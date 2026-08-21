@@ -35,6 +35,8 @@ export interface DhcpdHost {
 
 export interface DhcpdConfig {
   readonly globals: DhcpdOptions;
+  readonly pingCheck: boolean;
+  readonly pingTimeoutSeconds: number;
   readonly subnets: readonly DhcpdSubnet[];
   readonly hosts: readonly DhcpdHost[];
   readonly authoritative: boolean;
@@ -100,6 +102,8 @@ class Parser {
   readonly subnets: DhcpdSubnet[] = [];
   readonly hosts: DhcpdHost[] = [];
   authoritative = false;
+  pingCheck = false;
+  pingTimeoutSeconds = 1;
 
   constructor(private readonly tokens: Token[], private readonly path: string) {}
 
@@ -152,6 +156,7 @@ class Parser {
       case 'ddns-update-style': case 'ddns-updates': case 'log-facility':
       case 'next-server': case 'filename': case 'server-identifier':
       case 'get-lease-hostnames': case 'use-host-decl-names':
+      case 'ping-check': case 'ping-timeout':
         return 1;
       default:
         return Number.POSITIVE_INFINITY;
@@ -162,6 +167,12 @@ class Parser {
     switch (head.value) {
       case 'default-lease-time': into.defaultLeaseTime = Number(words[0]); return true;
       case 'max-lease-time': into.maxLeaseTime = Number(words[0]); return true;
+      case 'ping-check':
+        this.pingCheck = /^(true|on|1)$/i.test(words[0] ?? '');
+        return true;
+      case 'ping-timeout':
+        this.pingTimeoutSeconds = Number(words[0]) || 1;
+        return true;
       case 'min-lease-time': case 'ddns-update-style': case 'ddns-updates':
       case 'log-facility': case 'allow': case 'deny': case 'ignore':
       case 'get-lease-hostnames': case 'use-host-decl-names':
@@ -203,6 +214,7 @@ class Parser {
     for (const subnet of parser.subnets) this.subnets.push(subnet);
     for (const host of parser.hosts) this.hosts.push(host);
     if (parser.authoritative) this.authoritative = true;
+    if (parser.pingCheck) this.pingCheck = true;
   }
 
   private declareSubnet(head: Token): void {
@@ -315,7 +327,8 @@ export function parseDhcpdConf(text: string, path: string): DhcpdConfig {
   parser.run(globals);
   return {
     globals, subnets: parser.subnets, hosts: parser.hosts,
-    authoritative: parser.authoritative, errors: parser.errors,
+    authoritative: parser.authoritative, pingCheck: parser.pingCheck,
+    pingTimeoutSeconds: parser.pingTimeoutSeconds, errors: parser.errors,
   };
 }
 

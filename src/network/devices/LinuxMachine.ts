@@ -493,6 +493,9 @@ export abstract class LinuxMachine extends EndHost
     this.dhcpd = new LinuxDhcpdService(this, {
       read: (path) => this.executor.vfs.readFile(path),
       write: (path, content) => { this.executor.vfs.writeFile(path, content, 0, 0, 0o022); },
+      log: (message) => this.executor.logMgr.logDaemon(
+        'dhcpd', message, this.executor.serviceMgr.getPortBinding('isc-dhcp-server')?.mainPid,
+        'isc-dhcp-server'),
     });
     this.executor.serviceMgr.registerConfigCheck('isc-dhcp-server', () => {
       const verdict = this.dhcpd.preflight();

@@ -956,6 +956,8 @@ export interface IDhcpServerProvider {
   isAuthorizedInDC(): boolean;
   isRegisteredInDC(): boolean;
   revokeInDC(): DhcpOpResult;
+  getConflictDetectionAttempts(): number;
+  setConflictDetectionAttempts(attempts: number): DhcpOpResult;
   serverAddress(): string;
   serverName(): string;
 }

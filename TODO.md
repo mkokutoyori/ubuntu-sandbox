@@ -354,18 +354,31 @@ sujet en soi et non une commande de plus.
 
 ## Serveurs DHCP
 
-### [dhcp] le serveur n'écarte que SES PROPRES adresses, pas celles d'un squatteur
-Un serveur ne propose plus une adresse qu'il porte lui-même
-(`setServerOwnedAddresses`, alimenté par `Router` et par le rôle
-Windows). Ce qui reste absent est le cas général : une adresse de la
-plage occupée par une machine configurée en statique. Le vrai IOS la
-teste par deux pings avant de l'offrir.
-**Mesure** : un pool couvrant l'adresse du serveur ne la distribue plus ;
-une adresse tenue par un tiers l'est encore.
-**Report** : demande un aller-retour ICMP synchrone dans le chemin
-d'offre. `isAddressInUse` existe dans `DhcpServerExchange` et n'est
-consulté que si `ip dhcp ping packets` > 0, réglage qui n'a pas
-d'équivalent Windows.
+### [dhcp] la sonde d'avant-offre est un ARP, la vraie est un ICMP
+Les trois serveurs sondent désormais l'adresse avant de l'offrir, mais
+par une requête ARP — alors qu'IOS, ISC et Windows envoient tous un ICMP
+Echo. La différence est observable : une machine qui répond à l'ARP mais
+laisse tomber l'ICMP (pare-feu local) est vue OCCUPÉE ici et LIBRE sur
+une vraie machine.
+**Mesure** : `addressAnswersOnLink` émet une requête ARP et relit la
+table ; aucun paquet ICMP ne part.
+**Report** : un aller-retour ICMP synchrone demande que le voisin soit
+déjà résolu — donc un ARP d'abord de toute façon —, et un hôte qui
+répond à l'ARP est présent, ce que la sonde cherche. Écrire l'ICMP par
+dessus n'ajouterait que le cas du pare-feu local, au prix d'un émetteur
+ICMP synchrone qui n'existe sur aucun des trois serveurs.
+
+### [dhcp] `ping-check` : la valeur PAR DÉFAUT d'ISC n'est pas attestée
+`ping-check` est lu, honoré, et vaut **faux** par défaut ici. Aucune
+source lisible depuis ce réseau ne dit ce que vaut le défaut d'ISC : le
+manuel de `dhcpd.conf` n'est pas joignable (proxy), et les deux réponses
+trouvées se contredisent — un article de la base de connaissances d'ISC
+laisse entendre que la 4.4 le fait par défaut, tandis que chaque guide
+d'administration écrit `ping-check true;` explicitement, ce qui suggère
+l'inverse.
+**Mesure** : `dhcpd.conf` livré par Debian ne contient pas la directive.
+**Report** : trancher demande le manuel ou une vraie machine ; le défaut
+retenu est écrit dans `docs/PRD-Manquements.md` §M6 plutôt que tu.
 
 ### [dhcp] Windows : le basculement et l'export restent absents
 `Get-DhcpServerv4Binding`, `Get-/Set-DhcpServerv4DnsSetting` sont

@@ -56,6 +56,7 @@ import { RoutePolicyStore } from './router/policy/RoutePolicy';
 import { TrafficPolicyStore } from './router/policy/TrafficPolicy';
 import { NqaService } from '../nqa/NqaService';
 import { ControlPlaneUdpEndpoint } from './udp/ControlPlaneUdpEndpoint';
+import { addressAnswersOnLink } from '../arp/AddressProbe';
 import { CiscoDnsConfig } from './router/dns/CiscoDnsConfig';
 import { RouterDnsService, DNS_PORT, type DnsTransport } from './router/dns/RouterDnsService';
 import { encodeDnsMessage, decodeDnsMessage } from '../dns/wire/DnsMessageCodec';
@@ -3913,23 +3914,14 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
    * delivery already does for ordinary IP forwarding.
    */
   private isCandidateAddressInUse(candidateIP: IPAddress): boolean {
-    const key = candidateIP.toString();
-    if (this.arpTable.has(key)) return true;
     const route = this.lookupRoute(candidateIP);
     if (!route) return false;
     const port = this.ports.get(route.iface);
-    const myIP = port?.getIPAddress();
-    if (!port || !myIP) return false;
-    const arpReq: ARPPacket = {
-      type: 'arp', operation: 'request',
-      senderMAC: port.getMAC(), senderIP: myIP,
-      targetMAC: MACAddress.broadcast(), targetIP: candidateIP,
-    };
-    this.sendFrame(route.iface, {
-      srcMAC: port.getMAC(), dstMAC: MACAddress.broadcast(),
-      etherType: ETHERTYPE_ARP, payload: arpReq,
-    });
-    return this.arpTable.has(key);
+    if (!port) return false;
+    return addressAnswersOnLink({
+      sendFrame: (iface, frame) => { this.sendFrame(iface, frame); },
+      hasNeighbour: (ip) => this.arpTable.has(ip),
+    }, route.iface, port, candidateIP);
   }
 
   private sendDhcpFrameOnPort(

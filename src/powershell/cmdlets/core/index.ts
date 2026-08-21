@@ -172,6 +172,8 @@ import {
   GetDhcpServerv4StatisticsCmdlet,
   GetDhcpServerInDCCmdlet,
   RemoveDhcpServerInDCCmdlet,
+  GetDhcpServerSettingCmdlet,
+  SetDhcpServerSettingCmdlet,
 } from './DhcpServerCmdlets';
 import {
   NewNpsRadiusClientCmdlet, GetNpsRadiusClientCmdlet, RemoveNpsRadiusClientCmdlet,
@@ -666,6 +668,8 @@ export function registerServerCmdlets(registry: CmdletRegistry): void {
   registry.register(new GetDhcpServerv4StatisticsCmdlet());
   registry.register(new GetDhcpServerInDCCmdlet());
   registry.register(new RemoveDhcpServerInDCCmdlet());
+  registry.register(new GetDhcpServerSettingCmdlet());
+  registry.register(new SetDhcpServerSettingCmdlet());
 
   // ── NPS (RADIUS) role (PRD-Windows-Server.md §5 P9 + Advanced P22) ──────────
   registry.register(new NewNpsRadiusClientCmdlet());

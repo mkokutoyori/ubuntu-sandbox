@@ -328,6 +328,49 @@ ligne que l'opérateur doit corriger. Hors périmètre et non simulé :
 `omapi`, DHCPv6 (`dhcpd -6`), `failover peer`, les classes et
 sous-classes, et l'évaluation d'expressions (`if`/`match`).
 
+### §M7 — la sonde d'avant-offre, et les trois defauts des trois vendeurs
+
+Un serveur DHCP ne doit pas offrir une adresse qu'une machine tient deja
+en statique. La mesure de depart, faite sur les trois serveurs dans le
+meme laboratoire, a corrige la premisse : **le routeur Cisco le faisait
+deja** (`isCandidateAddressInUse`, une vraie requete ARP relue dans la
+table), et seuls Windows et Linux distribuaient l'adresse squattee. Le
+premier laboratoire ne discriminait rien — sa plage couvrait tout le
+sous-reseau, donc le serveur servait `.2` sans jamais avoir a considerer
+l'adresse tenue ; il a fallu exclure `.1`-`.9` pour que la question soit
+posee.
+
+**Le defaut par vendeur est un FAIT, pas un reglage uniforme**, et c'est
+la seule chose qu'il ne fallait pas rater :
+
+| | Reglage | Defaut reel | Ce que fait ce simulateur |
+|---|---|---|---|
+| IOS | `ip dhcp ping packets` | **2** (actif) | inchange, deja conforme |
+| Windows | `Set-DhcpServerSetting -ConflictDetectionAttempts` | **0** (eteint) | eteint, 1..6 accepte, au-dela refuse |
+| ISC | `ping-check` | non atteste | eteint, et dit pourquoi |
+
+Uniformiser aurait ete plus simple et faux : un Windows qui refuserait
+l'adresse squattee sans qu'on ait rien regle enseignerait un comportement
+que la vraie machine n'a pas, et c'est justement ce que le controle
+`ConflictDetectionAttempts` existe pour rendre visible.
+
+**Une seule implementation de la sonde** : `arp/AddressProbe.ts`. Il y
+avait trois constructions de requete ARP dans le depot (deux dans
+`EndHost`, une dans `Router`) ; la sonde etait la quatrieme a ecrire.
+`Router.isCandidateAddressInUse` delegue desormais, et
+`EndHost.addressAnswersOnLink` est la meme fonction vue depuis un hote,
+ce qui donne la sonde aux deux serveurs qui ne l'avaient pas.
+
+**Ce qui n'est pas atteste est dit** : le defaut de `ping-check` n'a pas
+pu etre verifie (manuel `dhcpd.conf` injoignable depuis ce reseau, et
+deux sources qui se contredisent) ; il est **eteint**, parce que le
+`dhcpd.conf` livre par Debian ne contient pas la directive et que chaque
+guide d'administration l'ecrit explicitement. Le message
+`Abandoning IP address <ip>: pinged before offer`, lui, est atteste par
+plusieurs archives de la liste `dhcp-users`. Et la sonde est un **ARP**
+la ou les trois vendeurs envoient un **ICMP Echo** — inscrit au TODO
+avec sa consequence observable plutot que passe sous silence.
+
 ## 5. Ordre, et pourquoi
 
 A1 d'abord, parce que c'est le seul manquement de cette liste où une

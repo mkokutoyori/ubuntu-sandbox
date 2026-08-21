@@ -91,6 +91,7 @@ import { HostLifecycle } from './host/lifecycle';
 import { SystemIdentity } from './host/identity';
 import { DHCPClient } from '../dhcp/DHCPClient';
 import { DHCPPacket } from '../dhcp/DHCPPacket';
+import { addressAnswersOnLink } from '../arp/AddressProbe';
 import { WireDhcpChannel } from '../dhcp/DhcpServerChannel';
 import type { DHCPClientIfaceState } from '../dhcp/types';
 import { DHCPv6Packet } from '../dhcpv6/DHCPv6Packet';
@@ -108,6 +109,7 @@ export interface GreDecapsulator {
 
 // ─── Internal Types ────────────────────────────────────────────────
 
+import type { ARPEntry } from '../core/types';
 export type { ARPEntry } from '../core/types';
 
 /** Linux reachable time default (RFC 4861 §10): 30 seconds */
@@ -2565,6 +2567,15 @@ export abstract class EndHost extends Equipment {
    * The binding is recorded in the socket table so `netstat`/`ss` show it.
    * Throws EADDRINUSE when the port is already bound (Fail Fast).
    */
+  public addressAnswersOnLink(iface: string, target: IPAddress): boolean {
+    const port = this.ports.get(iface);
+    if (!port) return false;
+    return addressAnswersOnLink({
+      sendFrame: (name, frame) => { this.sendFrame(name, frame); },
+      hasNeighbour: (ip) => this.arpTable.has(ip),
+    }, iface, port, target);
+  }
+
   public udpBind(port: number, listener: UdpListener, processName?: string): boolean {
     this.socketTable.bind('udp', '0.0.0.0', port, undefined, processName);
     this.udpListeners.set(port, listener);

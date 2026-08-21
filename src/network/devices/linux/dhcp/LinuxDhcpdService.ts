@@ -27,6 +27,7 @@ export interface DhcpdOperationResult {
 export interface DhcpdFsPort {
   read(path: string): string | null;
   write(path: string, content: string): void;
+  log?(message: string): void;
 }
 
 interface ServedInterface {
@@ -185,6 +186,8 @@ export class LinuxDhcpdService {
   }
 
   private applyConfig(config: DhcpdConfig, served: readonly ServedInterface[]): void {
+    this.engine.setPingPacketCount(config.pingCheck ? 1 : 0);
+    this.engine.setPingTimeoutMs(config.pingTimeoutSeconds * 1000);
     for (const [name] of this.engine.getAllPools()) this.engine.deletePool(name);
     for (const range of this.engine.getExcludedRanges()) {
       this.engine.removeExcludedRange(range.start, range.end);
@@ -273,12 +276,22 @@ export class LinuxDhcpdService {
     if (own && own !== '0.0.0.0') this.engine.setServerIdentifier(own);
     this.engine.setServerOwnedAddresses(this.ownAddresses());
 
-    const reply = buildDhcpServerReply(pkt, { server: this.engine, localGatewayIP: own });
+    const reply = buildDhcpServerReply(pkt, {
+      server: this.engine,
+      localGatewayIP: own,
+      isAddressInUse: (ip) => this.addressIsTaken(inPort, ip),
+    });
     if (!reply) return;
     if (reply.getMessageType() === 'DHCPACK') this.recordLease(pkt, reply);
     reply.giaddr = pkt.giaddr;
     if (pkt.giaddr !== '0.0.0.0') this.sendReplyToRelay(pkt.giaddr, reply);
     else this.sendReply(inPort, reply);
+  }
+
+  private addressIsTaken(inPort: string, ip: string): boolean {
+    const taken = this.host.addressAnswersOnLink(inPort, new IPAddress(ip));
+    if (taken) this.fs.log?.(`Abandoning IP address ${ip}: pinged before offer`);
+    return taken;
   }
 
   private ownAddresses(): string[] {

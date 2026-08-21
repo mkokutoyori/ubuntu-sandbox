@@ -515,6 +515,48 @@ export class SetDhcpServerv4DnsSettingCmdlet implements ICmdlet {
   }
 }
 
+export class GetDhcpServerSettingCmdlet implements ICmdlet {
+  readonly name = 'get-dhcpserversetting';
+  readonly displayName = 'Get-DhcpServerSetting';
+  readonly aliases = [] as const;
+  readonly parameters = ['ComputerName'] as const;
+
+  execute(ctx: CmdletContext): PSValue {
+    const dhcp = requireDhcp(ctx, 'Get-DhcpServerSetting');
+    return {
+      ConflictDetectionAttempts: dhcp.getConflictDetectionAttempts(),
+      IsAuthorized: dhcp.isRegisteredInDC(),
+      IsDomainJoined: dhcp.isAuthorizedInDC(),
+      DynamicBootp: false,
+      RestoreStatus: false,
+      NpsUnreachableAction: 'Full',
+      NapEnabled: false,
+    };
+  }
+}
+
+export class SetDhcpServerSettingCmdlet implements ICmdlet {
+  readonly name = 'set-dhcpserversetting';
+  readonly displayName = 'Set-DhcpServerSetting';
+  readonly aliases = [] as const;
+  readonly parameters = ['ComputerName', 'ConflictDetectionAttempts'] as const;
+
+  execute(ctx: CmdletContext): PSValue {
+    const dhcp = requireDhcp(ctx, 'Set-DhcpServerSetting');
+    const raw = ctx.named['conflictdetectionattempts'];
+    if (raw === undefined) return null;
+    const attempts = Number(psValueToString(raw));
+    if (!Number.isFinite(attempts)) {
+      ctx.emitError("Set-DhcpServerSetting : Cannot bind parameter 'ConflictDetectionAttempts'. "
+        + `Cannot convert value "${psValueToString(raw)}" to type "System.UInt32".`);
+      return null;
+    }
+    const res = dhcp.setConflictDetectionAttempts(attempts);
+    if (!res.ok) { ctx.emitError(`Set-DhcpServerSetting : ${res.message}`); return null; }
+    return null;
+  }
+}
+
 export class RemoveDhcpServerInDCCmdlet implements ICmdlet {
   readonly name = 'remove-dhcpserverindc';
   readonly displayName = 'Remove-DhcpServerInDC';
