@@ -485,6 +485,17 @@ export class Firewall extends Equipment {
     return bringUpTunnel(this.ipsec, this.getVdom(v).tunnels, name);
   }
 
+  clearIpsecGateway(name: string, v?: string): void {
+    const tunnels = this.getVdom(v).tunnels;
+    const tunnel = tunnels.getPhase1(name);
+    if (!tunnel) return;
+
+    this.ipsec.clearAllSAs();
+    tunnels.markDown(name, null);
+    tunnels.markGateway(name, false);
+    bringUpTunnel(this.ipsec, tunnels, name);
+  }
+
   private sendUdpToPeer(destIp: string, port: number, payload: unknown): boolean {
     const route = this.getVdom().routes.resolveNextHop(destIp);
     const iface = route?.iface ?? this.interfaces.interfaceForDestination(destIp);

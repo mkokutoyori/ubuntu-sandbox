@@ -14,7 +14,14 @@ export function renderVpnTunnelList(tunnels: IpsecTunnelTable, now: number): str
 export function renderVpnTunnelSummary(tunnels: IpsecTunnelTable): string {
   const lines = tunnels.all().map(tunnel => {
     const state = tunnels.stateOf(tunnel.name);
-    return `${tunnel.name}\t${tunnel.remoteGateway}\t${state?.status ?? 'down'}`;
+    const selectors = tunnels.selectorsOf(tunnel.name);
+    const up = state?.status === 'up' ? selectors.length : 0;
+    const counters = state?.counters;
+
+    return `'${tunnel.name}' ${tunnel.remoteGateway}:0  `
+      + `selectors(total,up): ${selectors.length}/${up}  `
+      + `rx(pkt,err): ${counters?.receivedPackets ?? 0}/0  `
+      + `tx(pkt,err): ${counters?.sentPackets ?? 0}/0`;
   });
   return lines.join('\n');
 }
@@ -69,4 +76,24 @@ function renderSelector(
 function sinceSeconds(at: number | null | undefined, now: number): number {
   if (at === null || at === undefined) return 0;
   return Math.max(0, Math.floor((now - at) / 1000));
+}
+
+export function renderIkeGatewayList(tunnels: IpsecTunnelTable, now: number): string {
+  const blocks = tunnels.all().map(tunnel => {
+    const state = tunnels.stateOf(tunnel.name);
+    const selectors = tunnels.selectorsOf(tunnel.name);
+    const up = state?.status === 'up' ? selectors.length : 0;
+
+    return [
+      `vd: root/0`,
+      `name: ${tunnel.name}`,
+      `version: ${tunnel.ikeVersion}`,
+      `interface: ${tunnel.boundInterface} 0`,
+      `addr: 0.0.0.0:500 -> ${tunnel.remoteGateway}:500`,
+      `created: ${sinceSeconds(state?.establishedAt ?? null, now)}s ago`,
+      `IKE SA: created ${state?.gatewayUp ? '1/1' : '0/0'}`,
+      `IPsec SA: created ${up}/${selectors.length}`,
+    ].join('\n');
+  });
+  return blocks.join('\n------------------------------------------------------\n');
 }

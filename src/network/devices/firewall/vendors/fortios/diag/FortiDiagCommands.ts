@@ -5,7 +5,7 @@ import type { PacketContext } from '../../../pipeline/PacketContext';
 import { parseCaptureFilter, portsOf } from '../../../diag/PacketCapture';
 import { FortiMessages } from '../FortiMessages';
 import { parseAuthFilter, renderAuthList } from './authListRenderer';
-import { renderVpnTunnelList, renderVpnTunnelSummary } from './vpnTunnelRenderer';
+import { renderIkeGatewayList, renderVpnTunnelList } from './vpnTunnelRenderer';
 import { unquote } from '../runtime/FortiNavigator';
 import { referencesTo, renderReference } from '../runtime/references';
 import type { FortiConfigTree } from '../runtime/FortiConfigTree';
@@ -370,18 +370,42 @@ function diagnoseAuth(rest: readonly string[], deps: FortiDiagDeps): string {
 }
 
 function diagnoseVpn(rest: readonly string[], deps: FortiDiagDeps): string {
+  if (rest[0] === 'ike') return diagnoseIke(rest.slice(1), deps);
   if (rest[0] !== 'tunnel') return FortiMessages.unknownPath(`vpn ${rest.join(' ')}`);
 
   const tunnels = deps.fw.getTunnelTable();
   if (rest[1] === 'list') return renderVpnTunnelList(tunnels, deps.fw.now());
-  if (rest[1] === 'summary') return renderVpnTunnelSummary(tunnels);
   if (rest[1] === 'up') {
     const name = rest[2] ?? '';
     return deps.fw.bringUpIpsecTunnel(name)
       ? ''
       : FortiMessages.commandFail(`tunnel \`${name}\` did not come up.`);
   }
+  if (rest[1] === 'flush') {
+    for (const tunnel of tunnels.all()) deps.fw.clearIpsecGateway(tunnel.name);
+    return '';
+  }
   return FortiMessages.unknownPath(`vpn tunnel ${rest.slice(1).join(' ')}`);
+}
+
+function diagnoseIke(rest: readonly string[], deps: FortiDiagDeps): string {
+  if (rest[0] !== 'gateway') return FortiMessages.unknownPath(`vpn ike ${rest.join(' ')}`);
+
+  const tunnels = deps.fw.getTunnelTable();
+  if (rest[1] === 'list') return renderIkeGatewayList(tunnels, deps.fw.now());
+  if (rest[1] === 'flush') {
+    for (const tunnel of tunnels.all()) deps.fw.clearIpsecGateway(tunnel.name);
+    return '';
+  }
+  if (rest[1] === 'clear') {
+    if (rest[2] !== 'name' || rest[3] === undefined) {
+      return FortiMessages.incomplete('`name <gateway>`');
+    }
+    if (!tunnels.getPhase1(rest[3])) return FortiMessages.unknownKey(rest[3]);
+    deps.fw.clearIpsecGateway(rest[3]);
+    return '';
+  }
+  return FortiMessages.unknownPath(`vpn ike gateway ${rest.slice(1).join(' ')}`);
 }
 
 function diagnoseSniffer(rest: readonly string[], deps: FortiDiagDeps): string {

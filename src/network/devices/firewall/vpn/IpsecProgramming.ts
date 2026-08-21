@@ -1,10 +1,10 @@
 import type { IPSecEngine } from '../../../ipsec/IPSecEngine';
-import type { CryptoMapEntry } from '../../../ipsec/IPSecTypes';
+import type { CryptoMapEntry, SATrafficSelector } from '../../../ipsec/IPSecTypes';
 import {
   IPAddress, IP_PROTO_UDP, createIPv4Packet,
   type IPv4Packet, type UDPPacket,
 } from '../../../core/types';
-import type { IpsecProposal, IpsecTunnelTable } from './IpsecTunnelTable';
+import type { IpsecProposal, IpsecTunnelTable, Phase2Tunnel } from './IpsecTunnelTable';
 import type { CertificateStore } from './CertificateStore';
 import { CertificateVerifier } from '../../../pki/CertificateVerifier';
 
@@ -16,6 +16,26 @@ export function cryptoEntryFor(
   engine: IPSecEngine, tunnel: string,
 ): CryptoMapEntry | undefined {
   return engine.getCryptoMap(cryptoMapName(tunnel))?.staticEntries.get(1);
+}
+
+function wildcardOf(mask: string): string {
+  const octets = mask.split('.').map(part => Number.parseInt(part, 10));
+  if (octets.length !== 4 || octets.some(value => Number.isNaN(value))) return '';
+  return octets.map(value => 255 - value).join('.');
+}
+
+function selectorsOf(phase2: Phase2Tunnel | undefined): SATrafficSelector | undefined {
+  if (!phase2) return undefined;
+  if (phase2.sourceSubnet.length === 0 || phase2.destinationSubnet.length === 0) {
+    return undefined;
+  }
+  return {
+    srcAddress: phase2.sourceSubnet,
+    srcWildcard: wildcardOf(phase2.sourceMask),
+    dstAddress: phase2.destinationSubnet,
+    dstWildcard: wildcardOf(phase2.destinationMask),
+    protocol: 0, srcPort: 0, dstPort: 0,
+  };
 }
 
 export function transformSetName(tunnel: string): string {
@@ -72,6 +92,7 @@ export function programIpsecEngine(
     entry.peers = [tunnel.remoteGateway];
     entry.transformSets = [transformSetName(tunnel.name)];
     entry.saLifetimeSeconds = selectors[0]?.keyLifeSeconds ?? tunnel.keyLifeSeconds;
+    entry.trafficSelectors = selectorsOf(selectors[0]);
     if (selectors[0]?.pfs) entry.pfsGroup = `group${selectors[0].dhGroups[0] ?? 14}`;
 
     if (tunnel.boundInterface.length > 0) {
@@ -142,8 +163,13 @@ export function bringUpTunnel(
     engine.initiateTunnel(declared.remoteGateway, entry, declared.boundInterface);
   }
 
+  const gatewayUp = engine.hasIkeSA(declared.remoteGateway);
   const sas = engine.getIPSecSAs(declared.remoteGateway);
-  if (sas.length === 0) { tunnels.markDown(name, 'negotiation failed'); return false; }
+  if (sas.length === 0) {
+    tunnels.markDown(name, gatewayUp ? 'no matching selector' : 'negotiation failed');
+    tunnels.markGateway(name, gatewayUp);
+    return false;
+  }
 
   tunnels.markUp(name, sas[0].natT === true);
   return true;

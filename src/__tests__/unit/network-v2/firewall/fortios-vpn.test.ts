@@ -325,12 +325,23 @@ describe('`diagnose vpn tunnel list` lit l`etat reel', () => {
     expect(vu).toContain('dst: 0:192.168.2.0/255.255.255.0:0');
   });
 
-  it('le resume nomme le tunnel, sa passerelle et son etat', () => {
+  it('le resume est celui d\'une vraie machine : `get vpn ipsec tunnel summary`', () => {
+    const { sh } = shell();
+    tunnel(sh);
+    selector(sh);
+
+    const vu = run(sh, 'get vpn ipsec tunnel summary');
+
+    expect(vu).toContain("'vers_site_b' 198.51.100.1:0");
+    expect(vu).toMatch(/selectors\(total,up\): 1\/0/);
+    expect(vu).toMatch(/rx\(pkt,err\): 0\/0/);
+  });
+
+  it('`diagnose vpn tunnel summary` n\'existe pas sur une vraie machine', () => {
     const { sh } = shell();
     tunnel(sh);
 
-    expect(run(sh, 'diagnose vpn tunnel summary'))
-      .toContain('vers_site_b\t198.51.100.1\tdown');
+    expect(run(sh, 'diagnose vpn tunnel summary')).toMatch(/Command fail|Unknown/i);
   });
 
   it('les compteurs sont ceux de la table, pas des constantes', () => {

@@ -244,7 +244,8 @@ describe('authmethod signature', () => {
     const sortie = await pingOnSimulatedClock(a.pc, 'ping -c 1 192.168.2.10');
 
     expect(sortie).toMatch(/, 100% packet loss/);
-    expect(a.sh.execute('diagnose vpn tunnel summary')).toMatch(/vers_b\s+203\.0\.113\.2\s+down/);
+    expect(a.sh.execute('get vpn ipsec tunnel summary'))
+      .toMatch(/'vers_b' 203\.0\.113\.2:0\s+selectors\(total,up\): \d+\/0/);
   });
 
   it('la cle partagee reste utilisable — non-regression', async () => {

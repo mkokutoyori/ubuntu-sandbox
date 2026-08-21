@@ -38,6 +38,7 @@ import type {
 } from '../../inspection/UtmProfiles';
 import { FortiDiagnostics } from './diag/FortiDiagnostics';
 import { deniedLog, runDiagnose, runExecuteLog } from './diag/FortiDiagCommands';
+import { renderVpnTunnelList, renderVpnTunnelSummary } from './diag/vpnTunnelRenderer';
 import {
   renderArpTable, renderInterfaceStatus, renderPerformanceStatus,
   type InterfaceStatusFacts,
@@ -463,6 +464,12 @@ export class FortiShell {
       });
     }
 
+    if (path === 'vpn ipsec tunnel summary') {
+      return renderVpnTunnelSummary(this.fw.getTunnelTable());
+    }
+    if (path === 'vpn ipsec tunnel details' || path === 'vpn ipsec tunnel name') {
+      return renderVpnTunnelList(this.fw.getTunnelTable(), this.fw.now());
+    }
     if (path === 'system fortiguard-service status') {
       return renderFortiguardServiceStatus();
     }

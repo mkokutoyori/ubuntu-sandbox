@@ -210,7 +210,8 @@ describe('FGT-VPN-3 — le trafic traverse le tunnel', () => {
 
     await pingOnSimulatedClock(a.pc, 'ping -c 1 192.168.2.10');
 
-    expect(a.sh.execute('diagnose vpn tunnel summary')).toMatch(/vers_b\s+203\.0\.113\.2\s+up/);
+    expect(a.sh.execute('get vpn ipsec tunnel summary'))
+      .toMatch(/'vers_b' 203\.0\.113\.2:0\s+selectors\(total,up\): \d+\/[1-9]/);
   });
 
   it('sans politique du cote distant, le trafic n`arrive pas', async () => {
