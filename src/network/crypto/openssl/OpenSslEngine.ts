@@ -1086,14 +1086,6 @@ const IPV4_RE = /^\d{1,3}(\.\d{1,3}){3}$/;
  * simulateur, comme `curl` et `nc` en ouvrent déjà. Il n'y a rien à
  * inventer ici : le transport existe, et le verdict rendu est celui du
  * fil.
- *
- * Ce que ce sous-mode NE fait pas, et qui est écrit plutôt que tu : il
- * ne déroule pas une poignée de main TLS pour en extraire la chaîne du
- * pair. Le certificat affiché est celui de `-CAfile` quand l'opérateur
- * en fournit un ; sans lui, la section « Certificate chain » annonce
- * qu'aucune chaîne n'a été présentée, au lieu d'en fabriquer une. Un
- * `Verification: OK` inventé serait précisément le genre de fausse
- * confiance que le §5 P3 interdit.
  */
 function runSClient(host: OpenSslHost, argv: readonly string[]): OpenSslResult {
   const { opts } = parseArgs('s_client', argv);
@@ -1134,15 +1126,14 @@ function runSClient(host: OpenSslHost, argv: readonly string[]): OpenSslResult {
   const sonde = host.tlsPeerCertificate?.(
     ip, port, typeof nomServeur === 'string' ? nomServeur : undefined);
 
+  const echecPoignee = sonde && sonde.ok === false
+    ? (sonde.reason ?? 'handshake failed') : null;
+  if (echecPoignee !== null) {
+    lignes.push(`TLS handshake yielded no peer certificate: ${echecPoignee}`);
+  }
+
   lignes.push('---');
   lignes.push('Certificate chain');
-
-  if (sonde && sonde.ok === false) {
-    lignes.push(` (handshake failed: ${sonde.reason})`);
-    lignes.push('---');
-    lignes.push('Verification error: unable to complete the TLS handshake');
-    return ok(lignes.join('\n'));
-  }
 
   const presente = sonde && sonde.ok ? sonde.certificate : null;
   if (presente) {
@@ -1156,9 +1147,13 @@ function runSClient(host: OpenSslHost, argv: readonly string[]): OpenSslResult {
       + 'pass -CAfile to display a known anchor; see docs/PRD-OpenSSL.md §P7)');
   }
   lignes.push('---');
-  const suite = sonde && sonde.ok && sonde.cipherSuite
-    ? sonde.cipherSuite : MANDATORY_CIPHER_SUITES[1];
-  lignes.push(`New, TLSv1.3, Cipher is ${suite}`);
+  if (echecPoignee !== null) {
+    lignes.push('New, (NONE), Cipher is (NONE)');
+  } else {
+    const suite = sonde && sonde.ok && sonde.cipherSuite
+      ? sonde.cipherSuite : MANDATORY_CIPHER_SUITES[1];
+    lignes.push(`New, TLSv1.3, Cipher is ${suite}`);
+  }
   if (typeof nomServeur === 'string') lignes.push(`Server name: ${nomServeur}`);
   if (presente) {
     lignes.push(sonde && sonde.ok && sonde.verified

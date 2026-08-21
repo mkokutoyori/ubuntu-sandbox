@@ -151,18 +151,6 @@ ecrivent avant de lire.
 d'evenements que la livraison synchrone de trames ne fournit pas ici ;
 c'est le meme plafond que le relai `portproxy` de Windows.
 
-### [openssl] `s_client` échoue sur deux cas de chaîne de certificats
-Deux cas de `openssl-prd-p0-p3.test.ts` §P7 sont ROUGES sur la branche,
-indépendamment de toute modification récente : « sans -CAfile, il DIT
-qu'il n'a pas de chaîne » et « avec -CAfile, il affiche l'ancre
-fournie ».
-**Mesure** : identiques avec et sans les modifications DHCP/DNS en cours
-(vérifié par `git stash`). Un troisième cas (« la CRL nomme son
-émetteur ») passe en isolation et tombe sous charge — instable, pas
-faux.
-**Report** : sujet PKI, distinct du chantier DHCP ; à traiter pour
-lui-même plutôt qu'en passant.
-
 ### [dns] `dns-service default` : la semantique exacte n'est pas verifiee
 Trois valeurs existent — `local` (le pare-feu lui-meme), `default` (les
 serveurs de `config system dns`) et `specify` (ceux nommes sous le
