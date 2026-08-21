@@ -486,6 +486,18 @@ un nombre est attendu, signatures de constructeur périmées.
 
 ## Journal des entrées fermées
 
+- Table de routage montree contre table reelle — fermee, et le defaut
+  touchait TOUT hote et non le seul pare-feu. Mesure sur un PC Linux :
+  apres `ip addr add 192.168.10.10/24 dev eth0`, `ip route` montre la
+  route connectee et `observables.routes` est VIDE, `routeCount` a 0 —
+  donc le panneau annonce « ROUTING TABLE (empty) » pour une machine qui
+  a une route. `configureInterface`, le chemin le plus courant, poussait
+  la route sans l'annoncer, comme six autres points de mutation sur
+  dix-sept. Referme par la STRUCTURE plutot qu'au cas par cas : le champ
+  devient un accesseur (toute reaffectation rafraichit) et les sept
+  `push` passent par `addRouteEntry`, donc le dix-huitieme point de
+  mutation ne pourra pas etre oublie.
+
 - Panneau « Live state » d'un pare-feu — ferme. Mesure au navigateur :
   ARP, routes, TCP, compteurs, TOUTES les sections rendaient « (empty) »
   pour un FortiGate qui portait au meme instant une interface adressee,
