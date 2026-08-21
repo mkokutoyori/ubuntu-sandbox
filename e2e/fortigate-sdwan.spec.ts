@@ -78,7 +78,7 @@ test.describe('FortiGate — SD-WAN dans le terminal', () => {
 
     for (const c of [...MEMBRES, 'diagnose sys sdwan member']) await typeCmd(page, c);
 
-    await waitForText(page, 'Member(1): interface(port2)');
+    await waitForText(page, 'Member(1): interface: port2');
   });
 
   test('l`aide de `latency-threshold` nomme la limite du simulateur', async ({ page }) => {

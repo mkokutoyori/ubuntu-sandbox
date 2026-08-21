@@ -105,7 +105,7 @@ test.describe('FortiGate — diagnostic et journaux dans le terminal', () => {
 
     const vu = await modalText(page);
     expect(vu).toContain('via 203.0.113.254, port2');
-    expect(vu).toContain('192.168.1.0 255.255.255.0 is directly connected, port1');
+    expect(vu).toContain('192.168.1.0/24 is directly connected, port1');
   });
 
   test('`diagnose firewall iprope list` rend la politique compilee', async ({ page }) => {

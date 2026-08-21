@@ -121,14 +121,15 @@ test.describe('FortiGate — routage dynamique dans le terminal', () => {
     await waitForText(page, '192.168.1.0/24 is directly connected, port1');
   });
 
-  test('`config router bgp` est refuse et la note dit quelle brique manque', async ({ page }) => {
+  test('`config router bgp` est accepte et l`invite descend', async ({ page }) => {
     test.setTimeout(120_000);
     const id = await poserFortiGate(page);
     await openTerminal(page, id);
 
     await typeCmd(page, 'config router bgp');
+    await waitForText(page, '(bgp) #');
 
-    await waitForText(page, 'Command fail');
-    await waitForText(page, 'NOTE:');
+    const vu = await modalText(page);
+    expect(vu).not.toContain('Command fail');
   });
 });
