@@ -373,18 +373,6 @@ UTC.
 (`set timezone ?`), et l'inventer donnerait 79 correspondances fausses —
 pire que l'aveu.
 
-### [diag] `diagnose sniffer packet` ne se DEROULE pas, il tombe d'un bloc
-La capture fonctionne et son format est celui de FortiOS, mais la
-commande rend tout son texte a la fin. Sur une vraie machine le
-renifleur ECRIT au fil de l'eau et on l'arrete par Ctrl+C — c'est meme
-son usage normal, on lance sans compteur et on regarde passer.
-**Mesure** : `diagnose sniffer packet port2 none 4 3` rend ses trois
-paquets d'un coup ; aucune ligne n'apparait pendant la capture.
-**Report** : `startAsyncCommand`/`onInterrupt` existent et `execute ping`
-s'en sert deja, donc la brique est la ; ce qui manque est de rendre la
-capture PAS A PAS comme `FirewallPing.begin()`, c'est-a-dire de decouper
-un moteur qui rend aujourd'hui une chaine.
-
 ### [execute] `ping6`, `backup config`, `restore`, `factoryreset` absentes
 Quatre actions d'`execute` refusees en « unknown action ». Aucune n'est
 un decor : `factoryreset` a un sens observable (la configuration revient
@@ -501,6 +489,13 @@ un nombre est attendu, signatures de constructeur périmées.
 « pas plus qu'avant ta modification », pas « zéro ».
 
 ## Journal des entrées fermées
+
+- `diagnose sniffer packet` au fil de l'eau — fermee. Dans un terminal il
+  ecrit paquet par paquet et Ctrl+C l'arrete ; et il capture A PARTIR DE
+  MAINTENANT au lieu de rejouer le tampon, ce qui est la difference qui
+  rend la commande utilisable. Hors terminal il garde son texte d'un
+  bloc, un script n'ayant personne pour provoquer le trafic pendant
+  qu'il attend.
 
 - `execute traceroute` du FortiGate — fermee, et le defaut etait plus
   profond que « la vue est fausse » : la commande n'avait JAMAIS trouve

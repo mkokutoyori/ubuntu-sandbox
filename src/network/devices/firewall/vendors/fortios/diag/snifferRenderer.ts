@@ -9,25 +9,29 @@ export interface SnifferRequest {
   readonly count: number;
 }
 
-export function renderSniffer(
-  request: SnifferRequest, frames: readonly CapturedFrame[], startedAt: number,
-): string {
-  const lines = [
+export function snifferHeader(request: SnifferRequest): string[] {
+  return [
     `interfaces=[${request.iface}]`,
     `filters=[${request.expression === '' ? 'none' : request.expression}]`,
   ];
+}
 
+export function snifferTrailer(received: number): string[] {
+  return ['', `${received} packets received by filter`, '0 packets dropped by kernel'];
+}
+
+export function renderSniffer(
+  request: SnifferRequest, frames: readonly CapturedFrame[], startedAt: number,
+): string {
+  const lines = snifferHeader(request);
   for (const entry of frames) {
     lines.push(renderFrame(entry, request.verbosity, startedAt));
   }
-
-  lines.push('');
-  lines.push(`${frames.length} packets received by filter`);
-  lines.push('0 packets dropped by kernel');
+  lines.push(...snifferTrailer(frames.length));
   return lines.join('\n');
 }
 
-function renderFrame(entry: CapturedFrame, verbosity: number, startedAt: number): string {
+export function renderFrame(entry: CapturedFrame, verbosity: number, startedAt: number): string {
   const stamp = ((entry.at - startedAt) / 1000).toFixed(6);
   const named = verbosity >= 4;
   const head = named ? `${stamp} ${entry.iface} -- ` : `${stamp} `;

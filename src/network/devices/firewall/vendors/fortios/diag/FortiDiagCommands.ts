@@ -3,7 +3,9 @@ import type { IPv4Packet } from '../../../../../core/types';
 import type { Firewall } from '../../../Firewall';
 import type { FirewallLogDraft } from '../../../logging/FirewallLogStore';
 import type { PacketContext } from '../../../pipeline/PacketContext';
-import { parseCaptureFilter, portsOf } from '../../../diag/PacketCapture';
+import {
+  parseCaptureFilter, portsOf, type CaptureFilter,
+} from '../../../diag/PacketCapture';
 import { FortiMessages } from '../FortiMessages';
 import { parseAuthFilter, renderAuthList } from './authListRenderer';
 import { renderIkeGatewayList, renderVpnTunnelList } from './vpnTunnelRenderer';
@@ -424,6 +426,28 @@ function diagnoseIke(rest: readonly string[], deps: FortiDiagDeps): string {
     return '';
   }
   return FortiMessages.unknownPath(`vpn ike gateway ${rest.slice(1).join(' ')}`);
+}
+
+export interface SnifferPlan {
+  readonly iface: string;
+  readonly expression: string;
+  readonly verbosity: number;
+  readonly count: number;
+  readonly filter: CaptureFilter;
+}
+
+export function parseSnifferPlan(
+  rest: readonly string[], knownInterface: (name: string) => boolean,
+): SnifferPlan | null {
+  if (rest[0] !== 'packet') return null;
+  const iface = rest[1];
+  if (iface === undefined) return null;
+  if (iface !== 'any' && !knownInterface(iface)) return null;
+
+  const parsed = splitSnifferArguments(rest.slice(2));
+  const filter = parseCaptureFilter(parsed.expression);
+  if (filter === null) return null;
+  return { iface, filter, ...parsed };
 }
 
 function diagnoseSniffer(rest: readonly string[], deps: FortiDiagDeps): string {

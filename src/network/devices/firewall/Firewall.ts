@@ -85,6 +85,9 @@ import type { NtpAgent } from '../../ntp/NtpAgent';
 import { FirewallPing, type FirewallPingEgress } from './diag/FirewallPing';
 import { PingOptions } from './diag/PingOptions';
 import { ConsoleSettings } from './mgmt/ConsoleSettings';
+import {
+  beginSniffer, type SnifferRun, type SnifferSelection,
+} from './diag/FirewallSniffer';
 import { buildEchoRequest } from './l3/IcmpEcho';
 import { FirewallTraceroute } from './diag/FirewallTraceroute';
 import {
@@ -401,6 +404,13 @@ export class Firewall extends Equipment {
   getPingOptions(): PingOptions { return this.pingOptions; }
 
   getConsoleSettings(): ConsoleSettings { return this.consoleSettings; }
+
+  beginSniffer(selection: SnifferSelection): SnifferRun {
+    const capture = this.capture;
+    return beginSniffer({
+      observe: (listener) => capture.observe(listener),
+    }, selection);
+  }
 
   shutdownNow(): void { this.powerOff(); }
 

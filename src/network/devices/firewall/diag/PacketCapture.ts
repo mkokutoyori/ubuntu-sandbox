@@ -29,9 +29,17 @@ const RING_CAPACITY = 512;
 export class PacketCapture {
   private readonly frames: CapturedFrame[] = [];
 
+  private readonly listeners = new Set<(entry: CapturedFrame) => void>();
+
   record(entry: CapturedFrame): void {
     this.frames.push(entry);
     while (this.frames.length > RING_CAPACITY) this.frames.shift();
+    for (const listener of [...this.listeners]) listener(entry);
+  }
+
+  observe(listener: (entry: CapturedFrame) => void): () => void {
+    this.listeners.add(listener);
+    return () => { this.listeners.delete(listener); };
   }
 
   clear(): void {
@@ -92,7 +100,7 @@ function nextAddress(words: readonly string[], index: number): string | undefine
   return next.toLowerCase() === 'host' ? words[index + 2] : next;
 }
 
-function frameMatches(frame: EthernetFrame, filter: CaptureFilter): boolean {
+export function frameMatches(frame: EthernetFrame, filter: CaptureFilter): boolean {
   if (filter.protocol === -1) return frame.etherType === ETHERTYPE_ARP;
   if (frame.etherType !== ETHERTYPE_IPV4) {
     return filter.host === undefined && filter.source === undefined

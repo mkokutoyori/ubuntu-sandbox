@@ -7,9 +7,14 @@ import { Firewall } from '@/network/devices/firewall/Firewall';
 import { PING_NO_ROUTE } from '@/network/devices/firewall/diag/FirewallPing';
 import type { FortiGate } from '@/network/devices/firewall/vendors/fortios/FortiGate';
 import type { InteractiveStep } from '@/terminal/core/types';
+import type { CapturedFrame } from '@/network/devices/firewall/diag/PacketCapture';
+import {
+  snifferHeader, snifferTrailer, renderFrame,
+} from '@/network/devices/firewall/vendors/fortios/diag/snifferRenderer';
 import { getDefaultEventBus } from '@/events/EventBus';
 
 const PING_INTERVAL_MS = 300;
+const SNIFFER_POLL_MS = 50;
 
 const FORTI_THEME: TerminalTheme = {
   sessionType: 'linux',
@@ -189,7 +194,53 @@ export class FortiTerminalSession extends CLITerminalSession {
   }
 
   protected override tryInterceptAsyncCommand(command: string): boolean {
-    return this.tryStartPingStream(command);
+    return this.tryStartPingStream(command) || this.tryStartSnifferStream(command);
+  }
+
+  private tryStartSnifferStream(commandLine: string): boolean {
+    if (this.hasForegroundAsyncJob) return false;
+    const device = this.device;
+    if (!(device instanceof Firewall)) return false;
+
+    const plan = this.forti().getShell().snifferPlanFor(commandLine);
+    if (!plan) return false;
+
+    const run = device.beginSniffer(plan);
+    let received = 0;
+    let startedAt = 0;
+    const emitTrailer = (ctx: { sink: { line(text: string): void } }) => {
+      for (const line of snifferTrailer(received)) ctx.sink.line(line);
+    };
+
+    const job = this.startAsyncCommand({
+      mode: 'foreground',
+      kind: 'streaming',
+      command: commandLine,
+      run: async (ctx) => {
+        for (const line of snifferHeader(plan)) ctx.sink.line(line);
+
+        const show = (entry: CapturedFrame) => {
+          if (startedAt === 0) startedAt = entry.at;
+          received++;
+          ctx.sink.line(renderFrame(entry, plan.verbosity, startedAt));
+        };
+
+        const stop = run.onFrame((entry) => {
+          if (run.wanted > 0 && received >= run.wanted) return;
+          show(entry);
+        });
+        try {
+          while (!ctx.cancelled() && (run.wanted === 0 || received < run.wanted)) {
+            await ctx.delay(SNIFFER_POLL_MS);
+          }
+        } finally { stop(); }
+
+        if (ctx.cancelled()) return;
+        emitTrailer(ctx);
+      },
+      onInterrupt: (ctx) => emitTrailer(ctx),
+    });
+    return job !== null;
   }
 
   private tryStartPingStream(commandLine: string): boolean {

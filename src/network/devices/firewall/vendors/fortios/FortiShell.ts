@@ -46,7 +46,9 @@ import type {
   CategoryFilterEntry, FilterTable, UrlFilterEntry, UtmAction,
 } from '../../inspection/UtmProfiles';
 import { FortiDiagnostics } from './diag/FortiDiagnostics';
-import { deniedLog, runDiagnose, runExecuteLog } from './diag/FortiDiagCommands';
+import {
+  deniedLog, runDiagnose, runExecuteLog, parseSnifferPlan, type SnifferPlan,
+} from './diag/FortiDiagCommands';
 import { renderVpnTunnelList, renderVpnTunnelSummary } from './diag/vpnTunnelRenderer';
 import {
   renderArpTable, renderInterfaceStatus, renderPerformanceStatus,
@@ -726,6 +728,13 @@ export class FortiShell {
         `the TFTP server at ${server} did not take "${file}" `
         + `(${result.error ?? 'Timed out'}).`)));
     return '';
+  }
+
+  snifferPlanFor(commandLine: string): SnifferPlan | null {
+    const words = commandLine.trim().split(/\s+/);
+    if (words[0] !== 'diagnose' || words[1] !== 'sniffer') return null;
+    return parseSnifferPlan(
+      words.slice(2), (name) => this.fw.getPort(name) !== undefined);
   }
 
   interactionPlanFor(commandLine: string): CommandInteractionPlan | null {

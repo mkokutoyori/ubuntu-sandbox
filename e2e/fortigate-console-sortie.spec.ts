@@ -90,6 +90,24 @@ test.describe('FortiGate — la console se quitte et se regle', () => {
     await waitForText(page, ' 1  192.168.10.10');
   });
 
+  test('`diagnose sniffer packet` ecrit au fil de l`eau et Ctrl+C l`arrete', async ({ page }) => {
+    test.setTimeout(120_000);
+    const id = await poserFortiGate(page);
+    await openTerminal(page, id);
+    for (const c of ['config system console', 'set output standard', 'end']) {
+      await typeCmd(page, c);
+    }
+
+    await typeCmd(page, 'diagnose sniffer packet any none 4');
+    await waitForText(page, 'interfaces=[any]');
+
+    const pendant = await modalText(page);
+    expect(pendant).not.toContain('packets received by filter');
+
+    await page.keyboard.press('Control+c');
+    await waitForText(page, 'packets received by filter');
+  });
+
   test('`exit` rend l`invite de connexion, et on rentre a nouveau', async ({ page }) => {
     test.setTimeout(120_000);
     const id = await poserFortiGate(page);
