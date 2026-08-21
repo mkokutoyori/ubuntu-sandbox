@@ -31,7 +31,9 @@ export interface FortiDiagDeps {
 import {
   renderSdwanHealthCheck, renderSdwanMembers, renderSdwanService,
 } from './sdwanRenderer';
-import { renderHaChecksum, renderHaStatus } from './haRenderer';
+import {
+  renderHaChecksum, renderHaChecksumCluster, renderHaStatus,
+} from './haRenderer';
 import { renderNtpStatus } from './ntpStatusRenderer';
 import { renderVipList } from './vipListRenderer';
 import { renderDnsProxy } from './dnsProxyRenderer';
@@ -115,6 +117,8 @@ function diagnoseHa(rest: readonly string[], deps: FortiDiagDeps): string {
     });
   }
   if (rest[0] === 'checksum' && rest[1] === 'show') return renderHaChecksum(ha);
+  if (rest[0] === 'checksum' && rest[1] === 'cluster') return renderHaChecksumCluster(ha);
+  if (rest[0] === 'reset-uptime') { ha.resetUptime(); return ''; }
   return FortiMessages.unknownPath(`sys ha ${rest.join(' ')}`);
 }
 

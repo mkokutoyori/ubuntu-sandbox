@@ -46,6 +46,10 @@ export interface VdomServices {
   opmode?: 'nat' | 'transparent';
 }
 
+export interface HaStandby {
+  forwardsTransit(): boolean;
+}
+
 export interface SdwanSteering {
   steer(
     probe: { readonly sourceIP: string; readonly destinationIP: string },
@@ -56,6 +60,7 @@ export interface SdwanSteering {
 export interface FirewallServices {
   interfaces: InterfaceTable;
   sdwan?: () => SdwanSteering | undefined;
+  ha?: () => HaStandby | undefined;
   now: () => number;
   vdomOf: (iface: string) => VdomServices;
   natOrder?: NatOrder;
@@ -118,6 +123,7 @@ function tcpFlagsOf(packet: IPv4Packet): ObservedTcpFlags | undefined {
 
 export function createCoreStages(services: FirewallServices): PipelineStage[] {
   return [
+    haStandbyStage(services),
     vdomBindStage(services),
     switchBridgeStage(services),
     ingressZoneStage(services),
@@ -299,6 +305,17 @@ function payloadText(payload: unknown): string | undefined {
   }
   if (payload !== null && typeof payload === 'object') return JSON.stringify(payload);
   return undefined;
+}
+
+function haStandbyStage(services: FirewallServices): PipelineStage {
+  return {
+    name: 'ha-standby',
+    apply(context) {
+      const ha = services.ha?.();
+      if (!ha || ha.forwardsTransit()) return proceed(context, 'ha-standby', 'forwarding');
+      return deny(context, 'ha-standby', 'ha-subordinate');
+    },
+  };
 }
 
 function vdomBindStage(services: FirewallServices): PipelineStage {

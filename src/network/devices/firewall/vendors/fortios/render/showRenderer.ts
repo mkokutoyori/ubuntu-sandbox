@@ -15,6 +15,9 @@ export interface ShowOptions {
 
 export function renderValue(spec: FortiAttributeSpec, values: readonly string[]): string {
   if (spec.secret === true) return `ENC ${encodeSecret(values.join(' '))}`;
+  if (spec.quoteValue) {
+    return values.map(v => (spec.quoteValue?.(v) === true ? `"${v}"` : v)).join(' ');
+  }
   if (!isQuoted(spec)) return values.join(' ');
   return values.map(v => `"${v}"`).join(' ');
 }

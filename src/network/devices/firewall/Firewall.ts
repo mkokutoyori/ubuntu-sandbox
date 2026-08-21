@@ -257,6 +257,7 @@ export class Firewall extends Equipment {
       interfaces: this.interfaces,
       vdomOf: (iface) => vdomServices(this.vdoms.contextOfInterface(iface)),
       sdwan: () => this.sdwan,
+      ha: () => ({ forwardsTransit: () => this.forwardsTransit() }),
       policyKeyedBy: profile.policyKeyedBy,
       bridgedWith: (ingress, egress) => this.sameSwitchInterface(ingress, egress),
       macLookup: (destination, ingress) => this.lookupMac(destination, ingress),
@@ -494,6 +495,11 @@ export class Firewall extends Equipment {
   }
 
   getHa(): HaAgent { return this.haService.agent; }
+
+  forwardsTransit(): boolean {
+    const ha = this.haService.agent;
+    return ha.getConfiguration().mode !== 'a-p' || ha.role() !== 'slave';
+  }
 
   applyHa(c: HaConfiguration): string | undefined {
     this.haService.agent.configure(c);
@@ -896,6 +902,7 @@ export class Firewall extends Equipment {
   private handleArpFrame(portName: string, packet: ARPPacket): void {
     if (!packet || packet.type !== 'arp') return;
     if (packet.operation === 'reply') { this.arp.handleReply(packet, portName); return; }
+    if (!this.forwardsTransit()) return;
     const answer = this.arp.handleRequest(packet, portName);
     if (answer) this.emitArp(answer, portName);
   }

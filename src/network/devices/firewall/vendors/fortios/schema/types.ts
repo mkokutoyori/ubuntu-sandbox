@@ -57,6 +57,7 @@ export interface FortiAttributeSpec {
   readonly multiValue?: boolean;
   readonly referenceTo?: readonly string[];
   readonly quoted?: boolean;
+  readonly quoteValue?: (value: string) => boolean;
   readonly defaultValue?: readonly string[];
   readonly availableWhen?: (object: FortiObjectView) => boolean;
   readonly unimplemented?: string;

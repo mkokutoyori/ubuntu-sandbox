@@ -15,7 +15,8 @@ export function renderHaStatus(ha: HaAgent, facts: HaViewFacts): string {
     'HA Health Status: OK',
     `Model: ${facts.model}`,
     `Mode: HA ${config.mode.toUpperCase()}`,
-    `Group: ${config.groupId}`,
+    `Group Name: ${config.groupName}`,
+    `Group ID: ${config.groupId}`,
     'Debug: 0',
     `Cluster Uptime: ${formatUptime(ha.uptimeMs())}`,
     'Master selected using:',
@@ -37,8 +38,12 @@ export function renderHaStatus(ha: HaAgent, facts: HaViewFacts): string {
 
   const primary = members(ha).find(member => member.role === 'master');
   const secondary = members(ha).find(member => member.role !== 'master');
-  if (primary) lines.push(`Master: ${facts.hostname}, ${primary.serial}, cluster index = 0`);
-  if (secondary) lines.push(`Slave : ${secondary.serial}, cluster index = 1`);
+  if (primary) {
+    lines.push(`Master: ${primary.hostname}, ${primary.serial}, cluster index = 0`);
+  }
+  if (secondary) {
+    lines.push(`Slave : ${secondary.hostname}, ${secondary.serial}, cluster index = 1`);
+  }
   lines.push('number of vcluster: 1');
 
   return lines.join('\n');
@@ -57,6 +62,7 @@ export function renderHaChecksum(ha: HaAgent): string {
 
 interface MemberView {
   readonly serial: string;
+  readonly hostname: string;
   readonly role: string;
   readonly sync: string;
 }
@@ -64,16 +70,42 @@ interface MemberView {
 function members(ha: HaAgent): readonly MemberView[] {
   const own: MemberView = {
     serial: ha.serial(),
+    hostname: ha.hostname(),
     role: ha.role(),
     sync: 'in-sync',
   };
   const digest = ha.configurationDigest();
   const peers = ha.knownPeers().map(peer => ({
     serial: peer.serial,
+    hostname: peer.hostname,
     role: peer.role,
     sync: peer.configurationDigest === digest ? 'in-sync' : 'out-of-sync',
   }));
   return [own, ...peers];
+}
+
+export function renderHaChecksumCluster(ha: HaAgent): string {
+  const blocks = members(ha)
+    .slice()
+    .sort((left, right) => (left.role === 'master' ? -1 : right.role === 'master' ? 1 : 0))
+    .map(member => {
+      const manage = member.serial === ha.serial() && ha.role() === 'master' ? 1 : 0;
+      const digest = member.serial === ha.serial()
+        ? ha.configurationDigest()
+        : ha.knownPeers().find(peer => peer.serial === member.serial)?.configurationDigest ?? '';
+      return [
+        `================== ${member.serial} ==================`,
+        `is_manage_master()=${manage}, is_root_master()=${manage}`,
+        'debugzone',
+        `global: ${digest}`,
+        `root: ${digest}`,
+        '',
+        'checksum',
+        `global: ${digest}`,
+        `root: ${digest}`,
+      ].join('\n');
+    });
+  return blocks.join('\n\n');
 }
 
 function formatUptime(ms: number): string {

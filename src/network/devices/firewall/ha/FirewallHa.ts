@@ -5,6 +5,7 @@ import { exportSessions, importSessions } from './HaSessionSync';
 
 export interface FirewallHaDeps {
   readonly serial: () => string;
+  readonly hostname: () => string;
   readonly now: () => number;
   readonly sendFrame: (iface: string, frame: EthernetFrame) => void;
   readonly interfaceMac: (iface: string) => MACAddress | undefined;
@@ -20,6 +21,7 @@ export class FirewallHa {
   constructor(deps: FirewallHaDeps) {
     this.agent = new HaAgent({
       serial: deps.serial,
+      hostname: deps.hostname,
       now: deps.now,
       sendFrame: deps.sendFrame,
       interfaceMac: deps.interfaceMac,
@@ -45,6 +47,7 @@ export function serialNumberOf(name: string): string {
 
 export interface HaWiringHost {
   serial(): string;
+  hostname(): string;
   now(): number;
   sendFrame(iface: string, frame: EthernetFrame): void;
   port(iface: string): { getMAC(): MACAddress; isConnected(): boolean } | undefined;
@@ -54,6 +57,7 @@ export interface HaWiringHost {
 export function buildFirewallHa(host: HaWiringHost): FirewallHa {
   return new FirewallHa({
     serial: () => host.serial(),
+    hostname: () => host.hostname(),
     now: () => host.now(),
     sendFrame: (iface, frame) => { host.sendFrame(iface, frame); },
     interfaceMac: (iface) => host.port(iface)?.getMAC(),

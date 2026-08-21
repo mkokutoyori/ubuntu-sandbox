@@ -51,6 +51,7 @@ export interface HaHeartbeat {
   readonly groupName: string;
   readonly passwordDigest: string;
   readonly serial: string;
+  readonly hostname: string;
   readonly priority: number;
   readonly override: boolean;
   readonly monitoredUp: number;
@@ -65,6 +66,7 @@ export interface HaHeartbeat {
 
 export interface HaPeer {
   readonly serial: string;
+  hostname: string;
   priority: number;
   override: boolean;
   monitoredUp: number;
@@ -97,33 +99,52 @@ export interface HaElection {
 
 const UPTIME_GRANULARITY_MS = 5 * 60 * 1000;
 
-export function electPrimary(candidates: readonly HaCandidate[]): HaElection {
+export function electPrimary(
+  candidates: readonly HaCandidate[], override = false,
+): HaElection {
   if (candidates.length === 1) {
     return { winner: candidates[0].serial, reason: 'only-member' };
   }
 
-  const sorted = [...candidates].sort(compareCandidates);
-  return { winner: sorted[0].serial, reason: reasonAgainst(sorted[0], sorted[1]) };
+  const sorted = [...candidates].sort((left, right) =>
+    compareCandidates(left, right, override));
+  return { winner: sorted[0].serial, reason: reasonAgainst(sorted[0], sorted[1], override) };
 }
 
-function compareCandidates(left: HaCandidate, right: HaCandidate): number {
-  if (left.monitoredUp !== right.monitoredUp) return right.monitoredUp - left.monitoredUp;
-  if (left.priority !== right.priority) return right.priority - left.priority;
+function uptimeSteps(candidate: HaCandidate): number {
+  return Math.floor(candidate.uptimeMs / UPTIME_GRANULARITY_MS);
+}
 
-  const leftSteps = Math.floor(left.uptimeMs / UPTIME_GRANULARITY_MS);
-  const rightSteps = Math.floor(right.uptimeMs / UPTIME_GRANULARITY_MS);
-  if (leftSteps !== rightSteps) return rightSteps - leftSteps;
+function compareCandidates(
+  left: HaCandidate, right: HaCandidate, override: boolean,
+): number {
+  if (left.monitoredUp !== right.monitoredUp) return right.monitoredUp - left.monitoredUp;
+
+  for (const criterion of orderedCriteria(override)) {
+    if (criterion === 'priority' && left.priority !== right.priority) {
+      return right.priority - left.priority;
+    }
+    if (criterion === 'uptime' && uptimeSteps(left) !== uptimeSteps(right)) {
+      return uptimeSteps(right) - uptimeSteps(left);
+    }
+  }
 
   return left.serial < right.serial ? 1 : -1;
 }
 
-function reasonAgainst(winner: HaCandidate, runnerUp: HaCandidate): HaElectionReason {
-  if (winner.monitoredUp !== runnerUp.monitoredUp) return 'monitored-interfaces';
-  if (winner.priority !== runnerUp.priority) return 'priority';
+function orderedCriteria(override: boolean): readonly HaElectionReason[] {
+  return override ? ['priority', 'uptime'] : ['uptime', 'priority'];
+}
 
-  const winnerSteps = Math.floor(winner.uptimeMs / UPTIME_GRANULARITY_MS);
-  const runnerSteps = Math.floor(runnerUp.uptimeMs / UPTIME_GRANULARITY_MS);
-  if (winnerSteps !== runnerSteps) return 'uptime';
+function reasonAgainst(
+  winner: HaCandidate, runnerUp: HaCandidate, override: boolean,
+): HaElectionReason {
+  if (winner.monitoredUp !== runnerUp.monitoredUp) return 'monitored-interfaces';
+
+  for (const criterion of orderedCriteria(override)) {
+    if (criterion === 'priority' && winner.priority !== runnerUp.priority) return 'priority';
+    if (criterion === 'uptime' && uptimeSteps(winner) !== uptimeSteps(runnerUp)) return 'uptime';
+  }
 
   return 'serial';
 }

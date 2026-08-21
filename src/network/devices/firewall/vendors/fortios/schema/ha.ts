@@ -9,6 +9,7 @@ function heartbeatDevices(): FortiAttributeSpec {
     name: 'hbdev',
     help: 'Heartbeat interfaces, each followed by its priority.',
     quoted: false,
+    quoteValue: (value) => !/^\d+$/.test(value),
     multiValue: true,
     parts: [{
       name: 'interface', type: 'WORD',

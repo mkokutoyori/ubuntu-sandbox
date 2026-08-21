@@ -173,12 +173,32 @@ export class FortiShell {
   private clusterConfigurationText(): string {
     const kept: string[] = [];
     let insideHa = false;
+    let insideLocalCertificates = false;
+    let entry: string[] | null = null;
 
     for (const line of renderWholeConfig(this.tree, { full: false })) {
       const trimmed = line.trim();
       if (trimmed === 'config system ha') { insideHa = true; continue; }
       if (insideHa) { if (trimmed === 'end') insideHa = false; continue; }
       if (PER_MEMBER_LINE.test(trimmed)) continue;
+
+      if (trimmed === 'config vpn certificate local') {
+        insideLocalCertificates = true;
+        kept.push(line);
+        continue;
+      }
+      if (insideLocalCertificates) {
+        if (entry === null && trimmed.startsWith('edit ')) { entry = [line]; continue; }
+        if (entry !== null) {
+          entry.push(line);
+          if (trimmed === 'next') {
+            if (!entry.some(row => row.trim() === 'set source factory')) kept.push(...entry);
+            entry = null;
+          }
+          continue;
+        }
+        if (trimmed === 'end') insideLocalCertificates = false;
+      }
       kept.push(line);
     }
     return kept.join('\n');
@@ -659,7 +679,14 @@ export class FortiShell {
       if (!Number.isFinite(index) || index < 1 || index > peers.length) {
         return FortiMessages.commandFail(`no cluster member ${rest[1] ?? ''}.`);
       }
-      return `Connecting to ${peers[index - 1].serial}...`;
+      const peer = peers[index - 1];
+      return `Connecting to ${peer.hostname.length > 0 ? peer.hostname : peer.serial} `
+        + `(${peer.serial})...`;
+    }
+    if (rest[0] === 'synchronize') {
+      if (rest[1] === 'start') { ha.requestSynchronisation(); return ''; }
+      if (rest[1] === 'stop') { return ''; }
+      return FortiMessages.incomplete('`start` or `stop`');
     }
     return FortiMessages.unknownPath(`ha ${rest.join(' ')}`);
   }

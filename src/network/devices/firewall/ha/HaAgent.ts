@@ -9,6 +9,7 @@ export const ETHERTYPE_FGCP = 0x8890;
 
 export interface HaAgentDeps {
   readonly serial: () => string;
+  readonly hostname: () => string;
   readonly now: () => number;
   readonly sendFrame: (iface: string, frame: EthernetFrame) => void;
   readonly interfaceMac: (iface: string) => MACAddress | undefined;
@@ -32,6 +33,7 @@ export class HaAgent {
   private readonly electionRecords: HaElectionRecord[] = [];
   private startedAt: number;
   private uptimeBonusMs = 0;
+  private lastMonitoredUp: number | null = null;
   private forcedFailover = false;
 
   constructor(private readonly deps: HaAgentDeps) {
@@ -53,6 +55,24 @@ export class HaAgent {
   role(): HaRole { return this.currentRole; }
 
   serial(): string { return this.deps.serial(); }
+
+  hostname(): string { return this.deps.hostname(); }
+
+  resetUptime(): void {
+    this.startedAt = this.deps.now();
+    this.uptimeBonusMs = 0;
+  }
+
+  private noteMonitoredLoss(): void {
+    const up = this.monitoredUp();
+    if (this.lastMonitoredUp !== null && up < this.lastMonitoredUp) this.resetUptime();
+    this.lastMonitoredUp = up;
+  }
+
+  requestSynchronisation(): void {
+    if (this.config.mode === 'standalone') return;
+    this.emitHeartbeat();
+  }
 
   uptimeMs(): number { return this.deps.now() - this.startedAt + this.uptimeBonusMs; }
 
@@ -77,6 +97,8 @@ export class HaAgent {
   tick(): void {
     if (this.config.mode === 'standalone') return;
 
+    this.noteMonitoredLoss();
+
     this.emitHeartbeat();
     this.ageOutPeers();
     this.elect();
@@ -95,6 +117,7 @@ export class HaAgent {
 
     this.peers.set(beat.serial, {
       serial: beat.serial,
+      hostname: beat.hostname,
       priority: beat.priority,
       override: beat.override,
       monitoredUp: beat.monitoredUp,
@@ -122,6 +145,7 @@ export class HaAgent {
       groupName: this.config.groupName,
       passwordDigest: digestOf(this.config.password),
       serial: this.deps.serial(),
+      hostname: this.deps.hostname(),
       priority: this.config.priority,
       override: this.config.override,
       monitoredUp: this.monitoredUp(),
@@ -180,7 +204,7 @@ export class HaAgent {
     const eligible = standing.length > 0 ? standing : candidates;
 
     const outcome = this.incumbentKeepsRole(eligible)
-      ?? electPrimary(eligible);
+      ?? electPrimary(eligible, this.config.override);
 
     this.settleRole(outcome.winner, outcome.reason);
   }

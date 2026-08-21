@@ -31,6 +31,7 @@ export type VerdictReason =
   | 'utm-dns'
   | 'utm-file-type'
   | 'auth-required'
+  | 'ha-subordinate'
   | 'application-shift-deny'
   | 'zone-mismatch'
   | 'interface-down'
