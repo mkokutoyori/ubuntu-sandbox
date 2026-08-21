@@ -4,6 +4,7 @@ import type { ZoneType } from '../../model/SecurityZone';
 import type { FirewallProfile } from '../../FirewallProfile';
 
 export const FORTIOS_PIPELINE: readonly string[] = Object.freeze([
+  'ha-standby',
   'vdom-bind',
   'switch-bridge',
   'ingress-zone',
@@ -11,6 +12,7 @@ export const FORTIOS_PIPELINE: readonly string[] = Object.freeze([
   'tcp-state-check',
   'nat-destination',
   'policy-route',
+  'sdwan',
   'route-lookup',
   'egress-zone',
   'policy-lookup',
@@ -21,6 +23,7 @@ export const FORTIOS_PIPELINE: readonly string[] = Object.freeze([
 ]);
 
 export const FORTIOS_TRANSPARENT_PIPELINE: readonly string[] = Object.freeze([
+  'ha-standby',
   'vdom-bind',
   'switch-bridge',
   'ingress-zone',

@@ -78,22 +78,41 @@ function sinceSeconds(at: number | null | undefined, now: number): number {
   return Math.max(0, Math.floor((now - at) / 1000));
 }
 
-export function renderIkeGatewayList(tunnels: IpsecTunnelTable, now: number): string {
-  const blocks = tunnels.all().map(tunnel => {
+export interface ModeCfgView {
+  getModeCfgPool(): {
+    assignmentsOf(tunnel: string): readonly {
+      address: string; netmask: string; user?: string;
+    }[];
+  };
+}
+
+export function renderIkeGatewayList(
+  tunnels: IpsecTunnelTable, now: number, host?: ModeCfgView, only?: string,
+): string {
+  const listed = only === undefined
+    ? tunnels.all() : tunnels.all().filter(entry => entry.name === only);
+  const blocks = listed.map(tunnel => {
     const state = tunnels.stateOf(tunnel.name);
     const selectors = tunnels.selectorsOf(tunnel.name);
     const up = state?.status === 'up' ? selectors.length : 0;
 
-    return [
+    const lines = [
       `vd: root/0`,
       `name: ${tunnel.name}`,
       `version: ${tunnel.ikeVersion}`,
       `interface: ${tunnel.boundInterface} 0`,
       `addr: 0.0.0.0:500 -> ${tunnel.remoteGateway}:500`,
       `created: ${sinceSeconds(state?.establishedAt ?? null, now)}s ago`,
-      `IKE SA: created ${state?.gatewayUp ? '1/1' : '0/0'}`,
-      `IPsec SA: created ${up}/${selectors.length}`,
-    ].join('\n');
+    ];
+    for (const assignment of host?.getModeCfgPool().assignmentsOf(tunnel.name) ?? []) {
+      if (assignment.user !== undefined) lines.push(`xauth-user: ${assignment.user}`);
+      lines.push(`assigned IPv4 address: ${assignment.address}/${assignment.netmask}`);
+    }
+    const held = tunnels.receivedAssignment(tunnel.name);
+    if (held) lines.push(`assigned IPv4 address: ${held.address}/${held.netmask}`);
+    lines.push(`IKE SA: created ${state?.gatewayUp ? '1/1' : '0/0'}`);
+    lines.push(`IPsec SA: created ${up}/${selectors.length}`);
+    return lines.join('\n');
   });
   return blocks.join('\n------------------------------------------------------\n');
 }

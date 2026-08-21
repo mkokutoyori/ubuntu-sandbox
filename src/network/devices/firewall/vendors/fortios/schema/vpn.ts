@@ -99,6 +99,51 @@ export const VPN_PHASE1_INTERFACE: FortiTableSpec = {
       { keyword: 'forced', description: 'Always use NAT-T.' },
     ], 'enable'),
     enable('net-device', 'Enable/disable a per-tunnel device.'),
+    enable('mode-cfg', 'Enable/disable the IKE configuration method.'),
+    {
+      ...reference('authusrgrp', 'User group allowed to dial in.', ['user group']),
+      availableWhen: (view) => view.effective('type')[0] === 'dynamic',
+    },
+    {
+      ...address('ipv4-start-ip', 'First address of the client pool.'),
+      availableWhen: (view) => view.effective('mode-cfg')[0] === 'enable',
+    },
+    {
+      ...address('ipv4-end-ip', 'Last address of the client pool.'),
+      availableWhen: (view) => view.effective('mode-cfg')[0] === 'enable',
+    },
+    {
+      ...address('ipv4-netmask', 'Mask handed to the client.', '255.255.255.255'),
+      availableWhen: (view) => view.effective('mode-cfg')[0] === 'enable',
+    },
+    {
+      ...reference('ipv4-split-include', 'Subnets routed through the tunnel.',
+        ['firewall address', 'firewall addrgrp']),
+      availableWhen: (view) => view.effective('mode-cfg')[0] === 'enable',
+    },
+    {
+      ...address('ipv4-dns-server1', 'First DNS server handed to the client.'),
+      availableWhen: (view) => view.effective('mode-cfg')[0] === 'enable',
+    },
+    {
+      ...address('ipv4-dns-server2', 'Second DNS server handed to the client.'),
+      availableWhen: (view) => view.effective('mode-cfg')[0] === 'enable',
+    },
+    choice('xauthtype', 'Extended authentication mode.', [
+      { keyword: 'disable', description: 'No extended authentication.' },
+      { keyword: 'client', description: 'This unit authenticates as a client.' },
+      { keyword: 'auto', description: 'Server side, any supported method.' },
+      { keyword: 'pap', description: 'Server side, PAP.' },
+    ], 'disable'),
+    {
+      ...word('authusr', 'User name presented to the dial-up server.'),
+      availableWhen: (view) => view.effective('xauthtype')[0] === 'client',
+    },
+    {
+      ...text('authpasswd', 'Password presented to the dial-up server.'),
+      quoted: true, secret: true,
+      availableWhen: (view) => view.effective('xauthtype')[0] === 'client',
+    },
     text('comments', 'Comment.'),
   ],
   onCommit(object, context) {
@@ -106,6 +151,8 @@ export const VPN_PHASE1_INTERFACE: FortiTableSpec = {
       && (object.effective('certificate')[0] ?? '') === '') {
       return 'a signature phase 1 needs `set certificate <local-certificate>`.';
     }
+    const poolFault = poolProblem(object);
+    if (poolFault) return poolFault;
     context.device.applyPhase1({
       name: object.key,
       boundInterface: object.effective('interface')[0] ?? '',
@@ -124,6 +171,19 @@ export const VPN_PHASE1_INTERFACE: FortiTableSpec = {
       dpdRetryCount: Number.parseInt(object.effective('dpd-retrycount')[0] ?? '3', 10),
       natTraversal: object.effective('nattraversal')[0] ?? 'enable',
       policyBased: false,
+      modeCfg: object.effective('mode-cfg')[0] === 'enable',
+      authUserGroup: object.effective('authusrgrp')[0] || undefined,
+      poolStart: object.effective('ipv4-start-ip')[0] || undefined,
+      poolEnd: object.effective('ipv4-end-ip')[0] || undefined,
+      poolNetmask: object.effective('ipv4-netmask')[0] || undefined,
+      splitInclude: object.effective('ipv4-split-include')[0] || undefined,
+      xauthType: object.effective('xauthtype')[0] ?? 'disable',
+      authUser: object.effective('authusr')[0] || undefined,
+      authPassword: object.effective('authpasswd')[0] || undefined,
+      dnsServers: [
+        object.effective('ipv4-dns-server1')[0] || '',
+        object.effective('ipv4-dns-server2')[0] || '',
+      ].filter(entry => entry.length > 0),
       comments: object.effective('comments')[0] || undefined,
     });
   },
@@ -131,6 +191,22 @@ export const VPN_PHASE1_INTERFACE: FortiTableSpec = {
     context.device.removePhase1(key);
   },
 };
+
+function poolProblem(object: FortiObjectView): string | undefined {
+  if (object.effective('mode-cfg')[0] !== 'enable') return undefined;
+  const start = object.effective('ipv4-start-ip')[0] ?? '';
+  const end = object.effective('ipv4-end-ip')[0] ?? '';
+  if (start.length === 0 || end.length === 0) return undefined;
+  if (addressToNumber(end) < addressToNumber(start)) {
+    return `\`ipv4-end-ip\` (${end}) is below \`ipv4-start-ip\` (${start}).`;
+  }
+  return undefined;
+}
+
+function addressToNumber(address: string): number {
+  return address.split('.')
+    .reduce((total, part) => total * 256 + Number.parseInt(part, 10), 0);
+}
 
 export const VPN_PHASE2_INTERFACE: FortiTableSpec = {
   path: ['vpn', 'ipsec', 'phase2-interface'],
@@ -197,6 +273,8 @@ export const VPN_PHASE1_POLICY: FortiTableSpec = {
       && (object.effective('certificate')[0] ?? '') === '') {
       return 'a signature phase 1 needs `set certificate <local-certificate>`.';
     }
+    const poolFault = poolProblem(object);
+    if (poolFault) return poolFault;
     context.device.applyPhase1({
       name: object.key,
       boundInterface: object.effective('interface')[0] ?? '',

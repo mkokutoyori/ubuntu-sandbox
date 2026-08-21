@@ -280,6 +280,97 @@ curl P4 est une famille d'options, pas un défaut de cohérence : elle ne
 ment sur rien aujourd'hui (`is not implemented in this simulator`), donc
 elle passe en dernier.
 
+### §M6 — `isc-dhcp-server` : une machine Linux SERT le DHCP
+
+`new DHCPServer` n'était instancié que par `Router`, `Switch`, le rôle
+Windows et le pare-feu : un `LinuxServer` n'avait ni `dhcpd`, ni
+`/etc/dhcp/dhcpd.conf`, ni unité. Le manquement était mesuré — le cas
+« serveur générique (Linux) » de `routeur-adresse-par-dhcp.test.ts`
+avait dû être remplacé par un commutateur de niveau 3.
+
+Le moteur d'attribution n'est PAS réécrit : c'est le même `DHCPServer`
+et le même `buildDhcpServerReply` que les quatre autres, comme nginx et
+apache2 se sont posés sur `Http1ServerSession`. Ce qui est écrit, c'est
+l'enveloppe Debian — les fichiers du paquet, l'analyseur de
+`dhcpd.conf`, l'unité, le binaire, le fichier de baux.
+
+Trois faits d'ISC portent la valeur pédagogique, et chacun est
+observable plutôt que décoratif :
+
+1. **Le `dhcpd.conf` livré par Debian n'a AUCUNE déclaration de
+   sous-réseau**, si bien qu'un `systemctl start` sur une machine
+   fraîche échoue — c'est la première expérience de tout le monde avec
+   ce démon. Le refus nomme l'interface, son adresse, et ce qu'il faut
+   écrire (`No subnet declaration for eth0 (…)` … `Not configured to
+   listen on any interfaces!`).
+2. **`dhcpd -t` ne teste QUE la syntaxe.** Une configuration sans
+   sous-réseau la passe. La vérification d'interface appartient au
+   démarrage, donc au `registerConfigCheck` de l'unité — deux questions
+   distinctes, deux réponses distinctes, comme sur la vraie machine.
+3. **Une plage est ce que le serveur sert, et rien d'autre.** Le moteur
+   attribue tout le sous-réseau sauf exclusion : `restrictToRanges`
+   exclut donc le complément des `range` déclarées, plutôt que
+   d'énumérer les plages. Sans `range`, un sous-réseau est déclaré et ne
+   distribue rien — ce qui est légal et courant (il n'est là que pour
+   que l'interface soit servable).
+
+Le fichier de baux est celui de `dhcpd.leases(5)` — `starts`/`ends` en
+UTC précédés du jour de la semaine, `binding state active`,
+`hardware ethernet`, `client-hostname` — et `dhcp-lease-list` le relit.
+Deux vues d'un seul fait.
+
+**Ce qui n'est pas attesté est dit** : la LIGNE que le vrai ISC désigne
+quand un point-virgule manque n'a pas pu être vérifiée (le message est
+`<fichier> line <n>: semicolon expected.`, mais rien ne dit si `n` est
+la ligne de l'instruction inachevée ou celle du jeton qui a surpris
+l'analyseur). Ce simulateur désigne l'instruction inachevée, qui est la
+ligne que l'opérateur doit corriger. Hors périmètre et non simulé :
+`omapi`, DHCPv6 (`dhcpd -6`), `failover peer`, les classes et
+sous-classes, et l'évaluation d'expressions (`if`/`match`).
+
+### §M7 — la sonde d'avant-offre, et les trois defauts des trois vendeurs
+
+Un serveur DHCP ne doit pas offrir une adresse qu'une machine tient deja
+en statique. La mesure de depart, faite sur les trois serveurs dans le
+meme laboratoire, a corrige la premisse : **le routeur Cisco le faisait
+deja** (`isCandidateAddressInUse`, une vraie requete ARP relue dans la
+table), et seuls Windows et Linux distribuaient l'adresse squattee. Le
+premier laboratoire ne discriminait rien — sa plage couvrait tout le
+sous-reseau, donc le serveur servait `.2` sans jamais avoir a considerer
+l'adresse tenue ; il a fallu exclure `.1`-`.9` pour que la question soit
+posee.
+
+**Le defaut par vendeur est un FAIT, pas un reglage uniforme**, et c'est
+la seule chose qu'il ne fallait pas rater :
+
+| | Reglage | Defaut reel | Ce que fait ce simulateur |
+|---|---|---|---|
+| IOS | `ip dhcp ping packets` | **2** (actif) | inchange, deja conforme |
+| Windows | `Set-DhcpServerSetting -ConflictDetectionAttempts` | **0** (eteint) | eteint, 1..6 accepte, au-dela refuse |
+| ISC | `ping-check` | non atteste | eteint, et dit pourquoi |
+
+Uniformiser aurait ete plus simple et faux : un Windows qui refuserait
+l'adresse squattee sans qu'on ait rien regle enseignerait un comportement
+que la vraie machine n'a pas, et c'est justement ce que le controle
+`ConflictDetectionAttempts` existe pour rendre visible.
+
+**Une seule implementation de la sonde** : `arp/AddressProbe.ts`. Il y
+avait trois constructions de requete ARP dans le depot (deux dans
+`EndHost`, une dans `Router`) ; la sonde etait la quatrieme a ecrire.
+`Router.isCandidateAddressInUse` delegue desormais, et
+`EndHost.addressAnswersOnLink` est la meme fonction vue depuis un hote,
+ce qui donne la sonde aux deux serveurs qui ne l'avaient pas.
+
+**Ce qui n'est pas atteste est dit** : le defaut de `ping-check` n'a pas
+pu etre verifie (manuel `dhcpd.conf` injoignable depuis ce reseau, et
+deux sources qui se contredisent) ; il est **eteint**, parce que le
+`dhcpd.conf` livre par Debian ne contient pas la directive et que chaque
+guide d'administration l'ecrit explicitement. Le message
+`Abandoning IP address <ip>: pinged before offer`, lui, est atteste par
+plusieurs archives de la liste `dhcp-users`. Et la sonde est un **ARP**
+la ou les trois vendeurs envoient un **ICMP Echo** — inscrit au TODO
+avec sa consequence observable plutot que passe sous silence.
+
 ## 5. Ordre, et pourquoi
 
 A1 d'abord, parce que c'est le seul manquement de cette liste où une

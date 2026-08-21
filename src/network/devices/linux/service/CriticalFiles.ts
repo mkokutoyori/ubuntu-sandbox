@@ -149,6 +149,18 @@ export function checkNginxCriticalFiles(probe: FileProbe): ConfigCheckResult {
   return missing ? { ok: false, error: missing } : { ok: true };
 }
 
+export const DHCPD_CRITICAL_FILES: readonly CriticalRequirement[] = [
+  {
+    path: '/etc/dhcp/dhcpd.conf',
+    onMissing: "Can't open /etc/dhcp/dhcpd.conf: No such file or directory",
+  },
+];
+
+export function checkDhcpdCriticalFiles(probe: FileProbe): ConfigCheckResult {
+  const missing = firstMissingRequirement(probe, DHCPD_CRITICAL_FILES);
+  return missing ? { ok: false, error: missing } : { ok: true };
+}
+
 // ─── Command binaries ────────────────────────────────────────────
 
 /**
@@ -208,6 +220,7 @@ export const STANDARD_BIN_PATHS: Readonly<Record<string, string>> = {
   // `apachectl` the link; both names exist, as on the machine.
   nginx: '/usr/sbin/nginx', apache2: '/usr/sbin/apache2',
   apachectl: '/usr/sbin/apachectl', apache2ctl: '/usr/sbin/apache2ctl',
+  dhcpd: '/usr/sbin/dhcpd', 'dhcp-lease-list': '/usr/sbin/dhcp-lease-list',
   a2ensite: '/usr/sbin/a2ensite', a2dissite: '/usr/sbin/a2dissite',
   a2enmod: '/usr/sbin/a2enmod', a2dismod: '/usr/sbin/a2dismod',
 };

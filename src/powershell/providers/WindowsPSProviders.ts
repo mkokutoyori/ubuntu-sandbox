@@ -1083,6 +1083,10 @@ class WindowsDhcpServerAdapter implements IDhcpServerProvider {
   isAuthorizedInDC(): boolean { return this.role().isAuthorizedInDC(); }
   isRegisteredInDC(): boolean { return this.role().isRegisteredInDC(); }
   revokeInDC(): DhcpOpResult { return this.role().revokeInDC(); }
+  getConflictDetectionAttempts(): number { return this.role().getConflictDetectionAttempts(); }
+  setConflictDetectionAttempts(attempts: number): DhcpOpResult {
+    return this.role().setConflictDetectionAttempts(attempts);
+  }
   serverAddress(): string { return this.pc.getPorts()[0]?.getIPAddress()?.toString() ?? ''; }
   serverName(): string { return this.pc.getHostname(); }
 }

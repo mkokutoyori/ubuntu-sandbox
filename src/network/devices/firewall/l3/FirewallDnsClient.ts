@@ -1,7 +1,5 @@
-import {
-  IPAddress, IP_PROTO_UDP, createIPv4Packet,
-  type IPv4Packet, type UDPPacket,
-} from '../../../core/types';
+import { IP_PROTO_UDP, type IPv4Packet, type UDPPacket } from '../../../core/types';
+import { udpDatagram } from './FirewallEgress';
 import {
   buildLegacyQueryMessage, nextDnsTransactionId, resourceRecordToLegacyRecord,
 } from '../../../dns/compat/DnsWireCompat';
@@ -114,11 +112,5 @@ export class FirewallDnsClient {
 export function dnsQueryDatagram(
   source: string, destination: string, sourcePort: number, payload: Uint8Array,
 ): IPv4Packet {
-  const udp: UDPPacket = {
-    type: 'udp', sourcePort, destinationPort: DNS_PORT,
-    length: 8 + payload.length, checksum: 0, payload,
-  };
-  return createIPv4Packet(
-    new IPAddress(source), new IPAddress(destination),
-    IP_PROTO_UDP, 64, udp, 8 + payload.length);
+  return udpDatagram(source, destination, sourcePort, DNS_PORT, payload);
 }

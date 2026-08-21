@@ -10,6 +10,7 @@
  */
 
 import type { Router } from '../../Router';
+import { normalizeOspfRouteType, ospfRouteCode } from '@/network/ospf/routeCodes';
 import { renderIpRouteTable } from './CiscoShowCommands';
 import { CliInvalidInput } from '../cli/CliDiagnostic';
 import { CISCO_ERRORS } from '../cli-utils';
@@ -398,6 +399,7 @@ function adresseReseau(ip: string, wildcard: string): string {
     if (!ospf) return '% OSPF is not configured';
     ospf.setDefaultInformationOriginate(true);
     const extra = ctx.r()._getOSPFExtraConfig();
+    extra.defaultInfoAlways = args.some(a => a.toLowerCase() === 'always');
     // Check for metric-type argument
     for (let i = 0; i < args.length - 1; i++) {
       if (args[i] === 'metric-type') {
@@ -405,6 +407,7 @@ function adresseReseau(ip: string, wildcard: string): string {
       }
     }
     if (extra.defaultInfoMetricType === undefined) extra.defaultInfoMetricType = 2;
+    ctx.r()._ospfAutoConverge?.();
     return '';
   });
 
@@ -2612,10 +2615,8 @@ function getOSPFRouteCode(router: Router, net: string, cidr: number, routeEntry?
     if (isDefault && (routeEntry._metricType || routeEntry.routeType?.includes('external'))) {
       return mt === 1 ? 'O*E1' : 'O*E2';
     }
-    if (routeEntry.routeType === 'type1-external' || routeEntry.routeType === 'external-type1') return 'O E1';
-    if (routeEntry.routeType === 'type2-external' || routeEntry.routeType === 'external-type2') return 'O E2';
-    if (isDefault && routeEntry.routeType === 'inter-area') return 'O*IA';
-    if (routeEntry.routeType === 'inter-area') return 'O IA';
+    const shared = normalizeOspfRouteType(routeEntry.routeType);
+    if (shared && shared !== 'intra-area') return ospfRouteCode(shared, isDefault);
   }
 
   if (isDefault) {

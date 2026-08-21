@@ -51,9 +51,11 @@ import { SwitchGroupTable } from './l3/SwitchGroupTable';
 import { logFactsOf } from './logging/logFacts';
 import { emitFirewallEvent, logPipelineOutcome } from './logging/emitFirewallEvent';
 import {
-  arpFrame, buildEgressFrame, egressDepsOf, type BridgedFrame, type EgressDeps,
+  arpFrame, buildEgressFrame, egressDepsOf, udpDatagram,
+  type BridgedFrame, type EgressDeps,
 } from './l3/FirewallEgress';
 import { deliverLocally } from './l3/LocalDelivery';
+import { ControlPlaneUdpEndpoint } from '../udp/ControlPlaneUdpEndpoint';
 import type { FirewallDhcp } from './l3/FirewallDhcp';
 import type { TcpStack } from '../../tcp/TcpStack';
 import { buildFirewallAgents } from './FirewallAgents';
@@ -77,6 +79,8 @@ import { ManagementPlane } from './mgmt/ManagementPlane';
 import type { ManagementPorts } from './mgmt/ManagementAccess';
 import type { CaptivePortalRedirect } from './auth/CaptivePortalRedirect';
 import { SslDeepInspection } from './inspection/SslDeepInspection';
+import { ModeCfgPool } from './vpn/ModeCfgPool';
+import type { IkeConfigReply, IkeConfigRequest } from '../../ipsec/IPSecTypes';
 import type { NtpAgent } from '../../ntp/NtpAgent';
 import { FirewallPing, type FirewallPingEgress } from './diag/FirewallPing';
 import { buildEchoRequest } from './l3/IcmpEcho';
@@ -84,7 +88,7 @@ import { FirewallTraceroute } from './diag/FirewallTraceroute';
 import {
   DNS_PORT, FirewallDnsClient, dnsQueryDatagram,
 } from './l3/FirewallDnsClient';
-import { FirewallDnsServer, udpReplyDatagram } from './l3/FirewallDnsServer';
+import { FirewallDnsServer } from './l3/FirewallDnsServer';
 import type { SdwanService } from './sdwan/SdwanService';
 import { ETHERTYPE_FGCP, type HaAgent } from './ha/HaAgent';
 import { serialNumberOf, type FirewallHa } from './ha/FirewallHa';
@@ -92,7 +96,7 @@ import type { HaConfiguration } from './ha/HaTypes';
 import type { SdwanConfiguration } from './sdwan/SdwanTable';
 import type { SslVpnPortal, SslVpnSettings } from './vpn/SslVpnPortal';
 import type { IPSecEngine } from '../../ipsec/IPSecEngine';
-import { bringUpTunnel, programIpsecEngine, udpDatagram } from './vpn/IpsecProgramming';
+import { bringUpTunnel, programIpsecEngine } from './vpn/IpsecProgramming';
 import { RouterHostsTable } from '../router/dns/RouterHostsTable';
 import type { VdomServices } from './pipeline/stages/coreStages';
 import { ScheduleStore, type ScheduleObject } from './model/ScheduleObject';
@@ -152,6 +156,7 @@ export class Firewall extends Equipment {
   private readonly ntp: FirewallNtp;
   private readonly captivePortal: CaptivePortalRedirect;
   private authPortalSecureHttp = false;
+  private readonly modeCfg = new ModeCfgPool();
   private readonly deepInspection = new SslDeepInspection({
     tcp: () => this.tcp,
     localCertificate: (name) => this.getCertificateStore().local(name),
@@ -251,6 +256,8 @@ export class Firewall extends Equipment {
     this.services = {
       interfaces: this.interfaces,
       vdomOf: (iface) => vdomServices(this.vdoms.contextOfInterface(iface)),
+      sdwan: () => this.sdwan,
+      ha: () => ({ forwardsTransit: () => this.forwardsTransit() }),
       policyKeyedBy: profile.policyKeyedBy,
       bridgedWith: (ingress, egress) => this.sameSwitchInterface(ingress, egress),
       macLookup: (destination, ingress) => this.lookupMac(destination, ingress),
@@ -424,13 +431,41 @@ export class Firewall extends Equipment {
 
   getDnsClient(): FirewallDnsClient { return this.dnsClient; }
 
+  private udpEndpoint: ControlPlaneUdpEndpoint | null = null;
+
+  getUdpEndpoint(): ControlPlaneUdpEndpoint {
+    if (!this.udpEndpoint) {
+      this.udpEndpoint = new ControlPlaneUdpEndpoint({
+        sendUdpBytes: (destinationIP, destinationPort, sourcePort, payload) => {
+          const egress = this.resolveEgress(destinationIP.toString());
+          if (!egress) return false;
+          this.forward(
+            egress.iface,
+            udpDatagram(egress.source, destinationIP.toString(),
+              sourcePort, destinationPort, payload),
+            egress.gateway);
+          return true;
+        },
+      });
+    }
+    return this.udpEndpoint;
+  }
+
+  private deliverToUdpSocket(packet: IPv4Packet): boolean {
+    if (packet.protocol !== IP_PROTO_UDP || this.udpEndpoint === null) return false;
+    const udp = packet.payload as UDPPacket | undefined;
+    if (udp?.type !== 'udp') return false;
+    return this.udpEndpoint.deliver(
+      packet.sourceIP, udp.destinationPort, udp.sourcePort, udp.payload);
+  }
+
   private readonly dnsServer = new FirewallDnsServer({
     resolveExternal: (name) => this.dnsClient.resolve(name),
     reply: (iface, to, port, payload) => {
       const source = this.interfaces.get(iface)?.ip;
       if (source === undefined) return;
       this.forward(iface,
-        udpReplyDatagram(source, to, DNS_PORT, port, payload),
+        udpDatagram(source, to, DNS_PORT, port, payload),
         this.getVdom().routes.resolveNextHop(to)?.nextHop);
     },
   });
@@ -461,6 +496,11 @@ export class Firewall extends Equipment {
 
   getHa(): HaAgent { return this.haService.agent; }
 
+  forwardsTransit(): boolean {
+    const ha = this.haService.agent;
+    return ha.getConfiguration().mode !== 'a-p' || ha.role() !== 'slave';
+  }
+
   applyHa(c: HaConfiguration): string | undefined {
     this.haService.agent.configure(c);
     return undefined;
@@ -479,10 +519,70 @@ export class Firewall extends Equipment {
   syncIpsecTunnels(v?: string) {
     const vdom = this.getVdom(v);
     programIpsecEngine(this.ipsec, vdom.tunnels, vdom.certificates, this.services.now);
+    this.ipsec.setConfigMethod((peer, request) => this.answerConfigMethod(peer, request));
+  }
+
+  getModeCfgPool(): ModeCfgPool { return this.modeCfg; }
+
+  private answerConfigMethod(
+    peer: string, request: IkeConfigRequest,
+  ): IkeConfigReply | string | undefined {
+    if (!request.wantAddress) return undefined;
+
+    const tunnel = this.getVdom().tunnels.all()
+      .find(entry => this.modeCfg.configuredFor(entry));
+    if (!tunnel) return 'IPv4 pool is not configured';
+
+    if (tunnel.authUserGroup !== undefined) {
+      const directory = this.getUserDirectory();
+      const user = request.identity ?? '';
+      const admitted = user.length > 0
+        && directory.authenticateLocal(user, request.credential ?? '')
+        && directory.groupsOf(user).includes(tunnel.authUserGroup);
+      if (!admitted) return 'AUTHENTICATION_FAILED';
+    }
+
+    const assignment = this.modeCfg.assign(tunnel, peer, request.identity);
+    if (assignment === undefined) return 'IPv4 pool is not configured';
+    if (assignment === 'exhausted') return 'IPv4 address pool is exhausted';
+
+    return {
+      address: assignment.address,
+      netmask: assignment.netmask,
+      splitInclude: this.splitSubnetsOf(assignment.splitInclude),
+      dnsServers: assignment.dnsServers,
+    };
+  }
+
+  private splitSubnetsOf(name: string | undefined): readonly string[] {
+    if (name === undefined) return [];
+    const object = this.getObjectStore().getAddress(name);
+    if (object?.value === undefined) return [];
+    return object.careMask === undefined
+      ? [object.value]
+      : [`${object.value}/${object.careMask}`];
   }
 
   bringUpIpsecTunnel(name: string, v?: string): boolean {
-    return bringUpTunnel(this.ipsec, this.getVdom(v).tunnels, name);
+    const brought = bringUpTunnel(this.ipsec, this.getVdom(v).tunnels, name);
+    this.applyAssignedConfiguration(name, v);
+    return brought;
+  }
+
+  private applyAssignedConfiguration(name: string, v?: string): void {
+    const vdom = this.getVdom(v);
+    const assignment = vdom.tunnels.receivedAssignment(name);
+    if (!assignment) return;
+
+    this.interfaces.configure(name, {
+      up: true, ip: assignment.address, mask: assignment.netmask,
+    });
+    for (const subnet of assignment.splitInclude) {
+      const [network, mask] = subnet.split('/');
+      vdom.routes.addStatic(network, mask ?? '255.255.255.255', undefined, {
+        iface: name, id: `modecfg:${name}:${network}`,
+      });
+    }
   }
 
   clearIpsecGateway(name: string, v?: string): void {
@@ -502,7 +602,7 @@ export class Firewall extends Equipment {
     const source = iface === undefined ? undefined : this.interfaces.get(iface)?.ip;
     if (iface === undefined || source === undefined) return false;
 
-    this.forward(iface, udpDatagram(source, destIp, port, payload), route?.nextHop);
+    this.forward(iface, udpDatagram(source, destIp, port, port, payload), route?.nextHop);
     return true;
   }
 
@@ -802,6 +902,7 @@ export class Firewall extends Equipment {
   private handleArpFrame(portName: string, packet: ARPPacket): void {
     if (!packet || packet.type !== 'arp') return;
     if (packet.operation === 'reply') { this.arp.handleReply(packet, portName); return; }
+    if (!this.forwardsTransit()) return;
     const answer = this.arp.handleRequest(packet, portName);
     if (answer) this.emitArp(answer, portName);
   }
@@ -887,7 +988,7 @@ export class Firewall extends Equipment {
       handleIke: (iface, p, d) => { this.ipsec.handleIkeUdp(iface, p, d as never); },
       observedBySdwan: (p) => this.dnsClient.observe(p)
         || this.traceroute.observe(p) || this.ping.observeReply(p)
-        || this.sdwan.observeReply(p),
+        || this.sdwan.observeReply(p) || this.deliverToUdpSocket(p),
       answeredByDnsServer: (iface, p) => {
         if (p.protocol !== IP_PROTO_UDP) return false;
         const udp = p.payload as UDPPacket | undefined;

@@ -1,3 +1,4 @@
+import { ospfRouteCode } from '@/network/ospf/routeCodes';
 import { cpuStatesLine, memoryLine, FORTI_VM_CPUS } from './systemLoad';
 import { renderTable, FIXED_TABLE } from '../../../../shells/cli/TextTable';
 import type { InterfaceTable } from '../../../l3/InterfaceTable';
@@ -138,7 +139,8 @@ function prefixLength(mask: string): number {
     .reduce((total, bits) => total + bits, 0);
 }
 
-export type RoutingView = 'all' | 'static' | 'connected' | 'database';
+export type RoutingView = 'all' | 'static' | 'connected' | 'database'
+  | 'ospf' | 'rip' | 'bgp';
 
 export function renderRoutingTable(routes: RouteTable, view: RoutingView): string {
   if (view === 'database') return renderRoutingDatabase(routes);
@@ -185,17 +187,27 @@ export function renderRoutingDatabase(routes: RouteTable): string {
 function keptBy(view: RoutingView, route: FirewallRoute): boolean {
   if (view === 'static') return route.kind === 'static' || route.kind === 'default';
   if (view === 'connected') return route.kind === 'connected';
+  if (view === 'ospf' || view === 'rip' || view === 'bgp') {
+    return protocolLetter(route).toLowerCase().startsWith(view[0]);
+  }
   return true;
 }
 
 function protocolLetter(route: FirewallRoute): string {
-  return routeCode(route).replace('*', '');
+  return routeCode(route).replace('*', '').trim();
 }
 
 function routeCode(route: FirewallRoute): string {
+  if (route.protocol === 'ospf') {
+    return ospfRouteCode(route.routeType, isDefaultRoute(route)).trimEnd();
+  }
   return (route.protocol === undefined
     ? ROUTE_CODE[route.kind]
     : PROTOCOL_CODE[route.protocol]) ?? 'S';
+}
+
+function isDefaultRoute(route: FirewallRoute): boolean {
+  return route.network === '0.0.0.0' && route.mask === '0.0.0.0';
 }
 
 function reachedBy(route: FirewallRoute): string {

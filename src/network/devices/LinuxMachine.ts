@@ -101,6 +101,8 @@ import {
 } from './linux/LinuxIpCommand';
 import { DnsService } from './linux/LinuxDnsService';
 import { Bind9Service } from './linux/bind9/Bind9Service';
+import { LinuxDhcpdService } from './linux/dhcp/LinuxDhcpdService';
+import { seedDhcpdFiles } from './linux/dhcp/DhcpdFiles';
 import { ServiceScriptRunner } from './linux/service/ServiceScriptRunner';
 
 import { bindDnsUdpServer, DNS_PORT } from '../dns/transport/DnsUdpTransport';
@@ -274,6 +276,7 @@ export abstract class LinuxMachine extends EndHost
   public readonly dnsService: DnsService = new DnsService();
 
   public readonly bind9: Bind9Service;
+  public readonly dhcpd: LinuxDhcpdService;
 
   /** Configured DNS resolver IP (from /etc/resolv.conf). */
   protected dnsResolverIP = '';
@@ -479,6 +482,32 @@ export abstract class LinuxMachine extends EndHost
       },
     });
     this.executor.serviceMgr.registerConfigCheck('named', () => this.bind9.checkConfig());
+
+    seedDhcpdFiles({
+      exists: (path) => this.executor.vfs.exists(path),
+      mkdirp: (path) => {
+        if (!this.executor.vfs.exists(path)) this.executor.vfs.mkdirp(path, 0o755, 0, 0);
+      },
+      write: (path, content) => { this.executor.vfs.writeFile(path, content, 0, 0, 0o022); },
+    });
+    this.dhcpd = new LinuxDhcpdService(this, {
+      read: (path) => this.executor.vfs.readFile(path),
+      write: (path, content) => { this.executor.vfs.writeFile(path, content, 0, 0, 0o022); },
+      log: (message) => this.executor.logMgr.logDaemon(
+        'dhcpd', message, this.executor.serviceMgr.getPortBinding('isc-dhcp-server')?.mainPid,
+        'isc-dhcp-server'),
+    });
+    this.executor.serviceMgr.registerConfigCheck('isc-dhcp-server', () => {
+      const verdict = this.dhcpd.preflight();
+      return verdict.ok ? { ok: true } : { ok: false, error: verdict.output, verbatim: true };
+    });
+    this.executor.serviceMgr.onLifecycle((event, name) => {
+      if (name !== 'isc-dhcp-server') return;
+      if (event === 'start') this.applyDhcpd(this.dhcpd.start());
+      else if (event === 'restart') this.applyDhcpd(this.dhcpd.restart());
+      else if (event === 'reload') this.applyDhcpd(this.dhcpd.restart());
+      else if (event === 'stop') this.dhcpd.stop();
+    });
     this.executor.serviceMgr.onLifecycle((event, name) => {
       if (name !== 'named') return;
       if (event === 'start') this.applyBind9(this.bind9.start());
@@ -698,9 +727,16 @@ export abstract class LinuxMachine extends EndHost
     }
   }
 
+  private applyDhcpd(result: { ok: boolean; output: string }): void {
+    if (result.ok) return;
+    this.dhcpd.stop();
+    this.executor.serviceMgr.markFailed('isc-dhcp-server', result.output);
+  }
+
   private applyBind9(result: { ok: boolean; error?: string }): void {
     if (!result.ok) {
       this.bind9.stop();
+      this.dhcpd.stop();
       this.executor.serviceMgr.markFailed('named', result.error ?? 'failed to start');
     }
   }
@@ -2387,6 +2423,7 @@ export abstract class LinuxMachine extends EndHost
       addTlsTrustAnchor: (cert) => { this.addTrustedCertificateAuthority(cert); },
       dnsService: this.dnsService,
       bind9: this.bind9,
+      dhcpd: this.dhcpd,
       xfrm: this.xfrmCtx,
       profile: this.profile,
       fmt: this.fmt,

@@ -1,7 +1,4 @@
-import {
-  IPAddress, IP_PROTO_UDP, createIPv4Packet,
-  type IPv4Packet, type UDPPacket,
-} from '../../../core/types';
+import type { IPv4Packet, UDPPacket } from '../../../core/types';
 import {
   buildLegacyResponseMessage, legacyRecordToResourceRecord, rrTypeName,
   type DnsRecord,
@@ -171,19 +168,6 @@ export class FirewallDnsServer {
     this.authority = new AuthoritativeServer(store);
     return this.authority;
   }
-}
-
-export function udpReplyDatagram(
-  source: string, destination: string,
-  sourcePort: number, destinationPort: number, payload: Uint8Array,
-): IPv4Packet {
-  const udp: UDPPacket = {
-    type: 'udp', sourcePort, destinationPort,
-    length: 8 + payload.length, checksum: 0, payload,
-  };
-  return createIPv4Packet(
-    new IPAddress(source), new IPAddress(destination),
-    IP_PROTO_UDP, 64, udp, 8 + payload.length);
 }
 
 export function zoneRecordsOf(zone: DnsZone): readonly DnsRecord[] {

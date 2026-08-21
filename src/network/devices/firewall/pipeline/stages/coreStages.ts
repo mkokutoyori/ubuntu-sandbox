@@ -46,8 +46,21 @@ export interface VdomServices {
   opmode?: 'nat' | 'transparent';
 }
 
+export interface HaStandby {
+  forwardsTransit(): boolean;
+}
+
+export interface SdwanSteering {
+  steer(
+    probe: { readonly sourceIP: string; readonly destinationIP: string },
+    matchesAddress: (names: readonly string[], candidate: string) => boolean,
+  ): { iface: string; gateway: string; ruleId: string } | undefined;
+}
+
 export interface FirewallServices {
   interfaces: InterfaceTable;
+  sdwan?: () => SdwanSteering | undefined;
+  ha?: () => HaStandby | undefined;
   now: () => number;
   vdomOf: (iface: string) => VdomServices;
   natOrder?: NatOrder;
@@ -110,6 +123,7 @@ function tcpFlagsOf(packet: IPv4Packet): ObservedTcpFlags | undefined {
 
 export function createCoreStages(services: FirewallServices): PipelineStage[] {
   return [
+    haStandbyStage(services),
     vdomBindStage(services),
     switchBridgeStage(services),
     ingressZoneStage(services),
@@ -117,6 +131,7 @@ export function createCoreStages(services: FirewallServices): PipelineStage[] {
     tcpStateCheckStage(services),
     natDestinationStage(services),
     policyRouteStage(services),
+    sdwanRuleStage(services),
     macLookupStage(services),
     routeLookupStage(services),
     egressZoneStage(services),
@@ -290,6 +305,17 @@ function payloadText(payload: unknown): string | undefined {
   }
   if (payload !== null && typeof payload === 'object') return JSON.stringify(payload);
   return undefined;
+}
+
+function haStandbyStage(services: FirewallServices): PipelineStage {
+  return {
+    name: 'ha-standby',
+    apply(context) {
+      const ha = services.ha?.();
+      if (!ha || ha.forwardsTransit()) return proceed(context, 'ha-standby', 'forwarding');
+      return deny(context, 'ha-standby', 'ha-subordinate');
+    },
+  };
 }
 
 function vdomBindStage(services: FirewallServices): PipelineStage {
@@ -603,6 +629,34 @@ function policyRouteStage(services: FirewallServices): PipelineStage {
       context.egressPort = decision.outputDevice;
       context.policyRouteGateway = decision.gateway;
       return proceed(context, 'policy-route', decision.route.id);
+    },
+  };
+}
+
+function sdwanRuleStage(services: FirewallServices): PipelineStage {
+  return {
+    name: 'sdwan',
+    apply(context) {
+      const packet = ipv4(context);
+      const steering = services.sdwan?.();
+      if (!packet || !steering || context.egressPort !== undefined) {
+        return proceed(context, 'sdwan', 'no-sdwan-rule');
+      }
+
+      const objects = vdom(services, context).objects;
+      const chosen = steering.steer({
+        sourceIP: packet.sourceIP.toString(),
+        destinationIP: packet.destinationIP.toString(),
+      }, (names, candidate) => objects.matchesAnyAddress(names, candidate));
+      if (!chosen) return proceed(context, 'sdwan', 'no-match');
+      if (!services.interfaces.isUp(chosen.iface)) {
+        return proceed(context, 'sdwan', `${chosen.ruleId}:interface-down`);
+      }
+
+      context.egressPort = chosen.iface;
+      context.policyRouteId = `sdwan-${chosen.ruleId}`;
+      context.policyRouteGateway = chosen.gateway;
+      return proceed(context, 'sdwan', chosen.ruleId);
     },
   };
 }

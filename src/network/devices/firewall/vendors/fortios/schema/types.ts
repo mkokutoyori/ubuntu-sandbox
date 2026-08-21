@@ -57,6 +57,7 @@ export interface FortiAttributeSpec {
   readonly multiValue?: boolean;
   readonly referenceTo?: readonly string[];
   readonly quoted?: boolean;
+  readonly quoteValue?: (value: string) => boolean;
   readonly defaultValue?: readonly string[];
   readonly availableWhen?: (object: FortiObjectView) => boolean;
   readonly unimplemented?: string;
@@ -393,6 +394,16 @@ export interface FortiPhase1Patch {
   readonly dpdRetryCount: number;
   readonly natTraversal: string;
   readonly policyBased: boolean;
+  readonly modeCfg?: boolean;
+  readonly authUserGroup?: string;
+  readonly poolStart?: string;
+  readonly poolEnd?: string;
+  readonly poolNetmask?: string;
+  readonly splitInclude?: string;
+  readonly xauthType?: string;
+  readonly authUser?: string;
+  readonly authPassword?: string;
+  readonly dnsServers?: readonly string[];
   readonly comments?: string;
 }
 

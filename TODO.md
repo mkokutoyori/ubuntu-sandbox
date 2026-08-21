@@ -97,6 +97,133 @@ famille reprise ferme une part de cette entrée.
 
 ## Pare-feu FortiGate
 
+### [ha] les adresses MAC VIRTUELLES du cluster n'existent pas
+FGCP donne a chaque interface du cluster une adresse MAC virtuelle, portee
+par le membre primaire : c'est ce qui rend le basculement invisible aux
+commutateurs et aux caches ARP du reseau. Ici, chaque membre garde la MAC
+de son propre port ; le secondaire se tait (il ne repond plus a l'ARP et ne
+fait passer aucun paquet), donc le cas nominal est juste, mais apres un
+basculement le voisinage doit RE-resoudre l'adresse au lieu de continuer a
+emettre vers la meme MAC.
+**Mesure** : `ip neigh` sur le poste du LAN nomme la MAC du membre primaire
+et non une MAC de grappe ; apres bascule, la valeur change.
+**Report** : poser une MAC virtuelle demande que `Port` accepte une seconde
+adresse decidee par le cluster et que l'emission comme la reception la
+suivent — c'est un changement du materiel simule, pas du pare-feu, et il
+touche l'apprentissage MAC de tous les commutateurs du projet. L'ARP
+gratuit qui accompagne le basculement en depend egalement.
+
+### [ha] `execute ha manage` n'ouvre pas la CLI du membre distant
+La commande repond `Connecting to <nom> (<serie>)...` et rend la main : on
+ne se retrouve pas sur l'autre machine. L'etape 6 du TP 21 s'en sert pour
+verifier que la configuration a bien ete copiee, ce qui reste faisable
+autrement (le test lit la configuration du secondaire directement).
+**Mesure** : `execute ha manage 1 admin` puis `get system status` repond
+encore pour le membre local.
+**Report** : la matiere existe — `RemoteDeviceSubShell` fait exactement
+cela pour SSH — mais la brancher ici demande que le battement de coeur
+porte une voie de commande, ou que la grappe partage un registre
+d'equipements, ce qui contournerait le fil.
+
+### [ha] `execute ha synchronize start` ne tire rien depuis un secondaire
+La synchronisation de ce moteur est POUSSEE par le primaire dans son
+battement de coeur. La commande emet donc un battement immediat, ce qui
+avance vraiment la synchronisation quand on la tape sur le primaire, et ne
+fait rien de plus sur un secondaire — un vrai FortiGate y declenche une
+traction de la configuration.
+**Mesure** : modifier le primaire, taper la commande sur le secondaire :
+rien ne change tant que le primaire n'a pas emis.
+**Report** : demanderait un echange requete/reponse dans le protocole de
+grappe, la ou il n'y a aujourd'hui qu'une annonce periodique.
+
+### [sdwan] une interface membre reste referencable par une politique
+Le tutoriel (§20, TP 20 etape 1) enonce la protection reelle : quand une
+interface devient membre du SD-WAN, FortiOS REFUSE de l'ajouter tant qu'une
+politique ou une route statique la nomme encore directement — il faut
+d'abord faire citer la ZONE par ces politiques. Rien ne refuse ici : une
+politique peut nommer `port1` et le membre 1 peut nommer `port1` au meme
+instant, ce qui est precisement la situation que la protection existe pour
+empecher.
+**Mesure** : `set dstintf "port1"` sur une politique, puis `set interface
+"port1"` sur un membre : les deux sont acceptes.
+**Report** : la matiere est a moitie la — `ZoneTable.assignInterface` refuse
+deja `interface-already-in-zone` — mais compter les references d'une
+interface a travers les politiques, les routes et les tables NAT est un
+mecanisme general (« qu'est-ce qui nomme cet objet ? ») qui depasse le
+SD-WAN et servirait a toutes les suppressions d'objet.
+
+### [sdwan] la route de la zone ne SUIT ni la sante ni un changement de membre
+`update-static-route` (active par defaut sur un vrai FortiGate) retire de la
+table la route d'un membre declare mort. Ici, la route statique nommant une
+zone SD-WAN est developpee en une route par membre AU MOMENT ou elle est
+ecrite : elle ne bouge plus ensuite, ni quand un membre tombe, ni quand on
+ajoute ou retire un membre de la zone.
+**Mesure** : couper le lien du membre 1 puis relire `get router info
+routing-table all` — la route par `port1` y est toujours, alors que
+`diagnose sys sdwan health-check` le declare `dead`.
+**Report** : sans consequence sur le TP 20, dont la bascule passe par la
+REGLE de service (branchee sur le pipeline, elle, et qui suit la mesure) ;
+la fermer demande de reinstaller les routes a chaque tour de sonde, donc de
+faire de la table de routage un consommateur de l'evenement de sante.
+
+### [sdwan] une session DEJA ouverte ne change pas de membre
+La regle de service choisit le membre a l'ouverture de la session. Une
+session en cours garde son interface de sortie meme si son membre cesse de
+respecter le contrat — seul un nouveau flux emprunte le nouveau membre.
+**Mesure** : `ping` vers une adresse, degrader le lien, `ping` vers LA MEME
+adresse : le trafic reste sur le premier membre ; vers une AUTRE adresse, il
+part par le second.
+**Report** : un vrai FortiGate reevalue les sessions affectees quand un SLA
+change d'etat. Le faire ici demande que la table de sessions soit un
+consommateur de l'evenement de sante — meme chainon manquant que l'entree
+precedente, et meme raison de ne pas l'improviser.
+
+### [ospf] les vues `get router info ospf database` et `... interface` n'existent pas
+Le pare-feu ne repond qu'a `get router info ospf neighbor` ; les deux autres
+vues que le tutoriel nomme dans le meme bloc de verification (§20.2) sont
+refusees. La matiere existe pourtant en entier depuis que la base se
+remplit vraiment : `getOspf().getLSDB()` porte les LSA de routeur, de reseau
+et externes, et `getInterface(nom)` porte l'etat, le DR, le BDR, le cout et
+les temporisateurs.
+**Mesure** : `get router info ospf database brief` rend `Command fail.
+Return code -61 / NOTE: unknown configuration path`, sur une machine dont la
+base contient au meme instant trois LSA.
+**Report** : ces deux vues appartiennent au TP 20 et non au TP 19, dont
+l'etape 4 lit `get router info routing-table ospf`. Le format a rendre est
+celui de zebra (`Link ID / ADV Router / Age / Seq# / CkSum`), qui n'est pas
+celui d'IOS — la base est partagee, le rendu ne l'est pas.
+
+### [ospf] un LSA de reseau PERIME n'est jamais retire
+RFC 2328 §12.4.2 : quand le dernier voisin pleinement adjacent disparait, le
+DR doit VIDER (`MaxAge`) le LSA de reseau qu'il a annonce. `OSPFEngine`
+n'a aucun mecanisme de vidange — `originateNetworkLSA` rend `null` quand il
+reste moins de deux routeurs attaches, et le LSA deja installe demeure
+jusqu'a son vieillissement naturel (3600 s).
+**Mesure** : couper le lien de transit laisse `2:<ip du DR>:<routeur>` dans
+la base des deux cotes ; seul le LSA de ROUTEUR est reannonce, et c'est lui
+qui fait disparaitre la route du calcul.
+**Report** : la consequence visible est nulle aujourd'hui — le SPF traverse
+un lien de transit par le LSA de routeur ET le LSA de reseau, donc la route
+tombe quand meme. Ecrire la vidange demande un `MaxAge` premature et sa
+propagation, qui n'existent nulle part dans ce moteur.
+
+### [linux] la commande `ipsec` (strongSwan) est une FACADE
+`ipsec up <conn>` rend `initiating IKE_SA <conn>[1] to 0.0.0.0` — la chaine
+`0.0.0.0` est litterale, quelle que soit la configuration —, `ipsec status`
+annonce toujours `0 up`, et `/etc/ipsec.conf` n'est lu par personne. Aucune
+negociation n'a lieu : un poste Linux n'a pas de moteur IPsec du tout, seuls
+`Router` et le pare-feu en construisent un. Le TP 18 monte donc son client
+teletravailleur avec un SECOND FortiGate, qui en porte un — ce qu'un vrai
+deploiement fait aussi (concentrateur a composition avec des FortiGate
+distants), mais ce n'est pas le client du tutoriel.
+**Mesure** : `ipsec up X` puis `ipsec status` sur un poste Linux ; rien ne
+change et aucune trame ne part.
+**Report** : il faut donner un moteur IPsec a `LinuxMachine` et un lecteur
+d'`ipsec.conf` par-dessus. `IPSecEngine` est ecrit contre un hote de forme
+ROUTEUR (`_getAccessListsInternal`, `getLocalIP`, `_getHostnameInternal`),
+donc il faut d'abord degager ce port etroit — c'est le vrai travail, et il
+sert aussi le TP 17 cote client.
+
 ### [ipsec] la RESTRICTION des selecteurs n'est pas implementee
 RFC 7296 §2.9 laisse un repondeur RETRECIR les selecteurs proposes : si
 l'initiateur demande 10.0.0.0/8 et que le repondeur ne couvre que
@@ -134,20 +261,18 @@ type, la duree, l'inactivite, l'expiration, les compteurs et les groupes.
 distingue (`auth`, `idle`, `radius`, `src_idle`), ce qui est un sujet a
 part.
 
-### [transport] le pare-feu n'a AUCUNE couche de socket UDP
-`Firewall` porte une pile TCP (`getTcpStack()`), s'en sert pour BGP, le
-portail captif, la CLI et desormais l'inspection profonde — mais rien
-cote UDP : le client DNS fabrique et observe des paquets IPv4 bruts, et
-il n'existe ni `udpBind` ni `sendUdpDatagramTo`. Consequence directe :
-`TftpClientSession` (reel, et deja utilise par Cisco) ne peut pas
-tourner sur un FortiGate, donc `execute vpn certificate local export
-tftp` refuse en nommant la brique au lieu de transferer.
-**Mesure** : `grep -rn "udpBind" src/network/devices/firewall` ne rend
-rien ; `execute vpn certificate local export tftp Fortinet_CA_SSL f.cer
-192.168.10.10` repond « no UDP socket layer ».
-**Report** : c'est une couche de transport a ecrire, pas une commande ;
-elle debloquerait aussi un vrai client NTP et le transfert de
-configuration.
+### [transport] le pare-feu n'a pas de client NTP ni de sauvegarde de configuration
+La couche de socket UDP existe desormais (`getUdpEndpoint()`), donc les
+deux commandes qu'elle debloquait restent a ecrire : `execute backup
+config tftp` / `execute restore config tftp` et un vrai client NTP —
+`set ntpserver` est range et rendu, et aucun paquet ne part.
+**Mesure** : `execute backup config tftp cfg 192.168.10.10` repond
+`Unknown action` ; `diagnose sys ntp status` ne rend aucune association
+mesuree.
+**Report** : la sauvegarde suppose de decider CE que le fichier contient
+(la sortie de `show` complet, chiffree ou non) ; le client NTP est un
+sujet a part, et le moteur `src/network/ntp/` est ecrit contre `EndHost`
+comme `TftpClientSession` l'etait — il lui faut le meme port etroit.
 
 ### [inspection] la charge processeur est DECLAREE, pas mesuree
 `get system performance status` et `diagnose sys top` lisent maintenant
@@ -229,29 +354,31 @@ sujet en soi et non une commande de plus.
 
 ## Serveurs DHCP
 
-### [dhcp] une machine Linux ne peut pas SERVIR le DHCP
-`new DHCPServer` n'est instancié que par `Router`, `Switch`,
-`WindowsDhcpServerRole` et le pare-feu. Un `LinuxServer` n'a ni `dhcpd`,
-ni `/etc/dhcp/dhcpd.conf`, ni unité `isc-dhcp-server`.
-**Mesure** : le cas « serveur générique (Linux) » de
-`routeur-adresse-par-dhcp.test.ts` a dû être remplacé par un commutateur
-de niveau 3.
-**Report** : demande un vrai démon `dhcpd` (fichier de configuration lu,
-unité systemd, journal) — la brique serveur existe, c'est l'enveloppe
-Linux qui manque.
+### [dhcp] la sonde d'avant-offre est un ARP, la vraie est un ICMP
+Les trois serveurs sondent désormais l'adresse avant de l'offrir, mais
+par une requête ARP — alors qu'IOS, ISC et Windows envoient tous un ICMP
+Echo. La différence est observable : une machine qui répond à l'ARP mais
+laisse tomber l'ICMP (pare-feu local) est vue OCCUPÉE ici et LIBRE sur
+une vraie machine.
+**Mesure** : `addressAnswersOnLink` émet une requête ARP et relit la
+table ; aucun paquet ICMP ne part.
+**Report** : un aller-retour ICMP synchrone demande que le voisin soit
+déjà résolu — donc un ARP d'abord de toute façon —, et un hôte qui
+répond à l'ARP est présent, ce que la sonde cherche. Écrire l'ICMP par
+dessus n'ajouterait que le cas du pare-feu local, au prix d'un émetteur
+ICMP synchrone qui n'existe sur aucun des trois serveurs.
 
-### [dhcp] le serveur n'écarte que SES PROPRES adresses, pas celles d'un squatteur
-Un serveur ne propose plus une adresse qu'il porte lui-même
-(`setServerOwnedAddresses`, alimenté par `Router` et par le rôle
-Windows). Ce qui reste absent est le cas général : une adresse de la
-plage occupée par une machine configurée en statique. Le vrai IOS la
-teste par deux pings avant de l'offrir.
-**Mesure** : un pool couvrant l'adresse du serveur ne la distribue plus ;
-une adresse tenue par un tiers l'est encore.
-**Report** : demande un aller-retour ICMP synchrone dans le chemin
-d'offre. `isAddressInUse` existe dans `DhcpServerExchange` et n'est
-consulté que si `ip dhcp ping packets` > 0, réglage qui n'a pas
-d'équivalent Windows.
+### [dhcp] `ping-check` : la valeur PAR DÉFAUT d'ISC n'est pas attestée
+`ping-check` est lu, honoré, et vaut **faux** par défaut ici. Aucune
+source lisible depuis ce réseau ne dit ce que vaut le défaut d'ISC : le
+manuel de `dhcpd.conf` n'est pas joignable (proxy), et les deux réponses
+trouvées se contredisent — un article de la base de connaissances d'ISC
+laisse entendre que la 4.4 le fait par défaut, tandis que chaque guide
+d'administration écrit `ping-check true;` explicitement, ce qui suggère
+l'inverse.
+**Mesure** : `dhcpd.conf` livré par Debian ne contient pas la directive.
+**Report** : trancher demande le manuel ou une vraie machine ; le défaut
+retenu est écrit dans `docs/PRD-Manquements.md` §M6 plutôt que tu.
 
 ### [dhcp] Windows : le basculement et l'export restent absents
 `Get-DhcpServerv4Binding`, `Get-/Set-DhcpServerv4DnsSetting` sont
@@ -289,6 +416,17 @@ un nombre est attendu, signatures de constructeur périmées.
 
 ## Journal des entrées fermées
 
+- Base OSPF du pare-feu — fermée, et la mesure d'origine était FAUSSE : la
+  base n'était pas vide (elle portait les deux LSA de routeur), il y
+  manquait le LSA de RÉSEAU du lien de transit, sans lequel le SPF ne
+  traverse pas. Le DR ne réannonçait son type 2 que sur `ospf.dr-election`,
+  jamais quand un voisin devient `Full` (RFC 2328 §12.4.2) : un pare-feu
+  raccordé après l'élection ne le recevait donc jamais. Fermée avec deux
+  défauts voisins : `default-information originate` était la seule des trois
+  commandes de sa famille à ne pas converger (son propre `no` le faisait),
+  donc le LSA externe naissait au hasard d'une commande ultérieure ; et le
+  type de route OSPF était jeté à l'installation dans la RIB du pare-feu,
+  qui rendait `O` là où FortiOS rend `O*E2`.
 - Numérotation des catégories de journaux FortiOS — fermée. La table du
   simulateur était CONTIGUË (11 waf, 12 dns, 13 ssh, 14 ssl, 15
   file-filter) là où la vraie a des TROUS (12 waf, 15 dns, 16 ssh, 17

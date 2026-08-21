@@ -36,7 +36,23 @@ export function buildCommitDevice(fw: Firewall): FortiCommitDevice {
       applyStaticRoute(route) {
         const routes = fw.getRouteTable();
         routes.removeStaticById(route.id);
+        routes.removeStaticsBySource(route.id);
         if (!route.enabled || route.blackhole) return;
+
+        const sdwan = fw.getSdwan().getTable();
+        const throughZone = sdwan.membersOfZone(route.iface);
+        if (throughZone.length > 0) {
+          for (const member of throughZone) {
+            routes.addStatic(route.destination, route.mask,
+              member.gateway === '0.0.0.0' ? undefined : member.gateway,
+              {
+                iface: member.iface, distance: route.distance,
+                priority: member.priority, id: `${route.id}:sdwan-${member.sequence}`,
+              });
+          }
+          return;
+        }
+
         routes.addStatic(route.destination, route.mask,
           route.gateway === '0.0.0.0' ? undefined : route.gateway,
           {
@@ -72,6 +88,7 @@ export function buildCommitDevice(fw: Firewall): FortiCommitDevice {
         fw.getDhcp().acquireLease(iface);
       },
       removeStaticRoute(id) {
+        fw.getRouteTable().removeStaticsBySource(id);
         fw.getRouteTable().removeStaticById(id);
       },
       applySchedule(schedule) {

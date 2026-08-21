@@ -102,7 +102,9 @@ export class WindowsDhcpServerRole {
   private readonly registeredRecords = new Map<string, { zone: string; fqdn: string; forward: boolean; reverse: boolean }>();
   private registeredIpAddress: string | null = null;
 
-  constructor(private readonly host: EndHost) {}
+  constructor(private readonly host: EndHost) {
+    this.engine.setPingPacketCount(0);
+  }
 
   isRunning(): boolean { return this.running; }
 
@@ -133,6 +135,21 @@ export class WindowsDhcpServerRole {
 
   attachDnsRegistrar(registrar: DhcpDnsRegistrar | null): void {
     this.dnsRegistrar = registrar;
+  }
+
+  getConflictDetectionAttempts(): number { return this.engine.getPingPacketCount(); }
+
+  setConflictDetectionAttempts(attempts: number): DhcpOpResult {
+    if (!Number.isInteger(attempts) || attempts < 0 || attempts > 6) {
+      return {
+        ok: false,
+        message: "Cannot validate argument on parameter 'ConflictDetectionAttempts'. "
+          + `The ${attempts} argument is greater than the maximum allowed range of 6. `
+          + 'Supply an argument that is less than or equal to 6 and then try the command again.',
+      };
+    }
+    this.engine.setPingPacketCount(attempts);
+    return { ok: true, message: '' };
   }
 
   getDnsSettings(): DhcpDnsSettings {
@@ -204,6 +221,7 @@ export class WindowsDhcpServerRole {
     const reply = buildDhcpServerReply(pkt, {
       server: this.engine,
       localGatewayIP: this.host.getPorts().find(p => p.getName() === inPort)?.getIPAddress()?.toString(),
+      isAddressInUse: (ip) => this.host.addressAnswersOnLink(inPort, new IPAddress(ip)),
     });
     if (!reply) return;
     this.syncDnsForExchange(pkt, reply);

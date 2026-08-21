@@ -21,6 +21,8 @@ export interface OspfInterfaceSettings {
   readonly deadIntervalSec: number;
   readonly priority: number;
   readonly networkType: string;
+  readonly authentication: string;
+  readonly md5Keys: readonly { readonly id: number; readonly key: string }[];
 }
 
 export interface OspfArea {
@@ -34,6 +36,7 @@ export interface OspfConfiguration {
   readonly areas: readonly OspfArea[];
   readonly networks: readonly DynamicNetwork[];
   readonly interfaces: readonly OspfInterfaceSettings[];
+  readonly passiveInterfaces: readonly string[];
   readonly redistributeConnected: boolean;
   readonly redistributeStatic: boolean;
 }
@@ -74,6 +77,7 @@ export const OSPF_DEFAULTS: OspfConfiguration = Object.freeze({
   areas: Object.freeze([]),
   networks: Object.freeze([]),
   interfaces: Object.freeze([]),
+  passiveInterfaces: Object.freeze([]),
   redistributeConnected: false,
   redistributeStatic: false,
 });

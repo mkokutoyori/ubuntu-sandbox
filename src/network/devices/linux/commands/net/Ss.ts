@@ -41,6 +41,7 @@ export const ssCommand: LinuxCommand = {
       ctx.executor.getSocketTable(),
       (port, proto) => ctx.executor.resolveServiceName(port, proto),
       (name) => ctx.executor.resolveServicePort(name),
+      (processName) => ctx.executor.processMgr.list({ comm: processName })[0]?.pid,
     );
   },
 };

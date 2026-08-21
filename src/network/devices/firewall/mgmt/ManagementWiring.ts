@@ -66,6 +66,7 @@ export function buildManagementServices(host: ManagementHost): ManagementService
 
   const ha = buildFirewallHa({
     serial: () => host.serial(),
+    hostname: () => host.hostname(),
     now: () => host.now(),
     sendFrame: (iface, frame) => { host.sendFrame(iface, frame); },
     port: (iface) => host.port(iface),

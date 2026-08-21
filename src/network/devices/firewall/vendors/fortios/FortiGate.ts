@@ -29,7 +29,9 @@ export class FortiGate extends Firewall {
   }
 
   executeCommand(command: string): Promise<string> {
-    return Promise.resolve(this.getShell().execute(command));
+    const shell = this.getShell();
+    const output = shell.execute(command);
+    return shell.takePendingAsync() ?? Promise.resolve(output);
   }
 
   getPrompt(): string {

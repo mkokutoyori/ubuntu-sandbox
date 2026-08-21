@@ -37,6 +37,13 @@ export class SdwanService {
     return this.probe.observeReply(packet);
   }
 
+  steer(
+    probe: { readonly sourceIP: string; readonly destinationIP: string },
+    matchesAddress: (names: readonly string[], candidate: string) => boolean,
+  ): { iface: string; gateway: string; ruleId: string } | undefined {
+    return this.table.steer(probe, matchesAddress);
+  }
+
   preferredMember(check: string, slaId?: number): SdwanMember | undefined {
     return this.table.preferredMember(check, slaId);
   }

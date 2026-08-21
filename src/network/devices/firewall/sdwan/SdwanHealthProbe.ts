@@ -51,6 +51,17 @@ export class SdwanHealthProbe {
       return { alive: false, packetLossPercent: DEAD_LOSS_PERCENT, latencyMs: 0, jitterMs: 0 };
     }
 
+    let last = { alive: false, packetLossPercent: DEAD_LOSS_PERCENT, latencyMs: 0, jitterMs: 0 };
+    for (const server of check.servers) {
+      last = await this.probeServer(check, member, source, server);
+      if (last.alive) return last;
+    }
+    return last;
+  }
+
+  private async probeServer(
+    check: SdwanHealthCheck, member: SdwanMember, source: string, server: string,
+  ): Promise<{ alive: boolean; packetLossPercent: number; latencyMs: number; jitterMs: number }> {
     const identifier = this.nextIdentifier++;
     const samples: EchoSample[] = [];
 
@@ -59,7 +70,7 @@ export class SdwanHealthProbe {
       samples.push(sample);
       this.pending.set(keyOf(identifier, sequence), sample);
       this.deps.send(
-        member.iface, buildEchoRequest(source, check.server, identifier, sequence), member.gateway);
+        member.iface, buildEchoRequest(source, server, identifier, sequence), member.gateway);
     }
 
     await this.deps.settle();
