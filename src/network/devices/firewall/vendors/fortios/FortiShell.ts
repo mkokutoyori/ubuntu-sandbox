@@ -697,6 +697,87 @@ export class FortiShell {
     return runDiagnose(rest, this.diagDeps());
   }
 
+  private tftpTarget(
+    destination: string | undefined, server: string | undefined,
+  ): IPAddress | string {
+    if (destination === undefined) return FortiMessages.incomplete('a destination');
+    if (destination !== 'tftp') {
+      return FortiMessages.commandFail(
+        `destination "${destination}" is not available; this unit has no USB port `
+        + 'and no FTP client.');
+    }
+    if (server === undefined) return FortiMessages.incomplete('a TFTP server address');
+    try { return new IPAddress(server); }
+    catch {
+      return FortiMessages.valueError(
+        server, 'a TFTP server address is an IPv4 address.');
+    }
+  }
+
+  private tftpClient(address: IPAddress): TftpClientSession {
+    return new TftpClientSession(
+      this.fw.getUdpEndpoint(), address, undefined,
+      TFTP_EXPORT_TIMEOUT_MS, TFTP_EXPORT_MAX_RETRIES);
+  }
+
+  private executeBackup(rest: readonly string[]): string {
+    if (rest[0] !== 'config' && rest[0] !== 'full-config') {
+      return rest[0] === undefined
+        ? FortiMessages.incomplete('what to back up')
+        : FortiMessages.unknownAction(`backup ${rest[0]}`);
+    }
+    const [destination, file, server] = rest.slice(1);
+    const address = this.tftpTarget(destination, server);
+    if (typeof address === 'string') return address;
+    if (file === undefined) return FortiMessages.incomplete('a file name');
+
+    const text = renderWholeConfig(this.tree, { full: rest[0] === 'full-config' }).join('\n');
+    this.pendingAsync = this.tftpClient(address).put(file, text).then(result => (
+      result.ok ? '' : FortiMessages.commandFail(
+        `the TFTP server at ${server} did not take "${file}" `
+        + `(${result.error ?? 'Timed out'}).`)));
+    return '';
+  }
+
+  private executeRestore(rest: readonly string[]): string {
+    if (rest[0] !== 'config') {
+      return rest[0] === undefined
+        ? FortiMessages.incomplete('what to restore')
+        : FortiMessages.unknownAction(`restore ${rest[0]}`);
+    }
+    const [destination, file, server] = rest.slice(1);
+    const address = this.tftpTarget(destination, server);
+    if (typeof address === 'string') return address;
+    if (file === undefined) return FortiMessages.incomplete('a file name');
+
+    this.pendingAsync = this.tftpClient(address).get(file).then(result => {
+      if (!result.ok || result.content === undefined) {
+        return FortiMessages.commandFail(
+          `the TFTP server at ${server} did not give "${file}" `
+          + `(${result.error ?? 'Timed out'}).`);
+      }
+      this.factoryReset();
+      this.absorbClusterConfiguration(result.content);
+      return '';
+    });
+    return '';
+  }
+
+  factoryReset(): void {
+    this.nav.abort();
+    this.tree.clear();
+    this.vdom = 'root';
+    this.globalScope = false;
+    for (const path of this.tree.specPaths()) {
+      const spec = this.tree.spec(path);
+      if (spec) this.nav.commitDefaults(spec);
+    }
+    this.tree.clear();
+    this.fw.applyFactoryIdentity();
+    this.seedFactoryCertificates();
+    this.seedFactoryAdmin();
+  }
+
   private executeCertificate(rest: readonly string[]): string {
     if (rest[0] !== 'local' || rest[1] !== 'export') {
       return FortiMessages.commandFail(
@@ -743,12 +824,16 @@ export class FortiShell {
 
     const resolved = resolvePrefix(words[1], executeNames());
     const action = resolved.name;
-    if (action !== 'reboot' && action !== 'shutdown') return null;
+    if (action !== 'reboot' && action !== 'shutdown' && action !== 'factoryreset') {
+      return null;
+    }
 
-    const verb = action === 'reboot' ? 'reboot' : 'shutdown';
+    const announcement = action === 'factoryreset'
+      ? 'This operation will reset the system to factory default!'
+      : `This operation will ${action} the system !`;
     return {
       steps: [
-        { kind: 'output', lines: [`This operation will ${verb} the system !`] },
+        { kind: 'output', lines: [announcement] },
         {
           kind: 'confirmation',
           prompt: 'Do you want to continue? (y/n)',
@@ -759,7 +844,8 @@ export class FortiShell {
           run: async (runtime) => {
             if ((runtime.values.get('forti_power_confirm') ?? '') !== 'yes') return;
             if (action === 'reboot') this.fw.rebootNow();
-            else this.fw.shutdownNow();
+            else if (action === 'shutdown') this.fw.shutdownNow();
+            else { this.factoryReset(); this.fw.rebootNow(); }
           },
         },
       ],
@@ -797,6 +883,9 @@ export class FortiShell {
           ? FortiMessages.incomplete('a destination')
           : this.fw.runPing(tail[0]);
       case 'ping-options': return this.executePingOptions(tail);
+      case 'backup': return this.executeBackup(tail);
+      case 'restore': return this.executeRestore(tail);
+      case 'factoryreset': this.factoryReset(); return '';
       case 'reboot': case 'shutdown': return '';
       case 'ssh': case 'telnet':
         return tail.length === 0

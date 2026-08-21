@@ -373,17 +373,13 @@ UTC.
 (`set timezone ?`), et l'inventer donnerait 79 correspondances fausses —
 pire que l'aveu.
 
-### [execute] `ping6`, `backup config`, `restore`, `factoryreset` absentes
-Quatre actions d'`execute` refusees en « unknown action ». Aucune n'est
-un decor : `factoryreset` a un sens observable (la configuration revient
-au depart), `backup`/`restore` ont un client TFTP reel dans ce depot
-(`executeCertificate` s'en sert), et `ping6` a besoin d'un emetteur
-ICMPv6 sur le pare-feu, qui n'existe pas.
-**Mesure** : les quatre tapees sur une machine neuve, refusees.
-**Report** : `ping6` est bloque sur la brique ICMPv6 ; les trois autres
-sont un lot en soi (la sauvegarde doit rendre un texte de configuration
-que `restore` sache relire, donc c'est le format d'export qui est le
-sujet).
+### [execute] `ping6` absente, faute d'emetteur ICMPv6 sur le pare-feu
+`execute ping6 ::1` repond « unknown action ». Le refus tient a une
+brique manquante et non a la commande : le pare-feu n'a aucun emetteur
+ICMPv6 — `FirewallPing` construit un `IPv4Packet` et rien d'autre.
+**Mesure** : la commande tapee sur une machine neuve, refusee.
+**Report** : ecrire l'emetteur ICMPv6 est le sujet, et il sert aussi
+`execute traceroute6` et la surveillance SD-WAN en v6.
 
 ### [console] les bannieres pre-login et post-login sont refusees
 `config system global set pre-login-banner enable` (et son jumeau
@@ -489,6 +485,14 @@ un nombre est attendu, signatures de constructeur périmées.
 « pas plus qu'avant ta modification », pas « zéro ».
 
 ## Journal des entrées fermées
+
+- `execute backup config` / `restore config` / `factoryreset` — fermees.
+  Les trois briques existaient sans porte : le client TFTP (`put` ET
+  `get`), `renderWholeConfig`, et la boucle qui rejoue une configuration.
+  Deux choses ne s'inventent pas et sont ecrites en test : une
+  restauration REMET A ZERO avant de rejouer, sinon elle superpose ; et
+  une remise a zero doit rejouer les DEFAUTS, les effets d'une
+  configuration vivant sur l'equipement et pas dans l'arbre.
 
 - `diagnose sniffer packet` au fil de l'eau — fermee. Dans un terminal il
   ecrit paquet par paquet et Ctrl+C l'arrete ; et il capture A PARTIR DE

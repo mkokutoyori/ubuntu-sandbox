@@ -374,6 +374,12 @@ export class FortiNavigator {
     return EMPTY;
   }
 
+  commitDefaults(spec: FortiTableSpec): void {
+    if (spec.kind !== 'object' || spec.onCommit === undefined) return;
+    const object = this.deps.tree.singleton(spec);
+    spec.onCommit(object, { ...this.deps.commitContext(), position: -1 });
+  }
+
   private commit(object: FortiObject, owner?: FortiTable | null): string | void {
     const table = owner ?? this.ownerOf(object);
     const position = table ? table.keys().indexOf(object.key) : -1;

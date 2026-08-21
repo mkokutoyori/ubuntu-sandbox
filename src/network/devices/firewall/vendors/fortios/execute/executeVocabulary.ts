@@ -4,13 +4,16 @@ export interface FortiExecuteCommand {
 }
 
 export const FORTI_EXECUTE_COMMANDS: readonly FortiExecuteCommand[] = Object.freeze([
+  { name: 'backup', help: 'Backup the configuration to a remote server.' },
   { name: 'date', help: 'Display or set the system date.' },
   { name: 'dhcp', help: 'DHCP server operations.' },
+  { name: 'factoryreset', help: 'Reset the configuration to factory default.' },
   { name: 'ha', help: 'Cluster operations.' },
   { name: 'log', help: 'Log operations.' },
   { name: 'ping', help: 'Send ICMP echo requests.' },
   { name: 'ping-options', help: 'Set ICMP echo request (ping) options.' },
   { name: 'reboot', help: 'Reboot this device.' },
+  { name: 'restore', help: 'Restore the configuration from a remote server.' },
   { name: 'shutdown', help: 'Shut down this device.' },
   { name: 'ssh', help: 'Open an SSH session to a remote host.' },
   { name: 'telnet', help: 'Open a telnet session to a remote host.' },
