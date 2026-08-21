@@ -21,6 +21,12 @@ import { DHCPServer } from '@/network/dhcp/DHCPServer';
 import { DHCPPacket, DHCP_OPTION } from '@/network/dhcp/DHCPPacket';
 import { buildDhcpServerReply } from '@/network/dhcp/DhcpServerExchange';
 import type { DHCPBinding } from '@/network/dhcp/types';
+import type { DhcidRecordData } from '@/network/dns/wire/ResourceRecord';
+import { RRType } from '@/network/dns/wire/RRType';
+import {
+  dhcidIdentityFromChaddr, dhcidIdentityFromClientId, dhcidMatches,
+  DHCID_DIGEST_SHA256, computeDhcidDigest, type DhcidIdentity,
+} from '@/network/dns/wire/Dhcid';
 import {
   IPAddress, SubnetMask, MACAddress, createIPv4Packet, ETHERTYPE_IPV4, IP_PROTO_UDP,
   type UDPPacket,
@@ -49,7 +55,11 @@ export interface DhcpDnsSettings {
 
 export interface DhcpDnsRegistrar {
   applyDynamicARecord(zoneName: string, fqdnName: string, ipv4: string, ttl?: number): { ok: boolean; message: string };
-  removeRecord(zoneName: string, recordName: string, type: string): { ok: boolean; message: string };
+  applyDynamicPtrRecord(ipv4: string, fqdnName: string, ttl?: number): { ok: boolean; message: string };
+  removeDynamicPtrRecord(ipv4: string): { ok: boolean; message: string };
+  removeDynamicRecord(zoneName: string, fqdnName: string, type: string): { ok: boolean; message: string };
+  readDhcid(zoneName: string, fqdnName: string): DhcidRecordData | null;
+  writeDhcid(zoneName: string, fqdnName: string, data: DhcidRecordData, ttl?: number): { ok: boolean; message: string };
 }
 
 export interface DhcpLeaseInfo {
@@ -89,7 +99,7 @@ export class WindowsDhcpServerRole {
     updateDnsRRForOlderClients: false,
     nameProtection: false,
   };
-  private readonly registeredRecords = new Map<string, { zone: string; fqdn: string }>();
+  private readonly registeredRecords = new Map<string, { zone: string; fqdn: string; forward: boolean; reverse: boolean }>();
   private registeredIpAddress: string | null = null;
 
   constructor(private readonly host: EndHost) {}
@@ -209,6 +219,27 @@ export class WindowsDhcpServerRole {
     return domain ? domain : null;
   }
 
+  private clientDhcidIdentity(request: DHCPPacket): DhcidIdentity {
+    const clientId = request.getOption(DHCP_OPTION.CLIENT_IDENTIFIER);
+    if (typeof clientId === 'string' && clientId.length > 0) {
+      return dhcidIdentityFromClientId(clientId);
+    }
+    return dhcidIdentityFromChaddr(request.chaddr);
+  }
+
+  private nameIsProtectedFromClient(
+    zone: string, fqdn: string, identity: DhcidIdentity,
+  ): boolean {
+    if (!this.dnsSettings.nameProtection || !this.dnsRegistrar) return false;
+    const held = this.dnsRegistrar.readDhcid(zone, fqdn);
+    if (!held) return false;
+    const mine: DhcidRecordData = {
+      type: held.type, identifierType: identity.identifierType,
+      digestType: DHCID_DIGEST_SHA256, digest: computeDhcidDigest(identity, fqdn),
+    };
+    return !dhcidMatches(held, mine);
+  }
+
   private syncDnsForExchange(request: DHCPPacket, reply: DHCPPacket): void {
     if (!this.dnsRegistrar) return;
     if (reply.getMessageType() !== 'DHCPACK') return;
@@ -217,21 +248,39 @@ export class WindowsDhcpServerRole {
     const fqdnOption = request.getOption(DHCP_OPTION.CLIENT_FQDN) as
       { flags: number; name: string } | undefined;
     if (fqdnOption && (fqdnOption.flags & 0x08) !== 0) return;
+    if (!fqdnOption && !this.dnsSettings.updateDnsRRForOlderClients) return;
 
     const declaredName = String(
       request.getOption(DHCP_OPTION.HOST_NAME) ?? fqdnOption?.name ?? '',
     ).trim();
     if (!declaredName) return;
 
-    const clientRequestedUpdate = !!fqdnOption && (fqdnOption.flags & 0x01) !== 0;
-    if (this.dnsSettings.dynamicUpdates === 'OnClientRequest' && !clientRequestedUpdate) return;
-
     const zone = this.zoneForLeasedAddress(reply.yiaddr);
     if (!zone) return;
     const label = declaredName.split('.')[0];
     const fqdn = `${label}.${zone}`;
-    if (this.dnsRegistrar.applyDynamicARecord(zone, fqdn, reply.yiaddr).ok) {
-      this.registeredRecords.set(reply.yiaddr, { zone, fqdn });
+
+    const identity = this.clientDhcidIdentity(request);
+    if (this.nameIsProtectedFromClient(zone, fqdn, identity)) return;
+
+    const clientKeepsItsOwnForward = !!fqdnOption && (fqdnOption.flags & 0x01) === 0;
+    const updatesForward = this.dnsSettings.dynamicUpdates === 'Always'
+      || !clientKeepsItsOwnForward;
+
+    let forward = false;
+    if (updatesForward && this.dnsRegistrar.applyDynamicARecord(zone, fqdn, reply.yiaddr).ok) {
+      forward = true;
+      if (this.dnsSettings.nameProtection) {
+        this.dnsRegistrar.writeDhcid(zone, fqdn, {
+          type: RRType.DHCID, identifierType: identity.identifierType,
+          digestType: DHCID_DIGEST_SHA256, digest: computeDhcidDigest(identity, fqdn),
+        });
+      }
+    }
+    const reverse = this.dnsRegistrar.applyDynamicPtrRecord(reply.yiaddr, fqdn).ok;
+
+    if (forward || reverse) {
+      this.registeredRecords.set(reply.yiaddr, { zone, fqdn, forward, reverse });
     }
   }
 
@@ -239,7 +288,13 @@ export class WindowsDhcpServerRole {
     if (!this.dnsSettings.deleteDnsRRonLeaseExpiry) return;
     const record = this.registeredRecords.get(ip);
     if (!record || !this.dnsRegistrar) return;
-    this.dnsRegistrar.removeRecord(record.zone, record.fqdn, 'A');
+    if (record.forward) {
+      this.dnsRegistrar.removeDynamicRecord(record.zone, record.fqdn, 'A');
+      if (this.dnsSettings.nameProtection) {
+        this.dnsRegistrar.removeDynamicRecord(record.zone, record.fqdn, 'DHCID');
+      }
+    }
+    if (record.reverse) this.dnsRegistrar.removeDynamicPtrRecord(ip);
     this.registeredRecords.delete(ip);
   }
 

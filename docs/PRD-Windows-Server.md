@@ -190,6 +190,27 @@ serveur de fichiers SMB et AD DS comme seuls gros morceaux réellement nouveaux.
      lab (Windows `ipconfig /renew`, Linux `dhclient`) sont visibles dans
      `Get-DhcpServerv4Lease` ; autorisation dans AD simulée (flag) quand un
      domaine existe.
+   - **mise à jour DNS dynamique du bail** (`Set-DhcpServerv4DnsSetting`) :
+     un bail accordé écrit le A dans la zone du domaine de l'étendue ET le
+     **PTR** dans la zone inverse, la libération retire les deux. La règle
+     est celle de la RFC 4702 §3.3 et non l'intitulé grossier de la case
+     Microsoft (« A *et* PTR seulement si le client le demande ») : le
+     drapeau **N** coupe tout, le drapeau **S** décide du **A seul**, et le
+     **PTR reste le travail du serveur** — c'est même le réglage par défaut
+     de Windows, où le client enregistre son A et le serveur son PTR,
+     « parce que le propriétaire du nom est le client et le propriétaire de
+     l'adresse est le serveur ». Un client sans option 81 n'est pris en
+     charge que si `UpdateDnsRRForOlderClients` le demande. La zone inverse
+     n'est pas créée : elle est cherchée par **suffixe** parmi les zones
+     hébergées (donc `40.168.192.in-addr.arpa` comme `168.192.in-addr.arpa`
+     conviennent), et son absence n'empêche ni le bail ni le A — c'est ce
+     que fait un vrai serveur, dont la mise à jour échoue en journalisant.
+   - **`NameProtection`** est un vrai **DHCID** (RFC 4701) : le condensé est
+     un SHA-256 réel de l'identifiant du client suivi du nom en forme
+     canonique de fil, écrit à côté du A, et un client dont le condensé
+     diffère ne peut pas prendre le nom. Le type 49 traverse le codec DNS et
+     se relit depuis un fichier de zone, sa forme de présentation étant le
+     base64 de la RDATA entière.
 7. **Rôle NPS (RADIUS)** (dépend `PRD-RADIUS.md`) :
    - héberge le `RadiusServerAgent` via le contrat `RadiusServerHost` ; service
      `IAS` gated par le rôle `NPAS` ;

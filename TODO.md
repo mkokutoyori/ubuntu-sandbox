@@ -264,18 +264,18 @@ synchronisation entre les deux — un sujet en soi, pas une applet de plus.
 L'export/import est faisable (le VFS existe) mais suppose d'écrire le
 XML qu'un vrai Windows produit, et de le relire.
 
-### [dhcp] la mise à jour DNS dynamique ne couvre que l'enregistrement A
-Un bail accordé crée l'enregistrement A dans la zone du domaine du scope,
-gouverné par `Set-DhcpServerv4DnsSetting -DynamicUpdates`
-(`Always`/`Never`/`OnClientRequest`, RFC 4702 lu sur l'option 81 que le
-client pose désormais). Ce qui manque : l'enregistrement **PTR** dans la
-zone inverse, et `NameProtection` (DHCID) qui est accepté et rangé sans
-rien empêcher.
-**Mesure** : `Get-DnsServerResourceRecord -ZoneName lab.local` rend le A
-après un `ipconfig /renew` ; aucune zone inverse n'est touchée.
-**Report** : la zone inverse suppose de la créer et de nommer
-`x.x.x.x.in-addr.arpa`, ce qui est un travail à part ; `NameProtection`
-suppose l'enregistrement DHCID, qui n'existe nulle part.
+### [dhcp] le client de ce simulateur ne sait pas faire SA propre mise à jour DNS
+Le serveur applique désormais la règle de la RFC 4702 (PTR toujours, A
+selon le drapeau S), mais le client pose toujours S=1 — « serveur, fais
+le A pour moi » — parce qu'il n'a aucun moyen de l'enregistrer lui-même.
+Un vrai client Windows pose S=0 et enregistre son A par une mise à jour
+dynamique DNS.
+**Mesure** : la branche S=0 du serveur n'est atteignable que par un
+client étranger fabriqué par la sonde ; aucune machine de ce dépôt ne
+l'emprunte.
+**Report** : demande un client de mise à jour dynamique (RFC 2136) côté
+hôte, que ce dépôt n'a nulle part — `PrimaryZoneAgent.applyUpdate`
+existe côté serveur, mais rien ne l'atteint par le fil.
 
 ## Outillage
 

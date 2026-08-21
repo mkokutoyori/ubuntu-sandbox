@@ -13,6 +13,7 @@ export const RRType = {
   RRSIG: 46,
   NSEC: 47,
   DNSKEY: 48,
+  DHCID: 49,
   IXFR: 251,
   AXFR: 252,
   ANY: 255,
