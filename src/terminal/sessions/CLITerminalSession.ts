@@ -501,13 +501,14 @@ export abstract class CLITerminalSession extends TerminalSession {
       return;
     }
 
-    const firstWord = trimmed.split(/\s+/)[0]?.toLowerCase();
+    const clientLine = this.stripClientPrefix(trimmed);
+    const firstWord = clientLine.split(/\s+/)[0]?.toLowerCase();
     if (firstWord === 'telnet') {
-      await this.enterTelnet(trimmed.split(/\s+/).slice(1));
+      await this.enterTelnet(clientLine.split(/\s+/).slice(1));
       return;
     }
     if (firstWord && this.sshInteractiveVerbs().includes(firstWord) && this.sshInteractiveModeAllowed()) {
-      const sshSteps = this.buildSshInteractiveFlowSteps(trimmed);
+      const sshSteps = this.buildSshInteractiveFlowSteps(clientLine);
       if (sshSteps) {
         this.startFlowFromSteps(sshSteps, trimmed);
         return;
@@ -579,6 +580,8 @@ export abstract class CLITerminalSession extends TerminalSession {
    * additionally accepts `stelnet` as a synonym.
    */
   protected sshInteractiveVerbs(): string[] { return ['ssh']; }
+
+  protected stripClientPrefix(line: string): string { return line; }
 
   /**
    * Only user/privileged exec mode has an outbound `ssh` client on real

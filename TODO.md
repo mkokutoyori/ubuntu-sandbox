@@ -373,6 +373,30 @@ UTC.
 (`set timezone ?`), et l'inventer donnerait 79 correspondances fausses —
 pire que l'aveu.
 
+### [diag] `diagnose sniffer packet` ne se DEROULE pas, il tombe d'un bloc
+La capture fonctionne et son format est celui de FortiOS, mais la
+commande rend tout son texte a la fin. Sur une vraie machine le
+renifleur ECRIT au fil de l'eau et on l'arrete par Ctrl+C — c'est meme
+son usage normal, on lance sans compteur et on regarde passer.
+**Mesure** : `diagnose sniffer packet port2 none 4 3` rend ses trois
+paquets d'un coup ; aucune ligne n'apparait pendant la capture.
+**Report** : `startAsyncCommand`/`onInterrupt` existent et `execute ping`
+s'en sert deja, donc la brique est la ; ce qui manque est de rendre la
+capture PAS A PAS comme `FirewallPing.begin()`, c'est-a-dire de decouper
+un moteur qui rend aujourd'hui une chaine.
+
+### [execute] `ping6`, `backup config`, `restore`, `factoryreset` absentes
+Quatre actions d'`execute` refusees en « unknown action ». Aucune n'est
+un decor : `factoryreset` a un sens observable (la configuration revient
+au depart), `backup`/`restore` ont un client TFTP reel dans ce depot
+(`executeCertificate` s'en sert), et `ping6` a besoin d'un emetteur
+ICMPv6 sur le pare-feu, qui n'existe pas.
+**Mesure** : les quatre tapees sur une machine neuve, refusees.
+**Report** : `ping6` est bloque sur la brique ICMPv6 ; les trois autres
+sont un lot en soi (la sauvegarde doit rendre un texte de configuration
+que `restore` sache relire, donc c'est le format d'export qui est le
+sujet).
+
 ### [console] les bannieres pre-login et post-login sont refusees
 `config system global set pre-login-banner enable` (et son jumeau
 `post-login-banner`) repond « unknown attribute ». Le refus est
@@ -477,6 +501,16 @@ un nombre est attendu, signatures de constructeur périmées.
 « pas plus qu'avant ta modification », pas « zéro ».
 
 ## Journal des entrées fermées
+
+- `execute traceroute` du FortiGate — fermee, et le defaut etait plus
+  profond que « la vue est fausse » : la commande n'avait JAMAIS trouve
+  quoi que ce soit. `buildEchoRequest` calcule la somme de controle IPv4
+  avec un TTL de 64 et le traceroute la reposait ensuite par
+  `{ ...request, ttl }`, donc chaque sonde etait jetee comme corrompue
+  par le premier equipement qui verifie l'en-tete. La meme machine au
+  meme instant repondait au `ping`.
+- `execute ssh` / `execute telnet` du FortiGate — fermees ; branchees sur
+  la machinerie de client que le socle portait deja pour IOS et VRP.
 
 - Console FortiGate : `exit` ne sortait pas, la console ne se reglait pas
   — fermee. `exit`/`quit` etaient REFUSES (« unknown command ») alors que

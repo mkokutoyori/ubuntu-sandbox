@@ -789,6 +789,10 @@ export class FortiShell {
           : this.fw.runPing(tail[0]);
       case 'ping-options': return this.executePingOptions(tail);
       case 'reboot': case 'shutdown': return '';
+      case 'ssh': case 'telnet':
+        return tail.length === 0
+          ? FortiMessages.incomplete('a destination')
+          : FortiMessages.needsConsole(resolved.name);
       default: return FortiMessages.unknownAction(resolved.name);
     }
   }

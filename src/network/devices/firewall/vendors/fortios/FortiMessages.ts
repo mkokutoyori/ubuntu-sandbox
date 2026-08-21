@@ -83,6 +83,14 @@ export const FortiMessages = {
     );
   },
 
+  needsConsole(action: string): string {
+    return fail(
+      FORTI_COMMAND_FAIL,
+      `\`execute ${action}\` asks for a password, so it only runs from an `
+      + 'interactive console; this invocation has no terminal to prompt on.',
+    );
+  },
+
   noPermission(path: string): string {
     return fail(
       FORTI_COMMAND_FAIL,

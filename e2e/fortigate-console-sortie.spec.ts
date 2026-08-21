@@ -48,6 +48,48 @@ test.beforeEach(async ({ page }) => {
 });
 
 test.describe('FortiGate — la console se quitte et se regle', () => {
+  test('`execute traceroute` TROUVE le voisin que `execute ping` atteint', async ({ page }) => {
+    test.setTimeout(120_000);
+    const id = await poserFortiGate(page);
+    const pcId = await page.evaluate(() => {
+      type S = {
+        addDevice(t: string, x: number, y: number): { id: string };
+        addConnection(a: string, ap: string, b: string, bp: string): unknown;
+        deviceInstances: Map<string, Record<string, unknown>>;
+      };
+      const store = (window as Record<string, unknown>).__networkStore as { getState(): S };
+      const created = store.getState().addDevice('linux-pc', 60, 240);
+      const device = store.getState().deviceInstances.get(created.id) as Record<string, unknown>;
+      (device.powerOn as (() => void) | undefined)?.call(device);
+      return created.id;
+    });
+    await page.evaluate(([fw, pc]) => {
+      type S = {
+        addConnection(a: string, ap: string, b: string, bp: string): unknown;
+        deviceInstances: Map<string, Record<string, unknown>>;
+      };
+      const store = (window as Record<string, unknown>).__networkStore as { getState(): S };
+      store.getState().addConnection(pc, 'eth0', fw, 'port2');
+      const host = store.getState().deviceInstances.get(pc) as {
+        executeCommand(c: string): Promise<string>;
+      };
+      void host.executeCommand('ip addr add 192.168.10.10/24 dev eth0');
+      void host.executeCommand('ip link set eth0 up');
+    }, [id, pcId]);
+
+    await openTerminal(page, id);
+    for (const c of ['config system console', 'set output standard', 'end',
+      'config system interface', 'edit port2', 'set mode static',
+      'set ip 192.168.10.1 255.255.255.0', 'set allowaccess ping', 'next', 'end']) {
+      await typeCmd(page, c);
+    }
+    await typeCmd(page, 'execute ping 192.168.10.10');
+    await waitForText(page, ', 0% packet loss');
+
+    await typeCmd(page, 'execute traceroute 192.168.10.10');
+    await waitForText(page, ' 1  192.168.10.10');
+  });
+
   test('`exit` rend l`invite de connexion, et on rentre a nouveau', async ({ page }) => {
     test.setTimeout(120_000);
     const id = await poserFortiGate(page);

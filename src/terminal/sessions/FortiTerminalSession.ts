@@ -98,6 +98,11 @@ export class FortiTerminalSession extends CLITerminalSession {
 
   protected override exitClosesLocalSession(): boolean { return true; }
 
+  protected override stripClientPrefix(line: string): string {
+    const match = /^execute\s+(ssh|telnet)\b\s*(.*)$/i.exec(line.trim());
+    return match ? `${match[1].toLowerCase()} ${match[2]}`.trim() : line;
+  }
+
   protected override endExecSession(): void {
     this.startConsoleLogin();
     this.updatePrompt();
