@@ -242,12 +242,22 @@ export function formatIfconfigInterface(i: IpInterfaceInfo): string {
 
 // ─── netstat ────────────────────────────────────────────────────────
 
+export type PidResolver = (processName: string) => number | undefined;
+
+function ownerPid(
+  sock: { pid?: number; processName?: string }, resolvePid?: PidResolver,
+): number | undefined {
+  if (sock.pid) return sock.pid;
+  return sock.processName ? resolvePid?.(sock.processName) : undefined;
+}
+
 export function cmdNetstat(
   args: string[],
   ctx: IpNetworkContext | null,
   isServer: boolean,
   socketTable?: SocketTable | null,
   resolveService?: ServiceResolver,
+  resolvePid?: PidResolver,
 ): string {
   // Expand combined flags: '-tlnp' → individual chars t,l,n,p
   const hasFlag = (ch: string): boolean =>
@@ -349,7 +359,8 @@ export function cmdNetstat(
         ? (v6 ? ':::*' : '0.0.0.0:*')
         : formatEndpoint(sock.remoteAddress, sock.remotePort, sock.protocol, numeric, resolveService);
       const stateCol   = isTcp ? sock.state : '';
-      const pidCol     = showProcesses && sock.pid ? `${sock.pid}/${sock.processName}` : '';
+      const pid        = ownerPid(sock, resolvePid);
+      const pidCol     = showProcesses && pid ? `${pid}/${sock.processName}` : '';
 
       lines.push(formatNetstatLine(`${sock.protocol}${v6 ? '6' : ''}`, localAddr, remoteAddr, stateCol, pidCol));
     }
@@ -434,7 +445,7 @@ function formatNetstatLine(
 export function cmdSs(
   args: string[], isServer: boolean,
   socketTable?: SocketTable | null, resolveService?: ServiceResolver,
-  resolvePort?: PortResolver,
+  resolvePort?: PortResolver, resolvePid?: PidResolver,
 ): string {
   // Expand combined flags: '-tlnp' → individual chars t,l,n,p
   const hasFlag = (ch: string): boolean =>
@@ -524,8 +535,9 @@ export function cmdSs(
         ? (v6 ? '[::]:*' : '0.0.0.0:*')
         : formatEndpoint(sock.remoteAddress, sock.remotePort, sock.protocol, numeric, resolveService, true);
       const stateCol   = ssStateLabel(sock);
-      const procCol    = showProcesses && sock.pid
-        ? ` users:(("${sock.processName}",pid=${sock.pid},fd=3))`
+      const pid        = ownerPid(sock, resolvePid);
+      const procCol    = showProcesses && pid
+        ? ` users:(("${sock.processName}",pid=${pid},fd=3))`
         : '';
 
       lines.push(`${stateCol.padEnd(10)} 0       0        ${localAddr.padEnd(22)} ${remoteAddr.padEnd(18)}${procCol}`);

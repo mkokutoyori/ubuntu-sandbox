@@ -315,20 +315,6 @@ sujet en soi et non une commande de plus.
 
 ## Serveurs DHCP
 
-### [sockets] `ss -lunp` ne nomme le processus d'aucune socket UDP
-La colonne `Process` de `ss` est rendue seulement si la socket porte un
-PID (`showProcesses && sock.pid`), et `EndHost.udpBind` n'en pose aucun :
-elle transmet le NOM du processus et rien d'autre. Aucun démon UDP de ce
-dépôt — dhcpd, systemd-resolved, freeradius, dnsmasq — n'est donc nommé
-par `ss -lunp`, alors que la vraie commande écrit
-`users:(("dhcpd",pid=1234,fd=7))`.
-**Mesure** : `ss -lunp` sur une machine servant le DHCP rend la ligne
-`0.0.0.0:67` avec une colonne Process vide ; le PID existe pourtant, le
-gestionnaire de services le tient.
-**Report** : `udpBind(port, listener, processName?)` n'a pas de paramètre
-de PID, et l'ajouter touche chaque démon UDP du dépôt ; c'est un sujet
-commun à tous, pas propre au DHCP.
-
 ### [dhcp] le serveur n'écarte que SES PROPRES adresses, pas celles d'un squatteur
 Un serveur ne propose plus une adresse qu'il porte lui-même
 (`setServerOwnedAddresses`, alimenté par `Router` et par le rôle
