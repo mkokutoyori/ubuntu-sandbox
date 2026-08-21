@@ -1,7 +1,9 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { FortiGate } from '@/network/devices/firewall/vendors/fortios/FortiGate';
-import { FortiTerminalSession } from '@/terminal/sessions';
-import type { KeyEvent } from '@/terminal/sessions/TerminalSession';
+import type { FortiTerminalSession } from '@/terminal/sessions';
+import {
+  bootFortiConsole, answerPrompt, answerSecret, runCommand,
+} from './fortiConsoleHarness';
 import { resetCounters, MACAddress } from '@/network/core/types';
 import { resetDeviceCounters } from '@/network/devices/DeviceFactory';
 import { Logger } from '@/network/core/Logger';
@@ -13,35 +15,10 @@ beforeEach(() => {
   Logger.clear();
 });
 
-const tick = () => new Promise((r) => setTimeout(r, 0));
-const key = (k: string): KeyEvent =>
-  ({ key: k, ctrlKey: false, shiftKey: false, altKey: false, metaKey: false }) as KeyEvent;
-
-async function console_(fgt: FortiGate): Promise<FortiTerminalSession> {
-  const s = new FortiTerminalSession('t1', fgt as never);
-  await s.init();
-  for (let i = 0; i < 40 && s.isBooting; i++) await tick();
-  for (let i = 0; i < 10; i++) await tick();
-  return s;
-}
-
-async function texte(s: FortiTerminalSession, valeur: string): Promise<void> {
-  s.setInputBuf(valeur);
-  s.handleKey(key('Enter'));
-  for (let i = 0; i < 25; i++) await tick();
-}
-
-async function commande(s: FortiTerminalSession, valeur: string): Promise<void> {
-  s.setInput(valeur);
-  s.handleKey(key('Enter'));
-  for (let i = 0; i < 30; i++) await tick();
-}
-
-async function secret(s: FortiTerminalSession, valeur: string): Promise<void> {
-  s.setPasswordBuf(valeur);
-  s.handleKey(key('Enter'));
-  for (let i = 0; i < 25; i++) await tick();
-}
+const console_ = bootFortiConsole;
+const texte = answerPrompt;
+const commande = runCommand;
+const secret = answerSecret;
 
 const vu = (s: FortiTerminalSession) => s.lines.map(l => l.text).join('\n');
 

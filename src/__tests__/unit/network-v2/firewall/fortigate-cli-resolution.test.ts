@@ -70,6 +70,7 @@ import { FortiShell } from '@/network/devices/firewall/vendors/fortios/FortiShel
 import { resetCounters, MACAddress } from '@/network/core/types';
 import { resetDeviceCounters } from '@/network/devices/DeviceFactory';
 import { Logger } from '@/network/core/Logger';
+import { openFortiConsole } from './fortiConsoleHarness';
 import { FortiTerminalSession } from '@/terminal/sessions';
 import {
   FORTI_EXECUTE_COMMANDS,
@@ -413,11 +414,7 @@ const touche = (k: string) => ({
 const tick = () => new Promise<void>(resolve => { setTimeout(resolve, 0); });
 
 async function terminal(fgt: FortiGate): Promise<FortiTerminalSession> {
-  const session = new FortiTerminalSession('t1', fgt as never);
-  await session.init();
-  for (let tour = 0; tour < 40 && session.isBooting; tour++) await tick();
-  await tick();
-  return session;
+  return openFortiConsole(fgt);
 }
 
 async function tab(session: FortiTerminalSession, saisie: string): Promise<string> {

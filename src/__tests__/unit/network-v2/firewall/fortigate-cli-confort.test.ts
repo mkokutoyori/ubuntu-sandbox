@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { FortiGate } from '@/network/devices/firewall/vendors/fortios/FortiGate';
 import { LinuxPC } from '@/network/devices/LinuxPC';
+import { openFortiConsole } from './fortiConsoleHarness';
 import { FortiTerminalSession } from '@/terminal/sessions';
 import type { KeyEvent } from '@/terminal/sessions/TerminalSession';
 import { Cable } from '@/network/hardware/Cable';
@@ -39,17 +40,7 @@ async function laboratoire() {
 }
 
 async function session(fgt: FortiGate): Promise<FortiTerminalSession> {
-  const s = new FortiTerminalSession('t1', fgt as never);
-  await s.init();
-  for (let i = 0; i < 40 && s.isBooting; i++) await tick();
-  for (let i = 0; i < 10; i++) await tick();
-  s.setInputBuf('admin');
-  s.handleKey(key('Enter'));
-  for (let i = 0; i < 25; i++) await tick();
-  s.setPasswordBuf('Fortinet123');
-  s.handleKey(key('Enter'));
-  for (let i = 0; i < 25; i++) await tick();
-  return s;
+  return openFortiConsole(fgt, 'Fortinet123');
 }
 
 const vu = (s: FortiTerminalSession) => s.lines.map(l => l.text).join('\n');
