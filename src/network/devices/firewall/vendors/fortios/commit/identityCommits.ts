@@ -68,8 +68,15 @@ export function identityCommitHandlers(fw: Firewall): IdentityHandlers {
     fw.getUserDirectory().removeServer(name);
   },
   applyAuthSetting(setting) {
-    fw.getAuthPortal().setTimeoutSeconds(setting.timeoutMinutes * 60);
+    const seconds = setting.timeoutMinutes * 60;
+    fw.getAuthPortal().setTimeoutSeconds(seconds);
     fw.setAuthPortalPorts(setting.httpPort, setting.httpsPort);
+    fw.getIdentityTable().setTimeoutPolicy(
+      setting.timeoutType === 'hard-timeout' || setting.timeoutType === 'new-session'
+        ? setting.timeoutType
+        : 'idle-timeout',
+      seconds);
+    fw.setAuthPortalSecureHttp(setting.secureHttp === true);
   },
   applyAccessProfile(profile) {
     fw.getAccessMatrix().setProfile({

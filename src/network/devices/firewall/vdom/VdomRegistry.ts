@@ -185,8 +185,17 @@ export class VdomRegistry {
       onClosed: (session, reason) => deps.onSessionClosed(name, session, reason),
     });
 
+    const identities = new IdentityTable({ now: this.deps.now });
+
     const evaluator = new PolicyEvaluator({
       objects,
+      userOf: (address) => identities.lookup(address)?.user,
+      userGroupsOf: (user) => {
+        for (const identity of identities.list()) {
+          if (identity.user === user) return identity.groups;
+        }
+        return [];
+      },
       policyKeyedBy: deps.policyKeyedBy,
       implicitPolicy: deps.implicitPolicy,
       applicationShift: deps.applicationShift,
@@ -219,7 +228,7 @@ export class VdomRegistry {
       schedules,
       logs: new FirewallLogStore(),
       utm: new UtmProfileStore(),
-      identities: new IdentityTable({ now: this.deps.now }),
+      identities,
       tunnels: new IpsecTunnelTable({
         now: this.deps.now,
         onInterfaceCreated: (tunnel, boundTo) =>

@@ -34,6 +34,7 @@ export interface ManagementHost {
   addressOf(iface: string): string | undefined;
   authenticated(iface: string, address: string): boolean;
   authRequiredByPolicy(): boolean;
+  portalUsesHttps(): boolean;
   managementPorts(): ManagementPorts;
   createManagementCli(user: string): ManagementCli | null;
   authenticateAdmin(user: string, password: string, source: string): boolean;
@@ -83,7 +84,8 @@ export function buildManagementServices(host: ManagementHost): ManagementService
 
   const captivePortal = new CaptivePortalRedirect({
     tcp: () => host.tcp(),
-    portalPort: () => portals.ports().http,
+    portalPort: () => (host.portalUsesHttps() ? portals.ports().https : portals.ports().http),
+    portalScheme: () => (host.portalUsesHttps() ? 'https' : 'http'),
     connectedRoutes: () => host.connectedRoutes(),
     addressOf: (iface) => host.addressOf(iface),
     authenticated: (iface, address) => host.authenticated(iface, address),

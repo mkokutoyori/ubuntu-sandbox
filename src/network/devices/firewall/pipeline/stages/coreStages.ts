@@ -668,6 +668,9 @@ function policyLookupStage(services: FirewallServices): PipelineStage {
       context.matchedPolicy = decision.rule;
 
       if (isDenyAction(decision.action)) {
+        if (decision.implicit && decision.sawIdentityGate) {
+          return deny(context, 'policy-lookup', 'auth-required');
+        }
         installDiscard(services, context, packet);
         return deny(context, 'policy-lookup',
           decision.implicit ? 'implicit-deny' : 'policy-deny',

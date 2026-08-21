@@ -29,6 +29,8 @@ export interface IdentityBindOptions {
   readonly timeoutSec: number;
 }
 
+export type AuthTimeoutType = 'idle-timeout' | 'hard-timeout' | 'new-session';
+
 export interface IdentityTableDeps {
   readonly now?: () => number;
 }
@@ -39,9 +41,20 @@ export class IdentityTable {
   private readonly byAddress = new Map<string, AuthenticatedIdentity>();
   private readonly now: () => number;
   private nextId = 1;
+  private timeoutType: AuthTimeoutType = 'idle-timeout';
+  private timeoutSec = DEFAULT_AUTH_TIMEOUT_SEC;
 
   constructor(deps: IdentityTableDeps = {}) {
     this.now = deps.now ?? (() => Date.now());
+  }
+
+  setTimeoutPolicy(type: AuthTimeoutType, seconds: number): void {
+    this.timeoutType = type;
+    this.timeoutSec = seconds;
+  }
+
+  timeoutPolicy(): { type: AuthTimeoutType; seconds: number } {
+    return { type: this.timeoutType, seconds: this.timeoutSec };
   }
 
   bind(options: IdentityBindOptions): AuthenticatedIdentity {
@@ -90,6 +103,9 @@ export class IdentityTable {
     if (!identity) return;
 
     identity.lastSeenAt = this.now();
+    if (this.timeoutType === 'idle-timeout') {
+      identity.expiresAt = identity.lastSeenAt + this.timeoutSec * 1000;
+    }
     if (direction === 'in') {
       identity.packetsIn += 1;
       identity.bytesIn += bytes;
@@ -97,6 +113,11 @@ export class IdentityTable {
     }
     identity.packetsOut += 1;
     identity.bytesOut += bytes;
+  }
+
+  onNewSession(address: string): void {
+    if (this.timeoutType !== 'new-session') return;
+    this.extend(address, this.timeoutSec);
   }
 
   extend(address: string, timeoutSec: number): void {
@@ -133,6 +154,10 @@ export class IdentityTable {
   size(): number {
     this.prune();
     return this.byAddress.size;
+  }
+
+  expiryOf(identity: AuthenticatedIdentity): number {
+    return Math.max(0, Math.floor((identity.expiresAt - this.now()) / 1000));
   }
 
   durationOf(identity: AuthenticatedIdentity): number {

@@ -97,6 +97,18 @@ famille reprise ferme une part de cette entrée.
 
 ## Pare-feu FortiGate
 
+### [identite] `diagnose firewall auth list` ne rend pas la ligne `flag(...)`
+Une vraie machine ecrit `flag(10): auth` ou `flag(30): radius idle` — un
+masque de bits decrivant l'etat de la session d'authentification. La vue
+rend desormais `expire:` et `allow-idle:`, qui sont des MESURES, mais pas
+le drapeau : ce depot n'a aucun masque de bits derriere cet etat, et
+recopier `flag(10)` serait afficher un nombre que rien ne soutient.
+**Mesure** : `diagnose firewall auth list` rend l'adresse, le nom, le
+type, la duree, l'inactivite, l'expiration, les compteurs et les groupes.
+**Report** : il faudrait d'abord modeliser les etats qu'un drapeau
+distingue (`auth`, `idle`, `radius`, `src_idle`), ce qui est un sujet a
+part.
+
 ### [transport] le pare-feu n'a AUCUNE couche de socket UDP
 `Firewall` porte une pile TCP (`getTcpStack()`), s'en sert pour BGP, le
 portail captif, la CLI et desormais l'inspection profonde — mais rien

@@ -151,6 +151,7 @@ export class Firewall extends Equipment {
   private readonly l3: L3Services;
   private readonly ntp: FirewallNtp;
   private readonly captivePortal: CaptivePortalRedirect;
+  private authPortalSecureHttp = false;
   private readonly deepInspection = new SslDeepInspection({
     tcp: () => this.tcp,
     localCertificate: (name) => this.getCertificateStore().local(name),
@@ -306,6 +307,7 @@ export class Firewall extends Equipment {
         this.vdoms.contextOfInterface(iface).identities.lookup(address) !== undefined,
       authRequiredByPolicy: () => this.getVdom().policy.ordered()
         .some(r => (r.authUsers?.length ?? 0) > 0 || (r.authGroups?.length ?? 0) > 0),
+      portalUsesHttps: () => this.authPortalSecureHttp,
       managementPorts: () => this.management.managementPorts(),
       createManagementCli: (user) => this.createManagementCli(user),
       authenticateAdmin: (user, password, source) =>
@@ -513,6 +515,9 @@ export class Firewall extends Equipment {
   setAuthPortalPorts(httpPort: number, httpsPort: number): void {
     this.portals.setPorts(httpPort, httpsPort);
   }
+
+  setAuthPortalSecureHttp(on: boolean): void { this.authPortalSecureHttp = on; }
+  authPortalUsesHttps(): boolean { return this.authPortalSecureHttp; }
 
   getAuthPortalPorts(): PortalPorts { return this.portals.ports(); }
   startAuthPortal(): boolean { return this.portals.startAuth(); }

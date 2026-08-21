@@ -5,6 +5,7 @@ import { FortiConfigTree } from './FortiConfigTree';
 import { FortiObject, type FortiObjectSnapshot } from './FortiObject';
 import { FortiTable, type MovePosition } from './FortiTable';
 import { FortiValidator } from './FortiValidator';
+import { clearOf, ENC_PREFIX } from './secretEncoding';
 
 export interface TableFrame {
   readonly kind: 'table';
@@ -158,7 +159,9 @@ export class FortiNavigator {
       );
     }
 
-    const cleaned = values.map(unquote);
+    const cleaned = spec.secret === true
+      ? [decodeStoredSecret(values.map(unquote))]
+      : values.map(unquote);
     const verdict = this.deps.validator.validate(spec, cleaned);
     if (!verdict.ok) return verdict.error;
 
@@ -386,4 +389,9 @@ function parsePair(
 
 function lastPathWord(spec: { path: readonly string[] }): string {
   return spec.path[spec.path.length - 1];
+}
+
+function decodeStoredSecret(values: readonly string[]): string {
+  const joined = values.join(' ');
+  return joined.startsWith(ENC_PREFIX) ? clearOf(joined) : joined;
 }

@@ -1,3 +1,4 @@
+import { encodeSecret } from '../runtime/secretEncoding';
 import {
   isQuoted, keyAttributeName,
   type FortiAttributeSpec, type FortiTableSpec,
@@ -18,14 +19,6 @@ export function renderValue(spec: FortiAttributeSpec, values: readonly string[])
   return values.map(v => `"${v}"`).join(' ');
 }
 
-function encodeSecret(clear: string): string {
-  let hash = 0x811c9dc5;
-  for (let index = 0; index < clear.length; index++) {
-    hash ^= clear.charCodeAt(index);
-    hash = Math.imul(hash, 0x01000193) >>> 0;
-  }
-  return `${hash.toString(16)}${clear.length.toString(16).padStart(2, '0')}`;
-}
 
 export function renderKey(spec: FortiTableSpec, key: string): string {
   if (spec.quotedKey !== undefined) return spec.quotedKey ? `"${key}"` : key;

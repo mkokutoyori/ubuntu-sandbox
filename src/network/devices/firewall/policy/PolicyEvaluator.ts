@@ -15,6 +15,7 @@ export interface PolicyDecision {
   readonly action: RuleAction;
   readonly implicit: boolean;
   readonly sawPending: boolean;
+  readonly sawIdentityGate: boolean;
 }
 
 export interface PolicyEvaluatorDeps {
@@ -38,6 +39,10 @@ function catchesVipWithoutNaming(rule: SecurityRule): boolean {
 }
 
 const ANY = 'any';
+
+function namedIdentities(rule: SecurityRule): readonly string[] {
+  return [...rule.user, ...(rule.authUsers ?? []), ...(rule.authGroups ?? [])];
+}
 
 export class PolicyEvaluator {
   private readonly objects: ObjectStore;
@@ -68,25 +73,40 @@ export class PolicyEvaluator {
 
   evaluate(rules: readonly SecurityRule[], probe: PolicyProbe, bytes = 0): PolicyDecision {
     let sawPending = false;
+    let sawIdentityGate = false;
 
     for (const rule of [...rules].sort((a, b) => a.seq - b.seq)) {
       if (!rule.enabled) continue;
 
       const outcome = this.match(rule, probe);
       if (outcome === 'pending') { sawPending = true; continue; }
-      if (outcome === 'no-match') continue;
+      if (outcome === 'no-match') {
+        if (this.heldBackByIdentity(rule, probe)) sawIdentityGate = true;
+        continue;
+      }
 
       this.countHit(rule, bytes);
-      return Object.freeze({ rule, action: rule.action, implicit: false, sawPending });
+      return Object.freeze({
+        rule, action: rule.action, implicit: false, sawPending, sawIdentityGate,
+      });
     }
 
-    return this.implicitDecision(probe, bytes, sawPending);
+    return this.implicitDecision(probe, bytes, sawPending, sawIdentityGate);
   }
 
-  private implicitDecision(probe: PolicyProbe, bytes: number, sawPending: boolean): PolicyDecision {
+  private heldBackByIdentity(rule: SecurityRule, probe: PolicyProbe): boolean {
+    if (namedIdentities(rule).length === 0) return false;
+    return this.matchesEverythingButIdentity(rule, probe);
+  }
+
+  private implicitDecision(
+    probe: PolicyProbe, bytes: number, sawPending: boolean, sawIdentityGate: boolean,
+  ): PolicyDecision {
     this.countHit(this.implicit, bytes);
     const action: RuleAction = this.securityLevelAllows(probe) ? 'allow' : 'deny';
-    return Object.freeze({ rule: this.implicit, action, implicit: true, sawPending });
+    return Object.freeze({
+      rule: this.implicit, action, implicit: true, sawPending, sawIdentityGate,
+    });
   }
 
   private securityLevelAllows(probe: PolicyProbe): boolean {
@@ -107,13 +127,17 @@ export class PolicyEvaluator {
   }
 
   private match(rule: SecurityRule, probe: PolicyProbe): MatchOutcome {
-    if (!this.matchesTranslatedDestination(rule, probe)) return 'no-match';
-    if (!this.matchesEndpoints(rule, probe)) return 'no-match';
-    if (!this.matchesAddresses(rule, probe)) return 'no-match';
-    if (!this.matchesService(rule, probe)) return 'no-match';
-    if (!this.matchesSchedule(rule)) return 'no-match';
+    if (!this.matchesEverythingButIdentity(rule, probe)) return 'no-match';
     if (!this.matchesUser(rule, probe)) return 'no-match';
     return this.matchesApplication(rule, probe);
+  }
+
+  private matchesEverythingButIdentity(rule: SecurityRule, probe: PolicyProbe): boolean {
+    return this.matchesTranslatedDestination(rule, probe)
+      && this.matchesEndpoints(rule, probe)
+      && this.matchesAddresses(rule, probe)
+      && this.matchesService(rule, probe)
+      && this.matchesSchedule(rule);
   }
 
   private matchesTranslatedDestination(rule: SecurityRule, probe: PolicyProbe): boolean {
@@ -162,14 +186,15 @@ export class PolicyEvaluator {
   }
 
   private matchesUser(rule: SecurityRule, probe: PolicyProbe): boolean {
-    if (rule.user.length === 0) return true;
+    const named = namedIdentities(rule);
+    if (named.length === 0) return true;
 
     const user = this.deps.userOf?.(probe.sourceIP);
     if (user === undefined) return false;
-    if (rule.user.includes(user)) return true;
+    if (named.includes(user)) return true;
 
     const groups = this.deps.userGroupsOf?.(user) ?? [];
-    return groups.some(group => rule.user.includes(group));
+    return groups.some(group => named.includes(group));
   }
 
   private matchesApplication(rule: SecurityRule, probe: PolicyProbe): MatchOutcome {

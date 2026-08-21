@@ -10,7 +10,7 @@ import { unquote } from '../runtime/FortiNavigator';
 import { referencesTo, renderReference } from '../runtime/references';
 import type { FortiConfigTree } from '../runtime/FortiConfigTree';
 import { formatLogRecord, type FortiLogContext, type FortiLogFormat } from '../log/fortiLogFormat';
-import { trafficDenyLog } from '../log/trafficLog';
+import { type LoggedIdentity, trafficDenyLog } from '../log/trafficLog';
 import type { FortiDiagnostics } from './FortiDiagnostics';
 import { renderDebugFlow } from './debugFlowRenderer';
 import { renderIpropeList, renderIpropeShow } from './ipropeRenderer';
@@ -150,7 +150,9 @@ export function runExecuteLog(rest: readonly string[], deps: FortiDiagDeps): str
   return records.map(record => formatLogRecord(record, format, context)).join('\n');
 }
 
-export function deniedLog(context: PacketContext, now: number): FirewallLogDraft {
+export function deniedLog(
+  context: PacketContext, now: number, identity?: LoggedIdentity,
+): FirewallLogDraft {
   const packet = context.originalPacket as IPv4Packet;
   const ports = portsOf(packet);
 
@@ -166,6 +168,7 @@ export function deniedLog(context: PacketContext, now: number): FirewallLogDraft
     policyId: context.matchedPolicy?.implicit === false
       ? context.matchedPolicy.id
       : '0',
+    identity,
   });
 }
 

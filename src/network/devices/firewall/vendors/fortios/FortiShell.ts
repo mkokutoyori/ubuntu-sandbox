@@ -114,16 +114,20 @@ export class FortiShell {
     this.fw.setTrafficLogger({
       onSessionOpened: (session, rule) => {
         if (!shouldLogTrafficStart(rule)) return;
-        this.fw.getLogStore().append(
-          trafficStartLog({ session, rule, now: this.fw.now() }));
+        this.fw.getLogStore().append(trafficStartLog({
+          session, rule, now: this.fw.now(),
+          identity: this.loggedIdentity(session.c2s.sourceIP),
+        }));
       },
       onSessionClosed: (session, reason) => {
         const rule = session.policyId === undefined
           ? undefined
           : this.fw.getPolicyStore().byId(session.policyId);
         if (!shouldLogTraffic(rule)) return;
-        this.fw.getLogStore().append(
-          trafficCloseLog({ session, rule, now: this.fw.now() }, reason));
+        this.fw.getLogStore().append(trafficCloseLog({
+          session, rule, now: this.fw.now(),
+          identity: this.loggedIdentity(session.c2s.sourceIP),
+        }, reason));
       },
       onDenied: (context) => {
         const utm = context.utmVerdict === undefined
@@ -133,9 +137,23 @@ export class FortiShell {
         if (rule?.implicit === true && !this.logsImplicitDeny()) return;
         if (rule !== undefined && rule.implicit === false
           && !shouldLogTraffic(rule)) return;
-        this.fw.getLogStore().append(deniedLog(context, this.fw.now()));
+        this.fw.getLogStore().append(deniedLog(
+          context, this.fw.now(),
+          this.loggedIdentity((context.originalPacket as { sourceIP: { toString(): string } })
+            .sourceIP.toString())));
       },
     });
+  }
+
+  private loggedIdentity(address: string) {
+    const identity = this.fw.getIdentityTable().lookup(address);
+    if (!identity) return undefined;
+    return {
+      user: identity.user,
+      groups: identity.groups,
+      source: identity.source,
+      server: identity.server,
+    };
   }
 
   private clusterConfigurationText(): string {

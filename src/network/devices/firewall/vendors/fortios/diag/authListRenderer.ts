@@ -37,6 +37,9 @@ function renderIdentity(
     + `duration: ${table.durationOf(identity)}, idled: ${table.idleOf(identity)}`,
   ];
 
+  const policy = table.timeoutPolicy();
+  out.push(`\texpire: ${table.expiryOf(identity)}, allow-idle: ${policy.seconds}`);
+
   if (identity.source !== 'local' && identity.server !== undefined) {
     out.push(`\tserver: ${identity.server}`);
   }

@@ -424,6 +424,8 @@ export interface FortiLdapServerPatch {
 export interface FortiAuthSettingPatch {
   readonly timeoutMinutes: number;
   readonly timeoutType: string;
+  readonly secureHttp?: boolean;
+  readonly keepAlive?: boolean;
   readonly httpPort: number;
   readonly httpsPort: number;
 }
