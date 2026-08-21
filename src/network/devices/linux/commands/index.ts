@@ -44,6 +44,7 @@ import { updateCaCertificatesCommand } from './crypto/UpdateCaCertificates';
 import { nginxCommand } from './net/Nginx';
 import { rsyslogdCommand } from './net/Rsyslogd';
 import { apachectlCommand } from './net/Apachectl';
+import { dhcpdCommand, dhcpLeaseListCommand } from './net/Dhcpd';
 import {
   a2ensiteCommand, a2dissiteCommand, a2enmodCommand, a2dismodCommand,
 } from './net/A2enmod';
@@ -167,6 +168,8 @@ export {
   nginxCommand,
   rsyslogdCommand,
   apachectlCommand,
+  dhcpdCommand,
+  dhcpLeaseListCommand,
   a2ensiteCommand,
   a2dissiteCommand,
   a2enmodCommand,
@@ -308,6 +311,8 @@ export const CORE_LINUX_COMMANDS: readonly LinuxCommand[] = [
   nginxCommand,
   rsyslogdCommand,
   apachectlCommand,
+  dhcpdCommand,
+  dhcpLeaseListCommand,
   a2ensiteCommand,
   a2dissiteCommand,
   a2enmodCommand,

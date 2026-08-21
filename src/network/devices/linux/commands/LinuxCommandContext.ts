@@ -18,6 +18,7 @@ import type { LinuxCommandExecutor } from '../LinuxCommandExecutor';
 import type { LinuxNetKernel } from '../LinuxNetKernel';
 import type { DnsService } from '../LinuxDnsService';
 import type { Bind9Service } from '../bind9/Bind9Service';
+import type { LinuxDhcpdService } from '../dhcp/LinuxDhcpdService';
 import type { IpXfrmContext, IpLinkOpsContext, IpMaddrContext } from '../LinuxIpCommand';
 import type { LinuxProfile } from '../LinuxProfile';
 import type { LinuxFormatHelpers } from '../LinuxFormatHelpers';
@@ -41,6 +42,9 @@ export interface LinuxCommandContext {
 
   /** BIND 9 daemon co-located with this machine (named). */
   readonly bind9: Bind9Service;
+
+  /** ISC DHCP server co-located with this machine (dhcpd). */
+  readonly dhcpd?: LinuxDhcpdService;
 
   /** XFRM SAD/SPD context for `ip xfrm` commands. */
   readonly xfrm: IpXfrmContext;
