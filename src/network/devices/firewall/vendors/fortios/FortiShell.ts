@@ -63,14 +63,30 @@ export class FortiShell {
   private readonly nav: FortiNavigator;
   private readonly socle: FortiSocle;
   private readonly diagnostics = new FortiDiagnostics();
+  private seedFactoryCertificates(): void {
+    const spec = this.tree.spec(['vpn', 'certificate', 'local']);
+    if (!spec) return;
+    const table = this.tree.table(spec);
+    for (const name of this.fw.getCertificateStore().localNames()) {
+      const entry = this.fw.getCertificateStore().local(name);
+      if (!entry || entry.source !== 'factory') continue;
+      const object = table.ensure(name);
+      object.set('certificate', [entry.certificatePem]);
+      object.set('private-key', [entry.privateKeyPem]);
+      object.set('source', ['factory']);
+    }
+  }
+
   private vdom = 'root';
   private adminName: string | null = null;
   private globalScope = false;
+  private continuation: string | null = null;
 
   constructor(private readonly fw: FortiGate) {
     this.tree = new FortiConfigTree(schemaIndex());
     this.tree.bindScope(() => this.vdom);
     this.tree.bindPhysicalPorts((name) => this.fw.getPort(name) !== undefined);
+    this.seedFactoryCertificates();
     const validator = new FortiValidator(
       (target, name) => this.referenceExists(target, name));
     this.nav = new FortiNavigator({
@@ -171,6 +187,18 @@ export class FortiShell {
   }
 
   execute(rawLine: string): string {
+    if (this.continuation !== null) {
+      this.continuation = `${this.continuation}\n${rawLine}`;
+      if (hasOpenQuote(this.continuation)) return '';
+      const whole = this.continuation;
+      this.continuation = null;
+      return this.execute(whole);
+    }
+    if (hasOpenQuote(rawLine)) {
+      this.continuation = rawLine;
+      return '';
+    }
+
     const piped = splitPipe(rawLine.trim());
     if (piped.error !== null) return piped.error;
     if (piped.filter === null) return this.runLine(piped.command);
@@ -516,6 +544,32 @@ export class FortiShell {
     return runDiagnose(rest, this.diagDeps());
   }
 
+  private executeCertificate(rest: readonly string[]): string {
+    if (rest[0] !== 'local' || rest[1] !== 'export') {
+      return FortiMessages.commandFail(
+        'only `execute vpn certificate local export` is available here.');
+    }
+    const [destination, name, file, server] = rest.slice(2);
+    if (!destination || !name || !file) {
+      return FortiMessages.incomplete('a destination, a certificate name and a file name');
+    }
+    const entry = this.fw.getCertificateStore().local(name);
+    if (!entry) return FortiMessages.commandFail(`certificate "${name}" does not exist.`);
+
+    if (destination !== 'tftp') {
+      return FortiMessages.commandFail(
+        `destination "${destination}" is not available; this unit has no USB port `
+        + 'and no FTP client.');
+    }
+    if (!server) return FortiMessages.incomplete('a TFTP server address');
+
+    return FortiMessages.commandFail(
+      'this firewall has no UDP socket layer, so it can run no TFTP client — the '
+      + `certificate cannot be pushed to ${server}. Read it with \`show vpn `
+      + `certificate local ${name}\` and copy the PEM, which is what the GUI's `
+      + 'Download button hands you.');
+  }
+
   private executeVerb(rest: readonly string[]): string {
     if (rest.length === 0) return FortiMessages.incomplete('a command');
     if (rest[0] === 'log') return runExecuteLog(rest.slice(1), this.diagDeps());
@@ -531,6 +585,9 @@ export class FortiShell {
     if (rest[0] === 'traceroute') {
       if (rest.length < 2) return FortiMessages.incomplete('a destination');
       return this.fw.runTraceroute(rest[1]);
+    }
+    if (rest[0] === 'vpn' && rest[1] === 'certificate') {
+      return this.executeCertificate(rest.slice(2));
     }
     if (rest[0] === 'time') return runExecuteTime(rest.slice(1), this.fw);
     if (rest[0] === 'date') return runExecuteDate(rest.slice(1), this.fw);
@@ -600,6 +657,17 @@ export class FortiShell {
 
 function helpPrefix(input: string): string {
   return input.replace(/^\s+/, '');
+}
+
+function hasOpenQuote(text: string): boolean {
+  let quoted = false;
+  let escaped = false;
+  for (const character of text) {
+    if (escaped) { escaped = false; continue; }
+    if (character === '\\') { escaped = true; continue; }
+    if (character === '"') quoted = !quoted;
+  }
+  return quoted;
 }
 
 function splitTokens(line: string): string[] {

@@ -13,7 +13,7 @@ import { encodeRequest, parseResponse, type Http1EncodeOptions } from '../http1/
 import { TlsClientSession, type TlsClientConfig } from '@/network/tls/TlsClientSession';
 import type { X509Certificate } from '@/network/pki/X509Certificate';
 import type { TlsRecord } from '@/network/tls/recordLayer';
-import { encodeRecords, decodeRecords } from './TlsRecordWire';
+import { encodeRecords, decodeRecords, runTlsHandshakeOverSocket } from './TlsRecordWire';
 import { encryptApplicationData, decryptApplicationData } from './ApplicationDataCipher';
 import { HstsStore } from './HstsStore';
 import type { IEventBus } from '@/events/EventBus';
@@ -66,17 +66,6 @@ export class HttpsClientSession {
     this.hstsStore = hstsStore ?? new HstsStore();
   }
 
-  private handshakeOverSocket(socket: TcpSocket, tls: TlsClientSession): void {
-    const unsubscribe = socket.onData((data) => {
-      if (tls.result !== null) return;
-      const incoming = decodeRecords(binaryStringToBytes(String(data)));
-      const nextFlight = tls.handle(incoming);
-      if (nextFlight && nextFlight.length > 0) socket.write(bytesToBinaryString(encodeRecords(nextFlight)));
-    });
-    const firstFlight = tls.start();
-    socket.write(bytesToBinaryString(encodeRecords(firstFlight)));
-    unsubscribe();
-  }
 
   private connectIfNeeded(): boolean {
     if (this.socket && this.socket.state === 'established' && this.tls?.result === 'success') return true;
@@ -85,7 +74,7 @@ export class HttpsClientSession {
     if (!socket || socket.state !== 'established') return false;
 
     const tls = new TlsClientSession({ ...this.tlsConfig, alpn: this.tlsConfig.alpn ?? ['http/1.1'] });
-    this.handshakeOverSocket(socket, tls);
+    runTlsHandshakeOverSocket(socket, tls);
 
     if (tls.result !== 'success') {
       socket.close();

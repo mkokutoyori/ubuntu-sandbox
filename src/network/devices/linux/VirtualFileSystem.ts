@@ -162,7 +162,9 @@ export class VirtualFileSystem {
     // Real directories under /usr; top-level /bin, /sbin, /lib, /lib64 are symlinks
     const dirs = [
       '/usr', '/usr/bin', '/usr/sbin', '/usr/lib', '/usr/lib64',
-      '/usr/local', '/usr/local/bin',
+      '/usr/local', '/usr/local/bin', '/usr/local/share', '/usr/local/share/ca-certificates',
+      '/usr/share', '/usr/share/ca-certificates',
+      '/etc/ssl', '/etc/ssl/certs', '/etc/ssl/private',
       '/etc', '/etc/cron.hourly', '/etc/cron.daily', '/etc/cron.weekly', '/etc/cron.monthly', '/etc/cron.d',
       '/etc/sudoers.d',
       '/etc/ufw', '/etc/ufw/applications.d',

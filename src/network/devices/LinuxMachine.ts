@@ -2384,6 +2384,7 @@ export abstract class LinuxMachine extends EndHost
       net: this.net,
       netConfig: this.executor.netConfig,
       tlsTrustAnchors: this.trustedCAs,
+      addTlsTrustAnchor: (cert) => { this.addTrustedCertificateAuthority(cert); },
       dnsService: this.dnsService,
       bind9: this.bind9,
       xfrm: this.xfrmCtx,

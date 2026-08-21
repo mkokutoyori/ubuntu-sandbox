@@ -40,6 +40,7 @@ import { curlCommand } from './net/Curl';
 import { scpCommand } from './net/Scp';
 import { sftpCommand } from './net/Sftp';
 import { opensslCommand } from './crypto/OpenSsl';
+import { updateCaCertificatesCommand } from './crypto/UpdateCaCertificates';
 import { nginxCommand } from './net/Nginx';
 import { rsyslogdCommand } from './net/Rsyslogd';
 import { apachectlCommand } from './net/Apachectl';
@@ -162,6 +163,7 @@ export {
   scpCommand,
   sftpCommand,
   opensslCommand,
+  updateCaCertificatesCommand,
   nginxCommand,
   rsyslogdCommand,
   apachectlCommand,
@@ -302,6 +304,7 @@ export const CORE_LINUX_COMMANDS: readonly LinuxCommand[] = [
   scpCommand,
   sftpCommand,
   opensslCommand,
+  updateCaCertificatesCommand,
   nginxCommand,
   rsyslogdCommand,
   apachectlCommand,

@@ -17,6 +17,7 @@ import { IdentityTable } from '../identity/IdentityTable';
 import { UserDirectory } from '../identity/UserDirectory';
 import { IpsecTunnelTable } from '../vpn/IpsecTunnelTable';
 import { CertificateStore } from '../vpn/CertificateStore';
+import { seedFactoryCertificates } from '../vpn/FactoryCertificates';
 import { NetworkOsCredentialStore } from '../../router/aaa/NetworkOsCredentialStore';
 import type { ConnectedRoute } from '../l3/InterfaceTable';
 import type { IEventBus } from '../../../../events/EventBus';
@@ -225,7 +226,7 @@ export class VdomRegistry {
           this.deps.onTunnelInterface?.(name, tunnel, boundTo),
         onInterfaceRemoved: (tunnel) => this.deps.onTunnelRemoved?.(name, tunnel),
       }),
-      certificates: new CertificateStore(),
+      certificates: buildCertificateStore(this.deps.now()),
       users: new UserDirectory({
         credentials: new NetworkOsCredentialStore({
           deviceId: `${this.deps.deviceId}:${name}`,
@@ -236,4 +237,10 @@ export class VdomRegistry {
       settings,
     });
   }
+}
+
+function buildCertificateStore(now: number): CertificateStore {
+  const store = new CertificateStore();
+  seedFactoryCertificates(store, now);
+  return store;
 }

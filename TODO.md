@@ -97,6 +97,48 @@ famille reprise ferme une part de cette entrée.
 
 ## Pare-feu FortiGate
 
+### [transport] le pare-feu n'a AUCUNE couche de socket UDP
+`Firewall` porte une pile TCP (`getTcpStack()`), s'en sert pour BGP, le
+portail captif, la CLI et desormais l'inspection profonde — mais rien
+cote UDP : le client DNS fabrique et observe des paquets IPv4 bruts, et
+il n'existe ni `udpBind` ni `sendUdpDatagramTo`. Consequence directe :
+`TftpClientSession` (reel, et deja utilise par Cisco) ne peut pas
+tourner sur un FortiGate, donc `execute vpn certificate local export
+tftp` refuse en nommant la brique au lieu de transferer.
+**Mesure** : `grep -rn "udpBind" src/network/devices/firewall` ne rend
+rien ; `execute vpn certificate local export tftp Fortinet_CA_SSL f.cer
+192.168.10.10` repond « no UDP socket layer ».
+**Report** : c'est une couche de transport a ecrire, pas une commande ;
+elle debloquerait aussi un vrai client NTP et le transfert de
+configuration.
+
+### [inspection] la charge processeur est DECLAREE, pas mesuree
+`get system performance status` et `diagnose sys top` lisent maintenant
+les MEMES faits (`diag/systemLoad.ts`), donc les deux vues ne peuvent
+plus se contredire — mais ces faits sont constants : 100 % de repos et
+zero octet de memoire utilise. L'etape 10 du TP 15 demande d'observer la
+charge monter avec l'inspection profonde ; elle ne monte pas.
+**Mesure** : ouvrir dix sessions HTTPS a travers un profil
+`deep-inspection` ne change pas une ligne de `get system performance
+status`.
+**Report** : il n'existe aucun modele de cout processeur dans ce
+simulateur ; en inventer un ferait afficher un chiffre que rien ne
+soutient. Le meme raisonnement que `NO_WIRE_CLOCK` pour les limiteurs de
+debit.
+
+### [tls] l'inspection profonde relaie un aller-retour a la fois
+`SslDeepInspection.terminate()` dechiffre l'ecriture du client, la
+rechiffre vers le serveur, attend la reponse dans le meme tour et la
+renvoie. Cela suffit a HTTP/1.1 en mode requete-reponse (c'est ainsi que
+`HttpsClientSession` ecrit deja), mais une session qui recevrait du
+serveur sans que le client ait ecrit, ou deux requetes en pipeline, ne
+sont pas relayees.
+**Mesure** : le TP 15 passe parce que `openssl s_client` et `curl`
+ecrivent avant de lire.
+**Report** : le relai bidirectionnel permanent demande une boucle
+d'evenements que la livraison synchrone de trames ne fournit pas ici ;
+c'est le meme plafond que le relai `portproxy` de Windows.
+
 ### [journaux] le tutoriel se trompe sur la categorie 1
 Le tutoriel ecrit que `execute log filter category 1` designe les
 journaux UTM. Sur une vraie machine la categorie 1 est `event` ; les

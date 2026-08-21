@@ -258,10 +258,14 @@ export function buildCommitDevice(fw: Firewall): FortiCommitDevice {
         fw.getUtmProfiles().setSslSsh({
           name: profile.name,
           httpsMode: profile.httpsMode === 'certificate-inspection'
-            ? 'certificate-inspection'
+            || profile.httpsMode === 'deep-inspection'
+            ? profile.httpsMode
             : 'disable',
           httpsPorts: [...profile.httpsPorts],
           caName: profile.caName,
+          untrustedCaName: profile.untrustedCaName,
+          serverCertMode: profile.serverCertMode,
+          exemptions: profile.exemptions?.map(entry => ({ ...entry })),
           comment: profile.comment,
         });
       },

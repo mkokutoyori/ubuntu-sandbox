@@ -1,3 +1,4 @@
+import type { X509Certificate } from '@/network/pki/X509Certificate';
 /**
  * docs/PRD-OpenSSL.md §6 — le port étroit que la plateforme remplit.
  *
@@ -11,6 +12,11 @@
  * directement : sans cela `openssl rand` n'est pas testable et `genrsa`
  * rend une clé différente à chaque exécution du même scénario.
  */
+
+export type TlsPeerProbe =
+  | { readonly ok: true; readonly certificate: X509Certificate | null;
+      readonly cipherSuite: string | null; readonly verified: boolean }
+  | { readonly ok: false; readonly reason: string };
 
 export interface OpenSslHost {
   readFile(path: string): string | null;
@@ -35,6 +41,16 @@ export interface OpenSslHost {
    * `sudo openssl`, qui reste sur le chemin synchrone.
    */
   tcpConnect(ip: string, port: number): 'open' | 'refused' | 'timeout';
+
+  /**
+   * La chaine REELLEMENT presentee par le pair, obtenue en deroulant la
+   * poignee de main que `HttpsClientSession` deroule deja — meme pilote
+   * (`runTlsHandshakeOverSocket`), donc `s_client` et `curl` ne peuvent pas
+   * decrire deux certificats differents pour le meme serveur.
+   */
+  tlsPeerCertificate?(
+    ip: string, port: number, servername?: string,
+  ): TlsPeerProbe;
 
   /** Résolution par `/etc/hosts` — synchrone, pour la même raison. */
   resolveHost(nom: string): string | null;

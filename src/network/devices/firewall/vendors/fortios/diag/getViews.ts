@@ -1,3 +1,4 @@
+import { cpuStatesLine, memoryLine, FORTI_VM_CPUS } from './systemLoad';
 import { renderTable, FIXED_TABLE } from '../../../../shells/cli/TextTable';
 import type { InterfaceTable } from '../../../l3/InterfaceTable';
 import type { FirewallRoute, RouteTable } from '../../../l3/RouteTable';
@@ -56,7 +57,19 @@ export function renderPerformanceStatus(facts: PerformanceFacts): string {
   const hours = Math.floor((seconds % 86400) / 3600);
   const minutes = Math.floor((seconds % 3600) / 60);
 
+  const cpus: string[] = [cpuStatesLine('CPU')];
+  for (let i = 0; i < FORTI_VM_CPUS; i++) cpus.push(cpuStatesLine(`CPU${i}`));
+
   return [
+    ...cpus,
+    memoryLine(),
+    `Average network usage: 0 / 0 kbps in 1 minute, 0 / 0 kbps in 10 minutes, `
+      + `0 / 0 kbps in 30 minutes`,
+    `Average sessions: ${facts.sessions.active} sessions in 1 minute, `
+      + `${facts.sessions.active} sessions in 10 minutes, `
+      + `${facts.sessions.active} sessions in 30 minutes`,
+    `Virus caught: 0 total in 1 minute`,
+    `IPS attacks blocked: 0 total in 1 minute`,
     `Current sessions: ${facts.sessions.active}`,
     `Total sessions created: ${facts.sessions.created}`,
     `Total sessions closed: ${facts.sessions.closed}`,

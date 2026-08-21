@@ -76,6 +76,7 @@ import type { ManagementCli } from './mgmt/FirewallCliServer';
 import { ManagementPlane } from './mgmt/ManagementPlane';
 import type { ManagementPorts } from './mgmt/ManagementAccess';
 import type { CaptivePortalRedirect } from './auth/CaptivePortalRedirect';
+import { SslDeepInspection } from './inspection/SslDeepInspection';
 import type { NtpAgent } from '../../ntp/NtpAgent';
 import { FirewallPing, type FirewallPingEgress } from './diag/FirewallPing';
 import { buildEchoRequest } from './l3/IcmpEcho';
@@ -150,6 +151,14 @@ export class Firewall extends Equipment {
   private readonly l3: L3Services;
   private readonly ntp: FirewallNtp;
   private readonly captivePortal: CaptivePortalRedirect;
+  private readonly deepInspection = new SslDeepInspection({
+    tcp: () => this.tcp,
+    localCertificate: (name) => this.getCertificateStore().local(name),
+    trustAnchors: () => this.getCertificateStore().trustAnchors(),
+    matchesAddress: (name, candidate) =>
+      this.getObjectStore().matchesAddress(name, candidate),
+    now: () => this.services.now(),
+  });
   private readonly management: ManagementPlane;
 
   private readonly haService: FirewallHa;
@@ -795,6 +804,11 @@ export class Firewall extends Equipment {
     }
     if (decision.kind === 'local') { this.deliverLocally(portName, packet); return; }
 
+    if (this.deepInspection.owns(packet)) {
+      this.deepInspection.resume(portName, packet);
+      return;
+    }
+
     const context = makePacketContext({
       ingressPort: portName, packet, arrivedAt: this.services.now(),
       ingressFrameDestination: frame?.dstMAC,
@@ -810,11 +824,38 @@ export class Firewall extends Equipment {
     }
 
     const forwarded = outcome.payload ?? context;
+    if (this.interceptForDeepInspection(portName, packet, context)) return;
     if (forwarded.egressPort === undefined) return;
     this.forward(forwarded.egressPort, forwarded.packet as IPv4Packet,
       forwarded.policyRouteGateway,
       bridgedFrameOf(frame, forwarded.bridged === true
         || vdom.settings.opmode === 'transparent'));
+  }
+
+  getDeepInspection(): SslDeepInspection { return this.deepInspection; }
+
+  private interceptForDeepInspection(
+    portName: string, packet: IPv4Packet, context: PacketContext,
+  ): boolean {
+    const rule = context.matchedPolicy;
+    const name = rule?.sslSshProfile;
+    if (!name) return false;
+    const profile = this.getUtmProfiles().getSslSsh(name);
+    if (!profile || profile.httpsMode !== 'deep-inspection') return false;
+
+    return this.deepInspection.capture(portName, packet, {
+      name: profile.name,
+      ports: profile.httpsPorts,
+      caName: profile.caName,
+      untrustedCaName: profile.untrustedCaName ?? 'Fortinet_CA_Untrusted',
+      serverCertMode: profile.serverCertMode ?? 're-sign',
+      exemptions: (profile.exemptions ?? []).map(entry => ({
+        type: entry.type,
+        category: entry.category,
+        regex: entry.regex,
+        addressName: entry.addressName,
+      })),
+    });
   }
 
   private logPipelineOutcome(context: PacketContext, accepted: boolean): void {

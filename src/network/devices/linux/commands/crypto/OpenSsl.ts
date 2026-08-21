@@ -3,6 +3,7 @@ import type { LinuxCommandContext } from '../LinuxCommandContext';
 import { makeArgCompleter } from '../completionHelpers';
 import { runOpenSsl, OPENSSL_VERSION } from '@/network/crypto/openssl/OpenSslEngine';
 import type { OpenSslHost } from '@/network/crypto/openssl/OpenSslHost';
+import { probeTlsPeer } from '@/network/tls/tlsPeerProbe';
 
 /**
  * docs/PRD-OpenSSL.md — la porte Linux du moteur `openssl`.
@@ -34,6 +35,16 @@ function linuxOpenSslHost(ctx: LinuxCommandContext, stdin?: string): OpenSslHost
     // `nc` et `nmap` — `EndHost.tcpConnectOutcome`, synchrone parce que
     // la livraison de trames l'est dans ce simulateur.
     tcpConnect: (ip, port) => ctx.net.tcpConnectOutcome(ip, port),
+    tlsPeerCertificate: (ip, port, servername) => {
+      const sonde = probeTlsPeer(ctx.net.getTcpStack(), ip, port, {
+        servername, trustAnchors: ctx.tlsTrustAnchors,
+      });
+      if (!sonde.ok) return { ok: false, reason: sonde.reason ?? 'handshake failed' };
+      return {
+        ok: true, certificate: sonde.certificate,
+        cipherSuite: sonde.cipherSuite, verified: sonde.verified,
+      };
+    },
     resolveHost: (nom) => {
       const hosts = vfs.readFile('/etc/hosts') ?? '';
       for (const ligne of hosts.split('\n')) {

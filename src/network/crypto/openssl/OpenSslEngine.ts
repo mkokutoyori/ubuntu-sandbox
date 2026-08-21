@@ -1130,22 +1130,43 @@ function runSClient(host: OpenSslHost, argv: readonly string[]): OpenSslResult {
     ancre = pemToCert(t);
   }
 
+  const nomServeur = opts.get('-servername');
+  const sonde = host.tlsPeerCertificate?.(
+    ip, port, typeof nomServeur === 'string' ? nomServeur : undefined);
+
   lignes.push('---');
   lignes.push('Certificate chain');
-  if (ancre) {
+
+  if (sonde && sonde.ok === false) {
+    lignes.push(` (handshake failed: ${sonde.reason})`);
+    lignes.push('---');
+    lignes.push('Verification error: unable to complete the TLS handshake');
+    return ok(lignes.join('\n'));
+  }
+
+  const presente = sonde && sonde.ok ? sonde.certificate : null;
+  if (presente) {
+    lignes.push(` 0 s:${presente.subject}`);
+    lignes.push(`   i:${presente.issuer}`);
+  } else if (ancre) {
     lignes.push(` 0 s:${ancre.subject}`);
     lignes.push(`   i:${ancre.issuer}`);
   } else {
-    // Rien n'a été présenté et on le dit : inventer une chaîne serait
-    // apprendre à l'opérateur à faire confiance à un affichage.
     lignes.push(' (no peer certificate available in this simulator — '
       + 'pass -CAfile to display a known anchor; see docs/PRD-OpenSSL.md §P7)');
   }
   lignes.push('---');
-  lignes.push(`New, TLSv1.3, Cipher is ${MANDATORY_CIPHER_SUITES[1]}`);
-  const nomServeur = opts.get('-servername');
+  const suite = sonde && sonde.ok && sonde.cipherSuite
+    ? sonde.cipherSuite : MANDATORY_CIPHER_SUITES[1];
+  lignes.push(`New, TLSv1.3, Cipher is ${suite}`);
   if (typeof nomServeur === 'string') lignes.push(`Server name: ${nomServeur}`);
-  lignes.push(ancre ? 'Verification: OK' : 'Verification: not performed');
+  if (presente) {
+    lignes.push(sonde && sonde.ok && sonde.verified
+      ? 'Verification: OK'
+      : 'Verification error: unable to get local issuer certificate');
+  } else {
+    lignes.push(ancre ? 'Verification: OK' : 'Verification: not performed');
+  }
   return ok(lignes.join('\n'));
 }
 

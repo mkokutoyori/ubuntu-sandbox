@@ -501,7 +501,17 @@ export interface FortiSslSshPatch {
   readonly httpsMode: string;
   readonly httpsPorts: readonly number[];
   readonly caName: string;
+  readonly untrustedCaName?: string;
+  readonly serverCertMode?: string;
+  readonly exemptions?: readonly FortiSslExemptPatch[];
   readonly comment?: string;
+}
+
+export interface FortiSslExemptPatch {
+  readonly type: string;
+  readonly category?: number;
+  readonly regex?: string;
+  readonly addressName?: string;
 }
 
 export interface FortiProtocolOptionsPatch {

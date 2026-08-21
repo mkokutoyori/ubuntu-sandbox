@@ -82,6 +82,12 @@ export interface LinuxCommandContext {
   readonly tlsTrustAnchors: readonly X509Certificate[];
 
   /**
+   * `update-ca-certificates` — la seule porte par laquelle un certificat
+   * pose par l'operateur entre dans le magasin systeme.
+   */
+  readonly addTlsTrustAnchor?: (cert: X509Certificate) => void;
+
+  /**
    * The sshd daemon's *live, cached* effective configuration — reflects
    * the last (re)load of `/etc/ssh/sshd_config`, not necessarily the
    * file's current on-disk content (real sshd only re-reads its config on

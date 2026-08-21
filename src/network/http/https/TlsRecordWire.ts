@@ -67,3 +67,42 @@ export function decodeRecords(bytes: Uint8Array): TlsRecord[] {
   }
   return records;
 }
+
+export interface TlsHandshakeSocket {
+  onData(handler: (data: unknown) => void): () => void;
+  write(data: string): unknown;
+}
+
+export interface TlsHandshakeDriver {
+  start(): readonly TlsRecord[];
+  handle(records: readonly TlsRecord[]): readonly TlsRecord[] | null;
+  readonly result: 'success' | 'failure' | null;
+}
+
+function bytesToBinaryString(bytes: Uint8Array): string {
+  let out = '';
+  for (const b of bytes) out += String.fromCharCode(b);
+  return out;
+}
+
+function binaryStringToBytes(text: string): Uint8Array {
+  const bytes = new Uint8Array(text.length);
+  for (let i = 0; i < text.length; i++) bytes[i] = text.charCodeAt(i) & 0xff;
+  return bytes;
+}
+
+export function runTlsHandshakeOverSocket(
+  socket: TlsHandshakeSocket, tls: TlsHandshakeDriver,
+): void {
+  const unsubscribe = socket.onData((data) => {
+    if (tls.result !== null) return;
+    const incoming = decodeRecords(binaryStringToBytes(String(data)));
+    const nextFlight = tls.handle(incoming);
+    if (nextFlight && nextFlight.length > 0) {
+      socket.write(bytesToBinaryString(encodeRecords(nextFlight)));
+    }
+  });
+  const firstFlight = tls.start();
+  socket.write(bytesToBinaryString(encodeRecords(firstFlight)));
+  unsubscribe();
+}

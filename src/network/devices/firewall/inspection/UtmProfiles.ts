@@ -1,5 +1,5 @@
 export type UtmAction = 'allow' | 'block' | 'monitor';
-export type SslInspectionMode = 'disable' | 'certificate-inspection';
+export type SslInspectionMode = 'disable' | 'certificate-inspection' | 'deep-inspection';
 
 export interface AntivirusProfile {
   readonly name: string;
@@ -78,7 +78,17 @@ export interface SslSshProfile {
   readonly httpsMode: SslInspectionMode;
   readonly httpsPorts: readonly number[];
   readonly caName: string;
+  readonly untrustedCaName?: string;
+  readonly serverCertMode?: string;
+  readonly exemptions?: readonly SslExemptEntry[];
   readonly comment?: string;
+}
+
+export interface SslExemptEntry {
+  readonly type: string;
+  readonly category?: number;
+  readonly regex?: string;
+  readonly addressName?: string;
 }
 
 export interface ProtocolOptions {

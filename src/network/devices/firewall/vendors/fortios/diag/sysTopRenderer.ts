@@ -1,7 +1,7 @@
 import type { Firewall } from '../../../Firewall';
+import { sysTopCpuLine, FORTI_VM_MEMORY_MB, FORTI_VM_CPUS } from './systemLoad';
 
-export const FORTI_VM_MEMORY_MB = 1985;
-export const FORTI_VM_CPUS = 1;
+export { FORTI_VM_MEMORY_MB, FORTI_VM_CPUS };
 
 export interface FortiProcess {
   readonly name: string;
@@ -44,8 +44,7 @@ function runTime(uptimeMs: number): string {
 export function renderSysTop(fw: Firewall): string {
   const lines = [
     runTime(fw.getUptimeMs()),
-    `0U, 0N, 0S, 100I, 0WA, 0HI, 0SI, 0ST;`
-    + ` ${FORTI_VM_MEMORY_MB}T, ${FORTI_VM_MEMORY_MB}F`,
+    sysTopCpuLine(),
   ];
   for (const process of processTable(fw)) {
     lines.push(`        ${process.name.padEnd(16)}${String(process.pid).padStart(4)}`

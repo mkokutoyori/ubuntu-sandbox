@@ -1,5 +1,5 @@
 import {
-  choice, count, enable, text, word,
+  choice, count, enable, reference, text, word,
   type FortiObjectView, type FortiTableSpec,
 } from './types';
 import { APPLICATION_SIGNATURES } from '../../../inspection/ApplicationSignatures';
@@ -12,13 +12,6 @@ const NO_SIGNATURES = 'this simulator has no FortiGuard signature database, and 
 const NO_WIRE_CLOCK = 'frames are delivered synchronously, with no wire clock, so a '
   + 'shaper cannot slow anything down. Counting without limiting would let a learner '
   + 'believe the limit applies.';
-
-const NO_TLS_TERMINATION = 'deep inspection terminates the client session and '
-  + 're-originates it towards the server under a certificate re-signed by the '
-  + 'FortiGate CA. This firewall forwards packets and holds no TCP or TLS '
-  + 'termination point, so it can present no certificate of its own and the '
-  + 'session would stay encrypted while the CLI claimed it was decrypted. Use '
-  + '`certificate-inspection`, which reads the SNI of the real ClientHello.';
 
 const SCAN_ACTIONS = [
   { keyword: 'block', description: 'Block the infected file.' },
@@ -324,9 +317,49 @@ export const SSL_SSH_PROFILE: FortiTableSpec = {
   attributes: [
     { ...word('name', 'Profile name.'), readOnly: true },
     text('comment', 'Comment.'),
-    word('caname', 'CA certificate used by SSL inspection.', 'Fortinet_CA_SSL'),
+    choice('server-cert-mode', 'How the server certificate is handled.', [
+      { keyword: 're-sign', description: 'Re-sign the server certificate with the CA below.' },
+      { keyword: 'replace', description: 'Replace it with a certificate of this FortiGate.' },
+    ], 're-sign'),
+    reference('caname', 'CA certificate used by SSL inspection.',
+      ['vpn certificate local'], 'Fortinet_CA_SSL'),
+    reference('untrusted-caname', 'CA used when the server certificate is untrusted.',
+      ['vpn certificate local'], 'Fortinet_CA_Untrusted'),
+    reference('server-cert', 'Certificate presented under `replace` mode.',
+      ['vpn certificate local']),
+    choice('untrusted-cert', 'What to do with an untrusted server certificate.', [
+      { keyword: 'allow', description: 'Allow the session.' },
+      { keyword: 'block', description: 'Block the session.' },
+      { keyword: 'ignore', description: 'Ignore the server certificate.' },
+    ], 'allow'),
   ],
   children: [
+    {
+      path: ['ssl-exempt'],
+      kind: 'table',
+      keyType: 'integer',
+      ordered: false,
+      scope: 'vdom',
+      accessGroup: 'utmgrp',
+      renderOrder: 442,
+      help: 'Servers to exempt from SSL inspection.',
+      attributes: [
+        { ...word('id', 'Entry identifier.'), readOnly: true },
+        choice('type', 'Type of the exemption.', [
+          { keyword: 'fortiguard-category', description: 'Exempt a FortiGuard category.' },
+          { keyword: 'address', description: 'Exempt an IPv4 address object.' },
+          { keyword: 'address6', description: 'Exempt an IPv6 address object.' },
+          { keyword: 'wildcard-fqdn', description: 'Exempt a wildcard FQDN object.' },
+          { keyword: 'regex', description: 'Exempt hosts matching a regular expression.' },
+        ], 'fortiguard-category'),
+        count('fortiguard-category', 'FortiGuard category identifier.', 0, 255, 0),
+        reference('address', 'IPv4 address object to exempt.', ['firewall address']),
+        reference('address6', 'IPv6 address object to exempt.', ['firewall address6']),
+        reference('wildcard-fqdn', 'Wildcard FQDN object to exempt.',
+          ['firewall wildcard-fqdn custom']),
+        word('regex', 'Regular expression matched against the server name.'),
+      ],
+    },
     {
       path: ['https'],
       kind: 'object',
@@ -353,7 +386,6 @@ export const SSL_SSH_PROFILE: FortiTableSpec = {
               description: 'Intercept and decrypt the session.',
             },
           ], 'certificate-inspection'),
-          unimplementedValues: { 'deep-inspection': NO_TLS_TERMINATION },
         },
       ],
       onCommit() {},
@@ -367,6 +399,14 @@ export const SSL_SSH_PROFILE: FortiTableSpec = {
       httpsMode: declared,
       httpsPorts: channelPorts(object, 'https', 443),
       caName: object.effective('caname')[0] ?? 'Fortinet_CA_SSL',
+      untrustedCaName: object.effective('untrusted-caname')[0] ?? 'Fortinet_CA_Untrusted',
+      serverCertMode: object.effective('server-cert-mode')[0] ?? 're-sign',
+      exemptions: object.childEntries('ssl-exempt').map(entry => ({
+        type: entry.effective('type')[0] ?? 'fortiguard-category',
+        category: Number.parseInt(entry.effective('fortiguard-category')[0] ?? '0', 10),
+        regex: entry.effective('regex')[0] || entry.effective('wildcard-fqdn')[0] || undefined,
+        addressName: entry.effective('address')[0] || entry.effective('address6')[0] || undefined,
+      })),
       comment: object.effective('comment')[0] || undefined,
     });
   },
