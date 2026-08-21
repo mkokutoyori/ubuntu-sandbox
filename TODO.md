@@ -97,6 +97,21 @@ famille reprise ferme une part de cette entrée.
 
 ## Pare-feu FortiGate
 
+### [ospf] la base de donnees OSPF du pare-feu reste VIDE
+Un FortiGate forme une adjacence complete avec un routeur Cisco — les Hello
+traversent vraiment, l'etat atteint `Full` des deux cotes, et le ROUTEUR
+apprend les reseaux du pare-feu. L'inverse n'a pas lieu : la base du
+pare-feu ne contient AUCUN LSA, pas meme le sien, `runSPF()` rend une liste
+vide et `get router info routing-table ospf` ne montre jamais de route
+apprise. L'echange de bases (DD / LSR / LSU) n'a donc pas lieu de ce cote.
+**Mesure** : deux routeurs Cisco s'echangent `O* 0.0.0.0/0` par
+`default-information originate always` ; le meme laboratoire avec un
+FortiGate a la place du second n'installe rien, et
+`getOspf().getLSDB().routerLSAs` est vide.
+**Report** : c'est la moitie « base de donnees » d'OSPF sur le pare-feu, pas
+un reglage manquant — l'etape 4 du TP 19 (apprendre la route par defaut en
+`O*E2`) en depend entierement.
+
 ### [linux] la commande `ipsec` (strongSwan) est une FACADE
 `ipsec up <conn>` rend `initiating IKE_SA <conn>[1] to 0.0.0.0` — la chaine
 `0.0.0.0` est litterale, quelle que soit la configuration —, `ipsec status`

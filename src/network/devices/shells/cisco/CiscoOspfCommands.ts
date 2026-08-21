@@ -398,6 +398,7 @@ function adresseReseau(ip: string, wildcard: string): string {
     if (!ospf) return '% OSPF is not configured';
     ospf.setDefaultInformationOriginate(true);
     const extra = ctx.r()._getOSPFExtraConfig();
+    extra.defaultInfoAlways = args.some(a => a.toLowerCase() === 'always');
     // Check for metric-type argument
     for (let i = 0; i < args.length - 1; i++) {
       if (args[i] === 'metric-type') {

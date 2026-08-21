@@ -138,7 +138,8 @@ function prefixLength(mask: string): number {
     .reduce((total, bits) => total + bits, 0);
 }
 
-export type RoutingView = 'all' | 'static' | 'connected' | 'database';
+export type RoutingView = 'all' | 'static' | 'connected' | 'database'
+  | 'ospf' | 'rip' | 'bgp';
 
 export function renderRoutingTable(routes: RouteTable, view: RoutingView): string {
   if (view === 'database') return renderRoutingDatabase(routes);
@@ -185,6 +186,9 @@ export function renderRoutingDatabase(routes: RouteTable): string {
 function keptBy(view: RoutingView, route: FirewallRoute): boolean {
   if (view === 'static') return route.kind === 'static' || route.kind === 'default';
   if (view === 'connected') return route.kind === 'connected';
+  if (view === 'ospf' || view === 'rip' || view === 'bgp') {
+    return protocolLetter(route).toLowerCase().startsWith(view[0]);
+  }
   return true;
 }
 

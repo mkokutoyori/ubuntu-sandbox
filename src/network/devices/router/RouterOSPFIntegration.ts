@@ -47,6 +47,7 @@ export interface OSPFExtraConfig {
   shamLinks?: Map<string, { areaId: string; source: string; destination: string }>;
   distributeList?: { aclId?: string; prefixListName?: string; direction: 'in' | 'out' };
   defaultInfoMetricType?: number;
+  defaultInfoAlways?: boolean;
   pendingIfConfig: Map<string, {
     cost?: number; priority?: number;
     helloInterval?: number; deadInterval?: number;
@@ -1569,9 +1570,10 @@ export class RouterOSPFIntegration {
     const extra = this.extraConfig;
 
     if (this.ospfEngine.getConfig().defaultInformationOriginate) {
-      const hasDefault = this.ctx.getRoutingTable().some(rt =>
-        rt.type === 'default' || (rt.type === 'static' &&
-          rt.network.toString() === '0.0.0.0' && rt.mask.toString() === '0.0.0.0'));
+      const hasDefault = extra.defaultInfoAlways === true
+        || this.ctx.getRoutingTable().some(rt =>
+          rt.type === 'default' || (rt.type === 'static' &&
+            rt.network.toString() === '0.0.0.0' && rt.mask.toString() === '0.0.0.0'));
       if (hasDefault) {
         const metricType = (extra.defaultInfoMetricType ?? 2) as 1 | 2;
         this.ospfEngine.redistributeExternalRoute('0.0.0.0', '0.0.0.0', 1, metricType);

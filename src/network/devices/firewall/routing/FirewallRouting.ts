@@ -45,6 +45,12 @@ export type RoutingSource = 'rip' | 'ospf' | 'bgp';
 const RIP_DISTANCE = 120;
 const OSPF_DISTANCE = 110;
 
+function authTypeOf(mode: string | undefined): number {
+  if (mode === 'md5') return 2;
+  if (mode === 'text') return 1;
+  return 0;
+}
+
 export class FirewallRouting {
   private readonly bgpService: FirewallBgp;
   private rip: RIPEngine | null = null;
@@ -157,7 +163,7 @@ export class FirewallRouting {
     for (const matched of this.ospf.matchInterfaces(declared)) {
       const settings = this.ospfConfig.interfaces.find(
         entry => entry.iface === matched.name);
-      this.ospf.activateInterface(
+      const iface = this.ospf.activateInterface(
         matched.name, matched.ip, matched.mask, matched.areaId,
         settings === undefined ? undefined : {
           cost: settings.cost,
@@ -165,6 +171,14 @@ export class FirewallRouting {
           helloInterval: settings.helloIntervalSec,
           deadInterval: settings.deadIntervalSec,
         });
+
+      iface.authType = authTypeOf(settings?.authentication);
+      iface.authKey = iface.authType === 0
+        ? undefined : (settings?.md5Keys[0]?.key ?? '');
+
+      if (this.ospfConfig.passiveInterfaces.includes(matched.name)) {
+        this.ospf.setPassiveInterface(matched.name);
+      }
     }
   }
 

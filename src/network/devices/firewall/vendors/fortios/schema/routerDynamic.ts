@@ -110,6 +110,21 @@ const OSPF_NETWORK: FortiTableSpec = {
   ],
 };
 
+const OSPF_MD5_KEYS: FortiTableSpec = {
+  path: ['md5-keys'],
+  kind: 'table',
+  keyType: 'integer',
+  ordered: false,
+  scope: 'vdom',
+  accessGroup: 'netgrp',
+  renderOrder: 4,
+  help: 'MD5 key.',
+  attributes: [
+    { ...word('id', 'Key identifier.'), readOnly: true },
+    { ...text('key', 'Authentication key.'), quoted: true, secret: true },
+  ],
+};
+
 const OSPF_INTERFACE: FortiTableSpec = {
   path: ['router', 'ospf', 'ospf-interface'],
   kind: 'table',
@@ -131,7 +146,18 @@ const OSPF_INTERFACE: FortiTableSpec = {
       { keyword: 'point-to-point', description: 'Point to point.' },
       { keyword: 'non-broadcast', description: 'Non-broadcast multi-access.' },
     ], 'broadcast'),
+    choice('authentication', 'Authentication expected on this interface.', [
+      { keyword: 'none', description: 'No authentication.' },
+      { keyword: 'text', description: 'Cleartext password.' },
+      { keyword: 'md5', description: 'Keyed MD5 digest (RFC 2328 §D).' },
+    ], 'none'),
+    {
+      ...text('authentication-key', 'Cleartext authentication password.'),
+      quoted: true, secret: true,
+      availableWhen: (view) => view.effective('authentication')[0] === 'text',
+    },
   ],
+  children: [OSPF_MD5_KEYS],
 };
 
 export const ROUTER_OSPF: FortiTableSpec = {
@@ -143,6 +169,10 @@ export const ROUTER_OSPF: FortiTableSpec = {
   help: 'Configure OSPF.',
   attributes: [
     address('router-id', 'Router ID, in dotted form.', '0.0.0.0'),
+    {
+      ...text('passive-interface', 'Interfaces that listen without advertising.'),
+      multiValue: true,
+    },
     enable('distribute-list-in', 'Filter incoming routes.'),
   ],
   children: [OSPF_AREA, OSPF_NETWORK, OSPF_INTERFACE],
@@ -173,7 +203,13 @@ export const ROUTER_OSPF: FortiTableSpec = {
         deadIntervalSec: Number.parseInt(entry.effective('dead-interval')[0] ?? '40', 10),
         priority: Number.parseInt(entry.effective('priority')[0] ?? '1', 10),
         networkType: entry.effective('network-type')[0] ?? 'broadcast',
+        authentication: entry.effective('authentication')[0] ?? 'none',
+        md5Keys: entry.childEntries('md5-keys').map(key => ({
+          id: Number.parseInt(key.key, 10),
+          key: key.effective('key')[0] ?? '',
+        })),
       })),
+      passiveInterfaces: [...object.effective('passive-interface')],
       redistributeConnected: false,
       redistributeStatic: false,
     });

@@ -490,8 +490,9 @@ export class FortiShell {
     }
     if (path.startsWith('router info routing-table ')) {
       const view = path.slice('router info routing-table '.length);
-      if (view !== 'all' && view !== 'static'
-        && view !== 'connected' && view !== 'database') return null;
+      if (view !== 'all' && view !== 'static' && view !== 'connected'
+        && view !== 'database' && view !== 'ospf' && view !== 'rip'
+        && view !== 'bgp') return null;
       return renderRoutingTable(this.fw.getRouteTable(), view);
     }
     if (path === 'router info bgp summary') {
