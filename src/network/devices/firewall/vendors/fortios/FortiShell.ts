@@ -15,7 +15,9 @@ import type {
 } from './schema/types';
 import type { AccessIntent, AccessVerdict } from '../../authz/AccessMatrix';
 import { FortiConfigTree } from './runtime/FortiConfigTree';
-import { FortiNavigator, unquote } from './runtime/FortiNavigator';
+import {
+  FortiNavigator, unquote, type FortiConfigChange,
+} from './runtime/FortiNavigator';
 import { FortiValidator } from './runtime/FortiValidator';
 import { renderPath, renderWholeConfig } from './render/showRenderer';
 import { renderGet } from './render/getRenderer';
@@ -48,6 +50,7 @@ import {
 import { renderHaChecksum, renderHaStatus } from './diag/haRenderer';
 import type { FortiLogFormat } from './log/fortiLogFormat';
 import {
+  configChangeLog,
   shouldLogTraffic, shouldLogTrafficStart, trafficCloseLog, trafficStartLog,
 } from './log/trafficLog';
 import { utmLog } from './log/utmLog';
@@ -107,6 +110,7 @@ export class FortiShell {
       tree: this.tree,
       validator,
       commitContext: () => this.commitContext(),
+      onConfigured: (change) => { this.logConfigurationChange(change); },
     });
     this.socle = new FortiSocle({
       tree: this.tree,
@@ -690,6 +694,25 @@ export class FortiShell {
     }
     return FortiMessages.unknownPath(`ha ${rest.join(' ')}`);
   }
+
+  private logConfigurationChange(change: FortiConfigChange): void {
+    this.fw.getLogStore().append(configChangeLog({
+      now: this.fw.now(),
+      action: change.action,
+      path: change.path,
+      key: change.key,
+      attributes: change.attributes,
+      user: this.adminName ?? 'admin',
+      ui: this.administrativeInterface(),
+      transactionId: ++this.configTransactionId,
+    }));
+  }
+
+  private administrativeInterface(): string {
+    return 'jsconsole';
+  }
+
+  private configTransactionId = 0;
 
   private logsImplicitDeny(): boolean {
     return this.tree.setting('log setting', 'fwpolicy-implicit-log')[0] === 'enable';

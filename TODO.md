@@ -106,6 +106,30 @@ famille reprise ferme une part de cette entrée.
 
 ## Pare-feu FortiGate
 
+### [journal] l'origine d'une modification est toujours `jsconsole`
+L'evenement de configuration porte `user` — le compte reellement
+authentifie, ce qui est ce que l'etape 7 du TP 22 enseigne — mais son champ
+`ui` est constant. Un vrai FortiOS y ecrit d'ou la modification vient :
+`GUI(10.5.63.254)`, `ssh(10.5.63.254)`, `jsconsole`, `fgfm`.
+**Mesure** : modifier un objet depuis la console et depuis une session SSH
+donne la meme ligne.
+**Report** : le shell ne sait pas par quelle porte il est atteint —
+`FortiShell` est construit une fois par equipement et les sessions
+distantes le partagent. Le porter demande la meme notion de session que le
+`terminal monitor` de Cisco a exigee, et vaut mieux fait une fois pour
+toutes les vues que par une devinette ici.
+
+### [journal] le seuil de remplissage du tampon memoire n'alerte pas
+`full-first-warning-threshold`, `full-second-warning-threshold` et
+`full-final-warning-threshold` sont acceptes, rendus, et lus par personne.
+Sur une vraie machine, franchir chacun ecrit un evenement.
+**Mesure** : `set max-size 400` puis produire du trafic — le tampon est
+borne pour de bon (les plus anciennes lignes tombent), mais aucun
+evenement n'annonce le franchissement.
+**Report** : le tampon compte desormais ses octets, donc la matiere est la ;
+ce qui manque est le message exact et son `logid`, que je n'ai pas pu
+relever sur une sortie reelle depuis ce reseau.
+
 ### [ha] les adresses MAC VIRTUELLES du cluster n'existent pas
 FGCP donne a chaque interface du cluster une adresse MAC virtuelle, portee
 par le membre primaire : c'est ce qui rend le basculement invisible aux

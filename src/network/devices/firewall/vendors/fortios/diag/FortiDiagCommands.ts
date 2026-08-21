@@ -1,3 +1,4 @@
+import { conserveModeLines } from './systemLoad';
 import type { IPv4Packet } from '../../../../../core/types';
 import type { Firewall } from '../../../Firewall';
 import type { FirewallLogDraft } from '../../../logging/FirewallLogStore';
@@ -50,6 +51,12 @@ export function runDiagnose(rest: readonly string[], deps: FortiDiagDeps): strin
   if (family === 'vpn') return diagnoseVpn(tail, deps);
   if (family === 'ip') return diagnoseIp(tail, deps);
   if (family === 'test') return diagnoseTest(tail, deps);
+  if (family === 'hardware') {
+    if (tail[0] === 'sysinfo' && tail[1] === 'conserve') {
+      return conserveModeLines().join('\n');
+    }
+    return FortiMessages.unknownPath(`hardware ${tail.join(' ')}`);
+  }
   if (family === 'autoupdate') {
     if (tail[0] !== 'versions') {
       return FortiMessages.unknownPath(`autoupdate ${tail.join(' ')}`);

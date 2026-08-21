@@ -199,6 +199,7 @@ export interface FortiVdomSettings {
 export interface FortiMemoryLogPatch {
   readonly enabled?: boolean;
   readonly capacity?: number;
+  readonly maxBytes?: number;
 }
 
 export interface FortiCommitDevice {

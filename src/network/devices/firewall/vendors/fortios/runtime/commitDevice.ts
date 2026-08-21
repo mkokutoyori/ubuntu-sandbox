@@ -359,6 +359,7 @@ export function buildCommitDevice(fw: Firewall): FortiCommitDevice {
       },
       applyMemoryLog(patch) {
         if (patch.capacity !== undefined) fw.getLogStore().setCapacity(patch.capacity);
+        if (patch.maxBytes !== undefined) fw.getLogStore().setMaxBytes(patch.maxBytes);
         if (patch.enabled === false) fw.getLogStore().clear();
       },
   };
