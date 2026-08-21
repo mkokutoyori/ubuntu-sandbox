@@ -13,4 +13,5 @@ export interface PolicyProbe {
   readonly application?: string;
   readonly urlCategory?: string;
   readonly destinationTranslated?: boolean;
+  readonly destinationNatRuleId?: string;
 }

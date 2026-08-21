@@ -7,6 +7,7 @@ export const CAPTURED_HTTP_PORT = 80;
 export interface CaptivePortalDeps {
   readonly tcp: () => TcpStack;
   readonly portalPort: () => number;
+  readonly portalScheme?: () => 'http' | 'https';
   readonly connectedRoutes: () => ReadonlyArray<{
     network: string; mask: string; iface: string;
   }>;
@@ -84,7 +85,8 @@ export class CaptivePortalRedirect {
       if (((target & mask) >>> 0) !== ((network & mask) >>> 0)) continue;
 
       const address = this.deps.addressOf(route.iface);
-      if (address !== undefined) return `http://${address}:${this.deps.portalPort()}`;
+      const scheme = this.deps.portalScheme?.() ?? 'http';
+      if (address !== undefined) return `${scheme}://${address}:${this.deps.portalPort()}`;
     }
     return undefined;
   }

@@ -95,6 +95,138 @@ sur `CommandTrie`.
 **Report** : la migration est incrémentale par construction ; chaque
 famille reprise ferme une part de cette entrée.
 
+## Pare-feu FortiGate
+
+### [ipsec] la RESTRICTION des selecteurs n'est pas implementee
+RFC 7296 §2.9 laisse un repondeur RETRECIR les selecteurs proposes : si
+l'initiateur demande 10.0.0.0/8 et que le repondeur ne couvre que
+10.1.0.0/16, il repond avec le plus petit des deux et l'enfant s'etablit.
+Le depot n'accepte que le cas MIROIR exact — deux selecteurs identiques a
+l'envers — et refuse tout le reste par `TS_UNACCEPTABLE`.
+**Mesure** : deux phases 2 dont l'une est un sur-ensemble de l'autre
+donnent `selectors(total,up): 1/0` alors qu'une vraie machine monterait
+l'enfant sur l'intersection.
+**Report** : le retrecissement demande de calculer une intersection de
+prefixes et de la RENVOYER dans l'acceptation, donc de porter les
+selecteurs retenus jusqu'a l'initiateur ; le cas miroir est celui de tous
+les laboratoires site-a-site et il est desormais juste.
+
+### [ipsec] `diagnose debug application ike -1` ne trace rien
+L'etape 10 du TP 17 fait lire le journal IKE pour reconnaitre un echec de
+phase 1. `diagnose debug application ike` n'existe pas : le refus est
+observable par `diagnose vpn ike gateway list` (`IKE SA: created 0/0`) et
+par `get vpn ipsec tunnel summary`, mais pas par une trace ligne a ligne.
+**Mesure** : un secret partage discordant donne `IKE SA: created 0/0` et
+aucune ligne de trace.
+**Report** : il faudrait un canal de trace par application dans le moteur
+IKE partage, que ni Cisco ni Huawei n'ont ici non plus — c'est un sujet
+commun aux trois constructeurs, pas une commande FortiOS.
+
+### [identite] `diagnose firewall auth list` ne rend pas la ligne `flag(...)`
+Une vraie machine ecrit `flag(10): auth` ou `flag(30): radius idle` — un
+masque de bits decrivant l'etat de la session d'authentification. La vue
+rend desormais `expire:` et `allow-idle:`, qui sont des MESURES, mais pas
+le drapeau : ce depot n'a aucun masque de bits derriere cet etat, et
+recopier `flag(10)` serait afficher un nombre que rien ne soutient.
+**Mesure** : `diagnose firewall auth list` rend l'adresse, le nom, le
+type, la duree, l'inactivite, l'expiration, les compteurs et les groupes.
+**Report** : il faudrait d'abord modeliser les etats qu'un drapeau
+distingue (`auth`, `idle`, `radius`, `src_idle`), ce qui est un sujet a
+part.
+
+### [transport] le pare-feu n'a AUCUNE couche de socket UDP
+`Firewall` porte une pile TCP (`getTcpStack()`), s'en sert pour BGP, le
+portail captif, la CLI et desormais l'inspection profonde — mais rien
+cote UDP : le client DNS fabrique et observe des paquets IPv4 bruts, et
+il n'existe ni `udpBind` ni `sendUdpDatagramTo`. Consequence directe :
+`TftpClientSession` (reel, et deja utilise par Cisco) ne peut pas
+tourner sur un FortiGate, donc `execute vpn certificate local export
+tftp` refuse en nommant la brique au lieu de transferer.
+**Mesure** : `grep -rn "udpBind" src/network/devices/firewall` ne rend
+rien ; `execute vpn certificate local export tftp Fortinet_CA_SSL f.cer
+192.168.10.10` repond « no UDP socket layer ».
+**Report** : c'est une couche de transport a ecrire, pas une commande ;
+elle debloquerait aussi un vrai client NTP et le transfert de
+configuration.
+
+### [inspection] la charge processeur est DECLAREE, pas mesuree
+`get system performance status` et `diagnose sys top` lisent maintenant
+les MEMES faits (`diag/systemLoad.ts`), donc les deux vues ne peuvent
+plus se contredire — mais ces faits sont constants : 100 % de repos et
+zero octet de memoire utilise. L'etape 10 du TP 15 demande d'observer la
+charge monter avec l'inspection profonde ; elle ne monte pas.
+**Mesure** : ouvrir dix sessions HTTPS a travers un profil
+`deep-inspection` ne change pas une ligne de `get system performance
+status`.
+**Report** : il n'existe aucun modele de cout processeur dans ce
+simulateur ; en inventer un ferait afficher un chiffre que rien ne
+soutient. Le meme raisonnement que `NO_WIRE_CLOCK` pour les limiteurs de
+debit.
+
+### [tls] l'inspection profonde relaie un aller-retour a la fois
+`SslDeepInspection.terminate()` dechiffre l'ecriture du client, la
+rechiffre vers le serveur, attend la reponse dans le meme tour et la
+renvoie. Cela suffit a HTTP/1.1 en mode requete-reponse (c'est ainsi que
+`HttpsClientSession` ecrit deja), mais une session qui recevrait du
+serveur sans que le client ait ecrit, ou deux requetes en pipeline, ne
+sont pas relayees.
+**Mesure** : le TP 15 passe parce que `openssl s_client` et `curl`
+ecrivent avant de lire.
+**Report** : le relai bidirectionnel permanent demande une boucle
+d'evenements que la livraison synchrone de trames ne fournit pas ici ;
+c'est le meme plafond que le relai `portproxy` de Windows.
+
+### [dns] `dns-service default` : la semantique exacte n'est pas verifiee
+Trois valeurs existent — `local` (le pare-feu lui-meme), `default` (les
+serveurs de `config system dns`) et `specify` (ceux nommes sous le
+serveur DHCP). `local` et `specify` sont sans ambiguite ; `default` est
+implemente comme « les serveurs systeme », mais la documentation
+Fortinet accessible depuis ce reseau ne dit pas si un vrai FortiGate
+distribue plutot sa PROPRE adresse quand le role de serveur DNS est
+active sur l'interface.
+**Mesure** : le laboratoire du TP 10 doit poser `dns-service local` pour
+que le poste resolve la zone locale.
+**Report** : trancher demande une vraie machine ; choisir au jugé
+donnerait un comportement plausible et invérifiable.
+
+### [politique] `get firewall policy` ne compte pas
+Le tutoriel ecrit que cette commande affiche les octets et les paquets de
+chaque politique. Elle rend la liste `== [ N ]` des cles, qui est la
+forme reelle d'un `get` sur une table sans cle, et les compteurs se
+lisent par `diagnose firewall iprope show`.
+**Mesure** : `get firewall policy` rend deux lignes par politique ;
+`diagnose firewall iprope show 100004 2` rend `hit count:` et il
+progresse.
+**Report** : je n'ai pas pu confronter la sortie reelle d'une machine
+(documentation Fortinet inaccessible depuis ce reseau), et inventer une
+sortie que le vrai produit ne rend pas serait pire que la difference.
+`renderFirewallPolicy`, un TROISIEME rendu de cette table qui n'avait
+aucun appelant, est supprime plutot que branche.
+
+### [heure] la table des fuseaux FortiOS est incomplete
+`set timezone` accepte desormais un nom IANA (verifie contre la VRAIE
+base de fuseaux du moteur) et un indice historique <0-86>. La
+correspondance indice -> nom n'est ecrite que pour les huit indices que
+la documentation publique atteste ; un autre indice est accepte, rendu,
+et resolu en UTC.
+**Mesure** : `set timezone 37` est accepte et `execute time` rend l'heure
+UTC.
+**Report** : la liste complete ne se lit que sur une vraie machine
+(`set timezone ?`), et l'inventer donnerait 79 correspondances fausses —
+pire que l'aveu.
+
+### [admin] pas d'interface d'administration HTTP/HTTPS
+`set allowaccess http https` est accepte, rendu, et gouverne bien le
+filtrage TCP (`ManagementPlane.admitsTcp` refuse le port), mais RIEN
+n'ecoute derriere : aucun serveur qui servirait la page de connexion que
+le TP 1 fait ouvrir sur `http://192.168.100.99`.
+**Mesure** : le TP 1 demande d'ouvrir l'adresse dans un navigateur ; la
+seule brique HTTP du pare-feu est `AuthPortal` (portail captif), qui
+n'est pas monte sur les ports d'administration.
+**Report** : `Http1ServerSession` existe et le portail captif montre le
+chemin ; il manque le serveur d'administration lui-meme et ses pages,
+sujet en soi et non une commande de plus.
+
 ## Serveurs DHCP
 
 ### [dhcp] une machine Linux ne peut pas SERVIR le DHCP
@@ -108,15 +240,42 @@ de niveau 3.
 unité systemd, journal) — la brique serveur existe, c'est l'enveloppe
 Linux qui manque.
 
-### [dhcp] pas de détection de conflit d'adresse côté serveur
-Un pool qui couvre l'adresse du serveur lui-même la propose : les
-laboratoires doivent poser `ip dhcp excluded-address`. Le vrai IOS teste
-l'adresse par deux pings avant de l'offrir.
-**Mesure** : sans `excluded-address`, le client reçoit `192.168.51.1`,
-l'adresse du serveur.
+### [dhcp] le serveur n'écarte que SES PROPRES adresses, pas celles d'un squatteur
+Un serveur ne propose plus une adresse qu'il porte lui-même
+(`setServerOwnedAddresses`, alimenté par `Router` et par le rôle
+Windows). Ce qui reste absent est le cas général : une adresse de la
+plage occupée par une machine configurée en statique. Le vrai IOS la
+teste par deux pings avant de l'offrir.
+**Mesure** : un pool couvrant l'adresse du serveur ne la distribue plus ;
+une adresse tenue par un tiers l'est encore.
 **Report** : demande un aller-retour ICMP synchrone dans le chemin
-d'offre ; `setAddressConflictChecker` existe côté CLIENT et n'a pas de
-pendant côté serveur.
+d'offre. `isAddressInUse` existe dans `DhcpServerExchange` et n'est
+consulté que si `ip dhcp ping packets` > 0, réglage qui n'a pas
+d'équivalent Windows.
+
+### [dhcp] Windows : le basculement et l'export restent absents
+`Get-DhcpServerv4Binding`, `Get-/Set-DhcpServerv4DnsSetting` sont
+désormais déclarées et réelles. Restent absents
+`Add-DhcpServerv4Failover`, `Get-DhcpServerv4Failover` et
+`Export-DhcpServer`/`Import-DhcpServer`.
+**Mesure** : ces trois familles ne sont pas dans le module.
+**Report** : le basculement demande un second serveur et un protocole de
+synchronisation entre les deux — un sujet en soi, pas une applet de plus.
+L'export/import est faisable (le VFS existe) mais suppose d'écrire le
+XML qu'un vrai Windows produit, et de le relire.
+
+### [dhcp] la mise à jour DNS dynamique ne couvre que l'enregistrement A
+Un bail accordé crée l'enregistrement A dans la zone du domaine du scope,
+gouverné par `Set-DhcpServerv4DnsSetting -DynamicUpdates`
+(`Always`/`Never`/`OnClientRequest`, RFC 4702 lu sur l'option 81 que le
+client pose désormais). Ce qui manque : l'enregistrement **PTR** dans la
+zone inverse, et `NameProtection` (DHCID) qui est accepté et rangé sans
+rien empêcher.
+**Mesure** : `Get-DnsServerResourceRecord -ZoneName lab.local` rend le A
+après un `ipconfig /renew` ; aucune zone inverse n'est touchée.
+**Report** : la zone inverse suppose de la créer et de nommer
+`x.x.x.x.in-addr.arpa`, ce qui est un travail à part ; `NameProtection`
+suppose l'enregistrement DHCID, qui n'existe nulle part.
 
 ## Outillage
 
@@ -129,6 +288,25 @@ un nombre est attendu, signatures de constructeur périmées.
 « pas plus qu'avant ta modification », pas « zéro ».
 
 ## Journal des entrées fermées
+
+- Numérotation des catégories de journaux FortiOS — fermée. La table du
+  simulateur était CONTIGUË (11 waf, 12 dns, 13 ssh, 14 ssl, 15
+  file-filter) là où la vraie a des TROUS (12 waf, 15 dns, 16 ssh, 17
+  ssl, 19 file-filter, 20 icap, 22 sctp-filter) : signature d'une
+  invention plausible. Alignée sur deux sources concordantes, et le
+  tutoriel corrigé avec elle.
+- Continuation de ligne par accent grave en PowerShell — fermée.
+- ScopeId d'un scope DHCP Windows = adresse réseau — fermée.
+- Option 54 d'un serveur DHCP Windows = son adresse, pas la passerelle —
+  fermée.
+- `Add-DhcpServerInDC` retenait ses paramètres — fermée.
+- Relais DHCP vers un serveur Windows (giaddr) — fermée ; le rôle passe
+  par `DhcpServerExchange` au lieu d'en tenir une troisième copie.
+- Un serveur DHCP ne propose plus sa propre adresse — fermée.
+- Un serveur DHCP Windows enregistre le bail dans le DNS — fermée ;
+  `applyDynamicARecord` n'avait AUCUN appelant.
+- Le client DHCP déclare son nom (options 12 et 81) — fermée ;
+  `EndHost` ne le transmettait jamais à son client DHCP.
 
 - `mac-address learning disable` (VRP interface + VLAN) et
   `no mac address-table learning` (Cisco) — fermé, moteur réel sur le

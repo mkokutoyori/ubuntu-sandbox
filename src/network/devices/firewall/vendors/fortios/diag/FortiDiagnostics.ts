@@ -5,6 +5,7 @@ import type { AuthListFilter } from './authListRenderer';
 
 export interface LogViewFilter {
   category: FirewallLogType;
+  subtype?: string;
   level?: FirewallLogLevel;
   fields: Map<string, string>;
   viewLines: number;
@@ -15,7 +16,7 @@ export class FortiDiagnostics {
   readonly debugFlow: DebugFlowState = makeDebugFlowState();
   authFilter: AuthListFilter = {};
   readonly logFilter: LogViewFilter = {
-    category: 'traffic', fields: new Map(), viewLines: 0,
+    category: 'traffic', subtype: undefined, fields: new Map(), viewLines: 0,
   };
 
   clearSessionFilter(): void {
@@ -33,6 +34,7 @@ export class FortiDiagnostics {
 
   clearLogFilter(): void {
     this.logFilter.category = 'traffic';
+    this.logFilter.subtype = undefined;
     this.logFilter.level = undefined;
     this.logFilter.fields.clear();
     this.logFilter.viewLines = 0;

@@ -1,7 +1,7 @@
 import type { NmapOptions } from './NmapOptions';
 import { topPorts, serviceName, DEFAULT_TOP_COUNT } from './ServiceRegistry';
 
-export type PortState = 'open' | 'closed' | 'filtered' | 'open|filtered';
+export type PortState = 'open' | 'closed' | 'filtered' | 'open|filtered' | 'unfiltered';
 
 export interface HostState {
   ip: string;
@@ -18,6 +18,7 @@ export interface HostProbes {
   tcpOutcome(ip: string, port: number): 'open' | 'refused' | 'timeout';
   udpState(ip: string, port: number): 'open' | 'closed' | 'open|filtered';
   banner(ip: string, port: number): { service: string; version?: string } | null;
+  ackReaches?(ip: string, port: number): boolean;
 }
 
 export interface PortResult {
@@ -96,6 +97,16 @@ function tcpResult(options: NmapOptions, probes: HostProbes, ip: string, port: n
   return { port, protocol: 'tcp', state, service, version, reason };
 }
 
+function ackResult(probes: HostProbes, ip: string, port: number): PortResult {
+  const reachable = probes.ackReaches?.(ip, port) ?? true;
+  return {
+    port, protocol: 'tcp',
+    state: reachable ? 'unfiltered' : 'filtered',
+    service: serviceName(port, 'tcp'),
+    reason: reachable ? 'reset' : 'no-response',
+  };
+}
+
 function udpResult(options: NmapOptions, probes: HostProbes, ip: string, port: number): PortResult {
   const state = probes.udpState(ip, port);
   const reason = state === 'open' ? 'udp-response' : state === 'closed' ? 'port-unreach' : 'no-response';
@@ -152,11 +163,11 @@ function scanHost(options: NmapOptions, probes: HostProbes, target: string): Hos
     return { ip: info.ip, hostname: info.hostname, up: true, latencyMs, osGuess, ports: [] };
   }
 
-  const all = effectivePorts(options).map((port) =>
-    options.scanType === 'udp'
-      ? udpResult(options, probes, info.ip, port)
-      : tcpResult(options, probes, info.ip, port),
-  );
+  const all = effectivePorts(options).map((port) => {
+    if (options.scanType === 'udp') return udpResult(options, probes, info.ip, port);
+    if (options.scanType === 'ack') return ackResult(probes, info.ip, port);
+    return tcpResult(options, probes, info.ip, port);
+  });
   const { ports, notShown } = partition(options, all);
   return { ip: info.ip, hostname: info.hostname, up: true, latencyMs, osGuess, ports, notShown };
 }

@@ -157,12 +157,28 @@ interface RouterAclSurface {
  * still gets the same time-out feeling a real client gets when a
  * Cisco ACL eats the SYN.
  */
+interface FirewallSimulationSurface {
+  simulate(request: {
+    ingressPort: string; protocol: 'tcp' | 'udp';
+    sourceIP: string; destinationIP: string;
+    sourcePort: number; destinationPort: number; ackOnly?: boolean;
+  }): { allowed: boolean };
+}
+
 export function transitTcpAclVerdict(
   srcIp: string, dstIp: string, dstPort: number,
   now: Date = new Date(),
   from?: Equipment | null,
 ): 'permit' | 'deny' {
   return transitAclVerdict(srcIp, dstIp, dstPort, 'tcp', now, from);
+}
+
+export function transitAckAclVerdict(
+  srcIp: string, dstIp: string, dstPort: number,
+  now: Date = new Date(),
+  from?: Equipment | null,
+): 'permit' | 'deny' {
+  return transitAclVerdict(srcIp, dstIp, dstPort, 'tcp', now, from, true);
 }
 
 /**
@@ -183,6 +199,7 @@ function transitAclVerdict(
   proto: 'tcp' | 'udp',
   now: Date,
   from?: Equipment | null,
+  ackOnly = false,
 ): 'permit' | 'deny' {
   if (srcIp === dstIp) return 'permit';
   const startPorts: Port[] = [];
@@ -195,7 +212,7 @@ function transitAclVerdict(
   if (startPorts.length === 0) return 'permit';
 
   const synth = proto === 'tcp'
-    ? synthSynPacket(srcIp, dstIp, dstPort)
+    ? synthSynPacket(srcIp, dstIp, dstPort, ackOnly)
     : synthUdpPacket(srcIp, dstIp, dstPort);
   const visited = new Set<string>();
   const queue: Port[] = [...startPorts];
@@ -213,6 +230,28 @@ function transitAclVerdict(
     if (!peerDev || !peerDev.getIsPoweredOn()) continue;
     const peerIp = peerPort.getIPAddress();
     if (peerIp && peerIp.toString() === dstIp) return 'permit';
+    const firewall = peerDev as unknown as FirewallSimulationSurface;
+    if (typeof firewall.simulate === 'function') {
+      try {
+        const outcome = firewall.simulate({
+          ingressPort: peerPort.getName(),
+          protocol: proto,
+          sourceIP: srcIp,
+          destinationIP: dstIp,
+          sourcePort: 49152,
+          destinationPort: dstPort,
+          ackOnly,
+        });
+        if (!outcome.allowed) return 'deny';
+      } catch {
+        return 'permit';
+      }
+      for (const sibling of peerDev.getPorts()) {
+        if (sibling !== peerPort) queue.push(sibling);
+      }
+      continue;
+    }
+
     const router = peerDev as unknown as RouterAclSurface;
     if (typeof router.getInterfaceACL === 'function' && typeof router.evaluateACLByName === 'function') {
       const ingressIface = peerPort.getName();
@@ -253,14 +292,19 @@ function synthUdpPacket(srcIp: string, dstIp: string, dstPort: number): IPv4Pack
   );
 }
 
-function synthSynPacket(srcIp: string, dstIp: string, dstPort: number): IPv4Packet {
+function synthSynPacket(
+  srcIp: string, dstIp: string, dstPort: number, ackOnly = false,
+): IPv4Packet {
   const tcp: TCPPacket = {
     type: 'tcp',
     sourcePort: 49152,
     destinationPort: dstPort,
     sequenceNumber: 0,
-    acknowledgementNumber: 0,
-    flags: { syn: true, ack: false, fin: false, rst: false, psh: false, urg: false },
+    acknowledgementNumber: ackOnly ? 1 : 0,
+    flags: {
+      syn: !ackOnly, ack: ackOnly,
+      fin: false, rst: false, psh: false, urg: false,
+    },
     windowSize: 65535,
     checksum: 0,
     payload: null,

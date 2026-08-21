@@ -1,8 +1,6 @@
-import {
-  IPAddress, IP_PROTO_ICMP, computeIPv4Checksum,
-  type ICMPPacket, type IPv4Packet,
-} from '../../../core/types';
+import { IP_PROTO_ICMP, type ICMPPacket, type IPv4Packet } from '../../../core/types';
 import { DEAD_LOSS_PERCENT, type SdwanHealthCheck, type SdwanMember, type SdwanTable } from './SdwanTable';
+import { buildEchoRequest } from '../l3/IcmpEcho';
 
 export interface ProbeDeps {
   readonly send: (iface: string, packet: IPv4Packet, gateway: string) => void;
@@ -61,7 +59,7 @@ export class SdwanHealthProbe {
       samples.push(sample);
       this.pending.set(keyOf(identifier, sequence), sample);
       this.deps.send(
-        member.iface, echoRequest(source, check.server, identifier, sequence), member.gateway);
+        member.iface, buildEchoRequest(source, check.server, identifier, sequence), member.gateway);
     }
 
     await this.deps.settle();
@@ -80,36 +78,4 @@ export class SdwanHealthProbe {
 
 function keyOf(identifier: number, sequence: number): string {
   return `${identifier}:${sequence}`;
-}
-
-function echoRequest(
-  source: string, destination: string, identifier: number, sequence: number,
-): IPv4Packet {
-  const icmp: ICMPPacket = {
-    type: 'icmp',
-    icmpType: 'echo-request',
-    code: 0,
-    id: identifier,
-    sequence,
-    dataSize: 56,
-  };
-
-  const packet: IPv4Packet = {
-    type: 'ipv4',
-    version: 4,
-    ihl: 5,
-    tos: 0,
-    totalLength: 20 + 8 + 18,
-    identification: identifier * 1000 + sequence,
-    flags: 0,
-    fragmentOffset: 0,
-    ttl: 64,
-    protocol: IP_PROTO_ICMP,
-    headerChecksum: 0,
-    sourceIP: new IPAddress(source),
-    destinationIP: new IPAddress(destination),
-    payload: icmp,
-  };
-  packet.headerChecksum = computeIPv4Checksum(packet);
-  return packet;
 }

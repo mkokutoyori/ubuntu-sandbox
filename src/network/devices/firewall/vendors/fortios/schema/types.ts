@@ -10,6 +10,18 @@ import type {
   SyslogCollectorSettings, SyslogFilterSettings,
 } from '../../../logging/SyslogCollectors';
 import type { NtpSettings } from '../../../mgmt/FirewallNtp';
+import type { FirewallDnsSettings } from '../../../l3/FirewallDnsClient';
+import type { DnsServerInterface } from '../../../l3/FirewallDnsServer';
+
+export interface FortiDnsZonePatch {
+  readonly name: string;
+  readonly domain: string;
+  readonly type: string;
+  readonly authoritative: boolean;
+  readonly primaryName?: string;
+  readonly contact?: string;
+  readonly entries: ReadonlyArray<{ hostname: string; ip: string; ttl?: number }>;
+}
 import type {
   BgpConfiguration, OspfConfiguration, RipConfiguration,
 } from '../../../routing/DynamicRoutingTypes';
@@ -20,6 +32,7 @@ export type FortiScope = 'global' | 'vdom' | 'both';
 
 export interface FortiObjectView {
   key: string;
+  hasPhysicalKey(): boolean;
   effective(attribute: string): readonly string[];
   isExplicit(attribute: string): boolean;
   setting(path: string, attribute: string): readonly string[];
@@ -30,6 +43,7 @@ export interface FortiObjectView {
 
 export interface FortiSchemaEnvironment {
   setting(path: string, attribute: string): readonly string[];
+  isPhysicalPort?(name: string): boolean;
 }
 
 export const EMPTY_ENVIRONMENT: FortiSchemaEnvironment = Object.freeze({
@@ -49,6 +63,11 @@ export interface FortiAttributeSpec {
   readonly unimplementedValues?: Readonly<Record<string, string>>;
   readonly readOnly?: boolean;
   readonly secret?: boolean;
+  readonly appliesImmediately?: (
+    values: readonly string[], context: FortiCommitContext,
+  ) => void;
+  readonly acceptsValue?: (value: string) => boolean;
+  readonly expectedValue?: string;
 }
 
 export interface FortiInterfacePatch {
@@ -69,6 +88,7 @@ export interface FortiStaticRoute {
   readonly gateway: string;
   readonly iface: string;
   readonly distance: number;
+  readonly priority: number;
   readonly blackhole: boolean;
   readonly enabled: boolean;
 }
@@ -164,6 +184,7 @@ export interface FortiGlobalSettings {
   readonly adminTimeoutMin?: number;
   readonly adminLockoutThreshold?: number;
   readonly adminLockoutDurationSec?: number;
+  readonly timezone?: string;
 }
 
 export interface FortiVdomSettings {
@@ -198,6 +219,13 @@ export interface FortiCommitDevice {
   removePolicyRoute(id: string): void;
   applyMemoryLog(patch: FortiMemoryLogPatch): void;
   applyGlobalSettings(settings: FortiGlobalSettings): void;
+  applyHostname(hostname: string): void;
+  applyDnsSettings(settings: FirewallDnsSettings): void;
+  applyDnsServerInterface(entry: DnsServerInterface): void;
+  removeDnsServerInterface(iface: string): void;
+  applyDnsZone(zone: FortiDnsZonePatch): void;
+  removeDnsZone(name: string): void;
+  resolveFqdnNow(fqdn: string): void;
   setCaptivePortalInterface(iface: string, on: boolean): void;
   refreshCaptivePortal(): void;
   applySyslogCollector(settings: SyslogCollectorSettings): string | void;
@@ -210,7 +238,10 @@ export interface FortiCommitDevice {
   removeSwitchInterface(name: string): void;
   applyAntivirusProfile(profile: FortiAntivirusPatch): void;
   removeAntivirusProfile(name: string): void;
+  applyApplicationList(list: FortiApplicationListPatch): void;
+  removeApplicationList(name: string): void;
   applyWebFilterProfile(profile: FortiWebFilterPatch): void;
+  webFilterFeatureSet(name: string): string | undefined;
   removeWebFilterProfile(name: string): void;
   applyDnsFilterProfile(profile: FortiDnsFilterPatch): void;
   removeDnsFilterProfile(name: string): void;
@@ -393,6 +424,8 @@ export interface FortiLdapServerPatch {
 export interface FortiAuthSettingPatch {
   readonly timeoutMinutes: number;
   readonly timeoutType: string;
+  readonly secureHttp?: boolean;
+  readonly keepAlive?: boolean;
   readonly httpPort: number;
   readonly httpsPort: number;
 }
@@ -425,12 +458,21 @@ export interface FortiFilterTablePatch {
   readonly comment?: string;
 }
 
+export interface FortiApplicationListPatch {
+  readonly name: string;
+  readonly entries: ReadonlyArray<{
+    id: string; application: string; action: string;
+  }>;
+  readonly comment?: string;
+}
+
 export interface FortiWebFilterPatch {
   readonly name: string;
   readonly urlFilterTable?: string;
   readonly categoryFilters: readonly FortiCategoryFilterPatch[];
   readonly unclassifiedAction: string;
   readonly logAllUrl: boolean;
+  readonly featureSet: string;
   readonly comment?: string;
 }
 
@@ -461,7 +503,17 @@ export interface FortiSslSshPatch {
   readonly httpsMode: string;
   readonly httpsPorts: readonly number[];
   readonly caName: string;
+  readonly untrustedCaName?: string;
+  readonly serverCertMode?: string;
+  readonly exemptions?: readonly FortiSslExemptPatch[];
   readonly comment?: string;
+}
+
+export interface FortiSslExemptPatch {
+  readonly type: string;
+  readonly category?: number;
+  readonly regex?: string;
+  readonly addressName?: string;
 }
 
 export interface FortiProtocolOptionsPatch {

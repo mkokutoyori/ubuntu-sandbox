@@ -49,6 +49,7 @@
 
 import { describe, it, expect, beforeEach } from 'vitest';
 import { FortiGate } from '@/network/devices/firewall/vendors/fortios/FortiGate';
+import { FORTIOS_PROFILE } from '@/network/devices/firewall/vendors/fortios/FortiProfile';
 import { FortiShell } from '@/network/devices/firewall/vendors/fortios/FortiShell';
 import { LinuxPC } from '@/network/devices/LinuxPC';
 import { Cable } from '@/network/hardware/Cable';
@@ -379,8 +380,9 @@ describe('les vues `get`', () => {
 
     const vu = run(sh, 'get system interface');
 
-    expect(vu).toMatch(/port1\s+192\.168\.1\.1 255\.255\.255\.0\s+up/);
-    expect(vu).toMatch(/port2\s+203\.0\.113\.1 255\.255\.255\.0\s+up/);
+    expect(vu).toMatch(/== \[port1\]\n\tmode: static\n\tip: 192\.168\.1\.1 255\.255\.255\.0/);
+    expect(vu).toMatch(/== \[port2\]\n\tmode: static\n\tip: 203\.0\.113\.1 255\.255\.255\.0/);
+    expect(vu).toMatch(/\tstatus: up/);
   });
 
   it('`get router info routing-table all` rend la route par defaut', async () => {
@@ -547,7 +549,9 @@ describe('les journaux', () => {
     await pingOnSimulatedClock(poste, 'ping -c 1 203.0.113.10');
     const vu = run(sh, 'execute log display');
 
-    expect(vu).toMatch(/^CEF:0\|Fortinet\|Fortigate\|7\.4\.4\|/);
+    expect(vu).toMatch(
+      new RegExp(`^CEF:0\\|Fortinet\\|Fortigate\\|${FORTIOS_PROFILE.defaultVersion}\\|`),
+    );
     expect(vu).toContain('|traffic:forward|');
   });
 

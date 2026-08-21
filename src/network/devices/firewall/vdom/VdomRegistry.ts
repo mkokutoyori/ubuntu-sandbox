@@ -1,3 +1,5 @@
+import type { AddressObject } from '../model/AddressObject';
+import type { ServiceObject } from '../model/ServiceObject';
 import { ZoneTable } from '../model/ZoneTable';
 import { ObjectStore } from '../model/ObjectStore';
 import { PolicyStore } from '../model/PolicyStore';
@@ -15,6 +17,7 @@ import { IdentityTable } from '../identity/IdentityTable';
 import { UserDirectory } from '../identity/UserDirectory';
 import { IpsecTunnelTable } from '../vpn/IpsecTunnelTable';
 import { CertificateStore } from '../vpn/CertificateStore';
+import { seedFactoryCertificates } from '../vpn/FactoryCertificates';
 import { NetworkOsCredentialStore } from '../../router/aaa/NetworkOsCredentialStore';
 import type { ConnectedRoute } from '../l3/InterfaceTable';
 import type { IEventBus } from '../../../../events/EventBus';
@@ -63,6 +66,9 @@ export interface VdomRegistryDeps {
   readonly implicitPolicy: 'deny-all' | 'security-level';
   readonly applicationShift: boolean;
   readonly maxGroupNesting: number;
+  readonly resolveFqdn?: (fqdn: string) => readonly string[];
+  readonly predefinedAddresses?: readonly AddressObject[];
+  readonly predefinedServices?: readonly ServiceObject[];
   readonly connectedRoutes: (vdom: string) => readonly ConnectedRoute[];
   readonly interfaceForDestination: (vdom: string, address: string) => string | undefined;
   readonly isInterfaceUp: (iface: string) => boolean;
@@ -156,7 +162,13 @@ export class VdomRegistry {
     const deps = this.deps;
     const settings: VdomSettings = { opmode: 'nat', centralNat: false };
     const zones = new ZoneTable();
-    const objects = new ObjectStore({ maxGroupNesting: deps.maxGroupNesting });
+    const objects = new ObjectStore({
+      maxGroupNesting: deps.maxGroupNesting,
+      resolveFqdn: (fqdn) => deps.resolveFqdn?.(fqdn) ?? [],
+    });
+    for (const object of deps.predefinedAddresses ?? []) objects.addAddress(object);
+    for (const object of deps.predefinedServices ?? []) objects.addService(object);
+
     const policy = new PolicyStore();
     const natPolicy = new NatPolicyStore();
     const pools = new IpPoolAllocator(deps.now);
@@ -173,8 +185,17 @@ export class VdomRegistry {
       onClosed: (session, reason) => deps.onSessionClosed(name, session, reason),
     });
 
+    const identities = new IdentityTable({ now: this.deps.now });
+
     const evaluator = new PolicyEvaluator({
       objects,
+      userOf: (address) => identities.lookup(address)?.user,
+      userGroupsOf: (user) => {
+        for (const identity of identities.list()) {
+          if (identity.user === user) return identity.groups;
+        }
+        return [];
+      },
       policyKeyedBy: deps.policyKeyedBy,
       implicitPolicy: deps.implicitPolicy,
       applicationShift: deps.applicationShift,
@@ -207,14 +228,14 @@ export class VdomRegistry {
       schedules,
       logs: new FirewallLogStore(),
       utm: new UtmProfileStore(),
-      identities: new IdentityTable({ now: this.deps.now }),
+      identities,
       tunnels: new IpsecTunnelTable({
         now: this.deps.now,
         onInterfaceCreated: (tunnel, boundTo) =>
           this.deps.onTunnelInterface?.(name, tunnel, boundTo),
         onInterfaceRemoved: (tunnel) => this.deps.onTunnelRemoved?.(name, tunnel),
       }),
-      certificates: new CertificateStore(),
+      certificates: buildCertificateStore(this.deps.now()),
       users: new UserDirectory({
         credentials: new NetworkOsCredentialStore({
           deviceId: `${this.deps.deviceId}:${name}`,
@@ -225,4 +246,10 @@ export class VdomRegistry {
       settings,
     });
   }
+}
+
+function buildCertificateStore(now: number): CertificateStore {
+  const store = new CertificateStore();
+  seedFactoryCertificates(store, now);
+  return store;
 }

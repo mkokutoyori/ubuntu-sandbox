@@ -5,11 +5,14 @@ import {
 } from '../../../../core/types';
 import type { InterfaceTable } from '../../l3/InterfaceTable';
 import type { RouteTable } from '../../l3/RouteTable';
+import { icmpTypeNumber } from '../../session/FlowKey';
+import type { ICMPType } from '../../../../core/types';
 import type { ObjectStore } from '../../model/ObjectStore';
 import type { PolicyStore } from '../../model/PolicyStore';
 import { isDenyAction, type SecurityRule } from '../../model/SecurityRule';
 import {
-  inspectTls, protocolOfFlow, scanAntivirus, scanDnsFilter, scanFileFilter,
+  inspectTls, protocolOfFlow, scanAntivirus, scanApplicationControl,
+  scanDnsFilter, scanFileFilter,
   scanWebFilter, scanWebFilterHost,
   type InspectedFlow, type UtmVerdict, type UtmVerdictKind,
 } from '../../inspection/ContentInspector';
@@ -215,6 +218,7 @@ const UTM_REASON: Readonly<Record<UtmVerdictKind, VerdictReason>> = Object.freez
   'category-blocked': 'utm-category',
   'dns-blocked': 'utm-dns',
   'file-type-blocked': 'utm-file-type',
+  'application-blocked': 'utm-application',
 });
 
 function firstBlocking(
@@ -249,6 +253,11 @@ function firstBlocking(
     ? undefined
     : profiles.getFileFilter(rule.fileFilterProfile);
   if (file) scans.push(scanFileFilter(flow, file));
+
+  const applications = rule.applicationList === undefined
+    ? undefined
+    : profiles.getApplicationList(rule.applicationList);
+  if (applications) scans.push(scanApplicationControl(flow, applications));
 
   return scans.find(verdict => verdict !== undefined && verdict.kind !== 'clean');
 }
@@ -509,6 +518,7 @@ function natDestinationStage(services: FirewallServices): PipelineStage {
 
       context.packet = outcome.packet;
       context.destinationTranslated = true;
+      context.destinationNatRuleId = outcome.matchedRuleId;
       pendingTranslations.set(context, outcome.translation);
       return proceed(context, 'nat-destination', outcome.matchedRuleId);
     },
@@ -650,6 +660,7 @@ function policyLookupStage(services: FirewallServices): PipelineStage {
           ...transportPorts(policyDestination(context, packet, services)),
           application: context.identifiedApplication,
           destinationTranslated: context.destinationTranslated === true,
+          destinationNatRuleId: context.destinationNatRuleId,
         },
         packet.totalLength,
       );
@@ -657,6 +668,9 @@ function policyLookupStage(services: FirewallServices): PipelineStage {
       context.matchedPolicy = decision.rule;
 
       if (isDenyAction(decision.action)) {
+        if (decision.implicit && decision.sawIdentityGate) {
+          return deny(context, 'policy-lookup', 'auth-required');
+        }
         installDiscard(services, context, packet);
         return deny(context, 'policy-lookup',
           decision.implicit ? 'implicit-deny' : 'policy-deny',
@@ -743,10 +757,18 @@ function policyDestination(
   return original.type === 'ipv4' ? original : packet;
 }
 
-function transportPorts(packet: IPv4Packet): { sourcePort?: number; destPort?: number } {
-  const payload = packet.payload as { type?: string; sourcePort?: number; destinationPort?: number } | null;
+function transportPorts(packet: IPv4Packet): {
+  sourcePort?: number; destPort?: number; icmpType?: number; icmpCode?: number;
+} {
+  const payload = packet.payload as {
+    type?: string; sourcePort?: number; destinationPort?: number;
+    icmpType?: ICMPType; code?: number;
+  } | null;
   if (payload && (payload.type === 'tcp' || payload.type === 'udp')) {
     return { sourcePort: payload.sourcePort, destPort: payload.destinationPort };
+  }
+  if (payload?.type === 'icmp' && payload.icmpType !== undefined) {
+    return { icmpType: icmpTypeNumber(payload.icmpType), icmpCode: payload.code };
   }
   return {};
 }

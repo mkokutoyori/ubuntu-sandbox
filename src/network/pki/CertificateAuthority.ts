@@ -35,6 +35,8 @@ function nextSerial(): string {
 export class CertificateAuthority {
   readonly rootCertificate: X509Certificate;
   private readonly rootKey: PkiPrivateKey;
+
+  get signingKey(): PkiPrivateKey { return this.rootKey; }
   private readonly revoked = new Map<string, RevokedEntry>();
   private crlNumber = 0;
 
@@ -62,6 +64,16 @@ export class CertificateAuthority {
     const signature = PkiKeyPair.sign(keys.privateKey, tbsPayload(fields));
     const root: X509Certificate = { ...fields, signature };
     return new CertificateAuthority(root, keys.privateKey);
+  }
+
+  /**
+   * Adopte une AC deja emise — son certificat et sa cle privee — pour
+   * qu'elle SIGNE par le meme chemin que celle qu'on vient de generer.
+   * Sans cela une AC rangee dans un magasin ne pourrait signer qu'en
+   * recopiant `issueCertificate`, c'est-a-dire une seconde emission.
+   */
+  static fromKeyPair(cert: X509Certificate, privateKey: PkiPrivateKey): CertificateAuthority {
+    return new CertificateAuthority(cert, privateKey);
   }
 
   issueCertificate(opts: IssueOptions): IssuedCertificate {

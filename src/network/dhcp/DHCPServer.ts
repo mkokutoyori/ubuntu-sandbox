@@ -59,6 +59,7 @@ export class DHCPServer implements IProtocolEngine {
 
   /** Server's own IP address (Option 54: Server Identifier) */
   private serverIdentifier: string = '0.0.0.0';
+  private serverOwnedAddresses: Set<string> = new Set();
 
   /** Named DHCP pools */
   private pools: Map<string, DHCPPoolConfig> = new Map();
@@ -381,11 +382,33 @@ export class DHCPServer implements IProtocolEngine {
     this.excludedRanges.push({ start, end });
   }
 
+  removeExcludedRange(start: string, end: string): boolean {
+    const before = this.excludedRanges.length;
+    this.excludedRanges = this.excludedRanges.filter(r => !(r.start === start && r.end === end));
+    return this.excludedRanges.length < before;
+  }
+
+  setPoolActive(name: string, active: boolean): boolean {
+    const pool = this.getPool(name);
+    if (!pool) return false;
+    pool.active = active;
+    return true;
+  }
+
   getExcludedRanges(): DHCPExcludedRange[] {
     return [...this.excludedRanges];
   }
 
+  setServerOwnedAddresses(ips: string[]): void {
+    this.serverOwnedAddresses = new Set(ips.filter(ip => ip && ip !== '0.0.0.0'));
+  }
+
+  getServerOwnedAddresses(): string[] {
+    return [...this.serverOwnedAddresses];
+  }
+
   private isExcluded(ip: string): boolean {
+    if (this.serverOwnedAddresses.has(ip)) return true;
     const ipNum = this.ipToNumber(ip);
     for (const range of this.excludedRanges) {
       const startNum = this.ipToNumber(range.start);
@@ -418,6 +441,16 @@ export class DHCPServer implements IProtocolEngine {
       this.staticBindings.set(poolName, existing);
     }
     return { ok: true };
+  }
+
+  /** Is this address reserved for this very client, in any pool? */
+  private isReservedFor(clientMAC: string, ipAddress: string): boolean {
+    const mac = clientMAC.toLowerCase();
+    for (const bindings of this.staticBindings.values()) {
+      if (bindings.some(binding => binding.ipAddress === ipAddress
+        && binding.clientId.toLowerCase() === mac)) return true;
+    }
+    return false;
   }
 
   /** Get all static bindings for a pool */
@@ -487,6 +520,7 @@ export class DHCPServer implements IProtocolEngine {
 
     for (const pool of poolEntries) {
       if (!pool.network || !pool.mask) continue;
+      if (pool.active === false) continue;
 
       // Only consider pools whose subnet actually contains the anchor.
       if (subnetAnchor && !this.isIPInPool(subnetAnchor, pool)) continue;
@@ -646,7 +680,8 @@ export class DHCPServer implements IProtocolEngine {
     this.stats.requests++;
 
     // RFC compliance: Check if the requested IP is in an excluded range
-    if (this.isExcluded(params.requestedIP)) {
+    if (this.isExcluded(params.requestedIP)
+      && !this.isReservedFor(params.clientMAC, params.requestedIP)) {
       this.stats.naks++;
       return null;
     }
@@ -757,7 +792,8 @@ export class DHCPServer implements IProtocolEngine {
     this.stats.requests++;
 
     // Check excluded
-    if (this.isExcluded(params.requestedIP)) {
+    if (this.isExcluded(params.requestedIP)
+      && !this.isReservedFor(params.clientMAC, params.requestedIP)) {
       this.stats.naks++;
       return {
         type: 'NAK',

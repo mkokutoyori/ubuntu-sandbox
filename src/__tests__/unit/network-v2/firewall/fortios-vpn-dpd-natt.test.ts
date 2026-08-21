@@ -149,7 +149,8 @@ describe('set dpd', () => {
     moteur(a).runDPDCheck();
 
     expect(a.fw.getPacketCapture().count()).toBeGreaterThan(avant);
-    expect(a.sh.execute('diagnose vpn tunnel summary')).toMatch(/up/);
+    expect(a.sh.execute('get vpn ipsec tunnel summary'))
+      .toMatch(/selectors\(total,up\): \d+\/[1-9]/);
   });
 
   it('un pair muet fait tomber le tunnel apres `dpd-retrycount` essais', () => {

@@ -35,6 +35,7 @@ import { getSessionRegistry } from '../equipment/RouterServiceCapabilities';
 import { EthernetFrame, DeviceType, MACAddress, ETHERTYPE_ARP, ARPPacket, IPAddress, SubnetMask, ETHERTYPE_IPV4, IPv4Packet } from '../core/types';
 import { DHCPPacket } from '../dhcp/DHCPPacket';
 import { VlanSet } from './switch/VlanSet';
+import { RouterDhcpClient } from './router/RouterDhcpClient';
 import { SwitchSvi, type SviInterface } from './SwitchSvi';
 import { RouterUdpEndpoint } from './router/RouterUdpEndpoint';
 import { getSecurityConfig } from './shells/cisco/CiscoSecurityCommands';
@@ -50,7 +51,7 @@ import { HsrpAgent } from '../hsrp/HsrpAgent';
 import { UDP_PORT_HSRP } from '../hsrp/types';
 import { GlbpAgent } from '../glbp/GlbpAgent';
 import { UDP_PORT_GLBP } from '../glbp/types';
-import { IP_PROTO_UDP } from '../core/types';
+import { IP_PROTO_UDP, createIPv4Packet } from '../core/types';
 import type { UDPPacket } from '../core/types';
 import { makeSwitchVrrpHost, makeSwitchNtpHost } from './switch/SwitchVrrpAdapter';
 import { NtpAgent } from '../ntp/NtpAgent';
@@ -384,6 +385,12 @@ export abstract class Switch extends Equipment {
     getBridgeMac: () => this.getBridgeMac(),
     egressOnVlan: (vlan, frame) => this.egressOnVlan(vlan, frame),
     vlanHasActivePort: (vlan) => this.vlanHasActivePort(vlan),
+    dhcpClientDeliver: (vlan, pkt) => {
+      const iface = this.sviClientIface(vlan);
+      if (iface === null) return false;
+      this.dhcpClientAgent.deliver(iface, pkt);
+      return true;
+    },
     lookupArp: (ip) => this.arpTable.get(ip)?.mac ?? null,
     forgetArp: (ip: string) => {
       const existing = this.arpTable.get(ip);
@@ -2387,12 +2394,73 @@ export abstract class Switch extends Equipment {
 
   /** `interface Vlan N` — materialise the SVI (admin-down, no IP) if new. */
   ensureSvi(vlan: number): void { this.svi.ensure(vlan); }
+  private readonly dhcpClientAgent: RouterDhcpClient = new RouterDhcpClient({
+    macOf: () => this.getBridgeMac().toString(),
+    linkUsable: (iface) => {
+      const vlan = Switch.vlanOfSviName(iface);
+      return vlan !== null && this.getSvi(vlan)?.adminUp === true
+        && this.vlanHasActivePort(vlan);
+    },
+    applyLease: (iface, ip, mask) => {
+      const vlan = Switch.vlanOfSviName(iface);
+      if (vlan !== null) this.configureSviIp(vlan, new IPAddress(ip), new SubnetMask(mask));
+    },
+    clearLease: (iface) => {
+      const vlan = Switch.vlanOfSviName(iface);
+      if (vlan !== null) this.clearSviIp(vlan);
+    },
+    markClient: (iface, on) => {
+      const vlan = Switch.vlanOfSviName(iface);
+      if (vlan === null) return;
+      this.ensureSvi(vlan);
+      const svi = this.getSvi(vlan);
+      if (svi) svi.dhcpClient = on;
+    },
+    sendDhcpFrame: (iface, pkt) => {
+      const vlan = Switch.vlanOfSviName(iface);
+      if (vlan === null) return;
+      const udp: UDPPacket = {
+        type: 'udp', sourcePort: 68, destinationPort: 67,
+        length: 8 + 300, checksum: 0, payload: pkt,
+      };
+      const ipPkt = createIPv4Packet(
+        new IPAddress('0.0.0.0'), new IPAddress('255.255.255.255'),
+        IP_PROTO_UDP, 64, udp, 8 + 300);
+      this.egressOnVlan(vlan, {
+        srcMAC: this.getBridgeMac(),
+        dstMAC: MACAddress.broadcast(),
+        etherType: ETHERTYPE_IPV4,
+        payload: ipPkt,
+      });
+    },
+    bus: () => this.getBus(),
+    identity: () => ({ deviceId: this.id, hostname: this.getHostname() }),
+  });
+
+  getDhcpClientAgent(): RouterDhcpClient { return this.dhcpClientAgent; }
+
+  private sviClientIface(vlan: number): string | null {
+    if (!this.getSvi(vlan)?.dhcpClient) return null;
+    return this.dhcpClientAgent.enabledInterfaces()
+      .find(i => Switch.vlanOfSviName(i) === vlan) ?? null;
+  }
+
+  static vlanOfSviName(name: string): number | null {
+    const m = name.match(/^(?:Vlanif|Vlan)\s*(\d+)$/i);
+    return m ? parseInt(m[1], 10) : null;
+  }
+
   configureSviIp(vlan: number, ip: IPAddress, mask: SubnetMask): void {
     this.svi.configure(vlan, ip, mask);
   }
   clearSviIp(vlan: number): void { this.svi.clearIp(vlan); }
   setSviAdminUp(vlan: number, up: boolean): void {
     this.svi.setAdminUp(vlan, up);
+    const clientIface = this.sviClientIface(vlan);
+    if (clientIface !== null) {
+      if (up) this.dhcpClientAgent.onLinkUp(clientIface);
+      else this.dhcpClientAgent.onLinkDown(clientIface);
+    }
     // Feed the FHRP link-state signal so any VRRP group on this
     // Vlanif recomputes (Init→Master when the SVI comes up, or the
     // reverse on shutdown). The FhrpAgentBase already subscribes to

@@ -5,10 +5,12 @@ import type { PacketContext } from '../../../pipeline/PacketContext';
 import { parseCaptureFilter, portsOf } from '../../../diag/PacketCapture';
 import { FortiMessages } from '../FortiMessages';
 import { parseAuthFilter, renderAuthList } from './authListRenderer';
-import { renderVpnTunnelList, renderVpnTunnelSummary } from './vpnTunnelRenderer';
+import { renderIkeGatewayList, renderVpnTunnelList } from './vpnTunnelRenderer';
 import { unquote } from '../runtime/FortiNavigator';
+import { referencesTo, renderReference } from '../runtime/references';
+import type { FortiConfigTree } from '../runtime/FortiConfigTree';
 import { formatLogRecord, type FortiLogContext, type FortiLogFormat } from '../log/fortiLogFormat';
-import { trafficDenyLog } from '../log/trafficLog';
+import { type LoggedIdentity, trafficDenyLog } from '../log/trafficLog';
 import type { FortiDiagnostics } from './FortiDiagnostics';
 import { renderDebugFlow } from './debugFlowRenderer';
 import { renderIpropeList, renderIpropeShow } from './ipropeRenderer';
@@ -23,12 +25,19 @@ export interface FortiDiagDeps {
   readonly vdom: () => string;
   readonly logFormat: () => FortiLogFormat;
   readonly logContext: () => FortiLogContext;
+  readonly configTree: () => FortiConfigTree;
 }
 
 import {
   renderSdwanHealthCheck, renderSdwanMembers, renderSdwanService,
 } from './sdwanRenderer';
 import { renderHaChecksum, renderHaStatus } from './haRenderer';
+import { renderNtpStatus } from './ntpStatusRenderer';
+import { renderVipList } from './vipListRenderer';
+import { renderDnsProxy } from './dnsProxyRenderer';
+import { renderSysTop } from './sysTopRenderer';
+import { renderAutoupdateVersions } from './fortiguardRenderer';
+import { describeLogCategories, resolveLogCategory } from '../log/logCategories';
 
 export function runDiagnose(rest: readonly string[], deps: FortiDiagDeps): string {
   const [family, ...tail] = rest;
@@ -37,7 +46,64 @@ export function runDiagnose(rest: readonly string[], deps: FortiDiagDeps): strin
   if (family === 'firewall') return diagnoseIprope(tail, deps);
   if (family === 'sniffer') return diagnoseSniffer(tail, deps);
   if (family === 'vpn') return diagnoseVpn(tail, deps);
+  if (family === 'ip') return diagnoseIp(tail, deps);
+  if (family === 'test') return diagnoseTest(tail, deps);
+  if (family === 'autoupdate') {
+    if (tail[0] !== 'versions') {
+      return FortiMessages.unknownPath(`autoupdate ${tail.join(' ')}`);
+    }
+    return renderAutoupdateVersions();
+  }
   return FortiMessages.unknownPath(rest.join(' '));
+}
+
+function diagnoseCheckused(rest: readonly string[], deps: FortiDiagDeps): string {
+  const datasource = unquote(rest[0] ?? '');
+  const key = unquote(rest[1] ?? '');
+  if (datasource.length === 0 || key.length === 0) {
+    return FortiMessages.incomplete('`<path.object.mkey> <value>`');
+  }
+
+  const words = datasource.split('.');
+  const tree = deps.configTree();
+  for (let take = Math.min(words.length, 4); take >= 1; take--) {
+    const path = words.slice(0, take);
+    if (!tree.spec(path)) continue;
+    const found = referencesTo(tree, path, key).map(renderReference);
+    return found.join('\n');
+  }
+  return FortiMessages.unknownPath(datasource);
+}
+
+function diagnoseTest(rest: readonly string[], deps: FortiDiagDeps): string {
+  if (rest[0] !== 'application') {
+    return FortiMessages.unknownPath(`test ${rest.join(' ')}`);
+  }
+  if (rest[1] === 'dnsproxy') return renderDnsProxy(deps.fw, deps.vdom());
+  return FortiMessages.unimplemented(`test application ${rest[1] ?? ''}`,
+    'only the `dnsproxy` application is modelled in this simulator.');
+}
+
+function diagnoseIp(rest: readonly string[], deps: FortiDiagDeps): string {
+  if (rest[0] !== 'address' || rest[1] !== 'list') {
+    return FortiMessages.unknownPath(`ip ${rest.join(' ')}`);
+  }
+  const lignes: string[] = [];
+  for (const iface of deps.fw.listL3Interfaces()) {
+    if (!iface.ip || iface.ip === '0.0.0.0') continue;
+    lignes.push(`IP=${iface.ip}->${iface.ip}/${maskToPrefix(iface.mask)}`
+      + ` index=${deps.fw.interfaceIndex(iface.name)} devname=${iface.name}`);
+  }
+  return lignes.join('\n');
+}
+
+function maskToPrefix(mask: string | undefined): string {
+  if (!mask) return '32';
+  const octets = mask.split('.').map(Number);
+  if (octets.length !== 4 || octets.some(o => isNaN(o))) return '32';
+  let bits = 0;
+  for (const o of octets) bits += ((o >>> 0).toString(2).match(/1/g) ?? []).length;
+  return String(bits);
 }
 
 function diagnoseHa(rest: readonly string[], deps: FortiDiagDeps): string {
@@ -72,6 +138,7 @@ export function runExecuteLog(rest: readonly string[], deps: FortiDiagDeps): str
 
   const records = deps.fw.getLogStore().select({
     type: view.category,
+    subtype: view.subtype,
     level: view.level,
     fields: view.fields,
     viewLines: view.viewLines,
@@ -83,7 +150,9 @@ export function runExecuteLog(rest: readonly string[], deps: FortiDiagDeps): str
   return records.map(record => formatLogRecord(record, format, context)).join('\n');
 }
 
-export function deniedLog(context: PacketContext, now: number): FirewallLogDraft {
+export function deniedLog(
+  context: PacketContext, now: number, identity?: LoggedIdentity,
+): FirewallLogDraft {
   const packet = context.originalPacket as IPv4Packet;
   const ports = portsOf(packet);
 
@@ -99,12 +168,19 @@ export function deniedLog(context: PacketContext, now: number): FirewallLogDraft
     policyId: context.matchedPolicy?.implicit === false
       ? context.matchedPolicy.id
       : '0',
+    identity,
   });
 }
 
 function diagnoseSession(rest: readonly string[], deps: FortiDiagDeps): string {
   if (rest[0] === 'sdwan') return diagnoseSdwan(rest.slice(1), deps);
   if (rest[0] === 'ha') return diagnoseHa(rest.slice(1), deps);
+  if (rest[0] === 'top') return renderSysTop(deps.fw);
+  if (rest[0] === 'checkused') return diagnoseCheckused(rest.slice(1), deps);
+  if (rest[0] === 'ntp') {
+    if (rest[1] !== 'status') return FortiMessages.unknownPath(`sys ${rest.join(' ')}`);
+    return renderNtpStatus(deps.fw);
+  }
 
   const verb = rest[1];
   const filter = deps.state.sessionFilter;
@@ -139,7 +215,7 @@ function diagnoseSession(rest: readonly string[], deps: FortiDiagDeps): string {
 
 function setSessionFilter(words: readonly string[], deps: FortiDiagDeps): string {
   const [name, value] = words;
-  if (name === undefined) return FortiMessages.incomplete('a filter criterion');
+  if (name === undefined) return renderSessionFilter(deps);
   if (name === 'clear') { deps.state.clearSessionFilter(); return ''; }
   if (value === undefined) return FortiMessages.incomplete('the filter value');
 
@@ -156,6 +232,24 @@ function setSessionFilter(words: readonly string[], deps: FortiDiagDeps): string
       return FortiMessages.parseError(name,
         'known filters: src, dst, sport, dport, proto, policy, vd, clear.');
   }
+}
+
+function renderSessionFilter(deps: FortiDiagDeps): string {
+  const filter = deps.state.sessionFilter;
+  const shown = (value: unknown): string =>
+    value === undefined || value === null || Number.isNaN(value) ? 'any' : String(value);
+
+  return [
+    `vd: ${shown(filter.vd)}`,
+    `sintf: any`,
+    `dintf: any`,
+    `src: ${shown(filter.src)}`,
+    `dst: ${shown(filter.dst)}`,
+    `src-port: ${shown(filter.sport)}`,
+    `dst-port: ${shown(filter.dport)}`,
+    `proto: ${shown(filter.proto)}`,
+    `policy: ${shown(filter.policy)}`,
+  ].join('\n');
 }
 
 function diagnoseDebug(rest: readonly string[], deps: FortiDiagDeps): string {
@@ -185,9 +279,25 @@ function diagnoseDebug(rest: readonly string[], deps: FortiDiagDeps): string {
   return FortiMessages.unknownPath(rest.join(' '));
 }
 
+function renderFlowFilter(deps: FortiDiagDeps): string {
+  const filter = deps.state.debugFlow.filter;
+  const shown = (value: unknown, fallback: string): string =>
+    value === undefined || value === null || Number.isNaN(value)
+      ? fallback : String(value);
+
+  return [
+    'vd: any',
+    `addr: ${shown(filter.addr, '0.0.0.0')}`,
+    `saddr: ${shown(filter.saddr, '0.0.0.0')}`,
+    `daddr: ${shown(filter.daddr, '0.0.0.0')}`,
+    `port: ${shown(filter.port, '0')}`,
+    `proto: ${shown(filter.proto, '0')}`,
+  ].join('\n');
+}
+
 function setFlowFilter(words: readonly string[], deps: FortiDiagDeps): string {
   const [name, value] = words;
-  if (name === undefined) return FortiMessages.incomplete('a filter criterion');
+  if (name === undefined) return renderFlowFilter(deps);
   if (name === 'clear') { deps.state.debugFlow.filter = {}; return ''; }
   if (value === undefined) return FortiMessages.incomplete('the filter value');
 
@@ -204,8 +314,27 @@ function setFlowFilter(words: readonly string[], deps: FortiDiagDeps): string {
   }
 }
 
+function diagnoseFqdnList(deps: FortiDiagDeps): string {
+  const lignes: string[] = [];
+  for (const entry of deps.fw.getDnsClient().entries()) {
+    lignes.push(`${entry.fqdn}:`);
+    for (const address of entry.addresses) {
+      lignes.push(`\t${address}\t${entry.ttl}`);
+    }
+  }
+  return lignes.join('\n');
+}
+
 function diagnoseIprope(rest: readonly string[], deps: FortiDiagDeps): string {
   if (rest[0] === 'auth') return diagnoseAuth(rest.slice(1), deps);
+  if (rest[0] === 'vip') {
+    if (rest[1] !== 'list') return FortiMessages.unknownPath(`firewall ${rest.join(' ')}`);
+    return renderVipList(deps.fw.getNatPolicy().ordered(), deps.vdom());
+  }
+  if (rest[0] === 'fqdn') {
+    if (rest[1] !== 'list') return FortiMessages.unknownPath(`firewall ${rest.join(' ')}`);
+    return diagnoseFqdnList(deps);
+  }
   if (rest[0] !== 'iprope') return FortiMessages.unknownPath(rest.join(' '));
 
   const options = { zones: deps.fw.getZoneTable(), vdom: 0 };
@@ -241,18 +370,42 @@ function diagnoseAuth(rest: readonly string[], deps: FortiDiagDeps): string {
 }
 
 function diagnoseVpn(rest: readonly string[], deps: FortiDiagDeps): string {
+  if (rest[0] === 'ike') return diagnoseIke(rest.slice(1), deps);
   if (rest[0] !== 'tunnel') return FortiMessages.unknownPath(`vpn ${rest.join(' ')}`);
 
   const tunnels = deps.fw.getTunnelTable();
   if (rest[1] === 'list') return renderVpnTunnelList(tunnels, deps.fw.now());
-  if (rest[1] === 'summary') return renderVpnTunnelSummary(tunnels);
   if (rest[1] === 'up') {
     const name = rest[2] ?? '';
     return deps.fw.bringUpIpsecTunnel(name)
       ? ''
       : FortiMessages.commandFail(`tunnel \`${name}\` did not come up.`);
   }
+  if (rest[1] === 'flush') {
+    for (const tunnel of tunnels.all()) deps.fw.clearIpsecGateway(tunnel.name);
+    return '';
+  }
   return FortiMessages.unknownPath(`vpn tunnel ${rest.slice(1).join(' ')}`);
+}
+
+function diagnoseIke(rest: readonly string[], deps: FortiDiagDeps): string {
+  if (rest[0] !== 'gateway') return FortiMessages.unknownPath(`vpn ike ${rest.join(' ')}`);
+
+  const tunnels = deps.fw.getTunnelTable();
+  if (rest[1] === 'list') return renderIkeGatewayList(tunnels, deps.fw.now());
+  if (rest[1] === 'flush') {
+    for (const tunnel of tunnels.all()) deps.fw.clearIpsecGateway(tunnel.name);
+    return '';
+  }
+  if (rest[1] === 'clear') {
+    if (rest[2] !== 'name' || rest[3] === undefined) {
+      return FortiMessages.incomplete('`name <gateway>`');
+    }
+    if (!tunnels.getPhase1(rest[3])) return FortiMessages.unknownKey(rest[3]);
+    deps.fw.clearIpsecGateway(rest[3]);
+    return '';
+  }
+  return FortiMessages.unknownPath(`vpn ike gateway ${rest.slice(1).join(' ')}`);
 }
 
 function diagnoseSniffer(rest: readonly string[], deps: FortiDiagDeps): string {
@@ -286,12 +439,15 @@ function setLogFilter(words: readonly string[], deps: FortiDiagDeps): string {
   if (name === 'reset') { deps.state.clearLogFilter(); return ''; }
 
   if (name === 'category') {
-    const category = tail[0];
-    if (category !== 'traffic' && category !== 'event' && category !== 'utm') {
-      return FortiMessages.valueError(category ?? '',
-        'known categories: traffic, event, utm.');
+    const raw = tail[0];
+    if (raw === '?') return describeLogCategories();
+    const category = raw === undefined ? undefined : resolveLogCategory(raw);
+    if (!category) {
+      return FortiMessages.valueError(raw ?? '',
+        `known categories:\n${describeLogCategories()}`);
     }
-    view.category = category;
+    view.category = category.type;
+    view.subtype = category.subtype;
     return '';
   }
   if (name === 'view-lines') {

@@ -1,3 +1,4 @@
+import { resolveFortiTimezone } from '../schema/timezones';
 import type { Firewall } from '../../../Firewall';
 import type { FortiCommitDevice } from '../schema/types';
 import {
@@ -38,7 +39,10 @@ export function buildCommitDevice(fw: Firewall): FortiCommitDevice {
         if (!route.enabled || route.blackhole) return;
         routes.addStatic(route.destination, route.mask,
           route.gateway === '0.0.0.0' ? undefined : route.gateway,
-          { iface: route.iface || undefined, distance: route.distance, id: route.id });
+          {
+            iface: route.iface || undefined, distance: route.distance,
+            priority: route.priority, id: route.id,
+          });
       },
       applySdwan(patch) {
         return fw.applySdwan(patch);
@@ -99,7 +103,35 @@ export function buildCommitDevice(fw: Firewall): FortiCommitDevice {
             settings.manageMask ?? '255.255.255.0', settings.gateway);
         }
       },
+      applyDnsSettings(settings) {
+        fw.getDnsClient().applySettings(settings);
+      },
+      resolveFqdnNow(fqdn) {
+        fw.getDnsClient().forget(fqdn);
+        fw.getDnsClient().query(fqdn);
+      },
+      applyDnsServerInterface(entry) {
+        fw.getDnsServer().applyInterface(entry);
+      },
+      removeDnsServerInterface(iface) {
+        fw.getDnsServer().removeInterface(iface);
+      },
+      applyDnsZone(zone) {
+        fw.getDnsServer().applyZone(zone);
+      },
+      removeDnsZone(name) {
+        fw.getDnsServer().removeZone(name);
+      },
+      applyHostname(hostname) {
+        if (hostname.length > 0) fw.setName(hostname);
+      },
       applyGlobalSettings(settings) {
+        if (settings.hostname !== undefined && settings.hostname.length > 0) {
+          fw.setName(settings.hostname);
+        }
+        const zone = settings.timezone === undefined
+          ? null : resolveFortiTimezone(settings.timezone);
+        if (zone) fw.setTimezone(zone.name);
         fw.setMultiVdom(settings.multiVdom);
         if (settings.authHttpPort !== undefined && settings.authHttpsPort !== undefined) {
           fw.setAuthPortalPorts(settings.authHttpPort, settings.authHttpsPort);
@@ -161,6 +193,20 @@ export function buildCommitDevice(fw: Firewall): FortiCommitDevice {
       removeAntivirusProfile(name) {
         fw.getUtmProfiles().removeAntivirus(name);
       },
+      applyApplicationList(list) {
+        fw.getUtmProfiles().setApplicationList({
+          name: list.name,
+          entries: list.entries.map(entry => ({
+            id: entry.id,
+            application: entry.application,
+            action: entry.action === 'allow' ? 'allow' : 'block',
+          })),
+          comment: list.comment,
+        });
+      },
+      removeApplicationList(name) {
+        fw.getUtmProfiles().removeApplicationList(name);
+      },
       applyWebFilterProfile(profile) {
         fw.getUtmProfiles().setWebFilter({
           name: profile.name,
@@ -168,8 +214,12 @@ export function buildCommitDevice(fw: Firewall): FortiCommitDevice {
           categoryFilters: profile.categoryFilters.map(categoryEntry),
           unclassifiedAction: utmAction(profile.unclassifiedAction),
           logAllUrl: profile.logAllUrl,
+          featureSet: profile.featureSet,
           comment: profile.comment,
         });
+      },
+      webFilterFeatureSet(name) {
+        return fw.getUtmProfiles().getWebFilter(name)?.featureSet;
       },
       removeWebFilterProfile(name) {
         fw.getUtmProfiles().removeWebFilter(name);
@@ -208,10 +258,14 @@ export function buildCommitDevice(fw: Firewall): FortiCommitDevice {
         fw.getUtmProfiles().setSslSsh({
           name: profile.name,
           httpsMode: profile.httpsMode === 'certificate-inspection'
-            ? 'certificate-inspection'
+            || profile.httpsMode === 'deep-inspection'
+            ? profile.httpsMode
             : 'disable',
           httpsPorts: [...profile.httpsPorts],
           caName: profile.caName,
+          untrustedCaName: profile.untrustedCaName,
+          serverCertMode: profile.serverCertMode,
+          exemptions: profile.exemptions?.map(entry => ({ ...entry })),
           comment: profile.comment,
         });
       },

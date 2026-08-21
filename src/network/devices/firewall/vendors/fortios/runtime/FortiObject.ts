@@ -37,6 +37,10 @@ export class FortiObject implements FortiObjectView {
     return this.env.setting(path, attribute);
   }
 
+  hasPhysicalKey(): boolean {
+    return this.env.isPhysicalPort?.(this.key) ?? false;
+  }
+
   childEntries(name: string): readonly FortiObject[] {
     return this.childTables.get(name)?.all() ?? [];
   }

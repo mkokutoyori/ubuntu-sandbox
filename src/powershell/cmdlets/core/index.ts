@@ -154,10 +154,24 @@ import {
   SetDnsServerForwarderCmdlet, GetDnsServerForwarderCmdlet,
 } from './DnsServerCmdlets';
 import {
-  AddDhcpServerv4ScopeCmdlet, GetDhcpServerv4ScopeCmdlet,
+  AddDhcpServerv4ScopeCmdlet, GetDhcpServerv4ScopeCmdlet, GetDhcpServerv4BindingCmdlet,
+  GetDhcpServerv4DnsSettingCmdlet, SetDhcpServerv4DnsSettingCmdlet,
   AddDhcpServerv4ExclusionRangeCmdlet, AddDhcpServerv4ReservationCmdlet,
   SetDhcpServerv4OptionValueCmdlet, GetDhcpServerv4LeaseCmdlet,
   AddDhcpServerInDCCmdlet,
+  SetDhcpServerv4ScopeCmdlet,
+  RemoveDhcpServerv4ScopeCmdlet,
+  GetDhcpServerv4ReservationCmdlet,
+  RemoveDhcpServerv4ReservationCmdlet,
+  GetDhcpServerv4ExclusionRangeCmdlet,
+  RemoveDhcpServerv4ExclusionRangeCmdlet,
+  GetDhcpServerv4OptionValueCmdlet,
+  RemoveDhcpServerv4OptionValueCmdlet,
+  RemoveDhcpServerv4LeaseCmdlet,
+  GetDhcpServerv4ScopeStatisticsCmdlet,
+  GetDhcpServerv4StatisticsCmdlet,
+  GetDhcpServerInDCCmdlet,
+  RemoveDhcpServerInDCCmdlet,
 } from './DhcpServerCmdlets';
 import {
   NewNpsRadiusClientCmdlet, GetNpsRadiusClientCmdlet, RemoveNpsRadiusClientCmdlet,
@@ -631,11 +645,27 @@ export function registerServerCmdlets(registry: CmdletRegistry): void {
   // ── DHCP Server role (PRD-Windows-Server.md §5 P8) ──────────────────────────
   registry.register(new AddDhcpServerv4ScopeCmdlet());
   registry.register(new GetDhcpServerv4ScopeCmdlet());
+  registry.register(new GetDhcpServerv4BindingCmdlet());
+  registry.register(new GetDhcpServerv4DnsSettingCmdlet());
+  registry.register(new SetDhcpServerv4DnsSettingCmdlet());
   registry.register(new AddDhcpServerv4ExclusionRangeCmdlet());
   registry.register(new AddDhcpServerv4ReservationCmdlet());
   registry.register(new SetDhcpServerv4OptionValueCmdlet());
   registry.register(new GetDhcpServerv4LeaseCmdlet());
   registry.register(new AddDhcpServerInDCCmdlet());
+  registry.register(new SetDhcpServerv4ScopeCmdlet());
+  registry.register(new RemoveDhcpServerv4ScopeCmdlet());
+  registry.register(new GetDhcpServerv4ReservationCmdlet());
+  registry.register(new RemoveDhcpServerv4ReservationCmdlet());
+  registry.register(new GetDhcpServerv4ExclusionRangeCmdlet());
+  registry.register(new RemoveDhcpServerv4ExclusionRangeCmdlet());
+  registry.register(new GetDhcpServerv4OptionValueCmdlet());
+  registry.register(new RemoveDhcpServerv4OptionValueCmdlet());
+  registry.register(new RemoveDhcpServerv4LeaseCmdlet());
+  registry.register(new GetDhcpServerv4ScopeStatisticsCmdlet());
+  registry.register(new GetDhcpServerv4StatisticsCmdlet());
+  registry.register(new GetDhcpServerInDCCmdlet());
+  registry.register(new RemoveDhcpServerInDCCmdlet());
 
   // ── NPS (RADIUS) role (PRD-Windows-Server.md §5 P9 + Advanced P22) ──────────
   registry.register(new NewNpsRadiusClientCmdlet());

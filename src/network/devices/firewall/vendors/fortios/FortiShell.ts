@@ -4,6 +4,10 @@ import type { Suggestion } from '../../../../../cli/CompletionEngine';
 import type { FortiGate } from './FortiGate';
 import { FORTIOS_PROFILE } from './FortiProfile';
 import { FortiMessages, FORTI_COMMAND_FAIL, setHintsEnabled } from './FortiMessages';
+import {
+  fortiSystemTime, runExecuteDate, runExecuteTime,
+} from './diag/timeCommands';
+import { applyFilter, splitPipe } from './render/outputFilter';
 import { FortiSocle } from './FortiSocle';
 import { schemaIndex } from './schema';
 import type {
@@ -34,8 +38,10 @@ import type {
 } from '../../inspection/UtmProfiles';
 import { FortiDiagnostics } from './diag/FortiDiagnostics';
 import { deniedLog, runDiagnose, runExecuteLog } from './diag/FortiDiagCommands';
+import { renderVpnTunnelList, renderVpnTunnelSummary } from './diag/vpnTunnelRenderer';
 import {
   renderArpTable, renderInterfaceStatus, renderPerformanceStatus,
+  type InterfaceStatusFacts,
   renderBgpNeighbors, renderBgpSummary, renderDhcpLeases,
   renderOspfNeighbors, renderRoutingTable, renderSystemStatus,
 } from './diag/getViews';
@@ -44,10 +50,12 @@ import type { FortiLogFormat } from './log/fortiLogFormat';
 import {
   shouldLogTraffic, shouldLogTrafficStart, trafficCloseLog, trafficStartLog,
 } from './log/trafficLog';
+import { utmLog } from './log/utmLog';
+import { renderFortiguardServiceStatus } from './diag/fortiguardRenderer';
 
 export { FORTI_COMMAND_FAIL };
 
-export const FORTI_BUILD = '2662';
+export const FORTI_BUILD = '2660';
 
 const PER_MEMBER_LINE = /^set (priority|hostname)\b/;
 
@@ -56,13 +64,30 @@ export class FortiShell {
   private readonly nav: FortiNavigator;
   private readonly socle: FortiSocle;
   private readonly diagnostics = new FortiDiagnostics();
+  private seedFactoryCertificates(): void {
+    const spec = this.tree.spec(['vpn', 'certificate', 'local']);
+    if (!spec) return;
+    const table = this.tree.table(spec);
+    for (const name of this.fw.getCertificateStore().localNames()) {
+      const entry = this.fw.getCertificateStore().local(name);
+      if (!entry || entry.source !== 'factory') continue;
+      const object = table.ensure(name);
+      object.set('certificate', [entry.certificatePem]);
+      object.set('private-key', [entry.privateKeyPem]);
+      object.set('source', ['factory']);
+    }
+  }
+
   private vdom = 'root';
   private adminName: string | null = null;
   private globalScope = false;
+  private continuation: string | null = null;
 
   constructor(private readonly fw: FortiGate) {
     this.tree = new FortiConfigTree(schemaIndex());
     this.tree.bindScope(() => this.vdom);
+    this.tree.bindPhysicalPorts((name) => this.fw.getPort(name) !== undefined);
+    this.seedFactoryCertificates();
     const validator = new FortiValidator(
       (target, name) => this.referenceExists(target, name));
     this.nav = new FortiNavigator({
@@ -90,25 +115,46 @@ export class FortiShell {
     this.fw.setTrafficLogger({
       onSessionOpened: (session, rule) => {
         if (!shouldLogTrafficStart(rule)) return;
-        this.fw.getLogStore().append(
-          trafficStartLog({ session, rule, now: this.fw.now() }));
+        this.fw.getLogStore().append(trafficStartLog({
+          session, rule, now: this.fw.now(),
+          identity: this.loggedIdentity(session.c2s.sourceIP),
+        }));
       },
       onSessionClosed: (session, reason) => {
         const rule = session.policyId === undefined
           ? undefined
           : this.fw.getPolicyStore().byId(session.policyId);
         if (!shouldLogTraffic(rule)) return;
-        this.fw.getLogStore().append(
-          trafficCloseLog({ session, rule, now: this.fw.now() }, reason));
+        this.fw.getLogStore().append(trafficCloseLog({
+          session, rule, now: this.fw.now(),
+          identity: this.loggedIdentity(session.c2s.sourceIP),
+        }, reason));
       },
       onDenied: (context) => {
+        const utm = context.utmVerdict === undefined
+          ? undefined : utmLog(context, context.utmVerdict, this.fw.now());
+        if (utm) { this.fw.getLogStore().append(utm); return; }
         const rule = context.matchedPolicy;
         if (rule?.implicit === true && !this.logsImplicitDeny()) return;
         if (rule !== undefined && rule.implicit === false
           && !shouldLogTraffic(rule)) return;
-        this.fw.getLogStore().append(deniedLog(context, this.fw.now()));
+        this.fw.getLogStore().append(deniedLog(
+          context, this.fw.now(),
+          this.loggedIdentity((context.originalPacket as { sourceIP: { toString(): string } })
+            .sourceIP.toString())));
       },
     });
+  }
+
+  private loggedIdentity(address: string) {
+    const identity = this.fw.getIdentityTable().lookup(address);
+    if (!identity) return undefined;
+    return {
+      user: identity.user,
+      groups: identity.groups,
+      source: identity.source,
+      server: identity.server,
+    };
   }
 
   private clusterConfigurationText(): string {
@@ -160,7 +206,25 @@ export class FortiShell {
   }
 
   execute(rawLine: string): string {
-    const line = rawLine.trim();
+    if (this.continuation !== null) {
+      this.continuation = `${this.continuation}\n${rawLine}`;
+      if (hasOpenQuote(this.continuation)) return '';
+      const whole = this.continuation;
+      this.continuation = null;
+      return this.execute(whole);
+    }
+    if (hasOpenQuote(rawLine)) {
+      this.continuation = rawLine;
+      return '';
+    }
+
+    const piped = splitPipe(rawLine.trim());
+    if (piped.error !== null) return piped.error;
+    if (piped.filter === null) return this.runLine(piped.command);
+    return applyFilter(this.runLine(piped.command), piped.filter);
+  }
+
+  private runLine(line: string): string {
     if (line.length === 0) return '';
     if (line.endsWith('?')) {
       return this.help(line.slice(0, -1)).join('\n');
@@ -355,9 +419,15 @@ export class FortiShell {
       return renderWholeConfig(this.tree, options).join('\n');
     }
 
-    const lines = renderPath(this.tree, words, options);
-    if (lines === null) return FortiMessages.unknownPath(words.join(' '));
-    return lines.join('\n');
+    for (let take = Math.min(words.length, 4); take >= 1; take--) {
+      const path = words.slice(0, take);
+      if (!this.tree.spec(path)) continue;
+      const key = words[take] === undefined ? undefined : unquote(words[take]);
+      const lines = renderPath(this.tree, path, options, key);
+      if (lines === null) return FortiMessages.unknownKey(key ?? '');
+      return lines.join('\n');
+    }
+    return FortiMessages.unknownPath(words.join(' '));
   }
 
   private get(rest: readonly string[]): string {
@@ -393,6 +463,16 @@ export class FortiShell {
         uptimeMs: this.fw.getUptimeMs(),
       });
     }
+
+    if (path === 'vpn ipsec tunnel summary') {
+      return renderVpnTunnelSummary(this.fw.getTunnelTable());
+    }
+    if (path === 'vpn ipsec tunnel details' || path === 'vpn ipsec tunnel name') {
+      return renderVpnTunnelList(this.fw.getTunnelTable(), this.fw.now());
+    }
+    if (path === 'system fortiguard-service status') {
+      return renderFortiguardServiceStatus();
+    }
     if (path === 'system arp') return renderArpTable(this.fw.getArpService());
     if (path === 'system ha status') {
       return renderHaStatus(this.fw.getHa(), {
@@ -402,13 +482,17 @@ export class FortiShell {
       });
     }
     if (path === 'system interface' || path === 'system interface physical') {
-      return renderInterfaceStatus(this.fw.getInterfaceTable());
+      return renderInterfaceStatus(
+        this.interfaceStatusFacts(), path.endsWith('physical'));
     }
     if (path === 'router info ospf neighbor') {
       return renderOspfNeighbors(this.fw.getRouting().ospfNeighbors());
     }
-    if (path === 'router info routing-table all') {
-      return renderRoutingTable(this.fw.getRouteTable());
+    if (path.startsWith('router info routing-table ')) {
+      const view = path.slice('router info routing-table '.length);
+      if (view !== 'all' && view !== 'static'
+        && view !== 'connected' && view !== 'database') return null;
+      return renderRoutingTable(this.fw.getRouteTable(), view);
     }
     if (path === 'router info bgp summary') {
       return renderBgpSummary(this.fw.getRouting().getBgp().summaryFacts());
@@ -417,6 +501,30 @@ export class FortiShell {
       return renderBgpNeighbors(this.fw.getRouting().getBgp().summaryFacts());
     }
     return null;
+  }
+
+  private interfaceStatusFacts(): InterfaceStatusFacts[] {
+    return this.fw.listL3Interfaces().map((iface) => {
+      const port = this.fw.getPort(iface.name);
+      const linked = port !== undefined && port.isConnected() && port.isOperationallyUp();
+      return {
+        name: iface.name,
+        mode: this.interfaceSetting(iface.name, 'mode') ?? 'static',
+        ip: `${iface.ip ?? '0.0.0.0'} ${iface.mask ?? '0.0.0.0'}`,
+        ipv6: '::/0',
+        status: iface.up && (port === undefined || linked) ? 'up' : 'down',
+        speed: linked && port !== undefined
+          ? `${port.getNegotiatedSpeed()}Mbps (Duplex: ${port.getNegotiatedDuplex()})`
+          : 'n/a',
+        physical: port !== undefined,
+      };
+    });
+  }
+
+  private interfaceSetting(name: string, attribute: string): string | undefined {
+    const spec = this.tree.spec(['system', 'interface']);
+    if (!spec) return undefined;
+    return this.tree.table(spec).get(name)?.effective(attribute)[0];
   }
 
   private systemStatus(): string {
@@ -434,8 +542,13 @@ export class FortiShell {
       vdomsInNat: settings === 'transparent' ? 0 : 1,
       vdomsInTransparent: settings === 'transparent' ? 1 : 0,
       vdomConfiguration: vdomMode === 'no-vdom' ? 'disable' : 'enable',
-      haMode: 'standalone',
-      systemTime: new Date(this.fw.now()).toUTCString(),
+      haMode: this.fw.getHa().getConfiguration().mode === 'standalone'
+        ? 'standalone' : this.fw.getHa().getConfiguration().mode,
+      licenseStatus: 'Valid',
+      vmCpus: 1,
+      vmMemoryMb: 1985,
+      logDisk: 'Available',
+      systemTime: fortiSystemTime(this.fw),
     });
   }
 
@@ -448,11 +561,38 @@ export class FortiShell {
       vdom: () => this.vdom,
       logFormat: () => this.logFormat(),
       logContext: () => this.logContext(),
+      configTree: () => this.tree,
     };
   }
 
   private diagnose(rest: readonly string[]): string {
     return runDiagnose(rest, this.diagDeps());
+  }
+
+  private executeCertificate(rest: readonly string[]): string {
+    if (rest[0] !== 'local' || rest[1] !== 'export') {
+      return FortiMessages.commandFail(
+        'only `execute vpn certificate local export` is available here.');
+    }
+    const [destination, name, file, server] = rest.slice(2);
+    if (!destination || !name || !file) {
+      return FortiMessages.incomplete('a destination, a certificate name and a file name');
+    }
+    const entry = this.fw.getCertificateStore().local(name);
+    if (!entry) return FortiMessages.commandFail(`certificate "${name}" does not exist.`);
+
+    if (destination !== 'tftp') {
+      return FortiMessages.commandFail(
+        `destination "${destination}" is not available; this unit has no USB port `
+        + 'and no FTP client.');
+    }
+    if (!server) return FortiMessages.incomplete('a TFTP server address');
+
+    return FortiMessages.commandFail(
+      'this firewall has no UDP socket layer, so it can run no TFTP client — the '
+      + `certificate cannot be pushed to ${server}. Read it with \`show vpn `
+      + `certificate local ${name}\` and copy the PEM, which is what the GUI's `
+      + 'Download button hands you.');
   }
 
   private executeVerb(rest: readonly string[]): string {
@@ -461,6 +601,24 @@ export class FortiShell {
     if (rest[0] === 'ha') return this.executeHa(rest.slice(1));
     if (rest[0] === 'dhcp' && rest[1] === 'lease-list') {
       return renderDhcpLeases(this.fw.getDhcp().leases());
+    }
+    if (rest[0] === 'dhcp' && rest[1] === 'lease-clear') {
+      if (rest.length < 3) return FortiMessages.incomplete('an IP address');
+      return this.fw.getDhcp().clearLease(rest[2])
+        ? '' : FortiMessages.commandFail(`no lease held for ${rest[2]}.`);
+    }
+    if (rest[0] === 'traceroute') {
+      if (rest.length < 2) return FortiMessages.incomplete('a destination');
+      return this.fw.runTraceroute(rest[1]);
+    }
+    if (rest[0] === 'vpn' && rest[1] === 'certificate') {
+      return this.executeCertificate(rest.slice(2));
+    }
+    if (rest[0] === 'time') return runExecuteTime(rest.slice(1), this.fw);
+    if (rest[0] === 'date') return runExecuteDate(rest.slice(1), this.fw);
+    if (rest[0] === 'ping') {
+      if (rest.length < 2) return FortiMessages.incomplete('a destination');
+      return this.fw.runPing(rest[1]);
     }
     return FortiMessages.commandFail(
       `\`execute ${rest[0]}\` is not implemented in this simulator.`,
@@ -524,6 +682,17 @@ export class FortiShell {
 
 function helpPrefix(input: string): string {
   return input.replace(/^\s+/, '');
+}
+
+function hasOpenQuote(text: string): boolean {
+  let quoted = false;
+  let escaped = false;
+  for (const character of text) {
+    if (escaped) { escaped = false; continue; }
+    if (character === '\\') { escaped = true; continue; }
+    if (character === '"') quoted = !quoted;
+  }
+  return quoted;
 }
 
 function splitTokens(line: string): string[] {

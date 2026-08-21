@@ -50,6 +50,7 @@ export interface DHCPPoolConfig {
   leaseDuration: number;
   /** Client-identifier deny patterns */
   denyPatterns: string[];
+  active?: boolean;
   /** Option 58: T1 renewal time in seconds (default: 50% of lease) */
   renewalTime?: number;
   /** Option 59: T2 rebinding time in seconds (default: 87.5% of lease) */
@@ -79,9 +80,19 @@ export interface DHCPPoolConfig {
 // ─── DHCP Message Parameters (RFC 2131 §2, RFC 2132) ────────────────
 
 /** Parameters sent in DHCPDISCOVER (client → server) */
+export interface DhcpClientFqdn {
+  /** RFC 4702 §2.1 flags: bit0 S, bit1 O, bit2 E, bit3 N. */
+  flags: number;
+  name: string;
+}
+
 export interface DHCPDiscoverParams {
   clientMAC: string;
   xid: number;
+  /** Option 12: the name the client calls itself. */
+  hostName?: string;
+  /** Option 81: RFC 4702 Client FQDN. */
+  clientFqdn?: DhcpClientFqdn;
   /** Option 61: Client Identifier (01 + MAC for Ethernet) */
   clientIdentifier: string;
   /** Option 55: Parameter Request List (option codes client wants) */
@@ -117,6 +128,8 @@ export interface DHCPOfferResult {
 export interface DHCPRequestParams {
   clientMAC: string;
   xid: number;
+  hostName?: string;
+  clientFqdn?: DhcpClientFqdn;
   /** Option 50: Requested IP Address */
   requestedIP: string;
   /** Option 54: Server Identifier (in SELECTING state) */

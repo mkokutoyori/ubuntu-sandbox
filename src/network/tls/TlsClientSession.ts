@@ -44,6 +44,8 @@ export interface TlsClientConfig {
   readonly supportedGroups?: readonly string[];
   /** RFC 7301 — protocols offered, in preference order (e.g. `['h2', 'http/1.1']`). */
   readonly alpn?: readonly string[];
+  /** RFC 6066 §3 — the host_name this client is asking for. */
+  readonly serverName?: string;
   /** A ticket from a prior session's NewSessionTicket — offers PSK resumption (§4.2.11). */
   readonly resumptionTicket?: SessionTicket;
   /** Sent as 0-RTT data alongside ClientHello (§2.3) — only honored together with `resumptionTicket`. */
@@ -129,6 +131,7 @@ export class TlsClientSession {
         supportedVersions: ['1.3'], keyShare: this.clientKeyShare,
         supportedGroups: this.supportedGroups, signatureAlgorithms: ['ecdsa_secp256r1_sha256'],
         alpn: this.config.alpn,
+        serverName: this.config.serverName,
         preSharedKey: ticket?.ticket,
         pskKeyExchangeModes: ticket ? ['psk_dhe_ke'] : undefined,
         earlyData: ticket && this.config.earlyData ? true : undefined,
@@ -239,6 +242,7 @@ export class TlsClientSession {
 
     const leafCert = certificate.certificateList[0];
     if (!leafCert) return this.fail('certificate_unknown');
+    this.peerCertificate = leafCert;
     const verification = this.config.verifier.verify(leafCert);
     if (verification.ok === false) {
       this.lastAlert = certificateAlert(verification.reason);
@@ -248,7 +252,6 @@ export class TlsClientSession {
       this.emit({ topic: 'tls.alert.sent', payload: { sessionId: this.sessionId, role: 'client', alert: this.lastAlert } });
       return null;
     }
-    this.peerCertificate = leafCert;
 
     this.transcript.push(encodeHandshakeMessage(encryptedExtensions));
     if (certificateRequest) this.transcript.push(encodeHandshakeMessage(certificateRequest));

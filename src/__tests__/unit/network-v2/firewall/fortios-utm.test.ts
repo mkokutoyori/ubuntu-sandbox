@@ -306,15 +306,17 @@ describe('`utm-status` commande l`existence des references', () => {
 });
 
 describe('SSL : ce qui est lisible sans dechiffrer, et ce qui ne l`est pas', () => {
-  it('`deep-inspection` est refuse en nommant la brique absente', async () => {
+  it('`deep-inspection` est acceptee et retient l\'AC qui resignera', async () => {
     const { sh } = await laboratoire();
 
     const vu = run(sh, 'config firewall ssl-ssh-profile', 'edit "SSL"',
-      'config https', 'set status deep-inspection');
+      'config https', 'set status deep-inspection', 'end',
+      'set server-cert-mode re-sign', 'set caname "Fortinet_CA_SSL"', 'next', 'end');
 
-    expect(vu).toContain('Command fail');
-    expect(vu).toContain('deep-inspection');
-    expect(vu).toContain('certificate-inspection');
+    expect(vu).not.toContain('Command fail');
+    const conf = run(sh, 'show firewall ssl-ssh-profile SSL');
+    expect(conf).toContain('set status deep-inspection');
+    expect(conf).toContain('set caname "Fortinet_CA_SSL"');
   });
 
   it('`certificate-inspection` est acceptee', async () => {
@@ -462,7 +464,6 @@ describe('filtre de fichiers : le CONTENU decide, pas l`extension', () => {
 
 describe('les familles sans moteur sont REFUSEES, pas rangees', () => {
   it.each([
-    ['application list', 'signature'],
     ['ips sensor', 'signature'],
     ['dlp sensor', 'signature'],
     ['firewall shaper traffic-shaper', 'clock'],

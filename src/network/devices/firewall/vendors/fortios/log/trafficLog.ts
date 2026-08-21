@@ -10,10 +10,28 @@ const PROTOCOL_SERVICE: Readonly<Record<number, string>> = Object.freeze({
   1: 'PING', 6: 'tcp/', 17: 'udp/',
 });
 
+export interface LoggedIdentity {
+  readonly user: string;
+  readonly groups: readonly string[];
+  readonly source: string;
+  readonly server?: string;
+}
+
 export interface TrafficLogFacts {
   readonly session: FirewallSession;
   readonly rule?: SecurityRule;
   readonly now: number;
+  readonly identity?: LoggedIdentity;
+}
+
+export function identityFields(
+  identity: LoggedIdentity | undefined,
+): Record<string, string> {
+  if (!identity) return {};
+  const fields: Record<string, string> = { user: identity.user };
+  if (identity.groups.length > 0) fields.group = identity.groups.join(',');
+  fields.authserver = identity.server ?? identity.source;
+  return fields;
 }
 
 export function shouldLogTraffic(rule: SecurityRule | undefined): boolean {
@@ -69,6 +87,7 @@ export function trafficDenyLog(facts: {
   readonly ingressInterface: string;
   readonly egressInterface: string;
   readonly policyId: string;
+  readonly identity?: LoggedIdentity;
 }): FirewallLogDraft {
   return {
     at: facts.now,
@@ -89,6 +108,7 @@ export function trafficDenyLog(facts: {
       service: serviceLabel(facts.protocol, facts.destPort),
       sentbyte: 0,
       rcvdbyte: 0,
+      ...identityFields(facts.identity),
     },
   };
 }
@@ -110,6 +130,7 @@ function common(facts: TrafficLogFacts): Record<string, string | number> {
     policyid: facts.rule?.id ?? session.policyId ?? '0',
     policyname: facts.rule?.name ?? '',
     service: serviceLabel(flow.protocol, flow.destPort),
+    ...identityFields(facts.identity),
   };
 
   if (translation === undefined) {

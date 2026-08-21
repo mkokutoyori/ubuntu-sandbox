@@ -94,7 +94,28 @@ function runListen(
   } catch {
     return { output: `nc: Address already in use`, exitCode: 1 };
   }
+  if (!udp && !openTcpListener(ctx, port)) {
+    table.unbind('tcp', '0.0.0.0', port);
+    return { output: `nc: Address already in use`, exitCode: 1 };
+  }
   return { output: verbose ? `Listening on 0.0.0.0 ${port}` : '', exitCode: 0 };
+}
+
+function openTcpListener(ctx: LinuxCommandContext, port: number): boolean {
+  const device = localDeviceOf(ctx) as unknown as {
+    getTcpStack?: () => {
+      listen(localPort: number, opts: { onAccept: (socket: unknown) => void }): unknown;
+    };
+  } | null;
+  const stack = device?.getTcpStack?.();
+  if (!stack) return true;
+
+  try {
+    stack.listen(port, { onAccept: () => undefined });
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 export const ncCommand: LinuxCommand = {

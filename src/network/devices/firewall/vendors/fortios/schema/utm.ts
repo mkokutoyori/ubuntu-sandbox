@@ -1,7 +1,8 @@
 import {
-  choice, count, enable, text, word,
+  choice, count, enable, reference, text, word,
   type FortiObjectView, type FortiTableSpec,
 } from './types';
+import { APPLICATION_SIGNATURES } from '../../../inspection/ApplicationSignatures';
 
 const NO_SIGNATURES = 'this simulator has no FortiGuard signature database, and will '
   + 'have none. Accepting the profile would install an inspection that never '
@@ -11,13 +12,6 @@ const NO_SIGNATURES = 'this simulator has no FortiGuard signature database, and 
 const NO_WIRE_CLOCK = 'frames are delivered synchronously, with no wire clock, so a '
   + 'shaper cannot slow anything down. Counting without limiting would let a learner '
   + 'believe the limit applies.';
-
-const NO_TLS_TERMINATION = 'deep inspection terminates the client session and '
-  + 're-originates it towards the server under a certificate re-signed by the '
-  + 'FortiGate CA. This firewall forwards packets and holds no TCP or TLS '
-  + 'termination point, so it can present no certificate of its own and the '
-  + 'session would stay encrypted while the CLI claimed it was decrypted. Use '
-  + '`certificate-inspection`, which reads the SNI of the real ClientHello.';
 
 const SCAN_ACTIONS = [
   { keyword: 'block', description: 'Block the infected file.' },
@@ -60,7 +54,10 @@ export const ANTIVIRUS_PROFILE: FortiTableSpec = {
   attributes: [
     { ...word('name', 'Profile name.'), readOnly: true },
     text('comment', 'Comment.'),
-    enable('feature-set', 'Flow/proxy feature set.'),
+    choice('feature-set', 'Flow/proxy feature set.', [
+      { keyword: 'flow', description: 'Flow-based inspection.' },
+      { keyword: 'proxy', description: 'Proxy-based inspection.' },
+    ], 'flow'),
   ],
   children: [
     scanChannel('http', 'Configure HTTP AntiVirus options.'),
@@ -93,6 +90,10 @@ export const WEBFILTER_PROFILE: FortiTableSpec = {
   attributes: [
     { ...word('name', 'Profile name.'), readOnly: true },
     text('comment', 'Comment.'),
+    choice('feature-set', 'Flow/proxy feature set.', [
+      { keyword: 'flow', description: 'Flow-based inspection.' },
+      { keyword: 'proxy', description: 'Proxy-based inspection.' },
+    ], 'flow'),
     enable('log-all-url', 'Enable/disable logging all URLs visited.'),
     choice('unclassified-action', 'Action for domains this build cannot classify.',
       FILTER_ACTIONS, 'allow'),
@@ -129,6 +130,7 @@ export const WEBFILTER_PROFILE: FortiTableSpec = {
       categoryFilters: categoryEntries(object, 'ftgd-wf'),
       unclassifiedAction: object.effective('unclassified-action')[0] ?? 'allow',
       logAllUrl: object.effective('log-all-url')[0] === 'enable',
+      featureSet: object.effective('feature-set')[0] ?? 'flow',
       comment: object.effective('comment')[0] || undefined,
     });
   },
@@ -204,6 +206,10 @@ export const FILE_FILTER_PROFILE: FortiTableSpec = {
   attributes: [
     { ...word('name', 'Profile name.'), readOnly: true },
     text('comment', 'Comment.'),
+    choice('feature-set', 'Flow/proxy feature set.', [
+      { keyword: 'flow', description: 'Flow-based inspection.' },
+      { keyword: 'proxy', description: 'Proxy-based inspection.' },
+    ], 'flow'),
     enable('scan-archive-contents', 'Enable/disable archive contents scan.'),
     enable('log', 'Enable/disable file-filter logging.', true),
   ],
@@ -220,6 +226,25 @@ export const FILE_FILTER_PROFILE: FortiTableSpec = {
       attributes: [
         text('comment', 'Comment.'),
         {
+          name: 'protocol',
+          help: 'Protocols to apply the rule to.',
+          quoted: false,
+          multiValue: true,
+          parts: [{
+            name: 'protocol', type: 'ENUM', description: 'Protocol.',
+            values: [
+              { keyword: 'http-get', description: 'HTTP downloads.' },
+              { keyword: 'http-post', description: 'HTTP uploads.' },
+              { keyword: 'ftp', description: 'FTP transfers.' },
+              { keyword: 'smtp', description: 'SMTP messages.' },
+              { keyword: 'imap', description: 'IMAP messages.' },
+              { keyword: 'pop3', description: 'POP3 messages.' },
+              { keyword: 'cifs', description: 'CIFS transfers.' },
+            ],
+          }],
+          defaultValue: [],
+        },
+        {
           name: 'file-type',
           help: 'Select file types recognised by their magic number.',
           quoted: true,
@@ -235,8 +260,14 @@ export const FILE_FILTER_PROFILE: FortiTableSpec = {
               { keyword: 'gif', description: 'GIF image.' },
               { keyword: 'png', description: 'PNG image.' },
               { keyword: 'jpeg', description: 'JPEG image.' },
+              { keyword: 'msi', description: 'Windows installer (OLE compound file).' },
+              { keyword: 'bat', description: 'Windows batch script.' },
             ],
           }],
+          unimplementedValues: {
+            bat: 'a batch script has no magic number; this build recognises a file '
+              + 'type by its leading bytes, so `bat` could never match.',
+          },
           defaultValue: [],
         },
         choice('action', 'Action taken for the matched file.', [
@@ -279,12 +310,56 @@ export const SSL_SSH_PROFILE: FortiTableSpec = {
   accessGroup: 'utmgrp',
   renderOrder: 440,
   help: 'Configure SSL/SSH protocol options.',
+  predefined: [
+    'certificate-inspection', 'deep-inspection',
+    'no-inspection', 'custom-deep-inspection',
+  ],
   attributes: [
     { ...word('name', 'Profile name.'), readOnly: true },
     text('comment', 'Comment.'),
-    word('caname', 'CA certificate used by SSL inspection.', 'Fortinet_CA_SSL'),
+    choice('server-cert-mode', 'How the server certificate is handled.', [
+      { keyword: 're-sign', description: 'Re-sign the server certificate with the CA below.' },
+      { keyword: 'replace', description: 'Replace it with a certificate of this FortiGate.' },
+    ], 're-sign'),
+    reference('caname', 'CA certificate used by SSL inspection.',
+      ['vpn certificate local'], 'Fortinet_CA_SSL'),
+    reference('untrusted-caname', 'CA used when the server certificate is untrusted.',
+      ['vpn certificate local'], 'Fortinet_CA_Untrusted'),
+    reference('server-cert', 'Certificate presented under `replace` mode.',
+      ['vpn certificate local']),
+    choice('untrusted-cert', 'What to do with an untrusted server certificate.', [
+      { keyword: 'allow', description: 'Allow the session.' },
+      { keyword: 'block', description: 'Block the session.' },
+      { keyword: 'ignore', description: 'Ignore the server certificate.' },
+    ], 'allow'),
   ],
   children: [
+    {
+      path: ['ssl-exempt'],
+      kind: 'table',
+      keyType: 'integer',
+      ordered: false,
+      scope: 'vdom',
+      accessGroup: 'utmgrp',
+      renderOrder: 442,
+      help: 'Servers to exempt from SSL inspection.',
+      attributes: [
+        { ...word('id', 'Entry identifier.'), readOnly: true },
+        choice('type', 'Type of the exemption.', [
+          { keyword: 'fortiguard-category', description: 'Exempt a FortiGuard category.' },
+          { keyword: 'address', description: 'Exempt an IPv4 address object.' },
+          { keyword: 'address6', description: 'Exempt an IPv6 address object.' },
+          { keyword: 'wildcard-fqdn', description: 'Exempt a wildcard FQDN object.' },
+          { keyword: 'regex', description: 'Exempt hosts matching a regular expression.' },
+        ], 'fortiguard-category'),
+        count('fortiguard-category', 'FortiGuard category identifier.', 0, 255, 0),
+        reference('address', 'IPv4 address object to exempt.', ['firewall address']),
+        reference('address6', 'IPv6 address object to exempt.', ['firewall address6']),
+        reference('wildcard-fqdn', 'Wildcard FQDN object to exempt.',
+          ['firewall wildcard-fqdn custom']),
+        word('regex', 'Regular expression matched against the server name.'),
+      ],
+    },
     {
       path: ['https'],
       kind: 'object',
@@ -311,7 +386,6 @@ export const SSL_SSH_PROFILE: FortiTableSpec = {
               description: 'Intercept and decrypt the session.',
             },
           ], 'certificate-inspection'),
-          unimplementedValues: { 'deep-inspection': NO_TLS_TERMINATION },
         },
       ],
       onCommit() {},
@@ -325,6 +399,14 @@ export const SSL_SSH_PROFILE: FortiTableSpec = {
       httpsMode: declared,
       httpsPorts: channelPorts(object, 'https', 443),
       caName: object.effective('caname')[0] ?? 'Fortinet_CA_SSL',
+      untrustedCaName: object.effective('untrusted-caname')[0] ?? 'Fortinet_CA_Untrusted',
+      serverCertMode: object.effective('server-cert-mode')[0] ?? 're-sign',
+      exemptions: object.childEntries('ssl-exempt').map(entry => ({
+        type: entry.effective('type')[0] ?? 'fortiguard-category',
+        category: Number.parseInt(entry.effective('fortiguard-category')[0] ?? '0', 10),
+        regex: entry.effective('regex')[0] || entry.effective('wildcard-fqdn')[0] || undefined,
+        addressName: entry.effective('address')[0] || entry.effective('address6')[0] || undefined,
+      })),
       comment: object.effective('comment')[0] || undefined,
     });
   },
@@ -399,9 +481,61 @@ export const APPLICATION_LIST: FortiTableSpec = {
   renderOrder: 460,
   help: 'Configure application control lists.',
   attributes: [
-    { ...word('name', 'List name.'), unimplemented: NO_SIGNATURES },
+    { ...word('name', 'List name.'), readOnly: true },
+    text('comment', 'Comment.'),
+    choice('other-application-action', 'Action for an application with no entry.', [
+      { keyword: 'pass', description: 'Let it through.' },
+      { keyword: 'block', description: 'Block it.' },
+    ], 'pass'),
   ],
-  onCommit() {},
+  children: [
+    {
+      path: ['entries'],
+      kind: 'table',
+      keyType: 'integer',
+      ordered: true,
+      scope: 'vdom',
+      accessGroup: 'utmgrp',
+      renderOrder: 464,
+      help: 'Application control entries.',
+      attributes: [
+        { ...word('id', 'Entry identifier.'), readOnly: true },
+        {
+          name: 'application',
+          help: 'Applications recognised by their own protocol exchange.',
+          quoted: true,
+          multiValue: true,
+          parts: [{
+            name: 'application', type: 'ENUM', description: 'Application.',
+            values: APPLICATION_SIGNATURES.map(signature => ({
+              keyword: signature.name, description: signature.description,
+            })),
+          }],
+          defaultValue: [],
+        },
+        choice('action', 'Action taken for the matched application.', [
+          { keyword: 'pass', description: 'Let the flow through.' },
+          { keyword: 'block', description: 'Block the flow.' },
+          { keyword: 'reset', description: 'Reset the connection.' },
+        ], 'block'),
+      ],
+    },
+  ],
+  onCommit(object, context) {
+    context.device.applyApplicationList({
+      name: object.key,
+      entries: listOf(object, 'entries').flatMap(entry =>
+        [...entry.effective('application')].map(application => ({
+          id: entry.key,
+          application,
+          action: field(entry, 'action') === 'pass' ? 'allow' : 'block',
+        }))),
+      comment: object.effective('comment')[0] || undefined,
+    });
+  },
+  onDelete(key, context) {
+    context.device.removeApplicationList(key);
+  },
 };
 
 export const IPS_SENSOR: FortiTableSpec = {

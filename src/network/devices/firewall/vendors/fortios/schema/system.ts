@@ -5,6 +5,7 @@ import {
 import {
   MANAGEMENT_SERVICES, type ManagementService,
 } from '../../../mgmt/ManagementAccess';
+import { resolveFortiTimezone } from './timezones';
 
 const ACCESS_SERVICE_HELP: Readonly<Record<ManagementService, string>> = Object.freeze({
   ping: 'PING access.',
@@ -31,8 +32,13 @@ function isTransparent(object: FortiObjectView): boolean {
   return object.effective('opmode')[0] === 'transparent';
 }
 
+export function interfaceType(object: FortiObjectView): string {
+  if (object.isExplicit('type')) return object.effective('type')[0] ?? 'physical';
+  return object.hasPhysicalKey() ? 'physical' : 'vlan';
+}
+
 function isVlan(object: FortiObjectView): boolean {
-  return object.effective('type')[0] === 'vlan';
+  return interfaceType(object) === 'vlan';
 }
 
 export const SYSTEM_GLOBAL: FortiTableSpec = {
@@ -43,7 +49,12 @@ export const SYSTEM_GLOBAL: FortiTableSpec = {
   renderOrder: 10,
   help: 'Configure global attributes.',
   attributes: [
-    word('hostname', 'FortiGate unit name.', 'FortiGate'),
+    {
+      ...word('hostname', 'FortiGate unit name.', 'FortiGate'),
+      appliesImmediately: (values, context) => {
+        context.device.applyHostname(values[0] ?? '');
+      },
+    },
     word('alias', 'Alias for this FortiGate unit.'),
     count('admintimeout', 'Number of minutes before an idle administrator times out.',
       1, 480, 5),
@@ -66,7 +77,18 @@ export const SYSTEM_GLOBAL: FortiTableSpec = {
     ], 'check-all'),
     count('auth-http-port', 'Port the captive portal answers HTTP on.', 1, 65535, 1000),
     count('auth-https-port', 'Port the captive portal answers HTTPS on.', 1, 65535, 1003),
-    count('timezone', 'Time zone index.', 0, 86, 4),
+    {
+      name: 'timezone',
+      help: 'Time zone.',
+      quoted: false,
+      parts: [{
+        name: 'timezone', type: 'WORD',
+        description: 'Time zone index or IANA name.',
+      }],
+      defaultValue: ['4'],
+      acceptsValue: (value) => resolveFortiTimezone(value) !== null,
+      expectedValue: 'a time zone index <0-86> or an IANA name such as `Europe/Paris`.',
+    },
     enable('simulator-hints',
       '[simulator] Add a diagnostic line to refusals.', true),
     {
@@ -79,7 +101,8 @@ export const SYSTEM_GLOBAL: FortiTableSpec = {
       Number.parseInt(object.effective(name)[0] ?? '', 10) || fallback;
 
     context.device.applyGlobalSettings({
-      hostname: object.effective('hostname')[0],
+      hostname: object.isExplicit('hostname')
+        ? object.effective('hostname')[0] : undefined,
       multiVdom: object.effective('vdom-mode')[0] !== 'no-vdom',
       authHttpPort: number('auth-http-port', 1000),
       authHttpsPort: number('auth-https-port', 1003),
@@ -88,6 +111,8 @@ export const SYSTEM_GLOBAL: FortiTableSpec = {
       adminHttpPort: number('admin-port', 80),
       adminHttpsPort: number('admin-sport', 443),
       adminTimeoutMin: number('admintimeout', 5),
+      timezone: object.isExplicit('timezone')
+        ? object.effective('timezone')[0] : undefined,
       adminLockoutThreshold: number('admin-lockout-threshold', 3),
       adminLockoutDurationSec: number('admin-lockout-duration', 60),
     });
@@ -154,12 +179,15 @@ export const SYSTEM_INTERFACE: FortiTableSpec = {
       { keyword: 'dmz', description: 'Connected to a server network.' },
       { keyword: 'undefined', description: 'No specific role.' },
     ], 'undefined'),
-    choice('type', 'Interface type.', [
-      { keyword: 'physical', description: 'Physical interface.' },
-      { keyword: 'vlan', description: 'VLAN sub-interface.' },
-      { keyword: 'loopback', description: 'Loopback interface.' },
-      { keyword: 'aggregate', description: 'Link aggregate interface.' },
-    ], 'physical'),
+    {
+      ...choice('type', 'Interface type.', [
+        { keyword: 'physical', description: 'Physical interface.' },
+        { keyword: 'vlan', description: 'VLAN sub-interface.' },
+        { keyword: 'loopback', description: 'Loopback interface.' },
+        { keyword: 'aggregate', description: 'Link aggregate interface.' },
+      ], 'physical'),
+      availableWhen: (object) => !object.hasPhysicalKey(),
+    },
     { ...reference('interface', 'Parent interface name.', ['system interface']),
       availableWhen: isVlan },
     { ...count('vlanid', 'VLAN ID.', 1, 4094, 0), availableWhen: isVlan },
@@ -202,7 +230,7 @@ export const SYSTEM_INTERFACE: FortiTableSpec = {
       mask: ip[1],
       up: object.effective('status')[0] !== 'down',
       allowAccess: object.effective('allowaccess'),
-      type: object.effective('type')[0],
+      type: interfaceType(object),
       parent: object.effective('interface')[0],
       vlanId: Number.parseInt(object.effective('vlanid')[0] ?? '', 10) || undefined,
     });
@@ -251,7 +279,120 @@ export const SYSTEM_DNS: FortiTableSpec = {
     address('secondary', 'Secondary DNS server IP address.', '96.45.46.46'),
     word('domain', 'Search suffix list for hostname lookup.'),
   ],
-  onCommit() {},
+  onCommit(object, context) {
+    context.device.applyDnsSettings({
+      primary: object.effective('primary')[0] ?? '',
+      secondary: object.effective('secondary')[0] ?? '',
+      domain: object.effective('domain')[0] ?? '',
+    });
+  },
+};
+
+export const SYSTEM_DNS_SERVER: FortiTableSpec = {
+  path: ['system', 'dns-server'],
+  kind: 'table',
+  keyType: 'name',
+  ordered: false,
+  scope: 'vdom',
+  accessGroup: 'sysgrp',
+  renderOrder: 61,
+  help: 'Configure DNS servers.',
+  attributes: [
+    {
+      ...reference('name', 'DNS server name.', ['system interface']),
+      readOnly: true,
+    },
+    choice('mode', 'DNS server mode.', [
+      { keyword: 'recursive', description: 'Answer from the local zones, then recurse.' },
+      { keyword: 'non-recursive', description: 'Answer from the local zones only.' },
+      { keyword: 'forward-only', description: 'Forward what the local zones do not hold.' },
+    ], 'recursive'),
+    enable('dnsfilter-profile', 'Enable/disable the DNS filter profile.', false),
+  ],
+  onCommit(object, context) {
+    context.device.applyDnsServerInterface({
+      iface: object.key,
+      mode: object.effective('mode')[0] ?? 'recursive',
+    });
+  },
+  onDelete(key, context) {
+    context.device.removeDnsServerInterface(key);
+  },
+};
+
+export const SYSTEM_DNS_DATABASE: FortiTableSpec = {
+  path: ['system', 'dns-database'],
+  kind: 'table',
+  keyType: 'name',
+  ordered: false,
+  scope: 'vdom',
+  accessGroup: 'sysgrp',
+  renderOrder: 62,
+  help: 'Configure DNS databases.',
+  attributes: [
+    { ...word('name', 'Zone name.'), readOnly: true },
+    enable('status', 'Enable/disable this DNS zone.', true),
+    word('domain', 'Domain name.'),
+    choice('type', 'Zone type.', [
+      { keyword: 'primary', description: 'Primary zone.' },
+      { keyword: 'secondary', description: 'Secondary zone.' },
+    ], 'primary'),
+    choice('view', 'Zone view.', [
+      { keyword: 'shadow', description: 'Answer only clients of this FortiGate.' },
+      { keyword: 'public', description: 'Answer any client.' },
+    ], 'shadow'),
+    enable('authoritative', 'Enable/disable authoritative answers.', true),
+    address('ip-primary', 'IP address of the primary DNS server.'),
+    word('primary-name', 'Domain name of the default DNS server for this zone.'),
+    word('contact', 'Email address of the administrator for this zone.'),
+  ],
+  children: [
+    {
+      path: ['dns-entry'],
+      kind: 'table',
+      keyType: 'integer',
+      ordered: false,
+      scope: 'vdom',
+      accessGroup: 'sysgrp',
+      renderOrder: 63,
+      help: 'DNS entry.',
+      attributes: [
+        { ...word('id', 'Entry identifier.'), readOnly: true },
+        enable('status', 'Enable/disable this entry.', true),
+        choice('type', 'Resource record type.', [
+          { keyword: 'A', description: 'IPv4 address record.' },
+          { keyword: 'AAAA', description: 'IPv6 address record.' },
+          { keyword: 'CNAME', description: 'Canonical name record.' },
+          { keyword: 'MX', description: 'Mail exchange record.' },
+          { keyword: 'NS', description: 'Name server record.' },
+        ], 'A'),
+        word('hostname', 'Name of the host.'),
+        address('ip', 'IPv4 address of the host.'),
+        count('ttl', 'Time-to-live in seconds.', 0, 2147483647, 0),
+      ],
+    },
+  ],
+  onCommit(object, context) {
+    context.device.applyDnsZone({
+      name: object.key,
+      domain: object.effective('domain')[0] ?? '',
+      type: object.effective('type')[0] ?? 'primary',
+      authoritative: object.effective('authoritative')[0] !== 'disable',
+      primaryName: object.effective('primary-name')[0] ?? '',
+      contact: object.effective('contact')[0] ?? '',
+      entries: object.childEntries('dns-entry')
+        .filter(entry => entry.effective('status')[0] !== 'disable'
+          && (entry.effective('type')[0] ?? 'A') === 'A')
+        .map(entry => ({
+          hostname: entry.effective('hostname')[0] ?? '',
+          ip: entry.effective('ip')[0] ?? '0.0.0.0',
+          ttl: Number(entry.effective('ttl')[0] ?? '0'),
+        })),
+    });
+  },
+  onDelete(key, context) {
+    context.device.removeDnsZone(key);
+  },
 };
 
 export const SYSTEM_DHCP_SERVER: FortiTableSpec = {
@@ -274,10 +415,39 @@ export const SYSTEM_DHCP_SERVER: FortiTableSpec = {
     address('default-gateway', 'Default gateway IP address assigned by the DHCP server.'),
     address('netmask', 'Netmask assigned by the DHCP server.'),
     count('lease-time', 'Lease time in seconds, 0 means unlimited.', 0, 8640000, 604800),
+    choice('dns-service', 'Options for assigning DNS servers to DHCP clients.', [
+      { keyword: 'local', description: 'Use the FortiGate as the DNS server.' },
+      { keyword: 'default', description: 'Use the system DNS servers.' },
+      { keyword: 'specify', description: 'Use the servers named below.' },
+    ], 'specify'),
     address('dns-server1', 'DNS server 1.'),
+    address('dns-server2', 'DNS server 2.'),
     word('domain', 'Domain name suffix for the IP addresses that the DHCP server assigns.'),
   ],
   children: [
+    {
+      path: ['reserved-address'],
+      kind: 'table',
+      keyType: 'integer',
+      ordered: false,
+      scope: 'vdom',
+      accessGroup: 'sysgrp',
+      renderOrder: 72,
+      help: 'Options for the DHCP server to assign IP settings to specific MAC addresses.',
+      attributes: [
+        { ...word('id', 'Reservation identifier.'), readOnly: true },
+        address('ip', 'IP address to be reserved for the MAC address.'),
+        {
+          name: 'mac', help: 'MAC address of the client that will get the reserved IP.',
+          quoted: false,
+          parts: [{
+            name: 'mac', type: 'MAC_ADDR',
+            description: 'MAC address of the client.',
+          }],
+        },
+        text('description', 'Description.'),
+      ],
+    },
     {
       path: ['ip-range'],
       kind: 'table',
@@ -301,8 +471,16 @@ export const SYSTEM_DHCP_SERVER: FortiTableSpec = {
       iface: object.effective('interface')[0] ?? '',
       defaultGateway: object.effective('default-gateway')[0] ?? '0.0.0.0',
       netmask: object.effective('netmask')[0] ?? '0.0.0.0',
-      dnsServers: [object.effective('dns-server1')[0] ?? '']
-        .filter(server => server.length > 0 && server !== '0.0.0.0'),
+      dnsService: object.effective('dns-service')[0] ?? 'specify',
+      dnsServers: [
+        object.effective('dns-server1')[0] ?? '',
+        object.effective('dns-server2')[0] ?? '',
+      ].filter(server => server.length > 0 && server !== '0.0.0.0'),
+      reservations: object.childEntries('reserved-address').map(entry => ({
+        ip: entry.effective('ip')[0] ?? '0.0.0.0',
+        mac: entry.effective('mac')[0] ?? '',
+        description: entry.effective('description')[0] ?? '',
+      })),
       domain: object.effective('domain')[0] ?? '',
       leaseTimeSec: Number.parseInt(object.effective('lease-time')[0] ?? '604800', 10),
       ranges: object.childEntries('ip-range').map(range => ({
@@ -374,6 +552,8 @@ export const SYSTEM_SPECS: readonly FortiTableSpec[] = Object.freeze([
   SYSTEM_INTERFACE,
   SYSTEM_ZONE,
   SYSTEM_DNS,
+  SYSTEM_DNS_SERVER,
+  SYSTEM_DNS_DATABASE,
   SYSTEM_DHCP_SERVER,
   SYSTEM_NTP,
 ]);

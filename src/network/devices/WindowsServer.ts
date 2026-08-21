@@ -171,6 +171,7 @@ export class WindowsServer extends WindowsPC {
     this.dhcpServerRoleInstance.setDomainContext(
       this.getDirectoryStore() !== null || this.getDomainMembership() !== null,
     );
+    this.dhcpServerRoleInstance.attachDnsRegistrar(this.getDnsServerRole());
     return this.dhcpServerRoleInstance;
   }
 

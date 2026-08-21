@@ -29,7 +29,7 @@ export const USER_LOCAL: FortiTableSpec = {
   attributes: [
     { ...word('name', 'User name.'), readOnly: true },
     choice('type', 'Authentication method.', USER_TYPES, 'password'),
-    { ...text('passwd', 'User password.'), quoted: true },
+    { ...text('passwd', 'User password.'), quoted: true, secret: true },
     reference('radius-server', 'Name of the RADIUS server.', ['user radius']),
     reference('tacacs+-server', 'Name of the TACACS+ server.', ['user tacacs+']),
     reference('ldap-server', 'Name of the LDAP server.', ['user ldap']),
@@ -122,7 +122,10 @@ export const USER_RADIUS: FortiTableSpec = {
   attributes: [
     { ...word('name', 'RADIUS server entry name.'), readOnly: true },
     address('server', 'Primary RADIUS server IP address.'),
-    { ...text('secret', 'Pre-shared secret to access the RADIUS server.'), quoted: true },
+    {
+      ...text('secret', 'Pre-shared secret to access the RADIUS server.'),
+      quoted: true, secret: true,
+    },
     count('radius-port', 'RADIUS service port number.', 0, 65535, 1812),
     choice('auth-type', 'Authentication methods.', [
       { keyword: 'auto', description: 'Try PAP, then MS-CHAPv2, then CHAP.' },
@@ -203,7 +206,7 @@ export const USER_LDAP: FortiTableSpec = {
       { keyword: 'anonymous', description: 'Bind anonymously, then search.' },
     ], 'simple'),
     { ...text('username', 'Username for a regular bind.'), quoted: true },
-    { ...text('password', 'Password for a regular bind.'), quoted: true },
+    { ...text('password', 'Password for a regular bind.'), quoted: true, secret: true },
   ],
   onCommit(object, context) {
     context.device.applyLdapServer({
@@ -268,6 +271,8 @@ export const USER_SETTING: FortiTableSpec = {
     ], 'idle-timeout'),
     count('auth-http-port', 'HTTP authentication port.', 1, 65535, 1000),
     count('auth-https-port', 'HTTPS authentication port.', 1, 65535, 1003),
+    enable('auth-secure-http', 'Enable/disable redirecting the login page to HTTPS.', false),
+    enable('auth-keepalive', 'Enable/disable keeping the session alive from the browser.', false),
   ],
   onCommit(object, context) {
     context.device.applyAuthSetting({
@@ -275,6 +280,8 @@ export const USER_SETTING: FortiTableSpec = {
       timeoutType: object.effective('auth-timeout-type')[0] ?? 'idle-timeout',
       httpPort: Number.parseInt(object.effective('auth-http-port')[0] ?? '1000', 10),
       httpsPort: Number.parseInt(object.effective('auth-https-port')[0] ?? '1003', 10),
+      secureHttp: object.effective('auth-secure-http')[0] === 'enable',
+      keepAlive: object.effective('auth-keepalive')[0] === 'enable',
     });
   },
 };

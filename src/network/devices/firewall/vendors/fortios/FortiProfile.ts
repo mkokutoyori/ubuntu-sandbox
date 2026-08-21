@@ -1,3 +1,4 @@
+import { PREDEFINED_ADDRESSES, PREDEFINED_SERVICES } from './schema/predefined';
 import type { RuleAction } from '../../model/SecurityRule';
 import type { ZoneType } from '../../model/SecurityZone';
 import type { FirewallProfile } from '../../FirewallProfile';
@@ -37,7 +38,9 @@ export const FORTIOS_PROFILE: FirewallProfile = Object.freeze({
   vendor: 'fortios',
   displayName: 'Fortinet FortiGate',
   osName: 'fortios',
-  defaultVersion: '7.4.4',
+  defaultVersion: '7.6.3',
+  predefinedAddresses: PREDEFINED_ADDRESSES,
+  predefinedServices: PREDEFINED_SERVICES,
 
   pipeline: Object.freeze({
     nat: FORTIOS_PIPELINE,

@@ -1,3 +1,4 @@
+import { cpuStatesLine, memoryLine, FORTI_VM_CPUS } from './systemLoad';
 import { renderTable, FIXED_TABLE } from '../../../../shells/cli/TextTable';
 import type { InterfaceTable } from '../../../l3/InterfaceTable';
 import type { FirewallRoute, RouteTable } from '../../../l3/RouteTable';
@@ -18,6 +19,10 @@ export interface SystemStatusFacts {
   readonly vdomsInTransparent: number;
   readonly vdomConfiguration: string;
   readonly haMode: string;
+  readonly licenseStatus: string;
+  readonly vmCpus: number;
+  readonly vmMemoryMb: number;
+  readonly logDisk: string;
   readonly systemTime: string;
 }
 
@@ -25,6 +30,9 @@ export function renderSystemStatus(facts: SystemStatusFacts): string {
   return [
     `Version: FortiGate-VM64 v${facts.version},build${facts.build}`,
     `Serial-Number: ${facts.serial}`,
+    `License Status: ${facts.licenseStatus}`,
+    `VM Resources: ${facts.vmCpus} CPU, ${facts.vmMemoryMb} MB RAM`,
+    `Log hard disk: ${facts.logDisk}`,
     `Hostname: ${facts.hostname}`,
     `Operation Mode: ${facts.operationMode}`,
     `Current virtual domain: ${facts.vdom}`,
@@ -49,7 +57,19 @@ export function renderPerformanceStatus(facts: PerformanceFacts): string {
   const hours = Math.floor((seconds % 86400) / 3600);
   const minutes = Math.floor((seconds % 3600) / 60);
 
+  const cpus: string[] = [cpuStatesLine('CPU')];
+  for (let i = 0; i < FORTI_VM_CPUS; i++) cpus.push(cpuStatesLine(`CPU${i}`));
+
   return [
+    ...cpus,
+    memoryLine(),
+    `Average network usage: 0 / 0 kbps in 1 minute, 0 / 0 kbps in 10 minutes, `
+      + `0 / 0 kbps in 30 minutes`,
+    `Average sessions: ${facts.sessions.active} sessions in 1 minute, `
+      + `${facts.sessions.active} sessions in 10 minutes, `
+      + `${facts.sessions.active} sessions in 30 minutes`,
+    `Virus caught: 0 total in 1 minute`,
+    `IPS attacks blocked: 0 total in 1 minute`,
     `Current sessions: ${facts.sessions.active}`,
     `Total sessions created: ${facts.sessions.created}`,
     `Total sessions closed: ${facts.sessions.closed}`,
@@ -57,20 +77,30 @@ export function renderPerformanceStatus(facts: PerformanceFacts): string {
   ].join('\n');
 }
 
-export function renderInterfaceStatus(interfaces: InterfaceTable): string {
-  const rows = interfaces.all().map(iface => ({
-    name: iface.name,
-    address: iface.ip === undefined ? '0.0.0.0 0.0.0.0' : `${iface.ip} ${iface.mask ?? ''}`,
-    status: iface.up ? 'up' : 'down',
-    mtu: String(iface.mtu),
-  }));
+export interface InterfaceStatusFacts {
+  readonly name: string;
+  readonly mode: string;
+  readonly ip: string;
+  readonly ipv6: string;
+  readonly status: string;
+  readonly speed: string;
+  readonly physical: boolean;
+}
 
-  return renderTable(rows, [
-    { header: 'name', width: 18, value: row => row.name },
-    { header: 'ip', width: 34, value: row => row.address },
-    { header: 'status', width: 8, value: row => row.status },
-    { header: 'mtu', width: 0, value: row => row.mtu },
-  ], FIXED_TABLE).join('\n');
+export function renderInterfaceStatus(
+  facts: readonly InterfaceStatusFacts[], physicalOnly: boolean,
+): string {
+  const lines: string[] = [];
+  for (const iface of facts) {
+    if (physicalOnly && !iface.physical) continue;
+    lines.push(`== [${iface.name}]`);
+    lines.push(`\tmode: ${iface.mode}`);
+    lines.push(`\tip: ${iface.ip}`);
+    lines.push(`\tipv6: ${iface.ipv6}`);
+    lines.push(`\tstatus: ${iface.status}`);
+    lines.push(`\tspeed: ${iface.speed}`);
+  }
+  return lines.join('\n');
 }
 
 export function renderArpTable(arp: ArpService): string {
@@ -108,7 +138,11 @@ function prefixLength(mask: string): number {
     .reduce((total, bits) => total + bits, 0);
 }
 
-export function renderRoutingTable(routes: RouteTable): string {
+export type RoutingView = 'all' | 'static' | 'connected' | 'database';
+
+export function renderRoutingTable(routes: RouteTable, view: RoutingView): string {
+  if (view === 'database') return renderRoutingDatabase(routes);
+
   const lines = [
     'Codes: K - kernel, C - connected, S - static, R - RIP, B - BGP',
     '       O - OSPF, IA - OSPF inter area',
@@ -116,12 +150,12 @@ export function renderRoutingTable(routes: RouteTable): string {
     '',
   ];
 
-  const rows = routes.all().map(route => ({
-    code: (route.protocol === undefined
-      ? ROUTE_CODE[route.kind]
-      : PROTOCOL_CODE[route.protocol]) ?? 'S',
-    destination: `${route.network}/${prefixLength(route.mask)} ${reachedBy(route)}`,
-  }));
+  const rows = routes.selected()
+    .filter(route => keptBy(view, route))
+    .map(route => ({
+      code: routeCode(route),
+      destination: `${route.network}/${prefixLength(route.mask)} ${reachedBy(route)}`,
+    }));
 
   lines.push(...renderTable(rows, [
     { header: '', width: 8, value: row => row.code },
@@ -129,6 +163,39 @@ export function renderRoutingTable(routes: RouteTable): string {
   ], FIXED_TABLE).filter(line => line.trim().length > 0));
 
   return lines.join('\n');
+}
+
+export function renderRoutingDatabase(routes: RouteTable): string {
+  const lines = [
+    'Codes: K - kernel, C - connected, S - static, R - RIP, B - BGP',
+    '       O - OSPF, IA - OSPF inter area',
+    '       > - selected route, * - FIB route',
+    '',
+  ];
+
+  for (const route of routes.all()) {
+    const kept = routes.isSelected(route);
+    lines.push(`${protocolLetter(route).padEnd(5)}${kept ? '*>' : '  '} `
+      + `${route.network}/${prefixLength(route.mask)} ${reachedBy(route)}`
+      + (kept ? '' : ' inactive'));
+  }
+  return lines.join('\n');
+}
+
+function keptBy(view: RoutingView, route: FirewallRoute): boolean {
+  if (view === 'static') return route.kind === 'static' || route.kind === 'default';
+  if (view === 'connected') return route.kind === 'connected';
+  return true;
+}
+
+function protocolLetter(route: FirewallRoute): string {
+  return routeCode(route).replace('*', '');
+}
+
+function routeCode(route: FirewallRoute): string {
+  return (route.protocol === undefined
+    ? ROUTE_CODE[route.kind]
+    : PROTOCOL_CODE[route.protocol]) ?? 'S';
 }
 
 function reachedBy(route: FirewallRoute): string {
@@ -172,27 +239,6 @@ export function renderOspfNeighbors(
   ], FIXED_TABLE)].join('\n');
 }
 
-export function renderFirewallPolicy(rules: readonly SecurityRule[]): string {
-  const lines: string[] = [];
-  for (const rule of rules) {
-    lines.push(
-      `policyid: ${rule.id}`,
-      `name: ${rule.name ?? ''}`,
-      `srcintf: ${rule.from.join(' ')}`,
-      `dstintf: ${rule.to.join(' ')}`,
-      `srcaddr: ${rule.source.join(' ')}`,
-      `dstaddr: ${rule.destination.join(' ')}`,
-      `service: ${rule.service.join(' ')}`,
-      `action: ${rule.action}`,
-      `status: ${rule.enabled ? 'enable' : 'disable'}`,
-      `nat: ${rule.natEnabled ? 'enable' : 'disable'}`,
-      `hit count: ${rule.hitCount}`,
-      `bytes: ${rule.byteCount}`,
-      '',
-    );
-  }
-  return lines.join('\n').trimEnd();
-}
 
 export function renderBgpSummary(facts: BgpSummaryFacts): string {
   const lines = [

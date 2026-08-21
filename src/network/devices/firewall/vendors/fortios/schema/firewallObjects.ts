@@ -110,6 +110,7 @@ export const FIREWALL_ADDRESS: FortiTableSpec = {
       name: object.key, kind: 'fqdn', family: 'ipv4',
       fqdn, predefined: false, tags: [],
     });
+    context.device.resolveFqdnNow(fqdn);
   },
   onDelete(key, context) {
     context.objects.removeAddress(key);
@@ -181,6 +182,7 @@ export const FIREWALL_SERVICE_CUSTOM: FortiTableSpec = {
     count('icmptype', 'ICMP type.', 0, 255, 0),
     count('icmpcode', 'ICMP code.', 0, 255, 0),
     count('protocol-number', 'IP protocol number.', 0, 254, 0),
+    reference('category', 'Service category.', ['firewall service category']),
     text('comment', 'Comment.'),
   ],
   onCommit(object, context) {
@@ -211,6 +213,27 @@ export const FIREWALL_SERVICE_CUSTOM: FortiTableSpec = {
   onDelete(key, context) {
     context.objects.removeService(key);
   },
+};
+
+export const FIREWALL_SERVICE_CATEGORY: FortiTableSpec = {
+  path: ['firewall', 'service', 'category'],
+  kind: 'table',
+  keyType: 'name',
+  ordered: false,
+  scope: 'vdom',
+  accessGroup: 'fwgrp',
+  renderOrder: 149,
+  help: 'Configure service categories.',
+  predefined: [
+    'General', 'Web Access', 'File Access', 'Email', 'Network Services',
+    'Authentication', 'Remote Access', 'Tunneling', 'VoIP, Messaging & Other Applications',
+    'Web Proxy',
+  ],
+  attributes: [
+    { ...word('name', 'Service category name.'), readOnly: true },
+    text('comment', 'Comment.'),
+  ],
+  onCommit() {},
 };
 
 export const FIREWALL_SERVICE_GROUP: FortiTableSpec = {

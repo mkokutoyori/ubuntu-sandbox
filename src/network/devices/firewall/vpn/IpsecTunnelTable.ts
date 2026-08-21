@@ -57,6 +57,7 @@ export interface TunnelCounters {
 export interface TunnelState {
   readonly serial: number;
   status: TunnelStatus;
+  gatewayUp: boolean;
   establishedAt: number | null;
   lastInboundAt: number | null;
   lastOutboundAt: number | null;
@@ -119,10 +120,16 @@ export class IpsecTunnelTable {
 
   stateOf(name: string): TunnelState | undefined { return this.states.get(name); }
 
+  markGateway(name: string, up: boolean): void {
+    const state = this.states.get(name);
+    if (state) state.gatewayUp = up;
+  }
+
   markUp(name: string, natTraversalUsed = false): void {
     const state = this.states.get(name);
     if (!state) return;
     state.status = 'up';
+    state.gatewayUp = true;
     state.establishedAt = this.now();
     state.failure = null;
     state.natTraversalUsed = natTraversalUsed;
@@ -166,6 +173,7 @@ export class IpsecTunnelTable {
     return {
       serial: this.nextSerial++,
       status: 'down',
+      gatewayUp: false,
       establishedAt: null,
       lastInboundAt: null,
       lastOutboundAt: null,

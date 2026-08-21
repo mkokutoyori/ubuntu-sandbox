@@ -23,6 +23,10 @@ export interface DhcpScope {
   readonly domain: string;
   readonly leaseTimeSec: number;
   readonly ranges: ReadonlyArray<{ startIp: string; endIp: string }>;
+  readonly dnsService?: string;
+  readonly reservations?: ReadonlyArray<{
+    ip: string; mac: string; description: string;
+  }>;
 }
 
 export interface FirewallDhcpDeps {
@@ -35,6 +39,7 @@ export interface FirewallDhcpDeps {
   readonly configureInterface: (
     iface: string, ip: string, mask: string, gateway: string | null) => void;
   readonly clearInterface: (iface: string) => void;
+  readonly systemDnsServers?: () => readonly string[];
 }
 
 export class FirewallDhcp {
@@ -138,6 +143,9 @@ export class FirewallDhcp {
   private rebuild(): void {
     this.server.setEventBus(this.deps.bus());
     for (const name of [...this.server.getAllPools().keys()]) this.server.deletePool(name);
+    for (const range of this.server.getExcludedRanges()) {
+      this.server.removeExcludedRange(range.start, range.end);
+    }
 
     const serving = [...this.scopes.values()]
       .filter(scope => scope.enabled && scope.ranges.length > 0);
@@ -146,6 +154,18 @@ export class FirewallDhcp {
     if (serving.length === 0) { this.server.disable(); return; }
     this.server.enable();
     if (!this.server.isRunning()) this.server.start();
+  }
+
+  private resolvedDnsServers(scope: DhcpScope, localIp?: string): string[] {
+    if (scope.dnsService === 'local') return localIp ? [localIp] : [];
+    if (scope.dnsService === 'default') {
+      return [...(this.deps.systemDnsServers?.() ?? [])];
+    }
+    return [...scope.dnsServers];
+  }
+
+  clearLease(ip: string): boolean {
+    return this.server.clearBinding(ip);
   }
 
   getServer(): DHCPServer { return this.server; }
@@ -192,14 +212,18 @@ export class FirewallDhcp {
     if (scope.defaultGateway !== '0.0.0.0' && scope.defaultGateway.length > 0) {
       this.server.configurePoolRouter(name, scope.defaultGateway);
     }
-    if (scope.dnsServers.length > 0) {
-      this.server.configurePoolDNS(name, [...scope.dnsServers]);
-    }
+    const dns = this.resolvedDnsServers(scope, local?.ip);
+    if (dns.length > 0) this.server.configurePoolDNS(name, dns);
     if (scope.domain.length > 0) this.server.configurePoolDomain(name, scope.domain);
     this.server.configurePoolLease(name, scope.leaseTimeSec);
 
     for (const gap of gapsOutsideRanges(network, mask, scope.ranges)) {
       this.server.addExcludedRange(gap.start, gap.end);
+    }
+
+    for (const reservation of scope.reservations ?? []) {
+      if (reservation.mac.length === 0 || reservation.ip === '0.0.0.0') continue;
+      this.server.addStaticBinding(name, reservation.mac, reservation.ip);
     }
   }
 
@@ -282,10 +306,12 @@ export interface DhcpWiringHost {
   emitFrame(iface: string, frame: EthernetFrame): void;
   leaseGranted(iface: string, ip: string, mask: string, gateway: string | null): void;
   leaseLost(iface: string): void;
+  systemDnsServers?(): readonly string[];
 }
 
 export function createFirewallDhcp(host: DhcpWiringHost): FirewallDhcp {
   return new FirewallDhcp({
+    systemDnsServers: () => host.systemDnsServers?.() ?? [],
     deviceId: host.deviceId,
     hostname: () => host.hostname(),
     bus: () => host.bus(),

@@ -529,6 +529,21 @@ function fragmentIPv4Packet(pkt: IPv4Packet, mtu: number): IPv4Packet[] {
   return fragments;
 }
 
+function selectorsNarrow(
+  proposed: SATrafficSelector | undefined, local: SATrafficSelector | undefined,
+): boolean {
+  if (!proposed || !local) return true;
+  if (isAnySelector(proposed) || isAnySelector(local)) return true;
+  return proposed.srcAddress === local.dstAddress
+    && proposed.dstAddress === local.srcAddress
+    && proposed.srcWildcard === local.dstWildcard
+    && proposed.dstWildcard === local.srcWildcard;
+}
+
+function isAnySelector(selector: SATrafficSelector): boolean {
+  return selector.srcAddress === '' && selector.dstAddress === '';
+}
+
 /** Create default traffic selectors (any/any). */
 function defaultTrafficSelectors(): SATrafficSelector {
   return {
@@ -3479,6 +3494,7 @@ export class IPSecEngine implements IProtocolEngine {
       ipsecSpiIn: spiInitIn,
       natTHint: this.natTraversalDecision(apparentSrcIP !== localIP),
       keyExchange: exchange?.payload,
+      trafficSelectors: entry.trafficSelectors,
     };
     if (this.ikeCertAuth) {
       
@@ -3710,15 +3726,18 @@ export class IPSecEngine implements IProtocolEngine {
     const hasAH = transforms.some((t) => t.startsWith('ah'));
     const egress = this.findInterfaceForPeer(srcIp) || '';
     const localIP = this.getLocalIP(egress) || '';
-    const trafficSelectors = this.buildTrafficSelectorsFromACL(peerEntry?.aclName || '');
+    const trafficSelectors = this.selectorsForEntry(peerEntry);
+    const childAccepted = selectorsNarrow(offer.trafficSelectors, trafficSelectors);
 
-    const sa = this.buildIpsecSAStruct({
-      peerIP: srcIp, localIP, spiIn: spiRespIn, spiOut: offer.ipsecSpiIn,
-      cryptoKeys, lifetime: lifetimeSec, lifetimeKB, mode: saMode,
-      trafficSelectors, transforms, aclName: peerEntry?.aclName || '',
-      pfsGroup: peerEntry?.pfsGroup ?? offer.pfsGroup, natT, outIface: egress, hasESP, hasAH,
-    });
-    this.installIpsecSALocal(srcIp, sa);
+    if (childAccepted) {
+      const sa = this.buildIpsecSAStruct({
+        peerIP: srcIp, localIP, spiIn: spiRespIn, spiOut: offer.ipsecSpiIn,
+        cryptoKeys, lifetime: lifetimeSec, lifetimeKB, mode: saMode,
+        trafficSelectors, transforms, aclName: peerEntry?.aclName || '',
+        pfsGroup: peerEntry?.pfsGroup ?? offer.pfsGroup, natT, outIface: egress, hasESP, hasAH,
+      });
+      this.installIpsecSALocal(srcIp, sa);
+    }
 
     const responderSpi = spiHex(randomSPI());
     if (isV2) {
@@ -3755,6 +3774,7 @@ export class IPSecEngine implements IProtocolEngine {
       ipsecSpiIn: spiRespIn, ikeLifetimeSec: ikeLifetime,
       lifetimeSec, lifetimeKB, natT,
       keyExchange: responderExchange?.payload,
+      childRejected: childAccepted ? undefined : 'TS_UNACCEPTABLE',
     };
     if (this.ikeCertAuth) {
       
@@ -3815,15 +3835,17 @@ export class IPSecEngine implements IProtocolEngine {
     const saMode = accept.chosenTransform.mode === 'transport' ? 'Transport' : 'Tunnel';
     const hasESP = transforms.some((t) => t.startsWith('esp'));
     const hasAH = transforms.some((t) => t.startsWith('ah'));
-    const trafficSelectors = this.buildTrafficSelectorsFromACL(pending.entry.aclName);
+    const trafficSelectors = this.selectorsForEntry(pending.entry);
 
-    const sa = this.buildIpsecSAStruct({
-      peerIP: srcIp, localIP: pending.localIP, spiIn: spiInitIn, spiOut: accept.ipsecSpiIn,
-      cryptoKeys, lifetime: accept.lifetimeSec, lifetimeKB: accept.lifetimeKB, mode: saMode,
-      trafficSelectors, transforms, aclName: pending.entry.aclName,
-      pfsGroup: pending.entry.pfsGroup, natT: accept.natT, outIface: pending.egressIface, hasESP, hasAH,
-    });
-    this.installIpsecSALocal(srcIp, sa);
+    if (accept.childRejected === undefined) {
+      const sa = this.buildIpsecSAStruct({
+        peerIP: srcIp, localIP: pending.localIP, spiIn: spiInitIn, spiOut: accept.ipsecSpiIn,
+        cryptoKeys, lifetime: accept.lifetimeSec, lifetimeKB: accept.lifetimeKB, mode: saMode,
+        trafficSelectors, transforms, aclName: pending.entry.aclName,
+        pfsGroup: pending.entry.pfsGroup, natT: accept.natT, outIface: pending.egressIface, hasESP, hasAH,
+      });
+      this.installIpsecSALocal(srcIp, sa);
+    }
 
     if (isV2 && accept.chosenIkev2) {
       const ikev2Dpd = this.resolveIkev2Dpd(pending.entry);
@@ -4273,6 +4295,11 @@ export class IPSecEngine implements IProtocolEngine {
    * Build SA traffic selectors from an ACL (RFC 4301 §4.4.2 field #12).
    * Extracts the first matching ACE's source/destination selectors.
    */
+  selectorsForEntry(entry: { aclName?: string; trafficSelectors?: SATrafficSelector } | undefined): SATrafficSelector {
+    if (entry?.trafficSelectors) return entry.trafficSelectors;
+    return this.buildTrafficSelectorsFromACL(entry?.aclName || '');
+  }
+
   buildTrafficSelectorsFromACL(aclName: string): SATrafficSelector {
     const acl = (this.router as any)._getAccessListsInternal?.()?.find((a: any) =>
       a.name === aclName || String(a.id) === aclName);
@@ -4772,6 +4799,14 @@ export class IPSecEngine implements IProtocolEngine {
 
   getIPSecSAs(peerIP: string): readonly IPSec_SA[] {
     return this.ipsecSADB.get(peerIP) ?? [];
+  }
+
+  hasIkeSA(peerIP: string): boolean {
+    const v2 = this.ikev2SADB.get(peerIP);
+    if (v2 && v2.status === 'READY') return true;
+    const v1 = this.ikeSADB.get(peerIP);
+    return v1 !== undefined && v1.failureReason === undefined
+      && v1.status !== 'MM_NO_STATE';
   }
 
   clearAllSAs(): { ikeSAs: number; ikev2SAs: number; ipsecSAs: number } {

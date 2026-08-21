@@ -1,9 +1,11 @@
 import { FortiMessages } from '../FortiMessages';
+import { referencesTo } from './references';
 import type { FortiCommitContext, FortiTableSpec } from '../schema/types';
 import { FortiConfigTree } from './FortiConfigTree';
 import { FortiObject, type FortiObjectSnapshot } from './FortiObject';
 import { FortiTable, type MovePosition } from './FortiTable';
 import { FortiValidator } from './FortiValidator';
+import { clearOf, ENC_PREFIX } from './secretEncoding';
 
 export interface TableFrame {
   readonly kind: 'table';
@@ -157,11 +159,16 @@ export class FortiNavigator {
       );
     }
 
-    const cleaned = values.map(unquote);
+    const cleaned = spec.secret === true
+      ? [decodeStoredSecret(values.map(unquote))]
+      : values.map(unquote);
     const verdict = this.deps.validator.validate(spec, cleaned);
     if (!verdict.ok) return verdict.error;
 
     object.set(attribute, verdict.values);
+    spec.appliesImmediately?.(verdict.values, {
+      ...this.deps.commitContext(), position: -1,
+    });
     return EMPTY;
   }
 
@@ -268,7 +275,12 @@ export class FortiNavigator {
     if (key === undefined) return FortiMessages.incomplete('the key to delete');
 
     const resolved = unquote(key);
-    if (!table.remove(resolved)) return FortiMessages.unknownKey(resolved);
+    if (!table.has(resolved)) return FortiMessages.unknownKey(resolved);
+    if (referencesTo(this.deps.tree, table.spec.path, resolved).length > 0) {
+      return FortiMessages.commandFail(
+        'Entry is used by other entries. Cannot be deleted.');
+    }
+    table.remove(resolved);
 
     table.spec.onDelete?.(resolved, this.deps.commitContext());
     return EMPTY;
@@ -377,4 +389,9 @@ function parsePair(
 
 function lastPathWord(spec: { path: readonly string[] }): string {
   return spec.path[spec.path.length - 1];
+}
+
+function decodeStoredSecret(values: readonly string[]): string {
+  const joined = values.join(' ');
+  return joined.startsWith(ENC_PREFIX) ? clearOf(joined) : joined;
 }

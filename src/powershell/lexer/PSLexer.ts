@@ -57,6 +57,11 @@ export class PSLexer {
   private scanToken(): PSToken | null {
     const ch = this.ch();
 
+    if (ch === '`' && this.startsLineContinuation()) {
+      this.consumeLineContinuation();
+      return null;
+    }
+
     // ── Newline ──
     if (ch === '\n') return this.advance1(PSTokenType.NEWLINE);
 
@@ -122,6 +127,18 @@ export class PSLexer {
 
   private pos_(): SourcePosition {
     return { offset: this.pos, line: this.line, column: this.column };
+  }
+
+  private startsLineContinuation(): boolean {
+    const next = this.peek1();
+    if (next === '\n') return true;
+    return next === '\r' && this.peek2() === '\n';
+  }
+
+  private consumeLineContinuation(): void {
+    this.advance();
+    if (this.ch() === '\r') this.advance();
+    this.advance();
   }
 
   private eof(): boolean { return this.pos >= this.input.length; }

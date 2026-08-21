@@ -1,10 +1,12 @@
 import {
   categoryOfDomain, categoryName, UNCLASSIFIED_CATEGORY,
   type AntivirusProfile, type CategoryFilterEntry, type DnsFilterProfile,
-  type FileFilterProfile, type ProtocolOptions, type SslSshProfile,
+  type ApplicationList, type FileFilterProfile, type ProtocolOptions,
+  type SslSshProfile,
   type UrlFilterEntry, type UtmAction, type WebFilterProfile,
 } from './UtmProfiles';
 import { parseRequest, parseResponse } from '../../../http/http1/Http1Wire';
+import { identifyApplication } from './ApplicationSignatures';
 import { decodeDnsMessage } from '../../../dns/wire/DnsMessageCodec';
 import { decodeRecords } from '../../../http/https/TlsRecordWire';
 import { decodeMessages } from '../../../tls/messages';
@@ -30,7 +32,8 @@ export type UtmVerdictKind =
   | 'url-blocked'
   | 'category-blocked'
   | 'dns-blocked'
-  | 'file-type-blocked';
+  | 'file-type-blocked'
+  | 'application-blocked';
 
 export interface UtmVerdict {
   readonly kind: UtmVerdictKind;
@@ -42,6 +45,7 @@ export interface UtmVerdict {
   readonly host?: string;
   readonly url?: string;
   readonly fileType?: string;
+  readonly application?: string;
 }
 
 export const CLEAN: UtmVerdict = Object.freeze({
@@ -57,6 +61,7 @@ const MAGIC_NUMBERS: ReadonlyArray<readonly [string, string]> = Object.freeze([
   ['GIF8', 'gif'],
   ['PNG', 'png'],
   ['ÿØÿ', 'jpeg'],
+  ['ÐÏ\u0011à', 'msi'],
 ]);
 
 export function protocolOfFlow(
@@ -69,6 +74,8 @@ export function protocolOfFlow(
   if (ports.some(port => options.dnsPorts.includes(port))) return 'dns';
   return 'other';
 }
+
+export { identifyApplication };
 
 export function detectFileType(payload: string): string | undefined {
   const body = httpBody(payload) ?? payload;
@@ -223,6 +230,27 @@ export function scanFileFilter(
       detail: detected,
       profile: profile.name,
       fileType: detected,
+    });
+  }
+  return CLEAN;
+}
+
+export function scanApplicationControl(
+  flow: InspectedFlow, list: ApplicationList,
+): UtmVerdict {
+  const application = identifyApplication(flow.payload);
+  if (application === undefined) return CLEAN;
+
+  for (const entry of list.entries) {
+    if (entry.application.toUpperCase() !== application) continue;
+    if (entry.action === 'allow') return CLEAN;
+
+    return Object.freeze({
+      kind: 'application-blocked' as const,
+      blocked: entry.action === 'block',
+      detail: application,
+      profile: list.name,
+      application,
     });
   }
   return CLEAN;

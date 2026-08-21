@@ -86,6 +86,7 @@ export interface CryptoMapEntry {
   peerHostname?: string;
   /** Huawei `ike-peer NAME` — named peer whose remote-address feeds `peers`. */
   ikePeerName?: string;
+  trafficSelectors?: SATrafficSelector;
 }
 
 // ─── IKEv1 keyring + ISAKMP profile (crypto keyring / crypto isakmp profile) ──
@@ -274,6 +275,7 @@ export interface IkeOfferMessage {
   authMode?: 'psk' | 'x509';
   certPayload?: X509CertPayload;
   keyExchange?: IkeKeyExchangePayload;
+  trafficSelectors?: SATrafficSelector;
 }
 
 /**
@@ -291,6 +293,7 @@ export interface IkeKeyExchangePayload {
 export interface IkeAcceptMessage {
   type: 'ike';
   step: 'accept';
+  childRejected?: string;
   responderSpi: string;
   pskProof: string;
   certPayload?: X509CertPayload;

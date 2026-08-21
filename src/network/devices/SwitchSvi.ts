@@ -24,6 +24,7 @@ export interface SviInterface {
    * DHCP clients on this VLAN reach upstream DHCP servers through them.
    */
   helperAddresses: string[];
+  dhcpClient?: boolean;
 }
 
 /** The minimal surface the SVI plane needs from its hosting switch. */
@@ -36,6 +37,7 @@ export interface SviHost {
   egressOnVlan(vlan: number, frame: EthernetFrame): void;
   /** True when the VLAN has at least one up, connected member port. */
   vlanHasActivePort(vlan: number): boolean;
+  dhcpClientDeliver?(vlan: number, pkt: DHCPPacket): boolean;
   /** Read the switch's shared management ARP cache. */
   lookupArp(ip: string): MACAddress | null;
   /** Populate the switch's shared management ARP cache. */
@@ -242,6 +244,15 @@ export class SwitchSvi {
    */
   intercept(ingressVlan: number, ingressPort: string, frame: EthernetFrame): boolean {
     const svi = this.svis.get(ingressVlan);
+    if (svi?.dhcpClient && svi.adminUp && frame.etherType === ETHERTYPE_IPV4) {
+      const ip = frame.payload as IPv4Packet | undefined;
+      const udp = ip?.type === 'ipv4' ? ip.payload as UDPPacket | undefined : undefined;
+      const reply = udp?.type === 'udp' ? udp.payload : undefined;
+      if (udp?.destinationPort === 68 && reply instanceof DHCPPacket && reply.op === 2
+        && this.host.dhcpClientDeliver?.(ingressVlan, reply)) {
+        return true;
+      }
+    }
     if (!svi || !svi.adminUp || !svi.ip) return false;
     const selfIp = svi.ip;
 

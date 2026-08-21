@@ -1,3 +1,4 @@
+import { encodeSecret } from '../runtime/secretEncoding';
 import {
   isQuoted, keyAttributeName,
   type FortiAttributeSpec, type FortiTableSpec,
@@ -18,14 +19,6 @@ export function renderValue(spec: FortiAttributeSpec, values: readonly string[])
   return values.map(v => `"${v}"`).join(' ');
 }
 
-function encodeSecret(clear: string): string {
-  let hash = 0x811c9dc5;
-  for (let index = 0; index < clear.length; index++) {
-    hash ^= clear.charCodeAt(index);
-    hash = Math.imul(hash, 0x01000193) >>> 0;
-  }
-  return `${hash.toString(16)}${clear.length.toString(16).padStart(2, '0')}`;
-}
 
 export function renderKey(spec: FortiTableSpec, key: string): string {
   if (spec.quotedKey !== undefined) return spec.quotedKey ? `"${key}"` : key;
@@ -79,9 +72,12 @@ function objectLines(object: FortiObject, options: ShowOptions, indent: string):
   return [...attributeLines(object, options, indent), ...childLines(object, options, indent)];
 }
 
-function tableBody(table: FortiTable, options: ShowOptions, indent: string): string[] {
+function tableBody(
+  table: FortiTable, options: ShowOptions, indent: string, only?: string,
+): string[] {
   const out: string[] = [];
   for (const object of table.all()) {
+    if (only !== undefined && object.key !== only) continue;
     out.push(`${indent}edit ${renderKey(table.spec, object.key)}`);
     out.push(...objectLines(object, options, indent + STEP));
     out.push(`${indent}next`);
@@ -90,10 +86,10 @@ function tableBody(table: FortiTable, options: ShowOptions, indent: string): str
 }
 
 export function renderTableConfig(
-  table: FortiTable, options: ShowOptions,
+  table: FortiTable, options: ShowOptions, only?: string,
 ): string[] {
   const path = table.spec.path.join(' ');
-  return [`config ${path}`, ...tableBody(table, options, STEP), 'end'];
+  return [`config ${path}`, ...tableBody(table, options, STEP, only), 'end'];
 }
 
 export function renderSingletonConfig(
@@ -105,11 +101,17 @@ export function renderSingletonConfig(
 
 export function renderPath(
   tree: FortiConfigTree, path: readonly string[], options: ShowOptions,
+  key?: string,
 ): string[] | null {
   const spec = tree.spec(path);
   if (!spec) return null;
 
-  if (spec.kind === 'table') return renderTableConfig(tree.table(spec), options);
+  if (spec.kind === 'table') {
+    const table = tree.table(spec);
+    if (key !== undefined && !table.has(key)) return null;
+    return renderTableConfig(table, options, key);
+  }
+  if (key !== undefined) return null;
   return renderSingletonConfig(tree.singleton(spec), options);
 }
 

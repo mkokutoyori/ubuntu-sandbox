@@ -160,6 +160,13 @@ export interface DhcpServerOption82ReceivedPayload extends DhcpDeviceRef {
   remoteId: string;
 }
 
+export interface DhcpServerReplyUndeliverablePayload extends DhcpDeviceRef {
+  relayAgent: string;
+  clientMac: string;
+  offeredIp: string;
+  reason: 'no-route-to-relay';
+}
+
 export interface DhcpPoolExhaustedPayload extends DhcpDeviceRef {
   pool: string;
   network: string;
@@ -191,4 +198,5 @@ export type DhcpDomainEvent =
   | { topic: 'dhcp.relay.reply-forwarded'; payload: DhcpRelayReplyForwardedPayload }
   | { topic: 'dhcp.relay.dropped'; payload: DhcpRelayDroppedPayload }
   | { topic: 'dhcp.server.option82-received'; payload: DhcpServerOption82ReceivedPayload }
+  | { topic: 'dhcp.server.reply-undeliverable'; payload: DhcpServerReplyUndeliverablePayload }
   | { topic: 'dhcp.pool.exhausted'; payload: DhcpPoolExhaustedPayload };

@@ -30,6 +30,7 @@ export interface ConnectedRoute {
   readonly iface: string;
   readonly kind: 'connected';
   readonly distance: 0;
+  readonly priority: 0;
 }
 
 const DEFAULT_MTU = 1500;
@@ -118,6 +119,7 @@ export class InterfaceTable {
         iface: iface.name,
         kind: 'connected' as const,
         distance: 0 as const,
+        priority: 0 as const,
       }));
     }
     return Object.freeze(routes);

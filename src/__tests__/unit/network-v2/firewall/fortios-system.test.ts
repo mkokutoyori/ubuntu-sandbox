@@ -141,13 +141,19 @@ describe('config system interface', () => {
     expect(run(sh, 'set ip 10.0.0.1 255.255.0.1')).toContain('value parse error');
   });
 
-  it('`vlanid` n\'apparait que sur un type `vlan`', async () => {
+  it('`vlanid` n\'apparait pas sur un PORT PHYSIQUE', async () => {
     const { sh } = await laboratoireL1();
     run(sh, 'config system interface', 'edit "port3"');
+
     expect(run(sh, 'set vlanid 100')).toContain('Command fail');
+    expect(run(sh, 'set type vlan')).toContain('Command fail');
+  });
 
-    run(sh, 'set type vlan');
+  it('une interface CREEE est une vlan, donc `vlanid` y est admis', async () => {
+    const { sh } = await laboratoireL1();
+    run(sh, 'config system interface', 'edit "VLAN-100"');
 
+    expect(run(sh, 'set interface "port3"')).toBe('');
     expect(run(sh, 'set vlanid 100')).toBe('');
   });
 });

@@ -6,7 +6,7 @@ import type { IOcspResponder } from './OcspResponder';
 
 export type VerificationReason = 'unknown' | 'expired' | 'revoked' | 'not-yet-valid' | 'bad-signature' | 'crl-stale' | 'crl-untrusted' | 'hostname-mismatch';
 
-export interface VerificationOk { readonly ok: true }
+export interface VerificationOk { readonly ok: true; readonly reason?: undefined }
 export interface VerificationFailure { readonly ok: false; readonly reason: VerificationReason }
 export type VerificationResult = VerificationOk | VerificationFailure;
 

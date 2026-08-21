@@ -89,7 +89,7 @@ export const SYSTEM_ADMIN: FortiTableSpec = {
   predefined: ['admin'],
   attributes: [
     { ...word('name', 'Administrator name.'), readOnly: true },
-    { ...text('password', 'Administrator password.'), quoted: true },
+    { ...text('password', 'Administrator password.'), quoted: true, secret: true },
     reference('accprofile', 'Access profile for this administrator.',
       ['system accprofile']),
     refList('vdom', 'Virtual domains this administrator can access.',

@@ -1,3 +1,5 @@
+import type { AddressObject } from './model/AddressObject';
+import type { ServiceObject } from './model/ServiceObject';
 import type { FirewallSyslogCatalog } from './logging/SyslogCatalog';
 import type { RuleAction } from './model/SecurityRule';
 import type { ZoneType, IntraZoneAction } from './model/SecurityZone';
@@ -55,6 +57,8 @@ export interface FirewallProfile {
 
   readonly objectsMandatoryInPolicy: boolean;
   readonly maxGroupNesting: number;
+  readonly predefinedAddresses?: readonly AddressObject[];
+  readonly predefinedServices?: readonly ServiceObject[];
 
   readonly timeouts: SessionTimeoutProfile;
   readonly tcpSynCheckDefault: boolean;

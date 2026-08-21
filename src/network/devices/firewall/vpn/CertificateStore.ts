@@ -9,6 +9,7 @@ export interface LocalCertificate {
   readonly certificatePem: string;
   readonly privateKeyPem: string;
   readonly comments?: string;
+  readonly source?: 'factory' | 'user' | 'bundle';
 }
 
 export interface TrustAnchor {

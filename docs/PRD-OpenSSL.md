@@ -603,6 +603,31 @@ chaîne présentée, le sujet, l'émetteur, le résultat de vérification.
 C'est l'outil de diagnostic TLS que les TP réclament, et il n'y a rien
 à inventer : le transport existe.
 
+La poignée de main est déroulée pour de bon depuis le TP 15 du tutoriel
+FortiGate (`probeTlsPeer`, le même pilote que `HttpsClientSession`), de
+sorte que `s_client` et `curl` ne puissent pas décrire deux certificats
+différents pour le même serveur. Une **absence** de certificat n'est pas
+un échec de la commande, et le premier branchement de cette sonde en
+faisait un : un port servi en TCP nu — le cas le plus fréquent d'un
+diagnostic, puisque c'est précisément ce qu'on vient vérifier — rendait
+`(handshake failed: …)` puis s'arrêtait là, court-circuitant les deux
+seules choses que la commande avait à dire dans cette situation. Le vrai
+client, lui, écrit sa ligne d'erreur PUIS continue : `no peer certificate
+available`, `New, (NONE), Cipher is (NONE)`, et le verdict. La raison est
+donc rendue en tête, comme la sienne, et le reste de la sortie suit son
+cours.
+
+Deux écarts assumés avec le vrai binaire, chacun pour une raison :
+le motif d'échec est une phrase du simulateur et non un code
+`error:0A00010B:SSL routines:…` — inventer un code que personne ne peut
+retrouver dans les sources d'OpenSSL vaudrait moins qu'une phrase
+exacte ; et sans `-CAfile` le verdict est `Verification: not performed`
+là où le vrai écrit `Verification: OK` après une poignée de main
+échouée (son résultat de vérification par défaut vaut `X509_V_OK` et
+rien ne l'a jamais remplacé). Recopier ce `OK`-là serait la seule ligne
+de tout ce chantier où un apprenant lirait littéralement « fais
+confiance » sans que rien ne l'ait vérifié.
+
 ## 10. Ce que `openssl` débloque ailleurs
 
 Écrit ici pour que ces suites ne soient pas oubliées une fois le
