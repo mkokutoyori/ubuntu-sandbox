@@ -410,6 +410,7 @@ function sessionLookupStage(services: FirewallServices): PipelineStage {
       vdom(services, context).sessions.recordTraffic(found.session, found.direction, packet.totalLength);
 
       const carried = sessionPolicy(services, context, found.session);
+      if (carried !== undefined) context.matchedPolicy = carried;
       if (carried?.utmEnabled === true) {
         const inspected = inspectUtm(services, context, carried, 'utm-inspect');
         if (inspected.kind === 'drop') return inspected;

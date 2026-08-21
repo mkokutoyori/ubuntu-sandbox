@@ -33,8 +33,10 @@ import {
   makeARecord, makeAaaaRecord, makeCnameRecord, makePtrRecord, makeMxRecord, makeSrvRecord, makeSoaRecord,
   type ResourceRecord, type ResourceRecordData, type SoaRecordData,
   type ARecordData, type AaaaRecordData, type CnameRecordData, type PtrRecordData, type MxRecordData,
-  type SrvRecordData, type NsRecordData,
+  type SrvRecordData, type NsRecordData, type DhcidRecordData, makeDhcidRecord,
 } from '@/network/dns/wire/ResourceRecord';
+import { dhcidToPresentation } from '@/network/dns/wire/Dhcid';
+import { ptrQName } from '@/network/dns/compat/DnsWireCompat';
 import { IPAddress } from '@/network/core/types';
 
 export interface DnsOpResult { ok: boolean; message: string }
@@ -68,6 +70,7 @@ function formatRecordData(rr: ResourceRecord<ResourceRecordData>): string {
       const d = rr.data as SoaRecordData;
       return `${d.mname} ${d.rname} ${d.serial}`;
     }
+    case RRType.DHCID: return dhcidToPresentation(rr.data as DhcidRecordData);
     default: return JSON.stringify(rr.data);
   }
 }
@@ -291,6 +294,63 @@ export class WindowsDnsServerRole {
     if (!zone) return { ok: false, message: `Zone "${zoneName}" does not exist on this server.` };
     for (const rr of zone.getRRSet(fqdnName, RRType.A) ?? []) zone.removeRecord(rr);
     zone.addRecord(makeARecord(fqdnName, ttl, ipv4));
+    bumpSerial(zone);
+    return { ok: true, message: '' };
+  }
+
+  reverseZoneFor(ipv4: string): string | null {
+    return this.store.findZone(ptrQName(ipv4))?.origin ?? null;
+  }
+
+  applyDynamicPtrRecord(ipv4: string, fqdnName: string, ttl = 3600): DnsOpResult {
+    const arpa = ptrQName(ipv4);
+    const zone = this.store.findZone(arpa);
+    if (!zone) return { ok: false, message: `No reverse lookup zone is authoritative for "${arpa}".` };
+    for (const rr of zone.getRRSet(arpa, RRType.PTR) ?? []) zone.removeRecord(rr);
+    zone.addRecord(makePtrRecord(arpa, ttl, fqdnName));
+    bumpSerial(zone);
+    return { ok: true, message: '' };
+  }
+
+  removeDynamicRecord(zoneName: string, fqdnName: string, type: string): DnsOpResult {
+    const zone = this.store.getZone(zoneName);
+    if (!zone) return { ok: false, message: `Zone "${zoneName}" does not exist on this server.` };
+    const rrType = RRType[type.toUpperCase() as keyof typeof RRType];
+    if (rrType === undefined) return { ok: false, message: `Unknown record type "${type}".` };
+    const existing = zone.getRRSet(fqdnName, rrType) ?? [];
+    if (existing.length === 0) {
+      return { ok: false, message: `Cannot find "${fqdnName}" of type ${type} in zone "${zoneName}".` };
+    }
+    for (const rr of [...existing]) zone.removeRecord(rr);
+    bumpSerial(zone);
+    return { ok: true, message: '' };
+  }
+
+  removeDynamicPtrRecord(ipv4: string): DnsOpResult {
+    const arpa = ptrQName(ipv4);
+    const zone = this.store.findZone(arpa);
+    if (!zone) return { ok: false, message: `No reverse lookup zone is authoritative for "${arpa}".` };
+    const existing = zone.getRRSet(arpa, RRType.PTR) ?? [];
+    if (existing.length === 0) return { ok: false, message: `Cannot find "${arpa}" of type PTR.` };
+    for (const rr of [...existing]) zone.removeRecord(rr);
+    bumpSerial(zone);
+    return { ok: true, message: '' };
+  }
+
+  readDhcid(zoneName: string, fqdnName: string): DhcidRecordData | null {
+    const zone = this.store.getZone(zoneName);
+    if (!zone) return null;
+    const set = zone.getRRSet(fqdnName, RRType.DHCID) ?? [];
+    return set.length > 0 ? set[0].data as DhcidRecordData : null;
+  }
+
+  writeDhcid(zoneName: string, fqdnName: string, data: DhcidRecordData, ttl = 3600): DnsOpResult {
+    const zone = this.store.getZone(zoneName);
+    if (!zone) return { ok: false, message: `Zone "${zoneName}" does not exist on this server.` };
+    for (const rr of zone.getRRSet(fqdnName, RRType.DHCID) ?? []) zone.removeRecord(rr);
+    zone.addRecord(makeDhcidRecord(fqdnName, ttl, {
+      identifierType: data.identifierType, digestType: data.digestType, digest: data.digest,
+    }));
     bumpSerial(zone);
     return { ok: true, message: '' };
   }

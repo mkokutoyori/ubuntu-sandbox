@@ -2489,7 +2489,12 @@ export class PSRuntime {
         // legacy engine's hardcoded strings). Strip it so the canonical
         // prefix added below — derived once from the actually-dispatched
         // cmdlet — is never duplicated.
-        const msg = rawMsg.replace(/^[A-Za-z][\w]*(?:-[A-Za-z][\w]*)+\s*:\s*/, '');
+        let msg = rawMsg;
+        for (;;) {
+          const stripped = msg.replace(/^[A-Za-z][\w]*(?:-[A-Za-z][\w]*)+\s*:\s*/, '');
+          if (stripped === msg) break;
+          msg = stripped;
+        }
         const category = 'NotSpecified';
         const exceptionType = 'WriteErrorException';
         const fullyQualifiedErrorId = 'Microsoft.PowerShell.Commands.WriteErrorException';

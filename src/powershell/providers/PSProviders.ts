@@ -942,6 +942,7 @@ export interface IDhcpServerProvider {
   listReservations(scopeName?: string): DhcpReservationInfo[];
   removeReservation(scopeName: string, ipAddress: string): DhcpOpResult;
   removeLease(ipAddress: string): DhcpOpResult;
+  hasScope(scopeName: string): boolean;
   listOptionValues(scopeName?: string): DhcpOptionInfo[];
   removeOptionValue(scopeName: string | undefined, optionId: number): DhcpOpResult;
   scopeStatistics(scopeName: string): DhcpScopeStats | null;

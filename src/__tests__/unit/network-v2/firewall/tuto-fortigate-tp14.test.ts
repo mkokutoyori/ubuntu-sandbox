@@ -99,48 +99,83 @@ describe('TP 14 — le bilan, exigence par exigence', () => {
     expect(syn).not.toMatch(/8080\/tcp\s+open/);
   });
 
-  it('exigence 3 : un service sur un port NON STANDARD est reconnu', async () => {
-    const { fgt, pcLan, srvDmz } = await laboratoire();
-    await srvDmz.executeCommand('nc -l -p 6881 &');
+  async function servirHttpSur(srvDmz: LinuxServer, port: number): Promise<void> {
+    await srvDmz.executeCommand(
+      `printf "server {\\n listen ${port};\\n}\\n" > /etc/nginx/sites-available/p${port}.conf`);
+    await taper(srvDmz, [
+      `ln -s /etc/nginx/sites-available/p${port}.conf /etc/nginx/sites-enabled/p${port}.conf`,
+      'systemctl reload nginx',
+    ]);
+  }
 
-    propre(await taper(fgt, [
+  async function bloquer(fgt: FortiGate, application: string): Promise<string[]> {
+    return taper(fgt, [
       'config application list', 'edit "APP-Lab"',
       'set comment "Controle applicatif du laboratoire"',
       'config entries', 'edit 1',
-      'set application "HTTP.BROWSER"',
+      `set application "${application}"`,
       'set action block',
-      'next', 'end',
-      'next', 'end',
-    ]));
-
-    propre(await taper(fgt, [
-      'config firewall policy', 'edit 2',
-      'set utm-status enable',
-      'set application-list "APP-Lab"',
-      'next', 'end',
-    ]));
-
-    expect(await fgt.executeCommand('show firewall policy 2'))
-      .toContain('set application-list "APP-Lab"');
-    void pcLan;
-  });
-
-  it('exigence 3 : le controle applicatif juge le PROTOCOLE, pas le port', async () => {
-    const { fgt, pcLan, srvDmz } = await laboratoire();
-    await srvDmz.executeCommand('systemctl start nginx');
-    await taper(fgt, [
-      'config application list', 'edit "APP-Lab"',
-      'config entries', 'edit 1',
-      'set application "HTTP.BROWSER"', 'set action block', 'next', 'end',
-      'next', 'end',
+      'next', 'end', 'next', 'end',
       'config firewall policy', 'edit 2',
       'set utm-status enable', 'set inspection-mode flow',
       'set application-list "APP-Lab"', 'set logtraffic all', 'next', 'end',
     ]);
+  }
 
-    expect(await pcLan.executeCommand('curl -sS http://192.168.20.10/'))
-      .not.toContain('Welcome to nginx!');
+  it('exigence 3 : HTTP sur un port NON STANDARD est reconnu et bloque', async () => {
+    const { fgt, pcLan, srvDmz } = await laboratoire();
+    await servirHttpSur(srvDmz, 6881);
+
+    expect(await pcLan.executeCommand('curl -sS http://192.168.20.10:6881/'))
+      .toMatch(/<html|It works|nginx/i);
+
+    propre(await bloquer(fgt, 'HTTP.BROWSER'));
+
+    expect(await pcLan.executeCommand('curl -sS http://192.168.20.10:6881/'))
+      .not.toMatch(/<html|It works|nginx/i);
   });
+
+  it('exigence 3 : changer de port ne change RIEN, comme le dit le tutoriel',
+    async () => {
+      const { fgt, pcLan, srvDmz } = await laboratoire();
+      await servirHttpSur(srvDmz, 6881);
+      await servirHttpSur(srvDmz, 9999);
+      await bloquer(fgt, 'HTTP.BROWSER');
+
+      for (const port of [80, 6881, 9999]) {
+        const cible = port === 80
+          ? 'http://192.168.20.10/' : `http://192.168.20.10:${port}/`;
+        expect(await pcLan.executeCommand(`curl -sS ${cible}`))
+          .not.toMatch(/<html|It works|nginx/i);
+      }
+    });
+
+  it('exigence 3 : le TEMOIN — meme port, autre signature, le trafic passe',
+    async () => {
+      const { fgt, pcLan, srvDmz } = await laboratoire();
+      await servirHttpSur(srvDmz, 6881);
+      await bloquer(fgt, 'FTP');
+
+      expect(await pcLan.executeCommand('curl -sS http://192.168.20.10:6881/'))
+        .toMatch(/<html|It works|nginx/i);
+    });
+
+  it('exigence 3 : le journal nomme l\'application, le PORT et la politique',
+    async () => {
+      const { fgt, pcLan, srvDmz } = await laboratoire();
+      await servirHttpSur(srvDmz, 6881);
+      await bloquer(fgt, 'HTTP.BROWSER');
+      await pcLan.executeCommand('curl -sS http://192.168.20.10:6881/');
+
+      await taper(fgt, ['execute log filter category 10']);
+      const journal = await fgt.executeCommand('execute log display');
+
+      expect(journal).toContain('subtype="app-ctrl"');
+      expect(journal).toContain('app="HTTP.BROWSER"');
+      expect(journal).toContain('dstport=6881');
+      expect(journal).toContain('policyid=2');
+      expect(journal).toContain('profile="APP-Lab"');
+    });
 
   it('exigence 4 : un executable deguise reste bloque', async () => {
     const { fgt, pcLan, srvDmz } = await laboratoire();

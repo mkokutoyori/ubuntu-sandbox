@@ -2,8 +2,9 @@ import { Zone } from '@/network/dns/zone/Zone';
 import type { ResourceRecord, SoaRecordData } from '@/network/dns/wire/ResourceRecord';
 import {
   makeARecord, makeAaaaRecord, makeNsRecord, makeCnameRecord, makePtrRecord,
-  makeMxRecord, makeTxtRecord, makeSrvRecord, makeSoaRecord,
+  makeMxRecord, makeTxtRecord, makeSrvRecord, makeSoaRecord, makeDhcidRecord,
 } from '@/network/dns/wire/ResourceRecord';
+import { dhcidFromPresentation } from '@/network/dns/wire/Dhcid';
 import { RRType } from '@/network/dns/wire/RRType';
 
 export class ZoneFileError extends Error {
@@ -191,6 +192,9 @@ export function parseZoneFile(text: string, defaultOrigin?: string): Zone {
           port: parseInt(rdata[2], 10),
           target: resolveName(rdata[3], origin),
         });
+        break;
+      case 'DHCID':
+        rr = makeDhcidRecord(owner, ttl, dhcidFromPresentation(rdata.join('')));
         break;
       case 'SOA': {
         const soaData = makeSoaRecord(owner, ttl, {

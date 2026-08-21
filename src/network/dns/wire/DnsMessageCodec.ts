@@ -7,7 +7,7 @@ import type {
   ResourceRecord, ResourceRecordData, OptRecordData,
   ARecordData, AaaaRecordData, NsRecordData, CnameRecordData, PtrRecordData,
   SoaRecordData, MxRecordData, TxtRecordData, SrvRecordData,
-  DnskeyRecordData, RrsigRecordData, DsRecordData, NsecRecordData,
+  DnskeyRecordData, RrsigRecordData, DsRecordData, DhcidRecordData, NsecRecordData,
 } from '@/network/dns/wire/ResourceRecord';
 
 export class DnsMessageError extends Error {
@@ -95,6 +95,12 @@ function encodeTypeBitmaps(types: readonly number[], out: number[]): void {
   }
 }
 
+export function encodeCanonicalName(name: string): number[] {
+  const out: number[] = [];
+  encodeName(name.toLowerCase(), out, new Map());
+  return out;
+}
+
 function encodeRData(data: ResourceRecordData, out: number[], compressionMap: Map<string, number>): void {
   switch (data.type) {
     case RRType.A:
@@ -155,6 +161,11 @@ function encodeRData(data: ResourceRecordData, out: number[], compressionMap: Ma
     case RRType.DS:
       writeUint16(out, data.keyTag);
       out.push(data.algorithm & 0xff, data.digestType & 0xff);
+      writeText(out, data.digest);
+      return;
+    case RRType.DHCID:
+      writeUint16(out, data.identifierType);
+      out.push(data.digestType & 0xff);
       writeText(out, data.digest);
       return;
     case RRType.NSEC:
@@ -395,6 +406,12 @@ function decodeRData(type: number, view: Uint8Array, offset: number, rdlength: n
       const digestType = rdataCursor.readUint8();
       const digest = readText(view, rdataCursor.pos, offset + rdlength);
       return { type: RRType.DS, keyTag, algorithm, digestType, digest } as DsRecordData;
+    }
+    case RRType.DHCID: {
+      const identifierType = rdataCursor.readUint16();
+      const digestType = rdataCursor.readUint8();
+      const digest = readText(view, rdataCursor.pos, offset + rdlength);
+      return { type: RRType.DHCID, identifierType, digestType, digest } as DhcidRecordData;
     }
     case RRType.NSEC: {
       const next = decodeName(view, offset);

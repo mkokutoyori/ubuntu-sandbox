@@ -171,6 +171,13 @@ export interface DsRecordData {
   readonly digest: string;
 }
 
+export interface DhcidRecordData {
+  readonly type: typeof RRType.DHCID;
+  readonly identifierType: number;
+  readonly digestType: number;
+  readonly digest: string;
+}
+
 export interface NsecRecordData {
   readonly type: typeof RRType.NSEC;
   readonly nextDomainName: string;
@@ -191,6 +198,7 @@ export type ResourceRecordData =
   | DnskeyRecordData
   | RrsigRecordData
   | DsRecordData
+  | DhcidRecordData
   | NsecRecordData;
 
 export interface ResourceRecord<TData extends ResourceRecordData = ResourceRecordData> {
@@ -360,6 +368,15 @@ export function makeDsRecord(
   return { ...base, data: { type: RRType.DS, ...fields } };
 }
 
+export function makeDhcidRecord(
+  name: string, ttl: number,
+  fields: { identifierType: number; digestType: number; digest: string },
+): ResourceRecord<DhcidRecordData> {
+  const base = buildRecordBase(name, ttl);
+  validateUint16(fields.identifierType, 'identifierType');
+  return { ...base, data: { type: RRType.DHCID, ...fields } };
+}
+
 export function makeNsecRecord(
   name: string, ttl: number, nextDomainName: string, types: readonly number[],
 ): ResourceRecord<NsecRecordData> {
@@ -393,6 +410,8 @@ export function rdataKey(data: ResourceRecordData): string {
       return `rrsig|${data.typeCovered}|${data.keyTag}|${data.signerName.toLowerCase()}|${data.signature}`;
     case RRType.DS:
       return `ds|${data.keyTag}|${data.algorithm}|${data.digestType}|${data.digest}`;
+    case RRType.DHCID:
+      return `dhcid|${data.identifierType}|${data.digestType}|${data.digest}`;
     case RRType.NSEC:
       return `nsec|${data.nextDomainName.toLowerCase()}|${data.types.join(',')}`;
     default:
