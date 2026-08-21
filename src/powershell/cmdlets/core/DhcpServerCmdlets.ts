@@ -415,6 +415,80 @@ export class GetDhcpServerInDCCmdlet implements ICmdlet {
   }
 }
 
+export class GetDhcpServerv4BindingCmdlet implements ICmdlet {
+  readonly name = 'get-dhcpserverv4binding';
+  readonly aliases = [] as const;
+  readonly parameters = [] as const;
+
+  execute(ctx: CmdletContext): PSValue {
+    const dhcp = requireDhcp(ctx, 'Get-DhcpServerv4Binding');
+    return dhcp.listBindings().map(b => ({
+      InterfaceAlias: b.interfaceAlias,
+      IPAddress: b.ipAddress,
+      SubnetMask: b.subnetMask,
+      BindingState: b.bindingState,
+    }));
+  }
+}
+
+export class GetDhcpServerv4DnsSettingCmdlet implements ICmdlet {
+  readonly name = 'get-dhcpserverv4dnssetting';
+  readonly aliases = [] as const;
+  readonly parameters = ['ScopeId'] as const;
+
+  execute(ctx: CmdletContext): PSValue {
+    const dhcp = requireDhcp(ctx, 'Get-DhcpServerv4DnsSetting');
+    const s = dhcp.getDnsSettings();
+    return {
+      DynamicUpdates: s.dynamicUpdates,
+      DeleteDnsRROnLeaseExpiry: s.deleteDnsRRonLeaseExpiry,
+      UpdateDnsRRForOlderClients: s.updateDnsRRForOlderClients,
+      NameProtection: s.nameProtection,
+    };
+  }
+}
+
+const DYNAMIC_UPDATE_POLICIES = ['Always', 'Never', 'OnClientRequest'];
+
+export class SetDhcpServerv4DnsSettingCmdlet implements ICmdlet {
+  readonly name = 'set-dhcpserverv4dnssetting';
+  readonly aliases = [] as const;
+  readonly parameters = ['ScopeId', 'DynamicUpdates', 'DeleteDnsRROnLeaseExpiry',
+    'UpdateDnsRRForOlderClients', 'NameProtection'] as const;
+
+  execute(ctx: CmdletContext): PSValue {
+    const dhcp = requireDhcp(ctx, 'Set-DhcpServerv4DnsSetting');
+    const changes: Record<string, unknown> = {};
+
+    const raw = ctx.named['dynamicupdates'];
+    if (raw !== undefined) {
+      const wanted = psValueToString(raw);
+      const match = DYNAMIC_UPDATE_POLICIES.find(p => p.toLowerCase() === wanted.toLowerCase());
+      if (!match) {
+        ctx.emitError(`Set-DhcpServerv4DnsSetting : Cannot validate argument on parameter 'DynamicUpdates'. The argument "${wanted}" does not belong to the set "${DYNAMIC_UPDATE_POLICIES.join(',')}".`);
+        return null;
+      }
+      changes.dynamicUpdates = match;
+    }
+    const bool = (key: string): boolean | undefined => {
+      const v = ctx.named[key];
+      if (v === undefined) return undefined;
+      const t = psValueToString(v).toLowerCase();
+      return t === 'true' || t === '$true' || t === '1' || v === true;
+    };
+    const del = bool('deletednsrronleaseexpiry');
+    if (del !== undefined) changes.deleteDnsRRonLeaseExpiry = del;
+    const older = bool('updatednsrrforolderclients');
+    if (older !== undefined) changes.updateDnsRRForOlderClients = older;
+    const prot = bool('nameprotection');
+    if (prot !== undefined) changes.nameProtection = prot;
+
+    const res = dhcp.setDnsSettings(changes);
+    if (!res.ok) { ctx.emitError(`Set-DhcpServerv4DnsSetting : ${res.message}`); return null; }
+    return null;
+  }
+}
+
 export class RemoveDhcpServerInDCCmdlet implements ICmdlet {
   readonly name = 'remove-dhcpserverindc';
   readonly aliases = [] as const;

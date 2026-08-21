@@ -154,7 +154,8 @@ import {
   SetDnsServerForwarderCmdlet, GetDnsServerForwarderCmdlet,
 } from './DnsServerCmdlets';
 import {
-  AddDhcpServerv4ScopeCmdlet, GetDhcpServerv4ScopeCmdlet,
+  AddDhcpServerv4ScopeCmdlet, GetDhcpServerv4ScopeCmdlet, GetDhcpServerv4BindingCmdlet,
+  GetDhcpServerv4DnsSettingCmdlet, SetDhcpServerv4DnsSettingCmdlet,
   AddDhcpServerv4ExclusionRangeCmdlet, AddDhcpServerv4ReservationCmdlet,
   SetDhcpServerv4OptionValueCmdlet, GetDhcpServerv4LeaseCmdlet,
   AddDhcpServerInDCCmdlet,
@@ -644,6 +645,9 @@ export function registerServerCmdlets(registry: CmdletRegistry): void {
   // ── DHCP Server role (PRD-Windows-Server.md §5 P8) ──────────────────────────
   registry.register(new AddDhcpServerv4ScopeCmdlet());
   registry.register(new GetDhcpServerv4ScopeCmdlet());
+  registry.register(new GetDhcpServerv4BindingCmdlet());
+  registry.register(new GetDhcpServerv4DnsSettingCmdlet());
+  registry.register(new SetDhcpServerv4DnsSettingCmdlet());
   registry.register(new AddDhcpServerv4ExclusionRangeCmdlet());
   registry.register(new AddDhcpServerv4ReservationCmdlet());
   registry.register(new SetDhcpServerv4OptionValueCmdlet());

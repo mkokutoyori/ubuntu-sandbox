@@ -18,12 +18,16 @@ export const LOG_CATEGORIES: readonly LogCategory[] = Object.freeze([
   { index: 8, name: 'utm-voip', type: 'utm', subtype: 'voip' },
   { index: 9, name: 'utm-dlp', type: 'utm', subtype: 'dlp' },
   { index: 10, name: 'utm-app-ctrl', type: 'utm', subtype: 'app-ctrl' },
-  { index: 11, name: 'utm-waf', type: 'utm', subtype: 'waf' },
-  { index: 12, name: 'utm-dns', type: 'utm', subtype: 'dns' },
-  { index: 13, name: 'utm-ssh', type: 'utm', subtype: 'ssh' },
-  { index: 14, name: 'utm-ssl', type: 'utm', subtype: 'ssl' },
-  { index: 15, name: 'utm-file-filter', type: 'utm', subtype: 'file-filter' },
-  { index: 16, name: 'utm-icap', type: 'utm', subtype: 'icap' },
+  { index: 12, name: 'utm-waf', type: 'utm', subtype: 'waf' },
+  { index: 15, name: 'utm-dns', type: 'utm', subtype: 'dns' },
+  { index: 16, name: 'utm-ssh', type: 'utm', subtype: 'ssh' },
+  { index: 17, name: 'utm-ssl', type: 'utm', subtype: 'ssl' },
+  { index: 19, name: 'utm-file-filter', type: 'utm', subtype: 'file-filter' },
+  { index: 20, name: 'utm-icap', type: 'utm', subtype: 'icap' },
+  { index: 22, name: 'utm-sctp-filter', type: 'utm', subtype: 'sctp-filter' },
+  { index: 23, name: 'forti-switch', type: 'event', subtype: 'forti-switch' },
+  { index: 24, name: 'utm-virtual-patch', type: 'utm', subtype: 'virtual-patch' },
+  { index: 25, name: 'utm-casb', type: 'utm', subtype: 'casb' },
 ]);
 
 export function resolveLogCategory(raw: string): LogCategory | undefined {

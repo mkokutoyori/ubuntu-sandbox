@@ -59,6 +59,7 @@ export class DHCPServer implements IProtocolEngine {
 
   /** Server's own IP address (Option 54: Server Identifier) */
   private serverIdentifier: string = '0.0.0.0';
+  private serverOwnedAddresses: Set<string> = new Set();
 
   /** Named DHCP pools */
   private pools: Map<string, DHCPPoolConfig> = new Map();
@@ -398,7 +399,16 @@ export class DHCPServer implements IProtocolEngine {
     return [...this.excludedRanges];
   }
 
+  setServerOwnedAddresses(ips: string[]): void {
+    this.serverOwnedAddresses = new Set(ips.filter(ip => ip && ip !== '0.0.0.0'));
+  }
+
+  getServerOwnedAddresses(): string[] {
+    return [...this.serverOwnedAddresses];
+  }
+
   private isExcluded(ip: string): boolean {
+    if (this.serverOwnedAddresses.has(ip)) return true;
     const ipNum = this.ipToNumber(ip);
     for (const range of this.excludedRanges) {
       const startNum = this.ipToNumber(range.start);

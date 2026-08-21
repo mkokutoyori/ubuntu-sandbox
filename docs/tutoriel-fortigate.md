@@ -5537,14 +5537,14 @@ Tu obtiens une page de blocage FortiGuard, ou une connexion coupée.
 **Étape 5 — Voir le blocage dans les journaux**
 
 ```
-FGT-01 # execute log filter category 1
+FGT-01 # execute log filter category 3
 FGT-01 # execute log filter field action "blocked"
 FGT-01 # execute log display
 ```
 
 Tu vois l'événement, avec l'URL, l'utilisateur, la politique et l'heure.
 
-> 💡 **Astuce** : `category 1` correspond aux journaux **UTM**, `category 0` aux journaux de **trafic**. Cette distinction revient tout le temps :
+> 💡 **Astuce** : `category 0` est le **trafic**, et le filtrage web a **sa propre catégorie** (`3`) — il n'existe pas de catégorie « UTM » unique. Vérifie toujours la liste sur ta machine :
 > ```
 > FGT-01 # execute log filter category ?
 > ```
@@ -5603,7 +5603,7 @@ user@pc-lan:~$ curl -O http://192.168.20.10/photo.jpg
 **Le téléchargement est bloqué**, malgré l'extension `.jpg`. Le pare-feu a lu les octets, pas le nom.
 
 ```
-FGT-01 # execute log filter category 1
+FGT-01 # execute log filter category 3
 FGT-01 # execute log display
 ```
 
@@ -8845,12 +8845,20 @@ FortiOS sépare les journaux par nature, et cette séparation gouverne toutes le
 | Catégorie | Contenu | Numéro |
 |---|---|---|
 | **Traffic** | Chaque session autorisée ou refusée | `0` |
-| **UTM** | Virus détecté, site bloqué, IPS déclenché | `1` |
-| **Event** | Administration, système, VPN, HA, routage | `2` |
+| **Event** | Administration, système, VPN, HA, routage | `1` |
+| **Virus** | Antivirus | `2` |
+| **Webfilter** | Filtrage web | `3` |
+| **IPS** (attack) | Détection d'intrusion | `4` |
+| **File-filter** | Filtrage de fichiers | `19` |
 
-```
-FGT-01 # execute log filter category ?
-```
+> ⚠️ **Attention — le piège de numérotation**
+> Beaucoup de tutoriels écrivent que « la catégorie 1, c'est l'UTM ». **C'est faux.** La catégorie 1 est `event`. Les journaux UTM ne forment pas une catégorie unique : **chaque sous-type a son propre numéro** — antivirus, filtrage web, IPS, filtrage de fichiers…
+>
+> Ne devine pas ces numéros : ta machine te donne la liste exacte.
+> ```
+> FGT-01 # execute log filter category ?
+> ```
+> Elle rend les dix-sept catégories réelles. C'est la seule source fiable, et elle est à portée de main.
 
 ### 23.2 Où vont les journaux
 
@@ -9071,23 +9079,23 @@ FGT-01 # execute log display
 
 Tu retrouves la tentative SSH. Regarde le champ `policyid` : il vaut `0` — l'`Implicit Deny` du §11, TP 9.
 
-**Étape 6 — Retrouver le blocage UTM**
+**Étape 6 — Retrouver le blocage du filtrage web**
 
 ```
 FGT-01 # execute log filter reset
-FGT-01 # execute log filter category 1
+FGT-01 # execute log filter category 3
 FGT-01 # execute log display
 ```
 
 Tu retrouves le blocage de `example.com` par la liste locale.
 
-> 🧠 **Note la différence** : le refus de la politique est en catégorie `0` (trafic), le blocage du filtrage web en catégorie `1` (UTM). Chercher dans la mauvaise catégorie est la cause n°1 des « je ne trouve rien dans les journaux ».
+> 🧠 **Note la différence** : le refus de la politique est en catégorie `0` (trafic), le blocage du filtrage web en catégorie `3` (webfilter). Chercher dans la mauvaise catégorie est la cause n°1 des « je ne trouve rien dans les journaux ».
 
 **Étape 7 — Les événements système**
 
 ```
 FGT-01 # execute log filter reset
-FGT-01 # execute log filter category 2
+FGT-01 # execute log filter category 1
 FGT-01 # execute log display
 ```
 
@@ -9154,10 +9162,11 @@ Génère du trafic et regarde les journaux arriver **en direct**.
 
 **🧠 Ce que tu viens d'apprendre**
 
-1. **Trois catégories**, et chercher dans la mauvaise fait conclure à tort qu'il n'y a rien.
+1. **Il n'y a pas de catégorie « UTM » unique** — chaque sous-type a son numéro, et chercher dans la mauvaise fait conclure à tort qu'il n'y a rien.
 2. **`execute log filter reset` avant chaque recherche** — les filtres persistent.
 3. **`policyid=0` dans un journal, c'est l'Implicit Deny.**
 4. **Les journaux en mémoire disparaissent au redémarrage.** En production, on externalise.
+   *(La liste exacte des catégories se lit avec `execute log filter category ?` — jamais de mémoire.)*
 5. **Un compteur à zéro est un signal** à investiguer.
 6. **Le conserve mode arrête l'inspection sans rien casser de visible.** C'est une panne silencieuse.
 
@@ -9201,7 +9210,7 @@ Le réflexe qui distingue un dépanneur efficace, c'est de ne **jamais** cherche
 | `diagnose sniffer packet` | « Le paquet arrive-t-il ? Ressort-il ? » |
 | `diagnose debug flow` | « Que **décide** le pare-feu, et pourquoi ? » |
 | `diagnose sys session list` | « Quelle règle a autorisé ? Quel NAT s'applique ? » |
-| `execute log display` | « Que s'est-il passé **avant** que j'arrive ? » |
+| `execute log display` | « Que s'est-il passé **avant** que j'arrive ? » (précédé de `execute log filter reset`) |
 | `get router info routing-table` | « Le pare-feu sait-il où envoyer ça ? » |
 
 ### 24.3 L'aide-mémoire du sniffer
@@ -10366,8 +10375,9 @@ diagnose sniffer packet any 'udp port 500 or udp port 4500' 4 30
 ```
 execute log filter reset                   ⭐ TOUJOURS commencer par là
 execute log filter category 0              Trafic
-execute log filter category 1              UTM
-execute log filter category 2              Événements
+execute log filter category 1              Événements
+execute log filter category 3              Filtrage web
+execute log filter category ?              ⭐ La liste réelle de TA machine
 execute log filter field srcip <ip>        Filtrer par source
 execute log filter field action deny       Filtrer par action
 execute log filter field policyid <n>      Filtrer par politique

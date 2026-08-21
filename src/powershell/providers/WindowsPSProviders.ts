@@ -1074,6 +1074,11 @@ class WindowsDhcpServerAdapter implements IDhcpServerProvider {
 
   authorizeInDC(dnsName?: string, ipAddress?: string): DhcpOpResult { return this.role().authorizeInDC(dnsName, ipAddress); }
   registeredIdentity(): { dnsName: string | null; ipAddress: string | null } { return this.role().registeredIdentity(); }
+  listBindings() { return this.role().listBindings(); }
+  getDnsSettings() { return this.role().getDnsSettings(); }
+  setDnsSettings(changes: Record<string, unknown>) {
+    return this.role().setDnsSettings(changes as Parameters<WindowsDhcpServerRole['setDnsSettings']>[0]);
+  }
   isAuthorizedInDC(): boolean { return this.role().isAuthorizedInDC(); }
   isRegisteredInDC(): boolean { return this.role().isRegisteredInDC(); }
   revokeInDC(): DhcpOpResult { return this.role().revokeInDC(); }

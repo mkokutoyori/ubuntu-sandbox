@@ -3867,6 +3867,11 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
     // would expect back.
     if (pkt.getMessageType() === 'DHCPRELEASE') this.arpTable.delete(pkt.ciaddr);
 
+    this.dhcpServer.setServerOwnedAddresses(
+      [...this.ports.values()]
+        .map(p => p.getIPAddress()?.toString())
+        .filter((ip): ip is string => !!ip),
+    );
     const reply = buildDhcpServerReply(pkt, {
       server: this.dhcpServer,
       localGatewayIP: this.ports.get(inPort)?.getIPAddress()?.toString(),

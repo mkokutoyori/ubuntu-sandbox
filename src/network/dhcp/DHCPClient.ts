@@ -126,6 +126,7 @@ export class DHCPClient implements IProtocolEngine {
   /** Read-only observables (ifaces, stats). */
   readonly observables: DHCPClientObservables = makeReadonlyDHCPClientObservables(this.signalStore);
   private signalRefreshActor: DHCPClientSignalRefreshActor | null = null;
+  private hostnameProvider: (() => string) | null = null;
   /** Optional device id stamped on every event. Set via setDeviceId(). */
   private deviceId: string = '';
   private hostname: string = '';
@@ -155,6 +156,16 @@ export class DHCPClient implements IProtocolEngine {
   private getBus(): IEventBus { return this.busOverride ?? getDefaultEventBus(); }
   private getScheduler(): IScheduler { return this.schedulerOverride ?? getDefaultScheduler(); }
   private deviceRef() { return { deviceId: this.deviceId, hostname: this.hostname }; }
+
+  setHostnameProvider(provider: () => string): void {
+    this.hostnameProvider = provider;
+  }
+
+  private clientIdentity(): { hostName?: string; clientFqdn?: { flags: number; name: string } } {
+    const name = (this.hostnameProvider?.() ?? this.hostname).trim();
+    if (!name) return {};
+    return { hostName: name, clientFqdn: { flags: 0x01, name } };
+  }
 
   private attachActors(): void {
     this.signalRefreshActor?.stop();
@@ -359,6 +370,7 @@ export class DHCPClient implements IProtocolEngine {
         clientMAC: mac,
         xid: state.xid,
         clientIdentifier,
+        ...this.clientIdentity(),
         parameterRequestList: DEFAULT_PARAMETER_REQUEST_LIST,
       });
       if (result) {
@@ -417,6 +429,7 @@ export class DHCPClient implements IProtocolEngine {
       requestedIP: offer.ip,
       serverIdentifier: offer.serverIdentifier,
       clientIdentifier,
+      ...this.clientIdentity(),
     });
     const ackResult = replyResult && replyResult.type === 'ACK' && replyResult.binding
       ? { binding: replyResult.binding, serverIdentifier: replyResult.serverIdentifier, xid: replyResult.xid, renewalTime: replyResult.renewalTime, rebindingTime: replyResult.rebindingTime, serverMac: replyResult.serverMac }
@@ -473,6 +486,7 @@ export class DHCPClient implements IProtocolEngine {
         declinedIP: ackResult.binding.ipAddress,
         serverIdentifier: offer.serverIdentifier,
         clientIdentifier,
+        ...this.clientIdentity(),
       });
       this.emitStateChange(iface, 'REQUESTING', 'INIT', 'DECLINE');
       state.state = 'INIT';
@@ -653,6 +667,7 @@ export class DHCPClient implements IProtocolEngine {
         requestedIP: lastLease.ipAddress,    // Option 50
         // NO serverIdentifier (RFC 2131 §3.2)
         clientIdentifier,                     // Option 61
+        ...this.clientIdentity(),
       });
       if (result && result.xid === state.xid) {
         ackResult = result;
@@ -682,6 +697,7 @@ export class DHCPClient implements IProtocolEngine {
         declinedIP: ackResult.binding.ipAddress,
         serverIdentifier: ackResult.serverIdentifier,
         clientIdentifier,
+        ...this.clientIdentity(),
       });
       state.state = 'INIT';
       state.lastKnownLease = null;
@@ -760,6 +776,7 @@ export class DHCPClient implements IProtocolEngine {
           clientIP: lease.ipAddress,
           serverIdentifier: lease.serverIdentifier,
           clientIdentifier,
+          ...this.clientIdentity(),
         });
         break; // Only release to the server that gave us the lease
       }
@@ -941,6 +958,7 @@ export class DHCPClient implements IProtocolEngine {
               requestedIP: lease.ipAddress,
               // No serverIdentifier in RENEWING (unicast, RFC 2131 §4.3.2)
               clientIdentifier,
+              ...this.clientIdentity(),
             });
             if (ackResult && ackResult.xid === state.xid) {
               const oldS2 = state.state as string;
@@ -983,6 +1001,7 @@ export class DHCPClient implements IProtocolEngine {
             xid: state.xid,
             requestedIP: lease.ipAddress,
             clientIdentifier,
+            ...this.clientIdentity(),
           });
           if (ackResult && ackResult.xid === state.xid) {
             const oldS2 = state.state as string;

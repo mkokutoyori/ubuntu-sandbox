@@ -151,16 +151,17 @@ ecrivent avant de lire.
 d'evenements que la livraison synchrone de trames ne fournit pas ici ;
 c'est le meme plafond que le relai `portproxy` de Windows.
 
-### [journaux] le tutoriel se trompe sur la categorie 1
-Le tutoriel ecrit que `execute log filter category 1` designe les
-journaux UTM. Sur une vraie machine la categorie 1 est `event` ; les
-journaux UTM sont numerotes par sous-type (2 virus, 3 webfilter,
-15 file-filter…). Le simulateur suit la MACHINE, et la sonde du TP 12
-lit donc la categorie 3.
-**Mesure** : `execute log filter category ?` rend les dix-sept
-categories reelles.
-**Report** : ce n'est pas un manquement du produit mais une erreur du
-document ; l'entree est ici pour qu'on pense a corriger le tutoriel.
+### [openssl] `s_client` échoue sur deux cas de chaîne de certificats
+Deux cas de `openssl-prd-p0-p3.test.ts` §P7 sont ROUGES sur la branche,
+indépendamment de toute modification récente : « sans -CAfile, il DIT
+qu'il n'a pas de chaîne » et « avec -CAfile, il affiche l'ancre
+fournie ».
+**Mesure** : identiques avec et sans les modifications DHCP/DNS en cours
+(vérifié par `git stash`). Un troisième cas (« la CRL nomme son
+émetteur ») passe en isolation et tombe sous charge — instable, pas
+faux.
+**Report** : sujet PKI, distinct du chantier DHCP ; à traiter pour
+lui-même plutôt qu'en passant.
 
 ### [dns] `dns-service default` : la semantique exacte n'est pas verifiee
 Trois valeurs existent — `local` (le pare-feu lui-meme), `default` (les
@@ -226,24 +227,42 @@ de niveau 3.
 unité systemd, journal) — la brique serveur existe, c'est l'enveloppe
 Linux qui manque.
 
-### [dhcp] pas de détection de conflit d'adresse côté serveur
-Un pool qui couvre l'adresse du serveur lui-même la propose : les
-laboratoires doivent poser `ip dhcp excluded-address`. Le vrai IOS teste
-l'adresse par deux pings avant de l'offrir.
-**Mesure** : sans `excluded-address`, le client reçoit `192.168.51.1`,
-l'adresse du serveur.
+### [dhcp] le serveur n'écarte que SES PROPRES adresses, pas celles d'un squatteur
+Un serveur ne propose plus une adresse qu'il porte lui-même
+(`setServerOwnedAddresses`, alimenté par `Router` et par le rôle
+Windows). Ce qui reste absent est le cas général : une adresse de la
+plage occupée par une machine configurée en statique. Le vrai IOS la
+teste par deux pings avant de l'offrir.
+**Mesure** : un pool couvrant l'adresse du serveur ne la distribue plus ;
+une adresse tenue par un tiers l'est encore.
 **Report** : demande un aller-retour ICMP synchrone dans le chemin
-d'offre ; `setAddressConflictChecker` existe côté CLIENT et n'a pas de
-pendant côté serveur.
+d'offre. `isAddressInUse` existe dans `DhcpServerExchange` et n'est
+consulté que si `ip dhcp ping packets` > 0, réglage qui n'a pas
+d'équivalent Windows.
 
 ### [dhcp] Windows : le basculement et l'export restent absents
-`Add-DhcpServerv4Failover`, `Get-DhcpServerv4Failover`,
-`Export-DhcpServer`/`Import-DhcpServer`, `Get-DhcpServerv4Binding` et
-`Set-DhcpServerv4DnsSetting` ne sont pas déclarés.
-**Mesure** : le module compte 20 applets ; ces cinq familles n'y sont
-pas.
+`Get-DhcpServerv4Binding`, `Get-/Set-DhcpServerv4DnsSetting` sont
+désormais déclarées et réelles. Restent absents
+`Add-DhcpServerv4Failover`, `Get-DhcpServerv4Failover` et
+`Export-DhcpServer`/`Import-DhcpServer`.
+**Mesure** : ces trois familles ne sont pas dans le module.
 **Report** : le basculement demande un second serveur et un protocole de
 synchronisation entre les deux — un sujet en soi, pas une applet de plus.
+L'export/import est faisable (le VFS existe) mais suppose d'écrire le
+XML qu'un vrai Windows produit, et de le relire.
+
+### [dhcp] la mise à jour DNS dynamique ne couvre que l'enregistrement A
+Un bail accordé crée l'enregistrement A dans la zone du domaine du scope,
+gouverné par `Set-DhcpServerv4DnsSetting -DynamicUpdates`
+(`Always`/`Never`/`OnClientRequest`, RFC 4702 lu sur l'option 81 que le
+client pose désormais). Ce qui manque : l'enregistrement **PTR** dans la
+zone inverse, et `NameProtection` (DHCID) qui est accepté et rangé sans
+rien empêcher.
+**Mesure** : `Get-DnsServerResourceRecord -ZoneName lab.local` rend le A
+après un `ipconfig /renew` ; aucune zone inverse n'est touchée.
+**Report** : la zone inverse suppose de la créer et de nommer
+`x.x.x.x.in-addr.arpa`, ce qui est un travail à part ; `NameProtection`
+suppose l'enregistrement DHCID, qui n'existe nulle part.
 
 ## Outillage
 
@@ -256,6 +275,25 @@ un nombre est attendu, signatures de constructeur périmées.
 « pas plus qu'avant ta modification », pas « zéro ».
 
 ## Journal des entrées fermées
+
+- Numérotation des catégories de journaux FortiOS — fermée. La table du
+  simulateur était CONTIGUË (11 waf, 12 dns, 13 ssh, 14 ssl, 15
+  file-filter) là où la vraie a des TROUS (12 waf, 15 dns, 16 ssh, 17
+  ssl, 19 file-filter, 20 icap, 22 sctp-filter) : signature d'une
+  invention plausible. Alignée sur deux sources concordantes, et le
+  tutoriel corrigé avec elle.
+- Continuation de ligne par accent grave en PowerShell — fermée.
+- ScopeId d'un scope DHCP Windows = adresse réseau — fermée.
+- Option 54 d'un serveur DHCP Windows = son adresse, pas la passerelle —
+  fermée.
+- `Add-DhcpServerInDC` retenait ses paramètres — fermée.
+- Relais DHCP vers un serveur Windows (giaddr) — fermée ; le rôle passe
+  par `DhcpServerExchange` au lieu d'en tenir une troisième copie.
+- Un serveur DHCP ne propose plus sa propre adresse — fermée.
+- Un serveur DHCP Windows enregistre le bail dans le DNS — fermée ;
+  `applyDynamicARecord` n'avait AUCUN appelant.
+- Le client DHCP déclare son nom (options 12 et 81) — fermée ;
+  `EndHost` ne le transmettait jamais à son client DHCP.
 
 - `mac-address learning disable` (VRP interface + VLAN) et
   `no mac address-table learning` (Cisco) — fermé, moteur réel sur le

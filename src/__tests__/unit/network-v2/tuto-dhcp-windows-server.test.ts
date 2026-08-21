@@ -9,6 +9,7 @@ import { Cable } from '@/network/hardware/Cable';
 import { resetDeviceCounters } from '@/network/devices/DeviceFactory';
 import { Logger } from '@/network/core/Logger';
 import { PowerShellSubShell } from '@/terminal/subshells/PowerShellSubShell';
+import { getDefaultEventBus } from '@/events/EventBus';
 
 beforeEach(() => {
   resetCounters();
@@ -256,5 +257,145 @@ describe('tuto DHCP — note finale : relais via ip helper-address', () => {
     await remote.executeCommand('dhclient eth0');
     const ip = remote.getPorts()[0].getIPAddress()?.toString() ?? '';
     expect(ip.startsWith('192.168.50.')).toBe(true);
+  });
+});
+
+describe('DHCP Windows — le serveur ne propose jamais sa PROPRE adresse', () => {
+  it('un scope couvrant l adresse du serveur ne la distribue pas', async () => {
+    const { srv, winClient } = buildLab();
+    const sh = ps(srv);
+    await run(sh, 'Install-WindowsFeature -Name DHCP -IncludeManagementTools');
+    await run(sh, 'Add-DhcpServerv4Scope -Name "LARGE" -StartRange 192.168.40.1 -EndRange 192.168.40.20 -SubnetMask 255.255.255.0 -State Active');
+    await run(sh, 'Set-DhcpServerv4OptionValue -ScopeId 192.168.40.0 -Router 192.168.40.1');
+
+    const cli = ps(winClient);
+    await run(cli, 'ipconfig /release');
+    await run(cli, 'ipconfig /renew');
+    const out = await run(cli, 'ipconfig /all');
+    const m = /IPv4 Address[. ]*:\s*(\d+\.\d+\.\d+\.\d+)/.exec(out);
+    expect(m).not.toBeNull();
+    expect(m![1]).not.toBe('192.168.40.5');
+    expect(m![1].startsWith('192.168.40.')).toBe(true);
+  });
+});
+
+describe('DHCP Windows — Get-DhcpServerv4Binding', () => {
+  it('liste les interfaces REELLES du serveur avec leur adresse', async () => {
+    const { srv } = buildLab();
+    const sh = ps(srv);
+    await run(sh, 'Install-WindowsFeature -Name DHCP -IncludeManagementTools');
+    const out = await run(sh, 'Get-DhcpServerv4Binding');
+    expect(out).toContain('192.168.40.5');
+    expect(out).toMatch(/255\.255\.255\.0/);
+  });
+
+  it('est inconnue tant que le role n est pas installe', async () => {
+    const { srv } = buildLab();
+    const out = await run(ps(srv), 'Get-DhcpServerv4Binding');
+    expect(out).toMatch(/not recognized/i);
+  });
+});
+
+describe('DHCP Windows — un relais injoignable ne echoue plus en SILENCE', () => {
+  it('publie dhcp.server.reply-undeliverable quand aucune route ne mene au relais', async () => {
+    const srv = new WindowsServer('SRV-DHCP');
+    const router = new CiscoRouter('R1');
+    const remote = new LinuxPC('linux-pc', 'PC-DISTANT');
+    const swServer = new GenericSwitch('switch-generic', 'SW-SRV');
+    const swRemote = new GenericSwitch('switch-generic', 'SW-REM');
+    new Cable('c1').connect(srv.getPorts()[0], swServer.getPorts()[0]);
+    new Cable('c2').connect(router.getPorts()[0], swServer.getPorts()[1]);
+    new Cable('c3').connect(router.getPorts()[1], swRemote.getPorts()[0]);
+    new Cable('c4').connect(remote.getPorts()[0], swRemote.getPorts()[1]);
+    srv.getPorts()[0].configureIP(new IPAddress('192.168.40.5'), new SubnetMask('255.255.255.0'));
+    srv.setCurrentUser('Administrator');
+    router.configureInterface('GigabitEthernet0/0', new IPAddress('192.168.40.1'), new SubnetMask('255.255.255.0'));
+    router.configureInterface('GigabitEthernet0/1', new IPAddress('192.168.50.1'), new SubnetMask('255.255.255.0'));
+
+    const seen: Array<Record<string, unknown>> = [];
+    getDefaultEventBus().subscribe('dhcp.server.reply-undeliverable',
+      (e: { payload: Record<string, unknown> }) => seen.push(e.payload));
+
+    const sh = ps(srv);
+    await run(sh, 'Install-WindowsFeature -Name DHCP -IncludeManagementTools');
+    await run(sh, 'Add-DhcpServerv4Scope -Name "LAN-50" -StartRange 192.168.50.10 -EndRange 192.168.50.200 -SubnetMask 255.255.255.0 -State Active');
+    await run(sh, 'Set-DhcpServerv4OptionValue -ScopeId 192.168.50.0 -Router 192.168.50.1');
+
+    await router.executeCommand('enable');
+    await router.executeCommand('configure terminal');
+    await router.executeCommand('interface GigabitEthernet0/1');
+    await router.executeCommand('ip helper-address 192.168.40.5');
+    await router.executeCommand('end');
+
+    await remote.executeCommand('dhclient eth0');
+
+    expect(remote.getPorts()[0].getIPAddress()?.toString() ?? '').not.toMatch(/^192\.168\.50\./);
+    expect(seen.length).toBeGreaterThan(0);
+    expect(seen[0].relayAgent).toBe('192.168.50.1');
+    expect(seen[0].reason).toBe('no-route-to-relay');
+    expect(seen[0].offeredIp).toBe('192.168.50.10');
+  });
+});
+
+describe('DHCP Windows — enregistrement DNS dynamique du bail', () => {
+  async function labWithDns() {
+    const { srv, winClient } = buildLab();
+    const sh = ps(srv);
+    await run(sh, 'Install-WindowsFeature -Name DNS -IncludeManagementTools');
+    await run(sh, 'Install-WindowsFeature -Name DHCP -IncludeManagementTools');
+    await run(sh, 'Add-DnsServerPrimaryZone -Name "lab.local"');
+    await run(sh, 'Add-DhcpServerv4Scope -Name "LAN-40" -StartRange 192.168.40.10 -EndRange 192.168.40.200 -SubnetMask 255.255.255.0 -State Active');
+    await run(sh, 'Set-DhcpServerv4OptionValue -ScopeId 192.168.40.0 -Router 192.168.40.1');
+    await run(sh, 'Set-DhcpServerv4OptionValue -ScopeId 192.168.40.0 -DnsServer 192.168.40.5 -DnsDomain "lab.local"');
+    return { srv, winClient, sh };
+  }
+
+  it('les reglages par defaut sont ceux de Windows', async () => {
+    const { srv } = buildLab();
+    const sh = ps(srv);
+    await run(sh, 'Install-WindowsFeature -Name DHCP -IncludeManagementTools');
+    const out = await run(sh, 'Get-DhcpServerv4DnsSetting');
+    expect(out).toContain('DynamicUpdates');
+    expect(out).toContain('OnClientRequest');
+    expect(out).toMatch(/True/);
+  });
+
+  it('une valeur hors de l ensemble est refusee', async () => {
+    const { srv } = buildLab();
+    const sh = ps(srv);
+    await run(sh, 'Install-WindowsFeature -Name DHCP -IncludeManagementTools');
+    const out = await run(sh, 'Set-DhcpServerv4DnsSetting -DynamicUpdates Parfois');
+    expect(out).toMatch(/does not belong to the set/i);
+  });
+
+  it('un bail accorde CREE l enregistrement A dans la zone', async () => {
+    const { winClient, sh } = await labWithDns();
+    const cli = ps(winClient);
+    await run(cli, 'ipconfig /release');
+    await run(cli, 'ipconfig /renew');
+
+    const records = await run(sh, 'Get-DnsServerResourceRecord -ZoneName "lab.local"');
+    expect(records.toLowerCase()).toContain('pc-win');
+    expect(records).toMatch(/192\.168\.40\.\d+/);
+  });
+
+  it('DynamicUpdates Never n enregistre RIEN', async () => {
+    const { winClient, sh } = await labWithDns();
+    await run(sh, 'Set-DhcpServerv4DnsSetting -DynamicUpdates Never');
+    const cli = ps(winClient);
+    await run(cli, 'ipconfig /release');
+    await run(cli, 'ipconfig /renew');
+    const records = await run(sh, 'Get-DnsServerResourceRecord -ZoneName "lab.local"');
+    expect(records.toLowerCase()).not.toContain('pc-win');
+  });
+
+  it('sans role DNS sur la machine, le bail est accorde quand meme', async () => {
+    const { srv, winClient } = buildLab();
+    const sh = await installAndScope(srv);
+    const cli = ps(winClient);
+    await run(cli, 'ipconfig /release');
+    const out = await run(cli, 'ipconfig /renew');
+    expect(out).toMatch(/192\.168\.40\./);
+    void sh;
   });
 });

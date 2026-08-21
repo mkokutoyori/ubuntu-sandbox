@@ -95,6 +95,8 @@ export class WireDhcpChannel implements DhcpServerChannel {
   processDiscover(params: DHCPDiscoverParams): DHCPOfferResult | null {
     const discover = DHCPPacket.createDiscover(params.clientMAC, params.xid);
     if (params.requestedIP) discover.setOption(DHCP_OPTION.REQUESTED_IP, params.requestedIP);
+    if (params.hostName) discover.setOption(DHCP_OPTION.HOST_NAME, params.hostName);
+    if (params.clientFqdn) discover.setOption(DHCP_OPTION.CLIENT_FQDN, params.clientFqdn);
     const entry = this.exchange(discover, ['DHCPOFFER'], params.xid, params.clientMAC);
     if (!entry) return null;
     const offer = entry.pkt;
@@ -138,6 +140,8 @@ export class WireDhcpChannel implements DhcpServerChannel {
       params.clientMAC, params.xid, params.requestedIP, params.serverIdentifier ?? '');
     // RENEWING/REBINDING/INIT-REBOOT REQUESTs carry no server id (RFC 2131 §4.3.2).
     if (!params.serverIdentifier) request.removeOption(DHCP_OPTION.SERVER_IDENTIFIER);
+    if (params.hostName) request.setOption(DHCP_OPTION.HOST_NAME, params.hostName);
+    if (params.clientFqdn) request.setOption(DHCP_OPTION.CLIENT_FQDN, params.clientFqdn);
 
     const entry = this.exchange(request, ['DHCPACK', 'DHCPNAK'], params.xid, params.clientMAC);
     if (!entry) return null;

@@ -18,7 +18,7 @@
 
 import type { EndHost } from '@/network/devices/EndHost';
 import { DHCPServer } from '@/network/dhcp/DHCPServer';
-import { DHCPPacket } from '@/network/dhcp/DHCPPacket';
+import { DHCPPacket, DHCP_OPTION } from '@/network/dhcp/DHCPPacket';
 import { buildDhcpServerReply } from '@/network/dhcp/DhcpServerExchange';
 import type { DHCPBinding } from '@/network/dhcp/types';
 import {
@@ -36,6 +36,20 @@ export interface DhcpScopeInfo {
   subnetMask: string;
   leaseDuration: number;
   state: 'Active' | 'Inactive';
+}
+
+export type DhcpDynamicUpdatePolicy = 'Always' | 'Never' | 'OnClientRequest';
+
+export interface DhcpDnsSettings {
+  dynamicUpdates: DhcpDynamicUpdatePolicy;
+  deleteDnsRRonLeaseExpiry: boolean;
+  updateDnsRRForOlderClients: boolean;
+  nameProtection: boolean;
+}
+
+export interface DhcpDnsRegistrar {
+  applyDynamicARecord(zoneName: string, fqdnName: string, ipv4: string, ttl?: number): { ok: boolean; message: string };
+  removeRecord(zoneName: string, recordName: string, type: string): { ok: boolean; message: string };
 }
 
 export interface DhcpLeaseInfo {
@@ -68,6 +82,14 @@ export class WindowsDhcpServerRole {
   private domainExists = false;
   private authorized = false;
   private registeredDnsName: string | null = null;
+  private dnsRegistrar: DhcpDnsRegistrar | null = null;
+  private dnsSettings: DhcpDnsSettings = {
+    dynamicUpdates: 'OnClientRequest',
+    deleteDnsRRonLeaseExpiry: true,
+    updateDnsRRForOlderClients: false,
+    nameProtection: false,
+  };
+  private readonly registeredRecords = new Map<string, { zone: string; fqdn: string }>();
   private registeredIpAddress: string | null = null;
 
   constructor(private readonly host: EndHost) {}
@@ -99,6 +121,26 @@ export class WindowsDhcpServerRole {
     return { ok: true, message: '' };
   }
 
+  attachDnsRegistrar(registrar: DhcpDnsRegistrar | null): void {
+    this.dnsRegistrar = registrar;
+  }
+
+  getDnsSettings(): DhcpDnsSettings {
+    return { ...this.dnsSettings };
+  }
+
+  setDnsSettings(changes: Partial<DhcpDnsSettings>): DhcpOpResult {
+    const next = { ...this.dnsSettings, ...changes };
+    if (next.dynamicUpdates === 'Never' && changes.deleteDnsRRonLeaseExpiry === true) {
+      return {
+        ok: false,
+        message: 'DeleteDnsRROnLeaseExpiry can only be set when DynamicUpdates is Always or OnClientRequest.',
+      };
+    }
+    this.dnsSettings = next;
+    return { ok: true, message: '' };
+  }
+
   registeredIdentity(): { dnsName: string | null; ipAddress: string | null } {
     return { dnsName: this.registeredDnsName, ipAddress: this.registeredIpAddress };
   }
@@ -127,21 +169,93 @@ export class WindowsDhcpServerRole {
     if (own && own !== '0.0.0.0') this.engine.setServerIdentifier(own);
   }
 
+  listBindings(): Array<{ interfaceAlias: string; ipAddress: string; subnetMask: string; bindingState: boolean }> {
+    return this.host.getPorts()
+      .filter(p => !!p.getIPAddress())
+      .map(p => ({
+        interfaceAlias: p.getName(),
+        ipAddress: p.getIPAddress()!.toString(),
+        subnetMask: p.getSubnetMask()?.toString() ?? '',
+        bindingState: !p.isAdminDown() && this.running,
+      }));
+  }
+
+  private ownAddresses(): string[] {
+    return this.host.getPorts()
+      .map(p => p.getIPAddress()?.toString())
+      .filter((ip): ip is string => !!ip);
+  }
+
   private serveOnWire(inPort: string, pkt: DHCPPacket): void {
     this.adoptServerIdentifierOf(inPort);
+    this.engine.setServerOwnedAddresses(this.ownAddresses());
+    if (pkt.getMessageType() === 'DHCPRELEASE') this.withdrawDnsFor(pkt.ciaddr);
     const relayAgent = pkt.giaddr !== '0.0.0.0' ? pkt.giaddr : undefined;
     const reply = buildDhcpServerReply(pkt, {
       server: this.engine,
       localGatewayIP: this.host.getPorts().find(p => p.getName() === inPort)?.getIPAddress()?.toString(),
     });
     if (!reply) return;
+    this.syncDnsForExchange(pkt, reply);
     reply.giaddr = pkt.giaddr;
     if (relayAgent) this.sendReplyToRelay(relayAgent, reply);
     else this.sendReply(inPort, reply);
   }
 
+  private zoneForLeasedAddress(ip: string): string | null {
+    const poolName = this.engine.getBindings().get(ip)?.poolName;
+    if (!poolName) return null;
+    const domain = this.engine.getPool(poolName)?.domainName;
+    return domain ? domain : null;
+  }
+
+  private syncDnsForExchange(request: DHCPPacket, reply: DHCPPacket): void {
+    if (!this.dnsRegistrar) return;
+    if (reply.getMessageType() !== 'DHCPACK') return;
+    if (this.dnsSettings.dynamicUpdates === 'Never') return;
+
+    const fqdnOption = request.getOption(DHCP_OPTION.CLIENT_FQDN) as
+      { flags: number; name: string } | undefined;
+    if (fqdnOption && (fqdnOption.flags & 0x08) !== 0) return;
+
+    const declaredName = String(
+      request.getOption(DHCP_OPTION.HOST_NAME) ?? fqdnOption?.name ?? '',
+    ).trim();
+    if (!declaredName) return;
+
+    const clientRequestedUpdate = !!fqdnOption && (fqdnOption.flags & 0x01) !== 0;
+    if (this.dnsSettings.dynamicUpdates === 'OnClientRequest' && !clientRequestedUpdate) return;
+
+    const zone = this.zoneForLeasedAddress(reply.yiaddr);
+    if (!zone) return;
+    const label = declaredName.split('.')[0];
+    const fqdn = `${label}.${zone}`;
+    if (this.dnsRegistrar.applyDynamicARecord(zone, fqdn, reply.yiaddr).ok) {
+      this.registeredRecords.set(reply.yiaddr, { zone, fqdn });
+    }
+  }
+
+  private withdrawDnsFor(ip: string): void {
+    if (!this.dnsSettings.deleteDnsRRonLeaseExpiry) return;
+    const record = this.registeredRecords.get(ip);
+    if (!record || !this.dnsRegistrar) return;
+    this.dnsRegistrar.removeRecord(record.zone, record.fqdn, 'A');
+    this.registeredRecords.delete(ip);
+  }
+
   private sendReplyToRelay(relayAgent: string, reply: DHCPPacket): void {
-    this.host.sendUdpDatagram(new IPAddress(relayAgent), DHCP_SERVER_PORT, DHCP_SERVER_PORT, reply, 300);
+    const sent = this.host.sendUdpDatagram(
+      new IPAddress(relayAgent), DHCP_SERVER_PORT, DHCP_SERVER_PORT, reply, 300,
+    );
+    if (sent) return;
+    this.host.getBus().publish({
+      topic: 'dhcp.server.reply-undeliverable',
+      payload: {
+        deviceId: this.host.getId(), hostname: this.host.getHostname(),
+        relayAgent, clientMac: reply.chaddr, offeredIp: reply.yiaddr,
+        reason: 'no-route-to-relay',
+      },
+    });
   }
 
   private sendReply(inPort: string, reply: DHCPPacket): void {

@@ -949,6 +949,9 @@ export interface IDhcpServerProvider {
 
   authorizeInDC(dnsName?: string, ipAddress?: string): DhcpOpResult;
   registeredIdentity(): { dnsName: string | null; ipAddress: string | null };
+  listBindings(): Array<{ interfaceAlias: string; ipAddress: string; subnetMask: string; bindingState: boolean }>;
+  getDnsSettings(): { dynamicUpdates: string; deleteDnsRRonLeaseExpiry: boolean; updateDnsRRForOlderClients: boolean; nameProtection: boolean };
+  setDnsSettings(changes: Record<string, unknown>): DhcpOpResult;
   isAuthorizedInDC(): boolean;
   isRegisteredInDC(): boolean;
   revokeInDC(): DhcpOpResult;
