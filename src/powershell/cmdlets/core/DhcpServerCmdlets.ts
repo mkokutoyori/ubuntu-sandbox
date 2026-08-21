@@ -55,6 +55,7 @@ function valuesOf(ctx: CmdletContext): string[] {
 
 export class AddDhcpServerv4ScopeCmdlet implements ICmdlet {
   readonly name = 'add-dhcpserverv4scope';
+  readonly displayName = 'Add-DhcpServerv4Scope';
   readonly aliases = [] as const;
   readonly parameters = ['Name', 'StartRange', 'EndRange', 'SubnetMask', 'LeaseDuration', 'State'] as const;
 
@@ -77,6 +78,7 @@ export class AddDhcpServerv4ScopeCmdlet implements ICmdlet {
 
 export class GetDhcpServerv4ScopeCmdlet implements ICmdlet {
   readonly name = 'get-dhcpserverv4scope';
+  readonly displayName = 'Get-DhcpServerv4Scope';
   readonly aliases = [] as const;
   readonly parameters = ['ScopeId'] as const;
 
@@ -96,6 +98,7 @@ export class GetDhcpServerv4ScopeCmdlet implements ICmdlet {
 
 export class AddDhcpServerv4ExclusionRangeCmdlet implements ICmdlet {
   readonly name = 'add-dhcpserverv4exclusionrange';
+  readonly displayName = 'Add-DhcpServerv4ExclusionRange';
   readonly aliases = [] as const;
   readonly parameters = ['ScopeId', 'StartRange', 'EndRange'] as const;
 
@@ -117,6 +120,7 @@ export class AddDhcpServerv4ExclusionRangeCmdlet implements ICmdlet {
 
 export class AddDhcpServerv4ReservationCmdlet implements ICmdlet {
   readonly name = 'add-dhcpserverv4reservation';
+  readonly displayName = 'Add-DhcpServerv4Reservation';
   readonly aliases = [] as const;
   readonly parameters = ['ScopeId', 'IPAddress', 'ClientId', 'Name'] as const;
 
@@ -139,6 +143,7 @@ export class AddDhcpServerv4ReservationCmdlet implements ICmdlet {
 
 export class SetDhcpServerv4OptionValueCmdlet implements ICmdlet {
   readonly name = 'set-dhcpserverv4optionvalue';
+  readonly displayName = 'Set-DhcpServerv4OptionValue';
   readonly aliases = [] as const;
   readonly parameters = ['ScopeId', 'OptionId', 'Value', 'Router', 'DnsServer', 'DnsDomain'] as const;
 
@@ -177,6 +182,7 @@ export class SetDhcpServerv4OptionValueCmdlet implements ICmdlet {
 
 export class GetDhcpServerv4LeaseCmdlet implements ICmdlet {
   readonly name = 'get-dhcpserverv4lease';
+  readonly displayName = 'Get-DhcpServerv4Lease';
   readonly aliases = [] as const;
   readonly parameters = ['ScopeId'] as const;
 
@@ -191,6 +197,7 @@ export class GetDhcpServerv4LeaseCmdlet implements ICmdlet {
 
 export class AddDhcpServerInDCCmdlet implements ICmdlet {
   readonly name = 'add-dhcpserverindc';
+  readonly displayName = 'Add-DhcpServerInDC';
   readonly aliases = [] as const;
   readonly parameters = ['DnsName', 'IpAddress'] as const;
 
@@ -206,6 +213,7 @@ export class AddDhcpServerInDCCmdlet implements ICmdlet {
 
 export class SetDhcpServerv4ScopeCmdlet implements ICmdlet {
   readonly name = 'set-dhcpserverv4scope';
+  readonly displayName = 'Set-DhcpServerv4Scope';
   readonly aliases = [] as const;
   readonly parameters = ['ScopeId', 'Name', 'LeaseDuration', 'State'] as const;
 
@@ -237,6 +245,7 @@ export class SetDhcpServerv4ScopeCmdlet implements ICmdlet {
 
 export class RemoveDhcpServerv4ScopeCmdlet implements ICmdlet {
   readonly name = 'remove-dhcpserverv4scope';
+  readonly displayName = 'Remove-DhcpServerv4Scope';
   readonly aliases = [] as const;
   readonly parameters = ['ScopeId', 'Force'] as const;
 
@@ -250,6 +259,7 @@ export class RemoveDhcpServerv4ScopeCmdlet implements ICmdlet {
 
 export class GetDhcpServerv4ReservationCmdlet implements ICmdlet {
   readonly name = 'get-dhcpserverv4reservation';
+  readonly displayName = 'Get-DhcpServerv4Reservation';
   readonly aliases = [] as const;
   readonly parameters = ['ScopeId', 'IPAddress'] as const;
 
@@ -268,6 +278,7 @@ export class GetDhcpServerv4ReservationCmdlet implements ICmdlet {
 
 export class RemoveDhcpServerv4ReservationCmdlet implements ICmdlet {
   readonly name = 'remove-dhcpserverv4reservation';
+  readonly displayName = 'Remove-DhcpServerv4Reservation';
   readonly aliases = [] as const;
   readonly parameters = ['ScopeId', 'IPAddress'] as const;
 
@@ -281,6 +292,7 @@ export class RemoveDhcpServerv4ReservationCmdlet implements ICmdlet {
 
 export class GetDhcpServerv4ExclusionRangeCmdlet implements ICmdlet {
   readonly name = 'get-dhcpserverv4exclusionrange';
+  readonly displayName = 'Get-DhcpServerv4ExclusionRange';
   readonly aliases = [] as const;
   readonly parameters = ['ScopeId'] as const;
 
@@ -295,6 +307,7 @@ export class GetDhcpServerv4ExclusionRangeCmdlet implements ICmdlet {
 
 export class RemoveDhcpServerv4ExclusionRangeCmdlet implements ICmdlet {
   readonly name = 'remove-dhcpserverv4exclusionrange';
+  readonly displayName = 'Remove-DhcpServerv4ExclusionRange';
   readonly aliases = [] as const;
   readonly parameters = ['ScopeId', 'StartRange', 'EndRange'] as const;
 
@@ -310,12 +323,17 @@ export class RemoveDhcpServerv4ExclusionRangeCmdlet implements ICmdlet {
 
 export class GetDhcpServerv4OptionValueCmdlet implements ICmdlet {
   readonly name = 'get-dhcpserverv4optionvalue';
+  readonly displayName = 'Get-DhcpServerv4OptionValue';
   readonly aliases = [] as const;
   readonly parameters = ['ScopeId', 'OptionId'] as const;
 
   execute(ctx: CmdletContext): PSValue {
     const dhcp = requireDhcp(ctx, 'Get-DhcpServerv4OptionValue');
     const scopeId = scopeIdOf(ctx);
+    if (scopeId && !dhcp.hasScope(scopeId)) {
+      ctx.emitError(`ScopeId "${scopeId}" does not exist on this DHCP server.`);
+      return null;
+    }
     const wanted = ctx.named['optionid'] !== undefined
       ? Number(psValueToString(ctx.named['optionid'])) : null;
     return dhcp.listOptionValues(scopeId || undefined)
@@ -328,6 +346,7 @@ export class GetDhcpServerv4OptionValueCmdlet implements ICmdlet {
 
 export class RemoveDhcpServerv4OptionValueCmdlet implements ICmdlet {
   readonly name = 'remove-dhcpserverv4optionvalue';
+  readonly displayName = 'Remove-DhcpServerv4OptionValue';
   readonly aliases = [] as const;
   readonly parameters = ['ScopeId', 'OptionId'] as const;
 
@@ -347,6 +366,7 @@ export class RemoveDhcpServerv4OptionValueCmdlet implements ICmdlet {
 
 export class RemoveDhcpServerv4LeaseCmdlet implements ICmdlet {
   readonly name = 'remove-dhcpserverv4lease';
+  readonly displayName = 'Remove-DhcpServerv4Lease';
   readonly aliases = [] as const;
   readonly parameters = ['ScopeId', 'IPAddress'] as const;
 
@@ -360,6 +380,7 @@ export class RemoveDhcpServerv4LeaseCmdlet implements ICmdlet {
 
 export class GetDhcpServerv4ScopeStatisticsCmdlet implements ICmdlet {
   readonly name = 'get-dhcpserverv4scopestatistics';
+  readonly displayName = 'Get-DhcpServerv4ScopeStatistics';
   readonly aliases = [] as const;
   readonly parameters = ['ScopeId'] as const;
 
@@ -383,6 +404,7 @@ export class GetDhcpServerv4ScopeStatisticsCmdlet implements ICmdlet {
 
 export class GetDhcpServerv4StatisticsCmdlet implements ICmdlet {
   readonly name = 'get-dhcpserverv4statistics';
+  readonly displayName = 'Get-DhcpServerv4Statistics';
   readonly aliases = [] as const;
   readonly parameters = [] as const;
 
@@ -401,6 +423,7 @@ export class GetDhcpServerv4StatisticsCmdlet implements ICmdlet {
 
 export class GetDhcpServerInDCCmdlet implements ICmdlet {
   readonly name = 'get-dhcpserverindc';
+  readonly displayName = 'Get-DhcpServerInDC';
   readonly aliases = [] as const;
   readonly parameters = [] as const;
 
@@ -417,6 +440,7 @@ export class GetDhcpServerInDCCmdlet implements ICmdlet {
 
 export class GetDhcpServerv4BindingCmdlet implements ICmdlet {
   readonly name = 'get-dhcpserverv4binding';
+  readonly displayName = 'Get-DhcpServerv4Binding';
   readonly aliases = [] as const;
   readonly parameters = [] as const;
 
@@ -433,6 +457,7 @@ export class GetDhcpServerv4BindingCmdlet implements ICmdlet {
 
 export class GetDhcpServerv4DnsSettingCmdlet implements ICmdlet {
   readonly name = 'get-dhcpserverv4dnssetting';
+  readonly displayName = 'Get-DhcpServerv4DnsSetting';
   readonly aliases = [] as const;
   readonly parameters = ['ScopeId'] as const;
 
@@ -452,6 +477,7 @@ const DYNAMIC_UPDATE_POLICIES = ['Always', 'Never', 'OnClientRequest'];
 
 export class SetDhcpServerv4DnsSettingCmdlet implements ICmdlet {
   readonly name = 'set-dhcpserverv4dnssetting';
+  readonly displayName = 'Set-DhcpServerv4DnsSetting';
   readonly aliases = [] as const;
   readonly parameters = ['ScopeId', 'DynamicUpdates', 'DeleteDnsRROnLeaseExpiry',
     'UpdateDnsRRForOlderClients', 'NameProtection'] as const;
@@ -491,6 +517,7 @@ export class SetDhcpServerv4DnsSettingCmdlet implements ICmdlet {
 
 export class RemoveDhcpServerInDCCmdlet implements ICmdlet {
   readonly name = 'remove-dhcpserverindc';
+  readonly displayName = 'Remove-DhcpServerInDC';
   readonly aliases = [] as const;
   readonly parameters = ['DnsName', 'IPAddress'] as const;
 

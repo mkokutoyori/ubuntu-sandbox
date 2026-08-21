@@ -1065,6 +1065,7 @@ class WindowsDhcpServerAdapter implements IDhcpServerProvider {
     return this.role().removeReservation(scopeName, ipAddress);
   }
   removeLease(ipAddress: string): DhcpOpResult { return this.role().removeLease(ipAddress); }
+  hasScope(scopeName: string) { return this.role().hasScope(scopeName); }
   listOptionValues(scopeName?: string) { return this.role().listOptionValues(scopeName); }
   removeOptionValue(scopeName: string | undefined, optionId: number): DhcpOpResult {
     return this.role().removeOptionValue(scopeName, optionId);

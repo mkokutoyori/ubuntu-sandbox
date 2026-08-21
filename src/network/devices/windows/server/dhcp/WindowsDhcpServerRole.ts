@@ -511,6 +511,10 @@ export class WindowsDhcpServerRole {
       : { ok: false, message: `Remove-DhcpServerv4Lease : The lease ${ipAddress} does not exist.` };
   }
 
+  hasScope(scopeIdOrName: string): boolean {
+    return this.engine.getPool(this.resolveScopeKey(scopeIdOrName)) !== undefined;
+  }
+
   listOptionValues(scopeIdOrName?: string): Array<{ optionId: number; name: string; values: string[] }> {
     const scopeName = scopeIdOrName === undefined ? undefined : this.resolveScopeKey(scopeIdOrName);
     const source = scopeName
