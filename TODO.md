@@ -373,6 +373,19 @@ UTC.
 (`set timezone ?`), et l'inventer donnerait 79 correspondances fausses —
 pire que l'aveu.
 
+### [console] les bannieres pre-login et post-login sont refusees
+`config system global set pre-login-banner enable` (et son jumeau
+`post-login-banner`) repond « unknown attribute ». Le refus est
+CORRECT en l'etat — la banniere n'a pas de texte a afficher, celui-ci
+vivant dans `config system replacemsg admin pre_admin-disclaimer-text`,
+une famille qui n'existe pas du tout — donc accepter le drapeau
+stockerait un critere que rien n'evalue.
+**Mesure** : les deux commandes tapees sur une machine neuve, refusees.
+**Report** : la porte manquante est le magasin des messages de
+remplacement, pas le drapeau ; l'ecrire est un sujet en soi (la famille
+`replacemsg` porte des dizaines d'entrees et un editeur de texte
+multi-lignes).
+
 ### [admin] le verrouillage apres N essais ne compte pas la console
 `admin-lockout-threshold` et `admin-lockout-duration` sont acceptes et le
 compteur (`ManagementPlane.login`) fonctionne — mais il est indexe par
@@ -464,6 +477,14 @@ un nombre est attendu, signatures de constructeur périmées.
 « pas plus qu'avant ta modification », pas « zéro ».
 
 ## Journal des entrées fermées
+
+- Console FortiGate : `exit` ne sortait pas, la console ne se reglait pas
+  — fermee. `exit`/`quit` etaient REFUSES (« unknown command ») alors que
+  la porte d'entree venait d'etre posee ; `config system console`
+  n'existait pas, donc le pager `--More--` etait inevitable ; `execute
+  reboot`/`shutdown` n'existaient pas. Mesure corrigee en chemin :
+  l'historique (fleches) et l'edition de ligne (Ctrl-U/W) etaient crus
+  absents et fonctionnaient — c'est le pager qui avalait les touches.
 
 - Console FortiGate : login au demarrage et mot de passe force — fermee.
   La mesure a trouve plus large que l'entree : `authenticateAdmin`

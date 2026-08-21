@@ -84,6 +84,7 @@ export interface SocleDeps {
   readonly inspect: (rest: readonly string[]) => string;
   readonly diagnose: (rest: readonly string[]) => string;
   readonly runExecute: (rest: readonly string[]) => string;
+  readonly leaveCli: () => string;
   readonly enterGlobal: () => string;
   readonly authorize?: (spec: FortiTableSpec, intent: AccessIntent) => AccessVerdict;
   readonly principal?: () => string;
@@ -216,6 +217,8 @@ export class FortiSocle {
       this.plain('config vdom', ['config', 'vdom'],
         'Configure virtual domain.',
         () => this.deps.nav.descend(['vdom'])),
+      this.plain('exit', ['exit'], 'Exit the CLI.', () => this.deps.leaveCli()),
+      this.plain('quit', ['quit'], 'Exit the CLI.', () => this.deps.leaveCli()),
     ];
     out.push(...this.branchSpecs());
     out.push(...this.viewSpecs());

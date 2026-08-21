@@ -110,6 +110,8 @@ export abstract class CLITerminalSession extends TerminalSession {
 
   protected abstract isTopLevelExit(line: string): boolean;
 
+  protected exitClosesLocalSession(): boolean { return false; }
+
   /** The vendor-specific "go to top-level" command (Cisco: 'end', Huawei: 'return') */
   protected abstract getCtrlZCommand(): string;
 
@@ -520,7 +522,8 @@ export abstract class CLITerminalSession extends TerminalSession {
 
     if (this.tryInterceptAsyncCommand(trimmed)) return;
 
-    const exitBeforeExec = this.isRemoteChild && this.isTopLevelExit(trimmed);
+    const exitBeforeExec = (this.isRemoteChild || this.exitClosesLocalSession())
+      && this.isTopLevelExit(trimmed);
 
     try {
       const result = await this.executeOnDevice(trimmed);

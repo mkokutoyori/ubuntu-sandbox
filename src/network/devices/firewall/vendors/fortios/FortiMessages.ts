@@ -1,5 +1,7 @@
 export const FORTI_COMMAND_FAIL = 'Command fail. Return code -61';
 export const FORTI_UNKNOWN_ACTION = 'Unknown action 0';
+
+export const FORTI_CLI_LOGOUT = '\u0000forti-cli-logout';
 export const FORTI_NOT_FOUND = 'entry not found in datasource';
 export const FORTI_DUPLICATE = 'duplicate name';
 export const FORTI_IN_USE = 'Cannot delete entry: it is used by other entries';

@@ -7,6 +7,7 @@ import { Firewall } from '@/network/devices/firewall/Firewall';
 import { PING_NO_ROUTE } from '@/network/devices/firewall/diag/FirewallPing';
 import type { FortiGate } from '@/network/devices/firewall/vendors/fortios/FortiGate';
 import type { InteractiveStep } from '@/terminal/core/types';
+import { getDefaultEventBus } from '@/events/EventBus';
 
 const PING_INTERVAL_MS = 300;
 
@@ -32,6 +33,30 @@ export class FortiTerminalSession extends CLITerminalSession {
   override async init(): Promise<void> {
     await super.init();
     this.startConsoleLogin();
+    this.watchPowerCycle();
+  }
+
+  private watchPowerCycle(): void {
+    if (!(this.device instanceof Firewall)) return;
+    const stop = getDefaultEventBus().subscribe('device.power-on', (event) => {
+      if ((event.payload as { id?: string }).id !== this.device.id) return;
+      this.rearmConsole();
+    });
+    this.registerTearDown(stop);
+  }
+
+  private rearmConsole(): void {
+    setTimeout(() => {
+      if (this.disposed || this.isFlowActive) return;
+      this.startConsoleLogin();
+      this.updatePrompt();
+      this.notify();
+    }, 0);
+  }
+
+  override markReconnected(notice?: string): void {
+    super.markReconnected(notice);
+    this.rearmConsole();
   }
 
   override platformLabel(): string { return 'Fortinet FortiOS'; }
@@ -66,7 +91,23 @@ export class FortiTerminalSession extends CLITerminalSession {
 
   private startConsoleLogin(): void {
     if (!(this.device instanceof Firewall)) return;
+    if (!this.device.getConsoleSettings().requiresLogin()) { this.loggedIn = true; return; }
+    this.loggedIn = false;
     this.startFlowFromSteps(this.buildLoginSteps(), '', undefined, { authGate: true });
+  }
+
+  protected override exitClosesLocalSession(): boolean { return true; }
+
+  protected override endExecSession(): void {
+    this.startConsoleLogin();
+    this.updatePrompt();
+    this.notify();
+  }
+
+  protected override getPageSize(): number {
+    if (this.device instanceof Firewall
+      && !this.device.getConsoleSettings().pagesOutput()) return 0;
+    return super.getPageSize();
   }
 
   protected override restartAuthGate(): void { this.startConsoleLogin(); }

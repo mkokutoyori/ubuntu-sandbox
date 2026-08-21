@@ -1,3 +1,4 @@
+import type { ConsoleSettingsPatch } from '../../../mgmt/ConsoleSettings';
 import type { ArgumentSpec, EnumValue } from '../../../../../../cli/ArgumentTypes';
 import type { ObjectStore } from '../../../model/ObjectStore';
 import type { PolicyStore } from '../../../model/PolicyStore';
@@ -221,6 +222,7 @@ export interface FortiCommitDevice {
   removePolicyRoute(id: string): void;
   applyMemoryLog(patch: FortiMemoryLogPatch): void;
   applyGlobalSettings(settings: FortiGlobalSettings): void;
+  applyConsoleSettings(settings: ConsoleSettingsPatch): void;
   applyHostname(hostname: string): void;
   applyDnsSettings(settings: FirewallDnsSettings): void;
   applyDnsServerInterface(entry: DnsServerInterface): void;

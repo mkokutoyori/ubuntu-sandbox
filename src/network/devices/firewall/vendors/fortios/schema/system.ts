@@ -6,6 +6,7 @@ import {
   MANAGEMENT_SERVICES, type ManagementService,
 } from '../../../mgmt/ManagementAccess';
 import { resolveFortiTimezone } from './timezones';
+import { CONSOLE_BAUD_RATES } from '../../../mgmt/ConsoleSettings';
 
 const ACCESS_SERVICE_HELP: Readonly<Record<ManagementService, string>> = Object.freeze({
   ping: 'PING access.',
@@ -115,6 +116,42 @@ export const SYSTEM_GLOBAL: FortiTableSpec = {
         ? object.effective('timezone')[0] : undefined,
       adminLockoutThreshold: number('admin-lockout-threshold', 3),
       adminLockoutDurationSec: number('admin-lockout-duration', 60),
+    });
+  },
+};
+
+export const SYSTEM_CONSOLE: FortiTableSpec = {
+  path: ['system', 'console'],
+  kind: 'object',
+  scope: 'global',
+  accessGroup: 'sysgrp',
+  renderOrder: 15,
+  help: 'Configure console.',
+  attributes: [
+    choice('mode', 'Console mode.', [
+      { keyword: 'batch', description: 'Batch mode.' },
+      { keyword: 'line', description: 'Line mode.' },
+    ], 'line'),
+    choice('baudrate', 'Console baud rate.',
+      CONSOLE_BAUD_RATES.map(rate => ({
+        keyword: String(rate), description: `${rate} baud.`,
+      })), '9600'),
+    choice('output', 'Console output mode.', [
+      { keyword: 'standard', description: 'No pause.' },
+      { keyword: 'more', description: 'Pause after each screenful.' },
+    ], 'more'),
+    enable('login', 'Enable/disable login for the console.', true),
+    {
+      ...enable('fortiexplorer', 'Enable/disable FortiExplorer.'),
+      unimplemented: 'this simulator has no USB management port.',
+    },
+  ],
+  onCommit(object, context) {
+    context.device.applyConsoleSettings({
+      output: object.effective('output')[0] === 'standard' ? 'standard' : 'more',
+      mode: object.effective('mode')[0] === 'batch' ? 'batch' : 'line',
+      baudrate: Number.parseInt(object.effective('baudrate')[0] ?? '9600', 10),
+      login: object.effective('login')[0] !== 'disable',
     });
   },
 };
@@ -548,6 +585,7 @@ export const SYSTEM_NTP: FortiTableSpec = {
 
 export const SYSTEM_SPECS: readonly FortiTableSpec[] = Object.freeze([
   SYSTEM_GLOBAL,
+  SYSTEM_CONSOLE,
   SYSTEM_SETTINGS,
   SYSTEM_INTERFACE,
   SYSTEM_ZONE,

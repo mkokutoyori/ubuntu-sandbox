@@ -10,6 +10,8 @@ export const FORTI_EXECUTE_COMMANDS: readonly FortiExecuteCommand[] = Object.fre
   { name: 'log', help: 'Log operations.' },
   { name: 'ping', help: 'Send ICMP echo requests.' },
   { name: 'ping-options', help: 'Set ICMP echo request (ping) options.' },
+  { name: 'reboot', help: 'Reboot this device.' },
+  { name: 'shutdown', help: 'Shut down this device.' },
   { name: 'time', help: 'Display or set the system time.' },
   { name: 'traceroute', help: 'Trace the route to a destination.' },
   { name: 'vpn', help: 'VPN operations.' },

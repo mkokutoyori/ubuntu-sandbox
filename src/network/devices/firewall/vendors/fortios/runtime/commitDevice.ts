@@ -139,6 +139,9 @@ export function buildCommitDevice(fw: Firewall): FortiCommitDevice {
       removeDnsZone(name) {
         fw.getDnsServer().removeZone(name);
       },
+      applyConsoleSettings(settings) {
+        fw.getConsoleSettings().apply(settings);
+      },
       applyHostname(hostname) {
         if (hostname.length > 0) fw.setName(hostname);
       },

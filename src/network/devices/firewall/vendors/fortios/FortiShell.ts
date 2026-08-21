@@ -3,12 +3,15 @@ import type { EnumValue } from '../../../../../cli/ArgumentTypes';
 import type { Suggestion } from '../../../../../cli/CompletionEngine';
 import type { FortiGate } from './FortiGate';
 import { FORTIOS_PROFILE } from './FortiProfile';
-import { FortiMessages, FORTI_COMMAND_FAIL, setHintsEnabled } from './FortiMessages';
+import {
+  FortiMessages, FORTI_COMMAND_FAIL, FORTI_CLI_LOGOUT, setHintsEnabled,
+} from './FortiMessages';
 import {
   fortiSystemTime, runExecuteDate, runExecuteTime,
 } from './diag/timeCommands';
 import { applyFilter, splitPipe } from './render/outputFilter';
 import { FortiSocle, VALUE_LIST_VERBS } from './FortiSocle';
+import type { CommandInteractionPlan } from '../../../../../shell/interaction/CommandInteraction';
 import { schemaIndex } from './schema';
 import type {
   FortiCommitContext, FortiCommitDevice, FortiTableSpec,
@@ -150,6 +153,7 @@ export class FortiShell {
       inspect: (rest) => this.get(rest),
       diagnose: (rest) => this.diagnose(rest),
       runExecute: (rest) => this.executeVerb(rest),
+      leaveCli: () => FORTI_CLI_LOGOUT,
       enterGlobal: () => this.enterGlobal(),
       authorize: (spec, intent) => this.authorizeSpec(spec, intent),
       principal: () => this.adminName ?? '',
@@ -724,6 +728,35 @@ export class FortiShell {
     return '';
   }
 
+  interactionPlanFor(commandLine: string): CommandInteractionPlan | null {
+    const words = commandLine.trim().split(/\s+/);
+    if (words.length !== 2 || words[0] !== 'execute') return null;
+
+    const resolved = resolvePrefix(words[1], executeNames());
+    const action = resolved.name;
+    if (action !== 'reboot' && action !== 'shutdown') return null;
+
+    const verb = action === 'reboot' ? 'reboot' : 'shutdown';
+    return {
+      steps: [
+        { kind: 'output', lines: [`This operation will ${verb} the system !`] },
+        {
+          kind: 'confirmation',
+          prompt: 'Do you want to continue? (y/n)',
+          storeAs: 'forti_power_confirm',
+        },
+        {
+          kind: 'run',
+          run: async (runtime) => {
+            if ((runtime.values.get('forti_power_confirm') ?? '') !== 'yes') return;
+            if (action === 'reboot') this.fw.rebootNow();
+            else this.fw.shutdownNow();
+          },
+        },
+      ],
+    };
+  }
+
   private executeVerb(rest: readonly string[]): string {
     if (rest.length === 0) return FortiMessages.incomplete('a command');
 
@@ -755,6 +788,7 @@ export class FortiShell {
           ? FortiMessages.incomplete('a destination')
           : this.fw.runPing(tail[0]);
       case 'ping-options': return this.executePingOptions(tail);
+      case 'reboot': case 'shutdown': return '';
       default: return FortiMessages.unknownAction(resolved.name);
     }
   }

@@ -84,6 +84,7 @@ import type { IkeConfigReply, IkeConfigRequest } from '../../ipsec/IPSecTypes';
 import type { NtpAgent } from '../../ntp/NtpAgent';
 import { FirewallPing, type FirewallPingEgress } from './diag/FirewallPing';
 import { PingOptions } from './diag/PingOptions';
+import { ConsoleSettings } from './mgmt/ConsoleSettings';
 import { buildEchoRequest } from './l3/IcmpEcho';
 import { FirewallTraceroute } from './diag/FirewallTraceroute';
 import {
@@ -399,6 +400,15 @@ export class Firewall extends Equipment {
 
   getPingOptions(): PingOptions { return this.pingOptions; }
 
+  getConsoleSettings(): ConsoleSettings { return this.consoleSettings; }
+
+  shutdownNow(): void { this.powerOff(); }
+
+  rebootNow(): void {
+    this.powerOff();
+    this.powerOn();
+  }
+
   private resolveEgress(destination: string): FirewallPingEgress | null {
     const route = this.getVdom().routes.resolveNextHop(destination);
     const iface = route?.iface ?? this.interfaces.interfaceForDestination(destination);
@@ -421,6 +431,8 @@ export class Firewall extends Equipment {
   }
 
   private readonly pingOptions = new PingOptions();
+
+  private readonly consoleSettings = new ConsoleSettings();
 
   private readonly traceroute = new FirewallTraceroute({
     resolve: (destination) => this.resolveEgress(destination),
