@@ -523,16 +523,37 @@ export class FortiSocle {
   }
 
   private viewSpecs(): CommandSpec[] {
+    const branches = this.branchAlternatives();
     return [
       this.withArgument('show', ['show',
-        { name: 'path', type: 'REST', optional: true, description: 'Configuration path.' }],
+        {
+          name: 'path', type: 'REST', optional: true,
+          description: 'Configuration path.', alternatives: branches,
+        }],
         'Show configuration.',
         (_s, args) => this.deps.view(words(args.path), false)),
       this.withArgument('get', ['get',
-        { name: 'path', type: 'REST', optional: true, description: 'Object path.' }],
+        {
+          name: 'path', type: 'REST', optional: true,
+          description: 'Object path.', alternatives: branches,
+        }],
         'Get dynamic and system information.',
         (_s, args) => this.deps.inspect(words(args.path))),
     ];
+  }
+
+  private branchAlternatives(): EnumValue[] {
+    const seen = new Map<string, string>();
+    for (const path of this.deps.tree.specPaths()) {
+      const head = path[0];
+      if (head === undefined || seen.has(head)) continue;
+      const spec = this.deps.tree.spec(path);
+      if (!spec || this.verdict(spec, 'read') === 'absent') continue;
+      seen.set(head, path.length === 1 ? spec.help : `Configure ${head}.`);
+    }
+    return [...seen.entries()]
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([keyword, description]) => ({ keyword, description }));
   }
 
   private plain(

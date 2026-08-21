@@ -64,6 +64,17 @@ export const FORTI_BUILD = '2660';
 
 const PER_MEMBER_LINE = /^set (priority|hostname)\b/;
 
+const NO_PING_PAYLOAD = 'an echo request carries no operator-chosen payload here — '
+  + 'its data field is a byte count, not bytes — so a pattern could be set and never '
+  + 'sent, and a reply could never be checked against it.';
+
+const UNSIMULATED_PING_OPTIONS: Readonly<Record<string, string>> = {
+  pattern: NO_PING_PAYLOAD,
+  'validate-reply': NO_PING_PAYLOAD,
+  'adaptive-ping': 'frames are delivered synchronously, with no wire clock, so there '
+    + 'is no round-trip time for the interval to adapt to.',
+};
+
 const TFTP_EXPORT_TIMEOUT_MS = 1_000;
 const TFTP_EXPORT_MAX_RETRIES = 2;
 
@@ -232,7 +243,7 @@ export class FortiShell {
     const prefix = input.trimStart();
     const head = prefix.slice(0, prefix.lastIndexOf(' ') + 1);
     return this.socle.suggestions(prefix, 'TAB')
-      .filter(s => !s.isArgument)
+      .filter(s => !s.isArgument || s.completable === true)
       .map(s => `${head}${s.value}`)
       .filter(w => w.startsWith(prefix) && w !== prefix);
   }
@@ -665,9 +676,21 @@ export class FortiShell {
       if (rest.length < 2) return FortiMessages.incomplete('a destination');
       return this.fw.runPing(rest[1]);
     }
+    if (rest[0] === 'ping-options') return this.executePingOptions(rest.slice(1));
     return FortiMessages.commandFail(
       `\`execute ${rest[0]}\` is not implemented in this simulator.`,
     );
+  }
+
+  private executePingOptions(rest: readonly string[]): string {
+    if (rest.length === 0) return FortiMessages.incomplete('a ping option');
+    if (rest[0] === 'view-settings') return this.fw.getPingOptions().viewSettings();
+
+    const refused = UNSIMULATED_PING_OPTIONS[rest[0]];
+    if (refused) return FortiMessages.unimplemented(`ping-options ${rest[0]}`, refused);
+
+    const outcome = this.fw.getPingOptions().set(rest[0], rest[1]);
+    return outcome.ok ? '' : FortiMessages.commandFail(outcome.message);
   }
 
   private executeHa(rest: readonly string[]): string {

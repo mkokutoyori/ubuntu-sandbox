@@ -89,6 +89,9 @@ qui reprend doit les connaître avant de toucher au code.
 | **D28** | La couche de socket UDP du pare-feu est **`ControlPlaneUdpEndpoint`**, celle que le routeur et le commutateur remplissent déjà — pas une seconde table de ports. Le module était nommé `RouterUdpEndpoint` et ne dépendait pourtant que d'une méthode d'émission ; le renommer coûtait moins qu'une copie | E36 |
 | **D29** | Il n'y a **qu'un constructeur de datagramme UDP** dans tout le pare-feu (`udpDatagram`, dans `l3/FirewallEgress.ts`). Il y en avait trois — un pour DNS en client, un pour DNS en serveur, un pour IKE — qui différaient sur la longueur annoncée et sur rien d'autre | E36 |
 | **D30** | Une commande asynchrone passe par **`FortiShell.takePendingAsync()`**, lu par `FortiGate.executeCommand` — la même écoutille que les shells IOS et VRP, `execute` restant synchrone pour tout le reste | E36 |
+| **D31** | **Tab FAIT DÉFILER** les candidats (`CyclingPolicy`), il ne se tait pas sur l'ambiguïté comme IOS. C'est la doc CLI de Fortinet qui le dit — « Press the Tab key multiple times to cycle through available matches » — et la politique existait déjà pour VRP | E37 |
+| **D32** | `get` et `show` prennent un chemin LIBRE dont les *alternatives* sont les branches de l'arbre. Déclarer une branche par mot-clé aurait cassé `get system status`, dont `status` n'est pas une table ; `argumentAccepts` accepte toujours le jeton quand une place porte des `alternatives` sans `values` | E37 |
+| **D33** | Le ping se déroule **pas à pas** (`FirewallPing.begin()`), pour que le terminal imprime chaque réponse à son arrivée et que Ctrl+C rende les statistiques de ce qui est parti. `run()` demeure et appelle les mêmes pas : un script n'a pas à changer | E37 |
 
 ---
 

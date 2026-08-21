@@ -83,6 +83,7 @@ import { ModeCfgPool } from './vpn/ModeCfgPool';
 import type { IkeConfigReply, IkeConfigRequest } from '../../ipsec/IPSecTypes';
 import type { NtpAgent } from '../../ntp/NtpAgent';
 import { FirewallPing, type FirewallPingEgress } from './diag/FirewallPing';
+import { PingOptions } from './diag/PingOptions';
 import { buildEchoRequest } from './l3/IcmpEcho';
 import { FirewallTraceroute } from './diag/FirewallTraceroute';
 import {
@@ -381,6 +382,7 @@ export class Firewall extends Equipment {
   private readonly ping = new FirewallPing({
     resolve: (destination) => this.resolveEgress(destination),
     send: (iface, packet, gateway) => { this.forward(iface, packet, gateway); },
+    options: () => this.pingOptions,
     onReply: (payload) => {
       this.getBus().publish({
         topic: 'host.icmp.echo-reply',
@@ -390,6 +392,12 @@ export class Firewall extends Equipment {
   });
 
   runPing(target: string, count?: number): string { return this.ping.run(target, count); }
+
+  beginPing(target: string) { return this.ping.begin(target); }
+
+  pingRepeatCount(): number { return this.ping.defaultCount(); }
+
+  getPingOptions(): PingOptions { return this.pingOptions; }
 
   private resolveEgress(destination: string): FirewallPingEgress | null {
     const route = this.getVdom().routes.resolveNextHop(destination);
@@ -411,6 +419,8 @@ export class Firewall extends Equipment {
     context.verdict = { action: 'drop', reason: 'no-route', stage: 'route-lookup' };
     this.traces.remember(context);
   }
+
+  private readonly pingOptions = new PingOptions();
 
   private readonly traceroute = new FirewallTraceroute({
     resolve: (destination) => this.resolveEgress(destination),
