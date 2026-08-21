@@ -97,20 +97,34 @@ famille reprise ferme une part de cette entrée.
 
 ## Pare-feu FortiGate
 
-### [ospf] la base de donnees OSPF du pare-feu reste VIDE
-Un FortiGate forme une adjacence complete avec un routeur Cisco — les Hello
-traversent vraiment, l'etat atteint `Full` des deux cotes, et le ROUTEUR
-apprend les reseaux du pare-feu. L'inverse n'a pas lieu : la base du
-pare-feu ne contient AUCUN LSA, pas meme le sien, `runSPF()` rend une liste
-vide et `get router info routing-table ospf` ne montre jamais de route
-apprise. L'echange de bases (DD / LSR / LSU) n'a donc pas lieu de ce cote.
-**Mesure** : deux routeurs Cisco s'echangent `O* 0.0.0.0/0` par
-`default-information originate always` ; le meme laboratoire avec un
-FortiGate a la place du second n'installe rien, et
-`getOspf().getLSDB().routerLSAs` est vide.
-**Report** : c'est la moitie « base de donnees » d'OSPF sur le pare-feu, pas
-un reglage manquant — l'etape 4 du TP 19 (apprendre la route par defaut en
-`O*E2`) en depend entierement.
+### [ospf] les vues `get router info ospf database` et `... interface` n'existent pas
+Le pare-feu ne repond qu'a `get router info ospf neighbor` ; les deux autres
+vues que le tutoriel nomme dans le meme bloc de verification (§20.2) sont
+refusees. La matiere existe pourtant en entier depuis que la base se
+remplit vraiment : `getOspf().getLSDB()` porte les LSA de routeur, de reseau
+et externes, et `getInterface(nom)` porte l'etat, le DR, le BDR, le cout et
+les temporisateurs.
+**Mesure** : `get router info ospf database brief` rend `Command fail.
+Return code -61 / NOTE: unknown configuration path`, sur une machine dont la
+base contient au meme instant trois LSA.
+**Report** : ces deux vues appartiennent au TP 20 et non au TP 19, dont
+l'etape 4 lit `get router info routing-table ospf`. Le format a rendre est
+celui de zebra (`Link ID / ADV Router / Age / Seq# / CkSum`), qui n'est pas
+celui d'IOS — la base est partagee, le rendu ne l'est pas.
+
+### [ospf] un LSA de reseau PERIME n'est jamais retire
+RFC 2328 §12.4.2 : quand le dernier voisin pleinement adjacent disparait, le
+DR doit VIDER (`MaxAge`) le LSA de reseau qu'il a annonce. `OSPFEngine`
+n'a aucun mecanisme de vidange — `originateNetworkLSA` rend `null` quand il
+reste moins de deux routeurs attaches, et le LSA deja installe demeure
+jusqu'a son vieillissement naturel (3600 s).
+**Mesure** : couper le lien de transit laisse `2:<ip du DR>:<routeur>` dans
+la base des deux cotes ; seul le LSA de ROUTEUR est reannonce, et c'est lui
+qui fait disparaitre la route du calcul.
+**Report** : la consequence visible est nulle aujourd'hui — le SPF traverse
+un lien de transit par le LSA de routeur ET le LSA de reseau, donc la route
+tombe quand meme. Ecrire la vidange demande un `MaxAge` premature et sa
+propagation, qui n'existent nulle part dans ce moteur.
 
 ### [linux] la commande `ipsec` (strongSwan) est une FACADE
 `ipsec up <conn>` rend `initiating IKE_SA <conn>[1] to 0.0.0.0` — la chaine
@@ -321,6 +335,17 @@ un nombre est attendu, signatures de constructeur périmées.
 
 ## Journal des entrées fermées
 
+- Base OSPF du pare-feu — fermée, et la mesure d'origine était FAUSSE : la
+  base n'était pas vide (elle portait les deux LSA de routeur), il y
+  manquait le LSA de RÉSEAU du lien de transit, sans lequel le SPF ne
+  traverse pas. Le DR ne réannonçait son type 2 que sur `ospf.dr-election`,
+  jamais quand un voisin devient `Full` (RFC 2328 §12.4.2) : un pare-feu
+  raccordé après l'élection ne le recevait donc jamais. Fermée avec deux
+  défauts voisins : `default-information originate` était la seule des trois
+  commandes de sa famille à ne pas converger (son propre `no` le faisait),
+  donc le LSA externe naissait au hasard d'une commande ultérieure ; et le
+  type de route OSPF était jeté à l'installation dans la RIB du pare-feu,
+  qui rendait `O` là où FortiOS rend `O*E2`.
 - Numérotation des catégories de journaux FortiOS — fermée. La table du
   simulateur était CONTIGUË (11 waf, 12 dns, 13 ssh, 14 ssl, 15
   file-filter) là où la vraie a des TROUS (12 waf, 15 dns, 16 ssh, 17

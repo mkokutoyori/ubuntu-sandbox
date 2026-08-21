@@ -174,6 +174,7 @@ describe('TP 19 — OSPF entre le pare-feu et R1', () => {
     expect(vue).not.toMatch(/Command fail|unknown configuration path/i);
     expect(vue).toContain('O - OSPF');
     expect(vue).not.toMatch(/^C\s+192\.168\.10\.0/m);
+    expect(vue).toMatch(/^O\*E2\s+0\.0\.0\.0\/0 \[110\/1\] via 192\.168\.100\.1, port1$/m);
 
     expect(await fgt.executeCommand('get router info routing-table connected'))
       .toMatch(/C\s+192\.168\.10\.0/);
@@ -279,6 +280,101 @@ describe('TP 19 — OSPF entre le pare-feu et R1', () => {
     expect(await fgt.executeCommand('get router info ospf neighbor'))
       .toMatch(/Full/);
   });
+
+  it('etape 4 : le LSA de RESEAU du lien de transit atteint le pare-feu', async () => {
+    const { fgt, r1 } = await laboratoire();
+    await ospfSurR1(r1);
+    await ospfSurFgt(fgt);
+    converger();
+
+    const base = (fgt as unknown as {
+      getRouting(): { getOspf(): { getLSDB(): { areas: Map<string, Map<string, unknown>> } } };
+    }).getRouting().getOspf().getLSDB();
+    const zone = base.areas.get('0.0.0.0');
+    expect(zone).toBeDefined();
+    expect([...zone!.keys()].some(cle => cle.startsWith('2:'))).toBe(true);
+
+    expect(await fgt.executeCommand('get router info routing-table ospf'))
+      .toMatch(/0\.0\.0\.0\/0/);
+  });
+
+  it('etape 5 : la coupure RETIRE la route apprise, le retour la remet', async () => {
+    const { fgt, r1 } = await laboratoire();
+    await ospfSurR1(r1);
+    await ospfSurFgt(fgt);
+    converger();
+    expect(await fgt.executeCommand('get router info routing-table ospf'))
+      .toMatch(/0\.0\.0\.0\/0/);
+
+    await taper(r1, [
+      'configure terminal', 'interface GigabitEthernet0/1', 'shutdown', 'end',
+    ]);
+    converger();
+    expect(await fgt.executeCommand('get router info routing-table ospf'))
+      .not.toMatch(/0\.0\.0\.0\/0/);
+
+    await taper(r1, [
+      'configure terminal', 'interface GigabitEthernet0/1', 'no shutdown', 'end',
+    ]);
+    converger();
+    expect(await fgt.executeCommand('get router info routing-table ospf'))
+      .toMatch(/0\.0\.0\.0\/0/);
+  });
+
+  it('le pare-feu raccorde APRES l\'election apprend quand meme les reseaux',
+    async () => {
+      const r1 = new CiscoRouter('R1-DEJA-LA', 200, 0);
+      const fgt = new FortiGate('firewall-fortinet', 'FGT-TARD', 0, 0);
+      new Cable('transit').connect(
+        fgt.getPort('port1')!, r1.getPort('GigabitEthernet0/1')!);
+
+      await taper(r1, [
+        'enable', 'configure terminal',
+        'interface GigabitEthernet0/1',
+        'ip address 10.0.0.1 255.255.255.0', 'no shutdown', 'exit',
+        'interface GigabitEthernet0/0',
+        'ip address 172.16.0.1 255.255.255.0', 'no shutdown', 'exit',
+        'router ospf 1', 'router-id 1.1.1.1',
+        'network 10.0.0.0 0.0.0.255 area 0',
+        'network 172.16.0.0 0.0.0.255 area 0',
+        'default-information originate always',
+        'end',
+      ]);
+
+      await taper(fgt, [
+        'config system interface',
+        'edit port1', 'set mode static',
+        'set ip 10.0.0.2 255.255.255.0', 'set allowaccess ping', 'next',
+        'edit port2', 'set mode static',
+        'set ip 192.168.1.1 255.255.255.0', 'set allowaccess ping', 'next', 'end',
+        'config router ospf', 'set router-id 2.2.2.2',
+        'config area', 'edit 0.0.0.0', 'next', 'end',
+        'config network',
+        'edit 1', 'set prefix 10.0.0.0 255.255.255.0', 'set area 0.0.0.0', 'next',
+        'edit 2', 'set prefix 192.168.1.0 255.255.255.0', 'set area 0.0.0.0', 'next',
+        'end',
+        'end',
+      ]);
+      converger(120);
+
+      const moteur = (fgt as unknown as {
+        getRouting(): {
+          getOspf(): {
+            getInterface(nom: string): { dr: string } | undefined;
+            getLSDB(): { areas: Map<string, Map<string, unknown>> };
+          };
+        };
+      }).getRouting().getOspf();
+
+      expect(moteur.getInterface('port1')?.dr).toBe('10.0.0.1');
+      const zone = moteur.getLSDB().areas.get('0.0.0.0');
+      expect([...(zone ?? new Map()).keys()].some(cle => cle.startsWith('2:')))
+        .toBe(true);
+
+      const table = await fgt.executeCommand('get router info routing-table ospf');
+      expect(table).toMatch(/O\s+172\.16\.0\.0\/24 \[110\/2\] via 10\.0\.0\.1, port1/);
+      expect(table).toMatch(/O\*E2\s+0\.0\.0\.0\/0 \[110\/1\] via 10\.0\.0\.1, port1/);
+    });
 
   it('une interface PASSIVE n\'a pas de voisin', async () => {
     const { fgt, r1 } = await laboratoire();

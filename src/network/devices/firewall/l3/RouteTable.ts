@@ -13,6 +13,7 @@ export interface FirewallRoute {
   readonly priority: number;
   readonly metric?: number;
   readonly protocol?: string;
+  readonly routeType?: string;
 }
 
 export interface ResolvedNextHop {
@@ -27,6 +28,7 @@ export interface StaticRouteOptions {
   metric?: number;
   iface?: string;
   id?: string;
+  routeType?: string;
 }
 
 export interface RouteTableDeps {
@@ -45,6 +47,7 @@ interface StaticRecord {
   metric?: number;
   isDefault: boolean;
   id?: string;
+  routeType?: string;
 }
 
 const DEFAULT_STATIC_DISTANCE = 1;
@@ -81,6 +84,7 @@ export class RouteTable {
       metric: options.metric,
       isDefault: mask === '0.0.0.0' && network === '0.0.0.0',
       id: options.id,
+      routeType: options.routeType,
     });
   }
 
@@ -169,6 +173,7 @@ export class RouteTable {
         priority: route.priority,
         metric: route.metric,
         protocol: protocolOf(route),
+        routeType: route.routeType,
       }));
     }
     return Object.freeze(routes);

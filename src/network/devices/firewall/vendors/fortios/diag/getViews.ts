@@ -1,3 +1,4 @@
+import { ospfRouteCode } from '@/network/ospf/routeCodes';
 import { cpuStatesLine, memoryLine, FORTI_VM_CPUS } from './systemLoad';
 import { renderTable, FIXED_TABLE } from '../../../../shells/cli/TextTable';
 import type { InterfaceTable } from '../../../l3/InterfaceTable';
@@ -193,13 +194,20 @@ function keptBy(view: RoutingView, route: FirewallRoute): boolean {
 }
 
 function protocolLetter(route: FirewallRoute): string {
-  return routeCode(route).replace('*', '');
+  return routeCode(route).replace('*', '').trim();
 }
 
 function routeCode(route: FirewallRoute): string {
+  if (route.protocol === 'ospf') {
+    return ospfRouteCode(route.routeType, isDefaultRoute(route)).trimEnd();
+  }
   return (route.protocol === undefined
     ? ROUTE_CODE[route.kind]
     : PROTOCOL_CODE[route.protocol]) ?? 'S';
+}
+
+function isDefaultRoute(route: FirewallRoute): boolean {
+  return route.network === '0.0.0.0' && route.mask === '0.0.0.0';
 }
 
 function reachedBy(route: FirewallRoute): string {

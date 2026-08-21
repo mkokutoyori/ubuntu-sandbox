@@ -37,6 +37,7 @@ export function createFirewallRouting(host: RoutingWiringHost): FirewallRouting 
         distance: route.distance,
         metric: route.metric,
         id: `${route.source}:${route.network}/${route.mask}`,
+        routeType: route.routeType,
       });
     },
     removeRoutes: (source) => { host.routes().removeStaticsBySource(source); },

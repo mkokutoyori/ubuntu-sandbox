@@ -33,7 +33,7 @@ export interface FirewallRoutingDeps {
   }>;
   readonly installRoute: (route: {
     network: string; mask: string; nextHop?: string; iface: string;
-    distance: number; metric: number; source: RoutingSource;
+    distance: number; metric: number; source: RoutingSource; routeType?: string;
   }) => void;
   readonly removeRoutes: (source: RoutingSource) => void;
   readonly resolvedMac: (ip: string) => MACAddress | undefined;
@@ -195,6 +195,7 @@ export class FirewallRouting {
         distance: OSPF_DISTANCE,
         metric: route.cost,
         source: 'ospf',
+        routeType: route.routeType,
       });
     }
   }
