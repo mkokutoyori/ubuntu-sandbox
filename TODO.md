@@ -21,13 +21,22 @@ compteur, aucune trame écartée.
 un vrai seau à jetons par port et par type de trafic (le `CarPolicer` du
 routeur en est un, mais il vit sur `Router`, que `Switch` n'étend pas).
 
-### [mac-limit] deux lignes pour un seul réglage
-`mac-limit maximum 5` puis `mac-limit maximum 5 vlan 10` se rendent tous
-les deux, alors que VRP remplace le premier par le second.
-**Mesure** : les deux lignes apparaissent dans `display this`.
-**Report** : défaut général du magasin de texte par interface (`ifCfg`),
-qui empile au lieu de remplacer — il touche toute la vue interface, pas
-seulement `mac-limit`.
+### [mac-limit] la portée VLAN d'une limite MAC n'est pas vérifiée
+Le magasin de texte par interface ne s'empile plus : une ligne identique
+n'est gardée qu'une fois, et `broadcast-suppression`, `jumboframe` et
+`mac-limit maximum` (sans qualificatif `vlan`) remplacent leur valeur
+précédente. Reste la question de PORTÉE que l'entrée précédente posait :
+`mac-limit maximum 5` puis `mac-limit maximum 5 vlan 10` coexistent ici,
+parce qu'un qualificatif `vlan` désigne une autre règle — ce qui est un
+raisonnement, pas une mesure.
+**Mesure** : les pages `mac-limit (interface view)` de Huawei ne sont pas
+joignables depuis ce réseau (proxy) ; deux règles de portées différentes
+sur le même port sont plausibles et non attestées.
+**Report** : trancher demande le manuel ou une vraie machine. Deux règles
+`mac-limit ... vlan 10` successives coexistent aussi aujourd'hui, ce qui
+est faux quelle que soit la réponse — mais le corriger suppose une clé de
+réglage qui porte ses qualificatifs, donc un magasin qui ne soit plus une
+simple liste de lignes.
 
 ### [qos car] policé sur un routeur VRP, texte sur un commutateur VRP
 `CarPolicer` est un vrai seau à jetons sur le chemin de données, mais il
