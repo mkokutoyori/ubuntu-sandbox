@@ -193,6 +193,20 @@ export function buildCommitDevice(fw: Firewall): FortiCommitDevice {
       removeAntivirusProfile(name) {
         fw.getUtmProfiles().removeAntivirus(name);
       },
+      applyApplicationList(list) {
+        fw.getUtmProfiles().setApplicationList({
+          name: list.name,
+          entries: list.entries.map(entry => ({
+            id: entry.id,
+            application: entry.application,
+            action: entry.action === 'allow' ? 'allow' : 'block',
+          })),
+          comment: list.comment,
+        });
+      },
+      removeApplicationList(name) {
+        fw.getUtmProfiles().removeApplicationList(name);
+      },
       applyWebFilterProfile(profile) {
         fw.getUtmProfiles().setWebFilter({
           name: profile.name,

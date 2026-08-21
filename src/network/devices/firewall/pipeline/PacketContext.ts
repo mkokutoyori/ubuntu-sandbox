@@ -27,6 +27,7 @@ export type VerdictReason =
   | 'utm-virus'
   | 'utm-url'
   | 'utm-category'
+  | 'utm-application'
   | 'utm-dns'
   | 'utm-file-type'
   | 'auth-required'

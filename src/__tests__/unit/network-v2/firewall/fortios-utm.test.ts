@@ -462,7 +462,6 @@ describe('filtre de fichiers : le CONTENU decide, pas l`extension', () => {
 
 describe('les familles sans moteur sont REFUSEES, pas rangees', () => {
   it.each([
-    ['application list', 'signature'],
     ['ips sensor', 'signature'],
     ['dlp sensor', 'signature'],
     ['firewall shaper traffic-shaper', 'clock'],

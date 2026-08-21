@@ -47,6 +47,7 @@ export interface SecurityRule {
   authUsers?: readonly string[];
   antivirusProfile?: string;
   webFilterProfile?: string;
+  applicationList?: string;
   dnsFilterProfile?: string;
   fileFilterProfile?: string;
   sslSshProfile?: string;
@@ -95,6 +96,7 @@ export interface SecurityRuleInit {
   authUsers?: readonly string[];
   antivirusProfile?: string;
   webFilterProfile?: string;
+  applicationList?: string;
   dnsFilterProfile?: string;
   fileFilterProfile?: string;
   sslSshProfile?: string;
@@ -149,6 +151,7 @@ export function makeRule(init: SecurityRuleInit): SecurityRule {
     authUsers: init.authUsers === undefined ? undefined : Object.freeze([...init.authUsers]),
     antivirusProfile: init.antivirusProfile,
     webFilterProfile: init.webFilterProfile,
+    applicationList: init.applicationList,
     dnsFilterProfile: init.dnsFilterProfile,
     fileFilterProfile: init.fileFilterProfile,
     sslSshProfile: init.sslSshProfile,

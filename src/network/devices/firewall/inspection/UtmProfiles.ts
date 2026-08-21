@@ -61,6 +61,18 @@ export interface FileFilterProfile {
   readonly comment?: string;
 }
 
+export interface ApplicationEntry {
+  readonly id: string;
+  readonly application: string;
+  readonly action: UtmAction;
+}
+
+export interface ApplicationList {
+  readonly name: string;
+  readonly entries: readonly ApplicationEntry[];
+  readonly comment?: string;
+}
+
 export interface SslSshProfile {
   readonly name: string;
   readonly httpsMode: SslInspectionMode;
@@ -135,6 +147,7 @@ export class UtmProfileStore {
   private readonly webfilter = new Map<string, WebFilterProfile>();
   private readonly dnsfilter = new Map<string, DnsFilterProfile>();
   private readonly filefilter = new Map<string, FileFilterProfile>();
+  private readonly applications = new Map<string, ApplicationList>();
   private readonly sslSsh = new Map<string, SslSshProfile>();
   private readonly protocolOptions = new Map<string, ProtocolOptions>();
   private readonly urlFilterTables = new Map<string, FilterTable>();
@@ -162,6 +175,22 @@ export class UtmProfileStore {
   setFileFilter(profile: FileFilterProfile): void { this.filefilter.set(profile.name, profile); }
   getFileFilter(name: string): FileFilterProfile | undefined { return this.filefilter.get(name); }
   removeFileFilter(name: string): boolean { return this.filefilter.delete(name); }
+
+  setApplicationList(list: ApplicationList): void {
+    this.applications.set(list.name, list);
+  }
+
+  getApplicationList(name: string): ApplicationList | undefined {
+    return this.applications.get(name);
+  }
+
+  removeApplicationList(name: string): boolean {
+    return this.applications.delete(name);
+  }
+
+  applicationListNames(): readonly string[] {
+    return Object.freeze([...this.applications.keys()]);
+  }
   fileFilterNames(): readonly string[] { return Object.freeze([...this.filefilter.keys()]); }
 
   setSslSsh(profile: SslSshProfile): void { this.sslSsh.set(profile.name, profile); }

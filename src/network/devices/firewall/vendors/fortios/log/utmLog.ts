@@ -17,6 +17,7 @@ const UTM_SHAPE: Readonly<Record<Exclude<UtmVerdictKind, 'clean'>, UtmShape>> =
     'category-blocked': { subtype: 'webfilter', logid: '0317013312', category: 3 },
     'dns-blocked': { subtype: 'dns', logid: '1501054600', category: 12 },
     'file-type-blocked': { subtype: 'file-filter', logid: '0317013318', category: 15 },
+    'application-blocked': { subtype: 'app-ctrl', logid: '1059028704', category: 10 },
   });
 
 export const UTM_CATEGORY_BY_SUBTYPE: Readonly<Record<string, number>> = Object.freeze({
@@ -54,6 +55,7 @@ export function utmLog(
       hostname: verdict.host ?? '',
       url: verdict.url ?? '',
       filetype: verdict.fileType ?? '',
+      app: verdict.application ?? '',
       msg: verdict.detail,
     },
   };

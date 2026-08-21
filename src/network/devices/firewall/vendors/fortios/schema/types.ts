@@ -18,7 +18,9 @@ export interface FortiDnsZonePatch {
   readonly domain: string;
   readonly type: string;
   readonly authoritative: boolean;
-  readonly entries: ReadonlyArray<{ hostname: string; ip: string }>;
+  readonly primaryName?: string;
+  readonly contact?: string;
+  readonly entries: ReadonlyArray<{ hostname: string; ip: string; ttl?: number }>;
 }
 import type {
   BgpConfiguration, OspfConfiguration, RipConfiguration,
@@ -236,6 +238,8 @@ export interface FortiCommitDevice {
   removeSwitchInterface(name: string): void;
   applyAntivirusProfile(profile: FortiAntivirusPatch): void;
   removeAntivirusProfile(name: string): void;
+  applyApplicationList(list: FortiApplicationListPatch): void;
+  removeApplicationList(name: string): void;
   applyWebFilterProfile(profile: FortiWebFilterPatch): void;
   webFilterFeatureSet(name: string): string | undefined;
   removeWebFilterProfile(name: string): void;
@@ -449,6 +453,14 @@ export interface FortiFilterTablePatch {
   readonly id: string;
   readonly name: string;
   readonly entries: readonly FortiUrlFilterPatch[];
+  readonly comment?: string;
+}
+
+export interface FortiApplicationListPatch {
+  readonly name: string;
+  readonly entries: ReadonlyArray<{
+    id: string; application: string; action: string;
+  }>;
   readonly comment?: string;
 }
 

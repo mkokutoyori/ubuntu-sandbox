@@ -2,6 +2,7 @@ import {
   choice, count, enable, text, word,
   type FortiObjectView, type FortiTableSpec,
 } from './types';
+import { APPLICATION_SIGNATURES } from '../../../inspection/ApplicationSignatures';
 
 const NO_SIGNATURES = 'this simulator has no FortiGuard signature database, and will '
   + 'have none. Accepting the profile would install an inspection that never '
@@ -440,9 +441,61 @@ export const APPLICATION_LIST: FortiTableSpec = {
   renderOrder: 460,
   help: 'Configure application control lists.',
   attributes: [
-    { ...word('name', 'List name.'), unimplemented: NO_SIGNATURES },
+    { ...word('name', 'List name.'), readOnly: true },
+    text('comment', 'Comment.'),
+    choice('other-application-action', 'Action for an application with no entry.', [
+      { keyword: 'pass', description: 'Let it through.' },
+      { keyword: 'block', description: 'Block it.' },
+    ], 'pass'),
   ],
-  onCommit() {},
+  children: [
+    {
+      path: ['entries'],
+      kind: 'table',
+      keyType: 'integer',
+      ordered: true,
+      scope: 'vdom',
+      accessGroup: 'utmgrp',
+      renderOrder: 464,
+      help: 'Application control entries.',
+      attributes: [
+        { ...word('id', 'Entry identifier.'), readOnly: true },
+        {
+          name: 'application',
+          help: 'Applications recognised by their own protocol exchange.',
+          quoted: true,
+          multiValue: true,
+          parts: [{
+            name: 'application', type: 'ENUM', description: 'Application.',
+            values: APPLICATION_SIGNATURES.map(signature => ({
+              keyword: signature.name, description: signature.description,
+            })),
+          }],
+          defaultValue: [],
+        },
+        choice('action', 'Action taken for the matched application.', [
+          { keyword: 'pass', description: 'Let the flow through.' },
+          { keyword: 'block', description: 'Block the flow.' },
+          { keyword: 'reset', description: 'Reset the connection.' },
+        ], 'block'),
+      ],
+    },
+  ],
+  onCommit(object, context) {
+    context.device.applyApplicationList({
+      name: object.key,
+      entries: listOf(object, 'entries').flatMap(entry =>
+        [...entry.effective('application')].map(application => ({
+          id: entry.key,
+          application,
+          action: field(entry, 'action') === 'pass' ? 'allow' : 'block',
+        }))),
+      comment: object.effective('comment')[0] || undefined,
+    });
+  },
+  onDelete(key, context) {
+    context.device.removeApplicationList(key);
+  },
 };
 
 export const IPS_SENSOR: FortiTableSpec = {

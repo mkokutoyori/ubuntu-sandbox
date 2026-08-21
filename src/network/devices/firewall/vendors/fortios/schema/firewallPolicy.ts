@@ -118,6 +118,11 @@ export const FIREWALL_POLICY: FortiTableSpec = {
       availableWhen: usesUtm,
     },
     {
+      ...reference('application-list', 'Name of an existing application list.',
+        ['application list']),
+      availableWhen: usesUtm,
+    },
+    {
       ...reference('ssl-ssh-profile', 'Name of an existing SSL SSH profile.',
         ['firewall ssl-ssh-profile']),
       availableWhen: usesUtm,
@@ -194,6 +199,7 @@ export const FIREWALL_POLICY: FortiTableSpec = {
       webFilterProfile: named(object, 'webfilter-profile'),
       dnsFilterProfile: named(object, 'dnsfilter-profile'),
       fileFilterProfile: named(object, 'file-filter-profile'),
+      applicationList: named(object, 'application-list'),
       sslSshProfile: named(object, 'ssl-ssh-profile'),
       protocolOptions: named(object, 'profile-protocol-options'),
       sessionTimeoutOverrideSec: sessionTtl(object.effective('session-ttl')[0]),

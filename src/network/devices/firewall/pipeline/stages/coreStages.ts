@@ -11,7 +11,8 @@ import type { ObjectStore } from '../../model/ObjectStore';
 import type { PolicyStore } from '../../model/PolicyStore';
 import { isDenyAction, type SecurityRule } from '../../model/SecurityRule';
 import {
-  inspectTls, protocolOfFlow, scanAntivirus, scanDnsFilter, scanFileFilter,
+  inspectTls, protocolOfFlow, scanAntivirus, scanApplicationControl,
+  scanDnsFilter, scanFileFilter,
   scanWebFilter, scanWebFilterHost,
   type InspectedFlow, type UtmVerdict, type UtmVerdictKind,
 } from '../../inspection/ContentInspector';
@@ -217,6 +218,7 @@ const UTM_REASON: Readonly<Record<UtmVerdictKind, VerdictReason>> = Object.freez
   'category-blocked': 'utm-category',
   'dns-blocked': 'utm-dns',
   'file-type-blocked': 'utm-file-type',
+  'application-blocked': 'utm-application',
 });
 
 function firstBlocking(
@@ -251,6 +253,11 @@ function firstBlocking(
     ? undefined
     : profiles.getFileFilter(rule.fileFilterProfile);
   if (file) scans.push(scanFileFilter(flow, file));
+
+  const applications = rule.applicationList === undefined
+    ? undefined
+    : profiles.getApplicationList(rule.applicationList);
+  if (applications) scans.push(scanApplicationControl(flow, applications));
 
   return scans.find(verdict => verdict !== undefined && verdict.kind !== 'clean');
 }
