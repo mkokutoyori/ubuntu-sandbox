@@ -378,12 +378,15 @@ export const SYSTEM_DNS_DATABASE: FortiTableSpec = {
       domain: object.effective('domain')[0] ?? '',
       type: object.effective('type')[0] ?? 'primary',
       authoritative: object.effective('authoritative')[0] !== 'disable',
+      primaryName: object.effective('primary-name')[0] ?? '',
+      contact: object.effective('contact')[0] ?? '',
       entries: object.childEntries('dns-entry')
         .filter(entry => entry.effective('status')[0] !== 'disable'
           && (entry.effective('type')[0] ?? 'A') === 'A')
         .map(entry => ({
           hostname: entry.effective('hostname')[0] ?? '',
           ip: entry.effective('ip')[0] ?? '0.0.0.0',
+          ttl: Number(entry.effective('ttl')[0] ?? '0'),
         })),
     });
   },

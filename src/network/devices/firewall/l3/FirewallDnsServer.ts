@@ -8,11 +8,17 @@ import {
 } from '../../../dns/compat/DnsWireCompat';
 import { decodeDnsMessage, encodeDnsMessage } from '../../../dns/wire/DnsMessageCodec';
 import type { DnsMessage } from '../../../dns/wire/DnsMessage';
+import { DnsRcode } from '../../../dns/wire/DnsHeaderFlags';
+import { makeARecord, makeSoaRecord } from '../../../dns/wire/ResourceRecord';
+import { Zone } from '../../../dns/zone/Zone';
+import { ZoneStore } from '../../../dns/zone/ZoneStore';
+import { AuthoritativeServer } from '../../../dns/resolver/AuthoritativeServer';
 import { DNS_PORT } from './FirewallDnsClient';
 
 export interface DnsZoneEntry {
   readonly hostname: string;
   readonly ip: string;
+  readonly ttl?: number;
 }
 
 export interface DnsZone {
@@ -20,6 +26,8 @@ export interface DnsZone {
   readonly domain: string;
   readonly type: string;
   readonly authoritative: boolean;
+  readonly primaryName?: string;
+  readonly contact?: string;
   readonly entries: readonly DnsZoneEntry[];
 }
 
@@ -34,10 +42,47 @@ export interface FirewallDnsServerDeps {
 }
 
 const ZONE_TTL = 3600;
+const SOA_REFRESH = 10800;
+const SOA_RETRY = 900;
+const SOA_EXPIRE = 604800;
+const SOA_MINIMUM = 86400;
+
+function buildZone(zone: DnsZone): Zone | null {
+  const domain = zone.domain.replace(/\.$/, '');
+  if (domain.length === 0) return null;
+
+  const mname = zone.primaryName && zone.primaryName.length > 0
+    ? zone.primaryName : `dns.${domain}`;
+  const rname = zone.contact && zone.contact.length > 0
+    ? zone.contact.replace('@', '.') : `hostmaster.${domain}`;
+
+  let built: Zone;
+  try {
+    built = new Zone(domain, makeSoaRecord(domain, ZONE_TTL, {
+      mname, rname, serial: 1,
+      refresh: SOA_REFRESH, retry: SOA_RETRY,
+      expire: SOA_EXPIRE, minimum: SOA_MINIMUM,
+    }));
+  } catch {
+    return null;
+  }
+
+  for (const entry of zone.entries) {
+    if (entry.hostname.length === 0) continue;
+    const owner = entry.hostname === '@' ? domain : `${entry.hostname}.${domain}`;
+    try {
+      built.addRecord(makeARecord(owner, entry.ttl && entry.ttl > 0 ? entry.ttl : ZONE_TTL, entry.ip));
+    } catch {
+      continue;
+    }
+  }
+  return built;
+}
 
 export class FirewallDnsServer {
   private readonly listeners = new Map<string, DnsServerInterface>();
   private readonly zones = new Map<string, DnsZone>();
+  private authority: AuthoritativeServer | null = null;
 
   constructor(private readonly deps: FirewallDnsServerDeps) {}
 
@@ -47,9 +92,15 @@ export class FirewallDnsServer {
 
   removeInterface(iface: string): void { this.listeners.delete(iface); }
 
-  applyZone(zone: DnsZone): void { this.zones.set(zone.name, zone); }
+  applyZone(zone: DnsZone): void {
+    this.zones.set(zone.name, zone);
+    this.authority = null;
+  }
 
-  removeZone(name: string): void { this.zones.delete(name); }
+  removeZone(name: string): void {
+    this.zones.delete(name);
+    this.authority = null;
+  }
 
   servesOn(iface: string): boolean { return this.listeners.has(iface); }
 
@@ -67,39 +118,58 @@ export class FirewallDnsServer {
     }
     if (query.flags.qr) return false;
 
-    const answers = this.answer(query);
-    const response = buildLegacyResponseMessage(
-      query, answers.length > 0 ? 'NOERROR' : 'NXDOMAIN', answers);
+    const response = this.respond(query);
     this.deps.reply(iface, packet.sourceIP.toString(), udp.sourcePort,
       encodeDnsMessage(response));
     return true;
   }
 
-  private answer(query: DnsMessage): DnsRecord[] {
+  private respond(query: DnsMessage): DnsMessage {
     const question = query.questions[0];
-    if (!question || rrTypeName(Number(question.qtype)) !== 'A') return [];
-
-    const name = question.qname.replace(/\.$/, '').toLowerCase();
-    const local = this.fromZones(name);
-    if (local.length > 0) return local;
-
-    return this.deps.resolveExternal(name)
-      .map(address => ({ name, type: 'A' as const, value: address, ttl: ZONE_TTL }));
-  }
-
-  private fromZones(name: string): DnsRecord[] {
-    for (const zone of this.zones.values()) {
-      const domain = zone.domain.replace(/\.$/, '').toLowerCase();
-      if (domain.length === 0 || !name.endsWith(`.${domain}`)) continue;
-
-      const host = name.slice(0, name.length - domain.length - 1);
-      const entry = zone.entries.find(
-        candidate => candidate.hostname.toLowerCase() === host);
-      if (entry) {
-        return [{ name, type: 'A', value: entry.ip, ttl: ZONE_TTL }];
+    if (question) {
+      const local = this.localAuthority().answer(query);
+      if (local.flags.rcode !== DnsRcode.REFUSED
+        && (local.answers.length > 0 || this.answersNegatively(question.qname))) {
+        return local;
       }
     }
-    return [];
+    return this.forwarded(query);
+  }
+
+  private answersNegatively(qname: string): boolean {
+    const domain = qname.replace(/\.$/, '').toLowerCase();
+    for (const zone of this.zones.values()) {
+      const origin = zone.domain.replace(/\.$/, '').toLowerCase();
+      if (origin.length === 0) continue;
+      if (domain === origin || domain.endsWith(`.${origin}`)) return zone.authoritative;
+    }
+    return false;
+  }
+
+  private forwarded(query: DnsMessage): DnsMessage {
+    const question = query.questions[0];
+    const answers = question && rrTypeName(Number(question.qtype)) === 'A'
+      ? this.deps.resolveExternal(question.qname.replace(/\.$/, '').toLowerCase())
+        .map<DnsRecord>(address => ({
+          name: question.qname.replace(/\.$/, ''),
+          type: 'A', value: address, ttl: ZONE_TTL,
+        }))
+      : [];
+    return buildLegacyResponseMessage(
+      query, answers.length > 0 ? 'NOERROR' : 'NXDOMAIN', answers);
+  }
+
+  private localAuthority(): AuthoritativeServer {
+    if (this.authority) return this.authority;
+    const store = new ZoneStore();
+    for (const zone of this.zones.values()) {
+      const built = buildZone(zone);
+      if (!built) continue;
+      if (store.getZone(built.origin)) continue;
+      store.addZone(built);
+    }
+    this.authority = new AuthoritativeServer(store);
+    return this.authority;
   }
 }
 
@@ -119,7 +189,7 @@ export function udpReplyDatagram(
 export function zoneRecordsOf(zone: DnsZone): readonly DnsRecord[] {
   return zone.entries.map(entry => ({
     name: `${entry.hostname}.${zone.domain}`,
-    type: 'A' as const, value: entry.ip, ttl: ZONE_TTL,
+    type: 'A' as const, value: entry.ip, ttl: entry.ttl && entry.ttl > 0 ? entry.ttl : ZONE_TTL,
   }));
 }
 

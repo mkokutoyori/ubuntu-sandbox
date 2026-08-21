@@ -3,9 +3,13 @@ import { FortiGate } from '@/network/devices/firewall/vendors/fortios/FortiGate'
 import { LinuxPC } from '@/network/devices/LinuxPC';
 import { LinuxServer } from '@/network/devices/LinuxServer';
 import { Cable } from '@/network/hardware/Cable';
-import { resetCounters, MACAddress } from '@/network/core/types';
+import { resetCounters, MACAddress, IPAddress } from '@/network/core/types';
 import { resetDeviceCounters } from '@/network/devices/DeviceFactory';
 import { Logger } from '@/network/core/Logger';
+import { FirewallDnsServer } from '@/network/devices/firewall/l3/FirewallDnsServer';
+import { encodeDnsMessage, decodeDnsMessage } from '@/network/dns/wire/DnsMessageCodec';
+import { buildLegacyQueryMessage } from '@/network/dns/compat/DnsWireCompat';
+import { DnsRcode } from '@/network/dns/wire/DnsHeaderFlags';
 
 beforeEach(() => {
   resetCounters();
@@ -25,6 +29,14 @@ function propre(sorties: string[]): void {
   for (const s of sorties) {
     expect(s).not.toMatch(/Unknown action|command parse error|Invalid|entry not found/i);
   }
+}
+
+function demander(serveur: FirewallDnsServer, nom: string): void {
+  const requete = encodeDnsMessage(buildLegacyQueryMessage(1234, nom, 'A'));
+  serveur.handleUdp('port2', { sourceIP: new IPAddress('192.168.10.50') } as never, {
+    type: 'udp', sourcePort: 5300, destinationPort: 53,
+    length: 8 + requete.length, checksum: 0, payload: requete,
+  } as never);
 }
 
 async function laboratoire() {
@@ -241,6 +253,44 @@ describe('TP 10 — rendre le reseau autonome', () => {
 
     expect(await pcLan.executeCommand('curl -sS http://srv-web.lab.local/'))
       .toContain('Welcome to nginx!');
+  });
+
+  it('etape 8 : une zone AUTORITAIRE refuse un nom absent au lieu de le renvoyer dehors',
+    () => {
+      const dehors: string[] = [];
+      let rendu: Uint8Array | null = null;
+      const serveur = new FirewallDnsServer({
+        resolveExternal: (name) => { dehors.push(name); return ['203.0.113.9']; },
+        reply: (_i, _t, _p, payload) => { rendu = payload; },
+      });
+      serveur.applyInterface({ iface: 'port2', mode: 'forward-only' });
+      serveur.applyZone({
+        name: 'lab-local', domain: 'lab.local', type: 'primary', authoritative: true,
+        entries: [{ hostname: 'srv-web', ip: '192.168.20.10' }],
+      });
+
+      demander(serveur, 'absent.lab.local');
+      expect(rendu).not.toBeNull();
+      expect(decodeDnsMessage(rendu!).flags.rcode).toBe(DnsRcode.NXDOMAIN);
+      expect(dehors).toHaveLength(0);
+    });
+
+  it('etape 8 : un nom HORS zone locale part vers le resolveur amont', () => {
+    const dehors: string[] = [];
+    let rendu: Uint8Array | null = null;
+    const serveur = new FirewallDnsServer({
+      resolveExternal: (name) => { dehors.push(name); return ['203.0.113.9']; },
+      reply: (_i, _t, _p, payload) => { rendu = payload; },
+    });
+    serveur.applyInterface({ iface: 'port2', mode: 'forward-only' });
+    serveur.applyZone({
+      name: 'lab-local', domain: 'lab.local', type: 'primary', authoritative: true,
+      entries: [{ hostname: 'srv-web', ip: '192.168.20.10' }],
+    });
+
+    demander(serveur, 'www.exemple.fr');
+    expect(dehors).toEqual(['www.exemple.fr']);
+    expect(decodeDnsMessage(rendu!).flags.rcode).toBe(DnsRcode.NOERROR);
   });
 
   it('etape 10 : `diagnose test application dnsproxy 3` rend l\'etat des serveurs',
