@@ -32,6 +32,16 @@ export function vpnCommitHandlers(fw: Firewall): VpnHandlers {
         dpdRetryCount: tunnel.dpdRetryCount,
         natTraversal: asNatTraversalMode(tunnel.natTraversal),
         policyBased: tunnel.policyBased,
+        modeCfg: tunnel.modeCfg,
+        authUserGroup: tunnel.authUserGroup,
+        poolStart: tunnel.poolStart,
+        poolEnd: tunnel.poolEnd,
+        poolNetmask: tunnel.poolNetmask,
+        splitInclude: tunnel.splitInclude,
+        xauthType: tunnel.xauthType,
+        authUser: tunnel.authUser,
+        authPassword: tunnel.authPassword,
+        dnsServers: tunnel.dnsServers === undefined ? undefined : [...tunnel.dnsServers],
         comments: tunnel.comments,
       });
       fw.syncIpsecTunnels();

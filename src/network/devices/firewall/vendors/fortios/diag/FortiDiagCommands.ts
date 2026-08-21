@@ -392,7 +392,14 @@ function diagnoseIke(rest: readonly string[], deps: FortiDiagDeps): string {
   if (rest[0] !== 'gateway') return FortiMessages.unknownPath(`vpn ike ${rest.join(' ')}`);
 
   const tunnels = deps.fw.getTunnelTable();
-  if (rest[1] === 'list') return renderIkeGatewayList(tunnels, deps.fw.now());
+  if (rest[1] === 'list') {
+    if (rest[2] === 'name') {
+      if (rest[3] === undefined) return FortiMessages.incomplete('a gateway name');
+      if (!tunnels.getPhase1(rest[3])) return FortiMessages.unknownKey(rest[3]);
+      return renderIkeGatewayList(tunnels, deps.fw.now(), deps.fw, rest[3]);
+    }
+    return renderIkeGatewayList(tunnels, deps.fw.now(), deps.fw);
+  }
   if (rest[1] === 'flush') {
     for (const tunnel of tunnels.all()) deps.fw.clearIpsecGateway(tunnel.name);
     return '';

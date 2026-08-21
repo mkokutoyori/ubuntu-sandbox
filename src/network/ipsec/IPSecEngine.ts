@@ -57,6 +57,7 @@ import {
 import { tripleDesCbcEncrypt, tripleDesCbcDecrypt } from '../../crypto/cipher/des';
 import { generateIkeKeyShare, ikeSharedSecret } from './IkeKeyExchange';
 import type { IkeKeyPair } from './IkeKeyExchange';
+import type { IkeConfigRequest, IkeConfigReply } from './IPSecTypes';
 import {
   IPSecSignalStore,
   makeReadonlyIPSecObservables,
@@ -570,7 +571,15 @@ function multicastSAKey(spi: number, groupAddress: string): string {
   return `${spi}|${groupAddress}`;
 }
 
+export type IkeConfigMethod = (
+  peerIP: string, request: IkeConfigRequest,
+) => IkeConfigReply | string | undefined;
+
 export class IPSecEngine implements IProtocolEngine {
+  private configMethod: IkeConfigMethod | null = null;
+  private readonly configRequests = new Map<string, IkeConfigRequest>();
+  private readonly configReplies = new Map<string, IkeConfigReply>();
+
   private readonly router: Router;
   private running = false;
 
@@ -3495,6 +3504,7 @@ export class IPSecEngine implements IProtocolEngine {
       natTHint: this.natTraversalDecision(apparentSrcIP !== localIP),
       keyExchange: exchange?.payload,
       trafficSelectors: entry.trafficSelectors,
+      configRequest: this.configRequests.get(peerIP),
     };
     if (this.ikeCertAuth) {
       
@@ -3728,6 +3738,13 @@ export class IPSecEngine implements IProtocolEngine {
     const localIP = this.getLocalIP(egress) || '';
     const trafficSelectors = this.selectorsForEntry(peerEntry);
     const childAccepted = selectorsNarrow(offer.trafficSelectors, trafficSelectors);
+    const configVerdict = offer.configRequest === undefined || !this.configMethod
+      ? undefined
+      : this.configMethod(srcIp, offer.configRequest);
+    if (configVerdict !== undefined && typeof configVerdict === 'string') {
+      this.rejectIke(srcIp, configVerdict);
+      return;
+    }
 
     if (childAccepted) {
       const sa = this.buildIpsecSAStruct({
@@ -3775,6 +3792,7 @@ export class IPSecEngine implements IProtocolEngine {
       lifetimeSec, lifetimeKB, natT,
       keyExchange: responderExchange?.payload,
       childRejected: childAccepted ? undefined : 'TS_UNACCEPTABLE',
+      configReply: typeof configVerdict === 'string' ? undefined : configVerdict,
     };
     if (this.ikeCertAuth) {
       
@@ -3837,6 +3855,7 @@ export class IPSecEngine implements IProtocolEngine {
     const hasAH = transforms.some((t) => t.startsWith('ah'));
     const trafficSelectors = this.selectorsForEntry(pending.entry);
 
+    if (accept.configReply) this.configReplies.set(srcIp, accept.configReply);
     if (accept.childRejected === undefined) {
       const sa = this.buildIpsecSAStruct({
         peerIP: srcIp, localIP: pending.localIP, spiIn: spiInitIn, spiOut: accept.ipsecSpiIn,
@@ -4799,6 +4818,18 @@ export class IPSecEngine implements IProtocolEngine {
 
   getIPSecSAs(peerIP: string): readonly IPSec_SA[] {
     return this.ipsecSADB.get(peerIP) ?? [];
+  }
+
+  setConfigMethod(handler: IkeConfigMethod | null): void {
+    this.configMethod = handler;
+  }
+
+  requestConfigFor(peerIP: string, request: IkeConfigRequest): void {
+    this.configRequests.set(peerIP, request);
+  }
+
+  configReplyFor(peerIP: string): IkeConfigReply | undefined {
+    return this.configReplies.get(peerIP);
   }
 
   hasIkeSA(peerIP: string): boolean {

@@ -77,6 +77,8 @@ import { ManagementPlane } from './mgmt/ManagementPlane';
 import type { ManagementPorts } from './mgmt/ManagementAccess';
 import type { CaptivePortalRedirect } from './auth/CaptivePortalRedirect';
 import { SslDeepInspection } from './inspection/SslDeepInspection';
+import { ModeCfgPool } from './vpn/ModeCfgPool';
+import type { IkeConfigReply, IkeConfigRequest } from '../../ipsec/IPSecTypes';
 import type { NtpAgent } from '../../ntp/NtpAgent';
 import { FirewallPing, type FirewallPingEgress } from './diag/FirewallPing';
 import { buildEchoRequest } from './l3/IcmpEcho';
@@ -152,6 +154,7 @@ export class Firewall extends Equipment {
   private readonly ntp: FirewallNtp;
   private readonly captivePortal: CaptivePortalRedirect;
   private authPortalSecureHttp = false;
+  private readonly modeCfg = new ModeCfgPool();
   private readonly deepInspection = new SslDeepInspection({
     tcp: () => this.tcp,
     localCertificate: (name) => this.getCertificateStore().local(name),
@@ -479,10 +482,70 @@ export class Firewall extends Equipment {
   syncIpsecTunnels(v?: string) {
     const vdom = this.getVdom(v);
     programIpsecEngine(this.ipsec, vdom.tunnels, vdom.certificates, this.services.now);
+    this.ipsec.setConfigMethod((peer, request) => this.answerConfigMethod(peer, request));
+  }
+
+  getModeCfgPool(): ModeCfgPool { return this.modeCfg; }
+
+  private answerConfigMethod(
+    peer: string, request: IkeConfigRequest,
+  ): IkeConfigReply | string | undefined {
+    if (!request.wantAddress) return undefined;
+
+    const tunnel = this.getVdom().tunnels.all()
+      .find(entry => this.modeCfg.configuredFor(entry));
+    if (!tunnel) return 'IPv4 pool is not configured';
+
+    if (tunnel.authUserGroup !== undefined) {
+      const directory = this.getUserDirectory();
+      const user = request.identity ?? '';
+      const admitted = user.length > 0
+        && directory.authenticateLocal(user, request.credential ?? '')
+        && directory.groupsOf(user).includes(tunnel.authUserGroup);
+      if (!admitted) return 'AUTHENTICATION_FAILED';
+    }
+
+    const assignment = this.modeCfg.assign(tunnel, peer, request.identity);
+    if (assignment === undefined) return 'IPv4 pool is not configured';
+    if (assignment === 'exhausted') return 'IPv4 address pool is exhausted';
+
+    return {
+      address: assignment.address,
+      netmask: assignment.netmask,
+      splitInclude: this.splitSubnetsOf(assignment.splitInclude),
+      dnsServers: assignment.dnsServers,
+    };
+  }
+
+  private splitSubnetsOf(name: string | undefined): readonly string[] {
+    if (name === undefined) return [];
+    const object = this.getObjectStore().getAddress(name);
+    if (object?.value === undefined) return [];
+    return object.careMask === undefined
+      ? [object.value]
+      : [`${object.value}/${object.careMask}`];
   }
 
   bringUpIpsecTunnel(name: string, v?: string): boolean {
-    return bringUpTunnel(this.ipsec, this.getVdom(v).tunnels, name);
+    const brought = bringUpTunnel(this.ipsec, this.getVdom(v).tunnels, name);
+    this.applyAssignedConfiguration(name, v);
+    return brought;
+  }
+
+  private applyAssignedConfiguration(name: string, v?: string): void {
+    const vdom = this.getVdom(v);
+    const assignment = vdom.tunnels.receivedAssignment(name);
+    if (!assignment) return;
+
+    this.interfaces.configure(name, {
+      up: true, ip: assignment.address, mask: assignment.netmask,
+    });
+    for (const subnet of assignment.splitInclude) {
+      const [network, mask] = subnet.split('/');
+      vdom.routes.addStatic(network, mask ?? '255.255.255.255', undefined, {
+        iface: name, id: `modecfg:${name}:${network}`,
+      });
+    }
   }
 
   clearIpsecGateway(name: string, v?: string): void {

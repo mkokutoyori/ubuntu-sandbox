@@ -276,6 +276,20 @@ export interface IkeOfferMessage {
   certPayload?: X509CertPayload;
   keyExchange?: IkeKeyExchangePayload;
   trafficSelectors?: SATrafficSelector;
+  configRequest?: IkeConfigRequest;
+}
+
+export interface IkeConfigRequest {
+  readonly wantAddress: boolean;
+  readonly identity?: string;
+  readonly credential?: string;
+}
+
+export interface IkeConfigReply {
+  readonly address: string;
+  readonly netmask: string;
+  readonly splitInclude?: readonly string[];
+  readonly dnsServers?: readonly string[];
 }
 
 /**
@@ -294,6 +308,8 @@ export interface IkeAcceptMessage {
   type: 'ike';
   step: 'accept';
   childRejected?: string;
+  configReply?: IkeConfigReply;
+  configRefused?: string;
   responderSpi: string;
   pskProof: string;
   certPayload?: X509CertPayload;

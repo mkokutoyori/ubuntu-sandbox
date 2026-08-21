@@ -30,7 +30,32 @@ export interface Phase1Tunnel {
   readonly dpdRetryCount: number;
   readonly natTraversal: NatTraversalMode;
   readonly policyBased: boolean;
+  readonly modeCfg?: boolean;
+  readonly authUserGroup?: string;
+  readonly poolStart?: string;
+  readonly poolEnd?: string;
+  readonly poolNetmask?: string;
+  readonly splitInclude?: string;
+  readonly xauthType?: string;
+  readonly authUser?: string;
+  readonly authPassword?: string;
+  readonly dnsServers?: readonly string[];
   readonly comments?: string;
+}
+
+export interface ReceivedConfiguration {
+  readonly address: string;
+  readonly netmask: string;
+  readonly splitInclude: readonly string[];
+  readonly dnsServers: readonly string[];
+}
+
+export interface ModeCfgAssignment {
+  readonly address: string;
+  readonly netmask: string;
+  readonly user?: string;
+  readonly splitInclude?: string;
+  readonly dnsServers: readonly string[];
 }
 
 export interface Phase2Tunnel {
@@ -76,6 +101,7 @@ export class IpsecTunnelTable {
   private readonly phase1 = new Map<string, Phase1Tunnel>();
   private readonly phase2 = new Map<string, Phase2Tunnel>();
   private readonly states = new Map<string, TunnelState>();
+  private readonly received = new Map<string, ReceivedConfiguration>();
   private readonly now: () => number;
   private nextSerial = 1;
 
@@ -119,6 +145,22 @@ export class IpsecTunnelTable {
   }
 
   stateOf(name: string): TunnelState | undefined { return this.states.get(name); }
+
+  recordAssignment(name: string, assignment: {
+    address: string; netmask: string;
+    splitInclude?: readonly string[]; dnsServers?: readonly string[];
+  }): void {
+    this.received.set(name, Object.freeze({
+      address: assignment.address,
+      netmask: assignment.netmask,
+      splitInclude: Object.freeze([...(assignment.splitInclude ?? [])]),
+      dnsServers: Object.freeze([...(assignment.dnsServers ?? [])]),
+    }));
+  }
+
+  receivedAssignment(name: string): ReceivedConfiguration | undefined {
+    return this.received.get(name);
+  }
 
   markGateway(name: string, up: boolean): void {
     const state = this.states.get(name);

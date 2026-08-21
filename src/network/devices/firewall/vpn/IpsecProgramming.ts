@@ -4,7 +4,9 @@ import {
   IPAddress, IP_PROTO_UDP, createIPv4Packet,
   type IPv4Packet, type UDPPacket,
 } from '../../../core/types';
-import type { IpsecProposal, IpsecTunnelTable, Phase2Tunnel } from './IpsecTunnelTable';
+import type {
+  IpsecProposal, IpsecTunnelTable, Phase1Tunnel, Phase2Tunnel,
+} from './IpsecTunnelTable';
 import type { CertificateStore } from './CertificateStore';
 import { CertificateVerifier } from '../../../pki/CertificateVerifier';
 
@@ -36,6 +38,14 @@ function selectorsOf(phase2: Phase2Tunnel | undefined): SATrafficSelector | unde
     dstWildcard: wildcardOf(phase2.destinationMask),
     protocol: 0, srcPort: 0, dstPort: 0,
   };
+}
+
+export function requestsConfiguration(tunnel: {
+  modeCfg?: boolean; poolStart?: string; poolEnd?: string;
+}): boolean {
+  return tunnel.modeCfg === true
+    && (tunnel.poolStart ?? '').length === 0
+    && (tunnel.poolEnd ?? '').length === 0;
 }
 
 export function transformSetName(tunnel: string): string {
@@ -97,6 +107,14 @@ export function programIpsecEngine(
 
     if (tunnel.boundInterface.length > 0) {
       engine.applyCryptoMapToInterface(tunnel.boundInterface, cryptoMapName(tunnel.name));
+    }
+
+    if (requestsConfiguration(tunnel)) {
+      engine.requestConfigFor(tunnel.remoteGateway, {
+        wantAddress: true,
+        identity: tunnel.authUser,
+        credential: tunnel.authPassword,
+      });
     }
   }
 }
@@ -164,6 +182,7 @@ export function bringUpTunnel(
   }
 
   const gatewayUp = engine.hasIkeSA(declared.remoteGateway);
+  applyReceivedConfiguration(engine, tunnels, declared);
   const sas = engine.getIPSecSAs(declared.remoteGateway);
   if (sas.length === 0) {
     tunnels.markDown(name, gatewayUp ? 'no matching selector' : 'negotiation failed');
@@ -173,6 +192,15 @@ export function bringUpTunnel(
 
   tunnels.markUp(name, sas[0].natT === true);
   return true;
+}
+
+function applyReceivedConfiguration(
+  engine: IPSecEngine, tunnels: IpsecTunnelTable, tunnel: Phase1Tunnel,
+): void {
+  if (!requestsConfiguration(tunnel)) return;
+  const reply = engine.configReplyFor(tunnel.remoteGateway);
+  if (!reply) return;
+  tunnels.recordAssignment(tunnel.name, reply);
 }
 
 export function udpDatagram(

@@ -97,6 +97,23 @@ famille reprise ferme une part de cette entrée.
 
 ## Pare-feu FortiGate
 
+### [linux] la commande `ipsec` (strongSwan) est une FACADE
+`ipsec up <conn>` rend `initiating IKE_SA <conn>[1] to 0.0.0.0` — la chaine
+`0.0.0.0` est litterale, quelle que soit la configuration —, `ipsec status`
+annonce toujours `0 up`, et `/etc/ipsec.conf` n'est lu par personne. Aucune
+negociation n'a lieu : un poste Linux n'a pas de moteur IPsec du tout, seuls
+`Router` et le pare-feu en construisent un. Le TP 18 monte donc son client
+teletravailleur avec un SECOND FortiGate, qui en porte un — ce qu'un vrai
+deploiement fait aussi (concentrateur a composition avec des FortiGate
+distants), mais ce n'est pas le client du tutoriel.
+**Mesure** : `ipsec up X` puis `ipsec status` sur un poste Linux ; rien ne
+change et aucune trame ne part.
+**Report** : il faut donner un moteur IPsec a `LinuxMachine` et un lecteur
+d'`ipsec.conf` par-dessus. `IPSecEngine` est ecrit contre un hote de forme
+ROUTEUR (`_getAccessListsInternal`, `getLocalIP`, `_getHostnameInternal`),
+donc il faut d'abord degager ce port etroit — c'est le vrai travail, et il
+sert aussi le TP 17 cote client.
+
 ### [ipsec] la RESTRICTION des selecteurs n'est pas implementee
 RFC 7296 §2.9 laisse un repondeur RETRECIR les selecteurs proposes : si
 l'initiateur demande 10.0.0.0/8 et que le repondeur ne couvre que
