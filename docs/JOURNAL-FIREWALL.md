@@ -2844,6 +2844,39 @@ pare-feu peut atterrir dans le `/var/log/syslog` d'une vraie machine.
 
 ---
 
+### E52c — Une liste de valeurs se complète à chaque valeur
+
+Troisième passage, même périmètre. `set srcaddr NET-LAN ` ne proposait plus
+rien — or `set srcaddr "NET-LAN" "NET-DMZ"` est la forme ordinaire, et le
+tutoriel l'écrit partout.
+
+**La cause est la forme de la place.** Un attribut multiple reçoit un seul
+argument `REST` : le curseur y voit tout ce qui reste de la ligne et compare
+donc `NET-LAN ` aux candidats, qui ne commencent pas par là. La porte
+FortiOS interroge maintenant le socle sur le SEUL mot en cours.
+
+**Et seulement quand l'attribut accepte vraiment plusieurs valeurs.** Le
+premier jet ne posait pas la condition : `set action accept ` reproposait
+alors les valeurs de l'énumération, ce qu'un vrai FortiGate ne fait pas.
+C'est le cas témoin qui l'a attrapé — il était écrit pour ça.
+
+**Le garde-fou G6 a refusé le premier correctif, et il avait raison.**
+J'avais écrit `new Set(['set', 'append', 'select', 'unselect'])` dans le
+shell : une seconde liste de verbes, alors que `FortiSocle` les énumère déjà
+pour déclarer leurs specs. `VALUE_LIST_VERBS` est exporté et lu par les
+deux. Le garde ne visait pas ce cas — il interdit les listes blanches
+d'attributs hors du schéma — mais sa règle textuelle a trouvé une vraie
+duplication.
+
+`fortigate-cli-resolution.test.ts` passe de 36 à 41 cas ; les 5 nouveaux
+sont discriminés sur les seules modifications de ce passage : **4 tombent**,
+le cinquième étant le témoin, qui doit passer des deux côtés.
+
+**Vérifié** : 1637 cas du module pare-feu (78 fichiers), 1224 du socle CLI.
+Typecheck inchangé à 344.
+
+---
+
 ### E52b — La complétion suit les guillemets, et descend le chemin
 
 Second passage sur le même périmètre, mesuré après le premier. Deux

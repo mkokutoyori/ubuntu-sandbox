@@ -67,6 +67,9 @@ const LEGENDS: ReadonlyArray<readonly [readonly string[], string]> = Object.free
   [['unselect'], 'Remove a value from a list.'],
 ]);
 
+export const VALUE_LIST_VERBS = Object.freeze(
+  ['set', 'append', 'select', 'unselect'] as const);
+
 const FORTI_MODES = Object.freeze({ forti: { parent: null } });
 const FORTI_PROMPTS = Object.freeze({ forti: '{host} # ' });
 const MODE = ['forti'];
@@ -507,7 +510,7 @@ export class FortiSocle {
 
     if (!attribute.multiValue) return out;
 
-    for (const verb of ['append', 'select', 'unselect'] as const) {
+    for (const verb of VALUE_LIST_VERBS.slice(1)) {
       out.push(this.withArgument(`${verb} ${attribute.name}`,
         [verb, attribute.name, ...value], attribute.help,
         (_s, args) => this.deps.nav[verb](attribute.name, collect(value, args))));

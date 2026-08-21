@@ -8,7 +8,7 @@ import {
   fortiSystemTime, runExecuteDate, runExecuteTime,
 } from './diag/timeCommands';
 import { applyFilter, splitPipe } from './render/outputFilter';
-import { FortiSocle } from './FortiSocle';
+import { FortiSocle, VALUE_LIST_VERBS } from './FortiSocle';
 import { schemaIndex } from './schema';
 import type {
   FortiCommitContext, FortiCommitDevice, FortiTableSpec,
@@ -251,7 +251,7 @@ export class FortiShell {
     const bare = typed.slice(quote.length);
 
     const proposed = [
-      ...this.socle.suggestions(prefix.slice(0, head.length) + bare, 'TAB')
+      ...this.socle.suggestions(this.socleProbe(head, bare), 'TAB')
         .filter(s => !s.isArgument || s.completable === true)
         .map(s => s.value),
       ...this.viewPathCompletions(head, bare),
@@ -260,6 +260,22 @@ export class FortiShell {
     return [...new Set(proposed)]
       .filter(value => value.startsWith(bare) && value !== bare)
       .map(value => `${head}${quote}${value}${quote}`);
+  }
+
+  private socleProbe(head: string, typed: string): string {
+    const words = head.trim().split(/\s+/).filter(Boolean);
+    if (words.length > 2 && VALUE_LIST_VERBS.includes(words[0] as never)
+      && this.acceptsSeveralValues(words[1])) {
+      return `${words[0]} ${words[1]} ${typed}`;
+    }
+    return `${head}${typed}`;
+  }
+
+  private acceptsSeveralValues(attribute: string): boolean {
+    const object = this.nav.currentObject();
+    if (!object) return false;
+    return object.spec.attributes
+      .some(spec => spec.name === attribute && spec.multiValue === true);
   }
 
   private viewPathCompletions(head: string, typed: string): readonly string[] {

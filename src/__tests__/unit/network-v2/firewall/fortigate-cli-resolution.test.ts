@@ -46,8 +46,16 @@
  *      libre sont statiques, donc bornées au premier niveau. La
  *      complétion descend désormais l'arbre au niveau déjà tapé, et
  *      propose les entrées quand le chemin nomme une table.
- *   7. Les trois derniers cas vérifient tout cela **dans le terminal**,
- *      là où l'opérateur tape vraiment — pas seulement sur le shell.
+ *   7. **Une LISTE de valeurs ne se complétait qu'à la première.**
+ *      `set srcaddr NET-LAN ` ne proposait plus rien, alors que
+ *      `set srcaddr "NET-LAN" "NET-DMZ"` est la forme ordinaire. La place
+ *      d'une valeur multiple est un `REST` : le curseur y voit tout ce qui
+ *      reste, et compare donc `NET-LAN ` aux candidats. La porte FortiOS
+ *      interroge maintenant le socle sur le SEUL mot en cours, et
+ *      seulement quand l'attribut accepte vraiment plusieurs valeurs —
+ *      `set action accept ` ne propose rien après lui.
+ *   8. Trois cas vérifient tout cela **dans le terminal**, là où
+ *      l'opérateur tape vraiment — pas seulement sur le shell.
  *
  * Les trois cas de GARDE : toute sous-commande déclarée
  * répond, toute vue déclarée rend quelque chose, et la liste proposée est
@@ -324,6 +332,47 @@ describe('`show` et `get` proposent les CLES de la table nommee', () => {
   it('les BRANCHES continuent de se proposer sous un chemin partiel', () => {
     const { sh } = shell();
     expect(sh.completions('show system ')).toContain('show system interface');
+  });
+});
+
+describe('une liste de valeurs se complete a chaque valeur', () => {
+  function labo() {
+    const { fgt, sh } = shell();
+    taper(sh, 'config firewall address',
+      'edit "NET-LAN"', 'set subnet 192.168.10.0 255.255.255.0', 'next',
+      'edit "NET-DMZ"', 'set subnet 192.168.20.0 255.255.255.0', 'next', 'end');
+    taper(sh, 'config firewall policy', 'edit 1');
+    return { fgt, sh };
+  }
+
+  it('la DEUXIEME valeur se propose comme la premiere', () => {
+    const { sh } = labo();
+    expect(sh.completions('set srcaddr NET-LAN ')).toContain(
+      'set srcaddr NET-LAN NET-DMZ');
+  });
+
+  it('elle se propose aussi ENTRE GUILLEMETS', () => {
+    const { sh } = labo();
+    expect(sh.completions('set srcaddr "NET-LAN" "NET-D')).toContain(
+      'set srcaddr "NET-LAN" "NET-DMZ"');
+  });
+
+  it('le prefixe de la deuxieme valeur FILTRE', () => {
+    const { sh } = labo();
+    const proposees = sh.completions('set srcaddr NET-LAN NET-D');
+    expect(proposees).toContain('set srcaddr NET-LAN NET-DMZ');
+    expect(proposees).not.toContain('set srcaddr NET-LAN NET-LAN');
+  });
+
+  it('`append` et `select` completent de la meme facon', () => {
+    const { sh } = labo();
+    expect(sh.completions('append srcaddr NET-LAN ')).toContain(
+      'append srcaddr NET-LAN NET-DMZ');
+  });
+
+  it('une valeur UNIQUE ne propose rien apres elle', () => {
+    const { sh } = labo();
+    expect(sh.completions('set action accept ')).toHaveLength(0);
   });
 });
 
