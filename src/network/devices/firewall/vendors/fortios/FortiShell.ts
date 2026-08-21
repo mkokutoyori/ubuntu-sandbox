@@ -143,7 +143,10 @@ export class FortiShell {
       tree: this.tree,
       validator,
       commitContext: () => this.commitContext(),
-      onConfigured: (change) => { this.logConfigurationChange(change); },
+      onConfigured: (change) => {
+        this.logConfigurationChange(change);
+        this.fw.refreshLiveState();
+      },
     });
     this.socle = new FortiSocle({
       tree: this.tree,

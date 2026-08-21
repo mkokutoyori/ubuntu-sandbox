@@ -85,6 +85,8 @@ import type { NtpAgent } from '../../ntp/NtpAgent';
 import { FirewallPing, type FirewallPingEgress } from './diag/FirewallPing';
 import { PingOptions } from './diag/PingOptions';
 import { ConsoleSettings } from './mgmt/ConsoleSettings';
+import { FirewallObservables } from './diag/FirewallObservables';
+import type { HostObservables } from '../host/observables';
 import {
   beginSniffer, type SnifferRun, type SnifferSelection,
 } from './diag/FirewallSniffer';
@@ -256,6 +258,7 @@ export class Firewall extends Equipment {
       now,
       onRequestNeeded: (request, iface) => this.emitArp(request, iface),
       proxyOwns: (address, iface) => this.proxyArpAnswers(address, iface),
+      onCacheChanged: () => { this.liveState.refresh(); },
     });
 
     this.services = {
@@ -383,11 +386,25 @@ export class Firewall extends Equipment {
   getSslVpnPortal(): SslVpnPortal { return this.sslVpn; }
   getSdwan(): SdwanService { return this.sdwan; }
 
+  private readonly liveState = new FirewallObservables({
+    arp: () => this.arp,
+    routes: () => this.getVdom().routes,
+    tcp: () => this.tcp,
+  });
+
+  readonly observables: HostObservables = this.liveState.published;
+
+  refreshLiveState(): void { this.liveState.refresh(); }
+
   private readonly ping = new FirewallPing({
     resolve: (destination) => this.resolveEgress(destination),
-    send: (iface, packet, gateway) => { this.forward(iface, packet, gateway); },
+    send: (iface, packet, gateway) => {
+      this.liveState.countEchoSent();
+      this.forward(iface, packet, gateway);
+    },
     options: () => this.pingOptions,
     onReply: (payload) => {
+      this.liveState.countEchoReceived();
       this.getBus().publish({
         topic: 'host.icmp.echo-reply',
         payload: { deviceId: this.id, hostname: this.getHostname(), rttMs: 0, ...payload },

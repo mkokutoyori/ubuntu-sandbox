@@ -486,6 +486,14 @@ un nombre est attendu, signatures de constructeur périmées.
 
 ## Journal des entrées fermées
 
+- Panneau « Live state » d'un pare-feu — ferme. Mesure au navigateur :
+  ARP, routes, TCP, compteurs, TOUTES les sections rendaient « (empty) »
+  pour un FortiGate qui portait au meme instant une interface adressee,
+  une entree ARP pour le voisin qu'il venait de pinguer et une vraie
+  pile TCP ; le PC Linux a cote montrait les siennes. Le panneau
+  n'etait pas casse — le pare-feu n'exposait aucun `observables`, que
+  `resolveObservables` lit par canard.
+
 - `execute backup config` / `restore config` / `factoryreset` — fermees.
   Les trois briques existaient sans porte : le client TFTP (`put` ET
   `get`), `renderWholeConfig`, et la boucle qui rejoue une configuration.
