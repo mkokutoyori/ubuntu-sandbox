@@ -256,6 +256,7 @@ export class Firewall extends Equipment {
     this.services = {
       interfaces: this.interfaces,
       vdomOf: (iface) => vdomServices(this.vdoms.contextOfInterface(iface)),
+      sdwan: () => this.sdwan,
       policyKeyedBy: profile.policyKeyedBy,
       bridgedWith: (ingress, egress) => this.sameSwitchInterface(ingress, egress),
       macLookup: (destination, ingress) => this.lookupMac(destination, ingress),

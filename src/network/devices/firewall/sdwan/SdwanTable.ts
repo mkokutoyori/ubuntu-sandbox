@@ -20,7 +20,7 @@ export interface SdwanSlaTarget {
 
 export interface SdwanHealthCheck {
   readonly name: string;
-  readonly server: string;
+  readonly servers: readonly string[];
   readonly protocol: SdwanProtocol;
   readonly port: number;
   readonly intervalMs: number;
@@ -85,6 +85,11 @@ export class SdwanTable {
 
   member(sequence: number): SdwanMember | undefined { return this.members.get(sequence); }
 
+  membersOfZone(zone: string): readonly SdwanMember[] {
+    if (zone.length === 0 || !this.zones.has(zone)) return Object.freeze([]);
+    return this.allMembers().filter(member => member.zone === zone && member.enabled);
+  }
+
   allMembers(): readonly SdwanMember[] {
     return Object.freeze([...this.members.values()].sort((a, b) => a.sequence - b.sequence));
   }
@@ -120,14 +125,30 @@ export class SdwanTable {
     this.health.set(check, perCheck);
 
     const previous = perCheck.get(sequence);
+    const failures = sample.alive ? 0 : (previous?.consecutiveFailures ?? 0) + 1;
+    const successes = sample.alive ? (previous?.consecutiveSuccesses ?? 0) + 1 : 0;
+
     perCheck.set(sequence, {
-      alive: sample.alive,
+      alive: this.declaredState(check, previous, sample.alive, failures, successes),
       packetLossPercent: sample.packetLossPercent,
       latencyMs: sample.latencyMs,
       jitterMs: sample.jitterMs,
-      consecutiveFailures: sample.alive ? 0 : (previous?.consecutiveFailures ?? 0) + 1,
-      consecutiveSuccesses: sample.alive ? (previous?.consecutiveSuccesses ?? 0) + 1 : 0,
+      consecutiveFailures: failures,
+      consecutiveSuccesses: successes,
     });
+  }
+
+  private declaredState(
+    check: string, previous: SdwanMemberHealth | undefined,
+    answered: boolean, failures: number, successes: number,
+  ): boolean {
+    if (previous === undefined) return answered;
+
+    const declared = this.checks.get(check);
+    if (previous.alive) {
+      return failures < (declared?.failtime ?? 1);
+    }
+    return successes >= (declared?.recoverytime ?? 1);
   }
 
   healthOf(check: string, sequence: number): SdwanMemberHealth | undefined {
@@ -145,6 +166,40 @@ export class SdwanTable {
     return measured.packetLossPercent <= target.packetLossThresholdPercent
       && measured.latencyMs <= target.latencyThresholdMs
       && measured.jitterMs <= target.jitterThresholdMs;
+  }
+
+  steer(
+    probe: { readonly sourceIP: string; readonly destinationIP: string },
+    matchesAddress: (names: readonly string[], candidate: string) => boolean,
+  ): { iface: string; gateway: string; ruleId: string } | undefined {
+    if (!this.enabled) return undefined;
+
+    for (const rule of this.services.values()) {
+      if (rule.sources.length > 0 && !matchesAddress(rule.sources, probe.sourceIP)) continue;
+      if (rule.destinations.length > 0
+        && !matchesAddress(rule.destinations, probe.destinationIP)) continue;
+
+      const member = this.ruleMember(rule);
+      if (member) return { iface: member.iface, gateway: member.gateway, ruleId: rule.id };
+    }
+    return undefined;
+  }
+
+  private ruleMember(rule: SdwanService): SdwanMember | undefined {
+    const ordered = rule.priorityMembers
+      .map(sequence => this.members.get(sequence))
+      .filter((member): member is SdwanMember => member !== undefined && member.enabled);
+    const candidates = ordered.length > 0 ? ordered : this.allMembers();
+
+    if (rule.mode === 'sla' && rule.healthCheck.length > 0) {
+      const meeting = candidates.find(
+        member => this.slaMet(rule.healthCheck, member.sequence, rule.slaId));
+      if (meeting) return meeting;
+    }
+
+    const alive = candidates.find(
+      member => this.healthOf(rule.healthCheck, member.sequence)?.alive !== false);
+    return alive ?? candidates[0];
   }
 
   preferredMember(check: string, slaId?: number): SdwanMember | undefined {

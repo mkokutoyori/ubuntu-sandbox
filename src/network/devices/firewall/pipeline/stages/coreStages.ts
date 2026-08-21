@@ -46,8 +46,16 @@ export interface VdomServices {
   opmode?: 'nat' | 'transparent';
 }
 
+export interface SdwanSteering {
+  steer(
+    probe: { readonly sourceIP: string; readonly destinationIP: string },
+    matchesAddress: (names: readonly string[], candidate: string) => boolean,
+  ): { iface: string; gateway: string; ruleId: string } | undefined;
+}
+
 export interface FirewallServices {
   interfaces: InterfaceTable;
+  sdwan?: () => SdwanSteering | undefined;
   now: () => number;
   vdomOf: (iface: string) => VdomServices;
   natOrder?: NatOrder;
@@ -117,6 +125,7 @@ export function createCoreStages(services: FirewallServices): PipelineStage[] {
     tcpStateCheckStage(services),
     natDestinationStage(services),
     policyRouteStage(services),
+    sdwanRuleStage(services),
     macLookupStage(services),
     routeLookupStage(services),
     egressZoneStage(services),
@@ -603,6 +612,34 @@ function policyRouteStage(services: FirewallServices): PipelineStage {
       context.egressPort = decision.outputDevice;
       context.policyRouteGateway = decision.gateway;
       return proceed(context, 'policy-route', decision.route.id);
+    },
+  };
+}
+
+function sdwanRuleStage(services: FirewallServices): PipelineStage {
+  return {
+    name: 'sdwan',
+    apply(context) {
+      const packet = ipv4(context);
+      const steering = services.sdwan?.();
+      if (!packet || !steering || context.egressPort !== undefined) {
+        return proceed(context, 'sdwan', 'no-sdwan-rule');
+      }
+
+      const objects = vdom(services, context).objects;
+      const chosen = steering.steer({
+        sourceIP: packet.sourceIP.toString(),
+        destinationIP: packet.destinationIP.toString(),
+      }, (names, candidate) => objects.matchesAnyAddress(names, candidate));
+      if (!chosen) return proceed(context, 'sdwan', 'no-match');
+      if (!services.interfaces.isUp(chosen.iface)) {
+        return proceed(context, 'sdwan', `${chosen.ruleId}:interface-down`);
+      }
+
+      context.egressPort = chosen.iface;
+      context.policyRouteId = `sdwan-${chosen.ruleId}`;
+      context.policyRouteGateway = chosen.gateway;
+      return proceed(context, 'sdwan', chosen.ruleId);
     },
   };
 }

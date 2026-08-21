@@ -97,6 +97,48 @@ famille reprise ferme une part de cette entrée.
 
 ## Pare-feu FortiGate
 
+### [sdwan] une interface membre reste referencable par une politique
+Le tutoriel (§20, TP 20 etape 1) enonce la protection reelle : quand une
+interface devient membre du SD-WAN, FortiOS REFUSE de l'ajouter tant qu'une
+politique ou une route statique la nomme encore directement — il faut
+d'abord faire citer la ZONE par ces politiques. Rien ne refuse ici : une
+politique peut nommer `port1` et le membre 1 peut nommer `port1` au meme
+instant, ce qui est precisement la situation que la protection existe pour
+empecher.
+**Mesure** : `set dstintf "port1"` sur une politique, puis `set interface
+"port1"` sur un membre : les deux sont acceptes.
+**Report** : la matiere est a moitie la — `ZoneTable.assignInterface` refuse
+deja `interface-already-in-zone` — mais compter les references d'une
+interface a travers les politiques, les routes et les tables NAT est un
+mecanisme general (« qu'est-ce qui nomme cet objet ? ») qui depasse le
+SD-WAN et servirait a toutes les suppressions d'objet.
+
+### [sdwan] la route de la zone ne SUIT ni la sante ni un changement de membre
+`update-static-route` (active par defaut sur un vrai FortiGate) retire de la
+table la route d'un membre declare mort. Ici, la route statique nommant une
+zone SD-WAN est developpee en une route par membre AU MOMENT ou elle est
+ecrite : elle ne bouge plus ensuite, ni quand un membre tombe, ni quand on
+ajoute ou retire un membre de la zone.
+**Mesure** : couper le lien du membre 1 puis relire `get router info
+routing-table all` — la route par `port1` y est toujours, alors que
+`diagnose sys sdwan health-check` le declare `dead`.
+**Report** : sans consequence sur le TP 20, dont la bascule passe par la
+REGLE de service (branchee sur le pipeline, elle, et qui suit la mesure) ;
+la fermer demande de reinstaller les routes a chaque tour de sonde, donc de
+faire de la table de routage un consommateur de l'evenement de sante.
+
+### [sdwan] une session DEJA ouverte ne change pas de membre
+La regle de service choisit le membre a l'ouverture de la session. Une
+session en cours garde son interface de sortie meme si son membre cesse de
+respecter le contrat — seul un nouveau flux emprunte le nouveau membre.
+**Mesure** : `ping` vers une adresse, degrader le lien, `ping` vers LA MEME
+adresse : le trafic reste sur le premier membre ; vers une AUTRE adresse, il
+part par le second.
+**Report** : un vrai FortiGate reevalue les sessions affectees quand un SLA
+change d'etat. Le faire ici demande que la table de sessions soit un
+consommateur de l'evenement de sante — meme chainon manquant que l'entree
+precedente, et meme raison de ne pas l'improviser.
+
 ### [ospf] les vues `get router info ospf database` et `... interface` n'existent pas
 Le pare-feu ne repond qu'a `get router info ospf neighbor` ; les deux autres
 vues que le tutoriel nomme dans le meme bloc de verification (§20.2) sont

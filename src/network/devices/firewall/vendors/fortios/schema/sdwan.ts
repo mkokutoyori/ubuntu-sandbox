@@ -79,7 +79,18 @@ const SDWAN_HEALTH_CHECK: FortiTableSpec = {
   help: 'SD-WAN status checking or health checking.',
   attributes: [
     { ...word('name', 'Health check name.'), readOnly: true },
-    { ...text('server', 'Server this check probes.'), quoted: true },
+    {
+      name: 'server',
+      help: 'Servers this check probes; the next one is used when the previous '
+        + 'does not answer.',
+      quoted: true,
+      multiValue: true,
+      parts: [{
+        name: 'server', type: 'IP_ADDR',
+        description: 'IPv4 address of a server to probe.',
+      }],
+      defaultValue: [],
+    },
     {
       ...choice('protocol', 'Protocol used to determine if the server is up.', [
         { keyword: 'ping', description: 'ICMP echo.' },
@@ -196,7 +207,7 @@ export const SYSTEM_SDWAN: FortiTableSpec = {
       })),
       healthChecks: object.childEntries('health-check').map(check => ({
         name: check.key,
-        server: check.effective('server')[0] ?? '',
+        servers: [...check.effective('server')],
         protocol: (check.effective('protocol')[0] ?? 'ping') as SdwanProtocol,
         port: Number.parseInt(check.effective('port')[0] ?? '0', 10),
         intervalMs: Number.parseInt(check.effective('interval')[0] ?? '500', 10),
