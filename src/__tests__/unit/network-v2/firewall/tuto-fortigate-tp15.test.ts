@@ -88,7 +88,7 @@ describe('TP 15 — activer l\'inspection profonde proprement', () => {
     expect(vu).toContain('Fortinet_CA_SSL');
   });
 
-  it('etape 2 : l\'AC se LIT, et le transfert TFTP se refuse en nommant la brique',
+  it('etape 2 : l\'AC se LIT, et le transfert TFTP part vers le serveur',
     async () => {
       const { fgt } = await laboratoire();
 
@@ -97,8 +97,7 @@ describe('TP 15 — activer l\'inspection profonde proprement', () => {
 
       const vu = await fgt.executeCommand(
         'execute vpn certificate local export tftp Fortinet_CA_SSL fortinet_ca.cer 192.168.10.10');
-      expect(vu).not.toMatch(/Unknown action|command parse error/i);
-      expect(vu).toMatch(/no UDP socket layer/i);
+      expect(vu).not.toMatch(/Unknown action|command parse error|no UDP socket layer/i);
 
       const absent = await fgt.executeCommand(
         'execute vpn certificate local export tftp Absent fortinet_ca.cer 192.168.10.10');

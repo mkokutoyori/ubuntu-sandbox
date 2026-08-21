@@ -52,6 +52,8 @@ import {
 } from './log/trafficLog';
 import { utmLog } from './log/utmLog';
 import { renderFortiguardServiceStatus } from './diag/fortiguardRenderer';
+import { TftpClientSession } from '@/network/tftp/TftpSession';
+import { IPAddress } from '@/network/core/types';
 
 export { FORTI_COMMAND_FAIL };
 
@@ -59,7 +61,18 @@ export const FORTI_BUILD = '2660';
 
 const PER_MEMBER_LINE = /^set (priority|hostname)\b/;
 
+const TFTP_EXPORT_TIMEOUT_MS = 1_000;
+const TFTP_EXPORT_MAX_RETRIES = 2;
+
 export class FortiShell {
+  private pendingAsync: Promise<string> | null = null;
+
+  takePendingAsync(): Promise<string> | null {
+    const pending = this.pendingAsync;
+    this.pendingAsync = null;
+    return pending;
+  }
+
   private readonly tree: FortiConfigTree;
   private readonly nav: FortiNavigator;
   private readonly socle: FortiSocle;
@@ -589,11 +602,18 @@ export class FortiShell {
     }
     if (!server) return FortiMessages.incomplete('a TFTP server address');
 
-    return FortiMessages.commandFail(
-      'this firewall has no UDP socket layer, so it can run no TFTP client — the '
-      + `certificate cannot be pushed to ${server}. Read it with \`show vpn `
-      + `certificate local ${name}\` and copy the PEM, which is what the GUI's `
-      + 'Download button hands you.');
+    let address: IPAddress;
+    try { address = new IPAddress(server); }
+    catch { return FortiMessages.valueError(server, 'a TFTP server address is an IPv4 address.'); }
+
+    const client = new TftpClientSession(
+      this.fw.getUdpEndpoint(), address, undefined,
+      TFTP_EXPORT_TIMEOUT_MS, TFTP_EXPORT_MAX_RETRIES);
+    this.pendingAsync = client.put(file, entry.certificatePem).then(result => (
+      result.ok ? '' : FortiMessages.commandFail(
+        `the TFTP server at ${server} did not take "${file}" `
+        + `(${result.error ?? 'Timed out'}).`)));
+    return '';
   }
 
   private executeVerb(rest: readonly string[]): string {

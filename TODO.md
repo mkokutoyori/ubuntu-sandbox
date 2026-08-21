@@ -180,20 +180,18 @@ type, la duree, l'inactivite, l'expiration, les compteurs et les groupes.
 distingue (`auth`, `idle`, `radius`, `src_idle`), ce qui est un sujet a
 part.
 
-### [transport] le pare-feu n'a AUCUNE couche de socket UDP
-`Firewall` porte une pile TCP (`getTcpStack()`), s'en sert pour BGP, le
-portail captif, la CLI et desormais l'inspection profonde — mais rien
-cote UDP : le client DNS fabrique et observe des paquets IPv4 bruts, et
-il n'existe ni `udpBind` ni `sendUdpDatagramTo`. Consequence directe :
-`TftpClientSession` (reel, et deja utilise par Cisco) ne peut pas
-tourner sur un FortiGate, donc `execute vpn certificate local export
-tftp` refuse en nommant la brique au lieu de transferer.
-**Mesure** : `grep -rn "udpBind" src/network/devices/firewall` ne rend
-rien ; `execute vpn certificate local export tftp Fortinet_CA_SSL f.cer
-192.168.10.10` repond « no UDP socket layer ».
-**Report** : c'est une couche de transport a ecrire, pas une commande ;
-elle debloquerait aussi un vrai client NTP et le transfert de
-configuration.
+### [transport] le pare-feu n'a pas de client NTP ni de sauvegarde de configuration
+La couche de socket UDP existe desormais (`getUdpEndpoint()`), donc les
+deux commandes qu'elle debloquait restent a ecrire : `execute backup
+config tftp` / `execute restore config tftp` et un vrai client NTP —
+`set ntpserver` est range et rendu, et aucun paquet ne part.
+**Mesure** : `execute backup config tftp cfg 192.168.10.10` repond
+`Unknown action` ; `diagnose sys ntp status` ne rend aucune association
+mesuree.
+**Report** : la sauvegarde suppose de decider CE que le fichier contient
+(la sortie de `show` complet, chiffree ou non) ; le client NTP est un
+sujet a part, et le moteur `src/network/ntp/` est ecrit contre `EndHost`
+comme `TftpClientSession` l'etait — il lui faut le meme port etroit.
 
 ### [inspection] la charge processeur est DECLAREE, pas mesuree
 `get system performance status` et `diagnose sys top` lisent maintenant

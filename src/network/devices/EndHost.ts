@@ -2565,9 +2565,10 @@ export abstract class EndHost extends Equipment {
    * The binding is recorded in the socket table so `netstat`/`ss` show it.
    * Throws EADDRINUSE when the port is already bound (Fail Fast).
    */
-  public udpBind(port: number, listener: UdpListener, processName?: string): void {
+  public udpBind(port: number, listener: UdpListener, processName?: string): boolean {
     this.socketTable.bind('udp', '0.0.0.0', port, undefined, processName);
     this.udpListeners.set(port, listener);
+    return true;
   }
 
   private readonly udpAddressListeners = new Map<string, UdpListener>();

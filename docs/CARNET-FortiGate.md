@@ -86,6 +86,9 @@ qui reprend doit les connaître avant de toucher au code.
 | **D25** | L'arbre de configuration est **indexé par portée** pour un spec `scope: 'vdom'` — sinon deux VDOM éditent la même table | Défaut B51 |
 | **D26** | Le mode transparent est un **PIPELINE**, pas un drapeau : `FirewallProfile.pipeline` est un dictionnaire par mode | FGT-DEP-6, E35 |
 | **D27** | `vdom-link` est un **vrai `Cable`** entre deux `Port` : c'est ce qui fait traverser les deux politiques pour de bon | BRD §10.5, E35 |
+| **D28** | La couche de socket UDP du pare-feu est **`ControlPlaneUdpEndpoint`**, celle que le routeur et le commutateur remplissent déjà — pas une seconde table de ports. Le module était nommé `RouterUdpEndpoint` et ne dépendait pourtant que d'une méthode d'émission ; le renommer coûtait moins qu'une copie | E36 |
+| **D29** | Il n'y a **qu'un constructeur de datagramme UDP** dans tout le pare-feu (`udpDatagram`, dans `l3/FirewallEgress.ts`). Il y en avait trois — un pour DNS en client, un pour DNS en serveur, un pour IKE — qui différaient sur la longueur annoncée et sur rien d'autre | E36 |
+| **D30** | Une commande asynchrone passe par **`FortiShell.takePendingAsync()`**, lu par `FortiGate.executeCommand` — la même écoutille que les shells IOS et VRP, `execute` restant synchrone pour tout le reste | E36 |
 
 ---
 
@@ -192,6 +195,7 @@ Un agent qui reprend gagnera du temps à les connaître.
 | ~~**P14**~~ | ~~Le garde-fou G1 borne un fichier vendeur à 800 lignes~~ | **Retiré.** Le comptage de lignes s'est révélé un mauvais indicateur de couplage : il imposait des extractions dictées par un compteur plutôt que par la cohésion, pour un coût en temps supérieur à ce qu'il faisait gagner. Les extractions déjà faites restent — elles étaient justes ; c'est l'obligation qui disparaît. |
 | **P15** | G6 interdit un `new Set(['…'])` littéral hors du schéma | Même pour une liste qui n'est pas des attributs de configuration. Nommer une constante `readonly string[]` et construire le `Set` à partir d'elle. |
 | **P16** | `allowaccess` JETTE le paquet, il ne le rejette pas | Une interface qui n'admet pas un service ne répond RIEN — le client attend puis conclut « Connection timed out », jamais « Connection refused ». Une sonde qui attend un refus explicite teste le mauvais comportement ; c'est l'ABSENCE d'invite de mot de passe qui prouve le rejet. |
+| **P18** | Le succès d'un `execute` FortiOS ne s'invente pas | Aucune transcription publique ne dit ce qu'écrit `execute vpn certificate local export tftp` quand il réussit ; la documentation donne la syntaxe et rien d'autre, et la documentation Fortinet n'est pas lisible directement depuis ce réseau. Il ne rend donc RIEN en cas de succès — ce que font la plupart des verbes `execute` — et ne parle qu'en cas d'échec. Fabriquer un `Send certificate … OK.` plausible serait apprendre une sortie que la vraie machine ne rend peut-être pas. |
 | **P17** | Une adresse et un port ne se passent pas en `string`/`number` | Le dépôt a déjà `IPAddress` et `core/ports/PortNumber` (RFC 6335, utilisé par les services Linux et le gestionnaire de services Windows). Toute nouvelle signature les prend ; la conversion se fait à la frontière qui lit l'argument. Chercher AVANT d'écrire un type de valeur — il existe probablement déjà. |
 
 ---

@@ -1,9 +1,5 @@
 import type { IPSecEngine } from '../../../ipsec/IPSecEngine';
 import type { CryptoMapEntry, SATrafficSelector } from '../../../ipsec/IPSecTypes';
-import {
-  IPAddress, IP_PROTO_UDP, createIPv4Packet,
-  type IPv4Packet, type UDPPacket,
-} from '../../../core/types';
 import type {
   IpsecProposal, IpsecTunnelTable, Phase1Tunnel, Phase2Tunnel,
 } from './IpsecTunnelTable';
@@ -201,15 +197,4 @@ function applyReceivedConfiguration(
   const reply = engine.configReplyFor(tunnel.remoteGateway);
   if (!reply) return;
   tunnels.recordAssignment(tunnel.name, reply);
-}
-
-export function udpDatagram(
-  source: string, destination: string, port: number, payload: unknown,
-): IPv4Packet {
-  const udp: UDPPacket = {
-    type: 'udp', sourcePort: port, destinationPort: port,
-    length: 8 + 64, checksum: 0, payload,
-  };
-  return createIPv4Packet(
-    new IPAddress(source), new IPAddress(destination), IP_PROTO_UDP, 64, udp, 8 + 64);
 }

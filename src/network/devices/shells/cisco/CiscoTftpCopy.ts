@@ -10,7 +10,8 @@
  * Le client TFTP existait déjà (`src/network/tftp/`, RFC 1350 §4-5) et
  * n'avait qu'un test pour appelant : il était typé contre `EndHost`, ce
  * qu'un routeur n'est pas. `TftpEndpoint` est le port qui l'en dégage,
- * et `RouterUdpEndpoint` ce que le routeur et le commutateur remplissent
+ * et `ControlPlaneUdpEndpoint` ce que le routeur, le commutateur et le
+ * pare-feu remplissent
  * tous les deux — un Catalyst copie vers un serveur TFTP exactement
  * comme un ISR, donc les deux passent par ici plutôt que par deux
  * implémentations qui finiraient par diverger.

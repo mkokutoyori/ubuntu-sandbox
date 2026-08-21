@@ -51,9 +51,11 @@ import { SwitchGroupTable } from './l3/SwitchGroupTable';
 import { logFactsOf } from './logging/logFacts';
 import { emitFirewallEvent, logPipelineOutcome } from './logging/emitFirewallEvent';
 import {
-  arpFrame, buildEgressFrame, egressDepsOf, type BridgedFrame, type EgressDeps,
+  arpFrame, buildEgressFrame, egressDepsOf, udpDatagram,
+  type BridgedFrame, type EgressDeps,
 } from './l3/FirewallEgress';
 import { deliverLocally } from './l3/LocalDelivery';
+import { ControlPlaneUdpEndpoint } from '../udp/ControlPlaneUdpEndpoint';
 import type { FirewallDhcp } from './l3/FirewallDhcp';
 import type { TcpStack } from '../../tcp/TcpStack';
 import { buildFirewallAgents } from './FirewallAgents';
@@ -86,7 +88,7 @@ import { FirewallTraceroute } from './diag/FirewallTraceroute';
 import {
   DNS_PORT, FirewallDnsClient, dnsQueryDatagram,
 } from './l3/FirewallDnsClient';
-import { FirewallDnsServer, udpReplyDatagram } from './l3/FirewallDnsServer';
+import { FirewallDnsServer } from './l3/FirewallDnsServer';
 import type { SdwanService } from './sdwan/SdwanService';
 import { ETHERTYPE_FGCP, type HaAgent } from './ha/HaAgent';
 import { serialNumberOf, type FirewallHa } from './ha/FirewallHa';
@@ -94,7 +96,7 @@ import type { HaConfiguration } from './ha/HaTypes';
 import type { SdwanConfiguration } from './sdwan/SdwanTable';
 import type { SslVpnPortal, SslVpnSettings } from './vpn/SslVpnPortal';
 import type { IPSecEngine } from '../../ipsec/IPSecEngine';
-import { bringUpTunnel, programIpsecEngine, udpDatagram } from './vpn/IpsecProgramming';
+import { bringUpTunnel, programIpsecEngine } from './vpn/IpsecProgramming';
 import { RouterHostsTable } from '../router/dns/RouterHostsTable';
 import type { VdomServices } from './pipeline/stages/coreStages';
 import { ScheduleStore, type ScheduleObject } from './model/ScheduleObject';
@@ -427,13 +429,41 @@ export class Firewall extends Equipment {
 
   getDnsClient(): FirewallDnsClient { return this.dnsClient; }
 
+  private udpEndpoint: ControlPlaneUdpEndpoint | null = null;
+
+  getUdpEndpoint(): ControlPlaneUdpEndpoint {
+    if (!this.udpEndpoint) {
+      this.udpEndpoint = new ControlPlaneUdpEndpoint({
+        sendUdpBytes: (destinationIP, destinationPort, sourcePort, payload) => {
+          const egress = this.resolveEgress(destinationIP.toString());
+          if (!egress) return false;
+          this.forward(
+            egress.iface,
+            udpDatagram(egress.source, destinationIP.toString(),
+              sourcePort, destinationPort, payload),
+            egress.gateway);
+          return true;
+        },
+      });
+    }
+    return this.udpEndpoint;
+  }
+
+  private deliverToUdpSocket(packet: IPv4Packet): boolean {
+    if (packet.protocol !== IP_PROTO_UDP || this.udpEndpoint === null) return false;
+    const udp = packet.payload as UDPPacket | undefined;
+    if (udp?.type !== 'udp') return false;
+    return this.udpEndpoint.deliver(
+      packet.sourceIP, udp.destinationPort, udp.sourcePort, udp.payload);
+  }
+
   private readonly dnsServer = new FirewallDnsServer({
     resolveExternal: (name) => this.dnsClient.resolve(name),
     reply: (iface, to, port, payload) => {
       const source = this.interfaces.get(iface)?.ip;
       if (source === undefined) return;
       this.forward(iface,
-        udpReplyDatagram(source, to, DNS_PORT, port, payload),
+        udpDatagram(source, to, DNS_PORT, port, payload),
         this.getVdom().routes.resolveNextHop(to)?.nextHop);
     },
   });
@@ -565,7 +595,7 @@ export class Firewall extends Equipment {
     const source = iface === undefined ? undefined : this.interfaces.get(iface)?.ip;
     if (iface === undefined || source === undefined) return false;
 
-    this.forward(iface, udpDatagram(source, destIp, port, payload), route?.nextHop);
+    this.forward(iface, udpDatagram(source, destIp, port, port, payload), route?.nextHop);
     return true;
   }
 
@@ -950,7 +980,7 @@ export class Firewall extends Equipment {
       handleIke: (iface, p, d) => { this.ipsec.handleIkeUdp(iface, p, d as never); },
       observedBySdwan: (p) => this.dnsClient.observe(p)
         || this.traceroute.observe(p) || this.ping.observeReply(p)
-        || this.sdwan.observeReply(p),
+        || this.sdwan.observeReply(p) || this.deliverToUdpSocket(p),
       answeredByDnsServer: (iface, p) => {
         if (p.protocol !== IP_PROTO_UDP) return false;
         const udp = p.payload as UDPPacket | undefined;

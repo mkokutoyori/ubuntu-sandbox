@@ -37,7 +37,7 @@ import { DHCPPacket } from '../dhcp/DHCPPacket';
 import { VlanSet } from './switch/VlanSet';
 import { RouterDhcpClient } from './router/RouterDhcpClient';
 import { SwitchSvi, type SviInterface } from './SwitchSvi';
-import { RouterUdpEndpoint } from './router/RouterUdpEndpoint';
+import { ControlPlaneUdpEndpoint } from './udp/ControlPlaneUdpEndpoint';
 import { getSecurityConfig } from './shells/cisco/CiscoSecurityCommands';
 import { AaaAuthenticator } from './router/aaa/AaaAuthenticator';
 import { isInteractionPlanner } from '@/shell/interaction/CommandInteraction';
@@ -431,7 +431,7 @@ export abstract class Switch extends Equipment {
     },
   });
 
-  private udpEndpoint: RouterUdpEndpoint | null = null;
+  private udpEndpoint: ControlPlaneUdpEndpoint | null = null;
 
   /**
    * Les ports UDP que le plan de controle de CE commutateur tient
@@ -439,9 +439,9 @@ export abstract class Switch extends Equipment {
    * `copy running-config tftp:` exactement comme un ISR et qu'ecrire
    * deux tables donnerait deux reponses a la meme question.
    */
-  getUdpEndpoint(): RouterUdpEndpoint {
+  getUdpEndpoint(): ControlPlaneUdpEndpoint {
     if (!this.udpEndpoint) {
-      this.udpEndpoint = new RouterUdpEndpoint({
+      this.udpEndpoint = new ControlPlaneUdpEndpoint({
         sendUdpBytes: (dst, dstPort, srcPort, payload) =>
           this.svi.sendUdpBytes(dst, dstPort, srcPort, payload),
       });

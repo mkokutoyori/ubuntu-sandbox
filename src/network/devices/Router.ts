@@ -55,7 +55,7 @@ import { IpPrefixListStore } from './router/policy/IpPrefixList';
 import { RoutePolicyStore } from './router/policy/RoutePolicy';
 import { TrafficPolicyStore } from './router/policy/TrafficPolicy';
 import { NqaService } from '../nqa/NqaService';
-import { RouterUdpEndpoint } from './router/RouterUdpEndpoint';
+import { ControlPlaneUdpEndpoint } from './udp/ControlPlaneUdpEndpoint';
 import { CiscoDnsConfig } from './router/dns/CiscoDnsConfig';
 import { RouterDnsService, DNS_PORT, type DnsTransport } from './router/dns/RouterDnsService';
 import { encodeDnsMessage, decodeDnsMessage } from '../dns/wire/DnsMessageCodec';
@@ -4826,16 +4826,16 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
   protected ftpServerEnabled = false;
   private ftpServer: FtpServer | null = null;
   private ciscoFs: CiscoFileSystem | null = null;
-  private udpEndpoint: RouterUdpEndpoint | null = null;
+  private udpEndpoint: ControlPlaneUdpEndpoint | null = null;
 
   /**
    * Les ports UDP que le plan de contrôle de CETTE machine tient
    * ouverts. Construit à la demande : un routeur qui ne fait aucune
    * copie réseau n'a aucun port éphémère et ne paie rien.
    */
-  getUdpEndpoint(): RouterUdpEndpoint {
+  getUdpEndpoint(): ControlPlaneUdpEndpoint {
     if (!this.udpEndpoint) {
-      this.udpEndpoint = new RouterUdpEndpoint({
+      this.udpEndpoint = new ControlPlaneUdpEndpoint({
         sendUdpBytes: (dst, dstPort, srcPort, payload) =>
           this.sendUdpBytesThroughFib(dst, dstPort, srcPort, payload),
       });

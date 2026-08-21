@@ -1,7 +1,22 @@
 import {
-  ETHERTYPE_ARP, ETHERTYPE_IPV4, IP_PROTO_ICMP, MACAddress, computeIPv4Checksum,
-  type ARPPacket, type EthernetFrame, type ICMPPacket, type IPv4Packet,
+  ETHERTYPE_ARP, ETHERTYPE_IPV4, IP_PROTO_ICMP, IP_PROTO_UDP, IPAddress, MACAddress,
+  computeIPv4Checksum, createIPv4Packet,
+  type ARPPacket, type EthernetFrame, type ICMPPacket, type IPv4Packet, type UDPPacket,
 } from '../../../core/types';
+
+export function udpDatagram(
+  source: string, destination: string,
+  sourcePort: number, destinationPort: number, payload: unknown,
+  payloadBytes = payload instanceof Uint8Array ? payload.length : 64,
+): IPv4Packet {
+  const udp: UDPPacket = {
+    type: 'udp', sourcePort, destinationPort,
+    length: 8 + payloadBytes, checksum: 0, payload,
+  };
+  return createIPv4Packet(
+    new IPAddress(source), new IPAddress(destination),
+    IP_PROTO_UDP, 64, udp, 8 + payloadBytes);
+}
 
 export interface BridgedFrame {
   readonly srcMAC: MACAddress;
