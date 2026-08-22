@@ -2742,6 +2742,31 @@ et il fera la phase 16. **En attendant il est REFUSÉ** par
 l'objet FQDN résout, un bloc de ports rendu redevient disponible après
 `pba-timeout`, et `dns-translation` est refusé avec sa raison.
 
+**Livrée**, en deux temps (15a `pba-timeout`, 15b le type du VIP), et le
+périmètre annoncé ci-dessus a été **réduit par la synchronisation** : la
+branche portait déjà `FirewallDnsClient`, `config system dns` commis et
+`resolveFqdn` câblé sur le magasin d'objets. La première version de ce
+travail écrivait un client DNS et une pile UDP pour le pare-feu — un
+DOUBLON — et a été supprimée avant tout commit. Ce qui restait, et qui
+est fait, est le type du VIP lui-même.
+
+Deux découvertes en chemin, chacune dans le fichier qu'on touchait :
+
+- **`overloadMappings` fuyait ET était inerte** : inséré sous
+  `pool|source:PORT SOURCE`, supprimé sous `pool|source:PORT ALLOUÉ`. La
+  table ne pouvait donc jamais perdre une entrée, et personne ne la
+  relisait — un même flux se voyait attribuer un nouveau port public à
+  chaque appel. Une PAT qui n'est pas stable pour un flux est une PAT
+  dont la réponse ne revient pas.
+- **`pba-timeout` mesure une INACTIVITÉ**, pas un bail à durée fixe (la
+  documentation Fortinet le dit ainsi). Les deux lectures s'écrivaient
+  aussi naturellement ; un cas de la sonde éprouve explicitement que
+  l'usage repousse l'échéance.
+
+**Refusé plutôt que laissé inerte** : `dns-translation`, avec la brique
+nommée (un relais applicatif DNS sur le chemin de transit) et l'entrée
+correspondante dans `TODO.md`.
+
 ---
 
 ## Périmètre pris — FortiOS phase 14 (le plan de gestion a une porte)

@@ -111,6 +111,33 @@ famille reprise ferme une part de cette entrée.
 
 ## Pare-feu FortiGate
 
+### [vip] `set type dns-translation` est refuse faute de relais DNS de transit
+**Constat.** `config firewall vip` accepte trois types. `static-nat` et
+`fqdn` sont commis pour de bon (phases 15a/15b) ; `dns-translation` est
+REFUSE, en nommant ce qui manque, plutôt que laissé accepté et inerte.
+
+**Mesure.** Un VIP `dns-translation` de FortiOS observe les réponses DNS
+qui **traversent** le pare-feu : quand une réponse contient une adresse
+de `mappedip`, elle est réécrite vers une adresse libre de la plage
+`extip`, le mappage est retenu avec `dns-mapping-ttl`, et le DNAT
+s'applique ensuite quand le client compose l'adresse externe. Vérifié
+contre la documentation Fortinet, pas de mémoire.
+
+**Pourquoi ce n'est pas fermé.** Il manque UNE brique nommable : un
+relais applicatif (ALG) DNS sur le chemin de **transit**. Ce qui existe
+déjà et servira : `decodeDnsMessage`/`encodeDnsMessage`, que
+`ContentInspector` du pare-feu emploie déjà pour lire une question DNS ;
+`FirewallDnsClient` pour le côté client. Ce qui manque est le point
+d'accroche qui laisse RÉÉCRIRE un enregistrement A dans une réponse en
+transit puis la réémettre, plus la table de mappages dynamiques et son
+TTL. C'est un sujet à lui seul, pas une extension bornée du VIP, d'où le
+refus explicite en attendant.
+
+**Manquent aussi, de la même famille** : `dns-mapping-ttl` (attribut du
+type `dns-translation`, donc sans objet tant que le type est refusé) et
+le type `server-load-balance` (grappe de serveurs réels + moniteurs de
+santé), qui n'a aucune brique existante à réutiliser.
+
 ### [debug] `diagnose debug flow show iprope` est refuse
 Les trois options de `show` sont desormais LUES (`function-name`, `console`,
 `iprope`) au lieu d'etre confondues, mais `iprope` est refuse en nommant ce

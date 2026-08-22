@@ -361,13 +361,26 @@ pipeline, et `match-vip`.
 
 **Ce qui reste de la phase 3, nommé plutôt que tu** :
 
+- ~~`dns-translation` et `fqdn` sont déclarés et non commis~~ **fermé en
+  E52** : `fqdn` est commis pour de bon (`set mapped-addr <objet>`, le
+  VIP pointe sur l'adresse que le nom résout et **suit** quand elle
+  change), et `dns-translation` est REFUSÉ en nommant la brique
+  manquante — un relais applicatif DNS sur le chemin de transit
+  (`TODO.md`, section Pare-feu FortiGate). Il n'existe donc à aucun
+  moment un mot-clé accepté et inerte ;
 - `firewall vip` de type `server-load-balance` (grappe de serveurs réels,
-  moniteurs de santé) — le type `static-nat` est livré, `dns-translation`
-  et `fqdn` sont déclarés et non commis ;
+  moniteurs de santé) — aucune brique existante à réutiliser ;
 - `firewall vip6` / `ippool6` (IPv6) — le socle NAT est IPv4 seul ;
 - `central-snat-map` en `type ipv6`, `nat46`/`nat64` ;
-- `pba-timeout` est stocké et ne périme rien : l'allocateur de blocs n'a
-  pas d'horloge (`nat/IpPool.ts`).
+- ~~`pba-timeout` est stocké et ne périme rien~~ **fermé en E52** :
+  l'allocateur prend l'horloge du pare-feu, chaque bloc porte son
+  `lastUsedAt`, et un bloc inutilisé plus longtemps que le délai est rendu
+  au pool — ports compris. L'usage repousse l'échéance, parce que la
+  documentation Fortinet décrit une INACTIVITÉ et non un bail à durée
+  fixe. Trouvé et corrigé dans le même allocateur : `overloadMappings`
+  était inséré sous une clé et supprimé sous une autre, donc la table
+  fuyait et n'était jamais relue — une PAT qui n'est pas stable pour un
+  flux est une PAT dont la réponse ne revient pas.
 
 ### 6.5 Phase 4 — diagnostic et journaux — ✅ livrée
 
@@ -612,6 +625,7 @@ comparer, jamais le supposer).
 | 2026-08-18 | agent `mandeng` | Phase 6 livrée (E36). §6.7 (refus assumés, ce qui reste). Trois défauts de socle corrigés (clé de session post-NAT, inspection hors du premier paquet, enfants de type objet). |
 | 2026-08-19 | agent `mandeng` | Phase 13 livrée (E50). **Les collecteurs syslog émettent pour de bon**, et leur chemin CLI était faux (`setting`/`filter` sont frères). |
 | 2026-08-20 | agent `mandeng` | Phase 14 livrée (E51). **Le pare-feu héberge un vrai serveur SSH et telnet**, et `allowaccess` devient un filtre local-in par port de destination — il était stocké et lu par personne, comme les sept réglages d'administration de `config system global`. Piège P14 retiré : la limite de 800 lignes par fichier (NFR-M3, garde-fous G1 et G3) est supprimée. |
+| 2026-08-21 | agent `mandeng` | Phase 15 livrée (E52). **`pba-timeout` périme vraiment un bloc de ports** — et `overloadMappings` fuyait, inséré sous une clé et supprimé sous une autre. **Le TYPE d'un VIP gouverne** : `fqdn` est commis avec `set mapped-addr`, `dns-translation` est refusé en nommant le relais DNS de transit manquant (`TODO.md`). Le client DNS du pare-feu est RÉUTILISÉ, pas réécrit : une première version en doublait `FirewallDnsClient` et a été supprimée avant commit. |
 | 2026-08-19 | agent `mandeng` | Phase 12 livrée (E49). **Le portail captif détourne pour de bon**, et un défaut du socle TCP tombe avec : `transmit` sourçait un segment par le ROUTAGE au lieu de `socket.localIp`. |
 | 2026-08-19 | agent `mandeng` | Phase 11 livrée (E46 à E48). **Tous les points ouverts de la phase 2 sont fermés.** **BGP : le refus de la phase 10 reposait sur une prémisse fausse de ma part** — le pare-feu a un `TcpStack` depuis la phase 7. **DHCP : `onCommit` était vide**, le serveur sert maintenant de vrais baux et `mode dhcp` est un vrai client. |
 | 2026-08-21 | agent `mandeng` | Le panneau « Live state » lit le pare-feu (E43). Decisions D53 a D55. **Toutes ses sections rendaient « (empty) »** pour une machine qui portait au meme instant une interface adressee, une entree ARP et une pile TCP ; le PC voisin, lui, montrait les siennes. |
