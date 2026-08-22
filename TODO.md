@@ -88,6 +88,33 @@ converger le voisin, donc le symptôme est refermé côté VRP.
 
 ## Socle CLI
 
+### [socle] `ip ?` liste les enfants d'`ipv6`, et la branche en est ROUGE
+Trois cas tombent aujourd'hui sur la branche
+(`probe-cli-help-parity-ratchet` x2, `probe-aide-tient-ses-promesses`),
+et le quatrieme rouge (`engines-run-on-their-owner-bus`) est un sujet
+distinct.
+**Mesure** : sur un routeur Cisco en `config`, `ip ?` annonce
+`unicast-routing  Enable IPv6 unicast routing` — une commande qu'IOS n'a
+pas — et donne a `cef` la description de la v6. Tape, `ip
+unicast-routing` est CORRECTEMENT refuse (`% Invalid input detected`) :
+le defaut est donc confine a l'AIDE, qui annonce ce que la machine
+refuse. C'est exactement ce que le cliquet de parite mesure.
+**Cause, cernee** : le nœud `ip` du trie hérité porte bien ses seuls
+enfants v4 (verifie en le lisant). Le mot vient du SOCLE, dont l'arbre
+n'a pas de nœud `ip` — seul `ipv6` y est migre. `locateCursor` appelle
+`uniqueChild`, `keywordMatches` ne trouve pas d'exact et rend l'unique
+candidat par prefixe, `ipv6` ; le curseur atterrit donc sur `ipv6` et
+`suggestionsAt` liste SES enfants. `keywordMatches` applique pourtant
+« l'exact l'emporte » correctement — c'est pourquoi l'execution refuse ;
+ce qui manque est que l'abreviation soit jugee sur le vocabulaire
+ENTIER, trie hérité compris, et non sur le seul arbre du socle.
+**Report** : le correctif vit au point de jonction des deux moteurs, en
+plein dans la migration en cours d'un autre agent (`cfc6937`, `f6860d1`,
+`286eee6`). Le consigner plutot que l'ecrire suit la procedure du carnet
+(revendiquer le perimetre avant d'ecrire) ; le diagnostic ci-dessus
+devrait suffire a le fermer en une fois.
+
+
 ### [socle] le commutateur VRP n'a pas encore de pont vers le socle
 Le pont existe pour le ROUTEUR VRP (`src/cli/vendors/vrp/`) ;
 `HuaweiSwitchShell` ne connaît toujours ni `CommandTable` ni
