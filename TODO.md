@@ -142,6 +142,23 @@ evenement n'annonce le franchissement.
 ce qui manque est le message exact et son `logid`, que je n'ai pas pu
 relever sur une sortie reelle depuis ce reseau.
 
+### [pare-feu] un paquet qui TRAVERSE ne perd pas un saut
+Le pare-feu ne decremente jamais le TTL d'un paquet qu'il relaie, et n'emet
+donc aucun ICMP Time Exceeded. Consequences : il est INVISIBLE a un
+`traceroute` qui le traverse — la machine d'en face apparait au saut du
+routeur precedent — et une boucle de routage passant par lui ne se romprait
+jamais toute seule.
+**Mesure** : `FirewallEgress.buildEgressFrame` recopie le paquet tel quel ;
+le seul `ttl:` du module est le 64 que le pare-feu pose sur SES PROPRES
+reponses d'echo. Trouve par le garde-fou G-P2 : `ttl-expired` et
+`mtu-exceeded-df` etaient declares comme motifs de refus et produits par
+personne.
+**Report** : les deux motifs sont retires plutot que laisses a mentir, mais
+la connaissance est ecrite ici. Fermer demande un decrement au relais, un
+emetteur d'ICMP Time Exceeded, et la meme chose pour la fragmentation
+(`mtu-exceeded-df`) — c'est-a-dire un plan de donnees IP complet, que
+`Router.ts` porte deja et que le pare-feu n'a jamais eu.
+
 ### [ha] les adresses MAC VIRTUELLES du cluster n'existent pas
 FGCP donne a chaque interface du cluster une adresse MAC virtuelle, portee
 par le membre primaire : c'est ce qui rend le basculement invisible aux

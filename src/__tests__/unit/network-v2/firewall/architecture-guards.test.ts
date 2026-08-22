@@ -16,6 +16,11 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { join } from 'node:path';
+import { createCoreStages } from '@/network/devices/firewall/pipeline/stages/coreStages';
+import { GENERIC_PROFILE } from '@/network/devices/firewall/FirewallProfile';
+import { FORTIOS_PROFILE } from '@/network/devices/firewall/vendors/fortios/FortiProfile';
+import { ASA_PROFILE } from '@/network/devices/firewall/vendors/asa/AsaProfile';
+import type { FirewallProfile } from '@/network/devices/firewall/FirewallProfile';
 
 const MODULE_ROOT = join(process.cwd(), 'src/network/devices/firewall');
 const VENDORS_ROOT = join(MODULE_ROOT, 'vendors');
@@ -288,5 +293,137 @@ describe('G8 — toute table du schema declare sa portee et son groupe de droits
     for (const spec of FORTIOS_SCHEMA.filter(s => s.ordered)) {
       expect(spec.keyType, spec.path.join(' ')).toBe('integer');
     }
+  });
+});
+
+
+const PROFILES: ReadonlyArray<readonly [string, FirewallProfile]> = Object.freeze([
+  ['generic', GENERIC_PROFILE],
+  ['fortios', FORTIOS_PROFILE],
+  ['asa', ASA_PROFILE],
+]);
+
+function stageNames(): readonly string[] {
+  return createCoreStages({
+    interfaces: null as never, now: () => 0, vdomOf: null as never,
+  }).map(stage => stage.name);
+}
+
+function declaredStages(): ReadonlySet<string> {
+  const out = new Set<string>();
+  for (const [, profile] of PROFILES) {
+    for (const pipeline of Object.values(profile.pipeline)) {
+      for (const stage of pipeline) out.add(stage);
+    }
+  }
+  return out;
+}
+
+function unknownStages(
+  pipelines: ReadonlyArray<readonly [string, readonly string[]]>,
+  registered: readonly string[],
+): string[] {
+  const known = new Set(registered);
+  const orphans: string[] = [];
+  for (const [label, pipeline] of pipelines) {
+    for (const stage of pipeline) {
+      if (!known.has(stage)) orphans.push(`${label} → ${stage}`);
+    }
+  }
+  return orphans;
+}
+
+function profilePipelines(): Array<readonly [string, readonly string[]]> {
+  const out: Array<readonly [string, readonly string[]]> = [];
+  for (const [vendor, profile] of PROFILES) {
+    for (const [mode, pipeline] of Object.entries(profile.pipeline)) {
+      out.push([`${vendor}/${mode}`, pipeline] as const);
+    }
+  }
+  return out;
+}
+
+describe('G-P1 — un profil ne nomme que des etapes qui existent', () => {
+  it('trouve bien des etapes et des profils', () => {
+    expect(stageNames().length).toBeGreaterThan(5);
+    expect(profilePipelines().length).toBeGreaterThan(3);
+  });
+
+  it('chaque etape nommee par un profil est enregistree', () => {
+    expect(unknownStages(profilePipelines(), stageNames())).toEqual([]);
+  });
+
+  it('chaque etape enregistree est nommee par au moins un profil', () => {
+    const declared = declaredStages();
+    const unused = stageNames().filter(name => !declared.has(name));
+
+    expect(unused).toEqual([]);
+  });
+
+  it('le garde-fou ATTRAPE une etape mal orthographiee', () => {
+    const faute = [['faux/nat', ['vdom-bind', 'sdwaan', 'route-lookup']] as const];
+
+    expect(unknownStages(faute, stageNames())).toEqual(['faux/nat → sdwaan']);
+  });
+
+  it('le garde-fou ATTRAPE une etape ecrite et jamais nommee', () => {
+    const declared = new Set(['vdom-bind']);
+    const unused = ['vdom-bind', 'sdwan'].filter(name => !declared.has(name));
+
+    expect(unused).toEqual(['sdwan']);
+  });
+});
+
+describe('G-P2 — chaque motif de refus a un producteur', () => {
+  const CONTEXT = join(MODULE_ROOT, 'pipeline/PacketContext.ts');
+
+  function declaredReasons(): readonly string[] {
+    const source = readFileSync(CONTEXT, 'utf8');
+    const block = /export type VerdictReason =([\s\S]*?);/.exec(source);
+    expect(block, 'VerdictReason introuvable').not.toBeNull();
+    return [...(block?.[1] ?? '').matchAll(/'([^']+)'/g)].map(match => match[1]);
+  }
+
+  it('trouve bien la liste des motifs', () => {
+    expect(declaredReasons().length).toBeGreaterThan(10);
+  });
+
+  it('aucun motif declare n\'est produit par personne', () => {
+    expect(orphanReasons(declaredReasons(), producingSources())).toEqual([]);
+  });
+
+  it('le garde-fou ATTRAPE un motif que personne n\'emet', () => {
+    const declares = ['policy-deny', 'jamais-emis'];
+
+    expect(orphanReasons(declares, "deny(context, 'x', 'policy-deny');"))
+      .toEqual(['jamais-emis']);
+  });
+
+  function producingSources(): string {
+    return ALL_FILES
+      .filter(file => file !== CONTEXT)
+      .map(file => readFileSync(file, 'utf8'))
+      .join('\n');
+  }
+
+  function orphanReasons(declares: readonly string[], sources: string): string[] {
+    return declares.filter(reason => !sources.includes(`'${reason}'`));
+  }
+});
+
+describe('G-P3 — toute commande enregistree porte une description', () => {
+  const NUE = /this\.(?:plain|withArgument)\(\s*'([^']+)'[^]*?\],\s*''/g;
+
+  it('aucune description vide dans les specs FortiOS', () => {
+    const source = readFileSync(
+      join(VENDORS_ROOT, 'fortios/FortiSocle.ts'), 'utf8');
+
+    expect([...source.matchAll(NUE)].map(match => match[1])).toEqual([]);
+  });
+
+  it('le garde-fou ATTRAPE une description vide', () => {
+    const faux = "this.plain('execute muet', ['execute', 'muet'], '',\n () => '');";
+
+    expect([...faux.matchAll(NUE)].map(match => match[1])).toEqual(['execute muet']);
   });
 });

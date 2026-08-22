@@ -2844,6 +2844,52 @@ pare-feu peut atterrir dans le `/var/log/syslog` d'une vraie machine.
 
 ---
 
+### E53 — Trois garde-fous que le BRD nommait et qui n'existaient pas
+
+`architecture-guards.test.ts` portait G1, G2, G5 du BRD générique et G6, G7,
+G8 du BRD FortiGate. Il manquait trois garde-fous que BRD-Firewall §40.6
+nomme depuis le début. Ils sont écrits, chacun avec son **témoin**.
+
+**G-P1 — un profil ne nomme que des étapes qui existent**, et toute étape
+écrite est nommée par au moins un profil. Ce garde-fou aurait épargné une
+session entière de mise au point : l'étage SD-WAN livré plus tôt ce mois-ci
+ne s'exécutait pas du tout, parce que son nom manquait dans
+`FORTIOS_PIPELINE` — le registre l'avait, le pipeline ne le nommait pas, et
+rien ne le disait. Vérifié en retirant pour de bon `sdwan` du profil : le
+garde l'attrape.
+
+**G-P2 — chaque motif de refus déclaré a un producteur.** À son écriture il
+en a trouvé **onze** que personne n'émettait :
+`policy-route-deny`, `sequence-out-of-window`, `screen-anomaly`,
+`screen-flood`, `screen-recon`, `alg-violation`, `application-shift-deny`,
+`ttl-expired`, `mtu-exceeded-df`, `unsupported-protocol`,
+`context-not-found`. Aucun n'est produit nulle part **dans tout le dépôt**,
+et aucun n'est consommé par un rendu. Ils sont retirés — un motif de refus
+qu'aucun chemin n'emprunte est la même chose qu'un attribut stocké et lu
+par personne (D7).
+
+**Deux d'entre eux nommaient un vrai manque**, et la connaissance est
+inscrite dans `TODO.md` plutôt que perdue avec la déclaration : le pare-feu
+ne décrémente **jamais** le TTL d'un paquet qu'il relaie et n'émet aucun
+ICMP Time Exceeded, donc il est invisible à un `traceroute` qui le
+traverse ; la fragmentation (`mtu-exceeded-df`) est absente pour la même
+raison. Fermer demande un plan de données IP complet, que `Router.ts` porte
+et que ce pare-feu n'a jamais eu.
+
+**G-P3 — toute commande enregistrée porte une description.** C'est
+l'analogue du `cisco-help-every-keyword-described` du dépôt, dont le BRD
+disait qu'il « a attrapé quatre nœuds intermédiaires nus ». Rien à
+attraper aujourd'hui côté FortiOS ; le garde reste, avec son témoin.
+
+**Numérotation** : `G-P*` et non `G*`, parce que le BRD générique et le BRD
+FortiGate donnent tous deux un sens à G6/G7/G8. Reprendre les chiffres
+aurait fait croire que ce fichier porte les huit du générique.
+
+`architecture-guards.test.ts` passe de 21 à 31 cas. **Vérifié** : 1650 cas
+du module pare-feu (78 fichiers). Typecheck inchangé à 344.
+
+---
+
 ### E52c — Une liste de valeurs se complète à chaque valeur
 
 Troisième passage, même périmètre. `set srcaddr NET-LAN ` ne proposait plus
