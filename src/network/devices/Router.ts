@@ -112,7 +112,7 @@ import {
 import type { IIPv4Route } from '../core/interfaces';
 import { ipv4MulticastToMac, tryIpToUint32 } from '../core/ip';
 import { Logger } from '../core/Logger';
-import { CarPolicer } from './router/qos/CarPolicer';
+import { CarPolicer } from '../qos/CarPolicer';
 import { buildICMPError, mayGenerateICMPError, type ICMPErrorType } from '../core/IcmpErrors';
 import { IpSlaEngine } from '../ipsla/IpSlaEngine';
 import { TrackService } from '../ipsla/TrackService';

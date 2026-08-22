@@ -28,11 +28,16 @@
  */
 
 import { Equipment } from '../equipment/Equipment';
+import {
+  CarPolicer, suppressionKindOf, type SuppressionKind,
+} from '../qos/CarPolicer';
 import { CiscoFileSystem } from './shells/cisco/CiscoFileSystem';
 import { Port } from '../hardware/Port';
 import { CliShellSession } from './shells/vty/CliShellSession';
 import { getSessionRegistry } from '../equipment/RouterServiceCapabilities';
-import { EthernetFrame, DeviceType, MACAddress, ETHERTYPE_ARP, ARPPacket, IPAddress, SubnetMask, ETHERTYPE_IPV4, IPv4Packet } from '../core/types';
+import { EthernetFrame, DeviceType, MACAddress, ETHERTYPE_ARP, ARPPacket, IPAddress, SubnetMask, ETHERTYPE_IPV4, IPv4Packet,
+  ethernetFrameBytes,
+} from '../core/types';
 import { DHCPPacket } from '../dhcp/DHCPPacket';
 import { VlanSet } from './switch/VlanSet';
 import { RouterDhcpClient } from './router/RouterDhcpClient';
@@ -272,6 +277,60 @@ export abstract class Switch extends Equipment {
 
   // ─── Port Configurations ────────────────────────────────────────
   private switchportConfigs: Map<string, SwitchportConfig> = new Map();
+
+  private readonly carPolicers = new Map<string, CarPolicer>();
+
+  private readonly suppressionPolicers = new Map<string, Map<SuppressionKind, CarPolicer>>();
+
+  getCarPolicer(ifName: string, create = false): CarPolicer | undefined {
+    let policer = this.carPolicers.get(ifName);
+    if (!policer && create) {
+      policer = new CarPolicer();
+      this.carPolicers.set(ifName, policer);
+    }
+    return policer;
+  }
+
+  getSuppressionPolicer(
+    ifName: string, kind: SuppressionKind, create = false,
+  ): CarPolicer | undefined {
+    let perPort = this.suppressionPolicers.get(ifName);
+    if (!perPort && create) {
+      perPort = new Map();
+      this.suppressionPolicers.set(ifName, perPort);
+    }
+    if (!perPort) return undefined;
+    let policer = perPort.get(kind);
+    if (!policer && create) {
+      policer = new CarPolicer();
+      perPort.set(kind, policer);
+    }
+    return policer;
+  }
+
+  clearSuppression(ifName: string, kind: SuppressionKind): void {
+    this.suppressionPolicers.get(ifName)?.get(kind)?.clear();
+  }
+
+  private policeIngress(portName: string, frame: EthernetFrame): boolean {
+    const bytes = ethernetFrameBytes(frame);
+
+    const kind = suppressionKindOf(frame.dstMAC.toString());
+    const suppression = this.suppressionPolicers.get(portName)?.get(kind);
+    if (suppression && !suppression.isEmpty() && !suppression.police('input', bytes)) {
+      Logger.debug(this.id, 'switch:suppression-drop',
+        `${this.name}: ${kind}-suppression dropped a frame on ${portName}`);
+      return false;
+    }
+
+    const car = this.carPolicers.get(portName);
+    if (car && !car.isEmpty() && !car.police('input', bytes)) {
+      Logger.debug(this.id, 'switch:car-drop',
+        `${this.name}: qos car dropped a frame on ${portName}`);
+      return false;
+    }
+    return true;
+  }
 
   // ─── Private VLAN (PVLAN) ────────────────────────────────────────
   private pvlanRoles: Map<number, PrivateVlanRole> = new Map();
@@ -1774,6 +1833,8 @@ export abstract class Switch extends Equipment {
         `${this.name}: inbound ACL dropped frame on ${portName}`);
       return;
     }
+
+    if (!this.policeIngress(portName, frame)) return;
 
     const taggedFrame = frame as TaggedEthernetFrame;
 
@@ -3380,7 +3441,8 @@ export abstract class Switch extends Equipment {
       onVtyLine: false,
     });
     if (!plan) return null;
-    return runInteractionPlanHeadless(plan, answers, (c) => this.shell.execute(this, c));
+    return runInteractionPlanHeadless(
+      plan, answers, (c) => Promise.resolve(this.shell.execute(this, c)));
   }
 
   async loginAs(username: string, password: string): Promise<boolean> {

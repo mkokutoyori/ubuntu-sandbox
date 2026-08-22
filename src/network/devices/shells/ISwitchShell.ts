@@ -24,7 +24,7 @@ export interface ISwitchShell {
   /** Get context-sensitive help for the given input (? behavior) */
   getHelp(inputBeforeQuestion: string, sw?: Switch): string;
   /** Get tab completion for the given partial input */
-  tabComplete(input: string): string | null;
+  tabComplete(input: string, sw?: Switch): string | null;
   /** All full-line Tab candidates (static keywords + live device values) */
   tabCandidates(input: string, sw: Switch): string[];
   /** Reset the CLI to its initial mode (new terminal session opened). */

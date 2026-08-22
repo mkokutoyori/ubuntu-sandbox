@@ -14,6 +14,9 @@
  */
 
 import { CommandTrie } from './CommandTrie';
+import {
+  parseSuppressionRule, parseVrpCarRule, SUPPRESSION_KINDS,
+} from '../../qos/CarPolicer';
 import { NetworkOsAccount } from '../router/aaa/NetworkOsAccount';
 import {
   withVrpCommonHelp, withVrpCommonCandidates,
@@ -176,6 +179,15 @@ export class HuaweiSwitchShell implements ISwitchShell {
       .filter(existing => existing !== line && !existing.startsWith(`${settingKey} `)
         && existing !== settingKey);
     kept.push(line);
+    this.ifCfg.set(this.selectedInterface, kept);
+    return '';
+  }
+
+  private removeIfCfg(settingKey: string): string {
+    if (!this.selectedInterface) return 'Error: Incomplete command.';
+    const kept = (this.ifCfg.get(this.selectedInterface) ?? [])
+      .filter(existing => existing !== settingKey
+        && !existing.startsWith(`${settingKey} `));
     this.ifCfg.set(this.selectedInterface, kept);
     return '';
   }
@@ -2913,15 +2925,54 @@ export class HuaweiSwitchShell implements ISwitchShell {
       'flow-control',
       'loopback-detect', 'port-security', 'storm-control',
       'port-mirroring',
-      'qos', 'traffic-policy', 'am',
+      'traffic-policy', 'am',
     ]) {
       trie.registerGreedy(kw, `Interface ${kw} configuration`, (args) =>
         record(`${kw} ${args.join(' ')}`.trim()));
     }
 
-    for (const kw of ['jumboframe', 'broadcast-suppression']) {
-      trie.registerGreedy(kw, `Interface ${kw} configuration`, (args) =>
-        record(`${kw} ${args.join(' ')}`.trim(), kw));
+    trie.registerGreedy('jumboframe', 'Interface jumboframe configuration', (args) =>
+      record(`jumboframe ${args.join(' ')}`.trim(), 'jumboframe'));
+
+    trie.registerGreedy('qos', 'Interface QoS configuration', (args) => {
+      const raw = `qos ${args.join(' ')}`.trim();
+      if (args[0]?.toLowerCase() !== 'car') return record(raw);
+      if (!this.selectedInterface) return 'Error: Incomplete command.';
+
+      const rule = parseVrpCarRule(args.slice(1), raw);
+      if (!rule) return 'Error: Wrong parameter found at \'^\' position.';
+      this.swRef?.getCarPolicer(this.selectedInterface, true)?.add(rule);
+      return record(raw, 'qos car');
+    });
+
+    trie.registerGreedy('undo qos', 'Remove interface QoS configuration', (args) => {
+      if (args[0]?.toLowerCase() !== 'car') return this.removeIfCfg('qos');
+      if (!this.selectedInterface) return 'Error: Incomplete command.';
+      this.swRef?.getCarPolicer(this.selectedInterface)?.clear();
+      return this.removeIfCfg('qos car');
+    });
+
+    for (const kind of SUPPRESSION_KINDS) {
+      const kw = `${kind}-suppression`;
+      trie.registerGreedy(kw, `Limit ${kind} traffic on this port`, (args) => {
+        const port = portSelectionne();
+        if (!port || !this.selectedInterface) return 'Error: Incomplete command.';
+        const raw = `${kw} ${args.join(' ')}`.trim();
+        const rule = parseSuppressionRule(
+          kind, args, port.getEffectiveBandwidthKbps(), raw);
+        if (!rule) return 'Error: Wrong parameter found at \'^\' position.';
+
+        const policer = this.swRef?.getSuppressionPolicer(this.selectedInterface, kind, true);
+        if (!policer) return 'Error: Incomplete command.';
+        policer.clear();
+        policer.add(rule);
+        return record(raw, kw);
+      });
+      trie.registerGreedy(`undo ${kw}`, `Remove the ${kind} limit`, () => {
+        if (!this.selectedInterface) return 'Error: Incomplete command.';
+        this.swRef?.clearSuppression(this.selectedInterface, kind);
+        return this.removeIfCfg(kw);
+      });
     }
 
     trie.registerGreedy('mac-limit', 'Interface mac-limit configuration', (args) => {

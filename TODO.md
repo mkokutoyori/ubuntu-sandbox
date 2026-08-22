@@ -12,15 +12,6 @@ Format : `[famille] intitulé` puis constat / mesure / raison du report.
 
 ## Commutateur Huawei (VRP)
 
-### [suppression] `multicast-suppression` / `unicast-suppression` absentes, `broadcast-suppression` décorative
-Les deux premières sont refusées ; la troisième est acceptée et rangée en
-TEXTE dans `ifCfg`, sans moteur de limitation derrière.
-**Mesure** : `broadcast-suppression 30` → rendu dans `display this`, aucun
-compteur, aucune trame écartée.
-**Report** : compléter la famille ajouterait deux décors. Il faut d'abord
-un vrai seau à jetons par port et par type de trafic (le `CarPolicer` du
-routeur en est un, mais il vit sur `Router`, que `Switch` n'étend pas).
-
 ### [mac-limit] la portée VLAN d'une limite MAC n'est pas vérifiée
 Le magasin de texte par interface ne s'empile plus : une ligne identique
 n'est gardée qu'une fois, et `broadcast-suppression`, `jumboframe` et
@@ -37,12 +28,6 @@ sur le même port sont plausibles et non attestées.
 est faux quelle que soit la réponse — mais le corriger suppose une clé de
 réglage qui porte ses qualificatifs, donc un magasin qui ne soit plus une
 simple liste de lignes.
-
-### [qos car] policé sur un routeur VRP, texte sur un commutateur VRP
-`CarPolicer` est un vrai seau à jetons sur le chemin de données, mais il
-vit sur `Router` ; `Switch` ne l'étend pas.
-**Report** : demande de sortir `CarPolicer` du routeur vers une base
-partagée, ou de le monter sur `Switch` — travail d'architecture.
 
 ### [vues système non mesurées]
 Familles repérées comme présentes mais jamais passées au banc :
@@ -512,6 +497,15 @@ un nombre est attendu, signatures de constructeur périmées.
 « pas plus qu'avant ta modification », pas « zéro ».
 
 ## Journal des entrées fermées
+
+- `broadcast-suppression` decorative et `qos car` texte sur un
+  commutateur VRP — les DEUX fermees, et la mesure a montre que le report
+  reposait sur une premisse fausse : `CarPolicer` n'avait AUCUNE
+  dependance a `Router`, il vivait seulement dans son dossier. Le
+  « travail d'architecture » annonce etait un deplacement de fichier.
+  `multicast-suppression` et `unicast-suppression` existent avec, la
+  famille etant desormais construite par une boucle sur les trois genres
+  de trafic plutot que mot a mot.
 
 - Table de routage montree contre table reelle — fermee, et le defaut
   touchait TOUT hote et non le seul pare-feu. Mesure sur un PC Linux :
