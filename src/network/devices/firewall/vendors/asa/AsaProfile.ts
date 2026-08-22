@@ -10,6 +10,7 @@ export const ASA_PIPELINE: readonly string[] = Object.freeze([
   'nat-destination',
   'route-lookup',
   'ttl-decrement',
+  'mtu-check',
   'egress-zone',
   'policy-lookup',
   'nat-source',

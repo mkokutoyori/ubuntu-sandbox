@@ -355,6 +355,9 @@ export const SYSTEM_INTERFACE: FortiTableSpec = {
       type: interfaceType(object),
       parent: object.effective('interface')[0],
       vlanId: Number.parseInt(object.effective('vlanid')[0] ?? '', 10) || undefined,
+      mtu: object.effective('mtu-override')[0] === 'enable'
+        ? Number.parseInt(object.effective('mtu')[0] ?? '', 10) || undefined
+        : undefined,
     });
     if (mode === 'dhcp') context.device.acquireDhcpLease(object.key);
     context.device.setCaptivePortalInterface(object.key,

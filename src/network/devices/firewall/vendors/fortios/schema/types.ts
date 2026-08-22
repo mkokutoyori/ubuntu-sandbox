@@ -84,6 +84,7 @@ export interface FortiInterfacePatch {
   readonly type?: string;
   readonly parent?: string;
   readonly vlanId?: number;
+  readonly mtu?: number;
 }
 
 export interface FortiStaticRoute {

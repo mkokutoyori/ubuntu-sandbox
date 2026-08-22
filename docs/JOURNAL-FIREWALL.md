@@ -2844,6 +2844,65 @@ pare-feu peut atterrir dans le `/var/log/syslog` d'une vraie machine.
 
 ---
 
+### E59 — Le MTU de sortie est respecté, et `set mtu` était rangé par personne
+
+Périmètre : l'entrée jumelle de celle du TTL — « la fragmentation n'existe
+pas ». Un datagramme plus grand que le MTU de l'interface de sortie était
+relayé tel quel, ni fragmenté ni refusé, donc la découverte de MTU de chemin
+ne pouvait pas fonctionner à travers ce pare-feu.
+
+**La mesure a trouvé plus large que l'entrée n'annonçait** : `set mtu` était
+un attribut de schéma **stocké, rendu, et lu par personne**. `FortiInterfacePatch`
+ne le portait pas, `applyInterface` ne le posait pas, et `L3Interface.mtu`
+restait à 1500 quoi que l'opérateur écrive. C'est le défaut que ce dépôt passe
+son temps à défaire, sur une commande que le tutoriel emploie.
+
+**`mtu-override` est le critère, et l'ignorer aurait été une infidélité dans
+l'autre sens.** Sur un vrai FortiGate, `set mtu` ne fait rien tant que
+`set mtu-override enable` n'est pas posé — les deux attributs existaient ici,
+tous deux morts. Le patch ne porte le MTU **que** si l'override est actif, et
+un cas de témoin le vérifie : `set mtu 600` seul laisse passer 1228 octets.
+
+**Deux moitiés, deux endroits, et l'ordre est celui de Linux.** Le refus
+(`DF` posé + trop gros) est une étape de pipeline, `mtu-check`, placée juste
+après `ttl-decrement` — c'est l'ordre d'`ip_forward()`, qui vérifie le TTL
+puis `ip_exceeds_mtu` avant le crochet FORWARD. La fragmentation elle-même est
+au point d'émission (`Firewall.forward`), comme dans `ip_output`, donc elle
+vaut aussi pour les paquets que le pare-feu produit lui-même. `mtu-exceeded-df`
+redevient un motif de refus **avec un producteur**, comme `ttl-expired` la
+veille : les deux motifs que le garde-fou G-P2 avait trouvés orphelins sont
+maintenant vivants tous les deux.
+
+**Rien n'est écrit de neuf pour la découpe** : `fragmentIPv4` (RFC 791 §3.2)
+est la fonction du socle que `Router.ts` utilise déjà, et `buildICMPError` avec
+`ICMP_UNREACH_FRAG_NEEDED` porte le MTU du saut suivant dans le champ prévu
+par la RFC 1191. `sendTimeExceeded` et `sendFragmentationNeeded` passent par un
+seul `sendIcmpError` — deux émetteurs auraient fini par ne pas sourcer l'erreur
+depuis la même interface.
+
+**Ce que la sonde vérifie est le FIL, pas seulement le succès.** Le premier
+essai avait un cas « DF absent : le datagramme arrive » qui passait **avant
+correctif**, puisqu'un datagramme non contraint arrive de toute façon : il
+compte maintenant les trames sorties sur `port3` — une seule quand ça tient,
+plusieurs quand il faut découper. Le message rendu au PC est celui du vrai
+`ping` : `From 192.168.10.1 icmp_seq=1 Frag needed and DF set (mtu = 600)`.
+
+**Reste ouvert et réécrit dans `TODO.md`** : le sens inverse, le réassemblage.
+`IPv4Reassembler` existe dans le socle, donc c'est un branchement — mais un
+pare-feu de transit ne réassemble pas par défaut sur un vrai FortiGate (il ne
+le fait que sous inspection UTM), et cette condition n'est modélisée nulle
+part. La brancher sans la condition serait inventer un comportement.
+
+**Discrimination** (`git stash push -- src/network`) : 3 des 6 cas tombent
+avant correctif. Les 3 témoins sont le datagramme qui tient (une seule trame
+des deux côtés), `set mtu` sans override (qui ne doit rien changer, et ne
+changeait rien non plus avant) et l'envoi sans contrainte.
+
+**Vérifié** : 1825 cas du module pare-feu (92 fichiers). Typecheck inchangé
+à 342.
+
+---
+
 ### E58 — La table de routage et la table de sessions écoutent la santé SD-WAN
 
 Périmètre : deux entrées ouvertes de `TODO.md` — « la route de la zone ne

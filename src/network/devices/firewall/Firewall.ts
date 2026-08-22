@@ -14,8 +14,10 @@ import {
   type UDPPacket,
 } from '../../core/types';
 import {
-  buildICMPError, mayGenerateICMPError, ICMP_TTL_EXPIRED_IN_TRANSIT,
+  buildICMPError, mayGenerateICMPError,
+  ICMP_TTL_EXPIRED_IN_TRANSIT, ICMP_UNREACH_FRAG_NEEDED,
 } from '../../core/IcmpErrors';
+import { fragmentIPv4, IPV4_FLAG_DF } from '../../core/Ipv4Fragmentation';
 import { SystemClock } from '../../core/SystemClock';
 import { localTimeMs, utcMsForLocal } from '../../core/Timezone';
 import { decryptFromTunnel, sealedLegs } from './vpn/IpsecDataPlane';
@@ -139,7 +141,8 @@ export interface TrafficLogger {
   onDenied(context: PacketContext): void;
 }
 
-const TIME_EXCEEDED_TTL = 64;
+const ICMP_ERROR_TTL = 64;
+const DEFAULT_INTERFACE_MTU = 1500;
 
 export class Firewall extends Equipment {
   private readonly interfaces = new InterfaceTable();
@@ -803,6 +806,10 @@ export class Firewall extends Equipment {
     return summariseSimulation(context, accepted);
   }
 
+  setInterfaceMtu(name: string, mtu: number | undefined): void {
+    this.interfaces.configure(name, { mtu: mtu ?? DEFAULT_INTERFACE_MTU });
+  }
+
   setInterfaceUp(name: string, up: boolean): void {
     this.interfaces.setUp(name, up);
     this.getPort(name)?.setAdminShutdown(!up);
@@ -1076,6 +1083,9 @@ export class Firewall extends Equipment {
       if (context.verdict?.reason === 'ttl-expired') {
         this.sendTimeExceeded(portName, packet);
       }
+      if (context.verdict?.reason === 'mtu-exceeded-df') {
+        this.sendFragmentationNeeded(portName, packet, context.egressMtu);
+      }
       return;
     }
 
@@ -1089,16 +1099,31 @@ export class Firewall extends Equipment {
   }
 
   private sendTimeExceeded(ingressPort: string, packet: IPv4Packet): void {
+    this.sendIcmpError(ingressPort, packet, 'time-exceeded',
+      ICMP_TTL_EXPIRED_IN_TRANSIT, {});
+  }
+
+  private sendIcmpError(
+    ingressPort: string, packet: IPv4Packet,
+    kind: 'time-exceeded' | 'destination-unreachable', code: number,
+    options: { nextHopMTU?: number },
+  ): void {
     if (!mayGenerateICMPError(packet)) return;
 
     const source = this.interfaces.get(ingressPort)?.ip;
     if (!source) return;
 
     const error = buildICMPError(
-      new IPAddress(source), packet, 'time-exceeded',
-      ICMP_TTL_EXPIRED_IN_TRANSIT, TIME_EXCEEDED_TTL);
+      new IPAddress(source), packet, kind, code, ICMP_ERROR_TTL, options);
     const route = this.getVdom().routes.resolveNextHop(packet.sourceIP.toString());
     this.forward(route?.iface ?? ingressPort, error, route?.nextHop);
+  }
+
+  private sendFragmentationNeeded(
+    ingressPort: string, packet: IPv4Packet, nextHopMTU: number | undefined,
+  ): void {
+    this.sendIcmpError(ingressPort, packet, 'destination-unreachable',
+      ICMP_UNREACH_FRAG_NEEDED, { nextHopMTU });
   }
 
   getDeepInspection(): SslDeepInspection { return this.deepInspection; }
@@ -1161,13 +1186,23 @@ export class Firewall extends Equipment {
       return;
     }
 
-    const frame = buildEgressFrame(this.egressDeps(), egressPort, packet, gateway, bridged);
-    if (!frame) return;
+    for (const piece of this.fittingPieces(egressPort, packet)) {
+      const frame = buildEgressFrame(
+        this.egressDeps(), egressPort, piece, gateway, bridged);
+      if (!frame) return;
 
-    this.capture.record({
-      at: this.services.now(), iface: egressPort, direction: 'out', frame,
-    });
-    this.sendFrame(egressPort, frame);
+      this.capture.record({
+        at: this.services.now(), iface: egressPort, direction: 'out', frame,
+      });
+      this.sendFrame(egressPort, frame);
+    }
+  }
+
+  private fittingPieces(egressPort: string, packet: IPv4Packet): readonly IPv4Packet[] {
+    const mtu = this.interfaces.get(egressPort)?.mtu;
+    if (mtu === undefined || packet.totalLength <= mtu) return [packet];
+    if ((packet.flags & IPV4_FLAG_DF) !== 0) return [packet];
+    return fragmentIPv4(packet, mtu);
   }
 
   private forwardThroughTunnel(tunnelName: string, packet: IPv4Packet): void {

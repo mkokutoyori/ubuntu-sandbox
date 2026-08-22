@@ -22,6 +22,7 @@ export function buildCommitDevice(fw: Firewall): FortiCommitDevice {
         if (patch.ip && patch.mask) fw.configureInterface(name, { ip: patch.ip, mask: patch.mask });
         if (patch.up !== undefined) fw.setInterfaceUp(name, patch.up);
         if (patch.allowAccess) fw.setAllowedAccess(name, patch.allowAccess);
+        fw.setInterfaceMtu(name, patch.mtu);
       },
       applyZone(name, members, intrazone) {
         const zones = fw.getZoneTable();

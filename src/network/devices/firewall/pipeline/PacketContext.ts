@@ -28,7 +28,8 @@ export type VerdictReason =
   | 'ha-subordinate'
   | 'zone-mismatch'
   | 'interface-down'
-  | 'ttl-expired';
+  | 'ttl-expired'
+  | 'mtu-exceeded-df';
 
 export type VerdictAction = 'accept' | 'deny' | 'drop' | 'reset' | 'reject';
 
@@ -54,6 +55,7 @@ export interface PacketContext {
 
   ingressPort: string;
   egressPort?: string;
+  egressMtu?: number;
   ingressZone?: string;
   egressZone?: string;
   vdom?: string;

@@ -195,21 +195,22 @@ evenement n'annonce le franchissement.
 ce qui manque est le message exact et son `logid`, que je n'ai pas pu
 relever sur une sortie reelle depuis ce reseau.
 
-### [pare-feu] la fragmentation n'existe pas
-Le TTL est desormais decremente au relais et un ICMP Time Exceeded part
-quand il s'epuise, donc le pare-feu apparait dans un `traceroute` — mais la
-seconde moitie du meme sujet reste ouverte : un datagramme plus grand que le
-MTU de l'interface de sortie est relaye tel quel. Il n'est ni fragmente
-(DF=0) ni refuse par un ICMP Fragmentation Needed (DF=1), donc la decouverte
-de MTU de chemin ne peut pas fonctionner a travers ce pare-feu.
-**Mesure** : `L3Interface.mtu` existe et est configurable ; aucun chemin du
-module ne le lit avant d'emettre. Trouve avec le TTL, par le garde-fou G-P2
-(`mtu-exceeded-df` etait declare comme motif de refus et produit par
-personne).
-**Report** : `Ipv4Fragmentation.ts` (RFC 791 §3.2) existe deja dans le socle
-et sert `Router.ts` et `EndHost.ts` — le fermer est donc un branchement et
-non une ecriture, mais il demande un REASSEMBLEUR cote reception et une
-etape de plus dans le pipeline, ce qui est un sujet en soi.
+### [pare-feu] les fragments recus ne sont pas REASSEMBLES
+Le pare-feu fait desormais respecter le MTU de son interface de sortie :
+DF pose et datagramme trop gros donne un ICMP Fragmentation Needed portant le
+MTU du saut suivant, DF absent donne de vrais fragments RFC 791. Ce qui reste
+ouvert est le sens INVERSE : un datagramme qui arrive deja fragmente n'est pas
+recolle. Les fragments suivant le premier ne portent pas d'en-tete de couche 4,
+donc leur cle de flux est batie sur des ports absents et la table de sessions
+ne les rattache a rien.
+**Mesure** : le premier fragment ouvre une session, les suivants en ouvrent
+chacun une autre — `diagnose sys session list` en compte plusieurs pour un seul
+datagramme.
+**Report** : `IPv4Reassembler` existe dans le socle (`core/Ipv4Fragmentation.ts`)
+et `Router.ts` s'en sert, donc c'est un branchement ; mais un pare-feu de
+TRANSIT ne reassemble pas par defaut sur un vrai FortiGate (il ne le fait que
+sous inspection UTM), donc le brancher demande d'abord de decider QUAND, et
+cette condition n'est modelisee nulle part.
 
 ### [ha] les adresses MAC VIRTUELLES du cluster n'existent pas
 FGCP donne a chaque interface du cluster une adresse MAC virtuelle, portee
