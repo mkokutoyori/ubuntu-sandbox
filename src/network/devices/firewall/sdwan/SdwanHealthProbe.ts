@@ -4,7 +4,7 @@ import {
   type SdwanHealthCheck, type SdwanHealthTransition,
   type SdwanMember, type SdwanTable,
 } from './SdwanTable';
-import { buildEchoRequest } from '../l3/IcmpEcho';
+import { buildEchoRequest } from '../../../icmp/IcmpEcho';
 
 export interface ProbeDeps {
   readonly send: (iface: string, packet: IPv4Packet, gateway: string) => void;

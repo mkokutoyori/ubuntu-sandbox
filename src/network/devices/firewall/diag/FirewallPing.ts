@@ -1,5 +1,5 @@
 import type { IPv4Packet } from '../../../core/types';
-import { buildEchoRequest, echoReplyOf, ECHO_DATA_BYTES } from '../l3/IcmpEcho';
+import { buildEchoRequest, echoReplyOf, ECHO_DATA_BYTES } from '../../../icmp/IcmpEcho';
 import type { PingOptions } from './PingOptions';
 
 export interface FirewallPingEgress {

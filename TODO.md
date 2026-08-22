@@ -479,20 +479,6 @@ sujet en soi et non une commande de plus.
 
 ## Serveurs DHCP
 
-### [dhcp] la sonde d'avant-offre est un ARP, la vraie est un ICMP
-Les trois serveurs sondent désormais l'adresse avant de l'offrir, mais
-par une requête ARP — alors qu'IOS, ISC et Windows envoient tous un ICMP
-Echo. La différence est observable : une machine qui répond à l'ARP mais
-laisse tomber l'ICMP (pare-feu local) est vue OCCUPÉE ici et LIBRE sur
-une vraie machine.
-**Mesure** : `addressAnswersOnLink` émet une requête ARP et relit la
-table ; aucun paquet ICMP ne part.
-**Report** : un aller-retour ICMP synchrone demande que le voisin soit
-déjà résolu — donc un ARP d'abord de toute façon —, et un hôte qui
-répond à l'ARP est présent, ce que la sonde cherche. Écrire l'ICMP par
-dessus n'ajouterait que le cas du pare-feu local, au prix d'un émetteur
-ICMP synchrone qui n'existe sur aucun des trois serveurs.
-
 ### [dhcp] `ping-check` : la valeur PAR DÉFAUT d'ISC n'est pas attestée
 `ping-check` est lu, honoré, et vaut **faux** par défaut ici. Aucune
 source lisible depuis ce réseau ne dit ce que vaut le défaut d'ISC : le
@@ -540,6 +526,15 @@ un nombre est attendu, signatures de constructeur périmées.
 « pas plus qu'avant ta modification », pas « zéro ».
 
 ## Journal des entrées fermées
+
+- Sonde d'avant-offre DHCP en ICMP — fermee, et la premisse du report
+  etait fausse une fois de plus : « un emetteur ICMP synchrone qui
+  n'existe sur aucun des trois serveurs ». La livraison de trames est
+  SYNCHRONE dans ce simulateur — le pare-feu le prouvait deja avec
+  `FirewallPing.step()` — donc un abonnement pose juste avant l'envoi
+  voit la reponse revenir pendant l'appel. Le cas qui distingue les deux
+  sondes est atteignable : `iptables -A INPUT -p icmp -j DROP` sur un
+  hote qui repond a l'ARP, et il est desormais eprouve par test.
 
 - Vocabulaire d'états de `display stp brief` — ferme (l'entree ci-dessus
   ne porte plus que la question du LISTAGE). La table melangeait DEUX

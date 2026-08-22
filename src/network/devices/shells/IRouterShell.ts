@@ -25,7 +25,7 @@ export interface IRouterShell {
   /** Get context-sensitive help for the given input (? behavior) */
   getHelp(inputBeforeQuestion: string, router?: Router): string;
   /** Get tab completion for the given partial input */
-  tabComplete(input: string): string | null;
+  tabComplete(input: string, device?: unknown): string | null;
   /** All full-line Tab candidates (static keywords + live device values) */
   tabCandidates(input: string, router: Router): string[];
   /** Attach the shell's logging config to a bus for event-driven syslog buffering. */

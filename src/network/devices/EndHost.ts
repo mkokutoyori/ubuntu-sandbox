@@ -2591,6 +2591,15 @@ export abstract class EndHost extends Equipment {
     return addressAnswersOnLink({
       sendFrame: (name, frame) => { this.sendFrame(name, frame); },
       hasNeighbour: (ip) => this.arpTable.has(ip),
+      neighbourMac: (ip) => this.arpTable.get(ip)?.mac,
+      answersEcho: (from, send) => {
+        let vu = false;
+        const stop = this.getBus().subscribe('host.icmp.echo-reply', (e) => {
+          if ((e.payload as { fromIp?: string }).fromIp === from) vu = true;
+        });
+        try { send(); } finally { stop(); }
+        return vu;
+      },
     }, iface, port, target);
   }
 

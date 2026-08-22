@@ -1,7 +1,7 @@
 import {
   IPAddress, IP_PROTO_ICMP, computeIPv4Checksum,
   type ICMPPacket, type IPv4Packet,
-} from '../../../core/types';
+} from '../core/types';
 
 export const ECHO_DATA_BYTES = 56;
 

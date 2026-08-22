@@ -4,7 +4,7 @@ import { LinuxPC } from '@/network/devices/LinuxPC';
 import { CiscoRouter } from '@/network/devices/CiscoRouter';
 import { Cable } from '@/network/hardware/Cable';
 import { verifyIPv4Checksum } from '@/network/core/types';
-import { buildEchoRequest } from '@/network/devices/firewall/l3/IcmpEcho';
+import { buildEchoRequest } from '../../../../network/icmp/IcmpEcho';
 import { resetCounters, MACAddress } from '@/network/core/types';
 import { resetDeviceCounters } from '@/network/devices/DeviceFactory';
 import { Logger } from '@/network/core/Logger';

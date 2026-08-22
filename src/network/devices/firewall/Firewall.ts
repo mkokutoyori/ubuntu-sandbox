@@ -96,7 +96,7 @@ import type { HostObservables } from '../host/observables';
 import {
   beginSniffer, type SnifferRun, type SnifferSelection,
 } from './diag/FirewallSniffer';
-import { buildEchoRequest } from './l3/IcmpEcho';
+import { buildEchoRequest } from '../../icmp/IcmpEcho';
 import { FirewallTraceroute } from './diag/FirewallTraceroute';
 import {
   DNS_PORT, FirewallDnsClient, dnsQueryDatagram,

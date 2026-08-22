@@ -1,5 +1,5 @@
 import { IP_PROTO_ICMP, type ICMPPacket, type IPv4Packet } from '../../../core/types';
-import { buildEchoRequest, echoReplyOf, ECHO_DATA_BYTES } from '../l3/IcmpEcho';
+import { buildEchoRequest, echoReplyOf, ECHO_DATA_BYTES } from '../../../icmp/IcmpEcho';
 import type { FirewallPingDeps } from './FirewallPing';
 
 export const TRACEROUTE_MAX_HOPS = 32;
