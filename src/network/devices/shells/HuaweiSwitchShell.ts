@@ -94,6 +94,18 @@ function numeroDInterface(saisie: string, attendu: string): number | null {
   return parseInt(m[2], 10);
 }
 
+/**
+ * RSTP et MSTP n'ont que trois etats — Discarding, Learning, Forwarding —
+ * les Listening et Blocking de 802.1D y ayant ete fondus dans Discarding.
+ * Tout etat que le moteur nomme autrement se rend donc DISCARDING, l'etat
+ * qui ne fait pas passer de trafic.
+ */
+function mstpStateName(state: string): string {
+  if (state === 'forwarding') return 'FORWARDING';
+  if (state === 'learning') return 'LEARNING';
+  return 'DISCARDING';
+}
+
 export class HuaweiSwitchShell implements ISwitchShell {
   private mode: VRPSwitchMode = 'user';
   private selectedInterface: string | null = null;
@@ -3348,9 +3360,7 @@ export class HuaweiSwitchShell implements ISwitchShell {
       const st = mstid !== undefined
         ? (ag?.getForwardStateForInstance(mstid, p) ?? this.swRef.getSTPState(p))
         : this.swRef.getSTPState(p);
-      const state = st === 'forwarding' ? 'FORWARDING'
-        : st === 'blocking' ? 'DISCARDING'
-        : st === 'disabled' ? 'DISCARDING' : st.toUpperCase();
+      const state = mstpStateName(st);
       const r = mstid !== undefined
         ? (ag?.getPortRoleForInstance(mstid, p) ?? 'designated')
         : (ag?.getPortRole(p) ?? 'designated');

@@ -41,12 +41,19 @@ que ce soit.
 
 ## Moteur L2 partagé (`Switch.ts`)
 
-### [stp] `display stp brief` liste les ports sans câble en `DISA LISTENING`
+### [stp] `display stp brief` liste-t-il les ports sans câble ?
 Un port administrativement actif mais sans lien apparaît dans le tableau
-avec un rôle et un état, ce qui noie les deux lignes utiles.
-**Mesure** : maquette à 25 ports, 23 lignes `DISA LISTENING`.
-**Report** : il faut d'abord vérifier sur une vraie machine si VRP les
-liste ou non — l'affirmer sans capture serait inventer.
+avec un rôle et un état (`DISA DISCARDING` depuis que le vocabulaire
+MSTP est respecté), ce qui noie les deux lignes utiles.
+**Mesure** : maquette à 12 ports, 10 lignes pour des ports sans câble.
+**Ce qui a été cherché** : le jeu de références `ntc-templates` ne porte
+AUCUNE capture STP pour Huawei VRP (vérifié dans
+`tests/huawei_vrp/`, qui n'a pas de répertoire `display_stp*`), et
+`support.huawei.com` comme `info.support.huawei.com` sont bloqués par le
+proxy de sortie.
+**Report** : trancher demande une transcription de vraie machine.
+Affirmer que VRP les masque — ou qu'il les liste — sans capture serait
+inventer, et l'état rendu est désormais correct dans les deux cas.
 
 ### [stp] MSTI : la BPDU porte son instance en clair
 L'arbre commun (CIST) est désormais nommé sur la trame (`cist`), donc
@@ -533,6 +540,13 @@ un nombre est attendu, signatures de constructeur périmées.
 « pas plus qu'avant ta modification », pas « zéro ».
 
 ## Journal des entrées fermées
+
+- Vocabulaire d'états de `display stp brief` — ferme (l'entree ci-dessus
+  ne porte plus que la question du LISTAGE). La table melangeait DEUX
+  vocabulaires dans la meme vue : `DISCARDING` pour le lien redondant et
+  `LISTENING` pour les ports sans cable. Atteste chez Huawei : RSTP et
+  MSTP n'ont que trois etats — Discarding, Learning, Forwarding — les
+  Listening et Blocking de 802.1D y ayant ete FONDUS dans Discarding.
 
 - `spanning-tree mode mst` cote Cisco — passe au banc, et la premisse de
   l'entree etait FAUSSE : l'arbre ne repart pas d'une instance vide, il
