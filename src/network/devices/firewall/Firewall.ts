@@ -198,6 +198,7 @@ export class Firewall extends Equipment {
   private sameSecurityIntra = false;
   private multiVdom = false;
   private activeVdom = ROOT_VDOM;
+  private readonly fqdnVips = new Map<string, () => void>();
 
   constructor(
     deviceType: DeviceType, name: string, x = 0, y = 0, options: FirewallOptions = {},
@@ -938,6 +939,17 @@ export class Firewall extends Equipment {
   getSessionTable(vdom?: string): SessionTable { return this.getVdom(vdom).sessions; }
   getRouteTable(vdom?: string): RouteTable { return this.getVdom(vdom).routes; }
   getArpService(): ArpService { return this.arp; }
+  bindFqdnVip(name: string, apply: () => void): void {
+    this.fqdnVips.set(name, apply);
+    apply();
+  }
+
+  unbindFqdnVip(name: string): void { this.fqdnVips.delete(name); }
+
+  refreshFqdnVips(): void {
+    for (const apply of this.fqdnVips.values()) apply();
+  }
+
   getNatPolicy(vdom?: string): NatPolicyStore { return this.getVdom(vdom).natPolicy; }
   getNatEngine(vdom?: string): FirewallNatEngine { return this.getVdom(vdom).nat; }
   getIpPools(vdom?: string): IpPoolAllocator { return this.getVdom(vdom).pools; }

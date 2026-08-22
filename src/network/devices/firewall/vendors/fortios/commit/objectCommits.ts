@@ -5,7 +5,7 @@ import type {
 } from '../../../inspection/UtmProfiles';
 import type {
   FortiCategoryFilterPatch, FortiCentralSnatPatch, FortiFilterTablePatch,
-  FortiUrlFilterPatch, FortiVipPatch,
+  FortiUrlFilterPatch, FortiVipPatch, FortiFqdnVipPatch,
 } from '../schema/types';
 
 export function utmAction(declared: string): UtmAction {
@@ -42,6 +42,39 @@ export function vipRuleId(name: string): string {
 
 export function centralSnatRuleId(id: string): string {
   return `csnat:${id}`;
+}
+
+export function applyFqdnVipToFirewall(
+  fw: Firewall, vip: FortiFqdnVipPatch,
+): string | void {
+  const object = fw.getObjectStore().getAddress(vip.mappedAddressObject);
+  if (!object) return `unknown address ${vip.mappedAddressObject}.`;
+  if (object.kind !== 'fqdn' || object.fqdn === undefined) {
+    return `${vip.mappedAddressObject} is not a fqdn address object.`;
+  }
+
+  const fqdn = object.fqdn;
+  fw.bindFqdnVip(vip.name, () => {
+    const resolved = fw.getDnsClient().resolve(fqdn)[0];
+    if (resolved === undefined) return;
+
+    applyVipToFirewall(fw, {
+      name: vip.name,
+      externalAddress: vip.externalAddress,
+      externalEndAddress: vip.externalEndAddress,
+      mappedAddress: resolved,
+      externalInterfaces: vip.externalInterfaces,
+      sourceFilters: vip.sourceFilters,
+      arpReply: vip.arpReply,
+      portForward: false,
+      protocol: 0,
+      externalPortFrom: 0,
+      externalPortTo: 0,
+      mappedPort: 0,
+      natSourceVip: false,
+      comment: vip.comment,
+    });
+  });
 }
 
 export function applyVipToFirewall(fw: Firewall, vip: FortiVipPatch): void {

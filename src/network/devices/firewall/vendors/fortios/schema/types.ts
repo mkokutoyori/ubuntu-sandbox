@@ -142,6 +142,17 @@ export interface FortiVipPatch {
   readonly comment?: string;
 }
 
+export interface FortiFqdnVipPatch {
+  readonly name: string;
+  readonly externalAddress: string;
+  readonly externalEndAddress?: string;
+  readonly mappedAddressObject: string;
+  readonly externalInterfaces: readonly string[];
+  readonly sourceFilters: readonly string[];
+  readonly arpReply: boolean;
+  readonly comment?: string;
+}
+
 export interface FortiCentralSnatPatch {
   readonly id: string;
   readonly position: number;
@@ -221,6 +232,7 @@ export interface FortiCommitDevice {
   applyIpPool(pool: FortiIpPoolPatch): void;
   removeIpPool(name: string): void;
   applyVip(vip: FortiVipPatch): void;
+  applyFqdnVip(vip: FortiFqdnVipPatch): string | void;
   removeVip(name: string): void;
   applyCentralSnat(entry: FortiCentralSnatPatch): void;
   removeCentralSnat(id: string): void;

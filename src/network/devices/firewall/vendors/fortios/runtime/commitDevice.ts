@@ -8,7 +8,8 @@ import { vipAddress } from '../../../model/AddressObject';
 import { identityCommitHandlers } from '../commit/identityCommits';
 import { vpnCommitHandlers } from '../commit/vpnCommits';
 import {
-  applyCentralSnatToFirewall, applyVipToFirewall, categoryEntry, centralSnatRuleId,
+  applyCentralSnatToFirewall, applyFqdnVipToFirewall, applyVipToFirewall, categoryEntry,
+  centralSnatRuleId,
   filterTable, urlEntry, utmAction, vipRuleId,
 } from '../commit/objectCommits';
 import type { PolicyRoutePrefix } from '../../../l3/PolicyRouteTable';
@@ -104,6 +105,7 @@ export function buildCommitDevice(fw: Firewall): FortiCommitDevice {
       resolveFqdnNow(fqdn) {
         fw.getDnsClient().forget(fqdn);
         fw.getDnsClient().query(fqdn);
+        fw.refreshFqdnVips();
       },
       applyDnsServerInterface(entry) {
         fw.getDnsServer().applyInterface(entry);
@@ -307,6 +309,9 @@ export function buildCommitDevice(fw: Firewall): FortiCommitDevice {
       },
       removeIpPool(name) {
         fw.removeIpPool(name);
+      },
+      applyFqdnVip(vip) {
+        return applyFqdnVipToFirewall(fw, vip);
       },
       applyVip(vip) {
         applyVipToFirewall(fw, vip);
