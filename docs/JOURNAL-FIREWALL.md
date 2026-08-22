@@ -2844,6 +2844,59 @@ pare-feu peut atterrir dans le `/var/log/syslog` d'une vraie machine.
 
 ---
 
+### E54 — Une vue de lecture ne peut plus être écrite, et une l'était
+
+G8 de BRD-Firewall §40.6 — « les vues de lecture n'exposent aucune
+mutation », dont la colonne *Vérification* dit **« vérification de type »**
+— était le dernier des huit à n'exister nulle part. Il est écrit, sous le
+nom **G-P4** pour la même raison de numérotation que les trois précédents.
+
+**Ce qu'il vérifie**, sur toute interface du module dont le nom finit par
+`View` : un champ est `readonly` (sans quoi un lecteur le réaffecte) ; une
+méthode ne rend pas `void` (une vue répond à une question, elle n'agit
+pas) ; et un tableau rendu est `readonly T[]` — sans quoi l'appelant tient
+une poignée **vive** sur le tableau du magasin et peut y pousser une entrée
+que le magasin n'a jamais acceptée. Le retour arrière depuis chaque `[]`
+compte les accolades, pour que `readonly { a: string; b: string }[]` ne
+soit pas pris pour un tableau nu à cause du dernier `:` rencontré ; le
+témoin oppose cette forme-là à sa jumelle mutable.
+
+**À sa première exécution il a trouvé une porte ouverte**, et une seule :
+`FortiObjectView.key` était déclaré `key: string`. Cette vue est le port
+étroit remis aux prédicats du schéma — `availableWhen`, `renders`,
+`isStaticNat`, une centaine de fonctions dans `schema/` — et n'importe
+laquelle pouvait donc écrire `object.key = …`. Ce n'est pas théorique : la
+clé est **l'index de la table**. `FortiTable.rename()` la change en
+réécrivant du même geste la `Map` et l'ordre de rendu ; une écriture par la
+vue n'aurait fait que la moitié, laissant l'objet porter un nom que sa
+propre table ne connaît pas — `get` par l'ancien nom rendrait un objet qui
+se dit autrement, et `show` écrirait une configuration que `edit` ne sait
+pas rejouer. Un mot suffit à fermer : `readonly key: string`. Aucun appel
+n'a bougé — une classe dont le champ est mutable satisfait toujours une
+interface qui le déclare en lecture seule, et `FortiObject.key` reste
+assignable pour `rename()`, qui est le seul à en avoir le droit.
+
+Les autres vues du module passaient déjà : `PolicyStoreView`,
+`SessionTableView`, `ModeCfgView`, `MemberView`. `LogViewFilter` et
+`HaViewFacts` sont hors périmètre et le garde le voit tout seul — leur nom
+ne finit pas par `View`, et le premier est justement un accumulateur que le
+parseur remplit. La limite est dite plutôt que tue : **le garde ne voit que
+ce qui se nomme `View`** ; une vue de lecture baptisée autrement lui est
+invisible.
+
+**Corrigé en passant** : les deux décisions écrites en E53 portaient les
+numéros D43 et D44, déjà pris par l'autre session pour tout autre chose
+(le TTL de `buildEchoRequest`, le réarmement après cycle d'alimentation).
+Elles deviennent **D56** et **D57** ; la règle de ce carnet est prise
+après lecture de ce qu'il porte, pas d'après le dernier numéro qu'on se
+rappelle avoir écrit.
+
+BRD-Firewall §40.6 est désormais entièrement couvert. Le fichier de
+garde-fous passe de 31 à 37 cas. **Vérifié** : 1723 cas du module pare-feu
+(84 fichiers). Typecheck inchangé à 342.
+
+---
+
 ### E53 — Trois garde-fous que le BRD nommait et qui n'existaient pas
 
 `architecture-guards.test.ts` portait G1, G2, G5 du BRD générique et G6, G7,

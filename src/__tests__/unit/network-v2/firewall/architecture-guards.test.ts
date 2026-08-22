@@ -427,3 +427,109 @@ describe('G-P3 — toute commande enregistree porte une description', () => {
     expect([...faux.matchAll(NUE)].map(match => match[1])).toEqual(['execute muet']);
   });
 });
+
+function balancedBody(source: string, open: number): string {
+  let depth = 0;
+  for (let i = open; i < source.length; i += 1) {
+    if (source[i] === '{') depth += 1;
+    else if (source[i] === '}') {
+      depth -= 1;
+      if (depth === 0) return source.slice(open + 1, i);
+    }
+  }
+  return '';
+}
+
+function viewInterfaces(): Array<readonly [string, string]> {
+  const out: Array<readonly [string, string]> = [];
+  for (const file of ALL_FILES) {
+    const source = readFileSync(file, 'utf8');
+    for (const match of source.matchAll(/\binterface\s+(\w*View)\s*\{/g)) {
+      const open = (match.index ?? 0) + match[0].length - 1;
+      out.push([`${relative(file)} → ${match[1]}`, balancedBody(source, open)] as const);
+    }
+  }
+  return out;
+}
+
+function viewMembers(body: string): string[] {
+  const out: string[] = [];
+  let depth = 0;
+  let current = '';
+  for (const char of body) {
+    if (char === '{' || char === '(' || char === '[') depth += 1;
+    if (char === '}' || char === ')' || char === ']') depth -= 1;
+    if (char === ';' && depth === 0) {
+      out.push(current.trim());
+      current = '';
+      continue;
+    }
+    current += char;
+  }
+  out.push(current.trim());
+  return out.filter(member => member.length > 0);
+}
+
+function mutableArrayIn(text: string): boolean {
+  for (const match of text.matchAll(/\[\]/g)) {
+    const end = match.index ?? 0;
+    let depth = 0;
+    let start = -1;
+    for (let i = end - 1; i >= 0; i -= 1) {
+      const char = text[i];
+      if (char === '}' || char === ')') depth += 1;
+      else if (char === '{' || char === '(') depth -= 1;
+      else if (char === ':' && depth === 0) { start = i; break; }
+    }
+    if (!/\breadonly\b/.test(text.slice(start + 1, end))) return true;
+  }
+  return false;
+}
+
+function exposesMutation(member: string): boolean {
+  if (!/^\w+\??\s*\(/.test(member)) return !/^readonly\s/.test(member);
+  if (/\)\s*:\s*void\b/.test(member)) return true;
+  return mutableArrayIn(member);
+}
+
+function mutableViewMembers(): string[] {
+  const offenders: string[] = [];
+  for (const [label, body] of viewInterfaces()) {
+    for (const member of viewMembers(body)) {
+      if (exposesMutation(member)) offenders.push(`${label} → ${member}`);
+    }
+  }
+  return offenders;
+}
+
+describe('G-P4 — une vue de lecture n\'expose aucune mutation', () => {
+  it('trouve bien des vues a controler', () => {
+    expect(viewInterfaces().length).toBeGreaterThan(3);
+  });
+
+  it('aucune vue du module n\'ouvre une porte en ecriture', () => {
+    expect(mutableViewMembers()).toEqual([]);
+  });
+
+  it('le garde-fou ATTRAPE un champ qu\'un lecteur peut reaffecter', () => {
+    expect(exposesMutation('key: string')).toBe(true);
+    expect(exposesMutation('readonly key: string')).toBe(false);
+  });
+
+  it('le garde-fou ATTRAPE un tableau rendu par sa reference vive', () => {
+    expect(exposesMutation('all(): FirewallSession[]')).toBe(true);
+    expect(exposesMutation('all(): readonly FirewallSession[]')).toBe(false);
+  });
+
+  it('le garde-fou ATTRAPE une methode qui agit au lieu de repondre', () => {
+    expect(exposesMutation('purge(): void')).toBe(true);
+    expect(exposesMutation('count(): number')).toBe(false);
+  });
+
+  it('le garde-fou lit la profondeur, un objet imbrique ne le trompe pas', () => {
+    const imbrique = 'pool(): { of(t: string): readonly { a: string; b: string; }[] }';
+
+    expect(exposesMutation(imbrique)).toBe(false);
+    expect(exposesMutation('pool(): { of(t: string): { a: string }[] }')).toBe(true);
+  });
+});

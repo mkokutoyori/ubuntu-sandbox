@@ -32,7 +32,7 @@ export type FortiAccessGroup = AccessGroup;
 export type FortiScope = 'global' | 'vdom' | 'both';
 
 export interface FortiObjectView {
-  key: string;
+  readonly key: string;
   hasPhysicalKey(): boolean;
   effective(attribute: string): readonly string[];
   isExplicit(attribute: string): boolean;
