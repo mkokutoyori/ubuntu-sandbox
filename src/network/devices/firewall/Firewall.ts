@@ -85,6 +85,7 @@ import type { NtpAgent } from '../../ntp/NtpAgent';
 import { FirewallPing, type FirewallPingEgress } from './diag/FirewallPing';
 import { PingOptions } from './diag/PingOptions';
 import { ConsoleSettings } from './mgmt/ConsoleSettings';
+import { LoginBanners } from './mgmt/LoginBanners';
 import { FirewallObservables } from './diag/FirewallObservables';
 import type { HostObservables } from '../host/observables';
 import {
@@ -422,6 +423,8 @@ export class Firewall extends Equipment {
 
   getConsoleSettings(): ConsoleSettings { return this.consoleSettings; }
 
+  getLoginBanners(): LoginBanners { return this.loginBanners; }
+
   beginSniffer(selection: SnifferSelection): SnifferRun {
     const capture = this.capture;
     return beginSniffer({
@@ -460,6 +463,7 @@ export class Firewall extends Equipment {
   private readonly pingOptions = new PingOptions();
 
   private readonly consoleSettings = new ConsoleSettings();
+  private readonly loginBanners = new LoginBanners();
 
   private readonly traceroute = new FirewallTraceroute({
     resolve: (destination) => this.resolveEgress(destination),

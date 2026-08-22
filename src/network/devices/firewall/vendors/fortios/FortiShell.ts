@@ -66,6 +66,7 @@ import { utmLog } from './log/utmLog';
 import { renderFortiguardServiceStatus } from './diag/fortiguardRenderer';
 import { TftpClientSession } from '@/network/tftp/TftpSession';
 import { IPAddress } from '@/network/core/types';
+import { encryptConfig, decryptConfig, isEncryptedConfig } from './backup/ConfigEncryption';
 
 export { FORTI_COMMAND_FAIL };
 
@@ -138,7 +139,7 @@ export class FortiShell {
     this.seedFactoryCertificates();
     this.seedFactoryAdmin();
     const validator = new FortiValidator(
-      (target, name) => this.referenceExists(target, name));
+      (target, name) => this.referenceExists(target, name), this.tree);
     this.nav = new FortiNavigator({
       tree: this.tree,
       validator,
@@ -729,12 +730,13 @@ export class FortiShell {
         ? FortiMessages.incomplete('what to back up')
         : FortiMessages.unknownAction(`backup ${rest[0]}`);
     }
-    const [destination, file, server] = rest.slice(1);
+    const [destination, file, server, password] = rest.slice(1);
     const address = this.tftpTarget(destination, server);
     if (typeof address === 'string') return address;
     if (file === undefined) return FortiMessages.incomplete('a file name');
 
-    const text = renderWholeConfig(this.tree, { full: rest[0] === 'full-config' }).join('\n');
+    const clear = renderWholeConfig(this.tree, { full: rest[0] === 'full-config' }).join('\n');
+    const text = password === undefined ? clear : encryptConfig(clear, password);
     this.pendingAsync = this.tftpClient(address).put(file, text).then(result => (
       result.ok ? '' : FortiMessages.commandFail(
         `the TFTP server at ${server} did not take "${file}" `
@@ -748,7 +750,7 @@ export class FortiShell {
         ? FortiMessages.incomplete('what to restore')
         : FortiMessages.unknownAction(`restore ${rest[0]}`);
     }
-    const [destination, file, server] = rest.slice(1);
+    const [destination, file, server, password] = rest.slice(1);
     const address = this.tftpTarget(destination, server);
     if (typeof address === 'string') return address;
     if (file === undefined) return FortiMessages.incomplete('a file name');
@@ -759,11 +761,31 @@ export class FortiShell {
           `the TFTP server at ${server} did not give "${file}" `
           + `(${result.error ?? 'Timed out'}).`);
       }
+      const clear = this.restorableText(result.content, file, password);
+      if (typeof clear !== 'string') return clear.refusal;
       this.factoryReset();
-      this.absorbClusterConfiguration(result.content);
+      this.absorbClusterConfiguration(clear);
       return '';
     });
     return '';
+  }
+
+  private restorableText(
+    content: string, file: string, password: string | undefined,
+  ): string | { refusal: string } {
+    if (!isEncryptedConfig(content)) {
+      return password === undefined ? content : { refusal: FortiMessages.commandFail(
+        `"${file}" is not encrypted; restoring it takes no password.`) };
+    }
+    if (password === undefined) {
+      return { refusal: FortiMessages.commandFail(
+        `"${file}" is encrypted; restoring it takes the backup password.`) };
+    }
+    const clear = decryptConfig(content, password);
+    return clear === null
+      ? { refusal: FortiMessages.commandFail(
+        `"${file}" did not decrypt; the backup password is wrong or the file is damaged.`) }
+      : clear;
   }
 
   factoryReset(): void {

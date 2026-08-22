@@ -4207,6 +4207,7 @@ FGT-01 # diagnose debug enable
 | `flow filter clear` | Efface un filtre précédent — **le plus oublié** |
 | `flow filter addr` | Ne trace que le trafic concernant cette adresse |
 | `show function-name enable` | Affiche la fonction interne, très utile |
+| `show console disable` | **Tait** la trace sans arrêter le traçage — l'option existe pour les machines chargées, où la trace noie la console |
 | `flow trace start 20` | Trace 20 paquets puis s'arrête tout seul |
 | `debug enable` | ⭐ **Démarre réellement l'affichage** |
 
@@ -9858,6 +9859,8 @@ end
 
 **④ Renforcer les mots de passe**
 
+Le refus est immédiat, au moment du `set`, et nomme la règle non remplie. `apply-to` porte aussi sur les clés partagées IPsec, pas seulement sur les comptes.
+
 ```
 config system password-policy
     set status enable
@@ -9943,7 +9946,12 @@ Appliquer la liste de durcissement, sauvegarder en chiffré, vérifier la restau
 
 ```
 FGT-01 # execute backup config tftp avant-durcissement.conf 192.168.10.50 MotDePasseSauvegarde2026
+FGT-01 # execute backup config tftp en-clair.conf 192.168.10.50
 ```
+
+La première est chiffrée, la seconde ne l'est pas — c'est le mot de passe en fin de ligne qui décide, et c'est ce que compare l'étape 2.
+
+> ⚠️ **La restauration exige le même mot de passe.** `execute restore config tftp avant-durcissement.conf 192.168.10.50` **sans** le mot de passe est refusé, et avec un mauvais mot de passe aussi : l'étiquette d'authentification GCM détecte la différence. Un mot de passe perdu rend la sauvegarde définitivement inutilisable.
 
 Sans serveur TFTP, utilise l'interface web pour télécharger le fichier.
 
@@ -9959,7 +9967,17 @@ Sans serveur TFTP, utilise l'interface web pour télécharger le fichier.
 user@pc-lan:~$ head -c 200 /srv/tftp/avant-durcissement.conf
 ```
 
-Tu dois voir du contenu **illisible**. Compare avec une sauvegarde non chiffrée : tu y liras `config system global`, `set psksecret`… en clair.
+Tu dois voir un en-tête `#FGTCONFIG-ENCRYPTED-AES256-GCM` suivi de contenu **illisible**. Compare avec une sauvegarde non chiffrée :
+
+```bash
+user@pc-lan:~$ grep -E 'psksecret|hostname|allowaccess' /srv/tftp/en-clair.conf
+```
+
+Tu y liras toute la configuration, et les secrets sous la forme `set psksecret ENC RnZ4…`.
+
+> 🧠 **`ENC` n'est PAS un chiffrement — c'est un encodage réversible.** La clé est **statique**, la même sur tous les FortiGate, et publiée : c'est la CVE-2019-6693. Qui tient le fichier tient la clé partagée de tes VPN, sans mot de passe et sans effort. C'est exactement pourquoi une sauvegarde en clair est un fichier de secrets.
+>
+> Le chiffrement de la sauvegarde, lui, est réel : AES-256-GCM. Sa faiblesse connue est ailleurs — la clé est dérivée du mot de passe par **un seul tour de SHA-256**, donc un mot de passe court se casse vite. Choisis-le long.
 
 **Fais l'expérience.** C'est ce qui convainc de toujours chiffrer.
 
@@ -9985,11 +10003,23 @@ FGT-01 (admin) # edit "test-faible"
 FGT-01 (test-faible) # set password "1234"
 ```
 
-FortiOS **refuse**. Supprime le compte de test :
+FortiOS **refuse**, et la refus **nomme la règle** qui n'est pas remplie (« at least 12 characters »). Essaie ensuite `set password "Court1!"`, puis `set password "minusculesansrien"` : chaque essai te dit ce qui manque — la longueur, la majuscule, le chiffre, le caractère non alphanumérique.
+
+Un mot de passe conforme, lui, passe :
+
+```
+FGT-01 (test-faible) # set password "MotDePasse2026!"
+```
+
+Supprime le compte de test :
 
 ```
 FGT-01 (test-faible) # abort
 ```
+
+> 💡 **`apply-to` décide de la portée, et il ne concerne pas que les comptes.** Avec `set apply-to admin-password ipsec-preshared-key`, la même politique refuse aussi une clé partagée VPN trop faible — c'est le seul endroit du pare-feu où la qualité d'un `psksecret` est vérifiée.
+
+> ⚠️ **`set reuse-password disable` est refusé ici** : il demande de comparer avec les anciens mots de passe, et ce simulateur n'en garde pas l'historique. Un réglage accepté sans être appliqué serait pire que son absence.
 
 **Étape 4 — Verrouillage après échecs**
 
@@ -10039,13 +10069,29 @@ FGT-01 (global) # set pre-login-banner enable
 FGT-01 (global) # end
 
 FGT-01 # config system replacemsg admin "pre_admin-disclaimer-text"
-FGT-01 (pre_admin-discl~t) # set buffer "ACCES RESERVE AUX PERSONNES AUTORISEES.
-Toute connexion est journalisee. Tout acces non autorise fera l objet de poursuites."
+FGT-01 (pre_admin-discl~t) # set buffer "ACCES RESERVE AUX PERSONNES AUTORISEES."
 FGT-01 (pre_admin-discl~t) # next
 FGT-01 # end
 ```
 
+> 🧠 **Note la forme de la commande** : le nom du message est sur la ligne `config`, pas sur un `edit`. `config system replacemsg <groupe> <message>` ouvre directement l'objet — c'est une des rares tables de FortiOS qui se comporte ainsi, et `show` te la rendra sous la même forme.
+
 Déconnecte-toi et reconnecte-toi : la bannière s'affiche avant l'invite.
+
+Le pendant existe pour l'après-connexion, et le message porte alors l'autre nom :
+
+```
+FGT-01 # config system global
+FGT-01 (global) # set post-login-banner enable
+FGT-01 (global) # end
+
+FGT-01 # config system replacemsg admin "post_admin-disclaimer-text"
+FGT-01 (post_admin-disc~t) # set buffer "Session journalisee."
+FGT-01 (post_admin-disc~t) # next
+FGT-01 # end
+```
+
+**Le drapeau et le texte sont deux réglages distincts** : le drapeau sans texte n'affiche rien, et le texte sans le drapeau non plus. C'est l'erreur la plus fréquente sur cette commande.
 
 **Étape 8 — Le suivi en Git**
 
@@ -10095,18 +10141,19 @@ FGT-01 # execute backup config tftp apres-durcissement.conf 192.168.10.50 MotDeP
 
 **✅ Résultat attendu**
 
-- La sauvegarde chiffrée est illisible, la non chiffrée révèle les secrets
-- Un mot de passe faible est refusé
+- La sauvegarde chiffrée porte l'en-tête `#FGTCONFIG-ENCRYPTED-AES256-GCM` et rien de lisible ; la non chiffrée révèle toute la configuration et les secrets en `ENC …`
+- La restauration refuse sans le mot de passe, et refuse avec le mauvais
+- Un mot de passe faible est refusé, et le refus nomme la règle manquante
 - L'administration écoute sur les nouveaux ports
 - Le WAN n'accepte plus que le ping
-- La bannière s'affiche
+- La bannière s'affiche avant l'invite, et celle d'après-connexion après
 - `git diff` montre les changements de configuration
 
 ---
 
 **🧠 Ce que tu viens d'apprendre**
 
-1. **Une sauvegarde en clair est un fichier de secrets**, et tu l'as vérifié de tes yeux.
+1. **Une sauvegarde en clair est un fichier de secrets**, et tu l'as vérifié de tes yeux. `ENC` n'est pas un chiffrement : c'est un encodage à clé statique publiée (CVE-2019-6693).
 2. **La restauration écrase tout** et redémarre. Ce n'est pas une fusion.
 3. **On lit les notes de version avant de mettre à jour** — le §2.6 en est la preuve.
 4. **Le durcissement se teste depuis une seconde session**, toujours.

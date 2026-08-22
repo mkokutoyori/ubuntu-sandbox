@@ -1,4 +1,5 @@
 import { ACCESS_GROUPS } from '../../../authz/AccessMatrix';
+import { passwordPolicyRefusal } from './passwordPolicy';
 import {
   addressMask, choice, refList, reference, text, word,
   type FortiAttributeSpec, type FortiObjectView, type FortiTableSpec,
@@ -89,7 +90,13 @@ export const SYSTEM_ADMIN: FortiTableSpec = {
   predefined: ['admin'],
   attributes: [
     { ...word('name', 'Administrator name.'), readOnly: true },
-    { ...text('password', 'Administrator password.'), quoted: true, secret: true },
+    {
+      ...text('password', 'Administrator password.'),
+      quoted: true,
+      secret: true,
+      valueRefusal: (value, env) =>
+        passwordPolicyRefusal(value, env, 'admin-password'),
+    },
     reference('accprofile', 'Access profile for this administrator.',
       ['system accprofile']),
     refList('vdom', 'Virtual domains this administrator can access.',

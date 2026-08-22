@@ -92,7 +92,23 @@ export function renderTableConfig(
   table: FortiTable, options: ShowOptions, only?: string,
 ): string[] {
   const path = table.spec.path.join(' ');
+  if (table.spec.keyOnConfigLine === true) {
+    return keyedTableConfig(table, options, path, only);
+  }
   return [`config ${path}`, ...tableBody(table, options, STEP, only), 'end'];
+}
+
+function keyedTableConfig(
+  table: FortiTable, options: ShowOptions, path: string, only?: string,
+): string[] {
+  const out: string[] = [];
+  for (const object of table.all()) {
+    if (only !== undefined && object.key !== only) continue;
+    const body = objectLines(object, options, STEP);
+    if (body.length === 0) continue;
+    out.push(`config ${path} ${renderKey(table.spec, object.key)}`, ...body, 'end');
+  }
+  return out;
 }
 
 export function renderSingletonConfig(

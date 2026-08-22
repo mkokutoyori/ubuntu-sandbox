@@ -70,6 +70,9 @@ export interface FortiAttributeSpec {
   ) => void;
   readonly acceptsValue?: (value: string) => boolean;
   readonly expectedValue?: string;
+  readonly valueRefusal?: (
+    value: string, environment: FortiSchemaEnvironment,
+  ) => string | null;
 }
 
 export interface FortiInterfacePatch {
@@ -186,6 +189,8 @@ export interface FortiGlobalSettings {
   readonly adminTimeoutMin?: number;
   readonly adminLockoutThreshold?: number;
   readonly adminLockoutDurationSec?: number;
+  readonly preLoginBanner?: boolean;
+  readonly postLoginBanner?: boolean;
   readonly timezone?: string;
 }
 
@@ -222,6 +227,7 @@ export interface FortiCommitDevice {
   removePolicyRoute(id: string): void;
   applyMemoryLog(patch: FortiMemoryLogPatch): void;
   applyGlobalSettings(settings: FortiGlobalSettings): void;
+  applyReplacementMessage(message: string, buffer: string): void;
   applyConsoleSettings(settings: ConsoleSettingsPatch): void;
   applyHostname(hostname: string): void;
   applyDnsSettings(settings: FirewallDnsSettings): void;
@@ -560,6 +566,7 @@ export interface FortiTableSpec {
   readonly attributes: readonly FortiAttributeSpec[];
   readonly children?: readonly FortiTableSpec[];
   readonly predefined?: readonly string[];
+  readonly keyOnConfigLine?: boolean;
   readonly scopeOnly?: boolean;
   readonly unavailable?: string;
   readonly onCommit?: (

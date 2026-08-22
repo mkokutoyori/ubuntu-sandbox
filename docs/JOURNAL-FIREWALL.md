@@ -2844,6 +2844,125 @@ pare-feu peut atterrir dans le `/var/log/syslog` d'une vraie machine.
 
 ---
 
+### E55 — Les deux derniers TP du tutoriel, et le durcissement qui n'existait pas
+
+Périmètre : TP 23 (dépanner trois pannes) et TP 24 (durcir et sauvegarder),
+les deux derniers laboratoires du tutoriel FortiGate encore non vérifiés.
+
+**TP 23 se joue en entier sans qu'une ligne de produit change**, et c'est le
+résultat le plus utile de la mesure. Les trois pannes — service de politique
+qui ne couvre plus le trafic, `set nat disable`, `mappedip` vers une machine
+inexistante — se provoquent, se diagnostiquent et se réparent exactement
+comme le tutoriel les écrit : le renifleur montre le paquet qui ARRIVE sur
+`port2` et ne ressort pas sur `port3`, la trace de flux dit
+`Denied by forward policy check (policy 0)` pour la première et
+`Allowed by Policy-1` pour la seconde, la table de sessions ne porte aucun
+`act=snat` tant que le NAT est coupé, et `execute ping 192.168.20.99` ne
+répond pas. Les 15 cas passent avant comme après correctif.
+
+**Ce qui a échoué au premier essai était ma propre lecture.** J'avais écrit
+la sonde en relisant la trace par `diagnose debug flow show console`, en la
+prenant pour une commande d'AFFICHAGE. Ce n'en est pas une : c'est un
+RÉGLAGE (`show console enable|disable`), et la trace se lit en réémettant
+`diagnose debug enable`, ce que le TP 9 faisait déjà correctement. Le test
+était faux, pas le produit — mais la mesure a trouvé un vrai défaut à côté :
+
+**`diagnose debug flow show` ne lisait PAS l'option qu'on lui nomme.** Le
+répartiteur faisait `state.showFunctionName = rest[3] !== 'disable'` sans
+jamais regarder `rest[2]`, c'est-à-dire le NOM de l'option. Conséquences
+mesurées : `show console enable` allumait les noms de fonction — une option
+en activait une autre ; `show console disable` les éteignait ; `show iprope`
+faisait de même ; et une option SANS valeur (`show function-name` tout court)
+était prise pour un `enable`. Les trois options sont maintenant distinguées :
+`function-name` agit comme avant, **`console` tait la trace sans arrêter le
+traçage** (ce qu'elle fait sur une vraie machine chargée, où la trace noie la
+console — activée par défaut, sans quoi le TP 9 cesserait de fonctionner), et
+`iprope` est refusée en nommant ce qui manque plutôt qu'acceptée sans effet
+(inscrit dans `TODO.md`). Une valeur absente ou inconnue est refusée.
+
+**TP 24 était, lui, largement intapable.** Trois familles manquaient.
+
+**① La sauvegarde chiffrée ne l'était pas.** `execute backup config tftp
+<fichier> <serveur> <mot de passe>` acceptait le mot de passe et le JETAIT :
+`const [destination, file, server] = rest.slice(1)` ne lisait pas le
+quatrième mot. Les deux fichiers étaient **octet pour octet identiques**, et
+`execute restore` sans mot de passe restaurait le prétendu fichier chiffré
+sans broncher. L'étape 2 du TP — « Fais l'expérience. C'est ce qui convainc
+de toujours chiffrer » — enseignait donc l'inverse de ce qu'elle promet.
+Le chiffrement est maintenant réel et sa forme est celle de Fortinet, non une
+invention : **AES-256-GCM**, clé dérivée du mot de passe par **un seul tour de
+SHA-256** — la faiblesse réelle et documentée de ce format, celle qui rend un
+mot de passe court cassable — puis en-tête, vecteur d'initialisation de 12
+octets, étiquette GCM de 16 octets, chiffré. Rien n'est écrit de neuf :
+`aesGcmEncrypt`/`aesGcmDecrypt` et `sha256` sont ceux du dépôt. **Une seule
+divergence, assumée et écrite** : le fichier réel est binaire, le VFS de ce
+simulateur ne stocke que de l'UTF-8 (contrainte déjà documentée par
+`PRD-OpenSSL` pour `openssl enc`), donc le corps est armuré en base64 sous une
+ligne d'en-tête. La restauration DÉTECTE : mot de passe absent, mauvais mot
+de passe et octet retourné sont trois refus distincts, et c'est l'étiquette
+GCM qui les prononce — un XOR ne l'aurait pas pu.
+
+**Corrigé au passage dans le tutoriel, car sa phrase était fausse** : « tu y
+liras `set psksecret`… en clair ». Non — un vrai FortiGate écrit
+`set psksecret ENC <base64>`, et ce simulateur le faisait déjà. Le danger
+n'est pas que le secret soit en clair, c'est qu'`ENC` soit un encodage
+RÉVERSIBLE à clé statique publiée (CVE-2019-6693) : la sonde décode le blob
+de la sauvegarde en clair et retrouve la clé partagée, ce qui démontre la
+leçon au lieu de l'affirmer.
+
+**② `config system password-policy` n'existait pas** — toute l'étape 3 et le
+point ④ du §25.4 étaient injouables. La table est écrite avec ses attributs
+réels (`status`, `apply-to`, `minimum-length` 8–128, les quatre minimums de
+classes de caractères, `expire-status`/`expire-day`), et surtout **elle
+refuse pour de bon** : le refus se produit au moment du `set`, comme sur une
+vraie machine, et **nomme la règle non remplie**. `apply-to` décide de la
+portée et porte AUSSI sur `psksecret`, ce qui est le seul endroit du pare-feu
+où la qualité d'une clé partagée est vérifiée.
+
+Cela a demandé un vrai chaînon : la validation d'un attribut ne voyait que sa
+propre valeur, jamais l'état de la machine. `FortiAttributeSpec` gagne
+`valueRefusal(value, environment)` et `FortiValidator` reçoit le
+`FortiSchemaEnvironment` — qui n'est pas un objet nouveau, c'est le contrat
+que `FortiConfigTree` remplit déjà et que `isRouted`/`isStatic` lisent depuis
+toujours par `object.setting('system settings', 'opmode')`. Le hook rend la
+RAISON plutôt qu'un booléen, parce qu'un refus qui ne dit pas quelle règle a
+échoué envoie l'opérateur deviner. `reuse-password` et
+`min-change-characters` sont refusés en nommant l'absence d'historique de
+mots de passe (`TODO.md`).
+
+**③ La bannière n'existait pas non plus** : `pre-login-banner` et
+`post-login-banner` étaient refusés par `config system global`, et
+`config system replacemsg` n'existait pas du tout. Les deux moitiés sont
+écrites et **restent deux réglages distincts** — le drapeau sans texte
+n'affiche rien, le texte sans drapeau non plus, et les deux cas sont épinglés
+par test parce que c'est l'erreur la plus fréquente sur cette commande.
+
+Une particularité de FortiOS a dû être modélisée pour cela, et elle n'est pas
+cosmétique : **`config system replacemsg admin "pre_admin-disclaimer-text"`
+porte la clé sur la ligne `config`**, pas sur un `edit`. Le socle
+n'enregistrait que des chemins exacts, donc la forme du tutoriel n'atteignait
+même pas le navigateur. `FortiTableSpec.keyOnConfigLine` le déclare, et il
+gouverne les TROIS endroits qui doivent s'accorder : la commande enregistrée
+(qui prend la clé en argument, donc la complète aussi), la descente du
+navigateur, et le RENDU — sans quoi `show` aurait écrit une forme que
+l'import d'une topologie n'aurait pas su rejouer. Un cas rejoue le `show`
+d'une machine sur une autre et vérifie que la bannière y arrive.
+
+**Discrimination** (`git stash push -- src/network src/terminal`) : 19 des
+69 cas tombent avant correctif — 4 sur `tuto-fortigate-tp09` (les options de
+`show`), 7 sur `tuto-fortigate-tp24`, 8 sur `fortigate-durcissement`. **Les
+15 cas de `tuto-fortigate-tp23` passent des deux côtés**, ce qui est le
+constat et non un défaut de la sonde. Nuance dite plutôt que tue : les trois
+fichiers NOUVEAUX du produit (`ConfigEncryption`, `LoginBanners`,
+`passwordPolicy`) ne sont pas suivis par git, donc le `stash` n'a retiré que
+leur BRANCHEMENT — ce qui est la bonne granularité, un module que personne
+n'appelle ne fait rien, mais il faut le dire.
+
+**Vérifié** : 1786 cas du module pare-feu (87 fichiers). Typecheck inchangé
+à 342.
+
+---
+
 ### E54 — Une vue de lecture ne peut plus être écrite, et une l'était
 
 G8 de BRD-Firewall §40.6 — « les vues de lecture n'exposent aucune

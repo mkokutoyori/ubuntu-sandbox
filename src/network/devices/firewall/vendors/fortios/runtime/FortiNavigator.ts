@@ -104,7 +104,7 @@ export class FortiNavigator {
     }
 
     const spec = this.deps.tree.spec(words);
-    if (!spec) return FortiMessages.unknownPath(words.join(' '));
+    if (!spec) return this.descendWithKeyOnConfigLine(words);
     if (spec.unavailable) return FortiMessages.commandFail(spec.unavailable);
 
     if (spec.kind === 'object') {
@@ -117,6 +117,19 @@ export class FortiNavigator {
 
     this.stack.push({ kind: 'table', table: this.deps.tree.table(spec) });
     return EMPTY;
+  }
+
+  private descendWithKeyOnConfigLine(words: readonly string[]): string {
+    const spec = words.length > 1 ? this.deps.tree.spec(words.slice(0, -1)) : undefined;
+    if (!spec || spec.keyOnConfigLine !== true) {
+      return FortiMessages.unknownPath(words.join(' '));
+    }
+    if (spec.unavailable) return FortiMessages.commandFail(spec.unavailable);
+
+    this.stack.push({ kind: 'table', table: this.deps.tree.table(spec) });
+    const opened = this.edit(words[words.length - 1]);
+    if (opened !== EMPTY) this.stack.pop();
+    return opened;
   }
 
   private descendChild(parent: FortiObject, words: readonly string[]): string {

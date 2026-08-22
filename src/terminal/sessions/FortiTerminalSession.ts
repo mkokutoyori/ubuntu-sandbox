@@ -98,6 +98,7 @@ export class FortiTerminalSession extends CLITerminalSession {
     if (!(this.device instanceof Firewall)) return;
     if (!this.device.getConsoleSettings().requiresLogin()) { this.loggedIn = true; return; }
     this.loggedIn = false;
+    for (const line of this.forti().getLoginBanners().lines('pre')) this.addLine(line);
     this.startFlowFromSteps(this.buildLoginSteps(), '', undefined, { authGate: true });
   }
 
@@ -156,6 +157,9 @@ export class FortiTerminalSession extends CLITerminalSession {
           const user = (ctx.values.get('forti_user') ?? '').trim();
           this.loggedIn = true;
           this.forti().getShell().setAdminIdentity(user);
+          for (const line of this.forti().getLoginBanners().lines('post')) {
+            this.addLine(line);
+          }
           return this.forti().adminMustChoosePassword(user) ? 5 : 9;
         },
       },

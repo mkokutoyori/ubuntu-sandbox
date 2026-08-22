@@ -29,6 +29,7 @@ export class FortiDiagnostics {
     this.debugFlow.enabled = false;
     this.debugFlow.traceCount = 0;
     this.debugFlow.showFunctionName = false;
+    this.debugFlow.showConsole = true;
     this.debugFlow.filter = {};
   }
 

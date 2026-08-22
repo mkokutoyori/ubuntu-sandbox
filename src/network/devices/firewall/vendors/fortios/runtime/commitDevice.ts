@@ -170,6 +170,11 @@ export function buildCommitDevice(fw: Firewall): FortiCommitDevice {
           fw.setAdminLockout(
             settings.adminLockoutThreshold, settings.adminLockoutDurationSec);
         }
+        fw.getLoginBanners().enable('pre', settings.preLoginBanner === true);
+        fw.getLoginBanners().enable('post', settings.postLoginBanner === true);
+      },
+      applyReplacementMessage(message, buffer) {
+        fw.getLoginBanners().setBuffer(message, buffer);
       },
       setCaptivePortalInterface(iface, on) {
         fw.setCaptivePortalInterface(iface, on);

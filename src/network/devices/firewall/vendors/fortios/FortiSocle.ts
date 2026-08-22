@@ -10,6 +10,7 @@ import type { FortiAttributeSpec, FortiTableSpec } from './schema/types';
 import type { AccessIntent, AccessVerdict } from '../../authz/AccessMatrix';
 import type { FortiConfigTree } from './runtime/FortiConfigTree';
 import type { FortiNavigator } from './runtime/FortiNavigator';
+import { unquote } from './runtime/FortiNavigator';
 import type { FortiObject } from './runtime/FortiObject';
 import type { FortiTable } from './runtime/FortiTable';
 
@@ -195,11 +196,25 @@ export class FortiSocle {
       const verdict = this.verdict(spec, 'write');
       if (verdict === 'absent') continue;
 
+      const refused = () => FortiMessages.noPermission(path.join(' '));
+      if (spec.keyOnConfigLine === true) {
+        out.push(this.withArgument(
+          `config ${path.join(' ')}`,
+          ['config', ...path, {
+            name: 'key', type: 'WORD', description: 'Message name.',
+            alternatives: (spec.predefined ?? []).map(name => ({
+              keyword: name, description: 'Replacement message.',
+            })),
+          }], spec.help,
+          (_session, args) => verdict === 'read-only'
+            ? refused()
+            : this.deps.nav.descend([...path, unquote(args.key ?? '')]),
+        ));
+        continue;
+      }
       out.push(this.plain(
         `config ${path.join(' ')}`, ['config', ...path], spec.help,
-        () => verdict === 'read-only'
-          ? FortiMessages.noPermission(path.join(' '))
-          : this.deps.nav.descend(path),
+        () => verdict === 'read-only' ? refused() : this.deps.nav.descend(path),
       ));
     }
     return out;

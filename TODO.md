@@ -118,6 +118,59 @@ famille reprise ferme une part de cette entrée.
 
 ## Pare-feu FortiGate
 
+### [debug] `diagnose debug flow show iprope` est refuse
+Les trois options de `show` sont desormais LUES (`function-name`, `console`,
+`iprope`) au lieu d'etre confondues, mais `iprope` est refuse en nommant ce
+qui manque : un vrai FortiGate ajoute a la trace les lignes de consultation
+de la table `iprope` (le mecanisme noyau de choix de politique), et ce
+simulateur n'en produit aucune.
+**Mesure** : `diagnose debug flow show iprope enable` rend `Command fail`
+avec la raison ; la trace de `diagnose debug enable` ne change pas.
+**Report** : ecrire ces lignes demanderait d'inventer un journal de
+consultation que le moteur de politiques ne tient pas. La politique retenue
+EST deja nommee dans la trace (`Allowed by Policy-2`), donc l'option
+n'apporterait qu'un texte fabrique.
+
+### [durcissement] `set reuse-password disable` est refuse
+Le reglage existe sur un vrai FortiGate et interdit de reprendre un ancien
+mot de passe.
+**Mesure** : la commande rend `Command fail` en nommant l'absence
+d'historique.
+**Report** : il faudrait garder les N derniers mots de passe de chaque
+compte — donc un magasin de secrets historises, ce qu'aucun equipement de
+ce depot ne fait aujourd'hui. `min-change-characters` est dans le meme cas
+et pour la meme raison (il compare au mot de passe PRECEDENT).
+
+### [durcissement] la banniere d'apres-connexion ne demande pas d'etre acceptee
+Un vrai FortiOS affiche la banniere `post_admin-disclaimer-text` puis
+demande de l'accepter, et refuse la session sans acceptation.
+**Mesure** : la banniere s'affiche, la session s'ouvre sans rien demander.
+**Report** : c'est un pas d'interaction de plus dans l'enchainement de
+connexion (`buildLoginSteps`), donc un branchement de refus a ecrire ; le
+tutoriel n'emprunte que la banniere d'avant-connexion.
+
+### [durcissement] `config system replacemsg` ne porte que le groupe `admin`
+Un vrai FortiGate en a une vingtaine (`auth`, `http`, `ftp`, `mail`,
+`spam`, `alertmail`, `sslvpn`, `nac-quar`, `traffic-quota`...).
+**Mesure** : `config system replacemsg auth ...` rend
+`unknown configuration path`.
+**Report** : les autres groupes decrivent des pages servies par des
+fonctions que ce pare-feu n'a pas toutes, et une table acceptee dont le
+texte n'est affiche nulle part serait le decor que ce depot passe son temps
+a defaire. Le groupe `admin` est ecrit parce que ses deux messages sont
+VRAIMENT affiches.
+
+### [rendu] `show <table singleton>` rend un bloc vide
+`show system global` sur une machine d'usine rend `config system global`
+suivi de `end`, sans une ligne entre les deux. La sauvegarde complete, elle,
+omet correctement la table vide.
+**Mesure** : `show system global` sur une machine neuve ; comparer avec
+`execute backup config`, qui ne porte pas la table.
+**Report** : deux rendus de la meme table decident differemment de ce
+qu'est une table vide. Les unifier est juste, mais toucher au rendu de
+`show` demande de verifier ce qu'un vrai FortiGate ecrit pour chaque
+singleton — la mesure n'est pas faite.
+
 ### [journal] l'origine d'une modification est toujours `jsconsole`
 L'evenement de configuration porte `user` — le compte reellement
 authentifie, ce qui est ce que l'etape 7 du TP 22 enseigne — mais son champ
