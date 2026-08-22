@@ -29,13 +29,30 @@ est faux quelle que soit la réponse — mais le corriger suppose une clé de
 réglage qui porte ses qualificatifs, donc un magasin qui ne soit plus une
 simple liste de lignes.
 
-### [vues système non mesurées]
-Familles repérées comme présentes mais jamais passées au banc :
-`dhcp enable`, `dhcp snooping enable`, `observe-port`, `traffic classifier`,
-`user-interface vty`, `info-center enable`, `ip route-static` sur un
-commutateur L3.
-**Report** : pas encore mesurées — à passer au banc avant d'affirmer quoi
-que ce soit.
+### [mqc] `traffic classifier` ouvre une vue dont le corps est refusé
+Mesuré sur un commutateur Huawei : `traffic classifier tc1` est acceptée et
+ouvre bien sa vue, mais `if-match vlan-id 10` — la seule chose qu'on y
+tape — répond `Unrecognized command found at '^' position`, et
+`display traffic classifier user-defined` est refusée elle aussi. Le
+classificateur n'est donc rangé nulle part que quiconque puisse relire, et
+il ne figure pas non plus dans la configuration rendue.
+**Report** : fermer cette entrée veut dire écrire le MQC (classifier /
+behavior / policy, `if-match`, `traffic-policy` sur interface) — un
+sous-système, pas une commande. Refuser `traffic classifier` en attendant
+retirerait une commande que la vraie machine accepte ; la laisser telle
+quelle laisse un critère accepté et non évalué. Les deux sont mauvais, d'où
+l'inscription plutôt qu'un correctif de façade.
+
+### [info-center] `display info-center` est refusée
+Le magasin existe (`InfoCenterConfig`), la famille de configuration est
+honorée et figure maintenant dans `display current-configuration` sur les
+deux plateformes — mais la vue qui la relit n'existe sur aucune des deux :
+`display info-center` répond `Unrecognized command`.
+**Report** : mesuré, non fermé — il manque une capture attestée du tableau
+que rend la vraie commande (état, canaux, destinations), et
+`info.support.huawei.com` est EGRESS_BLOCKED depuis cette session. Rendre
+un tableau inventé serait exactement le décor que ce dépôt passe son temps
+à défaire.
 
 ---
 
@@ -517,8 +534,8 @@ existe côté serveur, mais rien ne l'atteint par le fil.
 
 ## Outillage
 
-### [typecheck] 347 erreurs de type au compteur
-`npm run typecheck` (ajouté) en compte 347, presque toutes dans les
+### [typecheck] 341 erreurs de type au compteur
+`npm run typecheck` (ajouté) en compte 341, presque toutes dans les
 tests : arguments de `DeviceType` passés à l'envers, `MACAddress` là où
 un nombre est attendu, signatures de constructeur périmées.
 **Mesure** : `npm run typecheck 2>&1 | grep -c "error TS"`.

@@ -106,6 +106,16 @@ function mstpStateName(state: string): string {
   return 'DISCARDING';
 }
 
+/**
+ * `vty0-4` redevient `user-interface vty 0 4`. L'etiquette est ce que la
+ * vue affiche ; la configuration doit rendre la commande qui la rouvre.
+ */
+function vrpUserInterfaceHeader(label: string): string | null {
+  const m = /^([a-z-]+)(\d+)(?:-(\d+))?$/.exec(label);
+  if (!m) return null;
+  return `user-interface ${m[1]} ${m[2]}${m[3] ? ` ${m[3]}` : ''}`;
+}
+
 export class HuaweiSwitchShell implements ISwitchShell {
   private mode: VRPSwitchMode = 'user';
   private selectedInterface: string | null = null;
@@ -3803,6 +3813,64 @@ export class HuaweiSwitchShell implements ISwitchShell {
     return lines.join('\n');
   }
 
+
+  /**
+   * Les familles globales que la configuration ne portait pas.
+   *
+   * Chacune etait acceptee, plusieurs etaient honorees — le snooping
+   * repond dans sa vue, le port d'observation dans la sienne, la route
+   * statique est dans la table — et aucune ne survivait a un
+   * `display current-configuration`, donc a un rechargement de topologie.
+   */
+  private globalRunningConfigBlocks(sw: HuaweiSwitchDevice): string[][] {
+    const blocs: string[][] = [];
+    const sec = sw.getSecurityService();
+
+    const dhcp: string[] = [];
+    if (sec.isDhcpEnabled()) dhcp.push('dhcp enable');
+    if (sec.isDhcpSnoopingEnabled()) {
+      dhcp.push('dhcp snooping enable');
+      const vlans = sec.getDhcpSnoopingVlans();
+      if (vlans.length > 0) {
+        dhcp.push(`dhcp snooping enable vlan ${[...vlans].sort((a, b) => a - b).join(' ')}`);
+      }
+    }
+    for (const trust of sec.getDhcpSnoopingTrust()) {
+      if (trust.trusted) dhcp.push(`dhcp snooping trust interface ${trust.ifName}`);
+    }
+    if (dhcp.length > 0) blocs.push(dhcp);
+
+    const observation = sw.listMirrorSessions()
+      .filter(session => session.destination !== null)
+      .map(session => `observe-port ${session.id} interface ${session.destination}`);
+    if (observation.length > 0) blocs.push(observation);
+
+    const journal = sw.getManagementService?.().getInfoCenter().toRunningConfig() ?? [];
+    if (journal.length > 0) blocs.push([...journal]);
+
+    const routes = sw.getStaticRoutes?.() ?? [];
+    const lignesRoutes = routes.map(
+      route => `ip route-static ${route.network} ${route.mask} ${route.nextHop}`);
+    if (lignesRoutes.length > 0) blocs.push(lignesRoutes);
+
+    for (const [label, cfg] of this.userInterfaceExtraConfig) {
+      const vue = vrpUserInterfaceHeader(label);
+      if (!vue) continue;
+      const corps: string[] = [];
+      if (cfg.authMode) corps.push(` authentication-mode ${cfg.authMode}`);
+      if (cfg.idleTimeoutMin !== undefined) corps.push(` idle-timeout ${cfg.idleTimeoutMin} 0`);
+      if (cfg.screenLength !== undefined) corps.push(` screen-length ${cfg.screenLength}`);
+      if (cfg.historySize !== undefined) corps.push(` history-command max-size ${cfg.historySize}`);
+      if (cfg.acl) corps.push(` acl ${cfg.acl} inbound`);
+      if (cfg.authorizationMode) corps.push(` authorization-mode ${cfg.authorizationMode}`);
+      for (const u of cfg.users) corps.push(` user ${u}`);
+      for (const l of cfg.rawLines) corps.push(` ${l}`);
+      if (corps.length > 0) blocs.push([vue, ...corps]);
+    }
+
+    return blocs;
+  }
+
   private displayCurrentConfig(sw: HuaweiSwitchDevice): string {
     const lines = [
       '#',
@@ -3846,6 +3914,10 @@ export class HuaweiSwitchShell implements ISwitchShell {
 
     const lldpGlobal = sw.getLldpAgent?.()?.asRunningConfigLinesVrp() ?? [];
     if (lldpGlobal.length > 0) { lines.push(...lldpGlobal); lines.push('#'); }
+
+    for (const bloc of this.globalRunningConfigBlocks(sw)) {
+      lines.push(...bloc); lines.push('#');
+    }
 
     const ports = sw._getPortsInternal();
     const configs = sw._getSwitchportConfigs();

@@ -2599,6 +2599,8 @@ export abstract class Switch extends Equipment {
     return this.svi.executePingSequence(target, count, timeoutMs, sourceIPStr);
   }
 
+  getStaticRoutes() { return this.svi.getStaticRoutes(); }
+
   addStaticRoute(network: IPAddress, mask: SubnetMask, nextHop: IPAddress): void {
     this.svi.addStaticRoute(network, mask, nextHop);
   }
