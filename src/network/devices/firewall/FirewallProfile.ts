@@ -75,13 +75,15 @@ export interface FirewallProfile {
 
 export const GENERIC_PIPELINE: readonly string[] = Object.freeze([
   'vdom-bind', 'switch-bridge', 'ingress-zone', 'session-lookup', 'tcp-state-check',
-  'nat-destination', 'policy-route', 'route-lookup', 'egress-zone', 'policy-lookup',
+  'nat-destination', 'policy-route', 'route-lookup', 'ttl-decrement',
+  'egress-zone', 'policy-lookup',
   'auth-check', 'utm-inspect', 'nat-source', 'session-install',
 ]);
 
 export const GENERIC_TRANSPARENT_PIPELINE: readonly string[] = Object.freeze([
   'vdom-bind', 'switch-bridge', 'ingress-zone', 'session-lookup', 'tcp-state-check',
-  'mac-lookup', 'egress-zone', 'policy-lookup', 'auth-check', 'utm-inspect', 'session-install',
+  'mac-lookup', 'ttl-decrement', 'egress-zone', 'policy-lookup', 'auth-check',
+  'utm-inspect', 'session-install',
 ]);
 
 export const GENERIC_PIPELINE_BY_MODE: PipelineByMode = Object.freeze({

@@ -76,7 +76,11 @@ export class ManagementPlane {
   }
 
   refusesSource(source: string): boolean {
-    return !this.trustedSource(source) || this.lockout.isLockedOut(source);
+    return !this.trustedSource(source);
+  }
+
+  isLockedOut(user: string): boolean {
+    return this.lockout.isLockedOut(user);
   }
 
   applyAdmin(admin: AdminAccountDraft): void {
@@ -91,11 +95,11 @@ export class ManagementPlane {
     return adminTrustsSource(this.access, name, source);
   }
 
-  login(user: string, password: string, source: string): boolean {
-    if (this.lockout.isLockedOut(source)) return false;
+  login(user: string, password: string, source?: string): boolean {
+    if (this.lockout.isLockedOut(user)) return false;
     const accepted = this.authenticate(user, password, source);
-    if (accepted) this.lockout.recordSuccess(source);
-    else this.lockout.recordFailure(source);
+    if (accepted) this.lockout.recordSuccess(user);
+    else this.lockout.recordFailure(user);
     return accepted;
   }
 
@@ -103,7 +107,7 @@ export class ManagementPlane {
     return adminHasNoPassword(this.access, this.secrets, name);
   }
 
-  noteLogin(source: string): void { this.lockout.recordSuccess(source); }
+  noteLogin(user: string): void { this.lockout.recordSuccess(user); }
 
-  noteAuthFailure(source: string): void { this.lockout.recordFailure(source); }
+  noteAuthFailure(user: string): void { this.lockout.recordFailure(user); }
 }

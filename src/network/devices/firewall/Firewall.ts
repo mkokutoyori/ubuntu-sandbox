@@ -13,6 +13,9 @@ import {
   type IPv4Packet,
   type UDPPacket,
 } from '../../core/types';
+import {
+  buildICMPError, mayGenerateICMPError, ICMP_TTL_EXPIRED_IN_TRANSIT,
+} from '../../core/IcmpErrors';
 import { SystemClock } from '../../core/SystemClock';
 import { localTimeMs, utcMsForLocal } from '../../core/Timezone';
 import { decryptFromTunnel, sealedLegs } from './vpn/IpsecDataPlane';
@@ -133,6 +136,8 @@ export interface TrafficLogger {
   onSessionClosed(session: FirewallSession, reason: SessionCloseReason): void;
   onDenied(context: PacketContext): void;
 }
+
+const TIME_EXCEEDED_TTL = 64;
 
 export class Firewall extends Equipment {
   private readonly interfaces = new InterfaceTable();
@@ -332,9 +337,9 @@ export class Firewall extends Equipment {
       refuseManagementSource: (source) => this.management.refusesSource(source),
       managementIdleTimeoutMs: () => this.management.idleTimeoutMs(),
       runningConfig: () => this.managementRunningConfig(),
-      onManagementLogin: (_user, source) => { this.management.noteLogin(source); },
-      onManagementAuthFailure: (_user, source) => {
-        this.management.noteAuthFailure(source);
+      onManagementLogin: (user) => { this.management.noteLogin(user); },
+      onManagementAuthFailure: (user) => {
+        this.management.noteAuthFailure(user);
       },
     });
     this.portals = mgmt.portals;
@@ -697,7 +702,11 @@ export class Firewall extends Equipment {
   }
 
   authenticateAdmin(name: string, password: string, source?: string): boolean {
-    return this.management.authenticate(name, password, source);
+    return this.management.login(name, password, source);
+  }
+
+  adminIsLockedOut(name: string): boolean {
+    return this.management.isLockedOut(name);
   }
 
   adminTrustsSource(name: string, source: string): boolean {
@@ -998,6 +1007,9 @@ export class Firewall extends Equipment {
       if (context.verdict?.reason === 'auth-required') {
         this.captivePortal.capture(portName, packet);
       }
+      if (context.verdict?.reason === 'ttl-expired') {
+        this.sendTimeExceeded(portName, packet);
+      }
       return;
     }
 
@@ -1008,6 +1020,19 @@ export class Firewall extends Equipment {
       forwarded.policyRouteGateway,
       bridgedFrameOf(frame, forwarded.bridged === true
         || vdom.settings.opmode === 'transparent'));
+  }
+
+  private sendTimeExceeded(ingressPort: string, packet: IPv4Packet): void {
+    if (!mayGenerateICMPError(packet)) return;
+
+    const source = this.interfaces.get(ingressPort)?.ip;
+    if (!source) return;
+
+    const error = buildICMPError(
+      new IPAddress(source), packet, 'time-exceeded',
+      ICMP_TTL_EXPIRED_IN_TRANSIT, TIME_EXCEEDED_TTL);
+    const route = this.getVdom().routes.resolveNextHop(packet.sourceIP.toString());
+    this.forward(route?.iface ?? ingressPort, error, route?.nextHop);
   }
 
   getDeepInspection(): SslDeepInspection { return this.deepInspection; }

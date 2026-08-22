@@ -195,22 +195,21 @@ evenement n'annonce le franchissement.
 ce qui manque est le message exact et son `logid`, que je n'ai pas pu
 relever sur une sortie reelle depuis ce reseau.
 
-### [pare-feu] un paquet qui TRAVERSE ne perd pas un saut
-Le pare-feu ne decremente jamais le TTL d'un paquet qu'il relaie, et n'emet
-donc aucun ICMP Time Exceeded. Consequences : il est INVISIBLE a un
-`traceroute` qui le traverse — la machine d'en face apparait au saut du
-routeur precedent — et une boucle de routage passant par lui ne se romprait
-jamais toute seule.
-**Mesure** : `FirewallEgress.buildEgressFrame` recopie le paquet tel quel ;
-le seul `ttl:` du module est le 64 que le pare-feu pose sur SES PROPRES
-reponses d'echo. Trouve par le garde-fou G-P2 : `ttl-expired` et
-`mtu-exceeded-df` etaient declares comme motifs de refus et produits par
-personne.
-**Report** : les deux motifs sont retires plutot que laisses a mentir, mais
-la connaissance est ecrite ici. Fermer demande un decrement au relais, un
-emetteur d'ICMP Time Exceeded, et la meme chose pour la fragmentation
-(`mtu-exceeded-df`) — c'est-a-dire un plan de donnees IP complet, que
-`Router.ts` porte deja et que le pare-feu n'a jamais eu.
+### [pare-feu] la fragmentation n'existe pas
+Le TTL est desormais decremente au relais et un ICMP Time Exceeded part
+quand il s'epuise, donc le pare-feu apparait dans un `traceroute` — mais la
+seconde moitie du meme sujet reste ouverte : un datagramme plus grand que le
+MTU de l'interface de sortie est relaye tel quel. Il n'est ni fragmente
+(DF=0) ni refuse par un ICMP Fragmentation Needed (DF=1), donc la decouverte
+de MTU de chemin ne peut pas fonctionner a travers ce pare-feu.
+**Mesure** : `L3Interface.mtu` existe et est configurable ; aucun chemin du
+module ne le lit avant d'emettre. Trouve avec le TTL, par le garde-fou G-P2
+(`mtu-exceeded-df` etait declare comme motif de refus et produit par
+personne).
+**Report** : `Ipv4Fragmentation.ts` (RFC 791 §3.2) existe deja dans le socle
+et sert `Router.ts` et `EndHost.ts` — le fermer est donc un branchement et
+non une ecriture, mais il demande un REASSEMBLEUR cote reception et une
+etape de plus dans le pipeline, ce qui est un sujet en soi.
 
 ### [ha] les adresses MAC VIRTUELLES du cluster n'existent pas
 FGCP donne a chaque interface du cluster une adresse MAC virtuelle, portee
@@ -462,35 +461,6 @@ ICMPv6 — `FirewallPing` construit un `IPv4Packet` et rien d'autre.
 **Mesure** : la commande tapee sur une machine neuve, refusee.
 **Report** : ecrire l'emetteur ICMPv6 est le sujet, et il sert aussi
 `execute traceroute6` et la surveillance SD-WAN en v6.
-
-### [console] les bannieres pre-login et post-login sont refusees
-`config system global set pre-login-banner enable` (et son jumeau
-`post-login-banner`) repond « unknown attribute ». Le refus est
-CORRECT en l'etat — la banniere n'a pas de texte a afficher, celui-ci
-vivant dans `config system replacemsg admin pre_admin-disclaimer-text`,
-une famille qui n'existe pas du tout — donc accepter le drapeau
-stockerait un critere que rien n'evalue.
-**Mesure** : les deux commandes tapees sur une machine neuve, refusees.
-**Report** : la porte manquante est le magasin des messages de
-remplacement, pas le drapeau ; l'ecrire est un sujet en soi (la famille
-`replacemsg` porte des dizaines d'entrees et un editeur de texte
-multi-lignes).
-
-### [admin] le verrouillage apres N essais ne compte pas la console
-`admin-lockout-threshold` et `admin-lockout-duration` sont acceptes et le
-compteur (`ManagementPlane.login`) fonctionne — mais il est indexe par
-SOURCE, et une connexion de console n'a pas d'adresse d'origine. La
-console appelle donc `authenticateAdmin` directement : trois mots de
-passe faux d'affilee sur la console ne verrouillent rien.
-**Mesure** : trois refus consecutifs dans le flux de console, puis le bon
-mot de passe — il est accepte, alors qu'une vraie machine aurait bloque
-la ligne pendant `admin-lockout-duration` (60 s par defaut).
-**Report** : donner une cle a la console (`console`, ou le nom du compte)
-n'est pas un detail — le vrai FortiOS verrouille le COMPTE et non la
-source, donc aligner le simulateur veut dire changer l'index du compteur
-pour tout le monde, SSH et telnet compris, et verifier que le compte
-`admin` ne peut pas etre verrouille depuis l'exterieur au point qu'on ne
-puisse plus entrer par la console. Sujet en soi.
 
 ### [admin] pas d'interface d'administration HTTP/HTTPS
 `set allowaccess http https` est accepte, rendu, et gouverne bien le

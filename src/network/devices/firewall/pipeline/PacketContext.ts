@@ -27,7 +27,8 @@ export type VerdictReason =
   | 'auth-required'
   | 'ha-subordinate'
   | 'zone-mismatch'
-  | 'interface-down';
+  | 'interface-down'
+  | 'ttl-expired';
 
 export type VerdictAction = 'accept' | 'deny' | 'drop' | 'reset' | 'reject';
 

@@ -2844,6 +2844,88 @@ pare-feu peut atterrir dans le `/var/log/syslog` d'une vraie machine.
 
 ---
 
+### E56 — Le verrou porte sur le COMPTE, et un paquet qui traverse perd un saut
+
+Périmètre : deux entrées ouvertes de `TODO.md`, prises pour elles-mêmes.
+
+**① `admin-lockout-threshold` ne comptait rien sur la console.** Le compteur
+existait, fonctionnait, et était indexé par **SOURCE** — or une connexion de
+console n'a pas d'adresse d'origine, donc la console appelait
+`authenticateAdmin` directement et trois mots de passe faux d'affilée ne
+verrouillaient rien. Le TP 24 configure précisément ce réglage à son étape 4.
+
+La mesure a montré que la clé était fausse pour tout le monde, pas seulement
+pour la console : **un vrai FortiGate verrouille le COMPTE**, ce que la
+documentation Fortinet dit explicitement (« the amount of time an
+administrator account is locked out »). Le compteur est donc ré-indexé par
+nom de compte — SSH et telnet compris —, la console passe par `login()` au
+lieu de contourner le compteur, et `refusesSource()` ne consulte plus le
+verrou du tout : il ne juge plus que le `trusthost`, ce qui est sa question.
+Détail qui n'en est pas un : `onManagementAuthFailure` recevait DÉJÀ le nom
+d'utilisateur et le jetait (`(_user, source) => …`) — la donnée était là, la
+clé était l'autre.
+
+**Conséquence assumée, parce qu'elle est celle d'une vraie machine** :
+verrouiller `admin` depuis l'extérieur le verrouille aussi pour la console
+pendant `admin-lockout-duration`. C'est exactement le risque contre lequel
+`trusthost` existe, et le tutoriel l'enseigne déjà.
+
+**Corrigé en chemin dans ma propre sonde**, deux fois : `getPrompt()` rend
+`FGT-01 # ` même pendant l'invite de connexion (l'invite du flux interactif
+est ailleurs), donc l'assertion ne prouvait rien — elle compte maintenant les
+`Login incorrect`. Et un seuil de `0` n'existe pas : FortiOS accepte de 1 à
+10, le simulateur le refusait déjà, et mon cas « un seuil de zéro ne
+verrouille jamais » testait une commande refusée. Il pose maintenant le refus
+comme contrat.
+
+**② Un paquet qui TRAVERSE ne perdait pas un saut.** Le pare-feu était
+**invisible à un `traceroute`** : mesuré avant tout changement, `traceroute`
+depuis le LAN vers la DMZ affichait le serveur au saut 1. Une boucle de
+routage passant par lui n'aurait jamais pu se rompre.
+
+Rien n'a été écrit de neuf pour le fermer : `IcmpErrors.ts`
+(`buildICMPError`, `mayGenerateICMPError`, les codes RFC 792) est le module
+partagé que `Router.ts` et `EndHost.ts` utilisent déjà, et le décrément est
+une étape de pipeline (`ttl-decrement`) placée **après la décision de
+routage et avant la politique** — l'ordre de `ip_forward()` sous Linux, dont
+FortiOS dérive. `ttl-expired` redevient un motif de refus **avec un
+producteur**, ce que le garde-fou G-P2 exigeait.
+
+**Ce qui a demandé de la mesure plutôt que du raisonnement** : la première
+version décrémentait bien à l'aller et pas au retour. La cause est que
+`session-lookup` est un **chemin rapide** qui accepte et saute toutes les
+étapes suivantes — comme sur une vraie machine, sauf qu'une vraie machine
+décrémente quand même. La règle est donc UNE fonction (`transitTtl`) appelée
+par l'étape ET par le chemin rapide, plutôt que deux copies qui finiraient
+par ne pas décider pareil.
+
+**Le mode transparent ne décrémente pas**, parce qu'un pare-feu transparent
+est un PONT. Et cette condition est écrite **une seule fois**, dans
+`transitTtl` : la faire porter aussi par la liste d'étapes du profil aurait
+donné deux décideurs pour une même règle, exactement le défaut que ce dépôt
+passe son temps à défaire. L'étape figure donc dans tous les pipelines, y
+compris transparents, et c'est l'`opmode` qui tranche.
+
+**Reste ouvert et réécrit dans `TODO.md`** : la seconde moitié du même
+sujet, la fragmentation. Un datagramme plus grand que le MTU de sortie est
+relayé tel quel, ni fragmenté ni refusé par un ICMP Fragmentation Needed.
+`Ipv4Fragmentation.ts` existe déjà dans le socle, donc c'est un branchement —
+mais il demande un réassembleur et une étape de plus.
+
+Deux entrées de `TODO.md` sont retirées : le verrouillage, et les bannières
+de connexion (fermées en E55, l'entrée était restée).
+
+**Discrimination** (`git stash push -- src/network src/terminal`) : 6 des 7
+cas du verrouillage et 5 des 7 du TTL tombent avant correctif. Les témoins
+qui passent des deux côtés sont le refus d'un seuil de 0 (la commande était
+déjà refusée), la réponse du pare-feu à son propre écho, et le mode
+transparent — dont l'objet est justement de ne rien changer.
+
+**Vérifié** : 1798 cas du module pare-feu (89 fichiers). Typecheck inchangé
+à 342.
+
+---
+
 ### E55 — Les deux derniers TP du tutoriel, et le durcissement qui n'existait pas
 
 Périmètre : TP 23 (dépanner trois pannes) et TP 24 (durcir et sauvegarder),
