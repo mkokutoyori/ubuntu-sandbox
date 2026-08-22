@@ -84,18 +84,25 @@ function rfc5424Line(record: FirewallLogRecord, context: FortiLogContext): strin
 }
 
 function quoted(name: string, value: string): string {
-  if (/^\d+$/.test(value)) return value;
+  if (ALWAYS_QUOTED.has(name)) return `"${value}"`;
   if (NEVER_QUOTED.has(name)) return value;
+  if (/^\d+$/.test(value)) return value;
   return `"${value}"`;
 }
 
 const UNQUOTED_LOG_FIELDS: readonly string[] = Object.freeze([
-  'date', 'time', 'eventtime', 'srcport', 'dstport', 'proto',
+  'date', 'time', 'eventtime', 'srcip', 'srcport', 'dstip', 'dstport', 'proto',
   'policyid', 'sessionid', 'sentbyte', 'rcvdbyte', 'sentpkt', 'rcvdpkt',
-  'duration', 'trandisp', 'tranport',
+  'duration', 'transip', 'tranip', 'tranport', 'transport', 'cfgtid',
+]);
+
+const QUOTED_LOG_FIELDS: readonly string[] = Object.freeze([
+  'logid', 'trandisp',
 ]);
 
 const NEVER_QUOTED: ReadonlySet<string> = new Set(UNQUOTED_LOG_FIELDS);
+
+const ALWAYS_QUOTED: ReadonlySet<string> = new Set(QUOTED_LOG_FIELDS);
 
 function isoDate(stamp: Date): string {
   return `${stamp.getUTCFullYear()}-${pad(stamp.getUTCMonth() + 1)}-${pad(stamp.getUTCDate())}`;

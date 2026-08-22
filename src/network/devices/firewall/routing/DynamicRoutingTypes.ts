@@ -96,3 +96,57 @@ export interface BgpSummaryFacts {
   readonly localAs: number;
   readonly neighbours: readonly BgpPeerSummary[];
 }
+
+export interface OspfLsaFacts {
+  readonly lsType: number;
+  readonly linkStateId: string;
+  readonly advertisingRouter: string;
+  readonly lsAge: number;
+  readonly lsSequenceNumber: number;
+  readonly checksum: number;
+  readonly linkCount?: number;
+  readonly route?: string;
+  readonly metricType?: 1 | 2;
+  readonly routeTag?: number;
+}
+
+export interface OspfAreaFacts {
+  readonly areaId: string;
+  readonly lsas: readonly OspfLsaFacts[];
+}
+
+export interface OspfDatabaseFacts {
+  readonly routerId: string;
+  readonly areas: readonly OspfAreaFacts[];
+  readonly external: readonly OspfLsaFacts[];
+}
+
+
+export interface OspfInterfaceFacts {
+  readonly name: string;
+  readonly up: boolean;
+  readonly ifindex: number;
+  readonly mtu: number;
+  readonly bandwidthMbit: number;
+  readonly enabled: boolean;
+  readonly address?: string;
+  readonly prefixLength?: number;
+  readonly broadcast?: string;
+  readonly areaId: string;
+  readonly routerId: string;
+  readonly networkType: string;
+  readonly cost: number;
+  readonly transmitDelay: number;
+  readonly state: string;
+  readonly priority: number;
+  readonly drRouterId?: string;
+  readonly drAddress?: string;
+  readonly bdrRouterId?: string;
+  readonly bdrAddress?: string;
+  readonly helloInterval: number;
+  readonly deadInterval: number;
+  readonly retransmitInterval: number;
+  readonly passive: boolean;
+  readonly neighbourCount: number;
+  readonly adjacentCount: number;
+}

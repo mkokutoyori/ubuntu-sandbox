@@ -1,5 +1,5 @@
 import { IP_PROTO_ICMP, type ICMPPacket, type IPv4Packet } from '../../../core/types';
-import { buildEchoRequest, echoReplyOf } from '../l3/IcmpEcho';
+import { buildEchoRequest, echoReplyOf, ECHO_DATA_BYTES } from '../../../icmp/IcmpEcho';
 import type { FirewallPingDeps } from './FirewallPing';
 
 export const TRACEROUTE_MAX_HOPS = 32;
@@ -58,8 +58,8 @@ export class FirewallTraceroute {
 
       for (let probe = 0; probe < TRACEROUTE_PROBES; probe++) {
         const request = buildEchoRequest(
-          egress.source, target, this.identifier++, ttl);
-        this.deps.send(egress.iface, { ...request, ttl }, egress.gateway);
+          egress.source, target, this.identifier++, ttl, ECHO_DATA_BYTES, ttl);
+        this.deps.send(egress.iface, request, egress.gateway);
         seen.push(hop.from === undefined ? '*' : '0.0 ms');
       }
       this.awaited = null;

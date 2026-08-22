@@ -14,6 +14,8 @@ export const FORTIOS_PIPELINE: readonly string[] = Object.freeze([
   'policy-route',
   'sdwan',
   'route-lookup',
+  'ttl-decrement',
+  'mtu-check',
   'egress-zone',
   'policy-lookup',
   'auth-check',
@@ -30,6 +32,8 @@ export const FORTIOS_TRANSPARENT_PIPELINE: readonly string[] = Object.freeze([
   'session-lookup',
   'tcp-state-check',
   'mac-lookup',
+  'ttl-decrement',
+  'mtu-check',
   'egress-zone',
   'policy-lookup',
   'auth-check',
@@ -97,9 +101,4 @@ export const FORTIOS_PROFILE: FirewallProfile = Object.freeze({
     'policy-deny': Object.freeze({ id: '0000000015', severity: 'warnings' as const }),
   }),
 
-  unimplemented: Object.freeze([
-    'config vpn ipsec',
-    'diagnose debug flow',
-    'execute backup',
-  ]),
 });

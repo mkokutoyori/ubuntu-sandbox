@@ -13,12 +13,17 @@ import {
   type IPv4Packet,
   type UDPPacket,
 } from '../../core/types';
+import {
+  buildICMPError, mayGenerateICMPError,
+  ICMP_TTL_EXPIRED_IN_TRANSIT, ICMP_UNREACH_FRAG_NEEDED,
+} from '../../core/IcmpErrors';
+import { fragmentIPv4, IPV4_FLAG_DF } from '../../core/Ipv4Fragmentation';
 import { SystemClock } from '../../core/SystemClock';
 import { localTimeMs, utcMsForLocal } from '../../core/Timezone';
 import { decryptFromTunnel, sealedLegs } from './vpn/IpsecDataPlane';
 import { ikeDatagram, ipsecHostFacts } from './vpn/FirewallIpsecHost';
 import { InterfaceTable, type InterfaceConfig } from './l3/InterfaceTable';
-import { RouteTable } from './l3/RouteTable';
+import { RouteTable, type DeclaredStaticRoute } from './l3/RouteTable';
 import {
   ProxyArpTable, proxyOwnerKey, publishPoolProxyArp, type ProxyArpEntry,
 } from './l3/ProxyArpTable';
@@ -83,7 +88,15 @@ import { ModeCfgPool } from './vpn/ModeCfgPool';
 import type { IkeConfigReply, IkeConfigRequest } from '../../ipsec/IPSecTypes';
 import type { NtpAgent } from '../../ntp/NtpAgent';
 import { FirewallPing, type FirewallPingEgress } from './diag/FirewallPing';
-import { buildEchoRequest } from './l3/IcmpEcho';
+import { PingOptions } from './diag/PingOptions';
+import { ConsoleSettings } from './mgmt/ConsoleSettings';
+import { LoginBanners } from './mgmt/LoginBanners';
+import { FirewallObservables } from './diag/FirewallObservables';
+import type { HostObservables } from '../host/observables';
+import {
+  beginSniffer, type SnifferRun, type SnifferSelection,
+} from './diag/FirewallSniffer';
+import { buildEchoRequest } from '../../icmp/IcmpEcho';
 import { FirewallTraceroute } from './diag/FirewallTraceroute';
 import {
   DNS_PORT, FirewallDnsClient, dnsQueryDatagram,
@@ -93,7 +106,9 @@ import type { SdwanService } from './sdwan/SdwanService';
 import { ETHERTYPE_FGCP, type HaAgent } from './ha/HaAgent';
 import { serialNumberOf, type FirewallHa } from './ha/FirewallHa';
 import type { HaConfiguration } from './ha/HaTypes';
-import type { SdwanConfiguration } from './sdwan/SdwanTable';
+import type {
+  SdwanConfiguration, SdwanHealthTransition,
+} from './sdwan/SdwanTable';
 import type { SslVpnPortal, SslVpnSettings } from './vpn/SslVpnPortal';
 import type { IPSecEngine } from '../../ipsec/IPSecEngine';
 import { bringUpTunnel, programIpsecEngine } from './vpn/IpsecProgramming';
@@ -126,6 +141,9 @@ export interface TrafficLogger {
   onDenied(context: PacketContext): void;
 }
 
+const ICMP_ERROR_TTL = 64;
+const DEFAULT_INTERFACE_MTU = 1500;
+
 export class Firewall extends Equipment {
   private readonly interfaces = new InterfaceTable();
   private readonly vdoms: VdomRegistry;
@@ -150,6 +168,7 @@ export class Firewall extends Equipment {
   private readonly sslVpn: SslVpnPortal;
   private readonly portals: FirewallPortals;
   private readonly sdwan: SdwanService;
+  private readonly sdwanRoutes = new Map<string, DeclaredStaticRoute>();
   private readonly routing: FirewallRouting;
   private readonly dhcp: FirewallDhcp;
   private readonly l3: L3Services;
@@ -179,6 +198,7 @@ export class Firewall extends Equipment {
   private sameSecurityIntra = false;
   private multiVdom = false;
   private activeVdom = ROOT_VDOM;
+  private readonly fqdnVips = new Map<string, () => void>();
 
   constructor(
     deviceType: DeviceType, name: string, x = 0, y = 0, options: FirewallOptions = {},
@@ -251,6 +271,7 @@ export class Firewall extends Equipment {
       now,
       onRequestNeeded: (request, iface) => this.emitArp(request, iface),
       proxyOwns: (address, iface) => this.proxyArpAnswers(address, iface),
+      onCacheChanged: () => { this.liveState.refresh(); },
     });
 
     this.services = {
@@ -323,9 +344,9 @@ export class Firewall extends Equipment {
       refuseManagementSource: (source) => this.management.refusesSource(source),
       managementIdleTimeoutMs: () => this.management.idleTimeoutMs(),
       runningConfig: () => this.managementRunningConfig(),
-      onManagementLogin: (_user, source) => { this.management.noteLogin(source); },
-      onManagementAuthFailure: (_user, source) => {
-        this.management.noteAuthFailure(source);
+      onManagementLogin: (user) => { this.management.noteLogin(user); },
+      onManagementAuthFailure: (user) => {
+        this.management.noteAuthFailure(user);
       },
     });
     this.portals = mgmt.portals;
@@ -362,7 +383,7 @@ export class Firewall extends Equipment {
     this.routing = l3.routing;
     this.dhcp = l3.dhcp;
     this.sdwan = l3.sdwan;
-
+    this.sdwan.onHealthChange((changes) => { this.onSdwanHealthChange(changes); });
   }
 
   private processPipeline(context: PacketContext) {
@@ -378,10 +399,25 @@ export class Firewall extends Equipment {
   getSslVpnPortal(): SslVpnPortal { return this.sslVpn; }
   getSdwan(): SdwanService { return this.sdwan; }
 
+  private readonly liveState = new FirewallObservables({
+    arp: () => this.arp,
+    routes: () => this.getVdom().routes,
+    tcp: () => this.tcp,
+  });
+
+  readonly observables: HostObservables = this.liveState.published;
+
+  refreshLiveState(): void { this.liveState.refresh(); }
+
   private readonly ping = new FirewallPing({
     resolve: (destination) => this.resolveEgress(destination),
-    send: (iface, packet, gateway) => { this.forward(iface, packet, gateway); },
+    send: (iface, packet, gateway) => {
+      this.liveState.countEchoSent();
+      this.forward(iface, packet, gateway);
+    },
+    options: () => this.pingOptions,
     onReply: (payload) => {
+      this.liveState.countEchoReceived();
       this.getBus().publish({
         topic: 'host.icmp.echo-reply',
         payload: { deviceId: this.id, hostname: this.getHostname(), rttMs: 0, ...payload },
@@ -390,6 +426,30 @@ export class Firewall extends Equipment {
   });
 
   runPing(target: string, count?: number): string { return this.ping.run(target, count); }
+
+  beginPing(target: string) { return this.ping.begin(target); }
+
+  pingRepeatCount(): number { return this.ping.defaultCount(); }
+
+  getPingOptions(): PingOptions { return this.pingOptions; }
+
+  getConsoleSettings(): ConsoleSettings { return this.consoleSettings; }
+
+  getLoginBanners(): LoginBanners { return this.loginBanners; }
+
+  beginSniffer(selection: SnifferSelection): SnifferRun {
+    const capture = this.capture;
+    return beginSniffer({
+      observe: (listener) => capture.observe(listener),
+    }, selection);
+  }
+
+  shutdownNow(): void { this.powerOff(); }
+
+  rebootNow(): void {
+    this.powerOff();
+    this.powerOn();
+  }
 
   private resolveEgress(destination: string): FirewallPingEgress | null {
     const route = this.getVdom().routes.resolveNextHop(destination);
@@ -411,6 +471,11 @@ export class Firewall extends Equipment {
     context.verdict = { action: 'drop', reason: 'no-route', stage: 'route-lookup' };
     this.traces.remember(context);
   }
+
+  private readonly pingOptions = new PingOptions();
+
+  private readonly consoleSettings = new ConsoleSettings();
+  private readonly loginBanners = new LoginBanners();
 
   private readonly traceroute = new FirewallTraceroute({
     resolve: (destination) => this.resolveEgress(destination),
@@ -509,6 +574,69 @@ export class Firewall extends Equipment {
   serialNumber(): string { return serialNumberOf(this.name); }
   applySdwan(c: SdwanConfiguration): string | undefined { return this.sdwan.apply(c); }
   runSdwanHealthChecks(): Promise<void> { return this.sdwan.runHealthChecks(); }
+
+  applySdwanStaticRoute(route: DeclaredStaticRoute): void {
+    this.sdwanRoutes.delete(route.id);
+    const routes = this.getRouteTable();
+    routes.removeStaticById(route.id);
+    routes.removeStaticsBySource(route.id);
+    if (!route.enabled || route.blackhole) return;
+
+    if (this.sdwan.getTable().membersOfZone(route.iface).length > 0) {
+      this.sdwanRoutes.set(route.id, route);
+      this.installSdwanRoute(route);
+      return;
+    }
+
+    routes.addStatic(route.destination, route.mask,
+      route.gateway === '0.0.0.0' ? undefined : route.gateway,
+      {
+        iface: route.iface || undefined, distance: route.distance,
+        priority: route.priority, id: route.id,
+      });
+  }
+
+  forgetSdwanStaticRoute(id: string): void { this.sdwanRoutes.delete(id); }
+
+  private installSdwanRoute(route: DeclaredStaticRoute): void {
+    const table = this.sdwan.getTable();
+    for (const member of table.membersOfZone(route.iface)) {
+      if (!this.memberCarriesRoutes(member.sequence)) continue;
+      this.getRouteTable().addStatic(route.destination, route.mask,
+        member.gateway === '0.0.0.0' ? undefined : member.gateway,
+        {
+          iface: member.iface, distance: route.distance,
+          priority: member.priority, id: `${route.id}:sdwan-${member.sequence}`,
+        });
+    }
+  }
+
+  private memberCarriesRoutes(sequence: number): boolean {
+    const table = this.sdwan.getTable();
+    for (const check of table.allHealthChecks()) {
+      if (!check.members.includes(sequence)) continue;
+      if (!check.updateStaticRoute) continue;
+      if (table.healthOf(check.name, sequence)?.alive === false) return false;
+    }
+    return true;
+  }
+
+  private onSdwanHealthChange(changes: readonly SdwanHealthTransition[]): void {
+    for (const route of this.sdwanRoutes.values()) {
+      this.getRouteTable().removeStaticsBySource(route.id);
+      this.installSdwanRoute(route);
+    }
+    for (const change of changes) {
+      if (change.alive) continue;
+      const member = this.sdwan.getTable().member(change.sequence);
+      if (member) this.closeSessionsOn(member.iface);
+    }
+  }
+
+  private closeSessionsOn(iface: string): void {
+    this.getVdom().sessions.clearMatching(
+      session => session.egressInterface === iface);
+  }
 
   bindHaConfiguration(read: () => string, apply: (text: string) => void): void {
     this.haService.bindConfiguration(read, apply);
@@ -635,8 +763,20 @@ export class Firewall extends Equipment {
 
   applyAdminAccount(admin: AdminAccountDraft): void { this.management.applyAdmin(admin); }
 
+  adminNames(): readonly string[] { return this.access.adminNames(); }
+
+  getAdminAccount(name: string) { return this.access.getAdmin(name); }
+
+  adminMustChoosePassword(name: string): boolean {
+    return this.management.requiresPasswordChange(name);
+  }
+
   authenticateAdmin(name: string, password: string, source?: string): boolean {
-    return this.management.authenticate(name, password, source);
+    return this.management.login(name, password, source);
+  }
+
+  adminIsLockedOut(name: string): boolean {
+    return this.management.isLockedOut(name);
   }
 
   adminTrustsSource(name: string, source: string): boolean {
@@ -665,6 +805,10 @@ export class Firewall extends Equipment {
     const accepted = this.processPipeline(context).verdict === 'accepted';
     this.traces.remember(context);
     return summariseSimulation(context, accepted);
+  }
+
+  setInterfaceMtu(name: string, mtu: number | undefined): void {
+    this.interfaces.configure(name, { mtu: mtu ?? DEFAULT_INTERFACE_MTU });
   }
 
   setInterfaceUp(name: string, up: boolean): void {
@@ -795,6 +939,17 @@ export class Firewall extends Equipment {
   getSessionTable(vdom?: string): SessionTable { return this.getVdom(vdom).sessions; }
   getRouteTable(vdom?: string): RouteTable { return this.getVdom(vdom).routes; }
   getArpService(): ArpService { return this.arp; }
+  bindFqdnVip(name: string, apply: () => void): void {
+    this.fqdnVips.set(name, apply);
+    apply();
+  }
+
+  unbindFqdnVip(name: string): void { this.fqdnVips.delete(name); }
+
+  refreshFqdnVips(): void {
+    for (const apply of this.fqdnVips.values()) apply();
+  }
+
   getNatPolicy(vdom?: string): NatPolicyStore { return this.getVdom(vdom).natPolicy; }
   getNatEngine(vdom?: string): FirewallNatEngine { return this.getVdom(vdom).nat; }
   getIpPools(vdom?: string): IpPoolAllocator { return this.getVdom(vdom).pools; }
@@ -937,6 +1092,12 @@ export class Firewall extends Equipment {
       if (context.verdict?.reason === 'auth-required') {
         this.captivePortal.capture(portName, packet);
       }
+      if (context.verdict?.reason === 'ttl-expired') {
+        this.sendTimeExceeded(portName, packet);
+      }
+      if (context.verdict?.reason === 'mtu-exceeded-df') {
+        this.sendFragmentationNeeded(portName, packet, context.egressMtu);
+      }
       return;
     }
 
@@ -947,6 +1108,34 @@ export class Firewall extends Equipment {
       forwarded.policyRouteGateway,
       bridgedFrameOf(frame, forwarded.bridged === true
         || vdom.settings.opmode === 'transparent'));
+  }
+
+  private sendTimeExceeded(ingressPort: string, packet: IPv4Packet): void {
+    this.sendIcmpError(ingressPort, packet, 'time-exceeded',
+      ICMP_TTL_EXPIRED_IN_TRANSIT, {});
+  }
+
+  private sendIcmpError(
+    ingressPort: string, packet: IPv4Packet,
+    kind: 'time-exceeded' | 'destination-unreachable', code: number,
+    options: { nextHopMTU?: number },
+  ): void {
+    if (!mayGenerateICMPError(packet)) return;
+
+    const source = this.interfaces.get(ingressPort)?.ip;
+    if (!source) return;
+
+    const error = buildICMPError(
+      new IPAddress(source), packet, kind, code, ICMP_ERROR_TTL, options);
+    const route = this.getVdom().routes.resolveNextHop(packet.sourceIP.toString());
+    this.forward(route?.iface ?? ingressPort, error, route?.nextHop);
+  }
+
+  private sendFragmentationNeeded(
+    ingressPort: string, packet: IPv4Packet, nextHopMTU: number | undefined,
+  ): void {
+    this.sendIcmpError(ingressPort, packet, 'destination-unreachable',
+      ICMP_UNREACH_FRAG_NEEDED, { nextHopMTU });
   }
 
   getDeepInspection(): SslDeepInspection { return this.deepInspection; }
@@ -1009,13 +1198,23 @@ export class Firewall extends Equipment {
       return;
     }
 
-    const frame = buildEgressFrame(this.egressDeps(), egressPort, packet, gateway, bridged);
-    if (!frame) return;
+    for (const piece of this.fittingPieces(egressPort, packet)) {
+      const frame = buildEgressFrame(
+        this.egressDeps(), egressPort, piece, gateway, bridged);
+      if (!frame) return;
 
-    this.capture.record({
-      at: this.services.now(), iface: egressPort, direction: 'out', frame,
-    });
-    this.sendFrame(egressPort, frame);
+      this.capture.record({
+        at: this.services.now(), iface: egressPort, direction: 'out', frame,
+      });
+      this.sendFrame(egressPort, frame);
+    }
+  }
+
+  private fittingPieces(egressPort: string, packet: IPv4Packet): readonly IPv4Packet[] {
+    const mtu = this.interfaces.get(egressPort)?.mtu;
+    if (mtu === undefined || packet.totalLength <= mtu) return [packet];
+    if ((packet.flags & IPV4_FLAG_DF) !== 0) return [packet];
+    return fragmentIPv4(packet, mtu);
   }
 
   private forwardThroughTunnel(tunnelName: string, packet: IPv4Packet): void {

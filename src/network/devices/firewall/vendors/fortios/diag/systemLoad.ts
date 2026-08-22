@@ -41,6 +41,32 @@ export function sysTopCpuLine(): string {
     + `${Math.round(m.freeKib / 1024)}F`;
 }
 
+export const CONSERVE_THRESHOLDS = Object.freeze({
+  extremePercent: 88, redPercent: 82, greenPercent: 78,
+});
+
+export function conserveModeLines(): readonly string[] {
+  const m = memoryStates();
+  const totalMb = Math.round(m.totalKib / 1024);
+  const usedMb = Math.round(m.usedKib / 1024);
+  const freeableMb = Math.round(m.freeableKib / 1024);
+  const share = (value: number) => Math.round((value / totalMb) * 100);
+  const at = (percent: number) => Math.round((totalMb * percent) / 100);
+
+  return Object.freeze([
+    `memory conserve mode: ${usedMb >= at(CONSERVE_THRESHOLDS.redPercent) ? 'on' : 'off'}`,
+    `total RAM: ${totalMb} MB`,
+    `memory used: ${usedMb} MB ${share(usedMb)}% of total RAM`,
+    `memory freeable: ${freeableMb} MB ${share(freeableMb)}% of total RAM`,
+    `memory used + freeable threshold extreme: ${at(CONSERVE_THRESHOLDS.extremePercent)}`
+      + ` MB ${CONSERVE_THRESHOLDS.extremePercent}% of total RAM`,
+    `memory used threshold red: ${at(CONSERVE_THRESHOLDS.redPercent)}`
+      + ` MB ${CONSERVE_THRESHOLDS.redPercent}% of total RAM`,
+    `memory used threshold green: ${at(CONSERVE_THRESHOLDS.greenPercent)}`
+      + ` MB ${CONSERVE_THRESHOLDS.greenPercent}% of total RAM`,
+  ]);
+}
+
 export function memoryLine(): string {
   const m = memoryStates();
   const pct = (value: number) => ((value / m.totalKib) * 100).toFixed(1);

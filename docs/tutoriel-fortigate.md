@@ -392,6 +392,15 @@ Il y en a deux, et **il faut connaître les deux**. Ce n'est pas une préférenc
 >
 > Je donnerai systématiquement le chemin GUI quand il existe, parce que c'est utile pour se repérer. Mais la référence, ce sera toujours la commande.
 
+> 🖥️ **Tous les TP de ce tutoriel se font en CLI**, sans exception : par SSH
+> depuis un poste du laboratoire, ou par la console. La seule chose qui
+> demande encore un navigateur est l'enregistrement de la licence sur
+> FortiCare (§4.4), et c'est le site de Fortinet — pas le pare-feu. Même les
+> manipulations qu'on décrit d'habitude « avec la souris » — se connecter au
+> portail captif, provoquer une panne de cluster, vérifier l'accès
+> d'administration — ont ici leur forme en ligne de commande, et c'est
+> délibéré : c'est ce qui rend un TP rejouable, scriptable et vérifiable.
+
 ### 2.10 « Mais un routeur fait déjà tout ça, non ? »
 
 C'est la question qu'on te posera le jour où tu proposeras d'acheter un pare-feu. Elle vient parfois d'un directeur financier, souvent d'un collègue, et elle est **légitime** — parce qu'en apparence, un routeur Cisco moderne sait déjà :
@@ -838,7 +847,7 @@ Connecte-toi avec :
 FortiOS t'oblige immédiatement à changer ce mot de passe vide :
 
 ```
-You are forced to change your password. Please input a new password.
+You are forced to change your password, please input a new password.
 New Password: ********
 Confirm Password: ********
 ```
@@ -938,7 +947,38 @@ ou, plus lisible :
 FGT-01 # diagnose ip address list
 ```
 
-Tu dois voir `port1` en `192.168.100.99`. C'est par là que tu accèderas à l'interface web.
+Tu dois voir `port1` en `192.168.100.99`.
+
+**Étape 7 — Vérifier l'accès d'administration, en CLI**
+
+Depuis une machine du réseau de transit, sans navigateur :
+
+```bash
+user@pc-transit:~$ curl -sSi http://192.168.100.99/
+```
+```
+HTTP/1.1 200 OK
+Server: xxxxxxxx-xxxxx
+```
+
+Et l'accès SSH, celui dont tu te serviras pour tout le reste du tutoriel :
+
+```bash
+user@pc-transit:~$ ssh admin@192.168.100.99
+```
+
+Sur le pare-feu, la liste de ce que `port1` accepte réellement :
+
+```
+FGT-01 # show system interface port1
+```
+```
+    set allowaccess ping https ssh http
+```
+
+**C'est `allowaccess` qui décide**, et rien d'autre. Une adresse correcte
+avec un `allowaccess` vide ne répond à personne — c'est la panne n°1 du
+premier jour.
 
 ---
 
@@ -946,11 +986,13 @@ Tu dois voir `port1` en `192.168.100.99`. C'est par là que tu accèderas à l'i
 
 - R1 pingue Internet, et le pare-feu pingue R1 ✅
 - `execute ping 8.8.8.8` depuis le pare-feu fonctionne ✅
-- Depuis un navigateur d'une machine du réseau de transit, `http://192.168.100.99` affiche la page de connexion FortiGate. Connecte-toi avec `admin` et ton nouveau mot de passe.
+- `curl -sSi http://192.168.100.99/` répond `200 OK`, et `ssh admin@192.168.100.99` ouvre une session ✅
 
 > ⚠️ Rappel du §3.2 : avec la licence d'évaluation, utilise bien **`http://`** et non `https://`. C'est normal, ce n'est pas une erreur de ta part.
 
-Tu devrais voir le tableau de bord, avec probablement un bandeau rouge signalant que la licence n'est pas enregistrée. C'est attendu — on s'en occupe au TP 2.
+> 💡 **Tout le reste du tutoriel se fait en CLI**, par SSH ou par la console.
+> Les chemins de l'interface web sont donnés quand ils existent, pour se
+> repérer — mais aucune manipulation n'en dépend.
 
 ---
 
@@ -1037,11 +1079,32 @@ Les profils prédéfinis :
 
 Sur une VM, le bandeau rouge du tableau de bord signale une licence non enregistrée. Pour obtenir la licence d'évaluation permanente :
 
-1. Va dans **Dashboard → Status**, widget **Licenses** (ou le bandeau d'avertissement)
-2. Clique sur l'invitation à enregistrer la VM
-3. Choisis **Evaluation License**
-4. Saisis les identifiants de ton compte FortiCare gratuit
-5. La licence est générée et appliquée automatiquement
+L'enregistrement lui-même passe par FortiCare — c'est le seul point du
+tutoriel qui demande un navigateur, parce que c'est le service de Fortinet
+et non le pare-feu : sur `support.fortinet.com`, enregistre la VM avec son
+numéro de série et choisis **Evaluation License**. Tu récupères un fichier
+de licence, ou un jeton.
+
+L'application, elle, se fait **en CLI** :
+
+```
+FGT-01 # execute vm-license <jeton-forticare>
+```
+
+ou, si tu as récupéré un fichier :
+
+```
+FGT-01 # execute restore vmlicense tftp FGVM.lic 192.168.10.50
+```
+
+Le pare-feu redémarre et applique la licence. Vérifie ensuite :
+
+```
+FGT-01 # get system status
+```
+```
+License Status: Valid
+```
 
 > ⚠️ **Attention** : une seule licence d'évaluation par compte FortiCare. Si tu veux plusieurs FortiGate simultanés (sections 17 à 21), il te faudra **plusieurs comptes**, ou passer par des boîtiers physiques. C'est une contrainte réelle qu'il vaut mieux découvrir maintenant qu'au moment de monter le VPN site-à-site.
 
@@ -4144,6 +4207,7 @@ FGT-01 # diagnose debug enable
 | `flow filter clear` | Efface un filtre précédent — **le plus oublié** |
 | `flow filter addr` | Ne trace que le trafic concernant cette adresse |
 | `show function-name enable` | Affiche la fonction interne, très utile |
+| `show console disable` | **Tait** la trace sans arrêter le traçage — l'option existe pour les machines chargées, où la trace noie la console |
 | `flow trace start 20` | Trace 20 paquets puis s'arrête tout seul |
 | `debug enable` | ⭐ **Démarre réellement l'affichage** |
 
@@ -6858,15 +6922,44 @@ FGT-01 (setting) # end
 
 **Étape 5 — Tester**
 
-Depuis le PC du LAN, ouvre un navigateur vers un site en **HTTP** (le portail intercepte plus facilement) :
+Depuis le PC du LAN, **en ligne de commande**. Première requête HTTP :
 
 ```bash
-user@pc-lan:~$ curl -m 10 -L http://neverssl.com
+user@pc-lan:~$ curl -sSi http://192.168.20.10/
+```
+```
+HTTP/1.1 303 See Other
+Location: https://192.168.10.1:1003/
 ```
 
-Tu es **redirigé vers le portail d'authentification** du FortiGate. Dans un vrai navigateur, tu verras la page de connexion.
+**Le pare-feu ne répond pas la page demandée : il redirige vers son portail
+d'authentification.** C'est ce qu'un navigateur affiche comme « page de
+connexion » ; en CLI, on le lit dans l'en-tête `Location`. Le port **1000**
+est celui du portail en clair, **1003** celui en TLS — c'est
+`auth-secure-http enable` de l'étape 4 qui fait pointer la redirection vers
+le second.
 
-Connecte-toi avec `marie.durand`. La navigation reprend.
+Authentifie-toi en postant les identifiants au portail, toujours en CLI :
+
+```bash
+user@pc-lan:~$ curl -sS -d "username=marie.durand&password=Direction2026!" http://192.168.10.1:1000/
+```
+```
+Authentication successful
+```
+
+Puis rejoue la requête — elle passe maintenant :
+
+```bash
+user@pc-lan:~$ curl -sSi http://192.168.20.10/
+```
+```
+HTTP/1.1 200 OK
+```
+
+> 💡 Un navigateur fait exactement ces trois échanges : il suit la
+> redirection, poste le formulaire, rejoue la requête. `curl` les montre un
+> par un — c'est la raison de faire ce TP en CLI.
 
 **Étape 6 — Voir la table d'authentification**
 
@@ -7285,7 +7378,41 @@ FGT-01 (phase2-interface) # end
 
 **Étape 6 — Le miroir sur FGT-02**
 
-Identique, sauf `remote-gw` (qui pointe vers FGT-01) et les sous-réseaux **inversés**. La clé partagée doit être **rigoureusement identique**.
+Identique, sauf `remote-gw` (qui pointe vers FGT-01) et les sous-réseaux
+**inversés**. La clé partagée doit être **rigoureusement identique** :
+
+```
+FGT-02 # config vpn ipsec phase1-interface
+FGT-02 (phase1-interface) # edit "VPN-Paris"
+FGT-02 (VPN-Paris) # set interface "port1"
+FGT-02 (VPN-Paris) # set ike-version 2
+FGT-02 (VPN-Paris) # set peertype any
+FGT-02 (VPN-Paris) # set net-device disable
+FGT-02 (VPN-Paris) # set proposal aes256-sha256
+FGT-02 (VPN-Paris) # set dhgrp 14
+FGT-02 (VPN-Paris) # set remote-gw <adresse-port1-de-FGT-01>
+FGT-02 (VPN-Paris) # set psksecret "CleLabFortiGate2026!"
+FGT-02 (VPN-Paris) # set dpd on-idle
+FGT-02 (VPN-Paris) # next
+FGT-02 (phase1-interface) # end
+
+FGT-02 # config vpn ipsec phase2-interface
+FGT-02 (phase2-interface) # edit "VPN-Paris-P2"
+FGT-02 (VPN-Paris-P2) # set phase1name "VPN-Paris"
+FGT-02 (VPN-Paris-P2) # set proposal aes256-sha256
+FGT-02 (VPN-Paris-P2) # set pfs enable
+FGT-02 (VPN-Paris-P2) # set dhgrp 14
+FGT-02 (VPN-Paris-P2) # set src-subnet 192.168.50.0 255.255.255.0
+FGT-02 (VPN-Paris-P2) # set dst-subnet 192.168.10.0 255.255.255.0
+FGT-02 (VPN-Paris-P2) # set auto-negotiate enable
+FGT-02 (VPN-Paris-P2) # next
+FGT-02 (phase2-interface) # end
+```
+
+> ⚠️ **`src-subnet` est TON réseau, `dst-subnet` celui d'en face.** Les deux
+> côtés décrivent donc les mêmes sous-réseaux dans l'ordre inverse. Les
+> intervertir monte la phase 1 et laisse la phase 2 à zéro sélecteur — la
+> panne du §21.6, et celle de l'étape 11 plus bas.
 
 **Étape 7 — Route et politiques**
 
@@ -8656,7 +8783,29 @@ Créer un cluster actif-passif, vérifier la synchronisation, provoquer une pann
 
 **Étape 1 — Préparer les interfaces de battement de cœur**
 
-Sur les deux équipements, réserve deux interfaces dédiées. Elles ne doivent porter **aucune configuration IP** : FGCP s'en charge.
+Sur les deux équipements, réserve deux interfaces dédiées. Elles ne doivent
+porter **aucune configuration IP** : FGCP s'en charge. Vérifie-le en CLI, et
+retire l'adresse si l'une en porte une :
+
+```
+FGT-01 # show system interface port5
+FGT-01 # show system interface port6
+```
+
+```
+FGT-01 # config system interface
+FGT-01 (interface) # edit "port5"
+FGT-01 (port5) # unset ip
+FGT-01 (port5) # set status up
+FGT-01 (port5) # next
+FGT-01 (interface) # edit "port6"
+FGT-01 (port6) # unset ip
+FGT-01 (port6) # set status up
+FGT-01 (port6) # next
+FGT-01 (interface) # end
+```
+
+Fais de même sur FGT-02.
 
 **Étape 2 — Configurer le maître**
 
@@ -8701,13 +8850,20 @@ FGT-01 # get system ha status
 HA Health Status: OK
 Model: FortiGate-VM64
 Mode: HA A-P
-Group: CLUSTER-LAB
+Group Name: CLUSTER-LAB
+Group ID: 0
 Debug: 0
 Cluster Uptime: 0 days 0:3:12
 ...
-Master: FGT-01, FGVMEV0000000001, HA cluster index = 0
-Slave : FGT-02, FGVMEV0000000002, HA cluster index = 1
+Master: FGT-01, FGVMEV0000000001, cluster index = 0
+Slave : FGT-02, FGVMEV0000000002, cluster index = 1
 ```
+
+> ⚠️ **`Group Name` et `Group ID` sont deux lignes distinctes.** Le nom est
+> celui que tu as tapé, l'identifiant reste à `0` tant que tu n'as pas posé
+> `set group-id`. Deux clusters sur le même domaine de diffusion qui
+> partagent le même `group-id` se mélangent — c'est l'identifiant, pas le
+> nom, qui sépare les grappes sur le fil.
 
 **`HA Health Status: OK`** et deux membres listés : le cluster est formé. 🎉
 
@@ -8752,9 +8908,48 @@ user@pc-lan:~$ ping -i 0.2 192.168.20.10
 
 Laisse tourner. C'est ce qui va nous dire combien de temps dure la bascule.
 
-**Étape 8 — Provoquer la panne**
+**Étape 8 — Provoquer la panne, en CLI**
 
-Éteins brutalement FGT-01 depuis l'hyperviseur (pas un arrêt propre — on simule une panne).
+C'est l'étape qui apprend le plus, et elle se fait **entièrement en ligne de
+commande** — pas besoin de toucher à l'hyperviseur. Deux leviers, du plus
+doux au plus radical :
+
+```
+FGT-01 # execute ha failover set
+```
+
+Le maître **cède la main volontairement**. C'est la manœuvre de maintenance.
+
+```
+FGT-01 # diagnose sys ha reset-uptime
+```
+
+Sa durée de fonctionnement HA retombe à zéro. Avec `override disable`, c'est
+ce critère qui départage **avant** la priorité (§22.3), donc l'autre membre
+gagne l'élection suivante.
+
+> ⚠️ **Le cluster doit tourner depuis un moment pour que ça marche.** La
+> durée de fonctionnement HA se compare par tranches de **cinq minutes** :
+> sur une grappe montée il y a trente secondes, remettre à zéro ne creuse
+> aucun écart et il ne se passe rien. Laisse tourner, puis recommence — la
+> tranche est là pour qu'un simple redémarrage de service ne fasse pas
+> osciller un cluster.
+
+**Fais celle du milieu.** `diagnose sys ha reset-uptime` est la manœuvre que
+Fortinet documente pour tester une bascule, et c'est celle du §22.5.
+
+> 🧠 **Pourquoi PAS `set status down` sur une interface surveillée ?**
+> Parce que le statut administratif d'une interface **fait partie de la
+> configuration**, et que la configuration est synchronisée : shutter
+> `port1` sur le maître le shutte aussi sur l'esclave. Les deux membres
+> perdent la même interface, le critère ne départage plus rien, et il ne se
+> passe **rien**. Une panne d'interface surveillée est un événement
+> **physique** — câble débranché, commutateur mort — et c'est justement ce
+> que `set monitor` existe pour attraper. C'est aussi pourquoi on ne peut
+> pas la mettre en scène depuis la CLI : essaie, et tu verras les deux
+> membres tomber ensemble.
+
+> 🚨 Garde la **console** ouverte pendant toute cette étape.
 
 Sur le PC, observe le `ping` :
 
@@ -8797,9 +8992,10 @@ FGT-02 (ha) # end
 >
 > C'est pour ça que `session-pickup` est **le paramètre à ne jamais oublier**.
 
-**Étape 11 — Rallumer FGT-01**
+**Étape 11 — Observer le retour**
 
-Rallume-le et observe :
+FGT-01 n'a rien perdu : il a seulement cédé la main. Observe qui est maître
+maintenant :
 
 ```
 FGT-02 # get system ha status
@@ -9033,6 +9229,18 @@ FGT-01 (global-setting) # set max-size 98304
 FGT-01 (global-setting) # end
 ```
 
+**`max-size` est en OCTETS**, pas en lignes : c'est la taille du tampon en
+mémoire, et quand il est plein les lignes les plus anciennes tombent.
+
+Active aussi la journalisation du refus implicite — **elle est désactivée
+par défaut**, et sans elle l'étape 5 ne trouvera rien :
+
+```
+FGT-01 # config log setting
+FGT-01 (setting) # set fwpolicy-implicit-log enable
+FGT-01 (setting) # end
+```
+
 **Étape 2 — S'assurer que les politiques journalisent**
 
 ```
@@ -9079,6 +9287,11 @@ FGT-01 # execute log display
 
 Tu retrouves la tentative SSH. Regarde le champ `policyid` : il vaut `0` — l'`Implicit Deny` du §11, TP 9.
 
+> 🧠 **Tu ne trouves rien ?** C'est que `fwpolicy-implicit-log` est resté
+> désactivé (étape 1). Fortinet le laisse ainsi par défaut pour ne pas noyer
+> le collecteur, et c'est la première chose à vérifier quand un refus
+> « n'apparaît pas dans les journaux ».
+
 **Étape 6 — Retrouver le blocage du filtrage web**
 
 ```
@@ -9103,11 +9316,35 @@ Tu retrouves tes propres connexions d'administration et tes changements de confi
 
 **Étape 8 — Trouver les règles inutiles**
 
+`get firewall policy` liste les **clés** de la table, une politique par
+bloc — c'est la forme de tout `get` sur une table sans clé, et il n'y a pas
+de compteur dedans :
+
 ```
 FGT-01 # get firewall policy
 ```
+```
+== [ 1 ]
+policyid: 1
+== [ 2 ]
+policyid: 2
+```
 
-Regarde les compteurs. Une politique à `0 bytes` depuis longtemps est suspecte : soit elle ne sert à rien, soit elle est masquée par une règle au-dessus.
+Les compteurs se lisent dans le moteur de politiques lui-même, une règle à
+la fois :
+
+```
+FGT-01 # diagnose firewall iprope show 100004 1
+FGT-01 # diagnose firewall iprope show 100004 2
+```
+```
+policy index=1 ... hit count:14 ...
+policy index=2 ... hit count:0 ...
+```
+
+Une politique dont le `hit count` reste à zéro depuis longtemps est
+suspecte : soit elle ne sert à rien, soit elle est **masquée par une règle
+au-dessus** (§11.3).
 
 **Étape 9 — Surveiller les indicateurs**
 
@@ -9154,9 +9391,9 @@ Génère du trafic et regarde les journaux arriver **en direct**.
 
 - Le trafic autorisé apparaît en catégorie 0
 - Le trafic refusé porte `policyid=0`
-- Le blocage web apparaît en catégorie 1
-- Tes modifications apparaissent en catégorie 2
-- `get firewall policy` révèle les compteurs
+- Le blocage web apparaît en catégorie **3** (`utm-webfilter`)
+- Tes modifications apparaissent en catégorie **1** (`event`)
+- `diagnose firewall iprope show` révèle les compteurs
 
 ---
 
@@ -9622,6 +9859,8 @@ end
 
 **④ Renforcer les mots de passe**
 
+Le refus est immédiat, au moment du `set`, et nomme la règle non remplie. `apply-to` porte aussi sur les clés partagées IPsec, pas seulement sur les comptes.
+
 ```
 config system password-policy
     set status enable
@@ -9707,7 +9946,12 @@ Appliquer la liste de durcissement, sauvegarder en chiffré, vérifier la restau
 
 ```
 FGT-01 # execute backup config tftp avant-durcissement.conf 192.168.10.50 MotDePasseSauvegarde2026
+FGT-01 # execute backup config tftp en-clair.conf 192.168.10.50
 ```
+
+La première est chiffrée, la seconde ne l'est pas — c'est le mot de passe en fin de ligne qui décide, et c'est ce que compare l'étape 2.
+
+> ⚠️ **La restauration exige le même mot de passe.** `execute restore config tftp avant-durcissement.conf 192.168.10.50` **sans** le mot de passe est refusé, et avec un mauvais mot de passe aussi : l'étiquette d'authentification GCM détecte la différence. Un mot de passe perdu rend la sauvegarde définitivement inutilisable.
 
 Sans serveur TFTP, utilise l'interface web pour télécharger le fichier.
 
@@ -9723,7 +9967,17 @@ Sans serveur TFTP, utilise l'interface web pour télécharger le fichier.
 user@pc-lan:~$ head -c 200 /srv/tftp/avant-durcissement.conf
 ```
 
-Tu dois voir du contenu **illisible**. Compare avec une sauvegarde non chiffrée : tu y liras `config system global`, `set psksecret`… en clair.
+Tu dois voir un en-tête `#FGTCONFIG-ENCRYPTED-AES256-GCM` suivi de contenu **illisible**. Compare avec une sauvegarde non chiffrée :
+
+```bash
+user@pc-lan:~$ grep -E 'psksecret|hostname|allowaccess' /srv/tftp/en-clair.conf
+```
+
+Tu y liras toute la configuration, et les secrets sous la forme `set psksecret ENC RnZ4…`.
+
+> 🧠 **`ENC` n'est PAS un chiffrement — c'est un encodage réversible.** La clé est **statique**, la même sur tous les FortiGate, et publiée : c'est la CVE-2019-6693. Qui tient le fichier tient la clé partagée de tes VPN, sans mot de passe et sans effort. C'est exactement pourquoi une sauvegarde en clair est un fichier de secrets.
+>
+> Le chiffrement de la sauvegarde, lui, est réel : AES-256-GCM. Sa faiblesse connue est ailleurs — la clé est dérivée du mot de passe par **un seul tour de SHA-256**, donc un mot de passe court se casse vite. Choisis-le long.
 
 **Fais l'expérience.** C'est ce qui convainc de toujours chiffrer.
 
@@ -9749,11 +10003,23 @@ FGT-01 (admin) # edit "test-faible"
 FGT-01 (test-faible) # set password "1234"
 ```
 
-FortiOS **refuse**. Supprime le compte de test :
+FortiOS **refuse**, et la refus **nomme la règle** qui n'est pas remplie (« at least 12 characters »). Essaie ensuite `set password "Court1!"`, puis `set password "minusculesansrien"` : chaque essai te dit ce qui manque — la longueur, la majuscule, le chiffre, le caractère non alphanumérique.
+
+Un mot de passe conforme, lui, passe :
+
+```
+FGT-01 (test-faible) # set password "MotDePasse2026!"
+```
+
+Supprime le compte de test :
 
 ```
 FGT-01 (test-faible) # abort
 ```
+
+> 💡 **`apply-to` décide de la portée, et il ne concerne pas que les comptes.** Avec `set apply-to admin-password ipsec-preshared-key`, la même politique refuse aussi une clé partagée VPN trop faible — c'est le seul endroit du pare-feu où la qualité d'un `psksecret` est vérifiée.
+
+> ⚠️ **`set reuse-password disable` est refusé ici** : il demande de comparer avec les anciens mots de passe, et ce simulateur n'en garde pas l'historique. Un réglage accepté sans être appliqué serait pire que son absence.
 
 **Étape 4 — Verrouillage après échecs**
 
@@ -9803,13 +10069,29 @@ FGT-01 (global) # set pre-login-banner enable
 FGT-01 (global) # end
 
 FGT-01 # config system replacemsg admin "pre_admin-disclaimer-text"
-FGT-01 (pre_admin-discl~t) # set buffer "ACCES RESERVE AUX PERSONNES AUTORISEES.
-Toute connexion est journalisee. Tout acces non autorise fera l objet de poursuites."
+FGT-01 (pre_admin-discl~t) # set buffer "ACCES RESERVE AUX PERSONNES AUTORISEES."
 FGT-01 (pre_admin-discl~t) # next
 FGT-01 # end
 ```
 
+> 🧠 **Note la forme de la commande** : le nom du message est sur la ligne `config`, pas sur un `edit`. `config system replacemsg <groupe> <message>` ouvre directement l'objet — c'est une des rares tables de FortiOS qui se comporte ainsi, et `show` te la rendra sous la même forme.
+
 Déconnecte-toi et reconnecte-toi : la bannière s'affiche avant l'invite.
+
+Le pendant existe pour l'après-connexion, et le message porte alors l'autre nom :
+
+```
+FGT-01 # config system global
+FGT-01 (global) # set post-login-banner enable
+FGT-01 (global) # end
+
+FGT-01 # config system replacemsg admin "post_admin-disclaimer-text"
+FGT-01 (post_admin-disc~t) # set buffer "Session journalisee."
+FGT-01 (post_admin-disc~t) # next
+FGT-01 # end
+```
+
+**Le drapeau et le texte sont deux réglages distincts** : le drapeau sans texte n'affiche rien, et le texte sans le drapeau non plus. C'est l'erreur la plus fréquente sur cette commande.
 
 **Étape 8 — Le suivi en Git**
 
@@ -9859,18 +10141,19 @@ FGT-01 # execute backup config tftp apres-durcissement.conf 192.168.10.50 MotDeP
 
 **✅ Résultat attendu**
 
-- La sauvegarde chiffrée est illisible, la non chiffrée révèle les secrets
-- Un mot de passe faible est refusé
+- La sauvegarde chiffrée porte l'en-tête `#FGTCONFIG-ENCRYPTED-AES256-GCM` et rien de lisible ; la non chiffrée révèle toute la configuration et les secrets en `ENC …`
+- La restauration refuse sans le mot de passe, et refuse avec le mauvais
+- Un mot de passe faible est refusé, et le refus nomme la règle manquante
 - L'administration écoute sur les nouveaux ports
 - Le WAN n'accepte plus que le ping
-- La bannière s'affiche
+- La bannière s'affiche avant l'invite, et celle d'après-connexion après
 - `git diff` montre les changements de configuration
 
 ---
 
 **🧠 Ce que tu viens d'apprendre**
 
-1. **Une sauvegarde en clair est un fichier de secrets**, et tu l'as vérifié de tes yeux.
+1. **Une sauvegarde en clair est un fichier de secrets**, et tu l'as vérifié de tes yeux. `ENC` n'est pas un chiffrement : c'est un encodage à clé statique publiée (CVE-2019-6693).
 2. **La restauration écrase tout** et redémarre. Ce n'est pas une fusion.
 3. **On lit les notes de version avant de mettre à jour** — le §2.6 en est la preuve.
 4. **Le durcissement se teste depuis une seconde session**, toujours.

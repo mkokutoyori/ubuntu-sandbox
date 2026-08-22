@@ -313,7 +313,25 @@ export abstract class EndHost extends Equipment {
   /** Default gateway IP (set via `ip route add default via ...` or `route add`) */
   protected defaultGateway: IPAddress | null = null;
   /** Full routing table (connected + static + default) with LPM support */
-  protected routingTable: HostRouteEntry[] = [];
+  private _routingTable: HostRouteEntry[] = [];
+
+  protected get routingTable(): HostRouteEntry[] { return this._routingTable; }
+
+  protected set routingTable(table: HostRouteEntry[]) {
+    this._routingTable = table;
+    this.noteRoutesChanged();
+  }
+
+  protected addRouteEntry(entry: HostRouteEntry): void {
+    this._routingTable.push(entry);
+    this.noteRoutesChanged();
+  }
+
+  private noteRoutesChanged(): void {
+    if (!this.hostSignalStore || !this.tcpv2 || !this.neighborCache) return;
+    this._refreshRoutesSignal();
+    this._refreshHostStatsSignal();
+  }
   /** Non-main routing tables (`ip route add ... table <ID>`), keyed by table ID. */
   protected policyRoutingTables: Map<number, HostRouteEntry[]> = new Map();
   /** Policy-routing rules (`ip rule`), sorted ascending by priority. */
@@ -1131,7 +1149,7 @@ export abstract class EndHost extends Equipment {
 
     // Add connected route
     const networkOctets = ip.getOctets().map((o, i) => o & mask.getOctets()[i]);
-    this.routingTable.push({
+    this.addRouteEntry({
       network: new IPAddress(networkOctets),
       mask,
       nextHop: null,
@@ -1250,7 +1268,7 @@ export abstract class EndHost extends Equipment {
       }
     }
 
-    this.routingTable.push({
+    this.addRouteEntry({
       network: new IPAddress('0.0.0.0'),
       mask: new SubnetMask('0.0.0.0'),
       nextHop: gw,
@@ -1400,7 +1418,7 @@ export abstract class EndHost extends Equipment {
       return false;
     }
 
-    this.routingTable.push({
+    this.addRouteEntry({
       network, mask, nextHop,
       iface: gwIface,
       type: 'static',
@@ -1419,7 +1437,7 @@ export abstract class EndHost extends Equipment {
   /** Add an on-link (directly-connected) static route via an interface, no gateway. */
   addDeviceRoute(network: IPAddress, mask: SubnetMask, iface: string, metric: number = 0): boolean {
     if (!this.ports.has(iface)) return false;
-    this.routingTable.push({ network, mask, nextHop: null, iface, type: 'static', metric });
+    this.addRouteEntry({ network, mask, nextHop: null, iface, type: 'static', metric });
     Logger.info(this.id, 'host:route-add',
       `${this.name}: on-link route ${network}/${mask.toCIDR()} dev ${iface} metric ${metric}`);
     this.emitRouteAdded({
@@ -1574,7 +1592,7 @@ export abstract class EndHost extends Equipment {
     if (type === 'default') {
       this.routingTable = this.routingTable.filter(r => r.type !== 'default');
       this.defaultGateway = nextHop;
-      this.routingTable.push({
+      this.addRouteEntry({
         network: new IPAddress('0.0.0.0'),
         mask: new SubnetMask('0.0.0.0'),
         nextHop,
@@ -1583,7 +1601,7 @@ export abstract class EndHost extends Equipment {
         metric,
       });
     } else {
-      this.routingTable.push({ network, mask, nextHop, iface, type: 'static', metric });
+      this.addRouteEntry({ network, mask, nextHop, iface, type: 'static', metric });
     }
   }
 
@@ -2318,7 +2336,7 @@ export abstract class EndHost extends Equipment {
       // Find which interface the gateway is reachable on
       const gwRoute = this.resolveRoute(gw);
       const iface = gwRoute?.port.getName() ?? portName;
-      this.routingTable.push({
+      this.addRouteEntry({
         network: dest,
         mask: hostMask,
         nextHop: gw,
@@ -2573,6 +2591,15 @@ export abstract class EndHost extends Equipment {
     return addressAnswersOnLink({
       sendFrame: (name, frame) => { this.sendFrame(name, frame); },
       hasNeighbour: (ip) => this.arpTable.has(ip),
+      neighbourMac: (ip) => this.arpTable.get(ip)?.mac,
+      answersEcho: (from, send) => {
+        let vu = false;
+        const stop = this.getBus().subscribe('host.icmp.echo-reply', (e) => {
+          if ((e.payload as { fromIp?: string }).fromIp === from) vu = true;
+        });
+        try { send(); } finally { stop(); }
+        return vu;
+      },
     }, iface, port, target);
   }
 

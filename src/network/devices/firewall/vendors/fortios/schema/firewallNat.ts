@@ -6,8 +6,17 @@ import {
 const INTERFACE_TARGETS = ['system interface', 'system zone'];
 const ADDRESS_TARGETS = ['firewall address', 'firewall addrgrp'];
 
+const NO_DNS_ALG = 'a dns-translation VIP rewrites the address inside a DNS reply '
+  + 'crossing the firewall, which needs a DNS application-level gateway on the '
+  + 'transit path. None exists here, so the type would be accepted and translate '
+  + 'nothing.';
+
 function isStaticNat(object: FortiObjectView): boolean {
   return object.effective('type')[0] === 'static-nat';
+}
+
+function isFqdnVip(object: FortiObjectView): boolean {
+  return object.effective('type')[0] === 'fqdn';
 }
 
 function forwardsPorts(object: FortiObjectView): boolean {
@@ -133,11 +142,14 @@ export const FIREWALL_VIP: FortiTableSpec = {
     { ...word('name', 'Virtual IP name.'), readOnly: true },
     { ...word('uuid', 'Universally Unique Identifier.'), readOnly: true },
     text('comment', 'Comment.'),
-    choice('type', 'Configure a static NAT or server load balance VIP.', [
-      { keyword: 'static-nat', description: 'Static NAT.' },
-      { keyword: 'dns-translation', description: 'DNS translation.' },
-      { keyword: 'fqdn', description: 'FQDN translation.' },
-    ], 'static-nat'),
+    {
+      ...choice('type', 'Configure a static NAT or server load balance VIP.', [
+        { keyword: 'static-nat', description: 'Static NAT.' },
+        { keyword: 'dns-translation', description: 'DNS translation.' },
+        { keyword: 'fqdn', description: 'FQDN translation.' },
+      ], 'static-nat'),
+      unimplementedValues: { 'dns-translation': NO_DNS_ALG },
+    },
     {
       name: 'extip', help: 'IP address or address range on the external interface.',
       quoted: false,
@@ -156,6 +168,10 @@ export const FIREWALL_VIP: FortiTableSpec = {
         description: 'Mapped IP address or range.',
       }],
       defaultValue: [],
+    },
+    {
+      ...reference('mapped-addr', 'Mapped FQDN address object.', ADDRESS_TARGETS),
+      availableWhen: isFqdnVip,
     },
     refList('extintf', 'Interface connected to the source network that receives the '
       + 'packets that will be forwarded to the destination network.', INTERFACE_TARGETS),
@@ -200,11 +216,28 @@ export const FIREWALL_VIP: FortiTableSpec = {
     count('color', 'Color of icon on the GUI.', 0, 32, 0),
   ],
   onCommit(object, context) {
-    if (object.effective('type')[0] !== 'static-nat') return;
-
+    const kind = object.effective('type')[0] ?? 'static-nat';
     const external = splitRange(object.effective('extip')[0] ?? '');
+    if (external.from === '') return;
+
+    if (kind === 'fqdn') {
+      const mappedAddress = object.effective('mapped-addr')[0] ?? '';
+      if (mappedAddress === '') return 'a fqdn VIP needs `set mapped-addr <object>`.';
+
+      return context.device.applyFqdnVip({
+        name: object.key,
+        externalAddress: external.from,
+        externalEndAddress: external.to,
+        mappedAddressObject: mappedAddress,
+        externalInterfaces: [...object.effective('extintf')],
+        sourceFilters: [...object.effective('srcfilter')],
+        arpReply: object.effective('arp-reply')[0] !== 'disable',
+        comment: object.effective('comment')[0] || undefined,
+      });
+    }
+
     const mapped = splitRange(object.effective('mappedip')[0] ?? '');
-    if (external.from === '' || mapped.from === '') return;
+    if (mapped.from === '') return;
 
     const forwarding = object.effective('portforward')[0] === 'enable';
     const protocol = protocolNumber(object.effective('protocol')[0]);

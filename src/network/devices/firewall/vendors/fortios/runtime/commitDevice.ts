@@ -8,7 +8,8 @@ import { vipAddress } from '../../../model/AddressObject';
 import { identityCommitHandlers } from '../commit/identityCommits';
 import { vpnCommitHandlers } from '../commit/vpnCommits';
 import {
-  applyCentralSnatToFirewall, applyVipToFirewall, categoryEntry, centralSnatRuleId,
+  applyCentralSnatToFirewall, applyFqdnVipToFirewall, applyVipToFirewall, categoryEntry,
+  centralSnatRuleId,
   filterTable, urlEntry, utmAction, vipRuleId,
 } from '../commit/objectCommits';
 import type { PolicyRoutePrefix } from '../../../l3/PolicyRouteTable';
@@ -22,6 +23,7 @@ export function buildCommitDevice(fw: Firewall): FortiCommitDevice {
         if (patch.ip && patch.mask) fw.configureInterface(name, { ip: patch.ip, mask: patch.mask });
         if (patch.up !== undefined) fw.setInterfaceUp(name, patch.up);
         if (patch.allowAccess) fw.setAllowedAccess(name, patch.allowAccess);
+        fw.setInterfaceMtu(name, patch.mtu);
       },
       applyZone(name, members, intrazone) {
         const zones = fw.getZoneTable();
@@ -34,31 +36,7 @@ export function buildCommitDevice(fw: Firewall): FortiCommitDevice {
         fw.getZoneTable().deleteZone(name);
       },
       applyStaticRoute(route) {
-        const routes = fw.getRouteTable();
-        routes.removeStaticById(route.id);
-        routes.removeStaticsBySource(route.id);
-        if (!route.enabled || route.blackhole) return;
-
-        const sdwan = fw.getSdwan().getTable();
-        const throughZone = sdwan.membersOfZone(route.iface);
-        if (throughZone.length > 0) {
-          for (const member of throughZone) {
-            routes.addStatic(route.destination, route.mask,
-              member.gateway === '0.0.0.0' ? undefined : member.gateway,
-              {
-                iface: member.iface, distance: route.distance,
-                priority: member.priority, id: `${route.id}:sdwan-${member.sequence}`,
-              });
-          }
-          return;
-        }
-
-        routes.addStatic(route.destination, route.mask,
-          route.gateway === '0.0.0.0' ? undefined : route.gateway,
-          {
-            iface: route.iface || undefined, distance: route.distance,
-            priority: route.priority, id: route.id,
-          });
+        fw.applySdwanStaticRoute(route);
       },
       applySdwan(patch) {
         return fw.applySdwan(patch);
@@ -88,6 +66,7 @@ export function buildCommitDevice(fw: Firewall): FortiCommitDevice {
         fw.getDhcp().acquireLease(iface);
       },
       removeStaticRoute(id) {
+        fw.forgetSdwanStaticRoute(id);
         fw.getRouteTable().removeStaticsBySource(id);
         fw.getRouteTable().removeStaticById(id);
       },
@@ -126,6 +105,7 @@ export function buildCommitDevice(fw: Firewall): FortiCommitDevice {
       resolveFqdnNow(fqdn) {
         fw.getDnsClient().forget(fqdn);
         fw.getDnsClient().query(fqdn);
+        fw.refreshFqdnVips();
       },
       applyDnsServerInterface(entry) {
         fw.getDnsServer().applyInterface(entry);
@@ -138,6 +118,9 @@ export function buildCommitDevice(fw: Firewall): FortiCommitDevice {
       },
       removeDnsZone(name) {
         fw.getDnsServer().removeZone(name);
+      },
+      applyConsoleSettings(settings) {
+        fw.getConsoleSettings().apply(settings);
       },
       applyHostname(hostname) {
         if (hostname.length > 0) fw.setName(hostname);
@@ -167,6 +150,11 @@ export function buildCommitDevice(fw: Firewall): FortiCommitDevice {
           fw.setAdminLockout(
             settings.adminLockoutThreshold, settings.adminLockoutDurationSec);
         }
+        fw.getLoginBanners().enable('pre', settings.preLoginBanner === true);
+        fw.getLoginBanners().enable('post', settings.postLoginBanner === true);
+      },
+      applyReplacementMessage(message, buffer) {
+        fw.getLoginBanners().setBuffer(message, buffer);
       },
       setCaptivePortalInterface(iface, on) {
         fw.setCaptivePortalInterface(iface, on);
@@ -322,6 +310,9 @@ export function buildCommitDevice(fw: Firewall): FortiCommitDevice {
       removeIpPool(name) {
         fw.removeIpPool(name);
       },
+      applyFqdnVip(vip) {
+        return applyFqdnVipToFirewall(fw, vip);
+      },
       applyVip(vip) {
         applyVipToFirewall(fw, vip);
       },
@@ -359,6 +350,7 @@ export function buildCommitDevice(fw: Firewall): FortiCommitDevice {
       },
       applyMemoryLog(patch) {
         if (patch.capacity !== undefined) fw.getLogStore().setCapacity(patch.capacity);
+        if (patch.maxBytes !== undefined) fw.getLogStore().setMaxBytes(patch.maxBytes);
         if (patch.enabled === false) fw.getLogStore().clear();
       },
   };

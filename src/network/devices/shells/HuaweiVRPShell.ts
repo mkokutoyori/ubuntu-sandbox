@@ -121,7 +121,7 @@ import { collectListeningSockets } from '../router/management/SocketInventory';
 import { getVrrpAgent, getSessionRegistry, getVtyLineConfig } from '../../equipment/RouterServiceCapabilities';
 import { registerUserInterfaceCommands } from './huawei/HuaweiUserInterfaceCommands';
 import { getSecurityConfig } from './cisco/CiscoSecurityCommands';
-import { parseVrpCarRule } from '../router/qos/CarPolicer';
+import { parseVrpCarRule } from '../../qos/CarPolicer';
 
 const JOURS_VRP: Record<string, string> = {
   daily: 'daily', 'working-day': 'weekdays', 'off-day': 'weekend',

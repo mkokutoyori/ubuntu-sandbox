@@ -14,6 +14,9 @@
  */
 
 import { CommandTrie } from './CommandTrie';
+import {
+  parseSuppressionRule, parseVrpCarRule, SUPPRESSION_KINDS,
+} from '../../qos/CarPolicer';
 import { NetworkOsAccount } from '../router/aaa/NetworkOsAccount';
 import {
   withVrpCommonHelp, withVrpCommonCandidates,
@@ -89,6 +92,28 @@ function numeroDInterface(saisie: string, attendu: string): number | null {
   const m = saisie.replace(/\s+/g, '').match(/^([a-z-]+)(\d+)$/i);
   if (!m || huaweiTypeInterface(m[1]) !== attendu) return null;
   return parseInt(m[2], 10);
+}
+
+/**
+ * RSTP et MSTP n'ont que trois etats — Discarding, Learning, Forwarding —
+ * les Listening et Blocking de 802.1D y ayant ete fondus dans Discarding.
+ * Tout etat que le moteur nomme autrement se rend donc DISCARDING, l'etat
+ * qui ne fait pas passer de trafic.
+ */
+function mstpStateName(state: string): string {
+  if (state === 'forwarding') return 'FORWARDING';
+  if (state === 'learning') return 'LEARNING';
+  return 'DISCARDING';
+}
+
+/**
+ * `vty0-4` redevient `user-interface vty 0 4`. L'etiquette est ce que la
+ * vue affiche ; la configuration doit rendre la commande qui la rouvre.
+ */
+function vrpUserInterfaceHeader(label: string): string | null {
+  const m = /^([a-z-]+)(\d+)(?:-(\d+))?$/.exec(label);
+  if (!m) return null;
+  return `user-interface ${m[1]} ${m[2]}${m[3] ? ` ${m[3]}` : ''}`;
 }
 
 export class HuaweiSwitchShell implements ISwitchShell {
@@ -168,6 +193,26 @@ export class HuaweiSwitchShell implements ISwitchShell {
 
   /** Per-interface physical/security config lines (rendered in `display this`). */
   private ifCfg = new Map<string, string[]>();
+
+  private recordIfCfg(line: string, key?: string): string {
+    if (!this.selectedInterface) return 'Error: Incomplete command.';
+    const settingKey = key ?? line;
+    const kept = (this.ifCfg.get(this.selectedInterface) ?? [])
+      .filter(existing => existing !== line && !existing.startsWith(`${settingKey} `)
+        && existing !== settingKey);
+    kept.push(line);
+    this.ifCfg.set(this.selectedInterface, kept);
+    return '';
+  }
+
+  private removeIfCfg(settingKey: string): string {
+    if (!this.selectedInterface) return 'Error: Incomplete command.';
+    const kept = (this.ifCfg.get(this.selectedInterface) ?? [])
+      .filter(existing => existing !== settingKey
+        && !existing.startsWith(`${settingKey} `));
+    this.ifCfg.set(this.selectedInterface, kept);
+    return '';
+  }
 
   /** Per-VLAN description (vlan-view `description …`). */
   private vlanDesc = new Map<number, string>();
@@ -1301,9 +1346,7 @@ export class HuaweiSwitchShell implements ISwitchShell {
 
     this.interfaceTrie.registerGreedy('port vlan-mapping', 'Interface port vlan-mapping configuration', (args) => {
       if (!this.selectedInterface) return 'Error: Incomplete command.';
-      const list = this.ifCfg.get(this.selectedInterface) ?? [];
-      list.push(`port vlan-mapping ${args.join(' ')}`.trim());
-      this.ifCfg.set(this.selectedInterface, list);
+      this.recordIfCfg(`port vlan-mapping ${args.join(' ')}`.trim());
       return '';
     });
     // Selective QinQ: `port vlan-mapping vlan <cvlan> map-vlan <svlan>` shadows
@@ -1311,9 +1354,7 @@ export class HuaweiSwitchShell implements ISwitchShell {
     // registration) so it can additionally reach the real translation table.
     this.interfaceTrie.registerGreedy('port vlan-mapping vlan', 'Map a client VLAN to a service (S-VLAN)', (args) => {
       if (!this.selectedInterface || !this.swRef) return 'Error: Incomplete command.';
-      const list = this.ifCfg.get(this.selectedInterface) ?? [];
-      list.push(`port vlan-mapping vlan ${args.join(' ')}`.trim());
-      this.ifCfg.set(this.selectedInterface, list);
+      this.recordIfCfg(`port vlan-mapping vlan ${args.join(' ')}`.trim());
       const cvlan = parseInt(args[0] ?? '', 10);
       const svlan = parseInt(args[2] ?? '', 10);
       if (isNaN(cvlan) || args[1]?.toLowerCase() !== 'map-vlan' || isNaN(svlan)) {
@@ -1328,9 +1369,7 @@ export class HuaweiSwitchShell implements ISwitchShell {
     });
     this.interfaceTrie.registerGreedy('bpdu-tunnel', 'Tunnel a client L2 control protocol across the S-VLAN instead of terminating it locally', (args) => {
       if (!this.selectedInterface || !this.swRef) return 'Error: Incomplete command.';
-      const list = this.ifCfg.get(this.selectedInterface) ?? [];
-      list.push(`bpdu-tunnel ${args.join(' ')}`.trim());
-      this.ifCfg.set(this.selectedInterface, list);
+      this.recordIfCfg(`bpdu-tunnel ${args.join(' ')}`.trim());
       const proto = (args[0] ?? '').toLowerCase();
       if ((proto !== 'stp' && proto !== 'lldp') || args[1]?.toLowerCase() !== 'enable') {
         return 'Error: Wrong parameter found at \'^\' position.';
@@ -1346,9 +1385,7 @@ export class HuaweiSwitchShell implements ISwitchShell {
     for (const sub of ['dhcp snooping', 'ip source', 'arp anti-attack']) {
       this.interfaceTrie.registerGreedy(sub, `Interface ${sub}`, (args) => {
         if (!this.selectedInterface) return 'Error: Incomplete command.';
-        const list = this.ifCfg.get(this.selectedInterface) ?? [];
-        list.push(`${sub} ${args.join(' ')}`.trim());
-        this.ifCfg.set(this.selectedInterface, list);
+        this.recordIfCfg(`${sub} ${args.join(' ')}`.trim());
         return '';
       });
     }
@@ -1358,49 +1395,37 @@ export class HuaweiSwitchShell implements ISwitchShell {
     // trust/rate-limit/verify-mac only take effect from there.
     this.interfaceTrie.register('dhcp snooping trusted', 'Mark interface as DHCP snooping trusted', () => {
       if (!this.selectedInterface || !this.swRef) return 'Error: Incomplete command.';
-      const list = this.ifCfg.get(this.selectedInterface) ?? [];
-      list.push('dhcp snooping trusted');
-      this.ifCfg.set(this.selectedInterface, list);
+      this.recordIfCfg('dhcp snooping trusted');
       this.swRef._getDHCPSnoopingConfig().trustedPorts.add(this.selectedInterface);
       return '';
     });
     this.interfaceTrie.register('dhcp snooping check dhcp-rate enable', 'Enable DHCP snooping rate check', () => {
       if (!this.selectedInterface) return 'Error: Incomplete command.';
-      const list = this.ifCfg.get(this.selectedInterface) ?? [];
-      list.push('dhcp snooping check dhcp-rate enable');
-      this.ifCfg.set(this.selectedInterface, list);
+      this.recordIfCfg('dhcp snooping check dhcp-rate enable');
       return '';
     });
     this.interfaceTrie.registerGreedy('dhcp snooping check dhcp-rate', 'Set DHCP snooping rate limit (pps)', (args) => {
       if (!this.selectedInterface || !this.swRef) return 'Error: Incomplete command.';
       const rate = parseInt(args[0] ?? '', 10);
       if (isNaN(rate) || rate < 1) return 'Error: Wrong parameter found at \'^\' position.';
-      const list = this.ifCfg.get(this.selectedInterface) ?? [];
-      list.push(`dhcp snooping check dhcp-rate ${rate}`);
-      this.ifCfg.set(this.selectedInterface, list);
+      this.recordIfCfg(`dhcp snooping check dhcp-rate ${rate}`);
       this.swRef._getDHCPSnoopingConfig().rateLimits.set(this.selectedInterface, rate);
       return '';
     });
     this.interfaceTrie.registerGreedy('qinq', 'Interface qinq configuration', (args) => {
       if (!this.selectedInterface) return 'Error: Incomplete command.';
-      const list = this.ifCfg.get(this.selectedInterface) ?? [];
-      list.push(`qinq ${args.join(' ')}`.trim());
-      this.ifCfg.set(this.selectedInterface, list);
+      this.recordIfCfg(`qinq ${args.join(' ')}`.trim());
       return '';
     });
     this.interfaceTrie.register('qinq enable', '802.1ad QinQ tunnel port (S-VLAN access port)', () => {
       if (!this.selectedInterface || !this.swRef) return 'Error: Incomplete command.';
-      const list = this.ifCfg.get(this.selectedInterface) ?? [];
-      list.push('qinq enable');
-      this.ifCfg.set(this.selectedInterface, list);
+      this.recordIfCfg('qinq enable');
       this.swRef.setSwitchportMode(this.selectedInterface, 'dot1q-tunnel');
       return '';
     });
     this.interfaceTrie.registerGreedy('voice-vlan', 'Interface voice-vlan configuration', (args) => {
       if (!this.selectedInterface || !this.swRef) return 'Error: Incomplete command.';
-      const list = this.ifCfg.get(this.selectedInterface) ?? [];
-      list.push(`voice-vlan ${args.join(' ')}`.trim());
-      this.ifCfg.set(this.selectedInterface, list);
+      this.recordIfCfg(`voice-vlan ${args.join(' ')}`.trim());
       const cfg = this.swRef.getSwitchportConfig(this.selectedInterface);
       if (!cfg) return '';
       if (args[0]?.toLowerCase() === 'mode') {
@@ -1439,9 +1464,7 @@ export class HuaweiSwitchShell implements ISwitchShell {
 
     this.interfaceTrie.registerGreedy('port-isolate', 'Configure port isolation', (args) => {
       if (!this.selectedInterface || !this.swRef) return 'Error: Incomplete command.';
-      const list = this.ifCfg.get(this.selectedInterface) ?? [];
-      list.push(`port-isolate ${args.join(' ')}`.trim());
-      this.ifCfg.set(this.selectedInterface, list);
+      this.recordIfCfg(`port-isolate ${args.join(' ')}`.trim());
       if (args[0]?.toLowerCase() === 'enable') {
         const groupIdx = args.findIndex(a => a.toLowerCase() === 'group');
         const group = groupIdx >= 0 ? parseInt(args[groupIdx + 1] ?? '', 10) : 1;
@@ -1493,9 +1516,7 @@ export class HuaweiSwitchShell implements ISwitchShell {
       }
       const t = this.ethTrunks.get(id)!;
       if (!t.members.includes(this.selectedInterface)) t.members.push(this.selectedInterface);
-      const list = this.ifCfg.get(this.selectedInterface) ?? [];
-      list.push(`eth-trunk ${id}`);
-      this.ifCfg.set(this.selectedInterface, list);
+      this.recordIfCfg(`eth-trunk ${id}`);
       this.applyToLacpAgent(a => {
         const lacpMode = t.mode === 'lacp-dynamic' ? 'active'
           : t.mode === 'lacp-static' ? 'active' : 'on';
@@ -2852,13 +2873,7 @@ export class HuaweiSwitchShell implements ISwitchShell {
    * the faithful behaviour.
    */
   private registerInterfacePhysicalCommands(trie: CommandTrie): void {
-    const record = (line: string) => {
-      if (!this.selectedInterface) return 'Error: Incomplete command.';
-      const list = this.ifCfg.get(this.selectedInterface) ?? [];
-      list.push(line);
-      this.ifCfg.set(this.selectedInterface, list);
-      return '';
-    };
+    const record = (line: string, key?: string) => this.recordIfCfg(line, key);
     // Simple keyword commands that take the rest of the line verbatim.
     // L2/physical interface keywords only — an L2 switch port must NOT
     // accept L3 (ip/arp) config, so those are deliberately excluded.
@@ -2929,15 +2944,64 @@ export class HuaweiSwitchShell implements ISwitchShell {
     });
 
     for (const kw of [
-      'jumboframe', 'flow-control',
+      'flow-control',
       'loopback-detect', 'port-security', 'storm-control',
-      'broadcast-suppression', 'port-mirroring',
-      'qos', 'traffic-policy', 'am',
-      'mac-limit',
+      'port-mirroring',
+      'traffic-policy', 'am',
     ]) {
       trie.registerGreedy(kw, `Interface ${kw} configuration`, (args) =>
         record(`${kw} ${args.join(' ')}`.trim()));
     }
+
+    trie.registerGreedy('jumboframe', 'Interface jumboframe configuration', (args) =>
+      record(`jumboframe ${args.join(' ')}`.trim(), 'jumboframe'));
+
+    trie.registerGreedy('qos', 'Interface QoS configuration', (args) => {
+      const raw = `qos ${args.join(' ')}`.trim();
+      if (args[0]?.toLowerCase() !== 'car') return record(raw);
+      if (!this.selectedInterface) return 'Error: Incomplete command.';
+
+      const rule = parseVrpCarRule(args.slice(1), raw);
+      if (!rule) return 'Error: Wrong parameter found at \'^\' position.';
+      this.swRef?.getCarPolicer(this.selectedInterface, true)?.add(rule);
+      return record(raw, 'qos car');
+    });
+
+    trie.registerGreedy('undo qos', 'Remove interface QoS configuration', (args) => {
+      if (args[0]?.toLowerCase() !== 'car') return this.removeIfCfg('qos');
+      if (!this.selectedInterface) return 'Error: Incomplete command.';
+      this.swRef?.getCarPolicer(this.selectedInterface)?.clear();
+      return this.removeIfCfg('qos car');
+    });
+
+    for (const kind of SUPPRESSION_KINDS) {
+      const kw = `${kind}-suppression`;
+      trie.registerGreedy(kw, `Limit ${kind} traffic on this port`, (args) => {
+        const port = portSelectionne();
+        if (!port || !this.selectedInterface) return 'Error: Incomplete command.';
+        const raw = `${kw} ${args.join(' ')}`.trim();
+        const rule = parseSuppressionRule(
+          kind, args, port.getEffectiveBandwidthKbps(), raw);
+        if (!rule) return 'Error: Wrong parameter found at \'^\' position.';
+
+        const policer = this.swRef?.getSuppressionPolicer(this.selectedInterface, kind, true);
+        if (!policer) return 'Error: Incomplete command.';
+        policer.clear();
+        policer.add(rule);
+        return record(raw, kw);
+      });
+      trie.registerGreedy(`undo ${kw}`, `Remove the ${kind} limit`, () => {
+        if (!this.selectedInterface) return 'Error: Incomplete command.';
+        this.swRef?.clearSuppression(this.selectedInterface, kind);
+        return this.removeIfCfg(kw);
+      });
+    }
+
+    trie.registerGreedy('mac-limit', 'Interface mac-limit configuration', (args) => {
+      const line = `mac-limit ${args.join(' ')}`.trim();
+      const scoped = args.some(word => word.toLowerCase() === 'vlan');
+      return record(line, scoped ? undefined : 'mac-limit maximum');
+    });
 
     // `traffic-filter inbound|outbound acl <number>` binds a real numbered
     // ACL to this port; the switch dataplane consults it on ingress/egress.
@@ -3170,13 +3234,6 @@ export class HuaweiSwitchShell implements ISwitchShell {
     return this.swRef.getPort(this.selectedInterface)?.getPortSecurity() ?? null;
   }
 
-  private recordIfCfg(line: string): void {
-    if (!this.selectedInterface) return;
-    const list = this.ifCfg.get(this.selectedInterface) ?? [];
-    list.push(line);
-    this.ifCfg.set(this.selectedInterface, list);
-  }
-
   private parsePsecMac(s: string): MACAddress | null {
     const m = s.match(/^([0-9a-fA-F]{4})-([0-9a-fA-F]{4})-([0-9a-fA-F]{4})$/);
     try {
@@ -3313,9 +3370,7 @@ export class HuaweiSwitchShell implements ISwitchShell {
       const st = mstid !== undefined
         ? (ag?.getForwardStateForInstance(mstid, p) ?? this.swRef.getSTPState(p))
         : this.swRef.getSTPState(p);
-      const state = st === 'forwarding' ? 'FORWARDING'
-        : st === 'blocking' ? 'DISCARDING'
-        : st === 'disabled' ? 'DISCARDING' : st.toUpperCase();
+      const state = mstpStateName(st);
       const r = mstid !== undefined
         ? (ag?.getPortRoleForInstance(mstid, p) ?? 'designated')
         : (ag?.getPortRole(p) ?? 'designated');
@@ -3758,6 +3813,64 @@ export class HuaweiSwitchShell implements ISwitchShell {
     return lines.join('\n');
   }
 
+
+  /**
+   * Les familles globales que la configuration ne portait pas.
+   *
+   * Chacune etait acceptee, plusieurs etaient honorees — le snooping
+   * repond dans sa vue, le port d'observation dans la sienne, la route
+   * statique est dans la table — et aucune ne survivait a un
+   * `display current-configuration`, donc a un rechargement de topologie.
+   */
+  private globalRunningConfigBlocks(sw: HuaweiSwitchDevice): string[][] {
+    const blocs: string[][] = [];
+    const sec = sw.getSecurityService();
+
+    const dhcp: string[] = [];
+    if (sec.isDhcpEnabled()) dhcp.push('dhcp enable');
+    if (sec.isDhcpSnoopingEnabled()) {
+      dhcp.push('dhcp snooping enable');
+      const vlans = sec.getDhcpSnoopingVlans();
+      if (vlans.length > 0) {
+        dhcp.push(`dhcp snooping enable vlan ${[...vlans].sort((a, b) => a - b).join(' ')}`);
+      }
+    }
+    for (const trust of sec.getDhcpSnoopingTrust()) {
+      if (trust.trusted) dhcp.push(`dhcp snooping trust interface ${trust.ifName}`);
+    }
+    if (dhcp.length > 0) blocs.push(dhcp);
+
+    const observation = sw.listMirrorSessions()
+      .filter(session => session.destination !== null)
+      .map(session => `observe-port ${session.id} interface ${session.destination}`);
+    if (observation.length > 0) blocs.push(observation);
+
+    const journal = sw.getManagementService?.().getInfoCenter().toRunningConfig() ?? [];
+    if (journal.length > 0) blocs.push([...journal]);
+
+    const routes = sw.getStaticRoutes?.() ?? [];
+    const lignesRoutes = routes.map(
+      route => `ip route-static ${route.network} ${route.mask} ${route.nextHop}`);
+    if (lignesRoutes.length > 0) blocs.push(lignesRoutes);
+
+    for (const [label, cfg] of this.userInterfaceExtraConfig) {
+      const vue = vrpUserInterfaceHeader(label);
+      if (!vue) continue;
+      const corps: string[] = [];
+      if (cfg.authMode) corps.push(` authentication-mode ${cfg.authMode}`);
+      if (cfg.idleTimeoutMin !== undefined) corps.push(` idle-timeout ${cfg.idleTimeoutMin} 0`);
+      if (cfg.screenLength !== undefined) corps.push(` screen-length ${cfg.screenLength}`);
+      if (cfg.historySize !== undefined) corps.push(` history-command max-size ${cfg.historySize}`);
+      if (cfg.acl) corps.push(` acl ${cfg.acl} inbound`);
+      if (cfg.authorizationMode) corps.push(` authorization-mode ${cfg.authorizationMode}`);
+      for (const u of cfg.users) corps.push(` user ${u}`);
+      for (const l of cfg.rawLines) corps.push(` ${l}`);
+      if (corps.length > 0) blocs.push([vue, ...corps]);
+    }
+
+    return blocs;
+  }
+
   private displayCurrentConfig(sw: HuaweiSwitchDevice): string {
     const lines = [
       '#',
@@ -3801,6 +3914,10 @@ export class HuaweiSwitchShell implements ISwitchShell {
 
     const lldpGlobal = sw.getLldpAgent?.()?.asRunningConfigLinesVrp() ?? [];
     if (lldpGlobal.length > 0) { lines.push(...lldpGlobal); lines.push('#'); }
+
+    for (const bloc of this.globalRunningConfigBlocks(sw)) {
+      lines.push(...bloc); lines.push('#');
+    }
 
     const ports = sw._getPortsInternal();
     const configs = sw._getSwitchportConfigs();

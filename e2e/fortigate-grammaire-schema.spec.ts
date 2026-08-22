@@ -1,4 +1,5 @@
 import { test, expect, type Page } from '@playwright/test';
+import { fortiConsoleLogin } from './fortiConsole';
 
 async function waitForStore(page: Page): Promise<void> {
   await page.waitForFunction(() => !!(window as Record<string, unknown>).__networkStore, { timeout: 15_000 });
@@ -7,6 +8,7 @@ async function waitForStore(page: Page): Promise<void> {
 async function openTerminal(page: Page, id: string): Promise<void> {
   await page.locator(`[data-device-id="${id}"]`).first().dblclick({ timeout: 8_000 });
   await page.locator('[data-testid="terminal-modal"]').waitFor({ state: 'visible', timeout: 10_000 });
+  await fortiConsoleLogin(page);
   await page.waitForTimeout(1500);
 }
 

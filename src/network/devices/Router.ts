@@ -112,7 +112,7 @@ import {
 import type { IIPv4Route } from '../core/interfaces';
 import { ipv4MulticastToMac, tryIpToUint32 } from '../core/ip';
 import { Logger } from '../core/Logger';
-import { CarPolicer } from './router/qos/CarPolicer';
+import { CarPolicer } from '../qos/CarPolicer';
 import { buildICMPError, mayGenerateICMPError, type ICMPErrorType } from '../core/IcmpErrors';
 import { IpSlaEngine } from '../ipsla/IpSlaEngine';
 import { TrackService } from '../ipsla/TrackService';
@@ -3921,6 +3921,15 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
     return addressAnswersOnLink({
       sendFrame: (iface, frame) => { this.sendFrame(iface, frame); },
       hasNeighbour: (ip) => this.arpTable.has(ip),
+      neighbourMac: (ip) => this.arpTable.get(ip)?.mac,
+      answersEcho: (from, send) => {
+        let vu = false;
+        const stop = this.getBus().subscribe('host.icmp.echo-reply', (e) => {
+          if ((e.payload as { fromIp?: string }).fromIp === from) vu = true;
+        });
+        try { send(); } finally { stop(); }
+        return vu;
+      },
     }, route.iface, port, candidateIP);
   }
 

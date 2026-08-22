@@ -164,3 +164,34 @@ export class CarPolicer {
     r.lastRefillMs = now;
   }
 }
+
+export type SuppressionKind = 'broadcast' | 'multicast' | 'unicast';
+
+export const SUPPRESSION_KINDS: readonly SuppressionKind[] =
+  Object.freeze(['broadcast', 'multicast', 'unicast']);
+
+export function parseSuppressionRule(
+  kind: SuppressionKind, args: readonly string[], bandwidthKbps: number, raw: string,
+): CarRule | null {
+  if (args.length !== 1) return null;
+  const percent = Number.parseInt(args[0] ?? '', 10);
+  if (!Number.isFinite(percent) || percent < 0 || percent > 100) return null;
+
+  const bitsPerSecond = Math.round((bandwidthKbps * 1000 * percent) / 100);
+  const normalBurstBytes = Math.max(1, Math.round(bitsPerSecond / 8 / 8));
+  return {
+    direction: 'input',
+    bitsPerSecond, normalBurstBytes, maxBurstBytes: normalBurstBytes * 2,
+    conformAction: 'transmit', exceedAction: 'drop', raw,
+    tokens: percent === 0 ? 0 : normalBurstBytes, lastRefillMs: Date.now(),
+    conformedPackets: 0, conformedBytes: 0,
+    exceededPackets: 0, exceededBytes: 0, lastPacketMs: null,
+  };
+}
+
+export function suppressionKindOf(dstMac: string): SuppressionKind {
+  const upper = dstMac.toUpperCase();
+  if (upper === 'FF:FF:FF:FF:FF:FF') return 'broadcast';
+  const first = Number.parseInt(upper.slice(0, 2), 16);
+  return Number.isFinite(first) && (first & 1) === 1 ? 'multicast' : 'unicast';
+}

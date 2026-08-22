@@ -1,8 +1,11 @@
+import { conserveModeLines } from './systemLoad';
 import type { IPv4Packet } from '../../../../../core/types';
 import type { Firewall } from '../../../Firewall';
 import type { FirewallLogDraft } from '../../../logging/FirewallLogStore';
 import type { PacketContext } from '../../../pipeline/PacketContext';
-import { parseCaptureFilter, portsOf } from '../../../diag/PacketCapture';
+import {
+  parseCaptureFilter, portsOf, type CaptureFilter,
+} from '../../../diag/PacketCapture';
 import { FortiMessages } from '../FortiMessages';
 import { parseAuthFilter, renderAuthList } from './authListRenderer';
 import { renderIkeGatewayList, renderVpnTunnelList } from './vpnTunnelRenderer';
@@ -50,6 +53,12 @@ export function runDiagnose(rest: readonly string[], deps: FortiDiagDeps): strin
   if (family === 'vpn') return diagnoseVpn(tail, deps);
   if (family === 'ip') return diagnoseIp(tail, deps);
   if (family === 'test') return diagnoseTest(tail, deps);
+  if (family === 'hardware') {
+    if (tail[0] === 'sysinfo' && tail[1] === 'conserve') {
+      return conserveModeLines().join('\n');
+    }
+    return FortiMessages.unknownPath(`hardware ${tail.join(' ')}`);
+  }
   if (family === 'autoupdate') {
     if (tail[0] !== 'versions') {
       return FortiMessages.unknownPath(`autoupdate ${tail.join(' ')}`);
@@ -264,16 +273,13 @@ function diagnoseDebug(rest: readonly string[], deps: FortiDiagDeps): string {
     state.enabled = true;
     const text = renderDebugFlow(deps.fw.recentTraces(), state, deps.vdom());
     state.nextTraceId += Math.max(1, countTraces(text));
-    return text;
+    return state.showConsole ? text : '';
   }
   if (rest[0] === 'disable') { state.enabled = false; return ''; }
   if (rest[0] !== 'flow') return FortiMessages.unknownPath(rest.join(' '));
 
   if (rest[1] === 'filter') return setFlowFilter(rest.slice(2), deps);
-  if (rest[1] === 'show') {
-    state.showFunctionName = rest[3] !== 'disable';
-    return '';
-  }
+  if (rest[1] === 'show') return setFlowShow(rest.slice(2), deps);
   if (rest[1] === 'trace') {
     if (rest[2] === 'stop') { state.traceCount = 0; return ''; }
     const count = Number.parseInt(rest[3] ?? '', 10);
@@ -281,6 +287,34 @@ function diagnoseDebug(rest: readonly string[], deps: FortiDiagDeps): string {
     return '';
   }
   return FortiMessages.unknownPath(rest.join(' '));
+}
+
+function setFlowShow(words: readonly string[], deps: FortiDiagDeps): string {
+  const [option, value] = words;
+  if (option === undefined) {
+    return FortiMessages.parseError('show',
+      'expected `function-name`, `console` or `iprope`, then `enable` or `disable`.');
+  }
+  if (value !== 'enable' && value !== 'disable') {
+    return FortiMessages.parseError(value ?? option,
+      `\`diagnose debug flow show ${option}\` takes \`enable\` or \`disable\`.`);
+  }
+  const on = value === 'enable';
+  if (option === 'function-name') {
+    deps.state.debugFlow.showFunctionName = on;
+    return '';
+  }
+  if (option === 'console') {
+    deps.state.debugFlow.showConsole = on;
+    return '';
+  }
+  if (option === 'iprope') {
+    return FortiMessages.commandFail(
+      '`show iprope` exists on a real FortiGate; this simulator has no iprope '
+      + 'lookup lines to add to the trace, and the policy it matched is already named.');
+  }
+  return FortiMessages.parseError(option,
+    'expected `function-name`, `console` or `iprope`.');
 }
 
 function renderFlowFilter(deps: FortiDiagDeps): string {
@@ -417,6 +451,28 @@ function diagnoseIke(rest: readonly string[], deps: FortiDiagDeps): string {
     return '';
   }
   return FortiMessages.unknownPath(`vpn ike gateway ${rest.slice(1).join(' ')}`);
+}
+
+export interface SnifferPlan {
+  readonly iface: string;
+  readonly expression: string;
+  readonly verbosity: number;
+  readonly count: number;
+  readonly filter: CaptureFilter;
+}
+
+export function parseSnifferPlan(
+  rest: readonly string[], knownInterface: (name: string) => boolean,
+): SnifferPlan | null {
+  if (rest[0] !== 'packet') return null;
+  const iface = rest[1];
+  if (iface === undefined) return null;
+  if (iface !== 'any' && !knownInterface(iface)) return null;
+
+  const parsed = splitSnifferArguments(rest.slice(2));
+  const filter = parseCaptureFilter(parsed.expression);
+  if (filter === null) return null;
+  return { iface, filter, ...parsed };
 }
 
 function diagnoseSniffer(rest: readonly string[], deps: FortiDiagDeps): string {

@@ -17,6 +17,7 @@ export interface ArpServiceDeps {
   onRequestNeeded?: (request: ARPPacket, iface: string) => void;
   onDuplicateAddress?: (report: DuplicateAddressReport) => void;
   proxyOwns?: (address: string, iface: string) => boolean;
+  onCacheChanged?: () => void;
 }
 
 const DEFAULT_AGING_SEC = 14400;
@@ -45,11 +46,13 @@ export class ArpService implements INeighborResolver<string> {
     if (existing?.type === 'static') return;
 
     this.cache.set(address, { mac, iface, timestamp: this.now(), type: 'dynamic' });
+    this.deps.onCacheChanged?.();
     this.settle(address, mac);
   }
 
   setStatic(address: string, mac: MACAddress, iface: string): void {
     this.cache.set(address, { mac, iface, timestamp: this.now(), type: 'static' });
+    this.deps.onCacheChanged?.();
     this.settle(address, mac);
   }
 

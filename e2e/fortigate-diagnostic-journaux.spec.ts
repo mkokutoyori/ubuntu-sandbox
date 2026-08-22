@@ -1,4 +1,5 @@
 import { test, expect, type Page } from '@playwright/test';
+import { fortiConsoleLogin } from './fortiConsole';
 
 async function waitForStore(page: Page): Promise<void> {
   await page.waitForFunction(() => !!(window as Record<string, unknown>).__networkStore, { timeout: 15_000 });
@@ -7,6 +8,7 @@ async function waitForStore(page: Page): Promise<void> {
 async function openTerminal(page: Page, id: string): Promise<void> {
   await page.locator(`[data-device-id="${id}"]`).first().dblclick({ timeout: 8_000 });
   await page.locator('[data-testid="terminal-modal"]').waitFor({ state: 'visible', timeout: 10_000 });
+  await fortiConsoleLogin(page);
   await page.waitForTimeout(1500);
 }
 
@@ -103,7 +105,7 @@ test.describe('FortiGate — diagnostic et journaux dans le terminal', () => {
 
     const vu = await modalText(page);
     expect(vu).toContain('via 203.0.113.254, port2');
-    expect(vu).toContain('192.168.1.0 255.255.255.0 is directly connected, port1');
+    expect(vu).toContain('192.168.1.0/24 is directly connected, port1');
   });
 
   test('`diagnose firewall iprope list` rend la politique compilee', async ({ page }) => {

@@ -1,13 +1,14 @@
 import {
   IPAddress, IP_PROTO_ICMP, computeIPv4Checksum,
   type ICMPPacket, type IPv4Packet,
-} from '../../../core/types';
+} from '../core/types';
 
 export const ECHO_DATA_BYTES = 56;
 
 export function buildEchoRequest(
   source: string, destination: string,
   identifier: number, sequence: number, dataSize = ECHO_DATA_BYTES,
+  ttl = 64,
 ): IPv4Packet {
   const icmp: ICMPPacket = {
     type: 'icmp', icmpType: 'echo-request', code: 0,
@@ -17,7 +18,7 @@ export function buildEchoRequest(
     type: 'ipv4', version: 4, ihl: 5, tos: 0,
     totalLength: 20 + 8 + dataSize,
     identification: identifier * 1000 + sequence,
-    flags: 0, fragmentOffset: 0, ttl: 64,
+    flags: 0, fragmentOffset: 0, ttl,
     protocol: IP_PROTO_ICMP, headerChecksum: 0,
     sourceIP: new IPAddress(source), destinationIP: new IPAddress(destination),
     payload: icmp,

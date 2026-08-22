@@ -4,6 +4,7 @@ import {
   address, addressMask, choice, count, enable, reference, refList, text, word,
   type FortiAttributeSpec, type FortiObjectView, type FortiTableSpec,
 } from './types';
+import { passwordPolicyRefusal } from './passwordPolicy';
 
 const POLICY_BASED_HINT = 'policy-based IPsec (`config vpn ipsec phase1`, '
   + 'without `-interface`) is the legacy mode: the tunnel is not an interface, '
@@ -79,6 +80,8 @@ export const VPN_PHASE1_INTERFACE: FortiTableSpec = {
     {
       ...text('psksecret', 'Pre-shared secret for PSK authentication.'),
       quoted: true, secret: true,
+      valueRefusal: (value, env) =>
+        passwordPolicyRefusal(value, env, 'ipsec-preshared-key'),
     },
     reference('certificate', 'Local certificate presented for signature authentication.',
       ['vpn certificate local']),
@@ -264,7 +267,12 @@ export const VPN_PHASE1_POLICY: FortiTableSpec = {
     { ...word('name', 'IPsec remote gateway name.'), readOnly: true },
     reference('interface', 'Local outgoing interface.', ['system interface']),
     address('remote-gw', 'Remote VPN gateway address.', '0.0.0.0'),
-    { ...text('psksecret', 'Pre-shared secret.'), quoted: true, secret: true },
+    {
+      ...text('psksecret', 'Pre-shared secret.'),
+      quoted: true, secret: true,
+      valueRefusal: (value, env) =>
+        passwordPolicyRefusal(value, env, 'ipsec-preshared-key'),
+    },
     proposalAttribute('Phase 1 proposals.'),
     dhGroupAttribute(),
   ],

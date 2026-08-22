@@ -9,6 +9,8 @@ export const ASA_PIPELINE: readonly string[] = Object.freeze([
   'tcp-state-check',
   'nat-destination',
   'route-lookup',
+  'ttl-decrement',
+  'mtu-check',
   'egress-zone',
   'policy-lookup',
   'nat-source',
@@ -71,11 +73,6 @@ export const ASA_PROFILE: FirewallProfile = Object.freeze({
     'translation-created': Object.freeze({ id: '305011', severity: 'informational' as const }),
   }),
 
-  unimplemented: Object.freeze([
-    'show module',
-    'verify /md5',
-    'threat-detection scanning-threat',
-  ]),
 });
 
 export const ASA_NAT_SECTIONS = Object.freeze({

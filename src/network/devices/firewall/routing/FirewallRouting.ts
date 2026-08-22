@@ -1,3 +1,6 @@
+import type {
+  OspfDatabaseFacts, OspfInterfaceFacts, OspfLsaFacts,
+} from './DynamicRoutingTypes';
 import {
   ETHERTYPE_IPV4, IPAddress, IP_PROTO_OSPF, MACAddress, SubnetMask,
   createIPv4Packet,
@@ -5,7 +8,10 @@ import {
 } from '../../../core/types';
 import { ipv4MulticastToMac } from '../../../core/ip';
 import { OSPFEngine } from '../../../ospf/OSPFEngine';
-import type { OSPFPacket } from '../../../ospf/types';
+import type {
+  OSPFPacket, LSA, RouterLSA, SummaryLSA, ExternalLSA,
+} from '../../../ospf/types';
+
 import { RIPEngine } from '../../../rip/RIPEngine';
 import type { IEventBus } from '../../../../events/EventBus';
 import type { TcpStack } from '../../../tcp/TcpStack';
@@ -148,6 +154,62 @@ export class FirewallRouting {
       }
     }
     return found;
+  }
+
+  ospfDatabase(): OspfDatabaseFacts | null {
+    const engine = this.ospf;
+    if (!engine) return null;
+
+    const lsdb = engine.getLSDB();
+    const areas = [...lsdb.areas.entries()].map(([areaId, entries]) => ({
+      areaId,
+      lsas: [...entries.values()].map(lsaFacts),
+    }));
+    return {
+      routerId: engine.getRouterId(),
+      areas,
+      external: [...lsdb.external.values()].map(lsaFacts),
+    };
+  }
+
+  ospfInterfaces(): readonly OspfInterfaceFacts[] {
+    const engine = this.ospf;
+    if (!engine) return Object.freeze([]);
+
+    const out: OspfInterfaceFacts[] = [];
+    let ifindex = 1;
+    for (const [name, iface] of engine.getInterfaces()) {
+      const neighbours = [...(iface.neighbors ?? new Map()).values()];
+      out.push({
+        name,
+        up: iface.state !== 'Down',
+        ifindex: ifindex++,
+        mtu: 1500,
+        bandwidthMbit: 1000,
+        enabled: true,
+        address: iface.ipAddress,
+        prefixLength: maskLength(iface.mask),
+        broadcast: broadcastOf(iface.ipAddress, iface.mask),
+        areaId: iface.areaId,
+        routerId: engine.getRouterId(),
+        networkType: iface.networkType.toUpperCase(),
+        cost: iface.cost,
+        transmitDelay: iface.transmitDelay,
+        state: iface.state,
+        priority: iface.priority,
+        drRouterId: routerIdAt(neighbours, iface.dr, engine.getRouterId(), iface.ipAddress),
+        drAddress: iface.dr === '0.0.0.0' ? undefined : iface.dr,
+        bdrRouterId: routerIdAt(neighbours, iface.bdr, engine.getRouterId(), iface.ipAddress),
+        bdrAddress: iface.bdr === '0.0.0.0' ? undefined : iface.bdr,
+        helloInterval: iface.helloInterval,
+        deadInterval: iface.deadInterval,
+        retransmitInterval: iface.retransmitInterval,
+        passive: iface.passive === true,
+        neighbourCount: neighbours.length,
+        adjacentCount: neighbours.filter(n => n.state === 'Full').length,
+      });
+    }
+    return out;
   }
 
   refreshInterfaces(): void {
@@ -305,4 +367,60 @@ export function ripPacketOf(packet: IPv4Packet): RIPPacket | null {
 
   const rip = udp.payload as RIPPacket | undefined;
   return rip?.type === 'rip' ? rip : null;
+}
+
+function lsaFacts(lsa: LSA): OspfLsaFacts {
+  const base = {
+    lsType: lsa.lsType as number,
+    linkStateId: lsa.linkStateId,
+    advertisingRouter: lsa.advertisingRouter,
+    lsAge: lsa.lsAge,
+    lsSequenceNumber: lsa.lsSequenceNumber,
+    checksum: lsa.checksum,
+  };
+  if (lsa.lsType === 1) return { ...base, linkCount: (lsa as RouterLSA).numLinks };
+  if (lsa.lsType === 3 || lsa.lsType === 4) {
+    const summary = lsa as SummaryLSA;
+    return { ...base, route: `${lsa.linkStateId}/${maskLength(summary.networkMask) ?? 0}` };
+  }
+  if (lsa.lsType === 5) {
+    const external = lsa as ExternalLSA;
+    return {
+      ...base,
+      route: `${lsa.linkStateId}/${maskLength(external.networkMask) ?? 0}`,
+      metricType: external.metricType,
+      routeTag: 0,
+    };
+  }
+  return base;
+}
+
+function maskLength(mask: string | undefined): number | undefined {
+  if (mask === undefined) return undefined;
+  const octets = mask.split('.').map(Number);
+  if (octets.length !== 4 || octets.some(Number.isNaN)) return undefined;
+  return octets.reduce((total, octet) => total + countBits(octet), 0);
+}
+
+function countBits(octet: number): number {
+  let bits = 0;
+  for (let mask = 128; mask > 0; mask >>= 1) if ((octet & mask) !== 0) bits += 1;
+  return bits;
+}
+
+function broadcastOf(address: string | undefined, mask: string | undefined): string | undefined {
+  if (address === undefined || mask === undefined) return undefined;
+  const a = address.split('.').map(Number);
+  const m = mask.split('.').map(Number);
+  if (a.length !== 4 || m.length !== 4) return undefined;
+  return a.map((octet, index) => (octet | (~m[index] & 255))).join('.');
+}
+
+function routerIdAt(
+  neighbours: ReadonlyArray<{ routerId: string; ipAddress?: string }>,
+  address: string, ownRouterId: string, ownAddress: string | undefined,
+): string | undefined {
+  if (address === '0.0.0.0') return undefined;
+  if (address === ownAddress) return ownRouterId;
+  return neighbours.find(n => n.ipAddress === address)?.routerId;
 }

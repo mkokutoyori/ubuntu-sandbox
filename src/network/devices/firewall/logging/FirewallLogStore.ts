@@ -46,6 +46,7 @@ export function logLevelAtLeast(
 export class FirewallLogStore {
   private records: FirewallLogRecord[] = [];
   private capacity: number;
+  private maxBytes: number | null = null;
   private droppedCount = 0;
 
   constructor(capacity = DEFAULT_CAPACITY) {
@@ -59,6 +60,19 @@ export class FirewallLogStore {
 
   getCapacity(): number {
     return this.capacity;
+  }
+
+  setMaxBytes(bytes: number | null): void {
+    this.maxBytes = bytes === null || bytes <= 0 ? null : bytes;
+    this.trim();
+  }
+
+  getMaxBytes(): number | null {
+    return this.maxBytes;
+  }
+
+  usedBytes(): number {
+    return this.records.reduce((total, record) => total + sizeOf(record), 0);
   }
 
   append(draft: FirewallLogDraft): FirewallLogRecord {
@@ -114,7 +128,21 @@ export class FirewallLogStore {
       this.records.shift();
       this.droppedCount++;
     }
+    if (this.maxBytes === null) return;
+    let used = this.usedBytes();
+    while (this.records.length > 1 && used > this.maxBytes) {
+      used -= sizeOf(this.records[0]);
+      this.records.shift();
+      this.droppedCount++;
+    }
   }
+}
+
+function sizeOf(record: FirewallLogRecord): number {
+  let bytes = record.type.length + record.subtype.length + record.level.length
+    + record.id.length + 32;
+  for (const [name, value] of record.fields) bytes += name.length + value.length + 2;
+  return bytes;
 }
 
 function matches(record: FirewallLogRecord, filter: FirewallLogFilter): boolean {

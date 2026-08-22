@@ -1,8 +1,10 @@
 import { Continue, Drop, type FilterVerdict } from '../../../../core/FilterChain';
 import { getPacketDstPort, getPacketSrcPort, rewriteSrcIP } from '../../../../nat/rewrite';
 import {
-  IP_PROTO_TCP, type IPv4Packet, type MACAddress, type TCPPacket,
+  IP_PROTO_TCP, computeIPv4Checksum,
+  type IPv4Packet, type MACAddress, type TCPPacket,
 } from '../../../../core/types';
+import { IPV4_FLAG_DF } from '../../../../core/Ipv4Fragmentation';
 import type { InterfaceTable } from '../../l3/InterfaceTable';
 import type { RouteTable } from '../../l3/RouteTable';
 import { icmpTypeNumber } from '../../session/FlowKey';
@@ -134,6 +136,8 @@ export function createCoreStages(services: FirewallServices): PipelineStage[] {
     sdwanRuleStage(services),
     macLookupStage(services),
     routeLookupStage(services),
+    ttlDecrementStage(services),
+    mtuCheckStage(services),
     egressZoneStage(services),
     policyLookupStage(services),
     authCheckStage(services),
@@ -447,6 +451,9 @@ function sessionLookupStage(services: FirewallServices): PipelineStage {
         context.packet = vdom(services, context).nat.reapply(packet, translation, found.direction);
       }
 
+      const expired = transitTtl(services, context, 'session-lookup');
+      if (expired) return expired;
+
       context.trace.push({ stage: 'session-lookup', verdict: 'fastpath' });
       context.verdict = Object.freeze({
         action: 'accept' as const, reason: 'policy-deny' as VerdictReason, stage: 'session-lookup',
@@ -676,6 +683,54 @@ function routeLookupStage(services: FirewallServices): PipelineStage {
 
       context.egressPort = resolved.iface;
       return proceed(context, 'route-lookup', resolved.iface);
+    },
+  };
+}
+
+function transitTtl(
+  services: FirewallServices, context: PacketContext, stage: string,
+): FilterVerdict<PacketContext> | null {
+  const packet = ipv4(context);
+  if (!packet) return null;
+  if (context.egressPort === undefined) return null;
+  if (vdom(services, context).opmode === 'transparent') return null;
+  if (packet.ttl <= 1) return deny(context, stage, 'ttl-expired');
+
+  const forwarded: IPv4Packet = { ...packet, ttl: packet.ttl - 1, headerChecksum: 0 };
+  forwarded.headerChecksum = computeIPv4Checksum(forwarded);
+  context.packet = forwarded;
+  return null;
+}
+
+function ttlDecrementStage(services: FirewallServices): PipelineStage {
+  return {
+    name: 'ttl-decrement',
+    apply(context) {
+      const expired = transitTtl(services, context, 'ttl-decrement');
+      if (expired) return expired;
+      const packet = ipv4(context);
+      return proceed(context, 'ttl-decrement', packet ? String(packet.ttl) : 'not-ipv4');
+    },
+  };
+}
+
+function mtuCheckStage(services: FirewallServices): PipelineStage {
+  return {
+    name: 'mtu-check',
+    apply(context) {
+      const packet = ipv4(context);
+      if (!packet) return proceed(context, 'mtu-check', 'not-ipv4');
+      if (context.egressPort === undefined) return proceed(context, 'mtu-check', 'no-egress');
+
+      const mtu = services.interfaces.get(context.egressPort)?.mtu;
+      if (mtu === undefined || packet.totalLength <= mtu) {
+        return proceed(context, 'mtu-check', String(mtu ?? 'unknown'));
+      }
+      if ((packet.flags & IPV4_FLAG_DF) === 0) {
+        return proceed(context, 'mtu-check', `fragment-${mtu}`);
+      }
+      context.egressMtu = mtu;
+      return deny(context, 'mtu-check', 'mtu-exceeded-df');
     },
   };
 }

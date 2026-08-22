@@ -205,4 +205,47 @@ describe('TP 9 — voir le pare-feu penser avec `debug flow`', () => {
       "diagnose sniffer packet any 'host 192.168.10.10 and not port 80' 4 50");
     expect(seulementIcmp).not.toMatch(/\.80 /);
   });
+  it('`show` LIT l\'option qu\'on lui nomme : `console` n\'est pas `function-name`', async () => {
+    const { fgt, pcLan } = await laboratoire();
+    await armerTrace(fgt, '192.168.20.10');
+    await fgt.executeCommand('diagnose debug flow show function-name disable');
+    await fgt.executeCommand('diagnose debug flow show console enable');
+    await pcLan.executeCommand('curl -sS http://192.168.20.10/');
+
+    expect(await fgt.executeCommand('diagnose debug enable'))
+      .not.toContain('func=');
+  });
+
+  it('`show console disable` TAIT la trace, et la trace seule', async () => {
+    const { fgt, pcLan } = await laboratoire();
+    await armerTrace(fgt, '192.168.20.10');
+    await fgt.executeCommand('diagnose debug flow show console disable');
+    await pcLan.executeCommand('curl -sS http://192.168.20.10/');
+
+    expect(await fgt.executeCommand('diagnose debug enable')).toBe('');
+  });
+
+  it('`show console` est ACTIVE par defaut — la trace se lit sans la demander', async () => {
+    const { fgt, pcLan } = await laboratoire();
+    await armerTrace(fgt, '192.168.20.10');
+    await pcLan.executeCommand('curl -sS http://192.168.20.10/');
+
+    expect(await fgt.executeCommand('diagnose debug enable'))
+      .toMatch(/Allowed by Policy-2/);
+  });
+
+  it('une option de `show` sans valeur est REFUSEE, pas prise pour un `enable`', async () => {
+    const { fgt } = await laboratoire();
+
+    expect(await fgt.executeCommand('diagnose debug flow show function-name'))
+      .toMatch(/parse error|Command fail/i);
+  });
+
+  it('`show iprope` NOMME la brique absente au lieu d\'etre acceptee sans effet', async () => {
+    const { fgt } = await laboratoire();
+    const refus = await fgt.executeCommand('diagnose debug flow show iprope enable');
+
+    expect(refus).toMatch(/Command fail/i);
+    expect(refus).toContain('iprope');
+  });
 });

@@ -218,14 +218,14 @@ export class HaAgent {
     if (claiming.length !== 1) return null;
 
     const incumbent = claiming[0];
-    const best = Math.max(...candidates.map(candidate => candidate.monitoredUp));
-    if (incumbent.monitoredUp < best) return null;
-
-    const contest = electPrimary(candidates);
-    return {
-      winner: incumbent.serial,
-      reason: contest.winner === incumbent.serial ? contest.reason : 'uptime',
-    };
+    const contest = electPrimary(candidates, false);
+    if (contest.winner === incumbent.serial) {
+      return { winner: incumbent.serial, reason: contest.reason };
+    }
+    if (contest.reason === 'monitored-interfaces' || contest.reason === 'uptime') {
+      return null;
+    }
+    return { winner: incumbent.serial, reason: 'uptime' };
   }
 
   private claimsMaster(serial: string): boolean {

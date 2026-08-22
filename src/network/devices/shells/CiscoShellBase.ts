@@ -6215,6 +6215,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       try {
         const base = this.withUniversalCandidates(input, trie.tabCandidates(input))
           .filter((c) => this.laSessionVoit(c));
+        if (input.endsWith(' ')) return base.sort();
         const amont = this.amontCanonique(input);
         for (const { keyword } of this.socleSuggestions(input, 'TAB', device)) {
           const ligne = `${amont} ${keyword}`.trim();
