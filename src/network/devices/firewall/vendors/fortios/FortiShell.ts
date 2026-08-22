@@ -67,6 +67,22 @@ import { renderFortiguardServiceStatus } from './diag/fortiguardRenderer';
 import { TftpClientSession } from '@/network/tftp/TftpSession';
 import { IPAddress } from '@/network/core/types';
 import { encryptConfig, decryptConfig, isEncryptedConfig } from './backup/ConfigEncryption';
+import {
+  renderOspfDatabase, renderOspfInterfaces,
+} from './diag/ospfDatabaseRenderer';
+import type { OspfInterfaceFacts } from '../../routing/DynamicRoutingTypes';
+
+const OSPF_NOT_RUNNING = '';
+
+function outsideOspf(name: string, physical: boolean): OspfInterfaceFacts {
+  return {
+    name, up: physical, ifindex: 0, mtu: 1500, bandwidthMbit: 1000, enabled: false,
+    areaId: '0.0.0.0', routerId: '0.0.0.0', networkType: 'BROADCAST', cost: 0,
+    transmitDelay: 1, state: 'Down', priority: 1,
+    helloInterval: 10, deadInterval: 40, retransmitInterval: 5,
+    passive: false, neighbourCount: 0, adjacentCount: 0,
+  };
+}
 
 export { FORTI_COMMAND_FAIL };
 
@@ -619,6 +635,13 @@ export class FortiShell {
     if (path === 'router info ospf neighbor') {
       return renderOspfNeighbors(this.fw.getRouting().ospfNeighbors());
     }
+    if (path === 'router info ospf database' || path === 'router info ospf database brief') {
+      const facts = this.fw.getRouting().ospfDatabase();
+      return facts === null ? OSPF_NOT_RUNNING : renderOspfDatabase(facts);
+    }
+    if (path === 'router info ospf interface' || path.startsWith('router info ospf interface ')) {
+      return this.ospfInterfaceView(path.slice('router info ospf interface'.length).trim());
+    }
     if (path.startsWith('router info routing-table ')) {
       const view = path.slice('router info routing-table '.length);
       if (view !== 'all' && view !== 'static' && view !== 'connected'
@@ -633,6 +656,21 @@ export class FortiShell {
       return renderBgpNeighbors(this.fw.getRouting().getBgp().summaryFacts());
     }
     return null;
+  }
+
+  private ospfInterfaceView(name: string): string | null {
+    const declared = this.fw.getRouting().ospfInterfaces();
+    if (name.length === 0) {
+      return declared.length === 0 ? OSPF_NOT_RUNNING : renderOspfInterfaces(declared);
+    }
+
+    const wanted = unquote(name);
+    const found = declared.find(iface => iface.name === wanted);
+    if (found) return renderOspfInterfaces([found]);
+    if (this.fw.getPort(wanted) === undefined
+      && this.fw.listL3Interfaces().every(iface => iface.name !== wanted)) return null;
+
+    return renderOspfInterfaces([outsideOspf(wanted, this.fw.getPort(wanted) !== undefined)]);
   }
 
   private interfaceStatusFacts(): InterfaceStatusFacts[] {

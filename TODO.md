@@ -292,21 +292,6 @@ change d'etat. Le faire ici demande que la table de sessions soit un
 consommateur de l'evenement de sante — meme chainon manquant que l'entree
 precedente, et meme raison de ne pas l'improviser.
 
-### [ospf] les vues `get router info ospf database` et `... interface` n'existent pas
-Le pare-feu ne repond qu'a `get router info ospf neighbor` ; les deux autres
-vues que le tutoriel nomme dans le meme bloc de verification (§20.2) sont
-refusees. La matiere existe pourtant en entier depuis que la base se
-remplit vraiment : `getOspf().getLSDB()` porte les LSA de routeur, de reseau
-et externes, et `getInterface(nom)` porte l'etat, le DR, le BDR, le cout et
-les temporisateurs.
-**Mesure** : `get router info ospf database brief` rend `Command fail.
-Return code -61 / NOTE: unknown configuration path`, sur une machine dont la
-base contient au meme instant trois LSA.
-**Report** : ces deux vues appartiennent au TP 20 et non au TP 19, dont
-l'etape 4 lit `get router info routing-table ospf`. Le format a rendre est
-celui de zebra (`Link ID / ADV Router / Age / Seq# / CkSum`), qui n'est pas
-celui d'IOS — la base est partagee, le rendu ne l'est pas.
-
 ### [ospf] un LSA de reseau PERIME n'est jamais retire
 RFC 2328 §12.4.2 : quand le dernier voisin pleinement adjacent disparait, le
 DR doit VIDER (`MaxAge`) le LSA de reseau qu'il a annonce. `OSPFEngine`

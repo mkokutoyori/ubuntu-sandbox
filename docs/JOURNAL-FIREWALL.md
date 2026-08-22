@@ -2844,6 +2844,68 @@ pare-feu peut atterrir dans le `/var/log/syslog` d'une vraie machine.
 
 ---
 
+### E57 — Les deux vues OSPF que le tutoriel nomme, au format de leur vrai auteur
+
+Périmètre : l'entrée ouverte « les vues `get router info ospf database` et
+`... interface` n'existent pas ». Le pare-feu ne répondait qu'à
+`get router info ospf neighbor` ; les deux autres, que le §20.2 nomme dans le
+même bloc de vérification, rendaient `unknown configuration path` sur une
+machine dont la base contenait au même instant trois LSA.
+
+**La matière était là en entier** — `getLSDB()` porte les LSA par aire et les
+externes, `getInterfaces()` porte l'état, le DR, le BDR, le coût et les
+temporisateurs. Ce qui manquait était le rendu, et le rendu est la seule
+partie qui ne se déduit pas : `get router info ospf …` de FortiOS est la
+sortie de **zebra/FRR**, pas celle d'IOS, et les deux diffèrent.
+
+**Le format vient de la source de FRR, pas de ma mémoire.** La documentation
+Fortinet et les blogs qui la citent sont hors de portée depuis ce réseau
+(le mandataire les refuse), mais `raw.githubusercontent.com` répond : les
+chaînes de `ospfd/ospf_vty.c` donnent l'en-tête de chaque section
+(`show_database_desc`), la ligne de colonnes (`show_database_header` — dont
+le décalage d'un caractère par rapport aux données est REPRODUIT, parce
+qu'il est réel), le format de ligne (`%-15pI4` deux fois, puis `%4d
+0x%08lx 0x%04x`), la mention `E2 <préfixe> [0x<tag>]` des LSA externes, et
+les onze lignes de `show ip ospf interface` avec leur ponctuation exacte —
+`MTU mismatch detection: enabled`, `Transmit Delay is 1 sec, State …`,
+`Timer intervals configured, Hello 10s, Dead 40s, Wait 40s, Retransmit 5`,
+`No Hellos (Passive interface)`, `Neighbor Count is N, Adjacent neighbor
+count is M`. Rien n'est inventé, et là où FRR distingue deux phrases
+(`OSPF not enabled on this interface` contre `OSPF is enabled, but not
+running`) la distinction est gardée.
+
+**Les types de faits vivent dans le SOCLE, pas dans la déclinaison.** La
+première version les avait posés à côté du rendu, dans
+`vendors/fortios/diag/` — et `FirewallRouting`, qui est du socle, aurait dû
+importer la couche vendeur pour les produire. C'est exactement ce que le
+garde-fou G2 interdit. `OspfLsaFacts`/`OspfAreaFacts`/`OspfDatabaseFacts`/
+`OspfInterfaceFacts` sont donc dans `routing/DynamicRoutingTypes.ts` : le
+socle MESURE, la déclinaison MET EN FORME, et la prochaine déclinaison
+(zebra chez d'autres, IOS chez Cisco) réutilisera la mesure sans réécrire la
+lecture de la base.
+
+**Deux prémisses de ma sonde étaient fausses, et c'est la mesure qui a
+tranché** : j'attendais `Internet Address 192.168.100.99/24, Area 0.0.0.0`
+alors que FRR intercale `Broadcast 192.168.100.255,` — le produit avait
+raison ; et mon laboratoire n'avait ni interface de bouclage ni avance
+d'horloge, donc AUCUNE adjacence ne se formait et je lisais une base à un
+seul LSA en croyant tester le rendu de deux. Le laboratoire reprend celui du
+TP 19, `VirtualTimeScheduler` compris.
+
+`get router info ospf interface <nom>` répond aussi pour une interface qui
+ne fait PAS d'OSPF (`OSPF not enabled on this interface`, ce que FRR écrit)
+et refuse un nom qui n'existe sur la machine à aucun titre — les deux sont
+des réponses différentes et le restent.
+
+**Discrimination** (`git stash push -- src/network`) : 11 des 12 cas tombent
+avant correctif ; le douzième est le refus d'un nom d'interface inconnu, qui
+passait parce que la commande entière était refusée.
+
+**Vérifié** : 1812 cas du module pare-feu (90 fichiers). Typecheck inchangé
+à 342.
+
+---
+
 ### E56 — Le verrou porte sur le COMPTE, et un paquet qui traverse perd un saut
 
 Périmètre : deux entrées ouvertes de `TODO.md`, prises pour elles-mêmes.
