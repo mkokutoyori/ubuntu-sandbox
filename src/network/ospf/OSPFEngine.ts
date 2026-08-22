@@ -1067,7 +1067,7 @@ export class OSPFEngine implements IProtocolEngine {
 
     this.getBus().publish({
       topic: 'ospf.lsa.flushed',
-      payload: { ...this.routerRef(), areaId, lsa: this.headerOf(lsa), reason: 'interface-down' },
+      payload: { ...this.routerRef(), areaId, lsa: this.headerOf(lsa), reason: 'topology-change' },
     } as never);
   }
 
@@ -2583,7 +2583,10 @@ export class OSPFEngine implements IProtocolEngine {
    * RFC 2328 §12.4.2
    */
   originateNetworkLSA(iface: OSPFInterface): NetworkLSA | null {
-    if (iface.state !== 'DR') return null;
+    if (iface.state !== 'DR') {
+      this.flushOwnLSA(iface.areaId, 2, iface.ipAddress);
+      return null;
+    }
 
     const attachedRouters: string[] = [this.config.routerId];
 
@@ -2593,7 +2596,10 @@ export class OSPFEngine implements IProtocolEngine {
       }
     }
 
-    if (attachedRouters.length < 2) return null;
+    if (attachedRouters.length < 2) {
+      this.flushOwnLSA(iface.areaId, 2, iface.ipAddress);
+      return null;
+    }
 
     const lsa: NetworkLSA = {
       lsAge: 0,

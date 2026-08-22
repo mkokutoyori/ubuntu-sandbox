@@ -327,20 +327,6 @@ de `config system sdwan` n'est pas etabli : les membres et les routes
 statiques sont deux tables distinctes, et rejouer trop tot developperait une
 route sur une zone encore vide.
 
-### [ospf] un LSA de reseau PERIME n'est jamais retire
-RFC 2328 §12.4.2 : quand le dernier voisin pleinement adjacent disparait, le
-DR doit VIDER (`MaxAge`) le LSA de reseau qu'il a annonce. `OSPFEngine`
-n'a aucun mecanisme de vidange — `originateNetworkLSA` rend `null` quand il
-reste moins de deux routeurs attaches, et le LSA deja installe demeure
-jusqu'a son vieillissement naturel (3600 s).
-**Mesure** : couper le lien de transit laisse `2:<ip du DR>:<routeur>` dans
-la base des deux cotes ; seul le LSA de ROUTEUR est reannonce, et c'est lui
-qui fait disparaitre la route du calcul.
-**Report** : la consequence visible est nulle aujourd'hui — le SPF traverse
-un lien de transit par le LSA de routeur ET le LSA de reseau, donc la route
-tombe quand meme. Ecrire la vidange demande un `MaxAge` premature et sa
-propagation, qui n'existent nulle part dans ce moteur.
-
 ### [linux] la commande `ipsec` (strongSwan) est une FACADE
 `ipsec up <conn>` rend `initiating IKE_SA <conn>[1] to 0.0.0.0` — la chaine
 `0.0.0.0` est litterale, quelle que soit la configuration —, `ipsec status`
