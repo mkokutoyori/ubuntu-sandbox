@@ -2700,6 +2700,74 @@ refusé sont remplacés par un cas qui l'affirme disponible.
 
 ---
 
+## Périmètre pris — FortiOS phase 16 (la charge est mesurée, le mode conserve engage)
+
+**Agent `mandeng`.** §6.5 du carnet nomme le point, et le carnet le dit
+déjà dans la langue de ce module : « `get system performance status` ne
+rend **ni CPU ni mémoire** : aucun modèle de charge n'existe, et une
+constante affichée là où la vue promet une mesure est précisément le
+défaut que ce dépôt referme. »
+
+Mesure de départ, faite en lisant les trois vues et leur source unique
+`vendors/fortios/diag/systemLoad.ts` :
+
+- **`CPU_STATES` est un objet GELÉ à `idle: 100`** et tout le reste à
+  zéro. `get system performance status` et `diagnose sys top` le
+  rendent tous les deux : un pare-feu qui vient d'acheminer cent mille
+  paquets annonce cent pour cent d'inactivité.
+- **`memoryStates()` rend `usedKib: 0`**, donc `freeKib = totalKib`. Un
+  équipement dont la mémoire utilisée est nulle n'a pas démarré. La
+  conséquence dépasse l'affichage : `conserveModeLines()` calcule
+  `memory conserve mode: on|off` à partir de cette valeur, donc le mode
+  conserve est **structurellement impossible** — la vue décrit un
+  mécanisme qui ne peut pas se produire.
+- **Les seuils sont des constantes que l'opérateur ne peut pas régler** :
+  `CONSERVE_THRESHOLDS` est figé à 88/82/78 et
+  `memory-use-threshold-extreme|red|green` n'existent pas dans le
+  schéma de `config system global`.
+- **La table des processus de `diagnose sys top` rend `0.0 0.0`** en dur
+  pour chaque processus, colonnes `%CPU` et `%mem` comprises.
+- **Les ressources de la machine sont déclarées CINQ fois** : `1985` et
+  `1` dans `systemLoad.ts`, et à nouveau en dur dans `FortiShell` pour
+  la ligne `VM Resources` de `get system status`. Rien ne les relie, et
+  `FirewallProfile` — qui décrit pourtant le châssis (ports, temporisateurs,
+  catalogue d'usine) — ne porte ni RAM ni CPU.
+
+**Fichiers que la phase 16 prendra** :
+
+```
+firewall/health/SystemLoad.ts            ← le modèle unique (socle, neuf)
+firewall/FirewallProfile.ts              ← la RAM et les CPU du châssis
+firewall/Firewall.ts                     ← le compteur de travail à l'entrée
+vendors/fortios/diag/systemLoad.ts       ← devient un RENDU, plus une source
+vendors/fortios/schema/system.ts         ← memory-use-threshold-*
+```
+
+**Ce qui existe déjà et ne sera pas réécrit** : `SessionTable.statistics()`
+compte les sessions actives, créées et fermées ; `PolicyStore`,
+`ObjectStore`, `RouteTable`, `ArpService` et le tampon de journaux
+comptent chacun ce qu'ils portent ; `SystemClock` donne l'horloge.
+`MemoryProfile` (`devices/host/hardware/`) est le modèle mémoire du
+projet — il est lu ici pour ce qu'il sait faire (réserver et rendre) et
+n'est pas dupliqué.
+
+**Décision de découpage, écrite ici pour ne pas être découverte** : la
+charge est DÉRIVÉE de ce que l'équipement porte et fait vraiment — le
+nombre de sessions, d'objets, de politiques, de routes, d'entrées de
+journal, et les paquets traités dans la dernière fenêtre — jamais d'un
+tirage aléatoire ni d'une constante décorative. Ce qui n'a pas de source
+mesurable reste à ZÉRO et est dit tel quel : `nice`, `iowait`, `irq` ne
+correspondent à rien qu'on mesure, et les inventer serait exactement le
+défaut qu'on referme.
+
+**Critère de sortie** : remplir la table des sessions fait MONTER la
+mémoire utilisée, le mode conserve s'active pour de bon au seuil rouge
+et se relâche au seuil vert, un paquet arrivant en mode conserve extrême
+est vraiment refusé, l'événement est journalisé, et les trois vues
+lisent le même modèle.
+
+---
+
 ## Périmètre pris — FortiOS phase 15 (le type du VIP gouverne, un bloc expire)
 
 **Agent `mandeng`.** §6.4 du carnet nomme les deux points, et ce sont les
