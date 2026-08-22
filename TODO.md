@@ -266,31 +266,21 @@ interface a travers les politiques, les routes et les tables NAT est un
 mecanisme general (« qu'est-ce qui nomme cet objet ? ») qui depasse le
 SD-WAN et servirait a toutes les suppressions d'objet.
 
-### [sdwan] la route de la zone ne SUIT ni la sante ni un changement de membre
-`update-static-route` (active par defaut sur un vrai FortiGate) retire de la
-table la route d'un membre declare mort. Ici, la route statique nommant une
-zone SD-WAN est developpee en une route par membre AU MOMENT ou elle est
-ecrite : elle ne bouge plus ensuite, ni quand un membre tombe, ni quand on
-ajoute ou retire un membre de la zone.
-**Mesure** : couper le lien du membre 1 puis relire `get router info
-routing-table all` — la route par `port1` y est toujours, alors que
-`diagnose sys sdwan health-check` le declare `dead`.
-**Report** : sans consequence sur le TP 20, dont la bascule passe par la
-REGLE de service (branchee sur le pipeline, elle, et qui suit la mesure) ;
-la fermer demande de reinstaller les routes a chaque tour de sonde, donc de
-faire de la table de routage un consommateur de l'evenement de sante.
-
-### [sdwan] une session DEJA ouverte ne change pas de membre
-La regle de service choisit le membre a l'ouverture de la session. Une
-session en cours garde son interface de sortie meme si son membre cesse de
-respecter le contrat — seul un nouveau flux emprunte le nouveau membre.
-**Mesure** : `ping` vers une adresse, degrader le lien, `ping` vers LA MEME
-adresse : le trafic reste sur le premier membre ; vers une AUTRE adresse, il
-part par le second.
-**Report** : un vrai FortiGate reevalue les sessions affectees quand un SLA
-change d'etat. Le faire ici demande que la table de sessions soit un
-consommateur de l'evenement de sante — meme chainon manquant que l'entree
-precedente, et meme raison de ne pas l'improviser.
+### [sdwan] la zone ne suit pas un changement de MEMBRE
+La route d'une zone SD-WAN suit desormais la SANTE : `update-static-route`
+(actif par defaut, comme sur un vrai FortiGate) retire la route d'un membre
+declare mort et la rend quand il revient ; la session portee par ce membre
+est fermee, donc le flux suivant repart par le membre survivant. Ce qui reste
+ouvert est l'autre moitie de l'ancienne entree : ajouter ou retirer un membre
+de la zone APRES avoir ecrit la route ne redeveloppe rien.
+**Mesure** : declarer la route par la zone, puis ajouter un membre 3 — la
+table de routage n'en porte pas de route.
+**Report** : le chainon existe maintenant (`Firewall.installSdwanRoute` est
+rejoue a chaque transition de sante), il suffirait de le rejouer aussi au
+commit d'un membre. Ce n'est pas fait parce que l'ordre de commit des tables
+de `config system sdwan` n'est pas etabli : les membres et les routes
+statiques sont deux tables distinctes, et rejouer trop tot developperait une
+route sur une zone encore vide.
 
 ### [ospf] un LSA de reseau PERIME n'est jamais retire
 RFC 2328 §12.4.2 : quand le dernier voisin pleinement adjacent disparait, le

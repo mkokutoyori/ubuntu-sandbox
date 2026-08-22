@@ -21,7 +21,7 @@ import { localTimeMs, utcMsForLocal } from '../../core/Timezone';
 import { decryptFromTunnel, sealedLegs } from './vpn/IpsecDataPlane';
 import { ikeDatagram, ipsecHostFacts } from './vpn/FirewallIpsecHost';
 import { InterfaceTable, type InterfaceConfig } from './l3/InterfaceTable';
-import { RouteTable } from './l3/RouteTable';
+import { RouteTable, type DeclaredStaticRoute } from './l3/RouteTable';
 import {
   ProxyArpTable, proxyOwnerKey, publishPoolProxyArp, type ProxyArpEntry,
 } from './l3/ProxyArpTable';
@@ -104,7 +104,9 @@ import type { SdwanService } from './sdwan/SdwanService';
 import { ETHERTYPE_FGCP, type HaAgent } from './ha/HaAgent';
 import { serialNumberOf, type FirewallHa } from './ha/FirewallHa';
 import type { HaConfiguration } from './ha/HaTypes';
-import type { SdwanConfiguration } from './sdwan/SdwanTable';
+import type {
+  SdwanConfiguration, SdwanHealthTransition,
+} from './sdwan/SdwanTable';
 import type { SslVpnPortal, SslVpnSettings } from './vpn/SslVpnPortal';
 import type { IPSecEngine } from '../../ipsec/IPSecEngine';
 import { bringUpTunnel, programIpsecEngine } from './vpn/IpsecProgramming';
@@ -163,6 +165,7 @@ export class Firewall extends Equipment {
   private readonly sslVpn: SslVpnPortal;
   private readonly portals: FirewallPortals;
   private readonly sdwan: SdwanService;
+  private readonly sdwanRoutes = new Map<string, DeclaredStaticRoute>();
   private readonly routing: FirewallRouting;
   private readonly dhcp: FirewallDhcp;
   private readonly l3: L3Services;
@@ -376,7 +379,7 @@ export class Firewall extends Equipment {
     this.routing = l3.routing;
     this.dhcp = l3.dhcp;
     this.sdwan = l3.sdwan;
-
+    this.sdwan.onHealthChange((changes) => { this.onSdwanHealthChange(changes); });
   }
 
   private processPipeline(context: PacketContext) {
@@ -567,6 +570,69 @@ export class Firewall extends Equipment {
   serialNumber(): string { return serialNumberOf(this.name); }
   applySdwan(c: SdwanConfiguration): string | undefined { return this.sdwan.apply(c); }
   runSdwanHealthChecks(): Promise<void> { return this.sdwan.runHealthChecks(); }
+
+  applySdwanStaticRoute(route: DeclaredStaticRoute): void {
+    this.sdwanRoutes.delete(route.id);
+    const routes = this.getRouteTable();
+    routes.removeStaticById(route.id);
+    routes.removeStaticsBySource(route.id);
+    if (!route.enabled || route.blackhole) return;
+
+    if (this.sdwan.getTable().membersOfZone(route.iface).length > 0) {
+      this.sdwanRoutes.set(route.id, route);
+      this.installSdwanRoute(route);
+      return;
+    }
+
+    routes.addStatic(route.destination, route.mask,
+      route.gateway === '0.0.0.0' ? undefined : route.gateway,
+      {
+        iface: route.iface || undefined, distance: route.distance,
+        priority: route.priority, id: route.id,
+      });
+  }
+
+  forgetSdwanStaticRoute(id: string): void { this.sdwanRoutes.delete(id); }
+
+  private installSdwanRoute(route: DeclaredStaticRoute): void {
+    const table = this.sdwan.getTable();
+    for (const member of table.membersOfZone(route.iface)) {
+      if (!this.memberCarriesRoutes(member.sequence)) continue;
+      this.getRouteTable().addStatic(route.destination, route.mask,
+        member.gateway === '0.0.0.0' ? undefined : member.gateway,
+        {
+          iface: member.iface, distance: route.distance,
+          priority: member.priority, id: `${route.id}:sdwan-${member.sequence}`,
+        });
+    }
+  }
+
+  private memberCarriesRoutes(sequence: number): boolean {
+    const table = this.sdwan.getTable();
+    for (const check of table.allHealthChecks()) {
+      if (!check.members.includes(sequence)) continue;
+      if (!check.updateStaticRoute) continue;
+      if (table.healthOf(check.name, sequence)?.alive === false) return false;
+    }
+    return true;
+  }
+
+  private onSdwanHealthChange(changes: readonly SdwanHealthTransition[]): void {
+    for (const route of this.sdwanRoutes.values()) {
+      this.getRouteTable().removeStaticsBySource(route.id);
+      this.installSdwanRoute(route);
+    }
+    for (const change of changes) {
+      if (change.alive) continue;
+      const member = this.sdwan.getTable().member(change.sequence);
+      if (member) this.closeSessionsOn(member.iface);
+    }
+  }
+
+  private closeSessionsOn(iface: string): void {
+    this.getVdom().sessions.clearMatching(
+      session => session.egressInterface === iface);
+  }
 
   bindHaConfiguration(read: () => string, apply: (text: string) => void): void {
     this.haService.bindConfiguration(read, apply);

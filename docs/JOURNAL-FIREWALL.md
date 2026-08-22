@@ -2844,6 +2844,80 @@ pare-feu peut atterrir dans le `/var/log/syslog` d'une vraie machine.
 
 ---
 
+### E58 — La table de routage et la table de sessions écoutent la santé SD-WAN
+
+Périmètre : deux entrées ouvertes de `TODO.md` — « la route de la zone ne
+SUIT ni la santé ni un changement de membre » et « une session DÉJÀ ouverte
+ne change pas de membre ». **Elles nommaient toutes deux le même chaînon
+manquant**, et c'est la raison de les prendre ensemble : la mesure de santé
+n'avait aucun consommateur en dehors de son propre afficheur.
+
+**Ce qui manquait n'était pas la mesure, c'était l'événement.**
+`recordHealth` calculait déjà l'état DÉCLARÉ d'un membre — avec `failtime` et
+`recoverytime`, livrés au TP 20 — et le rangeait sans que personne
+l'apprenne. Il rend maintenant la TRANSITION (`{check, sequence, alive}`) ou
+`null` quand rien ne change, la sonde les collecte, et `SdwanService` les
+publie à un observateur. Rendre `null` sur un non-changement est ce qui rend
+l'événement utilisable : sans cela, chaque tour de sonde aurait redéveloppé
+toutes les routes et fermé les mêmes sessions.
+
+**Deux consommateurs, un seul développement de route.** La route d'une zone
+SD-WAN était développée en une route par membre AU MOMENT du commit, dans
+`commitDevice` — donc figée. Le développement vit désormais sur l'équipement
+(`Firewall.installSdwanRoute`), le commit l'appelle et la transition de santé
+le rejoue : **une seule implémentation**, sinon la route posée au commit et
+celle reposée après une bascule auraient fini par différer. L'équipement
+garde les routes de zone DÉCLARÉES (`sdwanRoutes`), parce qu'on ne peut pas
+redévelopper ce qu'on n'a pas gardé — la table de routage ne porte que les
+copies développées.
+
+**`update-static-route` est le critère, et il existait sur le vrai produit
+sans exister ici.** Actif par défaut, il gouverne le retrait : `set
+update-static-route disable` laisse la route en place alors que la sonde
+déclare le membre mort, et un cas le vérifie. L'écrire était nécessaire —
+retirer la route inconditionnellement aurait été honorer un comportement que
+l'opérateur peut désactiver.
+
+**La session fermée plutôt que reroutée.** Un vrai FortiGate réévalue les
+sessions affectées ; ici la table de sessions ferme celles dont l'interface
+de sortie est celle du membre mort, si bien que le paquet suivant retraverse
+le pipeline et se fait aiguiller vers le survivant. Le résultat observable
+est le même — le trafic vers LA MÊME adresse repart par l'autre membre — et
+le mécanisme est celui que la table sait déjà faire (`clearMatching`), plutôt
+qu'une réécriture d'entrée de session qui n'aurait rien de plus.
+
+**Un garde-fou a repris la main en cours de route, et il avait raison** :
+ma première version déclarait les faits de route avec le type
+`FortiStaticRoute` de la déclinaison FortiOS, ce qui aurait fait importer la
+couche vendeur par `Firewall.ts` — G2. `DeclaredStaticRoute` est donc un type
+du socle (`l3/RouteTable.ts`), que la déclinaison satisfait par sa forme.
+C'est la deuxième fois en deux entrées que ce garde-fou attrape le même
+réflexe.
+
+**Corrigé dans ma propre sonde** : `diagnose sys session list` ne nomme pas
+les interfaces (il écrit `dev=4->3/3->4`, des index), donc mes assertions sur
+`port1` ne prouvaient rien ; elles portent maintenant sur `gwy=`, la
+passerelle du membre, qui est ce que la session dit vraiment. Et `Cable` n'a
+pas de `reconnect()` — le retour du lien se fait par un `connect()` sur les
+deux mêmes ports.
+
+**Reste ouvert et réécrit** : ajouter ou retirer un membre de la zone APRÈS
+avoir écrit la route ne redéveloppe rien. Le chaînon existe désormais ; ce
+qui manque est l'ordre de commit entre deux tables distinctes, et rejouer
+trop tôt développerait une route sur une zone encore vide.
+
+**Discrimination** (`git stash push -- src/network`) : 3 des 7 cas tombent
+avant correctif — le retrait de la route, la fermeture de la session, et le
+départ par l'autre membre. Les 4 autres sont les témoins : les deux membres
+vivants, le retour du membre (qui passait parce que la route n'était jamais
+partie), `update-static-route disable` (idem), et la session du membre vivant
+qui survit.
+
+**Vérifié** : 1819 cas du module pare-feu (91 fichiers). Typecheck inchangé
+à 342.
+
+---
+
 ### E57 — Les deux vues OSPF que le tutoriel nomme, au format de leur vrai auteur
 
 Périmètre : l'entrée ouverte « les vues `get router info ospf database` et
