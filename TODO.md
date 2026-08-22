@@ -62,13 +62,6 @@ CIST entre régions.
 
 ## Commutateur Cisco
 
-### [stp] `spanning-tree mode mst` déplace l'arbre commun
-Passer de PVST (arbre commun = VLAN 1) à MST (CIST = instance 0) laisse
-l'ancienne instance convergée derrière et repart d'une instance vide.
-La règle 802.1D §8.6.9 ajoutée (réponse à une information inférieure) fait
-converger le voisin, donc le symptôme est refermé côté VRP.
-**Report** : le cas Cisco n'a pas été mesuré ; à passer au banc.
-
 ---
 
 ## Socle CLI
@@ -513,6 +506,18 @@ un nombre est attendu, signatures de constructeur périmées.
 « pas plus qu'avant ta modification », pas « zéro ».
 
 ## Journal des entrées fermées
+
+- `spanning-tree mode mst` cote Cisco — passe au banc, et la premisse de
+  l'entree etait FAUSSE : l'arbre ne repart pas d'une instance vide, il
+  reste convergé (le voisin bloque toujours son second lien) et la
+  priorite passe correctement de 32769 a 32768 en perdant l'extension de
+  VLAN. Le vrai defaut etait ailleurs et n'avait pas ete vu :
+  `show spanning-tree` ne suivait PAS le mode — il annoncait
+  `VLAN0001 / protocol ieee` sur une machine en MST, pendant que
+  `show spanning-tree mst` rendait `MST0` au meme instant. Ferme avec
+  deux ecarts voisins mesures sur la capture `ntc-templates` : le bloc
+  `Bridge ID`/`Hello Time`/`Aging Time` manquait entierement, et le
+  tableau des ports etait a des largeurs inventees.
 
 - `broadcast-suppression` decorative et `qos car` texte sur un
   commutateur VRP — les DEUX fermees, et la mesure a montre que le report

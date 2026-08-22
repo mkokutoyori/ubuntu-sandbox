@@ -66,7 +66,10 @@ import { TrackObjectRegistry } from '../switch/TrackObjectRegistry';
 import { CliInvalidInput } from './cli/CliDiagnostic';
 import { describeCiscoSwitchArguments } from './cisco/ciscoArgumentHelp';
 import { renderTableText, FIXED_TABLE } from './cli/TextTable';
-import { INTERFACE_STATUS_COLUMNS, INTERFACE_STATUS_STYLE, type InterfaceStatusRow } from './cisco/ciscoTableLayouts';
+import {
+  INTERFACE_STATUS_COLUMNS, INTERFACE_STATUS_STYLE, type InterfaceStatusRow,
+  SPANNING_TREE_COLUMNS, SPANNING_TREE_STYLE, type SpanningTreePortRow,
+} from './cisco/ciscoTableLayouts';
 import { SOCLE, COMMUTATEUR_SEUL, appliquerContinuations } from './cisco/ciscoContinuations';
 
 /** CLI Mode (FSM State) */
@@ -4237,37 +4240,55 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
     }
     const stpStates = sw._getSTPStates();
     const agent = (sw as unknown as { getStpAgent?: () => import('../../stp/StpAgent').StpAgent }).getStpAgent?.();
+    const mode = agent?.getMode() ?? 'pvst';
+    const mstp = mode === 'mstp';
+    const protocole = mstp ? 'mstp' : mode === 'rstp' ? 'rstp' : 'ieee';
     const root = agent?.getRootBridgeForVlan(vlanId);
     const cost = agent?.getRootPathCostForVlan(vlanId) ?? 0;
     const rootPort = agent?.getRootPortForVlan(vlanId);
     const isRoot = agent?.isRootForVlan(vlanId) ?? true;
     const rootMacFmt = root ? this.formatMacCisco(new MACAddress(root.mac)) : '0000.0000.0000';
-    const rootPrio = isRoot
-      ? (agent?.ownBridgeId(vlanId).priority ?? 32768 + vlanId)
-      : (root?.priority ?? 32768 + vlanId);
-    const lines = [
-      `VLAN${String(vlanId).padStart(4, '0')}`,
-      '  Spanning tree enabled protocol ieee',
-      `  Root ID    Priority    ${rootPrio}`,
-      `             Address     ${rootMacFmt}`,
-      `             Cost        ${cost}`,
-      rootPort
-        ? `             Port        ${this.abbreviateInterface(rootPort)}`
-        : '             This bridge is the root',
-      '',
-      'Interface        Role  Sts  Cost      Prio.Nbr  Type',
-      '---------------- ----  ---  --------  --------  ----',
-    ];
+    const sysIdExt = mstp ? 0 : vlanId;
+    const own = agent?.ownBridgeId(vlanId).priority ?? 32768 + sysIdExt;
+    const rootPrio = isRoot ? own : (root?.priority ?? 32768 + sysIdExt);
+    const hello = agent?.getVlanHelloSec(vlanId) ?? 2;
+    const maxAge = agent?.maxAgeSec(vlanId) ?? 20;
+    const forward = agent?.forwardDelaySec(vlanId) ?? 15;
+    const minuteurs =
+      `             Hello Time   ${hello} sec  Max Age ${maxAge} sec  Forward Delay ${forward} sec`;
+
     const portIndex = new Map<string, number>();
     let idx = 0;
     for (const name of sw.getPortNames()) { idx += 1; portIndex.set(name, idx); }
+
+    const lines = [
+      mstp ? 'MST0' : `VLAN${String(vlanId).padStart(4, '0')}`,
+      `  Spanning tree enabled protocol ${protocole}`,
+      `  Root ID    Priority    ${rootPrio}`,
+      `             Address     ${rootMacFmt}`,
+    ];
+    if (rootPort) {
+      lines.push(`             Cost        ${cost}`);
+      lines.push(`             Port        ${portIndex.get(rootPort) ?? 1} (${rootPort})`);
+    } else {
+      lines.push(`             Cost        ${cost}`);
+      lines.push('             This bridge is the root');
+    }
+    lines.push(minuteurs);
+    lines.push('');
+    lines.push(`  Bridge ID  Priority    ${own}  (priority ${own - sysIdExt} sys-id-ext ${sysIdExt})`);
+    lines.push(`             Address     ${this.formatMacCisco(new MACAddress(agent?.ownBridgeId(vlanId).mac ?? '00:00:00:00:00:00'))}`);
+    lines.push(minuteurs);
+    lines.push('             Aging Time  300 sec');
+    lines.push('');
+
     const ports = sw._getPortsInternal();
+    const rows: SpanningTreePortRow[] = [];
     for (const [portName] of stpStates) {
       const port = ports.get(portName);
       if (!port || !port.getIsUp() || !port.isConnected()) continue;
       if (!sw.getStpPortVlans(portName).includes(vlanId)) continue;
       const state = agent?.getForwardStateForVlan(vlanId, portName) ?? sw.getStpVlanState(portName, vlanId);
-      const shortName = this.abbreviateInterface(portName).padEnd(17);
       const stpRole = agent?.getPortRoleForVlan(vlanId, portName) ?? 'designated';
       const role =
         stpRole === 'root' ? 'Root'
@@ -4280,12 +4301,17 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
         : state === 'listening' ? 'LIS'
         : state === 'learning' ? 'LRN'
         : 'DIS';
-      const portCost = agent?.getPortCost(portName) ?? 19;
       const linkType = agent?.getPortLinkType(portName) === 'shared' ? 'Shr' : 'P2p';
       const edge = agent?.isPortFastOperational(portName) ? ' Edge' : '';
-      const prioNbr = `128.${portIndex.get(portName) ?? 1}`;
-      lines.push(`${shortName}${role.padEnd(6)}${sts.padEnd(5)}${String(portCost).padEnd(10)}${prioNbr.padEnd(10)}${linkType}${edge}`);
+      rows.push({
+        iface: this.abbreviateInterface(portName),
+        role, state: sts,
+        cost: String(agent?.getPortCost(portName) ?? 19),
+        prioNbr: `128.${portIndex.get(portName) ?? 1}`,
+        type: `${linkType}${edge}`,
+      });
     }
+    lines.push(renderTableText(rows, SPANNING_TREE_COLUMNS, SPANNING_TREE_STYLE));
     return lines.join('\n');
   }
 
