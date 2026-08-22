@@ -106,7 +106,7 @@ export class Zone {
     return this.rrsets.get(normalize(name))?.get(type);
   }
 
-  private hasAnyRecord(name: string): boolean {
+  hasName(name: string): boolean {
     return this.rrsets.has(normalize(name));
   }
 
@@ -180,7 +180,7 @@ export class Zone {
       return { kind: 'cname', chain: [chainHead], finalRecords: null };
     }
 
-    if (ownRrsets && this.hasAnyRecord(name)) {
+    if (ownRrsets && this.hasName(name)) {
       return { kind: 'nodata' };
     }
 

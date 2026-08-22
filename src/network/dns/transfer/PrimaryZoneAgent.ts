@@ -16,6 +16,11 @@ import {
 } from '@/network/dns/transfer/AxfrSession';
 import { buildIxfrAnswers } from '@/network/dns/transfer/IxfrSession';
 import { sendNotify } from '@/network/dns/transfer/NotifyProtocol';
+import { isUpdateMessage } from '@/network/dns/update/DnsUpdate';
+import {
+  evaluateUpdate, updateResponse, parseOrFormerr,
+} from '@/network/dns/update/UpdateResponder';
+import { DnsRcode } from '@/network/dns/wire/DnsHeaderFlags';
 
 export interface ZoneUpdate {
   readonly additions: readonly ResourceRecord<ResourceRecordData>[];
@@ -50,10 +55,30 @@ export class PrimaryZoneAgent {
   }
 
   start(): void {
-    bindDnsUdpServer(this.host, (query) =>
-      isTransferQuery(query) ? refuseTransfer(query) : this.authServer.answer(query));
-    bindDnsTcpServer(this.host, (query) =>
-      isTransferQuery(query) ? this.answerTransfer(query) : this.authServer.answer(query));
+    bindDnsUdpServer(this.host, (query) => this.dispatch(query, false));
+    bindDnsTcpServer(this.host, (query) => this.dispatch(query, true));
+  }
+
+  private dispatch(query: DnsMessage, transferAllowed: boolean): DnsMessage | Promise<DnsMessage> {
+    if (isUpdateMessage(query)) return this.answerUpdate(query);
+    if (isTransferQuery(query)) {
+      return transferAllowed ? this.answerTransfer(query) : refuseTransfer(query);
+    }
+    return this.authServer.answer(query);
+  }
+
+  private async answerUpdate(query: DnsMessage): Promise<DnsMessage> {
+    const request = parseOrFormerr(query);
+    if (!request) return updateResponse(query, DnsRcode.FORMERR);
+
+    const verdict = evaluateUpdate(this.zone, request);
+    if (verdict.rcode !== DnsRcode.NOERROR) return updateResponse(query, verdict.rcode);
+
+    const { additions, removals } = verdict.applied;
+    if (additions.length > 0 || removals.length > 0) {
+      await this.applyUpdate({ additions, removals });
+    }
+    return updateResponse(query, DnsRcode.NOERROR);
   }
 
   stop(): void {

@@ -9,6 +9,7 @@ import type {
   SoaRecordData, MxRecordData, TxtRecordData, SrvRecordData,
   DnskeyRecordData, RrsigRecordData, DsRecordData, DhcidRecordData, NsecRecordData,
 } from '@/network/dns/wire/ResourceRecord';
+import { isEmptyRecordData } from '@/network/dns/wire/ResourceRecord';
 
 export class DnsMessageError extends Error {
   constructor(message: string) {
@@ -102,6 +103,7 @@ export function encodeCanonicalName(name: string): number[] {
 }
 
 function encodeRData(data: ResourceRecordData, out: number[], compressionMap: Map<string, number>): void {
+  if (isEmptyRecordData(data)) return;
   switch (data.type) {
     case RRType.A:
       for (const octet of data.address.getOctets()) out.push(octet);
@@ -196,7 +198,7 @@ function encodeResourceRecord(
   }
 
   encodeName(rr.name, out, compressionMap);
-  writeUint16(out, rr.data.type);
+  writeUint16(out, isEmptyRecordData(rr.data) ? rr.data.wireType : rr.data.type);
   writeUint16(out, rr.rrClass);
   writeUint32(out, rr.ttl);
 
@@ -460,6 +462,10 @@ function decodeResourceRecord(cursor: Cursor): ResourceRecord<ResourceRecordData
     cursor.pos += rdlength;
     const data: OptRecordData = { type: RRType.OPT, udpPayloadSize: rrClass, ...unpackOptTtl(ttl) };
     return { name, ttl, rrClass, data };
+  }
+
+  if (rdlength === 0) {
+    return { name, ttl, rrClass: rrClass as DnsClass, data: { type: RRType.ANY, wireType: type } };
   }
 
   const data = decodeRData(type, cursor.view, cursor.pos, rdlength);

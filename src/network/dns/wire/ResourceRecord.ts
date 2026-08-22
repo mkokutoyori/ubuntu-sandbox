@@ -184,7 +184,17 @@ export interface NsecRecordData {
   readonly types: readonly number[];
 }
 
+export interface EmptyRecordData {
+  readonly type: typeof RRType.ANY;
+  readonly wireType: RRType | number;
+}
+
+export function isEmptyRecordData(data: ResourceRecordData): data is EmptyRecordData {
+  return data.type === RRType.ANY;
+}
+
 export type ResourceRecordData =
+  | EmptyRecordData
   | ARecordData
   | AaaaRecordData
   | NsRecordData
@@ -417,4 +427,12 @@ export function rdataKey(data: ResourceRecordData): string {
     default:
       return JSON.stringify(data);
   }
+}
+
+export function makeEmptyRecord(
+  name: string, wireType: RRType | number, rrClass: DnsClass | number, ttl = 0,
+): ResourceRecord<EmptyRecordData> {
+  validateDnsName(name);
+  validateTtl(ttl);
+  return { name, ttl, rrClass, data: { type: RRType.ANY, wireType } };
 }
