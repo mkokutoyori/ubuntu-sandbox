@@ -127,6 +127,7 @@ export class DHCPClient implements IProtocolEngine {
   readonly observables: DHCPClientObservables = makeReadonlyDHCPClientObservables(this.signalStore);
   private signalRefreshActor: DHCPClientSignalRefreshActor | null = null;
   private hostnameProvider: (() => string) | null = null;
+  private forwardRegistrationPolicy: (() => boolean) | null = null;
   /** Optional device id stamped on every event. Set via setDeviceId(). */
   private deviceId: string = '';
   private hostname: string = '';
@@ -161,10 +162,15 @@ export class DHCPClient implements IProtocolEngine {
     this.hostnameProvider = provider;
   }
 
+  setForwardRegistrationPolicy(policy: () => boolean): void {
+    this.forwardRegistrationPolicy = policy;
+  }
+
   private clientIdentity(): { hostName?: string; clientFqdn?: { flags: number; name: string } } {
     const name = (this.hostnameProvider?.() ?? this.hostname).trim();
     if (!name) return {};
-    return { hostName: name, clientFqdn: { flags: 0x01, name } };
+    const serverDoesForward = !(this.forwardRegistrationPolicy?.() ?? false);
+    return { hostName: name, clientFqdn: { flags: serverDoesForward ? 0x01 : 0x00, name } };
   }
 
   private attachActors(): void {

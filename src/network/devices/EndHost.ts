@@ -102,6 +102,9 @@ import { LldpAgent } from '../lldp/LldpAgent';
 import { ETHERTYPE_LLDP, LLDP_MULTICAST_MAC } from '../lldp/types';
 import type { LldpNeighbor } from '../lldp/LldpAgent';
 import { parseNatAddress, rewriteNatAddress } from '../nat/rewrite';
+import { sendDynamicUpdate } from '../dns/update/DynamicUpdateClient';
+import { DnsClass, RRType } from '../dns/wire/RRType';
+import { makeARecord } from '../dns/wire/ResourceRecord';
 
 export interface GreDecapsulator {
   handleIp(inPort: string, srcIp: IPAddress, ipPkt: IPv4Packet): IPv4Packet | null;
@@ -110,6 +113,15 @@ export interface GreDecapsulator {
 // ─── Internal Types ────────────────────────────────────────────────
 
 import type { ARPEntry } from '../core/types';
+
+const CLIENT_DDNS_TTL = 1200;
+
+interface OwnForwardDnsName {
+  readonly zone: string;
+  readonly server: string;
+  readonly fqdn: string;
+  readonly address: string;
+}
 export type { ARPEntry } from '../core/types';
 
 /** Linux reachable time default (RFC 4861 §10): 30 seconds */
@@ -869,8 +881,10 @@ export abstract class EndHost extends Equipment {
         else if (this.defaultGatewayOrigin === 'dhcp') this.clearDefaultGateway();
         this.dhcpInterfaces.add(iface);
         this.onDhcpLeaseConfigured(iface);
+        this.registerOwnForwardDnsName(iface);
       },
       (iface: string) => {
+        this.withdrawOwnForwardDnsName(this.ownForwardDnsRegistration(iface));
         const port = this.ports.get(iface);
         if (port) port.clearIP();
         // Remove connected route for this interface
@@ -886,6 +900,7 @@ export abstract class EndHost extends Equipment {
     );
     this.dhcpClient.setEventBus(this.getBus());
     this.dhcpClient.setHostnameProvider(() => this.getHostname());
+    this.dhcpClient.setForwardRegistrationPolicy(() => this.registersOwnForwardDns());
     this.dhcpClient.setWireChannelFactory((iface) => this.getDhcpWireChannel(iface));
     this.dhcpClient.setServerObservationRecorder((iface, serverIp, serverMac) => {
       if (!serverMac || serverIp === '0.0.0.0') return;
@@ -930,6 +945,45 @@ export abstract class EndHost extends Equipment {
   }
 
   protected onDhcpLeaseConfigured(_iface: string): void {}
+
+  protected registersOwnForwardDns(): boolean { return false; }
+
+  private ownForwardDnsRegistration(iface: string): OwnForwardDnsName | null {
+    if (!this.registersOwnForwardDns()) return null;
+    const lease = this.dhcpClient.getState(iface)?.lease;
+    if (!lease) return null;
+    const zone = (lease.domainName ?? '').trim();
+    const server = lease.dnsServers[0];
+    const label = this.getHostname().split('.')[0].trim();
+    if (!zone || !server || !label) return null;
+    return { zone, server, fqdn: `${label}.${zone}`, address: lease.ipAddress };
+  }
+
+  private registerOwnForwardDnsName(iface: string): void {
+    const own = this.ownForwardDnsRegistration(iface);
+    if (!own) return;
+    void sendDynamicUpdate(this, new IPAddress(own.server), {
+      zone: own.zone,
+      zoneClass: DnsClass.IN,
+      prerequisites: [],
+      updates: [
+        { kind: 'delete-rrset', name: own.fqdn, type: RRType.A },
+        { kind: 'add', record: makeARecord(own.fqdn, CLIENT_DDNS_TTL, own.address) },
+      ],
+    });
+  }
+
+  private withdrawOwnForwardDnsName(own: OwnForwardDnsName | null): void {
+    if (!own) return;
+    void sendDynamicUpdate(this, new IPAddress(own.server), {
+      zone: own.zone,
+      zoneClass: DnsClass.IN,
+      prerequisites: [],
+      updates: [
+        { kind: 'delete-record', record: makeARecord(own.fqdn, 0, own.address) },
+      ],
+    });
+  }
 
   /**
    * The v6 counterpart of the hook above. The DHCPv6 client read only

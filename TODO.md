@@ -505,18 +505,23 @@ synchronisation entre les deux — un sujet en soi, pas une applet de plus.
 L'export/import est faisable (le VFS existe) mais suppose d'écrire le
 XML qu'un vrai Windows produit, et de le relire.
 
-### [dhcp] le client de ce simulateur ne sait pas faire SA propre mise à jour DNS
-Le serveur applique désormais la règle de la RFC 4702 (PTR toujours, A
-selon le drapeau S), mais le client pose toujours S=1 — « serveur, fais
-le A pour moi » — parce qu'il n'a aucun moyen de l'enregistrer lui-même.
-Un vrai client Windows pose S=0 et enregistre son A par une mise à jour
-dynamique DNS.
-**Mesure** : la branche S=0 du serveur n'est atteignable que par un
-client étranger fabriqué par la sonde ; aucune machine de ce dépôt ne
-l'emprunte.
-**Report** : demande un client de mise à jour dynamique (RFC 2136) côté
-hôte, que ce dépôt n'a nulle part — `PrimaryZoneAgent.applyUpdate`
-existe côté serveur, mais rien ne l'atteint par le fil.
+### [ddns] la mise à jour dynamique n'est pas AUTHENTIFIÉE
+RFC 2136 est écrite et traverse le fil ; RFC 2845 (TSIG) et le GSS-TSIG
+d'un contrôleur de domaine, non. Le serveur accepte donc toute mise à
+jour venant de n'importe qui, ce qui est exactement le mode « Nonsecure
+and secure » d'un Windows non intégré à l'annuaire — mais le mode
+« Secure only », qui est le DÉFAUT d'une zone intégrée à Active
+Directory, ne peut pas être modélisé, et `Set-DnsServerPrimaryZone
+-DynamicUpdate Secure` n'a rien derrière.
+**Mesure** : n'importe quelle machine du réseau peut écraser le A d'une
+autre ; c'est le témoin « sans NameProtection, un autre client PREND le
+nom » de `dhcp-dns-ptr-et-dhcid.test.ts`.
+**Report** : TSIG demande une clé partagée, un condensé HMAC sur le
+message ENCODÉ et un enregistrement de méta-données en section
+additionnelle — le socle a le HMAC réel (`src/crypto/`) et le codeur,
+donc c'est faisable ; GSS-TSIG demande Kerberos, qui est un sujet à lui
+seul. La protection de nom par DHCID, elle, existe déjà et couvre le cas
+que les laboratoires rencontrent.
 
 ## Outillage
 

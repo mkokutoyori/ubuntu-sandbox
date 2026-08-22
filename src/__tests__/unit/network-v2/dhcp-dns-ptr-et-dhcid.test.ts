@@ -37,17 +37,19 @@ function buildLab() {
   const srv = new WindowsServer('SRV-DHCP');
   const winClient = new WindowsPC('windows-pc', 'PC-WIN');
   const other = new LinuxPC('linux-pc', 'PC-LNX');
+  const intruder = new LinuxPC('linux-pc', 'PC-INT');
   const sw = new GenericSwitch('switch-generic', 'SW1');
   new Cable('c1').connect(srv.getPorts()[0], sw.getPorts()[0]);
   new Cable('c2').connect(winClient.getPorts()[0], sw.getPorts()[1]);
   new Cable('c3').connect(other.getPorts()[0], sw.getPorts()[2]);
+  new Cable('c4').connect(intruder.getPorts()[0], sw.getPorts()[3]);
   srv.getPorts()[0].configureIP(new IPAddress('192.168.40.5'), new SubnetMask('255.255.255.0'));
   srv.setCurrentUser('Administrator');
-  return { srv, winClient, other, sw };
+  return { srv, winClient, other, intruder, sw };
 }
 
 async function labWithZones(reverseZone: string | null = REVERSE_ZONE) {
-  const { srv, winClient, other } = buildLab();
+  const { srv, winClient, other, intruder } = buildLab();
   const sh = ps(srv);
   await run(sh, 'Install-WindowsFeature -Name DNS -IncludeManagementTools');
   await run(sh, 'Install-WindowsFeature -Name DHCP -IncludeManagementTools');
@@ -58,7 +60,7 @@ async function labWithZones(reverseZone: string | null = REVERSE_ZONE) {
   await run(sh, 'Set-DhcpServerv4OptionValue -ScopeId 192.168.40.0 -Router 192.168.40.1');
   await run(sh, 'Set-DhcpServerv4OptionValue -ScopeId 192.168.40.0 '
     + '-DnsServer 192.168.40.5 -DnsDomain "lab.local"');
-  return { srv, winClient, other, sh };
+  return { srv, winClient, other, intruder, sh };
 }
 
 async function lease(client: WindowsPC) {
@@ -83,9 +85,11 @@ function dhcpFrame(srcMac: string, pkt: DHCPPacket) {
 }
 
 /**
- * Un client ETRANGER : celui de ce simulateur pose toujours S=1 (il ne
- * sait pas faire sa propre mise a jour DNS), donc les autres formes du
- * drapeau ne peuvent venir que d'une machine qui n'est pas la notre. La
+ * Un client ETRANGER : le client Windows de ce simulateur pose S=0 et
+ * enregistre son A lui-meme (RFC 2136), le client Linux pose S=1 et le
+ * demande au serveur ; les autres formes du drapeau ne peuvent venir que
+ * d'une machine fabriquee ici. C'est aussi ce qui permet d'eprouver le
+ * chemin SERVEUR sans qu'un client s'enregistre par-dessus. La
  * trame part du port de la machine, donc par le vrai cable — c'est la
  * meme trame que `EndHost` emet, un client sans adresse ne pouvant pas
  * passer par une route.
@@ -153,14 +157,26 @@ describe('DHCP -> DNS : la zone inverse recoit le PTR', () => {
     expect(direct.toLowerCase()).toContain('pc-win');
   });
 
-  it('DynamicUpdates Never ne touche NI le A NI le PTR', async () => {
+  it('DynamicUpdates Never ne touche NI le A NI le PTR du client qui le lui demande', async () => {
+    const { other, sh } = await labWithZones();
+    await run(sh, 'Set-DhcpServerv4DnsSetting -DynamicUpdates Never');
+
+    await foreignLease(other, 'poste-never', 0x01);
+
+    const direct = await run(sh, 'Get-DnsServerResourceRecord -ZoneName "lab.local"');
+    expect(direct.toLowerCase()).not.toContain('poste-never');
+    const inverse = await run(sh, `Get-DnsServerResourceRecord -ZoneName "${REVERSE_ZONE}"`);
+    expect(inverse.toLowerCase()).not.toContain('poste-never');
+  });
+
+  it('Never ne peut rien contre un client qui s enregistre LUI-MEME', async () => {
     const { winClient, sh } = await labWithZones();
     await run(sh, 'Set-DhcpServerv4DnsSetting -DynamicUpdates Never');
 
     await lease(winClient);
 
     const direct = await run(sh, 'Get-DnsServerResourceRecord -ZoneName "lab.local"');
-    expect(direct.toLowerCase()).not.toContain('pc-win');
+    expect(direct.toLowerCase()).toContain('pc-win');
     const inverse = await run(sh, `Get-DnsServerResourceRecord -ZoneName "${REVERSE_ZONE}"`);
     expect(inverse.toLowerCase()).not.toContain('pc-win');
   });
@@ -262,31 +278,31 @@ describe('RFC 4701 : NameProtection tient le nom par un DHCID', () => {
   });
 
   it('avec NameProtection, le DHCID accompagne le A', async () => {
-    const { winClient, sh } = await labWithZones();
+    const { other, sh } = await labWithZones();
     await run(sh, 'Set-DhcpServerv4DnsSetting -NameProtection $true');
 
-    await lease(winClient);
+    await foreignLease(other, 'poste-np', 0x01);
 
     const records = await run(sh, 'Get-DnsServerResourceRecord -ZoneName "lab.local"');
     expect(records).toContain('DHCID');
   });
 
   it('sans NameProtection, un autre client PREND le nom — le temoin', async () => {
-    const { winClient, other, sh } = await labWithZones();
-    await lease(winClient);
+    const { other, intruder, sh } = await labWithZones();
+    await foreignLease(other, 'poste-np', 0x01);
 
-    await foreignLease(other, 'PC-WIN', 0x01, '192.168.40.77');
+    await foreignLease(intruder, 'poste-np', 0x01, '192.168.40.77');
 
     const apres = await run(sh, 'Get-DnsServerResourceRecord -ZoneName "lab.local"');
     expect(apres).toContain('192.168.40.77');
   });
 
   it('avec NameProtection, un AUTRE client ne peut pas prendre le nom tenu', async () => {
-    const { winClient, other, sh } = await labWithZones();
+    const { other, intruder, sh } = await labWithZones();
     await run(sh, 'Set-DhcpServerv4DnsSetting -NameProtection $true');
-    await lease(winClient);
+    await foreignLease(other, 'poste-np', 0x01);
 
-    await foreignLease(other, 'PC-WIN', 0x01, '192.168.40.77');
+    await foreignLease(intruder, 'poste-np', 0x01, '192.168.40.77');
 
     const apres = await run(sh, 'Get-DnsServerResourceRecord -ZoneName "lab.local"');
     expect(apres).not.toContain('192.168.40.77');

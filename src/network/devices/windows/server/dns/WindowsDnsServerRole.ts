@@ -11,11 +11,7 @@
  * Scope, matching the PRD's explicit `DnsServer` cmdlet surface: primary
  * zones only — no secondary zones / zone-transfer serving (not in the
  * PRD's cmdlet list; that machinery exists in `transfer/` if a later phase
- * wants it). Dynamic updates (DHCP lease grant, domain join) are applied
- * in-process via direct `Zone.addRecord`/`removeRecord` calls — mirroring
- * how the engine's own canonical DDNS mechanism (`PrimaryZoneAgent.
- * applyUpdate`) already works — rather than a wire-level RFC 2136 UPDATE
- * handler, which the underlying engine doesn't implement at any layer yet.
+ * wants it).
  */
 
 import type { EndHost } from '@/network/devices/EndHost';
@@ -26,6 +22,10 @@ import { RecursiveResolver } from '@/network/dns/resolver/RecursiveResolver';
 import { DnsCache } from '@/network/dns/resolver/DnsCache';
 import { bindDnsUdpServer, unbindDnsUdpServer } from '@/network/dns/transport/DnsUdpTransport';
 import { bindDnsTcpServer, unbindDnsTcpServer } from '@/network/dns/transport/DnsTcpTransport';
+import { isUpdateMessage } from '@/network/dns/update/DnsUpdate';
+import {
+  evaluateUpdate, updateResponse, parseOrFormerr, DnsUpdateRcode,
+} from '@/network/dns/update/UpdateResponder';
 import { DnsOpcode, DnsRcode } from '@/network/dns/wire/DnsHeaderFlags';
 import type { DnsMessage } from '@/network/dns/wire/DnsMessage';
 import { RRType } from '@/network/dns/wire/RRType';
@@ -109,6 +109,7 @@ export class WindowsDnsServerRole {
   }
 
   private readonly handleQuery = (query: DnsMessage): DnsMessage | Promise<DnsMessage> => {
+    if (isUpdateMessage(query)) return this.handleUpdate(query);
     const response = this.authoritative.answer(query);
     const question = query.questions[0];
     const outsideAuthority = !response.flags.aa && response.flags.rcode === DnsRcode.REFUSED;
@@ -117,6 +118,24 @@ export class WindowsDnsServerRole {
     }
     return response;
   };
+
+  private handleUpdate(query: DnsMessage): DnsMessage {
+    const request = parseOrFormerr(query);
+    if (!request) return updateResponse(query, DnsRcode.FORMERR);
+
+    const zone = this.store.getZone(request.zone);
+    if (!zone) return updateResponse(query, DnsUpdateRcode.NOTAUTH);
+
+    const verdict = evaluateUpdate(zone, request);
+    if (verdict.rcode !== DnsRcode.NOERROR) return updateResponse(query, verdict.rcode);
+
+    for (const rr of verdict.applied.removals) zone.removeRecord(rr);
+    for (const rr of verdict.applied.additions) zone.addRecord(rr);
+    if (verdict.applied.removals.length > 0 || verdict.applied.additions.length > 0) {
+      bumpSerial(zone);
+    }
+    return updateResponse(query, DnsRcode.NOERROR);
+  }
 
   private async recurse(query: DnsMessage): Promise<DnsMessage> {
     const question = query.questions[0];
