@@ -40,6 +40,7 @@ import {
 import { renderNtpStatus } from './ntpStatusRenderer';
 import { renderVipList } from './vipListRenderer';
 import { renderDnsProxy } from './dnsProxyRenderer';
+import { renderIpFrags } from './ipFragsRenderer';
 import { renderSysTop } from './sysTopRenderer';
 import { renderBridgeList, renderBridgeHosts } from './brctlRenderer';
 import { renderAutoupdateVersions } from './fortiguardRenderer';
@@ -83,6 +84,7 @@ export function runDiagnose(rest: readonly string[], deps: FortiDiagDeps): strin
   if (family === 'ip') return diagnoseIp(tail, deps);
   if (family === 'test') return diagnoseTest(tail, deps);
   if (family === 'netlink') return diagnoseNetlink(tail, deps);
+  if (family === 'snmp') return diagnoseSnmp(tail, deps);
   if (family === 'hardware') {
     if (tail[0] === 'sysinfo' && tail[1] === 'conserve') {
       return conserveModeLines(deps.fw.getSystemLoad()).join('\n');
@@ -123,6 +125,13 @@ function diagnoseTest(rest: readonly string[], deps: FortiDiagDeps): string {
   if (rest[1] === 'dnsproxy') return renderDnsProxy(deps.fw, deps.vdom());
   return FortiMessages.unimplemented(`test application ${rest[1] ?? ''}`,
     'only the `dnsproxy` application is modelled in this simulator.');
+}
+
+function diagnoseSnmp(rest: readonly string[], deps: FortiDiagDeps): string {
+  if (rest[0] !== 'ip' || rest[1] !== 'frags') {
+    return FortiMessages.unknownPath(`snmp ${rest.join(' ')}`);
+  }
+  return renderIpFrags(deps.fw.getFragmentReassembly().counters());
 }
 
 function diagnoseIp(rest: readonly string[], deps: FortiDiagDeps): string {

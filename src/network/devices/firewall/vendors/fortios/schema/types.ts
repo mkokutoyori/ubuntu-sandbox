@@ -286,6 +286,7 @@ export interface FortiCommitDevice {
   applyGlobalSettings(settings: FortiGlobalSettings): void;
   applyIpsGlobal(settings: FortiIpsGlobalSettings): void;
   applyLdbMonitor(monitor: FortiLdbMonitorPatch): void;
+  applyFragmentMemoryThreshold(megabytes: number): void;
   removeLdbMonitor(name: string): void;
   applyBalancedVip(vip: FortiBalancedVipPatch): string | void;
   applyReplacementMessage(message: string, buffer: string): void;

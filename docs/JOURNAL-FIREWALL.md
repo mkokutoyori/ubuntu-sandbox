@@ -2756,6 +2756,68 @@ Rien n'est écrit pour réassembler : `IPv4Reassembler` porte déjà la
 fenêtre, le recouvrement et l'expiration. Ce qui est neuf est la BORNE
 mémoire, qu'il n'a pas, et le branchement.
 
+### E67 — Livré, et ce que la mesure a corrigé
+
+**13 cas, 10 tombent avant correctif.** Le branchement est une ligne dans
+`handleIpv4Frame`, avant `classifyIpv4` : le recollage précède la
+recherche de politique parce que seul le premier fragment porte l'en-tête
+de couche 4.
+
+**Ce que la discrimination a appris, et qui a corrigé la sonde plutôt que
+le produit.** Deux cas écrits comme décisifs — « le datagramme arrive
+ENTIER » et « il ouvre UNE session » — **passaient avant le correctif**.
+La raison n'était pas prévue : sous une politique PERMISSIVE
+(`service "ALL"`), un pare-feu qui ne recolle pas transmet quand même les
+trois fragments, et **c'est le serveur qui les recolle**, avec son propre
+`IPv4Reassembler`. La délivrance ne dit donc rien du pare-feu. Le cas qui
+montre le défaut est celui dont la politique **ne nomme que le port
+5000** : les fragments 2 et 3 ne portent pas ce port, sont refusés un par
+un, et le datagramme n'arrive jamais. C'est la même leçon qu'à la
+phase 20 — l'observable doit être une décision du PARE-FEU, pas ce que
+voit le destinataire.
+
+**Trois pièges rencontrés, chacun mesuré :**
+
+1. **DF est posé par défaut sur tout UDP sortant** (`EndHost.ts`, comme
+   une pile qui découvre le MTU du chemin), donc le routeur intercalé ne
+   fragmentait pas : il rendait un ICMP « Fragmentation Needed » et
+   jetait le datagramme. Rien n'arrivait au pare-feu et les compteurs
+   restaient à zéro — ce qui ressemblait à un branchement mort. La sonde
+   envoie `{ df: false }`, et le comportement observé était juste.
+2. **La borne mémoire ne se remplit pas depuis une maquette** : 32 Mo de
+   fragments demandent vingt-cinq mille datagrammes. Le cas est donc au
+   niveau du module, avec un seuil posé sous le minimum de la CLI, et
+   c'est écrit dans le fichier — les bornes 32-2047 appartiennent au
+   schéma, que le cas de refus vérifie séparément.
+3. **Un jeu incomplet ne se produit pas non plus depuis une maquette** :
+   la livraison de trames est synchrone, donc les fragments d'un même
+   datagramme traversent dans le même appel, et les deux leviers réels
+   qui pourraient en perdre un — perte et corruption de câble — sont
+   PROBABILISTES, incapables de désigner lequel. Inventer un levier
+   « jette le n-ième fragment » aurait été la porte dérobée refusée à la
+   phase 16 ; le cas est au niveau du module, nourri par la VRAIE sortie
+   de `fragmentIPv4`.
+
+**Ce qui a été ajouté au socle plutôt que recopié** : `fragmentKey`,
+`isIPv4Fragment` et `forget` sont exportés de `core/Ipv4Fragmentation.ts`
+et `IPv4Reassembler` les emploie lui-même — la borne mémoire a besoin de
+la même clé que la table qu'elle borne, et deux clés finiraient par
+désigner deux datagrammes différents.
+
+**Une décision écrite plutôt que subie** : au-dessus du seuil, c'est le
+jeu le PLUS ANCIEN qui est perdu. Évincer le plus récent laisserait un
+flot de fragments orphelins chasser le jeu légitime en cours
+d'assemblage, ce qui ferait de la borne une arme contre le trafic
+qu'elle protège.
+
+**Limite mesurée et assumée** : le seuil est déclaré `config system
+settings`, donc par VDOM, parce que c'est là que la documentation de
+Fortinet le place ; la table, elle, est unique pour l'équipement. Deux
+VDOM qui poseraient deux seuils écriraient donc successivement sur la
+même borne. Le modéliser par VDOM demanderait une table par contexte,
+qui n'apporterait rien tant qu'un laboratoire n'a pas deux VDOM sous
+charge de fragments.
+
 ---
 
 ## Périmètre pris — FortiOS phase 20 (un VIP répartit vers un serveur VIVANT)

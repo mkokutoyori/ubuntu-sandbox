@@ -70,7 +70,16 @@ export function fragmentIPv4(pkt: IPv4Packet, mtu: number): IPv4Packet[] {
   return fragments;
 }
 
-const REASSEMBLY_TIMEOUT_MS = 30_000;
+export const REASSEMBLY_TIMEOUT_MS = 30_000;
+
+export function isIPv4Fragment(pkt: IPv4Packet): boolean {
+  return pkt.fragmentOffset !== 0 || (pkt.flags & IPV4_FLAG_MF) !== 0;
+}
+
+export function fragmentKey(pkt: IPv4Packet): string {
+  return `${pkt.sourceIP.toString()}|${pkt.destinationIP.toString()}`
+    + `|${pkt.protocol}|${pkt.identification}`;
+}
 
 interface PendingFragment {
   offsetBytes: number;
@@ -96,7 +105,7 @@ export class IPv4Reassembler {
   constructor(private readonly onExpire?: (firstFragment: IPv4Packet | null) => void) {}
 
   private key(pkt: IPv4Packet): string {
-    return `${pkt.sourceIP.toString()}|${pkt.destinationIP.toString()}|${pkt.protocol}|${pkt.identification}`;
+    return fragmentKey(pkt);
   }
 
   /**
@@ -105,8 +114,7 @@ export class IPv4Reassembler {
    * `null` while the set is still incomplete.
    */
   add(pkt: IPv4Packet, nowMs: number = Date.now()): IPv4Packet | null {
-    const isFragment = pkt.fragmentOffset !== 0 || (pkt.flags & IPV4_FLAG_MF) !== 0;
-    if (!isFragment) return pkt;
+    if (!isIPv4Fragment(pkt)) return pkt;
 
     this.purgeExpired(nowMs);
 
@@ -154,6 +162,8 @@ export class IPv4Reassembler {
     reassembled.headerChecksum = computeIPv4Checksum(reassembled);
     return reassembled;
   }
+
+  forget(key: string): void { this.pending.delete(key); }
 
   /** Drop fragment sets idle for longer than the reassembly timeout. */
   purgeExpired(nowMs: number = Date.now()): void {

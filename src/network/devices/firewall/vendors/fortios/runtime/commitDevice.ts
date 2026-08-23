@@ -168,6 +168,9 @@ export function buildCommitDevice(fw: Firewall): FortiCommitDevice {
       applyLdbMonitor(monitor) {
         fw.getLdbMonitors().set(monitor);
       },
+      applyFragmentMemoryThreshold(megabytes) {
+        fw.getFragmentReassembly().setThresholdMegabytes(megabytes);
+      },
       removeLdbMonitor(name) {
         fw.getLdbMonitors().remove(name);
       },
