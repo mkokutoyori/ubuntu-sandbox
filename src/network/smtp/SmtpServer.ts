@@ -25,7 +25,7 @@ export interface SmtpServerOptions {
   /** Receive Connector source-IP restriction (docs/PRD-Exchange.md §4.4) — a connection from an IP this predicate rejects is closed before any protocol interaction, never gets a banner. */
   readonly remoteIpAllowed?: (ip: string) => boolean;
   /** Transport Rule categorizer stage (docs/PRD-Exchange.md §2.1 P6) — runs before the final DATA reply is written, so a policy rejection replaces the accept reply with a real `550`, never a silent post-accept drop. */
-  readonly beforeMessageAccepted?: (delivered: SmtpAcceptedMessage) => { reject?: string } | void;
+  readonly beforeMessageAccepted?: (delivered: SmtpAcceptedMessage) => { reject?: string } | undefined;
 }
 
 export class SmtpServer {
@@ -36,7 +36,7 @@ export class SmtpServer {
   private readonly implicitTls: boolean;
   private readonly onMessageAccepted?: (delivered: SmtpAcceptedMessage) => void;
   private readonly remoteIpAllowed?: (ip: string) => boolean;
-  private readonly beforeMessageAccepted?: (delivered: SmtpAcceptedMessage) => { reject?: string } | void;
+  private readonly beforeMessageAccepted?: (delivered: SmtpAcceptedMessage) => { reject?: string } | undefined;
 
   constructor(
     private readonly tcpStack: TcpStack,

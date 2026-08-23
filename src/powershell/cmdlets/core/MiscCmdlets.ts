@@ -10,6 +10,7 @@ import type { CmdletContext } from '../CmdletContext';
 import type { PSValue } from '@/powershell/runtime/PSEnvironment';
 import { psValueToString } from '@/powershell/runtime/PSExpansion';
 import { parseCredentialArg } from './RemotingCmdlets';
+import { makePSCredential } from '@/powershell/credential/PSCredential';
 
 // ─── New-Object ───────────────────────────────────────────────────────────
 
@@ -51,8 +52,11 @@ export class NewObjectCmdlet implements ICmdlet {
     }
     if (tname.includes('pscredential')) {
       const args = newObjectCtorArgs(ctx);
-      const user = psValueToString(args[0] ?? '');
-      return { UserName: user, Password: null } as Record<string, PSValue>;
+      const secret = args[1] as { SecureString?: unknown } | undefined;
+      const password = secret && typeof secret === 'object' && 'SecureString' in secret
+        ? psValueToString(secret.SecureString as PSValue)
+        : psValueToString(args[1] ?? '');
+      return makePSCredential(psValueToString(args[0] ?? ''), password) as unknown as PSValue;
     }
     if (tname.includes('activedirectoryschedule')) {
       // `Set-ADReplicationSiteLink -ReplicationSchedule` accepts one of these — no

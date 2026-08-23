@@ -59,7 +59,10 @@ export class SendMailMessageCmdlet implements ICmdlet {
     const port = ctx.named['port'] !== undefined ? Number(psValueToString(ctx.named['port'])) : undefined;
     const useSsl = ctx.named['usessl'] === true;
     const rawCred = ctx.named['credential'];
-    const credential = isPSCredential(rawCred) ? getNetworkCredential(rawCred) : undefined;
+    const netCred = isPSCredential(rawCred) ? getNetworkCredential(rawCred) : undefined;
+    const credential = netCred
+      ? { username: netCred.userName, password: netCred.password }
+      : undefined;
 
     const result = ctx.providers.network.sendMailMessage({
       from, to, cc, bcc, subject, body, smtpServer, port, useSsl, credential,

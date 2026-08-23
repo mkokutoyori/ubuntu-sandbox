@@ -656,7 +656,7 @@ export class RouterDebugService implements TerminalDebugSource {
         `IP: s=${ip.src} (${entree}), d=${ip.dst} (${iface}), len ${ip.len}, ${verbe}`, faits);
       const detail = RouterDebugService.ligneTransport(ip.proto, ip.transport);
       if (detail && this.flags.get('ip.packet')?.detail) this.emit('ip.packet', detail, faits);
-      if (ip.proto === 6 && dir !== 'forward') this.tracerTcp(ip, dir, faits);
+      if (ip.proto === 6) this.tracerTcp(ip, dir, faits);
       if (ip.proto === 17 && dir === 'rcvd') {
         const u = ip.transport as { sourcePort?: number; destinationPort?: number; length?: number } | undefined;
         if (u) {

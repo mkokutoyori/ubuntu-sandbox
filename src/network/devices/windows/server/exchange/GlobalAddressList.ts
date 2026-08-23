@@ -1,7 +1,7 @@
 import type { MailboxStore } from './MailboxStore';
-import type { DistributionGroupStore } from './DistributionGroupStore';
+import type { DistributionGroupStore, DistributionGroupType } from './DistributionGroupStore';
 
-export type GalEntryKind = 'Mailbox' | 'DistributionGroup' | 'SecurityMailEnabled';
+export type GalEntryKind = 'Mailbox' | DistributionGroupType;
 
 export interface GalEntry {
   readonly displayName: string;
@@ -15,7 +15,8 @@ export function buildGlobalAddressList(mailboxes: MailboxStore, groups: Distribu
     displayName: m.adIdentity, samAccountName: m.adIdentity, primarySmtpAddress: m.primarySmtpAddress, kind: 'Mailbox',
   }));
   const groupEntries: GalEntry[] = groups.list().map((g) => ({
-    displayName: g.adGroupSam, samAccountName: g.adGroupSam, primarySmtpAddress: g.primarySmtpAddress, kind: g.type,
+    displayName: g.adGroupSam, samAccountName: g.adGroupSam, primarySmtpAddress: g.primarySmtpAddress,
+    kind: g.type,
   }));
   return [...mailboxEntries, ...groupEntries];
 }
