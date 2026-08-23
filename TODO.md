@@ -12,22 +12,20 @@ Format : `[famille] intitulé` puis constat / mesure / raison du report.
 
 ## Commutateur Huawei (VRP)
 
-### [mac-limit] la portée VLAN d'une limite MAC n'est pas vérifiée
-Le magasin de texte par interface ne s'empile plus : une ligne identique
-n'est gardée qu'une fois, et `broadcast-suppression`, `jumboframe` et
-`mac-limit maximum` (sans qualificatif `vlan`) remplacent leur valeur
-précédente. Reste la question de PORTÉE que l'entrée précédente posait :
-`mac-limit maximum 5` puis `mac-limit maximum 5 vlan 10` coexistent ici,
-parce qu'un qualificatif `vlan` désigne une autre règle — ce qui est un
-raisonnement, pas une mesure.
+### [mac-limit] deux règles de PORTÉES différentes coexistent-elles ?
+Une règle est maintenant identifiée par sa portée : `mac-limit maximum 5
+vlan 10` puis `mac-limit maximum 8 vlan 10` remplacent bien, et deux VLAN
+différents gardent leurs deux règles. Reste la seule question que la
+mesure ne tranche pas : `mac-limit maximum 5` (sans qualificatif) et
+`mac-limit maximum 5 vlan 10` coexistent ici, parce qu'un qualificatif
+`vlan` désigne une autre portée — ce qui est un raisonnement, pas une
+mesure.
 **Mesure** : les pages `mac-limit (interface view)` de Huawei ne sont pas
 joignables depuis ce réseau (proxy) ; deux règles de portées différentes
 sur le même port sont plausibles et non attestées.
-**Report** : trancher demande le manuel ou une vraie machine. Deux règles
-`mac-limit ... vlan 10` successives coexistent aussi aujourd'hui, ce qui
-est faux quelle que soit la réponse — mais le corriger suppose une clé de
-réglage qui porte ses qualificatifs, donc un magasin qui ne soit plus une
-simple liste de lignes.
+**Report** : trancher demande le manuel ou une vraie machine. Le
+mécanisme, lui, est en place — la clé de réglage porte désormais ses
+qualificatifs —, donc fermer cette entrée ne sera qu'un choix de clé.
 
 ### [mqc] `traffic classifier` ouvre une vue dont le corps est refusé
 Mesuré sur un commutateur Huawei : `traffic classifier tc1` est acceptée et

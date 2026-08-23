@@ -110,6 +110,12 @@ function mstpStateName(state: string): string {
  * `vty0-4` redevient `user-interface vty 0 4`. L'etiquette est ce que la
  * vue affiche ; la configuration doit rendre la commande qui la rouvre.
  */
+function macLimitSettingKey(args: readonly string[]): string {
+  const vlanAt = args.findIndex(word => word.toLowerCase() === 'vlan');
+  const vlan = vlanAt === -1 ? null : args[vlanAt + 1];
+  return vlan ? `mac-limit maximum vlan ${vlan}` : 'mac-limit maximum';
+}
+
 function vrpUserInterfaceHeader(label: string): string | null {
   const m = /^([a-z-]+)(\d+)(?:-(\d+))?$/.exec(label);
   if (!m) return null;
@@ -192,15 +198,16 @@ export class HuaweiSwitchShell implements ISwitchShell {
   private ifStp = new Map<string, string[]>();
 
   /** Per-interface physical/security config lines (rendered in `display this`). */
-  private ifCfg = new Map<string, string[]>();
+  private ifCfg = new Map<string, { key: string; line: string }[]>();
 
   private recordIfCfg(line: string, key?: string): string {
     if (!this.selectedInterface) return 'Error: Incomplete command.';
     const settingKey = key ?? line;
     const kept = (this.ifCfg.get(this.selectedInterface) ?? [])
-      .filter(existing => existing !== line && !existing.startsWith(`${settingKey} `)
-        && existing !== settingKey);
-    kept.push(line);
+      .filter(entry => entry.key !== settingKey
+        && entry.line !== line && !entry.line.startsWith(`${settingKey} `)
+        && entry.line !== settingKey);
+    kept.push({ key: settingKey, line });
     this.ifCfg.set(this.selectedInterface, kept);
     return '';
   }
@@ -208,8 +215,9 @@ export class HuaweiSwitchShell implements ISwitchShell {
   private removeIfCfg(settingKey: string): string {
     if (!this.selectedInterface) return 'Error: Incomplete command.';
     const kept = (this.ifCfg.get(this.selectedInterface) ?? [])
-      .filter(existing => existing !== settingKey
-        && !existing.startsWith(`${settingKey} `));
+      .filter(entry => entry.key !== settingKey
+        && entry.line !== settingKey
+        && !entry.line.startsWith(`${settingKey} `));
     this.ifCfg.set(this.selectedInterface, kept);
     return '';
   }
@@ -2999,8 +3007,7 @@ export class HuaweiSwitchShell implements ISwitchShell {
 
     trie.registerGreedy('mac-limit', 'Interface mac-limit configuration', (args) => {
       const line = `mac-limit ${args.join(' ')}`.trim();
-      const scoped = args.some(word => word.toLowerCase() === 'vlan');
-      return record(line, scoped ? undefined : 'mac-limit maximum');
+      return record(line, macLimitSettingKey(args));
     });
 
     // `traffic-filter inbound|outbound acl <number>` binds a real numbered
@@ -4031,7 +4038,7 @@ export class HuaweiSwitchShell implements ISwitchShell {
 
     const apprentissage = new Map(sw.getMacLearningDisabledPorts()).get(portName);
     if (apprentissage) lines.push(` ${ligneApprentissageMac(apprentissage)}`);
-    for (const l of this.ifCfg.get(portName) ?? []) lines.push(` ${l}`);
+    for (const entry of this.ifCfg.get(portName) ?? []) lines.push(` ${entry.line}`);
     for (const l of this.ifStp.get(portName) ?? []) lines.push(` ${l}`);
     for (const l of sw.getLldpAgent?.()?.vrpInterfaceLines(portName) ?? []) lines.push(` ${l}`);
     if (!port.isNegotiationAuto()) {
