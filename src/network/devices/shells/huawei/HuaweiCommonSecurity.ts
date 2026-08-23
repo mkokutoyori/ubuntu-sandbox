@@ -17,6 +17,12 @@ import {
   displayNtpServiceStatus, displayNtpServiceSessions, displayNtpStatisticsPacket,
 } from './huaweiNtpCommands';
 import { analyserNtpVrp, appliquerNtpVrp, retirerNtpVrp } from './huaweiNtpCommands';
+import {
+  analyserSnmpVrp, appliquerSnmpVrp, retirerSnmpVrp, displaySnmpSysInfoVrp,
+} from './huaweiSnmpCommands';
+import { projectSnmpServiceOntoAgent } from '../../../snmp/snmpProjection';
+import { getSnmpAgent } from '../../../equipment/RouterServiceCapabilities';
+import type { SnmpService } from '../../router/management/SnmpService';
 
 export interface LocalUser {
   password?: string;
@@ -48,14 +54,6 @@ export function displaySshServerStatus(): string {
     'SSH authentication retries      : 3 times',
     'SFTP server                     : Disable',
     'STELNET server                  : Enable',
-  ].join('\n');
-}
-
-export function displaySnmpSysInfo(): string {
-  return [
-    'The contact person for this managed node: R&D Beijing, Huawei',
-    'The physical location of this node: Beijing China',
-    'SNMP version running in the system: SNMPv2c SNMPv3',
   ].join('\n');
 }
 
@@ -100,8 +98,9 @@ export function registerHuaweiCommonSecurity(
    * ici.
    */
   getNtpAgentDirect?: () => import('../../../ntp/NtpAgent').NtpAgent | undefined,
+  getSnmpServiceDirect?: () => SnmpService | undefined,
 ): void {
-  const dispatch = (feature: 'stelnet' | 'telnet' | 'ssh' | 'snmp-agent' | 'ntp-service' | 'clock' | 'sflow', args: string[]) => {
+  const dispatch = (feature: 'stelnet' | 'telnet' | 'ssh' | 'ntp-service' | 'clock' | 'sflow', args: string[]) => {
     if (!getRouter) return '';
     const mgmt = getRouter().getManagementService();
     switch (feature) {
@@ -117,7 +116,6 @@ export function registerHuaweiCommonSecurity(
       }
       case 'telnet': mgmt.configureTelnet(args); break;
       case 'ssh': mgmt.configureSsh(args); break;
-      case 'snmp-agent': mgmt.configureSnmp(args); break;
       case 'ntp-service': mgmt.configureNtp(args); break;
       case 'clock': mgmt.configureClock(args); break;
       case 'sflow': mgmt.configureSflow(args); break;
@@ -127,7 +125,31 @@ export function registerHuaweiCommonSecurity(
   trie.registerGreedy('stelnet', 'STelnet configuration', (args) => dispatch('stelnet', args));
   trie.registerGreedy('telnet', 'Telnet configuration', (args) => dispatch('telnet', args));
   trie.registerGreedy('ssh', 'SSH configuration', (args) => dispatch('ssh', args));
-  trie.registerGreedy('snmp-agent', 'SNMP agent configuration', (args) => dispatch('snmp-agent', args));
+  const snmpService = (): SnmpService | undefined =>
+    (getRouter?.() as unknown as { getSnmpService?: () => SnmpService })?.getSnmpService?.()
+    ?? getSnmpServiceDirect?.();
+  const projeterSnmp = (service: SnmpService) => {
+    const agent = getRouter ? getSnmpAgent(getRouter()) : undefined;
+    if (agent) projectSnmpServiceOntoAgent(service, agent);
+  };
+  trie.registerGreedy('snmp-agent', 'SNMP agent configuration', (args, raw) => {
+    const service = snmpService();
+    if (!service) return '';
+    const a = analyserSnmpVrp(args);
+    if (a.statut === 'refus') return rendreErreurVrp(a.err, raw ?? `snmp-agent ${args.join(' ')}`);
+    appliquerSnmpVrp(service, a.action);
+    projeterSnmp(service);
+    return '';
+  });
+  trie.registerGreedy('undo snmp-agent', 'Remove SNMP agent configuration', (args, raw) => {
+    const service = snmpService();
+    if (!service) return '';
+    const a = analyserSnmpVrp(args);
+    if (a.statut === 'refus') return rendreErreurVrp(a.err, raw ?? `undo snmp-agent ${args.join(' ')}`);
+    retirerSnmpVrp(service, a.action);
+    projeterSnmp(service);
+    return '';
+  });
   // Lot N2 : `ntp-service` ecrivait dans le service de gestion — pour
   // `unicast-server`, dans un simple sac de chaines brutes — tandis que
   // les vues lisaient le `NtpAgent`. Aucune commande NTP tapee sur un
@@ -173,13 +195,14 @@ export function registerHuaweiCommonSecurityDisplay(
    * rendus que le routeur — un seul texte pour un seul fait.
    */
   getNtpAgentDirect?: () => import('../../../ntp/NtpAgent').NtpAgent | undefined,
+  getSnmpServiceDirect?: () => SnmpService | undefined,
 ): void {
   trie.register('display local-user', 'Display local users', () =>
     displayLocalUser(getUsers()));
   trie.registerGreedy('display ssh', 'Display SSH server status', () =>
     displaySshServerStatus());
   trie.registerGreedy('display snmp-agent', 'Display SNMP agent info', () =>
-    displaySnmpSysInfo());
+    displaySnmpSysInfoVrp(getSnmpServiceDirect?.()));
   trie.registerGreedy('display ntp-service', 'Display NTP status', (args) => {
     const agent = getNtpAgentDirect?.();
     if (!agent) return displayNtpStatus();

@@ -84,6 +84,7 @@ import {
 } from './cisco/CiscoConfigCommands';
 import {
   buildConfigDhcpCommands, buildConfigDhcpPoolClassCommands, dhcpPoolSpecs,
+  dhcpPoolClassSpecs, dhcpClassSpecs, ipv6DhcpPoolSpecs,
   buildConfigDhcpClassCommands,
   buildConfigIpv6DhcpCommands,
   registerDhcpShowCommands, dhcpIpv6ShowSpecs,
@@ -105,13 +106,13 @@ import {
   buildACLConfigCommands, buildACLInterfaceCommands,
   buildNamedStdACLCommands, buildNamedExtACLCommands,
   buildIPv6ACLGlobalCommands, buildIPv6ACLModeCommands,
-  registerACLShowCommands, aclShowSpecs,
+  registerACLShowCommands, registerACLClearCommands, aclShowSpecs,
 } from './cisco/CiscoAclCommands';
 import {
   registerOSPFConfigCommands, buildConfigRouterOSPFCommands,
   buildConfigRouterOSPFv3Commands,
   registerOSPFInterfaceCommands, registerOSPFShowCommands, ospfShowSpecs, ospfClearSpecs,
-  ospfIpv6ShowSpecs,
+  ospfIpv6ShowSpecs, routerOspfSpecs, routerOspfv3Specs,
   setOspfv3InterfaceParams, enableOspfv3OnInterface, disableOspfv3OnInterface,
   setOspfv3InterfaceAuthentication,
 } from './cisco/CiscoOspfCommands';
@@ -120,6 +121,8 @@ import {
   buildTransformSetCommands, buildCryptoMapEntryCommands,
   buildIPSecProfileCommands, buildIPSecIfCommands,
   buildIPSecPrivilegedCommands,
+  isakmpPolicySpecs, isakmpProfileSpecs, isakmpKeyringSpecs,
+  transformSetSpecs, cryptoMapEntrySpecs, ipsecProfileSpecs,
 } from './cisco/CiscoIPSecIKEv1Commands';
 import {
   buildIKEv2GlobalCommands, buildIKEv2ProposalCommands,
@@ -255,6 +258,17 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
       ...dhcpClientFamily(),
       ...this.ipv6ExecSpecs(),
       ...dhcpPoolSpecs(this),
+      ...routerOspfSpecs(this),
+      ...routerOspfv3Specs(this),
+      ...isakmpPolicySpecs(this),
+      ...isakmpProfileSpecs(this),
+      ...isakmpKeyringSpecs(this),
+      ...transformSetSpecs(this),
+      ...cryptoMapEntrySpecs(this),
+      ...ipsecProfileSpecs(this),
+      ...dhcpPoolClassSpecs(this),
+      ...dhcpClassSpecs(this),
+      ...ipv6DhcpPoolSpecs(this),
       ...ospfIpv6ShowSpecs(() => this.d()),
       ...dhcpIpv6ShowSpecs(() => this.d()),
       ...pimShowSpecs(this.multicastShowContext()),
@@ -403,6 +417,16 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
   protected override socleLegends(): ReadonlyArray<[readonly string[], string]> {
     return [
       ...super.socleLegends(),
+      [['crypto'], 'Encryption module'],
+      [['crypto', 'ipsec'], 'Configure IPSec policy'],
+      [['crypto', 'ipsec', 'security-association'], 'Security association parameters'],
+      [['crypto', 'ipsec', 'security-association', 'lifetime'], 'Security association lifetime'],
+      [['crypto', 'ipsec', 'security-association', 'replay'], 'Anti-replay checking'],
+      [['set'], 'Set values for encryption/decryption'],
+      [['set', 'security-association'], 'Security association parameters'],
+      [['set', 'security-association', 'lifetime'], 'Security association lifetime'],
+      [['match'], 'Match values'],
+      [['match', 'identity'], 'Match peer identity'],
       [['ipv6'], 'IPv6 interface subcommands'],
       [['ipv6', 'nd'], 'IPv6 neighbor discovery'],
       [['ipv6', 'ospf'], 'OSPFv3 interface commands'],
@@ -421,6 +445,13 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
       [['show', 'ip', 'bgp'], 'BGP information'],
       [['show', 'ipv6', 'dhcp'], 'Dynamic Host Configuration Protocol'],
       [['show', 'ipv6', 'eigrp'], 'Enhanced Interior Gateway Routing Protocol'],
+      [['default-information'], 'Control distribution of default information'],
+      [['max-metric'], 'Advertise the maximum metric'],
+      [['timers'], 'Protocol timers'],
+      [['timers', 'lsa'], 'Link State Advertisement'],
+      [['timers', 'pacing'], 'Pacing'],
+      [['timers', 'throttle'], 'Throttle timers'],
+      [['version'], 'Protocol version'],
       [['show', 'ip', 'pim'], 'PIM information'],
       [['show', 'ip', 'pim', 'rp'], 'PIM Rendezvous Point information'],
       [['show', 'ip', 'igmp'], 'IGMP information'],
@@ -1330,6 +1361,7 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
     registerDhcpPrivilegedCommands(this.privilegedTrie, () => this.d());
     buildIPSecPrivilegedCommands(this.privilegedTrie, this);
     registerNATPrivilegedCommands(this.privilegedTrie, () => this.d());
+    registerACLClearCommands(this.privilegedTrie, () => this.d());
 
     // ── Config mode ──
     buildConfigCommands(this.configTrie, this);

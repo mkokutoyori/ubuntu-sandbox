@@ -25,6 +25,136 @@ qui tient quoi, maintenant.
 
 ## En cours
 
+### Périmètre pris — la MIGRATION du `CommandTrie` vers le socle `src/cli/`
+
+**À lire avant de toucher un enregistrement de commande Cisco.** Objectif
+donné : à la fin il ne doit plus rester UN SEUL `CommandTrie`. Les
+commandes passent famille par famille du trie (un arbre par mode, dans
+`network/devices/shells/`) vers la table unique du socle (`src/cli/`), et
+`pruneMigratedFromTries()` retire du trie ce que la table porte — une
+commande appartient à un moteur et à un seul, un doublon lève
+`DuplicateCommandError` à la construction du shell.
+
+Déjà vides : `configLineTrie`, `configDhcpTrie` et ses trois sous-modes,
+`configRouterOspfTrie`. Compteurs : routeur 1007 → ~904, commutateur
+570 → 460. Restent les deux gros blocs `configTrie` (308) et
+`configIfTrie` (152), puis `privilegedTrie`, `userTrie`,
+`configRouterTrie` et une trentaine de petits sous-modes.
+
+**Ce que ça change pour vous** : une famille migrée n'est plus dans le
+trie. Si vous ajoutez une commande à un `register*(t: CommandTrie)` dont
+la famille est déjà partie, elle sera élaguée au démarrage et ne
+répondra jamais. Le symptôme est silencieux. Cherchez d'abord la famille
+dans `socleSpecs()` (`CiscoShellBase`, `CiscoIOSShell`,
+`CiscoSwitchShell`) : si elle y est, ajoutez un `CommandSpec` à côté des
+autres. En cas de doute, `enumerateExecutablePaths()` sur le trie du mode
+dit ce qu'il porte encore.
+
+**Fichiers réclamés** : `src/cli/**` en entier,
+`network/devices/shells/CommandTrie.ts`,
+`network/devices/shells/CiscoShellBase.ts`,
+`network/devices/shells/CiscoIOSShell.ts`, et le *bloc
+d'enregistrement* de chaque famille migrée dans les fichiers
+`shells/cisco/*Commands.ts`.
+
+**Recouvrement avec le lot ACL ci-dessous, et comment on s'en sort** :
+`CiscoAclCommands.ts` (les vues `show access-lists` /
+`show ip access-lists`) et `CiscoSwitchShell.ts` (`show vlan`,
+`show spanning-tree`, tables L2) sont DÉJÀ migrés — leur rendu n'a pas
+bougé, seul l'endroit où la commande est déclarée a changé. Corriger un
+alignement ou un libellé se fait donc dans la fonction de rendu comme
+avant ; c'est seulement AJOUTER ou RETIRER une commande de ces familles
+qui passe maintenant par un `CommandSpec`. `show ip interface` et
+`show vlan access-map`/`show vlan filter` ne sont pas migrés : ils sont à
+vous sans réserve.
+
+### LIVRÉ — le tutoriel ACL Cisco, de bout en bout
+
+Demande : « assure-toi que notre plateforme permet de suivre le tutoriel
+suivant » — *Les ACL Cisco pour les débutants : on configure, on casse,
+on comprend*, onze concepts sur un routeur, deux commutateurs et cinq
+machines.
+
+Le tutoriel a été rejoué commande par commande par une sonde écrite à
+l'aveugle (`src/__tests__/unit/network-v2/tuto-acl-cisco.test.ts`,
+36 cas). **26 passent, 10 tombent** ; les dix sont des défauts mesurés,
+pas des commandes manquantes à inventer :
+
+1. `show access-lists` n'aligne pas l'action sur une liste STANDARD —
+   IOS écrit `deny   10.1.1.1` (six caractères), nous `deny 10.1.1.1`.
+   Vérifié sur du texte capturé (`ntc-templates`), pas sur de la
+   documentation HTML qui écrase les blancs. Une liste ÉTENDUE ne pose
+   pas ce blanc, et la même capture le montre.
+2. Un `remark` prend un numéro de séquence et s'affiche dans
+   `show access-lists`. Sur IOS 15 il ne fait NI l'un NI l'autre : les
+   ACE du tutoriel sont donc décalées d'un cran (`20 permit tcp` au lieu
+   de `10 permit tcp`), et `ip access-list resequence` propage le décalage.
+3. `show ip interface` répond `Outgoing access list is not set` sur une
+   interface qui porte `ip access-group 1 out` — un affichage qui nie la
+   configuration de la même machine, routeur ET commutateur.
+4. `clear access-list counters` n'existe pas. Le moteur sait pourtant
+   remettre à zéro (`ACLEngine.resetCounters`), la porte VRP existe
+   (`reset acl counter`), la porte IOS non.
+5. `show time-range` écrit `(inactive)` EN DUR, quelle que soit l'heure.
+6. Le plan de données évalue une `time-range` contre `new Date()` — la
+   VRAIE horloge — pendant que `show time-range` lit l'horloge posée par
+   `clock set`. Deux horloges pour une question.
+7. Les ACL réflexives (`reflect` / `evaluate`) sont refusées à
+   l'évaluation faute de table de sessions ; le concept 9 du tutoriel
+   est donc injouable, et `show ip access-lists <nom-réflexif>` répond
+   « not found ».
+8. `show vlan access-map` et `show vlan filter` n'existent pas, alors
+   que `vlan access-map` se configure : la VACL du concept 10 se pose et
+   ne se relit pas.
+
+**Fichiers réclamés** :
+`network/devices/router/ACLEngine.ts`,
+`network/devices/shells/cisco/CiscoAclCommands.ts`,
+`network/devices/shells/cisco/CiscoSecurityCommands.ts`,
+`network/devices/shells/cisco/CiscoShowCommands.ts`,
+`network/devices/shells/CiscoSwitchShell.ts` (bloc `show ip interface`
+et famille `show vlan access-map`/`show vlan filter` uniquement),
+`network/devices/Router.ts` (câblage de l'horloge dans `ACLEngine`).
+
+Ce que ça change pour vous, maintenant que c'est poussé :
+
+- **`ACLEngine` a une source d'horloge** (`setClockSource`), posée par
+  `Router` sur `getSystemClockMs()`. Les paramètres `now` de
+  `evaluateACL` / `evaluateACLByName` / `evaluateForDataPlane` sont
+  devenus OPTIONNELS : ne passez plus `new Date()` explicitement, vous
+  remettriez l'horloge de la machine hôte à la place de celle de
+  l'équipement.
+- **Une entrée `remark` ne porte plus de numéro à elle** : elle prend
+  celui de l'ACE qui la SUIT, et n'est jamais rendue par
+  `show access-lists`. Si vous lisiez `entry.sequence` sur un
+  commentaire, la valeur a changé de sens.
+- **`entry.evaluate` n'échoue plus fermé** : il consulte
+  `router/acl/ReflexiveSessions.ts`. Une ACE `reflect` qui permet un
+  paquet y dépose la session miroir.
+- **Deux fonctions de rendu sont sorties de `Router`** :
+  `runningConfigACLFrom(acls)` et `runningConfigInterfaceACLFrom(bindings,
+  iface)` prennent la table plutôt que l'équipement, pour que le
+  commutateur les emprunte au lieu d'en écrire une seconde. Les formes
+  `runningConfigACL(router)` / `runningConfigInterfaceACL(router, iface)`
+  restent et délèguent.
+- **`ipInterfaceBlockFor` a un 7ᵉ paramètre** `acl: InterfaceAclRefs`,
+  facultatif. Sans lui les deux lignes disent « not set », comme avant.
+- **Sur le commutateur** : `ip access-group`, `no access-list`,
+  `no ip access-list`, `switchport protected`, `show vlan access-map` et
+  `show vlan filter` existent ; la configuration rendue contient
+  désormais les listes elles-mêmes, ce qui allonge tout
+  `show running-config` de Catalyst portant une ACL.
+
+Défaut trouvé chez le voisin et corrigé au passage :
+`other-commands.test.ts` §121 (`no access-list 10` sur un commutateur)
+passait à VIDE, la configuration ne rendant aucune liste — la commande
+n'existait pas. Elle existe.
+
+Sondes : `src/__tests__/unit/network-v2/tuto-acl-cisco.test.ts` (43 cas,
+16 tombent avant correctif) et `e2e/tuto-acl-cisco.spec.ts` (7 cas).
+`cisco-acl.test.ts` §6.1 attendait `deny any` là où IOS écrit
+`deny   any` : l'attente encodait l'écart, elle est corrigée.
+
 ### Le niveau 1 voyait dix-sept commandes de trop — CORRIGÉ
 
 **À lire si vous touchez à l'arbre de commandes.** Vérification demandée

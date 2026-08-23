@@ -2700,6 +2700,161 @@ refusé sont remplacés par un cas qui l'affirme disponible.
 
 ---
 
+## Périmètre pris — FortiOS phase 21 (un datagramme fragmenté est RECOLLÉ)
+
+**Agent `mandeng`.** L'entrée `[pare-feu] les fragments recus ne sont pas
+REASSEMBLES` de `TODO.md` nomme le point, et son **report est à
+re-mesurer** : il dit qu'il faut « d'abord décider QUAND » réassembler,
+« cette condition n'étant modélisée nulle part ». Deux choses ont changé
+depuis qu'il a été écrit — la phase 17 a donné au pare-feu une notion
+d'inspection de FLUX, et la documentation de Fortinet, relue, répond
+elle-même à la question.
+
+Mesure de départ :
+
+- **Le pare-feu fragmente à la sortie et ne recolle jamais à l'entrée.**
+  `Firewall.ts` importe `fragmentIPv4` et lui seul ; `IPv4Reassembler`
+  — qui existe dans `core/Ipv4Fragmentation.ts` et que `Router.ts`
+  utilise — n'a AUCUN appelant côté pare-feu.
+- **Conséquence observable** : les fragments qui suivent le premier ne
+  portent pas d'en-tête de couche 4, donc leur clé de flux est bâtie sur
+  des ports absents. Un seul datagramme ouvre plusieurs sessions.
+- **Conséquence de sécurité, qui est la vraie raison de la phase** : une
+  règle qui refuse un port ne peut se prononcer que sur le premier
+  fragment. Les suivants ne portent pas ce port et échappent à la règle
+  qui les nomme — c'est l'évasion par fragmentation, et un pare-feu qui
+  la laisse passer enseigne l'inverse de ce qu'il existe pour montrer.
+
+**Ce que la documentation de Fortinet tranche**, et qui rend le report
+caduc : la défragmentation existe « so that policy can be applied to
+reassembled packets », le chemin logiciel (processeur) traite TOUS les
+fragments par défaut, et le déchargement matériel NP7 — désactivé par
+défaut — est une optimisation orthogonale. La réponse à « quand ? » est
+donc **avant la recherche de politique, toujours**, ce que fait déjà
+`Router.forwardPacket` avec la même brique.
+
+**Deux commandes réelles à servir plutôt qu'à inventer** :
+
+- `config system settings` → `set ip-fragment-mem-thresholds <32-2047>`
+  (mégaoctets, défaut 32). Elle doit BORNER quelque chose : au-delà, les
+  fragments sont perdus et `ReasmFails` monte.
+- `diagnose snmp ip frags` → les compteurs de la MIB IP
+  (`ReasmTimeout`, `ReasmReqds`, `ReasmOKs`, `ReasmFails`), qui doivent
+  être une MESURE du réassembleur et non un affichage.
+
+**Fichiers que la phase 21 prendra** :
+
+```
+firewall/l3/FragmentReassembly.ts   ← la table et sa borne (socle, neuf)
+firewall/Firewall.ts                ← le recollage avant la politique
+firewall/diag/                      ← les compteurs de la MIB IP
+vendors/fortios/schema/system*.ts   ← ip-fragment-mem-thresholds
+vendors/fortios/diag/               ← `diagnose snmp ip frags`
+```
+
+Rien n'est écrit pour réassembler : `IPv4Reassembler` porte déjà la
+fenêtre, le recouvrement et l'expiration. Ce qui est neuf est la BORNE
+mémoire, qu'il n'a pas, et le branchement.
+
+---
+
+## Périmètre pris — FortiOS phase 20 (un VIP répartit vers un serveur VIVANT)
+
+**Agent `mandeng`.** §6.4 du carnet et l'entrée `[vip]` de `TODO.md`
+nomment le point : le type `server-load-balance` « n'a aucune brique
+existante à réutiliser (grappe de serveurs réels + moniteurs de santé) ».
+La mesure corrige cette phrase, et c'est ce qui rend la phase possible.
+
+Mesure de départ :
+
+- **`set type server-load-balance` est REFUSÉ** (phase 15b), donc un VIP
+  de répartition ne peut pas exister. Le refus était le bon choix tant
+  que rien ne pouvait le servir.
+- **`config firewall ldb-monitor` n'existe pas** : aucun moniteur de
+  santé, donc rien pour distinguer un serveur vivant d'un serveur mort.
+- **La grappe de serveurs réels n'existe pas** : `config realservers`
+  est inconnu.
+
+**Ce qui a été trouvé et qui change la conclusion du TODO** — trois
+briques existent :
+
+1. **Le point d'accroche du DNAT est déjà là.** `FirewallNatEngine`
+   choisit l'adresse traduite par `spreadDestination(translation, packet)`
+   et **inscrit le choix dans la session** (`translation.translatedDest`).
+   Une répartition de charge est donc un `destinationTranslation` dont le
+   choix vient d'une grappe au lieu d'une plage — et **la persistance
+   d'une session est gratuite**, puisque le retour se dé-traduit déjà
+   depuis la session.
+2. **Le pare-feu sait déjà sonder.** `FirewallPing` est son ping réel, et
+   `TcpStack.connect` ouvre une vraie connexion. Un moniteur `ping` et un
+   moniteur `tcp` n'ont rien de neuf à écrire.
+3. **`SdwanHealthProbe` existe** — et il est examiné puis ÉCARTÉ : il est
+   indexé sur les membres SD-WAN (des interfaces) et rend latence, gigue
+   et perte pour les règles SD-WAN. Un moniteur de serveur réel demande
+   « ce serveur:port répond-il ? ». Question différente, clé différente.
+   Ce qu'il partage — l'écho ICMP — est ce que `FirewallPing` porte déjà.
+
+**Fichiers que la phase 20 prendra** :
+
+```
+firewall/nat/RealServerPool.ts     ← la grappe et son choix (socle, neuf)
+firewall/health/LdbMonitor.ts      ← les moniteurs (socle, neuf)
+firewall/nat/FirewallNatEngine.ts  ← le choix par la grappe
+vendors/fortios/schema/firewallNat.ts ← realservers, ldb-monitor
+```
+
+**Décisions de découpage, écrites ici pour ne pas être découvertes** :
+
+- **`ldb-method`** : `static`, `round-robin`, `weighted`, `first-alive`
+  et `least-session` sont implémentés — chacun se décide avec ce que la
+  grappe et la table des sessions savent déjà. **`least-rtt` est REFUSÉ**
+  (les trames sont livrées de façon synchrone, sans horloge de fil : il
+  n'y a pas de temps d'aller-retour à comparer, et ce simulateur porte
+  déjà ce refus ailleurs sous le même motif) et **`http-host` est
+  REFUSÉ** (le choix du serveur se fait à la traduction, donc avant que
+  la moindre charge utile HTTP soit lue).
+- **Types de moniteur** : `ping` et `tcp` sont réels. `http`/`https`,
+  `dns` et `passive-sip` seront tranchés en mesurant ce que le pare-feu
+  sait composer lui-même — jamais acceptés inertes.
+
+**Critère de sortie** : un vrai client atteint un vrai serveur à travers
+un VIP de répartition, deux serveurs se partagent les connexions selon
+la méthode réglée, un serveur qui ne répond plus est retiré de la
+grappe, et une session déjà ouverte reste sur SON serveur.
+
+**Livrée.** Trois choses méritent d'être gardées :
+
+- **L'entrée `TODO.md` était fausse, et c'est elle qui a rendu la phase
+  possible une fois vérifiée.** « Aucune brique existante à réutiliser »
+  s'est révélé inexact sur les trois points : le DNAT choisissait déjà
+  son adresse en un seul endroit ET inscrivait le choix dans la session
+  — donc la persistance d'une session n'a demandé AUCUNE ligne, ce qui
+  est le genre de réutilisation qui ne se voit pas dans le diff. La
+  leçon : une entrée du registre affirme un manque, et un manque affirmé
+  se re-mesure avant d'être cru.
+- **L'OBSERVABLE de la sonde était faux sur trois cas**, et c'est la
+  leçon de méthode. Le client compose le VIP et voit le VIP, puisque le
+  retour est dé-traduit : c'est CORRECT, et cela ne dit rien du serveur
+  choisi. Le choix est une décision du pare-feu et se lit dans la
+  session qu'il vient d'ouvrir. Un quatrième cas attendait une connexion
+  vouée à ne jamais aboutir (grappe entièrement morte) : elle ne se
+  résout qu'après le repli RFC 6298, bien au-delà du délai d'un test.
+  La livraison des trames étant synchrone ici, le SYN a déjà traversé
+  quand la promesse est rendue, donc le cas n'attend plus.
+- **`retry` compte de vrais échecs CONSÉCUTIFS.** Une seule passe ne
+  déclare rien mort, et c'est voulu : un moniteur qui condamnerait un
+  serveur au premier paquet perdu serait inutilisable.
+
+**Refusé plutôt que laissé inerte**, chacun en nommant sa brique :
+`least-rtt` (pas d'horloge de fil, donc tous les serveurs répondent en
+zéro temps), `http-host` (le serveur est choisi à la traduction, avant
+qu'une charge utile HTTP existe), et les moniteurs `http`/`https`/`dns`
+— les accepter marquerait chaque serveur vivant sans jamais le lui
+demander, ce qui est pire que le refus. `passive-sip` n'a aucun SIP à
+observer.
+
+---
+
 ## Périmètre pris — FortiOS phase 19 (la configuration garde son HISTORIQUE)
 
 **Agent `mandeng`.** §6.5 du carnet nomme le point : « `execute

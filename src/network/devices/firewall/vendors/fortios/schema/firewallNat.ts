@@ -6,6 +6,22 @@ import {
 const INTERFACE_TARGETS = ['system interface', 'system zone'];
 const ADDRESS_TARGETS = ['firewall address', 'firewall addrgrp'];
 
+const NO_APPLICATION_MONITOR = 'this build probes a real server with an ICMP echo or a '
+  + 'TCP connection, which the firewall itself can do. An application probe would have '
+  + 'to speak the protocol from the firewall and read the answer, and nothing here does '
+  + 'that yet — accepting the type would mark every server alive without asking it.';
+
+const NO_SIP_MONITOR = 'there is no SIP anywhere in this simulator, so a passive-sip '
+  + 'monitor would have no traffic to watch.';
+
+const NO_RTT = 'frames are delivered synchronously here, with no wire clock, so every '
+  + 'real server answers in the same zero time. There is no round-trip time to compare, '
+  + 'and a method that always returned the first server would not be least-rtt.';
+
+const NO_HTTP_HOST = 'the real server is chosen when the destination is translated, '
+  + 'which happens before any HTTP payload has been read — the Host header does not '
+  + 'exist yet at that point in the pipeline.';
+
 const NO_DNS_ALG = 'a dns-translation VIP rewrites the address inside a DNS reply '
   + 'crossing the firewall, which needs a DNS application-level gateway on the '
   + 'transit path. None exists here, so the type would be accepted and translate '
@@ -13,6 +29,81 @@ const NO_DNS_ALG = 'a dns-translation VIP rewrites the address inside a DNS repl
 
 function isStaticNat(object: FortiObjectView): boolean {
   return object.effective('type')[0] === 'static-nat';
+}
+
+const REALSERVERS: FortiTableSpec = {
+  path: ['realservers'],
+  kind: 'table',
+  keyType: 'integer',
+  ordered: false,
+  scope: 'vdom',
+  accessGroup: 'fwgrp',
+  renderOrder: 151,
+  help: 'Configure the real servers behind a load-balancing virtual IP.',
+  attributes: [
+    address('ip', 'Real server address.'),
+    count('port', 'Real server port. 0 keeps the port the client dialled.',
+      0, 65535, 0),
+    count('weight', 'Share of sessions under the `weighted` method.', 1, 255, 1),
+    count('max-connections', 'Maximum concurrent sessions. 0 means unlimited.',
+      0, 2147483647, 0),
+    choice('status', 'Real server status.', [
+      { keyword: 'active', description: 'Take new sessions.' },
+      { keyword: 'standby', description: 'Take sessions only if no active server is up.' },
+      { keyword: 'disable', description: 'Take no session.' },
+    ], 'active'),
+  ],
+  onCommit() {},
+};
+
+export const LDB_MONITOR: FortiTableSpec = {
+  path: ['firewall', 'ldb-monitor'],
+  kind: 'table',
+  keyType: 'name',
+  ordered: false,
+  scope: 'vdom',
+  accessGroup: 'fwgrp',
+  renderOrder: 148,
+  help: 'Configure server load balancing health monitors.',
+  attributes: [
+    { ...word('name', 'Monitor name.'), readOnly: true },
+    {
+      ...choice('type', 'Select the protocol used to test the real server.', [
+        { keyword: 'ping', description: 'ICMP echo.' },
+        { keyword: 'tcp', description: 'TCP connection to the server port.' },
+        { keyword: 'http', description: 'HTTP request.' },
+        { keyword: 'https', description: 'HTTPS request.' },
+        { keyword: 'dns', description: 'DNS query.' },
+        { keyword: 'passive-sip', description: 'Passive SIP.' },
+      ], 'ping'),
+      unimplementedValues: {
+        http: NO_APPLICATION_MONITOR, https: NO_APPLICATION_MONITOR,
+        dns: NO_APPLICATION_MONITOR, 'passive-sip': NO_SIP_MONITOR,
+      },
+    },
+    count('interval', 'Time between health checks, in seconds.', 5, 65535, 10),
+    count('timeout', 'Time to wait for an answer, in seconds.', 1, 255, 2),
+    count('retry', 'Consecutive failures before the server is declared dead.',
+      1, 255, 3),
+    count('port', 'Port to probe. 0 uses the real server port.', 0, 65535, 0),
+  ],
+  onCommit(object, context) {
+    context.device.applyLdbMonitor({
+      name: object.key,
+      type: (object.effective('type')[0] ?? 'ping') as never,
+      intervalSec: Number.parseInt(object.effective('interval')[0] ?? '10', 10) || 10,
+      timeoutSec: Number.parseInt(object.effective('timeout')[0] ?? '2', 10) || 2,
+      retry: Number.parseInt(object.effective('retry')[0] ?? '3', 10) || 3,
+      port: Number.parseInt(object.effective('port')[0] ?? '0', 10) || 0,
+    });
+  },
+  onDelete(key, context) {
+    context.device.removeLdbMonitor(key);
+  },
+};
+
+function isBalancedVip(object: FortiObjectView): boolean {
+  return object.effective('type')[0] === 'server-load-balance';
 }
 
 function isFqdnVip(object: FortiObjectView): boolean {
@@ -147,8 +238,40 @@ export const FIREWALL_VIP: FortiTableSpec = {
         { keyword: 'static-nat', description: 'Static NAT.' },
         { keyword: 'dns-translation', description: 'DNS translation.' },
         { keyword: 'fqdn', description: 'FQDN translation.' },
+        {
+          keyword: 'server-load-balance',
+          description: 'Distribute sessions across a pool of real servers.',
+        },
       ], 'static-nat'),
       unimplementedValues: { 'dns-translation': NO_DNS_ALG },
+    },
+    {
+      ...choice('server-type', 'Protocol the load-balanced servers speak.', [
+        { keyword: 'http', description: 'HTTP.' },
+        { keyword: 'https', description: 'HTTPS.' },
+        { keyword: 'tcp', description: 'Plain TCP.' },
+        { keyword: 'udp', description: 'Plain UDP.' },
+        { keyword: 'ip', description: 'Any IP protocol.' },
+      ], 'tcp'),
+      availableWhen: isBalancedVip,
+    },
+    {
+      ...choice('ldb-method', 'How a new session picks a real server.', [
+        { keyword: 'static', description: 'Always the first live server.' },
+        { keyword: 'round-robin', description: 'Each new session takes the next.' },
+        { keyword: 'weighted', description: 'In proportion to each weight.' },
+        { keyword: 'least-session', description: 'The server holding the fewest.' },
+        { keyword: 'least-rtt', description: 'The server answering fastest.' },
+        { keyword: 'first-alive', description: 'The first live server, and it stays.' },
+        { keyword: 'http-host', description: 'By the HTTP Host header.' },
+      ], 'static'),
+      availableWhen: isBalancedVip,
+      unimplementedValues: { 'least-rtt': NO_RTT, 'http-host': NO_HTTP_HOST },
+    },
+    {
+      ...refList('monitor', 'Health-check monitors a real server must pass.',
+        ['firewall ldb-monitor']),
+      availableWhen: isBalancedVip,
     },
     {
       name: 'extip', help: 'IP address or address range on the external interface.',
@@ -215,10 +338,40 @@ export const FIREWALL_VIP: FortiTableSpec = {
       + 'IP, forcing the source address of traffic to the external IP of the VIP.'),
     count('color', 'Color of icon on the GUI.', 0, 32, 0),
   ],
+  children: [REALSERVERS],
   onCommit(object, context) {
     const kind = object.effective('type')[0] ?? 'static-nat';
     const external = splitRange(object.effective('extip')[0] ?? '');
     if (external.from === '') return;
+
+    if (kind === 'server-load-balance') {
+      const servers = object.childEntries('realservers').map(entry => ({
+        id: entry.key,
+        address: entry.effective('ip')[0] ?? '',
+        port: Number.parseInt(entry.effective('port')[0] ?? '0', 10) || 0,
+        weight: Number.parseInt(entry.effective('weight')[0] ?? '1', 10) || 1,
+        enabled: entry.effective('status')[0] !== 'disable',
+        maxConnections: Number.parseInt(
+          entry.effective('max-connections')[0] ?? '0', 10) || 0,
+      })).filter(server => server.address !== '');
+      if (servers.length === 0) return;
+
+      return context.device.applyBalancedVip({
+        name: object.key,
+        externalAddress: external.from,
+        externalEndAddress: external.to,
+        externalInterfaces: [...object.effective('extintf')],
+        sourceFilters: [...object.effective('srcfilter')],
+        arpReply: object.effective('arp-reply')[0] !== 'disable',
+        protocol: protocolNumber(object.effective('server-type')[0] === 'udp'
+          ? 'udp' : 'tcp'),
+        externalPort: splitPortRange(object.effective('extport')[0]).from,
+        method: (object.effective('ldb-method')[0] ?? 'static') as never,
+        monitors: [...object.effective('monitor')],
+        servers,
+        comment: object.effective('comment')[0] || undefined,
+      });
+    }
 
     if (kind === 'fqdn') {
       const mappedAddress = object.effective('mapped-addr')[0] ?? '';
@@ -360,6 +513,7 @@ export function splitPortRange(raw: string | undefined): { from: number; to: num
 
 export const FIREWALL_NAT_SPECS: readonly FortiTableSpec[] = Object.freeze([
   FIREWALL_IPPOOL,
+  LDB_MONITOR,
   FIREWALL_VIP,
   FIREWALL_CENTRAL_SNAT_MAP,
 ]);

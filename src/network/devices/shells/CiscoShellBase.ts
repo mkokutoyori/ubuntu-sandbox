@@ -32,6 +32,7 @@ import {
 } from '../inspection/config/LoggingConfig';
 import { complete as socleComplete, type CompletionTrigger } from '@/cli/CompletionEngine';
 import { projectLoggingOntoSyslogAgent } from '@/network/syslog/loggingProjection';
+import { projectSnmpServiceOntoAgent } from '@/network/snmp/snmpProjection';
 import { renderStartupConfig } from './cisco/ciscoConfigSerializer';
 import { CommandTrie } from './CommandTrie';
 import { EquipmentParamResolver } from './EquipmentParamResolver';
@@ -1911,22 +1912,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     const agent = getSnmpAgent(this.d());
     const svc = getSnmpService(this.d());
     if (!agent || !svc) return;
-    agent.setContact(svc.getContact());
-    agent.setLocation(svc.getLocation());
-    agent.setTrapSourceInterface(svc.getTrapSource() || null);
-    const cfg = agent.getConfig();
-    const desiredCommunities = svc.getCommunities();
-    const desiredNames = new Set(desiredCommunities.map((c) => c.name));
-    for (const c of cfg.communities) {
-      if (!desiredNames.has(c.community)) agent.removeCommunity(c.community);
-    }
-    for (const c of desiredCommunities) agent.addCommunity(c.name, c.access);
-    const desiredHosts = svc.getHosts();
-    const desiredIps = new Set(desiredHosts.map((h) => h.host));
-    for (const h of cfg.trapHosts) {
-      if (!desiredIps.has(h.ip)) agent.removeTrapHost(h.ip);
-    }
-    for (const h of desiredHosts) agent.addTrapHost(h.host, h.community, h.udpPort);
+    projectSnmpServiceOntoAgent(svc, agent);
   }
 
   syncNetflowAgent(): void {
@@ -5324,7 +5310,9 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
         canonique.push(enfant.keyword.toLowerCase());
         continue;
       }
-      const argument = node.argumentChild;
+      const argument = session
+        ? table.argumentAt(node, session)
+        : node.argumentChildren[0];
       if (argument?.argument && argumentAccepts(argument.argument, mot)) {
         node = argument;
         canonique.push(tape);

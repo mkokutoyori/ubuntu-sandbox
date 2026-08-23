@@ -22,6 +22,7 @@ import { huaweiCipher, huaweiIrreversibleCipher } from '@/crypto';
 import { looksLikeIrreversibleCipher, looksLikeReversibleCipher } from '@/crypto/passwords/huawei';
 import { resolveHuaweiInterfaceName as resolveHuaweiIfName, normaliserBlocsVrp, huaweiRipExtras, huaweiDisplayInterfaceName, HUAWEI_ERRORS } from '../cli-utils';
 import { displayNtpServiceStatus, displayNtpServiceSessions, lignesConfigNtpVrp, displayNtpStatisticsPacket } from './huaweiNtpCommands';
+import { lignesConfigSnmpVrp } from './huaweiSnmpCommands';
 import {
   AUCUN_GROUPE, groupesDeLInterface, lignesConfigVrrp,
   rendreDisplayVrrp, rendreDisplayVrrpBrief, rendreDisplayVrrpStatistics,
@@ -1128,7 +1129,7 @@ function appendManagementConfig(lines: string[], router: Router): void {
   if (router.isFtpServerEnabled()) { lines.push('#'); lines.push('ftp server enable'); }
   if (router._getGlobalToggle('telnet server')) { lines.push('#'); lines.push('telnet server enable'); }
 
-  const snmpLines = mgmt.snmpRunningConfigLines();
+  const snmpLines = lignesConfigSnmpVrp(router.getSnmpService?.());
   if (snmpLines.length > 0) { lines.push('#'); lines.push(...snmpLines); }
   // Lot N2 : ces lignes sortaient d'un sac de chaines brutes, donc elles
   // reproduisaient la saisie sans decrire l'etat — deux lignes pour une

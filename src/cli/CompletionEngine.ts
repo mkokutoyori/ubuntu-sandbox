@@ -36,7 +36,7 @@ export function locateCursor(
     const child = uniqueChild(node, token, table, session);
     if (child) { node = child; continue; }
 
-    const argument = node.argumentChild;
+    const argument = table.argumentAt(node, session, AIDE);
     if (argument?.argument && argumentAccepts(argument.argument, token)) {
       node = argument;
       continue;
@@ -77,12 +77,12 @@ function suggestionsAt(
 
     out.push({
       value: child.keyword,
-      description: describe(child),
+      description: describe(child, table, session),
       isArgument: false,
     });
   }
 
-  const argument = cursor.node.argumentChild?.argument;
+  const argument = table.argumentAt(cursor.node, session, AIDE)?.argument;
   if (argument && trigger === 'QUESTION_MARK'
     && (argument.values || argument.alternatives || cursor.prefix.length === 0)) {
     for (const suggestion of argumentSuggestions(argument)) {
@@ -103,22 +103,34 @@ function suggestionsAt(
     }
   }
 
-  if (trigger === 'QUESTION_MARK' && cursor.node.spec && cursor.prefix.length === 0
-    && !cursor.node.spec.existsOnlyNegated
-    && table.isReachable(cursor.node.spec, session, AIDE)) {
+  const ici = table.specAt(cursor.node, session, AIDE);
+  if (trigger === 'QUESTION_MARK' && ici && cursor.prefix.length === 0
+    && !ici.existsOnlyNegated) {
     out.push({ value: '<cr>', description: '', isArgument: true });
   }
 
   return out.sort((left, right) => left.value.localeCompare(right.value));
 }
 
-function describe(node: TreeNode): string {
+function describe(node: TreeNode, table: CommandTable, session: CliSession): string {
   if (node.legend) return node.legend;
-  if (node.spec) return node.spec.description;
+  // La description suit le MODE : deux modes qui nomment la meme
+  // commande ne la decrivent pas pareil, et prendre la premiere
+  // declaree faisait decrire un pool DHCPv6 par les mots du pool IPv4.
+  const ici = table.specAt(node, session, AIDE);
+  if (ici) return ici.description;
 
   for (const child of node.children.values()) {
-    const inherited = describe(child);
+    if (!subtreeReachable(child, table, session, AIDE)) continue;
+    const inherited = describe(child, table, session);
     if (inherited) return inherited;
   }
-  return node.argumentChild ? describe(node.argumentChild) : '';
+  const place = table.argumentAt(node, session, AIDE);
+  if (place) {
+    const herite = describe(place, table, session);
+    if (herite) return herite;
+  }
+  if (node.specs.length > 0) return node.specs[0].description;
+  return node.argumentChildren[0]
+    ? describe(node.argumentChildren[0], table, session) : '';
 }

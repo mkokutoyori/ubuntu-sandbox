@@ -152,9 +152,6 @@ export const ROUTEUR_SEUL: ContinuationTable = {
   configIpv6Dhcp: {
     'address prefix': ['lifetime'],
   },
-  configKeyring: {
-    'pre-shared-key': ['address', 'key'],
-  },
   configPmap: {
     'class': ['inspect', 'type'],
   },
@@ -171,39 +168,8 @@ export const ROUTEUR_SEUL: ContinuationTable = {
     'no redistribute': ['bgp', 'connected', 'ospf', 'rip', 'static'],
     'passive-interface': ['default'],
   },
-  configRouterOspf: {
-    'area': ['authentication', 'default-cost', 'filter-list', 'message-digest', 'no-summary', 'nssa-only', 'range', 'sham-link', 'stub', 'virtual-link'],
-    'auto-cost': ['reference-bandwidth'],
-    'bfd': ['all-interfaces'],
-    'capability': ['opaque', 'transit'],
-    'compatible': ['rfc1583'],
-    'default-information originate': ['metric-type'],
-    'discard-route': ['external'],
-    'distance': ['external', 'inter-area', 'intra-area', 'ospf'],
-    'graceful-restart': ['grace-period'],
-    'log-adjacency-changes': ['detail'],
-    'max-metric router-lsa': ['on-startup'],
-    'neighbor': ['poll-interval', 'priority'],
-    'network': ['area'],
-    'no area': ['nssa', 'range', 'stub'],
-    'no redistribute': ['connected', 'rip', 'static'],
-    'passive-interface': ['default'],
-    'segment-routing': ['mpls'],
-  },
-  configRouterOspfv3: {
-    'area': ['range', 'stub', 'virtual-link'],
-    'bfd': ['all-interfaces'],
-    'default-information originate': ['always'],
-    'graceful-restart': ['grace-period'],
-    'no passive-interface': ['default'],
-    'passive-interface': ['default'],
-    'redistribute': ['static'],
-  },
   configStdNacl: {
     'sequence': ['deny', 'permit'],
-  },
-  configTfset: {
-    'mode': ['transport', 'tunnel'],
   },
   configTimeRange: {
     'periodic': ['to'],

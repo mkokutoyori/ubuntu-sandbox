@@ -6,6 +6,7 @@ import {
   rewriteSrcIP,
 } from '../../../nat/rewrite';
 import type { ObjectStore } from '../model/ObjectStore';
+import type { RealServerPool } from './RealServerPool';
 import type { FirewallSession, SessionTranslation } from '../session/SessionTable';
 import type { FlowDirection } from '../session/TcpStateMachine';
 import { tryIpToUint32, uint32ToIp } from '../../../core/ip';
@@ -193,6 +194,9 @@ export class FirewallNatEngine {
     if (!translation) return this.translateInboundBidirectional(packet, context);
 
     const originalPort = getPacketDstPort(packet);
+    if (translation.kind === 'load-balance') {
+      return this.balanceInbound(rule, translation, packet, originalPort);
+    }
     const port = translation.translatedPort ?? originalPort;
     const realDest = this.spreadDestination(translation, packet);
 
@@ -275,6 +279,43 @@ export class FirewallNatEngine {
   private resolveAddress(name: string): string {
     return this.deps.objects.getAddress(name)?.value ?? name;
   }
+
+  private balanceInbound(
+    rule: NatRule, translation: DestinationTranslation,
+    packet: IPv4Packet, originalPort: number,
+  ): NatOutcome {
+    const pool = translation.pool === undefined
+      ? undefined : this.pools?.(translation.pool);
+    const chosen = pool?.pick();
+    if (chosen === undefined) return { packet, matchedRuleId: rule.id };
+
+    const port = chosen.port > 0 ? chosen.port : originalPort;
+    rule.hitCount++;
+    rule.byteCount += packet.totalLength;
+    this.translationsCreated++;
+
+    return {
+      packet: rewriteDestIP(packet, chosen.address, port),
+      matchedRuleId: rule.id,
+      translation: Object.freeze({
+        natRuleId: rule.id,
+        originalSource: packet.sourceIP.toString(),
+        originalSourcePort: getPacketSrcPort(packet),
+        translatedSource: packet.sourceIP.toString(),
+        translatedSourcePort: getPacketSrcPort(packet),
+        originalDest: packet.destinationIP.toString(),
+        originalDestPort: originalPort,
+        translatedDest: chosen.address,
+        translatedDestPort: port,
+      }),
+    };
+  }
+
+  setPoolResolver(resolve: (name: string) => RealServerPool | undefined): void {
+    this.pools = resolve;
+  }
+
+  private pools?: (name: string) => RealServerPool | undefined;
 
   private spreadDestination(
     translation: DestinationTranslation, packet: IPv4Packet,

@@ -385,6 +385,7 @@ export abstract class Switch extends Equipment {
 
   // ─── Port isolation (Huawei port-isolate) ──────────────────────
   private portIsolateGroups: Map<string, number> = new Map();
+  private protectedPorts: Set<string> = new Set();
 
   // ─── Super-VLAN / Sub-VLAN (Huawei) ────────────────────────────
   private superVlanIds: Set<number> = new Set();
@@ -1300,8 +1301,29 @@ export abstract class Switch extends Equipment {
     return this.portIsolateGroups.get(portName);
   }
 
+  /**
+   * `switchport protected` — le nom Cisco de ce que VRP appelle
+   * `port-isolate`, et donc la MÊME règle plutôt qu'une seconde.
+   *
+   * La seule différence est le groupe : VRP le numérote, IOS n'en a
+   * qu'un, implicite — deux ports protégés du même commutateur ne
+   * s'échangent rien, un port protégé et un port ordinaire dialoguent
+   * normalement.
+   */
+  setPortProtected(portName: string, on: boolean): void {
+    if (on) this.protectedPorts.add(portName);
+    else this.protectedPorts.delete(portName);
+  }
+
+  isPortProtected(portName: string): boolean {
+    return this.protectedPorts.has(portName);
+  }
+
   private portIsolateBlocks(ingressPort: string, egressPort: string): boolean {
     if (!ingressPort) return false;
+    if (this.protectedPorts.has(ingressPort) && this.protectedPorts.has(egressPort)) {
+      return true;
+    }
     const ingGroup = this.portIsolateGroups.get(ingressPort);
     const egGroup = this.portIsolateGroups.get(egressPort);
     return ingGroup !== undefined && ingGroup === egGroup;
@@ -1436,6 +1458,22 @@ export abstract class Switch extends Equipment {
 
   getVlanAccessMap(mapName: string): VlanAccessMapRule[] | undefined {
     return this.vlanAccessMaps.get(mapName);
+  }
+
+  getVlanAccessMapNames(): string[] {
+    return [...this.vlanAccessMaps.keys()];
+  }
+
+  /** Quels VLAN chaque carte filtre-t-elle ? Lu par `show vlan filter`. */
+  getVlanFilterBindings(): Map<string, number[]> {
+    const parCarte = new Map<string, number[]>();
+    for (const [vlan, name] of this.vlanFilterBindings) {
+      const liste = parCarte.get(name) ?? [];
+      liste.push(vlan);
+      parCarte.set(name, liste);
+    }
+    for (const liste of parCarte.values()) liste.sort((a, b) => a - b);
+    return parCarte;
   }
 
   removeVlanAccessMap(mapName: string): boolean {
