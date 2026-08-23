@@ -1157,7 +1157,7 @@ export class OSPFEngine implements IProtocolEngine {
           areaConfigured: physIface.areaId,
           reason: why,
         },
-      } as never);
+      });
       return null;
     }
 
@@ -1356,18 +1356,7 @@ export class OSPFEngine implements IProtocolEngine {
       }
     }
     if (hello.helloInterval !== iface.helloInterval || hello.deadInterval !== iface.deadInterval) {
-      const mismatched = hello.helloInterval !== iface.helloInterval ? 'hello' : 'dead';
-      this.getBus().publish({
-        topic: 'ospf.interface.state-changed',
-        payload: {
-          ...this.routerRef(),
-          iface: ifaceName,
-          oldState: `${mismatched} interval mismatch`,
-          newState: mismatched === 'hello'
-            ? `Mismatched hello parameters from ${srcIP}: received ${hello.helloInterval}, configured ${iface.helloInterval}`
-            : `Mismatched dead parameters from ${srcIP}: received ${hello.deadInterval}, configured ${iface.deadInterval}`,
-        },
-      });
+      this.publierDiscordanceHello(ifaceName, iface, hello, srcIP);
       if (iface.neighbors.delete(hello.routerId)) this.scheduleSPF();
       return;
     }
@@ -1625,14 +1614,14 @@ export class OSPFEngine implements IProtocolEngine {
         maskReceived: hello.networkMask,
         maskConfigured: iface.mask,
       },
-    } as never);
+    });
   }
 
   private setNeighborState(
     iface: OSPFInterface,
     neighbor: OSPFNeighbor,
     next: OSPFNeighbor['state'],
-    event: string,
+    event: OSPFNeighborEvent,
   ): void {
     const from = neighbor.state;
     if (from === next) return;

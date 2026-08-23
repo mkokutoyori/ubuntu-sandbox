@@ -51,6 +51,7 @@ export type DebugCategory =
 import type { IEventBus } from '@/events/EventBus';
 import { DebugBroadcast, type DebugLineListener, type DebugLineJournal, type TerminalDebugSource } from '@/network/devices/diag/DebugBroadcast';
 import { CliInvalidInput } from '@/network/devices/shells/cli/CliDiagnostic';
+import { ospfHelloMismatchLines } from '@/network/ospf/events';
 
 const OSPF_TYPE_NAMES: Readonly<Record<number, string>> = {
   1: 'Hello', 2: 'Data Description', 3: 'LS Request', 4: 'LS Update', 5: 'LS Ack',
@@ -535,6 +536,12 @@ export class RouterDebugService implements TerminalDebugSource {
       const h = p.lsa ?? {};
       this.emit('ip.ospf.lsa-generation',
         `OSPF: Generate LSA type ${h.lsType ?? '?'}, LSID ${h.linkStateId ?? '?'}, adv rtr ${h.advertisingRouter ?? '?'}, area ${p.areaId ?? '?'}, seq 0x${(h.sequenceNumber ?? 0).toString(16).toUpperCase()}`);
+    }));
+    this.broadcast.track(bus.subscribe('ospf.hello.mismatch', (e) => {
+      if (!mine(e.payload)) return;
+      for (const ligne of ospfHelloMismatchLines(e.payload)) {
+        this.emit('ip.ospf.hello', ligne);
+      }
     }));
     this.broadcast.track(bus.subscribe('ospf.hello.send-requested', (e) => {
       if (!mine(e.payload)) return;
