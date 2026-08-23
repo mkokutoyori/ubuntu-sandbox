@@ -25,6 +25,60 @@ qui tient quoi, maintenant.
 
 ## En cours
 
+### Périmètre pris — le tutoriel ACL Cisco, de bout en bout
+
+Demande : « assure-toi que notre plateforme permet de suivre le tutoriel
+suivant » — *Les ACL Cisco pour les débutants : on configure, on casse,
+on comprend*, onze concepts sur un routeur, deux commutateurs et cinq
+machines.
+
+Le tutoriel a été rejoué commande par commande par une sonde écrite à
+l'aveugle (`src/__tests__/unit/network-v2/tuto-acl-cisco.test.ts`,
+36 cas). **26 passent, 10 tombent** ; les dix sont des défauts mesurés,
+pas des commandes manquantes à inventer :
+
+1. `show access-lists` n'aligne pas l'action sur une liste STANDARD —
+   IOS écrit `deny   10.1.1.1` (six caractères), nous `deny 10.1.1.1`.
+   Vérifié sur du texte capturé (`ntc-templates`), pas sur de la
+   documentation HTML qui écrase les blancs. Une liste ÉTENDUE ne pose
+   pas ce blanc, et la même capture le montre.
+2. Un `remark` prend un numéro de séquence et s'affiche dans
+   `show access-lists`. Sur IOS 15 il ne fait NI l'un NI l'autre : les
+   ACE du tutoriel sont donc décalées d'un cran (`20 permit tcp` au lieu
+   de `10 permit tcp`), et `ip access-list resequence` propage le décalage.
+3. `show ip interface` répond `Outgoing access list is not set` sur une
+   interface qui porte `ip access-group 1 out` — un affichage qui nie la
+   configuration de la même machine, routeur ET commutateur.
+4. `clear access-list counters` n'existe pas. Le moteur sait pourtant
+   remettre à zéro (`ACLEngine.resetCounters`), la porte VRP existe
+   (`reset acl counter`), la porte IOS non.
+5. `show time-range` écrit `(inactive)` EN DUR, quelle que soit l'heure.
+6. Le plan de données évalue une `time-range` contre `new Date()` — la
+   VRAIE horloge — pendant que `show time-range` lit l'horloge posée par
+   `clock set`. Deux horloges pour une question.
+7. Les ACL réflexives (`reflect` / `evaluate`) sont refusées à
+   l'évaluation faute de table de sessions ; le concept 9 du tutoriel
+   est donc injouable, et `show ip access-lists <nom-réflexif>` répond
+   « not found ».
+8. `show vlan access-map` et `show vlan filter` n'existent pas, alors
+   que `vlan access-map` se configure : la VACL du concept 10 se pose et
+   ne se relit pas.
+
+**Fichiers réclamés** :
+`network/devices/router/ACLEngine.ts`,
+`network/devices/shells/cisco/CiscoAclCommands.ts`,
+`network/devices/shells/cisco/CiscoSecurityCommands.ts`,
+`network/devices/shells/cisco/CiscoShowCommands.ts`,
+`network/devices/shells/CiscoSwitchShell.ts` (bloc `show ip interface`
+et famille `show vlan access-map`/`show vlan filter` uniquement),
+`network/devices/Router.ts` (câblage de l'horloge dans `ACLEngine`).
+
+Ce que ça change pour les autres, une fois livré : `ACLEngine` reçoit une
+source d'horloge et une table de sessions réflexives ; les entrées
+`remark` cessent de porter un numéro de séquence — si vous lisiez
+`entry.sequence` sur un commentaire, il vaut désormais celui de l'ACE qui
+SUIT, et n'est jamais rendu.
+
 ### Le niveau 1 voyait dix-sept commandes de trop — CORRIGÉ
 
 **À lire si vous touchez à l'arbre de commandes.** Vérification demandée
