@@ -41,8 +41,37 @@ import { renderNtpStatus } from './ntpStatusRenderer';
 import { renderVipList } from './vipListRenderer';
 import { renderDnsProxy } from './dnsProxyRenderer';
 import { renderSysTop } from './sysTopRenderer';
+import { renderBridgeList, renderBridgeHosts } from './brctlRenderer';
 import { renderAutoupdateVersions } from './fortiguardRenderer';
 import { describeLogCategories, resolveLogCategory } from '../log/logCategories';
+
+function diagnoseNetlink(rest: readonly string[], deps: FortiDiagDeps): string {
+  const [family, ...tail] = rest;
+  if (family !== 'brctl') {
+    return FortiMessages.unknownPath(`netlink ${rest.join(' ')}`);
+  }
+
+  const names = deps.fw.bridgeNames();
+  if (tail[0] === 'list') return renderBridgeList(names);
+
+  if (tail[0] === 'name' && tail[1] === 'host' && tail[2] !== undefined) {
+    const bridge = tail[2];
+    if (!names.includes(bridge)) {
+      return `bridge ${bridge} does not exist`;
+    }
+    const vdom = bridge.slice(0, -'.b'.length);
+    return renderBridgeHosts(bridge, deps.fw.getBridge(vdom).entries(), {
+      numberOf: (port) => bridgePortNumber(deps, port),
+    });
+  }
+
+  return FortiMessages.unknownPath(`netlink brctl ${tail.join(' ')}`);
+}
+
+function bridgePortNumber(deps: FortiDiagDeps, port: string): number {
+  const index = deps.fw.getPorts().findIndex(known => known.getName() === port);
+  return index < 0 ? 0 : index + 1;
+}
 
 export function runDiagnose(rest: readonly string[], deps: FortiDiagDeps): string {
   const [family, ...tail] = rest;
@@ -53,6 +82,7 @@ export function runDiagnose(rest: readonly string[], deps: FortiDiagDeps): strin
   if (family === 'vpn') return diagnoseVpn(tail, deps);
   if (family === 'ip') return diagnoseIp(tail, deps);
   if (family === 'test') return diagnoseTest(tail, deps);
+  if (family === 'netlink') return diagnoseNetlink(tail, deps);
   if (family === 'hardware') {
     if (tail[0] === 'sysinfo' && tail[1] === 'conserve') {
       return conserveModeLines(deps.fw.getSystemLoad()).join('\n');

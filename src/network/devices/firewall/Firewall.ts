@@ -23,6 +23,7 @@ import { SystemLoad, type MemoryWorkload } from './health/SystemLoad';
 import { conserveLogDraft } from './health/ConserveEvent';
 import { vdomFootprint, cacheFootprint } from './health/MemoryFootprint';
 import { StreamAssembler, oversizeLimitBytes } from './inspection/StreamAssembler';
+import { BridgeFdb } from './l2/BridgeFdb';
 import { localTimeMs, utcMsForLocal } from '../../core/Timezone';
 import { decryptFromTunnel, sealedLegs } from './vpn/IpsecDataPlane';
 import { ikeDatagram, ipsecHostFacts } from './vpn/FirewallIpsecHost';
@@ -160,7 +161,7 @@ export class Firewall extends Equipment {
   private readonly vdoms: VdomRegistry;
   private readonly switchGroups = new SwitchGroupTable();
   private readonly vdomLinks: VdomLinkTable;
-  private readonly macTable = new Map<string, string>();
+  private readonly bridges = new Map<string, BridgeFdb>();
   private readonly proxyArp = new ProxyArpTable();
   private readonly arp: ArpService;
   private readonly registry = new PipelineStageRegistry();
@@ -226,6 +227,7 @@ export class Firewall extends Equipment {
     for (let index = first; index < first + profile.portCount; index++) {
       const port = new Port(`${profile.portPrefix}${index}`, 'ethernet');
       this.addPort(port);
+      this.watchBridgePort(port);
       this.interfaces.configure(port.getName(), { up: port.getIsUp() });
     }
 
@@ -1096,7 +1098,7 @@ export class Firewall extends Equipment {
     this.capture.record({
       at: this.services.now(), iface: portName, direction: 'in', frame,
     });
-    this.macTable.set(frame.srcMAC.toString(), portName);
+    this.bridgeOf(portName).learn(frame.srcMAC.toString(), portName);
 
     if (frame.etherType === ETHERTYPE_FGCP) {
       this.haService.agent.receive(frame);
@@ -1112,8 +1114,36 @@ export class Firewall extends Equipment {
   }
 
   private lookupMac(destination: MACAddress, ingress: string): string | undefined {
-    const learned = this.macTable.get(destination.toString());
+    const learned = this.bridgeOf(ingress).lookup(destination.toString());
     return learned === undefined || learned === ingress ? undefined : learned;
+  }
+
+  getBridge(vdom?: string): BridgeFdb {
+    return this.bridgeNamed(vdom ?? this.activeVdom);
+  }
+
+  bridgeNames(): readonly string[] {
+    return Object.freeze(this.vdoms.names().map(name => `${name}.b`));
+  }
+
+  private watchBridgePort(port: Port): void {
+    port.onLinkChange((state) => {
+      if (state === 'up') return;
+      const name = port.getName();
+      for (const bridge of this.bridges.values()) bridge.forgetPort(name);
+    });
+  }
+
+  private bridgeOf(iface: string): BridgeFdb {
+    return this.bridgeNamed(this.vdoms.contextOfInterface(iface).name);
+  }
+
+  private bridgeNamed(vdom: string): BridgeFdb {
+    const known = this.bridges.get(vdom);
+    if (known) return known;
+    const created = new BridgeFdb({ now: () => this.services.now() });
+    this.bridges.set(vdom, created);
+    return created;
   }
 
   private handleArpFrame(portName: string, packet: ARPPacket): void {
