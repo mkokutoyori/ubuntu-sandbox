@@ -608,6 +608,23 @@ sujet en soi et non une commande de plus.
 
 ## Serveurs DHCP
 
+### [dhcp] une plage d'exclusion a l'envers est acceptee et n'exclut rien
+`ip dhcp excluded-address 10.0.0.5 10.0.0.2` est accepte : les deux
+bornes SONT des adresses, donc le magasin les retient. `isExcluded`
+compare ensuite `ipNum >= startNum && ipNum <= endNum`, jamais vrai quand
+la borne basse est la plus haute — l'exclusion ne protege donc rien,
+en silence.
+**Mesure** : la plage figure dans `show running-config` et dans
+`getExcludedRanges()`, et une adresse de l'intervalle est distribuee.
+**Report** : ce que fait une VRAIE machine n'est pas atteste depuis ce
+reseau (`cisco.com` est EGRESS_BLOCKED) — elle peut refuser la ligne,
+l'accepter et normaliser les bornes, ou l'accepter telle quelle comme
+ici. Les trois sont plausibles et inventer un refus serait le decor que
+ce depot passe son temps a defaire. Ce qui EST ferme depuis le lot
+« une exclusion malformee ne rentre pas dans le magasin » : une borne
+qui n'est pas une adresse est refusee aux quatre portes.
+
+
 ### [dhcp] `utilization mark high|low` n'est pas configurable
 `show ip dhcp pool` rend la ligne
 `Utilization mark (high/low) : 100 / 0`. Les deux valeurs SONT celles

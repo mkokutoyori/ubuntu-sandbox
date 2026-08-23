@@ -212,7 +212,9 @@ export function buildConfigCommands(trie: CommandTrie, ctx: CiscoShellContext): 
     if (args.length < 1) return '% Incomplete command.';
     const start = args[0];
     const end = args[1] || start;
-    ctx.r()._getDHCPServerInternal().addExcludedRange(start, end);
+    if (!ctx.r()._getDHCPServerInternal().addExcludedRange(start, end)) {
+      throw new CliInvalidInput({ token: isValidIPv4(start) ? end : start });
+    }
     return '';
   });
 

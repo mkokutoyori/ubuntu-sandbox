@@ -18,6 +18,7 @@ import { CiscoShellBase } from './CiscoShellBase';
 import { privilegeConfigLines } from './cli/CliAuthorization';
 import { getPrivilegeRules } from '../router/security/CiscoPrivilegeStore';
 import { CommandTrie, formatInvalidInput } from './CommandTrie';
+import { isValidIPv4 } from '../../core/ip';
 import type { CommandSpec } from '@/cli/CommandTable';
 import type { ArgumentSpec } from '@/cli/ArgumentTypes';
 import type { SpecCollector } from '@/cli/commands/trieAdapter';
@@ -4917,7 +4918,10 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
     cfg.registerGreedy('ip dhcp excluded-address',
       'Exclude IP range from DHCP allocation', (args) => {
         if (args.length < 1) return CISCO_ERRORS.INCOMPLETE;
-        this.d()._getDHCPServerInternal().addExcludedRange(args[0], args[1] || args[0]);
+        const end = args[1] || args[0];
+        if (!this.d()._getDHCPServerInternal().addExcludedRange(args[0], end)) {
+          throw new CliInvalidInput({ token: isValidIPv4(args[0]) ? end : args[0] });
+        }
         return '';
       });
     cfg.registerGreedy('ip dhcp database', 'Configure a DHCP database agent URL', (args, raw) => {

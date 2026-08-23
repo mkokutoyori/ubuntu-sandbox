@@ -13,7 +13,8 @@
 import type { Router } from '../../Router';
 import type { HuaweiShellContext } from './HuaweiConfigCommands';
 import type { CommandTrie } from '../CommandTrie';
-import { huaweiDisplayInterfaceName } from '../cli-utils';
+import { huaweiDisplayInterfaceName, refuseMotInattenduVrp, HUAWEI_ERRORS } from '../cli-utils';
+import { isValidIPv4 } from '../../../core/ip';
 
 /** Reserved DHCPServer pool name backing an interface in `dhcp select interface` mode. */
 export function interfacePoolName(ifName: string): string {
@@ -117,9 +118,14 @@ export function registerDhcpInterfaceCommands(trie: CommandTrie, ctx: HuaweiShel
     if (pool) ctx.r()._getDHCPServerInternal().configurePoolLease(pool, e.leaseSec);
     return '';
   });
-  trie.registerGreedy('dhcp server excluded-ip-address', 'Exclude IP range', (args) => {
-    if (args.length < 1) return '';
-    ctx.r()._getDHCPServerInternal().addExcludedRange(args[0], args[1] || args[0]);
+  trie.registerGreedy('dhcp server excluded-ip-address', 'Exclude IP range', (args, raw) => {
+    if (args.length < 1) return HUAWEI_ERRORS.INCOMPLETE(raw ?? 'dhcp server excluded-ip-address');
+    const end = args[1] || args[0];
+    if (!ctx.r()._getDHCPServerInternal().addExcludedRange(args[0], end)) {
+      return refuseMotInattenduVrp(
+        raw ?? `dhcp server excluded-ip-address ${args.join(' ')}`,
+        isValidIPv4(args[0]) ? end : args[0]);
+    }
     return '';
   });
   trie.registerGreedy('dhcp server static-bind', 'Static bind IP↔MAC (ip-address X mac-address Y)', (args) => {
@@ -243,11 +249,14 @@ export function buildDhcpPoolCommands(trie: CommandTrie, ctx: HuaweiShellContext
     return '';
   });
 
-  trie.registerGreedy('excluded-ip-address', 'Exclude IP range from pool', (args) => {
+  trie.registerGreedy('excluded-ip-address', 'Exclude IP range from pool', (args, raw) => {
     if (args.length < 1) return 'Error: Incomplete command.';
     const start = args[0];
     const end = args[1] || start;
-    getRouter()._getDHCPServerInternal().addExcludedRange(start, end);
+    if (!getRouter()._getDHCPServerInternal().addExcludedRange(start, end)) {
+      return refuseMotInattenduVrp(
+        raw ?? `excluded-ip-address ${args.join(' ')}`, isValidIPv4(start) ? end : start);
+    }
     return '';
   });
 
