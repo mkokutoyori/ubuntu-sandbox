@@ -521,17 +521,18 @@ Windows (c'est la forme BIND du même besoin).
 est écrit plutôt que tu : la sécurisation est RÉELLE et vérifiable, sa
 distribution de clé ne l'est pas.
 
-### [ddns] `nsupdate` n'existe pas côté Linux
-Le moteur RFC 2136 et TSIG sont là et une machine Windows s'en sert
-seule, mais aucune commande ne permet à un opérateur de composer une
-mise à jour à la main — `nsupdate`, avec son mode interactif (`server`,
-`key`, `zone`, `prereq`, `update add|delete`, `send`) et son option
-`-k`/`-y`, est la porte que le socle attend.
-**Mesure** : `nsupdate` n'est ni dans `STANDARD_BIN_PATHS` ni dans le
-répartiteur de commandes ; `dpkg -l` ne le déclare pas non plus, donc
-rien ne ment pour l'instant.
-**Report** : c'est un sous-shell interactif de plus, du même genre que
-`SftpSubShell` — faisable et borné, mais un chantier en soi.
+### [ddns] `nsupdate` n'a pas son mode INTERACTIF
+La forme non interactive est écrite — script lu sur l'entrée standard ou
+dans un fichier, `-y` pour la clé — mais le vrai `nsupdate` lancé sans
+argument ouvre une invite `>` où l'on tape `server`, `prereq`, `update`
+puis `send`, plusieurs fois de suite, chaque `send` émettant un message
+et `answer` affichant la réponse complète.
+**Mesure** : `nsupdate` sans entrée rend une chaîne vide au lieu d'ouvrir
+une invite.
+**Report** : c'est un sous-shell de plus, de la forme de `SftpSubShell`,
+et il demande de garder l'état entre deux `send` (les mises à jour déjà
+composées) — borné, mais un chantier à lui seul. `show` et `answer`
+suivront le même chemin.
 
 ## Outillage
 

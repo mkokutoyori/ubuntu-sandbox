@@ -416,6 +416,8 @@ export class LinuxCommandExecutor {
   /** L'agent NTP de la machine — le MEME moteur que Cisco et Huawei. */
   ntpAgent: (() => import('../../ntp/NtpAgent').NtpAgent) | null = null;
 
+  dnsUpdateSender: (() => import('./commands/net/DnsUpdateSender').DnsUpdateSender) | null = null;
+
   /** Le demon chrony de cette machine (`PRD-NTP-Tutoriel.md` §4). */
   chronyService: import('./time/LinuxChronyService').LinuxChronyService | null = null;
   /** The apache2 server, for the `apachectl` command (§M4a). */
