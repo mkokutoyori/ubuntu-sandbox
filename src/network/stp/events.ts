@@ -52,6 +52,11 @@ export interface StpRootGuardChangedPayload extends StpDeviceRef {
   state: 'consistent' | 'inconsistent';
 }
 
+export interface StpLoopGuardChangedPayload extends StpDeviceRef {
+  port: string;
+  state: 'consistent' | 'inconsistent';
+}
+
 export interface StpErrDisableChangedPayload extends StpDeviceRef {
   port: string;
   cause: 'bpduguard';
@@ -99,6 +104,7 @@ export type StpDomainEvent =
   | { topic: 'stp.topology.change'; payload: StpTopologyChangePayload }
   | { topic: 'stp.bpdu-guard.violation'; payload: StpBpduGuardViolationPayload }
   | { topic: 'stp.root-guard.changed'; payload: StpRootGuardChangedPayload }
+  | { topic: 'stp.loop-guard.changed'; payload: StpLoopGuardChangedPayload }
   | { topic: 'stp.errdisable.changed'; payload: StpErrDisableChangedPayload }
   | { topic: 'stp.portfast.lost'; payload: StpPortfastLostPayload }
   | { topic: 'stp.tcn.received'; payload: StpTcnReceivedPayload }

@@ -60,6 +60,7 @@ import type { QuicDomainEvent } from '@/network/quic/events';
 import type { HttpDomainEvent } from '@/network/http/events';
 import type { FtpDomainEvent } from '@/network/ftp/events';
 import type { SmtpDomainEvent } from '@/network/smtp/events';
+import type { NhrpDomainEvent } from '@/network/nhrp/events';
 import type { TftpDomainEvent } from '@/network/tftp/events';
 import type { SftpDomainEvent } from '@/network/protocols/ssh/sftp/events';
 import type { NetworkOsAccountEventEnvelope } from '@/network/devices/router/aaa/NetworkOsAccount';
@@ -426,7 +427,8 @@ export type DomainEvent =
   | DfsDomainEvent
   // SMTP: control channel, mail transaction, delivery outcomes, DSN, retry
   // queue (sub-union, see src/network/smtp/events.ts)
-  | SmtpDomainEvent;
+  | SmtpDomainEvent
+  | NhrpDomainEvent;
 
 export interface SwitchMacEntryPayload {
   deviceId: string;

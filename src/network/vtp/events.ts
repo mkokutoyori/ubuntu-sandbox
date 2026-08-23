@@ -28,6 +28,13 @@ export interface VtpDbSyncedPayload extends VtpDeviceRef {
   vlansRemoved: number[];
 }
 
+export interface VtpMstSyncedPayload extends VtpDeviceRef {
+  port: string;
+  oldRevision: number;
+  newRevision: number;
+  mstName: string;
+}
+
 export interface VtpModeChangedPayload extends VtpDeviceRef {
   oldMode: VtpMode;
   newMode: VtpMode;
@@ -43,5 +50,6 @@ export type VtpDomainEvent =
   | { topic: 'vtp.frame.sent'; payload: VtpFrameSentPayload }
   | { topic: 'vtp.frame.received'; payload: VtpFrameReceivedPayload }
   | { topic: 'vtp.db.synced'; payload: VtpDbSyncedPayload }
+  | { topic: 'vtp.mst.synced'; payload: VtpMstSyncedPayload }
   | { topic: 'vtp.mode.changed'; payload: VtpModeChangedPayload }
   | { topic: 'vtp.domain.changed'; payload: VtpDomainChangedPayload };

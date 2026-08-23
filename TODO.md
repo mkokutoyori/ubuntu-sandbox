@@ -496,6 +496,37 @@ Windows (c'est la forme BIND du même besoin).
 est écrit plutôt que tu : la sécurisation est RÉELLE et vérifiable, sa
 distribution de clé ne l'est pas.
 
+## Bus d'evenements
+
+### [nhrp] `debug nhrp` n'a toujours pas d'emetteur, faute de transcription
+`NhrpDomainEvent` est desormais dans l'union `DomainEvent`, donc un
+abonnement compile — c'etait le blocage que
+`cisco-debug-no-empty-promise.test.ts` nommait. Ce qui manque est la mise
+en forme : `RouterDebugService` accepte la categorie `ip.nhrp` et
+n'ecrit aucune ligne.
+**Mesure** : `debug nhrp` est accepte et ne produit rien ; les quatre
+sujets `nhrp.*` sont publies par `NhrpEngine`.
+**Report** : les lignes de `debug nhrp packet`/`cache` d'un vrai IOS ne
+sont attestees par aucune source joignable depuis ce reseau (les pages
+Cisco sont bloquees, `ntc-templates` ne porte aucune capture NHRP, et la
+recherche de code GitHub est hors perimetre de cette session). Ecrire un
+format de memoire donnerait une sortie que la vraie machine ne rend pas.
+
+### [vtp] un `join` part avec un condense de mot de passe VIDE
+`VtpFrame.passwordHash` est desormais declare — il etait ecrit et LU
+(c'est le controle MD5 du domaine) sans figurer dans le type. En le
+declarant, un ecart apparait : `sendJoin()` pose `passwordHash: ''` alors
+que le recepteur compare ce champ a `hashPassword(...)` pour TOUTE trame
+recue, donc dans un domaine protege par mot de passe un `join` d'elagage
+est rejete en `password-mismatch`.
+**Mesure** : lecture des trois sites de construction ; seuls le sommaire
+et le sous-ensemble calculent le condense.
+**Report** : trancher demande de savoir si une vraie trame VTP Join porte
+le condense. Le dissecteur `packet-vtp.c` et `vtp_generate_md5()` de
+Yersinia decrivent le SOMMAIRE ; ni l'un ni l'autre ne dit ce que porte un
+Join. Poser le condense « par symetrie » ou exempter le Join du controle
+sont deux inventions opposees, aussi peu attestees l'une que l'autre.
+
 ## Outillage
 
 ### [e2e] la PREMIÈRE navigation d'une exécution à froid dépasse le délai
