@@ -83,7 +83,7 @@ import type {
   IWindowsUpdateProvider,
   IPrintProvider, PrintOpResult, PrintJobInfo,
   ILicensingProvider, LicenseStateInfo,
-  IDnsServerProvider, DnsOpResult, DnsZoneInfo, DnsRecordInfo,
+  IDnsServerProvider, DnsOpResult, DnsZoneInfo, DnsRecordInfo, DnsDynamicUpdateMode,
   IDhcpServerProvider, DhcpOpResult, DhcpScopeInfo, DhcpLeaseInfo,
   INpsProvider, NpsOpResult, NasClientInfo, NetworkPolicyInfo,
   ConnectionRequestPolicyConditionsInfo, ConnectionRequestPolicyInfo,
@@ -1021,6 +1021,15 @@ class WindowsDnsServerAdapter implements IDnsServerProvider {
 
   setForwarders(addresses: string[]): DnsOpResult { return this.role().setForwarders(addresses); }
   getForwarders(): string[] { return this.role().getForwarders(); }
+
+  setZoneDynamicUpdate(zone: string, mode: DnsDynamicUpdateMode): DnsOpResult {
+    return this.role().setZoneDynamicUpdate(zone, mode);
+  }
+  addTsigKey(name: string, algorithm: string, secret: string): DnsOpResult {
+    return this.role().addTsigKey(name, algorithm, secret);
+  }
+  removeTsigKey(name: string): DnsOpResult { return this.role().removeTsigKey(name); }
+  listTsigKeys(): { name: string; algorithm: string }[] { return this.role().listTsigKeys(); }
 }
 
 // ── DHCP Server adapter (PRD-Windows-Server.md §5 P8) ────────────────────
@@ -1078,7 +1087,7 @@ class WindowsDhcpServerAdapter implements IDhcpServerProvider {
   listBindings() { return this.role().listBindings(); }
   getDnsSettings() { return this.role().getDnsSettings(); }
   setDnsSettings(changes: Record<string, unknown>) {
-    return this.role().setDnsSettings(changes as Parameters<WindowsDhcpServerRole['setDnsSettings']>[0]);
+    return this.role().setDnsSettings(changes as Parameters<ReturnType<WindowsPC['getDhcpServerRole']>['setDnsSettings']>[0]);
   }
   isAuthorizedInDC(): boolean { return this.role().isAuthorizedInDC(); }
   isRegisteredInDC(): boolean { return this.role().isRegisteredInDC(); }

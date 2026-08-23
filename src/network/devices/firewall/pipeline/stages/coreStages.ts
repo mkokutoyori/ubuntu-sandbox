@@ -1,8 +1,10 @@
 import { Continue, Drop, type FilterVerdict } from '../../../../core/FilterChain';
 import { getPacketDstPort, getPacketSrcPort, rewriteSrcIP } from '../../../../nat/rewrite';
 import {
-  IP_PROTO_TCP, type IPv4Packet, type MACAddress, type TCPPacket,
+  IP_PROTO_TCP, computeIPv4Checksum,
+  type IPv4Packet, type MACAddress, type TCPPacket,
 } from '../../../../core/types';
+import { IPV4_FLAG_DF } from '../../../../core/Ipv4Fragmentation';
 import type { InterfaceTable } from '../../l3/InterfaceTable';
 import type { RouteTable } from '../../l3/RouteTable';
 import { icmpTypeNumber } from '../../session/FlowKey';
@@ -20,7 +22,8 @@ import type { ProtocolOptions, UtmProfileStore } from '../../inspection/UtmProfi
 import type { IdentityTable } from '../../identity/IdentityTable';
 import type { ZoneTable } from '../../model/ZoneTable';
 import type { PolicyEvaluator } from '../../policy/PolicyEvaluator';
-import { flowKeyFromPacket, reverseFlowKey } from '../../session/FlowKey';
+import { flowKeyFromPacket, reverseFlowKey, type FlowKey } from '../../session/FlowKey';
+import type { AssembledStream } from '../../inspection/StreamAssembler';
 import type { SessionTable, SessionTranslation } from '../../session/SessionTable';
 import { TcpStateMachine, type ObservedTcpFlags } from '../../session/TcpStateMachine';
 import type { FirewallNatEngine } from '../../nat/FirewallNatEngine';
@@ -69,11 +72,20 @@ export interface FirewallServices {
   macLookup?: (destination: MACAddress, ingress: string) => string | undefined;
   defaultTimeoutSec?: number;
   discardTimeoutSec?: number;
+  refusesNewSessions?: () => boolean;
+  proxyInspectionPosture?: () => 'normal' | 'bypass' | 'block';
+  flowInspectionPosture?: () => 'normal' | 'bypass' | 'block';
+  assembleStream?: StreamJoiner;
+  onInspection?: () => void;
 }
 
 function vdom(services: FirewallServices, context: PacketContext): VdomServices {
   return services.vdomOf(context.ingressPort);
 }
+
+export type StreamJoiner = (
+  key: FlowKey, chunk: string, limitMb: number,
+) => AssembledStream;
 
 export interface NatOrder {
   natIsPolicyField?: boolean;
@@ -134,6 +146,8 @@ export function createCoreStages(services: FirewallServices): PipelineStage[] {
     sdwanRuleStage(services),
     macLookupStage(services),
     routeLookupStage(services),
+    ttlDecrementStage(services),
+    mtuCheckStage(services),
     egressZoneStage(services),
     policyLookupStage(services),
     authCheckStage(services),
@@ -205,12 +219,27 @@ function inspectUtm(
 ): FilterVerdict<PacketContext> {
   if (rule?.utmEnabled !== true) return proceed(context, stage, 'utm-disabled');
 
+  if (rule.inspectionMode === 'proxy') {
+    const posture = services.proxyInspectionPosture?.() ?? 'normal';
+    if (posture === 'bypass') return proceed(context, stage, 'av-failopen-pass');
+    if (posture === 'block') return deny(context, stage, 'av-failopen-off', rule.id);
+  } else {
+    const posture = services.flowInspectionPosture?.() ?? 'normal';
+    if (posture === 'bypass') return proceed(context, stage, 'ips-fail-open');
+    if (posture === 'block') return deny(context, stage, 'ips-fail-closed', rule.id);
+  }
+
   const packet = ipv4(context);
   const profiles = vdom(services, context).utm;
   if (!packet || !profiles) return proceed(context, stage, 'no-profiles');
 
-  const flow = inspectedFlowOf(packet, profiles.getProtocolOptions(rule.protocolOptions));
+  const options = profiles.getProtocolOptions(rule.protocolOptions);
+  const flow = inspectedFlowOf(packet, options, services.assembleStream);
   if (!flow) return proceed(context, stage, 'no-payload');
+  if (flow.oversize && options.blockOversize) {
+    return deny(context, stage, 'oversize-blocked', rule.id);
+  }
+  services.onInspection?.();
 
   const ssl = rule.sslSshProfile === undefined
     ? undefined
@@ -278,7 +307,7 @@ function firstBlocking(
 }
 
 function inspectedFlowOf(
-  packet: IPv4Packet, options: ProtocolOptions,
+  packet: IPv4Packet, options: ProtocolOptions, assemble?: StreamJoiner,
 ): InspectedFlow | undefined {
   const payload = packet.payload as
     { type?: string; sourcePort?: number; destinationPort?: number; payload?: unknown } | null;
@@ -287,13 +316,15 @@ function inspectedFlowOf(
   const text = payloadText(payload.payload);
   if (text === undefined || text.length === 0) return undefined;
 
+  const stream = assemble?.(flowKeyFromPacket(packet), text, options.oversizeLimitMb);
   const sourcePort = payload.sourcePort ?? 0;
   const destinationPort = payload.destinationPort ?? 0;
   return Object.freeze({
     protocol: protocolOfFlow(sourcePort, destinationPort, options),
     sourcePort,
     destinationPort,
-    payload: text,
+    payload: stream?.payload ?? text,
+    oversize: stream?.oversize === true,
     bytes: payload.payload instanceof Uint8Array ? payload.payload : undefined,
   });
 }
@@ -446,6 +477,9 @@ function sessionLookupStage(services: FirewallServices): PipelineStage {
       if (translation && vdom(services, context).nat) {
         context.packet = vdom(services, context).nat.reapply(packet, translation, found.direction);
       }
+
+      const expired = transitTtl(services, context, 'session-lookup');
+      if (expired) return expired;
 
       context.trace.push({ stage: 'session-lookup', verdict: 'fastpath' });
       context.verdict = Object.freeze({
@@ -680,6 +714,54 @@ function routeLookupStage(services: FirewallServices): PipelineStage {
   };
 }
 
+function transitTtl(
+  services: FirewallServices, context: PacketContext, stage: string,
+): FilterVerdict<PacketContext> | null {
+  const packet = ipv4(context);
+  if (!packet) return null;
+  if (context.egressPort === undefined) return null;
+  if (vdom(services, context).opmode === 'transparent') return null;
+  if (packet.ttl <= 1) return deny(context, stage, 'ttl-expired');
+
+  const forwarded: IPv4Packet = { ...packet, ttl: packet.ttl - 1, headerChecksum: 0 };
+  forwarded.headerChecksum = computeIPv4Checksum(forwarded);
+  context.packet = forwarded;
+  return null;
+}
+
+function ttlDecrementStage(services: FirewallServices): PipelineStage {
+  return {
+    name: 'ttl-decrement',
+    apply(context) {
+      const expired = transitTtl(services, context, 'ttl-decrement');
+      if (expired) return expired;
+      const packet = ipv4(context);
+      return proceed(context, 'ttl-decrement', packet ? String(packet.ttl) : 'not-ipv4');
+    },
+  };
+}
+
+function mtuCheckStage(services: FirewallServices): PipelineStage {
+  return {
+    name: 'mtu-check',
+    apply(context) {
+      const packet = ipv4(context);
+      if (!packet) return proceed(context, 'mtu-check', 'not-ipv4');
+      if (context.egressPort === undefined) return proceed(context, 'mtu-check', 'no-egress');
+
+      const mtu = services.interfaces.get(context.egressPort)?.mtu;
+      if (mtu === undefined || packet.totalLength <= mtu) {
+        return proceed(context, 'mtu-check', String(mtu ?? 'unknown'));
+      }
+      if ((packet.flags & IPV4_FLAG_DF) === 0) {
+        return proceed(context, 'mtu-check', `fragment-${mtu}`);
+      }
+      context.egressMtu = mtu;
+      return deny(context, 'mtu-check', 'mtu-exceeded-df');
+    },
+  };
+}
+
 function egressZoneStage(services: FirewallServices): PipelineStage {
   return {
     name: 'egress-zone',
@@ -749,6 +831,9 @@ function sessionInstallStage(services: FirewallServices): PipelineStage {
       if (!context.isFirstPacket) return proceed(context, 'session-install', 'already');
       if (context.simulated) return proceed(context, 'session-install', 'simulated');
 
+      if (services.refusesNewSessions?.() === true) {
+        return deny(context, 'session-install', 'memory-conserve-extreme');
+      }
       if (!vdom(services, context).sessions.hasRoom()) {
         return deny(context, 'session-install', 'session-table-full');
       }

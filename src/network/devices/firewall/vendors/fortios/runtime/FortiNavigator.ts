@@ -22,10 +22,30 @@ export interface ObjectFrame {
 
 export type FortiFrame = TableFrame | ObjectFrame;
 
+export interface FortiConfigChange {
+  readonly action: 'Add' | 'Edit' | 'Delete';
+  readonly path: readonly string[];
+  readonly key?: string;
+  readonly attributes: readonly string[];
+}
+
+function changedAttributes(
+  snapshot: FortiObjectSnapshot, object: FortiObject,
+): readonly string[] {
+  const changed: string[] = [];
+  for (const spec of object.spec.attributes) {
+    const before = (snapshot.values.get(spec.name) ?? []).join(' ');
+    const after = (object.explicit(spec.name) ?? []).join(' ');
+    if (before !== after) changed.push(spec.name);
+  }
+  return changed;
+}
+
 export interface NavigatorDeps {
   readonly tree: FortiConfigTree;
   readonly validator: FortiValidator;
   readonly commitContext: () => FortiCommitContext;
+  readonly onConfigured?: (change: FortiConfigChange) => void;
 }
 
 const EMPTY = '';
@@ -84,7 +104,7 @@ export class FortiNavigator {
     }
 
     const spec = this.deps.tree.spec(words);
-    if (!spec) return FortiMessages.unknownPath(words.join(' '));
+    if (!spec) return this.descendWithKeyOnConfigLine(words);
     if (spec.unavailable) return FortiMessages.commandFail(spec.unavailable);
 
     if (spec.kind === 'object') {
@@ -97,6 +117,19 @@ export class FortiNavigator {
 
     this.stack.push({ kind: 'table', table: this.deps.tree.table(spec) });
     return EMPTY;
+  }
+
+  private descendWithKeyOnConfigLine(words: readonly string[]): string {
+    const spec = words.length > 1 ? this.deps.tree.spec(words.slice(0, -1)) : undefined;
+    if (!spec || spec.keyOnConfigLine !== true) {
+      return FortiMessages.unknownPath(words.join(' '));
+    }
+    if (spec.unavailable) return FortiMessages.commandFail(spec.unavailable);
+
+    this.stack.push({ kind: 'table', table: this.deps.tree.table(spec) });
+    const opened = this.edit(words[words.length - 1]);
+    if (opened !== EMPTY) this.stack.pop();
+    return opened;
   }
 
   private descendChild(parent: FortiObject, words: readonly string[]): string {
@@ -234,6 +267,7 @@ export class FortiNavigator {
     const refusal = this.commit(frame.object);
     if (refusal) return FortiMessages.commandFail(refusal);
 
+    this.announce(frame);
     this.stack.pop();
     return EMPTY;
   }
@@ -246,6 +280,7 @@ export class FortiNavigator {
       const refusal = this.commit(frame.object);
       if (refusal) return FortiMessages.commandFail(refusal);
 
+      this.announce(frame);
       this.stack.pop();
       if (this.currentTable() !== undefined) this.stack.pop();
       return EMPTY;
@@ -283,6 +318,9 @@ export class FortiNavigator {
     table.remove(resolved);
 
     table.spec.onDelete?.(resolved, this.deps.commitContext());
+    this.deps.onConfigured?.({
+      action: 'Delete', path: table.spec.path, key: resolved, attributes: [],
+    });
     return EMPTY;
   }
 
@@ -349,10 +387,35 @@ export class FortiNavigator {
     return EMPTY;
   }
 
+  commitDefaults(spec: FortiTableSpec): void {
+    if (spec.kind !== 'object' || spec.onCommit === undefined) return;
+    const object = this.deps.tree.singleton(spec);
+    spec.onCommit(object, { ...this.deps.commitContext(), position: -1 });
+  }
+
   private commit(object: FortiObject, owner?: FortiTable | null): string | void {
     const table = owner ?? this.ownerOf(object);
     const position = table ? table.keys().indexOf(object.key) : -1;
     return object.spec.onCommit?.(object, { ...this.deps.commitContext(), position });
+  }
+
+  private announce(frame: ObjectFrame): void {
+    const announce = this.deps.onConfigured;
+    if (!announce) return;
+
+    const changed = changedAttributes(frame.snapshot, frame.object);
+    if (!frame.existed) {
+      announce({
+        action: 'Add', path: frame.object.spec.path,
+        key: frame.owner ? frame.object.key : undefined, attributes: changed,
+      });
+      return;
+    }
+    if (changed.length === 0) return;
+    announce({
+      action: 'Edit', path: frame.object.spec.path,
+      key: frame.owner ? frame.object.key : undefined, attributes: changed,
+    });
   }
 
   private ownerOf(object: FortiObject): FortiTable | null {

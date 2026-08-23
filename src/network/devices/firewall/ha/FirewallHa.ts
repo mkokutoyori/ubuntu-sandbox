@@ -50,7 +50,11 @@ export interface HaWiringHost {
   hostname(): string;
   now(): number;
   sendFrame(iface: string, frame: EthernetFrame): void;
-  port(iface: string): { getMAC(): MACAddress; isConnected(): boolean } | undefined;
+  port(iface: string): {
+    getMAC(): MACAddress;
+    isConnected(): boolean;
+    isOperationallyUp(): boolean;
+  } | undefined;
   sessions(): SessionTable;
 }
 
@@ -61,7 +65,10 @@ export function buildFirewallHa(host: HaWiringHost): FirewallHa {
     now: () => host.now(),
     sendFrame: (iface, frame) => { host.sendFrame(iface, frame); },
     interfaceMac: (iface) => host.port(iface)?.getMAC(),
-    interfaceUp: (iface) => host.port(iface)?.isConnected() === true,
+    interfaceUp: (iface) => {
+      const port = host.port(iface);
+      return port !== undefined && port.isConnected() && port.isOperationallyUp();
+    },
     sessions: () => host.sessions(),
   });
 }

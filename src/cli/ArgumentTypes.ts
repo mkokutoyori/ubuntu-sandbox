@@ -166,9 +166,14 @@ export function argumentPlaceholder(spec: ArgumentSpec): string {
  * sinon chaque appelant en oublierait une autre.
  */
 export function argumentCompletableValues(spec: ArgumentSpec): readonly EnumValue[] {
+  const placeholder = argumentPlaceholder(spec);
   return [...(spec.alternatives ?? []), ...(spec.values ?? [])]
-    .filter(value => /^[a-z][a-z0-9:._-]*$/.test(value.keyword));
+    .filter(value => value.keyword !== placeholder)
+    .filter(value => !PLACEHOLDER_SHAPE.test(value.keyword))
+    .filter(value => /^[A-Za-z0-9][A-Za-z0-9:._-]*$/.test(value.keyword));
 }
+
+const PLACEHOLDER_SHAPE = /^(<.*>|[A-Z]\.[A-Z]\.[A-Z]\.[A-Z].*|WORD|LINE|STRING|NAME)$/;
 
 export function argumentSuggestions(spec: ArgumentSpec): readonly EnumValue[] {
   const out: EnumValue[] = [];
@@ -183,8 +188,11 @@ export function argumentSuggestions(spec: ArgumentSpec): readonly EnumValue[] {
     for (const value of spec.values) out.push(value);
     return out;
   }
-  if (out.length > 0) return out;
-  return [{ keyword: argumentPlaceholder(spec), description: describeArgument(spec) }];
+  const placeholder = {
+    keyword: argumentPlaceholder(spec), description: describeArgument(spec),
+  };
+  if (out.length === 0) return [placeholder];
+  return spec.type === 'REST' ? out : [placeholder, ...out];
 }
 
 export function describeArgument(spec: ArgumentSpec): string {

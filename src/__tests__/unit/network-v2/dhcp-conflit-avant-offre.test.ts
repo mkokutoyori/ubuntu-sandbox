@@ -1,3 +1,25 @@
+/**
+ * ISC — le defaut de `ping-check` est ATTESTE, et il est VRAI.
+ *
+ * Ce fichier tenait pour acquis que sans directive le controle n'a pas
+ * lieu, et ecrivait ce defaut dans son cas « sans lui ». Le code d'ISC
+ * dit l'inverse : `do_ping_check()` (`server/dhcp.c`) n'abandonne le
+ * controle que si l'option EXISTE et vaut faux —
+ * `if (oc && !evaluate_boolean_option_cache(...)) return (0);` —, donc
+ * une option absente laisse le ping partir. La page de manuel du depot
+ * (`server/dhcpd.conf.5`) dit la meme chose dans l'autre sens : « if its
+ * value is false, no ping check is done ». Le parametre existe pour
+ * ETEINDRE le controle, pas pour l'allumer.
+ *
+ * Deux moities, discriminees separement par neutralisation :
+ * « SANS directive » tombe si le defaut redevient faux ; « dans le
+ * sous-reseau » tombe si la recolte des blocs imbriques redevient un
+ * cliquet a sens unique (`if (parser.pingCheck)`), qui ne pouvait que
+ * MONTER la valeur — sans effet tant que le defaut etait faux, et qui
+ * rendait `ping-check false;` inerte des qu'il devient vrai. Les deux
+ * cas `false` explicites passent des deux cotes et sont la comme
+ * non-regression.
+ */
 import { describe, it, expect, beforeEach } from 'vitest';
 import { resetCounters, IPAddress, SubnetMask } from '@/network/core/types';
 import { LinuxServer } from '@/network/devices/LinuxServer';
@@ -169,7 +191,9 @@ describe('Windows : la detection de conflit est un REGLAGE, eteint par defaut', 
 
 // ─── Linux (ISC) ─────────────────────────────────────────────────────
 
-async function labLinux(pingCheck: boolean) {
+type FormePingCheck = 'absente' | 'globale-vraie' | 'globale-fausse' | 'sous-reseau-fausse';
+
+async function labLinux(forme: FormePingCheck) {
   const srv = new LinuxServer('linux-server', 'SRV');
   const sw = new GenericSwitch('switch-generic', 'SW');
   new Cable('up').connect(srv.getPorts()[0], sw.getPorts()[0]);
@@ -177,9 +201,12 @@ async function labLinux(pingCheck: boolean) {
   srv.powerOn();
   const squatteur = await poste('SQUAT', sw, 1, SQUATTED);
   const client = await poste('CLI', sw, 2);
-  const conf = `${pingCheck ? 'ping-check true;\n' : ''}
+  const global = forme === 'globale-vraie' ? 'ping-check true;\n'
+    : forme === 'globale-fausse' ? 'ping-check false;\n' : '';
+  const local = forme === 'sous-reseau-fausse' ? '  ping-check false;\n' : '';
+  const conf = `${global}
 subnet 10.0.0.0 netmask 255.255.255.0 {
-  range 10.0.0.10 10.0.0.50;
+${local}  range 10.0.0.10 10.0.0.50;
   option routers 10.0.0.1;
 }
 `;
@@ -189,8 +216,24 @@ subnet 10.0.0.0 netmask 255.255.255.0 {
 }
 
 describe('ISC : `ping-check` s ecrit dans dhcpd.conf', () => {
-  it('sans lui, l adresse squattee est distribuee', async () => {
-    const { client } = await labLinux(false);
+  it('`ping-check false;` distribue l adresse squattee', async () => {
+    const { client } = await labLinux('globale-fausse');
+
+    await client.executeCommand('dhclient eth0');
+
+    expect(adresseDe(client)).toBe(SQUATTED);
+  });
+
+  it('SANS directive le controle a lieu quand meme — le defaut d ISC', async () => {
+    const { client } = await labLinux('absente');
+
+    await client.executeCommand('dhclient eth0');
+
+    expect(adresseDe(client)).not.toBe(SQUATTED);
+  });
+
+  it('`ping-check false;` dans le sous-reseau eteint le controle', async () => {
+    const { client } = await labLinux('sous-reseau-fausse');
 
     await client.executeCommand('dhclient eth0');
 
@@ -198,7 +241,7 @@ describe('ISC : `ping-check` s ecrit dans dhcpd.conf', () => {
   });
 
   it('avec lui, elle est ABANDONNEE et une autre est servie', async () => {
-    const { client } = await labLinux(true);
+    const { client } = await labLinux('globale-vraie');
 
     await client.executeCommand('dhclient eth0');
 
@@ -207,7 +250,7 @@ describe('ISC : `ping-check` s ecrit dans dhcpd.conf', () => {
   });
 
   it('le journal le dit dans les mots du vrai demon', async () => {
-    const { srv, client } = await labLinux(true);
+    const { srv, client } = await labLinux('globale-vraie');
     await client.executeCommand('dhclient eth0');
 
     const vu = await srv.executeCommand('journalctl -u isc-dhcp-server');
@@ -216,7 +259,7 @@ describe('ISC : `ping-check` s ecrit dans dhcpd.conf', () => {
   });
 
   it('`dhcpd -t` accepte la forme et ne s en plaint pas', async () => {
-    const { srv } = await labLinux(true);
+    const { srv } = await labLinux('globale-vraie');
 
     const vu = await srv.executeCommand('sudo dhcpd -t');
 
@@ -225,7 +268,7 @@ describe('ISC : `ping-check` s ecrit dans dhcpd.conf', () => {
   });
 
   it('une adresse LIBRE de la plage n est jamais abandonnee', async () => {
-    const { srv, client } = await labLinux(true);
+    const { srv, client } = await labLinux('globale-vraie');
     await client.executeCommand('dhclient eth0');
 
     const vu = await srv.executeCommand('journalctl -u isc-dhcp-server');

@@ -14,7 +14,7 @@ import type { Router } from '../../Router';
 import { CommandTrie, formatInvalidInput } from '../CommandTrie';
 import { resolveCiscoInterfaceName } from '../cli-utils';
 import { classfulMask as classfulMaskString } from '@/network/core/ip';
-import { parseRateLimitRule } from '../../router/qos/CarPolicer';
+import { parseRateLimitRule } from '../../../qos/CarPolicer';
 import { CliInvalidInput } from '../cli/CliDiagnostic';
 import {
   getGlobalConfig, DHCP_RELAY_INFO_POLICIES, CEF_LOAD_SHARING_ALGORITHMS,

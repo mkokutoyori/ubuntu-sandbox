@@ -79,7 +79,9 @@ qui reprend doit les connaître avant de toucher au code.
 | **D18** | Un journal est **structuré** (`FirewallLogStore`), pas une ligne de texte : sans champs, `execute log filter field` ne peut filtrer sur rien | E34 |
 | **D19** | Les champs d'un journal FortiOS sont **entre guillemets**, les numériques exceptés | E34, mesuré |
 | **D20** | **La règle implicite ne journalise pas par défaut** ; `config log setting` / `set fwpolicy-implicit-log enable` la fait parler | E34, mesuré |
-| **D21** | Une vue ne publie **que ce qui est mesuré** : pas de CPU ni de mémoire dans `get system performance status`, faute de modèle de charge | E34 |
+| **D21** | Une vue ne publie **que ce qui est mesuré**. ~~Pas de CPU ni de mémoire, faute de modèle de charge~~ → **E62** : le modèle existe (`health/SystemLoad`), la charge est DÉRIVÉE de ce que l'équipement porte et fait, et ce qui n'a pas de source (`nice`, `iowait`, `irq`) reste à zéro | E34, E62 |
+| **D21b** | La charge a **une seule source pour trois vues** : `get system performance status`, `diagnose sys top` et `diagnose hardware sysinfo conserve` ne peuvent pas se contredire | E62 |
+| **D21c** | Un mécanisme annoncé par une vue doit **pouvoir se produire** : un mode conserve calculé sur une mémoire toujours nulle décrivait un état inatteignable | E62 |
 | **D22** | **Un FortiGate multi-VDOM est UNE machine.** Jamais N objets `Firewall` : un registre de `VdomContext` sur un seul châssis | BRD §10.2, E35 |
 | **D23** | Le **mono-VDOM est le cas particulier** du multi-VDOM, pas une branche : `FirewallServices` résout toujours par VDOM | FGT-VDM-2, E35 |
 | **D24** | Un VDOM est une **PORTÉE** (`FortiTableSpec.scopeOnly`), pas un conteneur : l'arbre complet se rouvre dessous | Défaut B50 |
@@ -89,6 +91,63 @@ qui reprend doit les connaître avant de toucher au code.
 | **D28** | La couche de socket UDP du pare-feu est **`ControlPlaneUdpEndpoint`**, celle que le routeur et le commutateur remplissent déjà — pas une seconde table de ports. Le module était nommé `RouterUdpEndpoint` et ne dépendait pourtant que d'une méthode d'émission ; le renommer coûtait moins qu'une copie | E36 |
 | **D29** | Il n'y a **qu'un constructeur de datagramme UDP** dans tout le pare-feu (`udpDatagram`, dans `l3/FirewallEgress.ts`). Il y en avait trois — un pour DNS en client, un pour DNS en serveur, un pour IKE — qui différaient sur la longueur annoncée et sur rien d'autre | E36 |
 | **D30** | Une commande asynchrone passe par **`FortiShell.takePendingAsync()`**, lu par `FortiGate.executeCommand` — la même écoutille que les shells IOS et VRP, `execute` restant synchrone pour tout le reste | E36 |
+| **D31** | **Tab FAIT DÉFILER** les candidats (`CyclingPolicy`), il ne se tait pas sur l'ambiguïté comme IOS. C'est la doc CLI de Fortinet qui le dit — « Press the Tab key multiple times to cycle through available matches » — et la politique existait déjà pour VRP | E37 |
+| **D32** | `get` et `show` prennent un chemin LIBRE dont les *alternatives* sont les branches de l'arbre. Déclarer une branche par mot-clé aurait cassé `get system status`, dont `status` n'est pas une table ; `argumentAccepts` accepte toujours le jeton quand une place porte des `alternatives` sans `values` | E37 |
+| **D34** | **Une commande s'abrège jusqu'au plus court non ambigu, chemin compris.** Fortinet en donne l'exemple : `get system status` → `g sy stat`. Le verbe s'abrégeait déjà ; le CHEMIN de `get`/`show` ne s'abrégeait pas, faute d'être un chemin de mots-clés. `resolvePathWords` le résout mot à mot contre les branches de l'arbre **et** les vues déclarées, exact d'abord, préfixe unique ensuite, ambiguïté nommée sinon | E52, mesuré |
+| **D35** | **Le vocabulaire d'`execute` est déclaré une fois** (`execute/executeVocabulary.ts`), lu par la répartition, par la complétion et par l'aide. Il était enfermé dans une chaîne de `if` : ni `?`, ni Tab, ni l'abréviation ne pouvaient le voir, et `execute pin` répondait « is not implemented in this simulator » pour une commande qui l'est. Un cas de garde vérifie qu'aucune entrée déclarée ne ment et qu'aucune proposition n'est absente de la liste | E52 |
+| **D36** | **Un message ne prétend jamais qu'une commande manque au simulateur alors qu'elle existe.** Une sous-commande non résolue est `unknown action` ou une ambiguïté nommée ; `is not implemented in this simulator` est réservé à ce qui est vraiment hors périmètre | E52 |
+| **D37** | **Une valeur proposable n'est pas décidée par sa CASSE.** `argumentCompletableValues` filtrait sur `/^[a-z]…/`, donc aucun nom d'objet en majuscules — soit la quasi-totalité des objets FortiOS — n'était jamais proposé après `edit `. Le bon discriminant est le PLACEHOLDER (`argumentPlaceholder(spec)` et les formes `<…>`/`WORD`/`A.B.C.D`), pas la casse | E52, socle partagé |
+| **D38** | `exit`/`quit` referme la session EXEC et rend `login:` — la machine ne se ferme pas, elle redemande qui parle. `endExecSession()` est surchargee pour REARMER la porte plutot que fermer l'onglet ; fermer l'onglet ferait disparaitre la transcription que l'operateur vient de produire | E39 |
+| **D39** | Le crochet du socle est `exitClosesLocalSession()`, faux par defaut. La condition existante ne consultait `isTopLevelExit` que pour une session DISTANTE, et l'elargir a tout le monde aurait fait deconnecter un IOS ou un VRP dont ce n'est pas la regle | E39 |
+| **D40** | `config system console` est une VRAIE table de schema, donc `set output standard` coupe la pagination pour de bon (`getPageSize()` rend 0, le mecanisme que le socle porte deja pour `terminal length 0`) et `set login disable` ouvre la console sans demander de compte. Stocker les deux sans les honorer aurait ete le decor que ce depot passe son temps a defaire | E39 |
+| **D41** | Le defaut d'`output` est **`more`**, verifie chez Fortinet et non suppose — c'est pourquoi une longue sortie PAGINE sur une machine neuve, et la sonde garde ce cas comme temoin | E39 |
+| **D42** | `execute reboot`/`shutdown` empruntent le pas `confirmation` du socle d'interaction (`CommandInteractionPlan`), qui existait et que le pare-feu n'utilisait pas. Un `y` sur `reboot` fait un VRAI cycle d'alimentation (`powerOff` puis `powerOn`), donc la console redemande le login : une machine qui redemarre oublie qui etait connecte | E39 |
+| **D43** | Le rearmement apres cycle d'alimentation est DIFFERE d'un tour de boucle. Mesure : l'evenement `device.power-on` arrive pendant la retombee du flux qui l'a declenche, et poser la nouvelle invite a cet instant la faisait balayer par la fin de l'ancien flux — la console repartait en mode normal sans login | E39 |
+| **D44** | Le TTL est un PARAMETRE de `buildEchoRequest`, jamais un champ qu'on repose apres coup. `{ ...request, ttl }` laissait la somme de controle calculee pour l'ancien TTL, donc chaque sonde de traceroute etait jetee comme corrompue au premier saut : `execute traceroute` n'avait JAMAIS trouve quoi que ce soit dans ce simulateur | E40 |
+| **D45** | `execute ssh`/`execute telnet` passent par la machinerie de client que le socle porte deja pour IOS et VRP. Le crochet ajoute est `stripClientPrefix()`, identite par defaut : le socle n'examinait que le PREMIER mot, et FortiOS ecrit le verbe en deux mots. Ecrire un second client aurait donne deux clients qui finissent par diverger | E40 |
+| **D46** | Hors console, `execute ssh <cible>` NOMME la brique manquante au lieu de repondre « unknown action » : la commande existe, c'est le terminal qui manque pour saisir le mot de passe. Un garde-fou du depot (« chaque sous-commande declaree REPOND ») a attrape ce trou, et il avait raison | E40 |
+| **D47** | Le renifleur capture **a partir de maintenant** dans un terminal — il ne rejoue pas le tampon. C'est ce que fait une vraie machine, et c'est ce qui rend la commande utilisable : on la lance, on provoque le trafic, on le voit passer. Rejouer le passe aurait donne une commande qui repond avant qu'on ait rien fait | E41 |
+| **D48** | Hors terminal (script, tuyau) la commande GARDE son texte d'un bloc, lu dans le tampon. Un script n'a personne pour provoquer le trafic pendant qu'il attend, donc la capture vivante n'y voudrait rien dire ; c'est la meme separation que `FirewallPing.run()` / `.begin()` | E41 |
+| **D49** | `PacketCapture` gagne un `observe()`, et le filtre de la capture vivante passe par le MEME `frameMatches` que `select()`. Un second predicat aurait fini par ne pas filtrer pareil selon qu'on regarde en direct ou en differe | E41 |
+| **D50** | `execute backup`/`restore` traversent le VRAI reseau par le client TFTP existant : `put` depose le texte que rend `renderWholeConfig`, `get` le relit et `absorbClusterConfiguration` le rejoue commande par commande. Rien n'est ecrit de neuf — les trois briques etaient la, il manquait la porte | E42 |
+| **D51** | Une restauration REMET A ZERO avant de rejouer. Sans cela elle ne restaurerait pas, elle SUPERPOSERAIT : une regle ajoutee apres la sauvegarde survivrait a la restauration de la sauvegarde qui ne la contient pas | E42 |
+| **D52** | La remise a zero rejoue les DEFAUTS de chaque table (`commitDefaults`) au lieu d'oublier le texte : les effets d'une configuration vivent sur l'equipement, pas dans l'arbre, donc vider l'arbre seul laissait la machine telle quelle. `applyFactoryIdentity()` rend en plus le nom d'origine et le compte `admin` SANS mot de passe — donc la console reimpose le changement au premier acces, comme une machine sortie d'usine | E42 |
+| **D53** | Le pare-feu EXPOSE un `observables` de la meme forme que celui d'un hote, parce que c'est ce que `resolveObservables` cherche par canard. Ecrire un panneau special au pare-feu aurait fait deux panneaux qui finissent par ne pas dire la meme chose de la meme situation | E43 |
+| **D54** | Les vues sont POUSSEES aux points de mutation (cache ARP change, commit de configuration, echo emis ou recu) et non recalculees a la lecture : `useSyncExternalStore` exige un instantane stable, donc un `get()` qui reconstruirait un tableau a chaque appel ferait boucler le rendu | E43 |
+| **D55** | Les compteurs que ce pare-feu ne tient PAS (NDP, delais d'attente ICMP, requetes ARP emises) sont rendus a zero plutot que devines. Zero est ici un fait — il n'y a pas de cache NDP derriere — et non un remplissage | E43 |
+| **D38** | `FirewallProfile.unimplemented` est **supprimé** : déclaré, lu par personne, et faux (il rangeait `config vpn ipsec` et `diagnose debug flow` parmi les absents alors que les deux sont livrés). Ce que le produit refuse se dit à l'endroit du refus, pas dans une liste que rien ne consulte | E52 |
+| **D39** | **Une valeur commencée entre guillemets se complète.** `set srcaddr "N` + Tab ne proposait rien, le guillemet ouvrant faisant partie du préfixe comparé. `FortiShell.completions()` travaille sur la valeur nue et rend les deux guillemets — c'est la forme que le tutoriel et Fortinet écrivent partout | E52b, mesuré |
+| **D40** | **Le chemin d'un `show`/`get` se complète en PROFONDEUR**, et propose les CLÉS quand il nomme une table. Les `alternatives` d'un chemin libre sont statiques (D32), donc bornées au premier niveau ; la descente est faite dans la porte FortiOS, qui lit le même arbre — pas dans le socle, dont ce n'est pas la question | E52b |
+| **D41** | **Une liste de valeurs se complète à CHAQUE valeur.** La place d'un attribut multiple est un `REST` : le curseur y voit tout le reste de la ligne, donc rien ne correspondait après la première valeur. La porte FortiOS interroge le socle sur le seul mot en cours, et **seulement si l'attribut est `multiValue`** — sinon `set action accept ` proposerait à nouveau les valeurs de l'énumération | E52c, mesuré |
+| **D42** | Les verbes qui prennent `<attribut> <valeurs…>` sont déclarés **une fois** (`VALUE_LIST_VERBS`, exporté par `FortiSocle`) et lus par les deux endroits qui en ont besoin. Le garde-fou G6 a refusé un `new Set([…])` dans le shell, et il avait raison : c'était une seconde liste | E52c |
+| **D56** | Les garde-fous ajoutés d'après BRD-Firewall §40.6 sont numérotés **`G-P*`** et non `G*` : le BRD générique et le BRD FortiGate donnent chacun un sens à G6/G7/G8, et reprendre les chiffres aurait laissé croire que le fichier porte les huit du générique | E53 |
+| **D57** | **Un garde-fou porte son témoin.** Chacun des trois nouveaux a un cas qui le fait échouer sur une entrée fabriquée — un garde qu'on ne voit jamais échouer ne prouve pas qu'il regarde. Celui de G-P1 a été vérifié en retirant pour de bon `sdwan` du pipeline FortiOS : il l'attrape | E53 |
+| **D58** | **Une vue de lecture porte la lecture seule dans son TYPE** : champ `readonly`, aucun retour `void`, tout tableau rendu en `readonly T[]`. Un tableau nu remet à l'appelant une poignée VIVE sur le magasin. `FortiObjectView.key` était `key: string` alors que la clé est l'index de la table — une écriture par la vue n'aurait fait que la moitié de ce que fait `rename()` | E54, mesuré |
+| **D59** | **`diagnose debug flow show` LIT le nom de l'option.** Il ne lisait que la valeur, si bien que `show console enable` allumait les noms de fonction : une option en activait une autre, et une option sans valeur passait pour un `enable`. `console` tait la trace sans arrêter le traçage (activée par défaut, sinon le TP 9 cesserait de marcher) ; `iprope` est refusée en nommant ce qui manque | E55, mesuré |
+| **D60** | **La sauvegarde chiffrée l'est avec la forme de Fortinet** : AES-256-GCM, clé = UN tour de SHA-256 sur le mot de passe — la faiblesse réelle du format, reproduite plutôt que corrigée. Divergence unique et assumée : le corps est armuré en base64 parce que le VFS ne stocke que de l'UTF-8 (même contrainte que `openssl enc`, `PRD-OpenSSL`) | E55 |
+| **D61** | **L'étiquette GCM fait la différence entre trois refus** : mot de passe absent, mauvais mot de passe, fichier abîmé. C'est ce que le chiffrement authentifié apporte et qu'un chiffrement de flux n'aurait pas pu donner | E55 |
+| **D62** | **Un refus de mot de passe NOMME la règle non remplie.** `FortiAttributeSpec.valueRefusal(value, environment)` rend la raison et non un booléen, et reçoit le `FortiSchemaEnvironment` que `FortiConfigTree` remplit déjà — pas un objet nouveau : c'est le contrat que `isRouted` lit depuis toujours. Un refus muet enverrait deviner | E55 |
+| **D63** | **`apply-to` porte aussi sur `psksecret`**, pas seulement sur les comptes : c'est le seul endroit du pare-feu où la qualité d'une clé partagée est vérifiée, et l'ignorer aurait fait mentir la commande sur sa propre portée | E55 |
+| **D64** | **`FortiTableSpec.keyOnConfigLine`** déclare les tables dont FortiOS met la clé sur la ligne `config` (`config system replacemsg admin "pre_admin-disclaimer-text"`). Il gouverne les TROIS endroits qui doivent s'accorder — commande enregistrée, descente du navigateur, RENDU — sans quoi `show` écrirait une forme que l'import d'une topologie ne saurait pas rejouer | E55 |
+| **D65** | **Le drapeau de bannière et son texte restent deux réglages distincts.** Le drapeau sans texte n'affiche rien, le texte sans drapeau non plus, et les deux cas sont épinglés — c'est l'erreur la plus fréquente sur cette commande, et les fusionner l'effacerait au lieu de l'enseigner | E55 |
+| **D66** | **Le verrou d'administration porte sur le COMPTE, pas sur la source** — la documentation Fortinet le dit, et le compteur était indexé par adresse, donc la console (qui n'en a pas) n'était jamais comptée. `refusesSource()` ne juge plus que le `trusthost`. Conséquence assumée : verrouiller `admin` depuis l'extérieur le verrouille aussi pour la console, ce qui est le risque contre lequel `trusthost` existe | E56, mesuré |
+| **D67** | **Le décrément de TTL est UNE fonction, appelée par l'étape ET par le chemin rapide.** `session-lookup` accepte et saute les étapes suivantes — comme une vraie machine, sauf qu'une vraie machine décrémente quand même ; la première version ne décrémentait qu'à l'aller | E56, mesuré |
+| **D68** | **`opmode` est le SEUL décideur du décrément**, pas la liste d'étapes du profil. Un pare-feu transparent est un pont et ne décrémente pas ; faire porter la règle par les deux aurait donné deux décideurs pour un même fait. L'étape figure donc dans tous les pipelines | E56 |
+| **D69** | Le décrément est placé **après la décision de routage et avant la politique**, l'ordre d'`ip_forward()` sous Linux dont FortiOS dérive : un paquet refusé par la politique est refusé, pas « time exceeded » | E56 |
+| **D70** | **`get router info ospf …` est la sortie de zebra/FRR, pas celle d'IOS**, et le format vient de `ospfd/ospf_vty.c` — la documentation Fortinet étant hors de portée du mandataire. Le décalage d'un caractère entre la ligne de colonnes et les données est REPRODUIT parce qu'il est réel | E57, mesuré |
+| **D71** | **Les faits OSPF sont des types du SOCLE.** La première version les posait dans `vendors/fortios/diag/`, ce qui aurait fait importer la couche vendeur par `FirewallRouting` — précisément ce que le garde-fou G2 interdit. Le socle mesure, la déclinaison met en forme | E57 |
+| **D72** | **`recordHealth` rend la TRANSITION, pas l'état.** Un `null` sur un non-changement est ce qui rend l'événement utilisable : sinon chaque tour de sonde redévelopperait toutes les routes et fermerait les mêmes sessions | E58 |
+| **D73** | **Le développement d'une route de zone vit sur l'ÉQUIPEMENT**, appelé par le commit ET rejoué par la transition de santé. Il était fait dans `commitDevice`, donc figé ; deux développements auraient fini par différer. L'équipement garde les routes DÉCLARÉES, parce qu'on ne redéveloppe pas ce qu'on n'a pas gardé | E58 |
+| **D74** | **La session du membre mort est FERMÉE, pas réécrite.** Le paquet suivant retraverse le pipeline et se fait aiguiller : même résultat observable qu'une réévaluation, par un mécanisme que la table sait déjà faire | E58 |
+| **D75** | Les faits de route déclarés sont un type du SOCLE (`DeclaredStaticRoute`), que la déclinaison satisfait par sa forme — deuxième fois que G2 attrape le même réflexe d'importer la couche vendeur depuis `Firewall.ts` | E58 |
+| **D76** | **`set mtu` n'agit que sous `set mtu-override enable`**, comme sur un vrai FortiGate. Les deux attributs existaient et étaient morts ; honorer `mtu` seul aurait été une infidélité dans l'autre sens, et un témoin pin le fait que `set mtu 600` seul ne contraint rien | E59, mesuré |
+| **D77** | **Le refus pour MTU est une ÉTAPE, la découpe est à l'ÉMISSION** — l'ordre d'`ip_forward()` (TTL puis `ip_exceeds_mtu`, avant le crochet FORWARD) puis d'`ip_output`. La découpe à l'émission vaut donc aussi pour les paquets que le pare-feu produit lui-même | E59 |
+| **D78** | Les deux erreurs ICMP du pare-feu passent par UN seul émetteur : deux auraient fini par ne pas sourcer l'erreur depuis la même interface | E59 |
+| **D33** | Le ping se déroule **pas à pas** (`FirewallPing.begin()`), pour que le terminal imprime chaque réponse à son arrivée et que Ctrl+C rende les statistiques de ce qui est parti. `run()` demeure et appelle les mêmes pas : un script n'a pas à changer | E37 |
+| **D34** | La connexion de console est un **enchaînement d'`InteractiveStep`** (le moteur de flux que `passwd` et `ssh` empruntent déjà), posé en `authGate` — pas une machine à états écrite dans la session. Le forçage du mot de passe est donc une BRANCHE de ce même enchaînement, et un refus revient au pas 0 sans que rien ne soit à réarmer | E38 |
+| **D35** | Ce qui déclenche le changement forcé est **le mot de passe VIDE du compte** (`adminHasNoPassword`), jamais un booléen « premier démarrage ». C'est la règle de FortiOS et elle a une conséquence observable : `set password` fait cesser le forçage à l'instant, et le rendre au vide le fait revenir — un drapeau de premier démarrage aurait menti dans les deux sens | E38 |
+| **D36** | Le verrouillage par nombre d'essais (`admin-lockout-threshold`) **ne s'applique pas à la console**, parce que le compteur de ce dépôt est indexé par SOURCE et qu'une console n'en a pas. Inventer une clé aurait fait verrouiller une session SSH pour une faute de frappe tapée sur la console. Inscrit dans `TODO.md` plutôt que deviné | E38 |
+| **D37** | Le compte d'usine `admin` est semé par le **constructeur de `FortiGate`** et non par le shell : un pare-feu sans compte n'existe pas sur une vraie machine, et le semer depuis le shell le faisait dépendre d'une première commande tapée | E38 |
 
 ---
 
@@ -304,13 +363,26 @@ pipeline, et `match-vip`.
 
 **Ce qui reste de la phase 3, nommé plutôt que tu** :
 
+- ~~`dns-translation` et `fqdn` sont déclarés et non commis~~ **fermé en
+  E52** : `fqdn` est commis pour de bon (`set mapped-addr <objet>`, le
+  VIP pointe sur l'adresse que le nom résout et **suit** quand elle
+  change), et `dns-translation` est REFUSÉ en nommant la brique
+  manquante — un relais applicatif DNS sur le chemin de transit
+  (`TODO.md`, section Pare-feu FortiGate). Il n'existe donc à aucun
+  moment un mot-clé accepté et inerte ;
 - `firewall vip` de type `server-load-balance` (grappe de serveurs réels,
-  moniteurs de santé) — le type `static-nat` est livré, `dns-translation`
-  et `fqdn` sont déclarés et non commis ;
+  moniteurs de santé) — aucune brique existante à réutiliser ;
 - `firewall vip6` / `ippool6` (IPv6) — le socle NAT est IPv4 seul ;
 - `central-snat-map` en `type ipv6`, `nat46`/`nat64` ;
-- `pba-timeout` est stocké et ne périme rien : l'allocateur de blocs n'a
-  pas d'horloge (`nat/IpPool.ts`).
+- ~~`pba-timeout` est stocké et ne périme rien~~ **fermé en E52** :
+  l'allocateur prend l'horloge du pare-feu, chaque bloc porte son
+  `lastUsedAt`, et un bloc inutilisé plus longtemps que le délai est rendu
+  au pool — ports compris. L'usage repousse l'échéance, parce que la
+  documentation Fortinet décrit une INACTIVITÉ et non un bail à durée
+  fixe. Trouvé et corrigé dans le même allocateur : `overloadMappings`
+  était inséré sous une clé et supprimé sous une autre, donc la table
+  fuyait et n'était jamais relue — une PAT qui n'est pas stable pour un
+  flux est une PAT dont la réponse ne revient pas.
 
 ### 6.5 Phase 4 — diagnostic et journaux — ✅ livrée
 
@@ -326,9 +398,11 @@ syslogd[2-4]` + `filter`, `config log memory setting|global-setting`,
 
 **Ce qui reste de la phase 4, nommé plutôt que tu** :
 
-- `get system performance status` ne rend **ni CPU ni mémoire** : aucun
-  modèle de charge n'existe, et une constante affichée là où la vue
-  promet une mesure est précisément le défaut que ce dépôt referme ;
+- ~~`get system performance status` ne rend ni CPU ni mémoire~~
+  **fermé en E62** : `health/SystemLoad` mesure, les trois vues le
+  lisent, les seuils du mode conserve se règlent et valaient 88/82/78
+  là où un vrai FortiGate donne 95/88/82, et le mode conserve a
+  désormais une conséquence sur le trafic ;
 - ~~les collecteurs syslog n'émettent pas~~ **fermé en E50** : un vrai
   `rsyslog` reçoit la ligne dans son `/var/log/syslog`. Le chemin CLI
   était faux au passage (`config log syslogd setting` et
@@ -337,8 +411,15 @@ syslogd[2-4]` + `filter`, `config log memory setting|global-setting`,
   bus de trames global : il voit ce qui traverse CE pare-feu, ce qui est
   le périmètre de la commande, mais un `any` n'inclut pas les trames
   qu'un autre équipement échange ;
-- `execute backup|restore|revision` (BRD §29.4-29.5) appartient au
-  chapitre `execute` et n'a pas été pris.
+- ~~`execute backup|restore|revision` (BRD §29.4-29.5) n'a pas été pris~~
+  **fermé en E65** : `backup` et `restore` existaient depuis E42 (vrai
+  TFTP) ; ce qui manquait était l'HISTORIQUE. `config/RevisionStore`,
+  `execute revision list|delete config`,
+  `execute restore config flash <id>` et `revision-backup-on-logout`
+  ferment le point. Le seul déclencheur modélisé est la déconnexion d'un
+  administrateur — ce simulateur n'a ni mise à jour de micrologiciel ni
+  interface web, donc les deux autres déclencheurs d'un vrai boîtier ne
+  sont pas inventés.
 
 ### 6.6 Phase 5 — VDOM et modes de déploiement — ✅ livrée
 
@@ -351,15 +432,28 @@ pipeline par mode), et l'invite qui indique le VDOM courant.
 
 **Ce qui reste de la phase 5, nommé plutôt que tu** :
 
-- les **comptes administrateurs** ne sont pas encore une portée globale
-  (`config global` existe, `config system admin` n'a pas de schéma) ;
+- ~~les comptes administrateurs ne sont pas encore une portée globale
+  (`config system admin` n'a pas de schéma)~~ **note périmée, corrigée
+  le 2026-08-23** : `schema/admin.ts` porte `config system admin` depuis
+  la phase 7, et la phase 14 l'a branché sur une vraie session SSH ;
 - `vdom-mode split-vdom` est accepté et se comporte comme `multi-vdom` :
-  la séparation gestion/trafic n'a pas de mécanisme derrière ;
+  la séparation gestion/trafic n'a pas de mécanisme derrière. **Mesuré
+  et inscrit dans `TODO.md` le 2026-08-23** — trancher demande d'abord
+  d'établir si ce mode existe encore en 7.6, ce que les sources
+  consultées contredisent l'une l'autre ;
 - le **laboratoire L9** (FortiGate vs ASA) est une comparaison
   documentaire, pas un mécanisme ; il n'a pas été écrit en code ;
-- l'apprentissage MAC du mode transparent est une table simple sur le
-  châssis, sans vieillissement ni STP — `Switch` en a une plus complète,
-  et la partager serait le prochain pas.
+- ~~l'apprentissage MAC du mode transparent est une table simple sur le
+  châssis, sans vieillissement ni STP~~ **fermé en E64** : `l2/BridgeFdb`
+  vieillit (300 s, l'âge comptant depuis la dernière trame vue), porte
+  une instance PAR VDOM, se purge quand un port tombe, et se lit par
+  `diagnose netlink brctl list|name host <vdom>.b`. **Le partage avec
+  `Switch` est examiné et écarté** : sa table est indexée `vlan:mac` et
+  distingue statique / dynamique / trou noir, avec la sécurité de port et
+  le vieillissement accéléré de STP par-dessus ; un pont de mode
+  transparent n'a ici aucune de ces notions. Le STP n'est pas ajouté — un
+  pont transparent sans STP est ce que ce simulateur porte, et l'écrire
+  serait un chantier de `Switch.ts`.
 
 ### 6.7 Phase 6 — inspection et UTM — ✅ livrée
 
@@ -395,8 +489,12 @@ et qu'il ne faut donc pas « implémenter » sans fournir la brique :
   test, pas un moteur ;
 - `scan-archive-contents` est accepté et ne descend dans aucune archive
   (il n'y a pas de décompresseur) ;
-- le filtrage de fichiers lit le nombre magique en tête de corps, donc
-  ne voit pas un fichier réparti sur plusieurs segments.
+- ~~le filtrage de fichiers lit le nombre magique en tête de corps, donc
+  ne voit pas un fichier réparti sur plusieurs segments~~ **fermé en
+  E63** : l'inspection lit un FLUX réassemblé par connexion et par sens,
+  borné par `oversize-limit`. Le défaut était plus large que le filtrage
+  de fichiers — la signature antivirus se contournait de la même façon,
+  en coupant l'envoi en deux.
 
 **Si vous câblez le serveur DHCP du FortiGate** (`config system dhcp
 server` est aujourd'hui grammaire seule) : le socle DHCP du dépôt est
@@ -541,6 +639,11 @@ comparer, jamais le supposer).
 
 | Date | Auteur | Ce qui change |
 |---|---|---|
+| 2026-08-22 | agent `mandeng` | Le MTU de sortie est respecté (E59). Décisions D76 à D78. **`set mtu` était stocké, rendu, et lu par personne** — plus large que ce que l'entrée annonçait. DF posé donne un ICMP Fragmentation Needed portant le MTU, DF absent donne de vrais fragments RFC 791. |
+| 2026-08-22 | agent `mandeng` | La santé SD-WAN a enfin des consommateurs (E58). Décisions D72 à D75. Les deux entrées ouvertes nommaient le MÊME chaînon manquant : la mesure existait, l'événement non. La route de zone suit la santé (`update-static-route`), et la session du membre mort est fermée. |
+| 2026-08-22 | agent `mandeng` | Les deux vues OSPF du §20.2 (E57). Décisions D70 et D71. La matière était là en entier ; il manquait le rendu, pris dans la source de FRR plutôt que de mémoire. Deux prémisses de ma sonde étaient fausses — le laboratoire ne formait aucune adjacence. |
+| 2026-08-22 | agent `mandeng` | Deux entrées ouvertes fermées (E56). Décisions D66 à D69. **Le verrou d'administration ne comptait rien sur la console** — il était indexé par source, or un vrai FortiGate verrouille le COMPTE. **Le pare-feu était invisible à un `traceroute`** : il ne décrémentait jamais le TTL d'un paquet relayé. |
+| 2026-08-22 | agent `mandeng` | TP 23 et TP 24 du tutoriel (E55). Décisions D59 à D65. **TP 23 se joue en entier sans changer une ligne de produit** — le premier échec venait de ma lecture de `diagnose debug flow show console`, qui est un RÉGLAGE et non un affichage. **La sauvegarde « chiffrée » ne l'était pas** : le mot de passe était accepté et jeté, les deux fichiers octet pour octet identiques. **`config system password-policy` et les bannières de connexion n'existaient pas.** |
 | 2026-08-17 | agent `mandeng` | Création. État après phase 1, décision D10, plan de phase 1b et 2. |
 | 2026-08-17 | agent `mandeng` | Phase 3 livrée (E33). Décisions D11 à D14, pièges P7 à P11, §6.4 (ce qui reste de la phase 3). |
 | 2026-08-17 | agent `mandeng` | Phase 4 livrée (E34), badge retiré. Décisions D15 à D21, pièges P12 à P15, §6.5 (ce qui reste de la phase 4). |
@@ -550,6 +653,17 @@ comparer, jamais le supposer).
 | 2026-08-18 | agent `mandeng` | Phase 6 livrée (E36). §6.7 (refus assumés, ce qui reste). Trois défauts de socle corrigés (clé de session post-NAT, inspection hors du premier paquet, enfants de type objet). |
 | 2026-08-19 | agent `mandeng` | Phase 13 livrée (E50). **Les collecteurs syslog émettent pour de bon**, et leur chemin CLI était faux (`setting`/`filter` sont frères). |
 | 2026-08-20 | agent `mandeng` | Phase 14 livrée (E51). **Le pare-feu héberge un vrai serveur SSH et telnet**, et `allowaccess` devient un filtre local-in par port de destination — il était stocké et lu par personne, comme les sept réglages d'administration de `config system global`. Piège P14 retiré : la limite de 800 lignes par fichier (NFR-M3, garde-fous G1 et G3) est supprimée. |
+| 2026-08-21 | agent `mandeng` | Phase 15 livrée (E52). **`pba-timeout` périme vraiment un bloc de ports** — et `overloadMappings` fuyait, inséré sous une clé et supprimé sous une autre. **Le TYPE d'un VIP gouverne** : `fqdn` est commis avec `set mapped-addr`, `dns-translation` est refusé en nommant le relais DNS de transit manquant (`TODO.md`). Le client DNS du pare-feu est RÉUTILISÉ, pas réécrit : une première version en doublait `FirewallDnsClient` et a été supprimée avant commit. |
+| 2026-08-23 | agent `mandeng` | Phase 19 livrée (E65). **La configuration garde son HISTORIQUE.** `execute revision` n'existait pas, `execute restore config flash <id>` était refusée, et `revision-backup-on-logout` — le réglage qui CRÉE une révision — était absent du schéma. Rien n'est écrit pour restaurer : le chemin de restauration savait déjà rejouer un texte de configuration à travers la vraie CLI. La déconnexion est branchée aux DEUX endroits où une session d'administration se termine (SSH/telnet et console), pas à un seul. **Deux points fermés au passage** : `vdom-mode` est désormais CACHÉE comme sur un vrai 7.4/7.6 — c'était le point que la phase 18 avait laissé en le disant sûr — et `FORTI_CLI_LOGOUT`, sentinelle produite par `exit` et consommée par PERSONNE, est supprimée plutôt que branchée. |
+| 2026-08-23 | agent `mandeng` | Phase 18 livrée (E64). **Le pont du mode transparent apprend, VIEILLIT, et se lit.** La table était un `Map<string, string>` : aucun horodatage donc aucun vieillissement (une entrée vivait jusqu'à l'extinction), aucune vue pour la lire, une seule instance pour tout le châssis là où un vrai FortiGate en porte une par VDOM, et rien ne la purgeait quand un port tombait. `l2/BridgeFdb` porte les quatre, l'expiration étant calculée à la LECTURE (G5 interdit les minuteurs bruts). `diagnose netlink brctl list|name host <vdom>.b` rend les colonnes du vrai outil, `ttl` portant le temps qui RESTE. **Le partage avec `Switch.ts` est examiné et écarté avec sa raison**, comme la première règle de `CLAUDE.md` le demande. |
+| 2026-08-23 | agent `mandeng` | Phase 17 livrée (E63). **L'inspection lit un FLUX, pas un segment.** `inspectedFlowOf` lisait la charge utile d'UN paquet, donc TOUTE détection UTM se contournait en coupant l'envoi en deux — la signature antivirus comme le nombre magique d'un fichier. `inspection/StreamAssembler` réassemble par CONNEXION et par SENS (la clé de flux était déjà directionnelle), libère son tampon à la fermeture de session, et **ne réassemble PAS UDP** — coller deux datagrammes DNS produirait un message que personne n'a envoyé. La borne est celle du vrai boîtier : `oversize-limit` (défaut 10 Mo, minimum 1) et `set options oversize` ; le défaut laxiste de Fortinet est GARDÉ tel quel. **Le laboratoire a dû être refait** : monté sur `nginx`, il ne prouvait rien — le serveur répondait `400` et fermait avant le second `write`. Un cas a été DURCI après discrimination, la coupure passant désormais au milieu du nombre magique. |
+| 2026-08-23 | agent `mandeng` | Phase 16 livrée (E62). **La charge est MESURÉE et le mode conserve engage.** Trois vues promettaient une mesure et lisaient la même constante gelée — CPU figé à `idle: 100`, mémoire utilisée NULLE, donc un mode conserve structurellement impossible. `health/SystemLoad` dérive la charge de ce que l'équipement porte et fait ; `FirewallProfile.chassis` déclare RAM, CPU et débit une seule fois pour les trois constructeurs. **Les seuils étaient faux** (88/82/78 au lieu de 95/88/82) et ne se réglaient pas. Le mode conserve a une CONSÉQUENCE : session refusée au seuil extrême, `av-failopen` (mandataire, échoue OUVERT par défaut) et `ips global fail-open` (flux, échoue FERMÉ) au seuil rouge — polarités opposées, comme sur un vrai boîtier. Trois lignes inventées retirées de `get system performance status`. Deux erreurs de mon propre modèle corrigées en lisant la sortie : `utilisé + libre + libérable = total` (trois catégories DISJOINTES), et un tampon de journaux réservé n'est pas réclamable. |
 | 2026-08-19 | agent `mandeng` | Phase 12 livrée (E49). **Le portail captif détourne pour de bon**, et un défaut du socle TCP tombe avec : `transmit` sourçait un segment par le ROUTAGE au lieu de `socket.localIp`. |
 | 2026-08-19 | agent `mandeng` | Phase 11 livrée (E46 à E48). **Tous les points ouverts de la phase 2 sont fermés.** **BGP : le refus de la phase 10 reposait sur une prémisse fausse de ma part** — le pare-feu a un `TcpStack` depuis la phase 7. **DHCP : `onCommit` était vide**, le serveur sert maintenant de vrais baux et `mode dhcp` est un vrai client. |
+| 2026-08-21 | agent `mandeng` | Le panneau « Live state » lit le pare-feu (E43). Decisions D53 a D55. **Toutes ses sections rendaient « (empty) »** pour une machine qui portait au meme instant une interface adressee, une entree ARP et une pile TCP ; le PC voisin, lui, montrait les siennes. |
+| 2026-08-21 | agent `mandeng` | Sauvegarde, restauration, remise a zero (E42). Decisions D50 a D52. Le fichier traverse le vrai reseau par TFTP ; la remise a zero rejoue les DEFAUTS et rend le mot de passe vide. |
+| 2026-08-21 | agent `mandeng` | Le renifleur au fil de l'eau (E41). Decisions D47 a D49. **`diagnose sniffer packet` ecrit paquet par paquet et Ctrl+C l'arrete**, dans un terminal ; hors terminal il garde son texte d'un bloc. |
+| 2026-08-21 | agent `mandeng` | Sortir de la machine (E40). Decisions D44 a D46. **`execute traceroute` n'avait jamais fonctionne** — somme de controle IPv4 calculee pour un TTL de 64 puis TTL remplace, donc toute sonde jetee au premier saut ; la meme machine au meme instant repondait au `ping`. `execute ssh`/`telnet` branches sur la machinerie de client existante. |
+| 2026-08-21 | agent `mandeng` | Sortie de console et reglages (E39). Decisions D38 a D43. **`exit` referme ce que `login` avait ouvert**, `config system console` existe et ses deux reglages AGISSENT, `execute reboot`/`shutdown` demandent confirmation et font un vrai cycle d'alimentation. Mesure corrigee en chemin : l'historique et l'edition de ligne fonctionnaient deja — la premiere lecture les croyait absents parce que le pager `--More--` avalait les touches. |
+| 2026-08-21 | agent `mandeng` | Confort de CLI et console de premier démarrage (E37, E38). Décisions D31 à D37. **La console demande un login et force le mot de passe vide**, et un défaut du socle tombe avec : `authenticateAdmin` comparait `secrets.get(name) === password`, donc un compte SANS entrée de secret ne pouvait accepter aucun mot de passe, pas même le vide — le compte d'usine était inauthentifiable. |
 | 2026-08-19 | agent `mandeng` | Phases 9a/9b/10 livrées (E43, E44, E45). **`OSPFEngine.activateInterface` rendu idempotent dans le socle partagé** — quatre appelants portaient la même garde, donc c'était au moteur de la porter. **`convergeDynamicRouting()` écrit puis supprimé** : les deux bouts ont de vrais minuteurs, la sonde avance une horloge. **Prémisse fausse corrigée, et elle était la mienne** : une note de périmètre attribuait au BRD §22.3 un refus de RIP/OSPF qu'il ne contient pas (§19.3 disait déjà « les moteurs existent, le travail est de les brancher »). Jumelle de la leçon LDAP/DH : on vérifie une citation avant de la répéter. Format de `get router info routing-table all` corrigé en CIDR après vérification chez Fortinet. |

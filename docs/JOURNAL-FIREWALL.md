@@ -2700,6 +2700,441 @@ refusé sont remplacés par un cas qui l'affirme disponible.
 
 ---
 
+## Périmètre pris — FortiOS phase 19 (la configuration garde son HISTORIQUE)
+
+**Agent `mandeng`.** §6.5 du carnet nomme le point : « `execute
+backup|restore|revision` (BRD §29.4-29.5) appartient au chapitre
+`execute` et n'a pas été pris ». La mesure le réduit et le précise :
+`backup` et `restore` EXISTENT depuis E42 et passent par un vrai TFTP.
+Ce qui manque est l'**historique**.
+
+Mesure de départ :
+
+- **`execute revision` n'existe pas du tout** — ni `list`, ni `delete`.
+  Un vrai FortiGate garde ses configurations précédentes et
+  `execute revision list config` les rend avec les colonnes `ID`,
+  `TIME`, `ADMIN`, `FIRMWARE VERSION`, `COMMENT`.
+- **`execute restore config flash <id>`** — la forme qui rejoue une
+  révision, celle que la documentation Fortinet donne pour revenir en
+  arrière — est refusée : seul `tftp` est accepté comme destination.
+- **`revision-backup-on-logout` n'existe pas** dans le schéma de
+  `config system global`, alors que c'est le réglage qui, sur un vrai
+  boîtier, CRÉE une révision.
+- **Trouvé en mesurant** : `FORTI_CLI_LOGOUT` est produit par `exit` et
+  `quit` et **consommé par personne** dans tout le dépôt. Sur une
+  session SSH ou telnet, `FirewallCliServer.closesSession` intercepte le
+  mot avant que la CLI ne le voie, donc la sentinelle ne sort pas ; il
+  reste à établir ce que fait la console.
+
+**Fichiers que la phase 19 prendra** :
+
+```
+firewall/config/RevisionStore.ts       ← l'historique (socle, neuf)
+vendors/fortios/FortiShell.ts          ← restore depuis flash, révisions
+vendors/fortios/FortiSocle.ts          ← le vocabulaire `execute revision`
+vendors/fortios/schema/system.ts       ← revision-backup-on-logout
+```
+
+**Ce qui existe déjà et ne sera pas réécrit** : `renderWholeConfig` rend
+la configuration entière, et le chemin de restauration sait déjà REJOUER
+un texte de configuration à travers la vraie CLI — c'est exactement ce
+qu'une révision restaurée demande. Rien de neuf n'est écrit pour cela.
+
+**Décision de découpage, écrite ici pour ne pas être découverte** : sur
+un vrai FortiGate une révision naît d'une mise à jour de micrologiciel,
+d'une sauvegarde automatique à la déconnexion, ou de la sauvegarde par
+l'interface web. Ce simulateur n'a ni mise à jour de micrologiciel ni
+interface web, donc **le seul déclencheur honnête est la déconnexion
+d'un administrateur**, sous `revision-backup-on-logout`. Les autres ne
+seront pas inventés.
+
+**Sera fermé au passage** : le point que la phase 18 a laissé en le
+disant SÛR — `vdom-mode` est une commande cachée sur un vrai 7.4/7.6 et
+figure ici dans `show`, `show full` et la liste du `?`. Il touche le
+rendu de `system global`, c'est-à-dire ce qu'une révision capture.
+
+**Critère de sortie** : une déconnexion sous `revision-backup-on-logout`
+crée une révision, `execute revision list config` la rend avec ses
+colonnes réelles, `execute restore config flash <id>` remet la
+configuration d'alors, et `execute revision delete config <id>` la
+retire.
+
+**Livrée.** Quatre choses méritent d'être gardées :
+
+- **Rien n'est écrit pour restaurer.** Le chemin de restauration savait
+  déjà rejouer un texte de configuration à travers la vraie CLI, et
+  `renderWholeConfig` sait rendre la configuration entière : une révision
+  EST ce texte, et la restaurer EST ce rejeu. `restoreRevision` tient en
+  dix lignes pour cette raison, et c'est le genre de réutilisation qui
+  ne se voit pas dans le diff — d'où cette ligne.
+- **La déconnexion est branchée aux DEUX endroits** où une session
+  d'administration se termine : `FirewallCliServer` pour SSH et telnet,
+  `FortiTerminalSession.endExecSession` pour la console. Un historique
+  qui ne se remplirait que sur SSH serait exactement la moitié que ce
+  module passe son temps à refermer.
+- **`vdom-mode` est cachée**, et le socle CLI portait déjà tout ce qu'il
+  fallait : `CommandSpec.hidden` et le filtre `forHelp` existent depuis
+  la construction du socle. Seul `FortiAttributeSpec.hidden` est ajouté,
+  puis propagé aux deux rendus — la configuration et la complétion.
+  C'était le point que la phase 18 avait laissé en le disant SÛR.
+- **`FORTI_CLI_LOGOUT` est supprimée plutôt que branchée.** La sentinelle
+  était produite par `exit` et `quit` et consommée par PERSONNE : au
+  niveau le plus haut, `exit` rendait `\0forti-cli-logout` à l'appelant.
+  Les deux vrais appelants tranchent eux-mêmes — `closesSession` côté
+  SSH/telnet, `isTopLevelExit` côté console — donc la sentinelle ne
+  servait à rien et la brancher aurait ajouté un troisième mécanisme
+  pour la même décision.
+
+**Une assertion de ma sonde était fausse et c'est ELLE qui a été
+corrigée**, pas le produit : `execute restore config tftp` sans serveur
+refuse par « a TFTP server address is missing » et non par le nom de
+fichier — le serveur est vérifié en premier, ce qui est le bon ordre.
+
+**Ce qui n'est PAS modélisé, et pourquoi ce n'est pas un report** : une
+révision naît aussi, sur un vrai FortiGate, d'une mise à jour de
+micrologiciel et de la sauvegarde par l'interface web. Ce simulateur n'a
+ni l'une ni l'autre, donc ces deux déclencheurs n'ont rien à déclencher.
+Les inventer aurait produit des révisions que rien ne cause.
+
+---
+
+## Périmètre pris — FortiOS phase 18 (le pont apprend, VIEILLIT, et se lit)
+
+**Agent `mandeng`.** §6.6 du carnet nomme le point : « l'apprentissage MAC
+du mode transparent est une table simple sur le châssis, sans
+vieillissement ni STP — `Switch` en a une plus complète, et la partager
+serait le prochain pas ».
+
+Mesure de départ, faite en lisant `Firewall.ts` :
+
+- **La table est un `Map<string, string>`** — MAC vers nom de port, rien
+  d'autre. Pas d'horodatage, donc **aucun vieillissement** : une entrée
+  apprise une fois vit jusqu'à l'extinction de la machine. Sur un vrai
+  FortiGate en mode transparent, la durée de vie d'une entrée est de
+  **300 secondes** et l'entrée est ensuite réapprise.
+- **Aucune vue ne la lit.** `diagnose netlink brctl name host root.b` —
+  la commande que tout cours de mode transparent fait taper — n'existe
+  pas, et `diagnose netlink brctl list` non plus. Une table
+  d'apprentissage qu'on ne peut pas regarder ne sert à rien pour le
+  diagnostic, qui est sa seule raison d'être.
+- **Elle est unique pour tout le châssis**, alors qu'un vrai FortiGate
+  porte une instance de pont **par VDOM** (`root.b`, `<vdom>.b`).
+- **Rien ne la purge quand un port tombe**, donc une trame continue de
+  viser un port mort.
+
+**Fichiers que la phase 18 prendra** :
+
+```
+firewall/l2/BridgeFdb.ts        ← la base d'apprentissage (socle, neuf)
+firewall/Firewall.ts            ← apprentissage, consultation, purge
+vendors/fortios/diag/…          ← `diagnose netlink brctl`
+```
+
+**Réutilisation examinée et ÉCARTÉE, avec sa raison** — c'est la
+première règle de `CLAUDE.md` et elle demande d'écrire pourquoi quand on
+ne réutilise pas. `Switch.ts` porte bien une table plus complète, mais
+la mesure montre que les deux objets ne répondent pas à la même
+question : celle du commutateur est indexée par **`vlan:mac`** et
+distingue `static` / `dynamic` / `blackhole`, avec la sécurité de port
+et le vieillissement accéléré de STP par-dessus (28 points d'appel dans
+le fichier). Un pont de mode transparent n'a ici ni VLAN, ni entrée
+statique, ni trou noir, ni STP. Partager le stockage forcerait l'un à
+porter les notions de l'autre. Ce qu'ils partagent vraiment est la
+**règle de vieillissement**, qui tient en trois lignes. La table du
+commutateur n'est donc **pas** touchée par cette phase, et l'extraction
+d'un primitif commun reste un chantier de `Switch.ts`, pas une tranche
+d'une phase FortiGate.
+
+**Décision de découpage** : l'expiration est calculée à la LECTURE, pas
+par un minuteur — le garde-fou G5 interdit les minuteurs bruts, et le
+pare-feu porte déjà son horloge. C'est la même mécanique que la posture
+du mode conserve en phase 16 : piloté par l'événement et par la lecture,
+jamais par la scrutation.
+
+**Critère de sortie** : une entrée apprise expire au bout de 300
+secondes d'horloge de l'équipement, `diagnose netlink brctl name host
+root.b` rend le tableau avec ses colonnes réelles, chaque VDOM a son
+pont, et un port qui tombe perd ses entrées.
+
+**Livrée.** Les quatre défauts sont fermés et le périmètre annoncé n'a
+pas bougé. Trois choses méritent d'être gardées :
+
+- **Le refus de partager la table de `Switch.ts` est la décision de
+  cette phase**, et elle va contre ce que le carnet suggérait. La
+  mesure la tranche : 28 points d'appel, une clé `vlan:mac`, des
+  entrées statiques et des trous noirs, la sécurité de port et le
+  vieillissement accéléré de STP. Un pont de mode transparent n'a ici
+  aucune de ces notions. Ce qu'ils partagent vraiment tient en trois
+  lignes — l'âge depuis la dernière trame vue —, et forcer un stockage
+  commun ferait porter à l'un les notions de l'autre. La règle de
+  `CLAUDE.md` prévoit ce cas et demande d'écrire ce qu'on a regardé et
+  pourquoi cela ne pouvait pas servir : c'est fait, ici et dans le
+  message de commit.
+- **Le rendu a fait apparaître une propriété de `FIXED_TABLE`** qu'il
+  vaut mieux connaître : une colonne alignée à DROITE ne laisse aucun
+  blanc après elle, puisque la largeur porte son propre blanc. La
+  première version collait `port no` à `device` et `ttl` à
+  `attributes`. L'alignement à gauche est le bon choix pour ce tableau,
+  et c'est aussi celui du vrai outil.
+- **Deux notes du carnet ont été corrigées en passant** : celle qui
+  disait `config system admin` sans schéma était périmée (il existe
+  depuis la phase 7 et la phase 14 l'a branché sur SSH), et
+  `split-vdom` est désormais inscrit dans `TODO.md` avec sa mesure.
+
+**Ce qui n'est PAS fait, et pourquoi ce n'est pas un report déguisé** :
+`split-vdom` est accepté et se replie sur `multi-vdom`. Les deux
+corrections possibles — lui donner son mécanisme, ou le refuser en
+nommant la raison — dépendent de la même question à laquelle je n'ai pas
+pu répondre depuis ce réseau : ce mode existe-t-il encore en 7.6 ? Une
+source secondaire le dit retiré depuis 7.2.0 et remplacé par un type de
+VDOM `Admin` ; la documentation Fortinet décrit encore deux modes de
+6.2 à 7.6. Choisir au hasard ferait soit inventer un mécanisme que la
+vraie machine n'a plus, soit refuser une commande qu'elle accepte. La
+mesure est écrite dans `TODO.md`, y compris un fait sûr et indépendant :
+`vdom-mode` est une commande CACHÉE sur un vrai 7.4/7.6, absente de
+`show`, de `show full` et de la liste du `?`, alors qu'elle figure dans
+les trois ici.
+
+---
+
+## Périmètre pris — FortiOS phase 17 (l'inspection lit un FLUX, pas un segment)
+
+**Agent `mandeng`.** §6.7 du carnet nomme le point de loin : « le
+filtrage de fichiers lit le nombre magique en tête de corps, donc ne voit
+pas un fichier réparti sur plusieurs segments ». La mesure montre que le
+défaut est plus large que le filtrage de fichiers et qu'il n'est pas
+cosmétique du tout : c'est une **évasion**.
+
+Mesure de départ, faite en lisant `inspectedFlowOf`
+(`pipeline/stages/coreStages.ts`) et `inspection/ContentInspector.ts` :
+
+- **`inspectedFlowOf` construit son `InspectedFlow` à partir de la charge
+  utile d'UN paquet.** Il n'existe nulle part de tampon par session.
+- **`containsEicar(flow.payload)`** cherche donc la signature dans un
+  segment. Une signature coupée en deux par une frontière de segment
+  n'est vue par personne — et couper une charge utile en deux est le
+  geste le plus simple qui soit.
+- **`detectFileType` fait `body.startsWith(magic)`** : le nombre magique
+  doit se trouver au tout début du corps DE CE segment. Un fichier dont
+  l'en-tête HTTP occupe le premier segment n'est jamais typé.
+- **`ProtocolOptions` ne porte aucune borne de mise en tampon** : ni
+  `oversize-limit` ni l'option `oversize`, alors que ce sont exactement
+  les deux réglages qui, sur un vrai FortiGate, disent jusqu'où on
+  bufferise et ce qu'on fait au-delà.
+
+Ce n'est pas une imprécision d'affichage : un contrôle de sécurité qui se
+contourne en découpant un envoi est un contrôle qui n'existe pas, et
+`CLAUDE.md` porte déjà la règle qui le juge — un critère que le moteur ne
+peut pas décider doit faire ÉCHOUER la correspondance, jamais la laisser
+passer en silence.
+
+**Fichiers que la phase 17 prendra** :
+
+```
+firewall/inspection/StreamAssembler.ts   ← le flux par session (socle, neuf)
+firewall/inspection/ContentInspector.ts  ← le type de fichier lu sur le flux
+firewall/inspection/UtmProfiles.ts       ← oversize-limit et l'option oversize
+firewall/pipeline/stages/coreStages.ts   ← `inspectedFlowOf` lit le flux
+vendors/fortios/schema/utm.ts            ← les deux réglages, valeurs réelles
+```
+
+**Ce qui existe déjà et ne sera pas réécrit** : `flowKeyFromPacket` donne
+une clé DIRECTIONNELLE (source→destination), donc les deux sens d'une
+connexion ne se mélangent pas sans qu'on ait rien à inventer ;
+`SessionTable` sait dire quand une session se ferme, donc l'éviction a
+son crochet ; `ContentInspector` porte déjà toutes les détections.
+
+**Décision de découpage, écrite ici pour ne pas être découverte** : on
+réassemble le **TCP seulement**. UDP n'est pas un flux — accumuler deux
+datagrammes DNS produirait un message que personne n'a envoyé, et
+`parseDnsQuestion` lirait n'importe quoi. La borne est celle du vrai
+boîtier : `oversize-limit` en mégaoctets (défaut 10, minimum 1), et
+au-delà le comportement documenté — le fichier passe SANS être analysé,
+sauf si `set options oversize` demande de le bloquer. Cette valeur par
+défaut est celle de Fortinet et elle est laxiste ; la changer « pour être
+plus sûr » ferait mentir le simulateur sur ce que fait la vraie machine.
+
+**Critère de sortie** : une signature EICAR coupée en deux segments est
+DÉTECTÉE, un fichier dont le nombre magique arrive après la frontière de
+segment est TYPÉ, un envoi qui dépasse `oversize-limit` suit le
+comportement réglé, et le tampon d'une session disparaît quand la session
+se ferme.
+
+**Livrée.** La leçon de ce chantier n'est pas dans le produit, elle est
+dans le LABORATOIRE, et elle mérite d'être écrite : **la première version
+de la sonde ne prouvait rien**. Montée sur `nginx`, le serveur répondait
+`400 Bad Request` et fermait la connexion avant le second `write` — un
+seul segment traversait le pare-feu, et le cas central aurait pu passer
+comme échouer sans rien dire du réassemblage. Ce n'est pas une erreur
+qu'on découvre en relisant : elle s'est vue en imprimant les segments qui
+ont RÉELLEMENT traversé, et pas autrement. Le serveur écoute désormais
+sans répondre, sur le port 80 parce que c'est celui que
+`profile-protocol-options` déclare comme HTTP — sur un autre port le flux
+n'est pas classé `http` et le profil antivirus ne s'applique pas, ce qui
+est le comportement d'un vrai FortiGate et non un contournement.
+
+**Un cas a été DURCI par la discrimination**, ce qui est le deuxième
+enseignement : « le nombre magique arrive après la frontière » passait
+des DEUX côtés, parce que le second segment commençait par `%PDF-` et se
+typait tout seul. Il coupe désormais AU MILIEU du nombre magique, où
+aucun des deux segments ne peut se typer seul. Sans le passage par
+`git stash`, ce cas serait resté au fichier en donnant l'illusion de
+couvrir le mécanisme.
+
+**Trois décisions, chacune parce que l'inverse était possible** :
+
+- **UDP n'est pas réassemblé.** UDP n'est pas un flux ; coller deux
+  datagrammes DNS produirait un message que personne n'a envoyé, et
+  `parseDnsQuestion` lirait n'importe quoi.
+- **La clé du flux est celle du paquet**, `flowKeyFromPacket`, qui est
+  déjà directionnelle. Les deux sens d'une connexion ne se mélangent donc
+  pas sans qu'on ait rien eu à inventer, et deux connexions non plus.
+- **Le défaut laxiste de Fortinet est gardé.** Au-delà de
+  `oversize-limit`, un fichier passe SANS être analysé sauf si
+  `set options oversize` demande de le bloquer. Le durcir « pour être
+  plus sûr » ferait mentir le simulateur sur ce que fait la vraie
+  machine, et un apprenant qui mesure ici et sur un vrai FortiGate doit
+  trouver la même chose.
+
+**Ce qui reste de la phase 6 et n'est pas touché ici** : le catalogue de
+catégories reste LOCAL, l'antivirus reconnaît EICAR et rien d'autre, et
+`scan-archive-contents` ne descend dans aucune archive faute de
+décompresseur. Ces trois-là demandent une brique qui n'existe pas ; le
+réassemblage, lui, n'en demandait aucune — c'est pourquoi il est fait.
+
+---
+
+## Périmètre pris — FortiOS phase 16 (la charge est mesurée, le mode conserve engage)
+
+**Agent `mandeng`.** §6.5 du carnet nomme le point, et le carnet le dit
+déjà dans la langue de ce module : « `get system performance status` ne
+rend **ni CPU ni mémoire** : aucun modèle de charge n'existe, et une
+constante affichée là où la vue promet une mesure est précisément le
+défaut que ce dépôt referme. »
+
+Mesure de départ, faite en lisant les trois vues et leur source unique
+`vendors/fortios/diag/systemLoad.ts` :
+
+- **`CPU_STATES` est un objet GELÉ à `idle: 100`** et tout le reste à
+  zéro. `get system performance status` et `diagnose sys top` le
+  rendent tous les deux : un pare-feu qui vient d'acheminer cent mille
+  paquets annonce cent pour cent d'inactivité.
+- **`memoryStates()` rend `usedKib: 0`**, donc `freeKib = totalKib`. Un
+  équipement dont la mémoire utilisée est nulle n'a pas démarré. La
+  conséquence dépasse l'affichage : `conserveModeLines()` calcule
+  `memory conserve mode: on|off` à partir de cette valeur, donc le mode
+  conserve est **structurellement impossible** — la vue décrit un
+  mécanisme qui ne peut pas se produire.
+- **Les seuils sont des constantes que l'opérateur ne peut pas régler** :
+  `CONSERVE_THRESHOLDS` est figé à 88/82/78 et
+  `memory-use-threshold-extreme|red|green` n'existent pas dans le
+  schéma de `config system global`.
+- **La table des processus de `diagnose sys top` rend `0.0 0.0`** en dur
+  pour chaque processus, colonnes `%CPU` et `%mem` comprises.
+- **Les ressources de la machine sont déclarées CINQ fois** : `1985` et
+  `1` dans `systemLoad.ts`, et à nouveau en dur dans `FortiShell` pour
+  la ligne `VM Resources` de `get system status`. Rien ne les relie, et
+  `FirewallProfile` — qui décrit pourtant le châssis (ports, temporisateurs,
+  catalogue d'usine) — ne porte ni RAM ni CPU.
+
+**Fichiers que la phase 16 prendra** :
+
+```
+firewall/health/SystemLoad.ts            ← le modèle unique (socle, neuf)
+firewall/FirewallProfile.ts              ← la RAM et les CPU du châssis
+firewall/Firewall.ts                     ← le compteur de travail à l'entrée
+vendors/fortios/diag/systemLoad.ts       ← devient un RENDU, plus une source
+vendors/fortios/schema/system.ts         ← memory-use-threshold-*
+```
+
+**Ce qui existe déjà et ne sera pas réécrit** : `SessionTable.statistics()`
+compte les sessions actives, créées et fermées ; `PolicyStore`,
+`ObjectStore`, `RouteTable`, `ArpService` et le tampon de journaux
+comptent chacun ce qu'ils portent ; `SystemClock` donne l'horloge.
+`MemoryProfile` (`devices/host/hardware/`) est le modèle mémoire du
+projet — il est lu ici pour ce qu'il sait faire (réserver et rendre) et
+n'est pas dupliqué.
+
+**Décision de découpage, écrite ici pour ne pas être découverte** : la
+charge est DÉRIVÉE de ce que l'équipement porte et fait vraiment — le
+nombre de sessions, d'objets, de politiques, de routes, d'entrées de
+journal, et les paquets traités dans la dernière fenêtre — jamais d'un
+tirage aléatoire ni d'une constante décorative. Ce qui n'a pas de source
+mesurable reste à ZÉRO et est dit tel quel : `nice`, `iowait`, `irq` ne
+correspondent à rien qu'on mesure, et les inventer serait exactement le
+défaut qu'on referme.
+
+**Critère de sortie** : remplir la table des sessions fait MONTER la
+mémoire utilisée, le mode conserve s'active pour de bon au seuil rouge
+et se relâche au seuil vert, un paquet arrivant en mode conserve extrême
+est vraiment refusé, l'événement est journalisé, et les trois vues
+lisent le même modèle.
+
+**Livrée.** Le périmètre annoncé a été ÉLARGI par la vérification contre
+la documentation Fortinet, qui a trouvé trois choses que la mesure de
+départ n'avait pas vues :
+
+- **Les seuils étaient FAUX**, pas seulement non réglables : le dépôt
+  portait 88/82/78 là où un vrai FortiGate donne extrême 95, rouge 88,
+  vert 82 (plage 70-97, inchangée de 7.4 à 8.0). Le 88 du dépôt était le
+  seuil ROUGE pris pour l'extrême et le 82 le seuil VERT pris pour le
+  rouge ; 78 ne figure nulle part.
+- **Le seuil extrême se mesure sur `utilisé + libérable`** quand le rouge
+  et le vert se mesurent sur l'`utilisé` seul. C'est écrit dans
+  l'intitulé même de la vue (`memory used + freeable threshold extreme`),
+  que le dépôt rendait déjà sans que rien ne l'applique.
+- **`Current sessions:`, `Total sessions created:` et
+  `Total sessions closed:` n'existent pas** dans cette commande sur un
+  vrai boîtier — trois lignes inventées — pendant qu'il lui manquait
+  `Average session setup rate:`, qu'elle a.
+
+**Deux erreurs de MON premier modèle**, trouvées en lisant la sortie
+rendue plutôt qu'en la supposant juste, et corrigées :
+
+1. `utilisé + libre + libérable = total`. Ce sont TROIS catégories
+   disjointes et non deux dont l'une contiendrait l'autre — la capture
+   d'un vrai boîtier tranche : 68,6 + 18,8 + 12,6 = 100. Ma première
+   version comptait le tampon de journaux DEUX fois.
+2. Le tampon de journaux n'est pas réclamable : le libérer perdrait les
+   journaux, donc il est UTILISÉ en entier, réserve comprise. Une fois
+   réservé, le remplir ne change plus rien.
+
+**Le levier de pression mémoire de la sonde est une vraie commande
+d'opérateur** — `config log memory global-setting` / `set max-size` — et
+non une porte dérobée. Sur un vrai FortiGate ce tampon est de la RAM
+réservée et le sur-dimensionner est une cause documentée de mode
+conserve. Aucune méthode de test n'est ajoutée à l'équipement ; la
+première version de la sonde en ouvrait une (`setMemoryPressureForTest`)
+et a été réécrite avant d'être exécutée une seule fois.
+
+**Le mode conserve a deux conséquences, de polarités OPPOSÉES**, et c'est
+le fait le moins intuitif de ce chantier : l'inspection MANDATAIRE échoue
+OUVERTE par défaut (`av-failopen pass` — le trafic passe sans être
+inspecté), l'inspection de FLUX échoue FERMÉE par défaut
+(`ips global fail-open disable` — le trafic est jeté). Les deux valeurs
+par défaut sont réelles. `one-shot` reste collé après la sortie du mode
+conserve, ce qui est sa raison d'être.
+
+Trouvé en chemin et corrigé dans le fichier qu'on touchait : `renderTable`
+ne savait pas rendre un tableau SANS intitulé de colonne, alors que les
+deux vues de ce chantier en sont. `TableStyle.header` le permet, et les
+deux passent par le module commun au lieu de caler leurs blancs à la
+main.
+
+Ce qui n'a **pas** de source mesurable reste à ZÉRO et est dit dans le
+fichier : `nice`, `iowait`, `irq`. De même le %CPU par processus n'est
+attribué qu'aux processus d'inspection — le travail du noyau n'appartient
+à aucun processus utilisateur, ce que la documentation Fortinet dit
+elle-même de la colonne mémoire de `diagnose sys top`.
+
+**Rien n'est laissé ouvert.** Il n'y a pas de minuteur de surveillance
+(G5 l'interdit) et il n'en faut pas : `memory()` règle la posture à
+chaque LECTURE, et chaque mutation qui déplace vraiment la mémoire
+(réserve de journaux, compte de sessions, changement de seuil) la
+rappelle. Un mécanisme piloté par l'événement plutôt que par la scrutation.
+
+---
+
 ## Périmètre pris — FortiOS phase 15 (le type du VIP gouverne, un bloc expire)
 
 **Agent `mandeng`.** §6.4 du carnet nomme les deux points, et ce sont les
@@ -2741,6 +3176,31 @@ et il fera la phase 16. **En attendant il est REFUSÉ** par
 **Critère de sortie** : un VIP `fqdn` traduit vraiment vers l'adresse que
 l'objet FQDN résout, un bloc de ports rendu redevient disponible après
 `pba-timeout`, et `dns-translation` est refusé avec sa raison.
+
+**Livrée**, en deux temps (15a `pba-timeout`, 15b le type du VIP), et le
+périmètre annoncé ci-dessus a été **réduit par la synchronisation** : la
+branche portait déjà `FirewallDnsClient`, `config system dns` commis et
+`resolveFqdn` câblé sur le magasin d'objets. La première version de ce
+travail écrivait un client DNS et une pile UDP pour le pare-feu — un
+DOUBLON — et a été supprimée avant tout commit. Ce qui restait, et qui
+est fait, est le type du VIP lui-même.
+
+Deux découvertes en chemin, chacune dans le fichier qu'on touchait :
+
+- **`overloadMappings` fuyait ET était inerte** : inséré sous
+  `pool|source:PORT SOURCE`, supprimé sous `pool|source:PORT ALLOUÉ`. La
+  table ne pouvait donc jamais perdre une entrée, et personne ne la
+  relisait — un même flux se voyait attribuer un nouveau port public à
+  chaque appel. Une PAT qui n'est pas stable pour un flux est une PAT
+  dont la réponse ne revient pas.
+- **`pba-timeout` mesure une INACTIVITÉ**, pas un bail à durée fixe (la
+  documentation Fortinet le dit ainsi). Les deux lectures s'écrivaient
+  aussi naturellement ; un cas de la sonde éprouve explicitement que
+  l'usage repousse l'échéance.
+
+**Refusé plutôt que laissé inerte** : `dns-translation`, avec la brique
+nommée (un relais applicatif DNS sur le chemin de transit) et l'entrée
+correspondante dans `TODO.md`.
 
 ---
 
@@ -2841,6 +3301,683 @@ serveur DHCP en E47.
 Le laboratoire peut être vrai de bout en bout : `LinuxRsyslogService`
 existe et écoute pour de bon (`imudp`), donc un datagramme parti du
 pare-feu peut atterrir dans le `/var/log/syslog` d'une vraie machine.
+
+---
+
+### E59 — Le MTU de sortie est respecté, et `set mtu` était rangé par personne
+
+Périmètre : l'entrée jumelle de celle du TTL — « la fragmentation n'existe
+pas ». Un datagramme plus grand que le MTU de l'interface de sortie était
+relayé tel quel, ni fragmenté ni refusé, donc la découverte de MTU de chemin
+ne pouvait pas fonctionner à travers ce pare-feu.
+
+**La mesure a trouvé plus large que l'entrée n'annonçait** : `set mtu` était
+un attribut de schéma **stocké, rendu, et lu par personne**. `FortiInterfacePatch`
+ne le portait pas, `applyInterface` ne le posait pas, et `L3Interface.mtu`
+restait à 1500 quoi que l'opérateur écrive. C'est le défaut que ce dépôt passe
+son temps à défaire, sur une commande que le tutoriel emploie.
+
+**`mtu-override` est le critère, et l'ignorer aurait été une infidélité dans
+l'autre sens.** Sur un vrai FortiGate, `set mtu` ne fait rien tant que
+`set mtu-override enable` n'est pas posé — les deux attributs existaient ici,
+tous deux morts. Le patch ne porte le MTU **que** si l'override est actif, et
+un cas de témoin le vérifie : `set mtu 600` seul laisse passer 1228 octets.
+
+**Deux moitiés, deux endroits, et l'ordre est celui de Linux.** Le refus
+(`DF` posé + trop gros) est une étape de pipeline, `mtu-check`, placée juste
+après `ttl-decrement` — c'est l'ordre d'`ip_forward()`, qui vérifie le TTL
+puis `ip_exceeds_mtu` avant le crochet FORWARD. La fragmentation elle-même est
+au point d'émission (`Firewall.forward`), comme dans `ip_output`, donc elle
+vaut aussi pour les paquets que le pare-feu produit lui-même. `mtu-exceeded-df`
+redevient un motif de refus **avec un producteur**, comme `ttl-expired` la
+veille : les deux motifs que le garde-fou G-P2 avait trouvés orphelins sont
+maintenant vivants tous les deux.
+
+**Rien n'est écrit de neuf pour la découpe** : `fragmentIPv4` (RFC 791 §3.2)
+est la fonction du socle que `Router.ts` utilise déjà, et `buildICMPError` avec
+`ICMP_UNREACH_FRAG_NEEDED` porte le MTU du saut suivant dans le champ prévu
+par la RFC 1191. `sendTimeExceeded` et `sendFragmentationNeeded` passent par un
+seul `sendIcmpError` — deux émetteurs auraient fini par ne pas sourcer l'erreur
+depuis la même interface.
+
+**Ce que la sonde vérifie est le FIL, pas seulement le succès.** Le premier
+essai avait un cas « DF absent : le datagramme arrive » qui passait **avant
+correctif**, puisqu'un datagramme non contraint arrive de toute façon : il
+compte maintenant les trames sorties sur `port3` — une seule quand ça tient,
+plusieurs quand il faut découper. Le message rendu au PC est celui du vrai
+`ping` : `From 192.168.10.1 icmp_seq=1 Frag needed and DF set (mtu = 600)`.
+
+**Reste ouvert et réécrit dans `TODO.md`** : le sens inverse, le réassemblage.
+`IPv4Reassembler` existe dans le socle, donc c'est un branchement — mais un
+pare-feu de transit ne réassemble pas par défaut sur un vrai FortiGate (il ne
+le fait que sous inspection UTM), et cette condition n'est modélisée nulle
+part. La brancher sans la condition serait inventer un comportement.
+
+**Discrimination** (`git stash push -- src/network`) : 3 des 6 cas tombent
+avant correctif. Les 3 témoins sont le datagramme qui tient (une seule trame
+des deux côtés), `set mtu` sans override (qui ne doit rien changer, et ne
+changeait rien non plus avant) et l'envoi sans contrainte.
+
+**Vérifié** : 1825 cas du module pare-feu (92 fichiers). Typecheck inchangé
+à 342.
+
+---
+
+### E58 — La table de routage et la table de sessions écoutent la santé SD-WAN
+
+Périmètre : deux entrées ouvertes de `TODO.md` — « la route de la zone ne
+SUIT ni la santé ni un changement de membre » et « une session DÉJÀ ouverte
+ne change pas de membre ». **Elles nommaient toutes deux le même chaînon
+manquant**, et c'est la raison de les prendre ensemble : la mesure de santé
+n'avait aucun consommateur en dehors de son propre afficheur.
+
+**Ce qui manquait n'était pas la mesure, c'était l'événement.**
+`recordHealth` calculait déjà l'état DÉCLARÉ d'un membre — avec `failtime` et
+`recoverytime`, livrés au TP 20 — et le rangeait sans que personne
+l'apprenne. Il rend maintenant la TRANSITION (`{check, sequence, alive}`) ou
+`null` quand rien ne change, la sonde les collecte, et `SdwanService` les
+publie à un observateur. Rendre `null` sur un non-changement est ce qui rend
+l'événement utilisable : sans cela, chaque tour de sonde aurait redéveloppé
+toutes les routes et fermé les mêmes sessions.
+
+**Deux consommateurs, un seul développement de route.** La route d'une zone
+SD-WAN était développée en une route par membre AU MOMENT du commit, dans
+`commitDevice` — donc figée. Le développement vit désormais sur l'équipement
+(`Firewall.installSdwanRoute`), le commit l'appelle et la transition de santé
+le rejoue : **une seule implémentation**, sinon la route posée au commit et
+celle reposée après une bascule auraient fini par différer. L'équipement
+garde les routes de zone DÉCLARÉES (`sdwanRoutes`), parce qu'on ne peut pas
+redévelopper ce qu'on n'a pas gardé — la table de routage ne porte que les
+copies développées.
+
+**`update-static-route` est le critère, et il existait sur le vrai produit
+sans exister ici.** Actif par défaut, il gouverne le retrait : `set
+update-static-route disable` laisse la route en place alors que la sonde
+déclare le membre mort, et un cas le vérifie. L'écrire était nécessaire —
+retirer la route inconditionnellement aurait été honorer un comportement que
+l'opérateur peut désactiver.
+
+**La session fermée plutôt que reroutée.** Un vrai FortiGate réévalue les
+sessions affectées ; ici la table de sessions ferme celles dont l'interface
+de sortie est celle du membre mort, si bien que le paquet suivant retraverse
+le pipeline et se fait aiguiller vers le survivant. Le résultat observable
+est le même — le trafic vers LA MÊME adresse repart par l'autre membre — et
+le mécanisme est celui que la table sait déjà faire (`clearMatching`), plutôt
+qu'une réécriture d'entrée de session qui n'aurait rien de plus.
+
+**Un garde-fou a repris la main en cours de route, et il avait raison** :
+ma première version déclarait les faits de route avec le type
+`FortiStaticRoute` de la déclinaison FortiOS, ce qui aurait fait importer la
+couche vendeur par `Firewall.ts` — G2. `DeclaredStaticRoute` est donc un type
+du socle (`l3/RouteTable.ts`), que la déclinaison satisfait par sa forme.
+C'est la deuxième fois en deux entrées que ce garde-fou attrape le même
+réflexe.
+
+**Corrigé dans ma propre sonde** : `diagnose sys session list` ne nomme pas
+les interfaces (il écrit `dev=4->3/3->4`, des index), donc mes assertions sur
+`port1` ne prouvaient rien ; elles portent maintenant sur `gwy=`, la
+passerelle du membre, qui est ce que la session dit vraiment. Et `Cable` n'a
+pas de `reconnect()` — le retour du lien se fait par un `connect()` sur les
+deux mêmes ports.
+
+**Reste ouvert et réécrit** : ajouter ou retirer un membre de la zone APRÈS
+avoir écrit la route ne redéveloppe rien. Le chaînon existe désormais ; ce
+qui manque est l'ordre de commit entre deux tables distinctes, et rejouer
+trop tôt développerait une route sur une zone encore vide.
+
+**Discrimination** (`git stash push -- src/network`) : 3 des 7 cas tombent
+avant correctif — le retrait de la route, la fermeture de la session, et le
+départ par l'autre membre. Les 4 autres sont les témoins : les deux membres
+vivants, le retour du membre (qui passait parce que la route n'était jamais
+partie), `update-static-route disable` (idem), et la session du membre vivant
+qui survit.
+
+**Vérifié** : 1819 cas du module pare-feu (91 fichiers). Typecheck inchangé
+à 342.
+
+---
+
+### E57 — Les deux vues OSPF que le tutoriel nomme, au format de leur vrai auteur
+
+Périmètre : l'entrée ouverte « les vues `get router info ospf database` et
+`... interface` n'existent pas ». Le pare-feu ne répondait qu'à
+`get router info ospf neighbor` ; les deux autres, que le §20.2 nomme dans le
+même bloc de vérification, rendaient `unknown configuration path` sur une
+machine dont la base contenait au même instant trois LSA.
+
+**La matière était là en entier** — `getLSDB()` porte les LSA par aire et les
+externes, `getInterfaces()` porte l'état, le DR, le BDR, le coût et les
+temporisateurs. Ce qui manquait était le rendu, et le rendu est la seule
+partie qui ne se déduit pas : `get router info ospf …` de FortiOS est la
+sortie de **zebra/FRR**, pas celle d'IOS, et les deux diffèrent.
+
+**Le format vient de la source de FRR, pas de ma mémoire.** La documentation
+Fortinet et les blogs qui la citent sont hors de portée depuis ce réseau
+(le mandataire les refuse), mais `raw.githubusercontent.com` répond : les
+chaînes de `ospfd/ospf_vty.c` donnent l'en-tête de chaque section
+(`show_database_desc`), la ligne de colonnes (`show_database_header` — dont
+le décalage d'un caractère par rapport aux données est REPRODUIT, parce
+qu'il est réel), le format de ligne (`%-15pI4` deux fois, puis `%4d
+0x%08lx 0x%04x`), la mention `E2 <préfixe> [0x<tag>]` des LSA externes, et
+les onze lignes de `show ip ospf interface` avec leur ponctuation exacte —
+`MTU mismatch detection: enabled`, `Transmit Delay is 1 sec, State …`,
+`Timer intervals configured, Hello 10s, Dead 40s, Wait 40s, Retransmit 5`,
+`No Hellos (Passive interface)`, `Neighbor Count is N, Adjacent neighbor
+count is M`. Rien n'est inventé, et là où FRR distingue deux phrases
+(`OSPF not enabled on this interface` contre `OSPF is enabled, but not
+running`) la distinction est gardée.
+
+**Les types de faits vivent dans le SOCLE, pas dans la déclinaison.** La
+première version les avait posés à côté du rendu, dans
+`vendors/fortios/diag/` — et `FirewallRouting`, qui est du socle, aurait dû
+importer la couche vendeur pour les produire. C'est exactement ce que le
+garde-fou G2 interdit. `OspfLsaFacts`/`OspfAreaFacts`/`OspfDatabaseFacts`/
+`OspfInterfaceFacts` sont donc dans `routing/DynamicRoutingTypes.ts` : le
+socle MESURE, la déclinaison MET EN FORME, et la prochaine déclinaison
+(zebra chez d'autres, IOS chez Cisco) réutilisera la mesure sans réécrire la
+lecture de la base.
+
+**Deux prémisses de ma sonde étaient fausses, et c'est la mesure qui a
+tranché** : j'attendais `Internet Address 192.168.100.99/24, Area 0.0.0.0`
+alors que FRR intercale `Broadcast 192.168.100.255,` — le produit avait
+raison ; et mon laboratoire n'avait ni interface de bouclage ni avance
+d'horloge, donc AUCUNE adjacence ne se formait et je lisais une base à un
+seul LSA en croyant tester le rendu de deux. Le laboratoire reprend celui du
+TP 19, `VirtualTimeScheduler` compris.
+
+`get router info ospf interface <nom>` répond aussi pour une interface qui
+ne fait PAS d'OSPF (`OSPF not enabled on this interface`, ce que FRR écrit)
+et refuse un nom qui n'existe sur la machine à aucun titre — les deux sont
+des réponses différentes et le restent.
+
+**Discrimination** (`git stash push -- src/network`) : 11 des 12 cas tombent
+avant correctif ; le douzième est le refus d'un nom d'interface inconnu, qui
+passait parce que la commande entière était refusée.
+
+**Vérifié** : 1812 cas du module pare-feu (90 fichiers). Typecheck inchangé
+à 342.
+
+---
+
+### E56 — Le verrou porte sur le COMPTE, et un paquet qui traverse perd un saut
+
+Périmètre : deux entrées ouvertes de `TODO.md`, prises pour elles-mêmes.
+
+**① `admin-lockout-threshold` ne comptait rien sur la console.** Le compteur
+existait, fonctionnait, et était indexé par **SOURCE** — or une connexion de
+console n'a pas d'adresse d'origine, donc la console appelait
+`authenticateAdmin` directement et trois mots de passe faux d'affilée ne
+verrouillaient rien. Le TP 24 configure précisément ce réglage à son étape 4.
+
+La mesure a montré que la clé était fausse pour tout le monde, pas seulement
+pour la console : **un vrai FortiGate verrouille le COMPTE**, ce que la
+documentation Fortinet dit explicitement (« the amount of time an
+administrator account is locked out »). Le compteur est donc ré-indexé par
+nom de compte — SSH et telnet compris —, la console passe par `login()` au
+lieu de contourner le compteur, et `refusesSource()` ne consulte plus le
+verrou du tout : il ne juge plus que le `trusthost`, ce qui est sa question.
+Détail qui n'en est pas un : `onManagementAuthFailure` recevait DÉJÀ le nom
+d'utilisateur et le jetait (`(_user, source) => …`) — la donnée était là, la
+clé était l'autre.
+
+**Conséquence assumée, parce qu'elle est celle d'une vraie machine** :
+verrouiller `admin` depuis l'extérieur le verrouille aussi pour la console
+pendant `admin-lockout-duration`. C'est exactement le risque contre lequel
+`trusthost` existe, et le tutoriel l'enseigne déjà.
+
+**Corrigé en chemin dans ma propre sonde**, deux fois : `getPrompt()` rend
+`FGT-01 # ` même pendant l'invite de connexion (l'invite du flux interactif
+est ailleurs), donc l'assertion ne prouvait rien — elle compte maintenant les
+`Login incorrect`. Et un seuil de `0` n'existe pas : FortiOS accepte de 1 à
+10, le simulateur le refusait déjà, et mon cas « un seuil de zéro ne
+verrouille jamais » testait une commande refusée. Il pose maintenant le refus
+comme contrat.
+
+**② Un paquet qui TRAVERSE ne perdait pas un saut.** Le pare-feu était
+**invisible à un `traceroute`** : mesuré avant tout changement, `traceroute`
+depuis le LAN vers la DMZ affichait le serveur au saut 1. Une boucle de
+routage passant par lui n'aurait jamais pu se rompre.
+
+Rien n'a été écrit de neuf pour le fermer : `IcmpErrors.ts`
+(`buildICMPError`, `mayGenerateICMPError`, les codes RFC 792) est le module
+partagé que `Router.ts` et `EndHost.ts` utilisent déjà, et le décrément est
+une étape de pipeline (`ttl-decrement`) placée **après la décision de
+routage et avant la politique** — l'ordre de `ip_forward()` sous Linux, dont
+FortiOS dérive. `ttl-expired` redevient un motif de refus **avec un
+producteur**, ce que le garde-fou G-P2 exigeait.
+
+**Ce qui a demandé de la mesure plutôt que du raisonnement** : la première
+version décrémentait bien à l'aller et pas au retour. La cause est que
+`session-lookup` est un **chemin rapide** qui accepte et saute toutes les
+étapes suivantes — comme sur une vraie machine, sauf qu'une vraie machine
+décrémente quand même. La règle est donc UNE fonction (`transitTtl`) appelée
+par l'étape ET par le chemin rapide, plutôt que deux copies qui finiraient
+par ne pas décider pareil.
+
+**Le mode transparent ne décrémente pas**, parce qu'un pare-feu transparent
+est un PONT. Et cette condition est écrite **une seule fois**, dans
+`transitTtl` : la faire porter aussi par la liste d'étapes du profil aurait
+donné deux décideurs pour une même règle, exactement le défaut que ce dépôt
+passe son temps à défaire. L'étape figure donc dans tous les pipelines, y
+compris transparents, et c'est l'`opmode` qui tranche.
+
+**Reste ouvert et réécrit dans `TODO.md`** : la seconde moitié du même
+sujet, la fragmentation. Un datagramme plus grand que le MTU de sortie est
+relayé tel quel, ni fragmenté ni refusé par un ICMP Fragmentation Needed.
+`Ipv4Fragmentation.ts` existe déjà dans le socle, donc c'est un branchement —
+mais il demande un réassembleur et une étape de plus.
+
+Deux entrées de `TODO.md` sont retirées : le verrouillage, et les bannières
+de connexion (fermées en E55, l'entrée était restée).
+
+**Discrimination** (`git stash push -- src/network src/terminal`) : 6 des 7
+cas du verrouillage et 5 des 7 du TTL tombent avant correctif. Les témoins
+qui passent des deux côtés sont le refus d'un seuil de 0 (la commande était
+déjà refusée), la réponse du pare-feu à son propre écho, et le mode
+transparent — dont l'objet est justement de ne rien changer.
+
+**Vérifié** : 1798 cas du module pare-feu (89 fichiers). Typecheck inchangé
+à 342.
+
+---
+
+### E55 — Les deux derniers TP du tutoriel, et le durcissement qui n'existait pas
+
+Périmètre : TP 23 (dépanner trois pannes) et TP 24 (durcir et sauvegarder),
+les deux derniers laboratoires du tutoriel FortiGate encore non vérifiés.
+
+**TP 23 se joue en entier sans qu'une ligne de produit change**, et c'est le
+résultat le plus utile de la mesure. Les trois pannes — service de politique
+qui ne couvre plus le trafic, `set nat disable`, `mappedip` vers une machine
+inexistante — se provoquent, se diagnostiquent et se réparent exactement
+comme le tutoriel les écrit : le renifleur montre le paquet qui ARRIVE sur
+`port2` et ne ressort pas sur `port3`, la trace de flux dit
+`Denied by forward policy check (policy 0)` pour la première et
+`Allowed by Policy-1` pour la seconde, la table de sessions ne porte aucun
+`act=snat` tant que le NAT est coupé, et `execute ping 192.168.20.99` ne
+répond pas. Les 15 cas passent avant comme après correctif.
+
+**Ce qui a échoué au premier essai était ma propre lecture.** J'avais écrit
+la sonde en relisant la trace par `diagnose debug flow show console`, en la
+prenant pour une commande d'AFFICHAGE. Ce n'en est pas une : c'est un
+RÉGLAGE (`show console enable|disable`), et la trace se lit en réémettant
+`diagnose debug enable`, ce que le TP 9 faisait déjà correctement. Le test
+était faux, pas le produit — mais la mesure a trouvé un vrai défaut à côté :
+
+**`diagnose debug flow show` ne lisait PAS l'option qu'on lui nomme.** Le
+répartiteur faisait `state.showFunctionName = rest[3] !== 'disable'` sans
+jamais regarder `rest[2]`, c'est-à-dire le NOM de l'option. Conséquences
+mesurées : `show console enable` allumait les noms de fonction — une option
+en activait une autre ; `show console disable` les éteignait ; `show iprope`
+faisait de même ; et une option SANS valeur (`show function-name` tout court)
+était prise pour un `enable`. Les trois options sont maintenant distinguées :
+`function-name` agit comme avant, **`console` tait la trace sans arrêter le
+traçage** (ce qu'elle fait sur une vraie machine chargée, où la trace noie la
+console — activée par défaut, sans quoi le TP 9 cesserait de fonctionner), et
+`iprope` est refusée en nommant ce qui manque plutôt qu'acceptée sans effet
+(inscrit dans `TODO.md`). Une valeur absente ou inconnue est refusée.
+
+**TP 24 était, lui, largement intapable.** Trois familles manquaient.
+
+**① La sauvegarde chiffrée ne l'était pas.** `execute backup config tftp
+<fichier> <serveur> <mot de passe>` acceptait le mot de passe et le JETAIT :
+`const [destination, file, server] = rest.slice(1)` ne lisait pas le
+quatrième mot. Les deux fichiers étaient **octet pour octet identiques**, et
+`execute restore` sans mot de passe restaurait le prétendu fichier chiffré
+sans broncher. L'étape 2 du TP — « Fais l'expérience. C'est ce qui convainc
+de toujours chiffrer » — enseignait donc l'inverse de ce qu'elle promet.
+Le chiffrement est maintenant réel et sa forme est celle de Fortinet, non une
+invention : **AES-256-GCM**, clé dérivée du mot de passe par **un seul tour de
+SHA-256** — la faiblesse réelle et documentée de ce format, celle qui rend un
+mot de passe court cassable — puis en-tête, vecteur d'initialisation de 12
+octets, étiquette GCM de 16 octets, chiffré. Rien n'est écrit de neuf :
+`aesGcmEncrypt`/`aesGcmDecrypt` et `sha256` sont ceux du dépôt. **Une seule
+divergence, assumée et écrite** : le fichier réel est binaire, le VFS de ce
+simulateur ne stocke que de l'UTF-8 (contrainte déjà documentée par
+`PRD-OpenSSL` pour `openssl enc`), donc le corps est armuré en base64 sous une
+ligne d'en-tête. La restauration DÉTECTE : mot de passe absent, mauvais mot
+de passe et octet retourné sont trois refus distincts, et c'est l'étiquette
+GCM qui les prononce — un XOR ne l'aurait pas pu.
+
+**Corrigé au passage dans le tutoriel, car sa phrase était fausse** : « tu y
+liras `set psksecret`… en clair ». Non — un vrai FortiGate écrit
+`set psksecret ENC <base64>`, et ce simulateur le faisait déjà. Le danger
+n'est pas que le secret soit en clair, c'est qu'`ENC` soit un encodage
+RÉVERSIBLE à clé statique publiée (CVE-2019-6693) : la sonde décode le blob
+de la sauvegarde en clair et retrouve la clé partagée, ce qui démontre la
+leçon au lieu de l'affirmer.
+
+**② `config system password-policy` n'existait pas** — toute l'étape 3 et le
+point ④ du §25.4 étaient injouables. La table est écrite avec ses attributs
+réels (`status`, `apply-to`, `minimum-length` 8–128, les quatre minimums de
+classes de caractères, `expire-status`/`expire-day`), et surtout **elle
+refuse pour de bon** : le refus se produit au moment du `set`, comme sur une
+vraie machine, et **nomme la règle non remplie**. `apply-to` décide de la
+portée et porte AUSSI sur `psksecret`, ce qui est le seul endroit du pare-feu
+où la qualité d'une clé partagée est vérifiée.
+
+Cela a demandé un vrai chaînon : la validation d'un attribut ne voyait que sa
+propre valeur, jamais l'état de la machine. `FortiAttributeSpec` gagne
+`valueRefusal(value, environment)` et `FortiValidator` reçoit le
+`FortiSchemaEnvironment` — qui n'est pas un objet nouveau, c'est le contrat
+que `FortiConfigTree` remplit déjà et que `isRouted`/`isStatic` lisent depuis
+toujours par `object.setting('system settings', 'opmode')`. Le hook rend la
+RAISON plutôt qu'un booléen, parce qu'un refus qui ne dit pas quelle règle a
+échoué envoie l'opérateur deviner. `reuse-password` et
+`min-change-characters` sont refusés en nommant l'absence d'historique de
+mots de passe (`TODO.md`).
+
+**③ La bannière n'existait pas non plus** : `pre-login-banner` et
+`post-login-banner` étaient refusés par `config system global`, et
+`config system replacemsg` n'existait pas du tout. Les deux moitiés sont
+écrites et **restent deux réglages distincts** — le drapeau sans texte
+n'affiche rien, le texte sans drapeau non plus, et les deux cas sont épinglés
+par test parce que c'est l'erreur la plus fréquente sur cette commande.
+
+Une particularité de FortiOS a dû être modélisée pour cela, et elle n'est pas
+cosmétique : **`config system replacemsg admin "pre_admin-disclaimer-text"`
+porte la clé sur la ligne `config`**, pas sur un `edit`. Le socle
+n'enregistrait que des chemins exacts, donc la forme du tutoriel n'atteignait
+même pas le navigateur. `FortiTableSpec.keyOnConfigLine` le déclare, et il
+gouverne les TROIS endroits qui doivent s'accorder : la commande enregistrée
+(qui prend la clé en argument, donc la complète aussi), la descente du
+navigateur, et le RENDU — sans quoi `show` aurait écrit une forme que
+l'import d'une topologie n'aurait pas su rejouer. Un cas rejoue le `show`
+d'une machine sur une autre et vérifie que la bannière y arrive.
+
+**Discrimination** (`git stash push -- src/network src/terminal`) : 19 des
+69 cas tombent avant correctif — 4 sur `tuto-fortigate-tp09` (les options de
+`show`), 7 sur `tuto-fortigate-tp24`, 8 sur `fortigate-durcissement`. **Les
+15 cas de `tuto-fortigate-tp23` passent des deux côtés**, ce qui est le
+constat et non un défaut de la sonde. Nuance dite plutôt que tue : les trois
+fichiers NOUVEAUX du produit (`ConfigEncryption`, `LoginBanners`,
+`passwordPolicy`) ne sont pas suivis par git, donc le `stash` n'a retiré que
+leur BRANCHEMENT — ce qui est la bonne granularité, un module que personne
+n'appelle ne fait rien, mais il faut le dire.
+
+**Vérifié** : 1786 cas du module pare-feu (87 fichiers). Typecheck inchangé
+à 342.
+
+---
+
+### E54 — Une vue de lecture ne peut plus être écrite, et une l'était
+
+G8 de BRD-Firewall §40.6 — « les vues de lecture n'exposent aucune
+mutation », dont la colonne *Vérification* dit **« vérification de type »**
+— était le dernier des huit à n'exister nulle part. Il est écrit, sous le
+nom **G-P4** pour la même raison de numérotation que les trois précédents.
+
+**Ce qu'il vérifie**, sur toute interface du module dont le nom finit par
+`View` : un champ est `readonly` (sans quoi un lecteur le réaffecte) ; une
+méthode ne rend pas `void` (une vue répond à une question, elle n'agit
+pas) ; et un tableau rendu est `readonly T[]` — sans quoi l'appelant tient
+une poignée **vive** sur le tableau du magasin et peut y pousser une entrée
+que le magasin n'a jamais acceptée. Le retour arrière depuis chaque `[]`
+compte les accolades, pour que `readonly { a: string; b: string }[]` ne
+soit pas pris pour un tableau nu à cause du dernier `:` rencontré ; le
+témoin oppose cette forme-là à sa jumelle mutable.
+
+**À sa première exécution il a trouvé une porte ouverte**, et une seule :
+`FortiObjectView.key` était déclaré `key: string`. Cette vue est le port
+étroit remis aux prédicats du schéma — `availableWhen`, `renders`,
+`isStaticNat`, une centaine de fonctions dans `schema/` — et n'importe
+laquelle pouvait donc écrire `object.key = …`. Ce n'est pas théorique : la
+clé est **l'index de la table**. `FortiTable.rename()` la change en
+réécrivant du même geste la `Map` et l'ordre de rendu ; une écriture par la
+vue n'aurait fait que la moitié, laissant l'objet porter un nom que sa
+propre table ne connaît pas — `get` par l'ancien nom rendrait un objet qui
+se dit autrement, et `show` écrirait une configuration que `edit` ne sait
+pas rejouer. Un mot suffit à fermer : `readonly key: string`. Aucun appel
+n'a bougé — une classe dont le champ est mutable satisfait toujours une
+interface qui le déclare en lecture seule, et `FortiObject.key` reste
+assignable pour `rename()`, qui est le seul à en avoir le droit.
+
+Les autres vues du module passaient déjà : `PolicyStoreView`,
+`SessionTableView`, `ModeCfgView`, `MemberView`. `LogViewFilter` et
+`HaViewFacts` sont hors périmètre et le garde le voit tout seul — leur nom
+ne finit pas par `View`, et le premier est justement un accumulateur que le
+parseur remplit. La limite est dite plutôt que tue : **le garde ne voit que
+ce qui se nomme `View`** ; une vue de lecture baptisée autrement lui est
+invisible.
+
+**Corrigé en passant** : les deux décisions écrites en E53 portaient les
+numéros D43 et D44, déjà pris par l'autre session pour tout autre chose
+(le TTL de `buildEchoRequest`, le réarmement après cycle d'alimentation).
+Elles deviennent **D56** et **D57** ; la règle de ce carnet est prise
+après lecture de ce qu'il porte, pas d'après le dernier numéro qu'on se
+rappelle avoir écrit.
+
+BRD-Firewall §40.6 est désormais entièrement couvert. Le fichier de
+garde-fous passe de 31 à 37 cas. **Vérifié** : 1723 cas du module pare-feu
+(84 fichiers). Typecheck inchangé à 342.
+
+---
+
+### E53 — Trois garde-fous que le BRD nommait et qui n'existaient pas
+
+`architecture-guards.test.ts` portait G1, G2, G5 du BRD générique et G6, G7,
+G8 du BRD FortiGate. Il manquait trois garde-fous que BRD-Firewall §40.6
+nomme depuis le début. Ils sont écrits, chacun avec son **témoin**.
+
+**G-P1 — un profil ne nomme que des étapes qui existent**, et toute étape
+écrite est nommée par au moins un profil. Ce garde-fou aurait épargné une
+session entière de mise au point : l'étage SD-WAN livré plus tôt ce mois-ci
+ne s'exécutait pas du tout, parce que son nom manquait dans
+`FORTIOS_PIPELINE` — le registre l'avait, le pipeline ne le nommait pas, et
+rien ne le disait. Vérifié en retirant pour de bon `sdwan` du profil : le
+garde l'attrape.
+
+**G-P2 — chaque motif de refus déclaré a un producteur.** À son écriture il
+en a trouvé **onze** que personne n'émettait :
+`policy-route-deny`, `sequence-out-of-window`, `screen-anomaly`,
+`screen-flood`, `screen-recon`, `alg-violation`, `application-shift-deny`,
+`ttl-expired`, `mtu-exceeded-df`, `unsupported-protocol`,
+`context-not-found`. Aucun n'est produit nulle part **dans tout le dépôt**,
+et aucun n'est consommé par un rendu. Ils sont retirés — un motif de refus
+qu'aucun chemin n'emprunte est la même chose qu'un attribut stocké et lu
+par personne (D7).
+
+**Deux d'entre eux nommaient un vrai manque**, et la connaissance est
+inscrite dans `TODO.md` plutôt que perdue avec la déclaration : le pare-feu
+ne décrémente **jamais** le TTL d'un paquet qu'il relaie et n'émet aucun
+ICMP Time Exceeded, donc il est invisible à un `traceroute` qui le
+traverse ; la fragmentation (`mtu-exceeded-df`) est absente pour la même
+raison. Fermer demande un plan de données IP complet, que `Router.ts` porte
+et que ce pare-feu n'a jamais eu.
+
+**G-P3 — toute commande enregistrée porte une description.** C'est
+l'analogue du `cisco-help-every-keyword-described` du dépôt, dont le BRD
+disait qu'il « a attrapé quatre nœuds intermédiaires nus ». Rien à
+attraper aujourd'hui côté FortiOS ; le garde reste, avec son témoin.
+
+**Numérotation** : `G-P*` et non `G*`, parce que le BRD générique et le BRD
+FortiGate donnent tous deux un sens à G6/G7/G8. Reprendre les chiffres
+aurait fait croire que ce fichier porte les huit du générique.
+
+`architecture-guards.test.ts` passe de 21 à 31 cas. **Vérifié** : 1650 cas
+du module pare-feu (78 fichiers). Typecheck inchangé à 344.
+
+---
+
+### E52c — Une liste de valeurs se complète à chaque valeur
+
+Troisième passage, même périmètre. `set srcaddr NET-LAN ` ne proposait plus
+rien — or `set srcaddr "NET-LAN" "NET-DMZ"` est la forme ordinaire, et le
+tutoriel l'écrit partout.
+
+**La cause est la forme de la place.** Un attribut multiple reçoit un seul
+argument `REST` : le curseur y voit tout ce qui reste de la ligne et compare
+donc `NET-LAN ` aux candidats, qui ne commencent pas par là. La porte
+FortiOS interroge maintenant le socle sur le SEUL mot en cours.
+
+**Et seulement quand l'attribut accepte vraiment plusieurs valeurs.** Le
+premier jet ne posait pas la condition : `set action accept ` reproposait
+alors les valeurs de l'énumération, ce qu'un vrai FortiGate ne fait pas.
+C'est le cas témoin qui l'a attrapé — il était écrit pour ça.
+
+**Le garde-fou G6 a refusé le premier correctif, et il avait raison.**
+J'avais écrit `new Set(['set', 'append', 'select', 'unselect'])` dans le
+shell : une seconde liste de verbes, alors que `FortiSocle` les énumère déjà
+pour déclarer leurs specs. `VALUE_LIST_VERBS` est exporté et lu par les
+deux. Le garde ne visait pas ce cas — il interdit les listes blanches
+d'attributs hors du schéma — mais sa règle textuelle a trouvé une vraie
+duplication.
+
+`fortigate-cli-resolution.test.ts` passe de 36 à 41 cas ; les 5 nouveaux
+sont discriminés sur les seules modifications de ce passage : **4 tombent**,
+le cinquième étant le témoin, qui doit passer des deux côtés.
+
+**Vérifié** : 1637 cas du module pare-feu (78 fichiers), 1224 du socle CLI.
+Typecheck inchangé à 344.
+
+---
+
+### E52b — La complétion suit les guillemets, et descend le chemin
+
+Second passage sur le même périmètre, mesuré après le premier. Deux
+manques, et les deux portent sur ce qu'un opérateur tape le plus souvent.
+
+**Une valeur commencée entre guillemets ne se complétait pas.**
+`set srcaddr "N` + Tab ne proposait rien. La cause est simple et se voyait
+mal : le guillemet ouvrant fait partie du préfixe comparé, et aucun
+candidat ne commence par `"`. Or c'est la forme que le tutoriel écrit
+partout (`set srcaddr "NET-LAN"`), et celle que Fortinet emploie dans sa
+propre documentation. La complétion travaille désormais sur la valeur nue
+et rend les deux guillemets. Un guillemet ouvert qui ne correspond à rien
+ne propose toujours rien — la règle vaut dans les deux sens.
+
+**Le chemin d'un `show`/`get` ne se complétait qu'au premier niveau.**
+`show system ` ne proposait pas `interface`, et `show firewall address `
+aucune clé. C'est la conséquence directe de D32 : les `alternatives` d'un
+chemin libre sont une liste STATIQUE, donc les têtes de branche. La
+descente est faite dans `FortiShell.completions()` — la porte FortiOS, qui
+lit le même arbre — et non dans le socle : un chemin libre reste libre, et
+c'est le vendeur qui sait ce qu'il y a dessous.
+
+Les trois derniers cas vérifient tout cela **dans le terminal**, à travers
+`FortiTerminalSession` et de vraies touches Tab, et non seulement sur le
+shell : c'est là que l'opérateur tape. Ils confirment au passage que le
+terminal ajoute l'espace après le mot complété, comme le vrai.
+
+`fortigate-cli-resolution.test.ts` passe de 25 à 36 cas ; les 11 nouveaux
+sont discriminés par `git stash push -- src/network/ src/cli/` sur les
+seules modifications de ce passage : **7 tombent**, les 4 autres étant déjà
+servis par E52 (la valeur nue, la clé entre guillemets, le chemin qui n'est
+pas une table, la commande abrégée depuis le terminal).
+
+**Vérifié** : 1632 cas du module pare-feu (78 fichiers), 1224 du socle CLI
+(42 fichiers). Typecheck inchangé à 344.
+
+---
+
+### E52 — Une commande s'abrège, `execute` connaît ses mots, `edit` propose ses clés
+
+**Ce qui a été mesuré avant d'écrire** est dans le périmètre pris
+ci-dessous. Ce qui a été livré :
+
+**L'abréviation du CHEMIN.** `resolvePathWords` (`view/pathResolution.ts`)
+résout mot à mot : correspondance exacte d'abord, préfixe unique ensuite,
+ambiguïté nommée sinon, et le mot tel que tapé quand rien ne correspond —
+pour que le message d'erreur nomme ce que l'opérateur a écrit. Le
+vocabulaire à chaque profondeur est l'union des branches de l'arbre et des
+vues déclarées, parce que `get system status` n'est pas un chemin de
+l'arbre : sans les vues, `sy stat` ne pouvait pas se résoudre. Mesuré au
+passage : l'union produisait `system` deux fois et l'annonçait « ambiguous:
+system, system » — les candidats sont dédoublonnés.
+
+**Le vocabulaire d'`execute`.** Neuf sous-commandes déclarées une fois,
+lues par la répartition (un `switch` sur le nom résolu), par la complétion
+et par l'aide. `execute pin` répondait « is not implemented in this
+simulator » ; il répond maintenant que le mot est ambigu entre `ping` et
+`ping-options`, ce qui est vrai. `execute zorglub` répond `unknown action`
+sans parler du simulateur.
+
+**Un défaut du SOCLE PARTAGÉ, trouvé en cherchant pourquoi `edit ` ne
+propose rien.** `argumentCompletableValues` filtrait les valeurs
+proposables sur `/^[a-z][a-z0-9:._-]*$/` : une valeur commençant par une
+majuscule n'était jamais proposée. Or les clés d'une table FortiOS —
+`SRV-WEB`, `NET-LAN`, `GRP-Direction` — en sont presque toujours. Le filtre
+visait les PLACEHOLDERS (`WORD`, `A.B.C.D`, `<1-4094>`) et se servait de la
+casse comme approximation. Il compare maintenant au placeholder réel de la
+place (`argumentPlaceholder(spec)`) et aux formes de placeholder connues.
+Conséquence sur les autres constructeurs : ils gagnent la même chose, et
+les 1221 cas du socle CLI comme les 181 cas de complétion Cisco/VRP passent
+sans changement.
+
+**`edit ?` liste les entrées ET garde la place libre.** `argumentSuggestions`
+n'émettait plus le placeholder dès qu'une place portait des `alternatives` ;
+une place non-`REST` le rend désormais en tête, comme un vrai `edit ?` qui
+montre `<string>` puis les entrées. Les places `REST` (`get`, `show`) ne le
+rendent pas : leurs alternatives SONT des formes, et annoncer une forme
+libre par-dessus n'apprendrait rien.
+
+**Supprimé** : `FirewallProfile.unimplemented`, déclaré, lu par personne, et
+faux — il rangeait `config vpn ipsec` et `diagnose debug flow` parmi les
+absents alors que les deux sont livrés depuis les phases 8 et 4.
+
+`fortigate-cli-resolution.test.ts` (25 cas) est discriminé par `git stash
+push -- src/network/ src/cli/` : **17 tombent**. Trois d'entre eux sont des
+GARDES — toute sous-commande déclarée répond, toute vue déclarée rend
+quelque chose, la liste proposée est exactement la liste déclarée — sans
+quoi les deux vocabulaires pourraient dériver en silence vers la promesse
+fausse que ce périmètre vient de fermer.
+
+**Vérifié** : 1624 cas du module pare-feu (78 fichiers), 1221 du socle CLI
+(42 fichiers), 181 des suites de complétion Cisco/VRP. Typecheck inchangé à
+344.
+
+---
+
+## Périmètre pris — FortiOS : résolution, suggestions, complétion (2e volet)
+
+**Agent `mandeng` (session tutoriel/TP).** Le premier volet du confort CLI
+est livré par l'autre agent (Tab qui défile — D31, `get`/`show` qui
+proposent l'arbre — D32, le ping au fil de l'eau — D33). Ce périmètre-ci
+ne le recouvre pas : il porte sur ce que la **mesure** trouve encore
+manquant en amont de la complétion, c'est-à-dire la RÉSOLUTION d'une
+commande abrégée et les propositions qui n'existent pas du tout.
+
+**Mesuré avant d'écrire** (sonde jetable, sur une machine neuve) :
+
+| Saisie | Résultat mesuré |
+|---|---|
+| `g system status` | ✅ le VERBE s'abrège |
+| `get sys status` | ❌ `unknown configuration path "sys status"` |
+| `show system glo` | ❌ idem |
+| `diag sy session stat` | ✅ (chemin de mots-clés) |
+| `execute pin 1.1.1.1` | ❌ **`execute pin` is not implemented in this simulator** |
+| `execute ` + Tab | ❌ 4 propositions sur ~15 sous-commandes réelles |
+| `edit ` + Tab dans une table peuplée | ❌ aucune proposition |
+
+**Ce que dit Fortinet**, et c'est son propre exemple : « You can
+abbreviate words in the command line to their smallest number of
+non-ambiguous characters. For example, the command `get system status`
+could be abbreviated to `g sy stat`. » Le simulateur abrège le verbe et
+pas le chemin.
+
+**Le message de refus d'`execute` est FAUX** et c'est le plus coûteux des
+quatre : `execute pin` répond que la commande n'est pas implémentée dans
+ce simulateur, alors que `execute ping` l'est. Il envoie chercher une
+limite de produit là où il n'y a qu'une abréviation non résolue.
+
+**Cause commune des deux dernières lignes** : `execute` est UNE seule
+`CommandSpec` dont l'argument `REST` avale toute la ligne, et le
+répartiteur est une chaîne de `if` dans `FortiShell.executeVerb`. Les noms
+des sous-commandes ne vivent donc nulle part où la complétion, l'aide ou
+la résolution puissent les lire.
+
+**Fichiers pris** :
+
+```
+vendors/fortios/FortiSocle.ts        ← alternatives d'`execute` et d'`edit`
+vendors/fortios/FortiShell.ts        ← répartition d'`execute`, résolution du chemin
+vendors/fortios/execute/…            ← la table déclarative des sous-commandes
+```
+
+**Critère de sortie** : `g sy stat`, `exe pin 1.1.1.1`, `execute ` + Tab et
+`edit ` + Tab se comportent comme sur une vraie machine, une abréviation
+ambiguë est refusée en le disant, et aucun message ne prétend qu'une
+commande implémentée ne l'est pas.
 
 ---
 

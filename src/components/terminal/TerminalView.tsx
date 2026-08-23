@@ -391,6 +391,7 @@ export const TerminalView: React.FC<TerminalViewProps> = ({ session }) => {
               name="terminalPassword"
               type="password"
               autoComplete="off"
+              aria-label={(inputMode as { promptText?: string }).promptText ?? 'Password'}
               value={session.getPasswordBuf()}
               onChange={(e) => session.setPasswordBuf(e.target.value)}
               onKeyDown={handleKeyDown}
@@ -508,6 +509,7 @@ export const TerminalView: React.FC<TerminalViewProps> = ({ session }) => {
                 name="terminalInput"
                 type="text"
                 autoComplete="off"
+                aria-label={`Command line — ${session.getInfoBarContent().left}`}
                 value={session.input}
                 onChange={(e) => {
                   session.setInput(e.target.value);

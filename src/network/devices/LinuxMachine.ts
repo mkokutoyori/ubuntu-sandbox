@@ -31,6 +31,7 @@ import { LinuxRsyslogService } from './linux/syslog/LinuxRsyslogService';
 import { RSYSLOG_SEEDED_FILES } from './linux/syslog/RsyslogFiles';
 import { checkRsyslogCriticalFiles } from './linux/service/CriticalFiles';
 import { NtpAgent, type NtpHost } from '../ntp/NtpAgent';
+import { sendDynamicUpdate } from '../dns/update/DynamicUpdateClient';
 import { LinuxChronyService, CHRONY_CONF_PATH } from './linux/time/LinuxChronyService';
 import { CHRONY_KEYS_PATH, CHRONY_KEYS_DEBIAN } from './linux/time/ChronyKeys';
 import { LinuxApacheService } from './linux/http/apache/LinuxApacheService';
@@ -497,6 +498,7 @@ export abstract class LinuxMachine extends EndHost
         'dhcpd', message, this.executor.serviceMgr.getPortBinding('isc-dhcp-server')?.mainPid,
         'isc-dhcp-server'),
     });
+    this.dhcpd.getEngine().setEventBus(this.getBus());
     this.executor.serviceMgr.registerConfigCheck('isc-dhcp-server', () => {
       const verdict = this.dhcpd.preflight();
       return verdict.ok ? { ok: true } : { ok: false, error: verdict.output, verbatim: true };
@@ -1166,6 +1168,7 @@ export abstract class LinuxMachine extends EndHost
   override setEventBus(bus: import('@/events/EventBus').IEventBus | null): void {
     super.setEventBus(bus);
     this.executor.attachEventBus(this.getBus(), this.id);
+    this.dhcpd?.getEngine().setEventBus(this.getBus());
   }
 
   override setHardware(profile: HardwareProfile): void {
@@ -1420,6 +1423,8 @@ export abstract class LinuxMachine extends EndHost
     });
     this.executor.chronyService = this.chronyService;
     this.executor.ntpAgent = () => this.getNtpAgent();
+    this.executor.dnsUpdateSender = () => (server, request, key) =>
+      sendDynamicUpdate(this, server, request, 2000, key);
 
     // Le fichier absent EMPÊCHE le démarrage, le fichier vide non :
     // c'est la distinction que `CriticalFiles.ts` tient déjà pour sshd,

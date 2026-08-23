@@ -60,12 +60,12 @@ export function runTruncate(
   }
 
   for (const p of files) {
-    const abs = exec.vfs.normalizePath(p, exec.cwd);
+    const abs = exec.vfs.normalizePath(p, exec.getCwd());
     if (noCreate && !exec.vfs.exists(abs)) continue;
-    exec.publishFsAccess(abs, 'w', 'truncate');
-    exec.publishSyscall('truncate', abs);
+    exec.publishAuditFsAccess(abs, 'w', 'truncate');
+    exec.publishAuditSyscall('truncate', abs);
     const ok = exec.vfs.writeFile(
-      abs, '', exec.userMgr.currentUid, exec.userMgr.currentGid, exec.umask,
+      abs, '', exec.userMgr.currentUid, exec.userMgr.currentGid, exec.getUmask(),
       false, size ?? undefined,
     );
     if (!ok) {

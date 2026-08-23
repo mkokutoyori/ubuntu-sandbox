@@ -1,6 +1,6 @@
 ============================================================
 Cisco L2 switch debug transcript — cisco-l2-04-spanning-tree
-Generated: 2026-08-18T19:51:04.738Z
+Generated: 2026-08-23T10:19:35.495Z
 Topology: CORE(L2) trunked to SW1 & SW2 (L2 access). SW1: L1(Linux 1.11) Fa0/1, W1(Win 1.12) Fa0/2, SRV1(Linux 1.13) Fa0/3, Gi0/1=trunk. SW2: L2(Linux 1.21) Fa0/1, W2(Win 1.22) Fa0/2, SRV2(Linux 1.23) Fa0/3, Gi0/1=trunk. All hosts 192.168.1.0/24.
 focus=PVST/RPVST/MST modes, root/priority, portfast/guards, MST region, topology change
 Total steps: 363
@@ -18,13 +18,19 @@ Total steps: 363
                Address     0200.0000.0001
                Cost        0
                This bridge is the root
+               Hello Time   2 sec  Max Age 20 sec  Forward Delay 15 sec
   
-  Interface        Role  Sts  Cost      Prio.Nbr  Type
-  ---------------- ----  ---  --------  --------  ----
-  Fa0/1            Desg  FWD  19        128.1     P2p
-  Fa0/2            Desg  FWD  19        128.2     P2p
-  Fa0/3            Desg  FWD  19        128.3     P2p
-  Gi0/1            Desg  FWD  4         128.25    P2p
+    Bridge ID  Priority    32769  (priority 32768 sys-id-ext 1)
+               Address     0200.0000.0001
+               Hello Time   2 sec  Max Age 20 sec  Forward Delay 15 sec
+               Aging Time  300 sec
+  
+  Interface           Role Sts Cost      Prio.Nbr Type
+  ------------------- ---- --- --------- -------- --------------------------------
+  Fa0/1               Desg FWD 19        128.1    P2p
+  Fa0/2               Desg FWD 19        128.2    P2p
+  Fa0/3               Desg FWD 19        128.3    P2p
+  Gi0/1               Desg FWD 4         128.25   P2p
 
 [3/363] sw1 SW1# show spanning-tree summary
   Switch is in pvst mode
@@ -316,13 +322,19 @@ Total steps: 363
                Address     0200.0000.0001
                Cost        0
                This bridge is the root
+               Hello Time   2 sec  Max Age 20 sec  Forward Delay 15 sec
   
-  Interface        Role  Sts  Cost      Prio.Nbr  Type
-  ---------------- ----  ---  --------  --------  ----
-  Fa0/1            Desg  FWD  19        128.1     P2p
-  Fa0/2            Desg  FWD  19        128.2     P2p
-  Fa0/3            Desg  FWD  19        128.3     P2p
-  Gi0/1            Desg  FWD  4         128.25    P2p
+    Bridge ID  Priority    32769  (priority 32768 sys-id-ext 1)
+               Address     0200.0000.0001
+               Hello Time   2 sec  Max Age 20 sec  Forward Delay 15 sec
+               Aging Time  300 sec
+  
+  Interface           Role Sts Cost      Prio.Nbr Type
+  ------------------- ---- --- --------- -------- --------------------------------
+  Fa0/1               Desg FWD 19        128.1    P2p
+  Fa0/2               Desg FWD 19        128.2    P2p
+  Fa0/3               Desg FWD 19        128.3    P2p
+  Gi0/1               Desg FWD 4         128.25   P2p
 
 [10/363] sw1 SW1# show spanning-tree pathcost method
   Spanning tree default pathcost method used is short
@@ -518,18 +530,24 @@ Total steps: 363
 
 [59/363] sw1 SW1(config)# do show spanning-tree vlan 1
   VLAN0001
-    Spanning tree enabled protocol ieee
+    Spanning tree enabled protocol rstp
     Root ID    Priority    24577
                Address     0200.0000.0001
                Cost        0
                This bridge is the root
+               Hello Time   2 sec  Max Age 20 sec  Forward Delay 15 sec
   
-  Interface        Role  Sts  Cost      Prio.Nbr  Type
-  ---------------- ----  ---  --------  --------  ----
-  Fa0/1            Desg  FWD  19        128.1     P2p
-  Fa0/2            Desg  FWD  19        128.2     P2p
-  Fa0/3            Desg  FWD  19        128.3     P2p
-  Gi0/1            Desg  FWD  4         128.25    P2p
+    Bridge ID  Priority    24577  (priority 24576 sys-id-ext 1)
+               Address     0200.0000.0001
+               Hello Time   2 sec  Max Age 20 sec  Forward Delay 15 sec
+               Aging Time  300 sec
+  
+  Interface           Role Sts Cost      Prio.Nbr Type
+  ------------------- ---- --- --------- -------- --------------------------------
+  Fa0/1               Desg FWD 19        128.1    P2p
+  Fa0/2               Desg FWD 19        128.2    P2p
+  Fa0/3               Desg FWD 19        128.3    P2p
+  Gi0/1               Desg FWD 4         128.25   P2p
 
 [60/363] sw1 SW1(config)# end
 <empty>
@@ -1017,9 +1035,9 @@ Total steps: 363
   -------------------------------------------------------------
   Instance  Vlans mapped
   --------  -------------------------------------------------
-  0         1-4094
-  1         vlan 10,20,30
-  2         vlan 40,50,60
+  0         1-9,11-19,21-29,31-39,41-49,51-59,61-4094
+  1         10,20,30
+  2         40,50,60
 
 [214/363] sw1 SW1(config-mst)# show pending
   Name      [REGION1]
@@ -1027,9 +1045,9 @@ Total steps: 363
   -------------------------------------------------------------
   Instance  Vlans mapped
   --------  -------------------------------------------------
-  0         1-4094
-  1         vlan 10,20,30
-  2         vlan 40,50,60
+  0         1-9,11-19,21-29,31-39,41-49,51-59,61-4094
+  1         10,20,30
+  2         40,50,60
 
 [215/363] sw1 SW1(config-mst)# exit
 <empty>
@@ -1051,14 +1069,14 @@ Total steps: 363
   Fa0/3            Desg  FWD  19        128.3     P2p
   Gi0/1            Desg  FWD  4         128.25    P2p
   
-  ##### MST1    vlans mapped:   vlan 10,20,30
+  ##### MST1    vlans mapped:   10,20,30
   Bridge        address 0200.0000.0001  priority  4097 (4096 sysid 1)
   
   Interface        Role  Sts  Cost      Prio.Nbr  Type
   ---------------- ----  ---  --------  --------  ----
   Gi0/1            Desg  FWD  4         128.25    P2p
   
-  ##### MST2    vlans mapped:   vlan 40,50,60
+  ##### MST2    vlans mapped:   40,50,60
   Bridge        address 0200.0000.0001  priority  8194 (8192 sysid 2)
   
   Interface        Role  Sts  Cost      Prio.Nbr  Type
@@ -1071,12 +1089,12 @@ Total steps: 363
   -------------------------------------------------------------
   Instance  Vlans mapped
   --------  -------------------------------------------------
-  0         1-4094
-  1         vlan 10,20,30
-  2         vlan 40,50,60
+  0         1-9,11-19,21-29,31-39,41-49,51-59,61-4094
+  1         10,20,30
+  2         40,50,60
 
 [220/363] sw1 SW1(config)# do show spanning-tree mst 1
-  ##### MST1    vlans mapped:   vlan 10,20,30
+  ##### MST1    vlans mapped:   10,20,30
   Bridge        address 0200.0000.0001  priority  4097 (4096 sysid 1)
   
   Interface        Role  Sts  Cost      Prio.Nbr  Type
@@ -1089,19 +1107,25 @@ Total steps: 363
 
 --- [222] § inspection after config ---
 [223/363] sw1 SW1# show spanning-tree
-  VLAN0001
-    Spanning tree enabled protocol ieee
+  MST0
+    Spanning tree enabled protocol mstp
     Root ID    Priority    4097
                Address     0200.0000.0001
                Cost        0
                This bridge is the root
+               Hello Time   2 sec  Max Age 20 sec  Forward Delay 15 sec
   
-  Interface        Role  Sts  Cost      Prio.Nbr  Type
-  ---------------- ----  ---  --------  --------  ----
-  Fa0/1            Desg  FWD  19        128.1     P2p Edge
-  Fa0/2            Desg  FWD  19        128.2     P2p Edge
-  Fa0/3            Desg  FWD  19        128.3     P2p Edge
-  Gi0/1            Desg  FWD  4         128.25    P2p
+    Bridge ID  Priority    4097  (priority 4097 sys-id-ext 0)
+               Address     0200.0000.0001
+               Hello Time   2 sec  Max Age 20 sec  Forward Delay 15 sec
+               Aging Time  300 sec
+  
+  Interface           Role Sts Cost      Prio.Nbr Type
+  ------------------- ---- --- --------- -------- --------------------------------
+  Fa0/1               Desg FWD 19        128.1    P2p Edge
+  Fa0/2               Desg FWD 19        128.2    P2p Edge
+  Fa0/3               Desg FWD 19        128.3    P2p Edge
+  Gi0/1               Desg FWD 4         128.25   P2p
 
 [224/363] sw1 SW1# show spanning-tree summary
   Switch is in mst mode
@@ -1126,28 +1150,40 @@ Total steps: 363
   VLAN0001         4097 0200.0000.0001  0               2     20  15
 
 [226/363] sw1 SW1# show spanning-tree vlan 10
-  VLAN0010
-    Spanning tree enabled protocol ieee
+  MST0
+    Spanning tree enabled protocol mstp
     Root ID    Priority    32778
                Address     0200.0000.0001
                Cost        0
                This bridge is the root
+               Hello Time   2 sec  Max Age 20 sec  Forward Delay 15 sec
   
-  Interface        Role  Sts  Cost      Prio.Nbr  Type
-  ---------------- ----  ---  --------  --------  ----
-  Gi0/1            Desg  FWD  4         128.25    P2p
+    Bridge ID  Priority    32778  (priority 32778 sys-id-ext 0)
+               Address     0200.0000.0001
+               Hello Time   2 sec  Max Age 20 sec  Forward Delay 15 sec
+               Aging Time  300 sec
+  
+  Interface           Role Sts Cost      Prio.Nbr Type
+  ------------------- ---- --- --------- -------- --------------------------------
+  Gi0/1               Desg FWD 4         128.25   P2p
 
 [227/363] sw1 SW1# show spanning-tree vlan 20
-  VLAN0020
-    Spanning tree enabled protocol ieee
+  MST0
+    Spanning tree enabled protocol mstp
     Root ID    Priority    32788
                Address     0200.0000.0001
                Cost        0
                This bridge is the root
+               Hello Time   2 sec  Max Age 20 sec  Forward Delay 15 sec
   
-  Interface        Role  Sts  Cost      Prio.Nbr  Type
-  ---------------- ----  ---  --------  --------  ----
-  Gi0/1            Desg  FWD  4         128.25    P2p
+    Bridge ID  Priority    32788  (priority 32788 sys-id-ext 0)
+               Address     0200.0000.0001
+               Hello Time   2 sec  Max Age 20 sec  Forward Delay 15 sec
+               Aging Time  300 sec
+  
+  Interface           Role Sts Cost      Prio.Nbr Type
+  ------------------- ---- --- --------- -------- --------------------------------
+  Gi0/1               Desg FWD 4         128.25   P2p
 
 [228/363] sw1 SW1# show spanning-tree interface FastEthernet0/1
   FastEthernet0/1
@@ -1185,14 +1221,14 @@ Total steps: 363
   Fa0/3            Desg  FWD  19        128.3     P2p
   Gi0/1            Desg  FWD  4         128.25    P2p
   
-  ##### MST1    vlans mapped:   vlan 10,20,30
+  ##### MST1    vlans mapped:   10,20,30
   Bridge        address 0200.0000.0001  priority  4097 (4096 sysid 1)
   
   Interface        Role  Sts  Cost      Prio.Nbr  Type
   ---------------- ----  ---  --------  --------  ----
   Gi0/1            Desg  FWD  4         128.25    P2p
   
-  ##### MST2    vlans mapped:   vlan 40,50,60
+  ##### MST2    vlans mapped:   40,50,60
   Bridge        address 0200.0000.0001  priority  8194 (8192 sysid 2)
   
   Interface        Role  Sts  Cost      Prio.Nbr  Type
@@ -1213,124 +1249,184 @@ Total steps: 363
 
 --- [234] § per-VLAN STP inspection loop ---
 [235/363] sw1 SW1# show spanning-tree vlan 10
-  VLAN0010
-    Spanning tree enabled protocol ieee
+  MST0
+    Spanning tree enabled protocol mstp
     Root ID    Priority    32778
                Address     0200.0000.0001
                Cost        0
                This bridge is the root
+               Hello Time   2 sec  Max Age 20 sec  Forward Delay 15 sec
   
-  Interface        Role  Sts  Cost      Prio.Nbr  Type
-  ---------------- ----  ---  --------  --------  ----
-  Gi0/1            Desg  FWD  4         128.25    P2p
+    Bridge ID  Priority    32778  (priority 32778 sys-id-ext 0)
+               Address     0200.0000.0001
+               Hello Time   2 sec  Max Age 20 sec  Forward Delay 15 sec
+               Aging Time  300 sec
+  
+  Interface           Role Sts Cost      Prio.Nbr Type
+  ------------------- ---- --- --------- -------- --------------------------------
+  Gi0/1               Desg FWD 4         128.25   P2p
 
 [236/363] sw1 SW1# show spanning-tree vlan 20
-  VLAN0020
-    Spanning tree enabled protocol ieee
+  MST0
+    Spanning tree enabled protocol mstp
     Root ID    Priority    32788
                Address     0200.0000.0001
                Cost        0
                This bridge is the root
+               Hello Time   2 sec  Max Age 20 sec  Forward Delay 15 sec
   
-  Interface        Role  Sts  Cost      Prio.Nbr  Type
-  ---------------- ----  ---  --------  --------  ----
-  Gi0/1            Desg  FWD  4         128.25    P2p
+    Bridge ID  Priority    32788  (priority 32788 sys-id-ext 0)
+               Address     0200.0000.0001
+               Hello Time   2 sec  Max Age 20 sec  Forward Delay 15 sec
+               Aging Time  300 sec
+  
+  Interface           Role Sts Cost      Prio.Nbr Type
+  ------------------- ---- --- --------- -------- --------------------------------
+  Gi0/1               Desg FWD 4         128.25   P2p
 
 [237/363] sw1 SW1# show spanning-tree vlan 30
-  VLAN0030
-    Spanning tree enabled protocol ieee
+  MST0
+    Spanning tree enabled protocol mstp
     Root ID    Priority    32798
                Address     0200.0000.0001
                Cost        0
                This bridge is the root
+               Hello Time   2 sec  Max Age 20 sec  Forward Delay 15 sec
   
-  Interface        Role  Sts  Cost      Prio.Nbr  Type
-  ---------------- ----  ---  --------  --------  ----
-  Gi0/1            Desg  FWD  4         128.25    P2p
+    Bridge ID  Priority    32798  (priority 32798 sys-id-ext 0)
+               Address     0200.0000.0001
+               Hello Time   2 sec  Max Age 20 sec  Forward Delay 15 sec
+               Aging Time  300 sec
+  
+  Interface           Role Sts Cost      Prio.Nbr Type
+  ------------------- ---- --- --------- -------- --------------------------------
+  Gi0/1               Desg FWD 4         128.25   P2p
 
 [238/363] sw1 SW1# show spanning-tree vlan 40
-  VLAN0040
-    Spanning tree enabled protocol ieee
+  MST0
+    Spanning tree enabled protocol mstp
     Root ID    Priority    32808
                Address     0200.0000.0001
                Cost        0
                This bridge is the root
+               Hello Time   2 sec  Max Age 20 sec  Forward Delay 15 sec
   
-  Interface        Role  Sts  Cost      Prio.Nbr  Type
-  ---------------- ----  ---  --------  --------  ----
-  Gi0/1            Desg  FWD  4         128.25    P2p
+    Bridge ID  Priority    32808  (priority 32808 sys-id-ext 0)
+               Address     0200.0000.0001
+               Hello Time   2 sec  Max Age 20 sec  Forward Delay 15 sec
+               Aging Time  300 sec
+  
+  Interface           Role Sts Cost      Prio.Nbr Type
+  ------------------- ---- --- --------- -------- --------------------------------
+  Gi0/1               Desg FWD 4         128.25   P2p
 
 [239/363] sw1 SW1# show spanning-tree vlan 50
-  VLAN0050
-    Spanning tree enabled protocol ieee
+  MST0
+    Spanning tree enabled protocol mstp
     Root ID    Priority    32818
                Address     0200.0000.0001
                Cost        0
                This bridge is the root
+               Hello Time   2 sec  Max Age 20 sec  Forward Delay 15 sec
   
-  Interface        Role  Sts  Cost      Prio.Nbr  Type
-  ---------------- ----  ---  --------  --------  ----
-  Gi0/1            Desg  FWD  4         128.25    P2p
+    Bridge ID  Priority    32818  (priority 32818 sys-id-ext 0)
+               Address     0200.0000.0001
+               Hello Time   2 sec  Max Age 20 sec  Forward Delay 15 sec
+               Aging Time  300 sec
+  
+  Interface           Role Sts Cost      Prio.Nbr Type
+  ------------------- ---- --- --------- -------- --------------------------------
+  Gi0/1               Desg FWD 4         128.25   P2p
 
 [240/363] sw1 SW1# show spanning-tree vlan 60
-  VLAN0060
-    Spanning tree enabled protocol ieee
+  MST0
+    Spanning tree enabled protocol mstp
     Root ID    Priority    32828
                Address     0200.0000.0001
                Cost        0
                This bridge is the root
+               Hello Time   2 sec  Max Age 20 sec  Forward Delay 15 sec
   
-  Interface        Role  Sts  Cost      Prio.Nbr  Type
-  ---------------- ----  ---  --------  --------  ----
-  Gi0/1            Desg  FWD  4         128.25    P2p
+    Bridge ID  Priority    32828  (priority 32828 sys-id-ext 0)
+               Address     0200.0000.0001
+               Hello Time   2 sec  Max Age 20 sec  Forward Delay 15 sec
+               Aging Time  300 sec
+  
+  Interface           Role Sts Cost      Prio.Nbr Type
+  ------------------- ---- --- --------- -------- --------------------------------
+  Gi0/1               Desg FWD 4         128.25   P2p
 
 [241/363] sw1 SW1# show spanning-tree vlan 70
-  VLAN0070
-    Spanning tree enabled protocol ieee
+  MST0
+    Spanning tree enabled protocol mstp
     Root ID    Priority    32838
                Address     0200.0000.0001
                Cost        0
                This bridge is the root
+               Hello Time   2 sec  Max Age 20 sec  Forward Delay 15 sec
   
-  Interface        Role  Sts  Cost      Prio.Nbr  Type
-  ---------------- ----  ---  --------  --------  ----
-  Gi0/1            Desg  FWD  4         128.25    P2p
+    Bridge ID  Priority    32838  (priority 32838 sys-id-ext 0)
+               Address     0200.0000.0001
+               Hello Time   2 sec  Max Age 20 sec  Forward Delay 15 sec
+               Aging Time  300 sec
+  
+  Interface           Role Sts Cost      Prio.Nbr Type
+  ------------------- ---- --- --------- -------- --------------------------------
+  Gi0/1               Desg FWD 4         128.25   P2p
 
 [242/363] sw1 SW1# show spanning-tree vlan 80
-  VLAN0080
-    Spanning tree enabled protocol ieee
+  MST0
+    Spanning tree enabled protocol mstp
     Root ID    Priority    32848
                Address     0200.0000.0001
                Cost        0
                This bridge is the root
+               Hello Time   2 sec  Max Age 20 sec  Forward Delay 15 sec
   
-  Interface        Role  Sts  Cost      Prio.Nbr  Type
-  ---------------- ----  ---  --------  --------  ----
-  Gi0/1            Desg  FWD  4         128.25    P2p
+    Bridge ID  Priority    32848  (priority 32848 sys-id-ext 0)
+               Address     0200.0000.0001
+               Hello Time   2 sec  Max Age 20 sec  Forward Delay 15 sec
+               Aging Time  300 sec
+  
+  Interface           Role Sts Cost      Prio.Nbr Type
+  ------------------- ---- --- --------- -------- --------------------------------
+  Gi0/1               Desg FWD 4         128.25   P2p
 
 [243/363] sw1 SW1# show spanning-tree vlan 90
-  VLAN0090
-    Spanning tree enabled protocol ieee
+  MST0
+    Spanning tree enabled protocol mstp
     Root ID    Priority    32858
                Address     0200.0000.0001
                Cost        0
                This bridge is the root
+               Hello Time   2 sec  Max Age 20 sec  Forward Delay 15 sec
   
-  Interface        Role  Sts  Cost      Prio.Nbr  Type
-  ---------------- ----  ---  --------  --------  ----
-  Gi0/1            Desg  FWD  4         128.25    P2p
+    Bridge ID  Priority    32858  (priority 32858 sys-id-ext 0)
+               Address     0200.0000.0001
+               Hello Time   2 sec  Max Age 20 sec  Forward Delay 15 sec
+               Aging Time  300 sec
+  
+  Interface           Role Sts Cost      Prio.Nbr Type
+  ------------------- ---- --- --------- -------- --------------------------------
+  Gi0/1               Desg FWD 4         128.25   P2p
 
 [244/363] sw1 SW1# show spanning-tree vlan 100
-  VLAN0100
-    Spanning tree enabled protocol ieee
+  MST0
+    Spanning tree enabled protocol mstp
     Root ID    Priority    32868
                Address     0200.0000.0001
                Cost        0
                This bridge is the root
+               Hello Time   2 sec  Max Age 20 sec  Forward Delay 15 sec
   
-  Interface        Role  Sts  Cost      Prio.Nbr  Type
-  ---------------- ----  ---  --------  --------  ----
-  Gi0/1            Desg  FWD  4         128.25    P2p
+    Bridge ID  Priority    32868  (priority 32868 sys-id-ext 0)
+               Address     0200.0000.0001
+               Hello Time   2 sec  Max Age 20 sec  Forward Delay 15 sec
+               Aging Time  300 sec
+  
+  Interface           Role Sts Cost      Prio.Nbr Type
+  ------------------- ---- --- --------- -------- --------------------------------
+  Gi0/1               Desg FWD 4         128.25   P2p
 
 
 --- [245] § per-interface STP inspection loop ---
@@ -1501,10 +1597,10 @@ Total steps: 363
 <empty>
 
 [272/363] sw1 SW1(config-if)# shutdown
-  *19:51:05: STP: VLAN0001 Fa0/3 -> disabled
+  *10:19:35: STP: VLAN0001 Fa0/3 -> disabled
 
 [273/363] sw1 SW1(config-if)# no shutdown
-  *19:51:05: STP: VLAN0001 Fa0/3 -> forwarding
+  *10:19:35: STP: VLAN0001 Fa0/3 -> forwarding
 
 [274/363] sw1 SW1(config-if)# end
 <empty>
@@ -1585,7 +1681,7 @@ Total steps: 363
                                           Root    Hello Max Fwd
   Vlan             Root ID              Cost    Port    Time  Age Dly
   ---------------- -------------------- ------- ------- ----- --- ---
-  VLAN0001         32769 0200.0000.0001  8       Gi0/1   2     20  15
+  VLAN0001         4097 0200.0000.0001  8       Gi0/1   2     20  15
 
 
 --- [284] § host verification ---
@@ -1619,17 +1715,17 @@ Total steps: 363
 
 [289/363] l1 l1$ ping -c 2 192.168.1.13
   PING 192.168.1.13 (192.168.1.13) 56(84) bytes of data.
-  64 bytes from 192.168.1.13: icmp_seq=1 ttl=64 time=2.464 ms
-  64 bytes from 192.168.1.13: icmp_seq=2 ttl=64 time=0.820 ms
+  64 bytes from 192.168.1.13: icmp_seq=1 ttl=64 time=2.307 ms
+  64 bytes from 192.168.1.13: icmp_seq=2 ttl=64 time=0.661 ms
   
   --- 192.168.1.13 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.820/1.642/2.464/0.822 ms
+  rtt min/avg/max/mdev = 0.661/1.484/2.307/0.823 ms
 
 [290/363] sw1 SW1# show running-config
   Building configuration...
   
-  Current configuration : 3832 bytes
+  Current configuration : 4336 bytes
   !
   service timestamps debug datetime msec
   service timestamps log datetime msec
@@ -1808,6 +1904,7 @@ Total steps: 363
   vlan 100
    name VLAN0100
   !
+  spanning-tree mode mst
   spanning-tree vlan 1 priority 24576
   spanning-tree portfast default
   spanning-tree portfast bpduguard default
@@ -1816,6 +1913,22 @@ Total steps: 363
   spanning-tree uplinkfast
   spanning-tree backbonefast
   spanning-tree pathcost method long
+  spanning-tree vlan 10 priority 24576
+  spanning-tree vlan 20 priority 28672
+  spanning-tree vlan 30 priority 16384
+  spanning-tree vlan 40 priority 20480
+  spanning-tree vlan 50 priority 24576
+  spanning-tree vlan 60 priority 28672
+  spanning-tree vlan 70 priority 32768
+  spanning-tree vlan 80 priority 4096
+  spanning-tree vlan 90 priority 8192
+  spanning-tree vlan 100 priority 12288
+  !
+  spanning-tree mst configuration
+   name REGION1
+   revision 5
+   instance 1 vlan 10,20,30
+   instance 2 vlan 40,50,60
   !
   end
 
@@ -2329,7 +2442,7 @@ Total steps: 363
        Received 0 broadcasts (0 multicasts)
        0 runts, 0 giants, 0 throttles
        0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
-       16 packets output, 1114 bytes, 0 underruns
+       30 packets output, 2010 bytes, 0 underruns
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
 
@@ -2350,7 +2463,7 @@ Total steps: 363
        Received 0 broadcasts (0 multicasts)
        0 runts, 0 giants, 0 throttles
        0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
-       16 packets output, 1136 bytes, 0 underruns
+       30 packets output, 2032 bytes, 0 underruns
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
 
@@ -2371,7 +2484,7 @@ Total steps: 363
        Received 0 broadcasts (0 multicasts)
        0 runts, 0 giants, 0 throttles
        0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
-       13 packets output, 910 bytes, 0 underruns
+       27 packets output, 1806 bytes, 0 underruns
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
 

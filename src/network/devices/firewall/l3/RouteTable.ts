@@ -22,6 +22,18 @@ export interface ResolvedNextHop {
   readonly iface: string;
 }
 
+export interface DeclaredStaticRoute {
+  readonly id: string;
+  readonly destination: string;
+  readonly mask: string;
+  readonly gateway: string;
+  readonly iface: string;
+  readonly distance: number;
+  readonly priority: number;
+  readonly blackhole: boolean;
+  readonly enabled: boolean;
+}
+
 export interface StaticRouteOptions {
   distance?: number;
   priority?: number;

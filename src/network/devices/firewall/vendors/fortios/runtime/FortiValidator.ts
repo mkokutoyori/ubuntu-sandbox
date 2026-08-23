@@ -2,7 +2,10 @@ import {
   argumentAccepts, argumentPlaceholder, type ArgumentSpec,
 } from '../../../../../../cli/ArgumentTypes';
 import { FortiMessages } from '../FortiMessages';
-import { attributeArity, type FortiAttributeSpec } from '../schema/types';
+import {
+  attributeArity, EMPTY_ENVIRONMENT,
+  type FortiAttributeSpec, type FortiSchemaEnvironment,
+} from '../schema/types';
 
 export interface ValidationResult {
   readonly ok: boolean;
@@ -18,7 +21,10 @@ const OK = (values: string[]): ValidationResult => ({ ok: true, values, error: '
 const KO = (error: string): ValidationResult => ({ ok: false, values: [], error });
 
 export class FortiValidator {
-  constructor(private readonly resolve: ReferenceResolver) {}
+  constructor(
+    private readonly resolve: ReferenceResolver,
+    private readonly environment: FortiSchemaEnvironment = EMPTY_ENVIRONMENT,
+  ) {}
 
   validate(spec: FortiAttributeSpec, raw: readonly string[]): ValidationResult {
     if (spec.readOnly) return KO(FortiMessages.readOnly(spec.name));
@@ -72,6 +78,10 @@ export class FortiValidator {
     if (attribute.referenceTo) {
       if (attribute.referenceTo.some(target => this.resolve(target, value))) return null;
       return FortiMessages.unknownReference(attribute.name, value, attribute.referenceTo[0]);
+    }
+    if (attribute.valueRefusal) {
+      const refusal = attribute.valueRefusal(value, this.environment);
+      if (refusal !== null) return FortiMessages.valueError(value, refusal);
     }
     if (attribute.acceptsValue) {
       if (attribute.acceptsValue(value)) return null;

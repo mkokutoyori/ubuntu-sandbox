@@ -788,28 +788,12 @@ export function buildInterfaceCommands(trie: CommandTrie, ctx: HuaweiShellContex
     return '';
   });
 
-  trie.registerGreedy('mtu', 'Set interface MTU', (args) => {
-    const ifName = ctx.getSelectedInterface();
-    if (!ifName) return 'Error: No interface selected';
-    const port = ctx.r().getPort(ifName);
-    const n = parseInt(args[0] ?? '', 10);
-    if (port && !isNaN(n)) { try { port.setMTU(n); } catch (e: any) { return `Error: ${e.message}`; } }
-    return '';
-  });
   trie.registerGreedy('jumboframe enable', 'Enable jumbo frames', (args) => {
     const ifName = ctx.getSelectedInterface();
     if (!ifName) return '';
     const port = ctx.r().getPort(ifName);
     const n = parseInt(args[0] ?? '9216', 10);
     if (port && !isNaN(n)) { try { port.setMTU(n); } catch { /* ignore */ } }
-    return '';
-  });
-  trie.registerGreedy('bandwidth', 'Set interface bandwidth (kbps)', (args) => {
-    const ifName = ctx.getSelectedInterface();
-    if (!ifName) return '';
-    const port = ctx.r().getPort(ifName);
-    const n = parseInt(args[0] ?? '', 10);
-    if (port && !isNaN(n)) port.setBandwidthKbps(n);
     return '';
   });
   trie.registerGreedy('speed', 'Set interface speed', (args) => {

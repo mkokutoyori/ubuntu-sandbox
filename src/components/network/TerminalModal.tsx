@@ -190,6 +190,8 @@ export function TerminalModal({ session, onClose, onMinimize, embedded = false }
           onClick={() => setShowScrollbackConfig(prev => !prev)}
           className="w-8 h-full flex items-center justify-center hover:bg-white/10 transition-colors"
           title="Scrollback settings"
+          aria-label="Scrollback settings"
+          aria-expanded={showScrollbackConfig}
         >
           <Settings2 className="w-3 h-3 text-white/40 hover:text-white/70" />
         </button>
@@ -203,6 +205,8 @@ export function TerminalModal({ session, onClose, onMinimize, embedded = false }
           title={session.isGhostTextEnabled()
             ? 'Ghost text ON — inline completion preview (click to disable)'
             : 'Ghost text OFF — click to enable inline completion preview'}
+          aria-label="Inline completion preview"
+          aria-pressed={session.isGhostTextEnabled()}
         >
           <Lightbulb className={cn(
             "w-3 h-3",
@@ -219,6 +223,8 @@ export function TerminalModal({ session, onClose, onMinimize, embedded = false }
           title={session.isMultilinePasteEnabled()
             ? 'Multi-line paste ON — a pasted block runs line by line, like a real console (click to hold it back)'
             : 'Multi-line paste OFF — a pasted block stays editable on the command line and runs nothing'}
+          aria-label="Multi-line paste"
+          aria-pressed={session.isMultilinePasteEnabled()}
         >
           <ClipboardPaste className={cn(
             "w-3 h-3",
@@ -232,21 +238,26 @@ export function TerminalModal({ session, onClose, onMinimize, embedded = false }
             session.isRecording && "bg-red-500/10"
           )}
           title={session.isRecording ? 'Stop recording & download' : 'Start recording session'}
+          aria-label={session.isRecording
+            ? 'Stop recording and download the session'
+            : 'Start recording the session'}
+          aria-pressed={session.isRecording}
         >
           {session.isRecording
             ? <Download className="w-3 h-3 text-red-400" />
             : <Circle className="w-3 h-3 text-white/40 hover:text-white/70" />
           }
         </button>
-        <button onClick={onMinimize} className="w-11 h-full flex items-center justify-center hover:bg-white/10 transition-colors" title="Minimize">
+        <button onClick={onMinimize} className="w-11 h-full flex items-center justify-center hover:bg-white/10 transition-colors" title="Minimize" aria-label="Minimize the terminal">
           <Minus className="w-4 h-4 text-white/70" />
         </button>
         {!embedded && (
-          <button onClick={toggleFullscreen} className="w-11 h-full flex items-center justify-center hover:bg-white/10 transition-colors" title={isFullscreen ? 'Restore Down' : 'Maximize'}>
+          <button onClick={toggleFullscreen} className="w-11 h-full flex items-center justify-center hover:bg-white/10 transition-colors" title={isFullscreen ? 'Restore Down' : 'Maximize'}
+            aria-label={isFullscreen ? 'Restore the terminal down' : 'Maximize the terminal'}>
             {isFullscreen ? <Copy className="w-3.5 h-3.5 text-white/70" /> : <Maximize2 className="w-3.5 h-3.5 text-white/70" />}
           </button>
         )}
-        <button onClick={onClose} className="w-11 h-full flex items-center justify-center hover:bg-[#e81123] transition-colors group" title="Close">
+        <button onClick={onClose} className="w-11 h-full flex items-center justify-center hover:bg-[#e81123] transition-colors group" title="Close" aria-label="Close the terminal">
           <X className="w-4 h-4 text-white/70 group-hover:text-white" />
         </button>
       </div>

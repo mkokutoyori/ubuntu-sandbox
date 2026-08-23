@@ -9,6 +9,8 @@ export const ASA_PIPELINE: readonly string[] = Object.freeze([
   'tcp-state-check',
   'nat-destination',
   'route-lookup',
+  'ttl-decrement',
+  'mtu-check',
   'egress-zone',
   'policy-lookup',
   'nat-source',
@@ -64,6 +66,13 @@ export const ASA_PROFILE: FirewallProfile = Object.freeze({
   portCount: 8,
   portFirstIndex: 0,
 
+  chassis: Object.freeze({
+    cpuCount: 1,
+    memoryMb: 8192,
+    firmwareMemoryMb: 1024,
+    packetsPerSecondPerCpu: 1_000_000,
+  }),
+
   syslogCatalog: Object.freeze({
     'session-built': Object.freeze({ id: '302013', severity: 'informational' as const }),
     'session-torn-down': Object.freeze({ id: '302014', severity: 'informational' as const }),
@@ -71,11 +80,6 @@ export const ASA_PROFILE: FirewallProfile = Object.freeze({
     'translation-created': Object.freeze({ id: '305011', severity: 'informational' as const }),
   }),
 
-  unimplemented: Object.freeze([
-    'show module',
-    'verify /md5',
-    'threat-detection scanning-threat',
-  ]),
 });
 
 export const ASA_NAT_SECTIONS = Object.freeze({

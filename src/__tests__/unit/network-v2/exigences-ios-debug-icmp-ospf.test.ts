@@ -40,6 +40,60 @@ async function paireRouteurs(masqueR2 = '255.255.255.0'): Promise<[CiscoRouter, 
   return [r1, r2];
 }
 
+
+/**
+ * Trois routeurs en chaine — R1 (10.0.0.1) — R2 — R3 (10.1.0.2) — pour
+ * que le paquet TRAVERSE quelque chose. Ce cas observait auparavant un
+ * sujet de bus que personne ne publie (`router.packet.forwarded`), sur
+ * une maquette a DEUX routeurs dos a dos ou aucun paquet n'est achemine :
+ * la liste observee restait vide et `for (const t of vus)` ne verifiait
+ * donc rien du tout.
+ */
+async function chaineTroisRouteurs(): Promise<[CiscoRouter, CiscoRouter, CiscoRouter]> {
+  const r1 = new CiscoRouter('R1');
+  const r2 = new CiscoRouter('R2');
+  const r3 = new CiscoRouter('R3');
+  new Cable('c1').connect(r1.getPort('GigabitEthernet0/0')!, r2.getPort('GigabitEthernet0/0')!);
+  new Cable('c2').connect(r2.getPort('GigabitEthernet0/1')!, r3.getPort('GigabitEthernet0/0')!);
+  const plan: [CiscoRouter, string, string][] = [
+    [r1, 'GigabitEthernet0/0', '10.0.0.1'],
+    [r2, 'GigabitEthernet0/0', '10.0.0.2'],
+    [r2, 'GigabitEthernet0/1', '10.1.0.1'],
+    [r3, 'GigabitEthernet0/0', '10.1.0.2'],
+  ];
+  for (const [r, iface, ip] of plan) {
+    await run(r, 'enable');
+    await run(r, 'configure terminal');
+    await run(r, `interface ${iface}`);
+    await run(r, `ip address ${ip} 255.255.255.0`);
+    await run(r, 'no shutdown');
+    await run(r, 'end');
+  }
+  await run(r1, 'configure terminal');
+  await run(r1, 'ip route 10.1.0.0 255.255.255.0 10.0.0.2');
+  await run(r1, 'end');
+  await run(r3, 'configure terminal');
+  await run(r3, 'ip route 10.0.0.0 255.255.255.0 10.1.0.1');
+  await run(r3, 'end');
+  return [r1, r2, r3];
+}
+
+/** Collecte les TTL des echos ICMP vers `cible` que ce routeur RECOIT. */
+function guetterTtl(r: CiscoRouter, cible: string): number[] {
+  const vus: number[] = [];
+  r.getBus().subscribe('port.frame.received', (e) => {
+    const ip = e.payload.frame.payload as {
+      type?: string; ttl?: number;
+      destinationIP?: { toString(): string };
+      payload?: { icmpType?: string };
+    } | undefined;
+    if (ip?.type !== 'ipv4' || ip.destinationIP?.toString() !== cible) return;
+    if (ip.payload?.icmpType !== 'echo-request') return;
+    if (typeof ip.ttl === 'number') vus.push(ip.ttl);
+  });
+  return vus;
+}
+
 // ── 1. Console vs sessions distantes (terminal monitor) ─────────────
 /**
  * Prémisse corrigée par la mesure : ces trois cas s'abonnaient
@@ -264,16 +318,15 @@ describe('Exigence 6 — le premier paquet paie la résolution ARP', () => {
 // ── 7. TTL et ICMP Time Exceeded ────────────────────────────────────
 describe('Exigence 7 — le TTL décroît à chaque saut, zéro déclenche Time Exceeded', () => {
   it('un paquet routé perd exactement 1 de TTL par routeur traversé', async () => {
-    const [r1, r2] = await paireRouteurs();
-    await run(r1, 'clear arp-cache');
-    await run(r1, 'ping 10.0.0.2');
-    const vus: number[] = [];
-    r2.getBus().subscribe('router.packet.forwarded', (e) => {
-      const p = e.payload as { ttl?: number };
-      if (typeof p.ttl === 'number') vus.push(p.ttl);
-    });
-    await run(r1, 'ping 10.0.0.2');
-    for (const t of vus) expect(t).toBeLessThan(255);
+    const [r1, r2, r3] = await chaineTroisRouteurs();
+    const arrives = guetterTtl(r2, '10.1.0.2');
+    const traverses = guetterTtl(r3, '10.1.0.2');
+
+    await run(r1, 'ping 10.1.0.2');
+
+    expect(arrives.length).toBeGreaterThan(0);
+    expect(traverses.length).toBeGreaterThan(0);
+    expect(traverses[0]).toBe(arrives[0] - 1);
   });
 
   it('un TTL épuisé produit un ICMP Time Exceeded, ce qui fait marcher traceroute', async () => {

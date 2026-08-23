@@ -1,6 +1,6 @@
 ============================================================
 Router (L3) debug transcript — huawei-router-interfaces
-Generated: 2026-08-19T07:03:15.845Z
+Generated: 2026-08-23T10:29:59.251Z
 Topology: R1(Huawei) GE0/0/1=L1 LAN 192.168.1.0/24, GE0/0/0=WAN 10.0.0.0/30; R2(Huawei) GE0/0/1=W1 LAN 192.168.2.0/24, GE0/0/0=WAN
 focus=VRP IPv4/IPv6 addressing, dot1q sub-if, tunnels, display
 Total steps: 286
@@ -80,7 +80,8 @@ Total steps: 286
 <empty>
 
 [24/286] r1 [R1-GigabitEthernet0/0/0] qos queue 0 shaping 50
-<empty>
+  Error: This simulator carries no queue scheduler, so this command would be stored without effect.
+  qos queue 0 shaping 50
 
 [25/286] r1 [R1-GigabitEthernet0/0/0] dhcp select interface
 <empty>
@@ -585,12 +586,17 @@ Total steps: 286
    description ## LAN to L1 ##
    ip address 192.168.100.1 255.255.255.0
    dhcp select global
+   nat outbound 2000
+   nat server protocol tcp global 10.0.0.1 80 inside 192.168.1.10 80
+   traffic-policy P1 inbound
    arp expire-time 600
    mtu 9000
    bandwidth 100000
    mac-address 00e0-fc12-3456
    flow-control
    ipv6 enable
+   ipv6 address 2001:db8:1::1/64
+   ipv6 address 2001:db8:abcd::1/64
    ipv6 mtu 1280
   #
 
@@ -1003,12 +1009,17 @@ Total steps: 286
    description ## LAN to L1 ##
    ip address 192.168.100.1 255.255.255.0
    dhcp select global
+   nat outbound 2000
+   nat server protocol tcp global 10.0.0.1 80 inside 192.168.1.10 80
+   traffic-policy P1 inbound
    arp expire-time 600
    mtu 9000
    bandwidth 100000
    mac-address 00e0-fc12-3456
    flow-control
    ipv6 enable
+   ipv6 address 2001:db8:1::1/64
+   ipv6 address 2001:db8:abcd::1/64
    ipv6 mtu 1280
   #
   interface GigabitEthernet0/0/1
@@ -1497,14 +1508,14 @@ Total steps: 286
   Root delay: 0.00 ms
   Root dispersion: 16000.00 ms
   Peer dispersion: 16000.00 ms
-  Reference time: 07:03:16.014  Aug 19 2026(EE2FD3B4.03958106)
+  Reference time: 10:29:59.388  Aug 23 2026(EE354A27.6353F7CE)
 
 [216/286] r1 <R1> display ntp session
   Info: No NTP session exists.
 
 [217/286] r1 <R1> display clock
-  2026-08-19 07:03:16
-  Wednesday
+  2026-08-23 10:29:59
+  Sunday
   Time Zone(UTC) : UTC
 
 [218/286] r1 <R1> display lldp neighbor
@@ -1516,13 +1527,13 @@ Total steps: 286
 [220/286] r1 <R1> display cpu-usage
   CPU Usage Stat. Cycle: 60 (Second)
   CPU Usage            : 11% Max: 38%
-  CPU Usage Stat. Time : 2026-08-19 07:03:16
+  CPU Usage Stat. Time : 2026-08-23 10:29:59
   CPU utilization for five seconds: 11%: one minute: 12%: five minutes: 10%
   
   Max CPU Usage Stat. Time : 0000-00-00 00:00:00.
 
 [221/286] r1 <R1> display memory-usage
-  Memory utilization statistics at 2026-08-19 07:03:16
+  Memory utilization statistics at 2026-08-23 10:29:59
   System Total Memory Is: 536870912 bytes
   Total Memory Used Is: 193273528 bytes
   Memory Using Percentage Is: 36%
@@ -1563,18 +1574,18 @@ Total steps: 286
   Dropped messages : 0
   Overwritten messages : 0
   Current messages : 12
-  2026-08-19 07:03:15 %01LINK/3/ERRORS: Interface GE0/0/1, changed state to up
-  2026-08-19 07:03:15 %01LINEPROTO/5/NOTIFICATIONS: Line protocol on Interface GE0/0/1, changed state to up
-  2026-08-19 07:03:15 %01LINK/3/ERRORS: Interface GE0/0/0, changed state to up
-  2026-08-19 07:03:15 %01LINEPROTO/5/NOTIFICATIONS: Line protocol on Interface GE0/0/0, changed state to up
-  2026-08-19 07:03:15 %01LINK/5/NOTIFICATIONS: Interface GE0/0/0, changed state to administratively down
-  2026-08-19 07:03:15 %01LINEPROTO/5/NOTIFICATIONS: Line protocol on Interface GE0/0/0, changed state to down
-  2026-08-19 07:03:15 %01LINK/3/ERRORS: Interface GE0/0/0, changed state to up
-  2026-08-19 07:03:15 %01LINEPROTO/5/NOTIFICATIONS: Line protocol on Interface GE0/0/0, changed state to up
-  2026-08-19 07:03:15 %01LINK/5/NOTIFICATIONS: Interface GE0/0/1, changed state to administratively down
-  2026-08-19 07:03:15 %01LINEPROTO/5/NOTIFICATIONS: Line protocol on Interface GE0/0/1, changed state to down
-  2026-08-19 07:03:15 %01LINK/3/ERRORS: Interface GE0/0/1, changed state to up
-  2026-08-19 07:03:15 %01LINEPROTO/5/NOTIFICATIONS: Line protocol on Interface GE0/0/1, changed state to up
+  2026-08-23 10:29:59 %01LINK/3/ERRORS: Interface GE0/0/1, changed state to up
+  2026-08-23 10:29:59 %01LINEPROTO/5/NOTIFICATIONS: Line protocol on Interface GE0/0/1, changed state to up
+  2026-08-23 10:29:59 %01LINK/3/ERRORS: Interface GE0/0/0, changed state to up
+  2026-08-23 10:29:59 %01LINEPROTO/5/NOTIFICATIONS: Line protocol on Interface GE0/0/0, changed state to up
+  2026-08-23 10:29:59 %01LINK/5/NOTIFICATIONS: Interface GE0/0/0, changed state to administratively down
+  2026-08-23 10:29:59 %01LINEPROTO/5/NOTIFICATIONS: Line protocol on Interface GE0/0/0, changed state to down
+  2026-08-23 10:29:59 %01LINK/3/ERRORS: Interface GE0/0/0, changed state to up
+  2026-08-23 10:29:59 %01LINEPROTO/5/NOTIFICATIONS: Line protocol on Interface GE0/0/0, changed state to up
+  2026-08-23 10:29:59 %01LINK/5/NOTIFICATIONS: Interface GE0/0/1, changed state to administratively down
+  2026-08-23 10:29:59 %01LINEPROTO/5/NOTIFICATIONS: Line protocol on Interface GE0/0/1, changed state to down
+  2026-08-23 10:29:59 %01LINK/3/ERRORS: Interface GE0/0/1, changed state to up
+  2026-08-23 10:29:59 %01LINEPROTO/5/NOTIFICATIONS: Line protocol on Interface GE0/0/1, changed state to up
 
 [226/286] r1 <R1> display trapbuffer
   Trapping buffer configuration and contents: enabled
@@ -1680,12 +1691,17 @@ Total steps: 286
    description ## LAN to L1 ##
    ip address 192.168.100.1 255.255.255.0
    dhcp select global
+   nat outbound 2000
+   nat server protocol tcp global 10.0.0.1 80 inside 192.168.1.10 80
+   traffic-policy P1 inbound
    arp expire-time 600
    mtu 9000
    bandwidth 100000
    mac-address 00e0-fc12-3456
    flow-control
    ipv6 enable
+   ipv6 address 2001:db8:1::1/64
+   ipv6 address 2001:db8:abcd::1/64
    ipv6 mtu 1280
   #
   interface GigabitEthernet0/0/1
@@ -1878,12 +1894,17 @@ Total steps: 286
    description ## LAN to L1 ##
    ip address 192.168.100.1 255.255.255.0
    dhcp select global
+   nat outbound 2000
+   nat server protocol tcp global 10.0.0.1 80 inside 192.168.1.10 80
+   traffic-policy P1 inbound
    arp expire-time 600
    mtu 9000
    bandwidth 100000
    mac-address 00e0-fc12-3456
    flow-control
    ipv6 enable
+   ipv6 address 2001:db8:1::1/64
+   ipv6 address 2001:db8:abcd::1/64
    ipv6 mtu 1280
   #
   interface GigabitEthernet0/0/1
@@ -2029,12 +2050,17 @@ Total steps: 286
   interface GigabitEthernet0/0/0
    ip address 192.168.100.1 255.255.255.0
    dhcp select global
+   nat outbound 2000
+   nat server protocol tcp global 10.0.0.1 80 inside 192.168.1.10 80
+   traffic-policy P1 inbound
    arp expire-time 600
    mtu 9000
    bandwidth 100000
    mac-address 00e0-fc12-3456
    flow-control
    ipv6 enable
+   ipv6 address 2001:db8:1::1/64
+   ipv6 address 2001:db8:abcd::1/64
    ipv6 mtu 1280
   interface GigabitEthernet0/0/1
    shutdown
@@ -2270,12 +2296,17 @@ Total steps: 286
    description ## LAN to L1 ##
    ip address 192.168.100.1 255.255.255.0
    dhcp select global
+   nat outbound 2000
+   nat server protocol tcp global 10.0.0.1 80 inside 192.168.1.10 80
+   traffic-policy P1 inbound
    arp expire-time 600
    mtu 9000
    bandwidth 100000
    mac-address 00e0-fc12-3456
    flow-control
    ipv6 enable
+   ipv6 address 2001:db8:1::1/64
+   ipv6 address 2001:db8:abcd::1/64
    ipv6 mtu 1280
   #
 
@@ -2360,6 +2391,7 @@ Total steps: 286
     screen-length  Restore default screen length
     screen-width   Restore default screen width
     terminal       Set the terminal line characteristics
+    time-range     Remove a time-range
     traffic        Display traffic statistics
     <cr>
 

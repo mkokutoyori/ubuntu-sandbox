@@ -1,6 +1,7 @@
 import { getDefaultEventBus } from '@/events/EventBus';
 import { DuplicateEventFilter } from '@/events/DuplicateEventFilter';
 import { isValidIPv4 } from '@/network/core/ip';
+import { ospfHelloMismatchLines } from '@/network/ospf/events';
 
 /**
  * LoggingConfig — config-driven syslog/logging state (Lot C).
@@ -1005,21 +1006,13 @@ export class LoggingConfig {
         this.append('notifications', 'lineproto',
           `Line protocol on Interface ${p.portName}, changed state to down`, true, 'UPDOWN');
       }),
-      bus.subscribeWhere('ospf.hello.mismatch' as never, isOurs, (e) => {
-        const p = e.payload as unknown as {
-          from: string; deadReceived: number; deadConfigured: number;
-          helloReceived: number; helloConfigured: number;
-          maskReceived: string; maskConfigured: string;
-        };
-        this.append('debugging', 'ospf',
-          `OSPF: Mismatched hello parameters from ${p.from}`, true, DEBUG_VERBATIM);
-        this.append('debugging', 'ospf',
-          `OSPF: Dead R ${p.deadReceived} C ${p.deadConfigured}, `
-          + `Hello R ${p.helloReceived} C ${p.helloConfigured}, `
-          + `Mask R ${p.maskReceived} C ${p.maskConfigured}`, true, DEBUG_VERBATIM);
+      bus.subscribeWhere('ospf.hello.mismatch', isOurs, (e) => {
+        for (const ligne of ospfHelloMismatchLines(e.payload)) {
+          this.append('debugging', 'ospf', ligne, true, DEBUG_VERBATIM);
+        }
       }),
-      bus.subscribeWhere('ospf.area.mismatch' as never, isOurs, (e) => {
-        const p = e.payload as unknown as { iface: string; from: string; reason: string };
+      bus.subscribeWhere('ospf.area.mismatch', isOurs, (e) => {
+        const p = e.payload;
         this.append('warnings', 'ospf',
           `Received invalid packet: ${p.reason}, from ${p.from}, ${p.iface}`, true, 'ERRRCV');
       }),

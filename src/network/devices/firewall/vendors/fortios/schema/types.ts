@@ -1,3 +1,5 @@
+import type { ConsoleSettingsPatch } from '../../../mgmt/ConsoleSettings';
+import type { ConserveThresholds } from '../../../health/SystemLoad';
 import type { ArgumentSpec, EnumValue } from '../../../../../../cli/ArgumentTypes';
 import type { ObjectStore } from '../../../model/ObjectStore';
 import type { PolicyStore } from '../../../model/PolicyStore';
@@ -31,7 +33,7 @@ export type FortiAccessGroup = AccessGroup;
 export type FortiScope = 'global' | 'vdom' | 'both';
 
 export interface FortiObjectView {
-  key: string;
+  readonly key: string;
   hasPhysicalKey(): boolean;
   effective(attribute: string): readonly string[];
   isExplicit(attribute: string): boolean;
@@ -63,12 +65,16 @@ export interface FortiAttributeSpec {
   readonly unimplemented?: string;
   readonly unimplementedValues?: Readonly<Record<string, string>>;
   readonly readOnly?: boolean;
+  readonly hidden?: boolean;
   readonly secret?: boolean;
   readonly appliesImmediately?: (
     values: readonly string[], context: FortiCommitContext,
   ) => void;
   readonly acceptsValue?: (value: string) => boolean;
   readonly expectedValue?: string;
+  readonly valueRefusal?: (
+    value: string, environment: FortiSchemaEnvironment,
+  ) => string | null;
 }
 
 export interface FortiInterfacePatch {
@@ -80,6 +86,7 @@ export interface FortiInterfacePatch {
   readonly type?: string;
   readonly parent?: string;
   readonly vlanId?: number;
+  readonly mtu?: number;
 }
 
 export interface FortiStaticRoute {
@@ -137,6 +144,17 @@ export interface FortiVipPatch {
   readonly comment?: string;
 }
 
+export interface FortiFqdnVipPatch {
+  readonly name: string;
+  readonly externalAddress: string;
+  readonly externalEndAddress?: string;
+  readonly mappedAddressObject: string;
+  readonly externalInterfaces: readonly string[];
+  readonly sourceFilters: readonly string[];
+  readonly arpReply: boolean;
+  readonly comment?: string;
+}
+
 export interface FortiCentralSnatPatch {
   readonly id: string;
   readonly position: number;
@@ -185,7 +203,16 @@ export interface FortiGlobalSettings {
   readonly adminTimeoutMin?: number;
   readonly adminLockoutThreshold?: number;
   readonly adminLockoutDurationSec?: number;
+  readonly preLoginBanner?: boolean;
+  readonly postLoginBanner?: boolean;
   readonly timezone?: string;
+  readonly conserveThresholds?: ConserveThresholds;
+  readonly avFailopen?: string;
+  readonly revisionOnLogout?: boolean;
+}
+
+export interface FortiIpsGlobalSettings {
+  readonly failOpen: boolean;
 }
 
 export interface FortiVdomSettings {
@@ -199,6 +226,7 @@ export interface FortiVdomSettings {
 export interface FortiMemoryLogPatch {
   readonly enabled?: boolean;
   readonly capacity?: number;
+  readonly maxBytes?: number;
 }
 
 export interface FortiCommitDevice {
@@ -213,6 +241,7 @@ export interface FortiCommitDevice {
   applyIpPool(pool: FortiIpPoolPatch): void;
   removeIpPool(name: string): void;
   applyVip(vip: FortiVipPatch): void;
+  applyFqdnVip(vip: FortiFqdnVipPatch): string | void;
   removeVip(name: string): void;
   applyCentralSnat(entry: FortiCentralSnatPatch): void;
   removeCentralSnat(id: string): void;
@@ -220,6 +249,9 @@ export interface FortiCommitDevice {
   removePolicyRoute(id: string): void;
   applyMemoryLog(patch: FortiMemoryLogPatch): void;
   applyGlobalSettings(settings: FortiGlobalSettings): void;
+  applyIpsGlobal(settings: FortiIpsGlobalSettings): void;
+  applyReplacementMessage(message: string, buffer: string): void;
+  applyConsoleSettings(settings: ConsoleSettingsPatch): void;
   applyHostname(hostname: string): void;
   applyDnsSettings(settings: FirewallDnsSettings): void;
   applyDnsServerInterface(entry: DnsServerInterface): void;
@@ -533,6 +565,8 @@ export interface FortiProtocolOptionsPatch {
   readonly httpsPorts: readonly number[];
   readonly ftpPorts: readonly number[];
   readonly dnsPorts: readonly number[];
+  readonly oversizeLimitMb: number;
+  readonly blockOversize: boolean;
   readonly comment?: string;
 }
 
@@ -557,6 +591,7 @@ export interface FortiTableSpec {
   readonly attributes: readonly FortiAttributeSpec[];
   readonly children?: readonly FortiTableSpec[];
   readonly predefined?: readonly string[];
+  readonly keyOnConfigLine?: boolean;
   readonly scopeOnly?: boolean;
   readonly unavailable?: string;
   readonly onCommit?: (

@@ -109,6 +109,8 @@ const SDWAN_HEALTH_CHECK: FortiTableSpec = {
     count('probe-count', 'Probes sent per round.', 5, 30, 5),
     count('failtime', 'Consecutive failures before the member is dead.', 1, 3600, 5),
     count('recoverytime', 'Consecutive successes before it is alive again.', 1, 3600, 5),
+    enable('update-static-route',
+      'Withdraw the static route of a member the health check declares dead.', true),
     {
       name: 'members',
       help: 'Member sequence numbers this check watches.',
@@ -214,6 +216,7 @@ export const SYSTEM_SDWAN: FortiTableSpec = {
         probeCount: Number.parseInt(check.effective('probe-count')[0] ?? '5', 10),
         failtime: Number.parseInt(check.effective('failtime')[0] ?? '5', 10),
         recoverytime: Number.parseInt(check.effective('recoverytime')[0] ?? '5', 10),
+        updateStaticRoute: check.effective('update-static-route')[0] !== 'disable',
         members: check.effective('members')
           .map(value => Number.parseInt(value, 10)).filter(Number.isFinite),
         sla: check.childEntries('sla').map(sla => ({

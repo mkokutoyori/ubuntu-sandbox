@@ -48,6 +48,8 @@ export interface AdGenericObject {
   attributes: Record<string, string[]>;
 }
 
+export const AD_NULL_GUID = '00000000-0000-0000-0000-000000000000';
+
 export interface AdAccessRule {
   identitySam: string;
   rights: string;

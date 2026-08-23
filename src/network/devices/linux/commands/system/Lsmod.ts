@@ -125,6 +125,9 @@ export const modprobeCommand: LinuxCommand = {
   options: [
     { flag: '-r', aliases: ['--remove'], dest: 'remove', description: 'Remove modules instead of inserting them' },
   ],
+  run(ctx: LinuxCommandContext, args: string[]): string {
+    return this.runWithStatusSync!(ctx, args).output;
+  },
   runWithStatusSync(ctx: LinuxCommandContext, args: string[]) {
     let remove = false;
     const names: string[] = [];

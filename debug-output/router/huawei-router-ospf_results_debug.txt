@@ -1,6 +1,6 @@
 ============================================================
 Router (L3) debug transcript — huawei-router-ospf
-Generated: 2026-08-19T07:03:15.585Z
+Generated: 2026-08-23T10:20:06.130Z
 Topology: R1(Huawei) GE0/0/1=L1 LAN 192.168.1.0/24, GE0/0/0=WAN 10.0.0.0/30; R2(Huawei) GE0/0/1=W1 LAN 192.168.2.0/24, GE0/0/0=WAN
 focus=VRP OSPF/OSPFv3: areas, auth, import-route, timers, display
 Total steps: 247
@@ -305,7 +305,8 @@ Total steps: 247
 <empty>
 
 [92/247] r1 [R1-GigabitEthernet0/0/1] ospf mtu-enable
-<empty>
+  Error: This simulator's OSPF engine writes the MTU into a DBD packet but never compares it, so this command would be stored without effect.
+  ospf mtu-enable
 
 [93/247] r1 [R1-GigabitEthernet0/0/1] ospf bfd enable
 <empty>
@@ -445,10 +446,12 @@ Total steps: 247
 <empty>
 
 [110/247] r1 [R1-GigabitEthernet0/0/1] ospfv3 cost 50
-<empty>
+  Error: This simulator's OSPFv3 engine carries no per-interface cost, so this command would be stored without effect.
+  ospfv3 cost 50
 
 [111/247] r1 [R1-GigabitEthernet0/0/1] ospfv3 network-type p2p
-<empty>
+  Error: This simulator's OSPFv3 engine carries no per-interface network-type, so this command would be stored without effect.
+  ospfv3 network-type p2p
 
 [112/247] r1 [R1-GigabitEthernet0/0/1] ospfv3 timer hello 5
   Error: Invalid process ID.
@@ -697,7 +700,14 @@ Total steps: 247
   #
   interface GigabitEthernet0/0/1
    ip address 10.0.0.1 255.255.255.252
+   ospf cost 100
+   ospf dr-priority 200
+   ospf timer hello 5
+   ospf timer dead 20
+   ospf network-type p2mp
    ipv6 enable
+   ipv6 address 2001:db8:1::1/64
+   ospfv3 1 area 0
   #
   interface GigabitEthernet0/0/2
    shutdown
@@ -1024,14 +1034,14 @@ Total steps: 247
   Root delay: 0.00 ms
   Root dispersion: 16000.00 ms
   Peer dispersion: 16000.00 ms
-  Reference time: 07:03:15.694  Aug 19 2026(EE2FD3B3.B1A9FBE7)
+  Reference time: 10:20:06.245  Aug 23 2026(EE3547D6.3EB851EB)
 
 [177/247] r1 <R1> display ntp session
   Info: No NTP session exists.
 
 [178/247] r1 <R1> display clock
-  2026-08-19 07:03:15
-  Wednesday
+  2026-08-23 10:20:06
+  Sunday
   Time Zone(UTC) : UTC
 
 [179/247] r1 <R1> display lldp neighbor
@@ -1043,13 +1053,13 @@ Total steps: 247
 [181/247] r1 <R1> display cpu-usage
   CPU Usage Stat. Cycle: 60 (Second)
   CPU Usage            : 11% Max: 38%
-  CPU Usage Stat. Time : 2026-08-19 07:03:15
+  CPU Usage Stat. Time : 2026-08-23 10:20:06
   CPU utilization for five seconds: 11%: one minute: 12%: five minutes: 10%
   
   Max CPU Usage Stat. Time : 0000-00-00 00:00:00.
 
 [182/247] r1 <R1> display memory-usage
-  Memory utilization statistics at 2026-08-19 07:03:15
+  Memory utilization statistics at 2026-08-23 10:20:06
   System Total Memory Is: 536870912 bytes
   Total Memory Used Is: 193273528 bytes
   Memory Using Percentage Is: 36%
@@ -1090,10 +1100,10 @@ Total steps: 247
   Dropped messages : 0
   Overwritten messages : 0
   Current messages : 4
-  2026-08-19 07:03:15 %01LINK/3/ERRORS: Interface GE0/0/1, changed state to up
-  2026-08-19 07:03:15 %01LINEPROTO/5/NOTIFICATIONS: Line protocol on Interface GE0/0/1, changed state to up
-  2026-08-19 07:03:15 %01LINK/3/ERRORS: Interface GE0/0/0, changed state to up
-  2026-08-19 07:03:15 %01LINEPROTO/5/NOTIFICATIONS: Line protocol on Interface GE0/0/0, changed state to up
+  2026-08-23 10:20:06 %01LINK/3/ERRORS: Interface GE0/0/1, changed state to up
+  2026-08-23 10:20:06 %01LINEPROTO/5/NOTIFICATIONS: Line protocol on Interface GE0/0/1, changed state to up
+  2026-08-23 10:20:06 %01LINK/3/ERRORS: Interface GE0/0/0, changed state to up
+  2026-08-23 10:20:06 %01LINEPROTO/5/NOTIFICATIONS: Line protocol on Interface GE0/0/0, changed state to up
 
 [187/247] r1 <R1> display trapbuffer
   Trapping buffer configuration and contents: enabled
@@ -1183,7 +1193,14 @@ Total steps: 247
   #
   interface GigabitEthernet0/0/1
    ip address 10.0.0.1 255.255.255.252
+   ospf cost 100
+   ospf dr-priority 200
+   ospf timer hello 5
+   ospf timer dead 20
+   ospf network-type p2mp
    ipv6 enable
+   ipv6 address 2001:db8:1::1/64
+   ospfv3 1 area 0
   #
   interface GigabitEthernet0/0/2
    shutdown
@@ -1285,6 +1302,12 @@ Total steps: 247
 
 --- [204] § regression: pipe filters ---
 [204/247] r1 <R1> display current-configuration | include ospf
+   ospf cost 100
+   ospf dr-priority 200
+   ospf timer hello 5
+   ospf timer dead 20
+   ospf network-type p2mp
+   ospfv3 1 area 0
   ospf 1
 
 [205/247] r1 <R1> display current-configuration | begin interface
@@ -1293,7 +1316,14 @@ Total steps: 247
   #
   interface GigabitEthernet0/0/1
    ip address 10.0.0.1 255.255.255.252
+   ospf cost 100
+   ospf dr-priority 200
+   ospf timer hello 5
+   ospf timer dead 20
+   ospf network-type p2mp
    ipv6 enable
+   ipv6 address 2001:db8:1::1/64
+   ospfv3 1 area 0
   #
   interface GigabitEthernet0/0/2
    shutdown
@@ -1356,7 +1386,14 @@ Total steps: 247
    ip address 192.168.1.1 255.255.255.0
   interface GigabitEthernet0/0/1
    ip address 10.0.0.1 255.255.255.252
+   ospf cost 100
+   ospf dr-priority 200
+   ospf timer hello 5
+   ospf timer dead 20
+   ospf network-type p2mp
    ipv6 enable
+   ipv6 address 2001:db8:1::1/64
+   ospfv3 1 area 0
   interface GigabitEthernet0/0/2
    shutdown
   interface GigabitEthernet0/0/3
@@ -1584,6 +1621,7 @@ Total steps: 247
     screen-length  Restore default screen length
     screen-width   Restore default screen width
     terminal       Set the terminal line characteristics
+    time-range     Remove a time-range
     traffic        Display traffic statistics
     <cr>
 

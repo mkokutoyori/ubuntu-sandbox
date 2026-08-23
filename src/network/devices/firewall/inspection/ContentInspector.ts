@@ -19,6 +19,7 @@ export const EICAR_VIRUS_NAME = 'EICAR_TEST_FILE';
 export type InspectedProtocol = 'http' | 'https' | 'ftp' | 'dns' | 'other';
 
 export interface InspectedFlow {
+  readonly oversize?: boolean;
   readonly protocol: InspectedProtocol;
   readonly sourcePort: number;
   readonly destinationPort: number;

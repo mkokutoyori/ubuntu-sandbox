@@ -143,7 +143,7 @@ export abstract class Equipment {
     for (const port of this.ports.values()) port.setEventBus(this.getBus());
   }
 
-  protected getBus(): IEventBus {
+  getBus(): IEventBus {
     if (this.busOverride) return this.busOverride;
     if (!this.machineBus) this.machineBus = new ForwardingEventBus(getDefaultEventBus());
     return this.machineBus;

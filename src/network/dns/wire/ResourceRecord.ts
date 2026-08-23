@@ -184,7 +184,29 @@ export interface NsecRecordData {
   readonly types: readonly number[];
 }
 
+export interface TsigRecordData {
+  readonly type: typeof RRType.TSIG;
+  readonly algorithm: string;
+  readonly timeSigned: number;
+  readonly fudge: number;
+  readonly mac: Uint8Array;
+  readonly originalId: number;
+  readonly error: number;
+  readonly otherData: Uint8Array;
+}
+
+export interface EmptyRecordData {
+  readonly type: typeof RRType.ANY;
+  readonly wireType: RRType | number;
+}
+
+export function isEmptyRecordData(data: ResourceRecordData): data is EmptyRecordData {
+  return data.type === RRType.ANY;
+}
+
 export type ResourceRecordData =
+  | TsigRecordData
+  | EmptyRecordData
   | ARecordData
   | AaaaRecordData
   | NsRecordData
@@ -417,4 +439,22 @@ export function rdataKey(data: ResourceRecordData): string {
     default:
       return JSON.stringify(data);
   }
+}
+
+export function makeEmptyRecord(
+  name: string, wireType: RRType | number, rrClass: DnsClass | number, ttl = 0,
+): ResourceRecord<EmptyRecordData> {
+  validateDnsName(name);
+  validateTtl(ttl);
+  return { name, ttl, rrClass, data: { type: RRType.ANY, wireType } };
+}
+
+export function makeTsigRecord(
+  keyName: string, data: Omit<TsigRecordData, 'type'>,
+): ResourceRecord<TsigRecordData> {
+  validateDnsName(keyName);
+  return {
+    name: keyName, ttl: 0, rrClass: DnsClass.ANY,
+    data: { type: RRType.TSIG, ...data },
+  };
 }

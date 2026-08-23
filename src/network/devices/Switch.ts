@@ -28,11 +28,17 @@
  */
 
 import { Equipment } from '../equipment/Equipment';
+import {
+  CarPolicer, suppressionKindOf, cloneCarRule,
+  type SuppressionKind, type CarRule,
+} from '../qos/CarPolicer';
 import { CiscoFileSystem } from './shells/cisco/CiscoFileSystem';
 import { Port } from '../hardware/Port';
 import { CliShellSession } from './shells/vty/CliShellSession';
 import { getSessionRegistry } from '../equipment/RouterServiceCapabilities';
-import { EthernetFrame, DeviceType, MACAddress, ETHERTYPE_ARP, ARPPacket, IPAddress, SubnetMask, ETHERTYPE_IPV4, IPv4Packet } from '../core/types';
+import { EthernetFrame, DeviceType, MACAddress, ETHERTYPE_ARP, ARPPacket, IPAddress, SubnetMask, ETHERTYPE_IPV4, IPv4Packet,
+  ethernetFrameBytes,
+} from '../core/types';
 import { DHCPPacket } from '../dhcp/DHCPPacket';
 import { VlanSet } from './switch/VlanSet';
 import { RouterDhcpClient } from './router/RouterDhcpClient';
@@ -52,6 +58,7 @@ import { UDP_PORT_HSRP } from '../hsrp/types';
 import { GlbpAgent } from '../glbp/GlbpAgent';
 import { UDP_PORT_GLBP } from '../glbp/types';
 import { IP_PROTO_UDP, createIPv4Packet } from '../core/types';
+import type { ARPEntry } from '../core/types';
 import type { UDPPacket } from '../core/types';
 import { makeSwitchVrrpHost, makeSwitchNtpHost } from './switch/SwitchVrrpAdapter';
 import { NtpAgent } from '../ntp/NtpAgent';
@@ -200,6 +207,48 @@ export interface MqcPolicyBinding {
   behavior: string;
 }
 
+export interface MqcCounters {
+  matchedPackets: number;
+  matchedBytes: number;
+  passedPackets: number;
+  passedBytes: number;
+  droppedPackets: number;
+  droppedBytes: number;
+}
+
+export function emptyMqcCounters(): MqcCounters {
+  return {
+    matchedPackets: 0, matchedBytes: 0,
+    passedPackets: 0, passedBytes: 0,
+    droppedPackets: 0, droppedBytes: 0,
+  };
+}
+
+export interface MqcRemark {
+  dscp?: number;
+  dot1p?: number;
+}
+
+export function mqcRemarkLines(remark: MqcRemark): string[] {
+  const lines: string[] = [];
+  if (remark.dscp !== undefined) lines.push(`remark dscp ${remark.dscp}`);
+  if (remark.dot1p !== undefined) lines.push(`remark 8021p ${remark.dot1p}`);
+  return lines;
+}
+
+export type MqcMatch =
+  | { kind: 'acl'; ref: string }
+  | { kind: 'vlan-id'; vlan: number }
+  | { kind: 'any' };
+
+export function mqcMatchLine(match: MqcMatch): string {
+  switch (match.kind) {
+    case 'acl': return `if-match acl ${match.ref}`;
+    case 'vlan-id': return `if-match vlan-id ${match.vlan}`;
+    case 'any': return 'if-match any';
+  }
+}
+
 // ─── MAC Table Entry ────────────────────────────────────────────────
 
 export type MacLearningAction = 'discard' | 'forward';
@@ -273,6 +322,60 @@ export abstract class Switch extends Equipment {
   // ─── Port Configurations ────────────────────────────────────────
   private switchportConfigs: Map<string, SwitchportConfig> = new Map();
 
+  private readonly carPolicers = new Map<string, CarPolicer>();
+
+  private readonly suppressionPolicers = new Map<string, Map<SuppressionKind, CarPolicer>>();
+
+  getCarPolicer(ifName: string, create = false): CarPolicer | undefined {
+    let policer = this.carPolicers.get(ifName);
+    if (!policer && create) {
+      policer = new CarPolicer();
+      this.carPolicers.set(ifName, policer);
+    }
+    return policer;
+  }
+
+  getSuppressionPolicer(
+    ifName: string, kind: SuppressionKind, create = false,
+  ): CarPolicer | undefined {
+    let perPort = this.suppressionPolicers.get(ifName);
+    if (!perPort && create) {
+      perPort = new Map();
+      this.suppressionPolicers.set(ifName, perPort);
+    }
+    if (!perPort) return undefined;
+    let policer = perPort.get(kind);
+    if (!policer && create) {
+      policer = new CarPolicer();
+      perPort.set(kind, policer);
+    }
+    return policer;
+  }
+
+  clearSuppression(ifName: string, kind: SuppressionKind): void {
+    this.suppressionPolicers.get(ifName)?.get(kind)?.clear();
+  }
+
+  private policeIngress(portName: string, frame: EthernetFrame): boolean {
+    const bytes = ethernetFrameBytes(frame);
+
+    const kind = suppressionKindOf(frame.dstMAC.toString());
+    const suppression = this.suppressionPolicers.get(portName)?.get(kind);
+    if (suppression && !suppression.isEmpty() && !suppression.police('input', bytes)) {
+      Logger.debug(this.id, 'switch:suppression-drop',
+        `${this.name}: ${kind}-suppression dropped a frame on ${portName}`);
+      return false;
+    }
+
+    const car = this.carPolicers.get(portName);
+    if (car && !car.isEmpty() && !car.police('input', bytes)) {
+      Logger.debug(this.id, 'switch:car-drop',
+        `${this.name}: qos car dropped a frame on ${portName}`);
+      return false;
+    }
+    return true;
+  }
+
   // ─── Private VLAN (PVLAN) ────────────────────────────────────────
   private pvlanRoles: Map<number, PrivateVlanRole> = new Map();
   private pvlanAssociations: Map<number, Set<number>> = new Map();
@@ -294,10 +397,16 @@ export abstract class Switch extends Equipment {
   private vlanFilterBindings: Map<number, string> = new Map();
 
   // ─── MQC (Huawei) ──────────────────────────────────────────────
-  private mqcClassifiers: Map<string, string[]> = new Map();
+  private mqcClassifiers: Map<string, MqcMatch[]> = new Map();
   private mqcBehaviors: Map<string, 'permit' | 'deny'> = new Map();
+  private mqcBehaviorCar: Map<string, CarRule> = new Map();
+  private mqcBehaviorRemark: Map<string, MqcRemark> = new Map();
+  private mqcBehaviorStatistic: Set<string> = new Set();
+  private mqcCounters: Map<string, MqcCounters> = new Map();
+  private mqcCarBuckets: Map<string, { raw: string; policer: CarPolicer }> = new Map();
   private mqcPolicies: Map<string, MqcPolicyBinding[]> = new Map();
   private vlanTrafficPolicies: Map<number, string> = new Map();
+  private portTrafficPolicies: Map<string, string> = new Map();
 
   // ─── STP Port States ────────────────────────────────────────────
   private stpStates: Map<string, STPPortState> = new Map();
@@ -343,7 +452,7 @@ export abstract class Switch extends Equipment {
   private interfaceDescriptions: Map<string, string> = new Map();
 
   // ─── Management ARP Table ──────────────────────────────────────
-  private arpTable: Map<string, { mac: MACAddress; iface: string; timestamp: number; type: 'dynamic' | 'static' }> = new Map();
+  private arpTable: Map<string, ARPEntry> = new Map();
   private readonly arpStats = new ArpStats();
   private ipRoutingEnabled = false;
 
@@ -1389,19 +1498,123 @@ export abstract class Switch extends Equipment {
     if (!this.mqcClassifiers.has(name)) this.mqcClassifiers.set(name, []);
   }
 
-  mqcClassifierAddMatchAcl(name: string, aclRef: string): { ok: boolean; error?: string } {
+  mqcClassifierAddMatch(name: string, match: MqcMatch): { ok: boolean; error?: string } {
     const list = this.mqcClassifiers.get(name);
     if (!list) return { ok: false, error: `Traffic classifier ${name} does not exist` };
-    if (!list.includes(aclRef)) list.push(aclRef);
+    const line = mqcMatchLine(match);
+    if (!list.some(existing => mqcMatchLine(existing) === line)) list.push(match);
     return { ok: true };
   }
 
-  getMqcClassifier(name: string): string[] | undefined {
+  mqcClassifierAddMatchAcl(name: string, aclRef: string): { ok: boolean; error?: string } {
+    return this.mqcClassifierAddMatch(name, { kind: 'acl', ref: aclRef });
+  }
+
+  getMqcClassifier(name: string): MqcMatch[] | undefined {
     return this.mqcClassifiers.get(name);
   }
 
+  getMqcClassifierNames(): string[] { return [...this.mqcClassifiers.keys()]; }
+  getMqcBehaviorNames(): string[] { return [...this.mqcBehaviors.keys()]; }
+  getMqcPolicyNames(): string[] { return [...this.mqcPolicies.keys()]; }
+
   mqcEnsureBehavior(name: string): void {
     if (!this.mqcBehaviors.has(name)) this.mqcBehaviors.set(name, 'permit');
+  }
+
+  mqcBehaviorSetCar(name: string, rule: CarRule): { ok: boolean; error?: string } {
+    if (!this.mqcBehaviors.has(name)) return { ok: false, error: `Traffic behavior ${name} does not exist` };
+    this.mqcBehaviorCar.set(name, rule);
+    return { ok: true };
+  }
+
+  mqcBehaviorClearCar(name: string): void {
+    this.mqcBehaviorCar.delete(name);
+  }
+
+  mqcBehaviorSetRemark(name: string, remark: MqcRemark): { ok: boolean; error?: string } {
+    if (!this.mqcBehaviors.has(name)) return { ok: false, error: `Traffic behavior ${name} does not exist` };
+    this.mqcBehaviorRemark.set(name, { ...this.mqcBehaviorRemark.get(name), ...remark });
+    return { ok: true };
+  }
+
+  mqcBehaviorClearRemark(name: string): void {
+    this.mqcBehaviorRemark.delete(name);
+  }
+
+  mqcBehaviorSetStatistic(name: string, on: boolean): { ok: boolean; error?: string } {
+    if (!this.mqcBehaviors.has(name)) return { ok: false, error: `Traffic behavior ${name} does not exist` };
+    if (on) this.mqcBehaviorStatistic.add(name);
+    else this.mqcBehaviorStatistic.delete(name);
+    return { ok: true };
+  }
+
+  mqcBehaviorHasStatistic(name: string): boolean {
+    return this.mqcBehaviorStatistic.has(name);
+  }
+
+  /**
+   * Le compteur suit la MEME cle que le seau CAR — point d'application,
+   * classificateur, comportement — parce qu'une politique posee a deux
+   * endroits compte deux fois sur une vraie machine.
+   */
+  getMqcCounters(point: string, classifier: string, behavior: string): MqcCounters | undefined {
+    return this.mqcCounters.get(`${point}|${classifier}|${behavior}`);
+  }
+
+  clearMqcCounters(): void { this.mqcCounters.clear(); }
+
+  private countMqc(
+    point: string, pair: MqcPolicyBinding, bytes: number, passed: boolean,
+  ): void {
+    if (!this.mqcBehaviorStatistic.has(pair.behavior)) return;
+    const key = `${point}|${pair.classifier}|${pair.behavior}`;
+    let counters = this.mqcCounters.get(key);
+    if (!counters) { counters = emptyMqcCounters(); this.mqcCounters.set(key, counters); }
+    counters.matchedPackets++;
+    counters.matchedBytes += bytes;
+    if (passed) { counters.passedPackets++; counters.passedBytes += bytes; }
+    else { counters.droppedPackets++; counters.droppedBytes += bytes; }
+  }
+
+  getMqcBehaviorRemark(name: string): MqcRemark | undefined {
+    return this.mqcBehaviorRemark.get(name);
+  }
+
+  /**
+   * RFC 2474 : les six bits de poids fort de l'octet TOS, l'ECN restant
+   * intact — c'est le meme decoupage que celui qu'`ACLEngine` compare,
+   * donc une marque posee ici est vue par une liste d'acces en aval.
+   */
+  private applyMqcRemark(behavior: string, frame: EthernetFrame): void {
+    const remark = this.mqcBehaviorRemark.get(behavior);
+    if (!remark) return;
+    if (remark.dscp !== undefined && frame.etherType === ETHERTYPE_IPV4) {
+      const ip = frame.payload as IPv4Packet | undefined;
+      if (ip && ip.type === 'ipv4') {
+        ip.tos = ((remark.dscp & 0x3f) << 2) | (ip.tos & 0x03);
+      }
+    }
+    if (remark.dot1p !== undefined) {
+      const tag = (frame as TaggedEthernetFrame).dot1q;
+      if (tag) tag.pcp = remark.dot1p & 0x07;
+    }
+  }
+
+  getMqcBehaviorCar(name: string): CarRule | undefined {
+    return this.mqcBehaviorCar.get(name);
+  }
+
+  private mqcCarBucket(point: string, behavior: string): CarPolicer | null {
+    const configured = this.mqcBehaviorCar.get(behavior);
+    if (!configured) return null;
+    const key = `${point}|${behavior}`;
+    const held = this.mqcCarBuckets.get(key);
+    if (held && held.raw === configured.raw) return held.policer;
+    const policer = new CarPolicer();
+    policer.add(cloneCarRule(configured));
+    this.mqcCarBuckets.set(key, { raw: configured.raw, policer });
+    return policer;
   }
 
   mqcBehaviorSetAction(name: string, action: 'permit' | 'deny'): { ok: boolean; error?: string } {
@@ -1449,22 +1662,67 @@ export abstract class Switch extends Equipment {
     return this.vlanTrafficPolicies.get(vlan);
   }
 
-  private mqcVlanPermits(vlan: number, frame: EthernetFrame): boolean {
-    const policyName = this.vlanTrafficPolicies.get(vlan);
-    if (!policyName) return true;
+  private mqcMatchHits(match: MqcMatch, vlan: number, frame: EthernetFrame): boolean {
+    if (match.kind === 'any') return true;
+    if (match.kind === 'vlan-id') return match.vlan === vlan;
+    if (frame.etherType !== ETHERTYPE_IPV4) return false;
+    const ip = frame.payload as IPv4Packet | undefined;
+    if (!ip || ip.type !== 'ipv4') return false;
+    return this.getVaclEngine().evaluateACLByName(match.ref, ip) === 'permit';
+  }
+
+  private mqcPolicyPermits(
+    policyName: string, vlan: number, frame: EthernetFrame, point: string,
+  ): boolean {
     const pairs = this.mqcPolicies.get(policyName);
     if (!pairs || pairs.length === 0) return true;
-    if (frame.etherType !== ETHERTYPE_IPV4) return true;
-    const ip = frame.payload as IPv4Packet | undefined;
-    if (!ip || ip.type !== 'ipv4') return true;
     for (const pair of pairs) {
-      for (const aclRef of this.mqcClassifiers.get(pair.classifier) ?? []) {
-        if (this.getVaclEngine().evaluateACLByName(aclRef, ip) === 'permit') {
-          return (this.mqcBehaviors.get(pair.behavior) ?? 'permit') === 'permit';
+      for (const match of this.mqcClassifiers.get(pair.classifier) ?? []) {
+        if (!this.mqcMatchHits(match, vlan, frame)) continue;
+        const bytes = ethernetFrameBytes(frame);
+        if ((this.mqcBehaviors.get(pair.behavior) ?? 'permit') === 'deny') {
+          this.countMqc(point, pair, bytes, false);
+          return false;
         }
+        const bucket = this.mqcCarBucket(point, pair.behavior);
+        if (bucket && !bucket.police('input', bytes)) {
+          this.countMqc(point, pair, bytes, false);
+          return false;
+        }
+        this.applyMqcRemark(pair.behavior, frame);
+        this.countMqc(point, pair, bytes, true);
+        return true;
       }
     }
     return true;
+  }
+
+  private mqcVlanPermits(vlan: number, frame: EthernetFrame): boolean {
+    const policyName = this.vlanTrafficPolicies.get(vlan);
+    if (!policyName) return true;
+    return this.mqcPolicyPermits(policyName, vlan, frame, `vlan${vlan}`);
+  }
+
+  private mqcPortPermits(portName: string, vlan: number, frame: EthernetFrame): boolean {
+    const policyName = this.portTrafficPolicies.get(portName);
+    if (!policyName) return true;
+    return this.mqcPolicyPermits(policyName, vlan, frame, portName);
+  }
+
+  applyPortTrafficPolicy(portName: string, policyName: string): { ok: boolean; error?: string } {
+    if (!this.mqcPolicies.has(policyName)) {
+      return { ok: false, error: `Traffic policy ${policyName} does not exist` };
+    }
+    this.portTrafficPolicies.set(portName, policyName);
+    return { ok: true };
+  }
+
+  removePortTrafficPolicy(portName: string): void {
+    this.portTrafficPolicies.delete(portName);
+  }
+
+  getPortTrafficPolicy(portName: string): string | undefined {
+    return this.portTrafficPolicies.get(portName);
   }
 
   setTrunkNativeVlan(portName: string, vlanId: number): boolean {
@@ -1775,6 +2033,8 @@ export abstract class Switch extends Equipment {
       return;
     }
 
+    if (!this.policeIngress(portName, frame)) return;
+
     const taggedFrame = frame as TaggedEthernetFrame;
 
     // ─── Step 1: Determine ingress VLAN ─────────────────────────
@@ -2027,7 +2287,9 @@ export abstract class Switch extends Equipment {
     }
 
     // ─── Step 2.7: VLAN-scoped filtering (Cisco VACL / Huawei MQC) ─
-    if (!this.vaclPermits(ingressVlan, frame) || !this.mqcVlanPermits(ingressVlan, frame)) {
+    if (!this.vaclPermits(ingressVlan, frame)
+      || !this.mqcVlanPermits(ingressVlan, frame)
+      || !this.mqcPortPermits(portName, ingressVlan, frame)) {
       Logger.debug(this.id, 'switch:vacl-drop',
         `${this.name}: VLAN filter dropped frame on ${portName} VLAN ${ingressVlan}`);
       return;
@@ -2537,6 +2799,8 @@ export abstract class Switch extends Equipment {
   ): Promise<CiscoPingRow[]> {
     return this.svi.executePingSequence(target, count, timeoutMs, sourceIPStr);
   }
+
+  getStaticRoutes() { return this.svi.getStaticRoutes(); }
 
   addStaticRoute(network: IPAddress, mask: SubnetMask, nextHop: IPAddress): void {
     this.svi.addStaticRoute(network, mask, nextHop);
@@ -3380,7 +3644,8 @@ export abstract class Switch extends Equipment {
       onVtyLine: false,
     });
     if (!plan) return null;
-    return runInteractionPlanHeadless(plan, answers, (c) => this.shell.execute(this, c));
+    return runInteractionPlanHeadless(
+      plan, answers, (c) => Promise.resolve(this.shell.execute(this, c)));
   }
 
   async loginAs(username: string, password: string): Promise<boolean> {

@@ -25,7 +25,10 @@ function requireDns(ctx: CmdletContext, cmdletName: string): IDnsServerProvider 
 }
 
 function zoneToPSObject(z: DnsZoneInfo): Record<string, PSValue> {
-  return { ZoneName: z.name, ZoneType: 'Primary', RecordCount: z.recordCount, DynamicUpdate: 'None', IsDsIntegrated: true };
+  return {
+    ZoneName: z.name, ZoneType: 'Primary', RecordCount: z.recordCount,
+    DynamicUpdate: z.dynamicUpdate, IsDsIntegrated: true,
+  };
 }
 function recordToPSObject(r: DnsRecordInfo): Record<string, PSValue> {
   return { HostName: r.name, RecordType: r.type, TimeToLive: r.ttl, RecordData: r.text };
@@ -72,6 +75,76 @@ export class GetDnsServerZoneCmdlet implements ICmdlet {
       return zoneToPSObject(z);
     }
     return dns.listZones().map(zoneToPSObject);
+  }
+}
+
+const DYNAMIC_UPDATE_MODES = ['None', 'NonsecureAndSecure', 'Secure'] as const;
+
+export class SetDnsServerPrimaryZoneCmdlet implements ICmdlet {
+  readonly name = 'set-dnsserverprimaryzone';
+  readonly aliases = [] as const;
+  readonly parameters = ['Name', 'DynamicUpdate'] as const;
+
+  execute(ctx: CmdletContext): PSValue {
+    const dns = requireDns(ctx, 'Set-DnsServerPrimaryZone');
+    const name = nameOf(ctx);
+    if (!name) {
+      ctx.emitError('Set-DnsServerPrimaryZone : Cannot process command because of one or more missing mandatory parameters: Name.');
+      return null;
+    }
+    const wanted = psValueToString(ctx.named['dynamicupdate'] ?? '');
+    const mode = DYNAMIC_UPDATE_MODES.find(m => m.toLowerCase() === wanted.toLowerCase());
+    if (!mode) {
+      ctx.emitError(`Set-DnsServerPrimaryZone : Cannot validate argument on parameter 'DynamicUpdate'. The argument "${wanted}" does not belong to the set "${DYNAMIC_UPDATE_MODES.join(',')}".`);
+      return null;
+    }
+    const res = dns.setZoneDynamicUpdate(name, mode);
+    if (!res.ok) { ctx.emitError(`Set-DnsServerPrimaryZone : ${res.message}`); return null; }
+    return null;
+  }
+}
+
+export class AddDnsServerTsigKeyCmdlet implements ICmdlet {
+  readonly name = 'add-dnsservertsigkey';
+  readonly aliases = [] as const;
+  readonly parameters = ['Name', 'Algorithm', 'Secret'] as const;
+
+  execute(ctx: CmdletContext): PSValue {
+    const dns = requireDns(ctx, 'Add-DnsServerTsigKey');
+    const name = nameOf(ctx);
+    const algorithm = psValueToString(ctx.named['algorithm'] ?? 'hmac-sha256.');
+    const secret = psValueToString(ctx.named['secret'] ?? '');
+    if (!name || !secret) {
+      ctx.emitError('Add-DnsServerTsigKey : Cannot process command because of one or more missing mandatory parameters: Name Secret.');
+      return null;
+    }
+    const res = dns.addTsigKey(name, algorithm, secret);
+    if (!res.ok) { ctx.emitError(`Add-DnsServerTsigKey : ${res.message}`); return null; }
+    return null;
+  }
+}
+
+export class GetDnsServerTsigKeyCmdlet implements ICmdlet {
+  readonly name = 'get-dnsservertsigkey';
+  readonly aliases = [] as const;
+  readonly parameters = [] as const;
+
+  execute(ctx: CmdletContext): PSValue {
+    const dns = requireDns(ctx, 'Get-DnsServerTsigKey');
+    return dns.listTsigKeys().map(k => ({ Name: k.name, Algorithm: k.algorithm }));
+  }
+}
+
+export class RemoveDnsServerTsigKeyCmdlet implements ICmdlet {
+  readonly name = 'remove-dnsservertsigkey';
+  readonly aliases = [] as const;
+  readonly parameters = ['Name'] as const;
+
+  execute(ctx: CmdletContext): PSValue {
+    const dns = requireDns(ctx, 'Remove-DnsServerTsigKey');
+    const res = dns.removeTsigKey(nameOf(ctx));
+    if (!res.ok) { ctx.emitError(`Remove-DnsServerTsigKey : ${res.message}`); return null; }
+    return null;
   }
 }
 

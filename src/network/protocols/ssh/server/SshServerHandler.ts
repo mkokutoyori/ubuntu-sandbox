@@ -13,6 +13,7 @@ import { getDefaultScheduler } from '@/events/Scheduler';
 import type { EditorKeyInput } from '@/network/devices/linux/editors/EditorKeyInput';
 import type { EditorSession } from '@/network/devices/linux/editors/EditorView';
 import type { ChannelType } from '../channels/ISshChannel';
+import type { AccountLifecycleVerdict } from '../auth/ISshAuthMethod';
 import {
   encodeSftpChannelFrame,
   decodeSftpChannelFrame,
@@ -806,7 +807,8 @@ export class SshServerHandler {
       return { ok: false };
     }
 
-    const lifecycle = this.ctx.auth.checkAccountLifecycle?.(user) ?? { ok: true };
+    const lifecycle: AccountLifecycleVerdict =
+      this.ctx.auth.checkAccountLifecycle?.(user) ?? { ok: true };
     if (!lifecycle.ok) {
       this.eventBus.emit({
         kind: 'auth_failure',

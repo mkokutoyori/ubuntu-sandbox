@@ -51,6 +51,7 @@ export type DebugCategory =
 import type { IEventBus } from '@/events/EventBus';
 import { DebugBroadcast, type DebugLineListener, type DebugLineJournal, type TerminalDebugSource } from '@/network/devices/diag/DebugBroadcast';
 import { CliInvalidInput } from '@/network/devices/shells/cli/CliDiagnostic';
+import { ospfHelloMismatchLines } from '@/network/ospf/events';
 
 const OSPF_TYPE_NAMES: Readonly<Record<number, string>> = {
   1: 'Hello', 2: 'Data Description', 3: 'LS Request', 4: 'LS Update', 5: 'LS Ack',
@@ -536,6 +537,12 @@ export class RouterDebugService implements TerminalDebugSource {
       this.emit('ip.ospf.lsa-generation',
         `OSPF: Generate LSA type ${h.lsType ?? '?'}, LSID ${h.linkStateId ?? '?'}, adv rtr ${h.advertisingRouter ?? '?'}, area ${p.areaId ?? '?'}, seq 0x${(h.sequenceNumber ?? 0).toString(16).toUpperCase()}`);
     }));
+    this.broadcast.track(bus.subscribe('ospf.hello.mismatch', (e) => {
+      if (!mine(e.payload)) return;
+      for (const ligne of ospfHelloMismatchLines(e.payload)) {
+        this.emit('ip.ospf.hello', ligne);
+      }
+    }));
     this.broadcast.track(bus.subscribe('ospf.hello.send-requested', (e) => {
       if (!mine(e.payload)) return;
       const p = e.payload as unknown as { iface?: string; areaId?: string; srcIp?: string };
@@ -649,7 +656,7 @@ export class RouterDebugService implements TerminalDebugSource {
         `IP: s=${ip.src} (${entree}), d=${ip.dst} (${iface}), len ${ip.len}, ${verbe}`, faits);
       const detail = RouterDebugService.ligneTransport(ip.proto, ip.transport);
       if (detail && this.flags.get('ip.packet')?.detail) this.emit('ip.packet', detail, faits);
-      if (ip.proto === 6 && dir !== 'forward') this.tracerTcp(ip, dir, faits);
+      if (ip.proto === 6) this.tracerTcp(ip, dir, faits);
       if (ip.proto === 17 && dir === 'rcvd') {
         const u = ip.transport as { sourcePort?: number; destinationPort?: number; length?: number } | undefined;
         if (u) {

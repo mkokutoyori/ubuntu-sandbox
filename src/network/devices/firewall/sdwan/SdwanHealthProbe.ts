@@ -1,6 +1,10 @@
 import { IP_PROTO_ICMP, type ICMPPacket, type IPv4Packet } from '../../../core/types';
-import { DEAD_LOSS_PERCENT, type SdwanHealthCheck, type SdwanMember, type SdwanTable } from './SdwanTable';
-import { buildEchoRequest } from '../l3/IcmpEcho';
+import {
+  DEAD_LOSS_PERCENT,
+  type SdwanHealthCheck, type SdwanHealthTransition,
+  type SdwanMember, type SdwanTable,
+} from './SdwanTable';
+import { buildEchoRequest } from '../../../icmp/IcmpEcho';
 
 export interface ProbeDeps {
   readonly send: (iface: string, packet: IPv4Packet, gateway: string) => void;
@@ -20,14 +24,18 @@ export class SdwanHealthProbe {
 
   constructor(private readonly deps: ProbeDeps) {}
 
-  async run(table: SdwanTable): Promise<void> {
+  async run(table: SdwanTable): Promise<readonly SdwanHealthTransition[]> {
+    const changes: SdwanHealthTransition[] = [];
     for (const check of table.allHealthChecks()) {
       for (const sequence of check.members) {
         const member = table.member(sequence);
         if (!member) continue;
-        table.recordHealth(check.name, sequence, await this.measure(check, member));
+        const change = table.recordHealth(
+          check.name, sequence, await this.measure(check, member));
+        if (change) changes.push(change);
       }
     }
+    return changes;
   }
 
   observeReply(packet: IPv4Packet): boolean {

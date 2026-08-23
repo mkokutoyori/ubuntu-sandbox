@@ -108,11 +108,13 @@ export function keywordMatches(
   node: TreeNode, token: string, table: CommandTable, session: CliSession,
 ): TreeNode[] {
   const lowered = token.toLowerCase();
-  const reachable = [...node.children.values()]
-    .filter(child => subtreeReachable(child, table, session));
+  const children = [...node.children.values()];
+  const reachable = children.filter(child => subtreeReachable(child, table, session));
 
   const exact = reachable.find(child => child.keyword?.toLowerCase() === lowered);
   if (exact) return [exact];
+
+  if (children.some(child => child.keyword?.toLowerCase() === lowered)) return [];
 
   return reachable.filter(child => child.keyword?.toLowerCase().startsWith(lowered));
 }

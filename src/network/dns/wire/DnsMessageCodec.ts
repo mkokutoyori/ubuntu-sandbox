@@ -8,7 +8,9 @@ import type {
   ARecordData, AaaaRecordData, NsRecordData, CnameRecordData, PtrRecordData,
   SoaRecordData, MxRecordData, TxtRecordData, SrvRecordData,
   DnskeyRecordData, RrsigRecordData, DsRecordData, DhcidRecordData, NsecRecordData,
+  TsigRecordData,
 } from '@/network/dns/wire/ResourceRecord';
+import { isEmptyRecordData } from '@/network/dns/wire/ResourceRecord';
 
 export class DnsMessageError extends Error {
   constructor(message: string) {
@@ -95,6 +97,21 @@ function encodeTypeBitmaps(types: readonly number[], out: number[]): void {
   }
 }
 
+export function writeUint48(out: number[], value: number): void {
+  out.push(Math.floor(value / 0x10000000000) & 0xff);
+  out.push(Math.floor(value / 0x100000000) & 0xff);
+  out.push((value >>> 24) & 0xff);
+  out.push((value >>> 16) & 0xff);
+  out.push((value >>> 8) & 0xff);
+  out.push(value & 0xff);
+}
+
+export function readUint48(view: Uint8Array, offset: number): number {
+  return view[offset] * 0x10000000000 + view[offset + 1] * 0x100000000
+    + view[offset + 2] * 0x1000000 + view[offset + 3] * 0x10000
+    + view[offset + 4] * 0x100 + view[offset + 5];
+}
+
 export function encodeCanonicalName(name: string): number[] {
   const out: number[] = [];
   encodeName(name.toLowerCase(), out, new Map());
@@ -102,6 +119,7 @@ export function encodeCanonicalName(name: string): number[] {
 }
 
 function encodeRData(data: ResourceRecordData, out: number[], compressionMap: Map<string, number>): void {
+  if (isEmptyRecordData(data)) return;
   switch (data.type) {
     case RRType.A:
       for (const octet of data.address.getOctets()) out.push(octet);
@@ -172,6 +190,17 @@ function encodeRData(data: ResourceRecordData, out: number[], compressionMap: Ma
       encodeName(data.nextDomainName, out, new Map());
       encodeTypeBitmaps(data.types, out);
       return;
+    case RRType.TSIG:
+      for (const b of encodeCanonicalName(data.algorithm)) out.push(b);
+      writeUint48(out, data.timeSigned);
+      writeUint16(out, data.fudge);
+      writeUint16(out, data.mac.length);
+      for (const b of data.mac) out.push(b);
+      writeUint16(out, data.originalId);
+      writeUint16(out, data.error);
+      writeUint16(out, data.otherData.length);
+      for (const b of data.otherData) out.push(b);
+      return;
     case RRType.OPT:
       return;
     default:
@@ -196,7 +225,7 @@ function encodeResourceRecord(
   }
 
   encodeName(rr.name, out, compressionMap);
-  writeUint16(out, rr.data.type);
+  writeUint16(out, isEmptyRecordData(rr.data) ? rr.data.wireType : rr.data.type);
   writeUint16(out, rr.rrClass);
   writeUint32(out, rr.ttl);
 
@@ -418,6 +447,26 @@ function decodeRData(type: number, view: Uint8Array, offset: number, rdlength: n
       const types = decodeTypeBitmaps(view, next.next, offset + rdlength);
       return { type: RRType.NSEC, nextDomainName: next.name, types } as NsecRecordData;
     }
+    case RRType.TSIG: {
+      const algorithm = decodeName(view, offset);
+      let pos = algorithm.next;
+      const timeSigned = readUint48(view, pos); pos += 6;
+      const fudge = (view[pos] << 8) | view[pos + 1]; pos += 2;
+      const macSize = (view[pos] << 8) | view[pos + 1]; pos += 2;
+      const mac = view.slice(pos, pos + macSize); pos += macSize;
+      const originalId = (view[pos] << 8) | view[pos + 1]; pos += 2;
+      const error = (view[pos] << 8) | view[pos + 1]; pos += 2;
+      const otherLen = (view[pos] << 8) | view[pos + 1]; pos += 2;
+      if (pos + otherLen !== offset + rdlength) {
+        throw new DnsMessageError(
+          `TSIG RDATA length ${rdlength} does not match its own field sizes`);
+      }
+      const otherData = view.slice(pos, pos + otherLen);
+      return {
+        type: RRType.TSIG, algorithm: algorithm.name, timeSigned, fudge,
+        mac, originalId, error, otherData,
+      } as TsigRecordData;
+    }
     default:
       throw new DnsMessageError(`cannot decode RDATA for unsupported record type ${type}`);
   }
@@ -462,12 +511,21 @@ function decodeResourceRecord(cursor: Cursor): ResourceRecord<ResourceRecordData
     return { name, ttl, rrClass, data };
   }
 
+  if (rdlength === 0) {
+    return { name, ttl, rrClass: rrClass as DnsClass, data: { type: RRType.ANY, wireType: type } };
+  }
+
   const data = decodeRData(type, cursor.view, cursor.pos, rdlength);
   cursor.pos += rdlength;
   return { name, ttl, rrClass: rrClass as DnsClass, data };
 }
 
-export function decodeDnsMessage(bytes: Uint8Array): DnsMessage {
+export interface DecodedDnsMessage {
+  readonly message: DnsMessage;
+  readonly lastAdditionalOffset: number | null;
+}
+
+export function decodeDnsMessageDetailed(bytes: Uint8Array): DecodedDnsMessage {
   if (bytes.length < HEADER_LENGTH) {
     throw new DnsMessageError(`truncated DNS message: header requires ${HEADER_LENGTH} bytes, got ${bytes.length}`);
   }
@@ -490,7 +548,18 @@ export function decodeDnsMessage(bytes: Uint8Array): DnsMessage {
   for (let i = 0; i < nscount; i++) authorities.push(decodeResourceRecord(cursor));
 
   const additionals: ResourceRecord<ResourceRecordData>[] = [];
-  for (let i = 0; i < arcount; i++) additionals.push(decodeResourceRecord(cursor));
+  let lastAdditionalOffset: number | null = null;
+  for (let i = 0; i < arcount; i++) {
+    lastAdditionalOffset = cursor.pos;
+    additionals.push(decodeResourceRecord(cursor));
+  }
 
-  return { id, flags, questions, answers, authorities, additionals };
+  return {
+    message: { id, flags, questions, answers, authorities, additionals },
+    lastAdditionalOffset,
+  };
+}
+
+export function decodeDnsMessage(bytes: Uint8Array): DnsMessage {
+  return decodeDnsMessageDetailed(bytes).message;
 }

@@ -1,6 +1,6 @@
 ============================================================
 Router (L3) debug transcript — huawei-router-vrrp-qos
-Generated: 2026-08-19T07:03:22.317Z
+Generated: 2026-08-23T10:20:02.955Z
 Topology: R1(Huawei) GE0/0/1=L1 LAN 192.168.1.0/24, GE0/0/0=WAN 10.0.0.0/30; R2(Huawei) GE0/0/1=W1 LAN 192.168.2.0/24, GE0/0/0=WAN
 focus=VRP VRRP/BFD-for-VRRP + MQC QoS classifier/behavior/policy
 Total steps: 257
@@ -629,28 +629,36 @@ Total steps: 257
 <empty>
 
 [123/257] r1 [R1-GigabitEthernet0/0/1] qos lr outbound cir 100000 cbs 1875000
-<empty>
+  Error: This simulator carries no lr scheduler, so this command would be stored without effect.
+  qos lr outbound cir 100000 cbs 1875000
 
 [124/257] r1 [R1-GigabitEthernet0/0/1] qos gts dscp ef cir 2000 cbs 50000
-<empty>
+  Error: This simulator carries no gts scheduler, so this command would be stored without effect.
+  qos gts dscp ef cir 2000 cbs 50000
 
 [125/257] r1 [R1-GigabitEthernet0/0/1] qos queue 5 length packets 100
-<empty>
+  Error: This simulator carries no queue scheduler, so this command would be stored without effect.
+  qos queue 5 length packets 100
 
 [126/257] r1 [R1-GigabitEthernet0/0/1] qos wfq
-<empty>
+  Error: This simulator carries no wfq scheduler, so this command would be stored without effect.
+  qos wfq
 
 [127/257] r1 [R1-GigabitEthernet0/0/1] qos wred dscp
-<empty>
+  Error: This simulator carries no wred scheduler, so this command would be stored without effect.
+  qos wred dscp
 
 [128/257] r1 [R1-GigabitEthernet0/0/1] trust dscp
-<empty>
+  Error: This simulator carries no QoS trust boundary, so this command would be stored without effect.
+  trust dscp
 
 [129/257] r1 [R1-GigabitEthernet0/0/1] trust 8021p
-<empty>
+  Error: This simulator carries no QoS trust boundary, so this command would be stored without effect.
+  trust 8021p
 
 [130/257] r1 [R1-GigabitEthernet0/0/1] qos queue-profile QP1
-<empty>
+  Error: This simulator carries no queue-profile scheduler, so this command would be stored without effect.
+  qos queue-profile QP1
 
 [131/257] r1 [R1-GigabitEthernet0/0/1] quit
 <empty>
@@ -691,19 +699,25 @@ Total steps: 257
 <empty>
 
 [143/257] r1 [R1-GigabitEthernet0/0/1] qos pq
-<empty>
+  Error: This simulator carries no pq scheduler, so this command would be stored without effect.
+  qos pq
 
 [144/257] r1 [R1-GigabitEthernet0/0/1] qos cq
-<empty>
+  Error: This simulator carries no cq scheduler, so this command would be stored without effect.
+  qos cq
 
 [145/257] r1 [R1-GigabitEthernet0/0/1] qos wrr
-<empty>
+  Error: This simulator carries no wrr scheduler, so this command would be stored without effect.
+  qos wrr
 
 [146/257] r1 [R1-GigabitEthernet0/0/1] qos priority 5
-<empty>
+  Error: This simulator carries no priority scheduler, so this command would be stored without effect.
+  qos priority 5
 
 [147/257] r1 [R1-GigabitEthernet0/0/1] undo qos pq
-<empty>
+  Error: Unrecognized command found at '^' position.
+  undo qos pq
+           ^
 
 [148/257] r1 [R1-GigabitEthernet0/0/1] quit
 <empty>
@@ -746,6 +760,42 @@ Total steps: 257
   #
   dns resolve
   #
+  traffic classifier VOICE operator or
+   if-match dscp NaN
+   if-match acl 3000
+   if-match protocol rtp
+  #
+  traffic classifier VIDEO operator and
+   if-match dscp NaN
+  #
+  traffic classifier CRITICAL operator or
+   if-match protocol ospf
+   if-match ip-precedence 6
+  #
+  traffic behavior B-VOICE
+   remark dscp NaN
+   queue ef bandwidth 2000
+   car cir 2000 pir 4000 cbs 50000 pbs 100000
+   statistic enable
+  #
+  traffic behavior B-VIDEO
+   remark dscp NaN
+   queue af bandwidth pct 25
+  #
+  traffic behavior B-CRIT
+   queue af bandwidth pct 15
+  #
+  traffic behavior B-DROP
+   deny
+  #
+  traffic policy WAN-OUT
+   classifier VOICE behavior B-VOICE
+   classifier VIDEO behavior B-VIDEO
+   classifier CRITICAL behavior B-CRIT
+  #
+  acl number 3000
+   rule 5 permit ip
+  #
   interface GigabitEthernet0/0/0
    ip address 192.168.1.2 255.255.255.0
    vrrp vrid 1 virtual-ip 192.168.1.101
@@ -775,15 +825,14 @@ Total steps: 257
   #
   interface GigabitEthernet0/0/1
    ip address 10.0.0.1 255.255.255.252
+   qos car inbound cir 8000 cbs 1500000
+   traffic-policy WAN-OUT outbound
   #
   interface GigabitEthernet0/0/2
    shutdown
   #
   interface GigabitEthernet0/0/3
    shutdown
-  #
-  acl number 3000
-   rule 5 permit ip
   #
   aaa
    local-user alice password irreversible-cipher VV7a59tMk2A3Ln+JO1OhFp/4+M5jAWNxaZocI3BM9PaNK+CTBQncTA
@@ -1045,14 +1094,14 @@ Total steps: 257
   Root delay: 0.00 ms
   Root dispersion: 16000.00 ms
   Peer dispersion: 16000.00 ms
-  Reference time: 07:03:22.407  Aug 19 2026(EE2FD3BA.683126E9)
+  Reference time: 10:20:03.036  Aug 23 2026(EE3547D3.09374BC6)
 
 [187/257] r1 <R1> display ntp session
   Info: No NTP session exists.
 
 [188/257] r1 <R1> display clock
-  2026-08-19 07:03:22
-  Wednesday
+  2026-08-23 10:20:03
+  Sunday
   Time Zone(UTC) : UTC
 
 [189/257] r1 <R1> display lldp neighbor
@@ -1064,13 +1113,13 @@ Total steps: 257
 [191/257] r1 <R1> display cpu-usage
   CPU Usage Stat. Cycle: 60 (Second)
   CPU Usage            : 11% Max: 38%
-  CPU Usage Stat. Time : 2026-08-19 07:03:22
+  CPU Usage Stat. Time : 2026-08-23 10:20:03
   CPU utilization for five seconds: 11%: one minute: 12%: five minutes: 10%
   
   Max CPU Usage Stat. Time : 0000-00-00 00:00:00.
 
 [192/257] r1 <R1> display memory-usage
-  Memory utilization statistics at 2026-08-19 07:03:22
+  Memory utilization statistics at 2026-08-23 10:20:03
   System Total Memory Is: 536870912 bytes
   Total Memory Used Is: 193273528 bytes
   Memory Using Percentage Is: 36%
@@ -1111,14 +1160,14 @@ Total steps: 257
   Dropped messages : 0
   Overwritten messages : 0
   Current messages : 8
-  2026-08-19 07:03:22 %01LINK/3/ERRORS: Interface GE0/0/1, changed state to up
-  2026-08-19 07:03:22 %01LINEPROTO/5/NOTIFICATIONS: Line protocol on Interface GE0/0/1, changed state to up
-  2026-08-19 07:03:22 %01LINK/3/ERRORS: Interface GE0/0/0, changed state to up
-  2026-08-19 07:03:22 %01LINEPROTO/5/NOTIFICATIONS: Line protocol on Interface GE0/0/0, changed state to up
-  2026-08-19 07:03:22 %01VRRP/5/NOTIFICATIONS: GE0/0/0 VRID 1 state init -> master
-  2026-08-19 07:03:22 %01VRRP/5/NOTIFICATIONS: GE0/0/0 VRID 2 state init -> master
-  2026-08-19 07:03:22 %01VRRP/5/NOTIFICATIONS: GE0/0/0 VRID 3 state init -> master
-  2026-08-19 07:03:22 %01VRRP/5/NOTIFICATIONS: GE0/0/0 VRID 4 state init -> master
+  2026-08-23 10:20:02 %01LINK/3/ERRORS: Interface GE0/0/1, changed state to up
+  2026-08-23 10:20:02 %01LINEPROTO/5/NOTIFICATIONS: Line protocol on Interface GE0/0/1, changed state to up
+  2026-08-23 10:20:02 %01LINK/3/ERRORS: Interface GE0/0/0, changed state to up
+  2026-08-23 10:20:02 %01LINEPROTO/5/NOTIFICATIONS: Line protocol on Interface GE0/0/0, changed state to up
+  2026-08-23 10:20:02 %01VRRP/5/NOTIFICATIONS: GE0/0/0 VRID 1 state init -> master
+  2026-08-23 10:20:02 %01VRRP/5/NOTIFICATIONS: GE0/0/0 VRID 2 state init -> master
+  2026-08-23 10:20:02 %01VRRP/5/NOTIFICATIONS: GE0/0/0 VRID 3 state init -> master
+  2026-08-23 10:20:02 %01VRRP/5/NOTIFICATIONS: GE0/0/0 VRID 4 state init -> master
 
 [197/257] r1 <R1> display trapbuffer
   Trapping buffer configuration and contents: enabled
@@ -1199,6 +1248,42 @@ Total steps: 257
   #
   dns resolve
   #
+  traffic classifier VOICE operator or
+   if-match dscp NaN
+   if-match acl 3000
+   if-match protocol rtp
+  #
+  traffic classifier VIDEO operator and
+   if-match dscp NaN
+  #
+  traffic classifier CRITICAL operator or
+   if-match protocol ospf
+   if-match ip-precedence 6
+  #
+  traffic behavior B-VOICE
+   remark dscp NaN
+   queue ef bandwidth 2000
+   car cir 2000 pir 4000 cbs 50000 pbs 100000
+   statistic enable
+  #
+  traffic behavior B-VIDEO
+   remark dscp NaN
+   queue af bandwidth pct 25
+  #
+  traffic behavior B-CRIT
+   queue af bandwidth pct 15
+  #
+  traffic behavior B-DROP
+   deny
+  #
+  traffic policy WAN-OUT
+   classifier VOICE behavior B-VOICE
+   classifier VIDEO behavior B-VIDEO
+   classifier CRITICAL behavior B-CRIT
+  #
+  acl number 3000
+   rule 5 permit ip
+  #
   interface GigabitEthernet0/0/0
    ip address 192.168.1.2 255.255.255.0
    vrrp vrid 1 virtual-ip 192.168.1.101
@@ -1228,15 +1313,14 @@ Total steps: 257
   #
   interface GigabitEthernet0/0/1
    ip address 10.0.0.1 255.255.255.252
+   qos car inbound cir 8000 cbs 1500000
+   traffic-policy WAN-OUT outbound
   #
   interface GigabitEthernet0/0/2
    shutdown
   #
   interface GigabitEthernet0/0/3
    shutdown
-  #
-  acl number 3000
-   rule 5 permit ip
   #
   aaa
    local-user alice password irreversible-cipher VV7a59tMk2A3Ln+JO1OhFp/4+M5jAWNxaZocI3BM9PaNK+CTBQncTA
@@ -1307,7 +1391,7 @@ Total steps: 257
 
 --- [214] § regression: pipe filters ---
 [214/257] r1 <R1> display current-configuration | include ospf
-<empty>
+   if-match protocol ospf
 
 [215/257] r1 <R1> display current-configuration | begin interface
   interface GigabitEthernet0/0/0
@@ -1339,15 +1423,14 @@ Total steps: 257
   #
   interface GigabitEthernet0/0/1
    ip address 10.0.0.1 255.255.255.252
+   qos car inbound cir 8000 cbs 1500000
+   traffic-policy WAN-OUT outbound
   #
   interface GigabitEthernet0/0/2
    shutdown
   #
   interface GigabitEthernet0/0/3
    shutdown
-  #
-  acl number 3000
-   rule 5 permit ip
   #
   aaa
    local-user alice password irreversible-cipher VV7a59tMk2A3Ln+JO1OhFp/4+M5jAWNxaZocI3BM9PaNK+CTBQncTA
@@ -1375,6 +1458,33 @@ Total steps: 257
 [216/257] r1 <R1> display current-configuration | exclude #
   sysname R1
   dns resolve
+  traffic classifier VOICE operator or
+   if-match dscp NaN
+   if-match acl 3000
+   if-match protocol rtp
+  traffic classifier VIDEO operator and
+   if-match dscp NaN
+  traffic classifier CRITICAL operator or
+   if-match protocol ospf
+   if-match ip-precedence 6
+  traffic behavior B-VOICE
+   remark dscp NaN
+   queue ef bandwidth 2000
+   car cir 2000 pir 4000 cbs 50000 pbs 100000
+   statistic enable
+  traffic behavior B-VIDEO
+   remark dscp NaN
+   queue af bandwidth pct 25
+  traffic behavior B-CRIT
+   queue af bandwidth pct 15
+  traffic behavior B-DROP
+   deny
+  traffic policy WAN-OUT
+   classifier VOICE behavior B-VOICE
+   classifier VIDEO behavior B-VIDEO
+   classifier CRITICAL behavior B-CRIT
+  acl number 3000
+   rule 5 permit ip
   interface GigabitEthernet0/0/0
    ip address 192.168.1.2 255.255.255.0
    vrrp vrid 1 virtual-ip 192.168.1.101
@@ -1403,12 +1513,12 @@ Total steps: 257
    vrrp vrid 4 track interface GigabitEthernet0/0/1 reduced 30
   interface GigabitEthernet0/0/1
    ip address 10.0.0.1 255.255.255.252
+   qos car inbound cir 8000 cbs 1500000
+   traffic-policy WAN-OUT outbound
   interface GigabitEthernet0/0/2
    shutdown
   interface GigabitEthernet0/0/3
    shutdown
-  acl number 3000
-   rule 5 permit ip
   aaa
    local-user alice password irreversible-cipher VV7a59tMk2A3Ln+JO1OhFp/4+M5jAWNxaZocI3BM9PaNK+CTBQncTA
    local-user alice privilege level 1
@@ -1617,6 +1727,7 @@ Total steps: 257
     screen-length  Restore default screen length
     screen-width   Restore default screen width
     terminal       Set the terminal line characteristics
+    time-range     Remove a time-range
     traffic        Display traffic statistics
     <cr>
 

@@ -36,6 +36,7 @@ export interface FirewallCliServerDeps {
   idleTimeoutMs(): number | null;
   runningConfig(): string;
   onLogin(user: string, source: string): void;
+  onLogout(user: string): void;
   onAuthFailure(user: string, source: string): void;
 }
 
@@ -136,12 +137,9 @@ class FirewallSshServerContext implements ISshServerContext {
     return {
       execute: async (line: string) => {
         const ends = closesSession(line, cli.getPrompt());
-        return {
-          stdout: renderedLine(cli.execute(line)),
-          stderr: '',
-          exitCode: 0,
-          sessionEnded: ends,
-        };
+        const stdout = renderedLine(cli.execute(line));
+        if (ends) this.deps.onLogout(userCtx.username);
+        return { stdout, stderr: '', exitCode: 0, sessionEnded: ends };
       },
       getPrompt: () => cli.getPrompt(),
       getCompletions: cli.completions ? (line: string) => [...cli.completions!(line)] : undefined,
@@ -222,7 +220,9 @@ class FirewallTelnetServerContext implements ITelnetServerContext {
     return {
       execute: (raw: string) => {
         ended = closesSession(raw, cli.getPrompt());
-        return renderedLine(cli.execute(raw));
+        const rendered = renderedLine(cli.execute(raw));
+        if (ended) this.deps.onLogout(username ?? '');
+        return rendered;
       },
       getPrompt: () => cli.getPrompt(),
       lastEndedSession: () => ended,

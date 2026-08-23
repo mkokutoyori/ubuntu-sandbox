@@ -126,14 +126,19 @@ export const LOG_MEMORY_GLOBAL_SETTING: FortiTableSpec = {
   renderOrder: 350,
   help: 'Global settings for memory logging.',
   attributes: [
-    count('max-lines', 'Maximum number of lines in the memory log.', 100, 20000, 1000),
+    count('max-size', 'Maximum memory used for logging, in bytes.',
+      0, 4294967295, 98304),
     count('full-first-warning-threshold',
       'Log full first warning threshold as a percentage.', 1, 98, 75),
+    count('full-second-warning-threshold',
+      'Log full second warning threshold as a percentage.', 2, 99, 90),
+    count('full-final-warning-threshold',
+      'Log full final warning threshold as a percentage.', 3, 100, 95),
   ],
   onCommit(object, context) {
-    const lines = Number.parseInt(object.effective('max-lines')[0] ?? '', 10);
+    const bytes = Number.parseInt(object.effective('max-size')[0] ?? '', 10);
     context.device.applyMemoryLog({
-      capacity: Number.isFinite(lines) ? lines : undefined,
+      maxBytes: Number.isFinite(bytes) ? bytes : undefined,
     });
   },
 };

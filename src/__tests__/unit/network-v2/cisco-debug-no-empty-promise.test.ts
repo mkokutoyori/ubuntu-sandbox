@@ -30,8 +30,10 @@ const SERVICE = 'src/network/devices/router/diag/RouterDebugService.ts';
  * ecrite. Cette liste ne doit que RETRECIR.
  */
 const SANS_EMETTEUR_CONNUES = [
-  // NHRP publie bien `nhrp.packet.*`, mais ces sujets ne sont pas dans
-  // l'union `DomainEvent` : l'abonnement ne compile pas encore.
+  // NHRP publie `nhrp.packet.*` et ces sujets sont desormais dans
+  // l'union `DomainEvent` : l'abonnement compile. Ce qui manque est la
+  // MISE EN FORME des lignes de `debug nhrp`, qu'aucune transcription
+  // joignable depuis ce reseau n'atteste.
   'ip.nhrp',
   // Aucun evenement ne distingue l'autorisation de l'authentification.
   'aaa.authorization',

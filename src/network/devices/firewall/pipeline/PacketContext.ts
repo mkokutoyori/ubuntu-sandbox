@@ -11,18 +11,16 @@ export type VerdictReason =
   | 'implicit-deny'
   | 'security-level'
   | 'no-route'
-  | 'policy-route-deny'
   | 'no-session-non-syn'
   | 'invalid-tcp-flags'
   | 'tcp-state-violation'
-  | 'sequence-out-of-window'
   | 'session-table-full'
+  | 'memory-conserve-extreme'
+  | 'av-failopen-off'
+  | 'ips-fail-closed'
+  | 'oversize-blocked'
   | 'nat-port-exhausted'
   | 'nat-no-rule'
-  | 'screen-anomaly'
-  | 'screen-flood'
-  | 'screen-recon'
-  | 'alg-violation'
   | 'profile-block'
   | 'utm-virus'
   | 'utm-url'
@@ -32,13 +30,10 @@ export type VerdictReason =
   | 'utm-file-type'
   | 'auth-required'
   | 'ha-subordinate'
-  | 'application-shift-deny'
   | 'zone-mismatch'
   | 'interface-down'
   | 'ttl-expired'
-  | 'mtu-exceeded-df'
-  | 'unsupported-protocol'
-  | 'context-not-found';
+  | 'mtu-exceeded-df';
 
 export type VerdictAction = 'accept' | 'deny' | 'drop' | 'reset' | 'reject';
 
@@ -64,6 +59,7 @@ export interface PacketContext {
 
   ingressPort: string;
   egressPort?: string;
+  egressMtu?: number;
   ingressZone?: string;
   egressZone?: string;
   vdom?: string;

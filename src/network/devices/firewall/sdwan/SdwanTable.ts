@@ -29,6 +29,7 @@ export interface SdwanHealthCheck {
   readonly recoverytime: number;
   readonly members: readonly number[];
   readonly sla: readonly SdwanSlaTarget[];
+  readonly updateStaticRoute: boolean;
 }
 
 export interface SdwanService {
@@ -57,6 +58,12 @@ export interface SdwanConfiguration {
   readonly members: readonly SdwanMember[];
   readonly healthChecks: readonly SdwanHealthCheck[];
   readonly services: readonly SdwanService[];
+}
+
+export interface SdwanHealthTransition {
+  readonly check: string;
+  readonly sequence: number;
+  readonly alive: boolean;
 }
 
 export const DEAD_LOSS_PERCENT = 100;
@@ -120,7 +127,7 @@ export class SdwanTable {
 
   recordHealth(check: string, sequence: number, sample: {
     alive: boolean; packetLossPercent: number; latencyMs: number; jitterMs: number;
-  }): void {
+  }): SdwanHealthTransition | null {
     const perCheck = this.health.get(check) ?? new Map<number, SdwanMemberHealth>();
     this.health.set(check, perCheck);
 
@@ -128,14 +135,18 @@ export class SdwanTable {
     const failures = sample.alive ? 0 : (previous?.consecutiveFailures ?? 0) + 1;
     const successes = sample.alive ? (previous?.consecutiveSuccesses ?? 0) + 1 : 0;
 
+    const alive = this.declaredState(check, previous, sample.alive, failures, successes);
     perCheck.set(sequence, {
-      alive: this.declaredState(check, previous, sample.alive, failures, successes),
+      alive,
       packetLossPercent: sample.packetLossPercent,
       latencyMs: sample.latencyMs,
       jitterMs: sample.jitterMs,
       consecutiveFailures: failures,
       consecutiveSuccesses: successes,
     });
+
+    if (previous !== undefined && previous.alive === alive) return null;
+    return { check, sequence, alive };
   }
 
   private declaredState(

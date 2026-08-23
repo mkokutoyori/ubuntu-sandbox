@@ -52,6 +52,7 @@ export interface StpBpdu {
   forwardDelaySec: number;
   topologyChange: boolean;
   topologyChangeAck: boolean;
+  mstConfigId?: { name: string; revision: number; digest: string };
 }
 
 export interface StpPortGuards {

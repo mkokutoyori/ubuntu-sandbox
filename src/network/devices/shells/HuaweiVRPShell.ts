@@ -21,6 +21,8 @@
 import type { Router } from '../Router';
 import { VrpSocle } from '@/cli/vendors/vrp/vrpSocle';
 import { vrpDhcpClientFamily, type VrpDhcpLeaseView } from '@/cli/vendors/vrp/vrpDhcpClientFamily';
+import { vrpMtuFamily, vrpBandwidthFamily } from '@/cli/vendors/vrp/vrpInterfaceParamsFamily';
+import { vrpClockFamily, VRP_TIMEZONE_DEFAUT } from '@/cli/vendors/vrp/vrpClockFamily';
 import { registerInfoCenterDisplayCommands } from './huawei/HuaweiInfoCenterCommands';
 import type { IRouterShell } from './IRouterShell';
 import { LoggingConfig } from '../inspection/config/LoggingConfig';
@@ -121,7 +123,7 @@ import { collectListeningSockets } from '../router/management/SocketInventory';
 import { getVrrpAgent, getSessionRegistry, getVtyLineConfig } from '../../equipment/RouterServiceCapabilities';
 import { registerUserInterfaceCommands } from './huawei/HuaweiUserInterfaceCommands';
 import { getSecurityConfig } from './cisco/CiscoSecurityCommands';
-import { parseVrpCarRule } from '../router/qos/CarPolicer';
+import { parseVrpCarRule } from '../../qos/CarPolicer';
 
 const JOURS_VRP: Record<string, string> = {
   daily: 'daily', 'working-day': 'weekdays', 'off-day': 'weekend',
@@ -688,12 +690,38 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
   private socle(): VrpSocle {
     if (!this.socleInstance) {
       this.socleInstance = new VrpSocle(
-        () => this.routerRef?.getHostname() ?? 'Router', this, () => vrpDhcpClientFamily());
+        () => this.routerRef?.getHostname() ?? 'Router', this,
+                () => [...vrpDhcpClientFamily(), ...vrpMtuFamily(), ...vrpBandwidthFamily(),
+          ...vrpClockFamily()]);
     }
     return this.socleInstance;
   }
 
   vrpSelectedInterface(): string | null { return this.selectedInterface ?? null; }
+
+  vrpSetInterfaceMtu(iface: string, mtu: number): string {
+    const port = this.routerRef?.getPort(iface);
+    if (!port) return 'Error: No interface selected';
+    try { port.setMTU(mtu); } catch (e) { return `Error: ${(e as Error).message}`; }
+    return '';
+  }
+
+  vrpSetInterfaceBandwidth(iface: string, kbps: number): string {
+    this.routerRef?.getPort(iface)?.setBandwidthKbps(kbps);
+    return '';
+  }
+
+  vrpSetTimezone(nom: string, minutes: number): string {
+    const clock = this.routerRef?.getManagementService?.().getClock();
+    if (clock) { clock.timezone = nom; clock.offsetMin = minutes; }
+    return '';
+  }
+
+  vrpClearTimezone(): string {
+    const clock = this.routerRef?.getManagementService?.().getClock();
+    if (clock) { clock.timezone = VRP_TIMEZONE_DEFAUT; clock.offsetMin = 0; }
+    return '';
+  }
 
   vrpDhcpEnabledElsewhere(iface: string): boolean {
     const agent = this.routerRef?.getDhcpClientAgent();
@@ -725,6 +753,8 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
   private executeOnTrie(cmdPart: string): string {
     const migre = this.socle().run(cmdPart, this.mode);
     if (migre !== null) return migre;
+    const refus = this.socle().refusalBeforeTrie(cmdPart, this.mode);
+    if (refus !== null) return refus;
     const trie = this.getActiveTrie();
     const result = trie.match(cmdPart);
 

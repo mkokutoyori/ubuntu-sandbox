@@ -117,6 +117,8 @@ import { hostnamectlCommand } from './system/Hostnamectl';
 import { timedatectlCommand } from './system/Timedatectl';
 import { chronycCommand } from './system/Chronyc';
 import { ntpqCommand } from './net/Ntpq';
+import { nsupdateCommand } from './net/Nsupdate';
+import { ipsecCommand } from './net/Ipsec';
 import { nprocCommand } from './system/Nproc';
 import { anacronCommand } from './system/Anacron';
 import { systemdAnalyzeCommand } from './system/SystemdAnalyze';
@@ -249,6 +251,8 @@ export {
   timedatectlCommand,
   chronycCommand,
   ntpqCommand,
+  nsupdateCommand,
+  ipsecCommand,
   nprocCommand,
   anacronCommand,
   systemdAnalyzeCommand,
@@ -392,6 +396,8 @@ export const CORE_LINUX_COMMANDS: readonly LinuxCommand[] = [
   timedatectlCommand,
   chronycCommand,
   ntpqCommand,
+  nsupdateCommand,
+  ipsecCommand,
   nprocCommand,
   anacronCommand,
   systemdAnalyzeCommand,

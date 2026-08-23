@@ -4,4 +4,6 @@ export { CLITerminalSession } from './CLITerminalSession';
 export { CiscoTerminalSession } from './CiscoTerminalSession';
 export { HuaweiTerminalSession } from './HuaweiTerminalSession';
 export { WindowsTerminalSession } from './WindowsTerminalSession';
+export { AsaTerminalSession } from './AsaTerminalSession';
+export { FortiTerminalSession } from './FortiTerminalSession';
 export { TerminalManager, getTerminalManager } from './TerminalManager';

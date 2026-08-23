@@ -115,3 +115,40 @@ export const SHOW_USERS_COLUMNS: ReadonlyArray<TableColumn<ShowUsersRow>> = [
 ];
 
 export const SHOW_USERS_STYLE: TableStyle = { gap: 0, rule: false };
+
+/**
+ * `show spanning-tree`.
+ *
+ * Mesuré sur le jeu de référence de `ntc-templates`
+ * (`tests/cisco_ios/show_spanning-tree/cisco_ios_show_spanning_tree.raw`),
+ * texte capturé sur une vraie machine :
+ *
+ * ```
+ * Interface           Role Sts Cost      Prio.Nbr Type
+ * ------------------- ---- --- --------- -------- --------------------------------
+ * Gi0/2               Desg FWD 4         128.3    Shr
+ * Gi0/3               Root FWD 4         128.4    Shr
+ * ```
+ *
+ * Les deux implémentations qu'avait ce dépôt écrivaient un tableau plus
+ * étroit, séparé de DEUX blancs et coiffé d'un filet de la largeur des
+ * intitulés — donc un tableau qu'aucun script découpant par position ne
+ * lit. La colonne `Type` porte ici trente-deux caractères parce que la
+ * référence y écrit des mentions longues (`P2p Peer(STP)`), et son filet
+ * les porte tous.
+ */
+export interface SpanningTreePortRow {
+  iface: string; role: string; state: string;
+  cost: string; prioNbr: string; type: string;
+}
+
+export const SPANNING_TREE_COLUMNS: ReadonlyArray<TableColumn<SpanningTreePortRow>> = [
+  { header: 'Interface', width: 19, value: (r) => r.iface },
+  { header: 'Role', width: 4, value: (r) => r.role },
+  { header: 'Sts', width: 3, value: (r) => r.state },
+  { header: 'Cost', width: 9, value: (r) => r.cost },
+  { header: 'Prio.Nbr', width: 8, value: (r) => r.prioNbr },
+  { header: 'Type', width: 32, value: (r) => r.type },
+];
+
+export const SPANNING_TREE_STYLE: TableStyle = { gap: 1, rule: true };

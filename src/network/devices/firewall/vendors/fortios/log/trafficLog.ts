@@ -164,3 +164,41 @@ function serviceLabel(protocol: number, port: number): string {
   if (protocol === 1) return prefix;
   return `${prefix}${port}`;
 }
+
+export interface ConfigChangeFacts {
+  readonly now: number;
+  readonly action: 'Add' | 'Edit' | 'Delete';
+  readonly path: readonly string[];
+  readonly key?: string;
+  readonly attributes: readonly string[];
+  readonly user: string;
+  readonly ui: string;
+  readonly transactionId: number;
+}
+
+const CONFIG_LOGID = '0100044547';
+
+export function configChangeLog(facts: ConfigChangeFacts): FirewallLogDraft {
+  const cfgpath = facts.path.join('.');
+  const object = facts.key === undefined ? '' : facts.key;
+  const target = object.length > 0 ? `${cfgpath} ${object}` : cfgpath;
+
+  return {
+    at: facts.now,
+    type: 'event',
+    subtype: 'system',
+    level: 'information',
+    id: CONFIG_LOGID,
+    fields: {
+      logdesc: 'Object attribute configured',
+      user: facts.user,
+      ui: facts.ui,
+      action: facts.action,
+      cfgtid: facts.transactionId,
+      cfgpath,
+      cfgobj: object.length > 0 ? object : undefined,
+      cfgattr: facts.attributes.length > 0 ? facts.attributes.join('|') : undefined,
+      msg: `${facts.action} ${target}`,
+    },
+  };
+}

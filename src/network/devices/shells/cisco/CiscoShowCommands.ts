@@ -1092,9 +1092,9 @@ export function showIpProtocols(router: Router): string {
   if (ospf) {
     const cfg = ospf.getConfig();
     const aires = [...cfg.areas.values()];
-    const normales = aires.filter(a => !a.isStub && !a.isNSSA).length;
-    const stub = aires.filter(a => a.isStub && !a.isNSSA).length;
-    const nssa = aires.filter(a => a.isNSSA).length;
+    const normales = aires.filter(a => a.type === 'normal').length;
+    const stub = aires.filter(a => a.type === 'stub' || a.type === 'totally-stubby').length;
+    const nssa = aires.filter(a => a.type === 'nssa').length;
     const block: string[] = [
       `Routing Protocol is "ospf ${cfg.processId}"`,
       `  Outgoing update filter list for all interfaces is not set`,

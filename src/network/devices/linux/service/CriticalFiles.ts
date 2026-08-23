@@ -191,7 +191,8 @@ export const STANDARD_BIN_PATHS: Readonly<Record<string, string>> = {
   // part entiere plutot qu'un alias : c'est lui que l'unite lance, donc
   // c'est sa disparition qui empeche le service de demarrer.
   chronyc: '/usr/bin/chronyc',
-  ntpq: '/usr/bin/ntpq', chronyd: '/usr/sbin/chronyd',
+  ntpq: '/usr/bin/ntpq', nsupdate: '/usr/bin/nsupdate', ipsec: '/usr/sbin/ipsec',
+  chronyd: '/usr/sbin/chronyd',
   timedatectl: '/usr/bin/timedatectl',
   wget: '/usr/bin/wget', ping: '/bin/ping', ssh: '/usr/bin/ssh', scp: '/usr/bin/scp',
   sftp: '/usr/bin/sftp', ip: '/sbin/ip', ifconfig: '/sbin/ifconfig',

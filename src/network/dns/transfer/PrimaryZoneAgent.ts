@@ -16,6 +16,13 @@ import {
 } from '@/network/dns/transfer/AxfrSession';
 import { buildIxfrAnswers } from '@/network/dns/transfer/IxfrSession';
 import { sendNotify } from '@/network/dns/transfer/NotifyProtocol';
+import { isUpdateMessage } from '@/network/dns/update/DnsUpdate';
+import {
+  evaluateUpdate, updateResponse, parseOrFormerr, authorizeUpdate, signIfKeyed,
+  type UpdateSecurityPolicy,
+} from '@/network/dns/update/UpdateResponder';
+import { TsigKeyring } from '@/network/dns/tsig/Tsig';
+import { DnsRcode } from '@/network/dns/wire/DnsHeaderFlags';
 
 export interface ZoneUpdate {
   readonly additions: readonly ResourceRecord<ResourceRecordData>[];
@@ -27,6 +34,7 @@ export interface ZoneUpdate {
 export interface PrimaryZoneAgentOptions {
   readonly secondaries?: readonly IPAddress[];
   readonly journalLimit?: number;
+  readonly updatePolicy?: UpdateSecurityPolicy;
 }
 
 export type TransferListener = (qtype: number, response: DnsMessage) => void;
@@ -37,6 +45,8 @@ export class PrimaryZoneAgent {
   private readonly journal: ZoneJournal;
   private readonly secondaries: readonly IPAddress[];
   private readonly transferListeners: TransferListener[] = [];
+  private readonly keyring = new TsigKeyring();
+  private updatePolicy: UpdateSecurityPolicy;
 
   constructor(
     private readonly host: EndHost,
@@ -47,14 +57,47 @@ export class PrimaryZoneAgent {
     this.authServer = new AuthoritativeServer(this.store);
     this.journal = new ZoneJournal(options.journalLimit);
     this.secondaries = options.secondaries ?? [];
+    this.updatePolicy = options.updatePolicy ?? 'none';
   }
 
   start(): void {
-    bindDnsUdpServer(this.host, (query) =>
-      isTransferQuery(query) ? refuseTransfer(query) : this.authServer.answer(query));
-    bindDnsTcpServer(this.host, (query) =>
-      isTransferQuery(query) ? this.answerTransfer(query) : this.authServer.answer(query));
+    bindDnsUdpServer(this.host, (query, _ip, _port, raw) => this.dispatch(query, false, raw));
+    bindDnsTcpServer(this.host, (query, _ip, _port, raw) => this.dispatch(query, true, raw));
   }
+
+  private dispatch(
+    query: DnsMessage, transferAllowed: boolean, raw?: Uint8Array,
+  ): DnsMessage | Promise<DnsMessage> {
+    if (isUpdateMessage(query)) return this.answerUpdate(query, raw);
+    if (isTransferQuery(query)) {
+      return transferAllowed ? this.answerTransfer(query) : refuseTransfer(query);
+    }
+    return this.authServer.answer(query);
+  }
+
+  private async answerUpdate(query: DnsMessage, raw?: Uint8Array): Promise<DnsMessage> {
+    const now = Math.floor(Date.now() / 1000);
+    const auth = authorizeUpdate(raw, this.updatePolicy, this.keyring, now);
+    const reply = (rcode: number): DnsMessage =>
+      signIfKeyed(updateResponse(query, rcode), auth, now);
+    if (auth.rcode !== DnsRcode.NOERROR) return reply(auth.rcode);
+
+    const request = parseOrFormerr(query);
+    if (!request) return reply(DnsRcode.FORMERR);
+
+    const verdict = evaluateUpdate(this.zone, request);
+    if (verdict.rcode !== DnsRcode.NOERROR) return reply(verdict.rcode);
+
+    const { additions, removals } = verdict.applied;
+    if (additions.length > 0 || removals.length > 0) {
+      await this.applyUpdate({ additions, removals });
+    }
+    return reply(DnsRcode.NOERROR);
+  }
+
+  getTsigKeyring(): TsigKeyring { return this.keyring; }
+
+  setUpdatePolicy(policy: UpdateSecurityPolicy): void { this.updatePolicy = policy; }
 
   stop(): void {
     unbindDnsUdpServer(this.host);

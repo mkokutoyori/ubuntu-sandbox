@@ -1,59 +1,59 @@
 ============================================================
 RMAN debug transcript — rman-wan-disaster-recovery-pre
-Generated: 2026-08-13T16:16:28.712Z
+Generated: 2026-08-23T09:46:23.976Z
 Topology:  WAN — A-prim/A-rcat (10.40.0.0/24) ↔ B-dr/B-witness (10.50.0.0/24) — pre-disaster
 Total commands: 85
 ============================================================
 
 @prim banner:
   
-  Recovery Manager: Release 19.0.0.0.0 - Production on 13-AUG-2026 16:16:28
+  Recovery Manager: Release 19.0.0.0.0 - Production on 23-AUG-2026 09:46:23
   
   Copyright (c) 1982, 2024, Oracle and/or its affiliates.  All rights reserved.
   
-  connected to target database: ORCL (DBID=1992670588)
+  connected to target database: ORCL (DBID=1205072149)
   
 
 @rcat banner:
   
-  Recovery Manager: Release 19.0.0.0.0 - Production on 13-AUG-2026 16:16:28
+  Recovery Manager: Release 19.0.0.0.0 - Production on 23-AUG-2026 09:46:23
   
   Copyright (c) 1982, 2024, Oracle and/or its affiliates.  All rights reserved.
   
-  connected to target database: ORCL (DBID=3261493153)
+  connected to target database: ORCL (DBID=3014583097)
   
 
 @dr banner:
   
-  Recovery Manager: Release 19.0.0.0.0 - Production on 13-AUG-2026 16:16:28
+  Recovery Manager: Release 19.0.0.0.0 - Production on 23-AUG-2026 09:46:23
   
   Copyright (c) 1982, 2024, Oracle and/or its affiliates.  All rights reserved.
   
-  connected to target database: ORCL (DBID=2764297017)
+  connected to target database: ORCL (DBID=3929035200)
   
 
 @witness banner:
   
-  Recovery Manager: Release 19.0.0.0.0 - Production on 13-AUG-2026 16:16:28
+  Recovery Manager: Release 19.0.0.0.0 - Production on 23-AUG-2026 09:46:23
   
   Copyright (c) 1982, 2024, Oracle and/or its affiliates.  All rights reserved.
   
-  connected to target database: ORCL (DBID=2185862907)
+  connected to target database: ORCL (DBID=1786661945)
   
 
 
 --- [1] § P1 — handshake ---
 @prim [1/85]> CONNECT TARGET /
-  connected to target database: ORCL (DBID=1992670588)
+  connected to target database: ORCL (DBID=1205072149)
 
 @rcat [2/85]> CONNECT TARGET /
-  connected to target database: ORCL (DBID=3261493153)
+  connected to target database: ORCL (DBID=3014583097)
 
 @dr [3/85]> CONNECT TARGET /
-  connected to target database: ORCL (DBID=2764297017)
+  connected to target database: ORCL (DBID=3929035200)
 
 @witness [4/85]> CONNECT TARGET /
-  connected to target database: ORCL (DBID=2185862907)
+  connected to target database: ORCL (DBID=1786661945)
 
 @prim [5/85]> CONNECT CATALOG rman/rman@RCAT
   connected to recovery catalog database
@@ -79,7 +79,7 @@ Total commands: 85
   =================
   DB Key  DB Name  DB ID            Database Role    Db_unique_name
   ------- -------- ---------------- ---------------- ----------------
-  1       ORCL     3261493153       PRIMARY          ORCL
+  1       ORCL     3014583097       PRIMARY          ORCL
   
 
 
@@ -193,240 +193,240 @@ Total commands: 85
 --- [30] § P2 — primary daily cadence ---
 @prim [30/85]> BACKUP INCREMENTAL LEVEL 0 DATABASE TAG 'DC1_BASE'
   
-  Starting backup at 13-AUG-2026 16:16:28
+  Starting backup at 23-AUG-2026 09:46:23
   allocated channel: ORA_DISK_1
   channel ORA_DISK_1: SID=100 device type=DISK
   channel ORA_DISK_1: starting incremental level 0 datafile backup set
   channel ORA_DISK_1: specifying datafile(s) in backup set
   channel ORA_DISK_1: backing up database
-  piece handle=/u01/backup/ORCL_rr8f4edi.bkp tag=DC1_BASE
+  piece handle=/u01/backup/ORCL_mcgiip0t.bkp tag=DC1_BASE
   channel ORA_DISK_1: backup set complete, elapsed time: 00:00:33
-  Finished backup at 13-AUG-2026 16:16:28
+  Finished backup at 23-AUG-2026 09:46:23
   
   
-  Starting backup at 13-AUG-2026 16:16:28
+  Starting backup at 23-AUG-2026 09:46:23
   allocated channel: ORA_DISK_1
   channel ORA_DISK_1: SID=101 device type=DISK
   channel ORA_DISK_1: starting full datafile backup set
   including current control file in backup set
-  piece handle=/u01/backup/ORCL_3pj55n02.bkp tag=AUTOBACKUP
+  piece handle=/u01/backup/ORCL_rkxtra3b.bkp tag=AUTOBACKUP
   channel ORA_DISK_1: backup set complete, elapsed time: 00:00:01
-  Finished backup at 13-AUG-2026 16:16:28
+  Finished backup at 23-AUG-2026 09:46:23
   
 
 @prim [31/85]> BACKUP DATABASE TAG 'DC1_FULL_MON' PLUS ARCHIVELOG DELETE INPUT
   
-  Starting backup at 13-AUG-2026 16:16:28
+  Starting backup at 23-AUG-2026 09:46:23
   allocated channel: ORA_DISK_1
   channel ORA_DISK_1: SID=102 device type=DISK
   channel ORA_DISK_1: starting full datafile backup set
   channel ORA_DISK_1: specifying datafile(s) in backup set
   channel ORA_DISK_1: backing up database
-  Finished backup at 13-AUG-2026 16:16:28
+  Finished backup at 23-AUG-2026 09:46:23
   
   
-  Starting backup at 13-AUG-2026 16:16:28
+  Starting backup at 23-AUG-2026 09:46:23
   allocated channel: ORA_DISK_1
   channel ORA_DISK_1: SID=103 device type=DISK
   channel ORA_DISK_1: starting archived log backup set
   channel ORA_DISK_1: specifying archived log(s) in backup set
-  piece handle=/u01/backup/ORCL_wxetchxf.bkp tag=TAG20260813T161628
+  piece handle=/u01/backup/ORCL_70zvg43e.bkp tag=TAG20260823T094623
   channel ORA_DISK_1: backup set complete, elapsed time: 00:00:33
-  Finished backup at 13-AUG-2026 16:16:28
+  Finished backup at 23-AUG-2026 09:46:23
   
   
-  Starting backup at 13-AUG-2026 16:16:28
+  Starting backup at 23-AUG-2026 09:46:23
   allocated channel: ORA_DISK_1
   channel ORA_DISK_1: SID=104 device type=DISK
   channel ORA_DISK_1: starting full datafile backup set
   including current control file in backup set
-  piece handle=/u01/backup/ORCL_h9gish6u.bkp tag=AUTOBACKUP
+  piece handle=/u01/backup/ORCL_a197vxvo.bkp tag=AUTOBACKUP
   channel ORA_DISK_1: backup set complete, elapsed time: 00:00:01
-  Finished backup at 13-AUG-2026 16:16:28
+  Finished backup at 23-AUG-2026 09:46:23
   
 
 @prim [32/85]> BACKUP CURRENT CONTROLFILE
   
-  Starting backup at 13-AUG-2026 16:16:28
+  Starting backup at 23-AUG-2026 09:46:23
   allocated channel: ORA_DISK_1
   channel ORA_DISK_1: SID=105 device type=DISK
   channel ORA_DISK_1: starting full datafile backup set
   including current control file in backup set
-  piece handle=/u01/backup/ORCL_tn8pthxj.bkp tag=TAG20260813T161628
+  piece handle=/u01/backup/ORCL_3h9ylnur.bkp tag=TAG20260823T094623
   channel ORA_DISK_1: backup set complete, elapsed time: 00:00:01
-  Finished backup at 13-AUG-2026 16:16:28
+  Finished backup at 23-AUG-2026 09:46:23
   
 
 @prim [33/85]> BACKUP INCREMENTAL LEVEL 1 DATABASE TAG 'DC1_L1_TUE'
   
-  Starting backup at 13-AUG-2026 16:16:28
+  Starting backup at 23-AUG-2026 09:46:23
   allocated channel: ORA_DISK_1
   channel ORA_DISK_1: SID=106 device type=DISK
   channel ORA_DISK_1: starting incremental level 1 datafile backup set
   channel ORA_DISK_1: specifying datafile(s) in backup set
   channel ORA_DISK_1: backing up database
-  Finished backup at 13-AUG-2026 16:16:28
+  Finished backup at 23-AUG-2026 09:46:23
   
   
-  Starting backup at 13-AUG-2026 16:16:28
+  Starting backup at 23-AUG-2026 09:46:23
   allocated channel: ORA_DISK_1
   channel ORA_DISK_1: SID=107 device type=DISK
   channel ORA_DISK_1: starting full datafile backup set
   including current control file in backup set
-  piece handle=/u01/backup/ORCL_ketiqrzw.bkp tag=AUTOBACKUP
+  piece handle=/u01/backup/ORCL_1i5h2fds.bkp tag=AUTOBACKUP
   channel ORA_DISK_1: backup set complete, elapsed time: 00:00:01
-  Finished backup at 13-AUG-2026 16:16:28
+  Finished backup at 23-AUG-2026 09:46:23
   
 
 @prim [34/85]> BACKUP ARCHIVELOG ALL DELETE INPUT
   
-  Starting backup at 13-AUG-2026 16:16:28
+  Starting backup at 23-AUG-2026 09:46:23
   allocated channel: ORA_DISK_1
   channel ORA_DISK_1: SID=108 device type=DISK
   channel ORA_DISK_1: starting archived log backup set
   channel ORA_DISK_1: specifying archived log(s) in backup set
-  piece handle=/u01/backup/ORCL_hugtlafb.bkp tag=TAG20260813T161628
+  piece handle=/u01/backup/ORCL_4wjcsfg1.bkp tag=TAG20260823T094623
   channel ORA_DISK_1: backup set complete, elapsed time: 00:00:33
-  Finished backup at 13-AUG-2026 16:16:28
+  Finished backup at 23-AUG-2026 09:46:23
   
   
-  Starting backup at 13-AUG-2026 16:16:28
+  Starting backup at 23-AUG-2026 09:46:23
   allocated channel: ORA_DISK_1
   channel ORA_DISK_1: SID=109 device type=DISK
   channel ORA_DISK_1: starting full datafile backup set
   including current control file in backup set
-  piece handle=/u01/backup/ORCL_ieoo2cr0.bkp tag=AUTOBACKUP
+  piece handle=/u01/backup/ORCL_6agb1237.bkp tag=AUTOBACKUP
   channel ORA_DISK_1: backup set complete, elapsed time: 00:00:01
-  Finished backup at 13-AUG-2026 16:16:28
+  Finished backup at 23-AUG-2026 09:46:23
   
 
 @prim [35/85]> BACKUP INCREMENTAL LEVEL 1 CUMULATIVE DATABASE TAG 'DC1_L1_CUM_WED'
   
-  Starting backup at 13-AUG-2026 16:16:28
+  Starting backup at 23-AUG-2026 09:46:23
   allocated channel: ORA_DISK_1
   channel ORA_DISK_1: SID=110 device type=DISK
   channel ORA_DISK_1: starting cumulative incremental level 1 datafile backup set
   channel ORA_DISK_1: specifying datafile(s) in backup set
   channel ORA_DISK_1: backing up database
-  Finished backup at 13-AUG-2026 16:16:28
+  Finished backup at 23-AUG-2026 09:46:23
   
   
-  Starting backup at 13-AUG-2026 16:16:28
+  Starting backup at 23-AUG-2026 09:46:23
   allocated channel: ORA_DISK_1
   channel ORA_DISK_1: SID=111 device type=DISK
   channel ORA_DISK_1: starting full datafile backup set
   including current control file in backup set
-  piece handle=/u01/backup/ORCL_qv272jz6.bkp tag=AUTOBACKUP
+  piece handle=/u01/backup/ORCL_yamzid35.bkp tag=AUTOBACKUP
   channel ORA_DISK_1: backup set complete, elapsed time: 00:00:01
-  Finished backup at 13-AUG-2026 16:16:28
+  Finished backup at 23-AUG-2026 09:46:23
   
 
 @prim [36/85]> BACKUP ARCHIVELOG ALL DELETE INPUT
   
-  Starting backup at 13-AUG-2026 16:16:28
+  Starting backup at 23-AUG-2026 09:46:23
   allocated channel: ORA_DISK_1
   channel ORA_DISK_1: SID=112 device type=DISK
   channel ORA_DISK_1: starting archived log backup set
   channel ORA_DISK_1: specifying archived log(s) in backup set
-  piece handle=/u01/backup/ORCL_yb2dftaj.bkp tag=TAG20260813T161628
+  piece handle=/u01/backup/ORCL_49t89873.bkp tag=TAG20260823T094623
   channel ORA_DISK_1: backup set complete, elapsed time: 00:00:33
-  Finished backup at 13-AUG-2026 16:16:28
+  Finished backup at 23-AUG-2026 09:46:23
   
   
-  Starting backup at 13-AUG-2026 16:16:28
+  Starting backup at 23-AUG-2026 09:46:23
   allocated channel: ORA_DISK_1
   channel ORA_DISK_1: SID=113 device type=DISK
   channel ORA_DISK_1: starting full datafile backup set
   including current control file in backup set
-  piece handle=/u01/backup/ORCL_k7qxlsn4.bkp tag=AUTOBACKUP
+  piece handle=/u01/backup/ORCL_lgh9flje.bkp tag=AUTOBACKUP
   channel ORA_DISK_1: backup set complete, elapsed time: 00:00:01
-  Finished backup at 13-AUG-2026 16:16:28
+  Finished backup at 23-AUG-2026 09:46:23
   
 
 @prim [37/85]> BACKUP INCREMENTAL LEVEL 1 DATABASE TAG 'DC1_L1_THU'
   
-  Starting backup at 13-AUG-2026 16:16:28
+  Starting backup at 23-AUG-2026 09:46:23
   allocated channel: ORA_DISK_1
   channel ORA_DISK_1: SID=114 device type=DISK
   channel ORA_DISK_1: starting incremental level 1 datafile backup set
   channel ORA_DISK_1: specifying datafile(s) in backup set
   channel ORA_DISK_1: backing up database
-  Finished backup at 13-AUG-2026 16:16:28
+  Finished backup at 23-AUG-2026 09:46:23
   
   
-  Starting backup at 13-AUG-2026 16:16:28
+  Starting backup at 23-AUG-2026 09:46:23
   allocated channel: ORA_DISK_1
   channel ORA_DISK_1: SID=115 device type=DISK
   channel ORA_DISK_1: starting full datafile backup set
   including current control file in backup set
-  piece handle=/u01/backup/ORCL_ggxxi2py.bkp tag=AUTOBACKUP
+  piece handle=/u01/backup/ORCL_j5bcu9w7.bkp tag=AUTOBACKUP
   channel ORA_DISK_1: backup set complete, elapsed time: 00:00:01
-  Finished backup at 13-AUG-2026 16:16:28
+  Finished backup at 23-AUG-2026 09:46:23
   
 
 @prim [38/85]> BACKUP ARCHIVELOG ALL DELETE INPUT
   
-  Starting backup at 13-AUG-2026 16:16:28
+  Starting backup at 23-AUG-2026 09:46:23
   allocated channel: ORA_DISK_1
   channel ORA_DISK_1: SID=116 device type=DISK
   channel ORA_DISK_1: starting archived log backup set
   channel ORA_DISK_1: specifying archived log(s) in backup set
-  piece handle=/u01/backup/ORCL_h6gpzoj0.bkp tag=TAG20260813T161628
+  piece handle=/u01/backup/ORCL_qs8o8nh5.bkp tag=TAG20260823T094623
   channel ORA_DISK_1: backup set complete, elapsed time: 00:00:33
-  Finished backup at 13-AUG-2026 16:16:28
+  Finished backup at 23-AUG-2026 09:46:23
   
   
-  Starting backup at 13-AUG-2026 16:16:28
+  Starting backup at 23-AUG-2026 09:46:23
   allocated channel: ORA_DISK_1
   channel ORA_DISK_1: SID=117 device type=DISK
   channel ORA_DISK_1: starting full datafile backup set
   including current control file in backup set
-  piece handle=/u01/backup/ORCL_cwpu21t8.bkp tag=AUTOBACKUP
+  piece handle=/u01/backup/ORCL_oqi9f44y.bkp tag=AUTOBACKUP
   channel ORA_DISK_1: backup set complete, elapsed time: 00:00:01
-  Finished backup at 13-AUG-2026 16:16:28
+  Finished backup at 23-AUG-2026 09:46:23
   
 
 @prim [39/85]> BACKUP INCREMENTAL LEVEL 1 CUMULATIVE DATABASE TAG 'DC1_L1_CUM_FRI'
   
-  Starting backup at 13-AUG-2026 16:16:28
+  Starting backup at 23-AUG-2026 09:46:23
   allocated channel: ORA_DISK_1
   channel ORA_DISK_1: SID=118 device type=DISK
   channel ORA_DISK_1: starting cumulative incremental level 1 datafile backup set
   channel ORA_DISK_1: specifying datafile(s) in backup set
   channel ORA_DISK_1: backing up database
-  Finished backup at 13-AUG-2026 16:16:28
+  Finished backup at 23-AUG-2026 09:46:23
   
   
-  Starting backup at 13-AUG-2026 16:16:28
+  Starting backup at 23-AUG-2026 09:46:23
   allocated channel: ORA_DISK_1
   channel ORA_DISK_1: SID=119 device type=DISK
   channel ORA_DISK_1: starting full datafile backup set
   including current control file in backup set
-  piece handle=/u01/backup/ORCL_ds6tnh96.bkp tag=AUTOBACKUP
+  piece handle=/u01/backup/ORCL_55kdmkdt.bkp tag=AUTOBACKUP
   channel ORA_DISK_1: backup set complete, elapsed time: 00:00:01
-  Finished backup at 13-AUG-2026 16:16:28
+  Finished backup at 23-AUG-2026 09:46:23
   
 
 @prim [40/85]> BACKUP ARCHIVELOG ALL DELETE INPUT
   
-  Starting backup at 13-AUG-2026 16:16:28
+  Starting backup at 23-AUG-2026 09:46:23
   allocated channel: ORA_DISK_1
   channel ORA_DISK_1: SID=120 device type=DISK
   channel ORA_DISK_1: starting archived log backup set
   channel ORA_DISK_1: specifying archived log(s) in backup set
-  piece handle=/u01/backup/ORCL_sdpqqpjn.bkp tag=TAG20260813T161628
+  piece handle=/u01/backup/ORCL_mk3xerq3.bkp tag=TAG20260823T094623
   channel ORA_DISK_1: backup set complete, elapsed time: 00:00:33
-  Finished backup at 13-AUG-2026 16:16:28
+  Finished backup at 23-AUG-2026 09:46:23
   
   
-  Starting backup at 13-AUG-2026 16:16:28
+  Starting backup at 23-AUG-2026 09:46:23
   allocated channel: ORA_DISK_1
   channel ORA_DISK_1: SID=121 device type=DISK
   channel ORA_DISK_1: starting full datafile backup set
   including current control file in backup set
-  piece handle=/u01/backup/ORCL_o21p54hb.bkp tag=AUTOBACKUP
+  piece handle=/u01/backup/ORCL_dn7lisc5.bkp tag=AUTOBACKUP
   channel ORA_DISK_1: backup set complete, elapsed time: 00:00:01
-  Finished backup at 13-AUG-2026 16:16:28
+  Finished backup at 23-AUG-2026 09:46:23
   
 
 @prim [41/85]> LIST BACKUP SUMMARY
@@ -435,23 +435,23 @@ Total commands: 85
   ===============
   Key     TY LV S Device Type Completion Time     #Pieces #Copies Compressed Tag
   ------- -- -- - ----------- ------------------- ------- ------- ---------- ---
-  1       B  0  A DISK        13-AUG-2026 16:16:28  1       1       NO         DC1_BASE
-  2       B  F  A DISK        13-AUG-2026 16:16:28  1       1       NO         AUTOBACKUP
-  3       B  A  A DISK        13-AUG-2026 16:16:28  1       1       NO         TAG20260813T161628
-  4       B  F  A DISK        13-AUG-2026 16:16:28  1       1       NO         AUTOBACKUP
-  5       B  F  A DISK        13-AUG-2026 16:16:28  1       1       NO         TAG20260813T161628
-  6       B  F  A DISK        13-AUG-2026 16:16:28  1       1       NO         AUTOBACKUP
-  7       B  A  A DISK        13-AUG-2026 16:16:28  1       1       NO         TAG20260813T161628
-  8       B  F  A DISK        13-AUG-2026 16:16:28  1       1       NO         AUTOBACKUP
-  9       B  F  A DISK        13-AUG-2026 16:16:28  1       1       NO         AUTOBACKUP
-  10      B  A  A DISK        13-AUG-2026 16:16:28  1       1       NO         TAG20260813T161628
-  11      B  F  A DISK        13-AUG-2026 16:16:28  1       1       NO         AUTOBACKUP
-  12      B  F  A DISK        13-AUG-2026 16:16:28  1       1       NO         AUTOBACKUP
-  13      B  A  A DISK        13-AUG-2026 16:16:28  1       1       NO         TAG20260813T161628
-  14      B  F  A DISK        13-AUG-2026 16:16:28  1       1       NO         AUTOBACKUP
-  15      B  F  A DISK        13-AUG-2026 16:16:28  1       1       NO         AUTOBACKUP
-  16      B  A  A DISK        13-AUG-2026 16:16:28  1       1       NO         TAG20260813T161628
-  17      B  F  A DISK        13-AUG-2026 16:16:28  1       1       NO         AUTOBACKUP
+  1       B  0  A DISK        23-AUG-2026 09:46:23  1       1       NO         DC1_BASE
+  2       B  F  A DISK        23-AUG-2026 09:46:23  1       1       NO         AUTOBACKUP
+  3       B  A  A DISK        23-AUG-2026 09:46:23  1       1       NO         TAG20260823T094623
+  4       B  F  A DISK        23-AUG-2026 09:46:23  1       1       NO         AUTOBACKUP
+  5       B  F  A DISK        23-AUG-2026 09:46:23  1       1       NO         TAG20260823T094623
+  6       B  F  A DISK        23-AUG-2026 09:46:23  1       1       NO         AUTOBACKUP
+  7       B  A  A DISK        23-AUG-2026 09:46:23  1       1       NO         TAG20260823T094623
+  8       B  F  A DISK        23-AUG-2026 09:46:23  1       1       NO         AUTOBACKUP
+  9       B  F  A DISK        23-AUG-2026 09:46:23  1       1       NO         AUTOBACKUP
+  10      B  A  A DISK        23-AUG-2026 09:46:23  1       1       NO         TAG20260823T094623
+  11      B  F  A DISK        23-AUG-2026 09:46:23  1       1       NO         AUTOBACKUP
+  12      B  F  A DISK        23-AUG-2026 09:46:23  1       1       NO         AUTOBACKUP
+  13      B  A  A DISK        23-AUG-2026 09:46:23  1       1       NO         TAG20260823T094623
+  14      B  F  A DISK        23-AUG-2026 09:46:23  1       1       NO         AUTOBACKUP
+  15      B  F  A DISK        23-AUG-2026 09:46:23  1       1       NO         AUTOBACKUP
+  16      B  A  A DISK        23-AUG-2026 09:46:23  1       1       NO         TAG20260823T094623
+  17      B  F  A DISK        23-AUG-2026 09:46:23  1       1       NO         AUTOBACKUP
   
 
 @prim [42/85]> REPORT NEED BACKUP
@@ -471,142 +471,142 @@ Total commands: 85
 --- [44] § P2 — VALIDATE sweep ---
 @prim [44/85]> VALIDATE DATABASE
   
-  Starting backup at 13-AUG-2026 16:16:28
+  Starting backup at 23-AUG-2026 09:46:23
   allocated channel: ORA_DISK_1
   channel ORA_DISK_1: SID=122 device type=DISK
   channel ORA_DISK_1: starting validation of database
   channel ORA_DISK_1: validating database
-  Finished backup at 13-AUG-2026 16:16:28
+  Finished backup at 23-AUG-2026 09:46:24
   
 
 @prim [45/85]> VALIDATE TABLESPACE SYSTEM
   
-  Starting backup at 13-AUG-2026 16:16:28
+  Starting backup at 23-AUG-2026 09:46:24
   allocated channel: ORA_DISK_1
   channel ORA_DISK_1: SID=123 device type=DISK
   channel ORA_DISK_1: starting validation of tablespace SYSTEM
   channel ORA_DISK_1: validating tablespace SYSTEM
-  Finished backup at 13-AUG-2026 16:16:28
+  Finished backup at 23-AUG-2026 09:46:24
   
 
 @prim [46/85]> VALIDATE TABLESPACE USERS
   
-  Starting backup at 13-AUG-2026 16:16:28
+  Starting backup at 23-AUG-2026 09:46:24
   allocated channel: ORA_DISK_1
   channel ORA_DISK_1: SID=124 device type=DISK
   channel ORA_DISK_1: starting validation of tablespace USERS
   channel ORA_DISK_1: validating tablespace USERS
-  Finished backup at 13-AUG-2026 16:16:28
+  Finished backup at 23-AUG-2026 09:46:24
   
 
 @prim [47/85]> VALIDATE TABLESPACE SYSAUX
   
-  Starting backup at 13-AUG-2026 16:16:28
+  Starting backup at 23-AUG-2026 09:46:24
   allocated channel: ORA_DISK_1
   channel ORA_DISK_1: SID=125 device type=DISK
   channel ORA_DISK_1: starting validation of tablespace SYSAUX
   channel ORA_DISK_1: validating tablespace SYSAUX
-  Finished backup at 13-AUG-2026 16:16:28
+  Finished backup at 23-AUG-2026 09:46:24
   
 
 @prim [48/85]> VALIDATE TABLESPACE UNDOTBS1
   
-  Starting backup at 13-AUG-2026 16:16:28
+  Starting backup at 23-AUG-2026 09:46:24
   allocated channel: ORA_DISK_1
   channel ORA_DISK_1: SID=126 device type=DISK
   channel ORA_DISK_1: starting validation of tablespace UNDOTBS1
   channel ORA_DISK_1: validating tablespace UNDOTBS1
-  Finished backup at 13-AUG-2026 16:16:28
+  Finished backup at 23-AUG-2026 09:46:24
   
 
 @prim [49/85]> VALIDATE DATAFILE 1
   
-  Starting backup at 13-AUG-2026 16:16:28
+  Starting backup at 23-AUG-2026 09:46:24
   allocated channel: ORA_DISK_1
   channel ORA_DISK_1: SID=127 device type=DISK
   channel ORA_DISK_1: starting validation of datafile 1
   channel ORA_DISK_1: validating datafile 1
-  Finished backup at 13-AUG-2026 16:16:28
+  Finished backup at 23-AUG-2026 09:46:24
   
 
 @prim [50/85]> VALIDATE DATAFILE 2
   
-  Starting backup at 13-AUG-2026 16:16:28
+  Starting backup at 23-AUG-2026 09:46:24
   allocated channel: ORA_DISK_1
   channel ORA_DISK_1: SID=128 device type=DISK
   channel ORA_DISK_1: starting validation of datafile 2
   channel ORA_DISK_1: validating datafile 2
-  Finished backup at 13-AUG-2026 16:16:28
+  Finished backup at 23-AUG-2026 09:46:24
   
 
 @prim [51/85]> VALIDATE DATAFILE 3
   
-  Starting backup at 13-AUG-2026 16:16:28
+  Starting backup at 23-AUG-2026 09:46:24
   allocated channel: ORA_DISK_1
   channel ORA_DISK_1: SID=129 device type=DISK
   channel ORA_DISK_1: starting validation of datafile 3
   channel ORA_DISK_1: validating datafile 3
-  Finished backup at 13-AUG-2026 16:16:28
+  Finished backup at 23-AUG-2026 09:46:24
   
 
 @prim [52/85]> VALIDATE DATAFILE 4
   
-  Starting backup at 13-AUG-2026 16:16:28
+  Starting backup at 23-AUG-2026 09:46:24
   allocated channel: ORA_DISK_1
   channel ORA_DISK_1: SID=130 device type=DISK
   channel ORA_DISK_1: starting validation of datafile 4
   channel ORA_DISK_1: validating datafile 4
-  Finished backup at 13-AUG-2026 16:16:28
+  Finished backup at 23-AUG-2026 09:46:24
   
 
 @prim [53/85]> VALIDATE BACKUPSET 1
   
-  Starting backup at 13-AUG-2026 16:16:28
+  Starting backup at 23-AUG-2026 09:46:24
   allocated channel: ORA_DISK_1
   channel ORA_DISK_1: SID=131 device type=DISK
   channel ORA_DISK_1: starting validation of backupset 1
   channel ORA_DISK_1: validating backupset 1
-  Finished backup at 13-AUG-2026 16:16:28
+  Finished backup at 23-AUG-2026 09:46:24
   
 
 @prim [54/85]> VALIDATE BACKUPSET 2
   
-  Starting backup at 13-AUG-2026 16:16:28
+  Starting backup at 23-AUG-2026 09:46:24
   allocated channel: ORA_DISK_1
   channel ORA_DISK_1: SID=132 device type=DISK
   channel ORA_DISK_1: starting validation of backupset 2
   channel ORA_DISK_1: validating backupset 2
-  Finished backup at 13-AUG-2026 16:16:28
+  Finished backup at 23-AUG-2026 09:46:24
   
 
 @prim [55/85]> VALIDATE BACKUPSET 3
   
-  Starting backup at 13-AUG-2026 16:16:28
+  Starting backup at 23-AUG-2026 09:46:24
   allocated channel: ORA_DISK_1
   channel ORA_DISK_1: SID=133 device type=DISK
   channel ORA_DISK_1: starting validation of backupset 3
   channel ORA_DISK_1: validating backupset 3
-  Finished backup at 13-AUG-2026 16:16:28
+  Finished backup at 23-AUG-2026 09:46:24
   
 
 @prim [56/85]> VALIDATE BACKUPSET 4
   
-  Starting backup at 13-AUG-2026 16:16:28
+  Starting backup at 23-AUG-2026 09:46:24
   allocated channel: ORA_DISK_1
   channel ORA_DISK_1: SID=134 device type=DISK
   channel ORA_DISK_1: starting validation of backupset 4
   channel ORA_DISK_1: validating backupset 4
-  Finished backup at 13-AUG-2026 16:16:28
+  Finished backup at 23-AUG-2026 09:46:24
   
 
 @prim [57/85]> VALIDATE BACKUPSET 5
   
-  Starting backup at 13-AUG-2026 16:16:28
+  Starting backup at 23-AUG-2026 09:46:24
   allocated channel: ORA_DISK_1
   channel ORA_DISK_1: SID=135 device type=DISK
   channel ORA_DISK_1: starting validation of backupset 5
   channel ORA_DISK_1: validating backupset 5
-  Finished backup at 13-AUG-2026 16:16:28
+  Finished backup at 23-AUG-2026 09:46:24
   
 
 
@@ -624,7 +624,7 @@ Total commands: 85
   =================
   DB Key  DB Name  DB ID            Database Role    Db_unique_name
   ------- -------- ---------------- ---------------- ----------------
-  1       ORCL     3261493153       PRIMARY          ORCL
+  1       ORCL     3014583097       PRIMARY          ORCL
   
 
 @rcat [60/85]> REPORT SCHEMA
@@ -766,59 +766,59 @@ Total commands: 85
 --- [78] § P3 — DR own baseline ---
 @dr [78/85]> BACKUP DATABASE TAG 'DC2_BASE'
   
-  Starting backup at 13-AUG-2026 16:16:28
+  Starting backup at 23-AUG-2026 09:46:24
   allocated channel: ORA_DISK_1
   channel ORA_DISK_1: SID=100 device type=DISK
   channel ORA_DISK_1: starting full datafile backup set
   channel ORA_DISK_1: specifying datafile(s) in backup set
   channel ORA_DISK_1: backing up database
-  piece handle=/u01/backup/ORCL_zqej0ugx.bkp tag=DC2_BASE
+  piece handle=/u01/backup/ORCL_6tfbyjbn.bkp tag=DC2_BASE
   channel ORA_DISK_1: backup set complete, elapsed time: 00:00:33
-  Finished backup at 13-AUG-2026 16:16:28
+  Finished backup at 23-AUG-2026 09:46:24
   
   
-  Starting backup at 13-AUG-2026 16:16:28
+  Starting backup at 23-AUG-2026 09:46:24
   allocated channel: ORA_DISK_1
   channel ORA_DISK_1: SID=101 device type=DISK
   channel ORA_DISK_1: starting full datafile backup set
   including current control file in backup set
-  piece handle=/u01/backup/ORCL_grkn5zex.bkp tag=AUTOBACKUP
+  piece handle=/u01/backup/ORCL_gqk210c2.bkp tag=AUTOBACKUP
   channel ORA_DISK_1: backup set complete, elapsed time: 00:00:01
-  Finished backup at 13-AUG-2026 16:16:28
+  Finished backup at 23-AUG-2026 09:46:24
   
 
 @dr [79/85]> BACKUP ARCHIVELOG ALL
   
-  Starting backup at 13-AUG-2026 16:16:28
+  Starting backup at 23-AUG-2026 09:46:24
   allocated channel: ORA_DISK_1
   channel ORA_DISK_1: SID=102 device type=DISK
   channel ORA_DISK_1: starting archived log backup set
   channel ORA_DISK_1: specifying archived log(s) in backup set
-  piece handle=/u01/backup/ORCL_4kwh5q70.bkp tag=TAG20260813T161628
+  piece handle=/u01/backup/ORCL_2b4czrzt.bkp tag=TAG20260823T094624
   channel ORA_DISK_1: backup set complete, elapsed time: 00:00:33
-  Finished backup at 13-AUG-2026 16:16:28
+  Finished backup at 23-AUG-2026 09:46:24
   
   
-  Starting backup at 13-AUG-2026 16:16:28
+  Starting backup at 23-AUG-2026 09:46:24
   allocated channel: ORA_DISK_1
   channel ORA_DISK_1: SID=103 device type=DISK
   channel ORA_DISK_1: starting full datafile backup set
   including current control file in backup set
-  piece handle=/u01/backup/ORCL_6jdk1qoa.bkp tag=AUTOBACKUP
+  piece handle=/u01/backup/ORCL_le4yoaj3.bkp tag=AUTOBACKUP
   channel ORA_DISK_1: backup set complete, elapsed time: 00:00:01
-  Finished backup at 13-AUG-2026 16:16:28
+  Finished backup at 23-AUG-2026 09:46:24
   
 
 @dr [80/85]> BACKUP CURRENT CONTROLFILE
   
-  Starting backup at 13-AUG-2026 16:16:28
+  Starting backup at 23-AUG-2026 09:46:24
   allocated channel: ORA_DISK_1
   channel ORA_DISK_1: SID=104 device type=DISK
   channel ORA_DISK_1: starting full datafile backup set
   including current control file in backup set
-  piece handle=/u01/backup/ORCL_ic4fbbo1.bkp tag=TAG20260813T161628
+  piece handle=/u01/backup/ORCL_s1vupdil.bkp tag=TAG20260823T094624
   channel ORA_DISK_1: backup set complete, elapsed time: 00:00:01
-  Finished backup at 13-AUG-2026 16:16:28
+  Finished backup at 23-AUG-2026 09:46:24
   
 
 @dr [81/85]> LIST BACKUP SUMMARY
@@ -827,68 +827,68 @@ Total commands: 85
   ===============
   Key     TY LV S Device Type Completion Time     #Pieces #Copies Compressed Tag
   ------- -- -- - ----------- ------------------- ------- ------- ---------- ---
-  18      B  F  A DISK        13-AUG-2026 16:16:28  1       1       NO         DC2_BASE
-  19      B  F  A DISK        13-AUG-2026 16:16:28  1       1       NO         AUTOBACKUP
-  20      B  A  A DISK        13-AUG-2026 16:16:28  1       1       NO         TAG20260813T161628
-  21      B  F  A DISK        13-AUG-2026 16:16:28  1       1       NO         AUTOBACKUP
-  22      B  F  A DISK        13-AUG-2026 16:16:28  1       1       NO         TAG20260813T161628
+  18      B  F  A DISK        23-AUG-2026 09:46:24  1       1       NO         DC2_BASE
+  19      B  F  A DISK        23-AUG-2026 09:46:24  1       1       NO         AUTOBACKUP
+  20      B  A  A DISK        23-AUG-2026 09:46:24  1       1       NO         TAG20260823T094624
+  21      B  F  A DISK        23-AUG-2026 09:46:24  1       1       NO         AUTOBACKUP
+  22      B  F  A DISK        23-AUG-2026 09:46:24  1       1       NO         TAG20260823T094624
   
 
 
 --- [82] § P4 — disaster! ---
 @prim [82/85]> BACKUP DATABASE TAG 'DC1_FINAL_FAREWELL'
   
-  Starting backup at 13-AUG-2026 16:16:28
+  Starting backup at 23-AUG-2026 09:46:24
   allocated channel: ORA_DISK_1
   channel ORA_DISK_1: SID=136 device type=DISK
   channel ORA_DISK_1: starting full datafile backup set
   channel ORA_DISK_1: specifying datafile(s) in backup set
   channel ORA_DISK_1: backing up database
-  Finished backup at 13-AUG-2026 16:16:28
+  Finished backup at 23-AUG-2026 09:46:24
   
   
-  Starting backup at 13-AUG-2026 16:16:28
+  Starting backup at 23-AUG-2026 09:46:24
   allocated channel: ORA_DISK_1
   channel ORA_DISK_1: SID=137 device type=DISK
   channel ORA_DISK_1: starting full datafile backup set
   including current control file in backup set
-  piece handle=/u01/backup/ORCL_ileagimt.bkp tag=AUTOBACKUP
+  piece handle=/u01/backup/ORCL_m799an5b.bkp tag=AUTOBACKUP
   channel ORA_DISK_1: backup set complete, elapsed time: 00:00:01
-  Finished backup at 13-AUG-2026 16:16:28
+  Finished backup at 23-AUG-2026 09:46:24
   
 
 @prim [83/85]> BACKUP ARCHIVELOG ALL DELETE INPUT
   
-  Starting backup at 13-AUG-2026 16:16:28
+  Starting backup at 23-AUG-2026 09:46:24
   allocated channel: ORA_DISK_1
   channel ORA_DISK_1: SID=138 device type=DISK
   channel ORA_DISK_1: starting archived log backup set
   channel ORA_DISK_1: specifying archived log(s) in backup set
-  piece handle=/u01/backup/ORCL_779prq97.bkp tag=TAG20260813T161628
+  piece handle=/u01/backup/ORCL_63e9zy7l.bkp tag=TAG20260823T094624
   channel ORA_DISK_1: backup set complete, elapsed time: 00:00:33
-  Finished backup at 13-AUG-2026 16:16:28
+  Finished backup at 23-AUG-2026 09:46:24
   
   
-  Starting backup at 13-AUG-2026 16:16:28
+  Starting backup at 23-AUG-2026 09:46:24
   allocated channel: ORA_DISK_1
   channel ORA_DISK_1: SID=139 device type=DISK
   channel ORA_DISK_1: starting full datafile backup set
   including current control file in backup set
-  piece handle=/u01/backup/ORCL_wqxmivsk.bkp tag=AUTOBACKUP
+  piece handle=/u01/backup/ORCL_it5lor3x.bkp tag=AUTOBACKUP
   channel ORA_DISK_1: backup set complete, elapsed time: 00:00:01
-  Finished backup at 13-AUG-2026 16:16:28
+  Finished backup at 23-AUG-2026 09:46:24
   
 
 @prim [84/85]> BACKUP CURRENT CONTROLFILE
   
-  Starting backup at 13-AUG-2026 16:16:28
+  Starting backup at 23-AUG-2026 09:46:24
   allocated channel: ORA_DISK_1
   channel ORA_DISK_1: SID=140 device type=DISK
   channel ORA_DISK_1: starting full datafile backup set
   including current control file in backup set
-  piece handle=/u01/backup/ORCL_sq6qybpe.bkp tag=TAG20260813T161628
+  piece handle=/u01/backup/ORCL_t5ix25yr.bkp tag=TAG20260823T094624
   channel ORA_DISK_1: backup set complete, elapsed time: 00:00:01
-  Finished backup at 13-AUG-2026 16:16:28
+  Finished backup at 23-AUG-2026 09:46:24
   
 
 @prim [85/85]> LIST BACKUP SUMMARY
@@ -897,25 +897,25 @@ Total commands: 85
   ===============
   Key     TY LV S Device Type Completion Time     #Pieces #Copies Compressed Tag
   ------- -- -- - ----------- ------------------- ------- ------- ---------- ---
-  1       B  0  A DISK        13-AUG-2026 16:16:28  1       1       NO         DC1_BASE
-  2       B  F  A DISK        13-AUG-2026 16:16:28  1       1       NO         AUTOBACKUP
-  3       B  A  A DISK        13-AUG-2026 16:16:28  1       1       NO         TAG20260813T161628
-  4       B  F  A DISK        13-AUG-2026 16:16:28  1       1       NO         AUTOBACKUP
-  5       B  F  A DISK        13-AUG-2026 16:16:28  1       1       NO         TAG20260813T161628
-  6       B  F  A DISK        13-AUG-2026 16:16:28  1       1       NO         AUTOBACKUP
-  7       B  A  A DISK        13-AUG-2026 16:16:28  1       1       NO         TAG20260813T161628
-  8       B  F  A DISK        13-AUG-2026 16:16:28  1       1       NO         AUTOBACKUP
-  9       B  F  A DISK        13-AUG-2026 16:16:28  1       1       NO         AUTOBACKUP
-  10      B  A  A DISK        13-AUG-2026 16:16:28  1       1       NO         TAG20260813T161628
-  11      B  F  A DISK        13-AUG-2026 16:16:28  1       1       NO         AUTOBACKUP
-  12      B  F  A DISK        13-AUG-2026 16:16:28  1       1       NO         AUTOBACKUP
-  13      B  A  A DISK        13-AUG-2026 16:16:28  1       1       NO         TAG20260813T161628
-  14      B  F  A DISK        13-AUG-2026 16:16:28  1       1       NO         AUTOBACKUP
-  15      B  F  A DISK        13-AUG-2026 16:16:28  1       1       NO         AUTOBACKUP
-  16      B  A  A DISK        13-AUG-2026 16:16:28  1       1       NO         TAG20260813T161628
-  17      B  F  A DISK        13-AUG-2026 16:16:28  1       1       NO         AUTOBACKUP
-  23      B  F  A DISK        13-AUG-2026 16:16:28  1       1       NO         AUTOBACKUP
-  24      B  A  A DISK        13-AUG-2026 16:16:28  1       1       NO         TAG20260813T161628
-  25      B  F  A DISK        13-AUG-2026 16:16:28  1       1       NO         AUTOBACKUP
-  26      B  F  A DISK        13-AUG-2026 16:16:28  1       1       NO         TAG20260813T161628
+  1       B  0  A DISK        23-AUG-2026 09:46:23  1       1       NO         DC1_BASE
+  2       B  F  A DISK        23-AUG-2026 09:46:23  1       1       NO         AUTOBACKUP
+  3       B  A  A DISK        23-AUG-2026 09:46:23  1       1       NO         TAG20260823T094623
+  4       B  F  A DISK        23-AUG-2026 09:46:23  1       1       NO         AUTOBACKUP
+  5       B  F  A DISK        23-AUG-2026 09:46:23  1       1       NO         TAG20260823T094623
+  6       B  F  A DISK        23-AUG-2026 09:46:23  1       1       NO         AUTOBACKUP
+  7       B  A  A DISK        23-AUG-2026 09:46:23  1       1       NO         TAG20260823T094623
+  8       B  F  A DISK        23-AUG-2026 09:46:23  1       1       NO         AUTOBACKUP
+  9       B  F  A DISK        23-AUG-2026 09:46:23  1       1       NO         AUTOBACKUP
+  10      B  A  A DISK        23-AUG-2026 09:46:23  1       1       NO         TAG20260823T094623
+  11      B  F  A DISK        23-AUG-2026 09:46:23  1       1       NO         AUTOBACKUP
+  12      B  F  A DISK        23-AUG-2026 09:46:23  1       1       NO         AUTOBACKUP
+  13      B  A  A DISK        23-AUG-2026 09:46:23  1       1       NO         TAG20260823T094623
+  14      B  F  A DISK        23-AUG-2026 09:46:23  1       1       NO         AUTOBACKUP
+  15      B  F  A DISK        23-AUG-2026 09:46:23  1       1       NO         AUTOBACKUP
+  16      B  A  A DISK        23-AUG-2026 09:46:23  1       1       NO         TAG20260823T094623
+  17      B  F  A DISK        23-AUG-2026 09:46:23  1       1       NO         AUTOBACKUP
+  23      B  F  A DISK        23-AUG-2026 09:46:24  1       1       NO         AUTOBACKUP
+  24      B  A  A DISK        23-AUG-2026 09:46:24  1       1       NO         TAG20260823T094624
+  25      B  F  A DISK        23-AUG-2026 09:46:24  1       1       NO         AUTOBACKUP
+  26      B  F  A DISK        23-AUG-2026 09:46:24  1       1       NO         TAG20260823T094624
   

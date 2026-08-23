@@ -110,6 +110,8 @@ export function PropertiesPanel() {
           </div>
           <button
             onClick={() => selectDevice(null)}
+            title="Clear selection"
+            aria-label="Clear selection"
             className="p-1 hover:bg-white/10 rounded transition-colors"
           >
             <X className="w-4 h-4 text-muted-foreground" />
@@ -205,6 +207,8 @@ export function PropertiesPanel() {
         </div>
         <button
           onClick={() => selectDevice(null)}
+          title="Clear selection"
+          aria-label="Clear selection"
           className="p-1 hover:bg-white/10 rounded transition-colors"
         >
           <X className="w-4 h-4 text-muted-foreground" />

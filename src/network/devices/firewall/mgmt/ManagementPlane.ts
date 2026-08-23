@@ -1,7 +1,7 @@
 import type { IPv4Packet } from '../../../core/types';
 import type { AccessMatrix } from '../authz/AccessMatrix';
 import {
-  adminTrustsSource, applyAdminAccount, authenticateAdmin,
+  adminHasNoPassword, adminTrustsSource, applyAdminAccount, authenticateAdmin,
   type AdminAccountDraft,
 } from '../identity/AdminAccounts';
 import type { FirewallCliServer } from './FirewallCliServer';
@@ -76,7 +76,11 @@ export class ManagementPlane {
   }
 
   refusesSource(source: string): boolean {
-    return !this.trustedSource(source) || this.lockout.isLockedOut(source);
+    return !this.trustedSource(source);
+  }
+
+  isLockedOut(user: string): boolean {
+    return this.lockout.isLockedOut(user);
   }
 
   applyAdmin(admin: AdminAccountDraft): void {
@@ -91,15 +95,19 @@ export class ManagementPlane {
     return adminTrustsSource(this.access, name, source);
   }
 
-  login(user: string, password: string, source: string): boolean {
-    if (this.lockout.isLockedOut(source)) return false;
+  login(user: string, password: string, source?: string): boolean {
+    if (this.lockout.isLockedOut(user)) return false;
     const accepted = this.authenticate(user, password, source);
-    if (accepted) this.lockout.recordSuccess(source);
-    else this.lockout.recordFailure(source);
+    if (accepted) this.lockout.recordSuccess(user);
+    else this.lockout.recordFailure(user);
     return accepted;
   }
 
-  noteLogin(source: string): void { this.lockout.recordSuccess(source); }
+  requiresPasswordChange(name: string): boolean {
+    return adminHasNoPassword(this.access, this.secrets, name);
+  }
 
-  noteAuthFailure(source: string): void { this.lockout.recordFailure(source); }
+  noteLogin(user: string): void { this.lockout.recordSuccess(user); }
+
+  noteAuthFailure(user: string): void { this.lockout.recordFailure(user); }
 }

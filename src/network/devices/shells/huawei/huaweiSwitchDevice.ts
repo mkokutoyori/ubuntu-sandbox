@@ -13,9 +13,8 @@
  * l'affirmer quatorze fois : chaque site pouvait ecrire une signature
  * differente de celle du voisin sans que rien ne le signale.
  *
- * Les membres sont OPTIONNELS parce qu'ils le sont reellement. Un membre
- * que ce port declare et que personne n'implemente reste donc visible —
- * c'est ainsi que `_setVtyTransportInput` a ete trouve.
+ * Les membres sont OPTIONNELS parce qu'ils le sont reellement : un
+ * `GenericSwitch` n'en porte aucun.
  */
 
 import type { Switch, VLANEntry } from '../../Switch';
@@ -28,8 +27,6 @@ import type { IgmpSnoopingAgent } from '@/network/igmp-snooping/IgmpSnoopingAgen
 import type { PimSnoopingAgent } from '@/network/pim-snooping/PimSnoopingAgent';
 import type { NATEngine } from '../../router/NATEngine';
 import type { HuaweiDebugService } from '../../router/diag/HuaweiDebugService';
-
-export type VtyTransport = 'ssh' | 'telnet' | 'all' | 'none';
 
 export interface HuaweiSwitchDevice extends Switch {
   getStpAgent?(): StpAgent;
@@ -48,15 +45,6 @@ export interface HuaweiSwitchDevice extends Switch {
   addPortGroupMembers?(name: string, ports: readonly string[]): 'ok' | 'absent' | 'plein';
   removePortGroupMembers?(name: string, ports: readonly string[]): boolean;
   addVoiceVlanOui?(macHex: string, maskHex: string, description?: string): void;
-  /**
-   * Declare et fourni par PERSONNE : `_setVtyTransportInput` vit sur
-   * `Router`, pas sur `Switch`. `protocol inbound ssh` sur un switch
-   * Huawei ne gouverne donc rien aujourd'hui — et il n'y a rien a
-   * gouverner, un `Switch` n'ayant ni serveur SSH ni politique de vty.
-   * Le declarer optionnel dit la verite ; le cast le cachait, sous un
-   * commentaire affirmant le contraire.
-   */
-  _setVtyTransportInput?(t: VtyTransport, range?: { first: number; last: number }): void;
 }
 
 /**

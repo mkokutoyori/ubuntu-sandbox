@@ -1,6 +1,6 @@
 ============================================================
 Router (L3) debug transcript — huawei-router-info-snmp-ntp
-Generated: 2026-08-19T07:03:18.832Z
+Generated: 2026-08-23T10:19:37.505Z
 Topology: R1(Huawei) GE0/0/1=L1 LAN 192.168.1.0/24, GE0/0/0=WAN 10.0.0.0/30; R2(Huawei) GE0/0/1=W1 LAN 192.168.2.0/24, GE0/0/0=WAN
 focus=VRP info-center/SNMPv1-3/NTP/LLDP/NQA/sFlow
 Total steps: 233
@@ -119,10 +119,10 @@ Total steps: 233
   Dropped messages : 0
   Overwritten messages : 0
   Current messages : 4
-  2026-08-19 07:03:18 %01LINK/3/ERRORS: Interface GE0/0/1, changed state to up
-  2026-08-19 07:03:18 %01LINEPROTO/5/NOTIFICATIONS: Line protocol on Interface GE0/0/1, changed state to up
-  2026-08-19 07:03:18 %01LINK/3/ERRORS: Interface GE0/0/0, changed state to up
-  2026-08-19 07:03:18 %01LINEPROTO/5/NOTIFICATIONS: Line protocol on Interface GE0/0/0, changed state to up
+  2026-08-23 10:19:37 %01LINK/3/ERRORS: Interface GE0/0/1, changed state to up
+  2026-08-23 10:19:37 %01LINEPROTO/5/NOTIFICATIONS: Line protocol on Interface GE0/0/1, changed state to up
+  2026-08-23 10:19:37 %01LINK/3/ERRORS: Interface GE0/0/0, changed state to up
+  2026-08-23 10:19:37 %01LINEPROTO/5/NOTIFICATIONS: Line protocol on Interface GE0/0/0, changed state to up
 
 [31/233] r1 <R1> display logbuffer summary
   Log buffer: 0 messages.
@@ -323,7 +323,7 @@ Total steps: 233
   SNMP version running in the system: SNMPv2c SNMPv3
 
 [75/233] r1 <R1> display snmp-agent local-engineid
-  SNMP local EngineID: 80000009038C2212C9
+  SNMP local EngineID: 8000000903C60D8206
 
 
 --- [76] § NTP ---
@@ -396,7 +396,7 @@ Total steps: 233
   Root delay: 0.00 ms
   Root dispersion: 0.00 ms
   Peer dispersion: 0.00 ms
-  Reference time: 07:03:18.847  Aug 19 2026(EE2FD3B6.D8D4FDF3)
+  Reference time: 10:19:37.523  Aug 23 2026(EE3547B9.85E353F7)
   Source interface: LoopBack0
 
 [95/233] r1 <R1> display ntp-service sessions
@@ -421,8 +421,8 @@ Total steps: 233
    clock offset: 0.0000 ms
 
 [97/233] r1 <R1> display clock
-  2026-08-19 07:03:18
-  Wednesday
+  2026-08-23 10:19:37
+  Sunday
   Time Zone(UTC) : UTC
 
 
@@ -557,6 +557,9 @@ Total steps: 233
   #
   dns resolve
   #
+  acl number 2000
+   rule 5 permit source 10.0.0.0 0.0.0.255
+  #
   interface GigabitEthernet0/0/0
    shutdown
   #
@@ -574,9 +577,6 @@ Total steps: 233
    mtu 1514
    bandwidth 8000000
   #
-  acl number 2000
-   rule 5 permit source 10.0.0.0 0.0.0.255
-  #
   aaa
    local-user alice password irreversible-cipher VV7a59tMk2A3Ln+JO1OhFp/4+M5jAWNxaZocI3BM9PaNK+CTBQncTA
    local-user alice privilege level 1
@@ -590,6 +590,30 @@ Total steps: 233
    local-user dave password irreversible-cipher gF5fQ3l68YLfjRccbWxMzaAQF2nO1hQ302jzBdHkBNrSCGLBvOhXGg
    local-user dave privilege level 1
    local-user dave service-type ssh
+  #
+  snmp-agent community read cipher acl mib-view
+  snmp-agent sys-info version v2c v3
+  snmp-agent sys-info contact noc@lab.local
+  snmp-agent sys-info location DC1-Rack5
+  snmp-agent target-host trap-hostname params securityname H1 address
+  snmp-agent target-host trap-paramsname params securityname P1 v2c
+  snmp-agent target-host trap-hostname params securityname H3 address
+  snmp-agent target-host trap-paramsname params securityname P3 v3
+  snmp-agent 
+  snmp-agent mib-view included iso-view iso
+  snmp-agent trap enable
+  snmp-agent trap enable feature-name ospf
+  snmp-agent trap enable feature-name bgp
+  snmp-agent trap source LoopBack0
+  snmp-agent packet max-size 1500
+  snmp-agent protocol source-interface LoopBack0
+  snmp-agent group v3 GRP-RW privacy read-view iso write-view iso notify-view iso
+  snmp-agent group v3 GRP-RO authentication read-view iso
+  snmp-agent usm-user v3 adminv3 group GRP-RW
+  snmp-agent usm-user v3 adminv3 authentication-mode sha2-256 cipher Auth@12345
+  snmp-agent usm-user v3 adminv3 privacy-mode aes256 cipher Priv@12345
+  snmp-agent usm-user v3 rouser group GRP-RO authentication-mode sha cipher Auth@67890
+  snmp-agent local-engineid 800007DB0300DEADBEEF01
   #
   ntp-service refclock-master 3
   ntp-service unicast-server 10.0.0.21 authentication-keyid 1 preference
@@ -798,7 +822,7 @@ Total steps: 233
   Root delay: 0.00 ms
   Root dispersion: 0.00 ms
   Peer dispersion: 0.00 ms
-  Reference time: 07:03:18.907  Aug 19 2026(EE2FD3B6.E83126E9)
+  Reference time: 10:19:37.586  Aug 23 2026(EE3547B9.96041893)
   Source interface: LoopBack0
 
 [163/233] r1 <R1> display ntp session
@@ -814,8 +838,8 @@ Total steps: 233
   Total sessions: 4
 
 [164/233] r1 <R1> display clock
-  2026-08-19 07:03:18
-  Wednesday
+  2026-08-23 10:19:37
+  Sunday
   Time Zone(UTC) : UTC
 
 [165/233] r1 <R1> display lldp neighbor
@@ -827,13 +851,13 @@ Total steps: 233
 [167/233] r1 <R1> display cpu-usage
   CPU Usage Stat. Cycle: 60 (Second)
   CPU Usage            : 11% Max: 38%
-  CPU Usage Stat. Time : 2026-08-19 07:03:18
+  CPU Usage Stat. Time : 2026-08-23 10:19:37
   CPU utilization for five seconds: 11%: one minute: 12%: five minutes: 10%
   
   Max CPU Usage Stat. Time : 0000-00-00 00:00:00.
 
 [168/233] r1 <R1> display memory-usage
-  Memory utilization statistics at 2026-08-19 07:03:18
+  Memory utilization statistics at 2026-08-23 10:19:37
   System Total Memory Is: 536870912 bytes
   Total Memory Used Is: 193273528 bytes
   Memory Using Percentage Is: 36%
@@ -874,10 +898,10 @@ Total steps: 233
   Dropped messages : 0
   Overwritten messages : 0
   Current messages : 4
-  2026-08-19 07:03:18 %01LINK/3/ERRORS: Interface GE0/0/1, changed state to up
-  2026-08-19 07:03:18 %01LINEPROTO/5/NOTIFICATIONS: Line protocol on Interface GE0/0/1, changed state to up
-  2026-08-19 07:03:18 %01LINK/3/ERRORS: Interface GE0/0/0, changed state to up
-  2026-08-19 07:03:18 %01LINEPROTO/5/NOTIFICATIONS: Line protocol on Interface GE0/0/0, changed state to up
+  2026-08-23 10:19:37 %01LINK/3/ERRORS: Interface GE0/0/1, changed state to up
+  2026-08-23 10:19:37 %01LINEPROTO/5/NOTIFICATIONS: Line protocol on Interface GE0/0/1, changed state to up
+  2026-08-23 10:19:37 %01LINK/3/ERRORS: Interface GE0/0/0, changed state to up
+  2026-08-23 10:19:37 %01LINEPROTO/5/NOTIFICATIONS: Line protocol on Interface GE0/0/0, changed state to up
 
 [173/233] r1 <R1> display trapbuffer
   Trapping buffer configuration and contents: enabled
@@ -959,6 +983,9 @@ Total steps: 233
   #
   dns resolve
   #
+  acl number 2000
+   rule 5 permit source 10.0.0.0 0.0.0.255
+  #
   interface GigabitEthernet0/0/0
    shutdown
   #
@@ -976,9 +1003,6 @@ Total steps: 233
    mtu 1514
    bandwidth 8000000
   #
-  acl number 2000
-   rule 5 permit source 10.0.0.0 0.0.0.255
-  #
   aaa
    local-user alice password irreversible-cipher VV7a59tMk2A3Ln+JO1OhFp/4+M5jAWNxaZocI3BM9PaNK+CTBQncTA
    local-user alice privilege level 1
@@ -992,6 +1016,30 @@ Total steps: 233
    local-user dave password irreversible-cipher gF5fQ3l68YLfjRccbWxMzaAQF2nO1hQ302jzBdHkBNrSCGLBvOhXGg
    local-user dave privilege level 1
    local-user dave service-type ssh
+  #
+  snmp-agent community read cipher acl mib-view
+  snmp-agent sys-info version v2c v3
+  snmp-agent sys-info contact noc@lab.local
+  snmp-agent sys-info location DC1-Rack5
+  snmp-agent target-host trap-hostname params securityname H1 address
+  snmp-agent target-host trap-paramsname params securityname P1 v2c
+  snmp-agent target-host trap-hostname params securityname H3 address
+  snmp-agent target-host trap-paramsname params securityname P3 v3
+  snmp-agent 
+  snmp-agent mib-view included iso-view iso
+  snmp-agent trap enable
+  snmp-agent trap enable feature-name ospf
+  snmp-agent trap enable feature-name bgp
+  snmp-agent trap source LoopBack0
+  snmp-agent packet max-size 1500
+  snmp-agent protocol source-interface LoopBack0
+  snmp-agent group v3 GRP-RW privacy read-view iso write-view iso notify-view iso
+  snmp-agent group v3 GRP-RO authentication read-view iso
+  snmp-agent usm-user v3 adminv3 group GRP-RW
+  snmp-agent usm-user v3 adminv3 authentication-mode sha2-256 cipher Auth@12345
+  snmp-agent usm-user v3 adminv3 privacy-mode aes256 cipher Priv@12345
+  snmp-agent usm-user v3 rouser group GRP-RO authentication-mode sha cipher Auth@67890
+  snmp-agent local-engineid 800007DB0300DEADBEEF01
   #
   ntp-service refclock-master 3
   ntp-service unicast-server 10.0.0.21 authentication-keyid 1 preference
@@ -1073,7 +1121,7 @@ Total steps: 233
 
 --- [190] § regression: pipe filters ---
 [190/233] r1 <R1> display current-configuration | include ospf
-<empty>
+  snmp-agent trap enable feature-name ospf
 
 [191/233] r1 <R1> display current-configuration | begin interface
   interface GigabitEthernet0/0/0
@@ -1093,9 +1141,6 @@ Total steps: 233
    mtu 1514
    bandwidth 8000000
   #
-  acl number 2000
-   rule 5 permit source 10.0.0.0 0.0.0.255
-  #
   aaa
    local-user alice password irreversible-cipher VV7a59tMk2A3Ln+JO1OhFp/4+M5jAWNxaZocI3BM9PaNK+CTBQncTA
    local-user alice privilege level 1
@@ -1109,6 +1154,30 @@ Total steps: 233
    local-user dave password irreversible-cipher gF5fQ3l68YLfjRccbWxMzaAQF2nO1hQ302jzBdHkBNrSCGLBvOhXGg
    local-user dave privilege level 1
    local-user dave service-type ssh
+  #
+  snmp-agent community read cipher acl mib-view
+  snmp-agent sys-info version v2c v3
+  snmp-agent sys-info contact noc@lab.local
+  snmp-agent sys-info location DC1-Rack5
+  snmp-agent target-host trap-hostname params securityname H1 address
+  snmp-agent target-host trap-paramsname params securityname P1 v2c
+  snmp-agent target-host trap-hostname params securityname H3 address
+  snmp-agent target-host trap-paramsname params securityname P3 v3
+  snmp-agent 
+  snmp-agent mib-view included iso-view iso
+  snmp-agent trap enable
+  snmp-agent trap enable feature-name ospf
+  snmp-agent trap enable feature-name bgp
+  snmp-agent trap source LoopBack0
+  snmp-agent packet max-size 1500
+  snmp-agent protocol source-interface LoopBack0
+  snmp-agent group v3 GRP-RW privacy read-view iso write-view iso notify-view iso
+  snmp-agent group v3 GRP-RO authentication read-view iso
+  snmp-agent usm-user v3 adminv3 group GRP-RW
+  snmp-agent usm-user v3 adminv3 authentication-mode sha2-256 cipher Auth@12345
+  snmp-agent usm-user v3 adminv3 privacy-mode aes256 cipher Priv@12345
+  snmp-agent usm-user v3 rouser group GRP-RO authentication-mode sha cipher Auth@67890
+  snmp-agent local-engineid 800007DB0300DEADBEEF01
   #
   ntp-service refclock-master 3
   ntp-service unicast-server 10.0.0.21 authentication-keyid 1 preference
@@ -1147,6 +1216,8 @@ Total steps: 233
 [192/233] r1 <R1> display current-configuration | exclude #
   sysname R1
   dns resolve
+  acl number 2000
+   rule 5 permit source 10.0.0.0 0.0.0.255
   interface GigabitEthernet0/0/0
    shutdown
   interface GigabitEthernet0/0/1
@@ -1159,8 +1230,6 @@ Total steps: 233
    ip address 1.1.1.1 255.255.255.255
    mtu 1514
    bandwidth 8000000
-  acl number 2000
-   rule 5 permit source 10.0.0.0 0.0.0.255
   aaa
    local-user alice password irreversible-cipher VV7a59tMk2A3Ln+JO1OhFp/4+M5jAWNxaZocI3BM9PaNK+CTBQncTA
    local-user alice privilege level 1
@@ -1174,6 +1243,29 @@ Total steps: 233
    local-user dave password irreversible-cipher gF5fQ3l68YLfjRccbWxMzaAQF2nO1hQ302jzBdHkBNrSCGLBvOhXGg
    local-user dave privilege level 1
    local-user dave service-type ssh
+  snmp-agent community read cipher acl mib-view
+  snmp-agent sys-info version v2c v3
+  snmp-agent sys-info contact noc@lab.local
+  snmp-agent sys-info location DC1-Rack5
+  snmp-agent target-host trap-hostname params securityname H1 address
+  snmp-agent target-host trap-paramsname params securityname P1 v2c
+  snmp-agent target-host trap-hostname params securityname H3 address
+  snmp-agent target-host trap-paramsname params securityname P3 v3
+  snmp-agent 
+  snmp-agent mib-view included iso-view iso
+  snmp-agent trap enable
+  snmp-agent trap enable feature-name ospf
+  snmp-agent trap enable feature-name bgp
+  snmp-agent trap source LoopBack0
+  snmp-agent packet max-size 1500
+  snmp-agent protocol source-interface LoopBack0
+  snmp-agent group v3 GRP-RW privacy read-view iso write-view iso notify-view iso
+  snmp-agent group v3 GRP-RO authentication read-view iso
+  snmp-agent usm-user v3 adminv3 group GRP-RW
+  snmp-agent usm-user v3 adminv3 authentication-mode sha2-256 cipher Auth@12345
+  snmp-agent usm-user v3 adminv3 privacy-mode aes256 cipher Priv@12345
+  snmp-agent usm-user v3 rouser group GRP-RO authentication-mode sha cipher Auth@67890
+  snmp-agent local-engineid 800007DB0300DEADBEEF01
   ntp-service refclock-master 3
   ntp-service unicast-server 10.0.0.21 authentication-keyid 1 preference
   ntp-service unicast-server 10.0.0.22 authentication-keyid 1 preference
@@ -1367,6 +1459,7 @@ Total steps: 233
     screen-length  Restore default screen length
     screen-width   Restore default screen width
     terminal       Set the terminal line characteristics
+    time-range     Remove a time-range
     traffic        Display traffic statistics
     <cr>
 

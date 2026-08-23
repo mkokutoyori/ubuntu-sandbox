@@ -347,7 +347,7 @@ la seule chose qu'il ne fallait pas rater :
 |---|---|---|---|
 | IOS | `ip dhcp ping packets` | **2** (actif) | inchange, deja conforme |
 | Windows | `Set-DhcpServerSetting -ConflictDetectionAttempts` | **0** (eteint) | eteint, 1..6 accepte, au-dela refuse |
-| ISC | `ping-check` | non atteste | eteint, et dit pourquoi |
+| ISC | `ping-check` | **actif** (atteste, cf. ci-dessous) | actif ; `ping-check false;` l'eteint |
 
 Uniformiser aurait ete plus simple et faux : un Windows qui refuserait
 l'adresse squattee sans qu'on ait rien regle enseignerait un comportement
@@ -361,11 +361,18 @@ avait trois constructions de requete ARP dans le depot (deux dans
 `EndHost.addressAnswersOnLink` est la meme fonction vue depuis un hote,
 ce qui donne la sonde aux deux serveurs qui ne l'avaient pas.
 
-**Ce qui n'est pas atteste est dit** : le defaut de `ping-check` n'a pas
-pu etre verifie (manuel `dhcpd.conf` injoignable depuis ce reseau, et
-deux sources qui se contredisent) ; il est **eteint**, parce que le
-`dhcpd.conf` livre par Debian ne contient pas la directive et que chaque
-guide d'administration l'ecrit explicitement. Le message
+**Le defaut de `ping-check` est desormais atteste, et il etait pris a
+l'envers.** Il avait ete pose **eteint**, faute de source lisible, en
+raisonnant sur le fait que le `dhcpd.conf` livre par Debian ne contient
+pas la directive et que les guides d'administration l'ecrivent
+explicitement. Les deux observations sont vraies et la conclusion etait
+fausse. Le code d'ISC tranche : `do_ping_check()` (`server/dhcp.c`)
+n'abandonne le controle que si l'option EXISTE et vaut faux
+(`if (oc && !evaluate_boolean_option_cache(...)) return (0);`), donc une
+option ABSENTE laisse le ping partir ; et `server/dhcpd.conf.5` decrit le
+parametre dans ce sens — « if its value is false, no ping check is done ».
+Le parametre existe pour ETEINDRE le controle. Le defaut est passe a
+**actif**. Le message
 `Abandoning IP address <ip>: pinged before offer`, lui, est atteste par
 plusieurs archives de la liste `dhcp-users`. Et la sonde est un **ARP**
 la ou les trois vendeurs envoient un **ICMP Echo** — inscrit au TODO

@@ -3,6 +3,9 @@ import {
   type FortiObjectView, type FortiTableSpec,
 } from './types';
 import { APPLICATION_SIGNATURES } from '../../../inspection/ApplicationSignatures';
+import {
+  DEFAULT_OVERSIZE_LIMIT_MB, MIN_OVERSIZE_LIMIT_MB, MAX_OVERSIZE_LIMIT_MB,
+} from '../../../inspection/StreamAssembler';
 
 const NO_SIGNATURES = 'this simulator has no FortiGuard signature database, and will '
   + 'have none. Accepting the profile would install an inspection that never '
@@ -442,6 +445,9 @@ export const PROTOCOL_OPTIONS: FortiTableSpec = {
       httpsPorts: channelPorts(object, 'https', 443),
       ftpPorts: channelPorts(object, 'ftp', 21),
       dnsPorts: channelPorts(object, 'dns', 53),
+      oversizeLimitMb: channelNumber(object, 'http', 'oversize-limit',
+        DEFAULT_OVERSIZE_LIMIT_MB),
+      blockOversize: object.childSetting('http', 'options').includes('oversize'),
       comment: object.effective('comment')[0] || undefined,
     });
   },
@@ -466,6 +472,20 @@ function portChannel(name: string, help: string, byDefault: string): FortiTableS
         defaultValue: [byDefault],
       },
       enable('status', 'Enable/disable the active status of scanning.', true),
+      count('oversize-limit',
+        'Maximum in-memory file size that can be scanned, in megabytes.',
+        MIN_OVERSIZE_LIMIT_MB, MAX_OVERSIZE_LIMIT_MB, DEFAULT_OVERSIZE_LIMIT_MB),
+      {
+        ...choice('options', 'One or more options that can be applied to the session.', [
+          {
+            keyword: 'oversize',
+            description: 'Block files larger than oversize-limit instead of'
+              + ' letting them through unscanned.',
+          },
+        ], ''),
+        multiValue: true,
+        defaultValue: [],
+      },
     ],
     onCommit() {},
   };
@@ -551,6 +571,25 @@ export const IPS_SENSOR: FortiTableSpec = {
     { ...word('name', 'Sensor name.'), unimplemented: NO_SIGNATURES },
   ],
   onCommit() {},
+};
+
+export const IPS_GLOBAL: FortiTableSpec = {
+  path: ['ips', 'global'],
+  kind: 'object',
+  scope: 'global',
+  accessGroup: 'utmgrp',
+  renderOrder: 465,
+  help: 'Configure IPS global parameters.',
+  attributes: [
+    enable('fail-open',
+      'Enable to allow new sessions through when the IPS engine cannot scan'
+      + ' them. Disabled by default, so flow-based inspection fails CLOSED.'),
+  ],
+  onCommit(object, context) {
+    context.device.applyIpsGlobal({
+      failOpen: object.effective('fail-open')[0] === 'enable',
+    });
+  },
 };
 
 export const DLP_SENSOR: FortiTableSpec = {
@@ -710,6 +749,14 @@ function channelAction(object: FortiObjectView, name: string): string {
   return object.childSetting(name, 'av-scan')[0] ?? 'disable';
 }
 
+function channelNumber(
+  object: FortiObjectView, channel: string, setting: string, byDefault: number,
+): number {
+  const declared = object.childSetting(channel, setting)[0];
+  const value = Number.parseInt(declared ?? '', 10);
+  return Number.isFinite(value) && value > 0 ? value : byDefault;
+}
+
 function channelPorts(
   object: FortiObjectView, name: string, byDefault: number,
 ): number[] {
@@ -733,6 +780,7 @@ export const UTM_SPECS: readonly FortiTableSpec[] = Object.freeze([
   PROTOCOL_OPTIONS,
   APPLICATION_LIST,
   IPS_SENSOR,
+  IPS_GLOBAL,
   DLP_SENSOR,
   TRAFFIC_SHAPER,
 ]);

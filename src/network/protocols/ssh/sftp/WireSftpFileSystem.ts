@@ -19,11 +19,11 @@
  * synchronous `ISftpFileSystem` contract unchanged; `ScpTransfer`/
  * `SftpInteractiveSession` need no changes at all.
  */
-import type { ISshSftpChannel } from '../channels/ISshChannel';
+import type { ISshSftpChannel, SftpResponse } from '../channels/ISshChannel';
 import { ok, err, type Result, type SshError } from '../Result';
 import type { EntryType, ISftpFileSystem, SftpDirEntry, SftpFileAttrs } from './ISftpFileSystem';
 
-function toError(resp: { error?: unknown }): SshError {
+function toError(resp: SftpResponse): SshError {
   return { kind: 'IO_ERROR', message: typeof resp.error === 'string' ? resp.error : 'Failure' };
 }
 

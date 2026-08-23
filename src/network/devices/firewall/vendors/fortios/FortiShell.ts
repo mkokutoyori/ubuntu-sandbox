@@ -3,21 +3,31 @@ import type { EnumValue } from '../../../../../cli/ArgumentTypes';
 import type { Suggestion } from '../../../../../cli/CompletionEngine';
 import type { FortiGate } from './FortiGate';
 import { FORTIOS_PROFILE } from './FortiProfile';
-import { FortiMessages, FORTI_COMMAND_FAIL, setHintsEnabled } from './FortiMessages';
+import {
+  FortiMessages, FORTI_COMMAND_FAIL, setHintsEnabled,
+} from './FortiMessages';
 import {
   fortiSystemTime, runExecuteDate, runExecuteTime,
 } from './diag/timeCommands';
 import { applyFilter, splitPipe } from './render/outputFilter';
-import { FortiSocle } from './FortiSocle';
+import { FortiSocle, VALUE_LIST_VERBS } from './FortiSocle';
+import type { CommandInteractionPlan } from '../../../../../shell/interaction/CommandInteraction';
 import { schemaIndex } from './schema';
 import type {
   FortiCommitContext, FortiCommitDevice, FortiTableSpec,
 } from './schema/types';
 import type { AccessIntent, AccessVerdict } from '../../authz/AccessMatrix';
 import { FortiConfigTree } from './runtime/FortiConfigTree';
-import { FortiNavigator, unquote } from './runtime/FortiNavigator';
+import {
+  FortiNavigator, unquote, type FortiConfigChange,
+} from './runtime/FortiNavigator';
+import { executeNames, resolvePrefix } from './execute/executeVocabulary';
+import {
+  FORTI_GET_VIEWS, resolvePathWords, viewContinuations,
+} from './view/pathResolution';
 import { FortiValidator } from './runtime/FortiValidator';
 import { renderPath, renderWholeConfig } from './render/showRenderer';
+import { renderRevisionList } from './render/revisionRenderer';
 import { renderGet } from './render/getRenderer';
 import { buildCommitDevice } from './runtime/commitDevice';
 import { vipAddress } from '../../model/AddressObject';
@@ -37,7 +47,9 @@ import type {
   CategoryFilterEntry, FilterTable, UrlFilterEntry, UtmAction,
 } from '../../inspection/UtmProfiles';
 import { FortiDiagnostics } from './diag/FortiDiagnostics';
-import { deniedLog, runDiagnose, runExecuteLog } from './diag/FortiDiagCommands';
+import {
+  deniedLog, runDiagnose, runExecuteLog, parseSnifferPlan, type SnifferPlan,
+} from './diag/FortiDiagCommands';
 import { renderVpnTunnelList, renderVpnTunnelSummary } from './diag/vpnTunnelRenderer';
 import {
   renderArpTable, renderInterfaceStatus, renderPerformanceStatus,
@@ -48,18 +60,47 @@ import {
 import { renderHaChecksum, renderHaStatus } from './diag/haRenderer';
 import type { FortiLogFormat } from './log/fortiLogFormat';
 import {
+  configChangeLog,
   shouldLogTraffic, shouldLogTrafficStart, trafficCloseLog, trafficStartLog,
 } from './log/trafficLog';
 import { utmLog } from './log/utmLog';
 import { renderFortiguardServiceStatus } from './diag/fortiguardRenderer';
 import { TftpClientSession } from '@/network/tftp/TftpSession';
 import { IPAddress } from '@/network/core/types';
+import { encryptConfig, decryptConfig, isEncryptedConfig } from './backup/ConfigEncryption';
+import {
+  renderOspfDatabase, renderOspfInterfaces,
+} from './diag/ospfDatabaseRenderer';
+import type { OspfInterfaceFacts } from '../../routing/DynamicRoutingTypes';
+
+const OSPF_NOT_RUNNING = '';
+
+function outsideOspf(name: string, physical: boolean): OspfInterfaceFacts {
+  return {
+    name, up: physical, ifindex: 0, mtu: 1500, bandwidthMbit: 1000, enabled: false,
+    areaId: '0.0.0.0', routerId: '0.0.0.0', networkType: 'BROADCAST', cost: 0,
+    transmitDelay: 1, state: 'Down', priority: 1,
+    helloInterval: 10, deadInterval: 40, retransmitInterval: 5,
+    passive: false, neighbourCount: 0, adjacentCount: 0,
+  };
+}
 
 export { FORTI_COMMAND_FAIL };
 
 export const FORTI_BUILD = '2660';
 
 const PER_MEMBER_LINE = /^set (priority|hostname)\b/;
+
+const NO_PING_PAYLOAD = 'an echo request carries no operator-chosen payload here — '
+  + 'its data field is a byte count, not bytes — so a pattern could be set and never '
+  + 'sent, and a reply could never be checked against it.';
+
+const UNSIMULATED_PING_OPTIONS: Readonly<Record<string, string>> = {
+  pattern: NO_PING_PAYLOAD,
+  'validate-reply': NO_PING_PAYLOAD,
+  'adaptive-ping': 'frames are delivered synchronously, with no wire clock, so there '
+    + 'is no round-trip time for the interval to adapt to.',
+};
 
 const TFTP_EXPORT_TIMEOUT_MS = 1_000;
 const TFTP_EXPORT_MAX_RETRIES = 2;
@@ -91,6 +132,18 @@ export class FortiShell {
     }
   }
 
+  private seedFactoryAdmin(): void {
+    const spec = this.tree.spec(['system', 'admin']);
+    if (!spec) return;
+    const table = this.tree.table(spec);
+    for (const name of this.fw.adminNames()) {
+      const admin = this.fw.getAdminAccount(name);
+      if (!admin) continue;
+      const object = table.ensure(name);
+      object.set('accprofile', [admin.profile]);
+    }
+  }
+
   private vdom = 'root';
   private adminName: string | null = null;
   private globalScope = false;
@@ -101,12 +154,17 @@ export class FortiShell {
     this.tree.bindScope(() => this.vdom);
     this.tree.bindPhysicalPorts((name) => this.fw.getPort(name) !== undefined);
     this.seedFactoryCertificates();
+    this.seedFactoryAdmin();
     const validator = new FortiValidator(
-      (target, name) => this.referenceExists(target, name));
+      (target, name) => this.referenceExists(target, name), this.tree);
     this.nav = new FortiNavigator({
       tree: this.tree,
       validator,
       commitContext: () => this.commitContext(),
+      onConfigured: (change) => {
+        this.logConfigurationChange(change);
+        this.fw.refreshLiveState();
+      },
     });
     this.socle = new FortiSocle({
       tree: this.tree,
@@ -118,10 +176,13 @@ export class FortiShell {
       inspect: (rest) => this.get(rest),
       diagnose: (rest) => this.diagnose(rest),
       runExecute: (rest) => this.executeVerb(rest),
+      leaveCli: () => '',
       enterGlobal: () => this.enterGlobal(),
       authorize: (spec, intent) => this.authorizeSpec(spec, intent),
       principal: () => this.adminName ?? '',
     });
+    this.fw.bindConfigSnapshot(
+      () => renderWholeConfig(this.tree, { full: false }).join('\n'));
     this.fw.bindHaConfiguration(
       () => this.clusterConfigurationText(),
       (text) => { this.absorbClusterConfiguration(text); });
@@ -227,10 +288,49 @@ export class FortiShell {
   completions(input: string): readonly string[] {
     const prefix = input.trimStart();
     const head = prefix.slice(0, prefix.lastIndexOf(' ') + 1);
-    return this.socle.suggestions(prefix, 'TAB')
-      .filter(s => !s.isArgument)
-      .map(s => `${head}${s.value}`)
-      .filter(w => w.startsWith(prefix) && w !== prefix);
+    const typed = prefix.slice(head.length);
+    const quote = typed.startsWith('"') ? '"' : '';
+    const bare = typed.slice(quote.length);
+
+    const proposed = [
+      ...this.socle.suggestions(this.socleProbe(head, bare), 'TAB')
+        .filter(s => !s.isArgument || s.completable === true)
+        .map(s => s.value),
+      ...this.viewPathCompletions(head, bare),
+    ];
+
+    return [...new Set(proposed)]
+      .filter(value => value.startsWith(bare) && value !== bare)
+      .map(value => `${head}${quote}${value}${quote}`);
+  }
+
+  private socleProbe(head: string, typed: string): string {
+    const words = head.trim().split(/\s+/).filter(Boolean);
+    if (words.length > 2 && VALUE_LIST_VERBS.includes(words[0] as never)
+      && this.acceptsSeveralValues(words[1])) {
+      return `${words[0]} ${words[1]} ${typed}`;
+    }
+    return `${head}${typed}`;
+  }
+
+  private acceptsSeveralValues(attribute: string): boolean {
+    const object = this.nav.currentObject();
+    if (!object) return false;
+    return object.spec.attributes
+      .some(spec => spec.name === attribute && spec.multiValue === true);
+  }
+
+  private viewPathCompletions(head: string, typed: string): readonly string[] {
+    const words = head.trim().split(/\s+/).filter(Boolean);
+    if (words[0] !== 'show' && words[0] !== 'get') return [];
+
+    const walked = words.slice(1);
+    const branches = this.tree.branchNames(walked);
+    if (branches.length > 0) return branches;
+
+    const spec = this.tree.spec(walked);
+    if (!spec || spec.kind !== 'table') return [];
+    return this.tree.table(spec).keys();
   }
 
   help(inputBeforeQuestion = ''): readonly string[] {
@@ -439,8 +539,15 @@ export class FortiShell {
   }
 
   private show(rest: readonly string[], full: boolean): string {
-    const words = rest[0] === 'full-configuration' ? rest.slice(1) : rest;
+    const typed = rest[0] === 'full-configuration' ? rest.slice(1) : rest;
     const options = { full: full || rest[0] === 'full-configuration' };
+
+    const resolution = resolvePathWords(typed, (prefix) => this.tree.branchNames(prefix));
+    if (resolution.ambiguous) {
+      return FortiMessages.ambiguous(
+        resolution.ambiguous.typed, resolution.ambiguous.candidates);
+    }
+    const words = resolution.words;
 
     if (words.length === 0) {
       const object = this.nav.currentObject();
@@ -460,17 +567,27 @@ export class FortiShell {
       if (lines === null) return FortiMessages.unknownKey(key ?? '');
       return lines.join('\n');
     }
-    return FortiMessages.unknownPath(words.join(' '));
+    return FortiMessages.unknownPath(words.join(' '), 'show');
   }
 
-  private get(rest: readonly string[]): string {
-    if (rest.length === 0) {
+  private get(typed: readonly string[]): string {
+    if (typed.length === 0) {
       const object = this.nav.currentObject();
       if (object) return renderGet(this.tree, object.spec.path, object.key)?.join('\n') ?? '';
       const table = this.nav.currentTable();
       if (table) return renderGet(this.tree, table.spec.path)?.join('\n') ?? '';
       return FortiMessages.incomplete('a path');
     }
+
+    const resolution = resolvePathWords(typed, (prefix) => [
+      ...this.tree.branchNames(prefix),
+      ...viewContinuations(FORTI_GET_VIEWS, prefix),
+    ]);
+    if (resolution.ambiguous) {
+      return FortiMessages.ambiguous(
+        resolution.ambiguous.typed, resolution.ambiguous.candidates);
+    }
+    const rest = resolution.words;
 
     const view = this.getView(rest);
     if (view !== null) return view;
@@ -483,7 +600,7 @@ export class FortiShell {
       if (lines === null) return FortiMessages.unknownKey(key ?? '');
       return lines.join('\n');
     }
-    return FortiMessages.unknownPath(rest.join(' '));
+    return FortiMessages.unknownPath(rest.join(' '), 'get');
   }
 
   private getView(rest: readonly string[]): string | null {
@@ -492,7 +609,7 @@ export class FortiShell {
     if (path === 'system status') return this.systemStatus();
     if (path === 'system performance status') {
       return renderPerformanceStatus({
-        sessions: this.fw.getSessionTable().view().statistics(),
+        load: this.fw.getSystemLoad(),
         uptimeMs: this.fw.getUptimeMs(),
       });
     }
@@ -521,6 +638,13 @@ export class FortiShell {
     if (path === 'router info ospf neighbor') {
       return renderOspfNeighbors(this.fw.getRouting().ospfNeighbors());
     }
+    if (path === 'router info ospf database' || path === 'router info ospf database brief') {
+      const facts = this.fw.getRouting().ospfDatabase();
+      return facts === null ? OSPF_NOT_RUNNING : renderOspfDatabase(facts);
+    }
+    if (path === 'router info ospf interface' || path.startsWith('router info ospf interface ')) {
+      return this.ospfInterfaceView(path.slice('router info ospf interface'.length).trim());
+    }
     if (path.startsWith('router info routing-table ')) {
       const view = path.slice('router info routing-table '.length);
       if (view !== 'all' && view !== 'static' && view !== 'connected'
@@ -535,6 +659,21 @@ export class FortiShell {
       return renderBgpNeighbors(this.fw.getRouting().getBgp().summaryFacts());
     }
     return null;
+  }
+
+  private ospfInterfaceView(name: string): string | null {
+    const declared = this.fw.getRouting().ospfInterfaces();
+    if (name.length === 0) {
+      return declared.length === 0 ? OSPF_NOT_RUNNING : renderOspfInterfaces(declared);
+    }
+
+    const wanted = unquote(name);
+    const found = declared.find(iface => iface.name === wanted);
+    if (found) return renderOspfInterfaces([found]);
+    if (this.fw.getPort(wanted) === undefined
+      && this.fw.listL3Interfaces().every(iface => iface.name !== wanted)) return null;
+
+    return renderOspfInterfaces([outsideOspf(wanted, this.fw.getPort(wanted) !== undefined)]);
   }
 
   private interfaceStatusFacts(): InterfaceStatusFacts[] {
@@ -579,8 +718,8 @@ export class FortiShell {
       haMode: this.fw.getHa().getConfiguration().mode === 'standalone'
         ? 'standalone' : this.fw.getHa().getConfiguration().mode,
       licenseStatus: 'Valid',
-      vmCpus: 1,
-      vmMemoryMb: 1985,
+      vmCpus: this.fw.getSystemLoad().cpuCount(),
+      vmMemoryMb: Math.round(this.fw.getSystemLoad().memory().totalKib / 1024),
       logDisk: 'Available',
       systemTime: fortiSystemTime(this.fw),
     });
@@ -601,6 +740,147 @@ export class FortiShell {
 
   private diagnose(rest: readonly string[]): string {
     return runDiagnose(rest, this.diagDeps());
+  }
+
+  private tftpTarget(
+    destination: string | undefined, server: string | undefined,
+  ): IPAddress | string {
+    if (destination === undefined) return FortiMessages.incomplete('a destination');
+    if (destination !== 'tftp') {
+      return FortiMessages.commandFail(
+        `destination "${destination}" is not available; this unit has no USB port `
+        + 'and no FTP client.');
+    }
+    if (server === undefined) return FortiMessages.incomplete('a TFTP server address');
+    try { return new IPAddress(server); }
+    catch {
+      return FortiMessages.valueError(
+        server, 'a TFTP server address is an IPv4 address.');
+    }
+  }
+
+  private tftpClient(address: IPAddress): TftpClientSession {
+    return new TftpClientSession(
+      this.fw.getUdpEndpoint(), address, undefined,
+      TFTP_EXPORT_TIMEOUT_MS, TFTP_EXPORT_MAX_RETRIES);
+  }
+
+  private executeBackup(rest: readonly string[]): string {
+    if (rest[0] !== 'config' && rest[0] !== 'full-config') {
+      return rest[0] === undefined
+        ? FortiMessages.incomplete('what to back up')
+        : FortiMessages.unknownAction(`backup ${rest[0]}`);
+    }
+    const [destination, file, server, password] = rest.slice(1);
+    const address = this.tftpTarget(destination, server);
+    if (typeof address === 'string') return address;
+    if (file === undefined) return FortiMessages.incomplete('a file name');
+
+    const clear = renderWholeConfig(this.tree, { full: rest[0] === 'full-config' }).join('\n');
+    const text = password === undefined ? clear : encryptConfig(clear, password);
+    this.pendingAsync = this.tftpClient(address).put(file, text).then(result => (
+      result.ok ? '' : FortiMessages.commandFail(
+        `the TFTP server at ${server} did not take "${file}" `
+        + `(${result.error ?? 'Timed out'}).`)));
+    return '';
+  }
+
+  private executeRestore(rest: readonly string[]): string {
+    if (rest[0] !== 'config') {
+      return rest[0] === undefined
+        ? FortiMessages.incomplete('what to restore')
+        : FortiMessages.unknownAction(`restore ${rest[0]}`);
+    }
+    if (rest[1] === 'flash') return this.restoreRevision(rest[2]);
+    const [destination, file, server, password] = rest.slice(1);
+    const address = this.tftpTarget(destination, server);
+    if (typeof address === 'string') return address;
+    if (file === undefined) return FortiMessages.incomplete('a file name');
+
+    this.pendingAsync = this.tftpClient(address).get(file).then(result => {
+      if (!result.ok || result.content === undefined) {
+        return FortiMessages.commandFail(
+          `the TFTP server at ${server} did not give "${file}" `
+          + `(${result.error ?? 'Timed out'}).`);
+      }
+      const clear = this.restorableText(result.content, file, password);
+      if (typeof clear !== 'string') return clear.refusal;
+      this.factoryReset();
+      this.absorbClusterConfiguration(clear);
+      return '';
+    });
+    return '';
+  }
+
+  private restoreRevision(raw: string | undefined): string {
+    if (raw === undefined) return FortiMessages.incomplete('a revision id');
+    const id = Number.parseInt(raw, 10);
+    const revision = Number.isFinite(id)
+      ? this.fw.getRevisions().get(id) : undefined;
+    if (!revision) {
+      return FortiMessages.commandFail(`revision ${raw} does not exist.`);
+    }
+    this.factoryReset();
+    this.absorbClusterConfiguration(revision.text);
+    return '';
+  }
+
+  private executeRevision(rest: readonly string[]): string {
+    const [action, target, raw] = rest;
+    if (action !== 'list' && action !== 'delete') {
+      return action === undefined
+        ? FortiMessages.incomplete('list or delete')
+        : FortiMessages.unknownAction(`revision ${action}`);
+    }
+    if (target !== 'config') {
+      return target === undefined
+        ? FortiMessages.incomplete('config')
+        : FortiMessages.unknownAction(`revision ${action} ${target}`);
+    }
+
+    if (action === 'list') {
+      return renderRevisionList(this.fw.getRevisions().list(), this.fw.localNow());
+    }
+
+    if (raw === undefined) return FortiMessages.incomplete('a revision id');
+    const id = Number.parseInt(raw, 10);
+    if (!Number.isFinite(id) || !this.fw.getRevisions().remove(id)) {
+      return FortiMessages.commandFail(`revision ${raw} does not exist.`);
+    }
+    return '';
+  }
+
+  private restorableText(
+    content: string, file: string, password: string | undefined,
+  ): string | { refusal: string } {
+    if (!isEncryptedConfig(content)) {
+      return password === undefined ? content : { refusal: FortiMessages.commandFail(
+        `"${file}" is not encrypted; restoring it takes no password.`) };
+    }
+    if (password === undefined) {
+      return { refusal: FortiMessages.commandFail(
+        `"${file}" is encrypted; restoring it takes the backup password.`) };
+    }
+    const clear = decryptConfig(content, password);
+    return clear === null
+      ? { refusal: FortiMessages.commandFail(
+        `"${file}" did not decrypt; the backup password is wrong or the file is damaged.`) }
+      : clear;
+  }
+
+  factoryReset(): void {
+    this.nav.abort();
+    this.tree.clear();
+    this.vdom = 'root';
+    this.globalScope = false;
+    for (const path of this.tree.specPaths()) {
+      const spec = this.tree.spec(path);
+      if (spec) this.nav.commitDefaults(spec);
+    }
+    this.tree.clear();
+    this.fw.applyFactoryIdentity();
+    this.seedFactoryCertificates();
+    this.seedFactoryAdmin();
   }
 
   private executeCertificate(rest: readonly string[]): string {
@@ -636,34 +916,111 @@ export class FortiShell {
     return '';
   }
 
+  snifferPlanFor(commandLine: string): SnifferPlan | null {
+    const words = commandLine.trim().split(/\s+/);
+    if (words[0] !== 'diagnose' || words[1] !== 'sniffer') return null;
+    return parseSnifferPlan(
+      words.slice(2), (name) => this.fw.getPort(name) !== undefined);
+  }
+
+  interactionPlanFor(commandLine: string): CommandInteractionPlan | null {
+    const words = commandLine.trim().split(/\s+/);
+    if (words.length !== 2 || words[0] !== 'execute') return null;
+
+    const resolved = resolvePrefix(words[1], executeNames());
+    const action = resolved.name;
+    if (action !== 'reboot' && action !== 'shutdown' && action !== 'factoryreset') {
+      return null;
+    }
+
+    const announcement = action === 'factoryreset'
+      ? 'This operation will reset the system to factory default!'
+      : `This operation will ${action} the system !`;
+    return {
+      steps: [
+        { kind: 'output', lines: [announcement] },
+        {
+          kind: 'confirmation',
+          prompt: 'Do you want to continue? (y/n)',
+          storeAs: 'forti_power_confirm',
+        },
+        {
+          kind: 'run',
+          run: async (runtime) => {
+            if ((runtime.values.get('forti_power_confirm') ?? '') !== 'yes') return;
+            if (action === 'reboot') this.fw.rebootNow();
+            else if (action === 'shutdown') this.fw.shutdownNow();
+            else { this.factoryReset(); this.fw.rebootNow(); }
+          },
+        },
+      ],
+    };
+  }
+
   private executeVerb(rest: readonly string[]): string {
     if (rest.length === 0) return FortiMessages.incomplete('a command');
-    if (rest[0] === 'log') return runExecuteLog(rest.slice(1), this.diagDeps());
-    if (rest[0] === 'ha') return this.executeHa(rest.slice(1));
-    if (rest[0] === 'dhcp' && rest[1] === 'lease-list') {
-      return renderDhcpLeases(this.fw.getDhcp().leases());
+
+    const resolved = resolvePrefix(rest[0], executeNames());
+    if (resolved.name === undefined) {
+      return resolved.candidates.length > 1
+        ? FortiMessages.ambiguous(rest[0], resolved.candidates)
+        : FortiMessages.unknownAction(rest[0]);
     }
-    if (rest[0] === 'dhcp' && rest[1] === 'lease-clear') {
-      if (rest.length < 3) return FortiMessages.incomplete('an IP address');
-      return this.fw.getDhcp().clearLease(rest[2])
-        ? '' : FortiMessages.commandFail(`no lease held for ${rest[2]}.`);
+
+    const tail = rest.slice(1);
+    switch (resolved.name) {
+      case 'log': return runExecuteLog(tail, this.diagDeps());
+      case 'ha': return this.executeHa(tail);
+      case 'dhcp': return this.executeDhcp(tail);
+      case 'traceroute':
+        return tail.length === 0
+          ? FortiMessages.incomplete('a destination')
+          : this.fw.runTraceroute(tail[0]);
+      case 'vpn':
+        if (tail.length === 0) return FortiMessages.incomplete('a VPN operation');
+        return tail[0] === 'certificate'
+          ? this.executeCertificate(tail.slice(1))
+          : FortiMessages.unknownAction(`vpn ${tail[0]}`);
+      case 'time': return runExecuteTime(tail, this.fw);
+      case 'date': return runExecuteDate(tail, this.fw);
+      case 'ping':
+        return tail.length === 0
+          ? FortiMessages.incomplete('a destination')
+          : this.fw.runPing(tail[0]);
+      case 'ping-options': return this.executePingOptions(tail);
+      case 'backup': return this.executeBackup(tail);
+      case 'restore': return this.executeRestore(tail);
+      case 'revision': return this.executeRevision(tail);
+      case 'factoryreset': this.factoryReset(); return '';
+      case 'reboot': case 'shutdown': return '';
+      case 'ssh': case 'telnet':
+        return tail.length === 0
+          ? FortiMessages.incomplete('a destination')
+          : FortiMessages.needsConsole(resolved.name);
+      default: return FortiMessages.unknownAction(resolved.name);
     }
-    if (rest[0] === 'traceroute') {
-      if (rest.length < 2) return FortiMessages.incomplete('a destination');
-      return this.fw.runTraceroute(rest[1]);
+  }
+
+  private executeDhcp(rest: readonly string[]): string {
+    if (rest.length === 0) return FortiMessages.incomplete('a DHCP operation');
+    if (rest[0] === 'lease-list') return renderDhcpLeases(this.fw.getDhcp().leases());
+    if (rest[0] === 'lease-clear') {
+      if (rest.length < 2) return FortiMessages.incomplete('an IP address');
+      return this.fw.getDhcp().clearLease(rest[1])
+        ? '' : FortiMessages.commandFail(`no lease held for ${rest[1]}.`);
     }
-    if (rest[0] === 'vpn' && rest[1] === 'certificate') {
-      return this.executeCertificate(rest.slice(2));
-    }
-    if (rest[0] === 'time') return runExecuteTime(rest.slice(1), this.fw);
-    if (rest[0] === 'date') return runExecuteDate(rest.slice(1), this.fw);
-    if (rest[0] === 'ping') {
-      if (rest.length < 2) return FortiMessages.incomplete('a destination');
-      return this.fw.runPing(rest[1]);
-    }
-    return FortiMessages.commandFail(
-      `\`execute ${rest[0]}\` is not implemented in this simulator.`,
-    );
+    return FortiMessages.unknownAction(`dhcp ${rest[0]}`);
+  }
+
+  private executePingOptions(rest: readonly string[]): string {
+    if (rest.length === 0) return FortiMessages.incomplete('a ping option');
+    if (rest[0] === 'view-settings') return this.fw.getPingOptions().viewSettings();
+
+    const refused = UNSIMULATED_PING_OPTIONS[rest[0]];
+    if (refused) return FortiMessages.unimplemented(`ping-options ${rest[0]}`, refused);
+
+    const outcome = this.fw.getPingOptions().set(rest[0], rest[1]);
+    return outcome.ok ? '' : FortiMessages.commandFail(outcome.message);
   }
 
   private executeHa(rest: readonly string[]): string {
@@ -690,6 +1047,25 @@ export class FortiShell {
     }
     return FortiMessages.unknownPath(`ha ${rest.join(' ')}`);
   }
+
+  private logConfigurationChange(change: FortiConfigChange): void {
+    this.fw.getLogStore().append(configChangeLog({
+      now: this.fw.now(),
+      action: change.action,
+      path: change.path,
+      key: change.key,
+      attributes: change.attributes,
+      user: this.adminName ?? 'admin',
+      ui: this.administrativeInterface(),
+      transactionId: ++this.configTransactionId,
+    }));
+  }
+
+  private administrativeInterface(): string {
+    return 'jsconsole';
+  }
+
+  private configTransactionId = 0;
 
   private logsImplicitDeny(): boolean {
     return this.tree.setting('log setting', 'fwpolicy-implicit-log')[0] === 'enable';

@@ -3,6 +3,7 @@ import { newSession, type CliSession } from '../../CliSession';
 import { parseCommand } from '../../CommandParser';
 import { complete, type CompletionTrigger } from '../../CompletionEngine';
 import { VRP_MODES, VRP_PROMPTS, VRP_TOP_LEVEL, VRP_EXEC_LEVEL } from './vrpModes';
+import type { ModeHierarchy } from '../../../network/devices/shells/CLIStateMachine';
 import { HUAWEI_ERRORS } from '../../../network/devices/shells/cli-utils';
 
 export interface VrpHelpLine {
@@ -27,6 +28,7 @@ export class VrpSocle {
     private readonly hostname: () => string,
     private readonly device: unknown,
     private readonly specs: () => readonly CommandSpec[],
+    private readonly hierarchy: ModeHierarchy = VRP_MODES,
   ) {}
 
   private built(): CommandTable {
@@ -39,7 +41,7 @@ export class VrpSocle {
 
   private session(mode: string, fields: Record<string, string | undefined> = {}): CliSession {
     const s = newSession(this.hostname(), this.device, {
-      hierarchy: VRP_MODES, prompts: VRP_PROMPTS,
+      hierarchy: this.hierarchy, prompts: VRP_PROMPTS,
       topLevel: VRP_TOP_LEVEL, execLevel: VRP_EXEC_LEVEL,
       initialMode: mode,
     });
@@ -71,14 +73,49 @@ export class VrpSocle {
     if (parsed.status === 'incomplete') return HUAWEI_ERRORS.INCOMPLETE(line);
     if (parsed.status === 'ambiguous') return HUAWEI_ERRORS.AMBIGUOUS(line);
     if (parsed.status === 'invalid' && parsed.position > 0) {
-      return HUAWEI_ERRORS.UNRECOGNIZED(line, offsetOfWord(line, parsed.position));
+      const offset = offsetOfWord(line, parsed.position);
+      return parsed.refusePar === 'argument'
+        ? HUAWEI_ERRORS.WRONG(line, offset)
+        : HUAWEI_ERRORS.UNRECOGNIZED(line, offset);
+    }
+    return null;
+  }
+
+  /**
+   * Le refus a opposer AVANT de laisser le trie repondre.
+   *
+   * Un enregistrement gourmand du trie (`registerGreedy('clock', …)`)
+   * accepte tout ce qui commence par son mot-cle, donc il masquerait le
+   * refus d'une famille migree. La question n'est posee que lorsque le
+   * socle a RECONNU le chemin et refuse ce qui suit : un argument mal
+   * forme, ou une commande incomplete dont il a deja consomme au moins
+   * deux mots-cles. Toute autre issue rend `null`, et le trie garde la
+   * main sur les formes qu'il est seul a connaitre.
+   */
+  refusalBeforeTrie(line: string, mode: string): string | null {
+    const l = VrpSocle.negationVrp(line);
+    const parsed = parseCommand(this.built(), l, this.session(mode));
+    if (parsed.status === 'invalid' && parsed.refusePar === 'argument') {
+      return HUAWEI_ERRORS.WRONG(line, offsetOfWord(line, parsed.position));
+    }
+    if (parsed.status === 'incomplete' && parsed.consumed >= 2) {
+      return HUAWEI_ERRORS.INCOMPLETE(line);
+    }
+    // Un mot EN TROP derriere une commande que le socle connait
+    // entierement : la ligne sans son dernier mot s'analyse, donc c'est
+    // bien lui qui est de trop, et non la commande qui est etrangere.
+    if (parsed.status === 'invalid' && parsed.position > 0) {
+      const mots = l.trim().split(/\s+/);
+      const sansDernier = mots.slice(0, -1).join(' ');
+      if (parseCommand(this.built(), sansDernier, this.session(mode)).status === 'ok') {
+        return HUAWEI_ERRORS.WRONG(line, offsetOfWord(line, mots.length - 1));
+      }
     }
     return null;
   }
 
   suggestions(input: string, mode: string, trigger: CompletionTrigger): VrpHelpLine[] {
     return complete(this.built(), VrpSocle.negationVrp(input), this.session(mode), trigger).suggestions
-      .filter(s => !s.isArgument)
       .map(s => ({ keyword: s.value, description: s.description }));
   }
 

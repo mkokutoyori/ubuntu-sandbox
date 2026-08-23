@@ -73,6 +73,7 @@ export interface VtpFrame extends NetworkPdu {
   mstRegion?: VtpMstRegionPayload;
   interestVlans?: number[];
   primaryClaim?: { updater: string; revision: number; forced: boolean };
+  passwordHash: string;
 }
 
 export interface VtpConfig {

@@ -11,11 +11,7 @@
  * Scope, matching the PRD's explicit `DnsServer` cmdlet surface: primary
  * zones only — no secondary zones / zone-transfer serving (not in the
  * PRD's cmdlet list; that machinery exists in `transfer/` if a later phase
- * wants it). Dynamic updates (DHCP lease grant, domain join) are applied
- * in-process via direct `Zone.addRecord`/`removeRecord` calls — mirroring
- * how the engine's own canonical DDNS mechanism (`PrimaryZoneAgent.
- * applyUpdate`) already works — rather than a wire-level RFC 2136 UPDATE
- * handler, which the underlying engine doesn't implement at any layer yet.
+ * wants it).
  */
 
 import type { EndHost } from '@/network/devices/EndHost';
@@ -26,6 +22,12 @@ import { RecursiveResolver } from '@/network/dns/resolver/RecursiveResolver';
 import { DnsCache } from '@/network/dns/resolver/DnsCache';
 import { bindDnsUdpServer, unbindDnsUdpServer } from '@/network/dns/transport/DnsUdpTransport';
 import { bindDnsTcpServer, unbindDnsTcpServer } from '@/network/dns/transport/DnsTcpTransport';
+import { isUpdateMessage } from '@/network/dns/update/DnsUpdate';
+import {
+  evaluateUpdate, updateResponse, parseOrFormerr, DnsUpdateRcode,
+  authorizeUpdate, signIfKeyed,
+} from '@/network/dns/update/UpdateResponder';
+import { TsigKeyring } from '@/network/dns/tsig/Tsig';
 import { DnsOpcode, DnsRcode } from '@/network/dns/wire/DnsHeaderFlags';
 import type { DnsMessage } from '@/network/dns/wire/DnsMessage';
 import { RRType } from '@/network/dns/wire/RRType';
@@ -41,7 +43,13 @@ import { IPAddress } from '@/network/core/types';
 
 export interface DnsOpResult { ok: boolean; message: string }
 
-export interface DnsZoneInfo { name: string; recordCount: number }
+export type DnsDynamicUpdateMode = 'None' | 'NonsecureAndSecure' | 'Secure';
+
+export interface DnsZoneInfo {
+  name: string;
+  recordCount: number;
+  dynamicUpdate: DnsDynamicUpdateMode;
+}
 
 export interface DnsRecordInfo { name: string; type: string; ttl: number; text: string }
 
@@ -83,16 +91,25 @@ function bumpSerial(zone: Zone): void {
   }));
 }
 
+function normalizeZoneKey(name: string): string {
+  const lower = name.toLowerCase();
+  return lower.endsWith('.') ? lower.slice(0, -1) : lower;
+}
+
 export class WindowsDnsServerRole {
   private readonly store = new ZoneStore();
   private readonly authoritative = new AuthoritativeServer(this.store);
   private resolver: RecursiveResolver | null = null;
+  private readonly keyring = new TsigKeyring();
+  private readonly zoneDynamicUpdate = new Map<string, DnsDynamicUpdateMode>();
   private forwarderAddresses: string[] = [];
   private running = false;
 
   constructor(private readonly host: EndHost) {}
 
   isRunning(): boolean { return this.running; }
+
+  getTsigKeyring(): TsigKeyring { return this.keyring; }
 
   start(): void {
     if (this.running) return;
@@ -108,7 +125,10 @@ export class WindowsDnsServerRole {
     this.running = false;
   }
 
-  private readonly handleQuery = (query: DnsMessage): DnsMessage | Promise<DnsMessage> => {
+  private readonly handleQuery = (
+    query: DnsMessage, _ip?: unknown, _port?: number, raw?: Uint8Array,
+  ): DnsMessage | Promise<DnsMessage> => {
+    if (isUpdateMessage(query)) return this.handleUpdate(query, raw);
     const response = this.authoritative.answer(query);
     const question = query.questions[0];
     const outsideAuthority = !response.flags.aa && response.flags.rcode === DnsRcode.REFUSED;
@@ -117,6 +137,34 @@ export class WindowsDnsServerRole {
     }
     return response;
   };
+
+  private handleUpdate(query: DnsMessage, raw?: Uint8Array): DnsMessage {
+    const now = Math.floor(Date.now() / 1000);
+    const request = parseOrFormerr(query);
+    const mode = request ? this.dynamicUpdateMode(request.zone) : 'NonsecureAndSecure';
+    const auth = authorizeUpdate(raw, mode === 'Secure' ? 'secure' : 'none', this.keyring, now);
+    if (mode === 'None') {
+      return signIfKeyed(updateResponse(query, DnsRcode.REFUSED), auth, now);
+    }
+    const reply = (rcode: number): DnsMessage =>
+      signIfKeyed(updateResponse(query, rcode), auth, now);
+
+    if (auth.rcode !== DnsRcode.NOERROR) return reply(auth.rcode);
+    if (!request) return reply(DnsRcode.FORMERR);
+
+    const zone = this.store.getZone(request.zone);
+    if (!zone) return reply(DnsUpdateRcode.NOTAUTH);
+
+    const verdict = evaluateUpdate(zone, request);
+    if (verdict.rcode !== DnsRcode.NOERROR) return reply(verdict.rcode);
+
+    for (const rr of verdict.applied.removals) zone.removeRecord(rr);
+    for (const rr of verdict.applied.additions) zone.addRecord(rr);
+    if (verdict.applied.removals.length > 0 || verdict.applied.additions.length > 0) {
+      bumpSerial(zone);
+    }
+    return reply(DnsRcode.NOERROR);
+  }
 
   private async recurse(query: DnsMessage): Promise<DnsMessage> {
     const question = query.questions[0];
@@ -183,11 +231,46 @@ export class WindowsDnsServerRole {
 
   getZone(name: string): DnsZoneInfo | null {
     const zone = this.store.getZone(name);
-    return zone ? { name: zone.origin, recordCount: zone.allRecords().length } : null;
+    return zone ? this.zoneInfo(zone) : null;
   }
 
   listZones(): DnsZoneInfo[] {
-    return this.store.listZones().map(z => ({ name: z.origin, recordCount: z.allRecords().length }));
+    return this.store.listZones().map(z => this.zoneInfo(z));
+  }
+
+  private zoneInfo(zone: Zone): DnsZoneInfo {
+    return {
+      name: zone.origin,
+      recordCount: zone.allRecords().length,
+      dynamicUpdate: this.dynamicUpdateMode(zone.origin),
+    };
+  }
+
+  private dynamicUpdateMode(zoneName: string): DnsDynamicUpdateMode {
+    return this.zoneDynamicUpdate.get(normalizeZoneKey(zoneName)) ?? 'NonsecureAndSecure';
+  }
+
+  setZoneDynamicUpdate(zoneName: string, mode: DnsDynamicUpdateMode): DnsOpResult {
+    if (!this.store.getZone(zoneName)) {
+      return { ok: false, message: `Zone "${zoneName}" does not exist on this server.` };
+    }
+    this.zoneDynamicUpdate.set(normalizeZoneKey(zoneName), mode);
+    return { ok: true, message: '' };
+  }
+
+  addTsigKey(name: string, algorithm: string, secret: string): DnsOpResult {
+    this.keyring.add({ name, algorithm, secret });
+    return { ok: true, message: '' };
+  }
+
+  removeTsigKey(name: string): DnsOpResult {
+    return this.keyring.remove(name)
+      ? { ok: true, message: '' }
+      : { ok: false, message: `TSIG key "${name}" is not configured on this server.` };
+  }
+
+  listTsigKeys(): { name: string; algorithm: string }[] {
+    return this.keyring.list().map(k => ({ name: k.name, algorithm: k.algorithm }));
   }
 
   // ─── Records (Add/Get/Remove-DnsServerResourceRecord*) ──────────────

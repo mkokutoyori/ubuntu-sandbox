@@ -1,5 +1,6 @@
 export const FORTI_COMMAND_FAIL = 'Command fail. Return code -61';
 export const FORTI_UNKNOWN_ACTION = 'Unknown action 0';
+
 export const FORTI_NOT_FOUND = 'entry not found in datasource';
 export const FORTI_DUPLICATE = 'duplicate name';
 export const FORTI_IN_USE = 'Cannot delete entry: it is used by other entries';
@@ -52,10 +53,17 @@ export const FortiMessages = {
     return fail(`value parse error before '${value}'\n${FORTI_COMMAND_FAIL}`, hint);
   },
 
-  unknownPath(path: string): string {
+  unknownPath(path: string, verb = 'config'): string {
     return fail(
       FORTI_COMMAND_FAIL,
-      `unknown configuration path "${path}". Type \`config ?\` for the list of branches.`,
+      `unknown configuration path "${path}". Type \`${verb} ?\` for the list of branches.`,
+    );
+  },
+
+  unknownAction(what: string): string {
+    return fail(
+      `${FORTI_UNKNOWN_ACTION}\n${FORTI_COMMAND_FAIL}`,
+      `unknown action "${what}". Type \`execute ?\` for the list.`,
     );
   },
 
@@ -71,6 +79,14 @@ export const FortiMessages = {
     return fail(
       FORTI_COMMAND_FAIL,
       `\`set ${attribute}\` exists on a real FortiGate; ${reason}`,
+    );
+  },
+
+  needsConsole(action: string): string {
+    return fail(
+      FORTI_COMMAND_FAIL,
+      `\`execute ${action}\` asks for a password, so it only runs from an `
+      + 'interactive console; this invocation has no terminal to prompt on.',
     );
   },
 

@@ -1,3 +1,5 @@
+import { DEFAULT_OVERSIZE_LIMIT_MB } from './StreamAssembler';
+
 export type UtmAction = 'allow' | 'block' | 'monitor';
 export type SslInspectionMode = 'disable' | 'certificate-inspection' | 'deep-inspection';
 
@@ -97,6 +99,8 @@ export interface ProtocolOptions {
   readonly httpsPorts: readonly number[];
   readonly ftpPorts: readonly number[];
   readonly dnsPorts: readonly number[];
+  readonly oversizeLimitMb: number;
+  readonly blockOversize: boolean;
   readonly comment?: string;
 }
 
@@ -106,6 +110,8 @@ export const DEFAULT_PROTOCOL_OPTIONS: ProtocolOptions = Object.freeze({
   httpsPorts: Object.freeze([443]),
   ftpPorts: Object.freeze([21]),
   dnsPorts: Object.freeze([53]),
+  oversizeLimitMb: DEFAULT_OVERSIZE_LIMIT_MB,
+  blockOversize: false,
 });
 
 export type UrlCategoryId = number;

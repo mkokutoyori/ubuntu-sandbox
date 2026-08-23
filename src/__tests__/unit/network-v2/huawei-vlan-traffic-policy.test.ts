@@ -61,7 +61,7 @@ describe('Huawei MQC — traffic classifier / behavior / policy CLI', () => {
     expect(await sw.executeCommand('traffic-policy P1 inbound')).not.toMatch(/Error/);
     await sw.executeCommand('quit');
 
-    expect(sw.getMqcClassifier('C1')).toEqual(['3001']);
+    expect(sw.getMqcClassifier('C1')).toEqual([{ kind: 'acl', ref: '3001' }]);
     expect(sw.getMqcBehavior('B1')).toBe('deny');
     expect(sw.getMqcPolicy('P1')).toEqual([{ classifier: 'C1', behavior: 'B1' }]);
     expect(sw.getVlanTrafficPolicy(10)).toBe('P1');

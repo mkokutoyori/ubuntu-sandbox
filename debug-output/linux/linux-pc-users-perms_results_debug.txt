@@ -1,6 +1,6 @@
 ============================================================
 Shell debug transcript — linux-pc-users-perms
-Generated: 2026-08-13T16:28:38.950Z
+Generated: 2026-08-23T09:47:27.674Z
 Engine: linux
 host=L-PC-USR-DBG (linux-pc) — focus: utilisateurs, groupes & permissions
 Total commands: 301
@@ -48,34 +48,34 @@ $ [13/301]> echo $UID
   1000
 
 $ [14/301]> who
-  user     tty1         2026-08-13 16:28 (:0)
+  user     tty1         2026-08-23 09:47 (:0)
 
 $ [15/301]> who am i
-  user     tty1         2026-08-13 16:28 (:0)
+  user     tty1         2026-08-23 09:47 (:0)
 
 $ [16/301]> w
-   16:28:38 up 0 min,  1 user,  load average: 0.00, 0.01, 0.05
+   09:47:27 up 0 min,  1 user,  load average: 0.00, 0.01, 0.05
   USER     TTY      FROM             LOGIN@   IDLE   JCPU   PCPU   WHAT
-  user     tty1     :0               16:28    0.00s  0.00s  0.00s  -bash
+  user     tty1     :0               09:47    0.00s  0.00s  0.00s  -bash
 
 $ [17/301]> users
   user
 
 $ [18/301]> last
-  user     tty1         :0               Thu Aug 13 16:28   still logged in
-  reboot   system boot  5.15.0-91-generic Thu Aug 13 16:28   still running
+  user     tty1         :0               Sun Aug 23 09:47   still logged in
+  reboot   system boot  5.15.0-91-generic Sun Aug 23 09:47   still running
   
-  wtmp begins Thu Aug 13 16:28:38 2026
+  wtmp begins Sun Aug 23 09:47:27 2026
 
 $ [19/301]> lastb
   
-  btmp begins Thu Aug 13 16:28:38 2026
+  btmp begins Sun Aug 23 09:47:27 2026
 
 $ [20/301]> last -n 5
-  user     tty1         :0               Thu Aug 13 16:28   still logged in
-  reboot   system boot  5.15.0-91-generic Thu Aug 13 16:28   still running
+  user     tty1         :0               Sun Aug 23 09:47   still logged in
+  reboot   system boot  5.15.0-91-generic Sun Aug 23 09:47   still running
   
-  wtmp begins Thu Aug 13 16:28:38 2026
+  wtmp begins Sun Aug 23 09:47:27 2026
 
 
 --- [21] § bases de comptes — inventaire ---
@@ -274,13 +274,13 @@ $ [60/301]> usermod -L bob
   usermod: Permission denied
 
 $ [61/301]> passwd -S bob
-  bob P 08/13/2026 0 99999 7 -1
+  bob P 08/23/2026 0 99999 7 -1
 
 $ [62/301]> usermod -U bob
   usermod: Permission denied
 
 $ [63/301]> passwd -S bob
-  bob P 08/13/2026 0 99999 7 -1
+  bob P 08/23/2026 0 99999 7 -1
 
 $ [64/301]> usermod -u 1600 carol
   usermod: Permission denied
@@ -303,16 +303,16 @@ $ [69/301]> passwd -S alicia
   passwd: user 'alicia' does not exist
 
 $ [70/301]> passwd -S bob
-  bob P 08/13/2026 0 99999 7 -1
+  bob P 08/23/2026 0 99999 7 -1
 
 $ [71/301]> passwd -S root
-  root P 08/13/2026 0 99999 7 -1
+  root P 08/23/2026 0 99999 7 -1
 
 $ [72/301]> echo "bob:NouveauPass123" | chpasswd
   chpasswd: Permission denied
 
 $ [73/301]> passwd -S bob
-  bob P 08/13/2026 0 99999 7 -1
+  bob P 08/23/2026 0 99999 7 -1
 
 $ [74/301]> passwd -l dan
   usermod: user 'dan' does not exist
@@ -484,14 +484,14 @@ $ [126/301]> sudo -n true
 <empty>
 
 $ [127/301]> sudo cat /etc/shadow
-  root:$6$simulated$admin:20678:0:99999:7:::
-  daemon:!*:20678:0:99999:7:::
-  nobody:!*:20678:0:99999:7:::
-  user:$6$simulated$admin:20678:0:99999:7:::
-  alice:$6$simulated$alice:20678:0:99999:7:::
-  bob:$6$simulated$bob:20678:0:99999:7:::
-  carl:$6$simulated$carl:20678:0:99999:7:::
-  dave:$6$simulated$dave:20678:0:99999:7:::
+  root:$6$simulated$admin:20688:0:99999:7:::
+  daemon:!*:20688:0:99999:7:::
+  nobody:!*:20688:0:99999:7:::
+  user:$6$simulated$admin:20688:0:99999:7:::
+  alice:$6$simulated$alice:20688:0:99999:7:::
+  bob:$6$simulated$bob:20688:0:99999:7:::
+  carl:$6$simulated$carl:20688:0:99999:7:::
+  dave:$6$simulated$dave:20688:0:99999:7:::
 
 $ [128/301]> sudo -u bob whoami
   bob
@@ -525,55 +525,55 @@ $ [136/301]> touch p_chmod.txt
 <empty>
 
 $ [137/301]> ls -l p_chmod.txt
-  -rw-r--r-- 1 user user 0 Aug 13 16:28 p_chmod.txt
+  -rw-r--r-- 1 user user 0 Aug 23 09:47 p_chmod.txt
 
 $ [138/301]> chmod u+x p_chmod.txt
 <empty>
 
 $ [139/301]> ls -l p_chmod.txt
-  -rwxr--r-- 1 user user 0 Aug 13 16:28 p_chmod.txt
+  -rwxr--r-- 1 user user 0 Aug 23 09:47 p_chmod.txt
 
 $ [140/301]> chmod g+w p_chmod.txt
 <empty>
 
 $ [141/301]> ls -l p_chmod.txt
-  -rwxrw-r-- 1 user user 0 Aug 13 16:28 p_chmod.txt
+  -rwxrw-r-- 1 user user 0 Aug 23 09:47 p_chmod.txt
 
 $ [142/301]> chmod o-r p_chmod.txt
 <empty>
 
 $ [143/301]> ls -l p_chmod.txt
-  -rwxrw---- 1 user user 0 Aug 13 16:28 p_chmod.txt
+  -rwxrw---- 1 user user 0 Aug 23 09:47 p_chmod.txt
 
 $ [144/301]> chmod a+r p_chmod.txt
 <empty>
 
 $ [145/301]> ls -l p_chmod.txt
-  -rwxrw-r-- 1 user user 0 Aug 13 16:28 p_chmod.txt
+  -rwxrw-r-- 1 user user 0 Aug 23 09:47 p_chmod.txt
 
 $ [146/301]> chmod u=rwx,g=rx,o= p_chmod.txt
 <empty>
 
 $ [147/301]> ls -l p_chmod.txt
-  -rwxr-x--- 1 user user 0 Aug 13 16:28 p_chmod.txt
+  -rwxr-x--- 1 user user 0 Aug 23 09:47 p_chmod.txt
 
 $ [148/301]> chmod ug+s p_chmod.txt
 <empty>
 
 $ [149/301]> ls -l p_chmod.txt
-  -rwsr-s--- 1 user user 0 Aug 13 16:28 p_chmod.txt
+  -rwsr-s--- 1 user user 0 Aug 23 09:47 p_chmod.txt
 
 $ [150/301]> chmod +t p_chmod.txt
 <empty>
 
 $ [151/301]> ls -l p_chmod.txt
-  -rwsr-s--T 1 user user 0 Aug 13 16:28 p_chmod.txt
+  -rwsr-s--T 1 user user 0 Aug 23 09:47 p_chmod.txt
 
 $ [152/301]> chmod -t p_chmod.txt
 <empty>
 
 $ [153/301]> ls -l p_chmod.txt
-  -rwsr-s--- 1 user user 0 Aug 13 16:28 p_chmod.txt
+  -rwsr-s--- 1 user user 0 Aug 23 09:47 p_chmod.txt
 
 
 --- [154] § permissions octales — chmod ---
@@ -643,37 +643,37 @@ $ [174/301]> chown root p_chmod.txt
   chown: changing ownership of 'p_chmod.txt': Operation not permitted
 
 $ [175/301]> ls -l p_chmod.txt
-  ---------- 1 user user 0 Aug 13 16:28 p_chmod.txt
+  ---------- 1 user user 0 Aug 23 09:47 p_chmod.txt
 
 $ [176/301]> chown root:root p_chmod.txt
   chown: changing ownership of 'p_chmod.txt': Operation not permitted
 
 $ [177/301]> ls -l p_chmod.txt
-  ---------- 1 user user 0 Aug 13 16:28 p_chmod.txt
+  ---------- 1 user user 0 Aug 23 09:47 p_chmod.txt
 
 $ [178/301]> chgrp devs p_chmod.txt
   chgrp: invalid group: 'devs'
 
 $ [179/301]> ls -l p_chmod.txt
-  ---------- 1 user user 0 Aug 13 16:28 p_chmod.txt
+  ---------- 1 user user 0 Aug 23 09:47 p_chmod.txt
 
 $ [180/301]> chown :devs p_chmod.txt
   chown: changing ownership of 'p_chmod.txt': Operation not permitted
 
 $ [181/301]> ls -l p_chmod.txt
-  ---------- 1 user user 0 Aug 13 16:28 p_chmod.txt
+  ---------- 1 user user 0 Aug 23 09:47 p_chmod.txt
 
 $ [182/301]> chown bob p_chmod.txt
   chown: changing ownership of 'p_chmod.txt': Operation not permitted
 
 $ [183/301]> ls -l p_chmod.txt
-  ---------- 1 user user 0 Aug 13 16:28 p_chmod.txt
+  ---------- 1 user user 0 Aug 23 09:47 p_chmod.txt
 
 $ [184/301]> chown -R root:root p_chmoddir
   chown: changing ownership of 'p_chmoddir': Operation not permitted
 
 $ [185/301]> ls -ld p_chmoddir
-  drwx------ 2 user user 0 Aug 13 16:28 p_chmoddir
+  drwx------ 2 user user 0 Aug 23 09:47 p_chmoddir
 
 $ [186/301]> chown --reference=p_chmod.txt p_chmoddir
   chown: missing operand
@@ -702,13 +702,13 @@ $ [193/301]> touch sous_022.txt
 <empty>
 
 $ [194/301]> ls -l sous_022.txt
-  -rw-r--r-- 1 user user 0 Aug 13 16:28 sous_022.txt
+  -rw-r--r-- 1 user user 0 Aug 23 09:47 sous_022.txt
 
 $ [195/301]> mkdir sous_022dir
 <empty>
 
 $ [196/301]> ls -ld sous_022dir
-  drwxr-xr-x 2 user user 0 Aug 13 16:28 sous_022dir
+  drwxr-xr-x 2 user user 0 Aug 23 09:47 sous_022dir
 
 $ [197/301]> umask 077
 <empty>
@@ -720,7 +720,7 @@ $ [199/301]> touch sous_077.txt
 <empty>
 
 $ [200/301]> ls -l sous_077.txt
-  -rw------- 1 user user 0 Aug 13 16:28 sous_077.txt
+  -rw------- 1 user user 0 Aug 23 09:47 sous_077.txt
 
 $ [201/301]> umask 0022
 <empty>
@@ -763,7 +763,7 @@ $ [206/301]> getfacl p_chmod.txt
   other::---
 
 $ [207/301]> ls -l p_chmod.txt
-  ---------- 1 user user 0 Aug 13 16:28 p_chmod.txt
+  ---------- 1 user user 0 Aug 23 09:47 p_chmod.txt
 
 $ [208/301]> setfacl -x u:bob p_chmod.txt
 <empty>
@@ -904,11 +904,11 @@ $ [232/301]> cat /etc/default/useradd
 
 $ [233/301]> ls -la /etc/skel
   total 40
-  drwxr-xr-x  2 root root   0 Aug 13 16:28 .
-  drwxr-xr-x 26 root root   0 Aug 13 16:28 ..
-  -rw-r--r--  1 root root 220 Aug 13 16:28 .bash_logout
-  -rw-r--r--  1 root root 282 Aug 13 16:28 .bashrc
-  -rw-r--r--  1 root root 337 Aug 13 16:28 .profile
+  drwxr-xr-x  2 root root   0 Aug 23 09:47 .
+  drwxr-xr-x 28 root root   0 Aug 23 09:47 ..
+  -rw-r--r--  1 root root 220 Aug 23 09:47 .bash_logout
+  -rw-r--r--  1 root root 282 Aug 23 09:47 .bashrc
+  -rw-r--r--  1 root root 337 Aug 23 09:47 .profile
 
 $ [234/301]> cat /etc/shells
   /bin/bash
@@ -935,10 +935,10 @@ $ [238/301]> cat /etc/subgid
   dave:362144:65536
 
 $ [239/301]> ls -l /etc/passwd /etc/shadow /etc/group /etc/gshadow
-  -rw-r--r-- 1 root root 334 Aug 13 16:28 /etc/passwd
-  -rw-r----- 1 root root 312 Aug 13 16:28 /etc/shadow
-  -rw-r--r-- 1 root root 207 Aug 13 16:28 /etc/group
-  -rw-r----- 1 root root 165 Aug 13 16:28 /etc/gshadow
+  -rw-r--r-- 1 root root 334 Aug 23 09:47 /etc/passwd
+  -rw-r----- 1 root root 312 Aug 23 09:47 /etc/shadow
+  -rw-r--r-- 1 root root 207 Aug 23 09:47 /etc/group
+  -rw-r----- 1 root root 165 Aug 23 09:47 /etc/gshadow
 
 $ [240/301]> stat -c "%a %n" /etc/passwd
   644 /etc/passwd
@@ -950,22 +950,22 @@ $ [241/301]> stat -c "%a %n" /etc/shadow
 --- [242] § home & profil utilisateur ---
 $ [242/301]> ls -la /home
   total 64
-  drwxr-xr-x  8 root  root  0 Aug 13 16:28 .
-  drwxr-xr-x 17 root  root  0 Aug 13 16:28 ..
-  drwxr-xr-x  2 alice alice 0 Aug 13 16:28 alice
-  drwxr-xr-x  2 bob   bob   0 Aug 13 16:28 bob
-  drwxr-xr-x  2 carl  carl  0 Aug 13 16:28 carl
-  drwxr-xr-x  2 dave  dave  0 Aug 13 16:28 dave
-  drwxr-xr-x  2 root  root  0 Aug 13 16:28 scripts
-  drwxr-xr-x  2 user  user  0 Aug 13 16:28 user
+  drwxr-xr-x  8 root  root  0 Aug 23 09:47 .
+  drwxr-xr-x 17 root  root  0 Aug 23 09:47 ..
+  drwxr-xr-x  2 alice alice 0 Aug 23 09:47 alice
+  drwxr-xr-x  2 bob   bob   0 Aug 23 09:47 bob
+  drwxr-xr-x  2 carl  carl  0 Aug 23 09:47 carl
+  drwxr-xr-x  2 dave  dave  0 Aug 23 09:47 dave
+  drwxr-xr-x  2 root  root  0 Aug 23 09:47 scripts
+  drwxr-xr-x  2 user  user  0 Aug 23 09:47 user
 
 $ [243/301]> ls -la /root
   total 16
-  drwx------  2 root root 0 Aug 13 16:28 .
-  drwxr-xr-x 17 root root 0 Aug 13 16:28 ..
+  drwx------  2 root root 0 Aug 23 09:47 .
+  drwxr-xr-x 17 root root 0 Aug 23 09:47 ..
 
 $ [244/301]> ls -ld /home/bob
-  drwxr-xr-x 2 bob bob 0 Aug 13 16:28 /home/bob
+  drwxr-xr-x 2 bob bob 0 Aug 23 09:47 /home/bob
 
 $ [245/301]> echo $HOME
   /home/user
@@ -990,8 +990,8 @@ $ [248/301]> cat /etc/profile | head
 
 $ [249/301]> ls -la /etc/profile.d
   total 16
-  drwxr-xr-x  2 root root 0 Aug 13 16:28 .
-  drwxr-xr-x 26 root root 0 Aug 13 16:28 ..
+  drwxr-xr-x  2 root root 0 Aug 23 09:47 .
+  drwxr-xr-x 28 root root 0 Aug 23 09:47 ..
 
 $ [250/301]> getent passwd bob | cut -d: -f6
   /home/bob
@@ -1048,7 +1048,7 @@ $ [264/301]> getent protocols tcp
 
 --- [265] § verrouillage & sécurité — faillock/chage ---
 $ [265/301]> passwd -S root
-  root P 08/13/2026 0 99999 7 -1
+  root P 08/23/2026 0 99999 7 -1
 
 $ [266/301]> chage -l root
   chage: Permission denied

@@ -151,16 +151,10 @@ export function registerHuaweiCommonSecurity(
   // `info-center` a maintenant son propre arbre
   // (`HuaweiInfoCenterCommands`) : un nœud glouton n'a pas de sous-arbre,
   // donc son aide ne pouvait rien descendre.
-  //
-  // Le commutateur n'a pas de service de gestion, mais il connaît la
-  // commande : il reçoit son PROPRE état plutôt qu'un accesseur vide,
-  // sans quoi la famille redeviendrait chez lui ce qu'elle était
-  // partout — acceptée et sans effet.
-  const infoCenterDuShell = new InfoCenterConfig();
+  const infoCenterDeSecours = new InfoCenterConfig();
   registerInfoCenterCommands(trie, {
-    config: () => getRouter
-      ? getRouter().getManagementService().getInfoCenter()
-      : infoCenterDuShell,
+    config: () => getRouter?.().getManagementService?.().getInfoCenter()
+      ?? infoCenterDeSecours,
   });
   trie.registerGreedy('sflow', 'sFlow configuration', (args) => dispatch('sflow', args));
 }

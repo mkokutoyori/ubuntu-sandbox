@@ -57,13 +57,15 @@ describe('le socle VRP, comme objet', () => {
   it('un argument mal type est REFUSE, dans les mots de VRP', () => {
     const socle = new VrpSocle(() => 'R1', {}, () => [{
       id: 'c',
-      path: ['essai', { name: 'n', type: 'INT' as const, min: 1, max: 10, description: 'Un nombre' }],
+      path: ['essai', { name: 'n', type: 'INT' as const, range: [1, 10] as const, description: 'Un nombre' }],
       description: 'Un essai',
       modes: ['system'], minPrivilege: 1,
       run: (_s, args) => `n=${args.n}`,
     }]);
     expect(socle.run('essai 5', 'system')).toBe('n=5');
-    expect(socle.diagnostic('essai zzz', 'system')).toContain('Unrecognized command');
+    expect(socle.diagnostic('essai zzz', 'system')).toContain('Wrong parameter');
+    expect(socle.diagnostic('essai 99', 'system')).toContain('Wrong parameter');
+    expect(socle.diagnostic('zorglub', 'system')).toBe(null);
     expect(socle.diagnostic('essai', 'system')).toContain('Incomplete command');
   });
 

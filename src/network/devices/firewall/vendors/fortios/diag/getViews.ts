@@ -1,11 +1,11 @@
 import { ospfRouteCode } from '@/network/ospf/routeCodes';
-import { cpuStatesLine, memoryLine, FORTI_VM_CPUS } from './systemLoad';
+import { cpuStatesLines, memoryLine } from './systemLoad';
+import type { SystemLoad } from '../../../health/SystemLoad';
 import { renderTable, FIXED_TABLE } from '../../../../shells/cli/TextTable';
 import type { InterfaceTable } from '../../../l3/InterfaceTable';
 import type { FirewallRoute, RouteTable } from '../../../l3/RouteTable';
 import type { ArpService } from '../../../l3/ArpService';
 import type { SecurityRule } from '../../../model/SecurityRule';
-import type { SessionStatistics } from '../../../session/SessionTable';
 import type { BgpSummaryFacts } from '../../../routing/DynamicRoutingTypes';
 
 export interface SystemStatusFacts {
@@ -48,8 +48,14 @@ export function renderSystemStatus(facts: SystemStatusFacts): string {
 }
 
 export interface PerformanceFacts {
-  readonly sessions: SessionStatistics;
+  readonly load: SystemLoad;
   readonly uptimeMs: number;
+}
+
+const AVERAGE_WINDOWS: readonly number[] = Object.freeze([1, 10, 30]);
+
+function windowLabel(minutes: number): string {
+  return minutes === 1 ? '1 minute' : `${minutes} minutes`;
 }
 
 export function renderPerformanceStatus(facts: PerformanceFacts): string {
@@ -57,23 +63,26 @@ export function renderPerformanceStatus(facts: PerformanceFacts): string {
   const days = Math.floor(seconds / 86400);
   const hours = Math.floor((seconds % 86400) / 3600);
   const minutes = Math.floor((seconds % 3600) / 60);
+  const load = facts.load;
 
-  const cpus: string[] = [cpuStatesLine('CPU')];
-  for (let i = 0; i < FORTI_VM_CPUS; i++) cpus.push(cpuStatesLine(`CPU${i}`));
+  const networkUsage = AVERAGE_WINDOWS.map((window) => {
+    const kbps = load.averageKbps(window);
+    return `${kbps.inbound} / ${kbps.outbound} kbps in ${windowLabel(window)}`;
+  }).join(', ');
+  const sessions = AVERAGE_WINDOWS.map((window) =>
+    `${load.averageSessions(window)} sessions in ${windowLabel(window)}`).join(', ');
+  const setupRate = AVERAGE_WINDOWS.map((window) =>
+    `${load.averageSetupRate(window)} sessions per second in last `
+    + `${windowLabel(window)}`).join(', ');
 
   return [
-    ...cpus,
-    memoryLine(),
-    `Average network usage: 0 / 0 kbps in 1 minute, 0 / 0 kbps in 10 minutes, `
-      + `0 / 0 kbps in 30 minutes`,
-    `Average sessions: ${facts.sessions.active} sessions in 1 minute, `
-      + `${facts.sessions.active} sessions in 10 minutes, `
-      + `${facts.sessions.active} sessions in 30 minutes`,
+    ...cpuStatesLines(load),
+    memoryLine(load.memory()),
+    `Average network usage: ${networkUsage}`,
+    `Average sessions: ${sessions}`,
+    `Average session setup rate: ${setupRate}`,
     `Virus caught: 0 total in 1 minute`,
     `IPS attacks blocked: 0 total in 1 minute`,
-    `Current sessions: ${facts.sessions.active}`,
-    `Total sessions created: ${facts.sessions.created}`,
-    `Total sessions closed: ${facts.sessions.closed}`,
     `Uptime: ${days} days, ${hours} hours, ${minutes} minutes`,
   ].join('\n');
 }

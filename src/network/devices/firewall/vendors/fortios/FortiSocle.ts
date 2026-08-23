@@ -1,3 +1,4 @@
+import { FORTI_EXECUTE_COMMANDS } from './execute/executeVocabulary';
 import { LOG_CATEGORIES } from './log/logCategories';
 import { argumentAccepts, type ArgumentSpec, type EnumValue } from '../../../../../cli/ArgumentTypes';
 import { CommandTable, type CommandSpec } from '../../../../../cli/CommandTable';
@@ -9,6 +10,7 @@ import type { FortiAttributeSpec, FortiTableSpec } from './schema/types';
 import type { AccessIntent, AccessVerdict } from '../../authz/AccessMatrix';
 import type { FortiConfigTree } from './runtime/FortiConfigTree';
 import type { FortiNavigator } from './runtime/FortiNavigator';
+import { unquote } from './runtime/FortiNavigator';
 import type { FortiObject } from './runtime/FortiObject';
 import type { FortiTable } from './runtime/FortiTable';
 
@@ -45,6 +47,8 @@ const LEGENDS: ReadonlyArray<readonly [readonly string[], string]> = Object.free
   [['diagnose', 'sys', 'top'], 'Show the running processes.'],
   [['diagnose', 'sys', 'checkused'], 'Find what references an object.'],
   [['diagnose', 'autoupdate'], 'FortiGuard update facility.'],
+  [['diagnose', 'hardware'], 'Hardware information.'],
+  [['diagnose', 'hardware', 'sysinfo'], 'System hardware information.'],
   [['diagnose', 'test'], 'Application test facility.'],
   [['diagnose', 'test', 'application'], 'Test a daemon.'],
   [['execute', 'ping'], 'Send ICMP echo requests.'],
@@ -64,6 +68,9 @@ const LEGENDS: ReadonlyArray<readonly [readonly string[], string]> = Object.free
   [['unselect'], 'Remove a value from a list.'],
 ]);
 
+export const VALUE_LIST_VERBS = Object.freeze(
+  ['set', 'append', 'select', 'unselect'] as const);
+
 const FORTI_MODES = Object.freeze({ forti: { parent: null } });
 const FORTI_PROMPTS = Object.freeze({ forti: '{host} # ' });
 const MODE = ['forti'];
@@ -78,6 +85,7 @@ export interface SocleDeps {
   readonly inspect: (rest: readonly string[]) => string;
   readonly diagnose: (rest: readonly string[]) => string;
   readonly runExecute: (rest: readonly string[]) => string;
+  readonly leaveCli: () => string;
   readonly enterGlobal: () => string;
   readonly authorize?: (spec: FortiTableSpec, intent: AccessIntent) => AccessVerdict;
   readonly principal?: () => string;
@@ -188,11 +196,25 @@ export class FortiSocle {
       const verdict = this.verdict(spec, 'write');
       if (verdict === 'absent') continue;
 
+      const refused = () => FortiMessages.noPermission(path.join(' '));
+      if (spec.keyOnConfigLine === true) {
+        out.push(this.withArgument(
+          `config ${path.join(' ')}`,
+          ['config', ...path, {
+            name: 'key', type: 'WORD', description: 'Message name.',
+            alternatives: (spec.predefined ?? []).map(name => ({
+              keyword: name, description: 'Replacement message.',
+            })),
+          }], spec.help,
+          (_session, args) => verdict === 'read-only'
+            ? refused()
+            : this.deps.nav.descend([...path, unquote(args.key ?? '')]),
+        ));
+        continue;
+      }
       out.push(this.plain(
         `config ${path.join(' ')}`, ['config', ...path], spec.help,
-        () => verdict === 'read-only'
-          ? FortiMessages.noPermission(path.join(' '))
-          : this.deps.nav.descend(path),
+        () => verdict === 'read-only' ? refused() : this.deps.nav.descend(path),
       ));
     }
     return out;
@@ -210,15 +232,32 @@ export class FortiSocle {
       this.plain('config vdom', ['config', 'vdom'],
         'Configure virtual domain.',
         () => this.deps.nav.descend(['vdom'])),
+      this.plain('exit', ['exit'], 'Exit the CLI.', () => this.deps.leaveCli()),
+      this.plain('quit', ['quit'], 'Exit the CLI.', () => this.deps.leaveCli()),
     ];
     out.push(...this.branchSpecs());
     out.push(...this.viewSpecs());
     out.push(...this.diagnoseSpecs());
+    out.push(...this.executeSpecs(new Set(out.map(spec => spec.id))));
     out.push(this.withArgument('execute', ['execute',
       { name: 'command', type: 'REST', description: 'Command to execute.' }],
       'Execute static commands.',
       (_s, args) => this.deps.runExecute((args.command ?? '').split(/\s+/).filter(Boolean))));
     return out;
+  }
+
+  private executeSpecs(declared: ReadonlySet<string>): CommandSpec[] {
+    return FORTI_EXECUTE_COMMANDS
+      .filter(command => !declared.has(`execute ${command.name}`))
+      .map(command => this.withArgument(
+      `execute ${command.name}`,
+      ['execute', command.name, {
+        name: 'rest', type: 'REST', optional: true, description: command.help,
+      }],
+      command.help,
+      (_s, args) => this.deps.runExecute(
+        [command.name, ...(args.rest ?? '').split(/\s+/).filter(Boolean)]),
+      ));
   }
 
   private diagnoseSpecs(): CommandSpec[] {
@@ -242,6 +281,19 @@ export class FortiSocle {
       this.withArgument('diagnose sys checkused',
         ['diagnose', 'sys', 'checkused', rest('rest', '<path.object.mkey> <value>')],
         'Find what references an object.', run(['sys', 'checkused'])),
+      this.plain('diagnose netlink brctl list',
+        ['diagnose', 'netlink', 'brctl', 'list'],
+        'List the bridge instances, one per virtual domain.',
+        () => this.deps.diagnose(['netlink', 'brctl', 'list'])),
+      this.withArgument('diagnose netlink brctl name host',
+        ['diagnose', 'netlink', 'brctl', 'name', 'host', rest('rest', '<bridge>')],
+        'Show the forwarding database of a bridge instance.',
+        (_session, args) =>
+          this.deps.diagnose(['netlink', 'brctl', 'name', 'host', ...words(args.rest)])),
+      this.plain('diagnose hardware sysinfo conserve',
+        ['diagnose', 'hardware', 'sysinfo', 'conserve'],
+        'Show the memory conserve mode state and its thresholds.',
+        () => this.deps.diagnose(['hardware', 'sysinfo', 'conserve'])),
       this.plain('diagnose autoupdate versions',
         ['diagnose', 'autoupdate', 'versions'],
         'Show the FortiGuard database versions.',
@@ -475,6 +527,8 @@ export class FortiSocle {
 
   private attributeSpecs(attribute: FortiAttributeSpec): CommandSpec[] {
     const value = this.valueArgument(attribute);
+    const veil = (spec: CommandSpec): CommandSpec =>
+      attribute.hidden === true ? { ...spec, hidden: true } : spec;
     const out: CommandSpec[] = [
       this.withArgument(`set ${attribute.name}`, ['set', attribute.name, ...value],
         attribute.help,
@@ -483,14 +537,14 @@ export class FortiSocle {
         () => this.deps.nav.unset(attribute.name)),
     ];
 
-    if (!attribute.multiValue) return out;
+    if (!attribute.multiValue) return out.map(veil);
 
-    for (const verb of ['append', 'select', 'unselect'] as const) {
+    for (const verb of VALUE_LIST_VERBS.slice(1)) {
       out.push(this.withArgument(`${verb} ${attribute.name}`,
         [verb, attribute.name, ...value], attribute.help,
         (_s, args) => this.deps.nav[verb](attribute.name, collect(value, args))));
     }
-    return out;
+    return out.map(veil);
   }
 
   private valueArgument(attribute: FortiAttributeSpec): ArgumentSpec[] {
@@ -517,16 +571,37 @@ export class FortiSocle {
   }
 
   private viewSpecs(): CommandSpec[] {
+    const branches = this.branchAlternatives();
     return [
       this.withArgument('show', ['show',
-        { name: 'path', type: 'REST', optional: true, description: 'Configuration path.' }],
+        {
+          name: 'path', type: 'REST', optional: true,
+          description: 'Configuration path.', alternatives: branches,
+        }],
         'Show configuration.',
         (_s, args) => this.deps.view(words(args.path), false)),
       this.withArgument('get', ['get',
-        { name: 'path', type: 'REST', optional: true, description: 'Object path.' }],
+        {
+          name: 'path', type: 'REST', optional: true,
+          description: 'Object path.', alternatives: branches,
+        }],
         'Get dynamic and system information.',
         (_s, args) => this.deps.inspect(words(args.path))),
     ];
+  }
+
+  private branchAlternatives(): EnumValue[] {
+    const seen = new Map<string, string>();
+    for (const path of this.deps.tree.specPaths()) {
+      const head = path[0];
+      if (head === undefined || seen.has(head)) continue;
+      const spec = this.deps.tree.spec(path);
+      if (!spec || this.verdict(spec, 'read') === 'absent') continue;
+      seen.set(head, path.length === 1 ? spec.help : `Configure ${head}.`);
+    }
+    return [...seen.entries()]
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([keyword, description]) => ({ keyword, description }));
   }
 
   private plain(

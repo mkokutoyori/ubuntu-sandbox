@@ -231,6 +231,9 @@ function w32ReferenceId(ref: string): string {
 
 export class WindowsPC extends EndHost implements UserAccountHost {
   protected readonly defaultTTL = 128;
+
+  protected override registersOwnForwardDns(): boolean { return true; }
+
   /** DHCP event log for Windows Event Viewer */
   private dhcpEventLog: string[] = [];
   /** Track synced DHCP events to avoid duplicates */

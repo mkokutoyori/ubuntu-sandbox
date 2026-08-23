@@ -6,6 +6,11 @@ import {
   MANAGEMENT_SERVICES, type ManagementService,
 } from '../../../mgmt/ManagementAccess';
 import { resolveFortiTimezone } from './timezones';
+import { CONSOLE_BAUD_RATES } from '../../../mgmt/ConsoleSettings';
+import { ADMIN_DISCLAIMER_MESSAGES } from '../../../mgmt/LoginBanners';
+import {
+  CONSERVE_THRESHOLD_MIN, CONSERVE_THRESHOLD_MAX, DEFAULT_CONSERVE_THRESHOLDS,
+} from '../../../health/SystemLoad';
 
 const ACCESS_SERVICE_HELP: Readonly<Record<ManagementService, string>> = Object.freeze({
   ping: 'PING access.',
@@ -65,16 +70,42 @@ export const SYSTEM_GLOBAL: FortiTableSpec = {
     count('admin-lockout-threshold', 'Number of failed login attempts before lockout.',
       1, 10, 3),
     count('admin-lockout-duration', 'Lockout duration in seconds.', 1, 2147483647, 60),
-    choice('vdom-mode', 'Virtual domain mode.', [
-      { keyword: 'no-vdom', description: 'Disable virtual domains.' },
-      { keyword: 'multi-vdom', description: 'Enable multiple virtual domains.' },
-      { keyword: 'split-vdom', description: 'Enable split-task virtual domains.' },
-    ], 'no-vdom'),
+    enable('revision-backup-on-logout',
+      'Enable/disable back-up of the configuration to a revision when an'
+      + ' administrator logs out.'),
+    {
+      ...choice('vdom-mode', 'Virtual domain mode.', [
+        { keyword: 'no-vdom', description: 'Disable virtual domains.' },
+        { keyword: 'multi-vdom', description: 'Enable multiple virtual domains.' },
+        { keyword: 'split-vdom', description: 'Enable split-task virtual domains.' },
+      ], 'no-vdom'),
+      hidden: true,
+    },
     choice('firewall-session-dirty', 'Select how to manage sessions when a policy changes.', [
       { keyword: 'check-all', description: 'Flush all current sessions and re-evaluate.' },
       { keyword: 'check-new', description: 'Keep existing sessions, check new ones.' },
       { keyword: 'check-policy-option', description: 'Use the policy setting.' },
     ], 'check-all'),
+    count('memory-use-threshold-extreme',
+      'Threshold at which memory usage is considered extreme and new sessions'
+      + ' are dropped, in percent of total RAM.',
+      CONSERVE_THRESHOLD_MIN, CONSERVE_THRESHOLD_MAX,
+      DEFAULT_CONSERVE_THRESHOLDS.extremePercent),
+    count('memory-use-threshold-red',
+      'Threshold at which memory usage forces the FortiGate to enter conserve'
+      + ' mode, in percent of total RAM.',
+      CONSERVE_THRESHOLD_MIN, CONSERVE_THRESHOLD_MAX,
+      DEFAULT_CONSERVE_THRESHOLDS.redPercent),
+    count('memory-use-threshold-green',
+      'Threshold at which memory usage forces the FortiGate to leave conserve'
+      + ' mode, in percent of total RAM.',
+      CONSERVE_THRESHOLD_MIN, CONSERVE_THRESHOLD_MAX,
+      DEFAULT_CONSERVE_THRESHOLDS.greenPercent),
+    choice('av-failopen', 'Action to take when the antivirus proxy runs low on memory.', [
+      { keyword: 'pass', description: 'Bypass the antivirus proxy and let traffic through.' },
+      { keyword: 'off', description: 'Block new sessions that need the antivirus proxy.' },
+      { keyword: 'one-shot', description: 'Bypass, and keep bypassing after conserve mode ends.' },
+    ], 'pass'),
     count('auth-http-port', 'Port the captive portal answers HTTP on.', 1, 65535, 1000),
     count('auth-https-port', 'Port the captive portal answers HTTPS on.', 1, 65535, 1003),
     {
@@ -89,6 +120,10 @@ export const SYSTEM_GLOBAL: FortiTableSpec = {
       acceptsValue: (value) => resolveFortiTimezone(value) !== null,
       expectedValue: 'a time zone index <0-86> or an IANA name such as `Europe/Paris`.',
     },
+    enable('pre-login-banner',
+      'Enable/disable the disclaimer shown before the login prompt.'),
+    enable('post-login-banner',
+      'Enable/disable the disclaimer shown after a successful login.'),
     enable('simulator-hints',
       '[simulator] Add a diagnostic line to refusals.', true),
     {
@@ -115,6 +150,133 @@ export const SYSTEM_GLOBAL: FortiTableSpec = {
         ? object.effective('timezone')[0] : undefined,
       adminLockoutThreshold: number('admin-lockout-threshold', 3),
       adminLockoutDurationSec: number('admin-lockout-duration', 60),
+      preLoginBanner: object.effective('pre-login-banner')[0] === 'enable',
+      postLoginBanner: object.effective('post-login-banner')[0] === 'enable',
+      conserveThresholds: {
+        extremePercent: number('memory-use-threshold-extreme',
+          DEFAULT_CONSERVE_THRESHOLDS.extremePercent),
+        redPercent: number('memory-use-threshold-red',
+          DEFAULT_CONSERVE_THRESHOLDS.redPercent),
+        greenPercent: number('memory-use-threshold-green',
+          DEFAULT_CONSERVE_THRESHOLDS.greenPercent),
+      },
+      avFailopen: object.effective('av-failopen')[0] ?? 'pass',
+      revisionOnLogout:
+        object.effective('revision-backup-on-logout')[0] === 'enable',
+    });
+  },
+};
+
+export const SYSTEM_REPLACEMSG_ADMIN: FortiTableSpec = {
+  path: ['system', 'replacemsg', 'admin'],
+  kind: 'table',
+  keyType: 'name',
+  ordered: false,
+  scope: 'global',
+  accessGroup: 'sysgrp',
+  renderOrder: 13,
+  keyOnConfigLine: true,
+  help: 'Replacement messages shown to administrators.',
+  predefined: [
+    ADMIN_DISCLAIMER_MESSAGES.pre,
+    ADMIN_DISCLAIMER_MESSAGES.post,
+  ],
+  attributes: [
+    { ...word('msg-type', 'Message type.'), readOnly: true },
+    text('buffer', 'Message text.'),
+    choice('header', 'Header type.', [
+      { keyword: 'none', description: 'No header.' },
+      { keyword: 'http', description: 'HTTP header.' },
+      { keyword: '8bit', description: '8-bit header.' },
+    ], 'none'),
+    choice('format', 'Format flag.', [
+      { keyword: 'none', description: 'No format.' },
+      { keyword: 'text', description: 'Plain text.' },
+      { keyword: 'html', description: 'HTML.' },
+    ], 'none'),
+  ],
+  onCommit(object, context) {
+    context.device.applyReplacementMessage(object.key, object.effective('buffer')[0] ?? '');
+  },
+  onDelete(key, context) {
+    context.device.applyReplacementMessage(key, '');
+  },
+};
+
+export const SYSTEM_PASSWORD_POLICY: FortiTableSpec = {
+  path: ['system', 'password-policy'],
+  kind: 'object',
+  scope: 'global',
+  accessGroup: 'sysgrp',
+  renderOrder: 12,
+  help: 'Configure password policy for locally defined administrator passwords '
+    + 'and IPsec pre-shared keys.',
+  attributes: [
+    enable('status', 'Enable/disable the password policy.'),
+    {
+      name: 'apply-to',
+      help: 'Where the password policy applies.',
+      quoted: false,
+      multiValue: true,
+      defaultValue: ['admin-password'],
+      parts: [{
+        name: 'apply-to', type: 'ENUM', description: 'Where the policy applies.',
+        values: [
+          { keyword: 'admin-password', description: 'Administrator passwords.' },
+          { keyword: 'ipsec-preshared-key', description: 'IPsec pre-shared keys.' },
+        ],
+      }],
+    },
+    count('minimum-length', 'Minimum password length.', 8, 128, 8),
+    count('min-lower-case-letter', 'Minimum number of lowercase characters.', 0, 128, 0),
+    count('min-upper-case-letter', 'Minimum number of uppercase characters.', 0, 128, 0),
+    count('min-non-alphanumeric', 'Minimum number of non-alphanumeric characters.',
+      0, 128, 0),
+    count('min-number', 'Minimum number of digits.', 0, 128, 0),
+    count('min-change-characters',
+      'Minimum number of characters that must differ from the old password.', 0, 128, 0),
+    enable('expire-status', 'Enable/disable password expiration.'),
+    count('expire-day', 'Number of days before an administrator password expires.',
+      1, 999, 90),
+    {
+      ...enable('reuse-password', 'Enable/disable reuse of a previous password.', true),
+      unimplemented: 'this simulator keeps no password history to compare against.',
+    },
+  ],
+};
+
+export const SYSTEM_CONSOLE: FortiTableSpec = {
+  path: ['system', 'console'],
+  kind: 'object',
+  scope: 'global',
+  accessGroup: 'sysgrp',
+  renderOrder: 15,
+  help: 'Configure console.',
+  attributes: [
+    choice('mode', 'Console mode.', [
+      { keyword: 'batch', description: 'Batch mode.' },
+      { keyword: 'line', description: 'Line mode.' },
+    ], 'line'),
+    choice('baudrate', 'Console baud rate.',
+      CONSOLE_BAUD_RATES.map(rate => ({
+        keyword: String(rate), description: `${rate} baud.`,
+      })), '9600'),
+    choice('output', 'Console output mode.', [
+      { keyword: 'standard', description: 'No pause.' },
+      { keyword: 'more', description: 'Pause after each screenful.' },
+    ], 'more'),
+    enable('login', 'Enable/disable login for the console.', true),
+    {
+      ...enable('fortiexplorer', 'Enable/disable FortiExplorer.'),
+      unimplemented: 'this simulator has no USB management port.',
+    },
+  ],
+  onCommit(object, context) {
+    context.device.applyConsoleSettings({
+      output: object.effective('output')[0] === 'standard' ? 'standard' : 'more',
+      mode: object.effective('mode')[0] === 'batch' ? 'batch' : 'line',
+      baudrate: Number.parseInt(object.effective('baudrate')[0] ?? '9600', 10),
+      login: object.effective('login')[0] !== 'disable',
     });
   },
 };
@@ -233,6 +395,9 @@ export const SYSTEM_INTERFACE: FortiTableSpec = {
       type: interfaceType(object),
       parent: object.effective('interface')[0],
       vlanId: Number.parseInt(object.effective('vlanid')[0] ?? '', 10) || undefined,
+      mtu: object.effective('mtu-override')[0] === 'enable'
+        ? Number.parseInt(object.effective('mtu')[0] ?? '', 10) || undefined
+        : undefined,
     });
     if (mode === 'dhcp') context.device.acquireDhcpLease(object.key);
     context.device.setCaptivePortalInterface(object.key,
@@ -548,6 +713,9 @@ export const SYSTEM_NTP: FortiTableSpec = {
 
 export const SYSTEM_SPECS: readonly FortiTableSpec[] = Object.freeze([
   SYSTEM_GLOBAL,
+  SYSTEM_PASSWORD_POLICY,
+  SYSTEM_REPLACEMSG_ADMIN,
+  SYSTEM_CONSOLE,
   SYSTEM_SETTINGS,
   SYSTEM_INTERFACE,
   SYSTEM_ZONE,

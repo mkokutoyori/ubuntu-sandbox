@@ -159,6 +159,35 @@ export interface OspfLsrRetransmitDuePayload extends OspfRouterRef {
   neighborId: string;
 }
 
+export interface OspfHelloMismatchPayload extends OspfRouterRef {
+  iface: string;
+  from: string;
+  deadReceived: number;
+  deadConfigured: number;
+  helloReceived: number;
+  helloConfigured: number;
+  maskReceived: string;
+  maskConfigured: string;
+}
+
+export function ospfHelloMismatchLines(p: OspfHelloMismatchPayload): [string, string] {
+  return [
+    `OSPF: Mismatched hello parameters from ${p.from}`,
+    `OSPF: Dead R ${p.deadReceived} C ${p.deadConfigured}, `
+    + `Hello R ${p.helloReceived} C ${p.helloConfigured}, `
+    + `Mask R ${p.maskReceived} C ${p.maskConfigured}`,
+  ];
+}
+
+export interface OspfAreaMismatchPayload extends OspfRouterRef {
+  iface: string;
+  from: string;
+  packetType: number;
+  areaReceived: string;
+  areaConfigured: string;
+  reason: string;
+}
+
 // ── Topic union (added to DomainEvent in src/events/types.ts) ──────────
 
 export type OspfDomainEvent =
@@ -177,4 +206,6 @@ export type OspfDomainEvent =
   | { topic: 'ospf.packet.received'; payload: OspfPacketReceivedPayload }
   | { topic: 'ospf.hello.send-requested'; payload: OspfHelloSendRequestedPayload }
   | { topic: 'ospf.dd.retransmit-due'; payload: OspfDdRetransmitDuePayload }
-  | { topic: 'ospf.lsr.retransmit-due'; payload: OspfLsrRetransmitDuePayload };
+  | { topic: 'ospf.lsr.retransmit-due'; payload: OspfLsrRetransmitDuePayload }
+  | { topic: 'ospf.hello.mismatch'; payload: OspfHelloMismatchPayload }
+  | { topic: 'ospf.area.mismatch'; payload: OspfAreaMismatchPayload };

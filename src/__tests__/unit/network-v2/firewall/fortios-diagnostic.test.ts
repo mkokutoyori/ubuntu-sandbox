@@ -41,7 +41,9 @@
  * mesure, et les deux fois c'est la sonde qui avait tort :
  *
  *   - les champs d'un journal FortiOS sont **entre guillemets**
- *     (`type="traffic"`), sauf les numeriques ;
+ *     (`type="traffic"`), mais la regle est PAR CHAMP et non par forme de
+ *     valeur : `logid="0000000015"` est entre guillemets bien qu'il ne
+ *     contienne que des chiffres, et `srcip=192.168.1.10` n'y est pas ;
  *   - la regle implicite ne journalise **PAS** par defaut : il faut
  *     `config log setting` / `set fwpolicy-implicit-log enable`, que
  *     Fortinet laisse desactive pour ne pas noyer le collecteur.
@@ -402,9 +404,10 @@ describe('les vues `get`', () => {
 
     const vu = run(sh, 'get system performance status');
 
-    expect(vu).toMatch(/Current sessions: \d+/);
-    expect(vu).toMatch(/Total sessions created: [1-9]/);
+    expect(vu).toMatch(/Average sessions: \d+ sessions in 1 minute/);
+    expect(vu).toMatch(/Average session setup rate: \d+ sessions per second/);
     expect(vu).toMatch(/Uptime: \d+ days, \d+ hours, \d+ minutes/);
+    expect(vu).not.toContain('Current sessions:');
   });
 });
 
@@ -527,7 +530,9 @@ describe('les journaux', () => {
 
     expect(vu).toMatch(/^date=\d{4}-\d{2}-\d{2} time=\d{2}:\d{2}:\d{2} /);
     expect(vu).toContain('devname="FGT1"');
-    expect(vu).toContain('srcip="192.168.1.10"');
+    expect(vu).toContain('logid="0000000015"');
+    expect(vu).toContain('srcip=192.168.1.10');
+    expect(vu).not.toContain('srcip="192.168.1.10"');
   });
 
   it('`set format csv` change la mise en forme', async () => {
@@ -577,7 +582,7 @@ describe('les journaux', () => {
     const ecarte = run(sh, 'execute log filter field srcip 10.99.99.99',
       'execute log display');
 
-    expect(retenu).toContain('srcip="192.168.1.10"');
+    expect(retenu).toContain('srcip=192.168.1.10');
     expect(ecarte).toBe('No matching log data.');
   });
 
@@ -605,9 +610,9 @@ describe('les journaux', () => {
   it('le journal memoire est circulaire et borne', async () => {
     const { fw, sh } = await laboratoire();
 
-    run(sh, 'config log memory global-setting', 'set max-lines 100', 'end');
+    run(sh, 'config log memory global-setting', 'set max-size 4096', 'end');
 
-    expect(fw.getLogStore().getCapacity()).toBe(100);
+    expect(fw.getLogStore().getMaxBytes()).toBe(4096);
   });
 
   it('une categorie inconnue est refusee', async () => {

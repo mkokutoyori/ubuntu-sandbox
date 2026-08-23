@@ -14,6 +14,7 @@ export interface DebugFlowState {
   enabled: boolean;
   traceCount: number;
   showFunctionName: boolean;
+  showConsole: boolean;
   filter: DebugFlowFilter;
   nextTraceId: number;
 }
@@ -37,6 +38,7 @@ export function makeDebugFlowState(): DebugFlowState {
     enabled: false,
     traceCount: 0,
     showFunctionName: false,
+    showConsole: true,
     filter: {},
     nextTraceId: 1,
   };

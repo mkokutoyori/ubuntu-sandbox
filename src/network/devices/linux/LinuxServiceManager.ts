@@ -221,8 +221,6 @@ interface DefaultUnit {
   user?: string;
   after?: string[];
   enabledByDefault: boolean;
-  /** Whether the service should be active right after boot. */
-  startByDefault: boolean;
 }
 
 /** Vendor unit set installed in /lib/systemd/system on every machine. */
@@ -235,7 +233,6 @@ const BASE_UNITS: DefaultUnit[] = [
     execReload: '/bin/kill -HUP $MAINPID',
     after: ['network.target', 'auditd.service'],
     enabledByDefault: true,
-    startByDefault: true,
   },
   {
     name: 'fail2ban',
@@ -244,7 +241,6 @@ const BASE_UNITS: DefaultUnit[] = [
     execStart: '/usr/bin/fail2ban-server -xf start',
     after: ['network.target', 'iptables.service'],
     enabledByDefault: true,
-    startByDefault: true,
   },
   {
     // chrony (`docs/PRD-NTP-Tutoriel.md` §4). L'unite s'appelle `chrony`
@@ -259,7 +255,6 @@ const BASE_UNITS: DefaultUnit[] = [
     execReload: '/bin/kill -HUP $MAINPID',
     after: ['network.target'],
     enabledByDefault: true,
-    startByDefault: true,
   },
   {
     name: 'cron',
@@ -268,7 +263,6 @@ const BASE_UNITS: DefaultUnit[] = [
     execStart: '/usr/sbin/cron -f',
     after: ['network.target'],
     enabledByDefault: true,
-    startByDefault: true,
   },
   {
     name: 'rsyslog',
@@ -277,7 +271,6 @@ const BASE_UNITS: DefaultUnit[] = [
     execStart: '/usr/sbin/rsyslogd -n -iNONE',
     after: ['network.target'],
     enabledByDefault: true,
-    startByDefault: true,
   },
   {
     name: 'auditd',
@@ -287,7 +280,6 @@ const BASE_UNITS: DefaultUnit[] = [
     execReload: '/sbin/auditctl -R /etc/audit/audit.rules',
     after: ['local-fs.target'],
     enabledByDefault: true,
-    startByDefault: true,
   },
   {
     name: 'atd',
@@ -296,7 +288,6 @@ const BASE_UNITS: DefaultUnit[] = [
     execStart: '/usr/sbin/atd -f',
     after: ['network.target'],
     enabledByDefault: true,
-    startByDefault: true,
   },
   {
     name: 'systemd-resolved',
@@ -305,7 +296,6 @@ const BASE_UNITS: DefaultUnit[] = [
     execStart: '/lib/systemd/systemd-resolved',
     user: 'systemd-resolve',
     enabledByDefault: true,
-    startByDefault: true,
   },
   {
     name: 'systemd-journald',
@@ -313,7 +303,6 @@ const BASE_UNITS: DefaultUnit[] = [
     type: 'notify',
     execStart: '/lib/systemd/systemd-journald',
     enabledByDefault: true,
-    startByDefault: true,
   },
   {
     name: 'systemd-logind',
@@ -321,7 +310,6 @@ const BASE_UNITS: DefaultUnit[] = [
     type: 'dbus',
     execStart: '/lib/systemd/systemd-logind',
     enabledByDefault: true,
-    startByDefault: true,
   },
   {
     name: 'dbus',
@@ -330,7 +318,14 @@ const BASE_UNITS: DefaultUnit[] = [
     execStart: '/usr/bin/dbus-daemon --system --address=systemd: --nofork --nopidfile --systemd-activation --syslog-only',
     user: 'messagebus',
     enabledByDefault: true,
-    startByDefault: true,
+  },
+  {
+    name: 'strongswan-starter',
+    description: 'strongSwan IPsec IKEv1/IKEv2 daemon using ipsec.conf',
+    type: 'simple',
+    execStart: '/usr/sbin/ipsec start --nofork',
+    after: ['syslog.target', 'network-online.target'],
+    enabledByDefault: true,
   },
   {
     name: 'named',
@@ -341,7 +336,6 @@ const BASE_UNITS: DefaultUnit[] = [
     user: 'bind',
     after: ['network.target'],
     enabledByDefault: false,
-    startByDefault: false,
   },
   {
     name: 'networking',
@@ -350,7 +344,6 @@ const BASE_UNITS: DefaultUnit[] = [
     execStart: '/sbin/ifup -a --read-environment',
     after: ['network-pre.target'],
     enabledByDefault: true,
-    startByDefault: true,
   },
   {
     name: 'systemd-networkd',
@@ -360,7 +353,6 @@ const BASE_UNITS: DefaultUnit[] = [
     execReload: '/bin/kill -HUP $MAINPID',
     after: ['network-pre.target'],
     enabledByDefault: true,
-    startByDefault: true,
   },
   {
     name: 'NetworkManager',
@@ -369,7 +361,6 @@ const BASE_UNITS: DefaultUnit[] = [
     execStart: '/usr/sbin/NetworkManager --no-daemon',
     after: ['dbus.service', 'network-pre.target'],
     enabledByDefault: false,
-    startByDefault: false,
   },
   {
     name: 'ufw',
@@ -378,7 +369,6 @@ const BASE_UNITS: DefaultUnit[] = [
     execStart: '/lib/ufw/ufw-init start quiet',
     after: ['local-fs.target'],
     enabledByDefault: true,
-    startByDefault: true,
   },
   {
     name: 'netfilter-persistent',
@@ -387,7 +377,6 @@ const BASE_UNITS: DefaultUnit[] = [
     execStart: '/usr/share/netfilter-persistent/netfilter-persistent start',
     after: ['local-fs.target'],
     enabledByDefault: true,
-    startByDefault: true,
   },
   {
     name: 'apparmor',
@@ -395,7 +384,6 @@ const BASE_UNITS: DefaultUnit[] = [
     type: 'oneshot',
     execStart: '/lib/apparmor/apparmor.systemd reload',
     enabledByDefault: true,
-    startByDefault: true,
   },
 ];
 
@@ -410,7 +398,6 @@ const SERVER_UNITS: DefaultUnit[] = [
     user: 'www-data',
     after: ['network.target', 'remote-fs.target'],
     enabledByDefault: false,
-    startByDefault: false,
   },
   {
     name: 'isc-dhcp-server',
@@ -420,7 +407,6 @@ const SERVER_UNITS: DefaultUnit[] = [
     user: 'root',
     after: ['network-online.target'],
     enabledByDefault: false,
-    startByDefault: false,
   },
   {
     name: 'nginx',
@@ -431,7 +417,6 @@ const SERVER_UNITS: DefaultUnit[] = [
     user: 'www-data',
     after: ['network.target', 'remote-fs.target'],
     enabledByDefault: false,
-    startByDefault: false,
   },
   {
     name: 'mysql',
@@ -441,7 +426,6 @@ const SERVER_UNITS: DefaultUnit[] = [
     user: 'mysql',
     after: ['network.target'],
     enabledByDefault: false,
-    startByDefault: false,
   },
   {
     name: 'postgresql',
@@ -451,7 +435,6 @@ const SERVER_UNITS: DefaultUnit[] = [
     user: 'postgres',
     after: ['network.target'],
     enabledByDefault: false,
-    startByDefault: false,
   },
   {
     name: 'oracle-ohasd',
@@ -460,7 +443,6 @@ const SERVER_UNITS: DefaultUnit[] = [
     execStart: '/etc/init.d/init.ohasd run',
     user: 'oracle',
     enabledByDefault: true,
-    startByDefault: true,
   },
   {
     name: 'freeradius',
@@ -476,7 +458,6 @@ const SERVER_UNITS: DefaultUnit[] = [
     // control (and clients.conf/users-driven config) on top of that,
     // without changing the default-on behaviour existing labs rely on.
     enabledByDefault: true,
-    startByDefault: true,
   },
 ];
 

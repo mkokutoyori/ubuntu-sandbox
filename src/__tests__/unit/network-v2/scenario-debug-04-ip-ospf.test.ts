@@ -121,15 +121,16 @@ describe('Scénario 4 (debug) — debug ip ospf', () => {
       expect(out).not.toMatch(/FULL/);
     }, LONG);
 
-    it('`debug ip ospf events` devrait signaler le mismatch de hello', async () => {
-      await run('debug ip ospf events');
+    it('`debug ip ospf hello` signale le mismatch dans les mots d IOS', async () => {
+      await run('debug ip ospf hello');
       await run('configure terminal');
       await run(`interface ${g1}`);
       await run('ip ospf hello-interval 30');
       await run('end');
       await run('show ip ospf neighbor');
 
-      expect(lignes.some((l) => /hello interval mismatch/i.test(l))).toBe(true);
+      expect(lignes.some((l) => /Mismatched hello parameters from/.test(l))).toBe(true);
+      expect(lignes.some((l) => /Hello R 10 C 30/.test(l))).toBe(true);
     }, LONG);
   });
 

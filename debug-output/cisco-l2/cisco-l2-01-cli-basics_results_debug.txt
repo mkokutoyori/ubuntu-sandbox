@@ -1,6 +1,6 @@
 ============================================================
 Cisco L2 switch debug transcript — cisco-l2-01-cli-basics
-Generated: 2026-08-18T19:50:57.627Z
+Generated: 2026-08-23T10:16:46.283Z
 Topology: CORE(L2) trunked to SW1 & SW2 (L2 access). SW1: L1(Linux 1.11) Fa0/1, W1(Win 1.12) Fa0/2, SRV1(Linux 1.13) Fa0/3, Gi0/1=trunk. SW2: L2(Linux 1.21) Fa0/1, W2(Win 1.22) Fa0/2, SRV2(Linux 1.23) Fa0/3, Gi0/1=trunk. All hosts 192.168.1.0/24.
 focus=CLI parsing, help, prompts, mode navigation, show family, host inspection
 Total steps: 366
@@ -36,7 +36,7 @@ Total steps: 366
     accounting     Display accounting records
     adjacency      Display CEF adjacency table
     aliases        Display command aliases
-    arp            Display ARP table
+    arp            Display ARP ACLs
     buffers        Display buffer pools
     calendar       Display hardware calendar
     cdp            Display CDP information
@@ -46,7 +46,7 @@ Total steps: 366
     dot1x          Display 802.1X state
     dtp            Display DTP information
     environment    Display environment
-    errdisable
+    errdisable     Display errdisable recovery state
     etherchannel   Display EtherChannel
     file           Show filesystem information
     glbp           Display GLBP groups on SVIs
@@ -59,7 +59,7 @@ Total steps: 366
     line           Display TTY lines
     lldp           Display LLDP information
     login          Display login config
-    mac            MAC configuration
+    mac            Display MAC address table
     memory         Display memory statistics
     monitor        Display SPAN sessions
     ntp            Display NTP status
@@ -89,7 +89,7 @@ Total steps: 366
     vlan           Display VLAN information
     vrf            Display VRFs
     vrrp           Display VRRP groups on SVIs
-    vtp            VLAN Trunking Protocol
+    vtp            Display the VTP password
     who            Display active lines
 
 [3/366] sw1 SW1> s?
@@ -146,7 +146,7 @@ Total steps: 366
   Configuration register is 0xF
 
 [10/366] sw1 SW1> show clock
-  *19:50:57.000 UTC Tue Aug 18 2026
+  *10:16:46.000 UTC Sun Aug 23 2026
 
 [11/366] sw1 SW1> show users
       Line       User       Host(s)              Idle       Location
@@ -247,7 +247,7 @@ Total steps: 366
     test        Test subsystems, memory, and interfaces
     undebug     Disable debugging
     verify      Verify a file
-    vtp         VLAN Trunking Protocol
+    vtp         Force this switch to become the VTP Primary Server
     where       List open outgoing connections
     write       Write running configuration to memory
 
@@ -258,7 +258,7 @@ Total steps: 366
     adjacency       Display CEF adjacency table
     aliases         Display command aliases
     archive         Display archive status
-    arp             Display ARP table
+    arp             Display ARP ACLs
     boot            Display boot variables
     bootvar         Display boot variables
     buffers         Display buffer pools
@@ -273,7 +273,7 @@ Total steps: 366
     dot1x           Display 802.1X state
     dtp             Display DTP information
     environment     Display environment
-    errdisable      Error-disable configuration
+    errdisable      Display errdisable recovery state
     etherchannel    Display EtherChannel
     file            Show filesystem information
     flash:          Display flash filesystem
@@ -289,7 +289,7 @@ Total steps: 366
     lldp            Display LLDP information
     logging         Show the contents of logging buffers
     login           Display login config
-    mac             MAC configuration
+    mac             Display MAC address table
     memory          Display memory statistics
     monitor         Display SPAN sessions
     ntp             Display NTP status
@@ -325,7 +325,7 @@ Total steps: 366
     vlan            Display VLAN information
     vrf             Display VRFs
     vrrp            Display VRRP groups on SVIs
-    vtp             VLAN Trunking Protocol
+    vtp             Display the VTP password
     who             Display active lines
 
 [20/366] sw1 SW1# configure ?
@@ -342,7 +342,7 @@ Total steps: 366
     ip             Clear DHCP address bindings
     line           Reset a terminal line
     logging        Clear the syslog buffer
-    mac            MAC configuration
+    mac            Clear MAC address table entries
     ntp            Clear NTP packet statistics
     port-security  Clear secure MAC entries
     spanning-tree  Spanning trees
@@ -497,7 +497,7 @@ Total steps: 366
 
 [29/366] sw1 SW1# show inventory
   NAME: "WS-C3560-24TS-S chassis", DESCR: "Cisco Catalyst 3560 Multilayer Switch"
-  PID: WS-C3560-24TS-S     , VID: V01  , SN: FOC727831YJ
+  PID: WS-C3560-24TS-S     , VID: V01  , SN: FOC2763P53K
 
 [30/366] sw1 SW1# show flash:
   Directory of flash:/
@@ -584,13 +584,19 @@ Total steps: 366
                Address     0200.0000.0001
                Cost        0
                This bridge is the root
+               Hello Time   2 sec  Max Age 20 sec  Forward Delay 15 sec
   
-  Interface        Role  Sts  Cost      Prio.Nbr  Type
-  ---------------- ----  ---  --------  --------  ----
-  Fa0/1            Desg  FWD  19        128.1     P2p
-  Fa0/2            Desg  FWD  19        128.2     P2p
-  Fa0/3            Desg  FWD  19        128.3     P2p
-  Gi0/1            Desg  FWD  4         128.25    P2p
+    Bridge ID  Priority    32769  (priority 32768 sys-id-ext 1)
+               Address     0200.0000.0001
+               Hello Time   2 sec  Max Age 20 sec  Forward Delay 15 sec
+               Aging Time  300 sec
+  
+  Interface           Role Sts Cost      Prio.Nbr Type
+  ------------------- ---- --- --------- -------- --------------------------------
+  Fa0/1               Desg FWD 19        128.1    P2p
+  Fa0/2               Desg FWD 19        128.2    P2p
+  Fa0/3               Desg FWD 19        128.3    P2p
+  Gi0/1               Desg FWD 4         128.25   P2p
 
 [39/366] sw1 SW1# show spanning-tree summary
   Switch is in pvst mode
@@ -1318,7 +1324,7 @@ Total steps: 366
   Timer interval: 300 seconds
 
 [54/366] sw1 SW1# show clock
-  *19:50:57.000 UTC Tue Aug 18 2026
+  *10:16:46.000 UTC Sun Aug 23 2026
 
 [55/366] sw1 SW1# show processes cpu
   CPU utilization for five seconds: 4%/0%; one minute: 5%; five minutes: 4%
@@ -1470,15 +1476,15 @@ Total steps: 366
   
   Log Buffer (4096 bytes):
   
-  *Aug 18 19:50:57.549: %LINK-3-UPDOWN: Interface FastEthernet0/1, changed state to up
-  *Aug 18 19:50:57.549: %LINEPROTO-5-UPDOWN: Line protocol on Interface FastEthernet0/1, changed state to up
-  *Aug 18 19:50:57.553: %LINK-3-UPDOWN: Interface FastEthernet0/2, changed state to up
-  *Aug 18 19:50:57.553: %LINEPROTO-5-UPDOWN: Line protocol on Interface FastEthernet0/2, changed state to up
-  *Aug 18 19:50:57.556: %LINK-3-UPDOWN: Interface FastEthernet0/3, changed state to up
-  *Aug 18 19:50:57.556: %LINEPROTO-5-UPDOWN: Line protocol on Interface FastEthernet0/3, changed state to up
-  *Aug 18 19:50:57.560: %LINK-3-UPDOWN: Interface GigabitEthernet0/1, changed state to up
-  *Aug 18 19:50:57.560: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/1, changed state to up
-  *Aug 18 19:50:57.589: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug 23 10:16:46.214: %LINK-3-UPDOWN: Interface FastEthernet0/1, changed state to up
+  *Aug 23 10:16:46.215: %LINEPROTO-5-UPDOWN: Line protocol on Interface FastEthernet0/1, changed state to up
+  *Aug 23 10:16:46.218: %LINK-3-UPDOWN: Interface FastEthernet0/2, changed state to up
+  *Aug 23 10:16:46.218: %LINEPROTO-5-UPDOWN: Line protocol on Interface FastEthernet0/2, changed state to up
+  *Aug 23 10:16:46.220: %LINK-3-UPDOWN: Interface FastEthernet0/3, changed state to up
+  *Aug 23 10:16:46.220: %LINEPROTO-5-UPDOWN: Line protocol on Interface FastEthernet0/3, changed state to up
+  *Aug 23 10:16:46.223: %LINK-3-UPDOWN: Interface GigabitEthernet0/1, changed state to up
+  *Aug 23 10:16:46.223: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/1, changed state to up
+  *Aug 23 10:16:46.257: %SYS-5-CONFIG_I: Configured from console by console
 
 [60/366] sw1 SW1# show boot
   BOOT path-list      : 
@@ -1583,8 +1589,8 @@ Total steps: 366
     lacp           Link Aggregation Control Protocol
     line           Enter line configuration
     lldp           Enable LLDP globally
-    logging        Count every log message and timestamp last occurrence
-    login          Set the login blocking period
+    logging        line logging
+    login          line login
     mac            MAC address table configuration
     monitor        Monitoring different system events
     no             Negate a command or set its defaults
@@ -1710,7 +1716,6 @@ Total steps: 366
     cdp                Enable CDP globally
     channel-group      EtherChannel membership
     channel-protocol   Interface channel-protocol
-    clock              Set the system clock
     default            Set a command to its defaults
     description        Interface description
     do                 To run exec commands in config mode
@@ -1726,18 +1731,13 @@ Total steps: 366
     lacp               Link Aggregation Control Protocol
     lldp               Enable LLDP globally
     load-interval      Interface load-interval
-    logging            Count every log message and timestamp last occurrence
-    login              Set the login blocking period
     mdix               Interface mdix
     mls                Multilayer switching
     mtu                Set MTU
     no                 Negate a command or set its defaults
-    ntp                Authenticate time sources
     power              Interface power
     private-vlan       Configure private VLAN
-    service            Modify use of network based services
     shutdown           Disable interface
-    snmp-server        Set community string and access privs
     spanning-tree      Interface STP configuration
     speed              Set interface speed
     srr-queue          Interface srr-queue
@@ -1790,8 +1790,6 @@ Total steps: 366
     accounting        line accounting
     authorization     line authorization
     autocommand       line autocommand
-    cdp               Enable CDP globally
-    clock             Set the system clock
     databits          line databits
     default           Set a command to its defaults
     do                To run exec commands in config mode
@@ -1804,19 +1802,15 @@ Total steps: 366
     help              Description of the interactive help system
     history           line history
     length            line length
-    lldp              Enable LLDP globally
-    logging           Count every log message and timestamp last occurrence
-    login             Set the login blocking period
+    logging           line logging
+    login             line login
     login-timeout     Set login timeout
     motd-banner       line motd-banner
-    no                line no
-    ntp               Authenticate time sources
+    no                Negate a command or set its defaults
     parity            line parity
     password          line password
     privilege         line privilege
-    service           Modify use of network based services
     session-timeout   line session-timeout
-    snmp-server       Set community string and access privs
     speed             line speed
     stopbits          line stopbits
     transport         transport input/output
@@ -3144,8 +3138,8 @@ Total steps: 366
   LISTEN     0       0        [::]:1521              [::]:*             users:(("tnslsnr",pid=2001,fd=3))
   LISTEN     0       0        0.0.0.0:22             0.0.0.0:*          users:(("sshd",pid=985,fd=3))
   LISTEN     0       0        [::]:22                [::]:*             users:(("sshd",pid=985,fd=3))
-  LISTEN     0       0        127.0.0.53:53          0.0.0.0:*         
-  LISTEN     0       0        0.0.0.0:1812           0.0.0.0:*         
+  LISTEN     0       0        127.0.0.53:53          0.0.0.0:*          users:(("systemd-resolved",pid=29,fd=3))
+  LISTEN     0       0        0.0.0.0:1812           0.0.0.0:*          users:(("freeradius",pid=40,fd=3))
 
 [197/366] srv1 srv1$ systemctl status sshd
   Unit sshd.service could not be found.
@@ -3466,7 +3460,7 @@ Total steps: 366
   127.0.0.0       0.0.0.0         255.0.0.0       U         0 0          0 lo
 
 [256/366] l1 l1$ uptime
-   19:50:58 up 0 min,  1 user,  load average: 0.00, 0.01, 0.05
+   10:16:46 up 0 min,  1 user,  load average: 0.00, 0.01, 0.05
 
 [257/366] w1 w1$ hostname
   W1
@@ -3562,7 +3556,7 @@ Total steps: 366
   OS Manufacturer:           Microsoft Corporation
   OS Configuration:          Member Workstation
   OS Build Type:             Multiprocessor Free
-  System Boot Time:          8/18/2026, 7:50:57 PM
+  System Boot Time:          8/23/2026, 10:16:46 AM
   System Manufacturer:       QEMU
   System Model:              Standard PC (i440FX + PIIX, 1996)
   System Type:               x64-based PC
@@ -3618,7 +3612,7 @@ Total steps: 366
   127.0.0.0       0.0.0.0         255.0.0.0       U         0 0          0 lo
 
 [269/366] srv1 srv1$ uptime
-   19:50:58 up 0 min,  1 user,  load average: 0.00, 0.01, 0.05
+   10:16:46 up 0 min,  1 user,  load average: 0.00, 0.01, 0.05
 
 [270/366] l2 l2$ hostname
   linux-pc
@@ -3650,7 +3644,7 @@ Total steps: 366
   127.0.0.0       0.0.0.0         255.0.0.0       U         0 0          0 lo
 
 [276/366] l2 l2$ uptime
-   19:50:58 up 0 min,  1 user,  load average: 0.00, 0.01, 0.05
+   10:16:46 up 0 min,  1 user,  load average: 0.00, 0.01, 0.05
 
 [277/366] w2 w2$ hostname
   W2
@@ -3746,7 +3740,7 @@ Total steps: 366
   OS Manufacturer:           Microsoft Corporation
   OS Configuration:          Member Workstation
   OS Build Type:             Multiprocessor Free
-  System Boot Time:          8/18/2026, 7:50:57 PM
+  System Boot Time:          8/23/2026, 10:16:46 AM
   System Manufacturer:       QEMU
   System Model:              Standard PC (i440FX + PIIX, 1996)
   System Type:               x64-based PC
@@ -3802,27 +3796,27 @@ Total steps: 366
   127.0.0.0       0.0.0.0         255.0.0.0       U         0 0          0 lo
 
 [289/366] srv2 srv2$ uptime
-   19:50:58 up 0 min,  1 user,  load average: 0.00, 0.01, 0.05
+   10:16:46 up 0 min,  1 user,  load average: 0.00, 0.01, 0.05
 
 
 --- [290] § connectivity smoke test ---
 [290/366] l1 l1$ ping -c 2 192.168.1.12
   PING 192.168.1.12 (192.168.1.12) 56(84) bytes of data.
-  64 bytes from 192.168.1.12: icmp_seq=1 ttl=128 time=2.566 ms
-  64 bytes from 192.168.1.12: icmp_seq=2 ttl=128 time=0.830 ms
+  64 bytes from 192.168.1.12: icmp_seq=1 ttl=128 time=2.372 ms
+  64 bytes from 192.168.1.12: icmp_seq=2 ttl=128 time=1.252 ms
   
   --- 192.168.1.12 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.830/1.698/2.566/0.868 ms
+  rtt min/avg/max/mdev = 1.252/1.812/2.372/0.560 ms
 
 [291/366] l1 l1$ ping -c 2 192.168.1.21
   PING 192.168.1.21 (192.168.1.21) 56(84) bytes of data.
-  64 bytes from 192.168.1.21: icmp_seq=1 ttl=64 time=0.874 ms
-  64 bytes from 192.168.1.21: icmp_seq=2 ttl=64 time=0.996 ms
+  64 bytes from 192.168.1.21: icmp_seq=1 ttl=64 time=1.146 ms
+  64 bytes from 192.168.1.21: icmp_seq=2 ttl=64 time=1.357 ms
   
   --- 192.168.1.21 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.874/0.935/0.996/0.061 ms
+  rtt min/avg/max/mdev = 1.146/1.251/1.357/0.106 ms
 
 [292/366] l1 l1$ arp -a
   ? (192.168.1.13) at 02:00:00:00:00:57 [ether] on eth0
@@ -4362,7 +4356,7 @@ Total steps: 366
        Received 0 broadcasts (0 multicasts)
        0 runts, 0 giants, 0 throttles
        0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
-       17 packets output, 1244 bytes, 0 underruns
+       18 packets output, 1308 bytes, 0 underruns
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
 
@@ -4383,7 +4377,7 @@ Total steps: 366
        Received 0 broadcasts (0 multicasts)
        0 runts, 0 giants, 0 throttles
        0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
-       15 packets output, 1062 bytes, 0 underruns
+       16 packets output, 1126 bytes, 0 underruns
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
 
@@ -4404,7 +4398,7 @@ Total steps: 366
        Received 0 broadcasts (0 multicasts)
        0 runts, 0 giants, 0 throttles
        0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
-       12 packets output, 836 bytes, 0 underruns
+       13 packets output, 900 bytes, 0 underruns
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
 

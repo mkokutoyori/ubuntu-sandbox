@@ -12,90 +12,284 @@ Format : `[famille] intitulé` puis constat / mesure / raison du report.
 
 ## Commutateur Huawei (VRP)
 
-### [suppression] `multicast-suppression` / `unicast-suppression` absentes, `broadcast-suppression` décorative
-Les deux premières sont refusées ; la troisième est acceptée et rangée en
-TEXTE dans `ifCfg`, sans moteur de limitation derrière.
-**Mesure** : `broadcast-suppression 30` → rendu dans `display this`, aucun
-compteur, aucune trame écartée.
-**Report** : compléter la famille ajouterait deux décors. Il faut d'abord
-un vrai seau à jetons par port et par type de trafic (le `CarPolicer` du
-routeur en est un, mais il vit sur `Router`, que `Switch` n'étend pas).
+### [mac-limit] deux règles de PORTÉES différentes coexistent-elles ?
+Une règle est maintenant identifiée par sa portée : `mac-limit maximum 5
+vlan 10` puis `mac-limit maximum 8 vlan 10` remplacent bien, et deux VLAN
+différents gardent leurs deux règles. Reste la seule question que la
+mesure ne tranche pas : `mac-limit maximum 5` (sans qualificatif) et
+`mac-limit maximum 5 vlan 10` coexistent ici, parce qu'un qualificatif
+`vlan` désigne une autre portée — ce qui est un raisonnement, pas une
+mesure.
+**Mesure** : les pages `mac-limit (interface view)` de Huawei ne sont pas
+joignables depuis ce réseau (proxy) ; deux règles de portées différentes
+sur le même port sont plausibles et non attestées.
+**Report** : trancher demande le manuel ou une vraie machine. Le
+mécanisme, lui, est en place — la clé de réglage porte désormais ses
+qualificatifs —, donc fermer cette entrée ne sera qu'un choix de clé.
 
-### [mac-limit] deux lignes pour un seul réglage
-`mac-limit maximum 5` puis `mac-limit maximum 5 vlan 10` se rendent tous
-les deux, alors que VRP remplace le premier par le second.
-**Mesure** : les deux lignes apparaissent dans `display this`.
-**Report** : défaut général du magasin de texte par interface (`ifCfg`),
-qui empile au lieu de remplacer — il touche toute la vue interface, pas
-seulement `mac-limit`.
+### [mqc] `redirect` reste hors du comportement
+Le comportement sait `permit`, `deny`, `car`, `remark dscp|8021p` et
+`statistic enable` (compteurs par point d'application, rendus par
+`display traffic policy statistics`). Reste `redirect`.
+**Mesure** : `redirect interface GigabitEthernet0/0/2` sous
+`traffic behavior` répond `Unrecognized command`.
+**Report** : le chemin de données du commutateur décide de laisser passer
+ou de jeter — `handleFrame` n'a aucun point où réémettre une trame sur
+une autre interface depuis un filtre. Le brancher demande de séparer la
+décision de filtrage de la décision de commutation, ce qui touche le
+cœur de `handleFrame` et pas le MQC.
 
-### [qos car] policé sur un routeur VRP, texte sur un commutateur VRP
-`CarPolicer` est un vrai seau à jetons sur le chemin de données, mais il
-vit sur `Router` ; `Switch` ne l'étend pas.
-**Report** : demande de sortir `CarPolicer` du routeur vers une base
-partagée, ou de le monter sur `Switch` — travail d'architecture.
+### [mqc] l'opérateur `and`/`or` d'un classificateur n'est pas modélisé
+Plusieurs `if-match` dans un classificateur sont évalués en OU — le
+premier qui touche décide. VRP laisse choisir avec
+`traffic classifier NAME operator { and | or }`.
+**Mesure** : le mot-clé `operator` est refusé.
+**Report** : la valeur par DÉFAUT de VRP n'est pas attestée depuis ce
+réseau (pages Huawei bloquées par le proxy), et se tromper de défaut
+changerait le sens de tous les classificateurs à plusieurs règles. Le OU
+actuel est celui que le code appliquait déjà ; l'écrire sans mesure
+serait pire.
 
-### [vues système non mesurées]
-Familles repérées comme présentes mais jamais passées au banc :
-`dhcp enable`, `dhcp snooping enable`, `observe-port`, `traffic classifier`,
-`user-interface vty`, `info-center enable`, `ip route-static` sur un
-commutateur L3.
-**Report** : pas encore mesurées — à passer au banc avant d'affirmer quoi
-que ce soit.
+### [info-center] `display info-center` est refusée
+Le magasin existe (`InfoCenterConfig`), la famille de configuration est
+honorée et figure maintenant dans `display current-configuration` sur les
+deux plateformes — mais la vue qui la relit n'existe sur aucune des deux :
+`display info-center` répond `Unrecognized command`.
+**Report** : mesuré, non fermé — il manque une capture attestée du tableau
+que rend la vraie commande (état, canaux, destinations), et
+`info.support.huawei.com` est EGRESS_BLOCKED depuis cette session. Rendre
+un tableau inventé serait exactement le décor que ce dépôt passe son temps
+à défaire.
 
 ---
 
 ## Moteur L2 partagé (`Switch.ts`)
 
-### [stp] `display stp brief` liste les ports sans câble en `DISA LISTENING`
+### [stp] `display stp brief` liste-t-il les ports sans câble ?
 Un port administrativement actif mais sans lien apparaît dans le tableau
-avec un rôle et un état, ce qui noie les deux lignes utiles.
-**Mesure** : maquette à 25 ports, 23 lignes `DISA LISTENING`.
-**Report** : il faut d'abord vérifier sur une vraie machine si VRP les
-liste ou non — l'affirmer sans capture serait inventer.
+avec un rôle et un état (`DISA DISCARDING` depuis que le vocabulaire
+MSTP est respecté), ce qui noie les deux lignes utiles.
+**Mesure** : maquette à 12 ports, 10 lignes pour des ports sans câble.
+**Ce qui a été cherché** : le jeu de références `ntc-templates` ne porte
+AUCUNE capture STP pour Huawei VRP (vérifié dans
+`tests/huawei_vrp/`, qui n'a pas de répertoire `display_stp*`), et
+`support.huawei.com` comme `info.support.huawei.com` sont bloqués par le
+proxy de sortie.
+**Report** : trancher demande une transcription de vraie machine.
+Affirmer que VRP les masque — ou qu'il les liste — sans capture serait
+inventer, et l'état rendu est désormais correct dans les deux cas.
 
-### [stp] MSTI : la BPDU porte son instance en clair
-L'arbre commun (CIST) est désormais nommé sur la trame (`cist`), donc
-MSTP et PVST se rencontrent. Les MSTI, elles, portent toujours leur
-numéro d'instance : deux régions dont les tables VLAN→instance diffèrent
-échangeraient des BPDU sur des instances qui ne se correspondent pas.
-**Report** : à l'intérieur d'une région les tables sont identiques par
-définition, donc le cas ne se produit pas dans un laboratoire ; le fermer
-demande de propager le condensé de région et de ne plus échanger que le
-CIST entre régions.
+### [stp] les MSTI ne sont pas encore INONDEES par un pont de frontière
+Une région est désormais identifiée par son condensé (nom / révision /
+digest HMAC-MD5 de la table VLAN→instance), et un port qui entend une
+autre région écarte ses BPDU de MSTI en ne gardant que le CIST — la
+règle de l'IEEE 802.1Q §13.8. Ce qui reste : un vrai pont de frontière
+représente la région voisine tout entière comme un seul segment du CIST
+et propage l'information reçue vers ses propres MSTI ; ici les MSTI de
+part et d'autre s'ignorent simplement.
+**Mesure** : deux régions reliées convergent chacune de son côté ; le
+CIST traverse, les MSTI non.
+**Report** : la représentation d'une région comme segment du CIST demande
+le rôle de « Master Port » et le compte de sauts interne (`remainingHops`),
+que ce moteur ne porte pas — un chantier à part, et sans effet visible
+tant qu'un laboratoire n'a pas deux régions ET un chemin redondant entre
+elles.
 
 ---
 
 ## Commutateur Cisco
 
-### [stp] `spanning-tree mode mst` déplace l'arbre commun
-Passer de PVST (arbre commun = VLAN 1) à MST (CIST = instance 0) laisse
-l'ancienne instance convergée derrière et repart d'une instance vide.
-La règle 802.1D §8.6.9 ajoutée (réponse à une information inférieure) fait
-converger le voisin, donc le symptôme est refermé côté VRP.
-**Report** : le cas Cisco n'a pas été mesuré ; à passer au banc.
-
 ---
 
 ## Socle CLI
 
-### [socle] le commutateur VRP n'a pas encore de pont vers le socle
-Le pont existe pour le ROUTEUR VRP (`src/cli/vendors/vrp/`) ;
-`HuaweiSwitchShell` ne connaît toujours ni `CommandTable` ni
-`CommandSpec`.
-**Mesure** : aucune occurrence de `VrpSocle` dans ce fichier.
-**Report** : le commutateur a ses propres vues (`vlan`, `port-group`,
-`mst-region`, `traffic-*`) qui ne sont pas dans `HUAWEI_VRP_MODES` — il
-faut d'abord décrire cette hiérarchie, ce que le routeur n'exigeait pas.
+### [socle] deux familles sont migrées sur le commutateur VRP
+Le pont existe des DEUX côtés : `VRP_SWITCH_MODES` décrit la hiérarchie
+des treize vues du commutateur, et `HuaweiSwitchShell` consulte le socle
+avant son trie, comme le routeur. Deux familles l'empruntent (`mtu`,
+`clock timezone`) ; le reste du vocabulaire du commutateur — `vlan`,
+`port-group`, `traffic-*`, `mst-region` — vit toujours sur `CommandTrie`.
+**Report** : incrémental par construction, comme côté routeur.
 
-### [socle] une seule famille VRP est migrée
-Le pont est branché et exercé par la famille du client DHCP. Le reste du
-vocabulaire VRP — plusieurs centaines d'enregistrements — vit toujours
-sur `CommandTrie`.
+### [socle] trois familles VRP sont migrées sur le routeur
+Le pont est branché et exercé par la famille du client DHCP, celle des
+paramètres physiques d'interface (`mtu`, `bandwidth`) et celle de
+l'horloge (`clock timezone`). Le reste du vocabulaire VRP — plusieurs
+centaines d'enregistrements — vit toujours sur `CommandTrie`.
 **Report** : la migration est incrémentale par construction ; chaque
-famille reprise ferme une part de cette entrée.
+famille reprise ferme une part de cette entrée. Ce que la deuxième a
+appris : une famille ne vaut d'être migrée que si le socle lui APPORTE
+quelque chose — ici l'argument typé, qui a fermé cinq défauts d'un coup —
+et il faut RETIRER l'enregistrement du trie en même temps, sans quoi on
+laisse deux implémentations dont une morte.
 
 ## Pare-feu FortiGate
+
+### [vdom] `set vdom-mode split-vdom` est accepte et se comporte comme multi-vdom
+**Constat.** `vdom-mode` accepte trois valeurs. `no-vdom` et `multi-vdom`
+sont honorees ; `split-vdom` est range et se replie sur `multi-vdom` —
+`applyGlobalSettings` calcule `multiVdom: object.effective('vdom-mode')[0]
+!== 'no-vdom'`, donc la troisieme valeur n'a AUCUN mecanisme derriere
+elle. C'est la famille « accepte et inerte » que ce module referme
+partout ailleurs.
+
+**Mesure.** Le mode split-task d'un vrai FortiGate cree exactement DEUX
+VDOM, `root` (gestion) et `FG-traffic` (trafic), refuse d'en creer un
+troisieme, place toutes les interfaces dans `root` au depart, et
+interdit a `root` de traiter du trafic. Rien de tout cela n'existe ici :
+`config vdom` en cree autant qu'on veut et `root` route comme les
+autres.
+
+**Pourquoi ce n'est pas ferme.** Les deux corrections possibles — lui
+donner son mecanisme, ou le REFUSER en nommant la raison — dependent de
+la meme question, et les sources se contredisent : une source secondaire
+affirme que le mode split-task est retire depuis FortiOS 7.2.0 et
+remplace par un type de VDOM nomme `Admin`, tandis que la documentation
+Fortinet decrit encore deux modes de VDOM de 6.2 a 7.6. Le profil de ce
+depot annonce 7.6.3. Se tromper de sens ferait soit inventer un
+mecanisme que la vraie machine n'a plus, soit refuser une commande
+qu'elle accepte — les deux sont pires que l'etat actuel, qui est au
+moins honnete sur son perimetre. Trancher demande la page
+`split-task-vdom-mode` de la 7.6 ou une vraie machine ; les pages
+atteintes depuis ce reseau sont des sommaires de navigation.
+
+**Ferme en phase 19, et sans rapport avec la question ci-dessus** :
+`vdom-mode` est une commande CACHEE sur un vrai 7.4/7.6 — absente de
+`show`, de `show full` et de la liste du `?`. Elle l'est desormais ici
+aussi, tout en restant acceptee et honoree.
+
+### [vip] `set type dns-translation` est refuse faute de relais DNS de transit
+**Constat.** `config firewall vip` accepte trois types. `static-nat` et
+`fqdn` sont commis pour de bon (phases 15a/15b) ; `dns-translation` est
+REFUSE, en nommant ce qui manque, plutôt que laissé accepté et inerte.
+
+**Mesure.** Un VIP `dns-translation` de FortiOS observe les réponses DNS
+qui **traversent** le pare-feu : quand une réponse contient une adresse
+de `mappedip`, elle est réécrite vers une adresse libre de la plage
+`extip`, le mappage est retenu avec `dns-mapping-ttl`, et le DNAT
+s'applique ensuite quand le client compose l'adresse externe. Vérifié
+contre la documentation Fortinet, pas de mémoire.
+
+**Pourquoi ce n'est pas fermé.** Il manque UNE brique nommable : un
+relais applicatif (ALG) DNS sur le chemin de **transit**. Ce qui existe
+déjà et servira : `decodeDnsMessage`/`encodeDnsMessage`, que
+`ContentInspector` du pare-feu emploie déjà pour lire une question DNS ;
+`FirewallDnsClient` pour le côté client. Ce qui manque est le point
+d'accroche qui laisse RÉÉCRIRE un enregistrement A dans une réponse en
+transit puis la réémettre, plus la table de mappages dynamiques et son
+TTL. C'est un sujet à lui seul, pas une extension bornée du VIP, d'où le
+refus explicite en attendant.
+
+**Manquent aussi, de la même famille** : `dns-mapping-ttl` (attribut du
+type `dns-translation`, donc sans objet tant que le type est refusé) et
+le type `server-load-balance` (grappe de serveurs réels + moniteurs de
+santé), qui n'a aucune brique existante à réutiliser.
+
+### [debug] `diagnose debug flow show iprope` est refuse
+Les trois options de `show` sont desormais LUES (`function-name`, `console`,
+`iprope`) au lieu d'etre confondues, mais `iprope` est refuse en nommant ce
+qui manque : un vrai FortiGate ajoute a la trace les lignes de consultation
+de la table `iprope` (le mecanisme noyau de choix de politique), et ce
+simulateur n'en produit aucune.
+**Mesure** : `diagnose debug flow show iprope enable` rend `Command fail`
+avec la raison ; la trace de `diagnose debug enable` ne change pas.
+**Report** : ecrire ces lignes demanderait d'inventer un journal de
+consultation que le moteur de politiques ne tient pas. La politique retenue
+EST deja nommee dans la trace (`Allowed by Policy-2`), donc l'option
+n'apporterait qu'un texte fabrique.
+
+### [durcissement] `set reuse-password disable` est refuse
+Le reglage existe sur un vrai FortiGate et interdit de reprendre un ancien
+mot de passe.
+**Mesure** : la commande rend `Command fail` en nommant l'absence
+d'historique.
+**Report** : il faudrait garder les N derniers mots de passe de chaque
+compte — donc un magasin de secrets historises, ce qu'aucun equipement de
+ce depot ne fait aujourd'hui. `min-change-characters` est dans le meme cas
+et pour la meme raison (il compare au mot de passe PRECEDENT).
+
+### [durcissement] la banniere d'apres-connexion ne demande pas d'etre acceptee
+Un vrai FortiOS affiche la banniere `post_admin-disclaimer-text` puis
+demande de l'accepter, et refuse la session sans acceptation.
+**Mesure** : la banniere s'affiche, la session s'ouvre sans rien demander.
+**Report** : c'est un pas d'interaction de plus dans l'enchainement de
+connexion (`buildLoginSteps`), donc un branchement de refus a ecrire ; le
+tutoriel n'emprunte que la banniere d'avant-connexion.
+
+### [durcissement] `config system replacemsg` ne porte que le groupe `admin`
+Un vrai FortiGate en a une vingtaine (`auth`, `http`, `ftp`, `mail`,
+`spam`, `alertmail`, `sslvpn`, `nac-quar`, `traffic-quota`...).
+**Mesure** : `config system replacemsg auth ...` rend
+`unknown configuration path`.
+**Report** : les autres groupes decrivent des pages servies par des
+fonctions que ce pare-feu n'a pas toutes, et une table acceptee dont le
+texte n'est affiche nulle part serait le decor que ce depot passe son temps
+a defaire. Le groupe `admin` est ecrit parce que ses deux messages sont
+VRAIMENT affiches.
+
+### [rendu] `show <table singleton>` rend un bloc vide
+`show system global` sur une machine d'usine rend `config system global`
+suivi de `end`, sans une ligne entre les deux. La sauvegarde complete, elle,
+omet correctement la table vide.
+**Mesure** : `show system global` sur une machine neuve ; comparer avec
+`execute backup config`, qui ne porte pas la table.
+**Report** : deux rendus de la meme table decident differemment de ce
+qu'est une table vide. Les unifier est juste, mais toucher au rendu de
+`show` demande de verifier ce qu'un vrai FortiGate ecrit pour chaque
+singleton — la mesure n'est pas faite.
+
+### [journal] l'origine d'une modification est toujours `jsconsole`
+L'evenement de configuration porte `user` — le compte reellement
+authentifie, ce qui est ce que l'etape 7 du TP 22 enseigne — mais son champ
+`ui` est constant. Un vrai FortiOS y ecrit d'ou la modification vient :
+`GUI(10.5.63.254)`, `ssh(10.5.63.254)`, `jsconsole`, `fgfm`.
+**Mesure** : modifier un objet depuis la console et depuis une session SSH
+donne la meme ligne.
+**Report** : le shell ne sait pas par quelle porte il est atteint —
+`FortiShell` est construit une fois par equipement et les sessions
+distantes le partagent. Le porter demande la meme notion de session que le
+`terminal monitor` de Cisco a exigee, et vaut mieux fait une fois pour
+toutes les vues que par une devinette ici.
+
+### [journal] le seuil de remplissage du tampon memoire n'alerte pas
+`full-first-warning-threshold`, `full-second-warning-threshold` et
+`full-final-warning-threshold` sont acceptes, rendus, et lus par personne.
+Sur une vraie machine, franchir chacun ecrit un evenement.
+**Mesure** : `set max-size 400` puis produire du trafic — le tampon est
+borne pour de bon (les plus anciennes lignes tombent), mais aucun
+evenement n'annonce le franchissement.
+**Report** : le tampon compte desormais ses octets ET reserve vraiment sa
+RAM (phase 16 : `set max-size` deplace la memoire utilisee et peut a lui
+seul declencher le mode conserve), donc la matiere est la.
+Ce qui manque reste le message : la reference des journaux FortiOS ne
+porte qu'UN identifiant de cette famille, `22023`
+(`LOG_ID_MEM_LOG_FIRST_FULL`, « Memory log first full »), et rien en
+`22024`-`22026` qui corresponde a un deuxieme ou a un dernier
+avertissement — ces deux-la sont un mot de passe expire et deux
+evenements SSH. Donc la correspondance entre les TROIS seuils et les
+evenements emis n'est pas etablie : en ecrire trois inventerait deux
+identifiants, et rattacher `22023` au premier seuil suppose que
+« first full » veuille dire « 75 % » alors qu'il se lit plutot
+« plein pour la premiere fois ». Ce qui est sur et implementable seul :
+un evenement `0100022023` la premiere fois qu'un enregistrement est
+JETE faute de place — `droppedCount` le sait deja.
+
+### [pare-feu] les fragments recus ne sont pas REASSEMBLES
+Le pare-feu fait desormais respecter le MTU de son interface de sortie :
+DF pose et datagramme trop gros donne un ICMP Fragmentation Needed portant le
+MTU du saut suivant, DF absent donne de vrais fragments RFC 791. Ce qui reste
+ouvert est le sens INVERSE : un datagramme qui arrive deja fragmente n'est pas
+recolle. Les fragments suivant le premier ne portent pas d'en-tete de couche 4,
+donc leur cle de flux est batie sur des ports absents et la table de sessions
+ne les rattache a rien.
+**Mesure** : le premier fragment ouvre une session, les suivants en ouvrent
+chacun une autre — `diagnose sys session list` en compte plusieurs pour un seul
+datagramme.
+**Report** : `IPv4Reassembler` existe dans le socle (`core/Ipv4Fragmentation.ts`)
+et `Router.ts` s'en sert, donc c'est un branchement ; mais un pare-feu de
+TRANSIT ne reassemble pas par defaut sur un vrai FortiGate (il ne le fait que
+sous inspection UTM), donc le brancher demande d'abord de decider QUAND, et
+cette condition n'est modelisee nulle part.
 
 ### [ha] les adresses MAC VIRTUELLES du cluster n'existent pas
 FGCP donne a chaque interface du cluster une adresse MAC virtuelle, portee
@@ -152,91 +346,39 @@ interface a travers les politiques, les routes et les tables NAT est un
 mecanisme general (« qu'est-ce qui nomme cet objet ? ») qui depasse le
 SD-WAN et servirait a toutes les suppressions d'objet.
 
-### [sdwan] la route de la zone ne SUIT ni la sante ni un changement de membre
-`update-static-route` (active par defaut sur un vrai FortiGate) retire de la
-table la route d'un membre declare mort. Ici, la route statique nommant une
-zone SD-WAN est developpee en une route par membre AU MOMENT ou elle est
-ecrite : elle ne bouge plus ensuite, ni quand un membre tombe, ni quand on
-ajoute ou retire un membre de la zone.
-**Mesure** : couper le lien du membre 1 puis relire `get router info
-routing-table all` — la route par `port1` y est toujours, alors que
-`diagnose sys sdwan health-check` le declare `dead`.
-**Report** : sans consequence sur le TP 20, dont la bascule passe par la
-REGLE de service (branchee sur le pipeline, elle, et qui suit la mesure) ;
-la fermer demande de reinstaller les routes a chaque tour de sonde, donc de
-faire de la table de routage un consommateur de l'evenement de sante.
+### [sdwan] la zone ne suit pas un changement de MEMBRE
+La route d'une zone SD-WAN suit desormais la SANTE : `update-static-route`
+(actif par defaut, comme sur un vrai FortiGate) retire la route d'un membre
+declare mort et la rend quand il revient ; la session portee par ce membre
+est fermee, donc le flux suivant repart par le membre survivant. Ce qui reste
+ouvert est l'autre moitie de l'ancienne entree : ajouter ou retirer un membre
+de la zone APRES avoir ecrit la route ne redeveloppe rien.
+**Mesure** : declarer la route par la zone, puis ajouter un membre 3 — la
+table de routage n'en porte pas de route.
+**Report** : le chainon existe maintenant (`Firewall.installSdwanRoute` est
+rejoue a chaque transition de sante), il suffirait de le rejouer aussi au
+commit d'un membre. Ce n'est pas fait parce que l'ordre de commit des tables
+de `config system sdwan` n'est pas etabli : les membres et les routes
+statiques sont deux tables distinctes, et rejouer trop tot developperait une
+route sur une zone encore vide.
 
-### [sdwan] une session DEJA ouverte ne change pas de membre
-La regle de service choisit le membre a l'ouverture de la session. Une
-session en cours garde son interface de sortie meme si son membre cesse de
-respecter le contrat — seul un nouveau flux emprunte le nouveau membre.
-**Mesure** : `ping` vers une adresse, degrader le lien, `ping` vers LA MEME
-adresse : le trafic reste sur le premier membre ; vers une AUTRE adresse, il
-part par le second.
-**Report** : un vrai FortiGate reevalue les sessions affectees quand un SLA
-change d'etat. Le faire ici demande que la table de sessions soit un
-consommateur de l'evenement de sante — meme chainon manquant que l'entree
-precedente, et meme raison de ne pas l'improviser.
-
-### [ospf] les vues `get router info ospf database` et `... interface` n'existent pas
-Le pare-feu ne repond qu'a `get router info ospf neighbor` ; les deux autres
-vues que le tutoriel nomme dans le meme bloc de verification (§20.2) sont
-refusees. La matiere existe pourtant en entier depuis que la base se
-remplit vraiment : `getOspf().getLSDB()` porte les LSA de routeur, de reseau
-et externes, et `getInterface(nom)` porte l'etat, le DR, le BDR, le cout et
-les temporisateurs.
-**Mesure** : `get router info ospf database brief` rend `Command fail.
-Return code -61 / NOTE: unknown configuration path`, sur une machine dont la
-base contient au meme instant trois LSA.
-**Report** : ces deux vues appartiennent au TP 20 et non au TP 19, dont
-l'etape 4 lit `get router info routing-table ospf`. Le format a rendre est
-celui de zebra (`Link ID / ADV Router / Age / Seq# / CkSum`), qui n'est pas
-celui d'IOS — la base est partagee, le rendu ne l'est pas.
-
-### [ospf] un LSA de reseau PERIME n'est jamais retire
-RFC 2328 §12.4.2 : quand le dernier voisin pleinement adjacent disparait, le
-DR doit VIDER (`MaxAge`) le LSA de reseau qu'il a annonce. `OSPFEngine`
-n'a aucun mecanisme de vidange — `originateNetworkLSA` rend `null` quand il
-reste moins de deux routeurs attaches, et le LSA deja installe demeure
-jusqu'a son vieillissement naturel (3600 s).
-**Mesure** : couper le lien de transit laisse `2:<ip du DR>:<routeur>` dans
-la base des deux cotes ; seul le LSA de ROUTEUR est reannonce, et c'est lui
-qui fait disparaitre la route du calcul.
-**Report** : la consequence visible est nulle aujourd'hui — le SPF traverse
-un lien de transit par le LSA de routeur ET le LSA de reseau, donc la route
-tombe quand meme. Ecrire la vidange demande un `MaxAge` premature et sa
-propagation, qui n'existent nulle part dans ce moteur.
-
-### [linux] la commande `ipsec` (strongSwan) est une FACADE
-`ipsec up <conn>` rend `initiating IKE_SA <conn>[1] to 0.0.0.0` — la chaine
-`0.0.0.0` est litterale, quelle que soit la configuration —, `ipsec status`
-annonce toujours `0 up`, et `/etc/ipsec.conf` n'est lu par personne. Aucune
-negociation n'a lieu : un poste Linux n'a pas de moteur IPsec du tout, seuls
-`Router` et le pare-feu en construisent un. Le TP 18 monte donc son client
-teletravailleur avec un SECOND FortiGate, qui en porte un — ce qu'un vrai
-deploiement fait aussi (concentrateur a composition avec des FortiGate
-distants), mais ce n'est pas le client du tutoriel.
-**Mesure** : `ipsec up X` puis `ipsec status` sur un poste Linux ; rien ne
-change et aucune trame ne part.
-**Report** : il faut donner un moteur IPsec a `LinuxMachine` et un lecteur
-d'`ipsec.conf` par-dessus. `IPSecEngine` est ecrit contre un hote de forme
-ROUTEUR (`_getAccessListsInternal`, `getLocalIP`, `_getHostnameInternal`),
-donc il faut d'abord degager ce port etroit — c'est le vrai travail, et il
-sert aussi le TP 17 cote client.
-
-### [ipsec] la RESTRICTION des selecteurs n'est pas implementee
-RFC 7296 §2.9 laisse un repondeur RETRECIR les selecteurs proposes : si
-l'initiateur demande 10.0.0.0/8 et que le repondeur ne couvre que
-10.1.0.0/16, il repond avec le plus petit des deux et l'enfant s'etablit.
-Le depot n'accepte que le cas MIROIR exact — deux selecteurs identiques a
-l'envers — et refuse tout le reste par `TS_UNACCEPTABLE`.
-**Mesure** : deux phases 2 dont l'une est un sur-ensemble de l'autre
-donnent `selectors(total,up): 1/0` alors qu'une vraie machine monterait
-l'enfant sur l'intersection.
-**Report** : le retrecissement demande de calculer une intersection de
-prefixes et de la RENVOYER dans l'acceptation, donc de porter les
-selecteurs retenus jusqu'a l'initiateur ; le cas miroir est celui de tous
-les laboratoires site-a-site et il est desormais juste.
+### [linux] un poste Linux n'a pas de démon IKE
+La commande `ipsec` lit désormais vraiment `/etc/ipsec.conf` et
+`/etc/ipsec.secrets` — `statusall` rend les connexions du fichier, `up`
+nomme le vrai pair et refuse une connexion inexistante dans les mots de
+strongSwan —, mais aucune SA ne peut s'établir depuis un poste : seuls
+`Router` et le pare-feu construisent un `IPSecEngine`.
+**Mesure** : `ipsec up <conn>` refuse en nommant ce qui manque ; aucune
+trame ne part.
+**Report, et la premisse précédente était FAUSSE** : il ne reste pas à
+« dégager le port étroit », il existe (`IpsecHost`) et un hôte qui n'est
+pas un routeur le remplit déjà — `FirewallAgents.buildFirewallAgents`
+construit un objet conforme et le passe au moteur. Ce qui manque
+vraiment est ailleurs, et c'est plus gros : la réception des datagrammes
+IKE sur 500/4500 côté hôte, et surtout un point d'accroche ESP sur le
+trafic que la machine ÉMET elle-même — un routeur chiffre ce qu'il
+ACHEMINE (`forwardPacket`), un poste chiffrerait ce qu'il produit, et ce
+chemin-là n'a aucun crochet aujourd'hui.
 
 ### [ipsec] `diagnose debug application ike -1` ne trace rien
 L'etape 10 du TP 17 fait lire le journal IKE pour reconnaitre un echec de
@@ -340,6 +482,14 @@ UTC.
 (`set timezone ?`), et l'inventer donnerait 79 correspondances fausses —
 pire que l'aveu.
 
+### [execute] `ping6` absente, faute d'emetteur ICMPv6 sur le pare-feu
+`execute ping6 ::1` repond « unknown action ». Le refus tient a une
+brique manquante et non a la commande : le pare-feu n'a aucun emetteur
+ICMPv6 — `FirewallPing` construit un `IPv4Packet` et rien d'autre.
+**Mesure** : la commande tapee sur une machine neuve, refusee.
+**Report** : ecrire l'emetteur ICMPv6 est le sujet, et il sert aussi
+`execute traceroute6` et la surveillance SD-WAN en v6.
+
 ### [admin] pas d'interface d'administration HTTP/HTTPS
 `set allowaccess http https` est accepte, rendu, et gouverne bien le
 filtrage TCP (`ManagementPlane.admitsTcp` refuse le port), mais RIEN
@@ -354,31 +504,20 @@ sujet en soi et non une commande de plus.
 
 ## Serveurs DHCP
 
-### [dhcp] la sonde d'avant-offre est un ARP, la vraie est un ICMP
-Les trois serveurs sondent désormais l'adresse avant de l'offrir, mais
-par une requête ARP — alors qu'IOS, ISC et Windows envoient tous un ICMP
-Echo. La différence est observable : une machine qui répond à l'ARP mais
-laisse tomber l'ICMP (pare-feu local) est vue OCCUPÉE ici et LIBRE sur
-une vraie machine.
-**Mesure** : `addressAnswersOnLink` émet une requête ARP et relit la
-table ; aucun paquet ICMP ne part.
-**Report** : un aller-retour ICMP synchrone demande que le voisin soit
-déjà résolu — donc un ARP d'abord de toute façon —, et un hôte qui
-répond à l'ARP est présent, ce que la sonde cherche. Écrire l'ICMP par
-dessus n'ajouterait que le cas du pare-feu local, au prix d'un émetteur
-ICMP synchrone qui n'existe sur aucun des trois serveurs.
-
-### [dhcp] `ping-check` : la valeur PAR DÉFAUT d'ISC n'est pas attestée
-`ping-check` est lu, honoré, et vaut **faux** par défaut ici. Aucune
-source lisible depuis ce réseau ne dit ce que vaut le défaut d'ISC : le
-manuel de `dhcpd.conf` n'est pas joignable (proxy), et les deux réponses
-trouvées se contredisent — un article de la base de connaissances d'ISC
-laisse entendre que la 4.4 le fait par défaut, tandis que chaque guide
-d'administration écrit `ping-check true;` explicitement, ce qui suggère
-l'inverse.
-**Mesure** : `dhcpd.conf` livré par Debian ne contient pas la directive.
-**Report** : trancher demande le manuel ou une vraie machine ; le défaut
-retenu est écrit dans `docs/PRD-Manquements.md` §M6 plutôt que tu.
+### [dhcp] `utilization mark high|low` n'est pas configurable
+`show ip dhcp pool` rend la ligne
+`Utilization mark (high/low) : 100 / 0`. Les deux valeurs SONT celles
+d'IOS par defaut, mais elles sont constantes : la vue lisait
+`pool.highUtilizationMark`/`lowUtilizationMark`, deux proprietes qui
+n'existent sur aucun `DHCPPoolConfig`, donc les replis `?? 100` / `?? 0`
+etaient tout ce qui s'affichait. Elles sont desormais des constantes
+nommees, ce qui dit la verite au lieu de simuler une lecture.
+**Mesure** : `utilization mark high 80` sous `ip dhcp pool` est refuse, et
+aucun magasin ne porte le reglage.
+**Report** : la commande n'a d'interet qu'avec ce qu'elle declenche —
+`%DHCPD-4-HIGH_UTIL` et la notification SNMP associee —, donc l'accepter
+seule rangerait un seuil que rien ne franchit. C'est un lot avec son
+emetteur, pas un attribut de plus.
 
 ### [dhcp] Windows : le basculement et l'export restent absents
 `Get-DhcpServerv4Binding`, `Get-/Set-DhcpServerv4DnsSetting` sont
@@ -391,30 +530,183 @@ synchronisation entre les deux — un sujet en soi, pas une applet de plus.
 L'export/import est faisable (le VFS existe) mais suppose d'écrire le
 XML qu'un vrai Windows produit, et de le relire.
 
-### [dhcp] le client de ce simulateur ne sait pas faire SA propre mise à jour DNS
-Le serveur applique désormais la règle de la RFC 4702 (PTR toujours, A
-selon le drapeau S), mais le client pose toujours S=1 — « serveur, fais
-le A pour moi » — parce qu'il n'a aucun moyen de l'enregistrer lui-même.
-Un vrai client Windows pose S=0 et enregistre son A par une mise à jour
-dynamique DNS.
-**Mesure** : la branche S=0 du serveur n'est atteignable que par un
-client étranger fabriqué par la sonde ; aucune machine de ce dépôt ne
-l'emprunte.
-**Report** : demande un client de mise à jour dynamique (RFC 2136) côté
-hôte, que ce dépôt n'a nulle part — `PrimaryZoneAgent.applyUpdate`
-existe côté serveur, mais rien ne l'atteint par le fil.
+### [ddns] GSS-TSIG (Kerberos) n'est pas modélisé
+TSIG à clé partagée (RFC 8945) est écrit, signe et vérifie vraiment ; ce
+qu'un Windows appelle « Secure only » sur une zone intégrée à l'annuaire
+est GSS-TSIG, c'est-à-dire TSIG dont la clé vient d'une négociation
+Kerberos (TKEY). Ici, `Set-DnsServerPrimaryZone -DynamicUpdate Secure`
+exige une signature TSIG valide sous une clé déclarée par
+`Add-DnsServerTsigKey` — même mécanisme de signature, source de clé
+différente.
+**Mesure** : aucun échange TKEY n'existe dans le dépôt, et
+`Add-DnsServerTsigKey` n'a pas d'équivalent sur une vraie machine
+Windows (c'est la forme BIND du même besoin).
+**Report** : GSS-TSIG demande Kerberos — TGT, ticket de service pour
+`DNS/<serveur>`, jeton GSS-API —, un sujet à lui seul. Le choix fait ici
+est écrit plutôt que tu : la sécurisation est RÉELLE et vérifiable, sa
+distribution de clé ne l'est pas.
+
+## Bus d'evenements
+
+### [nhrp] `debug nhrp` n'a toujours pas d'emetteur, faute de transcription
+`NhrpDomainEvent` est desormais dans l'union `DomainEvent`, donc un
+abonnement compile — c'etait le blocage que
+`cisco-debug-no-empty-promise.test.ts` nommait. Ce qui manque est la mise
+en forme : `RouterDebugService` accepte la categorie `ip.nhrp` et
+n'ecrit aucune ligne.
+**Mesure** : `debug nhrp` est accepte et ne produit rien ; les quatre
+sujets `nhrp.*` sont publies par `NhrpEngine`.
+**Report** : les lignes de `debug nhrp packet`/`cache` d'un vrai IOS ne
+sont attestees par aucune source joignable depuis ce reseau (les pages
+Cisco sont bloquees, `ntc-templates` ne porte aucune capture NHRP, et la
+recherche de code GitHub est hors perimetre de cette session). Ecrire un
+format de memoire donnerait une sortie que la vraie machine ne rend pas.
+
+### [vtp] un `join` part avec un condense de mot de passe VIDE
+`VtpFrame.passwordHash` est desormais declare — il etait ecrit et LU
+(c'est le controle MD5 du domaine) sans figurer dans le type. En le
+declarant, un ecart apparait : `sendJoin()` pose `passwordHash: ''` alors
+que le recepteur compare ce champ a `hashPassword(...)` pour TOUTE trame
+recue, donc dans un domaine protege par mot de passe un `join` d'elagage
+est rejete en `password-mismatch`.
+**Mesure** : lecture des trois sites de construction ; seuls le sommaire
+et le sous-ensemble calculent le condense.
+**Report** : trancher demande de savoir si une vraie trame VTP Join porte
+le condense. Le dissecteur `packet-vtp.c` et `vtp_generate_md5()` de
+Yersinia decrivent le SOMMAIRE ; ni l'un ni l'autre ne dit ce que porte un
+Join. Poser le condense « par symetrie » ou exempter le Join du controle
+sont deux inventions opposees, aussi peu attestees l'une que l'autre.
 
 ## Outillage
 
-### [typecheck] 347 erreurs de type au compteur
-`npm run typecheck` (ajouté) en compte 347, presque toutes dans les
-tests : arguments de `DeviceType` passés à l'envers, `MACAddress` là où
-un nombre est attendu, signatures de constructeur périmées.
+### [e2e] la PREMIÈRE navigation d'une exécution à froid dépasse le délai
+Mesuré : `npx playwright test <n'importe quel spec>` sur un serveur de
+développement non démarré fait échouer le PREMIER test sur
+`page.goto('/')` — 30 s dépassées —, et tous les suivants passent. Vérifié
+par `--repeat-each=2` sur un seul cas : la première exécution tombe, la
+seconde passe. Ce n'est donc pas le spec mais l'amorçage de Vite.
+**Report** : le délai est global (`playwright.config.ts` : `timeout` du
+test et `timeout` du serveur, 30 s chacun), donc le corriger touche un
+fichier partagé et toute la suite ; le relever dans un seul spec
+soignerait le symptôme à un endroit alors que tous y sont exposés. À
+trancher avec l'autre agent, qui exécute la même suite.
+
+### [typecheck] 229 erreurs de type au compteur
+`npm run typecheck` en compte 229, contre 341 avant la passe de cette
+session. Les erreurs des fichiers de PRODUCTION ont presque toutes été
+fermées, et chacune disait quelque chose : quatre déclarations d'une même
+entrée ARP, quatre sujets de bus publiés et indéclarables, un `Send-
+MailMessage -Credential` qui ne s'authentifiait jamais, un bloc mort
+recopié dans trois adaptateurs de shell, plusieurs contrats décrivant
+moins que ce qui les traverse. Le reste est presque entièrement dans les
+tests : arguments de `DeviceType` passés à l'envers, `MACAddress` là où un
+nombre est attendu, signatures de constructeur périmées.
 **Mesure** : `npm run typecheck 2>&1 | grep -c "error TS"`.
-**Report** : dette réelle mais indépendante ; la règle en vigueur est
-« pas plus qu'avant ta modification », pas « zéro ».
+**Report** : dette réelle mais indépendante ; la règle en vigueur reste
+« pas plus qu'avant ta modification », pas « zéro ». Ce qui est acquis,
+c'est que lire ces erreurs plutôt que les faire taire trouve de vrais
+défauts — la méthode vaut d'être reprise sur le reliquat.
 
 ## Journal des entrées fermées
+
+- Sonde d'avant-offre DHCP en ICMP — fermee, et la premisse du report
+  etait fausse une fois de plus : « un emetteur ICMP synchrone qui
+  n'existe sur aucun des trois serveurs ». La livraison de trames est
+  SYNCHRONE dans ce simulateur — le pare-feu le prouvait deja avec
+  `FirewallPing.step()` — donc un abonnement pose juste avant l'envoi
+  voit la reponse revenir pendant l'appel. Le cas qui distingue les deux
+  sondes est atteignable : `iptables -A INPUT -p icmp -j DROP` sur un
+  hote qui repond a l'ARP, et il est desormais eprouve par test.
+
+- Vocabulaire d'états de `display stp brief` — ferme (l'entree ci-dessus
+  ne porte plus que la question du LISTAGE). La table melangeait DEUX
+  vocabulaires dans la meme vue : `DISCARDING` pour le lien redondant et
+  `LISTENING` pour les ports sans cable. Atteste chez Huawei : RSTP et
+  MSTP n'ont que trois etats — Discarding, Learning, Forwarding — les
+  Listening et Blocking de 802.1D y ayant ete FONDUS dans Discarding.
+
+- `spanning-tree mode mst` cote Cisco — passe au banc, et la premisse de
+  l'entree etait FAUSSE : l'arbre ne repart pas d'une instance vide, il
+  reste convergé (le voisin bloque toujours son second lien) et la
+  priorite passe correctement de 32769 a 32768 en perdant l'extension de
+  VLAN. Le vrai defaut etait ailleurs et n'avait pas ete vu :
+  `show spanning-tree` ne suivait PAS le mode — il annoncait
+  `VLAN0001 / protocol ieee` sur une machine en MST, pendant que
+  `show spanning-tree mst` rendait `MST0` au meme instant. Ferme avec
+  deux ecarts voisins mesures sur la capture `ntc-templates` : le bloc
+  `Bridge ID`/`Hello Time`/`Aging Time` manquait entierement, et le
+  tableau des ports etait a des largeurs inventees.
+
+- `broadcast-suppression` decorative et `qos car` texte sur un
+  commutateur VRP — les DEUX fermees, et la mesure a montre que le report
+  reposait sur une premisse fausse : `CarPolicer` n'avait AUCUNE
+  dependance a `Router`, il vivait seulement dans son dossier. Le
+  « travail d'architecture » annonce etait un deplacement de fichier.
+  `multicast-suppression` et `unicast-suppression` existent avec, la
+  famille etant desormais construite par une boucle sur les trois genres
+  de trafic plutot que mot a mot.
+
+- Table de routage montree contre table reelle — fermee, et le defaut
+  touchait TOUT hote et non le seul pare-feu. Mesure sur un PC Linux :
+  apres `ip addr add 192.168.10.10/24 dev eth0`, `ip route` montre la
+  route connectee et `observables.routes` est VIDE, `routeCount` a 0 —
+  donc le panneau annonce « ROUTING TABLE (empty) » pour une machine qui
+  a une route. `configureInterface`, le chemin le plus courant, poussait
+  la route sans l'annoncer, comme six autres points de mutation sur
+  dix-sept. Referme par la STRUCTURE plutot qu'au cas par cas : le champ
+  devient un accesseur (toute reaffectation rafraichit) et les sept
+  `push` passent par `addRouteEntry`, donc le dix-huitieme point de
+  mutation ne pourra pas etre oublie.
+
+- Panneau « Live state » d'un pare-feu — ferme. Mesure au navigateur :
+  ARP, routes, TCP, compteurs, TOUTES les sections rendaient « (empty) »
+  pour un FortiGate qui portait au meme instant une interface adressee,
+  une entree ARP pour le voisin qu'il venait de pinguer et une vraie
+  pile TCP ; le PC Linux a cote montrait les siennes. Le panneau
+  n'etait pas casse — le pare-feu n'exposait aucun `observables`, que
+  `resolveObservables` lit par canard.
+
+- `execute backup config` / `restore config` / `factoryreset` — fermees.
+  Les trois briques existaient sans porte : le client TFTP (`put` ET
+  `get`), `renderWholeConfig`, et la boucle qui rejoue une configuration.
+  Deux choses ne s'inventent pas et sont ecrites en test : une
+  restauration REMET A ZERO avant de rejouer, sinon elle superpose ; et
+  une remise a zero doit rejouer les DEFAUTS, les effets d'une
+  configuration vivant sur l'equipement et pas dans l'arbre.
+
+- `diagnose sniffer packet` au fil de l'eau — fermee. Dans un terminal il
+  ecrit paquet par paquet et Ctrl+C l'arrete ; et il capture A PARTIR DE
+  MAINTENANT au lieu de rejouer le tampon, ce qui est la difference qui
+  rend la commande utilisable. Hors terminal il garde son texte d'un
+  bloc, un script n'ayant personne pour provoquer le trafic pendant
+  qu'il attend.
+
+- `execute traceroute` du FortiGate — fermee, et le defaut etait plus
+  profond que « la vue est fausse » : la commande n'avait JAMAIS trouve
+  quoi que ce soit. `buildEchoRequest` calcule la somme de controle IPv4
+  avec un TTL de 64 et le traceroute la reposait ensuite par
+  `{ ...request, ttl }`, donc chaque sonde etait jetee comme corrompue
+  par le premier equipement qui verifie l'en-tete. La meme machine au
+  meme instant repondait au `ping`.
+- `execute ssh` / `execute telnet` du FortiGate — fermees ; branchees sur
+  la machinerie de client que le socle portait deja pour IOS et VRP.
+
+- Console FortiGate : `exit` ne sortait pas, la console ne se reglait pas
+  — fermee. `exit`/`quit` etaient REFUSES (« unknown command ») alors que
+  la porte d'entree venait d'etre posee ; `config system console`
+  n'existait pas, donc le pager `--More--` etait inevitable ; `execute
+  reboot`/`shutdown` n'existaient pas. Mesure corrigee en chemin :
+  l'historique (fleches) et l'edition de ligne (Ctrl-U/W) etaient crus
+  absents et fonctionnaient — c'est le pager qui avalait les touches.
+
+- Console FortiGate : login au demarrage et mot de passe force — fermee.
+  La mesure a trouve plus large que l'entree : `authenticateAdmin`
+  comparait `secrets.get(name) === password`, donc un compte sans entree
+  de secret n'acceptait AUCUN mot de passe, pas meme le vide — le compte
+  d'usine `admin` etait inauthentifiable par construction. Le forcage
+  repose sur le mot de passe VIDE et non sur un drapeau de premier
+  demarrage, donc `set password` le fait cesser et le vide le fait
+  revenir. Verrouillage apres N essais laisse ouvert ci-dessus.
 
 - Base OSPF du pare-feu — fermée, et la mesure d'origine était FAUSSE : la
   base n'était pas vide (elle portait les deux LSA de routeur), il y

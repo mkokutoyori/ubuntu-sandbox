@@ -42,6 +42,8 @@ import {
 
 /** Default pending offer timeout from centralized constants */
 const PENDING_OFFER_TIMEOUT_MS = DHCP_CONSTANTS.PENDING_OFFER_TIMEOUT_MS;
+const IOS_UTILIZATION_MARK_HIGH = 100;
+const IOS_UTILIZATION_MARK_LOW = 0;
 
 /** Default conflict TTL: infinite (0 = never expire) */
 const DEFAULT_CONFLICT_TTL = 0;
@@ -649,8 +651,7 @@ export class DHCPServer implements IProtocolEngine {
     this.debugPacket('BOOTREQUEST', { xid: dbgXid, chaddr: formatChaddr(dbgMac), ciaddr: dbgReq });
     const dbgAck = this.processRequestInternal(paramsOrMAC, legacyRequestedIP);
     if (dbgAck) {
-      this.debugEvent(`DHCPACK sent to client ${formatChaddr(dbgMac)} for ${dbgAck.ip}`);
-      this.debugPacket('BOOTREPLY', { xid: dbgAck.xid, chaddr: formatChaddr(dbgMac), yiaddr: dbgAck.ip });
+      this.traceAck(dbgMac, dbgAck.xid, dbgAck.binding?.ipAddress ?? dbgReq);
     } else {
       this.debugEvent(`DHCPNAK sent to client ${formatChaddr(dbgMac)}`);
     }
@@ -753,6 +754,12 @@ export class DHCPServer implements IProtocolEngine {
    * Unlike processRequest(), this returns a typed result indicating
    * whether the response is ACK or NAK, rather than using null for NAK.
    */
+  private traceAck(mac: string, xid: number, ip: string | undefined): void {
+    const adresse = ip ?? '0.0.0.0';
+    this.debugEvent(`DHCPACK sent to client ${formatChaddr(mac)} for ${adresse}`);
+    this.debugPacket('BOOTREPLY', { xid, chaddr: formatChaddr(mac), yiaddr: adresse });
+  }
+
   processRequestWithNak(paramsOrMAC: DHCPRequestParams | string, legacyRequestedIP?: string): DHCPRequestWithNakResult | null {
     const dbgMac = typeof paramsOrMAC === 'string' ? paramsOrMAC : paramsOrMAC.clientMAC;
     const dbgXid = typeof paramsOrMAC === 'string' ? 0 : paramsOrMAC.xid;
@@ -761,9 +768,7 @@ export class DHCPServer implements IProtocolEngine {
     this.debugPacket('BOOTREQUEST', { xid: dbgXid, chaddr: formatChaddr(dbgMac), ciaddr: dbgReq });
     const dbgRes = this.processRequestWithNakInternal(paramsOrMAC, legacyRequestedIP);
     if (dbgRes && dbgRes.type === 'ACK') {
-      const dbgIp = dbgRes.binding?.ipAddress ?? dbgReq ?? '0.0.0.0';
-      this.debugEvent(`DHCPACK sent to client ${formatChaddr(dbgMac)} for ${dbgIp}`);
-      this.debugPacket('BOOTREPLY', { xid: dbgRes.xid, chaddr: formatChaddr(dbgMac), yiaddr: dbgIp });
+      this.traceAck(dbgMac, dbgRes.xid, dbgRes.binding?.ipAddress ?? dbgReq);
     } else if (dbgRes && dbgRes.type === 'NAK') {
       this.debugEvent(`DHCPNAK sent to client ${formatChaddr(dbgMac)}`);
       this.debugPacket('BOOTREPLY', { xid: dbgRes.xid, chaddr: formatChaddr(dbgMac) });
@@ -1232,7 +1237,7 @@ export class DHCPServer implements IProtocolEngine {
 
     const lines = [
       `Pool ${pool.name} :`,
-      ` Utilization mark (high/low)    : ${pool.highUtilizationMark ?? 100} / ${pool.lowUtilizationMark ?? 0}`,
+      ` Utilization mark (high/low)    : ${IOS_UTILIZATION_MARK_HIGH} / ${IOS_UTILIZATION_MARK_LOW}`,
       ` Subnet size (first/next)       : 0 / 0`,
       ` Total addresses                : ${total}`,
       ` Leased addresses               : ${loues}`,

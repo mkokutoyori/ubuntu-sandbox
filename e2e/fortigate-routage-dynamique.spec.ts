@@ -1,4 +1,5 @@
 import { test, expect, type Page } from '@playwright/test';
+import { fortiConsoleLogin } from './fortiConsole';
 
 async function waitForStore(page: Page): Promise<void> {
   await page.waitForFunction(() => !!(window as Record<string, unknown>).__networkStore, { timeout: 15_000 });
@@ -7,6 +8,7 @@ async function waitForStore(page: Page): Promise<void> {
 async function openTerminal(page: Page, id: string): Promise<void> {
   await page.locator(`[data-device-id="${id}"]`).first().dblclick({ timeout: 8_000 });
   await page.locator('[data-testid="terminal-modal"]').waitFor({ state: 'visible', timeout: 10_000 });
+  await fortiConsoleLogin(page);
   await page.waitForTimeout(1500);
 }
 
@@ -119,14 +121,15 @@ test.describe('FortiGate — routage dynamique dans le terminal', () => {
     await waitForText(page, '192.168.1.0/24 is directly connected, port1');
   });
 
-  test('`config router bgp` est refuse et la note dit quelle brique manque', async ({ page }) => {
+  test('`config router bgp` est accepte et l`invite descend', async ({ page }) => {
     test.setTimeout(120_000);
     const id = await poserFortiGate(page);
     await openTerminal(page, id);
 
     await typeCmd(page, 'config router bgp');
+    await waitForText(page, '(bgp) #');
 
-    await waitForText(page, 'Command fail');
-    await waitForText(page, 'NOTE:');
+    const vu = await modalText(page);
+    expect(vu).not.toContain('Command fail');
   });
 });

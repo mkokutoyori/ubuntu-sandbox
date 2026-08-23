@@ -19,6 +19,8 @@
 import { WindowsPC } from './WindowsPC';
 import { RoleManager } from './windows/server/RoleManager';
 import { DirectoryStore } from './windows/server/ad/DirectoryStore';
+import { AD_NULL_GUID } from './windows/server/ad/AdTypes';
+import type { SharePermission } from './windows/server/smb/SmbTypes';
 import { WindowsDnsServerRole } from './windows/server/dns/WindowsDnsServerRole';
 import { WindowsDhcpServerRole } from './windows/server/dhcp/WindowsDhcpServerRole';
 import { WindowsNpsRole } from './windows/server/nps/WindowsNpsRole';
@@ -541,7 +543,12 @@ export class WindowsServer extends WindowsPC {
       return { ok: false, message: `${cmdletName} : The permission entry '${trusteeSam}: ${rights}' already exists on object "${identity}".` };
     }
     this.directoryStore.setAcl(targetUser.dn, [
-      ...existing, { identitySam: trusteeSam, rights, accessControlType: 'Allow', objectType: 'Mailbox', inheritanceType: 'None' },
+      ...existing,
+      {
+        identitySam: trusteeSam, rights, accessControlType: 'Allow',
+        objectType: 'Mailbox', inheritanceType: 'None',
+        inheritedObjectType: AD_NULL_GUID,
+      },
     ]);
     return { ok: true, message: '' };
   }
@@ -1436,7 +1443,7 @@ export class WindowsServer extends WindowsPC {
     const path = `C:\\Windows\\SYSVOL\\sysvol\\${domainName}`;
     const scriptsPath = `${path}\\SCRIPTS`;
     this.getFileSystem().mkdirp(scriptsPath);
-    const permissions = new Map([['Everyone', 'Read'], ['Domain Admins', 'Full']]);
+    const permissions = new Map<string, SharePermission>([['Everyone', 'Read'], ['Domain Admins', 'Full']]);
     this.smbShares.add('SYSVOL', path, { description: 'Logon server share', permissions });
     this.smbShares.add('NETLOGON', scriptsPath, { description: 'Logon server share', permissions });
   }

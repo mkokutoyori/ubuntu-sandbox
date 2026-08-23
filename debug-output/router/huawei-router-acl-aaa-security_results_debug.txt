@@ -1,6 +1,6 @@
 ============================================================
 Router (L3) debug transcript — huawei-router-acl-aaa-security
-Generated: 2026-08-19T07:03:22.166Z
+Generated: 2026-08-23T10:19:53.095Z
 Topology: R1(Huawei) GE0/0/1=L1 LAN 192.168.1.0/24, GE0/0/0=WAN 10.0.0.0/30; R2(Huawei) GE0/0/1=W1 LAN 192.168.2.0/24, GE0/0/0=WAN
 focus=VRP ACL(basic/adv/named)/AAA/SSH-hardening/attack-defense
 Total steps: 274
@@ -345,8 +345,7 @@ Total steps: 274
 <empty>
 
 [85/274] r1 <R1> display time-range all
-   Name: BUSINESS, spec: time-range BUSINESS 08:00 to 18:00 working-day
-   Name: OFF, spec: time-range OFF 00:00 to 23:59 off-day
+  No time-range configured.
 
 [86/274] r1 <R1> display traffic-filter applied-record
    Interface          Direction  ACL
@@ -616,10 +615,13 @@ Total steps: 274
 <empty>
 
 [164/274] r1 [R1-GigabitEthernet0/0/1] ip urpf strict
-<empty>
+  Error: This simulator performs no reverse-path check on a received packet, so this command would be stored without effect.
+  ip urpf strict
 
 [165/274] r1 [R1-GigabitEthernet0/0/1] undo ip urpf
-<empty>
+  Error: Ambiguous command found at '^' position.
+  undo ip urpf
+       ^
 
 [166/274] r1 [R1-GigabitEthernet0/0/1] quit
 <empty>
@@ -663,19 +665,8 @@ Total steps: 274
   #
   dns resolve
   #
-  interface GigabitEthernet0/0/0
-   shutdown
-  #
-  interface GigabitEthernet0/0/1
-   ip address 10.0.0.1 255.255.255.252
-   traffic-filter inbound acl 3000
-   traffic-filter outbound acl 2000
-  #
-  interface GigabitEthernet0/0/2
-   shutdown
-  #
-  interface GigabitEthernet0/0/3
-   shutdown
+  time-range BUSINESS 08:00 to 18:00 working-day
+  time-range OFF 00:00 to 23:59 off-day
   #
   acl number 2000
    step 10
@@ -737,7 +728,21 @@ Total steps: 274
    rule 10 deny ip
   #
   acl number 3001
-   rule 5 permit ip
+   rule 5 permit ip time-range BUSINESS
+  #
+  interface GigabitEthernet0/0/0
+   shutdown
+  #
+  interface GigabitEthernet0/0/1
+   ip address 10.0.0.1 255.255.255.252
+   traffic-filter inbound acl 3000
+   traffic-filter outbound acl 2000
+  #
+  interface GigabitEthernet0/0/2
+   shutdown
+  #
+  interface GigabitEthernet0/0/3
+   shutdown
   #
   user-interface vty 0 4
    authentication-mode aaa
@@ -956,7 +961,7 @@ Total steps: 274
    rule 10 deny ip
   Advanced ACL 3001, 1 rule(s)
   ACL's step is 5
-   rule 5 permit ip
+   rule 5 permit ip time-range BUSINESS
   Total 5 ACL(s)
 
 [193/274] r1 <R1> display dhcp server statistics
@@ -1011,14 +1016,14 @@ Total steps: 274
   Root delay: 0.00 ms
   Root dispersion: 16000.00 ms
   Peer dispersion: 16000.00 ms
-  Reference time: 07:03:22.259  Aug 19 2026(EE2FD3BA.424DD2F1)
+  Reference time: 10:19:53.184  Aug 23 2026(EE3547C9.2F1A9FBE)
 
 [204/274] r1 <R1> display ntp session
   Info: No NTP session exists.
 
 [205/274] r1 <R1> display clock
-  2026-08-19 07:03:22
-  Wednesday
+  2026-08-23 10:19:53
+  Sunday
   Time Zone(UTC) : UTC
 
 [206/274] r1 <R1> display lldp neighbor
@@ -1030,13 +1035,13 @@ Total steps: 274
 [208/274] r1 <R1> display cpu-usage
   CPU Usage Stat. Cycle: 60 (Second)
   CPU Usage            : 11% Max: 38%
-  CPU Usage Stat. Time : 2026-08-19 07:03:22
+  CPU Usage Stat. Time : 2026-08-23 10:19:53
   CPU utilization for five seconds: 11%: one minute: 12%: five minutes: 10%
   
   Max CPU Usage Stat. Time : 0000-00-00 00:00:00.
 
 [209/274] r1 <R1> display memory-usage
-  Memory utilization statistics at 2026-08-19 07:03:22
+  Memory utilization statistics at 2026-08-23 10:19:53
   System Total Memory Is: 536870912 bytes
   Total Memory Used Is: 193273528 bytes
   Memory Using Percentage Is: 36%
@@ -1077,10 +1082,10 @@ Total steps: 274
   Dropped messages : 0
   Overwritten messages : 0
   Current messages : 4
-  2026-08-19 07:03:22 %01LINK/3/ERRORS: Interface GE0/0/1, changed state to up
-  2026-08-19 07:03:22 %01LINEPROTO/5/NOTIFICATIONS: Line protocol on Interface GE0/0/1, changed state to up
-  2026-08-19 07:03:22 %01LINK/3/ERRORS: Interface GE0/0/0, changed state to up
-  2026-08-19 07:03:22 %01LINEPROTO/5/NOTIFICATIONS: Line protocol on Interface GE0/0/0, changed state to up
+  2026-08-23 10:19:53 %01LINK/3/ERRORS: Interface GE0/0/1, changed state to up
+  2026-08-23 10:19:53 %01LINEPROTO/5/NOTIFICATIONS: Line protocol on Interface GE0/0/1, changed state to up
+  2026-08-23 10:19:53 %01LINK/3/ERRORS: Interface GE0/0/0, changed state to up
+  2026-08-23 10:19:53 %01LINEPROTO/5/NOTIFICATIONS: Line protocol on Interface GE0/0/0, changed state to up
 
 [214/274] r1 <R1> display trapbuffer
   Trapping buffer configuration and contents: enabled
@@ -1161,19 +1166,8 @@ Total steps: 274
   #
   dns resolve
   #
-  interface GigabitEthernet0/0/0
-   shutdown
-  #
-  interface GigabitEthernet0/0/1
-   ip address 10.0.0.1 255.255.255.252
-   traffic-filter inbound acl 3000
-   traffic-filter outbound acl 2000
-  #
-  interface GigabitEthernet0/0/2
-   shutdown
-  #
-  interface GigabitEthernet0/0/3
-   shutdown
+  time-range BUSINESS 08:00 to 18:00 working-day
+  time-range OFF 00:00 to 23:59 off-day
   #
   acl number 2000
    step 10
@@ -1235,7 +1229,21 @@ Total steps: 274
    rule 10 deny ip
   #
   acl number 3001
-   rule 5 permit ip
+   rule 5 permit ip time-range BUSINESS
+  #
+  interface GigabitEthernet0/0/0
+   shutdown
+  #
+  interface GigabitEthernet0/0/1
+   ip address 10.0.0.1 255.255.255.252
+   traffic-filter inbound acl 3000
+   traffic-filter outbound acl 2000
+  #
+  interface GigabitEthernet0/0/2
+   shutdown
+  #
+  interface GigabitEthernet0/0/3
+   shutdown
   #
   user-interface vty 0 4
    authentication-mode aaa
@@ -1355,68 +1363,6 @@ Total steps: 274
   interface GigabitEthernet0/0/3
    shutdown
   #
-  acl number 2000
-   step 10
-   rule 5 permit source 192.168.1.0 0.0.0.255
-   rule 10 permit source 192.168.2.0 0.0.0.255
-   rule 15 permit source 192.168.3.0 0.0.0.255
-   rule 20 permit source 192.168.4.0 0.0.0.255
-   rule 25 permit source 192.168.5.0 0.0.0.255
-   rule 30 permit source 192.168.6.0 0.0.0.255
-   rule 35 permit source 192.168.7.0 0.0.0.255
-   rule 40 permit source 192.168.8.0 0.0.0.255
-   rule 45 permit source 192.168.9.0 0.0.0.255
-   rule 50 permit source 192.168.10.0 0.0.0.255
-   rule 55 permit source 192.168.11.0 0.0.0.255
-   rule 60 permit source 192.168.12.0 0.0.0.255
-   rule 65 permit source 192.168.13.0 0.0.0.255
-   rule 70 permit source 192.168.14.0 0.0.0.255
-   rule 75 permit source 192.168.15.0 0.0.0.255
-   rule 80 permit source 192.168.16.0 0.0.0.255
-   rule 85 permit source 192.168.17.0 0.0.0.255
-   rule 90 permit source 192.168.18.0 0.0.0.255
-   rule 95 permit source 192.168.19.0 0.0.0.255
-   rule 100 permit source 192.168.20.0 0.0.0.255
-   rule 1000 deny
-  #
-  acl number 2001
-   rule 5 permit source 10.0.0.0 0.0.0.255
-  #
-  acl number 3000
-   rule 5 permit tcp source 192.168.1.0 0.0.0.255 destination-port eq 81
-   rule 6 permit udp destination 10.0.0.1 0.0.0.0 destination-port eq 53
-   rule 10 permit tcp source 192.168.2.0 0.0.0.255 destination-port eq 82
-   rule 11 permit udp destination 10.0.0.2 0.0.0.0 destination-port eq 53
-   rule 15 permit tcp source 192.168.3.0 0.0.0.255 destination-port eq 83
-   rule 16 permit udp destination 10.0.0.3 0.0.0.0 destination-port eq 53
-   rule 20 permit tcp source 192.168.4.0 0.0.0.255 destination-port eq 84
-   rule 21 permit udp destination 10.0.0.4 0.0.0.0 destination-port eq 53
-   rule 25 permit tcp source 192.168.5.0 0.0.0.255 destination-port eq 85
-   rule 26 permit udp destination 10.0.0.5 0.0.0.0 destination-port eq 53
-   rule 30 permit tcp source 192.168.6.0 0.0.0.255 destination-port eq 86
-   rule 31 permit udp destination 10.0.0.6 0.0.0.0 destination-port eq 53
-   rule 35 permit tcp source 192.168.7.0 0.0.0.255 destination-port eq 87
-   rule 36 permit udp destination 10.0.0.7 0.0.0.0 destination-port eq 53
-   rule 40 permit tcp source 192.168.8.0 0.0.0.255 destination-port eq 88
-   rule 41 permit udp destination 10.0.0.8 0.0.0.0 destination-port eq 53
-   rule 45 permit tcp source 192.168.9.0 0.0.0.255 destination-port eq 89
-   rule 46 permit udp destination 10.0.0.9 0.0.0.0 destination-port eq 53
-   rule 50 permit tcp source 192.168.10.0 0.0.0.255 destination-port eq 90
-   rule 51 permit udp destination 10.0.0.10 0.0.0.0 destination-port eq 53
-   rule 55 permit tcp source 192.168.11.0 0.0.0.255 destination-port eq 91
-   rule 56 permit udp destination 10.0.0.11 0.0.0.0 destination-port eq 53
-   rule 60 permit tcp source 192.168.12.0 0.0.0.255 destination-port eq 92
-   rule 61 permit udp destination 10.0.0.12 0.0.0.0 destination-port eq 53
-   rule 900 permit icmp
-   rule 1000 deny ip
-  #
-  acl name WAN-IN advanced
-   rule 5 permit tcp destination-port eq 443
-   rule 10 deny ip
-  #
-  acl number 3001
-   rule 5 permit ip
-  #
   user-interface vty 0 4
    authentication-mode aaa
    user privilege level 15
@@ -1469,16 +1415,8 @@ Total steps: 274
 [233/274] r1 <R1> display current-configuration | exclude #
   sysname R1
   dns resolve
-  interface GigabitEthernet0/0/0
-   shutdown
-  interface GigabitEthernet0/0/1
-   ip address 10.0.0.1 255.255.255.252
-   traffic-filter inbound acl 3000
-   traffic-filter outbound acl 2000
-  interface GigabitEthernet0/0/2
-   shutdown
-  interface GigabitEthernet0/0/3
-   shutdown
+  time-range BUSINESS 08:00 to 18:00 working-day
+  time-range OFF 00:00 to 23:59 off-day
   acl number 2000
    step 10
    rule 5 permit source 192.168.1.0 0.0.0.255
@@ -1535,7 +1473,17 @@ Total steps: 274
    rule 5 permit tcp destination-port eq 443
    rule 10 deny ip
   acl number 3001
-   rule 5 permit ip
+   rule 5 permit ip time-range BUSINESS
+  interface GigabitEthernet0/0/0
+   shutdown
+  interface GigabitEthernet0/0/1
+   ip address 10.0.0.1 255.255.255.252
+   traffic-filter inbound acl 3000
+   traffic-filter outbound acl 2000
+  interface GigabitEthernet0/0/2
+   shutdown
+  interface GigabitEthernet0/0/3
+   shutdown
   user-interface vty 0 4
    authentication-mode aaa
    user privilege level 15
@@ -1741,6 +1689,7 @@ Total steps: 274
     screen-length  Restore default screen length
     screen-width   Restore default screen width
     terminal       Set the terminal line characteristics
+    time-range     Remove a time-range
     traffic        Display traffic statistics
     <cr>
 

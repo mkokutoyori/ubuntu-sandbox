@@ -102,6 +102,9 @@ import { LldpAgent } from '../lldp/LldpAgent';
 import { ETHERTYPE_LLDP, LLDP_MULTICAST_MAC } from '../lldp/types';
 import type { LldpNeighbor } from '../lldp/LldpAgent';
 import { parseNatAddress, rewriteNatAddress } from '../nat/rewrite';
+import { sendDynamicUpdate } from '../dns/update/DynamicUpdateClient';
+import { DnsClass, RRType } from '../dns/wire/RRType';
+import { makeARecord } from '../dns/wire/ResourceRecord';
 
 export interface GreDecapsulator {
   handleIp(inPort: string, srcIp: IPAddress, ipPkt: IPv4Packet): IPv4Packet | null;
@@ -110,6 +113,15 @@ export interface GreDecapsulator {
 // ─── Internal Types ────────────────────────────────────────────────
 
 import type { ARPEntry } from '../core/types';
+
+const CLIENT_DDNS_TTL = 1200;
+
+interface OwnForwardDnsName {
+  readonly zone: string;
+  readonly server: string;
+  readonly fqdn: string;
+  readonly address: string;
+}
 export type { ARPEntry } from '../core/types';
 
 /** Linux reachable time default (RFC 4861 §10): 30 seconds */
@@ -313,7 +325,25 @@ export abstract class EndHost extends Equipment {
   /** Default gateway IP (set via `ip route add default via ...` or `route add`) */
   protected defaultGateway: IPAddress | null = null;
   /** Full routing table (connected + static + default) with LPM support */
-  protected routingTable: HostRouteEntry[] = [];
+  private _routingTable: HostRouteEntry[] = [];
+
+  protected get routingTable(): HostRouteEntry[] { return this._routingTable; }
+
+  protected set routingTable(table: HostRouteEntry[]) {
+    this._routingTable = table;
+    this.noteRoutesChanged();
+  }
+
+  protected addRouteEntry(entry: HostRouteEntry): void {
+    this._routingTable.push(entry);
+    this.noteRoutesChanged();
+  }
+
+  private noteRoutesChanged(): void {
+    if (!this.hostSignalStore || !this.tcpv2 || !this.neighborCache) return;
+    this._refreshRoutesSignal();
+    this._refreshHostStatsSignal();
+  }
   /** Non-main routing tables (`ip route add ... table <ID>`), keyed by table ID. */
   protected policyRoutingTables: Map<number, HostRouteEntry[]> = new Map();
   /** Policy-routing rules (`ip rule`), sorted ascending by priority. */
@@ -851,8 +881,10 @@ export abstract class EndHost extends Equipment {
         else if (this.defaultGatewayOrigin === 'dhcp') this.clearDefaultGateway();
         this.dhcpInterfaces.add(iface);
         this.onDhcpLeaseConfigured(iface);
+        this.registerOwnForwardDnsName(iface);
       },
       (iface: string) => {
+        this.withdrawOwnForwardDnsName(this.ownForwardDnsRegistration(iface));
         const port = this.ports.get(iface);
         if (port) port.clearIP();
         // Remove connected route for this interface
@@ -868,6 +900,7 @@ export abstract class EndHost extends Equipment {
     );
     this.dhcpClient.setEventBus(this.getBus());
     this.dhcpClient.setHostnameProvider(() => this.getHostname());
+    this.dhcpClient.setForwardRegistrationPolicy(() => this.registersOwnForwardDns());
     this.dhcpClient.setWireChannelFactory((iface) => this.getDhcpWireChannel(iface));
     this.dhcpClient.setServerObservationRecorder((iface, serverIp, serverMac) => {
       if (!serverMac || serverIp === '0.0.0.0') return;
@@ -912,6 +945,45 @@ export abstract class EndHost extends Equipment {
   }
 
   protected onDhcpLeaseConfigured(_iface: string): void {}
+
+  protected registersOwnForwardDns(): boolean { return false; }
+
+  private ownForwardDnsRegistration(iface: string): OwnForwardDnsName | null {
+    if (!this.registersOwnForwardDns()) return null;
+    const lease = this.dhcpClient.getState(iface)?.lease;
+    if (!lease) return null;
+    const zone = (lease.domainName ?? '').trim();
+    const server = lease.dnsServers[0];
+    const label = this.getHostname().split('.')[0].trim();
+    if (!zone || !server || !label) return null;
+    return { zone, server, fqdn: `${label}.${zone}`, address: lease.ipAddress };
+  }
+
+  private registerOwnForwardDnsName(iface: string): void {
+    const own = this.ownForwardDnsRegistration(iface);
+    if (!own) return;
+    void sendDynamicUpdate(this, new IPAddress(own.server), {
+      zone: own.zone,
+      zoneClass: DnsClass.IN,
+      prerequisites: [],
+      updates: [
+        { kind: 'delete-rrset', name: own.fqdn, type: RRType.A },
+        { kind: 'add', record: makeARecord(own.fqdn, CLIENT_DDNS_TTL, own.address) },
+      ],
+    });
+  }
+
+  private withdrawOwnForwardDnsName(own: OwnForwardDnsName | null): void {
+    if (!own) return;
+    void sendDynamicUpdate(this, new IPAddress(own.server), {
+      zone: own.zone,
+      zoneClass: DnsClass.IN,
+      prerequisites: [],
+      updates: [
+        { kind: 'delete-record', record: makeARecord(own.fqdn, 0, own.address) },
+      ],
+    });
+  }
 
   /**
    * The v6 counterpart of the hook above. The DHCPv6 client read only
@@ -1131,7 +1203,7 @@ export abstract class EndHost extends Equipment {
 
     // Add connected route
     const networkOctets = ip.getOctets().map((o, i) => o & mask.getOctets()[i]);
-    this.routingTable.push({
+    this.addRouteEntry({
       network: new IPAddress(networkOctets),
       mask,
       nextHop: null,
@@ -1250,7 +1322,7 @@ export abstract class EndHost extends Equipment {
       }
     }
 
-    this.routingTable.push({
+    this.addRouteEntry({
       network: new IPAddress('0.0.0.0'),
       mask: new SubnetMask('0.0.0.0'),
       nextHop: gw,
@@ -1400,7 +1472,7 @@ export abstract class EndHost extends Equipment {
       return false;
     }
 
-    this.routingTable.push({
+    this.addRouteEntry({
       network, mask, nextHop,
       iface: gwIface,
       type: 'static',
@@ -1419,7 +1491,7 @@ export abstract class EndHost extends Equipment {
   /** Add an on-link (directly-connected) static route via an interface, no gateway. */
   addDeviceRoute(network: IPAddress, mask: SubnetMask, iface: string, metric: number = 0): boolean {
     if (!this.ports.has(iface)) return false;
-    this.routingTable.push({ network, mask, nextHop: null, iface, type: 'static', metric });
+    this.addRouteEntry({ network, mask, nextHop: null, iface, type: 'static', metric });
     Logger.info(this.id, 'host:route-add',
       `${this.name}: on-link route ${network}/${mask.toCIDR()} dev ${iface} metric ${metric}`);
     this.emitRouteAdded({
@@ -1574,7 +1646,7 @@ export abstract class EndHost extends Equipment {
     if (type === 'default') {
       this.routingTable = this.routingTable.filter(r => r.type !== 'default');
       this.defaultGateway = nextHop;
-      this.routingTable.push({
+      this.addRouteEntry({
         network: new IPAddress('0.0.0.0'),
         mask: new SubnetMask('0.0.0.0'),
         nextHop,
@@ -1583,7 +1655,7 @@ export abstract class EndHost extends Equipment {
         metric,
       });
     } else {
-      this.routingTable.push({ network, mask, nextHop, iface, type: 'static', metric });
+      this.addRouteEntry({ network, mask, nextHop, iface, type: 'static', metric });
     }
   }
 
@@ -2318,7 +2390,7 @@ export abstract class EndHost extends Equipment {
       // Find which interface the gateway is reachable on
       const gwRoute = this.resolveRoute(gw);
       const iface = gwRoute?.port.getName() ?? portName;
-      this.routingTable.push({
+      this.addRouteEntry({
         network: dest,
         mask: hostMask,
         nextHop: gw,
@@ -2573,6 +2645,15 @@ export abstract class EndHost extends Equipment {
     return addressAnswersOnLink({
       sendFrame: (name, frame) => { this.sendFrame(name, frame); },
       hasNeighbour: (ip) => this.arpTable.has(ip),
+      neighbourMac: (ip) => this.arpTable.get(ip)?.mac,
+      answersEcho: (from, send) => {
+        let vu = false;
+        const stop = this.getBus().subscribe('host.icmp.echo-reply', (e) => {
+          if ((e.payload as { fromIp?: string }).fromIp === from) vu = true;
+        });
+        try { send(); } finally { stop(); }
+        return vu;
+      },
     }, iface, port, target);
   }
 

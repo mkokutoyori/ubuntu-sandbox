@@ -71,18 +71,34 @@ export interface FirewallProfile {
   readonly portCount: number;
   readonly portFirstIndex: number;
 
-  readonly unimplemented: readonly string[];
+  readonly chassis: ChassisResources;
 }
+
+export interface ChassisResources {
+  readonly cpuCount: number;
+  readonly memoryMb: number;
+  readonly firmwareMemoryMb: number;
+  readonly packetsPerSecondPerCpu: number;
+}
+
+export const GENERIC_CHASSIS: ChassisResources = Object.freeze({
+  cpuCount: 1,
+  memoryMb: 2048,
+  firmwareMemoryMb: 256,
+  packetsPerSecondPerCpu: 500_000,
+});
 
 export const GENERIC_PIPELINE: readonly string[] = Object.freeze([
   'vdom-bind', 'switch-bridge', 'ingress-zone', 'session-lookup', 'tcp-state-check',
-  'nat-destination', 'policy-route', 'route-lookup', 'egress-zone', 'policy-lookup',
+  'nat-destination', 'policy-route', 'route-lookup', 'ttl-decrement', 'mtu-check',
+  'egress-zone', 'policy-lookup',
   'auth-check', 'utm-inspect', 'nat-source', 'session-install',
 ]);
 
 export const GENERIC_TRANSPARENT_PIPELINE: readonly string[] = Object.freeze([
   'vdom-bind', 'switch-bridge', 'ingress-zone', 'session-lookup', 'tcp-state-check',
-  'mac-lookup', 'egress-zone', 'policy-lookup', 'auth-check', 'utm-inspect', 'session-install',
+  'mac-lookup', 'ttl-decrement', 'mtu-check', 'egress-zone', 'policy-lookup', 'auth-check',
+  'utm-inspect', 'session-install',
 ]);
 
 export const GENERIC_PIPELINE_BY_MODE: PipelineByMode = Object.freeze({
@@ -135,5 +151,5 @@ export const GENERIC_PROFILE: FirewallProfile = Object.freeze({
   portCount: 8,
   portFirstIndex: 1,
 
-  unimplemented: Object.freeze([]),
+  chassis: GENERIC_CHASSIS,
 });

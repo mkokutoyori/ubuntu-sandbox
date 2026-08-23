@@ -1,6 +1,6 @@
 ============================================================
 Router (L3) debug transcript — cisco-router-cli-basics
-Generated: 2026-08-19T07:03:03.457Z
+Generated: 2026-08-23T10:16:23.010Z
 Topology: R1(Cisco) Gi0/0=L1 LAN 192.168.1.0/24, Gi0/1=WAN 10.0.0.0/30; R2(Cisco) Gi0/0=W1 LAN 192.168.2.0/24, Gi0/1=WAN
 focus=IOS router CLI: show family, mode nav, pipes, no, save
 Total steps: 482
@@ -29,7 +29,7 @@ Total steps: 482
   data          None          None           None
   
   Cisco CISCO2911/K9 (revision 1.0) with 491520K/32768K bytes of memory.
-  Processor board ID FTX1703V4EN
+  Processor board ID FTX1698EXLZ
   4 Gigabit Ethernet interfaces
   DRAM configuration is 64 bits wide with parity enabled.
   255K bytes of non-volatile configuration memory.
@@ -57,7 +57,7 @@ Total steps: 482
   data          None          None           None
   
   Cisco CISCO2911/K9 (revision 1.0) with 491520K/32768K bytes of memory.
-  Processor board ID FTX1703V4EN
+  Processor board ID FTX1698EXLZ
   4 Gigabit Ethernet interfaces
   DRAM configuration is 64 bits wide with parity enabled.
   255K bytes of non-volatile configuration memory.
@@ -65,10 +65,10 @@ Total steps: 482
   Configuration register is 0x2102
 
 [3/482] r1 R1> show clock
-  *07:03:03.000 UTC Wed Aug 19 2026
+  *10:16:23.000 UTC Sun Aug 23 2026
 
 [4/482] r1 R1> show calendar
-  07:03:03 UTC Wed Aug 19 2026
+  10:16:23 UTC Sun Aug 23 2026
 
 [5/482] r1 R1> show users
       Line       User       Host(s)              Idle       Location
@@ -84,7 +84,7 @@ Total steps: 482
 
 [7/482] r1 R1> show inventory
   NAME: "CISCO2911/K9 chassis", DESCR: "Cisco ISR 2911 Integrated Services Router"
-  PID: CISCO2911/K9        , VID: V01  , SN: FTX1703V4EN
+  PID: CISCO2911/K9        , VID: V01  , SN: FTX1698EXLZ
 
 [8/482] r1 R1> show processes cpu
   CPU utilization for five seconds: 4%/0%; one minute: 5%; five minutes: 4%
@@ -407,7 +407,10 @@ Total steps: 482
   -- No static NAT entries configured --
   Dynamic mappings:
   -- No dynamic NAT rules configured --
-  Application Layer Gateways: none
+  Total doors: 0
+  Appl doors: 0
+  Normal doors: 0
+  Queued Packets: 0
 
 [39/482] r1 R1> show access-lists
 <empty>
@@ -425,7 +428,7 @@ Total steps: 482
   Clock is unsynchronized, stratum 16, no reference clock
   nominal freq is 250.0000 Hz, actual freq is 250.0000 Hz, precision is 2**18
   ntp uptime is 0 (1/100 of seconds), resolution is 4001
-  reference time is EE2FD3A7.A189374B (07:03:03.631 UTC Wed Aug 19 2026)
+  reference time is EE3546F7.2C083126 (10:16:23.172 UTC Sun Aug 23 2026)
   clock offset is 0.0000 msec, root delay is 0.00 msec
   root dispersion is 16000.00 msec, peer dispersion is 16000.00 msec
   loopfilter state is 'FSET' (Drift set from file), drift is 0.000000000 s/s
@@ -545,7 +548,7 @@ Total steps: 482
   Host                      Port  Flags      Age Type   Address(es)
 
 [61/482] r1 R1> show ip ssh
-  % Incomplete command.
+  % Invalid input detected at '^' marker.
 
 [62/482] r1 R1> show ssh
   % Invalid input detected at '^' marker.
@@ -628,10 +631,10 @@ Total steps: 482
     clock          Display the system clock
     controllers    Display controller status
     counters       Display traffic counters
-    crypto         Display IKE global config
-    dhcp           Dynamic Host Configuration Protocol
+    crypto         Encryption module
+    dhcp           DHCP client lease information
     dmvpn          Display DMVPN status
-    eigrp          Enhanced Interior Gateway Routing Protocol
+    eigrp          EIGRP information
     environment    Display environment
     event          Embedded Event Manager
     file           Show filesystem information
@@ -641,8 +644,8 @@ Total steps: 482
     hosts          Display host cache
     interfaces     Display interface status
     inventory      Display hardware inventory
-    ip             DHCP pool information
-    ipv6           Internet Protocol version 6
+    ip             IP information
+    ipv6           Display IPv6 interface state
     key            Key management
     line           Display TTY lines
     lldp           Display LLDP information
@@ -720,7 +723,7 @@ Total steps: 482
   data          None          None           None
   
   Cisco CISCO2911/K9 (revision 1.0) with 491520K/32768K bytes of memory.
-  Processor board ID FTX1703V4EN
+  Processor board ID FTX1698EXLZ
   4 Gigabit Ethernet interfaces
   DRAM configuration is 64 bits wide with parity enabled.
   255K bytes of non-volatile configuration memory.
@@ -728,10 +731,10 @@ Total steps: 482
   Configuration register is 0x2102
 
 [80/482] r1 R1# show clock
-  *07:03:03.000 UTC Wed Aug 19 2026
+  *10:16:23.000 UTC Sun Aug 23 2026
 
 [81/482] r1 R1# show calendar
-  07:03:03 UTC Wed Aug 19 2026
+  10:16:23 UTC Sun Aug 23 2026
 
 [82/482] r1 R1# show users
       Line       User       Host(s)              Idle       Location
@@ -762,7 +765,7 @@ Total steps: 482
 
 [84/482] r1 R1# show inventory
   NAME: "CISCO2911/K9 chassis", DESCR: "Cisco ISR 2911 Integrated Services Router"
-  PID: CISCO2911/K9        , VID: V01  , SN: FTX1703V4EN
+  PID: CISCO2911/K9        , VID: V01  , SN: FTX1698EXLZ
 
 [85/482] r1 R1# show processes cpu
   CPU utilization for five seconds: 4%/0%; one minute: 5%; five minutes: 4%
@@ -1137,7 +1140,10 @@ Total steps: 482
   -- No static NAT entries configured --
   Dynamic mappings:
   -- No dynamic NAT rules configured --
-  Application Layer Gateways: none
+  Total doors: 0
+  Appl doors: 0
+  Normal doors: 0
+  Queued Packets: 0
 
 [116/482] r1 R1# show access-lists
 <empty>
@@ -1168,10 +1174,10 @@ Total steps: 482
   
   Log Buffer (4096 bytes):
   
-  *Aug 19 07:03:03.452: %LINK-3-UPDOWN: Interface GigabitEthernet0/0, changed state to up
-  *Aug 19 07:03:03.453: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/0, changed state to up
-  *Aug 19 07:03:03.454: %LINK-3-UPDOWN: Interface GigabitEthernet0/1, changed state to up
-  *Aug 19 07:03:03.454: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/1, changed state to up
+  *Aug 23 10:16:23.005: %LINK-3-UPDOWN: Interface GigabitEthernet0/0, changed state to up
+  *Aug 23 10:16:23.006: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/0, changed state to up
+  *Aug 23 10:16:23.007: %LINK-3-UPDOWN: Interface GigabitEthernet0/1, changed state to up
+  *Aug 23 10:16:23.007: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/1, changed state to up
 
 [119/482] r1 R1# show snmp
   Chassis: FTX1234567A
@@ -1183,7 +1189,7 @@ Total steps: 482
   Clock is unsynchronized, stratum 16, no reference clock
   nominal freq is 250.0000 Hz, actual freq is 250.0000 Hz, precision is 2**18
   ntp uptime is 0 (1/100 of seconds), resolution is 4001
-  reference time is EE2FD3A7.D810624D (07:03:03.844 UTC Wed Aug 19 2026)
+  reference time is EE3546F7.574BC6A7 (10:16:23.341 UTC Sun Aug 23 2026)
   clock offset is 0.0000 msec, root delay is 0.00 msec
   root dispersion is 16000.00 msec, peer dispersion is 16000.00 msec
   loopfilter state is 'FSET' (Drift set from file), drift is 0.000000000 s/s
@@ -1234,7 +1240,7 @@ Total steps: 482
 [126/482] r1 R1# show platform
   Cisco ISR 2911
     PID: CISCO2911/K9
-    S/N: FTX1703V4EN
+    S/N: FTX1698EXLZ
 
 [127/482] r1 R1# show license
   Index Feature                  Period left    Period Used    License Type    License State    License Count    License Priority
@@ -1243,7 +1249,7 @@ Total steps: 482
 
 [128/482] r1 R1# show license udi
   Device#   PID                   SN
-  *0        CISCO2911/K9          FTX1703V4EN
+  *0        CISCO2911/K9          FTX1698EXLZ
 
 [129/482] r1 R1# show boot
   BOOT variable = 
@@ -1372,7 +1378,7 @@ Total steps: 482
   data          None          None           None
   
   Cisco CISCO2911/K9 (revision 1.0) with 491520K/32768K bytes of memory.
-  Processor board ID FTX1703V4EN
+  Processor board ID FTX1698EXLZ
   4 Gigabit Ethernet interfaces
   DRAM configuration is 64 bits wide with parity enabled.
   255K bytes of non-volatile configuration memory.
@@ -1541,10 +1547,13 @@ Total steps: 482
   -- No static NAT entries configured --
   Dynamic mappings:
   -- No dynamic NAT rules configured --
-  Application Layer Gateways: none
+  Total doors: 0
+  Appl doors: 0
+  Normal doors: 0
+  Queued Packets: 0
   
   ------------------ show ip ospf neighbor ------------------
-  % OSPF is not configured
+  
   
   ------------------ show ip dhcp binding ------------------
   IP address       Client-id/              Lease expiration        Type
@@ -1573,10 +1582,10 @@ Total steps: 482
   
   Log Buffer (4096 bytes):
   
-  *Aug 19 07:03:03.452: %LINK-3-UPDOWN: Interface GigabitEthernet0/0, changed state to up
-  *Aug 19 07:03:03.453: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/0, changed state to up
-  *Aug 19 07:03:03.454: %LINK-3-UPDOWN: Interface GigabitEthernet0/1, changed state to up
-  *Aug 19 07:03:03.454: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/1, changed state to up
+  *Aug 23 10:16:23.005: %LINK-3-UPDOWN: Interface GigabitEthernet0/0, changed state to up
+  *Aug 23 10:16:23.006: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/0, changed state to up
+  *Aug 23 10:16:23.007: %LINK-3-UPDOWN: Interface GigabitEthernet0/1, changed state to up
+  *Aug 23 10:16:23.007: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/1, changed state to up
 
 [146/482] r1 R1# show diag
   Slot 0:
@@ -1586,7 +1595,7 @@ Total steps: 482
           Hardware Revision        : 1.0
           Part Number              : CISCO2911/K9
           Board Revision           : 1.0
-          PCB Serial Number        : FTX1703V4EN
+          PCB Serial Number        : FTX1698EXLZ
 
 [147/482] r1 R1# show idprom backplane
           ^
@@ -1659,7 +1668,7 @@ Total steps: 482
 <empty>
 
 [157/482] r1 R1(config-if)# do show clock
-  *07:03:03.000 UTC Wed Aug 19 2026
+  *10:16:23.000 UTC Sun Aug 23 2026
 
 [158/482] r1 R1(config-if)# exit
 <empty>
@@ -1668,7 +1677,7 @@ Total steps: 482
 <empty>
 
 [160/482] r1 R1(config-if)# do show clock
-  *07:03:03.000 UTC Wed Aug 19 2026
+  *10:16:23.000 UTC Sun Aug 23 2026
 
 [161/482] r1 R1(config-if)# exit
 <empty>
@@ -1677,7 +1686,7 @@ Total steps: 482
 <empty>
 
 [163/482] r1 R1(config-if)# do show clock
-  *07:03:03.000 UTC Wed Aug 19 2026
+  *10:16:23.000 UTC Sun Aug 23 2026
 
 [164/482] r1 R1(config-if)# exit
 <empty>
@@ -1686,7 +1695,7 @@ Total steps: 482
 <empty>
 
 [166/482] r1 R1(config-router)# do show clock
-  *07:03:03.000 UTC Wed Aug 19 2026
+  *10:16:23.000 UTC Sun Aug 23 2026
 
 [167/482] r1 R1(config-router)# exit
 <empty>
@@ -1695,7 +1704,7 @@ Total steps: 482
 <empty>
 
 [169/482] r1 R1(config-router)# do show clock
-  *07:03:03.000 UTC Wed Aug 19 2026
+  *10:16:23.000 UTC Sun Aug 23 2026
 
 [170/482] r1 R1(config-router)# exit
 <empty>
@@ -1704,7 +1713,7 @@ Total steps: 482
 <empty>
 
 [172/482] r1 R1(config-router)# do show clock
-  *07:03:03.000 UTC Wed Aug 19 2026
+  *10:16:23.000 UTC Sun Aug 23 2026
 
 [173/482] r1 R1(config-router)# exit
 <empty>
@@ -1713,7 +1722,7 @@ Total steps: 482
 <empty>
 
 [175/482] r1 R1(config-router)# do show clock
-  *07:03:03.000 UTC Wed Aug 19 2026
+  *10:16:23.000 UTC Sun Aug 23 2026
 
 [176/482] r1 R1(config-router)# exit
 <empty>
@@ -1722,7 +1731,7 @@ Total steps: 482
 <empty>
 
 [178/482] r1 R1(dhcp-config)# do show clock
-  *07:03:03.000 UTC Wed Aug 19 2026
+  *10:16:23.000 UTC Sun Aug 23 2026
 
 [179/482] r1 R1(dhcp-config)# exit
 <empty>
@@ -1731,7 +1740,7 @@ Total steps: 482
 <empty>
 
 [181/482] r1 R1(config-line)# do show clock
-  *07:03:03.000 UTC Wed Aug 19 2026
+  *10:16:23.000 UTC Sun Aug 23 2026
 
 [182/482] r1 R1(config-line)# exit
 <empty>
@@ -1740,7 +1749,7 @@ Total steps: 482
 <empty>
 
 [184/482] r1 R1(config-line)# do show clock
-  *07:03:03.000 UTC Wed Aug 19 2026
+  *10:16:23.000 UTC Sun Aug 23 2026
 
 [185/482] r1 R1(config-line)# exit
 <empty>
@@ -1749,7 +1758,7 @@ Total steps: 482
 <empty>
 
 [187/482] r1 R1(config-line)# do show clock
-  *07:03:04.000 UTC Wed Aug 19 2026
+  *10:16:23.000 UTC Sun Aug 23 2026
 
 [188/482] r1 R1(config-line)# exit
 <empty>
@@ -1758,7 +1767,7 @@ Total steps: 482
 <empty>
 
 [190/482] r1 R1(config-std-nacl)# do show clock
-  *07:03:04.000 UTC Wed Aug 19 2026
+  *10:16:23.000 UTC Sun Aug 23 2026
 
 [191/482] r1 R1(config-std-nacl)# exit
 <empty>
@@ -1767,7 +1776,7 @@ Total steps: 482
 <empty>
 
 [193/482] r1 R1(config-ext-nacl)# do show clock
-  *07:03:04.000 UTC Wed Aug 19 2026
+  *10:16:23.000 UTC Sun Aug 23 2026
 
 [194/482] r1 R1(config-ext-nacl)# exit
 <empty>
@@ -1776,7 +1785,7 @@ Total steps: 482
 <empty>
 
 [196/482] r1 R1(config-route-map)# do show clock
-  *07:03:04.000 UTC Wed Aug 19 2026
+  *10:16:23.000 UTC Sun Aug 23 2026
 
 [197/482] r1 R1(config-route-map)# exit
 <empty>
@@ -1785,7 +1794,7 @@ Total steps: 482
 <empty>
 
 [199/482] r1 R1(config-cmap)# do show clock
-  *07:03:04.000 UTC Wed Aug 19 2026
+  *10:16:23.000 UTC Sun Aug 23 2026
 
 [200/482] r1 R1(config-cmap)# exit
 <empty>
@@ -1794,7 +1803,7 @@ Total steps: 482
 <empty>
 
 [202/482] r1 R1(config-pmap)# do show clock
-  *07:03:04.000 UTC Wed Aug 19 2026
+  *10:16:23.000 UTC Sun Aug 23 2026
 
 [203/482] r1 R1(config-pmap)# exit
 <empty>
@@ -1803,7 +1812,7 @@ Total steps: 482
 <empty>
 
 [205/482] r1 R1(config-isakmp)# do show clock
-  *07:03:04.000 UTC Wed Aug 19 2026
+  *10:16:23.000 UTC Sun Aug 23 2026
 
 [206/482] r1 R1(config-isakmp)# exit
 <empty>
@@ -1812,7 +1821,7 @@ Total steps: 482
 <empty>
 
 [208/482] r1 R1(cfg-crypto-trans)# do show clock
-  *07:03:04.000 UTC Wed Aug 19 2026
+  *10:16:23.000 UTC Sun Aug 23 2026
 
 [209/482] r1 R1(cfg-crypto-trans)# exit
 <empty>
@@ -1821,7 +1830,7 @@ Total steps: 482
 <empty>
 
 [211/482] r1 R1(config-crypto-map)# do show clock
-  *07:03:04.000 UTC Wed Aug 19 2026
+  *10:16:23.000 UTC Sun Aug 23 2026
 
 [212/482] r1 R1(config-crypto-map)# exit
 <empty>
@@ -1830,7 +1839,7 @@ Total steps: 482
 <empty>
 
 [214/482] r1 R1(config-keychain)# do show clock
-  *07:03:04.000 UTC Wed Aug 19 2026
+  *10:16:23.000 UTC Sun Aug 23 2026
 
 [215/482] r1 R1(config-keychain)# exit
 <empty>
@@ -1839,7 +1848,7 @@ Total steps: 482
 <empty>
 
 [217/482] r1 R1(config-track)# do show clock
-  *07:03:04.000 UTC Wed Aug 19 2026
+  *10:16:23.000 UTC Sun Aug 23 2026
 
 [218/482] r1 R1(config-track)# exit
 <empty>
@@ -1848,7 +1857,7 @@ Total steps: 482
 <empty>
 
 [220/482] r1 R1(config-vrf)# do show clock
-  *07:03:04.000 UTC Wed Aug 19 2026
+  *10:16:23.000 UTC Sun Aug 23 2026
 
 [221/482] r1 R1(config-vrf)# exit
 <empty>
@@ -1938,7 +1947,7 @@ Total steps: 482
   data          None          None           None
   
   Cisco CISCO2911/K9 (revision 1.0) with 491520K/32768K bytes of memory.
-  Processor board ID FTX1703V4EN
+  Processor board ID FTX1698EXLZ
   4 Gigabit Ethernet interfaces
   DRAM configuration is 64 bits wide with parity enabled.
   255K bytes of non-volatile configuration memory.
@@ -2047,7 +2056,7 @@ Total steps: 482
     finger             Enable finger service
     flow-cache         NetFlow cache timeout
     flow-export        Legacy NetFlow export
-    gratuitous-arps    Enable gratuitous ARP
+    gratuitous-arps    Send gratuitous ARP
     host               Add a host to the host table
     http               Hypertext Transfer Protocol
     local              Local settings
@@ -2061,7 +2070,7 @@ Total steps: 482
     routing            Enable IP routing
     scp                SCP server config
     sla                Configure an IP SLAs operation
-    source-route       IP source-route
+    source-route       Accept source-routed packets
     ssh                SSH config
     subnet-zero        Accepted, default behaviour on IOS 12.0 and later
     vrf                Define a VRF instance
@@ -2091,8 +2100,8 @@ Total steps: 482
     key            Key management
     line           Remove line configuration
     lldp           Enable LLDP globally
-    logging        Count every log message and timestamp last occurrence
-    login          Set the login blocking period
+    logging        line logging
+    login          line login
     ntp            Authenticate time sources
     parser         Negate a parser command
     privilege      Remove privilege command rule
@@ -2241,7 +2250,7 @@ Total steps: 482
 [272/482] r1 R1-EDGE(config-if)# ip ?
     access-group        Set access group on interface
     accounting          Enable IP accounting
-    address             Set interface IP address
+    address             IP Address negotiated via DHCP
     authentication      Authentication configuration
     bandwidth-percent   Percentage of interface bandwidth
     dhcp                Dynamic Host Configuration Protocol
@@ -2273,7 +2282,7 @@ Total steps: 482
 
 [273/482] r1 R1-EDGE(config-if)# ip address ?
     A.B.C.D  IP address
-    dhcp     Configure IP via DHCP
+    dhcp     IP Address negotiated via DHCP
 
 [274/482] r1 R1-EDGE(config-if)# ip ospf ?
     area                 Enable OSPF on this interface
@@ -2414,13 +2423,10 @@ Total steps: 482
 [313/482] r1 R1-EDGE# show running-config | exclude !
   Building configuration...
   
-  Current configuration : 1592 bytes
+  Current configuration : 1583 bytes
   no service password-encryption
-  no service bootp-server
-  no service finger
   no service config
   no service pad
-  no service gratuitous-arps
   hostname R1-EDGE
   clock summer-time CEST recurring  
   ip domain-name lab.local
@@ -2433,6 +2439,7 @@ Total steps: 482
   ip dhcp pool LAN
   no ip routing
   no ip cef
+  no ip source-route
   crypto isakmp policy 10
    encryption des
    hash sha
@@ -2463,6 +2470,8 @@ Total steps: 482
   no ip domain-lookup
   no logging buffered
   no cdp run
+  no ip bootp server
+  no ip gratuitous-arps
   class-map match-all CM1
   policy-map PM1
   route-map RM1 permit 10
@@ -2510,6 +2519,8 @@ Total steps: 482
   no ip domain-lookup
   no logging buffered
   no cdp run
+  no ip bootp server
+  no ip gratuitous-arps
   !
   class-map match-all CM1
   !
@@ -2601,17 +2612,14 @@ Total steps: 482
 [325/482] r1 R1-EDGE# show running-config | tee flash:cfg.txt
   Building configuration...
   
-  Current configuration : 1592 bytes
+  Current configuration : 1583 bytes
   !
-  ! Last configuration change at 07:03:04 UTC Wed Aug 19 2026 by console
-  ! NVRAM config last updated at 07:03:04 UTC Wed Aug 19 2026 by console
+  ! Last configuration change at 10:16:23 UTC Sun Aug 23 2026 by console
+  ! NVRAM config last updated at 10:16:23 UTC Sun Aug 23 2026 by console
   !
   no service password-encryption
-  no service bootp-server
-  no service finger
   no service config
   no service pad
-  no service gratuitous-arps
   !
   hostname R1-EDGE
   !
@@ -2631,6 +2639,7 @@ Total steps: 482
   !
   no ip routing
   no ip cef
+  no ip source-route
   !
   crypto isakmp policy 10
    encryption des
@@ -2675,6 +2684,8 @@ Total steps: 482
   no ip domain-lookup
   no logging buffered
   no cdp run
+  no ip bootp server
+  no ip gratuitous-arps
   !
   class-map match-all CM1
   !
@@ -2745,7 +2756,8 @@ Total steps: 482
 <empty>
 
 [342/482] r1 R1-EDGE(config-line)# transport input telnet ssh
-<empty>
+                       ^
+  % Invalid input detected at '^' marker.
 
 [343/482] r1 R1-EDGE(config-line)# transport output none
 <empty>
@@ -2802,17 +2814,14 @@ Total steps: 482
 [359/482] r1 R1-EDGE# sr
   Building configuration...
   
-  Current configuration : 2089 bytes
+  Current configuration : 2077 bytes
   !
-  ! Last configuration change at 07:03:04 UTC Wed Aug 19 2026 by console
-  ! NVRAM config last updated at 07:03:04 UTC Wed Aug 19 2026 by console
+  ! Last configuration change at 10:16:23 UTC Sun Aug 23 2026 by console
+  ! NVRAM config last updated at 10:16:23 UTC Sun Aug 23 2026 by console
   !
   service password-encryption
-  no service bootp-server
-  no service finger
   no service config
   no service pad
-  no service gratuitous-arps
   !
   hostname R1-EDGE
   !
@@ -2839,6 +2848,7 @@ Total steps: 482
   !
   no ip routing
   no ip cef
+  no ip source-route
   !
   crypto isakmp policy 10
    encryption des
@@ -2885,6 +2895,8 @@ Total steps: 482
   no ip domain-lookup
   no logging buffered
   no cdp run
+  no ip bootp server
+  no ip gratuitous-arps
   !
   class-map match-all CM1
   !
@@ -2909,7 +2921,7 @@ Total steps: 482
    exec-timeout 5 0
    access-class 10 in
    login local
-   transport input telnet
+   transport input ssh
   !
   end
 
@@ -2948,14 +2960,14 @@ Total steps: 482
 
 [364/482] r1 R1-EDGE# copy startup-config running-config
   Destination filename [running-config]?
-  2152 bytes copied
+  2140 bytes copied
 
 [365/482] r1 R1-EDGE# copy running-config tftp:
   %Error: no remote host in the destination URL (write it as tftp://<address>/<filename>).
 
 [366/482] r1 R1-EDGE# copy running-config flash:backup.cfg
   Destination filename [backup.cfg]?
-  2152 bytes copied
+  2140 bytes copied
 
 [367/482] r1 R1-EDGE# write erase
   Erasing the nvram filesystem will remove all configuration files! Continue? [confirm]

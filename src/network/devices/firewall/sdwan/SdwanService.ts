@@ -1,12 +1,18 @@
 import type { IPv4Packet } from '../../../core/types';
 import { SdwanHealthProbe, type ProbeDeps } from './SdwanHealthProbe';
 import {
-  SdwanTable, type SdwanConfiguration, type SdwanMember,
+  SdwanTable,
+  type SdwanConfiguration, type SdwanHealthTransition, type SdwanMember,
 } from './SdwanTable';
+
+export interface SdwanHealthObserver {
+  (changes: readonly SdwanHealthTransition[]): void;
+}
 
 export class SdwanService {
   private readonly table = new SdwanTable();
   private readonly probe: SdwanHealthProbe;
+  private observer: SdwanHealthObserver | undefined;
 
   constructor(deps: ProbeDeps) {
     this.probe = new SdwanHealthProbe(deps);
@@ -28,9 +34,14 @@ export class SdwanService {
     return undefined;
   }
 
+  onHealthChange(observer: SdwanHealthObserver): void {
+    this.observer = observer;
+  }
+
   async runHealthChecks(): Promise<void> {
     if (!this.table.isEnabled()) return;
-    await this.probe.run(this.table);
+    const changes = await this.probe.run(this.table);
+    if (changes.length > 0) this.observer?.(changes);
   }
 
   observeReply(packet: IPv4Packet): boolean {

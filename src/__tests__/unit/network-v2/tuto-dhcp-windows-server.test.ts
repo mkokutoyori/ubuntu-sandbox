@@ -339,7 +339,7 @@ describe('DHCP Windows — un relais injoignable ne echoue plus en SILENCE', () 
 
 describe('DHCP Windows — enregistrement DNS dynamique du bail', () => {
   async function labWithDns() {
-    const { srv, winClient } = buildLab();
+    const { srv, winClient, linuxClient } = buildLab();
     const sh = ps(srv);
     await run(sh, 'Install-WindowsFeature -Name DNS -IncludeManagementTools');
     await run(sh, 'Install-WindowsFeature -Name DHCP -IncludeManagementTools');
@@ -347,7 +347,7 @@ describe('DHCP Windows — enregistrement DNS dynamique du bail', () => {
     await run(sh, 'Add-DhcpServerv4Scope -Name "LAN-40" -StartRange 192.168.40.10 -EndRange 192.168.40.200 -SubnetMask 255.255.255.0 -State Active');
     await run(sh, 'Set-DhcpServerv4OptionValue -ScopeId 192.168.40.0 -Router 192.168.40.1');
     await run(sh, 'Set-DhcpServerv4OptionValue -ScopeId 192.168.40.0 -DnsServer 192.168.40.5 -DnsDomain "lab.local"');
-    return { srv, winClient, sh };
+    return { srv, winClient, linuxClient, sh };
   }
 
   it('les reglages par defaut sont ceux de Windows', async () => {
@@ -379,14 +379,29 @@ describe('DHCP Windows — enregistrement DNS dynamique du bail', () => {
     expect(records).toMatch(/192\.168\.40\.\d+/);
   });
 
-  it('DynamicUpdates Never n enregistre RIEN', async () => {
+  it('TEMOIN — par defaut, le SERVEUR enregistre le client qui le lui demande', async () => {
+    const { linuxClient, sh } = await labWithDns();
+    await linuxClient.executeCommand('dhclient eth0');
+    const records = await run(sh, 'Get-DnsServerResourceRecord -ZoneName "lab.local"');
+    expect(records.toLowerCase()).toContain('pc-lnx');
+  });
+
+  it('DynamicUpdates Never empeche le SERVEUR d enregistrer', async () => {
+    const { linuxClient, sh } = await labWithDns();
+    await run(sh, 'Set-DhcpServerv4DnsSetting -DynamicUpdates Never');
+    await linuxClient.executeCommand('dhclient eth0');
+    const records = await run(sh, 'Get-DnsServerResourceRecord -ZoneName "lab.local"');
+    expect(records.toLowerCase()).not.toContain('pc-lnx');
+  });
+
+  it('Never ne peut rien contre un client qui s enregistre LUI-MEME', async () => {
     const { winClient, sh } = await labWithDns();
     await run(sh, 'Set-DhcpServerv4DnsSetting -DynamicUpdates Never');
     const cli = ps(winClient);
     await run(cli, 'ipconfig /release');
     await run(cli, 'ipconfig /renew');
     const records = await run(sh, 'Get-DnsServerResourceRecord -ZoneName "lab.local"');
-    expect(records.toLowerCase()).not.toContain('pc-win');
+    expect(records.toLowerCase()).toContain('pc-win');
   });
 
   it('sans role DNS sur la machine, le bail est accorde quand meme', async () => {

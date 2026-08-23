@@ -10,7 +10,7 @@ export type AuthMethodType = 'password' | 'publickey' | 'keyboard-interactive';
 
 /** Result of the PAM-equivalent account-phase check run after credentials verify. */
 export type AccountLifecycleVerdict =
-  | { ok: true }
+  | { ok: true; kind?: undefined }
   | { ok: false; kind: 'account-expired' | 'password-expired' };
 
 /**

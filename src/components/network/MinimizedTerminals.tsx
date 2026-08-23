@@ -101,6 +101,8 @@ export function TerminalTaskbar({
                   : "text-white/30 hover:text-white/60 hover:bg-white/5"
               )}
               title={`${opt.label} (${opt.shortcut})`}
+              aria-label={`Arrange terminals: ${opt.label} (${opt.shortcut})`}
+              aria-pressed={isActive}
             >
               <Icon className="w-3.5 h-3.5" />
             </button>
@@ -168,6 +170,7 @@ export function TerminalTaskbar({
                 onClick={(e) => { e.stopPropagation(); onClose(sessionId); }}
                 className="p-0.5 rounded hover:bg-red-500/20 transition-colors"
                 title="Close terminal"
+                aria-label={`Close the ${deviceName} terminal`}
               >
                 <X className="w-2.5 h-2.5 text-white/30 hover:text-red-400" />
               </button>

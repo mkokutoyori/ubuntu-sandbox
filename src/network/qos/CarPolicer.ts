@@ -87,6 +87,22 @@ export function parseRateLimitRule(args: string[], raw: string): CarRule | null 
 export function parseVrpCarRule(args: string[], raw: string): CarRule | null {
   const dir = (args[0] ?? '').toLowerCase();
   if (dir !== 'inbound' && dir !== 'outbound') return null;
+  return parseCarParameters(args, raw, dir === 'inbound' ? 'input' : 'output');
+}
+
+/**
+ * `car cir …` sous `traffic behavior` : les memes parametres, sans
+ * direction — celle-ci vient du point ou la politique est appliquee.
+ */
+export function parseMqcCarRule(
+  args: string[], raw: string, direction: CarDirection,
+): CarRule | null {
+  return parseCarParameters(args, raw, direction);
+}
+
+function parseCarParameters(
+  args: string[], raw: string, direction: CarDirection,
+): CarRule | null {
   const lireNombre = (mot: string): number | null => {
     const i = args.indexOf(mot);
     if (i < 0 || !args[i + 1]) return null;
@@ -102,7 +118,7 @@ export function parseVrpCarRule(args: string[], raw: string): CarRule | null {
   const pbs = lireNombre('pbs') ?? cbs * 2;
   if (pbs < cbs) return null;
   return {
-    direction: dir === 'inbound' ? 'input' : 'output',
+    direction,
     bitsPerSecond, normalBurstBytes: cbs, maxBurstBytes: pbs,
     conformAction: 'transmit', exceedAction: 'drop', raw,
     tokens: cbs, lastRefillMs: Date.now(),
@@ -163,4 +179,45 @@ export class CarPolicer {
     );
     r.lastRefillMs = now;
   }
+}
+
+export type SuppressionKind = 'broadcast' | 'multicast' | 'unicast';
+
+export const SUPPRESSION_KINDS: readonly SuppressionKind[] =
+  Object.freeze(['broadcast', 'multicast', 'unicast']);
+
+export function parseSuppressionRule(
+  kind: SuppressionKind, args: readonly string[], bandwidthKbps: number, raw: string,
+): CarRule | null {
+  if (args.length !== 1) return null;
+  const percent = Number.parseInt(args[0] ?? '', 10);
+  if (!Number.isFinite(percent) || percent < 0 || percent > 100) return null;
+
+  const bitsPerSecond = Math.round((bandwidthKbps * 1000 * percent) / 100);
+  const normalBurstBytes = Math.max(1, Math.round(bitsPerSecond / 8 / 8));
+  return {
+    direction: 'input',
+    bitsPerSecond, normalBurstBytes, maxBurstBytes: normalBurstBytes * 2,
+    conformAction: 'transmit', exceedAction: 'drop', raw,
+    tokens: percent === 0 ? 0 : normalBurstBytes, lastRefillMs: Date.now(),
+    conformedPackets: 0, conformedBytes: 0,
+    exceededPackets: 0, exceededBytes: 0, lastPacketMs: null,
+  };
+}
+
+export function suppressionKindOf(dstMac: string): SuppressionKind {
+  const upper = dstMac.toUpperCase();
+  if (upper === 'FF:FF:FF:FF:FF:FF') return 'broadcast';
+  const first = Number.parseInt(upper.slice(0, 2), 16);
+  return Number.isFinite(first) && (first & 1) === 1 ? 'multicast' : 'unicast';
+}
+
+/** Une copie NEUVE d'une regle : son seau lui appartient. */
+export function cloneCarRule(rule: CarRule, now = Date.now()): CarRule {
+  return {
+    ...rule,
+    tokens: rule.normalBurstBytes, lastRefillMs: now,
+    conformedPackets: 0, conformedBytes: 0,
+    exceededPackets: 0, exceededBytes: 0, lastPacketMs: null,
+  };
 }

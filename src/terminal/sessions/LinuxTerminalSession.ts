@@ -72,6 +72,10 @@ import {
 import { SqlPlusSubShell } from '@/terminal/subshells/SqlPlusSubShell';
 import { ReactiveRmanSubShell } from '@/terminal/subshells/rman/ReactiveRmanSubShell';
 import { SftpSubShell } from '@/terminal/subshells/SftpSubShell';
+import { NsupdateSubShell } from '@/terminal/subshells/NsupdateSubShell';
+import { nsupdateNamesAFile } from '@/network/dns/update/NsupdateScript';
+import { parseNsupdateKeyOption } from '@/network/dns/update/NsupdateScript';
+import type { TsigKey } from '@/network/dns/tsig/Tsig';
 import { FtpSubShell } from '@/terminal/subshells/FtpSubShell';
 import { FtpClientSession } from '@/network/ftp/FtpClientSession';
 import { NslookupSubShell } from '@/terminal/subshells/NslookupSubShell';
@@ -843,7 +847,6 @@ export class LinuxTerminalSession extends TerminalSession {
         }
         this._continuationBuffer = accumulated;
         this._pendingHeredocDelimiter = analysis.heredocDelimiter ?? null;
-        this.updatePrompt?.();
         this.notify();
         return;
       }
@@ -854,7 +857,6 @@ export class LinuxTerminalSession extends TerminalSession {
         this.addEchoLine(this.getPrompt(), cmd);
         this._continuationBuffer = null;
         this._pendingHeredocDelimiter = null;
-        this.updatePrompt?.();
         const doneMulti = this.executeCommand(accumulated, { echo: false });
         this.notify();
         return doneMulti;
@@ -1638,6 +1640,10 @@ export class LinuxTerminalSession extends TerminalSession {
       }
       if (parts[0] === 'nslookup' && parts.length === 1) {
         this.enterNslookup();
+        return;
+      }
+      if (parts[0] === 'nsupdate' && !nsupdateNamesAFile(parts.slice(1))) {
+        this.enterNsupdate(parts.slice(1));
         return;
       }
       if (parts[0] === 'ssh') {
@@ -2696,6 +2702,38 @@ export class LinuxTerminalSession extends TerminalSession {
   }
 
   /** `nslookup` with no arguments (PRD-Nslookup-Dig-Rndc-Runas.md §2.1.1) — real `nslookup(1)`'s interactive `>` REPL. */
+  private enterNsupdate(args: string[]): void {
+    const dev = this.device as unknown as {
+      net?: import('@/network/devices/linux/LinuxNetKernel').LinuxNetKernel;
+      executor?: import('@/network/devices/linux/LinuxCommandExecutor').LinuxCommandExecutor;
+    };
+    const sender = dev.executor?.dnsUpdateSender?.();
+    if (!dev.net || !sender) {
+      this.addLine('nsupdate: no DNS support on this host', 'error');
+      this.notify();
+      return;
+    }
+    let key: TsigKey | undefined;
+    for (let i = 0; i < args.length; i++) {
+      if (args[i] !== '-y') continue;
+      const parsed = parseNsupdateKeyOption(args[i + 1] ?? '');
+      if (typeof parsed === 'string') {
+        this.addLine(parsed, 'error');
+        this.notify();
+        return;
+      }
+      key = parsed;
+    }
+    const net = dev.net;
+    this.activeSubShell = new NsupdateSubShell({
+      send: sender,
+      resolve: (name) => Promise.resolve(net.resolveHostname(name)),
+      key,
+    });
+    this._inputBuf = '';
+    this.notify();
+  }
+
   private enterNslookup(): void {
     const dev = this.device as unknown as {
       net?: import('@/network/devices/linux/LinuxNetKernel').LinuxNetKernel;

@@ -6028,6 +6028,14 @@ Tests mécaniques, exécutés en continu :
 G4 est repris d'un garde-fou existant du dépôt, qui « a attrapé quatre
 nœuds intermédiaires nus » — preuve que ce type de test travaille.
 
+Les huit sont écrits, dans
+`src/__tests__/unit/network-v2/firewall/architecture-guards.test.ts`.
+G1, G2 et G5 y portent leur numéro ; G4, G6 et G7 y sont nommés
+**G-P3**, **G-P2** et **G-P1**, et G8 **G-P4**, parce que le BRD
+FortiGate (§31.4) donne déjà un autre sens à G6, G7 et G8 et que le
+fichier porte les deux séries. Chacun a son **témoin** : un garde-fou
+qu'on ne voit jamais échouer ne prouve pas qu'il regarde.
+
 ### 40.7 Couverture cible
 
 | Module | Cible |
