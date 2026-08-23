@@ -331,22 +331,35 @@ de `config system sdwan` n'est pas etabli : les membres et les routes
 statiques sont deux tables distinctes, et rejouer trop tot developperait une
 route sur une zone encore vide.
 
-### [linux] la commande `ipsec` (strongSwan) est une FACADE
-`ipsec up <conn>` rend `initiating IKE_SA <conn>[1] to 0.0.0.0` — la chaine
-`0.0.0.0` est litterale, quelle que soit la configuration —, `ipsec status`
-annonce toujours `0 up`, et `/etc/ipsec.conf` n'est lu par personne. Aucune
-negociation n'a lieu : un poste Linux n'a pas de moteur IPsec du tout, seuls
-`Router` et le pare-feu en construisent un. Le TP 18 monte donc son client
-teletravailleur avec un SECOND FortiGate, qui en porte un — ce qu'un vrai
-deploiement fait aussi (concentrateur a composition avec des FortiGate
-distants), mais ce n'est pas le client du tutoriel.
-**Mesure** : `ipsec up X` puis `ipsec status` sur un poste Linux ; rien ne
-change et aucune trame ne part.
-**Report** : il faut donner un moteur IPsec a `LinuxMachine` et un lecteur
-d'`ipsec.conf` par-dessus. `IPSecEngine` est ecrit contre un hote de forme
-ROUTEUR (`_getAccessListsInternal`, `getLocalIP`, `_getHostnameInternal`),
-donc il faut d'abord degager ce port etroit — c'est le vrai travail, et il
-sert aussi le TP 17 cote client.
+### [linux] un poste Linux n'a pas de démon IKE
+La commande `ipsec` lit désormais vraiment `/etc/ipsec.conf` et
+`/etc/ipsec.secrets` — `statusall` rend les connexions du fichier, `up`
+nomme le vrai pair et refuse une connexion inexistante dans les mots de
+strongSwan —, mais aucune SA ne peut s'établir depuis un poste : seuls
+`Router` et le pare-feu construisent un `IPSecEngine`.
+**Mesure** : `ipsec up <conn>` refuse en nommant ce qui manque ; aucune
+trame ne part.
+**Report, et la premisse précédente était FAUSSE** : il ne reste pas à
+« dégager le port étroit », il existe (`IpsecHost`) et un hôte qui n'est
+pas un routeur le remplit déjà — `FirewallAgents.buildFirewallAgents`
+construit un objet conforme et le passe au moteur. Ce qui manque
+vraiment est ailleurs, et c'est plus gros : la réception des datagrammes
+IKE sur 500/4500 côté hôte, et surtout un point d'accroche ESP sur le
+trafic que la machine ÉMET elle-même — un routeur chiffre ce qu'il
+ACHEMINE (`forwardPacket`), un poste chiffrerait ce qu'il produit, et ce
+chemin-là n'a aucun crochet aujourd'hui.
+
+### [linux] `ipsec` et `systemctl` ne partagent pas leur état
+`ipsec start`/`stop` écrivent un drapeau porté par l'exécuteur de
+commandes, et aucune unité `strongswan` n'existe dans le gestionnaire de
+services — donc `systemctl status strongswan` répond « unit could not be
+found » sur une machine dont `ipsec status` dit qu'elle tourne.
+**Mesure** : les deux vues ne se contredisent pas encore, faute d'unité ;
+elles s'ignorent.
+**Report** : ajouter l'unité veut dire décider ce que `ExecStart` lance
+et brancher le drapeau dessus, donc toucher la liste d'unités que
+plusieurs sondes lisent — un lot à part, du même genre que celui qui a
+donné son unité à `apache2`.
 
 ### [ipsec] la RESTRICTION des selecteurs n'est pas implementee
 RFC 7296 §2.9 laisse un repondeur RETRECIR les selecteurs proposes : si
