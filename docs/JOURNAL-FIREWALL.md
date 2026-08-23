@@ -2700,6 +2700,66 @@ refusé sont remplacés par un cas qui l'affirme disponible.
 
 ---
 
+## Périmètre pris — FortiOS phase 18 (le pont apprend, VIEILLIT, et se lit)
+
+**Agent `mandeng`.** §6.6 du carnet nomme le point : « l'apprentissage MAC
+du mode transparent est une table simple sur le châssis, sans
+vieillissement ni STP — `Switch` en a une plus complète, et la partager
+serait le prochain pas ».
+
+Mesure de départ, faite en lisant `Firewall.ts` :
+
+- **La table est un `Map<string, string>`** — MAC vers nom de port, rien
+  d'autre. Pas d'horodatage, donc **aucun vieillissement** : une entrée
+  apprise une fois vit jusqu'à l'extinction de la machine. Sur un vrai
+  FortiGate en mode transparent, la durée de vie d'une entrée est de
+  **300 secondes** et l'entrée est ensuite réapprise.
+- **Aucune vue ne la lit.** `diagnose netlink brctl name host root.b` —
+  la commande que tout cours de mode transparent fait taper — n'existe
+  pas, et `diagnose netlink brctl list` non plus. Une table
+  d'apprentissage qu'on ne peut pas regarder ne sert à rien pour le
+  diagnostic, qui est sa seule raison d'être.
+- **Elle est unique pour tout le châssis**, alors qu'un vrai FortiGate
+  porte une instance de pont **par VDOM** (`root.b`, `<vdom>.b`).
+- **Rien ne la purge quand un port tombe**, donc une trame continue de
+  viser un port mort.
+
+**Fichiers que la phase 18 prendra** :
+
+```
+firewall/l2/BridgeFdb.ts        ← la base d'apprentissage (socle, neuf)
+firewall/Firewall.ts            ← apprentissage, consultation, purge
+vendors/fortios/diag/…          ← `diagnose netlink brctl`
+```
+
+**Réutilisation examinée et ÉCARTÉE, avec sa raison** — c'est la
+première règle de `CLAUDE.md` et elle demande d'écrire pourquoi quand on
+ne réutilise pas. `Switch.ts` porte bien une table plus complète, mais
+la mesure montre que les deux objets ne répondent pas à la même
+question : celle du commutateur est indexée par **`vlan:mac`** et
+distingue `static` / `dynamic` / `blackhole`, avec la sécurité de port
+et le vieillissement accéléré de STP par-dessus (28 points d'appel dans
+le fichier). Un pont de mode transparent n'a ici ni VLAN, ni entrée
+statique, ni trou noir, ni STP. Partager le stockage forcerait l'un à
+porter les notions de l'autre. Ce qu'ils partagent vraiment est la
+**règle de vieillissement**, qui tient en trois lignes. La table du
+commutateur n'est donc **pas** touchée par cette phase, et l'extraction
+d'un primitif commun reste un chantier de `Switch.ts`, pas une tranche
+d'une phase FortiGate.
+
+**Décision de découpage** : l'expiration est calculée à la LECTURE, pas
+par un minuteur — le garde-fou G5 interdit les minuteurs bruts, et le
+pare-feu porte déjà son horloge. C'est la même mécanique que la posture
+du mode conserve en phase 16 : piloté par l'événement et par la lecture,
+jamais par la scrutation.
+
+**Critère de sortie** : une entrée apprise expire au bout de 300
+secondes d'horloge de l'équipement, `diagnose netlink brctl name host
+root.b` rend le tableau avec ses colonnes réelles, chaque VDOM a son
+pont, et un port qui tombe perd ses entrées.
+
+---
+
 ## Périmètre pris — FortiOS phase 17 (l'inspection lit un FLUX, pas un segment)
 
 **Agent `mandeng`.** §6.7 du carnet nomme le point de loin : « le
