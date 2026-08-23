@@ -53,7 +53,6 @@ export class WindowsUserManagerAuthority implements IAccountAuthority {
     return {
       name: u.name,
       secret: '',
-      secretAlgorithm: 'plain',
       privilege: 0,
       groups: Object.freeze([...groups]),
       serviceTypes: Object.freeze([]),

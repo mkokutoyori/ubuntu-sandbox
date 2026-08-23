@@ -85,7 +85,6 @@ export class LinuxUserManagerAuthority implements IAccountAuthority {
     return {
       name: accountName,
       secret: u.password ?? '',
-      secretAlgorithm: 'plain',
       privilege: 0,
       groups: Object.freeze([...(u.groups ?? [])]),
       serviceTypes: Object.freeze([...(u.serviceTypes ?? [])]),
