@@ -171,15 +171,6 @@ export const ROUTEUR_SEUL: ContinuationTable = {
     'no redistribute': ['bgp', 'connected', 'ospf', 'rip', 'static'],
     'passive-interface': ['default'],
   },
-  configRouterOspfv3: {
-    'area': ['range', 'stub', 'virtual-link'],
-    'bfd': ['all-interfaces'],
-    'default-information originate': ['always'],
-    'graceful-restart': ['grace-period'],
-    'no passive-interface': ['default'],
-    'passive-interface': ['default'],
-    'redistribute': ['static'],
-  },
   configStdNacl: {
     'sequence': ['deny', 'permit'],
   },

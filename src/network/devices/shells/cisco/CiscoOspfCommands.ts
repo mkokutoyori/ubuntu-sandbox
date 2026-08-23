@@ -30,6 +30,7 @@ import { iosShortInterfaceName, iosInterfaceStatus }
  */
 import type { CommandSpec } from '@/cli/CommandTable';
 import type { ArgumentSpec } from '@/cli/ArgumentTypes';
+import type { AdapterKeyword } from '@/cli/commands/trieAdapter';
 import { specsFromTrieRegistrations } from '@/cli/commands/trieAdapter';
 
 export function setOspfv3InterfaceParams(
@@ -1201,6 +1202,69 @@ export function routerOspfSpecs(ctx: CiscoShellContext): CommandSpec[] {
       undoFromNegatedPaths: true,
       argumentFor: (path) => ROUTER_OSPF_ARGUMENTS[path],
       keywordsFor: (path) => ROUTER_OSPF_KEYWORDS[path],
+    },
+  );
+}
+
+const ROUTER_OSPFV3_ARGUMENTS:
+Readonly<Record<string, ArgumentSpec | readonly ArgumentSpec[] | null>> = {
+  'router-id': { name: 'id', type: 'IP_ADDR', description: 'OSPFv3 router-id in IP address format' },
+  'passive-interface': { name: 'interface', type: 'INTERFACE', optional: true, description: 'Interface on which updates are suppressed' },
+  area: { name: 'aire', type: 'WORD', literal: '<0-4294967295>', description: 'OSPFv3 area number' },
+  redistribute: [{
+    name: 'protocole', type: 'ENUM', description: 'Source protocol to redistribute',
+    values: [{ keyword: 'static', description: 'Static routes' }],
+  }, { name: 'options', type: 'REST', optional: true, values: [], description: '' }],
+  'distribute-list': [{
+    name: 'genre', type: 'ENUM', description: 'Filter to apply',
+    values: [{ keyword: 'prefix-list', description: 'Filter prefixes in routing updates' }],
+  }, {
+    name: 'nom', type: 'WORD', description: 'Name of an IPv6 prefix list',
+  }, {
+    name: 'sens', type: 'ENUM', description: 'Direction to filter',
+    values: [
+      { keyword: 'in', description: 'Filter incoming routing updates' },
+      { keyword: 'out', description: 'Filter outgoing routing updates' },
+    ],
+  }],
+  'default-information originate': null,
+  'graceful-restart': null,
+  bfd: null,
+};
+
+const ROUTER_OSPFV3_KEYWORDS:
+Readonly<Record<string, ReadonlyArray<AdapterKeyword>>> = {
+  'passive-interface': [{ keyword: 'default', description: 'Suppress routing updates on all interfaces', argument: null }],
+  'default-information originate': [{ keyword: 'always', description: 'Always advertise the default route', argument: null }],
+  'graceful-restart': [{
+    keyword: 'grace-period', description: 'Maximum time before the restart completes',
+    argument: OSPF_INT('secondes', 1, 1800, 'Grace period in seconds'),
+  }],
+  bfd: [{ keyword: 'all-interfaces', description: 'Enable BFD on all interfaces', argument: null }],
+  area: [
+    {
+      keyword: 'range', description: 'Summarize routes matching an address/mask',
+      afterArguments: true,
+      argument: { name: 'prefixe', type: 'WORD', literal: 'X:X:X:X::X/<0-128>', description: 'IPv6 prefix' },
+    },
+    { keyword: 'stub', description: 'Stub area', afterArguments: true, argument: null },
+    {
+      keyword: 'virtual-link', description: 'OSPFv3 virtual link',
+      afterArguments: true,
+      argument: { name: 'voisin', type: 'IP_ADDR', description: 'Router ID of the virtual link neighbor' },
+    },
+  ],
+};
+
+export function routerOspfv3Specs(ctx: CiscoShellContext): CommandSpec[] {
+  return specsFromTrieRegistrations(
+    (collector) =>
+      buildConfigRouterOSPFv3Commands(collector as unknown as CommandTrie, ctx),
+    {
+      modes: ['config-router-ospfv3'], minPrivilege: 15,
+      undoFromNegatedPaths: true,
+      argumentFor: (path) => ROUTER_OSPFV3_ARGUMENTS[path],
+      keywordsFor: (path) => ROUTER_OSPFV3_KEYWORDS[path],
     },
   );
 }

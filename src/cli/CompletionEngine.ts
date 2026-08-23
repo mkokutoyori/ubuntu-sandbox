@@ -119,13 +119,18 @@ function describe(node: TreeNode, table: CommandTable, session: CliSession): str
   // declaree faisait decrire un pool DHCPv6 par les mots du pool IPv4.
   const ici = table.specAt(node, session, AIDE);
   if (ici) return ici.description;
-  if (node.specs.length > 0) return node.specs[0].description;
 
   for (const child of node.children.values()) {
     if (!subtreeReachable(child, table, session, AIDE)) continue;
     const inherited = describe(child, table, session);
     if (inherited) return inherited;
   }
-  const place = table.argumentAt(node, session, AIDE) ?? node.argumentChildren[0];
-  return place ? describe(place, table, session) : '';
+  const place = table.argumentAt(node, session, AIDE);
+  if (place) {
+    const herite = describe(place, table, session);
+    if (herite) return herite;
+  }
+  if (node.specs.length > 0) return node.specs[0].description;
+  return node.argumentChildren[0]
+    ? describe(node.argumentChildren[0], table, session) : '';
 }

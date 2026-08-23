@@ -112,7 +112,7 @@ import {
   registerOSPFConfigCommands, buildConfigRouterOSPFCommands,
   buildConfigRouterOSPFv3Commands,
   registerOSPFInterfaceCommands, registerOSPFShowCommands, ospfShowSpecs, ospfClearSpecs,
-  ospfIpv6ShowSpecs, routerOspfSpecs,
+  ospfIpv6ShowSpecs, routerOspfSpecs, routerOspfv3Specs,
   setOspfv3InterfaceParams, enableOspfv3OnInterface, disableOspfv3OnInterface,
   setOspfv3InterfaceAuthentication,
 } from './cisco/CiscoOspfCommands';
@@ -257,6 +257,7 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
       ...this.ipv6ExecSpecs(),
       ...dhcpPoolSpecs(this),
       ...routerOspfSpecs(this),
+      ...routerOspfv3Specs(this),
       ...dhcpPoolClassSpecs(this),
       ...dhcpClassSpecs(this),
       ...ipv6DhcpPoolSpecs(this),
