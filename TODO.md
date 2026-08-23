@@ -181,6 +181,44 @@ liste, echec ferme), contact, localisation, versions, hote de trap,
 
 ## Socle CLI
 
+### [cli] `standby ?` annonce `<0-255>` meme apres `standby version 2`
+La borne du numero de groupe HSRP DEPEND de la version configuree sur
+l'interface — 0-255 en v1, 0-4095 en v2 — et le gestionnaire l'applique
+correctement et dynamiquement. La declaration d'aide, elle, est statique
+et annonce toujours `<0-255>`.
+**Mesure** : sur une interface passee en `standby version 2`, un groupe
+300 est accepte (juste) et `standby ?` continue d'annoncer `<0-255>`
+(faux). La declaration porte desormais `rangeIsAdvisory`, qui EXEMPTE ce
+cas de la regle « une plage annoncee est appliquee » — sans quoi cette
+regle refusait un groupe que la machine accepte, mesure a neuf cas de
+test en echec.
+**Report** : rendre l'aide juste demande qu'une declaration puisse LIRE
+l'etat de l'interface, ce qu'aucune ne fait aujourd'hui — elles sont
+attachees a l'arbre, pas a la session. C'est le meme chantier que
+l'entree ci-dessous : des declarations qui decident au lieu de decrire.
+
+### [cli] les declarations d'arguments decrivent, elles ne tranchent pas
+Depuis le lot « une plage annoncee est une plage appliquee », un jeton
+NUMERIQUE hors d'un intervalle affiche par `?` est refuse. Le reste
+d'une declaration ne decide toujours rien : le TYPE (`WORD`, `IP_ADDR`,
+`INTERFACE`), les bornes non numeriques, et le nombre d'arguments.
+**Mesure** : appliquer les declarations a la lettre fait tomber 215 cas
+sur 4077 — `delete flash:jamais.cfg` refuse parce que le type `WORD` est
+declare `/^[a-zA-Z0-9_-]+$/` et n'admet ni `:` ni `.` ; `disconnect all`
+refuse parce que la place est declaree `<1-16>` alors qu'`all` est un
+mot-cle legitime qu'aucune declaration ne mentionne. Restent aussi
+acceptes `ip dhcp excluded-address zorglub` et `ip ssh time-out zorglub`,
+la ou l'aide annonce `A.B.C.D` et `<1-120>`.
+**Pourquoi ce n'est pas ferme** : ce ne sont pas les declarations qui
+sont trop faibles mais leur EXACTITUDE qui n'a jamais ete verifiee — il
+y en a 190, ecrites pour rendre une aide fidele, jamais pour arbitrer.
+Les faire trancher demande de les auditer une par une contre ce que la
+commande accepte vraiment, ce qui est un chantier a soi et non
+l'extension d'un correctif. La plage numerique a ete prise d'abord parce
+que c'est la seule partie d'une declaration qui soit sans ambiguite :
+`<1-120>` ne peut pas vouloir dire autre chose.
+
+
 ### [socle] deux familles sont migrées sur le commutateur VRP
 Le pont existe des DEUX côtés : `VRP_SWITCH_MODES` décrit la hiérarchie
 des treize vues du commutateur, et `HuaweiSwitchShell` consulte le socle

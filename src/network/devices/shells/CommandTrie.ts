@@ -38,6 +38,7 @@ export interface ParamSpec {
   validator?: (value: string) => boolean;
   /** Bornes d'un `INT`, rendues `<min-max>` comme IOS le fait. */
   range?: readonly [number, number];
+  rangeIsAdvisory?: boolean;
   /** Rendu littéral imposé, quand le type ne suffit pas (`LINE`, `hh:mm`). */
   literal?: string;
   /**
@@ -212,6 +213,7 @@ export interface DynamicParamResolver {
 
 export interface MatchResult {
   status: 'ok' | 'ambiguous' | 'incomplete' | 'invalid';
+  refusePar?: 'argument';
   /** The matched node (if ok or incomplete) */
   node?: CommandNode;
   /** The collected arguments for parameter nodes */
@@ -793,12 +795,74 @@ export class CommandTrie {
     return args.length - consumed < this.requiredArity(target);
   }
 
+  private declarationHolder(
+    node: CommandNode, args: readonly string[],
+  ): { node: CommandNode; firstArg: number } {
+    let holder = node;
+    let firstArg = 0;
+    while (firstArg < args.length) {
+      const child = holder.children.get(args[firstArg].toLowerCase());
+      if (!child || child.params.length === 0) break;
+      holder = child;
+      firstArg++;
+    }
+    return { node: holder, firstArg };
+  }
+
+  private outsideAnnouncedRange(value: string, literal: string): boolean {
+    if (!/^\d+$/.test(value)) return false;
+    const bounds = /^<(\d+)-(\d+)>$/.exec(literal);
+    if (!bounds) return false;
+    const n = Number(value);
+    return n < Number(bounds[1]) || n > Number(bounds[2]);
+  }
+
+  private rejectAnnouncedRange(
+    node: CommandNode, args: readonly string[], input: string, matchedKeywords: string[],
+  ): MatchResult | null {
+    const reject = (value: string): MatchResult => {
+      const pos = input.indexOf(value);
+      return {
+        status: 'invalid',
+        refusePar: 'argument',
+        args: [...args],
+        matchedKeywords,
+        error: this.formatInvalidInput(input, pos),
+        errorPos: pos,
+      };
+    };
+
+    for (let i = 0; i < args.length; i++) {
+      if (!/^\d+$/.test(args[i])) continue;
+      const announced = this.valeurAttendue(node, args.slice(0, i));
+      if (!announced || announced.length === 0) continue;
+      const ranges = announced.filter((v) => /^<\d+-\d+>$/.test(v.keyword));
+      if (ranges.length === 0 || ranges.length !== announced.length) continue;
+      if (ranges.some((v) => !this.outsideAnnouncedRange(args[i], v.keyword))) continue;
+      return reject(args[i]);
+    }
+
+    const { node: holder, firstArg } = this.declarationHolder(node, args);
+    for (let k = 0; k < holder.params.length && firstArg + k < args.length; k++) {
+      const spec = holder.params[k];
+      const value = args[firstArg + k];
+      if (spec.type !== 'INT' || !spec.range || spec.validator || spec.rangeIsAdvisory) continue;
+      if (!/^\d+$/.test(value)) continue;
+      if (Number(value) >= spec.range[0] && Number(value) <= spec.range[1]) continue;
+      if (holder.children.has(value.toLowerCase())) continue;
+      return reject(value);
+    }
+    return null;
+  }
+
   private finish(
     node: CommandNode,
     args: string[],
     matchedKeywords: string[],
     input: string,
   ): MatchResult {
+    const rejected = this.rejectAnnouncedRange(node, args, input, matchedKeywords);
+    if (rejected) return rejected;
     const keywordForm = args.length > 0 && this.isContinuationKeyword(node, args[0]);
     const arityMet = keywordForm || this.isExecutableAt(node, args.length, args);
     if (arityMet && !!node.action && !this.descendantShortfall(node, args)) {
@@ -1812,7 +1876,6 @@ export class CommandTrie {
 
   private validateParam(value: string, spec: ParamSpec): boolean {
     if (spec.validator) return spec.validator(value);
-
     switch (spec.type) {
       case 'ENUM':
         return (spec.values ?? []).some(v => v.keyword.toLowerCase() === value.toLowerCase());

@@ -5476,7 +5476,8 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       case 'incomplete':
         return renderCliDiagnostic('incomplete', { line: cmdPart });
       case 'invalid': {
-        const nav = this.tryGlobalConfigNavigation(cmdPart);
+        const nav = result.refusePar === 'argument'
+          ? null : this.tryGlobalConfigNavigation(cmdPart);
         if (nav !== null) return nav;
         const unknownExec = this.unknownExecCommand(cmdPart, result.errorPos);
         return unknownExec ?? (result.error || CISCO_ERRORS.INVALID_INPUT);
