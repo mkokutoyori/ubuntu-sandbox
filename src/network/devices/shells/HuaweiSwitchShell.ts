@@ -40,6 +40,7 @@ import { registerHuaweiCommonMgmt } from './huawei/HuaweiCommonConfig';
 import type { HuaweiDebugService } from '../router/diag/HuaweiDebugService';
 import { analyserAcl } from './huawei/HuaweiAclGrammar';
 import { type HuaweiSwitchDevice, commeRouteur, moteurNat, ajouterLigneVlan, lignesDuVlan } from './huawei/huaweiSwitchDevice';
+import { mqcMatchLine } from '../Switch';
 import { resolveHuaweiInterfaceName, huaweiDisplayInterfaceName } from './cli-utils';
 import { iosInterfaceStatus } from '../inspection/InterfaceStatusView';
 import {
@@ -944,7 +945,19 @@ export class HuaweiSwitchShell implements ISwitchShell {
 
     this.mqcClassifierTrie.registerGreedy('if-match acl', 'Match an ACL', (args) => {
       if (!args[0] || !this.selectedMqcName || !this.swRef) return 'Error: Incomplete command.';
-      const res = this.swRef.mqcClassifierAddMatchAcl(this.selectedMqcName, args[0]);
+      const res = this.swRef.mqcClassifierAddMatch(this.selectedMqcName, { kind: 'acl', ref: args[0] });
+      return res.ok ? '' : `Error: ${res.error}.`;
+    });
+    this.mqcClassifierTrie.registerGreedy('if-match vlan-id', 'Match a VLAN identifier', (args) => {
+      if (!this.selectedMqcName || !this.swRef) return 'Error: Incomplete command.';
+      const vlan = parseInt(args[0] ?? '', 10);
+      if (!Number.isFinite(vlan) || vlan < 1 || vlan > 4094) return 'Error: Wrong parameter found.';
+      const res = this.swRef.mqcClassifierAddMatch(this.selectedMqcName, { kind: 'vlan-id', vlan });
+      return res.ok ? '' : `Error: ${res.error}.`;
+    });
+    this.mqcClassifierTrie.register('if-match any', 'Match every packet', () => {
+      if (!this.selectedMqcName || !this.swRef) return 'Error: Incomplete command.';
+      const res = this.swRef.mqcClassifierAddMatch(this.selectedMqcName, { kind: 'any' });
       return res.ok ? '' : `Error: ${res.error}.`;
     });
     this.mqcBehaviorTrie.register('permit', 'Permit matched traffic', () => {
@@ -2561,6 +2574,7 @@ export class HuaweiSwitchShell implements ISwitchShell {
 
     // STP display family (switch-only).
     this.registerStpDisplay(trie);
+    this.registerMqcDisplay(trie);
 
     // Shared management `display` commands (DRY).
     registerHuaweiCommonSecurityDisplay(trie, () => this.localUsers,
@@ -2812,6 +2826,81 @@ export class HuaweiSwitchShell implements ISwitchShell {
     });
   }
 
+  private registerMqcDisplay(trie: CommandTrie): void {
+    const sw = () => this.swRef;
+
+    trie.register('display traffic classifier user-defined', 'Display user-defined classifiers', () => {
+      const device = sw();
+      const noms = device?.getMqcClassifierNames?.() ?? [];
+      if (noms.length === 0) return 'Info: Total 0 matched.';
+      const lignes: string[] = [];
+      for (const nom of noms) {
+        lignes.push(`  Classifier: ${nom}`);
+        lignes.push('   Operator: or');
+        for (const match of device?.getMqcClassifier?.(nom) ?? []) {
+          lignes.push(`   ${mqcMatchLine(match).replace(/^if-match /, 'Rule(s) : if-match ')}`);
+        }
+        lignes.push('');
+      }
+      lignes.push(`Total classifier number is ${noms.length}`);
+      return lignes.join('\n');
+    });
+
+    trie.register('display traffic behavior user-defined', 'Display user-defined behaviors', () => {
+      const device = sw();
+      const noms = device?.getMqcBehaviorNames?.() ?? [];
+      if (noms.length === 0) return 'Info: Total 0 matched.';
+      const lignes: string[] = [];
+      for (const nom of noms) {
+        lignes.push(`  Behavior: ${nom}`);
+        lignes.push(`   ${device?.getMqcBehavior?.(nom) ?? 'permit'}`);
+        lignes.push('');
+      }
+      lignes.push(`Total behavior number is ${noms.length}`);
+      return lignes.join('\n');
+    });
+
+    trie.register('display traffic policy user-defined', 'Display user-defined policies', () => {
+      const device = sw();
+      const noms = device?.getMqcPolicyNames?.() ?? [];
+      if (noms.length === 0) return 'Info: Total 0 matched.';
+      const lignes: string[] = [];
+      for (const nom of noms) {
+        lignes.push(`  Policy: ${nom}`);
+        for (const paire of device?.getMqcPolicy?.(nom) ?? []) {
+          lignes.push(`   Classifier: ${paire.classifier}`);
+          lignes.push(`    Behavior: ${paire.behavior}`);
+        }
+        lignes.push('');
+      }
+      lignes.push(`Total policy number is ${noms.length}`);
+      return lignes.join('\n');
+    });
+
+    trie.register('display traffic-policy applied-record', 'Where policies are applied', () => {
+      const device = sw();
+      const lignes: string[] = [];
+      for (const nom of device?.getMqcPolicyNames?.() ?? []) {
+        const points: string[] = [];
+        for (const [id] of device?.getVLANs?.() ?? []) {
+          if (device?.getVlanTrafficPolicy?.(id) === nom) {
+            points.push(`   Vlan ${id}: inbound`);
+          }
+        }
+        for (const port of device?.getPorts?.() ?? []) {
+          const portName = port.getName();
+          if (device?.getPortTrafficPolicy?.(portName) === nom) {
+            points.push(`   ${portName}: inbound`);
+          }
+        }
+        lignes.push(` Policy Name: ${nom}`);
+        lignes.push(...(points.length > 0 ? points : ['   (not applied)']));
+      }
+      if (lignes.length === 0) return 'Info: Total 0 matched.';
+      return lignes.join('\n');
+    });
+  }
+
   /** Interface-view `stp …` configuration commands. */
   private registerStpInterfaceCommands(trie: CommandTrie): void {
     trie.describeArgs('stp', [{
@@ -2951,11 +3040,24 @@ export class HuaweiSwitchShell implements ISwitchShell {
       return '';
     });
 
+    trie.registerGreedy('traffic-policy', 'Apply a traffic policy to this port', (args) => {
+      if (!this.selectedInterface || !this.swRef || !args[0]) return 'Error: Incomplete command.';
+      if (args[1]?.toLowerCase() !== 'inbound') return 'Error: Wrong parameter found.';
+      const res = this.swRef.applyPortTrafficPolicy(this.selectedInterface, args[0]);
+      if (!res.ok) return `Error: ${res.error}.`;
+      return record(`traffic-policy ${args.join(' ')}`.trim(), 'traffic-policy');
+    });
+    trie.registerGreedy('undo traffic-policy', 'Remove the port traffic policy', () => {
+      if (!this.selectedInterface || !this.swRef) return 'Error: Incomplete command.';
+      this.swRef.removePortTrafficPolicy(this.selectedInterface);
+      return this.removeIfCfg('traffic-policy');
+    });
+
     for (const kw of [
       'flow-control',
       'loopback-detect', 'port-security', 'storm-control',
       'port-mirroring',
-      'traffic-policy', 'am',
+      'am',
     ]) {
       trie.registerGreedy(kw, `Interface ${kw} configuration`, (args) =>
         record(`${kw} ${args.join(' ')}`.trim()));
@@ -3829,8 +3931,26 @@ export class HuaweiSwitchShell implements ISwitchShell {
    * statique est dans la table — et aucune ne survivait a un
    * `display current-configuration`, donc a un rechargement de topologie.
    */
-  private globalRunningConfigBlocks(sw: HuaweiSwitchDevice): string[][] {
+  private mqcRunningConfigBlocks(sw: HuaweiSwitchDevice): string[][] {
     const blocs: string[][] = [];
+    for (const nom of sw.getMqcClassifierNames?.() ?? []) {
+      const corps = (sw.getMqcClassifier?.(nom) ?? []).map(m => ` ${mqcMatchLine(m)}`);
+      blocs.push([`traffic classifier ${nom}`, ...corps]);
+    }
+    for (const nom of sw.getMqcBehaviorNames?.() ?? []) {
+      const action = sw.getMqcBehavior?.(nom) ?? 'permit';
+      blocs.push([`traffic behavior ${nom}`, ` ${action}`]);
+    }
+    for (const nom of sw.getMqcPolicyNames?.() ?? []) {
+      const corps = (sw.getMqcPolicy?.(nom) ?? [])
+        .map(p => ` classifier ${p.classifier} behavior ${p.behavior}`);
+      blocs.push([`traffic policy ${nom}`, ...corps]);
+    }
+    return blocs;
+  }
+
+  private globalRunningConfigBlocks(sw: HuaweiSwitchDevice): string[][] {
+    const blocs: string[][] = [...this.mqcRunningConfigBlocks(sw)];
     const sec = sw.getSecurityService();
 
     const dhcp: string[] = [];
@@ -3893,6 +4013,8 @@ export class HuaweiSwitchShell implements ISwitchShell {
       // Ces lignes etaient rangees et rendues par personne : la
       // configuration d'un VLAN les perdait, et l'import avec.
       for (const extra of lignesDuVlan(vlan)) lines.push(` ${extra}`);
+      const politique = sw.getVlanTrafficPolicy?.(id);
+      if (politique) lines.push(` traffic-policy ${politique} inbound`);
       const apprentissage = new Map(sw.getMacLearningDisabledVlans()).get(id);
       if (apprentissage) lines.push(` ${ligneApprentissageMac(apprentissage)}`);
       lines.push('#');

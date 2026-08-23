@@ -27,19 +27,30 @@ sur le même port sont plausibles et non attestées.
 mécanisme, lui, est en place — la clé de réglage porte désormais ses
 qualificatifs —, donc fermer cette entrée ne sera qu'un choix de clé.
 
-### [mqc] `traffic classifier` ouvre une vue dont le corps est refusé
-Mesuré sur un commutateur Huawei : `traffic classifier tc1` est acceptée et
-ouvre bien sa vue, mais `if-match vlan-id 10` — la seule chose qu'on y
-tape — répond `Unrecognized command found at '^' position`, et
-`display traffic classifier user-defined` est refusée elle aussi. Le
-classificateur n'est donc rangé nulle part que quiconque puisse relire, et
-il ne figure pas non plus dans la configuration rendue.
-**Report** : fermer cette entrée veut dire écrire le MQC (classifier /
-behavior / policy, `if-match`, `traffic-policy` sur interface) — un
-sous-système, pas une commande. Refuser `traffic classifier` en attendant
-retirerait une commande que la vraie machine accepte ; la laisser telle
-quelle laisse un critère accepté et non évalué. Les deux sont mauvais, d'où
-l'inscription plutôt qu'un correctif de façade.
+### [mqc] le comportement ne connaît que `permit` et `deny`
+Le classificateur (`if-match acl|vlan-id|any`), la politique et son
+évaluation sur le chemin de données sont réels, y compris posés sur un
+port. Le COMPORTEMENT, lui, n'a que deux actions : `car`, `remark dscp`,
+`statistic enable`, `redirect` sont refusés.
+**Mesure** : `car cir 1000` sous `traffic behavior` répond
+`Unrecognized command`.
+**Report** : `car` est le plus proche — `CarPolicer` existe et police
+déjà `qos car` et les trois suppressions —, mais le brancher demande de
+porter un seau par couple (classificateur, comportement) et non par port,
+donc une clé de police que le moteur ne connaît pas encore. `remark dscp`
+suppose un champ DSCP transporté de bout en bout, et `statistic enable`
+un compteur par classificateur : deux sujets à part.
+
+### [mqc] l'opérateur `and`/`or` d'un classificateur n'est pas modélisé
+Plusieurs `if-match` dans un classificateur sont évalués en OU — le
+premier qui touche décide. VRP laisse choisir avec
+`traffic classifier NAME operator { and | or }`.
+**Mesure** : le mot-clé `operator` est refusé.
+**Report** : la valeur par DÉFAUT de VRP n'est pas attestée depuis ce
+réseau (pages Huawei bloquées par le proxy), et se tromper de défaut
+changerait le sens de tous les classificateurs à plusieurs règles. Le OU
+actuel est celui que le code appliquait déjà ; l'écrire sans mesure
+serait pire.
 
 ### [info-center] `display info-center` est refusée
 Le magasin existe (`InfoCenterConfig`), la famille de configuration est
