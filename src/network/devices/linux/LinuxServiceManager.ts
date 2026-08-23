@@ -333,6 +333,15 @@ const BASE_UNITS: DefaultUnit[] = [
     startByDefault: true,
   },
   {
+    name: 'strongswan-starter',
+    description: 'strongSwan IPsec IKEv1/IKEv2 daemon using ipsec.conf',
+    type: 'simple',
+    execStart: '/usr/sbin/ipsec start --nofork',
+    after: ['syslog.target', 'network-online.target'],
+    enabledByDefault: true,
+    startByDefault: false,
+  },
+  {
     name: 'named',
     description: 'BIND Domain Name Server',
     type: 'forking',

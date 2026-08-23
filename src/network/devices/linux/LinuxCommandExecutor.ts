@@ -7009,10 +7009,6 @@ export class LinuxCommandExecutor {
     return load.engine.hasAnyAccess(this.sudoActor(user), hostname, this.getHostIps());
   }
 
-  // ─── IPSec (strongSwan) ─────────────────────────────────────────
-
-  readonly ipsecState = { started: false };
-
   // ─── Skeleton files ───────────────────────────────────────────────
 
   /**

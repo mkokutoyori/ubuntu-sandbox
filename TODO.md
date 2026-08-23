@@ -331,18 +331,6 @@ trafic que la machine ÉMET elle-même — un routeur chiffre ce qu'il
 ACHEMINE (`forwardPacket`), un poste chiffrerait ce qu'il produit, et ce
 chemin-là n'a aucun crochet aujourd'hui.
 
-### [linux] `ipsec` et `systemctl` ne partagent pas leur état
-`ipsec start`/`stop` écrivent un drapeau porté par l'exécuteur de
-commandes, et aucune unité `strongswan` n'existe dans le gestionnaire de
-services — donc `systemctl status strongswan` répond « unit could not be
-found » sur une machine dont `ipsec status` dit qu'elle tourne.
-**Mesure** : les deux vues ne se contredisent pas encore, faute d'unité ;
-elles s'ignorent.
-**Report** : ajouter l'unité veut dire décider ce que `ExecStart` lance
-et brancher le drapeau dessus, donc toucher la liste d'unités que
-plusieurs sondes lisent — un lot à part, du même genre que celui qui a
-donné son unité à `apache2`.
-
 ### [ipsec] la RESTRICTION des selecteurs n'est pas implementee
 RFC 7296 §2.9 laisse un repondeur RETRECIR les selecteurs proposes : si
 l'initiateur demande 10.0.0.0/8 et que le repondeur ne couvre que
@@ -533,6 +521,21 @@ test et `timeout` du serveur, 30 s chacun), donc le corriger touche un
 fichier partagé et toute la suite ; le relever dans un seul spec
 soignerait le symptôme à un endroit alors que tous y sont exposés. À
 trancher avec l'autre agent, qui exécute la même suite.
+
+### [systemd] `startByDefault` est déclaré sur chaque unité et lu par personne
+`DefaultUnit.startByDefault` figure sur les vingt-et-une entrées de
+`BASE_UNITS` (`LinuxServiceManager.ts`), avec une valeur différente selon
+l'unité — donc il a l'apparence d'un réglage. Ce qui décide réellement de
+l'activation au démarrage est `startEnabledServices()`, qui lit
+`enabled === 'enabled'`, c'est-à-dire `enabledByDefault`.
+**Mesure** : `grep -n "startByDefault" LinuxServiceManager.ts` ne rend que
+les déclarations, aucune lecture ; une unité posée à
+`startByDefault: false` et `enabledByDefault: true` démarre quand même.
+**Report** : le retirer touche les vingt-et-une unités et le type qui les
+décrit, pour un sujet qui n'est celui d'aucun lot en cours. C'est un
+champ mort, pas un comportement faux — mais un champ mort qui se lit
+comme un réglage est exactement ce que ce dépôt passe son temps à
+défaire.
 
 ### [typecheck] 341 erreurs de type au compteur
 `npm run typecheck` (ajouté) en compte 341, presque toutes dans les

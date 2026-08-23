@@ -5,6 +5,7 @@ import {
   type IpsecConn,
 } from '../../ipsec/IpsecConf';
 
+const UNIT = 'strongswan-starter';
 const CONF_PATH = '/etc/ipsec.conf';
 const SECRETS_PATH = '/etc/ipsec.secrets';
 const VERSION = '5.9.8';
@@ -69,7 +70,7 @@ export const ipsecCommand: LinuxCommand = {
     return ipsecCommand.runWithStatus!(ctx, argv) as unknown as string;
   },
   runWithStatus(ctx: LinuxCommandContext, argv: string[]) {
-    const state = ctx.executor.ipsecState;
+    const mgr = ctx.executor.serviceMgr;
     const verb = argv[0] ?? '';
 
     if (!verb) {
@@ -92,24 +93,30 @@ export const ipsecCommand: LinuxCommand = {
       });
     }
 
-    const running = () => state.started;
+    const running = () => mgr.isActive(UNIT);
     const notRunning = { output: 'IPsec is not running', exitCode: 1 };
+    const failed = (r: { error?: string }) =>
+      ({ output: r.error ?? 'ipsec: failed to start', exitCode: 1 });
 
     switch (verb) {
-      case 'start':
-        state.started = true;
+      case 'start': {
+        const r = mgr.start(UNIT);
+        if (!r.ok) return Promise.resolve(failed(r));
         return Promise.resolve({
           output: `Starting strongSwan ${VERSION} IPsec [starter]...`, exitCode: 0,
         });
+      }
       case 'stop':
-        state.started = false;
+        mgr.stop(UNIT);
         return Promise.resolve({ output: 'Stopping strongSwan IPsec...', exitCode: 0 });
-      case 'restart':
-        state.started = true;
+      case 'restart': {
+        const r = running() ? mgr.restart(UNIT) : mgr.start(UNIT);
+        if (!r.ok) return Promise.resolve(failed(r));
         return Promise.resolve({
           output: `Stopping strongSwan IPsec...\nStarting strongSwan ${VERSION} IPsec [starter]...`,
           exitCode: 0,
         });
+      }
       case 'reload':
         if (!running()) return Promise.resolve(notRunning);
         return Promise.resolve({

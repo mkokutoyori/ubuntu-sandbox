@@ -553,6 +553,7 @@ const UNIT_ALIASES: Record<string, string> = {
   // trouver son service, pas un `Unit could not be found` qui ne lui
   // apprendrait rien sur NTP.
   chronyd: 'chrony',
+  strongswan: 'strongswan-starter',
 };
 
 function resolveUnitAlias(name: string): string {
