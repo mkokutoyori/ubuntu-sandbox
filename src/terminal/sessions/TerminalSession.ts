@@ -115,7 +115,19 @@ export type InputMode =
   | { type: 'pager'; indicator: string }
   | { type: 'booting' }
   | { type: 'reverse-search' }
-  | { type: 'editor'; editorType: 'nano' | 'vi' | 'vim'; filePath: string; absolutePath: string; content: string; isNewFile: boolean }
+  | {
+      type: 'editor';
+      editorType: 'nano' | 'vi' | 'vim';
+      filePath: string;
+      absolutePath: string;
+      content: string;
+      isNewFile: boolean;
+      readOnly?: boolean;
+      showPosition?: boolean;
+      showLineNumbers?: boolean;
+      initialCursorLine?: number;
+      initialCursorCol?: number;
+    }
   /**
    * An editor whose buffer lives on the far side of an SSH channel: the
    * engine runs on the remote, and `controller` is the proxy the overlay

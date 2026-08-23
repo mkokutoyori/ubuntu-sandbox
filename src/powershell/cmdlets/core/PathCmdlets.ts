@@ -7,6 +7,7 @@
 import type { ICmdlet } from '../ICmdlet';
 import type { CmdletContext } from '../CmdletContext';
 import type { PSValue } from '@/powershell/runtime/PSEnvironment';
+import { AD_NULL_GUID } from '@/network/devices/windows/server/ad/AdTypes';
 import { PSRuntimeError } from '@/powershell/runtime/PSRuntime';
 import { psValueToString } from '@/powershell/runtime/PSExpansion';
 import { md5Hex } from '@/crypto/hash/md5';
@@ -945,9 +946,9 @@ export class SetAclCmdlet implements ICmdlet {
           identitySam: psValueToString(rec['IdentityReference'] ?? ''),
           rights: psValueToString(rec['ActiveDirectoryRights'] ?? ''),
           accessControlType: psValueToString(rec['AccessControlType'] ?? 'Allow') === 'Deny' ? 'Deny' as const : 'Allow' as const,
-          objectType: psValueToString(rec['ObjectType'] ?? '00000000-0000-0000-0000-000000000000'),
+          objectType: psValueToString(rec['ObjectType'] ?? AD_NULL_GUID),
           inheritanceType: psValueToString(rec['InheritanceType'] ?? 'None'),
-          inheritedObjectType: psValueToString(rec['InheritedObjectType'] ?? '00000000-0000-0000-0000-000000000000'),
+          inheritedObjectType: psValueToString(rec['InheritedObjectType'] ?? AD_NULL_GUID),
         };
       });
       const dn = stripAdPathPrefix(path);

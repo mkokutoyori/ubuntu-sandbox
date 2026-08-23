@@ -847,7 +847,6 @@ export class LinuxTerminalSession extends TerminalSession {
         }
         this._continuationBuffer = accumulated;
         this._pendingHeredocDelimiter = analysis.heredocDelimiter ?? null;
-        this.updatePrompt?.();
         this.notify();
         return;
       }
@@ -858,7 +857,6 @@ export class LinuxTerminalSession extends TerminalSession {
         this.addEchoLine(this.getPrompt(), cmd);
         this._continuationBuffer = null;
         this._pendingHeredocDelimiter = null;
-        this.updatePrompt?.();
         const doneMulti = this.executeCommand(accumulated, { echo: false });
         this.notify();
         return doneMulti;
