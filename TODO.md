@@ -469,6 +469,21 @@ sujet en soi et non une commande de plus.
 
 ## Serveurs DHCP
 
+### [dhcp] `utilization mark high|low` n'est pas configurable
+`show ip dhcp pool` rend la ligne
+`Utilization mark (high/low) : 100 / 0`. Les deux valeurs SONT celles
+d'IOS par defaut, mais elles sont constantes : la vue lisait
+`pool.highUtilizationMark`/`lowUtilizationMark`, deux proprietes qui
+n'existent sur aucun `DHCPPoolConfig`, donc les replis `?? 100` / `?? 0`
+etaient tout ce qui s'affichait. Elles sont desormais des constantes
+nommees, ce qui dit la verite au lieu de simuler une lecture.
+**Mesure** : `utilization mark high 80` sous `ip dhcp pool` est refuse, et
+aucun magasin ne porte le reglage.
+**Report** : la commande n'a d'interet qu'avec ce qu'elle declenche —
+`%DHCPD-4-HIGH_UTIL` et la notification SNMP associee —, donc l'accepter
+seule rangerait un seuil que rien ne franchit. C'est un lot avec son
+emetteur, pas un attribut de plus.
+
 ### [dhcp] Windows : le basculement et l'export restent absents
 `Get-DhcpServerv4Binding`, `Get-/Set-DhcpServerv4DnsSetting` sont
 désormais déclarées et réelles. Restent absents

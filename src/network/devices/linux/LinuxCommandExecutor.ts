@@ -7041,6 +7041,7 @@ export class LinuxCommandExecutor {
 
   /** Get current working directory */
   getCwd(): string { return this.cwd; }
+  getUmask(): number { return this.umask; }
 
   /**
    * Le nom sous lequel la session s'est ouverte, celui que `logname` rend.
