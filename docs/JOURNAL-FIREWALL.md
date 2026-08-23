@@ -2759,6 +2759,43 @@ colonnes réelles, `execute restore config flash <id>` remet la
 configuration d'alors, et `execute revision delete config <id>` la
 retire.
 
+**Livrée.** Quatre choses méritent d'être gardées :
+
+- **Rien n'est écrit pour restaurer.** Le chemin de restauration savait
+  déjà rejouer un texte de configuration à travers la vraie CLI, et
+  `renderWholeConfig` sait rendre la configuration entière : une révision
+  EST ce texte, et la restaurer EST ce rejeu. `restoreRevision` tient en
+  dix lignes pour cette raison, et c'est le genre de réutilisation qui
+  ne se voit pas dans le diff — d'où cette ligne.
+- **La déconnexion est branchée aux DEUX endroits** où une session
+  d'administration se termine : `FirewallCliServer` pour SSH et telnet,
+  `FortiTerminalSession.endExecSession` pour la console. Un historique
+  qui ne se remplirait que sur SSH serait exactement la moitié que ce
+  module passe son temps à refermer.
+- **`vdom-mode` est cachée**, et le socle CLI portait déjà tout ce qu'il
+  fallait : `CommandSpec.hidden` et le filtre `forHelp` existent depuis
+  la construction du socle. Seul `FortiAttributeSpec.hidden` est ajouté,
+  puis propagé aux deux rendus — la configuration et la complétion.
+  C'était le point que la phase 18 avait laissé en le disant SÛR.
+- **`FORTI_CLI_LOGOUT` est supprimée plutôt que branchée.** La sentinelle
+  était produite par `exit` et `quit` et consommée par PERSONNE : au
+  niveau le plus haut, `exit` rendait `\0forti-cli-logout` à l'appelant.
+  Les deux vrais appelants tranchent eux-mêmes — `closesSession` côté
+  SSH/telnet, `isTopLevelExit` côté console — donc la sentinelle ne
+  servait à rien et la brancher aurait ajouté un troisième mécanisme
+  pour la même décision.
+
+**Une assertion de ma sonde était fausse et c'est ELLE qui a été
+corrigée**, pas le produit : `execute restore config tftp` sans serveur
+refuse par « a TFTP server address is missing » et non par le nom de
+fichier — le serveur est vérifié en premier, ce qui est le bon ordre.
+
+**Ce qui n'est PAS modélisé, et pourquoi ce n'est pas un report** : une
+révision naît aussi, sur un vrai FortiGate, d'une mise à jour de
+micrologiciel et de la sauvegarde par l'interface web. Ce simulateur n'a
+ni l'une ni l'autre, donc ces deux déclencheurs n'ont rien à déclencher.
+Les inventer aurait produit des révisions que rien ne cause.
+
 ---
 
 ## Périmètre pris — FortiOS phase 18 (le pont apprend, VIEILLIT, et se lit)

@@ -153,10 +153,10 @@ moins honnete sur son perimetre. Trancher demande la page
 `split-task-vdom-mode` de la 7.6 ou une vraie machine ; les pages
 atteintes depuis ce reseau sont des sommaires de navigation.
 
-**Trouve en chemin et sur** : `vdom-mode` est une commande CACHEE sur un
-vrai 7.4/7.6 — elle n'apparait ni dans `show`, ni dans `show full`, ni
-dans la liste du `?`. Ici elle figure dans les trois. C'est mesurable et
-independant de la question ci-dessus.
+**Ferme en phase 19, et sans rapport avec la question ci-dessus** :
+`vdom-mode` est une commande CACHEE sur un vrai 7.4/7.6 — absente de
+`show`, de `show full` et de la liste du `?`. Elle l'est desormais ici
+aussi, tout en restant acceptee et honoree.
 
 ### [vip] `set type dns-translation` est refuse faute de relais DNS de transit
 **Constat.** `config firewall vip` accepte trois types. `static-nat` et
