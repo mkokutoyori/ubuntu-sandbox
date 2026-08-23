@@ -161,6 +161,9 @@ export function buildCommitDevice(fw: Firewall): FortiCommitDevice {
             settings.avFailopen as AntivirusFailopen);
         }
       },
+      applyIpsGlobal(settings) {
+        fw.getSystemLoad().setIpsFailOpen(settings.failOpen);
+      },
       applyReplacementMessage(message, buffer) {
         fw.getLoginBanners().setBuffer(message, buffer);
       },

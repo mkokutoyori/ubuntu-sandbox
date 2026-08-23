@@ -209,6 +209,10 @@ export interface FortiGlobalSettings {
   readonly avFailopen?: string;
 }
 
+export interface FortiIpsGlobalSettings {
+  readonly failOpen: boolean;
+}
+
 export interface FortiVdomSettings {
   readonly centralNat: boolean;
   readonly opmode: 'nat' | 'transparent';
@@ -243,6 +247,7 @@ export interface FortiCommitDevice {
   removePolicyRoute(id: string): void;
   applyMemoryLog(patch: FortiMemoryLogPatch): void;
   applyGlobalSettings(settings: FortiGlobalSettings): void;
+  applyIpsGlobal(settings: FortiIpsGlobalSettings): void;
   applyReplacementMessage(message: string, buffer: string): void;
   applyConsoleSettings(settings: ConsoleSettingsPatch): void;
   applyHostname(hostname: string): void;

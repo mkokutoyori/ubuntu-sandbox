@@ -429,6 +429,53 @@ describe('FortiOS — le mode conserve engage', () => {
     expect(fw.getSessionTable().count()).toBe(avant);
   });
 
+  it('av-failopen decide du sort de l inspection MANDATAIRE', () => {
+    const { fw, sh } = pareFeu();
+    const socle = socleMemoire(sh);
+    const charge = fw.getSystemLoad();
+    seuils(sh, 95, 80, 70);
+    expect(charge.proxyInspectionPosture()).toBe('normal');
+
+    pressionMemoire(sh, socle, 0.85);
+    expect(charge.proxyInspectionPosture()).toBe('bypass');
+
+    run(sh, 'config system global', 'set av-failopen off', 'end');
+    expect(charge.proxyInspectionPosture()).toBe('block');
+  });
+
+  it('one-shot reste COLLE apres la sortie du mode conserve', () => {
+    const { fw, sh } = pareFeu();
+    const socle = socleMemoire(sh);
+    const charge = fw.getSystemLoad();
+    seuils(sh, 95, 80, 70);
+    run(sh, 'config system global', 'set av-failopen one-shot', 'end');
+
+    pressionMemoire(sh, socle, 0.85);
+    expect(charge.proxyInspectionPosture()).toBe('bypass');
+
+    pressionMemoire(sh, socle, 0.20);
+    expect(conserveAllume(sh)).toBe(false);
+    expect(charge.proxyInspectionPosture()).toBe('bypass');
+
+    run(sh, 'config system global', 'set av-failopen pass', 'end');
+    expect(charge.proxyInspectionPosture()).toBe('normal');
+  });
+
+  it('l inspection de FLUX echoue FERMEE par defaut, l inverse du mandataire', () => {
+    const { fw, sh } = pareFeu();
+    const socle = socleMemoire(sh);
+    const charge = fw.getSystemLoad();
+    seuils(sh, 95, 80, 70);
+    pressionMemoire(sh, socle, 0.85);
+
+    expect(charge.flowInspectionPosture()).toBe('block');
+    expect(charge.proxyInspectionPosture()).toBe('bypass');
+
+    run(sh, 'config ips global', 'set fail-open enable', 'end');
+    expect(charge.flowInspectionPosture()).toBe('bypass');
+    expect(run(sh, 'show ips global')).toContain('set fail-open enable');
+  });
+
   it('une session DEJA etablie continue de passer en mode conserve', async () => {
     const { fw, sh, client, serveur } = await laboratoire();
     await runOn(serveur, ['systemctl start nginx']);

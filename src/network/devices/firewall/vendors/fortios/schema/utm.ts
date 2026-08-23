@@ -553,6 +553,25 @@ export const IPS_SENSOR: FortiTableSpec = {
   onCommit() {},
 };
 
+export const IPS_GLOBAL: FortiTableSpec = {
+  path: ['ips', 'global'],
+  kind: 'object',
+  scope: 'global',
+  accessGroup: 'utmgrp',
+  renderOrder: 465,
+  help: 'Configure IPS global parameters.',
+  attributes: [
+    enable('fail-open',
+      'Enable to allow new sessions through when the IPS engine cannot scan'
+      + ' them. Disabled by default, so flow-based inspection fails CLOSED.'),
+  ],
+  onCommit(object, context) {
+    context.device.applyIpsGlobal({
+      failOpen: object.effective('fail-open')[0] === 'enable',
+    });
+  },
+};
+
 export const DLP_SENSOR: FortiTableSpec = {
   path: ['dlp', 'sensor'],
   kind: 'table',
@@ -733,6 +752,7 @@ export const UTM_SPECS: readonly FortiTableSpec[] = Object.freeze([
   PROTOCOL_OPTIONS,
   APPLICATION_LIST,
   IPS_SENSOR,
+  IPS_GLOBAL,
   DLP_SENSOR,
   TRAFFIC_SHAPER,
 ]);

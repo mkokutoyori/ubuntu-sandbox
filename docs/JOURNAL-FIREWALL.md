@@ -2766,6 +2766,69 @@ et se relâche au seuil vert, un paquet arrivant en mode conserve extrême
 est vraiment refusé, l'événement est journalisé, et les trois vues
 lisent le même modèle.
 
+**Livrée.** Le périmètre annoncé a été ÉLARGI par la vérification contre
+la documentation Fortinet, qui a trouvé trois choses que la mesure de
+départ n'avait pas vues :
+
+- **Les seuils étaient FAUX**, pas seulement non réglables : le dépôt
+  portait 88/82/78 là où un vrai FortiGate donne extrême 95, rouge 88,
+  vert 82 (plage 70-97, inchangée de 7.4 à 8.0). Le 88 du dépôt était le
+  seuil ROUGE pris pour l'extrême et le 82 le seuil VERT pris pour le
+  rouge ; 78 ne figure nulle part.
+- **Le seuil extrême se mesure sur `utilisé + libérable`** quand le rouge
+  et le vert se mesurent sur l'`utilisé` seul. C'est écrit dans
+  l'intitulé même de la vue (`memory used + freeable threshold extreme`),
+  que le dépôt rendait déjà sans que rien ne l'applique.
+- **`Current sessions:`, `Total sessions created:` et
+  `Total sessions closed:` n'existent pas** dans cette commande sur un
+  vrai boîtier — trois lignes inventées — pendant qu'il lui manquait
+  `Average session setup rate:`, qu'elle a.
+
+**Deux erreurs de MON premier modèle**, trouvées en lisant la sortie
+rendue plutôt qu'en la supposant juste, et corrigées :
+
+1. `utilisé + libre + libérable = total`. Ce sont TROIS catégories
+   disjointes et non deux dont l'une contiendrait l'autre — la capture
+   d'un vrai boîtier tranche : 68,6 + 18,8 + 12,6 = 100. Ma première
+   version comptait le tampon de journaux DEUX fois.
+2. Le tampon de journaux n'est pas réclamable : le libérer perdrait les
+   journaux, donc il est UTILISÉ en entier, réserve comprise. Une fois
+   réservé, le remplir ne change plus rien.
+
+**Le levier de pression mémoire de la sonde est une vraie commande
+d'opérateur** — `config log memory global-setting` / `set max-size` — et
+non une porte dérobée. Sur un vrai FortiGate ce tampon est de la RAM
+réservée et le sur-dimensionner est une cause documentée de mode
+conserve. Aucune méthode de test n'est ajoutée à l'équipement ; la
+première version de la sonde en ouvrait une (`setMemoryPressureForTest`)
+et a été réécrite avant d'être exécutée une seule fois.
+
+**Le mode conserve a deux conséquences, de polarités OPPOSÉES**, et c'est
+le fait le moins intuitif de ce chantier : l'inspection MANDATAIRE échoue
+OUVERTE par défaut (`av-failopen pass` — le trafic passe sans être
+inspecté), l'inspection de FLUX échoue FERMÉE par défaut
+(`ips global fail-open disable` — le trafic est jeté). Les deux valeurs
+par défaut sont réelles. `one-shot` reste collé après la sortie du mode
+conserve, ce qui est sa raison d'être.
+
+Trouvé en chemin et corrigé dans le fichier qu'on touchait : `renderTable`
+ne savait pas rendre un tableau SANS intitulé de colonne, alors que les
+deux vues de ce chantier en sont. `TableStyle.header` le permet, et les
+deux passent par le module commun au lieu de caler leurs blancs à la
+main.
+
+Ce qui n'a **pas** de source mesurable reste à ZÉRO et est dit dans le
+fichier : `nice`, `iowait`, `irq`. De même le %CPU par processus n'est
+attribué qu'aux processus d'inspection — le travail du noyau n'appartient
+à aucun processus utilisateur, ce que la documentation Fortinet dit
+elle-même de la colonne mémoire de `diagnose sys top`.
+
+**Rien n'est laissé ouvert.** Il n'y a pas de minuteur de surveillance
+(G5 l'interdit) et il n'en faut pas : `memory()` règle la posture à
+chaque LECTURE, et chaque mutation qui déplace vraiment la mémoire
+(réserve de journaux, compte de sessions, changement de seuil) la
+rappelle. Un mécanisme piloté par l'événement plutôt que par la scrutation.
+
 ---
 
 ## Périmètre pris — FortiOS phase 15 (le type du VIP gouverne, un bloc expire)

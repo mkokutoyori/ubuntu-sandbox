@@ -73,6 +73,7 @@ export class SystemLoad {
   private thresholds: ConserveThresholds = DEFAULT_CONSERVE_THRESHOLDS;
   private posture: ConservePosture = 'green';
   private failopen: AntivirusFailopen = 'pass';
+  private ipsFailOpen = false;
   private bypassLatched = false;
   private processed = 0;
 
@@ -149,10 +150,12 @@ export class SystemLoad {
 
     const usedKib = Math.min(totalKib, Math.round(usedBytes / 1024));
     const freeableKib = Math.min(totalKib - usedKib, Math.round(freeableBytes / 1024));
-    return Object.freeze({
+    const states = Object.freeze({
       totalKib, usedKib, freeableKib,
       freeKib: totalKib - usedKib - freeableKib,
     });
+    this.settle(states);
+    return states;
   }
 
   setThresholds(thresholds: ConserveThresholds): void {
@@ -169,7 +172,11 @@ export class SystemLoad {
   }
 
   conservePosture(): ConservePosture {
-    const memory = this.memory();
+    this.memory();
+    return this.posture;
+  }
+
+  private settle(memory: MemoryStates): void {
     const usedPercent = (memory.usedKib / memory.totalKib) * 100;
     const withFreeable = ((memory.usedKib + memory.freeableKib) / memory.totalKib) * 100;
     const previous = this.posture;
@@ -180,7 +187,6 @@ export class SystemLoad {
     else if (previous === 'extreme') this.posture = 'conserve';
 
     if (previous !== this.posture) this.announce(previous, memory);
-    return this.posture;
   }
 
   inConserveMode(): boolean {
@@ -205,6 +211,19 @@ export class SystemLoad {
     if (this.failopen === 'off') return 'block';
     if (this.failopen === 'one-shot') this.bypassLatched = true;
     return 'bypass';
+  }
+
+  setIpsFailOpen(open: boolean): void {
+    this.ipsFailOpen = open;
+  }
+
+  getIpsFailOpen(): boolean {
+    return this.ipsFailOpen;
+  }
+
+  flowInspectionPosture(): InspectionPosture {
+    if (!this.inConserveMode()) return 'normal';
+    return this.ipsFailOpen ? 'bypass' : 'block';
   }
 
   private announce(previous: ConservePosture, memory: MemoryStates): void {

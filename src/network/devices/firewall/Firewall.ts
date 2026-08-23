@@ -309,6 +309,7 @@ export class Firewall extends Equipment {
       policyKeyedBy: profile.policyKeyedBy,
       refusesNewSessions: () => this.load.refusesNewSessions(),
       proxyInspectionPosture: () => this.load.proxyInspectionPosture(),
+      flowInspectionPosture: () => this.load.flowInspectionPosture(),
       onInspection: () => { this.load.recordPacket('inspection'); },
       bridgedWith: (ingress, egress) => this.sameSwitchInterface(ingress, egress),
       macLookup: (destination, ingress) => this.lookupMac(destination, ingress),

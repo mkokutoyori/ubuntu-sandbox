@@ -17,6 +17,7 @@ export type VerdictReason =
   | 'session-table-full'
   | 'memory-conserve-extreme'
   | 'av-failopen-off'
+  | 'ips-fail-closed'
   | 'nat-port-exhausted'
   | 'nat-no-rule'
   | 'profile-block'

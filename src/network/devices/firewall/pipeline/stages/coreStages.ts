@@ -73,6 +73,7 @@ export interface FirewallServices {
   discardTimeoutSec?: number;
   refusesNewSessions?: () => boolean;
   proxyInspectionPosture?: () => 'normal' | 'bypass' | 'block';
+  flowInspectionPosture?: () => 'normal' | 'bypass' | 'block';
   onInspection?: () => void;
 }
 
@@ -216,6 +217,10 @@ function inspectUtm(
     const posture = services.proxyInspectionPosture?.() ?? 'normal';
     if (posture === 'bypass') return proceed(context, stage, 'av-failopen-pass');
     if (posture === 'block') return deny(context, stage, 'av-failopen-off', rule.id);
+  } else {
+    const posture = services.flowInspectionPosture?.() ?? 'normal';
+    if (posture === 'bypass') return proceed(context, stage, 'ips-fail-open');
+    if (posture === 'block') return deny(context, stage, 'ips-fail-closed', rule.id);
   }
 
   const packet = ipv4(context);

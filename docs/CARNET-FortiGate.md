@@ -79,7 +79,9 @@ qui reprend doit les connaître avant de toucher au code.
 | **D18** | Un journal est **structuré** (`FirewallLogStore`), pas une ligne de texte : sans champs, `execute log filter field` ne peut filtrer sur rien | E34 |
 | **D19** | Les champs d'un journal FortiOS sont **entre guillemets**, les numériques exceptés | E34, mesuré |
 | **D20** | **La règle implicite ne journalise pas par défaut** ; `config log setting` / `set fwpolicy-implicit-log enable` la fait parler | E34, mesuré |
-| **D21** | Une vue ne publie **que ce qui est mesuré** : pas de CPU ni de mémoire dans `get system performance status`, faute de modèle de charge | E34 |
+| **D21** | Une vue ne publie **que ce qui est mesuré**. ~~Pas de CPU ni de mémoire, faute de modèle de charge~~ → **E62** : le modèle existe (`health/SystemLoad`), la charge est DÉRIVÉE de ce que l'équipement porte et fait, et ce qui n'a pas de source (`nice`, `iowait`, `irq`) reste à zéro | E34, E62 |
+| **D21b** | La charge a **une seule source pour trois vues** : `get system performance status`, `diagnose sys top` et `diagnose hardware sysinfo conserve` ne peuvent pas se contredire | E62 |
+| **D21c** | Un mécanisme annoncé par une vue doit **pouvoir se produire** : un mode conserve calculé sur une mémoire toujours nulle décrivait un état inatteignable | E62 |
 | **D22** | **Un FortiGate multi-VDOM est UNE machine.** Jamais N objets `Firewall` : un registre de `VdomContext` sur un seul châssis | BRD §10.2, E35 |
 | **D23** | Le **mono-VDOM est le cas particulier** du multi-VDOM, pas une branche : `FirewallServices` résout toujours par VDOM | FGT-VDM-2, E35 |
 | **D24** | Un VDOM est une **PORTÉE** (`FortiTableSpec.scopeOnly`), pas un conteneur : l'arbre complet se rouvre dessous | Défaut B50 |
@@ -396,9 +398,11 @@ syslogd[2-4]` + `filter`, `config log memory setting|global-setting`,
 
 **Ce qui reste de la phase 4, nommé plutôt que tu** :
 
-- `get system performance status` ne rend **ni CPU ni mémoire** : aucun
-  modèle de charge n'existe, et une constante affichée là où la vue
-  promet une mesure est précisément le défaut que ce dépôt referme ;
+- ~~`get system performance status` ne rend ni CPU ni mémoire~~
+  **fermé en E62** : `health/SystemLoad` mesure, les trois vues le
+  lisent, les seuils du mode conserve se règlent et valaient 88/82/78
+  là où un vrai FortiGate donne 95/88/82, et le mode conserve a
+  désormais une conséquence sur le trafic ;
 - ~~les collecteurs syslog n'émettent pas~~ **fermé en E50** : un vrai
   `rsyslog` reçoit la ligne dans son `/var/log/syslog`. Le chemin CLI
   était faux au passage (`config log syslogd setting` et
@@ -626,6 +630,7 @@ comparer, jamais le supposer).
 | 2026-08-19 | agent `mandeng` | Phase 13 livrée (E50). **Les collecteurs syslog émettent pour de bon**, et leur chemin CLI était faux (`setting`/`filter` sont frères). |
 | 2026-08-20 | agent `mandeng` | Phase 14 livrée (E51). **Le pare-feu héberge un vrai serveur SSH et telnet**, et `allowaccess` devient un filtre local-in par port de destination — il était stocké et lu par personne, comme les sept réglages d'administration de `config system global`. Piège P14 retiré : la limite de 800 lignes par fichier (NFR-M3, garde-fous G1 et G3) est supprimée. |
 | 2026-08-21 | agent `mandeng` | Phase 15 livrée (E52). **`pba-timeout` périme vraiment un bloc de ports** — et `overloadMappings` fuyait, inséré sous une clé et supprimé sous une autre. **Le TYPE d'un VIP gouverne** : `fqdn` est commis avec `set mapped-addr`, `dns-translation` est refusé en nommant le relais DNS de transit manquant (`TODO.md`). Le client DNS du pare-feu est RÉUTILISÉ, pas réécrit : une première version en doublait `FirewallDnsClient` et a été supprimée avant commit. |
+| 2026-08-23 | agent `mandeng` | Phase 16 livrée (E62). **La charge est MESURÉE et le mode conserve engage.** Trois vues promettaient une mesure et lisaient la même constante gelée — CPU figé à `idle: 100`, mémoire utilisée NULLE, donc un mode conserve structurellement impossible. `health/SystemLoad` dérive la charge de ce que l'équipement porte et fait ; `FirewallProfile.chassis` déclare RAM, CPU et débit une seule fois pour les trois constructeurs. **Les seuils étaient faux** (88/82/78 au lieu de 95/88/82) et ne se réglaient pas. Le mode conserve a une CONSÉQUENCE : session refusée au seuil extrême, `av-failopen` (mandataire, échoue OUVERT par défaut) et `ips global fail-open` (flux, échoue FERMÉ) au seuil rouge — polarités opposées, comme sur un vrai boîtier. Trois lignes inventées retirées de `get system performance status`. Deux erreurs de mon propre modèle corrigées en lisant la sortie : `utilisé + libre + libérable = total` (trois catégories DISJOINTES), et un tampon de journaux réservé n'est pas réclamable. |
 | 2026-08-19 | agent `mandeng` | Phase 12 livrée (E49). **Le portail captif détourne pour de bon**, et un défaut du socle TCP tombe avec : `transmit` sourçait un segment par le ROUTAGE au lieu de `socket.localIp`. |
 | 2026-08-19 | agent `mandeng` | Phase 11 livrée (E46 à E48). **Tous les points ouverts de la phase 2 sont fermés.** **BGP : le refus de la phase 10 reposait sur une prémisse fausse de ma part** — le pare-feu a un `TcpStack` depuis la phase 7. **DHCP : `onCommit` était vide**, le serveur sert maintenant de vrais baux et `mode dhcp` est un vrai client. |
 | 2026-08-21 | agent `mandeng` | Le panneau « Live state » lit le pare-feu (E43). Decisions D53 a D55. **Toutes ses sections rendaient « (empty) »** pour une machine qui portait au meme instant une interface adressee, une entree ARP et une pile TCP ; le PC voisin, lui, montrait les siennes. |
