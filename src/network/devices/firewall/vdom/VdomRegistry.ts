@@ -5,6 +5,7 @@ import { ObjectStore } from '../model/ObjectStore';
 import { PolicyStore } from '../model/PolicyStore';
 import { NatPolicyStore } from '../nat/NatPolicyStore';
 import { IpPoolAllocator } from '../nat/IpPool';
+import type { RealServerPool } from '../nat/RealServerPool';
 import { FirewallNatEngine } from '../nat/FirewallNatEngine';
 import { RouteTable } from '../l3/RouteTable';
 import { PolicyRouteTable } from '../l3/PolicyRouteTable';
@@ -79,6 +80,7 @@ export interface VdomRegistryDeps {
   readonly onSessionClosed: (
     vdom: string, session: FirewallSession, reason: SessionCloseReason) => void;
   readonly onSessionCountChanged?: (count: number, created: boolean) => void;
+  readonly realServerPool?: (name: string) => RealServerPool | undefined;
 }
 
 export class VdomAssignedInterfacesError extends Error {
@@ -217,6 +219,7 @@ export class VdomRegistry {
       pools,
       interfaceAddress: deps.interfaceAddress,
     });
+    if (deps.realServerPool) nat.setPoolResolver(deps.realServerPool);
 
     return Object.freeze({
       name,

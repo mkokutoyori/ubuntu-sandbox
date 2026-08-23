@@ -5,7 +5,7 @@ import type {
 } from '../../../inspection/UtmProfiles';
 import type {
   FortiCategoryFilterPatch, FortiCentralSnatPatch, FortiFilterTablePatch,
-  FortiUrlFilterPatch, FortiVipPatch, FortiFqdnVipPatch,
+  FortiUrlFilterPatch, FortiVipPatch, FortiFqdnVipPatch, FortiBalancedVipPatch,
 } from '../schema/types';
 
 export function utmAction(declared: string): UtmAction {
@@ -105,6 +105,43 @@ export function applyVipToFirewall(fw: Firewall, vip: FortiVipPatch): void {
 
   fw.getObjectStore().upsertAddress(
     vipAddress(vip.name, vip.mappedAddress, vipRuleId(vip.name), vip.mappedEndAddress));
+
+  const owner = proxyOwnerKey('vip', vip.name);
+  if (!vip.arpReply) { fw.clearProxyArpEntries(owner); return; }
+
+  fw.setProxyArpEntries(owner, interfaces.length === 0
+    ? [{ from: vip.externalAddress, to: vip.externalEndAddress }]
+    : interfaces.map(iface => ({
+      from: vip.externalAddress, to: vip.externalEndAddress, iface,
+    })));
+}
+
+export function applyBalancedVipToFirewall(
+  fw: Firewall, vip: FortiBalancedVipPatch,
+): string | void {
+  const interfaces = vip.externalInterfaces.filter(name => name !== 'any');
+  fw.applyRealServerPool(vip.name, vip.method, vip.servers, vip.monitors);
+
+  fw.getNatPolicy().upsert({
+    id: vipRuleId(vip.name),
+    type: 'static',
+    name: vip.name,
+    fromZone: interfaces.length > 0 ? [...interfaces] : ['any'],
+    originalSource: vip.sourceFilters.length > 0 ? [...vip.sourceFilters] : ['any'],
+    originalDestination: [vip.externalAddress],
+    originalPort: vip.externalPort > 0
+      ? { protocol: vip.protocol, from: vip.externalPort, to: vip.externalPort }
+      : undefined,
+    destinationTranslation: {
+      kind: 'load-balance',
+      translatedAddress: vip.servers[0]?.address ?? vip.externalAddress,
+      pool: vip.name,
+    },
+    comment: vip.comment,
+  });
+
+  fw.getObjectStore().upsertAddress(
+    vipAddress(vip.name, vip.externalAddress, vipRuleId(vip.name), vip.externalEndAddress));
 
   const owner = proxyOwnerKey('vip', vip.name);
   if (!vip.arpReply) { fw.clearProxyArpEntries(owner); return; }
