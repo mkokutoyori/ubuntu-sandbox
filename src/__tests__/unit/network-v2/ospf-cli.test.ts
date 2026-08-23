@@ -143,9 +143,12 @@ describe('Cisco IOS — OSPF CLI', () => {
 
   it('8. "network 10.0.0.0 0.0.0.255 0" without "area" keyword should return error', async () => {
     await ciscoOspfMode(r1);
-    // Only 3 args, needs 4 (ip wildcard area area-id), so "Incomplete command"
+    // La troisieme place attend le mot `area` et rien d'autre : `0` n'est
+    // donc pas une ligne INCOMPLETE mais une ligne FAUSSE, et IOS pose le
+    // caret sous le mot qu'il refuse. L'ancienne reponse comptait les
+    // arguments sans regarder lequel manquait.
     const output = await exec(r1, 'network 10.0.0.0 0.0.0.255 0');
-    expect(output).toContain('Incomplete command');
+    expect(output).toContain('Invalid input detected');
   });
 
   // ─── 9. Router-ID ──────────────────────────────────────────────
