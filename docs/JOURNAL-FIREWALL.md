@@ -2763,6 +2763,48 @@ segment est TYPÉ, un envoi qui dépasse `oversize-limit` suit le
 comportement réglé, et le tampon d'une session disparaît quand la session
 se ferme.
 
+**Livrée.** La leçon de ce chantier n'est pas dans le produit, elle est
+dans le LABORATOIRE, et elle mérite d'être écrite : **la première version
+de la sonde ne prouvait rien**. Montée sur `nginx`, le serveur répondait
+`400 Bad Request` et fermait la connexion avant le second `write` — un
+seul segment traversait le pare-feu, et le cas central aurait pu passer
+comme échouer sans rien dire du réassemblage. Ce n'est pas une erreur
+qu'on découvre en relisant : elle s'est vue en imprimant les segments qui
+ont RÉELLEMENT traversé, et pas autrement. Le serveur écoute désormais
+sans répondre, sur le port 80 parce que c'est celui que
+`profile-protocol-options` déclare comme HTTP — sur un autre port le flux
+n'est pas classé `http` et le profil antivirus ne s'applique pas, ce qui
+est le comportement d'un vrai FortiGate et non un contournement.
+
+**Un cas a été DURCI par la discrimination**, ce qui est le deuxième
+enseignement : « le nombre magique arrive après la frontière » passait
+des DEUX côtés, parce que le second segment commençait par `%PDF-` et se
+typait tout seul. Il coupe désormais AU MILIEU du nombre magique, où
+aucun des deux segments ne peut se typer seul. Sans le passage par
+`git stash`, ce cas serait resté au fichier en donnant l'illusion de
+couvrir le mécanisme.
+
+**Trois décisions, chacune parce que l'inverse était possible** :
+
+- **UDP n'est pas réassemblé.** UDP n'est pas un flux ; coller deux
+  datagrammes DNS produirait un message que personne n'a envoyé, et
+  `parseDnsQuestion` lirait n'importe quoi.
+- **La clé du flux est celle du paquet**, `flowKeyFromPacket`, qui est
+  déjà directionnelle. Les deux sens d'une connexion ne se mélangent donc
+  pas sans qu'on ait rien eu à inventer, et deux connexions non plus.
+- **Le défaut laxiste de Fortinet est gardé.** Au-delà de
+  `oversize-limit`, un fichier passe SANS être analysé sauf si
+  `set options oversize` demande de le bloquer. Le durcir « pour être
+  plus sûr » ferait mentir le simulateur sur ce que fait la vraie
+  machine, et un apprenant qui mesure ici et sur un vrai FortiGate doit
+  trouver la même chose.
+
+**Ce qui reste de la phase 6 et n'est pas touché ici** : le catalogue de
+catégories reste LOCAL, l'antivirus reconnaît EICAR et rien d'autre, et
+`scan-archive-contents` ne descend dans aucune archive faute de
+décompresseur. Ces trois-là demandent une brique qui n'existe pas ; le
+réassemblage, lui, n'en demandait aucune — c'est pourquoi il est fait.
+
 ---
 
 ## Périmètre pris — FortiOS phase 16 (la charge est mesurée, le mode conserve engage)

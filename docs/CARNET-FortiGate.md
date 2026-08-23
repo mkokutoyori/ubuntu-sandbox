@@ -469,8 +469,12 @@ et qu'il ne faut donc pas « implémenter » sans fournir la brique :
   test, pas un moteur ;
 - `scan-archive-contents` est accepté et ne descend dans aucune archive
   (il n'y a pas de décompresseur) ;
-- le filtrage de fichiers lit le nombre magique en tête de corps, donc
-  ne voit pas un fichier réparti sur plusieurs segments.
+- ~~le filtrage de fichiers lit le nombre magique en tête de corps, donc
+  ne voit pas un fichier réparti sur plusieurs segments~~ **fermé en
+  E63** : l'inspection lit un FLUX réassemblé par connexion et par sens,
+  borné par `oversize-limit`. Le défaut était plus large que le filtrage
+  de fichiers — la signature antivirus se contournait de la même façon,
+  en coupant l'envoi en deux.
 
 **Si vous câblez le serveur DHCP du FortiGate** (`config system dhcp
 server` est aujourd'hui grammaire seule) : le socle DHCP du dépôt est
@@ -630,6 +634,7 @@ comparer, jamais le supposer).
 | 2026-08-19 | agent `mandeng` | Phase 13 livrée (E50). **Les collecteurs syslog émettent pour de bon**, et leur chemin CLI était faux (`setting`/`filter` sont frères). |
 | 2026-08-20 | agent `mandeng` | Phase 14 livrée (E51). **Le pare-feu héberge un vrai serveur SSH et telnet**, et `allowaccess` devient un filtre local-in par port de destination — il était stocké et lu par personne, comme les sept réglages d'administration de `config system global`. Piège P14 retiré : la limite de 800 lignes par fichier (NFR-M3, garde-fous G1 et G3) est supprimée. |
 | 2026-08-21 | agent `mandeng` | Phase 15 livrée (E52). **`pba-timeout` périme vraiment un bloc de ports** — et `overloadMappings` fuyait, inséré sous une clé et supprimé sous une autre. **Le TYPE d'un VIP gouverne** : `fqdn` est commis avec `set mapped-addr`, `dns-translation` est refusé en nommant le relais DNS de transit manquant (`TODO.md`). Le client DNS du pare-feu est RÉUTILISÉ, pas réécrit : une première version en doublait `FirewallDnsClient` et a été supprimée avant commit. |
+| 2026-08-23 | agent `mandeng` | Phase 17 livrée (E63). **L'inspection lit un FLUX, pas un segment.** `inspectedFlowOf` lisait la charge utile d'UN paquet, donc TOUTE détection UTM se contournait en coupant l'envoi en deux — la signature antivirus comme le nombre magique d'un fichier. `inspection/StreamAssembler` réassemble par CONNEXION et par SENS (la clé de flux était déjà directionnelle), libère son tampon à la fermeture de session, et **ne réassemble PAS UDP** — coller deux datagrammes DNS produirait un message que personne n'a envoyé. La borne est celle du vrai boîtier : `oversize-limit` (défaut 10 Mo, minimum 1) et `set options oversize` ; le défaut laxiste de Fortinet est GARDÉ tel quel. **Le laboratoire a dû être refait** : monté sur `nginx`, il ne prouvait rien — le serveur répondait `400` et fermait avant le second `write`. Un cas a été DURCI après discrimination, la coupure passant désormais au milieu du nombre magique. |
 | 2026-08-23 | agent `mandeng` | Phase 16 livrée (E62). **La charge est MESURÉE et le mode conserve engage.** Trois vues promettaient une mesure et lisaient la même constante gelée — CPU figé à `idle: 100`, mémoire utilisée NULLE, donc un mode conserve structurellement impossible. `health/SystemLoad` dérive la charge de ce que l'équipement porte et fait ; `FirewallProfile.chassis` déclare RAM, CPU et débit une seule fois pour les trois constructeurs. **Les seuils étaient faux** (88/82/78 au lieu de 95/88/82) et ne se réglaient pas. Le mode conserve a une CONSÉQUENCE : session refusée au seuil extrême, `av-failopen` (mandataire, échoue OUVERT par défaut) et `ips global fail-open` (flux, échoue FERMÉ) au seuil rouge — polarités opposées, comme sur un vrai boîtier. Trois lignes inventées retirées de `get system performance status`. Deux erreurs de mon propre modèle corrigées en lisant la sortie : `utilisé + libre + libérable = total` (trois catégories DISJOINTES), et un tampon de journaux réservé n'est pas réclamable. |
 | 2026-08-19 | agent `mandeng` | Phase 12 livrée (E49). **Le portail captif détourne pour de bon**, et un défaut du socle TCP tombe avec : `transmit` sourçait un segment par le ROUTAGE au lieu de `socket.localIp`. |
 | 2026-08-19 | agent `mandeng` | Phase 11 livrée (E46 à E48). **Tous les points ouverts de la phase 2 sont fermés.** **BGP : le refus de la phase 10 reposait sur une prémisse fausse de ma part** — le pare-feu a un `TcpStack` depuis la phase 7. **DHCP : `onCommit` était vide**, le serveur sert maintenant de vrais baux et `mode dhcp` est un vrai client. |
