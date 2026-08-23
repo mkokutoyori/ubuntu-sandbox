@@ -1,6 +1,6 @@
 ============================================================
 Cisco L2 switch debug transcript — cisco-l2-06-port-security-access
-Generated: 2026-08-18T19:51:07.574Z
+Generated: 2026-08-23T10:19:41.566Z
 Topology: CORE(L2) trunked to SW1 & SW2 (L2 access). SW1: L1(Linux 1.11) Fa0/1, W1(Win 1.12) Fa0/2, SRV1(Linux 1.13) Fa0/3, Gi0/1=trunk. SW2: L2(Linux 1.21) Fa0/1, W2(Win 1.22) Fa0/2, SRV2(Linux 1.23) Fa0/3, Gi0/1=trunk. All hosts 192.168.1.0/24.
 focus=port-security/sticky/violation, errdisable, dot1x, DHCP snooping, DAI, storm-control
 Total steps: 421
@@ -732,12 +732,12 @@ Total steps: 421
 
 [211/421] l1 l1$ ping -c 2 192.168.1.13
   PING 192.168.1.13 (192.168.1.13) 56(84) bytes of data.
-  64 bytes from 192.168.1.13: icmp_seq=1 ttl=64 time=2.722 ms
-  64 bytes from 192.168.1.13: icmp_seq=2 ttl=64 time=0.728 ms
+  64 bytes from 192.168.1.13: icmp_seq=1 ttl=64 time=2.685 ms
+  64 bytes from 192.168.1.13: icmp_seq=2 ttl=64 time=0.684 ms
   
   --- 192.168.1.13 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.728/1.725/2.722/0.997 ms
+  rtt min/avg/max/mdev = 0.684/1.685/2.685/1.000 ms
 
 [212/421] sw1 SW1# show port-security interface FastEthernet0/1
   Port Security              : Enabled
@@ -1898,7 +1898,7 @@ Total steps: 421
 [421/421] sw1 SW1# show running-config
   Building configuration...
   
-  Current configuration : 8138 bytes
+  Current configuration : 8669 bytes
   !
   service timestamps debug datetime msec
   service timestamps log datetime msec
@@ -1907,6 +1907,9 @@ Total steps: 421
   !
   aaa new-model
   aaa authentication dot1x default group radius
+  !
+  ip dhcp snooping
+  ip dhcp snooping vlan 1,10,20
   !
   interface FastEthernet0/1
    switchport mode access
@@ -1922,6 +1925,9 @@ Total steps: 421
    switchport port-security mac-address sticky 0200.0000.004f
    switchport port-security aging time 5
    switchport port-security aging type inactivity
+   dot1x pae authenticator
+   dot1x port-control auto
+   ip dhcp snooping limit rate 15
   !
   interface FastEthernet0/2
    switchport mode access
@@ -1937,6 +1943,8 @@ Total steps: 421
    switchport port-security mac-address 0000.1111.3333
    switchport port-security aging time 5
    switchport port-security aging type inactivity
+   dot1x pae authenticator
+   dot1x port-control auto
   !
   interface FastEthernet0/3
    switchport mode access
@@ -1949,6 +1957,8 @@ Total steps: 421
    switchport port-security mac-address sticky 0200.0000.0057
    switchport port-security aging time 5
    switchport port-security aging type inactivity
+   dot1x pae authenticator
+   dot1x port-control auto
   !
   interface FastEthernet0/4
    switchport mode access
@@ -1962,6 +1972,8 @@ Total steps: 421
    switchport port-security mac-address sticky
    switchport port-security aging time 5
    switchport port-security aging type inactivity
+   dot1x pae authenticator
+   dot1x port-control auto
   !
   interface FastEthernet0/5
    switchport mode access
@@ -1975,6 +1987,8 @@ Total steps: 421
    switchport port-security mac-address sticky
    switchport port-security aging time 5
    switchport port-security aging type inactivity
+   dot1x pae authenticator
+   dot1x port-control auto
   !
   interface FastEthernet0/6
    switchport mode access
@@ -1986,6 +2000,8 @@ Total steps: 421
    switchport port-security mac-address sticky
    switchport port-security aging time 5
    switchport port-security aging type inactivity
+   dot1x pae authenticator
+   dot1x port-control auto
   !
   interface FastEthernet0/7
    switchport mode access
@@ -1999,6 +2015,8 @@ Total steps: 421
    switchport port-security mac-address sticky
    switchport port-security aging time 5
    switchport port-security aging type inactivity
+   dot1x pae authenticator
+   dot1x port-control auto
   !
   interface FastEthernet0/8
    switchport mode access
@@ -2012,6 +2030,8 @@ Total steps: 421
    switchport port-security mac-address sticky
    switchport port-security aging time 5
    switchport port-security aging type inactivity
+   dot1x pae authenticator
+   dot1x port-control auto
   !
   interface FastEthernet0/9
    switchport mode access
@@ -2141,6 +2161,7 @@ Total steps: 421
    switchport mode trunk
    switchport trunk encapsulation dot1q
    ip arp inspection trust
+   ip dhcp snooping trust
   !
   interface GigabitEthernet0/2
   !
@@ -2158,5 +2179,6 @@ Total steps: 421
   errdisable recovery interval 60
   errdisable recovery cause psecure-violation
   errdisable recovery cause bpduguard
+  dot1x system-auth-control
   !
   end

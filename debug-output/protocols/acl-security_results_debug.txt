@@ -121,48 +121,48 @@ Total steps: 400
 --- [17] § SEC — joignabilité de référence (avant filtrage) ---
 [17/400] lhq lhq$ ping -c 2 203.0.113.10
   PING 203.0.113.10 (203.0.113.10) 56(84) bytes of data.
-  64 bytes from 203.0.113.10: icmp_seq=1 ttl=63 time=3.522 ms
-  64 bytes from 203.0.113.10: icmp_seq=2 ttl=63 time=1.201 ms
+  64 bytes from 203.0.113.10: icmp_seq=1 ttl=63 time=1.447 ms
+  64 bytes from 203.0.113.10: icmp_seq=2 ttl=63 time=0.807 ms
   
   --- 203.0.113.10 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 1.201/2.361/3.522/1.160 ms
+  rtt min/avg/max/mdev = 0.807/1.127/1.447/0.320 ms
 
 [18/400] lbr lbr$ ping -c 2 198.51.100.10
   PING 198.51.100.10 (198.51.100.10) 56(84) bytes of data.
-  64 bytes from 198.51.100.10: icmp_seq=1 ttl=63 time=1.306 ms
-  64 bytes from 198.51.100.10: icmp_seq=2 ttl=63 time=1.172 ms
+  64 bytes from 198.51.100.10: icmp_seq=1 ttl=63 time=0.670 ms
+  64 bytes from 198.51.100.10: icmp_seq=2 ttl=63 time=0.682 ms
   
   --- 198.51.100.10 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 1.172/1.239/1.306/0.067 ms
+  rtt min/avg/max/mdev = 0.670/0.676/0.682/0.006 ms
 
 [19/400] isphq isphq$ ping -c 2 10.1.1.10
   PING 10.1.1.10 (10.1.1.10) 56(84) bytes of data.
-  64 bytes from 10.1.1.10: icmp_seq=1 ttl=63 time=0.951 ms
-  64 bytes from 10.1.1.10: icmp_seq=2 ttl=63 time=0.712 ms
+  64 bytes from 10.1.1.10: icmp_seq=1 ttl=63 time=0.769 ms
+  64 bytes from 10.1.1.10: icmp_seq=2 ttl=63 time=0.997 ms
   
   --- 10.1.1.10 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.712/0.831/0.951/0.120 ms
+  rtt min/avg/max/mdev = 0.769/0.883/0.997/0.114 ms
 
 [20/400] lhq lhq$ ping -c 2 10.3.3.10
   PING 10.3.3.10 (10.3.3.10) 56(84) bytes of data.
-  64 bytes from 10.3.3.10: icmp_seq=1 ttl=62 time=1.068 ms
-  64 bytes from 10.3.3.10: icmp_seq=2 ttl=62 time=0.876 ms
+  64 bytes from 10.3.3.10: icmp_seq=1 ttl=62 time=1.137 ms
+  64 bytes from 10.3.3.10: icmp_seq=2 ttl=62 time=0.882 ms
   
   --- 10.3.3.10 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.876/0.972/1.068/0.096 ms
+  rtt min/avg/max/mdev = 0.882/1.010/1.137/0.127 ms
 
 [21/400] ldc ldc$ ping -c 2 10.1.1.10
   PING 10.1.1.10 (10.1.1.10) 56(84) bytes of data.
-  64 bytes from 10.1.1.10: icmp_seq=1 ttl=62 time=1.025 ms
-  64 bytes from 10.1.1.10: icmp_seq=2 ttl=62 time=0.817 ms
+  64 bytes from 10.1.1.10: icmp_seq=1 ttl=62 time=0.667 ms
+  64 bytes from 10.1.1.10: icmp_seq=2 ttl=62 time=0.994 ms
   
   --- 10.1.1.10 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.817/0.921/1.025/0.104 ms
+  rtt min/avg/max/mdev = 0.667/0.831/0.994/0.164 ms
 
 
 --- [22] § ACL Cisco — standard (bloque un hôte source) ---
@@ -204,12 +204,12 @@ Total steps: 400
 
 [31/400] lhq lhq$ ping -c 2 203.0.113.10
   PING 203.0.113.10 (203.0.113.10) 56(84) bytes of data.
-  64 bytes from 203.0.113.10: icmp_seq=1 ttl=63 time=8.951 ms
-  64 bytes from 203.0.113.10: icmp_seq=2 ttl=63 time=1.119 ms
+  64 bytes from 203.0.113.10: icmp_seq=1 ttl=63 time=0.523 ms
+  64 bytes from 203.0.113.10: icmp_seq=2 ttl=63 time=0.432 ms
   
   --- 203.0.113.10 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 1.119/5.035/8.951/3.916 ms
+  rtt min/avg/max/mdev = 0.432/0.477/0.523/0.045 ms
 
 [32/400] rhq R-HQ# show access-lists 10
   Standard IP access list 10
@@ -238,12 +238,12 @@ Total steps: 400
   
   Pinging 203.0.113.10 with 32 bytes of data:
   Reply from 203.0.113.10: bytes=32 time=<1ms TTL=63
-  Reply from 203.0.113.10: bytes=32 time=2ms TTL=63
+  Reply from 203.0.113.10: bytes=32 time=<1ms TTL=63
   
   Ping statistics for 203.0.113.10:
       Packets: Sent = 2, Received = 2, Lost = 0 (0% loss),
   Approximate round trip times in milli-seconds:
-      Minimum = 1ms, Maximum = 2ms, Average = 2ms
+      Minimum = 1ms, Maximum = 1ms, Average = 1ms
 
 
 --- [40] § ACL Cisco — étendue (pare-feu de bordure entrant) ---
@@ -254,8 +254,7 @@ Total steps: 400
 <empty>
 
 [42/400] rhq R-HQ(config-ext-nacl)# permit tcp any any established
-                                           ^
-  % Invalid input detected at '^' marker.
+<empty>
 
 [43/400] rhq R-HQ(config-ext-nacl)# permit icmp any any echo-reply
 <empty>
@@ -286,11 +285,12 @@ Total steps: 400
 
 [52/400] rhq R-HQ# show ip access-lists INTERNET-IN
   Extended IP access list INTERNET-IN
-      10 permit icmp any any echo-reply
-      20 permit udp any eq 53 any
-      30 deny icmp any any echo log
-      40 deny ip any 10.1.1.0 0.0.0.255 log
-      50 permit ip any any
+      10 permit tcp any any established
+      20 permit icmp any any echo-reply
+      30 permit udp any eq 53 any
+      40 deny icmp any any echo log
+      50 deny ip any 10.1.1.0 0.0.0.255 log
+      60 permit ip any any
 
 [53/400] isphq isphq$ ping -c 2 10.1.1.10
   PING 10.1.1.10 (10.1.1.10) 56(84) bytes of data.
@@ -303,28 +303,30 @@ Total steps: 400
 
 [54/400] lhq lhq$ ping -c 2 203.0.113.10
   PING 203.0.113.10 (203.0.113.10) 56(84) bytes of data.
-  64 bytes from 203.0.113.10: icmp_seq=1 ttl=63 time=1.226 ms
-  64 bytes from 203.0.113.10: icmp_seq=2 ttl=63 time=1.088 ms
+  64 bytes from 203.0.113.10: icmp_seq=1 ttl=63 time=1.374 ms
+  64 bytes from 203.0.113.10: icmp_seq=2 ttl=63 time=1.345 ms
   
   --- 203.0.113.10 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 1.088/1.157/1.226/0.069 ms
+  rtt min/avg/max/mdev = 1.345/1.360/1.374/0.014 ms
 
 [55/400] rhq R-HQ# show ip access-lists INTERNET-IN
   Extended IP access list INTERNET-IN
-      10 permit icmp any any echo-reply (2 matches)
-      20 permit udp any eq 53 any
-      30 deny icmp any any echo log (2 matches)
-      40 deny ip any 10.1.1.0 0.0.0.255 log
-      50 permit ip any any
+      10 permit tcp any any established
+      20 permit icmp any any echo-reply (2 matches)
+      30 permit udp any eq 53 any
+      40 deny icmp any any echo log (2 matches)
+      50 deny ip any 10.1.1.0 0.0.0.255 log
+      60 permit ip any any
 
 [56/400] rhq R-HQ# show access-lists
   Extended IP access list INTERNET-IN
-      10 permit icmp any any echo-reply (2 matches)
-      20 permit udp any eq 53 any
-      30 deny icmp any any echo log (2 matches)
-      40 deny ip any 10.1.1.0 0.0.0.255 log
-      50 permit ip any any
+      10 permit tcp any any established
+      20 permit icmp any any echo-reply (2 matches)
+      30 permit udp any eq 53 any
+      40 deny icmp any any echo log (2 matches)
+      50 deny ip any 10.1.1.0 0.0.0.255 log
+      60 permit ip any any
 
 [57/400] rhq R-HQ# configure terminal
   Enter configuration commands, one per line.  End with CNTL/Z.
@@ -340,12 +342,12 @@ Total steps: 400
 
 [61/400] isphq isphq$ ping -c 2 10.1.1.10
   PING 10.1.1.10 (10.1.1.10) 56(84) bytes of data.
-  64 bytes from 10.1.1.10: icmp_seq=1 ttl=63 time=1.045 ms
-  64 bytes from 10.1.1.10: icmp_seq=2 ttl=63 time=0.729 ms
+  64 bytes from 10.1.1.10: icmp_seq=1 ttl=63 time=0.562 ms
+  64 bytes from 10.1.1.10: icmp_seq=2 ttl=63 time=0.327 ms
   
   --- 10.1.1.10 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.729/0.887/1.045/0.158 ms
+  rtt min/avg/max/mdev = 0.327/0.445/0.562/0.117 ms
 
 
 --- [62] § ACL Cisco — nommée par port/service (DMZ-style) ---
@@ -362,16 +364,13 @@ Total steps: 400
 <empty>
 
 [66/400] rdc R-DC(config-ext-nacl)# permit tcp any host 10.3.3.10 eq 22
-                                       ^
-  % Invalid input detected at '^' marker.
+<empty>
 
 [67/400] rdc R-DC(config-ext-nacl)# permit tcp any host 10.3.3.10 eq 80
-                                       ^
-  % Invalid input detected at '^' marker.
+<empty>
 
 [68/400] rdc R-DC(config-ext-nacl)# permit tcp any host 10.3.3.10 eq 443
-                                       ^
-  % Invalid input detected at '^' marker.
+<empty>
 
 [69/400] rdc R-DC(config-ext-nacl)# deny ip any host 10.3.3.10 log
 <empty>
@@ -394,8 +393,11 @@ Total steps: 400
 [75/400] rdc R-DC# show ip access-lists DC-FILTER
   Extended IP access list DC-FILTER
       10 remark Autoriser SSH/HTTP vers le serveur DC
-      20 deny ip any host 10.3.3.10 log
-      30 permit ip any any
+      20 permit tcp any host 10.3.3.10 eq 22
+      30 permit tcp any host 10.3.3.10 eq 80
+      40 permit tcp any host 10.3.3.10 eq 443
+      50 deny ip any host 10.3.3.10 log
+      60 permit ip any any
 
 [76/400] lhq lhq$ ping -c 2 10.3.3.10
   PING 10.3.3.10 (10.3.3.10) 56(84) bytes of data.
@@ -409,8 +411,11 @@ Total steps: 400
 [77/400] rdc R-DC# show ip access-lists DC-FILTER
   Extended IP access list DC-FILTER
       10 remark Autoriser SSH/HTTP vers le serveur DC
-      20 deny ip any host 10.3.3.10 log (2 matches)
-      30 permit ip any any
+      20 permit tcp any host 10.3.3.10 eq 22
+      30 permit tcp any host 10.3.3.10 eq 80
+      40 permit tcp any host 10.3.3.10 eq 443
+      50 deny ip any host 10.3.3.10 log (2 matches)
+      60 permit ip any any
 
 [78/400] rdc R-DC# configure terminal
   Enter configuration commands, one per line.  End with CNTL/Z.
@@ -426,12 +431,12 @@ Total steps: 400
 
 [82/400] lhq lhq$ ping -c 2 10.3.3.10
   PING 10.3.3.10 (10.3.3.10) 56(84) bytes of data.
-  64 bytes from 10.3.3.10: icmp_seq=1 ttl=62 time=1.541 ms
-  64 bytes from 10.3.3.10: icmp_seq=2 ttl=62 time=0.996 ms
+  64 bytes from 10.3.3.10: icmp_seq=1 ttl=62 time=0.807 ms
+  64 bytes from 10.3.3.10: icmp_seq=2 ttl=62 time=0.486 ms
   
   --- 10.3.3.10 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.996/1.268/1.541/0.273 ms
+  rtt min/avg/max/mdev = 0.486/0.646/0.807/0.161 ms
 
 
 --- [83] § ACL Cisco — séquençage / édition / resequence ---
@@ -458,11 +463,12 @@ Total steps: 400
 
 [90/400] rhq R-HQ# show ip access-lists INTERNET-IN
   Extended IP access list INTERNET-IN
-      10 permit icmp any any echo-reply (2 matches)
-      20 permit udp any eq 53 any
-      30 deny icmp any any echo log (2 matches)
-      40 deny ip any 10.1.1.0 0.0.0.255 log
-      50 permit ip any any
+      10 permit tcp any any established
+      20 permit icmp any any echo-reply (2 matches)
+      30 permit udp any eq 53 any
+      40 deny icmp any any echo log (2 matches)
+      50 deny ip any 10.1.1.0 0.0.0.255 log
+      60 permit ip any any
 
 [91/400] rhq R-HQ# show access-lists summary
   % Access list summary not found
@@ -534,12 +540,12 @@ Total steps: 400
 
 [109/400] lbr lbr$ ping -c 2 198.51.100.10
   PING 198.51.100.10 (198.51.100.10) 56(84) bytes of data.
-  64 bytes from 198.51.100.10: icmp_seq=1 ttl=63 time=0.733 ms
-  64 bytes from 198.51.100.10: icmp_seq=2 ttl=63 time=0.482 ms
+  64 bytes from 198.51.100.10: icmp_seq=1 ttl=63 time=0.628 ms
+  64 bytes from 198.51.100.10: icmp_seq=2 ttl=63 time=0.321 ms
   
   --- 198.51.100.10 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.482/0.608/0.733/0.126 ms
+  rtt min/avg/max/mdev = 0.321/0.474/0.628/0.153 ms
 
 
 --- [110] § ACL Huawei — advanced 3000 (proto/port) ---
@@ -660,12 +666,12 @@ Total steps: 400
 
 [137/400] ldc ldc$ ping -c 2 10.3.3.10
   PING 10.3.3.10 (10.3.3.10) 56(84) bytes of data.
-  64 bytes from 10.3.3.10: icmp_seq=1 ttl=64 time=0.591 ms
-  64 bytes from 10.3.3.10: icmp_seq=2 ttl=64 time=0.301 ms
+  64 bytes from 10.3.3.10: icmp_seq=1 ttl=64 time=0.323 ms
+  64 bytes from 10.3.3.10: icmp_seq=2 ttl=64 time=0.182 ms
   
   --- 10.3.3.10 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.301/0.446/0.591/0.145 ms
+  rtt min/avg/max/mdev = 0.182/0.253/0.323/0.071 ms
 
 [138/400] srvdc srvdc$ iptables -L INPUT -n -v
   Chain INPUT (policy ACCEPT)
@@ -697,12 +703,12 @@ Total steps: 400
 
 [142/400] lhq lhq$ ping -c 2 10.3.3.10
   PING 10.3.3.10 (10.3.3.10) 56(84) bytes of data.
-  64 bytes from 10.3.3.10: icmp_seq=1 ttl=62 time=1.100 ms
-  64 bytes from 10.3.3.10: icmp_seq=2 ttl=62 time=1.327 ms
+  64 bytes from 10.3.3.10: icmp_seq=1 ttl=62 time=0.785 ms
+  64 bytes from 10.3.3.10: icmp_seq=2 ttl=62 time=0.515 ms
   
   --- 10.3.3.10 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 1.100/1.213/1.327/0.113 ms
+  rtt min/avg/max/mdev = 0.515/0.650/0.785/0.135 ms
 
 
 --- [143] § pare-feu Linux — politique restrictive complète ---
@@ -737,12 +743,12 @@ Total steps: 400
 
 [149/400] ldc ldc$ ping -c 2 10.3.3.10
   PING 10.3.3.10 (10.3.3.10) 56(84) bytes of data.
-  64 bytes from 10.3.3.10: icmp_seq=1 ttl=64 time=0.672 ms
-  64 bytes from 10.3.3.10: icmp_seq=2 ttl=64 time=0.496 ms
+  64 bytes from 10.3.3.10: icmp_seq=1 ttl=64 time=0.487 ms
+  64 bytes from 10.3.3.10: icmp_seq=2 ttl=64 time=0.209 ms
   
   --- 10.3.3.10 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.496/0.584/0.672/0.088 ms
+  rtt min/avg/max/mdev = 0.209/0.348/0.487/0.139 ms
 
 [150/400] srvdc srvdc$ iptables-save
   # Generated by iptables-save
@@ -900,11 +906,11 @@ Total steps: 400
 
 [180/400] lhq lhq$ ping -c 1 10.1.1.1
   PING 10.1.1.1 (10.1.1.1) 56(84) bytes of data.
-  64 bytes from 10.1.1.1: icmp_seq=1 ttl=255 time=1.154 ms
+  64 bytes from 10.1.1.1: icmp_seq=1 ttl=255 time=0.673 ms
   
   --- 10.1.1.1 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 1.154/1.154/1.154/0.000 ms
+  rtt min/avg/max/mdev = 0.673/0.673/0.673/0.000 ms
 
 [181/400] swhq SW-HQ# show port-security interface FastEthernet0/2
   Port Security              : Enabled
@@ -963,15 +969,9 @@ Total steps: 400
   Enabled          2       restrict   Yes     0       0           GigabitEthernet0/0/2
 
 [195/400] swbr <SW-BR> display mac-address security
-  MAC address table of slot 0:
-  -------------------------------------------------------------------------------
-  MAC Address    VLAN/VSI   Learned-From          Type
-  -------------------------------------------------------------------------------
-  0200-0000-0053 1          GigabitEthernet0/0/3  dynamic
-  0200-0000-0005 1          GigabitEthernet0/0/1  dynamic
-  0200-0000-004f 1          GigabitEthernet0/0/2  dynamic
-  -------------------------------------------------------------------------------
-  Total items displayed = 3
+  Error: Unrecognized command found at '^' position.
+  display mac-address security
+                      ^
 
 [196/400] wbr wbr$ ping -n 1 10.2.2.1
   
@@ -981,7 +981,7 @@ Total steps: 400
   Ping statistics for 10.2.2.1:
       Packets: Sent = 1, Received = 1, Lost = 0 (0% loss),
   Approximate round trip times in milli-seconds:
-      Minimum = 1ms, Maximum = 1ms, Average = 1ms
+      Minimum = 0ms, Maximum = 0ms, Average = 0ms
 
 [197/400] swbr <SW-BR> system-view
   Enter system view, return user view with return command.
@@ -1073,11 +1073,12 @@ Total steps: 400
 --- [214] § SEC — consolidation des politiques (show/display) ---
 [214/400] rhq R-HQ# show access-lists
   Extended IP access list INTERNET-IN
-      10 permit icmp any any echo-reply (2 matches)
-      20 permit udp any eq 53 any
-      30 deny icmp any any echo log (2 matches)
-      40 deny ip any 10.1.1.0 0.0.0.255 log
-      50 permit ip any any
+      10 permit tcp any any established
+      20 permit icmp any any echo-reply (2 matches)
+      30 permit udp any eq 53 any
+      40 deny icmp any any echo log (2 matches)
+      50 deny ip any 10.1.1.0 0.0.0.255 log
+      60 permit ip any any
   Standard IP access list MGMT
       10 permit 10.3.3.0, wildcard bits 0.0.0.255
       20 deny any log
@@ -1090,8 +1091,11 @@ Total steps: 400
 [216/400] rdc R-DC# show access-lists
   Extended IP access list DC-FILTER
       10 remark Autoriser SSH/HTTP vers le serveur DC
-      20 deny ip any host 10.3.3.10 log (2 matches)
-      30 permit ip any any
+      20 permit tcp any host 10.3.3.10 eq 22
+      30 permit tcp any host 10.3.3.10 eq 80
+      40 permit tcp any host 10.3.3.10 eq 443
+      50 deny ip any host 10.3.3.10 log (2 matches)
+      60 permit ip any any
 
 [217/400] rbr <R-BR> display acl all
   Basic ACL 2000, 2 rule(s)
@@ -1153,33 +1157,36 @@ Total steps: 400
 --- [229] § SEC — inventaire ACL consolidé (Cisco) ---
 [229/400] rhq R-HQ# show access-lists
   Extended IP access list INTERNET-IN
-      10 permit icmp any any echo-reply (2 matches)
-      20 permit udp any eq 53 any
-      30 deny icmp any any echo log (2 matches)
-      40 deny ip any 10.1.1.0 0.0.0.255 log
-      50 permit ip any any
+      10 permit tcp any any established
+      20 permit icmp any any echo-reply (2 matches)
+      30 permit udp any eq 53 any
+      40 deny icmp any any echo log (2 matches)
+      50 deny ip any 10.1.1.0 0.0.0.255 log
+      60 permit ip any any
   Standard IP access list MGMT
       10 permit 10.3.3.0, wildcard bits 0.0.0.255
       20 deny any log
 
 [230/400] rhq R-HQ# show access-lists
   Extended IP access list INTERNET-IN
-      10 permit icmp any any echo-reply (2 matches)
-      20 permit udp any eq 53 any
-      30 deny icmp any any echo log (2 matches)
-      40 deny ip any 10.1.1.0 0.0.0.255 log
-      50 permit ip any any
+      10 permit tcp any any established
+      20 permit icmp any any echo-reply (2 matches)
+      30 permit udp any eq 53 any
+      40 deny icmp any any echo log (2 matches)
+      50 deny ip any 10.1.1.0 0.0.0.255 log
+      60 permit ip any any
   Standard IP access list MGMT
       10 permit 10.3.3.0, wildcard bits 0.0.0.255
       20 deny any log
 
 [231/400] rhq R-HQ# show ip access-lists
   Extended IP access list INTERNET-IN
-      10 permit icmp any any echo-reply (2 matches)
-      20 permit udp any eq 53 any
-      30 deny icmp any any echo log (2 matches)
-      40 deny ip any 10.1.1.0 0.0.0.255 log
-      50 permit ip any any
+      10 permit tcp any any established
+      20 permit icmp any any echo-reply (2 matches)
+      30 permit udp any eq 53 any
+      40 deny icmp any any echo log (2 matches)
+      50 deny ip any 10.1.1.0 0.0.0.255 log
+      60 permit ip any any
   Standard IP access list MGMT
       10 permit 10.3.3.0, wildcard bits 0.0.0.255
       20 deny any log
@@ -1198,14 +1205,20 @@ Total steps: 400
 [235/400] rdc R-DC# show access-lists
   Extended IP access list DC-FILTER
       10 remark Autoriser SSH/HTTP vers le serveur DC
-      20 deny ip any host 10.3.3.10 log (2 matches)
-      30 permit ip any any
+      20 permit tcp any host 10.3.3.10 eq 22
+      30 permit tcp any host 10.3.3.10 eq 80
+      40 permit tcp any host 10.3.3.10 eq 443
+      50 deny ip any host 10.3.3.10 log (2 matches)
+      60 permit ip any any
 
 [236/400] rdc R-DC# show ip access-lists
   Extended IP access list DC-FILTER
       10 remark Autoriser SSH/HTTP vers le serveur DC
-      20 deny ip any host 10.3.3.10 log (2 matches)
-      30 permit ip any any
+      20 permit tcp any host 10.3.3.10 eq 22
+      30 permit tcp any host 10.3.3.10 eq 80
+      40 permit tcp any host 10.3.3.10 eq 443
+      50 deny ip any host 10.3.3.10 log (2 matches)
+      60 permit ip any any
 
 [237/400] rdc R-DC# show running-config | include access-list
   ip access-list extended DC-FILTER
@@ -1414,99 +1427,99 @@ Total steps: 400
 --- [292] § SEC — matrice de joignabilité (sans filtre actif) ---
 [292/400] lhq lhq$ ping -c 1 203.0.113.10
   PING 203.0.113.10 (203.0.113.10) 56(84) bytes of data.
-  64 bytes from 203.0.113.10: icmp_seq=1 ttl=63 time=1.536 ms
+  64 bytes from 203.0.113.10: icmp_seq=1 ttl=63 time=0.829 ms
   
   --- 203.0.113.10 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 1.536/1.536/1.536/0.000 ms
+  rtt min/avg/max/mdev = 0.829/0.829/0.829/0.000 ms
 
 [293/400] lhq lhq$ ping -c 1 10.3.3.10
   PING 10.3.3.10 (10.3.3.10) 56(84) bytes of data.
-  64 bytes from 10.3.3.10: icmp_seq=1 ttl=62 time=1.164 ms
+  64 bytes from 10.3.3.10: icmp_seq=1 ttl=62 time=0.890 ms
   
   --- 10.3.3.10 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 1.164/1.164/1.164/0.000 ms
+  rtt min/avg/max/mdev = 0.890/0.890/0.890/0.000 ms
 
 [294/400] lhq lhq$ ping -c 1 10.1.1.1
   PING 10.1.1.1 (10.1.1.1) 56(84) bytes of data.
-  64 bytes from 10.1.1.1: icmp_seq=1 ttl=255 time=0.431 ms
+  64 bytes from 10.1.1.1: icmp_seq=1 ttl=255 time=0.305 ms
   
   --- 10.1.1.1 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.431/0.431/0.431/0.000 ms
+  rtt min/avg/max/mdev = 0.305/0.305/0.305/0.000 ms
 
 [295/400] lhq lhq$ ping -c 1 10.2.2.1
   PING 10.2.2.1 (10.2.2.1) 56(84) bytes of data.
-  64 bytes from 10.2.2.1: icmp_seq=1 ttl=253 time=0.650 ms
+  64 bytes from 10.2.2.1: icmp_seq=1 ttl=253 time=0.617 ms
   
   --- 10.2.2.1 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.650/0.650/0.650/0.000 ms
+  rtt min/avg/max/mdev = 0.617/0.617/0.617/0.000 ms
 
 [296/400] lbr lbr$ ping -c 1 10.3.3.10
   PING 10.3.3.10 (10.3.3.10) 56(84) bytes of data.
-  64 bytes from 10.3.3.10: icmp_seq=1 ttl=62 time=15.041 ms
+  64 bytes from 10.3.3.10: icmp_seq=1 ttl=62 time=0.830 ms
   
   --- 10.3.3.10 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 15.041/15.041/15.041/0.000 ms
+  rtt min/avg/max/mdev = 0.830/0.830/0.830/0.000 ms
 
 [297/400] lbr lbr$ ping -c 1 10.1.1.1
   PING 10.1.1.1 (10.1.1.1) 56(84) bytes of data.
-  64 bytes from 10.1.1.1: icmp_seq=1 ttl=253 time=0.864 ms
+  64 bytes from 10.1.1.1: icmp_seq=1 ttl=253 time=0.462 ms
   
   --- 10.1.1.1 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.864/0.864/0.864/0.000 ms
+  rtt min/avg/max/mdev = 0.462/0.462/0.462/0.000 ms
 
 [298/400] lbr lbr$ ping -c 1 10.2.2.1
   PING 10.2.2.1 (10.2.2.1) 56(84) bytes of data.
-  64 bytes from 10.2.2.1: icmp_seq=1 ttl=255 time=0.417 ms
+  64 bytes from 10.2.2.1: icmp_seq=1 ttl=255 time=0.315 ms
   
   --- 10.2.2.1 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.417/0.417/0.417/0.000 ms
+  rtt min/avg/max/mdev = 0.315/0.315/0.315/0.000 ms
 
 [299/400] ldc ldc$ ping -c 1 10.3.3.10
   PING 10.3.3.10 (10.3.3.10) 56(84) bytes of data.
-  64 bytes from 10.3.3.10: icmp_seq=1 ttl=64 time=0.411 ms
+  64 bytes from 10.3.3.10: icmp_seq=1 ttl=64 time=0.233 ms
   
   --- 10.3.3.10 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.411/0.411/0.411/0.000 ms
+  rtt min/avg/max/mdev = 0.233/0.233/0.233/0.000 ms
 
 [300/400] ldc ldc$ ping -c 1 10.1.1.1
   PING 10.1.1.1 (10.1.1.1) 56(84) bytes of data.
-  64 bytes from 10.1.1.1: icmp_seq=1 ttl=253 time=2.260 ms
+  64 bytes from 10.1.1.1: icmp_seq=1 ttl=253 time=0.575 ms
   
   --- 10.1.1.1 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 2.260/2.260/2.260/0.000 ms
+  rtt min/avg/max/mdev = 0.575/0.575/0.575/0.000 ms
 
 [301/400] ldc ldc$ ping -c 1 10.2.2.1
   PING 10.2.2.1 (10.2.2.1) 56(84) bytes of data.
-  64 bytes from 10.2.2.1: icmp_seq=1 ttl=253 time=0.828 ms
+  64 bytes from 10.2.2.1: icmp_seq=1 ttl=253 time=0.462 ms
   
   --- 10.2.2.1 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.828/0.828/0.828/0.000 ms
+  rtt min/avg/max/mdev = 0.462/0.462/0.462/0.000 ms
 
 [302/400] isphq isphq$ ping -c 1 10.1.1.10
   PING 10.1.1.10 (10.1.1.10) 56(84) bytes of data.
-  64 bytes from 10.1.1.10: icmp_seq=1 ttl=63 time=0.732 ms
+  64 bytes from 10.1.1.10: icmp_seq=1 ttl=63 time=0.390 ms
   
   --- 10.1.1.10 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.732/0.732/0.732/0.000 ms
+  rtt min/avg/max/mdev = 0.390/0.390/0.390/0.000 ms
 
 [303/400] ispbr ispbr$ ping -c 1 10.2.2.11
   PING 10.2.2.11 (10.2.2.11) 56(84) bytes of data.
-  64 bytes from 10.2.2.11: icmp_seq=1 ttl=63 time=0.737 ms
+  64 bytes from 10.2.2.11: icmp_seq=1 ttl=63 time=0.420 ms
   
   --- 10.2.2.11 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.737/0.737/0.737/0.000 ms
+  rtt min/avg/max/mdev = 0.420/0.420/0.420/0.000 ms
 
 
 --- [304] § SEC — inspection des tables iptables par hôte ---
@@ -1747,15 +1760,9 @@ Total steps: 400
   Port-security is not enabled on any interface.
 
 [351/400] swbr <SW-BR> display mac-address security
-  MAC address table of slot 0:
-  -------------------------------------------------------------------------------
-  MAC Address    VLAN/VSI   Learned-From          Type
-  -------------------------------------------------------------------------------
-  0200-0000-0053 1          GigabitEthernet0/0/3  dynamic
-  0200-0000-0005 1          GigabitEthernet0/0/1  dynamic
-  0200-0000-004f 1          GigabitEthernet0/0/2  dynamic
-  -------------------------------------------------------------------------------
-  Total items displayed = 3
+  Error: Unrecognized command found at '^' position.
+  display mac-address security
+                      ^
 
 [352/400] swbr <SW-BR> display mac-address
   MAC address table of slot 0:
@@ -1855,11 +1862,12 @@ Total steps: 400
 --- [375] § SEC — état final & joignabilité restaurée ---
 [375/400] rhq R-HQ# show access-lists
   Extended IP access list INTERNET-IN
-      10 permit icmp any any echo-reply (2 matches)
-      20 permit udp any eq 53 any
-      30 deny icmp any any echo log (2 matches)
-      40 deny ip any 10.1.1.0 0.0.0.255 log
-      50 permit ip any any
+      10 permit tcp any any established
+      20 permit icmp any any echo-reply (2 matches)
+      30 permit udp any eq 53 any
+      40 deny icmp any any echo log (2 matches)
+      50 deny ip any 10.1.1.0 0.0.0.255 log
+      60 permit ip any any
   Standard IP access list MGMT
       10 permit 10.3.3.0, wildcard bits 0.0.0.255
       20 deny any log
@@ -1867,8 +1875,11 @@ Total steps: 400
 [376/400] rdc R-DC# show access-lists
   Extended IP access list DC-FILTER
       10 remark Autoriser SSH/HTTP vers le serveur DC
-      20 deny ip any host 10.3.3.10 log (2 matches)
-      30 permit ip any any
+      20 permit tcp any host 10.3.3.10 eq 22
+      30 permit tcp any host 10.3.3.10 eq 80
+      40 permit tcp any host 10.3.3.10 eq 443
+      50 deny ip any host 10.3.3.10 log (2 matches)
+      60 permit ip any any
 
 [377/400] rbr <R-BR> display acl all
   Basic ACL 2000, 2 rule(s)
@@ -1884,11 +1895,11 @@ Total steps: 400
 
 [378/400] lhq lhq$ ping -c 1 203.0.113.10
   PING 203.0.113.10 (203.0.113.10) 56(84) bytes of data.
-  64 bytes from 203.0.113.10: icmp_seq=1 ttl=63 time=1.050 ms
+  64 bytes from 203.0.113.10: icmp_seq=1 ttl=63 time=0.583 ms
   
   --- 203.0.113.10 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 1.050/1.050/1.050/0.000 ms
+  rtt min/avg/max/mdev = 0.583/0.583/0.583/0.000 ms
 
 [379/400] whq whq$ ping -n 1 203.0.113.10
   
@@ -1898,61 +1909,61 @@ Total steps: 400
   Ping statistics for 203.0.113.10:
       Packets: Sent = 1, Received = 1, Lost = 0 (0% loss),
   Approximate round trip times in milli-seconds:
-      Minimum = 1ms, Maximum = 1ms, Average = 1ms
+      Minimum = 0ms, Maximum = 0ms, Average = 0ms
 
 [380/400] lbr lbr$ ping -c 1 198.51.100.10
   PING 198.51.100.10 (198.51.100.10) 56(84) bytes of data.
-  64 bytes from 198.51.100.10: icmp_seq=1 ttl=63 time=0.709 ms
+  64 bytes from 198.51.100.10: icmp_seq=1 ttl=63 time=0.459 ms
   
   --- 198.51.100.10 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.709/0.709/0.709/0.000 ms
+  rtt min/avg/max/mdev = 0.459/0.459/0.459/0.000 ms
 
 [381/400] lhq lhq$ ping -c 1 10.3.3.10
   PING 10.3.3.10 (10.3.3.10) 56(84) bytes of data.
-  64 bytes from 10.3.3.10: icmp_seq=1 ttl=62 time=1.167 ms
+  64 bytes from 10.3.3.10: icmp_seq=1 ttl=62 time=0.595 ms
   
   --- 10.3.3.10 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 1.167/1.167/1.167/0.000 ms
+  rtt min/avg/max/mdev = 0.595/0.595/0.595/0.000 ms
 
 [382/400] ldc ldc$ ping -c 1 10.3.3.10
   PING 10.3.3.10 (10.3.3.10) 56(84) bytes of data.
-  64 bytes from 10.3.3.10: icmp_seq=1 ttl=64 time=0.413 ms
+  64 bytes from 10.3.3.10: icmp_seq=1 ttl=64 time=0.256 ms
   
   --- 10.3.3.10 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.413/0.413/0.413/0.000 ms
+  rtt min/avg/max/mdev = 0.256/0.256/0.256/0.000 ms
 
 [383/400] isphq isphq$ ping -c 1 10.1.1.10
   PING 10.1.1.10 (10.1.1.10) 56(84) bytes of data.
-  64 bytes from 10.1.1.10: icmp_seq=1 ttl=63 time=0.572 ms
+  64 bytes from 10.1.1.10: icmp_seq=1 ttl=63 time=0.442 ms
   
   --- 10.1.1.10 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.572/0.572/0.572/0.000 ms
+  rtt min/avg/max/mdev = 0.442/0.442/0.442/0.000 ms
 
 [384/400] rdc R-DC# ping 10.1.1.10
   Type escape sequence to abort.
   Sending 5, 100-byte ICMP Echos to 10.1.1.10, timeout is 2 seconds:
   !!!!!
-  Success rate is 100 percent (5/5), round-trip min/avg/max = 1/1/1 ms
+  Success rate is 100 percent (5/5), round-trip min/avg/max = 0/1/1 ms
 
 [385/400] ldc ldc$ ping -c 1 10.1.1.10
   PING 10.1.1.10 (10.1.1.10) 56(84) bytes of data.
-  64 bytes from 10.1.1.10: icmp_seq=1 ttl=62 time=0.966 ms
+  64 bytes from 10.1.1.10: icmp_seq=1 ttl=62 time=0.765 ms
   
   --- 10.1.1.10 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.966/0.966/0.966/0.000 ms
+  rtt min/avg/max/mdev = 0.765/0.765/0.765/0.000 ms
 
 [386/400] lbr lbr$ ping -c 1 10.3.3.10
   PING 10.3.3.10 (10.3.3.10) 56(84) bytes of data.
-  64 bytes from 10.3.3.10: icmp_seq=1 ttl=62 time=1.577 ms
+  64 bytes from 10.3.3.10: icmp_seq=1 ttl=62 time=0.729 ms
   
   --- 10.3.3.10 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 1.577/1.577/1.577/0.000 ms
+  rtt min/avg/max/mdev = 0.729/0.729/0.729/0.000 ms
 
 [387/400] whq whq$ ping -n 1 10.3.3.10
   
@@ -1985,11 +1996,12 @@ Total steps: 400
 
 [392/400] rhq R-HQ# show access-lists
   Extended IP access list INTERNET-IN
-      10 permit icmp any any echo-reply (2 matches)
-      20 permit udp any eq 53 any
-      30 deny icmp any any echo log (2 matches)
-      40 deny ip any 10.1.1.0 0.0.0.255 log
-      50 permit ip any any
+      10 permit tcp any any established
+      20 permit icmp any any echo-reply (2 matches)
+      30 permit udp any eq 53 any
+      40 deny icmp any any echo log (2 matches)
+      50 deny ip any 10.1.1.0 0.0.0.255 log
+      60 permit ip any any
   Standard IP access list MGMT
       10 permit 10.3.3.0, wildcard bits 0.0.0.255
       20 deny any log
@@ -1997,8 +2009,11 @@ Total steps: 400
 [393/400] rdc R-DC# show access-lists
   Extended IP access list DC-FILTER
       10 remark Autoriser SSH/HTTP vers le serveur DC
-      20 deny ip any host 10.3.3.10 log (2 matches)
-      30 permit ip any any
+      20 permit tcp any host 10.3.3.10 eq 22
+      30 permit tcp any host 10.3.3.10 eq 80
+      40 permit tcp any host 10.3.3.10 eq 443
+      50 deny ip any host 10.3.3.10 log (2 matches)
+      60 permit ip any any
 
 [394/400] rbr <R-BR> display acl all
   Basic ACL 2000, 2 rule(s)

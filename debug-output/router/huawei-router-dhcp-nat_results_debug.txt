@@ -1,6 +1,6 @@
 ============================================================
 Router (L3) debug transcript — huawei-router-dhcp-nat
-Generated: 2026-08-19T07:03:25.185Z
+Generated: 2026-08-23T10:20:02.325Z
 Topology: R1(Huawei) GE0/0/1=L1 LAN 192.168.1.0/24, GE0/0/0=WAN 10.0.0.0/30; R2(Huawei) GE0/0/1=W1 LAN 192.168.2.0/24, GE0/0/0=WAN
 focus=VRP DHCP global/relay/v6/snoop + NAT outbound/static/server
 Total steps: 288
@@ -792,25 +792,35 @@ Total steps: 288
   dhcp server forbidden-ip 192.168.5.1 192.168.5.10
   dhcp server forbidden-ip 192.168.6.1 192.168.6.10
   dhcp server forbidden-ip 192.168.1.1 192.168.1.9
-  interface GigabitEthernet0/0/0
-   ip address 192.168.1.1 255.255.255.0
-   dhcp relay server-ip 10.0.0.2
-   dhcp relay server-ip 10.0.0.3
-  #
-  interface GigabitEthernet0/0/1
-   ip address 10.0.0.1 255.255.255.252
-  #
-  interface GigabitEthernet0/0/2
-   shutdown
-  #
-  interface GigabitEthernet0/0/3
-   shutdown
   #
   acl number 2000
    rule 5 permit source 192.168.1.0 0.0.0.255
   #
   acl number 2001
    rule 5 permit source 192.168.2.0 0.0.0.255
+  #
+  nat address-group 1 10.0.0.50 10.0.0.60
+  #
+  interface GigabitEthernet0/0/0
+   ip address 192.168.1.1 255.255.255.0
+   dhcp select relay
+   dhcp relay server-ip 10.0.0.2
+   dhcp relay server-ip 10.0.0.3
+  #
+  interface GigabitEthernet0/0/1
+   ip address 10.0.0.1 255.255.255.252
+   nat outbound 2000
+   nat outbound 2000 address-group 1
+   nat outbound 2001 address-group 1 no-pat
+   nat outbound 2000
+   nat server protocol tcp global 10.0.0.100 80 inside 192.168.1.100 8080
+   nat server protocol udp global 10.0.0.100 53 inside 192.168.1.102 53
+  #
+  interface GigabitEthernet0/0/2
+   shutdown
+  #
+  interface GigabitEthernet0/0/3
+   shutdown
   #
   aaa
    local-user alice password irreversible-cipher VV7a59tMk2A3Ln+JO1OhFp/4+M5jAWNxaZocI3BM9PaNK+CTBQncTA
@@ -1077,14 +1087,14 @@ Total steps: 288
   Root delay: 0.00 ms
   Root dispersion: 16000.00 ms
   Peer dispersion: 16000.00 ms
-  Reference time: 07:03:25.259  Aug 19 2026(EE2FD3BD.424DD2F1)
+  Reference time: 10:20:02.408  Aug 23 2026(EE3547D2.6872B020)
 
 [218/288] r1 <R1> display ntp session
   Info: No NTP session exists.
 
 [219/288] r1 <R1> display clock
-  2026-08-19 07:03:25
-  Wednesday
+  2026-08-23 10:20:02
+  Sunday
   Time Zone(UTC) : UTC
 
 [220/288] r1 <R1> display lldp neighbor
@@ -1096,13 +1106,13 @@ Total steps: 288
 [222/288] r1 <R1> display cpu-usage
   CPU Usage Stat. Cycle: 60 (Second)
   CPU Usage            : 11% Max: 38%
-  CPU Usage Stat. Time : 2026-08-19 07:03:25
+  CPU Usage Stat. Time : 2026-08-23 10:20:02
   CPU utilization for five seconds: 11%: one minute: 12%: five minutes: 10%
   
   Max CPU Usage Stat. Time : 0000-00-00 00:00:00.
 
 [223/288] r1 <R1> display memory-usage
-  Memory utilization statistics at 2026-08-19 07:03:25
+  Memory utilization statistics at 2026-08-23 10:20:02
   System Total Memory Is: 536870912 bytes
   Total Memory Used Is: 193273528 bytes
   Memory Using Percentage Is: 36%
@@ -1143,10 +1153,10 @@ Total steps: 288
   Dropped messages : 0
   Overwritten messages : 0
   Current messages : 4
-  2026-08-19 07:03:25 %01LINK/3/ERRORS: Interface GE0/0/1, changed state to up
-  2026-08-19 07:03:25 %01LINEPROTO/5/NOTIFICATIONS: Line protocol on Interface GE0/0/1, changed state to up
-  2026-08-19 07:03:25 %01LINK/3/ERRORS: Interface GE0/0/0, changed state to up
-  2026-08-19 07:03:25 %01LINEPROTO/5/NOTIFICATIONS: Line protocol on Interface GE0/0/0, changed state to up
+  2026-08-23 10:20:02 %01LINK/3/ERRORS: Interface GE0/0/1, changed state to up
+  2026-08-23 10:20:02 %01LINEPROTO/5/NOTIFICATIONS: Line protocol on Interface GE0/0/1, changed state to up
+  2026-08-23 10:20:02 %01LINK/3/ERRORS: Interface GE0/0/0, changed state to up
+  2026-08-23 10:20:02 %01LINEPROTO/5/NOTIFICATIONS: Line protocol on Interface GE0/0/0, changed state to up
 
 [228/288] r1 <R1> display trapbuffer
   Trapping buffer configuration and contents: enabled
@@ -1283,25 +1293,35 @@ Total steps: 288
   dhcp server forbidden-ip 192.168.5.1 192.168.5.10
   dhcp server forbidden-ip 192.168.6.1 192.168.6.10
   dhcp server forbidden-ip 192.168.1.1 192.168.1.9
-  interface GigabitEthernet0/0/0
-   ip address 192.168.1.1 255.255.255.0
-   dhcp relay server-ip 10.0.0.2
-   dhcp relay server-ip 10.0.0.3
-  #
-  interface GigabitEthernet0/0/1
-   ip address 10.0.0.1 255.255.255.252
-  #
-  interface GigabitEthernet0/0/2
-   shutdown
-  #
-  interface GigabitEthernet0/0/3
-   shutdown
   #
   acl number 2000
    rule 5 permit source 192.168.1.0 0.0.0.255
   #
   acl number 2001
    rule 5 permit source 192.168.2.0 0.0.0.255
+  #
+  nat address-group 1 10.0.0.50 10.0.0.60
+  #
+  interface GigabitEthernet0/0/0
+   ip address 192.168.1.1 255.255.255.0
+   dhcp select relay
+   dhcp relay server-ip 10.0.0.2
+   dhcp relay server-ip 10.0.0.3
+  #
+  interface GigabitEthernet0/0/1
+   ip address 10.0.0.1 255.255.255.252
+   nat outbound 2000
+   nat outbound 2000 address-group 1
+   nat outbound 2001 address-group 1 no-pat
+   nat outbound 2000
+   nat server protocol tcp global 10.0.0.100 80 inside 192.168.1.100 8080
+   nat server protocol udp global 10.0.0.100 53 inside 192.168.1.102 53
+  #
+  interface GigabitEthernet0/0/2
+   shutdown
+  #
+  interface GigabitEthernet0/0/3
+   shutdown
   #
   aaa
    local-user alice password irreversible-cipher VV7a59tMk2A3Ln+JO1OhFp/4+M5jAWNxaZocI3BM9PaNK+CTBQncTA
@@ -1369,23 +1389,24 @@ Total steps: 288
 [246/288] r1 <R1> display current-configuration | begin interface
   interface GigabitEthernet0/0/0
    ip address 192.168.1.1 255.255.255.0
+   dhcp select relay
    dhcp relay server-ip 10.0.0.2
    dhcp relay server-ip 10.0.0.3
   #
   interface GigabitEthernet0/0/1
    ip address 10.0.0.1 255.255.255.252
+   nat outbound 2000
+   nat outbound 2000 address-group 1
+   nat outbound 2001 address-group 1 no-pat
+   nat outbound 2000
+   nat server protocol tcp global 10.0.0.100 80 inside 192.168.1.100 8080
+   nat server protocol udp global 10.0.0.100 53 inside 192.168.1.102 53
   #
   interface GigabitEthernet0/0/2
    shutdown
   #
   interface GigabitEthernet0/0/3
    shutdown
-  #
-  acl number 2000
-   rule 5 permit source 192.168.1.0 0.0.0.255
-  #
-  acl number 2001
-   rule 5 permit source 192.168.2.0 0.0.0.255
   #
   aaa
    local-user alice password irreversible-cipher VV7a59tMk2A3Ln+JO1OhFp/4+M5jAWNxaZocI3BM9PaNK+CTBQncTA
@@ -1452,20 +1473,28 @@ Total steps: 288
   dhcp server forbidden-ip 192.168.5.1 192.168.5.10
   dhcp server forbidden-ip 192.168.6.1 192.168.6.10
   dhcp server forbidden-ip 192.168.1.1 192.168.1.9
-  interface GigabitEthernet0/0/0
-   ip address 192.168.1.1 255.255.255.0
-   dhcp relay server-ip 10.0.0.2
-   dhcp relay server-ip 10.0.0.3
-  interface GigabitEthernet0/0/1
-   ip address 10.0.0.1 255.255.255.252
-  interface GigabitEthernet0/0/2
-   shutdown
-  interface GigabitEthernet0/0/3
-   shutdown
   acl number 2000
    rule 5 permit source 192.168.1.0 0.0.0.255
   acl number 2001
    rule 5 permit source 192.168.2.0 0.0.0.255
+  nat address-group 1 10.0.0.50 10.0.0.60
+  interface GigabitEthernet0/0/0
+   ip address 192.168.1.1 255.255.255.0
+   dhcp select relay
+   dhcp relay server-ip 10.0.0.2
+   dhcp relay server-ip 10.0.0.3
+  interface GigabitEthernet0/0/1
+   ip address 10.0.0.1 255.255.255.252
+   nat outbound 2000
+   nat outbound 2000 address-group 1
+   nat outbound 2001 address-group 1 no-pat
+   nat outbound 2000
+   nat server protocol tcp global 10.0.0.100 80 inside 192.168.1.100 8080
+   nat server protocol udp global 10.0.0.100 53 inside 192.168.1.102 53
+  interface GigabitEthernet0/0/2
+   shutdown
+  interface GigabitEthernet0/0/3
+   shutdown
   aaa
    local-user alice password irreversible-cipher VV7a59tMk2A3Ln+JO1OhFp/4+M5jAWNxaZocI3BM9PaNK+CTBQncTA
    local-user alice privilege level 1
@@ -1560,6 +1589,7 @@ Total steps: 288
   #
   interface GigabitEthernet0/0/0
    ip address 192.168.1.1 255.255.255.0
+   dhcp select relay
    dhcp relay server-ip 10.0.0.2
    dhcp relay server-ip 10.0.0.3
   #
@@ -1645,6 +1675,7 @@ Total steps: 288
     screen-length  Restore default screen length
     screen-width   Restore default screen width
     terminal       Set the terminal line characteristics
+    time-range     Remove a time-range
     traffic        Display traffic statistics
     <cr>
 

@@ -1,6 +1,6 @@
 ============================================================
 Shell debug transcript — linux-server-networking
-Generated: 2026-08-13T16:04:41.003Z
+Generated: 2026-08-23T09:47:34.315Z
 Engine: linux
 host=L-SRV-NET-DBG (linux-server) — focus: réseau (ip/ping/route/dns/sockets/firewall)
 Total commands: 302
@@ -935,8 +935,8 @@ $ [149/302]> ss -tlnp
   LISTEN     0       0        [::]:1521              [::]:*             users:(("tnslsnr",pid=2001,fd=3))
   LISTEN     0       0        0.0.0.0:22             0.0.0.0:*          users:(("sshd",pid=985,fd=3))
   LISTEN     0       0        [::]:22                [::]:*             users:(("sshd",pid=985,fd=3))
-  LISTEN     0       0        127.0.0.53:53          0.0.0.0:*         
-  LISTEN     0       0        0.0.0.0:1812           0.0.0.0:*         
+  LISTEN     0       0        127.0.0.53:53          0.0.0.0:*          users:(("systemd-resolved",pid=29,fd=3))
+  LISTEN     0       0        0.0.0.0:1812           0.0.0.0:*          users:(("freeradius",pid=40,fd=3))
 
 $ [150/302]> ss -a
   State      Recv-Q  Send-Q   Local Address:Port     Peer Address:Port  Process
@@ -996,8 +996,8 @@ $ [156/302]> netstat -tlnp
   tcp6            0      0 :::1521                 :::*                    LISTEN      2001/tnslsnr
   tcp             0      0 0.0.0.0:22              0.0.0.0:*               LISTEN      985/sshd
   tcp6            0      0 :::22                   :::*                    LISTEN      985/sshd
-  tcp             0      0 127.0.0.53:53           0.0.0.0:*               LISTEN
-  tcp             0      0 0.0.0.0:1812            0.0.0.0:*               LISTEN
+  tcp             0      0 127.0.0.53:53           0.0.0.0:*               LISTEN      29/systemd-resolved
+  tcp             0      0 0.0.0.0:1812            0.0.0.0:*               LISTEN      40/freeradius
 
 $ [157/302]> netstat -an | head
   Active Internet connections (servers and established)
@@ -1078,18 +1078,18 @@ $ [170/302]> curl http://hote_inexistant_xyz
   curl: (6) Could not resolve host: hote_inexistant_xyz
 
 $ [171/302]> wget http://192.168.10.1
-  --2026-08-13 16:04:44--  http://192.168.10.1
+  --2026-08-23 09:47:37--  http://192.168.10.1
   Connecting to 192.168.10.1:80... failed: Connection refused.
 
 $ [172/302]> wget -q http://192.168.10.1
 <empty>
 
 $ [173/302]> wget -O /tmp/dl.html http://192.168.10.1
-  --2026-08-13 16:04:44--  http://192.168.10.1
+  --2026-08-23 09:47:37--  http://192.168.10.1
   Connecting to 192.168.10.1:80... failed: Connection refused.
 
 $ [174/302]> wget --timeout=2 http://192.168.10.99
-  --2026-08-13 16:04:44--  http://192.168.10.99
+  --2026-08-23 09:47:37--  http://192.168.10.99
   Connecting to 192.168.10.99:80... failed: Connection refused.
 
 $ [175/302]> curl
@@ -1312,11 +1312,11 @@ $ [218/302]> ssh-keygen -t rsa -b 2048 -f /tmp/id_rsa -N ""
 <empty>
 
 $ [219/302]> ls -l /tmp/id_rsa /tmp/id_rsa.pub
-  -rw------- 1 root root 77 Aug 13 16:04 /tmp/id_rsa
-  -rw-r--r-- 1 root root 42 Aug 13 16:04 /tmp/id_rsa.pub
+  -rw------- 1 root root 77 Aug 23 09:47 /tmp/id_rsa
+  -rw-r--r-- 1 root root 42 Aug 23 09:47 /tmp/id_rsa.pub
 
 $ [220/302]> cat /tmp/id_rsa.pub
-  ssh-rsa AAAAe55wdx7utzi root@linux-server
+  ssh-rsa AAAA8kjel7ldm8t root@linux-server
 
 $ [221/302]> ssh-keygen -t ed25519 -f /tmp/id_ed25519 -N ""
 <empty>
@@ -1325,7 +1325,7 @@ $ [222/302]> ssh-keygen -lf /tmp/id_rsa.pub
 <empty>
 
 $ [223/302]> ssh-keygen -y -f /tmp/id_rsa
-  ssh-ed25519 AAAAnaax7xtf8hn root@localhost
+  ssh-ed25519 AAAAhcvnchqjpe root@localhost
 
 $ [224/302]> ssh -V
   usage: ssh [-options] destination [command]

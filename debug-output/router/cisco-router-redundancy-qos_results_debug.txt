@@ -1,6 +1,6 @@
 ============================================================
 Router (L3) debug transcript — cisco-router-redundancy-qos
-Generated: 2026-08-19T07:03:11.487Z
+Generated: 2026-08-23T10:16:27.421Z
 Topology: R1(Cisco) Gi0/0=L1 LAN 192.168.1.0/24, Gi0/1=WAN 10.0.0.0/30; R2(Cisco) Gi0/0=W1 LAN 192.168.2.0/24, Gi0/1=WAN
 focus=HSRP/VRRP/GLBP/track/IP-SLA/BFD/MQC-QoS/NBAR
 Total steps: 413
@@ -1271,8 +1271,7 @@ Total steps: 413
 <empty>
 
 [214/413] r1 R1(config-ext-nacl)# permit tcp any any eq 1720
-                                         ^
-  % Invalid input detected at '^' marker.
+<empty>
 
 [215/413] r1 R1(config-ext-nacl)# exit
 <empty>
@@ -1629,7 +1628,7 @@ Total steps: 413
   data          None          None           None
   
   Cisco CISCO2911/K9 (revision 1.0) with 491520K/32768K bytes of memory.
-  Processor board ID FTX82499RF6
+  Processor board ID FTX83640DT6
   4 Gigabit Ethernet interfaces
   DRAM configuration is 64 bits wide with parity enabled.
   255K bytes of non-volatile configuration memory.
@@ -1639,9 +1638,9 @@ Total steps: 413
 [306/413] r1 R1# show running-config
   Building configuration...
   
-  Current configuration : 3171 bytes
+  Current configuration : 3272 bytes
   !
-  ! Last configuration change at 07:03:11 UTC Wed Aug 19 2026 by console
+  ! Last configuration change at 10:16:27 UTC Sun Aug 23 2026 by console
   !
   service timestamps debug datetime msec
   service timestamps log datetime msec
@@ -1692,8 +1691,11 @@ Total steps: 413
    ip nbar protocol-discovery
    fair-queue 64 256 8
    random-detect
+   max-reserved-bandwidth 90
+   priority-group 1
+   custom-queue-list 1
+   tx-ring-limit 3
    rate-limit output 8000000 1500000 3000000 conform-action transmit exceed-action drop
-   bfd echo
   !
   interface GigabitEthernet0/2
    no ip address
@@ -1737,6 +1739,7 @@ Total steps: 413
    permit udp any any range 16384 32767
   !
   ip access-list extended VIDEO
+   permit tcp any any eq 1720
   !
   priority-list 1 protocol ip high tcp telnet
   queue-list 1 protocol ip 1 tcp www
@@ -1970,7 +1973,10 @@ Total steps: 413
   -- No static NAT entries configured --
   Dynamic mappings:
   -- No dynamic NAT rules configured --
-  Application Layer Gateways: none
+  Total doors: 0
+  Appl doors: 0
+  Normal doors: 0
+  Queued Packets: 0
 
 [326/413] r1 R1# show ip dhcp binding
   Bindings from all pools not associated with VRF:
@@ -1985,11 +1991,13 @@ Total steps: 413
   Extended IP access list VOICE
       10 permit udp any any range 16384 32767
   Extended IP access list VIDEO
+      10 permit tcp any any eq 1720
 
 [329/413] r1 R1# show ip access-lists
   Extended IP access list VOICE
       10 permit udp any any range 16384 32767
   Extended IP access list VIDEO
+      10 permit tcp any any eq 1720
 
 [330/413] r1 R1# show crypto isakmp sa
   IPSec not configured.
@@ -2147,35 +2155,35 @@ Total steps: 413
   
   Log Buffer (4096 bytes):
   
-  *Aug 19 07:03:11.481: %LINK-3-UPDOWN: Interface GigabitEthernet0/0, changed state to up
-  *Aug 19 07:03:11.482: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/0, changed state to up
-  *Aug 19 07:03:11.483: %LINK-3-UPDOWN: Interface GigabitEthernet0/1, changed state to up
-  *Aug 19 07:03:11.483: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/1, changed state to up
-  *Aug 19 07:03:11.507: %SYS-5-CONFIG_I: Configured from console by console
-  *Aug 19 07:03:11.514: %HSRP-5-STATECHANGE: GigabitEthernet0/0 Grp 1 state init -> speak
-  *Aug 19 07:03:11.516: %HSRP-5-STATECHANGE: GigabitEthernet0/0 Grp 1 state speak -> active
-  *Aug 19 07:03:11.517: %HSRP-6-STATECHANGE: GigabitEthernet0/0 Grp 1 Active router is 192.168.1.2 (priority 100)
-  *Aug 19 07:03:11.530: %HSRP-5-STATECHANGE: GigabitEthernet0/0 Grp 2 state init -> speak
-  *Aug 19 07:03:11.530: %HSRP-5-STATECHANGE: GigabitEthernet0/0 Grp 2 state speak -> active
-  *Aug 19 07:03:11.530: %HSRP-6-STATECHANGE: GigabitEthernet0/0 Grp 2 Active router is 192.168.1.2 (priority 100)
-  *Aug 19 07:03:11.545: %HSRP-5-STATECHANGE: GigabitEthernet0/0 Grp 3 state init -> speak
-  *Aug 19 07:03:11.545: %HSRP-5-STATECHANGE: GigabitEthernet0/0 Grp 3 state speak -> active
-  *Aug 19 07:03:11.546: %HSRP-6-STATECHANGE: GigabitEthernet0/0 Grp 3 Active router is 192.168.1.2 (priority 100)
-  *Aug 19 07:03:11.551: %HSRP-5-STATECHANGE: GigabitEthernet0/0 Grp 4 state init -> speak
-  *Aug 19 07:03:11.551: %HSRP-5-STATECHANGE: GigabitEthernet0/0 Grp 4 state speak -> active
-  *Aug 19 07:03:11.552: %HSRP-6-STATECHANGE: GigabitEthernet0/0 Grp 4 Active router is 192.168.1.2 (priority 100)
-  *Aug 19 07:03:11.560: %SYS-5-CONFIG_I: Configured from console by console
-  *Aug 19 07:03:11.586: %VRRP-5-STATECHANGE: GigabitEthernet0/0 VRID 1 state init -> master
-  *Aug 19 07:03:11.592: %VRRP-5-STATECHANGE: GigabitEthernet0/0 VRID 2 state init -> master
-  *Aug 19 07:03:11.598: %VRRP-5-STATECHANGE: GigabitEthernet0/0 VRID 3 state init -> master
-  *Aug 19 07:03:11.601: %SYS-5-CONFIG_I: Configured from console by console
-  *Aug 19 07:03:11.607: %GLBP-5-STATECHANGE: GigabitEthernet0/0 Grp 1 AVG state init -> active
-  *Aug 19 07:03:11.612: %SYS-5-CONFIG_I: Configured from console by console
-  *Aug 19 07:03:11.634: %SYS-5-CONFIG_I: Configured from console by console
-  *Aug 19 07:03:11.666: %SYS-5-CONFIG_I: Configured from console by console
-  *Aug 19 07:03:11.687: %SYS-5-CONFIG_I: Configured from console by console
-  *Aug 19 07:03:11.739: %SYS-5-CONFIG_I: Configured from console by console
-  *Aug 19 07:03:11.777: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug 23 10:16:27.416: %LINK-3-UPDOWN: Interface GigabitEthernet0/0, changed state to up
+  *Aug 23 10:16:27.417: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/0, changed state to up
+  *Aug 23 10:16:27.418: %LINK-3-UPDOWN: Interface GigabitEthernet0/1, changed state to up
+  *Aug 23 10:16:27.418: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/1, changed state to up
+  *Aug 23 10:16:27.456: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug 23 10:16:27.461: %HSRP-5-STATECHANGE: GigabitEthernet0/0 Grp 1 state init -> speak
+  *Aug 23 10:16:27.462: %HSRP-5-STATECHANGE: GigabitEthernet0/0 Grp 1 state speak -> active
+  *Aug 23 10:16:27.463: %HSRP-6-STATECHANGE: GigabitEthernet0/0 Grp 1 Active router is 192.168.1.2 (priority 100)
+  *Aug 23 10:16:27.475: %HSRP-5-STATECHANGE: GigabitEthernet0/0 Grp 2 state init -> speak
+  *Aug 23 10:16:27.476: %HSRP-5-STATECHANGE: GigabitEthernet0/0 Grp 2 state speak -> active
+  *Aug 23 10:16:27.476: %HSRP-6-STATECHANGE: GigabitEthernet0/0 Grp 2 Active router is 192.168.1.2 (priority 100)
+  *Aug 23 10:16:27.487: %HSRP-5-STATECHANGE: GigabitEthernet0/0 Grp 3 state init -> speak
+  *Aug 23 10:16:27.487: %HSRP-5-STATECHANGE: GigabitEthernet0/0 Grp 3 state speak -> active
+  *Aug 23 10:16:27.487: %HSRP-6-STATECHANGE: GigabitEthernet0/0 Grp 3 Active router is 192.168.1.2 (priority 100)
+  *Aug 23 10:16:27.494: %HSRP-5-STATECHANGE: GigabitEthernet0/0 Grp 4 state init -> speak
+  *Aug 23 10:16:27.494: %HSRP-5-STATECHANGE: GigabitEthernet0/0 Grp 4 state speak -> active
+  *Aug 23 10:16:27.494: %HSRP-6-STATECHANGE: GigabitEthernet0/0 Grp 4 Active router is 192.168.1.2 (priority 100)
+  *Aug 23 10:16:27.501: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug 23 10:16:27.520: %VRRP-5-STATECHANGE: GigabitEthernet0/0 VRID 1 state init -> master
+  *Aug 23 10:16:27.526: %VRRP-5-STATECHANGE: GigabitEthernet0/0 VRID 2 state init -> master
+  *Aug 23 10:16:27.531: %VRRP-5-STATECHANGE: GigabitEthernet0/0 VRID 3 state init -> master
+  *Aug 23 10:16:27.535: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug 23 10:16:27.541: %GLBP-5-STATECHANGE: GigabitEthernet0/0 Grp 1 AVG state init -> active
+  *Aug 23 10:16:27.547: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug 23 10:16:27.562: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug 23 10:16:27.589: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug 23 10:16:27.621: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug 23 10:16:27.656: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug 23 10:16:27.694: %SYS-5-CONFIG_I: Configured from console by console
 
 [340/413] r1 R1# show snmp
   Chassis: FTX1234567A
@@ -2187,7 +2195,7 @@ Total steps: 413
   Clock is unsynchronized, stratum 16, no reference clock
   nominal freq is 250.0000 Hz, actual freq is 250.0000 Hz, precision is 2**18
   ntp uptime is 0 (1/100 of seconds), resolution is 4001
-  reference time is EE2FD3AF.E6E978D4 (07:03:11.902 UTC Wed Aug 19 2026)
+  reference time is EE3546FB.CFDF3B64 (10:16:27.812 UTC Sun Aug 23 2026)
   clock offset is 0.0000 msec, root delay is 0.00 msec
   root dispersion is 16000.00 msec, peer dispersion is 16000.00 msec
   loopfilter state is 'FSET' (Drift set from file), drift is 0.000000000 s/s
@@ -2198,7 +2206,7 @@ Total steps: 413
    * sys.peer, # selected, + candidate, - outlyer, x falseticker, ~ configured
 
 [343/413] r1 R1# show clock
-  *07:03:11.000 UTC Wed Aug 19 2026
+  *10:16:27.000 UTC Sun Aug 23 2026
 
 [344/413] r1 R1# show cdp neighbors
   Capability Codes: R - Router, T - Trans Bridge, B - Source Route Bridge
@@ -2380,7 +2388,7 @@ Total steps: 413
   data          None          None           None
   
   Cisco CISCO2911/K9 (revision 1.0) with 491520K/32768K bytes of memory.
-  Processor board ID FTX82499RF6
+  Processor board ID FTX83640DT6
   4 Gigabit Ethernet interfaces
   DRAM configuration is 64 bits wide with parity enabled.
   255K bytes of non-volatile configuration memory.
@@ -2390,9 +2398,9 @@ Total steps: 413
   ------------------ show running-config ------------------
   Building configuration...
   
-  Current configuration : 3171 bytes
+  Current configuration : 3272 bytes
   !
-  ! Last configuration change at 07:03:11 UTC Wed Aug 19 2026 by console
+  ! Last configuration change at 10:16:27 UTC Sun Aug 23 2026 by console
   !
   service timestamps debug datetime msec
   service timestamps log datetime msec
@@ -2443,8 +2451,11 @@ Total steps: 413
    ip nbar protocol-discovery
    fair-queue 64 256 8
    random-detect
+   max-reserved-bandwidth 90
+   priority-group 1
+   custom-queue-list 1
+   tx-ring-limit 3
    rate-limit output 8000000 1500000 3000000 conform-action transmit exceed-action drop
-   bfd echo
   !
   interface GigabitEthernet0/2
    no ip address
@@ -2488,6 +2499,7 @@ Total steps: 413
    permit udp any any range 16384 32767
   !
   ip access-list extended VIDEO
+   permit tcp any any eq 1720
   !
   priority-list 1 protocol ip high tcp telnet
   queue-list 1 protocol ip 1 tcp www
@@ -2680,7 +2692,10 @@ Total steps: 413
   -- No static NAT entries configured --
   Dynamic mappings:
   -- No dynamic NAT rules configured --
-  Application Layer Gateways: none
+  Total doors: 0
+  Appl doors: 0
+  Normal doors: 0
+  Queued Packets: 0
   
   ------------------ show ip ospf neighbor ------------------
   Neighbor ID     Pri   State           Dead Time   Address         Interface
@@ -2712,39 +2727,39 @@ Total steps: 413
   
   Log Buffer (4096 bytes):
   
-  *Aug 19 07:03:11.481: %LINK-3-UPDOWN: Interface GigabitEthernet0/0, changed state to up
-  *Aug 19 07:03:11.482: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/0, changed state to up
-  *Aug 19 07:03:11.483: %LINK-3-UPDOWN: Interface GigabitEthernet0/1, changed state to up
-  *Aug 19 07:03:11.483: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/1, changed state to up
-  *Aug 19 07:03:11.507: %SYS-5-CONFIG_I: Configured from console by console
-  *Aug 19 07:03:11.514: %HSRP-5-STATECHANGE: GigabitEthernet0/0 Grp 1 state init -> speak
-  *Aug 19 07:03:11.516: %HSRP-5-STATECHANGE: GigabitEthernet0/0 Grp 1 state speak -> active
-  *Aug 19 07:03:11.517: %HSRP-6-STATECHANGE: GigabitEthernet0/0 Grp 1 Active router is 192.168.1.2 (priority 100)
-  *Aug 19 07:03:11.530: %HSRP-5-STATECHANGE: GigabitEthernet0/0 Grp 2 state init -> speak
-  *Aug 19 07:03:11.530: %HSRP-5-STATECHANGE: GigabitEthernet0/0 Grp 2 state speak -> active
-  *Aug 19 07:03:11.530: %HSRP-6-STATECHANGE: GigabitEthernet0/0 Grp 2 Active router is 192.168.1.2 (priority 100)
-  *Aug 19 07:03:11.545: %HSRP-5-STATECHANGE: GigabitEthernet0/0 Grp 3 state init -> speak
-  *Aug 19 07:03:11.545: %HSRP-5-STATECHANGE: GigabitEthernet0/0 Grp 3 state speak -> active
-  *Aug 19 07:03:11.546: %HSRP-6-STATECHANGE: GigabitEthernet0/0 Grp 3 Active router is 192.168.1.2 (priority 100)
-  *Aug 19 07:03:11.551: %HSRP-5-STATECHANGE: GigabitEthernet0/0 Grp 4 state init -> speak
-  *Aug 19 07:03:11.551: %HSRP-5-STATECHANGE: GigabitEthernet0/0 Grp 4 state speak -> active
-  *Aug 19 07:03:11.552: %HSRP-6-STATECHANGE: GigabitEthernet0/0 Grp 4 Active router is 192.168.1.2 (priority 100)
-  *Aug 19 07:03:11.560: %SYS-5-CONFIG_I: Configured from console by console
-  *Aug 19 07:03:11.586: %VRRP-5-STATECHANGE: GigabitEthernet0/0 VRID 1 state init -> master
-  *Aug 19 07:03:11.592: %VRRP-5-STATECHANGE: GigabitEthernet0/0 VRID 2 state init -> master
-  *Aug 19 07:03:11.598: %VRRP-5-STATECHANGE: GigabitEthernet0/0 VRID 3 state init -> master
-  *Aug 19 07:03:11.601: %SYS-5-CONFIG_I: Configured from console by console
-  *Aug 19 07:03:11.607: %GLBP-5-STATECHANGE: GigabitEthernet0/0 Grp 1 AVG state init -> active
-  *Aug 19 07:03:11.612: %SYS-5-CONFIG_I: Configured from console by console
-  *Aug 19 07:03:11.634: %SYS-5-CONFIG_I: Configured from console by console
-  *Aug 19 07:03:11.666: %SYS-5-CONFIG_I: Configured from console by console
-  *Aug 19 07:03:11.687: %SYS-5-CONFIG_I: Configured from console by console
-  *Aug 19 07:03:11.739: %SYS-5-CONFIG_I: Configured from console by console
-  *Aug 19 07:03:11.777: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug 23 10:16:27.416: %LINK-3-UPDOWN: Interface GigabitEthernet0/0, changed state to up
+  *Aug 23 10:16:27.417: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/0, changed state to up
+  *Aug 23 10:16:27.418: %LINK-3-UPDOWN: Interface GigabitEthernet0/1, changed state to up
+  *Aug 23 10:16:27.418: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/1, changed state to up
+  *Aug 23 10:16:27.456: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug 23 10:16:27.461: %HSRP-5-STATECHANGE: GigabitEthernet0/0 Grp 1 state init -> speak
+  *Aug 23 10:16:27.462: %HSRP-5-STATECHANGE: GigabitEthernet0/0 Grp 1 state speak -> active
+  *Aug 23 10:16:27.463: %HSRP-6-STATECHANGE: GigabitEthernet0/0 Grp 1 Active router is 192.168.1.2 (priority 100)
+  *Aug 23 10:16:27.475: %HSRP-5-STATECHANGE: GigabitEthernet0/0 Grp 2 state init -> speak
+  *Aug 23 10:16:27.476: %HSRP-5-STATECHANGE: GigabitEthernet0/0 Grp 2 state speak -> active
+  *Aug 23 10:16:27.476: %HSRP-6-STATECHANGE: GigabitEthernet0/0 Grp 2 Active router is 192.168.1.2 (priority 100)
+  *Aug 23 10:16:27.487: %HSRP-5-STATECHANGE: GigabitEthernet0/0 Grp 3 state init -> speak
+  *Aug 23 10:16:27.487: %HSRP-5-STATECHANGE: GigabitEthernet0/0 Grp 3 state speak -> active
+  *Aug 23 10:16:27.487: %HSRP-6-STATECHANGE: GigabitEthernet0/0 Grp 3 Active router is 192.168.1.2 (priority 100)
+  *Aug 23 10:16:27.494: %HSRP-5-STATECHANGE: GigabitEthernet0/0 Grp 4 state init -> speak
+  *Aug 23 10:16:27.494: %HSRP-5-STATECHANGE: GigabitEthernet0/0 Grp 4 state speak -> active
+  *Aug 23 10:16:27.494: %HSRP-6-STATECHANGE: GigabitEthernet0/0 Grp 4 Active router is 192.168.1.2 (priority 100)
+  *Aug 23 10:16:27.501: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug 23 10:16:27.520: %VRRP-5-STATECHANGE: GigabitEthernet0/0 VRID 1 state init -> master
+  *Aug 23 10:16:27.526: %VRRP-5-STATECHANGE: GigabitEthernet0/0 VRID 2 state init -> master
+  *Aug 23 10:16:27.531: %VRRP-5-STATECHANGE: GigabitEthernet0/0 VRID 3 state init -> master
+  *Aug 23 10:16:27.535: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug 23 10:16:27.541: %GLBP-5-STATECHANGE: GigabitEthernet0/0 Grp 1 AVG state init -> active
+  *Aug 23 10:16:27.547: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug 23 10:16:27.562: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug 23 10:16:27.589: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug 23 10:16:27.621: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug 23 10:16:27.656: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug 23 10:16:27.694: %SYS-5-CONFIG_I: Configured from console by console
 
 [357/413] r1 R1# show inventory
   NAME: "CISCO2911/K9 chassis", DESCR: "Cisco ISR 2911 Integrated Services Router"
-  PID: CISCO2911/K9        , VID: V01  , SN: FTX82499RF6
+  PID: CISCO2911/K9        , VID: V01  , SN: FTX83640DT6
 
 [358/413] r1 R1# show environment
   Number of Critical alarms:  0
@@ -2836,8 +2851,11 @@ Total steps: 413
    ip nbar protocol-discovery
    fair-queue 64 256 8
    random-detect
+   max-reserved-bandwidth 90
+   priority-group 1
+   custom-queue-list 1
+   tx-ring-limit 3
    rate-limit output 8000000 1500000 3000000 conform-action transmit exceed-action drop
-   bfd echo
   !
   interface GigabitEthernet0/2
    no ip address
@@ -2886,8 +2904,11 @@ Total steps: 413
    ip nbar protocol-discovery
    fair-queue 64 256 8
    random-detect
+   max-reserved-bandwidth 90
+   priority-group 1
+   custom-queue-list 1
+   tx-ring-limit 3
    rate-limit output 8000000 1500000 3000000 conform-action transmit exceed-action drop
-   bfd echo
   !
   interface GigabitEthernet0/2
    no ip address
@@ -2931,6 +2952,7 @@ Total steps: 413
    permit udp any any range 16384 32767
   !
   ip access-list extended VIDEO
+   permit tcp any any eq 1720
   !
   priority-list 1 protocol ip high tcp telnet
   queue-list 1 protocol ip 1 tcp www
@@ -2974,7 +2996,7 @@ Total steps: 413
 [370/413] r1 R1# show running-config | exclude !
   Building configuration...
   
-  Current configuration : 3171 bytes
+  Current configuration : 3272 bytes
   service timestamps debug datetime msec
   service timestamps log datetime msec
   hostname R1
@@ -3011,8 +3033,11 @@ Total steps: 413
    ip nbar protocol-discovery
    fair-queue 64 256 8
    random-detect
+   max-reserved-bandwidth 90
+   priority-group 1
+   custom-queue-list 1
+   tx-ring-limit 3
    rate-limit output 8000000 1500000 3000000 conform-action transmit exceed-action drop
-   bfd echo
   interface GigabitEthernet0/2
    no ip address
   interface GigabitEthernet0/3
@@ -3044,6 +3069,7 @@ Total steps: 413
   ip access-list extended VOICE
    permit udp any any range 16384 32767
   ip access-list extended VIDEO
+   permit tcp any any eq 1720
   priority-list 1 protocol ip high tcp telnet
   queue-list 1 protocol ip 1 tcp www
   class-map match-any CM-VOICE
@@ -3227,7 +3253,7 @@ Total steps: 413
     finger             Enable finger service
     flow-cache         NetFlow cache timeout
     flow-export        Legacy NetFlow export
-    gratuitous-arps    Enable gratuitous ARP
+    gratuitous-arps    Send gratuitous ARP
     host               Add a host to the host table
     http               Hypertext Transfer Protocol
     local              Local settings
@@ -3241,7 +3267,7 @@ Total steps: 413
     routing            Enable IP routing
     scp                SCP server config
     sla                Configure an IP SLAs operation
-    source-route       IP source-route
+    source-route       Accept source-routed packets
     ssh                SSH config
     subnet-zero        Accepted, default behaviour on IOS 12.0 and later
     vrf                Define a VRF instance
@@ -3283,8 +3309,8 @@ Total steps: 413
     key            Key management
     line           Remove line configuration
     lldp           Enable LLDP globally
-    logging        Count every log message and timestamp last occurrence
-    login          Set the login blocking period
+    logging        line logging
+    login          line login
     ntp            Authenticate time sources
     parser         Negate a parser command
     privilege      Remove privilege command rule

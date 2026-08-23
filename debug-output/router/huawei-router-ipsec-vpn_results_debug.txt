@@ -1,6 +1,6 @@
 ============================================================
 Router (L3) debug transcript — huawei-router-ipsec-vpn
-Generated: 2026-08-19T07:03:22.548Z
+Generated: 2026-08-23T10:20:01.236Z
 Topology: R1(Huawei) GE0/0/1=L1 LAN 192.168.1.0/24, GE0/0/0=WAN 10.0.0.0/30; R2(Huawei) GE0/0/1=W1 LAN 192.168.2.0/24, GE0/0/0=WAN
 focus=VRP IKE/IKEv2/IPsec proposal-policy/profile/GRE-IPsec
 Total steps: 279
@@ -754,6 +754,9 @@ Total steps: 279
   #
   dns resolve
   #
+  acl number 3100
+   rule 5 permit ip source 192.168.1.0 0.0.0.255 destination 192.168.2.0 0.0.0.255
+  #
   interface GigabitEthernet0/0/0
    ip address 192.168.1.1 255.255.255.0
   #
@@ -785,9 +788,6 @@ Total steps: 279
    source LoopBack0
    destination 10.0.0.2
    ipsec profile PROF1
-  #
-  acl number 3100
-   rule 5 permit ip source 192.168.1.0 0.0.0.255 destination 192.168.2.0 0.0.0.255
   #
   ike proposal 1
    encryption-algorithm aes-128
@@ -1157,14 +1157,14 @@ Total steps: 279
   Root delay: 0.00 ms
   Root dispersion: 16000.00 ms
   Peer dispersion: 16000.00 ms
-  Reference time: 07:03:22.633  Aug 19 2026(EE2FD3BA.A20C49BA)
+  Reference time: 10:20:01.311  Aug 23 2026(EE3547D1.4F9DB22D)
 
 [209/279] r1 <R1> display ntp session
   Info: No NTP session exists.
 
 [210/279] r1 <R1> display clock
-  2026-08-19 07:03:22
-  Wednesday
+  2026-08-23 10:20:01
+  Sunday
   Time Zone(UTC) : UTC
 
 [211/279] r1 <R1> display lldp neighbor
@@ -1176,13 +1176,13 @@ Total steps: 279
 [213/279] r1 <R1> display cpu-usage
   CPU Usage Stat. Cycle: 60 (Second)
   CPU Usage            : 11% Max: 38%
-  CPU Usage Stat. Time : 2026-08-19 07:03:22
+  CPU Usage Stat. Time : 2026-08-23 10:20:01
   CPU utilization for five seconds: 11%: one minute: 12%: five minutes: 10%
   
   Max CPU Usage Stat. Time : 0000-00-00 00:00:00.
 
 [214/279] r1 <R1> display memory-usage
-  Memory utilization statistics at 2026-08-19 07:03:22
+  Memory utilization statistics at 2026-08-23 10:20:01
   System Total Memory Is: 536870912 bytes
   Total Memory Used Is: 193273528 bytes
   Memory Using Percentage Is: 36%
@@ -1223,10 +1223,10 @@ Total steps: 279
   Dropped messages : 0
   Overwritten messages : 0
   Current messages : 4
-  2026-08-19 07:03:22 %01LINK/3/ERRORS: Interface GE0/0/1, changed state to up
-  2026-08-19 07:03:22 %01LINEPROTO/5/NOTIFICATIONS: Line protocol on Interface GE0/0/1, changed state to up
-  2026-08-19 07:03:22 %01LINK/3/ERRORS: Interface GE0/0/0, changed state to up
-  2026-08-19 07:03:22 %01LINEPROTO/5/NOTIFICATIONS: Line protocol on Interface GE0/0/0, changed state to up
+  2026-08-23 10:20:01 %01LINK/3/ERRORS: Interface GE0/0/1, changed state to up
+  2026-08-23 10:20:01 %01LINEPROTO/5/NOTIFICATIONS: Line protocol on Interface GE0/0/1, changed state to up
+  2026-08-23 10:20:01 %01LINK/3/ERRORS: Interface GE0/0/0, changed state to up
+  2026-08-23 10:20:01 %01LINEPROTO/5/NOTIFICATIONS: Line protocol on Interface GE0/0/0, changed state to up
 
 [219/279] r1 <R1> display trapbuffer
   Trapping buffer configuration and contents: enabled
@@ -1310,6 +1310,9 @@ Total steps: 279
   #
   dns resolve
   #
+  acl number 3100
+   rule 5 permit ip source 192.168.1.0 0.0.0.255 destination 192.168.2.0 0.0.0.255
+  #
   interface GigabitEthernet0/0/0
    ip address 192.168.1.1 255.255.255.0
   #
@@ -1341,9 +1344,6 @@ Total steps: 279
    source LoopBack0
    destination 10.0.0.2
    ipsec profile PROF1
-  #
-  acl number 3100
-   rule 5 permit ip source 192.168.1.0 0.0.0.255 destination 192.168.2.0 0.0.0.255
   #
   ike proposal 1
    encryption-algorithm aes-128
@@ -1506,9 +1506,6 @@ Total steps: 279
    destination 10.0.0.2
    ipsec profile PROF1
   #
-  acl number 3100
-   rule 5 permit ip source 192.168.1.0 0.0.0.255 destination 192.168.2.0 0.0.0.255
-  #
   ike proposal 1
    encryption-algorithm aes-128
    authentication-algorithm sha256
@@ -1592,6 +1589,8 @@ Total steps: 279
 [238/279] r1 <R1> display current-configuration | exclude #
   sysname R1
   dns resolve
+  acl number 3100
+   rule 5 permit ip source 192.168.1.0 0.0.0.255 destination 192.168.2.0 0.0.0.255
   interface GigabitEthernet0/0/0
    ip address 192.168.1.1 255.255.255.0
   interface GigabitEthernet0/0/1
@@ -1617,8 +1616,6 @@ Total steps: 279
    source LoopBack0
    destination 10.0.0.2
    ipsec profile PROF1
-  acl number 3100
-   rule 5 permit ip source 192.168.1.0 0.0.0.255 destination 192.168.2.0 0.0.0.255
   ike proposal 1
    encryption-algorithm aes-128
    authentication-algorithm sha256
@@ -1852,6 +1849,7 @@ Total steps: 279
     screen-length  Restore default screen length
     screen-width   Restore default screen width
     terminal       Set the terminal line characteristics
+    time-range     Remove a time-range
     traffic        Display traffic statistics
     <cr>
 

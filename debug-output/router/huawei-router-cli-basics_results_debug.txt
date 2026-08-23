@@ -1,6 +1,6 @@
 ============================================================
 Router (L3) debug transcript — huawei-router-cli-basics
-Generated: 2026-08-19T07:02:59.148Z
+Generated: 2026-08-23T10:16:52.589Z
 Topology: R1(Huawei) GE0/0/1=L1 LAN 192.168.1.0/24, GE0/0/0=WAN 10.0.0.0/30; R2(Huawei) GE0/0/1=W1 LAN 192.168.2.0/24, GE0/0/0=WAN
 focus=VRP router view nav, display family, pipes, undo, save
 Total steps: 304
@@ -27,8 +27,8 @@ Total steps: 304
   R1 uptime is 0 days, 0 hours, 0 minutes
 
 [3/304] r1 <R1> display clock
-  2026-08-19 07:02:59
-  Wednesday
+  2026-08-23 10:16:52
+  Sunday
   Time Zone(UTC) : UTC
 
 [4/304] r1 <R1> display device
@@ -58,13 +58,13 @@ Total steps: 304
 [7/304] r1 <R1> display cpu-usage
   CPU Usage Stat. Cycle: 60 (Second)
   CPU Usage            : 11% Max: 38%
-  CPU Usage Stat. Time : 2026-08-19 07:02:59
+  CPU Usage Stat. Time : 2026-08-23 10:16:52
   CPU utilization for five seconds: 11%: one minute: 12%: five minutes: 10%
   
   Max CPU Usage Stat. Time : 0000-00-00 00:00:00.
 
 [8/304] r1 <R1> display memory-usage
-  Memory utilization statistics at 2026-08-19 07:02:59
+  Memory utilization statistics at 2026-08-23 10:16:52
   System Total Memory Is: 536870912 bytes
   Total Memory Used Is: 193273528 bytes
   Memory Using Percentage Is: 36%
@@ -311,7 +311,7 @@ Total steps: 304
   Root delay: 0.00 ms
   Root dispersion: 16000.00 ms
   Peer dispersion: 16000.00 ms
-  Reference time: 07:02:59.231  Aug 19 2026(EE2FD3A3.3B22D0E5)
+  Reference time: 10:16:52.680  Aug 23 2026(EE354714.AE147AE1)
 
 [36/304] r1 <R1> display lldp neighbor
   Info: No LLDP neighbor is found.
@@ -327,10 +327,10 @@ Total steps: 304
   Dropped messages : 0
   Overwritten messages : 0
   Current messages : 4
-  2026-08-19 07:02:59 %01LINK/3/ERRORS: Interface GE0/0/1, changed state to up
-  2026-08-19 07:02:59 %01LINEPROTO/5/NOTIFICATIONS: Line protocol on Interface GE0/0/1, changed state to up
-  2026-08-19 07:02:59 %01LINK/3/ERRORS: Interface GE0/0/0, changed state to up
-  2026-08-19 07:02:59 %01LINEPROTO/5/NOTIFICATIONS: Line protocol on Interface GE0/0/0, changed state to up
+  2026-08-23 10:16:52 %01LINK/3/ERRORS: Interface GE0/0/1, changed state to up
+  2026-08-23 10:16:52 %01LINEPROTO/5/NOTIFICATIONS: Line protocol on Interface GE0/0/1, changed state to up
+  2026-08-23 10:16:52 %01LINK/3/ERRORS: Interface GE0/0/0, changed state to up
+  2026-08-23 10:16:52 %01LINEPROTO/5/NOTIFICATIONS: Line protocol on Interface GE0/0/0, changed state to up
 
 [39/304] r1 <R1> display trapbuffer
   Trapping buffer configuration and contents: enabled
@@ -840,6 +840,9 @@ Total steps: 304
   #
   ip pool LAN
   #
+  acl number 2000
+  #
+  acl name MGMT basic
   interface GigabitEthernet0/0/0
    shutdown
   #
@@ -859,10 +862,6 @@ Total steps: 304
   #
   interface Tunnel0/0/0
    shutdown
-  #
-  acl number 2000
-  #
-  acl name MGMT basic
   #
   rip 1
    version 2
@@ -900,6 +899,9 @@ Total steps: 304
   #
   ip pool LAN
   #
+  acl number 2000
+  #
+  acl name MGMT basic
   interface GigabitEthernet0/0/0
    shutdown
   #
@@ -919,10 +921,6 @@ Total steps: 304
   #
   interface Tunnel0/0/0
    shutdown
-  #
-  acl number 2000
-  #
-  acl name MGMT basic
   #
   rip 1
    version 2
@@ -962,6 +960,11 @@ Total steps: 304
   #
   ip pool LAN
   #
+  route-policy RP permit node 10
+  #
+  acl number 2000
+  #
+  acl name MGMT basic
   interface GigabitEthernet0/0/0
    shutdown
   #
@@ -981,10 +984,6 @@ Total steps: 304
   #
   interface Tunnel0/0/0
    shutdown
-  #
-  acl number 2000
-  #
-  acl name MGMT basic
   #
   rip 1
    version 2
@@ -1024,6 +1023,11 @@ Total steps: 304
   #
   ip pool LAN
   #
+  route-policy RP permit node 10
+  #
+  acl number 2000
+  #
+  acl name MGMT basic
   interface GigabitEthernet0/0/0
    shutdown
   #
@@ -1043,10 +1047,6 @@ Total steps: 304
   #
   interface Tunnel0/0/0
    shutdown
-  #
-  acl number 2000
-  #
-  acl name MGMT basic
   #
   rip 1
    version 2
@@ -1091,6 +1091,11 @@ Total steps: 304
   #
   ip pool LAN
   #
+  route-policy RP permit node 10
+  #
+  acl number 2000
+  #
+  acl name MGMT basic
   interface GigabitEthernet0/0/0
    shutdown
   #
@@ -1110,10 +1115,6 @@ Total steps: 304
   #
   interface Tunnel0/0/0
    shutdown
-  #
-  acl number 2000
-  #
-  acl name MGMT basic
   #
   rip 1
    version 2
@@ -1167,6 +1168,11 @@ Total steps: 304
   #
   ip pool LAN
   #
+  route-policy RP permit node 10
+  #
+  acl number 2000
+  #
+  acl name MGMT basic
   interface GigabitEthernet0/0/0
    shutdown
   #
@@ -1186,10 +1192,6 @@ Total steps: 304
   #
   interface Tunnel0/0/0
    shutdown
-  #
-  acl number 2000
-  #
-  acl name MGMT basic
   #
   rip 1
    version 2
@@ -1241,6 +1243,11 @@ Total steps: 304
   #
   ip pool LAN
   #
+  route-policy RP permit node 10
+  #
+  acl number 2000
+  #
+  acl name MGMT basic
   interface GigabitEthernet0/0/0
    shutdown
   #
@@ -1260,10 +1267,6 @@ Total steps: 304
   #
   interface Tunnel0/0/0
    shutdown
-  #
-  acl number 2000
-  #
-  acl name MGMT basic
   #
   rip 1
    version 2
@@ -1322,6 +1325,11 @@ Total steps: 304
   #
   ip pool LAN
   #
+  route-policy RP permit node 10
+  #
+  acl number 2000
+  #
+  acl name MGMT basic
   interface GigabitEthernet0/0/0
    shutdown
   #
@@ -1341,10 +1349,6 @@ Total steps: 304
   #
   interface Tunnel0/0/0
    shutdown
-  #
-  acl number 2000
-  #
-  acl name MGMT basic
   #
   rip 1
    version 2
@@ -1461,6 +1465,7 @@ Total steps: 304
     screen-length  Restore default screen length
     screen-width   Restore default screen width
     terminal       Set the terminal line characteristics
+    time-range     Remove a time-range
     traffic        Display traffic statistics
     <cr>
 
@@ -1475,7 +1480,7 @@ Total steps: 304
     <cr>
 
 [138/304] r1 [R1-EDGE] snmp-agent ?
-    WORD  Toggle: snmp-agent
+    WORD  SNMP agent configuration
     <cr>
 
 [139/304] r1 [R1-EDGE] ntp-service ?
@@ -1500,7 +1505,8 @@ Total steps: 304
     urpf              Configure URPF mode
 
 [144/304] r1 [R1-EDGE-GigabitEthernet0/0/0] ip address ?
-    A.B.C.D  IP address
+    A.B.C.D     IP address
+    dhcp-alloc  Obtain an IP address through DHCP
 
 [145/304] r1 [R1-EDGE-GigabitEthernet0/0/0] quit
 <empty>
@@ -1599,6 +1605,9 @@ Total steps: 304
   dns resolve
   dhcp enable
   ip pool LAN
+  route-policy RP permit node 10
+  acl number 2000
+  acl name MGMT basic
   interface GigabitEthernet0/0/0
    shutdown
   interface GigabitEthernet0/0/1
@@ -1613,8 +1622,6 @@ Total steps: 304
    bandwidth 8000000
   interface Tunnel0/0/0
    shutdown
-  acl number 2000
-  acl name MGMT basic
   ip route-static 1.1.1.0 255.255.255.0 10.0.0.2
   rip 1
    version 2
@@ -1640,6 +1647,7 @@ Total steps: 304
    local-user dave service-type ssh
   bgp 65000
   isis 1
+  snmp-agent 
   undo info-center enable
 
 [173/304] r1 <Huawei> display current-configuration | begin interface
@@ -1663,9 +1671,6 @@ Total steps: 304
   interface Tunnel0/0/0
    shutdown
   #
-  acl number 2000
-  #
-  acl name MGMT basic
   ip route-static 1.1.1.0 255.255.255.0 10.0.0.2
   #
   rip 1
@@ -1698,6 +1703,8 @@ Total steps: 304
   #
   bgp 65000
   isis 1
+  #
+  snmp-agent 
   #
   undo info-center enable
   #
@@ -1785,6 +1792,11 @@ Total steps: 304
   #
   ip pool LAN
   #
+  route-policy RP permit node 10
+  #
+  acl number 2000
+  #
+  acl name MGMT basic
   interface GigabitEthernet0/0/0
    shutdown
   #
@@ -1805,9 +1817,6 @@ Total steps: 304
   interface Tunnel0/0/0
    shutdown
   #
-  acl number 2000
-  #
-  acl name MGMT basic
   ip route-static 1.1.1.0 255.255.255.0 10.0.0.2
   #
   rip 1
@@ -1844,6 +1853,8 @@ Total steps: 304
   #
   bgp 65000
   isis 1
+  #
+  snmp-agent 
   #
   undo info-center enable
   #
@@ -1895,6 +1906,11 @@ Total steps: 304
   #
   ip pool LAN
   #
+  route-policy RP permit node 10
+  #
+  acl number 2000
+  #
+  acl name MGMT basic
   interface GigabitEthernet0/0/0
    shutdown
   #
@@ -1914,10 +1930,6 @@ Total steps: 304
   #
   interface Tunnel0/0/0
    shutdown
-  #
-  acl number 2000
-  #
-  acl name MGMT basic
   #
   rip 1
    version 2
@@ -1953,6 +1965,8 @@ Total steps: 304
   #
   bgp 65000
   isis 1
+  #
+  snmp-agent 
   #
   undo info-center enable
   #
@@ -2195,14 +2209,14 @@ Total steps: 304
   Root delay: 0.00 ms
   Root dispersion: 16000.00 ms
   Peer dispersion: 16000.00 ms
-  Reference time: 07:03:00.449  Aug 19 2026(EE2FD3A4.72F1A9FB)
+  Reference time: 10:16:53.854  Aug 23 2026(EE354715.DA9FBE76)
 
 [234/304] r1 <R1> display ntp session
   Info: No NTP session exists.
 
 [235/304] r1 <R1> display clock
-  2026-08-19 07:03:00
-  Wednesday
+  2026-08-23 10:16:53
+  Sunday
   Time Zone(UTC) : UTC
 
 [236/304] r1 <R1> display lldp neighbor
@@ -2214,13 +2228,13 @@ Total steps: 304
 [238/304] r1 <R1> display cpu-usage
   CPU Usage Stat. Cycle: 60 (Second)
   CPU Usage            : 11% Max: 38%
-  CPU Usage Stat. Time : 2026-08-19 07:03:00
+  CPU Usage Stat. Time : 2026-08-23 10:16:53
   CPU utilization for five seconds: 11%: one minute: 12%: five minutes: 10%
   
   Max CPU Usage Stat. Time : 0000-00-00 00:00:00.
 
 [239/304] r1 <R1> display memory-usage
-  Memory utilization statistics at 2026-08-19 07:03:00
+  Memory utilization statistics at 2026-08-23 10:16:53
   System Total Memory Is: 536870912 bytes
   Total Memory Used Is: 193273528 bytes
   Memory Using Percentage Is: 36%
@@ -2261,15 +2275,15 @@ Total steps: 304
   Dropped messages : 0
   Overwritten messages : 0
   Current messages : 9
-  2026-08-19 07:02:59 %01LINK/3/ERRORS: Interface GE0/0/1, changed state to up
-  2026-08-19 07:02:59 %01LINEPROTO/5/NOTIFICATIONS: Line protocol on Interface GE0/0/1, changed state to up
-  2026-08-19 07:02:59 %01LINK/3/ERRORS: Interface GE0/0/0, changed state to up
-  2026-08-19 07:02:59 %01LINEPROTO/5/NOTIFICATIONS: Line protocol on Interface GE0/0/0, changed state to up
-  2026-08-19 07:03:00 %01NTP/4/WARNINGS: System clock unsynchronized (admin-disabled)
-  2026-08-19 07:03:00 %01LINK/5/NOTIFICATIONS: Interface GE0/0/0, changed state to administratively down
-  2026-08-19 07:03:00 %01LINEPROTO/5/NOTIFICATIONS: Line protocol on Interface GE0/0/0, changed state to down
-  2026-08-19 07:03:00 %01LINK/3/ERRORS: Interface GE0/0/0, changed state to up
-  2026-08-19 07:03:00 %01LINEPROTO/5/NOTIFICATIONS: Line protocol on Interface GE0/0/0, changed state to up
+  2026-08-23 10:16:52 %01LINK/3/ERRORS: Interface GE0/0/1, changed state to up
+  2026-08-23 10:16:52 %01LINEPROTO/5/NOTIFICATIONS: Line protocol on Interface GE0/0/1, changed state to up
+  2026-08-23 10:16:52 %01LINK/3/ERRORS: Interface GE0/0/0, changed state to up
+  2026-08-23 10:16:52 %01LINEPROTO/5/NOTIFICATIONS: Line protocol on Interface GE0/0/0, changed state to up
+  2026-08-23 10:16:53 %01NTP/4/WARNINGS: System clock unsynchronized (admin-disabled)
+  2026-08-23 10:16:53 %01LINK/5/NOTIFICATIONS: Interface GE0/0/0, changed state to administratively down
+  2026-08-23 10:16:53 %01LINEPROTO/5/NOTIFICATIONS: Line protocol on Interface GE0/0/0, changed state to down
+  2026-08-23 10:16:53 %01LINK/3/ERRORS: Interface GE0/0/0, changed state to up
+  2026-08-23 10:16:53 %01LINEPROTO/5/NOTIFICATIONS: Line protocol on Interface GE0/0/0, changed state to up
 
 [244/304] r1 <R1> display trapbuffer
   Trapping buffer configuration and contents: enabled
@@ -2356,6 +2370,11 @@ Total steps: 304
   #
   ip pool LAN
   #
+  route-policy RP permit node 10
+  #
+  acl number 2000
+  #
+  acl name MGMT basic
   interface GigabitEthernet0/0/0
    shutdown
   #
@@ -2375,10 +2394,6 @@ Total steps: 304
   #
   interface Tunnel0/0/0
    shutdown
-  #
-  acl number 2000
-  #
-  acl name MGMT basic
   #
   rip 1
    version 2
@@ -2414,6 +2429,8 @@ Total steps: 304
   #
   bgp 65000
   isis 1
+  #
+  snmp-agent 
   #
   undo info-center enable
   #
@@ -2494,10 +2511,6 @@ Total steps: 304
   interface Tunnel0/0/0
    shutdown
   #
-  acl number 2000
-  #
-  acl name MGMT basic
-  #
   rip 1
    version 2
   #
@@ -2533,6 +2546,8 @@ Total steps: 304
   bgp 65000
   isis 1
   #
+  snmp-agent 
+  #
   undo info-center enable
   #
 
@@ -2541,6 +2556,9 @@ Total steps: 304
   dns resolve
   dhcp enable
   ip pool LAN
+  route-policy RP permit node 10
+  acl number 2000
+  acl name MGMT basic
   interface GigabitEthernet0/0/0
    shutdown
   interface GigabitEthernet0/0/1
@@ -2555,8 +2573,6 @@ Total steps: 304
    bandwidth 8000000
   interface Tunnel0/0/0
    shutdown
-  acl number 2000
-  acl name MGMT basic
   rip 1
    version 2
   ospf 1
@@ -2585,6 +2601,7 @@ Total steps: 304
    local-user dave service-type ssh
   bgp 65000
   isis 1
+  snmp-agent 
   undo info-center enable
 
 [264/304] r1 <R1> display ip routing-table | include Direct
@@ -2750,6 +2767,7 @@ Total steps: 304
     screen-length  Restore default screen length
     screen-width   Restore default screen width
     terminal       Set the terminal line characteristics
+    time-range     Remove a time-range
     traffic        Display traffic statistics
     <cr>
 

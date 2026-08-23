@@ -1,6 +1,6 @@
 ============================================================
 Router (L3) debug transcript — cisco-router-dhcp-nat
-Generated: 2026-08-19T07:03:12.297Z
+Generated: 2026-08-23T10:16:51.604Z
 Topology: R1(Cisco) Gi0/0=L1 LAN 192.168.1.0/24, Gi0/1=WAN 10.0.0.0/30; R2(Cisco) Gi0/0=W1 LAN 192.168.2.0/24, Gi0/1=WAN
 focus=DHCP server/relay/snoop/v6/client + NAT static/PAT/pool
 Total steps: 369
@@ -832,7 +832,7 @@ Total steps: 369
 
 [174/369] r1 R1# show ip dhcp snooping
   Switch DHCP snooping is enabled
-  DHCP snooping VLAN configuration: ip dhcp snooping vlan 10,20,30
+  DHCP snooping VLAN configuration: 10,20,30
   Insertion of option-82 information: yes
 
 [175/369] r1 R1# show ip dhcp snooping binding
@@ -917,10 +917,12 @@ Total steps: 369
 <empty>
 
 [199/369] r1 R1(config-if)# ip address dhcp hostname R1
-<empty>
+                           ^
+  % Invalid input detected at '^' marker.
 
 [200/369] r1 R1(config-if)# ip address dhcp client-id GigabitEthernet0/1
-<empty>
+                           ^
+  % Invalid input detected at '^' marker.
 
 [201/369] r1 R1(config-if)# ipv6 address dhcp
                              ^
@@ -1117,7 +1119,10 @@ Total steps: 369
    -- static  192.168.1.150  10.0.0.150  refcount 0
   Dynamic mappings:
   -- No dynamic NAT rules configured --
-  Application Layer Gateways: none
+  Total doors: 0
+  Appl doors: 0
+  Normal doors: 0
+  Queued Packets: 0
 
 
 --- [233] § NAT dynamic / PAT ---
@@ -1231,7 +1236,10 @@ Total steps: 369
   Pools:
    POOL1: 10.0.0.50 - 10.0.0.60 — used 0/11 (0%)
    POOL2: 10.0.0.70 - 10.0.0.80 — used 0/11 (0%)
-  Application Layer Gateways: none
+  Total doors: 0
+  Appl doors: 0
+  Normal doors: 0
+  Queued Packets: 0
 
 [254/369] r1 R1# show ip nat nvi translations
   Pro  Inside global          Inside local           Outside local          Outside global
@@ -1292,7 +1300,7 @@ Total steps: 369
   data          None          None           None
   
   Cisco CISCO2911/K9 (revision 1.0) with 491520K/32768K bytes of memory.
-  Processor board ID FTX2712V8VD
+  Processor board ID FTX2736VFQU
   4 Gigabit Ethernet interfaces
   DRAM configuration is 64 bits wide with parity enabled.
   255K bytes of non-volatile configuration memory.
@@ -1302,9 +1310,9 @@ Total steps: 369
 [262/369] r1 R1# show running-config
   Building configuration...
   
-  Current configuration : 3683 bytes
+  Current configuration : 3857 bytes
   !
-  ! Last configuration change at 07:03:12 UTC Wed Aug 19 2026 by console
+  ! Last configuration change at 10:16:51 UTC Sun Aug 23 2026 by console
   !
   service timestamps debug datetime msec
   service timestamps log datetime msec
@@ -1382,6 +1390,13 @@ Total steps: 369
   ip dhcp pool MULTI
    network 10.50.0.0 255.255.0.0
   !
+  ip dhcp snooping
+  ip dhcp snooping vlan 10,20,30
+  ip dhcp snooping information option
+  ip dhcp relay information policy keep
+  ip dhcp relay information trust-all
+  ip dhcp smart-relay
+  !
   interface GigabitEthernet0/0
    ip address 192.168.1.1 255.255.255.0
    ipv6 address 2001:db8:1::1/64
@@ -1392,7 +1407,7 @@ Total steps: 369
    ipv6 dhcp server V6POOL
   !
   interface GigabitEthernet0/1
-   ip address 10.0.0.1 255.255.255.252
+   ip address dhcp
    ip nat outside
    ip dhcp snooping trust
    ip dhcp snooping limit rate 100
@@ -1404,7 +1419,7 @@ Total steps: 369
   interface GigabitEthernet0/3
    no ip address
   !
-  ip nat pool POOL1 10.0.0.50 10.0.0.60 prefix-length 24
+  ip nat pool POOL1 10.0.0.50 10.0.0.60 netmask 255.255.255.0
   ip nat pool POOL2 10.0.0.70 10.0.0.80 prefix-length 24
   ip nat inside source static 192.168.1.11 10.0.0.11
   ip nat inside source static 192.168.1.12 10.0.0.12
@@ -1422,7 +1437,7 @@ Total steps: 369
   ip nat inside source static 192.168.1.150 10.0.0.150
   ip nat outside source static 8.8.8.8 192.168.1.200
   ip nat inside source list 1 pool POOL1
-  ip nat inside source list 1 pool POOL1
+  ip nat inside source list 1 pool POOL1 overload
   ip nat inside source list 2 interface GigabitEthernet0/1 overload
   ip nat translation tcp-timeout 600
   ip nat translation udp-timeout 120
@@ -1444,7 +1459,7 @@ Total steps: 369
 [264/369] r1 R1# show ip interface brief
   Interface                  IP-Address      OK? Method Status                Protocol
   GigabitEthernet0/0         192.168.1.1     YES manual up                    up
-  GigabitEthernet0/1         10.0.0.1        YES manual up                    up
+  GigabitEthernet0/1         10.0.0.1        YES DHCP   up                    up
   GigabitEthernet0/2         unassigned      YES unset  down                  down
   GigabitEthernet0/3         unassigned      YES unset  down                  down
 
@@ -1486,7 +1501,7 @@ Total steps: 369
        Received 0 broadcasts (0 multicasts)
        0 runts, 0 giants, 0 throttles
        0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
-       3 packets output, 192 bytes, 0 underruns
+       4 packets output, 538 bytes, 0 underruns
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
   GigabitEthernet0/2 is down, line protocol is down
@@ -1571,16 +1586,16 @@ Total steps: 369
   No ARP entries.
 
 [271/369] r1 R1# show ip ospf
-  % OSPF is not configured
+<empty>
 
 [272/369] r1 R1# show ip ospf neighbor
-  % OSPF is not configured
+<empty>
 
 [273/369] r1 R1# show ip ospf database
-  % OSPF is not configured
+<empty>
 
 [274/369] r1 R1# show ip ospf interface brief
-  % OSPF is not configured
+<empty>
 
 [275/369] r1 R1# show ip eigrp neighbors
 <empty>
@@ -1650,7 +1665,10 @@ Total steps: 369
   Pools:
    POOL1: 10.0.0.50 - 10.0.0.60 — used 0/11 (0%)
    POOL2: 10.0.0.70 - 10.0.0.80 — used 0/11 (0%)
-  Application Layer Gateways: none
+  Total doors: 0
+  Appl doors: 0
+  Normal doors: 0
+  Queued Packets: 0
 
 [282/369] r1 R1# show ip dhcp binding
   Bindings from all pools not associated with VRF:
@@ -1953,19 +1971,19 @@ Total steps: 369
   
   Log Buffer (4096 bytes):
   
-  *Aug 19 07:03:12.291: %LINK-3-UPDOWN: Interface GigabitEthernet0/0, changed state to up
-  *Aug 19 07:03:12.292: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/0, changed state to up
-  *Aug 19 07:03:12.294: %LINK-3-UPDOWN: Interface GigabitEthernet0/1, changed state to up
-  *Aug 19 07:03:12.294: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/1, changed state to up
-  *Aug 19 07:03:12.323: %SYS-5-CONFIG_I: Configured from console by console
-  *Aug 19 07:03:12.375: %SYS-5-CONFIG_I: Configured from console by console
-  *Aug 19 07:03:12.451: %SYS-5-CONFIG_I: Configured from console by console
-  *Aug 19 07:03:12.456: %SYS-5-CONFIG_I: Configured from console by console
-  *Aug 19 07:03:12.465: %SYS-5-CONFIG_I: Configured from console by console
-  *Aug 19 07:03:12.481: %SYS-5-CONFIG_I: Configured from console by console
-  *Aug 19 07:03:12.495: %SYS-5-CONFIG_I: Configured from console by console
-  *Aug 19 07:03:12.514: %SYS-5-CONFIG_I: Configured from console by console
-  *Aug 19 07:03:12.536: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug 23 10:16:51.599: %LINK-3-UPDOWN: Interface GigabitEthernet0/0, changed state to up
+  *Aug 23 10:16:51.600: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/0, changed state to up
+  *Aug 23 10:16:51.601: %LINK-3-UPDOWN: Interface GigabitEthernet0/1, changed state to up
+  *Aug 23 10:16:51.601: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/1, changed state to up
+  *Aug 23 10:16:51.629: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug 23 10:16:51.721: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug 23 10:16:51.791: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug 23 10:16:51.801: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug 23 10:16:51.810: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug 23 10:16:51.825: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug 23 10:16:51.844: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug 23 10:16:51.858: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug 23 10:16:51.874: %SYS-5-CONFIG_I: Configured from console by console
 
 [296/369] r1 R1# show snmp
   Chassis: FTX1234567A
@@ -1977,7 +1995,7 @@ Total steps: 369
   Clock is unsynchronized, stratum 16, no reference clock
   nominal freq is 250.0000 Hz, actual freq is 250.0000 Hz, precision is 2**18
   ntp uptime is 0 (1/100 of seconds), resolution is 4001
-  reference time is EE2FD3B0.A3D70A3D (07:03:12.640 UTC Wed Aug 19 2026)
+  reference time is EE354713.F645A1CA (10:16:51.962 UTC Sun Aug 23 2026)
   clock offset is 0.0000 msec, root delay is 0.00 msec
   root dispersion is 16000.00 msec, peer dispersion is 16000.00 msec
   loopfilter state is 'FSET' (Drift set from file), drift is 0.000000000 s/s
@@ -1988,7 +2006,7 @@ Total steps: 369
    * sys.peer, # selected, + candidate, - outlyer, x falseticker, ~ configured
 
 [299/369] r1 R1# show clock
-  *07:03:12.000 UTC Wed Aug 19 2026
+  *10:16:51.000 UTC Sun Aug 23 2026
 
 [300/369] r1 R1# show cdp neighbors
   Capability Codes: R - Router, T - Trans Bridge, B - Source Route Bridge
@@ -2106,7 +2124,7 @@ Total steps: 369
        Received 0 broadcasts (0 multicasts)
        0 runts, 0 giants, 0 throttles
        0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
-       3 packets output, 192 bytes, 0 underruns
+       4 packets output, 538 bytes, 0 underruns
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
 
@@ -2114,7 +2132,7 @@ Total steps: 369
   GigabitEthernet0/1 is up, line protocol is up (nat: outside)
     Internet address is 10.0.0.1/30
     Broadcast address is 255.255.255.255
-    Address determined by non-volatile memory
+    Address determined by DHCP
     MTU is 1500 bytes
     Helper address is not set
     Directed broadcast forwarding is disabled
@@ -2169,7 +2187,7 @@ Total steps: 369
   data          None          None           None
   
   Cisco CISCO2911/K9 (revision 1.0) with 491520K/32768K bytes of memory.
-  Processor board ID FTX2712V8VD
+  Processor board ID FTX2736VFQU
   4 Gigabit Ethernet interfaces
   DRAM configuration is 64 bits wide with parity enabled.
   255K bytes of non-volatile configuration memory.
@@ -2179,9 +2197,9 @@ Total steps: 369
   ------------------ show running-config ------------------
   Building configuration...
   
-  Current configuration : 3683 bytes
+  Current configuration : 3857 bytes
   !
-  ! Last configuration change at 07:03:12 UTC Wed Aug 19 2026 by console
+  ! Last configuration change at 10:16:51 UTC Sun Aug 23 2026 by console
   !
   service timestamps debug datetime msec
   service timestamps log datetime msec
@@ -2259,6 +2277,13 @@ Total steps: 369
   ip dhcp pool MULTI
    network 10.50.0.0 255.255.0.0
   !
+  ip dhcp snooping
+  ip dhcp snooping vlan 10,20,30
+  ip dhcp snooping information option
+  ip dhcp relay information policy keep
+  ip dhcp relay information trust-all
+  ip dhcp smart-relay
+  !
   interface GigabitEthernet0/0
    ip address 192.168.1.1 255.255.255.0
    ipv6 address 2001:db8:1::1/64
@@ -2269,7 +2294,7 @@ Total steps: 369
    ipv6 dhcp server V6POOL
   !
   interface GigabitEthernet0/1
-   ip address 10.0.0.1 255.255.255.252
+   ip address dhcp
    ip nat outside
    ip dhcp snooping trust
    ip dhcp snooping limit rate 100
@@ -2281,7 +2306,7 @@ Total steps: 369
   interface GigabitEthernet0/3
    no ip address
   !
-  ip nat pool POOL1 10.0.0.50 10.0.0.60 prefix-length 24
+  ip nat pool POOL1 10.0.0.50 10.0.0.60 netmask 255.255.255.0
   ip nat pool POOL2 10.0.0.70 10.0.0.80 prefix-length 24
   ip nat inside source static 192.168.1.11 10.0.0.11
   ip nat inside source static 192.168.1.12 10.0.0.12
@@ -2299,7 +2324,7 @@ Total steps: 369
   ip nat inside source static 192.168.1.150 10.0.0.150
   ip nat outside source static 8.8.8.8 192.168.1.200
   ip nat inside source list 1 pool POOL1
-  ip nat inside source list 1 pool POOL1
+  ip nat inside source list 1 pool POOL1 overload
   ip nat inside source list 2 interface GigabitEthernet0/1 overload
   ip nat translation tcp-timeout 600
   ip nat translation udp-timeout 120
@@ -2318,7 +2343,7 @@ Total steps: 369
   ------------------ show ip interface brief ------------------
   Interface                  IP-Address      OK? Method Status                Protocol
   GigabitEthernet0/0         192.168.1.1     YES manual up                    up
-  GigabitEthernet0/1         10.0.0.1        YES manual up                    up
+  GigabitEthernet0/1         10.0.0.1        YES DHCP   up                    up
   GigabitEthernet0/2         unassigned      YES unset  down                  down
   GigabitEthernet0/3         unassigned      YES unset  down                  down
   
@@ -2380,7 +2405,7 @@ Total steps: 369
        Received 0 broadcasts (0 multicasts)
        0 runts, 0 giants, 0 throttles
        0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
-       3 packets output, 192 bytes, 0 underruns
+       4 packets output, 538 bytes, 0 underruns
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
   GigabitEthernet0/2 is down, line protocol is down
@@ -2490,10 +2515,13 @@ Total steps: 369
   Pools:
    POOL1: 10.0.0.50 - 10.0.0.60 — used 0/11 (0%)
    POOL2: 10.0.0.70 - 10.0.0.80 — used 0/11 (0%)
-  Application Layer Gateways: none
+  Total doors: 0
+  Appl doors: 0
+  Normal doors: 0
+  Queued Packets: 0
   
   ------------------ show ip ospf neighbor ------------------
-  % OSPF is not configured
+  
   
   ------------------ show ip dhcp binding ------------------
   IP address       Client-id/              Lease expiration        Type
@@ -2522,23 +2550,23 @@ Total steps: 369
   
   Log Buffer (4096 bytes):
   
-  *Aug 19 07:03:12.291: %LINK-3-UPDOWN: Interface GigabitEthernet0/0, changed state to up
-  *Aug 19 07:03:12.292: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/0, changed state to up
-  *Aug 19 07:03:12.294: %LINK-3-UPDOWN: Interface GigabitEthernet0/1, changed state to up
-  *Aug 19 07:03:12.294: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/1, changed state to up
-  *Aug 19 07:03:12.323: %SYS-5-CONFIG_I: Configured from console by console
-  *Aug 19 07:03:12.375: %SYS-5-CONFIG_I: Configured from console by console
-  *Aug 19 07:03:12.451: %SYS-5-CONFIG_I: Configured from console by console
-  *Aug 19 07:03:12.456: %SYS-5-CONFIG_I: Configured from console by console
-  *Aug 19 07:03:12.465: %SYS-5-CONFIG_I: Configured from console by console
-  *Aug 19 07:03:12.481: %SYS-5-CONFIG_I: Configured from console by console
-  *Aug 19 07:03:12.495: %SYS-5-CONFIG_I: Configured from console by console
-  *Aug 19 07:03:12.514: %SYS-5-CONFIG_I: Configured from console by console
-  *Aug 19 07:03:12.536: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug 23 10:16:51.599: %LINK-3-UPDOWN: Interface GigabitEthernet0/0, changed state to up
+  *Aug 23 10:16:51.600: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/0, changed state to up
+  *Aug 23 10:16:51.601: %LINK-3-UPDOWN: Interface GigabitEthernet0/1, changed state to up
+  *Aug 23 10:16:51.601: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/1, changed state to up
+  *Aug 23 10:16:51.629: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug 23 10:16:51.721: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug 23 10:16:51.791: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug 23 10:16:51.801: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug 23 10:16:51.810: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug 23 10:16:51.825: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug 23 10:16:51.844: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug 23 10:16:51.858: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug 23 10:16:51.874: %SYS-5-CONFIG_I: Configured from console by console
 
 [313/369] r1 R1# show inventory
   NAME: "CISCO2911/K9 chassis", DESCR: "Cisco ISR 2911 Integrated Services Router"
-  PID: CISCO2911/K9        , VID: V01  , SN: FTX2712V8VD
+  PID: CISCO2911/K9        , VID: V01  , SN: FTX2736VFQU
 
 [314/369] r1 R1# show environment
   Number of Critical alarms:  0
@@ -2622,7 +2650,7 @@ Total steps: 369
    ipv6 dhcp server V6POOL
   !
   interface GigabitEthernet0/1
-   ip address 10.0.0.1 255.255.255.252
+   ip address dhcp
    ip nat outside
    ip dhcp snooping trust
    ip dhcp snooping limit rate 100
@@ -2642,7 +2670,7 @@ Total steps: 369
 [326/369] r1 R1# show running-config | exclude !
   Building configuration...
   
-  Current configuration : 3683 bytes
+  Current configuration : 3857 bytes
   service timestamps debug datetime msec
   service timestamps log datetime msec
   hostname R1
@@ -2704,6 +2732,12 @@ Total steps: 369
    network 172.16.0.0 255.255.0.0
   ip dhcp pool MULTI
    network 10.50.0.0 255.255.0.0
+  ip dhcp snooping
+  ip dhcp snooping vlan 10,20,30
+  ip dhcp snooping information option
+  ip dhcp relay information policy keep
+  ip dhcp relay information trust-all
+  ip dhcp smart-relay
   interface GigabitEthernet0/0
    ip address 192.168.1.1 255.255.255.0
    ipv6 address 2001:db8:1::1/64
@@ -2713,7 +2747,7 @@ Total steps: 369
    ip dhcp relay information trusted
    ipv6 dhcp server V6POOL
   interface GigabitEthernet0/1
-   ip address 10.0.0.1 255.255.255.252
+   ip address dhcp
    ip nat outside
    ip dhcp snooping trust
    ip dhcp snooping limit rate 100
@@ -2722,7 +2756,7 @@ Total steps: 369
    no ip address
   interface GigabitEthernet0/3
    no ip address
-  ip nat pool POOL1 10.0.0.50 10.0.0.60 prefix-length 24
+  ip nat pool POOL1 10.0.0.50 10.0.0.60 netmask 255.255.255.0
   ip nat pool POOL2 10.0.0.70 10.0.0.80 prefix-length 24
   ip nat inside source static 192.168.1.11 10.0.0.11
   ip nat inside source static 192.168.1.12 10.0.0.12
@@ -2740,7 +2774,7 @@ Total steps: 369
   ip nat inside source static 192.168.1.150 10.0.0.150
   ip nat outside source static 8.8.8.8 192.168.1.200
   ip nat inside source list 1 pool POOL1
-  ip nat inside source list 1 pool POOL1
+  ip nat inside source list 1 pool POOL1 overload
   ip nat inside source list 2 interface GigabitEthernet0/1 overload
   ip nat translation tcp-timeout 600
   ip nat translation udp-timeout 120
@@ -2758,7 +2792,7 @@ Total steps: 369
 [328/369] r1 R1# show ip interface brief | exclude unassigned
   Interface                  IP-Address      OK? Method Status                Protocol
   GigabitEthernet0/0         192.168.1.1     YES manual up                    up
-  GigabitEthernet0/1         10.0.0.1        YES manual up                    up
+  GigabitEthernet0/1         10.0.0.1        YES DHCP   up                    up
 
 
 --- [329] § regression: mode nav + negation ---
@@ -2831,7 +2865,7 @@ Total steps: 369
 [351/369] r1 R1(config-if)# do show ip interface brief
   Interface                  IP-Address      OK? Method Status                Protocol
   GigabitEthernet0/0         192.168.1.1     YES manual up                    up
-  GigabitEthernet0/1         10.0.0.1        YES manual up                    up
+  GigabitEthernet0/1         10.0.0.1        YES DHCP   up                    up
   GigabitEthernet0/2         unassigned      YES unset  down                  down
   GigabitEthernet0/3         unassigned      YES unset  down                  down
 
@@ -2904,7 +2938,7 @@ Total steps: 369
     finger             Enable finger service
     flow-cache         NetFlow cache timeout
     flow-export        Legacy NetFlow export
-    gratuitous-arps    Enable gratuitous ARP
+    gratuitous-arps    Send gratuitous ARP
     host               Add a host to the host table
     http               Hypertext Transfer Protocol
     local              Local settings
@@ -2918,7 +2952,7 @@ Total steps: 369
     routing            Enable IP routing
     scp                SCP server config
     sla                Configure an IP SLAs operation
-    source-route       IP source-route
+    source-route       Accept source-routed packets
     ssh                SSH config
     subnet-zero        Accepted, default behaviour on IOS 12.0 and later
     vrf                Define a VRF instance
@@ -2960,8 +2994,8 @@ Total steps: 369
     key            Key management
     line           Remove line configuration
     lldp           Enable LLDP globally
-    logging        Count every log message and timestamp last occurrence
-    login          Set the login blocking period
+    logging        line logging
+    login          line login
     ntp            Authenticate time sources
     parser         Negate a parser command
     privilege      Remove privilege command rule
@@ -2978,7 +3012,7 @@ Total steps: 369
 <empty>
 
 [368/369] r1 R1# show running-config | count !
-  28
+  29
 
 [369/369] r1 R1# write memory
   Building configuration...

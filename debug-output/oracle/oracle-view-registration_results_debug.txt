@@ -1,12 +1,12 @@
 ============================================================
 Oracle debug transcript — oracle-view-registration
-Generated: 2026-08-13T16:19:13.200Z
+Generated: 2026-08-23T10:19:59.930Z
 Topology:  ora-viewreg
 Total commands: 31
 ============================================================
 
   
-  SQL*Plus: Release 19.0.0.0.0 - Production on Thu Aug 13 2026
+  SQL*Plus: Release 19.0.0.0.0 - Production on Sun Aug 23 2026
   Version 19.3.0.0.0
   
   Copyright (c) 1982, 2019, Oracle.  All rights reserved.
@@ -142,8 +142,8 @@ SQL [16/31]> SELECT * FROM V$SQL_MONITOR WHERE rownum < 3;
   
   SQL_ID        SQL_EXEC_ID SQL_EXEC_START STATUS    USERNAME ELAPSED_TIME CPU_TIME BUFFER_GETS DISK_READS PHYSICAL_READ_BYTES
   ------------- ----------- -------------- --------- -------- ------------ -------- ----------- ---------- -------------------
-  1rcfn8ma3xqw0           1 13-AUG-26      EXECUTING SYS                 0        0           0          0                   0
-  13ipzqna3xqw0           2 13-AUG-26      DONE      SYS               840      672           2          0                   0
+  1rcfn8ma3xqw0           1 23-AUG-26      EXECUTING SYS                 0        0           0          0                   0
+  13ipzqna3xqw0           2 23-AUG-26      DONE      SYS               866      693           2          0                   0
   
   2 rows selected.
 
@@ -167,7 +167,7 @@ SQL [19/31]> SELECT * FROM DBA_HIST_SNAPSHOT WHERE rownum < 3;
   
   SNAP_ID DBID INSTANCE_NUMBER SNAP_LEVEL BEGIN_INTERVAL_TIME END_INTERVAL_TIME STATUS    STARTUP_TIME FLUSH_LEVEL FLUSH_ELAPSED SOURCE
   ------- ---- --------------- ---------- ------------------- ----------------- --------- ------------ ----------- ------------- ------
-        1    1               1          1 13-AUG-26           13-AUG-26         COMPLETED YES          TYPICAL                 1 AUTO  
+        1    1               1          1 23-AUG-26           23-AUG-26         COMPLETED YES          TYPICAL                 1 AUTO  
   
   1 row selected.
 

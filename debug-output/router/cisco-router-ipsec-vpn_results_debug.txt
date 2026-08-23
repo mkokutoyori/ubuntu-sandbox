@@ -1,6 +1,6 @@
 ============================================================
 Router (L3) debug transcript — cisco-router-ipsec-vpn
-Generated: 2026-08-19T07:03:03.976Z
+Generated: 2026-08-23T10:16:31.446Z
 Topology: R1(Cisco) Gi0/0=L1 LAN 192.168.1.0/24, Gi0/1=WAN 10.0.0.0/30; R2(Cisco) Gi0/0=W1 LAN 192.168.2.0/24, Gi0/1=WAN
 focus=IKEv1/IKEv2/IPsec/crypto-map/VTI/DMVPN/PKI
 Total steps: 370
@@ -964,7 +964,7 @@ Total steps: 370
     Certificate Serial Number: 0000000000001002
     Subject: CN=R1.lab.local
     Issuer: CN=http://10.0.0.5:80
-    Validity: 2026-08-19T07:03:04.269Z to 2027-08-19T07:03:04.269Z
+    Validity: 2026-08-23T10:16:31.694Z to 2027-08-23T10:16:31.694Z
   CA Certificate (Trustpoint CA1):
     Status: Available
     Certificate Serial Number: 0000000000001001
@@ -1021,9 +1021,9 @@ Total steps: 370
   Number of IKEv2 SAs: 0
 
 [260/370] r1 R1# show crypto eli
-  Hardware Encryption Layer : ACTIVE
+  Hardware Encryption : ACTIVE
   
-  Number of crypto engines = 1.
+  Number of hardware crypto engines = 1.
   
   CryptoEngine Onboard VPN details: state = Active
    Capability     : IPPCP, DES, 3DES, AES, RSA
@@ -1057,7 +1057,7 @@ Total steps: 370
   data          None          None           None
   
   Cisco CISCO2911/K9 (revision 1.0) with 491520K/32768K bytes of memory.
-  Processor board ID FTX49949ZH2
+  Processor board ID FTX8783QJ70
   4 Gigabit Ethernet interfaces
   DRAM configuration is 64 bits wide with parity enabled.
   255K bytes of non-volatile configuration memory.
@@ -1069,7 +1069,7 @@ Total steps: 370
   
   Current configuration : 4125 bytes
   !
-  ! Last configuration change at 07:03:04 UTC Wed Aug 19 2026 by console
+  ! Last configuration change at 10:16:31 UTC Sun Aug 23 2026 by console
   !
   service timestamps debug datetime msec
   service timestamps log datetime msec
@@ -1451,16 +1451,16 @@ Total steps: 370
   No ARP entries.
 
 [272/370] r1 R1# show ip ospf
-  % OSPF is not configured
+<empty>
 
 [273/370] r1 R1# show ip ospf neighbor
-  % OSPF is not configured
+<empty>
 
 [274/370] r1 R1# show ip ospf database
-  % OSPF is not configured
+<empty>
 
 [275/370] r1 R1# show ip ospf interface brief
-  % OSPF is not configured
+<empty>
 
 [276/370] r1 R1# show ip eigrp neighbors
 <empty>
@@ -1496,7 +1496,10 @@ Total steps: 370
   -- No static NAT entries configured --
   Dynamic mappings:
   -- No dynamic NAT rules configured --
-  Application Layer Gateways: none
+  Total doors: 0
+  Appl doors: 0
+  Normal doors: 0
+  Queued Packets: 0
 
 [283/370] r1 R1# show ip dhcp binding
   Bindings from all pools not associated with VRF:
@@ -1617,18 +1620,18 @@ Total steps: 370
   
   Log Buffer (4096 bytes):
   
-  *Aug 19 07:03:03.971: %LINK-3-UPDOWN: Interface GigabitEthernet0/0, changed state to up
-  *Aug 19 07:03:03.972: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/0, changed state to up
-  *Aug 19 07:03:03.973: %LINK-3-UPDOWN: Interface GigabitEthernet0/1, changed state to up
-  *Aug 19 07:03:03.973: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/1, changed state to up
-  *Aug 19 07:03:04.014: %SYS-5-CONFIG_I: Configured from console by console
-  *Aug 19 07:03:04.053: %SYS-5-CONFIG_I: Configured from console by console
-  *Aug 19 07:03:04.091: %SYS-5-CONFIG_I: Configured from console by console
-  *Aug 19 07:03:04.123: %SYS-5-CONFIG_I: Configured from console by console
-  *Aug 19 07:03:04.162: %SYS-5-CONFIG_I: Configured from console by console
-  *Aug 19 07:03:04.199: %SYS-5-CONFIG_I: Configured from console by console
-  *Aug 19 07:03:04.234: %SYS-5-CONFIG_I: Configured from console by console
-  *Aug 19 07:03:04.291: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug 23 10:16:31.442: %LINK-3-UPDOWN: Interface GigabitEthernet0/0, changed state to up
+  *Aug 23 10:16:31.443: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/0, changed state to up
+  *Aug 23 10:16:31.444: %LINK-3-UPDOWN: Interface GigabitEthernet0/1, changed state to up
+  *Aug 23 10:16:31.444: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/1, changed state to up
+  *Aug 23 10:16:31.483: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug 23 10:16:31.515: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug 23 10:16:31.539: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug 23 10:16:31.560: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug 23 10:16:31.587: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug 23 10:16:31.632: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug 23 10:16:31.661: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug 23 10:16:31.707: %SYS-5-CONFIG_I: Configured from console by console
 
 [297/370] r1 R1# show snmp
   Chassis: FTX1234567A
@@ -1640,7 +1643,7 @@ Total steps: 370
   Clock is unsynchronized, stratum 16, no reference clock
   nominal freq is 250.0000 Hz, actual freq is 250.0000 Hz, precision is 2**18
   ntp uptime is 0 (1/100 of seconds), resolution is 4001
-  reference time is EE2FD3A8.6872B020 (07:03:04.408 UTC Wed Aug 19 2026)
+  reference time is EE3546FF.D3F7CED9 (10:16:31.828 UTC Sun Aug 23 2026)
   clock offset is 0.0000 msec, root delay is 0.00 msec
   root dispersion is 16000.00 msec, peer dispersion is 16000.00 msec
   loopfilter state is 'FSET' (Drift set from file), drift is 0.000000000 s/s
@@ -1651,7 +1654,7 @@ Total steps: 370
    * sys.peer, # selected, + candidate, - outlyer, x falseticker, ~ configured
 
 [300/370] r1 R1# show clock
-  *07:03:04.000 UTC Wed Aug 19 2026
+  *10:16:31.000 UTC Sun Aug 23 2026
 
 [301/370] r1 R1# show cdp neighbors
   Capability Codes: R - Router, T - Trans Bridge, B - Source Route Bridge
@@ -1836,7 +1839,7 @@ Total steps: 370
   data          None          None           None
   
   Cisco CISCO2911/K9 (revision 1.0) with 491520K/32768K bytes of memory.
-  Processor board ID FTX49949ZH2
+  Processor board ID FTX8783QJ70
   4 Gigabit Ethernet interfaces
   DRAM configuration is 64 bits wide with parity enabled.
   255K bytes of non-volatile configuration memory.
@@ -1848,7 +1851,7 @@ Total steps: 370
   
   Current configuration : 4125 bytes
   !
-  ! Last configuration change at 07:03:04 UTC Wed Aug 19 2026 by console
+  ! Last configuration change at 10:16:31 UTC Sun Aug 23 2026 by console
   !
   service timestamps debug datetime msec
   service timestamps log datetime msec
@@ -2238,10 +2241,13 @@ Total steps: 370
   -- No static NAT entries configured --
   Dynamic mappings:
   -- No dynamic NAT rules configured --
-  Application Layer Gateways: none
+  Total doors: 0
+  Appl doors: 0
+  Normal doors: 0
+  Queued Packets: 0
   
   ------------------ show ip ospf neighbor ------------------
-  % OSPF is not configured
+  
   
   ------------------ show ip dhcp binding ------------------
   IP address       Client-id/              Lease expiration        Type
@@ -2270,22 +2276,22 @@ Total steps: 370
   
   Log Buffer (4096 bytes):
   
-  *Aug 19 07:03:03.971: %LINK-3-UPDOWN: Interface GigabitEthernet0/0, changed state to up
-  *Aug 19 07:03:03.972: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/0, changed state to up
-  *Aug 19 07:03:03.973: %LINK-3-UPDOWN: Interface GigabitEthernet0/1, changed state to up
-  *Aug 19 07:03:03.973: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/1, changed state to up
-  *Aug 19 07:03:04.014: %SYS-5-CONFIG_I: Configured from console by console
-  *Aug 19 07:03:04.053: %SYS-5-CONFIG_I: Configured from console by console
-  *Aug 19 07:03:04.091: %SYS-5-CONFIG_I: Configured from console by console
-  *Aug 19 07:03:04.123: %SYS-5-CONFIG_I: Configured from console by console
-  *Aug 19 07:03:04.162: %SYS-5-CONFIG_I: Configured from console by console
-  *Aug 19 07:03:04.199: %SYS-5-CONFIG_I: Configured from console by console
-  *Aug 19 07:03:04.234: %SYS-5-CONFIG_I: Configured from console by console
-  *Aug 19 07:03:04.291: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug 23 10:16:31.442: %LINK-3-UPDOWN: Interface GigabitEthernet0/0, changed state to up
+  *Aug 23 10:16:31.443: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/0, changed state to up
+  *Aug 23 10:16:31.444: %LINK-3-UPDOWN: Interface GigabitEthernet0/1, changed state to up
+  *Aug 23 10:16:31.444: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/1, changed state to up
+  *Aug 23 10:16:31.483: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug 23 10:16:31.515: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug 23 10:16:31.539: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug 23 10:16:31.560: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug 23 10:16:31.587: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug 23 10:16:31.632: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug 23 10:16:31.661: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug 23 10:16:31.707: %SYS-5-CONFIG_I: Configured from console by console
 
 [314/370] r1 R1# show inventory
   NAME: "CISCO2911/K9 chassis", DESCR: "Cisco ISR 2911 Integrated Services Router"
-  PID: CISCO2911/K9        , VID: V01  , SN: FTX49949ZH2
+  PID: CISCO2911/K9        , VID: V01  , SN: FTX8783QJ70
 
 [315/370] r1 R1# show environment
   Number of Critical alarms:  0
@@ -2710,7 +2716,7 @@ Total steps: 370
     finger             Enable finger service
     flow-cache         NetFlow cache timeout
     flow-export        Legacy NetFlow export
-    gratuitous-arps    Enable gratuitous ARP
+    gratuitous-arps    Send gratuitous ARP
     host               Add a host to the host table
     http               Hypertext Transfer Protocol
     local              Local settings
@@ -2724,7 +2730,7 @@ Total steps: 370
     routing            Enable IP routing
     scp                SCP server config
     sla                Configure an IP SLAs operation
-    source-route       IP source-route
+    source-route       Accept source-routed packets
     ssh                SSH config
     subnet-zero        Accepted, default behaviour on IOS 12.0 and later
     vrf                Define a VRF instance
@@ -2766,8 +2772,8 @@ Total steps: 370
     key            Key management
     line           Remove line configuration
     lldp           Enable LLDP globally
-    logging        Count every log message and timestamp last occurrence
-    login          Set the login blocking period
+    logging        line logging
+    login          line login
     ntp            Authenticate time sources
     parser         Negate a parser command
     privilege      Remove privilege command rule

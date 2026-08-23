@@ -1,6 +1,6 @@
 ============================================================
 Router (L3) debug transcript — cisco-router-acl-aaa-security
-Generated: 2026-08-19T07:03:07.734Z
+Generated: 2026-08-23T10:16:30.886Z
 Topology: R1(Cisco) Gi0/0=L1 LAN 192.168.1.0/24, Gi0/1=WAN 10.0.0.0/30; R2(Cisco) Gi0/0=W1 LAN 192.168.2.0/24, Gi0/1=WAN
 focus=ACL(all kinds)/AAA/SSH-hardening/CoPP/uRPF/ZBF
 Total steps: 388
@@ -436,44 +436,34 @@ Total steps: 388
 <empty>
 
 [89/388] r1 R1(config-ext-nacl)# permit tcp any host 10.0.0.1 eq 443
-                                     ^
-  % Invalid input detected at '^' marker.
+<empty>
 
 [90/388] r1 R1(config-ext-nacl)# permit tcp any host 10.0.0.2 eq 443
-                                     ^
-  % Invalid input detected at '^' marker.
+<empty>
 
 [91/388] r1 R1(config-ext-nacl)# permit tcp any host 10.0.0.3 eq 443
-                                     ^
-  % Invalid input detected at '^' marker.
+<empty>
 
 [92/388] r1 R1(config-ext-nacl)# permit tcp any host 10.0.0.4 eq 443
-                                     ^
-  % Invalid input detected at '^' marker.
+<empty>
 
 [93/388] r1 R1(config-ext-nacl)# permit tcp any host 10.0.0.5 eq 443
-                                     ^
-  % Invalid input detected at '^' marker.
+<empty>
 
 [94/388] r1 R1(config-ext-nacl)# permit tcp any host 10.0.0.6 eq 443
-                                     ^
-  % Invalid input detected at '^' marker.
+<empty>
 
 [95/388] r1 R1(config-ext-nacl)# permit tcp any host 10.0.0.7 eq 443
-                                     ^
-  % Invalid input detected at '^' marker.
+<empty>
 
 [96/388] r1 R1(config-ext-nacl)# permit tcp any host 10.0.0.8 eq 443
-                                     ^
-  % Invalid input detected at '^' marker.
+<empty>
 
 [97/388] r1 R1(config-ext-nacl)# permit tcp any host 10.0.0.9 eq 443
-                                     ^
-  % Invalid input detected at '^' marker.
+<empty>
 
 [98/388] r1 R1(config-ext-nacl)# permit tcp any host 10.0.0.10 eq 443
-                                     ^
-  % Invalid input detected at '^' marker.
+<empty>
 
 [99/388] r1 R1(config-ext-nacl)# permit udp any any eq snmp
 <empty>
@@ -507,9 +497,19 @@ Total steps: 388
 
 [108/388] r1 R1# show ip access-lists WAN-IN
   Extended IP access list WAN-IN
-      10 permit udp any any eq 161
+      10 permit tcp any host 10.0.0.1 eq 443
       20 permit tcp any any eq 22
-      30 deny icmp any any
+      30 permit tcp any host 10.0.0.2 eq 443
+      40 permit tcp any host 10.0.0.4 eq 443
+      50 permit tcp any host 10.0.0.5 eq 443
+      60 permit tcp any host 10.0.0.6 eq 443
+      70 permit tcp any host 10.0.0.7 eq 443
+      80 permit tcp any host 10.0.0.8 eq 443
+      90 permit tcp any host 10.0.0.9 eq 443
+      100 permit tcp any host 10.0.0.10 eq 443
+      110 permit udp any any eq 161
+      120 deny icmp any any
+      130 permit ip any any
 
 
 --- [109] § time-based / reflexive ---
@@ -541,8 +541,7 @@ Total steps: 388
 <empty>
 
 [118/388] r1 R1(config-ext-nacl)# permit tcp any any reflect TCP-REFLECT
-                                         ^
-  % Invalid input detected at '^' marker.
+<empty>
 
 [119/388] r1 R1(config-ext-nacl)# exit
 <empty>
@@ -905,43 +904,43 @@ Total steps: 388
   %No SSHv1 server connections running.
 
 [216/388] r1 R1# show crypto key mypubkey rsa
-  % Key pair was generated at: 07:03:07 UTC Aug 19 2026
+  % Key pair was generated at: 10:16:31 UTC Aug 23 2026
   Key name: R1.lab.local
    Storage Device: not specified
    Usage: General Purpose Key
    Key is not exportable.
    Key Data:
-   BCD801B79B88A903BE0ABB256B457B85210A5B4689F8409E14794AA2E5D83C02
-    98068C77A5F4F1A31F2F832174E2B0B9A600A346B458F6B64D62C6EE3A5F54B6
-    7EEFB4B7BCF9D93B8AC44BAD2D2424756E23C3C6BD469976CAAAD8AA3014A862
-    7E67BA77DEDFF3AB2ADA1EA99056BAB9C2F5A6C60130B48ED3AD7FF6CEA33A16
-    690A9DB7C20EE7A3594CFC15766FACF5FAA316260213277E00FDFA9262638612
-    E0050657CC9E63A3B9650BF14AE1D30973E6F0063FE31296649C32BEB8B727C6
-    57D0F47763FA48DB446B845D4F21FA45BEE58A669AA4F6D6875E685A50B782F2
-    70D0A817ED7E782B479F6F396CBB798935EECF4667641EEEAD0E9B86A2D60506
+   A687EED595B336796610C1A7599FE7E74F586664186C7174E3222860D9810F30
+    3368AAD58DB5EC89F170D6E3E8D6184B279257A4C652477C8592E9EC70FBF744
+    6153F455B3F8D1011BF5DCAFC2C714B7298311642D298DAC943130E890395420
+    8D520B55A21A516117A4DCEBF3AEC0AB72607DA4AEB58D34C9CCFD743FBCCBB4
+    3132EFD5E5E2F2B96D4DD7973BA54CD7230B664465EA19D4F96D8D50AC5FE0C0
+    2C5749B5C55394A9562CF4B3B15F193B9BF2A9640E37FBDC7686CABCE81104D4
+    086D1915CF95D481087F6A5F72B5CE87E5EE9D043FA65F0C5262F598157C4350
+    920A9DF5F2484D01F578427BB074231B8B032B249EBEE9145261A1C40B9C8004
   
-  % Key pair was generated at: 07:03:07 UTC Aug 19 2026
+  % Key pair was generated at: 10:16:31 UTC Aug 23 2026
   Key name: SSH-KEY
    Storage Device: not specified
    Usage: General Purpose Key
    Key is not exportable.
    Key Data:
-   55657F36B37CD16E707886F43CA4351C2C310FC721E3AB1B7B4410D3D80FF91B
-    17FEC9F640B0D096872C0EF0E38E3AD0F19A17C79E63B3B3C0444D1FF7327A27
-    5B62B2367EC6BDE6285F977CC04B139C153FF8471D12CF738FB31EDB24E71EFB
-    B86577F66A1849CE4A242A788CFED0C0ECA49B47AA982D8B7CEC8627A26C0B87
-    549251560D5BF8EE0F2F5404B567A2EC216902E7893A007B5834E503F916ABAB
-    C893CA36B4F45DB6B597E020A5F7642074CD0507DEC57293E4D5316F8F5BFC37
-    7021F89610B347E6640B04CC9275ADEC1D18F7A77EC243538E87AB4BAE75AA0B
-    8F431C761D96516E102BCBE81E826F3025C0C4C7923EB56B16FA52B753FA29F7
-    8655FFB6D081302EC80EA9543A9A1E3C1ACD6A47F603B81B949459737D828ABB
-    1E456A761E9B6816F46E515082DDC0F01758924759C851B3F94CB5BFDAE6BF87
-    371772B6C92BD96613E5F9DC430D8C7C9B3892C70F6E0B33AA0BA77BEE33D91B
-    1BA05876D54C8D0E2E86ACD8009111A06DEF55C76AD6514B0C2D2EC7CE36EEE7
-    B149BE16E2F9892E80977AE42519438C97FC8DA73905043B991D5DA39F664DCB
-    6DC39AB6445B28F689C452801E4EABC0C326AF87D5223953DAD9CA0F40DB8E97
-    06C255566F0D646688F11BAC612FABCCC42F726782073953CD6813EBA77348AB
-    8D4FDCF62094A9EE528A2E483B579910CF115F475589876B1D6E02D7B59F7357
+   8A6FE7AAF0A53EF210F59328F930D2B0F49713BB2C9820FFA4D2EE0F2F70BC67
+    F87F4EEAA70A7AEA99071D2CC0F2449CF8F17DBBBBDBFE87BED683C300D9724B
+    530198AA6B2F384AAF9E26A02983B940055C8F3B6F8D3DF72B8104073D7ECD67
+    194284EA3624C4122CC9A5A479A8EA8C68765E3B0FDBE00FF1966EBB8109821B
+    D5D6DD8A20595B32D3F40E18943C17A0B4BDE89B2558F9FFF2F261DF17A49117
+    383416AAF0DCB20A652693FC40FB908CFD13587B26587A87366BE7738A48C69B
+    C4C21A4A23097D8ACFD401505C361BD0774E57DB26AD6A773268BF97F07A0397
+    AF9AA86A1851A2B24C794C34362E6B5C1C1AFCBBCBFA43CF1F5AEA2BFD5ABD2B
+    1AA08AEAA9A702328B907C482B9AF2508EB198FB858F1FBF13F5192F9B33C587
+    327209EAAC67C92ACA4E320CC4659B3C270402BB3912EF07269242A31651356B
+    44393B6A6DF1874A73533740E01E94E003B7E3FB5FB24777220626A712BBEC47
+    E21DDF6A02F7DF1264CA8204A9A5C22CE8C752BB0D30D58FADB0C51B907FDE3B
+    EC6F2C0A9F5F273214CC0AB829F14300DFEBFD1B1089937FC3EE447F25C37FF7
+    6DEA312A9C753BCA8526305C2E1171EC8D470CFB929000C75B0CFDD3B116D67B
+    114528CAF10C2C4A8CBABDF032973630A16F2C5BD6B78DB745FB6237CB7E0337
+    704B82EAE58E60324897A89471140E3CA651713B3526518FC85F990BC7CC328B
 
 [217/388] r1 R1# show login
   A login delay of 2 seconds is applied.
@@ -974,8 +973,7 @@ Total steps: 388
 <empty>
 
 [222/388] r1 R1(config-ext-nacl)# permit tcp any any eq bgp
-                                         ^
-  % Invalid input detected at '^' marker.
+<empty>
 
 [223/388] r1 R1(config-ext-nacl)# exit
 <empty>
@@ -1199,7 +1197,7 @@ Total steps: 388
   data          None          None           None
   
   Cisco CISCO2911/K9 (revision 1.0) with 491520K/32768K bytes of memory.
-  Processor board ID FTX3961EX0E
+  Processor board ID FTX8733T66Y
   4 Gigabit Ethernet interfaces
   DRAM configuration is 64 bits wide with parity enabled.
   255K bytes of non-volatile configuration memory.
@@ -1209,9 +1207,9 @@ Total steps: 388
 [281/388] r1 R1# show running-config
   Building configuration...
   
-  Current configuration : 6489 bytes
+  Current configuration : 6909 bytes
   !
-  ! Last configuration change at 07:03:07 UTC Wed Aug 19 2026 by console
+  ! Last configuration change at 10:16:31 UTC Sun Aug 23 2026 by console
   !
   service password-encryption
   service timestamps debug datetime msec
@@ -1334,20 +1332,32 @@ Total steps: 388
    deny any log
   !
   ip access-list extended WAN-IN
-   permit udp any any eq 161
+   permit tcp any host 10.0.0.1 eq 443
    20 permit tcp any any eq 22
+   permit tcp any host 10.0.0.2 eq 443
+   permit tcp any host 10.0.0.4 eq 443
+   permit tcp any host 10.0.0.5 eq 443
+   permit tcp any host 10.0.0.6 eq 443
+   permit tcp any host 10.0.0.7 eq 443
+   permit tcp any host 10.0.0.8 eq 443
+   permit tcp any host 10.0.0.9 eq 443
+   permit tcp any host 10.0.0.10 eq 443
+   permit udp any any eq 161
    deny icmp any any
+   permit ip any any
   !
   ip access-list extended TIMED
    permit ip any any time-range BUSINESS-HOURS
   !
   ip access-list extended REFLECT-OUT
+   permit tcp any any reflect TCP-REFLECT
   !
   ip access-list extended REFLECT-IN
    evaluate TCP-REFLECT
   !
   ip access-list extended COPP-CRITICAL
    permit ospf any any
+   permit tcp any any eq 179
   !
   security passwords min-length 10
   login block-for 120 attempts 3 within 60
@@ -1551,16 +1561,16 @@ Total steps: 388
   No ARP entries.
 
 [290/388] r1 R1# show ip ospf
-  % OSPF is not configured
+<empty>
 
 [291/388] r1 R1# show ip ospf neighbor
-  % OSPF is not configured
+<empty>
 
 [292/388] r1 R1# show ip ospf database
-  % OSPF is not configured
+<empty>
 
 [293/388] r1 R1# show ip ospf interface brief
-  % OSPF is not configured
+<empty>
 
 [294/388] r1 R1# show ip eigrp neighbors
 <empty>
@@ -1596,7 +1606,10 @@ Total steps: 388
   -- No static NAT entries configured --
   Dynamic mappings:
   -- No dynamic NAT rules configured --
-  Application Layer Gateways: none
+  Total doors: 0
+  Appl doors: 0
+  Normal doors: 0
+  Queued Packets: 0
 
 [301/388] r1 R1# show ip dhcp binding
   Bindings from all pools not associated with VRF:
@@ -1676,16 +1689,28 @@ Total steps: 388
       20 permit 192.168.1.10
       30 deny any log
   Extended IP access list WAN-IN
-      10 permit udp any any eq 161
+      10 permit tcp any host 10.0.0.1 eq 443
       20 permit tcp any any eq 22
-      30 deny icmp any any
+      30 permit tcp any host 10.0.0.2 eq 443
+      40 permit tcp any host 10.0.0.4 eq 443
+      50 permit tcp any host 10.0.0.5 eq 443
+      60 permit tcp any host 10.0.0.6 eq 443
+      70 permit tcp any host 10.0.0.7 eq 443
+      80 permit tcp any host 10.0.0.8 eq 443
+      90 permit tcp any host 10.0.0.9 eq 443
+      100 permit tcp any host 10.0.0.10 eq 443
+      110 permit udp any any eq 161
+      120 deny icmp any any
+      130 permit ip any any
   Extended IP access list TIMED
       10 permit ip any any time-range BUSINESS-HOURS
   Extended IP access list REFLECT-OUT
+      10 permit tcp any any reflect TCP-REFLECT
   Extended IP access list REFLECT-IN
       10 evaluate TCP-REFLECT
   Extended IP access list COPP-CRITICAL
       10 permit ospf any any
+      20 permit tcp any any eq 179
 
 [304/388] r1 R1# show ip access-lists
   Standard IP access list 10
@@ -1756,16 +1781,28 @@ Total steps: 388
       20 permit 192.168.1.10
       30 deny any log
   Extended IP access list WAN-IN
-      10 permit udp any any eq 161
+      10 permit tcp any host 10.0.0.1 eq 443
       20 permit tcp any any eq 22
-      30 deny icmp any any
+      30 permit tcp any host 10.0.0.2 eq 443
+      40 permit tcp any host 10.0.0.4 eq 443
+      50 permit tcp any host 10.0.0.5 eq 443
+      60 permit tcp any host 10.0.0.6 eq 443
+      70 permit tcp any host 10.0.0.7 eq 443
+      80 permit tcp any host 10.0.0.8 eq 443
+      90 permit tcp any host 10.0.0.9 eq 443
+      100 permit tcp any host 10.0.0.10 eq 443
+      110 permit udp any any eq 161
+      120 deny icmp any any
+      130 permit ip any any
   Extended IP access list TIMED
       10 permit ip any any time-range BUSINESS-HOURS
   Extended IP access list REFLECT-OUT
+      10 permit tcp any any reflect TCP-REFLECT
   Extended IP access list REFLECT-IN
       10 evaluate TCP-REFLECT
   Extended IP access list COPP-CRITICAL
       10 permit ospf any any
+      20 permit tcp any any eq 179
 
 [305/388] r1 R1# show crypto isakmp sa
   IPSec not configured.
@@ -1824,21 +1861,21 @@ Total steps: 388
   
   Log Buffer (4096 bytes):
   
-  *Aug 19 07:03:07.728: %LINK-3-UPDOWN: Interface GigabitEthernet0/0, changed state to up
-  *Aug 19 07:03:07.729: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/0, changed state to up
-  *Aug 19 07:03:07.731: %LINK-3-UPDOWN: Interface GigabitEthernet0/1, changed state to up
-  *Aug 19 07:03:07.731: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/1, changed state to up
-  *Aug 19 07:03:07.762: %SYS-5-CONFIG_I: Configured from console by console
-  *Aug 19 07:03:07.798: %SYS-5-CONFIG_I: Configured from console by console
-  *Aug 19 07:03:07.826: %SYS-5-CONFIG_I: Configured from console by console
-  *Aug 19 07:03:07.847: %SYS-5-CONFIG_I: Configured from console by console
-  *Aug 19 07:03:07.857: %SYS-5-CONFIG_I: Configured from console by console
-  *Aug 19 07:03:07.863: %SYS-5-CONFIG_I: Configured from console by console
-  *Aug 19 07:03:07.871: %SYS-5-CONFIG_I: Configured from console by console
-  *Aug 19 07:03:07.882: %SYS-5-CONFIG_I: Configured from console by console
-  *Aug 19 07:03:07.919: %SYS-5-CONFIG_I: Configured from console by console
-  *Aug 19 07:03:07.948: %SYS-5-CONFIG_I: Configured from console by console
-  *Aug 19 07:03:07.979: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug 23 10:16:30.879: %LINK-3-UPDOWN: Interface GigabitEthernet0/0, changed state to up
+  *Aug 23 10:16:30.880: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/0, changed state to up
+  *Aug 23 10:16:30.881: %LINK-3-UPDOWN: Interface GigabitEthernet0/1, changed state to up
+  *Aug 23 10:16:30.882: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/1, changed state to up
+  *Aug 23 10:16:30.909: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug 23 10:16:30.940: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug 23 10:16:30.974: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug 23 10:16:30.991: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug 23 10:16:31.001: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug 23 10:16:31.022: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug 23 10:16:31.028: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug 23 10:16:31.049: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug 23 10:16:31.087: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug 23 10:16:31.123: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug 23 10:16:31.136: %SYS-5-CONFIG_I: Configured from console by console
 
 [315/388] r1 R1# show snmp
   Chassis: FTX1234567A
@@ -1850,7 +1887,7 @@ Total steps: 388
   Clock is unsynchronized, stratum 16, no reference clock
   nominal freq is 250.0000 Hz, actual freq is 250.0000 Hz, precision is 2**18
   ntp uptime is 0 (1/100 of seconds), resolution is 4001
-  reference time is EE2FD3AC.16041893 (07:03:08.086 UTC Wed Aug 19 2026)
+  reference time is EE3546FF.3EF9DB22 (10:16:31.246 UTC Sun Aug 23 2026)
   clock offset is 0.0000 msec, root delay is 0.00 msec
   root dispersion is 16000.00 msec, peer dispersion is 16000.00 msec
   loopfilter state is 'FSET' (Drift set from file), drift is 0.000000000 s/s
@@ -1861,7 +1898,7 @@ Total steps: 388
    * sys.peer, # selected, + candidate, - outlyer, x falseticker, ~ configured
 
 [318/388] r1 R1# show clock
-  *07:03:08.000 UTC Wed Aug 19 2026
+  *10:16:31.000 UTC Sun Aug 23 2026
 
 [319/388] r1 R1# show cdp neighbors
   Capability Codes: R - Router, T - Trans Bridge, B - Source Route Bridge
@@ -2042,7 +2079,7 @@ Total steps: 388
   data          None          None           None
   
   Cisco CISCO2911/K9 (revision 1.0) with 491520K/32768K bytes of memory.
-  Processor board ID FTX3961EX0E
+  Processor board ID FTX8733T66Y
   4 Gigabit Ethernet interfaces
   DRAM configuration is 64 bits wide with parity enabled.
   255K bytes of non-volatile configuration memory.
@@ -2052,9 +2089,9 @@ Total steps: 388
   ------------------ show running-config ------------------
   Building configuration...
   
-  Current configuration : 6489 bytes
+  Current configuration : 6909 bytes
   !
-  ! Last configuration change at 07:03:07 UTC Wed Aug 19 2026 by console
+  ! Last configuration change at 10:16:31 UTC Sun Aug 23 2026 by console
   !
   service password-encryption
   service timestamps debug datetime msec
@@ -2177,20 +2214,32 @@ Total steps: 388
    deny any log
   !
   ip access-list extended WAN-IN
-   permit udp any any eq 161
+   permit tcp any host 10.0.0.1 eq 443
    20 permit tcp any any eq 22
+   permit tcp any host 10.0.0.2 eq 443
+   permit tcp any host 10.0.0.4 eq 443
+   permit tcp any host 10.0.0.5 eq 443
+   permit tcp any host 10.0.0.6 eq 443
+   permit tcp any host 10.0.0.7 eq 443
+   permit tcp any host 10.0.0.8 eq 443
+   permit tcp any host 10.0.0.9 eq 443
+   permit tcp any host 10.0.0.10 eq 443
+   permit udp any any eq 161
    deny icmp any any
+   permit ip any any
   !
   ip access-list extended TIMED
    permit ip any any time-range BUSINESS-HOURS
   !
   ip access-list extended REFLECT-OUT
+   permit tcp any any reflect TCP-REFLECT
   !
   ip access-list extended REFLECT-IN
    evaluate TCP-REFLECT
   !
   ip access-list extended COPP-CRITICAL
    permit ospf any any
+   permit tcp any any eq 179
   !
   security passwords min-length 10
   login block-for 120 attempts 3 within 60
@@ -2402,10 +2451,13 @@ Total steps: 388
   -- No static NAT entries configured --
   Dynamic mappings:
   -- No dynamic NAT rules configured --
-  Application Layer Gateways: none
+  Total doors: 0
+  Appl doors: 0
+  Normal doors: 0
+  Queued Packets: 0
   
   ------------------ show ip ospf neighbor ------------------
-  % OSPF is not configured
+  
   
   ------------------ show ip dhcp binding ------------------
   IP address       Client-id/              Lease expiration        Type
@@ -2434,25 +2486,25 @@ Total steps: 388
   
   Log Buffer (4096 bytes):
   
-  *Aug 19 07:03:07.728: %LINK-3-UPDOWN: Interface GigabitEthernet0/0, changed state to up
-  *Aug 19 07:03:07.729: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/0, changed state to up
-  *Aug 19 07:03:07.731: %LINK-3-UPDOWN: Interface GigabitEthernet0/1, changed state to up
-  *Aug 19 07:03:07.731: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/1, changed state to up
-  *Aug 19 07:03:07.762: %SYS-5-CONFIG_I: Configured from console by console
-  *Aug 19 07:03:07.798: %SYS-5-CONFIG_I: Configured from console by console
-  *Aug 19 07:03:07.826: %SYS-5-CONFIG_I: Configured from console by console
-  *Aug 19 07:03:07.847: %SYS-5-CONFIG_I: Configured from console by console
-  *Aug 19 07:03:07.857: %SYS-5-CONFIG_I: Configured from console by console
-  *Aug 19 07:03:07.863: %SYS-5-CONFIG_I: Configured from console by console
-  *Aug 19 07:03:07.871: %SYS-5-CONFIG_I: Configured from console by console
-  *Aug 19 07:03:07.882: %SYS-5-CONFIG_I: Configured from console by console
-  *Aug 19 07:03:07.919: %SYS-5-CONFIG_I: Configured from console by console
-  *Aug 19 07:03:07.948: %SYS-5-CONFIG_I: Configured from console by console
-  *Aug 19 07:03:07.979: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug 23 10:16:30.879: %LINK-3-UPDOWN: Interface GigabitEthernet0/0, changed state to up
+  *Aug 23 10:16:30.880: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/0, changed state to up
+  *Aug 23 10:16:30.881: %LINK-3-UPDOWN: Interface GigabitEthernet0/1, changed state to up
+  *Aug 23 10:16:30.882: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/1, changed state to up
+  *Aug 23 10:16:30.909: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug 23 10:16:30.940: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug 23 10:16:30.974: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug 23 10:16:30.991: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug 23 10:16:31.001: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug 23 10:16:31.022: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug 23 10:16:31.028: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug 23 10:16:31.049: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug 23 10:16:31.087: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug 23 10:16:31.123: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug 23 10:16:31.136: %SYS-5-CONFIG_I: Configured from console by console
 
 [332/388] r1 R1# show inventory
   NAME: "CISCO2911/K9 chassis", DESCR: "Cisco ISR 2911 Integrated Services Router"
-  PID: CISCO2911/K9        , VID: V01  , SN: FTX3961EX0E
+  PID: CISCO2911/K9        , VID: V01  , SN: FTX8733T66Y
 
 [333/388] r1 R1# show environment
   Number of Critical alarms:  0
@@ -2654,20 +2706,32 @@ Total steps: 388
    deny any log
   !
   ip access-list extended WAN-IN
-   permit udp any any eq 161
+   permit tcp any host 10.0.0.1 eq 443
    20 permit tcp any any eq 22
+   permit tcp any host 10.0.0.2 eq 443
+   permit tcp any host 10.0.0.4 eq 443
+   permit tcp any host 10.0.0.5 eq 443
+   permit tcp any host 10.0.0.6 eq 443
+   permit tcp any host 10.0.0.7 eq 443
+   permit tcp any host 10.0.0.8 eq 443
+   permit tcp any host 10.0.0.9 eq 443
+   permit tcp any host 10.0.0.10 eq 443
+   permit udp any any eq 161
    deny icmp any any
+   permit ip any any
   !
   ip access-list extended TIMED
    permit ip any any time-range BUSINESS-HOURS
   !
   ip access-list extended REFLECT-OUT
+   permit tcp any any reflect TCP-REFLECT
   !
   ip access-list extended REFLECT-IN
    evaluate TCP-REFLECT
   !
   ip access-list extended COPP-CRITICAL
    permit ospf any any
+   permit tcp any any eq 179
   !
   security passwords min-length 10
   login block-for 120 attempts 3 within 60
@@ -2741,7 +2805,7 @@ Total steps: 388
 [345/388] r1 R1# show running-config | exclude !
   Building configuration...
   
-  Current configuration : 6489 bytes
+  Current configuration : 6909 bytes
   service password-encryption
   service timestamps debug datetime msec
   service timestamps log datetime msec
@@ -2849,16 +2913,28 @@ Total steps: 388
    permit host 192.168.1.10
    deny any log
   ip access-list extended WAN-IN
-   permit udp any any eq 161
+   permit tcp any host 10.0.0.1 eq 443
    20 permit tcp any any eq 22
+   permit tcp any host 10.0.0.2 eq 443
+   permit tcp any host 10.0.0.4 eq 443
+   permit tcp any host 10.0.0.5 eq 443
+   permit tcp any host 10.0.0.6 eq 443
+   permit tcp any host 10.0.0.7 eq 443
+   permit tcp any host 10.0.0.8 eq 443
+   permit tcp any host 10.0.0.9 eq 443
+   permit tcp any host 10.0.0.10 eq 443
+   permit udp any any eq 161
    deny icmp any any
+   permit ip any any
   ip access-list extended TIMED
    permit ip any any time-range BUSINESS-HOURS
   ip access-list extended REFLECT-OUT
+   permit tcp any any reflect TCP-REFLECT
   ip access-list extended REFLECT-IN
    evaluate TCP-REFLECT
   ip access-list extended COPP-CRITICAL
    permit ospf any any
+   permit tcp any any eq 179
   security passwords min-length 10
   login block-for 120 attempts 3 within 60
   login quiet-mode access-class MGMT
@@ -3065,7 +3141,7 @@ Total steps: 388
     finger             Enable finger service
     flow-cache         NetFlow cache timeout
     flow-export        Legacy NetFlow export
-    gratuitous-arps    Enable gratuitous ARP
+    gratuitous-arps    Send gratuitous ARP
     host               Add a host to the host table
     http               Hypertext Transfer Protocol
     local              Local settings
@@ -3079,7 +3155,7 @@ Total steps: 388
     routing            Enable IP routing
     scp                SCP server config
     sla                Configure an IP SLAs operation
-    source-route       IP source-route
+    source-route       Accept source-routed packets
     ssh                SSH config
     subnet-zero        Accepted, default behaviour on IOS 12.0 and later
     vrf                Define a VRF instance
@@ -3121,8 +3197,8 @@ Total steps: 388
     key            Key management
     line           Remove line configuration
     lldp           Enable LLDP globally
-    logging        Count every log message and timestamp last occurrence
-    login          Set the login blocking period
+    logging        line logging
+    login          line login
     ntp            Authenticate time sources
     parser         Negate a parser command
     privilege      Remove privilege command rule

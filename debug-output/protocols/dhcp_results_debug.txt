@@ -246,30 +246,30 @@ Total steps: 300
   Sending on   LPF/eth0/02:00:00:00:00:47
   DHCPDISCOVER on eth0 to 255.255.255.255 port 67 interval 3
   INIT state
-  DHCPOFFER of 10.1.1.12 from 10.1.1.1
-  DHCPREQUEST of 10.1.1.12 on eth0 to 255.255.255.255 port 67
-  DHCPACK of 10.1.1.12 from 10.1.1.1
-  bound to 10.1.1.12 -- renewal in 14400 seconds.
+  DHCPOFFER of 10.1.1.10 from 10.1.1.1
+  DHCPREQUEST of 10.1.1.10 on eth0 to 255.255.255.255 port 67
+  DHCPACK of 10.1.1.10 from 10.1.1.1
+  bound to 10.1.1.10 -- renewal in 14400 seconds.
 
 [55/300] lhq lhq$ ip addr show eth0
   2: eth0: <BROADCAST,UP,MULTICAST,LOWER_UP> mtu 1500 qdisc fq_codel state UP group default qlen 1000
       link/ether 02:00:00:00:00:47 brd ff:ff:ff:ff:ff:ff
-      inet 10.1.1.12/24 brd 10.1.1.255 dynamic scope global eth0
+      inet 10.1.1.10/24 brd 10.1.1.255 dynamic scope global eth0
          valid_lft forever preferred_lft forever
       inet6 fe80::ff:fe00:47/64 scope link
          valid_lft forever preferred_lft forever
 
 [56/300] lhq lhq$ ip route show
-  10.1.1.0/24 dev eth0 proto kernel scope link src 10.1.1.12 metric 0
+  10.1.1.0/24 dev eth0 proto kernel scope link src 10.1.1.10 metric 0
   default via 10.1.1.1 dev eth0 proto dhcp
 
 [57/300] lhq lhq$ ping -c 1 10.1.1.1
   PING 10.1.1.1 (10.1.1.1) 56(84) bytes of data.
-  64 bytes from 10.1.1.1: icmp_seq=1 ttl=255 time=1.375 ms
+  64 bytes from 10.1.1.1: icmp_seq=1 ttl=255 time=0.863 ms
   
   --- 10.1.1.1 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 1.375/1.375/1.375/0.000 ms
+  rtt min/avg/max/mdev = 0.863/0.863/0.863/0.000 ms
 
 [58/300] whq whq$ ipconfig /release
   Windows IP Configuration
@@ -306,7 +306,7 @@ Total steps: 300
   
   Ethernet adapter Ethernet 0:
      Connection-specific DNS Suffix  . : acme.example
-     IPv4 Address. . . . . . . . . . . : 10.1.1.13
+     IPv4 Address. . . . . . . . . . . : 10.1.1.12
      Subnet Mask . . . . . . . . . . . : 255.255.255.0
      Default Gateway . . . . . . . . . : 10.1.1.1
   
@@ -327,7 +327,7 @@ Total steps: 300
      Physical Address. . . . . . . . . : 02-00-00-00-00-4B
      DHCP Enabled. . . . . . . . . . . : Yes
      Autoconfiguration Enabled . . . . : Yes
-     IPv4 Address. . . . . . . . . . . : 10.1.1.13(Preferred)
+     IPv4 Address. . . . . . . . . . . : 10.1.1.12(Preferred)
      Subnet Mask . . . . . . . . . . . : 255.255.255.0
      Lease Obtained. . . . . . . . . . : Saturday, June 6, 2026 8:00:00 AM
      Lease Expires . . . . . . . . . . : Saturday, June 6, 2026 4:00:00 PM
@@ -368,7 +368,7 @@ Total steps: 300
 [61/300] whq whq$ ping -n 1 10.1.1.1
   
   Pinging 10.1.1.1 with 32 bytes of data:
-  Reply from 10.1.1.1: bytes=32 time=1ms TTL=255
+  Reply from 10.1.1.1: bytes=32 time=<1ms TTL=255
   
   Ping statistics for 10.1.1.1:
       Packets: Sent = 1, Received = 1, Lost = 0 (0% loss),
@@ -384,30 +384,30 @@ Total steps: 300
   Sending on   LPF/eth0/02:00:00:00:00:53
   DHCPDISCOVER on eth0 to 255.255.255.255 port 67 interval 3
   INIT state
-  DHCPOFFER of 10.2.2.12 from 10.2.2.1
-  DHCPREQUEST of 10.2.2.12 on eth0 to 255.255.255.255 port 67
-  DHCPACK of 10.2.2.12 from 10.2.2.1
-  bound to 10.2.2.12 -- renewal in 43200 seconds.
+  DHCPOFFER of 10.2.2.11 from 10.2.2.1
+  DHCPREQUEST of 10.2.2.11 on eth0 to 255.255.255.255 port 67
+  DHCPACK of 10.2.2.11 from 10.2.2.1
+  bound to 10.2.2.11 -- renewal in 43200 seconds.
 
 [64/300] lbr lbr$ ip addr show eth0
   2: eth0: <BROADCAST,UP,MULTICAST,LOWER_UP> mtu 1500 qdisc fq_codel state UP group default qlen 1000
       link/ether 02:00:00:00:00:53 brd ff:ff:ff:ff:ff:ff
-      inet 10.2.2.12/24 brd 10.2.2.255 dynamic scope global eth0
+      inet 10.2.2.11/24 brd 10.2.2.255 dynamic scope global eth0
          valid_lft forever preferred_lft forever
       inet6 fe80::ff:fe00:53/64 scope link
          valid_lft forever preferred_lft forever
 
 [65/300] lbr lbr$ ip route show
-  10.2.2.0/24 dev eth0 proto kernel scope link src 10.2.2.12 metric 0
+  10.2.2.0/24 dev eth0 proto kernel scope link src 10.2.2.11 metric 0
   default via 10.2.2.1 dev eth0 proto dhcp
 
 [66/300] lbr lbr$ ping -c 1 10.2.2.1
   PING 10.2.2.1 (10.2.2.1) 56(84) bytes of data.
-  64 bytes from 10.2.2.1: icmp_seq=1 ttl=255 time=0.961 ms
+  64 bytes from 10.2.2.1: icmp_seq=1 ttl=255 time=0.512 ms
   
   --- 10.2.2.1 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.961/0.961/0.961/0.000 ms
+  rtt min/avg/max/mdev = 0.512/0.512/0.512/0.000 ms
 
 [67/300] wbr wbr$ ipconfig /release
   Windows IP Configuration
@@ -444,7 +444,7 @@ Total steps: 300
   
   Ethernet adapter Ethernet 0:
      Connection-specific DNS Suffix  . :
-     IPv4 Address. . . . . . . . . . . : 10.2.2.13
+     IPv4 Address. . . . . . . . . . . : 10.2.2.12
      Subnet Mask . . . . . . . . . . . : 255.255.255.0
      Default Gateway . . . . . . . . . : 10.2.2.1
   
@@ -465,7 +465,7 @@ Total steps: 300
      Physical Address. . . . . . . . . : 02-00-00-00-00-4F
      DHCP Enabled. . . . . . . . . . . : Yes
      Autoconfiguration Enabled . . . . : Yes
-     IPv4 Address. . . . . . . . . . . : 10.2.2.13(Preferred)
+     IPv4 Address. . . . . . . . . . . : 10.2.2.12(Preferred)
      Subnet Mask . . . . . . . . . . . : 255.255.255.0
      Lease Obtained. . . . . . . . . . : Saturday, June 6, 2026 8:00:00 AM
      Lease Expires . . . . . . . . . . : Sunday, June 7, 2026 8:00:00 AM
@@ -506,12 +506,12 @@ Total steps: 300
 [70/300] wbr wbr$ ping -n 1 10.2.2.1
   
   Pinging 10.2.2.1 with 32 bytes of data:
-  Reply from 10.2.2.1: bytes=32 time=1ms TTL=255
+  Reply from 10.2.2.1: bytes=32 time=<1ms TTL=255
   
   Ping statistics for 10.2.2.1:
       Packets: Sent = 1, Received = 1, Lost = 0 (0% loss),
   Approximate round trip times in milli-seconds:
-      Minimum = 1ms, Maximum = 1ms, Average = 1ms
+      Minimum = 0ms, Maximum = 0ms, Average = 0ms
 
 [71/300] ldc ldc$ ip addr flush dev eth0
 <empty>
@@ -522,48 +522,48 @@ Total steps: 300
   Sending on   LPF/eth0/02:00:00:00:00:5b
   DHCPDISCOVER on eth0 to 255.255.255.255 port 67 interval 3
   INIT state
-  DHCPOFFER of 10.3.3.12 from 10.3.3.1
-  DHCPREQUEST of 10.3.3.12 on eth0 to 255.255.255.255 port 67
-  DHCPACK of 10.3.3.12 from 10.3.3.1
-  bound to 10.3.3.12 -- renewal in 86400 seconds.
+  DHCPOFFER of 10.3.3.11 from 10.3.3.1
+  DHCPREQUEST of 10.3.3.11 on eth0 to 255.255.255.255 port 67
+  DHCPACK of 10.3.3.11 from 10.3.3.1
+  bound to 10.3.3.11 -- renewal in 86400 seconds.
 
 [73/300] ldc ldc$ ip addr show eth0
   2: eth0: <BROADCAST,UP,MULTICAST,LOWER_UP> mtu 1500 qdisc fq_codel state UP group default qlen 1000
       link/ether 02:00:00:00:00:5b brd ff:ff:ff:ff:ff:ff
-      inet 10.3.3.12/24 brd 10.3.3.255 dynamic scope global eth0
+      inet 10.3.3.11/24 brd 10.3.3.255 dynamic scope global eth0
          valid_lft forever preferred_lft forever
       inet6 fe80::ff:fe00:5b/64 scope link
          valid_lft forever preferred_lft forever
 
 [74/300] ldc ldc$ ip route show
-  10.3.3.0/24 dev eth0 proto kernel scope link src 10.3.3.12 metric 0
+  10.3.3.0/24 dev eth0 proto kernel scope link src 10.3.3.11 metric 0
   default via 10.3.3.1 dev eth0 proto dhcp
 
 [75/300] ldc ldc$ ping -c 1 10.3.3.1
   PING 10.3.3.1 (10.3.3.1) 56(84) bytes of data.
-  64 bytes from 10.3.3.1: icmp_seq=1 ttl=255 time=0.619 ms
+  64 bytes from 10.3.3.1: icmp_seq=1 ttl=255 time=0.428 ms
   
   --- 10.3.3.1 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.619/0.619/0.619/0.000 ms
+  rtt min/avg/max/mdev = 0.428/0.428/0.428/0.000 ms
 
 
 --- [76] § DHCP — joignabilité avec adresses obtenues ---
 [76/300] lhq lhq$ ping -c 1 10.1.1.1
   PING 10.1.1.1 (10.1.1.1) 56(84) bytes of data.
-  64 bytes from 10.1.1.1: icmp_seq=1 ttl=255 time=0.662 ms
+  64 bytes from 10.1.1.1: icmp_seq=1 ttl=255 time=0.447 ms
   
   --- 10.1.1.1 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.662/0.662/0.662/0.000 ms
+  rtt min/avg/max/mdev = 0.447/0.447/0.447/0.000 ms
 
 [77/300] lhq lhq$ ping -c 1 10.3.3.10
   PING 10.3.3.10 (10.3.3.10) 56(84) bytes of data.
-  64 bytes from 10.3.3.10: icmp_seq=1 ttl=62 time=1.046 ms
+  64 bytes from 10.3.3.10: icmp_seq=1 ttl=62 time=0.815 ms
   
   --- 10.3.3.10 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 1.046/1.046/1.046/0.000 ms
+  rtt min/avg/max/mdev = 0.815/0.815/0.815/0.000 ms
 
 [78/300] wbr wbr$ ping -n 1 10.1.1.1
   
@@ -577,19 +577,19 @@ Total steps: 300
 
 [79/300] ldc ldc$ ping -c 1 10.2.2.1
   PING 10.2.2.1 (10.2.2.1) 56(84) bytes of data.
-  64 bytes from 10.2.2.1: icmp_seq=1 ttl=253 time=2.227 ms
+  64 bytes from 10.2.2.1: icmp_seq=1 ttl=253 time=0.721 ms
   
   --- 10.2.2.1 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 2.227/2.227/2.227/0.000 ms
+  rtt min/avg/max/mdev = 0.721/0.721/0.721/0.000 ms
 
 [80/300] lbr lbr$ ping -c 1 10.3.3.10
   PING 10.3.3.10 (10.3.3.10) 56(84) bytes of data.
-  64 bytes from 10.3.3.10: icmp_seq=1 ttl=62 time=1.817 ms
+  64 bytes from 10.3.3.10: icmp_seq=1 ttl=62 time=0.720 ms
   
   --- 10.3.3.10 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 1.817/1.817/1.817/0.000 ms
+  rtt min/avg/max/mdev = 0.720/0.720/0.720/0.000 ms
 
 [81/300] whq whq$ ping -n 1 10.2.2.1
   
@@ -608,8 +608,8 @@ Total steps: 300
   IP address          Client-ID/              Lease expiration        Type
                       Hardware address/
                       User name
-  10.1.1.12           0102.0000.0000.47       06 Jun 2026 16:00:00    automatic
-  10.1.1.13           0102.0000.0000.4b       06 Jun 2026 16:00:00    automatic
+  10.1.1.10           0102.0000.0000.47       06 Jun 2026 16:00:00    automatic
+  10.1.1.12           0102.0000.0000.4b       06 Jun 2026 16:00:00    automatic
 
 [83/300] rhq R-HQ# show ip dhcp pool
   Pool LAN-HQ :
@@ -635,14 +635,14 @@ Total steps: 300
   Automatic bindings   2
   
   Message              Received
-  DHCPDISCOVER         4
+  DHCPDISCOVER         3
   DHCPREQUEST          2
   DHCPINFORM           0
   DHCPRELEASE          0
   DHCPDECLINE          0
   
   Message              Sent
-  DHCPOFFER            4
+  DHCPOFFER            3
   DHCPACK              2
   DHCPNAK              0
 
@@ -651,7 +651,7 @@ Total steps: 300
   IP address          Client-ID/              Lease expiration        Type
                       Hardware address/
                       User name
-  10.3.3.12           0102.0000.0000.5b       08 Jun 2026 08:00:00    automatic
+  10.3.3.11           0102.0000.0000.5b       08 Jun 2026 08:00:00    automatic
 
 [86/300] rdc R-DC# show ip dhcp pool
   Pool LAN-DC :
@@ -685,9 +685,9 @@ Total steps: 300
 
 [88/300] rbr <R-BR> display dhcp server statistics
   DHCP server packets statistics:
-    Receive total: 6
-    Send total: 6
-    Discover: 4      Offer: 4
+    Receive total: 5
+    Send total: 5
+    Discover: 3      Offer: 3
     Request: 2       Ack: 2
     Nak: 0           Release: 0
     Inform: 0        Decline: 0
@@ -696,15 +696,15 @@ Total steps: 300
 [89/300] rbr <R-BR> display dhcp-server binding all
   IP address       Client-id/              Lease expiration        Type
                    Hardware address
-  10.2.2.12        02:00:00:00:00:53       6/7/2026, 8:00:00 AM    automatic
-  10.2.2.13        02:00:00:00:00:4F       6/7/2026, 8:00:00 AM    automatic
+  10.2.2.11        02:00:00:00:00:53       6/7/2026, 8:00:00 AM    automatic
+  10.2.2.12        02:00:00:00:00:4F       6/7/2026, 8:00:00 AM    automatic
 
 
 --- [90] § DHCP — baux côté client ---
 [90/300] lhq lhq$ cat /var/lib/dhcp/dhclient.leases
   lease {
     interface "eth0";
-    fixed-address 10.1.1.12;
+    fixed-address 10.1.1.10;
     option subnet-mask 255.255.255.0;
     option routers 10.1.1.1;
     option domain-name-servers 10.3.3.10, 8.8.8.8;
@@ -718,7 +718,7 @@ Total steps: 300
 [91/300] lhq lhq$ cat /var/lib/dhcp/dhclient.leases
   lease {
     interface "eth0";
-    fixed-address 10.1.1.12;
+    fixed-address 10.1.1.10;
     option subnet-mask 255.255.255.0;
     option routers 10.1.1.1;
     option domain-name-servers 10.3.3.10, 8.8.8.8;
@@ -732,7 +732,7 @@ Total steps: 300
 [92/300] lhq lhq$ ip -4 addr show eth0
   2: eth0: <BROADCAST,UP,MULTICAST,LOWER_UP> mtu 1500 qdisc fq_codel state UP group default qlen 1000
       link/ether 02:00:00:00:00:47 brd ff:ff:ff:ff:ff:ff
-      inet 10.1.1.12/24 brd 10.1.1.255 dynamic scope global eth0
+      inet 10.1.1.10/24 brd 10.1.1.255 dynamic scope global eth0
          valid_lft forever preferred_lft forever
 
 [93/300] lhq lhq$ cat /etc/resolv.conf
@@ -743,7 +743,7 @@ Total steps: 300
 [94/300] lbr lbr$ cat /var/lib/dhcp/dhclient.leases
   lease {
     interface "eth0";
-    fixed-address 10.2.2.12;
+    fixed-address 10.2.2.11;
     option subnet-mask 255.255.255.0;
     option routers 10.2.2.1;
     option domain-name-servers 10.3.3.10, 8.8.8.8;
@@ -756,7 +756,7 @@ Total steps: 300
 [95/300] lbr lbr$ ip -4 addr show eth0
   2: eth0: <BROADCAST,UP,MULTICAST,LOWER_UP> mtu 1500 qdisc fq_codel state UP group default qlen 1000
       link/ether 02:00:00:00:00:53 brd ff:ff:ff:ff:ff:ff
-      inet 10.2.2.12/24 brd 10.2.2.255 dynamic scope global eth0
+      inet 10.2.2.11/24 brd 10.2.2.255 dynamic scope global eth0
          valid_lft forever preferred_lft forever
 
 [96/300] lbr lbr$ cat /etc/resolv.conf
@@ -766,7 +766,7 @@ Total steps: 300
 [97/300] ldc ldc$ cat /var/lib/dhcp/dhclient.leases
   lease {
     interface "eth0";
-    fixed-address 10.3.3.12;
+    fixed-address 10.3.3.11;
     option subnet-mask 255.255.255.0;
     option routers 10.3.3.1;
     option domain-name-servers 10.3.3.10;
@@ -779,7 +779,7 @@ Total steps: 300
 [98/300] ldc ldc$ ip -4 addr show eth0
   2: eth0: <BROADCAST,UP,MULTICAST,LOWER_UP> mtu 1500 qdisc fq_codel state UP group default qlen 1000
       link/ether 02:00:00:00:00:5b brd ff:ff:ff:ff:ff:ff
-      inet 10.3.3.12/24 brd 10.3.3.255 dynamic scope global eth0
+      inet 10.3.3.11/24 brd 10.3.3.255 dynamic scope global eth0
          valid_lft forever preferred_lft forever
 
 [99/300] ldc ldc$ cat /etc/resolv.conf
@@ -791,7 +791,7 @@ Total steps: 300
   Ethernet adapter Ethernet 0:
   
      Connection-specific DNS Suffix  . : acme.example
-     IPv4 Address. . . . . . . . . . . : 10.1.1.13
+     IPv4 Address. . . . . . . . . . . : 10.1.1.12
      Subnet Mask . . . . . . . . . . . : 255.255.255.0
      Default Gateway . . . . . . . . . : 10.1.1.1
   
@@ -822,7 +822,7 @@ Total steps: 300
   Ethernet adapter Ethernet 0:
   
      Connection-specific DNS Suffix  . : 
-     IPv4 Address. . . . . . . . . . . : 10.2.2.13
+     IPv4 Address. . . . . . . . . . . : 10.2.2.12
      Subnet Mask . . . . . . . . . . . : 255.255.255.0
      Default Gateway . . . . . . . . . : 10.2.2.1
   
@@ -854,23 +854,23 @@ Total steps: 300
   Listening on LPF/eth0/02:00:00:00:00:47
   Sending on   LPF/eth0/02:00:00:00:00:47
   INIT-REBOOT state
-  DHCPREQUEST for 10.1.1.12 on eth0 to 255.255.255.255 port 67
-  DHCPACK of 10.1.1.12 from 10.1.1.1
-  bound to 10.1.1.12 -- renewal in 14400 seconds.
+  DHCPREQUEST for 10.1.1.10 on eth0 to 255.255.255.255 port 67
+  DHCPACK of 10.1.1.10 from 10.1.1.1
+  bound to 10.1.1.10 -- renewal in 14400 seconds.
 
 [105/300] lhq lhq$ dhclient -v eth0
   Internet Systems Consortium DHCP Client 4.4.1
   Listening on LPF/eth0/02:00:00:00:00:47
   Sending on   LPF/eth0/02:00:00:00:00:47
   INIT-REBOOT state
-  DHCPREQUEST for 10.1.1.12 on eth0 to 255.255.255.255 port 67
-  DHCPACK of 10.1.1.12 from 10.1.1.1
-  bound to 10.1.1.12 -- renewal in 14400 seconds.
+  DHCPREQUEST for 10.1.1.10 on eth0 to 255.255.255.255 port 67
+  DHCPACK of 10.1.1.10 from 10.1.1.1
+  bound to 10.1.1.10 -- renewal in 14400 seconds.
 
 [106/300] lhq lhq$ ip -4 addr show eth0
   2: eth0: <BROADCAST,UP,MULTICAST,LOWER_UP> mtu 1500 qdisc fq_codel state UP group default qlen 1000
       link/ether 02:00:00:00:00:47 brd ff:ff:ff:ff:ff:ff
-      inet 10.1.1.12/24 brd 10.1.1.255 dynamic scope global eth0
+      inet 10.1.1.10/24 brd 10.1.1.255 dynamic scope global eth0
          valid_lft forever preferred_lft forever
 
 [107/300] whq whq$ ipconfig /renew
@@ -884,27 +884,27 @@ Total steps: 300
   
   Ethernet adapter Ethernet 0:
      Connection-specific DNS Suffix  . : acme.example
-     IPv4 Address. . . . . . . . . . . : 10.1.1.13
+     IPv4 Address. . . . . . . . . . . : 10.1.1.12
      Subnet Mask . . . . . . . . . . . : 255.255.255.0
      Default Gateway . . . . . . . . . : 10.1.1.1
   
 
 [108/300] whq whq$ ipconfig | findstr IPv4
-     IPv4 Address. . . . . . . . . . . : 10.1.1.13
+     IPv4 Address. . . . . . . . . . . : 10.1.1.12
 
 [109/300] lbr lbr$ dhclient -v eth0
   Internet Systems Consortium DHCP Client 4.4.1
   Listening on LPF/eth0/02:00:00:00:00:53
   Sending on   LPF/eth0/02:00:00:00:00:53
   INIT-REBOOT state
-  DHCPREQUEST for 10.2.2.12 on eth0 to 255.255.255.255 port 67
-  DHCPACK of 10.2.2.12 from 10.2.2.1
-  bound to 10.2.2.12 -- renewal in 43200 seconds.
+  DHCPREQUEST for 10.2.2.11 on eth0 to 255.255.255.255 port 67
+  DHCPACK of 10.2.2.11 from 10.2.2.1
+  bound to 10.2.2.11 -- renewal in 43200 seconds.
 
 [110/300] lbr lbr$ ip -4 addr show eth0
   2: eth0: <BROADCAST,UP,MULTICAST,LOWER_UP> mtu 1500 qdisc fq_codel state UP group default qlen 1000
       link/ether 02:00:00:00:00:53 brd ff:ff:ff:ff:ff:ff
-      inet 10.2.2.12/24 brd 10.2.2.255 dynamic scope global eth0
+      inet 10.2.2.11/24 brd 10.2.2.255 dynamic scope global eth0
          valid_lft forever preferred_lft forever
 
 [111/300] wbr wbr$ ipconfig /renew
@@ -918,27 +918,27 @@ Total steps: 300
   
   Ethernet adapter Ethernet 0:
      Connection-specific DNS Suffix  . :
-     IPv4 Address. . . . . . . . . . . : 10.2.2.13
+     IPv4 Address. . . . . . . . . . . : 10.2.2.12
      Subnet Mask . . . . . . . . . . . : 255.255.255.0
      Default Gateway . . . . . . . . . : 10.2.2.1
   
 
 [112/300] wbr wbr$ ipconfig | findstr IPv4
-     IPv4 Address. . . . . . . . . . . : 10.2.2.13
+     IPv4 Address. . . . . . . . . . . : 10.2.2.12
 
 [113/300] ldc ldc$ dhclient -v eth0
   Internet Systems Consortium DHCP Client 4.4.1
   Listening on LPF/eth0/02:00:00:00:00:5b
   Sending on   LPF/eth0/02:00:00:00:00:5b
   INIT-REBOOT state
-  DHCPREQUEST for 10.3.3.12 on eth0 to 255.255.255.255 port 67
-  DHCPACK of 10.3.3.12 from 10.3.3.1
-  bound to 10.3.3.12 -- renewal in 86400 seconds.
+  DHCPREQUEST for 10.3.3.11 on eth0 to 255.255.255.255 port 67
+  DHCPACK of 10.3.3.11 from 10.3.3.1
+  bound to 10.3.3.11 -- renewal in 86400 seconds.
 
 [114/300] ldc ldc$ ip -4 addr show eth0
   2: eth0: <BROADCAST,UP,MULTICAST,LOWER_UP> mtu 1500 qdisc fq_codel state UP group default qlen 1000
       link/ether 02:00:00:00:00:5b brd ff:ff:ff:ff:ff:ff
-      inet 10.3.3.12/24 brd 10.3.3.255 dynamic scope global eth0
+      inet 10.3.3.11/24 brd 10.3.3.255 dynamic scope global eth0
          valid_lft forever preferred_lft forever
 
 [115/300] rhq R-HQ# show ip dhcp binding
@@ -946,11 +946,11 @@ Total steps: 300
   IP address          Client-ID/              Lease expiration        Type
                       Hardware address/
                       User name
-  10.1.1.12           0102.0000.0000.47       06 Jun 2026 16:00:00    automatic
-  10.1.1.13           0102.0000.0000.4b       06 Jun 2026 16:00:00    automatic
+  10.1.1.10           0102.0000.0000.47       06 Jun 2026 16:00:00    automatic
+  10.1.1.12           0102.0000.0000.4b       06 Jun 2026 16:00:00    automatic
 
 [116/300] lhq lhq$ dhclient -r eth0
-  released 10.1.1.12
+  released 10.1.1.10
 
 [117/300] lhq lhq$ ip -4 addr show eth0
   2: eth0: <BROADCAST,UP,MULTICAST,LOWER_UP> mtu 1500 qdisc fq_codel state UP group default qlen 1000
@@ -1002,7 +1002,7 @@ Total steps: 300
   
 
 [120/300] lbr lbr$ dhclient -r eth0
-  released 10.2.2.12
+  released 10.2.2.11
 
 [121/300] lbr lbr$ ip -4 addr show eth0
   2: eth0: <BROADCAST,UP,MULTICAST,LOWER_UP> mtu 1500 qdisc fq_codel state UP group default qlen 1000
@@ -1054,7 +1054,7 @@ Total steps: 300
   
 
 [124/300] ldc ldc$ dhclient -r eth0
-  released 10.3.3.12
+  released 10.3.3.11
 
 [125/300] ldc ldc$ ip -4 addr show eth0
   2: eth0: <BROADCAST,UP,MULTICAST,LOWER_UP> mtu 1500 qdisc fq_codel state UP group default qlen 1000
@@ -1079,10 +1079,10 @@ Total steps: 300
   Sending on   LPF/eth0/02:00:00:00:00:47
   DHCPDISCOVER on eth0 to 255.255.255.255 port 67 interval 3
   INIT state
-  DHCPOFFER of 10.1.1.12 from 10.1.1.1
-  DHCPREQUEST of 10.1.1.12 on eth0 to 255.255.255.255 port 67
-  DHCPACK of 10.1.1.12 from 10.1.1.1
-  bound to 10.1.1.12 -- renewal in 14400 seconds.
+  DHCPOFFER of 10.1.1.10 from 10.1.1.1
+  DHCPREQUEST of 10.1.1.10 on eth0 to 255.255.255.255 port 67
+  DHCPACK of 10.1.1.10 from 10.1.1.1
+  bound to 10.1.1.10 -- renewal in 14400 seconds.
 
 [130/300] whq whq$ ipconfig /release
   Windows IP Configuration
@@ -1116,7 +1116,7 @@ Total steps: 300
   
   Ethernet adapter Ethernet 0:
      Connection-specific DNS Suffix  . : acme.example
-     IPv4 Address. . . . . . . . . . . : 10.1.1.13
+     IPv4 Address. . . . . . . . . . . : 10.1.1.12
      Subnet Mask . . . . . . . . . . . : 255.255.255.0
      Default Gateway . . . . . . . . . : 10.1.1.1
   
@@ -1130,10 +1130,10 @@ Total steps: 300
   Sending on   LPF/eth0/02:00:00:00:00:53
   DHCPDISCOVER on eth0 to 255.255.255.255 port 67 interval 3
   INIT state
-  DHCPOFFER of 10.2.2.12 from 10.2.2.1
-  DHCPREQUEST of 10.2.2.12 on eth0 to 255.255.255.255 port 67
-  DHCPACK of 10.2.2.12 from 10.2.2.1
-  bound to 10.2.2.12 -- renewal in 43200 seconds.
+  DHCPOFFER of 10.2.2.11 from 10.2.2.1
+  DHCPREQUEST of 10.2.2.11 on eth0 to 255.255.255.255 port 67
+  DHCPACK of 10.2.2.11 from 10.2.2.1
+  bound to 10.2.2.11 -- renewal in 43200 seconds.
 
 [134/300] wbr wbr$ ipconfig /release
   Windows IP Configuration
@@ -1167,7 +1167,7 @@ Total steps: 300
   
   Ethernet adapter Ethernet 0:
      Connection-specific DNS Suffix  . :
-     IPv4 Address. . . . . . . . . . . : 10.2.2.13
+     IPv4 Address. . . . . . . . . . . : 10.2.2.12
      Subnet Mask . . . . . . . . . . . : 255.255.255.0
      Default Gateway . . . . . . . . . : 10.2.2.1
   
@@ -1181,10 +1181,10 @@ Total steps: 300
   Sending on   LPF/eth0/02:00:00:00:00:5b
   DHCPDISCOVER on eth0 to 255.255.255.255 port 67 interval 3
   INIT state
-  DHCPOFFER of 10.3.3.12 from 10.3.3.1
-  DHCPREQUEST of 10.3.3.12 on eth0 to 255.255.255.255 port 67
-  DHCPACK of 10.3.3.12 from 10.3.3.1
-  bound to 10.3.3.12 -- renewal in 86400 seconds.
+  DHCPOFFER of 10.3.3.11 from 10.3.3.1
+  DHCPREQUEST of 10.3.3.11 on eth0 to 255.255.255.255 port 67
+  DHCPACK of 10.3.3.11 from 10.3.3.1
+  bound to 10.3.3.11 -- renewal in 86400 seconds.
 
 
 --- [138] § DHCP — réservation / static binding ---
@@ -1256,7 +1256,6 @@ Total steps: 300
 --- [153] § DHCP — exclusions & conflits ---
 [153/300] rhq R-HQ# show ip dhcp conflict
   IP address        Detection method   Detection time
-  10.1.1.10         ping               6/6/2026, 8:00:00 AM
   10.1.1.11         ping               6/6/2026, 8:00:00 AM
 
 [154/300] rhq R-HQ# configure terminal
@@ -1285,7 +1284,8 @@ Total steps: 300
 
 [161/300] rdc R-DC# show ip dhcp conflict
   IP address        Detection method   Detection time
-  10.3.3.11         ping               6/6/2026, 8:00:00 AM
+  
+  No conflicts detected.
 
 
 --- [162] § DHCP snooping — Cisco SW-HQ ---
@@ -1421,14 +1421,14 @@ Total steps: 300
   Listening on LPF/eth0/02:00:00:00:00:5b
   Sending on   LPF/eth0/02:00:00:00:00:5b
   INIT-REBOOT state
-  DHCPREQUEST for 10.3.3.12 on eth0 to 255.255.255.255 port 67
-  DHCPACK of 10.3.3.12 from 10.3.3.1
-  bound to 10.3.3.12 -- renewal in 43200 seconds.
+  DHCPREQUEST for 10.3.3.11 on eth0 to 255.255.255.255 port 67
+  DHCPACK of 10.3.3.11 from 10.3.3.1
+  bound to 10.3.3.11 -- renewal in 43200 seconds.
 
 [198/300] ldc ldc$ ip addr show eth0
   2: eth0: <BROADCAST,UP,MULTICAST,LOWER_UP> mtu 1500 qdisc fq_codel state UP group default qlen 1000
       link/ether 02:00:00:00:00:5b brd ff:ff:ff:ff:ff:ff
-      inet 10.3.3.12/24 brd 10.3.3.255 dynamic scope global eth0
+      inet 10.3.3.11/24 brd 10.3.3.255 dynamic scope global eth0
          valid_lft forever preferred_lft forever
       inet6 fe80::ff:fe00:5b/64 scope link
          valid_lft forever preferred_lft forever
@@ -1446,9 +1446,9 @@ Total steps: 300
   IP address          Client-ID/              Lease expiration        Type
                       Hardware address/
                       User name
-  10.1.1.12           0102.0000.0000.47       06 Jun 2026 16:00:00    automatic
-  10.1.1.13           0102.0000.0000.4b       06 Jun 2026 16:00:00    automatic
-  10.3.3.12           0102.0000.0000.5b       07 Jun 2026 08:00:00    automatic
+  10.1.1.10           0102.0000.0000.47       06 Jun 2026 16:00:00    automatic
+  10.1.1.12           0102.0000.0000.4b       06 Jun 2026 16:00:00    automatic
+  10.3.3.11           0102.0000.0000.5b       07 Jun 2026 08:00:00    automatic
 
 
 --- [201] § DHCP — statistiques & compteurs ---
@@ -1458,14 +1458,14 @@ Total steps: 300
   Automatic bindings   3
   
   Message              Received
-  DHCPDISCOVER         6
+  DHCPDISCOVER         5
   DHCPREQUEST          8
   DHCPINFORM           0
   DHCPRELEASE          2
   DHCPDECLINE          0
   
   Message              Sent
-  DHCPOFFER            6
+  DHCPOFFER            5
   DHCPACK              8
   DHCPNAK              0
 
@@ -1475,22 +1475,22 @@ Total steps: 300
   Automatic bindings   1
   
   Message              Received
-  DHCPDISCOVER         3
+  DHCPDISCOVER         2
   DHCPREQUEST          3
   DHCPINFORM           0
   DHCPRELEASE          1
   DHCPDECLINE          0
   
   Message              Sent
-  DHCPOFFER            3
+  DHCPOFFER            2
   DHCPACK              3
   DHCPNAK              0
 
 [203/300] rbr <R-BR> display dhcp server statistics
   DHCP server packets statistics:
-    Receive total: 14
-    Send total: 12
-    Discover: 6      Offer: 6
+    Receive total: 13
+    Send total: 11
+    Discover: 5      Offer: 5
     Request: 6       Ack: 6
     Nak: 0           Release: 2
     Inform: 0        Decline: 0
@@ -1502,21 +1502,21 @@ Total steps: 300
   Automatic bindings   2
   
   Message              Received
-  DHCPDISCOVER         6
+  DHCPDISCOVER         5
   DHCPREQUEST          6
   DHCPINFORM           0
   DHCPRELEASE          2
   DHCPDECLINE          0
   
   Message              Sent
-  DHCPOFFER            6
+  DHCPOFFER            5
   DHCPACK              6
   DHCPNAK              0
 
 [205/300] lhq lhq$ cat /var/lib/dhcp/dhclient.leases
   lease {
     interface "eth0";
-    fixed-address 10.1.1.12;
+    fixed-address 10.1.1.10;
     option subnet-mask 255.255.255.0;
     option routers 10.1.1.1;
     option domain-name-servers 10.3.3.10, 8.8.8.8;
@@ -1530,7 +1530,7 @@ Total steps: 300
 [206/300] lbr lbr$ cat /var/lib/dhcp/dhclient.leases
   lease {
     interface "eth0";
-    fixed-address 10.2.2.12;
+    fixed-address 10.2.2.11;
     option subnet-mask 255.255.255.0;
     option routers 10.2.2.1;
     option domain-name-servers 10.3.3.10, 8.8.8.8;
@@ -1543,7 +1543,7 @@ Total steps: 300
 [207/300] ldc ldc$ cat /var/lib/dhcp/dhclient.leases
   lease {
     interface "eth0";
-    fixed-address 10.3.3.12;
+    fixed-address 10.3.3.11;
     option subnet-mask 255.255.255.0;
     option routers 10.3.3.1;
     option domain-name-servers 10.3.3.10;
@@ -1569,7 +1569,7 @@ Total steps: 300
      Physical Address. . . . . . . . . : 02-00-00-00-00-4B
      DHCP Enabled. . . . . . . . . . . : Yes
      Autoconfiguration Enabled . . . . : Yes
-     IPv4 Address. . . . . . . . . . . : 10.1.1.13(Preferred)
+     IPv4 Address. . . . . . . . . . . : 10.1.1.12(Preferred)
      Subnet Mask . . . . . . . . . . . : 255.255.255.0
      Lease Obtained. . . . . . . . . . : Saturday, June 6, 2026 8:00:00 AM
      Lease Expires . . . . . . . . . . : Saturday, June 6, 2026 4:00:00 PM
@@ -1618,35 +1618,35 @@ Total steps: 300
 
 [210/300] lhq lhq$ ping -c 1 10.1.1.1
   PING 10.1.1.1 (10.1.1.1) 56(84) bytes of data.
-  64 bytes from 10.1.1.1: icmp_seq=1 ttl=255 time=1.025 ms
+  64 bytes from 10.1.1.1: icmp_seq=1 ttl=255 time=0.880 ms
   
   --- 10.1.1.1 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 1.025/1.025/1.025/0.000 ms
+  rtt min/avg/max/mdev = 0.880/0.880/0.880/0.000 ms
 
 [211/300] lhq lhq$ ping -c 1 10.2.2.1
   PING 10.2.2.1 (10.2.2.1) 56(84) bytes of data.
-  64 bytes from 10.2.2.1: icmp_seq=1 ttl=253 time=1.434 ms
+  64 bytes from 10.2.2.1: icmp_seq=1 ttl=253 time=0.672 ms
   
   --- 10.2.2.1 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 1.434/1.434/1.434/0.000 ms
+  rtt min/avg/max/mdev = 0.672/0.672/0.672/0.000 ms
 
 [212/300] lhq lhq$ ping -c 1 10.3.3.1
   PING 10.3.3.1 (10.3.3.1) 56(84) bytes of data.
-  64 bytes from 10.3.3.1: icmp_seq=1 ttl=253 time=1.137 ms
+  64 bytes from 10.3.3.1: icmp_seq=1 ttl=253 time=0.425 ms
   
   --- 10.3.3.1 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 1.137/1.137/1.137/0.000 ms
+  rtt min/avg/max/mdev = 0.425/0.425/0.425/0.000 ms
 
 [213/300] lhq lhq$ ping -c 1 10.3.3.10
   PING 10.3.3.10 (10.3.3.10) 56(84) bytes of data.
-  64 bytes from 10.3.3.10: icmp_seq=1 ttl=62 time=2.084 ms
+  64 bytes from 10.3.3.10: icmp_seq=1 ttl=62 time=0.619 ms
   
   --- 10.3.3.10 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 2.084/2.084/2.084/0.000 ms
+  rtt min/avg/max/mdev = 0.619/0.619/0.619/0.000 ms
 
 [214/300] whq whq$ ping -n 1 10.1.1.1
   
@@ -1656,12 +1656,12 @@ Total steps: 300
   Ping statistics for 10.1.1.1:
       Packets: Sent = 1, Received = 1, Lost = 0 (0% loss),
   Approximate round trip times in milli-seconds:
-      Minimum = 1ms, Maximum = 1ms, Average = 1ms
+      Minimum = 0ms, Maximum = 0ms, Average = 0ms
 
 [215/300] whq whq$ ping -n 1 10.2.2.1
   
   Pinging 10.2.2.1 with 32 bytes of data:
-  Reply from 10.2.2.1: bytes=32 time=1ms TTL=253
+  Reply from 10.2.2.1: bytes=32 time=<1ms TTL=253
   
   Ping statistics for 10.2.2.1:
       Packets: Sent = 1, Received = 1, Lost = 0 (0% loss),
@@ -1671,54 +1671,54 @@ Total steps: 300
 [216/300] whq whq$ ping -n 1 10.3.3.1
   
   Pinging 10.3.3.1 with 32 bytes of data:
-  Reply from 10.3.3.1: bytes=32 time=<1ms TTL=253
+  Reply from 10.3.3.1: bytes=32 time=2ms TTL=253
   
   Ping statistics for 10.3.3.1:
       Packets: Sent = 1, Received = 1, Lost = 0 (0% loss),
   Approximate round trip times in milli-seconds:
-      Minimum = 1ms, Maximum = 1ms, Average = 1ms
+      Minimum = 2ms, Maximum = 2ms, Average = 2ms
 
 [217/300] whq whq$ ping -n 1 10.3.3.10
   
   Pinging 10.3.3.10 with 32 bytes of data:
-  Reply from 10.3.3.10: bytes=32 time=2ms TTL=62
+  Reply from 10.3.3.10: bytes=32 time=1ms TTL=62
   
   Ping statistics for 10.3.3.10:
       Packets: Sent = 1, Received = 1, Lost = 0 (0% loss),
   Approximate round trip times in milli-seconds:
-      Minimum = 2ms, Maximum = 2ms, Average = 2ms
+      Minimum = 1ms, Maximum = 1ms, Average = 1ms
 
 [218/300] lbr lbr$ ping -c 1 10.1.1.1
   PING 10.1.1.1 (10.1.1.1) 56(84) bytes of data.
-  64 bytes from 10.1.1.1: icmp_seq=1 ttl=253 time=1.237 ms
+  64 bytes from 10.1.1.1: icmp_seq=1 ttl=253 time=0.888 ms
   
   --- 10.1.1.1 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 1.237/1.237/1.237/0.000 ms
+  rtt min/avg/max/mdev = 0.888/0.888/0.888/0.000 ms
 
 [219/300] lbr lbr$ ping -c 1 10.2.2.1
   PING 10.2.2.1 (10.2.2.1) 56(84) bytes of data.
-  64 bytes from 10.2.2.1: icmp_seq=1 ttl=255 time=0.655 ms
+  64 bytes from 10.2.2.1: icmp_seq=1 ttl=255 time=0.390 ms
   
   --- 10.2.2.1 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.655/0.655/0.655/0.000 ms
+  rtt min/avg/max/mdev = 0.390/0.390/0.390/0.000 ms
 
 [220/300] lbr lbr$ ping -c 1 10.3.3.1
   PING 10.3.3.1 (10.3.3.1) 56(84) bytes of data.
-  64 bytes from 10.3.3.1: icmp_seq=1 ttl=253 time=1.036 ms
+  64 bytes from 10.3.3.1: icmp_seq=1 ttl=253 time=0.427 ms
   
   --- 10.3.3.1 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 1.036/1.036/1.036/0.000 ms
+  rtt min/avg/max/mdev = 0.427/0.427/0.427/0.000 ms
 
 [221/300] lbr lbr$ ping -c 1 10.3.3.10
   PING 10.3.3.10 (10.3.3.10) 56(84) bytes of data.
-  64 bytes from 10.3.3.10: icmp_seq=1 ttl=62 time=1.538 ms
+  64 bytes from 10.3.3.10: icmp_seq=1 ttl=62 time=0.615 ms
   
   --- 10.3.3.10 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 1.538/1.538/1.538/0.000 ms
+  rtt min/avg/max/mdev = 0.615/0.615/0.615/0.000 ms
 
 [222/300] wbr wbr$ ping -n 1 10.1.1.1
   
@@ -1738,59 +1738,59 @@ Total steps: 300
   Ping statistics for 10.2.2.1:
       Packets: Sent = 1, Received = 1, Lost = 0 (0% loss),
   Approximate round trip times in milli-seconds:
-      Minimum = 1ms, Maximum = 1ms, Average = 1ms
+      Minimum = 0ms, Maximum = 0ms, Average = 0ms
 
 [224/300] wbr wbr$ ping -n 1 10.3.3.1
   
   Pinging 10.3.3.1 with 32 bytes of data:
-  Reply from 10.3.3.1: bytes=32 time=1ms TTL=253
+  Reply from 10.3.3.1: bytes=32 time=<1ms TTL=253
   
   Ping statistics for 10.3.3.1:
       Packets: Sent = 1, Received = 1, Lost = 0 (0% loss),
   Approximate round trip times in milli-seconds:
-      Minimum = 1ms, Maximum = 1ms, Average = 1ms
+      Minimum = 0ms, Maximum = 0ms, Average = 0ms
 
 [225/300] wbr wbr$ ping -n 1 10.3.3.10
   
   Pinging 10.3.3.10 with 32 bytes of data:
-  Reply from 10.3.3.10: bytes=32 time=2ms TTL=62
+  Reply from 10.3.3.10: bytes=32 time=<1ms TTL=62
   
   Ping statistics for 10.3.3.10:
       Packets: Sent = 1, Received = 1, Lost = 0 (0% loss),
   Approximate round trip times in milli-seconds:
-      Minimum = 2ms, Maximum = 2ms, Average = 2ms
+      Minimum = 1ms, Maximum = 1ms, Average = 1ms
 
 [226/300] ldc ldc$ ping -c 1 10.1.1.1
   PING 10.1.1.1 (10.1.1.1) 56(84) bytes of data.
-  64 bytes from 10.1.1.1: icmp_seq=1 ttl=253 time=0.946 ms
+  64 bytes from 10.1.1.1: icmp_seq=1 ttl=253 time=0.428 ms
   
   --- 10.1.1.1 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.946/0.946/0.946/0.000 ms
+  rtt min/avg/max/mdev = 0.428/0.428/0.428/0.000 ms
 
 [227/300] ldc ldc$ ping -c 1 10.2.2.1
   PING 10.2.2.1 (10.2.2.1) 56(84) bytes of data.
-  64 bytes from 10.2.2.1: icmp_seq=1 ttl=253 time=1.066 ms
+  64 bytes from 10.2.2.1: icmp_seq=1 ttl=253 time=0.490 ms
   
   --- 10.2.2.1 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 1.066/1.066/1.066/0.000 ms
+  rtt min/avg/max/mdev = 0.490/0.490/0.490/0.000 ms
 
 [228/300] ldc ldc$ ping -c 1 10.3.3.1
   PING 10.3.3.1 (10.3.3.1) 56(84) bytes of data.
-  64 bytes from 10.3.3.1: icmp_seq=1 ttl=255 time=0.887 ms
+  64 bytes from 10.3.3.1: icmp_seq=1 ttl=255 time=0.343 ms
   
   --- 10.3.3.1 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.887/0.887/0.887/0.000 ms
+  rtt min/avg/max/mdev = 0.343/0.343/0.343/0.000 ms
 
 [229/300] ldc ldc$ ping -c 1 10.3.3.10
   PING 10.3.3.10 (10.3.3.10) 56(84) bytes of data.
-  64 bytes from 10.3.3.10: icmp_seq=1 ttl=64 time=0.793 ms
+  64 bytes from 10.3.3.10: icmp_seq=1 ttl=64 time=0.239 ms
   
   --- 10.3.3.10 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.793/0.793/0.793/0.000 ms
+  rtt min/avg/max/mdev = 0.239/0.239/0.239/0.000 ms
 
 
 --- [230] § DHCP — inspection détaillée des pools/baux ---
@@ -1817,6 +1817,7 @@ Total steps: 300
   IP address          Client-ID/              Lease expiration        Type
                       Hardware address/
                       User name
+  10.1.1.10           0102.0000.0000.47       06 Jun 2026 16:00:00    automatic
 
 [232/300] rhq R-HQ# show running-config | section ip dhcp
   ip dhcp excluded-address 10.1.1.1 10.1.1.9
@@ -1847,8 +1848,8 @@ Total steps: 300
 [235/300] rbr <R-BR> display dhcp-server binding all
   IP address       Client-id/              Lease expiration        Type
                    Hardware address
-  10.2.2.12        02:00:00:00:00:53       6/7/2026, 8:00:00 AM    automatic
-  10.2.2.13        02:00:00:00:00:4F       6/7/2026, 8:00:00 AM    automatic
+  10.2.2.11        02:00:00:00:00:53       6/7/2026, 8:00:00 AM    automatic
+  10.2.2.12        02:00:00:00:00:4F       6/7/2026, 8:00:00 AM    automatic
 
 [236/300] rbr <R-BR> display current-configuration configuration dhcp
   dhcp enable
@@ -1867,17 +1868,17 @@ Total steps: 300
   nameserver 8.8.8.8
 
 [238/300] lbr lbr$ ip route show default
-  10.2.2.0/24 dev eth0 proto kernel scope link src 10.2.2.12 metric 0
+  10.2.2.0/24 dev eth0 proto kernel scope link src 10.2.2.11 metric 0
   default via 10.2.2.1 dev eth0 proto dhcp
 
 [239/300] ldc ldc$ ip route show default
-  10.3.3.0/24 dev eth0 proto kernel scope link src 10.3.3.12 metric 0
+  10.3.3.0/24 dev eth0 proto kernel scope link src 10.3.3.11 metric 0
   default via 10.3.3.1 dev eth0 proto dhcp
 
 
 --- [240] § DHCP — DECLINE / INFORM / changement d'options ---
 [240/300] lhq lhq$ dhclient -r eth0
-  released 10.1.1.12
+  released 10.1.1.10
 
 [241/300] lhq lhq$ arp -s 10.1.1.30 02:00:00:00:00:30
 <empty>
@@ -1888,15 +1889,15 @@ Total steps: 300
   Sending on   LPF/eth0/02:00:00:00:00:47
   DHCPDISCOVER on eth0 to 255.255.255.255 port 67 interval 3
   INIT state
-  DHCPOFFER of 10.1.1.12 from 10.1.1.1
-  DHCPREQUEST of 10.1.1.12 on eth0 to 255.255.255.255 port 67
-  DHCPACK of 10.1.1.12 from 10.1.1.1
-  bound to 10.1.1.12 -- renewal in 14400 seconds.
+  DHCPOFFER of 10.1.1.10 from 10.1.1.1
+  DHCPREQUEST of 10.1.1.10 on eth0 to 255.255.255.255 port 67
+  DHCPACK of 10.1.1.10 from 10.1.1.1
+  bound to 10.1.1.10 -- renewal in 14400 seconds.
 
 [243/300] lhq lhq$ ip -4 addr show eth0
   2: eth0: <BROADCAST,UP,MULTICAST,LOWER_UP> mtu 1500 qdisc fq_codel state UP group default qlen 1000
       link/ether 02:00:00:00:00:47 brd ff:ff:ff:ff:ff:ff
-      inet 10.1.1.12/24 brd 10.1.1.255 dynamic scope global eth0
+      inet 10.1.1.10/24 brd 10.1.1.255 dynamic scope global eth0
          valid_lft forever preferred_lft forever
 
 [244/300] rhq R-HQ# show ip dhcp conflict
@@ -1957,7 +1958,7 @@ Total steps: 300
   
   Ethernet adapter Ethernet 0:
      Connection-specific DNS Suffix  . : acme.example
-     IPv4 Address. . . . . . . . . . . : 10.1.1.13
+     IPv4 Address. . . . . . . . . . . : 10.1.1.12
      Subnet Mask . . . . . . . . . . . : 255.255.255.0
      Default Gateway . . . . . . . . . : 10.1.1.1
   
@@ -1978,7 +1979,7 @@ Total steps: 300
      Physical Address. . . . . . . . . : 02-00-00-00-00-4B
      DHCP Enabled. . . . . . . . . . . : Yes
      Autoconfiguration Enabled . . . . : Yes
-     IPv4 Address. . . . . . . . . . . : 10.1.1.13(Preferred)
+     IPv4 Address. . . . . . . . . . . : 10.1.1.12(Preferred)
      Subnet Mask . . . . . . . . . . . : 255.255.255.0
      Lease Obtained. . . . . . . . . . : Saturday, June 6, 2026 8:00:00 AM
      Lease Expires . . . . . . . . . . : Saturday, June 6, 2026 4:00:00 PM
@@ -2090,7 +2091,7 @@ Total steps: 300
      Physical Address. . . . . . . . . : 02-00-00-00-00-4B
      DHCP Enabled. . . . . . . . . . . : Yes
      Autoconfiguration Enabled . . . . : Yes
-     IPv4 Address. . . . . . . . . . . : 10.1.1.13(Preferred)
+     IPv4 Address. . . . . . . . . . . : 10.1.1.12(Preferred)
      Subnet Mask . . . . . . . . . . . : 255.255.255.0
      Lease Obtained. . . . . . . . . . : Saturday, June 6, 2026 8:00:00 AM
      Lease Expires . . . . . . . . . . : Saturday, June 6, 2026 4:00:00 PM
@@ -2186,9 +2187,9 @@ Total steps: 300
   IP address          Client-ID/              Lease expiration        Type
                       Hardware address/
                       User name
-  10.3.3.12           0102.0000.0000.5b       07 Jun 2026 08:00:00    automatic
-  10.1.1.12           0102.0000.0000.47       06 Jun 2026 16:00:00    automatic
-  10.1.1.13           0102.0000.0000.4b       06 Jun 2026 16:00:00    automatic
+  10.3.3.11           0102.0000.0000.5b       07 Jun 2026 08:00:00    automatic
+  10.1.1.10           0102.0000.0000.47       06 Jun 2026 16:00:00    automatic
+  10.1.1.12           0102.0000.0000.4b       06 Jun 2026 16:00:00    automatic
 
 [287/300] rbr <R-BR> display ip pool
   Pool-name      : LAN-BR
@@ -2258,8 +2259,8 @@ Total steps: 300
 [289/300] swhq SW-HQ# show ip dhcp snooping binding
   MacAddress          IP address        Lease(sec)  Type           VLAN  Interface
   ------------------  ----------------  ----------  -------------  ----  --------------------
-  02:00:00:00:00:47   10.1.1.12         28800       dynamic        1     FastEthernet0/2
-  02:00:00:00:00:4b   10.1.1.13         28800       dynamic        1     FastEthernet0/3
+  02:00:00:00:00:47   10.1.1.10         28800       dynamic        1     FastEthernet0/2
+  02:00:00:00:00:4b   10.1.1.12         28800       dynamic        1     FastEthernet0/3
   Total number of bindings: 2
 
 [290/300] swbr <SW-BR> display dhcp snooping user-bind all
@@ -2272,7 +2273,7 @@ Total steps: 300
 [291/300] lhq lhq$ ip -4 addr show eth0
   2: eth0: <BROADCAST,UP,MULTICAST,LOWER_UP> mtu 1500 qdisc fq_codel state UP group default qlen 1000
       link/ether 02:00:00:00:00:47 brd ff:ff:ff:ff:ff:ff
-      inet 10.1.1.12/24 brd 10.1.1.255 dynamic scope global eth0
+      inet 10.1.1.10/24 brd 10.1.1.255 dynamic scope global eth0
          valid_lft forever preferred_lft forever
 
 [292/300] whq whq$ ipconfig
@@ -2281,7 +2282,7 @@ Total steps: 300
   Ethernet adapter Ethernet 0:
   
      Connection-specific DNS Suffix  . : acme.example
-     IPv4 Address. . . . . . . . . . . : 10.1.1.13
+     IPv4 Address. . . . . . . . . . . : 10.1.1.12
      Subnet Mask . . . . . . . . . . . : 255.255.255.0
      Default Gateway . . . . . . . . . : 10.1.1.1
   
@@ -2304,7 +2305,7 @@ Total steps: 300
 [293/300] lbr lbr$ ip -4 addr show eth0
   2: eth0: <BROADCAST,UP,MULTICAST,LOWER_UP> mtu 1500 qdisc fq_codel state UP group default qlen 1000
       link/ether 02:00:00:00:00:53 brd ff:ff:ff:ff:ff:ff
-      inet 10.2.2.12/24 brd 10.2.2.255 dynamic scope global eth0
+      inet 10.2.2.11/24 brd 10.2.2.255 dynamic scope global eth0
          valid_lft forever preferred_lft forever
 
 [294/300] wbr wbr$ ipconfig
@@ -2313,7 +2314,7 @@ Total steps: 300
   Ethernet adapter Ethernet 0:
   
      Connection-specific DNS Suffix  . : 
-     IPv4 Address. . . . . . . . . . . : 10.2.2.13
+     IPv4 Address. . . . . . . . . . . : 10.2.2.12
      Subnet Mask . . . . . . . . . . . : 255.255.255.0
      Default Gateway . . . . . . . . . : 10.2.2.1
   
@@ -2336,7 +2337,7 @@ Total steps: 300
 [295/300] ldc ldc$ ip -4 addr show eth0
   2: eth0: <BROADCAST,UP,MULTICAST,LOWER_UP> mtu 1500 qdisc fq_codel state UP group default qlen 1000
       link/ether 02:00:00:00:00:5b brd ff:ff:ff:ff:ff:ff
-      inet 10.3.3.12/24 brd 10.3.3.255 dynamic scope global eth0
+      inet 10.3.3.11/24 brd 10.3.3.255 dynamic scope global eth0
          valid_lft forever preferred_lft forever
 
 [296/300] rhq R-HQ# show ip dhcp server statistics
@@ -2345,14 +2346,14 @@ Total steps: 300
   Automatic bindings   3
   
   Message              Received
-  DHCPDISCOVER         8
+  DHCPDISCOVER         7
   DHCPREQUEST          10
   DHCPINFORM           0
   DHCPRELEASE          4
   DHCPDECLINE          0
   
   Message              Sent
-  DHCPOFFER            8
+  DHCPOFFER            7
   DHCPACK              10
   DHCPNAK              0
 
@@ -2366,9 +2367,9 @@ Total steps: 300
 
 [298/300] rbr <R-BR> display dhcp server statistics
   DHCP server packets statistics:
-    Receive total: 14
-    Send total: 12
-    Discover: 6      Offer: 6
+    Receive total: 13
+    Send total: 11
+    Discover: 5      Offer: 5
     Request: 6       Ack: 6
     Nak: 0           Release: 2
     Inform: 0        Decline: 0
@@ -2383,7 +2384,7 @@ Total steps: 300
                        filtering disabled
       Monitor logging: level debugging, 14 messages logged, xml disabled,
                        filtering disabled
-      Buffer logging:  level debugging, 86 messages logged, xml disabled,
+      Buffer logging:  level debugging, 82 messages logged, xml disabled,
                        filtering disabled
       Exception Logging: size (4096 bytes)
       Count and timestamp logging messages: disabled
@@ -2406,81 +2407,77 @@ Total steps: 300
   *Jun  6 08:00:00.000: %SYS-5-CONFIG_I: Configured from console by console
   *Jun  6 08:00:00.000: %SYS-5-CONFIG_I: Configured from console by console
   *Jun  6 08:00:00.000: DHCPD: DHCPDISCOVER from 0200.0000.0047 through relay not used
-  *Jun  6 08:00:00.000: DHCPD: BOOTREQUEST: xid 9B1FC652, chaddr 0200.0000.0047, ciaddr 0.0.0.0, yiaddr 0.0.0.0, giaddr 0.0.0.0
+  *Jun  6 08:00:00.000: DHCPD: BOOTREQUEST: xid F849555C, chaddr 0200.0000.0047, ciaddr 0.0.0.0, yiaddr 0.0.0.0, giaddr 0.0.0.0
   *Jun  6 08:00:00.000: DHCPD: DHCPOFFER on interface, offering 10.1.1.10 to 0200.0000.0047
-  *Jun  6 08:00:00.000: DHCPD: BOOTREPLY: xid 9B1FC652, chaddr 0200.0000.0047, ciaddr 0.0.0.0, yiaddr 10.1.1.10, giaddr 0.0.0.0
-  *Jun  6 08:00:00.000: DHCPD: DHCPDISCOVER from 0200.0000.0047 through relay not used
-  *Jun  6 08:00:00.000: DHCPD: BOOTREQUEST: xid 9B1FC652, chaddr 0200.0000.0047, ciaddr 0.0.0.0, yiaddr 0.0.0.0, giaddr 0.0.0.0
-  *Jun  6 08:00:00.000: DHCPD: DHCPOFFER on interface, offering 10.1.1.11 to 0200.0000.0047
-  *Jun  6 08:00:00.000: DHCPD: BOOTREPLY: xid 9B1FC652, chaddr 0200.0000.0047, ciaddr 0.0.0.0, yiaddr 10.1.1.11, giaddr 0.0.0.0
-  *Jun  6 08:00:00.000: DHCPD: DHCPDISCOVER from 0200.0000.0047 through relay not used
-  *Jun  6 08:00:00.000: DHCPD: BOOTREQUEST: xid 9B1FC652, chaddr 0200.0000.0047, ciaddr 0.0.0.0, yiaddr 0.0.0.0, giaddr 0.0.0.0
-  *Jun  6 08:00:00.000: DHCPD: DHCPOFFER on interface, offering 10.1.1.12 to 0200.0000.0047
-  *Jun  6 08:00:00.000: DHCPD: BOOTREPLY: xid 9B1FC652, chaddr 0200.0000.0047, ciaddr 0.0.0.0, yiaddr 10.1.1.12, giaddr 0.0.0.0
-  *Jun  6 08:00:00.000: DHCPD: DHCPREQUEST received from client 0200.0000.0047 for 10.1.1.12
-  *Jun  6 08:00:00.000: DHCPD: BOOTREQUEST: xid 9B1FC652, chaddr 0200.0000.0047, ciaddr 10.1.1.12, yiaddr 0.0.0.0, giaddr 0.0.0.0
-  *Jun  6 08:00:00.000: DHCPD: DHCPACK sent to client 0200.0000.0047 for 10.1.1.12
-  *Jun  6 08:00:00.000: DHCPD: BOOTREPLY: xid 9B1FC652, chaddr 0200.0000.0047, ciaddr 0.0.0.0, yiaddr 10.1.1.12, giaddr 0.0.0.0
+  *Jun  6 08:00:00.000: DHCPD: BOOTREPLY: xid F849555C, chaddr 0200.0000.0047, ciaddr 0.0.0.0, yiaddr 10.1.1.10, giaddr 0.0.0.0
+  *Jun  6 08:00:00.000: DHCPD: DHCPREQUEST received from client 0200.0000.0047 for 10.1.1.10
+  *Jun  6 08:00:00.000: DHCPD: BOOTREQUEST: xid F849555C, chaddr 0200.0000.0047, ciaddr 10.1.1.10, yiaddr 0.0.0.0, giaddr 0.0.0.0
+  *Jun  6 08:00:00.000: DHCPD: DHCPACK sent to client 0200.0000.0047 for 10.1.1.10
+  *Jun  6 08:00:00.000: DHCPD: BOOTREPLY: xid F849555C, chaddr 0200.0000.0047, ciaddr 0.0.0.0, yiaddr 10.1.1.10, giaddr 0.0.0.0
   *Jun  6 08:00:00.000: DHCPD: DHCPDISCOVER from 0200.0000.004b through relay not used
-  *Jun  6 08:00:00.000: DHCPD: BOOTREQUEST: xid 15E0C7DE, chaddr 0200.0000.004b, ciaddr 0.0.0.0, yiaddr 0.0.0.0, giaddr 0.0.0.0
-  *Jun  6 08:00:00.000: DHCPD: DHCPOFFER on interface, offering 10.1.1.13 to 0200.0000.004b
-  *Jun  6 08:00:00.000: DHCPD: BOOTREPLY: xid 15E0C7DE, chaddr 0200.0000.004b, ciaddr 0.0.0.0, yiaddr 10.1.1.13, giaddr 0.0.0.0
-  *Jun  6 08:00:00.000: DHCPD: DHCPREQUEST received from client 0200.0000.004b for 10.1.1.13
-  *Jun  6 08:00:00.000: DHCPD: BOOTREQUEST: xid 15E0C7DE, chaddr 0200.0000.004b, ciaddr 10.1.1.13, yiaddr 0.0.0.0, giaddr 0.0.0.0
-  *Jun  6 08:00:00.000: DHCPD: DHCPACK sent to client 0200.0000.004b for 10.1.1.13
-  *Jun  6 08:00:00.000: DHCPD: BOOTREPLY: xid 15E0C7DE, chaddr 0200.0000.004b, ciaddr 0.0.0.0, yiaddr 10.1.1.13, giaddr 0.0.0.0
-  *Jun  6 08:00:00.000: DHCPD: DHCPREQUEST received from client 0200.0000.0047 for 10.1.1.12
-  *Jun  6 08:00:00.000: DHCPD: BOOTREQUEST: xid 6C96EE47, chaddr 0200.0000.0047, ciaddr 10.1.1.12, yiaddr 0.0.0.0, giaddr 0.0.0.0
-  *Jun  6 08:00:00.000: DHCPD: DHCPACK sent to client 0200.0000.0047 for 10.1.1.12
-  *Jun  6 08:00:00.000: DHCPD: BOOTREPLY: xid 6C96EE47, chaddr 0200.0000.0047, ciaddr 0.0.0.0, yiaddr 10.1.1.12, giaddr 0.0.0.0
-  *Jun  6 08:00:00.000: DHCPD: DHCPREQUEST received from client 0200.0000.0047 for 10.1.1.12
-  *Jun  6 08:00:00.000: DHCPD: BOOTREQUEST: xid 76F8BB9B, chaddr 0200.0000.0047, ciaddr 10.1.1.12, yiaddr 0.0.0.0, giaddr 0.0.0.0
-  *Jun  6 08:00:00.000: DHCPD: DHCPACK sent to client 0200.0000.0047 for 10.1.1.12
-  *Jun  6 08:00:00.000: DHCPD: BOOTREPLY: xid 76F8BB9B, chaddr 0200.0000.0047, ciaddr 0.0.0.0, yiaddr 10.1.1.12, giaddr 0.0.0.0
-  *Jun  6 08:00:00.000: DHCPD: DHCPREQUEST received from client 0200.0000.004b for 10.1.1.13
-  *Jun  6 08:00:00.000: DHCPD: BOOTREQUEST: xid 202E4874, chaddr 0200.0000.004b, ciaddr 10.1.1.13, yiaddr 0.0.0.0, giaddr 0.0.0.0
-  *Jun  6 08:00:00.000: DHCPD: DHCPACK sent to client 0200.0000.004b for 10.1.1.13
-  *Jun  6 08:00:00.000: DHCPD: BOOTREPLY: xid 202E4874, chaddr 0200.0000.004b, ciaddr 0.0.0.0, yiaddr 10.1.1.13, giaddr 0.0.0.0
-  *Jun  6 08:00:00.000: DHCPD: DHCPDISCOVER from 0200.0000.0047 through relay not used
-  *Jun  6 08:00:00.000: DHCPD: BOOTREQUEST: xid AA57000E, chaddr 0200.0000.0047, ciaddr 0.0.0.0, yiaddr 0.0.0.0, giaddr 0.0.0.0
-  *Jun  6 08:00:00.000: DHCPD: DHCPOFFER on interface, offering 10.1.1.12 to 0200.0000.0047
-  *Jun  6 08:00:00.000: DHCPD: BOOTREPLY: xid AA57000E, chaddr 0200.0000.0047, ciaddr 0.0.0.0, yiaddr 10.1.1.12, giaddr 0.0.0.0
-  *Jun  6 08:00:00.000: DHCPD: DHCPREQUEST received from client 0200.0000.0047 for 10.1.1.12
-  *Jun  6 08:00:00.000: DHCPD: BOOTREQUEST: xid AA57000E, chaddr 0200.0000.0047, ciaddr 10.1.1.12, yiaddr 0.0.0.0, giaddr 0.0.0.0
-  *Jun  6 08:00:00.000: DHCPD: DHCPACK sent to client 0200.0000.0047 for 10.1.1.12
-  *Jun  6 08:00:00.000: DHCPD: BOOTREPLY: xid AA57000E, chaddr 0200.0000.0047, ciaddr 0.0.0.0, yiaddr 10.1.1.12, giaddr 0.0.0.0
+  *Jun  6 08:00:00.000: DHCPD: BOOTREQUEST: xid 321E1665, chaddr 0200.0000.004b, ciaddr 0.0.0.0, yiaddr 0.0.0.0, giaddr 0.0.0.0
+  *Jun  6 08:00:00.000: DHCPD: DHCPOFFER on interface, offering 10.1.1.11 to 0200.0000.004b
+  *Jun  6 08:00:00.000: DHCPD: BOOTREPLY: xid 321E1665, chaddr 0200.0000.004b, ciaddr 0.0.0.0, yiaddr 10.1.1.11, giaddr 0.0.0.0
   *Jun  6 08:00:00.000: DHCPD: DHCPDISCOVER from 0200.0000.004b through relay not used
-  *Jun  6 08:00:00.000: DHCPD: BOOTREQUEST: xid 767E0CEB, chaddr 0200.0000.004b, ciaddr 0.0.0.0, yiaddr 0.0.0.0, giaddr 0.0.0.0
-  *Jun  6 08:00:00.000: DHCPD: DHCPOFFER on interface, offering 10.1.1.13 to 0200.0000.004b
-  *Jun  6 08:00:00.000: DHCPD: BOOTREPLY: xid 767E0CEB, chaddr 0200.0000.004b, ciaddr 0.0.0.0, yiaddr 10.1.1.13, giaddr 0.0.0.0
-  *Jun  6 08:00:00.000: DHCPD: DHCPREQUEST received from client 0200.0000.004b for 10.1.1.13
-  *Jun  6 08:00:00.000: DHCPD: BOOTREQUEST: xid 767E0CEB, chaddr 0200.0000.004b, ciaddr 10.1.1.13, yiaddr 0.0.0.0, giaddr 0.0.0.0
-  *Jun  6 08:00:00.000: DHCPD: DHCPACK sent to client 0200.0000.004b for 10.1.1.13
-  *Jun  6 08:00:00.000: DHCPD: BOOTREPLY: xid 767E0CEB, chaddr 0200.0000.004b, ciaddr 0.0.0.0, yiaddr 10.1.1.13, giaddr 0.0.0.0
-  *Jun  6 08:00:00.000: %SYS-5-CONFIG_I: Configured from console by console
-  *Jun  6 08:00:00.000: %SYS-5-CONFIG_I: Configured from console by console
-  *Jun  6 08:00:00.000: %SYS-5-CONFIG_I: Configured from console by console
-  *Jun  6 08:00:00.000: DHCPD: DHCPREQUEST received from client 0200.0000.005b for 10.3.3.12
-  *Jun  6 08:00:00.000: DHCPD: BOOTREQUEST: xid 57DDF9C1, chaddr 0200.0000.005b, ciaddr 10.3.3.12, yiaddr 0.0.0.0, giaddr 0.0.0.0
-  *Jun  6 08:00:00.000: DHCPD: DHCPACK sent to client 0200.0000.005b for 10.3.3.12
-  *Jun  6 08:00:00.000: DHCPD: BOOTREPLY: xid 57DDF9C1, chaddr 0200.0000.005b, ciaddr 0.0.0.0, yiaddr 10.3.3.12, giaddr 0.0.0.0
+  *Jun  6 08:00:00.000: DHCPD: BOOTREQUEST: xid 321E1665, chaddr 0200.0000.004b, ciaddr 0.0.0.0, yiaddr 0.0.0.0, giaddr 0.0.0.0
+  *Jun  6 08:00:00.000: DHCPD: DHCPOFFER on interface, offering 10.1.1.12 to 0200.0000.004b
+  *Jun  6 08:00:00.000: DHCPD: BOOTREPLY: xid 321E1665, chaddr 0200.0000.004b, ciaddr 0.0.0.0, yiaddr 10.1.1.12, giaddr 0.0.0.0
+  *Jun  6 08:00:00.000: DHCPD: DHCPREQUEST received from client 0200.0000.004b for 10.1.1.12
+  *Jun  6 08:00:00.000: DHCPD: BOOTREQUEST: xid 321E1665, chaddr 0200.0000.004b, ciaddr 10.1.1.12, yiaddr 0.0.0.0, giaddr 0.0.0.0
+  *Jun  6 08:00:00.000: DHCPD: DHCPACK sent to client 0200.0000.004b for 10.1.1.12
+  *Jun  6 08:00:00.000: DHCPD: BOOTREPLY: xid 321E1665, chaddr 0200.0000.004b, ciaddr 0.0.0.0, yiaddr 10.1.1.12, giaddr 0.0.0.0
+  *Jun  6 08:00:00.000: DHCPD: DHCPREQUEST received from client 0200.0000.0047 for 10.1.1.10
+  *Jun  6 08:00:00.000: DHCPD: BOOTREQUEST: xid ABCB44C0, chaddr 0200.0000.0047, ciaddr 10.1.1.10, yiaddr 0.0.0.0, giaddr 0.0.0.0
+  *Jun  6 08:00:00.000: DHCPD: DHCPACK sent to client 0200.0000.0047 for 10.1.1.10
+  *Jun  6 08:00:00.000: DHCPD: BOOTREPLY: xid ABCB44C0, chaddr 0200.0000.0047, ciaddr 0.0.0.0, yiaddr 10.1.1.10, giaddr 0.0.0.0
+  *Jun  6 08:00:00.000: DHCPD: DHCPREQUEST received from client 0200.0000.0047 for 10.1.1.10
+  *Jun  6 08:00:00.000: DHCPD: BOOTREQUEST: xid 8782135F, chaddr 0200.0000.0047, ciaddr 10.1.1.10, yiaddr 0.0.0.0, giaddr 0.0.0.0
+  *Jun  6 08:00:00.000: DHCPD: DHCPACK sent to client 0200.0000.0047 for 10.1.1.10
+  *Jun  6 08:00:00.000: DHCPD: BOOTREPLY: xid 8782135F, chaddr 0200.0000.0047, ciaddr 0.0.0.0, yiaddr 10.1.1.10, giaddr 0.0.0.0
+  *Jun  6 08:00:00.000: DHCPD: DHCPREQUEST received from client 0200.0000.004b for 10.1.1.12
+  *Jun  6 08:00:00.000: DHCPD: BOOTREQUEST: xid 1B3FC5B, chaddr 0200.0000.004b, ciaddr 10.1.1.12, yiaddr 0.0.0.0, giaddr 0.0.0.0
+  *Jun  6 08:00:00.000: DHCPD: DHCPACK sent to client 0200.0000.004b for 10.1.1.12
+  *Jun  6 08:00:00.000: DHCPD: BOOTREPLY: xid 1B3FC5B, chaddr 0200.0000.004b, ciaddr 0.0.0.0, yiaddr 10.1.1.12, giaddr 0.0.0.0
   *Jun  6 08:00:00.000: DHCPD: DHCPDISCOVER from 0200.0000.0047 through relay not used
-  *Jun  6 08:00:00.000: DHCPD: BOOTREQUEST: xid 493CC82C, chaddr 0200.0000.0047, ciaddr 0.0.0.0, yiaddr 0.0.0.0, giaddr 0.0.0.0
-  *Jun  6 08:00:00.000: DHCPD: DHCPOFFER on interface, offering 10.1.1.12 to 0200.0000.0047
-  *Jun  6 08:00:00.000: DHCPD: BOOTREPLY: xid 493CC82C, chaddr 0200.0000.0047, ciaddr 0.0.0.0, yiaddr 10.1.1.12, giaddr 0.0.0.0
-  *Jun  6 08:00:00.000: DHCPD: DHCPREQUEST received from client 0200.0000.0047 for 10.1.1.12
-  *Jun  6 08:00:00.000: DHCPD: BOOTREQUEST: xid 493CC82C, chaddr 0200.0000.0047, ciaddr 10.1.1.12, yiaddr 0.0.0.0, giaddr 0.0.0.0
-  *Jun  6 08:00:00.000: DHCPD: DHCPACK sent to client 0200.0000.0047 for 10.1.1.12
-  *Jun  6 08:00:00.000: DHCPD: BOOTREPLY: xid 493CC82C, chaddr 0200.0000.0047, ciaddr 0.0.0.0, yiaddr 10.1.1.12, giaddr 0.0.0.0
+  *Jun  6 08:00:00.000: DHCPD: BOOTREQUEST: xid 12839E93, chaddr 0200.0000.0047, ciaddr 0.0.0.0, yiaddr 0.0.0.0, giaddr 0.0.0.0
+  *Jun  6 08:00:00.000: DHCPD: DHCPOFFER on interface, offering 10.1.1.10 to 0200.0000.0047
+  *Jun  6 08:00:00.000: DHCPD: BOOTREPLY: xid 12839E93, chaddr 0200.0000.0047, ciaddr 0.0.0.0, yiaddr 10.1.1.10, giaddr 0.0.0.0
+  *Jun  6 08:00:00.000: DHCPD: DHCPREQUEST received from client 0200.0000.0047 for 10.1.1.10
+  *Jun  6 08:00:00.000: DHCPD: BOOTREQUEST: xid 12839E93, chaddr 0200.0000.0047, ciaddr 10.1.1.10, yiaddr 0.0.0.0, giaddr 0.0.0.0
+  *Jun  6 08:00:00.000: DHCPD: DHCPACK sent to client 0200.0000.0047 for 10.1.1.10
+  *Jun  6 08:00:00.000: DHCPD: BOOTREPLY: xid 12839E93, chaddr 0200.0000.0047, ciaddr 0.0.0.0, yiaddr 10.1.1.10, giaddr 0.0.0.0
+  *Jun  6 08:00:00.000: DHCPD: DHCPDISCOVER from 0200.0000.004b through relay not used
+  *Jun  6 08:00:00.000: DHCPD: BOOTREQUEST: xid 1AC59E99, chaddr 0200.0000.004b, ciaddr 0.0.0.0, yiaddr 0.0.0.0, giaddr 0.0.0.0
+  *Jun  6 08:00:00.000: DHCPD: DHCPOFFER on interface, offering 10.1.1.12 to 0200.0000.004b
+  *Jun  6 08:00:00.000: DHCPD: BOOTREPLY: xid 1AC59E99, chaddr 0200.0000.004b, ciaddr 0.0.0.0, yiaddr 10.1.1.12, giaddr 0.0.0.0
+  *Jun  6 08:00:00.000: DHCPD: DHCPREQUEST received from client 0200.0000.004b for 10.1.1.12
+  *Jun  6 08:00:00.000: DHCPD: BOOTREQUEST: xid 1AC59E99, chaddr 0200.0000.004b, ciaddr 10.1.1.12, yiaddr 0.0.0.0, giaddr 0.0.0.0
+  *Jun  6 08:00:00.000: DHCPD: DHCPACK sent to client 0200.0000.004b for 10.1.1.12
+  *Jun  6 08:00:00.000: DHCPD: BOOTREPLY: xid 1AC59E99, chaddr 0200.0000.004b, ciaddr 0.0.0.0, yiaddr 10.1.1.12, giaddr 0.0.0.0
+  *Jun  6 08:00:00.000: %SYS-5-CONFIG_I: Configured from console by console
+  *Jun  6 08:00:00.000: %SYS-5-CONFIG_I: Configured from console by console
+  *Jun  6 08:00:00.000: %SYS-5-CONFIG_I: Configured from console by console
+  *Jun  6 08:00:00.000: DHCPD: DHCPREQUEST received from client 0200.0000.005b for 10.3.3.11
+  *Jun  6 08:00:00.000: DHCPD: BOOTREQUEST: xid 3035E9B0, chaddr 0200.0000.005b, ciaddr 10.3.3.11, yiaddr 0.0.0.0, giaddr 0.0.0.0
+  *Jun  6 08:00:00.000: DHCPD: DHCPACK sent to client 0200.0000.005b for 10.3.3.11
+  *Jun  6 08:00:00.000: DHCPD: BOOTREPLY: xid 3035E9B0, chaddr 0200.0000.005b, ciaddr 0.0.0.0, yiaddr 10.3.3.11, giaddr 0.0.0.0
+  *Jun  6 08:00:00.000: DHCPD: DHCPDISCOVER from 0200.0000.0047 through relay not used
+  *Jun  6 08:00:00.000: DHCPD: BOOTREQUEST: xid 70B9AD28, chaddr 0200.0000.0047, ciaddr 0.0.0.0, yiaddr 0.0.0.0, giaddr 0.0.0.0
+  *Jun  6 08:00:00.000: DHCPD: DHCPOFFER on interface, offering 10.1.1.10 to 0200.0000.0047
+  *Jun  6 08:00:00.000: DHCPD: BOOTREPLY: xid 70B9AD28, chaddr 0200.0000.0047, ciaddr 0.0.0.0, yiaddr 10.1.1.10, giaddr 0.0.0.0
+  *Jun  6 08:00:00.000: DHCPD: DHCPREQUEST received from client 0200.0000.0047 for 10.1.1.10
+  *Jun  6 08:00:00.000: DHCPD: BOOTREQUEST: xid 70B9AD28, chaddr 0200.0000.0047, ciaddr 10.1.1.10, yiaddr 0.0.0.0, giaddr 0.0.0.0
+  *Jun  6 08:00:00.000: DHCPD: DHCPACK sent to client 0200.0000.0047 for 10.1.1.10
+  *Jun  6 08:00:00.000: DHCPD: BOOTREPLY: xid 70B9AD28, chaddr 0200.0000.0047, ciaddr 0.0.0.0, yiaddr 10.1.1.10, giaddr 0.0.0.0
   *Jun  6 08:00:00.000: %SYS-5-CONFIG_I: Configured from console by console
   *Jun  6 08:00:00.000: DHCPD: DHCPDISCOVER from 0200.0000.004b through relay not used
-  *Jun  6 08:00:00.000: DHCPD: BOOTREQUEST: xid 6429166C, chaddr 0200.0000.004b, ciaddr 0.0.0.0, yiaddr 0.0.0.0, giaddr 0.0.0.0
-  *Jun  6 08:00:00.000: DHCPD: DHCPOFFER on interface, offering 10.1.1.13 to 0200.0000.004b
-  *Jun  6 08:00:00.000: DHCPD: BOOTREPLY: xid 6429166C, chaddr 0200.0000.004b, ciaddr 0.0.0.0, yiaddr 10.1.1.13, giaddr 0.0.0.0
-  *Jun  6 08:00:00.000: DHCPD: DHCPREQUEST received from client 0200.0000.004b for 10.1.1.13
-  *Jun  6 08:00:00.000: DHCPD: BOOTREQUEST: xid 6429166C, chaddr 0200.0000.004b, ciaddr 10.1.1.13, yiaddr 0.0.0.0, giaddr 0.0.0.0
-  *Jun  6 08:00:00.000: DHCPD: DHCPACK sent to client 0200.0000.004b for 10.1.1.13
-  *Jun  6 08:00:00.000: DHCPD: BOOTREPLY: xid 6429166C, chaddr 0200.0000.004b, ciaddr 0.0.0.0, yiaddr 10.1.1.13, giaddr 0.0.0.0
+  *Jun  6 08:00:00.000: DHCPD: BOOTREQUEST: xid 9570ECDE, chaddr 0200.0000.004b, ciaddr 0.0.0.0, yiaddr 0.0.0.0, giaddr 0.0.0.0
+  *Jun  6 08:00:00.000: DHCPD: DHCPOFFER on interface, offering 10.1.1.12 to 0200.0000.004b
+  *Jun  6 08:00:00.000: DHCPD: BOOTREPLY: xid 9570ECDE, chaddr 0200.0000.004b, ciaddr 0.0.0.0, yiaddr 10.1.1.12, giaddr 0.0.0.0
+  *Jun  6 08:00:00.000: DHCPD: DHCPREQUEST received from client 0200.0000.004b for 10.1.1.12
+  *Jun  6 08:00:00.000: DHCPD: BOOTREQUEST: xid 9570ECDE, chaddr 0200.0000.004b, ciaddr 10.1.1.12, yiaddr 0.0.0.0, giaddr 0.0.0.0
+  *Jun  6 08:00:00.000: DHCPD: DHCPACK sent to client 0200.0000.004b for 10.1.1.12
+  *Jun  6 08:00:00.000: DHCPD: BOOTREPLY: xid 9570ECDE, chaddr 0200.0000.004b, ciaddr 0.0.0.0, yiaddr 10.1.1.12, giaddr 0.0.0.0
   *Jun  6 08:00:00.000: %SYS-5-CONFIG_I: Configured from console by console
   *Jun  6 08:00:00.000: %SYS-5-CONFIG_I: Configured from console by console
 

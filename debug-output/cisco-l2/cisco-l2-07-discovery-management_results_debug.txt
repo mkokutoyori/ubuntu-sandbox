@@ -1,6 +1,6 @@
 ============================================================
 Cisco L2 switch debug transcript — cisco-l2-07-discovery-management
-Generated: 2026-08-18T19:50:56.920Z
+Generated: 2026-08-23T10:16:40.004Z
 Topology: CORE(L2) trunked to SW1 & SW2 (L2 access). SW1: L1(Linux 1.11) Fa0/1, W1(Win 1.12) Fa0/2, SRV1(Linux 1.13) Fa0/3, Gi0/1=trunk. SW2: L2(Linux 1.21) Fa0/1, W2(Win 1.22) Fa0/2, SRV2(Linux 1.23) Fa0/3, Gi0/1=trunk. All hosts 192.168.1.0/24.
 focus=CDP/LLDP, management SVI, users/AAA, SSH, logging, NTP/SNTP, SNMP
 Total steps: 366
@@ -56,13 +56,13 @@ Total steps: 366
   Total entries displayed: 0
 
 [7/366] sw1 SW1# show clock
-  *19:50:56.000 UTC Tue Aug 18 2026
+  *10:16:40.000 UTC Sun Aug 23 2026
 
 [8/366] sw1 SW1# show ntp status
   Clock is unsynchronized, stratum 16, no reference clock
   nominal freq is 250.0000 Hz, actual freq is 250.0000 Hz, precision is 2**18
   ntp uptime is 0 (1/100 of seconds), resolution is 4001
-  reference time is EE2F3620.F374BC6A (19:50:56.951 UTC Tue Aug 18 2026)
+  reference time is EE354708.049BA5E3 (10:16:40.018 UTC Sun Aug 23 2026)
   clock offset is 0.0000 msec, root delay is 0.00 msec
   root dispersion is 16000.00 msec, peer dispersion is 16000.00 msec
   loopfilter state is 'FSET' (Drift set from file), drift is 0.000000000 s/s
@@ -101,15 +101,15 @@ Total steps: 366
   
   Log Buffer (4096 bytes):
   
-  *Aug 18 19:50:56.847: %LINK-3-UPDOWN: Interface FastEthernet0/1, changed state to up
-  *Aug 18 19:50:56.847: %LINEPROTO-5-UPDOWN: Line protocol on Interface FastEthernet0/1, changed state to up
-  *Aug 18 19:50:56.850: %LINK-3-UPDOWN: Interface FastEthernet0/2, changed state to up
-  *Aug 18 19:50:56.850: %LINEPROTO-5-UPDOWN: Line protocol on Interface FastEthernet0/2, changed state to up
-  *Aug 18 19:50:56.852: %LINK-3-UPDOWN: Interface FastEthernet0/3, changed state to up
-  *Aug 18 19:50:56.852: %LINEPROTO-5-UPDOWN: Line protocol on Interface FastEthernet0/3, changed state to up
-  *Aug 18 19:50:56.856: %LINK-3-UPDOWN: Interface GigabitEthernet0/1, changed state to up
-  *Aug 18 19:50:56.856: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/1, changed state to up
-  *Aug 18 19:50:56.885: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug 23 10:16:39.932: %LINK-3-UPDOWN: Interface FastEthernet0/1, changed state to up
+  *Aug 23 10:16:39.933: %LINEPROTO-5-UPDOWN: Line protocol on Interface FastEthernet0/1, changed state to up
+  *Aug 23 10:16:39.936: %LINK-3-UPDOWN: Interface FastEthernet0/2, changed state to up
+  *Aug 23 10:16:39.936: %LINEPROTO-5-UPDOWN: Line protocol on Interface FastEthernet0/2, changed state to up
+  *Aug 23 10:16:39.938: %LINK-3-UPDOWN: Interface FastEthernet0/3, changed state to up
+  *Aug 23 10:16:39.938: %LINEPROTO-5-UPDOWN: Line protocol on Interface FastEthernet0/3, changed state to up
+  *Aug 23 10:16:39.942: %LINK-3-UPDOWN: Interface GigabitEthernet0/1, changed state to up
+  *Aug 23 10:16:39.942: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/1, changed state to up
+  *Aug 23 10:16:39.968: %SYS-5-CONFIG_I: Configured from console by console
 
 [12/366] sw1 SW1# show ip interface brief
   Interface              IP-Address      OK? Method Status                Protocol
@@ -1030,24 +1030,24 @@ Total steps: 366
   
   Log Buffer (16384 bytes):
   
-  *Aug 18 19:50:56.847: %LINK-3-UPDOWN: Interface FastEthernet0/1, changed state to up
-  *Aug 18 19:50:56.847: %LINEPROTO-5-UPDOWN: Line protocol on Interface FastEthernet0/1, changed state to up
-  *Aug 18 19:50:56.850: %LINK-3-UPDOWN: Interface FastEthernet0/2, changed state to up
-  *Aug 18 19:50:56.850: %LINEPROTO-5-UPDOWN: Line protocol on Interface FastEthernet0/2, changed state to up
-  *Aug 18 19:50:56.852: %LINK-3-UPDOWN: Interface FastEthernet0/3, changed state to up
-  *Aug 18 19:50:56.852: %LINEPROTO-5-UPDOWN: Line protocol on Interface FastEthernet0/3, changed state to up
-  *Aug 18 19:50:56.856: %LINK-3-UPDOWN: Interface GigabitEthernet0/1, changed state to up
-  *Aug 18 19:50:56.856: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/1, changed state to up
-  *Aug 18 19:50:56.885: %SYS-5-CONFIG_I: Configured from console by console
-  *Aug 18 19:50:56.993: %SYS-5-CONFIG_I: Configured from console by console
-  *Aug 18 19:50:57.038: %SYS-5-CONFIG_I: Configured from console by console
-  *Aug 18 19:50:57.046: %LINK-3-UPDOWN: Interface Vlanif1, changed state to up
-  *Aug 18 19:50:57.046: %LINEPROTO-5-UPDOWN: Line protocol on Interface Vlanif1, changed state to up
-  *Aug 18 19:50:57.052: %SYS-5-CONFIG_I: Configured from console by console
-  *Aug 18 19:50:57.066: %SYS-5-CONFIG_I: Configured from console by console
-  *Aug 18 19:50:57.096: %SYS-5-CONFIG_I: Configured from console by console
-  *Aug 18 19:50:57.110: %SYS-5-CONFIG_I: Configured from console by console
-  *Aug 18 19:50:57.116: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug 23 10:16:39.932: %LINK-3-UPDOWN: Interface FastEthernet0/1, changed state to up
+  *Aug 23 10:16:39.933: %LINEPROTO-5-UPDOWN: Line protocol on Interface FastEthernet0/1, changed state to up
+  *Aug 23 10:16:39.936: %LINK-3-UPDOWN: Interface FastEthernet0/2, changed state to up
+  *Aug 23 10:16:39.936: %LINEPROTO-5-UPDOWN: Line protocol on Interface FastEthernet0/2, changed state to up
+  *Aug 23 10:16:39.938: %LINK-3-UPDOWN: Interface FastEthernet0/3, changed state to up
+  *Aug 23 10:16:39.938: %LINEPROTO-5-UPDOWN: Line protocol on Interface FastEthernet0/3, changed state to up
+  *Aug 23 10:16:39.942: %LINK-3-UPDOWN: Interface GigabitEthernet0/1, changed state to up
+  *Aug 23 10:16:39.942: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/1, changed state to up
+  *Aug 23 10:16:39.968: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug 23 10:16:40.061: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug 23 10:16:40.104: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug 23 10:16:40.112: %LINK-3-UPDOWN: Interface Vlanif1, changed state to up
+  *Aug 23 10:16:40.112: %LINEPROTO-5-UPDOWN: Line protocol on Interface Vlanif1, changed state to up
+  *Aug 23 10:16:40.120: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug 23 10:16:40.133: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug 23 10:16:40.163: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug 23 10:16:40.173: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug 23 10:16:40.198: %SYS-5-CONFIG_I: Configured from console by console
 
 [184/366] sw1 SW1(config)# end
 <empty>
@@ -1091,14 +1091,14 @@ Total steps: 366
   Clock is unsynchronized, stratum 16, no reference clock
   nominal freq is 250.0000 Hz, actual freq is 250.0000 Hz, precision is 2**18
   ntp uptime is 0 (1/100 of seconds), resolution is 4001
-  reference time is EE2F3621.326E978D (19:50:57.197 UTC Tue Aug 18 2026)
+  reference time is EE354708.40C49BA5 (10:16:40.253 UTC Sun Aug 23 2026)
   clock offset is 0.0000 msec, root delay is 0.00 msec
   root dispersion is 16000.00 msec, peer dispersion is 16000.00 msec
   loopfilter state is 'FSET' (Drift set from file), drift is 0.000000000 s/s
   system poll interval is 64, never updated.
 
 [196/366] sw1 SW1(config)# do show clock
-  *19:50:57.000 UTC Tue Aug 18 2026
+  *10:16:40.000 UTC Sun Aug 23 2026
 
 [197/366] sw1 SW1(config)# end
 <empty>
@@ -1187,21 +1187,21 @@ Total steps: 366
 --- [214] § management reachability from hosts ---
 [214/366] l1 l1$ ping -c 2 192.168.1.254
   PING 192.168.1.254 (192.168.1.254) 56(84) bytes of data.
-  64 bytes from 192.168.1.254: icmp_seq=1 ttl=255 time=1.041 ms
-  64 bytes from 192.168.1.254: icmp_seq=2 ttl=255 time=0.314 ms
+  64 bytes from 192.168.1.254: icmp_seq=1 ttl=255 time=1.276 ms
+  64 bytes from 192.168.1.254: icmp_seq=2 ttl=255 time=0.368 ms
   
   --- 192.168.1.254 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.314/0.677/1.041/0.364 ms
+  rtt min/avg/max/mdev = 0.368/0.822/1.276/0.454 ms
 
 [215/366] srv1 srv1$ ping -c 2 192.168.1.254
   PING 192.168.1.254 (192.168.1.254) 56(84) bytes of data.
-  64 bytes from 192.168.1.254: icmp_seq=1 ttl=255 time=0.303 ms
-  64 bytes from 192.168.1.254: icmp_seq=2 ttl=255 time=0.416 ms
+  64 bytes from 192.168.1.254: icmp_seq=1 ttl=255 time=0.300 ms
+  64 bytes from 192.168.1.254: icmp_seq=2 ttl=255 time=0.309 ms
   
   --- 192.168.1.254 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.303/0.360/0.416/0.056 ms
+  rtt min/avg/max/mdev = 0.300/0.304/0.309/0.004 ms
 
 [216/366] l1 l1$ arp -a
   ? (192.168.1.13) at 02:00:00:00:00:57 [ether] on eth0
@@ -4497,19 +4497,19 @@ Total steps: 366
   
   Log Buffer (4096 bytes):
   
-  *Aug 18 19:50:56.854: %LINK-3-UPDOWN: Interface FastEthernet0/1, changed state to up
-  *Aug 18 19:50:56.854: %LINEPROTO-5-UPDOWN: Line protocol on Interface FastEthernet0/1, changed state to up
-  *Aug 18 19:50:56.854: %LINK-3-UPDOWN: Interface FastEthernet0/2, changed state to up
-  *Aug 18 19:50:56.855: %LINEPROTO-5-UPDOWN: Line protocol on Interface FastEthernet0/2, changed state to up
-  *Aug 18 19:50:56.856: %LINK-3-UPDOWN: Interface FastEthernet0/3, changed state to up
-  *Aug 18 19:50:56.856: %LINEPROTO-5-UPDOWN: Line protocol on Interface FastEthernet0/3, changed state to up
-  *Aug 18 19:50:56.865: %LINK-3-UPDOWN: Interface GigabitEthernet0/1, changed state to up
-  *Aug 18 19:50:56.865: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/1, changed state to up
-  *Aug 18 19:50:56.866: %SPANTREE-5-ROOTCHANGE: New root 02:00:00:00:00:01 (was 02:00:00:00:00:1b), root port GigabitEthernet0/1
-  *Aug 18 19:50:56.889: %SYS-5-CONFIG_I: Configured from console by console
-  *Aug 18 19:50:57.302: %LINK-3-UPDOWN: Interface Vlanif1, changed state to up
-  *Aug 18 19:50:57.302: %LINEPROTO-5-UPDOWN: Line protocol on Interface Vlanif1, changed state to up
-  *Aug 18 19:50:57.310: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug 23 10:16:39.939: %LINK-3-UPDOWN: Interface FastEthernet0/1, changed state to up
+  *Aug 23 10:16:39.939: %LINEPROTO-5-UPDOWN: Line protocol on Interface FastEthernet0/1, changed state to up
+  *Aug 23 10:16:39.940: %LINK-3-UPDOWN: Interface FastEthernet0/2, changed state to up
+  *Aug 23 10:16:39.940: %LINEPROTO-5-UPDOWN: Line protocol on Interface FastEthernet0/2, changed state to up
+  *Aug 23 10:16:39.941: %LINK-3-UPDOWN: Interface FastEthernet0/3, changed state to up
+  *Aug 23 10:16:39.941: %LINEPROTO-5-UPDOWN: Line protocol on Interface FastEthernet0/3, changed state to up
+  *Aug 23 10:16:39.944: %LINK-3-UPDOWN: Interface GigabitEthernet0/1, changed state to up
+  *Aug 23 10:16:39.944: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/1, changed state to up
+  *Aug 23 10:16:39.945: %SPANTREE-5-ROOTCHANGE: New root 02:00:00:00:00:01 (was 02:00:00:00:00:1b), root port GigabitEthernet0/1
+  *Aug 23 10:16:39.981: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug 23 10:16:40.339: %LINK-3-UPDOWN: Interface Vlanif1, changed state to up
+  *Aug 23 10:16:40.340: %LINEPROTO-5-UPDOWN: Line protocol on Interface Vlanif1, changed state to up
+  *Aug 23 10:16:40.347: %SYS-5-CONFIG_I: Configured from console by console
 
 [281/366] sw2 SW2# show ntp associations
     address         ref clock     st  when poll reach delay offset disp
@@ -4597,12 +4597,12 @@ Total steps: 366
 
 [283/366] l2 l2$ ping -c 2 192.168.1.253
   PING 192.168.1.253 (192.168.1.253) 56(84) bytes of data.
-  64 bytes from 192.168.1.253: icmp_seq=1 ttl=255 time=0.424 ms
-  64 bytes from 192.168.1.253: icmp_seq=2 ttl=255 time=0.273 ms
+  64 bytes from 192.168.1.253: icmp_seq=1 ttl=255 time=0.243 ms
+  64 bytes from 192.168.1.253: icmp_seq=2 ttl=255 time=0.277 ms
   
   --- 192.168.1.253 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.273/0.348/0.424/0.075 ms
+  rtt min/avg/max/mdev = 0.243/0.260/0.277/0.017 ms
 
 
 --- [284] § host service inspection (SRV1/SRV2) ---
@@ -4612,8 +4612,8 @@ Total steps: 366
   LISTEN     0       0        [::]:1521              [::]:*             users:(("tnslsnr",pid=2001,fd=3))
   LISTEN     0       0        0.0.0.0:22             0.0.0.0:*          users:(("sshd",pid=985,fd=3))
   LISTEN     0       0        [::]:22                [::]:*             users:(("sshd",pid=985,fd=3))
-  LISTEN     0       0        127.0.0.53:53          0.0.0.0:*         
-  LISTEN     0       0        0.0.0.0:1812           0.0.0.0:*         
+  LISTEN     0       0        127.0.0.53:53          0.0.0.0:*          users:(("systemd-resolved",pid=29,fd=3))
+  LISTEN     0       0        0.0.0.0:1812           0.0.0.0:*          users:(("freeradius",pid=40,fd=3))
 
 [286/366] srv1 srv1$ systemctl status sshd
   Unit sshd.service could not be found.
@@ -4621,7 +4621,7 @@ Total steps: 366
 [287/366] srv1 srv1$ systemctl status chronyd
   [0;1;32m●[0m chrony.service - chrony, an NTP client/server
        Loaded: loaded (/usr/lib/systemd/system/chrony.service; enabled; vendor preset: enabled)
-       Active: [0;1;32mactive (running)[0m since Tue, 18 Aug 2026 19:50:56 GMT
+       Active: [0;1;32mactive (running)[0m since Sun, 23 Aug 2026 10:16:39 GMT
      Main PID: 24 (chronyd)
         Tasks: 1
        Memory: 4.4M
@@ -4638,8 +4638,8 @@ Total steps: 366
   LISTEN     0       0        [::]:1521              [::]:*             users:(("tnslsnr",pid=2001,fd=3))
   LISTEN     0       0        0.0.0.0:22             0.0.0.0:*          users:(("sshd",pid=985,fd=3))
   LISTEN     0       0        [::]:22                [::]:*             users:(("sshd",pid=985,fd=3))
-  LISTEN     0       0        127.0.0.53:53          0.0.0.0:*         
-  LISTEN     0       0        0.0.0.0:1812           0.0.0.0:*         
+  LISTEN     0       0        127.0.0.53:53          0.0.0.0:*          users:(("systemd-resolved",pid=29,fd=3))
+  LISTEN     0       0        0.0.0.0:1812           0.0.0.0:*          users:(("freeradius",pid=40,fd=3))
 
 [290/366] srv2 srv2$ systemctl status sshd
   Unit sshd.service could not be found.
@@ -4647,7 +4647,7 @@ Total steps: 366
 [291/366] srv2 srv2$ systemctl status chronyd
   [0;1;32m●[0m chrony.service - chrony, an NTP client/server
        Loaded: loaded (/usr/lib/systemd/system/chrony.service; enabled; vendor preset: enabled)
-       Active: [0;1;32mactive (running)[0m since Tue, 18 Aug 2026 19:50:56 GMT
+       Active: [0;1;32mactive (running)[0m since Sun, 23 Aug 2026 10:16:39 GMT
      Main PID: 24 (chronyd)
         Tasks: 1
        Memory: 4.4M
@@ -5292,7 +5292,7 @@ Total steps: 366
        Received 0 broadcasts (0 multicasts)
        0 runts, 0 giants, 0 throttles
        0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
-       25 packets output, 1876 bytes, 0 underruns
+       26 packets output, 1940 bytes, 0 underruns
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
 
@@ -5313,7 +5313,7 @@ Total steps: 366
        Received 0 broadcasts (0 multicasts)
        0 runts, 0 giants, 0 throttles
        0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
-       23 packets output, 1694 bytes, 0 underruns
+       24 packets output, 1758 bytes, 0 underruns
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
 
@@ -5334,7 +5334,7 @@ Total steps: 366
        Received 0 broadcasts (0 multicasts)
        0 runts, 0 giants, 0 throttles
        0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
-       20 packets output, 1468 bytes, 0 underruns
+       21 packets output, 1532 bytes, 0 underruns
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
 

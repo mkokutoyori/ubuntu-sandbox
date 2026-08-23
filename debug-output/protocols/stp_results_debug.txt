@@ -87,14 +87,20 @@ Total steps: 300
                Address     0200.0000.000d
                Cost        0
                This bridge is the root
+               Hello Time   2 sec  Max Age 20 sec  Forward Delay 15 sec
   
-  Interface        Role  Sts  Cost      Prio.Nbr  Type
-  ---------------- ----  ---  --------  --------  ----
-  Fa0/1            Desg  FWD  19        128.1     P2p
-  Fa0/2            Desg  FWD  19        128.2     P2p
-  Fa0/3            Desg  FWD  19        128.3     P2p
-  Fa0/4            Desg  FWD  19        128.4     P2p
-  Fa0/5            Desg  FWD  19        128.5     P2p
+    Bridge ID  Priority    32769  (priority 32768 sys-id-ext 1)
+               Address     0200.0000.000d
+               Hello Time   2 sec  Max Age 20 sec  Forward Delay 15 sec
+               Aging Time  300 sec
+  
+  Interface           Role Sts Cost      Prio.Nbr Type
+  ------------------- ---- --- --------- -------- --------------------------------
+  Fa0/1               Desg FWD 19        128.1    P2p
+  Fa0/2               Desg FWD 19        128.2    P2p
+  Fa0/3               Desg FWD 19        128.3    P2p
+  Fa0/4               Desg FWD 19        128.4    P2p
+  Fa0/5               Desg FWD 19        128.5    P2p
 
 [23/300] swhq SW-HQ# show spanning-tree
   VLAN0001
@@ -103,14 +109,20 @@ Total steps: 300
                Address     0200.0000.000d
                Cost        0
                This bridge is the root
+               Hello Time   2 sec  Max Age 20 sec  Forward Delay 15 sec
   
-  Interface        Role  Sts  Cost      Prio.Nbr  Type
-  ---------------- ----  ---  --------  --------  ----
-  Fa0/1            Desg  FWD  19        128.1     P2p
-  Fa0/2            Desg  FWD  19        128.2     P2p
-  Fa0/3            Desg  FWD  19        128.3     P2p
-  Fa0/4            Desg  FWD  19        128.4     P2p
-  Fa0/5            Desg  FWD  19        128.5     P2p
+    Bridge ID  Priority    32769  (priority 32768 sys-id-ext 1)
+               Address     0200.0000.000d
+               Hello Time   2 sec  Max Age 20 sec  Forward Delay 15 sec
+               Aging Time  300 sec
+  
+  Interface           Role Sts Cost      Prio.Nbr Type
+  ------------------- ---- --- --------- -------- --------------------------------
+  Fa0/1               Desg FWD 19        128.1    P2p
+  Fa0/2               Desg FWD 19        128.2    P2p
+  Fa0/3               Desg FWD 19        128.3    P2p
+  Fa0/4               Desg FWD 19        128.4    P2p
+  Fa0/5               Desg FWD 19        128.5    P2p
 
 [24/300] swhq SW-HQ# show spanning-tree summary
   Switch is in pvst mode
@@ -147,14 +159,20 @@ Total steps: 300
                Address     0200.0000.000d
                Cost        0
                This bridge is the root
+               Hello Time   2 sec  Max Age 20 sec  Forward Delay 15 sec
   
-  Interface        Role  Sts  Cost      Prio.Nbr  Type
-  ---------------- ----  ---  --------  --------  ----
-  Fa0/1            Desg  FWD  19        128.1     P2p
-  Fa0/2            Desg  FWD  19        128.2     P2p
-  Fa0/3            Desg  FWD  19        128.3     P2p
-  Fa0/4            Desg  FWD  19        128.4     P2p
-  Fa0/5            Desg  FWD  19        128.5     P2p
+    Bridge ID  Priority    32769  (priority 32768 sys-id-ext 1)
+               Address     0200.0000.000d
+               Hello Time   2 sec  Max Age 20 sec  Forward Delay 15 sec
+               Aging Time  300 sec
+  
+  Interface           Role Sts Cost      Prio.Nbr Type
+  ------------------- ---- --- --------- -------- --------------------------------
+  Fa0/1               Desg FWD 19        128.1    P2p
+  Fa0/2               Desg FWD 19        128.2    P2p
+  Fa0/3               Desg FWD 19        128.3    P2p
+  Fa0/4               Desg FWD 19        128.4    P2p
+  Fa0/5               Desg FWD 19        128.5    P2p
 
 [28/300] dsw1 DSW-HQ-1# show spanning-tree
   VLAN0001
@@ -162,12 +180,18 @@ Total steps: 300
     Root ID    Priority    32769
                Address     0200.0000.000d
                Cost        19
-               Port        Fa0/1
+               Port        1 (FastEthernet0/1)
+               Hello Time   2 sec  Max Age 20 sec  Forward Delay 15 sec
   
-  Interface        Role  Sts  Cost      Prio.Nbr  Type
-  ---------------- ----  ---  --------  --------  ----
-  Fa0/1            Root  FWD  19        128.1     P2p
-  Fa0/2            Desg  FWD  19        128.2     P2p
+    Bridge ID  Priority    32769  (priority 32768 sys-id-ext 1)
+               Address     0200.0000.005f
+               Hello Time   2 sec  Max Age 20 sec  Forward Delay 15 sec
+               Aging Time  300 sec
+  
+  Interface           Role Sts Cost      Prio.Nbr Type
+  ------------------- ---- --- --------- -------- --------------------------------
+  Fa0/1               Root FWD 19        128.1    P2p
+  Fa0/2               Desg FWD 19        128.2    P2p
 
 [29/300] dsw1 DSW-HQ-1# show spanning-tree summary
   Switch is in pvst mode
@@ -203,12 +227,18 @@ Total steps: 300
     Root ID    Priority    32769
                Address     0200.0000.000d
                Cost        19
-               Port        Fa0/1
+               Port        1 (FastEthernet0/1)
+               Hello Time   2 sec  Max Age 20 sec  Forward Delay 15 sec
   
-  Interface        Role  Sts  Cost      Prio.Nbr  Type
-  ---------------- ----  ---  --------  --------  ----
-  Fa0/1            Root  FWD  19        128.1     P2p
-  Fa0/2            Desg  FWD  19        128.2     P2p
+    Bridge ID  Priority    32769  (priority 32768 sys-id-ext 1)
+               Address     0200.0000.005f
+               Hello Time   2 sec  Max Age 20 sec  Forward Delay 15 sec
+               Aging Time  300 sec
+  
+  Interface           Role Sts Cost      Prio.Nbr Type
+  ------------------- ---- --- --------- -------- --------------------------------
+  Fa0/1               Root FWD 19        128.1    P2p
+  Fa0/2               Desg FWD 19        128.2    P2p
 
 [33/300] dsw2 DSW-HQ-2# show spanning-tree
   VLAN0001
@@ -216,12 +246,18 @@ Total steps: 300
     Root ID    Priority    32769
                Address     0200.0000.000d
                Cost        19
-               Port        Fa0/1
+               Port        1 (FastEthernet0/1)
+               Hello Time   2 sec  Max Age 20 sec  Forward Delay 15 sec
   
-  Interface        Role  Sts  Cost      Prio.Nbr  Type
-  ---------------- ----  ---  --------  --------  ----
-  Fa0/1            Root  FWD  19        128.1     P2p
-  Fa0/2            Altn  BLK  19        128.2     P2p
+    Bridge ID  Priority    32769  (priority 32768 sys-id-ext 1)
+               Address     0200.0000.0079
+               Hello Time   2 sec  Max Age 20 sec  Forward Delay 15 sec
+               Aging Time  300 sec
+  
+  Interface           Role Sts Cost      Prio.Nbr Type
+  ------------------- ---- --- --------- -------- --------------------------------
+  Fa0/1               Root FWD 19        128.1    P2p
+  Fa0/2               Altn BLK 19        128.2    P2p
 
 [34/300] dsw2 DSW-HQ-2# show spanning-tree summary
   Switch is in pvst mode
@@ -257,41 +293,47 @@ Total steps: 300
     Root ID    Priority    32769
                Address     0200.0000.000d
                Cost        19
-               Port        Fa0/1
+               Port        1 (FastEthernet0/1)
+               Hello Time   2 sec  Max Age 20 sec  Forward Delay 15 sec
   
-  Interface        Role  Sts  Cost      Prio.Nbr  Type
-  ---------------- ----  ---  --------  --------  ----
-  Fa0/1            Root  FWD  19        128.1     P2p
-  Fa0/2            Altn  BLK  19        128.2     P2p
+    Bridge ID  Priority    32769  (priority 32768 sys-id-ext 1)
+               Address     0200.0000.0079
+               Hello Time   2 sec  Max Age 20 sec  Forward Delay 15 sec
+               Aging Time  300 sec
+  
+  Interface           Role Sts Cost      Prio.Nbr Type
+  ------------------- ---- --- --------- -------- --------------------------------
+  Fa0/1               Root FWD 19        128.1    P2p
+  Fa0/2               Altn BLK 19        128.2    P2p
 
 
 --- [38] § STP — état initial (Huawei) ---
 [38/300] swbr <SW-BR> display stp brief
    MSTID  Port                        Role  STP State     Protection
-       0  GigabitEthernet0/0/0        DISA  LISTENING     NONE
+       0  GigabitEthernet0/0/0        DISA  DISCARDING    NONE
        0  GigabitEthernet0/0/1        DESI  FORWARDING    NONE
        0  GigabitEthernet0/0/2        DESI  FORWARDING    NONE
        0  GigabitEthernet0/0/3        DESI  FORWARDING    NONE
        0  GigabitEthernet0/0/4        DESI  FORWARDING    NONE
        0  GigabitEthernet0/0/5        DESI  FORWARDING    NONE
-       0  GigabitEthernet0/0/6        DISA  LISTENING     NONE
-       0  GigabitEthernet0/0/7        DISA  LISTENING     NONE
-       0  GigabitEthernet0/0/8        DISA  LISTENING     NONE
-       0  GigabitEthernet0/0/9        DISA  LISTENING     NONE
-       0  GigabitEthernet0/0/10       DISA  LISTENING     NONE
-       0  GigabitEthernet0/0/11       DISA  LISTENING     NONE
-       0  GigabitEthernet0/0/12       DISA  LISTENING     NONE
-       0  GigabitEthernet0/0/13       DISA  LISTENING     NONE
-       0  GigabitEthernet0/0/14       DISA  LISTENING     NONE
-       0  GigabitEthernet0/0/15       DISA  LISTENING     NONE
-       0  GigabitEthernet0/0/16       DISA  LISTENING     NONE
-       0  GigabitEthernet0/0/17       DISA  LISTENING     NONE
-       0  GigabitEthernet0/0/18       DISA  LISTENING     NONE
-       0  GigabitEthernet0/0/19       DISA  LISTENING     NONE
-       0  GigabitEthernet0/0/20       DISA  LISTENING     NONE
-       0  GigabitEthernet0/0/21       DISA  LISTENING     NONE
-       0  GigabitEthernet0/0/22       DISA  LISTENING     NONE
-       0  GigabitEthernet0/0/23       DISA  LISTENING     NONE
+       0  GigabitEthernet0/0/6        DISA  DISCARDING    NONE
+       0  GigabitEthernet0/0/7        DISA  DISCARDING    NONE
+       0  GigabitEthernet0/0/8        DISA  DISCARDING    NONE
+       0  GigabitEthernet0/0/9        DISA  DISCARDING    NONE
+       0  GigabitEthernet0/0/10       DISA  DISCARDING    NONE
+       0  GigabitEthernet0/0/11       DISA  DISCARDING    NONE
+       0  GigabitEthernet0/0/12       DISA  DISCARDING    NONE
+       0  GigabitEthernet0/0/13       DISA  DISCARDING    NONE
+       0  GigabitEthernet0/0/14       DISA  DISCARDING    NONE
+       0  GigabitEthernet0/0/15       DISA  DISCARDING    NONE
+       0  GigabitEthernet0/0/16       DISA  DISCARDING    NONE
+       0  GigabitEthernet0/0/17       DISA  DISCARDING    NONE
+       0  GigabitEthernet0/0/18       DISA  DISCARDING    NONE
+       0  GigabitEthernet0/0/19       DISA  DISCARDING    NONE
+       0  GigabitEthernet0/0/20       DISA  DISCARDING    NONE
+       0  GigabitEthernet0/0/21       DISA  DISCARDING    NONE
+       0  GigabitEthernet0/0/22       DISA  DISCARDING    NONE
+       0  GigabitEthernet0/0/23       DISA  DISCARDING    NONE
 
 [39/300] swbr <SW-BR> display stp
   -------[CIST Global Info][Mode MSTP]-------
@@ -307,30 +349,30 @@ Total steps: 300
 
 [40/300] swbr <SW-BR> display stp brief
    MSTID  Port                        Role  STP State     Protection
-       0  GigabitEthernet0/0/0        DISA  LISTENING     NONE
+       0  GigabitEthernet0/0/0        DISA  DISCARDING    NONE
        0  GigabitEthernet0/0/1        DESI  FORWARDING    NONE
        0  GigabitEthernet0/0/2        DESI  FORWARDING    NONE
        0  GigabitEthernet0/0/3        DESI  FORWARDING    NONE
        0  GigabitEthernet0/0/4        DESI  FORWARDING    NONE
        0  GigabitEthernet0/0/5        DESI  FORWARDING    NONE
-       0  GigabitEthernet0/0/6        DISA  LISTENING     NONE
-       0  GigabitEthernet0/0/7        DISA  LISTENING     NONE
-       0  GigabitEthernet0/0/8        DISA  LISTENING     NONE
-       0  GigabitEthernet0/0/9        DISA  LISTENING     NONE
-       0  GigabitEthernet0/0/10       DISA  LISTENING     NONE
-       0  GigabitEthernet0/0/11       DISA  LISTENING     NONE
-       0  GigabitEthernet0/0/12       DISA  LISTENING     NONE
-       0  GigabitEthernet0/0/13       DISA  LISTENING     NONE
-       0  GigabitEthernet0/0/14       DISA  LISTENING     NONE
-       0  GigabitEthernet0/0/15       DISA  LISTENING     NONE
-       0  GigabitEthernet0/0/16       DISA  LISTENING     NONE
-       0  GigabitEthernet0/0/17       DISA  LISTENING     NONE
-       0  GigabitEthernet0/0/18       DISA  LISTENING     NONE
-       0  GigabitEthernet0/0/19       DISA  LISTENING     NONE
-       0  GigabitEthernet0/0/20       DISA  LISTENING     NONE
-       0  GigabitEthernet0/0/21       DISA  LISTENING     NONE
-       0  GigabitEthernet0/0/22       DISA  LISTENING     NONE
-       0  GigabitEthernet0/0/23       DISA  LISTENING     NONE
+       0  GigabitEthernet0/0/6        DISA  DISCARDING    NONE
+       0  GigabitEthernet0/0/7        DISA  DISCARDING    NONE
+       0  GigabitEthernet0/0/8        DISA  DISCARDING    NONE
+       0  GigabitEthernet0/0/9        DISA  DISCARDING    NONE
+       0  GigabitEthernet0/0/10       DISA  DISCARDING    NONE
+       0  GigabitEthernet0/0/11       DISA  DISCARDING    NONE
+       0  GigabitEthernet0/0/12       DISA  DISCARDING    NONE
+       0  GigabitEthernet0/0/13       DISA  DISCARDING    NONE
+       0  GigabitEthernet0/0/14       DISA  DISCARDING    NONE
+       0  GigabitEthernet0/0/15       DISA  DISCARDING    NONE
+       0  GigabitEthernet0/0/16       DISA  DISCARDING    NONE
+       0  GigabitEthernet0/0/17       DISA  DISCARDING    NONE
+       0  GigabitEthernet0/0/18       DISA  DISCARDING    NONE
+       0  GigabitEthernet0/0/19       DISA  DISCARDING    NONE
+       0  GigabitEthernet0/0/20       DISA  DISCARDING    NONE
+       0  GigabitEthernet0/0/21       DISA  DISCARDING    NONE
+       0  GigabitEthernet0/0/22       DISA  DISCARDING    NONE
+       0  GigabitEthernet0/0/23       DISA  DISCARDING    NONE
 
 [41/300] swbr <SW-BR> display stp global
   -------[CIST Global Info][Mode MSTP]-------
@@ -349,7 +391,7 @@ Total steps: 300
   CIST Bridge         :32768.DSW-BR
   Config Times        :Hello 2s MaxAge 20s FwDly 15s MaxHop 20
   Active Times        :Hello 2s MaxAge 20s FwDly 15s MaxHop 20
-  CIST Root/ERPC      :32768.0200-0000-0027 / 4
+  CIST Root/ERPC      :32768.0200-0000-0027 / 20000
   CIST RegRoot/IRPC   :32768.0200-0000-0027 / 0
   CIST RootPortId     :2.2
   BPDU-Protection     :Disabled
@@ -358,37 +400,37 @@ Total steps: 300
 
 [43/300] dswbr <DSW-BR> display stp brief
    MSTID  Port                        Role  STP State     Protection
-       0  GigabitEthernet0/0/0        DISA  LISTENING     NONE
+       0  GigabitEthernet0/0/0        DISA  DISCARDING    NONE
        0  GigabitEthernet0/0/1        ROOT  FORWARDING    NONE
        0  GigabitEthernet0/0/2        ALTE  DISCARDING    NONE
-       0  GigabitEthernet0/0/3        DISA  LISTENING     NONE
-       0  GigabitEthernet0/0/4        DISA  LISTENING     NONE
-       0  GigabitEthernet0/0/5        DISA  LISTENING     NONE
-       0  GigabitEthernet0/0/6        DISA  LISTENING     NONE
-       0  GigabitEthernet0/0/7        DISA  LISTENING     NONE
-       0  GigabitEthernet0/0/8        DISA  LISTENING     NONE
-       0  GigabitEthernet0/0/9        DISA  LISTENING     NONE
-       0  GigabitEthernet0/0/10       DISA  LISTENING     NONE
-       0  GigabitEthernet0/0/11       DISA  LISTENING     NONE
-       0  GigabitEthernet0/0/12       DISA  LISTENING     NONE
-       0  GigabitEthernet0/0/13       DISA  LISTENING     NONE
-       0  GigabitEthernet0/0/14       DISA  LISTENING     NONE
-       0  GigabitEthernet0/0/15       DISA  LISTENING     NONE
-       0  GigabitEthernet0/0/16       DISA  LISTENING     NONE
-       0  GigabitEthernet0/0/17       DISA  LISTENING     NONE
-       0  GigabitEthernet0/0/18       DISA  LISTENING     NONE
-       0  GigabitEthernet0/0/19       DISA  LISTENING     NONE
-       0  GigabitEthernet0/0/20       DISA  LISTENING     NONE
-       0  GigabitEthernet0/0/21       DISA  LISTENING     NONE
-       0  GigabitEthernet0/0/22       DISA  LISTENING     NONE
-       0  GigabitEthernet0/0/23       DISA  LISTENING     NONE
+       0  GigabitEthernet0/0/3        DISA  DISCARDING    NONE
+       0  GigabitEthernet0/0/4        DISA  DISCARDING    NONE
+       0  GigabitEthernet0/0/5        DISA  DISCARDING    NONE
+       0  GigabitEthernet0/0/6        DISA  DISCARDING    NONE
+       0  GigabitEthernet0/0/7        DISA  DISCARDING    NONE
+       0  GigabitEthernet0/0/8        DISA  DISCARDING    NONE
+       0  GigabitEthernet0/0/9        DISA  DISCARDING    NONE
+       0  GigabitEthernet0/0/10       DISA  DISCARDING    NONE
+       0  GigabitEthernet0/0/11       DISA  DISCARDING    NONE
+       0  GigabitEthernet0/0/12       DISA  DISCARDING    NONE
+       0  GigabitEthernet0/0/13       DISA  DISCARDING    NONE
+       0  GigabitEthernet0/0/14       DISA  DISCARDING    NONE
+       0  GigabitEthernet0/0/15       DISA  DISCARDING    NONE
+       0  GigabitEthernet0/0/16       DISA  DISCARDING    NONE
+       0  GigabitEthernet0/0/17       DISA  DISCARDING    NONE
+       0  GigabitEthernet0/0/18       DISA  DISCARDING    NONE
+       0  GigabitEthernet0/0/19       DISA  DISCARDING    NONE
+       0  GigabitEthernet0/0/20       DISA  DISCARDING    NONE
+       0  GigabitEthernet0/0/21       DISA  DISCARDING    NONE
+       0  GigabitEthernet0/0/22       DISA  DISCARDING    NONE
+       0  GigabitEthernet0/0/23       DISA  DISCARDING    NONE
 
 [44/300] dswbr <DSW-BR> display stp global
   -------[CIST Global Info][Mode MSTP]-------
   CIST Bridge         :32768.DSW-BR
   Config Times        :Hello 2s MaxAge 20s FwDly 15s MaxHop 20
   Active Times        :Hello 2s MaxAge 20s FwDly 15s MaxHop 20
-  CIST Root/ERPC      :32768.0200-0000-0027 / 4
+  CIST Root/ERPC      :32768.0200-0000-0027 / 20000
   CIST RegRoot/IRPC   :32768.0200-0000-0027 / 0
   CIST RootPortId     :2.2
   BPDU-Protection     :Disabled
@@ -774,15 +816,21 @@ Total steps: 300
     Root ID    Priority    4097
                Address     0200.0000.005f
                Cost        19
-               Port        Fa0/4
+               Port        4 (FastEthernet0/4)
+               Hello Time   2 sec  Max Age 20 sec  Forward Delay 15 sec
   
-  Interface        Role  Sts  Cost      Prio.Nbr  Type
-  ---------------- ----  ---  --------  --------  ----
-  Fa0/1            Desg  FWD  19        128.1     P2p
-  Fa0/2            Desg  FWD  19        128.2     P2p
-  Fa0/3            Desg  FWD  19        128.3     P2p
-  Fa0/4            Root  FWD  19        128.4     P2p
-  Fa0/5            Desg  FWD  19        128.5     P2p
+    Bridge ID  Priority    8193  (priority 8192 sys-id-ext 1)
+               Address     0200.0000.000d
+               Hello Time   2 sec  Max Age 20 sec  Forward Delay 15 sec
+               Aging Time  300 sec
+  
+  Interface           Role Sts Cost      Prio.Nbr Type
+  ------------------- ---- --- --------- -------- --------------------------------
+  Fa0/1               Desg FWD 19        128.1    P2p
+  Fa0/2               Desg FWD 19        128.2    P2p
+  Fa0/3               Desg FWD 19        128.3    P2p
+  Fa0/4               Root FWD 19        128.4    P2p
+  Fa0/5               Desg FWD 19        128.5    P2p
 
 [74/300] dsw2 DSW-HQ-2# show spanning-tree blockedports
   Name                 Blocked Interfaces List
@@ -797,7 +845,7 @@ Total steps: 300
   Enter configuration commands, one per line.  End with CNTL/Z.
 
 [76/300] dsw1 DSW-HQ-1(config)# spanning-tree vlan 1 root primary
-<empty>
+  *08:00:00: STP: VLAN0001 Fa0/2 -> blocking
 
 [77/300] dsw1 DSW-HQ-1(config)# end
 <empty>
@@ -815,13 +863,13 @@ Total steps: 300
                                           Root    Hello Max Fwd
   Vlan             Root ID              Cost    Port    Time  Age Dly
   ---------------- -------------------- ------- ------- ----- --- ---
-  VLAN0001         24577 0200.0000.005f  0               2     20  15
+  VLAN0001         4097 0200.0000.005f  57      Fa0/1   2     20  15
 
 [82/300] swhq SW-HQ# show spanning-tree root
                                           Root    Hello Max Fwd
   Vlan             Root ID              Cost    Port    Time  Age Dly
   ---------------- -------------------- ------- ------- ----- --- ---
-  VLAN0001         24577 0200.0000.005f  19      Fa0/4   2     20  15
+  VLAN0001         4097 0200.0000.005f  38      Fa0/5   2     20  15
 
 
 --- [83] § STP — élection de la racine BR (Huawei priority) ---
@@ -845,64 +893,64 @@ Total steps: 300
 
 [89/300] swbr <SW-BR> display stp brief
    MSTID  Port                        Role  STP State     Protection
-       0  GigabitEthernet0/0/0        DISA  LISTENING     NONE
+       0  GigabitEthernet0/0/0        DISA  DISCARDING    NONE
        0  GigabitEthernet0/0/1        DESI  FORWARDING    NONE
        0  GigabitEthernet0/0/2        DESI  FORWARDING    NONE
        0  GigabitEthernet0/0/3        DESI  FORWARDING    NONE
        0  GigabitEthernet0/0/4        DESI  FORWARDING    NONE
        0  GigabitEthernet0/0/5        DESI  FORWARDING    NONE
-       0  GigabitEthernet0/0/6        DISA  LISTENING     NONE
-       0  GigabitEthernet0/0/7        DISA  LISTENING     NONE
-       0  GigabitEthernet0/0/8        DISA  LISTENING     NONE
-       0  GigabitEthernet0/0/9        DISA  LISTENING     NONE
-       0  GigabitEthernet0/0/10       DISA  LISTENING     NONE
-       0  GigabitEthernet0/0/11       DISA  LISTENING     NONE
-       0  GigabitEthernet0/0/12       DISA  LISTENING     NONE
-       0  GigabitEthernet0/0/13       DISA  LISTENING     NONE
-       0  GigabitEthernet0/0/14       DISA  LISTENING     NONE
-       0  GigabitEthernet0/0/15       DISA  LISTENING     NONE
-       0  GigabitEthernet0/0/16       DISA  LISTENING     NONE
-       0  GigabitEthernet0/0/17       DISA  LISTENING     NONE
-       0  GigabitEthernet0/0/18       DISA  LISTENING     NONE
-       0  GigabitEthernet0/0/19       DISA  LISTENING     NONE
-       0  GigabitEthernet0/0/20       DISA  LISTENING     NONE
-       0  GigabitEthernet0/0/21       DISA  LISTENING     NONE
-       0  GigabitEthernet0/0/22       DISA  LISTENING     NONE
-       0  GigabitEthernet0/0/23       DISA  LISTENING     NONE
+       0  GigabitEthernet0/0/6        DISA  DISCARDING    NONE
+       0  GigabitEthernet0/0/7        DISA  DISCARDING    NONE
+       0  GigabitEthernet0/0/8        DISA  DISCARDING    NONE
+       0  GigabitEthernet0/0/9        DISA  DISCARDING    NONE
+       0  GigabitEthernet0/0/10       DISA  DISCARDING    NONE
+       0  GigabitEthernet0/0/11       DISA  DISCARDING    NONE
+       0  GigabitEthernet0/0/12       DISA  DISCARDING    NONE
+       0  GigabitEthernet0/0/13       DISA  DISCARDING    NONE
+       0  GigabitEthernet0/0/14       DISA  DISCARDING    NONE
+       0  GigabitEthernet0/0/15       DISA  DISCARDING    NONE
+       0  GigabitEthernet0/0/16       DISA  DISCARDING    NONE
+       0  GigabitEthernet0/0/17       DISA  DISCARDING    NONE
+       0  GigabitEthernet0/0/18       DISA  DISCARDING    NONE
+       0  GigabitEthernet0/0/19       DISA  DISCARDING    NONE
+       0  GigabitEthernet0/0/20       DISA  DISCARDING    NONE
+       0  GigabitEthernet0/0/21       DISA  DISCARDING    NONE
+       0  GigabitEthernet0/0/22       DISA  DISCARDING    NONE
+       0  GigabitEthernet0/0/23       DISA  DISCARDING    NONE
 
 [90/300] dswbr <DSW-BR> display stp brief
    MSTID  Port                        Role  STP State     Protection
-       0  GigabitEthernet0/0/0        DISA  LISTENING     NONE
+       0  GigabitEthernet0/0/0        DISA  DISCARDING    NONE
        0  GigabitEthernet0/0/1        ROOT  FORWARDING    NONE
        0  GigabitEthernet0/0/2        ALTE  DISCARDING    NONE
-       0  GigabitEthernet0/0/3        DISA  LISTENING     NONE
-       0  GigabitEthernet0/0/4        DISA  LISTENING     NONE
-       0  GigabitEthernet0/0/5        DISA  LISTENING     NONE
-       0  GigabitEthernet0/0/6        DISA  LISTENING     NONE
-       0  GigabitEthernet0/0/7        DISA  LISTENING     NONE
-       0  GigabitEthernet0/0/8        DISA  LISTENING     NONE
-       0  GigabitEthernet0/0/9        DISA  LISTENING     NONE
-       0  GigabitEthernet0/0/10       DISA  LISTENING     NONE
-       0  GigabitEthernet0/0/11       DISA  LISTENING     NONE
-       0  GigabitEthernet0/0/12       DISA  LISTENING     NONE
-       0  GigabitEthernet0/0/13       DISA  LISTENING     NONE
-       0  GigabitEthernet0/0/14       DISA  LISTENING     NONE
-       0  GigabitEthernet0/0/15       DISA  LISTENING     NONE
-       0  GigabitEthernet0/0/16       DISA  LISTENING     NONE
-       0  GigabitEthernet0/0/17       DISA  LISTENING     NONE
-       0  GigabitEthernet0/0/18       DISA  LISTENING     NONE
-       0  GigabitEthernet0/0/19       DISA  LISTENING     NONE
-       0  GigabitEthernet0/0/20       DISA  LISTENING     NONE
-       0  GigabitEthernet0/0/21       DISA  LISTENING     NONE
-       0  GigabitEthernet0/0/22       DISA  LISTENING     NONE
-       0  GigabitEthernet0/0/23       DISA  LISTENING     NONE
+       0  GigabitEthernet0/0/3        DISA  DISCARDING    NONE
+       0  GigabitEthernet0/0/4        DISA  DISCARDING    NONE
+       0  GigabitEthernet0/0/5        DISA  DISCARDING    NONE
+       0  GigabitEthernet0/0/6        DISA  DISCARDING    NONE
+       0  GigabitEthernet0/0/7        DISA  DISCARDING    NONE
+       0  GigabitEthernet0/0/8        DISA  DISCARDING    NONE
+       0  GigabitEthernet0/0/9        DISA  DISCARDING    NONE
+       0  GigabitEthernet0/0/10       DISA  DISCARDING    NONE
+       0  GigabitEthernet0/0/11       DISA  DISCARDING    NONE
+       0  GigabitEthernet0/0/12       DISA  DISCARDING    NONE
+       0  GigabitEthernet0/0/13       DISA  DISCARDING    NONE
+       0  GigabitEthernet0/0/14       DISA  DISCARDING    NONE
+       0  GigabitEthernet0/0/15       DISA  DISCARDING    NONE
+       0  GigabitEthernet0/0/16       DISA  DISCARDING    NONE
+       0  GigabitEthernet0/0/17       DISA  DISCARDING    NONE
+       0  GigabitEthernet0/0/18       DISA  DISCARDING    NONE
+       0  GigabitEthernet0/0/19       DISA  DISCARDING    NONE
+       0  GigabitEthernet0/0/20       DISA  DISCARDING    NONE
+       0  GigabitEthernet0/0/21       DISA  DISCARDING    NONE
+       0  GigabitEthernet0/0/22       DISA  DISCARDING    NONE
+       0  GigabitEthernet0/0/23       DISA  DISCARDING    NONE
 
 [91/300] dswbr <DSW-BR> display stp
   -------[CIST Global Info][Mode MSTP]-------
   CIST Bridge         :32768.DSW-BR
   Config Times        :Hello 2s MaxAge 20s FwDly 15s MaxHop 20
   Active Times        :Hello 2s MaxAge 20s FwDly 15s MaxHop 20
-  CIST Root/ERPC      :4096.0200-0000-0027 / 4
+  CIST Root/ERPC      :4096.0200-0000-0027 / 20000
   CIST RegRoot/IRPC   :4096.0200-0000-0027 / 0
   CIST RootPortId     :2.2
   BPDU-Protection     :Disabled
@@ -920,30 +968,30 @@ Total steps: 300
 
 [95/300] swbr <SW-BR> display stp brief
    MSTID  Port                        Role  STP State     Protection
-       0  GigabitEthernet0/0/0        DISA  LISTENING     NONE
+       0  GigabitEthernet0/0/0        DISA  DISCARDING    NONE
        0  GigabitEthernet0/0/1        DESI  FORWARDING    NONE
        0  GigabitEthernet0/0/2        DESI  FORWARDING    NONE
        0  GigabitEthernet0/0/3        DESI  FORWARDING    NONE
        0  GigabitEthernet0/0/4        DESI  FORWARDING    NONE
        0  GigabitEthernet0/0/5        DESI  FORWARDING    NONE
-       0  GigabitEthernet0/0/6        DISA  LISTENING     NONE
-       0  GigabitEthernet0/0/7        DISA  LISTENING     NONE
-       0  GigabitEthernet0/0/8        DISA  LISTENING     NONE
-       0  GigabitEthernet0/0/9        DISA  LISTENING     NONE
-       0  GigabitEthernet0/0/10       DISA  LISTENING     NONE
-       0  GigabitEthernet0/0/11       DISA  LISTENING     NONE
-       0  GigabitEthernet0/0/12       DISA  LISTENING     NONE
-       0  GigabitEthernet0/0/13       DISA  LISTENING     NONE
-       0  GigabitEthernet0/0/14       DISA  LISTENING     NONE
-       0  GigabitEthernet0/0/15       DISA  LISTENING     NONE
-       0  GigabitEthernet0/0/16       DISA  LISTENING     NONE
-       0  GigabitEthernet0/0/17       DISA  LISTENING     NONE
-       0  GigabitEthernet0/0/18       DISA  LISTENING     NONE
-       0  GigabitEthernet0/0/19       DISA  LISTENING     NONE
-       0  GigabitEthernet0/0/20       DISA  LISTENING     NONE
-       0  GigabitEthernet0/0/21       DISA  LISTENING     NONE
-       0  GigabitEthernet0/0/22       DISA  LISTENING     NONE
-       0  GigabitEthernet0/0/23       DISA  LISTENING     NONE
+       0  GigabitEthernet0/0/6        DISA  DISCARDING    NONE
+       0  GigabitEthernet0/0/7        DISA  DISCARDING    NONE
+       0  GigabitEthernet0/0/8        DISA  DISCARDING    NONE
+       0  GigabitEthernet0/0/9        DISA  DISCARDING    NONE
+       0  GigabitEthernet0/0/10       DISA  DISCARDING    NONE
+       0  GigabitEthernet0/0/11       DISA  DISCARDING    NONE
+       0  GigabitEthernet0/0/12       DISA  DISCARDING    NONE
+       0  GigabitEthernet0/0/13       DISA  DISCARDING    NONE
+       0  GigabitEthernet0/0/14       DISA  DISCARDING    NONE
+       0  GigabitEthernet0/0/15       DISA  DISCARDING    NONE
+       0  GigabitEthernet0/0/16       DISA  DISCARDING    NONE
+       0  GigabitEthernet0/0/17       DISA  DISCARDING    NONE
+       0  GigabitEthernet0/0/18       DISA  DISCARDING    NONE
+       0  GigabitEthernet0/0/19       DISA  DISCARDING    NONE
+       0  GigabitEthernet0/0/20       DISA  DISCARDING    NONE
+       0  GigabitEthernet0/0/21       DISA  DISCARDING    NONE
+       0  GigabitEthernet0/0/22       DISA  DISCARDING    NONE
+       0  GigabitEthernet0/0/23       DISA  DISCARDING    NONE
 
 
 --- [96] § STP — coût & priorité de port (Cisco) ---
@@ -972,15 +1020,21 @@ Total steps: 300
 [103/300] dsw2 DSW-HQ-2# show spanning-tree
   VLAN0001
     Spanning tree enabled protocol ieee
-    Root ID    Priority    24577
+    Root ID    Priority    4097
                Address     0200.0000.005f
                Cost        19
-               Port        Fa0/2
+               Port        2 (FastEthernet0/2)
+               Hello Time   2 sec  Max Age 20 sec  Forward Delay 15 sec
   
-  Interface        Role  Sts  Cost      Prio.Nbr  Type
-  ---------------- ----  ---  --------  --------  ----
-  Fa0/1            Altn  BLK  19        128.1     P2p
-  Fa0/2            Root  LIS  19        128.2     P2p
+    Bridge ID  Priority    32769  (priority 32768 sys-id-ext 1)
+               Address     0200.0000.0079
+               Hello Time   2 sec  Max Age 20 sec  Forward Delay 15 sec
+               Aging Time  300 sec
+  
+  Interface           Role Sts Cost      Prio.Nbr Type
+  ------------------- ---- --- --------- -------- --------------------------------
+  Fa0/1               Desg LIS 19        128.1    P2p
+  Fa0/2               Root LIS 19        128.2    P2p
 
 
 --- [104] § STP — coût & priorité de port (Huawei) ---
@@ -1111,30 +1165,30 @@ Total steps: 300
 
 [129/300] swbr <SW-BR> display stp brief
    MSTID  Port                        Role  STP State     Protection
-       0  GigabitEthernet0/0/0        DISA  LISTENING     NONE
+       0  GigabitEthernet0/0/0        DISA  DISCARDING    NONE
        0  GigabitEthernet0/0/1        DESI  FORWARDING    NONE
        0  GigabitEthernet0/0/2        DESI  FORWARDING    NONE
        0  GigabitEthernet0/0/3        DESI  FORWARDING    NONE
-       0  GigabitEthernet0/0/4        DESI  FORWARDING    NONE
-       0  GigabitEthernet0/0/5        DESI  FORWARDING    NONE
-       0  GigabitEthernet0/0/6        DISA  LISTENING     NONE
-       0  GigabitEthernet0/0/7        DISA  LISTENING     NONE
-       0  GigabitEthernet0/0/8        DISA  LISTENING     NONE
-       0  GigabitEthernet0/0/9        DISA  LISTENING     NONE
-       0  GigabitEthernet0/0/10       DISA  LISTENING     NONE
-       0  GigabitEthernet0/0/11       DISA  LISTENING     NONE
-       0  GigabitEthernet0/0/12       DISA  LISTENING     NONE
-       0  GigabitEthernet0/0/13       DISA  LISTENING     NONE
-       0  GigabitEthernet0/0/14       DISA  LISTENING     NONE
-       0  GigabitEthernet0/0/15       DISA  LISTENING     NONE
-       0  GigabitEthernet0/0/16       DISA  LISTENING     NONE
-       0  GigabitEthernet0/0/17       DISA  LISTENING     NONE
-       0  GigabitEthernet0/0/18       DISA  LISTENING     NONE
-       0  GigabitEthernet0/0/19       DISA  LISTENING     NONE
-       0  GigabitEthernet0/0/20       DISA  LISTENING     NONE
-       0  GigabitEthernet0/0/21       DISA  LISTENING     NONE
-       0  GigabitEthernet0/0/22       DISA  LISTENING     NONE
-       0  GigabitEthernet0/0/23       DISA  LISTENING     NONE
+       0  GigabitEthernet0/0/4        ALTE  DISCARDING    NONE
+       0  GigabitEthernet0/0/5        ROOT  FORWARDING    NONE
+       0  GigabitEthernet0/0/6        DISA  DISCARDING    NONE
+       0  GigabitEthernet0/0/7        DISA  DISCARDING    NONE
+       0  GigabitEthernet0/0/8        DISA  DISCARDING    NONE
+       0  GigabitEthernet0/0/9        DISA  DISCARDING    NONE
+       0  GigabitEthernet0/0/10       DISA  DISCARDING    NONE
+       0  GigabitEthernet0/0/11       DISA  DISCARDING    NONE
+       0  GigabitEthernet0/0/12       DISA  DISCARDING    NONE
+       0  GigabitEthernet0/0/13       DISA  DISCARDING    NONE
+       0  GigabitEthernet0/0/14       DISA  DISCARDING    NONE
+       0  GigabitEthernet0/0/15       DISA  DISCARDING    NONE
+       0  GigabitEthernet0/0/16       DISA  DISCARDING    NONE
+       0  GigabitEthernet0/0/17       DISA  DISCARDING    NONE
+       0  GigabitEthernet0/0/18       DISA  DISCARDING    NONE
+       0  GigabitEthernet0/0/19       DISA  DISCARDING    NONE
+       0  GigabitEthernet0/0/20       DISA  DISCARDING    NONE
+       0  GigabitEthernet0/0/21       DISA  DISCARDING    NONE
+       0  GigabitEthernet0/0/22       DISA  DISCARDING    NONE
+       0  GigabitEthernet0/0/23       DISA  DISCARDING    NONE
 
 
 --- [130] § STP — PortFast / edged-port (ports d'accès) ---
@@ -1329,18 +1383,24 @@ Total steps: 300
 [183/300] dsw1 DSW-HQ-1(config)# do show spanning-tree vlan 1
   VLAN0001
     Spanning tree enabled protocol ieee
-    Root ID    Priority    24577
+    Root ID    Priority    4097
                Address     0200.0000.005f
-               Cost        0
-               This bridge is the root
+               Cost        57
+               Port        1 (FastEthernet0/1)
+               Hello Time   1 sec  Max Age 20 sec  Forward Delay 15 sec
   
-  Interface        Role  Sts  Cost      Prio.Nbr  Type
-  ---------------- ----  ---  --------  --------  ----
-  Fa0/1            Desg  FWD  19        128.1     P2p
-  Fa0/2            Desg  FWD  19        128.2     P2p
+    Bridge ID  Priority    24577  (priority 24576 sys-id-ext 1)
+               Address     0200.0000.005f
+               Hello Time   1 sec  Max Age 20 sec  Forward Delay 15 sec
+               Aging Time  300 sec
+  
+  Interface           Role Sts Cost      Prio.Nbr Type
+  ------------------- ---- --- --------- -------- --------------------------------
+  Fa0/1               Root FWD 19        128.1    P2p
+  Fa0/2               Altn BLK 19        128.2    P2p
 
 [184/300] dsw1 DSW-HQ-1(config)# no spanning-tree vlan 1 hello-time
-<empty>
+  *08:00:00: STP: VLAN0001 Fa0/2 -> forwarding
 
 [185/300] dsw1 DSW-HQ-1(config)# end
 <empty>
@@ -1362,9 +1422,9 @@ Total steps: 300
   CIST Bridge         :0.SW-BR
   Config Times        :Hello 1s MaxAge 6s FwDly 4s MaxHop 20
   Active Times        :Hello 1s MaxAge 6s FwDly 4s MaxHop 20
-  CIST Root/ERPC      :0.0200-0000-0027 / 0
-  CIST RegRoot/IRPC   :0.0200-0000-0027 / 0
-  CIST RootPortId     :0.0
+  CIST Root/ERPC      :-1.0200-0000-0027 / 80000
+  CIST RegRoot/IRPC   :-1.0200-0000-0027 / 0
+  CIST RootPortId     :6.6
   BPDU-Protection     :Enabled
   TC or TCN received  :0
   STP Status          :Enabled
@@ -1379,11 +1439,11 @@ Total steps: 300
 --- [193] § STP — convergence sur panne de lien (HQ) ---
 [193/300] lhq lhq$ ping -c 1 10.1.1.11
   PING 10.1.1.11 (10.1.1.11) 56(84) bytes of data.
-  64 bytes from 10.1.1.11: icmp_seq=1 ttl=128 time=1.381 ms
+  64 bytes from 10.1.1.11: icmp_seq=1 ttl=128 time=0.935 ms
   
   --- 10.1.1.11 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 1.381/1.381/1.381/0.000 ms
+  rtt min/avg/max/mdev = 0.935/0.935/0.935/0.000 ms
 
 [194/300] swhq SW-HQ# show spanning-tree blockedports
   Name                 Blocked Interfaces List
@@ -1407,23 +1467,29 @@ Total steps: 300
 [199/300] swhq SW-HQ# show spanning-tree
   VLAN0001
     Spanning tree enabled protocol ieee
-    Root ID    Priority    28673
-               Address     0200.0000.000d
-               Cost        0
-               This bridge is the root
+    Root ID    Priority    4097
+               Address     0200.0000.005f
+               Cost        38
+               Port        5 (FastEthernet0/5)
+               Hello Time   2 sec  Max Age 20 sec  Forward Delay 15 sec
   
-  Interface        Role  Sts  Cost      Prio.Nbr  Type
-  ---------------- ----  ---  --------  --------  ----
-  Fa0/1            Desg  FWD  19        128.1     P2p
-  Fa0/2            Desg  FWD  19        128.2     P2p Edge
-  Fa0/3            Desg  FWD  19        128.3     P2p Edge
-  Fa0/5            Desg  FWD  19        128.5     P2p
+    Bridge ID  Priority    28673  (priority 28672 sys-id-ext 1)
+               Address     0200.0000.000d
+               Hello Time   2 sec  Max Age 20 sec  Forward Delay 15 sec
+               Aging Time  300 sec
+  
+  Interface           Role Sts Cost      Prio.Nbr Type
+  ------------------- ---- --- --------- -------- --------------------------------
+  Fa0/1               Desg FWD 19        128.1    P2p
+  Fa0/2               Desg FWD 19        128.2    P2p Edge
+  Fa0/3               Desg FWD 19        128.3    P2p Edge
+  Fa0/5               Root FWD 19        128.5    P2p
 
 [200/300] dsw1 DSW-HQ-1# show spanning-tree root
                                           Root    Hello Max Fwd
   Vlan             Root ID              Cost    Port    Time  Age Dly
   ---------------- -------------------- ------- ------- ----- --- ---
-  VLAN0001         24577 0200.0000.005f  0               1     6   4
+  VLAN0001         4097 0200.0000.005f  57      Fa0/2   1     6   4
 
 [201/300] dsw2 DSW-HQ-2# show spanning-tree blockedports
   Name                 Blocked Interfaces List
@@ -1434,21 +1500,21 @@ Total steps: 300
 
 [202/300] lhq lhq$ ping -c 2 10.1.1.11
   PING 10.1.1.11 (10.1.1.11) 56(84) bytes of data.
-  64 bytes from 10.1.1.11: icmp_seq=1 ttl=128 time=1.078 ms
-  64 bytes from 10.1.1.11: icmp_seq=2 ttl=128 time=0.716 ms
+  64 bytes from 10.1.1.11: icmp_seq=1 ttl=128 time=0.672 ms
+  64 bytes from 10.1.1.11: icmp_seq=2 ttl=128 time=0.585 ms
   
   --- 10.1.1.11 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.716/0.897/1.078/0.181 ms
+  rtt min/avg/max/mdev = 0.585/0.628/0.672/0.043 ms
 
 [203/300] lhq lhq$ ping -c 2 10.3.3.10
   PING 10.3.3.10 (10.3.3.10) 56(84) bytes of data.
-  64 bytes from 10.3.3.10: icmp_seq=1 ttl=62 time=1.377 ms
-  64 bytes from 10.3.3.10: icmp_seq=2 ttl=62 time=2.203 ms
+  64 bytes from 10.3.3.10: icmp_seq=1 ttl=62 time=1.012 ms
+  64 bytes from 10.3.3.10: icmp_seq=2 ttl=62 time=0.858 ms
   
   --- 10.3.3.10 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 1.377/1.790/2.203/0.413 ms
+  rtt min/avg/max/mdev = 0.858/0.935/1.012/0.077 ms
 
 [204/300] swhq SW-HQ# configure terminal
   Enter configuration commands, one per line.  End with CNTL/Z.
@@ -1465,83 +1531,89 @@ Total steps: 300
 [208/300] swhq SW-HQ# show spanning-tree
   VLAN0001
     Spanning tree enabled protocol ieee
-    Root ID    Priority    28673
-               Address     0200.0000.000d
-               Cost        0
-               This bridge is the root
+    Root ID    Priority    4097
+               Address     0200.0000.005f
+               Cost        38
+               Port        5 (FastEthernet0/5)
+               Hello Time   2 sec  Max Age 20 sec  Forward Delay 15 sec
   
-  Interface        Role  Sts  Cost      Prio.Nbr  Type
-  ---------------- ----  ---  --------  --------  ----
-  Fa0/1            Desg  FWD  19        128.1     P2p
-  Fa0/2            Desg  FWD  19        128.2     P2p Edge
-  Fa0/3            Desg  FWD  19        128.3     P2p Edge
-  Fa0/4            Desg  FWD  19        128.4     P2p
-  Fa0/5            Desg  FWD  19        128.5     P2p
+    Bridge ID  Priority    28673  (priority 28672 sys-id-ext 1)
+               Address     0200.0000.000d
+               Hello Time   2 sec  Max Age 20 sec  Forward Delay 15 sec
+               Aging Time  300 sec
+  
+  Interface           Role Sts Cost      Prio.Nbr Type
+  ------------------- ---- --- --------- -------- --------------------------------
+  Fa0/1               Desg FWD 19        128.1    P2p
+  Fa0/2               Desg FWD 19        128.2    P2p Edge
+  Fa0/3               Desg FWD 19        128.3    P2p Edge
+  Fa0/4               Desg FWD 19        128.4    P2p
+  Fa0/5               Root FWD 19        128.5    P2p
 
 [209/300] lhq lhq$ ping -c 2 10.1.1.11
   PING 10.1.1.11 (10.1.1.11) 56(84) bytes of data.
-  64 bytes from 10.1.1.11: icmp_seq=1 ttl=128 time=0.726 ms
-  64 bytes from 10.1.1.11: icmp_seq=2 ttl=128 time=0.627 ms
+  64 bytes from 10.1.1.11: icmp_seq=1 ttl=128 time=0.420 ms
+  64 bytes from 10.1.1.11: icmp_seq=2 ttl=128 time=0.416 ms
   
   --- 10.1.1.11 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.627/0.676/0.726/0.050 ms
+  rtt min/avg/max/mdev = 0.416/0.418/0.420/0.002 ms
 
 
 --- [210] § STP — convergence sur panne de lien (BR Huawei) ---
 [210/300] swbr <SW-BR> display stp brief
    MSTID  Port                        Role  STP State     Protection
-       0  GigabitEthernet0/0/0        DISA  LISTENING     NONE
+       0  GigabitEthernet0/0/0        DISA  DISCARDING    NONE
        0  GigabitEthernet0/0/1        DESI  FORWARDING    NONE
        0  GigabitEthernet0/0/2        DESI  FORWARDING    EDGE
        0  GigabitEthernet0/0/3        DESI  FORWARDING    NONE
-       0  GigabitEthernet0/0/4        DESI  FORWARDING    NONE
-       0  GigabitEthernet0/0/5        DESI  FORWARDING    NONE
-       0  GigabitEthernet0/0/6        DISA  LISTENING     NONE
-       0  GigabitEthernet0/0/7        DISA  LISTENING     NONE
-       0  GigabitEthernet0/0/8        DISA  LISTENING     NONE
-       0  GigabitEthernet0/0/9        DISA  LISTENING     NONE
-       0  GigabitEthernet0/0/10       DISA  LISTENING     NONE
-       0  GigabitEthernet0/0/11       DISA  LISTENING     NONE
-       0  GigabitEthernet0/0/12       DISA  LISTENING     NONE
-       0  GigabitEthernet0/0/13       DISA  LISTENING     NONE
-       0  GigabitEthernet0/0/14       DISA  LISTENING     NONE
-       0  GigabitEthernet0/0/15       DISA  LISTENING     NONE
-       0  GigabitEthernet0/0/16       DISA  LISTENING     NONE
-       0  GigabitEthernet0/0/17       DISA  LISTENING     NONE
-       0  GigabitEthernet0/0/18       DISA  LISTENING     NONE
-       0  GigabitEthernet0/0/19       DISA  LISTENING     NONE
-       0  GigabitEthernet0/0/20       DISA  LISTENING     NONE
-       0  GigabitEthernet0/0/21       DISA  LISTENING     NONE
-       0  GigabitEthernet0/0/22       DISA  LISTENING     NONE
-       0  GigabitEthernet0/0/23       DISA  LISTENING     NONE
+       0  GigabitEthernet0/0/4        ALTE  DISCARDING    NONE
+       0  GigabitEthernet0/0/5        ROOT  FORWARDING    NONE
+       0  GigabitEthernet0/0/6        DISA  DISCARDING    NONE
+       0  GigabitEthernet0/0/7        DISA  DISCARDING    NONE
+       0  GigabitEthernet0/0/8        DISA  DISCARDING    NONE
+       0  GigabitEthernet0/0/9        DISA  DISCARDING    NONE
+       0  GigabitEthernet0/0/10       DISA  DISCARDING    NONE
+       0  GigabitEthernet0/0/11       DISA  DISCARDING    NONE
+       0  GigabitEthernet0/0/12       DISA  DISCARDING    NONE
+       0  GigabitEthernet0/0/13       DISA  DISCARDING    NONE
+       0  GigabitEthernet0/0/14       DISA  DISCARDING    NONE
+       0  GigabitEthernet0/0/15       DISA  DISCARDING    NONE
+       0  GigabitEthernet0/0/16       DISA  DISCARDING    NONE
+       0  GigabitEthernet0/0/17       DISA  DISCARDING    NONE
+       0  GigabitEthernet0/0/18       DISA  DISCARDING    NONE
+       0  GigabitEthernet0/0/19       DISA  DISCARDING    NONE
+       0  GigabitEthernet0/0/20       DISA  DISCARDING    NONE
+       0  GigabitEthernet0/0/21       DISA  DISCARDING    NONE
+       0  GigabitEthernet0/0/22       DISA  DISCARDING    NONE
+       0  GigabitEthernet0/0/23       DISA  DISCARDING    NONE
 
 [211/300] dswbr <DSW-BR> display stp brief
    MSTID  Port                        Role  STP State     Protection
-       0  GigabitEthernet0/0/0        DISA  LISTENING     NONE
+       0  GigabitEthernet0/0/0        DISA  DISCARDING    NONE
        0  GigabitEthernet0/0/1        ROOT  FORWARDING    NONE
-       0  GigabitEthernet0/0/2        ALTE  DISCARDING    NONE
-       0  GigabitEthernet0/0/3        DISA  LISTENING     NONE
-       0  GigabitEthernet0/0/4        DISA  LISTENING     NONE
-       0  GigabitEthernet0/0/5        DISA  LISTENING     NONE
-       0  GigabitEthernet0/0/6        DISA  LISTENING     NONE
-       0  GigabitEthernet0/0/7        DISA  LISTENING     NONE
-       0  GigabitEthernet0/0/8        DISA  LISTENING     NONE
-       0  GigabitEthernet0/0/9        DISA  LISTENING     NONE
-       0  GigabitEthernet0/0/10       DISA  LISTENING     NONE
-       0  GigabitEthernet0/0/11       DISA  LISTENING     NONE
-       0  GigabitEthernet0/0/12       DISA  LISTENING     NONE
-       0  GigabitEthernet0/0/13       DISA  LISTENING     NONE
-       0  GigabitEthernet0/0/14       DISA  LISTENING     NONE
-       0  GigabitEthernet0/0/15       DISA  LISTENING     NONE
-       0  GigabitEthernet0/0/16       DISA  LISTENING     NONE
-       0  GigabitEthernet0/0/17       DISA  LISTENING     NONE
-       0  GigabitEthernet0/0/18       DISA  LISTENING     NONE
-       0  GigabitEthernet0/0/19       DISA  LISTENING     NONE
-       0  GigabitEthernet0/0/20       DISA  LISTENING     NONE
-       0  GigabitEthernet0/0/21       DISA  LISTENING     NONE
-       0  GigabitEthernet0/0/22       DISA  LISTENING     NONE
-       0  GigabitEthernet0/0/23       DISA  LISTENING     NONE
+       0  GigabitEthernet0/0/2        DESI  DISCARDING    NONE
+       0  GigabitEthernet0/0/3        DISA  DISCARDING    NONE
+       0  GigabitEthernet0/0/4        DISA  DISCARDING    NONE
+       0  GigabitEthernet0/0/5        DISA  DISCARDING    NONE
+       0  GigabitEthernet0/0/6        DISA  DISCARDING    NONE
+       0  GigabitEthernet0/0/7        DISA  DISCARDING    NONE
+       0  GigabitEthernet0/0/8        DISA  DISCARDING    NONE
+       0  GigabitEthernet0/0/9        DISA  DISCARDING    NONE
+       0  GigabitEthernet0/0/10       DISA  DISCARDING    NONE
+       0  GigabitEthernet0/0/11       DISA  DISCARDING    NONE
+       0  GigabitEthernet0/0/12       DISA  DISCARDING    NONE
+       0  GigabitEthernet0/0/13       DISA  DISCARDING    NONE
+       0  GigabitEthernet0/0/14       DISA  DISCARDING    NONE
+       0  GigabitEthernet0/0/15       DISA  DISCARDING    NONE
+       0  GigabitEthernet0/0/16       DISA  DISCARDING    NONE
+       0  GigabitEthernet0/0/17       DISA  DISCARDING    NONE
+       0  GigabitEthernet0/0/18       DISA  DISCARDING    NONE
+       0  GigabitEthernet0/0/19       DISA  DISCARDING    NONE
+       0  GigabitEthernet0/0/20       DISA  DISCARDING    NONE
+       0  GigabitEthernet0/0/21       DISA  DISCARDING    NONE
+       0  GigabitEthernet0/0/22       DISA  DISCARDING    NONE
+       0  GigabitEthernet0/0/23       DISA  DISCARDING    NONE
 
 [212/300] swbr <SW-BR> system-view
   Enter system view, return user view with return command.
@@ -1560,30 +1632,30 @@ Total steps: 300
 
 [217/300] dswbr <DSW-BR> display stp brief
    MSTID  Port                        Role  STP State     Protection
-       0  GigabitEthernet0/0/0        DISA  LISTENING     NONE
+       0  GigabitEthernet0/0/0        DISA  DISCARDING    NONE
        0  GigabitEthernet0/0/1        DESI  FORWARDING    NONE
-       0  GigabitEthernet0/0/2        ROOT  LISTENING     NONE
-       0  GigabitEthernet0/0/3        DISA  LISTENING     NONE
-       0  GigabitEthernet0/0/4        DISA  LISTENING     NONE
-       0  GigabitEthernet0/0/5        DISA  LISTENING     NONE
-       0  GigabitEthernet0/0/6        DISA  LISTENING     NONE
-       0  GigabitEthernet0/0/7        DISA  LISTENING     NONE
-       0  GigabitEthernet0/0/8        DISA  LISTENING     NONE
-       0  GigabitEthernet0/0/9        DISA  LISTENING     NONE
-       0  GigabitEthernet0/0/10       DISA  LISTENING     NONE
-       0  GigabitEthernet0/0/11       DISA  LISTENING     NONE
-       0  GigabitEthernet0/0/12       DISA  LISTENING     NONE
-       0  GigabitEthernet0/0/13       DISA  LISTENING     NONE
-       0  GigabitEthernet0/0/14       DISA  LISTENING     NONE
-       0  GigabitEthernet0/0/15       DISA  LISTENING     NONE
-       0  GigabitEthernet0/0/16       DISA  LISTENING     NONE
-       0  GigabitEthernet0/0/17       DISA  LISTENING     NONE
-       0  GigabitEthernet0/0/18       DISA  LISTENING     NONE
-       0  GigabitEthernet0/0/19       DISA  LISTENING     NONE
-       0  GigabitEthernet0/0/20       DISA  LISTENING     NONE
-       0  GigabitEthernet0/0/21       DISA  LISTENING     NONE
-       0  GigabitEthernet0/0/22       DISA  LISTENING     NONE
-       0  GigabitEthernet0/0/23       DISA  LISTENING     NONE
+       0  GigabitEthernet0/0/2        ROOT  DISCARDING    NONE
+       0  GigabitEthernet0/0/3        DISA  DISCARDING    NONE
+       0  GigabitEthernet0/0/4        DISA  DISCARDING    NONE
+       0  GigabitEthernet0/0/5        DISA  DISCARDING    NONE
+       0  GigabitEthernet0/0/6        DISA  DISCARDING    NONE
+       0  GigabitEthernet0/0/7        DISA  DISCARDING    NONE
+       0  GigabitEthernet0/0/8        DISA  DISCARDING    NONE
+       0  GigabitEthernet0/0/9        DISA  DISCARDING    NONE
+       0  GigabitEthernet0/0/10       DISA  DISCARDING    NONE
+       0  GigabitEthernet0/0/11       DISA  DISCARDING    NONE
+       0  GigabitEthernet0/0/12       DISA  DISCARDING    NONE
+       0  GigabitEthernet0/0/13       DISA  DISCARDING    NONE
+       0  GigabitEthernet0/0/14       DISA  DISCARDING    NONE
+       0  GigabitEthernet0/0/15       DISA  DISCARDING    NONE
+       0  GigabitEthernet0/0/16       DISA  DISCARDING    NONE
+       0  GigabitEthernet0/0/17       DISA  DISCARDING    NONE
+       0  GigabitEthernet0/0/18       DISA  DISCARDING    NONE
+       0  GigabitEthernet0/0/19       DISA  DISCARDING    NONE
+       0  GigabitEthernet0/0/20       DISA  DISCARDING    NONE
+       0  GigabitEthernet0/0/21       DISA  DISCARDING    NONE
+       0  GigabitEthernet0/0/22       DISA  DISCARDING    NONE
+       0  GigabitEthernet0/0/23       DISA  DISCARDING    NONE
 
 [218/300] wbr wbr$ ping -n 2 10.2.2.11
   
@@ -1613,30 +1685,30 @@ Total steps: 300
 
 [224/300] dswbr <DSW-BR> display stp brief
    MSTID  Port                        Role  STP State     Protection
-       0  GigabitEthernet0/0/0        DISA  LISTENING     NONE
+       0  GigabitEthernet0/0/0        DISA  DISCARDING    NONE
        0  GigabitEthernet0/0/1        ROOT  FORWARDING    NONE
        0  GigabitEthernet0/0/2        ALTE  DISCARDING    NONE
-       0  GigabitEthernet0/0/3        DISA  LISTENING     NONE
-       0  GigabitEthernet0/0/4        DISA  LISTENING     NONE
-       0  GigabitEthernet0/0/5        DISA  LISTENING     NONE
-       0  GigabitEthernet0/0/6        DISA  LISTENING     NONE
-       0  GigabitEthernet0/0/7        DISA  LISTENING     NONE
-       0  GigabitEthernet0/0/8        DISA  LISTENING     NONE
-       0  GigabitEthernet0/0/9        DISA  LISTENING     NONE
-       0  GigabitEthernet0/0/10       DISA  LISTENING     NONE
-       0  GigabitEthernet0/0/11       DISA  LISTENING     NONE
-       0  GigabitEthernet0/0/12       DISA  LISTENING     NONE
-       0  GigabitEthernet0/0/13       DISA  LISTENING     NONE
-       0  GigabitEthernet0/0/14       DISA  LISTENING     NONE
-       0  GigabitEthernet0/0/15       DISA  LISTENING     NONE
-       0  GigabitEthernet0/0/16       DISA  LISTENING     NONE
-       0  GigabitEthernet0/0/17       DISA  LISTENING     NONE
-       0  GigabitEthernet0/0/18       DISA  LISTENING     NONE
-       0  GigabitEthernet0/0/19       DISA  LISTENING     NONE
-       0  GigabitEthernet0/0/20       DISA  LISTENING     NONE
-       0  GigabitEthernet0/0/21       DISA  LISTENING     NONE
-       0  GigabitEthernet0/0/22       DISA  LISTENING     NONE
-       0  GigabitEthernet0/0/23       DISA  LISTENING     NONE
+       0  GigabitEthernet0/0/3        DISA  DISCARDING    NONE
+       0  GigabitEthernet0/0/4        DISA  DISCARDING    NONE
+       0  GigabitEthernet0/0/5        DISA  DISCARDING    NONE
+       0  GigabitEthernet0/0/6        DISA  DISCARDING    NONE
+       0  GigabitEthernet0/0/7        DISA  DISCARDING    NONE
+       0  GigabitEthernet0/0/8        DISA  DISCARDING    NONE
+       0  GigabitEthernet0/0/9        DISA  DISCARDING    NONE
+       0  GigabitEthernet0/0/10       DISA  DISCARDING    NONE
+       0  GigabitEthernet0/0/11       DISA  DISCARDING    NONE
+       0  GigabitEthernet0/0/12       DISA  DISCARDING    NONE
+       0  GigabitEthernet0/0/13       DISA  DISCARDING    NONE
+       0  GigabitEthernet0/0/14       DISA  DISCARDING    NONE
+       0  GigabitEthernet0/0/15       DISA  DISCARDING    NONE
+       0  GigabitEthernet0/0/16       DISA  DISCARDING    NONE
+       0  GigabitEthernet0/0/17       DISA  DISCARDING    NONE
+       0  GigabitEthernet0/0/18       DISA  DISCARDING    NONE
+       0  GigabitEthernet0/0/19       DISA  DISCARDING    NONE
+       0  GigabitEthernet0/0/20       DISA  DISCARDING    NONE
+       0  GigabitEthernet0/0/21       DISA  DISCARDING    NONE
+       0  GigabitEthernet0/0/22       DISA  DISCARDING    NONE
+       0  GigabitEthernet0/0/23       DISA  DISCARDING    NONE
 
 
 --- [225] § STP — région MST (Cisco) & topologie ---
@@ -1661,8 +1733,8 @@ Total steps: 300
   -------------------------------------------------------------
   Instance  Vlans mapped
   --------  -------------------------------------------------
-  0         1-4094
-  1         vlan 1-100
+  0         101-4094
+  1         1-100
 
 [231/300] dsw1 DSW-HQ-1(config-mst)# exit
 <empty>
@@ -1676,8 +1748,8 @@ Total steps: 300
   -------------------------------------------------------------
   Instance  Vlans mapped
   --------  -------------------------------------------------
-  0         1-4094
-  1         vlan 1-100
+  0         101-4094
+  1         1-100
 
 [234/300] swbr <SW-BR> system-view
   Enter system view, return user view with return command.
@@ -1714,8 +1786,8 @@ Total steps: 300
 [243/300] swhq SW-HQ# show spanning-tree detail
    VLAN0001 is executing the pvst compatible Spanning Tree protocol
     Bridge Identifier has priority 28672, sysid 1, address 0200.0000.000d
-    We are the root of the spanning tree
-    Root port is N/A, cost of root path is 0
+    Current root has priority 4097, address 0200.0000.005f
+    Root port is Fa0/5, cost of root path is 38
     Hello Time 2 sec  Max Age 20 sec  Forward Delay 15 sec
   
    Port 1 (FastEthernet0/1) of VLAN0001 is designated forwarding
@@ -1726,7 +1798,7 @@ Total steps: 300
      Timers: message age 0, forward delay 0, hold 0
      Number of transitions to forwarding state: 2
      Link type is point-to-point by default
-     BPDU: sent 13, received 0
+     BPDU: sent 17, received 0
    Port 2 (FastEthernet0/2) of VLAN0001 is designated forwarding
      Port path cost 19, Port priority 128, Port Identifier 128.2.
      Designated root has priority 32769, address 0200.0000.000d
@@ -1735,7 +1807,7 @@ Total steps: 300
      Timers: message age 0, forward delay 0, hold 0
      Number of transitions to forwarding state: 2
      Link type is point-to-point by default
-     BPDU: sent 10, received 0
+     BPDU: sent 15, received 0
    Port 3 (FastEthernet0/3) of VLAN0001 is designated forwarding
      Port path cost 19, Port priority 128, Port Identifier 128.3.
      Designated root has priority 32769, address 0200.0000.000d
@@ -1744,7 +1816,7 @@ Total steps: 300
      Timers: message age 0, forward delay 0, hold 0
      Number of transitions to forwarding state: 2
      Link type is point-to-point by default
-     BPDU: sent 11, received 0
+     BPDU: sent 15, received 0
    Port 4 (FastEthernet0/4) of VLAN0001 is designated forwarding
      Port path cost 19, Port priority 128, Port Identifier 128.4.
      Designated root has priority 28673, address 0200.0000.000d
@@ -1753,16 +1825,16 @@ Total steps: 300
      Timers: message age 0, forward delay 0, hold 0
      Number of transitions to forwarding state: 3
      Link type is point-to-point by default
-     BPDU: sent 4, received 2
-   Port 5 (FastEthernet0/5) of VLAN0001 is designated forwarding
+     BPDU: sent 8, received 3
+   Port 5 (FastEthernet0/5) of VLAN0001 is root forwarding
      Port path cost 19, Port priority 128, Port Identifier 128.5.
-     Designated root has priority 32769, address 0200.0000.000d
-     Designated bridge has priority 32769, address 0200.0000.000d
-     Designated port id is 128.4, designated path cost 0
+     Designated root has priority 4097, address 0200.0000.005f
+     Designated bridge has priority 32769, address 0200.0000.0079
+     Designated port id is 128.0, designated path cost 19
      Timers: message age 0, forward delay 0, hold 0
      Number of transitions to forwarding state: 2
      Link type is point-to-point by default
-     BPDU: sent 8, received 0
+     BPDU: sent 5, received 6
    Port 6 (FastEthernet0/6) of VLAN0001 is disabled
      Port path cost 19, Port priority 128, Port Identifier 128.6.
      Designated root has priority 32768, address 0200.0000.000d
@@ -1955,7 +2027,7 @@ Total steps: 300
 
 [244/300] dsw1 DSW-HQ-1# show spanning-tree summary totals
   Switch is in pvst mode
-  Root bridge for: VLAN0001
+  Root bridge for: none
                        Blocking Listening Learning Forwarding STP Active
   -------------------- -------- --------- -------- ---------- ----------
   1 vlan               0        0         0        2          2
@@ -1975,8 +2047,8 @@ Total steps: 300
 [247/300] swbr <SW-BR> display stp global
   -------[CIST Global Info][Mode STP]-------
   CIST Bridge         :0.SW-BR
-  Config Times        :Hello 1s MaxAge 6s FwDly 4s MaxHop 20
-  Active Times        :Hello 1s MaxAge 6s FwDly 4s MaxHop 20
+  Config Times        :Hello 2s MaxAge 6s FwDly 4s MaxHop 20
+  Active Times        :Hello 2s MaxAge 6s FwDly 4s MaxHop 20
   CIST Root/ERPC      :0.0200-0000-0027 / 0
   CIST RegRoot/IRPC   :0.0200-0000-0027 / 0
   CIST RootPortId     :0.0
@@ -1998,27 +2070,27 @@ Total steps: 300
 
 [251/300] lhq lhq$ ping -c 1 10.1.1.11
   PING 10.1.1.11 (10.1.1.11) 56(84) bytes of data.
-  64 bytes from 10.1.1.11: icmp_seq=1 ttl=128 time=0.640 ms
+  64 bytes from 10.1.1.11: icmp_seq=1 ttl=128 time=0.441 ms
   
   --- 10.1.1.11 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.640/0.640/0.640/0.000 ms
+  rtt min/avg/max/mdev = 0.441/0.441/0.441/0.000 ms
 
 [252/300] lbr lbr$ ping -c 1 10.2.2.10
   PING 10.2.2.10 (10.2.2.10) 56(84) bytes of data.
-  64 bytes from 10.2.2.10: icmp_seq=1 ttl=128 time=0.488 ms
+  64 bytes from 10.2.2.10: icmp_seq=1 ttl=128 time=0.342 ms
   
   --- 10.2.2.10 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.488/0.488/0.488/0.000 ms
+  rtt min/avg/max/mdev = 0.342/0.342/0.342/0.000 ms
 
 [253/300] ldc ldc$ ping -c 1 10.3.3.10
   PING 10.3.3.10 (10.3.3.10) 56(84) bytes of data.
-  64 bytes from 10.3.3.10: icmp_seq=1 ttl=64 time=0.511 ms
+  64 bytes from 10.3.3.10: icmp_seq=1 ttl=64 time=0.372 ms
   
   --- 10.3.3.10 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.511/0.511/0.511/0.000 ms
+  rtt min/avg/max/mdev = 0.372/0.372/0.372/0.000 ms
 
 [254/300] whq whq$ getmac
   Physical Address  Transport Name          
@@ -2057,18 +2129,24 @@ Total steps: 300
 [261/300] swhq SW-HQ# show spanning-tree vlan 1
   VLAN0001
     Spanning tree enabled protocol ieee
-    Root ID    Priority    28673
-               Address     0200.0000.000d
-               Cost        0
-               This bridge is the root
+    Root ID    Priority    4097
+               Address     0200.0000.005f
+               Cost        38
+               Port        5 (FastEthernet0/5)
+               Hello Time   2 sec  Max Age 20 sec  Forward Delay 15 sec
   
-  Interface        Role  Sts  Cost      Prio.Nbr  Type
-  ---------------- ----  ---  --------  --------  ----
-  Fa0/1            Desg  FWD  19        128.1     P2p
-  Fa0/2            Desg  FWD  19        128.2     P2p Edge
-  Fa0/3            Desg  FWD  19        128.3     P2p Edge
-  Fa0/4            Desg  FWD  19        128.4     P2p
-  Fa0/5            Desg  FWD  19        128.5     P2p
+    Bridge ID  Priority    28673  (priority 28672 sys-id-ext 1)
+               Address     0200.0000.000d
+               Hello Time   2 sec  Max Age 20 sec  Forward Delay 15 sec
+               Aging Time  300 sec
+  
+  Interface           Role Sts Cost      Prio.Nbr Type
+  ------------------- ---- --- --------- -------- --------------------------------
+  Fa0/1               Desg FWD 19        128.1    P2p
+  Fa0/2               Desg FWD 19        128.2    P2p Edge
+  Fa0/3               Desg FWD 19        128.3    P2p Edge
+  Fa0/4               Desg FWD 19        128.4    P2p
+  Fa0/5               Root FWD 19        128.5    P2p
 
 [262/300] swhq SW-HQ# show spanning-tree bridge
                                                      Hello  Max  Fwd
@@ -2079,15 +2157,21 @@ Total steps: 300
 [263/300] dsw1 DSW-HQ-1# show spanning-tree vlan 1
   VLAN0001
     Spanning tree enabled protocol ieee
-    Root ID    Priority    24577
+    Root ID    Priority    4097
                Address     0200.0000.005f
-               Cost        0
-               This bridge is the root
+               Cost        57
+               Port        2 (FastEthernet0/2)
+               Hello Time   1 sec  Max Age 20 sec  Forward Delay 15 sec
   
-  Interface        Role  Sts  Cost      Prio.Nbr  Type
-  ---------------- ----  ---  --------  --------  ----
-  Fa0/1            Desg  FWD  19        128.1     P2p
-  Fa0/2            Desg  FWD  19        128.2     P2p
+    Bridge ID  Priority    24577  (priority 24576 sys-id-ext 1)
+               Address     0200.0000.005f
+               Hello Time   1 sec  Max Age 20 sec  Forward Delay 15 sec
+               Aging Time  300 sec
+  
+  Interface           Role Sts Cost      Prio.Nbr Type
+  ------------------- ---- --- --------- -------- --------------------------------
+  Fa0/1               Desg FWD 19        128.1    P2p
+  Fa0/2               Root FWD 19        128.2    P2p
 
 [264/300] dsw1 DSW-HQ-1# show spanning-tree bridge
                                                      Hello  Max  Fwd
@@ -2098,15 +2182,21 @@ Total steps: 300
 [265/300] dsw2 DSW-HQ-2# show spanning-tree vlan 1
   VLAN0001
     Spanning tree enabled protocol ieee
-    Root ID    Priority    24577
+    Root ID    Priority    4097
                Address     0200.0000.005f
                Cost        19
-               Port        Fa0/2
+               Port        2 (FastEthernet0/2)
+               Hello Time   2 sec  Max Age 20 sec  Forward Delay 15 sec
   
-  Interface        Role  Sts  Cost      Prio.Nbr  Type
-  ---------------- ----  ---  --------  --------  ----
-  Fa0/1            Desg  LIS  19        128.1     P2p
-  Fa0/2            Root  LIS  19        128.2     P2p
+    Bridge ID  Priority    32769  (priority 32768 sys-id-ext 1)
+               Address     0200.0000.0079
+               Hello Time   2 sec  Max Age 20 sec  Forward Delay 15 sec
+               Aging Time  300 sec
+  
+  Interface           Role Sts Cost      Prio.Nbr Type
+  ------------------- ---- --- --------- -------- --------------------------------
+  Fa0/1               Desg LIS 19        128.1    P2p
+  Fa0/2               Root LIS 19        128.2    P2p
 
 [266/300] dsw2 DSW-HQ-2# show spanning-tree bridge
                                                      Hello  Max  Fwd
@@ -2135,8 +2225,8 @@ Total steps: 300
 [271/300] swbr <SW-BR> display stp
   -------[CIST Global Info][Mode STP]-------
   CIST Bridge         :0.SW-BR
-  Config Times        :Hello 1s MaxAge 6s FwDly 4s MaxHop 20
-  Active Times        :Hello 1s MaxAge 6s FwDly 4s MaxHop 20
+  Config Times        :Hello 2s MaxAge 6s FwDly 4s MaxHop 20
+  Active Times        :Hello 2s MaxAge 6s FwDly 4s MaxHop 20
   CIST Root/ERPC      :0.0200-0000-0027 / 0
   CIST RegRoot/IRPC   :0.0200-0000-0027 / 0
   CIST RootPortId     :0.0
@@ -2146,38 +2236,38 @@ Total steps: 300
 
 [272/300] swbr <SW-BR> display stp brief
    MSTID  Port                        Role  STP State     Protection
-       0  GigabitEthernet0/0/0        DISA  LISTENING     NONE
+       0  GigabitEthernet0/0/0        DISA  DISCARDING    NONE
        0  GigabitEthernet0/0/1        DESI  FORWARDING    NONE
        0  GigabitEthernet0/0/2        DESI  FORWARDING    EDGE
        0  GigabitEthernet0/0/3        DESI  FORWARDING    NONE
        0  GigabitEthernet0/0/4        DESI  FORWARDING    NONE
        0  GigabitEthernet0/0/5        DESI  FORWARDING    NONE
-       0  GigabitEthernet0/0/6        DISA  LISTENING     NONE
-       0  GigabitEthernet0/0/7        DISA  LISTENING     NONE
-       0  GigabitEthernet0/0/8        DISA  LISTENING     NONE
-       0  GigabitEthernet0/0/9        DISA  LISTENING     NONE
-       0  GigabitEthernet0/0/10       DISA  LISTENING     NONE
-       0  GigabitEthernet0/0/11       DISA  LISTENING     NONE
-       0  GigabitEthernet0/0/12       DISA  LISTENING     NONE
-       0  GigabitEthernet0/0/13       DISA  LISTENING     NONE
-       0  GigabitEthernet0/0/14       DISA  LISTENING     NONE
-       0  GigabitEthernet0/0/15       DISA  LISTENING     NONE
-       0  GigabitEthernet0/0/16       DISA  LISTENING     NONE
-       0  GigabitEthernet0/0/17       DISA  LISTENING     NONE
-       0  GigabitEthernet0/0/18       DISA  LISTENING     NONE
-       0  GigabitEthernet0/0/19       DISA  LISTENING     NONE
-       0  GigabitEthernet0/0/20       DISA  LISTENING     NONE
-       0  GigabitEthernet0/0/21       DISA  LISTENING     NONE
-       0  GigabitEthernet0/0/22       DISA  LISTENING     NONE
-       0  GigabitEthernet0/0/23       DISA  LISTENING     NONE
+       0  GigabitEthernet0/0/6        DISA  DISCARDING    NONE
+       0  GigabitEthernet0/0/7        DISA  DISCARDING    NONE
+       0  GigabitEthernet0/0/8        DISA  DISCARDING    NONE
+       0  GigabitEthernet0/0/9        DISA  DISCARDING    NONE
+       0  GigabitEthernet0/0/10       DISA  DISCARDING    NONE
+       0  GigabitEthernet0/0/11       DISA  DISCARDING    NONE
+       0  GigabitEthernet0/0/12       DISA  DISCARDING    NONE
+       0  GigabitEthernet0/0/13       DISA  DISCARDING    NONE
+       0  GigabitEthernet0/0/14       DISA  DISCARDING    NONE
+       0  GigabitEthernet0/0/15       DISA  DISCARDING    NONE
+       0  GigabitEthernet0/0/16       DISA  DISCARDING    NONE
+       0  GigabitEthernet0/0/17       DISA  DISCARDING    NONE
+       0  GigabitEthernet0/0/18       DISA  DISCARDING    NONE
+       0  GigabitEthernet0/0/19       DISA  DISCARDING    NONE
+       0  GigabitEthernet0/0/20       DISA  DISCARDING    NONE
+       0  GigabitEthernet0/0/21       DISA  DISCARDING    NONE
+       0  GigabitEthernet0/0/22       DISA  DISCARDING    NONE
+       0  GigabitEthernet0/0/23       DISA  DISCARDING    NONE
 
 [273/300] dswbr <DSW-BR> display stp
   -------[CIST Global Info][Mode MSTP]-------
   CIST Bridge         :32768.DSW-BR
   Config Times        :Hello 2s MaxAge 20s FwDly 15s MaxHop 20
   Active Times        :Hello 2s MaxAge 20s FwDly 15s MaxHop 20
-  CIST Root/ERPC      :0.0200-0000-0027 / 4
-  CIST RegRoot/IRPC   :0.0200-0000-0027 / 0
+  CIST Root/ERPC      :1.0200-0000-0027 / 20000
+  CIST RegRoot/IRPC   :1.0200-0000-0027 / 0
   CIST RootPortId     :2.2
   BPDU-Protection     :Disabled
   TC or TCN received  :0
@@ -2185,30 +2275,30 @@ Total steps: 300
 
 [274/300] dswbr <DSW-BR> display stp brief
    MSTID  Port                        Role  STP State     Protection
-       0  GigabitEthernet0/0/0        DISA  LISTENING     NONE
+       0  GigabitEthernet0/0/0        DISA  DISCARDING    NONE
        0  GigabitEthernet0/0/1        ROOT  FORWARDING    NONE
        0  GigabitEthernet0/0/2        ALTE  DISCARDING    NONE
-       0  GigabitEthernet0/0/3        DISA  LISTENING     NONE
-       0  GigabitEthernet0/0/4        DISA  LISTENING     NONE
-       0  GigabitEthernet0/0/5        DISA  LISTENING     NONE
-       0  GigabitEthernet0/0/6        DISA  LISTENING     NONE
-       0  GigabitEthernet0/0/7        DISA  LISTENING     NONE
-       0  GigabitEthernet0/0/8        DISA  LISTENING     NONE
-       0  GigabitEthernet0/0/9        DISA  LISTENING     NONE
-       0  GigabitEthernet0/0/10       DISA  LISTENING     NONE
-       0  GigabitEthernet0/0/11       DISA  LISTENING     NONE
-       0  GigabitEthernet0/0/12       DISA  LISTENING     NONE
-       0  GigabitEthernet0/0/13       DISA  LISTENING     NONE
-       0  GigabitEthernet0/0/14       DISA  LISTENING     NONE
-       0  GigabitEthernet0/0/15       DISA  LISTENING     NONE
-       0  GigabitEthernet0/0/16       DISA  LISTENING     NONE
-       0  GigabitEthernet0/0/17       DISA  LISTENING     NONE
-       0  GigabitEthernet0/0/18       DISA  LISTENING     NONE
-       0  GigabitEthernet0/0/19       DISA  LISTENING     NONE
-       0  GigabitEthernet0/0/20       DISA  LISTENING     NONE
-       0  GigabitEthernet0/0/21       DISA  LISTENING     NONE
-       0  GigabitEthernet0/0/22       DISA  LISTENING     NONE
-       0  GigabitEthernet0/0/23       DISA  LISTENING     NONE
+       0  GigabitEthernet0/0/3        DISA  DISCARDING    NONE
+       0  GigabitEthernet0/0/4        DISA  DISCARDING    NONE
+       0  GigabitEthernet0/0/5        DISA  DISCARDING    NONE
+       0  GigabitEthernet0/0/6        DISA  DISCARDING    NONE
+       0  GigabitEthernet0/0/7        DISA  DISCARDING    NONE
+       0  GigabitEthernet0/0/8        DISA  DISCARDING    NONE
+       0  GigabitEthernet0/0/9        DISA  DISCARDING    NONE
+       0  GigabitEthernet0/0/10       DISA  DISCARDING    NONE
+       0  GigabitEthernet0/0/11       DISA  DISCARDING    NONE
+       0  GigabitEthernet0/0/12       DISA  DISCARDING    NONE
+       0  GigabitEthernet0/0/13       DISA  DISCARDING    NONE
+       0  GigabitEthernet0/0/14       DISA  DISCARDING    NONE
+       0  GigabitEthernet0/0/15       DISA  DISCARDING    NONE
+       0  GigabitEthernet0/0/16       DISA  DISCARDING    NONE
+       0  GigabitEthernet0/0/17       DISA  DISCARDING    NONE
+       0  GigabitEthernet0/0/18       DISA  DISCARDING    NONE
+       0  GigabitEthernet0/0/19       DISA  DISCARDING    NONE
+       0  GigabitEthernet0/0/20       DISA  DISCARDING    NONE
+       0  GigabitEthernet0/0/21       DISA  DISCARDING    NONE
+       0  GigabitEthernet0/0/22       DISA  DISCARDING    NONE
+       0  GigabitEthernet0/0/23       DISA  DISCARDING    NONE
 
 
 --- [275] § STP — cas négatifs / mal formés ---
@@ -2284,7 +2374,7 @@ Total steps: 300
 
 [292/300] dsw1 DSW-HQ-1# show spanning-tree summary
   Switch is in pvst mode
-  Root bridge for: VLAN0001
+  Root bridge for: none
   Extended system ID           is enabled
   Portfast Default             is disabled
   PortFast BPDU Guard Default  is disabled
@@ -2316,57 +2406,57 @@ Total steps: 300
 
 [294/300] swbr <SW-BR> display stp brief
    MSTID  Port                        Role  STP State     Protection
-       0  GigabitEthernet0/0/0        DISA  LISTENING     NONE
+       0  GigabitEthernet0/0/0        DISA  DISCARDING    NONE
        0  GigabitEthernet0/0/1        DESI  FORWARDING    NONE
        0  GigabitEthernet0/0/2        DESI  FORWARDING    EDGE
        0  GigabitEthernet0/0/3        DESI  FORWARDING    NONE
        0  GigabitEthernet0/0/4        DESI  FORWARDING    NONE
        0  GigabitEthernet0/0/5        DESI  FORWARDING    NONE
-       0  GigabitEthernet0/0/6        DISA  LISTENING     NONE
-       0  GigabitEthernet0/0/7        DISA  LISTENING     NONE
-       0  GigabitEthernet0/0/8        DISA  LISTENING     NONE
-       0  GigabitEthernet0/0/9        DISA  LISTENING     NONE
-       0  GigabitEthernet0/0/10       DISA  LISTENING     NONE
-       0  GigabitEthernet0/0/11       DISA  LISTENING     NONE
-       0  GigabitEthernet0/0/12       DISA  LISTENING     NONE
-       0  GigabitEthernet0/0/13       DISA  LISTENING     NONE
-       0  GigabitEthernet0/0/14       DISA  LISTENING     NONE
-       0  GigabitEthernet0/0/15       DISA  LISTENING     NONE
-       0  GigabitEthernet0/0/16       DISA  LISTENING     NONE
-       0  GigabitEthernet0/0/17       DISA  LISTENING     NONE
-       0  GigabitEthernet0/0/18       DISA  LISTENING     NONE
-       0  GigabitEthernet0/0/19       DISA  LISTENING     NONE
-       0  GigabitEthernet0/0/20       DISA  LISTENING     NONE
-       0  GigabitEthernet0/0/21       DISA  LISTENING     NONE
-       0  GigabitEthernet0/0/22       DISA  LISTENING     NONE
-       0  GigabitEthernet0/0/23       DISA  LISTENING     NONE
+       0  GigabitEthernet0/0/6        DISA  DISCARDING    NONE
+       0  GigabitEthernet0/0/7        DISA  DISCARDING    NONE
+       0  GigabitEthernet0/0/8        DISA  DISCARDING    NONE
+       0  GigabitEthernet0/0/9        DISA  DISCARDING    NONE
+       0  GigabitEthernet0/0/10       DISA  DISCARDING    NONE
+       0  GigabitEthernet0/0/11       DISA  DISCARDING    NONE
+       0  GigabitEthernet0/0/12       DISA  DISCARDING    NONE
+       0  GigabitEthernet0/0/13       DISA  DISCARDING    NONE
+       0  GigabitEthernet0/0/14       DISA  DISCARDING    NONE
+       0  GigabitEthernet0/0/15       DISA  DISCARDING    NONE
+       0  GigabitEthernet0/0/16       DISA  DISCARDING    NONE
+       0  GigabitEthernet0/0/17       DISA  DISCARDING    NONE
+       0  GigabitEthernet0/0/18       DISA  DISCARDING    NONE
+       0  GigabitEthernet0/0/19       DISA  DISCARDING    NONE
+       0  GigabitEthernet0/0/20       DISA  DISCARDING    NONE
+       0  GigabitEthernet0/0/21       DISA  DISCARDING    NONE
+       0  GigabitEthernet0/0/22       DISA  DISCARDING    NONE
+       0  GigabitEthernet0/0/23       DISA  DISCARDING    NONE
 
 [295/300] dswbr <DSW-BR> display stp brief
    MSTID  Port                        Role  STP State     Protection
-       0  GigabitEthernet0/0/0        DISA  LISTENING     NONE
+       0  GigabitEthernet0/0/0        DISA  DISCARDING    NONE
        0  GigabitEthernet0/0/1        ROOT  FORWARDING    NONE
        0  GigabitEthernet0/0/2        ALTE  DISCARDING    NONE
-       0  GigabitEthernet0/0/3        DISA  LISTENING     NONE
-       0  GigabitEthernet0/0/4        DISA  LISTENING     NONE
-       0  GigabitEthernet0/0/5        DISA  LISTENING     NONE
-       0  GigabitEthernet0/0/6        DISA  LISTENING     NONE
-       0  GigabitEthernet0/0/7        DISA  LISTENING     NONE
-       0  GigabitEthernet0/0/8        DISA  LISTENING     NONE
-       0  GigabitEthernet0/0/9        DISA  LISTENING     NONE
-       0  GigabitEthernet0/0/10       DISA  LISTENING     NONE
-       0  GigabitEthernet0/0/11       DISA  LISTENING     NONE
-       0  GigabitEthernet0/0/12       DISA  LISTENING     NONE
-       0  GigabitEthernet0/0/13       DISA  LISTENING     NONE
-       0  GigabitEthernet0/0/14       DISA  LISTENING     NONE
-       0  GigabitEthernet0/0/15       DISA  LISTENING     NONE
-       0  GigabitEthernet0/0/16       DISA  LISTENING     NONE
-       0  GigabitEthernet0/0/17       DISA  LISTENING     NONE
-       0  GigabitEthernet0/0/18       DISA  LISTENING     NONE
-       0  GigabitEthernet0/0/19       DISA  LISTENING     NONE
-       0  GigabitEthernet0/0/20       DISA  LISTENING     NONE
-       0  GigabitEthernet0/0/21       DISA  LISTENING     NONE
-       0  GigabitEthernet0/0/22       DISA  LISTENING     NONE
-       0  GigabitEthernet0/0/23       DISA  LISTENING     NONE
+       0  GigabitEthernet0/0/3        DISA  DISCARDING    NONE
+       0  GigabitEthernet0/0/4        DISA  DISCARDING    NONE
+       0  GigabitEthernet0/0/5        DISA  DISCARDING    NONE
+       0  GigabitEthernet0/0/6        DISA  DISCARDING    NONE
+       0  GigabitEthernet0/0/7        DISA  DISCARDING    NONE
+       0  GigabitEthernet0/0/8        DISA  DISCARDING    NONE
+       0  GigabitEthernet0/0/9        DISA  DISCARDING    NONE
+       0  GigabitEthernet0/0/10       DISA  DISCARDING    NONE
+       0  GigabitEthernet0/0/11       DISA  DISCARDING    NONE
+       0  GigabitEthernet0/0/12       DISA  DISCARDING    NONE
+       0  GigabitEthernet0/0/13       DISA  DISCARDING    NONE
+       0  GigabitEthernet0/0/14       DISA  DISCARDING    NONE
+       0  GigabitEthernet0/0/15       DISA  DISCARDING    NONE
+       0  GigabitEthernet0/0/16       DISA  DISCARDING    NONE
+       0  GigabitEthernet0/0/17       DISA  DISCARDING    NONE
+       0  GigabitEthernet0/0/18       DISA  DISCARDING    NONE
+       0  GigabitEthernet0/0/19       DISA  DISCARDING    NONE
+       0  GigabitEthernet0/0/20       DISA  DISCARDING    NONE
+       0  GigabitEthernet0/0/21       DISA  DISCARDING    NONE
+       0  GigabitEthernet0/0/22       DISA  DISCARDING    NONE
+       0  GigabitEthernet0/0/23       DISA  DISCARDING    NONE
 
 [296/300] swhq SW-HQ# show spanning-tree blockedports
   Name                 Blocked Interfaces List
@@ -2384,62 +2474,62 @@ Total steps: 300
 
 [298/300] dswbr <DSW-BR> display stp brief
    MSTID  Port                        Role  STP State     Protection
-       0  GigabitEthernet0/0/0        DISA  LISTENING     NONE
+       0  GigabitEthernet0/0/0        DISA  DISCARDING    NONE
        0  GigabitEthernet0/0/1        ROOT  FORWARDING    NONE
        0  GigabitEthernet0/0/2        ALTE  DISCARDING    NONE
-       0  GigabitEthernet0/0/3        DISA  LISTENING     NONE
-       0  GigabitEthernet0/0/4        DISA  LISTENING     NONE
-       0  GigabitEthernet0/0/5        DISA  LISTENING     NONE
-       0  GigabitEthernet0/0/6        DISA  LISTENING     NONE
-       0  GigabitEthernet0/0/7        DISA  LISTENING     NONE
-       0  GigabitEthernet0/0/8        DISA  LISTENING     NONE
-       0  GigabitEthernet0/0/9        DISA  LISTENING     NONE
-       0  GigabitEthernet0/0/10       DISA  LISTENING     NONE
-       0  GigabitEthernet0/0/11       DISA  LISTENING     NONE
-       0  GigabitEthernet0/0/12       DISA  LISTENING     NONE
-       0  GigabitEthernet0/0/13       DISA  LISTENING     NONE
-       0  GigabitEthernet0/0/14       DISA  LISTENING     NONE
-       0  GigabitEthernet0/0/15       DISA  LISTENING     NONE
-       0  GigabitEthernet0/0/16       DISA  LISTENING     NONE
-       0  GigabitEthernet0/0/17       DISA  LISTENING     NONE
-       0  GigabitEthernet0/0/18       DISA  LISTENING     NONE
-       0  GigabitEthernet0/0/19       DISA  LISTENING     NONE
-       0  GigabitEthernet0/0/20       DISA  LISTENING     NONE
-       0  GigabitEthernet0/0/21       DISA  LISTENING     NONE
-       0  GigabitEthernet0/0/22       DISA  LISTENING     NONE
-       0  GigabitEthernet0/0/23       DISA  LISTENING     NONE
+       0  GigabitEthernet0/0/3        DISA  DISCARDING    NONE
+       0  GigabitEthernet0/0/4        DISA  DISCARDING    NONE
+       0  GigabitEthernet0/0/5        DISA  DISCARDING    NONE
+       0  GigabitEthernet0/0/6        DISA  DISCARDING    NONE
+       0  GigabitEthernet0/0/7        DISA  DISCARDING    NONE
+       0  GigabitEthernet0/0/8        DISA  DISCARDING    NONE
+       0  GigabitEthernet0/0/9        DISA  DISCARDING    NONE
+       0  GigabitEthernet0/0/10       DISA  DISCARDING    NONE
+       0  GigabitEthernet0/0/11       DISA  DISCARDING    NONE
+       0  GigabitEthernet0/0/12       DISA  DISCARDING    NONE
+       0  GigabitEthernet0/0/13       DISA  DISCARDING    NONE
+       0  GigabitEthernet0/0/14       DISA  DISCARDING    NONE
+       0  GigabitEthernet0/0/15       DISA  DISCARDING    NONE
+       0  GigabitEthernet0/0/16       DISA  DISCARDING    NONE
+       0  GigabitEthernet0/0/17       DISA  DISCARDING    NONE
+       0  GigabitEthernet0/0/18       DISA  DISCARDING    NONE
+       0  GigabitEthernet0/0/19       DISA  DISCARDING    NONE
+       0  GigabitEthernet0/0/20       DISA  DISCARDING    NONE
+       0  GigabitEthernet0/0/21       DISA  DISCARDING    NONE
+       0  GigabitEthernet0/0/22       DISA  DISCARDING    NONE
+       0  GigabitEthernet0/0/23       DISA  DISCARDING    NONE
 
 [299/300] swbr <SW-BR> display stp brief
    MSTID  Port                        Role  STP State     Protection
-       0  GigabitEthernet0/0/0        DISA  LISTENING     NONE
+       0  GigabitEthernet0/0/0        DISA  DISCARDING    NONE
        0  GigabitEthernet0/0/1        DESI  FORWARDING    NONE
        0  GigabitEthernet0/0/2        DESI  FORWARDING    EDGE
        0  GigabitEthernet0/0/3        DESI  FORWARDING    NONE
        0  GigabitEthernet0/0/4        DESI  FORWARDING    NONE
        0  GigabitEthernet0/0/5        DESI  FORWARDING    NONE
-       0  GigabitEthernet0/0/6        DISA  LISTENING     NONE
-       0  GigabitEthernet0/0/7        DISA  LISTENING     NONE
-       0  GigabitEthernet0/0/8        DISA  LISTENING     NONE
-       0  GigabitEthernet0/0/9        DISA  LISTENING     NONE
-       0  GigabitEthernet0/0/10       DISA  LISTENING     NONE
-       0  GigabitEthernet0/0/11       DISA  LISTENING     NONE
-       0  GigabitEthernet0/0/12       DISA  LISTENING     NONE
-       0  GigabitEthernet0/0/13       DISA  LISTENING     NONE
-       0  GigabitEthernet0/0/14       DISA  LISTENING     NONE
-       0  GigabitEthernet0/0/15       DISA  LISTENING     NONE
-       0  GigabitEthernet0/0/16       DISA  LISTENING     NONE
-       0  GigabitEthernet0/0/17       DISA  LISTENING     NONE
-       0  GigabitEthernet0/0/18       DISA  LISTENING     NONE
-       0  GigabitEthernet0/0/19       DISA  LISTENING     NONE
-       0  GigabitEthernet0/0/20       DISA  LISTENING     NONE
-       0  GigabitEthernet0/0/21       DISA  LISTENING     NONE
-       0  GigabitEthernet0/0/22       DISA  LISTENING     NONE
-       0  GigabitEthernet0/0/23       DISA  LISTENING     NONE
+       0  GigabitEthernet0/0/6        DISA  DISCARDING    NONE
+       0  GigabitEthernet0/0/7        DISA  DISCARDING    NONE
+       0  GigabitEthernet0/0/8        DISA  DISCARDING    NONE
+       0  GigabitEthernet0/0/9        DISA  DISCARDING    NONE
+       0  GigabitEthernet0/0/10       DISA  DISCARDING    NONE
+       0  GigabitEthernet0/0/11       DISA  DISCARDING    NONE
+       0  GigabitEthernet0/0/12       DISA  DISCARDING    NONE
+       0  GigabitEthernet0/0/13       DISA  DISCARDING    NONE
+       0  GigabitEthernet0/0/14       DISA  DISCARDING    NONE
+       0  GigabitEthernet0/0/15       DISA  DISCARDING    NONE
+       0  GigabitEthernet0/0/16       DISA  DISCARDING    NONE
+       0  GigabitEthernet0/0/17       DISA  DISCARDING    NONE
+       0  GigabitEthernet0/0/18       DISA  DISCARDING    NONE
+       0  GigabitEthernet0/0/19       DISA  DISCARDING    NONE
+       0  GigabitEthernet0/0/20       DISA  DISCARDING    NONE
+       0  GigabitEthernet0/0/21       DISA  DISCARDING    NONE
+       0  GigabitEthernet0/0/22       DISA  DISCARDING    NONE
+       0  GigabitEthernet0/0/23       DISA  DISCARDING    NONE
 
 [300/300] lhq lhq$ ping -c 1 10.3.3.10
   PING 10.3.3.10 (10.3.3.10) 56(84) bytes of data.
-  64 bytes from 10.3.3.10: icmp_seq=1 ttl=62 time=1.713 ms
+  64 bytes from 10.3.3.10: icmp_seq=1 ttl=62 time=0.893 ms
   
   --- 10.3.3.10 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 1.713/1.713/1.713/0.000 ms
+  rtt min/avg/max/mdev = 0.893/0.893/0.893/0.000 ms
