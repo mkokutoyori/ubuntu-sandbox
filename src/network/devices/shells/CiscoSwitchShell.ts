@@ -25,6 +25,7 @@ import { collectRegistrations, specsFromTrieRegistrations }
   from '@/cli/commands/trieAdapter';
 import type { ISwitchShell } from './ISwitchShell';
 import type { Switch, SwitchportConfig } from '../Switch';
+import type { VlanSet } from '../switch/VlanSet';
 import type { CiscoSwitch } from '../CiscoSwitch';
 import type { PromptMap } from './PromptBuilder';
 import { CISCO_SWITCH_PROMPTS } from './PromptBuilder';
@@ -4093,7 +4094,7 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
     // trunk` a real answer on an unmanaged switch rather than a refusal.
     const dtp = this.optionalDtp();
     const existing = [...sw.getVLANs().keys()].sort((a, b) => a - b);
-    const trunks: Array<{ port: string; native: number; allowed: Set<number> }> = [];
+    const trunks: Array<{ port: string; native: number; allowed: VlanSet }> = [];
     for (const p of portNames) {
       const c = sw.getSwitchportConfig(p);
       const isTrunk = dtp ? dtp.getOperationalMode(p) === 'trunk' : c?.mode === 'trunk';
@@ -4106,9 +4107,9 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
     for (const t of trunks) {
       lines.push(`${t.port.padEnd(12)}${'on'.padEnd(17)}${'802.1q'.padEnd(15)}${'trunking'.padEnd(14)}${t.native}`);
     }
-    const allowedStr = (a: Set<number>) =>
+    const allowedStr = (a: VlanSet) =>
       a.size >= 4094 ? '1-4094' : this.compactVlanList([...a].sort((x, y) => x - y));
-    const activeStr = (a: Set<number>) =>
+    const activeStr = (a: VlanSet) =>
       this.compactVlanList(existing.filter((v) => a.has(v))) || 'none';
     lines.push('', 'Port        Vlans allowed on trunk');
     for (const t of trunks) lines.push(`${t.port.padEnd(12)}${allowedStr(t.allowed)}`);

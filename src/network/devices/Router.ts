@@ -109,6 +109,7 @@ import {
   DeviceType,
   IPv6Address, IPv6Packet,
 } from '../core/types';
+import type { ARPEntry } from '../core/types';
 import type { IIPv4Route } from '../core/interfaces';
 import { ipv4MulticastToMac, tryIpToUint32 } from '../core/ip';
 import { Logger } from '../core/Logger';
@@ -246,13 +247,6 @@ export interface RouterCounters {
 }
 
 // ─── ARP State ─────────────────────────────────────────────────────
-
-interface ARPEntry {
-  mac: MACAddress;
-  iface: string;
-  timestamp: number;
-  type: 'dynamic' | 'static';
-}
 
 /** Packets waiting for ARP resolution */
 interface QueuedPacket {

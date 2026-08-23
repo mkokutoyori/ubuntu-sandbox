@@ -49,7 +49,7 @@ const transport = (sw: HuaweiSwitch) =>
   (sw as unknown as { _getVtyTransportInput(): string })._getVtyTransportInput();
 
 async function commutateur(lignes: readonly string[]): Promise<HuaweiSwitch> {
-  const sw = new HuaweiSwitch('huawei-switch', 'SW');
+  const sw = new HuaweiSwitch('switch-huawei', 'SW');
   await taper(sw, lignes);
   return sw;
 }
@@ -76,7 +76,7 @@ describe('VRP commutateur : la vue vty est rendue par UN bloc', () => {
     const sw = await commutateur(VTY_SSH);
     const cfg = await rendre(sw);
 
-    const copie = new HuaweiSwitch('huawei-switch', 'SW2');
+    const copie = new HuaweiSwitch('switch-huawei', 'SW2');
     await replayVendorConfig(copie as Parameters<typeof replayVendorConfig>[0], cfg);
 
     expect(transport(copie)).toBe('ssh');

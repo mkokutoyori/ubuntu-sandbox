@@ -58,6 +58,7 @@ import { UDP_PORT_HSRP } from '../hsrp/types';
 import { GlbpAgent } from '../glbp/GlbpAgent';
 import { UDP_PORT_GLBP } from '../glbp/types';
 import { IP_PROTO_UDP, createIPv4Packet } from '../core/types';
+import type { ARPEntry } from '../core/types';
 import type { UDPPacket } from '../core/types';
 import { makeSwitchVrrpHost, makeSwitchNtpHost } from './switch/SwitchVrrpAdapter';
 import { NtpAgent } from '../ntp/NtpAgent';
@@ -451,7 +452,7 @@ export abstract class Switch extends Equipment {
   private interfaceDescriptions: Map<string, string> = new Map();
 
   // ─── Management ARP Table ──────────────────────────────────────
-  private arpTable: Map<string, { mac: MACAddress; iface: string; timestamp: number; type: 'dynamic' | 'static' }> = new Map();
+  private arpTable: Map<string, ARPEntry> = new Map();
   private readonly arpStats = new ArpStats();
   private ipRoutingEnabled = false;
 

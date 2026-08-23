@@ -10,17 +10,11 @@
  */
 
 import type { Port } from '../../hardware/Port';
-import type { IPAddress, MACAddress } from '../../core/types';
+import type { ARPEntry, IPAddress, MACAddress } from '../../core/types';
 
 // ─── ARP Provider (shared ARP table access) ─────────────────────────
 
-/** Entry in the ARP table (dynamic or static) */
-export interface CiscoARPEntry {
-  mac: MACAddress;
-  iface: string;
-  timestamp: number;
-  type: 'dynamic' | 'static';
-}
+export type CiscoARPEntry = ARPEntry;
 
 /**
  * ARP table access — subset of CiscoDevice for ARP commands.
