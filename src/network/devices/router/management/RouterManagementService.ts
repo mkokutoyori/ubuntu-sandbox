@@ -168,25 +168,7 @@ export class RouterManagementService {
 
   configureClock(args: string[]): void {
     const head = (args[0] ?? '').toLowerCase();
-    if (head === 'timezone' && args[1] && args[3]) {
-      // VRP ecrit `clock timezone WAT add 01:00:00` : le signe est le mot
-      // `add`/`minus` et le decalage porte des SECONDES. L'expression
-      // reguliere attendait `+01:00`, une forme que VRP n'emet jamais,
-      // donc AUCUN fuseau configure sur un Huawei n'etait applique et
-      // `display clock` repondait UTC (lot N2).
-      this.clockCfg.timezone = args[1];
-      const signe = args[2]?.toLowerCase() === 'minus' ? -1 : 1;
-      const m = /^(\d{1,2}):(\d{2})(?::(\d{2}))?$/.exec(args[3]);
-      if (m) {
-        this.clockCfg.offsetMin = signe * (parseInt(m[1], 10) * 60 + parseInt(m[2], 10));
-      } else {
-        const ios = /^([-+]?)(\d{1,2}):(\d{2})$/.exec(args[3]);
-        if (ios) {
-          const s = ios[1] === '-' ? -1 : 1;
-          this.clockCfg.offsetMin = s * (parseInt(ios[2], 10) * 60 + parseInt(ios[3], 10));
-        }
-      }
-    } else if (head === 'daylight-saving-time') {
+    if (head === 'daylight-saving-time') {
       this.clockCfg.summerTimezone = args[1] ?? '';
       this.clockCfg.daylightStart = args.slice(3, 6).join(' ');
       this.clockCfg.daylightEnd = args.slice(7, 10).join(' ');

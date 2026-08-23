@@ -43,6 +43,7 @@ import { type HuaweiSwitchDevice, commeRouteur, moteurNat, ajouterLigneVlan, lig
 import { VrpSocle } from '@/cli/vendors/vrp/vrpSocle';
 import { VRP_SWITCH_MODES } from '@/cli/vendors/vrp/vrpModes';
 import { vrpMtuFamily } from '@/cli/vendors/vrp/vrpInterfaceParamsFamily';
+import { vrpClockFamily, VRP_TIMEZONE_DEFAUT } from '@/cli/vendors/vrp/vrpClockFamily';
 import { mqcMatchLine, mqcRemarkLines } from '../Switch';
 import { DSCP_KEYWORD_TO_VALUE } from '../router/ACLEngine';
 import { resolveHuaweiInterfaceName, huaweiDisplayInterfaceName } from './cli-utils';
@@ -504,7 +505,7 @@ export class HuaweiSwitchShell implements ISwitchShell {
     if (!this.socleInstance) {
       this.socleInstance = new VrpSocle(
         () => this.swRef?.getHostname() ?? 'Switch', this,
-        () => vrpMtuFamily(), VRP_SWITCH_MODES);
+        () => [...vrpMtuFamily(), ...vrpClockFamily()], VRP_SWITCH_MODES);
     }
     return this.socleInstance;
   }
@@ -520,6 +521,18 @@ export class HuaweiSwitchShell implements ISwitchShell {
 
   vrpSetInterfaceBandwidth(iface: string, kbps: number): string {
     this.swRef?.getPort(iface)?.setBandwidthKbps(kbps);
+    return '';
+  }
+
+  vrpSetTimezone(nom: string, minutes: number): string {
+    const clock = this.swRef?.getManagementService?.().getClock();
+    if (clock) { clock.timezone = nom; clock.offsetMin = minutes; }
+    return '';
+  }
+
+  vrpClearTimezone(): string {
+    const clock = this.swRef?.getManagementService?.().getClock();
+    if (clock) { clock.timezone = VRP_TIMEZONE_DEFAUT; clock.offsetMin = 0; }
     return '';
   }
 
@@ -587,6 +600,11 @@ export class HuaweiSwitchShell implements ISwitchShell {
     // Bind switch reference for command closures
     this.swRef = sw;
 
+    const refus = this.socle().refusalBeforeTrie(cmd, this.mode);
+    if (refus !== null) {
+      this.swRef = null;
+      return refus;
+    }
     const migre = this.socle().run(cmd, this.mode);
     if (migre !== null) {
       this.swRef = null;
@@ -2603,7 +2621,11 @@ export class HuaweiSwitchShell implements ISwitchShell {
     });
 
     // ── Common VRP display commands (shared with the router, DRY) ──
-    trie.register('display clock', 'Display system clock', () => displayClock());
+    trie.register('display clock', 'Display system clock', () => {
+      const c = this.swRef?.getManagementService?.().getClock();
+      return displayClock(new Date(),
+        c ? { timezone: c.timezone, offsetMin: c.offsetMin } : undefined);
+    });
     trie.register('display cpu-usage', 'Display CPU usage', () => displayCpuUsage());
     trie.register('display memory-usage', 'Display memory usage', () => displayMemoryUsage());
     trie.register('display users', 'Display user sessions', () => displayUsers(this.swRef));

@@ -22,6 +22,7 @@ import type { Router } from '../Router';
 import { VrpSocle } from '@/cli/vendors/vrp/vrpSocle';
 import { vrpDhcpClientFamily, type VrpDhcpLeaseView } from '@/cli/vendors/vrp/vrpDhcpClientFamily';
 import { vrpMtuFamily, vrpBandwidthFamily } from '@/cli/vendors/vrp/vrpInterfaceParamsFamily';
+import { vrpClockFamily, VRP_TIMEZONE_DEFAUT } from '@/cli/vendors/vrp/vrpClockFamily';
 import { registerInfoCenterDisplayCommands } from './huawei/HuaweiInfoCenterCommands';
 import type { IRouterShell } from './IRouterShell';
 import { LoggingConfig } from '../inspection/config/LoggingConfig';
@@ -690,7 +691,8 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
     if (!this.socleInstance) {
       this.socleInstance = new VrpSocle(
         () => this.routerRef?.getHostname() ?? 'Router', this,
-        () => [...vrpDhcpClientFamily(), ...vrpMtuFamily(), ...vrpBandwidthFamily()]);
+                () => [...vrpDhcpClientFamily(), ...vrpMtuFamily(), ...vrpBandwidthFamily(),
+          ...vrpClockFamily()]);
     }
     return this.socleInstance;
   }
@@ -706,6 +708,18 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
 
   vrpSetInterfaceBandwidth(iface: string, kbps: number): string {
     this.routerRef?.getPort(iface)?.setBandwidthKbps(kbps);
+    return '';
+  }
+
+  vrpSetTimezone(nom: string, minutes: number): string {
+    const clock = this.routerRef?.getManagementService?.().getClock();
+    if (clock) { clock.timezone = nom; clock.offsetMin = minutes; }
+    return '';
+  }
+
+  vrpClearTimezone(): string {
+    const clock = this.routerRef?.getManagementService?.().getClock();
+    if (clock) { clock.timezone = VRP_TIMEZONE_DEFAUT; clock.offsetMin = 0; }
     return '';
   }
 
@@ -739,6 +753,8 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
   private executeOnTrie(cmdPart: string): string {
     const migre = this.socle().run(cmdPart, this.mode);
     if (migre !== null) return migre;
+    const refus = this.socle().refusalBeforeTrie(cmdPart, this.mode);
+    if (refus !== null) return refus;
     const trie = this.getActiveTrie();
     const result = trie.match(cmdPart);
 

@@ -9,6 +9,7 @@
 
 import type { Router } from '../../Router';
 import type { CommandTrie } from '../CommandTrie';
+import { vrpRenderOffset } from '@/cli/vendors/vrp/vrpClockFamily';
 import { HuaweiDebugService } from '../../router/diag/HuaweiDebugService';
 import { nqaRunningConfigLines } from './HuaweiNqaCommands';
 import {
@@ -1143,9 +1144,7 @@ function appendManagementConfig(lines: string[], router: Router): void {
   if (clock.timezone !== 'UTC' || clock.summerTimezone) {
     lines.push('#');
     if (clock.timezone !== 'UTC') {
-      const sign = clock.offsetMin >= 0 ? 'add' : 'minus';
-      const abs = Math.abs(clock.offsetMin);
-      lines.push(`clock timezone ${clock.timezone} ${sign} ${Math.floor(abs / 60)}:${String(abs % 60).padStart(2, '0')}`);
+      lines.push(`clock timezone ${clock.timezone} ${vrpRenderOffset(clock.offsetMin)}`);
     }
     if (clock.summerTimezone) {
       lines.push(`clock daylight-saving-time ${clock.summerTimezone} repeating ${clock.daylightStart} ${clock.daylightEnd}`);

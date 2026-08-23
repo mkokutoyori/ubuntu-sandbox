@@ -103,19 +103,19 @@ elles.
 
 ## Socle CLI
 
-### [socle] une seule famille est migrée sur le commutateur VRP
-Le pont existe désormais des DEUX côtés : `VRP_SWITCH_MODES` décrit la
-hiérarchie des treize vues du commutateur, et `HuaweiSwitchShell` consulte
-le socle avant son trie, comme le routeur. Une seule famille l'emprunte
-(`mtu`) ; le reste du vocabulaire du commutateur — `vlan`, `port-group`,
-`traffic-*`, `mst-region` — vit toujours sur `CommandTrie`.
+### [socle] deux familles sont migrées sur le commutateur VRP
+Le pont existe des DEUX côtés : `VRP_SWITCH_MODES` décrit la hiérarchie
+des treize vues du commutateur, et `HuaweiSwitchShell` consulte le socle
+avant son trie, comme le routeur. Deux familles l'empruntent (`mtu`,
+`clock timezone`) ; le reste du vocabulaire du commutateur — `vlan`,
+`port-group`, `traffic-*`, `mst-region` — vit toujours sur `CommandTrie`.
 **Report** : incrémental par construction, comme côté routeur.
 
-### [socle] deux familles VRP sont migrées sur le routeur
-Le pont est branché et exercé par la famille du client DHCP et par celle
-des paramètres physiques d'interface (`mtu`, `bandwidth`). Le reste du
-vocabulaire VRP — plusieurs centaines d'enregistrements — vit toujours
-sur `CommandTrie`.
+### [socle] trois familles VRP sont migrées sur le routeur
+Le pont est branché et exercé par la famille du client DHCP, celle des
+paramètres physiques d'interface (`mtu`, `bandwidth`) et celle de
+l'horloge (`clock timezone`). Le reste du vocabulaire VRP — plusieurs
+centaines d'enregistrements — vit toujours sur `CommandTrie`.
 **Report** : la migration est incrémentale par construction ; chaque
 famille reprise ferme une part de cette entrée. Ce que la deuxième a
 appris : une famille ne vaut d'être migrée que si le socle lui APPORTE
