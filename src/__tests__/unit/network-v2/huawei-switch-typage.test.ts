@@ -123,15 +123,15 @@ describe('une vue que le switch n\'a pas ne le rend pas muet', () => {
   });
 });
 
-describe('ce que le cast affirmait et que personne ne fournissait', () => {
-  it('`protocol inbound` est accepte et ne gouverne rien sur un switch', async () => {
-    // `_setVtyTransportInput` vit sur `Router`. Un `Switch` n'a ni
-    // serveur SSH ni politique de vty, donc il n'y a rien a gouverner.
-    // Le port le declare optionnel : la commande reste acceptee, comme
-    // sur VRP, et le fait qu'elle soit inerte est ecrit ici.
+describe('ce que le port declare, et ce que l equipement fournit', () => {
+  it('`protocol inbound` est accepte ET range sur le commutateur', async () => {
     const s = await sw(['system-view', 'user-interface vty 0 4']);
     expect(await s.executeCommand('protocol inbound ssh')).toBe('');
+    expect((s as unknown as { _getVtyTransportInput(): string })._getVtyTransportInput())
+      .toBe('ssh');
     expect(await s.executeCommand('undo protocol inbound ssh')).toBe('');
+    expect((s as unknown as { _getVtyTransportInput(): string })._getVtyTransportInput())
+      .toBe('telnet');
   });
 
   it('aucun `as unknown as` ni `as any` ne subsiste dans le shell', () => {

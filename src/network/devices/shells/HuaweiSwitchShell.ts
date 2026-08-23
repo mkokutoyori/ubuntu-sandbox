@@ -2053,7 +2053,7 @@ export class HuaweiSwitchShell implements ISwitchShell {
       if (args[0]?.toLowerCase() !== 'inbound' || !args[1]) return '';
       const dev = this.swRef;
       const proto = args[1].toLowerCase() as 'ssh' | 'telnet' | 'all' | 'none';
-      if (dev?._setVtyTransportInput && ['ssh', 'telnet', 'all', 'none'].includes(proto)) {
+      if (dev && ['ssh', 'telnet', 'all', 'none'].includes(proto)) {
         dev._setVtyTransportInput(proto, this.selectedUiRange ?? undefined);
       }
       return '';
@@ -2064,7 +2064,7 @@ export class HuaweiSwitchShell implements ISwitchShell {
       if (args[0]?.toLowerCase() !== 'protocol' || args[1]?.toLowerCase() !== 'inbound') return '';
       const dev = this.swRef;
       const removed = (args[2] ?? '').toLowerCase();
-      if (!dev?._setVtyTransportInput) return '';
+      if (!dev) return '';
       const plage = this.selectedUiRange ?? undefined;
       if (removed === 'ssh') dev._setVtyTransportInput('telnet', plage);
       else if (removed === 'telnet') dev._setVtyTransportInput('ssh', plage);
@@ -3695,9 +3695,9 @@ export class HuaweiSwitchShell implements ISwitchShell {
       }
       return retire ? '' : 'Error: The MAC address entry does not exist.';
     }
-    return a.token === null
-      ? HUAWEI_ERRORS.INCOMPLETE(brut)
-      : refuseMotInattenduVrp(brut, a.token);
+    return a.statut === 'refus' && a.token !== null
+      ? refuseMotInattenduVrp(brut, a.token)
+      : HUAWEI_ERRORS.INCOMPLETE(brut);
   }
 
   private undoStpSysteme(reste: readonly string[]): string {
@@ -4082,6 +4082,7 @@ export class HuaweiSwitchShell implements ISwitchShell {
       route => `ip route-static ${route.network} ${route.mask} ${route.nextHop}`);
     if (lignesRoutes.length > 0) blocs.push(lignesRoutes);
 
+    const vues = new Map<string, string[]>();
     for (const [label, cfg] of this.userInterfaceExtraConfig) {
       const vue = vrpUserInterfaceHeader(label);
       if (!vue) continue;
@@ -4094,8 +4095,15 @@ export class HuaweiSwitchShell implements ISwitchShell {
       if (cfg.authorizationMode) corps.push(` authorization-mode ${cfg.authorizationMode}`);
       for (const u of cfg.users) corps.push(` user ${u}`);
       for (const l of cfg.rawLines) corps.push(` ${l}`);
-      if (corps.length > 0) blocs.push([vue, ...corps]);
+      vues.set(vue, corps);
     }
+    for (const bloc of sw._getVtyLineConfig().all()) {
+      const rendu = bloc.renderHuawei();
+      const corps = vues.get(rendu[0]) ?? [];
+      for (const ligne of rendu.slice(1)) if (!corps.includes(ligne)) corps.push(ligne);
+      vues.set(rendu[0], corps);
+    }
+    for (const [vue, corps] of vues) if (corps.length > 0) blocs.push([vue, ...corps]);
 
     return blocs;
   }
