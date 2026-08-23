@@ -29,7 +29,8 @@
 
 import { Equipment } from '../equipment/Equipment';
 import {
-  CarPolicer, suppressionKindOf, type SuppressionKind,
+  CarPolicer, suppressionKindOf, cloneCarRule,
+  type SuppressionKind, type CarRule,
 } from '../qos/CarPolicer';
 import { CiscoFileSystem } from './shells/cisco/CiscoFileSystem';
 import { Port } from '../hardware/Port';
@@ -368,6 +369,8 @@ export abstract class Switch extends Equipment {
   // ─── MQC (Huawei) ──────────────────────────────────────────────
   private mqcClassifiers: Map<string, MqcMatch[]> = new Map();
   private mqcBehaviors: Map<string, 'permit' | 'deny'> = new Map();
+  private mqcBehaviorCar: Map<string, CarRule> = new Map();
+  private mqcCarBuckets: Map<string, { raw: string; policer: CarPolicer }> = new Map();
   private mqcPolicies: Map<string, MqcPolicyBinding[]> = new Map();
   private vlanTrafficPolicies: Map<number, string> = new Map();
   private portTrafficPolicies: Map<string, string> = new Map();
@@ -1486,6 +1489,32 @@ export abstract class Switch extends Equipment {
     if (!this.mqcBehaviors.has(name)) this.mqcBehaviors.set(name, 'permit');
   }
 
+  mqcBehaviorSetCar(name: string, rule: CarRule): { ok: boolean; error?: string } {
+    if (!this.mqcBehaviors.has(name)) return { ok: false, error: `Traffic behavior ${name} does not exist` };
+    this.mqcBehaviorCar.set(name, rule);
+    return { ok: true };
+  }
+
+  mqcBehaviorClearCar(name: string): void {
+    this.mqcBehaviorCar.delete(name);
+  }
+
+  getMqcBehaviorCar(name: string): CarRule | undefined {
+    return this.mqcBehaviorCar.get(name);
+  }
+
+  private mqcCarBucket(point: string, behavior: string): CarPolicer | null {
+    const configured = this.mqcBehaviorCar.get(behavior);
+    if (!configured) return null;
+    const key = `${point}|${behavior}`;
+    const held = this.mqcCarBuckets.get(key);
+    if (held && held.raw === configured.raw) return held.policer;
+    const policer = new CarPolicer();
+    policer.add(cloneCarRule(configured));
+    this.mqcCarBuckets.set(key, { raw: configured.raw, policer });
+    return policer;
+  }
+
   mqcBehaviorSetAction(name: string, action: 'permit' | 'deny'): { ok: boolean; error?: string } {
     if (!this.mqcBehaviors.has(name)) return { ok: false, error: `Traffic behavior ${name} does not exist` };
     this.mqcBehaviors.set(name, action);
@@ -1540,14 +1569,18 @@ export abstract class Switch extends Equipment {
     return this.getVaclEngine().evaluateACLByName(match.ref, ip) === 'permit';
   }
 
-  private mqcPolicyPermits(policyName: string, vlan: number, frame: EthernetFrame): boolean {
+  private mqcPolicyPermits(
+    policyName: string, vlan: number, frame: EthernetFrame, point: string,
+  ): boolean {
     const pairs = this.mqcPolicies.get(policyName);
     if (!pairs || pairs.length === 0) return true;
     for (const pair of pairs) {
       for (const match of this.mqcClassifiers.get(pair.classifier) ?? []) {
-        if (this.mqcMatchHits(match, vlan, frame)) {
-          return (this.mqcBehaviors.get(pair.behavior) ?? 'permit') === 'permit';
-        }
+        if (!this.mqcMatchHits(match, vlan, frame)) continue;
+        if ((this.mqcBehaviors.get(pair.behavior) ?? 'permit') === 'deny') return false;
+        const bucket = this.mqcCarBucket(point, pair.behavior);
+        if (bucket) return bucket.police('input', ethernetFrameBytes(frame));
+        return true;
       }
     }
     return true;
@@ -1556,13 +1589,13 @@ export abstract class Switch extends Equipment {
   private mqcVlanPermits(vlan: number, frame: EthernetFrame): boolean {
     const policyName = this.vlanTrafficPolicies.get(vlan);
     if (!policyName) return true;
-    return this.mqcPolicyPermits(policyName, vlan, frame);
+    return this.mqcPolicyPermits(policyName, vlan, frame, `vlan${vlan}`);
   }
 
   private mqcPortPermits(portName: string, vlan: number, frame: EthernetFrame): boolean {
     const policyName = this.portTrafficPolicies.get(portName);
     if (!policyName) return true;
-    return this.mqcPolicyPermits(policyName, vlan, frame);
+    return this.mqcPolicyPermits(policyName, vlan, frame, portName);
   }
 
   applyPortTrafficPolicy(portName: string, policyName: string): { ok: boolean; error?: string } {

@@ -169,3 +169,61 @@ describe('la politique posee sur un PORT filtre vraiment', () => {
     expect(await sw.executeCommand('traffic-policy inconnue inbound')).toContain('Error');
   });
 });
+
+/**
+ * Le second volet — `car` sous `traffic behavior` — se discrimine contre
+ * le lot precedent : 2 de ses 4 cas tombent (la commande etait refusee,
+ * et le seau etroit ne jetait rien). Les 2 autres passent des deux cotes
+ * et sont nommes ici : le refus d'une valeur malformee, qui avant venait
+ * du refus de `car` tout entier, et le seau large, qui est le TEMOIN du
+ * cas precedent.
+ */
+describe('le comportement sait aussi POLICER', () => {
+  const CAR = [
+    'traffic classifier tc2',
+    'if-match any',
+    'quit',
+    'traffic behavior tb2',
+    'car cir 1',
+    'quit',
+    'traffic policy tp2',
+    'classifier tc2 behavior tb2',
+    'quit',
+  ];
+
+  it('`car cir` est accepte, rendu, et lu par la vue', async () => {
+    const sw = await commutateur(CAR);
+    expect(await sw.executeCommand('display current-configuration'))
+      .toContain(' car cir 1');
+    expect(await sw.executeCommand('display traffic behavior user-defined'))
+      .toContain('CIR 1 (Kbps)');
+  });
+
+  it('une valeur malformee est REFUSEE plutot que rangee', async () => {
+    const sw = await commutateur(['traffic behavior tb3']);
+    expect(await sw.executeCommand('car zorglub')).toContain('Error');
+    expect(await sw.executeCommand('display current-configuration'))
+      .not.toContain('car zorglub');
+  });
+
+  it('un seau plus petit qu une trame jette VRAIMENT le trafic', async () => {
+    const { sw, a } = await laboFiltre([]);
+    for (const c of ['system-view', ...CAR,
+      'interface GigabitEthernet0/0/1', 'traffic-policy tp2 inbound', 'quit']) {
+      await sw.executeCommand(c);
+    }
+    expect(perdu(await a.executeCommand('ping -c 1 10.0.0.2'))).toBe(true);
+  });
+
+  it('un seau large laisse passer — TEMOIN de la mesure precedente', async () => {
+    const { sw, a } = await laboFiltre([]);
+    for (const c of ['system-view',
+      'traffic classifier tc3', 'if-match any', 'quit',
+      'traffic behavior tb4', 'car cir 100000', 'quit',
+      'traffic policy tp3', 'classifier tc3 behavior tb4', 'quit',
+      'interface GigabitEthernet0/0/1', 'traffic-policy tp3 inbound', 'quit']) {
+      await sw.executeCommand(c);
+    }
+    expect(perdu(await a.executeCommand('ping -c 1 10.0.0.2'))).toBe(false);
+  });
+});

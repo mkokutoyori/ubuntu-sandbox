@@ -15,7 +15,7 @@
 
 import { CommandTrie } from './CommandTrie';
 import {
-  parseSuppressionRule, parseVrpCarRule, SUPPRESSION_KINDS,
+  parseSuppressionRule, parseVrpCarRule, parseMqcCarRule, SUPPRESSION_KINDS,
 } from '../../qos/CarPolicer';
 import { NetworkOsAccount } from '../router/aaa/NetworkOsAccount';
 import {
@@ -969,6 +969,19 @@ export class HuaweiSwitchShell implements ISwitchShell {
       if (!this.selectedMqcName || !this.swRef) return 'Error: Incomplete command.';
       const res = this.swRef.mqcBehaviorSetAction(this.selectedMqcName, 'deny');
       return res.ok ? '' : `Error: ${res.error}.`;
+    });
+    this.mqcBehaviorTrie.registerGreedy('car', 'Rate-limit matched traffic', (args, brut) => {
+      if (!this.selectedMqcName || !this.swRef) return 'Error: Incomplete command.';
+      const raw = brut ?? `car ${args.join(' ')}`.trim();
+      const rule = parseMqcCarRule(args, raw, 'input');
+      if (!rule) return "Error: Wrong parameter found at '^' position.";
+      const res = this.swRef.mqcBehaviorSetCar(this.selectedMqcName, rule);
+      return res.ok ? '' : `Error: ${res.error}.`;
+    });
+    this.mqcBehaviorTrie.registerGreedy('undo car', 'Remove the rate limit', () => {
+      if (!this.selectedMqcName || !this.swRef) return 'Error: Incomplete command.';
+      this.swRef.mqcBehaviorClearCar(this.selectedMqcName);
+      return '';
     });
     this.mqcPolicyTrie.registerGreedy('classifier', 'Bind a classifier to a behavior', (args) => {
       if (!this.selectedMqcName || !this.swRef) return 'Error: Incomplete command.';
@@ -2854,6 +2867,11 @@ export class HuaweiSwitchShell implements ISwitchShell {
       for (const nom of noms) {
         lignes.push(`  Behavior: ${nom}`);
         lignes.push(`   ${device?.getMqcBehavior?.(nom) ?? 'permit'}`);
+        const car = device?.getMqcBehaviorCar?.(nom);
+        if (car) {
+          lignes.push(`   Committed Access Rate:`);
+          lignes.push(`     CIR ${Math.round(car.bitsPerSecond / 1000)} (Kbps), CBS ${car.normalBurstBytes} (Bytes), PBS ${car.maxBurstBytes} (Bytes)`);
+        }
         lignes.push('');
       }
       lignes.push(`Total behavior number is ${noms.length}`);
@@ -3938,8 +3956,10 @@ export class HuaweiSwitchShell implements ISwitchShell {
       blocs.push([`traffic classifier ${nom}`, ...corps]);
     }
     for (const nom of sw.getMqcBehaviorNames?.() ?? []) {
-      const action = sw.getMqcBehavior?.(nom) ?? 'permit';
-      blocs.push([`traffic behavior ${nom}`, ` ${action}`]);
+      const corps = [` ${sw.getMqcBehavior?.(nom) ?? 'permit'}`];
+      const car = sw.getMqcBehaviorCar?.(nom);
+      if (car) corps.push(` ${car.raw}`);
+      blocs.push([`traffic behavior ${nom}`, ...corps]);
     }
     for (const nom of sw.getMqcPolicyNames?.() ?? []) {
       const corps = (sw.getMqcPolicy?.(nom) ?? [])

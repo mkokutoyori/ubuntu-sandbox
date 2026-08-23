@@ -27,19 +27,19 @@ sur le même port sont plausibles et non attestées.
 mécanisme, lui, est en place — la clé de réglage porte désormais ses
 qualificatifs —, donc fermer cette entrée ne sera qu'un choix de clé.
 
-### [mqc] le comportement ne connaît que `permit` et `deny`
-Le classificateur (`if-match acl|vlan-id|any`), la politique et son
-évaluation sur le chemin de données sont réels, y compris posés sur un
-port. Le COMPORTEMENT, lui, n'a que deux actions : `car`, `remark dscp`,
-`statistic enable`, `redirect` sont refusés.
-**Mesure** : `car cir 1000` sous `traffic behavior` répond
+### [mqc] `remark` et `statistic` restent hors du comportement
+Le comportement sait `permit`, `deny` et `car` — ce dernier avec un vrai
+seau à jetons, propre à chaque point d'application. Restent refusés
+`remark dscp|8021p`, `statistic enable` et `redirect`.
+**Mesure** : `remark dscp af11` sous `traffic behavior` répond
 `Unrecognized command`.
-**Report** : `car` est le plus proche — `CarPolicer` existe et police
-déjà `qos car` et les trois suppressions —, mais le brancher demande de
-porter un seau par couple (classificateur, comportement) et non par port,
-donc une clé de police que le moteur ne connaît pas encore. `remark dscp`
-suppose un champ DSCP transporté de bout en bout, et `statistic enable`
-un compteur par classificateur : deux sujets à part.
+**Report** : `remark` suppose un champ DSCP porté de bout en bout par la
+trame — `IPv4Packet` a bien un `tos`, mais rien ne le lit ni ne le rend,
+donc marquer sans que personne n'observe la marque serait décoratif.
+`statistic enable` demande un compteur par couple classificateur/
+comportement et une vue qui le rende. `redirect` demande de détourner
+vers une interface, ce que le chemin de données du commutateur ne sait
+pas faire depuis un filtre.
 
 ### [mqc] l'opérateur `and`/`or` d'un classificateur n'est pas modélisé
 Plusieurs `if-match` dans un classificateur sont évalués en OU — le
