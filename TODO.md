@@ -221,9 +221,21 @@ Sur une vraie machine, franchir chacun ecrit un evenement.
 **Mesure** : `set max-size 400` puis produire du trafic — le tampon est
 borne pour de bon (les plus anciennes lignes tombent), mais aucun
 evenement n'annonce le franchissement.
-**Report** : le tampon compte desormais ses octets, donc la matiere est la ;
-ce qui manque est le message exact et son `logid`, que je n'ai pas pu
-relever sur une sortie reelle depuis ce reseau.
+**Report** : le tampon compte desormais ses octets ET reserve vraiment sa
+RAM (phase 16 : `set max-size` deplace la memoire utilisee et peut a lui
+seul declencher le mode conserve), donc la matiere est la.
+Ce qui manque reste le message : la reference des journaux FortiOS ne
+porte qu'UN identifiant de cette famille, `22023`
+(`LOG_ID_MEM_LOG_FIRST_FULL`, « Memory log first full »), et rien en
+`22024`-`22026` qui corresponde a un deuxieme ou a un dernier
+avertissement — ces deux-la sont un mot de passe expire et deux
+evenements SSH. Donc la correspondance entre les TROIS seuils et les
+evenements emis n'est pas etablie : en ecrire trois inventerait deux
+identifiants, et rattacher `22023` au premier seuil suppose que
+« first full » veuille dire « 75 % » alors qu'il se lit plutot
+« plein pour la premiere fois ». Ce qui est sur et implementable seul :
+un evenement `0100022023` la premiere fois qu'un enregistrement est
+JETE faute de place — `droppedCount` le sait deja.
 
 ### [pare-feu] les fragments recus ne sont pas REASSEMBLES
 Le pare-feu fait desormais respecter le MTU de son interface de sortie :
