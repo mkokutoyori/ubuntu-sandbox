@@ -979,6 +979,16 @@ export class HuaweiSwitchShell implements ISwitchShell {
       const res = this.swRef.mqcBehaviorSetCar(this.selectedMqcName, rule);
       return res.ok ? '' : `Error: ${res.error}.`;
     });
+    this.mqcBehaviorTrie.register('statistic enable', 'Count matched traffic', () => {
+      if (!this.selectedMqcName || !this.swRef) return 'Error: Incomplete command.';
+      const res = this.swRef.mqcBehaviorSetStatistic(this.selectedMqcName, true);
+      return res.ok ? '' : `Error: ${res.error}.`;
+    });
+    this.mqcBehaviorTrie.register('undo statistic enable', 'Stop counting', () => {
+      if (!this.selectedMqcName || !this.swRef) return 'Error: Incomplete command.';
+      this.swRef.mqcBehaviorSetStatistic(this.selectedMqcName, false);
+      return '';
+    });
     this.mqcBehaviorTrie.registerGreedy('remark', 'Rewrite a priority field', (args) => {
       if (!this.selectedMqcName || !this.swRef) return 'Error: Incomplete command.';
       const champ = (args[0] ?? '').toLowerCase();
@@ -2898,6 +2908,7 @@ export class HuaweiSwitchShell implements ISwitchShell {
         lignes.push(`   ${device?.getMqcBehavior?.(nom) ?? 'permit'}`);
         const marque = device?.getMqcBehaviorRemark?.(nom);
         if (marque) for (const ligne of mqcRemarkLines(marque)) lignes.push(`   ${ligne}`);
+        if (device?.mqcBehaviorHasStatistic?.(nom)) lignes.push('   statistic: enable');
         const car = device?.getMqcBehaviorCar?.(nom);
         if (car) {
           lignes.push(`   Committed Access Rate:`);
@@ -2923,6 +2934,43 @@ export class HuaweiSwitchShell implements ISwitchShell {
         lignes.push('');
       }
       lignes.push(`Total policy number is ${noms.length}`);
+      return lignes.join('\n');
+    });
+
+    trie.registerGreedy('display traffic policy statistics', 'Per-policy counters', (args) => {
+      const device = sw();
+      if (!device) return '';
+      const points: { label: string; point: string }[] = [];
+      const cible = (args[0] ?? '').toLowerCase();
+      if (cible === 'interface' && args[1]) {
+        const nom = this.resolveInterfaceName(args[1]) ?? args[1];
+        points.push({ label: nom, point: nom });
+      } else if (cible === 'vlan' && args[1]) {
+        points.push({ label: `Vlan ${args[1]}`, point: `vlan${args[1]}` });
+      } else {
+        return 'Error: Incomplete command.';
+      }
+
+      const lignes: string[] = [];
+      for (const { label, point } of points) {
+        const politique = point.startsWith('vlan')
+          ? device.getVlanTrafficPolicy?.(Number.parseInt(point.slice(4), 10))
+          : device.getPortTrafficPolicy?.(point);
+        if (!politique) return 'Info: The traffic policy is not applied.';
+        lignes.push(` Interface: ${label}`);
+        lignes.push(` Traffic policy inbound: ${politique}`);
+        for (const paire of device.getMqcPolicy?.(politique) ?? []) {
+          const compteurs = device.getMqcCounters?.(point, paire.classifier, paire.behavior);
+          lignes.push(`  Classifier: ${paire.classifier} Behavior: ${paire.behavior}`);
+          if (!compteurs) {
+            lignes.push('   (statistics not enabled)');
+            continue;
+          }
+          lignes.push(`   Matched      : ${compteurs.matchedPackets} packets, ${compteurs.matchedBytes} bytes`);
+          lignes.push(`    Passed      : ${compteurs.passedPackets} packets, ${compteurs.passedBytes} bytes`);
+          lignes.push(`    Dropped     : ${compteurs.droppedPackets} packets, ${compteurs.droppedBytes} bytes`);
+        }
+      }
       return lignes.join('\n');
     });
 
@@ -3992,6 +4040,7 @@ export class HuaweiSwitchShell implements ISwitchShell {
       if (car) corps.push(` ${car.raw}`);
       const marque = sw.getMqcBehaviorRemark?.(nom);
       if (marque) for (const ligne of mqcRemarkLines(marque)) corps.push(` ${ligne}`);
+      if (sw.mqcBehaviorHasStatistic?.(nom)) corps.push(' statistic enable');
       blocs.push([`traffic behavior ${nom}`, ...corps]);
     }
     for (const nom of sw.getMqcPolicyNames?.() ?? []) {

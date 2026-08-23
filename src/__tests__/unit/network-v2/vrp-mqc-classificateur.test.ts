@@ -296,3 +296,84 @@ describe('le comportement sait MARQUER, et la marque se lit en aval', () => {
     expect(perdu(await a.executeCommand('ping -c 1 10.0.0.2'))).toBe(true);
   });
 });
+
+/**
+ * Le quatrieme volet — `statistic enable` — mesure ce que la politique a
+ * VU passer, et le compteur suit la meme cle que le seau CAR : point
+ * d'application, classificateur, comportement. Une politique posee a
+ * deux endroits compte deux fois, comme sur une vraie machine.
+ *
+ * Discrimine contre le lot precedent : les 5 cas tombent, TEMOIN
+ * compris — non parce que le comportement differait, mais parce que la
+ * vue elle-meme est neuve et qu'aucun de ses cas n'etait atteignable.
+ * Ce que le TEMOIN mesure — une vue demandee la ou aucune politique
+ * n'est posee doit le DIRE — reste ce qu'il dit.
+ */
+describe('le comportement sait COMPTER', () => {
+  const COMPTE = [
+    'traffic classifier tcs', 'if-match any', 'quit',
+    'traffic behavior tbs', 'deny', 'statistic enable', 'quit',
+    'traffic policy tps', 'classifier tcs behavior tbs', 'quit',
+  ];
+
+  it('`statistic enable` est accepte et rendu', async () => {
+    const sw = await commutateur(COMPTE);
+    expect(await sw.executeCommand('display current-configuration'))
+      .toContain(' statistic enable');
+    expect(await sw.executeCommand('display traffic behavior user-defined'))
+      .toContain('statistic: enable');
+  });
+
+  it('le compteur avance avec le trafic REELLEMENT vu', async () => {
+    const { sw, a } = await laboFiltre([]);
+    for (const c of ['system-view', ...COMPTE,
+      'interface GigabitEthernet0/0/1', 'traffic-policy tps inbound', 'quit']) {
+      await sw.executeCommand(c);
+    }
+    await a.executeCommand('ping -c 1 10.0.0.2');
+
+    const vue = await sw.executeCommand(
+      'display traffic policy statistics interface GigabitEthernet0/0/1');
+    expect(vue).toContain('tcs');
+    expect(vue).toMatch(/Matched\s+: [1-9]\d* packets/);
+    expect(vue).toMatch(/Dropped\s+: [1-9]\d* packets/);
+  });
+
+  it('sans `statistic enable`, la vue le dit au lieu d inventer un zero', async () => {
+    const { sw, a } = await laboFiltre([
+      'interface GigabitEthernet0/0/1', 'traffic-policy tp1 inbound', 'quit',
+    ]);
+    await a.executeCommand('ping -c 1 10.0.0.2');
+    expect(await sw.executeCommand(
+      'display traffic policy statistics interface GigabitEthernet0/0/1'))
+      .toContain('statistics not enabled');
+  });
+
+  it('TEMOIN — sur un point sans politique, la vue le dit', async () => {
+    const { sw } = await laboFiltre([]);
+    expect(await sw.executeCommand(
+      'display traffic policy statistics interface GigabitEthernet0/0/1'))
+      .toContain('not applied');
+  });
+
+  it('le meme comportement pose a DEUX endroits compte separement', async () => {
+    const { sw, a, b } = await laboFiltre([]);
+    for (const c of ['system-view',
+      'traffic classifier tcd', 'if-match any', 'quit',
+      'traffic behavior tbd', 'permit', 'statistic enable', 'quit',
+      'traffic policy tpd', 'classifier tcd behavior tbd', 'quit',
+      'interface GigabitEthernet0/0/1', 'traffic-policy tpd inbound', 'quit',
+      'interface GigabitEthernet0/0/2', 'traffic-policy tpd inbound', 'quit']) {
+      await sw.executeCommand(c);
+    }
+    await a.executeCommand('ping -c 1 10.0.0.2');
+    await b.executeCommand('ping -c 1 10.0.0.1');
+
+    const un = await sw.executeCommand(
+      'display traffic policy statistics interface GigabitEthernet0/0/1');
+    const deux = await sw.executeCommand(
+      'display traffic policy statistics interface GigabitEthernet0/0/2');
+    expect(un).toMatch(/Matched\s+: [1-9]\d* packets/);
+    expect(deux).toMatch(/Matched\s+: [1-9]\d* packets/);
+  });
+});

@@ -206,6 +206,23 @@ export interface MqcPolicyBinding {
   behavior: string;
 }
 
+export interface MqcCounters {
+  matchedPackets: number;
+  matchedBytes: number;
+  passedPackets: number;
+  passedBytes: number;
+  droppedPackets: number;
+  droppedBytes: number;
+}
+
+export function emptyMqcCounters(): MqcCounters {
+  return {
+    matchedPackets: 0, matchedBytes: 0,
+    passedPackets: 0, passedBytes: 0,
+    droppedPackets: 0, droppedBytes: 0,
+  };
+}
+
 export interface MqcRemark {
   dscp?: number;
   dot1p?: number;
@@ -383,6 +400,8 @@ export abstract class Switch extends Equipment {
   private mqcBehaviors: Map<string, 'permit' | 'deny'> = new Map();
   private mqcBehaviorCar: Map<string, CarRule> = new Map();
   private mqcBehaviorRemark: Map<string, MqcRemark> = new Map();
+  private mqcBehaviorStatistic: Set<string> = new Set();
+  private mqcCounters: Map<string, MqcCounters> = new Map();
   private mqcCarBuckets: Map<string, { raw: string; policer: CarPolicer }> = new Map();
   private mqcPolicies: Map<string, MqcPolicyBinding[]> = new Map();
   private vlanTrafficPolicies: Map<number, string> = new Map();
@@ -1522,6 +1541,41 @@ export abstract class Switch extends Equipment {
     this.mqcBehaviorRemark.delete(name);
   }
 
+  mqcBehaviorSetStatistic(name: string, on: boolean): { ok: boolean; error?: string } {
+    if (!this.mqcBehaviors.has(name)) return { ok: false, error: `Traffic behavior ${name} does not exist` };
+    if (on) this.mqcBehaviorStatistic.add(name);
+    else this.mqcBehaviorStatistic.delete(name);
+    return { ok: true };
+  }
+
+  mqcBehaviorHasStatistic(name: string): boolean {
+    return this.mqcBehaviorStatistic.has(name);
+  }
+
+  /**
+   * Le compteur suit la MEME cle que le seau CAR — point d'application,
+   * classificateur, comportement — parce qu'une politique posee a deux
+   * endroits compte deux fois sur une vraie machine.
+   */
+  getMqcCounters(point: string, classifier: string, behavior: string): MqcCounters | undefined {
+    return this.mqcCounters.get(`${point}|${classifier}|${behavior}`);
+  }
+
+  clearMqcCounters(): void { this.mqcCounters.clear(); }
+
+  private countMqc(
+    point: string, pair: MqcPolicyBinding, bytes: number, passed: boolean,
+  ): void {
+    if (!this.mqcBehaviorStatistic.has(pair.behavior)) return;
+    const key = `${point}|${pair.classifier}|${pair.behavior}`;
+    let counters = this.mqcCounters.get(key);
+    if (!counters) { counters = emptyMqcCounters(); this.mqcCounters.set(key, counters); }
+    counters.matchedPackets++;
+    counters.matchedBytes += bytes;
+    if (passed) { counters.passedPackets++; counters.passedBytes += bytes; }
+    else { counters.droppedPackets++; counters.droppedBytes += bytes; }
+  }
+
   getMqcBehaviorRemark(name: string): MqcRemark | undefined {
     return this.mqcBehaviorRemark.get(name);
   }
@@ -1624,10 +1678,18 @@ export abstract class Switch extends Equipment {
     for (const pair of pairs) {
       for (const match of this.mqcClassifiers.get(pair.classifier) ?? []) {
         if (!this.mqcMatchHits(match, vlan, frame)) continue;
-        if ((this.mqcBehaviors.get(pair.behavior) ?? 'permit') === 'deny') return false;
+        const bytes = ethernetFrameBytes(frame);
+        if ((this.mqcBehaviors.get(pair.behavior) ?? 'permit') === 'deny') {
+          this.countMqc(point, pair, bytes, false);
+          return false;
+        }
         const bucket = this.mqcCarBucket(point, pair.behavior);
-        if (bucket && !bucket.police('input', ethernetFrameBytes(frame))) return false;
+        if (bucket && !bucket.police('input', bytes)) {
+          this.countMqc(point, pair, bytes, false);
+          return false;
+        }
         this.applyMqcRemark(pair.behavior, frame);
+        this.countMqc(point, pair, bytes, true);
         return true;
       }
     }

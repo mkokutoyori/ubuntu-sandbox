@@ -27,21 +27,17 @@ sur le même port sont plausibles et non attestées.
 mécanisme, lui, est en place — la clé de réglage porte désormais ses
 qualificatifs —, donc fermer cette entrée ne sera qu'un choix de clé.
 
-### [mqc] `statistic` et `redirect` restent hors du comportement
-Le comportement sait `permit`, `deny`, `car` (vrai seau à jetons, propre à
-chaque point d'application) et `remark dscp|8021p` (marque réellement
-posée sur le paquet, et lue par une liste d'accès en aval). Restent
-refusés `statistic enable` et `redirect`.
-**Mesure** : `statistic enable` sous `traffic behavior` répond
-`Unrecognized command`.
-**Report** : `statistic enable` demande un compteur par couple
-classificateur/comportement ET par point d'application — la même clé que
-celle des seaux CAR, donc le mécanisme existe — plus la vue
-`display traffic policy … statistics` qui le rende ; c'est un lot à part.
-`redirect` demande de détourner une trame vers une autre interface depuis
-un filtre, ce que le chemin de données du commutateur ne sait pas faire :
-`handleFrame` décide de laisser passer ou de jeter, jamais de réémettre
-ailleurs.
+### [mqc] `redirect` reste hors du comportement
+Le comportement sait `permit`, `deny`, `car`, `remark dscp|8021p` et
+`statistic enable` (compteurs par point d'application, rendus par
+`display traffic policy statistics`). Reste `redirect`.
+**Mesure** : `redirect interface GigabitEthernet0/0/2` sous
+`traffic behavior` répond `Unrecognized command`.
+**Report** : le chemin de données du commutateur décide de laisser passer
+ou de jeter — `handleFrame` n'a aucun point où réémettre une trame sur
+une autre interface depuis un filtre. Le brancher demande de séparer la
+décision de filtrage de la décision de commutation, ce qui touche le
+cœur de `handleFrame` et pas le MQC.
 
 ### [mqc] l'opérateur `and`/`or` d'un classificateur n'est pas modélisé
 Plusieurs `if-match` dans un classificateur sont évalués en OU — le
