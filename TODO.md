@@ -101,6 +101,39 @@ elles.
 
 ---
 
+## Postes Windows
+
+### [ping] le CODE de l'ICMP inatteignable est jeté à l'affichage
+**Constat.** `WinPing.formatWinPingReplyLine` rend TOUT « destination
+unreachable » par `Reply from <ip>: Destination host unreachable.`, quel
+que soit le code ICMP. Mesuré : un routeur qui refuse par ACL répond
+type 3 **code 13** (communication administrativement interdite), le code
+VOYAGE bien jusqu'au client — `EndHost` le range dans la chaîne d'erreur
+(`Destination unreachable (from X) code 13`) et le `ping` Linux le lit
+déjà pour écrire « Packet filtered » (`commands/net/Ping.ts`, ligne 249)
+— mais la moitié Windows ne le regarde pas. Deux machines du même
+laboratoire diagnostiquent donc le même refus autrement, et celle qui
+perd l'information est celle qui envoie l'apprenant vérifier son câblage
+au lieu de sa liste d'accès.
+
+**Ce qui bloque, et c'est une question de RÉFÉRENCE, pas de code.** Les
+chaînes exactes de `ping.exe` par code ne sont pas vérifiables : la
+documentation Microsoft ne les publie pas, et la seule source à texte
+préservé trouvée est ReactOS — une réimplémentation, qui ne traite que
+NET/HOST/TTL et écrit « Destination network unreachable. » là où Windows
+écrit, d'après tout ce qu'on lit ailleurs, « Destination net
+unreachable. ». Écrire la table de mémoire produirait exactement le
+genre de sortie plausible-et-fausse que ce dépôt passe son temps à
+refermer.
+
+**Report.** Hors du chemin du tutoriel ACL — le lecteur y constate un
+`Reply from <routeur>` et 100 % de perte, ce que la plateforme rend
+correctement. À fermer le jour où une capture réelle de `ping.exe` sous
+ACL est disponible ; le reste est déjà en place, il ne manque que les
+libellés.
+
+---
+
 ## Socle CLI
 
 ### [socle] deux familles sont migrées sur le commutateur VRP
