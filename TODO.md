@@ -107,17 +107,29 @@ elles.
 Le pont existe pour le ROUTEUR VRP (`src/cli/vendors/vrp/`) ;
 `HuaweiSwitchShell` ne connaît toujours ni `CommandTable` ni
 `CommandSpec`.
-**Mesure** : aucune occurrence de `VrpSocle` dans ce fichier.
+**Mesure** : aucune occurrence de `VrpSocle` dans ce fichier. Conséquence
+désormais VISIBLE, depuis que `mtu`/`bandwidth` du routeur sont sur le
+socle : les deux plateformes VRP ne répondent plus pareil à la même
+commande. Sur le commutateur, `undo mtu` est accepté et n'annule rien
+(le port garde sa valeur), et `mtu ?` annonce `WORD` là où le routeur
+annonce `<68-9216>`. Le commutateur refuse bien `mtu zorglub`, mais avec
+`Wrong parameter` là où `mtu` seul devrait dire `Incomplete command`.
 **Report** : le commutateur a ses propres vues (`vlan`, `port-group`,
 `mst-region`, `traffic-*`) qui ne sont pas dans `HUAWEI_VRP_MODES` — il
 faut d'abord décrire cette hiérarchie, ce que le routeur n'exigeait pas.
+Migrer la même famille des deux côtés est ce qui refermera l'écart.
 
-### [socle] une seule famille VRP est migrée
-Le pont est branché et exercé par la famille du client DHCP. Le reste du
+### [socle] deux familles VRP sont migrées
+Le pont est branché et exercé par la famille du client DHCP et par celle
+des paramètres physiques d'interface (`mtu`, `bandwidth`). Le reste du
 vocabulaire VRP — plusieurs centaines d'enregistrements — vit toujours
 sur `CommandTrie`.
 **Report** : la migration est incrémentale par construction ; chaque
-famille reprise ferme une part de cette entrée.
+famille reprise ferme une part de cette entrée. Ce que la deuxième a
+appris : une famille ne vaut d'être migrée que si le socle lui APPORTE
+quelque chose — ici l'argument typé, qui a fermé cinq défauts d'un coup —
+et il faut RETIRER l'enregistrement du trie en même temps, sans quoi on
+laisse deux implémentations dont une morte.
 
 ## Pare-feu FortiGate
 

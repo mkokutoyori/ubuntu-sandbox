@@ -21,6 +21,7 @@
 import type { Router } from '../Router';
 import { VrpSocle } from '@/cli/vendors/vrp/vrpSocle';
 import { vrpDhcpClientFamily, type VrpDhcpLeaseView } from '@/cli/vendors/vrp/vrpDhcpClientFamily';
+import { vrpInterfaceParamsFamily } from '@/cli/vendors/vrp/vrpInterfaceParamsFamily';
 import { registerInfoCenterDisplayCommands } from './huawei/HuaweiInfoCenterCommands';
 import type { IRouterShell } from './IRouterShell';
 import { LoggingConfig } from '../inspection/config/LoggingConfig';
@@ -688,12 +689,25 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
   private socle(): VrpSocle {
     if (!this.socleInstance) {
       this.socleInstance = new VrpSocle(
-        () => this.routerRef?.getHostname() ?? 'Router', this, () => vrpDhcpClientFamily());
+        () => this.routerRef?.getHostname() ?? 'Router', this,
+        () => [...vrpDhcpClientFamily(), ...vrpInterfaceParamsFamily()]);
     }
     return this.socleInstance;
   }
 
   vrpSelectedInterface(): string | null { return this.selectedInterface ?? null; }
+
+  vrpSetInterfaceMtu(iface: string, mtu: number): string {
+    const port = this.routerRef?.getPort(iface);
+    if (!port) return 'Error: No interface selected';
+    try { port.setMTU(mtu); } catch (e) { return `Error: ${(e as Error).message}`; }
+    return '';
+  }
+
+  vrpSetInterfaceBandwidth(iface: string, kbps: number): string {
+    this.routerRef?.getPort(iface)?.setBandwidthKbps(kbps);
+    return '';
+  }
 
   vrpDhcpEnabledElsewhere(iface: string): boolean {
     const agent = this.routerRef?.getDhcpClientAgent();

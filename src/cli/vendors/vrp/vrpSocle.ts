@@ -71,14 +71,16 @@ export class VrpSocle {
     if (parsed.status === 'incomplete') return HUAWEI_ERRORS.INCOMPLETE(line);
     if (parsed.status === 'ambiguous') return HUAWEI_ERRORS.AMBIGUOUS(line);
     if (parsed.status === 'invalid' && parsed.position > 0) {
-      return HUAWEI_ERRORS.UNRECOGNIZED(line, offsetOfWord(line, parsed.position));
+      const offset = offsetOfWord(line, parsed.position);
+      return parsed.refusePar === 'argument'
+        ? HUAWEI_ERRORS.WRONG(line, offset)
+        : HUAWEI_ERRORS.UNRECOGNIZED(line, offset);
     }
     return null;
   }
 
   suggestions(input: string, mode: string, trigger: CompletionTrigger): VrpHelpLine[] {
     return complete(this.built(), VrpSocle.negationVrp(input), this.session(mode), trigger).suggestions
-      .filter(s => !s.isArgument)
       .map(s => ({ keyword: s.value, description: s.description }));
   }
 
