@@ -83,7 +83,7 @@ import type {
   IWindowsUpdateProvider,
   IPrintProvider, PrintOpResult, PrintJobInfo,
   ILicensingProvider, LicenseStateInfo,
-  IDnsServerProvider, DnsOpResult, DnsZoneInfo, DnsRecordInfo,
+  IDnsServerProvider, DnsOpResult, DnsZoneInfo, DnsRecordInfo, DnsDynamicUpdateMode,
   IDhcpServerProvider, DhcpOpResult, DhcpScopeInfo, DhcpLeaseInfo,
   INpsProvider, NpsOpResult, NasClientInfo, NetworkPolicyInfo,
   ConnectionRequestPolicyConditionsInfo, ConnectionRequestPolicyInfo,
@@ -1021,6 +1021,15 @@ class WindowsDnsServerAdapter implements IDnsServerProvider {
 
   setForwarders(addresses: string[]): DnsOpResult { return this.role().setForwarders(addresses); }
   getForwarders(): string[] { return this.role().getForwarders(); }
+
+  setZoneDynamicUpdate(zone: string, mode: DnsDynamicUpdateMode): DnsOpResult {
+    return this.role().setZoneDynamicUpdate(zone, mode);
+  }
+  addTsigKey(name: string, algorithm: string, secret: string): DnsOpResult {
+    return this.role().addTsigKey(name, algorithm, secret);
+  }
+  removeTsigKey(name: string): DnsOpResult { return this.role().removeTsigKey(name); }
+  listTsigKeys(): { name: string; algorithm: string }[] { return this.role().listTsigKeys(); }
 }
 
 // ── DHCP Server adapter (PRD-Windows-Server.md §5 P8) ────────────────────

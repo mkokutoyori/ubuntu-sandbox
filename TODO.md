@@ -505,23 +505,33 @@ synchronisation entre les deux — un sujet en soi, pas une applet de plus.
 L'export/import est faisable (le VFS existe) mais suppose d'écrire le
 XML qu'un vrai Windows produit, et de le relire.
 
-### [ddns] la mise à jour dynamique n'est pas AUTHENTIFIÉE
-RFC 2136 est écrite et traverse le fil ; RFC 2845 (TSIG) et le GSS-TSIG
-d'un contrôleur de domaine, non. Le serveur accepte donc toute mise à
-jour venant de n'importe qui, ce qui est exactement le mode « Nonsecure
-and secure » d'un Windows non intégré à l'annuaire — mais le mode
-« Secure only », qui est le DÉFAUT d'une zone intégrée à Active
-Directory, ne peut pas être modélisé, et `Set-DnsServerPrimaryZone
--DynamicUpdate Secure` n'a rien derrière.
-**Mesure** : n'importe quelle machine du réseau peut écraser le A d'une
-autre ; c'est le témoin « sans NameProtection, un autre client PREND le
-nom » de `dhcp-dns-ptr-et-dhcid.test.ts`.
-**Report** : TSIG demande une clé partagée, un condensé HMAC sur le
-message ENCODÉ et un enregistrement de méta-données en section
-additionnelle — le socle a le HMAC réel (`src/crypto/`) et le codeur,
-donc c'est faisable ; GSS-TSIG demande Kerberos, qui est un sujet à lui
-seul. La protection de nom par DHCID, elle, existe déjà et couvre le cas
-que les laboratoires rencontrent.
+### [ddns] GSS-TSIG (Kerberos) n'est pas modélisé
+TSIG à clé partagée (RFC 8945) est écrit, signe et vérifie vraiment ; ce
+qu'un Windows appelle « Secure only » sur une zone intégrée à l'annuaire
+est GSS-TSIG, c'est-à-dire TSIG dont la clé vient d'une négociation
+Kerberos (TKEY). Ici, `Set-DnsServerPrimaryZone -DynamicUpdate Secure`
+exige une signature TSIG valide sous une clé déclarée par
+`Add-DnsServerTsigKey` — même mécanisme de signature, source de clé
+différente.
+**Mesure** : aucun échange TKEY n'existe dans le dépôt, et
+`Add-DnsServerTsigKey` n'a pas d'équivalent sur une vraie machine
+Windows (c'est la forme BIND du même besoin).
+**Report** : GSS-TSIG demande Kerberos — TGT, ticket de service pour
+`DNS/<serveur>`, jeton GSS-API —, un sujet à lui seul. Le choix fait ici
+est écrit plutôt que tu : la sécurisation est RÉELLE et vérifiable, sa
+distribution de clé ne l'est pas.
+
+### [ddns] `nsupdate` n'existe pas côté Linux
+Le moteur RFC 2136 et TSIG sont là et une machine Windows s'en sert
+seule, mais aucune commande ne permet à un opérateur de composer une
+mise à jour à la main — `nsupdate`, avec son mode interactif (`server`,
+`key`, `zone`, `prereq`, `update add|delete`, `send`) et son option
+`-k`/`-y`, est la porte que le socle attend.
+**Mesure** : `nsupdate` n'est ni dans `STANDARD_BIN_PATHS` ni dans le
+répartiteur de commandes ; `dpkg -l` ne le déclare pas non plus, donc
+rien ne ment pour l'instant.
+**Report** : c'est un sous-shell interactif de plus, du même genre que
+`SftpSubShell` — faisable et borné, mais un chantier en soi.
 
 ## Outillage
 

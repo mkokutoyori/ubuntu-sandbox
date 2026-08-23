@@ -4,6 +4,10 @@ import type { DnsMessage } from '@/network/dns/wire/DnsMessage';
 import type { ResourceRecord, ResourceRecordData } from '@/network/dns/wire/ResourceRecord';
 import type { Zone } from '@/network/dns/zone/Zone';
 import {
+  verifyDnsMessage, signedDnsMessage, tsigErrorCodeFor, TsigErrorCode,
+  type TsigKey, type TsigKeyring,
+} from '@/network/dns/tsig/Tsig';
+import {
   readUpdateMessage, DnsUpdateFormatError,
   type DnsUpdateRequest, type UpdatePrerequisite, type UpdateInstruction,
 } from '@/network/dns/update/DnsUpdate';
@@ -114,6 +118,49 @@ export function evaluateUpdate(zone: Zone, request: DnsUpdateRequest): UpdateVer
     expand(zone, u, applied);
   }
   return { rcode: DnsRcode.NOERROR, applied };
+}
+
+export type UpdateSecurityPolicy = 'none' | 'secure';
+
+export interface UpdateAuthorization {
+  readonly rcode: number;
+  readonly tsigError: number;
+  readonly key: TsigKey | null;
+  readonly requestMac: Uint8Array | null;
+}
+
+export function authorizeUpdate(
+  raw: Uint8Array | undefined,
+  policy: UpdateSecurityPolicy,
+  keyring: TsigKeyring,
+  now: number,
+): UpdateAuthorization {
+  const none: UpdateAuthorization = {
+    rcode: DnsRcode.NOERROR, tsigError: 0, key: null, requestMac: null,
+  };
+  if (!raw) return policy === 'secure' ? refusal(TsigErrorCode.BADKEY) : none;
+
+  const verdict = verifyDnsMessage(raw, { lookup: keyring.lookup, now });
+  if (verdict.status === 'absent') {
+    return policy === 'secure' ? refusal(TsigErrorCode.BADKEY) : none;
+  }
+  if (verdict.status === 'ok') {
+    return { rcode: DnsRcode.NOERROR, tsigError: 0, key: verdict.key, requestMac: verdict.mac };
+  }
+  return refusal(tsigErrorCodeFor(verdict.status));
+}
+
+function refusal(tsigError: number): UpdateAuthorization {
+  return { rcode: DnsUpdateRcode.NOTAUTH, tsigError, key: null, requestMac: null };
+}
+
+export function signIfKeyed(
+  response: DnsMessage, auth: UpdateAuthorization, now: number,
+): DnsMessage {
+  if (!auth.key) return response;
+  return signedDnsMessage(response, {
+    key: auth.key, timeSigned: now, requestMac: auth.requestMac,
+  });
 }
 
 export function updateResponse(request: DnsMessage, rcode: number): DnsMessage {

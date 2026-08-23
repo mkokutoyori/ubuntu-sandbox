@@ -14,6 +14,7 @@ export const RRType = {
   NSEC: 47,
   DNSKEY: 48,
   DHCID: 49,
+  TSIG: 250,
   IXFR: 251,
   AXFR: 252,
   ANY: 255,
@@ -25,6 +26,7 @@ export const DnsClass = {
   IN: 1,
   CH: 3,
   HS: 4,
+  NONE: 254,
   ANY: 255,
 } as const;
 

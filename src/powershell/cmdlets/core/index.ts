@@ -146,7 +146,8 @@ import {
 } from './AdcsCmdlets';
 import { AddComputerCmdlet, RemoveComputerCmdlet, RenameComputerCmdlet, TestComputerSecureChannelCmdlet, InstallADServiceAccountCmdlet, TestADServiceAccountCmdlet } from './ComputerCmdlets';
 import {
-  AddDnsServerPrimaryZoneCmdlet, GetDnsServerZoneCmdlet,
+  AddDnsServerPrimaryZoneCmdlet, GetDnsServerZoneCmdlet, SetDnsServerPrimaryZoneCmdlet,
+  AddDnsServerTsigKeyCmdlet, GetDnsServerTsigKeyCmdlet, RemoveDnsServerTsigKeyCmdlet,
   AddDnsServerResourceRecordACmdlet, AddDnsServerResourceRecordAAAACmdlet,
   AddDnsServerResourceRecordCNameCmdlet, AddDnsServerResourceRecordMXCmdlet,
   AddDnsServerResourceRecordPtrCmdlet, AddDnsServerResourceRecordCmdlet,
@@ -632,6 +633,10 @@ export function registerServerCmdlets(registry: CmdletRegistry): void {
 
   // ── DNS Server role (PRD-Windows-Server.md §5 P7) ───────────────────────────
   registry.register(new AddDnsServerPrimaryZoneCmdlet());
+  registry.register(new SetDnsServerPrimaryZoneCmdlet());
+  registry.register(new AddDnsServerTsigKeyCmdlet());
+  registry.register(new GetDnsServerTsigKeyCmdlet());
+  registry.register(new RemoveDnsServerTsigKeyCmdlet());
   registry.register(new GetDnsServerZoneCmdlet());
   registry.register(new AddDnsServerResourceRecordACmdlet());
   registry.register(new AddDnsServerResourceRecordAAAACmdlet());

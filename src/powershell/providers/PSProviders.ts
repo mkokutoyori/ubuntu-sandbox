@@ -892,7 +892,8 @@ export interface ILicensingProvider {
 // ── DNS Server role (PRD-Windows-Server.md §5 P7) ───────────────────────────
 
 export interface DnsOpResult { ok: boolean; message: string }
-export interface DnsZoneInfo { name: string; recordCount: number }
+export interface DnsZoneInfo { name: string; recordCount: number; dynamicUpdate: DnsDynamicUpdateMode }
+export type DnsDynamicUpdateMode = 'None' | 'NonsecureAndSecure' | 'Secure';
 export interface DnsRecordInfo { name: string; type: string; ttl: number; text: string }
 
 export interface IDnsServerProvider {
@@ -912,6 +913,11 @@ export interface IDnsServerProvider {
 
   setForwarders(addresses: string[]): DnsOpResult;
   getForwarders(): string[];
+
+  setZoneDynamicUpdate(zone: string, mode: DnsDynamicUpdateMode): DnsOpResult;
+  addTsigKey(name: string, algorithm: string, secret: string): DnsOpResult;
+  removeTsigKey(name: string): DnsOpResult;
+  listTsigKeys(): { name: string; algorithm: string }[];
 }
 
 // ── DHCP Server role (PRD-Windows-Server.md §5 P8) ──────────────────────────

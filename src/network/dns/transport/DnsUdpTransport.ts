@@ -13,7 +13,10 @@ export type DnsMessageHandler = (
   query: DnsMessage,
   sourceIP?: IPAddress | IPv6Address,
   sourcePort?: number,
+  raw?: Uint8Array,
 ) => DnsMessage | Promise<DnsMessage>;
+
+export type DnsMessageEncoder = (message: DnsMessage) => Uint8Array;
 
 export function truncateForUdp(message: DnsMessage, maxSize: number = CLASSIC_UDP_PAYLOAD_SIZE): DnsMessage {
   if (encodeDnsMessage(message).length <= maxSize) return message;
@@ -67,7 +70,7 @@ export function bindDnsUdpServer(
       const bytes = encodeDnsMessage(response);
       host.sendUdpDatagramTo(sourceIP, udp.sourcePort, port, bytes, bytes.length);
     };
-    const result = handler(query, sourceIP, udp.sourcePort);
+    const result = handler(query, sourceIP, udp.sourcePort, udp.payload);
     if (result instanceof Promise) void result.then(send);
     else send(result);
   }, processName);
@@ -83,6 +86,7 @@ export function queryDnsOverUdp(
   query: DnsMessage,
   port: number = DNS_PORT,
   timeoutMs: number = 2000,
+  encode: DnsMessageEncoder = encodeDnsMessage,
 ): Promise<DnsMessage | null> {
   let sourcePort: number;
   try {
@@ -117,7 +121,7 @@ export function queryDnsOverUdp(
       return;
     }
 
-    const bytes = encodeDnsMessage(query);
+    const bytes = encode(query);
     const sent = host.sendUdpDatagramTo(serverIP, port, sourcePort, bytes, bytes.length);
     if (!sent) {
       finish(null);
