@@ -43,6 +43,7 @@ import { UDP_PORT_RADIUS_AUTH, UDP_PORT_RADIUS_ACCT, UDP_PORT_RADIUS_COA } from 
 import { GreAgent } from '../gre/GreAgent';
 import { IP_PROTO_GRE } from '../gre/types';
 import { SnmpAgent } from '../snmp/SnmpAgent';
+import { projectSnmpServiceOntoAgent } from '../snmp/snmpProjection';
 import { UDP_PORT_SNMP } from '../snmp/types';
 import { NetFlowAgent, type NetFlowRecordInput } from '../netflow/NetFlowAgent';
 import { TacacsClientAgent } from '../tacacs/TacacsClientAgent';
@@ -106,6 +107,8 @@ export class HuaweiRouter extends Router {
         this.sendArpRequestFor(iface, target),
       tcpConnect: (ip: string, port: number, opts: { onOpen?: () => void; onClose?: () => void }) =>
         this.getTcpStack().connect(ip, port, opts),
+      evaluateAclPermit: (aclName: string, sourceIp: string) =>
+        this.evaluateAclPermit(aclName, sourceIp),
     };
     this.lldpAgent = new LldpAgent(hostBase, () => this.getBus());
     this.vrrpAgent = new VrrpAgent(hostBase, () => this.getBus());
@@ -150,6 +153,7 @@ export class HuaweiRouter extends Router {
       this.tacacsClient, this.tacacsServer, this.vxlanAgent,
     );
     this.agents.startAll();
+    projectSnmpServiceOntoAgent(this.getSnmpService(), this.snmpAgent);
   }
 
   /** See CiscoRouter's identical helper — RFC 5176 CoA/Disconnect acting on this NAS's VTY/SSH sessions. */

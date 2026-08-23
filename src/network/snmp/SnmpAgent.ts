@@ -29,6 +29,7 @@ export interface SnmpHost {
   getSysObjectId(): string;
   /** ARP-aware send (queues on a cold cache instead of broadcasting) — falls back to broadcast when absent (mirrors `TcpHost`). */
   sendIpv4FrameArpAware?(outPortName: string, ipPkt: IPv4Packet, nextHopIP: IPAddress): void;
+  evaluateAclPermit?(aclName: string, sourceIp: string): boolean;
 }
 
 interface PendingRequest {
@@ -88,10 +89,15 @@ export class SnmpAgent {
     return named ?? egressPort.getIPAddress();
   }
 
-  addCommunity(community: string, access: 'ro' | 'rw'): void {
+  addCommunity(community: string, access: 'ro' | 'rw', aclName?: string): void {
     const existing = this.config.communities.find((c) => c.community === community);
-    if (existing) { existing.access = access; return; }
-    this.config.communities.push({ community, access });
+    if (existing) { existing.access = access; existing.aclName = aclName; return; }
+    this.config.communities.push({ community, access, aclName });
+  }
+
+  private communityAdmits(entry: SnmpCommunityAcl, srcIp: IPAddress): boolean {
+    if (!entry.aclName) return true;
+    return this.host.evaluateAclPermit?.(entry.aclName, srcIp.toString()) ?? false;
   }
 
   removeCommunity(community: string): void {
@@ -224,6 +230,17 @@ export class SnmpAgent {
           deviceId: this.host.id, hostname: this.host.getHostname(),
           fromIp: srcIp.toString(), community: request.community,
           reason: 'unknown-community',
+        },
+      });
+      return;
+    }
+    if (!this.communityAdmits(acl, srcIp)) {
+      this.getBus().publish({
+        topic: 'snmp.auth.rejected',
+        payload: {
+          deviceId: this.host.id, hostname: this.host.getHostname(),
+          fromIp: srcIp.toString(), community: request.community,
+          reason: 'acl-denied',
         },
       });
       return;

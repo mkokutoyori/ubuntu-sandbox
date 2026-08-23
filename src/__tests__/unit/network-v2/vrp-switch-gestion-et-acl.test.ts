@@ -32,9 +32,9 @@ const SNMP = [
 describe('commutateur VRP — la gestion atteint enfin son magasin', () => {
   it('`snmp-agent community` retient la communauté, pas le mot-clé', async () => {
     const sw = await commutateur(['snmp-agent community read public']);
-    const snmp = sw.getManagementService().getSnmp();
-    expect([...snmp.communities.keys()]).toEqual(['public']);
-    expect(snmp.communities.get('public')?.access).toBe('ro');
+    const snmp = sw.getSnmpService();
+    expect(snmp.getCommunities().map((c) => c.name)).toEqual(['public']);
+    expect(snmp.getCommunities()[0]?.access).toBe('ro');
   });
 
   it('rend chaque ligne SNMP', async () => {

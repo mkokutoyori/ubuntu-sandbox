@@ -65,9 +65,11 @@ import {
   runningConfigNATHuawei,
 } from './huawei/HuaweiNATCommands';
 import type { HuaweiShellContext } from './huawei/HuaweiConfigCommands';
+import { analyserTeteRouteStatiqueVrp } from './huawei/HuaweiConfigCommands';
 import {
   registerHuaweiCommonSecurity, registerHuaweiCommonSecurityDisplay,
 } from './huawei/HuaweiCommonSecurity';
+import { lignesConfigSnmpVrp } from './huawei/huaweiSnmpCommands';
 import { buildDhcpPoolCommands } from './huawei/HuaweiDhcpCommands';
 import { formatHuaweiAcl, formatHuaweiAclConfig } from './huawei/HuaweiAclFormat';
 import { analyserRegleVrp } from './huawei/HuaweiAclRule';
@@ -1119,7 +1121,8 @@ export class HuaweiSwitchShell implements ISwitchShell {
     // Shared management commands (SSH/Telnet/SNMP/NTP/syslog/…) — DRY
     registerHuaweiCommonSecurity(this.systemTrie,
       () => commeRouteur(this.swRef),
-      () => this.swRef?.getNtpAgent());
+      () => this.swRef?.getNtpAgent(),
+      () => this.swRef?.getSnmpService());
 
     this.systemTrie.register('dhcp enable', 'Enable DHCP', () => {
       this.swRef.getSecurityService().setDhcpEnabled(true);
@@ -1298,15 +1301,29 @@ export class HuaweiSwitchShell implements ISwitchShell {
     });
 
     this.systemTrie.registerGreedy('undo ip route-static', 'Remove a static route', (args) => {
-      if (!this.swRef || args.length < 2) return 'Error: Incomplete command.';
-      let net: IPAddress, mask: SubnetMask;
-      try { net = new IPAddress(args[0]); } catch { return `Error: Invalid network ${args[0]}.`; }
+      const sw = this.swRef;
+      if (!sw) return 'Error: Incomplete command.';
+      if (args.length === 0) return 'Error: Incomplete command.';
+      if (args[0].toLowerCase() === 'all') {
+        if (args.length > 1) {
+          return refuseMotInattenduVrp(`undo ip route-static ${args.join(' ')}`, args[1]);
+        }
+        for (const r of [...sw.getStaticRoutes()]) sw.removeStaticRoute(r.network, r.mask);
+        return '';
+      }
       try {
-        if (/^\d+$/.test(args[1])) mask = SubnetMask.fromCIDR(parseInt(args[1], 10));
-        else mask = new SubnetMask(args[1]);
-      } catch { return `Error: Invalid mask ${args[1]}.`; }
-      this.swRef.removeStaticRoute(net, mask);
-      return '';
+        const tete = analyserTeteRouteStatiqueVrp(commeRouteur(sw), args, false);
+        if (typeof tete === 'string') return tete;
+        const { network, mask, nextHop } = tete;
+        const vise = sw.getStaticRoutes().find((r) =>
+          r.network.equals(network) && r.mask.toCIDR() === mask.toCIDR()
+          && (nextHop === null || r.nextHop.equals(nextHop)));
+        if (!vise) return 'Error: Route not found.';
+        sw.removeStaticRoute(vise.network, vise.mask);
+        return '';
+      } catch (e) {
+        return `Error: ${(e as Error).message}`;
+      }
     });
   }
 
@@ -2690,7 +2707,8 @@ export class HuaweiSwitchShell implements ISwitchShell {
 
     // Shared management `display` commands (DRY).
     registerHuaweiCommonSecurityDisplay(trie, () => this.localUsers,
-      () => this.swRef?.getNtpAgent());
+      () => this.swRef?.getNtpAgent(),
+      () => this.swRef?.getSnmpService());
 
     // Real DHCP snooping binding table — shadows the generic hardcoded
     // `display dhcp ...` catch-all above with the switch's actual bindings.
@@ -4192,7 +4210,7 @@ export class HuaweiSwitchShell implements ISwitchShell {
 
     // Interfaces
     const mgmt = sw.getManagementService?.();
-    const snmpLignes = mgmt?.snmpRunningConfigLines() ?? [];
+    const snmpLignes = lignesConfigSnmpVrp(sw.getSnmpService?.());
     if (snmpLignes.length > 0) { lines.push(...snmpLignes); lines.push('#'); }
     const stelnet = mgmt?.getStelnet();
     if (stelnet?.enabled) { lines.push('stelnet server enable'); lines.push('#'); }

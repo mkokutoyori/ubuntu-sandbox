@@ -82,6 +82,7 @@ export interface SnmpPacket extends NetworkPdu {
 export interface SnmpCommunityAcl {
   community: string;
   access: 'ro' | 'rw';
+  aclName?: string;
 }
 
 export interface SnmpTrapHost {

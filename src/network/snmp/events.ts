@@ -30,7 +30,7 @@ export interface SnmpRequestServedPayload extends SnmpDeviceRef {
 export interface SnmpAuthRejectedPayload extends SnmpDeviceRef {
   fromIp: string;
   community: string;
-  reason: 'unknown-community' | 'read-only-access';
+  reason: 'unknown-community' | 'read-only-access' | 'acl-denied';
 }
 
 export interface SnmpTrapSentPayload extends SnmpDeviceRef {
