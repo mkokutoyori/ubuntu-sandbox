@@ -19,6 +19,7 @@ import { privilegeConfigLines } from './cli/CliAuthorization';
 import { getPrivilegeRules } from '../router/security/CiscoPrivilegeStore';
 import { CommandTrie, formatInvalidInput } from './CommandTrie';
 import type { CommandSpec } from '@/cli/CommandTable';
+import type { SocleLegend } from './CiscoShellBase';
 import type { ArgumentSpec } from '@/cli/ArgumentTypes';
 import type { SpecCollector } from '@/cli/commands/trieAdapter';
 import { collectRegistrations, specsFromTrieRegistrations }
@@ -2043,7 +2044,7 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
     ];
   }
 
-  protected override socleLegends(): ReadonlyArray<[readonly string[], string]> {
+  protected override socleLegends(): SocleLegend[] {
     return [
       ...super.socleLegends(),
       [['show', 'spanning-tree', 'pathcost'], 'Path cost method'],

@@ -113,7 +113,8 @@ function suggestionsAt(
 }
 
 function describe(node: TreeNode, table: CommandTable, session: CliSession): string {
-  if (node.legend) return node.legend;
+  const legende = table.legendAt(node, session);
+  if (legende) return legende;
   // La description suit le MODE : deux modes qui nomment la meme
   // commande ne la decrivent pas pareil, et prendre la premiere
   // declaree faisait decrire un pool DHCPv6 par les mots du pool IPv4.

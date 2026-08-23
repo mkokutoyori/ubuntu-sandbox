@@ -146,9 +146,6 @@ export const ROUTEUR_SEUL: ContinuationTable = {
     'tunnel path-mtu-discovery': ['age-timer', 'min-mtu'],
     'tunnel protection ipsec profile': ['shared'],
   },
-  configIkev2KeyringPeer: {
-    'pre-shared-key': ['local'],
-  },
   configIpv6Dhcp: {
     'address prefix': ['lifetime'],
   },

@@ -20,6 +20,15 @@ import { parseCommand, uniqueChild } from '@/cli/CommandParser';
 import { argumentAccepts } from '@/cli/ArgumentTypes';
 import type { ArgumentSpec } from '@/cli/ArgumentTypes';
 import type { CommandSpec, TreeNode } from '@/cli/CommandTable';
+
+/**
+ * Un libelle de noeud, et les modes ou il vaut.
+ *
+ * Sans les modes, un chemin n'a qu'un seul nom pour toute la CLI :
+ * `authentication` porterait les mots de la politique ISAKMP jusque dans
+ * un profil IKEv2, ou la commande n'est pas la meme.
+ */
+export type SocleLegend = readonly [readonly string[], string, (readonly string[])?];
 import { showIpDhcpSpecs, type DhcpViewServer } from '@/cli/commands/show/showIpDhcp';
 import { showConfigViewSpecs } from '@/cli/commands/show/showSlice';
 import { debugFamily, type DebugPair } from '@/cli/commands/debug/debugFamily';
@@ -4794,7 +4803,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
    * `ipv6 ?` annoncait « Set OSPFv3 cost » pour le mot `ipv6`, c'est-a-dire
    * la description d'UNE des branches pour le nom de TOUTES.
    */
-  protected socleLegends(): ReadonlyArray<[readonly string[], string]> {
+  protected socleLegends(): SocleLegend[] {
     return [
       [['show', 'ip', 'http'], 'HTTP information'],
       [['client-identifier'], 'Manual binding client identifier'],
@@ -4808,8 +4817,8 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     if (!this.socleInstance) {
       this.socleInstance = new CommandTable();
       for (const spec of this.socleSpecs()) this.socleInstance.declare(spec);
-      for (const [path, legend] of this.socleLegends()) {
-        this.socleInstance.describePath(path, legend);
+      for (const [path, legend, modes] of this.socleLegends()) {
+        this.socleInstance.describePath(path, legend, modes);
       }
     }
     return this.socleInstance;
