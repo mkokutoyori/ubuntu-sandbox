@@ -19,6 +19,9 @@
  */
 
 import type { CommandTrie } from '../CommandTrie';
+import type { CommandSpec } from '@/cli/CommandTable';
+import type { ArgumentSpec } from '@/cli/ArgumentTypes';
+import { specsFromTrieRegistrations } from '@/cli/commands/trieAdapter';
 import type { ArchiveService, ConfigLogRecord } from '../../router/archive/ArchiveService';
 import { renderTable, type TableColumn, FIXED_TABLE } from '../cli/TextTable';
 import { CliInvalidInput, CliIncomplete } from '../cli/CliDiagnostic';
@@ -323,4 +326,58 @@ export function buildArchiveLogSubmodeOn(trie: CommandTrie, ar: ArchiveAccessor)
     ar()?.setNotifySyslog(args[0] === 'xml' ? 'xml' : 'plaintext');
     return '';
   });
+}
+
+const ARCHIVE_ARGUMENTS:
+Readonly<Record<string, ArgumentSpec | readonly ArgumentSpec[] | null>> = {
+  path: { name: 'chemin', type: 'WORD', description: 'Path for backups' },
+  'time-period': {
+    name: 'minutes', type: 'INT', range: [1, 525600],
+    description: 'Period of time in minutes between archives',
+  },
+  maximum: {
+    name: 'revisions', type: 'INT', range: [1, 14],
+    description: 'Maximum number of backups to keep',
+  },
+};
+
+const ARCHIVE_LOG_ARGUMENTS:
+Readonly<Record<string, ArgumentSpec | readonly ArgumentSpec[] | null>> = {
+  'logging size': {
+    name: 'entrees', type: 'INT', range: [1, 1000],
+    description: 'Number of entries the log keeps',
+  },
+  'notify syslog contenttype': {
+    name: 'format', type: 'ENUM', description: 'Format of the syslog notification',
+    values: [
+      { keyword: 'plaintext', description: 'Plain text notification' },
+      { keyword: 'xml', description: 'XML notification' },
+    ],
+  },
+};
+
+export function archiveSubmodeSpecs(
+  ar: ArchiveAccessor, enterLogMode: () => void,
+): CommandSpec[] {
+  return specsFromTrieRegistrations(
+    (collector) =>
+      buildArchiveSubmodeOn(collector as unknown as CommandTrie, ar, enterLogMode),
+    {
+      modes: ['config-archive'], minPrivilege: 15,
+      undoFromNegatedPaths: true,
+      argumentFor: (path) => ARCHIVE_ARGUMENTS[path],
+    },
+  );
+}
+
+export function archiveLogSubmodeSpecs(ar: ArchiveAccessor): CommandSpec[] {
+  return specsFromTrieRegistrations(
+    (collector) =>
+      buildArchiveLogSubmodeOn(collector as unknown as CommandTrie, ar),
+    {
+      modes: ['config-archive-log'], minPrivilege: 15,
+      undoFromNegatedPaths: true,
+      argumentFor: (path) => ARCHIVE_LOG_ARGUMENTS[path],
+    },
+  );
 }

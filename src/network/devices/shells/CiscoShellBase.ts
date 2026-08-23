@@ -118,7 +118,8 @@ import { LoggingConfig, disabledTimestampSpec, bareTimestampSpec, deviceClockSou
 import type { TimestampSpec } from '../inspection/config/LoggingConfig';
 import { isPathReachable } from '../linux/network/HostLookup';
 import { OutgoingSessionRegistry, renderSessions } from './OutgoingSessionRegistry';
-import { registerArchiveExecCommands, archiveOnWriteMemory } from './cisco/CiscoArchiveCommands';
+import { registerArchiveExecCommands, archiveOnWriteMemory,
+  archiveSubmodeSpecs, archiveLogSubmodeSpecs } from './cisco/CiscoArchiveCommands';
 import { registerLineExecCommands } from './cisco/CiscoLineCommands';
 import { setupInteractionPlan } from './cisco/CiscoSetupDialog';
 import {
@@ -999,7 +1000,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     // reconnait plus : sans ce repli, `erase startup-config` perdait son
     // dialogue `[confirm]` le jour de sa migration.
     const migre = m.status === 'ok' && m.node
-      ? null : this.cheminCanoniqueDuSocle(`${line} `);
+      ? null : this.cheminCanoniqueDuSocle(`${line} `, mode);
     if (migre === null && (m.status !== 'ok' || !m.node)) return null;
     const path = (migre ?? m.matchedKeywords).join(' ').toLowerCase();
 
@@ -4725,6 +4726,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       ...this.writeEraseSpecs(),
       ...this.serviceSpecs(),
       ...this.showSocleSpecs(),
+      ...this.archiveSubmodeSpecs(),
     ];
   }
 
@@ -4803,6 +4805,14 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
    * `ipv6 ?` annoncait « Set OSPFv3 cost » pour le mot `ipv6`, c'est-a-dire
    * la description d'UNE des branches pour le nom de TOUTES.
    */
+  protected archiveSubmodeSpecs(): readonly CommandSpec[] {
+    const ar = () => this.archiveService();
+    return [
+      ...archiveSubmodeSpecs(ar, () => { this.mode = 'config-archive-log'; }),
+      ...archiveLogSubmodeSpecs(ar),
+    ];
+  }
+
   protected socleLegends(): SocleLegend[] {
     return [
       [['show', 'ip', 'http'], 'HTTP information'],
@@ -5293,11 +5303,28 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     return prefixes.length === 1 ? prefixes[0] : undefined;
   }
 
-  private cheminCanoniqueDuSocle(ligne: string): string[] | null {
+  /**
+   * Le chemin canonique d'une commande MIGREE, dans le mode ou on la tape.
+   *
+   * Sans le mode, `wr` designe `write` ET `write-memory` — la seconde
+   * vivant dans le sous-mode `archive`, ou l'operateur n'est pas — donc
+   * l'abreviation devenait ambigue et `wr er` perdait son dialogue
+   * `[confirm]`. Le mode est ce qui les departage, comme partout
+   * ailleurs dans le socle.
+   */
+  private cheminCanoniqueDuSocle(ligne: string, mode?: string): string[] | null {
     const table = this.socleTable();
     if (!table) return null;
 
-    const chemin = this.cheminCanonique(table, ligne, null);
+    // La session est fabriquee POUR le mode demande, et non prise a
+    // l'equipement : un plan est demande hors de `execute`, donc la
+    // reference d'appareil n'est pas posee, et un routeur neuf est
+    // encore au niveau 1 alors qu'on interroge le mode privilegie.
+    const session = mode === undefined ? null : newSession('Router', this, {
+      initialMode: mode,
+      privilegeLevel: mode === 'user' ? 1 : 15,
+    });
+    const chemin = this.cheminCanonique(table, ligne, session);
     return chemin !== null && chemin.length > 0 ? chemin : null;
   }
 
