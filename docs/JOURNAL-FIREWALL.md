@@ -2700,6 +2700,64 @@ refusé sont remplacés par un cas qui l'affirme disponible.
 
 ---
 
+## Périmètre pris — FortiOS phase 21 (un datagramme fragmenté est RECOLLÉ)
+
+**Agent `mandeng`.** L'entrée `[pare-feu] les fragments recus ne sont pas
+REASSEMBLES` de `TODO.md` nomme le point, et son **report est à
+re-mesurer** : il dit qu'il faut « d'abord décider QUAND » réassembler,
+« cette condition n'étant modélisée nulle part ». Deux choses ont changé
+depuis qu'il a été écrit — la phase 17 a donné au pare-feu une notion
+d'inspection de FLUX, et la documentation de Fortinet, relue, répond
+elle-même à la question.
+
+Mesure de départ :
+
+- **Le pare-feu fragmente à la sortie et ne recolle jamais à l'entrée.**
+  `Firewall.ts` importe `fragmentIPv4` et lui seul ; `IPv4Reassembler`
+  — qui existe dans `core/Ipv4Fragmentation.ts` et que `Router.ts`
+  utilise — n'a AUCUN appelant côté pare-feu.
+- **Conséquence observable** : les fragments qui suivent le premier ne
+  portent pas d'en-tête de couche 4, donc leur clé de flux est bâtie sur
+  des ports absents. Un seul datagramme ouvre plusieurs sessions.
+- **Conséquence de sécurité, qui est la vraie raison de la phase** : une
+  règle qui refuse un port ne peut se prononcer que sur le premier
+  fragment. Les suivants ne portent pas ce port et échappent à la règle
+  qui les nomme — c'est l'évasion par fragmentation, et un pare-feu qui
+  la laisse passer enseigne l'inverse de ce qu'il existe pour montrer.
+
+**Ce que la documentation de Fortinet tranche**, et qui rend le report
+caduc : la défragmentation existe « so that policy can be applied to
+reassembled packets », le chemin logiciel (processeur) traite TOUS les
+fragments par défaut, et le déchargement matériel NP7 — désactivé par
+défaut — est une optimisation orthogonale. La réponse à « quand ? » est
+donc **avant la recherche de politique, toujours**, ce que fait déjà
+`Router.forwardPacket` avec la même brique.
+
+**Deux commandes réelles à servir plutôt qu'à inventer** :
+
+- `config system settings` → `set ip-fragment-mem-thresholds <32-2047>`
+  (mégaoctets, défaut 32). Elle doit BORNER quelque chose : au-delà, les
+  fragments sont perdus et `ReasmFails` monte.
+- `diagnose snmp ip frags` → les compteurs de la MIB IP
+  (`ReasmTimeout`, `ReasmReqds`, `ReasmOKs`, `ReasmFails`), qui doivent
+  être une MESURE du réassembleur et non un affichage.
+
+**Fichiers que la phase 21 prendra** :
+
+```
+firewall/l3/FragmentReassembly.ts   ← la table et sa borne (socle, neuf)
+firewall/Firewall.ts                ← le recollage avant la politique
+firewall/diag/                      ← les compteurs de la MIB IP
+vendors/fortios/schema/system*.ts   ← ip-fragment-mem-thresholds
+vendors/fortios/diag/               ← `diagnose snmp ip frags`
+```
+
+Rien n'est écrit pour réassembler : `IPv4Reassembler` porte déjà la
+fenêtre, le recouvrement et l'expiration. Ce qui est neuf est la BORNE
+mémoire, qu'il n'a pas, et le branchement.
+
+---
+
 ## Périmètre pris — FortiOS phase 20 (un VIP répartit vers un serveur VIVANT)
 
 **Agent `mandeng`.** §6.4 du carnet et l'entrée `[vip]` de `TODO.md`
