@@ -21,7 +21,7 @@
 import type { Router } from '../Router';
 import { VrpSocle } from '@/cli/vendors/vrp/vrpSocle';
 import { vrpDhcpClientFamily, type VrpDhcpLeaseView } from '@/cli/vendors/vrp/vrpDhcpClientFamily';
-import { vrpInterfaceParamsFamily } from '@/cli/vendors/vrp/vrpInterfaceParamsFamily';
+import { vrpMtuFamily, vrpBandwidthFamily } from '@/cli/vendors/vrp/vrpInterfaceParamsFamily';
 import { registerInfoCenterDisplayCommands } from './huawei/HuaweiInfoCenterCommands';
 import type { IRouterShell } from './IRouterShell';
 import { LoggingConfig } from '../inspection/config/LoggingConfig';
@@ -690,7 +690,7 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
     if (!this.socleInstance) {
       this.socleInstance = new VrpSocle(
         () => this.routerRef?.getHostname() ?? 'Router', this,
-        () => [...vrpDhcpClientFamily(), ...vrpInterfaceParamsFamily()]);
+        () => [...vrpDhcpClientFamily(), ...vrpMtuFamily(), ...vrpBandwidthFamily()]);
     }
     return this.socleInstance;
   }

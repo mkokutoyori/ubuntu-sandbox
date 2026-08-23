@@ -40,6 +40,9 @@ import { registerHuaweiCommonMgmt } from './huawei/HuaweiCommonConfig';
 import type { HuaweiDebugService } from '../router/diag/HuaweiDebugService';
 import { analyserAcl } from './huawei/HuaweiAclGrammar';
 import { type HuaweiSwitchDevice, commeRouteur, moteurNat, ajouterLigneVlan, lignesDuVlan } from './huawei/huaweiSwitchDevice';
+import { VrpSocle } from '@/cli/vendors/vrp/vrpSocle';
+import { VRP_SWITCH_MODES } from '@/cli/vendors/vrp/vrpModes';
+import { vrpMtuFamily } from '@/cli/vendors/vrp/vrpInterfaceParamsFamily';
 import { mqcMatchLine, mqcRemarkLines } from '../Switch';
 import { DSCP_KEYWORD_TO_VALUE } from '../router/ACLEngine';
 import { resolveHuaweiInterfaceName, huaweiDisplayInterfaceName } from './cli-utils';
@@ -495,6 +498,31 @@ export class HuaweiSwitchShell implements ISwitchShell {
     this.history = [...s.cmdHistory];
   }
 
+  private socleInstance: VrpSocle | null = null;
+
+  private socle(): VrpSocle {
+    if (!this.socleInstance) {
+      this.socleInstance = new VrpSocle(
+        () => this.swRef?.getHostname() ?? 'Switch', this,
+        () => vrpMtuFamily(), VRP_SWITCH_MODES);
+    }
+    return this.socleInstance;
+  }
+
+  vrpSelectedInterface(): string | null { return this.selectedInterface ?? null; }
+
+  vrpSetInterfaceMtu(iface: string, mtu: number): string {
+    const port = this.swRef?.getPort(iface);
+    if (!port) return 'Error: No interface selected';
+    try { port.setMTU(mtu); } catch (e) { return `Error: ${(e as Error).message}`; }
+    return '';
+  }
+
+  vrpSetInterfaceBandwidth(iface: string, kbps: number): string {
+    this.swRef?.getPort(iface)?.setBandwidthKbps(kbps);
+    return '';
+  }
+
   getPrompt(sw: Switch): string {
     const host = sw.getHostname();
     switch (this.mode) {
@@ -559,6 +587,12 @@ export class HuaweiSwitchShell implements ISwitchShell {
     // Bind switch reference for command closures
     this.swRef = sw;
 
+    const migre = this.socle().run(cmd, this.mode);
+    if (migre !== null) {
+      this.swRef = null;
+      return filter && !migre.startsWith('Error:') ? applyPipeFilter(migre, filter) : migre;
+    }
+
     // Get the trie for current mode
     const trie = this.getActiveTrie();
     const result = trie.match(cmd);
@@ -592,7 +626,8 @@ export class HuaweiSwitchShell implements ISwitchShell {
         break;
 
       case 'invalid':
-        output = HUAWEI_ERRORS.UNRECOGNIZED(cmd, result.errorPos);
+        output = this.socle().diagnostic(cmd, this.mode)
+          ?? HUAWEI_ERRORS.UNRECOGNIZED(cmd, result.errorPos);
         break;
 
       default:
@@ -612,7 +647,10 @@ export class HuaweiSwitchShell implements ISwitchShell {
     const trie = this.getActiveTrie();
     trie.setDynamicResolver(sw ? new EquipmentParamResolver(sw) : null);
     try {
-      const completions = withVrpCommonHelp(this.vrpView(), input, trie.getCompletions(input));
+      const duTrie = trie.getCompletions(input);
+      const duSocle = this.socle().suggestions(input, this.mode, 'QUESTION_MARK')
+        .filter(s => !duTrie.some(c => c.keyword === s.keyword));
+      const completions = withVrpCommonHelp(this.vrpView(), input, [...duTrie, ...duSocle]);
       if (completions.length === 0) return 'Error: Unrecognized command';
       const maxKw = Math.max(...completions.map(c => c.keyword.length));
       return completions
@@ -3091,14 +3129,6 @@ export class HuaweiSwitchShell implements ISwitchShell {
       if (a !== 'full' && a !== 'half') return HUAWEI_ERRORS.WRONG(`duplex ${args.join(' ')}`);
       port.setDuplex(a);
       port.setNegotiationAuto(false);
-      return '';
-    });
-    trie.registerGreedy('mtu', 'Interface MTU', (args) => {
-      const port = portSelectionne();
-      if (!port) return 'Error: Incomplete command.';
-      const n = parseInt(args[0] ?? '', 10);
-      if (isNaN(n)) return HUAWEI_ERRORS.WRONG(`mtu ${args.join(' ')}`);
-      try { port.setMTU(n); } catch { return HUAWEI_ERRORS.WRONG(`mtu ${args.join(' ')}`); }
       return '';
     });
     trie.registerGreedy('negotiation', 'Auto-negotiation', (args) => {

@@ -103,23 +103,15 @@ elles.
 
 ## Socle CLI
 
-### [socle] le commutateur VRP n'a pas encore de pont vers le socle
-Le pont existe pour le ROUTEUR VRP (`src/cli/vendors/vrp/`) ;
-`HuaweiSwitchShell` ne connaît toujours ni `CommandTable` ni
-`CommandSpec`.
-**Mesure** : aucune occurrence de `VrpSocle` dans ce fichier. Conséquence
-désormais VISIBLE, depuis que `mtu`/`bandwidth` du routeur sont sur le
-socle : les deux plateformes VRP ne répondent plus pareil à la même
-commande. Sur le commutateur, `undo mtu` est accepté et n'annule rien
-(le port garde sa valeur), et `mtu ?` annonce `WORD` là où le routeur
-annonce `<68-9216>`. Le commutateur refuse bien `mtu zorglub`, mais avec
-`Wrong parameter` là où `mtu` seul devrait dire `Incomplete command`.
-**Report** : le commutateur a ses propres vues (`vlan`, `port-group`,
-`mst-region`, `traffic-*`) qui ne sont pas dans `HUAWEI_VRP_MODES` — il
-faut d'abord décrire cette hiérarchie, ce que le routeur n'exigeait pas.
-Migrer la même famille des deux côtés est ce qui refermera l'écart.
+### [socle] une seule famille est migrée sur le commutateur VRP
+Le pont existe désormais des DEUX côtés : `VRP_SWITCH_MODES` décrit la
+hiérarchie des treize vues du commutateur, et `HuaweiSwitchShell` consulte
+le socle avant son trie, comme le routeur. Une seule famille l'emprunte
+(`mtu`) ; le reste du vocabulaire du commutateur — `vlan`, `port-group`,
+`traffic-*`, `mst-region` — vit toujours sur `CommandTrie`.
+**Report** : incrémental par construction, comme côté routeur.
 
-### [socle] deux familles VRP sont migrées
+### [socle] deux familles VRP sont migrées sur le routeur
 Le pont est branché et exercé par la famille du client DHCP et par celle
 des paramètres physiques d'interface (`mtu`, `bandwidth`). Le reste du
 vocabulaire VRP — plusieurs centaines d'enregistrements — vit toujours

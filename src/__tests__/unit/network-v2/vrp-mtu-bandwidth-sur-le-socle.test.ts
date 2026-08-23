@@ -37,6 +37,20 @@
  * une commande dont la suite est un ARGUMENT et non un mot-cle rendait
  * une liste vide, c'est-a-dire `Error: Unrecognized command` sur un `?`.
  *
+ * **Le COMMUTATEUR passe au socle en meme temps**, et c'est la raison
+ * pour laquelle son pont est ecrit ici plutot que reporte : sans lui, les
+ * deux plateformes VRP auraient repondu differemment a la meme commande —
+ * `undo mtu` inerte d'un cote et actif de l'autre, `mtu ?` annoncant
+ * `WORD` ici et `<68-9216>` la. `VRP_SWITCH_MODES` decrit la hierarchie
+ * de vues que `VUES_SWITCH` enumerait deja sans dire leurs parents, et
+ * `VrpSocle` prend desormais sa hierarchie en parametre.
+ *
+ * Le commutateur ne recoit QUE `mtu` : `bandwidth` n'etait pas dans son
+ * vocabulaire, et le lui donner « puisque la famille est la » aurait
+ * invente une commande sur une plateforme dont rien n'atteste qu'elle la
+ * porte. La famille est donc scindee en deux, chaque plateforme prenant
+ * ce qu'elle avait.
+ *
  * Discrimine par `git stash` des fichiers touches : 9 des 11 cas tombent.
  * Les 3 qui passent des deux cotes sont nommes ici plutot que laisses a
  * decouvrir — le TEMOIN `speed zorglub`, dont c'est l'objet (il refusait
@@ -46,6 +60,7 @@
  */
 import { describe, it, expect, beforeEach } from 'vitest';
 import { HuaweiRouter } from '@/network/devices/HuaweiRouter';
+import { HuaweiSwitch } from '@/network/devices/HuaweiSwitch';
 import { resetCounters } from '@/network/core/types';
 import { resetDeviceCounters } from '@/network/devices/DeviceFactory';
 import { Logger } from '@/network/core/Logger';
@@ -147,5 +162,49 @@ describe('VRP : un argument borne est refuse par l analyseur', () => {
 
     expect(await r.executeCommand('mtu ?')).toContain('<68-9216>');
     expect(await r.executeCommand('bandwidth ?')).toContain('<1-4294967295>');
+  });
+});
+
+async function surInterfaceCommutateur(): Promise<HuaweiSwitch> {
+  const sw = new HuaweiSwitch('switch-huawei', 'SW');
+  sw.powerOn();
+  await sw.executeCommand('system-view');
+  await sw.executeCommand(`interface ${sw.getPorts()[0].getName()}`);
+  return sw;
+}
+
+describe('VRP : le commutateur repond comme le routeur', () => {
+  it('`undo mtu` restaure le defaut, comme sur le routeur', async () => {
+    const sw = await surInterfaceCommutateur();
+    await sw.executeCommand('mtu 1400');
+
+    expect(await sw.executeCommand('undo mtu')).toBe('');
+
+    expect(sw.getPorts()[0].getMTU()).toBe(1500);
+  });
+
+  it('`mtu ?` annonce la meme plage que sur le routeur', async () => {
+    const sw = await surInterfaceCommutateur();
+
+    expect(await sw.executeCommand('mtu ?')).toContain('<68-9216>');
+  });
+
+  it('`mtu` seul est incomplete, et non un mauvais parametre', async () => {
+    const sw = await surInterfaceCommutateur();
+
+    expect(await sw.executeCommand('mtu')).toContain('Incomplete command');
+  });
+
+  it('la valeur posee est toujours rendue par `display this`', async () => {
+    const sw = await surInterfaceCommutateur();
+    await sw.executeCommand('mtu 1400');
+
+    expect(await sw.executeCommand('display this')).toContain(' mtu 1400');
+  });
+
+  it('`bandwidth` reste inconnue du commutateur', async () => {
+    const sw = await surInterfaceCommutateur();
+
+    expect(await sw.executeCommand('bandwidth 64')).toContain('Unrecognized command');
   });
 });

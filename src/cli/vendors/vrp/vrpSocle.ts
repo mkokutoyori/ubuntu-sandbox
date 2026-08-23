@@ -3,6 +3,7 @@ import { newSession, type CliSession } from '../../CliSession';
 import { parseCommand } from '../../CommandParser';
 import { complete, type CompletionTrigger } from '../../CompletionEngine';
 import { VRP_MODES, VRP_PROMPTS, VRP_TOP_LEVEL, VRP_EXEC_LEVEL } from './vrpModes';
+import type { ModeHierarchy } from '../../../network/devices/shells/CLIStateMachine';
 import { HUAWEI_ERRORS } from '../../../network/devices/shells/cli-utils';
 
 export interface VrpHelpLine {
@@ -27,6 +28,7 @@ export class VrpSocle {
     private readonly hostname: () => string,
     private readonly device: unknown,
     private readonly specs: () => readonly CommandSpec[],
+    private readonly hierarchy: ModeHierarchy = VRP_MODES,
   ) {}
 
   private built(): CommandTable {
@@ -39,7 +41,7 @@ export class VrpSocle {
 
   private session(mode: string, fields: Record<string, string | undefined> = {}): CliSession {
     const s = newSession(this.hostname(), this.device, {
-      hierarchy: VRP_MODES, prompts: VRP_PROMPTS,
+      hierarchy: this.hierarchy, prompts: VRP_PROMPTS,
       topLevel: VRP_TOP_LEVEL, execLevel: VRP_EXEC_LEVEL,
       initialMode: mode,
     });

@@ -29,7 +29,7 @@ function surInterface(
   return agir(target, iface);
 }
 
-export function vrpInterfaceParamsFamily(): CommandSpec[] {
+export function vrpMtuFamily(): CommandSpec[] {
   return [
     {
       id: 'vrp-mtu',
@@ -53,6 +53,11 @@ export function vrpInterfaceParamsFamily(): CommandSpec[] {
       undo: (session) => surInterface(session.device,
         (target, iface) => target.vrpSetInterfaceMtu(iface, VRP_MTU_DEFAUT)),
     },
+  ];
+}
+
+export function vrpBandwidthFamily(): CommandSpec[] {
+  return [
     {
       id: 'vrp-bandwidth',
       path: ['bandwidth', {
