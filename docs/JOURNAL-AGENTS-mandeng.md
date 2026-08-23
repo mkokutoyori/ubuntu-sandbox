@@ -25,6 +25,49 @@ qui tient quoi, maintenant.
 
 ## En cours
 
+### Périmètre pris — la MIGRATION du `CommandTrie` vers le socle `src/cli/`
+
+**À lire avant de toucher un enregistrement de commande Cisco.** Objectif
+donné : à la fin il ne doit plus rester UN SEUL `CommandTrie`. Les
+commandes passent famille par famille du trie (un arbre par mode, dans
+`network/devices/shells/`) vers la table unique du socle (`src/cli/`), et
+`pruneMigratedFromTries()` retire du trie ce que la table porte — une
+commande appartient à un moteur et à un seul, un doublon lève
+`DuplicateCommandError` à la construction du shell.
+
+Déjà vides : `configLineTrie`, `configDhcpTrie` et ses trois sous-modes,
+`configRouterOspfTrie`. Compteurs : routeur 1007 → ~904, commutateur
+570 → 460. Restent les deux gros blocs `configTrie` (308) et
+`configIfTrie` (152), puis `privilegedTrie`, `userTrie`,
+`configRouterTrie` et une trentaine de petits sous-modes.
+
+**Ce que ça change pour vous** : une famille migrée n'est plus dans le
+trie. Si vous ajoutez une commande à un `register*(t: CommandTrie)` dont
+la famille est déjà partie, elle sera élaguée au démarrage et ne
+répondra jamais. Le symptôme est silencieux. Cherchez d'abord la famille
+dans `socleSpecs()` (`CiscoShellBase`, `CiscoIOSShell`,
+`CiscoSwitchShell`) : si elle y est, ajoutez un `CommandSpec` à côté des
+autres. En cas de doute, `enumerateExecutablePaths()` sur le trie du mode
+dit ce qu'il porte encore.
+
+**Fichiers réclamés** : `src/cli/**` en entier,
+`network/devices/shells/CommandTrie.ts`,
+`network/devices/shells/CiscoShellBase.ts`,
+`network/devices/shells/CiscoIOSShell.ts`, et le *bloc
+d'enregistrement* de chaque famille migrée dans les fichiers
+`shells/cisco/*Commands.ts`.
+
+**Recouvrement avec le lot ACL ci-dessous, et comment on s'en sort** :
+`CiscoAclCommands.ts` (les vues `show access-lists` /
+`show ip access-lists`) et `CiscoSwitchShell.ts` (`show vlan`,
+`show spanning-tree`, tables L2) sont DÉJÀ migrés — leur rendu n'a pas
+bougé, seul l'endroit où la commande est déclarée a changé. Corriger un
+alignement ou un libellé se fait donc dans la fonction de rendu comme
+avant ; c'est seulement AJOUTER ou RETIRER une commande de ces familles
+qui passe maintenant par un `CommandSpec`. `show ip interface` et
+`show vlan access-map`/`show vlan filter` ne sont pas migrés : ils sont à
+vous sans réserve.
+
 ### Périmètre pris — le tutoriel ACL Cisco, de bout en bout
 
 Demande : « assure-toi que notre plateforme permet de suivre le tutoriel
