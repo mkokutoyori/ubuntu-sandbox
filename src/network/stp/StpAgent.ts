@@ -9,6 +9,7 @@ import {
   ETHERTYPE_STP, STP_BRIDGE_MAC, PVST_PLUS_MAC,
 } from './types';
 import { StpVlanInstance, type StpInstanceAgent, type StpForwardState } from './StpVlanInstance';
+import { mstConfigIdentifier, sameMstRegion, type MstConfigIdentifier } from './MstConfigId';
 import { MACAddress, type EthernetFrame } from '../core/types';
 import { Logger } from '../core/Logger';
 
@@ -530,6 +531,18 @@ export class StpAgent extends ReactiveAgentBase implements StpInstanceAgent {
   }
 
   getMstRegion(): MstRegion { return this.mstRegion; }
+
+  getMstConfigIdentifier(): MstConfigIdentifier { return mstConfigIdentifier(this.mstRegion); }
+
+  /**
+   * IEEE 802.1Q §13.8 : hors de sa region, un pont n'echange que le CIST.
+   */
+  private isBoundaryBpdu(payload: StpBpdu, key: number): boolean {
+    if (this.config.mode !== 'mstp') return false;
+    if (key === this.cstKey()) return false;
+    if (!payload.mstConfigId) return true;
+    return !sameMstRegion(payload.mstConfigId, mstConfigIdentifier(this.mstRegion));
+  }
   setMstName(name: string): void { this.mstRegion.name = name; }
   setMstRevision(rev: number): void { this.mstRegion.revision = rev; }
   mapMstInstance(instanceId: number, vlans: string): void {
@@ -841,6 +854,11 @@ export class StpAgent extends ReactiveAgentBase implements StpInstanceAgent {
     if (payload.bpduType !== 'config') return;
 
     const key = payload.cist ? this.cstKey() : (payload.vlan ?? 1);
+    if (this.isBoundaryBpdu(payload, key)) {
+      Logger.info(this.host.id, 'stp:boundary',
+        `${this.host.name}: MSTI ${key} BPDU on ${portName} ignored, sender is in another MST region`);
+      return;
+    }
     const inst = this.instanceForKey(key);
     // 802.1D: a BPDU whose Message Age has already reached Max Age is past
     // its useful life and is discarded rather than acted on — this is what
@@ -1108,6 +1126,8 @@ export class StpAgent extends ReactiveAgentBase implements StpInstanceAgent {
     const rapid = this.config.mode !== 'stp';
     const bpdu: StpBpdu = {
       type: 'stp', bpduType: 'config', vlan: key, cist: key === this.cstKey(),
+      mstConfigId: this.config.mode === 'mstp'
+        ? mstConfigIdentifier(this.mstRegion) : undefined,
       protocolId: 0x0000,
       version: rapid ? 2 : 0,
       flags: 0,

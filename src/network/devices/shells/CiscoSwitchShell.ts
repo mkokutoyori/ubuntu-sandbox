@@ -71,6 +71,7 @@ import {
   SPANNING_TREE_COLUMNS, SPANNING_TREE_STYLE, type SpanningTreePortRow,
 } from './cisco/ciscoTableLayouts';
 import { SOCLE, COMMUTATEUR_SEUL, appliquerContinuations } from './cisco/ciscoContinuations';
+import { mstConfigDigest, vlansMappedToInstanceZero } from '@/network/stp/MstConfigId';
 
 /** CLI Mode (FSM State) */
 export type CLIMode =
@@ -2232,6 +2233,8 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
     });
     t.register('show spanning-tree mst configuration', 'MST region config', () =>
       this.showMstConfig());
+    t.register('show spanning-tree mst configuration digest', 'MST region digest', () =>
+      this.showMstConfig(true));
     t.registerGreedy('show spanning-tree interface', 'STP for an interface', (a) => {
       const name = this.resolvePortName(a.join(' ')) ?? a.join(' ');
       const lines = this.ifStp.get(name) ?? [];
@@ -2329,18 +2332,24 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
     return (this.d() as unknown as { getDebugService?: () => import('../router/diag/RouterDebugService').RouterDebugService }).getDebugService?.();
   }
 
-  private showMstConfig(): string {
+  private showMstConfig(withDigest = false): string {
     const region = this.stpAgentOf(this.d())?.getMstRegion();
     const instances = region?.instances ?? new Map<number, string>();
     const ml: string[] = [
       'Name      [' + (region?.name ?? '') + ']',
       'Revision  ' + (region?.revision ?? 0) + '     Instances configured ' +
         (instances.size + 1),
+    ];
+    if (withDigest) {
+      ml.push(`Digest              0x${mstConfigDigest(instances)}`);
+      return ml.join('\n');
+    }
+    ml.push(
       '-------------------------------------------------------------',
       'Instance  Vlans mapped',
       '--------  -------------------------------------------------',
-      '0         1-4094',
-    ];
+      `0         ${vlansMappedToInstanceZero(instances)}`,
+    );
     for (const [id, v] of instances) ml.push(`${String(id).padEnd(10)}${v}`);
     return ml.join('\n');
   }

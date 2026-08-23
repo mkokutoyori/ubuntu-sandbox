@@ -70,15 +70,21 @@ proxy de sortie.
 Affirmer que VRP les masque — ou qu'il les liste — sans capture serait
 inventer, et l'état rendu est désormais correct dans les deux cas.
 
-### [stp] MSTI : la BPDU porte son instance en clair
-L'arbre commun (CIST) est désormais nommé sur la trame (`cist`), donc
-MSTP et PVST se rencontrent. Les MSTI, elles, portent toujours leur
-numéro d'instance : deux régions dont les tables VLAN→instance diffèrent
-échangeraient des BPDU sur des instances qui ne se correspondent pas.
-**Report** : à l'intérieur d'une région les tables sont identiques par
-définition, donc le cas ne se produit pas dans un laboratoire ; le fermer
-demande de propager le condensé de région et de ne plus échanger que le
-CIST entre régions.
+### [stp] les MSTI ne sont pas encore INONDEES par un pont de frontière
+Une région est désormais identifiée par son condensé (nom / révision /
+digest HMAC-MD5 de la table VLAN→instance), et un port qui entend une
+autre région écarte ses BPDU de MSTI en ne gardant que le CIST — la
+règle de l'IEEE 802.1Q §13.8. Ce qui reste : un vrai pont de frontière
+représente la région voisine tout entière comme un seul segment du CIST
+et propage l'information reçue vers ses propres MSTI ; ici les MSTI de
+part et d'autre s'ignorent simplement.
+**Mesure** : deux régions reliées convergent chacune de son côté ; le
+CIST traverse, les MSTI non.
+**Report** : la représentation d'une région comme segment du CIST demande
+le rôle de « Master Port » et le compte de sauts interne (`remainingHops`),
+que ce moteur ne porte pas — un chantier à part, et sans effet visible
+tant qu'un laboratoire n'a pas deux régions ET un chemin redondant entre
+elles.
 
 ---
 
