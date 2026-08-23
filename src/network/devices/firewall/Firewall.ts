@@ -22,6 +22,7 @@ import { SystemClock } from '../../core/SystemClock';
 import { SystemLoad, type MemoryWorkload } from './health/SystemLoad';
 import { conserveLogDraft } from './health/ConserveEvent';
 import { vdomFootprint, cacheFootprint } from './health/MemoryFootprint';
+import { StreamAssembler, oversizeLimitBytes } from './inspection/StreamAssembler';
 import { localTimeMs, utcMsForLocal } from '../../core/Timezone';
 import { decryptFromTunnel, sealedLegs } from './vpn/IpsecDataPlane';
 import { ikeDatagram, ipsecHostFacts } from './vpn/FirewallIpsecHost';
@@ -196,6 +197,7 @@ export class Firewall extends Equipment {
   });
   private readonly management: ManagementPlane;
   private readonly load: SystemLoad;
+  private readonly streams = new StreamAssembler();
 
   private readonly haService: FirewallHa;
   private readonly ipsec: IPSecEngine;
@@ -283,6 +285,7 @@ export class Firewall extends Equipment {
       securityLevelOf: (vdom, zone) => this.vdoms.require(vdom).zones.getZone(zone)?.securityLevel,
       sameSecurityInterAllowed: () => this.sameSecurityInter,
       onSessionClosed: (_vdom, session, reason) => {
+        this.streams.forget(session.c2s);
         this.trafficLogger?.onSessionClosed(session, reason);
         this.sessionObserver?.(session, reason);
       },
@@ -310,6 +313,8 @@ export class Firewall extends Equipment {
       refusesNewSessions: () => this.load.refusesNewSessions(),
       proxyInspectionPosture: () => this.load.proxyInspectionPosture(),
       flowInspectionPosture: () => this.load.flowInspectionPosture(),
+      assembleStream: (key, chunk, limitMb) =>
+        this.streams.append(key, chunk, oversizeLimitBytes(limitMb)),
       onInspection: () => { this.load.recordPacket('inspection'); },
       bridgedWith: (ingress, egress) => this.sameSwitchInterface(ingress, egress),
       macLookup: (destination, ingress) => this.lookupMac(destination, ingress),
@@ -966,6 +971,8 @@ export class Firewall extends Equipment {
   getInterfaceTable(): InterfaceTable { return this.interfaces; }
   getZoneTable(vdom?: string): ZoneTable { return this.getVdom(vdom).zones; }
   getSystemLoad(): SystemLoad { return this.load; }
+
+  getStreamAssembler(): StreamAssembler { return this.streams; }
 
   private measureWorkload(): MemoryWorkload {
     let used = 0;

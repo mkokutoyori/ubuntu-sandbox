@@ -22,7 +22,8 @@ import type { ProtocolOptions, UtmProfileStore } from '../../inspection/UtmProfi
 import type { IdentityTable } from '../../identity/IdentityTable';
 import type { ZoneTable } from '../../model/ZoneTable';
 import type { PolicyEvaluator } from '../../policy/PolicyEvaluator';
-import { flowKeyFromPacket, reverseFlowKey } from '../../session/FlowKey';
+import { flowKeyFromPacket, reverseFlowKey, type FlowKey } from '../../session/FlowKey';
+import type { AssembledStream } from '../../inspection/StreamAssembler';
 import type { SessionTable, SessionTranslation } from '../../session/SessionTable';
 import { TcpStateMachine, type ObservedTcpFlags } from '../../session/TcpStateMachine';
 import type { FirewallNatEngine } from '../../nat/FirewallNatEngine';
@@ -74,12 +75,17 @@ export interface FirewallServices {
   refusesNewSessions?: () => boolean;
   proxyInspectionPosture?: () => 'normal' | 'bypass' | 'block';
   flowInspectionPosture?: () => 'normal' | 'bypass' | 'block';
+  assembleStream?: StreamJoiner;
   onInspection?: () => void;
 }
 
 function vdom(services: FirewallServices, context: PacketContext): VdomServices {
   return services.vdomOf(context.ingressPort);
 }
+
+export type StreamJoiner = (
+  key: FlowKey, chunk: string, limitMb: number,
+) => AssembledStream;
 
 export interface NatOrder {
   natIsPolicyField?: boolean;
@@ -227,8 +233,12 @@ function inspectUtm(
   const profiles = vdom(services, context).utm;
   if (!packet || !profiles) return proceed(context, stage, 'no-profiles');
 
-  const flow = inspectedFlowOf(packet, profiles.getProtocolOptions(rule.protocolOptions));
+  const options = profiles.getProtocolOptions(rule.protocolOptions);
+  const flow = inspectedFlowOf(packet, options, services.assembleStream);
   if (!flow) return proceed(context, stage, 'no-payload');
+  if (flow.oversize && options.blockOversize) {
+    return deny(context, stage, 'oversize-blocked', rule.id);
+  }
   services.onInspection?.();
 
   const ssl = rule.sslSshProfile === undefined
@@ -297,7 +307,7 @@ function firstBlocking(
 }
 
 function inspectedFlowOf(
-  packet: IPv4Packet, options: ProtocolOptions,
+  packet: IPv4Packet, options: ProtocolOptions, assemble?: StreamJoiner,
 ): InspectedFlow | undefined {
   const payload = packet.payload as
     { type?: string; sourcePort?: number; destinationPort?: number; payload?: unknown } | null;
@@ -306,13 +316,15 @@ function inspectedFlowOf(
   const text = payloadText(payload.payload);
   if (text === undefined || text.length === 0) return undefined;
 
+  const stream = assemble?.(flowKeyFromPacket(packet), text, options.oversizeLimitMb);
   const sourcePort = payload.sourcePort ?? 0;
   const destinationPort = payload.destinationPort ?? 0;
   return Object.freeze({
     protocol: protocolOfFlow(sourcePort, destinationPort, options),
     sourcePort,
     destinationPort,
-    payload: text,
+    payload: stream?.payload ?? text,
+    oversize: stream?.oversize === true,
     bytes: payload.payload instanceof Uint8Array ? payload.payload : undefined,
   });
 }

@@ -18,6 +18,7 @@ export type VerdictReason =
   | 'memory-conserve-extreme'
   | 'av-failopen-off'
   | 'ips-fail-closed'
+  | 'oversize-blocked'
   | 'nat-port-exhausted'
   | 'nat-no-rule'
   | 'profile-block'

@@ -295,6 +295,8 @@ export function buildCommitDevice(fw: Firewall): FortiCommitDevice {
           httpsPorts: [...options.httpsPorts],
           ftpPorts: [...options.ftpPorts],
           dnsPorts: [...options.dnsPorts],
+          oversizeLimitMb: options.oversizeLimitMb,
+          blockOversize: options.blockOversize,
           comment: options.comment,
         });
       },

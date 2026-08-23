@@ -563,6 +563,8 @@ export interface FortiProtocolOptionsPatch {
   readonly httpsPorts: readonly number[];
   readonly ftpPorts: readonly number[];
   readonly dnsPorts: readonly number[];
+  readonly oversizeLimitMb: number;
+  readonly blockOversize: boolean;
   readonly comment?: string;
 }
 
