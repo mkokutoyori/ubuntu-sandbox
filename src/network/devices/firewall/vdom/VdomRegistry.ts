@@ -78,6 +78,7 @@ export interface VdomRegistryDeps {
   readonly sameSecurityInterAllowed: () => boolean;
   readonly onSessionClosed: (
     vdom: string, session: FirewallSession, reason: SessionCloseReason) => void;
+  readonly onSessionCountChanged?: (count: number, created: boolean) => void;
 }
 
 export class VdomAssignedInterfacesError extends Error {
@@ -182,7 +183,11 @@ export class VdomRegistry {
 
     const sessions = new SessionTable({
       now: deps.now,
-      onClosed: (session, reason) => deps.onSessionClosed(name, session, reason),
+      onCreated: () => deps.onSessionCountChanged?.(sessions.count(), true),
+      onClosed: (session, reason) => {
+        deps.onSessionClosed(name, session, reason);
+        deps.onSessionCountChanged?.(sessions.count(), false);
+      },
     });
 
     const identities = new IdentityTable({ now: this.deps.now });

@@ -61,6 +61,13 @@ export interface TableStyle {
   readonly rule: boolean;
   /** Décalage appliqué à toutes les lignes, en-tête compris. */
   readonly indent?: string;
+  /**
+   * Certaines vues sont des tableaux SANS intitulé de colonne — la table
+   * des processus de `diagnose sys top`, la liste étiquette/valeur de
+   * `diagnose hardware sysinfo conserve`. Leurs colonnes ont bien une
+   * largeur et un alignement ; il leur manque seulement la ligne du haut.
+   */
+  readonly header?: boolean;
 }
 
 /**
@@ -132,7 +139,8 @@ export function renderTable<R>(
   const ligne = (cellules: readonly string[]): string =>
     (indent + cellules.map((c, i) => caler(c, largeurs[i], columns[i].align ?? 'left')).join(sep)).trimEnd();
 
-  const out = [ligne(columns.map((c) => c.header))];
+  const out: string[] = [];
+  if (style.header !== false) out.push(ligne(columns.map((c) => c.header)));
   if (style.rule) out.push(ligne(largeurs.map((w) => '-'.repeat(w))));
   for (const r of rows) out.push(ligne(columns.map((c) => c.value(r))));
   return out;

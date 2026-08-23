@@ -15,6 +15,8 @@ export type VerdictReason =
   | 'invalid-tcp-flags'
   | 'tcp-state-violation'
   | 'session-table-full'
+  | 'memory-conserve-extreme'
+  | 'av-failopen-off'
   | 'nat-port-exhausted'
   | 'nat-no-rule'
   | 'profile-block'

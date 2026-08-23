@@ -2,6 +2,7 @@ import type { DeviceType } from '../../../../core/types';
 import { Firewall, type FirewallOptions } from '../../Firewall';
 import { FORTIOS_PROFILE } from './FortiProfile';
 import { FortiShell } from './FortiShell';
+import { daemonMemoryKib } from './diag/sysTopRenderer';
 
 const FACTORY_ADMIN = 'admin';
 
@@ -14,6 +15,9 @@ export class FortiGate extends Firewall {
   ) {
     super(deviceType, name, x, y, { ...options, profile: FORTIOS_PROFILE });
     this.factoryHostname = name;
+    this.getSystemLoad().addWorkload(() => ({
+      usedBytes: daemonMemoryKib(this) * 1024, freeableBytes: 0,
+    }));
     this.applyFactoryIdentity();
   }
 

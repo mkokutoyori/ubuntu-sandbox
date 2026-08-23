@@ -8,6 +8,9 @@ import {
 import { resolveFortiTimezone } from './timezones';
 import { CONSOLE_BAUD_RATES } from '../../../mgmt/ConsoleSettings';
 import { ADMIN_DISCLAIMER_MESSAGES } from '../../../mgmt/LoginBanners';
+import {
+  CONSERVE_THRESHOLD_MIN, CONSERVE_THRESHOLD_MAX, DEFAULT_CONSERVE_THRESHOLDS,
+} from '../../../health/SystemLoad';
 
 const ACCESS_SERVICE_HELP: Readonly<Record<ManagementService, string>> = Object.freeze({
   ping: 'PING access.',
@@ -77,6 +80,26 @@ export const SYSTEM_GLOBAL: FortiTableSpec = {
       { keyword: 'check-new', description: 'Keep existing sessions, check new ones.' },
       { keyword: 'check-policy-option', description: 'Use the policy setting.' },
     ], 'check-all'),
+    count('memory-use-threshold-extreme',
+      'Threshold at which memory usage is considered extreme and new sessions'
+      + ' are dropped, in percent of total RAM.',
+      CONSERVE_THRESHOLD_MIN, CONSERVE_THRESHOLD_MAX,
+      DEFAULT_CONSERVE_THRESHOLDS.extremePercent),
+    count('memory-use-threshold-red',
+      'Threshold at which memory usage forces the FortiGate to enter conserve'
+      + ' mode, in percent of total RAM.',
+      CONSERVE_THRESHOLD_MIN, CONSERVE_THRESHOLD_MAX,
+      DEFAULT_CONSERVE_THRESHOLDS.redPercent),
+    count('memory-use-threshold-green',
+      'Threshold at which memory usage forces the FortiGate to leave conserve'
+      + ' mode, in percent of total RAM.',
+      CONSERVE_THRESHOLD_MIN, CONSERVE_THRESHOLD_MAX,
+      DEFAULT_CONSERVE_THRESHOLDS.greenPercent),
+    choice('av-failopen', 'Action to take when the antivirus proxy runs low on memory.', [
+      { keyword: 'pass', description: 'Bypass the antivirus proxy and let traffic through.' },
+      { keyword: 'off', description: 'Block new sessions that need the antivirus proxy.' },
+      { keyword: 'one-shot', description: 'Bypass, and keep bypassing after conserve mode ends.' },
+    ], 'pass'),
     count('auth-http-port', 'Port the captive portal answers HTTP on.', 1, 65535, 1000),
     count('auth-https-port', 'Port the captive portal answers HTTPS on.', 1, 65535, 1003),
     {
@@ -123,6 +146,15 @@ export const SYSTEM_GLOBAL: FortiTableSpec = {
       adminLockoutDurationSec: number('admin-lockout-duration', 60),
       preLoginBanner: object.effective('pre-login-banner')[0] === 'enable',
       postLoginBanner: object.effective('post-login-banner')[0] === 'enable',
+      conserveThresholds: {
+        extremePercent: number('memory-use-threshold-extreme',
+          DEFAULT_CONSERVE_THRESHOLDS.extremePercent),
+        redPercent: number('memory-use-threshold-red',
+          DEFAULT_CONSERVE_THRESHOLDS.redPercent),
+        greenPercent: number('memory-use-threshold-green',
+          DEFAULT_CONSERVE_THRESHOLDS.greenPercent),
+      },
+      avFailopen: object.effective('av-failopen')[0] ?? 'pass',
     });
   },
 };

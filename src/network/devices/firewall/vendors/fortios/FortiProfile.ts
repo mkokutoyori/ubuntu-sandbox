@@ -95,6 +95,13 @@ export const FORTIOS_PROFILE: FirewallProfile = Object.freeze({
   portCount: 8,
   portFirstIndex: 1,
 
+  chassis: Object.freeze({
+    cpuCount: 1,
+    memoryMb: 1985,
+    firmwareMemoryMb: 210,
+    packetsPerSecondPerCpu: 700_000,
+  }),
+
   syslogCatalog: Object.freeze({
     'session-built': Object.freeze({ id: '0000000013', severity: 'notifications' as const }),
     'session-torn-down': Object.freeze({ id: '0000000014', severity: 'notifications' as const }),

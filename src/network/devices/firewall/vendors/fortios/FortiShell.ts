@@ -606,7 +606,7 @@ export class FortiShell {
     if (path === 'system status') return this.systemStatus();
     if (path === 'system performance status') {
       return renderPerformanceStatus({
-        sessions: this.fw.getSessionTable().view().statistics(),
+        load: this.fw.getSystemLoad(),
         uptimeMs: this.fw.getUptimeMs(),
       });
     }
@@ -715,8 +715,8 @@ export class FortiShell {
       haMode: this.fw.getHa().getConfiguration().mode === 'standalone'
         ? 'standalone' : this.fw.getHa().getConfiguration().mode,
       licenseStatus: 'Valid',
-      vmCpus: 1,
-      vmMemoryMb: 1985,
+      vmCpus: this.fw.getSystemLoad().cpuCount(),
+      vmMemoryMb: Math.round(this.fw.getSystemLoad().memory().totalKib / 1024),
       logDisk: 'Available',
       systemTime: fortiSystemTime(this.fw),
     });

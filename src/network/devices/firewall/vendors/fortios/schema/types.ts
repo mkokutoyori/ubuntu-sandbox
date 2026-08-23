@@ -1,4 +1,5 @@
 import type { ConsoleSettingsPatch } from '../../../mgmt/ConsoleSettings';
+import type { ConserveThresholds } from '../../../health/SystemLoad';
 import type { ArgumentSpec, EnumValue } from '../../../../../../cli/ArgumentTypes';
 import type { ObjectStore } from '../../../model/ObjectStore';
 import type { PolicyStore } from '../../../model/PolicyStore';
@@ -204,6 +205,8 @@ export interface FortiGlobalSettings {
   readonly preLoginBanner?: boolean;
   readonly postLoginBanner?: boolean;
   readonly timezone?: string;
+  readonly conserveThresholds?: ConserveThresholds;
+  readonly avFailopen?: string;
 }
 
 export interface FortiVdomSettings {

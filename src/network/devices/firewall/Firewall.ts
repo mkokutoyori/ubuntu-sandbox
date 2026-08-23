@@ -19,6 +19,9 @@ import {
 } from '../../core/IcmpErrors';
 import { fragmentIPv4, IPV4_FLAG_DF } from '../../core/Ipv4Fragmentation';
 import { SystemClock } from '../../core/SystemClock';
+import { SystemLoad, type MemoryWorkload } from './health/SystemLoad';
+import { conserveLogDraft } from './health/ConserveEvent';
+import { vdomFootprint, cacheFootprint } from './health/MemoryFootprint';
 import { localTimeMs, utcMsForLocal } from '../../core/Timezone';
 import { decryptFromTunnel, sealedLegs } from './vpn/IpsecDataPlane';
 import { ikeDatagram, ipsecHostFacts } from './vpn/FirewallIpsecHost';
@@ -141,6 +144,13 @@ export interface TrafficLogger {
   onDenied(context: PacketContext): void;
 }
 
+const ETHERNET_OVERHEAD_BYTES = 18;
+
+function frameBytes(frame: EthernetFrame): number {
+  const payload = frame.payload as { totalLength?: number } | undefined;
+  return ETHERNET_OVERHEAD_BYTES + (payload?.totalLength ?? 46);
+}
+
 const ICMP_ERROR_TTL = 64;
 const DEFAULT_INTERFACE_MTU = 1500;
 
@@ -185,6 +195,7 @@ export class Firewall extends Equipment {
     now: () => this.services.now(),
   });
   private readonly management: ManagementPlane;
+  private readonly load: SystemLoad;
 
   private readonly haService: FirewallHa;
   private readonly ipsec: IPSecEngine;
@@ -229,6 +240,17 @@ export class Firewall extends Equipment {
 
     this.clock = new SystemClock(options.now ?? (() => Date.now()));
     const now = () => this.clock.now();
+    this.load = new SystemLoad({
+      now,
+      cpuCount: profile.chassis.cpuCount,
+      memoryKib: profile.chassis.memoryMb * 1024,
+      baseMemoryKib: profile.chassis.firmwareMemoryMb * 1024,
+      packetsPerSecondPerCpu: profile.chassis.packetsPerSecondPerCpu,
+      onConserveChange: (transition) => {
+        this.getLogStore().append(conserveLogDraft(now(), transition));
+      },
+    });
+    this.load.addWorkload(() => this.measureWorkload());
     this.syslog = new SyslogAgent(this, () => this.getBus());
     this.syslogCollectors = new SyslogCollectorTable(() => this.syslog);
     this.vdoms = new VdomRegistry({
@@ -264,6 +286,11 @@ export class Firewall extends Equipment {
         this.trafficLogger?.onSessionClosed(session, reason);
         this.sessionObserver?.(session, reason);
       },
+      onSessionCountChanged: (count, created) => {
+        this.load.observeSessionCount(count);
+        if (created) this.load.recordSessionCreated();
+        this.load.reassess();
+      },
     });
     this.arp = new ArpService({
       interfaces: this.interfaces,
@@ -280,6 +307,9 @@ export class Firewall extends Equipment {
       sdwan: () => this.sdwan,
       ha: () => ({ forwardsTransit: () => this.forwardsTransit() }),
       policyKeyedBy: profile.policyKeyedBy,
+      refusesNewSessions: () => this.load.refusesNewSessions(),
+      proxyInspectionPosture: () => this.load.proxyInspectionPosture(),
+      onInspection: () => { this.load.recordPacket('inspection'); },
       bridgedWith: (ingress, egress) => this.sameSwitchInterface(ingress, egress),
       macLookup: (destination, ingress) => this.lookupMac(destination, ingress),
       natOrder: {
@@ -934,6 +964,28 @@ export class Firewall extends Equipment {
 
   getInterfaceTable(): InterfaceTable { return this.interfaces; }
   getZoneTable(vdom?: string): ZoneTable { return this.getVdom(vdom).zones; }
+  getSystemLoad(): SystemLoad { return this.load; }
+
+  private measureWorkload(): MemoryWorkload {
+    let used = 0;
+    let freeable = 0;
+    for (const context of this.vdoms.all()) {
+      const footprint = vdomFootprint({
+        sessions: context.sessions.count(),
+        policies: context.policy.ordered().length,
+        addresses: context.objects.listAddresses().length,
+        services: context.objects.listServices().length,
+        routes: context.routes.all().length,
+        logReserveBytes: context.logs.getMaxBytes() ?? 0,
+        logRecordBytes: context.logs.usedBytes(),
+      });
+      used += footprint.usedBytes;
+      freeable += footprint.freeableBytes;
+    }
+    const caches = cacheFootprint(this.arp.getCache().size);
+    return { usedBytes: used + caches.usedBytes, freeableBytes: freeable + caches.freeableBytes };
+  }
+
   getObjectStore(vdom?: string): ObjectStore { return this.getVdom(vdom).objects; }
   getPolicyStore(vdom?: string): PolicyStore { return this.getVdom(vdom).policy; }
   getSessionTable(vdom?: string): SessionTable { return this.getVdom(vdom).sessions; }
@@ -1031,6 +1083,8 @@ export class Firewall extends Equipment {
   clearTraces(): void { this.traces.clear(); }
 
   protected handleFrame(portName: string, frame: EthernetFrame): void {
+    this.load.recordPacket('kernel');
+    this.load.recordBytes('in', frameBytes(frame));
     this.capture.record({
       at: this.services.now(), iface: portName, direction: 'in', frame,
     });
@@ -1203,6 +1257,7 @@ export class Firewall extends Equipment {
         this.egressDeps(), egressPort, piece, gateway, bridged);
       if (!frame) return;
 
+      this.load.recordBytes('out', frameBytes(frame));
       this.capture.record({
         at: this.services.now(), iface: egressPort, direction: 'out', frame,
       });

@@ -404,9 +404,10 @@ describe('les vues `get`', () => {
 
     const vu = run(sh, 'get system performance status');
 
-    expect(vu).toMatch(/Current sessions: \d+/);
-    expect(vu).toMatch(/Total sessions created: [1-9]/);
+    expect(vu).toMatch(/Average sessions: \d+ sessions in 1 minute/);
+    expect(vu).toMatch(/Average session setup rate: \d+ sessions per second/);
     expect(vu).toMatch(/Uptime: \d+ days, \d+ hours, \d+ minutes/);
+    expect(vu).not.toContain('Current sessions:');
   });
 });
 

@@ -1,5 +1,6 @@
 import { resolveFortiTimezone } from '../schema/timezones';
 import type { Firewall } from '../../../Firewall';
+import type { AntivirusFailopen } from '../../../health/SystemLoad';
 import type { FortiCommitDevice } from '../schema/types';
 import {
   makeSchedule, makeOnetimeSchedule, makeScheduleGroup,
@@ -152,6 +153,13 @@ export function buildCommitDevice(fw: Firewall): FortiCommitDevice {
         }
         fw.getLoginBanners().enable('pre', settings.preLoginBanner === true);
         fw.getLoginBanners().enable('post', settings.postLoginBanner === true);
+        if (settings.conserveThresholds !== undefined) {
+          fw.getSystemLoad().setThresholds(settings.conserveThresholds);
+        }
+        if (settings.avFailopen !== undefined) {
+          fw.getSystemLoad().setAntivirusFailopen(
+            settings.avFailopen as AntivirusFailopen);
+        }
       },
       applyReplacementMessage(message, buffer) {
         fw.getLoginBanners().setBuffer(message, buffer);
@@ -352,6 +360,7 @@ export function buildCommitDevice(fw: Firewall): FortiCommitDevice {
         if (patch.capacity !== undefined) fw.getLogStore().setCapacity(patch.capacity);
         if (patch.maxBytes !== undefined) fw.getLogStore().setMaxBytes(patch.maxBytes);
         if (patch.enabled === false) fw.getLogStore().clear();
+        fw.getSystemLoad().reassess();
       },
   };
 }

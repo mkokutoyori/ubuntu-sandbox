@@ -71,6 +71,9 @@ export interface FirewallServices {
   macLookup?: (destination: MACAddress, ingress: string) => string | undefined;
   defaultTimeoutSec?: number;
   discardTimeoutSec?: number;
+  refusesNewSessions?: () => boolean;
+  proxyInspectionPosture?: () => 'normal' | 'bypass' | 'block';
+  onInspection?: () => void;
 }
 
 function vdom(services: FirewallServices, context: PacketContext): VdomServices {
@@ -209,12 +212,19 @@ function inspectUtm(
 ): FilterVerdict<PacketContext> {
   if (rule?.utmEnabled !== true) return proceed(context, stage, 'utm-disabled');
 
+  if (rule.inspectionMode === 'proxy') {
+    const posture = services.proxyInspectionPosture?.() ?? 'normal';
+    if (posture === 'bypass') return proceed(context, stage, 'av-failopen-pass');
+    if (posture === 'block') return deny(context, stage, 'av-failopen-off', rule.id);
+  }
+
   const packet = ipv4(context);
   const profiles = vdom(services, context).utm;
   if (!packet || !profiles) return proceed(context, stage, 'no-profiles');
 
   const flow = inspectedFlowOf(packet, profiles.getProtocolOptions(rule.protocolOptions));
   if (!flow) return proceed(context, stage, 'no-payload');
+  services.onInspection?.();
 
   const ssl = rule.sslSshProfile === undefined
     ? undefined
@@ -804,6 +814,9 @@ function sessionInstallStage(services: FirewallServices): PipelineStage {
       if (!context.isFirstPacket) return proceed(context, 'session-install', 'already');
       if (context.simulated) return proceed(context, 'session-install', 'simulated');
 
+      if (services.refusesNewSessions?.() === true) {
+        return deny(context, 'session-install', 'memory-conserve-extreme');
+      }
       if (!vdom(services, context).sessions.hasRoom()) {
         return deny(context, 'session-install', 'session-table-full');
       }

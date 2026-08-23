@@ -55,7 +55,7 @@ export function runDiagnose(rest: readonly string[], deps: FortiDiagDeps): strin
   if (family === 'test') return diagnoseTest(tail, deps);
   if (family === 'hardware') {
     if (tail[0] === 'sysinfo' && tail[1] === 'conserve') {
-      return conserveModeLines().join('\n');
+      return conserveModeLines(deps.fw.getSystemLoad()).join('\n');
     }
     return FortiMessages.unknownPath(`hardware ${tail.join(' ')}`);
   }

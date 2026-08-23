@@ -66,6 +66,13 @@ export const ASA_PROFILE: FirewallProfile = Object.freeze({
   portCount: 8,
   portFirstIndex: 0,
 
+  chassis: Object.freeze({
+    cpuCount: 1,
+    memoryMb: 8192,
+    firmwareMemoryMb: 1024,
+    packetsPerSecondPerCpu: 1_000_000,
+  }),
+
   syslogCatalog: Object.freeze({
     'session-built': Object.freeze({ id: '302013', severity: 'informational' as const }),
     'session-torn-down': Object.freeze({ id: '302014', severity: 'informational' as const }),

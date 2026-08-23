@@ -71,7 +71,22 @@ export interface FirewallProfile {
   readonly portCount: number;
   readonly portFirstIndex: number;
 
+  readonly chassis: ChassisResources;
 }
+
+export interface ChassisResources {
+  readonly cpuCount: number;
+  readonly memoryMb: number;
+  readonly firmwareMemoryMb: number;
+  readonly packetsPerSecondPerCpu: number;
+}
+
+export const GENERIC_CHASSIS: ChassisResources = Object.freeze({
+  cpuCount: 1,
+  memoryMb: 2048,
+  firmwareMemoryMb: 256,
+  packetsPerSecondPerCpu: 500_000,
+});
 
 export const GENERIC_PIPELINE: readonly string[] = Object.freeze([
   'vdom-bind', 'switch-bridge', 'ingress-zone', 'session-lookup', 'tcp-state-check',
@@ -136,4 +151,5 @@ export const GENERIC_PROFILE: FirewallProfile = Object.freeze({
   portCount: 8,
   portFirstIndex: 1,
 
+  chassis: GENERIC_CHASSIS,
 });
