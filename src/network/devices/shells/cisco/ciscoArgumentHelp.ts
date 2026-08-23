@@ -446,29 +446,6 @@ function describeArgumentTypes(tries: ArgumentHelpTries): void {
       ['prefix', 'Filter prefixes in routing updates'],
     ]),
   ]);
-  tries.configRouterOspf.describeArgs('default-metric', [
-    INT('metric', [1, 16777214], 'Default metric of redistributed routes'),
-  ]);
-  tries.configRouterOspf.describeArgs('maximum-paths', [
-    INT('paths', [1, 32], 'Number of equal-cost paths installed'),
-  ]);
-  tries.configRouterOspf.describeArgs('max-lsa', [
-    INT('lsas', [1, 4294967294], 'Maximum number of non self-generated LSAs'),
-  ]);
-  tries.configRouterOspf.describeArgs('summary-address', [
-    IP('address', 'Summary address'), MASK('Summary mask'),
-  ]);
-  tries.configRouterOspf.describeArgs('no passive-interface', [
-    IFACE('Interface on which updates are re-enabled'),
-  ]);
-  for (const path of ['distribute-list', 'no distribute-list']) {
-    tries.configRouterOspf.describeArgs(path, [
-      ENUM('filter', 'Filter to apply', [
-        ['gateway', 'Filtering incoming updates based on gateway'],
-        ['prefix', 'Filter prefixes in routing updates'],
-      ]),
-    ]);
-  }
   // ── `<cr>` ne s'annonce que si la commande se valide vraiment ──
   //
   // `<cr>` promet une chose et une seule : vous pouvez valider ici.
@@ -637,9 +614,6 @@ export function describeCiscoArguments(tries: ArgumentHelpTries): void {
   ]);
 
 
-  tries.configRouterOspf.describeArgs('router-id', [
-    IP('router-id', 'OSPF router-id in IP address format'),
-  ]);
   tries.configRouter.describeArgs('network', [
     IP('network', 'Network number'),
   ]);
@@ -679,19 +653,6 @@ export function describeCiscoArguments(tries: ArgumentHelpTries): void {
       ['ospf', 'Open Shortest Path First (OSPF)'],
       ['static', 'Static routes'],
     ]),
-  ]);
-  tries.configRouterOspf.describeArgs('redistribute', [
-    ENUM('protocol', 'Source protocol to redistribute', [
-      ['bgp', 'Border Gateway Protocol (BGP)'],
-      ['connected', 'Connected'],
-      ['eigrp', 'Enhanced Interior Gateway Routing Protocol (EIGRP)'],
-      ['rip', 'Routing Information Protocol (RIP)'],
-      ['static', 'Static routes'],
-    ]),
-  ]);
-  tries.configRouterOspf.describeArgs('network', [
-    IP('network', 'Network number'),
-    { ...IP('wildcard', 'OSPF wild card bits'), optional: true },
   ]);
 
   tries.configIf.describeArgs('ip helper-address', [

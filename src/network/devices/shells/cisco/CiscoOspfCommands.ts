@@ -29,6 +29,7 @@ import { iosShortInterfaceName, iosInterfaceStatus }
  * be defeated by the second spelling.
  */
 import type { CommandSpec } from '@/cli/CommandTable';
+import type { ArgumentSpec } from '@/cli/ArgumentTypes';
 import { specsFromTrieRegistrations } from '@/cli/commands/trieAdapter';
 
 export function setOspfv3InterfaceParams(
@@ -1100,6 +1101,109 @@ export function registerOSPFInterfaceCommands(configIfTrie: CommandTrie, ctx: Ci
 }
 
 // ─── Show Commands ───────────────────────────────────────────────────
+
+
+const OSPF_INT = (
+  name: string, min: number, max: number, description: string,
+): ArgumentSpec => ({ name, type: 'INT', range: [min, max], description });
+
+const ROUTER_OSPF_ARGUMENTS:
+Readonly<Record<string, ArgumentSpec | readonly ArgumentSpec[] | null>> = {
+  network: [
+    { name: 'reseau', type: 'IP_ADDR', description: 'Network number' },
+    { name: 'masque', type: 'IP_ADDR', optional: true, description: 'OSPF wild card bits' },
+  ],
+  'summary-address': [
+    { name: 'adresse', type: 'IP_ADDR', description: 'Summary address' },
+    { name: 'masque', type: 'SUBNET_MASK', description: 'Summary mask' },
+  ],
+  'router-id': { name: 'id', type: 'IP_ADDR', description: 'OSPF router-id in IP address format' },
+  'default-metric': OSPF_INT('metrique', 1, 16777214, 'Default metric of redistributed routes'),
+  'maximum-paths': OSPF_INT('chemins', 1, 32, 'Number of equal-cost paths installed'),
+  'max-lsa': OSPF_INT('lsas', 1, 4294967294, 'Maximum number of non self-generated LSAs'),
+  'passive-interface': { name: 'interface', type: 'INTERFACE', optional: true, description: 'Interface on which updates are suppressed' },
+  redistribute: [{
+    name: 'protocole', type: 'ENUM', description: 'Source protocol to redistribute',
+    values: [
+      { keyword: 'bgp', description: 'Border Gateway Protocol (BGP)' },
+      { keyword: 'connected', description: 'Connected' },
+      { keyword: 'eigrp', description: 'Enhanced Interior Gateway Routing Protocol (EIGRP)' },
+      { keyword: 'rip', description: 'Routing Information Protocol (RIP)' },
+      { keyword: 'static', description: 'Static routes' },
+    ],
+  }, { name: 'options', type: 'REST', optional: true, values: [], description: '' }],
+  'distribute-list': [{
+    name: 'filtre', type: 'WORD', description: 'Filter to apply',
+    alternatives: [
+      { keyword: '<1-199>', description: 'IP access list number' },
+      { keyword: 'gateway', description: 'Filtering incoming updates based on gateway' },
+      { keyword: 'prefix', description: 'Filter prefixes in routing updates' },
+    ],
+  }, { name: 'options', type: 'REST', optional: true, values: [], description: '' }],
+  shutdown: null,
+  ispf: null,
+  'prefix-suppression': null,
+};
+
+const ROUTER_OSPF_KEYWORDS:
+Readonly<Record<string, ReadonlyArray<{
+  keyword: string; description: string; afterArguments?: boolean;
+  argument?: ArgumentSpec | null;
+}>>> = {
+  network: [{
+    keyword: 'area', description: 'Set the OSPF area ID', afterArguments: true,
+    argument: { name: 'aire', type: 'WORD', literal: '<0-4294967295>', description: 'OSPF area ID' },
+  }],
+  'passive-interface': [{ keyword: 'default', description: 'Suppress routing updates on all interfaces', argument: null }],
+  'auto-cost': [{ keyword: 'reference-bandwidth', description: 'Reference bandwidth for cost calculation' }],
+  bfd: [{ keyword: 'all-interfaces', description: 'Enable BFD on all interfaces' }],
+  capability: [
+    { keyword: 'opaque', description: 'Opaque LSA' },
+    { keyword: 'transit', description: 'Transit area capability' },
+  ],
+  compatible: [{ keyword: 'rfc1583', description: 'RFC 1583 compatible route selection' }],
+  'default-information originate': [{ keyword: 'metric-type', description: 'OSPF metric type for default routes' }],
+  'discard-route': [{ keyword: 'external', description: 'Discard route for external summary' }],
+  distance: [
+    { keyword: 'external', description: 'External type 5 and type 7 routes' },
+    { keyword: 'inter-area', description: 'Inter-area routes' },
+    { keyword: 'intra-area', description: 'Intra-area routes' },
+    { keyword: 'ospf', description: 'OSPF distance' },
+  ],
+  'graceful-restart': [{ keyword: 'grace-period', description: 'Grace period in seconds' }],
+  'log-adjacency-changes': [{ keyword: 'detail', description: 'Detailed output' }],
+  'max-metric router-lsa': [{ keyword: 'on-startup', description: 'Set maximum metric temporarily after reboot' }],
+  neighbor: [
+    { keyword: 'poll-interval', description: 'OSPF dead-neighbor polling interval' },
+    { keyword: 'priority', description: 'OSPF priority of non-broadcast neighbor' },
+  ],
+  'segment-routing': [{ keyword: 'mpls', description: 'Segment Routing global block' }],
+  area: [
+    { keyword: 'authentication', description: 'Authentication configuration' },
+    { keyword: 'default-cost', description: 'Cost of the default summary route' },
+    { keyword: 'filter-list', description: 'Filter prefixes' },
+    { keyword: 'message-digest', description: 'MD5 authentication' },
+    { keyword: 'no-summary', description: 'Do not send summary LSAs into the area' },
+    { keyword: 'nssa-only', description: 'Limit the route to the NSSA area' },
+    { keyword: 'range', description: 'Range of values' },
+    { keyword: 'sham-link', description: 'OSPF sham link' },
+    { keyword: 'stub', description: 'Stub area' },
+    { keyword: 'virtual-link', description: 'OSPF virtual link' },
+  ],
+};
+
+export function routerOspfSpecs(ctx: CiscoShellContext): CommandSpec[] {
+  return specsFromTrieRegistrations(
+    (collector) =>
+      buildConfigRouterOSPFCommands(collector as unknown as CommandTrie, ctx),
+    {
+      modes: ['config-router-ospf'], minPrivilege: 15,
+      undoFromNegatedPaths: true,
+      argumentFor: (path) => ROUTER_OSPF_ARGUMENTS[path],
+      keywordsFor: (path) => ROUTER_OSPF_KEYWORDS[path],
+    },
+  );
+}
 
 export function registerOSPFShowCommands(trie: CommandTrie, getRouter: () => Router): void {
   trie.registerGreedy('show ip ospf neighbor', 'Display OSPF neighbor table (filtered)', (args) => {
