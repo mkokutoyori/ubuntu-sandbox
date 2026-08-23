@@ -2700,6 +2700,57 @@ refusé sont remplacés par un cas qui l'affirme disponible.
 
 ---
 
+## Périmètre pris — FortiOS phase 22 (le battement de cœur porte une VOIE DE COMMANDE)
+
+**Agent `mandeng`.** Deux entrées `[ha]` de `TODO.md` reportent la même
+chose, et c'est le report qui nomme la phase : FGCP n'a ici qu'une
+**annonce périodique à sens unique**. Il manque un échange
+requête/réponse, et c'est un seul mécanisme qui ferme les deux.
+
+Mesure de départ :
+
+- **`execute ha manage 1 admin` répond `Connecting to <nom> (<série>)…`
+  et rend la main.** On ne se retrouve jamais sur l'autre machine : le
+  `get system status` suivant répond encore pour le membre local.
+- **`execute ha synchronize start` tapé sur un SECONDAIRE n'attire
+  rien.** Il appelle `requestSynchronisation()`, qui émet le battement
+  du secondaire — c'est-à-dire sa propre configuration, exactement ce
+  dont personne n'a besoin. Rien ne change tant que le primaire n'a pas
+  émis de lui-même.
+
+**Ce que la documentation de Fortinet ajoute, et qui lie les deux
+commandes en un seul geste** : `execute ha synchronize` **se tape depuis
+le subordonné**, et on atteint le subordonné par `execute ha manage`.
+Les deux ne sont pas deux commandes voisines mais les deux moitiés d'un
+seul mode opératoire — `manage`, puis `synchronize start`, puis `exit`.
+La même source précise que `manage` demande un mot de passe **évalué
+contre le magasin de comptes du membre CIBLE**, ce qui est une propriété
+de sécurité vérifiable et pas un détail d'invite.
+
+**Le report disait qu'un registre partagé « contournerait le fil ». Il a
+raison, et c'est pour cela que la voie de commande passe SUR le fil** :
+même `ETHERTYPE_FGCP`, mêmes interfaces de battement, une requête et une
+réponse. Un vrai FortiGate relaie précisément la session CLI par le lien
+de grappe ; le modéliser ainsi est fidèle, pas commode.
+
+**Fichiers que la phase 22 prendra** :
+
+```
+firewall/ha/HaCommandChannel.ts   ← requête/réponse (socle, neuf)
+firewall/ha/HaTypes.ts            ← les deux messages
+firewall/ha/HaAgent.ts            ← émission, réception, routage
+firewall/Firewall.ts              ← le point d'entrée déjà branché
+vendors/fortios/FortiShell.ts     ← `ha manage`, `ha synchronize start`
+```
+
+**Hors périmètre, et dit plutôt que tu** : l'entrée `[ha] les adresses
+MAC VIRTUELLES du cluster n'existent pas` reste ouverte. Elle touche
+`Port` et l'apprentissage MAC de tous les commutateurs du projet — c'est
+un changement du matériel simulé, pas du pare-feu, et il n'a rien à voir
+avec la voie de commande.
+
+---
+
 ## Périmètre pris — FortiOS phase 21 (un datagramme fragmenté est RECOLLÉ)
 
 **Agent `mandeng`.** L'entrée `[pare-feu] les fragments recus ne sont pas
