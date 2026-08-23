@@ -106,7 +106,7 @@ import {
   buildACLConfigCommands, buildACLInterfaceCommands,
   buildNamedStdACLCommands, buildNamedExtACLCommands,
   buildIPv6ACLGlobalCommands, buildIPv6ACLModeCommands,
-  registerACLShowCommands, aclShowSpecs,
+  registerACLShowCommands, registerACLClearCommands, aclShowSpecs,
 } from './cisco/CiscoAclCommands';
 import {
   registerOSPFConfigCommands, buildConfigRouterOSPFCommands,
@@ -1334,6 +1334,7 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
     registerDhcpPrivilegedCommands(this.privilegedTrie, () => this.d());
     buildIPSecPrivilegedCommands(this.privilegedTrie, this);
     registerNATPrivilegedCommands(this.privilegedTrie, () => this.d());
+    registerACLClearCommands(this.privilegedTrie, () => this.d());
 
     // ── Config mode ──
     buildConfigCommands(this.configTrie, this);

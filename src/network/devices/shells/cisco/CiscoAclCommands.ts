@@ -653,7 +653,17 @@ export function buildNamedExtACLCommands(trie: CommandTrie, ctx: CiscoACLShellCo
 // ─── Show Commands ────────────────────────────────────────────────────
 
 export function showAccessLists(router: Router, ref?: string): string {
-  return showAccessListsFrom(router._getAccessListsInternal(), ref);
+  return showAccessListsFrom(router._getAccessListsInternal(), ref, reflexiveViewOf(router));
+}
+
+function reflexiveViewOf(router: Router): ReflexiveView {
+  const sessions = router._getReflexiveSessions();
+  return {
+    names: () => sessions.names(),
+    entries: (name, nowMs) => sessions.entries(name, nowMs),
+    timeLeft: (entry, nowMs) => sessions.timeLeft(entry, nowMs),
+    nowMs: () => router.getSystemClockMs(),
+  };
 }
 
 /**
@@ -666,13 +676,18 @@ export function showAccessLists(router: Router, ref?: string): string {
  */
 export function showAccessListsFrom(
   all: import('../../router/ACLEngine').AccessList[], ref?: string,
+  reflexive?: ReflexiveView,
 ): string {
   let acls = all;
   if (ref) {
     const num = parseInt(ref, 10);
     if (!isNaN(num)) acls = all.filter(a => a.id === num);
     else acls = all.filter(a => a.name === ref);
-    if (acls.length === 0) return `% Access list ${ref} not found`;
+    if (acls.length === 0) {
+      const miroir = reflexive && renderReflexiveList(reflexive, ref);
+      if (miroir) return miroir;
+      return `% Access list ${ref} not found`;
+    }
   }
   if (acls.length === 0) return '';
   const lines: string[] = [];
@@ -681,6 +696,9 @@ export function showAccessListsFrom(
     const typeStr = acl.type === 'standard' ? 'Standard' : 'Extended';
     lines.push(`${typeStr} IP access list ${label}`);
     for (const entry of acl.entries) {
+      // Un commentaire ne paraît PAS ici sur IOS 15 : il vit dans la
+      // configuration seule, et n'a pas de numéro de séquence à porter.
+      if (entry.remark !== undefined) continue;
       const seq = entry.sequence !== undefined ? `${entry.sequence} ` : '';
       // IOS n'écrit le compteur que s'il a compté quelque chose.
       const matches = entry.matchCount > 0
@@ -688,6 +706,43 @@ export function showAccessListsFrom(
         : '';
       lines.push(`    ${seq}${formatACLEntry(acl.type, entry, true)}${matches}`);
     }
+  }
+  if (!ref && reflexive) {
+    for (const name of reflexive.names()) {
+      const bloc = renderReflexiveList(reflexive, name);
+      if (bloc) lines.push(bloc);
+    }
+  }
+  return lines.join('\n');
+}
+
+export interface ReflexiveView {
+  names(): string[];
+  entries(name: string, nowMs: number): import('../../router/acl/ReflexiveSessions').ReflexiveEntry[];
+  timeLeft(
+    entry: import('../../router/acl/ReflexiveSessions').ReflexiveEntry, nowMs: number,
+  ): number;
+  nowMs(): number;
+}
+
+/**
+ * Une liste réflexive n'est pas configurée : elle est PEUPLÉE par le
+ * trafic. IOS la rend donc sans numéro de séquence, chaque ligne portant
+ * son compteur et le temps qui lui reste à vivre.
+ */
+function renderReflexiveList(view: ReflexiveView, name: string): string {
+  if (!view.names().includes(name)) return '';
+  const now = view.nowMs();
+  const lines = [`Reflexive IP access list ${name}`];
+  for (const e of view.entries(name, now)) {
+    const src = e.sourcePort !== undefined
+      ? `host ${e.sourceIP} eq ${e.sourcePort}` : `host ${e.sourceIP}`;
+    const dst = e.destinationPort !== undefined
+      ? `host ${e.destinationIP} eq ${e.destinationPort}` : `host ${e.destinationIP}`;
+    const matches = e.matchCount > 0
+      ? ` (${e.matchCount} match${e.matchCount !== 1 ? 'es' : ''})` : '';
+    lines.push(`     permit ${e.protocol} ${src} ${dst}${matches}`
+      + ` (time left ${view.timeLeft(e, now)})`);
   }
   return lines.join('\n');
 }
@@ -714,7 +769,10 @@ function formatACLEntry(
     const addr = pourAffichage
       ? formatStandardAddr(entry.srcIP, entry.srcWildcard)
       : formatSrcAddr(entry.srcIP, entry.srcWildcard);
-    return `${action} ${addr}${tail}`;
+    // Une liste STANDARD aligne son adresse : IOS écrit `deny   10.1.1.1`
+    // en calant l'action sur la largeur de `permit`. La liste ÉTENDUE ne
+    // le fait PAS (`deny ip any any`), et la même capture le montre.
+    return `${pourAffichage ? action.padEnd(6) : action} ${addr}${tail}`;
   }
   const proto = entry.protocol || 'ip';
   const src = formatSrcAddr(entry.srcIP, entry.srcWildcard);
@@ -777,7 +835,20 @@ function formatStandardAddr(ip: IPAddress, wildcard: SubnetMask): string {
 // ─── Show ACL entries in running-config ───────────────────────────────
 
 export function runningConfigACL(router: Router): string[] {
-  const acls = router._getAccessListsInternal();
+  return runningConfigACLFrom(router._getAccessListsInternal());
+}
+
+/**
+ * Les listes elles-mêmes, rendues depuis la table.
+ *
+ * Un Catalyst rendait ses cartes `vlan access-map` et JAMAIS les listes
+ * qu'elles apparient : la configuration relue à l'import d'une topologie
+ * reconstituait des cartes qui ne désignaient plus rien. Le routeur avait
+ * déjà ce rendu ; c'est le même, pas un second.
+ */
+export function runningConfigACLFrom(
+  acls: import('../../router/ACLEngine').AccessList[],
+): string[] {
   const lines: string[] = [];
 
   // Numbered ACLs
@@ -808,7 +879,13 @@ export function runningConfigACL(router: Router): string[] {
 }
 
 export function runningConfigInterfaceACL(router: Router, ifName: string): string[] {
-  const bindings = router._getInterfaceACLBindingsInternal();
+  return runningConfigInterfaceACLFrom(router._getInterfaceACLBindingsInternal(), ifName);
+}
+
+export function runningConfigInterfaceACLFrom(
+  bindings: ReadonlyMap<string, import('../../router/ACLEngine').InterfaceACLBinding>,
+  ifName: string,
+): string[] {
   const binding = bindings.get(ifName);
   const lines: string[] = [];
   if (binding?.inbound !== null && binding?.inbound !== undefined) {
@@ -828,10 +905,35 @@ export function registerACLShowCommands(trie: CommandTrie, getRouter: () => Rout
   trie.registerGreedy('show ipv6 access-lists', 'Display IPv6 access lists', (args) => showIPv6AccessLists(getRouter(), args[0]));
 }
 
+/** `clear` est de l'EXEC PRIVILÉGIÉ : il ne rejoint pas les `show`. */
+export function registerACLClearCommands(trie: CommandTrie, getRouter: () => Router): void {
+  trie.registerGreedy('clear access-list counters', 'Clear access list counters',
+    (args) => clearAccessListCounters(getRouter(), args[0]));
+  trie.registerGreedy('clear ip access-list counters', 'Clear IP access list counters',
+    (args) => clearAccessListCounters(getRouter(), args[0]));
+}
+
+/**
+ * `clear access-list counters [nom|numero]`.
+ *
+ * Le moteur savait remettre à zéro depuis toujours — c'est ce que VRP
+ * appelle `reset acl counter` — et la porte IOS n'existait pas : le
+ * tutoriel demande de repartir d'un compteur propre pour voir ce qui
+ * frappe la liste MAINTENANT, et rien ne le permettait.
+ */
+export function clearAccessListCounters(router: Router, ref?: string): string {
+  if (!ref) { router.resetAllAclCounters(); return ''; }
+  const cible: number | string = /^\d+$/.test(ref) ? parseInt(ref, 10) : ref;
+  if (!router.resetAclCounters(cible)) return `% Access list ${ref} not found`;
+  return '';
+}
+
 const ACL_SHOW_ARGUMENTS: Readonly<Record<string, [string, string]>> = {
   'show access-lists': ['WORD', 'Access list name or number'],
   'show ip access-lists': ['WORD', 'Access list name or number'],
   'show ipv6 access-lists': ['WORD', 'Access list name'],
+  'clear access-list counters': ['WORD', 'Access list name or number'],
+  'clear ip access-list counters': ['WORD', 'Access list name or number'],
 };
 
 export function aclShowSpecs(getRouter: () => Router): CommandSpec[] {

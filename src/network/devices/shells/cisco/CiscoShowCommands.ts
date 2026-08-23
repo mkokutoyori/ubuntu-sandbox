@@ -1551,8 +1551,33 @@ function ipInterfaceBlock(router: Router, name: string, port: Port): string {
   const flags = (router as unknown as {
     [k: symbol]: { interfaceFlags?: Map<string, { noRedirects?: boolean; noUnreachables?: boolean }> } | undefined;
   })[Symbol.for('CiscoSecurityConfig')]?.interfaceFlags?.get(name) ?? {};
+  const binding = router._getInterfaceACLBindingsInternal().get(name);
   return ipInterfaceBlockFor(name, port, router._getPortsInternal(), natTag,
-    router.ripSplitHorizonOn(name), flags);
+    router.ripSplitHorizonOn(name), flags,
+    { inbound: binding?.inbound, outbound: binding?.outbound });
+}
+
+export interface InterfaceAclRefs {
+  inbound?: number | string | null;
+  outbound?: number | string | null;
+}
+
+/**
+ * Les deux lignes qui disent quelle liste filtre cette interface.
+ *
+ * Elles étaient CONSTANTES : `ip access-group 1 out` posé, la vue
+ * répondait « not set » sur la même machine au même instant — la seule
+ * commande qui répond à « où ma liste est-elle appliquée ? » ne lisait
+ * pas la liaison. Une seule fonction, lue par le routeur ET par le
+ * commutateur, physique comme SVI.
+ */
+export function interfaceAclLines(acl: InterfaceAclRefs): string[] {
+  const dit = (ref: number | string | null | undefined) =>
+    ref === null || ref === undefined ? 'not set' : String(ref);
+  return [
+    `  Outgoing access list is ${dit(acl.outbound)}`,
+    `  Inbound  access list is ${dit(acl.inbound)}`,
+  ];
 }
 
 export function ipInterfaceBlockFor(
@@ -1562,6 +1587,7 @@ export function ipInterfaceBlockFor(
   natTag = '',
   splitHorizon = true,
   icmp: { noRedirects?: boolean; noUnreachables?: boolean } = {},
+  acl: InterfaceAclRefs = {},
 ): string {
   const view = iosInterfaceStatus(port, name, ports);
   const ip = port.getIPAddress();
@@ -1578,8 +1604,7 @@ export function ipInterfaceBlockFor(
   lines.push(`  MTU is ${port.getMTU()} bytes`);
   lines.push('  Helper address is not set');
   lines.push('  Directed broadcast forwarding is disabled');
-  lines.push('  Outgoing access list is not set');
-  lines.push('  Inbound  access list is not set');
+  lines.push(...interfaceAclLines(acl));
   lines.push(`  Proxy ARP is ${port.isProxyArpEnabled?.() === false ? 'disabled' : 'enabled'}`);
   lines.push('  Local Proxy ARP is disabled');
   lines.push('  Security level is default');

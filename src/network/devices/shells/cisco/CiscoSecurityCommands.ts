@@ -6,6 +6,7 @@ import {
   CiscoSecurityConfig,
   newRadiusServerStats,
   newTacacsServerStats,
+  isTimeRangeActive,
   type AaaServiceKind,
   type AaaPhase,
 } from '../../router/security/CiscoSecurityConfig';
@@ -1705,10 +1706,23 @@ export function buildSecurityShowCommands(trie: CommandTrie, getRouter: () => Ro
     const s = sec();
     const list = args[0] ? [s.timeRanges.get(args[0])].filter((x): x is NonNullable<typeof x> => !!x) : [...s.timeRanges.values()];
     if (list.length === 0) return '';
+    // `(inactive)` était écrit EN DUR, quelle que soit l'heure : la seule
+    // vue qui répond à « ma plage est-elle en cours ? » ne consultait pas
+    // l'horloge. Elle lit désormais celle de l'ÉQUIPEMENT — celle que
+    // `clock set` pose et que le plan de données consulte — et non celle
+    // de la machine hôte, sans quoi la vue et le filtrage se
+    // contrediraient à nouveau.
+    const dev = getRouter();
+    const now = new Date(dev.getSystemClockMs());
+    const utilisee = (nom: string): boolean =>
+      dev._getAccessListsInternal()
+        .some(acl => acl.entries.some(e => e.timeRange === nom));
     const lines: string[] = [];
     for (const tr of list) {
-      lines.push(`time-range entry: ${tr.name} (inactive)`);
+      const etat = isTimeRangeActive(tr, now) ? 'active' : 'inactive';
+      lines.push(`time-range entry: ${tr.name} (${etat})`);
       for (const p of tr.periodic) lines.push(`   periodic ${p.days} ${p.startHour}:${pad2(p.startMinute)} to ${p.endHour}:${pad2(p.endMinute)}`);
+      if (utilisee(tr.name)) lines.push('   used in: IP ACL entry');
     }
     return lines.join('\n');
   });
