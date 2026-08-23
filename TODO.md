@@ -538,19 +538,6 @@ Windows (c'est la forme BIND du même besoin).
 est écrit plutôt que tu : la sécurisation est RÉELLE et vérifiable, sa
 distribution de clé ne l'est pas.
 
-### [ddns] `nsupdate` n'a pas son mode INTERACTIF
-La forme non interactive est écrite — script lu sur l'entrée standard ou
-dans un fichier, `-y` pour la clé — mais le vrai `nsupdate` lancé sans
-argument ouvre une invite `>` où l'on tape `server`, `prereq`, `update`
-puis `send`, plusieurs fois de suite, chaque `send` émettant un message
-et `answer` affichant la réponse complète.
-**Mesure** : `nsupdate` sans entrée rend une chaîne vide au lieu d'ouvrir
-une invite.
-**Report** : c'est un sous-shell de plus, de la forme de `SftpSubShell`,
-et il demande de garder l'état entre deux `send` (les mises à jour déjà
-composées) — borné, mais un chantier à lui seul. `show` et `answer`
-suivront le même chemin.
-
 ## Outillage
 
 ### [typecheck] 341 erreurs de type au compteur
