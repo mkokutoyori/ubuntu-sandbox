@@ -152,9 +152,6 @@ export const ROUTEUR_SEUL: ContinuationTable = {
   configIpv6Dhcp: {
     'address prefix': ['lifetime'],
   },
-  configKeyring: {
-    'pre-shared-key': ['address', 'key'],
-  },
   configPmap: {
     'class': ['inspect', 'type'],
   },
@@ -173,9 +170,6 @@ export const ROUTEUR_SEUL: ContinuationTable = {
   },
   configStdNacl: {
     'sequence': ['deny', 'permit'],
-  },
-  configTfset: {
-    'mode': ['transport', 'tunnel'],
   },
   configTimeRange: {
     'periodic': ['to'],

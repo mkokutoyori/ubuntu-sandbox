@@ -15,6 +15,10 @@
 
 import { CommandTrie } from '../CommandTrie';
 import type { CiscoShellContext } from './CiscoConfigCommands';
+import type { CommandSpec } from '@/cli/CommandTable';
+import type { ArgumentSpec } from '@/cli/ArgumentTypes';
+import type { AdapterKeyword } from '@/cli/commands/trieAdapter';
+import { specsFromTrieRegistrations } from '@/cli/commands/trieAdapter';
 
 const IPV4_LITERAL_RE = /^(?:(?:25[0-5]|2[0-4]\d|[01]?\d?\d)\.){3}(?:25[0-5]|2[0-4]\d|[01]?\d?\d)$/;
 function isIPv4Literal(s: string): boolean { return IPV4_LITERAL_RE.test(s); }
@@ -795,4 +799,246 @@ export function normalizeTransforms(args: string[]): string[] {
     }
   }
   return transforms;
+}
+
+const CRYPTO_ENUM = (
+  name: string, description: string,
+  valeurs: ReadonlyArray<readonly [string, string]>,
+): ArgumentSpec => ({
+  name, type: 'ENUM', description,
+  values: valeurs.map(([keyword, texte]) => ({ keyword, description: texte })),
+});
+
+const SUITE_LIBRE: ArgumentSpec = {
+  name: 'suite', type: 'REST', optional: true, values: [], description: '',
+};
+
+const ISAKMP_ARGUMENTS:
+Readonly<Record<string, ArgumentSpec | readonly ArgumentSpec[] | null>> = {
+  encryption: [CRYPTO_ENUM('algorithme', 'Encryption algorithm', [
+    ['3des', 'Three key triple DES'],
+    ['aes', 'AES - Advanced Encryption Standard'],
+    ['des', 'DES - Data Encryption Standard (56 bit keys)'],
+  ]), SUITE_LIBRE],
+  hash: CRYPTO_ENUM('condense', 'Hash algorithm', [
+    ['md5', 'Message Digest 5'],
+    ['sha', 'Secure Hash Standard'],
+    ['sha256', 'Secure Hash Standard 2 (256 bit)'],
+    ['sha384', 'Secure Hash Standard 2 (384 bit)'],
+    ['sha512', 'Secure Hash Standard 2 (512 bit)'],
+  ]),
+  authentication: CRYPTO_ENUM('methode', 'Authentication method', [
+    ['pre-share', 'Pre-Shared Key'],
+    ['rsa-encr', 'Rivest-Shamir-Adleman Encryption'],
+    ['rsa-sig', 'Rivest-Shamir-Adleman Signature'],
+  ]),
+  group: CRYPTO_ENUM('groupe', 'Diffie-Hellman group', [
+    ['1', 'Diffie-Hellman group 1 (768 bit)'],
+    ['2', 'Diffie-Hellman group 2 (1024 bit)'],
+    ['5', 'Diffie-Hellman group 5 (1536 bit)'],
+    ['14', 'Diffie-Hellman group 14 (2048 bit)'],
+    ['15', 'Diffie-Hellman group 15 (3072 bit)'],
+    ['16', 'Diffie-Hellman group 16 (4096 bit)'],
+    ['19', 'Diffie-Hellman group 19 (256 bit ECP)'],
+    ['20', 'Diffie-Hellman group 20 (384 bit ECP)'],
+    ['21', 'Diffie-Hellman group 21 (521 bit ECP)'],
+    ['24', 'Diffie-Hellman group 24 (2048 bit, 256 bit subgroup)'],
+  ]),
+  lifetime: {
+    name: 'secondes', type: 'INT', range: [60, 86400],
+    description: 'Security association lifetime in seconds',
+  },
+};
+
+const GROUPE_PFS = CRYPTO_ENUM('groupe', 'Diffie-Hellman group', [
+  ['group1', 'Diffie-Hellman group 1 (768 bit)'],
+  ['group2', 'Diffie-Hellman group 2 (1024 bit)'],
+  ['group5', 'Diffie-Hellman group 5 (1536 bit)'],
+  ['group14', 'Diffie-Hellman group 14 (2048 bit)'],
+  ['group15', 'Diffie-Hellman group 15 (3072 bit)'],
+  ['group16', 'Diffie-Hellman group 16 (4096 bit)'],
+  ['group19', 'Diffie-Hellman group 19 (256 bit ECP)'],
+  ['group20', 'Diffie-Hellman group 20 (384 bit ECP)'],
+  ['group21', 'Diffie-Hellman group 21 (521 bit ECP)'],
+  ['group24', 'Diffie-Hellman group 24 (2048 bit, 256 bit subgroup)'],
+]);
+
+const NOM_JEU: ArgumentSpec = {
+  name: 'nom', type: 'WORD', description: 'Name of the transform set',
+};
+
+const DUREE_SA: ArgumentSpec = {
+  name: 'secondes', type: 'INT', range: [120, 86400],
+  description: 'Security association duration in seconds',
+};
+
+const TFSET_ARGUMENTS:
+Readonly<Record<string, ArgumentSpec | readonly ArgumentSpec[] | null>> = {
+  mode: CRYPTO_ENUM('encapsulation', 'IPSec encapsulation mode', [
+    ['transport', 'Transport mode'],
+    ['tunnel', 'Tunnel mode'],
+  ]),
+  'crypto ipsec profile': {
+    name: 'nom', type: 'WORD', description: 'Name of the IPSec profile',
+  },
+  'crypto ipsec transform-set': [
+    { name: 'nom', type: 'WORD', description: 'Name of the transform set' },
+    { name: 'transformations', type: 'REST', description: 'Transforms to apply' },
+  ],
+  'crypto ipsec security-association lifetime seconds': DUREE_SA,
+  'crypto ipsec security-association lifetime kilobytes': {
+    name: 'kilooctets', type: 'INT',
+    description: 'Security association duration in kilobytes of traffic',
+  },
+  'crypto ipsec security-association replay window-size': {
+    name: 'taille', type: 'INT', range: [64, 1024],
+    description: 'Size of the anti-replay window',
+  },
+};
+
+const IPSEC_PROFILE_ARGUMENTS:
+Readonly<Record<string, ArgumentSpec | readonly ArgumentSpec[] | null>> = {
+  'set transform-set': NOM_JEU,
+  'set pfs': GROUPE_PFS,
+  'set security-association lifetime seconds': DUREE_SA,
+  'set security-association lifetime kilobytes': {
+    name: 'kilooctets', type: 'INT',
+    description: 'Security association duration in kilobytes of traffic',
+  },
+  'set ikev2-profile': {
+    name: 'nom', type: 'WORD', description: 'Name of the IKEv2 profile',
+  },
+};
+
+const ISAKMP_PROFILE_ARGUMENTS:
+Readonly<Record<string, ArgumentSpec | readonly ArgumentSpec[] | null>> = {
+  keyring: { name: 'nom', type: 'WORD', description: 'Name of the keyring' },
+  'match identity address': [
+    { name: 'adresse', type: 'IP_ADDR', description: 'Address of the peer' },
+    { name: 'masque', type: 'SUBNET_MASK', optional: true, description: 'Mask of the peer address' },
+  ],
+  'match identity hostname': {
+    name: 'hote', type: 'WORD', description: 'Hostname of the peer',
+  },
+  'self-identity': [CRYPTO_ENUM('identite', 'Local IKE identity', [
+    ['address', 'Use the interface address as the identity'],
+    ['dn', 'Use the certificate distinguished name'],
+    ['fqdn', 'Use the fully qualified domain name'],
+    ['user-fqdn', 'Use a user fully qualified domain name'],
+  ]), { name: 'nom', type: 'REST', optional: true, values: [], description: '' }],
+  vrf: { name: 'nom', type: 'WORD', description: 'Name of the VRF' },
+};
+
+const KEYRING_ARGUMENTS:
+Readonly<Record<string, ArgumentSpec | readonly ArgumentSpec[] | null>> = {
+  'pre-shared-key': [
+    CRYPTO_ENUM('genre', 'Identity of the peer', [
+      ['address', 'Identify the peer by address'],
+    ]),
+    { name: 'adresse', type: 'IP_ADDR', description: 'Address of the peer' },
+  ],
+};
+
+const KEYRING_KEYWORDS:
+Readonly<Record<string, ReadonlyArray<AdapterKeyword>>> = {
+  'pre-shared-key': [{
+    keyword: 'key', description: 'The shared secret', afterArguments: true,
+    argument: { name: 'secret', type: 'WORD', description: 'The shared secret' },
+  }],
+};
+
+const CRYPTO_MAP_ARGUMENTS:
+Readonly<Record<string, ArgumentSpec | readonly ArgumentSpec[] | null>> = {
+  description: {
+    name: 'texte', type: 'REST', literal: 'LINE',
+    description: 'Up to 80 characters describing this entry',
+  },
+  'match address': {
+    name: 'liste', type: 'WORD',
+    description: 'Access list name',
+    alternatives: [
+      { keyword: '<100-199>', description: 'IP extended access list number' },
+    ],
+  },
+  'set peer': [{
+    name: 'pair', type: 'WORD', description: 'Hostname of the peer',
+    alternatives: [{ keyword: 'A.B.C.D', description: 'IP address of the peer' }],
+  }, { name: 'options', type: 'REST', optional: true, values: [], description: '' }],
+  'set transform-set': [NOM_JEU,
+    { name: 'autres', type: 'REST', optional: true, values: [], description: '' }],
+  'set pfs': GROUPE_PFS,
+  'set security-association lifetime seconds': DUREE_SA,
+  'set ikev2-profile': {
+    name: 'nom', type: 'WORD', description: 'Name of the IKEv2 profile',
+  },
+  'set isakmp-profile': {
+    name: 'nom', type: 'WORD', description: 'Name of the ISAKMP profile',
+  },
+};
+
+export function isakmpPolicySpecs(ctx: CiscoShellContext): CommandSpec[] {
+  return specsFromTrieRegistrations(
+    (collector) =>
+      buildISAKMPPolicyCommands(collector as unknown as CommandTrie, ctx),
+    {
+      modes: ['config-isakmp'], minPrivilege: 15,
+      argumentFor: (path) => ISAKMP_ARGUMENTS[path],
+    },
+  );
+}
+
+export function isakmpProfileSpecs(ctx: CiscoShellContext): CommandSpec[] {
+  return specsFromTrieRegistrations(
+    (collector) =>
+      buildISAKMPProfileCommands(collector as unknown as CommandTrie, ctx),
+    {
+      modes: ['config-isakmp-profile'], minPrivilege: 15,
+      argumentFor: (path) => ISAKMP_PROFILE_ARGUMENTS[path],
+    },
+  );
+}
+
+export function isakmpKeyringSpecs(ctx: CiscoShellContext): CommandSpec[] {
+  return specsFromTrieRegistrations(
+    (collector) =>
+      buildISAKMPKeyringCommands(collector as unknown as CommandTrie, ctx),
+    {
+      modes: ['config-keyring'], minPrivilege: 15,
+      argumentFor: (path) => KEYRING_ARGUMENTS[path],
+      keywordsFor: (path) => KEYRING_KEYWORDS[path],
+    },
+  );
+}
+
+export function transformSetSpecs(ctx: CiscoShellContext): CommandSpec[] {
+  return specsFromTrieRegistrations(
+    (collector) =>
+      buildTransformSetCommands(collector as unknown as CommandTrie, ctx),
+    {
+      modes: ['config-tfset'], minPrivilege: 15,
+      argumentFor: (path) => TFSET_ARGUMENTS[path],
+    },
+  );
+}
+
+export function cryptoMapEntrySpecs(ctx: CiscoShellContext): CommandSpec[] {
+  return specsFromTrieRegistrations(
+    (collector) =>
+      buildCryptoMapEntryCommands(collector as unknown as CommandTrie, ctx),
+    {
+      modes: ['config-crypto-map'], minPrivilege: 15,
+      argumentFor: (path) => CRYPTO_MAP_ARGUMENTS[path],
+    },
+  );
+}
+
+export function ipsecProfileSpecs(ctx: CiscoShellContext): CommandSpec[] {
+  return specsFromTrieRegistrations(
+    (collector) =>
+      buildIPSecProfileCommands(collector as unknown as CommandTrie, ctx),
+    {
+      modes: ['config-ipsec-profile'], minPrivilege: 15,
+      argumentFor: (path) => IPSEC_PROFILE_ARGUMENTS[path],
+    },
+  );
 }

@@ -121,6 +121,8 @@ import {
   buildTransformSetCommands, buildCryptoMapEntryCommands,
   buildIPSecProfileCommands, buildIPSecIfCommands,
   buildIPSecPrivilegedCommands,
+  isakmpPolicySpecs, isakmpProfileSpecs, isakmpKeyringSpecs,
+  transformSetSpecs, cryptoMapEntrySpecs, ipsecProfileSpecs,
 } from './cisco/CiscoIPSecIKEv1Commands';
 import {
   buildIKEv2GlobalCommands, buildIKEv2ProposalCommands,
@@ -258,6 +260,12 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
       ...dhcpPoolSpecs(this),
       ...routerOspfSpecs(this),
       ...routerOspfv3Specs(this),
+      ...isakmpPolicySpecs(this),
+      ...isakmpProfileSpecs(this),
+      ...isakmpKeyringSpecs(this),
+      ...transformSetSpecs(this),
+      ...cryptoMapEntrySpecs(this),
+      ...ipsecProfileSpecs(this),
       ...dhcpPoolClassSpecs(this),
       ...dhcpClassSpecs(this),
       ...ipv6DhcpPoolSpecs(this),
@@ -409,6 +417,16 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
   protected override socleLegends(): ReadonlyArray<[readonly string[], string]> {
     return [
       ...super.socleLegends(),
+      [['crypto'], 'Encryption module'],
+      [['crypto', 'ipsec'], 'Configure IPSec policy'],
+      [['crypto', 'ipsec', 'security-association'], 'Security association parameters'],
+      [['crypto', 'ipsec', 'security-association', 'lifetime'], 'Security association lifetime'],
+      [['crypto', 'ipsec', 'security-association', 'replay'], 'Anti-replay checking'],
+      [['set'], 'Set values for encryption/decryption'],
+      [['set', 'security-association'], 'Security association parameters'],
+      [['set', 'security-association', 'lifetime'], 'Security association lifetime'],
+      [['match'], 'Match values'],
+      [['match', 'identity'], 'Match peer identity'],
       [['ipv6'], 'IPv6 interface subcommands'],
       [['ipv6', 'nd'], 'IPv6 neighbor discovery'],
       [['ipv6', 'ospf'], 'OSPFv3 interface commands'],
