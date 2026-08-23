@@ -12,6 +12,24 @@ Format : `[famille] intitulé` puis constat / mesure / raison du report.
 
 ## Commutateur Huawei (VRP)
 
+### [route] deux routes statiques vers le meme prefixe se confondent
+Sur le COMMUTATEUR, `SwitchSvi` indexe ses routes statiques par
+`network/mask` seul (`addStaticRoute` remplace l'entree existante), donc
+`ip route-static 10.9.0.0 24 10.0.0.1` puis `... 10.0.0.2` laissent UNE
+route, la seconde. Une vraie machine en garde deux — c'est ainsi qu'on
+ecrit une route de secours ou un partage de charge.
+**Mesure** : les deux commandes acceptees, `display current-configuration`
+n'en rend qu'une, et `getStaticRoutes()` n'a qu'une entree.
+**Consequence sur `undo`** : depuis que la suppression compare le saut
+suivant, `undo ip route-static 10.9.0.0 24 10.0.0.1` repond desormais
+`Route not found.` sur cette machine — la reponse EXACTE pour l'etat du
+magasin, et qui rend le defaut visible au lieu de le masquer en retirant
+la mauvaise route comme avant.
+**Report** : la cle du magasin decide aussi de ce que lit le plan de
+donnees (`SwitchSvi` resout le saut a la volee dans deux boucles), donc
+la changer touche le routage du commutateur et pas la CLI. Le ROUTEUR,
+lui, n'a pas ce defaut : `Router` garde les deux routes.
+
 ### [mac-limit] deux règles de PORTÉES différentes coexistent-elles ?
 Une règle est maintenant identifiée par sa portée : `mac-limit maximum 5
 vlan 10` puis `mac-limit maximum 8 vlan 10` remplacent bien, et deux VLAN
