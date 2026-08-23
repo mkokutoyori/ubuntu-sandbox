@@ -120,6 +120,10 @@ import { isPathReachable } from '../linux/network/HostLookup';
 import { OutgoingSessionRegistry, renderSessions } from './OutgoingSessionRegistry';
 import { registerArchiveExecCommands, archiveOnWriteMemory,
   archiveSubmodeSpecs, archiveLogSubmodeSpecs } from './cisco/CiscoArchiveCommands';
+import {
+  radiusServerSubmodeSpecs, tacacsServerSubmodeSpecs, aaaGroupSubmodeSpecs,
+  type CiscoSecurityShellContext,
+} from './cisco/CiscoSecurityCommands';
 import { registerLineExecCommands } from './cisco/CiscoLineCommands';
 import { setupInteractionPlan } from './cisco/CiscoSetupDialog';
 import {
@@ -366,6 +370,7 @@ function enumeration(
 const MODE_DU_TRIE: Readonly<Record<string, readonly string[]>> = {
   userTrie: ['user', 'privileged'],
   privilegedTrie: ['user', 'privileged'],
+  configPmapClassTrie: ['config-pmap-c'],
 };
 
 /**
@@ -4727,6 +4732,21 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       ...this.serviceSpecs(),
       ...this.showSocleSpecs(),
       ...this.archiveSubmodeSpecs(),
+      ...this.identitySubmodeSpecs(),
+    ];
+  }
+
+  protected identitySubmodeContext(): CiscoSecurityShellContext | null {
+    return null;
+  }
+
+  protected identitySubmodeSpecs(): readonly CommandSpec[] {
+    const ctx = this.identitySubmodeContext();
+    if (!ctx) return [];
+    return [
+      ...radiusServerSubmodeSpecs(ctx),
+      ...tacacsServerSubmodeSpecs(ctx),
+      ...aaaGroupSubmodeSpecs(ctx),
     ];
   }
 

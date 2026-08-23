@@ -139,6 +139,10 @@ import { registerIPSecShowCommands, cryptoShowSpecs } from './cisco/CiscoIPSecSh
 import {
   buildSecurityConfigCommands, buildSecurityInterfaceCommands,
   buildSecuritySubmodeCommands, buildSecurityShowCommands,
+  classMapSubmodeSpecs, policyMapSubmodeSpecs, policyClassSubmodeSpecs,
+  controlPlaneSubmodeSpecs, zoneSubmodeSpecs, zonePairSubmodeSpecs,
+  timeRangeSubmodeSpecs, trustpointSubmodeSpecs,
+  type CiscoSecurityShellContext,
 } from './cisco/CiscoSecurityCommands';
 import {
   buildEemNetflowArchiveConfigCommands, buildEemAppletSubmode,
@@ -256,6 +260,10 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
     ];
   }
 
+  protected override identitySubmodeContext(): CiscoSecurityShellContext {
+    return this as unknown as CiscoSecurityShellContext;
+  }
+
   protected override socleSpecs(): readonly CommandSpec[] {
     return [
       ...super.socleSpecs(),
@@ -280,6 +288,14 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
       ...flowExporterSpecs(this),
       ...flowRecordSpecs(this),
       ...flowMonitorSpecs(this),
+      ...classMapSubmodeSpecs(this),
+      ...policyMapSubmodeSpecs(this),
+      ...policyClassSubmodeSpecs(this),
+      ...controlPlaneSubmodeSpecs(this),
+      ...zoneSubmodeSpecs(this),
+      ...zonePairSubmodeSpecs(this),
+      ...timeRangeSubmodeSpecs(this),
+      ...trustpointSubmodeSpecs(this),
       ...dhcpPoolClassSpecs(this),
       ...dhcpClassSpecs(this),
       ...ipv6DhcpPoolSpecs(this),
