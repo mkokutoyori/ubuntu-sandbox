@@ -11,6 +11,9 @@ import { ADMIN_DISCLAIMER_MESSAGES } from '../../../mgmt/LoginBanners';
 import {
   CONSERVE_THRESHOLD_MIN, CONSERVE_THRESHOLD_MAX, DEFAULT_CONSERVE_THRESHOLDS,
 } from '../../../health/SystemLoad';
+import {
+  DEFAULT_FRAGMENT_MEM_MB, MIN_FRAGMENT_MEM_MB, MAX_FRAGMENT_MEM_MB,
+} from '../../../l3/FragmentReassembly';
 
 const ACCESS_SERVICE_HELP: Readonly<Record<ManagementService, string>> = Object.freeze({
   ping: 'PING access.',
@@ -303,6 +306,9 @@ export const SYSTEM_SETTINGS: FortiTableSpec = {
     ], 'profile-based'),
     { ...enable('central-nat', 'Enable/disable central NAT.'),
       availableWhen: (object) => !isTransparent(object) },
+    count('ip-fragment-mem-thresholds',
+      'Maximum memory (MB) used to reassemble IPv4/IPv6 fragments.',
+      MIN_FRAGMENT_MEM_MB, MAX_FRAGMENT_MEM_MB, DEFAULT_FRAGMENT_MEM_MB),
     { ...addressMask('manageip', 'Transparent mode management IP address and mask.'),
       availableWhen: isTransparent },
     { ...address('gateway', 'Transparent mode default gateway.'),
@@ -310,6 +316,9 @@ export const SYSTEM_SETTINGS: FortiTableSpec = {
   ],
   onCommit(object, context) {
     const management = object.effective('manageip');
+    context.device.applyFragmentMemoryThreshold(Number.parseInt(
+      object.effective('ip-fragment-mem-thresholds')[0]
+      ?? String(DEFAULT_FRAGMENT_MEM_MB), 10));
     context.device.applyVdomSettings({
       centralNat: object.effective('central-nat')[0] === 'enable',
       opmode: object.effective('opmode')[0] === 'transparent' ? 'transparent' : 'nat',

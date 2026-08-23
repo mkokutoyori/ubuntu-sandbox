@@ -2700,6 +2700,99 @@ refusé sont remplacés par un cas qui l'affirme disponible.
 
 ---
 
+## Périmètre pris — FortiOS phase 22 (le battement de cœur porte une VOIE DE COMMANDE)
+
+**Agent `mandeng`.** Deux entrées `[ha]` de `TODO.md` reportent la même
+chose, et c'est le report qui nomme la phase : FGCP n'a ici qu'une
+**annonce périodique à sens unique**. Il manque un échange
+requête/réponse, et c'est un seul mécanisme qui ferme les deux.
+
+Mesure de départ :
+
+- **`execute ha manage 1 admin` répond `Connecting to <nom> (<série>)…`
+  et rend la main.** On ne se retrouve jamais sur l'autre machine : le
+  `get system status` suivant répond encore pour le membre local.
+- **`execute ha synchronize start` tapé sur un SECONDAIRE n'attire
+  rien.** Il appelle `requestSynchronisation()`, qui émet le battement
+  du secondaire — c'est-à-dire sa propre configuration, exactement ce
+  dont personne n'a besoin. Rien ne change tant que le primaire n'a pas
+  émis de lui-même.
+
+**Ce que la documentation de Fortinet ajoute, et qui lie les deux
+commandes en un seul geste** : `execute ha synchronize` **se tape depuis
+le subordonné**, et on atteint le subordonné par `execute ha manage`.
+Les deux ne sont pas deux commandes voisines mais les deux moitiés d'un
+seul mode opératoire — `manage`, puis `synchronize start`, puis `exit`.
+La même source précise que `manage` demande un mot de passe **évalué
+contre le magasin de comptes du membre CIBLE**, ce qui est une propriété
+de sécurité vérifiable et pas un détail d'invite.
+
+**Le report disait qu'un registre partagé « contournerait le fil ». Il a
+raison, et c'est pour cela que la voie de commande passe SUR le fil** :
+même `ETHERTYPE_FGCP`, mêmes interfaces de battement, une requête et une
+réponse. Un vrai FortiGate relaie précisément la session CLI par le lien
+de grappe ; le modéliser ainsi est fidèle, pas commode.
+
+**Fichiers que la phase 22 prendra** :
+
+```
+firewall/ha/HaCommandChannel.ts   ← requête/réponse (socle, neuf)
+firewall/ha/HaTypes.ts            ← les deux messages
+firewall/ha/HaAgent.ts            ← émission, réception, routage
+firewall/Firewall.ts              ← le point d'entrée déjà branché
+vendors/fortios/FortiShell.ts     ← `ha manage`, `ha synchronize start`
+```
+
+**Hors périmètre, et dit plutôt que tu** : l'entrée `[ha] les adresses
+MAC VIRTUELLES du cluster n'existent pas` reste ouverte. Elle touche
+`Port` et l'apprentissage MAC de tous les commutateurs du projet — c'est
+un changement du matériel simulé, pas du pare-feu, et il n'a rien à voir
+avec la voie de commande.
+
+### E68 — Livré, et les deux décisions qui tenaient tout
+
+**13 cas, 6 tombent avant correctif.** Deux messages nouveaux sur
+`ETHERTYPE_FGCP` — `fgcp-command-request` et `fgcp-command-reply` — et
+les deux entrées `[ha]` visées se ferment ensemble.
+
+**Décision 1 : la voie passe sur le FIL, et l'échange est synchrone
+parce que la livraison de trames l'est.** `ask()` diffuse la requête et
+relit sa table d'échanges juste après : quand le pair est joignable, sa
+réponse y est déjà. Ce n'est pas un raccourci — c'est la propriété que ce
+simulateur a partout, et c'est elle qui rend une session CLI distante
+possible sans machine à états asynchrone. Le corollaire est ce qui rend
+le cas du câble coupé vrai : rien ne revient, `answered` est faux, et la
+commande le dit.
+
+**Décision 2 : l'authentification est évaluée chez la CIBLE, et la suite
+de la session tient à un JETON.** Une première version envoyait le nom du
+compte à chaque ligne et laissait le distant ré-authentifier — sauf qu'il
+n'y avait plus de mot de passe à présenter, donc soit on acceptait sans
+rien vérifier (une porte ouverte), soit rien ne passait. Le distant
+délivre donc un jeton à l'authentification et n'exécute une ligne que
+sous ce jeton : c'est ce qu'est une session mandatée, et c'est vérifiable
+— le mot de passe du membre LOCAL est refusé, celui du membre cible est
+accepté.
+
+**Ce que la documentation de Fortinet a évité de faire inventer** :
+`execute ha synchronize` se tape depuis le SUBORDONNÉ. Sans cela on
+aurait écrit une commande qui pousse depuis le primaire — utile, et pas
+ce que la commande fait. Sur le primaire elle pousse (comportement
+conservé), sur un secondaire elle demande au primaire d'émettre.
+
+**Un cas DURCI après discrimination** : « câble coupé, la voie ne répond
+plus » passait avec `/fail/`, parce que le mot de passe tapé en clair
+était alors une commande inconnue — donc `Command fail`. Vrai pour la
+mauvaise raison ; il exige désormais le message exact et vérifie que
+l'invite est restée locale.
+
+**Réutilisé plutôt que réécrit** : `createManagementCli(admin)` — le
+constructeur de CLI que le serveur SSH emploie déjà — sert la ligne
+distante, et `management.login()` l'authentifie, avec `ha-cluster` comme
+source. Aucun second chemin d'exécution n'a été écrit.
+
+---
+
 ## Périmètre pris — FortiOS phase 21 (un datagramme fragmenté est RECOLLÉ)
 
 **Agent `mandeng`.** L'entrée `[pare-feu] les fragments recus ne sont pas
@@ -2755,6 +2848,68 @@ vendors/fortios/diag/               ← `diagnose snmp ip frags`
 Rien n'est écrit pour réassembler : `IPv4Reassembler` porte déjà la
 fenêtre, le recouvrement et l'expiration. Ce qui est neuf est la BORNE
 mémoire, qu'il n'a pas, et le branchement.
+
+### E67 — Livré, et ce que la mesure a corrigé
+
+**13 cas, 10 tombent avant correctif.** Le branchement est une ligne dans
+`handleIpv4Frame`, avant `classifyIpv4` : le recollage précède la
+recherche de politique parce que seul le premier fragment porte l'en-tête
+de couche 4.
+
+**Ce que la discrimination a appris, et qui a corrigé la sonde plutôt que
+le produit.** Deux cas écrits comme décisifs — « le datagramme arrive
+ENTIER » et « il ouvre UNE session » — **passaient avant le correctif**.
+La raison n'était pas prévue : sous une politique PERMISSIVE
+(`service "ALL"`), un pare-feu qui ne recolle pas transmet quand même les
+trois fragments, et **c'est le serveur qui les recolle**, avec son propre
+`IPv4Reassembler`. La délivrance ne dit donc rien du pare-feu. Le cas qui
+montre le défaut est celui dont la politique **ne nomme que le port
+5000** : les fragments 2 et 3 ne portent pas ce port, sont refusés un par
+un, et le datagramme n'arrive jamais. C'est la même leçon qu'à la
+phase 20 — l'observable doit être une décision du PARE-FEU, pas ce que
+voit le destinataire.
+
+**Trois pièges rencontrés, chacun mesuré :**
+
+1. **DF est posé par défaut sur tout UDP sortant** (`EndHost.ts`, comme
+   une pile qui découvre le MTU du chemin), donc le routeur intercalé ne
+   fragmentait pas : il rendait un ICMP « Fragmentation Needed » et
+   jetait le datagramme. Rien n'arrivait au pare-feu et les compteurs
+   restaient à zéro — ce qui ressemblait à un branchement mort. La sonde
+   envoie `{ df: false }`, et le comportement observé était juste.
+2. **La borne mémoire ne se remplit pas depuis une maquette** : 32 Mo de
+   fragments demandent vingt-cinq mille datagrammes. Le cas est donc au
+   niveau du module, avec un seuil posé sous le minimum de la CLI, et
+   c'est écrit dans le fichier — les bornes 32-2047 appartiennent au
+   schéma, que le cas de refus vérifie séparément.
+3. **Un jeu incomplet ne se produit pas non plus depuis une maquette** :
+   la livraison de trames est synchrone, donc les fragments d'un même
+   datagramme traversent dans le même appel, et les deux leviers réels
+   qui pourraient en perdre un — perte et corruption de câble — sont
+   PROBABILISTES, incapables de désigner lequel. Inventer un levier
+   « jette le n-ième fragment » aurait été la porte dérobée refusée à la
+   phase 16 ; le cas est au niveau du module, nourri par la VRAIE sortie
+   de `fragmentIPv4`.
+
+**Ce qui a été ajouté au socle plutôt que recopié** : `fragmentKey`,
+`isIPv4Fragment` et `forget` sont exportés de `core/Ipv4Fragmentation.ts`
+et `IPv4Reassembler` les emploie lui-même — la borne mémoire a besoin de
+la même clé que la table qu'elle borne, et deux clés finiraient par
+désigner deux datagrammes différents.
+
+**Une décision écrite plutôt que subie** : au-dessus du seuil, c'est le
+jeu le PLUS ANCIEN qui est perdu. Évincer le plus récent laisserait un
+flot de fragments orphelins chasser le jeu légitime en cours
+d'assemblage, ce qui ferait de la borne une arme contre le trafic
+qu'elle protège.
+
+**Limite mesurée et assumée** : le seuil est déclaré `config system
+settings`, donc par VDOM, parce que c'est là que la documentation de
+Fortinet le place ; la table, elle, est unique pour l'équipement. Deux
+VDOM qui poseraient deux seuils écriraient donc successivement sur la
+même borne. Le modéliser par VDOM demanderait une table par contexte,
+qui n'apporterait rien tant qu'un laboratoire n'a pas deux VDOM sous
+charge de fragments.
 
 ---
 

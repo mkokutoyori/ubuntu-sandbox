@@ -18,6 +18,7 @@ import {
   ICMP_TTL_EXPIRED_IN_TRANSIT, ICMP_UNREACH_FRAG_NEEDED,
 } from '../../core/IcmpErrors';
 import { fragmentIPv4, IPV4_FLAG_DF } from '../../core/Ipv4Fragmentation';
+import { FragmentReassembly } from './l3/FragmentReassembly';
 import { SystemClock } from '../../core/SystemClock';
 import { SystemLoad, type MemoryWorkload } from './health/SystemLoad';
 import { conserveLogDraft } from './health/ConserveEvent';
@@ -170,6 +171,7 @@ export class Firewall extends Equipment {
   private readonly switchGroups = new SwitchGroupTable();
   private readonly vdomLinks: VdomLinkTable;
   private readonly bridges = new Map<string, BridgeFdb>();
+  private readonly fragments = new FragmentReassembly();
   private readonly revisions: RevisionStore;
   private revisionOnLogout = false;
   private configSnapshot?: () => string;
@@ -1149,6 +1151,8 @@ export class Firewall extends Equipment {
 
   getLdbMonitors(): LdbMonitorTable { return this.ldbMonitors; }
 
+  getFragmentReassembly(): FragmentReassembly { return this.fragments; }
+
   getRealServerPool(name: string): RealServerPool | undefined {
     return this.serverPools.get(name);
   }
@@ -1248,6 +1252,10 @@ export class Firewall extends Equipment {
     portName: string, packet: IPv4Packet, frame?: EthernetFrame,
   ): void {
     if (!packet || packet.type !== 'ipv4') return;
+
+    const recolle = this.fragments.accept(packet, this.services.now());
+    if (recolle === null) return;
+    packet = recolle;
 
     const vdom = this.vdoms.contextOfInterface(portName);
     const decision = classifyIpv4(this.ingressHost(), portName, vdom, packet, frame);

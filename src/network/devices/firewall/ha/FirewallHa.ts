@@ -11,6 +11,8 @@ export interface FirewallHaDeps {
   readonly interfaceMac: (iface: string) => MACAddress | undefined;
   readonly interfaceUp: (iface: string) => boolean;
   readonly sessions: () => SessionTable;
+  readonly authenticateAdmin: (admin: string, secret: string) => boolean;
+  readonly runCommand: (admin: string, line: string) => string;
 }
 
 export class FirewallHa {
@@ -30,6 +32,8 @@ export class FirewallHa {
       applyConfiguration: (text) => { this.apply?.(text); },
       exportSessions: () => exportSessions(deps.sessions()),
       importSessions: (sessions) => { importSessions(deps.sessions(), sessions); },
+      authenticateAdmin: deps.authenticateAdmin,
+      runCommand: deps.runCommand,
     });
   }
 
@@ -56,6 +60,8 @@ export interface HaWiringHost {
     isOperationallyUp(): boolean;
   } | undefined;
   sessions(): SessionTable;
+  authenticateAdmin(admin: string, secret: string): boolean;
+  runManagementCommand(admin: string, line: string): string;
 }
 
 export function buildFirewallHa(host: HaWiringHost): FirewallHa {
@@ -70,5 +76,7 @@ export function buildFirewallHa(host: HaWiringHost): FirewallHa {
       return port !== undefined && port.isConnected() && port.isOperationallyUp();
     },
     sessions: () => host.sessions(),
+    authenticateAdmin: (admin, secret) => host.authenticateAdmin(admin, secret),
+    runCommand: (admin, line) => host.runManagementCommand(admin, line),
   });
 }
