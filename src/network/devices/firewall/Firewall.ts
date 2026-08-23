@@ -24,6 +24,7 @@ import { conserveLogDraft } from './health/ConserveEvent';
 import { vdomFootprint, cacheFootprint } from './health/MemoryFootprint';
 import { StreamAssembler, oversizeLimitBytes } from './inspection/StreamAssembler';
 import { BridgeFdb } from './l2/BridgeFdb';
+import { RevisionStore } from './config/RevisionStore';
 import { localTimeMs, utcMsForLocal } from '../../core/Timezone';
 import { decryptFromTunnel, sealedLegs } from './vpn/IpsecDataPlane';
 import { ikeDatagram, ipsecHostFacts } from './vpn/FirewallIpsecHost';
@@ -162,6 +163,9 @@ export class Firewall extends Equipment {
   private readonly switchGroups = new SwitchGroupTable();
   private readonly vdomLinks: VdomLinkTable;
   private readonly bridges = new Map<string, BridgeFdb>();
+  private readonly revisions: RevisionStore;
+  private revisionOnLogout = false;
+  private configSnapshot?: () => string;
   private readonly proxyArp = new ProxyArpTable();
   private readonly arp: ArpService;
   private readonly registry = new PipelineStageRegistry();
@@ -255,6 +259,7 @@ export class Firewall extends Equipment {
       },
     });
     this.load.addWorkload(() => this.measureWorkload());
+    this.revisions = new RevisionStore({ now });
     this.syslog = new SyslogAgent(this, () => this.getBus());
     this.syslogCollectors = new SyslogCollectorTable(() => this.syslog);
     this.vdoms = new VdomRegistry({
@@ -383,6 +388,7 @@ export class Firewall extends Equipment {
       managementIdleTimeoutMs: () => this.management.idleTimeoutMs(),
       runningConfig: () => this.managementRunningConfig(),
       onManagementLogin: (user) => { this.management.noteLogin(user); },
+      onAdminLogout: (user) => { this.onAdminLogout(user); },
       onManagementAuthFailure: (user) => {
         this.management.noteAuthFailure(user);
       },
@@ -1116,6 +1122,26 @@ export class Firewall extends Equipment {
   private lookupMac(destination: MACAddress, ingress: string): string | undefined {
     const learned = this.bridgeOf(ingress).lookup(destination.toString());
     return learned === undefined || learned === ingress ? undefined : learned;
+  }
+
+  getRevisions(): RevisionStore { return this.revisions; }
+
+  setRevisionOnLogout(enabled: boolean): void { this.revisionOnLogout = enabled; }
+
+  revisionOnLogoutEnabled(): boolean { return this.revisionOnLogout; }
+
+  bindConfigSnapshot(render: () => string): void { this.configSnapshot = render; }
+
+  onAdminLogout(admin: string): void {
+    if (!this.revisionOnLogout) return;
+    const text = this.configSnapshot?.();
+    if (text === undefined) return;
+    this.revisions.record({
+      admin,
+      firmware: `v${this.profile.defaultVersion}`,
+      comment: 'Automatic backup (logout)',
+      text,
+    });
   }
 
   getBridge(vdom?: string): BridgeFdb {

@@ -65,6 +65,7 @@ export interface FortiAttributeSpec {
   readonly unimplemented?: string;
   readonly unimplementedValues?: Readonly<Record<string, string>>;
   readonly readOnly?: boolean;
+  readonly hidden?: boolean;
   readonly secret?: boolean;
   readonly appliesImmediately?: (
     values: readonly string[], context: FortiCommitContext,
@@ -207,6 +208,7 @@ export interface FortiGlobalSettings {
   readonly timezone?: string;
   readonly conserveThresholds?: ConserveThresholds;
   readonly avFailopen?: string;
+  readonly revisionOnLogout?: boolean;
 }
 
 export interface FortiIpsGlobalSettings {

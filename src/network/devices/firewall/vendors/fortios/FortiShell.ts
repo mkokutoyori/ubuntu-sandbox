@@ -4,7 +4,7 @@ import type { Suggestion } from '../../../../../cli/CompletionEngine';
 import type { FortiGate } from './FortiGate';
 import { FORTIOS_PROFILE } from './FortiProfile';
 import {
-  FortiMessages, FORTI_COMMAND_FAIL, FORTI_CLI_LOGOUT, setHintsEnabled,
+  FortiMessages, FORTI_COMMAND_FAIL, setHintsEnabled,
 } from './FortiMessages';
 import {
   fortiSystemTime, runExecuteDate, runExecuteTime,
@@ -27,6 +27,7 @@ import {
 } from './view/pathResolution';
 import { FortiValidator } from './runtime/FortiValidator';
 import { renderPath, renderWholeConfig } from './render/showRenderer';
+import { renderRevisionList } from './render/revisionRenderer';
 import { renderGet } from './render/getRenderer';
 import { buildCommitDevice } from './runtime/commitDevice';
 import { vipAddress } from '../../model/AddressObject';
@@ -175,11 +176,13 @@ export class FortiShell {
       inspect: (rest) => this.get(rest),
       diagnose: (rest) => this.diagnose(rest),
       runExecute: (rest) => this.executeVerb(rest),
-      leaveCli: () => FORTI_CLI_LOGOUT,
+      leaveCli: () => '',
       enterGlobal: () => this.enterGlobal(),
       authorize: (spec, intent) => this.authorizeSpec(spec, intent),
       principal: () => this.adminName ?? '',
     });
+    this.fw.bindConfigSnapshot(
+      () => renderWholeConfig(this.tree, { full: false }).join('\n'));
     this.fw.bindHaConfiguration(
       () => this.clusterConfigurationText(),
       (text) => { this.absorbClusterConfiguration(text); });
@@ -788,6 +791,7 @@ export class FortiShell {
         ? FortiMessages.incomplete('what to restore')
         : FortiMessages.unknownAction(`restore ${rest[0]}`);
     }
+    if (rest[1] === 'flash') return this.restoreRevision(rest[2]);
     const [destination, file, server, password] = rest.slice(1);
     const address = this.tftpTarget(destination, server);
     if (typeof address === 'string') return address;
@@ -805,6 +809,44 @@ export class FortiShell {
       this.absorbClusterConfiguration(clear);
       return '';
     });
+    return '';
+  }
+
+  private restoreRevision(raw: string | undefined): string {
+    if (raw === undefined) return FortiMessages.incomplete('a revision id');
+    const id = Number.parseInt(raw, 10);
+    const revision = Number.isFinite(id)
+      ? this.fw.getRevisions().get(id) : undefined;
+    if (!revision) {
+      return FortiMessages.commandFail(`revision ${raw} does not exist.`);
+    }
+    this.factoryReset();
+    this.absorbClusterConfiguration(revision.text);
+    return '';
+  }
+
+  private executeRevision(rest: readonly string[]): string {
+    const [action, target, raw] = rest;
+    if (action !== 'list' && action !== 'delete') {
+      return action === undefined
+        ? FortiMessages.incomplete('list or delete')
+        : FortiMessages.unknownAction(`revision ${action}`);
+    }
+    if (target !== 'config') {
+      return target === undefined
+        ? FortiMessages.incomplete('config')
+        : FortiMessages.unknownAction(`revision ${action} ${target}`);
+    }
+
+    if (action === 'list') {
+      return renderRevisionList(this.fw.getRevisions().list(), this.fw.localNow());
+    }
+
+    if (raw === undefined) return FortiMessages.incomplete('a revision id');
+    const id = Number.parseInt(raw, 10);
+    if (!Number.isFinite(id) || !this.fw.getRevisions().remove(id)) {
+      return FortiMessages.commandFail(`revision ${raw} does not exist.`);
+    }
     return '';
   }
 
@@ -948,6 +990,7 @@ export class FortiShell {
       case 'ping-options': return this.executePingOptions(tail);
       case 'backup': return this.executeBackup(tail);
       case 'restore': return this.executeRestore(tail);
+      case 'revision': return this.executeRevision(tail);
       case 'factoryreset': this.factoryReset(); return '';
       case 'reboot': case 'shutdown': return '';
       case 'ssh': case 'telnet':

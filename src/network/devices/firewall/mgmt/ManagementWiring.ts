@@ -43,6 +43,7 @@ export interface ManagementHost {
   managementIdleTimeoutMs(): number | null;
   runningConfig(): string;
   onManagementLogin(user: string, source: string): void;
+  onAdminLogout(user: string): void;
   onManagementAuthFailure(user: string, source: string): void;
 }
 
@@ -105,6 +106,7 @@ export function buildManagementServices(host: ManagementHost): ManagementService
     idleTimeoutMs: () => host.managementIdleTimeoutMs(),
     runningConfig: () => host.runningConfig(),
     onLogin: (user, source) => { host.onManagementLogin(user, source); },
+    onLogout: (user) => { host.onAdminLogout(user); },
     onAuthFailure: (user, source) => { host.onManagementAuthFailure(user, source); },
   });
 

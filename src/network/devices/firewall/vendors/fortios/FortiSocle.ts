@@ -527,6 +527,8 @@ export class FortiSocle {
 
   private attributeSpecs(attribute: FortiAttributeSpec): CommandSpec[] {
     const value = this.valueArgument(attribute);
+    const veil = (spec: CommandSpec): CommandSpec =>
+      attribute.hidden === true ? { ...spec, hidden: true } : spec;
     const out: CommandSpec[] = [
       this.withArgument(`set ${attribute.name}`, ['set', attribute.name, ...value],
         attribute.help,
@@ -535,14 +537,14 @@ export class FortiSocle {
         () => this.deps.nav.unset(attribute.name)),
     ];
 
-    if (!attribute.multiValue) return out;
+    if (!attribute.multiValue) return out.map(veil);
 
     for (const verb of VALUE_LIST_VERBS.slice(1)) {
       out.push(this.withArgument(`${verb} ${attribute.name}`,
         [verb, attribute.name, ...value], attribute.help,
         (_s, args) => this.deps.nav[verb](attribute.name, collect(value, args))));
     }
-    return out;
+    return out.map(veil);
   }
 
   private valueArgument(attribute: FortiAttributeSpec): ArgumentSpec[] {

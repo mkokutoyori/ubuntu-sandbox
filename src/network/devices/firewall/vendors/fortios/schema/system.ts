@@ -70,11 +70,17 @@ export const SYSTEM_GLOBAL: FortiTableSpec = {
     count('admin-lockout-threshold', 'Number of failed login attempts before lockout.',
       1, 10, 3),
     count('admin-lockout-duration', 'Lockout duration in seconds.', 1, 2147483647, 60),
-    choice('vdom-mode', 'Virtual domain mode.', [
-      { keyword: 'no-vdom', description: 'Disable virtual domains.' },
-      { keyword: 'multi-vdom', description: 'Enable multiple virtual domains.' },
-      { keyword: 'split-vdom', description: 'Enable split-task virtual domains.' },
-    ], 'no-vdom'),
+    enable('revision-backup-on-logout',
+      'Enable/disable back-up of the configuration to a revision when an'
+      + ' administrator logs out.'),
+    {
+      ...choice('vdom-mode', 'Virtual domain mode.', [
+        { keyword: 'no-vdom', description: 'Disable virtual domains.' },
+        { keyword: 'multi-vdom', description: 'Enable multiple virtual domains.' },
+        { keyword: 'split-vdom', description: 'Enable split-task virtual domains.' },
+      ], 'no-vdom'),
+      hidden: true,
+    },
     choice('firewall-session-dirty', 'Select how to manage sessions when a policy changes.', [
       { keyword: 'check-all', description: 'Flush all current sessions and re-evaluate.' },
       { keyword: 'check-new', description: 'Keep existing sessions, check new ones.' },
@@ -155,6 +161,8 @@ export const SYSTEM_GLOBAL: FortiTableSpec = {
           DEFAULT_CONSERVE_THRESHOLDS.greenPercent),
       },
       avFailopen: object.effective('av-failopen')[0] ?? 'pass',
+      revisionOnLogout:
+        object.effective('revision-backup-on-logout')[0] === 'enable',
     });
   },
 };

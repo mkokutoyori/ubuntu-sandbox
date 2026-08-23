@@ -156,6 +156,9 @@ export function buildCommitDevice(fw: Firewall): FortiCommitDevice {
         if (settings.conserveThresholds !== undefined) {
           fw.getSystemLoad().setThresholds(settings.conserveThresholds);
         }
+        if (settings.revisionOnLogout !== undefined) {
+          fw.setRevisionOnLogout(settings.revisionOnLogout);
+        }
         if (settings.avFailopen !== undefined) {
           fw.getSystemLoad().setAntivirusFailopen(
             settings.avFailopen as AntivirusFailopen);

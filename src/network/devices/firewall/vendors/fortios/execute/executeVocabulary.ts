@@ -14,6 +14,7 @@ export const FORTI_EXECUTE_COMMANDS: readonly FortiExecuteCommand[] = Object.fre
   { name: 'ping-options', help: 'Set ICMP echo request (ping) options.' },
   { name: 'reboot', help: 'Reboot this device.' },
   { name: 'restore', help: 'Restore the configuration from a remote server.' },
+  { name: 'revision', help: 'List or delete stored configuration revisions.' },
   { name: 'shutdown', help: 'Shut down this device.' },
   { name: 'ssh', help: 'Open an SSH session to a remote host.' },
   { name: 'telnet', help: 'Open a telnet session to a remote host.' },

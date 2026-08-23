@@ -37,6 +37,7 @@ function attributeLines(
     if (spec.name === key) continue;
     if (!object.isAvailable(spec)) continue;
     if (spec.unimplemented) continue;
+    if (spec.hidden === true) continue;
     if (!options.full && !object.isExplicit(spec.name)) continue;
 
     const values = object.effective(spec.name);

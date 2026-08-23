@@ -110,6 +110,7 @@ export class FortiTerminalSession extends CLITerminalSession {
   }
 
   protected override endExecSession(): void {
+    this.forti().onAdminLogout(this.forti().getShell().getAdminIdentity() ?? 'admin');
     this.startConsoleLogin();
     this.updatePrompt();
     this.notify();
