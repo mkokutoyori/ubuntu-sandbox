@@ -532,7 +532,10 @@ describe('Cisco ACL (Access Control Lists)', () => {
       const output = await r.executeCommand('show access-lists');
       expect(output).toContain('Standard IP access list 10');
       expect(output).toContain('permit 10.0.1.0, wildcard bits 0.0.0.255');
-      expect(output).toContain('deny any');
+      // `deny   any` : IOS cale l'action sur la largeur de `permit` dans
+      // une liste STANDARD. Ce cas attendait `deny any` — l'ecart mesure
+      // sur du texte capture, donc c'est l'attente qui etait fausse.
+      expect(output).toContain('deny   any');
     });
 
     it('6.2 should display "show access-lists" with extended ACL', async () => {

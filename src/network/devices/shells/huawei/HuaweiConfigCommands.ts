@@ -99,36 +99,46 @@ export const VIRTUELLES: ReadonlySet<string> = new Set([
   'LoopBack', 'Tunnel', 'Nve', 'Vlanif', 'Eth-Trunk', 'NULL',
 ]);
 
-export function cmdIpRouteStatic(router: Router, args: string[], ligne?: string): string {
-  if (args.length < 3) return 'Error: Incomplete command.';
-  try {
-    let cursor = 0;
-    let vpnInstance: string | undefined;
-    if (args[cursor] === 'vpn-instance' && args[cursor + 1]) {
-      vpnInstance = args[cursor + 1];
-      cursor += 2;
-    }
-    if (args.length - cursor < 3) return 'Error: Incomplete command.';
+export interface TeteRouteStatiqueVrp {
+  vpnInstance?: string;
+  network: IPAddress;
+  isDefault: boolean;
+  mask: SubnetMask;
+  nextHop: IPAddress | null;
+  ifaceName: string;
+  cursor: number;
+}
 
-    const network = new IPAddress(args[cursor]);
-    const isDefault = args[cursor] === '0.0.0.0' && args[cursor + 1] === '0.0.0.0';
-
-    const maskToken = args[cursor + 1];
-    const mask = /^\d+$/.test(maskToken)
-      ? SubnetMask.fromCIDR(parseInt(maskToken, 10))
-      : new SubnetMask(maskToken);
+export function analyserTeteRouteStatiqueVrp(
+  router: Router, args: readonly string[], nextHopObligatoire: boolean,
+): TeteRouteStatiqueVrp | string {
+  let cursor = 0;
+  let vpnInstance: string | undefined;
+  if (args[cursor] === 'vpn-instance' && args[cursor + 1]) {
+    vpnInstance = args[cursor + 1];
     cursor += 2;
+  }
+  if (args.length - cursor < (nextHopObligatoire ? 3 : 2)) return 'Error: Incomplete command.';
 
-    const nhToken = args[cursor];
+  const network = new IPAddress(args[cursor]);
+  const isDefault = args[cursor] === '0.0.0.0' && args[cursor + 1] === '0.0.0.0';
+
+  const maskToken = args[cursor + 1];
+  const mask = /^\d+$/.test(maskToken)
+    ? SubnetMask.fromCIDR(parseInt(maskToken, 10))
+    : new SubnetMask(maskToken);
+  cursor += 2;
+
+  const nhToken = args[cursor];
+  let nextHop: IPAddress | null = null;
+  let ifaceName = '';
+  if (nhToken !== undefined && !MOTS_CLES_QUEUE_ROUTE.has(nhToken)) {
     cursor += 1;
-    let nextHop: IPAddress | null = null;
-    let ifaceName = '';
     if (HUAWEI_NULL_IFACE.test(nhToken)) {
       ifaceName = 'NULL0';
       nextHop = new IPAddress('0.0.0.0');
     } else if (looksLikeInterfaceName(nhToken)) {
-      const resolved = resolveHuaweiInterfaceName(router, nhToken) || nhToken;
-      ifaceName = resolved;
+      ifaceName = resolveHuaweiInterfaceName(router, nhToken) || nhToken;
       nextHop = new IPAddress('0.0.0.0');
       if (cursor < args.length && /^\d+\.\d+\.\d+\.\d+$/.test(args[cursor])) {
         nextHop = new IPAddress(args[cursor]);
@@ -137,6 +147,21 @@ export function cmdIpRouteStatic(router: Router, args: string[], ligne?: string)
     } else {
       nextHop = new IPAddress(nhToken);
     }
+  }
+  return { vpnInstance, network, isDefault, mask, nextHop, ifaceName, cursor };
+}
+
+const MOTS_CLES_QUEUE_ROUTE: ReadonlySet<string> = new Set([
+  'preference', 'tag', 'description', 'track', 'permanent',
+]);
+
+export function cmdIpRouteStatic(router: Router, args: string[], ligne?: string): string {
+  if (args.length < 3) return 'Error: Incomplete command.';
+  try {
+    const tete = analyserTeteRouteStatiqueVrp(router, args, true);
+    if (typeof tete === 'string') return tete;
+    const { vpnInstance, network, isDefault, mask, ifaceName, nextHop, cursor } = tete;
+    if (nextHop === null) return 'Error: Incomplete command.';
 
     let preference: number | undefined;
     let tag: number | undefined;
@@ -187,6 +212,56 @@ export function cmdIpRouteStatic(router: Router, args: string[], ligne?: string)
       ? '' : 'Error: Next-hop is not reachable';
   } catch (e: any) {
     return `Error: ${e.message}`;
+  }
+}
+
+export function cmdUndoIpRouteStatic(router: Router, args: readonly string[]): string {
+  if (args.length === 0) return 'Error: Incomplete command.';
+  const table = router._getRoutingTableInternal();
+  const statiques = (r: { type: string }) => r.type === 'static' || r.type === 'default';
+
+  const tete = args[0].toLowerCase();
+  if (tete === 'all') {
+    if (args.length > 1) {
+      return refuseMotInattenduVrp(`undo ip route-static ${args.join(' ')}`, args[1]);
+    }
+    const restantes = table.filter((r) => !statiques(r));
+    table.length = 0;
+    table.push(...restantes);
+    return '';
+  }
+  if (tete === 'default-preference') return '';
+
+  try {
+    const analyse = analyserTeteRouteStatiqueVrp(router, args, false);
+    if (typeof analyse === 'string') return analyse;
+    const { network, mask, nextHop, ifaceName, cursor } = analyse;
+
+    let preference: number | undefined;
+    for (let i = cursor; i < args.length; i++) {
+      const mot = args[i].toLowerCase();
+      if (mot === 'preference' && args[i + 1]) { preference = parseInt(args[++i], 10); continue; }
+      if (MOTS_CLES_QUEUE_ROUTE.has(mot)) { if (args[i + 1]) i++; continue; }
+      return refuseMotInattenduVrp(`undo ip route-static ${args.join(' ')}`, args[i]);
+    }
+
+    const vise = (r: {
+      type: string; network: IPAddress; mask: SubnetMask;
+      nextHop?: IPAddress | null; iface?: string; ad?: number;
+    }) => statiques(r)
+      && r.network.equals(network)
+      && r.mask.toCIDR() === mask.toCIDR()
+      && (nextHop === null || (r.nextHop?.equals(nextHop) ?? false))
+      && (ifaceName === '' || (r.iface ?? '').toLowerCase() === ifaceName.toLowerCase())
+      && (preference === undefined || r.ad === preference);
+
+    const restantes = table.filter((r) => !vise(r));
+    if (restantes.length === table.length) return 'Error: Route not found.';
+    table.length = 0;
+    table.push(...restantes);
+    return '';
+  } catch (e) {
+    return `Error: ${(e as Error).message}`;
   }
 }
 
@@ -286,28 +361,8 @@ export function cmdUndo(router: Router, ctx: HuaweiShellContext, args: string[])
     return '';
   }
 
-  // undo ip route-static <network> <mask> <next-hop>
-  if (args[0] === 'ip' && args.length >= 5 && args[1] === 'route-static') {
-    try {
-      const network = new IPAddress(args[2]);
-      const mask = new SubnetMask(args[3]);
-      const nextHop = new IPAddress(args[4]);
-
-      const table = router._getRoutingTableInternal();
-      const idx = table.findIndex(r =>
-        (r.type === 'static' || r.type === 'default') &&
-        r.network.equals(network) &&
-        r.mask.toCIDR() === mask.toCIDR() &&
-        r.nextHop?.equals(nextHop)
-      );
-      if (idx >= 0) {
-        table.splice(idx, 1);
-        return '';
-      }
-      return 'Error: Route not found.';
-    } catch (e: any) {
-      return `Error: ${e.message}`;
-    }
+  if (args[0] === 'ip' && args[1] === 'route-static') {
+    return cmdUndoIpRouteStatic(router, args.slice(2));
   }
 
   if (args[0] === 'ipv6' && args[1] === 'route-static' && args.length >= 5) {

@@ -38,14 +38,14 @@ describe('VRP — le SNMP revient d\'un export, et sa communauté est la bonne',
 
   it('retient la COMMUNAUTÉ, pas le mot-clé qui la précède', async () => {
     const r = await routeur(['snmp-agent community read public']);
-    const snmp = r.getManagementService().getSnmp();
-    expect([...snmp.communities.keys()]).toEqual(['public']);
-    expect(snmp.communities.get('public')?.access).toBe('ro');
+    const snmp = r.getSnmpService();
+    expect(snmp.getCommunities().map((c) => c.name)).toEqual(['public']);
+    expect(snmp.getCommunities()[0]?.access).toBe('ro');
   });
 
   it('distingue lecture et écriture', async () => {
     const r = await routeur(['snmp-agent community write private']);
-    expect(r.getManagementService().getSnmp().communities.get('private')?.access).toBe('rw');
+    expect(r.getSnmpService().getCommunities().find((c) => c.name === 'private')?.access).toBe('rw');
   });
 
   it('n\'écrit qu\'une fois chaque ligne', async () => {
@@ -57,7 +57,7 @@ describe('VRP — le SNMP revient d\'un export, et sa communauté est la bonne',
 
   it('`snmp-agent` seul active l\'agent et se rend', async () => {
     const r = await routeur(['snmp-agent']);
-    expect(r.getManagementService().getSnmp().enabled).toBe(true);
+    expect(r.getSnmpService().isEnabled()).toBe(true);
     expect(await config(r)).toContain('snmp-agent');
   });
 

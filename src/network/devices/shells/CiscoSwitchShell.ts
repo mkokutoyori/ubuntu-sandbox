@@ -37,6 +37,7 @@ import { parsePingArgs, formatCiscoPing } from './cisco/ciscoPing';
 import {
   showInterface, consoleAndAuxLineConfigLines, enableLevelSecretConfigLines,
   ipIntBriefRowsFromPorts, renderIpIntBrief, ipInterfaceBlockFor,
+  interfaceAclLines, type InterfaceAclRefs,
   renderInterfacesDescription,
 } from './cisco/CiscoShowCommands';
 import { orderCiscoConfigBlocks } from './cisco/ciscoConfigSerializer';
@@ -44,6 +45,7 @@ import { describeCiscoArguments } from './cisco/ciscoArgumentHelp';
 import {
   parseCiscoAce, renderCiscoAce, formatCiscoAclEntry,
   showAccessListsFrom, isValidIosAclNumber,
+  runningConfigACLFrom, runningConfigInterfaceACLFrom,
 } from './cisco/CiscoAclCommands';
 import { IOS_ACL_NUMBERING } from '../router/ACLEngine';
 import { CISCO_ERRORS } from './cli-utils';
@@ -607,6 +609,24 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
       this.mode = 'config-acl';
       return '';
     });
+
+    // Les deux formes en `no` n'existaient PAS : une liste posée sur un
+    // Catalyst ne pouvait plus être retirée. Le défaut ne se voyait pas
+    // tant que la configuration ne rendait aucune liste — elle en rend
+    // désormais, et c'est elle qui est rejouée à l'import.
+    this.configTrie.registerGreedy('no access-list', 'Remove a numbered ACL', (args) => {
+      const id = parseInt(args[0] ?? '', 10);
+      if (isNaN(id)) return '% Invalid access-list number.';
+      this.d().getVaclEngine().removeAccessList(id);
+      return '';
+    });
+    this.configTrie.registerGreedy('no ip access-list', 'Remove a named ACL', (args) => {
+      const kind = args[0]?.toLowerCase();
+      if (kind !== 'standard' && kind !== 'extended') return CISCO_ERRORS.INVALID_INPUT;
+      if (!args[1]) return CISCO_ERRORS.INCOMPLETE;
+      this.d().getVaclEngine().removeNamedAccessList(args[1]);
+      return '';
+    });
     this.registerDaiCommands();
     this.registerPortSecurityCommands();
     this.registerVtpCommands();
@@ -960,6 +980,17 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
       return '';
     });
     this.configIfTrie.addCompletionKeywords('ip address', ['dhcp']);
+
+    // La PACL — `ip access-group` sur un port du commutateur — était
+    // REFUSÉE, alors que le plan de données la lit depuis toujours
+    // (`Switch.portAclPermits` interroge `getVaclEngine()` à chaque
+    // trame) : le moteur, la liaison et le filtrage existaient, il
+    // manquait la commande qui les relie.
+    this.configIfTrie.registerGreedy('ip access-group',
+      'Apply an IP access list to this port', (args) => this.appliquerPacl(args, false));
+    this.configIfTrie.addCompletionKeywords('ip access-group', ['in', 'out']);
+    this.configIfTrie.registerGreedy('no ip access-group',
+      'Remove an IP access list from this port', (args) => this.appliquerPacl(args, true));
     this.configIfTrie.register('no ip address', 'Remove the SVI IP address', () => {
       const vlan = this.sviVlanId(this.selectedInterface ?? '');
       if (vlan === null) return '';
@@ -2137,6 +2168,11 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
       if (!args[0]) return CISCO_ERRORS.INCOMPLETE;
       return this.showVlanBrief(this.d(), { name: args[0] });
     });
+
+    t.registerGreedy('show vlan access-map', 'Display VLAN access maps',
+      (args) => this.showVlanAccessMap(args[0]));
+    t.registerGreedy('show vlan filter', 'Display VLAN filters',
+      (args) => this.showVlanFilter(args[0]));
   }
 
   private registerVtpShowCommands(t: CommandTrie): void {
@@ -3003,6 +3039,19 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
       return '';
     });
 
+    this.configIfTrie.register('switchport protected',
+      'Isolate this port from other protected ports', () =>
+        this.applyToSelectedInterfaces(portName => {
+          this.d().setPortProtected(portName, true);
+          return '';
+        }));
+    this.configIfTrie.register('no switchport protected',
+      'Stop isolating this port', () =>
+        this.applyToSelectedInterfaces(portName => {
+          this.d().setPortProtected(portName, false);
+          return '';
+        }));
+
     this.configIfTrie.register('switchport mode access', 'Set interface to access mode', () => {
       return this.applyToSelectedInterfaces(portName =>
         this.d().setSwitchportMode(portName, 'access') ? '' : '% Error'
@@ -3571,6 +3620,7 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
     if (sw.getDot1xAgent?.()?.getConfig?.()?.enabled) out.push('dot1x system-auth-control');
 
     out.push(...sw.getPortMirror().asRunningConfigLines());
+    out.push(...runningConfigACLFrom(sw.getVaclEngine().getAccessListsInternal()));
     out.push(...sw.vlanAccessMapRunningConfigLines());
 
     return out;
@@ -3805,6 +3855,9 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
         lines.push(` switchport access vlan ${cfg.accessVlan}`);
       }
       if (cfg.voiceVlan !== undefined) lines.push(` switchport voice vlan ${cfg.voiceVlan}`);
+      if (sw.isPortProtected(portName)) lines.push(' switchport protected');
+      lines.push(...runningConfigInterfaceACLFrom(
+        sw.getVaclEngine().getInterfaceACLBindingsInternal(), portName));
       for (const l of this.qosRunningConfigLines(cfg)) lines.push(l);
       for (const l of this.ifExtra.get(portName) ?? []) lines.push(` ${l}`);
       for (const l of this.ifStp.get(portName) ?? []) lines.push(` ${l}`);
@@ -4155,6 +4208,7 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
       lines.push(`Trunking VLANs Enabled: ${allowed}`);
     }
     if (c?.voiceVlan) lines.push(`Voice VLAN: ${c.voiceVlan}`);
+    lines.push(`Protected: ${this.d().isPortProtected(name)}`);
     return lines.join('\n');
   }
 
@@ -4734,6 +4788,85 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
     return m ? parseInt(m[1], 10) : null;
   }
 
+  private liaisonsAcl(iface: string): InterfaceAclRefs {
+    const engine = this.d().getVaclEngine();
+    return {
+      inbound: engine.getInterfaceACL(iface, 'in'),
+      outbound: engine.getInterfaceACL(iface, 'out'),
+    };
+  }
+
+  /**
+   * `ip access-group <liste> in|out` sur le port sélectionné.
+   *
+   * Une liste inconnue est REFUSÉE dans les mots d'IOS plutôt que liée :
+   * une PACL qui ne désigne rien ne filtre rien, et l'accepter donnerait
+   * un port qu'on croit protégé.
+   */
+  private appliquerPacl(args: string[], retirer: boolean): string {
+    const iface = this.selectedInterface;
+    if (!iface) return CISCO_ERRORS.INCOMPLETE;
+    if (this.sviVlanId(iface) !== null) {
+      return '% Command rejected: not applicable on this interface.';
+    }
+    if (args.length < 2) return CISCO_ERRORS.INCOMPLETE;
+    const sens = args[1].toLowerCase();
+    if (sens !== 'in' && sens !== 'out') return CISCO_ERRORS.INVALID_INPUT;
+    const direction: 'in' | 'out' = sens;
+    if (retirer) {
+      this.d().getVaclEngine().removeInterfaceACL(iface, direction);
+      return '';
+    }
+    const ref: number | string = /^\d+$/.test(args[0]) ? parseInt(args[0], 10) : args[0];
+    const engine = this.d().getVaclEngine();
+    if (!engine.findRef(ref)) return `% Access list ${args[0]} not found`;
+    engine.setInterfaceACL(iface, direction, ref);
+    return '';
+  }
+
+  /**
+   * `show vlan access-map` — la forme du Catalyst 3560/3750, plateforme
+   * que ce shell modélise : le numéro de séquence sur la ligne d'en-tête,
+   * puis les clauses et l'action. `ip  address:` porte deux blancs, la
+   * colonne laissée à `mac`.
+   */
+  private showVlanAccessMap(nom?: string): string {
+    const noms = this.d().getVlanAccessMapNames()
+      .filter(n => !nom || n === nom);
+    if (noms.length === 0) return '';
+    const lines: string[] = [];
+    for (const carte of noms) {
+      for (const regle of this.d().getVlanAccessMap(carte) ?? []) {
+        lines.push(`Vlan access-map "${carte}"  ${regle.sequence}`);
+        lines.push('  Match clauses:');
+        if (regle.matchIpAcl) lines.push(`    ip  address: ${regle.matchIpAcl}`);
+        lines.push('  Action:');
+        lines.push(`    ${regle.action}`);
+      }
+    }
+    return lines.join('\n');
+  }
+
+  /**
+   * `show vlan filter` — quels VLAN chaque carte filtre.
+   *
+   * « Configuré » et « actif » sont deux faits distincts et mesurés
+   * séparément : un VLAN peut être nommé par la liaison sans exister sur
+   * ce commutateur, et la carte n'y filtre alors rien.
+   */
+  private showVlanFilter(nom?: string): string {
+    const liaisons = this.d().getVlanFilterBindings();
+    const lines: string[] = [];
+    for (const [carte, vlans] of liaisons) {
+      if (nom && carte !== nom) continue;
+      const actifs = vlans.filter(v => this.d().getVLANs().has(v));
+      lines.push(`VLAN Map ${carte}:`);
+      lines.push(`   Configured on VLANs: ${this.compactVlanList(vlans)}`);
+      lines.push(`   Active on VLANs: ${this.compactVlanList(actifs)}`);
+    }
+    return lines.join('\n');
+  }
+
   /**
    * Wire the IOS Layer-3 surface: `ip routing`, `ip route`, the
    * `ip dhcp pool` sub-mode (reusing the shared DHCP pool builder),
@@ -5075,7 +5208,9 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
   private showIpInterfaceAll(): string {
     const ports = this.d()._getPortsInternal();
     const blocs: string[] = [];
-    for (const [nom, port] of ports) blocs.push(ipInterfaceBlockFor(nom, port, ports));
+    for (const [nom, port] of ports) {
+      blocs.push(ipInterfaceBlockFor(nom, port, ports, '', true, {}, this.liaisonsAcl(nom)));
+    }
     for (const svi of this.d().getSvis()) blocs.push(this.sviInterfaceBlock(svi.vlan));
     return blocs.length ? blocs.join('\n') : 'No interfaces present.';
   }
@@ -5087,7 +5222,7 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
       const nom = this.resolveInterfaceName(iface);
       const port = nom ? ports.get(nom) : undefined;
       if (!port || !nom) return CISCO_ERRORS.INVALID_INPUT;
-      return ipInterfaceBlockFor(nom, port, ports);
+      return ipInterfaceBlockFor(nom, port, ports, '', true, {}, this.liaisonsAcl(nom));
     }
     return this.sviInterfaceBlock(parseInt(vlanIfMatch[1], 10));
   }
@@ -5119,8 +5254,7 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
       lines.push('  Helper address is not set');
     }
     lines.push('  Directed broadcast forwarding is disabled');
-    lines.push('  Outgoing access list is not set');
-    lines.push('  Inbound  access list is not set');
+    lines.push(...interfaceAclLines(this.liaisonsAcl(`Vlan${vlan}`)));
     lines.push('  Proxy ARP is enabled');
     lines.push('  Security level is default');
     lines.push('  Split horizon is enabled');

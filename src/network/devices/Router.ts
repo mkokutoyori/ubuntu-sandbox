@@ -373,6 +373,7 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
     e.setLogSink((ev) => {
       Logger.info(this.id, 'router:acl-log', formatAclLogMessage(ev));
     });
+    e.setClockSource(() => this.getSystemClockMs());
     e.setTimeRangeResolver((name, now) => {
       const sec = (this as unknown as Record<symbol, CiscoSecurityConfig | undefined>)[
         Symbol.for('CiscoSecurityConfig')
@@ -4308,7 +4309,7 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
     } as unknown as IPv4Packet;
 
     // Filtre d'AFFICHAGE : il observe, il ne compte pas.
-    return this.aclEngine.evaluateACL(ref, probe, new Date(), false) !== 'deny';
+    return this.aclEngine.evaluateACL(ref, probe, undefined, false) !== 'deny';
   }
 
   /**
@@ -5727,9 +5728,11 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
   setInterfaceACL(ifName: string, direction: 'in' | 'out', aclRef: number | string) { this.aclEngine.setInterfaceACL(ifName, direction, aclRef); }
   removeInterfaceACL(ifName: string, direction: 'in' | 'out') { this.aclEngine.removeInterfaceACL(ifName, direction); }
   getInterfaceACL(ifName: string, direction: 'in' | 'out') { return this.aclEngine.getInterfaceACL(ifName, direction); }
-  evaluateACLByName(name: string, ipPkt: IPv4Packet, now: Date = new Date()) {
+  evaluateACLByName(name: string, ipPkt: IPv4Packet, now?: Date) {
     return this.aclEngine.evaluateACLByName(name, ipPkt, now);
   }
+
+  _getReflexiveSessions() { return this.aclEngine.getReflexiveSessions(); }
 
   _ensureNamedAccessList(name: string, type: 'standard' | 'extended') { this.aclEngine.ensureNamedAccessList(name, type); }
   _aclHasSequence(name: string, seq: number) { return this.aclEngine.hasSequence(name, seq); }

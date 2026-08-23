@@ -12,6 +12,24 @@ Format : `[famille] intitulé` puis constat / mesure / raison du report.
 
 ## Commutateur Huawei (VRP)
 
+### [route] deux routes statiques vers le meme prefixe se confondent
+Sur le COMMUTATEUR, `SwitchSvi` indexe ses routes statiques par
+`network/mask` seul (`addStaticRoute` remplace l'entree existante), donc
+`ip route-static 10.9.0.0 24 10.0.0.1` puis `... 10.0.0.2` laissent UNE
+route, la seconde. Une vraie machine en garde deux — c'est ainsi qu'on
+ecrit une route de secours ou un partage de charge.
+**Mesure** : les deux commandes acceptees, `display current-configuration`
+n'en rend qu'une, et `getStaticRoutes()` n'a qu'une entree.
+**Consequence sur `undo`** : depuis que la suppression compare le saut
+suivant, `undo ip route-static 10.9.0.0 24 10.0.0.1` repond desormais
+`Route not found.` sur cette machine — la reponse EXACTE pour l'etat du
+magasin, et qui rend le defaut visible au lieu de le masquer en retirant
+la mauvaise route comme avant.
+**Report** : la cle du magasin decide aussi de ce que lit le plan de
+donnees (`SwitchSvi` resout le saut a la volee dans deux boucles), donc
+la changer touche le routage du commutateur et pas la CLI. Le ROUTEUR,
+lui, n'a pas ce defaut : `Router` garde les deux routes.
+
 ### [mac-limit] deux règles de PORTÉES différentes coexistent-elles ?
 Une règle est maintenant identifiée par sa portée : `mac-limit maximum 5
 vlan 10` puis `mac-limit maximum 8 vlan 10` remplacent bien, et deux VLAN
@@ -98,6 +116,66 @@ elles.
 ---
 
 ## Commutateur Cisco
+
+---
+
+## Postes Windows
+
+### [ping] le CODE de l'ICMP inatteignable est jeté à l'affichage
+**Constat.** `WinPing.formatWinPingReplyLine` rend TOUT « destination
+unreachable » par `Reply from <ip>: Destination host unreachable.`, quel
+que soit le code ICMP. Mesuré : un routeur qui refuse par ACL répond
+type 3 **code 13** (communication administrativement interdite), le code
+VOYAGE bien jusqu'au client — `EndHost` le range dans la chaîne d'erreur
+(`Destination unreachable (from X) code 13`) et le `ping` Linux le lit
+déjà pour écrire « Packet filtered » (`commands/net/Ping.ts`, ligne 249)
+— mais la moitié Windows ne le regarde pas. Deux machines du même
+laboratoire diagnostiquent donc le même refus autrement, et celle qui
+perd l'information est celle qui envoie l'apprenant vérifier son câblage
+au lieu de sa liste d'accès.
+
+**Ce qui bloque, et c'est une question de RÉFÉRENCE, pas de code.** Les
+chaînes exactes de `ping.exe` par code ne sont pas vérifiables : la
+documentation Microsoft ne les publie pas, et la seule source à texte
+préservé trouvée est ReactOS — une réimplémentation, qui ne traite que
+NET/HOST/TTL et écrit « Destination network unreachable. » là où Windows
+écrit, d'après tout ce qu'on lit ailleurs, « Destination net
+unreachable. ». Écrire la table de mémoire produirait exactement le
+genre de sortie plausible-et-fausse que ce dépôt passe son temps à
+refermer.
+
+**Report.** Hors du chemin du tutoriel ACL — le lecteur y constate un
+`Reply from <routeur>` et 100 % de perte, ce que la plateforme rend
+correctement. À fermer le jour où une capture réelle de `ping.exe` sous
+ACL est disponible ; le reste est déjà en place, il ne manque que les
+libellés.
+
+---
+
+## Gestion (SNMP, NTP, syslog)
+
+### [snmp] la moitie du vocabulaire VRP est rangee et jamais evaluee
+Depuis le lot « une communaute SNMP est une communaute », la CLI VRP
+ecrit dans `SnmpService` et un mot que VRP ne connait pas est REFUSE.
+Restent les formes que VRP connait et que ce moteur ne sait pas honorer :
+`mib-view`, `group v3`, `usm-user v3`, `packet max-size`,
+`protocol source-interface`, `protocol version`, et les deux moities
+`target-host trap-hostname` / `trap-paramsname`. Elles vont dans
+`SnmpService.recordVrpLine`, sont rendues telles qu'ecrites, et rien ne
+les lit. Mesure : une communaute restreinte a une vue MIB vide lit quand
+meme `sysName` ; un `usm-user v3` declare ne permet aucune requete v3,
+`SnmpAgent` n'ayant ni USM ni v3 du tout.
+**Pourquoi ce n'est pas ferme** : les refuser casserait le rejeu d'une
+configuration reelle et les ferait disparaitre a l'import d'une
+topologie — le meme raisonnement que pour
+`ip ssh server algorithm`. Les evaluer demande trois chantiers
+distincts : une notion de vue MIB filtrant chaque OID resolu, un modele
+USM/v3 (authentification et chiffrement des PDU), et une interface
+d'ecoute par laquelle l'agent repondrait, qui n'existe pas — il repond
+sur le port qui a recu. Ce qui EST evalue depuis ce lot, et qui fixe la
+frontiere : nom et droit de communaute, `acl` (source confrontee a la
+liste, echec ferme), contact, localisation, versions, hote de trap,
+`trap source`, `trap enable`, `local-engineid`.
 
 ---
 

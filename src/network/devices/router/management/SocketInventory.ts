@@ -27,8 +27,9 @@ export function collectListeningSockets(router: Router): readonly ListeningSocke
   const telnet = mgmt.getTelnet();
   if (telnet.enabled) sockets.push({ protocol: 'tcp', port: telnet.port, service: 'telnet', source: 'configured' });
 
-  const snmp = mgmt.getSnmp();
-  if (snmp.enabled) sockets.push({ protocol: 'udp', port: 161, service: 'snmp', source: 'configured' });
+  const snmp = (router as unknown as { getSnmpService?: () => import('./SnmpService').SnmpService })
+    .getSnmpService?.();
+  if (snmp?.isEnabled()) sockets.push({ protocol: 'udp', port: 161, service: 'snmp', source: 'configured' });
 
   const ntp = mgmt.getNtp();
   if (ntp.enabled) sockets.push({ protocol: 'udp', port: 123, service: 'ntp', source: 'configured' });

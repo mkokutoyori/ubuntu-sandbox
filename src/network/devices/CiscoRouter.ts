@@ -191,6 +191,8 @@ export class CiscoRouter extends Router {
         this.sendArpRequestFor(iface, target),
       tcpConnect: (ip: string, port: number, opts: { onOpen?: () => void; onClose?: () => void }) =>
         this.getTcpStack().connect(ip, port, opts),
+      evaluateAclPermit: (aclName: string, sourceIp: string) =>
+        this.evaluateAclPermit(aclName, sourceIp),
     };
     this.cdpAgent = new CdpAgent(hostBase, () => this.getBus());
     this.lldpAgent = new LldpAgent(hostBase, () => this.getBus());

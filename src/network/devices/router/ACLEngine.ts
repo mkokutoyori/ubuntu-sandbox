@@ -13,6 +13,7 @@ import {
 } from '../../core/types';
 import { IP_PROTO_GRE } from '../../gre/types';
 import { IP_PROTO_PIM } from '../../pim/types';
+import { ReflexiveSessions } from './acl/ReflexiveSessions';
 
 export const DSCP_KEYWORD_TO_VALUE: Record<string, number> = {
   default: 0, cs0: 0, cs1: 8, cs2: 16, cs3: 24, cs4: 32, cs5: 40, cs6: 48, cs7: 56,
@@ -177,13 +178,9 @@ export interface ACLEntry {
   logInput?: boolean;
   timeRange?: string;
   /**
-   * `reflect NAME` — les ACL réflexives ne sont PAS implémentées : il
-   * n'existe aucune table de sessions miroir. Le mot-clé n'est donc pas
-   * un critère de correspondance mais un modificateur d'action inerte ;
-   * l'ACE qui le porte filtre normalement sur ses autres critères, et
-   * `evaluate NAME` (la liste miroir) échoue fermé faute d'être étayée.
-   * Le couple est cohérent : le trafic retour n'est pas ouvert par
-   * accident.
+   * `reflect NAME` — l'ACE qui le porte filtre normalement sur ses autres
+   * critères, et DÉPOSE en plus la session miroir quand elle permet le
+   * paquet. `evaluate NAME` consulte cette table (`ReflexiveSessions`).
    */
   reflect?: string;
   reflectTimeout?: number;
@@ -371,7 +368,8 @@ export class ACLEngine {
       acl = { name, type, entries: [] };
       this.accessLists.push(acl);
     }
-    if (opts.sequence !== undefined && acl.entries.some(e => e.sequence === opts.sequence)) {
+    if (opts.sequence !== undefined
+        && acl.entries.some(e => e.remark === undefined && e.sequence === opts.sequence)) {
       return false;
     }
     const seq = opts.sequence ?? this.nextSequence(acl);
@@ -387,20 +385,47 @@ export class ACLEngine {
     const acl = this.accessLists.find(a => a.name === name);
     if (!acl) return false;
     const before = acl.entries.length;
-    acl.entries = acl.entries.filter(e => e.sequence !== seq);
+    acl.entries = acl.entries.filter(e => e.remark !== undefined || e.sequence !== seq);
     return acl.entries.length !== before;
   }
 
+  /**
+   * `ip access-list resequence` renumérote les RÈGLES.
+   *
+   * Un commentaire n'a pas de numéro sur IOS 15 : il en prend celui de la
+   * règle qu'il précède, ce qui le garde à sa place sans jamais consommer
+   * un cran ni s'afficher. Un commentaire en fin de liste garde celui de
+   * la dernière règle — il n'y a plus de suivante à désigner.
+   */
   resequenceNamedACL(name: string, start: number, step: number): boolean {
     const acl = this.accessLists.find(a => a.name === name);
     if (!acl) return false;
     ACLEngine.sortBySequence(acl);
     let n = start;
     for (const e of acl.entries) {
+      if (e.remark !== undefined) continue;
       e.sequence = n;
       n += step;
     }
+    ACLEngine.alignRemarksOnFollowingRule(acl, Math.max(start, n - step));
     return true;
+  }
+
+  /**
+   * Un commentaire suit la règle qui vient APRÈS lui, jamais celle d'avant.
+   *
+   * Sans cet alignement, un tri par numéro de séquence remonterait tout
+   * commentaire au-dessus des règles qui portent le même numéro ou le
+   * laisserait derrière elles selon l'ordre d'insertion, et le
+   * commentaire cesserait de désigner la règle qu'il commente.
+   */
+  private static alignRemarksOnFollowingRule(acl: AccessList, fallback: number): void {
+    let suivante = fallback;
+    for (let i = acl.entries.length - 1; i >= 0; i--) {
+      const e = acl.entries[i];
+      if (e.remark === undefined) suivante = e.sequence ?? suivante;
+      else e.sequence = suivante;
+    }
   }
 
   findByName(name: string): AccessList | undefined {
@@ -435,8 +460,9 @@ export class ACLEngine {
    */
   private nextSequence(acl: AccessList): number {
     const step = acl.step ?? this.defaultStep;
-    if (acl.entries.length === 0) return this.sequencing(null, step);
-    const maxSeq = acl.entries.reduce((m, e) => Math.max(m, e.sequence ?? 0), 0);
+    const regles = acl.entries.filter(e => e.remark === undefined);
+    if (regles.length === 0) return this.sequencing(null, step);
+    const maxSeq = regles.reduce((m, e) => Math.max(m, e.sequence ?? 0), 0);
     return this.sequencing(maxSeq, step);
   }
 
@@ -492,32 +518,49 @@ export class ACLEngine {
    * s'applique.
    */
   evaluateForDataPlane(
-    aclRef: number | string | null, ipPkt: IPv4Packet, now: Date = new Date(),
+    aclRef: number | string | null, ipPkt: IPv4Packet, now?: Date,
   ): 'permit' | 'deny' | null {
     if (aclRef === null) return null;
     const acl = this.findRef(aclRef);
     if (!acl || acl.entries.length === 0) return null;
+    const when = now ?? this.nowFromDevice();
     for (const entry of acl.entries) {
       if (entry.timeRange && this.timeRangeResolver
-          && !this.timeRangeResolver(entry.timeRange, now)) continue;
-      if (this.aclEntryMatches(acl.type, entry, ipPkt)) {
-        entry.matchCount++;
-        if (this.logSink && (entry.log || entry.logInput)) {
-          this.logSink({
-            aclLabel: acl.name ?? String(acl.id ?? ''),
-            action: entry.action, entry, packet: ipPkt, wantsInput: !!entry.logInput,
-          });
-        }
-        return entry.action;
+          && !this.timeRangeResolver(entry.timeRange, when)) continue;
+      if (!this.entryMatchesWithReflexive(acl.type, entry, ipPkt, when)) continue;
+      entry.matchCount++;
+      if (entry.action === 'permit' && entry.reflect) {
+        this.reflexive.record(entry.reflect, ipPkt, entry.reflectTimeout, when.getTime());
       }
+      if (this.logSink && (entry.log || entry.logInput)) {
+        this.logSink({
+          aclLabel: acl.name ?? String(acl.id ?? ''),
+          action: entry.action, entry, packet: ipPkt, wantsInput: !!entry.logInput,
+        });
+      }
+      return entry.action;
     }
     return this.unmatchedDataPlaneAction;
+  }
+
+  /**
+   * `evaluate NOM` n'est pas un critère d'adresse mais un renvoi à la
+   * table des sessions miroir : l'ACE correspond si ce paquet est le
+   * retour d'un flux qu'une ACE `reflect NOM` a déjà laissé sortir.
+   */
+  private entryMatchesWithReflexive(
+    type: 'standard' | 'extended', entry: ACLEntry, ipPkt: IPv4Packet, now: Date,
+  ): boolean {
+    if (entry.evaluate !== undefined) {
+      return this.reflexive.matches(entry.evaluate, ipPkt, now.getTime());
+    }
+    return this.aclEntryMatches(type, entry, ipPkt);
   }
 
   /** Ce numéro de séquence est-il déjà pris ? IOS refuse les doublons. */
   hasSequence(name: string, seq: number): boolean {
     const acl = this.accessLists.find(a => a.name === name);
-    return !!acl && acl.entries.some(e => e.sequence === seq);
+    return !!acl && acl.entries.some(e => e.remark === undefined && e.sequence === seq);
   }
 
   /**
@@ -586,9 +629,29 @@ export class ACLEngine {
     this.timeRangeResolver = fn;
   }
 
+  /**
+   * L'horloge de l'ÉQUIPEMENT, pas celle de la machine hôte.
+   *
+   * Le plan de données lisait `new Date()` là où `show time-range` lit
+   * l'horloge posée par `clock set` : deux horloges pour une question, de
+   * sorte qu'une ACE `time-range` se déclarait active dans la vue et
+   * filtrait selon une autre heure. Le défaut n'était pas à un point
+   * d'appel mais dans la valeur par défaut, qu'ils héritaient tous ; c'est
+   * donc ici qu'il se referme, et non en passant l'heure à chaque appel —
+   * un point d'appel oublié rouvrirait l'écart en silence.
+   */
+  private clockSource: (() => number) | null = null;
+  setClockSource(fn: (() => number) | null): void { this.clockSource = fn; }
+  private nowFromDevice(): Date {
+    return new Date(this.clockSource ? this.clockSource() : Date.now());
+  }
+
+  private readonly reflexive = new ReflexiveSessions();
+  getReflexiveSessions(): ReflexiveSessions { return this.reflexive; }
+
   /** Evaluate a named/numbered ACL by name — used by IPSecEngine for crypto ACL matching. */
   evaluateACLByName(
-    name: string, ipPkt: IPv4Packet, now: Date = new Date(), countMatches = true,
+    name: string, ipPkt: IPv4Packet, now?: Date, countMatches = true,
   ): 'permit' | 'deny' | null {
     const ref: number | string = /^\d+$/.test(name) ? parseInt(name, 10) : name;
     return this.evaluateACL(ref, ipPkt, now, countMatches);
@@ -606,7 +669,7 @@ export class ACLEngine {
    */
   evaluateACL(
     aclRef: number | string | null, ipPkt: IPv4Packet,
-    now: Date = new Date(), countMatches = true,
+    now?: Date, countMatches = true,
   ): 'permit' | 'deny' | null {
     if (aclRef === null) return null;
 
@@ -619,14 +682,18 @@ export class ACLEngine {
       return null;
     }
 
+    const when = now ?? this.nowFromDevice();
     for (const entry of acl.entries) {
       if (entry.timeRange && this.timeRangeResolver
-          && !this.timeRangeResolver(entry.timeRange, now)) {
+          && !this.timeRangeResolver(entry.timeRange, when)) {
         continue; // inactive time-range → skip ACE (next-rule semantics)
       }
-      if (this.aclEntryMatches(acl.type, entry, ipPkt)) {
+      if (this.entryMatchesWithReflexive(acl.type, entry, ipPkt, when)) {
         if (!countMatches) return entry.action;
         entry.matchCount++;
+        if (entry.action === 'permit' && entry.reflect) {
+          this.reflexive.record(entry.reflect, ipPkt, entry.reflectTimeout, when.getTime());
+        }
         if (this.logSink && (entry.log || entry.logInput)) {
           this.logSink({
             aclLabel: acl.name ?? String(acl.id ?? ''),
@@ -661,10 +728,6 @@ export class ACLEngine {
     // tout — étant stocké comme un `permit` de source `any` — et toute
     // liste commentée devenait une liste ouverte.
     if (entry.remark !== undefined) return false;
-
-    // `evaluate` désigne une liste réflexive, et il n'existe aucune table
-    // de sessions derrière. La clause n'est donc pas étayée : elle échoue.
-    if (entry.evaluate !== undefined) return false;
 
     if (!this.wildcardMatch(ipPkt.sourceIP, entry.srcIP, entry.srcWildcard)) {
       return false;
