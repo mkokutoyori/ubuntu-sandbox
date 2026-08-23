@@ -522,6 +522,18 @@ distribution de clé ne l'est pas.
 
 ## Outillage
 
+### [e2e] la PREMIÈRE navigation d'une exécution à froid dépasse le délai
+Mesuré : `npx playwright test <n'importe quel spec>` sur un serveur de
+développement non démarré fait échouer le PREMIER test sur
+`page.goto('/')` — 30 s dépassées —, et tous les suivants passent. Vérifié
+par `--repeat-each=2` sur un seul cas : la première exécution tombe, la
+seconde passe. Ce n'est donc pas le spec mais l'amorçage de Vite.
+**Report** : le délai est global (`playwright.config.ts` : `timeout` du
+test et `timeout` du serveur, 30 s chacun), donc le corriger touche un
+fichier partagé et toute la suite ; le relever dans un seul spec
+soignerait le symptôme à un endroit alors que tous y sont exposés. À
+trancher avec l'autre agent, qui exécute la même suite.
+
 ### [typecheck] 341 erreurs de type au compteur
 `npm run typecheck` (ajouté) en compte 341, presque toutes dans les
 tests : arguments de `DeviceType` passés à l'envers, `MACAddress` là où
