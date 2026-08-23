@@ -43,6 +43,8 @@ export interface DhcpdConfig {
   readonly errors: readonly DhcpdError[];
 }
 
+export const PING_CHECK_DEFAULT = true;
+
 const IPV4 = /^\d{1,3}(\.\d{1,3}){3}$/;
 const MAC = /^[0-9a-f]{2}(:[0-9a-f]{2}){5}$/i;
 
@@ -102,7 +104,7 @@ class Parser {
   readonly subnets: DhcpdSubnet[] = [];
   readonly hosts: DhcpdHost[] = [];
   authoritative = false;
-  pingCheck = false;
+  pingCheck: boolean | undefined;
   pingTimeoutSeconds = 1;
 
   constructor(private readonly tokens: Token[], private readonly path: string) {}
@@ -214,7 +216,7 @@ class Parser {
     for (const subnet of parser.subnets) this.subnets.push(subnet);
     for (const host of parser.hosts) this.hosts.push(host);
     if (parser.authoritative) this.authoritative = true;
-    if (parser.pingCheck) this.pingCheck = true;
+    if (parser.pingCheck !== undefined) this.pingCheck = parser.pingCheck;
   }
 
   private declareSubnet(head: Token): void {
@@ -327,7 +329,7 @@ export function parseDhcpdConf(text: string, path: string): DhcpdConfig {
   parser.run(globals);
   return {
     globals, subnets: parser.subnets, hosts: parser.hosts,
-    authoritative: parser.authoritative, pingCheck: parser.pingCheck,
+    authoritative: parser.authoritative, pingCheck: parser.pingCheck ?? PING_CHECK_DEFAULT,
     pingTimeoutSeconds: parser.pingTimeoutSeconds, errors: parser.errors,
   };
 }

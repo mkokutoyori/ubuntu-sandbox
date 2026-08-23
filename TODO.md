@@ -469,18 +469,6 @@ sujet en soi et non une commande de plus.
 
 ## Serveurs DHCP
 
-### [dhcp] `ping-check` : la valeur PAR DÉFAUT d'ISC n'est pas attestée
-`ping-check` est lu, honoré, et vaut **faux** par défaut ici. Aucune
-source lisible depuis ce réseau ne dit ce que vaut le défaut d'ISC : le
-manuel de `dhcpd.conf` n'est pas joignable (proxy), et les deux réponses
-trouvées se contredisent — un article de la base de connaissances d'ISC
-laisse entendre que la 4.4 le fait par défaut, tandis que chaque guide
-d'administration écrit `ping-check true;` explicitement, ce qui suggère
-l'inverse.
-**Mesure** : `dhcpd.conf` livré par Debian ne contient pas la directive.
-**Report** : trancher demande le manuel ou une vraie machine ; le défaut
-retenu est écrit dans `docs/PRD-Manquements.md` §M6 plutôt que tu.
-
 ### [dhcp] Windows : le basculement et l'export restent absents
 `Get-DhcpServerv4Binding`, `Get-/Set-DhcpServerv4DnsSetting` sont
 désormais déclarées et réelles. Restent absents
