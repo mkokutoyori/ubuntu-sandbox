@@ -6,7 +6,7 @@ import {
 } from './firewallObjects';
 import { FIREWALL_POLICY } from './firewallPolicy';
 import {
-  FIREWALL_CENTRAL_SNAT_MAP, FIREWALL_IPPOOL, FIREWALL_VIP,
+  FIREWALL_CENTRAL_SNAT_MAP, FIREWALL_IPPOOL, FIREWALL_VIP, LDB_MONITOR,
 } from './firewallNat';
 import { SYSTEM_SPECS } from './system';
 import { ROUTER_SPECS } from './router';
@@ -35,6 +35,7 @@ export const FORTIOS_SCHEMA: readonly FortiTableSpec[] = Object.freeze([
   FIREWALL_SCHEDULE_ONETIME,
   FIREWALL_SCHEDULE_GROUP,
   FIREWALL_IPPOOL,
+  LDB_MONITOR,
   FIREWALL_VIP,
   ...UTM_SPECS,
   ...USER_SPECS,

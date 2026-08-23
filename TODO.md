@@ -180,10 +180,15 @@ transit puis la réémettre, plus la table de mappages dynamiques et son
 TTL. C'est un sujet à lui seul, pas une extension bornée du VIP, d'où le
 refus explicite en attendant.
 
-**Manquent aussi, de la même famille** : `dns-mapping-ttl` (attribut du
-type `dns-translation`, donc sans objet tant que le type est refusé) et
-le type `server-load-balance` (grappe de serveurs réels + moniteurs de
-santé), qui n'a aucune brique existante à réutiliser.
+**Manque aussi, de la même famille** : `dns-mapping-ttl` (attribut du
+type `dns-translation`, donc sans objet tant que le type est refusé).
+
+**Corrigé le 2026-08-23** : cette entrée affirmait aussi que le type
+`server-load-balance` « n'a aucune brique existante à réutiliser ».
+C'était FAUX, et la phase 20 l'a fermé en s'appuyant sur trois briques
+qui existaient — le point d'accroche unique du DNAT (qui inscrit déjà
+son choix dans la session, donc la persistance était gratuite),
+`FirewallPing` et `dialTcp`.
 
 ### [debug] `diagnose debug flow show iprope` est refuse
 Les trois options de `show` sont desormais LUES (`function-name`, `console`,

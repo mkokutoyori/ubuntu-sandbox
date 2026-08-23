@@ -10,10 +10,11 @@ export interface SourceTranslation {
 }
 
 export interface DestinationTranslation {
-  readonly kind: 'static-ip' | 'dynamic-ip';
+  readonly kind: 'static-ip' | 'dynamic-ip' | 'load-balance';
   readonly translatedAddress: string;
   readonly translatedEndAddress?: string;
   readonly translatedPort?: number;
+  readonly pool?: string;
 }
 
 export interface PortCriterion {

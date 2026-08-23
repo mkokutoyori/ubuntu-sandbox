@@ -25,6 +25,13 @@ import { vdomFootprint, cacheFootprint } from './health/MemoryFootprint';
 import { StreamAssembler, oversizeLimitBytes } from './inspection/StreamAssembler';
 import { BridgeFdb } from './l2/BridgeFdb';
 import { RevisionStore } from './config/RevisionStore';
+import { LdbMonitorTable } from './health/LdbMonitor';
+import { dialTcp, parseDialAddress } from '../../tcp/dial';
+import { isDialFailure } from '../../tcp/types';
+import { PortNumber } from '../../core/ports/PortNumber';
+import {
+  RealServerPool, type LdbMethod, type RealServer,
+} from './nat/RealServerPool';
 import { localTimeMs, utcMsForLocal } from '../../core/Timezone';
 import { decryptFromTunnel, sealedLegs } from './vpn/IpsecDataPlane';
 import { ikeDatagram, ipsecHostFacts } from './vpn/FirewallIpsecHost';
@@ -203,6 +210,19 @@ export class Firewall extends Equipment {
   private readonly management: ManagementPlane;
   private readonly load: SystemLoad;
   private readonly streams = new StreamAssembler();
+  private readonly serverPools = new Map<string, RealServerPool>();
+  private readonly poolMonitors = new Map<string, string[]>();
+  private readonly ldbMonitors = new LdbMonitorTable({
+    ping: async (address) => this.ping.begin(address)?.step(1) !== null,
+    tcp: async (address, port) => {
+      const destination = parseDialAddress(address);
+      if (!destination || !PortNumber.isValid(port)) return false;
+      const outcome = await dialTcp(this.tcp, destination, PortNumber.of(port));
+      if (isDialFailure(outcome)) return false;
+      outcome.close();
+      return true;
+    },
+  });
 
   private readonly haService: FirewallHa;
   private readonly ipsec: IPSecEngine;
@@ -296,6 +316,7 @@ export class Firewall extends Equipment {
         this.trafficLogger?.onSessionClosed(session, reason);
         this.sessionObserver?.(session, reason);
       },
+      realServerPool: (name) => this.serverPools.get(name),
       onSessionCountChanged: (count, created) => {
         this.load.observeSessionCount(count);
         if (created) this.load.recordSessionCreated();
@@ -1125,6 +1146,49 @@ export class Firewall extends Equipment {
   }
 
   getRevisions(): RevisionStore { return this.revisions; }
+
+  getLdbMonitors(): LdbMonitorTable { return this.ldbMonitors; }
+
+  getRealServerPool(name: string): RealServerPool | undefined {
+    return this.serverPools.get(name);
+  }
+
+  applyRealServerPool(
+    name: string, method: LdbMethod, servers: readonly RealServer[],
+    monitors: readonly string[],
+  ): void {
+    const pool = this.serverPools.get(name)
+      ?? new RealServerPool(name, method, {
+        sessionsTo: (address, port) => this.sessionsTo(address, port),
+      });
+    pool.setMethod(method);
+    pool.setServers(servers);
+    this.serverPools.set(name, pool);
+    this.poolMonitors.set(name, [...monitors]);
+  }
+
+  removeRealServerPool(name: string): void {
+    this.serverPools.delete(name);
+    this.poolMonitors.delete(name);
+  }
+
+  async runLdbMonitors(): Promise<void> {
+    for (const [name, pool] of this.serverPools) {
+      const monitors = this.poolMonitors.get(name) ?? [];
+      for (const server of pool.list()) {
+        const alive = await this.ldbMonitors.check(
+          monitors, `${name}|${server.id}`,
+          { address: server.address, port: server.port });
+        pool.markDead(server.id, !alive);
+      }
+    }
+  }
+
+  private sessionsTo(address: string, port: number): number {
+    return this.getSessionTable().view().find(session =>
+      session.translation?.translatedDest === address
+      && session.translation?.translatedDestPort === port).length;
+  }
 
   setRevisionOnLogout(enabled: boolean): void { this.revisionOnLogout = enabled; }
 

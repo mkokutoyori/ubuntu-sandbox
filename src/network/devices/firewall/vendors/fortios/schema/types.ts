@@ -1,5 +1,7 @@
 import type { ConsoleSettingsPatch } from '../../../mgmt/ConsoleSettings';
 import type { ConserveThresholds } from '../../../health/SystemLoad';
+import type { LdbMonitorType } from '../../../health/LdbMonitor';
+import type { LdbMethod } from '../../../nat/RealServerPool';
 import type { ArgumentSpec, EnumValue } from '../../../../../../cli/ArgumentTypes';
 import type { ObjectStore } from '../../../model/ObjectStore';
 import type { PolicyStore } from '../../../model/PolicyStore';
@@ -215,6 +217,39 @@ export interface FortiIpsGlobalSettings {
   readonly failOpen: boolean;
 }
 
+export interface FortiLdbMonitorPatch {
+  readonly name: string;
+  readonly type: LdbMonitorType;
+  readonly intervalSec: number;
+  readonly timeoutSec: number;
+  readonly retry: number;
+  readonly port: number;
+}
+
+export interface FortiRealServerPatch {
+  readonly id: string;
+  readonly address: string;
+  readonly port: number;
+  readonly weight: number;
+  readonly enabled: boolean;
+  readonly maxConnections: number;
+}
+
+export interface FortiBalancedVipPatch {
+  readonly name: string;
+  readonly externalAddress: string;
+  readonly externalEndAddress?: string;
+  readonly externalInterfaces: readonly string[];
+  readonly sourceFilters: readonly string[];
+  readonly arpReply: boolean;
+  readonly protocol: number;
+  readonly externalPort: number;
+  readonly method: LdbMethod;
+  readonly monitors: readonly string[];
+  readonly servers: readonly FortiRealServerPatch[];
+  readonly comment?: string;
+}
+
 export interface FortiVdomSettings {
   readonly centralNat: boolean;
   readonly opmode: 'nat' | 'transparent';
@@ -250,6 +285,9 @@ export interface FortiCommitDevice {
   applyMemoryLog(patch: FortiMemoryLogPatch): void;
   applyGlobalSettings(settings: FortiGlobalSettings): void;
   applyIpsGlobal(settings: FortiIpsGlobalSettings): void;
+  applyLdbMonitor(monitor: FortiLdbMonitorPatch): void;
+  removeLdbMonitor(name: string): void;
+  applyBalancedVip(vip: FortiBalancedVipPatch): string | void;
   applyReplacementMessage(message: string, buffer: string): void;
   applyConsoleSettings(settings: ConsoleSettingsPatch): void;
   applyHostname(hostname: string): void;

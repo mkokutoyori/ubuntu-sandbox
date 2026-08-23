@@ -9,7 +9,8 @@ import { vipAddress } from '../../../model/AddressObject';
 import { identityCommitHandlers } from '../commit/identityCommits';
 import { vpnCommitHandlers } from '../commit/vpnCommits';
 import {
-  applyCentralSnatToFirewall, applyFqdnVipToFirewall, applyVipToFirewall, categoryEntry,
+  applyBalancedVipToFirewall, applyCentralSnatToFirewall, applyFqdnVipToFirewall,
+  applyVipToFirewall, categoryEntry,
   centralSnatRuleId,
   filterTable, urlEntry, utmAction, vipRuleId,
 } from '../commit/objectCommits';
@@ -163,6 +164,15 @@ export function buildCommitDevice(fw: Firewall): FortiCommitDevice {
           fw.getSystemLoad().setAntivirusFailopen(
             settings.avFailopen as AntivirusFailopen);
         }
+      },
+      applyLdbMonitor(monitor) {
+        fw.getLdbMonitors().set(monitor);
+      },
+      removeLdbMonitor(name) {
+        fw.getLdbMonitors().remove(name);
+      },
+      applyBalancedVip(vip) {
+        return applyBalancedVipToFirewall(fw, vip);
       },
       applyIpsGlobal(settings) {
         fw.getSystemLoad().setIpsFailOpen(settings.failOpen);
