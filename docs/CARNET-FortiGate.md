@@ -425,15 +425,28 @@ pipeline par mode), et l'invite qui indique le VDOM courant.
 
 **Ce qui reste de la phase 5, nommé plutôt que tu** :
 
-- les **comptes administrateurs** ne sont pas encore une portée globale
-  (`config global` existe, `config system admin` n'a pas de schéma) ;
+- ~~les comptes administrateurs ne sont pas encore une portée globale
+  (`config system admin` n'a pas de schéma)~~ **note périmée, corrigée
+  le 2026-08-23** : `schema/admin.ts` porte `config system admin` depuis
+  la phase 7, et la phase 14 l'a branché sur une vraie session SSH ;
 - `vdom-mode split-vdom` est accepté et se comporte comme `multi-vdom` :
-  la séparation gestion/trafic n'a pas de mécanisme derrière ;
+  la séparation gestion/trafic n'a pas de mécanisme derrière. **Mesuré
+  et inscrit dans `TODO.md` le 2026-08-23** — trancher demande d'abord
+  d'établir si ce mode existe encore en 7.6, ce que les sources
+  consultées contredisent l'une l'autre ;
 - le **laboratoire L9** (FortiGate vs ASA) est une comparaison
   documentaire, pas un mécanisme ; il n'a pas été écrit en code ;
-- l'apprentissage MAC du mode transparent est une table simple sur le
-  châssis, sans vieillissement ni STP — `Switch` en a une plus complète,
-  et la partager serait le prochain pas.
+- ~~l'apprentissage MAC du mode transparent est une table simple sur le
+  châssis, sans vieillissement ni STP~~ **fermé en E64** : `l2/BridgeFdb`
+  vieillit (300 s, l'âge comptant depuis la dernière trame vue), porte
+  une instance PAR VDOM, se purge quand un port tombe, et se lit par
+  `diagnose netlink brctl list|name host <vdom>.b`. **Le partage avec
+  `Switch` est examiné et écarté** : sa table est indexée `vlan:mac` et
+  distingue statique / dynamique / trou noir, avec la sécurité de port et
+  le vieillissement accéléré de STP par-dessus ; un pont de mode
+  transparent n'a ici aucune de ces notions. Le STP n'est pas ajouté — un
+  pont transparent sans STP est ce que ce simulateur porte, et l'écrire
+  serait un chantier de `Switch.ts`.
 
 ### 6.7 Phase 6 — inspection et UTM — ✅ livrée
 
@@ -634,6 +647,7 @@ comparer, jamais le supposer).
 | 2026-08-19 | agent `mandeng` | Phase 13 livrée (E50). **Les collecteurs syslog émettent pour de bon**, et leur chemin CLI était faux (`setting`/`filter` sont frères). |
 | 2026-08-20 | agent `mandeng` | Phase 14 livrée (E51). **Le pare-feu héberge un vrai serveur SSH et telnet**, et `allowaccess` devient un filtre local-in par port de destination — il était stocké et lu par personne, comme les sept réglages d'administration de `config system global`. Piège P14 retiré : la limite de 800 lignes par fichier (NFR-M3, garde-fous G1 et G3) est supprimée. |
 | 2026-08-21 | agent `mandeng` | Phase 15 livrée (E52). **`pba-timeout` périme vraiment un bloc de ports** — et `overloadMappings` fuyait, inséré sous une clé et supprimé sous une autre. **Le TYPE d'un VIP gouverne** : `fqdn` est commis avec `set mapped-addr`, `dns-translation` est refusé en nommant le relais DNS de transit manquant (`TODO.md`). Le client DNS du pare-feu est RÉUTILISÉ, pas réécrit : une première version en doublait `FirewallDnsClient` et a été supprimée avant commit. |
+| 2026-08-23 | agent `mandeng` | Phase 18 livrée (E64). **Le pont du mode transparent apprend, VIEILLIT, et se lit.** La table était un `Map<string, string>` : aucun horodatage donc aucun vieillissement (une entrée vivait jusqu'à l'extinction), aucune vue pour la lire, une seule instance pour tout le châssis là où un vrai FortiGate en porte une par VDOM, et rien ne la purgeait quand un port tombait. `l2/BridgeFdb` porte les quatre, l'expiration étant calculée à la LECTURE (G5 interdit les minuteurs bruts). `diagnose netlink brctl list|name host <vdom>.b` rend les colonnes du vrai outil, `ttl` portant le temps qui RESTE. **Le partage avec `Switch.ts` est examiné et écarté avec sa raison**, comme la première règle de `CLAUDE.md` le demande. |
 | 2026-08-23 | agent `mandeng` | Phase 17 livrée (E63). **L'inspection lit un FLUX, pas un segment.** `inspectedFlowOf` lisait la charge utile d'UN paquet, donc TOUTE détection UTM se contournait en coupant l'envoi en deux — la signature antivirus comme le nombre magique d'un fichier. `inspection/StreamAssembler` réassemble par CONNEXION et par SENS (la clé de flux était déjà directionnelle), libère son tampon à la fermeture de session, et **ne réassemble PAS UDP** — coller deux datagrammes DNS produirait un message que personne n'a envoyé. La borne est celle du vrai boîtier : `oversize-limit` (défaut 10 Mo, minimum 1) et `set options oversize` ; le défaut laxiste de Fortinet est GARDÉ tel quel. **Le laboratoire a dû être refait** : monté sur `nginx`, il ne prouvait rien — le serveur répondait `400` et fermait avant le second `write`. Un cas a été DURCI après discrimination, la coupure passant désormais au milieu du nombre magique. |
 | 2026-08-23 | agent `mandeng` | Phase 16 livrée (E62). **La charge est MESURÉE et le mode conserve engage.** Trois vues promettaient une mesure et lisaient la même constante gelée — CPU figé à `idle: 100`, mémoire utilisée NULLE, donc un mode conserve structurellement impossible. `health/SystemLoad` dérive la charge de ce que l'équipement porte et fait ; `FirewallProfile.chassis` déclare RAM, CPU et débit une seule fois pour les trois constructeurs. **Les seuils étaient faux** (88/82/78 au lieu de 95/88/82) et ne se réglaient pas. Le mode conserve a une CONSÉQUENCE : session refusée au seuil extrême, `av-failopen` (mandataire, échoue OUVERT par défaut) et `ips global fail-open` (flux, échoue FERMÉ) au seuil rouge — polarités opposées, comme sur un vrai boîtier. Trois lignes inventées retirées de `get system performance status`. Deux erreurs de mon propre modèle corrigées en lisant la sortie : `utilisé + libre + libérable = total` (trois catégories DISJOINTES), et un tampon de journaux réservé n'est pas réclamable. |
 | 2026-08-19 | agent `mandeng` | Phase 12 livrée (E49). **Le portail captif détourne pour de bon**, et un défaut du socle TCP tombe avec : `transmit` sourçait un segment par le ROUTAGE au lieu de `socket.localIp`. |

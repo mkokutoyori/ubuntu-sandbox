@@ -121,6 +121,39 @@ famille reprise ferme une part de cette entrée.
 
 ## Pare-feu FortiGate
 
+### [vdom] `set vdom-mode split-vdom` est accepte et se comporte comme multi-vdom
+**Constat.** `vdom-mode` accepte trois valeurs. `no-vdom` et `multi-vdom`
+sont honorees ; `split-vdom` est range et se replie sur `multi-vdom` —
+`applyGlobalSettings` calcule `multiVdom: object.effective('vdom-mode')[0]
+!== 'no-vdom'`, donc la troisieme valeur n'a AUCUN mecanisme derriere
+elle. C'est la famille « accepte et inerte » que ce module referme
+partout ailleurs.
+
+**Mesure.** Le mode split-task d'un vrai FortiGate cree exactement DEUX
+VDOM, `root` (gestion) et `FG-traffic` (trafic), refuse d'en creer un
+troisieme, place toutes les interfaces dans `root` au depart, et
+interdit a `root` de traiter du trafic. Rien de tout cela n'existe ici :
+`config vdom` en cree autant qu'on veut et `root` route comme les
+autres.
+
+**Pourquoi ce n'est pas ferme.** Les deux corrections possibles — lui
+donner son mecanisme, ou le REFUSER en nommant la raison — dependent de
+la meme question, et les sources se contredisent : une source secondaire
+affirme que le mode split-task est retire depuis FortiOS 7.2.0 et
+remplace par un type de VDOM nomme `Admin`, tandis que la documentation
+Fortinet decrit encore deux modes de VDOM de 6.2 a 7.6. Le profil de ce
+depot annonce 7.6.3. Se tromper de sens ferait soit inventer un
+mecanisme que la vraie machine n'a plus, soit refuser une commande
+qu'elle accepte — les deux sont pires que l'etat actuel, qui est au
+moins honnete sur son perimetre. Trancher demande la page
+`split-task-vdom-mode` de la 7.6 ou une vraie machine ; les pages
+atteintes depuis ce reseau sont des sommaires de navigation.
+
+**Trouve en chemin et sur** : `vdom-mode` est une commande CACHEE sur un
+vrai 7.4/7.6 — elle n'apparait ni dans `show`, ni dans `show full`, ni
+dans la liste du `?`. Ici elle figure dans les trois. C'est mesurable et
+independant de la question ci-dessus.
+
 ### [vip] `set type dns-translation` est refuse faute de relais DNS de transit
 **Constat.** `config firewall vip` accepte trois types. `static-nat` et
 `fqdn` sont commis pour de bon (phases 15a/15b) ; `dns-translation` est

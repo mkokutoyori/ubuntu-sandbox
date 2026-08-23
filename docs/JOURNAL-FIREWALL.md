@@ -2758,6 +2758,45 @@ secondes d'horloge de l'équipement, `diagnose netlink brctl name host
 root.b` rend le tableau avec ses colonnes réelles, chaque VDOM a son
 pont, et un port qui tombe perd ses entrées.
 
+**Livrée.** Les quatre défauts sont fermés et le périmètre annoncé n'a
+pas bougé. Trois choses méritent d'être gardées :
+
+- **Le refus de partager la table de `Switch.ts` est la décision de
+  cette phase**, et elle va contre ce que le carnet suggérait. La
+  mesure la tranche : 28 points d'appel, une clé `vlan:mac`, des
+  entrées statiques et des trous noirs, la sécurité de port et le
+  vieillissement accéléré de STP. Un pont de mode transparent n'a ici
+  aucune de ces notions. Ce qu'ils partagent vraiment tient en trois
+  lignes — l'âge depuis la dernière trame vue —, et forcer un stockage
+  commun ferait porter à l'un les notions de l'autre. La règle de
+  `CLAUDE.md` prévoit ce cas et demande d'écrire ce qu'on a regardé et
+  pourquoi cela ne pouvait pas servir : c'est fait, ici et dans le
+  message de commit.
+- **Le rendu a fait apparaître une propriété de `FIXED_TABLE`** qu'il
+  vaut mieux connaître : une colonne alignée à DROITE ne laisse aucun
+  blanc après elle, puisque la largeur porte son propre blanc. La
+  première version collait `port no` à `device` et `ttl` à
+  `attributes`. L'alignement à gauche est le bon choix pour ce tableau,
+  et c'est aussi celui du vrai outil.
+- **Deux notes du carnet ont été corrigées en passant** : celle qui
+  disait `config system admin` sans schéma était périmée (il existe
+  depuis la phase 7 et la phase 14 l'a branché sur SSH), et
+  `split-vdom` est désormais inscrit dans `TODO.md` avec sa mesure.
+
+**Ce qui n'est PAS fait, et pourquoi ce n'est pas un report déguisé** :
+`split-vdom` est accepté et se replie sur `multi-vdom`. Les deux
+corrections possibles — lui donner son mécanisme, ou le refuser en
+nommant la raison — dépendent de la même question à laquelle je n'ai pas
+pu répondre depuis ce réseau : ce mode existe-t-il encore en 7.6 ? Une
+source secondaire le dit retiré depuis 7.2.0 et remplacé par un type de
+VDOM `Admin` ; la documentation Fortinet décrit encore deux modes de
+6.2 à 7.6. Choisir au hasard ferait soit inventer un mécanisme que la
+vraie machine n'a plus, soit refuser une commande qu'elle accepte. La
+mesure est écrite dans `TODO.md`, y compris un fait sûr et indépendant :
+`vdom-mode` est une commande CACHÉE sur un vrai 7.4/7.6, absente de
+`show`, de `show full` et de la liste du `?`, alors qu'elle figure dans
+les trois ici.
+
 ---
 
 ## Périmètre pris — FortiOS phase 17 (l'inspection lit un FLUX, pas un segment)
