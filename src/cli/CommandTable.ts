@@ -4,6 +4,7 @@ import {
   type ArgumentSpec,
 } from './ArgumentTypes';
 import type { CliSession } from './CliSession';
+import { subtreeReachable } from './CommandParser';
 
 export type CommandStep = string | ArgumentSpec;
 
@@ -77,8 +78,25 @@ export interface TreeNode {
   readonly keyword?: string;
   readonly argument?: ArgumentSpec;
   readonly children: Map<string, TreeNode>;
-  argumentChild?: TreeNode;
-  spec?: CommandSpec;
+  /**
+   * Les places d'argument de ce noeud, une par MODE.
+   *
+   * Deux modes qui nomment la meme commande ne lui donnent pas
+   * forcement le meme argument : `dns-server` prend une adresse IPv4
+   * dans un pool DHCP et une adresse IPv6 dans un pool DHCPv6. Une
+   * place unique faisait gagner la premiere declaree, en silence.
+   */
+  argumentChildren: TreeNode[];
+  /**
+   * Les commandes posees a cette place, une par MODE.
+   *
+   * Un noeud n'en portait qu'une, et deux modes ne pouvaient donc pas
+   * nommer la meme commande — or IOS le fait partout (`description`,
+   * `option`, `shutdown` existent dans dix sous-modes). Le mode
+   * departage a la lecture ; deux declarations qui partagent un mode
+   * restent un doublon et sont refusees.
+   */
+  specs: CommandSpec[];
   /**
    * Ce que `?` ecrit d'un noeud qui n'est PAS une commande.
    *
@@ -93,7 +111,7 @@ export interface TreeNode {
 }
 
 function newNode(keyword?: string, argument?: ArgumentSpec): TreeNode {
-  return { keyword, argument, children: new Map() };
+  return { keyword, argument, children: new Map(), argumentChildren: [], specs: [] };
 }
 
 export interface AuthorizationPort {
@@ -102,7 +120,7 @@ export interface AuthorizationPort {
 
 export class CommandTable {
   private readonly root: TreeNode = newNode();
-  private readonly byId = new Map<string, CommandSpec>();
+  private readonly declarees: CommandSpec[] = [];
   private readonly privilegeOverrides = new Map<string, number>();
   private authorization: AuthorizationPort | null = null;
 
@@ -111,15 +129,41 @@ export class CommandTable {
 
     let node = this.root;
     for (const step of spec.path) {
-      if (isArgumentSpec(step) && step.optional && !node.spec) node.spec = spec;
+      if (isArgumentSpec(step) && step.optional) this.poser(node, spec);
       node = isArgumentSpec(step)
         ? this.descendArgument(node, step)
         : this.descendKeyword(node, step);
     }
 
-    if (node.spec) throw new DuplicateCommandError(pathText(spec.path));
-    node.spec = spec;
-    this.byId.set(spec.id, spec);
+    this.poser(node, spec, pathText(spec.path));
+    this.declarees.push(spec);
+  }
+
+  private poser(node: TreeNode, spec: CommandSpec, chemin?: string): void {
+    const rival = node.specs.find(
+      autre => autre.modes.some(mode => spec.modes.includes(mode)));
+    if (rival) {
+      if (chemin === undefined) return;
+      throw new DuplicateCommandError(chemin);
+    }
+    node.specs.push(spec);
+  }
+
+  /** La place d'argument de ce noeud pour CETTE session, s'il y en a une. */
+  argumentAt(
+    node: TreeNode, session: CliSession, options?: ReachabilityOptions,
+  ): TreeNode | undefined {
+    return node.argumentChildren.find(
+      enfant => subtreeReachable(enfant, this, session, options ?? {}));
+  }
+
+  /** La commande de ce noeud pour CETTE session, s'il y en a une. */
+  specAt(
+    node: TreeNode, session: CliSession, options?: ReachabilityOptions,
+  ): CommandSpec | undefined {
+    return node.specs.find(spec => options === undefined
+      ? this.admetLeMode(spec, session)
+      : this.isReachable(spec, session, options));
   }
 
   private descendKeyword(node: TreeNode, keyword: string): TreeNode {
@@ -135,8 +179,13 @@ export class CommandTable {
     if (!(argument.type in ARGUMENT_TYPES)) {
       throw new UnknownArgumentTypeError(argument.type);
     }
-    if (!node.argumentChild) node.argumentChild = newNode(undefined, argument);
-    return node.argumentChild;
+    const existant = node.argumentChildren.find(
+      enfant => enfant.argument?.type === argument.type
+        && enfant.argument?.name === argument.name);
+    if (existant) return existant;
+    const cree = newNode(undefined, argument);
+    node.argumentChildren.push(cree);
+    return cree;
   }
 
   rootNode(): TreeNode { return this.root; }
@@ -147,9 +196,11 @@ export class CommandTable {
     node.legend = legend;
   }
 
-  specs(): readonly CommandSpec[] { return [...this.byId.values()]; }
+  specs(): readonly CommandSpec[] { return this.declarees; }
 
-  byIdentifier(id: string): CommandSpec | undefined { return this.byId.get(id); }
+  byIdentifier(id: string): CommandSpec | undefined {
+    return this.declarees.find(spec => spec.id === id);
+  }
 
   setPrivilegeOverride(path: readonly string[], level: number): void {
     this.privilegeOverrides.set(path.join(' '), level);

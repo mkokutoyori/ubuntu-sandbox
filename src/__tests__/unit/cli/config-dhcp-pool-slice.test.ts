@@ -156,3 +156,54 @@ describe('`client-identifier deny` cesse d\'etre avalee par son parent', () => {
       .not.toContain('Invalid input');
   });
 });
+
+describe('les trois autres sous-modes DHCP sont vides eux aussi', () => {
+  it.each(['configDhcpClassTrie', 'configDhcpPoolClassTrie', 'configIpv6DhcpTrie'])(
+    '%s', (champ) => {
+      const device = PLATEFORMES[0][1]();
+      device.powerOn();
+      const shell = (device as unknown as { shell: Record<string, unknown> }).shell;
+      expect((shell[champ] as CommandTrie).enumerateExecutablePaths()).toEqual([]);
+    });
+});
+
+describe('deux sous-modes nomment la MEME commande sans se confondre', () => {
+  async function dansLePoolV6(): Promise<Cli> {
+    const device = PLATEFORMES[0][1]();
+    device.powerOn();
+    for (const c of ['enable', 'configure terminal', 'ipv6 dhcp pool V6']) {
+      await device.executeCommand(c);
+    }
+    return device;
+  }
+
+  it('`dns-server` prend une adresse IPv4 dans un pool, IPv6 dans l\'autre',
+    async () => {
+      expect((await dansUnPool(PLATEFORMES[0][1])).cliHelp('dns-server '))
+        .toContain('A.B.C.D');
+      expect((await dansLePoolV6()).cliHelp('dns-server ')).toContain('X:X:X:X::X');
+    });
+
+  it('et `?` decrit chaque commande avec les mots de SON mode', async () => {
+    expect((await dansUnPool(PLATEFORMES[0][1])).cliHelp(''))
+      .toContain('Set DNS server for DHCP clients');
+    const v6 = (await dansLePoolV6()).cliHelp('');
+    expect(v6).toContain('IPv6 DNS server');
+    expect(v6).not.toContain('Set DNS server for DHCP clients');
+  });
+
+  it('les deux acceptent leur propre adresse', async () => {
+    expect(await (await dansUnPool(PLATEFORMES[0][1]))
+      .executeCommand('dns-server 8.8.8.8')).not.toContain('Invalid input');
+    expect(await (await dansLePoolV6())
+      .executeCommand('dns-server 2001:4860:4860::8888')).not.toContain('Invalid input');
+  });
+
+  it('le sous-mode classe garde SA plage d\'adresses', async () => {
+    const device = await dansUnPool(PLATEFORMES[0][1]);
+    await device.executeCommand('class VOIP');
+    expect(await device.executeCommand('address range 10.0.0.10 10.0.0.20'))
+      .not.toContain('Invalid input');
+    expect(device.cliHelp('address ')).toContain('range');
+  });
+});

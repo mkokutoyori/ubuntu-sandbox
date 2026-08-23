@@ -1,7 +1,7 @@
-import { isValidIPv4, isValidSubnetMask } from '../network/core/ip';
+import { isValidIPv4, isValidIPv6, isValidSubnetMask } from '../network/core/ip';
 
 export type ArgumentType =
-  | 'INT' | 'WORD' | 'LINE' | 'IP_ADDR' | 'SUBNET_MASK'
+  | 'INT' | 'WORD' | 'LINE' | 'IP_ADDR' | 'IPV6_ADDR' | 'SUBNET_MASK'
   | 'MAC_ADDR' | 'INTERFACE' | 'VLAN_ID' | 'REST' | 'ENUM' | 'TIME';
 
 export interface EnumValue {
@@ -90,6 +90,7 @@ export const ARGUMENT_TYPES: Readonly<Record<ArgumentType, ArgumentTypeDefinitio
     WORD: { placeholder: 'WORD', accepts: (t) => t.length > 0 && !/\s/.test(t) },
     LINE: { placeholder: 'LINE', accepts: (t) => t.length > 0 },
     IP_ADDR: { placeholder: 'A.B.C.D', accepts: (t) => isValidIPv4(t) },
+    IPV6_ADDR: { placeholder: 'X:X:X:X::X', accepts: (t) => isValidIPv6(t) },
     SUBNET_MASK: { placeholder: 'A.B.C.D', accepts: (t) => isValidSubnetMask(t) },
     MAC_ADDR: { placeholder: 'H.H.H', accepts: (t) => MAC.test(t) },
     INTERFACE: { placeholder: 'IFACE', accepts: (t) => INTERFACE_NAME.test(t) },

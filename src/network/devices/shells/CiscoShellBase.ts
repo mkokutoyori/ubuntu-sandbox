@@ -5324,7 +5324,9 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
         canonique.push(enfant.keyword.toLowerCase());
         continue;
       }
-      const argument = node.argumentChild;
+      const argument = session
+        ? table.argumentAt(node, session)
+        : node.argumentChildren[0];
       if (argument?.argument && argumentAccepts(argument.argument, mot)) {
         node = argument;
         canonique.push(tape);

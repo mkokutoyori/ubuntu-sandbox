@@ -148,7 +148,7 @@ export function specsFromTrieRegistrations(
       return entry.action(argv, [...words, ...argv].join(' '));
     };
     specs.push({
-      id: words.join('-'),
+      id: [options.modes[0], ...words].join('-'),
       path,
       description: entry.description,
       modes: options.modes,
@@ -173,7 +173,7 @@ export function specsFromTrieRegistrations(
     // tout court passerait pour une commande complete.
     if (negation !== undefined && argument !== null && argument.optional !== true) {
       specs.push({
-        id: `no-${words.join('-')}`,
+        id: `no-${[options.modes[0], ...words].join('-')}`,
         path: [...words],
         description: entry.description,
         modes: options.modes,
@@ -194,7 +194,7 @@ export function specsFromTrieRegistrations(
           description: sub.description, values: [] }
         : sub.argument;
       specs.push({
-        id: [...words, sub.keyword].join('-'),
+        id: [options.modes[0], ...words, sub.keyword].join('-'),
         path: placeFille === null
           ? [...words, sub.keyword]
           : [...words, sub.keyword, placeFille],

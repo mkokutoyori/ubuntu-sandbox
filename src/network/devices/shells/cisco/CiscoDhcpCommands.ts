@@ -318,6 +318,56 @@ export function buildConfigIpv6DhcpCommands(trie: CommandTrie, ctx: CiscoShellCo
 
 // ─── DHCP Show Commands (registered on user/privileged show tries) ───
 
+
+const DHCP_CLASS_ARGUMENTS:
+Readonly<Record<string, ArgumentSpec | readonly ArgumentSpec[] | null>> = {
+  'address range': [
+    { name: 'debut', type: 'IP_ADDR', description: 'Start of the address range' },
+    { name: 'fin', type: 'IP_ADDR', description: 'End of the address range' },
+  ],
+  option: REST('<0-254>', 'DHCP option to match'),
+  description: REST('LINE', 'Class description'),
+};
+
+const IPV6_DHCP_ARGUMENTS:
+Readonly<Record<string, ArgumentSpec | readonly ArgumentSpec[] | null>> = {
+  'address prefix': REST('X:X:X:X::X/<0-128>', 'IPv6 prefix given to clients'),
+  'dns-server': { name: 'serveur', type: 'IPV6_ADDR', description: 'DNS server IPv6 address' },
+  'domain-name': { name: 'domaine', type: 'WORD', description: 'Domain name given to clients' },
+  'link-address': { name: 'prefixe', type: 'WORD', description: 'Link address prefix' },
+};
+
+export function dhcpPoolClassSpecs(ctx: CiscoShellContext): CommandSpec[] {
+  return specsFromTrieRegistrations(
+    (collector) =>
+      buildConfigDhcpPoolClassCommands(collector as unknown as CommandTrie, ctx),
+    {
+      modes: ['config-dhcp-pool-class'], minPrivilege: 15,
+      argumentFor: (path) => DHCP_CLASS_ARGUMENTS[path],
+    },
+  );
+}
+
+export function dhcpClassSpecs(ctx: CiscoShellContext): CommandSpec[] {
+  return specsFromTrieRegistrations(
+    (collector) => buildConfigDhcpClassCommands(collector as unknown as CommandTrie, ctx),
+    {
+      modes: ['config-dhcp-class'], minPrivilege: 15,
+      argumentFor: (path) => DHCP_CLASS_ARGUMENTS[path],
+    },
+  );
+}
+
+export function ipv6DhcpPoolSpecs(ctx: CiscoShellContext): CommandSpec[] {
+  return specsFromTrieRegistrations(
+    (collector) => buildConfigIpv6DhcpCommands(collector as unknown as CommandTrie, ctx),
+    {
+      modes: ['config-ipv6-dhcp'], minPrivilege: 15,
+      argumentFor: (path) => IPV6_DHCP_ARGUMENTS[path],
+    },
+  );
+}
+
 export function registerDhcpShowCommands(trie: CommandTrie, getRouter: () => Router): void {
   trie.register('show debug', 'Display debugging flags', () =>
     getRouter().getDebugService().format());
