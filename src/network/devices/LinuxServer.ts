@@ -82,7 +82,7 @@ export class LinuxServer extends LinuxMachine {
       else if (event === 'reload') this.applyRadiusd(this.radiusd.reload());
       else if (event === 'stop') this.radiusd.stop();
     });
-    // freeradius is enabledByDefault/startByDefault, so LinuxServiceManager's
+    // freeradius is enabledByDefault, so LinuxServiceManager's
     // own constructor (which runs inside `super()`, before the listener just
     // above existed) already marked the unit 'active' without anyone having
     // reacted to it. Perform the real bind/config-load now to match —

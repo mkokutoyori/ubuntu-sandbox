@@ -522,21 +522,6 @@ fichier partagé et toute la suite ; le relever dans un seul spec
 soignerait le symptôme à un endroit alors que tous y sont exposés. À
 trancher avec l'autre agent, qui exécute la même suite.
 
-### [systemd] `startByDefault` est déclaré sur chaque unité et lu par personne
-`DefaultUnit.startByDefault` figure sur les vingt-et-une entrées de
-`BASE_UNITS` (`LinuxServiceManager.ts`), avec une valeur différente selon
-l'unité — donc il a l'apparence d'un réglage. Ce qui décide réellement de
-l'activation au démarrage est `startEnabledServices()`, qui lit
-`enabled === 'enabled'`, c'est-à-dire `enabledByDefault`.
-**Mesure** : `grep -n "startByDefault" LinuxServiceManager.ts` ne rend que
-les déclarations, aucune lecture ; une unité posée à
-`startByDefault: false` et `enabledByDefault: true` démarre quand même.
-**Report** : le retirer touche les vingt-et-une unités et le type qui les
-décrit, pour un sujet qui n'est celui d'aucun lot en cours. C'est un
-champ mort, pas un comportement faux — mais un champ mort qui se lit
-comme un réglage est exactement ce que ce dépôt passe son temps à
-défaire.
-
 ### [typecheck] 341 erreurs de type au compteur
 `npm run typecheck` (ajouté) en compte 341, presque toutes dans les
 tests : arguments de `DeviceType` passés à l'envers, `MACAddress` là où
