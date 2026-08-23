@@ -568,13 +568,21 @@ fichier partagé et toute la suite ; le relever dans un seul spec
 soignerait le symptôme à un endroit alors que tous y sont exposés. À
 trancher avec l'autre agent, qui exécute la même suite.
 
-### [typecheck] 341 erreurs de type au compteur
-`npm run typecheck` (ajouté) en compte 341, presque toutes dans les
-tests : arguments de `DeviceType` passés à l'envers, `MACAddress` là où
-un nombre est attendu, signatures de constructeur périmées.
+### [typecheck] 229 erreurs de type au compteur
+`npm run typecheck` en compte 229, contre 341 avant la passe de cette
+session. Les erreurs des fichiers de PRODUCTION ont presque toutes été
+fermées, et chacune disait quelque chose : quatre déclarations d'une même
+entrée ARP, quatre sujets de bus publiés et indéclarables, un `Send-
+MailMessage -Credential` qui ne s'authentifiait jamais, un bloc mort
+recopié dans trois adaptateurs de shell, plusieurs contrats décrivant
+moins que ce qui les traverse. Le reste est presque entièrement dans les
+tests : arguments de `DeviceType` passés à l'envers, `MACAddress` là où un
+nombre est attendu, signatures de constructeur périmées.
 **Mesure** : `npm run typecheck 2>&1 | grep -c "error TS"`.
-**Report** : dette réelle mais indépendante ; la règle en vigueur est
-« pas plus qu'avant ta modification », pas « zéro ».
+**Report** : dette réelle mais indépendante ; la règle en vigueur reste
+« pas plus qu'avant ta modification », pas « zéro ». Ce qui est acquis,
+c'est que lire ces erreurs plutôt que les faire taire trouve de vrais
+défauts — la méthode vaut d'être reprise sur le reliquat.
 
 ## Journal des entrées fermées
 
