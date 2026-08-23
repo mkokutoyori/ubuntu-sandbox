@@ -20,6 +20,7 @@ import { findHostByAddress, isPathReachable, transitTcpAclVerdict } from './Host
 import { IPAddress } from '../../../core/types';
 import { type SshHostKeyType } from './SshKnownHostEntry';
 import { SshPortForward } from './SshPortForward';
+import type { AccountLifecycleVerdict } from '@/network/protocols/ssh/auth/ISshAuthMethod';
 import type { SshForwardingTable } from './SshForwardingTable';
 import type { TcpStack } from '../../../tcp/TcpStack';
 import type { SshAgent } from '../../../protocols/ssh/SshAgent';
@@ -1008,7 +1009,7 @@ export function runSshClient(opts: SshClientOpts): SshClientResult {
   // or password expiry can still refuse the session — independently of
   // whether the password/key offered was right.
   const lifecycleGate = (remoteExec?.userMgr as unknown as {
-    accountLifecycleGate?: (u: string) => { ok: true } | { ok: false; kind: 'account-expired' | 'password-expired' };
+    accountLifecycleGate?: (u: string) => AccountLifecycleVerdict;
   } | undefined)?.accountLifecycleGate?.(remoteUser);
   if (lifecycleGate && !lifecycleGate.ok) {
     const reason = lifecycleGate.kind === 'account-expired' ? 'account_expired' : 'password_expired';

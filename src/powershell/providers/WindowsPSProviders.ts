@@ -1087,7 +1087,7 @@ class WindowsDhcpServerAdapter implements IDhcpServerProvider {
   listBindings() { return this.role().listBindings(); }
   getDnsSettings() { return this.role().getDnsSettings(); }
   setDnsSettings(changes: Record<string, unknown>) {
-    return this.role().setDnsSettings(changes as Parameters<WindowsDhcpServerRole['setDnsSettings']>[0]);
+    return this.role().setDnsSettings(changes as Parameters<ReturnType<WindowsPC['getDhcpServerRole']>['setDnsSettings']>[0]);
   }
   isAuthorizedInDC(): boolean { return this.role().isAuthorizedInDC(); }
   isRegisteredInDC(): boolean { return this.role().isRegisteredInDC(); }

@@ -275,12 +275,7 @@ export class LinuxBashShell extends AbstractShell {
       if (finalised.kind === 'exec') {
         return { output: [...finalised.banner, ...finalised.lines] };
       }
-      if (finalised.kind === 'exec') {
-      this.pendingSshAuth = null;
-      this.pendingExecCommand = null;
-      return { output: [...finalised.banner, ...finalised.lines] };
-    }
-    if (finalised.kind === 'success') {
+      if (finalised.kind === 'success') {
         return { output: [...finalised.banner], childShell: finalised.shell };
       }
       if (auth.attempts >= SSH_PASSWORD_PROMPTS) {

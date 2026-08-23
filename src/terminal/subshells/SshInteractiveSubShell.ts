@@ -174,7 +174,7 @@ interface PendingHopConnect {
   readonly targetUser: string;
   readonly targetHost: string;
   readonly interaction: HopInteractionHandler;
-  readonly connectResult: Promise<ReturnType<ISshSession['connect']>>;
+  readonly connectResult: ReturnType<ISshSession['connect']>;
   readonly session: SshSession;
 }
 
