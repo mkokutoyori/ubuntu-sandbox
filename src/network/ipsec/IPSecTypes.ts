@@ -322,6 +322,9 @@ export interface IkeAcceptMessage {
   lifetimeKB: number;
   natT: boolean;
   keyExchange?: IkeKeyExchangePayload;
+  /** RFC 7296 §2.9 — the selectors the responder narrowed to, seen from
+   *  the initiator's side. Absent when the child was refused. */
+  narrowedSelectors?: SATrafficSelector;
 }
 
 export interface IkeRejectMessage {

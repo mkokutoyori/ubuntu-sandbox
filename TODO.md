@@ -380,20 +380,6 @@ trafic que la machine ÉMET elle-même — un routeur chiffre ce qu'il
 ACHEMINE (`forwardPacket`), un poste chiffrerait ce qu'il produit, et ce
 chemin-là n'a aucun crochet aujourd'hui.
 
-### [ipsec] la RESTRICTION des selecteurs n'est pas implementee
-RFC 7296 §2.9 laisse un repondeur RETRECIR les selecteurs proposes : si
-l'initiateur demande 10.0.0.0/8 et que le repondeur ne couvre que
-10.1.0.0/16, il repond avec le plus petit des deux et l'enfant s'etablit.
-Le depot n'accepte que le cas MIROIR exact — deux selecteurs identiques a
-l'envers — et refuse tout le reste par `TS_UNACCEPTABLE`.
-**Mesure** : deux phases 2 dont l'une est un sur-ensemble de l'autre
-donnent `selectors(total,up): 1/0` alors qu'une vraie machine monterait
-l'enfant sur l'intersection.
-**Report** : le retrecissement demande de calculer une intersection de
-prefixes et de la RENVOYER dans l'acceptation, donc de porter les
-selecteurs retenus jusqu'a l'initiateur ; le cas miroir est celui de tous
-les laboratoires site-a-site et il est desormais juste.
-
 ### [ipsec] `diagnose debug application ike -1` ne trace rien
 L'etape 10 du TP 17 fait lire le journal IKE pour reconnaitre un echec de
 phase 1. `diagnose debug application ike` n'existe pas : le refus est

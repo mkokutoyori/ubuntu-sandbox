@@ -31,6 +31,7 @@ import {
   GdoiMessage, GdoiGroupRegister, GdoiGroupConfig, isIkeMessage, isGdoiMessage,
 } from './IPSecTypes';
 import { Logger } from '../core/Logger';
+import { tryIpToUint32 } from '../core/ip';
 import {
   prfPlus, hmac, type HashAlgorithm, MD5, SHA1, SHA256, sha256,
   utf8ToBytes, bytesToHex, hexToBytes,
@@ -530,19 +531,72 @@ function fragmentIPv4Packet(pkt: IPv4Packet, mtu: number): IPv4Packet[] {
   return fragments;
 }
 
-function selectorsNarrow(
-  proposed: SATrafficSelector | undefined, local: SATrafficSelector | undefined,
-): boolean {
-  if (!proposed || !local) return true;
-  if (isAnySelector(proposed) || isAnySelector(local)) return true;
-  return proposed.srcAddress === local.dstAddress
-    && proposed.dstAddress === local.srcAddress
-    && proposed.srcWildcard === local.dstWildcard
-    && proposed.dstWildcard === local.srcWildcard;
+interface SelectorSide {
+  readonly address: string;
+  readonly wildcard: string;
 }
 
-function isAnySelector(selector: SATrafficSelector): boolean {
-  return selector.srcAddress === '' && selector.dstAddress === '';
+const SIDE_ANY: SelectorSide = { address: '', wildcard: '' };
+
+function sideCoversAll(side: SelectorSide): boolean {
+  return side.address === '';
+}
+
+function careMask(wildcard: string): number {
+  if (wildcard === '') return 0xffffffff;
+  const parsed = tryIpToUint32(wildcard);
+  return parsed === null ? 0xffffffff : ((~parsed) >>> 0);
+}
+
+function sideContains(large: SelectorSide, small: SelectorSide): boolean {
+  if (sideCoversAll(large)) return true;
+  if (sideCoversAll(small)) return false;
+  const care = careMask(large.wildcard);
+  const a = tryIpToUint32(large.address);
+  const b = tryIpToUint32(small.address);
+  if (a === null || b === null) return false;
+  if (((careMask(small.wildcard) & care) >>> 0) !== care) return false;
+  return ((a & care) >>> 0) === ((b & care) >>> 0);
+}
+
+function intersectSide(a: SelectorSide, b: SelectorSide): SelectorSide | null {
+  if (sideContains(a, b)) return sideCoversAll(b) ? a : b;
+  if (sideContains(b, a)) return a;
+  return null;
+}
+
+/**
+ * RFC 7296 §2.9 — the responder answers with the intersection of what was
+ * proposed and what it holds, and the child rises on that. `null` is the
+ * empty intersection, the one case that is TS_UNACCEPTABLE.
+ */
+function narrowSelectors(
+  proposed: SATrafficSelector | undefined, local: SATrafficSelector | undefined,
+): SATrafficSelector | null {
+  if (!local) return proposed ?? defaultTrafficSelectors();
+  if (!proposed) return local;
+  const src = intersectSide(
+    { address: proposed.dstAddress, wildcard: proposed.dstWildcard },
+    { address: local.srcAddress, wildcard: local.srcWildcard });
+  const dst = intersectSide(
+    { address: proposed.srcAddress, wildcard: proposed.srcWildcard },
+    { address: local.dstAddress, wildcard: local.dstWildcard });
+  if (!src || !dst) return null;
+  return {
+    ...local,
+    srcAddress: src.address, srcWildcard: src.wildcard,
+    dstAddress: dst.address, dstWildcard: dst.wildcard,
+  };
+}
+
+/** The same selectors seen from the other end of the tunnel. */
+function mirrorSelectors(selector: SATrafficSelector): SATrafficSelector {
+  return {
+    ...selector,
+    srcAddress: selector.dstAddress, srcWildcard: selector.dstWildcard,
+    dstAddress: selector.srcAddress, dstWildcard: selector.srcWildcard,
+    srcPort: selector.dstPort, dstPort: selector.srcPort,
+  };
 }
 
 /** Create default traffic selectors (any/any). */
@@ -3503,7 +3557,7 @@ export class IPSecEngine implements IProtocolEngine {
       ipsecSpiIn: spiInitIn,
       natTHint: this.natTraversalDecision(apparentSrcIP !== localIP),
       keyExchange: exchange?.payload,
-      trafficSelectors: entry.trafficSelectors,
+      trafficSelectors: this.selectorsForEntry(entry),
       configRequest: this.configRequests.get(peerIP),
     };
     if (this.ikeCertAuth) {
@@ -3736,8 +3790,9 @@ export class IPSecEngine implements IProtocolEngine {
     const hasAH = transforms.some((t) => t.startsWith('ah'));
     const egress = this.findInterfaceForPeer(srcIp) || '';
     const localIP = this.getLocalIP(egress) || '';
-    const trafficSelectors = this.selectorsForEntry(peerEntry);
-    const childAccepted = selectorsNarrow(offer.trafficSelectors, trafficSelectors);
+    const localSelectors = this.selectorsForEntry(peerEntry);
+    const trafficSelectors = narrowSelectors(offer.trafficSelectors, localSelectors);
+    const childAccepted = trafficSelectors !== null;
     const configVerdict = offer.configRequest === undefined || !this.configMethod
       ? undefined
       : this.configMethod(srcIp, offer.configRequest);
@@ -3750,7 +3805,7 @@ export class IPSecEngine implements IProtocolEngine {
       const sa = this.buildIpsecSAStruct({
         peerIP: srcIp, localIP, spiIn: spiRespIn, spiOut: offer.ipsecSpiIn,
         cryptoKeys, lifetime: lifetimeSec, lifetimeKB, mode: saMode,
-        trafficSelectors, transforms, aclName: peerEntry?.aclName || '',
+        trafficSelectors: trafficSelectors ?? undefined, transforms, aclName: peerEntry?.aclName || '',
         pfsGroup: peerEntry?.pfsGroup ?? offer.pfsGroup, natT, outIface: egress, hasESP, hasAH,
       });
       this.installIpsecSALocal(srcIp, sa);
@@ -3792,6 +3847,7 @@ export class IPSecEngine implements IProtocolEngine {
       lifetimeSec, lifetimeKB, natT,
       keyExchange: responderExchange?.payload,
       childRejected: childAccepted ? undefined : 'TS_UNACCEPTABLE',
+      narrowedSelectors: trafficSelectors ? mirrorSelectors(trafficSelectors) : undefined,
       configReply: typeof configVerdict === 'string' ? undefined : configVerdict,
     };
     if (this.ikeCertAuth) {
@@ -3853,7 +3909,7 @@ export class IPSecEngine implements IProtocolEngine {
     const saMode = accept.chosenTransform.mode === 'transport' ? 'Transport' : 'Tunnel';
     const hasESP = transforms.some((t) => t.startsWith('esp'));
     const hasAH = transforms.some((t) => t.startsWith('ah'));
-    const trafficSelectors = this.selectorsForEntry(pending.entry);
+    const trafficSelectors = accept.narrowedSelectors ?? this.selectorsForEntry(pending.entry);
 
     if (accept.configReply) this.configReplies.set(srcIp, accept.configReply);
     if (accept.childRejected === undefined) {
