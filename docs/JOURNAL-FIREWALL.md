@@ -2764,6 +2764,37 @@ un VIP de répartition, deux serveurs se partagent les connexions selon
 la méthode réglée, un serveur qui ne répond plus est retiré de la
 grappe, et une session déjà ouverte reste sur SON serveur.
 
+**Livrée.** Trois choses méritent d'être gardées :
+
+- **L'entrée `TODO.md` était fausse, et c'est elle qui a rendu la phase
+  possible une fois vérifiée.** « Aucune brique existante à réutiliser »
+  s'est révélé inexact sur les trois points : le DNAT choisissait déjà
+  son adresse en un seul endroit ET inscrivait le choix dans la session
+  — donc la persistance d'une session n'a demandé AUCUNE ligne, ce qui
+  est le genre de réutilisation qui ne se voit pas dans le diff. La
+  leçon : une entrée du registre affirme un manque, et un manque affirmé
+  se re-mesure avant d'être cru.
+- **L'OBSERVABLE de la sonde était faux sur trois cas**, et c'est la
+  leçon de méthode. Le client compose le VIP et voit le VIP, puisque le
+  retour est dé-traduit : c'est CORRECT, et cela ne dit rien du serveur
+  choisi. Le choix est une décision du pare-feu et se lit dans la
+  session qu'il vient d'ouvrir. Un quatrième cas attendait une connexion
+  vouée à ne jamais aboutir (grappe entièrement morte) : elle ne se
+  résout qu'après le repli RFC 6298, bien au-delà du délai d'un test.
+  La livraison des trames étant synchrone ici, le SYN a déjà traversé
+  quand la promesse est rendue, donc le cas n'attend plus.
+- **`retry` compte de vrais échecs CONSÉCUTIFS.** Une seule passe ne
+  déclare rien mort, et c'est voulu : un moniteur qui condamnerait un
+  serveur au premier paquet perdu serait inutilisable.
+
+**Refusé plutôt que laissé inerte**, chacun en nommant sa brique :
+`least-rtt` (pas d'horloge de fil, donc tous les serveurs répondent en
+zéro temps), `http-host` (le serveur est choisi à la traduction, avant
+qu'une charge utile HTTP existe), et les moniteurs `http`/`https`/`dns`
+— les accepter marquerait chaque serveur vivant sans jamais le lui
+demander, ce qui est pire que le refus. `passive-sip` n'a aucun SIP à
+observer.
+
 ---
 
 ## Périmètre pris — FortiOS phase 19 (la configuration garde son HISTORIQUE)
