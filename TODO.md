@@ -134,6 +134,33 @@ libellés.
 
 ---
 
+## Gestion (SNMP, NTP, syslog)
+
+### [snmp] la moitie du vocabulaire VRP est rangee et jamais evaluee
+Depuis le lot « une communaute SNMP est une communaute », la CLI VRP
+ecrit dans `SnmpService` et un mot que VRP ne connait pas est REFUSE.
+Restent les formes que VRP connait et que ce moteur ne sait pas honorer :
+`mib-view`, `group v3`, `usm-user v3`, `packet max-size`,
+`protocol source-interface`, `protocol version`, et les deux moities
+`target-host trap-hostname` / `trap-paramsname`. Elles vont dans
+`SnmpService.recordVrpLine`, sont rendues telles qu'ecrites, et rien ne
+les lit. Mesure : une communaute restreinte a une vue MIB vide lit quand
+meme `sysName` ; un `usm-user v3` declare ne permet aucune requete v3,
+`SnmpAgent` n'ayant ni USM ni v3 du tout.
+**Pourquoi ce n'est pas ferme** : les refuser casserait le rejeu d'une
+configuration reelle et les ferait disparaitre a l'import d'une
+topologie — le meme raisonnement que pour
+`ip ssh server algorithm`. Les evaluer demande trois chantiers
+distincts : une notion de vue MIB filtrant chaque OID resolu, un modele
+USM/v3 (authentification et chiffrement des PDU), et une interface
+d'ecoute par laquelle l'agent repondrait, qui n'existe pas — il repond
+sur le port qui a recu. Ce qui EST evalue depuis ce lot, et qui fixe la
+frontiere : nom et droit de communaute, `acl` (source confrontee a la
+liste, echec ferme), contact, localisation, versions, hote de trap,
+`trap source`, `trap enable`, `local-engineid`.
+
+---
+
 ## Socle CLI
 
 ### [socle] deux familles sont migrées sur le commutateur VRP

@@ -68,6 +68,7 @@ import type { HuaweiShellContext } from './huawei/HuaweiConfigCommands';
 import {
   registerHuaweiCommonSecurity, registerHuaweiCommonSecurityDisplay,
 } from './huawei/HuaweiCommonSecurity';
+import { lignesConfigSnmpVrp } from './huawei/huaweiSnmpCommands';
 import { buildDhcpPoolCommands } from './huawei/HuaweiDhcpCommands';
 import { formatHuaweiAcl, formatHuaweiAclConfig } from './huawei/HuaweiAclFormat';
 import { analyserRegleVrp } from './huawei/HuaweiAclRule';
@@ -1119,7 +1120,8 @@ export class HuaweiSwitchShell implements ISwitchShell {
     // Shared management commands (SSH/Telnet/SNMP/NTP/syslog/…) — DRY
     registerHuaweiCommonSecurity(this.systemTrie,
       () => commeRouteur(this.swRef),
-      () => this.swRef?.getNtpAgent());
+      () => this.swRef?.getNtpAgent(),
+      () => this.swRef?.getSnmpService());
 
     this.systemTrie.register('dhcp enable', 'Enable DHCP', () => {
       this.swRef.getSecurityService().setDhcpEnabled(true);
@@ -2690,7 +2692,8 @@ export class HuaweiSwitchShell implements ISwitchShell {
 
     // Shared management `display` commands (DRY).
     registerHuaweiCommonSecurityDisplay(trie, () => this.localUsers,
-      () => this.swRef?.getNtpAgent());
+      () => this.swRef?.getNtpAgent(),
+      () => this.swRef?.getSnmpService());
 
     // Real DHCP snooping binding table — shadows the generic hardcoded
     // `display dhcp ...` catch-all above with the switch's actual bindings.
@@ -4192,7 +4195,7 @@ export class HuaweiSwitchShell implements ISwitchShell {
 
     // Interfaces
     const mgmt = sw.getManagementService?.();
-    const snmpLignes = mgmt?.snmpRunningConfigLines() ?? [];
+    const snmpLignes = lignesConfigSnmpVrp(sw.getSnmpService?.());
     if (snmpLignes.length > 0) { lines.push(...snmpLignes); lines.push('#'); }
     const stelnet = mgmt?.getStelnet();
     if (stelnet?.enabled) { lines.push('stelnet server enable'); lines.push('#'); }

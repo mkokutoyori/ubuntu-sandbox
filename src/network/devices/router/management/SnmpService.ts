@@ -85,6 +85,7 @@ export class SnmpService {
   private trapSourceInterface = '';
   private engineId: string = SnmpService.generateEngineId();
   private readonly communities: Map<string, SnmpCommunity> = new Map();
+  private versions: SnmpVersion[] = [];
   private readonly hosts: SnmpHost[] = [];
   private readonly groups: Map<string, SnmpGroup> = new Map();
   private readonly users: Map<string, SnmpUser> = new Map();
@@ -321,6 +322,68 @@ export class SnmpService {
   getLocation(): string { return this.location; }
   getChassisId(): string { return this.chassisId; }
   getTrapSource(): string { return this.trapSourceInterface; }
+  getVersions(): readonly SnmpVersion[] { return [...this.versions]; }
+
+  private readonly vrpLines: string[] = [];
+
+  getVrpLines(): readonly string[] { return [...this.vrpLines]; }
+
+  recordVrpLine(line: string): void {
+    if (!this.vrpLines.includes(line)) this.vrpLines.push(line);
+    this.enable();
+  }
+
+  forgetVrpLine(line: string): void {
+    const index = this.vrpLines.indexOf(line);
+    if (index >= 0) this.vrpLines.splice(index, 1);
+  }
+
+  private engineIdConfigured = false;
+
+  hasConfiguredEngineId(): boolean { return this.engineIdConfigured; }
+
+  setEngineId(id: string): void {
+    this.engineIdConfigured = id !== '';
+    this.engineId = id || SnmpService.generateEngineId();
+    this.enable();
+  }
+
+  enableTrap(feature?: string): void {
+    this.enabledTraps.set(feature ?? 'all', new Set());
+    this.enable();
+  }
+
+  disableTrap(feature?: string): void {
+    this.enabledTraps.delete(feature ?? 'all');
+  }
+
+  setCommunity(community: SnmpCommunity): void {
+    this.communities.set(community.name, { ...community });
+    this.enable();
+  }
+
+  removeCommunity(name: string): void {
+    this.communities.delete(name);
+  }
+
+  setContact(contact: string): void { this.contact = contact; this.enable(); }
+  setLocation(location: string): void { this.location = location; this.enable(); }
+  setTrapSourceInterface(iface: string): void { this.trapSourceInterface = iface; this.enable(); }
+  setVersions(versions: readonly SnmpVersion[]): void { this.versions = [...versions]; this.enable(); }
+
+  setTrapHost(host: string, community: string, version: SnmpVersion, udpPort?: number): void {
+    const index = this.hosts.findIndex((h) => h.host === host);
+    const entry: SnmpHost = {
+      host, version, community, notificationType: 'traps', udpPort, notifications: [],
+    };
+    if (index >= 0) this.hosts[index] = entry; else this.hosts.push(entry);
+    this.enable();
+  }
+
+  removeTrapHost(host: string): void {
+    const index = this.hosts.findIndex((h) => h.host === host);
+    if (index >= 0) this.hosts.splice(index, 1);
+  }
 
   asRunningConfigLines(): string[] {
     if (!this.enabled && this.communities.size === 0 && this.users.size === 0 && this.hosts.length === 0) return [];

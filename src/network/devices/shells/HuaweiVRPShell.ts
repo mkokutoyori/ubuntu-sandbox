@@ -1512,7 +1512,8 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
       return '';
     });
     this.registerScreenSizeCommands(t);
-    registerHuaweiCommonSecurityDisplay(t, () => new Map());
+    registerHuaweiCommonSecurityDisplay(t, () => new Map(), undefined,
+      () => this.r()?.getSnmpService());
 
     // OSPF display commands
     registerOSPFDisplayCommands(t, getRouter);
@@ -1886,7 +1887,8 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
     });
     this.registerScreenSizeCommands(t);
     registerHuaweiCommonSecurity(t, () => this.r() as unknown as { getManagementService: () => import('../router/management/RouterManagementService').RouterManagementService });
-    registerHuaweiCommonSecurityDisplay(t, () => new Map());
+    registerHuaweiCommonSecurityDisplay(t, () => new Map(), undefined,
+      () => this.r()?.getSnmpService());
     t.registerGreedy('ssh', 'SSH server configuration', (args) => {
       const router = getRouter() as unknown as {
         _configureSshAuthRetries?: (n: number) => void;

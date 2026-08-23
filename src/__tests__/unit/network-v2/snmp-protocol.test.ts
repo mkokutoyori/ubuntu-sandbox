@@ -203,6 +203,9 @@ describe('SNMP — Cisco↔Huawei interop', () => {
     new Cable('b').connect(nms.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/2')!);
     router.getPort('GE0/0/0')!.configureIP(new IPAddress('10.0.0.1'), new SubnetMask('255.255.255.0'));
     nms.getPort('GigabitEthernet0/0')!.configureIP(new IPAddress('10.0.0.2'), new SubnetMask('255.255.255.0'));
+    router.powerOn();
+    await router.executeCommand('system-view');
+    await router.executeCommand('snmp-agent community read public');
 
     const vbs = await nms.getSnmpAgent().get('10.0.0.1', 'public', [OID_SYS_DESCR]);
     expect(String(vbs![0].value.value)).toMatch(/Huawei VRP/);
