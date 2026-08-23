@@ -498,6 +498,7 @@ export abstract class LinuxMachine extends EndHost
         'dhcpd', message, this.executor.serviceMgr.getPortBinding('isc-dhcp-server')?.mainPid,
         'isc-dhcp-server'),
     });
+    this.dhcpd.getEngine().setEventBus(this.getBus());
     this.executor.serviceMgr.registerConfigCheck('isc-dhcp-server', () => {
       const verdict = this.dhcpd.preflight();
       return verdict.ok ? { ok: true } : { ok: false, error: verdict.output, verbatim: true };
@@ -1167,6 +1168,7 @@ export abstract class LinuxMachine extends EndHost
   override setEventBus(bus: import('@/events/EventBus').IEventBus | null): void {
     super.setEventBus(bus);
     this.executor.attachEventBus(this.getBus(), this.id);
+    this.dhcpd?.getEngine().setEventBus(this.getBus());
   }
 
   override setHardware(profile: HardwareProfile): void {
