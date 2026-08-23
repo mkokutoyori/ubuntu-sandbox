@@ -206,6 +206,18 @@ export interface MqcPolicyBinding {
   behavior: string;
 }
 
+export interface MqcRemark {
+  dscp?: number;
+  dot1p?: number;
+}
+
+export function mqcRemarkLines(remark: MqcRemark): string[] {
+  const lines: string[] = [];
+  if (remark.dscp !== undefined) lines.push(`remark dscp ${remark.dscp}`);
+  if (remark.dot1p !== undefined) lines.push(`remark 8021p ${remark.dot1p}`);
+  return lines;
+}
+
 export type MqcMatch =
   | { kind: 'acl'; ref: string }
   | { kind: 'vlan-id'; vlan: number }
@@ -370,6 +382,7 @@ export abstract class Switch extends Equipment {
   private mqcClassifiers: Map<string, MqcMatch[]> = new Map();
   private mqcBehaviors: Map<string, 'permit' | 'deny'> = new Map();
   private mqcBehaviorCar: Map<string, CarRule> = new Map();
+  private mqcBehaviorRemark: Map<string, MqcRemark> = new Map();
   private mqcCarBuckets: Map<string, { raw: string; policer: CarPolicer }> = new Map();
   private mqcPolicies: Map<string, MqcPolicyBinding[]> = new Map();
   private vlanTrafficPolicies: Map<number, string> = new Map();
@@ -1499,6 +1512,40 @@ export abstract class Switch extends Equipment {
     this.mqcBehaviorCar.delete(name);
   }
 
+  mqcBehaviorSetRemark(name: string, remark: MqcRemark): { ok: boolean; error?: string } {
+    if (!this.mqcBehaviors.has(name)) return { ok: false, error: `Traffic behavior ${name} does not exist` };
+    this.mqcBehaviorRemark.set(name, { ...this.mqcBehaviorRemark.get(name), ...remark });
+    return { ok: true };
+  }
+
+  mqcBehaviorClearRemark(name: string): void {
+    this.mqcBehaviorRemark.delete(name);
+  }
+
+  getMqcBehaviorRemark(name: string): MqcRemark | undefined {
+    return this.mqcBehaviorRemark.get(name);
+  }
+
+  /**
+   * RFC 2474 : les six bits de poids fort de l'octet TOS, l'ECN restant
+   * intact — c'est le meme decoupage que celui qu'`ACLEngine` compare,
+   * donc une marque posee ici est vue par une liste d'acces en aval.
+   */
+  private applyMqcRemark(behavior: string, frame: EthernetFrame): void {
+    const remark = this.mqcBehaviorRemark.get(behavior);
+    if (!remark) return;
+    if (remark.dscp !== undefined && frame.etherType === ETHERTYPE_IPV4) {
+      const ip = frame.payload as IPv4Packet | undefined;
+      if (ip && ip.type === 'ipv4') {
+        ip.tos = ((remark.dscp & 0x3f) << 2) | (ip.tos & 0x03);
+      }
+    }
+    if (remark.dot1p !== undefined) {
+      const tag = (frame as TaggedEthernetFrame).dot1q;
+      if (tag) tag.pcp = remark.dot1p & 0x07;
+    }
+  }
+
   getMqcBehaviorCar(name: string): CarRule | undefined {
     return this.mqcBehaviorCar.get(name);
   }
@@ -1579,7 +1626,8 @@ export abstract class Switch extends Equipment {
         if (!this.mqcMatchHits(match, vlan, frame)) continue;
         if ((this.mqcBehaviors.get(pair.behavior) ?? 'permit') === 'deny') return false;
         const bucket = this.mqcCarBucket(point, pair.behavior);
-        if (bucket) return bucket.police('input', ethernetFrameBytes(frame));
+        if (bucket && !bucket.police('input', ethernetFrameBytes(frame))) return false;
+        this.applyMqcRemark(pair.behavior, frame);
         return true;
       }
     }

@@ -40,7 +40,8 @@ import { registerHuaweiCommonMgmt } from './huawei/HuaweiCommonConfig';
 import type { HuaweiDebugService } from '../router/diag/HuaweiDebugService';
 import { analyserAcl } from './huawei/HuaweiAclGrammar';
 import { type HuaweiSwitchDevice, commeRouteur, moteurNat, ajouterLigneVlan, lignesDuVlan } from './huawei/huaweiSwitchDevice';
-import { mqcMatchLine } from '../Switch';
+import { mqcMatchLine, mqcRemarkLines } from '../Switch';
+import { DSCP_KEYWORD_TO_VALUE } from '../router/ACLEngine';
 import { resolveHuaweiInterfaceName, huaweiDisplayInterfaceName } from './cli-utils';
 import { iosInterfaceStatus } from '../inspection/InterfaceStatusView';
 import {
@@ -977,6 +978,34 @@ export class HuaweiSwitchShell implements ISwitchShell {
       if (!rule) return "Error: Wrong parameter found at '^' position.";
       const res = this.swRef.mqcBehaviorSetCar(this.selectedMqcName, rule);
       return res.ok ? '' : `Error: ${res.error}.`;
+    });
+    this.mqcBehaviorTrie.registerGreedy('remark', 'Rewrite a priority field', (args) => {
+      if (!this.selectedMqcName || !this.swRef) return 'Error: Incomplete command.';
+      const champ = (args[0] ?? '').toLowerCase();
+      const valeur = (args[1] ?? '').toLowerCase();
+      if (champ === 'dscp') {
+        const dscp = /^\d+$/.test(valeur)
+          ? Number.parseInt(valeur, 10) : DSCP_KEYWORD_TO_VALUE[valeur];
+        if (dscp === undefined || !Number.isFinite(dscp) || dscp < 0 || dscp > 63) {
+          return "Error: Wrong parameter found at '^' position.";
+        }
+        const res = this.swRef.mqcBehaviorSetRemark(this.selectedMqcName, { dscp });
+        return res.ok ? '' : `Error: ${res.error}.`;
+      }
+      if (champ === '8021p') {
+        const dot1p = Number.parseInt(valeur, 10);
+        if (!Number.isFinite(dot1p) || dot1p < 0 || dot1p > 7) {
+          return "Error: Wrong parameter found at '^' position.";
+        }
+        const res = this.swRef.mqcBehaviorSetRemark(this.selectedMqcName, { dot1p });
+        return res.ok ? '' : `Error: ${res.error}.`;
+      }
+      return "Error: Unrecognized command found at '^' position.";
+    });
+    this.mqcBehaviorTrie.registerGreedy('undo remark', 'Remove the rewrite', () => {
+      if (!this.selectedMqcName || !this.swRef) return 'Error: Incomplete command.';
+      this.swRef.mqcBehaviorClearRemark(this.selectedMqcName);
+      return '';
     });
     this.mqcBehaviorTrie.registerGreedy('undo car', 'Remove the rate limit', () => {
       if (!this.selectedMqcName || !this.swRef) return 'Error: Incomplete command.';
@@ -2867,6 +2896,8 @@ export class HuaweiSwitchShell implements ISwitchShell {
       for (const nom of noms) {
         lignes.push(`  Behavior: ${nom}`);
         lignes.push(`   ${device?.getMqcBehavior?.(nom) ?? 'permit'}`);
+        const marque = device?.getMqcBehaviorRemark?.(nom);
+        if (marque) for (const ligne of mqcRemarkLines(marque)) lignes.push(`   ${ligne}`);
         const car = device?.getMqcBehaviorCar?.(nom);
         if (car) {
           lignes.push(`   Committed Access Rate:`);
@@ -3959,6 +3990,8 @@ export class HuaweiSwitchShell implements ISwitchShell {
       const corps = [` ${sw.getMqcBehavior?.(nom) ?? 'permit'}`];
       const car = sw.getMqcBehaviorCar?.(nom);
       if (car) corps.push(` ${car.raw}`);
+      const marque = sw.getMqcBehaviorRemark?.(nom);
+      if (marque) for (const ligne of mqcRemarkLines(marque)) corps.push(` ${ligne}`);
       blocs.push([`traffic behavior ${nom}`, ...corps]);
     }
     for (const nom of sw.getMqcPolicyNames?.() ?? []) {

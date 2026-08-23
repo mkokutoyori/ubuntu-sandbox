@@ -227,3 +227,72 @@ describe('le comportement sait aussi POLICER', () => {
     expect(perdu(await a.executeCommand('ping -c 1 10.0.0.2'))).toBe(false);
   });
 });
+
+/**
+ * Le troisieme volet — `remark dscp` — n'est PAS decoratif, contrairement
+ * a ce que le TODO annoncait : `ACLEngine` compare deja le champ DSCP
+ * d'un paquet (`(tos >> 2) & 0x3f`), donc une marque posee au niveau du
+ * MQC est vue par une liste d'acces posee en aval. La sonde le mesure
+ * ainsi plutot que sur la seule vue.
+ *
+ * Discrimine contre le lot precedent : 3 de ses 5 cas tombent. Les 2 qui
+ * passent des deux cotes sont le TEMOIN, dont l'objet est qu'un paquet
+ * NON marque ne corresponde pas, et le refus d'une valeur hors bornes,
+ * qui avant venait du refus de `remark` tout entier.
+ */
+describe('le comportement sait MARQUER, et la marque se lit en aval', () => {
+  /**
+   * La marque est posee par la politique du VLAN, qui s'evalue AVANT
+   * celle du port ; le filtre est sur le port. Une seule trame est donc
+   * marquee puis filtree, ce qui mesure la marque sur le paquet et non
+   * sur la vue.
+   */
+  async function laboMarque(comportement: readonly string[]): Promise<Labo> {
+    const labo = await laboFiltre([]);
+    for (const c of ['system-view',
+      'traffic classifier tcm', 'if-match any', 'quit',
+      'traffic behavior tbm', ...comportement, 'quit',
+      'traffic policy tpm', 'classifier tcm behavior tbm', 'quit',
+      'vlan 10', 'traffic-policy tpm inbound', 'quit',
+      'acl 3900', 'rule 5 permit ip dscp af11', 'quit',
+      'traffic classifier tcf', 'if-match acl 3900', 'quit',
+      'traffic behavior tbf', 'deny', 'quit',
+      'traffic policy tpf', 'classifier tcf behavior tbf', 'quit',
+      'interface GigabitEthernet0/0/1', 'traffic-policy tpf inbound', 'quit',
+    ]) await labo.sw.executeCommand(c);
+    return labo;
+  }
+
+  it('`remark dscp` est accepte, rendu, et lu par la vue', async () => {
+    const sw = await commutateur([
+      'traffic behavior tbr', 'remark dscp af11', 'quit',
+    ]);
+    expect(await sw.executeCommand('display current-configuration'))
+      .toContain(' remark dscp 10');
+    expect(await sw.executeCommand('display traffic behavior user-defined'))
+      .toContain('remark dscp 10');
+  });
+
+  it('`remark 8021p` aussi', async () => {
+    const sw = await commutateur(['traffic behavior tbp', 'remark 8021p 5', 'quit']);
+    expect(await sw.executeCommand('display current-configuration'))
+      .toContain(' remark 8021p 5');
+  });
+
+  it('une valeur hors bornes est refusee', async () => {
+    const sw = await commutateur(['traffic behavior tbx']);
+    expect(await sw.executeCommand('remark dscp 99')).toContain('Error');
+    expect(await sw.executeCommand('remark 8021p 9')).toContain('Error');
+    expect(await sw.executeCommand('remark zorglub 1')).toContain('Error');
+  });
+
+  it('TEMOIN — sans marque, la liste d acces en aval laisse passer', async () => {
+    const { a } = await laboMarque(['permit']);
+    expect(perdu(await a.executeCommand('ping -c 1 10.0.0.2'))).toBe(false);
+  });
+
+  it('marque par le MQC, le paquet est reconnu par la liste d acces en aval', async () => {
+    const { a } = await laboMarque(['remark dscp af11']);
+    expect(perdu(await a.executeCommand('ping -c 1 10.0.0.2'))).toBe(true);
+  });
+});
