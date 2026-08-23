@@ -2700,6 +2700,67 @@ refusé sont remplacés par un cas qui l'affirme disponible.
 
 ---
 
+## Périmètre pris — FortiOS phase 19 (la configuration garde son HISTORIQUE)
+
+**Agent `mandeng`.** §6.5 du carnet nomme le point : « `execute
+backup|restore|revision` (BRD §29.4-29.5) appartient au chapitre
+`execute` et n'a pas été pris ». La mesure le réduit et le précise :
+`backup` et `restore` EXISTENT depuis E42 et passent par un vrai TFTP.
+Ce qui manque est l'**historique**.
+
+Mesure de départ :
+
+- **`execute revision` n'existe pas du tout** — ni `list`, ni `delete`.
+  Un vrai FortiGate garde ses configurations précédentes et
+  `execute revision list config` les rend avec les colonnes `ID`,
+  `TIME`, `ADMIN`, `FIRMWARE VERSION`, `COMMENT`.
+- **`execute restore config flash <id>`** — la forme qui rejoue une
+  révision, celle que la documentation Fortinet donne pour revenir en
+  arrière — est refusée : seul `tftp` est accepté comme destination.
+- **`revision-backup-on-logout` n'existe pas** dans le schéma de
+  `config system global`, alors que c'est le réglage qui, sur un vrai
+  boîtier, CRÉE une révision.
+- **Trouvé en mesurant** : `FORTI_CLI_LOGOUT` est produit par `exit` et
+  `quit` et **consommé par personne** dans tout le dépôt. Sur une
+  session SSH ou telnet, `FirewallCliServer.closesSession` intercepte le
+  mot avant que la CLI ne le voie, donc la sentinelle ne sort pas ; il
+  reste à établir ce que fait la console.
+
+**Fichiers que la phase 19 prendra** :
+
+```
+firewall/config/RevisionStore.ts       ← l'historique (socle, neuf)
+vendors/fortios/FortiShell.ts          ← restore depuis flash, révisions
+vendors/fortios/FortiSocle.ts          ← le vocabulaire `execute revision`
+vendors/fortios/schema/system.ts       ← revision-backup-on-logout
+```
+
+**Ce qui existe déjà et ne sera pas réécrit** : `renderWholeConfig` rend
+la configuration entière, et le chemin de restauration sait déjà REJOUER
+un texte de configuration à travers la vraie CLI — c'est exactement ce
+qu'une révision restaurée demande. Rien de neuf n'est écrit pour cela.
+
+**Décision de découpage, écrite ici pour ne pas être découverte** : sur
+un vrai FortiGate une révision naît d'une mise à jour de micrologiciel,
+d'une sauvegarde automatique à la déconnexion, ou de la sauvegarde par
+l'interface web. Ce simulateur n'a ni mise à jour de micrologiciel ni
+interface web, donc **le seul déclencheur honnête est la déconnexion
+d'un administrateur**, sous `revision-backup-on-logout`. Les autres ne
+seront pas inventés.
+
+**Sera fermé au passage** : le point que la phase 18 a laissé en le
+disant SÛR — `vdom-mode` est une commande cachée sur un vrai 7.4/7.6 et
+figure ici dans `show`, `show full` et la liste du `?`. Il touche le
+rendu de `system global`, c'est-à-dire ce qu'une révision capture.
+
+**Critère de sortie** : une déconnexion sous `revision-backup-on-logout`
+crée une révision, `execute revision list config` la rend avec ses
+colonnes réelles, `execute restore config flash <id>` remet la
+configuration d'alors, et `execute revision delete config <id>` la
+retire.
+
+---
+
 ## Périmètre pris — FortiOS phase 18 (le pont apprend, VIEILLIT, et se lit)
 
 **Agent `mandeng`.** §6.6 du carnet nomme le point : « l'apprentissage MAC
