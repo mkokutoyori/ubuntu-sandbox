@@ -411,29 +411,6 @@ suivent — c'est un changement du materiel simule, pas du pare-feu, et il
 touche l'apprentissage MAC de tous les commutateurs du projet. L'ARP
 gratuit qui accompagne le basculement en depend egalement.
 
-### [ha] `execute ha manage` n'ouvre pas la CLI du membre distant
-La commande repond `Connecting to <nom> (<serie>)...` et rend la main : on
-ne se retrouve pas sur l'autre machine. L'etape 6 du TP 21 s'en sert pour
-verifier que la configuration a bien ete copiee, ce qui reste faisable
-autrement (le test lit la configuration du secondaire directement).
-**Mesure** : `execute ha manage 1 admin` puis `get system status` repond
-encore pour le membre local.
-**Report** : la matiere existe — `RemoteDeviceSubShell` fait exactement
-cela pour SSH — mais la brancher ici demande que le battement de coeur
-porte une voie de commande, ou que la grappe partage un registre
-d'equipements, ce qui contournerait le fil.
-
-### [ha] `execute ha synchronize start` ne tire rien depuis un secondaire
-La synchronisation de ce moteur est POUSSEE par le primaire dans son
-battement de coeur. La commande emet donc un battement immediat, ce qui
-avance vraiment la synchronisation quand on la tape sur le primaire, et ne
-fait rien de plus sur un secondaire — un vrai FortiGate y declenche une
-traction de la configuration.
-**Mesure** : modifier le primaire, taper la commande sur le secondaire :
-rien ne change tant que le primaire n'a pas emis.
-**Report** : demanderait un echange requete/reponse dans le protocole de
-grappe, la ou il n'y a aujourd'hui qu'une annonce periodique.
-
 ### [sdwan] une interface membre reste referencable par une politique
 Le tutoriel (§20, TP 20 etape 1) enonce la protection reelle : quand une
 interface devient membre du SD-WAN, FortiOS REFUSE de l'ajouter tant qu'une

@@ -2749,6 +2749,48 @@ MAC VIRTUELLES du cluster n'existent pas` reste ouverte. Elle touche
 un changement du matériel simulé, pas du pare-feu, et il n'a rien à voir
 avec la voie de commande.
 
+### E68 — Livré, et les deux décisions qui tenaient tout
+
+**13 cas, 6 tombent avant correctif.** Deux messages nouveaux sur
+`ETHERTYPE_FGCP` — `fgcp-command-request` et `fgcp-command-reply` — et
+les deux entrées `[ha]` visées se ferment ensemble.
+
+**Décision 1 : la voie passe sur le FIL, et l'échange est synchrone
+parce que la livraison de trames l'est.** `ask()` diffuse la requête et
+relit sa table d'échanges juste après : quand le pair est joignable, sa
+réponse y est déjà. Ce n'est pas un raccourci — c'est la propriété que ce
+simulateur a partout, et c'est elle qui rend une session CLI distante
+possible sans machine à états asynchrone. Le corollaire est ce qui rend
+le cas du câble coupé vrai : rien ne revient, `answered` est faux, et la
+commande le dit.
+
+**Décision 2 : l'authentification est évaluée chez la CIBLE, et la suite
+de la session tient à un JETON.** Une première version envoyait le nom du
+compte à chaque ligne et laissait le distant ré-authentifier — sauf qu'il
+n'y avait plus de mot de passe à présenter, donc soit on acceptait sans
+rien vérifier (une porte ouverte), soit rien ne passait. Le distant
+délivre donc un jeton à l'authentification et n'exécute une ligne que
+sous ce jeton : c'est ce qu'est une session mandatée, et c'est vérifiable
+— le mot de passe du membre LOCAL est refusé, celui du membre cible est
+accepté.
+
+**Ce que la documentation de Fortinet a évité de faire inventer** :
+`execute ha synchronize` se tape depuis le SUBORDONNÉ. Sans cela on
+aurait écrit une commande qui pousse depuis le primaire — utile, et pas
+ce que la commande fait. Sur le primaire elle pousse (comportement
+conservé), sur un secondaire elle demande au primaire d'émettre.
+
+**Un cas DURCI après discrimination** : « câble coupé, la voie ne répond
+plus » passait avec `/fail/`, parce que le mot de passe tapé en clair
+était alors une commande inconnue — donc `Command fail`. Vrai pour la
+mauvaise raison ; il exige désormais le message exact et vérifie que
+l'invite est restée locale.
+
+**Réutilisé plutôt que réécrit** : `createManagementCli(admin)` — le
+constructeur de CLI que le serveur SSH emploie déjà — sert la ligne
+distante, et `management.login()` l'authentifie, avec `ha-cluster` comme
+source. Aucun second chemin d'exécution n'a été écrit.
+
 ---
 
 ## Périmètre pris — FortiOS phase 21 (un datagramme fragmenté est RECOLLÉ)

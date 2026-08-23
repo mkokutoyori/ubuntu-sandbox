@@ -13,6 +13,8 @@ import { CaptivePortalRedirect } from '../auth/CaptivePortalRedirect';
 import { FirewallCliServer, type ManagementCli } from './FirewallCliServer';
 import type { ManagementPorts } from './ManagementAccess';
 
+export const HA_COMMAND_SOURCE = 'ha-cluster';
+
 export interface ManagementHost {
   readonly deviceId: string;
   readonly deviceName: string;
@@ -72,6 +74,10 @@ export function buildManagementServices(host: ManagementHost): ManagementService
     sendFrame: (iface, frame) => { host.sendFrame(iface, frame); },
     port: (iface) => host.port(iface),
     sessions: () => host.sessions(),
+    authenticateAdmin: (admin, secret) =>
+      host.authenticateAdmin(admin, secret, HA_COMMAND_SOURCE),
+    runManagementCommand: (admin, line) =>
+      host.createManagementCli(admin)?.execute(line) ?? '',
   });
 
   const ntp = buildFirewallNtp({

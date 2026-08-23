@@ -1,7 +1,8 @@
 import { MACAddress, type EthernetFrame } from '../../../core/types';
 import {
   HA_DEFAULTS, electPrimary,
-  type HaCandidate, type HaConfiguration, type HaElectionReason,
+  type HaCandidate, type HaCommandKind, type HaCommandReply,
+  type HaCommandRequest, type HaConfiguration, type HaElectionReason,
   type HaHeartbeat, type HaPeer, type HaRole, type HaSyncedSession,
 } from './HaTypes';
 
@@ -18,7 +19,20 @@ export interface HaAgentDeps {
   readonly applyConfiguration: (text: string) => void;
   readonly exportSessions: () => readonly HaSyncedSession[];
   readonly importSessions: (sessions: readonly HaSyncedSession[]) => void;
+  readonly authenticateAdmin: (admin: string, secret: string) => boolean;
+  readonly runCommand: (admin: string, line: string) => string;
 }
+
+export interface HaCommandOutcome {
+  readonly answered: boolean;
+  readonly accepted: boolean;
+  readonly token: string;
+  readonly output: string;
+}
+
+const NO_ANSWER: HaCommandOutcome = Object.freeze({
+  answered: false, accepted: false, token: '', output: '',
+});
 
 export interface HaElectionRecord {
   readonly at: number;
@@ -35,6 +49,10 @@ export class HaAgent {
   private uptimeBonusMs = 0;
   private lastMonitoredUp: number | null = null;
   private forcedFailover = false;
+  private exchangeCounter = 0;
+  private grantCounter = 0;
+  private readonly pending = new Map<number, HaCommandOutcome>();
+  private readonly granted = new Map<string, string>();
 
   constructor(private readonly deps: HaAgentDeps) {
     this.startedAt = deps.now();
@@ -69,9 +87,42 @@ export class HaAgent {
     this.lastMonitoredUp = up;
   }
 
-  requestSynchronisation(): void {
-    if (this.config.mode === 'standalone') return;
-    this.emitHeartbeat();
+  requestSynchronisation(): boolean {
+    if (this.config.mode === 'standalone') return false;
+    if (this.currentRole === 'master') { this.emitHeartbeat(); return true; }
+    const primary = this.knownPeers().find(peer => peer.role === 'master');
+    if (!primary) return false;
+    return this.ask(primary.serial, 'sync-pull', '', '', '', '').answered;
+  }
+
+  askPeer(
+    serial: string, kind: HaCommandKind,
+    admin: string, secret: string, token: string, line: string,
+  ): HaCommandOutcome {
+    if (this.config.mode === 'standalone') return NO_ANSWER;
+    return this.ask(serial, kind, admin, secret, token, line);
+  }
+
+  private ask(
+    serial: string, kind: HaCommandKind,
+    admin: string, secret: string, token: string, line: string,
+  ): HaCommandOutcome {
+    const exchangeId = ++this.exchangeCounter;
+    this.pending.delete(exchangeId);
+    const request: HaCommandRequest = {
+      type: 'fgcp-command-request',
+      groupId: this.config.groupId,
+      groupName: this.config.groupName,
+      passwordDigest: digestOf(this.config.password),
+      fromSerial: this.deps.serial(),
+      toSerial: serial,
+      exchangeId,
+      kind, admin, secret, token, line,
+    };
+    this.broadcast(request);
+    const answer = this.pending.get(exchangeId);
+    this.pending.delete(exchangeId);
+    return answer ?? NO_ANSWER;
   }
 
   uptimeMs(): number { return this.deps.now() - this.startedAt + this.uptimeBonusMs; }
@@ -107,6 +158,17 @@ export class HaAgent {
   receive(frame: EthernetFrame): boolean {
     if (frame.etherType !== ETHERTYPE_FGCP) return false;
 
+    const payload = frame.payload as
+      { type?: string } | undefined;
+    if (payload?.type === 'fgcp-command-request') {
+      this.serveCommand(payload as HaCommandRequest);
+      return true;
+    }
+    if (payload?.type === 'fgcp-command-reply') {
+      this.collectReply(payload as HaCommandReply);
+      return true;
+    }
+
     const beat = frame.payload as HaHeartbeat | undefined;
     if (beat?.type !== 'fgcp-heartbeat') return false;
     if (this.config.mode === 'standalone') return true;
@@ -136,6 +198,78 @@ export class HaAgent {
       }
     }
     return true;
+  }
+
+  private serveCommand(request: HaCommandRequest): void {
+    if (this.config.mode === 'standalone') return;
+    if (request.groupId !== this.config.groupId) return;
+    if (request.groupName !== this.config.groupName) return;
+    if (request.passwordDigest !== digestOf(this.config.password)) return;
+    if (request.toSerial !== this.deps.serial()) return;
+
+    if (request.kind === 'sync-pull') {
+      this.answer(request, true, '', '');
+      this.emitHeartbeat();
+      return;
+    }
+
+    if (request.kind === 'authenticate') {
+      if (!this.deps.authenticateAdmin(request.admin, request.secret)) {
+        this.answer(request, false, '', 'Login incorrect');
+        return;
+      }
+      const token = `${request.fromSerial}|${++this.grantCounter}`;
+      this.granted.set(token, request.admin);
+      this.answer(request, true, token, '');
+      return;
+    }
+
+    const admin = this.granted.get(request.token);
+    if (admin === undefined || admin !== request.admin) {
+      this.answer(request, false, '', 'Login incorrect');
+      return;
+    }
+    this.answer(request, true, request.token,
+      this.deps.runCommand(request.admin, request.line));
+  }
+
+  private answer(
+    request: HaCommandRequest, accepted: boolean, token: string, output: string,
+  ): void {
+    const reply: HaCommandReply = {
+      type: 'fgcp-command-reply',
+      groupId: this.config.groupId,
+      groupName: this.config.groupName,
+      passwordDigest: digestOf(this.config.password),
+      fromSerial: this.deps.serial(),
+      toSerial: request.fromSerial,
+      exchangeId: request.exchangeId,
+      accepted, token, output,
+    };
+    this.broadcast(reply);
+  }
+
+  private collectReply(reply: HaCommandReply): void {
+    if (reply.toSerial !== this.deps.serial()) return;
+    if (reply.groupId !== this.config.groupId) return;
+    if (reply.passwordDigest !== digestOf(this.config.password)) return;
+    this.pending.set(reply.exchangeId, Object.freeze({
+      answered: true, accepted: reply.accepted,
+      token: reply.token, output: reply.output,
+    }));
+  }
+
+  private broadcast(payload: HaCommandRequest | HaCommandReply): void {
+    for (const device of this.config.heartbeatDevices) {
+      const source = this.deps.interfaceMac(device.iface);
+      if (!source) continue;
+      this.deps.sendFrame(device.iface, {
+        srcMAC: source,
+        dstMAC: MACAddress.broadcast(),
+        etherType: ETHERTYPE_FGCP,
+        payload,
+      });
+    }
   }
 
   private emitHeartbeat(): void {

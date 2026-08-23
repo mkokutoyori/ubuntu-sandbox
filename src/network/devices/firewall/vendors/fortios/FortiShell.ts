@@ -91,6 +91,16 @@ export const FORTI_BUILD = '2660';
 
 const PER_MEMBER_LINE = /^set (priority|hostname)\b/;
 
+interface HaPendingLogin {
+  readonly serial: string;
+  readonly hostname: string;
+  readonly admin: string;
+}
+
+interface HaRemoteSession extends HaPendingLogin {
+  readonly token: string;
+}
+
 const NO_PING_PAYLOAD = 'an echo request carries no operator-chosen payload here — '
   + 'its data field is a byte count, not bytes — so a pattern could be set and never '
   + 'sent, and a reply could never be checked against it.';
@@ -147,6 +157,8 @@ export class FortiShell {
   private vdom = 'root';
   private adminName: string | null = null;
   private globalScope = false;
+  private haRemote: HaRemoteSession | null = null;
+  private haPendingLogin: HaPendingLogin | null = null;
   private continuation: string | null = null;
 
   constructor(private readonly fw: FortiGate) {
@@ -275,6 +287,8 @@ export class FortiShell {
   }
 
   getPrompt(): string {
+    if (this.haPendingLogin !== null) return `${this.haPendingLogin.hostname} password: `;
+    if (this.haRemote !== null) return `${this.haRemote.hostname} # `;
     const host = this.fw.getName();
     const label = this.nav.label();
     if (label !== null) return `${host} (${label}) # `;
@@ -358,6 +372,8 @@ export class FortiShell {
   }
 
   private runLine(line: string): string {
+    if (this.haPendingLogin !== null) return this.finishHaLogin(line);
+    if (this.haRemote !== null) return this.relayToHaPeer(line);
     if (line.length === 0) return '';
     if (line.endsWith('?')) {
       return this.help(line.slice(0, -1)).join('\n');
@@ -1037,15 +1053,54 @@ export class FortiShell {
         return FortiMessages.commandFail(`no cluster member ${rest[1] ?? ''}.`);
       }
       const peer = peers[index - 1];
-      return `Connecting to ${peer.hostname.length > 0 ? peer.hostname : peer.serial} `
-        + `(${peer.serial})...`;
+      const label = peer.hostname.length > 0 ? peer.hostname : peer.serial;
+      this.haPendingLogin = {
+        serial: peer.serial, hostname: label, admin: rest[2] ?? 'admin',
+      };
+      return `Connecting to ${label} (${peer.serial})...\n${label} password: `;
     }
     if (rest[0] === 'synchronize') {
-      if (rest[1] === 'start') { ha.requestSynchronisation(); return ''; }
+      if (rest[1] === 'start') {
+        return ha.requestSynchronisation()
+          ? '' : FortiMessages.commandFail('no response from the cluster.');
+      }
       if (rest[1] === 'stop') { return ''; }
       return FortiMessages.incomplete('`start` or `stop`');
     }
     return FortiMessages.unknownPath(`ha ${rest.join(' ')}`);
+  }
+
+  private finishHaLogin(secret: string): string {
+    const attempt = this.haPendingLogin;
+    this.haPendingLogin = null;
+    if (attempt === null) return '';
+
+    const answer = this.fw.getHa()
+      .askPeer(attempt.serial, 'authenticate', attempt.admin, secret, '', '');
+    if (!answer.answered) {
+      return FortiMessages.commandFail('no response from the cluster member.');
+    }
+    if (!answer.accepted) return 'Login incorrect';
+
+    this.haRemote = {
+      serial: attempt.serial, hostname: attempt.hostname,
+      admin: attempt.admin, token: answer.token,
+    };
+    return '';
+  }
+
+  private relayToHaPeer(line: string): string {
+    const remote = this.haRemote;
+    if (remote === null) return '';
+    if (line.trim() === 'exit') { this.haRemote = null; return ''; }
+
+    const answer = this.fw.getHa()
+      .askPeer(remote.serial, 'cli', remote.admin, '', remote.token, line);
+    if (!answer.answered) {
+      this.haRemote = null;
+      return FortiMessages.commandFail('the cluster member stopped responding.');
+    }
+    return answer.output;
   }
 
   private logConfigurationChange(change: FortiConfigChange): void {
