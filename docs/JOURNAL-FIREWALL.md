@@ -2700,6 +2700,71 @@ refusé sont remplacés par un cas qui l'affirme disponible.
 
 ---
 
+## Périmètre pris — FortiOS phase 17 (l'inspection lit un FLUX, pas un segment)
+
+**Agent `mandeng`.** §6.7 du carnet nomme le point de loin : « le
+filtrage de fichiers lit le nombre magique en tête de corps, donc ne voit
+pas un fichier réparti sur plusieurs segments ». La mesure montre que le
+défaut est plus large que le filtrage de fichiers et qu'il n'est pas
+cosmétique du tout : c'est une **évasion**.
+
+Mesure de départ, faite en lisant `inspectedFlowOf`
+(`pipeline/stages/coreStages.ts`) et `inspection/ContentInspector.ts` :
+
+- **`inspectedFlowOf` construit son `InspectedFlow` à partir de la charge
+  utile d'UN paquet.** Il n'existe nulle part de tampon par session.
+- **`containsEicar(flow.payload)`** cherche donc la signature dans un
+  segment. Une signature coupée en deux par une frontière de segment
+  n'est vue par personne — et couper une charge utile en deux est le
+  geste le plus simple qui soit.
+- **`detectFileType` fait `body.startsWith(magic)`** : le nombre magique
+  doit se trouver au tout début du corps DE CE segment. Un fichier dont
+  l'en-tête HTTP occupe le premier segment n'est jamais typé.
+- **`ProtocolOptions` ne porte aucune borne de mise en tampon** : ni
+  `oversize-limit` ni l'option `oversize`, alors que ce sont exactement
+  les deux réglages qui, sur un vrai FortiGate, disent jusqu'où on
+  bufferise et ce qu'on fait au-delà.
+
+Ce n'est pas une imprécision d'affichage : un contrôle de sécurité qui se
+contourne en découpant un envoi est un contrôle qui n'existe pas, et
+`CLAUDE.md` porte déjà la règle qui le juge — un critère que le moteur ne
+peut pas décider doit faire ÉCHOUER la correspondance, jamais la laisser
+passer en silence.
+
+**Fichiers que la phase 17 prendra** :
+
+```
+firewall/inspection/StreamAssembler.ts   ← le flux par session (socle, neuf)
+firewall/inspection/ContentInspector.ts  ← le type de fichier lu sur le flux
+firewall/inspection/UtmProfiles.ts       ← oversize-limit et l'option oversize
+firewall/pipeline/stages/coreStages.ts   ← `inspectedFlowOf` lit le flux
+vendors/fortios/schema/utm.ts            ← les deux réglages, valeurs réelles
+```
+
+**Ce qui existe déjà et ne sera pas réécrit** : `flowKeyFromPacket` donne
+une clé DIRECTIONNELLE (source→destination), donc les deux sens d'une
+connexion ne se mélangent pas sans qu'on ait rien à inventer ;
+`SessionTable` sait dire quand une session se ferme, donc l'éviction a
+son crochet ; `ContentInspector` porte déjà toutes les détections.
+
+**Décision de découpage, écrite ici pour ne pas être découverte** : on
+réassemble le **TCP seulement**. UDP n'est pas un flux — accumuler deux
+datagrammes DNS produirait un message que personne n'a envoyé, et
+`parseDnsQuestion` lirait n'importe quoi. La borne est celle du vrai
+boîtier : `oversize-limit` en mégaoctets (défaut 10, minimum 1), et
+au-delà le comportement documenté — le fichier passe SANS être analysé,
+sauf si `set options oversize` demande de le bloquer. Cette valeur par
+défaut est celle de Fortinet et elle est laxiste ; la changer « pour être
+plus sûr » ferait mentir le simulateur sur ce que fait la vraie machine.
+
+**Critère de sortie** : une signature EICAR coupée en deux segments est
+DÉTECTÉE, un fichier dont le nombre magique arrive après la frontière de
+segment est TYPÉ, un envoi qui dépasse `oversize-limit` suit le
+comportement réglé, et le tampon d'une session disparaît quand la session
+se ferme.
+
+---
+
 ## Périmètre pris — FortiOS phase 16 (la charge est mesurée, le mode conserve engage)
 
 **Agent `mandeng`.** §6.5 du carnet nomme le point, et le carnet le dit
