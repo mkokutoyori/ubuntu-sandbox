@@ -2700,6 +2700,72 @@ refusé sont remplacés par un cas qui l'affirme disponible.
 
 ---
 
+## Périmètre pris — FortiOS phase 20 (un VIP répartit vers un serveur VIVANT)
+
+**Agent `mandeng`.** §6.4 du carnet et l'entrée `[vip]` de `TODO.md`
+nomment le point : le type `server-load-balance` « n'a aucune brique
+existante à réutiliser (grappe de serveurs réels + moniteurs de santé) ».
+La mesure corrige cette phrase, et c'est ce qui rend la phase possible.
+
+Mesure de départ :
+
+- **`set type server-load-balance` est REFUSÉ** (phase 15b), donc un VIP
+  de répartition ne peut pas exister. Le refus était le bon choix tant
+  que rien ne pouvait le servir.
+- **`config firewall ldb-monitor` n'existe pas** : aucun moniteur de
+  santé, donc rien pour distinguer un serveur vivant d'un serveur mort.
+- **La grappe de serveurs réels n'existe pas** : `config realservers`
+  est inconnu.
+
+**Ce qui a été trouvé et qui change la conclusion du TODO** — trois
+briques existent :
+
+1. **Le point d'accroche du DNAT est déjà là.** `FirewallNatEngine`
+   choisit l'adresse traduite par `spreadDestination(translation, packet)`
+   et **inscrit le choix dans la session** (`translation.translatedDest`).
+   Une répartition de charge est donc un `destinationTranslation` dont le
+   choix vient d'une grappe au lieu d'une plage — et **la persistance
+   d'une session est gratuite**, puisque le retour se dé-traduit déjà
+   depuis la session.
+2. **Le pare-feu sait déjà sonder.** `FirewallPing` est son ping réel, et
+   `TcpStack.connect` ouvre une vraie connexion. Un moniteur `ping` et un
+   moniteur `tcp` n'ont rien de neuf à écrire.
+3. **`SdwanHealthProbe` existe** — et il est examiné puis ÉCARTÉ : il est
+   indexé sur les membres SD-WAN (des interfaces) et rend latence, gigue
+   et perte pour les règles SD-WAN. Un moniteur de serveur réel demande
+   « ce serveur:port répond-il ? ». Question différente, clé différente.
+   Ce qu'il partage — l'écho ICMP — est ce que `FirewallPing` porte déjà.
+
+**Fichiers que la phase 20 prendra** :
+
+```
+firewall/nat/RealServerPool.ts     ← la grappe et son choix (socle, neuf)
+firewall/health/LdbMonitor.ts      ← les moniteurs (socle, neuf)
+firewall/nat/FirewallNatEngine.ts  ← le choix par la grappe
+vendors/fortios/schema/firewallNat.ts ← realservers, ldb-monitor
+```
+
+**Décisions de découpage, écrites ici pour ne pas être découvertes** :
+
+- **`ldb-method`** : `static`, `round-robin`, `weighted`, `first-alive`
+  et `least-session` sont implémentés — chacun se décide avec ce que la
+  grappe et la table des sessions savent déjà. **`least-rtt` est REFUSÉ**
+  (les trames sont livrées de façon synchrone, sans horloge de fil : il
+  n'y a pas de temps d'aller-retour à comparer, et ce simulateur porte
+  déjà ce refus ailleurs sous le même motif) et **`http-host` est
+  REFUSÉ** (le choix du serveur se fait à la traduction, donc avant que
+  la moindre charge utile HTTP soit lue).
+- **Types de moniteur** : `ping` et `tcp` sont réels. `http`/`https`,
+  `dns` et `passive-sip` seront tranchés en mesurant ce que le pare-feu
+  sait composer lui-même — jamais acceptés inertes.
+
+**Critère de sortie** : un vrai client atteint un vrai serveur à travers
+un VIP de répartition, deux serveurs se partagent les connexions selon
+la méthode réglée, un serveur qui ne répond plus est retiré de la
+grappe, et une session déjà ouverte reste sur SON serveur.
+
+---
+
 ## Périmètre pris — FortiOS phase 19 (la configuration garde son HISTORIQUE)
 
 **Agent `mandeng`.** §6.5 du carnet nomme le point : « `execute
