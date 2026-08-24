@@ -2,7 +2,9 @@ import {
   icmpService, ipProtocolService, tcpService, udpService, makeService,
   type ServiceObject,
 } from '../../../model/ServiceObject';
-import { anyAddress, type AddressObject } from '../../../model/AddressObject';
+import {
+  anyAddress, anyAddress6, type AddressObject,
+} from '../../../model/AddressObject';
 
 const OPTIONS = { predefined: true };
 
@@ -60,4 +62,4 @@ export const PREDEFINED_SERVICE_NAMES: readonly string[] =
   Object.freeze(PREDEFINED_SERVICES.map(service => service.name));
 
 export const PREDEFINED_ADDRESSES: readonly AddressObject[] =
-  Object.freeze([anyAddress('all')]);
+  Object.freeze([anyAddress('all'), anyAddress6('all6')]);

@@ -7,6 +7,9 @@ import {
   type FortiObjectView, type FortiTableSpec,
 } from './types';
 import { PREDEFINED_SERVICE_NAMES } from './predefined';
+import { FortiMessages } from '../FortiMessages';
+import { parseIpv6Prefix } from './system';
+import { prefixAddress6, rangeAddress6 } from '../../../model/AddressObject';
 
 function isKind(kind: string) {
   return (object: FortiObjectView): boolean => object.effective('type')[0] === kind;
@@ -114,6 +117,99 @@ export const FIREWALL_ADDRESS: FortiTableSpec = {
   },
   onDelete(key, context) {
     context.objects.removeAddress(key);
+  },
+};
+
+export const FIREWALL_ADDRESS6: FortiTableSpec = {
+  path: ['firewall', 'address6'],
+  kind: 'table',
+  keyType: 'name',
+  ordered: false,
+  scope: 'vdom',
+  accessGroup: 'fwgrp',
+  renderOrder: 95,
+  help: 'Configure IPv6 firewall addresses.',
+  predefined: ['all6'],
+  attributes: [
+    { ...word('name', 'Address name.'), readOnly: true },
+    { ...word('uuid', 'Universally Unique Identifier.'), readOnly: true },
+    choice('type', 'Type of IPv6 address object.', [
+      { keyword: 'ipprefix', description: 'IPv6 address prefix.' },
+      { keyword: 'iprange', description: 'Range between two IPv6 addresses.' },
+    ], 'ipprefix'),
+    {
+      name: 'ip6', help: 'IPv6 address prefix.', quoted: false,
+      parts: [{
+        name: 'prefix', type: 'WORD',
+        description: 'IPv6 address and prefix length, <address>/<0-128>.',
+      }],
+      defaultValue: ['::/0'],
+      availableWhen: isKind('ipprefix'),
+      acceptsValue: (value) => parseIpv6Prefix(value) !== null,
+      expectedValue: 'an IPv6 prefix such as `2001:db8::/64`.',
+    },
+    {
+      name: 'start-ip', help: 'First IPv6 address (inclusive) in the range.',
+      quoted: false,
+      parts: [{ name: 'start-ip', type: 'WORD', description: 'IPv6 address.' }],
+      defaultValue: ['::'],
+      availableWhen: isKind('iprange'),
+      acceptsValue: (value) => parseIpv6Prefix(`${value}/128`) !== null,
+      expectedValue: 'an IPv6 address such as `2001:db8::10`.',
+    },
+    {
+      name: 'end-ip', help: 'Final IPv6 address (inclusive) in the range.',
+      quoted: false,
+      parts: [{ name: 'end-ip', type: 'WORD', description: 'IPv6 address.' }],
+      defaultValue: ['::'],
+      availableWhen: isKind('iprange'),
+      acceptsValue: (value) => parseIpv6Prefix(`${value}/128`) !== null,
+      expectedValue: 'an IPv6 address such as `2001:db8::20`.',
+    },
+    text('comment', 'Comment.'),
+  ],
+  onCommit(object, context) {
+    const comment = object.effective('comment')[0] || undefined;
+    if (object.effective('type')[0] === 'iprange') {
+      context.objects.addAddress(rangeAddress6(object.key,
+        object.effective('start-ip')[0] ?? '::',
+        object.effective('end-ip')[0] ?? '::', { comment }));
+      return;
+    }
+    const prefix = parseIpv6Prefix(object.effective('ip6')[0] ?? '::/0');
+    if (!prefix) return FortiMessages.valueError(object.effective('ip6')[0] ?? '');
+    context.objects.addAddress(prefixAddress6(
+      object.key, prefix.address, prefix.prefixLength, { comment }));
+  },
+  onDelete(key, context) {
+    context.objects.removeAddress(key);
+  },
+};
+
+export const FIREWALL_ADDRGRP6: FortiTableSpec = {
+  path: ['firewall', 'addrgrp6'],
+  kind: 'table',
+  keyType: 'name',
+  ordered: false,
+  scope: 'vdom',
+  accessGroup: 'fwgrp',
+  renderOrder: 105,
+  help: 'Configure IPv6 address groups.',
+  attributes: [
+    { ...word('name', 'Address group name.'), readOnly: true },
+    refList('member', 'Address objects contained within the group.',
+      ['firewall address6', 'firewall addrgrp6']),
+    text('comment', 'Comment.'),
+  ],
+  onCommit(object, context) {
+    context.objects.removeAddressGroup(object.key);
+    const members = object.effective('member');
+    if (members.length === 0) return;
+    context.objects.addAddressGroup(object.key, members,
+      object.effective('comment')[0] || undefined);
+  },
+  onDelete(key, context) {
+    context.objects.removeAddressGroup(key);
   },
 };
 

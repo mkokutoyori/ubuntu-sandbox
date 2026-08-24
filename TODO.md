@@ -502,22 +502,6 @@ UTC.
 (`set timezone ?`), et l'inventer donnerait 79 correspondances fausses —
 pire que l'aveu.
 
-### [politique] le TRANSIT IPv6 est refuse, faute de politique v6
-Le pare-feu porte desormais un plan de donnees IPv6 complet (adresse,
-NDP, echo, routes statiques), mais son moteur de politiques est v4
-seulement : `SecurityRule` porte des adresses v4 et `iprope` compile du
-v4. Un paquet IPv6 EN TRANSIT est donc refuse, ce qui est le refus
-implicite d'un vrai FortiGate sans politique IPv6 — et la posture que
-`CLAUDE.md` impose (« security criteria fail CLOSED »). Ce qui manque
-est `config firewall policy6` et un moteur qui l'evalue.
-**Mesure** : `fortios-ipv6.test.ts` mesure `outForwarded` inchange pour
-un paquet v6 traversant, avec un TEMOIN v4 qui relaie dans le meme
-laboratoire.
-**Report** : ce n'est pas un manquement laisse ouvert mais le perimetre
-de la phase 27 — porter les adresses v6 dans les objets d'adresse, la
-regle et la table compilee est un chantier en soi, et livrer le transit
-sans lui aurait ouvert le pare-feu au lieu de l'ameliorer.
-
 ### [admin] pas d'interface d'administration HTTP/HTTPS
 `set allowaccess http https` est accepte, rendu, et gouverne bien le
 filtrage TCP (`ManagementPlane.admitsTcp` refuse le port), mais RIEN

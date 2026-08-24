@@ -87,6 +87,8 @@ import type { FirewallPortals, PortalPorts } from './auth/FirewallPortals';
 import { remoteAuthenticate, type AdminAccountDraft } from './identity/AdminAccounts';
 import type { PasswordHistory } from './identity/PasswordHistory';
 import { FirewallIpv6 } from './l3/FirewallIpv6';
+import type { PolicyProbe } from './policy/PolicyProbe';
+import { isDenyAction } from './model/SecurityRule';
 import { FirewallPing6 } from './diag/FirewallPing6';
 import { getDefaultScheduler } from '@/events/Scheduler';
 import type { Ipv6Counters } from '../router/IPv6DataPlane';
@@ -190,6 +192,8 @@ export class Firewall extends Equipment {
     scheduler: () => getDefaultScheduler(),
     managementAllows: (iface, service) => this.ipv6.allowsAccess(iface, service),
     onEchoReply: (payload) => { this.ping6.observeReply(payload); },
+    transitPermitted: (probe) => this.ipv6TransitPermitted(probe),
+    sessions: () => this.getSessionTable(),
   });
 
   private readonly ping6 = new FirewallPing6(() => this.ipv6.dataPlane());
@@ -1218,6 +1222,12 @@ export class Firewall extends Equipment {
   }
 
   getPing6(): FirewallPing6 { return this.ping6; }
+
+  private ipv6TransitPermitted(probe: PolicyProbe): boolean {
+    const vdom = this.getVdom();
+    const decision = vdom.evaluator.evaluate(vdom.policy.ordered(), probe);
+    return !isDenyAction(decision.action);
+  }
 
   applyIpv6StaticRoute(route: {
     id: string; destination: string; prefixLength: number;

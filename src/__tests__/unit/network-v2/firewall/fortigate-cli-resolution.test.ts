@@ -132,8 +132,17 @@ describe('une commande s\'abrege jusqu\'au plus court non ambigu', () => {
     const { sh } = shell();
     taper(sh, 'config firewall address', 'edit "SRV"',
       'set subnet 10.0.0.1 255.255.255.255', 'next', 'end');
-    expect(sh.execute('show fire addre')).toContain('edit "SRV"');
+    expect(sh.execute('show fire polic')).toContain('config firewall policy');
     expect(sh.execute('show fire addr')).toMatch(/ambiguous/i);
+  });
+
+  it('un mot COMPLET l\'emporte sur la table dont il est le prefixe', () => {
+    const { sh } = shell();
+    taper(sh, 'config firewall address', 'edit "SRV"',
+      'set subnet 10.0.0.1 255.255.255.255', 'next', 'end');
+    expect(sh.execute('show firewall address')).toContain('edit "SRV"');
+    expect(sh.execute('show fire addre'))
+      .toMatch(/ambiguous.*address, address6/i);
   });
 
   it('un chemin qui ne correspond a RIEN garde le mot tape', () => {

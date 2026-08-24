@@ -2746,15 +2746,74 @@ vendors/fortios/schema/firewallObjects.ts ← `address6`, `addrgrp6`
 vendors/fortios/schema/firewallPolicy.ts  ← `policy6`
 ```
 
-**Décision de périmètre** : `policy6` est la table SÉPARÉE de FortiOS
-antérieur à 7.0, et c'est elle qui est écrite — pas la politique unifiée
-de 7.0+, où une seule table porte les deux familles. Deux raisons, et la
-seconde est la vraie : la table séparée est celle que la documentation et
-les tutoriels accessibles décrivent avec des exemples complets ; et une
-politique unifiée demanderait de rendre CHAQUE règle existante
-bi-famille, donc de toucher le chemin v4 qui fonctionne. Ce que le
-verrou de la phase 26 devient : refus tant qu'aucune `policy6` ne
-permet, au lieu d'un refus inconditionnel.
+**Décision de périmètre RENVERSÉE par la vérification, avant d'écrire une
+ligne.** Cette revendication annonçait `config firewall policy6`, la
+table séparée, au motif que c'est elle que les tutoriels décrivent. La
+documentation Fortinet dit l'inverse pour la machine que ce simulateur
+déclare être : *« The `config firewall policy6` and `config firewall
+consolidated policy` commands … are all removed »* à partir de **6.4.0**
+(« Consolidated IPv4 and IPv6 policy configuration »), et
+`FortiProfile.defaultVersion` vaut **`7.6.3`**. Écrire `policy6` aurait
+donc appris une table que la vraie machine refuse.
+
+Ce qui est écrit est la politique UNIFIÉE : `srcaddr6`/`dstaddr6` sur la
+table `firewall policy` existante, plus `config firewall address6`,
+`config firewall addrgrp6` et l'objet prédéfini `all6` que l'exemple de
+Fortinet utilise. C'est aussi la meilleure conception : une table, un
+évaluateur, la règle portant les deux familles — au lieu de deux tables
+qui finiraient par se contredire. Ce que le verrou de la phase 26
+devient : refus tant qu'aucune règle ne permet POUR LA FAMILLE v6, au
+lieu d'un refus inconditionnel.
+### Livré
+
+L'entrée `[politique]` est retirée de `TODO.md`.
+
+**La famille DÉCIDE.** `addressObjectMatches` commence désormais par
+comparer la famille de l'objet à celle du candidat, et un objet v6 est
+comparé par une arithmétique 128 bits (`tryIpv6ToBits`, préfixe et
+plage) au lieu du `tryIpToUint32` qui rendait `null`. Le cas le plus
+important est le plus court : `kind === 'any'` sortait AVANT toute
+vérification, donc `all` correspondait à une adresse IPv6 — une règle
+écrite pour v4 jugeait du trafic v6 sans que rien ne le dise. Elle ne le
+fait plus, et un cas le mesure dans les deux sens.
+
+`PolicyEvaluator` choisit la liste d'adresses selon la famille du
+candidat (`srcaddr`/`dstaddr` ou `srcaddr6`/`dstaddr6`), et **une liste
+vide ne correspond pas** : une règle sans `srcaddr6` ne juge aucun
+paquet v6, ce qui est le refus implicite d'un vrai FortiGate.
+
+**La réponse est permise par la SESSION, pas par une règle inverse**, et
+c'est la table de sessions du pare-feu qui la porte — `FlowKey` prend
+des adresses en `string` et accueille donc l'IPv6 sans modification.
+Écrire un second suivi de flux dans `FirewallIpv6` aurait été la
+duplication que ce dépôt passe son temps à défaire.
+
+**Défaut de socle trouvé en chemin, et corrigé avec.** Le cas « un
+paquet v6 traverse » échouait encore alors que la politique répondait
+`allow` et que la requête traversait. La trace du filtre l'a nommé : le
+voisin répondait depuis son adresse SLAAC et non depuis celle qu'on
+avait jointe, donc la réponse ne retombait sur aucune session.
+`EndHost.handleICMPv6EchoRequest` choisissait `port.getGlobalIPv6()`,
+c'est-à-dire la PREMIÈRE adresse globale du port. RFC 4443 §4.2 :
+*« The Source Address of an Echo Reply sent in response to a unicast
+Echo Request message MUST be the same as the destination address of that
+Echo Request message. »* Le défaut était invisible tant que rien ne
+vérifiait la source d'une réponse ; le suivi de session le vérifie.
+
+**Un cas existant corrigé plutôt que le produit** :
+`fortigate-cli-resolution.test.ts` tenait `show fire addre` pour
+non ambigu. Il ne l'est plus, `address6` existant — et une vraie 7.6
+répond la même ambiguïté. Le cas est scindé : l'abréviation en
+profondeur est éprouvée sur `polic`, et un cas neuf atteste qu'un mot
+COMPLET l'emporte sur la table dont il est le préfixe.
+
+`fortios-politique-ipv6.test.ts` (11 cas) est discriminé par
+`git stash push -- src/network/` : 6 tombent avant correctif, et les 5
+qui passent des deux côtés sont nommés dans l'en-tête — dont les deux
+cas de refus, indiscernables du verrou inconditionnel de la phase 26
+tant que rien ne prouve qu'un paquet PEUT traverser.
+`e2e/fortigate-politique-ipv6.spec.ts` (4 cas) rejoue l'objet, la règle,
+le refus de `policy6` et le refus d'un préfixe mal écrit.
 
 ---
 
