@@ -32,6 +32,7 @@ import type { CommandSpec } from '@/cli/CommandTable';
 import type { ArgumentSpec } from '@/cli/ArgumentTypes';
 import type { AdapterKeyword } from '@/cli/commands/trieAdapter';
 import { specsFromTrieRegistrations } from '@/cli/commands/trieAdapter';
+import { MODES_INTERFACE } from './CiscoConfigCommands';
 
 export function setOspfv3InterfaceParams(
   router: Router, ifName: string, updates: Record<string, unknown>,
@@ -769,6 +770,95 @@ function enableOspfOnInterface(
     ospf.activateInterface(ifName, ip, mask, areaId);
   }
   router._ospfAutoConverge();
+}
+
+/**
+ * Les places d'OSPF sur une interface.
+ *
+ * Les bornes sont celles de la reference Cisco pour la version que
+ * `show version` annonce, verifiees plutot que tirees de memoire :
+ * cout 1-65535, priorite 0-255, les quatre minuteurs 1-65535 secondes,
+ * identifiant de cle 1-255. Elles sont DECLAREES et non laissees au
+ * gestionnaire parce qu'IOS les connait a l'analyse — une valeur hors
+ * bornes y recoit le caret, et c'est deja ce que cette machine rend.
+ */
+const SECONDES_OSPF = (description: string): ArgumentSpec => ({
+  name: 'secondes', type: 'INT', description, range: [1, 65535],
+});
+
+const OSPF_IF_ARGUMENTS:
+Readonly<Record<string, ArgumentSpec | readonly ArgumentSpec[] | null>> = {
+  'ip ospf bfd': null,
+  'ip ospf flood-reduction': null,
+  'ip ospf demand-circuit': null,
+  'ip ospf mtu-ignore': null,
+  'ip ospf cost': {
+    name: 'cout', type: 'INT', description: 'Cost of this interface',
+    range: [1, 65535],
+  },
+  'ip ospf priority': {
+    name: 'priorite', type: 'INT',
+    description: 'Priority in the designated-router election', range: [0, 255],
+  },
+  'ip ospf hello-interval': SECONDES_OSPF('Interval between hello packets'),
+  'ip ospf dead-interval': SECONDES_OSPF(
+    'Silence after which a neighbour is declared down'),
+  'ip ospf retransmit-interval': SECONDES_OSPF(
+    'Interval between retransmissions of an unacknowledged LSA'),
+  'ip ospf transmit-delay': SECONDES_OSPF(
+    'Time taken to transmit an update on this interface'),
+  'ip ospf network': [
+    {
+      name: 'genre', type: 'ENUM', description: 'Network type of this interface',
+      values: [
+        { keyword: 'broadcast', description: 'Specify OSPF broadcast multi-access network' },
+        { keyword: 'non-broadcast', description: 'Specify OSPF NBMA network' },
+        { keyword: 'point-to-multipoint', description: 'Specify OSPF point-to-multipoint network' },
+        { keyword: 'point-to-point', description: 'Specify OSPF point-to-point network' },
+      ],
+    },
+    // `point-to-multipoint non-broadcast` est la seule forme a deux
+    // mots : la place suivante existe pour elle, et le gestionnaire ne
+    // lit que le premier mot.
+    { name: 'reste', type: 'REST', optional: true,
+      description: 'non-broadcast, for a point-to-multipoint network' },
+  ],
+  'ip ospf authentication-key': {
+    name: 'cle', type: 'REST', literal: 'LINE',
+    description: 'The authentication key itself',
+  },
+  'ip ospf message-digest-key': [
+    { name: 'identifiant', type: 'INT', description: 'Key identifier',
+      range: [1, 255] },
+    { name: 'reste', type: 'REST', description: '`md5` then the key itself' },
+  ],
+  'ip ospf area': {
+    name: 'aire', type: 'REST', description: 'Area this interface belongs to',
+    alternatives: [
+      { keyword: '<0-4294967295>', description: 'Area number' },
+      { keyword: 'A.B.C.D', description: 'Area number in dotted-decimal' },
+    ],
+  },
+  'ip ospf database-filter': {
+    name: 'reste', type: 'REST', description: '`all out`',
+    alternatives: [{ keyword: 'all', description: 'Filter every outgoing LSA' }],
+  },
+  'ip ospf': {
+    name: 'reste', type: 'REST',
+    description: 'Process identifier, then `area <aire>`',
+  },
+};
+
+export function ospfInterfaceSpecs(ctx: CiscoShellContext): CommandSpec[] {
+  return specsFromTrieRegistrations(
+    (collector) =>
+      registerOSPFInterfaceCommands(collector as unknown as CommandTrie, ctx),
+    {
+      modes: MODES_INTERFACE, minPrivilege: 15,
+      undoFromNegatedPaths: true,
+      argumentFor: (path) => OSPF_IF_ARGUMENTS[path],
+    },
+  );
 }
 
 export function registerOSPFInterfaceCommands(configIfTrie: CommandTrie, ctx: CiscoShellContext): void {

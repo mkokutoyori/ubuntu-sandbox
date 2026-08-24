@@ -320,3 +320,46 @@ describe('une borne connue de l\'analyse est refusee au caret, comme sur IOS', (
       .not.toContain('Invalid input');
   });
 });
+
+/*
+ * Ce que la migration APPORTE a OSPF : `?` annonce desormais les bornes
+ * de la reference Cisco pour la version que `show version` annonce
+ * (15.7(3)M5), verifiees et non tirees de memoire — cout 1-65535,
+ * priorite 0-255, les quatre minuteurs 1-65535 secondes, identifiant de
+ * cle 1-255 — et les quatre types de reseau avec les mots d'IOS.
+ */
+describe('`?` annonce les bornes reelles d\'OSPF', () => {
+  const ATTENDU_OSPF: ReadonlyArray<readonly [string, string]> = [
+    ['ip ospf cost ', '<1-65535>'],
+    ['ip ospf priority ', '<0-255>'],
+    ['ip ospf hello-interval ', '<1-65535>'],
+    ['ip ospf dead-interval ', '<1-65535>'],
+    ['ip ospf retransmit-interval ', '<1-65535>'],
+    ['ip ospf transmit-delay ', '<1-65535>'],
+    ['ip ospf message-digest-key ', '<1-255>'],
+    ['ip ospf network ', 'Specify OSPF broadcast multi-access network'],
+    ['ip ospf network ', 'Specify OSPF NBMA network'],
+    ['ip ospf network ', 'Specify OSPF point-to-multipoint network'],
+    ['ip ospf network ', 'Specify OSPF point-to-point network'],
+  ];
+
+  it.each(ATTENDU_OSPF)('`%s?` annonce %s', async (saisie, attendu) => {
+    expect((await surIface()).cliHelp(saisie)).toContain(attendu);
+  });
+
+  it('`point-to-multipoint non-broadcast` reste accepte', async () => {
+    expect(await (await surIface())
+      .executeCommand('ip ospf network point-to-multipoint non-broadcast'))
+      .not.toContain('Invalid input');
+  });
+
+  it('un type de reseau inconnu est refuse au caret', async () => {
+    expect(await (await surIface()).executeCommand('ip ospf network zorglub'))
+      .toContain('Invalid input detected');
+  });
+
+  it('un identifiant de cle hors bornes est refuse au caret', async () => {
+    expect(await (await surIface()).executeCommand('ip ospf message-digest-key 256 md5 X'))
+      .toContain('Invalid input detected');
+  });
+});

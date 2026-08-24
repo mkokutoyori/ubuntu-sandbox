@@ -99,6 +99,25 @@ le sens « l'aide propose ce que la machine refuse » ; l'autre sens — « la
 déclaration refuse ce que la machine acceptait » — n'a pas de garde-fou,
 et c'est la suite de round-trip qui l'a attrapé.
 
+**Une borne se vérifie contre la VERSION que la machine annonce.**
+Plusieurs plages d'IOS dépendent de la version, et `show version` de ce
+simulateur répond `Version 15.7(3)M5` : c'est cette version-là qui
+tranche, sinon la machine se contredit elle-même. Deux cas rencontrés et
+vérifiés en ligne plutôt que de mémoire — le nombre d'objets `track` est
+1-500 jusqu'à 15.1(3)T et 1-1000 après (donc 1-1000 ici), et le numéro
+de groupe HSRP est 0-255 en version 1 et 0-4095 en version 2, ce qui
+dépend de l'interface et non de la commande (d'où la plage dynamique).
+
+**Une valeur hors bornes est refusée AU CARET par IOS**, pas par un
+message du gestionnaire : la documentation Cisco range « out of range
+values » et « invalid numeric arguments » parmi les causes de
+`% Invalid input detected at '^' marker`. Donc quand l'analyse connaît
+la plage, elle doit la déclarer ; le message écrit dans un gestionnaire
+derrière une plage déclarée est inatteignable, et c'est normal. La règle
+« ne pas devancer le gestionnaire » ne s'applique QUE là où l'analyse ne
+peut pas trancher — un nom de zone, une adresse, une liste de mots que
+le gestionnaire interprète.
+
 **Ce que ça change pour vous** : une famille migrée n'est plus dans le
 trie. Si vous ajoutez une commande à un `register*(t: CommandTrie)` dont
 la famille est déjà partie, elle sera élaguée au démarrage et ne
