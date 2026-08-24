@@ -866,34 +866,58 @@ Readonly<Record<string, ArgumentSpec | readonly ArgumentSpec[] | null>> = {
 const TYPE_ARGUMENTS:
 Readonly<Record<string, ArgumentSpec | readonly ArgumentSpec[]>> = {
   'icmp-echo': [
-    { name: 'cible', type: 'IP_ADDR', description: 'Destination IP address' },
+    { name: 'cible', type: 'IP_ANY', description: 'Destination address',
+      alternatives: [
+        { keyword: 'A.B.C.D', description: 'Destination IPv4 address' },
+        { keyword: 'X:X:X:X::X', description: 'Destination IPv6 address' },
+      ] },
     { name: 'reste', type: 'REST', optional: true,
       description: 'source-interface, source-ip' },
   ],
   'icmp-jitter': [
-    { name: 'cible', type: 'IP_ADDR', description: 'Destination IP address' },
+    { name: 'cible', type: 'IP_ANY', description: 'Destination address',
+      alternatives: [
+        { keyword: 'A.B.C.D', description: 'Destination IPv4 address' },
+        { keyword: 'X:X:X:X::X', description: 'Destination IPv6 address' },
+      ] },
     { name: 'reste', type: 'REST', optional: true,
       description: 'num-packets, interval, source-ip' },
   ],
   'path-echo': [
-    { name: 'cible', type: 'IP_ADDR', description: 'Destination IP address' },
+    { name: 'cible', type: 'IP_ANY', description: 'Destination address',
+      alternatives: [
+        { keyword: 'A.B.C.D', description: 'Destination IPv4 address' },
+        { keyword: 'X:X:X:X::X', description: 'Destination IPv6 address' },
+      ] },
     { name: 'reste', type: 'REST', optional: true,
       description: 'source-interface, source-ip' },
   ],
   'udp-echo': [
-    { name: 'cible', type: 'IP_ADDR', description: 'Destination IP address' },
+    { name: 'cible', type: 'IP_ANY', description: 'Destination address',
+      alternatives: [
+        { keyword: 'A.B.C.D', description: 'Destination IPv4 address' },
+        { keyword: 'X:X:X:X::X', description: 'Destination IPv6 address' },
+      ] },
     { name: 'port', type: 'INT', description: 'Destination port', range: [1, 65535] },
     { name: 'reste', type: 'REST', optional: true,
       description: 'source-ip, source-port, control' },
   ],
   'udp-jitter': [
-    { name: 'cible', type: 'IP_ADDR', description: 'Destination IP address' },
+    { name: 'cible', type: 'IP_ANY', description: 'Destination address',
+      alternatives: [
+        { keyword: 'A.B.C.D', description: 'Destination IPv4 address' },
+        { keyword: 'X:X:X:X::X', description: 'Destination IPv6 address' },
+      ] },
     { name: 'port', type: 'INT', description: 'Destination port', range: [1, 65535] },
     { name: 'reste', type: 'REST', optional: true,
       description: 'codec, num-packets, interval, source-ip' },
   ],
   'tcp-connect': [
-    { name: 'cible', type: 'IP_ADDR', description: 'Destination IP address' },
+    { name: 'cible', type: 'IP_ANY', description: 'Destination address',
+      alternatives: [
+        { keyword: 'A.B.C.D', description: 'Destination IPv4 address' },
+        { keyword: 'X:X:X:X::X', description: 'Destination IPv6 address' },
+      ] },
     { name: 'port', type: 'INT', description: 'Destination port', range: [1, 65535] },
     { name: 'reste', type: 'REST', optional: true,
       description: 'source-ip, source-port, control' },

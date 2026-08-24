@@ -60,9 +60,22 @@ que l'agent ACL le dise ici. Côté commutateur restent `configMstTrie`
 (7), `configAclTrie` (6), `configVlanTrie` (2), `configAccessMapTrie`
 (2).
 
-Compteurs : routeur 1007 → 721, commutateur 570 → 445. Restent les deux
+`configRouterTrie` est vide lui aussi : `router rip` / `router eigrp` /
+`router bgp` passent au socle, et le filtre de complétion qui masquait
+les mots-clés d'un autre protocole devient une **joignabilité de
+déclaration** — donc elle gouverne l'exécution ET l'aide, alors qu'un
+filtre de complétion ne gouvernait que l'aide.
+
+Compteurs : routeur 1007 → 679, commutateur 570 → 445. Restent les deux
 gros blocs `configTrie` (308) et `configIfTrie` (151), puis
-`privilegedTrie` (120), `userTrie` (85) et `configRouterTrie` (42).
+`privilegedTrie` (120) et `userTrie` (85).
+
+**Une contradiction tranchée qui peut vous concerner** : `metric`
+appartient à EIGRP dans `ROUTER_MODE_OWNERS`, et le gestionnaire portait
+quand même une branche RIP. Tant que le filtre ne gouvernait que l'aide,
+`metric 5` sous `router rip` s'exécutait en silence ; il est désormais
+refusé, ce qui est ce que fait un vrai IOS (la métrique RIP se règle par
+`default-metric` ou par un `offset-list`).
 
 **Un compteur d'avant le lot IP SLA sous-estimait de 82** : `configIpSlaTypeTries`
 est une TABLE de huit arbres et non huit champs, si bien que ni

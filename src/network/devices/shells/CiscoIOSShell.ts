@@ -106,7 +106,7 @@ import {
 } from './cisco/CiscoKeyChainCommands';
 import {
   buildRoutingProtoConfig, registerRoutingProtoShow, routerKeywordBelongsTo,
-  routingProtoShowSpecs,
+  routingProtoShowSpecs, routerSubmodeSpecs,
 } from './cisco/CiscoRoutingProtoCommands';
 import { RoutingConfigRepository } from '../inspection/config/RoutingConfigRepository';
 import {
@@ -354,6 +354,7 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
       ...keyChainSubmodeSpecs(this),
       ...keyChainKeySubmodeSpecs(this),
       ...routeMapSubmodeSpecs(this, this.policy),
+      ...routerSubmodeSpecs(this, this.routingCfg),
       ...dhcpPoolClassSpecs(this),
       ...dhcpClassSpecs(this),
       ...ipv6DhcpPoolSpecs(this),
@@ -505,6 +506,7 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
   protected override socleLegends(): SocleLegend[] {
     return [
       ...super.socleLegends(),
+      [['no'], 'Negate a command or set its defaults', ['config-router']],
       [['crypto'], 'Encryption module'],
       [['crypto', 'ipsec'], 'Configure IPSec policy'],
       [['crypto', 'ipsec', 'security-association'], 'Security association parameters'],

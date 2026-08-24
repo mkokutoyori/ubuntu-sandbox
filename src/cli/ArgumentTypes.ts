@@ -1,7 +1,7 @@
 import { isValidIPv4, isValidIPv6, isValidSubnetMask } from '../network/core/ip';
 
 export type ArgumentType =
-  | 'INT' | 'WORD' | 'LINE' | 'IP_ADDR' | 'IPV6_ADDR' | 'SUBNET_MASK'
+  | 'INT' | 'WORD' | 'LINE' | 'IP_ADDR' | 'IPV6_ADDR' | 'IP_ANY' | 'SUBNET_MASK'
   | 'MAC_ADDR' | 'INTERFACE' | 'VLAN_ID' | 'REST' | 'ENUM' | 'TIME';
 
 export interface EnumValue {
@@ -91,6 +91,19 @@ export const ARGUMENT_TYPES: Readonly<Record<ArgumentType, ArgumentTypeDefinitio
     LINE: { placeholder: 'LINE', accepts: (t) => t.length > 0 },
     IP_ADDR: { placeholder: 'A.B.C.D', accepts: (t) => isValidIPv4(t) },
     IPV6_ADDR: { placeholder: 'X:X:X:X::X', accepts: (t) => isValidIPv6(t) },
+    /*
+     * Une place qui prend l'une OU l'autre famille.
+     *
+     * `icmp-echo <cible>` en est une : la meme commande accepte
+     * `10.0.0.9` et `2001:db8::2`. La declarer `IP_ADDR` refuse la
+     * moitie de ce que la machine execute, et la declarer `WORD`
+     * n'annonce plus rien — c'est le type qui doit porter les deux, les
+     * deux formes se nommant par `alternatives`.
+     */
+    IP_ANY: {
+      placeholder: 'A.B.C.D',
+      accepts: (t) => isValidIPv4(t) || isValidIPv6(t),
+    },
     SUBNET_MASK: { placeholder: 'A.B.C.D', accepts: (t) => isValidSubnetMask(t) },
     MAC_ADDR: { placeholder: 'H.H.H', accepts: (t) => MAC.test(t) },
     INTERFACE: { placeholder: 'IFACE', accepts: (t) => INTERFACE_NAME.test(t) },
