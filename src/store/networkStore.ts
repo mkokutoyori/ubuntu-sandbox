@@ -183,6 +183,7 @@ interface NetworkState {
   // Utility
   clearSelection: () => void;
   clearAll: () => void;
+  replaceTopology: (deviceInstances: Map<string, Equipment>, connections: Connection[]) => void;
 }
 
 /**
@@ -268,6 +269,28 @@ function deviceToUI(device: Equipment): NetworkDeviceUI {
 /** Reconnect a previously-disconnected connection's cable to the same
  *  (device, interface) pair it originally used — a no-op if either
  *  device or port is gone (e.g. also removed since). */
+function tearDownCanvas(
+  state: { connections: Connection[]; deviceInstances: Map<string, Equipment> },
+  scope: 'clear' | 'replace',
+): void {
+  for (const conn of state.connections) {
+    conn.cable.disconnect();
+  }
+
+  for (const dev of state.deviceInstances.values()) {
+    if (dev.getIsPoweredOn()) {
+      try { dev.powerOff(); } catch { /* swallow */ }
+    }
+  }
+
+  const registry = EquipmentRegistry.getInstance();
+  if (scope === 'clear') {
+    registry.clear();
+    return;
+  }
+  for (const id of state.deviceInstances.keys()) registry.deregister(id);
+}
+
 function reconnectCable(connection: Connection, deviceInstances: Map<string, Equipment>): boolean {
   const source = deviceInstances.get(connection.sourceDeviceId);
   const target = deviceInstances.get(connection.targetDeviceId);
@@ -627,22 +650,7 @@ export const useNetworkStore = create<NetworkState>((set, get) => ({
   },
 
   clearAll: () => {
-    // Disconnect all cables
-    const state = get();
-    for (const conn of state.connections) {
-      conn.cable.disconnect();
-    }
-
-    // Power down every device first, so each one emits its own
-    // `device.power-off` event (services stop, supervisors detach), then
-    // clear the registry which fires `registry.cleared` for the terminal
-    // manager and other reactive subscribers.
-    for (const dev of state.deviceInstances.values()) {
-      if (dev.getIsPoweredOn()) {
-        try { dev.powerOff(); } catch { /* swallow */ }
-      }
-    }
-    EquipmentRegistry.getInstance().clear();
+    tearDownCanvas(get(), 'clear');
 
     resetDeviceCounters();
     resetCounters();
@@ -657,6 +665,22 @@ export const useNetworkStore = create<NetworkState>((set, get) => ({
       connectionSource: null,
       // A cleared canvas has nothing to undo back to — same "loading a
       // new document resets undo history" rule Import/Open follow.
+      historyPast: [],
+      historyFuture: [],
+    });
+  },
+
+  replaceTopology: (deviceInstances, connections) => {
+    tearDownCanvas(get(), 'replace');
+    Logger.reset();
+
+    set({
+      deviceInstances,
+      connections,
+      selectedDeviceId: null,
+      selectedConnectionId: null,
+      isConnecting: false,
+      connectionSource: null,
       historyPast: [],
       historyFuture: [],
     });
