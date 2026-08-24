@@ -9,6 +9,10 @@
  *   - Show commands: show access-lists, show ip access-lists
  */
 
+import {
+  parseIpProtocol, parseAclPortSpec, isDottedQuad, isAclPortOperator,
+  protocolCarriesPorts,
+} from '../../router/acl/AclSyntax';
 import { IPAddress, SubnetMask } from '../../../core/types';
 import type { Router } from '../../Router';
 import { CommandTrie } from '../CommandTrie';
@@ -46,47 +50,16 @@ function parseAddressWildcard(args: string[], offset: number): { ip: IPAddress; 
     return { ip: new IPAddress('0.0.0.0'), wildcard: new SubnetMask('255.255.255.255'), consumed: 1 };
   }
   if (token === 'host') {
-    if (offset + 1 >= args.length) return null;
+    if (!isDottedQuad(args[offset + 1])) return null;
     return { ip: new IPAddress(args[offset + 1]), wildcard: new SubnetMask('0.0.0.0'), consumed: 2 };
   }
-  // IP + wildcard
-  if (offset + 1 >= args.length) return null;
+  if (!isDottedQuad(args[offset]) || !isDottedQuad(args[offset + 1])) return null;
   return { ip: new IPAddress(args[offset]), wildcard: new SubnetMask(args[offset + 1]), consumed: 2 };
 }
 
-const PORT_NAME_MAP: Record<string, number> = {
-  ftp: 21, ftp_data: 20, 'ftp-data': 20, ssh: 22, telnet: 23, smtp: 25,
-  domain: 53, www: 80, http: 80, pop3: 110, ntp: 123, snmp: 161,
-  snmptrap: 162, bgp: 179, https: 443, syslog: 514, tacacs: 49,
-  rip: 520, isakmp: 500, 'non500-isakmp': 4500, sip: 5060,
-  imap: 143, ldap: 389, 'ldap-s': 636, dhcp: 67, bootps: 67, bootpc: 68,
-  tftp: 69, kerberos: 88, nntp: 119, finger: 79, gopher: 70,
-};
-
-function resolvePortName(token: string): number | null {
-  const n = parseInt(token, 10);
-  if (!isNaN(n)) return n;
-  const v = PORT_NAME_MAP[token.toLowerCase()];
-  return v ?? null;
-}
 
 function parsePortSpec(args: string[], offset: number): { spec: import('../../router/ACLEngine').PortSpec; consumed: number } | null {
-  if (offset >= args.length) return null;
-  const op = args[offset].toLowerCase();
-  if (op === 'eq' || op === 'neq' || op === 'gt' || op === 'lt') {
-    if (offset + 1 >= args.length) return null;
-    const port = resolvePortName(args[offset + 1]);
-    if (port === null) return null;
-    return { spec: { op: op as 'eq' | 'neq' | 'gt' | 'lt', port }, consumed: 2 };
-  }
-  if (op === 'range') {
-    if (offset + 2 >= args.length) return null;
-    const a = resolvePortName(args[offset + 1]);
-    const b = resolvePortName(args[offset + 2]);
-    if (a === null || b === null) return null;
-    return { spec: { op: 'range', port: a, endPort: b }, consumed: 3 };
-  }
-  return null;
+  return parseAclPortSpec(args, offset);
 }
 
 const ICMP_TYPE_KEYWORDS = new Set([
@@ -272,24 +245,45 @@ function parseStandardAce(args: string[], sequence?: number): AceParse {
   };
 }
 
+/**
+ * Une place vide est une commande INACHEVEE ; une place remplie par un
+ * jeton qui n'est ni `any`, ni `host`, ni une adresse est une commande
+ * INVALIDE. IOS distingue les deux, et les confondre envoie l'operateur
+ * chercher un mot qui manque alors qu'il en a ecrit un de trop.
+ */
+function incompleteOrInvalid(args: string[], offset: number): string {
+  return offset >= args.length ? '% Incomplete command.' : CISCO_INVALID_INPUT;
+}
+
 function parseExtendedAce(args: string[], sequence?: number): AceParse {
   if (args.length < 1) return { error: '% Incomplete command.' };
-  const protocol = args[0].toLowerCase();
+  const protocol = parseIpProtocol(args[0]);
+  if (protocol === null) return { error: CISCO_INVALID_INPUT };
   let offset = 1;
 
   const src = parseAddressWildcard(args, offset);
-  if (!src) return { error: '% Incomplete command.' };
+  if (!src) return { error: incompleteOrInvalid(args, offset) };
   offset += src.consumed;
 
   const srcPortSpec = parsePortSpec(args, offset);
-  if (srcPortSpec) offset += srcPortSpec.consumed;
+  if (srcPortSpec) {
+    if (!protocolCarriesPorts(protocol)) return { error: CISCO_INVALID_INPUT };
+    offset += srcPortSpec.consumed;
+  } else if (isAclPortOperator(args[offset]?.toLowerCase() ?? '')) {
+    return { error: CISCO_INVALID_INPUT };
+  }
 
   const dst = parseAddressWildcard(args, offset);
-  if (!dst) return { error: '% Incomplete command.' };
+  if (!dst) return { error: incompleteOrInvalid(args, offset) };
   offset += dst.consumed;
 
   const dstPortSpec = parsePortSpec(args, offset);
-  if (dstPortSpec) offset += dstPortSpec.consumed;
+  if (dstPortSpec) {
+    if (!protocolCarriesPorts(protocol)) return { error: CISCO_INVALID_INPUT };
+    offset += dstPortSpec.consumed;
+  } else if (isAclPortOperator(args[offset]?.toLowerCase() ?? '')) {
+    return { error: CISCO_INVALID_INPUT };
+  }
 
   const tail = parseTrailingOptions(args, offset, protocol);
   if (tail.rejected) return { error: CISCO_INVALID_INPUT };
@@ -377,58 +371,10 @@ export function buildACLConfigCommands(trie: CommandTrie, ctx: CiscoACLShellCont
     }
     if (action !== 'permit' && action !== 'deny') return `% Invalid action "${args[1]}"`;
 
-    if (IOS_ACL_NUMBERING(num) === 'standard') {
-      const rest = args.slice(2);
-      const src = parseStandardSource(rest);
-      if (!src) return '% Incomplete command.';
-      const tailOffset = src.consumed;
-      const tail = parseTrailingOptions(rest, tailOffset, 'ip');
-      if (tail.rejected) return CISCO_INVALID_INPUT;
-      ctx.r().addAccessListEntry(num, action as 'permit' | 'deny', {
-        srcIP: src.ip,
-        srcWildcard: src.wildcard,
-        log: tail.log,
-        logInput: tail.logInput,
-        timeRange: tail.timeRange,
-      });
-      return '';
-    } else {
-      if (args.length < 3) return '% Incomplete command.';
-      const protocol = args[2].toLowerCase();
-      let offset = 3;
-
-      const src = parseAddressWildcard(args, offset);
-      if (!src) return '% Incomplete command.';
-      offset += src.consumed;
-
-      const srcPortSpec = parsePortSpec(args, offset);
-      if (srcPortSpec) offset += srcPortSpec.consumed;
-
-      const dst = parseAddressWildcard(args, offset);
-      if (!dst) return '% Incomplete command.';
-      offset += dst.consumed;
-
-      const dstPortSpec = parsePortSpec(args, offset);
-      if (dstPortSpec) offset += dstPortSpec.consumed;
-
-      const tail = parseTrailingOptions(args, offset, protocol);
-      if (tail.rejected) return CISCO_INVALID_INPUT;
-      const { rejected: _r, ...tailOpts } = tail;
-
-      ctx.r().addAccessListEntry(num, action as 'permit' | 'deny', {
-        protocol,
-        srcIP: src.ip,
-        srcWildcard: src.wildcard,
-        dstIP: dst.ip,
-        dstWildcard: dst.wildcard,
-        srcPort: srcPortSpec?.spec.op === 'eq' ? srcPortSpec.spec.port : undefined,
-        dstPort: dstPortSpec?.spec.op === 'eq' ? dstPortSpec.spec.port : undefined,
-        srcPortSpec: srcPortSpec?.spec,
-        dstPortSpec: dstPortSpec?.spec,
-        ...tailOpts,
-      });
-      return '';
-    }
+    const parsed = parseCiscoAce(args.slice(2), IOS_ACL_NUMBERING(num));
+    if ('error' in parsed) return parsed.error;
+    ctx.r().addAccessListEntry(num, action as 'permit' | 'deny', parsed.opts);
+    return '';
   });
 
   // no access-list <number>

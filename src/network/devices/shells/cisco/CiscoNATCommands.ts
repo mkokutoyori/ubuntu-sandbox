@@ -72,6 +72,13 @@ function errorMessageFor(reason: string): string {
  */
 const NAT_GLOBAL_ARGUMENTS:
 Readonly<Record<string, ArgumentSpec | readonly ArgumentSpec[] | null>> = {
+  /*
+   * `ip vrf` vit dans ce constructeur : sa place etait declaree dans
+   * `ciscoArgumentHelp`, ou elle est morte avec l'elagage, si bien que
+   * `ip vrf ?` s'est mis a annoncer `<cr>` pour une commande qui exige
+   * un nom.
+   */
+  'ip vrf': { name: 'nom', type: 'WORD', description: 'VRF name' },
   'ip nat pool': {
     name: 'reserve', type: 'REST',
     description: 'Name, first and last address, then `netmask` or `prefix-length`',
@@ -105,37 +112,8 @@ Readonly<Record<string, ArgumentSpec | readonly ArgumentSpec[] | null>> = {
   },
 };
 
-/*
- * `ip nat inside source static network <local> <global> <masque>` est
- * une forme du gestionnaire GLOUTON `… source static`, mais sa NEGATION
- * a son propre gestionnaire : le general lirait `network` comme une
- * adresse. Le trie tranchait par la longueur du chemin ; le socle traite
- * `no` comme un modificateur, donc l'annulation de la forme gloutonne
- * doit aiguiller elle-meme vers le gestionnaire qui convient.
- *
- * Les deux gestionnaires sont repris du meme constructeur plutot que
- * recopies — deux ecritures de « retirer une traduction statique »
- * pourraient diverger.
- */
-function natStaticUndo(ctx: CiscoShellContext): CommandSpec['undo'] {
-  const collecte = collectRegistrations(
-    (collector) => buildNATConfigCommands(collector as unknown as CommandTrie, ctx));
-  const general = collecte.find(e => e.path === 'no ip nat inside source static');
-  const reseau = collecte.find(e => e.path === 'no ip nat inside source static network');
-  return ((_session: unknown, args: Record<string, string>) => {
-    const mots = String(args.traduction ?? '').trim().split(/\s+/).filter(Boolean);
-    if (mots[0]?.toLowerCase() === 'network') {
-      const suite = mots.slice(1);
-      return reseau?.action(suite,
-        ['no ip nat inside source static network', ...suite].join(' ')) ?? '';
-    }
-    return general?.action(mots,
-      ['no ip nat inside source static', ...mots].join(' ')) ?? '';
-  }) as CommandSpec['undo'];
-}
-
 export function natConfigSpecs(ctx: CiscoShellContext): CommandSpec[] {
-  const specs = specsFromTrieRegistrations(
+  return specsFromTrieRegistrations(
     (collector) => buildNATConfigCommands(collector as unknown as CommandTrie, ctx),
     {
       modes: ['config'], minPrivilege: 15,
@@ -143,13 +121,6 @@ export function natConfigSpecs(ctx: CiscoShellContext): CommandSpec[] {
       argumentFor: (path) => NAT_GLOBAL_ARGUMENTS[path],
     },
   );
-  const statique = specs.find(spec =>
-    spec.path.filter((p): p is string => typeof p === 'string').join(' ')
-      === 'ip nat inside source static');
-  if (statique) {
-    (statique as { undo?: CommandSpec['undo'] }).undo = natStaticUndo(ctx);
-  }
-  return specs;
 }
 
 export function buildNATConfigCommands(trie: CommandTrie, ctx: CiscoShellContext): void {
@@ -615,9 +586,50 @@ export function buildNATInterfaceCommands(trie: CommandTrie, ctx: CiscoShellCont
 import type { CommandSpec } from '@/cli/CommandTable';
 import type { ArgumentSpec } from '@/cli/ArgumentTypes';
 import {
-  specsFromTrieRegistrations, collectRegistrations,
+  specsFromTrieRegistrations,
 } from '@/cli/commands/trieAdapter';
 import { MODES_INTERFACE } from './CiscoConfigCommands';
+
+/*
+ * Chaque forme de `clear ip nat translation` porte un refus qui EXPLIQUE
+ * — VRF absent, reserve absente, port hors bornes — donc la place NOMME
+ * ce qui suit et laisse le gestionnaire trancher. Typer le VRF ou la
+ * reserve remplacerait « % VRF ZORG does not exist. » par un caret nu,
+ * c'est-a-dire une information par une absence d'information.
+ */
+const NAT_EXEC_ARGUMENTS:
+Readonly<Record<string, ArgumentSpec | readonly ArgumentSpec[] | null>> = {
+  'clear ip nat translation inside': { name: 'filtre', type: 'REST', optional: true,
+    description: 'Inside local address, or `vrf` then its name' },
+  'clear ip nat translation outside': { name: 'filtre', type: 'REST', optional: true,
+    description: 'Outside global address, or `vrf` then its name' },
+  'clear ip nat translation tcp': { name: 'traduction', type: 'REST',
+    description: 'Local address and port, then global address and port' },
+  'clear ip nat translation udp': { name: 'traduction', type: 'REST',
+    description: 'Local address and port, then global address and port' },
+  'clear ip nat translation vrf': { name: 'nom', type: 'WORD', description: 'VRF name' },
+  'clear ip nat translation pool': { name: 'nom', type: 'WORD', description: 'Pool name' },
+  'clear ip nat statistics': null,
+};
+
+export function natExecSpecs(getRouter: () => Router): CommandSpec[] {
+  return specsFromTrieRegistrations(
+    (collector) => registerNATPrivilegedCommands(collector as unknown as CommandTrie, getRouter),
+    {
+      modes: ['privileged'], minPrivilege: 15,
+      undoFromNegatedPaths: true,
+      argumentFor: (path) => NAT_EXEC_ARGUMENTS[path],
+      /*
+       * `debug ip nat` est enregistre ici et n'a jamais repondu : c'est
+       * le repartiteur `debug ip` de `CiscoShellBase` qui le sert, et
+       * lui seul sait dire `IP NAT detailed debugging is on`. Le migrer
+       * le ferait GAGNER et changerait le message ; la famille du debogage
+       * est un autre sujet, donc ce lot ne prend que `clear ip nat`.
+       */
+      skip: (path) => !path.replace(/^no\s+/i, '').startsWith('clear ip nat'),
+    },
+  );
+}
 
 export function registerNATPrivilegedCommands(trie: CommandTrie, getRouter: () => Router): void {
   const debugSvc = () => getRouter().getDebugService();

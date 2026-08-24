@@ -358,6 +358,40 @@ export function buildEemNetflowArchiveInterfaceCommands(trie: CommandTrie, ctx: 
   });
 }
 
+/*
+ * Un nom de reserve, d'enregistreur ou de moniteur est LIBRE : la place
+ * le nomme et la vue dit elle-meme qu'elle n'a rien a montrer quand il
+ * ne designe rien. `show flow monitor` accepte en plus le mot `cache`,
+ * que le gestionnaire distingue d'un nom — il est donc annonce comme un
+ * mot-cle, ce que `?` d'un vrai IOS fait aussi.
+ */
+const NETFLOW_EEM_SHOW_ARGUMENTS:
+Readonly<Record<string, ArgumentSpec | readonly ArgumentSpec[] | null>> = {
+  'show flow exporter': { name: 'nom', type: 'WORD', optional: true,
+    description: 'Name of the Flexible NetFlow exporter' },
+  'show flow record': { name: 'nom', type: 'WORD', optional: true,
+    description: 'Name of the Flexible NetFlow record' },
+  'show flow monitor': { name: 'nom', type: 'WORD', optional: true,
+    description: 'Name of the Flexible NetFlow monitor' },
+  'show ip cache flow': null,
+  'show ip flow export': null,
+  'event manager run': { name: 'nom', type: 'WORD', description: 'Name of the EEM policy' },
+};
+
+export function netflowEemShowSpecs(getRouter: () => Router): CommandSpec[] {
+  return specsFromTrieRegistrations(
+    (collector) => buildEemNetflowArchiveShowCommands(
+      collector as unknown as CommandTrie, getRouter),
+    {
+      modes: ['user', 'privileged'], minPrivilege: 1,
+      argumentFor: (path) => NETFLOW_EEM_SHOW_ARGUMENTS[path],
+      keywordsFor: (path) => path === 'show flow monitor'
+        ? [{ keyword: 'cache', description: 'Display the flow cache', argument: null }]
+        : undefined,
+    },
+  );
+}
+
 export function buildEemNetflowArchiveShowCommands(trie: CommandTrie, getRouter: () => Router): void {
   trie.registerGreedy('event manager run', 'Run an EEM applet manually', (args) => {
     if (!args[0]) return '% Incomplete command.';

@@ -43,6 +43,16 @@ export interface CollectedRegistration {
   greedy: boolean;
   keywords?: ReadonlyArray<AdapterKeyword>;
   hidden: boolean;
+  /**
+   * Le constructeur a dit que la place est EXIGEE.
+   *
+   * `requireArgs` etait avale sans rien faire, au motif qu'une place
+   * declaree non facultative le dit mieux — vrai quand la famille en
+   * declare une, faux sinon : la place par defaut de l'adaptateur est
+   * facultative, donc la commande annoncait `<cr>` et refusait ensuite
+   * au caret le mot qui manquait.
+   */
+  requiresArgs?: boolean;
 }
 
 export interface SpecCollector {
@@ -59,10 +69,11 @@ export interface SpecCollector {
   /**
    * « Ce chemin exige au moins un mot de plus. »
    *
-   * Le socle le dit autrement, et mieux : une place DECLAREE et non
-   * facultative. Le trie ne sait que compter les mots, la declaration
-   * sait de quelle NATURE ils sont, donc la traduction se fait par
-   * `argumentFor` et cet appel n'a rien a retenir.
+   * Une place DECLAREE et non facultative le dit mieux — elle sait de
+   * quelle NATURE est le mot — donc `argumentFor` l'emporte quand la
+   * famille en declare une. En son absence, cet appel est ce qui rend
+   * EXIGEE la place par defaut, faute de quoi la commande annonce
+   * `<cr>` et refuse ensuite au caret.
    */
   requireArgs(path: string, count: number): void;
   /**
@@ -87,6 +98,7 @@ export function collectRegistrations(
 ): CollectedRegistration[] {
   const collected: CollectedRegistration[] = [];
   const hidden = new Set<string>();
+  const exigent = new Set<string>();
   const collector: SpecCollector = {
     register(path, description, action) {
       collected.push({ path, description, action, greedy: false, hidden: false });
@@ -107,15 +119,28 @@ export function collectRegistrations(
     neJamaisAnnoncer(path) { hidden.add(path); },
     addCompletionKeywords() { /* the socle derives completion from declared children */ },
     registerSuggestions() { /* idem */ },
-    requireArgs() { /* a declared, non-optional place says it */ },
+    requireArgs(path) { exigent.add(path); },
     setCompletionFilter() { /* `reachableWhen` says it, for help AND execution */ },
   };
   register(collector);
-  return collected.map(entry => ({ ...entry, hidden: hidden.has(entry.path) }));
+  return collected.map(entry => ({
+    ...entry,
+    hidden: hidden.has(entry.path),
+    requiresArgs: exigent.has(entry.path),
+  }));
 }
 
 export interface SpecFromTrieOptions {
   modes: readonly string[];
+  /**
+   * Les modes de CE chemin, quand ils different de la famille.
+   *
+   * `scopedTrie` retire certaines vues de l'EXEC utilisateur
+   * (`PRIVILEGED_EXEC_ONLY`) : un constructeur partage porte donc des
+   * commandes de deux portees, et une famille a un seul jeu de modes
+   * les rendrait toutes visibles avant `enable`.
+   */
+  modesFor?: (path: string) => readonly string[] | undefined;
   minPrivilege: number;
   restName?: string;
   restDescription?: string;
@@ -175,6 +200,22 @@ export function specsFromTrieRegistrations(
       if (entry.path.startsWith('no ')) negations.set(entry.path.slice(3), entry);
     }
   }
+  const gloutonCouvrant = (positif: string): CollectedRegistration | undefined =>
+    collected
+      .filter(autre => autre.greedy && !autre.path.startsWith('no ')
+        && positif.startsWith(`${autre.path} `))
+      .sort((a, b) => b.path.length - a.path.length)[0];
+  const negationsCouvertes = new Map<string, CollectedRegistration[]>();
+  if (options.undoFromNegatedPaths) {
+    for (const entry of collected) {
+      if (!entry.path.startsWith('no ')) continue;
+      const glouton = gloutonCouvrant(entry.path.slice(3));
+      if (!glouton) continue;
+      const liste = negationsCouvertes.get(glouton.path) ?? [];
+      liste.push(entry);
+      negationsCouvertes.set(glouton.path, liste);
+    }
+  }
   const specs: CommandSpec[] = [];
   for (const entry of collected) {
     if (negation !== undefined && entry.path === negation.path) continue;
@@ -201,9 +242,8 @@ export function specsFromTrieRegistrations(
      * devenait « % Incomplete command. ».
      */
     const positif = entry.path.startsWith('no ') ? entry.path.slice(3) : null;
-    const couvertParUnGlouton = positif !== null && collected.some(autre =>
-      autre.greedy && !autre.path.startsWith('no ')
-      && positif.startsWith(`${autre.path} `));
+    const couvertParUnGlouton = positif !== null
+      && gloutonCouvrant(positif) !== undefined;
     const negationSeule = options.undoFromNegatedPaths
       && entry.path.startsWith('no ')
       && !collected.some(autre => autre.path === entry.path.slice(3))
@@ -215,12 +255,13 @@ export function specsFromTrieRegistrations(
     const contexte = options.reachableWhenFor?.(entry.path);
     const words = (negationSeule ? entry.path.slice(3) : entry.path)
       .split(/\s+/).filter(Boolean);
+    const modesIci = options.modesFor?.(entry.path) ?? options.modes;
     const declaredLabel = options.restDescriptionFor?.(entry.path)
       ?? options.restDescription;
     const restLiteral = options.restLiteralFor?.(entry.path);
     const declaredArgument = options.argumentFor?.(entry.path);
     const reste: ArgumentSpec = {
-      name: restName, type: 'REST', optional: true,
+      name: restName, type: 'REST', optional: entry.requiresArgs !== true,
       description: declaredLabel ?? entry.description,
       ...(restLiteral ? { literal: restLiteral } : {}),
       ...(declaredLabel === undefined && restLiteral === undefined
@@ -243,10 +284,10 @@ export function specsFromTrieRegistrations(
       return entry.action(argv, [...words, ...argv].join(' '));
     };
     specs.push({
-      id: [options.modes[0], ...words].join('-'),
+      id: [modesIci[0], ...words].join('-'),
       path,
       description: entry.description,
-      modes: options.modes,
+      modes: modesIci,
       minPrivilege: options.minPrivilege,
       ...(cache ? { hidden: true } : {}),
       ...(contexte ? { reachableWhen: contexte } : {}),
@@ -270,6 +311,50 @@ export function specsFromTrieRegistrations(
           const propre = negations.get(entry.path)!;
           const argv = valeursTapees(args);
           return propre.action(argv, [propre.path, ...argv].join(' '));
+        }) as CommandSpec['undo'],
+      }),
+      /*
+       * Une negation plus LONGUE que le glouton qui la couvre reste
+       * atteignable, et c'est le glouton qui l'aiguille.
+       *
+       * `no ip nat inside source static network 1.1.1.0 …` et
+       * `no bfd echo` decrivent tous deux une forme que le glouton
+       * positif avale deja : les declarer a part les masquerait, et ne
+       * rien declarer les perdrait. Le glouton porte donc UN `undo` qui
+       * lit les mots tapes et appelle la negation la plus specifique
+       * qui les prefixe — la meme regle que l'analyse suit pour la
+       * forme positive, donc les deux ne peuvent pas diverger.
+       */
+      ...((negationsCouvertes.get(entry.path) ?? []).length === 0 ? {} : {
+        undoRequiresArgument: negations.get(entry.path) === undefined,
+        undo: ((_session: unknown, args: Record<string, string>) => {
+          const mots = valeursTapees(args);
+          const couvertes = [...(negationsCouvertes.get(entry.path) ?? [])]
+            .sort((a, b) => b.path.length - a.path.length);
+          for (const cible of couvertes) {
+            const surplus = cible.path.slice(3).split(/\s+/)
+              .slice(words.length);
+            const prefixe = mots.slice(0, surplus.length)
+              .map(mot => mot.toLowerCase());
+            if (surplus.length === 0
+              || surplus.join(' ').toLowerCase() !== prefixe.join(' ')) continue;
+            const suite = mots.slice(surplus.length);
+            return cible.action(suite, [cible.path, ...suite].join(' '));
+          }
+          const propre = negations.get(entry.path);
+          if (propre !== undefined) {
+            return propre.action(mots, [propre.path, ...mots].join(' '));
+          }
+          /*
+           * Le mot-cle EXISTE sous `no`, il lui manque une suite : c'est
+           * `% Incomplete command.` et non le caret, qui dirait que la
+           * commande est inconnue. La distinction est celle d'IOS, et
+           * `probe-aide-tient-ses-promesses` la mesure — `no ?` annonce
+           * ce glouton des qu'une de ses formes sait se defaire.
+           */
+          return mots.length === 0
+            ? '% Incomplete command.'
+            : "% Invalid input detected at '^' marker.";
         }) as CommandSpec['undo'],
       }),
     });
@@ -299,10 +384,10 @@ export function specsFromTrieRegistrations(
       const cible = negationDeLaCommande;
       const argvNu = cible === negationPropre ? [] : [...words];
       specs.push({
-        id: `no-${[options.modes[0], ...words].join('-')}`,
+        id: `no-${[modesIci[0], ...words].join('-')}`,
         path: [...words],
         description: entry.description,
-        modes: options.modes,
+        modes: modesIci,
         minPrivilege: options.minPrivilege,
         existsOnlyNegated: true,
         ...(cache ? { hidden: true } : {}),
@@ -323,10 +408,10 @@ export function specsFromTrieRegistrations(
             : [sub.argument as ArgumentSpec];
       const amont = sub.afterArguments ? [...words, ...places] : [...words];
       specs.push({
-        id: [options.modes[0], ...amont, sub.keyword].join('-'),
+        id: [modesIci[0], ...amont, sub.keyword].join('-'),
         path: [...amont, sub.keyword, ...placesFille],
         description: sub.description,
-        modes: options.modes,
+        modes: modesIci,
         minPrivilege: options.minPrivilege,
         ...(cache ? { hidden: true } : {}),
         ...(sub.reachableWhen ? { reachableWhen: sub.reachableWhen }

@@ -12,74 +12,6 @@ Format : `[famille] intitulé` puis constat / mesure / raison du report.
 
 ## Commutateur Huawei (VRP)
 
-### [route] deux routes statiques vers le meme prefixe se confondent
-Sur le COMMUTATEUR, `SwitchSvi` indexe ses routes statiques par
-`network/mask` seul (`addStaticRoute` remplace l'entree existante), donc
-`ip route-static 10.9.0.0 24 10.0.0.1` puis `... 10.0.0.2` laissent UNE
-route, la seconde. Une vraie machine en garde deux — c'est ainsi qu'on
-ecrit une route de secours ou un partage de charge.
-**Mesure** : les deux commandes acceptees, `display current-configuration`
-n'en rend qu'une, et `getStaticRoutes()` n'a qu'une entree.
-**Consequence sur `undo`** : depuis que la suppression compare le saut
-suivant, `undo ip route-static 10.9.0.0 24 10.0.0.1` repond desormais
-`Route not found.` sur cette machine — la reponse EXACTE pour l'etat du
-magasin, et qui rend le defaut visible au lieu de le masquer en retirant
-la mauvaise route comme avant.
-**Report** : la cle du magasin decide aussi de ce que lit le plan de
-donnees (`SwitchSvi` resout le saut a la volee dans deux boucles), donc
-la changer touche le routage du commutateur et pas la CLI. Le ROUTEUR,
-lui, n'a pas ce defaut : `Router` garde les deux routes.
-
-### [mac-limit] deux règles de PORTÉES différentes coexistent-elles ?
-Une règle est maintenant identifiée par sa portée : `mac-limit maximum 5
-vlan 10` puis `mac-limit maximum 8 vlan 10` remplacent bien, et deux VLAN
-différents gardent leurs deux règles. Reste la seule question que la
-mesure ne tranche pas : `mac-limit maximum 5` (sans qualificatif) et
-`mac-limit maximum 5 vlan 10` coexistent ici, parce qu'un qualificatif
-`vlan` désigne une autre portée — ce qui est un raisonnement, pas une
-mesure.
-**Mesure** : les pages `mac-limit (interface view)` de Huawei ne sont pas
-joignables depuis ce réseau (proxy) ; deux règles de portées différentes
-sur le même port sont plausibles et non attestées.
-**Report** : trancher demande le manuel ou une vraie machine. Le
-mécanisme, lui, est en place — la clé de réglage porte désormais ses
-qualificatifs —, donc fermer cette entrée ne sera qu'un choix de clé.
-
-### [mqc] `redirect` reste hors du comportement
-Le comportement sait `permit`, `deny`, `car`, `remark dscp|8021p` et
-`statistic enable` (compteurs par point d'application, rendus par
-`display traffic policy statistics`). Reste `redirect`.
-**Mesure** : `redirect interface GigabitEthernet0/0/2` sous
-`traffic behavior` répond `Unrecognized command`.
-**Report** : le chemin de données du commutateur décide de laisser passer
-ou de jeter — `handleFrame` n'a aucun point où réémettre une trame sur
-une autre interface depuis un filtre. Le brancher demande de séparer la
-décision de filtrage de la décision de commutation, ce qui touche le
-cœur de `handleFrame` et pas le MQC.
-
-### [mqc] l'opérateur `and`/`or` d'un classificateur n'est pas modélisé
-Plusieurs `if-match` dans un classificateur sont évalués en OU — le
-premier qui touche décide. VRP laisse choisir avec
-`traffic classifier NAME operator { and | or }`.
-**Mesure** : le mot-clé `operator` est refusé.
-**Report** : la valeur par DÉFAUT de VRP n'est pas attestée depuis ce
-réseau (pages Huawei bloquées par le proxy), et se tromper de défaut
-changerait le sens de tous les classificateurs à plusieurs règles. Le OU
-actuel est celui que le code appliquait déjà ; l'écrire sans mesure
-serait pire.
-
-### [info-center] `display info-center` est refusée
-Le magasin existe (`InfoCenterConfig`), la famille de configuration est
-honorée et figure maintenant dans `display current-configuration` sur les
-deux plateformes — mais la vue qui la relit n'existe sur aucune des deux :
-`display info-center` répond `Unrecognized command`.
-**Report** : mesuré, non fermé — il manque une capture attestée du tableau
-que rend la vraie commande (état, canaux, destinations), et
-`info.support.huawei.com` est EGRESS_BLOCKED depuis cette session. Rendre
-un tableau inventé serait exactement le décor que ce dépôt passe son temps
-à défaire.
-
----
 
 ## Moteur L2 partagé (`Switch.ts`)
 
@@ -261,6 +193,44 @@ quatre plages d'IOS », une place peut en annoncer PLUSIEURS et n'est
 refusee que si la valeur est hors de TOUTES (`alternatives`), ce que les
 deux mecanismes de declaration jugent desormais par la meme regle.
 
+
+### [cli] cinq commandes de fichier repondent en EXEC UTILISATEUR
+`dir`, `more`, `pwd`, `delete`, `verify`, `mkdir`, `rmdir` et `squeeze`
+repondent aussi bien avant `enable` qu'apres, sur le routeur comme sur
+le commutateur.
+**Mesure** : sur une machine neuve, sans `enable`, les huit rendent leur
+sortie normale au lieu de `% Invalid input detected`.
+**Cause** : `registerFileSystemCommands` porte le commentaire inverse
+(« Enregistre sur la trie privilegiee uniquement ») et etait appelee avec
+la trie BRUTE et non par `scopedTrie`, le mecanisme prevu exactement pour
+cela (`PRIVILEGED_EXEC_ONLY`). La declaration au socle a preserve la
+portee mesuree plutot que de la changer dans un lot de migration.
+**Ce que dit la reference Cisco** : `dir`, `more` et `pwd` sont bien des
+commandes d'EXEC utilisateur, et la reference des fondamentaux decrit
+aussi `delete` comme « EXEC, privileged EXEC, or diagnostic mode » et
+`squeeze` comme « EXEC command » — donc cinq des huit sont conformes.
+`verify` est documentee privilegiee ; `mkdir`/`rmdir` sont donnees en
+mode chargeur d'amorce sur Catalyst et en EXEC privilegie sur routeur.
+**Report** : restreindre la portee change ce que la machine accepte, ce
+qu'un lot de migration ne doit pas faire ; et les trois cas restants
+demandent chacun une reference propre a la plateforme, la reponse
+n'etant pas la meme sur un 2900 et sur un 2960.
+
+### [nat] `debug ip nat` est enregistre DEUX fois, et l'une des deux est morte
+`registerNATPrivilegedCommands` enregistre `debug ip nat` et
+`no debug ip nat` avec leur propre corps (il allume le moteur puis
+delegue au service de debogage), et ce corps n'a jamais repondu : le
+repartiteur glouton `debug ip` de `CiscoShellBase` sert la commande, et
+lui seul sait ecrire `IP NAT detailed debugging is on`.
+**Mesure** : migrer la paire au socle la fait GAGNER, et
+`debug ip nat detailed` passe de `IP NAT detailed debugging is on` a
+`IP NAT debugging is on for access list detailed` — le message du corps
+mort. Un cas de `debug-family-slice.test.ts` l'a attrape.
+**Report** : les deux corps allument le meme moteur mais ne rendent pas
+le meme texte, donc les fondre demande de decider lequel est fidele
+(c'est celui du repartiteur) et de retirer l'autre — un travail qui
+appartient a la famille du DEBOGAGE, pas au lot `clear ip nat`. La
+migration l'ecarte explicitement par `skip` en attendant.
 
 ### [socle] deux familles sont migrées sur le commutateur VRP
 Le pont existe des DEUX côtés : `VRP_SWITCH_MODES` décrit la hiérarchie
@@ -537,17 +507,19 @@ UTC.
 (`set timezone ?`), et l'inventer donnerait 79 correspondances fausses —
 pire que l'aveu.
 
-### [admin] pas d'interface d'administration HTTP/HTTPS
-`set allowaccess http https` est accepte, rendu, et gouverne bien le
-filtrage TCP (`ManagementPlane.admitsTcp` refuse le port), mais RIEN
-n'ecoute derriere : aucun serveur qui servirait la page de connexion que
-le TP 1 fait ouvrir sur `http://192.168.100.99`.
-**Mesure** : le TP 1 demande d'ouvrir l'adresse dans un navigateur ; la
-seule brique HTTP du pare-feu est `AuthPortal` (portail captif), qui
-n'est pas monte sur les ports d'administration.
-**Report** : `Http1ServerSession` existe et le portail captif montre le
-chemin ; il manque le serveur d'administration lui-meme et ses pages,
-sujet en soi et non une commande de plus.
+### [admin] le code de redirection du port d'administration n'est pas atteste
+Depuis le lot « le plan d'administration ecoute », `admin-port` sert
+vraiment et redirige vers HTTPS quand `admin-https-redirect` est actif.
+Ce qui n'est pas atteste est le CODE de cette redirection sur une vraie
+machine, ni l'en-tete `Server` qu'elle rend.
+**Mesure** : la documentation Fortinet et les fils de la communaute
+attestent la redirection et son activation par defaut, jamais son code ;
+`docs.fortinet.com` ne rend pas de transcription HTTP depuis ce reseau.
+**Ce qui est pose** : `301`, la semantique HTTP d'un changement de
+schema permanent, et la sonde verifie `30x` plutot que d'epingler un
+chiffre que rien ne soutient.
+**Report** : trancher demande une capture de vraie machine. Le
+mecanisme, lui, est complet.
 
 ## Serveurs DHCP
 

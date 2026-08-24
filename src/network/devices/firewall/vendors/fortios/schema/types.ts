@@ -212,6 +212,8 @@ export interface FortiGlobalSettings {
   readonly conserveThresholds?: ConserveThresholds;
   readonly avFailopen?: string;
   readonly revisionOnLogout?: boolean;
+  readonly adminHttpsRedirect?: boolean;
+  readonly adminServerCertificate?: string;
 }
 
 export interface FortiIpsGlobalSettings {

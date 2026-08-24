@@ -129,7 +129,8 @@ import {
 import { registerLineExecCommands } from './cisco/CiscoLineCommands';
 import { setupInteractionPlan } from './cisco/CiscoSetupDialog';
 import {
-  scopedTrie, PRIVILEGED_ONLY_SHOW_CHILDREN, PRIVILEGED_ONLY_PATHS, type ExecScope,
+  scopedTrie, PRIVILEGED_ONLY_SHOW_CHILDREN, PRIVILEGED_ONLY_PATHS,
+  PRIVILEGED_EXEC_ONLY, type ExecScope,
 } from './cisco/CiscoExecScope';
 import {
   registerLoggingConfigCommands, loggingShowViews, severityValues,
@@ -464,6 +465,98 @@ const VIEW_COMMANDS_KEYWORDS: ReadonlyArray<AdapterKeyword> = [
 ];
 
 
+/*
+ * Les declarations viennent de `ciscoArgumentHelp`, ou elles etaient
+ * posees sur la trie privilegiee : les porter ici est ce qui les garde
+ * VIVANTES, une declaration accrochee a un arbre vide ne decrivant plus
+ * rien. Trois d'entre elles gagnent une place `REST` la ou le trie
+ * annoncait un mot unique : le gestionnaire de `dir`, `verify` et
+ * `delete` filtre les options en `/`, donc il en accepte plusieurs et
+ * une place unique aurait refuse `dir /all flash:`.
+ */
+const FICHIER_CISCO = (nom: string, description: string): ArgumentSpec => ({
+  name: nom, type: 'REST', literal: 'WORD', description,
+});
+
+/*
+ * `disconnect` et `resume` NOMMENT leurs deux formes sans restreindre :
+ * le gestionnaire lit un numero et repond lui-meme a ce qui n'en est
+ * pas un (`disconnect all` rend « No information for this connection »,
+ * ce qu'un test epingle), donc une place bornee refuserait au caret ce
+ * que la machine accepte. Les deux libelles sont ceux qu'IOS ecrit.
+ */
+const CONNEXION_SORTANTE: ArgumentSpec = {
+  name: 'connexion', type: 'REST', optional: true,
+  description: 'Connection number or name',
+  alternatives: [
+    { keyword: '<1-16>', description: 'Connection number' },
+    { keyword: 'WORD', description: 'Connection name' },
+  ],
+};
+
+/*
+ * Ce que ce lot prend de `registerCommonShowCommands`. Nommer les
+ * chemins plutot que de tout collecter est ce qui laisse ses
+ * DELEGATIONS — systeme de fichiers, sessions sortantes, EXEC du DNS —
+ * la ou elles sont, migrees ou non.
+ */
+const SHOW_PARTAGEES: ReadonlySet<string> = new Set([
+  'show interfaces counters errors', 'show mac address-table', 'terminal',
+  'show ntp packets', 'show cdp', 'show lldp', 'show snmp', 'show parser view',
+  'show hosts', 'show ip dns statistics', 'show ip vrf', 'show vrf',
+  'show adjacency', 'show redundancy', 'show aaa',
+]);
+
+const SHARED_SHOW_ARGUMENTS:
+Readonly<Record<string, ArgumentSpec | readonly ArgumentSpec[] | null>> = {
+  'show snmp': { name: 'vue', type: 'REST', optional: true,
+    description: 'SNMP detail to display' },
+  'show hosts': null,
+  'show adjacency': null,
+  'show ip dns statistics': null,
+  'show interfaces counters errors': null,
+  'show redundancy': null,
+  'show aaa': { name: 'reste', type: 'REST', optional: true,
+    description: 'AAA detail to display' },
+  'show mac address-table': { name: 'filtre', type: 'REST', optional: true,
+    description: 'Filter the MAC address table' },
+  /*
+   * La place est EXIGEE : `terminal` seul est declare incomplet par le
+   * gestionnaire, et la place facultative de l'adaptateur ferait
+   * annoncer `<cr>` a une commande qui ne s'ecrit jamais seule.
+   */
+  terminal: { name: 'reglage', type: 'REST', description: 'Terminal parameter to set' },
+};
+
+const SESSION_ARGUMENTS:
+Readonly<Record<string, ArgumentSpec | readonly ArgumentSpec[] | null>> = {
+  where: null,
+  disconnect: CONNEXION_SORTANTE,
+  resume: CONNEXION_SORTANTE,
+  /*
+   * La place est GLOUTONNE : les deux gestionnaires filtrent les options
+   * en `-`, donc `ssh -l zoe 10.0.0.9` porte trois mots et une place
+   * unique l'aurait refusee.
+   */
+  ssh: { name: 'hote', type: 'REST', literal: 'WORD',
+    description: 'IP address or hostname of a remote system' },
+  telnet: { name: 'hote', type: 'REST', literal: 'WORD',
+    description: 'IP address or hostname of a remote system' },
+};
+
+const FILESYSTEM_ARGUMENTS:
+Readonly<Record<string, ArgumentSpec | readonly ArgumentSpec[] | null>> = {
+  dir: { ...FICHIER_CISCO('filesystem', 'Filesystem or directory to list'),
+    optional: true },
+  more: FICHIER_CISCO('file', 'File to display'),
+  verify: FICHIER_CISCO('file', 'File to verify'),
+  delete: FICHIER_CISCO('file', 'File to be deleted'),
+  mkdir: FICHIER_CISCO('directory', 'Directory to create'),
+  rmdir: FICHIER_CISCO('directory', 'Directory to remove'),
+  squeeze: FICHIER_CISCO('filesystem', 'Filesystem to squeeze'),
+  pwd: null,
+};
+
 const HTTP_ARGUMENTS:
 Readonly<Record<string, ArgumentSpec | readonly ArgumentSpec[] | null>> = {
   'ip http server': null,
@@ -475,7 +568,18 @@ Readonly<Record<string, ArgumentSpec | readonly ArgumentSpec[] | null>> = {
   'ip http max-connections': { name: 'nombre', type: 'REST',
     description: 'Number of concurrent connections allowed' },
   'ip http access-class': { name: 'liste', type: 'REST',
-    description: 'Access list restricting who may connect' },
+    description: 'Access list restricting who may connect',
+    /*
+     * La forme historique est NOMMEE et non bornee : le gestionnaire
+     * accepte un nom comme un numero, et annoncer `<1-99>` promettrait
+     * une plage que `probe-plage-annoncee-est-appliquee` ferait alors
+     * appliquer — donc refuserait une liste nommee que la machine
+     * accepte.
+     */
+    alternatives: [
+      { keyword: 'WORD', description: 'Access list name or number' },
+      { keyword: 'ipv4', description: 'IPv4 access list, then its name' },
+    ] },
   'ip http authentication': { name: 'methode', type: 'REST',
     description: 'How the server authenticates a request' },
   'ip http timeout-policy': { name: 'reste', type: 'REST',
@@ -500,6 +604,27 @@ Readonly<Record<string, ArgumentSpec | readonly ArgumentSpec[] | null>> = {
     description: 'Address answered to every query' },
   'ip dns primary': { name: 'reste', type: 'REST',
     description: 'Zone, then `soa` with its name server and mailbox' },
+  /*
+   * Le gestionnaire prend PLUSIEURS serveurs — `setNameServers(args)` —
+   * donc une place unique refuserait le second ; la premiere est typee
+   * pour qu'`?` annonce `A.B.C.D` comme IOS, la suite est libre.
+   */
+  'ip name-server': [
+    { name: 'adresse', type: 'IP_ADDR', description: 'Domain server IP address' },
+    { name: 'reste', type: 'REST', optional: true,
+      description: 'Further domain server addresses' },
+  ],
+  /*
+   * `ip host <nom> <adresse>...` ou `ip host <nom> ns <adresse>` : le
+   * gestionnaire exige deux mots, donc la seconde place n'est pas
+   * facultative — sans quoi `ip host ?` annonce `<cr>` pour une frappe
+   * que la meme machine declare incomplete.
+   */
+  'ip host': [
+    { name: 'nom', type: 'WORD', description: 'Name of host' },
+    { name: 'reste', type: 'REST',
+      description: 'Host addresses, or `ns` then the name server address' },
+  ],
 };
 
 export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
@@ -2605,7 +2730,10 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
           if (!this.deviceRef) return new Map();
           return getSecurityConfig(this.d()).parserViews;
         }),
-        new CommandCanonicalizer({ triesFor: (scope) => this.arbresDe(scope) }),
+        new CommandCanonicalizer({
+          triesFor: (scope) => this.arbresDe(scope),
+          socleParts: (scope, commande) => this.socleCanonicalParts(scope, commande),
+        }),
       );
     }
     return this._autorisation;
@@ -2660,6 +2788,90 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     // un nom d'hote a joindre — donc `do write memory` refuse au niveau
     // reduit repondait par une resolution de nom.
     return this.niveauDeclareParLeSocle(cmdPart);
+  }
+
+  /**
+   * La forme canonique d'une commande que seul le socle porte.
+   *
+   * Le chemin le plus LONG gagne, comme la marche du trie : sinon
+   * `ip address` serait canonicalisee par `ip`, et une regle de niveau
+   * ecrite sur l'une couvrirait l'autre. Deux chemins de meme longueur
+   * rendent `null` — une abreviation ambigue ne doit pas faire porter
+   * la decision d'autorisation sur une commande que l'operateur n'a pas
+   * designee, ce que le canonicaliseur documente deja pour les tries.
+   */
+  private socleCanonicalParts(
+    scope: AuthScope, commande: string,
+  ): { keywords: string; full: string } | null {
+    const table = this.socleTable();
+    if (!table) return null;
+    const mots = commande.trim().toLowerCase().split(/\s+/).filter(Boolean);
+    if (mots.length === 0) return null;
+
+    const candidats: string[][] = [];
+    for (const chemin of this.cheminsDuSocle(table, scope)) {
+      if (chemin.length > mots.length) continue;
+      if (!chemin.every((mot, rang) => mot.startsWith(mots[rang]))) continue;
+      candidats.push(chemin);
+    }
+    /*
+     * Un mot TAPE EN ENTIER l'emporte sur un mot dont il n'est que le
+     * debut. Sans cette preference, `ip address` etait juge ambigu avec
+     * `ipv6 address` — `ipv6` commence bien par `ip` — donc la
+     * canonicalisation rendait `null` et la regle de niveau etait rangee
+     * sous la ligne entiere, arguments compris. C'est la meme regle que
+     * la marche du trie, qui essaie l'enfant EXACT avant les prefixes.
+     */
+    const exacts = candidats.filter(
+      chemin => chemin.every((mot, rang) => mot === mots[rang]));
+    const pool = exacts.length > 0 ? exacts : candidats;
+
+    let meilleur: string[] | null = null;
+    let ambigu = false;
+    for (const chemin of pool) {
+      if (meilleur === null || chemin.length > meilleur.length) {
+        meilleur = chemin;
+        ambigu = false;
+      } else if (chemin.length === meilleur.length
+        && chemin.join(' ') !== meilleur.join(' ')) {
+        ambigu = true;
+      }
+    }
+    if (meilleur === null || ambigu) return null;
+    return {
+      keywords: meilleur.join(' '),
+      full: [...meilleur, ...mots.slice(meilleur.length)].join(' '),
+    };
+  }
+
+  private cheminsDuSocle(table: CommandTable, scope: AuthScope): readonly string[][] {
+    if (!this.socleCheminsParPortee) {
+      const index = new Map<string, string[][]>();
+      for (const spec of table.specs()) {
+        const chemin = CiscoShellBase.keywordPathOf(spec);
+        if (chemin.length === 0) continue;
+        for (const portee of new Set(spec.modes.map(scopeForMode))) {
+          const liste = index.get(portee) ?? [];
+          liste.push(chemin);
+          index.set(portee, liste);
+        }
+      }
+      this.socleCheminsParPortee = index;
+    }
+    return this.socleCheminsParPortee.get(scope) ?? [];
+  }
+
+  private undoSansValeur(table: CommandTable, mode: string, chemin: string): boolean {
+    if (!this.socleUndoSansValeur) {
+      const vus = new Set<string>();
+      for (const spec of table.specs()) {
+        if (spec.undoRequiresArgument !== true) continue;
+        const mots = CiscoShellBase.keywordPathOf(spec).join(' ');
+        for (const m of spec.modes) vus.add(`${m} ${mots}`);
+      }
+      this.socleUndoSansValeur = vus;
+    }
+    return this.socleUndoSansValeur.has(`${mode} ${chemin}`);
   }
 
   private niveauDeclareParLeSocle(cmdPart: string): number | null {
@@ -2967,6 +3179,15 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
   }
 
   private socleInstance?: CommandTable;
+  /*
+   * Les chemins du socle, indexes par PORTEE et par MODE.
+   *
+   * `socleCanonicalParts` et l'aide des negations parcouraient la table
+   * entiere a chaque frappe et a chaque `?` ; la table ne change plus
+   * une fois construite, donc l'index se calcule une fois avec elle.
+   */
+  private socleCheminsParPortee?: Map<string, string[][]>;
+  private socleUndoSansValeur?: Set<string>;
 
   /**
    * Ce que cette plateforme declare sur le socle.
@@ -4831,7 +5052,49 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       ...this.viewSubmodeSpecs(),
       ...this.httpServerSpecs(),
       ...this.dnsConfigSpecs(),
+      ...this.fileSystemSpecs(),
+      ...this.sessionSpecs(),
+      ...this.sharedShowSpecs(),
     ];
+  }
+
+  /*
+   * `registerCommonShowCommands` sert les DEUX arbres d'EXEC et les DEUX
+   * plateformes : quinze commandes y sont enregistrees quatre fois. Le
+   * `skip` nomme celles que ce lot prend, parce que le constructeur
+   * DELEGUE aussi a des familles deja migrees — les collecter une
+   * seconde fois leverait un doublon.
+   */
+  protected sharedShowSpecs(): readonly CommandSpec[] {
+    return specsFromTrieRegistrations(
+      (collector) => this.registerCommonShowCommands(collector as unknown as CommandTrie),
+      {
+        modes: ['user', 'privileged'], minPrivilege: 1,
+        modesFor: (path) => PRIVILEGED_EXEC_ONLY.has(path) ? ['privileged'] : undefined,
+        skip: (path) => !SHOW_PARTAGEES.has(path),
+        argumentFor: (path) => SHARED_SHOW_ARGUMENTS[path],
+      },
+    );
+  }
+
+  protected sessionSpecs(): readonly CommandSpec[] {
+    return specsFromTrieRegistrations(
+      (collector) => this.registerOutgoingSessionCommands(collector as unknown as CommandTrie),
+      {
+        modes: ['user', 'privileged'], minPrivilege: 1,
+        argumentFor: (path) => SESSION_ARGUMENTS[path],
+      },
+    );
+  }
+
+  protected fileSystemSpecs(): readonly CommandSpec[] {
+    return specsFromTrieRegistrations(
+      (collector) => this.registerFileSystemCommands(collector as unknown as CommandTrie),
+      {
+        modes: ['user', 'privileged'], minPrivilege: 1,
+        argumentFor: (path) => FILESYSTEM_ARGUMENTS[path],
+      },
+    );
   }
 
   protected identitySubmodeContext(): CiscoSecurityShellContext | null {
@@ -4977,6 +5240,8 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
 
   protected socleTable(): CommandTable | null {
     if (!this.socleInstance) {
+      this.socleCheminsParPortee = undefined;
+      this.socleUndoSansValeur = undefined;
       this.socleInstance = new CommandTable();
       for (const spec of this.socleSpecs()) this.socleInstance.declare(spec);
       for (const [path, legend, modes] of this.socleLegends()) {
@@ -5413,7 +5678,18 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     if (amont === null
       || !CiscoShellBase.negationSous(table, amont, this.mode)) return [];
 
+    /*
+     * `<cr>` repond de la NEGATION, pas de la forme positive.
+     *
+     * `bfd` seul s'execute, `no bfd` seul non — seule `no bfd echo` se
+     * defait — donc l'aide de la ligne niee ne doit pas reprendre le
+     * `<cr>` que la commande positive merite.
+     */
+    const negationSansValeur = amont.length > 0
+      && this.undoSansValeur(table, this.mode, amont.join(' '));
+
     return brutes.flatMap(suggestion => {
+      if (negationSansValeur && suggestion.keyword === '<cr>') return [];
       // Une VALEUR d'argument n'a pas de chemin a elle : c'est la
       // commande qui la porte qui sait se defaire, et elle vient d'etre
       // jugee. `no service ?` doit rendre les vingt-quatre services.
@@ -6512,14 +6788,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
 
   // ─── Shared Command Registration ───────────────────────────────
 
-  /** IOS show/util commands common to every Cisco device + mode (DRY). */
-  private registerCommonShowCommands(target: CommandTrie, scope: ExecScope = 'privileged'): void {
-    const trie = scopedTrie(target, scope);
-    // `show who` est le SYNONYME historique de `show users` sur IOS, et
-    // la sequence de collecte de preuves d'un auditeur les enchaine.
-    // Elle repondait `% Invalid input`. Le rendu est le meme parce que
-    // c'est la meme question : deux textes pour une question feraient
-    // douter de la machine.
+  private registerOutgoingSessionCommands(trie: CommandTrie): void {
     trie.register('where', 'List open outgoing connections', () => renderSessions(this.outgoingSessions));
     trie.registerGreedy('disconnect', 'Close an outgoing connection', (args) => {
       if (!args[0]) {
@@ -6530,9 +6799,9 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       }
       const n = parseInt(args[0], 10);
       if (Number.isNaN(n) || !this.outgoingSessions.get(n)) return '% No information for this connection';
-      const target = this.outgoingSessions.get(n)!;
+      const cible = this.outgoingSessions.get(n)!;
       this.outgoingSessions.close(n);
-      return `Closing connection to ${target.host} [confirm]`;
+      return `Closing connection to ${cible.host} [confirm]`;
     });
     trie.registerGreedy('resume', 'Resume an outgoing connection', (args) => {
       const list = this.outgoingSessions.list();
@@ -6542,6 +6811,21 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       this.outgoingSessions.touch(n);
       return `[Resuming connection ${n} to ${s.host} ... ]`;
     });
+    trie.registerGreedy('ssh', 'Open an SSH connection to a remote host',
+      (args) => this.runOutboundSshClient(args));
+    trie.registerGreedy('telnet', 'Open a Telnet session',
+      (args) => this.runOutboundTelnet(args));
+  }
+
+  /** IOS show/util commands common to every Cisco device + mode (DRY). */
+  private registerCommonShowCommands(target: CommandTrie, scope: ExecScope = 'privileged'): void {
+    const trie = scopedTrie(target, scope);
+    // `show who` est le SYNONYME historique de `show users` sur IOS, et
+    // la sequence de collecte de preuves d'un auditeur les enchaine.
+    // Elle repondait `% Invalid input`. Le rendu est le meme parce que
+    // c'est la meme question : deux textes pour une question feraient
+    // douter de la machine.
+    this.registerOutgoingSessionCommands(target);
     trie.registerGreedy('show interfaces counters errors', 'Display interface error counters', () => {
       const rows = ['Port           Align-Err   FCS-Err  Xmit-Err   Rcv-Err UnderSize OutDiscards'];
       for (const name of this.d().getPortNames()) {
@@ -7198,14 +7482,6 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     // ARP commands (shared between router and switch)
     registerArpShowCommands(this.privilegedTrie, () => this.d());
     registerArpPrivilegedCommands(this.privilegedTrie, () => this.d());
-    this.privilegedTrie.registerGreedy('ssh', 'Open an SSH connection to a remote host', (args) => {
-      return this.runOutboundSshClient(args);
-    });
-    this.userTrie.registerGreedy('ssh', 'Open an SSH connection to a remote host', (args) => {
-      return this.runOutboundSshClient(args);
-    });
-    this.userTrie.registerGreedy('telnet', 'Open a Telnet session', (args) => this.runOutboundTelnet(args));
-    this.privilegedTrie.registerGreedy('telnet', 'Open a Telnet session', (args) => this.runOutboundTelnet(args));
   }
 
   /**

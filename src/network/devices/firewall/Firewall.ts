@@ -103,6 +103,9 @@ import { buildL3Services, type L3Services } from './l3/L3ServiceWiring';
 import { classifyIpv4, ingressHostOf, type Ipv4IngressHost } from './l3/Ipv4Ingress';
 import type { FirewallNtp } from './mgmt/FirewallNtp';
 import { buildManagementServices } from './mgmt/ManagementWiring';
+import type {
+  AdminHttpApp, AdminHttpServer, AdminServerCertificate,
+} from './mgmt/AdminHttpServer';
 import type { ManagementCli } from './mgmt/FirewallCliServer';
 import { ManagementPlane } from './mgmt/ManagementPlane';
 import type { ManagementPorts } from './mgmt/ManagementAccess';
@@ -235,7 +238,10 @@ export class Firewall extends Equipment {
     matchesAddress: (name, candidate) =>
       this.getObjectStore().matchesAddress(name, candidate),
     now: () => this.services.now(),
+    claimPort: (port) => { this.adminServer?.yieldPort(port); },
+    releasePort: (port) => { this.adminServer?.reclaimPort(port); },
   });
+  private adminServer: AdminHttpServer | null = null;
   private readonly management: ManagementPlane;
   private readonly load: SystemLoad;
   private readonly streams = new StreamAssembler();
@@ -443,6 +449,9 @@ export class Firewall extends Equipment {
         this.management.noteAuthFailure(user);
       },
       loginBannerLines: (stage) => this.loginBanners.lines(stage),
+      adminHttpsRedirect: () => this.management.adminHttpsRedirect(),
+      adminServerCertificate: () => this.adminServerCertificate(),
+      adminHttpApp: () => this.adminHttpApp(),
     });
     this.portals = mgmt.portals;
     this.portal = mgmt.portals.auth;
@@ -451,6 +460,8 @@ export class Firewall extends Equipment {
     this.ntp = mgmt.ntp;
     this.captivePortal = mgmt.captivePortal;
     this.management.attachCliServer(mgmt.cli);
+    this.adminServer = mgmt.admin;
+    this.management.attachAdminServer(mgmt.admin);
 
     const l3 = buildL3Services({
       deviceId: this.id,
@@ -980,6 +991,26 @@ export class Firewall extends Equipment {
   }
 
   setAdminIdleTimeout(minutes: number): void { this.management.setIdleTimeout(minutes); }
+
+  setAdminHttpsRedirect(enabled: boolean): void {
+    this.management.setAdminHttpsRedirect(enabled);
+  }
+
+  setAdminServerCertificate(name: string): void {
+    this.management.setAdminServerCertificate(name);
+  }
+
+  protected adminHttpApp(): AdminHttpApp | null { return null; }
+
+  private adminServerCertificate(): AdminServerCertificate | undefined {
+    const declared = this.getCertificateStore()
+      .local(this.management.adminServerCertificateName());
+    return declared === undefined
+      ? undefined
+      : { certificate: declared.certificate, privateKey: declared.privateKey };
+  }
+
+
 
   setAdminLockout(threshold: number, durationSec: number): void {
     this.management.setLockout(threshold, durationSec);
