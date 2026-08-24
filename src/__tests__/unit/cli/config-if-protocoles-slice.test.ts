@@ -130,9 +130,11 @@ describe('le refus vient du gestionnaire, avec ce qu\'il a a dire', () => {
     expect(out).not.toContain('Invalid input');
   });
 
-  it('une version IGMP absurde est refusee par le gestionnaire', async () => {
-    expect(await (await surIface()).executeCommand('ip igmp version 9'))
-      .toContain('Invalid IGMP version');
+  it('une version IGMP hors de la plage annoncee recoit le caret d IOS', async () => {
+    const out = await (await surIface()).executeCommand('ip igmp version 9');
+
+    expect(out).toContain("% Invalid input detected at '^' marker.");
+    expect(out).not.toContain('Invalid IGMP version');
   });
 
   it('un groupe hors du multicast est refuse en le disant', async () => {

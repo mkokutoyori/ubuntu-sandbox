@@ -6520,3 +6520,87 @@ qui passent des deux côtés sont nommés dans l'en-tête — trois d'entre eux
 passaient pour la raison même qui rendait la fonction absente (aucune
 remarque à numéroter, à rejouer, ni à supprimer).
 
+
+### La remarque PARAÎT, et `access-list ?` annonce les quatre plages d'IOS
+
+Demande explicite de l'utilisateur après le lot précédent : « je veux
+qu'elles apparaissent ». `show access-lists` ne rendait aucune remarque —
+la configuration en portait deux, la vue n'en montrait aucune, sur la
+même machine au même instant. La forme est celle que la vue IPv6 de ce
+dépôt emploie DÉJÀ (`showIPv6AccessLists` : `    remark <texte>`), reprise
+plutôt que réinventée, pour que les deux vues ne puissent pas se
+contredire ; la remarque garde sa place dans la liste et ne porte pas de
+numéro, puisqu'elle n'en consomme pas.
+
+Rendre `remark` visible dans `?` a demandé de toucher la déclaration
+d'argument d'`access-list`, et c'est là qu'un défaut plus large est
+apparu. **La place du numéro était déclarée `<1-2699>`, une plage qui
+n'existe sur aucune machine** : IOS en annonce QUATRE, disjointes, et
+2700 n'est pas la première valeur invalide — 200, 700 et 1200 le sont
+aussi, à l'intérieur de l'intervalle inventé. Le premier correctif —
+marquer la plage `rangeIsAdvisory` pour désarmer le contrôle — était
+cosmétique et a été jeté : il ne remplaçait pas une description fausse
+par une vraie, il cessait simplement de s'en servir.
+
+Vérifié contre de vraies sorties plutôt que de mémoire (`access-list ?`
+sur IOS 15) : `<1-99>` IP standard, `<100-199>` IP extended,
+`<1300-1999>` et `<2000-2699>` leurs formes *(expanded range)* — les
+descriptions sont celles d'IOS, mot pour mot. Les entrées que ce
+simulateur n'implémente pas (`<700-799>` et `<1100-1199>` MAC,
+`<200-299>` protocol type-code, `rate-limit`, `dynamic-extended`) ne sont
+pas annoncées : une aide qui offrirait une liste que la machine refuse
+ensuite serait le défaut d'origine à l'envers.
+
+Le socle savait déjà juger une place annonçant plusieurs plages — c'est
+la règle « hors de TOUTES » que la boucle des continuations appliquait
+depuis toujours — mais l'autre moitié, celle des `params`, ne savait lire
+qu'une plage unique. `outsideEveryAnnouncedRange` est cette règle
+EXTRAITE, et les deux boucles la lisent : deux mécanismes de déclaration,
+une seule règle, donc plus de divergence possible.
+
+Conséquence, et c'est la partie qui n'est pas de l'affichage : le refus
+appartient désormais au parseur, comme sur une vraie machine, et le
+message inventé des deux gestionnaires — `% Invalid access-list number.
+Valid range: 1-99, 100-199, 1300-1999, 2000-2699.`, qu'IOS n'écrit nulle
+part — est SUPPRIMÉ plutôt que laissé mort à côté. Deux réponses
+possibles à une même question sont exactement ce que ce dépôt passe son
+temps à refermer. `access-list 3000` reçoit maintenant le caret d'IOS sur
+le routeur ET sur le commutateur, qui portait la même déclaration et le
+même message.
+
+Le garde-fou du fichier `probe-plage-annoncee-est-appliquee.test.ts`
+sondait `max+1` pour CHAQUE plage annoncée, ce qui n'a de sens que
+lorsqu'il n'y en a qu'une : `access-list 100` est au-delà de `<1-99>` et
+parfaitement valide. Il sonde désormais une valeur hors de toutes.
+
+Trois expectations de tests ont été corrigées parce qu'elles encodaient
+la plage inventée ou le message inventé, jamais l'inverse : `F-08`,
+`C-02` (les deux bancs d'audit ACL, rouges depuis le lot « une plage
+annoncée est appliquée ») et `probe-cli-contextual-help`.
+
+`cisco-acl-remark-numerotee.test.ts` passe à 14 cas ; discriminé par
+`git stash push -- src/network/`, 3 tombent — les deux affichages et
+l'aide — et le cas hors plage est nommé dans l'en-tête comme ne prouvant
+rien de ce lot. `e2e/cisco-acl-remark.spec.ts` passe à 5 cas (5 verts) et
+couvre l'affichage, l'aide et le refus dans le vrai navigateur.
+
+Le garde-fou a ensuite attrapé un TROISIÈME porteur du même défaut, hors
+ACL : `crypto isakmp policy ?` annonce `<1-10000>` et `crypto isakmp
+policy 10001` était accepté. La cause est la moitié SOCLE de la même
+règle — `CommandParser` fait avaler la ligne entière par une place
+`REST` **avant** d'appeler `argumentAccepts`, exactement le « le glouton
+avale ce que la validation a refusé » que `CommandTrie.finish` avait
+fermé de son côté ; et `argumentAccepts` lui-même, devant une place à
+`alternatives`, ne vérifiait que le TYPE. Vérifié par `git stash` que ce
+défaut ne vient pas de ce lot : il tombe aussi avec toutes mes
+modifications retirées.
+
+Plutôt que d'écrire la règle une troisième fois, `outsideEveryAnnouncedRange`
+vit désormais dans `src/cli/ArgumentTypes.ts` — le socle est la base la
+plus récente et `CommandTrie` importe déjà de `@/cli` — et les deux
+moteurs la lisent. `CommandTrie` a perdu sa copie ET son
+`outsideAnnouncedRange` privé. Conséquence mesurée sur `ip igmp version
+9` : le refus vient maintenant du parseur, comme sur IOS, qui déclare ses
+trois versions et rend le caret pour tout le reste — et le message qui
+NOMME ce que IGMPv3 n'implémente pas est intact, `3` étant dans la plage
+annoncée. Le cas correspondant a été corrigé dans ce sens.

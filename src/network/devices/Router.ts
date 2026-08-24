@@ -2530,17 +2530,17 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
 
         this.counters.icmpOutEchoReps++;
         this.counters.icmpOutMsgs++;
-        this.counters.ifOutOctets += replyIP.totalLength;
 
         const sameSubnetMac = this.peerOnSameSubnet(inPort, ipPkt.sourceIP)
           ? this.arpTable.get(ipPkt.sourceIP.toString())
           : undefined;
         if (sameSubnetMac && !this.ipsecEngine) {
+          this.counters.ifOutOctets += replyIP.totalLength;
           this.sendFrame(inPort, {
             srcMAC: port.getMAC(), dstMAC: sameSubnetMac.mac,
             etherType: ETHERTYPE_IPV4, payload: replyIP,
           });
-        } else {
+        } else if (!this.sendSelfOriginatedIPv4(replyIP, ipPkt.sourceIP)) {
           this.forwardPacket(inPort, replyIP);
         }
       } else if (icmp.icmpType === 'destination-unreachable' && icmp.code === 4) {
@@ -3015,23 +3015,7 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
       offendingPkt.destinationIP.toString(), myIP.toString(),
       offendingPkt.sourceIP.toString());
 
-    const route = this.lookupRoute(offendingPkt.sourceIP);
-    if (!route) return;
-
-    const outPort = this.ports.get(route.iface);
-    if (!outPort) return;
-
-    const nextHopIP = route.nextHop || offendingPkt.sourceIP;
-    const cached = this.arpTable.get(nextHopIP.toString());
-    if (cached) {
-      this.counters.ifOutOctets += errorIP.totalLength;
-      this.sendFrame(route.iface, {
-        srcMAC: outPort.getMAC(), dstMAC: cached.mac,
-        etherType: ETHERTYPE_IPV4, payload: errorIP,
-      });
-    } else {
-      this.queueAndResolve(errorIP, route.iface, nextHopIP, outPort);
-    }
+    this.sendSelfOriginatedIPv4(errorIP, offendingPkt.sourceIP);
   }
 
   /**
@@ -3039,6 +3023,16 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
    * Tells the originating host to send future packets directly to `redirectGW`.
    * RFC 792; RFC 1812 §5.2.7.
    */
+  private sendSelfOriginatedIPv4(ipPkt: IPv4Packet, destination: IPAddress): boolean {
+    const route = this.lookupRoute(destination);
+    if (!route) return false;
+    const outPort = this.ports.get(route.iface);
+    if (!outPort) return false;
+    this.counters.ifOutOctets += ipPkt.totalLength;
+    this.sendIpv4FrameArpAware(route.iface, ipPkt, route.nextHop || destination);
+    return true;
+  }
+
   private sendICMPRedirect(inPort: string, offendingPkt: IPv4Packet, redirectGW: IPAddress): void {
     const inPortObj = this.ports.get(inPort);
     if (!inPortObj) return;
@@ -3060,23 +3054,7 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
     );
 
     this.counters.icmpOutMsgs++;
-
-    const route = this.lookupRoute(offendingPkt.sourceIP);
-    if (!route) return;
-
-    const outPort = this.ports.get(route.iface);
-    if (!outPort) return;
-
-    const nextHopIP = route.nextHop || offendingPkt.sourceIP;
-    const cached = this.arpTable.get(nextHopIP.toString());
-    if (cached) {
-      this.sendFrame(route.iface, {
-        srcMAC: outPort.getMAC(), dstMAC: cached.mac,
-        etherType: ETHERTYPE_IPV4, payload: redirectIP,
-      });
-    } else {
-      this.queueAndResolve(redirectIP, route.iface, nextHopIP, outPort);
-    }
+    this.sendSelfOriginatedIPv4(redirectIP, offendingPkt.sourceIP);
   }
 
   // ─── ARP Resolution + Packet Queue ────────────────────────────

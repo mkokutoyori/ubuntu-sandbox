@@ -170,34 +170,38 @@ n'evalue. C'est un chantier par knob, pas un correctif de commande.
 
 ## Postes Windows
 
-### [ping] le CODE de l'ICMP inatteignable est jeté à l'affichage
-**Constat.** `WinPing.formatWinPingReplyLine` rend TOUT « destination
-unreachable » par `Reply from <ip>: Destination host unreachable.`, quel
-que soit le code ICMP. Mesuré : un routeur qui refuse par ACL répond
-type 3 **code 13** (communication administrativement interdite), le code
-VOYAGE bien jusqu'au client — `EndHost` le range dans la chaîne d'erreur
-(`Destination unreachable (from X) code 13`) et le `ping` Linux le lit
-déjà pour écrire « Packet filtered » (`commands/net/Ping.ts`, ligne 249)
-— mais la moitié Windows ne le regarde pas. Deux machines du même
-laboratoire diagnostiquent donc le même refus autrement, et celle qui
-perd l'information est celle qui envoie l'apprenant vérifier son câblage
-au lieu de sa liste d'accès.
+### [ping] les mots de `ping.exe` pour le code 13 restent non attestés
+Depuis le lot « le code ICMP decide de ce que ping ecrit », la moitie
+Windows lit le code et distingue le RESEAU (code 0) de l'HOTE (code 1)
+et la fragmentation (code 4). Il reste **un** code non rendu : le 13
+(communication administrativement interdite), celui qu'un routeur emet
+sous liste de controle. Il est rendu comme le code 1 — `Reply from
+<ip>: Destination host unreachable.` — donc un refus par ACL et un hote
+qui n'a pas repondu se ressemblent encore sur une machine Windows,
+alors que Linux les separe (`Packet filtered` contre `Destination Host
+Unreachable`).
 
-**Ce qui bloque, et c'est une question de RÉFÉRENCE, pas de code.** Les
-chaînes exactes de `ping.exe` par code ne sont pas vérifiables : la
-documentation Microsoft ne les publie pas, et la seule source à texte
-préservé trouvée est ReactOS — une réimplémentation, qui ne traite que
-NET/HOST/TTL et écrit « Destination network unreachable. » là où Windows
-écrit, d'après tout ce qu'on lit ailleurs, « Destination net
-unreachable. ». Écrire la table de mémoire produirait exactement le
-genre de sortie plausible-et-fausse que ce dépôt passe son temps à
-refermer.
+**Ce qui bloque, et c'est une question de REFERENCE, pas de code.** La
+recherche a etabli beaucoup, et pas cela. Sont ATTESTES : la forme
+`Reply from <ip>: <message>` ; `Destination host unreachable.` ;
+`Destination port unreachable.` et `Destination protocol unreachable.`
+(transcriptions reelles retrouvees, meme si ce simulateur ne livre
+jamais ces deux codes a un `ping`) ; `Packet needs to be fragmented but
+DF set.` ; et la liste complete des `IP_STATUS` lue dans l'`ipexport.h`
+du vrai SDK Windows — ou l'on decouvre que `IP_DEST_PROHIBITED` et
+`IP_DEST_PROT_UNREACHABLE` sont **le meme nombre**, 11004. N'est PAS
+atteste : ce que `ping.exe` imprime pour le code 13. Deux resumes de
+recherche citant des fils Cisco disent « Destination net unreachable »,
+sans transcription primaire ; `community.cisco.com`, `cisco.com` et
+`sources.debian.org` sont bloques par le mandataire de sortie ; ReactOS
+est une reimplementation dont la table ne contient meme pas ce cas et
+qui ecrit « network » la ou Windows ecrit « net ». Ecrire la ligne de
+memoire produirait le genre de sortie plausible-et-fausse que ce depot
+passe son temps a refermer.
 
-**Report.** Hors du chemin du tutoriel ACL — le lecteur y constate un
-`Reply from <routeur>` et 100 % de perte, ce que la plateforme rend
-correctement. À fermer le jour où une capture réelle de `ping.exe` sous
-ACL est disponible ; le reste est déjà en place, il ne manque que les
-libellés.
+**Report.** A fermer le jour ou une capture reelle de `ping.exe` sous
+ACL est disponible ; tout le reste est en place, il ne manque que le
+libelle — une ligne dans `winUnreachText`.
 
 ---
 
@@ -252,7 +256,10 @@ que c'est la seule partie d'une declaration qui soit sans ambiguite :
 `<1-120>` ne peut pas vouloir dire autre chose. Depuis le lot « une
 plage annoncee suit l'etat », une declaration PEUT lire la session
 (`rangeIsAdvisory` + `SessionParamRanges`), mais une seule s'en sert —
-le numero de groupe HSRP.
+le numero de groupe HSRP. Depuis le lot « `access-list ?` annonce les
+quatre plages d'IOS », une place peut en annoncer PLUSIEURS et n'est
+refusee que si la valeur est hors de TOUTES (`alternatives`), ce que les
+deux mecanismes de declaration jugent desormais par la meme regle.
 
 
 ### [cli] cinq commandes de fichier repondent en EXEC UTILISATEUR
@@ -552,17 +559,19 @@ UTC.
 (`set timezone ?`), et l'inventer donnerait 79 correspondances fausses —
 pire que l'aveu.
 
-### [admin] pas d'interface d'administration HTTP/HTTPS
-`set allowaccess http https` est accepte, rendu, et gouverne bien le
-filtrage TCP (`ManagementPlane.admitsTcp` refuse le port), mais RIEN
-n'ecoute derriere : aucun serveur qui servirait la page de connexion que
-le TP 1 fait ouvrir sur `http://192.168.100.99`.
-**Mesure** : le TP 1 demande d'ouvrir l'adresse dans un navigateur ; la
-seule brique HTTP du pare-feu est `AuthPortal` (portail captif), qui
-n'est pas monte sur les ports d'administration.
-**Report** : `Http1ServerSession` existe et le portail captif montre le
-chemin ; il manque le serveur d'administration lui-meme et ses pages,
-sujet en soi et non une commande de plus.
+### [admin] le code de redirection du port d'administration n'est pas atteste
+Depuis le lot « le plan d'administration ecoute », `admin-port` sert
+vraiment et redirige vers HTTPS quand `admin-https-redirect` est actif.
+Ce qui n'est pas atteste est le CODE de cette redirection sur une vraie
+machine, ni l'en-tete `Server` qu'elle rend.
+**Mesure** : la documentation Fortinet et les fils de la communaute
+attestent la redirection et son activation par defaut, jamais son code ;
+`docs.fortinet.com` ne rend pas de transcription HTTP depuis ce reseau.
+**Ce qui est pose** : `301`, la semantique HTTP d'un changement de
+schema permanent, et la sonde verifie `30x` plutot que d'epingler un
+chiffre que rien ne soutient.
+**Report** : trancher demande une capture de vraie machine. Le
+mecanisme, lui, est complet.
 
 ## Serveurs DHCP
 

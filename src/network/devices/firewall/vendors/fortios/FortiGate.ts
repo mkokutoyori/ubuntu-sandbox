@@ -2,12 +2,37 @@ import type { DeviceType } from '../../../../core/types';
 import { Firewall, type FirewallOptions } from '../../Firewall';
 import { FORTIOS_PROFILE } from './FortiProfile';
 import { FortiShell } from './FortiShell';
+import { FortiConfigTree } from './runtime/FortiConfigTree';
+import { schemaIndex } from './schema';
+import { FortiAdminApp } from './admin/FortiAdminApp';
+import type { AdminHttpApp } from '../../mgmt/AdminHttpServer';
 import { daemonMemoryKib } from './diag/sysTopRenderer';
 
 const FACTORY_ADMIN = 'admin';
 
 export class FortiGate extends Firewall {
   private shellInstance?: FortiShell;
+  private tree?: FortiConfigTree;
+  private adminApp?: FortiAdminApp;
+
+  protected override adminHttpApp(): AdminHttpApp {
+    if (!this.adminApp) {
+      this.adminApp = new FortiAdminApp({
+        tree: () => this.configTree(),
+        version: () => FORTIOS_PROFILE.defaultVersion,
+        serial: () => this.serialNumber(),
+        vdom: () => 'root',
+        login: (user, password, source) => this.authenticateAdmin(user, password, source),
+        now: () => this.now(),
+      });
+    }
+    return this.adminApp;
+  }
+
+  configTree(): FortiConfigTree {
+    if (!this.tree) this.tree = new FortiConfigTree(schemaIndex());
+    return this.tree;
+  }
 
   constructor(
     deviceType: DeviceType = 'firewall-fortinet', name = 'FortiGate', x = 0, y = 0,

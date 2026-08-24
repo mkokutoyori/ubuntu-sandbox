@@ -17,6 +17,7 @@
  */
 
 import { descriptionForKeyword } from './CliKeywordDescriptions';
+import { outsideEveryAnnouncedRange } from '@/cli/ArgumentTypes';
 import {
   type CommandSpec, validateCommandSpec, specIsGreedy, specAppliesTo,
 } from './cli/CommandSpec';
@@ -838,14 +839,6 @@ export class CommandTrie {
     return { node: holder, firstArg };
   }
 
-  private outsideAnnouncedRange(value: string, literal: string): boolean {
-    if (!/^\d+$/.test(value)) return false;
-    const bounds = /^<(\d+)-(\d+)>$/.exec(literal);
-    if (!bounds) return false;
-    const n = Number(value);
-    return n < Number(bounds[1]) || n > Number(bounds[2]);
-  }
-
   private rejectAnnouncedRange(
     node: CommandNode, args: readonly string[], input: string, matchedKeywords: string[],
   ): MatchResult | null {
@@ -865,9 +858,7 @@ export class CommandTrie {
       if (!/^\d+$/.test(args[i])) continue;
       const announced = this.valeurAttendue(node, args.slice(0, i));
       if (!announced || announced.length === 0) continue;
-      const ranges = announced.filter((v) => /^<\d+-\d+>$/.test(v.keyword));
-      if (ranges.length === 0 || ranges.length !== announced.length) continue;
-      if (ranges.some((v) => !this.outsideAnnouncedRange(args[i], v.keyword))) continue;
+      if (!outsideEveryAnnouncedRange(args[i], announced)) continue;
       return reject(args[i]);
     }
 
@@ -875,14 +866,19 @@ export class CommandTrie {
     for (let k = 0; k < holder.params.length && firstArg + k < args.length; k++) {
       const spec = holder.params[k];
       const value = args[firstArg + k];
-      if (spec.type !== 'INT' || !spec.range || spec.validator) continue;
       if (!/^\d+$/.test(value)) continue;
+      if (holder.children.has(value.toLowerCase())) continue;
+      if (spec.alternatives) {
+        if (outsideEveryAnnouncedRange(
+          value, spec.alternatives.map((a) => ({ keyword: a.literal })))) return reject(value);
+        continue;
+      }
+      if (spec.type !== 'INT' || !spec.range || spec.validator) continue;
       const range = spec.rangeIsAdvisory
         ? this.resolvedRange(spec, { path: matchedKeywords, partial: '', keyword: holder.keyword })
         : spec.range;
       if (!range) continue;
       if (Number(value) >= range[0] && Number(value) <= range[1]) continue;
-      if (holder.children.has(value.toLowerCase())) continue;
       return reject(value);
     }
     return null;

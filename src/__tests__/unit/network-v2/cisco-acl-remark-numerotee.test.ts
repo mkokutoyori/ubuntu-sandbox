@@ -23,13 +23,24 @@
  *   5. Un texte de plus de 100 caracteres est tronque.
  *   6. Une remarque vide est refusee plutot que rangee.
  *   7. `no access-list <n>` emporte les remarques avec les regles.
- *   8. La forme numerotee est acceptee sur le COMMUTATEUR.
- *   9. TEMOIN : la forme NOMMEE fonctionnait deja et fonctionne encore.
- *  10. TEMOIN : une action inventee reste refusee.
+ *   8. Elle PARAIT dans `show access-lists`, a sa place et sans numero
+ *      de sequence — demande explicite de l'utilisateur. La forme est
+ *      celle que la vue IPv6 de ce depot emploie DEJA
+ *      (`showIPv6AccessLists` : `    remark <texte>`), de sorte que les
+ *      deux vues ne puissent pas se contredire.
+ *   9. La forme NOMMEE parait de la meme facon.
+ *  10. `?` offre `remark` a cote de `permit` et `deny`.
+ *  11. Un numero hors des quatre plages recoit le refus d'IOS.
+ *  12. La forme numerotee est acceptee sur le COMMUTATEUR.
+ *  13. TEMOIN : la forme NOMMEE fonctionnait deja et fonctionne encore.
+ *  14. TEMOIN : une action inventee reste refusee.
  *
- * Discrimine par `git stash push -- src/network/` : 5 cas tombent avant
- * correctif. Les 5 qui passent des DEUX cotes sont nommes ici, et aucun
- * ne prouve la fonction :
+ * Deux discriminations, parce que la fonction a ete livree en deux lots.
+ *
+ * Contre le depot AVANT le premier lot (l'acceptation de la forme
+ * numerotee), `git stash push -- src/network/` fait tomber 5 cas. Les
+ * 5 qui passent des DEUX cotes sont nommes ici, et aucun ne prouve la
+ * fonction :
  *
  *   — les deux TEMOINS, dont c'est l'objet — l'action inventee, et la
  *     forme NOMMEE qui fonctionnait deja.
@@ -40,6 +51,13 @@
  *     les remarques, puisqu'elles n'y etaient pas.
  *   — « `no access-list` emporte les remarques » : il n'y en avait
  *     aucune a emporter.
+ *
+ * Contre le depot avant le SECOND lot (l'affichage et la declaration
+ * des quatre plages), la meme manoeuvre fait tomber 3 cas : les deux
+ * affichages et l'aide. « Un numero hors des quatre plages » passe des
+ * deux cotes et ne prouve rien du lot : la place etait deja declaree
+ * `<1-2699>`, donc 3000 etait deja refuse — par une plage inventee, que
+ * ce lot remplace par les quatre vraies.
  */
 
 import { describe, it, expect } from 'vitest';
@@ -110,6 +128,35 @@ describe('`access-list <n> remark` sur un routeur', () => {
     expect(vu).toMatch(/^\s+20 deny/m);
   });
 
+  it('parait dans `show access-lists`, a sa place et sans numero', async () => {
+    const r = await routeur();
+    await tape(r, ...LISTE);
+
+    const vu = await tape(r, 'do show access-lists 10');
+
+    expect(vu.split('\n')).toEqual([
+      'Standard IP access list 10',
+      '    remark Autoriser le LAN admin',
+      '    10 permit 192.168.20.0, wildcard bits 0.0.0.255',
+      '    remark Refuser le reste',
+      '    20 deny   any',
+    ]);
+  });
+
+  it('la forme NOMMEE parait de la meme facon', async () => {
+    const r = await routeur();
+    await tape(r, 'ip access-list extended FILTRE',
+      'remark Bloquer telnet', 'deny tcp any any eq 23', 'exit');
+
+    const vu = await tape(r, 'do show access-lists FILTRE');
+
+    expect(vu.split('\n')).toEqual([
+      'Extended IP access list FILTRE',
+      '    remark Bloquer telnet',
+      '    10 deny tcp any any eq 23',
+    ]);
+  });
+
   it('la configuration rendue se rejoue', async () => {
     const premier = await routeur();
     await tape(premier, ...LISTE);
@@ -145,6 +192,27 @@ describe('`access-list <n> remark` sur un routeur', () => {
 
     await tape(r, 'no access-list 10');
 
+    expect(await tape(r, 'do show running-config | include access-list')).toBe('');
+  });
+
+  it('`?` offre `remark` a cote de `permit` et `deny`', async () => {
+    const r = await routeur();
+
+    const aide = await tape(r, 'access-list 10 ?');
+
+    expect(aide.split('\n')).toEqual([
+      '  deny    Specify packets to reject',
+      '  permit  Specify packets to forward',
+      '  remark  Access list entry comment',
+    ]);
+  });
+
+  it('un numero hors des quatre plages recoit le refus d IOS', async () => {
+    const r = await routeur();
+
+    const refus = await tape(r, 'access-list 3000 remark Rien');
+
+    expect(refus).toContain("% Invalid input detected at '^' marker.");
     expect(await tape(r, 'do show running-config | include access-list')).toBe('');
   });
 

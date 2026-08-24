@@ -168,6 +168,12 @@ export function buildCommitDevice(
           fw.getSystemLoad().setAntivirusFailopen(
             settings.avFailopen as AntivirusFailopen);
         }
+        if (settings.adminHttpsRedirect !== undefined) {
+          fw.setAdminHttpsRedirect(settings.adminHttpsRedirect);
+        }
+        if (settings.adminServerCertificate !== undefined) {
+          fw.setAdminServerCertificate(settings.adminServerCertificate);
+        }
       },
       applyLdbMonitor(monitor) {
         fw.getLdbMonitors().set(monitor);

@@ -5,14 +5,10 @@
  * Manages numbered/named ACLs and interface bindings.
  */
 
+import { protocolKeywordFor } from './acl/AclSyntax';
 import type { SubnetMask, IPv4Packet, UDPPacket, ICMPPacket, TCPPacket } from '../../core/types';
 import { IPAddress } from '../../core/types';
-import {
-  IP_PROTO_ICMP, IP_PROTO_TCP, IP_PROTO_UDP, IP_PROTO_ESP, IP_PROTO_AH,
-  IP_PROTO_EIGRP, IP_PROTO_OSPF,
-} from '../../core/types';
-import { IP_PROTO_GRE } from '../../gre/types';
-import { IP_PROTO_PIM } from '../../pim/types';
+import { IP_PROTO_TCP } from '../../core/types';
 import { ReflexiveSessions } from './acl/ReflexiveSessions';
 
 export const DSCP_KEYWORD_TO_VALUE: Record<string, number> = {
@@ -894,18 +890,7 @@ export class ACLEngine {
   }
 
   private getProtocolName(proto: number): string {
-    switch (proto) {
-      case IP_PROTO_ICMP: return 'icmp';
-      case IP_PROTO_TCP: return 'tcp';
-      case IP_PROTO_UDP: return 'udp';
-      case IP_PROTO_ESP: return 'esp';
-      case IP_PROTO_AH: return 'ahp';
-      case IP_PROTO_GRE: return 'gre';
-      case IP_PROTO_EIGRP: return 'eigrp';
-      case IP_PROTO_OSPF: return 'ospf';
-      case IP_PROTO_PIM: return 'pim';
-      default: return 'ip';
-    }
+    return protocolKeywordFor(proto);
   }
 
   /** @internal Direct access to ACL list for CLI shells */

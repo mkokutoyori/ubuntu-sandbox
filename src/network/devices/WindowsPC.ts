@@ -3117,8 +3117,9 @@ export class WindowsPC extends EndHost implements UserAccountHost {
         // silence rather than a broken path.
         return { port: route.port, onLink: route.nextHopIP.toString() === target.toString() };
       },
-      executePingSequence: (target: IPAddress, count: number, timeout?: number, ttl?: number) =>
-        this.executePingSequence(target, count, timeout, ttl),
+      executePingSequence: (target: IPAddress, count: number, timeout?: number, ttl?: number,
+        opts?: { dataSize?: number; df?: boolean }) =>
+        this.executePingSequence(target, count, timeout, ttl, opts),
       executeTraceroute: (target: IPAddress, maxHops?: number, timeoutMs?: number) =>
         this.executeTraceroute(target, maxHops, timeoutMs ?? 500) as Promise<TracerouteHop[]>,
 

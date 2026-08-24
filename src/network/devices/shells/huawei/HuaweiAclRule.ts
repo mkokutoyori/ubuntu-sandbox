@@ -14,6 +14,7 @@
  * à l'analyse plutôt que stocké.
  */
 
+import { parseAclPortSpec, parseIpProtocol, protocolCarriesPorts } from '../../router/acl/AclSyntax';
 import { IPAddress, SubnetMask } from '../../../core/types';
 import type { ACLEntryOptions, PortSpec, PortOperator } from '../../router/ACLEngine';
 import type { ErreurGrammaireVrp } from '../cli-utils';
@@ -44,23 +45,16 @@ const VRP_ICMP_NAMES: Readonly<Record<string, string>> = {
 
 const VRP_TCP_FLAGS = new Set(['ack', 'fin', 'psh', 'rst', 'syn', 'urg']);
 
-/** `eq N`, `neq N`, `gt N`, `lt N`, `range N M`. */
+/** `eq N`, `neq N`, `gt N`, `lt N`, `range N M` — meme grammaire qu'IOS. */
 export function parseHuaweiPortSpec(
   args: string[], offset: number,
 ): { spec: PortSpec; consumed: number } | null {
-  const op = args[offset]?.toLowerCase();
-  if (op === 'eq' || op === 'neq' || op === 'gt' || op === 'lt') {
-    const port = parseInt(args[offset + 1] ?? '', 10);
-    if (isNaN(port)) return null;
-    return { spec: { op: op as PortOperator, port }, consumed: 2 };
-  }
-  if (op === 'range') {
-    const a = parseInt(args[offset + 1] ?? '', 10);
-    const b = parseInt(args[offset + 2] ?? '', 10);
-    if (isNaN(a) || isNaN(b)) return null;
-    return { spec: { op: 'range', port: a, endPort: b }, consumed: 3 };
-  }
-  return null;
+  const parsed = parseAclPortSpec(args, offset);
+  if (!parsed) return null;
+  return {
+    spec: { op: parsed.spec.op as PortOperator, port: parsed.spec.port, endPort: parsed.spec.endPort },
+    consumed: parsed.consumed,
+  };
 }
 
 /** Un mot-clé de queue commun aux deux vues. */
@@ -109,7 +103,9 @@ export function analyserRegleVrp(args: string[], kind: 'basic' | 'advanced'): Ru
 
   // Sur une vue avancée, le premier mot après l'action est le protocole.
   if (kind === 'advanced' && i < args.length && !estMotCle(args[i].toLowerCase())) {
-    protocol = args[i].toLowerCase();
+    const nomme = parseIpProtocol(args[i]);
+    if (nomme === null) return refus(args[i]);
+    protocol = nomme;
     i++;
   }
 
@@ -133,6 +129,7 @@ export function analyserRegleVrp(args: string[], kind: 'basic' | 'advanced'): Ru
     }
 
     if (kind === 'advanced' && (kw === 'source-port' || kw === 'destination-port')) {
+      if (!protocolCarriesPorts(protocol)) return refus(kw);
       const p = parseHuaweiPortSpec(args, i + 1);
       if (!p) return refus(args[i + 1] ?? kw);
       if (kw === 'source-port') {

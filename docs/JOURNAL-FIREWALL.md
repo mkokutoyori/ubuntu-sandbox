@@ -61,6 +61,7 @@
 | **F3b** | `?` descend dans l'arbre ; l'interface passe en anglais | 13 | ✅ |
 | **F4** | **FortiOS phase 4 — diagnostic et journaux** | 44 | ✅ |
 | **F5** | **FortiOS phase 5 — VDOM et modes de deploiement** | 27 | ✅ |
+| **F28** | **FortiOS phase 28 — le plan d'administration écoute** | 15 | ✅ |
 | 3 | NAT objet ASA (`nat (dmz,outside) static`) | — | ⏳ |
 | 3 | `ShellFactory` + `DeviceFactory` | — | ⏳ |
 
@@ -2697,6 +2698,181 @@ est celle de FortiOS, `Command fail. Return code -61` précédé de
 
 Les deux cas de `fortios-routage-dynamique.test.ts` qui affirmaient BGP
 refusé sont remplacés par un cas qui l'affirme disponible.
+
+---
+
+## Périmètre pris — FortiOS phase 28 (le plan d'administration ÉCOUTE)
+
+**Agent `mandeng`.** L'entrée `[admin] pas d'interface d'administration
+HTTP/HTTPS` de `TODO.md`. La mesure la confirme et la précise.
+
+**Mesure de départ**, sur un FortiGate dont `port1` porte
+`set allowaccess ping http https ssh` :
+
+```
+listeners TCP            → ["0.0.0.0:22", "0.0.0.0:23"]
+get system global        → admin-port 80, admin-sport 443
+curl -sv http://192.168.1.1/login  → "*   Trying 192.168.1.1:80..."   (et rien)
+set admin-https-redirect → unknown attribute
+set admin-server-cert    → unknown attribute
+```
+
+Les deux ports sont **déclarés, rendus par `get system global`, gardés
+par `ManagementPlane.admitsTcp` — et liés par personne** :
+`FirewallCliServer.refresh()` ne lie que `ssh` et `telnet`. C'est la
+forme exacte du défaut que ce module passe son temps à refermer : une
+valeur affichée que rien ne soutient.
+
+**Fichiers que la phase 28 prendra** :
+
+```
+firewall/mgmt/AdminHttpServer.ts        ← NOUVEAU : lie les deux ports, redirige
+firewall/mgmt/ManagementPlane.ts        ← porte le serveur et ses réglages
+firewall/mgmt/ManagementWiring.ts       ← le construit
+firewall/Firewall.ts                    ← lui donne la pile TCP et le certificat
+vendors/fortios/admin/FortiAdminApp.ts  ← NOUVEAU : /logincheck et /api/v2/cmdb
+vendors/fortios/schema/system.ts        ← admin-https-redirect, admin-server-cert
+```
+
+**Ce qui est ATTESTÉ et ce qui ne l'est pas**, écrit avant d'écrire une
+ligne, parce que la moitié de ce périmètre est du texte de vendeur.
+
+*Attesté*, par du code source qui parle à de vraies machines — le module
+Metasploit `fortinet_authentication_bypass_cve_2022_40684` et la
+bibliothèque `fortiosapi` de Fortinet :
+
+- la base de l'API est `/api/v2/cmdb/`, celle de la supervision
+  `/api/v2/monitor/` ;
+- `GET /api/v2/cmdb/<n'importe quoi>` **sans session rend 401** — le
+  module s'en sert comme test de présence ;
+- l'URL est `/api/v2/cmdb/<path>/<name>[/<mkey>][?vdom=<v>|?global=1]` ;
+- l'enveloppe porte `status` (`success`), `http_status`, `version`,
+  `results`, `path`, `name`, `vdom` ;
+- les attributs du JSON s'écrivent comme sur la CLI (`accprofile`,
+  `trusthost1`, `ssh-public-key1`) ;
+- l'ouverture de session est `POST /logincheck` avec
+  `username=<u>&secretkey=<p>&ajax=1`, et le **premier caractère du corps
+  vaut `1`** en cas de succès ; un témoin `ccsrftoken` est posé et
+  renvoyé ensuite en en-tête `X-CSRFTOKEN` ;
+- `Authorization: Bearer <jeton>` est l'autre voie.
+
+*Non attesté depuis ce réseau*, donc traité comme tel : le code de
+redirection exact du port d'administration et l'en-tête `Server` d'un
+vrai FortiGate. La redirection elle-même l'est (documentation Fortinet :
+`set admin-https-redirect`, activée par défaut sur les versions
+récentes) ; son code ne l'est pas. **Le HTML de la page de connexion ne
+sera pas imité** : reproduire l'interface Angular de Fortinet de mémoire
+serait exactement l'invention que ce dépôt refuse. La page servie suit
+la convention déjà en place dans ce module — `AuthPortal` sert une page
+sobre et honnête —, et c'est l'API, elle, qui est fidèle.
+
+**La conception, et pourquoi elle n'est pas un second de quoi que ce
+soit.** Trois réemplois, cherchés avant d'écrire :
+
+- le transport est `Http1ServerSession` / `HttpsServerSession`, ceux
+  qu'`AuthPortal` et `SslVpnPortal` montent déjà ;
+- l'authentification est `ManagementPlane.login` — **le même magasin que
+  SSH et telnet**, donc le verrouillage après trois échecs et
+  `trusthost` valent pour l'API sans une ligne de plus. Un second
+  contrôle d'identité à côté du premier serait la duplication que ce
+  carnet raconte depuis vingt-sept phases ;
+- les `results` sont lus dans le **`FortiConfigTree` vivant**, celui que
+  la CLI écrit. C'est le point qui fait la valeur de la phase : `show`
+  et `GET /api/v2/cmdb/...` ne peuvent pas se contredire, parce qu'ils
+  lisent le même objet.
+
+**G2 impose la coupure** : le socle ne connaît aucun vendeur, or l'arbre
+de configuration est FortiOS. `AdminHttpServer` (socle) lie les ports,
+redirige et délègue ; `FortiAdminApp` (couche vendeur) répond — même
+forme que `FirewallCliServerDeps.createCli`.
+
+**Critère de sortie** : depuis un `LinuxPC` du dépôt et par de vraies
+trames, `curl http://<fw>/` redirige vers HTTPS, `curl -k
+https://<fw>/api/v2/cmdb/system/admin` rend 401, la même requête après
+`/logincheck` rend l'administrateur créé à la CLI, et retirer `http` de
+`allowaccess` referme la porte.
+
+---
+
+### Livré
+
+L'entrée `[admin] pas d'interface d'administration HTTP/HTTPS` est
+retirée de `TODO.md`.
+
+**Le port écoute pour de bon.** `AdminHttpServer` (socle) lie
+`admin-port` et `admin-sport` et les relie à `setManagementPorts`, donc
+déplacer la porte la déplace vraiment. Rien de neuf n'a été écrit pour
+le transport : ce sont `Http1ServerSession` et `HttpsServerSession`,
+ceux qu'`AuthPortal` et `SslVpnPortal` montaient déjà.
+
+**L'API lit l'arbre VIVANT**, et c'est ce qui a coûté le plus cher —
+parce que la mesure a trouvé, en chemin, que *l'arbre vivant n'existait
+pas*. Chaque `FortiShell` construisait son PROPRE `FortiConfigTree` :
+
+```
+console :  show system interface port1   → set ip 192.168.1.1 255.255.255.0
+ssh     :  show system interface port1   → "port1" does not exist
+```
+
+La même machine, au même instant, décrivait deux configurations
+différentes selon la porte par laquelle on l'interrogeait. Écrire l'API
+contre l'un des deux arbres aurait fait hériter la divergence ; l'écrire
+contre un troisième l'aurait aggravée. **Le magasin appartient donc
+désormais à l'ÉQUIPEMENT** (`FortiGate.configTree()`) et le CURSEUR
+reste à la session (`FortiNavigator`, le mode, le vdom) — ce sont deux
+notions distinctes, et les confondre était le défaut. `claimTree()`
+rattache la portée vdom à la session qui exécute, au seul point commun
+par lequel tout passe. Aucun cas existant n'a changé de verdict : 106
+fichiers, 2 015 cas verts.
+
+**L'identité est celle de SSH.** `/logincheck` appelle
+`ManagementPlane.login`, donc le verrouillage après trois échecs et
+`trusthost` valent pour l'API sans une ligne de plus. Un second contrôle
+d'identité aurait été la duplication que ce carnet raconte depuis
+vingt-sept phases.
+
+**Une SEULE porte HTTP, et deux duplications refermées en chemin.** Le
+portail captif liait `0.0.0.0:80` de son côté et **écrivait ses réponses
+HTTP à la main** — `'HTTP/1.1 303 See Other'` concaténé —, alors que le
+dépôt porte un moteur HTTP complet. Il ne lie plus rien : il DÉCIDE
+(`responseFor`) et le serveur d'administration sert, ce qui est
+exactement l'architecture d'un vrai FortiGate, où un seul `httpsd` sert
+la page d'administration et la redirection `/fgtauth`. Ses deux réponses
+sont maintenant des `HttpMessage` construits par le socle.
+
+L'inspection profonde, elle, lie `0.0.0.0:443` pour terminer un flux
+TLS **de transit** : ce n'est pas de l'HTTP et cela ne peut pas se
+fondre dans le même serveur. La règle écrite est donc l'ordre de
+priorité réel — un flux détourné n'est pas une connexion
+d'administration — et `claimPort`/`releasePort` font le serveur
+d'administration s'effacer le temps de l'interception, puis reprendre sa
+porte. C'est un arbitrage explicite plutôt qu'une exception attrapée.
+
+**Le certificat.** `admin-server-cert` vaut `self-sign` par défaut, comme
+sur une vraie machine, et ce nom désigne maintenant un VRAI certificat
+auto-signé posé à l'usine (`FactoryCertificates`) — sans quoi la valeur
+par défaut aurait référencé un objet inexistant, donc le port HTTPS
+n'aurait jamais pu se lier. `admin-https-redirect` est actif par défaut
+et sa redirection nomme le port HTTPS configuré.
+
+**Limite assumée et écrite ici plutôt que tue** : le code de redirection
+exact du port d'administration d'un vrai FortiGate n'est pas attesté
+depuis ce réseau. La redirection l'est ; son code ne l'est pas. Le code
+posé est `301`, la sémantique HTTP d'un changement de schéma permanent,
+et la sonde vérifie `30x` plutôt que d'épingler un chiffre que rien ne
+soutient. De même, le HTML de l'interface Angular de Fortinet n'est pas
+imité : la page servie est sobre, comme celle d'`AuthPortal`, et c'est
+l'API qui porte la fidélité.
+
+`fortios-plan-administration-http.test.ts` (15 cas) est discriminé par
+`git stash push -- src/network/` : **12 des 14 cas écrits à l'aveugle
+tombent** avant correctif, et les 2 qui passent des deux côtés sont
+nommés dans l'en-tête — le refus par `allowaccess`, qui passait parce
+que RIEN n'écoutait, et le témoin SSH, dont c'est l'objet. Le 15e cas
+est le défaut de l'arbre partagé, trouvé en chemin.
+`e2e/fortigate-plan-administration-http.spec.ts` (2 cas verts) rejoue la
+redirection, le 401, l'ouverture de session et la lecture de l'API dans
+le vrai navigateur.
 
 ---
 

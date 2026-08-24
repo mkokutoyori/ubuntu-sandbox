@@ -164,9 +164,13 @@ export class FortiShell {
   private haPendingLogin: HaPendingLogin | null = null;
   private continuation: string | null = null;
 
-  constructor(private readonly fw: FortiGate) {
-    this.tree = new FortiConfigTree(schemaIndex());
+  private claimTree(): void {
     this.tree.bindScope(() => this.vdom);
+  }
+
+  constructor(private readonly fw: FortiGate) {
+    this.tree = fw.configTree();
+    this.claimTree();
     this.tree.bindPhysicalPorts((name) => this.fw.getPort(name) !== undefined);
     this.seedFactoryCertificates();
     this.seedFactoryAdmin();
@@ -303,6 +307,7 @@ export class FortiShell {
   }
 
   completions(input: string): readonly string[] {
+    this.claimTree();
     const prefix = input.trimStart();
     const head = prefix.slice(0, prefix.lastIndexOf(' ') + 1);
     const typed = prefix.slice(head.length);
@@ -351,11 +356,13 @@ export class FortiShell {
   }
 
   help(inputBeforeQuestion = ''): readonly string[] {
+    this.claimTree();
     return this.describe(
       this.socle.suggestions(helpPrefix(inputBeforeQuestion), 'QUESTION_MARK'));
   }
 
   execute(rawLine: string): string {
+    this.claimTree();
     if (this.continuation !== null) {
       this.continuation = `${this.continuation}\n${rawLine}`;
       if (hasOpenQuote(this.continuation)) return '';

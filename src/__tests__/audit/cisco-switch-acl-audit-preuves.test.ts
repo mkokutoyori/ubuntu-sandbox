@@ -87,12 +87,15 @@ describe('ACL du commutateur Cisco — non-régression', () => {
     expect(d).toContain('Standard IP access list 10');
   });
 
-  it('C-02 les plages IOS invalides sont refusées, avec un message exact', async () => {
-    const { out } = await sw([
+  it('C-02 un numéro hors des quatre plages IOS reçoit le refus d\'IOS', async () => {
+    const { s, out } = await sw([
       'enable', 'configure terminal',
       'access-list 3000 permit ip any any',
     ]);
-    expect(out[2]).toContain('1-99, 100-199, 1300-1999, 2000-2699');
+    const refus = out[2].split('\n');
+    expect(refus[0]).toMatch(/^ +\^$/);
+    expect(refus[1]).toBe("% Invalid input detected at '^' marker.");
+    expect(s.getVaclEngine().getAccessLists().some(a => a.id === 3000)).toBe(false);
   });
 
   it('C-03 une entrée numérotée atteint le moteur, forme nue comprise', async () => {

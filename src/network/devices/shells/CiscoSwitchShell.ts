@@ -523,10 +523,7 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
     // moteur n'avait jamais enregistre.
     this.configTrie.registerGreedy('access-list', 'Numbered ACL entry', (args) => {
       const id = parseInt(args[0] ?? '', 10);
-      if (isNaN(id)) return '% Invalid access-list number.';
-      if (!isValidIosAclNumber(id)) {
-        return '% Invalid access-list number. Valid range: 1-99, 100-199, 1300-1999, 2000-2699.';
-      }
+      if (isNaN(id) || !isValidIosAclNumber(id)) return CISCO_ERRORS.INVALID_INPUT;
       const action = args[1]?.toLowerCase();
       if (action === 'remark') {
         const texte = args.slice(2).join(' ');
@@ -628,7 +625,7 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
     // désormais, et c'est elle qui est rejouée à l'import.
     this.configTrie.registerGreedy('no access-list', 'Remove a numbered ACL', (args) => {
       const id = parseInt(args[0] ?? '', 10);
-      if (isNaN(id)) return '% Invalid access-list number.';
+      if (isNaN(id) || !isValidIosAclNumber(id)) return CISCO_ERRORS.INVALID_INPUT;
       this.d().getVaclEngine().removeAccessList(id);
       return '';
     });

@@ -93,6 +93,11 @@ export const SYSTEM_GLOBAL: FortiTableSpec = {
     count('admin-lockout-threshold', 'Number of failed login attempts before lockout.',
       1, 10, 3),
     count('admin-lockout-duration', 'Lockout duration in seconds.', 1, 2147483647, 60),
+    enable('admin-https-redirect',
+      'Redirect HTTP administrative access to HTTPS.', true),
+    reference('admin-server-cert',
+      'Server certificate that the HTTPS administrative access presents.',
+      ['vpn certificate local'], 'self-sign'),
     enable('revision-backup-on-logout',
       'Enable/disable back-up of the configuration to a revision when an'
       + ' administrator logs out.'),
@@ -177,6 +182,8 @@ export const SYSTEM_GLOBAL: FortiTableSpec = {
         ? object.effective('timezone')[0] : undefined,
       adminLockoutThreshold: number('admin-lockout-threshold', 3),
       adminLockoutDurationSec: number('admin-lockout-duration', 60),
+      adminHttpsRedirect: object.effective('admin-https-redirect')[0] !== 'disable',
+      adminServerCertificate: object.effective('admin-server-cert')[0] ?? 'self-sign',
       preLoginBanner: object.effective('pre-login-banner')[0] === 'enable',
       postLoginBanner: object.effective('post-login-banner')[0] === 'enable',
       conserveThresholds: {
