@@ -132,6 +132,15 @@ export function collectRegistrations(
 
 export interface SpecFromTrieOptions {
   modes: readonly string[];
+  /**
+   * Les modes de CE chemin, quand ils different de la famille.
+   *
+   * `scopedTrie` retire certaines vues de l'EXEC utilisateur
+   * (`PRIVILEGED_EXEC_ONLY`) : un constructeur partage porte donc des
+   * commandes de deux portees, et une famille a un seul jeu de modes
+   * les rendrait toutes visibles avant `enable`.
+   */
+  modesFor?: (path: string) => readonly string[] | undefined;
   minPrivilege: number;
   restName?: string;
   restDescription?: string;
@@ -246,6 +255,7 @@ export function specsFromTrieRegistrations(
     const contexte = options.reachableWhenFor?.(entry.path);
     const words = (negationSeule ? entry.path.slice(3) : entry.path)
       .split(/\s+/).filter(Boolean);
+    const modesIci = options.modesFor?.(entry.path) ?? options.modes;
     const declaredLabel = options.restDescriptionFor?.(entry.path)
       ?? options.restDescription;
     const restLiteral = options.restLiteralFor?.(entry.path);
@@ -274,10 +284,10 @@ export function specsFromTrieRegistrations(
       return entry.action(argv, [...words, ...argv].join(' '));
     };
     specs.push({
-      id: [options.modes[0], ...words].join('-'),
+      id: [modesIci[0], ...words].join('-'),
       path,
       description: entry.description,
-      modes: options.modes,
+      modes: modesIci,
       minPrivilege: options.minPrivilege,
       ...(cache ? { hidden: true } : {}),
       ...(contexte ? { reachableWhen: contexte } : {}),
@@ -374,10 +384,10 @@ export function specsFromTrieRegistrations(
       const cible = negationDeLaCommande;
       const argvNu = cible === negationPropre ? [] : [...words];
       specs.push({
-        id: `no-${[options.modes[0], ...words].join('-')}`,
+        id: `no-${[modesIci[0], ...words].join('-')}`,
         path: [...words],
         description: entry.description,
-        modes: options.modes,
+        modes: modesIci,
         minPrivilege: options.minPrivilege,
         existsOnlyNegated: true,
         ...(cache ? { hidden: true } : {}),
@@ -398,10 +408,10 @@ export function specsFromTrieRegistrations(
             : [sub.argument as ArgumentSpec];
       const amont = sub.afterArguments ? [...words, ...places] : [...words];
       specs.push({
-        id: [options.modes[0], ...amont, sub.keyword].join('-'),
+        id: [modesIci[0], ...amont, sub.keyword].join('-'),
         path: [...amont, sub.keyword, ...placesFille],
         description: sub.description,
-        modes: options.modes,
+        modes: modesIci,
         minPrivilege: options.minPrivilege,
         ...(cache ? { hidden: true } : {}),
         ...(sub.reachableWhen ? { reachableWhen: sub.reachableWhen }

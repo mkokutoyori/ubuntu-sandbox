@@ -66,10 +66,18 @@ les mots-clés d'un autre protocole devient une **joignabilité de
 déclaration** — donc elle gouverne l'exécution ET l'aide, alors qu'un
 filtre de complétion ne gouvernait que l'aide.
 
-Compteurs : routeur 1007 → 296, commutateur 570 → 376. `configIfTrie`
+Compteurs : routeur 1007 → 272, commutateur 570 → 350. `configIfTrie`
 du routeur est passé de 151 à 11. Restent `configTrie` (143 routeur /
-140 commutateur), `privilegedTrie` (77 / 82), `userTrie` (50 / 48), le
+140 commutateur), `privilegedTrie` (64 / 68), `userTrie` (39 / 36), le
 `configIfTrie` du COMMUTATEUR (89, non entamé) et les sous-modes ACL.
+
+**Un constructeur d'EXEC PARTAGÉ est enregistré QUATRE fois** — une par
+arbre et par plateforme — et c'est le plus gros facteur de duplication
+qui restait. `SpecFromTrieOptions.modesFor` existe pour ça : `scopedTrie`
+retire certaines vues (`PRIVILEGED_EXEC_ONLY`) de l'EXEC utilisateur,
+donc un constructeur partagé porte des commandes de DEUX portées et un
+jeu de modes unique les rendrait toutes lisibles avant `enable`. Mesuré :
+`show snmp` et `show parser view` sont dans ce cas.
 
 **Les deux arbres d'EXEC partagent un espace de noms**, et c'est ce que
 le socle règle en une déclaration : `ssh`, `telnet`, `where`,

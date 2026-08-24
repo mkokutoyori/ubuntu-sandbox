@@ -129,7 +129,8 @@ import {
 import { registerLineExecCommands } from './cisco/CiscoLineCommands';
 import { setupInteractionPlan } from './cisco/CiscoSetupDialog';
 import {
-  scopedTrie, PRIVILEGED_ONLY_SHOW_CHILDREN, PRIVILEGED_ONLY_PATHS, type ExecScope,
+  scopedTrie, PRIVILEGED_ONLY_SHOW_CHILDREN, PRIVILEGED_ONLY_PATHS,
+  PRIVILEGED_EXEC_ONLY, type ExecScope,
 } from './cisco/CiscoExecScope';
 import {
   registerLoggingConfigCommands, loggingShowViews, severityValues,
@@ -491,6 +492,40 @@ const CONNEXION_SORTANTE: ArgumentSpec = {
     { keyword: '<1-16>', description: 'Connection number' },
     { keyword: 'WORD', description: 'Connection name' },
   ],
+};
+
+/*
+ * Ce que ce lot prend de `registerCommonShowCommands`. Nommer les
+ * chemins plutot que de tout collecter est ce qui laisse ses
+ * DELEGATIONS — systeme de fichiers, sessions sortantes, EXEC du DNS —
+ * la ou elles sont, migrees ou non.
+ */
+const SHOW_PARTAGEES: ReadonlySet<string> = new Set([
+  'show interfaces counters errors', 'show mac address-table', 'terminal',
+  'show ntp packets', 'show cdp', 'show lldp', 'show snmp', 'show parser view',
+  'show hosts', 'show ip dns statistics', 'show ip vrf', 'show vrf',
+  'show adjacency', 'show redundancy', 'show aaa',
+]);
+
+const SHARED_SHOW_ARGUMENTS:
+Readonly<Record<string, ArgumentSpec | readonly ArgumentSpec[] | null>> = {
+  'show snmp': { name: 'vue', type: 'REST', optional: true,
+    description: 'SNMP detail to display' },
+  'show hosts': null,
+  'show adjacency': null,
+  'show ip dns statistics': null,
+  'show interfaces counters errors': null,
+  'show redundancy': null,
+  'show aaa': { name: 'reste', type: 'REST', optional: true,
+    description: 'AAA detail to display' },
+  'show mac address-table': { name: 'filtre', type: 'REST', optional: true,
+    description: 'Filter the MAC address table' },
+  /*
+   * La place est EXIGEE : `terminal` seul est declare incomplet par le
+   * gestionnaire, et la place facultative de l'adaptateur ferait
+   * annoncer `<cr>` a une commande qui ne s'ecrit jamais seule.
+   */
+  terminal: { name: 'reglage', type: 'REST', description: 'Terminal parameter to set' },
 };
 
 const SESSION_ARGUMENTS:
@@ -5019,7 +5054,27 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       ...this.dnsConfigSpecs(),
       ...this.fileSystemSpecs(),
       ...this.sessionSpecs(),
+      ...this.sharedShowSpecs(),
     ];
+  }
+
+  /*
+   * `registerCommonShowCommands` sert les DEUX arbres d'EXEC et les DEUX
+   * plateformes : quinze commandes y sont enregistrees quatre fois. Le
+   * `skip` nomme celles que ce lot prend, parce que le constructeur
+   * DELEGUE aussi a des familles deja migrees — les collecter une
+   * seconde fois leverait un doublon.
+   */
+  protected sharedShowSpecs(): readonly CommandSpec[] {
+    return specsFromTrieRegistrations(
+      (collector) => this.registerCommonShowCommands(collector as unknown as CommandTrie),
+      {
+        modes: ['user', 'privileged'], minPrivilege: 1,
+        modesFor: (path) => PRIVILEGED_EXEC_ONLY.has(path) ? ['privileged'] : undefined,
+        skip: (path) => !SHOW_PARTAGEES.has(path),
+        argumentFor: (path) => SHARED_SHOW_ARGUMENTS[path],
+      },
+    );
   }
 
   protected sessionSpecs(): readonly CommandSpec[] {
