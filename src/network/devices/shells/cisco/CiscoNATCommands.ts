@@ -590,6 +590,47 @@ import {
 } from '@/cli/commands/trieAdapter';
 import { MODES_INTERFACE } from './CiscoConfigCommands';
 
+/*
+ * Chaque forme de `clear ip nat translation` porte un refus qui EXPLIQUE
+ * — VRF absent, reserve absente, port hors bornes — donc la place NOMME
+ * ce qui suit et laisse le gestionnaire trancher. Typer le VRF ou la
+ * reserve remplacerait « % VRF ZORG does not exist. » par un caret nu,
+ * c'est-a-dire une information par une absence d'information.
+ */
+const NAT_EXEC_ARGUMENTS:
+Readonly<Record<string, ArgumentSpec | readonly ArgumentSpec[] | null>> = {
+  'clear ip nat translation inside': { name: 'filtre', type: 'REST', optional: true,
+    description: 'Inside local address, or `vrf` then its name' },
+  'clear ip nat translation outside': { name: 'filtre', type: 'REST', optional: true,
+    description: 'Outside global address, or `vrf` then its name' },
+  'clear ip nat translation tcp': { name: 'traduction', type: 'REST',
+    description: 'Local address and port, then global address and port' },
+  'clear ip nat translation udp': { name: 'traduction', type: 'REST',
+    description: 'Local address and port, then global address and port' },
+  'clear ip nat translation vrf': { name: 'nom', type: 'WORD', description: 'VRF name' },
+  'clear ip nat translation pool': { name: 'nom', type: 'WORD', description: 'Pool name' },
+  'clear ip nat statistics': null,
+};
+
+export function natExecSpecs(getRouter: () => Router): CommandSpec[] {
+  return specsFromTrieRegistrations(
+    (collector) => registerNATPrivilegedCommands(collector as unknown as CommandTrie, getRouter),
+    {
+      modes: ['privileged'], minPrivilege: 15,
+      undoFromNegatedPaths: true,
+      argumentFor: (path) => NAT_EXEC_ARGUMENTS[path],
+      /*
+       * `debug ip nat` est enregistre ici et n'a jamais repondu : c'est
+       * le repartiteur `debug ip` de `CiscoShellBase` qui le sert, et
+       * lui seul sait dire `IP NAT detailed debugging is on`. Le migrer
+       * le ferait GAGNER et changerait le message ; la famille du debogage
+       * est un autre sujet, donc ce lot ne prend que `clear ip nat`.
+       */
+      skip: (path) => !path.replace(/^no\s+/i, '').startsWith('clear ip nat'),
+    },
+  );
+}
+
 export function registerNATPrivilegedCommands(trie: CommandTrie, getRouter: () => Router): void {
   const debugSvc = () => getRouter().getDebugService();
   trie.registerGreedy('debug ip nat', 'Enable NAT packet-translation debugging', (args) => {

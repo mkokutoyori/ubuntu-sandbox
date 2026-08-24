@@ -167,7 +167,7 @@ import {
 import {
   buildNATConfigCommands, buildNATInterfaceCommands, natInterfaceSpecs,
   natConfigSpecs,
-  registerNATPrivilegedCommands, registerNATShowCommands, natShowSpecs,
+  registerNATPrivilegedCommands, registerNATShowCommands, natShowSpecs, natExecSpecs,
 } from './cisco/CiscoNATCommands';
 import { iosShortInterfaceName } from '@/network/devices/inspection/InterfaceStatusView';
 import { SOCLE, ROUTEUR_SEUL, appliquerContinuations } from './cisco/ciscoContinuations';
@@ -381,6 +381,7 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
       ...ospfInterfaceSpecs(this),
       ...configIfSpecs(this),
       ...natConfigSpecs(this),
+      ...natExecSpecs(() => this.d()),
       ...pimGlobalSpecs({ r: () => this.d() }),
       ...ipsecGlobalSpecs(this),
       ...ikev2GlobalSpecs(this),

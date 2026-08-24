@@ -284,6 +284,22 @@ qu'un lot de migration ne doit pas faire ; et les trois cas restants
 demandent chacun une reference propre a la plateforme, la reponse
 n'etant pas la meme sur un 2900 et sur un 2960.
 
+### [nat] `debug ip nat` est enregistre DEUX fois, et l'une des deux est morte
+`registerNATPrivilegedCommands` enregistre `debug ip nat` et
+`no debug ip nat` avec leur propre corps (il allume le moteur puis
+delegue au service de debogage), et ce corps n'a jamais repondu : le
+repartiteur glouton `debug ip` de `CiscoShellBase` sert la commande, et
+lui seul sait ecrire `IP NAT detailed debugging is on`.
+**Mesure** : migrer la paire au socle la fait GAGNER, et
+`debug ip nat detailed` passe de `IP NAT detailed debugging is on` a
+`IP NAT debugging is on for access list detailed` — le message du corps
+mort. Un cas de `debug-family-slice.test.ts` l'a attrape.
+**Report** : les deux corps allument le meme moteur mais ne rendent pas
+le meme texte, donc les fondre demande de decider lequel est fidele
+(c'est celui du repartiteur) et de retirer l'autre — un travail qui
+appartient a la famille du DEBOGAGE, pas au lot `clear ip nat`. La
+migration l'ecarte explicitement par `skip` en attendant.
+
 ### [socle] deux familles sont migrées sur le commutateur VRP
 Le pont existe des DEUX côtés : `VRP_SWITCH_MODES` décrit la hiérarchie
 des treize vues du commutateur, et `HuaweiSwitchShell` consulte le socle
