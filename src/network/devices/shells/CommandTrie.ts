@@ -207,6 +207,7 @@ export interface DynamicCompletionContext {
 
 export interface DynamicParamResolver {
   candidatesFor(context: DynamicCompletionContext): readonly string[];
+  rangeFor?(context: DynamicCompletionContext): readonly [number, number] | null;
 }
 
 // ─── Match Result ───────────────────────────────────────────────────
@@ -846,9 +847,13 @@ export class CommandTrie {
     for (let k = 0; k < holder.params.length && firstArg + k < args.length; k++) {
       const spec = holder.params[k];
       const value = args[firstArg + k];
-      if (spec.type !== 'INT' || !spec.range || spec.validator || spec.rangeIsAdvisory) continue;
+      if (spec.type !== 'INT' || !spec.range || spec.validator) continue;
       if (!/^\d+$/.test(value)) continue;
-      if (Number(value) >= spec.range[0] && Number(value) <= spec.range[1]) continue;
+      const range = spec.rangeIsAdvisory
+        ? this.resolvedRange(spec, { path: matchedKeywords, partial: '', keyword: holder.keyword })
+        : spec.range;
+      if (!range) continue;
+      if (Number(value) >= range[0] && Number(value) <= range[1]) continue;
       if (holder.children.has(value.toLowerCase())) continue;
       return reject(value);
     }
@@ -1570,8 +1575,9 @@ export class CommandTrie {
       } else if (param.type === 'ENUM' && param.values) {
         for (const v of param.values) out.push({ ...v, origin: 'param' });
       } else {
+        const resolved = this.resolvedRange(param, { ...r, keyword: r.node.keyword });
         out.push({
-          keyword: renderParamKeyword(param),
+          keyword: renderParamKeyword(resolved ? { ...param, range: resolved } : param),
           description: param.description,
           origin: 'param',
         });
@@ -1601,6 +1607,16 @@ export class CommandTrie {
     if (auto.some((a) => dejaTape.has(a.keyword.toLowerCase()))) return [];
     return auto.map((a) =>
       ({ keyword: a.keyword, description: a.description, origin: 'auto' as const }));
+  }
+
+  private resolvedRange(
+    param: ParamSpec, r: { path: readonly string[]; partial: string; keyword?: string },
+  ): readonly [number, number] | null {
+    if (param.type !== 'INT' || !param.rangeIsAdvisory) return null;
+    return this.dynamicResolver?.rangeFor?.({
+      path: r.keyword ? [...r.path, r.keyword] : r.path,
+      paramType: param.type, partial: r.partial,
+    }) ?? null;
   }
 
   private dynamicCandidates(r: SuggestionRequest): SuggestionCandidate[] {

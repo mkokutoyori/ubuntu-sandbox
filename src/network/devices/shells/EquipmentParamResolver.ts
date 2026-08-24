@@ -1,5 +1,9 @@
 import type { DynamicCompletionContext, DynamicParamResolver } from './CommandTrie';
 
+export interface SessionParamRanges {
+  rangeFor(context: DynamicCompletionContext): readonly [number, number] | null;
+}
+
 interface PortLike {
   getName(): string;
 }
@@ -62,9 +66,15 @@ function pathEndsWith(path: readonly string[], tail: readonly string[]): boolean
 
 export class EquipmentParamResolver implements DynamicParamResolver {
   private readonly device: CompletableDevice;
+  private readonly sessionRanges: SessionParamRanges | null;
 
-  constructor(device: CompletableDevice) {
+  constructor(device: CompletableDevice, sessionRanges: SessionParamRanges | null = null) {
     this.device = device;
+    this.sessionRanges = sessionRanges;
+  }
+
+  rangeFor(context: DynamicCompletionContext): readonly [number, number] | null {
+    return this.sessionRanges?.rangeFor(context) ?? null;
   }
 
   candidatesFor(context: DynamicCompletionContext): readonly string[] {

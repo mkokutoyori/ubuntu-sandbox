@@ -10,6 +10,7 @@ import type { Router } from '../../Router';
 import { FhrpRepository, hsrpVirtualMac, type HsrpGroup }
   from '../../inspection/config/FhrpRepository';
 import { hsrpMaxGroup, HSRP_V1_MAX_GROUP } from '../../../hsrp/types';
+import type { SessionParamRanges } from '../EquipmentParamResolver';
 import { getHsrpAgent } from '../../../equipment/RouterServiceCapabilities';
 import { iosShortInterfaceName } from '@/network/devices/inspection/InterfaceStatusView';
 
@@ -177,6 +178,19 @@ function applyStandby(repo: FhrpRepository, iface: string, args: string[], route
     default:
       return '';
   }
+}
+
+export function hsrpGroupRange(
+  ctx: HsrpCtx, repo: FhrpRepository,
+): SessionParamRanges {
+  return {
+    rangeFor: (context) => {
+      if (context.path[context.path.length - 1]?.toLowerCase() !== 'standby') return null;
+      const iface = ctx.getSelectedInterface();
+      if (!iface) return null;
+      return [0, hsrpMaxGroup(repo.interfaceVersion(iface))];
+    },
+  };
 }
 
 export function buildHsrpInterfaceCommands(

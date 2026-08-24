@@ -40,8 +40,9 @@ import { CISCO_IOS_PROMPTS } from './PromptBuilder';
 import { CLIStateMachine, CISCO_IOS_MODES } from './CLIStateMachine';
 import { resolveInterfaceName } from './cisco/CiscoConfigCommands';
 import {
-  buildHsrpInterfaceCommands, registerHsrpShowCommands,
+  buildHsrpInterfaceCommands, registerHsrpShowCommands, hsrpGroupRange,
 } from './cisco/CiscoHsrpCommands';
+import type { SessionParamRanges } from './EquipmentParamResolver';
 import {
   buildVrrpGlbpInterfaceCommands, registerVrrpGlbpShowCommands,
 } from './cisco/CiscoVrrpGlbpCommands';
@@ -1308,6 +1309,10 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
   // c'est elle qui a fait diverger les deux plateformes le jour ou la
   // base a appris qu'`exit` depuis le mode privilegie ferme la session.
   // Le switch fermait, le routeur ne faisait rien.
+
+  protected override sessionParamRanges(): SessionParamRanges | null {
+    return hsrpGroupRange(this, this.fhrp);
+  }
 
   protected getActiveTrie(): CommandTrie {
     switch (this.mode) {

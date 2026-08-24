@@ -46,7 +46,7 @@ import { projectLoggingOntoSyslogAgent } from '@/network/syslog/loggingProjectio
 import { projectSnmpServiceOntoAgent } from '@/network/snmp/snmpProjection';
 import { renderStartupConfig } from './cisco/ciscoConfigSerializer';
 import { CommandTrie } from './CommandTrie';
-import { EquipmentParamResolver } from './EquipmentParamResolver';
+import { EquipmentParamResolver, type SessionParamRanges } from './EquipmentParamResolver';
 import { getDefaultScheduler, type IScheduler, type TimerHandle } from '@/events/Scheduler';
 import { runSshClient } from '../linux/network/LinuxSshClient';
 import { findHostByAddress } from '../linux/network/HostLookup';
@@ -6199,6 +6199,8 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     return reste === '' ? '  <cr>' : CISCO_ERRORS.UNRECOGNIZED_HELP;
   }
 
+  protected sessionParamRanges(): SessionParamRanges | null { return null; }
+
   getHelp(input: string, device?: TDevice): string {
     // `show running-config | ?` n'était le nœud d'aucun arbre : le `|`
     // est retiré de la ligne avant l'analyse, donc l'aide répondait au
@@ -6216,7 +6218,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     const aideUniverselle = this.aideDesCommandesUniverselles(input, device);
     if (aideUniverselle !== null) return aideUniverselle;
     const trie = this.getActiveTrie();
-    trie.setDynamicResolver(device ? new EquipmentParamResolver(device) : null);
+    trie.setDynamicResolver(device ? new EquipmentParamResolver(device, this.sessionParamRanges()) : null);
     try {
       const filtreNiveau = (ligne: string): boolean => {
         if (!device) return true;
@@ -6338,7 +6340,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     const viaDo = this.doTabCandidates(input, device);
     if (viaDo !== null) return viaDo;
     const trie = this.getActiveTrie();
-    trie.setDynamicResolver(new EquipmentParamResolver(device));
+    trie.setDynamicResolver(new EquipmentParamResolver(device, this.sessionParamRanges()));
     try {
       const precedent = this.deviceRef;
       this.deviceRef = device;
