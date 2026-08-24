@@ -1,10 +1,9 @@
+import { readIcmpUnreachable } from '@/network/core/icmpUnreachable';
 import type { WinCommandContext, PingResult } from './WinCommandExecutor';
 import { IPAddress } from '../../core/types';
 import { requireWindowsService } from './WinFeatureGate';
 import { isValidIPv4 } from '@/network/core/ip';
 import { unquote } from '@/lib/format';
-
-const DEFAULT_MTU = 1500;
 
 const PING_HELP = `
 Usage: ping [-t] [-a] [-n count] [-l size] [-f] [-i TTL] [-v TOS]
@@ -244,6 +243,14 @@ export function formatWinPingHeader(targetIP: IPAddress, size: number, hostname?
   return `\nPinging ${dest} with ${size} bytes of data:`;
 }
 
+function winUnreachText(code: number | undefined): string {
+  switch (code) {
+    case 0: return 'Destination net unreachable.';
+    case 4: return 'Packet needs to be fragmented but DF set.';
+    default: return 'Destination host unreachable.';
+  }
+}
+
 export function formatWinPingReplyLine(r: PingResult, size: number): string {
   if (r.success) {
     const ms = r.rttMs < 1 ? '<1ms' : `${Math.round(r.rttMs)}ms`;
@@ -253,7 +260,11 @@ export function formatWinPingReplyLine(r: PingResult, size: number): string {
     const match = r.error.match(/from ([\d.]+)/);
     return `Reply from ${match ? match[1] : 'unknown'}: TTL expired in transit.`;
   }
-  if (r.error?.includes('Destination unreachable') || r.error?.includes('unreachable')) {
+  const report = readIcmpUnreachable(r.error);
+  if (report) {
+    return `Reply from ${report.from || 'unknown'}: ${winUnreachText(report.code)}`;
+  }
+  if (r.error?.includes('unreachable')) {
     const match = r.error.match(/from ([\d.]+)/);
     return `Reply from ${match ? match[1] : 'unknown'}: Destination host unreachable.`;
   }
@@ -311,13 +322,6 @@ export async function cmdPing(ctx: WinCommandContext, args: string[]): Promise<s
     return `Ping request could not find host ${parsed.targetStr}. Invalid address format.`;
   }
 
-  if (parsed.dontFragment && parsed.size + 28 > DEFAULT_MTU) {
-    return `Pinging ${parsed.targetStr} with ${parsed.size} bytes of data:\n` +
-           `Packet needs to be fragmented but DF set.\n\n` +
-           `Ping statistics for ${parsed.targetStr}:\n` +
-           `    Packets: Sent = 1, Received = 0, Lost = 1 (100% loss),`;
-  }
-
   {
     // "General failure" only when NO interface can transmit at all. Which
     // interface actually carries the packet is the egress decision of the
@@ -353,7 +357,8 @@ export async function cmdPing(ctx: WinCommandContext, args: string[]): Promise<s
     }
   }
 
-  const results = await ctx.executePingSequence(targetIP, parsed.count, parsed.timeoutMs, parsed.ttl);
+  const results = await ctx.executePingSequence(targetIP, parsed.count, parsed.timeoutMs, parsed.ttl,
+    { dataSize: parsed.size, df: parsed.dontFragment });
   const hostname = parsed.targetStr !== targetIP.toString() ? parsed.targetStr : undefined;
 
   // `-r`/`-s` record the REAL forward path. Derive it once from a short

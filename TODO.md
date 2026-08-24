@@ -170,34 +170,38 @@ n'evalue. C'est un chantier par knob, pas un correctif de commande.
 
 ## Postes Windows
 
-### [ping] le CODE de l'ICMP inatteignable est jeté à l'affichage
-**Constat.** `WinPing.formatWinPingReplyLine` rend TOUT « destination
-unreachable » par `Reply from <ip>: Destination host unreachable.`, quel
-que soit le code ICMP. Mesuré : un routeur qui refuse par ACL répond
-type 3 **code 13** (communication administrativement interdite), le code
-VOYAGE bien jusqu'au client — `EndHost` le range dans la chaîne d'erreur
-(`Destination unreachable (from X) code 13`) et le `ping` Linux le lit
-déjà pour écrire « Packet filtered » (`commands/net/Ping.ts`, ligne 249)
-— mais la moitié Windows ne le regarde pas. Deux machines du même
-laboratoire diagnostiquent donc le même refus autrement, et celle qui
-perd l'information est celle qui envoie l'apprenant vérifier son câblage
-au lieu de sa liste d'accès.
+### [ping] les mots de `ping.exe` pour le code 13 restent non attestés
+Depuis le lot « le code ICMP decide de ce que ping ecrit », la moitie
+Windows lit le code et distingue le RESEAU (code 0) de l'HOTE (code 1)
+et la fragmentation (code 4). Il reste **un** code non rendu : le 13
+(communication administrativement interdite), celui qu'un routeur emet
+sous liste de controle. Il est rendu comme le code 1 — `Reply from
+<ip>: Destination host unreachable.` — donc un refus par ACL et un hote
+qui n'a pas repondu se ressemblent encore sur une machine Windows,
+alors que Linux les separe (`Packet filtered` contre `Destination Host
+Unreachable`).
 
-**Ce qui bloque, et c'est une question de RÉFÉRENCE, pas de code.** Les
-chaînes exactes de `ping.exe` par code ne sont pas vérifiables : la
-documentation Microsoft ne les publie pas, et la seule source à texte
-préservé trouvée est ReactOS — une réimplémentation, qui ne traite que
-NET/HOST/TTL et écrit « Destination network unreachable. » là où Windows
-écrit, d'après tout ce qu'on lit ailleurs, « Destination net
-unreachable. ». Écrire la table de mémoire produirait exactement le
-genre de sortie plausible-et-fausse que ce dépôt passe son temps à
-refermer.
+**Ce qui bloque, et c'est une question de REFERENCE, pas de code.** La
+recherche a etabli beaucoup, et pas cela. Sont ATTESTES : la forme
+`Reply from <ip>: <message>` ; `Destination host unreachable.` ;
+`Destination port unreachable.` et `Destination protocol unreachable.`
+(transcriptions reelles retrouvees, meme si ce simulateur ne livre
+jamais ces deux codes a un `ping`) ; `Packet needs to be fragmented but
+DF set.` ; et la liste complete des `IP_STATUS` lue dans l'`ipexport.h`
+du vrai SDK Windows — ou l'on decouvre que `IP_DEST_PROHIBITED` et
+`IP_DEST_PROT_UNREACHABLE` sont **le meme nombre**, 11004. N'est PAS
+atteste : ce que `ping.exe` imprime pour le code 13. Deux resumes de
+recherche citant des fils Cisco disent « Destination net unreachable »,
+sans transcription primaire ; `community.cisco.com`, `cisco.com` et
+`sources.debian.org` sont bloques par le mandataire de sortie ; ReactOS
+est une reimplementation dont la table ne contient meme pas ce cas et
+qui ecrit « network » la ou Windows ecrit « net ». Ecrire la ligne de
+memoire produirait le genre de sortie plausible-et-fausse que ce depot
+passe son temps a refermer.
 
-**Report.** Hors du chemin du tutoriel ACL — le lecteur y constate un
-`Reply from <routeur>` et 100 % de perte, ce que la plateforme rend
-correctement. À fermer le jour où une capture réelle de `ping.exe` sous
-ACL est disponible ; le reste est déjà en place, il ne manque que les
-libellés.
+**Report.** A fermer le jour ou une capture reelle de `ping.exe` sous
+ACL est disponible ; tout le reste est en place, il ne manque que le
+libelle — une ligne dans `winUnreachText`.
 
 ---
 

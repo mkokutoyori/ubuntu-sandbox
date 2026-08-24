@@ -1,3 +1,4 @@
+import { readIcmpUnreachable } from '@/network/core/icmpUnreachable';
 import { IPv6Address, IPAddress } from '@/network/core/types';
 import type { LinuxCommand } from '../LinuxCommand';
 import type { LinuxCommandContext } from '../LinuxCommandContext';
@@ -260,14 +261,10 @@ function formatReplyLine(r: PingResult, size: number, timestamp: boolean): strin
   } else if (r.error?.includes('Time to live exceeded')) {
     const m = r.error.match(/from ([\d.]+)/);
     line = `From ${m ? m[1] : 'unknown'} icmp_seq=${r.seq} Time to live exceeded`;
-  } else if (r.error?.includes('Destination unreachable') || r.error?.includes('Network is unreachable')) {
-    const m = r.error.match(/from ([\d.]+)/);
-    const from = m ? m[1] : (r.fromIP ?? 'unknown');
-    const codeMatch = r.error.match(/code (\d+)/);
-    const code = codeMatch ? parseInt(codeMatch[1], 10) : undefined;
-    const mtuMatch = r.error.match(/mtu (\d+)/);
-    const mtu = mtuMatch ? parseInt(mtuMatch[1], 10) : undefined;
-    line = `From ${from} icmp_seq=${r.seq} ${icmpUnreachText(code, mtu)}`;
+  } else if (readIcmpUnreachable(r.error)) {
+    const report = readIcmpUnreachable(r.error)!;
+    const from = report.from || (r.fromIP ?? 'unknown');
+    line = `From ${from} icmp_seq=${r.seq} ${icmpUnreachText(report.code, report.mtu)}`;
   } else {
     return '';
   }
