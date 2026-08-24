@@ -178,3 +178,58 @@ describe('la tabulation complete ce que l\'aide propose', () => {
       .toEqual(['ip nat inside']);
   });
 });
+
+/*
+ * Deuxieme vague : `crypto map`, la famille ICMP/uRPF/zone et NetFlow.
+ * Meme methode — les formes sont relevees sur les gestionnaires, et ce
+ * bloc est passe sur le code NON MIGRE avant de l'etre : les cas
+ * d'acceptation doivent etre verts DES AVANT, c'est ce qui en fait le
+ * garde-fou du sens « la declaration refuse ce que la machine
+ * acceptait ».
+ */
+const REGLAGES_2: ReadonlyArray<string> = [
+  'crypto map CM',
+  'no crypto map',
+  'ip unreachables',
+  'no ip unreachables',
+  'ip redirects',
+  'no ip redirects',
+  'ip proxy-arp',
+  'no ip proxy-arp',
+  'ip verify unicast reverse-path',
+  'ip verify unicast source reachable-via any',
+  'ip verify unicast source reachable-via rx',
+  'zone-member security INSIDE',
+  'ip route-cache flow',
+  'ip flow ingress',
+  'ip flow egress',
+  'ip flow monitor MON input',
+  'ip flow monitor MON output',
+  'ip flow monitor MON',
+];
+
+describe('crypto map, ICMP/uRPF/zone et NetFlow restent acceptes', () => {
+  it.each(REGLAGES_2)('`%s`', async (commande) => {
+    expect(await (await surIface()).executeCommand(commande))
+      .not.toContain('Invalid input');
+  });
+
+  it.each(REGLAGES_2)('sur une sous-interface aussi › `%s`', async (commande) => {
+    expect(await (await surSousIface()).executeCommand(commande))
+      .not.toContain('Invalid input');
+  });
+});
+
+describe('`?` nomme les places de la deuxieme vague', () => {
+  const ATTENDU_2: ReadonlyArray<readonly [string, string]> = [
+    ['crypto map ', 'Name of the crypto map'],
+    ['ip verify unicast ', 'reverse-path'],
+    ['zone-member security ', 'Name of the security zone'],
+    ['ip flow monitor ', 'Name of the flow monitor'],
+    ['ip flow ', 'Enable ingress NetFlow'],
+  ];
+
+  it.each(ATTENDU_2)('`%s?` annonce %s', async (saisie, attendu) => {
+    expect((await surIface()).cliHelp(saisie)).toContain(attendu);
+  });
+});

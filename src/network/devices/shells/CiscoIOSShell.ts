@@ -130,7 +130,7 @@ import {
 import {
   buildIPSecGlobalCommands, buildISAKMPPolicyCommands, buildISAKMPProfileCommands, buildISAKMPKeyringCommands,
   buildTransformSetCommands, buildCryptoMapEntryCommands,
-  buildIPSecProfileCommands, buildIPSecIfCommands,
+  buildIPSecProfileCommands, buildIPSecIfCommands, ipsecInterfaceSpecs,
   buildIPSecPrivilegedCommands,
   isakmpPolicySpecs, isakmpProfileSpecs, isakmpKeyringSpecs,
   transformSetSpecs, cryptoMapEntrySpecs, ipsecProfileSpecs,
@@ -148,7 +148,7 @@ import {
 import { registerIPSecShowCommands, cryptoShowSpecs } from './cisco/CiscoIPSecShowCommands';
 import {
   buildSecurityConfigCommands, buildSecurityInterfaceCommands,
-  buildSecuritySubmodeCommands, buildSecurityShowCommands,
+  buildSecuritySubmodeCommands, buildSecurityShowCommands, securityInterfaceSpecs,
   classMapSubmodeSpecs, policyMapSubmodeSpecs, policyClassSubmodeSpecs,
   controlPlaneSubmodeSpecs, zoneSubmodeSpecs, zonePairSubmodeSpecs,
   timeRangeSubmodeSpecs, trustpointSubmodeSpecs,
@@ -160,6 +160,7 @@ import {
   buildArchiveSubmode, buildArchiveLogSubmode,
   eemAppletSpecs, flowExporterSpecs, flowRecordSpecs, flowMonitorSpecs,
   buildEemNetflowArchiveInterfaceCommands, buildEemNetflowArchiveShowCommands,
+  netflowInterfaceSpecs,
 } from './cisco/CiscoEemNetflowArchiveCommands';
 import {
   buildNATConfigCommands, buildNATInterfaceCommands, natInterfaceSpecs,
@@ -371,6 +372,9 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
         r: () => this.d(),
       }),
       ...natInterfaceSpecs(this),
+      ...ipsecInterfaceSpecs(this),
+      ...securityInterfaceSpecs(this),
+      ...netflowInterfaceSpecs(this),
       ...dhcpPoolClassSpecs(this),
       ...dhcpClassSpecs(this),
       ...ipv6DhcpPoolSpecs(this),
