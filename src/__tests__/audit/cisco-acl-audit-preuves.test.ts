@@ -312,7 +312,7 @@ describe('ACL Cisco — non-régression des constats d\'audit', () => {
     }
   });
 
-  it('F-08 les quatre plages IOS sont acceptees, et le message dit vrai', async () => {
+  it('F-08 les quatre plages IOS sont acceptees, et un numero hors plage recoit le refus d IOS', async () => {
     const r = new CiscoRouter('R');
     const out = await cfg(r, [
       'enable', 'configure terminal',
@@ -324,7 +324,10 @@ describe('ACL Cisco — non-régression des constats d\'audit', () => {
     expect(out[3]).toBe('');
     expect(r.getAccessLists().find(a => a.id === 1500)?.type).toBe('standard');
     expect(r.getAccessLists().find(a => a.id === 2500)?.type).toBe('extended');
-    expect(out[4]).toContain('1-99, 100-199, 1300-1999, 2000-2699');
+    const refus = out[4].split('\n');
+    expect(refus[0]).toMatch(/^ +\^$/);
+    expect(refus[1]).toBe("% Invalid input detected at '^' marker.");
+    expect(r.getAccessLists().some(a => a.id === 3000)).toBe(false);
   });
 
   it('F-11 la sequence auto est « dernier + 10 », comme IOS', () => {

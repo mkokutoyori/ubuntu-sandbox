@@ -105,7 +105,9 @@ export interface IPv6RouterContext {
    * `ipv6 traffic-filter <name> in|out` on this interface. Absent on a
    * platform with no IPv6 access lists; `true` means the packet passes.
    */
-  ipv6FilterPermits?(iface: string, direction: 'in' | 'out', pkt: IPv6Packet): boolean;
+  ipv6FilterPermits?(
+    iface: string, direction: 'in' | 'out', pkt: IPv6Packet, ingress?: string,
+  ): boolean;
 }
 
 /**
@@ -1016,7 +1018,7 @@ export class IPv6DataPlane {
     // An outbound filter applies to TRANSIT traffic only: a packet this
     // router originates itself is not filtered on the way out, which is
     // why the check lives here and not in `sendEchoRequest`.
-    if (this.ctx.ipv6FilterPermits?.(route.iface, 'out', fwdPkt) === false) {
+    if (this.ctx.ipv6FilterPermits?.(route.iface, 'out', fwdPkt, inPort) === false) {
       this.v6Counters.outFiltered++;
       Logger.info(this.ctx.id, 'router:ipv6-acl-deny-out',
         `${this.ctx.name}: IPv6 ACL denied outbound on ${route.iface}: `

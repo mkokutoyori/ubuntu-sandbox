@@ -191,9 +191,23 @@ export function specsFromTrieRegistrations(
      * seul n'est pas une commande complete, et `no version` en est
      * l'annulation, donc annoncee comme telle.
      */
+    /*
+     * Une negation nue ne se declare que si sa forme positive n'est
+     * couverte par PERSONNE. `no ip nat inside source static network`
+     * n'a pas de `… static network` en face, mais `… static` est
+     * GLOUTON et avale deja `network 192.168.1.0 …` : declarer la forme
+     * longue comme n'existant que niee la masquerait, et la commande la
+     * plus specifique gagnant l'analyse, la traduction de reseau entiere
+     * devenait « % Incomplete command. ».
+     */
+    const positif = entry.path.startsWith('no ') ? entry.path.slice(3) : null;
+    const couvertParUnGlouton = positif !== null && collected.some(autre =>
+      autre.greedy && !autre.path.startsWith('no ')
+      && positif.startsWith(`${autre.path} `));
     const negationSeule = options.undoFromNegatedPaths
       && entry.path.startsWith('no ')
-      && !collected.some(autre => autre.path === entry.path.slice(3));
+      && !collected.some(autre => autre.path === entry.path.slice(3))
+      && !couvertParUnGlouton;
     if (options.undoFromNegatedPaths && entry.path.startsWith('no ')
       && !negationSeule) continue;
     if (options.skip?.(entry.path)) continue;
@@ -259,11 +273,31 @@ export function specsFromTrieRegistrations(
         }) as CommandSpec['undo'],
       }),
     });
-    // Une NEGATION ne reprend pas la valeur que la forme positive exige :
-    // `no password` se tape seul. Le chemin nu n'existe alors QUE
-    // negativement — le socle porte deja cette notion — sinon `password`
-    // tout court passerait pour une commande complete.
-    if (negation !== undefined && argument !== null && argument.optional !== true) {
+    /*
+     * Une NEGATION ne reprend pas la valeur que la forme positive
+     * exige : `no ip ospf cost` se tape SEUL, la ou `ip ospf cost`
+     * demande un nombre. Le chemin nu n'existe alors QUE negativement —
+     * le socle porte deja cette notion — sinon `ip ospf cost` tout court
+     * passerait pour une commande complete.
+     *
+     * Cette forme nue valait pour le seul mecanisme `undoFrom` ; elle
+     * manquait a `undoFromNegatedPaths`, si bien qu'une famille migree
+     * par celui-ci perdait en silence toutes ses negations tapees sans
+     * valeur. Les deux mecanismes decrivent le meme fait et doivent donc
+     * produire la meme commande.
+     */
+    const negationPropre = negations.get(entry.path);
+    const negationDeLaCommande = negation ?? negationPropre;
+    /*
+     * Ce qui compte est qu'une place soit EXIGEE, pas que la DERNIERE le
+     * soit : `ip ospf network <genre> [reste]` finit par une place
+     * facultative et exige pourtant un genre, donc `no ip ospf network`
+     * se tape seul comme les autres.
+     */
+    const exigeUneValeur = places.some(place => place.optional !== true);
+    if (negationDeLaCommande !== undefined && exigeUneValeur) {
+      const cible = negationDeLaCommande;
+      const argvNu = cible === negationPropre ? [] : [...words];
       specs.push({
         id: `no-${[options.modes[0], ...words].join('-')}`,
         path: [...words],
@@ -275,7 +309,7 @@ export function specsFromTrieRegistrations(
         ...(contexte ? { reachableWhen: contexte } : {}),
         run: (() => '') as CommandSpec['run'],
         undo: ((_session: unknown) =>
-          negation.action([...words], [negation.path, ...words].join(' '))
+          cible.action(argvNu, [cible.path, ...argvNu].join(' '))
         ) as CommandSpec['undo'],
       });
     }

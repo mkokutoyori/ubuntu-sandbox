@@ -4,6 +4,7 @@ import {
 } from './types';
 
 const ADDRESS_TARGETS = ['firewall address', 'firewall addrgrp', 'firewall vip'];
+const ADDRESS6_TARGETS = ['firewall address6', 'firewall addrgrp6'];
 const INTERFACE_TARGETS = ['system interface', 'system zone'];
 const SERVICE_TARGETS = ['firewall service custom', 'firewall service group'];
 const SCHEDULE_TARGETS = ['firewall schedule recurring', 'firewall schedule onetime'];
@@ -51,6 +52,10 @@ export const FIREWALL_POLICY: FortiTableSpec = {
     refList('dstintf', 'Outgoing (egress) interface.', INTERFACE_TARGETS),
     refList('srcaddr', 'Source address and address group names.', ADDRESS_TARGETS),
     refList('dstaddr', 'Destination address and address group names.', ADDRESS_TARGETS),
+    refList('srcaddr6', 'Source IPv6 address and address group names.',
+      ADDRESS6_TARGETS),
+    refList('dstaddr6', 'Destination IPv6 address and address group names.',
+      ADDRESS6_TARGETS),
     enable('srcaddr-negate', 'When enabled srcaddr specifies what the source address must NOT be.'),
     enable('dstaddr-negate', 'When enabled dstaddr specifies what the destination address must NOT be.'),
     refList('service', 'Service and service group names.', SERVICE_TARGETS),
@@ -176,6 +181,8 @@ export const FIREWALL_POLICY: FortiTableSpec = {
       to: listOrAny(object.effective('dstintf')),
       source: normaliseAny(object.effective('srcaddr')),
       destination: normaliseAny(object.effective('dstaddr')),
+      source6: [...object.effective('srcaddr6')],
+      destination6: [...object.effective('dstaddr6')],
       service: normaliseAny(object.effective('service')),
       sourceNegated: object.effective('srcaddr-negate')[0] === 'enable',
       destinationNegated: object.effective('dstaddr-negate')[0] === 'enable',

@@ -136,7 +136,7 @@ describe('config system dhcp server', () => {
       .toMatch(/192\.168\.1\.1[0-5][0-9]/);
 
     run(sh, 'config system dhcp server', 'edit 1', 'set status disable', 'next', 'end');
-    await runOn(poste, ['ip addr flush dev eth0', 'dhclient eth0']);
+    await runOn(poste, ['dhclient -r eth0', 'dhclient eth0']);
 
     expect(await poste.executeCommand('ip -4 addr show eth0'))
       .not.toMatch(/192\.168\.1\.1[0-5][0-9]/);

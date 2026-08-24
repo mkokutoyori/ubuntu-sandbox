@@ -185,52 +185,52 @@ Total steps: 339
   0 packets dropped by kernel
 
 [22/339] lhq lhq$ sysctl net.ipv4.conf.all.arp_ignore
-<empty>
+  net.ipv4.conf.all.arp_ignore = 0
 
 [23/339] lhq lhq$ sysctl net.ipv4.conf.all.arp_announce
-<empty>
+  net.ipv4.conf.all.arp_announce = 0
 
 [24/339] lhq lhq$ sysctl net.ipv4.neigh.default.gc_stale_time
-<empty>
+  net.ipv4.neigh.default.gc_stale_time = 60
 
 [25/339] lhq lhq$ ip link show eth0
   2: eth0: <BROADCAST,UP,MULTICAST,LOWER_UP> mtu 1500 qdisc fq_codel state UP mode DEFAULT group default qlen 1000
       link/ether 02:00:00:00:00:47 brd ff:ff:ff:ff:ff:ff
 
 [26/339] lbr lbr$ sysctl net.ipv4.conf.all.arp_ignore
-<empty>
+  net.ipv4.conf.all.arp_ignore = 0
 
 [27/339] lbr lbr$ sysctl net.ipv4.conf.all.arp_announce
-<empty>
+  net.ipv4.conf.all.arp_announce = 0
 
 [28/339] lbr lbr$ sysctl net.ipv4.neigh.default.gc_stale_time
-<empty>
+  net.ipv4.neigh.default.gc_stale_time = 60
 
 [29/339] lbr lbr$ ip link show eth0
   2: eth0: <BROADCAST,UP,MULTICAST,LOWER_UP> mtu 1500 qdisc fq_codel state UP mode DEFAULT group default qlen 1000
       link/ether 02:00:00:00:00:53 brd ff:ff:ff:ff:ff:ff
 
 [30/339] ldc ldc$ sysctl net.ipv4.conf.all.arp_ignore
-<empty>
+  net.ipv4.conf.all.arp_ignore = 0
 
 [31/339] ldc ldc$ sysctl net.ipv4.conf.all.arp_announce
-<empty>
+  net.ipv4.conf.all.arp_announce = 0
 
 [32/339] ldc ldc$ sysctl net.ipv4.neigh.default.gc_stale_time
-<empty>
+  net.ipv4.neigh.default.gc_stale_time = 60
 
 [33/339] ldc ldc$ ip link show eth0
   2: eth0: <BROADCAST,UP,MULTICAST,LOWER_UP> mtu 1500 qdisc fq_codel state UP mode DEFAULT group default qlen 1000
       link/ether 02:00:00:00:00:5b brd ff:ff:ff:ff:ff:ff
 
 [34/339] srvdc srvdc$ sysctl net.ipv4.conf.all.arp_ignore
-<empty>
+  net.ipv4.conf.all.arp_ignore = 0
 
 [35/339] srvdc srvdc$ sysctl net.ipv4.conf.all.arp_announce
-<empty>
+  net.ipv4.conf.all.arp_announce = 0
 
 [36/339] srvdc srvdc$ sysctl net.ipv4.neigh.default.gc_stale_time
-<empty>
+  net.ipv4.neigh.default.gc_stale_time = 60
 
 [37/339] srvdc srvdc$ ip link show eth0
   2: eth0: <BROADCAST,UP,MULTICAST,LOWER_UP> mtu 1500 qdisc fq_codel state UP mode DEFAULT group default qlen 1000
@@ -651,11 +651,11 @@ Total steps: 339
 
 [90/339] lhq lhq$ ping -c 1 10.1.1.11
   PING 10.1.1.11 (10.1.1.11) 56(84) bytes of data.
-  64 bytes from 10.1.1.11: icmp_seq=1 ttl=128 time=1.289 ms
+  64 bytes from 10.1.1.11: icmp_seq=1 ttl=128 time=0.702 ms
   
   --- 10.1.1.11 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 1.289/1.289/1.289/0.000 ms
+  rtt min/avg/max/mdev = 0.702/0.702/0.702/0.000 ms
 
 [91/339] lhq lhq$ arp -n 10.1.1.11
   Address                  HWtype  HWaddress           Flags Mask            Iface
@@ -675,11 +675,11 @@ Total steps: 339
 
 [96/339] lbr lbr$ ping -c 1 10.2.2.10
   PING 10.2.2.10 (10.2.2.10) 56(84) bytes of data.
-  64 bytes from 10.2.2.10: icmp_seq=1 ttl=128 time=0.595 ms
+  64 bytes from 10.2.2.10: icmp_seq=1 ttl=128 time=0.573 ms
   
   --- 10.2.2.10 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.595/0.595/0.595/0.000 ms
+  rtt min/avg/max/mdev = 0.573/0.573/0.573/0.000 ms
 
 [97/339] lbr lbr$ arp -n 10.2.2.10
   Address                  HWtype  HWaddress           Flags Mask            Iface
@@ -699,11 +699,11 @@ Total steps: 339
 
 [102/339] ldc ldc$ ping -c 1 10.3.3.10
   PING 10.3.3.10 (10.3.3.10) 56(84) bytes of data.
-  64 bytes from 10.3.3.10: icmp_seq=1 ttl=64 time=0.468 ms
+  64 bytes from 10.3.3.10: icmp_seq=1 ttl=64 time=0.720 ms
   
   --- 10.3.3.10 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.468/0.468/0.468/0.000 ms
+  rtt min/avg/max/mdev = 0.720/0.720/0.720/0.000 ms
 
 [103/339] ldc ldc$ arp -n 10.3.3.10
   Address                  HWtype  HWaddress           Flags Mask            Iface
@@ -723,11 +723,11 @@ Total steps: 339
 
 [108/339] srvdc srvdc$ ping -c 1 10.3.3.11
   PING 10.3.3.11 (10.3.3.11) 56(84) bytes of data.
-  64 bytes from 10.3.3.11: icmp_seq=1 ttl=64 time=0.452 ms
+  64 bytes from 10.3.3.11: icmp_seq=1 ttl=64 time=0.377 ms
   
   --- 10.3.3.11 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.452/0.452/0.452/0.000 ms
+  rtt min/avg/max/mdev = 0.377/0.377/0.377/0.000 ms
 
 [109/339] srvdc srvdc$ arp -n 10.3.3.11
   Address                  HWtype  HWaddress           Flags Mask            Iface
@@ -750,7 +750,7 @@ Total steps: 339
   Ping statistics for 10.1.1.10:
       Packets: Sent = 1, Received = 1, Lost = 0 (0% loss),
   Approximate round trip times in milli-seconds:
-      Minimum = 1ms, Maximum = 1ms, Average = 1ms
+      Minimum = 0ms, Maximum = 0ms, Average = 0ms
 
 [114/339] whq whq$ arp -a
   
@@ -769,7 +769,7 @@ Total steps: 339
   Ping statistics for 10.2.2.11:
       Packets: Sent = 1, Received = 1, Lost = 0 (0% loss),
   Approximate round trip times in milli-seconds:
-      Minimum = 1ms, Maximum = 1ms, Average = 1ms
+      Minimum = 0ms, Maximum = 0ms, Average = 0ms
 
 [117/339] wbr wbr$ arp -a
   
@@ -787,11 +787,11 @@ Total steps: 339
 
 [120/339] lhq lhq$ ping -c 1 10.1.1.1
   PING 10.1.1.1 (10.1.1.1) 56(84) bytes of data.
-  64 bytes from 10.1.1.1: icmp_seq=1 ttl=255 time=0.495 ms
+  64 bytes from 10.1.1.1: icmp_seq=1 ttl=255 time=0.337 ms
   
   --- 10.1.1.1 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.495/0.495/0.495/0.000 ms
+  rtt min/avg/max/mdev = 0.337/0.337/0.337/0.000 ms
 
 [121/339] lhq lhq$ ip neigh show 10.1.1.1 dev eth0
   10.1.1.1 dev eth0 lladdr 02:00:00:00:00:01 REACHABLE
@@ -805,11 +805,11 @@ Total steps: 339
 
 [124/339] lbr lbr$ ping -c 1 10.2.2.1
   PING 10.2.2.1 (10.2.2.1) 56(84) bytes of data.
-  64 bytes from 10.2.2.1: icmp_seq=1 ttl=255 time=0.405 ms
+  64 bytes from 10.2.2.1: icmp_seq=1 ttl=255 time=0.389 ms
   
   --- 10.2.2.1 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.405/0.405/0.405/0.000 ms
+  rtt min/avg/max/mdev = 0.389/0.389/0.389/0.000 ms
 
 [125/339] lbr lbr$ ip neigh show 10.2.2.1 dev eth0
   10.2.2.1 dev eth0 lladdr 02:00:00:00:00:05 REACHABLE
@@ -823,11 +823,11 @@ Total steps: 339
 
 [128/339] ldc ldc$ ping -c 1 10.3.3.1
   PING 10.3.3.1 (10.3.3.1) 56(84) bytes of data.
-  64 bytes from 10.3.3.1: icmp_seq=1 ttl=255 time=0.873 ms
+  64 bytes from 10.3.3.1: icmp_seq=1 ttl=255 time=0.733 ms
   
   --- 10.3.3.1 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.873/0.873/0.873/0.000 ms
+  rtt min/avg/max/mdev = 0.733/0.733/0.733/0.000 ms
 
 [129/339] ldc ldc$ ip neigh show 10.3.3.1 dev eth0
   10.3.3.1 dev eth0 lladdr 02:00:00:00:00:09 REACHABLE
@@ -841,11 +841,11 @@ Total steps: 339
 
 [132/339] srvdc srvdc$ ping -c 1 10.3.3.1
   PING 10.3.3.1 (10.3.3.1) 56(84) bytes of data.
-  64 bytes from 10.3.3.1: icmp_seq=1 ttl=255 time=0.449 ms
+  64 bytes from 10.3.3.1: icmp_seq=1 ttl=255 time=0.404 ms
   
   --- 10.3.3.1 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.449/0.449/0.449/0.000 ms
+  rtt min/avg/max/mdev = 0.404/0.404/0.404/0.000 ms
 
 [133/339] srvdc srvdc$ ip neigh show 10.3.3.1 dev eth0
   10.3.3.1 dev eth0 lladdr 02:00:00:00:00:09 REACHABLE
@@ -1238,19 +1238,19 @@ Total steps: 339
 
 --- [224] § Proxy ARP — Linux (sysctl) ---
 [224/339] srvdc srvdc$ sysctl net.ipv4.conf.all.proxy_arp
-<empty>
+  net.ipv4.conf.all.proxy_arp = 0
 
 [225/339] srvdc srvdc$ sysctl -w net.ipv4.conf.all.proxy_arp=1
-<empty>
+  sysctl: setting key "net.ipv4.conf.all.proxy_arp": Operation not permitted
 
 [226/339] srvdc srvdc$ sysctl net.ipv4.conf.all.proxy_arp
-<empty>
+  net.ipv4.conf.all.proxy_arp = 0
 
 [227/339] srvdc srvdc$ cat /proc/sys/net/ipv4/conf/eth0/proxy_arp
   0
 
 [228/339] srvdc srvdc$ sysctl -w net.ipv4.conf.all.proxy_arp=0
-<empty>
+  net.ipv4.conf.all.proxy_arp = 0
 
 
 --- [229] § Gratuitous ARP & détection de doublon (Linux) ---
@@ -1393,46 +1393,61 @@ Total steps: 339
 
 --- [259] § Linux — durcissement ARP (arp_ignore/announce/filter) ---
 [259/339] srvdc srvdc$ sysctl net.ipv4.conf.all.arp_ignore
-<empty>
+  net.ipv4.conf.all.arp_ignore = 0
 
 [260/339] srvdc srvdc$ sysctl -w net.ipv4.conf.all.arp_ignore=1
-<empty>
+  sysctl: setting key "net.ipv4.conf.all.arp_ignore": Operation not permitted
 
 [261/339] srvdc srvdc$ sysctl -w net.ipv4.conf.all.arp_announce=2
-<empty>
+  sysctl: setting key "net.ipv4.conf.all.arp_announce": Operation not permitted
 
 [262/339] srvdc srvdc$ sysctl -w net.ipv4.conf.all.arp_filter=1
-<empty>
+  sysctl: cannot stat /proc/sys/net/ipv4/conf/all/arp_filter: No such file or directory
 
 [263/339] srvdc srvdc$ sysctl -a 2>/dev/null | grep arp
-<empty>
+  net.ipv4.arp_cache_size = 1024
+  net.ipv4.conf.all.arp_accept = 0
+  net.ipv4.conf.all.arp_announce = 0
+  net.ipv4.conf.all.arp_ignore = 0
+  net.ipv4.conf.all.arp_notify = 0
+  net.ipv4.conf.all.proxy_arp = 0
+  net.ipv4.conf.default.arp_accept = 0
+  net.ipv4.conf.default.arp_announce = 0
+  net.ipv4.conf.default.arp_ignore = 0
+  net.ipv4.conf.default.arp_notify = 0
+  net.ipv4.conf.default.proxy_arp = 0
+  net.ipv4.conf.eth0.arp_accept = 0
+  net.ipv4.conf.eth0.arp_announce = 0
+  net.ipv4.conf.eth0.arp_ignore = 0
+  net.ipv4.conf.eth0.arp_notify = 0
+  net.ipv4.conf.eth0.proxy_arp = 0
 
 [264/339] ldc ldc$ ping -c 2 10.3.3.10
   PING 10.3.3.10 (10.3.3.10) 56(84) bytes of data.
-  64 bytes from 10.3.3.10: icmp_seq=1 ttl=64 time=1.217 ms
-  64 bytes from 10.3.3.10: icmp_seq=2 ttl=64 time=0.597 ms
+  64 bytes from 10.3.3.10: icmp_seq=1 ttl=64 time=0.514 ms
+  64 bytes from 10.3.3.10: icmp_seq=2 ttl=64 time=0.389 ms
   
   --- 10.3.3.10 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.597/0.907/1.217/0.310 ms
+  rtt min/avg/max/mdev = 0.389/0.451/0.514/0.062 ms
 
 [265/339] srvdc srvdc$ sysctl -w net.ipv4.conf.all.arp_ignore=0
-<empty>
+  net.ipv4.conf.all.arp_ignore = 0
 
 [266/339] srvdc srvdc$ sysctl -w net.ipv4.conf.all.arp_announce=0
-<empty>
+  net.ipv4.conf.all.arp_announce = 0
 
 [267/339] srvdc srvdc$ sysctl -w net.ipv4.conf.all.arp_filter=0
-<empty>
+  sysctl: cannot stat /proc/sys/net/ipv4/conf/all/arp_filter: No such file or directory
 
 [268/339] ldc ldc$ ping -c 2 10.3.3.10
   PING 10.3.3.10 (10.3.3.10) 56(84) bytes of data.
-  64 bytes from 10.3.3.10: icmp_seq=1 ttl=64 time=0.439 ms
-  64 bytes from 10.3.3.10: icmp_seq=2 ttl=64 time=0.240 ms
+  64 bytes from 10.3.3.10: icmp_seq=1 ttl=64 time=0.276 ms
+  64 bytes from 10.3.3.10: icmp_seq=2 ttl=64 time=0.265 ms
   
   --- 10.3.3.10 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.240/0.339/0.439/0.099 ms
+  rtt min/avg/max/mdev = 0.265/0.270/0.276/0.005 ms
 
 
 --- [269] § L2 — corrélation MAC/ARP sur switchs ---
@@ -1584,27 +1599,27 @@ Total steps: 339
 --- [298] § ARP — re-résolution complète après flush ---
 [298/339] lhq lhq$ ping -c 1 10.1.1.1
   PING 10.1.1.1 (10.1.1.1) 56(84) bytes of data.
+  64 bytes from 10.1.1.1: icmp_seq=1 ttl=255 time=0.434 ms
+  
+  --- 10.1.1.1 ping statistics ---
+  1 packets transmitted, 1 received, 0% packet loss
+  rtt min/avg/max/mdev = 0.434/0.434/0.434/0.000 ms
+
+[299/339] lhq lhq$ ping -c 1 10.1.1.1
+  PING 10.1.1.1 (10.1.1.1) 56(84) bytes of data.
   64 bytes from 10.1.1.1: icmp_seq=1 ttl=255 time=0.292 ms
   
   --- 10.1.1.1 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
   rtt min/avg/max/mdev = 0.292/0.292/0.292/0.000 ms
 
-[299/339] lhq lhq$ ping -c 1 10.1.1.1
-  PING 10.1.1.1 (10.1.1.1) 56(84) bytes of data.
-  64 bytes from 10.1.1.1: icmp_seq=1 ttl=255 time=0.293 ms
-  
-  --- 10.1.1.1 ping statistics ---
-  1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.293/0.293/0.293/0.000 ms
-
 [300/339] lhq lhq$ ping -c 1 10.1.1.11
   PING 10.1.1.11 (10.1.1.11) 56(84) bytes of data.
-  64 bytes from 10.1.1.11: icmp_seq=1 ttl=128 time=0.252 ms
+  64 bytes from 10.1.1.11: icmp_seq=1 ttl=128 time=0.239 ms
   
   --- 10.1.1.11 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.252/0.252/0.252/0.000 ms
+  rtt min/avg/max/mdev = 0.239/0.239/0.239/0.000 ms
 
 [301/339] lhq lhq$ ip -s neigh
   10.1.1.250 dev eth0 lladdr 02:00:00:de:ad:01 PERMANENT
@@ -1613,19 +1628,19 @@ Total steps: 339
 
 [302/339] lbr lbr$ ping -c 1 10.2.2.1
   PING 10.2.2.1 (10.2.2.1) 56(84) bytes of data.
-  64 bytes from 10.2.2.1: icmp_seq=1 ttl=255 time=0.401 ms
+  64 bytes from 10.2.2.1: icmp_seq=1 ttl=255 time=0.359 ms
   
   --- 10.2.2.1 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.401/0.401/0.401/0.000 ms
+  rtt min/avg/max/mdev = 0.359/0.359/0.359/0.000 ms
 
 [303/339] lbr lbr$ ping -c 1 10.2.2.10
   PING 10.2.2.10 (10.2.2.10) 56(84) bytes of data.
-  64 bytes from 10.2.2.10: icmp_seq=1 ttl=128 time=0.233 ms
+  64 bytes from 10.2.2.10: icmp_seq=1 ttl=128 time=0.253 ms
   
   --- 10.2.2.10 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.233/0.233/0.233/0.000 ms
+  rtt min/avg/max/mdev = 0.253/0.253/0.253/0.000 ms
 
 [304/339] lbr lbr$ ip -s neigh
   10.2.2.1 dev eth0 lladdr 02:00:00:00:00:05 REACHABLE
@@ -1633,19 +1648,19 @@ Total steps: 339
 
 [305/339] ldc ldc$ ping -c 1 10.3.3.1
   PING 10.3.3.1 (10.3.3.1) 56(84) bytes of data.
-  64 bytes from 10.3.3.1: icmp_seq=1 ttl=255 time=0.221 ms
+  64 bytes from 10.3.3.1: icmp_seq=1 ttl=255 time=0.209 ms
   
   --- 10.3.3.1 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.221/0.221/0.221/0.000 ms
+  rtt min/avg/max/mdev = 0.209/0.209/0.209/0.000 ms
 
 [306/339] ldc ldc$ ping -c 1 10.3.3.10
   PING 10.3.3.10 (10.3.3.10) 56(84) bytes of data.
-  64 bytes from 10.3.3.10: icmp_seq=1 ttl=64 time=0.253 ms
+  64 bytes from 10.3.3.10: icmp_seq=1 ttl=64 time=0.206 ms
   
   --- 10.3.3.10 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.253/0.253/0.253/0.000 ms
+  rtt min/avg/max/mdev = 0.206/0.206/0.206/0.000 ms
 
 [307/339] ldc ldc$ ip -s neigh
   10.3.3.1 dev eth0 lladdr 02:00:00:00:00:09 REACHABLE
@@ -1653,19 +1668,19 @@ Total steps: 339
 
 [308/339] srvdc srvdc$ ping -c 1 10.3.3.1
   PING 10.3.3.1 (10.3.3.1) 56(84) bytes of data.
-  64 bytes from 10.3.3.1: icmp_seq=1 ttl=255 time=0.269 ms
+  64 bytes from 10.3.3.1: icmp_seq=1 ttl=255 time=0.221 ms
   
   --- 10.3.3.1 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.269/0.269/0.269/0.000 ms
+  rtt min/avg/max/mdev = 0.221/0.221/0.221/0.000 ms
 
 [309/339] srvdc srvdc$ ping -c 1 10.3.3.11
   PING 10.3.3.11 (10.3.3.11) 56(84) bytes of data.
-  64 bytes from 10.3.3.11: icmp_seq=1 ttl=64 time=0.316 ms
+  64 bytes from 10.3.3.11: icmp_seq=1 ttl=64 time=0.380 ms
   
   --- 10.3.3.11 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.316/0.316/0.316/0.000 ms
+  rtt min/avg/max/mdev = 0.380/0.380/0.380/0.000 ms
 
 [310/339] srvdc srvdc$ ip -s neigh
   10.3.3.11 dev eth0 lladdr 02:00:00:00:00:5b REACHABLE

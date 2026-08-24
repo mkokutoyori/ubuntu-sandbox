@@ -4,6 +4,7 @@ import {
   type RuleAction, type SecurityRule,
 } from '../model/SecurityRule';
 import type { PolicyProbe } from './PolicyProbe';
+import { familyOf } from '../model/AddressObject';
 
 export type PolicyKeyedBy = 'zone' | 'interface';
 export type ImplicitPolicyMode = 'deny-all' | 'security-level';
@@ -153,7 +154,10 @@ export class PolicyEvaluator {
   }
 
   private matchesAddresses(rule: SecurityRule, probe: PolicyProbe): boolean {
-    const sourceHit = this.objects.matchesAnyAddress(rule.source, probe.sourceIP);
+    const sources = addressListFor(rule, probe.sourceIP, 'source');
+    if (sources.length === 0) return false;
+
+    const sourceHit = this.objects.matchesAnyAddress(sources, probe.sourceIP);
     if (sourceHit === rule.sourceNegated) return false;
 
     const destHit = this.matchesDestination(rule, probe);
@@ -166,7 +170,9 @@ export class PolicyEvaluator {
       && !catchesVipWithoutNaming(rule)) {
       return this.objects.namesVipRule(rule.destination, vipRule);
     }
-    return this.objects.matchesAnyAddress(rule.destination, probe.destIP);
+    const destinations = addressListFor(rule, probe.destIP, 'destination');
+    if (destinations.length === 0) return false;
+    return this.objects.matchesAnyAddress(destinations, probe.destIP);
   }
 
   private matchesService(rule: SecurityRule, probe: PolicyProbe): boolean {
@@ -211,4 +217,13 @@ export class PolicyEvaluator {
 
 function listMatches(list: readonly string[], value: string): boolean {
   return list.includes(ANY) || list.includes(value);
+}
+
+function addressListFor(
+  rule: SecurityRule, candidate: string, side: 'source' | 'destination',
+): readonly string[] {
+  if (familyOf(candidate) === 'ipv4') {
+    return side === 'source' ? rule.source : rule.destination;
+  }
+  return side === 'source' ? rule.source6 : rule.destination6;
 }

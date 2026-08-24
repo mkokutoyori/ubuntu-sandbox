@@ -317,6 +317,10 @@ export abstract class LinuxMachine extends EndHost
       this.executor.processMgr.canOpenDescriptor(pid, this.executor.descriptorSourcesFor(pid)));
     this.executor.vfs.mkdirp('/proc/sys/net/ipv4', 0o755, 0, 0);
     this.executor.vfs.writeFile('/proc/sys/net/ipv4/ip_local_port_range', '32768\t60999\n', 0, 0, 0o022);
+    this.executor.vfs.registerGeneratedFile('/proc/sys/net/ipv4/ip_forward',
+      () => `${this.ipForwardEnabled ? 1 : 0}\n`, 0o644);
+    this.executor.vfs.registerGeneratedFile('/proc/sys/net/ipv4/tcp_tw_reuse',
+      () => `${this.socketTable.getTcpTwReuse() ? 1 : 0}\n`, 0o644);
     this.executor.setSessionTable(this.sessionTable);
     this.executor.setTcpProbe((ip, port) => {
       if (ip.includes(':')) return this.tcpProbeSyncIPv6(ip, port);

@@ -133,7 +133,8 @@ export interface WinCommandContext {
    * drew no answer.
    */
   resolvePingEgress?(target: IPAddress): { port: Port; onLink: boolean } | null;
-  executePingSequence(target: IPAddress, count: number, timeout?: number, ttl?: number): Promise<PingResult[]>;
+  executePingSequence(target: IPAddress, count: number, timeout?: number, ttl?: number,
+    opts?: { dataSize?: number; df?: boolean }): Promise<PingResult[]>;
   executeTraceroute(target: IPAddress, maxHops?: number, timeoutMs?: number): Promise<TracerouteHop[]>;
 
   // TCP/IP stack reset

@@ -90,6 +90,9 @@ const REGLAGES: ReadonlyArray<string> = [
   'ip pim dr-priority 100',
   'ip pim query-interval 30',
   'no ip pim',
+  'no ip pim sparse-mode',
+  'no ip pim dense-mode',
+  'no ip pim sparse-dense-mode',
   'ip nat inside',
   'ip nat outside',
   'no ip nat inside',
@@ -127,9 +130,11 @@ describe('le refus vient du gestionnaire, avec ce qu\'il a a dire', () => {
     expect(out).not.toContain('Invalid input');
   });
 
-  it('une version IGMP absurde est refusee par le gestionnaire', async () => {
-    expect(await (await surIface()).executeCommand('ip igmp version 9'))
-      .toContain('Invalid IGMP version');
+  it('une version IGMP hors de la plage annoncee recoit le caret d IOS', async () => {
+    const out = await (await surIface()).executeCommand('ip igmp version 9');
+
+    expect(out).toContain("% Invalid input detected at '^' marker.");
+    expect(out).not.toContain('Invalid IGMP version');
   });
 
   it('un groupe hors du multicast est refuse en le disant', async () => {
@@ -274,6 +279,9 @@ const REGLAGES_3: ReadonlyArray<string> = [
   'no ip ospf authentication',
   'no ip ospf authentication-key',
   'no ip ospf message-digest-key',
+  'no ip ospf retransmit-interval',
+  'no ip ospf transmit-delay',
+  'no ip ospf mtu-ignore',
   'bfd interval 100 min_rx 100 multiplier 3',
   'ip nhrp network-id 1',
   'ip nhrp holdtime 300',
@@ -328,6 +336,31 @@ describe('une borne connue de l\'analyse est refusee au caret, comme sur IOS', (
  * priorite 0-255, les quatre minuteurs 1-65535 secondes, identifiant de
  * cle 1-255 — et les quatre types de reseau avec les mots d'IOS.
  */
+/*
+ * Une NEGATION se tape SEULE, la ou la forme positive exige une valeur.
+ * Le socle ne fabriquait cette forme nue que pour l'un de ses deux
+ * mecanismes de negation, si bien qu'une famille migree par l'autre
+ * perdait en silence tous ses `no <commande>` — la suite de
+ * serialisation l'a attrape, pas ce releve. Ce que le cas verifie n'est
+ * pas l'acceptation mais l'EFFET : le reglage doit disparaitre de la
+ * configuration rendue.
+ */
+describe('`no <reglage>` seul rend vraiment son defaut', () => {
+  it.each([
+    ['ip ospf cost 42', 'no ip ospf cost', 'ip ospf cost'],
+    ['ip ospf priority 7', 'no ip ospf priority', 'ip ospf priority'],
+    ['ip ospf hello-interval 5', 'no ip ospf hello-interval', 'ip ospf hello-interval'],
+    ['ip ospf network point-to-point', 'no ip ospf network', 'ip ospf network'],
+  ] as ReadonlyArray<readonly [string, string, string]>)(
+    '`%s` puis `%s` retire la ligne', async (pose, defait, ligne) => {
+      const device = await surIface();
+      await device.executeCommand(pose);
+      await device.executeCommand(defait);
+      await device.executeCommand('end');
+      expect(await device.executeCommand('show running-config')).not.toContain(ligne);
+    });
+});
+
 describe('`?` annonce les bornes reelles d\'OSPF', () => {
   const ATTENDU_OSPF: ReadonlyArray<readonly [string, string]> = [
     ['ip ospf cost ', '<1-65535>'],
@@ -360,6 +393,86 @@ describe('`?` annonce les bornes reelles d\'OSPF', () => {
 
   it('un identifiant de cle hors bornes est refuse au caret', async () => {
     expect(await (await surIface()).executeCommand('ip ospf message-digest-key 256 md5 X'))
+      .toContain('Invalid input detected');
+  });
+});
+
+/*
+ * Quatrieme vague : la famille PHYSIQUE de l'interface, celle que tout
+ * le monde tape — adresse, description, arret, vitesse, duplex, MTU —
+ * plus RIP et EIGRP d'interface, qui vivent dans le meme constructeur.
+ *
+ * Bornes verifiees contre la reference Cisco et identiques a celles que
+ * le gestionnaire applique deja : `bandwidth` 1-10000000 kbit/s,
+ * `delay` 1-16777215 dizaines de microsecondes.
+ */
+const REGLAGES_4: ReadonlyArray<string> = [
+  'description un lien de test',
+  'no description',
+  'shutdown',
+  'no shutdown',
+  'ip address 10.0.0.1 255.255.255.0',
+  'ip address 10.0.0.2 255.255.255.0 secondary',
+  'no ip address',
+  'ipv6 address 2001:db8::1/64',
+  'mtu 1500',
+  'ip mtu 1400',
+  'bandwidth 100000',
+  'delay 100',
+  'duplex full',
+  'duplex half',
+  'duplex auto',
+  'speed 100',
+  'keepalive 10',
+  'no keepalive',
+  'load-interval 60',
+  'ip helper-address 10.0.0.9',
+  'no ip helper-address 10.0.0.9',
+  'ip directed-broadcast',
+  'no ip directed-broadcast',
+  'ip tcp adjust-mss 1360',
+  'no ip tcp adjust-mss',
+  'arp timeout 300',
+  'ip policy route-map RM',
+  'ip split-horizon',
+  'no ip split-horizon',
+  'ip rip send version 2',
+  'ip rip receive version 2',
+  'ip rip authentication mode md5',
+  'ip rip v2-broadcast',
+  'ip summary-address rip 10.0.0.0 255.0.0.0',
+  'ip hello-interval eigrp 100 5',
+  'ip hold-time eigrp 100 15',
+  'ip bandwidth-percent eigrp 100 50',
+  'ip authentication mode eigrp 100 md5',
+  'ip authentication key-chain eigrp 100 KC',
+  'ip summary-address eigrp 100 10.0.0.0 255.0.0.0',
+  'no ip split-horizon eigrp 100',
+  'ntp disable',
+  'no ntp disable',
+  'service-policy input PM',
+  'ip accounting',
+  'ip unnumbered Loopback0',
+  'no ip unnumbered',
+];
+
+describe('la famille physique de l\'interface reste acceptee', () => {
+  it.each(REGLAGES_4)('`%s`', async (commande) => {
+    expect(await (await surIface()).executeCommand(commande))
+      .not.toContain('Invalid input');
+  });
+});
+
+describe('les bornes physiques sont celles d\'IOS, refusees au caret', () => {
+  it.each([
+    'bandwidth 0',
+    'bandwidth 10000001',
+    'delay 0',
+    'delay 16777216',
+    'duplex zorglub',
+    'mtu abc',
+  ])('`%s` est refuse au caret', async (commande) => {
+    expect(await (await surIface()).executeCommand(commande))
       .toContain('Invalid input detected');
   });
 });

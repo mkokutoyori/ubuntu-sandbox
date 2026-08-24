@@ -598,6 +598,17 @@ export class WindowsPC extends EndHost implements UserAccountHost {
     this.fs.createFile(path, `${head}PS> ${command}\n${output ? `${output}\n` : ''}`);
   }
 
+  protected override linkLocalAutoconfigurationEnabled(): boolean {
+    const values = this.registry.getItemPropertyValues(
+      'HKLM\\SYSTEM\\CurrentControlSet\\Services\\Tcpip\\Parameters');
+    if (!values) return true;
+    for (const [name, value] of Object.entries(values)) {
+      if (name.toLowerCase() !== 'ipautoconfigurationenabled') continue;
+      return String(value).trim() !== '0';
+    }
+    return true;
+  }
+
   /**
    * `ProcessCreationIncludeCmdLine_Enabled` — la stratégie qui décide si
    * 4688 porte la ligne de commande. Elle existe parce qu'une ligne de
@@ -3106,8 +3117,9 @@ export class WindowsPC extends EndHost implements UserAccountHost {
         // silence rather than a broken path.
         return { port: route.port, onLink: route.nextHopIP.toString() === target.toString() };
       },
-      executePingSequence: (target: IPAddress, count: number, timeout?: number, ttl?: number) =>
-        this.executePingSequence(target, count, timeout, ttl),
+      executePingSequence: (target: IPAddress, count: number, timeout?: number, ttl?: number,
+        opts?: { dataSize?: number; df?: boolean }) =>
+        this.executePingSequence(target, count, timeout, ttl, opts),
       executeTraceroute: (target: IPAddress, maxHops?: number, timeoutMs?: number) =>
         this.executeTraceroute(target, maxHops, timeoutMs ?? 500) as Promise<TracerouteHop[]>,
 

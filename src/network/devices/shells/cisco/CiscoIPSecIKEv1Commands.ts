@@ -32,6 +32,67 @@ function eng(ctx: CiscoShellContext) {
 
 // ─── Global config mode: crypto isakmp / ipsec ───────────────────────
 
+/**
+ * Les places de la famille crypto IKEv1 globale.
+ *
+ * `crypto isakmp key` porte son propre mode d'emploi dans son refus
+ * (« Usage: crypto isakmp key KEY {address IP | hostname NAME} ») et
+ * `crypto isakmp policy` explique une priorite invalide : l'analyse ne
+ * peut trancher ni l'un ni l'autre, donc les places nomment leur forme
+ * sans la restreindre.
+ */
+const IKEV1_GLOBAL_ARGUMENTS:
+Readonly<Record<string, ArgumentSpec | readonly ArgumentSpec[] | null>> = {
+  'crypto isakmp policy': { name: 'priorite', type: 'REST',
+    description: 'Priority of this IKE policy',
+    alternatives: [{ keyword: '<1-10000>', description: 'Priority of this IKE policy' }] },
+  'crypto isakmp key': { name: 'reste', type: 'REST',
+    description: 'The key, then `address <A.B.C.D>` or `hostname <nom>`' },
+  'crypto isakmp identity': {
+    name: 'forme', type: 'ENUM', description: 'Identity this peer announces',
+    values: [
+      { keyword: 'address', description: 'Use the interface address' },
+      { keyword: 'hostname', description: 'Use the host name' },
+      { keyword: 'dn', description: 'Use the distinguished name' },
+    ],
+  },
+  'crypto isakmp keepalive': { name: 'reste', type: 'REST',
+    description: 'Interval in seconds, then `periodic` or `on-demand`' },
+  'crypto isakmp nat keepalive': { name: 'secondes', type: 'REST',
+    description: 'Interval between NAT keepalives, in seconds' },
+  'crypto isakmp invalid-spi-recovery': null,
+  'crypto isakmp aggressive-mode disable': null,
+  'crypto isakmp profile': { name: 'nom', type: 'WORD',
+    description: 'Name of the ISAKMP profile' },
+  'crypto keyring': { name: 'nom', type: 'WORD', description: 'Name of the keyring' },
+  'crypto ipsec transform-set': { name: 'reste', type: 'REST',
+    description: 'Name, then the transforms it carries' },
+  'crypto ipsec profile': { name: 'nom', type: 'WORD',
+    description: 'Name of the IPSec profile' },
+  'crypto ipsec security-association lifetime seconds': {
+    name: 'secondes', type: 'REST', description: 'Lifetime of a security association' },
+  'crypto ipsec security-association lifetime kilobytes': {
+    name: 'kilooctets', type: 'REST', description: 'Volume a security association carries' },
+  'crypto ipsec security-association replay window-size': {
+    name: 'taille', type: 'REST', description: 'Size of the anti-replay window' },
+  'crypto ipsec security-association esn': null,
+  'crypto map': { name: 'reste', type: 'REST',
+    description: 'Name and sequence number, then the kind of entry' },
+  'crypto dynamic-map': { name: 'reste', type: 'REST',
+    description: 'Name and sequence number' },
+};
+
+export function ipsecGlobalSpecs(ctx: CiscoShellContext): CommandSpec[] {
+  return specsFromTrieRegistrations(
+    (collector) => buildIPSecGlobalCommands(collector as unknown as CommandTrie, ctx),
+    {
+      modes: ['config'], minPrivilege: 15,
+      undoFromNegatedPaths: true,
+      argumentFor: (path) => IKEV1_GLOBAL_ARGUMENTS[path],
+    },
+  );
+}
+
 export function buildIPSecGlobalCommands(trie: CommandTrie, ctx: CiscoShellContext): void {
 
   // ── crypto isakmp policy N ────────────────────────────────────────

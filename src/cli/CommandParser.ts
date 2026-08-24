@@ -1,4 +1,6 @@
-import { argumentAccepts, resolveEnumValue } from './ArgumentTypes';
+import {
+  argumentAccepts, outsideEveryAnnouncedRange, resolveEnumValue,
+} from './ArgumentTypes';
 import type { CliSession } from './CliSession';
 import type { ReachabilityOptions } from './CommandTable';
 import type { CommandSpec, CommandTable, TreeNode } from './CommandTable';
@@ -54,6 +56,9 @@ export function parseCommand(
     // et rendait « incomplete » une frappe que celui-ci refuse.
     const argument = table.argumentAt(node, session);
     if (argument?.argument?.type === 'REST') {
+      if (outsideEveryAnnouncedRange(token, argument.argument.alternatives ?? [])) {
+        return { status: 'invalid', token, position: index, refusePar: 'argument' };
+      }
       args[argument.argument.name] = tokens.slice(index).join(' ');
       node = argument;
       break;

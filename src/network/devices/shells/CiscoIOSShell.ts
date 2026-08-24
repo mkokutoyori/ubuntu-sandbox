@@ -55,7 +55,7 @@ import {
 } from './cisco/CiscoIgmpCommands';
 import {
   buildPimInterfaceCommands, buildPimGlobalConfigCommands, registerPimShowCommands,
-  pimInterfaceSpecs,
+  pimInterfaceSpecs, pimGlobalSpecs,
   pimShowSpecs,
 } from './cisco/CiscoPimCommands';
 import {
@@ -72,7 +72,7 @@ import {
 } from './cisco/CiscoKeyChainCommands';
 import {
   buildIpSlaConfigCommands, registerIpSlaTypeSubModes,
-  ipSlaSubmodeSpecs, ipSlaTypeSubmodeSpecs, ipSlaHttpRawSpecs,
+  ipSlaSubmodeSpecs, ipSlaTypeSubmodeSpecs, ipSlaHttpRawSpecs, ipSlaGlobalSpecs,
 } from './cisco/CiscoIpSlaCommands';
 import {
   ipSlaShowSpecs, ipSlaClearSpecs, ipSlaDebugPairs,
@@ -91,7 +91,7 @@ import { showNATTranslations, showNATStatistics } from './cisco/CiscoNATCommands
 import { showIpOspfNeighbor } from './cisco/CiscoOspfCommands';
 import {
   type CiscoShellMode, type CiscoShellContext,
-  buildConfigCommands, buildConfigIfCommands,
+  buildConfigCommands, buildConfigIfCommands, configIfSpecs, dhcpGlobalSpecs,
 } from './cisco/CiscoConfigCommands';
 import {
   buildConfigDhcpCommands, buildConfigDhcpPoolClassCommands, dhcpPoolSpecs,
@@ -132,19 +132,20 @@ import {
   buildIPSecGlobalCommands, buildISAKMPPolicyCommands, buildISAKMPProfileCommands, buildISAKMPKeyringCommands,
   buildTransformSetCommands, buildCryptoMapEntryCommands,
   buildIPSecProfileCommands, buildIPSecIfCommands, ipsecInterfaceSpecs,
+  ipsecGlobalSpecs,
   buildIPSecPrivilegedCommands,
   isakmpPolicySpecs, isakmpProfileSpecs, isakmpKeyringSpecs,
   transformSetSpecs, cryptoMapEntrySpecs, ipsecProfileSpecs,
 } from './cisco/CiscoIPSecIKEv1Commands';
 import {
-  buildIKEv2GlobalCommands, buildIKEv2ProposalCommands,
+  buildIKEv2GlobalCommands, buildIKEv2ProposalCommands, ikev2GlobalSpecs,
   buildIKEv2PolicyCommands, buildIKEv2KeyringCommands,
   buildIKEv2KeyringPeerCommands, buildIKEv2ProfileCommands,
   ikev2ProposalSpecs, ikev2PolicySpecs, ikev2KeyringSpecs,
   ikev2KeyringPeerSpecs, ikev2ProfileSpecs,
 } from './cisco/CiscoIPSecIKEv2Commands';
 import {
-  buildGdoiGlobalCommands, buildGdoiGroupCommands, gdoiGroupSpecs,
+  buildGdoiGlobalCommands, buildGdoiGroupCommands, gdoiGroupSpecs, gdoiGlobalSpecs,
 } from './cisco/CiscoGdoiCommands';
 import { registerIPSecShowCommands, cryptoShowSpecs } from './cisco/CiscoIPSecShowCommands';
 import {
@@ -165,6 +166,7 @@ import {
 } from './cisco/CiscoEemNetflowArchiveCommands';
 import {
   buildNATConfigCommands, buildNATInterfaceCommands, natInterfaceSpecs,
+  natConfigSpecs,
   registerNATPrivilegedCommands, registerNATShowCommands, natShowSpecs,
 } from './cisco/CiscoNATCommands';
 import { iosShortInterfaceName } from '@/network/devices/inspection/InterfaceStatusView';
@@ -377,6 +379,14 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
       ...securityInterfaceSpecs(this),
       ...netflowInterfaceSpecs(this),
       ...ospfInterfaceSpecs(this),
+      ...configIfSpecs(this),
+      ...natConfigSpecs(this),
+      ...pimGlobalSpecs({ r: () => this.d() }),
+      ...ipsecGlobalSpecs(this),
+      ...ikev2GlobalSpecs(this),
+      ...gdoiGlobalSpecs(this),
+      ...dhcpGlobalSpecs(this),
+      ...ipSlaGlobalSpecs(this),
       ...dhcpPoolClassSpecs(this),
       ...dhcpClassSpecs(this),
       ...ipv6DhcpPoolSpecs(this),

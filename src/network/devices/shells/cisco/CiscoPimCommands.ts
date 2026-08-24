@@ -1,7 +1,9 @@
 import type { CommandTrie } from '../CommandTrie';
 import type { CommandSpec } from '@/cli/CommandTable';
 import type { ArgumentSpec } from '@/cli/ArgumentTypes';
-import { specsFromTrieRegistrations } from '@/cli/commands/trieAdapter';
+import {
+  specsFromTrieRegistrations, collectRegistrations,
+} from '@/cli/commands/trieAdapter';
 import type { Router } from '../../Router';
 import type { PimAgent } from '../../../pim/PimAgent';
 import type { PimMode } from '../../../pim/types';
@@ -62,17 +64,59 @@ Readonly<Record<string, ArgumentSpec | readonly ArgumentSpec[] | null>> = {
     name: 'secondes', type: 'REST', description: 'Hello interval in seconds',
     alternatives: [{ keyword: '<1-65535>', description: 'Hello interval in seconds' }],
   },
-  'no ip pim': null,
+  /*
+   * `no ip pim` s'ecrit aussi `no ip pim sparse-mode` ou
+   * `no ip pim dense-mode` : le gestionnaire ignore la suite (`void
+   * args`) et coupe PIM dans tous les cas, mais la place doit exister
+   * pour que la ligne l'atteigne. La declarer nulle refusait au caret
+   * les deux formes que tout le monde tape.
+   */
+  'no ip pim': { name: 'mode', type: 'REST', optional: true,
+    description: 'Mode to remove, if named' },
 };
 
+/*
+ * `no ip pim` SEUL n'a pas de forme positive a nier : `ip pim` tout
+ * court n'est pas une commande, les trois modes le sont. Le socle
+ * traitant `no` comme un modificateur, la commande doit donc exister a
+ * sa place positive en n'existant QUE niee — sinon elle s'ecrit avec un
+ * premier mot `no`, ce que le socle ne resout pas.
+ *
+ * Le gestionnaire est repris du meme constructeur plutot que recopie :
+ * une seconde ecriture de « couper PIM » pourrait diverger de celle-ci.
+ */
+function pimBareNegationSpec(ctx: IfCtx): CommandSpec {
+  const collecte = collectRegistrations(
+    (collector) => buildPimInterfaceCommands(collector as unknown as CommandTrie, ctx));
+  const negation = collecte.find(entry => entry.path === 'no ip pim');
+  return {
+    id: 'config-if-ip-pim-negated',
+    path: ['ip', 'pim'],
+    description: 'PIM interface configuration',
+    modes: MODES_INTERFACE,
+    minPrivilege: 15,
+    existsOnlyNegated: true,
+    run: () => '',
+    undo: () => negation?.action([], 'no ip pim') ?? '',
+  };
+}
+
 export function pimInterfaceSpecs(ctx: IfCtx): CommandSpec[] {
-  return specsFromTrieRegistrations(
+  return [pimBareNegationSpec(ctx), ...specsFromTrieRegistrations(
     (collector) => buildPimInterfaceCommands(collector as unknown as CommandTrie, ctx),
     {
       modes: MODES_INTERFACE, minPrivilege: 15,
+      /*
+       * `no` est un MODIFICATEUR pour le socle : la negation doit donc
+       * etre l'`undo` des trois formes positives et non un chemin dont
+       * le premier mot serait `no`. `no ip pim` porte la negation de
+       * toute la famille — le gestionnaire ignore le mode nomme et coupe
+       * PIM dans tous les cas — d'ou `undoFrom`.
+       */
+      undoFrom: 'no ip pim',
       argumentFor: (path) => PIM_IF_ARGUMENTS[path],
     },
-  );
+  )];
 }
 
 export function buildPimInterfaceCommands(trie: CommandTrie, ctx: IfCtx): void {
@@ -120,6 +164,43 @@ export function pimGlobalRunningConfigLines(router: Router): string[] {
   return a.listRps()
     .filter((rp) => rp.isStatic)
     .map((rp) => `ip pim rp-address ${rp.rpAddress}`);
+}
+
+const PIM_GLOBAL_ARGUMENTS:
+Readonly<Record<string, ArgumentSpec | readonly ArgumentSpec[] | null>> = {
+  'ip pim rp-address': {
+    name: 'rp', type: 'REST', description: 'Address of the rendezvous point',
+    alternatives: [{ keyword: 'A.B.C.D', description: 'Address of the rendezvous point' }],
+  },
+  'ip pim spt-threshold': {
+    name: 'seuil', type: 'REST',
+    description: 'Rate above which the router joins the shortest-path tree',
+    alternatives: [{ keyword: 'infinity', description: 'Never join the shortest-path tree' }],
+  },
+  'ip pim send-rp-announce': {
+    name: 'reste', type: 'REST', description: 'Interface, then `scope <ttl>`',
+  },
+  'ip pim send-rp-discovery': {
+    name: 'reste', type: 'REST', description: 'Interface, then `scope <ttl>`',
+  },
+  'ip pim bsr-candidate': {
+    name: 'reste', type: 'REST', description: 'Interface, then hash length and priority',
+  },
+  'ip pim rp-candidate': {
+    name: 'reste', type: 'REST', description: 'Interface, then interval and priority',
+  },
+};
+
+export function pimGlobalSpecs(ctx: ShowCtx): CommandSpec[] {
+  return specsFromTrieRegistrations(
+    (collector) =>
+      buildPimGlobalConfigCommands(collector as unknown as CommandTrie, ctx),
+    {
+      modes: ['config'], minPrivilege: 15,
+      undoFromNegatedPaths: true,
+      argumentFor: (path) => PIM_GLOBAL_ARGUMENTS[path],
+    },
+  );
 }
 
 export function buildPimGlobalConfigCommands(trie: CommandTrie, ctx: ShowCtx): void {

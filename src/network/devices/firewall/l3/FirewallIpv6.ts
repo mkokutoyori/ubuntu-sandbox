@@ -1,5 +1,13 @@
 import type { Port } from '../../../hardware/Port';
-import type { EthernetFrame, IPv6Address, IPv6Packet } from '../../../core/types';
+import {
+  IP_PROTO_ICMPV6,
+  type EthernetFrame, type IPv6Address, type IPv6Packet,
+} from '../../../core/types';
+import type { PolicyProbe } from '../policy/PolicyProbe';
+import { makeFlowKey } from '../session/FlowKey';
+import type { SessionTable } from '../session/SessionTable';
+
+export const IPV6_SESSION_TIMEOUT_SEC = 300;
 import type { IEventBus } from '@/events/EventBus';
 import type { IScheduler } from '@/events/Scheduler';
 import { DHCPv6Server } from '../../../dhcpv6/DHCPv6Server';
@@ -19,6 +27,8 @@ export interface FirewallIpv6Deps {
   onEchoReply(payload: {
     fromIp: string; toIp: string; id: number; seq: number; hopLimit: number;
   }): void;
+  transitPermitted(probe: PolicyProbe): boolean;
+  sessions(): SessionTable;
 }
 
 function idleCounters(): RouterCounters {
@@ -71,16 +81,53 @@ export class FirewallIpv6 {
       getDhcpv6ServerPool: () => undefined,
       getDhcpv6RelayDestinations: () => [],
       onIcmpv6EchoReply: (payload) => { this.deps.onEchoReply(payload); },
-      ipv6FilterPermits: (iface, direction, packet) =>
-        this.permits(iface, direction, packet),
+      ipv6FilterPermits: (iface, direction, packet, ingress) =>
+        this.permits(iface, direction, packet, ingress),
     };
   }
 
-  private permits(iface: string, direction: 'in' | 'out', packet: IPv6Packet): boolean {
-    if (direction === 'out') return false;
+  private permits(
+    iface: string, direction: 'in' | 'out', packet: IPv6Packet, ingress?: string,
+  ): boolean {
+    if (direction === 'out') return this.transitPermitted(iface, packet, ingress);
     if (!this.isEchoRequest(packet)) return true;
     if (!this.addressedToUs(packet.destinationIP)) return true;
     return this.allowsAccess(iface, 'ping');
+  }
+
+  private transitPermitted(
+    egress: string, packet: IPv6Packet, ingress: string | undefined,
+  ): boolean {
+    const payload = packet.payload as { type?: string } | undefined;
+    const protocol = payload?.type === 'icmpv6'
+      ? IP_PROTO_ICMPV6 : packet.nextHeader;
+    const ports = transportPortsOf(packet);
+    const source = packet.sourceIP.toString();
+    const destination = packet.destinationIP.toString();
+
+    const key = makeFlowKey(source, ports.sourcePort ?? 0,
+      destination, ports.destPort ?? 0, protocol);
+    const sessions = this.deps.sessions();
+    if (sessions.lookup(key)) return true;
+
+    const permitted = this.deps.transitPermitted({
+      ingressZone: '', egressZone: '',
+      ingressInterface: ingress ?? '',
+      egressInterface: egress,
+      sourceIP: source, destIP: destination, protocol,
+      ...ports,
+    });
+    if (!permitted) return false;
+
+    sessions.install(key, {
+      ingressZone: '', egressZone: '',
+      ingressInterface: ingress ?? '',
+      egressInterface: egress,
+      timeoutSec: IPV6_SESSION_TIMEOUT_SEC,
+      replyKey: makeFlowKey(destination, ports.destPort ?? 0,
+        source, ports.sourcePort ?? 0, protocol),
+    });
+    return true;
   }
 
   private isEchoRequest(packet: IPv6Packet): boolean {
@@ -94,4 +141,14 @@ export class FirewallIpv6 {
     }
     return false;
   }
+}
+
+function transportPortsOf(
+  packet: IPv6Packet,
+): { sourcePort?: number; destPort?: number } {
+  const payload = packet.payload as {
+    sourcePort?: number; destinationPort?: number;
+  } | undefined;
+  if (payload?.sourcePort === undefined) return {};
+  return { sourcePort: payload.sourcePort, destPort: payload.destinationPort };
 }

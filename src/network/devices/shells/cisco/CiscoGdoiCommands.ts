@@ -23,6 +23,18 @@ function eng(ctx: CiscoShellContext) {
 
 // ─── Global config mode ───────────────────────────────────────────────
 
+export function gdoiGlobalSpecs(ctx: CiscoShellContext): CommandSpec[] {
+  return specsFromTrieRegistrations(
+    (collector) => buildGdoiGlobalCommands(collector as unknown as CommandTrie, ctx),
+    {
+      modes: ['config'], minPrivilege: 15,
+      undoFromNegatedPaths: true,
+      argumentFor: (path) => path === 'crypto gdoi group'
+        ? { name: 'nom', type: 'WORD', description: 'Name of the GDOI group' } : null,
+    },
+  );
+}
+
 export function buildGdoiGlobalCommands(trie: CommandTrie, ctx: CiscoShellContext): void {
   trie.registerGreedy('crypto gdoi group', 'Define a GDOI GET-VPN group', (args) => {
     if (args.length < 1) return '% Incomplete command.';

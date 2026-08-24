@@ -18,6 +18,8 @@ export interface SecurityRule {
   to: string[];
   source: string[];
   destination: string[];
+  source6: string[];
+  destination6: string[];
   sourceNegated: boolean;
   destinationNegated: boolean;
 
@@ -73,6 +75,8 @@ export interface SecurityRuleInit {
   to?: string[];
   source?: string[];
   destination?: string[];
+  source6?: string[];
+  destination6?: string[];
   sourceNegated?: boolean;
   destinationNegated?: boolean;
   service?: string[];
@@ -128,6 +132,8 @@ export function makeRule(init: SecurityRuleInit): SecurityRule {
     to: [...(init.to ?? ['any'])],
     source: [...(init.source ?? ['any'])],
     destination: [...(init.destination ?? ['any'])],
+    source6: [...(init.source6 ?? [])],
+    destination6: [...(init.destination6 ?? [])],
     sourceNegated: init.sourceNegated ?? false,
     destinationNegated: init.destinationNegated ?? false,
     service: [...(init.service ?? ['any'])],

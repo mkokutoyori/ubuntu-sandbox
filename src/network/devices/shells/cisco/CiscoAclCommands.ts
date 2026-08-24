@@ -353,6 +353,8 @@ function parseStandardSource(args: string[]): { ip: IPAddress; wildcard: SubnetM
   return { ip: new IPAddress(args[0]), wildcard: new SubnetMask(args[1]), consumed: 2 };
 }
 
+export const IOS_REMARK_MAX = 100;
+
 // ─── Global Config Mode: access-list commands ─────────────────────────
 
 export function buildACLConfigCommands(trie: CommandTrie, ctx: CiscoACLShellContext): void {
@@ -360,17 +362,19 @@ export function buildACLConfigCommands(trie: CommandTrie, ctx: CiscoACLShellCont
   trie.registerGreedy('access-list', 'Define a standard or extended access list', (args) => {
     if (args.length < 2) return '% Incomplete command.';
     const num = parseInt(args[0], 10);
-    if (isNaN(num)) return '% Invalid access-list number.';
-
-    // IOS : 1-99 et 1300-1999 standard ; 100-199 et 2000-2699 étendues.
-    // L'ancienne garde refusait les deux plages étendues (« Valid range:
-    // 1-199 »), un message par ailleurs faux : il énonçait une règle qui
-    // n'est pas celle d'IOS.
-    if (!isValidIosAclNumber(num)) {
-      return '% Invalid access-list number. Valid range: 1-99, 100-199, 1300-1999, 2000-2699.';
-    }
+    if (isNaN(num) || !isValidIosAclNumber(num)) return CISCO_INVALID_INPUT;
 
     const action = args[1].toLowerCase();
+    if (action === 'remark') {
+      const texte = args.slice(2).join(' ');
+      if (texte.length === 0) return '% Incomplete command.';
+      ctx.r().addAccessListEntry(num, 'permit', {
+        srcIP: new IPAddress('0.0.0.0'),
+        srcWildcard: new SubnetMask('255.255.255.255'),
+        remark: texte.slice(0, IOS_REMARK_MAX),
+      });
+      return '';
+    }
     if (action !== 'permit' && action !== 'deny') return `% Invalid action "${args[1]}"`;
 
     if (IOS_ACL_NUMBERING(num) === 'standard') {
@@ -546,7 +550,7 @@ export function buildNamedStdACLCommands(trie: CommandTrie, ctx: CiscoACLShellCo
     ctx.r().addNamedAccessListEntry(aclName, 'standard', 'permit', {
       srcIP: new IPAddress('0.0.0.0'),
       srcWildcard: new SubnetMask('255.255.255.255'),
-      remark: args.join(' '),
+      remark: args.join(' ').slice(0, IOS_REMARK_MAX),
     });
     return '';
   });
@@ -643,7 +647,7 @@ export function buildNamedExtACLCommands(trie: CommandTrie, ctx: CiscoACLShellCo
       srcWildcard: new SubnetMask('255.255.255.255'),
       dstIP: new IPAddress('0.0.0.0'),
       dstWildcard: new SubnetMask('255.255.255.255'),
-      remark: args.join(' '),
+      remark: args.join(' ').slice(0, IOS_REMARK_MAX),
     });
     return '';
   });
@@ -696,9 +700,10 @@ export function showAccessListsFrom(
     const typeStr = acl.type === 'standard' ? 'Standard' : 'Extended';
     lines.push(`${typeStr} IP access list ${label}`);
     for (const entry of acl.entries) {
-      // Un commentaire ne paraît PAS ici sur IOS 15 : il vit dans la
-      // configuration seule, et n'a pas de numéro de séquence à porter.
-      if (entry.remark !== undefined) continue;
+      if (entry.remark !== undefined) {
+        lines.push(`    remark ${entry.remark}`);
+        continue;
+      }
       const seq = entry.sequence !== undefined ? `${entry.sequence} ` : '';
       // IOS n'écrit le compteur que s'il a compté quelque chose.
       const matches = entry.matchCount > 0

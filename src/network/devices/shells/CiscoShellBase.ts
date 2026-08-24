@@ -463,6 +463,45 @@ const VIEW_COMMANDS_KEYWORDS: ReadonlyArray<AdapterKeyword> = [
   },
 ];
 
+
+const HTTP_ARGUMENTS:
+Readonly<Record<string, ArgumentSpec | readonly ArgumentSpec[] | null>> = {
+  'ip http server': null,
+  'ip http secure-server': null,
+  'ip http port': { name: 'port', type: 'INT', description: 'Port the HTTP server listens on',
+    range: [1, 65535] },
+  'ip http secure-port': { name: 'port', type: 'INT',
+    description: 'Port the HTTPS server listens on', range: [1, 65535] },
+  'ip http max-connections': { name: 'nombre', type: 'REST',
+    description: 'Number of concurrent connections allowed' },
+  'ip http access-class': { name: 'liste', type: 'REST',
+    description: 'Access list restricting who may connect' },
+  'ip http authentication': { name: 'methode', type: 'REST',
+    description: 'How the server authenticates a request' },
+  'ip http timeout-policy': { name: 'reste', type: 'REST',
+    description: '`idle`, `life` and `requests`, with their values' },
+};
+
+const DNS_ARGUMENTS:
+Readonly<Record<string, ArgumentSpec | readonly ArgumentSpec[] | null>> = {
+  'ip domain-lookup': null,
+  'ip domain lookup': null,
+  'ip domain round-robin': null,
+  'ip dns server': null,
+  'ip domain-name': { name: 'nom', type: 'WORD', description: 'Default domain name' },
+  'ip domain name': { name: 'nom', type: 'WORD', description: 'Default domain name' },
+  'ip domain-list': { name: 'nom', type: 'WORD', description: 'Domain name to append to the list' },
+  'ip domain list': { name: 'nom', type: 'WORD', description: 'Domain name to append to the list' },
+  'ip domain retry': { name: 'essais', type: 'REST',
+    description: 'Number of times a resolution is retried' },
+  'ip domain timeout': { name: 'secondes', type: 'REST',
+    description: 'Time waited for a resolution' },
+  'ip dns spoofing': { name: 'adresse', type: 'REST',
+    description: 'Address answered to every query' },
+  'ip dns primary': { name: 'reste', type: 'REST',
+    description: 'Zone, then `soa` with its name server and mailbox' },
+};
+
 export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
   // ─── State ───────────────────────────────────────────────────────
   protected mode: string = 'user';
@@ -4790,11 +4829,36 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       ...this.archiveSubmodeSpecs(),
       ...this.identitySubmodeSpecs(),
       ...this.viewSubmodeSpecs(),
+      ...this.httpServerSpecs(),
+      ...this.dnsConfigSpecs(),
     ];
   }
 
   protected identitySubmodeContext(): CiscoSecurityShellContext | null {
     return null;
+  }
+
+  protected httpServerSpecs(): readonly CommandSpec[] {
+    return specsFromTrieRegistrations(
+      (collector) => this.registerHttpServerOn(collector as unknown as CommandTrie),
+      {
+        modes: ['config'], minPrivilege: 15,
+        undoFromNegatedPaths: true,
+        argumentFor: (path) => HTTP_ARGUMENTS[path],
+      },
+    );
+  }
+
+  protected dnsConfigSpecs(): readonly CommandSpec[] {
+    return specsFromTrieRegistrations(
+      (collector) => registerCiscoDnsCommands(
+        collector as unknown as CommandTrie, this.dnsCommandContext()),
+      {
+        modes: ['config'], minPrivilege: 15,
+        undoFromNegatedPaths: true,
+        argumentFor: (path) => DNS_ARGUMENTS[path],
+      },
+    );
   }
 
   protected viewSubmodeSpecs(): readonly CommandSpec[] {
@@ -7362,7 +7426,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     // start / stop the per-device protocol agent so `show cdp neighbors`
     // reflects real learnt state (and stops learning when disabled).
     flag('ip cef', 'ip cef', 'CEF');
-    this.registerHttpServerCommands();
+    this.registerHttpServerOn(this.configTrie);
     // `ip routing` / `ipv6 unicast-routing` enable forms are owned by
     // the router (CiscoOspfCommands, device-specific); only record the
     // negation here so it's recognised on both vendors without
@@ -8025,27 +8089,27 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
    * Une valeur hors bornes est REFUSÉE plutôt que rognée : la ranger
    * silencieusement ferait mentir la configuration relue.
    */
-  private registerHttpServerCommands(): void {
+  protected registerHttpServerOn(trie: CommandTrie): void {
     const svc = () => getHttpService(this.d());
     const sync = () => {
       const dev = this.d() as unknown as { _refreshHttpListeners?: () => void };
       dev._refreshHttpListeners?.();
     };
 
-    this.configTrie.register('ip http server', 'Enable HTTP server', () => {
+    trie.register('ip http server', 'Enable HTTP server', () => {
       svc()?.setEnabled(true); sync(); return '';
     });
-    this.configTrie.register('no ip http server', 'Disable HTTP server', () => {
+    trie.register('no ip http server', 'Disable HTTP server', () => {
       svc()?.setEnabled(false); sync(); return '';
     });
-    this.configTrie.register('ip http secure-server', 'Enable HTTPS server', () => {
+    trie.register('ip http secure-server', 'Enable HTTPS server', () => {
       svc()?.setSecureEnabled(true, this.d().getHostname()); sync(); return '';
     });
-    this.configTrie.register('no ip http secure-server', 'Disable HTTPS server', () => {
+    trie.register('no ip http secure-server', 'Disable HTTPS server', () => {
       svc()?.setSecureEnabled(false); sync(); return '';
     });
 
-    this.configTrie.registerGreedy('ip http port', 'HTTP server port', (args) => {
+    trie.registerGreedy('ip http port', 'HTTP server port', (args) => {
       const port = Number(args[0]);
       if (args.length === 0) throw new CliIncomplete();
       if (!Number.isInteger(port) || port < 1 || port > 65535) {
@@ -8053,10 +8117,10 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       }
       svc()?.setPort(port); sync(); return '';
     });
-    this.configTrie.registerGreedy('no ip http port', 'Restore default HTTP port', () => {
+    trie.registerGreedy('no ip http port', 'Restore default HTTP port', () => {
       svc()?.setPort(80); sync(); return '';
     });
-    this.configTrie.registerGreedy('ip http secure-port', 'HTTPS server port', (args) => {
+    trie.registerGreedy('ip http secure-port', 'HTTPS server port', (args) => {
       const port = Number(args[0]);
       if (args.length === 0) throw new CliIncomplete();
       if (!Number.isInteger(port) || port < 1 || port > 65535) {
@@ -8065,7 +8129,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       svc()?.setSecurePort(port); sync(); return '';
     });
 
-    this.configTrie.registerGreedy('ip http authentication',
+    trie.registerGreedy('ip http authentication',
       'Set HTTP server authentication method', (args) => {
         if (args.length === 0) throw new CliIncomplete();
         const method = args[0].toLowerCase();
@@ -8075,10 +8139,10 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
         svc()?.setAuthMethod(method as HttpAuthMethod, args[1]);
         return '';
       });
-    this.configTrie.registerGreedy('no ip http authentication',
+    trie.registerGreedy('no ip http authentication',
       'Restore default authentication', () => { svc()?.resetAuthMethod(); return ''; });
 
-    this.configTrie.registerGreedy('ip http max-connections',
+    trie.registerGreedy('ip http max-connections',
       'Set maximum concurrent connections', (args) => {
         if (args.length === 0) throw new CliIncomplete();
         const n = Number(args[0]);
@@ -8089,10 +8153,10 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
         svc()?.setMaxConnections(n);
         return '';
       });
-    this.configTrie.registerGreedy('no ip http max-connections',
+    trie.registerGreedy('no ip http max-connections',
       'Restore default connection limit', () => { svc()?.setMaxConnections(5); return ''; });
 
-    this.configTrie.registerGreedy('ip http access-class',
+    trie.registerGreedy('ip http access-class',
       'Restrict HTTP server access by ACL', (args) => {
         if (args.length === 0) throw new CliIncomplete();
         // `ipv4 <nom>` est la forme longue d'IOS ; le premier mot seul est
@@ -8102,10 +8166,10 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
         svc()?.setAccessClass(acl);
         return '';
       });
-    this.configTrie.registerGreedy('no ip http access-class',
+    trie.registerGreedy('no ip http access-class',
       'Remove HTTP access restriction', () => { svc()?.setAccessClass(null); return ''; });
 
-    this.configTrie.registerGreedy('ip http timeout-policy',
+    trie.registerGreedy('ip http timeout-policy',
       'Set HTTP server timeout policy', (args) => {
         if (args.length === 0) throw new CliIncomplete();
         // Les trois mots-clés sont obligatoires sur IOS et dans cet
@@ -8127,7 +8191,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
         svc()?.setTimeoutPolicy({ idleSec: values[0], lifeSec: values[1], requests: values[2] });
         return '';
       });
-    this.configTrie.registerGreedy('no ip http timeout-policy',
+    trie.registerGreedy('no ip http timeout-policy',
       'Restore default timeout policy', () => { svc()?.resetTimeoutPolicy(); return ''; });
   }
 }
