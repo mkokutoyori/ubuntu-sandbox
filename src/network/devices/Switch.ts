@@ -2840,11 +2840,13 @@ export abstract class Switch extends Equipment {
 
   getStaticRoutes() { return this.svi.getStaticRoutes(); }
 
-  addStaticRoute(network: IPAddress, mask: SubnetMask, nextHop: IPAddress): void {
-    this.svi.addStaticRoute(network, mask, nextHop);
+  addStaticRoute(
+    network: IPAddress, mask: SubnetMask, nextHop: IPAddress, preference?: number,
+  ): void {
+    this.svi.addStaticRoute(network, mask, nextHop, preference);
   }
-  removeStaticRoute(network: IPAddress, mask: SubnetMask): boolean {
-    return this.svi.removeStaticRoute(network, mask);
+  removeStaticRoute(network: IPAddress, mask: SubnetMask, nextHop?: IPAddress): boolean {
+    return this.svi.removeStaticRoute(network, mask, nextHop);
   }
   getL3RoutingTable() {
     return this.svi.getRoutingTable();

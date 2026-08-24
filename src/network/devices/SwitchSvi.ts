@@ -84,6 +84,16 @@ export interface SwitchStaticRoute {
   network: IPAddress;
   mask: SubnetMask;
   nextHop: IPAddress;
+  preference: number;
+}
+
+/** La preference VRP par defaut d'une route statique. */
+export const VRP_STATIC_PREFERENCE = 60;
+
+function sameDestination(
+  route: SwitchStaticRoute, network: IPAddress, mask: SubnetMask,
+): boolean {
+  return route.network.equals(network) && route.mask.toCIDR() === mask.toCIDR();
 }
 
 export class SwitchSvi {
@@ -154,24 +164,32 @@ export class SwitchSvi {
     return [...this.svis.values()].sort((a, b) => a.vlan - b.vlan);
   }
 
-  addStaticRoute(network: IPAddress, mask: SubnetMask, nextHop: IPAddress): void {
-    const key = `${network}/${mask.toCIDR()}`;
-    const existing = this.staticRoutes.findIndex(r => `${r.network}/${r.mask.toCIDR()}` === key);
-    if (existing >= 0) this.staticRoutes[existing] = { network, mask, nextHop };
-    else this.staticRoutes.push({ network, mask, nextHop });
+  addStaticRoute(
+    network: IPAddress, mask: SubnetMask, nextHop: IPAddress,
+    preference: number | undefined = VRP_STATIC_PREFERENCE,
+  ): void {
+    const existing = this.staticRoutes.findIndex(r => sameDestination(r, network, mask)
+      && r.nextHop.equals(nextHop));
+    const pref = preference ?? VRP_STATIC_PREFERENCE;
+    if (existing >= 0) this.staticRoutes[existing] = { network, mask, nextHop, preference: pref };
+    else this.staticRoutes.push({ network, mask, nextHop, preference: pref });
   }
 
-  removeStaticRoute(network: IPAddress, mask: SubnetMask): boolean {
-    const key = `${network}/${mask.toCIDR()}`;
-    const idx = this.staticRoutes.findIndex(r => `${r.network}/${r.mask.toCIDR()}` === key);
+  removeStaticRoute(
+    network: IPAddress, mask: SubnetMask,
+    nextHop?: IPAddress, preference?: number,
+  ): boolean {
+    const idx = this.staticRoutes.findIndex(r => sameDestination(r, network, mask)
+      && (nextHop === undefined || r.nextHop.equals(nextHop))
+      && (preference === undefined || r.preference === preference));
     if (idx >= 0) { this.staticRoutes.splice(idx, 1); return true; }
     return false;
   }
 
   getStaticRoutes(): readonly SwitchStaticRoute[] { return this.staticRoutes; }
 
-  getRoutingTable(): Array<{ network: IPAddress; mask: SubnetMask; nextHop?: IPAddress; iface: string; proto: 'connected' | 'static' }> {
-    const rows: Array<{ network: IPAddress; mask: SubnetMask; nextHop?: IPAddress; iface: string; proto: 'connected' | 'static' }> = [];
+  getRoutingTable(): Array<{ network: IPAddress; mask: SubnetMask; nextHop?: IPAddress; preference?: number; iface: string; proto: 'connected' | 'static' }> {
+    const rows: Array<{ network: IPAddress; mask: SubnetMask; nextHop?: IPAddress; preference?: number; iface: string; proto: 'connected' | 'static' }> = [];
     for (const svi of this.svis.values()) {
       if (!svi.adminUp || !svi.ip || !svi.mask) continue;
       rows.push({
@@ -187,6 +205,7 @@ export class SwitchSvi {
         network: r.network,
         mask: r.mask,
         nextHop: r.nextHop,
+        preference: r.preference,
         iface: egress ? `Vlanif${egress.vlan}` : '-',
         proto: 'static',
       });
@@ -205,16 +224,14 @@ export class SwitchSvi {
   private lookupRoute(dst: IPAddress): { nextHop: IPAddress; egress: SviInterface } | null {
     const direct = this.svisFor(dst);
     if (direct) return { nextHop: dst, egress: direct };
-    let best: { route: SwitchStaticRoute; prefix: number } | null = null;
-    for (const r of this.staticRoutes) {
-      if (!dst.isInSameSubnet(r.network, r.mask)) continue;
-      const prefix = r.mask.toCIDR();
-      if (!best || prefix > best.prefix) best = { route: r, prefix };
+    const candidates = this.staticRoutes
+      .filter(r => dst.isInSameSubnet(r.network, r.mask))
+      .sort((a, b) => (b.mask.toCIDR() - a.mask.toCIDR()) || (a.preference - b.preference));
+    for (const route of candidates) {
+      const egress = this.svisFor(route.nextHop);
+      if (egress) return { nextHop: route.nextHop, egress };
     }
-    if (!best) return null;
-    const egress = this.svisFor(best.route.nextHop);
-    if (!egress) return null;
-    return { nextHop: best.route.nextHop, egress };
+    return null;
   }
 
   /** Line protocol is up when admin-up and the VLAN has a live member port. */
