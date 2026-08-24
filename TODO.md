@@ -119,6 +119,27 @@ elles.
 
 ---
 
+## Postes Linux
+
+### [sysctl] une cle inconnue est acceptee, et `sysctl -a` ne liste rien
+`sysctl -w zorglub.inexistant=1` est accepte en silence et ne range
+rien ; la relecture rend une chaine vide. Une vraie machine repond
+`sysctl: cannot stat /proc/sys/zorglub/inexistant: No such file or
+directory`. Et `sysctl -a`, qui doit lister TOUS les parametres, rend
+zero ligne alors que quatre cles sont modelisees
+(`net.ipv4.ip_forward`, `ip_local_port_range`, `tcp_tw_reuse`).
+**Mesure** : `sysctl -a` rend `""` ; `sysctl -w zorglub.x=1` rend `""`.
+**Pourquoi ce n'est pas ferme ici** : l'en-tete du fichier
+(`commands/net/Sysctl.ts`) declare le silence DELIBERE — « All other
+parameters are silently accepted so scripts that probe `kernel.*` or
+`net.core.*` values don't crash ». Renverser ce choix demande de savoir
+quels scripts du depot en dependent, ce qui est une mesure a part ;
+`-a`, en revanche, est un manque sec et se ferme seul le jour ou la
+table des cles modelisees est enumerable.
+
+
+---
+
 ## Postes Windows
 
 ### [ping] le CODE de l'ICMP inatteignable est jeté à l'affichage
