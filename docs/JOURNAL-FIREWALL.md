@@ -2700,6 +2700,78 @@ refusé sont remplacés par un cas qui l'affirme disponible.
 
 ---
 
+## Périmètre pris — FortiOS phase 25 (une zone suit ses MEMBRES)
+
+**Agent `mandeng`.** Les deux entrées `[sdwan]` de `TODO.md`. Les deux
+reports sont VRAIS cette fois — c'est la première phase depuis longtemps
+où la re-mesure les confirme — mais elle trouve un troisième défaut que
+ni l'un ni l'autre ne nomme, et **les trois ont la même cause**.
+
+**Mesure de départ** (laboratoire : trois ports adressés, une zone
+`virtual-wan-link`, membres 1 et 2, une route statique par la zone) :
+
+- **Ajouter le membre 3 ne développe rien.** La table de routage porte
+  toujours exactement les deux routes des membres 1 et 2. Entrée 2,
+  confirmée.
+- **`delete 2` sous `config members` ne retire rien** — ni la route du
+  membre 2, qui reste dans la table, ni le membre lui-même. **Ce défaut
+  n'est dans aucune des deux entrées**, et il est plus grave que celui
+  qui l'est : le pare-feu continue d'aiguiller du trafic vers un membre
+  que l'opérateur a supprimé.
+- **Une politique nommant `port1` n'empêche pas `port1` de devenir
+  membre.** Les deux commandes sont acceptées au même instant. Entrée 1,
+  confirmée.
+
+**La cause commune** : `SdwanService.apply()` ne fait que `set`. Or
+`onCommit` lui passe la configuration COMPLÈTE à chaque commit — la
+liste entière des membres, des zones, des contrôles et des services.
+Une méthode qui reçoit l'état voulu et se contente d'ajouter n'est pas
+une application, c'est une accumulation : ce qui a disparu de la
+configuration survit dans la table, et ce qui vient d'y entrer n'est
+signalé à personne. `apply` doit RÉCONCILIER, et les routes de zone
+doivent être rejouées après elle — le chaînon existe déjà
+(`Firewall.installSdwanRoute` est rejoué à chaque transition de santé),
+il n'est simplement pas appelé là.
+
+**La protection de l'entrée 1 est un mécanisme général, et c'est une
+VRAIE commande** plutôt qu'un échafaudage inventé : un FortiGate répond
+« qu'est-ce qui référence cet objet ? » par `diagnose sys cmdb refcnt
+show <path.object.mkey>`, et c'est ce compteur qui fait qu'une interface
+référencée n'apparaît même pas dans la liste des membres possibles. Le
+refus a une transcription attestée, prise sur le cas RÉCIPROQUE (une
+interface déjà membre du SD-WAN qu'on tente d'ajouter à
+`config system zone`) :
+
+```
+(zone_test01) set interface wan1
+entry not found in datasource
+value parse error before 'wan1'
+Command fail. Return code -3
+```
+
+FortiOS refuse donc **au niveau de la source de données** : la valeur
+n'est pas dans la liste des valeurs possibles, d'où ces deux lignes. Les
+deux existent déjà ici (`FORTI_NOT_FOUND`, `FortiMessages.valueError`).
+
+**Fichiers que la phase 25 prendra** :
+
+```
+firewall/model/InterfaceReferences.ts  ← qui nomme cette interface (socle, neuf)
+firewall/sdwan/SdwanService.ts         ← `apply` réconcilie au lieu d'accumuler
+firewall/sdwan/SdwanTable.ts           ← retrait de ce qui a disparu
+firewall/Firewall.ts                   ← les routes de zone rejouées au commit
+vendors/fortios/schema/sdwan.ts        ← le refus d'un membre référencé
+vendors/fortios/diag/                  ← `diagnose sys cmdb refcnt show`
+```
+
+**Hors périmètre, et dit plutôt que tu** : le code de retour. La
+transcription ci-dessus porte `-3` là où ce module rend `-61` pour tout
+refus. Les deux LIGNES de message sont reprises telles quelles ; le code
+suit celui du module, faute d'une capture par famille de message qui
+permettrait de les apparier un par un. Inscrit dans `TODO.md`.
+
+---
+
 ## Périmètre pris — FortiOS phase 24 (la bannière s'AFFICHE et s'ACCEPTE)
 
 **Agent `mandeng`.** Deux entrées `[durcissement]` de `TODO.md`, et là
