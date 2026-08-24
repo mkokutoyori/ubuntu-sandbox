@@ -3,7 +3,7 @@ import { LOG_CATEGORIES } from './log/logCategories';
 import { argumentAccepts, type ArgumentSpec, type EnumValue } from '../../../../../cli/ArgumentTypes';
 import { CommandTable, type CommandSpec } from '../../../../../cli/CommandTable';
 import { newSession, type CliSession } from '../../../../../cli/CliSession';
-import { parseCommand } from '../../../../../cli/CommandParser';
+import { parseCommand, uniqueChild } from '../../../../../cli/CommandParser';
 import { complete, type CompletionTrigger, type Suggestion } from '../../../../../cli/CompletionEngine';
 import { FortiMessages } from './FortiMessages';
 import type { FortiAttributeSpec, FortiTableSpec } from './schema/types';
@@ -139,6 +139,21 @@ export class FortiSocle {
 
   completion(input: string): string | undefined {
     return complete(this.contextTable(), input, this.session(), 'TAB').completion;
+  }
+
+  canonicalWords(words: readonly string[]): readonly string[] {
+    const table = this.contextTable();
+    const session = this.session();
+    let node = table.rootNode();
+    const out: string[] = [];
+
+    for (const word of words) {
+      const child = uniqueChild(node, word, table, session);
+      if (child?.keyword === undefined) return [...out, ...words.slice(out.length)];
+      out.push(child.keyword);
+      node = child;
+    }
+    return out;
   }
 
   private session(): CliSession {
