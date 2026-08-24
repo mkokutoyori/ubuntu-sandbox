@@ -83,6 +83,22 @@ l'inventaire ni `pruneMigratedFromTries` ne les voyaient. Si vous comptez
 ce qu'il reste, descendez dans les tables d'arbres, pas seulement dans
 les champs.
 
+**La règle qui m'a coûté trois régressions, écrite pour qu'elle ne les
+coûte pas deux fois** : quand on migre un gestionnaire GLOUTON, la place
+déclarée doit accepter au moins tout ce que le gestionnaire acceptait.
+NOMMER une forme (`alternatives`) et RESTREINDRE à un domaine (`values`,
+un type étroit) sont deux choses différentes, et l'aide ne demande que
+la première. Un `neighbor` typé `IP_ADDR` refuse `neighbor IBGP
+peer-group` ; six sous-commandes déclarées en mots-clés refusent les
+vingt autres que le gestionnaire range en l'état ; un `metric` énuméré
+refuse `metric 5`. À l'inverse, quand le domaine dépend vraiment du
+contexte (ce qu'on redistribue dépend du protocole), une place énumérée
+ne suffit pas : il faut des mots-clés, qui portent chacun leur
+`reachableWhen`. Le garde-fou `probe-cli-aide-egale-execution` attrape
+le sens « l'aide propose ce que la machine refuse » ; l'autre sens — « la
+déclaration refuse ce que la machine acceptait » — n'a pas de garde-fou,
+et c'est la suite de round-trip qui l'a attrapé.
+
 **Ce que ça change pour vous** : une famille migrée n'est plus dans le
 trie. Si vous ajoutez une commande à un `register*(t: CommandTrie)` dont
 la famille est déjà partie, elle sera élaguée au démarrage et ne
