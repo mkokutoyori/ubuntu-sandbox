@@ -122,7 +122,7 @@ import { ETHERTYPE_FGCP, type HaAgent } from './ha/HaAgent';
 import { serialNumberOf, type FirewallHa } from './ha/FirewallHa';
 import type { HaConfiguration } from './ha/HaTypes';
 import type {
-  SdwanConfiguration, SdwanHealthTransition,
+  SdwanConfiguration, SdwanHealthTransition, SdwanTable,
 } from './sdwan/SdwanTable';
 import type { SslVpnPortal, SslVpnSettings } from './vpn/SslVpnPortal';
 import type { IPSecEngine } from '../../ipsec/IPSecEngine';
@@ -641,7 +641,13 @@ export class Firewall extends Equipment {
   }
 
   serialNumber(): string { return serialNumberOf(this.name); }
-  applySdwan(c: SdwanConfiguration): string | undefined { return this.sdwan.apply(c); }
+  applySdwan(c: SdwanConfiguration): string | undefined {
+    const refusal = this.sdwan.apply(c);
+    if (refusal === undefined) this.refreshSdwanRoutes();
+    return refusal;
+  }
+
+  getSdwanTable(): SdwanTable { return this.sdwan.getTable(); }
   runSdwanHealthChecks(): Promise<void> { return this.sdwan.runHealthChecks(); }
 
   applySdwanStaticRoute(route: DeclaredStaticRoute): void {
@@ -688,6 +694,12 @@ export class Firewall extends Equipment {
       if (table.healthOf(check.name, sequence)?.alive === false) return false;
     }
     return true;
+  }
+
+  private refreshSdwanRoutes(): void {
+    for (const route of [...this.sdwanRoutes.values()]) {
+      this.applySdwanStaticRoute(route);
+    }
   }
 
   private onSdwanHealthChange(changes: readonly SdwanHealthTransition[]): void {

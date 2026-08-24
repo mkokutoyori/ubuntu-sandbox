@@ -338,6 +338,23 @@ texte n'est affiche nulle part serait le decor que ce depot passe son temps
 a defaire. Le groupe `admin` est ecrit parce que ses deux messages sont
 VRAIMENT affiches.
 
+### [message] le code de retour est `-61` pour tout refus
+Un vrai FortiGate distingue les codes : la transcription du refus au niveau
+de la source de donnees (community.fortinet.com, « Conflict when adding
+referenced interfaces that are part of SD-WAN to a zone ») porte
+`Command fail. Return code -3` sous `entry not found in datasource` /
+`value parse error before 'wan1'`, alors que ce module rend `-61` pour
+tous ses refus.
+**Mesure** : `FORTI_COMMAND_FAIL` est une constante unique
+(`vendors/fortios/FortiMessages.ts:1`), lue par les vingt-huit messages du
+module ; les deux LIGNES de texte au-dessus, elles, sont bien celles de la
+vraie machine.
+**Report** : apparier un code par famille de message demande une capture
+par famille, et je n'en ai qu'une. Poser `-3` sur ce seul message ferait
+cohabiter deux codes sans savoir si les vingt-sept autres sont justes ;
+poser `-3` partout remplacerait une valeur uniforme fausse par une autre.
+La correction est un releve de transcriptions, pas une decision de code.
+
 ### [rendu] `show <table singleton>` rend un bloc vide
 `show system global` sur une machine d'usine rend `config system global`
 suivi de `end`, sans une ligne entre les deux. La sauvegarde complete, elle,
@@ -364,38 +381,6 @@ adresse decidee par le cluster et que l'emission comme la reception la
 suivent — c'est un changement du materiel simule, pas du pare-feu, et il
 touche l'apprentissage MAC de tous les commutateurs du projet. L'ARP
 gratuit qui accompagne le basculement en depend egalement.
-
-### [sdwan] une interface membre reste referencable par une politique
-Le tutoriel (§20, TP 20 etape 1) enonce la protection reelle : quand une
-interface devient membre du SD-WAN, FortiOS REFUSE de l'ajouter tant qu'une
-politique ou une route statique la nomme encore directement — il faut
-d'abord faire citer la ZONE par ces politiques. Rien ne refuse ici : une
-politique peut nommer `port1` et le membre 1 peut nommer `port1` au meme
-instant, ce qui est precisement la situation que la protection existe pour
-empecher.
-**Mesure** : `set dstintf "port1"` sur une politique, puis `set interface
-"port1"` sur un membre : les deux sont acceptes.
-**Report** : la matiere est a moitie la — `ZoneTable.assignInterface` refuse
-deja `interface-already-in-zone` — mais compter les references d'une
-interface a travers les politiques, les routes et les tables NAT est un
-mecanisme general (« qu'est-ce qui nomme cet objet ? ») qui depasse le
-SD-WAN et servirait a toutes les suppressions d'objet.
-
-### [sdwan] la zone ne suit pas un changement de MEMBRE
-La route d'une zone SD-WAN suit desormais la SANTE : `update-static-route`
-(actif par defaut, comme sur un vrai FortiGate) retire la route d'un membre
-declare mort et la rend quand il revient ; la session portee par ce membre
-est fermee, donc le flux suivant repart par le membre survivant. Ce qui reste
-ouvert est l'autre moitie de l'ancienne entree : ajouter ou retirer un membre
-de la zone APRES avoir ecrit la route ne redeveloppe rien.
-**Mesure** : declarer la route par la zone, puis ajouter un membre 3 — la
-table de routage n'en porte pas de route.
-**Report** : le chainon existe maintenant (`Firewall.installSdwanRoute` est
-rejoue a chaque transition de sante), il suffirait de le rejouer aussi au
-commit d'un membre. Ce n'est pas fait parce que l'ordre de commit des tables
-de `config system sdwan` n'est pas etabli : les membres et les routes
-statiques sont deux tables distinctes, et rejouer trop tot developperait une
-route sur une zone encore vide.
 
 ### [linux] un poste Linux n'a pas de démon IKE
 La commande `ipsec` lit désormais vraiment `/etc/ipsec.conf` et

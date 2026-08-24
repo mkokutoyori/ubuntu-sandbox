@@ -171,6 +171,13 @@ export const FortiMessages = {
     );
   },
 
+  notInDatasource(value: string, hint?: string): string {
+    return fail(
+      `${FORTI_NOT_FOUND}\nvalue parse error before '${value}'\n${FORTI_COMMAND_FAIL}`,
+      hint,
+    );
+  },
+
   duplicate(key: string): string {
     return fail(`${FORTI_DUPLICATE}\n${FORTI_COMMAND_FAIL}`, `"${key}" already exists.`);
   },

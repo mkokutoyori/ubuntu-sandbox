@@ -2700,6 +2700,127 @@ refusé sont remplacés par un cas qui l'affirme disponible.
 
 ---
 
+## Périmètre pris — FortiOS phase 25 (une zone suit ses MEMBRES)
+
+**Agent `mandeng`.** Les deux entrées `[sdwan]` de `TODO.md`. Les deux
+reports sont VRAIS cette fois — c'est la première phase depuis longtemps
+où la re-mesure les confirme — mais elle trouve un troisième défaut que
+ni l'un ni l'autre ne nomme, et **les trois ont la même cause**.
+
+**Mesure de départ** (laboratoire : trois ports adressés, une zone
+`virtual-wan-link`, membres 1 et 2, une route statique par la zone) :
+
+- **Ajouter le membre 3 ne développe rien.** La table de routage porte
+  toujours exactement les deux routes des membres 1 et 2. Entrée 2,
+  confirmée.
+- **`delete 2` sous `config members` ne retire rien** — ni la route du
+  membre 2, qui reste dans la table, ni le membre lui-même. **Ce défaut
+  n'est dans aucune des deux entrées**, et il est plus grave que celui
+  qui l'est : le pare-feu continue d'aiguiller du trafic vers un membre
+  que l'opérateur a supprimé.
+- **Une politique nommant `port1` n'empêche pas `port1` de devenir
+  membre.** Les deux commandes sont acceptées au même instant. Entrée 1,
+  confirmée.
+
+**La cause commune** : `SdwanService.apply()` ne fait que `set`. Or
+`onCommit` lui passe la configuration COMPLÈTE à chaque commit — la
+liste entière des membres, des zones, des contrôles et des services.
+Une méthode qui reçoit l'état voulu et se contente d'ajouter n'est pas
+une application, c'est une accumulation : ce qui a disparu de la
+configuration survit dans la table, et ce qui vient d'y entrer n'est
+signalé à personne. `apply` doit RÉCONCILIER, et les routes de zone
+doivent être rejouées après elle — le chaînon existe déjà
+(`Firewall.installSdwanRoute` est rejoué à chaque transition de santé),
+il n'est simplement pas appelé là.
+
+**La protection de l'entrée 1 est un mécanisme général, et c'est une
+VRAIE commande** plutôt qu'un échafaudage inventé : un FortiGate répond
+« qu'est-ce qui référence cet objet ? » par `diagnose sys cmdb refcnt
+show <path.object.mkey>`, et c'est ce compteur qui fait qu'une interface
+référencée n'apparaît même pas dans la liste des membres possibles. Le
+refus a une transcription attestée, prise sur le cas RÉCIPROQUE (une
+interface déjà membre du SD-WAN qu'on tente d'ajouter à
+`config system zone`) :
+
+```
+(zone_test01) set interface wan1
+entry not found in datasource
+value parse error before 'wan1'
+Command fail. Return code -3
+```
+
+FortiOS refuse donc **au niveau de la source de données** : la valeur
+n'est pas dans la liste des valeurs possibles, d'où ces deux lignes. Les
+deux existent déjà ici (`FORTI_NOT_FOUND`, `FortiMessages.valueError`).
+
+**Fichiers que la phase 25 prendra** :
+
+```
+firewall/model/InterfaceReferences.ts  ← qui nomme cette interface (socle, neuf)
+firewall/sdwan/SdwanService.ts         ← `apply` réconcilie au lieu d'accumuler
+firewall/sdwan/SdwanTable.ts           ← retrait de ce qui a disparu
+firewall/Firewall.ts                   ← les routes de zone rejouées au commit
+vendors/fortios/schema/sdwan.ts        ← le refus d'un membre référencé
+vendors/fortios/diag/                  ← `diagnose sys cmdb refcnt show`
+```
+
+**Hors périmètre, et dit plutôt que tu** : le code de retour. La
+transcription ci-dessus porte `-3` là où ce module rend `-61` pour tout
+refus. Les deux LIGNES de message sont reprises telles quelles ; le code
+suit celui du module, faute d'une capture par famille de message qui
+permettrait de les apparier un par un. Inscrit dans `TODO.md`.
+### Livré
+
+Les deux entrées `[sdwan]` sont retirées de `TODO.md`.
+
+**Une seule cause pour les trois défauts, et le correctif est une seule
+phrase** : `SdwanService.apply()` RÉCONCILIE. Zones, membres, contrôles
+de santé et services qui ont disparu de la configuration disparaissent
+de la table ; ce qui y entre y entre. `Firewall.applySdwan` rejoue
+ensuite les routes de zone par `applySdwanStaticRoute`, le chemin qui
+sait déjà décider entre une route de zone et une route ordinaire — pas
+une seconde écriture de cette décision.
+
+**La protection de l'entrée 1 n'a demandé AUCUN moteur neuf, et c'est le
+point important.** Ma première écriture a créé
+`firewall/model/InterfaceReferences.ts` : un index de références nourri à
+la main par les politiques, les routes, les zones et les membres. Il a
+été SUPPRIMÉ avant commit, parce que `vendors/fortios/runtime/
+references.ts` existe depuis longtemps, fait la même chose en mieux — il
+parcourt l'ARBRE de configuration en lisant les `referenceTo` déclarés
+par le schéma, donc il couvre toutes les tables au lieu des quatre que
+j'avais énumérées — et rend déjà les deux formes de ligne attestées. Il
+n'avait qu'une porte, `diagnose sys checkused`. Il en a deux :
+`FortiConfigTree.referenceHolders()` pour le refus, et
+`diagnose sys cmdb refcnt show <path.object.attribute> <value>`, la vraie
+commande FortiOS, dont les lignes sont attestées :
+
+```
+entry used by child table srcintf:name 'X' of table firewall.policy:policyid '6'
+entry used by table router.static:seq-num '1'
+```
+
+Il n'y a PAS de ligne de total — une référence par ligne, rien du tout
+s'il n'y en a aucune. La sonde l'avait supposée et la vérification l'a
+démentie ; c'est la seule chose qu'elle a corrigée dans mes suppositions.
+
+Le refus vaut dans les **deux sens** : une interface encore nommée par
+une politique, une route statique ou une `config system zone` est refusée
+comme membre SD-WAN, et une interface déjà membre est refusée dans une
+`config system zone` — la réciproque est celle dont j'ai la
+transcription. La table qui commet est exclue de son propre décompte,
+sans quoi re-commettre un membre existant le refuserait lui-même.
+
+`fortios-sdwan-membres.test.ts` (13 cas) est discriminé par
+`git stash push -- src/network/` : 11 tombent avant correctif, et les 2
+qui passent des deux côtés sont nommés dans l'en-tête — deux
+`not.toContain` sur une commande qui n'existait pas, donc une absence de
+sortie et une sortie vide y sont indiscernables.
+`e2e/fortigate-sdwan-membres.spec.ts` (3 cas) rejoue le refus, la vue des
+références et le développement de la route dans le vrai navigateur.
+
+---
+
 ## Périmètre pris — FortiOS phase 24 (la bannière s'AFFICHE et s'ACCEPTE)
 
 **Agent `mandeng`.** Deux entrées `[durcissement]` de `TODO.md`, et là

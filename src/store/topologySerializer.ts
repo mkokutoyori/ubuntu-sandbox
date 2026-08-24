@@ -31,7 +31,7 @@ import {
   Equipment, Cable, Port,
   IPAddress, SubnetMask, MACAddress,
   DeviceType, ConnectionType,
-  createDevice, resetDeviceCounters,
+  createDevice, resetDeviceCounters, reserveDeviceName,
   generateId, resetCounters,
   Logger,
   EndHost, Router,
@@ -945,11 +945,19 @@ export async function importTopology(json: TopologyExport): Promise<ImportResult
   resetCounters();
   Logger.reset();
 
+  for (const devData of json.devices) {
+    reserveDeviceName(devData.name);
+    for (const ifConfig of devData.interfaces) {
+      if (!ifConfig.mac) continue;
+      try { MACAddress.reserve(new MACAddress(ifConfig.mac)); } catch { /* malformed address in file */ }
+    }
+  }
+
   const idMap = new Map<string, Equipment>();
   const deviceInstances = new Map<string, Equipment>();
 
   for (const devData of json.devices) {
-    const device = createDevice(devData.type, devData.x, devData.y);
+    const device = createDevice(devData.type, devData.x, devData.y, devData.name);
     device.setName(devData.name);
     device.setHostname(devData.hostname);
 
@@ -967,10 +975,7 @@ export async function importTopology(json: TopologyExport): Promise<ImportResult
       const port = device.getPort(ifConfig.name);
       if (!port) continue;
       try {
-        const mac = new MACAddress(ifConfig.mac);
-        port.setMAC(mac);
-        // Keep the generator from re-issuing it to a device added later.
-        MACAddress.reserve(mac);
+        port.setMAC(new MACAddress(ifConfig.mac));
       } catch { /* malformed address in file — keep the generated one */ }
     }
 

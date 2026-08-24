@@ -448,6 +448,10 @@ export const SYSTEM_ZONE: FortiTableSpec = {
     text('description', 'Description.'),
   ],
   onCommit(object, context) {
+    for (const iface of object.effective('interface')) {
+      const refusal = context.device.refuseBoundInterface(iface, 'system.zone');
+      if (refusal) return refusal;
+    }
     context.device.applyZone(object.key, object.effective('interface'),
       object.effective('intrazone')[0]);
   },

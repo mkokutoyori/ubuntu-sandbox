@@ -48,6 +48,7 @@ export interface FortiObjectView {
 export interface FortiSchemaEnvironment {
   setting(path: string, attribute: string): readonly string[];
   isPhysicalPort?(name: string): boolean;
+  referenceHolders?(target: readonly string[], key: string): readonly string[];
 }
 
 export const EMPTY_ENVIRONMENT: FortiSchemaEnvironment = Object.freeze({
@@ -294,6 +295,7 @@ export interface FortiCommitDevice {
   applyFragmentMemoryThreshold(megabytes: number): void;
   refusePasswordReuse(admin: string, secret: string): string | null;
   refuseReuseLimit(limit: number): string | null;
+  refuseBoundInterface(iface: string, excludingTable: string): string | null;
   removeLdbMonitor(name: string): void;
   applyBalancedVip(vip: FortiBalancedVipPatch): string | void;
   applyReplacementMessage(message: string, buffer: string): void;
