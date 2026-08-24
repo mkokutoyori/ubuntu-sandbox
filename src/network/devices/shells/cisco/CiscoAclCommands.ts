@@ -353,6 +353,8 @@ function parseStandardSource(args: string[]): { ip: IPAddress; wildcard: SubnetM
   return { ip: new IPAddress(args[0]), wildcard: new SubnetMask(args[1]), consumed: 2 };
 }
 
+export const IOS_REMARK_MAX = 100;
+
 // ─── Global Config Mode: access-list commands ─────────────────────────
 
 export function buildACLConfigCommands(trie: CommandTrie, ctx: CiscoACLShellContext): void {
@@ -371,6 +373,16 @@ export function buildACLConfigCommands(trie: CommandTrie, ctx: CiscoACLShellCont
     }
 
     const action = args[1].toLowerCase();
+    if (action === 'remark') {
+      const texte = args.slice(2).join(' ');
+      if (texte.length === 0) return '% Incomplete command.';
+      ctx.r().addAccessListEntry(num, 'permit', {
+        srcIP: new IPAddress('0.0.0.0'),
+        srcWildcard: new SubnetMask('255.255.255.255'),
+        remark: texte.slice(0, IOS_REMARK_MAX),
+      });
+      return '';
+    }
     if (action !== 'permit' && action !== 'deny') return `% Invalid action "${args[1]}"`;
 
     if (IOS_ACL_NUMBERING(num) === 'standard') {
@@ -546,7 +558,7 @@ export function buildNamedStdACLCommands(trie: CommandTrie, ctx: CiscoACLShellCo
     ctx.r().addNamedAccessListEntry(aclName, 'standard', 'permit', {
       srcIP: new IPAddress('0.0.0.0'),
       srcWildcard: new SubnetMask('255.255.255.255'),
-      remark: args.join(' '),
+      remark: args.join(' ').slice(0, IOS_REMARK_MAX),
     });
     return '';
   });
@@ -643,7 +655,7 @@ export function buildNamedExtACLCommands(trie: CommandTrie, ctx: CiscoACLShellCo
       srcWildcard: new SubnetMask('255.255.255.255'),
       dstIP: new IPAddress('0.0.0.0'),
       dstWildcard: new SubnetMask('255.255.255.255'),
-      remark: args.join(' '),
+      remark: args.join(' ').slice(0, IOS_REMARK_MAX),
     });
     return '';
   });

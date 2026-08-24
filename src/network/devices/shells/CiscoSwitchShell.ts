@@ -47,7 +47,7 @@ import { describeCiscoArguments } from './cisco/ciscoArgumentHelp';
 import {
   parseCiscoAce, renderCiscoAce, formatCiscoAclEntry,
   showAccessListsFrom, isValidIosAclNumber,
-  runningConfigACLFrom, runningConfigInterfaceACLFrom,
+  runningConfigACLFrom, runningConfigInterfaceACLFrom, IOS_REMARK_MAX,
 } from './cisco/CiscoAclCommands';
 import { IOS_ACL_NUMBERING } from '../router/ACLEngine';
 import { CISCO_ERRORS } from './cli-utils';
@@ -528,6 +528,16 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
         return '% Invalid access-list number. Valid range: 1-99, 100-199, 1300-1999, 2000-2699.';
       }
       const action = args[1]?.toLowerCase();
+      if (action === 'remark') {
+        const texte = args.slice(2).join(' ');
+        if (texte.length === 0) return CISCO_ERRORS.INCOMPLETE;
+        this.d().getVaclEngine().addAccessListEntry(id, 'permit', {
+          srcIP: new IPAddress('0.0.0.0'),
+          srcWildcard: new SubnetMask('255.255.255.255'),
+          remark: texte.slice(0, IOS_REMARK_MAX),
+        });
+        return '';
+      }
       if (action !== 'permit' && action !== 'deny') return CISCO_ERRORS.INCOMPLETE;
       const type = IOS_ACL_NUMBERING(id);
       const parsed = parseCiscoAce(args.slice(2), type);

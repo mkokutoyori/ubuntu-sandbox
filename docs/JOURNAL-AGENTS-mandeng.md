@@ -6408,3 +6408,71 @@ batissent le leur.
 Discrimination : en neutralisant `CommandLevelTable.levelOf` (tout au
 niveau 1), **126 des 432 tombent**. La suite mesure le mecanisme et ne
 passe pas a vide.
+
+## Une session SSH ne dit adieu qu'UNE fois, et `access-list <n> remark` existe
+
+Deux défauts rapportés par l'utilisateur, mesurés et corrigés ensemble.
+
+### La transcription rapportée
+
+```
+C:\Users\alice>exit
+Connection to 192.168.10.15 closed.
+root@Server1:~#
+logout
+Connection to 192.168.10.15 closed.      <- une seconde fois
+```
+
+Le laboratoire la reproduit à l'identique : un serveur Linux, un poste
+Windows, `ssh` puis `powershell`, `exit`, `exit`, `logout`. Deux
+`Connection to … closed.` au lieu d'un, et une ligne d'invite
+`root@Server1:~#` qui s'invite dans le défilement.
+
+**Ni `endRemoteSession` ni `popRemoteDevice` ne se déclenchaient** — une
+trace posée sur les deux est restée muette, et l'état de la session
+parente était propre (pile vide, aucun parent, aucun enfant, aucun
+sous-shell). Le message venait d'ailleurs : les deux sorties DÉLIBÉRÉES
+de `SshInteractiveSubShell` — `exit`/`logout` tapé, et fin décidée par le
+serveur — impriment leur adieu et appellent `session.disconnect()` **sans
+poser `closing`**. Le gestionnaire de fermeture du canal, dont l'objet
+est le raccrochage IMPRÉVU (câble arraché, machine éteinte), se
+déclenchait donc ensuite et réimprimait le même adieu. Le drapeau
+existait et portait déjà son commentaire (« Set once this session is on
+its way out, whichever side started it ») ; les deux sorties normales ne
+le posaient pas. Deux lignes, et la ligne d'invite parasite disparaît
+avec, puisqu'elle venait du même gestionnaire.
+
+`ssh-adieu-une-seule-fois.test.ts` (4 cas) est discriminé par
+`git stash push -- src/terminal/` : les 4 tombent avant correctif.
+
+### `access-list <n> remark` était refusé
+
+La forme NOMMÉE acceptait `remark` depuis toujours et le rendait dans la
+configuration. La forme NUMÉROTÉE — la plus tapée de toutes, celle de
+tous les cours — répondait `% Invalid action "remark"` sur le routeur et
+`% Incomplete command.` sur le commutateur : commenter une liste
+numérotée était impossible.
+
+La référence est la documentation de Cisco (« Commented IP Access List
+Entries », IOS 15E) : `access-list <n> remark <remark>`, cent caractères
+au maximum et tronqué au-delà, plaçable avant OU après l'instruction
+qu'elle commente, sans effet sur la logique de la liste.
+
+**Le mécanisme existait et n'a pas été réécrit** : la remarque est une
+entrée d'ACL portant `remark`, `nextSequence` la saute déjà (donc elle ne
+consomme aucun numéro de séquence, comme sur une vraie machine) et
+`formatACLEntry` la rend déjà. Il manquait la porte. Les deux
+constructeurs la lisent maintenant, et `IOS_REMARK_MAX` tronque aux trois
+endroits — les deux formes nommées le faisaient pas plus que la
+numérotée.
+
+Conséquence qui dépasse l'affichage : la configuration rendue est REJOUÉE
+à l'import d'une topologie, donc une remarque numérotée n'était pas
+seulement invisible, elle était perdue.
+
+`cisco-acl-remark-numerotee.test.ts` (10 cas) est discriminé par
+`git stash push -- src/network/` : 5 tombent avant correctif, et les 5
+qui passent des deux côtés sont nommés dans l'en-tête — trois d'entre eux
+passaient pour la raison même qui rendait la fonction absente (aucune
+remarque à numéroter, à rejouer, ni à supprimer).
+
