@@ -137,22 +137,34 @@ acceptee parce qu'un vrai `dhclient` l'accepte, et la refuser ferait
 diverger la CLI. Elle redeviendra implementable le jour ou `Cable`
 portera une latence.
 
-### [sysctl] une cle inconnue est acceptee, et `sysctl -a` ne liste rien
-`sysctl -w zorglub.inexistant=1` est accepte en silence et ne range
-rien ; la relecture rend une chaine vide. Une vraie machine repond
-`sysctl: cannot stat /proc/sys/zorglub/inexistant: No such file or
-directory`. Et `sysctl -a`, qui doit lister TOUS les parametres, rend
-zero ligne alors que quatre cles sont modelisees
-(`net.ipv4.ip_forward`, `ip_local_port_range`, `tcp_tw_reuse`).
-**Mesure** : `sysctl -a` rend `""` ; `sysctl -w zorglub.x=1` rend `""`.
-**Pourquoi ce n'est pas ferme ici** : l'en-tete du fichier
-(`commands/net/Sysctl.ts`) declare le silence DELIBERE — « All other
-parameters are silently accepted so scripts that probe `kernel.*` or
-`net.core.*` values don't crash ». Renverser ce choix demande de savoir
-quels scripts du depot en dependent, ce qui est une mesure a part ;
-`-a`, en revanche, est un manque sec et se ferme seul le jour ou la
-table des cles modelisees est enumerable.
+### [sysctl] `/etc/sysctl.conf` n'est pas livre, et les projections de `/proc/sys` sont en lecture seule
+Depuis le lot « `sysctl` lit `/proc/sys` », deux restes MESURES.
 
+**(1) Le fichier de prechargement n'existe pas.** `sysctl -p` repond
+`sysctl: cannot open "/etc/sysctl.conf": No such file or directory` sur
+une machine neuve, alors qu'une vraie Ubuntu livre ce fichier (tout en
+commentaires) et un `/etc/sysctl.d/` avec `99-sysctl.conf`. Le depot y
+fait deja reference : `/etc/ufw/sysctl.conf` est seme et son en-tete dit
+« these settings override /etc/sysctl.conf ». **Pourquoi ce n'est pas
+ferme ici** : le contenu EXACT du fichier de Debian n'a pas pu etre
+atteste depuis ce reseau (`sources.debian.org` et `git.launchpad.net`
+sont bloques par le mandataire ; le `sysctl.conf` d'amont de procps-ng
+est un AUTRE fichier, avec des reglages actifs que Debian ne livre pas).
+L'ecrire de memoire produirait le genre de sortie plausible-et-fausse
+que ce depot passe son temps a refermer. A fermer le jour ou une copie
+du fichier Debian est atteignable.
+
+**(2) Une projection de `/proc/sys` ne se laisse pas ecrire.** Les
+pseudo-fichiers generes sont en lecture seule par decision du VFS
+(`writeFile` les jette en silence), et ceux d'`arp_ignore`,
+`arp_announce`, `arp_accept`, `arp_notify` et `proxy_arp` rendent une
+CONSTANTE `0` que personne ne lit — verifie : `Port.isProxyArpEnabled`
+n'a d'appelants que `Router` et les CLI Cisco/Huawei, un hote Linux ne
+fait pas de proxy ARP ici. `sysctl -w` les refuse donc par la branche
+EPERM de procps plutot que de les accepter sans effet. **Pourquoi ce
+n'est pas ferme ici** : les rendre inscriptibles demande de donner un
+COMPORTEMENT a chacune, sans quoi on rangerait une valeur que rien
+n'evalue. C'est un chantier par knob, pas un correctif de commande.
 
 ---
 
