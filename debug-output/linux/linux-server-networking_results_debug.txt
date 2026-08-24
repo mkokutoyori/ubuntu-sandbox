@@ -1,6 +1,6 @@
 ============================================================
 Shell debug transcript — linux-server-networking
-Generated: 2026-08-23T09:47:34.315Z
+Generated: 2026-08-24T14:25:07.449Z
 Engine: linux
 host=L-SRV-NET-DBG (linux-server) — focus: réseau (ip/ping/route/dns/sockets/firewall)
 Total commands: 302
@@ -1078,18 +1078,18 @@ $ [170/302]> curl http://hote_inexistant_xyz
   curl: (6) Could not resolve host: hote_inexistant_xyz
 
 $ [171/302]> wget http://192.168.10.1
-  --2026-08-23 09:47:37--  http://192.168.10.1
+  --2026-08-24 14:25:10--  http://192.168.10.1
   Connecting to 192.168.10.1:80... failed: Connection refused.
 
 $ [172/302]> wget -q http://192.168.10.1
 <empty>
 
 $ [173/302]> wget -O /tmp/dl.html http://192.168.10.1
-  --2026-08-23 09:47:37--  http://192.168.10.1
+  --2026-08-24 14:25:10--  http://192.168.10.1
   Connecting to 192.168.10.1:80... failed: Connection refused.
 
 $ [174/302]> wget --timeout=2 http://192.168.10.99
-  --2026-08-23 09:47:37--  http://192.168.10.99
+  --2026-08-24 14:25:10--  http://192.168.10.99
   Connecting to 192.168.10.99:80... failed: Connection refused.
 
 $ [175/302]> curl
@@ -1101,7 +1101,7 @@ $ [176/302]> sysctl net.ipv4.ip_forward
   net.ipv4.ip_forward = 0
 
 $ [177/302]> sysctl net.ipv4.conf.all.forwarding
-<empty>
+  sysctl: cannot stat /proc/sys/net/ipv4/conf/all/forwarding: No such file or directory
 
 $ [178/302]> sysctl -w net.ipv4.ip_forward=1
   net.ipv4.ip_forward = 1
@@ -1110,7 +1110,7 @@ $ [179/302]> sysctl net.ipv4.ip_forward
   net.ipv4.ip_forward = 1
 
 $ [180/302]> cat /proc/sys/net/ipv4/ip_forward
-  cat: /proc/sys/net/ipv4/ip_forward: No such file or directory
+  1
 
 $ [181/302]> sysctl -w net.ipv4.ip_forward=0
   net.ipv4.ip_forward = 0
@@ -1119,16 +1119,16 @@ $ [182/302]> sysctl net.ipv4.ip_forward
   net.ipv4.ip_forward = 0
 
 $ [183/302]> sysctl net.ipv4.tcp_syncookies
-<empty>
+  sysctl: cannot stat /proc/sys/net/ipv4/tcp_syncookies: No such file or directory
 
 $ [184/302]> sysctl net.ipv6.conf.all.disable_ipv6
-<empty>
+  sysctl: cannot stat /proc/sys/net/ipv6/conf/all/disable_ipv6: No such file or directory
 
 $ [185/302]> sysctl -a 2>/dev/null | grep ip_forward
-<empty>
+  net.ipv4.ip_forward = 0
 
 $ [186/302]> sysctl net.ipv4.cle_inexistante
-<empty>
+  sysctl: cannot stat /proc/sys/net/ipv4/cle_inexistante: No such file or directory
 
 
 --- [187] § pare-feu — iptables / ufw ---
@@ -1312,11 +1312,11 @@ $ [218/302]> ssh-keygen -t rsa -b 2048 -f /tmp/id_rsa -N ""
 <empty>
 
 $ [219/302]> ls -l /tmp/id_rsa /tmp/id_rsa.pub
-  -rw------- 1 root root 77 Aug 23 09:47 /tmp/id_rsa
-  -rw-r--r-- 1 root root 42 Aug 23 09:47 /tmp/id_rsa.pub
+  -rw------- 1 root root 77 Aug 24 14:25 /tmp/id_rsa
+  -rw-r--r-- 1 root root 41 Aug 24 14:25 /tmp/id_rsa.pub
 
 $ [220/302]> cat /tmp/id_rsa.pub
-  ssh-rsa AAAA8kjel7ldm8t root@linux-server
+  ssh-rsa AAAAunq0hf8qcc root@linux-server
 
 $ [221/302]> ssh-keygen -t ed25519 -f /tmp/id_ed25519 -N ""
 <empty>
@@ -1325,7 +1325,7 @@ $ [222/302]> ssh-keygen -lf /tmp/id_rsa.pub
 <empty>
 
 $ [223/302]> ssh-keygen -y -f /tmp/id_rsa
-  ssh-ed25519 AAAAhcvnchqjpe root@localhost
+  ssh-ed25519 AAAAv1hssn35ij root@localhost
 
 $ [224/302]> ssh -V
   usage: ssh [-options] destination [command]
@@ -1345,21 +1345,19 @@ $ [228/302]> dhclient -v eth0
   Internet Systems Consortium DHCP Client 4.4.1
   Listening on LPF/eth0/02:00:00:aa:bb:cc
   Sending on   LPF/eth0/02:00:00:aa:bb:cc
-  INIT-REBOOT state
-  DHCPREQUEST for 169.254.188.204 on eth0 to 255.255.255.255 port 67
-  DHCPNAK or no response - reverting to DHCPDISCOVER
   DHCPDISCOVER on eth0 to 255.255.255.255 port 67 interval 3
   INIT state
   No DHCPOFFERS received.
-  Trying recorded lease 169.254.188.204
-  bound: renewal in 43200 seconds.
+  No working leases in persistent database - sleeping.
 
 $ [229/302]> dhclient -r eth0
-  released 169.254.188.204
+<empty>
 
 $ [230/302]> ip addr show eth0
   2: eth0: <NO-CARRIER,BROADCAST,UP,MULTICAST> mtu 1500 qdisc fq_codel state DOWN group default qlen 1000
       link/ether 02:00:00:aa:bb:cc brd ff:ff:ff:ff:ff:ff
+      inet 192.168.20.2/24 brd 192.168.20.255 scope global eth0
+         valid_lft forever preferred_lft forever
       inet6 fe80::ff:fe00:5/64 scope link
          valid_lft forever preferred_lft forever
 
@@ -1732,7 +1730,7 @@ $ [288/302]> ethtool -S eth0
        rx_errors: 0
        tx_errors: 0
        rx_dropped: 0
-       tx_dropped: 6
+       tx_dropped: 4
        rx_crc_errors: 0
        collisions: 0
 
