@@ -255,6 +255,28 @@ plage annoncee suit l'etat », une declaration PEUT lire la session
 le numero de groupe HSRP.
 
 
+### [cli] cinq commandes de fichier repondent en EXEC UTILISATEUR
+`dir`, `more`, `pwd`, `delete`, `verify`, `mkdir`, `rmdir` et `squeeze`
+repondent aussi bien avant `enable` qu'apres, sur le routeur comme sur
+le commutateur.
+**Mesure** : sur une machine neuve, sans `enable`, les huit rendent leur
+sortie normale au lieu de `% Invalid input detected`.
+**Cause** : `registerFileSystemCommands` porte le commentaire inverse
+(« Enregistre sur la trie privilegiee uniquement ») et etait appelee avec
+la trie BRUTE et non par `scopedTrie`, le mecanisme prevu exactement pour
+cela (`PRIVILEGED_EXEC_ONLY`). La declaration au socle a preserve la
+portee mesuree plutot que de la changer dans un lot de migration.
+**Ce que dit la reference Cisco** : `dir`, `more` et `pwd` sont bien des
+commandes d'EXEC utilisateur, et la reference des fondamentaux decrit
+aussi `delete` comme « EXEC, privileged EXEC, or diagnostic mode » et
+`squeeze` comme « EXEC command » — donc cinq des huit sont conformes.
+`verify` est documentee privilegiee ; `mkdir`/`rmdir` sont donnees en
+mode chargeur d'amorce sur Catalyst et en EXEC privilegie sur routeur.
+**Report** : restreindre la portee change ce que la machine accepte, ce
+qu'un lot de migration ne doit pas faire ; et les trois cas restants
+demandent chacun une reference propre a la plateforme, la reponse
+n'etant pas la meme sur un 2900 et sur un 2960.
+
 ### [socle] deux familles sont migrées sur le commutateur VRP
 Le pont existe des DEUX côtés : `VRP_SWITCH_MODES` décrit la hiérarchie
 des treize vues du commutateur, et `HuaweiSwitchShell` consulte le socle

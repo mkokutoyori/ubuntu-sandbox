@@ -66,9 +66,10 @@ les mots-clés d'un autre protocole devient une **joignabilité de
 déclaration** — donc elle gouverne l'exécution ET l'aide, alors qu'un
 filtre de complétion ne gouvernait que l'aide.
 
-Compteurs : routeur 1007 → 679, commutateur 570 → 445. Restent les deux
-gros blocs `configTrie` (308) et `configIfTrie` (151), puis
-`privilegedTrie` (120) et `userTrie` (85).
+Compteurs : routeur 1007 → 358, commutateur 570 → 386. `configIfTrie`
+du routeur est passé de 151 à 11. Restent `configTrie` (143 routeur /
+140 commutateur), `privilegedTrie` (112 / 87), `userTrie` (77 / 53), le
+`configIfTrie` du COMMUTATEUR (89, non entamé) et les sous-modes ACL.
 
 **Une contradiction tranchée qui peut vous concerner** : `metric`
 appartient à EIGRP dans `ROUTER_MODE_OWNERS`, et le gestionnaire portait
@@ -117,6 +118,49 @@ derrière une plage déclarée est inatteignable, et c'est normal. La règle
 « ne pas devancer le gestionnaire » ne s'applique QUE là où l'analyse ne
 peut pas trancher — un nom de zone, une adresse, une liste de mots que
 le gestionnaire interprète.
+
+**Une déclaration d'aide accrochée à un arbre vidé MEURT en silence, et
+il y en a de deux sortes.** `ciscoArgumentHelp` s'exécute APRÈS
+`initializeCommands()`, donc après l'élagage : `describeArgs` sur un
+chemin migré ne décrit plus rien, et `requireArgs` sur un chemin migré
+n'exige plus rien — la place par défaut de l'adaptateur étant
+FACULTATIVE, la commande se met alors à annoncer `<cr>` puis à refuser
+au caret le mot qui manque. Quand vous migrez une famille, portez ses
+déclarations dans la table `argumentFor` du lot ET retirez-les de
+`ciscoArgumentHelp`, sinon deux endroits décrivent la même place et le
+second ne décrit rien. `requireArgs` appelé DEPUIS un constructeur (et
+non depuis `ciscoArgumentHelp`) est désormais lu par l'adaptateur et
+rend la place par défaut exigée.
+
+**Les continuations DÉCLARÉES aussi.** `appliquerContinuations` tourne
+après l'élagage : elle reposait ses mots sur des nœuds migrés, si bien
+que `?` annonçait `crypto map dynamic`, `ip host ns`,
+`ip http access-class ipv4` … que la tabulation ne complétait plus.
+`prunePaths` marque désormais le nœud (`_elague`) et `declareContinuations`
+refuse d'y écrire. **Ne réutilisez pas `_migre` pour ce genre de
+marquage** : il est LU par la marche du trie (`prefixMatch`) et par une
+énumération, et le poser sur tout nœud élagué rendait `service dhcp`
+introuvable — mesuré, quatre suites tombées.
+
+**Une négation plus longue que le glouton qui la couvre est aiguillée
+par le glouton.** `no ip nat inside source static network …` et
+`no bfd echo` n'ont pas de forme positive à eux : les déclarer comme
+« n'existant que niées » MASQUE le glouton positif (`ip nat … static`
+répondait `% Incomplete command.`), et ne rien déclarer les perd.
+L'adaptateur pose donc UN `undo` sur le glouton, qui lit les mots tapés
+et appelle la négation la plus spécifique qui les préfixe. Le
+`natStaticUndo` écrit à la main pour le cas NAT est supprimé, cette
+règle le couvre. Conséquence à connaître : le glouton devient annoncé
+par `no ?`, donc `no <glouton>` seul doit répondre
+`% Incomplete command.` et non le caret — c'est ce que
+`probe-aide-tient-ses-promesses` mesure.
+
+**Une négation ne se déclare JAMAIS comme un chemin dont le premier mot
+est `no`.** L'analyse retire `no` avant de marcher l'arbre, donc un
+`path: ['no', 'ip', 'address', 'dhcp']` n'est atteignable par personne.
+Il y en avait un seul dans tout le socle (`dhcpClientFamily`) et il
+n'est apparu que le jour où `no ip address` a quitté le trie. C'est un
+`undo` sur la commande positive.
 
 **Ce que ça change pour vous** : une famille migrée n'est plus dans le
 trie. Si vous ajoutez une commande à un `register*(t: CommandTrie)` dont

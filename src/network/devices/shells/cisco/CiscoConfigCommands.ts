@@ -24,7 +24,9 @@ import { CISCO_ERRORS } from '../cli-utils';
 import { getNtpAgent } from '../../../equipment/RouterServiceCapabilities';
 import type { CommandSpec } from '@/cli/CommandTable';
 import type { ArgumentSpec } from '@/cli/ArgumentTypes';
-import { specsFromTrieRegistrations } from '@/cli/commands/trieAdapter';
+import {
+  specsFromTrieRegistrations, type AdapterKeyword,
+} from '@/cli/commands/trieAdapter';
 
 /**
  * Un TYPE d'interface sans son numéro.
@@ -342,8 +344,10 @@ const DHCP_GLOBAL_ARGUMENTS:
 Readonly<Record<string, ArgumentSpec | readonly ArgumentSpec[] | null>> = {
   'ip dhcp pool': { name: 'nom', type: 'WORD', description: 'Name of the address pool' },
   'ipv6 dhcp pool': { name: 'nom', type: 'WORD', description: 'Name of the IPv6 address pool' },
-  'ip dhcp excluded-address': { name: 'plage', type: 'REST',
-    description: 'First address, then the last one of the excluded range' },
+  'ip dhcp excluded-address': [
+    { name: 'low', type: 'IP_ADDR', description: 'Low IP address' },
+    { name: 'high', type: 'IP_ADDR', optional: true, description: 'High IP address' },
+  ],
   'ip dhcp database': { name: 'url', type: 'REST',
     description: 'URL of the bindings database, then its write delay' },
   'ip dhcp class': { name: 'nom', type: 'WORD', description: 'Name of the DHCP class' },
@@ -526,18 +530,111 @@ export function buildDhcpGlobalOn(
  * va de 30 a 600 par multiples de 30, et `keepalive` de 0 a 32767. Les
  * ajouter est une amelioration de fidelite, donc son propre sujet.
  */
+/*
+ * `ip address` a TROIS formes et non une : une adresse avec son masque,
+ * `dhcp`, et `negotiated`. Les deux dernieres ne prennent pas de masque,
+ * donc elles ne peuvent pas etre une valeur de la premiere place — ce
+ * sont des mots-cles freres, ce qu'IOS annonce d'ailleurs comme tels.
+ */
+const DEBIT_CAR: ArgumentSpec = {
+  name: 'reste', type: 'REST',
+  description: 'Average rate in bps, then normal and maximum burst sizes',
+};
+
+const RATE_LIMIT_KEYWORDS: ReadonlyArray<AdapterKeyword> = [
+  { keyword: 'input', description: 'Rate limit incoming traffic',
+    argument: DEBIT_CAR },
+  { keyword: 'output', description: 'Rate limit outgoing traffic',
+    argument: DEBIT_CAR },
+];
+
+const IP_ADDRESS_KEYWORDS: ReadonlyArray<AdapterKeyword> = [
+  { keyword: 'negotiated', argument: null,
+    description: 'IP Address negotiated over PPP' },
+];
+
 const CONFIG_IF_ARGUMENTS:
 Readonly<Record<string, ArgumentSpec | readonly ArgumentSpec[] | null>> = {
-  bandwidth: { name: 'kbits', type: 'INT', range: [1, 10000000],
-    description: 'Bandwidth in kilobits per second' },
-  delay: { name: 'dizaines', type: 'INT', range: [1, 16777215],
+  bandwidth: { name: 'kilobits', type: 'INT', range: [1, 10000000],
+    description: 'Bandwidth in kilobits' },
+  mtu: { name: 'bytes', type: 'INT', range: [68, 9216], description: 'MTU size in bytes' },
+  'ip mtu': { name: 'bytes', type: 'INT', range: [68, 9216], description: 'IP MTU, in bytes' },
+  keepalive: { name: 'seconds', type: 'INT', range: [0, 32767],
+    description: 'Keepalive period' },
+  'load-interval': { name: 'seconds', type: 'INT', range: [30, 600],
+    description: 'Load calculation interval, in multiples of 30' },
+  'arp timeout': { name: 'seconds', type: 'INT', range: [0, 2147483],
+    description: 'Seconds an ARP cache entry stays valid' },
+  /*
+   * La place est EXIGEE et GLOUTONNE : le gestionnaire recolle les mots
+   * (`interface GigabitEthernet 0/0` s'ecrit avec ou sans espace), et
+   * une place facultative faisait annoncer `<cr>` par une commande qui
+   * entre dans un mode sans avoir choisi d'interface.
+   */
+  interface: { name: 'nom', type: 'REST', literal: 'IFACE',
+    description: 'Interface to configure' },
+  /*
+   * La place est EXIGEE : le gestionnaire refuse au caret ce qu'il ne
+   * reconnait pas, y compris l'absence de tout mot, si bien que la
+   * commande annoncait `<cr>` puis se declarait inconnue. Le trie le
+   * savait par `requireArgs('ip rip authentication', 2)`, une garde que
+   * la migration laissait derriere elle.
+   */
+  'ip rip authentication': { name: 'reste', type: 'REST',
+    description: '`mode` or `key-chain`, then its value' },
+  'max-reserved-bandwidth': { name: 'percent', type: 'INT', range: [1, 100],
+    description: 'Percent of interface bandwidth reservable' },
+  'priority-group': { name: 'group', type: 'INT', range: [1, 16],
+    description: 'Priority group number' },
+  'custom-queue-list': { name: 'list', type: 'INT', range: [1, 16],
+    description: 'Custom queue list number' },
+  'tx-ring-limit': { name: 'packets', type: 'INT', range: [1, 32767],
+    description: 'Transmit ring size, in packets' },
+  'ipv6 eigrp': { name: 'as-number', type: 'INT', range: [1, 65535],
+    description: 'Autonomous system number' },
+  speed: {
+    name: 'speed', type: 'ENUM', description: 'Force speed',
+    values: [
+      { keyword: '10', description: 'Force 10 Mbps operation' },
+      { keyword: '100', description: 'Force 100 Mbps operation' },
+      { keyword: '1000', description: 'Force 1000 Mbps operation' },
+      { keyword: 'auto', description: 'Enable AUTO speed configuration' },
+    ],
+  },
+  encapsulation: {
+    name: 'type', type: 'REST', description: 'Encapsulation type',
+  },
+  'ipv6 address': { name: 'prefix', type: 'WORD', literal: 'X:X:X:X::X/<0-128>',
+    description: 'IPv6 prefix' },
+  'service-policy': [
+    {
+      name: 'direction', type: 'ENUM', description: 'Policy direction',
+      values: [
+        { keyword: 'input', description: 'Assign policy-map to the input of an interface' },
+        { keyword: 'output', description: 'Assign policy-map to the output of an interface' },
+      ],
+    },
+    { name: 'policy-map', type: 'WORD', description: 'Policy-map name' },
+  ],
+  /*
+   * Le sens est un MOT-CLE et non une forme nommee sur une place : le
+   * gestionnaire reclame encore le debit et les rafales apres lui, donc
+   * une place unique laissait `rate-limit input ?` annoncer `<cr>` pour
+   * une frappe que la meme machine declare incomplete. Le mot-cle porte
+   * sa propre place, exigee, et l'annonce suit. La place du PARENT
+   * reste declaree et exigee elle aussi, sans quoi `rate-limit` seul
+   * annoncerait `<cr>` la ou le gestionnaire le declare incomplet.
+   */
+  'rate-limit': { name: 'direction', type: 'REST',
+    description: 'Direction to rate limit, then the rate and burst sizes' },
+  delay: { name: 'tens-of-microseconds', type: 'INT', range: [1, 16777215],
     description: 'Delay in tens of microseconds' },
   duplex: {
-    name: 'mode', type: 'ENUM', description: 'Duplex mode of this interface',
+    name: 'duplex', type: 'ENUM', description: 'Set duplex mode',
     values: [
-      { keyword: 'auto', description: 'Negotiate the duplex mode' },
-      { keyword: 'full', description: 'Force full duplex' },
-      { keyword: 'half', description: 'Force half duplex' },
+      { keyword: 'auto', description: 'Enable AUTO duplex configuration' },
+      { keyword: 'full', description: 'Force full duplex operation' },
+      { keyword: 'half', description: 'Force half-duplex operation' },
     ],
   },
   description: { name: 'texte', type: 'REST', literal: 'LINE',
@@ -546,14 +643,20 @@ Readonly<Record<string, ArgumentSpec | readonly ArgumentSpec[] | null>> = {
   'ip directed-broadcast': null,
   'ntp disable': null,
   'ip accounting': null,
-  'ip address': {
-    name: 'adresse', type: 'REST',
-    description: 'Address and mask, then `secondary` for an extra one',
-    alternatives: [
-      { keyword: 'A.B.C.D', description: 'IP address of this interface' },
-      { keyword: 'dhcp', description: 'Obtain the address from a DHCP server' },
-    ],
-  },
+  /*
+   * Deux places et non un reste : `ip address` exige une adresse ET un
+   * masque, et le garde-fou de parite verifie que `?` n'annonce `<cr>`
+   * que sur une frappe REELLEMENT executable. Un reste unique rendait
+   * `ip address 1.2.3.4` complet aux yeux de l'aide alors que la
+   * commande est incomplete. Le troisieme mot — `secondary` — suit les
+   * deux places, d'ou le reste facultatif.
+   */
+  'ip address': [
+    { name: 'address', type: 'IP_ADDR', description: 'IP address' },
+    { name: 'mask', type: 'SUBNET_MASK', description: 'IP subnet mask' },
+    { name: 'reste', type: 'REST', optional: true,
+      description: '`secondary` for an additional address' },
+  ],
   'ip helper-address': {
     name: 'relais', type: 'REST', description: 'Address of the DHCP server',
     alternatives: [{ keyword: 'A.B.C.D', description: 'Address of the DHCP server' }],
@@ -571,6 +674,19 @@ export function configIfSpecs(ctx: CiscoShellContext): CommandSpec[] {
       modes: MODES_INTERFACE, minPrivilege: 15,
       undoFromNegatedPaths: true,
       argumentFor: (path) => CONFIG_IF_ARGUMENTS[path],
+      /*
+       * `dot1q` est un sous-chemin du glouton `encapsulation` : le trie
+       * lui donnait sa place par une declaration d'aide separee, que le
+       * socle porte comme un mot-cle — un chemin plus long n'existant
+       * pas dans la collecte, `argumentFor` ne serait jamais consulte
+       * pour lui.
+       */
+      keywordsFor: (path) => path === 'encapsulation' ? [{
+        keyword: 'dot1q', description: 'IEEE 802.1Q Virtual LAN',
+        argument: { name: 'vlan', type: 'INT', range: [1, 4094],
+          description: 'IEEE 802.1Q VLAN ID' },
+      }] : path === 'ip address' ? IP_ADDRESS_KEYWORDS
+        : path === 'rate-limit' ? RATE_LIMIT_KEYWORDS : undefined,
     },
   );
 }
@@ -1029,12 +1145,6 @@ export function buildConfigIfCommands(trie: CommandTrie, ctx: CiscoShellContext)
     const ifName = ctx.getSelectedInterface(); if (!ifName) return '';
     const port = ctx.r().getPort(ifName);
     port?.addEigrpExtra(raw ?? `no ip split-horizon eigrp ${args.join(' ')}`);
-    return '';
-  });
-  trie.registerGreedy('no bfd echo', 'Disable BFD echo on interface', () => {
-    const ifName = ctx.getSelectedInterface(); if (!ifName) return '';
-    const pending = ctx.r()._getOSPFExtraConfig().pendingIfConfig.get(ifName);
-    if (pending) delete pending.bfdEcho;
     return '';
   });
   trie.registerGreedy('max-reserved-bandwidth', 'Max reservable bandwidth %', (args) => {

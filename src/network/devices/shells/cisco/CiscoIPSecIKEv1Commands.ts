@@ -43,9 +43,16 @@ function eng(ctx: CiscoShellContext) {
  */
 const IKEV1_GLOBAL_ARGUMENTS:
 Readonly<Record<string, ArgumentSpec | readonly ArgumentSpec[] | null>> = {
-  'crypto isakmp policy': { name: 'priorite', type: 'REST',
-    description: 'Priority of this IKE policy',
-    alternatives: [{ keyword: '<1-10000>', description: 'Priority of this IKE policy' }] },
+  /*
+   * La plage est DECLAREE et non annoncee par une alternative : une
+   * place `REST` portant `<1-10000>` en etiquette annonce une borne
+   * qu'elle n'applique pas, ce que le garde-fou
+   * `probe-plage-annoncee-est-appliquee` interdit — et il avait raison,
+   * `crypto isakmp policy 10001` etait accepte. IOS connait cette plage
+   * a l'analyse et rend le caret.
+   */
+  'crypto isakmp policy': { name: 'priorite', type: 'INT',
+    description: 'Priority of this IKE policy', range: [1, 10000] },
   'crypto isakmp key': { name: 'reste', type: 'REST',
     description: 'The key, then `address <A.B.C.D>` or `hostname <nom>`' },
   'crypto isakmp identity': {
@@ -76,6 +83,15 @@ Readonly<Record<string, ArgumentSpec | readonly ArgumentSpec[] | null>> = {
   'crypto ipsec security-association replay window-size': {
     name: 'taille', type: 'REST', description: 'Size of the anti-replay window' },
   'crypto ipsec security-association esn': null,
+  /*
+   * La place est EXIGEE : le gestionnaire refuse en dessous de trois
+   * mots, et la place facultative que l'adaptateur pose par defaut
+   * faisait annoncer `<cr>` par une commande que la meme machine
+   * declare inutilisable seule.
+   */
+  'crypto ipsec security-policy': { name: 'reste', type: 'REST',
+    description:
+      'Name, PROTECT|BYPASS|DISCARD, in|out, then src/dst/proto selectors' },
   'crypto map': { name: 'reste', type: 'REST',
     description: 'Name and sequence number, then the kind of entry' },
   'crypto dynamic-map': { name: 'reste', type: 'REST',

@@ -464,6 +464,32 @@ const VIEW_COMMANDS_KEYWORDS: ReadonlyArray<AdapterKeyword> = [
 ];
 
 
+/*
+ * Les declarations viennent de `ciscoArgumentHelp`, ou elles etaient
+ * posees sur la trie privilegiee : les porter ici est ce qui les garde
+ * VIVANTES, une declaration accrochee a un arbre vide ne decrivant plus
+ * rien. Trois d'entre elles gagnent une place `REST` la ou le trie
+ * annoncait un mot unique : le gestionnaire de `dir`, `verify` et
+ * `delete` filtre les options en `/`, donc il en accepte plusieurs et
+ * une place unique aurait refuse `dir /all flash:`.
+ */
+const FICHIER_CISCO = (nom: string, description: string): ArgumentSpec => ({
+  name: nom, type: 'REST', literal: 'WORD', description,
+});
+
+const FILESYSTEM_ARGUMENTS:
+Readonly<Record<string, ArgumentSpec | readonly ArgumentSpec[] | null>> = {
+  dir: { ...FICHIER_CISCO('filesystem', 'Filesystem or directory to list'),
+    optional: true },
+  more: FICHIER_CISCO('file', 'File to display'),
+  verify: FICHIER_CISCO('file', 'File to verify'),
+  delete: FICHIER_CISCO('file', 'File to be deleted'),
+  mkdir: FICHIER_CISCO('directory', 'Directory to create'),
+  rmdir: FICHIER_CISCO('directory', 'Directory to remove'),
+  squeeze: FICHIER_CISCO('filesystem', 'Filesystem to squeeze'),
+  pwd: null,
+};
+
 const HTTP_ARGUMENTS:
 Readonly<Record<string, ArgumentSpec | readonly ArgumentSpec[] | null>> = {
   'ip http server': null,
@@ -475,7 +501,18 @@ Readonly<Record<string, ArgumentSpec | readonly ArgumentSpec[] | null>> = {
   'ip http max-connections': { name: 'nombre', type: 'REST',
     description: 'Number of concurrent connections allowed' },
   'ip http access-class': { name: 'liste', type: 'REST',
-    description: 'Access list restricting who may connect' },
+    description: 'Access list restricting who may connect',
+    /*
+     * La forme historique est NOMMEE et non bornee : le gestionnaire
+     * accepte un nom comme un numero, et annoncer `<1-99>` promettrait
+     * une plage que `probe-plage-annoncee-est-appliquee` ferait alors
+     * appliquer — donc refuserait une liste nommee que la machine
+     * accepte.
+     */
+    alternatives: [
+      { keyword: 'WORD', description: 'Access list name or number' },
+      { keyword: 'ipv4', description: 'IPv4 access list, then its name' },
+    ] },
   'ip http authentication': { name: 'methode', type: 'REST',
     description: 'How the server authenticates a request' },
   'ip http timeout-policy': { name: 'reste', type: 'REST',
@@ -500,6 +537,27 @@ Readonly<Record<string, ArgumentSpec | readonly ArgumentSpec[] | null>> = {
     description: 'Address answered to every query' },
   'ip dns primary': { name: 'reste', type: 'REST',
     description: 'Zone, then `soa` with its name server and mailbox' },
+  /*
+   * Le gestionnaire prend PLUSIEURS serveurs — `setNameServers(args)` —
+   * donc une place unique refuserait le second ; la premiere est typee
+   * pour qu'`?` annonce `A.B.C.D` comme IOS, la suite est libre.
+   */
+  'ip name-server': [
+    { name: 'adresse', type: 'IP_ADDR', description: 'Domain server IP address' },
+    { name: 'reste', type: 'REST', optional: true,
+      description: 'Further domain server addresses' },
+  ],
+  /*
+   * `ip host <nom> <adresse>...` ou `ip host <nom> ns <adresse>` : le
+   * gestionnaire exige deux mots, donc la seconde place n'est pas
+   * facultative — sans quoi `ip host ?` annonce `<cr>` pour une frappe
+   * que la meme machine declare incomplete.
+   */
+  'ip host': [
+    { name: 'nom', type: 'WORD', description: 'Name of host' },
+    { name: 'reste', type: 'REST',
+      description: 'Host addresses, or `ns` then the name server address' },
+  ],
 };
 
 export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
@@ -2605,7 +2663,10 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
           if (!this.deviceRef) return new Map();
           return getSecurityConfig(this.d()).parserViews;
         }),
-        new CommandCanonicalizer({ triesFor: (scope) => this.arbresDe(scope) }),
+        new CommandCanonicalizer({
+          triesFor: (scope) => this.arbresDe(scope),
+          socleParts: (scope, commande) => this.socleCanonicalParts(scope, commande),
+        }),
       );
     }
     return this._autorisation;
@@ -2660,6 +2721,90 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     // un nom d'hote a joindre — donc `do write memory` refuse au niveau
     // reduit repondait par une resolution de nom.
     return this.niveauDeclareParLeSocle(cmdPart);
+  }
+
+  /**
+   * La forme canonique d'une commande que seul le socle porte.
+   *
+   * Le chemin le plus LONG gagne, comme la marche du trie : sinon
+   * `ip address` serait canonicalisee par `ip`, et une regle de niveau
+   * ecrite sur l'une couvrirait l'autre. Deux chemins de meme longueur
+   * rendent `null` — une abreviation ambigue ne doit pas faire porter
+   * la decision d'autorisation sur une commande que l'operateur n'a pas
+   * designee, ce que le canonicaliseur documente deja pour les tries.
+   */
+  private socleCanonicalParts(
+    scope: AuthScope, commande: string,
+  ): { keywords: string; full: string } | null {
+    const table = this.socleTable();
+    if (!table) return null;
+    const mots = commande.trim().toLowerCase().split(/\s+/).filter(Boolean);
+    if (mots.length === 0) return null;
+
+    const candidats: string[][] = [];
+    for (const chemin of this.cheminsDuSocle(table, scope)) {
+      if (chemin.length > mots.length) continue;
+      if (!chemin.every((mot, rang) => mot.startsWith(mots[rang]))) continue;
+      candidats.push(chemin);
+    }
+    /*
+     * Un mot TAPE EN ENTIER l'emporte sur un mot dont il n'est que le
+     * debut. Sans cette preference, `ip address` etait juge ambigu avec
+     * `ipv6 address` — `ipv6` commence bien par `ip` — donc la
+     * canonicalisation rendait `null` et la regle de niveau etait rangee
+     * sous la ligne entiere, arguments compris. C'est la meme regle que
+     * la marche du trie, qui essaie l'enfant EXACT avant les prefixes.
+     */
+    const exacts = candidats.filter(
+      chemin => chemin.every((mot, rang) => mot === mots[rang]));
+    const pool = exacts.length > 0 ? exacts : candidats;
+
+    let meilleur: string[] | null = null;
+    let ambigu = false;
+    for (const chemin of pool) {
+      if (meilleur === null || chemin.length > meilleur.length) {
+        meilleur = chemin;
+        ambigu = false;
+      } else if (chemin.length === meilleur.length
+        && chemin.join(' ') !== meilleur.join(' ')) {
+        ambigu = true;
+      }
+    }
+    if (meilleur === null || ambigu) return null;
+    return {
+      keywords: meilleur.join(' '),
+      full: [...meilleur, ...mots.slice(meilleur.length)].join(' '),
+    };
+  }
+
+  private cheminsDuSocle(table: CommandTable, scope: AuthScope): readonly string[][] {
+    if (!this.socleCheminsParPortee) {
+      const index = new Map<string, string[][]>();
+      for (const spec of table.specs()) {
+        const chemin = CiscoShellBase.keywordPathOf(spec);
+        if (chemin.length === 0) continue;
+        for (const portee of new Set(spec.modes.map(scopeForMode))) {
+          const liste = index.get(portee) ?? [];
+          liste.push(chemin);
+          index.set(portee, liste);
+        }
+      }
+      this.socleCheminsParPortee = index;
+    }
+    return this.socleCheminsParPortee.get(scope) ?? [];
+  }
+
+  private undoSansValeur(table: CommandTable, mode: string, chemin: string): boolean {
+    if (!this.socleUndoSansValeur) {
+      const vus = new Set<string>();
+      for (const spec of table.specs()) {
+        if (spec.undoRequiresArgument !== true) continue;
+        const mots = CiscoShellBase.keywordPathOf(spec).join(' ');
+        for (const m of spec.modes) vus.add(`${m} ${mots}`);
+      }
+      this.socleUndoSansValeur = vus;
+    }
+    return this.socleUndoSansValeur.has(`${mode} ${chemin}`);
   }
 
   private niveauDeclareParLeSocle(cmdPart: string): number | null {
@@ -2967,6 +3112,15 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
   }
 
   private socleInstance?: CommandTable;
+  /*
+   * Les chemins du socle, indexes par PORTEE et par MODE.
+   *
+   * `socleCanonicalParts` et l'aide des negations parcouraient la table
+   * entiere a chaque frappe et a chaque `?` ; la table ne change plus
+   * une fois construite, donc l'index se calcule une fois avec elle.
+   */
+  private socleCheminsParPortee?: Map<string, string[][]>;
+  private socleUndoSansValeur?: Set<string>;
 
   /**
    * Ce que cette plateforme declare sur le socle.
@@ -4831,7 +4985,18 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       ...this.viewSubmodeSpecs(),
       ...this.httpServerSpecs(),
       ...this.dnsConfigSpecs(),
+      ...this.fileSystemSpecs(),
     ];
+  }
+
+  protected fileSystemSpecs(): readonly CommandSpec[] {
+    return specsFromTrieRegistrations(
+      (collector) => this.registerFileSystemCommands(collector as unknown as CommandTrie),
+      {
+        modes: ['user', 'privileged'], minPrivilege: 1,
+        argumentFor: (path) => FILESYSTEM_ARGUMENTS[path],
+      },
+    );
   }
 
   protected identitySubmodeContext(): CiscoSecurityShellContext | null {
@@ -4977,6 +5142,8 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
 
   protected socleTable(): CommandTable | null {
     if (!this.socleInstance) {
+      this.socleCheminsParPortee = undefined;
+      this.socleUndoSansValeur = undefined;
       this.socleInstance = new CommandTable();
       for (const spec of this.socleSpecs()) this.socleInstance.declare(spec);
       for (const [path, legend, modes] of this.socleLegends()) {
@@ -5413,7 +5580,18 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     if (amont === null
       || !CiscoShellBase.negationSous(table, amont, this.mode)) return [];
 
+    /*
+     * `<cr>` repond de la NEGATION, pas de la forme positive.
+     *
+     * `bfd` seul s'execute, `no bfd` seul non — seule `no bfd echo` se
+     * defait — donc l'aide de la ligne niee ne doit pas reprendre le
+     * `<cr>` que la commande positive merite.
+     */
+    const negationSansValeur = amont.length > 0
+      && this.undoSansValeur(table, this.mode, amont.join(' '));
+
     return brutes.flatMap(suggestion => {
+      if (negationSansValeur && suggestion.keyword === '<cr>') return [];
       // Une VALEUR d'argument n'a pas de chemin a elle : c'est la
       // commande qui la porte qui sait se defaire, et elle vient d'etre
       // jugee. `no service ?` doit rendre les vingt-quatre services.

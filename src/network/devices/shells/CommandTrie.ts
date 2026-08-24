@@ -135,6 +135,7 @@ export interface CommandNode {
    * continue de passer par le parent.
    */
   _migre?: boolean;
+  _elague?: boolean;
   /**
    * Enregistre POUR ETRE REFUSE, donc jamais annonce.
    *
@@ -355,6 +356,18 @@ export class CommandTrie {
       delete target.minArgs;
       delete target.hintSuggestions;
       target.params = [];
+      /*
+       * Une continuation DECLAREE nomme l'argument d'une commande de ce
+       * trie : une fois celle-ci partie au socle, elle ne decrit plus
+       * rien qu'il sache faire. La laisser faisait annoncer par `?` un
+       * mot que la tabulation ne completait plus — la parite exacte que
+       * `probe-cli-help-parity-ratchet` mesure. Le marqueur sert aussi
+       * a REFUSER les declarations d'apres, `appliquerContinuations`
+       * s'executant apres l'elagage.
+       */
+      delete target._continuations;
+      delete target._autoKeywords;
+      target._elague = true;
       // Le noeud reste pour ses enfants, mais il n'est plus une
       // COMMANDE : sans ce drapeau, la marche s'y arrete et rend
       // `% Incomplete command.` la ou la commande est simplement
@@ -504,10 +517,24 @@ export class CommandTrie {
     if (node) node._neJamaisAnnoncer = true;
   }
 
+  /**
+   * Ce chemin est parti au socle : rien ne s'y accroche plus.
+   *
+   * Les decorations d'apres-coup — suites declarees, arguments decrits,
+   * arite exigee, description de noeud — s'executent APRES l'elagage,
+   * donc elles reposaient leurs mots sur des noeuds vides. `?` annoncait
+   * alors ce que plus rien n'executait, et c'est le socle qui porte
+   * desormais la declaration.
+   */
+  private estElague(path: string): boolean {
+    return this.nodeAt(path)?._elague === true;
+  }
+
   registerSuggestions(
     path: string,
     suggestions: ReadonlyArray<{ keyword: string; description: string; leadingOnly?: boolean }>,
   ): void {
+    if (this.estElague(path)) return;
     const keywords = path.split(/\s+/).map(k => k.toLowerCase());
     let node: CommandNode = this.root;
     for (const kw of keywords) {
@@ -574,6 +601,7 @@ export class CommandTrie {
     path: string,
     continuations: ReadonlyArray<string | { keyword: string; description: string; leadingOnly?: boolean }>,
   ): void {
+    if (this.estElague(path)) return;
     const keywords = path.split(/\s+/).map(k => k.toLowerCase());
     let node: CommandNode = this.root;
     for (const kw of keywords) {
@@ -1439,6 +1467,7 @@ export class CommandTrie {
   declareContinuations(path: string, keywords: readonly string[]): void {
     const node = this.nodeAt(path);
     if (!node) return;
+    if (this.estElague(path)) return;
     const deja = new Set((node._continuations ?? []).map((k) => k.toLowerCase()));
     const out = [...(node._continuations ?? [])];
     for (const k of keywords) {
@@ -1465,6 +1494,7 @@ export class CommandTrie {
    * là où l'aide doit s'améliorer.
    */
   describeArgs(path: string, specs: readonly ParamSpec[]): void {
+    if (this.estElague(path)) return;
     if (!this.attacherArgs(path, specs)) {
       this.declarationsEnAttente.push({ path, specs: [...specs] });
     }
@@ -1518,7 +1548,7 @@ export class CommandTrie {
    */
   takesNoArgument(path: string): void {
     const node = this.nodeAt(path);
-    if (node) node._noArgument = true;
+    if (node && !node._elague) node._noArgument = true;
   }
 
   private hintDescription(node: CommandNode, keyword: string): string {
@@ -1651,7 +1681,7 @@ export class CommandTrie {
    */
   describeNode(path: string, description: string): void {
     const node = this.nodeAt(path);
-    if (!node) return;
+    if (!node || node._elague) return;
     // Un nœud créé en chemin reçoit sa propre CLÉ pour description, que
     // le rendu blanchit ensuite — répéter le mot-clé ne dit rien. Les
     // deux formes valent donc « pas de description », et ne garder que
@@ -1664,7 +1694,7 @@ export class CommandTrie {
 
   requireArgs(path: string, minArgs: number): void {
     const node = this.nodeAt(path);
-    if (node) node.minArgs = minArgs;
+    if (node && !node._elague) node.minArgs = minArgs;
   }
 
   /**

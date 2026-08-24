@@ -68,13 +68,16 @@ export function dhcpClientFamily(): CommandSpec[] {
         h.dhcpClientEnable(iface, 'ip address dhcp');
         return '';
       }),
-    },
-    {
-      id: 'no-ip-address-dhcp',
-      path: ['no', 'ip', 'address', 'dhcp'],
-      description: 'Stop the DHCP client on this interface',
-      modes: CONFIG_IF, minPrivilege: 15,
-      run: (session) => withIface(session.device, (h, iface) => {
+      /*
+       * La negation est un `undo`, pas un chemin dont le premier mot
+       * serait `no` : l'analyse retire `no` avant de marcher, donc un
+       * chemin litteral `no ip address dhcp` n'etait atteignable par
+       * personne. Il ne s'est vu que le jour ou `no ip address` a quitte
+       * le trie, la forme longue tombant alors sur un `dhcp` que rien ne
+       * savait defaire.
+       */
+      undoDescription: 'Stop the DHCP client on this interface',
+      undo: (session) => withIface(session.device, (h, iface) => {
         h.dhcpClientDisable(iface);
         return '';
       }),

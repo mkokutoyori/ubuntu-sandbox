@@ -85,7 +85,8 @@ describe('la famille crypto globale reste acceptee', () => {
 
 describe('le gestionnaire garde ses refus, qui EXPLIQUENT', () => {
   it.each([
-    ['crypto isakmp policy abc', 'Invalid priority'],
+    ['crypto isakmp policy abc', 'Invalid input detected'],
+    ['crypto isakmp policy 10001', 'Invalid input detected'],
     ['crypto isakmp key SECRET', 'crypto isakmp key KEY'],
   ] as ReadonlyArray<readonly [string, string]>)(
     '`%s` explique', async (commande, attendu) => {

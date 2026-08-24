@@ -1131,6 +1131,13 @@ export function registerOSPFInterfaceCommands(configIfTrie: CommandTrie, ctx: Ci
     return '';
   });
 
+  configIfTrie.registerGreedy('no bfd echo', 'Disable BFD echo on interface', () => {
+    const ifName = ctx.getSelectedInterface(); if (!ifName) return '';
+    const pending = ctx.r()._getOSPFExtraConfig().pendingIfConfig.get(ifName);
+    if (pending) delete pending.bfdEcho;
+    return '';
+  });
+
   // Frame relay (no-op for simulation)
   configIfTrie.registerGreedy('frame-relay', 'Frame-relay configuration', (args) => {
     const ifName = ctx.getSelectedInterface();

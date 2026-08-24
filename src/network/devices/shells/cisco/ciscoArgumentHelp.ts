@@ -73,15 +73,6 @@ function describeArgumentTypes(tries: ArgumentHelpTries): void {
   tries.privileged.describeArgs('clock set', [
     { name: 'time', type: 'WORD', description: 'Current time', literal: 'hh:mm:ss' },
   ]);
-  tries.privileged.describeArgs('delete', [WORD('file', 'File to be deleted')]);
-  tries.privileged.describeArgs('dir', [
-    { ...WORD('filesystem', 'Filesystem or directory to list'), optional: true },
-  ]);
-  tries.privileged.describeArgs('more', [WORD('file', 'File to display')]);
-  tries.privileged.describeArgs('verify', [WORD('file', 'File to verify')]);
-  tries.privileged.describeArgs('mkdir', [WORD('directory', 'Directory to create')]);
-  tries.privileged.describeArgs('rmdir', [WORD('directory', 'Directory to remove')]);
-  tries.privileged.describeArgs('squeeze', [WORD('filesystem', 'Filesystem to squeeze')]);
   tries.privileged.describeArgs('configure replace', [
     WORD('url', 'Configuration file URL'),
   ]);
@@ -255,7 +246,6 @@ function describeArgumentTypes(tries: ArgumentHelpTries): void {
     ['flow monitor', 'Name of the Flexible NetFlow monitor'],
     ['flow record', 'Name of the Flexible NetFlow record'],
     ['ip prefix-list', 'Name of a prefix list'],
-    ['ip vrf', 'VRF name'],
     ['ipv6 access-list', 'Name of the IPv6 access list'],
     ['ipv6 prefix-list', 'Name of an IPv6 prefix list'],
     ['key chain', 'Name of the key chain'],

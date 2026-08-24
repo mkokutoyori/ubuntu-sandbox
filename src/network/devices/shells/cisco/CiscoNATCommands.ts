@@ -72,6 +72,13 @@ function errorMessageFor(reason: string): string {
  */
 const NAT_GLOBAL_ARGUMENTS:
 Readonly<Record<string, ArgumentSpec | readonly ArgumentSpec[] | null>> = {
+  /*
+   * `ip vrf` vit dans ce constructeur : sa place etait declaree dans
+   * `ciscoArgumentHelp`, ou elle est morte avec l'elagage, si bien que
+   * `ip vrf ?` s'est mis a annoncer `<cr>` pour une commande qui exige
+   * un nom.
+   */
+  'ip vrf': { name: 'nom', type: 'WORD', description: 'VRF name' },
   'ip nat pool': {
     name: 'reserve', type: 'REST',
     description: 'Name, first and last address, then `netmask` or `prefix-length`',
@@ -105,37 +112,8 @@ Readonly<Record<string, ArgumentSpec | readonly ArgumentSpec[] | null>> = {
   },
 };
 
-/*
- * `ip nat inside source static network <local> <global> <masque>` est
- * une forme du gestionnaire GLOUTON `… source static`, mais sa NEGATION
- * a son propre gestionnaire : le general lirait `network` comme une
- * adresse. Le trie tranchait par la longueur du chemin ; le socle traite
- * `no` comme un modificateur, donc l'annulation de la forme gloutonne
- * doit aiguiller elle-meme vers le gestionnaire qui convient.
- *
- * Les deux gestionnaires sont repris du meme constructeur plutot que
- * recopies — deux ecritures de « retirer une traduction statique »
- * pourraient diverger.
- */
-function natStaticUndo(ctx: CiscoShellContext): CommandSpec['undo'] {
-  const collecte = collectRegistrations(
-    (collector) => buildNATConfigCommands(collector as unknown as CommandTrie, ctx));
-  const general = collecte.find(e => e.path === 'no ip nat inside source static');
-  const reseau = collecte.find(e => e.path === 'no ip nat inside source static network');
-  return ((_session: unknown, args: Record<string, string>) => {
-    const mots = String(args.traduction ?? '').trim().split(/\s+/).filter(Boolean);
-    if (mots[0]?.toLowerCase() === 'network') {
-      const suite = mots.slice(1);
-      return reseau?.action(suite,
-        ['no ip nat inside source static network', ...suite].join(' ')) ?? '';
-    }
-    return general?.action(mots,
-      ['no ip nat inside source static', ...mots].join(' ')) ?? '';
-  }) as CommandSpec['undo'];
-}
-
 export function natConfigSpecs(ctx: CiscoShellContext): CommandSpec[] {
-  const specs = specsFromTrieRegistrations(
+  return specsFromTrieRegistrations(
     (collector) => buildNATConfigCommands(collector as unknown as CommandTrie, ctx),
     {
       modes: ['config'], minPrivilege: 15,
@@ -143,13 +121,6 @@ export function natConfigSpecs(ctx: CiscoShellContext): CommandSpec[] {
       argumentFor: (path) => NAT_GLOBAL_ARGUMENTS[path],
     },
   );
-  const statique = specs.find(spec =>
-    spec.path.filter((p): p is string => typeof p === 'string').join(' ')
-      === 'ip nat inside source static');
-  if (statique) {
-    (statique as { undo?: CommandSpec['undo'] }).undo = natStaticUndo(ctx);
-  }
-  return specs;
 }
 
 export function buildNATConfigCommands(trie: CommandTrie, ctx: CiscoShellContext): void {
@@ -615,7 +586,7 @@ export function buildNATInterfaceCommands(trie: CommandTrie, ctx: CiscoShellCont
 import type { CommandSpec } from '@/cli/CommandTable';
 import type { ArgumentSpec } from '@/cli/ArgumentTypes';
 import {
-  specsFromTrieRegistrations, collectRegistrations,
+  specsFromTrieRegistrations,
 } from '@/cli/commands/trieAdapter';
 import { MODES_INTERFACE } from './CiscoConfigCommands';
 
