@@ -211,6 +211,12 @@ export class DHCPClient implements IProtocolEngine {
     });
   }
 
+  private linkLocalAutoconfiguration: () => boolean = () => false;
+
+  setLinkLocalAutoconfiguration(decide: () => boolean): void {
+    this.linkLocalAutoconfiguration = decide;
+  }
+
   constructor(
     getMACForIface: (iface: string) => string,
     configureIP: (iface: string, ip: string, mask: string, gateway: string | null, origin?: 'dhcp' | 'link-local') => void,
@@ -314,7 +320,7 @@ export class DHCPClient implements IProtocolEngine {
     const mac = this.getMACForIface(iface);
     const state = this.getState(iface);
     const lines: string[] = [];
-    const { verbose = false, timeout = 30 } = options;
+    const { verbose = false } = options;
     const clientIdentifier = this.buildClientIdentifier(mac);
 
     // INIT-REBOOT (RFC 2131 §3.2): a client that already knows an address —
@@ -348,16 +354,10 @@ export class DHCPClient implements IProtocolEngine {
 
     const channels = this.channelsFor(iface);
 
-    // If no channel at all (no wire transport injected AND no registered servers)
     if (channels.length === 0) {
-      // Verbose mode or explicit timeout: show failure
-      if (verbose || options.timeout !== undefined) {
-        this.noOffersFallback(iface, state, lines, verbose);
-        return lines.join('\n');
-      }
-
-      // Non-verbose without timeout: auto-assign simulated lease (simulator convenience)
-      return this.autoAssignLease(iface, state);
+      this.noOffersFallback(iface, state, lines, verbose);
+      if (!state.lease) this.autoconfigureLinkLocal(iface, state);
+      return lines.join('\n');
     }
 
     // SELECTING: broadcast DISCOVER (wire channel first), pick first OFFER
@@ -402,11 +402,8 @@ export class DHCPClient implements IProtocolEngine {
     }
 
     if (!offer) {
-      // APIPA fallback (RFC 3927) when nothing answered anywhere.
-      if (this.connectedServers.length === 0 && !verbose && options.timeout === undefined) {
-        return this.autoAssignLease(iface, state);
-      }
       this.noOffersFallback(iface, state, lines, verbose);
+      if (!state.lease) this.autoconfigureLinkLocal(iface, state);
       return lines.join('\n');
     }
 
@@ -865,13 +862,11 @@ export class DHCPClient implements IProtocolEngine {
     return lines.join('\n');
   }
 
-  /**
-   * Assign an APIPA (Automatic Private IP Addressing) address when no
-   * DHCP server is available. RFC 3927: Link-local addressing (169.254.x.x).
-   *
-   * The IP is derived deterministically from the MAC address so the same
-   * client always gets the same APIPA address.
-   */
+  private autoconfigureLinkLocal(iface: string, state: DHCPClientIfaceState): void {
+    if (!this.linkLocalAutoconfiguration()) return;
+    this.autoAssignLease(iface, state);
+  }
+
   private autoAssignLease(iface: string, state: DHCPClientIfaceState): string {
     const mac = this.getMACForIface(iface);
     const macParts = mac.split(':');
@@ -907,17 +902,16 @@ export class DHCPClient implements IProtocolEngine {
     };
 
     state.lease = lease;
-    state.lastKnownLease = { ...lease };
+    state.lastKnownLease = null;
     state.state = 'BOUND';
     state.processRunning = true;
-    state.logs.push(`DHCPDISCOVER on ${iface}`);
     state.logs.push(`No DHCP server available - using APIPA`);
     state.logs.push(`bound to ${ip} (link-local)`);
 
     this.configureIP(iface, ip, mask, null, 'link-local');
     this.setupLeaseTimers(iface, state);
 
-    return ''; // Non-verbose: silent success
+    return '';
   }
 
   /**

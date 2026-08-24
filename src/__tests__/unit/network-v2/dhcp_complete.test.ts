@@ -26,6 +26,21 @@ beforeEach(() => {
   vi.useRealTimers();
 });
 
+async function labWithDhcpServer(): Promise<{ router: CiscoRouter; pc: LinuxPC }> {
+  const router = new CiscoRouter('R1');
+  const pc = new LinuxPC('linux-pc', 'PC1');
+  for (const c of [
+    'enable', 'configure terminal',
+    'interface GigabitEthernet0/0', 'ip address 192.168.1.1 255.255.255.0', 'no shutdown', 'exit',
+    'ip dhcp pool LAN', 'network 192.168.1.0 255.255.255.0', 'default-router 192.168.1.1',
+    'dns-server 8.8.8.8', 'lease 1', 'exit',
+    'ip dhcp excluded-address 192.168.1.1', 'end',
+  ]) await router.executeCommand(c);
+  const cable = new Cable('dhcp-lab');
+  cable.connect(router.getPort('GigabitEthernet0/0')!, pc.getPort('eth0')!);
+  return { router, pc };
+}
+
 // ═══════════════════════════════════════════════════════════════════
 // GROUP 1: Unit Tests — DHCP Client/Server States
 // ═══════════════════════════════════════════════════════════════════
@@ -321,12 +336,12 @@ describe('Group 2: Functional — DORA Process', () => {
     });
 
     it('should release IP and go back to INIT state', async () => {
-      const pc = new LinuxPC('linux-pc', 'PC1');
-      
+      const { pc } = await labWithDhcpServer();
+
       // Get DHCP lease first
       await pc.executeCommand('sudo dhclient eth0');
       const beforeRelease = await pc.executeCommand('ip addr show eth0 | grep "inet "');
-      expect(beforeRelease).toContain('169.254.');
+      expect(beforeRelease).toContain('192.168.1.');
 
       // Release the lease
       const releaseOutput = await pc.executeCommand('sudo dhclient -r eth0');
@@ -334,7 +349,7 @@ describe('Group 2: Functional — DORA Process', () => {
 
       // Verify no IP
       const afterRelease = await pc.executeCommand('ip addr show eth0 | grep "inet "');
-      expect(afterRelease).not.toContain('169.254.');
+      expect(afterRelease).not.toContain('192.168.1.');
       
       // State should be INIT
       const state = pc.getDHCPState('eth0');
@@ -410,8 +425,8 @@ describe('Group 3: CLI — DHCP Configuration & Monitoring', () => {
   // Linux DHCP Client Commands
   describe('Linux: DHCP Client Commands', () => {
     it('should configure interface for DHCP via ifconfig', async () => {
-      const pc = new LinuxPC('linux-pc', 'PC1');
-      
+      const { pc } = await labWithDhcpServer();
+
       // Release any existing lease
       await pc.executeCommand('sudo dhclient -r eth0');
       
@@ -426,7 +441,7 @@ describe('Group 3: CLI — DHCP Configuration & Monitoring', () => {
     });
 
     it('should show DHCP lease information', async () => {
-      const pc = new LinuxPC('linux-pc', 'PC1');
+      const { pc } = await labWithDhcpServer();
       
       // Get lease
       await pc.executeCommand('sudo dhclient eth0');
