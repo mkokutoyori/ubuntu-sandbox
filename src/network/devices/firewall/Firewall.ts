@@ -3,6 +3,9 @@ import { Port } from '../../hardware/Port';
 import {
   ETHERTYPE_ARP,
   ETHERTYPE_IPV4,
+  ETHERTYPE_IPV6,
+  IPv6Address,
+  type IPv6Packet,
   IPAddress,
   IP_PROTO_UDP,
   MACAddress,
@@ -83,6 +86,10 @@ import { AuthPortal, type RemoteAuthOutcome } from './auth/AuthPortal';
 import type { FirewallPortals, PortalPorts } from './auth/FirewallPortals';
 import { remoteAuthenticate, type AdminAccountDraft } from './identity/AdminAccounts';
 import type { PasswordHistory } from './identity/PasswordHistory';
+import { FirewallIpv6 } from './l3/FirewallIpv6';
+import { FirewallPing6 } from './diag/FirewallPing6';
+import { getDefaultScheduler } from '@/events/Scheduler';
+import type { Ipv6Counters } from '../router/IPv6DataPlane';
 import type { RadiusClientAgent } from '../../radius/RadiusClientAgent';
 import type { TacacsClientAgent } from '../../tacacs/TacacsClientAgent';
 import type { IdentityTable } from './identity/IdentityTable';
@@ -173,6 +180,21 @@ export class Firewall extends Equipment {
   private readonly vdomLinks: VdomLinkTable;
   private readonly bridges = new Map<string, BridgeFdb>();
   private readonly fragments = new FragmentReassembly();
+
+  private readonly ipv6 = new FirewallIpv6({
+    id: this.id,
+    name: this.name,
+    ports: () => this.portMap(),
+    sendFrame: (iface, frame) => { this.sendFrame(iface, frame); },
+    bus: () => this.getBus(),
+    scheduler: () => getDefaultScheduler(),
+    managementAllows: (iface, service) => this.ipv6.allowsAccess(iface, service),
+    onEchoReply: (payload) => { this.ping6.observeReply(payload); },
+  });
+
+  private readonly ping6 = new FirewallPing6(() => this.ipv6.dataPlane());
+
+  private readonly ipv6Routes = new Map<string, string>();
   private readonly revisions: RevisionStore;
   private revisionOnLogout = false;
   private configSnapshot?: () => string;
@@ -1155,6 +1177,11 @@ export class Firewall extends Equipment {
       this.handleArpFrame(portName, frame.payload as ARPPacket);
       return;
     }
+    if (frame.etherType === ETHERTYPE_IPV6) {
+      this.ipv6.dataPlane().processPacket(
+        portName, frame.payload as IPv6Packet, frame.srcMAC);
+      return;
+    }
     if (frame.etherType === ETHERTYPE_IPV4) {
       this.handleIpv4Frame(portName, frame.payload as IPv4Packet, frame);
     }
@@ -1170,6 +1197,49 @@ export class Firewall extends Equipment {
   getLdbMonitors(): LdbMonitorTable { return this.ldbMonitors; }
 
   getFragmentReassembly(): FragmentReassembly { return this.fragments; }
+
+  private portMap(): Map<string, Port> {
+    const map = new Map<string, Port>();
+    for (const port of this.getPorts()) map.set(port.getName(), port);
+    return map;
+  }
+
+  getIpv6(): FirewallIpv6 { return this.ipv6; }
+
+  getIpv6Counters(): Ipv6Counters { return this.ipv6.counterView(); }
+
+  configureIpv6Interface(iface: string, address: string, prefixLength: number): boolean {
+    return this.ipv6.dataPlane()
+      .configureInterface(iface, new IPv6Address(address), prefixLength);
+  }
+
+  setIpv6AllowAccess(iface: string, services: readonly string[]): void {
+    this.ipv6.setAllowAccess(iface, services);
+  }
+
+  getPing6(): FirewallPing6 { return this.ping6; }
+
+  applyIpv6StaticRoute(route: {
+    id: string; destination: string; prefixLength: number;
+    gateway: string; iface: string; distance: number; enabled: boolean;
+  }): void {
+    this.removeIpv6StaticRoute(route.id);
+    if (!route.enabled) return;
+    this.ipv6Routes.set(route.id, route.destination);
+    this.ipv6.dataPlane().addStaticRoute(
+      new IPv6Address(route.destination), route.prefixLength,
+      new IPv6Address(route.gateway), route.iface, route.distance);
+  }
+
+  removeIpv6StaticRoute(id: string): void {
+    const destination = this.ipv6Routes.get(id);
+    if (destination === undefined) return;
+    this.ipv6Routes.delete(id);
+    this.ipv6.dataPlane().setRoutingTable(
+      this.ipv6.dataPlane().getRoutingTableInternal()
+        .filter(route => !(route.type !== 'connected'
+          && route.prefix.toString() === destination)));
+  }
 
   getRealServerPool(name: string): RealServerPool | undefined {
     return this.serverPools.get(name);

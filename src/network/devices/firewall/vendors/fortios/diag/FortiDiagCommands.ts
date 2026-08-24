@@ -11,6 +11,7 @@ import { parseAuthFilter, renderAuthList } from './authListRenderer';
 import { renderIkeGatewayList, renderVpnTunnelList } from './vpnTunnelRenderer';
 import { unquote } from '../runtime/FortiNavigator';
 import { referencesTo, renderReference } from '../runtime/references';
+import { renderIpv6AddressList, renderIpv6NeighborCache } from './ipv6Renderers';
 import type { FortiConfigTree } from '../runtime/FortiConfigTree';
 import { formatLogRecord, type FortiLogContext, type FortiLogFormat } from '../log/fortiLogFormat';
 import { type LoggedIdentity, trafficDenyLog } from '../log/trafficLog';
@@ -81,6 +82,7 @@ export function runDiagnose(rest: readonly string[], deps: FortiDiagDeps): strin
   if (family === 'firewall') return diagnoseIprope(tail, deps);
   if (family === 'sniffer') return diagnoseSniffer(tail, deps);
   if (family === 'vpn') return diagnoseVpn(tail, deps);
+  if (family === 'ipv6') return diagnoseIpv6(tail, deps);
   if (family === 'ip') return diagnoseIp(tail, deps);
   if (family === 'test') return diagnoseTest(tail, deps);
   if (family === 'netlink') return diagnoseNetlink(tail, deps);
@@ -157,6 +159,16 @@ function diagnoseSnmp(rest: readonly string[], deps: FortiDiagDeps): string {
     return FortiMessages.unknownPath(`snmp ${rest.join(' ')}`);
   }
   return renderIpFrags(deps.fw.getFragmentReassembly().counters());
+}
+
+function diagnoseIpv6(rest: readonly string[], deps: FortiDiagDeps): string {
+  if (rest[0] === 'address' && rest[1] === 'list') {
+    return renderIpv6AddressList(deps.fw.getPorts());
+  }
+  if (rest[0] === 'neighbor-cache' && rest[1] === 'list') {
+    return renderIpv6NeighborCache(deps.fw.getIpv6().dataPlane().getNeighborCache());
+  }
+  return FortiMessages.unknownPath(`ipv6 ${rest.join(' ')}`);
 }
 
 function diagnoseIp(rest: readonly string[], deps: FortiDiagDeps): string {

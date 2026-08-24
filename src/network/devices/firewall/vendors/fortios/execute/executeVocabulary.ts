@@ -11,6 +11,7 @@ export const FORTI_EXECUTE_COMMANDS: readonly FortiExecuteCommand[] = Object.fre
   { name: 'ha', help: 'Cluster operations.' },
   { name: 'log', help: 'Log operations.' },
   { name: 'ping', help: 'Send ICMP echo requests.' },
+  { name: 'ping6', help: 'Send IPv6 ICMP echo requests.' },
   { name: 'ping-options', help: 'Set ICMP echo request (ping) options.' },
   { name: 'reboot', help: 'Reboot this device.' },
   { name: 'restore', help: 'Restore the configuration from a remote server.' },

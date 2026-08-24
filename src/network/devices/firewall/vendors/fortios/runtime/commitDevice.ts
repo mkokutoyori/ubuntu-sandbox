@@ -179,6 +179,18 @@ export function buildCommitDevice(
         return passwordHistoryRefusal(
           admin, secret, environment, fw.getPasswordHistory());
       },
+      applyIpv6Address(iface, address, prefixLength) {
+        return fw.configureIpv6Interface(iface, address, prefixLength);
+      },
+      applyIpv6AllowAccess(iface, services) {
+        fw.setIpv6AllowAccess(iface, services);
+      },
+      applyIpv6StaticRoute(route) {
+        fw.applyIpv6StaticRoute(route);
+      },
+      removeIpv6StaticRoute(id) {
+        fw.removeIpv6StaticRoute(id);
+      },
       refuseBoundInterface(iface, excludingTable) {
         if (iface.length === 0) return null;
         const holders = (environment.referenceHolders?.(['system', 'interface'], iface)

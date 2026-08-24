@@ -28,6 +28,7 @@ import {
 import { FortiValidator } from './runtime/FortiValidator';
 import { renderPath, renderWholeConfig } from './render/showRenderer';
 import { renderRevisionList } from './render/revisionRenderer';
+import { renderIpv6RoutingTable } from './diag/ipv6Renderers';
 import { renderGet } from './render/getRenderer';
 import { buildCommitDevice } from './runtime/commitDevice';
 import { vipAddress } from '../../model/AddressObject';
@@ -670,6 +671,9 @@ export class FortiShell {
         && view !== 'bgp') return null;
       return renderRoutingTable(this.fw.getRouteTable(), view);
     }
+    if (path === 'router info6 routing-table') {
+      return renderIpv6RoutingTable(this.fw.getIpv6().dataPlane().getRoutingTable());
+    }
     if (path === 'router info bgp summary') {
       return renderBgpSummary(this.fw.getRouting().getBgp().summaryFacts());
     }
@@ -1005,6 +1009,10 @@ export class FortiShell {
         return tail.length === 0
           ? FortiMessages.incomplete('a destination')
           : this.fw.runPing(tail[0]);
+      case 'ping6':
+        return tail.length === 0
+          ? FortiMessages.incomplete('a destination')
+          : this.fw.getPing6().run(tail[0]);
       case 'ping-options': return this.executePingOptions(tail);
       case 'backup': return this.executeBackup(tail);
       case 'restore': return this.executeRestore(tail);
