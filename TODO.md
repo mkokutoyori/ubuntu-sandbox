@@ -121,6 +121,22 @@ elles.
 
 ## Postes Linux
 
+### [dhcp] `dhclient -t N` est accepte, et aucun delai ne le lit
+La duree passee a `-t` (et le `-w` qui la porte a 60) traverse
+`Dhclient.ts` jusqu'a `DHCPClient.requestLease` et n'est lue par personne.
+Elle ne l'a jamais ete comme un DELAI : son seul lecteur, jusqu'au
+correctif de l'auto-attribution de lien-local, etait la condition qui
+DESACTIVAIT l'APIPA — une valeur qui servait a autre chose que ce
+qu'elle nomme. **Mesure** : `dhclient -t 1 eth0` sans serveur rend le
+meme texte et le meme etat que `dhclient eth0`, immediatement.
+**Pourquoi ce n'est pas ferme ici** : la livraison des trames est
+SYNCHRONE dans ce simulateur — un DISCOVER est repondu dans le meme tour
+ou jamais — donc un delai n'a rien a mesurer et l'implementer poserait
+une valeur decorative, exactement ce que ce depot refuse. L'option reste
+acceptee parce qu'un vrai `dhclient` l'accepte, et la refuser ferait
+diverger la CLI. Elle redeviendra implementable le jour ou `Cable`
+portera une latence.
+
 ### [sysctl] une cle inconnue est acceptee, et `sysctl -a` ne liste rien
 `sysctl -w zorglub.inexistant=1` est accepte en silence et ne range
 rien ; la relecture rend une chaine vide. Une vraie machine repond

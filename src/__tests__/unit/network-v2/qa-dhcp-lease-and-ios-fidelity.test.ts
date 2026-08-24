@@ -83,6 +83,7 @@ describe('a Windows client and its default gateway', () => {
     await win.executeCommand('ipconfig /renew');
     expect(win.getDefaultGatewayString()).toBe('192.168.1.1');
     await killServer(r, g0);
+    await win.executeCommand('ipconfig /release');
 
     const out = await win.executeCommand('ipconfig /renew');
     expect(out).toMatch(/autoconfiguration IP address 169\.254\./);

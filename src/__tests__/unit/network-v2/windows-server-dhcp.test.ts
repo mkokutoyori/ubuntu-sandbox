@@ -177,10 +177,13 @@ describe('Simulated AD authorization (Add-DhcpServerInDC)', () => {
     await run(ps(dhcp), 'Add-DhcpServerv4Scope -Name LAN -StartRange 192.168.80.100 -EndRange 192.168.80.200 -SubnetMask 255.255.255.0');
 
     winClient.getDHCPClient().requestLease('eth0', { timeout: 1 });
-    expect(winClient.getDHCPClient().getState('eth0').state).not.toBe('BOUND');
+    expect(winClient.getDHCPClient().getState('eth0').lease?.ipAddress ?? '')
+      .not.toMatch(/^192\.168\.80\./);
 
     await run(ps(dhcp), 'Add-DhcpServerInDC');
     winClient.getDHCPClient().requestLease('eth0');
     expect(winClient.getDHCPClient().getState('eth0').state).toBe('BOUND');
+    expect(winClient.getDHCPClient().getState('eth0').lease!.ipAddress)
+      .toMatch(/^192\.168\.80\./);
   });
 });

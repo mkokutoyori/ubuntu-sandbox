@@ -106,6 +106,7 @@ describe('Group 1: Bug Fixes', () => {
         () => {},
         () => {},
       );
+      client.setLinkLocalAutoconfiguration(() => true);
       // No servers registered
 
       client.requestLease('eth0');
@@ -121,6 +122,8 @@ describe('Group 1: Bug Fixes', () => {
     it('should derive APIPA address deterministically from MAC', () => {
       const client1 = new DHCPClient(() => 'AA:BB:CC:DD:EE:01', () => {}, () => {});
       const client2 = new DHCPClient(() => 'AA:BB:CC:DD:EE:01', () => {}, () => {});
+      client1.setLinkLocalAutoconfiguration(() => true);
+      client2.setLinkLocalAutoconfiguration(() => true);
 
       client1.requestLease('eth0');
       client2.requestLease('eth0');
@@ -132,6 +135,7 @@ describe('Group 1: Bug Fixes', () => {
 
     it('APIPA address should be in valid range (169.254.1.0 - 169.254.254.255)', () => {
       const client = new DHCPClient(() => 'FF:FF:FF:FF:FF:FF', () => {}, () => {});
+      client.setLinkLocalAutoconfiguration(() => true);
       client.requestLease('eth0');
 
       const ip = client.getState('eth0').lease!.ipAddress;

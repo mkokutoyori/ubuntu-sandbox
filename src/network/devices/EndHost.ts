@@ -898,6 +898,7 @@ export abstract class EndHost extends Equipment {
         this.onDhcpLeaseReleased(iface);
       },
     );
+    this.dhcpClient.setLinkLocalAutoconfiguration(() => this.linkLocalAutoconfigurationEnabled());
     this.dhcpClient.setEventBus(this.getBus());
     this.dhcpClient.setHostnameProvider(() => this.getHostname());
     this.dhcpClient.setForwardRegistrationPolicy(() => this.registersOwnForwardDns());
@@ -3464,6 +3465,10 @@ export abstract class EndHost extends Equipment {
    */
   protected isInterfaceOperationallyUp(portName: string, port: Port): boolean {
     return port.isOperationallyUp();
+  }
+
+  protected linkLocalAutoconfigurationEnabled(): boolean {
+    return false;
   }
 
   // ─── High-level Ping (used by terminal commands) ──────────────

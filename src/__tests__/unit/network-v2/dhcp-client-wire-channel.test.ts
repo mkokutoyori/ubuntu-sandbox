@@ -53,16 +53,15 @@ describe('DHCPClient over the wire channel', () => {
     expect([...bindings.keys()]).toContain(state.lease!.ipAddress);
   });
 
-  it('a cut cable really interrupts DHCP — APIPA instead of a pool lease', async () => {
+  it('a cut cable really interrupts DHCP — no lease at all', async () => {
     const { h1, cable } = await buildLab();
     const client = h1.getDHCPClient();
 
     cable.disconnect();
     client.requestLease('eth0');
 
-    const state = client.getState('eth0');
-    // RFC 3927 link-local fallback — NOT an address from the router pool.
-    expect(state.lease?.ipAddress).toMatch(/^169\.254\./);
+    expect(client.getState('eth0').lease).toBeNull();
+    expect(client.getState('eth0').state).toBe('INIT');
   });
 
   it('DHCPRELEASE travels the wire and frees the server-side binding', async () => {
