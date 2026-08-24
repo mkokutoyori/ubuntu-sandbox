@@ -259,11 +259,31 @@ export function specsFromTrieRegistrations(
         }) as CommandSpec['undo'],
       }),
     });
-    // Une NEGATION ne reprend pas la valeur que la forme positive exige :
-    // `no password` se tape seul. Le chemin nu n'existe alors QUE
-    // negativement — le socle porte deja cette notion — sinon `password`
-    // tout court passerait pour une commande complete.
-    if (negation !== undefined && argument !== null && argument.optional !== true) {
+    /*
+     * Une NEGATION ne reprend pas la valeur que la forme positive
+     * exige : `no ip ospf cost` se tape SEUL, la ou `ip ospf cost`
+     * demande un nombre. Le chemin nu n'existe alors QUE negativement —
+     * le socle porte deja cette notion — sinon `ip ospf cost` tout court
+     * passerait pour une commande complete.
+     *
+     * Cette forme nue valait pour le seul mecanisme `undoFrom` ; elle
+     * manquait a `undoFromNegatedPaths`, si bien qu'une famille migree
+     * par celui-ci perdait en silence toutes ses negations tapees sans
+     * valeur. Les deux mecanismes decrivent le meme fait et doivent donc
+     * produire la meme commande.
+     */
+    const negationPropre = negations.get(entry.path);
+    const negationDeLaCommande = negation ?? negationPropre;
+    /*
+     * Ce qui compte est qu'une place soit EXIGEE, pas que la DERNIERE le
+     * soit : `ip ospf network <genre> [reste]` finit par une place
+     * facultative et exige pourtant un genre, donc `no ip ospf network`
+     * se tape seul comme les autres.
+     */
+    const exigeUneValeur = places.some(place => place.optional !== true);
+    if (negationDeLaCommande !== undefined && exigeUneValeur) {
+      const cible = negationDeLaCommande;
+      const argvNu = cible === negationPropre ? [] : [...words];
       specs.push({
         id: `no-${[options.modes[0], ...words].join('-')}`,
         path: [...words],
@@ -275,7 +295,7 @@ export function specsFromTrieRegistrations(
         ...(contexte ? { reachableWhen: contexte } : {}),
         run: (() => '') as CommandSpec['run'],
         undo: ((_session: unknown) =>
-          negation.action([...words], [negation.path, ...words].join(' '))
+          cible.action(argvNu, [cible.path, ...argvNu].join(' '))
         ) as CommandSpec['undo'],
       });
     }

@@ -277,6 +277,9 @@ const REGLAGES_3: ReadonlyArray<string> = [
   'no ip ospf authentication',
   'no ip ospf authentication-key',
   'no ip ospf message-digest-key',
+  'no ip ospf retransmit-interval',
+  'no ip ospf transmit-delay',
+  'no ip ospf mtu-ignore',
   'bfd interval 100 min_rx 100 multiplier 3',
   'ip nhrp network-id 1',
   'ip nhrp holdtime 300',
@@ -331,6 +334,31 @@ describe('une borne connue de l\'analyse est refusee au caret, comme sur IOS', (
  * priorite 0-255, les quatre minuteurs 1-65535 secondes, identifiant de
  * cle 1-255 — et les quatre types de reseau avec les mots d'IOS.
  */
+/*
+ * Une NEGATION se tape SEULE, la ou la forme positive exige une valeur.
+ * Le socle ne fabriquait cette forme nue que pour l'un de ses deux
+ * mecanismes de negation, si bien qu'une famille migree par l'autre
+ * perdait en silence tous ses `no <commande>` — la suite de
+ * serialisation l'a attrape, pas ce releve. Ce que le cas verifie n'est
+ * pas l'acceptation mais l'EFFET : le reglage doit disparaitre de la
+ * configuration rendue.
+ */
+describe('`no <reglage>` seul rend vraiment son defaut', () => {
+  it.each([
+    ['ip ospf cost 42', 'no ip ospf cost', 'ip ospf cost'],
+    ['ip ospf priority 7', 'no ip ospf priority', 'ip ospf priority'],
+    ['ip ospf hello-interval 5', 'no ip ospf hello-interval', 'ip ospf hello-interval'],
+    ['ip ospf network point-to-point', 'no ip ospf network', 'ip ospf network'],
+  ] as ReadonlyArray<readonly [string, string, string]>)(
+    '`%s` puis `%s` retire la ligne', async (pose, defait, ligne) => {
+      const device = await surIface();
+      await device.executeCommand(pose);
+      await device.executeCommand(defait);
+      await device.executeCommand('end');
+      expect(await device.executeCommand('show running-config')).not.toContain(ligne);
+    });
+});
+
 describe('`?` annonce les bornes reelles d\'OSPF', () => {
   const ATTENDU_OSPF: ReadonlyArray<readonly [string, string]> = [
     ['ip ospf cost ', '<1-65535>'],
