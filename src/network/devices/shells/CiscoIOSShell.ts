@@ -151,6 +151,7 @@ import { registerIPSecShowCommands, cryptoShowSpecs } from './cisco/CiscoIPSecSh
 import {
   buildSecurityConfigCommands, buildSecurityInterfaceCommands,
   buildSecuritySubmodeCommands, buildSecurityShowCommands, securityInterfaceSpecs,
+  securityShowSpecs,
   classMapSubmodeSpecs, policyMapSubmodeSpecs, policyClassSubmodeSpecs,
   controlPlaneSubmodeSpecs, zoneSubmodeSpecs, zonePairSubmodeSpecs,
   timeRangeSubmodeSpecs, trustpointSubmodeSpecs,
@@ -384,6 +385,7 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
       ...natConfigSpecs(this),
       ...natExecSpecs(() => this.d()),
       ...netflowEemShowSpecs(() => this.d()),
+      ...securityShowSpecs(() => this.d()),
       ...pimGlobalSpecs({ r: () => this.d() }),
       ...ipsecGlobalSpecs(this),
       ...ikev2GlobalSpecs(this),

@@ -1960,6 +1960,52 @@ export function buildIdentityShowCommands(
   return vues;
 }
 
+/*
+ * Un nom de classificateur, de politique ou de plage horaire est LIBRE :
+ * la place l'annonce en `WORD` et la vue dit elle-meme qu'elle n'a rien
+ * a montrer quand il ne designe rien — c'est ce qui distingue une vue
+ * qui FILTRE d'une commande qui refuse.
+ *
+ * `show ip cef` et `show policy-map interface` gardent une place
+ * GLOUTONNE facultative : leurs gestionnaires ignorent en silence ce
+ * qu'ils ne reconnaissent pas, donc une place typee refuserait au caret
+ * ce que la machine avale.
+ */
+const SECURITY_SHOW_ARGUMENTS:
+Readonly<Record<string, ArgumentSpec | readonly ArgumentSpec[] | null>> = {
+  'show crypto pki trustpoints': null,
+  'show crypto pki certificates': null,
+  'show crypto key mypubkey rsa': null,
+  'show policy-map control-plane': null,
+  'show zone security': null,
+  'show zone-pair security': null,
+  'show policy-map type inspect zone-pair': null,
+  'show ip traffic': null,
+  'show parameter-map type inspect': { name: 'nom', type: 'WORD', optional: true,
+    description: 'Name of the inspect parameter-map' },
+  'show policy-map': { name: 'nom', type: 'WORD', optional: true,
+    description: 'Policy-map name' },
+  'show class-map': { name: 'nom', type: 'WORD', optional: true,
+    description: 'Class-map name' },
+  'show time-range': { name: 'nom', type: 'WORD', optional: true,
+    description: 'Time-range name' },
+  'show ip cef': { name: 'prefixe', type: 'REST', optional: true,
+    description: 'Prefix to display',
+    alternatives: [{ keyword: 'A.B.C.D', description: 'Prefix to display' }] },
+  'show policy-map interface': { name: 'interface', type: 'REST', optional: true,
+    description: 'Interface the policy-map is applied on' },
+};
+
+export function securityShowSpecs(getRouter: () => Router): CommandSpec[] {
+  return specsFromTrieRegistrations(
+    (collector) => buildSecurityShowCommands(collector as unknown as CommandTrie, getRouter),
+    {
+      modes: ['user', 'privileged'], minPrivilege: 1,
+      argumentFor: (path) => SECURITY_SHOW_ARGUMENTS[path],
+    },
+  );
+}
+
 export function buildSecurityShowCommands(trie: CommandTrie, getRouter: () => Router): void {
   const sec = () => getSecurityConfig(getRouter());
 
