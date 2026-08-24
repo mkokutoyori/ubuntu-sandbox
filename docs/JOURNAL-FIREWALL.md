@@ -2700,6 +2700,72 @@ refusé sont remplacés par un cas qui l'affirme disponible.
 
 ---
 
+## Périmètre pris — FortiOS phase 23 (le journal dit D'OÙ, et le tampon ALERTE)
+
+**Agent `mandeng`.** Deux entrées `[journal]` de `TODO.md`, et **les
+deux reports sont faux** — chacun pour une raison différente, et c'est
+la re-mesure qui l'établit.
+
+**Entrée 1 — « l'origine d'une modification est toujours `jsconsole` ».**
+Le report dit : « le shell ne sait pas par quelle porte il est atteint —
+`FortiShell` est construit une fois par équipement et les sessions
+distantes le partagent ». **C'est faux** :
+`FortiGate.createManagementCli(user)` fait `new FortiShell(this)` — un
+shell PAR SESSION, depuis la phase 14. Les trois portes (onglet du
+terminal, SSH, telnet) portent déjà chacune une `source` (l'adresse du
+pair) jusqu'à `createCli`. Il ne manque que de la transmettre et que
+`administrativeInterface()` la lise au lieu de rendre `'jsconsole'` en
+dur.
+
+Vocabulaire attesté, et rien de plus : la note technique de Fortinet
+écrit que le changement fait par la console graphique porte
+`ui=jsconsole` et celui fait en SSH `ui=ssh` ; la documentation
+d'administration montre la forme parenthésée `jsconsole(2.0.225.112)`.
+
+**Entrée 2 — « le seuil de remplissage du tampon mémoire n'alerte
+pas ».** Le report dit qu'écrire trois événements « inventerait deux
+identifiants », la référence ne portant qu'un `22023`. **Il cherchait
+dans la mauvaise famille.** Les trois existent, en 32xxx :
+
+| Seuil | Identifiant | Symbole |
+|---|---|---|
+| `full-first-warning-threshold` (75 %) | 32023 | `LOG_ID_MEM_LOG_FIRST_FULL` |
+| `full-second-warning-threshold` (90 %) | 32042 | `LOG_ID_MEM_LOG_SECOND_FULL` |
+| `full-final-warning-threshold` (95 %) | 32043 | `LOG_ID_MEM_LOG_FINAL_FULL` |
+
+Et `22023` n'est pas « Memory log first full » mais
+`LOG_ID_LEAVE_EXTREME_LOW_MEM_MODE` — autre sujet. Le sens de 32023 est
+publié : « Memory log full over first warning level ».
+
+Mesure de départ :
+
+- **`administrativeInterface()` rend `'jsconsole'` en dur.** Une
+  modification faite en SSH et une faite dans l'onglet donnent la même
+  ligne, donc l'audit ne distingue pas les deux.
+- **Les trois seuils sont acceptés, rendus, et lus par personne.** Le
+  tampon est pourtant borné pour de bon depuis la phase 16 (il compte ses
+  octets et réserve sa RAM), donc la matière est là : il manque de
+  comparer le remplissage aux seuils et d'émettre.
+
+**Fichiers que la phase 23 prendra** :
+
+```
+firewall/logging/LogFullEvent.ts     ← les trois événements (socle, neuf)
+firewall/logging/FirewallLogStore.ts ← le franchissement, mesuré
+firewall/mgmt/FirewallCliServer.ts   ← la porte descend jusqu'au shell
+firewall/mgmt/ManagementWiring.ts    ← idem
+firewall/Firewall.ts                 ← `createManagementCli(user, origin)`
+vendors/fortios/FortiShell.ts        ← `administrativeInterface()` la lit
+vendors/fortios/schema/log.ts        ← les seuils atteignent le magasin
+```
+
+**Une décision d'avance, parce qu'elle sera posée de toute façon** : un
+franchissement s'annonce UNE FOIS, pas à chaque enregistrement écrit
+au-dessus du seuil — sinon le tampon se remplirait de ses propres
+alarmes. Le retour sous le seuil réarme.
+
+---
+
 ## Périmètre pris — FortiOS phase 22 (le battement de cœur porte une VOIE DE COMMANDE)
 
 **Agent `mandeng`.** Deux entrées `[ha]` de `TODO.md` reportent la même
