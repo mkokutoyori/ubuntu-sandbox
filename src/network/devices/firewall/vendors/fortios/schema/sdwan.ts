@@ -196,6 +196,11 @@ export const SYSTEM_SDWAN: FortiTableSpec = {
   ],
   children: [SDWAN_ZONE, SDWAN_MEMBER, SDWAN_HEALTH_CHECK, SDWAN_SERVICE],
   onCommit(object, context) {
+    for (const member of object.childEntries('members')) {
+      const refusal = context.device.refuseBoundInterface(
+        member.effective('interface')[0] ?? '', 'system.sdwan');
+      if (refusal) return refusal;
+    }
     return context.device.applySdwan({
       enabled: object.effective('status')[0] === 'enable',
       zones: object.childEntries('zone').map(zone => zone.key),

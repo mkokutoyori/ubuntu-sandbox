@@ -2769,6 +2769,55 @@ transcription ci-dessus porte `-3` là où ce module rend `-61` pour tout
 refus. Les deux LIGNES de message sont reprises telles quelles ; le code
 suit celui du module, faute d'une capture par famille de message qui
 permettrait de les apparier un par un. Inscrit dans `TODO.md`.
+### Livré
+
+Les deux entrées `[sdwan]` sont retirées de `TODO.md`.
+
+**Une seule cause pour les trois défauts, et le correctif est une seule
+phrase** : `SdwanService.apply()` RÉCONCILIE. Zones, membres, contrôles
+de santé et services qui ont disparu de la configuration disparaissent
+de la table ; ce qui y entre y entre. `Firewall.applySdwan` rejoue
+ensuite les routes de zone par `applySdwanStaticRoute`, le chemin qui
+sait déjà décider entre une route de zone et une route ordinaire — pas
+une seconde écriture de cette décision.
+
+**La protection de l'entrée 1 n'a demandé AUCUN moteur neuf, et c'est le
+point important.** Ma première écriture a créé
+`firewall/model/InterfaceReferences.ts` : un index de références nourri à
+la main par les politiques, les routes, les zones et les membres. Il a
+été SUPPRIMÉ avant commit, parce que `vendors/fortios/runtime/
+references.ts` existe depuis longtemps, fait la même chose en mieux — il
+parcourt l'ARBRE de configuration en lisant les `referenceTo` déclarés
+par le schéma, donc il couvre toutes les tables au lieu des quatre que
+j'avais énumérées — et rend déjà les deux formes de ligne attestées. Il
+n'avait qu'une porte, `diagnose sys checkused`. Il en a deux :
+`FortiConfigTree.referenceHolders()` pour le refus, et
+`diagnose sys cmdb refcnt show <path.object.attribute> <value>`, la vraie
+commande FortiOS, dont les lignes sont attestées :
+
+```
+entry used by child table srcintf:name 'X' of table firewall.policy:policyid '6'
+entry used by table router.static:seq-num '1'
+```
+
+Il n'y a PAS de ligne de total — une référence par ligne, rien du tout
+s'il n'y en a aucune. La sonde l'avait supposée et la vérification l'a
+démentie ; c'est la seule chose qu'elle a corrigée dans mes suppositions.
+
+Le refus vaut dans les **deux sens** : une interface encore nommée par
+une politique, une route statique ou une `config system zone` est refusée
+comme membre SD-WAN, et une interface déjà membre est refusée dans une
+`config system zone` — la réciproque est celle dont j'ai la
+transcription. La table qui commet est exclue de son propre décompte,
+sans quoi re-commettre un membre existant le refuserait lui-même.
+
+`fortios-sdwan-membres.test.ts` (13 cas) est discriminé par
+`git stash push -- src/network/` : 11 tombent avant correctif, et les 2
+qui passent des deux côtés sont nommés dans l'en-tête — deux
+`not.toContain` sur une commande qui n'existait pas, donc une absence de
+sortie et une sortie vide y sont indiscernables.
+`e2e/fortigate-sdwan-membres.spec.ts` (3 cas) rejoue le refus, la vue des
+références et le développement de la route dans le vrai navigateur.
 
 ---
 

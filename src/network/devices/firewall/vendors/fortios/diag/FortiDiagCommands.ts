@@ -100,6 +100,31 @@ export function runDiagnose(rest: readonly string[], deps: FortiDiagDeps): strin
   return FortiMessages.unknownPath(rest.join(' '));
 }
 
+function diagnoseCmdb(rest: readonly string[], deps: FortiDiagDeps): string {
+  if (rest[0] !== 'refcnt' || rest[1] !== 'show') {
+    return FortiMessages.unknownPath(`sys cmdb ${rest.join(' ')}`);
+  }
+
+  const datasource = unquote(rest[2] ?? '');
+  const given = unquote(rest[3] ?? '');
+  if (datasource.length === 0) {
+    return FortiMessages.incomplete('`<path.object.attribute> <value>`');
+  }
+
+  const words = datasource.split(/[.:]/);
+  const tree = deps.configTree();
+  for (let take = Math.min(words.length, 4); take >= 1; take--) {
+    const path = words.slice(0, take);
+    if (!tree.spec(path)) continue;
+    const key = given.length > 0 ? given : words.slice(take + 1).join('.');
+    if (key.length === 0) {
+      return FortiMessages.incomplete('`<path.object.attribute> <value>`');
+    }
+    return referencesTo(tree, path, key).map(renderReference).join('\n');
+  }
+  return FortiMessages.unknownPath(datasource);
+}
+
 function diagnoseCheckused(rest: readonly string[], deps: FortiDiagDeps): string {
   const datasource = unquote(rest[0] ?? '');
   const key = unquote(rest[1] ?? '');
@@ -229,6 +254,7 @@ function diagnoseSession(rest: readonly string[], deps: FortiDiagDeps): string {
   if (rest[0] === 'ha') return diagnoseHa(rest.slice(1), deps);
   if (rest[0] === 'top') return renderSysTop(deps.fw);
   if (rest[0] === 'checkused') return diagnoseCheckused(rest.slice(1), deps);
+  if (rest[0] === 'cmdb') return diagnoseCmdb(rest.slice(1), deps);
   if (rest[0] === 'ntp') {
     if (rest[1] !== 'status') return FortiMessages.unknownPath(`sys ${rest.join(' ')}`);
     return renderNtpStatus(deps.fw);

@@ -1,4 +1,5 @@
 import { resolveFortiTimezone } from '../schema/timezones';
+import { FortiMessages } from '../FortiMessages';
 import type { Firewall } from '../../../Firewall';
 import type { AntivirusFailopen } from '../../../health/SystemLoad';
 import type { FortiCommitDevice, FortiSchemaEnvironment } from '../schema/types';
@@ -177,6 +178,17 @@ export function buildCommitDevice(
       refusePasswordReuse(admin, secret) {
         return passwordHistoryRefusal(
           admin, secret, environment, fw.getPasswordHistory());
+      },
+      refuseBoundInterface(iface, excludingTable) {
+        if (iface.length === 0) return null;
+        const holders = (environment.referenceHolders?.(['system', 'interface'], iface)
+          ?? []).filter(line => !line.includes(` ${excludingTable}`));
+        if (holders.length === 0) return null;
+        return FortiMessages.notInDatasource(iface,
+          `"${iface}" is still referenced — `
+          + `\`diagnose sys cmdb refcnt show system.interface.name ${iface}\` `
+          + `lists ${holders.length === 1 ? 'it' : `all ${holders.length}`}; `
+          + 'remove the reference before adding the interface here.');
       },
       refuseReuseLimit(limit) {
         const kept = passwordHistoryThreshold(environment);
