@@ -155,6 +155,60 @@ const MOTS_CLES_QUEUE_ROUTE: ReadonlySet<string> = new Set([
   'preference', 'tag', 'description', 'track', 'permanent',
 ]);
 
+export interface QueueRouteStatiqueVrp {
+  preference?: number;
+  tag?: number;
+  description?: string;
+  track?: string;
+  permanent: boolean;
+}
+
+/**
+ * Le sentinelle rendu quand un mot-cle de queue est present mais que sa
+ * valeur ne tient pas — VRP repond alors `Wrong parameter.` et non le
+ * message du mot inattendu, qui designerait le mot-cle lui-meme.
+ */
+export const QUEUE_PARAMETRE_INVALIDE = '\u0000preference';
+
+export function lireQueueRouteStatiqueVrp(
+  args: readonly string[], cursor: number,
+): QueueRouteStatiqueVrp | string {
+  let preference: number | undefined;
+  let tag: number | undefined;
+  let description: string | undefined;
+  let track: string | undefined;
+  let permanent = false;
+  for (let i = cursor; i < args.length; i++) {
+    const tok = args[i];
+    if (tok === 'preference' && args[i + 1]) {
+      preference = parseInt(args[++i], 10);
+      // La preference d'une route statique VRP va de 1 a 255 : 0 et
+      // 256 etaient acceptes, et 0 aurait fait une route inderogeable.
+      if (isNaN(preference) || preference < 1 || preference > 255) {
+        return QUEUE_PARAMETRE_INVALIDE;
+      }
+    }
+    else if (tok === 'tag' && args[i + 1]) { tag = parseInt(args[++i], 10); }
+    else if (tok === 'description' && args[i + 1]) {
+      description = args.slice(i + 1).join(' '); i = args.length;
+    } else if (tok === 'track' && args[i + 1]) {
+      const parts: string[] = [];
+      while (i + 1 < args.length && !['preference', 'tag', 'description', 'permanent'].includes(args[i + 1])) {
+        parts.push(args[++i]);
+      }
+      track = parts.join(' ');
+    } else if (tok === 'permanent') {
+      permanent = true;
+    } else {
+      // La queue de `ip route-static` est une suite de mots-cles, et
+      // celui-ci n'en est pas un : il tombait dans le vide, la route
+      // etait posee comme si le mot n'avait pas ete tape.
+      return tok;
+    }
+  }
+  return { preference, tag, description, track, permanent };
+}
+
 export function cmdIpRouteStatic(router: Router, args: string[], ligne?: string): string {
   if (args.length < 3) return 'Error: Incomplete command.';
   try {
@@ -163,40 +217,13 @@ export function cmdIpRouteStatic(router: Router, args: string[], ligne?: string)
     const { vpnInstance, network, isDefault, mask, ifaceName, nextHop, cursor } = tete;
     if (nextHop === null) return 'Error: Incomplete command.';
 
-    let preference: number | undefined;
-    let tag: number | undefined;
-    let description: string | undefined;
-    let track: string | undefined;
-    let permanent = false;
-    for (let i = cursor; i < args.length; i++) {
-      const tok = args[i];
-      if (tok === 'preference' && args[i + 1]) {
-        preference = parseInt(args[++i], 10);
-        // La preference d'une route statique VRP va de 1 a 255 : 0 et
-        // 256 etaient acceptes, et 0 aurait fait une route inderogeable.
-        if (isNaN(preference) || preference < 1 || preference > 255) {
-          return 'Error: Wrong parameter.';
-        }
-      }
-      else if (tok === 'tag' && args[i + 1]) { tag = parseInt(args[++i], 10); }
-      else if (tok === 'description' && args[i + 1]) {
-        description = args.slice(i + 1).join(' '); i = args.length;
-      } else if (tok === 'track' && args[i + 1]) {
-        const parts: string[] = [];
-        while (i + 1 < args.length && !['preference', 'tag', 'description', 'permanent'].includes(args[i + 1])) {
-          parts.push(args[++i]);
-        }
-        track = parts.join(' ');
-      } else if (tok === 'permanent') {
-        permanent = true;
-      } else {
-        // La queue de `ip route-static` est une suite de mots-cles, et
-        // celui-ci n'en est pas un : il tombait dans le vide, la route
-        // etait posee comme si le mot n'avait pas ete tape.
-        return refuseMotInattenduVrp(
-          ligne ?? `ip route-static ${args.join(' ')}`, tok);
-      }
+    const queue = lireQueueRouteStatiqueVrp(args, cursor);
+    if (typeof queue === 'string') {
+      return queue === QUEUE_PARAMETRE_INVALIDE
+        ? 'Error: Wrong parameter.'
+        : refuseMotInattenduVrp(ligne ?? `ip route-static ${args.join(' ')}`, queue);
     }
+    const { preference, tag, description, track, permanent } = queue;
 
     const opts = { preference, tag, description, track, vpnInstance, permanent, iface: ifaceName || undefined };
     if (isDefault) {

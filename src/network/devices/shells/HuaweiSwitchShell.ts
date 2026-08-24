@@ -65,7 +65,10 @@ import {
   runningConfigNATHuawei,
 } from './huawei/HuaweiNATCommands';
 import type { HuaweiShellContext } from './huawei/HuaweiConfigCommands';
-import { analyserTeteRouteStatiqueVrp } from './huawei/HuaweiConfigCommands';
+import {
+  analyserTeteRouteStatiqueVrp, lireQueueRouteStatiqueVrp, QUEUE_PARAMETRE_INVALIDE,
+} from './huawei/HuaweiConfigCommands';
+import { VRP_STATIC_PREFERENCE } from '../SwitchSvi';
 import {
   registerHuaweiCommonSecurity, registerHuaweiCommonSecurityDisplay,
 } from './huawei/HuaweiCommonSecurity';
@@ -128,6 +131,18 @@ function vrpUserInterfaceHeader(label: string): string | null {
   const m = /^([a-z-]+)(\d+)(?:-(\d+))?$/.exec(label);
   if (!m) return null;
   return `user-interface ${m[1]} ${m[2]}${m[3] ? ` ${m[3]}` : ''}`;
+}
+
+/**
+ * VRP compte les DESTINATIONS — les prefixes distincts — a part des
+ * routes. Les deux nombres etaient le meme tant qu'un prefixe ne pouvait
+ * porter qu'une route ; ils divergent des qu'on ecrit une route de
+ * secours, et c'est justement ce que ce compteur existe pour montrer.
+ */
+function destinationsDistinctes(
+  rows: ReadonlyArray<{ network: { toString(): string }; mask: { toCIDR(): number } }>,
+): number {
+  return new Set(rows.map(r => `${r.network}/${r.mask.toCIDR()}`)).size;
 }
 
 export class HuaweiSwitchShell implements ISwitchShell {
@@ -1287,17 +1302,24 @@ export class HuaweiSwitchShell implements ISwitchShell {
       this.swRef?.setIpRoutingEnabled(true);
       return '';
     });
-    this.systemTrie.registerGreedy('ip route-static', 'Add a static route', (args) => {
-      if (!this.swRef || args.length < 3) return 'Error: Incomplete command.';
-      let net: IPAddress, mask: SubnetMask, gw: IPAddress;
-      try { net = new IPAddress(args[0]); } catch { return `Error: Invalid network ${args[0]}.`; }
+    this.systemTrie.registerGreedy('ip route-static', 'Add a static route', (args, ligne) => {
+      const sw = this.swRef;
+      if (!sw) return 'Error: Incomplete command.';
       try {
-        if (/^\d+$/.test(args[1])) mask = SubnetMask.fromCIDR(parseInt(args[1], 10));
-        else mask = new SubnetMask(args[1]);
-      } catch { return `Error: Invalid mask ${args[1]}.`; }
-      try { gw = new IPAddress(args[2]); } catch { return `Error: Invalid gateway ${args[2]}.`; }
-      this.swRef.addStaticRoute(net, mask, gw);
-      return '';
+        const tete = analyserTeteRouteStatiqueVrp(commeRouteur(sw), args, true);
+        if (typeof tete === 'string') return tete;
+        if (!tete.nextHop) return 'Error: Incomplete command.';
+        const queue = lireQueueRouteStatiqueVrp(args, tete.cursor);
+        if (typeof queue === 'string') {
+          return queue === QUEUE_PARAMETRE_INVALIDE
+            ? 'Error: Wrong parameter.'
+            : refuseMotInattenduVrp(ligne ?? `ip route-static ${args.join(' ')}`, queue);
+        }
+        sw.addStaticRoute(tete.network, tete.mask, tete.nextHop, queue.preference);
+        return '';
+      } catch (e) {
+        return `Error: ${(e as Error).message}`;
+      }
     });
 
     this.systemTrie.registerGreedy('undo ip route-static', 'Remove a static route', (args) => {
@@ -1308,7 +1330,9 @@ export class HuaweiSwitchShell implements ISwitchShell {
         if (args.length > 1) {
           return refuseMotInattenduVrp(`undo ip route-static ${args.join(' ')}`, args[1]);
         }
-        for (const r of [...sw.getStaticRoutes()]) sw.removeStaticRoute(r.network, r.mask);
+        for (const r of [...sw.getStaticRoutes()]) {
+          sw.removeStaticRoute(r.network, r.mask, r.nextHop);
+        }
         return '';
       }
       try {
@@ -1319,7 +1343,7 @@ export class HuaweiSwitchShell implements ISwitchShell {
           r.network.equals(network) && r.mask.toCIDR() === mask.toCIDR()
           && (nextHop === null || r.nextHop.equals(nextHop)));
         if (!vise) return 'Error: Route not found.';
-        sw.removeStaticRoute(vise.network, vise.mask);
+        sw.removeStaticRoute(vise.network, vise.mask, vise.nextHop);
         return '';
       } catch (e) {
         return `Error: ${(e as Error).message}`;
@@ -2450,12 +2474,12 @@ export class HuaweiSwitchShell implements ISwitchShell {
       const header = 'Route Flags: R - relay, D - download to fib\n' +
         '------------------------------------------------------------------------------\n' +
         'Routing Tables: Public\n' +
-        `         Destinations : ${rows.length}       Routes : ${rows.length}\n\n` +
+        `         Destinations : ${destinationsDistinctes(rows)}       Routes : ${rows.length}\n\n` +
         'Destination/Mask    Proto   Pre  Cost      Flags NextHop         Interface\n';
       const lines = rows.map(r => {
         const dest = `${r.network}/${r.mask.toCIDR()}`.padEnd(20);
         const proto = (r.proto === 'connected' ? 'Direct' : 'Static').padEnd(8);
-        const pre = (r.proto === 'connected' ? '0' : '60').padEnd(5);
+        const pre = String(r.proto === 'connected' ? 0 : r.preference ?? 60).padEnd(5);
         const nh = (r.nextHop ? r.nextHop.toString() : r.network.toString()).padEnd(16);
         return `${dest}${proto}${pre}0         D     ${nh}${r.iface}`;
       });
@@ -4149,7 +4173,8 @@ export class HuaweiSwitchShell implements ISwitchShell {
 
     const routes = sw.getStaticRoutes?.() ?? [];
     const lignesRoutes = routes.map(
-      route => `ip route-static ${route.network} ${route.mask} ${route.nextHop}`);
+      route => `ip route-static ${route.network} ${route.mask} ${route.nextHop}`
+        + (route.preference === VRP_STATIC_PREFERENCE ? '' : ` preference ${route.preference}`));
     if (lignesRoutes.length > 0) blocs.push(lignesRoutes);
 
     const vues = new Map<string, string[]>();
