@@ -319,24 +319,6 @@ consultation que le moteur de politiques ne tient pas. La politique retenue
 EST deja nommee dans la trace (`Allowed by Policy-2`), donc l'option
 n'apporterait qu'un texte fabrique.
 
-### [durcissement] `set reuse-password disable` est refuse
-Le reglage existe sur un vrai FortiGate et interdit de reprendre un ancien
-mot de passe.
-**Mesure** : la commande rend `Command fail` en nommant l'absence
-d'historique.
-**Report** : il faudrait garder les N derniers mots de passe de chaque
-compte — donc un magasin de secrets historises, ce qu'aucun equipement de
-ce depot ne fait aujourd'hui. `min-change-characters` est dans le meme cas
-et pour la meme raison (il compare au mot de passe PRECEDENT).
-
-### [durcissement] la banniere d'apres-connexion ne demande pas d'etre acceptee
-Un vrai FortiOS affiche la banniere `post_admin-disclaimer-text` puis
-demande de l'accepter, et refuse la session sans acceptation.
-**Mesure** : la banniere s'affiche, la session s'ouvre sans rien demander.
-**Report** : c'est un pas d'interaction de plus dans l'enchainement de
-connexion (`buildLoginSteps`), donc un branchement de refus a ecrire ; le
-tutoriel n'emprunte que la banniere d'avant-connexion.
-
 ### [durcissement] `config system replacemsg` ne porte que le groupe `admin`
 Un vrai FortiGate en a une vingtaine (`auth`, `http`, `ftp`, `mail`,
 `spam`, `alertmail`, `sslvpn`, `nac-quar`, `traffic-quota`...).

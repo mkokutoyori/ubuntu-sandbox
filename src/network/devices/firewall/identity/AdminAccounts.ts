@@ -2,6 +2,7 @@ import type { TcpStack } from '../../../tcp/TcpStack';
 import { dialLdap } from '../../windows/server/ad/ldap/LdapClient';
 import { trustHostAllows, type AccessMatrix } from '../authz/AccessMatrix';
 import type { IdentitySource } from './IdentityTable';
+import type { PasswordHistory } from './PasswordHistory';
 
 export interface AdminAccountDraft {
   readonly name: string;
@@ -20,6 +21,7 @@ export interface LdapBindTarget {
 
 export function applyAdminAccount(
   access: AccessMatrix, secrets: Map<string, string>, admin: AdminAccountDraft,
+  history?: PasswordHistory,
 ): void {
   access.setAdmin({
     name: admin.name,
@@ -32,6 +34,7 @@ export function applyAdminAccount(
 
   if (admin.password === undefined) return;
   secrets.set(admin.name, admin.password);
+  history?.remember(admin.name, admin.password);
 }
 
 export function authenticateAdmin(

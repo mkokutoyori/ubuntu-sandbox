@@ -18,6 +18,9 @@ import type {
   TelnetVtyShell,
 } from '../../../protocols/telnet/ITelnetServerContext';
 import type { ManagementPorts } from './ManagementAccess';
+import {
+  BANNER_ACCEPT_PROMPT, BannerAcceptance, type LoginBannerStage,
+} from './LoginBanners';
 
 export interface ManagementCli {
   execute(line: string): string;
@@ -38,6 +41,7 @@ export interface FirewallCliServerDeps {
   onLogin(user: string, source: string): void;
   onLogout(user: string): void;
   onAuthFailure(user: string, source: string): void;
+  bannerLines(stage: LoginBannerStage): readonly string[];
 }
 
 export class FirewallCliServer {
@@ -134,18 +138,33 @@ class FirewallSshServerContext implements ISshServerContext {
         }),
       };
     }
+    const disclaimer = new BannerAcceptance(this.deps.bannerLines('post'));
     return {
       execute: async (line: string) => {
+        if (disclaimer.awaiting()) {
+          const accepted = disclaimer.answer(line) === 'accepted';
+          if (!accepted) this.deps.onLogout(userCtx.username);
+          return { stdout: '', stderr: '', exitCode: 0, sessionEnded: !accepted };
+        }
         const ends = closesSession(line, cli.getPrompt());
         const stdout = renderedLine(cli.execute(line));
         if (ends) this.deps.onLogout(userCtx.username);
         return { stdout, stderr: '', exitCode: 0, sessionEnded: ends };
       },
-      getPrompt: () => cli.getPrompt(),
+      getPrompt: () => (disclaimer.awaiting() ? BANNER_ACCEPT_PROMPT : cli.getPrompt()),
       getCompletions: cli.completions ? (line: string) => [...cli.completions!(line)] : undefined,
+      subscribeAsyncOutput: (sink) => {
+        if (disclaimer.awaiting()) queueMicrotask(() => sink(disclaimer.message()));
+        return () => undefined;
+      },
       supportsInlineHelp: true,
       posixShell: false,
     };
+  }
+
+  getBanner(): string | null {
+    const lines = this.deps.bannerLines('pre');
+    return lines.length === 0 ? null : lines.join('\n');
   }
 
   getMotd(): string { return ''; }
@@ -182,6 +201,7 @@ class FirewallSshServerContext implements ISshServerContext {
 
 class FirewallTelnetServerContext implements ITelnetServerContext {
   private cli: ManagementCli | null = null;
+  private disclaimer = new BannerAcceptance([]);
 
   constructor(
     private readonly deps: FirewallCliServerDeps,
@@ -190,7 +210,15 @@ class FirewallTelnetServerContext implements ITelnetServerContext {
   ) {}
 
   hostname(): string { return this.deps.hostname(); }
-  banner(): string | null { return null; }
+  banner(): string | null {
+    const lines = this.deps.bannerLines('pre');
+    return lines.length === 0 ? null : lines.join('\n');
+  }
+
+  motd(): string | null {
+    return this.disclaimer.awaiting() ? this.disclaimer.message() : null;
+  }
+
   authHeader(): string | null { return null; }
   authPrompt(): TelnetAuthPrompt { return 'username-password'; }
 
@@ -216,15 +244,22 @@ class FirewallTelnetServerContext implements ITelnetServerContext {
     this.cli = this.deps.createCli(username ?? '', `telnet(${this.source})`);
     const cli = this.cli;
     if (!cli) return null;
+    this.disclaimer = new BannerAcceptance(this.deps.bannerLines('post'));
+    const disclaimer = this.disclaimer;
     let ended = false;
     return {
       execute: (raw: string) => {
+        if (disclaimer.awaiting()) {
+          ended = disclaimer.answer(raw) === 'refused';
+          if (ended) this.deps.onLogout(username ?? '');
+          return '';
+        }
         ended = closesSession(raw, cli.getPrompt());
         const rendered = renderedLine(cli.execute(raw));
         if (ended) this.deps.onLogout(username ?? '');
         return rendered;
       },
-      getPrompt: () => cli.getPrompt(),
+      getPrompt: () => (disclaimer.awaiting() ? BANNER_ACCEPT_PROMPT : cli.getPrompt()),
       lastEndedSession: () => ended,
     };
   }

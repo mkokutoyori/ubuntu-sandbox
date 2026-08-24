@@ -116,9 +116,14 @@ export const SYSTEM_ADMIN: FortiTableSpec = {
     text('comments', 'Comment.'),
   ],
   onCommit(object, context) {
+    const secret = object.effective('password')[0];
+    if (secret !== undefined && secret.length > 0) {
+      const refusal = context.device.refusePasswordReuse(object.key, secret);
+      if (refusal) return refusal;
+    }
     context.device.applyAdminAccount({
       name: object.key,
-      password: object.effective('password')[0],
+      password: secret,
       profile: object.effective('accprofile')[0] ?? 'no_access',
       vdoms: [...object.effective('vdom')],
       trustHosts: readTrustHosts(object),

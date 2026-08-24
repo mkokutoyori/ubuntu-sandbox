@@ -82,6 +82,7 @@ import { AccessMatrix } from './authz/AccessMatrix';
 import { AuthPortal, type RemoteAuthOutcome } from './auth/AuthPortal';
 import type { FirewallPortals, PortalPorts } from './auth/FirewallPortals';
 import { remoteAuthenticate, type AdminAccountDraft } from './identity/AdminAccounts';
+import type { PasswordHistory } from './identity/PasswordHistory';
 import type { RadiusClientAgent } from '../../radius/RadiusClientAgent';
 import type { TacacsClientAgent } from '../../tacacs/TacacsClientAgent';
 import type { IdentityTable } from './identity/IdentityTable';
@@ -415,6 +416,7 @@ export class Firewall extends Equipment {
       onManagementAuthFailure: (user) => {
         this.management.noteAuthFailure(user);
       },
+      loginBannerLines: (stage) => this.loginBanners.lines(stage),
     });
     this.portals = mgmt.portals;
     this.portal = mgmt.portals.auth;
@@ -829,6 +831,8 @@ export class Firewall extends Equipment {
   startAuthPortal(): boolean { return this.portals.startAuth(); }
 
   applyAdminAccount(admin: AdminAccountDraft): void { this.management.applyAdmin(admin); }
+
+  getPasswordHistory(): PasswordHistory { return this.management.passwordHistory(); }
 
   adminNames(): readonly string[] { return this.access.adminNames(); }
 

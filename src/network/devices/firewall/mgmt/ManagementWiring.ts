@@ -11,6 +11,7 @@ import { buildFirewallHa, type FirewallHa } from '../ha/FirewallHa';
 import { buildFirewallNtp, type FirewallNtp } from './FirewallNtp';
 import { CaptivePortalRedirect } from '../auth/CaptivePortalRedirect';
 import { FirewallCliServer, type ManagementCli } from './FirewallCliServer';
+import type { LoginBannerStage } from './LoginBanners';
 import type { ManagementPorts } from './ManagementAccess';
 
 export const HA_COMMAND_SOURCE = 'ha-cluster';
@@ -47,6 +48,7 @@ export interface ManagementHost {
   onManagementLogin(user: string, source: string): void;
   onAdminLogout(user: string): void;
   onManagementAuthFailure(user: string, source: string): void;
+  loginBannerLines(stage: LoginBannerStage): readonly string[];
 }
 
 export interface ManagementServices {
@@ -114,6 +116,7 @@ export function buildManagementServices(host: ManagementHost): ManagementService
     onLogin: (user, source) => { host.onManagementLogin(user, source); },
     onLogout: (user) => { host.onAdminLogout(user); },
     onAuthFailure: (user, source) => { host.onManagementAuthFailure(user, source); },
+    bannerLines: (stage) => host.loginBannerLines(stage),
   });
 
   return Object.freeze({ portals, ha, ntp, captivePortal, cli });
