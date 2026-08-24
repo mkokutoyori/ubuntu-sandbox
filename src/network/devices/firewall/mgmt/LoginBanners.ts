@@ -6,6 +6,26 @@ export const ADMIN_DISCLAIMER_MESSAGES: Readonly<Record<LoginBannerStage, string
     post: 'post_admin-disclaimer-text',
   });
 
+export const BANNER_ACCEPT_PROMPT = "(Press 'a' to accept): ";
+export const BANNER_ACCEPT_KEY = 'a';
+
+export class BannerAcceptance {
+  private pending: boolean;
+
+  constructor(private readonly text: readonly string[]) {
+    this.pending = text.length > 0;
+  }
+
+  awaiting(): boolean { return this.pending; }
+
+  message(): string { return this.text.join('\n'); }
+
+  answer(line: string): 'accepted' | 'refused' {
+    this.pending = false;
+    return line.trim().toLowerCase() === BANNER_ACCEPT_KEY ? 'accepted' : 'refused';
+  }
+}
+
 export class LoginBanners {
   private readonly shown = new Map<LoginBannerStage, boolean>();
   private readonly buffers = new Map<string, string>();

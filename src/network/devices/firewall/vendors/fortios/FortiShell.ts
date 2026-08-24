@@ -507,7 +507,7 @@ export class FortiShell {
   }
 
   private commitDevice(): FortiCommitDevice {
-    return buildCommitDevice(this.fw);
+    return buildCommitDevice(this.fw, this.tree);
   }
 
   private candidatesFor(targets: readonly string[]): readonly EnumValue[] {

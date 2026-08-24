@@ -292,6 +292,8 @@ export interface FortiCommitDevice {
   applyIpsGlobal(settings: FortiIpsGlobalSettings): void;
   applyLdbMonitor(monitor: FortiLdbMonitorPatch): void;
   applyFragmentMemoryThreshold(megabytes: number): void;
+  refusePasswordReuse(admin: string, secret: string): string | null;
+  refuseReuseLimit(limit: number): string | null;
   removeLdbMonitor(name: string): void;
   applyBalancedVip(vip: FortiBalancedVipPatch): string | void;
   applyReplacementMessage(message: string, buffer: string): void;

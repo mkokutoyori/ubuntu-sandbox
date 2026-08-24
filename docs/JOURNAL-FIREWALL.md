@@ -2755,6 +2755,71 @@ décrivent des pages servies par des fonctions que ce pare-feu n'a pas, et
 une table acceptée dont le texte ne s'affiche nulle part serait le décor
 que ce dépôt passe son temps à défaire.
 
+### Livré
+
+Les deux entrées `[durcissement]` sont retirées de `TODO.md`.
+
+**La bannière.** `BannerAcceptance` (`mgmt/LoginBanners.ts`) porte
+l'acceptation en attente et les deux portes la lisent :
+`FirewallSshServerContext.getBanner()` rend la bannière d'avant-connexion
+par le mécanisme d'annonce pré-authentification que la pile SSH portait
+déjà (RFC 4252 §5.4 — la bannière part après que le nom est offert et
+avant que le mot de passe soit demandé, ce qui est exactement l'ordre
+d'un vrai FortiGate en CLI), et `FirewallTelnetServerContext.banner()`
+cesse de rendre `null`. La bannière d'APRÈS-connexion passe par
+`motd()` côté telnet et, côté SSH, par la sortie asynchrone que le
+canal poussait déjà pour les traces `debug` — `getMotd()` est déclarée
+sur `ISshServerContext`, implémentée par quatre contextes et **lue par
+personne**, donc s'appuyer dessus aurait été s'appuyer sur un accesseur
+mort.
+
+**Le texte est celui de la vraie machine, pas une invention** : le
+FortiGate écrit la bannière puis `(Press 'a' to accept):`, transcription
+lue sur `rancid-discuss` (octobre 2018) et confirmée par les rapports
+oxidized #2021, netmiko #2775 et paramiko #2034, qui la reconnaissent
+tous par cette même chaîne. Tant que la réponse n'est pas donnée,
+l'invite du shell EST cette question — donc `FGT #` n'apparaît pas et la
+session n'est pas ouverte. **Ce que la documentation Fortinet ne dit
+pas**, et c'est écrit ici plutôt que passé sous silence : ce qui se
+produit si l'on répond autre chose. La règle retenue est que seule la
+lettre `a` accepte et que toute autre réponse FERME la session — c'est la
+seule lecture compatible avec « must be accepted before proceeding », et
+c'est aussi ce que rapportent les outils d'automatisation, dont les
+sauvegardes ÉCHOUENT au lieu de rester en attente.
+
+**L'historique.** `identity/PasswordHistory.ts` garde les secrets par
+compte, alimenté par `applyAdminAccount` — donc au point où un mot de
+passe est réellement accepté, pas à côté. `ManagementPlane` le détient
+comme il détient déjà `secrets`, et `Firewall.getPasswordHistory()` est
+la seule porte.
+
+**Deux sémantiques que la première écriture avait fausses, et que la
+vérification a corrigées** :
+
+- **`reuse-password-limit` n'est pas une profondeur de mémoire** mais un
+  NOMBRE DE REPRISES : « Number of times the password for system
+  administrators or local users can be reused (0 - 20, default = 0) »
+  (FortiOS 7.6.0, *Customizable password reuse thresholds*). La
+  profondeur est un autre réglage, `user-history-password-threshold`
+  (3-15, défaut 3) sous `config system global`, qui n'existait pas ici et
+  est ajouté ; la limite ne peut pas la dépasser, et `refuseReuseLimit`
+  le refuse en le nommant. Écrire la limite comme une profondeur aurait
+  donné une machine qui refuse l'inverse de ce qu'on lui demande.
+- **`min-change-characters` ne compare pas position par position** mais
+  compte les caractères du nouveau mot de passe ABSENTS de l'ancien
+  (« Minimum number of unique characters in new password which do not
+  exist in old password »). La différence est mesurable et un cas la
+  mesure : un mot de passe RETOURNÉ diffère à presque toutes les
+  positions et n'apporte aucun caractère neuf — la première écriture
+  l'aurait accepté, la vraie machine le refuse.
+
+`fortios-bannieres-et-historique.test.ts` (15 cas) est discriminé par
+`git stash push -- src/network/` : 10 tombent avant correctif, et les 5
+qui passent des deux côtés sont nommés dans l'en-tête du fichier avec la
+raison pour laquelle aucun ne prouve le mécanisme.
+`e2e/fortigate-bannieres.spec.ts` (2 cas) rejoue la pose de la bannière
+et le refus d'un mot de passe déjà employé dans le vrai navigateur.
+
 ---
 
 ## Périmètre pris — FortiOS phase 23 (le journal dit D'OÙ, et le tampon ALERTE)
