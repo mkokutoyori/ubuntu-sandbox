@@ -403,7 +403,7 @@ export class Firewall extends Equipment {
         .some(r => (r.authUsers?.length ?? 0) > 0 || (r.authGroups?.length ?? 0) > 0),
       portalUsesHttps: () => this.authPortalSecureHttp,
       managementPorts: () => this.management.managementPorts(),
-      createManagementCli: (user) => this.createManagementCli(user),
+      createManagementCli: (user, origin) => this.createManagementCli(user, origin),
       authenticateAdmin: (user, password, source) =>
         this.management.login(user, password, source),
       knownAdmin: (user) => this.access.getAdmin(user) !== undefined,
@@ -943,7 +943,9 @@ export class Firewall extends Equipment {
     this.management.setLockout(threshold, durationSec);
   }
 
-  protected createManagementCli(_user: string): ManagementCli | null { return null; }
+  protected createManagementCli(
+    _user: string, _origin: string,
+  ): ManagementCli | null { return null; }
 
   protected managementRunningConfig(): string { return ''; }
 

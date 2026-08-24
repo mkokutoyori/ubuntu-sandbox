@@ -262,6 +262,11 @@ export interface FortiMemoryLogPatch {
   readonly enabled?: boolean;
   readonly capacity?: number;
   readonly maxBytes?: number;
+  readonly fullThresholds?: {
+    readonly first?: number;
+    readonly second?: number;
+    readonly final?: number;
+  };
 }
 
 export interface FortiCommitDevice {

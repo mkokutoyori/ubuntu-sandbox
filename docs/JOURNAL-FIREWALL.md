@@ -2764,6 +2764,40 @@ franchissement s'annonce UNE FOIS, pas à chaque enregistrement écrit
 au-dessus du seuil — sinon le tampon se remplirait de ses propres
 alarmes. Le retour sous le seuil réarme.
 
+### E69 — Livré, et ce que la mesure a corrigé
+
+**11 cas, 7 tombent avant correctif.** Les deux entrées `[journal]` sont
+fermées.
+
+**La porte descend jusqu'au shell, elle ne s'y devine pas.**
+`createCli(user)` devient `createCli(user, origin)`, et chaque porte
+écrit ce qu'elle EST : `ssh(<adresse>)` côté SSH, `telnet(<adresse>)`
+côté telnet, `jsconsole` par défaut. Rien n'est reconstitué a posteriori,
+donc aucune vue ne peut se tromper sur l'origine d'une ligne.
+
+**Le vocabulaire est celui de Fortinet et rien de plus** : la note
+technique écrit `jsconsole` pour la console graphique et `ssh` pour une
+session SSH ; la forme parenthésée vient de la documentation
+d'administration (`jsconsole(2.0.225.112)`).
+
+**Une session relayée par la grappe reporte `jsconsole`, et c'est un
+choix, pas un repli.** `execute ha manage` (phase 22) donne une VRAIE
+session sur le membre distant : ce membre voit une session locale, comme
+un vrai FortiGate. Inventer un mot pour « venu du lien de grappe » aurait
+été une valeur que personne n'a jamais vue dans ce champ.
+
+**Le franchissement est calculé APRÈS l'insertion et ne se réentre
+pas.** `announceFullness` est gardée par un drapeau, sans quoi l'alarme
+qu'elle écrit relancerait le calcul et le tampon se remplirait de ses
+propres alarmes. Le retour sous le seuil retire le niveau du jeu
+annoncé, donc réarme.
+
+**Le cas qui garde le défaut** : « une modification faite dans l'onglet
+porte `ui=jsconsole` » passe des DEUX côtés, et c'est normal — avant,
+c'était la seule valeur possible. Ce sont ses voisins, SSH et telnet, qui
+prouvent le mécanisme ; lui vérifie que la valeur par défaut n'a pas
+bougé.
+
 ---
 
 ## Périmètre pris — FortiOS phase 22 (le battement de cœur porte une VOIE DE COMMANDE)

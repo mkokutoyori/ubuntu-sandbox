@@ -38,7 +38,7 @@ export interface ManagementHost {
   authRequiredByPolicy(): boolean;
   portalUsesHttps(): boolean;
   managementPorts(): ManagementPorts;
-  createManagementCli(user: string): ManagementCli | null;
+  createManagementCli(user: string, origin: string): ManagementCli | null;
   authenticateAdmin(user: string, password: string, source: string): boolean;
   knownAdmin(user: string): boolean;
   refuseManagementSource(source: string): boolean;
@@ -77,7 +77,7 @@ export function buildManagementServices(host: ManagementHost): ManagementService
     authenticateAdmin: (admin, secret) =>
       host.authenticateAdmin(admin, secret, HA_COMMAND_SOURCE),
     runManagementCommand: (admin, line) =>
-      host.createManagementCli(admin)?.execute(line) ?? '',
+      host.createManagementCli(admin, HA_COMMAND_SOURCE)?.execute(line) ?? '',
   });
 
   const ntp = buildFirewallNtp({
@@ -104,7 +104,7 @@ export function buildManagementServices(host: ManagementHost): ManagementService
     tcp: () => host.tcp(),
     hostname: () => host.hostname(),
     ports: () => host.managementPorts(),
-    createCli: (user) => host.createManagementCli(user),
+    createCli: (user, origin) => host.createManagementCli(user, origin),
     authenticate: (user, password, source) =>
       host.authenticateAdmin(user, password, source),
     knownAdmin: (user) => host.knownAdmin(user),

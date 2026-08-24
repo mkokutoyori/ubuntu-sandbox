@@ -29,7 +29,7 @@ export interface FirewallCliServerDeps {
   tcp(): TcpStack;
   hostname(): string;
   ports(): ManagementPorts;
-  createCli(user: string): ManagementCli | null;
+  createCli(user: string, origin: string): ManagementCli | null;
   authenticate(user: string, password: string, source: string): boolean;
   knownAdmin(user: string): boolean;
   refuseSource(source: string): boolean;
@@ -126,7 +126,7 @@ class FirewallSshServerContext implements ISshServerContext {
   execIdleTimeoutMs(): number | null { return this.deps.idleTimeoutMs(); }
 
   getShell(userCtx: SshUserContext): ILinuxShell {
-    const cli = this.deps.createCli(userCtx.username);
+    const cli = this.deps.createCli(userCtx.username, `ssh(${this.source})`);
     if (!cli) {
       return {
         execute: async (line: string) => ({
@@ -213,7 +213,7 @@ class FirewallTelnetServerContext implements ITelnetServerContext {
   maxAuthAttempts(): number { return 3; }
 
   createShell(username: string | null): TelnetVtyShell | null {
-    this.cli = this.deps.createCli(username ?? '');
+    this.cli = this.deps.createCli(username ?? '', `telnet(${this.source})`);
     const cli = this.cli;
     if (!cli) return null;
     let ended = false;

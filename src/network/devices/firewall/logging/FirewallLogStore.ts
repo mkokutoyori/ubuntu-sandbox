@@ -43,11 +43,18 @@ export function logLevelAtLeast(
   return LOG_LEVEL_ORDER.indexOf(candidate) <= LOG_LEVEL_ORDER.indexOf(threshold);
 }
 
+import {
+  DEFAULT_LOG_FULL_THRESHOLDS, LOG_FULL_LEVELS, logFullDraft, type LogFullLevel,
+} from './LogFullEvent';
+
 export class FirewallLogStore {
   private records: FirewallLogRecord[] = [];
   private capacity: number;
   private maxBytes: number | null = null;
   private droppedCount = 0;
+  private thresholds: Record<LogFullLevel, number> = { ...DEFAULT_LOG_FULL_THRESHOLDS };
+  private announced = new Set<LogFullLevel>();
+  private announcing = false;
 
   constructor(capacity = DEFAULT_CAPACITY) {
     this.capacity = Math.max(1, capacity);
@@ -75,6 +82,32 @@ export class FirewallLogStore {
     return this.records.reduce((total, record) => total + sizeOf(record), 0);
   }
 
+  setFullThresholds(thresholds: Partial<Record<LogFullLevel, number>>): void {
+    this.thresholds = { ...this.thresholds, ...thresholds };
+  }
+
+  getFullThresholds(): Readonly<Record<LogFullLevel, number>> {
+    return Object.freeze({ ...this.thresholds });
+  }
+
+  private announceFullness(at: number): void {
+    if (this.announcing || this.maxBytes === null) return;
+    const usedPercent = Math.floor((this.usedBytes() / this.maxBytes) * 100);
+
+    this.announcing = true;
+    for (const level of LOG_FULL_LEVELS) {
+      const threshold = this.thresholds[level];
+      if (usedPercent >= threshold) {
+        if (this.announced.has(level)) continue;
+        this.announced.add(level);
+        this.append(logFullDraft(at, level, threshold, usedPercent));
+      } else {
+        this.announced.delete(level);
+      }
+    }
+    this.announcing = false;
+  }
+
   append(draft: FirewallLogDraft): FirewallLogRecord {
     const fields = new Map<string, string>();
     for (const [name, value] of Object.entries(draft.fields)) {
@@ -93,6 +126,7 @@ export class FirewallLogStore {
 
     this.records.push(record);
     this.trim();
+    this.announceFullness(draft.at);
     return record;
   }
 
@@ -120,6 +154,7 @@ export class FirewallLogStore {
   clear(): number {
     const removed = this.records.length;
     this.records = [];
+    this.announced.clear();
     return removed;
   }
 

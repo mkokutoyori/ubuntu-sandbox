@@ -91,6 +91,8 @@ export const FORTI_BUILD = '2660';
 
 const PER_MEMBER_LINE = /^set (priority|hostname)\b/;
 
+const DEFAULT_ADMINISTRATIVE_INTERFACE = 'jsconsole';
+
 interface HaPendingLogin {
   readonly serial: string;
   readonly hostname: string;
@@ -1116,8 +1118,14 @@ export class FortiShell {
     }));
   }
 
+  private origin = DEFAULT_ADMINISTRATIVE_INTERFACE;
+
+  setAdministrativeInterface(origin: string): void {
+    this.origin = origin.length > 0 ? origin : DEFAULT_ADMINISTRATIVE_INTERFACE;
+  }
+
   private administrativeInterface(): string {
-    return 'jsconsole';
+    return this.haRemote !== null ? DEFAULT_ADMINISTRATIVE_INTERFACE : this.origin;
   }
 
   private configTransactionId = 0;

@@ -2,6 +2,7 @@ import {
   address, choice, count, enable, reference, word,
   type FortiTableSpec,
 } from './types';
+import { DEFAULT_LOG_FULL_THRESHOLDS } from '../../../logging/LogFullEvent';
 
 const SEVERITIES = [
   { keyword: 'emergency', description: 'Emergency level.' },
@@ -137,8 +138,20 @@ export const LOG_MEMORY_GLOBAL_SETTING: FortiTableSpec = {
   ],
   onCommit(object, context) {
     const bytes = Number.parseInt(object.effective('max-size')[0] ?? '', 10);
+    const percent = (name: string, byDefault: number): number => {
+      const value = Number.parseInt(object.effective(name)[0] ?? '', 10);
+      return Number.isFinite(value) ? value : byDefault;
+    };
     context.device.applyMemoryLog({
       maxBytes: Number.isFinite(bytes) ? bytes : undefined,
+      fullThresholds: {
+        first: percent('full-first-warning-threshold',
+          DEFAULT_LOG_FULL_THRESHOLDS.first),
+        second: percent('full-second-warning-threshold',
+          DEFAULT_LOG_FULL_THRESHOLDS.second),
+        final: percent('full-final-warning-threshold',
+          DEFAULT_LOG_FULL_THRESHOLDS.final),
+      },
     });
   },
 };
