@@ -19,17 +19,36 @@ export class SdwanService {
   }
 
   apply(configuration: SdwanConfiguration): string | undefined {
-    this.table.setStatus(configuration.enabled);
-    for (const zone of configuration.zones) this.table.setZone(zone);
-
     for (const member of configuration.members) {
       if (member.iface.length === 0) {
         return `member ${member.sequence} needs \`set interface\`.`;
       }
-      this.table.setMember(member);
     }
 
+    this.table.setStatus(configuration.enabled);
+
+    const zones = new Set(configuration.zones);
+    for (const zone of this.table.zoneNames()) {
+      if (!zones.has(zone)) this.table.removeZone(zone);
+    }
+    for (const zone of zones) this.table.setZone(zone);
+
+    const sequences = new Set(configuration.members.map(member => member.sequence));
+    for (const member of this.table.allMembers()) {
+      if (!sequences.has(member.sequence)) this.table.removeMember(member.sequence);
+    }
+    for (const member of configuration.members) this.table.setMember(member);
+
+    const checks = new Set(configuration.healthChecks.map(check => check.name));
+    for (const check of this.table.allHealthChecks()) {
+      if (!checks.has(check.name)) this.table.removeHealthCheck(check.name);
+    }
     for (const check of configuration.healthChecks) this.table.setHealthCheck(check);
+
+    const services = new Set(configuration.services.map(service => service.id));
+    for (const service of this.table.allServices()) {
+      if (!services.has(service.id)) this.table.removeService(service.id);
+    }
     for (const service of configuration.services) this.table.setService(service);
     return undefined;
   }

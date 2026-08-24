@@ -47,13 +47,15 @@ import {
   buildVrrpGlbpInterfaceCommands, registerVrrpGlbpShowCommands,
 } from './cisco/CiscoVrrpGlbpCommands';
 import {
-  buildBfdInterfaceCommands, registerBfdShowCommands,
+  buildBfdInterfaceCommands, registerBfdShowCommands, bfdInterfaceSpecs,
 } from './cisco/CiscoBfdCommands';
 import {
   buildIgmpInterfaceCommands, registerIgmpShowCommands, igmpShowSpecs,
+  igmpInterfaceSpecs,
 } from './cisco/CiscoIgmpCommands';
 import {
   buildPimInterfaceCommands, buildPimGlobalConfigCommands, registerPimShowCommands,
+  pimInterfaceSpecs,
   pimShowSpecs,
 } from './cisco/CiscoPimCommands';
 import {
@@ -107,7 +109,7 @@ import {
 } from './cisco/CiscoKeyChainCommands';
 import {
   buildRoutingProtoConfig, registerRoutingProtoShow, routerKeywordBelongsTo,
-  routingProtoShowSpecs,
+  routingProtoShowSpecs, routerSubmodeSpecs,
 } from './cisco/CiscoRoutingProtoCommands';
 import { RoutingConfigRepository } from '../inspection/config/RoutingConfigRepository';
 import {
@@ -121,6 +123,7 @@ import {
   registerOSPFConfigCommands, buildConfigRouterOSPFCommands,
   buildConfigRouterOSPFv3Commands,
   registerOSPFInterfaceCommands, registerOSPFShowCommands, ospfShowSpecs, ospfClearSpecs,
+  ospfInterfaceSpecs,
   ospfIpv6ShowSpecs, routerOspfSpecs, routerOspfv3Specs,
   setOspfv3InterfaceParams, enableOspfv3OnInterface, disableOspfv3OnInterface,
   setOspfv3InterfaceAuthentication,
@@ -128,7 +131,7 @@ import {
 import {
   buildIPSecGlobalCommands, buildISAKMPPolicyCommands, buildISAKMPProfileCommands, buildISAKMPKeyringCommands,
   buildTransformSetCommands, buildCryptoMapEntryCommands,
-  buildIPSecProfileCommands, buildIPSecIfCommands,
+  buildIPSecProfileCommands, buildIPSecIfCommands, ipsecInterfaceSpecs,
   buildIPSecPrivilegedCommands,
   isakmpPolicySpecs, isakmpProfileSpecs, isakmpKeyringSpecs,
   transformSetSpecs, cryptoMapEntrySpecs, ipsecProfileSpecs,
@@ -146,7 +149,7 @@ import {
 import { registerIPSecShowCommands, cryptoShowSpecs } from './cisco/CiscoIPSecShowCommands';
 import {
   buildSecurityConfigCommands, buildSecurityInterfaceCommands,
-  buildSecuritySubmodeCommands, buildSecurityShowCommands,
+  buildSecuritySubmodeCommands, buildSecurityShowCommands, securityInterfaceSpecs,
   classMapSubmodeSpecs, policyMapSubmodeSpecs, policyClassSubmodeSpecs,
   controlPlaneSubmodeSpecs, zoneSubmodeSpecs, zonePairSubmodeSpecs,
   timeRangeSubmodeSpecs, trustpointSubmodeSpecs,
@@ -158,9 +161,10 @@ import {
   buildArchiveSubmode, buildArchiveLogSubmode,
   eemAppletSpecs, flowExporterSpecs, flowRecordSpecs, flowMonitorSpecs,
   buildEemNetflowArchiveInterfaceCommands, buildEemNetflowArchiveShowCommands,
+  netflowInterfaceSpecs,
 } from './cisco/CiscoEemNetflowArchiveCommands';
 import {
-  buildNATConfigCommands, buildNATInterfaceCommands,
+  buildNATConfigCommands, buildNATInterfaceCommands, natInterfaceSpecs,
   registerNATPrivilegedCommands, registerNATShowCommands, natShowSpecs,
 } from './cisco/CiscoNATCommands';
 import { iosShortInterfaceName } from '@/network/devices/inspection/InterfaceStatusView';
@@ -355,6 +359,24 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
       ...keyChainSubmodeSpecs(this),
       ...keyChainKeySubmodeSpecs(this),
       ...routeMapSubmodeSpecs(this, this.policy),
+      ...routerSubmodeSpecs(this, this.routingCfg),
+      ...bfdInterfaceSpecs({
+        selectedPorts: () => this.selectedPortsForConfigIf(),
+        r: () => this.d(),
+      }),
+      ...igmpInterfaceSpecs({
+        selectedPorts: () => this.selectedPortsForConfigIf(),
+        r: () => this.d(),
+      }),
+      ...pimInterfaceSpecs({
+        selectedPorts: () => this.selectedPortsForConfigIf(),
+        r: () => this.d(),
+      }),
+      ...natInterfaceSpecs(this),
+      ...ipsecInterfaceSpecs(this),
+      ...securityInterfaceSpecs(this),
+      ...netflowInterfaceSpecs(this),
+      ...ospfInterfaceSpecs(this),
       ...dhcpPoolClassSpecs(this),
       ...dhcpClassSpecs(this),
       ...ipv6DhcpPoolSpecs(this),
@@ -506,6 +528,7 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
   protected override socleLegends(): SocleLegend[] {
     return [
       ...super.socleLegends(),
+      [['no'], 'Negate a command or set its defaults', ['config-router']],
       [['crypto'], 'Encryption module'],
       [['crypto', 'ipsec'], 'Configure IPSec policy'],
       [['crypto', 'ipsec', 'security-association'], 'Security association parameters'],

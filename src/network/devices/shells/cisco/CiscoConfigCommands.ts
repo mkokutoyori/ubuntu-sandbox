@@ -440,6 +440,19 @@ export function buildConfigCommands(trie: CommandTrie, ctx: CiscoShellContext): 
 
 // ─── Interface Config Mode Commands ──────────────────────────────────
 
+/**
+ * Les modes qu'un arbre d'INTERFACE sert.
+ *
+ * Une sous-interface est une interface : `configIfTrie` sert
+ * `config-subif` autant que `config-if`, et c'est ainsi qu'IOS se
+ * comporte. La hierarchie des modes, elle, donne `config` pour parent a
+ * `config-subif` — ce qui est juste pour `exit`, et ne dit donc rien du
+ * jeu de commandes. Les deux faits sont distincts, et une declaration
+ * qui n'en nomme qu'un fait disparaitre `ip nat inside` d'une
+ * sous-interface sans que rien ne le signale.
+ */
+export const MODES_INTERFACE: readonly string[] = ['config-if', 'config-subif'];
+
 export function buildConfigIfCommands(trie: CommandTrie, ctx: CiscoShellContext): void {
   trie.registerGreedy('ip policy route-map', 'Apply PBR on interface', (args) => {
     const iface = ctx.getSelectedInterface();

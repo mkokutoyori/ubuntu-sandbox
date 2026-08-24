@@ -19,6 +19,7 @@ import type { CommandSpec } from '@/cli/CommandTable';
 import type { ArgumentSpec } from '@/cli/ArgumentTypes';
 import type { AdapterKeyword } from '@/cli/commands/trieAdapter';
 import { specsFromTrieRegistrations } from '@/cli/commands/trieAdapter';
+import { MODES_INTERFACE } from './CiscoConfigCommands';
 
 const IPV4_LITERAL_RE = /^(?:(?:25[0-5]|2[0-4]\d|[01]?\d?\d)\.){3}(?:25[0-5]|2[0-4]\d|[01]?\d?\d)$/;
 function isIPv4Literal(s: string): boolean { return IPV4_LITERAL_RE.test(s); }
@@ -677,6 +678,18 @@ export function buildIPSecProfileCommands(trie: CommandTrie, ctx: CiscoShellCont
 }
 
 // ─── Interface config mode: crypto map + tunnel protection ───────────
+
+export function ipsecInterfaceSpecs(ctx: CiscoShellContext): CommandSpec[] {
+  return specsFromTrieRegistrations(
+    (collector) => buildIPSecIfCommands(collector as unknown as CommandTrie, ctx),
+    {
+      modes: MODES_INTERFACE, minPrivilege: 15,
+      undoFromNegatedPaths: true,
+      argumentFor: (path) => path === 'crypto map'
+        ? { name: 'carte', type: 'WORD', description: 'Name of the crypto map' } : null,
+    },
+  );
+}
 
 export function buildIPSecIfCommands(trie: CommandTrie, ctx: CiscoShellContext): void {
 

@@ -28,6 +28,7 @@ export const FORTI_GET_VIEWS: ReadonlyArray<readonly string[]> = Object.freeze([
   Object.freeze(['router', 'info', 'routing-table', 'ospf']),
   Object.freeze(['router', 'info', 'routing-table', 'rip']),
   Object.freeze(['router', 'info', 'routing-table', 'bgp']),
+  Object.freeze(['router', 'info6', 'routing-table']),
 ]);
 
 export function resolvePathWords(

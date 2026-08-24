@@ -2,6 +2,62 @@ import {
   address, addressMask, choice, count, enable, reference, refList, text,
   type FortiTableSpec,
 } from './types';
+import { FortiMessages } from '../FortiMessages';
+import { parseIpv6Prefix } from './system';
+
+export const ROUTER_STATIC6: FortiTableSpec = {
+  path: ['router', 'static6'],
+  kind: 'table',
+  keyType: 'integer',
+  ordered: false,
+  scope: 'vdom',
+  accessGroup: 'netgrp',
+  renderOrder: 221,
+  help: 'Configure IPv6 static routing tables.',
+  attributes: [
+    {
+      name: 'seq-num', help: 'Sequence number.', readOnly: true, quoted: false,
+      parts: [{ name: 'seq-num', type: 'INT', description: 'Sequence number.' }],
+    },
+    {
+      name: 'dst', help: 'Destination IPv6 prefix.', quoted: false,
+      parts: [{
+        name: 'prefix', type: 'WORD',
+        description: 'IPv6 address and prefix length, <address>/<0-128>.',
+      }],
+      defaultValue: ['::/0'],
+      acceptsValue: (value) => parseIpv6Prefix(value) !== null,
+      expectedValue: 'an IPv6 prefix such as `2001:db8::/64`.',
+    },
+    {
+      name: 'gateway', help: 'IPv6 address of the gateway.', quoted: false,
+      parts: [{ name: 'gateway', type: 'WORD', description: 'IPv6 address.' }],
+      defaultValue: ['::'],
+      acceptsValue: (value) => parseIpv6Prefix(`${value}/128`) !== null,
+      expectedValue: 'an IPv6 address such as `2001:db8::254`.',
+    },
+    reference('device', 'Gateway out interface or tunnel.', ['system interface']),
+    count('distance', 'Administrative distance.', 1, 255, 10),
+    enable('status', 'Enable/disable this static route.', true),
+    text('comment', 'Optional comments.'),
+  ],
+  onCommit(object, context) {
+    const destination = parseIpv6Prefix(object.effective('dst')[0] ?? '::/0');
+    if (!destination) return FortiMessages.valueError(object.effective('dst')[0] ?? '');
+    context.device.applyIpv6StaticRoute({
+      id: object.key,
+      destination: destination.address,
+      prefixLength: destination.prefixLength,
+      gateway: object.effective('gateway')[0] ?? '::',
+      iface: object.effective('device')[0] ?? '',
+      distance: Number.parseInt(object.effective('distance')[0] ?? '10', 10) || 10,
+      enabled: object.effective('status')[0] !== 'disable',
+    });
+  },
+  onDelete(key, context) {
+    context.device.removeIpv6StaticRoute(key);
+  },
+};
 
 export const ROUTER_STATIC: FortiTableSpec = {
   path: ['router', 'static'],
@@ -125,5 +181,5 @@ function integer(raw: string | undefined, fallback: number): number {
 }
 
 export const ROUTER_SPECS: readonly FortiTableSpec[] = Object.freeze([
-  ROUTER_STATIC, ROUTER_POLICY,
+  ROUTER_STATIC, ROUTER_STATIC6, ROUTER_POLICY,
 ]);

@@ -60,15 +60,63 @@ que l'agent ACL le dise ici. Côté commutateur restent `configMstTrie`
 (7), `configAclTrie` (6), `configVlanTrie` (2), `configAccessMapTrie`
 (2).
 
-Compteurs : routeur 1007 → 721, commutateur 570 → 445. Restent les deux
+`configRouterTrie` est vide lui aussi : `router rip` / `router eigrp` /
+`router bgp` passent au socle, et le filtre de complétion qui masquait
+les mots-clés d'un autre protocole devient une **joignabilité de
+déclaration** — donc elle gouverne l'exécution ET l'aide, alors qu'un
+filtre de complétion ne gouvernait que l'aide.
+
+Compteurs : routeur 1007 → 679, commutateur 570 → 445. Restent les deux
 gros blocs `configTrie` (308) et `configIfTrie` (151), puis
-`privilegedTrie` (120), `userTrie` (85) et `configRouterTrie` (42).
+`privilegedTrie` (120) et `userTrie` (85).
+
+**Une contradiction tranchée qui peut vous concerner** : `metric`
+appartient à EIGRP dans `ROUTER_MODE_OWNERS`, et le gestionnaire portait
+quand même une branche RIP. Tant que le filtre ne gouvernait que l'aide,
+`metric 5` sous `router rip` s'exécutait en silence ; il est désormais
+refusé, ce qui est ce que fait un vrai IOS (la métrique RIP se règle par
+`default-metric` ou par un `offset-list`).
 
 **Un compteur d'avant le lot IP SLA sous-estimait de 82** : `configIpSlaTypeTries`
 est une TABLE de huit arbres et non huit champs, si bien que ni
 l'inventaire ni `pruneMigratedFromTries` ne les voyaient. Si vous comptez
 ce qu'il reste, descendez dans les tables d'arbres, pas seulement dans
 les champs.
+
+**La règle qui m'a coûté trois régressions, écrite pour qu'elle ne les
+coûte pas deux fois** : quand on migre un gestionnaire GLOUTON, la place
+déclarée doit accepter au moins tout ce que le gestionnaire acceptait.
+NOMMER une forme (`alternatives`) et RESTREINDRE à un domaine (`values`,
+un type étroit) sont deux choses différentes, et l'aide ne demande que
+la première. Un `neighbor` typé `IP_ADDR` refuse `neighbor IBGP
+peer-group` ; six sous-commandes déclarées en mots-clés refusent les
+vingt autres que le gestionnaire range en l'état ; un `metric` énuméré
+refuse `metric 5`. À l'inverse, quand le domaine dépend vraiment du
+contexte (ce qu'on redistribue dépend du protocole), une place énumérée
+ne suffit pas : il faut des mots-clés, qui portent chacun leur
+`reachableWhen`. Le garde-fou `probe-cli-aide-egale-execution` attrape
+le sens « l'aide propose ce que la machine refuse » ; l'autre sens — « la
+déclaration refuse ce que la machine acceptait » — n'a pas de garde-fou,
+et c'est la suite de round-trip qui l'a attrapé.
+
+**Une borne se vérifie contre la VERSION que la machine annonce.**
+Plusieurs plages d'IOS dépendent de la version, et `show version` de ce
+simulateur répond `Version 15.7(3)M5` : c'est cette version-là qui
+tranche, sinon la machine se contredit elle-même. Deux cas rencontrés et
+vérifiés en ligne plutôt que de mémoire — le nombre d'objets `track` est
+1-500 jusqu'à 15.1(3)T et 1-1000 après (donc 1-1000 ici), et le numéro
+de groupe HSRP est 0-255 en version 1 et 0-4095 en version 2, ce qui
+dépend de l'interface et non de la commande (d'où la plage dynamique).
+
+**Une valeur hors bornes est refusée AU CARET par IOS**, pas par un
+message du gestionnaire : la documentation Cisco range « out of range
+values » et « invalid numeric arguments » parmi les causes de
+`% Invalid input detected at '^' marker`. Donc quand l'analyse connaît
+la plage, elle doit la déclarer ; le message écrit dans un gestionnaire
+derrière une plage déclarée est inatteignable, et c'est normal. La règle
+« ne pas devancer le gestionnaire » ne s'applique QUE là où l'analyse ne
+peut pas trancher — un nom de zone, une adresse, une liste de mots que
+le gestionnaire interprète.
 
 **Ce que ça change pour vous** : une famille migrée n'est plus dans le
 trie. Si vous ajoutez une commande à un `register*(t: CommandTrie)` dont

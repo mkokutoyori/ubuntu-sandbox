@@ -24,6 +24,16 @@ export interface AdapterKeyword {
    * annonce la ou il faut ecrire un reseau.
    */
   readonly afterArguments?: boolean;
+  /**
+   * La joignabilite de CE mot-cle, quand elle differe de la commande.
+   *
+   * `redistribute rip` sous `router rip` n'existe pas — on ne
+   * redistribue pas un protocole dans lui-meme — alors que
+   * `redistribute connected` existe partout. Une place enumeree ne peut
+   * pas porter cette nuance, son domaine etant fixe a la declaration ;
+   * un mot-cle, lui, est une declaration a part entiere.
+   */
+  readonly reachableWhen?: (session: CliSession) => boolean;
 }
 
 export interface CollectedRegistration {
@@ -46,6 +56,23 @@ export interface SpecCollector {
   neJamaisAnnoncer(path: string): void;
   addCompletionKeywords(path: string, keywords: readonly string[]): void;
   registerSuggestions(path: string, keywords: readonly unknown[]): void;
+  /**
+   * « Ce chemin exige au moins un mot de plus. »
+   *
+   * Le socle le dit autrement, et mieux : une place DECLAREE et non
+   * facultative. Le trie ne sait que compter les mots, la declaration
+   * sait de quelle NATURE ils sont, donc la traduction se fait par
+   * `argumentFor` et cet appel n'a rien a retenir.
+   */
+  requireArgs(path: string, count: number): void;
+  /**
+   * « N'annonce pas ce mot-cle dans cette situation. »
+   *
+   * Le socle le dit par `reachableWhen` sur chaque declaration, ce qui
+   * gouverne l'aide ET l'execution au lieu de la seule aide : c'est
+   * `reachableWhenFor` qui porte la regle, pas ce filtre.
+   */
+  setCompletionFilter(filter: (path: readonly string[], keyword: string) => boolean): void;
 }
 
 function normaliseKeywords(
@@ -80,6 +107,8 @@ export function collectRegistrations(
     neJamaisAnnoncer(path) { hidden.add(path); },
     addCompletionKeywords() { /* the socle derives completion from declared children */ },
     registerSuggestions() { /* idem */ },
+    requireArgs() { /* a declared, non-optional place says it */ },
+    setCompletionFilter() { /* `reachableWhen` says it, for help AND execution */ },
   };
   register(collector);
   return collected.map(entry => ({ ...entry, hidden: hidden.has(entry.path) }));
@@ -149,13 +178,29 @@ export function specsFromTrieRegistrations(
   const specs: CommandSpec[] = [];
   for (const entry of collected) {
     if (negation !== undefined && entry.path === negation.path) continue;
-    if (options.undoFromNegatedPaths && entry.path.startsWith('no ')) {
-      if (collected.some(autre => autre.path === entry.path.slice(3))) continue;
-    }
+    /*
+     * Une negation SANS forme positive reste une negation, pas un chemin
+     * dont le premier mot serait `no`.
+     *
+     * `no version` n'a pas de `version` en face — la forme positive
+     * s'ecrit `version 1` ou `version 2` — donc la traduction en `undo`
+     * ne trouvait rien et laissait un chemin litteral. Il s'executait
+     * tres bien et `no ?` ne l'annoncait JAMAIS, cette aide ne listant
+     * que les commandes qui savent se defaire. La commande est donc
+     * declaree a sa place positive, existant SEULEMENT niee : `version`
+     * seul n'est pas une commande complete, et `no version` en est
+     * l'annulation, donc annoncee comme telle.
+     */
+    const negationSeule = options.undoFromNegatedPaths
+      && entry.path.startsWith('no ')
+      && !collected.some(autre => autre.path === entry.path.slice(3));
+    if (options.undoFromNegatedPaths && entry.path.startsWith('no ')
+      && !negationSeule) continue;
     if (options.skip?.(entry.path)) continue;
     const cache = entry.hidden || options.hiddenFor?.(entry.path) === true;
     const contexte = options.reachableWhenFor?.(entry.path);
-    const words = entry.path.split(/\s+/).filter(Boolean);
+    const words = (negationSeule ? entry.path.slice(3) : entry.path)
+      .split(/\s+/).filter(Boolean);
     const declaredLabel = options.restDescriptionFor?.(entry.path)
       ?? options.restDescription;
     const restLiteral = options.restLiteralFor?.(entry.path);
@@ -191,7 +236,11 @@ export function specsFromTrieRegistrations(
       minPrivilege: options.minPrivilege,
       ...(cache ? { hidden: true } : {}),
       ...(contexte ? { reachableWhen: contexte } : {}),
-      run: run([]) as CommandSpec['run'],
+      ...(negationSeule ? {
+        existsOnlyNegated: true,
+        run: (() => '') as CommandSpec['run'],
+        undo: run([]) as CommandSpec['undo'],
+      } : { run: run([]) as CommandSpec['run'] }),
       ...(options.undoDescriptionFor?.(entry.path) === undefined ? {} : {
         undoDescription: options.undoDescriptionFor(entry.path),
       }),
@@ -246,7 +295,8 @@ export function specsFromTrieRegistrations(
         modes: options.modes,
         minPrivilege: options.minPrivilege,
         ...(cache ? { hidden: true } : {}),
-        ...(contexte ? { reachableWhen: contexte } : {}),
+        ...(sub.reachableWhen ? { reachableWhen: sub.reachableWhen }
+          : contexte ? { reachableWhen: contexte } : {}),
         run: ((_session: unknown, args: Record<string, string>) => {
           const argv = [...(sub.afterArguments ? valeursTapees(args) : []),
             ...argumentsFille(sub, placesFille, args)];

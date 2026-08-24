@@ -2700,6 +2700,299 @@ refusé sont remplacés par un cas qui l'affirme disponible.
 
 ---
 
+## Périmètre pris — FortiOS phase 27 (une politique IPv6 juge)
+
+**Agent `mandeng`.** L'entrée `[politique] le TRANSIT IPv6 est refusé,
+faute de politique v6`, que la phase 26 a inscrite comme son propre
+reste. La mesure la confirme et trouve **deux défauts que l'entrée ne
+nomme pas**.
+
+**Mesure de départ** :
+
+```
+config firewall address6   → unknown configuration path
+config firewall addrgrp6   → unknown configuration path
+config firewall policy6    → unknown configuration path
+```
+
+Aucune des trois tables n'existe. S'y ajoutent :
+
+- **`AddressObject.family` est écrit et LU PAR PERSONNE.** Le champ
+  existe (`'ipv4' | 'ipv6'`), chaque constructeur d'objet adresse le
+  remplit — et `grep '\.family\b'` hors de son propre fichier ne rend
+  RIEN. Le type dit que la famille compte ; le code ne la consulte
+  jamais.
+- **`addressObjectMatches` ne peut pas correspondre à une adresse v6.**
+  Les cinq comparateurs (`sameAddress`, `matchesCareMask`,
+  `matchesRange`, `matchesResolved`) passent tous par `tryIpToUint32`,
+  une conversion sur 32 bits qui rend `null` pour toute adresse IPv6.
+  Un candidat v6 ne peut donc correspondre qu'à `any` — et y correspond,
+  puisque `kind === 'any'` sort avant toute vérification de famille.
+  C'est le défaut le plus dangereux du lot : une règle écrite `all` →
+  `all` en v4 juge aussi du trafic v6 sans que rien ne le dise.
+- **`firewall address6` est RÉFÉRENCÉE par une table qui existe** :
+  `schema/utm.ts` déclare `reference('address6', …, ['firewall
+  address6'])` pour `ssl-exempt`, vers une table jamais déclarée. La
+  source de données ne peut donc jamais résoudre.
+
+**Fichiers que la phase 27 prendra** :
+
+```
+firewall/model/AddressObject.ts     ← la famille DÉCIDE, les comparateurs v6
+firewall/model/ObjectStore.ts       ← la famille du candidat filtre l'objet
+firewall/policy/PolicyEvaluator.ts  ← une règle ne juge que sa famille
+firewall/l3/FirewallIpv6.ts         ← le verrou de transit consulte la politique
+vendors/fortios/schema/firewallObjects.ts ← `address6`, `addrgrp6`
+vendors/fortios/schema/firewallPolicy.ts  ← `policy6`
+```
+
+**Décision de périmètre** : `policy6` est la table SÉPARÉE de FortiOS
+antérieur à 7.0, et c'est elle qui est écrite — pas la politique unifiée
+de 7.0+, où une seule table porte les deux familles. Deux raisons, et la
+seconde est la vraie : la table séparée est celle que la documentation et
+les tutoriels accessibles décrivent avec des exemples complets ; et une
+politique unifiée demanderait de rendre CHAQUE règle existante
+bi-famille, donc de toucher le chemin v4 qui fonctionne. Ce que le
+verrou de la phase 26 devient : refus tant qu'aucune `policy6` ne
+permet, au lieu d'un refus inconditionnel.
+
+---
+
+## Périmètre pris — FortiOS phase 26 (le pare-feu parle IPv6)
+
+**Agent `mandeng`.** L'entrée `[execute] ping6 absente, faute d'émetteur
+ICMPv6 sur le pare-feu`. Le report est juste sur la cause et **trop
+étroit sur l'étendue** : ce n'est pas une commande qui manque, c'est
+IPv6 en entier.
+
+**Mesure de départ**, sur une machine neuve :
+
+```
+execute ping6 ::1                    → unknown action "ping6"
+config system interface / edit port1 / config ipv6
+                                     → unknown configuration path "ipv6"
+set ip6-address 2001:db8::1/64       → unknown attribute "ip6-address"
+config router static6                → unknown configuration path
+diagnose ipv6 neighbor-cache list    → unknown command
+```
+
+`grep -l IPv6 src/network/devices/firewall/` ne rend que cinq fichiers,
+et aucun ne PRODUIT de paquet : `PacketContext` déclare
+`FirewallPacket = IPv4Packet | IPv6Packet` et rien ne construit jamais le
+second membre de cette union. Le pare-feu n'a ni adresse v6, ni NDP, ni
+table de routage v6, ni ICMPv6.
+
+**Ce qu'il ne faut surtout pas faire est écrire un second ICMPv6.**
+`router/IPv6DataPlane.ts` (1174 lignes) est un plan de données IPv6
+complet — NDP, cache de voisins, annonces de routeur, table de routage,
+écho, DHCPv6 — et il est déjà construit sur un **port étroit**,
+`IPv6RouterContext` : `getPorts()`, `sendFrame()`, `getCounters()`,
+`getBus()`, `getScheduler()`, plus des crochets facultatifs. Il porte
+même `sendEchoRequest()`, exactement l'émetteur que le report déclare
+manquant. Le pare-feu peut REMPLIR ce port : c'est un `Equipment`, il a
+des ports, un bus et un ordonnanceur. Une seule machine à états NDP dans
+le dépôt, pas deux.
+
+De même côté rendu : `diag/FirewallPing.ts` a déjà la forme
+(`header` / `step` / `statistics`) et le texte de FortiOS ; ping6 rend le
+MÊME texte sur une vraie machine (`PING …: 56 data bytes`, `64 bytes
+from …: icmp_seq=0 ttl=64 time=…`), donc c'est le constructeur de paquet
+qui varie, pas le rendu.
+
+**Fichiers que la phase 26 prendra** :
+
+```
+firewall/l3/FirewallIpv6.ts        ← le pare-feu remplit IPv6RouterContext (neuf)
+firewall/Firewall.ts               ← héberge le plan de données, aiguille ETHERTYPE_IPV6
+firewall/diag/FirewallPing.ts      ← le rendu sert les deux familles
+vendors/fortios/schema/system.ts   ← `config ipv6`, `ip6-address`, `ip6-allowaccess`
+vendors/fortios/schema/router.ts   ← `config router static6`
+vendors/fortios/diag/              ← `diagnose ipv6 address list`, `neighbor-cache list`
+vendors/fortios/FortiSocle.ts      ← `execute ping6`, `get router info6 routing-table`
+```
+
+**Décision de périmètre, prise et non subie** : le moteur de politiques
+est v4 seulement (`SecurityRule` porte des adresses v4, `iprope` compile
+du v4). Un paquet IPv6 EN TRANSIT est donc **refusé**, pas relayé —
+c'est le refus implicite d'un vrai FortiGate sans politique IPv6, et
+c'est la posture que `CLAUDE.md` impose à tout moteur de décision
+(« security criteria fail CLOSED »). Héberger le plan de données sans ce
+verrou ferait passer du trafic v6 sans qu'aucune politique le juge :
+ce serait ouvrir le pare-feu, pas l'améliorer. Ce que la phase livre est
+donc IPv6 **pour la machine elle-même** — adresse, voisinage, écho,
+routes — et le transit sous politique v6 est le sujet de la phase 27.
+### Livré
+
+L'entrée `[execute] ping6` est retirée de `TODO.md`.
+
+**Aucun second ICMPv6 n'a été écrit, et c'est tout le correctif.**
+`l3/FirewallIpv6.ts` remplit `IPv6RouterContext` — quatre lignes de
+délégation vers `Equipment` (ports, `sendFrame`, bus, ordonnanceur) plus
+un `DHCPv6Server` que le pare-feu porte sans encore l'exposer — et le
+plan de données du routeur tourne tel quel sur le pare-feu. NDP, cache
+de voisins, table de routage v6, écho : une seule machine à états dans
+le dépôt. `Firewall.handleFrame` aiguille `ETHERTYPE_IPV6` vers elle,
+là où seuls FGCP, ARP et IPv4 étaient reconnus.
+
+`diag/FirewallPing6.ts` reprend la forme de `FirewallPing`
+(`header`/`step`/`statistics`) parce qu'un vrai FortiGate rend le MÊME
+texte pour les deux familles ; ce qui change est le constructeur de
+paquet et l'attente, pas le rendu.
+
+**Le verrou de transit est la décision structurante.** `ipv6FilterPermits`
+— le crochet que le plan de données consulte déjà pour les ACL IPv6 d'un
+routeur — répond `false` en direction `out`, donc un paquet v6 qu'aucune
+politique ne peut juger ne traverse pas. Le même crochet sert, en
+direction `in`, à faire de `ip6-allowaccess` une vraie porte : une
+requête d'écho adressée à nous sur une interface qui n'autorise pas
+`ping` est écartée, et rien d'autre ne l'est — écarter tout ce qui n'est
+pas pour nous aurait aussi bloqué les sollicitations de voisin, donc NDP
+lui-même.
+
+**Mesure écrite dans la sonde plutôt que masquée** : le PREMIER écho
+reste sans réponse. Le voisin doit d'abord résoudre notre adresse de
+couche 2 en sens inverse — exactement ce qui fait perdre le premier
+paquet d'un ping sur une vraie machine pendant la résolution ARP ou ND.
+La sonde mesure donc le FORMAT et l'arrivée des réponses, pas une perte
+nulle ; ma première rédaction demandait `0% packet loss` et c'est elle
+qui avait tort.
+
+Livrées avec : `config system interface / config ipv6` (`ip6-address`,
+`ip6-allowaccess`, `ip6-send-adv`, `ip6-manage-flag`, `ip6-other-flag`),
+`config router static6`, `execute ping6`, `diagnose ipv6 address list`,
+`diagnose ipv6 neighbor-cache list` et `get router info6 routing-table`.
+
+`fortios-ipv6.test.ts` (12 cas) est discriminé par
+`git stash push -- src/network/` : 9 tombent avant correctif, et les 3
+qui passent des deux côtés sont nommés dans l'en-tête — les deux témoins
+et le cas `ip6-allowaccess`, dont le silence était indiscernable d'une
+absence d'ICMPv6. `e2e/fortigate-ipv6.spec.ts` (4 cas) rejoue
+l'adressage, la vue, le refus sans route et la route statique dans le
+vrai navigateur.
+
+---
+
+## Périmètre pris — FortiOS phase 25 (une zone suit ses MEMBRES)
+
+**Agent `mandeng`.** Les deux entrées `[sdwan]` de `TODO.md`. Les deux
+reports sont VRAIS cette fois — c'est la première phase depuis longtemps
+où la re-mesure les confirme — mais elle trouve un troisième défaut que
+ni l'un ni l'autre ne nomme, et **les trois ont la même cause**.
+
+**Mesure de départ** (laboratoire : trois ports adressés, une zone
+`virtual-wan-link`, membres 1 et 2, une route statique par la zone) :
+
+- **Ajouter le membre 3 ne développe rien.** La table de routage porte
+  toujours exactement les deux routes des membres 1 et 2. Entrée 2,
+  confirmée.
+- **`delete 2` sous `config members` ne retire rien** — ni la route du
+  membre 2, qui reste dans la table, ni le membre lui-même. **Ce défaut
+  n'est dans aucune des deux entrées**, et il est plus grave que celui
+  qui l'est : le pare-feu continue d'aiguiller du trafic vers un membre
+  que l'opérateur a supprimé.
+- **Une politique nommant `port1` n'empêche pas `port1` de devenir
+  membre.** Les deux commandes sont acceptées au même instant. Entrée 1,
+  confirmée.
+
+**La cause commune** : `SdwanService.apply()` ne fait que `set`. Or
+`onCommit` lui passe la configuration COMPLÈTE à chaque commit — la
+liste entière des membres, des zones, des contrôles et des services.
+Une méthode qui reçoit l'état voulu et se contente d'ajouter n'est pas
+une application, c'est une accumulation : ce qui a disparu de la
+configuration survit dans la table, et ce qui vient d'y entrer n'est
+signalé à personne. `apply` doit RÉCONCILIER, et les routes de zone
+doivent être rejouées après elle — le chaînon existe déjà
+(`Firewall.installSdwanRoute` est rejoué à chaque transition de santé),
+il n'est simplement pas appelé là.
+
+**La protection de l'entrée 1 est un mécanisme général, et c'est une
+VRAIE commande** plutôt qu'un échafaudage inventé : un FortiGate répond
+« qu'est-ce qui référence cet objet ? » par `diagnose sys cmdb refcnt
+show <path.object.mkey>`, et c'est ce compteur qui fait qu'une interface
+référencée n'apparaît même pas dans la liste des membres possibles. Le
+refus a une transcription attestée, prise sur le cas RÉCIPROQUE (une
+interface déjà membre du SD-WAN qu'on tente d'ajouter à
+`config system zone`) :
+
+```
+(zone_test01) set interface wan1
+entry not found in datasource
+value parse error before 'wan1'
+Command fail. Return code -3
+```
+
+FortiOS refuse donc **au niveau de la source de données** : la valeur
+n'est pas dans la liste des valeurs possibles, d'où ces deux lignes. Les
+deux existent déjà ici (`FORTI_NOT_FOUND`, `FortiMessages.valueError`).
+
+**Fichiers que la phase 25 prendra** :
+
+```
+firewall/model/InterfaceReferences.ts  ← qui nomme cette interface (socle, neuf)
+firewall/sdwan/SdwanService.ts         ← `apply` réconcilie au lieu d'accumuler
+firewall/sdwan/SdwanTable.ts           ← retrait de ce qui a disparu
+firewall/Firewall.ts                   ← les routes de zone rejouées au commit
+vendors/fortios/schema/sdwan.ts        ← le refus d'un membre référencé
+vendors/fortios/diag/                  ← `diagnose sys cmdb refcnt show`
+```
+
+**Hors périmètre, et dit plutôt que tu** : le code de retour. La
+transcription ci-dessus porte `-3` là où ce module rend `-61` pour tout
+refus. Les deux LIGNES de message sont reprises telles quelles ; le code
+suit celui du module, faute d'une capture par famille de message qui
+permettrait de les apparier un par un. Inscrit dans `TODO.md`.
+### Livré
+
+Les deux entrées `[sdwan]` sont retirées de `TODO.md`.
+
+**Une seule cause pour les trois défauts, et le correctif est une seule
+phrase** : `SdwanService.apply()` RÉCONCILIE. Zones, membres, contrôles
+de santé et services qui ont disparu de la configuration disparaissent
+de la table ; ce qui y entre y entre. `Firewall.applySdwan` rejoue
+ensuite les routes de zone par `applySdwanStaticRoute`, le chemin qui
+sait déjà décider entre une route de zone et une route ordinaire — pas
+une seconde écriture de cette décision.
+
+**La protection de l'entrée 1 n'a demandé AUCUN moteur neuf, et c'est le
+point important.** Ma première écriture a créé
+`firewall/model/InterfaceReferences.ts` : un index de références nourri à
+la main par les politiques, les routes, les zones et les membres. Il a
+été SUPPRIMÉ avant commit, parce que `vendors/fortios/runtime/
+references.ts` existe depuis longtemps, fait la même chose en mieux — il
+parcourt l'ARBRE de configuration en lisant les `referenceTo` déclarés
+par le schéma, donc il couvre toutes les tables au lieu des quatre que
+j'avais énumérées — et rend déjà les deux formes de ligne attestées. Il
+n'avait qu'une porte, `diagnose sys checkused`. Il en a deux :
+`FortiConfigTree.referenceHolders()` pour le refus, et
+`diagnose sys cmdb refcnt show <path.object.attribute> <value>`, la vraie
+commande FortiOS, dont les lignes sont attestées :
+
+```
+entry used by child table srcintf:name 'X' of table firewall.policy:policyid '6'
+entry used by table router.static:seq-num '1'
+```
+
+Il n'y a PAS de ligne de total — une référence par ligne, rien du tout
+s'il n'y en a aucune. La sonde l'avait supposée et la vérification l'a
+démentie ; c'est la seule chose qu'elle a corrigée dans mes suppositions.
+
+Le refus vaut dans les **deux sens** : une interface encore nommée par
+une politique, une route statique ou une `config system zone` est refusée
+comme membre SD-WAN, et une interface déjà membre est refusée dans une
+`config system zone` — la réciproque est celle dont j'ai la
+transcription. La table qui commet est exclue de son propre décompte,
+sans quoi re-commettre un membre existant le refuserait lui-même.
+
+`fortios-sdwan-membres.test.ts` (13 cas) est discriminé par
+`git stash push -- src/network/` : 11 tombent avant correctif, et les 2
+qui passent des deux côtés sont nommés dans l'en-tête — deux
+`not.toContain` sur une commande qui n'existait pas, donc une absence de
+sortie et une sortie vide y sont indiscernables.
+`e2e/fortigate-sdwan-membres.spec.ts` (3 cas) rejoue le refus, la vue des
+références et le développement de la route dans le vrai navigateur.
+
+---
+
 ## Périmètre pris — FortiOS phase 24 (la bannière s'AFFICHE et s'ACCEPTE)
 
 **Agent `mandeng`.** Deux entrées `[durcissement]` de `TODO.md`, et là

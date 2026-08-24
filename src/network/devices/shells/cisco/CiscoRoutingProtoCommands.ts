@@ -19,8 +19,8 @@ import type { RoutingConfigRepository }
 import { parseRedistribute, upsertRedistribute }
   from '../../inspection/config/RoutingConfigRepository';
 import type { CommandSpec } from '@/cli/CommandTable';
-import type { ArgumentSpec } from '@/cli/ArgumentTypes';
-import type { SpecCollector } from '@/cli/commands/trieAdapter';
+import type { ArgumentSpec, EnumValue } from '@/cli/ArgumentTypes';
+import type { SpecCollector, AdapterKeyword } from '@/cli/commands/trieAdapter';
 import { collectRegistrations, specsFromTrieRegistrations }
   from '@/cli/commands/trieAdapter';
 import { showIpProtocols } from './CiscoShowCommands';
@@ -28,6 +28,7 @@ import {
   showIpEigrpNeighbors, showIpEigrpNeighborsDetail,
   showIpEigrpTopology, showIpEigrpInterfaces, eigrpProtocolBlock,
 } from './CiscoEigrpShow';
+
 
 type Proto = 'rip' | 'eigrp' | 'bgp';
 
@@ -157,6 +158,18 @@ export function buildRoutingProtoConfig(
     converge();
     return '';
   });
+
+  buildRouterSubmodeOn(routerTrie, ctx, repo);
+}
+
+
+export function buildRouterSubmodeOn(
+  routerTrie: CommandTrie,
+  ctx: CiscoShellContext, repo: RoutingConfigRepository,
+): void {
+  const eigrpEng = () => ctx.r().getEIGRPEngine();
+  const bgpEng = () => ctx.r().getBGPEngine();
+  const converge = () => ctx.r().convergeDynamicRouting();
 
   // ── config-router sub-commands (proto-aware) ──
   const eigrp = () => repo.ensureEigrp(curProto(ctx).asn ?? 0);
@@ -1067,4 +1080,201 @@ export function routingProtoShowSpecs(
   const voisins = collectRegistrations(register)
     .find((entry) => entry.path === BGP_NEIGHBORS_PATH);
   return voisins ? [...specs, ...bgpNeighborSpecs(voisins.action)] : specs;
+}
+
+/*
+ * Ce qu'on peut redistribuer DEPEND du protocole ou l'on se trouve, et
+ * une place enumeree ne sait pas le dire : son domaine est fixe a la
+ * declaration. Sous `router rip`, le gestionnaire refuse `rip` — on ne
+ * redistribue pas un protocole dans lui-meme — et `isis`, dont ce
+ * simulateur n'a pas de moteur. Chaque source est donc un mot-cle, qui
+ * porte sa propre joignabilite ; sans quoi `?` proposerait sous RIP deux
+ * mots que la meme machine refuse, ce que le garde-fou
+ * `probe-cli-aide-egale-execution` interdit — et c'est lui qui l'a
+ * attrape.
+ */
+function redistribuable(
+  ctx: CiscoShellContext, keyword: string, description: string,
+  saufSousRip = false,
+): AdapterKeyword {
+  return {
+    keyword, description,
+    argument: { name: 'reste', type: 'REST', optional: true,
+      description: 'Process number, `metric`, `route-map` or `subnets`' },
+    ...(saufSousRip
+      ? { reachableWhen: () => curProto(ctx).proto !== 'rip' } : {}),
+  };
+}
+
+function redistributionKeywords(ctx: CiscoShellContext): ReadonlyArray<AdapterKeyword> {
+  return [
+    redistribuable(ctx, 'connected', 'Connected routes'),
+    redistribuable(ctx, 'static', 'Static routes'),
+    redistribuable(ctx, 'ospf', 'Open Shortest Path First'),
+    redistribuable(ctx, 'eigrp', 'Enhanced Interior Gateway Routing Protocol'),
+    redistribuable(ctx, 'bgp', 'Border Gateway Protocol'),
+    redistribuable(ctx, 'rip', 'Routing Information Protocol', true),
+    redistribuable(ctx, 'isis', 'ISO IS-IS', true),
+  ];
+}
+
+/*
+ * Les suites de `neighbor` etaient posees par la table de continuations
+ * du trie, qui ne s'applique plus a un arbre vide : sans les declarer
+ * ici, `neighbor 10.0.0.2 ?` aurait cesse d'annoncer `remote-as` et le
+ * reste, en silence. Elles NOMMENT sans restreindre — un pair porte
+ * bien d'autres reglages (`next-hop-self`, `password`, `prefix-list`…)
+ * que le gestionnaire range tels quels.
+ */
+const NEIGHBOR_SOUS_COMMANDES: readonly EnumValue[] = [
+  { keyword: 'remote-as', description: 'Autonomous system number of the neighbour' },
+  { keyword: 'peer-group', description: 'Declare a peer-group, or join one' },
+  { keyword: 'description', description: 'Text describing this neighbour' },
+  { keyword: 'update-source', description: 'Interface the session is sourced from' },
+  { keyword: 'activate', description: 'Enable this neighbour in the current address family' },
+  { keyword: 'weight', description: 'Weight given to the routes this neighbour advertises' },
+];
+
+const ROUTER_ARGUMENTS:
+Readonly<Record<string, ArgumentSpec | readonly ArgumentSpec[] | null>> = {
+  network: [
+    { name: 'reseau', type: 'IP_ADDR', description: 'Network number' },
+    { name: 'reste', type: 'REST', optional: true,
+      description: 'A wildcard or `mask <A.B.C.D>`, depending on the protocol' },
+  ],
+  redistribute: null,
+  'default-metric': { name: 'metrique', type: 'REST',
+    description: 'Metric given to a redistributed route' },
+  distance: [
+    { name: 'distance', type: 'INT', description: 'Administrative distance',
+      range: [1, 255] },
+    { name: 'reste', type: 'REST', optional: true,
+      description: 'A source address and its wildcard' },
+  ],
+  timers: { name: 'valeurs', type: 'REST',
+    description: '`basic <update> <invalid> <holddown> <flush>`' },
+  'maximum-paths': { name: 'chemins', type: 'INT',
+    description: 'Number of parallel routes', range: [1, 32] },
+  /*
+   * Le premier operande de `neighbor` n'est PAS toujours une adresse :
+   * `neighbor IBGP peer-group` declare un gabarit, qui porte un NOM.
+   * Le typer en adresse refuserait au caret la moitie de la famille
+   * des peer-groups, que cette machine sait pourtant configurer.
+   */
+  neighbor: [
+    {
+      name: 'pair', type: 'WORD',
+      description: 'Neighbour address, or the name of a peer-group',
+      alternatives: [
+        { keyword: 'A.B.C.D', description: 'Neighbour address' },
+        { keyword: 'X:X:X:X::X', description: 'Neighbour IPv6 address' },
+      ],
+    },
+    {
+      name: 'reste', type: 'REST', optional: true,
+      description: 'What to set on this neighbour',
+      alternatives: NEIGHBOR_SOUS_COMMANDES,
+    },
+  ],
+  'router-id': { name: 'identifiant', type: 'IP_ADDR',
+    description: 'Router identifier, in the shape of an IPv4 address' },
+  variance: { name: 'multiplicateur', type: 'INT',
+    description: 'Metric variance multiplier', range: [1, 128] },
+  /*
+   * Ces deux places NOMMENT sans RESTREINDRE, et la nuance est ce qui
+   * distingue une aide d'une regression. Sous RIP `metric 5` est un
+   * simple nombre, et `bgp <option>` accepte tout ce que le
+   * gestionnaire range en l'etat (`bestpath`, `deterministic-med`…) :
+   * une place enumeree refuserait au caret ce que la machine execute.
+   * Les formes connues sont donc des `alternatives` — ce que `?`
+   * annonce — sur une place qui accepte le reste de la ligne.
+   */
+  metric: {
+    name: 'reglage', type: 'REST', description: 'Metric parameter to set',
+    alternatives: [
+      { keyword: 'maximum-hops', description: 'Hop count beyond which a route is unreachable' },
+      { keyword: 'weights', description: 'Coefficients of the composite metric' },
+    ],
+  },
+  bgp: {
+    name: 'option', type: 'REST', description: 'BGP process option',
+    alternatives: [
+      { keyword: 'default', description: 'Configure a BGP default' },
+      { keyword: 'router-id', description: 'Router identifier of this BGP process' },
+      { keyword: 'log-neighbor-changes', description: 'Log neighbour up/down events' },
+    ],
+  },
+  'aggregate-address': [
+    { name: 'reseau', type: 'IP_ADDR', description: 'Aggregate address' },
+    { name: 'reste', type: 'REST', optional: true,
+      description: 'A mask, then `summary-only` or `as-set`' },
+  ],
+  'address-family': [
+    { name: 'famille', type: 'ENUM', description: 'Address family to enter',
+      values: [
+        { keyword: 'ipv4', description: 'IPv4 address family' },
+        { keyword: 'ipv6', description: 'IPv6 address family' },
+        { keyword: 'vpnv4', description: 'VPNv4 address family' },
+      ] },
+    { name: 'reste', type: 'REST', optional: true,
+      description: '`unicast`, `multicast` or `vrf <name>`' },
+  ],
+  'passive-interface': {
+    name: 'interface', type: 'REST',
+    description: 'Interface that stops sending updates',
+    alternatives: [
+      { keyword: 'IFACE', description: 'Interface that stops sending updates' },
+      { keyword: 'default', description: 'Every interface, unless listed otherwise' },
+    ],
+  },
+  'default-information': { name: 'reste', type: 'REST', optional: true,
+    description: '`originate`' },
+  eigrp: null,
+};
+
+const EIGRP_KEYWORDS: ReadonlyArray<AdapterKeyword> = [
+  {
+    keyword: 'router-id', description: 'Router identifier of this EIGRP process',
+    argument: { name: 'identifiant', type: 'IP_ADDR',
+      description: 'Router identifier, in the shape of an IPv4 address' },
+  },
+  {
+    keyword: 'stub', description: 'Make this router an EIGRP stub',
+    argument: { name: 'reste', type: 'REST', optional: true,
+      description: '`connected`, `summary`, `static`, `redistributed`, `receive-only`' },
+  },
+];
+
+/**
+ * `config-router` est UN arbre pour trois protocoles, et c'est
+ * `ROUTER_MODE_OWNERS` qui dit a qui appartient chaque mot-cle. Le trie
+ * lisait cette table par un filtre de completion, qui ne gouverne que
+ * l'AIDE ; au socle elle devient la joignabilite de la declaration, donc
+ * elle gouverne l'aide ET l'execution — le refus et la proposition ne
+ * peuvent pas diverger, ce qui est la raison d'etre de cette table.
+ */
+export function routerSubmodeSpecs(
+  ctx: CiscoShellContext, repo: RoutingConfigRepository,
+): CommandSpec[] {
+  return specsFromTrieRegistrations(
+    (collector) =>
+      buildRouterSubmodeOn(collector as unknown as CommandTrie, ctx, repo),
+    {
+      modes: ['config-router'], minPrivilege: 15,
+      undoFromNegatedPaths: true,
+      argumentFor: (path) => ROUTER_ARGUMENTS[path],
+      keywordsFor: (path) => path === 'eigrp' ? EIGRP_KEYWORDS
+        : path === 'redistribute' ? redistributionKeywords(ctx) : undefined,
+      /*
+       * Le mot qui decide est celui qu'on NIE, pas `no`.
+       * `routerKeywordBelongsTo` sait deja retirer un `no` de tete, mais
+       * il lui faut ensuite le PREMIER mot : le filtre du trie lui
+       * passait `path[0]`, donc `no` pour toute negation — un mot absent
+       * de la table, qui appartient donc aux trois protocoles. `no
+       * version` etait ainsi propose sous BGP, ou `version` n'existe pas.
+       */
+      reachableWhenFor: (path) => () => routerKeywordBelongsTo(
+        path.replace(/^no\s+/i, '').split(/\s+/)[0], curProto(ctx).proto),
+    },
+  );
 }

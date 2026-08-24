@@ -1,5 +1,9 @@
 import type { CommandTrie } from '../CommandTrie';
 import type { Router } from '../../Router';
+import type { CommandSpec } from '@/cli/CommandTable';
+import type { ArgumentSpec } from '@/cli/ArgumentTypes';
+import { specsFromTrieRegistrations } from '@/cli/commands/trieAdapter';
+import { MODES_INTERFACE } from './CiscoConfigCommands';
 
 interface IfCtx {
   selectedPorts(): string[];
@@ -12,6 +16,34 @@ interface ShowCtx {
 
 function agent(router: Router): import('../../../bfd/BfdAgent').BfdAgent | undefined {
   return (router as unknown as { getBfdAgent?: () => import('../../../bfd/BfdAgent').BfdAgent }).getBfdAgent?.();
+}
+
+const BFD_ARGUMENTS:
+Readonly<Record<string, ArgumentSpec | readonly ArgumentSpec[] | null>> = {
+  'bfd interval': {
+    name: 'valeurs', type: 'REST',
+    description: 'Transmit interval in milliseconds, then min_rx and multiplier',
+    alternatives: [
+      { keyword: '<1-9999>', description: 'Transmit interval in milliseconds' },
+      { keyword: 'min_rx', description: 'Minimum receive interval in milliseconds' },
+      { keyword: 'multiplier', description: 'Detection multiplier' },
+    ],
+  },
+  'bfd neighbor': {
+    name: 'voisin', type: 'REST', description: 'Address of the BFD neighbour',
+    alternatives: [{ keyword: 'A.B.C.D', description: 'Address of the BFD neighbour' }],
+  },
+};
+
+export function bfdInterfaceSpecs(ctx: IfCtx): CommandSpec[] {
+  return specsFromTrieRegistrations(
+    (collector) => buildBfdInterfaceCommands(collector as unknown as CommandTrie, ctx),
+    {
+      modes: MODES_INTERFACE, minPrivilege: 15,
+      undoFromNegatedPaths: true,
+      argumentFor: (path) => BFD_ARGUMENTS[path],
+    },
+  );
 }
 
 export function buildBfdInterfaceCommands(trie: CommandTrie, ctx: IfCtx): void {

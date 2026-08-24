@@ -1,5 +1,6 @@
 import type { CommandTrie } from '../CommandTrie';
 import type { CommandSpec } from '@/cli/CommandTable';
+import type { ArgumentSpec } from '@/cli/ArgumentTypes';
 import { specsFromTrieRegistrations } from '@/cli/commands/trieAdapter';
 import type { Router } from '../../Router';
 import type { IgmpAgent } from '../../../igmp/IgmpAgent';
@@ -7,6 +8,7 @@ import type { IgmpGroupRecord, IgmpInterfaceRuntime } from '../../../igmp/types'
 import { isMulticastIpv4, isReservedMulticast, isV1CompatActive, isConfiguredGroup } from '../../../igmp/types';
 import { iosInterfaceStatus } from '@/network/devices/inspection/InterfaceStatusView';
 import { hms } from '@/lib/format';
+import { MODES_INTERFACE } from './CiscoConfigCommands';
 
 interface IfCtx {
   selectedPorts(): string[];
@@ -48,6 +50,40 @@ export function igmpInterfaceRunningConfigLines(router: Router, iface: string): 
     lines.push(` ip igmp ${origin} ${group}`);
   }
   return lines;
+}
+
+const GROUPE_MULTICAST: ArgumentSpec = {
+  name: 'groupe', type: 'REST', description: 'Multicast group address',
+  alternatives: [{ keyword: 'A.B.C.D', description: 'Multicast group address' }],
+};
+
+const IGMP_ARGUMENTS:
+Readonly<Record<string, ArgumentSpec | readonly ArgumentSpec[] | null>> = {
+  /*
+   * Pas d'enumeration {1, 2} : IGMPv3 a son propre message, qui NOMME
+   * ce qui n'est pas modelise (le filtrage par source de la RFC 3376).
+   * Une place enumeree le remplacerait par un caret nu, c'est-a-dire
+   * une information par une absence d'information.
+   */
+  'ip igmp version': {
+    name: 'version', type: 'REST', description: 'IGMP version to run',
+    alternatives: [{ keyword: '<1-3>', description: 'IGMP version number' }],
+  },
+  'ip igmp join-group': GROUPE_MULTICAST,
+  'ip igmp static-group': GROUPE_MULTICAST,
+  'ip igmp': { name: 'reste', type: 'REST', optional: true,
+    description: 'IGMP interface parameters' },
+};
+
+export function igmpInterfaceSpecs(ctx: IfCtx): CommandSpec[] {
+  return specsFromTrieRegistrations(
+    (collector) => buildIgmpInterfaceCommands(collector as unknown as CommandTrie, ctx),
+    {
+      modes: MODES_INTERFACE, minPrivilege: 15,
+      undoFromNegatedPaths: true,
+      argumentFor: (path) => IGMP_ARGUMENTS[path],
+    },
+  );
 }
 
 export function buildIgmpInterfaceCommands(trie: CommandTrie, ctx: IfCtx): void {

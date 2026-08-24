@@ -65,7 +65,7 @@ export function NetworkDesigner() {
   const [importConfirmOpen, setImportConfirmOpen] = useState(false);
   const [message, setMessage] = useState<{ title: string; description: string } | null>(null);
 
-  const { getDevices, clearAll, deviceInstances, connections } = useNetworkStore();
+  const { getDevices, clearAll, replaceTopology, deviceInstances, connections } = useNetworkStore();
   const devices = getDevices();
   const undo = useNetworkStore(s => s.undo);
   const redo = useNetworkStore(s => s.redo);
@@ -96,20 +96,7 @@ export function NetworkDesigner() {
     try {
       const data = await openTopologyFile();
       const result = await importTopology(data);
-
-      // Clear current state first (disconnect existing cables). clearAll()
-      // now publishes `registry.cleared` which causes the TerminalManager
-      // to dispose every open session reactively — no manual close loop.
-      clearAll();
-
-      // Apply imported state directly to the store
-      useNetworkStore.setState({
-        deviceInstances: result.deviceInstances,
-        connections: result.connections,
-        selectedDeviceId: null,
-        selectedConnectionId: null,
-      });
-
+      replaceTopology(result.deviceInstances, result.connections);
       setProjectName(result.projectName);
       setMinimizedSessions(new Set());
     } catch (err) {
@@ -117,7 +104,7 @@ export function NetworkDesigner() {
         setMessage({ title: 'Import failed', description: err.message });
       }
     }
-  }, [clearAll, allSessions, manager]);
+  }, [replaceTopology]);
 
   const handleImport = useCallback(() => {
     if (deviceInstances.size > 0) {
@@ -150,19 +137,13 @@ export function NetworkDesigner() {
     }
     try {
       const result = await importTopology(topology);
-      clearAll();
-      useNetworkStore.setState({
-        deviceInstances: result.deviceInstances,
-        connections: result.connections,
-        selectedDeviceId: null,
-        selectedConnectionId: null,
-      });
+      replaceTopology(result.deviceInstances, result.connections);
       setProjectName(result.projectName);
       setMinimizedSessions(new Set());
     } catch (err) {
       setMessage({ title: 'Open failed', description: err instanceof Error ? err.message : String(err) });
     }
-  }, [clearAll]);
+  }, [replaceTopology]);
 
   // ── Clear All: destructive, so ask first (Reset already does) ──
   const handleClearAll = useCallback(() => {

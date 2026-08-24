@@ -22,6 +22,7 @@ import { encryptType7, md5Hex } from '@/crypto';
 import { pad2 } from '@/lib/format';
 import { getOrCreateCA } from '../../../pki/PkiCaRegistry';
 import type { RevocationCheckMode } from '../../../pki/CertificateVerifier';
+import { MODES_INTERFACE } from './CiscoConfigCommands';
 
 const SECURITY_KEY = Symbol.for('CiscoSecurityConfig');
 
@@ -1673,6 +1674,34 @@ function parseAbsolute(args: string[]): import('../../router/security/CiscoSecur
     }
   }
   return result;
+}
+
+const SECURITY_IF_ARGUMENTS:
+Readonly<Record<string, ArgumentSpec | readonly ArgumentSpec[] | null>> = {
+  'ip verify unicast': {
+    name: 'mode', type: 'REST', description: 'Unicast reverse-path forwarding check',
+    alternatives: [
+      { keyword: 'reverse-path', description: 'Strict reverse-path check' },
+      { keyword: 'source', description: 'Check the source, then `reachable-via`' },
+    ],
+  },
+  'zone-member security': {
+    name: 'zone', type: 'WORD', description: 'Name of the security zone',
+  },
+};
+
+export function securityInterfaceSpecs(
+  ctx: CiscoSecurityShellContext,
+): CommandSpec[] {
+  return specsFromTrieRegistrations(
+    (collector) =>
+      buildSecurityInterfaceCommands(collector as unknown as CommandTrie, ctx),
+    {
+      modes: MODES_INTERFACE, minPrivilege: 15,
+      undoFromNegatedPaths: true,
+      argumentFor: (path) => SECURITY_IF_ARGUMENTS[path] ?? null,
+    },
+  );
 }
 
 export function buildSecurityInterfaceCommands(trie: CommandTrie, ctx: CiscoSecurityShellContext): void {

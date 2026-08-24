@@ -28,8 +28,8 @@ function nextName(prefix: string): string {
   return `${prefix}${count}`;
 }
 
-export function createDevice(type: DeviceType, x: number = 0, y: number = 0): Equipment {
-  const name = nextName(DEVICE_CATALOG[type]?.namePrefix ?? type);
+export function createDevice(type: DeviceType, x: number = 0, y: number = 0, restoredName?: string): Equipment {
+  const name = restoredName ?? nextName(DEVICE_CATALOG[type]?.namePrefix ?? type);
   switch (type) {
     // Computers
     case 'linux-pc':
@@ -91,4 +91,13 @@ export function isFullyImplemented(type: DeviceType): boolean {
 export function resetDeviceCounters(): void {
   deviceCounters.clear();
   EquipmentRegistry.getInstance().clear();
+}
+
+export function reserveDeviceName(name: string): void {
+  const match = /^(.*?)(\d+)$/.exec(name);
+  if (!match) return;
+  const [, prefix, digits] = match;
+  const value = parseInt(digits, 10);
+  if (!Number.isFinite(value)) return;
+  if (value > (deviceCounters.get(prefix) ?? 0)) deviceCounters.set(prefix, value);
 }

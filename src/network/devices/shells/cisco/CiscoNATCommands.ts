@@ -455,6 +455,17 @@ export function buildNATConfigCommands(trie: CommandTrie, ctx: CiscoShellContext
 
 // ─── Interface Config Mode ────────────────────────────────────────────────────
 
+export function natInterfaceSpecs(ctx: CiscoShellContext): CommandSpec[] {
+  return specsFromTrieRegistrations(
+    (collector) => buildNATInterfaceCommands(collector as unknown as CommandTrie, ctx),
+    {
+      modes: MODES_INTERFACE, minPrivilege: 15,
+      undoFromNegatedPaths: true,
+      argumentFor: () => null,
+    },
+  );
+}
+
 export function buildNATInterfaceCommands(trie: CommandTrie, ctx: CiscoShellContext): void {
   const requireIp = (ifName: string): string | null => {
     const port = ctx.r().getPort?.(ifName);
@@ -507,6 +518,7 @@ export function buildNATInterfaceCommands(trie: CommandTrie, ctx: CiscoShellCont
 
 import type { CommandSpec } from '@/cli/CommandTable';
 import { specsFromTrieRegistrations } from '@/cli/commands/trieAdapter';
+import { MODES_INTERFACE } from './CiscoConfigCommands';
 
 export function registerNATPrivilegedCommands(trie: CommandTrie, getRouter: () => Router): void {
   const debugSvc = () => getRouter().getDebugService();

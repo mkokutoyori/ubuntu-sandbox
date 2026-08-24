@@ -7,6 +7,7 @@ import type { ArgumentSpec } from '@/cli/ArgumentTypes';
 import type { AdapterKeyword } from '@/cli/commands/trieAdapter';
 import { specsFromTrieRegistrations } from '@/cli/commands/trieAdapter';
 import { CISCO_ERRORS } from '../cli-utils';
+import { MODES_INTERFACE } from './CiscoConfigCommands';
 
 /** Les niveaux qu'EEM accepte derrière `priority` : l'indice EST la sévérité. */
 const EEM_SEVERITES: readonly string[] = [
@@ -303,6 +304,28 @@ export function buildArchiveSubmode(trie: CommandTrie, ctx: CiscoEemNetflowArchi
 
 export function buildArchiveLogSubmode(trie: CommandTrie, ctx: CiscoEemNetflowArchiveContext): void {
   buildArchiveLogSubmodeOn(trie, () => ctx.r().getArchiveService());
+}
+
+export function netflowInterfaceSpecs(
+  ctx: CiscoEemNetflowArchiveContext,
+): CommandSpec[] {
+  return specsFromTrieRegistrations(
+    (collector) => buildEemNetflowArchiveInterfaceCommands(
+      collector as unknown as CommandTrie, ctx),
+    {
+      modes: MODES_INTERFACE, minPrivilege: 15,
+      undoFromNegatedPaths: true,
+      argumentFor: (path) => path === 'ip flow monitor'
+        ? [{ name: 'moniteur', type: 'WORD', description: 'Name of the flow monitor' },
+          { name: 'sens', type: 'ENUM', optional: true,
+            description: 'Direction the monitor watches',
+            values: [
+              { keyword: 'input', description: 'Ingress traffic' },
+              { keyword: 'output', description: 'Egress traffic' },
+            ] }]
+        : null,
+    },
+  );
 }
 
 export function buildEemNetflowArchiveInterfaceCommands(trie: CommandTrie, ctx: CiscoEemNetflowArchiveContext): void {

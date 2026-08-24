@@ -137,19 +137,6 @@ export const ROUTEUR_SEUL: ContinuationTable = {
   configPmap: {
     'class': ['inspect', 'type'],
   },
-  configRouter: {
-    'bgp': ['default', 'ipv4-unicast', 'local-preference', 'router-id'],
-    'eigrp': ['router-id', 'stub'],
-    'metric': ['maximum-hops', 'weights'],
-    'neighbor': ['activate', 'description', 'peer-group', 'remote-as', 'update-source', 'weight'],
-    'network': ['mask'],
-    'no bgp': ['default', 'ipv4-unicast'],
-    'no eigrp': ['router-id', 'stub'],
-    'no neighbor': ['activate', 'peer-group'],
-    'no passive-interface': ['default'],
-    'no redistribute': ['bgp', 'connected', 'ospf', 'rip', 'static'],
-    'passive-interface': ['default'],
-  },
   configStdNacl: {
     'sequence': ['deny', 'permit'],
   },
