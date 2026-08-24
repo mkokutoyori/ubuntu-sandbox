@@ -433,6 +433,7 @@ export class SshInteractiveSubShell implements ISubShell {
     // (docs/PRD-SSH-Unification.md §4bis B2); only the login shell's own
     // `exit` ends the session.
     if ((trimmed === 'exit' || trimmed === 'logout') && !this.serverNested) {
+      this.closing = true;
       this.session.disconnect();
       return {
         output: ['logout', `Connection to ${this.remoteHost} closed.`],
@@ -537,6 +538,7 @@ export class SshInteractiveSubShell implements ISubShell {
     const output = onProgress ? [] : (collected.length ? collected : ['']);
 
     if (this.serverEndedSession) {
+      this.closing = true;
       this.session.disconnect();
       return {
         output: [...output, `Connection to ${this.remoteHost} closed.`],
