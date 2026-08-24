@@ -123,10 +123,38 @@ export function buildRouteMapSubmodeOn(
 
 const ROUTE_MAP_ARGUMENTS:
 Readonly<Record<string, ArgumentSpec | readonly ArgumentSpec[] | null>> = {
+  /*
+   * Les criteres et les actions sont NOMMES et non enumeres : le
+   * gestionnaire range ce qu'il ne reconnait pas, donc un domaine fini
+   * refuserait au caret ce que la machine avale. Ils etaient declares
+   * par `ciscoArgumentHelp`, qui s'execute apres l'elagage — donc morts
+   * depuis la migration de cette famille.
+   */
   match: { name: 'critere', type: 'REST',
-    description: 'Criterion the route must satisfy' },
+    description: 'Criterion the route must satisfy',
+    alternatives: [
+      { keyword: 'as-path', description: 'Match BGP AS path list' },
+      { keyword: 'community', description: 'Match BGP community list' },
+      { keyword: 'interface', description: 'Match first hop interface of route' },
+      { keyword: 'ip', description: 'IP specific information' },
+      { keyword: 'length', description: 'Packet length' },
+      { keyword: 'metric', description: 'Match metric of route' },
+      { keyword: 'tag', description: 'Match tag of route' },
+    ] },
   set: { name: 'action', type: 'REST',
-    description: 'Value the route-map applies to a matching route' },
+    description: 'Value the route-map applies to a matching route',
+    alternatives: [
+      { keyword: 'as-path', description: 'Prepend string for a BGP AS-path attribute' },
+      { keyword: 'community', description: 'BGP community attribute' },
+      { keyword: 'interface', description: 'Output interface' },
+      { keyword: 'ip', description: 'IP specific information' },
+      { keyword: 'local-preference', description: 'BGP local preference path attribute' },
+      { keyword: 'metric', description: 'Metric value for destination routing protocol' },
+      { keyword: 'metric-type', description: 'Type of metric for destination routing protocol' },
+      { keyword: 'origin', description: 'BGP origin code' },
+      { keyword: 'tag', description: 'Tag value for destination routing protocol' },
+      { keyword: 'weight', description: 'BGP weight for routing table' },
+    ] },
   description: { name: 'texte', type: 'REST', literal: 'LINE',
     description: 'Description of this route-map clause' },
 };

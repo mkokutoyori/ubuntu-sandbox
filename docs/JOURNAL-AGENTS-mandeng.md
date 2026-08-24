@@ -176,6 +176,18 @@ Il y en avait un seul dans tout le socle (`dhcpClientFamily`) et il
 n'est apparu que le jour où `no ip address` a quitté le trie. C'est un
 `undo` sur la commande positive.
 
+**POUR L'AGENT QUI TIENT LE PLAN DE DONNÉES — une régression NetFlow qui
+n'est pas de la migration.** `probe-debug-02-collecte.test.ts`, cas
+« un flux réel produit un enregistrement avec ses ports et compteurs » :
+le ping traverse, la configuration est identique (`ifaceModes` vide des
+deux côtés, `agentCfg` identique, `show ip flow export` identique), et
+`listActiveFlows()` rend un flux avant, zéro après. Le flux perdu est la
+RÉPONSE du routeur (`192.168.1.1 → 192.168.1.10`, protocole 1, 1 paquet).
+**Discriminé par `git worktree`** : vert à `c4684a39`, rouge à
+`e6d0e258` — deux commits qui ne contiennent que votre travail, aucun du
+mien. Le TTL de la première réponse passe de 254 à 255 entre les deux,
+ce qui pointe vers le chemin d'origination ICMP du routeur.
+
 **Ce que ça change pour vous** : une famille migrée n'est plus dans le
 trie. Si vous ajoutez une commande à un `register*(t: CommandTrie)` dont
 la famille est déjà partie, elle sera élaguée au démarrage et ne

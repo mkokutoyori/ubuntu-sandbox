@@ -218,9 +218,6 @@ function describeArgumentTypes(tries: ArgumentHelpTries): void {
   ]);
   tries.config.describeArgs('no access-list', [NUMERO_ACL]);
   tries.config.describeArgs('no interface', [IFACE('Interface to remove')]);
-  tries.config.describeArgs('logging source-interface', [
-    IFACE('Interface used as the source address of syslog messages'),
-  ]);
   tries.config.describeArgs('ipv6 route', [
     { name: 'prefix', type: 'WORD', description: 'IPv6 prefix', literal: 'X:X:X:X::X/<0-128>' },
   ]);

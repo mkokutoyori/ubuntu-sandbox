@@ -504,15 +504,23 @@ const SHOW_PARTAGEES: ReadonlySet<string> = new Set([
   'show interfaces counters errors', 'show mac address-table', 'terminal',
   'show ntp packets', 'show cdp', 'show lldp', 'show snmp', 'show parser view',
   'show hosts', 'show ip dns statistics', 'show ip vrf', 'show vrf',
-  'show adjacency', 'show redundancy', 'show aaa',
+  'show redundancy', 'show aaa',
 ]);
+/*
+ * `show adjacency` n'est PAS partagee : le commutateur en enregistre une
+ * autre, plus riche (elle lit sa table ARP et connait `detail` et
+ * `summary`), qui gagnait dans le trie parce qu'elle est declaree apres.
+ * La declarer au socle la ferait perdre — mesure par
+ * `cisco-switch-l3-referential`.
+ */
 
 const SHARED_SHOW_ARGUMENTS:
 Readonly<Record<string, ArgumentSpec | readonly ArgumentSpec[] | null>> = {
   'show snmp': { name: 'vue', type: 'REST', optional: true,
     description: 'SNMP detail to display' },
   'show hosts': null,
-  'show adjacency': null,
+  'show adjacency': { name: 'reste', type: 'REST', optional: true,
+    description: 'Adjacency detail to display' },
   'show ip dns statistics': null,
   'show interfaces counters errors': null,
   'show redundancy': null,
@@ -586,6 +594,24 @@ Readonly<Record<string, ArgumentSpec | readonly ArgumentSpec[] | null>> = {
     description: '`idle`, `life` and `requests`, with their values' },
 };
 
+/*
+ * `source-interface` est le seul mot que `ip domain-lookup` prenne, et
+ * il etait declare par `registerSuggestions` sur le trie — donc perdu le
+ * jour ou la famille a migre, l'elagage ayant lieu avant. Un mot-cle le
+ * declare des deux cotes a la fois : l'aide l'annonce et l'analyse le
+ * reconnait.
+ */
+const DOMAIN_LOOKUP_KEYWORDS: ReadonlyArray<AdapterKeyword> = [{
+  keyword: 'source-interface', description: 'Source interface for packets',
+  /*
+   * `WORD` et non `IFACE` : c'est ce que le trie annoncait, et
+   * `probe-cli-arguments-types` l'epingle — la place accepte un nom
+   * d'interface abrege que le type `INTERFACE` refuserait.
+   */
+  argument: { name: 'interface', type: 'WORD',
+    description: 'Interface used as the source address' },
+}];
+
 const DNS_ARGUMENTS:
 Readonly<Record<string, ArgumentSpec | readonly ArgumentSpec[] | null>> = {
   'ip domain-lookup': null,
@@ -622,7 +648,15 @@ Readonly<Record<string, ArgumentSpec | readonly ArgumentSpec[] | null>> = {
    */
   'ip host': [
     { name: 'nom', type: 'WORD', description: 'Name of host' },
-    { name: 'reste', type: 'REST',
+    /*
+     * La seconde place est FACULTATIVE alors que le gestionnaire exige
+     * deux mots, et c'est la NEGATION qui l'impose : `no ip host r2` ne
+     * prend qu'un nom, et la negation reprend les places de la forme
+     * positive. La rendre exigee faisait repondre « Incomplete » a une
+     * suppression parfaitement formee. `ip host ?` n'annonce pas `<cr>`
+     * pour autant, le NOM etant exige.
+     */
+    { name: 'reste', type: 'REST', optional: true,
       description: 'Host addresses, or `ns` then the name server address' },
   ],
 };
@@ -2816,15 +2850,22 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     }
     /*
      * Un mot TAPE EN ENTIER l'emporte sur un mot dont il n'est que le
-     * debut. Sans cette preference, `ip address` etait juge ambigu avec
-     * `ipv6 address` — `ipv6` commence bien par `ip` — donc la
-     * canonicalisation rendait `null` et la regle de niveau etait rangee
-     * sous la ligne entiere, arguments compris. C'est la meme regle que
-     * la marche du trie, qui essaie l'enfant EXACT avant les prefixes.
+     * debut, ET RANG PAR RANG.
+     *
+     * `sh ip traf` a deux candidats — `show ip traffic` et
+     * `show ipv6 traffic`, `ipv6` commencant bien par `ip` — que juger
+     * sur la ligne ENTIERE declarait ambigus, puisque `sh` n'est exact
+     * dans aucun des deux. C'est la marche du trie qu'il faut refaire :
+     * a chaque rang, si un candidat porte le mot EXACT, les autres
+     * tombent. Sans cette regle, une regle de niveau ecrite en abrege
+     * n'etait rangee nulle part.
      */
-    const exacts = candidats.filter(
-      chemin => chemin.every((mot, rang) => mot === mots[rang]));
-    const pool = exacts.length > 0 ? exacts : candidats;
+    let pool = candidats;
+    for (let rang = 0; rang < mots.length; rang++) {
+      const exacts = pool.filter(
+        chemin => rang >= chemin.length || chemin[rang] === mots[rang]);
+      if (exacts.length > 0 && exacts.length < pool.length) pool = exacts;
+    }
 
     let meilleur: string[] | null = null;
     let ambigu = false;
@@ -3785,7 +3826,14 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
         keyword: 'source-interface',
         description: 'Specify interface for source address in logging transactions',
         undoWithoutArgument: true,
-        argument: { name: 'interface', type: 'INTERFACE' },
+        /*
+         * `WORD` et non `IFACE` : c'est ce que la machine annoncait, la
+         * declaration de `ciscoArgumentHelp` l'emportant sur celle-ci
+         * jusqu'a l'elagage. Le type etroit refuserait en plus un nom
+         * abrege que le gestionnaire resout.
+         */
+        argument: { name: 'interface', type: 'WORD',
+          description: 'Interface used as the source address of syslog messages' },
       },
       {
         keyword: 'trap', description: 'Set syslog server logging level',
@@ -5120,6 +5168,8 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
         modes: ['config'], minPrivilege: 15,
         undoFromNegatedPaths: true,
         argumentFor: (path) => DNS_ARGUMENTS[path],
+        keywordsFor: (path) => /^ip domain[- ]lookup$/.test(path)
+          ? DOMAIN_LOOKUP_KEYWORDS : undefined,
       },
     );
   }

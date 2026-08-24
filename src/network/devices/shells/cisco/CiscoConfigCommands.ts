@@ -604,8 +604,18 @@ Readonly<Record<string, ArgumentSpec | readonly ArgumentSpec[] | null>> = {
   encapsulation: {
     name: 'type', type: 'REST', description: 'Encapsulation type',
   },
-  'ipv6 address': { name: 'prefix', type: 'WORD', literal: 'X:X:X:X::X/<0-128>',
-    description: 'IPv6 prefix' },
+  /*
+   * `eui-64` et `link-local` SUIVENT le prefixe, ils ne le remplacent
+   * pas : la seconde place existe pour eux. La declarer sur une seule
+   * place refusait `ipv6 address fe80::1 link-local`, que le
+   * gestionnaire lit depuis toujours.
+   */
+  'ipv6 address': [
+    { name: 'prefix', type: 'WORD', literal: 'X:X:X:X::X/<0-128>',
+      description: 'IPv6 prefix' },
+    { name: 'reste', type: 'REST', optional: true,
+      description: '`eui-64` or `link-local`' },
+  ],
   'service-policy': [
     {
       name: 'direction', type: 'ENUM', description: 'Policy direction',
