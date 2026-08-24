@@ -36,10 +36,22 @@ commande appartient à un moteur et à un seul, un doublon lève
 `DuplicateCommandError` à la construction du shell.
 
 Déjà vides : `configLineTrie`, `configDhcpTrie` et ses trois sous-modes,
-`configRouterOspfTrie`. Compteurs : routeur 1007 → ~904, commutateur
-570 → 460. Restent les deux gros blocs `configTrie` (308) et
-`configIfTrie` (152), puis `privilegedTrie`, `userTrie`,
-`configRouterTrie` et une trentaine de petits sous-modes.
+`configRouterOspfTrie` et `configRouterOspfv3Trie`, les six sous-modes
+IKEv1 (`configIsakmpTrie`, `configIsakmpProfileTrie`, `configKeyringTrie`,
+`configTfsetTrie`, `configCryptoMapTrie`, `configIpsecProfileTrie`), les
+cinq sous-modes IKEv2 et `configGdoiGroupTrie`, les quatre sous-modes
+EEM/NetFlow, `configArchiveTrie`/`configArchiveLogTrie` (partagés avec le
+commutateur), et les onze sous-modes de sécurité (`configCmapTrie`,
+`configPmapTrie`, `configPmapClassTrie`, `configCpTrie`,
+`configZoneTrie`, `configZonePairTrie`, `configTimeRangeTrie`,
+`configRadiusServerTrie`, `configTacacsServerTrie`,
+`configAaaGroupTrie`, `configCaTrustpointTrie` — les trois d'identité
+sont partagés avec le commutateur).
+
+Compteurs : routeur 1007 → 756, commutateur 570 → 448. Restent les deux
+gros blocs `configTrie` (308) et `configIfTrie` (151), puis
+`privilegedTrie` (120), `userTrie` (85), `configRouterTrie` (42) et une
+douzaine de petits sous-modes.
 
 **Ce que ça change pour vous** : une famille migrée n'est plus dans le
 trie. Si vous ajoutez une commande à un `register*(t: CommandTrie)` dont

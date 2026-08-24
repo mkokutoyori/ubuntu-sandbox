@@ -19,6 +19,7 @@
 
 import type { ExecScope } from './cisco/CiscoExecScope';
 import type { CommandSpec } from '@/cli/CommandTable';
+import type { SocleLegend } from './CiscoShellBase';
 import type { ArgumentSpec } from '@/cli/ArgumentTypes';
 import { dhcpClientFamily, type DhcpClientLeaseView } from '@/cli/commands/dhcp/dhcpClientFamily';
 import type { DebugPair } from '@/cli/commands/debug/debugFamily';
@@ -128,19 +129,26 @@ import {
   buildIKEv2GlobalCommands, buildIKEv2ProposalCommands,
   buildIKEv2PolicyCommands, buildIKEv2KeyringCommands,
   buildIKEv2KeyringPeerCommands, buildIKEv2ProfileCommands,
+  ikev2ProposalSpecs, ikev2PolicySpecs, ikev2KeyringSpecs,
+  ikev2KeyringPeerSpecs, ikev2ProfileSpecs,
 } from './cisco/CiscoIPSecIKEv2Commands';
 import {
-  buildGdoiGlobalCommands, buildGdoiGroupCommands,
+  buildGdoiGlobalCommands, buildGdoiGroupCommands, gdoiGroupSpecs,
 } from './cisco/CiscoGdoiCommands';
 import { registerIPSecShowCommands, cryptoShowSpecs } from './cisco/CiscoIPSecShowCommands';
 import {
   buildSecurityConfigCommands, buildSecurityInterfaceCommands,
   buildSecuritySubmodeCommands, buildSecurityShowCommands,
+  classMapSubmodeSpecs, policyMapSubmodeSpecs, policyClassSubmodeSpecs,
+  controlPlaneSubmodeSpecs, zoneSubmodeSpecs, zonePairSubmodeSpecs,
+  timeRangeSubmodeSpecs, trustpointSubmodeSpecs,
+  type CiscoSecurityShellContext,
 } from './cisco/CiscoSecurityCommands';
 import {
   buildEemNetflowArchiveConfigCommands, buildEemAppletSubmode,
   buildFlowExporterSubmode, buildFlowRecordSubmode, buildFlowMonitorSubmode,
   buildArchiveSubmode, buildArchiveLogSubmode,
+  eemAppletSpecs, flowExporterSpecs, flowRecordSpecs, flowMonitorSpecs,
   buildEemNetflowArchiveInterfaceCommands, buildEemNetflowArchiveShowCommands,
 } from './cisco/CiscoEemNetflowArchiveCommands';
 import {
@@ -252,6 +260,10 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
     ];
   }
 
+  protected override identitySubmodeContext(): CiscoSecurityShellContext {
+    return this as unknown as CiscoSecurityShellContext;
+  }
+
   protected override socleSpecs(): readonly CommandSpec[] {
     return [
       ...super.socleSpecs(),
@@ -266,6 +278,24 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
       ...transformSetSpecs(this),
       ...cryptoMapEntrySpecs(this),
       ...ipsecProfileSpecs(this),
+      ...ikev2ProposalSpecs(this),
+      ...ikev2PolicySpecs(this),
+      ...ikev2KeyringSpecs(this),
+      ...ikev2KeyringPeerSpecs(this),
+      ...ikev2ProfileSpecs(this),
+      ...gdoiGroupSpecs(this),
+      ...eemAppletSpecs(this),
+      ...flowExporterSpecs(this),
+      ...flowRecordSpecs(this),
+      ...flowMonitorSpecs(this),
+      ...classMapSubmodeSpecs(this),
+      ...policyMapSubmodeSpecs(this),
+      ...policyClassSubmodeSpecs(this),
+      ...controlPlaneSubmodeSpecs(this),
+      ...zoneSubmodeSpecs(this),
+      ...zonePairSubmodeSpecs(this),
+      ...timeRangeSubmodeSpecs(this),
+      ...trustpointSubmodeSpecs(this),
       ...dhcpPoolClassSpecs(this),
       ...dhcpClassSpecs(this),
       ...ipv6DhcpPoolSpecs(this),
@@ -414,7 +444,7 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
     ];
   }
 
-  protected override socleLegends(): ReadonlyArray<[readonly string[], string]> {
+  protected override socleLegends(): SocleLegend[] {
     return [
       ...super.socleLegends(),
       [['crypto'], 'Encryption module'],
@@ -422,11 +452,37 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
       [['crypto', 'ipsec', 'security-association'], 'Security association parameters'],
       [['crypto', 'ipsec', 'security-association', 'lifetime'], 'Security association lifetime'],
       [['crypto', 'ipsec', 'security-association', 'replay'], 'Anti-replay checking'],
-      [['set'], 'Set values for encryption/decryption'],
+      [['set'], 'Set values for encryption/decryption',
+        ['config-crypto-map', 'config-ipsec-profile']],
       [['set', 'security-association'], 'Security association parameters'],
       [['set', 'security-association', 'lifetime'], 'Security association lifetime'],
-      [['match'], 'Match values'],
-      [['match', 'identity'], 'Match peer identity'],
+      [['match'], 'Match values',
+        ['config-crypto-map', 'config-isakmp-profile', 'config-ikev2-profile']],
+      [['match'], 'Field the record matches on', ['config-flow-record']],
+      [['match', 'identity'], 'Match peer identity',
+        ['config-isakmp-profile', 'config-ikev2-profile']],
+      [['event'], 'Event that triggers the applet', ['config-applet']],
+      [['notify'], 'Notification sent when the applet runs', ['config-applet']],
+      [['transport'], 'Transport the exporter uses', ['config-flow-exporter']],
+      [['template'], 'Template resend policy', ['config-flow-exporter']],
+      [['template', 'data'], 'Data template', ['config-flow-exporter']],
+      [['cache'], 'Flow cache parameters', ['config-flow-monitor']],
+      [['cache', 'timeout'], 'When a flow leaves the cache', ['config-flow-monitor']],
+      [['logging'], 'Archive log parameters', ['config-archive-log']],
+      [['notify'], 'Notification the archive log sends', ['config-archive-log']],
+      [['notify', 'syslog'], 'Syslog notification', ['config-applet', 'config-archive-log']],
+      [['log'], 'Configuration change logging', ['config-archive']],
+      [['match', 'identity', 'remote'], 'Match the remote identity',
+        ['config-ikev2-profile']],
+      [['authentication'], 'Authentication method', ['config-ikev2-profile']],
+      [['identity'], 'Local identity', ['config-ikev2-profile']],
+      [['keyring'], 'Associate a keyring with the profile',
+        ['config-ikev2-profile']],
+      [['identity'], 'Identity of the GDOI group', ['config-gdoi-group']],
+      [['address'], 'Local address of the key server', ['config-gdoi-group']],
+      [['server'], 'Key server role of this router', ['config-gdoi-group']],
+      [['server', 'address'], 'Register with a remote key server',
+        ['config-gdoi-group']],
       [['ipv6'], 'IPv6 interface subcommands'],
       [['ipv6', 'nd'], 'IPv6 neighbor discovery'],
       [['ipv6', 'ospf'], 'OSPFv3 interface commands'],

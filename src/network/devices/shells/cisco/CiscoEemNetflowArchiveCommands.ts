@@ -2,6 +2,10 @@ import type { Router } from '../../Router';
 import { CommandTrie } from '../CommandTrie';
 import type { CiscoShellContext, CiscoShellMode } from './CiscoConfigCommands';
 import { buildArchiveSubmodeOn, buildArchiveLogSubmodeOn } from './CiscoArchiveCommands';
+import type { CommandSpec } from '@/cli/CommandTable';
+import type { ArgumentSpec } from '@/cli/ArgumentTypes';
+import type { AdapterKeyword } from '@/cli/commands/trieAdapter';
+import { specsFromTrieRegistrations } from '@/cli/commands/trieAdapter';
 import { CISCO_ERRORS } from '../cli-utils';
 
 /** Les niveaux qu'EEM accepte derrière `priority` : l'indice EST la sévérité. */
@@ -439,4 +443,140 @@ function stripQuotes(s: string): string {
     return trimmed.slice(1, -1);
   }
   return trimmed;
+}
+
+const EEM_APPLET_ARGUMENTS:
+Readonly<Record<string, ArgumentSpec | readonly ArgumentSpec[] | null>> = {
+  description: {
+    name: 'texte', type: 'REST', literal: 'LINE', description: 'Description of the applet',
+  },
+  'event syslog': [{
+    name: 'critere', type: 'ENUM', description: 'What the syslog event matches',
+    values: [{ keyword: 'pattern', description: 'Regular expression the message must match' }],
+  }, { name: 'valeur', type: 'REST', description: 'Regular expression' }],
+  'event cli': [{
+    name: 'critere', type: 'ENUM', description: 'What the CLI event matches',
+    values: [{ keyword: 'pattern', description: 'Regular expression the command must match' }],
+  }, { name: 'valeur', type: 'REST', description: 'Regular expression' }],
+  'event timer': [{
+    name: 'genre', type: 'ENUM', description: 'Kind of timer',
+    values: [
+      { keyword: 'countdown', description: 'Fire once after the interval' },
+      { keyword: 'cron', description: 'Fire on a cron schedule' },
+      { keyword: 'watchdog', description: 'Fire at every interval' },
+    ],
+  }, { name: 'reste', type: 'REST', description: 'Timer parameters' }],
+  'event none': null,
+  'event snmp': { name: 'criteres', type: 'REST', description: 'OID and comparison to watch' },
+  'event snmp-notification': { name: 'criteres', type: 'REST', description: 'OID to watch' },
+  action: { name: 'etiquette', type: 'WORD', description: 'Label that orders the actions' },
+  'notify syslog contenttype': {
+    name: 'format', type: 'ENUM', description: 'Format of the syslog notification',
+    values: [
+      { keyword: 'plaintext', description: 'Plain text notification' },
+      { keyword: 'xml', description: 'XML notification' },
+    ],
+  },
+};
+
+const EEM_APPLET_KEYWORDS:
+Readonly<Record<string, ReadonlyArray<AdapterKeyword>>> = {
+  action: [
+    { keyword: 'cli', description: 'Run a CLI command', afterArguments: true },
+    { keyword: 'mail', description: 'Send an e-mail', afterArguments: true },
+    { keyword: 'puts', description: 'Write to the applet output', afterArguments: true },
+    { keyword: 'snmp-trap', description: 'Send an SNMP trap', afterArguments: true },
+    { keyword: 'syslog', description: 'Write a syslog message', afterArguments: true },
+    {
+      keyword: 'wait', description: 'Pause before the next action', afterArguments: true,
+      argument: { name: 'secondes', type: 'INT', range: [1, 3600], description: 'Seconds to wait' },
+    },
+  ],
+};
+
+const FLOW_EXPORTER_ARGUMENTS:
+Readonly<Record<string, ArgumentSpec | readonly ArgumentSpec[] | null>> = {
+  destination: { name: 'adresse', type: 'IP_ADDR', description: 'Address of the collector' },
+  source: { name: 'interface', type: 'INTERFACE', description: 'Interface whose address the packets carry' },
+  'transport udp': {
+    name: 'port', type: 'INT', range: [1, 65535],
+    description: 'UDP port of the collector',
+  },
+  'export-protocol': {
+    name: 'protocole', type: 'ENUM', description: 'Export protocol',
+    values: [
+      { keyword: 'ipfix', description: 'IPFIX (RFC 7011)' },
+      { keyword: 'netflow-v5', description: 'NetFlow version 5' },
+      { keyword: 'netflow-v9', description: 'NetFlow version 9' },
+    ],
+  },
+  'template data timeout': {
+    name: 'secondes', type: 'INT', range: [1, 86400],
+    description: 'Seconds between template resends',
+  },
+};
+
+const FLOW_MONITOR_ARGUMENTS:
+Readonly<Record<string, ArgumentSpec | readonly ArgumentSpec[] | null>> = {
+  record: { name: 'nom', type: 'WORD', description: 'Name of the flow record' },
+  exporter: { name: 'nom', type: 'WORD', description: 'Name of the flow exporter' },
+  'cache timeout active': {
+    name: 'secondes', type: 'INT', range: [1, 604800],
+    description: 'Seconds a flow may stay active before it is exported',
+  },
+  'cache timeout inactive': {
+    name: 'secondes', type: 'INT', range: [1, 604800],
+    description: 'Seconds of silence before a flow is exported',
+  },
+  'cache entries': {
+    name: 'entrees', type: 'INT', range: [16, 1000000],
+    description: 'Maximum number of flows the cache holds',
+  },
+};
+
+export function eemAppletSpecs(ctx: CiscoEemNetflowArchiveContext): CommandSpec[] {
+  return specsFromTrieRegistrations(
+    (collector) => buildEemAppletSubmode(collector as unknown as CommandTrie, ctx),
+    {
+      modes: ['config-applet'], minPrivilege: 15,
+      argumentFor: (path) => EEM_APPLET_ARGUMENTS[path],
+      keywordsFor: (path) => EEM_APPLET_KEYWORDS[path],
+    },
+  );
+}
+
+export function flowExporterSpecs(ctx: CiscoEemNetflowArchiveContext): CommandSpec[] {
+  return specsFromTrieRegistrations(
+    (collector) => buildFlowExporterSubmode(collector as unknown as CommandTrie, ctx),
+    {
+      modes: ['config-flow-exporter'], minPrivilege: 15,
+      argumentFor: (path) => FLOW_EXPORTER_ARGUMENTS[path],
+    },
+  );
+}
+
+const FLOW_RECORD_ARGUMENTS:
+Readonly<Record<string, ArgumentSpec | readonly ArgumentSpec[] | null>> = {
+  match: { name: 'champ', type: 'REST', description: 'Key field that identifies a flow' },
+  collect: { name: 'champ', type: 'REST', description: 'Non-key field the record gathers' },
+};
+
+export function flowRecordSpecs(ctx: CiscoEemNetflowArchiveContext): CommandSpec[] {
+  return specsFromTrieRegistrations(
+    (collector) => buildFlowRecordSubmode(collector as unknown as CommandTrie, ctx),
+    {
+      modes: ['config-flow-record'], minPrivilege: 15,
+      argumentFor: (path) => FLOW_RECORD_ARGUMENTS[path],
+    },
+  );
+}
+
+export function flowMonitorSpecs(ctx: CiscoEemNetflowArchiveContext): CommandSpec[] {
+  return specsFromTrieRegistrations(
+    (collector) => buildFlowMonitorSubmode(collector as unknown as CommandTrie, ctx),
+    {
+      modes: ['config-flow-monitor'], minPrivilege: 15,
+      argumentFor: (path) => FLOW_MONITOR_ARGUMENTS[path],
+    },
+  );
 }

@@ -20,6 +20,7 @@ import { getPrivilegeRules } from '../router/security/CiscoPrivilegeStore';
 import { CommandTrie, formatInvalidInput } from './CommandTrie';
 import { isValidIPv4 } from '../../core/ip';
 import type { CommandSpec } from '@/cli/CommandTable';
+import type { SocleLegend } from './CiscoShellBase';
 import type { ArgumentSpec } from '@/cli/ArgumentTypes';
 import type { SpecCollector } from '@/cli/commands/trieAdapter';
 import { collectRegistrations, specsFromTrieRegistrations }
@@ -2034,6 +2035,19 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
     ];
   }
 
+  protected override identitySubmodeContext(): CiscoSecurityShellContext {
+    return {
+      r: () => this.d() as unknown as Router,
+      setMode: (m: string) => { this.mode = m as CLIMode; },
+      setRadiusServer: (n: string | null) => { this.selectedRadiusServer = n; },
+      getRadiusServer: () => this.selectedRadiusServer,
+      setTacacsServer: (n: string | null) => { this.selectedTacacsServer = n; },
+      getTacacsServer: () => this.selectedTacacsServer,
+      setAaaGroup: (n: string | null) => { this.selectedAaaGroup = n; },
+      getAaaGroup: () => this.selectedAaaGroup,
+    } as unknown as CiscoSecurityShellContext;
+  }
+
   protected override socleSpecs(): readonly CommandSpec[] {
     return [
       ...super.socleSpecs(),
@@ -2044,7 +2058,7 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
     ];
   }
 
-  protected override socleLegends(): ReadonlyArray<[readonly string[], string]> {
+  protected override socleLegends(): SocleLegend[] {
     return [
       ...super.socleLegends(),
       [['show', 'spanning-tree', 'pathcost'], 'Path cost method'],
@@ -4947,21 +4961,13 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
     // module de securite du ROUTEUR, qui enregistre aussi des commandes
     // qu'un commutateur n'a pas (`zone security`, `class-map type
     // inspect`). Extraite, elle sert les deux sans leur donner le reste.
-    const identityCtx = {
-      r: () => this.d() as unknown as Router,
-      setMode: (m: string) => { this.mode = m as CLIMode; },
-      setRadiusServer: (n: string | null) => { this.selectedRadiusServer = n; },
-      getRadiusServer: () => this.selectedRadiusServer,
-      setTacacsServer: (n: string | null) => { this.selectedTacacsServer = n; },
-      getTacacsServer: () => this.selectedTacacsServer,
-      setAaaGroup: (n: string | null) => { this.selectedAaaGroup = n; },
-      getAaaGroup: () => this.selectedAaaGroup,
-    } as unknown as CiscoSecurityShellContext;
+    const identityCtx = this.identitySubmodeContext();
     buildIdentityConfigCommands(this.configTrie, identityCtx);
     buildIdentitySubmodeCommands(
       this.configRadiusServerTrie, this.configTacacsServerTrie,
       this.configAaaGroupTrie, identityCtx,
     );
+
     // IOS ne nomme pas ses arguments, il les TYPE. Cette table etait
     // posee sur le seul shell du routeur, si bien qu'un Catalyst
     // repondait `WORD  Set a banner` la ou IOS liste `motd`, `login`,

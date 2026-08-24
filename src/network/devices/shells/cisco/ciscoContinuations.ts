@@ -43,9 +43,6 @@ export const SOCLE: ContinuationTable = {
     'no server': ['name'],
     'server': ['name'],
   },
-  configArchiveLog: {
-    'notify syslog contenttype': ['xml'],
-  },
   configRadiusServer: {
     'address': ['acct-port', 'auth-port', 'ipv4'],
   },
@@ -102,15 +99,6 @@ export const ROUTEUR_SEUL: ContinuationTable = {
     'router ospf': ['vrf'],
     'zone-pair security': ['destination', 'source'],
   },
-  configApplet: {
-    'action': ['body', 'cli', 'command', 'mail', 'msg', 'priority', 'puts', 'snmp-trap', 'subject', 'syslog', 'to', 'wait'],
-    'event cli': ['pattern'],
-    'event snmp': ['entry-val', 'get-type', 'oid'],
-    'event snmp-notification': ['oid'],
-    'event syslog': ['pattern'],
-    'event timer': ['countdown', 'cron-entry', 'time', 'watchdog'],
-    'notify syslog contenttype': ['xml'],
-  },
   configCaTrustpoint: {
     'auto-enroll': ['regenerate'],
     'enrollment': ['profile', 'self-signed', 'selfsigned', 'terminal', 'url'],
@@ -124,9 +112,6 @@ export const ROUTEUR_SEUL: ContinuationTable = {
   },
   configExtNacl: {
     'sequence': ['deny', 'permit'],
-  },
-  configFlowExporter: {
-    'export-protocol': ['ipfix', 'netflow-v5', 'netflow-v9'],
   },
   configIf: {
     'bfd': ['echo', 'multiplier', 'template'],
@@ -145,9 +130,6 @@ export const ROUTEUR_SEUL: ContinuationTable = {
     'no ip address': ['secondary'],
     'tunnel path-mtu-discovery': ['age-timer', 'min-mtu'],
     'tunnel protection ipsec profile': ['shared'],
-  },
-  configIkev2KeyringPeer: {
-    'pre-shared-key': ['local'],
   },
   configIpv6Dhcp: {
     'address prefix': ['lifetime'],

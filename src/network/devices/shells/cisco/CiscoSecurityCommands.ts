@@ -11,6 +11,11 @@ import {
   type AaaPhase,
 } from '../../router/security/CiscoSecurityConfig';
 import type { CiscoShellContext, CiscoShellMode } from './CiscoConfigCommands';
+import type { CommandSpec } from '@/cli/CommandTable';
+import type { ArgumentSpec, EnumValue } from '@/cli/ArgumentTypes';
+import {
+  specsFromTrieRegistrations, type AdapterKeyword,
+} from '@/cli/commands/trieAdapter';
 import { CliInvalidInput } from '../cli/CliDiagnostic';
 import { CISCO_ERRORS } from '../cli-utils';
 import { encryptType7, md5Hex } from '@/crypto';
@@ -951,6 +956,14 @@ export function buildIdentitySubmodeCommands(
   aaaGroupTrie: CommandTrie,
   ctx: CiscoSecurityShellContext,
 ): void {
+  buildRadiusServerSubmodeOn(radiusTrie, ctx);
+  buildTacacsServerSubmodeOn(tacacsTrie, ctx);
+  buildAaaGroupSubmodeOn(aaaGroupTrie, ctx);
+}
+
+export function buildRadiusServerSubmodeOn(
+  radiusTrie: CommandTrie, ctx: CiscoSecurityShellContext,
+): void {
   const sec = () => getSecurityConfig(ctx.r());
 
   radiusTrie.registerGreedy('address', 'Radius address', (args) => {
@@ -972,6 +985,12 @@ export function buildIdentitySubmodeCommands(
     if (s) s.key = args.join(' ');
     return '';
   });
+}
+
+export function buildTacacsServerSubmodeOn(
+  tacacsTrie: CommandTrie, ctx: CiscoSecurityShellContext,
+): void {
+  const sec = () => getSecurityConfig(ctx.r());
 
   tacacsTrie.registerGreedy('address', 'Tacacs address', (args) => {
     const name = ctx.getTacacsServer?.();
@@ -1004,6 +1023,12 @@ export function buildIdentitySubmodeCommands(
     if (s && !isNaN(n)) s.timeoutSec = n;
     return '';
   });
+}
+
+export function buildAaaGroupSubmodeOn(
+  aaaGroupTrie: CommandTrie, ctx: CiscoSecurityShellContext,
+): void {
+  const sec = () => getSecurityConfig(ctx.r());
 
   /*
    * Un groupe accepte DEUX formes de membre, et seule la moderne etait
@@ -1049,6 +1074,20 @@ export function buildSecuritySubmodeCommands(
   trustpointTrie: CommandTrie,
   ctx: CiscoSecurityShellContext,
 ): void {
+  buildClassMapSubmodeOn(cmapTrie, ctx);
+  buildPolicyMapSubmodeOn(pmapTrie, ctx);
+  buildPolicyClassSubmodeOn(pmapClassTrie, ctx);
+  buildControlPlaneSubmodeOn(cpTrie, ctx);
+  buildZoneSubmodeOn(zoneTrie, ctx);
+  buildZonePairSubmodeOn(zonePairTrie, ctx);
+  buildTimeRangeSubmodeOn(trTrie, ctx);
+  buildIdentitySubmodeCommands(radiusTrie, tacacsTrie, aaaGroupTrie, ctx);
+  buildTrustpointSubmodeOn(trustpointTrie, ctx);
+}
+
+export function buildClassMapSubmodeOn(
+  cmapTrie: CommandTrie, ctx: CiscoSecurityShellContext,
+): void {
   const sec = () => getSecurityConfig(ctx.r());
 
   cmapTrie.registerGreedy('match', 'Match criteria', (args) => {
@@ -1066,6 +1105,12 @@ export function buildSecuritySubmodeCommands(
     }
     return '';
   });
+}
+
+export function buildPolicyMapSubmodeOn(
+  pmapTrie: CommandTrie, ctx: CiscoSecurityShellContext,
+): void {
+  const sec = () => getSecurityConfig(ctx.r());
 
   pmapTrie.registerGreedy('class', 'Class for policy', (args) => {
     const pname = ctx.getPolicyMap?.();
@@ -1087,7 +1132,11 @@ export function buildSecuritySubmodeCommands(
     ctx.setMode('config-pmap-c' as CiscoShellMode);
     return '';
   });
+}
 
+export function buildPolicyClassSubmodeOn(
+  pmapClassTrie: CommandTrie, ctx: CiscoSecurityShellContext,
+): void {
   pmapClassTrie.registerGreedy('police', 'Police traffic', (args) => {
     addAction(ctx, 'police', args);
     return '';
@@ -1105,12 +1154,24 @@ export function buildSecuritySubmodeCommands(
   pmapClassTrie.registerGreedy('service-policy', 'Nested service-policy', (args) => { addAction(ctx, 'service-policy', args); return ''; });
   pmapClassTrie.registerGreedy('queue-limit', 'Queue depth', (args) => { addAction(ctx, 'queue-limit', args); return ''; });
   pmapClassTrie.registerGreedy('compression', 'Compression', (args) => { addAction(ctx, 'compression', args); return ''; });
+}
+
+export function buildControlPlaneSubmodeOn(
+  cpTrie: CommandTrie, ctx: CiscoSecurityShellContext,
+): void {
+  const sec = () => getSecurityConfig(ctx.r());
 
   cpTrie.registerGreedy('service-policy', 'Apply policy', (args) => {
     if (args[0] === 'input' && args[1]) sec().controlPlane.servicePolicyInput = args[1];
     if (args[0] === 'output' && args[1]) sec().controlPlane.servicePolicyOutput = args[1];
     return '';
   });
+}
+
+export function buildZoneSubmodeOn(
+  zoneTrie: CommandTrie, ctx: CiscoSecurityShellContext,
+): void {
+  const sec = () => getSecurityConfig(ctx.r());
 
   zoneTrie.registerGreedy('description', 'Zone description', (args) => {
     const name = ctx.getZone?.();
@@ -1119,6 +1180,12 @@ export function buildSecuritySubmodeCommands(
     if (z) (z as unknown as { description?: string }).description = args.join(' ');
     return '';
   });
+}
+
+export function buildZonePairSubmodeOn(
+  zonePairTrie: CommandTrie, ctx: CiscoSecurityShellContext,
+): void {
+  const sec = () => getSecurityConfig(ctx.r());
 
   zonePairTrie.registerGreedy('service-policy', 'Apply policy', (args) => {
     const name = ctx.getZonePair?.();
@@ -1128,6 +1195,12 @@ export function buildSecuritySubmodeCommands(
     if (args[0] === 'type' && args[1] === 'inspect' && args[2]) zp.servicePolicy = args[2];
     return '';
   });
+}
+
+export function buildTimeRangeSubmodeOn(
+  trTrie: CommandTrie, ctx: CiscoSecurityShellContext,
+): void {
+  const sec = () => getSecurityConfig(ctx.r());
 
   trTrie.registerGreedy('periodic', 'Periodic time-range', (args) => {
     const name = ctx.getTimeRange?.();
@@ -1154,9 +1227,12 @@ export function buildSecuritySubmodeCommands(
     if (parsed) tr.absolute = parsed;
     return '';
   });
+}
 
-  buildIdentitySubmodeCommands(radiusTrie, tacacsTrie, aaaGroupTrie, ctx);
-
+export function buildTrustpointSubmodeOn(
+  trustpointTrie: CommandTrie, ctx: CiscoSecurityShellContext,
+): void {
+  const sec = () => getSecurityConfig(ctx.r());
 
   const tp = () => {
     const name = ctx.getPkiTrustpoint?.();
@@ -1220,6 +1296,338 @@ export function buildSecuritySubmodeCommands(
     return '';
   });
 }
+
+const JOURS_SEMAINE: readonly EnumValue[] = [
+  { keyword: 'Monday', description: 'Monday' },
+  { keyword: 'Tuesday', description: 'Tuesday' },
+  { keyword: 'Wednesday', description: 'Wednesday' },
+  { keyword: 'Thursday', description: 'Thursday' },
+  { keyword: 'Friday', description: 'Friday' },
+  { keyword: 'Saturday', description: 'Saturday' },
+  { keyword: 'Sunday', description: 'Sunday' },
+  { keyword: 'daily', description: 'Every day of the week' },
+  { keyword: 'weekdays', description: 'Monday through Friday' },
+  { keyword: 'weekend', description: 'Saturday and Sunday' },
+];
+
+const REVOCATION_MODES: readonly EnumValue[] = [
+  { keyword: 'crl', description: 'Certificate revocation list' },
+  { keyword: 'crl-or-ocsp', description: 'Try the CRL, then OCSP' },
+  { keyword: 'crl-then-ocsp', description: 'Try the CRL, then OCSP' },
+  { keyword: 'none', description: 'Do not check the revocation status' },
+  { keyword: 'ocsp', description: 'Online Certificate Status Protocol' },
+];
+
+function place(
+  name: string, type: ArgumentSpec['type'], description: string,
+  extra: Partial<ArgumentSpec> = {},
+): ArgumentSpec {
+  return { name, type, description, ...extra };
+}
+
+function formes(
+  name: string, description: string, alternatives: readonly EnumValue[],
+): ArgumentSpec {
+  return { name, type: 'REST', description, alternatives };
+}
+
+const CMAP_KEYWORDS: ReadonlyArray<AdapterKeyword> = [
+  {
+    keyword: 'access-group', description: 'Access group',
+    argument: formes('liste', 'Access list to match', [
+      { keyword: '<1-2799>', description: 'Access list index' },
+      { keyword: 'name', description: 'Named access list' },
+    ]),
+  },
+  {
+    keyword: 'protocol', description: 'Protocol',
+    argument: place('protocole', 'WORD', 'Protocol name'),
+  },
+  { keyword: 'any', description: 'Any packets', argument: null },
+];
+
+export function classMapSubmodeSpecs(ctx: CiscoSecurityShellContext): CommandSpec[] {
+  return specsFromTrieRegistrations(
+    (collector) => buildClassMapSubmodeOn(collector as unknown as CommandTrie, ctx),
+    {
+      modes: ['config-cmap'], minPrivilege: 15,
+      keywordsFor: () => CMAP_KEYWORDS,
+      argumentFor: () => null,
+    },
+  );
+}
+
+export function policyMapSubmodeSpecs(ctx: CiscoSecurityShellContext): CommandSpec[] {
+  return specsFromTrieRegistrations(
+    (collector) => buildPolicyMapSubmodeOn(collector as unknown as CommandTrie, ctx),
+    {
+      modes: ['config-pmap'], minPrivilege: 15,
+      argumentFor: () => formes('classe', 'class-map name', [
+        { keyword: 'WORD', description: 'class-map name' },
+        {
+          keyword: 'class-default',
+          description: 'System default class matching otherwise unclassified packets',
+        },
+        { keyword: 'type', description: 'policy-map class type' },
+      ]),
+    },
+  );
+}
+
+/**
+ * Les places d'une action de classe.
+ *
+ * Aucune n'est bornee, et c'est mesure plutot que neglige : la
+ * documentation de Cisco ecrit elle-meme que le debit d'un `police` ou
+ * d'un `shape` est exprime en bits par seconde « sauf si la syntaxe
+ * propre a la plateforme en decide autrement ». Annoncer une plage
+ * decrirait une plateforme et pas cette commande.
+ */
+const PMAP_CLASS_ARGUMENTS:
+Readonly<Record<string, ArgumentSpec | readonly ArgumentSpec[] | null>> = {
+  police: place('debit', 'REST', 'Committed information rate in bits per second'),
+  drop: null,
+  'set dscp': place('valeur', 'INT', 'Differentiated services codepoint value', {
+    range: [0, 63],
+    values: [
+      { keyword: 'default', description: 'Match packets with default dscp (000000)' },
+      { keyword: 'ef', description: 'Match packets with EF dscp (101110)' },
+      { keyword: 'af11', description: 'Match packets with AF11 dscp (001010)' },
+      { keyword: 'af12', description: 'Match packets with AF12 dscp (001100)' },
+      { keyword: 'af13', description: 'Match packets with AF13 dscp (001110)' },
+      { keyword: 'af21', description: 'Match packets with AF21 dscp (010010)' },
+      { keyword: 'af22', description: 'Match packets with AF22 dscp (010100)' },
+      { keyword: 'af23', description: 'Match packets with AF23 dscp (010110)' },
+      { keyword: 'af31', description: 'Match packets with AF31 dscp (011010)' },
+      { keyword: 'af32', description: 'Match packets with AF32 dscp (011100)' },
+      { keyword: 'af33', description: 'Match packets with AF33 dscp (011110)' },
+      { keyword: 'af41', description: 'Match packets with AF41 dscp (100010)' },
+      { keyword: 'af42', description: 'Match packets with AF42 dscp (100100)' },
+      { keyword: 'af43', description: 'Match packets with AF43 dscp (100110)' },
+      { keyword: 'cs1', description: 'Match packets with CS1 (precedence 1) dscp (001000)' },
+      { keyword: 'cs2', description: 'Match packets with CS2 (precedence 2) dscp (010000)' },
+      { keyword: 'cs3', description: 'Match packets with CS3 (precedence 3) dscp (011000)' },
+      { keyword: 'cs4', description: 'Match packets with CS4 (precedence 4) dscp (100000)' },
+      { keyword: 'cs5', description: 'Match packets with CS5 (precedence 5) dscp (101000)' },
+      { keyword: 'cs6', description: 'Match packets with CS6 (precedence 6) dscp (110000)' },
+      { keyword: 'cs7', description: 'Match packets with CS7 (precedence 7) dscp (111000)' },
+    ],
+  }),
+  'set precedence': place('valeur', 'INT', 'IP precedence value', {
+    range: [0, 7],
+    values: [
+      { keyword: 'routine', description: 'Match packets with routine precedence (0)' },
+      { keyword: 'priority', description: 'Match packets with priority precedence (1)' },
+      { keyword: 'immediate', description: 'Match packets with immediate precedence (2)' },
+      { keyword: 'flash', description: 'Match packets with flash precedence (3)' },
+      { keyword: 'flash-override', description: 'Match packets with flash override precedence (4)' },
+      { keyword: 'critical', description: 'Match packets with critical precedence (5)' },
+      { keyword: 'internet', description: 'Match packets with internetwork control precedence (6)' },
+      { keyword: 'network', description: 'Match packets with network control precedence (7)' },
+    ],
+  }),
+  priority: place('debit', 'REST', 'Reserved bandwidth in kilobits per second'),
+  bandwidth: place('debit', 'REST', 'Reserved bandwidth in kilobits per second'),
+  'random-detect': place('mode', 'REST', 'Weighted random early detection parameters'),
+  shape: place('mode', 'REST', 'Traffic shaping parameters'),
+  'service-policy': place('politique', 'WORD', 'Name of the nested policy map'),
+  'queue-limit': place('paquets', 'REST', 'Maximum queue depth in packets'),
+  compression: place('mode', 'REST', 'Header compression parameters'),
+};
+
+export function policyClassSubmodeSpecs(ctx: CiscoSecurityShellContext): CommandSpec[] {
+  return specsFromTrieRegistrations(
+    (collector) => buildPolicyClassSubmodeOn(collector as unknown as CommandTrie, ctx),
+    {
+      modes: ['config-pmap-c'], minPrivilege: 15,
+      argumentFor: (path) => PMAP_CLASS_ARGUMENTS[path],
+    },
+  );
+}
+
+const SERVICE_POLICY_SENS: ReadonlyArray<AdapterKeyword> = [
+  {
+    keyword: 'input', description: 'Assign a policy map to the input of the control plane',
+    argument: place('politique', 'WORD', 'Policy map name'),
+  },
+  {
+    keyword: 'output', description: 'Assign a policy map to the output of the control plane',
+    argument: place('politique', 'WORD', 'Policy map name'),
+  },
+];
+
+export function controlPlaneSubmodeSpecs(ctx: CiscoSecurityShellContext): CommandSpec[] {
+  return specsFromTrieRegistrations(
+    (collector) => buildControlPlaneSubmodeOn(collector as unknown as CommandTrie, ctx),
+    {
+      modes: ['config-cp'], minPrivilege: 15,
+      keywordsFor: () => SERVICE_POLICY_SENS,
+      argumentFor: () => null,
+    },
+  );
+}
+
+export function zoneSubmodeSpecs(ctx: CiscoSecurityShellContext): CommandSpec[] {
+  return specsFromTrieRegistrations(
+    (collector) => buildZoneSubmodeOn(collector as unknown as CommandTrie, ctx),
+    {
+      modes: ['config-zone'], minPrivilege: 15,
+      argumentFor: () => place('texte', 'REST',
+        'Up to 200 characters describing this zone', { literal: 'LINE' }),
+    },
+  );
+}
+
+export function zonePairSubmodeSpecs(ctx: CiscoSecurityShellContext): CommandSpec[] {
+  return specsFromTrieRegistrations(
+    (collector) => buildZonePairSubmodeOn(collector as unknown as CommandTrie, ctx),
+    {
+      modes: ['config-zone-pair'], minPrivilege: 15,
+      argumentFor: () => null,
+      keywordsFor: () => [{
+        keyword: 'type', description: 'Type of the service policy',
+        argument: formes('inspection', 'Inspection policy map to apply', [
+          { keyword: 'inspect', description: 'Apply an inspection policy map' },
+        ]),
+      }],
+    },
+  );
+}
+
+const TIME_RANGE_ARGUMENTS:
+Readonly<Record<string, ArgumentSpec | readonly ArgumentSpec[] | null>> = {
+  periodic: formes('jours', 'Days of the week the range covers', JOURS_SEMAINE),
+  absolute: formes('bornes', 'Start and end of the range', [
+    { keyword: 'start', description: 'Time the range starts' },
+    { keyword: 'end', description: 'Time the range ends' },
+  ]),
+};
+
+export function timeRangeSubmodeSpecs(ctx: CiscoSecurityShellContext): CommandSpec[] {
+  return specsFromTrieRegistrations(
+    (collector) => buildTimeRangeSubmodeOn(collector as unknown as CommandTrie, ctx),
+    {
+      modes: ['config-time-range'], minPrivilege: 15,
+      argumentFor: (path) => TIME_RANGE_ARGUMENTS[path],
+    },
+  );
+}
+
+const RADIUS_SUBMODE_KEYWORDS: ReadonlyArray<AdapterKeyword> = [{
+  keyword: 'ipv4', description: 'IPv4 address of the RADIUS server',
+  argument: [
+    place('adresse', 'IP_ADDR', 'IP address of the RADIUS server'),
+    place('ports', 'REST', 'auth-port and acct-port of this server', { optional: true }),
+  ],
+}];
+
+export function radiusServerSubmodeSpecs(ctx: CiscoSecurityShellContext): CommandSpec[] {
+  return specsFromTrieRegistrations(
+    (collector) => buildRadiusServerSubmodeOn(collector as unknown as CommandTrie, ctx),
+    {
+      modes: ['config-radius-server'], minPrivilege: 15,
+      argumentFor: (path) => path === 'key'
+        ? place('cle', 'REST', 'The shared key itself', { literal: 'LINE' }) : null,
+      keywordsFor: (path) => path === 'address' ? RADIUS_SUBMODE_KEYWORDS : undefined,
+    },
+  );
+}
+
+const TACACS_SUBMODE_KEYWORDS: ReadonlyArray<AdapterKeyword> = [{
+  keyword: 'ipv4', description: 'IPv4 address of the TACACS+ server',
+  argument: place('adresse', 'IP_ADDR', 'IP address of the TACACS+ server'),
+}];
+
+const TACACS_SUBMODE_ARGUMENTS:
+Readonly<Record<string, ArgumentSpec | readonly ArgumentSpec[] | null>> = {
+  address: null,
+  key: place('cle', 'REST', 'The shared key itself', { literal: 'LINE' }),
+  port: place('port', 'INT', 'Port number', { range: [1, 65535] }),
+  timeout: place('secondes', 'INT', 'Wait time in seconds', { range: [1, 1000] }),
+};
+
+export function tacacsServerSubmodeSpecs(ctx: CiscoSecurityShellContext): CommandSpec[] {
+  return specsFromTrieRegistrations(
+    (collector) => buildTacacsServerSubmodeOn(collector as unknown as CommandTrie, ctx),
+    {
+      modes: ['config-tacacs-server'], minPrivilege: 15,
+      argumentFor: (path) => TACACS_SUBMODE_ARGUMENTS[path],
+      keywordsFor: (path) => path === 'address' ? TACACS_SUBMODE_KEYWORDS : undefined,
+    },
+  );
+}
+
+export function aaaGroupSubmodeSpecs(ctx: CiscoSecurityShellContext): CommandSpec[] {
+  return specsFromTrieRegistrations(
+    (collector) => buildAaaGroupSubmodeOn(collector as unknown as CommandTrie, ctx),
+    {
+      modes: ['config-aaa-group'], minPrivilege: 15,
+      undoFromNegatedPaths: true,
+      argumentFor: () => formes('serveur', 'Server that joins the group', [
+        { keyword: 'A.B.C.D', description: 'Address of a server declared the legacy way' },
+        { keyword: 'name', description: 'Name of a server declared by `tacacs server`' },
+      ]),
+    },
+  );
+}
+
+const TRUSTPOINT_ENROLLMENT: ReadonlyArray<AdapterKeyword> = [
+  {
+    keyword: 'profile', description: 'Name of an enrollment profile',
+    argument: place('profil', 'WORD', 'Enrollment profile name'),
+  },
+  { keyword: 'self-signed', description: 'Generate a self-signed certificate', argument: null },
+  { keyword: 'selfsigned', description: 'Generate a self-signed certificate', argument: null },
+  { keyword: 'terminal', description: 'Cut and paste the certificate at the terminal', argument: null },
+  {
+    keyword: 'url', description: 'Enrollment URL of the certification authority',
+    argument: place('url', 'WORD', 'The enrollment URL itself'),
+  },
+];
+
+const TRUSTPOINT_ARGUMENTS:
+Readonly<Record<string, ArgumentSpec | readonly ArgumentSpec[] | null>> = {
+  enrollment: null,
+  'subject-name': place('sujet', 'REST',
+    'Distinguished name of the certificate subject', { literal: 'LINE' }),
+  'revocation-check': place('methode', 'ENUM', 'How to check the revocation status', {
+    values: REVOCATION_MODES,
+  }),
+  rsakeypair: place('cle', 'WORD', 'Name of the RSA key pair to bind'),
+  fqdn: formes('nom', 'Fully qualified domain name of the certificate', [
+    { keyword: 'WORD', description: 'The domain name itself' },
+    { keyword: 'none', description: 'Do not include a domain name' },
+  ]),
+  'ip-address': formes('adresse', 'IP address of the certificate', [
+    { keyword: 'A.B.C.D', description: 'The address itself' },
+    { keyword: 'none', description: 'Do not include an IP address' },
+  ]),
+  'serial-number': formes('serie', 'Serial number of the certificate', [
+    { keyword: 'none', description: 'Do not include a serial number' },
+  ]),
+  'auto-enroll': place('pourcentage', 'INT',
+    'Percentage of the certificate lifetime after which to re-enrol', {
+      optional: true,
+    }),
+  fingerprint: place('empreinte', 'WORD', 'Fingerprint the certificate must carry'),
+};
+
+export function trustpointSubmodeSpecs(ctx: CiscoSecurityShellContext): CommandSpec[] {
+  return specsFromTrieRegistrations(
+    (collector) => buildTrustpointSubmodeOn(collector as unknown as CommandTrie, ctx),
+    {
+      modes: ['config-ca-trustpoint'], minPrivilege: 15,
+      argumentFor: (path) => TRUSTPOINT_ARGUMENTS[path],
+      keywordsFor: (path) => path === 'enrollment' ? TRUSTPOINT_ENROLLMENT
+        : path === 'auto-enroll' ? AUTO_ENROLL_KEYWORDS : undefined,
+    },
+  );
+}
+
+const AUTO_ENROLL_KEYWORDS: ReadonlyArray<AdapterKeyword> = [{
+  keyword: 'regenerate', description: 'Generate a new key pair when re-enrolling',
+  argument: null, afterArguments: true,
+}];
 
 function addAction(
   ctx: CiscoSecurityShellContext,
