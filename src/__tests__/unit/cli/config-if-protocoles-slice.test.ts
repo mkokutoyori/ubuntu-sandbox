@@ -233,3 +233,90 @@ describe('`?` nomme les places de la deuxieme vague', () => {
     expect((await surIface()).cliHelp(saisie)).toContain(attendu);
   });
 });
+
+/*
+ * Troisieme vague : la famille OSPF d'interface, plus `bfd`,
+ * `frame-relay` et `ip nhrp`. Comme les deux precedentes, ce bloc est
+ * releve sur les gestionnaires et passe sur le code NON MIGRE avant de
+ * l'etre.
+ *
+ * Chacun de ces gestionnaires VALIDE ET EXPLIQUE — `% Invalid cost
+ * value (1-65535)`, `% Invalid priority value (0-255)`, `% Invalid
+ * process ID` — donc aucune place ne doit le devancer : une borne
+ * declaree rendrait un caret nu la ou la machine nomme l'intervalle.
+ */
+const REGLAGES_3: ReadonlyArray<string> = [
+  'ip ospf 1 area 0',
+  'ip ospf area 0',
+  'ip ospf cost 100',
+  'ip ospf priority 10',
+  'ip ospf hello-interval 5',
+  'ip ospf dead-interval 20',
+  'ip ospf network point-to-point',
+  'ip ospf network broadcast',
+  'ip ospf network non-broadcast',
+  'ip ospf authentication',
+  'ip ospf authentication message-digest',
+  'ip ospf authentication-key CISCO',
+  'ip ospf message-digest-key 1 md5 CISCO',
+  'ip ospf retransmit-interval 5',
+  'ip ospf transmit-delay 2',
+  'ip ospf demand-circuit',
+  'ip ospf mtu-ignore',
+  'ip ospf bfd',
+  'ip ospf flood-reduction',
+  'ip ospf database-filter all out',
+  'no ip ospf cost',
+  'no ip ospf priority',
+  'no ip ospf hello-interval',
+  'no ip ospf dead-interval',
+  'no ip ospf network',
+  'no ip ospf authentication',
+  'no ip ospf authentication-key',
+  'no ip ospf message-digest-key',
+  'bfd interval 100 min_rx 100 multiplier 3',
+  'ip nhrp network-id 1',
+  'ip nhrp holdtime 300',
+  'frame-relay lmi-type cisco',
+];
+
+describe('la famille OSPF d\'interface reste acceptee', () => {
+  it.each(REGLAGES_3)('`%s`', async (commande) => {
+    expect(await (await surIface()).executeCommand(commande))
+      .not.toContain('Invalid input');
+  });
+});
+
+/*
+ * Mesure, et elle contredit l'attente : ces deux bornes sont REFUSEES AU
+ * CARET, pas par le gestionnaire. Celui-ci porte pourtant
+ * `% Invalid cost value (1-65535)` et `% Invalid priority value
+ * (0-255)`, ecrits et INATTEIGNABLES — l'analyse tranche avant lui.
+ *
+ * Et c'est le caret qui a raison : un vrai IOS connait la plage a
+ * l'analyse et rend `% Invalid input detected at '^' marker.`. La
+ * migration doit donc DECLARER ces plages pour conserver le
+ * comportement, a l'inverse de `bfd neighbor` ou `ip igmp version`, ou
+ * le message du gestionnaire etait la seule reponse possible. La
+ * difference n'est pas de gout : elle est dans ce que la machine rend
+ * deja.
+ */
+describe('une borne connue de l\'analyse est refusee au caret, comme sur IOS', () => {
+  it.each([
+    'ip ospf cost 70000',
+    'ip ospf cost 0',
+    'ip ospf priority 300',
+  ])('`%s` est refuse au caret', async (commande) => {
+    expect(await (await surIface()).executeCommand(commande))
+      .toContain('Invalid input detected');
+  });
+
+  /*
+   * Le gestionnaire ne refuse que ce qui n'est PAS un nombre : `ip ospf
+   * 0 area 0` passe. Mesure plutot que suppose — j'attendais un refus.
+   */
+  it('un identifiant de processus nul est accepte', async () => {
+    expect(await (await surIface()).executeCommand('ip ospf 0 area 0'))
+      .not.toContain('Invalid input');
+  });
+});
