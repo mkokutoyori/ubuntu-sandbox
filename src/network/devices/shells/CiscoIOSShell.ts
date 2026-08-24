@@ -91,7 +91,7 @@ import { showNATTranslations, showNATStatistics } from './cisco/CiscoNATCommands
 import { showIpOspfNeighbor } from './cisco/CiscoOspfCommands';
 import {
   type CiscoShellMode, type CiscoShellContext,
-  buildConfigCommands, buildConfigIfCommands,
+  buildConfigCommands, buildConfigIfCommands, configIfSpecs,
 } from './cisco/CiscoConfigCommands';
 import {
   buildConfigDhcpCommands, buildConfigDhcpPoolClassCommands, dhcpPoolSpecs,
@@ -377,6 +377,7 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
       ...securityInterfaceSpecs(this),
       ...netflowInterfaceSpecs(this),
       ...ospfInterfaceSpecs(this),
+      ...configIfSpecs(this),
       ...dhcpPoolClassSpecs(this),
       ...dhcpClassSpecs(this),
       ...ipv6DhcpPoolSpecs(this),

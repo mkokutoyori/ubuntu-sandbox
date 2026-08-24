@@ -22,6 +22,9 @@ import {
 } from '../../router/config/CiscoGlobalConfig';
 import { CISCO_ERRORS } from '../cli-utils';
 import { getNtpAgent } from '../../../equipment/RouterServiceCapabilities';
+import type { CommandSpec } from '@/cli/CommandTable';
+import type { ArgumentSpec } from '@/cli/ArgumentTypes';
+import { specsFromTrieRegistrations } from '@/cli/commands/trieAdapter';
 
 /**
  * Un TYPE d'interface sans son numéro.
@@ -452,6 +455,70 @@ export function buildConfigCommands(trie: CommandTrie, ctx: CiscoShellContext): 
  * sous-interface sans que rien ne le signale.
  */
 export const MODES_INTERFACE: readonly string[] = ['config-if', 'config-subif'];
+
+/**
+ * Les places de la famille physique d'interface.
+ *
+ * Ce lot DEPLACE des commandes, il ne change pas ce qu'elles acceptent :
+ * seules les bornes que le gestionnaire applique DEJA sont declarees —
+ * `bandwidth` 1-10000000 kbit/s et `delay` 1-16777215 dizaines de
+ * microsecondes, verifiees contre la reference Cisco et identiques a
+ * celles du code — plus les trois valeurs de `duplex`.
+ *
+ * Deux bornes reelles d'IOS sont volontairement LAISSEES DE COTE parce
+ * que cette machine ne les applique pas encore et que les poser ici
+ * refuserait au caret ce qu'elle accepte aujourd'hui : `load-interval`
+ * va de 30 a 600 par multiples de 30, et `keepalive` de 0 a 32767. Les
+ * ajouter est une amelioration de fidelite, donc son propre sujet.
+ */
+const CONFIG_IF_ARGUMENTS:
+Readonly<Record<string, ArgumentSpec | readonly ArgumentSpec[] | null>> = {
+  bandwidth: { name: 'kbits', type: 'INT', range: [1, 10000000],
+    description: 'Bandwidth in kilobits per second' },
+  delay: { name: 'dizaines', type: 'INT', range: [1, 16777215],
+    description: 'Delay in tens of microseconds' },
+  duplex: {
+    name: 'mode', type: 'ENUM', description: 'Duplex mode of this interface',
+    values: [
+      { keyword: 'auto', description: 'Negotiate the duplex mode' },
+      { keyword: 'full', description: 'Force full duplex' },
+      { keyword: 'half', description: 'Force half duplex' },
+    ],
+  },
+  description: { name: 'texte', type: 'REST', literal: 'LINE',
+    description: 'Up to 240 characters describing this interface' },
+  shutdown: null,
+  'ip directed-broadcast': null,
+  'ntp disable': null,
+  'ip accounting': null,
+  'ip address': {
+    name: 'adresse', type: 'REST',
+    description: 'Address and mask, then `secondary` for an extra one',
+    alternatives: [
+      { keyword: 'A.B.C.D', description: 'IP address of this interface' },
+      { keyword: 'dhcp', description: 'Obtain the address from a DHCP server' },
+    ],
+  },
+  'ip helper-address': {
+    name: 'relais', type: 'REST', description: 'Address of the DHCP server',
+    alternatives: [{ keyword: 'A.B.C.D', description: 'Address of the DHCP server' }],
+  },
+  'ip policy route-map': { name: 'carte', type: 'WORD',
+    description: 'Name of the route-map applied to this interface' },
+  'ip unnumbered': { name: 'interface', type: 'INTERFACE',
+    description: 'Interface whose address this one borrows' },
+};
+
+export function configIfSpecs(ctx: CiscoShellContext): CommandSpec[] {
+  return specsFromTrieRegistrations(
+    (collector) => buildConfigIfCommands(collector as unknown as CommandTrie, ctx),
+    {
+      modes: MODES_INTERFACE, minPrivilege: 15,
+      undoFromNegatedPaths: true,
+      argumentFor: (path) => CONFIG_IF_ARGUMENTS[path],
+    },
+  );
+}
 
 export function buildConfigIfCommands(trie: CommandTrie, ctx: CiscoShellContext): void {
   trie.registerGreedy('ip policy route-map', 'Apply PBR on interface', (args) => {
