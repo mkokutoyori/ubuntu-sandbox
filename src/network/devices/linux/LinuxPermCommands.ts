@@ -19,6 +19,8 @@ export function cmdChmod(ctx: ShellContext, args: string[]): string {
   const modeStr = nonFlags[0];
   const targets = nonFlags.slice(1);
 
+  if (!chmodModeIsValid(modeStr)) return `chmod: invalid mode: '${modeStr}'`;
+
   for (const target of targets) {
     const expanded = expandGlob(ctx, target);
     for (const t of expanded) {
@@ -55,11 +57,15 @@ function chmodRecursive(ctx: ShellContext, path: string, modeStr: string): void 
   }
 }
 
+function chmodModeIsValid(modeStr: string): boolean {
+  return parseChmodMode(modeStr, 0) !== null;
+}
+
 function parseChmodMode(modeStr: string, current: number): number | null {
-  // Octal mode: 755, 4755, 2755, etc.
-  if (/^\d{3,4}$/.test(modeStr)) {
+  if (/^[0-7]+$/.test(modeStr)) {
     return parseInt(modeStr, 8);
   }
+  if (/^\d+$/.test(modeStr)) return null;
 
   // Symbolic mode: u+x, g-w, o=r, a+x, u+s, g+s, +t, u+w,g-w,o=r
   let mode = current;
@@ -277,7 +283,7 @@ function formatStat(fmt: string, name: string, inode: INode, ctx: ShellContext):
 function fullStat(name: string, inode: INode, ctx: ShellContext): string {
   const owner = ctx.userMgr.uidToName(inode.uid);
   const group = ctx.userMgr.gidToName(inode.gid);
-  const octal = ctx.vfs.formatOctalPermissions(inode);
+  const octal = ctx.vfs.formatOctalPermissions(inode, 4);
   const perms = ctx.vfs.formatPermissions(inode);
   const typeStr = inode.type === 'file' ? 'regular file' : inode.type;
   const access = new Date(inode.atime).toISOString();

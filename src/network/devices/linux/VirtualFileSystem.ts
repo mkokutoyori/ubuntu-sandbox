@@ -1354,14 +1354,9 @@ export class VirtualFileSystem {
   /**
    * Get octal representation of permissions (3 or 4 digit).
    */
-  formatOctalPermissions(inode: INode): string {
+  formatOctalPermissions(inode: INode, width = 0): string {
     const perms = inode.permissions & 0o7777;
-    const special = (perms >> 9) & 7;
-    const basic = perms & 0o777;
-    if (special) {
-      return special.toString() + basic.toString(8).padStart(3, '0');
-    }
-    return basic.toString(8).padStart(3, '0');
+    return perms.toString(8).padStart(width, '0');
   }
 
   getInode(id: number): INode | undefined {
