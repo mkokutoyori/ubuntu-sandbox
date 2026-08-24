@@ -56,6 +56,102 @@ function errorMessageFor(reason: string): string {
 
 // ─── Global Config Mode ──────────────────────────────────────────────────────
 
+/**
+ * Les places de NAT global.
+ *
+ * Ces gestionnaires VALIDENT ET EXPLIQUENT ce que l'analyse ne peut pas
+ * trancher — nom de reserve trop long, plage mal alignee sur le masque,
+ * debut superieur a la fin, mot-cle `netmask` ou `prefix-length`
+ * attendu. Les places NOMMENT donc leur forme sans la restreindre : les
+ * devancer remplacerait « % IP range does not align with netmask. » par
+ * un caret nu, c'est-a-dire une information par une absence.
+ *
+ * Les delais de traduction, eux, ne portent aucune borne dans ce code
+ * et n'en recoivent pas ici : un lot de migration ne change pas ce
+ * qu'une commande accepte.
+ */
+const NAT_GLOBAL_ARGUMENTS:
+Readonly<Record<string, ArgumentSpec | readonly ArgumentSpec[] | null>> = {
+  'ip nat pool': {
+    name: 'reserve', type: 'REST',
+    description: 'Name, first and last address, then `netmask` or `prefix-length`',
+  },
+  'ip nat inside source static': {
+    name: 'traduction', type: 'REST',
+    description: 'Local then global address, or `tcp`/`udp` with their ports',
+    alternatives: [
+      { keyword: 'A.B.C.D', description: 'Inside local address' },
+      { keyword: 'tcp', description: 'Translate a TCP port' },
+      { keyword: 'udp', description: 'Translate a UDP port' },
+    ],
+  },
+  'ip nat inside source list': {
+    name: 'regle', type: 'REST',
+    description: 'Access list, then `pool <nom>` or `interface <nom>`, then `overload`',
+  },
+  'ip nat inside source route-map': {
+    name: 'regle', type: 'REST', description: 'Route-map, then `pool <nom>`',
+  },
+  'ip nat outside source static': {
+    name: 'traduction', type: 'REST',
+    description: 'Outside global then outside local address',
+  },
+  'ip nat log translations': {
+    name: 'ou', type: 'REST', description: 'Where the translations are logged',
+    alternatives: [{ keyword: 'syslog', description: 'Log the translations to syslog' }],
+  },
+  'ip nat service': {
+    name: 'service', type: 'REST', description: 'NAT service to enable or disable',
+  },
+};
+
+/*
+ * `ip nat inside source static network <local> <global> <masque>` est
+ * une forme du gestionnaire GLOUTON `… source static`, mais sa NEGATION
+ * a son propre gestionnaire : le general lirait `network` comme une
+ * adresse. Le trie tranchait par la longueur du chemin ; le socle traite
+ * `no` comme un modificateur, donc l'annulation de la forme gloutonne
+ * doit aiguiller elle-meme vers le gestionnaire qui convient.
+ *
+ * Les deux gestionnaires sont repris du meme constructeur plutot que
+ * recopies — deux ecritures de « retirer une traduction statique »
+ * pourraient diverger.
+ */
+function natStaticUndo(ctx: CiscoShellContext): CommandSpec['undo'] {
+  const collecte = collectRegistrations(
+    (collector) => buildNATConfigCommands(collector as unknown as CommandTrie, ctx));
+  const general = collecte.find(e => e.path === 'no ip nat inside source static');
+  const reseau = collecte.find(e => e.path === 'no ip nat inside source static network');
+  return ((_session: unknown, args: Record<string, string>) => {
+    const mots = String(args.traduction ?? '').trim().split(/\s+/).filter(Boolean);
+    if (mots[0]?.toLowerCase() === 'network') {
+      const suite = mots.slice(1);
+      return reseau?.action(suite,
+        ['no ip nat inside source static network', ...suite].join(' ')) ?? '';
+    }
+    return general?.action(mots,
+      ['no ip nat inside source static', ...mots].join(' ')) ?? '';
+  }) as CommandSpec['undo'];
+}
+
+export function natConfigSpecs(ctx: CiscoShellContext): CommandSpec[] {
+  const specs = specsFromTrieRegistrations(
+    (collector) => buildNATConfigCommands(collector as unknown as CommandTrie, ctx),
+    {
+      modes: ['config'], minPrivilege: 15,
+      undoFromNegatedPaths: true,
+      argumentFor: (path) => NAT_GLOBAL_ARGUMENTS[path],
+    },
+  );
+  const statique = specs.find(spec =>
+    spec.path.filter((p): p is string => typeof p === 'string').join(' ')
+      === 'ip nat inside source static');
+  if (statique) {
+    (statique as { undo?: CommandSpec['undo'] }).undo = natStaticUndo(ctx);
+  }
+  return specs;
+}
+
 export function buildNATConfigCommands(trie: CommandTrie, ctx: CiscoShellContext): void {
   trie.registerGreedy('ip nat inside source static', 'Configure static NAT translation', (rawArgs) => {
     if (hasUnmatchedQuote(rawArgs)) return '% Unmatched quote in input.';
@@ -517,7 +613,10 @@ export function buildNATInterfaceCommands(trie: CommandTrie, ctx: CiscoShellCont
 // ─── Privileged Mode ──────────────────────────────────────────────────────────
 
 import type { CommandSpec } from '@/cli/CommandTable';
-import { specsFromTrieRegistrations } from '@/cli/commands/trieAdapter';
+import type { ArgumentSpec } from '@/cli/ArgumentTypes';
+import {
+  specsFromTrieRegistrations, collectRegistrations,
+} from '@/cli/commands/trieAdapter';
 import { MODES_INTERFACE } from './CiscoConfigCommands';
 
 export function registerNATPrivilegedCommands(trie: CommandTrie, getRouter: () => Router): void {

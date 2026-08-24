@@ -191,9 +191,23 @@ export function specsFromTrieRegistrations(
      * seul n'est pas une commande complete, et `no version` en est
      * l'annulation, donc annoncee comme telle.
      */
+    /*
+     * Une negation nue ne se declare que si sa forme positive n'est
+     * couverte par PERSONNE. `no ip nat inside source static network`
+     * n'a pas de `… static network` en face, mais `… static` est
+     * GLOUTON et avale deja `network 192.168.1.0 …` : declarer la forme
+     * longue comme n'existant que niee la masquerait, et la commande la
+     * plus specifique gagnant l'analyse, la traduction de reseau entiere
+     * devenait « % Incomplete command. ».
+     */
+    const positif = entry.path.startsWith('no ') ? entry.path.slice(3) : null;
+    const couvertParUnGlouton = positif !== null && collected.some(autre =>
+      autre.greedy && !autre.path.startsWith('no ')
+      && positif.startsWith(`${autre.path} `));
     const negationSeule = options.undoFromNegatedPaths
       && entry.path.startsWith('no ')
-      && !collected.some(autre => autre.path === entry.path.slice(3));
+      && !collected.some(autre => autre.path === entry.path.slice(3))
+      && !couvertParUnGlouton;
     if (options.undoFromNegatedPaths && entry.path.startsWith('no ')
       && !negationSeule) continue;
     if (options.skip?.(entry.path)) continue;

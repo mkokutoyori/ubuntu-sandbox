@@ -166,6 +166,43 @@ export function pimGlobalRunningConfigLines(router: Router): string[] {
     .map((rp) => `ip pim rp-address ${rp.rpAddress}`);
 }
 
+const PIM_GLOBAL_ARGUMENTS:
+Readonly<Record<string, ArgumentSpec | readonly ArgumentSpec[] | null>> = {
+  'ip pim rp-address': {
+    name: 'rp', type: 'REST', description: 'Address of the rendezvous point',
+    alternatives: [{ keyword: 'A.B.C.D', description: 'Address of the rendezvous point' }],
+  },
+  'ip pim spt-threshold': {
+    name: 'seuil', type: 'REST',
+    description: 'Rate above which the router joins the shortest-path tree',
+    alternatives: [{ keyword: 'infinity', description: 'Never join the shortest-path tree' }],
+  },
+  'ip pim send-rp-announce': {
+    name: 'reste', type: 'REST', description: 'Interface, then `scope <ttl>`',
+  },
+  'ip pim send-rp-discovery': {
+    name: 'reste', type: 'REST', description: 'Interface, then `scope <ttl>`',
+  },
+  'ip pim bsr-candidate': {
+    name: 'reste', type: 'REST', description: 'Interface, then hash length and priority',
+  },
+  'ip pim rp-candidate': {
+    name: 'reste', type: 'REST', description: 'Interface, then interval and priority',
+  },
+};
+
+export function pimGlobalSpecs(ctx: ShowCtx): CommandSpec[] {
+  return specsFromTrieRegistrations(
+    (collector) =>
+      buildPimGlobalConfigCommands(collector as unknown as CommandTrie, ctx),
+    {
+      modes: ['config'], minPrivilege: 15,
+      undoFromNegatedPaths: true,
+      argumentFor: (path) => PIM_GLOBAL_ARGUMENTS[path],
+    },
+  );
+}
+
 export function buildPimGlobalConfigCommands(trie: CommandTrie, ctx: ShowCtx): void {
   trie.registerGreedy('ip pim rp-address', 'Configure static PIM RP address', (args) => {
     const a = agent(ctx.r());

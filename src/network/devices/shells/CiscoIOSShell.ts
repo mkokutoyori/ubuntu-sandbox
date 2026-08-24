@@ -55,7 +55,7 @@ import {
 } from './cisco/CiscoIgmpCommands';
 import {
   buildPimInterfaceCommands, buildPimGlobalConfigCommands, registerPimShowCommands,
-  pimInterfaceSpecs,
+  pimInterfaceSpecs, pimGlobalSpecs,
   pimShowSpecs,
 } from './cisco/CiscoPimCommands';
 import {
@@ -165,6 +165,7 @@ import {
 } from './cisco/CiscoEemNetflowArchiveCommands';
 import {
   buildNATConfigCommands, buildNATInterfaceCommands, natInterfaceSpecs,
+  natConfigSpecs,
   registerNATPrivilegedCommands, registerNATShowCommands, natShowSpecs,
 } from './cisco/CiscoNATCommands';
 import { iosShortInterfaceName } from '@/network/devices/inspection/InterfaceStatusView';
@@ -378,6 +379,8 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
       ...netflowInterfaceSpecs(this),
       ...ospfInterfaceSpecs(this),
       ...configIfSpecs(this),
+      ...natConfigSpecs(this),
+      ...pimGlobalSpecs({ r: () => this.d() }),
       ...dhcpPoolClassSpecs(this),
       ...dhcpClassSpecs(this),
       ...ipv6DhcpPoolSpecs(this),
