@@ -113,10 +113,37 @@ export function anyAddress(name = 'any'): AddressObject {
   return build({ name, kind: 'any' }, { predefined: true });
 }
 
+export function anyAddress6(name = 'all6'): AddressObject {
+  return build({ name, kind: 'any' }, { predefined: true, family: 'ipv6' });
+}
+
+export function prefixAddress6(
+  name: string, prefix: string, prefixLength: number,
+  options: AddressObjectOptions = {},
+): AddressObject {
+  return build(
+    { name, kind: 'subnet', value: prefix, careMask: String(prefixLength) },
+    { ...options, family: 'ipv6' },
+  );
+}
+
+export function rangeAddress6(
+  name: string, from: string, to: string, options: AddressObjectOptions = {},
+): AddressObject {
+  return build({ name, kind: 'range', value: from, endValue: to },
+    { ...options, family: 'ipv6' });
+}
+
+export function familyOf(candidate: string): AddressFamily {
+  return candidate.includes(':') ? 'ipv6' : 'ipv4';
+}
+
 export function addressObjectMatches(
   object: AddressObject, candidate: string, context: AddressMatchContext,
 ): boolean {
+  if (object.family !== familyOf(candidate)) return false;
   if (object.kind === 'any') return true;
+  if (object.family === 'ipv6') return matchesIpv6(object, candidate);
 
   switch (object.kind) {
     case 'host':
@@ -141,6 +168,76 @@ export function addressObjectMatches(
     default:
       return false;
   }
+}
+
+function matchesIpv6(object: AddressObject, candidate: string): boolean {
+  const value = tryIpv6ToBits(candidate);
+  if (value === null) return false;
+
+  switch (object.kind) {
+    case 'host':
+      return sameIpv6(value, object.value);
+    case 'subnet':
+      return withinIpv6Prefix(value, object.value, object.careMask);
+    case 'range':
+      return withinIpv6Range(value, object.value, object.endValue);
+    default:
+      return false;
+  }
+}
+
+function sameIpv6(value: bigint, other: string | undefined): boolean {
+  const compared = other === undefined ? null : tryIpv6ToBits(other);
+  return compared !== null && compared === value;
+}
+
+function withinIpv6Prefix(
+  value: bigint, prefix: string | undefined, length: string | undefined,
+): boolean {
+  if (prefix === undefined || length === undefined) return false;
+  const base = tryIpv6ToBits(prefix);
+  const bits = Number.parseInt(length, 10);
+  if (base === null || !Number.isInteger(bits) || bits < 0 || bits > 128) return false;
+  const mask = bits === 0
+    ? 0n
+    : ((1n << BigInt(bits)) - 1n) << BigInt(128 - bits);
+  return (value & mask) === (base & mask);
+}
+
+function withinIpv6Range(
+  value: bigint, from: string | undefined, to: string | undefined,
+): boolean {
+  if (from === undefined || to === undefined) return false;
+  const low = tryIpv6ToBits(from);
+  const high = tryIpv6ToBits(to);
+  if (low === null || high === null || low > high) return false;
+  return value >= low && value <= high;
+}
+
+export function tryIpv6ToBits(value: string): bigint | null {
+  const text = value.split('%')[0]?.trim() ?? '';
+  if (!text.includes(':')) return null;
+  const halves = text.split('::');
+  if (halves.length > 2) return null;
+
+  const expand = (part: string): string[] =>
+    part.length === 0 ? [] : part.split(':');
+  const head = expand(halves[0] ?? '');
+  const tail = halves.length === 2 ? expand(halves[1] ?? '') : [];
+  const missing = 8 - head.length - tail.length;
+  if (halves.length === 2 ? missing < 0 : missing !== 0) return null;
+
+  const groups = halves.length === 2
+    ? [...head, ...Array<string>(missing).fill('0'), ...tail]
+    : head;
+  if (groups.length !== 8) return null;
+
+  let bits = 0n;
+  for (const group of groups) {
+    if (!/^[0-9a-fA-F]{1,4}$/.test(group)) return null;
+    bits = (bits << 16n) | BigInt(Number.parseInt(group, 16));
+  }
+  return bits;
 }
 
 function sameAddress(candidate: string, value: string | undefined): boolean {

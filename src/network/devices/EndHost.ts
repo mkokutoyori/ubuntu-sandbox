@@ -4189,12 +4189,14 @@ export abstract class EndHost extends Equipment {
     const port = this.ports.get(portName);
     if (!port) return;
 
-    // Determine source address for reply
-    let srcIP: IPv6Address | null = null;
-    if (ipv6.destinationIP.isLinkLocal()) {
-      srcIP = port.getLinkLocalIPv6();
-    } else {
-      srcIP = port.getGlobalIPv6() || port.getLinkLocalIPv6();
+    // RFC 4443 §4.2: the source of an Echo Reply to a unicast request MUST
+    // be the destination the request was addressed to.
+    let srcIP: IPv6Address | null =
+      port.hasIPv6Address(ipv6.destinationIP) ? ipv6.destinationIP : null;
+    if (!srcIP) {
+      srcIP = ipv6.destinationIP.isLinkLocal()
+        ? port.getLinkLocalIPv6()
+        : (port.getGlobalIPv6() || port.getLinkLocalIPv6());
     }
     if (!srcIP) return;
 
