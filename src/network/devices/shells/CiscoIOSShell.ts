@@ -162,6 +162,7 @@ import {
   buildArchiveSubmode, buildArchiveLogSubmode,
   eemAppletSpecs, flowExporterSpecs, flowRecordSpecs, flowMonitorSpecs,
   buildEemNetflowArchiveInterfaceCommands, buildEemNetflowArchiveShowCommands,
+  netflowEemShowSpecs,
   netflowInterfaceSpecs,
 } from './cisco/CiscoEemNetflowArchiveCommands';
 import {
@@ -382,6 +383,7 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
       ...configIfSpecs(this),
       ...natConfigSpecs(this),
       ...natExecSpecs(() => this.d()),
+      ...netflowEemShowSpecs(() => this.d()),
       ...pimGlobalSpecs({ r: () => this.d() }),
       ...ipsecGlobalSpecs(this),
       ...ikev2GlobalSpecs(this),

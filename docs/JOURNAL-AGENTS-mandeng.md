@@ -66,9 +66,9 @@ les mots-clés d'un autre protocole devient une **joignabilité de
 déclaration** — donc elle gouverne l'exécution ET l'aide, alors qu'un
 filtre de complétion ne gouvernait que l'aide.
 
-Compteurs : routeur 1007 → 340, commutateur 570 → 376. `configIfTrie`
+Compteurs : routeur 1007 → 324, commutateur 570 → 376. `configIfTrie`
 du routeur est passé de 151 à 11. Restent `configTrie` (143 routeur /
-140 commutateur), `privilegedTrie` (99 / 82), `userTrie` (72 / 48), le
+140 commutateur), `privilegedTrie` (91 / 82), `userTrie` (64 / 48), le
 `configIfTrie` du COMMUTATEUR (89, non entamé) et les sous-modes ACL.
 
 **Les deux arbres d'EXEC partagent un espace de noms**, et c'est ce que
