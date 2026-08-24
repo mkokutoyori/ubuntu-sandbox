@@ -373,6 +373,9 @@ const MODE_DU_TRIE: Readonly<Record<string, readonly string[]>> = {
   userTrie: ['user', 'privileged'],
   privilegedTrie: ['user', 'privileged'],
   configPmapClassTrie: ['config-pmap-c'],
+  // Une sous-interface est une interface : le meme arbre sert les deux
+  // modes, et l'elagage doit retirer les chemins des DEUX.
+  configIfTrie: ['config-if', 'config-subif'],
   configIpSlaTrie: ['config-ipsla'],
   configIpSlaHttpRawTrie: ['config-ipsla-http-raw'],
 };

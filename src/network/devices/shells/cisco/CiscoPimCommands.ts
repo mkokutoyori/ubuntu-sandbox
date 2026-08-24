@@ -1,5 +1,6 @@
 import type { CommandTrie } from '../CommandTrie';
 import type { CommandSpec } from '@/cli/CommandTable';
+import type { ArgumentSpec } from '@/cli/ArgumentTypes';
 import { specsFromTrieRegistrations } from '@/cli/commands/trieAdapter';
 import type { Router } from '../../Router';
 import type { PimAgent } from '../../../pim/PimAgent';
@@ -7,6 +8,7 @@ import type { PimMode } from '../../../pim/types';
 import { hms } from '@/lib/format';
 import { CISCO_ERRORS } from '../cli-utils';
 import { CliInvalidInput } from '../cli/CliDiagnostic';
+import { MODES_INTERFACE } from './CiscoConfigCommands';
 
 interface IfCtx {
   selectedPorts(): string[];
@@ -45,6 +47,32 @@ export function pimInterfaceRunningConfigLines(router: Router, iface: string): s
   const lines = [` ip pim ${rt.mode}-mode`];
   if (rt.drPriority !== 1) lines.push(` ip pim dr-priority ${rt.drPriority}`);
   return lines;
+}
+
+const PIM_IF_ARGUMENTS:
+Readonly<Record<string, ArgumentSpec | readonly ArgumentSpec[] | null>> = {
+  'ip pim sparse-mode': null,
+  'ip pim dense-mode': null,
+  'ip pim sparse-dense-mode': null,
+  'ip pim dr-priority': {
+    name: 'priorite', type: 'REST', description: 'DR election priority',
+    alternatives: [{ keyword: '<0-4294967295>', description: 'DR election priority' }],
+  },
+  'ip pim query-interval': {
+    name: 'secondes', type: 'REST', description: 'Hello interval in seconds',
+    alternatives: [{ keyword: '<1-65535>', description: 'Hello interval in seconds' }],
+  },
+  'no ip pim': null,
+};
+
+export function pimInterfaceSpecs(ctx: IfCtx): CommandSpec[] {
+  return specsFromTrieRegistrations(
+    (collector) => buildPimInterfaceCommands(collector as unknown as CommandTrie, ctx),
+    {
+      modes: MODES_INTERFACE, minPrivilege: 15,
+      argumentFor: (path) => PIM_IF_ARGUMENTS[path],
+    },
+  );
 }
 
 export function buildPimInterfaceCommands(trie: CommandTrie, ctx: IfCtx): void {

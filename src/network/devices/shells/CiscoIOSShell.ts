@@ -47,13 +47,15 @@ import {
   buildVrrpGlbpInterfaceCommands, registerVrrpGlbpShowCommands,
 } from './cisco/CiscoVrrpGlbpCommands';
 import {
-  buildBfdInterfaceCommands, registerBfdShowCommands,
+  buildBfdInterfaceCommands, registerBfdShowCommands, bfdInterfaceSpecs,
 } from './cisco/CiscoBfdCommands';
 import {
   buildIgmpInterfaceCommands, registerIgmpShowCommands, igmpShowSpecs,
+  igmpInterfaceSpecs,
 } from './cisco/CiscoIgmpCommands';
 import {
   buildPimInterfaceCommands, buildPimGlobalConfigCommands, registerPimShowCommands,
+  pimInterfaceSpecs,
   pimShowSpecs,
 } from './cisco/CiscoPimCommands';
 import {
@@ -160,7 +162,7 @@ import {
   buildEemNetflowArchiveInterfaceCommands, buildEemNetflowArchiveShowCommands,
 } from './cisco/CiscoEemNetflowArchiveCommands';
 import {
-  buildNATConfigCommands, buildNATInterfaceCommands,
+  buildNATConfigCommands, buildNATInterfaceCommands, natInterfaceSpecs,
   registerNATPrivilegedCommands, registerNATShowCommands, natShowSpecs,
 } from './cisco/CiscoNATCommands';
 import { iosShortInterfaceName } from '@/network/devices/inspection/InterfaceStatusView';
@@ -356,6 +358,19 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
       ...keyChainKeySubmodeSpecs(this),
       ...routeMapSubmodeSpecs(this, this.policy),
       ...routerSubmodeSpecs(this, this.routingCfg),
+      ...bfdInterfaceSpecs({
+        selectedPorts: () => this.selectedPortsForConfigIf(),
+        r: () => this.d(),
+      }),
+      ...igmpInterfaceSpecs({
+        selectedPorts: () => this.selectedPortsForConfigIf(),
+        r: () => this.d(),
+      }),
+      ...pimInterfaceSpecs({
+        selectedPorts: () => this.selectedPortsForConfigIf(),
+        r: () => this.d(),
+      }),
+      ...natInterfaceSpecs(this),
       ...dhcpPoolClassSpecs(this),
       ...dhcpClassSpecs(this),
       ...ipv6DhcpPoolSpecs(this),
