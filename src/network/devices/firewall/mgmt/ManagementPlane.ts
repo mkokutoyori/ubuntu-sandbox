@@ -5,6 +5,7 @@ import {
   type AdminAccountDraft,
 } from '../identity/AdminAccounts';
 import { PasswordHistory } from '../identity/PasswordHistory';
+import type { AdminHttpServer } from './AdminHttpServer';
 import type { FirewallCliServer } from './FirewallCliServer';
 import {
   DEFAULT_MANAGEMENT_PORTS, MANAGEMENT_IDLE_TIMEOUT_MIN, ManagementLockout,
@@ -18,8 +19,11 @@ export class ManagementPlane {
   private readonly history = new PasswordHistory();
   private readonly lockout: ManagementLockout;
   private cliServer: FirewallCliServer | null = null;
+  private adminServer: AdminHttpServer | null = null;
   private ports: ManagementPorts = DEFAULT_MANAGEMENT_PORTS;
   private idleTimeoutMin = MANAGEMENT_IDLE_TIMEOUT_MIN;
+  private httpsRedirect = true;
+  private serverCertificate = 'self-sign';
 
   constructor(private readonly access: AccessMatrix, now: () => number) {
     this.lockout = new ManagementLockout(now);
@@ -30,11 +34,30 @@ export class ManagementPlane {
     server.refresh();
   }
 
+  attachAdminServer(server: AdminHttpServer): void {
+    this.adminServer = server;
+    server.refresh();
+  }
+
+  adminHttpsRedirect(): boolean { return this.httpsRedirect; }
+
+  setAdminHttpsRedirect(enabled: boolean): void {
+    this.httpsRedirect = enabled;
+  }
+
+  adminServerCertificateName(): string { return this.serverCertificate; }
+
+  setAdminServerCertificate(name: string): void {
+    this.serverCertificate = name;
+    this.adminServer?.refresh();
+  }
+
   managementPorts(): ManagementPorts { return this.ports; }
 
   setManagementPorts(patch: Partial<ManagementPorts>): void {
     this.ports = withManagementPorts(this.ports, patch);
     this.cliServer?.refresh();
+    this.adminServer?.refresh();
   }
 
   idleTimeoutMs(): number { return this.idleTimeoutMin * 60_000; }

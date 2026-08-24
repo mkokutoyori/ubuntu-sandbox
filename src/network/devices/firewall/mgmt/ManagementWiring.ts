@@ -9,7 +9,12 @@ import type { RemoteAuthOutcome } from '../auth/AuthPortal';
 import { buildFirewallPortals, type FirewallPortals } from '../auth/FirewallPortals';
 import { buildFirewallHa, type FirewallHa } from '../ha/FirewallHa';
 import { buildFirewallNtp, type FirewallNtp } from './FirewallNtp';
-import { CaptivePortalRedirect } from '../auth/CaptivePortalRedirect';
+import {
+  CAPTURED_HTTP_PORT, CaptivePortalRedirect,
+} from '../auth/CaptivePortalRedirect';
+import {
+  AdminHttpServer, type AdminHttpApp, type AdminServerCertificate,
+} from './AdminHttpServer';
 import { FirewallCliServer, type ManagementCli } from './FirewallCliServer';
 import type { LoginBannerStage } from './LoginBanners';
 import type { ManagementPorts } from './ManagementAccess';
@@ -49,6 +54,9 @@ export interface ManagementHost {
   onAdminLogout(user: string): void;
   onManagementAuthFailure(user: string, source: string): void;
   loginBannerLines(stage: LoginBannerStage): readonly string[];
+  adminHttpsRedirect(): boolean;
+  adminServerCertificate(): AdminServerCertificate | undefined;
+  adminHttpApp(): AdminHttpApp | null;
 }
 
 export interface ManagementServices {
@@ -57,6 +65,7 @@ export interface ManagementServices {
   readonly ntp: FirewallNtp;
   readonly captivePortal: CaptivePortalRedirect;
   readonly cli: FirewallCliServer;
+  readonly admin: AdminHttpServer;
 }
 
 export function buildManagementServices(host: ManagementHost): ManagementServices {
@@ -92,6 +101,16 @@ export function buildManagementServices(host: ManagementHost): ManagementService
     bus: () => host.bus(),
   });
 
+  const admin = new AdminHttpServer({
+    tcp: () => host.tcp(),
+    ports: () => host.managementPorts(),
+    httpsRedirect: () => host.adminHttpsRedirect(),
+    serverCertificate: () => host.adminServerCertificate(),
+    app: () => host.adminHttpApp(),
+    capturePort: () => (captivePortal.isArmed() ? CAPTURED_HTTP_PORT : null),
+    capturedResponse: (client) => captivePortal.responseFor(client),
+  });
+
   const captivePortal = new CaptivePortalRedirect({
     tcp: () => host.tcp(),
     portalPort: () => (host.portalUsesHttps() ? portals.ports().https : portals.ports().http),
@@ -100,6 +119,7 @@ export function buildManagementServices(host: ManagementHost): ManagementService
     addressOf: (iface) => host.addressOf(iface),
     authenticated: (iface, address) => host.authenticated(iface, address),
     authRequiredByPolicy: () => host.authRequiredByPolicy(),
+    onArmedChanged: () => { admin.refresh(); },
   });
 
   const cli = new FirewallCliServer({
@@ -119,7 +139,7 @@ export function buildManagementServices(host: ManagementHost): ManagementService
     bannerLines: (stage) => host.loginBannerLines(stage),
   });
 
-  return Object.freeze({ portals, ha, ntp, captivePortal, cli });
+  return Object.freeze({ portals, ha, ntp, captivePortal, cli, admin });
 }
 
 export function ipv4Claimed(

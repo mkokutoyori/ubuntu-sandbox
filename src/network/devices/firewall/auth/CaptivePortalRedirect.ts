@@ -1,6 +1,7 @@
 import { IP_PROTO_TCP, type IPv4Packet } from '../../../core/types';
 import { tryIpToUint32 } from '../../../core/ip';
-import type { TcpStack, TcpListener, TcpSocket } from '../../../tcp/TcpStack';
+import { createResponse, type HttpMessage } from '../../../http/semantics/types';
+import type { TcpStack } from '../../../tcp/TcpStack';
 
 export const CAPTURED_HTTP_PORT = 80;
 
@@ -14,10 +15,11 @@ export interface CaptivePortalDeps {
   readonly addressOf: (iface: string) => string | undefined;
   readonly authenticated: (iface: string, address: string) => boolean;
   readonly authRequiredByPolicy: () => boolean;
+  readonly onArmedChanged?: () => void;
 }
 
 export class CaptivePortalRedirect {
-  private listener: TcpListener | null = null;
+  private armed = false;
   private readonly captured = new Set<string>();
   private readonly captiveInterfaces = new Set<string>();
 
@@ -49,29 +51,37 @@ export class CaptivePortalRedirect {
   }
 
   arm(): void {
-    if (this.listener) return;
-    this.listener = this.deps.tcp().listen(CAPTURED_HTTP_PORT, {
-      onAccept: (socket) => { this.serve(socket); },
-      identity: { processName: 'httpsd' },
-    });
+    if (this.armed) return;
+    this.armed = true;
+    this.deps.onArmedChanged?.();
   }
 
   disarm(): void {
-    if (!this.listener) return;
-    this.deps.tcp().closeListener(CAPTURED_HTTP_PORT);
-    this.listener = null;
+    if (!this.armed) return;
+    this.armed = false;
     this.captured.clear();
+    this.deps.onArmedChanged?.();
   }
 
-  isArmed(): boolean { return this.listener !== null; }
+  isArmed(): boolean { return this.armed; }
 
   capture(iface: string, packet: IPv4Packet): boolean {
-    if (!this.listener) return false;
+    if (!this.armed) return false;
     if (!capturableHttp(packet)) return false;
 
     const key = flowKey(packet);
     if (key !== null) this.captured.add(key);
     return this.deps.tcp().handleIp(iface, packet.sourceIP, packet);
+  }
+
+  responseFor(client: { ip: string; port: number }): HttpMessage | null {
+    const prefix = `${client.ip}:${client.port}>`;
+    const key = [...this.captured].find(entry => entry.startsWith(prefix));
+    if (key === undefined) return null;
+    this.captured.delete(key);
+
+    const origin = this.portalOrigin(client.ip);
+    return origin === undefined ? refusedPage() : redirectPage(origin);
   }
 
   private portalOrigin(clientAddress: string): string | undefined {
@@ -91,17 +101,6 @@ export class CaptivePortalRedirect {
     return undefined;
   }
 
-  private serve(socket: TcpSocket): void {
-    socket.onData(() => {
-      const origin = this.portalOrigin(socket.remoteIp);
-      socket.send(origin === undefined ? refusedBody() : redirectBody(origin));
-      socket.close();
-    });
-    socket.onClose(() => {
-      this.captured.delete(
-        `${socket.remoteIp}:${socket.remotePort}>${socket.localIp}:${socket.localPort}`);
-    });
-  }
 }
 
 function flowKey(packet: IPv4Packet): string | null {
@@ -123,27 +122,21 @@ export function capturableHttp(packet: IPv4Packet): boolean {
   return segment?.type === 'tcp' && segment.destinationPort === CAPTURED_HTTP_PORT;
 }
 
-function redirectBody(origin: string): string {
-  const location = `${origin}/fgtauth`;
-  return [
-    'HTTP/1.1 303 See Other',
-    `Location: ${location}`,
-    'Content-Type: text/html',
-    'Content-Length: 0',
-    'Connection: close',
-    '',
-    '',
-  ].join('\r\n');
+function redirectPage(origin: string): HttpMessage {
+  const response = createResponse(303, 'See Other');
+  response.headers.set('Location', `${origin}/fgtauth`);
+  response.headers.set('Content-Type', 'text/html');
+  response.headers.set('Content-Length', '0');
+  response.headers.set('Connection', 'close');
+  return response;
 }
 
-function refusedBody(): string {
+function refusedPage(): HttpMessage {
   const body = '<html><body>Authentication required.</body></html>';
-  return [
-    'HTTP/1.1 403 Forbidden',
-    'Content-Type: text/html',
-    `Content-Length: ${body.length}`,
-    'Connection: close',
-    '',
-    body,
-  ].join('\r\n');
+  const response = createResponse(403, 'Forbidden');
+  response.headers.set('Content-Type', 'text/html');
+  response.headers.set('Content-Length', String(body.length));
+  response.headers.set('Connection', 'close');
+  response.body = new Uint8Array([...body].map(c => c.charCodeAt(0)));
+  return response;
 }

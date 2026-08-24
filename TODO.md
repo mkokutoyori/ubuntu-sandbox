@@ -537,17 +537,19 @@ UTC.
 (`set timezone ?`), et l'inventer donnerait 79 correspondances fausses —
 pire que l'aveu.
 
-### [admin] pas d'interface d'administration HTTP/HTTPS
-`set allowaccess http https` est accepte, rendu, et gouverne bien le
-filtrage TCP (`ManagementPlane.admitsTcp` refuse le port), mais RIEN
-n'ecoute derriere : aucun serveur qui servirait la page de connexion que
-le TP 1 fait ouvrir sur `http://192.168.100.99`.
-**Mesure** : le TP 1 demande d'ouvrir l'adresse dans un navigateur ; la
-seule brique HTTP du pare-feu est `AuthPortal` (portail captif), qui
-n'est pas monte sur les ports d'administration.
-**Report** : `Http1ServerSession` existe et le portail captif montre le
-chemin ; il manque le serveur d'administration lui-meme et ses pages,
-sujet en soi et non une commande de plus.
+### [admin] le code de redirection du port d'administration n'est pas atteste
+Depuis le lot « le plan d'administration ecoute », `admin-port` sert
+vraiment et redirige vers HTTPS quand `admin-https-redirect` est actif.
+Ce qui n'est pas atteste est le CODE de cette redirection sur une vraie
+machine, ni l'en-tete `Server` qu'elle rend.
+**Mesure** : la documentation Fortinet et les fils de la communaute
+attestent la redirection et son activation par defaut, jamais son code ;
+`docs.fortinet.com` ne rend pas de transcription HTTP depuis ce reseau.
+**Ce qui est pose** : `301`, la semantique HTTP d'un changement de
+schema permanent, et la sonde verifie `30x` plutot que d'epingler un
+chiffre que rien ne soutient.
+**Report** : trancher demande une capture de vraie machine. Le
+mecanisme, lui, est complet.
 
 ## Serveurs DHCP
 

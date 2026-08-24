@@ -61,6 +61,7 @@
 | **F3b** | `?` descend dans l'arbre ; l'interface passe en anglais | 13 | ✅ |
 | **F4** | **FortiOS phase 4 — diagnostic et journaux** | 44 | ✅ |
 | **F5** | **FortiOS phase 5 — VDOM et modes de deploiement** | 27 | ✅ |
+| **F28** | **FortiOS phase 28 — le plan d'administration écoute** | 15 | ✅ |
 | 3 | NAT objet ASA (`nat (dmz,outside) static`) | — | ⏳ |
 | 3 | `ShellFactory` + `DeviceFactory` | — | ⏳ |
 
@@ -2790,6 +2791,88 @@ trames, `curl http://<fw>/` redirige vers HTTPS, `curl -k
 https://<fw>/api/v2/cmdb/system/admin` rend 401, la même requête après
 `/logincheck` rend l'administrateur créé à la CLI, et retirer `http` de
 `allowaccess` referme la porte.
+
+---
+
+### Livré
+
+L'entrée `[admin] pas d'interface d'administration HTTP/HTTPS` est
+retirée de `TODO.md`.
+
+**Le port écoute pour de bon.** `AdminHttpServer` (socle) lie
+`admin-port` et `admin-sport` et les relie à `setManagementPorts`, donc
+déplacer la porte la déplace vraiment. Rien de neuf n'a été écrit pour
+le transport : ce sont `Http1ServerSession` et `HttpsServerSession`,
+ceux qu'`AuthPortal` et `SslVpnPortal` montaient déjà.
+
+**L'API lit l'arbre VIVANT**, et c'est ce qui a coûté le plus cher —
+parce que la mesure a trouvé, en chemin, que *l'arbre vivant n'existait
+pas*. Chaque `FortiShell` construisait son PROPRE `FortiConfigTree` :
+
+```
+console :  show system interface port1   → set ip 192.168.1.1 255.255.255.0
+ssh     :  show system interface port1   → "port1" does not exist
+```
+
+La même machine, au même instant, décrivait deux configurations
+différentes selon la porte par laquelle on l'interrogeait. Écrire l'API
+contre l'un des deux arbres aurait fait hériter la divergence ; l'écrire
+contre un troisième l'aurait aggravée. **Le magasin appartient donc
+désormais à l'ÉQUIPEMENT** (`FortiGate.configTree()`) et le CURSEUR
+reste à la session (`FortiNavigator`, le mode, le vdom) — ce sont deux
+notions distinctes, et les confondre était le défaut. `claimTree()`
+rattache la portée vdom à la session qui exécute, au seul point commun
+par lequel tout passe. Aucun cas existant n'a changé de verdict : 106
+fichiers, 2 015 cas verts.
+
+**L'identité est celle de SSH.** `/logincheck` appelle
+`ManagementPlane.login`, donc le verrouillage après trois échecs et
+`trusthost` valent pour l'API sans une ligne de plus. Un second contrôle
+d'identité aurait été la duplication que ce carnet raconte depuis
+vingt-sept phases.
+
+**Une SEULE porte HTTP, et deux duplications refermées en chemin.** Le
+portail captif liait `0.0.0.0:80` de son côté et **écrivait ses réponses
+HTTP à la main** — `'HTTP/1.1 303 See Other'` concaténé —, alors que le
+dépôt porte un moteur HTTP complet. Il ne lie plus rien : il DÉCIDE
+(`responseFor`) et le serveur d'administration sert, ce qui est
+exactement l'architecture d'un vrai FortiGate, où un seul `httpsd` sert
+la page d'administration et la redirection `/fgtauth`. Ses deux réponses
+sont maintenant des `HttpMessage` construits par le socle.
+
+L'inspection profonde, elle, lie `0.0.0.0:443` pour terminer un flux
+TLS **de transit** : ce n'est pas de l'HTTP et cela ne peut pas se
+fondre dans le même serveur. La règle écrite est donc l'ordre de
+priorité réel — un flux détourné n'est pas une connexion
+d'administration — et `claimPort`/`releasePort` font le serveur
+d'administration s'effacer le temps de l'interception, puis reprendre sa
+porte. C'est un arbitrage explicite plutôt qu'une exception attrapée.
+
+**Le certificat.** `admin-server-cert` vaut `self-sign` par défaut, comme
+sur une vraie machine, et ce nom désigne maintenant un VRAI certificat
+auto-signé posé à l'usine (`FactoryCertificates`) — sans quoi la valeur
+par défaut aurait référencé un objet inexistant, donc le port HTTPS
+n'aurait jamais pu se lier. `admin-https-redirect` est actif par défaut
+et sa redirection nomme le port HTTPS configuré.
+
+**Limite assumée et écrite ici plutôt que tue** : le code de redirection
+exact du port d'administration d'un vrai FortiGate n'est pas attesté
+depuis ce réseau. La redirection l'est ; son code ne l'est pas. Le code
+posé est `301`, la sémantique HTTP d'un changement de schéma permanent,
+et la sonde vérifie `30x` plutôt que d'épingler un chiffre que rien ne
+soutient. De même, le HTML de l'interface Angular de Fortinet n'est pas
+imité : la page servie est sobre, comme celle d'`AuthPortal`, et c'est
+l'API qui porte la fidélité.
+
+`fortios-plan-administration-http.test.ts` (15 cas) est discriminé par
+`git stash push -- src/network/` : **12 des 14 cas écrits à l'aveugle
+tombent** avant correctif, et les 2 qui passent des deux côtés sont
+nommés dans l'en-tête — le refus par `allowaccess`, qui passait parce
+que RIEN n'écoutait, et le témoin SSH, dont c'est l'objet. Le 15e cas
+est le défaut de l'arbre partagé, trouvé en chemin.
+`e2e/fortigate-plan-administration-http.spec.ts` (2 cas verts) rejoue la
+redirection, le 401, l'ouverture de session et la lecture de l'API dans
+le vrai navigateur.
 
 ---
 

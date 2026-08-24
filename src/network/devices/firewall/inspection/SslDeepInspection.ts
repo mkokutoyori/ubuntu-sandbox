@@ -94,6 +94,8 @@ export interface DeepInspectionDeps {
   readonly matchesAddress: (name: string, candidate: string) => boolean;
   readonly now: () => number;
   readonly onIntercepted?: (server: string, subject: string, issuer: string) => void;
+  readonly claimPort?: (port: number) => void;
+  readonly releasePort?: (port: number) => void;
 }
 
 const LEAF_VALIDITY_MS = 365 * 24 * 3600 * 1000;
@@ -161,6 +163,7 @@ export class SslDeepInspection {
     for (const port of [...this.listeners.keys()]) {
       this.deps.tcp().closeListener(port);
       this.listeners.delete(port);
+      this.deps.releasePort?.(port);
     }
     this.captured.clear();
     this.pending.clear();
@@ -168,6 +171,7 @@ export class SslDeepInspection {
 
   private arm(port: number): void {
     if (this.listeners.has(port)) return;
+    this.deps.claimPort?.(port);
     const listener = this.deps.tcp().listen(port, {
       onAccept: (socket) => { this.intercept(socket); },
       identity: { processName: 'sslvpnd' },
