@@ -22,6 +22,37 @@ function eng(ctx: CiscoShellContext) {
 
 // ─── Global config mode: IKEv2 ───────────────────────────────────────
 
+const IKEV2_GLOBAL_ARGUMENTS:
+Readonly<Record<string, ArgumentSpec | readonly ArgumentSpec[] | null>> = {
+  'crypto ikev2 proposal': { name: 'nom', type: 'WORD',
+    description: 'Name of the IKEv2 proposal' },
+  'crypto ikev2 policy': { name: 'nom', type: 'WORD',
+    description: 'Name of the IKEv2 policy' },
+  'crypto ikev2 keyring': { name: 'nom', type: 'WORD',
+    description: 'Name of the IKEv2 keyring' },
+  'crypto ikev2 profile': { name: 'nom', type: 'WORD',
+    description: 'Name of the IKEv2 profile' },
+  'crypto ikev2 dpd': { name: 'reste', type: 'REST',
+    description: 'Interval and retry, then `periodic` or `on-demand`' },
+  'crypto ikev2 cookie-challenge': { name: 'seuil', type: 'REST',
+    description: 'Number of half-open sessions above which a cookie is required' },
+  'crypto ikev2 window': { name: 'taille', type: 'REST',
+    description: 'Number of outstanding requests allowed' },
+  'crypto ikev2 nat keepalive': { name: 'secondes', type: 'REST',
+    description: 'Interval between NAT keepalives, in seconds' },
+};
+
+export function ikev2GlobalSpecs(ctx: CiscoShellContext): CommandSpec[] {
+  return specsFromTrieRegistrations(
+    (collector) => buildIKEv2GlobalCommands(collector as unknown as CommandTrie, ctx),
+    {
+      modes: ['config'], minPrivilege: 15,
+      undoFromNegatedPaths: true,
+      argumentFor: (path) => IKEV2_GLOBAL_ARGUMENTS[path],
+    },
+  );
+}
+
 export function buildIKEv2GlobalCommands(trie: CommandTrie, ctx: CiscoShellContext): void {
 
   // crypto ikev2 proposal NAME

@@ -132,19 +132,20 @@ import {
   buildIPSecGlobalCommands, buildISAKMPPolicyCommands, buildISAKMPProfileCommands, buildISAKMPKeyringCommands,
   buildTransformSetCommands, buildCryptoMapEntryCommands,
   buildIPSecProfileCommands, buildIPSecIfCommands, ipsecInterfaceSpecs,
+  ipsecGlobalSpecs,
   buildIPSecPrivilegedCommands,
   isakmpPolicySpecs, isakmpProfileSpecs, isakmpKeyringSpecs,
   transformSetSpecs, cryptoMapEntrySpecs, ipsecProfileSpecs,
 } from './cisco/CiscoIPSecIKEv1Commands';
 import {
-  buildIKEv2GlobalCommands, buildIKEv2ProposalCommands,
+  buildIKEv2GlobalCommands, buildIKEv2ProposalCommands, ikev2GlobalSpecs,
   buildIKEv2PolicyCommands, buildIKEv2KeyringCommands,
   buildIKEv2KeyringPeerCommands, buildIKEv2ProfileCommands,
   ikev2ProposalSpecs, ikev2PolicySpecs, ikev2KeyringSpecs,
   ikev2KeyringPeerSpecs, ikev2ProfileSpecs,
 } from './cisco/CiscoIPSecIKEv2Commands';
 import {
-  buildGdoiGlobalCommands, buildGdoiGroupCommands, gdoiGroupSpecs,
+  buildGdoiGlobalCommands, buildGdoiGroupCommands, gdoiGroupSpecs, gdoiGlobalSpecs,
 } from './cisco/CiscoGdoiCommands';
 import { registerIPSecShowCommands, cryptoShowSpecs } from './cisco/CiscoIPSecShowCommands';
 import {
@@ -381,6 +382,9 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
       ...configIfSpecs(this),
       ...natConfigSpecs(this),
       ...pimGlobalSpecs({ r: () => this.d() }),
+      ...ipsecGlobalSpecs(this),
+      ...ikev2GlobalSpecs(this),
+      ...gdoiGlobalSpecs(this),
       ...dhcpPoolClassSpecs(this),
       ...dhcpClassSpecs(this),
       ...ipv6DhcpPoolSpecs(this),
