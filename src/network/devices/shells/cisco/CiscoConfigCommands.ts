@@ -193,136 +193,7 @@ export function buildConfigCommands(trie: CommandTrie, ctx: CiscoShellContext): 
     return '';
   });
 
-  trie.registerGreedy('ip dhcp pool', 'Define a DHCP address pool', (args) => {
-    if (args.length < 1) return '% Incomplete command.';
-    const poolName = args[0];
-    const dhcp = ctx.r()._getDHCPServerInternal();
-    if (!dhcp.getPool(poolName)) {
-      dhcp.createPool(poolName);
-    }
-    ctx.setSelectedDHCPPool(poolName);
-    ctx.setMode('config-dhcp');
-    return '';
-  });
-
-  trie.registerGreedy('no ip dhcp pool', 'Remove a DHCP address pool', (args) => {
-    if (args.length < 1) return '% Incomplete command.';
-    ctx.r()._getDHCPServerInternal().deletePool(args[0]);
-    return '';
-  });
-
-  trie.registerGreedy('ip dhcp excluded-address', 'Prevent DHCP from assigning certain addresses', (args) => {
-    if (args.length < 1) return '% Incomplete command.';
-    const start = args[0];
-    const end = args[1] || start;
-    if (!ctx.r()._getDHCPServerInternal().addExcludedRange(start, end)) {
-      throw new CliInvalidInput({ token: isValidIPv4(start) ? end : start });
-    }
-    return '';
-  });
-
-  trie.registerGreedy('ip dhcp class', 'Define DHCP class', (args) => {
-    if (!args[0]) return '% Incomplete command.';
-    const r = ctx.r() as any;
-    const classes = r._ciscoDhcpClasses ?? (r._ciscoDhcpClasses = new Map<string, any>());
-    if (!classes.has(args[0])) classes.set(args[0], { name: args[0], options: [], lines: [] });
-    r._ciscoDhcpCurrentClass = args[0];
-    ctx.setMode('config-dhcp-class' as any);
-    return '';
-  });
-
-  trie.registerGreedy('ipv6 dhcp pool', 'Define an IPv6 DHCP pool', (args) => {
-    if (!args[0]) return '% Incomplete command.';
-    const r = ctx.r() as any;
-    const pools = r._ciscoIpv6DhcpPools ?? (r._ciscoIpv6DhcpPools = new Map<string, any>());
-    if (!pools.has(args[0])) pools.set(args[0], { name: args[0] });
-    r._ciscoIpv6DhcpCurrent = args[0];
-    if (!ctx.r()._getDHCPv6ServerInternal().getPool(args[0])) {
-      ctx.r()._getDHCPv6ServerInternal().createPool(args[0]);
-    }
-    ctx.setMode('config-ipv6-dhcp' as any);
-    return '';
-  });
-
-  trie.register('ip dhcp use class', 'Enable DHCP class lookup', () => {
-    (ctx.r() as any)._ciscoDhcpUseClass = true;
-    return '';
-  });
-  trie.registerGreedy('ip dhcp ping packets', 'Number of ping packets sent before offering an address', (args) => {
-    const n = parseInt(args[0] ?? '', 10);
-    if (isNaN(n) || n < 0 || n > 10) return '% Invalid input detected.';
-    ctx.r()._getDHCPServerInternal().setPingPacketCount(n);
-    return '';
-  });
-  trie.registerGreedy('ip dhcp ping timeout', 'Ping-before-offer reply timeout (milliseconds)', (args) => {
-    const n = parseInt(args[0] ?? '', 10);
-    if (isNaN(n) || n < 1) return '% Invalid input detected.';
-    ctx.r()._getDHCPServerInternal().setPingTimeoutMs(n);
-    return '';
-  });
-  trie.registerGreedy('ip dhcp database', 'Set DHCP database URL', (args, raw) => {
-    (ctx.r() as any)._ciscoDhcpDatabase = raw ?? args.join(' ');
-    return '';
-  });
-  trie.register('ip dhcp bootp ignore', 'Ignore BOOTP requests', () => {
-    (ctx.r() as any)._ciscoDhcpBootpIgnore = true; return '';
-  });
-  trie.registerGreedy('ip dhcp compatibility', 'DHCP compatibility tweaks', (_args) => '');
-
-  trie.register('ip dhcp relay information option', 'Enable option-82 insertion', () => {
-    (ctx.r() as any)._ciscoDhcpRelayInfoOption = true;
-    ctx.r()._getDHCPServerInternal().setRelayInformationOption(true);
-    return '';
-  });
-  trie.register('no ip dhcp relay information option', 'Disable option-82 insertion', () => {
-    (ctx.r() as any)._ciscoDhcpRelayInfoOption = false;
-    ctx.r()._getDHCPServerInternal().setRelayInformationOption(false);
-    return '';
-  });
-  trie.registerGreedy('ip dhcp relay information policy', 'Option-82 policy (keep/replace/drop)', (args) => {
-    const policy = args[0]?.toLowerCase();
-    if (!policy || !DHCP_RELAY_INFO_POLICIES.has(policy)) {
-      throw new CliInvalidInput({ token: args[0] ?? 'policy' });
-    }
-    getGlobalConfig(ctx.r()).dhcpRelayInfoPolicy = policy as DhcpRelayInfoPolicy;
-    return '';
-  });
-  trie.registerGreedy('no ip dhcp relay information policy', 'Restore the default option-82 policy', () => {
-    getGlobalConfig(ctx.r()).dhcpRelayInfoPolicy = null; return '';
-  });
-  trie.register('ip dhcp relay information trust-all', 'Trust option-82 on all interfaces', () => {
-    getGlobalConfig(ctx.r()).dhcpRelayInfoTrustAll = true; return '';
-  });
-  trie.register('no ip dhcp relay information trust-all', 'Stop trusting option-82 everywhere', () => {
-    getGlobalConfig(ctx.r()).dhcpRelayInfoTrustAll = false; return '';
-  });
-  trie.register('ip dhcp smart-relay', 'Enable DHCP smart relay', () => {
-    getGlobalConfig(ctx.r()).dhcpSmartRelay = true; return '';
-  });
-  trie.register('no ip dhcp smart-relay', 'Disable DHCP smart relay', () => {
-    getGlobalConfig(ctx.r()).dhcpSmartRelay = false; return '';
-  });
-
-  trie.register('ip dhcp snooping', 'Enable DHCP snooping globally', () => {
-    getGlobalConfig(ctx.r()).dhcpSnooping = true; return '';
-  });
-  trie.register('no ip dhcp snooping', 'Disable DHCP snooping globally', () => {
-    getGlobalConfig(ctx.r()).dhcpSnooping = false; return '';
-  });
-  trie.registerGreedy('ip dhcp snooping vlan', 'Enable DHCP snooping for VLANs', (args) => {
-    if (args.length === 0) return CISCO_ERRORS.INCOMPLETE;
-    getGlobalConfig(ctx.r()).dhcpSnoopingVlans = args.join(' ');
-    return '';
-  });
-  trie.registerGreedy('no ip dhcp snooping vlan', 'Stop snooping those VLANs', () => {
-    getGlobalConfig(ctx.r()).dhcpSnoopingVlans = null; return '';
-  });
-  trie.register('ip dhcp snooping information option', 'Include option-82 in snooped packets', () => {
-    getGlobalConfig(ctx.r()).dhcpSnoopingInfoOption = true; return '';
-  });
-  trie.register('no ip dhcp snooping information option', 'Drop option-82 from snooped packets', () => {
-    getGlobalConfig(ctx.r()).dhcpSnoopingInfoOption = false; return '';
-  });
+  buildDhcpGlobalOn(trie, ctx);
 
   trie.registerGreedy('ip route', 'Establish static routes', (args) => {
     return cmdIpRoute(ctx.r(), args);
@@ -455,6 +326,190 @@ export function buildConfigCommands(trie: CommandTrie, ctx: CiscoShellContext): 
  * sous-interface sans que rien ne le signale.
  */
 export const MODES_INTERFACE: readonly string[] = ['config-if', 'config-subif'];
+
+
+/**
+ * La famille DHCP de mode `config`, extraite pour etre declarable.
+ *
+ * Huit de ses chemins sont ECRITS DEUX FOIS dans ce depot — une fois
+ * ici, une fois dans le shell du commutateur — et les deux ecritures
+ * divergeaient sur un point, le commutateur appelant `enable()` que le
+ * routeur n'appelle pas. La mesure dit que la consequence est nulle :
+ * le service est actif des le depart des deux cotes, comme
+ * `service dhcp` l'est par defaut sur un vrai IOS.
+ */
+const DHCP_GLOBAL_ARGUMENTS:
+Readonly<Record<string, ArgumentSpec | readonly ArgumentSpec[] | null>> = {
+  'ip dhcp pool': { name: 'nom', type: 'WORD', description: 'Name of the address pool' },
+  'ipv6 dhcp pool': { name: 'nom', type: 'WORD', description: 'Name of the IPv6 address pool' },
+  'ip dhcp excluded-address': { name: 'plage', type: 'REST',
+    description: 'First address, then the last one of the excluded range' },
+  'ip dhcp database': { name: 'url', type: 'REST',
+    description: 'URL of the bindings database, then its write delay' },
+  'ip dhcp class': { name: 'nom', type: 'WORD', description: 'Name of the DHCP class' },
+  'ip dhcp ping packets': { name: 'nombre', type: 'REST',
+    description: 'Number of ping packets sent before offering an address' },
+  'ip dhcp ping timeout': { name: 'millisecondes', type: 'REST',
+    description: 'Time waited for a ping reply' },
+  'ip dhcp snooping vlan': { name: 'vlans', type: 'REST',
+    description: 'VLAN or range of VLANs snooping watches' },
+  'ip dhcp relay information policy': {
+    name: 'politique', type: 'ENUM', description: 'What to do with an existing option 82',
+    values: [
+      { keyword: 'drop', description: 'Drop the packet' },
+      { keyword: 'keep', description: 'Keep the existing option' },
+      { keyword: 'replace', description: 'Replace the existing option' },
+    ],
+  },
+  'ip dhcp compatibility': { name: 'reste', type: 'REST',
+    description: 'Suboption compatibility with other implementations' },
+};
+
+export function dhcpGlobalSpecs(ctx: CiscoShellContext): CommandSpec[] {
+  return specsFromTrieRegistrations(
+    (collector) => buildDhcpGlobalOn(collector as unknown as CommandTrie, ctx),
+    {
+      modes: ['config'], minPrivilege: 15,
+      undoFromNegatedPaths: true,
+      argumentFor: (path) => DHCP_GLOBAL_ARGUMENTS[path],
+    },
+  );
+}
+
+export function buildDhcpGlobalOn(
+  trie: CommandTrie, ctx: CiscoShellContext,
+): void {
+  trie.registerGreedy('ip dhcp pool', 'Define a DHCP address pool', (args) => {
+    if (args.length < 1) return '% Incomplete command.';
+    const poolName = args[0];
+    const dhcp = ctx.r()._getDHCPServerInternal();
+    if (!dhcp.getPool(poolName)) {
+      dhcp.createPool(poolName);
+    }
+    ctx.setSelectedDHCPPool(poolName);
+    ctx.setMode('config-dhcp');
+    return '';
+  });
+
+  trie.registerGreedy('no ip dhcp pool', 'Remove a DHCP address pool', (args) => {
+    if (args.length < 1) return '% Incomplete command.';
+    ctx.r()._getDHCPServerInternal().deletePool(args[0]);
+    return '';
+  });
+
+  trie.registerGreedy('ip dhcp excluded-address', 'Prevent DHCP from assigning certain addresses', (args) => {
+    if (args.length < 1) return '% Incomplete command.';
+    const start = args[0];
+    const end = args[1] || start;
+    if (!ctx.r()._getDHCPServerInternal().addExcludedRange(start, end)) {
+      throw new CliInvalidInput({ token: isValidIPv4(start) ? end : start });
+    }
+    return '';
+  });
+
+  trie.registerGreedy('ip dhcp class', 'Define DHCP class', (args) => {
+    if (!args[0]) return '% Incomplete command.';
+    const r = ctx.r() as any;
+    const classes = r._ciscoDhcpClasses ?? (r._ciscoDhcpClasses = new Map<string, any>());
+    if (!classes.has(args[0])) classes.set(args[0], { name: args[0], options: [], lines: [] });
+    r._ciscoDhcpCurrentClass = args[0];
+    ctx.setMode('config-dhcp-class' as any);
+    return '';
+  });
+
+  trie.registerGreedy('ipv6 dhcp pool', 'Define an IPv6 DHCP pool', (args) => {
+    if (!args[0]) return '% Incomplete command.';
+    const r = ctx.r() as any;
+    const pools = r._ciscoIpv6DhcpPools ?? (r._ciscoIpv6DhcpPools = new Map<string, any>());
+    if (!pools.has(args[0])) pools.set(args[0], { name: args[0] });
+    r._ciscoIpv6DhcpCurrent = args[0];
+    if (!ctx.r()._getDHCPv6ServerInternal().getPool(args[0])) {
+      ctx.r()._getDHCPv6ServerInternal().createPool(args[0]);
+    }
+    ctx.setMode('config-ipv6-dhcp' as any);
+    return '';
+  });
+
+  trie.register('ip dhcp use class', 'Enable DHCP class lookup', () => {
+    (ctx.r() as any)._ciscoDhcpUseClass = true;
+    return '';
+  });
+  trie.registerGreedy('ip dhcp ping packets', 'Number of ping packets sent before offering an address', (args) => {
+    const n = parseInt(args[0] ?? '', 10);
+    if (isNaN(n) || n < 0 || n > 10) return '% Invalid input detected.';
+    ctx.r()._getDHCPServerInternal().setPingPacketCount(n);
+    return '';
+  });
+  trie.registerGreedy('ip dhcp ping timeout', 'Ping-before-offer reply timeout (milliseconds)', (args) => {
+    const n = parseInt(args[0] ?? '', 10);
+    if (isNaN(n) || n < 1) return '% Invalid input detected.';
+    ctx.r()._getDHCPServerInternal().setPingTimeoutMs(n);
+    return '';
+  });
+  trie.registerGreedy('ip dhcp database', 'Set DHCP database URL', (args, raw) => {
+    (ctx.r() as any)._ciscoDhcpDatabase = raw ?? args.join(' ');
+    return '';
+  });
+  trie.register('ip dhcp bootp ignore', 'Ignore BOOTP requests', () => {
+    (ctx.r() as any)._ciscoDhcpBootpIgnore = true; return '';
+  });
+  trie.registerGreedy('ip dhcp compatibility', 'DHCP compatibility tweaks', (_args) => '');
+
+  trie.register('ip dhcp relay information option', 'Enable option-82 insertion', () => {
+    (ctx.r() as any)._ciscoDhcpRelayInfoOption = true;
+    ctx.r()._getDHCPServerInternal().setRelayInformationOption(true);
+    return '';
+  });
+  trie.register('no ip dhcp relay information option', 'Disable option-82 insertion', () => {
+    (ctx.r() as any)._ciscoDhcpRelayInfoOption = false;
+    ctx.r()._getDHCPServerInternal().setRelayInformationOption(false);
+    return '';
+  });
+  trie.registerGreedy('ip dhcp relay information policy', 'Option-82 policy (keep/replace/drop)', (args) => {
+    const policy = args[0]?.toLowerCase();
+    if (!policy || !DHCP_RELAY_INFO_POLICIES.has(policy)) {
+      throw new CliInvalidInput({ token: args[0] ?? 'policy' });
+    }
+    getGlobalConfig(ctx.r()).dhcpRelayInfoPolicy = policy as DhcpRelayInfoPolicy;
+    return '';
+  });
+  trie.registerGreedy('no ip dhcp relay information policy', 'Restore the default option-82 policy', () => {
+    getGlobalConfig(ctx.r()).dhcpRelayInfoPolicy = null; return '';
+  });
+  trie.register('ip dhcp relay information trust-all', 'Trust option-82 on all interfaces', () => {
+    getGlobalConfig(ctx.r()).dhcpRelayInfoTrustAll = true; return '';
+  });
+  trie.register('no ip dhcp relay information trust-all', 'Stop trusting option-82 everywhere', () => {
+    getGlobalConfig(ctx.r()).dhcpRelayInfoTrustAll = false; return '';
+  });
+  trie.register('ip dhcp smart-relay', 'Enable DHCP smart relay', () => {
+    getGlobalConfig(ctx.r()).dhcpSmartRelay = true; return '';
+  });
+  trie.register('no ip dhcp smart-relay', 'Disable DHCP smart relay', () => {
+    getGlobalConfig(ctx.r()).dhcpSmartRelay = false; return '';
+  });
+
+  trie.register('ip dhcp snooping', 'Enable DHCP snooping globally', () => {
+    getGlobalConfig(ctx.r()).dhcpSnooping = true; return '';
+  });
+  trie.register('no ip dhcp snooping', 'Disable DHCP snooping globally', () => {
+    getGlobalConfig(ctx.r()).dhcpSnooping = false; return '';
+  });
+  trie.registerGreedy('ip dhcp snooping vlan', 'Enable DHCP snooping for VLANs', (args) => {
+    if (args.length === 0) return CISCO_ERRORS.INCOMPLETE;
+    getGlobalConfig(ctx.r()).dhcpSnoopingVlans = args.join(' ');
+    return '';
+  });
+  trie.registerGreedy('no ip dhcp snooping vlan', 'Stop snooping those VLANs', () => {
+    getGlobalConfig(ctx.r()).dhcpSnoopingVlans = null; return '';
+  });
+  trie.register('ip dhcp snooping information option', 'Include option-82 in snooped packets', () => {
+    getGlobalConfig(ctx.r()).dhcpSnoopingInfoOption = true; return '';
+  });
+  trie.register('no ip dhcp snooping information option', 'Drop option-82 from snooped packets', () => {
+    getGlobalConfig(ctx.r()).dhcpSnoopingInfoOption = false; return '';
+  });
+}
 
 /**
  * Les places de la famille physique d'interface.
