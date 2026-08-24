@@ -2700,6 +2700,64 @@ refusé sont remplacés par un cas qui l'affirme disponible.
 
 ---
 
+## Périmètre pris — FortiOS phase 27 (une politique IPv6 juge)
+
+**Agent `mandeng`.** L'entrée `[politique] le TRANSIT IPv6 est refusé,
+faute de politique v6`, que la phase 26 a inscrite comme son propre
+reste. La mesure la confirme et trouve **deux défauts que l'entrée ne
+nomme pas**.
+
+**Mesure de départ** :
+
+```
+config firewall address6   → unknown configuration path
+config firewall addrgrp6   → unknown configuration path
+config firewall policy6    → unknown configuration path
+```
+
+Aucune des trois tables n'existe. S'y ajoutent :
+
+- **`AddressObject.family` est écrit et LU PAR PERSONNE.** Le champ
+  existe (`'ipv4' | 'ipv6'`), chaque constructeur d'objet adresse le
+  remplit — et `grep '\.family\b'` hors de son propre fichier ne rend
+  RIEN. Le type dit que la famille compte ; le code ne la consulte
+  jamais.
+- **`addressObjectMatches` ne peut pas correspondre à une adresse v6.**
+  Les cinq comparateurs (`sameAddress`, `matchesCareMask`,
+  `matchesRange`, `matchesResolved`) passent tous par `tryIpToUint32`,
+  une conversion sur 32 bits qui rend `null` pour toute adresse IPv6.
+  Un candidat v6 ne peut donc correspondre qu'à `any` — et y correspond,
+  puisque `kind === 'any'` sort avant toute vérification de famille.
+  C'est le défaut le plus dangereux du lot : une règle écrite `all` →
+  `all` en v4 juge aussi du trafic v6 sans que rien ne le dise.
+- **`firewall address6` est RÉFÉRENCÉE par une table qui existe** :
+  `schema/utm.ts` déclare `reference('address6', …, ['firewall
+  address6'])` pour `ssl-exempt`, vers une table jamais déclarée. La
+  source de données ne peut donc jamais résoudre.
+
+**Fichiers que la phase 27 prendra** :
+
+```
+firewall/model/AddressObject.ts     ← la famille DÉCIDE, les comparateurs v6
+firewall/model/ObjectStore.ts       ← la famille du candidat filtre l'objet
+firewall/policy/PolicyEvaluator.ts  ← une règle ne juge que sa famille
+firewall/l3/FirewallIpv6.ts         ← le verrou de transit consulte la politique
+vendors/fortios/schema/firewallObjects.ts ← `address6`, `addrgrp6`
+vendors/fortios/schema/firewallPolicy.ts  ← `policy6`
+```
+
+**Décision de périmètre** : `policy6` est la table SÉPARÉE de FortiOS
+antérieur à 7.0, et c'est elle qui est écrite — pas la politique unifiée
+de 7.0+, où une seule table porte les deux familles. Deux raisons, et la
+seconde est la vraie : la table séparée est celle que la documentation et
+les tutoriels accessibles décrivent avec des exemples complets ; et une
+politique unifiée demanderait de rendre CHAQUE règle existante
+bi-famille, donc de toucher le chemin v4 qui fonctionne. Ce que le
+verrou de la phase 26 devient : refus tant qu'aucune `policy6` ne
+permet, au lieu d'un refus inconditionnel.
+
+---
+
 ## Périmètre pris — FortiOS phase 26 (le pare-feu parle IPv6)
 
 **Agent `mandeng`.** L'entrée `[execute] ping6 absente, faute d'émetteur
@@ -2763,6 +2821,54 @@ verrou ferait passer du trafic v6 sans qu'aucune politique le juge :
 ce serait ouvrir le pare-feu, pas l'améliorer. Ce que la phase livre est
 donc IPv6 **pour la machine elle-même** — adresse, voisinage, écho,
 routes — et le transit sous politique v6 est le sujet de la phase 27.
+### Livré
+
+L'entrée `[execute] ping6` est retirée de `TODO.md`.
+
+**Aucun second ICMPv6 n'a été écrit, et c'est tout le correctif.**
+`l3/FirewallIpv6.ts` remplit `IPv6RouterContext` — quatre lignes de
+délégation vers `Equipment` (ports, `sendFrame`, bus, ordonnanceur) plus
+un `DHCPv6Server` que le pare-feu porte sans encore l'exposer — et le
+plan de données du routeur tourne tel quel sur le pare-feu. NDP, cache
+de voisins, table de routage v6, écho : une seule machine à états dans
+le dépôt. `Firewall.handleFrame` aiguille `ETHERTYPE_IPV6` vers elle,
+là où seuls FGCP, ARP et IPv4 étaient reconnus.
+
+`diag/FirewallPing6.ts` reprend la forme de `FirewallPing`
+(`header`/`step`/`statistics`) parce qu'un vrai FortiGate rend le MÊME
+texte pour les deux familles ; ce qui change est le constructeur de
+paquet et l'attente, pas le rendu.
+
+**Le verrou de transit est la décision structurante.** `ipv6FilterPermits`
+— le crochet que le plan de données consulte déjà pour les ACL IPv6 d'un
+routeur — répond `false` en direction `out`, donc un paquet v6 qu'aucune
+politique ne peut juger ne traverse pas. Le même crochet sert, en
+direction `in`, à faire de `ip6-allowaccess` une vraie porte : une
+requête d'écho adressée à nous sur une interface qui n'autorise pas
+`ping` est écartée, et rien d'autre ne l'est — écarter tout ce qui n'est
+pas pour nous aurait aussi bloqué les sollicitations de voisin, donc NDP
+lui-même.
+
+**Mesure écrite dans la sonde plutôt que masquée** : le PREMIER écho
+reste sans réponse. Le voisin doit d'abord résoudre notre adresse de
+couche 2 en sens inverse — exactement ce qui fait perdre le premier
+paquet d'un ping sur une vraie machine pendant la résolution ARP ou ND.
+La sonde mesure donc le FORMAT et l'arrivée des réponses, pas une perte
+nulle ; ma première rédaction demandait `0% packet loss` et c'est elle
+qui avait tort.
+
+Livrées avec : `config system interface / config ipv6` (`ip6-address`,
+`ip6-allowaccess`, `ip6-send-adv`, `ip6-manage-flag`, `ip6-other-flag`),
+`config router static6`, `execute ping6`, `diagnose ipv6 address list`,
+`diagnose ipv6 neighbor-cache list` et `get router info6 routing-table`.
+
+`fortios-ipv6.test.ts` (12 cas) est discriminé par
+`git stash push -- src/network/` : 9 tombent avant correctif, et les 3
+qui passent des deux côtés sont nommés dans l'en-tête — les deux témoins
+et le cas `ip6-allowaccess`, dont le silence était indiscernable d'une
+absence d'ICMPv6. `e2e/fortigate-ipv6.spec.ts` (4 cas) rejoue
+l'adressage, la vue, le refus sans route et la route statique dans le
+vrai navigateur.
 
 ---
 

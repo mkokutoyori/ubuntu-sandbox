@@ -6,6 +6,7 @@ import {
   MANAGEMENT_SERVICES, type ManagementService,
 } from '../../../mgmt/ManagementAccess';
 import { resolveFortiTimezone } from './timezones';
+import { IPv6Address } from '../../../../../core/types';
 import { CONSOLE_BAUD_RATES } from '../../../mgmt/ConsoleSettings';
 import { ADMIN_DISCLAIMER_MESSAGES } from '../../../mgmt/LoginBanners';
 import {
@@ -32,6 +33,20 @@ const ACCESS_SERVICE_HELP: Readonly<Record<ManagementService, string>> = Object.
 const ACCESS_SERVICES = MANAGEMENT_SERVICES.map(service => ({
   keyword: service, description: ACCESS_SERVICE_HELP[service],
 }));
+
+export function parseIpv6Prefix(
+  value: string,
+): { address: string; prefixLength: number } | null {
+  const [address, length] = value.split('/');
+  if (address === undefined || length === undefined) return null;
+  const prefixLength = Number.parseInt(length, 10);
+  if (!Number.isInteger(prefixLength) || prefixLength < 0 || prefixLength > 128) return null;
+  try {
+    return { address: new IPv6Address(address).toString(), prefixLength };
+  } catch {
+    return null;
+  }
+}
 
 function isStatic(object: FortiObjectView): boolean {
   return object.effective('mode')[0] === 'static' && isRouted(object);
@@ -344,6 +359,44 @@ export const SYSTEM_SETTINGS: FortiTableSpec = {
   },
 };
 
+const SYSTEM_INTERFACE_IPV6: FortiTableSpec = {
+  path: ['ipv6'],
+  kind: 'object',
+  scope: 'global',
+  accessGroup: 'netgrp',
+  renderOrder: 41,
+  help: 'IPv6 of interface.',
+  attributes: [
+    {
+      name: 'ip6-address', help: 'Primary IPv6 address prefix of the interface.',
+      quoted: false,
+      parts: [{
+        name: 'prefix', type: 'WORD',
+        description: 'IPv6 address and prefix length, <address>/<0-128>.',
+      }],
+      defaultValue: ['::/0'],
+      acceptsValue: (value) => parseIpv6Prefix(value) !== null,
+      expectedValue: 'an IPv6 address and prefix length such as `2001:db8::1/64`.',
+    },
+    {
+      name: 'ip6-allowaccess',
+      help: 'Allowed management access to the interface over IPv6.',
+      quoted: false,
+      multiValue: true,
+      parts: [{
+        name: 'ip6-allowaccess', type: 'ENUM',
+        description: 'Permitted types of management access.',
+        values: ACCESS_SERVICES,
+      }],
+      defaultValue: [],
+    },
+    enable('ip6-send-adv', 'Enable/disable sending router advertisements.'),
+    enable('ip6-manage-flag',
+      'Enable/disable the managed address configuration flag.'),
+    enable('ip6-other-flag', 'Enable/disable the other configuration flag.'),
+  ],
+};
+
 export const SYSTEM_INTERFACE: FortiTableSpec = {
   path: ['system', 'interface'],
   kind: 'table',
@@ -407,6 +460,7 @@ export const SYSTEM_INTERFACE: FortiTableSpec = {
     enable('mtu-override', 'Enable to set a custom MTU for this interface.'),
     count('mtu', 'MTU value for this interface.', 68, 9216, 1500),
   ],
+  children: [SYSTEM_INTERFACE_IPV6],
   onCommit(object, context) {
     const mode = object.effective('mode')[0];
     const ip = mode === 'static' && isRouted(object) ? object.effective('ip') : [];
@@ -426,6 +480,13 @@ export const SYSTEM_INTERFACE: FortiTableSpec = {
     if (mode === 'dhcp') context.device.acquireDhcpLease(object.key);
     context.device.setCaptivePortalInterface(object.key,
       object.effective('security-mode')[0] === 'captive-portal');
+
+    const prefix = parseIpv6Prefix(object.childSetting('ipv6', 'ip6-address')[0] ?? '');
+    if (prefix) {
+      context.device.applyIpv6Address(object.key, prefix.address, prefix.prefixLength);
+    }
+    context.device.applyIpv6AllowAccess(
+      object.key, object.childSetting('ipv6', 'ip6-allowaccess'));
   },
 };
 

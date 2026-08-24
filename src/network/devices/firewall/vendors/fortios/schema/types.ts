@@ -296,6 +296,13 @@ export interface FortiCommitDevice {
   refusePasswordReuse(admin: string, secret: string): string | null;
   refuseReuseLimit(limit: number): string | null;
   refuseBoundInterface(iface: string, excludingTable: string): string | null;
+  applyIpv6Address(iface: string, address: string, prefixLength: number): boolean;
+  applyIpv6AllowAccess(iface: string, services: readonly string[]): void;
+  applyIpv6StaticRoute(route: {
+    id: string; destination: string; prefixLength: number;
+    gateway: string; iface: string; distance: number; enabled: boolean;
+  }): void;
+  removeIpv6StaticRoute(id: string): void;
   removeLdbMonitor(name: string): void;
   applyBalancedVip(vip: FortiBalancedVipPatch): string | void;
   applyReplacementMessage(message: string, buffer: string): void;
