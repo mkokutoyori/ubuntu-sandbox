@@ -2700,6 +2700,64 @@ refusé sont remplacés par un cas qui l'affirme disponible.
 
 ---
 
+## Périmètre pris — FortiOS phase 27 (une politique IPv6 juge)
+
+**Agent `mandeng`.** L'entrée `[politique] le TRANSIT IPv6 est refusé,
+faute de politique v6`, que la phase 26 a inscrite comme son propre
+reste. La mesure la confirme et trouve **deux défauts que l'entrée ne
+nomme pas**.
+
+**Mesure de départ** :
+
+```
+config firewall address6   → unknown configuration path
+config firewall addrgrp6   → unknown configuration path
+config firewall policy6    → unknown configuration path
+```
+
+Aucune des trois tables n'existe. S'y ajoutent :
+
+- **`AddressObject.family` est écrit et LU PAR PERSONNE.** Le champ
+  existe (`'ipv4' | 'ipv6'`), chaque constructeur d'objet adresse le
+  remplit — et `grep '\.family\b'` hors de son propre fichier ne rend
+  RIEN. Le type dit que la famille compte ; le code ne la consulte
+  jamais.
+- **`addressObjectMatches` ne peut pas correspondre à une adresse v6.**
+  Les cinq comparateurs (`sameAddress`, `matchesCareMask`,
+  `matchesRange`, `matchesResolved`) passent tous par `tryIpToUint32`,
+  une conversion sur 32 bits qui rend `null` pour toute adresse IPv6.
+  Un candidat v6 ne peut donc correspondre qu'à `any` — et y correspond,
+  puisque `kind === 'any'` sort avant toute vérification de famille.
+  C'est le défaut le plus dangereux du lot : une règle écrite `all` →
+  `all` en v4 juge aussi du trafic v6 sans que rien ne le dise.
+- **`firewall address6` est RÉFÉRENCÉE par une table qui existe** :
+  `schema/utm.ts` déclare `reference('address6', …, ['firewall
+  address6'])` pour `ssl-exempt`, vers une table jamais déclarée. La
+  source de données ne peut donc jamais résoudre.
+
+**Fichiers que la phase 27 prendra** :
+
+```
+firewall/model/AddressObject.ts     ← la famille DÉCIDE, les comparateurs v6
+firewall/model/ObjectStore.ts       ← la famille du candidat filtre l'objet
+firewall/policy/PolicyEvaluator.ts  ← une règle ne juge que sa famille
+firewall/l3/FirewallIpv6.ts         ← le verrou de transit consulte la politique
+vendors/fortios/schema/firewallObjects.ts ← `address6`, `addrgrp6`
+vendors/fortios/schema/firewallPolicy.ts  ← `policy6`
+```
+
+**Décision de périmètre** : `policy6` est la table SÉPARÉE de FortiOS
+antérieur à 7.0, et c'est elle qui est écrite — pas la politique unifiée
+de 7.0+, où une seule table porte les deux familles. Deux raisons, et la
+seconde est la vraie : la table séparée est celle que la documentation et
+les tutoriels accessibles décrivent avec des exemples complets ; et une
+politique unifiée demanderait de rendre CHAQUE règle existante
+bi-famille, donc de toucher le chemin v4 qui fonctionne. Ce que le
+verrou de la phase 26 devient : refus tant qu'aucune `policy6` ne
+permet, au lieu d'un refus inconditionnel.
+
+---
+
 ## Périmètre pris — FortiOS phase 26 (le pare-feu parle IPv6)
 
 **Agent `mandeng`.** L'entrée `[execute] ping6 absente, faute d'émetteur
