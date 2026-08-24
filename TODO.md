@@ -256,7 +256,10 @@ que c'est la seule partie d'une declaration qui soit sans ambiguite :
 `<1-120>` ne peut pas vouloir dire autre chose. Depuis le lot « une
 plage annoncee suit l'etat », une declaration PEUT lire la session
 (`rangeIsAdvisory` + `SessionParamRanges`), mais une seule s'en sert —
-le numero de groupe HSRP.
+le numero de groupe HSRP. Depuis le lot « `access-list ?` annonce les
+quatre plages d'IOS », une place peut en annoncer PLUSIEURS et n'est
+refusee que si la valeur est hors de TOUTES (`alternatives`), ce que les
+deux mecanismes de declaration jugent desormais par la meme regle.
 
 
 ### [socle] deux familles sont migrées sur le commutateur VRP

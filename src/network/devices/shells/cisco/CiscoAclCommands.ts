@@ -362,15 +362,7 @@ export function buildACLConfigCommands(trie: CommandTrie, ctx: CiscoACLShellCont
   trie.registerGreedy('access-list', 'Define a standard or extended access list', (args) => {
     if (args.length < 2) return '% Incomplete command.';
     const num = parseInt(args[0], 10);
-    if (isNaN(num)) return '% Invalid access-list number.';
-
-    // IOS : 1-99 et 1300-1999 standard ; 100-199 et 2000-2699 étendues.
-    // L'ancienne garde refusait les deux plages étendues (« Valid range:
-    // 1-199 »), un message par ailleurs faux : il énonçait une règle qui
-    // n'est pas celle d'IOS.
-    if (!isValidIosAclNumber(num)) {
-      return '% Invalid access-list number. Valid range: 1-99, 100-199, 1300-1999, 2000-2699.';
-    }
+    if (isNaN(num) || !isValidIosAclNumber(num)) return CISCO_INVALID_INPUT;
 
     const action = args[1].toLowerCase();
     if (action === 'remark') {
@@ -708,9 +700,10 @@ export function showAccessListsFrom(
     const typeStr = acl.type === 'standard' ? 'Standard' : 'Extended';
     lines.push(`${typeStr} IP access list ${label}`);
     for (const entry of acl.entries) {
-      // Un commentaire ne paraît PAS ici sur IOS 15 : il vit dans la
-      // configuration seule, et n'a pas de numéro de séquence à porter.
-      if (entry.remark !== undefined) continue;
+      if (entry.remark !== undefined) {
+        lines.push(`    remark ${entry.remark}`);
+        continue;
+      }
       const seq = entry.sequence !== undefined ? `${entry.sequence} ` : '';
       // IOS n'écrit le compteur que s'il a compté quelque chose.
       const matches = entry.matchCount > 0

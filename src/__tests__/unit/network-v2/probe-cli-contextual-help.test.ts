@@ -98,11 +98,21 @@ describe('L\'help annonce le TYPE de l\'argument, comme IOS', () => {
     ['ip route ?', 'A.B.C.D'],
     ['ip dhcp excluded-address ?', 'A.B.C.D'],
     ['router ospf ?', '<1-65535>'],
-    ['access-list ?', '<1-2699>'],
     ['ip ssh time-out ?', '<1-120>'],
   ])('%s announces %s', async (command, expected) => {
     const router = await inConfig();
     expect(await router.executeCommand(command)).toContain(expected);
+  });
+
+  it('access-list ? announces the four IOS ranges, not one made-up span', async () => {
+    const router = await inConfig();
+
+    expect((await router.executeCommand('access-list ?')).split('\n')).toEqual([
+      '  <1-99>       IP standard access list',
+      '  <100-199>    IP extended access list',
+      '  <1300-1999>  IP standard access list (expanded range)',
+      '  <2000-2699>  IP extended access list (expanded range)',
+    ]);
   });
 
   it('snmp-server community ? announces WORD and its description', async () => {

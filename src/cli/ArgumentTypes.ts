@@ -144,6 +144,21 @@ export function resolveEnumValue(
   return prefixes.length === 1 ? prefixes[0].keyword : undefined;
 }
 
+const ANNOUNCED_RANGE = /^<(\d+)-(\d+)>$/;
+
+export function outsideEveryAnnouncedRange(
+  token: string, forms: readonly { readonly keyword: string }[],
+): boolean {
+  if (!/^\d+$/.test(token)) return false;
+  const ranges = forms.filter(form => ANNOUNCED_RANGE.test(form.keyword));
+  if (ranges.length === 0 || ranges.length !== forms.length) return false;
+  const value = Number(token);
+  return ranges.every(form => {
+    const bounds = ANNOUNCED_RANGE.exec(form.keyword) as RegExpExecArray;
+    return value < Number(bounds[1]) || value > Number(bounds[2]);
+  });
+}
+
 export function argumentAccepts(spec: ArgumentSpec, token: string): boolean {
   const named = spec.values !== undefined
     && resolveEnumValue(spec, token) !== undefined;
@@ -151,6 +166,7 @@ export function argumentAccepts(spec: ArgumentSpec, token: string): boolean {
   // Une place a plusieurs FORMES : ce sont des types, pas des valeurs, et
   // c'est la forme qui decide de l'acceptation, jamais son intitule.
   if (spec.alternatives && spec.alternatives.length > 0 && !spec.values) {
+    if (outsideEveryAnnouncedRange(token, spec.alternatives)) return false;
     return ARGUMENT_TYPES[spec.type].accepts(token);
   }
   // Porter les DEUX veut dire « l'un ou l'autre » : une severite IOS

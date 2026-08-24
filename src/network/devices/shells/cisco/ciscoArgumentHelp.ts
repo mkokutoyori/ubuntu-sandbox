@@ -19,6 +19,16 @@ const ENUM = (
   values: values.map(([keyword, d]) => ({ keyword, description: d })),
 });
 
+const NUMERO_ACL: ParamSpec = {
+  name: 'number', type: 'WORD', description: 'Access list number',
+  alternatives: [
+    { literal: '<1-99>', description: 'IP standard access list' },
+    { literal: '<100-199>', description: 'IP extended access list' },
+    { literal: '<1300-1999>', description: 'IP standard access list (expanded range)' },
+    { literal: '<2000-2699>', description: 'IP extended access list (expanded range)' },
+  ],
+};
+
 const IFACE = (description: string): ParamSpec =>
   ({ name: 'interface', type: 'INTERFACE', description });
 const MAC = (description: string): ParamSpec =>
@@ -226,9 +236,7 @@ function describeArgumentTypes(tries: ArgumentHelpTries): void {
   tries.config.describeArgs('login delay', [
     INT('seconds', [1, 65535], 'Delay between successive login attempts'),
   ]);
-  tries.config.describeArgs('no access-list', [
-    INT('number', [1, 2699], 'Access list number'),
-  ]);
+  tries.config.describeArgs('no access-list', [NUMERO_ACL]);
   tries.config.describeArgs('no interface', [IFACE('Interface to remove')]);
   tries.config.describeArgs('logging source-interface', [
     IFACE('Interface used as the source address of syslog messages'),
@@ -536,10 +544,11 @@ export function describeCiscoArguments(tries: ArgumentHelpTries): void {
   ]);
 
   tries.config.describeArgs('access-list', [
-    INT('number', [1, 2699], 'Access list number'),
+    NUMERO_ACL,
     ENUM('action', 'Specify packets to forward or reject', [
       ['deny', 'Specify packets to reject'],
       ['permit', 'Specify packets to forward'],
+      ['remark', 'Access list entry comment'],
     ]),
   ]);
   tries.config.describeArgs('ip route', [
@@ -987,6 +996,15 @@ export function describeCiscoSwitchArguments(tries: SwitchArgumentHelpTries): vo
     INT('bytes', [68, 9216], 'MTU size in bytes'),
   ]);
 
+  tries.config.describeArgs('access-list', [
+    NUMERO_ACL,
+    ENUM('action', 'Specify packets to forward or reject', [
+      ['deny', 'Specify packets to reject'],
+      ['permit', 'Specify packets to forward'],
+      ['remark', 'Access list entry comment'],
+    ]),
+  ]);
+  tries.config.describeArgs('no access-list', [NUMERO_ACL]);
   tries.config.describeArgs('vlan', [
     INT('vlan', [1, 4094], 'ISL VLAN IDs 1-4094'),
   ]);

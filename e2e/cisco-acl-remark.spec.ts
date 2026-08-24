@@ -83,6 +83,32 @@ test.describe('Cisco — remarque sur une ACL numerotee', () => {
     await waitForText(page, '20 deny');
   });
 
+  test('la remarque parait dans `show access-lists`', async ({ page }) => {
+    const id = await poser(page, 'router-cisco');
+    await openTerminal(page, id);
+
+    for (const ligne of [
+      'enable', 'configure terminal', ...LISTE, 'end', 'show access-lists 10',
+    ]) await typeCmd(page, ligne);
+
+    await waitForText(page, 'remark Autoriser le LAN admin');
+    await waitForText(page, 'remark Refuser le reste');
+  });
+
+  test('`?` offre `remark`, et un numero hors plage est refuse', async ({ page }) => {
+    const id = await poser(page, 'router-cisco');
+    await openTerminal(page, id);
+
+    for (const ligne of [
+      'enable', 'configure terminal', 'access-list ?', 'access-list 10 ?',
+      'access-list 3000 remark Rien',
+    ]) await typeCmd(page, ligne);
+
+    await waitForText(page, 'IP standard access list (expanded range)');
+    await waitForText(page, 'Access list entry comment');
+    await waitForText(page, "% Invalid input detected at '^' marker.");
+  });
+
   test('le commutateur l accepte aussi', async ({ page }) => {
     const id = await poser(page, 'switch-cisco');
     await openTerminal(page, id);

@@ -149,6 +149,7 @@ describe('IOS : le garde-fou — aucune plage annoncee ne reste inappliquee', ()
       await reprendre();
       const help = r.cliHelp(prefixe);
       if (help.includes('Invalid input') || help.includes('Ambiguous') || help.trim() === '') return;
+      const maxima: number[] = [];
       for (const ligne of help.split('\n').map((l) => l.trim()).filter(Boolean)) {
         const i = ligne.search(/\s{2,}/);
         const mot = i < 0 ? ligne : ligne.slice(0, i);
@@ -158,12 +159,13 @@ describe('IOS : le garde-fou — aucune plage annoncee ne reste inappliquee', ()
           const cle = `${prefixe}|${mot}`;
           if (vus.has(cle)) continue;
           vus.add(cle);
-          await essayer(`${prefixe}${Number(plage[2]) + 1}`);
+          maxima.push(Number(plage[2]));
           continue;
         }
         if (/^[<A-Z]/.test(mot)) continue;
         await visiter(`${prefixe}${mot} `, reste - 1);
       }
+      if (maxima.length > 0) await essayer(`${prefixe}${Math.max(...maxima) + 1}`);
     };
 
     await visiter('', 4);
