@@ -2700,6 +2700,63 @@ refusé sont remplacés par un cas qui l'affirme disponible.
 
 ---
 
+## Périmètre pris — FortiOS phase 24 (la bannière s'AFFICHE et s'ACCEPTE)
+
+**Agent `mandeng`.** Deux entrées `[durcissement]` de `TODO.md`, et là
+encore la re-mesure corrige ce qui était écrit.
+
+**Entrée 1 — « la bannière d'après-connexion ne demande pas d'être
+acceptée ».** Le report dit : « la bannière s'affiche, la session s'ouvre
+sans rien demander ». **Le défaut est plus large** :
+`mgmt/LoginBanners.ts` est écrit par `commitDevice` et **lu par
+personne** — `getLoginBanners()` n'a aucun appelant hors de ce point
+d'écriture. Ni `pre-login-banner` ni `post-login-banner` ne paraît
+JAMAIS, sur aucune porte. Les deux réglages sont donc acceptés, rendus
+dans la configuration, et sans effet.
+
+Les deux crochets existent pourtant des deux côtés :
+`ISshServerContext.getBanner?()` (que le contexte du pare-feu
+n'implémente pas) et `FirewallTelnetServerContext.banner()`, qui rend
+`null` en dur.
+
+**Entrée 2 — « `set reuse-password disable` est refusé ».** Le report est
+juste sur la cause (aucun historique de secrets) et le tenait pour
+rédhibitoire. Il ne l'est pas : le magasin de comptes existe, il lui
+manque de garder les N derniers. Les options sont attestées —
+`reuse-password` enable|disable, `reuse-password-limit` 0-20,
+`min-change-characters` 0-128 — et la politique de mot de passe est DÉJÀ
+appliquée pour la longueur et les classes de caractères
+(`schema/passwordPolicy.ts`), donc la seule pièce manquante est la
+mémoire.
+
+Mesure de départ :
+
+- **Aucune bannière ne paraît**, ni en SSH ni en telnet, quel que soit le
+  réglage.
+- **`set reuse-password disable`** est refusé en nommant l'absence
+  d'historique ; **`min-change-characters`** est accepté et n'est comparé
+  à rien.
+
+**Fichiers que la phase 24 prendra** :
+
+```
+firewall/identity/PasswordHistory.ts  ← les N derniers secrets (socle, neuf)
+firewall/mgmt/LoginBanners.ts         ← l'acceptation en attente
+firewall/mgmt/FirewallCliServer.ts    ← les deux portes affichent
+firewall/identity/AdminAccounts.ts    ← l'historique au changement
+vendors/fortios/schema/passwordPolicy.ts ← réutilisation et écart
+vendors/fortios/schema/system.ts      ← `reuse-password` cesse d'être refusé
+```
+
+**Hors périmètre, et c'est une décision déjà prise plutôt qu'un oubli** :
+la troisième entrée `[durcissement]`, `config system replacemsg` au-delà
+du groupe `admin`. Son report tient toujours — les autres groupes
+décrivent des pages servies par des fonctions que ce pare-feu n'a pas, et
+une table acceptée dont le texte ne s'affiche nulle part serait le décor
+que ce dépôt passe son temps à défaire.
+
+---
+
 ## Périmètre pris — FortiOS phase 23 (le journal dit D'OÙ, et le tampon ALERTE)
 
 **Agent `mandeng`.** Deux entrées `[journal]` de `TODO.md`, et **les
