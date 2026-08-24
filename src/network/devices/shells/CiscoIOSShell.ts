@@ -63,6 +63,7 @@ import { buildTrackConfigCommands, registerTrackShowCommands } from './cisco/Cis
 import { KeyChainRepository } from '../inspection/config/KeyChainRepository';
 import {
   buildIpSlaConfigCommands, registerIpSlaTypeSubModes,
+  ipSlaSubmodeSpecs, ipSlaTypeSubmodeSpecs, ipSlaHttpRawSpecs,
 } from './cisco/CiscoIpSlaCommands';
 import {
   ipSlaShowSpecs, ipSlaClearSpecs, ipSlaDebugPairs,
@@ -296,6 +297,9 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
       ...zonePairSubmodeSpecs(this),
       ...timeRangeSubmodeSpecs(this),
       ...trustpointSubmodeSpecs(this),
+      ...ipSlaSubmodeSpecs(this),
+      ...ipSlaTypeSubmodeSpecs(this),
+      ...ipSlaHttpRawSpecs(this),
       ...dhcpPoolClassSpecs(this),
       ...dhcpClassSpecs(this),
       ...ipv6DhcpPoolSpecs(this),

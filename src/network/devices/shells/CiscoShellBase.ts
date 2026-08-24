@@ -371,6 +371,8 @@ const MODE_DU_TRIE: Readonly<Record<string, readonly string[]>> = {
   userTrie: ['user', 'privileged'],
   privilegedTrie: ['user', 'privileged'],
   configPmapClassTrie: ['config-pmap-c'],
+  configIpSlaTrie: ['config-ipsla'],
+  configIpSlaHttpRawTrie: ['config-ipsla-http-raw'],
 };
 
 /**
@@ -4882,17 +4884,37 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     if (!table) return;
 
     for (const [champ, valeur] of Object.entries(this as unknown as Record<string, unknown>)) {
-      if (!(valeur instanceof CommandTrie)) continue;
-      const modes = modesDuTrie(champ);
-      const paths: string[] = [];
-      for (const spec of table.specs()) {
-        if (!modes.some(mode => spec.modes.includes(mode))) continue;
-        const texte = CiscoShellBase.keywordPathOf(spec).join(' ');
-        paths.push(texte);
-        if (spec.undo) paths.push(`no ${texte}`);
+      if (valeur instanceof CommandTrie) {
+        this.pruneUnTrie(table, valeur, modesDuTrie(champ));
+        continue;
       }
-      if (paths.length > 0) valeur.prunePaths(paths);
+      /*
+       * Un arbre n'est pas toujours un CHAMP : les huit sous-modes de
+       * type d'IP SLA vivent dans une table indexee par leur propre mode,
+       * donc cette boucle ne les voyait pas et quatre-vingt-deux chemins
+       * migres restaient dans le trie — un doublon qu'aucun garde-fou ne
+       * signalait, l'elagage etant justement ce qui le detecte. La cle de
+       * la table EST le mode, ce qui la rend plus sure que la derivation
+       * par le nom du champ.
+       */
+      if (valeur === null || typeof valeur !== 'object') continue;
+      for (const [cle, enfant] of Object.entries(valeur as Record<string, unknown>)) {
+        if (enfant instanceof CommandTrie) this.pruneUnTrie(table, enfant, [cle]);
+      }
     }
+  }
+
+  private pruneUnTrie(
+    table: CommandTable, trie: CommandTrie, modes: readonly string[],
+  ): void {
+    const paths: string[] = [];
+    for (const spec of table.specs()) {
+      if (!modes.some(mode => spec.modes.includes(mode))) continue;
+      const texte = CiscoShellBase.keywordPathOf(spec).join(' ');
+      paths.push(texte);
+      if (spec.undo) paths.push(`no ${texte}`);
+    }
+    if (paths.length > 0) trie.prunePaths(paths);
   }
 
   private prefixIsUnambiguous(cmdPart: string, spec: { path: readonly unknown[] }): boolean {
