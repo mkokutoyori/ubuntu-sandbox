@@ -2,6 +2,9 @@ import type { Router } from '../../Router';
 import type { CommandTrie } from '../CommandTrie';
 import type { KeyChainRepository } from '../../inspection/config/KeyChainRepository';
 import type { CiscoShellMode } from './CiscoConfigCommands';
+import type { CommandSpec } from '@/cli/CommandTable';
+import type { ArgumentSpec } from '@/cli/ArgumentTypes';
+import { specsFromTrieRegistrations } from '@/cli/commands/trieAdapter';
 
 export interface KeyChainShellContext {
   r(): Router;
@@ -140,4 +143,60 @@ export function registerKeyChainShowCommands(
     }
     return lines.join('\n');
   });
+}
+
+const DUREE_DE_VIE: ArgumentSpec = {
+  name: 'bornes', type: 'REST',
+  description: 'Start time and date, then `infinite`, `duration <n>` or an end time',
+};
+
+const KEYCHAIN_ARGUMENTS:
+Readonly<Record<string, ArgumentSpec | readonly ArgumentSpec[] | null>> = {
+  key: { name: 'identifiant', type: 'INT', description: 'Key identifier',
+    range: [0, 2147483647] },
+  description: { name: 'texte', type: 'REST', literal: 'LINE',
+    description: 'Description of this key chain' },
+};
+
+const KEYCHAIN_KEY_ARGUMENTS:
+Readonly<Record<string, ArgumentSpec | readonly ArgumentSpec[] | null>> = {
+  'key-string': { name: 'chaine', type: 'REST', literal: 'LINE',
+    description: 'The key itself, optionally preceded by 0, 6 or 7' },
+  'cryptographic-algorithm': {
+    name: 'algorithme', type: 'ENUM', description: 'Algorithm the key is used with',
+    values: [
+      { keyword: 'md5', description: 'Message Digest 5' },
+      { keyword: 'hmac-sha-1', description: 'HMAC-SHA-1' },
+      { keyword: 'hmac-sha-256', description: 'HMAC-SHA-256' },
+      { keyword: 'hmac-sha-384', description: 'HMAC-SHA-384' },
+      { keyword: 'hmac-sha-512', description: 'HMAC-SHA-512' },
+    ],
+  },
+  'accept-lifetime': DUREE_DE_VIE,
+  'send-lifetime': DUREE_DE_VIE,
+  'send-id': { name: 'identifiant', type: 'INT', description: 'Send identifier',
+    range: [0, 255] },
+  'recv-id': { name: 'identifiant', type: 'INT', description: 'Receive identifier',
+    range: [0, 255] },
+};
+
+export function keyChainSubmodeSpecs(ctx: KeyChainShellContext): CommandSpec[] {
+  return specsFromTrieRegistrations(
+    (collector) => buildKeyChainSubmode(collector as unknown as CommandTrie, ctx),
+    {
+      modes: ['config-keychain'], minPrivilege: 15,
+      undoFromNegatedPaths: true,
+      argumentFor: (path) => KEYCHAIN_ARGUMENTS[path],
+    },
+  );
+}
+
+export function keyChainKeySubmodeSpecs(ctx: KeyChainShellContext): CommandSpec[] {
+  return specsFromTrieRegistrations(
+    (collector) => buildKeyChainKeySubmode(collector as unknown as CommandTrie, ctx),
+    {
+      modes: ['config-keychain-key'], minPrivilege: 15,
+      argumentFor: (path) => KEYCHAIN_KEY_ARGUMENTS[path],
+    },
+  );
 }

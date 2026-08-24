@@ -59,8 +59,14 @@ import {
   buildVxlanInterfaceCommands, registerVxlanShowCommands,
 } from './cisco/CiscoVxlanCommands';
 import { FhrpRepository } from '../inspection/config/FhrpRepository';
-import { buildTrackConfigCommands, registerTrackShowCommands } from './cisco/CiscoTrackCommands';
+import {
+  buildTrackConfigCommands, registerTrackShowCommands, trackSubmodeSpecs,
+} from './cisco/CiscoTrackCommands';
 import { KeyChainRepository } from '../inspection/config/KeyChainRepository';
+import { specsFromTrieRegistrations } from '@/cli/commands/trieAdapter';
+import {
+  keyChainSubmodeSpecs, keyChainKeySubmodeSpecs,
+} from './cisco/CiscoKeyChainCommands';
 import {
   buildIpSlaConfigCommands, registerIpSlaTypeSubModes,
   ipSlaSubmodeSpecs, ipSlaTypeSubmodeSpecs, ipSlaHttpRawSpecs,
@@ -72,7 +78,7 @@ import { describeCiscoArguments } from './cisco/ciscoArgumentHelp';
 import { renderStartupConfig } from './cisco/ciscoConfigSerializer';
 import { PolicyRepository } from '../inspection/config/PolicyRepository';
 import {
-  buildPolicyConfig, registerPolicyShow, policyShowSpecs,
+  buildPolicyConfig, registerPolicyShow, policyShowSpecs, routeMapSubmodeSpecs,
 } from './cisco/CiscoPolicyCommands';
 
 // Extracted command modules
@@ -163,6 +169,17 @@ const HORS_PLATEFORME_ISR: ReadonlySet<string> = new Set(['vxlan', 'nve', 'mls']
 
 import { routerOnlyDebugPairs, type RouterDebugHost } from '@/cli/commands/debug/routerDebugPairs';
 import { getGlobalConfig } from '../router/config/CiscoGlobalConfig';
+
+
+const VRF_ARGUMENTS:
+Readonly<Record<string, ArgumentSpec | readonly ArgumentSpec[] | null>> = {
+  rd: { name: 'distingueur', type: 'WORD', literal: 'ASN:nn or IP-address:nn',
+    description: 'Route distinguisher of this VRF' },
+  'route-target': { name: 'cible', type: 'REST',
+    description: 'import, export or both, then ASN:nn' },
+  description: { name: 'texte', type: 'REST', literal: 'LINE',
+    description: 'Description of this VRF' },
+};
 
 export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShell, CiscoShellContext, CiscoACLShellContext {
   versionText(): string {
@@ -265,6 +282,38 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
     return this as unknown as CiscoSecurityShellContext;
   }
 
+
+  private registerVrfSubmodeOn(trie: CommandTrie): void {
+    trie.registerGreedy('rd', 'Route distinguisher', (args) => {
+      const rd = args.join(' ').trim();
+      const m = /^(\d+):(\d+)$/.exec(rd);
+      if (!m) return "% Invalid input detected at '^' marker.";
+      const a = Number(m[1]);
+      const b = Number(m[2]);
+      if (!Number.isSafeInteger(a) || !Number.isSafeInteger(b) || a > 4294967295 || b > 4294967295) {
+        return "% Invalid input detected at '^' marker.";
+      }
+      const r = this.d() as unknown as { _vrfs?: Map<string, { name: string; rd?: string }> };
+      if (this.selectedVRF != null) {
+        const v = r._vrfs?.get(this.selectedVRF);
+        if (v) v.rd = rd;
+      }
+      return '';
+    });
+    trie.registerGreedy('route-target', 'Route target', () => '');
+    trie.registerGreedy('description', 'Description', () => '');
+  }
+
+  private vrfSubmodeSpecs(): CommandSpec[] {
+    return specsFromTrieRegistrations(
+      (collector) => this.registerVrfSubmodeOn(collector as unknown as CommandTrie),
+      {
+        modes: ['config-vrf'], minPrivilege: 15,
+        argumentFor: (path) => VRF_ARGUMENTS[path],
+      },
+    );
+  }
+
   protected override socleSpecs(): readonly CommandSpec[] {
     return [
       ...super.socleSpecs(),
@@ -300,6 +349,11 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
       ...ipSlaSubmodeSpecs(this),
       ...ipSlaTypeSubmodeSpecs(this),
       ...ipSlaHttpRawSpecs(this),
+      ...this.vrfSubmodeSpecs(),
+      ...trackSubmodeSpecs(this),
+      ...keyChainSubmodeSpecs(this),
+      ...keyChainKeySubmodeSpecs(this),
+      ...routeMapSubmodeSpecs(this, this.policy),
       ...dhcpPoolClassSpecs(this),
       ...dhcpClassSpecs(this),
       ...ipv6DhcpPoolSpecs(this),
@@ -1507,24 +1561,7 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
     buildConfigRouterOSPFCommands(this.configRouterOspfTrie, this);
     buildConfigRouterOSPFv3Commands(this.configRouterOspfv3Trie, this);
 
-    this.configVrfTrie.registerGreedy('rd', 'Route distinguisher', (args) => {
-      const rd = args.join(' ').trim();
-      const m = /^(\d+):(\d+)$/.exec(rd);
-      if (!m) return "% Invalid input detected at '^' marker.";
-      const a = Number(m[1]);
-      const b = Number(m[2]);
-      if (!Number.isSafeInteger(a) || !Number.isSafeInteger(b) || a > 4294967295 || b > 4294967295) {
-        return "% Invalid input detected at '^' marker.";
-      }
-      const r = this.d() as unknown as { _vrfs?: Map<string, { name: string; rd?: string }> };
-      if (this.selectedVRF != null) {
-        const v = r._vrfs?.get(this.selectedVRF);
-        if (v) v.rd = rd;
-      }
-      return '';
-    });
-    this.configVrfTrie.registerGreedy('route-target', 'Route target', () => '');
-    this.configVrfTrie.registerGreedy('description', 'Description', () => '');
+    this.registerVrfSubmodeOn(this.configVrfTrie);
     // IPSec
     buildIPSecGlobalCommands(this.configTrie, this);
     buildIPSecIfCommands(this.configIfTrie, this);

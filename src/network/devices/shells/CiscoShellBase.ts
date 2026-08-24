@@ -14,7 +14,9 @@
 
 import { CiscoFileSystem } from './cisco/CiscoFileSystem';
 import { CommandTable } from '@/cli/CommandTable';
-import { specsFromTrieRegistrations } from '@/cli/commands/trieAdapter';
+import {
+  specsFromTrieRegistrations, type AdapterKeyword,
+} from '@/cli/commands/trieAdapter';
 import { newSession, type CliSession } from '@/cli/CliSession';
 import { parseCommand, uniqueChild } from '@/cli/CommandParser';
 import { argumentAccepts } from '@/cli/ArgumentTypes';
@@ -407,6 +409,55 @@ const LINE_KEYWORD_SUITES: ReadonlyArray<readonly [string, ReadonlyArray<readonl
   ]],
   ['authorization', [['commands', 'Authorize commands'], ['exec', 'Authorize EXEC sessions']]],
   ['accounting', [['commands', 'Account for commands'], ['connection', 'Account for connections'], ['exec', 'Account for EXEC sessions']]],
+];
+
+
+/**
+ * Les places du sous-mode `config-view`.
+ *
+ * `commands` en prend TROIS avant la commande elle-meme — le mode, le
+ * sens, puis un `all` facultatif — et les annoncer comme un mot muet
+ * laissait l'operateur deviner l'ordre d'une commande dont l'ordre EST
+ * la difficulte.
+ */
+const VIEW_SUBMODE_ARGUMENTS:
+Readonly<Record<string, ArgumentSpec | readonly ArgumentSpec[] | null>> = {
+  secret: {
+    name: 'secret', type: 'REST', literal: 'LINE',
+    description: 'The password itself, or a digest already computed',
+  },
+  view: { name: 'membre', type: 'WORD', description: 'Name of the member view' },
+  commands: [{
+    name: 'mode', type: 'ENUM', description: 'Mode the commands belong to',
+    values: [
+      { keyword: 'exec', description: 'EXEC mode commands' },
+      { keyword: 'configure', description: 'Global configuration commands' },
+      { keyword: 'interface', description: 'Interface configuration commands' },
+      { keyword: 'line', description: 'Line configuration commands' },
+    ],
+  }],
+};
+
+const VIEW_COMMANDS_KEYWORDS: ReadonlyArray<AdapterKeyword> = [
+  {
+    keyword: 'include', description: 'Add a command to the view',
+    afterArguments: true,
+    argument: { name: 'commande', type: 'REST', literal: 'LINE',
+      description: 'The command, optionally preceded by `all`' },
+  },
+  {
+    keyword: 'include-exclusive',
+    description: 'Add a command to the view and reserve it for this view',
+    afterArguments: true,
+    argument: { name: 'commande', type: 'REST', literal: 'LINE',
+      description: 'The command, optionally preceded by `all`' },
+  },
+  {
+    keyword: 'exclude', description: 'Remove a command from the view',
+    afterArguments: true,
+    argument: { name: 'commande', type: 'REST', literal: 'LINE',
+      description: 'The command, optionally preceded by `all`' },
+  },
 ];
 
 export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
@@ -4735,11 +4786,23 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       ...this.showSocleSpecs(),
       ...this.archiveSubmodeSpecs(),
       ...this.identitySubmodeSpecs(),
+      ...this.viewSubmodeSpecs(),
     ];
   }
 
   protected identitySubmodeContext(): CiscoSecurityShellContext | null {
     return null;
+  }
+
+  protected viewSubmodeSpecs(): readonly CommandSpec[] {
+    return specsFromTrieRegistrations(
+      (collector) => this.registerViewSubmodeOn(collector as unknown as CommandTrie),
+      {
+        modes: ['config-view'], minPrivilege: 15,
+        argumentFor: (path) => VIEW_SUBMODE_ARGUMENTS[path],
+        keywordsFor: (path) => path === 'commands' ? VIEW_COMMANDS_KEYWORDS : undefined,
+      },
+    );
   }
 
   protected identitySubmodeSpecs(): readonly CommandSpec[] {
@@ -7800,8 +7863,37 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
 
     // `exec-timeout <minutes> [seconds]` — persisted on the VTY block
     // so show running-config can echo it back exactly.
-    // ─── Sous-mode `config-view` ────────────────────────────────────
-    this.configViewTrie.registerGreedy('secret', 'Set the view password', (args) => {
+    this.registerViewSubmodeOn(this.configViewTrie);
+
+    /**
+     * La commande existe-t-elle dans l'arbre de ce mode ?
+     *
+     * On interroge l'arbre du MODE nomme, et non l'arbre privilegie pour
+     * tout : `commands configure include hostname` porte sur une commande
+     * de configuration, qui n'est dans aucun arbre exec.
+     */
+    // `login-timeout <secondes>` : le delai laisse pour s'identifier,
+    // distinct de `exec-timeout` qui compte l'inactivite APRES la
+    // connexion. La commande d'IOS etait refusee.
+
+    // ARP config commands (shared between router and switch)
+    registerArpConfigCommands(this.configTrie, () => this.d());
+  }
+
+  /**
+   * `test aaa group <nom> <user> <mot de passe> {legacy | new-code}`
+   * (`docs/PRD-Serveur-HTTP-Cisco.md` §5).
+   *
+   * Elle existait dans `CiscoTerminalSession` — donc dans le terminal
+   * graphique et nulle part ailleurs : la même machine y répondait par un
+   * onglet et l'ignorait par le shell, en SSH comme dans un script. Le
+   * motif invoqué là-bas (« un gestionnaire du trie doit rendre une
+   * chaîne synchrone ») ne tient pas : `_pendingAsync` est précisément
+   * l'écoutille que `ping` emprunte, et c'est celle-ci.
+   */
+
+  protected registerViewSubmodeOn(trie: CommandTrie): void {
+    trie.registerGreedy('secret', 'Set the view password', (args) => {
       if (args.length === 0) throw new CliIncomplete();
       const vue = this.vueEnCours();
       if (!vue) return '';
@@ -7827,7 +7919,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
      * ordinaire n'a pas de membres : melanger les deux produirait un
      * objet qu'IOS ne connait pas.
      */
-    this.configViewTrie.registerGreedy('view', 'Add a member view to this superview', (args) => {
+    trie.registerGreedy('view', 'Add a member view to this superview', (args) => {
       if (args.length < 1) throw new CliIncomplete();
       const vue = this.vueEnCours();
       if (!vue) return '';
@@ -7842,7 +7934,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       return '';
     });
 
-    this.configViewTrie.registerGreedy('commands', 'Configure the commands of a view', (args) => {
+    trie.registerGreedy('commands', 'Configure the commands of a view', (args) => {
       // `commands <mode> {include | include-exclusive | exclude} [all] <cmd>`
       if (args.length < 3) throw new CliIncomplete();
       const vue = this.vueEnCours();
@@ -7890,33 +7982,8 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       }
       return '';
     });
-
-    /**
-     * La commande existe-t-elle dans l'arbre de ce mode ?
-     *
-     * On interroge l'arbre du MODE nomme, et non l'arbre privilegie pour
-     * tout : `commands configure include hostname` porte sur une commande
-     * de configuration, qui n'est dans aucun arbre exec.
-     */
-    // `login-timeout <secondes>` : le delai laisse pour s'identifier,
-    // distinct de `exec-timeout` qui compte l'inactivite APRES la
-    // connexion. La commande d'IOS etait refusee.
-
-    // ARP config commands (shared between router and switch)
-    registerArpConfigCommands(this.configTrie, () => this.d());
   }
 
-  /**
-   * `test aaa group <nom> <user> <mot de passe> {legacy | new-code}`
-   * (`docs/PRD-Serveur-HTTP-Cisco.md` §5).
-   *
-   * Elle existait dans `CiscoTerminalSession` — donc dans le terminal
-   * graphique et nulle part ailleurs : la même machine y répondait par un
-   * onglet et l'ignorait par le shell, en SSH comme dans un script. Le
-   * motif invoqué là-bas (« un gestionnaire du trie doit rendre une
-   * chaîne synchrone ») ne tient pas : `_pendingAsync` est précisément
-   * l'écoutille que `ping` emprunte, et c'est celle-ci.
-   */
   private registerTestAaaCommand(): void {
     this.privilegedTrie.registerGreedy('test aaa group',
       'Test AAA server-group authentication', (args) => {

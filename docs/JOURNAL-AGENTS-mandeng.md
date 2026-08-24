@@ -48,12 +48,21 @@ commutateur), et les onze sous-modes de sécurité (`configCmapTrie`,
 `configAaaGroupTrie`, `configCaTrustpointTrie` — les trois d'identité
 sont partagés avec le commutateur), et les dix arbres IP SLA
 (`configIpSlaTrie`, `configIpSlaHttpRawTrie` et les huit sous-modes de
-type rangés dans `configIpSlaTypeTries`).
+type rangés dans `configIpSlaTypeTries`), et les six derniers petits
+sous-modes (`configTrackTrie`, `configKeychainTrie`,
+`configKeychainKeyTrie`, `configRouteMapTrie`, `configVrfTrie`,
+`configViewTrie` — ce dernier partagé avec le commutateur).
 
-Compteurs : routeur 1007 → 747, commutateur 570 → 448. Restent les deux
+**Tous les sous-modes dédiés du ROUTEUR sont désormais vides.** Ce qu'il
+reste de sous-mode y est le lot ACL (`configExtNaclTrie` 6,
+`configStdNaclTrie` 5, `configIpv6NaclTrie` 4) et je n'y touche pas sans
+que l'agent ACL le dise ici. Côté commutateur restent `configMstTrie`
+(7), `configAclTrie` (6), `configVlanTrie` (2), `configAccessMapTrie`
+(2).
+
+Compteurs : routeur 1007 → 721, commutateur 570 → 445. Restent les deux
 gros blocs `configTrie` (308) et `configIfTrie` (151), puis
-`privilegedTrie` (120), `userTrie` (85), `configRouterTrie` (42) et une
-dizaine de petits sous-modes.
+`privilegedTrie` (120), `userTrie` (85) et `configRouterTrie` (42).
 
 **Un compteur d'avant le lot IP SLA sous-estimait de 82** : `configIpSlaTypeTries`
 est une TABLE de huit arbres et non huit champs, si bien que ni
