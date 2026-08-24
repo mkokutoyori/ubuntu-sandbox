@@ -66,10 +66,16 @@ les mots-clés d'un autre protocole devient une **joignabilité de
 déclaration** — donc elle gouverne l'exécution ET l'aide, alors qu'un
 filtre de complétion ne gouvernait que l'aide.
 
-Compteurs : routeur 1007 → 358, commutateur 570 → 386. `configIfTrie`
+Compteurs : routeur 1007 → 348, commutateur 570 → 376. `configIfTrie`
 du routeur est passé de 151 à 11. Restent `configTrie` (143 routeur /
-140 commutateur), `privilegedTrie` (112 / 87), `userTrie` (77 / 53), le
+140 commutateur), `privilegedTrie` (107 / 82), `userTrie` (72 / 48), le
 `configIfTrie` du COMMUTATEUR (89, non entamé) et les sous-modes ACL.
+
+**Les deux arbres d'EXEC partagent un espace de noms**, et c'est ce que
+le socle règle en une déclaration : `ssh`, `telnet`, `where`,
+`disconnect` et `resume` étaient enregistrées DEUX FOIS, une par arbre,
+là où `modes: ['user','privileged']` suffit. Si vous migrez une commande
+d'EXEC, cherchez son doublon dans l'autre arbre avant de déclarer.
 
 **Une contradiction tranchée qui peut vous concerner** : `metric`
 appartient à EIGRP dans `ROUTER_MODE_OWNERS`, et le gestionnaire portait

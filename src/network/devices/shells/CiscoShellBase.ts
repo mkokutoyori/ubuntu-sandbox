@@ -477,6 +477,38 @@ const FICHIER_CISCO = (nom: string, description: string): ArgumentSpec => ({
   name: nom, type: 'REST', literal: 'WORD', description,
 });
 
+/*
+ * `disconnect` et `resume` NOMMENT leurs deux formes sans restreindre :
+ * le gestionnaire lit un numero et repond lui-meme a ce qui n'en est
+ * pas un (`disconnect all` rend « No information for this connection »,
+ * ce qu'un test epingle), donc une place bornee refuserait au caret ce
+ * que la machine accepte. Les deux libelles sont ceux qu'IOS ecrit.
+ */
+const CONNEXION_SORTANTE: ArgumentSpec = {
+  name: 'connexion', type: 'REST', optional: true,
+  description: 'Connection number or name',
+  alternatives: [
+    { keyword: '<1-16>', description: 'Connection number' },
+    { keyword: 'WORD', description: 'Connection name' },
+  ],
+};
+
+const SESSION_ARGUMENTS:
+Readonly<Record<string, ArgumentSpec | readonly ArgumentSpec[] | null>> = {
+  where: null,
+  disconnect: CONNEXION_SORTANTE,
+  resume: CONNEXION_SORTANTE,
+  /*
+   * La place est GLOUTONNE : les deux gestionnaires filtrent les options
+   * en `-`, donc `ssh -l zoe 10.0.0.9` porte trois mots et une place
+   * unique l'aurait refusee.
+   */
+  ssh: { name: 'hote', type: 'REST', literal: 'WORD',
+    description: 'IP address or hostname of a remote system' },
+  telnet: { name: 'hote', type: 'REST', literal: 'WORD',
+    description: 'IP address or hostname of a remote system' },
+};
+
 const FILESYSTEM_ARGUMENTS:
 Readonly<Record<string, ArgumentSpec | readonly ArgumentSpec[] | null>> = {
   dir: { ...FICHIER_CISCO('filesystem', 'Filesystem or directory to list'),
@@ -4986,7 +5018,18 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       ...this.httpServerSpecs(),
       ...this.dnsConfigSpecs(),
       ...this.fileSystemSpecs(),
+      ...this.sessionSpecs(),
     ];
+  }
+
+  protected sessionSpecs(): readonly CommandSpec[] {
+    return specsFromTrieRegistrations(
+      (collector) => this.registerOutgoingSessionCommands(collector as unknown as CommandTrie),
+      {
+        modes: ['user', 'privileged'], minPrivilege: 1,
+        argumentFor: (path) => SESSION_ARGUMENTS[path],
+      },
+    );
   }
 
   protected fileSystemSpecs(): readonly CommandSpec[] {
@@ -6690,14 +6733,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
 
   // ─── Shared Command Registration ───────────────────────────────
 
-  /** IOS show/util commands common to every Cisco device + mode (DRY). */
-  private registerCommonShowCommands(target: CommandTrie, scope: ExecScope = 'privileged'): void {
-    const trie = scopedTrie(target, scope);
-    // `show who` est le SYNONYME historique de `show users` sur IOS, et
-    // la sequence de collecte de preuves d'un auditeur les enchaine.
-    // Elle repondait `% Invalid input`. Le rendu est le meme parce que
-    // c'est la meme question : deux textes pour une question feraient
-    // douter de la machine.
+  private registerOutgoingSessionCommands(trie: CommandTrie): void {
     trie.register('where', 'List open outgoing connections', () => renderSessions(this.outgoingSessions));
     trie.registerGreedy('disconnect', 'Close an outgoing connection', (args) => {
       if (!args[0]) {
@@ -6708,9 +6744,9 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       }
       const n = parseInt(args[0], 10);
       if (Number.isNaN(n) || !this.outgoingSessions.get(n)) return '% No information for this connection';
-      const target = this.outgoingSessions.get(n)!;
+      const cible = this.outgoingSessions.get(n)!;
       this.outgoingSessions.close(n);
-      return `Closing connection to ${target.host} [confirm]`;
+      return `Closing connection to ${cible.host} [confirm]`;
     });
     trie.registerGreedy('resume', 'Resume an outgoing connection', (args) => {
       const list = this.outgoingSessions.list();
@@ -6720,6 +6756,21 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       this.outgoingSessions.touch(n);
       return `[Resuming connection ${n} to ${s.host} ... ]`;
     });
+    trie.registerGreedy('ssh', 'Open an SSH connection to a remote host',
+      (args) => this.runOutboundSshClient(args));
+    trie.registerGreedy('telnet', 'Open a Telnet session',
+      (args) => this.runOutboundTelnet(args));
+  }
+
+  /** IOS show/util commands common to every Cisco device + mode (DRY). */
+  private registerCommonShowCommands(target: CommandTrie, scope: ExecScope = 'privileged'): void {
+    const trie = scopedTrie(target, scope);
+    // `show who` est le SYNONYME historique de `show users` sur IOS, et
+    // la sequence de collecte de preuves d'un auditeur les enchaine.
+    // Elle repondait `% Invalid input`. Le rendu est le meme parce que
+    // c'est la meme question : deux textes pour une question feraient
+    // douter de la machine.
+    this.registerOutgoingSessionCommands(target);
     trie.registerGreedy('show interfaces counters errors', 'Display interface error counters', () => {
       const rows = ['Port           Align-Err   FCS-Err  Xmit-Err   Rcv-Err UnderSize OutDiscards'];
       for (const name of this.d().getPortNames()) {
@@ -7376,14 +7427,6 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     // ARP commands (shared between router and switch)
     registerArpShowCommands(this.privilegedTrie, () => this.d());
     registerArpPrivilegedCommands(this.privilegedTrie, () => this.d());
-    this.privilegedTrie.registerGreedy('ssh', 'Open an SSH connection to a remote host', (args) => {
-      return this.runOutboundSshClient(args);
-    });
-    this.userTrie.registerGreedy('ssh', 'Open an SSH connection to a remote host', (args) => {
-      return this.runOutboundSshClient(args);
-    });
-    this.userTrie.registerGreedy('telnet', 'Open a Telnet session', (args) => this.runOutboundTelnet(args));
-    this.privilegedTrie.registerGreedy('telnet', 'Open a Telnet session', (args) => this.runOutboundTelnet(args));
   }
 
   /**

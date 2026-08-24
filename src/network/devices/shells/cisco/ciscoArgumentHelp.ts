@@ -86,21 +86,10 @@ function describeArgumentTypes(tries: ArgumentHelpTries): void {
   tries.privileged.describeArgs('configure replace', [
     WORD('url', 'Configuration file URL'),
   ]);
-  tries.privileged.describeArgs('disconnect', [
-    { ...INT('connection', [1, 16], 'Connection number'), optional: true },
-  ]);
-  tries.privileged.describeArgs('resume', [
-    { ...INT('connection', [1, 16], 'Connection number'), optional: true },
-  ]);
   for (const cmd of ['ping', 'traceroute']) {
     tries.privileged.describeArgs(cmd, [
       { name: 'destination', type: 'WORD', description: 'Destination address or hostname',
         optional: true },
-    ]);
-  }
-  for (const cmd of ['ssh', 'telnet']) {
-    tries.privileged.describeArgs(cmd, [
-      { name: 'host', type: 'WORD', description: 'IP address or hostname of a remote system' },
     ]);
   }
   for (const [cmd, description] of [
