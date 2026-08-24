@@ -62,6 +62,7 @@
 | **F4** | **FortiOS phase 4 — diagnostic et journaux** | 44 | ✅ |
 | **F5** | **FortiOS phase 5 — VDOM et modes de deploiement** | 27 | ✅ |
 | **F28** | **FortiOS phase 28 — le plan d'administration écoute** | 15 | ✅ |
+| **F28b** | Tab développe la ligne entière (parité avec Cisco) | 10 | ✅ |
 | 3 | NAT objet ASA (`nat (dmz,outside) static`) | — | ⏳ |
 | 3 | `ShellFactory` + `DeviceFactory` | — | ⏳ |
 
@@ -2698,6 +2699,74 @@ est celle de FortiOS, `Command fail. Return code -61` précédé de
 
 Les deux cas de `fortios-routage-dynamique.test.ts` qui affirmaient BGP
 refusé sont remplacés par un cas qui l'affirme disponible.
+
+---
+
+## FortiOS — la tabulation développe la ligne entière
+
+**Agent `mandeng`.** Demande de l'utilisateur : « `conf t` + Tab devient
+`configure terminal`, je voudrais ce même comportement sur FortiGate ».
+
+**Mesure de départ, les deux plateformes côte à côte** :
+
+```
+CISCO  "conf t"       -> "configure terminal"
+FORTI  "conf sys glo" -> "conf sys global"
+```
+
+Seul le DERNIER mot était développé : `FortiShell.completions` recopiait
+la tête telle qu'elle avait été tapée (`${head}${value}`). La mesure a
+trouvé **deux conséquences que la demande ne nomme pas** :
+
+```
+FORTI  "sh sys int"   -> aucune proposition
+FORTI  "get sys stat" -> aucune proposition
+```
+
+`show`/`get` parcourent l'arbre de configuration, et la branche de
+complétion le parcourait avec les mots BRUTS — alors que la même
+commande **s'exécute** parfaitement abrégée, `resolvePathWords` étant
+appelé au moment d'exécuter. Deux lectures d'un même chemin, dont une
+seule savait lire une abréviation.
+
+**Ce qui est attesté** : la documentation Fortinet écrit elle-même que
+« *the command `get system status` could be abbreviated to `g sy stat`* »
+et que « *valid command lines must be unambiguous if abbreviated* » —
+d'où le cas de sonde nommé d'après cette phrase. Le cyclage est attesté
+lui aussi : « *the Tab key completes the word with the next available
+match, and pressing the Tab key multiple times cycles through available
+matches* ». Il est donc **préservé** : une tête abrégée suivie d'un
+préfixe ambigu rend toujours plusieurs propositions, développées.
+
+**Nuance de fidélité, écrite plutôt que tue** : une vraie machine
+complète le MOT courant, elle ne réécrit pas rétroactivement les mots
+déjà tapés. Développer la ligne entière est une commodité pédagogique
+que ce simulateur applique **déjà** sur Cisco ; ce lot la rend uniforme
+plutôt que d'en laisser une par plateforme. L'abréviation elle-même,
+elle, est du vrai FortiOS.
+
+**Aucun second résolveur.** Les deux qui existent sont réutilisés tels
+quels : `uniqueChild` du socle (`src/cli/CommandParser`) pour les
+mots-clés de commande — exposé par `FortiSocle.canonicalWords`, l'objet
+qui détient déjà la table et la session —, et `resolvePathWords` pour la
+suite d'un `show`/`get`, c'est-à-dire la fonction que l'exécution appelle
+déjà. Écrire une troisième résolution aurait été le défaut que ce lot
+referme.
+
+**Trouvé en chemin et corrigé avec** : `get system ` ne proposait aucune
+des vues de diagnostic (`status`, `performance`, …) parce que la
+complétion ne lisait que les branches de l'arbre de configuration, quand
+l'exécution lit AUSSI `FORTI_GET_VIEWS`. Les deux lisent maintenant le
+même vocabulaire.
+
+`fortios-tabulation-developpe-la-ligne.test.ts` (10 cas) est discriminé
+par `git stash push -- src/network/` : 5 tombent avant correctif, et les
+5 qui passent des deux côtés sont nommés dans l'en-tête — dont
+« la ligne développée s'exécute », qui passait parce que l'exécution
+acceptait déjà l'abrégé, ce qui est précisément ce qui rendait le défaut
+invisible. `e2e/fortigate-tabulation.spec.ts` (2 cas verts) tape
+`conf sys glo` puis Tab dans le vrai navigateur, et exécute
+`g sy stat` développé.
 
 ---
 

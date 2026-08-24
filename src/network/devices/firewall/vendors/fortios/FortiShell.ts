@@ -321,9 +321,29 @@ export class FortiShell {
       ...this.viewPathCompletions(head, bare),
     ];
 
+    const developpee = this.canonicalHead(head);
     return [...new Set(proposed)]
       .filter(value => value.startsWith(bare) && value !== bare)
-      .map(value => `${head}${quote}${value}${quote}`);
+      .map(value => `${developpee}${quote}${value}${quote}`);
+  }
+
+  private canonicalHead(head: string): string {
+    const words = this.canonicalWords(head);
+    return words.length === 0 ? head : `${words.join(' ')} `;
+  }
+
+  private canonicalWords(head: string): readonly string[] {
+    const typed = head.trim().split(/\s+/).filter(Boolean);
+    if (typed.length === 0) return [];
+
+    const words = [...this.socle.canonicalWords(typed)];
+    if (words[0] !== 'show' && words[0] !== 'get') return words;
+
+    const resolution = resolvePathWords(words.slice(1), (prefix) => [
+      ...this.tree.branchNames(prefix),
+      ...viewContinuations(FORTI_GET_VIEWS, prefix),
+    ]);
+    return [words[0], ...resolution.words];
   }
 
   private socleProbe(head: string, typed: string): string {
@@ -343,11 +363,14 @@ export class FortiShell {
   }
 
   private viewPathCompletions(head: string, typed: string): readonly string[] {
-    const words = head.trim().split(/\s+/).filter(Boolean);
+    const words = this.canonicalWords(head);
     if (words[0] !== 'show' && words[0] !== 'get') return [];
 
     const walked = words.slice(1);
-    const branches = this.tree.branchNames(walked);
+    const branches = [...new Set([
+      ...this.tree.branchNames(walked),
+      ...(words[0] === 'get' ? viewContinuations(FORTI_GET_VIEWS, walked) : []),
+    ])].sort();
     if (branches.length > 0) return branches;
 
     const spec = this.tree.spec(walked);
