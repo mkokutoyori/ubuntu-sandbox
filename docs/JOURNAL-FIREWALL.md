@@ -2700,6 +2700,72 @@ refusé sont remplacés par un cas qui l'affirme disponible.
 
 ---
 
+## Périmètre pris — FortiOS phase 26 (le pare-feu parle IPv6)
+
+**Agent `mandeng`.** L'entrée `[execute] ping6 absente, faute d'émetteur
+ICMPv6 sur le pare-feu`. Le report est juste sur la cause et **trop
+étroit sur l'étendue** : ce n'est pas une commande qui manque, c'est
+IPv6 en entier.
+
+**Mesure de départ**, sur une machine neuve :
+
+```
+execute ping6 ::1                    → unknown action "ping6"
+config system interface / edit port1 / config ipv6
+                                     → unknown configuration path "ipv6"
+set ip6-address 2001:db8::1/64       → unknown attribute "ip6-address"
+config router static6                → unknown configuration path
+diagnose ipv6 neighbor-cache list    → unknown command
+```
+
+`grep -l IPv6 src/network/devices/firewall/` ne rend que cinq fichiers,
+et aucun ne PRODUIT de paquet : `PacketContext` déclare
+`FirewallPacket = IPv4Packet | IPv6Packet` et rien ne construit jamais le
+second membre de cette union. Le pare-feu n'a ni adresse v6, ni NDP, ni
+table de routage v6, ni ICMPv6.
+
+**Ce qu'il ne faut surtout pas faire est écrire un second ICMPv6.**
+`router/IPv6DataPlane.ts` (1174 lignes) est un plan de données IPv6
+complet — NDP, cache de voisins, annonces de routeur, table de routage,
+écho, DHCPv6 — et il est déjà construit sur un **port étroit**,
+`IPv6RouterContext` : `getPorts()`, `sendFrame()`, `getCounters()`,
+`getBus()`, `getScheduler()`, plus des crochets facultatifs. Il porte
+même `sendEchoRequest()`, exactement l'émetteur que le report déclare
+manquant. Le pare-feu peut REMPLIR ce port : c'est un `Equipment`, il a
+des ports, un bus et un ordonnanceur. Une seule machine à états NDP dans
+le dépôt, pas deux.
+
+De même côté rendu : `diag/FirewallPing.ts` a déjà la forme
+(`header` / `step` / `statistics`) et le texte de FortiOS ; ping6 rend le
+MÊME texte sur une vraie machine (`PING …: 56 data bytes`, `64 bytes
+from …: icmp_seq=0 ttl=64 time=…`), donc c'est le constructeur de paquet
+qui varie, pas le rendu.
+
+**Fichiers que la phase 26 prendra** :
+
+```
+firewall/l3/FirewallIpv6.ts        ← le pare-feu remplit IPv6RouterContext (neuf)
+firewall/Firewall.ts               ← héberge le plan de données, aiguille ETHERTYPE_IPV6
+firewall/diag/FirewallPing.ts      ← le rendu sert les deux familles
+vendors/fortios/schema/system.ts   ← `config ipv6`, `ip6-address`, `ip6-allowaccess`
+vendors/fortios/schema/router.ts   ← `config router static6`
+vendors/fortios/diag/              ← `diagnose ipv6 address list`, `neighbor-cache list`
+vendors/fortios/FortiSocle.ts      ← `execute ping6`, `get router info6 routing-table`
+```
+
+**Décision de périmètre, prise et non subie** : le moteur de politiques
+est v4 seulement (`SecurityRule` porte des adresses v4, `iprope` compile
+du v4). Un paquet IPv6 EN TRANSIT est donc **refusé**, pas relayé —
+c'est le refus implicite d'un vrai FortiGate sans politique IPv6, et
+c'est la posture que `CLAUDE.md` impose à tout moteur de décision
+(« security criteria fail CLOSED »). Héberger le plan de données sans ce
+verrou ferait passer du trafic v6 sans qu'aucune politique le juge :
+ce serait ouvrir le pare-feu, pas l'améliorer. Ce que la phase livre est
+donc IPv6 **pour la machine elle-même** — adresse, voisinage, écho,
+routes — et le transit sous politique v6 est le sujet de la phase 27.
+
+---
+
 ## Périmètre pris — FortiOS phase 25 (une zone suit ses MEMBRES)
 
 **Agent `mandeng`.** Les deux entrées `[sdwan]` de `TODO.md`. Les deux
