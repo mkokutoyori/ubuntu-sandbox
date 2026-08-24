@@ -181,6 +181,31 @@ liste, echec ferme), contact, localisation, versions, hote de trap,
 
 ## Socle CLI
 
+### [cli] les declarations d'arguments decrivent, elles ne tranchent pas
+Depuis le lot « une plage annoncee est une plage appliquee », un jeton
+NUMERIQUE hors d'un intervalle affiche par `?` est refuse. Le reste
+d'une declaration ne decide toujours rien : le TYPE (`WORD`, `IP_ADDR`,
+`INTERFACE`), les bornes non numeriques, et le nombre d'arguments.
+**Mesure** : appliquer les declarations a la lettre fait tomber 215 cas
+sur 4077 — `delete flash:jamais.cfg` refuse parce que le type `WORD` est
+declare `/^[a-zA-Z0-9_-]+$/` et n'admet ni `:` ni `.` ; `disconnect all`
+refuse parce que la place est declaree `<1-16>` alors qu'`all` est un
+mot-cle legitime qu'aucune declaration ne mentionne. Restent aussi
+acceptes `ip dhcp excluded-address zorglub` et `ip ssh time-out zorglub`,
+la ou l'aide annonce `A.B.C.D` et `<1-120>`.
+**Pourquoi ce n'est pas ferme** : ce ne sont pas les declarations qui
+sont trop faibles mais leur EXACTITUDE qui n'a jamais ete verifiee — il
+y en a 190, ecrites pour rendre une aide fidele, jamais pour arbitrer.
+Les faire trancher demande de les auditer une par une contre ce que la
+commande accepte vraiment, ce qui est un chantier a soi et non
+l'extension d'un correctif. La plage numerique a ete prise d'abord parce
+que c'est la seule partie d'une declaration qui soit sans ambiguite :
+`<1-120>` ne peut pas vouloir dire autre chose. Depuis le lot « une
+plage annoncee suit l'etat », une declaration PEUT lire la session
+(`rangeIsAdvisory` + `SessionParamRanges`), mais une seule s'en sert —
+le numero de groupe HSRP.
+
+
 ### [socle] deux familles sont migrées sur le commutateur VRP
 Le pont existe des DEUX côtés : `VRP_SWITCH_MODES` décrit la hiérarchie
 des treize vues du commutateur, et `HuaweiSwitchShell` consulte le socle
@@ -281,24 +306,6 @@ consultation que le moteur de politiques ne tient pas. La politique retenue
 EST deja nommee dans la trace (`Allowed by Policy-2`), donc l'option
 n'apporterait qu'un texte fabrique.
 
-### [durcissement] `set reuse-password disable` est refuse
-Le reglage existe sur un vrai FortiGate et interdit de reprendre un ancien
-mot de passe.
-**Mesure** : la commande rend `Command fail` en nommant l'absence
-d'historique.
-**Report** : il faudrait garder les N derniers mots de passe de chaque
-compte — donc un magasin de secrets historises, ce qu'aucun equipement de
-ce depot ne fait aujourd'hui. `min-change-characters` est dans le meme cas
-et pour la meme raison (il compare au mot de passe PRECEDENT).
-
-### [durcissement] la banniere d'apres-connexion ne demande pas d'etre acceptee
-Un vrai FortiOS affiche la banniere `post_admin-disclaimer-text` puis
-demande de l'accepter, et refuse la session sans acceptation.
-**Mesure** : la banniere s'affiche, la session s'ouvre sans rien demander.
-**Report** : c'est un pas d'interaction de plus dans l'enchainement de
-connexion (`buildLoginSteps`), donc un branchement de refus a ecrire ; le
-tutoriel n'emprunte que la banniere d'avant-connexion.
-
 ### [durcissement] `config system replacemsg` ne porte que le groupe `admin`
 Un vrai FortiGate en a une vingtaine (`auth`, `http`, `ftp`, `mail`,
 `spam`, `alertmail`, `sslvpn`, `nac-quar`, `traffic-quota`...).
@@ -321,59 +328,6 @@ qu'est une table vide. Les unifier est juste, mais toucher au rendu de
 `show` demande de verifier ce qu'un vrai FortiGate ecrit pour chaque
 singleton — la mesure n'est pas faite.
 
-### [journal] l'origine d'une modification est toujours `jsconsole`
-L'evenement de configuration porte `user` — le compte reellement
-authentifie, ce qui est ce que l'etape 7 du TP 22 enseigne — mais son champ
-`ui` est constant. Un vrai FortiOS y ecrit d'ou la modification vient :
-`GUI(10.5.63.254)`, `ssh(10.5.63.254)`, `jsconsole`, `fgfm`.
-**Mesure** : modifier un objet depuis la console et depuis une session SSH
-donne la meme ligne.
-**Report** : le shell ne sait pas par quelle porte il est atteint —
-`FortiShell` est construit une fois par equipement et les sessions
-distantes le partagent. Le porter demande la meme notion de session que le
-`terminal monitor` de Cisco a exigee, et vaut mieux fait une fois pour
-toutes les vues que par une devinette ici.
-
-### [journal] le seuil de remplissage du tampon memoire n'alerte pas
-`full-first-warning-threshold`, `full-second-warning-threshold` et
-`full-final-warning-threshold` sont acceptes, rendus, et lus par personne.
-Sur une vraie machine, franchir chacun ecrit un evenement.
-**Mesure** : `set max-size 400` puis produire du trafic — le tampon est
-borne pour de bon (les plus anciennes lignes tombent), mais aucun
-evenement n'annonce le franchissement.
-**Report** : le tampon compte desormais ses octets ET reserve vraiment sa
-RAM (phase 16 : `set max-size` deplace la memoire utilisee et peut a lui
-seul declencher le mode conserve), donc la matiere est la.
-Ce qui manque reste le message : la reference des journaux FortiOS ne
-porte qu'UN identifiant de cette famille, `22023`
-(`LOG_ID_MEM_LOG_FIRST_FULL`, « Memory log first full »), et rien en
-`22024`-`22026` qui corresponde a un deuxieme ou a un dernier
-avertissement — ces deux-la sont un mot de passe expire et deux
-evenements SSH. Donc la correspondance entre les TROIS seuils et les
-evenements emis n'est pas etablie : en ecrire trois inventerait deux
-identifiants, et rattacher `22023` au premier seuil suppose que
-« first full » veuille dire « 75 % » alors qu'il se lit plutot
-« plein pour la premiere fois ». Ce qui est sur et implementable seul :
-un evenement `0100022023` la premiere fois qu'un enregistrement est
-JETE faute de place — `droppedCount` le sait deja.
-
-### [pare-feu] les fragments recus ne sont pas REASSEMBLES
-Le pare-feu fait desormais respecter le MTU de son interface de sortie :
-DF pose et datagramme trop gros donne un ICMP Fragmentation Needed portant le
-MTU du saut suivant, DF absent donne de vrais fragments RFC 791. Ce qui reste
-ouvert est le sens INVERSE : un datagramme qui arrive deja fragmente n'est pas
-recolle. Les fragments suivant le premier ne portent pas d'en-tete de couche 4,
-donc leur cle de flux est batie sur des ports absents et la table de sessions
-ne les rattache a rien.
-**Mesure** : le premier fragment ouvre une session, les suivants en ouvrent
-chacun une autre — `diagnose sys session list` en compte plusieurs pour un seul
-datagramme.
-**Report** : `IPv4Reassembler` existe dans le socle (`core/Ipv4Fragmentation.ts`)
-et `Router.ts` s'en sert, donc c'est un branchement ; mais un pare-feu de
-TRANSIT ne reassemble pas par defaut sur un vrai FortiGate (il ne le fait que
-sous inspection UTM), donc le brancher demande d'abord de decider QUAND, et
-cette condition n'est modelisee nulle part.
-
 ### [ha] les adresses MAC VIRTUELLES du cluster n'existent pas
 FGCP donne a chaque interface du cluster une adresse MAC virtuelle, portee
 par le membre primaire : c'est ce qui rend le basculement invisible aux
@@ -389,29 +343,6 @@ adresse decidee par le cluster et que l'emission comme la reception la
 suivent — c'est un changement du materiel simule, pas du pare-feu, et il
 touche l'apprentissage MAC de tous les commutateurs du projet. L'ARP
 gratuit qui accompagne le basculement en depend egalement.
-
-### [ha] `execute ha manage` n'ouvre pas la CLI du membre distant
-La commande repond `Connecting to <nom> (<serie>)...` et rend la main : on
-ne se retrouve pas sur l'autre machine. L'etape 6 du TP 21 s'en sert pour
-verifier que la configuration a bien ete copiee, ce qui reste faisable
-autrement (le test lit la configuration du secondaire directement).
-**Mesure** : `execute ha manage 1 admin` puis `get system status` repond
-encore pour le membre local.
-**Report** : la matiere existe — `RemoteDeviceSubShell` fait exactement
-cela pour SSH — mais la brancher ici demande que le battement de coeur
-porte une voie de commande, ou que la grappe partage un registre
-d'equipements, ce qui contournerait le fil.
-
-### [ha] `execute ha synchronize start` ne tire rien depuis un secondaire
-La synchronisation de ce moteur est POUSSEE par le primaire dans son
-battement de coeur. La commande emet donc un battement immediat, ce qui
-avance vraiment la synchronisation quand on la tape sur le primaire, et ne
-fait rien de plus sur un secondaire — un vrai FortiGate y declenche une
-traction de la configuration.
-**Mesure** : modifier le primaire, taper la commande sur le secondaire :
-rien ne change tant que le primaire n'a pas emis.
-**Report** : demanderait un echange requete/reponse dans le protocole de
-grappe, la ou il n'y a aujourd'hui qu'une annonce periodique.
 
 ### [sdwan] une interface membre reste referencable par une politique
 Le tutoriel (§20, TP 20 etape 1) enonce la protection reelle : quand une
@@ -586,6 +517,23 @@ chemin ; il manque le serveur d'administration lui-meme et ses pages,
 sujet en soi et non une commande de plus.
 
 ## Serveurs DHCP
+
+### [dhcp] une plage d'exclusion a l'envers est acceptee et n'exclut rien
+`ip dhcp excluded-address 10.0.0.5 10.0.0.2` est accepte : les deux
+bornes SONT des adresses, donc le magasin les retient. `isExcluded`
+compare ensuite `ipNum >= startNum && ipNum <= endNum`, jamais vrai quand
+la borne basse est la plus haute — l'exclusion ne protege donc rien,
+en silence.
+**Mesure** : la plage figure dans `show running-config` et dans
+`getExcludedRanges()`, et une adresse de l'intervalle est distribuee.
+**Report** : ce que fait une VRAIE machine n'est pas atteste depuis ce
+reseau (`cisco.com` est EGRESS_BLOCKED) — elle peut refuser la ligne,
+l'accepter et normaliser les bornes, ou l'accepter telle quelle comme
+ici. Les trois sont plausibles et inventer un refus serait le decor que
+ce depot passe son temps a defaire. Ce qui EST ferme depuis le lot
+« une exclusion malformee ne rentre pas dans le magasin » : une borne
+qui n'est pas une adresse est refusee aux quatre portes.
+
 
 ### [dhcp] `utilization mark high|low` n'est pas configurable
 `show ip dhcp pool` rend la ligne

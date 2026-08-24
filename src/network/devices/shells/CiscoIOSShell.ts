@@ -19,6 +19,7 @@
 
 import type { ExecScope } from './cisco/CiscoExecScope';
 import type { CommandSpec } from '@/cli/CommandTable';
+import type { SocleLegend } from './CiscoShellBase';
 import type { ArgumentSpec } from '@/cli/ArgumentTypes';
 import { dhcpClientFamily, type DhcpClientLeaseView } from '@/cli/commands/dhcp/dhcpClientFamily';
 import type { DebugPair } from '@/cli/commands/debug/debugFamily';
@@ -39,8 +40,9 @@ import { CISCO_IOS_PROMPTS } from './PromptBuilder';
 import { CLIStateMachine, CISCO_IOS_MODES } from './CLIStateMachine';
 import { resolveInterfaceName } from './cisco/CiscoConfigCommands';
 import {
-  buildHsrpInterfaceCommands, registerHsrpShowCommands,
+  buildHsrpInterfaceCommands, registerHsrpShowCommands, hsrpGroupRange,
 } from './cisco/CiscoHsrpCommands';
+import type { SessionParamRanges } from './EquipmentParamResolver';
 import {
   buildVrrpGlbpInterfaceCommands, registerVrrpGlbpShowCommands,
 } from './cisco/CiscoVrrpGlbpCommands';
@@ -58,10 +60,17 @@ import {
   buildVxlanInterfaceCommands, registerVxlanShowCommands,
 } from './cisco/CiscoVxlanCommands';
 import { FhrpRepository } from '../inspection/config/FhrpRepository';
-import { buildTrackConfigCommands, registerTrackShowCommands } from './cisco/CiscoTrackCommands';
+import {
+  buildTrackConfigCommands, registerTrackShowCommands, trackSubmodeSpecs,
+} from './cisco/CiscoTrackCommands';
 import { KeyChainRepository } from '../inspection/config/KeyChainRepository';
+import { specsFromTrieRegistrations } from '@/cli/commands/trieAdapter';
+import {
+  keyChainSubmodeSpecs, keyChainKeySubmodeSpecs,
+} from './cisco/CiscoKeyChainCommands';
 import {
   buildIpSlaConfigCommands, registerIpSlaTypeSubModes,
+  ipSlaSubmodeSpecs, ipSlaTypeSubmodeSpecs, ipSlaHttpRawSpecs,
 } from './cisco/CiscoIpSlaCommands';
 import {
   ipSlaShowSpecs, ipSlaClearSpecs, ipSlaDebugPairs,
@@ -70,7 +79,7 @@ import { describeCiscoArguments } from './cisco/ciscoArgumentHelp';
 import { renderStartupConfig } from './cisco/ciscoConfigSerializer';
 import { PolicyRepository } from '../inspection/config/PolicyRepository';
 import {
-  buildPolicyConfig, registerPolicyShow, policyShowSpecs,
+  buildPolicyConfig, registerPolicyShow, policyShowSpecs, routeMapSubmodeSpecs,
 } from './cisco/CiscoPolicyCommands';
 
 // Extracted command modules
@@ -128,19 +137,26 @@ import {
   buildIKEv2GlobalCommands, buildIKEv2ProposalCommands,
   buildIKEv2PolicyCommands, buildIKEv2KeyringCommands,
   buildIKEv2KeyringPeerCommands, buildIKEv2ProfileCommands,
+  ikev2ProposalSpecs, ikev2PolicySpecs, ikev2KeyringSpecs,
+  ikev2KeyringPeerSpecs, ikev2ProfileSpecs,
 } from './cisco/CiscoIPSecIKEv2Commands';
 import {
-  buildGdoiGlobalCommands, buildGdoiGroupCommands,
+  buildGdoiGlobalCommands, buildGdoiGroupCommands, gdoiGroupSpecs,
 } from './cisco/CiscoGdoiCommands';
 import { registerIPSecShowCommands, cryptoShowSpecs } from './cisco/CiscoIPSecShowCommands';
 import {
   buildSecurityConfigCommands, buildSecurityInterfaceCommands,
   buildSecuritySubmodeCommands, buildSecurityShowCommands,
+  classMapSubmodeSpecs, policyMapSubmodeSpecs, policyClassSubmodeSpecs,
+  controlPlaneSubmodeSpecs, zoneSubmodeSpecs, zonePairSubmodeSpecs,
+  timeRangeSubmodeSpecs, trustpointSubmodeSpecs,
+  type CiscoSecurityShellContext,
 } from './cisco/CiscoSecurityCommands';
 import {
   buildEemNetflowArchiveConfigCommands, buildEemAppletSubmode,
   buildFlowExporterSubmode, buildFlowRecordSubmode, buildFlowMonitorSubmode,
   buildArchiveSubmode, buildArchiveLogSubmode,
+  eemAppletSpecs, flowExporterSpecs, flowRecordSpecs, flowMonitorSpecs,
   buildEemNetflowArchiveInterfaceCommands, buildEemNetflowArchiveShowCommands,
 } from './cisco/CiscoEemNetflowArchiveCommands';
 import {
@@ -154,6 +170,17 @@ const HORS_PLATEFORME_ISR: ReadonlySet<string> = new Set(['vxlan', 'nve', 'mls']
 
 import { routerOnlyDebugPairs, type RouterDebugHost } from '@/cli/commands/debug/routerDebugPairs';
 import { getGlobalConfig } from '../router/config/CiscoGlobalConfig';
+
+
+const VRF_ARGUMENTS:
+Readonly<Record<string, ArgumentSpec | readonly ArgumentSpec[] | null>> = {
+  rd: { name: 'distingueur', type: 'WORD', literal: 'ASN:nn or IP-address:nn',
+    description: 'Route distinguisher of this VRF' },
+  'route-target': { name: 'cible', type: 'REST',
+    description: 'import, export or both, then ASN:nn' },
+  description: { name: 'texte', type: 'REST', literal: 'LINE',
+    description: 'Description of this VRF' },
+};
 
 export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShell, CiscoShellContext, CiscoACLShellContext {
   versionText(): string {
@@ -252,6 +279,42 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
     ];
   }
 
+  protected override identitySubmodeContext(): CiscoSecurityShellContext {
+    return this as unknown as CiscoSecurityShellContext;
+  }
+
+
+  private registerVrfSubmodeOn(trie: CommandTrie): void {
+    trie.registerGreedy('rd', 'Route distinguisher', (args) => {
+      const rd = args.join(' ').trim();
+      const m = /^(\d+):(\d+)$/.exec(rd);
+      if (!m) return "% Invalid input detected at '^' marker.";
+      const a = Number(m[1]);
+      const b = Number(m[2]);
+      if (!Number.isSafeInteger(a) || !Number.isSafeInteger(b) || a > 4294967295 || b > 4294967295) {
+        return "% Invalid input detected at '^' marker.";
+      }
+      const r = this.d() as unknown as { _vrfs?: Map<string, { name: string; rd?: string }> };
+      if (this.selectedVRF != null) {
+        const v = r._vrfs?.get(this.selectedVRF);
+        if (v) v.rd = rd;
+      }
+      return '';
+    });
+    trie.registerGreedy('route-target', 'Route target', () => '');
+    trie.registerGreedy('description', 'Description', () => '');
+  }
+
+  private vrfSubmodeSpecs(): CommandSpec[] {
+    return specsFromTrieRegistrations(
+      (collector) => this.registerVrfSubmodeOn(collector as unknown as CommandTrie),
+      {
+        modes: ['config-vrf'], minPrivilege: 15,
+        argumentFor: (path) => VRF_ARGUMENTS[path],
+      },
+    );
+  }
+
   protected override socleSpecs(): readonly CommandSpec[] {
     return [
       ...super.socleSpecs(),
@@ -266,6 +329,32 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
       ...transformSetSpecs(this),
       ...cryptoMapEntrySpecs(this),
       ...ipsecProfileSpecs(this),
+      ...ikev2ProposalSpecs(this),
+      ...ikev2PolicySpecs(this),
+      ...ikev2KeyringSpecs(this),
+      ...ikev2KeyringPeerSpecs(this),
+      ...ikev2ProfileSpecs(this),
+      ...gdoiGroupSpecs(this),
+      ...eemAppletSpecs(this),
+      ...flowExporterSpecs(this),
+      ...flowRecordSpecs(this),
+      ...flowMonitorSpecs(this),
+      ...classMapSubmodeSpecs(this),
+      ...policyMapSubmodeSpecs(this),
+      ...policyClassSubmodeSpecs(this),
+      ...controlPlaneSubmodeSpecs(this),
+      ...zoneSubmodeSpecs(this),
+      ...zonePairSubmodeSpecs(this),
+      ...timeRangeSubmodeSpecs(this),
+      ...trustpointSubmodeSpecs(this),
+      ...ipSlaSubmodeSpecs(this),
+      ...ipSlaTypeSubmodeSpecs(this),
+      ...ipSlaHttpRawSpecs(this),
+      ...this.vrfSubmodeSpecs(),
+      ...trackSubmodeSpecs(this),
+      ...keyChainSubmodeSpecs(this),
+      ...keyChainKeySubmodeSpecs(this),
+      ...routeMapSubmodeSpecs(this, this.policy),
       ...dhcpPoolClassSpecs(this),
       ...dhcpClassSpecs(this),
       ...ipv6DhcpPoolSpecs(this),
@@ -414,7 +503,7 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
     ];
   }
 
-  protected override socleLegends(): ReadonlyArray<[readonly string[], string]> {
+  protected override socleLegends(): SocleLegend[] {
     return [
       ...super.socleLegends(),
       [['crypto'], 'Encryption module'],
@@ -422,11 +511,37 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
       [['crypto', 'ipsec', 'security-association'], 'Security association parameters'],
       [['crypto', 'ipsec', 'security-association', 'lifetime'], 'Security association lifetime'],
       [['crypto', 'ipsec', 'security-association', 'replay'], 'Anti-replay checking'],
-      [['set'], 'Set values for encryption/decryption'],
+      [['set'], 'Set values for encryption/decryption',
+        ['config-crypto-map', 'config-ipsec-profile']],
       [['set', 'security-association'], 'Security association parameters'],
       [['set', 'security-association', 'lifetime'], 'Security association lifetime'],
-      [['match'], 'Match values'],
-      [['match', 'identity'], 'Match peer identity'],
+      [['match'], 'Match values',
+        ['config-crypto-map', 'config-isakmp-profile', 'config-ikev2-profile']],
+      [['match'], 'Field the record matches on', ['config-flow-record']],
+      [['match', 'identity'], 'Match peer identity',
+        ['config-isakmp-profile', 'config-ikev2-profile']],
+      [['event'], 'Event that triggers the applet', ['config-applet']],
+      [['notify'], 'Notification sent when the applet runs', ['config-applet']],
+      [['transport'], 'Transport the exporter uses', ['config-flow-exporter']],
+      [['template'], 'Template resend policy', ['config-flow-exporter']],
+      [['template', 'data'], 'Data template', ['config-flow-exporter']],
+      [['cache'], 'Flow cache parameters', ['config-flow-monitor']],
+      [['cache', 'timeout'], 'When a flow leaves the cache', ['config-flow-monitor']],
+      [['logging'], 'Archive log parameters', ['config-archive-log']],
+      [['notify'], 'Notification the archive log sends', ['config-archive-log']],
+      [['notify', 'syslog'], 'Syslog notification', ['config-applet', 'config-archive-log']],
+      [['log'], 'Configuration change logging', ['config-archive']],
+      [['match', 'identity', 'remote'], 'Match the remote identity',
+        ['config-ikev2-profile']],
+      [['authentication'], 'Authentication method', ['config-ikev2-profile']],
+      [['identity'], 'Local identity', ['config-ikev2-profile']],
+      [['keyring'], 'Associate a keyring with the profile',
+        ['config-ikev2-profile']],
+      [['identity'], 'Identity of the GDOI group', ['config-gdoi-group']],
+      [['address'], 'Local address of the key server', ['config-gdoi-group']],
+      [['server'], 'Key server role of this router', ['config-gdoi-group']],
+      [['server', 'address'], 'Register with a remote key server',
+        ['config-gdoi-group']],
       [['ipv6'], 'IPv6 interface subcommands'],
       [['ipv6', 'nd'], 'IPv6 neighbor discovery'],
       [['ipv6', 'ospf'], 'OSPFv3 interface commands'],
@@ -1195,6 +1310,10 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
   // base a appris qu'`exit` depuis le mode privilegie ferme la session.
   // Le switch fermait, le routeur ne faisait rien.
 
+  protected override sessionParamRanges(): SessionParamRanges | null {
+    return hsrpGroupRange(this, this.fhrp);
+  }
+
   protected getActiveTrie(): CommandTrie {
     switch (this.mode) {
       case 'user': return this.userTrie;
@@ -1447,24 +1566,7 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
     buildConfigRouterOSPFCommands(this.configRouterOspfTrie, this);
     buildConfigRouterOSPFv3Commands(this.configRouterOspfv3Trie, this);
 
-    this.configVrfTrie.registerGreedy('rd', 'Route distinguisher', (args) => {
-      const rd = args.join(' ').trim();
-      const m = /^(\d+):(\d+)$/.exec(rd);
-      if (!m) return "% Invalid input detected at '^' marker.";
-      const a = Number(m[1]);
-      const b = Number(m[2]);
-      if (!Number.isSafeInteger(a) || !Number.isSafeInteger(b) || a > 4294967295 || b > 4294967295) {
-        return "% Invalid input detected at '^' marker.";
-      }
-      const r = this.d() as unknown as { _vrfs?: Map<string, { name: string; rd?: string }> };
-      if (this.selectedVRF != null) {
-        const v = r._vrfs?.get(this.selectedVRF);
-        if (v) v.rd = rd;
-      }
-      return '';
-    });
-    this.configVrfTrie.registerGreedy('route-target', 'Route target', () => '');
-    this.configVrfTrie.registerGreedy('description', 'Description', () => '');
+    this.registerVrfSubmodeOn(this.configVrfTrie);
     // IPSec
     buildIPSecGlobalCommands(this.configTrie, this);
     buildIPSecIfCommands(this.configIfTrie, this);

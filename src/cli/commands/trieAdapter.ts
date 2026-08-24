@@ -7,7 +7,15 @@ export type TrieAction = (args: string[], raw?: string) => string;
 export interface AdapterKeyword {
   readonly keyword: string;
   readonly description: string;
-  readonly argument?: ArgumentSpec | null;
+  /**
+   * Ce que le mot-cle prend apres lui : une place, PLUSIEURS, ou aucune.
+   *
+   * Une seule ne suffit pas : `address ipv4 <adresse> auth-port <port>
+   * acct-port <port>` en pose trois, et n'en declarer qu'une laissait
+   * la suite de la ligne sans destination — la commande la plus tapee
+   * du sous-mode RADIUS etait refusee au caret.
+   */
+  readonly argument?: ArgumentSpec | readonly ArgumentSpec[] | null;
   /**
    * Le mot-cle vient APRES les places declarees, pas avant.
    *
@@ -114,11 +122,13 @@ export interface SpecFromTrieOptions {
 }
 
 function argumentsFille(
-  sub: AdapterKeyword, place: ArgumentSpec | null,
+  sub: AdapterKeyword, places: readonly ArgumentSpec[],
   args: Record<string, string>,
 ): string[] {
-  const valeur = place === null ? '' : String(args[place.name] ?? '').trim();
-  return [sub.keyword, ...(valeur.length === 0 ? [] : valeur.split(/\s+/))];
+  return [sub.keyword, ...places.flatMap(place => {
+    const valeur = String(args[place.name] ?? '').trim();
+    return valeur.length === 0 ? [] : valeur.split(/\s+/);
+  })];
 }
 
 export function specsFromTrieRegistrations(
@@ -222,16 +232,16 @@ export function specsFromTrieRegistrations(
     }
 
     for (const sub of entry.keywords ?? options.keywordsFor?.(entry.path) ?? []) {
-      const placeFille: ArgumentSpec | null = sub.argument === undefined
-        ? { name: restName, type: 'REST', optional: true,
-          description: sub.description, values: [] }
-        : sub.argument;
+      const placesFille: readonly ArgumentSpec[] = sub.argument === undefined
+        ? [{ name: restName, type: 'REST', optional: true,
+          description: sub.description, values: [] }]
+        : sub.argument === null ? []
+          : Array.isArray(sub.argument) ? sub.argument
+            : [sub.argument as ArgumentSpec];
       const amont = sub.afterArguments ? [...words, ...places] : [...words];
       specs.push({
         id: [options.modes[0], ...amont, sub.keyword].join('-'),
-        path: placeFille === null
-          ? [...amont, sub.keyword]
-          : [...amont, sub.keyword, placeFille],
+        path: [...amont, sub.keyword, ...placesFille],
         description: sub.description,
         modes: options.modes,
         minPrivilege: options.minPrivilege,
@@ -239,21 +249,21 @@ export function specsFromTrieRegistrations(
         ...(contexte ? { reachableWhen: contexte } : {}),
         run: ((_session: unknown, args: Record<string, string>) => {
           const argv = [...(sub.afterArguments ? valeursTapees(args) : []),
-            ...argumentsFille(sub, placeFille, args)];
+            ...argumentsFille(sub, placesFille, args)];
           return entry.action(argv, [...words, ...argv].join(' '));
         }) as CommandSpec['run'],
         ...(negations.get(entry.path) === undefined ? {} : {
           undo: ((_session: unknown, args: Record<string, string>) => {
             const propre = negations.get(entry.path)!;
             const argv = [...(sub.afterArguments ? valeursTapees(args) : []),
-              ...argumentsFille(sub, placeFille, args)];
+              ...argumentsFille(sub, placesFille, args)];
             return propre.action(argv, [propre.path, ...argv].join(' '));
           }) as CommandSpec['undo'],
         }),
         ...(negation === undefined
           || options.undoFor?.(entry.path) === false ? {} : {
           undo: ((_session: unknown, args: Record<string, string>) => {
-            const argv = [...words, ...argumentsFille(sub, placeFille, args)];
+            const argv = [...words, ...argumentsFille(sub, placesFille, args)];
             return negation.action(argv, [negation.path, ...argv].join(' '));
           }) as CommandSpec['undo'],
         }),

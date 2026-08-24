@@ -18,6 +18,7 @@ import {
   ICMP_TTL_EXPIRED_IN_TRANSIT, ICMP_UNREACH_FRAG_NEEDED,
 } from '../../core/IcmpErrors';
 import { fragmentIPv4, IPV4_FLAG_DF } from '../../core/Ipv4Fragmentation';
+import { FragmentReassembly } from './l3/FragmentReassembly';
 import { SystemClock } from '../../core/SystemClock';
 import { SystemLoad, type MemoryWorkload } from './health/SystemLoad';
 import { conserveLogDraft } from './health/ConserveEvent';
@@ -81,6 +82,7 @@ import { AccessMatrix } from './authz/AccessMatrix';
 import { AuthPortal, type RemoteAuthOutcome } from './auth/AuthPortal';
 import type { FirewallPortals, PortalPorts } from './auth/FirewallPortals';
 import { remoteAuthenticate, type AdminAccountDraft } from './identity/AdminAccounts';
+import type { PasswordHistory } from './identity/PasswordHistory';
 import type { RadiusClientAgent } from '../../radius/RadiusClientAgent';
 import type { TacacsClientAgent } from '../../tacacs/TacacsClientAgent';
 import type { IdentityTable } from './identity/IdentityTable';
@@ -170,6 +172,7 @@ export class Firewall extends Equipment {
   private readonly switchGroups = new SwitchGroupTable();
   private readonly vdomLinks: VdomLinkTable;
   private readonly bridges = new Map<string, BridgeFdb>();
+  private readonly fragments = new FragmentReassembly();
   private readonly revisions: RevisionStore;
   private revisionOnLogout = false;
   private configSnapshot?: () => string;
@@ -401,7 +404,7 @@ export class Firewall extends Equipment {
         .some(r => (r.authUsers?.length ?? 0) > 0 || (r.authGroups?.length ?? 0) > 0),
       portalUsesHttps: () => this.authPortalSecureHttp,
       managementPorts: () => this.management.managementPorts(),
-      createManagementCli: (user) => this.createManagementCli(user),
+      createManagementCli: (user, origin) => this.createManagementCli(user, origin),
       authenticateAdmin: (user, password, source) =>
         this.management.login(user, password, source),
       knownAdmin: (user) => this.access.getAdmin(user) !== undefined,
@@ -413,6 +416,7 @@ export class Firewall extends Equipment {
       onManagementAuthFailure: (user) => {
         this.management.noteAuthFailure(user);
       },
+      loginBannerLines: (stage) => this.loginBanners.lines(stage),
     });
     this.portals = mgmt.portals;
     this.portal = mgmt.portals.auth;
@@ -828,6 +832,8 @@ export class Firewall extends Equipment {
 
   applyAdminAccount(admin: AdminAccountDraft): void { this.management.applyAdmin(admin); }
 
+  getPasswordHistory(): PasswordHistory { return this.management.passwordHistory(); }
+
   adminNames(): readonly string[] { return this.access.adminNames(); }
 
   getAdminAccount(name: string) { return this.access.getAdmin(name); }
@@ -941,7 +947,9 @@ export class Firewall extends Equipment {
     this.management.setLockout(threshold, durationSec);
   }
 
-  protected createManagementCli(_user: string): ManagementCli | null { return null; }
+  protected createManagementCli(
+    _user: string, _origin: string,
+  ): ManagementCli | null { return null; }
 
   protected managementRunningConfig(): string { return ''; }
 
@@ -1149,6 +1157,8 @@ export class Firewall extends Equipment {
 
   getLdbMonitors(): LdbMonitorTable { return this.ldbMonitors; }
 
+  getFragmentReassembly(): FragmentReassembly { return this.fragments; }
+
   getRealServerPool(name: string): RealServerPool | undefined {
     return this.serverPools.get(name);
   }
@@ -1248,6 +1258,10 @@ export class Firewall extends Equipment {
     portName: string, packet: IPv4Packet, frame?: EthernetFrame,
   ): void {
     if (!packet || packet.type !== 'ipv4') return;
+
+    const recolle = this.fragments.accept(packet, this.services.now());
+    if (recolle === null) return;
+    packet = recolle;
 
     const vdom = this.vdoms.contextOfInterface(portName);
     const decision = classifyIpv4(this.ingressHost(), portName, vdom, packet, frame);

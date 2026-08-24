@@ -64,6 +64,36 @@ export interface HaHeartbeat {
   readonly sessions: readonly HaSyncedSession[];
 }
 
+export type HaCommandKind = 'sync-pull' | 'authenticate' | 'cli';
+
+export interface HaCommandRequest {
+  readonly type: 'fgcp-command-request';
+  readonly groupId: number;
+  readonly groupName: string;
+  readonly passwordDigest: string;
+  readonly fromSerial: string;
+  readonly toSerial: string;
+  readonly exchangeId: number;
+  readonly kind: HaCommandKind;
+  readonly admin: string;
+  readonly secret: string;
+  readonly token: string;
+  readonly line: string;
+}
+
+export interface HaCommandReply {
+  readonly type: 'fgcp-command-reply';
+  readonly groupId: number;
+  readonly groupName: string;
+  readonly passwordDigest: string;
+  readonly fromSerial: string;
+  readonly toSerial: string;
+  readonly exchangeId: number;
+  readonly accepted: boolean;
+  readonly token: string;
+  readonly output: string;
+}
+
 export interface HaPeer {
   readonly serial: string;
   hostname: string;

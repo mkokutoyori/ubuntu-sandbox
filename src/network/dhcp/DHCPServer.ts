@@ -20,6 +20,7 @@
  */
 
 import { IPAddress } from '../core/types';
+import { isValidIPv4 } from '../core/ip';
 import {
   DHCPPoolConfig, DHCPExcludedRange, DHCPBinding, DHCPServerStats,
   DHCPConflict, DHCPDebugFlags, DHCPRelayConfig, DHCPPendingOffer,
@@ -380,8 +381,10 @@ export class DHCPServer implements IProtocolEngine {
 
   // ─── Excluded Addresses ───────────────────────────────────────────
 
-  addExcludedRange(start: string, end: string): void {
+  addExcludedRange(start: string, end: string): boolean {
+    if (!isValidIPv4(start) || !isValidIPv4(end)) return false;
     this.excludedRanges.push({ start, end });
+    return true;
   }
 
   removeExcludedRange(start: string, end: string): boolean {

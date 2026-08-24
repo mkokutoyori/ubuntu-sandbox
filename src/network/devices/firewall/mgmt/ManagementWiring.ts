@@ -11,7 +11,10 @@ import { buildFirewallHa, type FirewallHa } from '../ha/FirewallHa';
 import { buildFirewallNtp, type FirewallNtp } from './FirewallNtp';
 import { CaptivePortalRedirect } from '../auth/CaptivePortalRedirect';
 import { FirewallCliServer, type ManagementCli } from './FirewallCliServer';
+import type { LoginBannerStage } from './LoginBanners';
 import type { ManagementPorts } from './ManagementAccess';
+
+export const HA_COMMAND_SOURCE = 'ha-cluster';
 
 export interface ManagementHost {
   readonly deviceId: string;
@@ -36,7 +39,7 @@ export interface ManagementHost {
   authRequiredByPolicy(): boolean;
   portalUsesHttps(): boolean;
   managementPorts(): ManagementPorts;
-  createManagementCli(user: string): ManagementCli | null;
+  createManagementCli(user: string, origin: string): ManagementCli | null;
   authenticateAdmin(user: string, password: string, source: string): boolean;
   knownAdmin(user: string): boolean;
   refuseManagementSource(source: string): boolean;
@@ -45,6 +48,7 @@ export interface ManagementHost {
   onManagementLogin(user: string, source: string): void;
   onAdminLogout(user: string): void;
   onManagementAuthFailure(user: string, source: string): void;
+  loginBannerLines(stage: LoginBannerStage): readonly string[];
 }
 
 export interface ManagementServices {
@@ -72,6 +76,10 @@ export function buildManagementServices(host: ManagementHost): ManagementService
     sendFrame: (iface, frame) => { host.sendFrame(iface, frame); },
     port: (iface) => host.port(iface),
     sessions: () => host.sessions(),
+    authenticateAdmin: (admin, secret) =>
+      host.authenticateAdmin(admin, secret, HA_COMMAND_SOURCE),
+    runManagementCommand: (admin, line) =>
+      host.createManagementCli(admin, HA_COMMAND_SOURCE)?.execute(line) ?? '',
   });
 
   const ntp = buildFirewallNtp({
@@ -98,7 +106,7 @@ export function buildManagementServices(host: ManagementHost): ManagementService
     tcp: () => host.tcp(),
     hostname: () => host.hostname(),
     ports: () => host.managementPorts(),
-    createCli: (user) => host.createManagementCli(user),
+    createCli: (user, origin) => host.createManagementCli(user, origin),
     authenticate: (user, password, source) =>
       host.authenticateAdmin(user, password, source),
     knownAdmin: (user) => host.knownAdmin(user),
@@ -108,6 +116,7 @@ export function buildManagementServices(host: ManagementHost): ManagementService
     onLogin: (user, source) => { host.onManagementLogin(user, source); },
     onLogout: (user) => { host.onAdminLogout(user); },
     onAuthFailure: (user, source) => { host.onManagementAuthFailure(user, source); },
+    bannerLines: (stage) => host.loginBannerLines(stage),
   });
 
   return Object.freeze({ portals, ha, ntp, captivePortal, cli });

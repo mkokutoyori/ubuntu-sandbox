@@ -1,4 +1,8 @@
 import type { FortiSchemaEnvironment } from './types';
+import {
+  charactersAbsentFrom, DEFAULT_PASSWORD_HISTORY_THRESHOLD,
+  type PasswordHistory,
+} from '../../../identity/PasswordHistory';
 
 export type PasswordPolicyScope = 'admin-password' | 'ipsec-preshared-key';
 
@@ -43,4 +47,34 @@ export function passwordPolicyRefusal(
     }
   }
   return null;
+}
+
+export function passwordHistoryThreshold(env: FortiSchemaEnvironment): number {
+  const declared = Number.parseInt(
+    env.setting('system global', 'user-history-password-threshold')[0] ?? '', 10);
+  return Number.isNaN(declared) ? DEFAULT_PASSWORD_HISTORY_THRESHOLD : declared;
+}
+
+export function passwordHistoryRefusal(
+  name: string, value: string, env: FortiSchemaEnvironment,
+  history: PasswordHistory,
+): string | null {
+  if (reading(env, 'status')[0] !== 'enable') return null;
+
+  const appliesTo = reading(env, 'apply-to');
+  if (appliesTo.length > 0 && !appliesTo.includes('admin-password')) return null;
+
+  const wanted = threshold(env, 'min-change-characters');
+  const previous = history.previous(name);
+  if (wanted > 0 && previous !== undefined
+    && charactersAbsentFrom(previous, value) < wanted) {
+    return `the password policy asks for at least ${wanted} character`
+      + `${wanted > 1 ? 's' : ''} that the previous password does not contain.`;
+  }
+
+  if (reading(env, 'reuse-password')[0] !== 'disable') return null;
+  const kept = passwordHistoryThreshold(env);
+  const reusable = Math.min(threshold(env, 'reuse-password-limit'), kept);
+  if (!history.wasUsed(name, value, kept, reusable)) return null;
+  return 'the password policy refuses a password that has already been used.';
 }

@@ -94,13 +94,12 @@ function describeArgumentTypes(tries: ArgumentHelpTries): void {
   for (const cmd of ['ping', 'traceroute']) {
     tries.privileged.describeArgs(cmd, [
       { name: 'destination', type: 'WORD', description: 'Destination address or hostname',
-        literal: 'A.B.C.D', optional: true },
+        optional: true },
     ]);
   }
   for (const cmd of ['ssh', 'telnet']) {
     tries.privileged.describeArgs(cmd, [
-      { name: 'host', type: 'WORD', description: 'IP address or hostname of a remote system',
-        literal: 'A.B.C.D' },
+      { name: 'host', type: 'WORD', description: 'IP address or hostname of a remote system' },
     ]);
   }
   for (const [cmd, description] of [
@@ -671,7 +670,7 @@ export function describeCiscoArguments(tries: ArgumentHelpTries): void {
     INT('seconds', [1, 65535], 'Seconds'),
   ]);
   tries.configIf.describeArgs('standby', [
-    INT('group', [0, 255], 'Group number'),
+    { ...INT('group', [0, 255], 'Group number'), rangeIsAdvisory: true },
   ]);
   tries.configIf.describeArgs('vrrp', [
     INT('group', [1, 255], 'Group number'),

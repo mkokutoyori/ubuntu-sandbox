@@ -14,12 +14,23 @@
 
 import { CiscoFileSystem } from './cisco/CiscoFileSystem';
 import { CommandTable } from '@/cli/CommandTable';
-import { specsFromTrieRegistrations } from '@/cli/commands/trieAdapter';
+import {
+  specsFromTrieRegistrations, type AdapterKeyword,
+} from '@/cli/commands/trieAdapter';
 import { newSession, type CliSession } from '@/cli/CliSession';
 import { parseCommand, uniqueChild } from '@/cli/CommandParser';
 import { argumentAccepts } from '@/cli/ArgumentTypes';
 import type { ArgumentSpec } from '@/cli/ArgumentTypes';
 import type { CommandSpec, TreeNode } from '@/cli/CommandTable';
+
+/**
+ * Un libelle de noeud, et les modes ou il vaut.
+ *
+ * Sans les modes, un chemin n'a qu'un seul nom pour toute la CLI :
+ * `authentication` porterait les mots de la politique ISAKMP jusque dans
+ * un profil IKEv2, ou la commande n'est pas la meme.
+ */
+export type SocleLegend = readonly [readonly string[], string, (readonly string[])?];
 import { showIpDhcpSpecs, type DhcpViewServer } from '@/cli/commands/show/showIpDhcp';
 import { showConfigViewSpecs } from '@/cli/commands/show/showSlice';
 import { debugFamily, type DebugPair } from '@/cli/commands/debug/debugFamily';
@@ -35,7 +46,7 @@ import { projectLoggingOntoSyslogAgent } from '@/network/syslog/loggingProjectio
 import { projectSnmpServiceOntoAgent } from '@/network/snmp/snmpProjection';
 import { renderStartupConfig } from './cisco/ciscoConfigSerializer';
 import { CommandTrie } from './CommandTrie';
-import { EquipmentParamResolver } from './EquipmentParamResolver';
+import { EquipmentParamResolver, type SessionParamRanges } from './EquipmentParamResolver';
 import { getDefaultScheduler, type IScheduler, type TimerHandle } from '@/events/Scheduler';
 import { runSshClient } from '../linux/network/LinuxSshClient';
 import { findHostByAddress } from '../linux/network/HostLookup';
@@ -109,7 +120,12 @@ import { LoggingConfig, disabledTimestampSpec, bareTimestampSpec, deviceClockSou
 import type { TimestampSpec } from '../inspection/config/LoggingConfig';
 import { isPathReachable } from '../linux/network/HostLookup';
 import { OutgoingSessionRegistry, renderSessions } from './OutgoingSessionRegistry';
-import { registerArchiveExecCommands, archiveOnWriteMemory } from './cisco/CiscoArchiveCommands';
+import { registerArchiveExecCommands, archiveOnWriteMemory,
+  archiveSubmodeSpecs, archiveLogSubmodeSpecs } from './cisco/CiscoArchiveCommands';
+import {
+  radiusServerSubmodeSpecs, tacacsServerSubmodeSpecs, aaaGroupSubmodeSpecs,
+  type CiscoSecurityShellContext,
+} from './cisco/CiscoSecurityCommands';
 import { registerLineExecCommands } from './cisco/CiscoLineCommands';
 import { setupInteractionPlan } from './cisco/CiscoSetupDialog';
 import {
@@ -356,6 +372,9 @@ function enumeration(
 const MODE_DU_TRIE: Readonly<Record<string, readonly string[]>> = {
   userTrie: ['user', 'privileged'],
   privilegedTrie: ['user', 'privileged'],
+  configPmapClassTrie: ['config-pmap-c'],
+  configIpSlaTrie: ['config-ipsla'],
+  configIpSlaHttpRawTrie: ['config-ipsla-http-raw'],
 };
 
 /**
@@ -390,6 +409,55 @@ const LINE_KEYWORD_SUITES: ReadonlyArray<readonly [string, ReadonlyArray<readonl
   ]],
   ['authorization', [['commands', 'Authorize commands'], ['exec', 'Authorize EXEC sessions']]],
   ['accounting', [['commands', 'Account for commands'], ['connection', 'Account for connections'], ['exec', 'Account for EXEC sessions']]],
+];
+
+
+/**
+ * Les places du sous-mode `config-view`.
+ *
+ * `commands` en prend TROIS avant la commande elle-meme — le mode, le
+ * sens, puis un `all` facultatif — et les annoncer comme un mot muet
+ * laissait l'operateur deviner l'ordre d'une commande dont l'ordre EST
+ * la difficulte.
+ */
+const VIEW_SUBMODE_ARGUMENTS:
+Readonly<Record<string, ArgumentSpec | readonly ArgumentSpec[] | null>> = {
+  secret: {
+    name: 'secret', type: 'REST', literal: 'LINE',
+    description: 'The password itself, or a digest already computed',
+  },
+  view: { name: 'membre', type: 'WORD', description: 'Name of the member view' },
+  commands: [{
+    name: 'mode', type: 'ENUM', description: 'Mode the commands belong to',
+    values: [
+      { keyword: 'exec', description: 'EXEC mode commands' },
+      { keyword: 'configure', description: 'Global configuration commands' },
+      { keyword: 'interface', description: 'Interface configuration commands' },
+      { keyword: 'line', description: 'Line configuration commands' },
+    ],
+  }],
+};
+
+const VIEW_COMMANDS_KEYWORDS: ReadonlyArray<AdapterKeyword> = [
+  {
+    keyword: 'include', description: 'Add a command to the view',
+    afterArguments: true,
+    argument: { name: 'commande', type: 'REST', literal: 'LINE',
+      description: 'The command, optionally preceded by `all`' },
+  },
+  {
+    keyword: 'include-exclusive',
+    description: 'Add a command to the view and reserve it for this view',
+    afterArguments: true,
+    argument: { name: 'commande', type: 'REST', literal: 'LINE',
+      description: 'The command, optionally preceded by `all`' },
+  },
+  {
+    keyword: 'exclude', description: 'Remove a command from the view',
+    afterArguments: true,
+    argument: { name: 'commande', type: 'REST', literal: 'LINE',
+      description: 'The command, optionally preceded by `all`' },
+  },
 ];
 
 export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
@@ -990,7 +1058,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     // reconnait plus : sans ce repli, `erase startup-config` perdait son
     // dialogue `[confirm]` le jour de sa migration.
     const migre = m.status === 'ok' && m.node
-      ? null : this.cheminCanoniqueDuSocle(`${line} `);
+      ? null : this.cheminCanoniqueDuSocle(`${line} `, mode);
     if (migre === null && (m.status !== 'ok' || !m.node)) return null;
     const path = (migre ?? m.matchedKeywords).join(' ').toLowerCase();
 
@@ -4716,6 +4784,34 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       ...this.writeEraseSpecs(),
       ...this.serviceSpecs(),
       ...this.showSocleSpecs(),
+      ...this.archiveSubmodeSpecs(),
+      ...this.identitySubmodeSpecs(),
+      ...this.viewSubmodeSpecs(),
+    ];
+  }
+
+  protected identitySubmodeContext(): CiscoSecurityShellContext | null {
+    return null;
+  }
+
+  protected viewSubmodeSpecs(): readonly CommandSpec[] {
+    return specsFromTrieRegistrations(
+      (collector) => this.registerViewSubmodeOn(collector as unknown as CommandTrie),
+      {
+        modes: ['config-view'], minPrivilege: 15,
+        argumentFor: (path) => VIEW_SUBMODE_ARGUMENTS[path],
+        keywordsFor: (path) => path === 'commands' ? VIEW_COMMANDS_KEYWORDS : undefined,
+      },
+    );
+  }
+
+  protected identitySubmodeSpecs(): readonly CommandSpec[] {
+    const ctx = this.identitySubmodeContext();
+    if (!ctx) return [];
+    return [
+      ...radiusServerSubmodeSpecs(ctx),
+      ...tacacsServerSubmodeSpecs(ctx),
+      ...aaaGroupSubmodeSpecs(ctx),
     ];
   }
 
@@ -4794,7 +4890,15 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
    * `ipv6 ?` annoncait « Set OSPFv3 cost » pour le mot `ipv6`, c'est-a-dire
    * la description d'UNE des branches pour le nom de TOUTES.
    */
-  protected socleLegends(): ReadonlyArray<[readonly string[], string]> {
+  protected archiveSubmodeSpecs(): readonly CommandSpec[] {
+    const ar = () => this.archiveService();
+    return [
+      ...archiveSubmodeSpecs(ar, () => { this.mode = 'config-archive-log'; }),
+      ...archiveLogSubmodeSpecs(ar),
+    ];
+  }
+
+  protected socleLegends(): SocleLegend[] {
     return [
       [['show', 'ip', 'http'], 'HTTP information'],
       [['client-identifier'], 'Manual binding client identifier'],
@@ -4808,8 +4912,8 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     if (!this.socleInstance) {
       this.socleInstance = new CommandTable();
       for (const spec of this.socleSpecs()) this.socleInstance.declare(spec);
-      for (const [path, legend] of this.socleLegends()) {
-        this.socleInstance.describePath(path, legend);
+      for (const [path, legend, modes] of this.socleLegends()) {
+        this.socleInstance.describePath(path, legend, modes);
       }
     }
     return this.socleInstance;
@@ -4843,17 +4947,37 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     if (!table) return;
 
     for (const [champ, valeur] of Object.entries(this as unknown as Record<string, unknown>)) {
-      if (!(valeur instanceof CommandTrie)) continue;
-      const modes = modesDuTrie(champ);
-      const paths: string[] = [];
-      for (const spec of table.specs()) {
-        if (!modes.some(mode => spec.modes.includes(mode))) continue;
-        const texte = CiscoShellBase.keywordPathOf(spec).join(' ');
-        paths.push(texte);
-        if (spec.undo) paths.push(`no ${texte}`);
+      if (valeur instanceof CommandTrie) {
+        this.pruneUnTrie(table, valeur, modesDuTrie(champ));
+        continue;
       }
-      if (paths.length > 0) valeur.prunePaths(paths);
+      /*
+       * Un arbre n'est pas toujours un CHAMP : les huit sous-modes de
+       * type d'IP SLA vivent dans une table indexee par leur propre mode,
+       * donc cette boucle ne les voyait pas et quatre-vingt-deux chemins
+       * migres restaient dans le trie — un doublon qu'aucun garde-fou ne
+       * signalait, l'elagage etant justement ce qui le detecte. La cle de
+       * la table EST le mode, ce qui la rend plus sure que la derivation
+       * par le nom du champ.
+       */
+      if (valeur === null || typeof valeur !== 'object') continue;
+      for (const [cle, enfant] of Object.entries(valeur as Record<string, unknown>)) {
+        if (enfant instanceof CommandTrie) this.pruneUnTrie(table, enfant, [cle]);
+      }
     }
+  }
+
+  private pruneUnTrie(
+    table: CommandTable, trie: CommandTrie, modes: readonly string[],
+  ): void {
+    const paths: string[] = [];
+    for (const spec of table.specs()) {
+      if (!modes.some(mode => spec.modes.includes(mode))) continue;
+      const texte = CiscoShellBase.keywordPathOf(spec).join(' ');
+      paths.push(texte);
+      if (spec.undo) paths.push(`no ${texte}`);
+    }
+    if (paths.length > 0) trie.prunePaths(paths);
   }
 
   private prefixIsUnambiguous(cmdPart: string, spec: { path: readonly unknown[] }): boolean {
@@ -5284,11 +5408,28 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     return prefixes.length === 1 ? prefixes[0] : undefined;
   }
 
-  private cheminCanoniqueDuSocle(ligne: string): string[] | null {
+  /**
+   * Le chemin canonique d'une commande MIGREE, dans le mode ou on la tape.
+   *
+   * Sans le mode, `wr` designe `write` ET `write-memory` — la seconde
+   * vivant dans le sous-mode `archive`, ou l'operateur n'est pas — donc
+   * l'abreviation devenait ambigue et `wr er` perdait son dialogue
+   * `[confirm]`. Le mode est ce qui les departage, comme partout
+   * ailleurs dans le socle.
+   */
+  private cheminCanoniqueDuSocle(ligne: string, mode?: string): string[] | null {
     const table = this.socleTable();
     if (!table) return null;
 
-    const chemin = this.cheminCanonique(table, ligne, null);
+    // La session est fabriquee POUR le mode demande, et non prise a
+    // l'equipement : un plan est demande hors de `execute`, donc la
+    // reference d'appareil n'est pas posee, et un routeur neuf est
+    // encore au niveau 1 alors qu'on interroge le mode privilegie.
+    const session = mode === undefined ? null : newSession('Router', this, {
+      initialMode: mode,
+      privilegeLevel: mode === 'user' ? 1 : 15,
+    });
+    const chemin = this.cheminCanonique(table, ligne, session);
     return chemin !== null && chemin.length > 0 ? chemin : null;
   }
 
@@ -5476,7 +5617,8 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       case 'incomplete':
         return renderCliDiagnostic('incomplete', { line: cmdPart });
       case 'invalid': {
-        const nav = this.tryGlobalConfigNavigation(cmdPart);
+        const nav = result.refusePar === 'argument'
+          ? null : this.tryGlobalConfigNavigation(cmdPart);
         if (nav !== null) return nav;
         const unknownExec = this.unknownExecCommand(cmdPart, result.errorPos);
         return unknownExec ?? (result.error || CISCO_ERRORS.INVALID_INPUT);
@@ -6057,6 +6199,8 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     return reste === '' ? '  <cr>' : CISCO_ERRORS.UNRECOGNIZED_HELP;
   }
 
+  protected sessionParamRanges(): SessionParamRanges | null { return null; }
+
   getHelp(input: string, device?: TDevice): string {
     // `show running-config | ?` n'était le nœud d'aucun arbre : le `|`
     // est retiré de la ligne avant l'analyse, donc l'aide répondait au
@@ -6074,7 +6218,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     const aideUniverselle = this.aideDesCommandesUniverselles(input, device);
     if (aideUniverselle !== null) return aideUniverselle;
     const trie = this.getActiveTrie();
-    trie.setDynamicResolver(device ? new EquipmentParamResolver(device) : null);
+    trie.setDynamicResolver(device ? new EquipmentParamResolver(device, this.sessionParamRanges()) : null);
     try {
       const filtreNiveau = (ligne: string): boolean => {
         if (!device) return true;
@@ -6196,7 +6340,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     const viaDo = this.doTabCandidates(input, device);
     if (viaDo !== null) return viaDo;
     const trie = this.getActiveTrie();
-    trie.setDynamicResolver(new EquipmentParamResolver(device));
+    trie.setDynamicResolver(new EquipmentParamResolver(device, this.sessionParamRanges()));
     try {
       const precedent = this.deviceRef;
       this.deviceRef = device;
@@ -7721,8 +7865,37 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
 
     // `exec-timeout <minutes> [seconds]` — persisted on the VTY block
     // so show running-config can echo it back exactly.
-    // ─── Sous-mode `config-view` ────────────────────────────────────
-    this.configViewTrie.registerGreedy('secret', 'Set the view password', (args) => {
+    this.registerViewSubmodeOn(this.configViewTrie);
+
+    /**
+     * La commande existe-t-elle dans l'arbre de ce mode ?
+     *
+     * On interroge l'arbre du MODE nomme, et non l'arbre privilegie pour
+     * tout : `commands configure include hostname` porte sur une commande
+     * de configuration, qui n'est dans aucun arbre exec.
+     */
+    // `login-timeout <secondes>` : le delai laisse pour s'identifier,
+    // distinct de `exec-timeout` qui compte l'inactivite APRES la
+    // connexion. La commande d'IOS etait refusee.
+
+    // ARP config commands (shared between router and switch)
+    registerArpConfigCommands(this.configTrie, () => this.d());
+  }
+
+  /**
+   * `test aaa group <nom> <user> <mot de passe> {legacy | new-code}`
+   * (`docs/PRD-Serveur-HTTP-Cisco.md` §5).
+   *
+   * Elle existait dans `CiscoTerminalSession` — donc dans le terminal
+   * graphique et nulle part ailleurs : la même machine y répondait par un
+   * onglet et l'ignorait par le shell, en SSH comme dans un script. Le
+   * motif invoqué là-bas (« un gestionnaire du trie doit rendre une
+   * chaîne synchrone ») ne tient pas : `_pendingAsync` est précisément
+   * l'écoutille que `ping` emprunte, et c'est celle-ci.
+   */
+
+  protected registerViewSubmodeOn(trie: CommandTrie): void {
+    trie.registerGreedy('secret', 'Set the view password', (args) => {
       if (args.length === 0) throw new CliIncomplete();
       const vue = this.vueEnCours();
       if (!vue) return '';
@@ -7748,7 +7921,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
      * ordinaire n'a pas de membres : melanger les deux produirait un
      * objet qu'IOS ne connait pas.
      */
-    this.configViewTrie.registerGreedy('view', 'Add a member view to this superview', (args) => {
+    trie.registerGreedy('view', 'Add a member view to this superview', (args) => {
       if (args.length < 1) throw new CliIncomplete();
       const vue = this.vueEnCours();
       if (!vue) return '';
@@ -7763,7 +7936,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       return '';
     });
 
-    this.configViewTrie.registerGreedy('commands', 'Configure the commands of a view', (args) => {
+    trie.registerGreedy('commands', 'Configure the commands of a view', (args) => {
       // `commands <mode> {include | include-exclusive | exclude} [all] <cmd>`
       if (args.length < 3) throw new CliIncomplete();
       const vue = this.vueEnCours();
@@ -7811,33 +7984,8 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       }
       return '';
     });
-
-    /**
-     * La commande existe-t-elle dans l'arbre de ce mode ?
-     *
-     * On interroge l'arbre du MODE nomme, et non l'arbre privilegie pour
-     * tout : `commands configure include hostname` porte sur une commande
-     * de configuration, qui n'est dans aucun arbre exec.
-     */
-    // `login-timeout <secondes>` : le delai laisse pour s'identifier,
-    // distinct de `exec-timeout` qui compte l'inactivite APRES la
-    // connexion. La commande d'IOS etait refusee.
-
-    // ARP config commands (shared between router and switch)
-    registerArpConfigCommands(this.configTrie, () => this.d());
   }
 
-  /**
-   * `test aaa group <nom> <user> <mot de passe> {legacy | new-code}`
-   * (`docs/PRD-Serveur-HTTP-Cisco.md` §5).
-   *
-   * Elle existait dans `CiscoTerminalSession` — donc dans le terminal
-   * graphique et nulle part ailleurs : la même machine y répondait par un
-   * onglet et l'ignorait par le shell, en SSH comme dans un script. Le
-   * motif invoqué là-bas (« un gestionnaire du trie doit rendre une
-   * chaîne synchrone ») ne tient pas : `_pendingAsync` est précisément
-   * l'écoutille que `ping` emprunte, et c'est celle-ci.
-   */
   private registerTestAaaCommand(): void {
     this.privilegedTrie.registerGreedy('test aaa group',
       'Test AAA server-group authentication', (args) => {

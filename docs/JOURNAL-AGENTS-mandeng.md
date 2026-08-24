@@ -36,10 +36,39 @@ commande appartient à un moteur et à un seul, un doublon lève
 `DuplicateCommandError` à la construction du shell.
 
 Déjà vides : `configLineTrie`, `configDhcpTrie` et ses trois sous-modes,
-`configRouterOspfTrie`. Compteurs : routeur 1007 → ~904, commutateur
-570 → 460. Restent les deux gros blocs `configTrie` (308) et
-`configIfTrie` (152), puis `privilegedTrie`, `userTrie`,
-`configRouterTrie` et une trentaine de petits sous-modes.
+`configRouterOspfTrie` et `configRouterOspfv3Trie`, les six sous-modes
+IKEv1 (`configIsakmpTrie`, `configIsakmpProfileTrie`, `configKeyringTrie`,
+`configTfsetTrie`, `configCryptoMapTrie`, `configIpsecProfileTrie`), les
+cinq sous-modes IKEv2 et `configGdoiGroupTrie`, les quatre sous-modes
+EEM/NetFlow, `configArchiveTrie`/`configArchiveLogTrie` (partagés avec le
+commutateur), et les onze sous-modes de sécurité (`configCmapTrie`,
+`configPmapTrie`, `configPmapClassTrie`, `configCpTrie`,
+`configZoneTrie`, `configZonePairTrie`, `configTimeRangeTrie`,
+`configRadiusServerTrie`, `configTacacsServerTrie`,
+`configAaaGroupTrie`, `configCaTrustpointTrie` — les trois d'identité
+sont partagés avec le commutateur), et les dix arbres IP SLA
+(`configIpSlaTrie`, `configIpSlaHttpRawTrie` et les huit sous-modes de
+type rangés dans `configIpSlaTypeTries`), et les six derniers petits
+sous-modes (`configTrackTrie`, `configKeychainTrie`,
+`configKeychainKeyTrie`, `configRouteMapTrie`, `configVrfTrie`,
+`configViewTrie` — ce dernier partagé avec le commutateur).
+
+**Tous les sous-modes dédiés du ROUTEUR sont désormais vides.** Ce qu'il
+reste de sous-mode y est le lot ACL (`configExtNaclTrie` 6,
+`configStdNaclTrie` 5, `configIpv6NaclTrie` 4) et je n'y touche pas sans
+que l'agent ACL le dise ici. Côté commutateur restent `configMstTrie`
+(7), `configAclTrie` (6), `configVlanTrie` (2), `configAccessMapTrie`
+(2).
+
+Compteurs : routeur 1007 → 721, commutateur 570 → 445. Restent les deux
+gros blocs `configTrie` (308) et `configIfTrie` (151), puis
+`privilegedTrie` (120), `userTrie` (85) et `configRouterTrie` (42).
+
+**Un compteur d'avant le lot IP SLA sous-estimait de 82** : `configIpSlaTypeTries`
+est une TABLE de huit arbres et non huit champs, si bien que ni
+l'inventaire ni `pruneMigratedFromTries` ne les voyaient. Si vous comptez
+ce qu'il reste, descendez dans les tables d'arbres, pas seulement dans
+les champs.
 
 **Ce que ça change pour vous** : une famille migrée n'est plus dans le
 trie. Si vous ajoutez une commande à un `register*(t: CommandTrie)` dont

@@ -1,7 +1,7 @@
 import { resolveFortiTimezone } from '../schema/timezones';
 import type { Firewall } from '../../../Firewall';
 import type { AntivirusFailopen } from '../../../health/SystemLoad';
-import type { FortiCommitDevice } from '../schema/types';
+import type { FortiCommitDevice, FortiSchemaEnvironment } from '../schema/types';
 import {
   makeSchedule, makeOnetimeSchedule, makeScheduleGroup,
 } from '../../../model/ScheduleObject';
@@ -17,8 +17,11 @@ import {
 import type { PolicyRoutePrefix } from '../../../l3/PolicyRouteTable';
 import { makeIpPool, type IpPoolType } from '../../../nat/IpPool';
 import { proxyOwnerKey } from '../../../Firewall';
+import { passwordHistoryRefusal, passwordHistoryThreshold } from '../schema/passwordPolicy';
 
-export function buildCommitDevice(fw: Firewall): FortiCommitDevice {
+export function buildCommitDevice(
+  fw: Firewall, environment: FortiSchemaEnvironment,
+): FortiCommitDevice {
   return {
       applyInterface(name, patch) {
         if (patch.vdom) fw.assignInterfaceToVdom(name, patch.vdom);
@@ -167,6 +170,19 @@ export function buildCommitDevice(fw: Firewall): FortiCommitDevice {
       },
       applyLdbMonitor(monitor) {
         fw.getLdbMonitors().set(monitor);
+      },
+      applyFragmentMemoryThreshold(megabytes) {
+        fw.getFragmentReassembly().setThresholdMegabytes(megabytes);
+      },
+      refusePasswordReuse(admin, secret) {
+        return passwordHistoryRefusal(
+          admin, secret, environment, fw.getPasswordHistory());
+      },
+      refuseReuseLimit(limit) {
+        const kept = passwordHistoryThreshold(environment);
+        if (limit <= kept) return null;
+        return `reuse-password-limit cannot exceed user-history-password-threshold `
+          + `(${kept}).`;
       },
       removeLdbMonitor(name) {
         fw.getLdbMonitors().remove(name);
@@ -377,6 +393,7 @@ export function buildCommitDevice(fw: Firewall): FortiCommitDevice {
       applyMemoryLog(patch) {
         if (patch.capacity !== undefined) fw.getLogStore().setCapacity(patch.capacity);
         if (patch.maxBytes !== undefined) fw.getLogStore().setMaxBytes(patch.maxBytes);
+        if (patch.fullThresholds) fw.getLogStore().setFullThresholds(patch.fullThresholds);
         if (patch.enabled === false) fw.getLogStore().clear();
         fw.getSystemLoad().reassess();
       },

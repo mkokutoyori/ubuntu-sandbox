@@ -4,6 +4,7 @@ import {
   adminHasNoPassword, adminTrustsSource, applyAdminAccount, authenticateAdmin,
   type AdminAccountDraft,
 } from '../identity/AdminAccounts';
+import { PasswordHistory } from '../identity/PasswordHistory';
 import type { FirewallCliServer } from './FirewallCliServer';
 import {
   DEFAULT_MANAGEMENT_PORTS, MANAGEMENT_IDLE_TIMEOUT_MIN, ManagementLockout,
@@ -14,6 +15,7 @@ import {
 export class ManagementPlane {
   private readonly allowed = new Map<string, ReadonlySet<string>>();
   private readonly secrets = new Map<string, string>();
+  private readonly history = new PasswordHistory();
   private readonly lockout: ManagementLockout;
   private cliServer: FirewallCliServer | null = null;
   private ports: ManagementPorts = DEFAULT_MANAGEMENT_PORTS;
@@ -84,8 +86,10 @@ export class ManagementPlane {
   }
 
   applyAdmin(admin: AdminAccountDraft): void {
-    applyAdminAccount(this.access, this.secrets, admin);
+    applyAdminAccount(this.access, this.secrets, admin, this.history);
   }
+
+  passwordHistory(): PasswordHistory { return this.history; }
 
   authenticate(name: string, password: string, source?: string): boolean {
     return authenticateAdmin(this.access, this.secrets, name, password, source);

@@ -6,6 +6,11 @@ import {
   type SlaCodec, type SlaOperationConfig, type SlaOperationType,
 } from '../../../ipsla/types';
 import { isReactionElement } from '../../../ipsla/reactions';
+import type { CommandSpec } from '@/cli/CommandTable';
+import type { ArgumentSpec } from '@/cli/ArgumentTypes';
+import {
+  specsFromTrieRegistrations, type AdapterKeyword,
+} from '@/cli/commands/trieAdapter';
 
 export type IpSlaSubMode =
   | 'config-ipsla' | 'config-ipsla-http-raw' | 'config'
@@ -493,7 +498,7 @@ const TYPE_SPECS: readonly TypeSpec[] = [
   },
 ];
 
-function registerOperationTypes(
+export function registerOperationTypes(
   slaTrie: CommandTrie,
   ctx: IpSlaCommandContext,
 ): void {
@@ -751,10 +756,198 @@ export function registerIpSlaTypeSubModes(
   for (const spec of TYPE_SPECS) {
     const trie = tries[IPSLA_TYPE_MODES[spec.type]];
     if (!trie) continue;
-    for (const parameter of spec.parameters) registerParameter(trie, parameter, ctx);
+    registerTypeSubModeOn(trie, spec.type, ctx);
   }
+  registerIpSlaHttpRawOn(rawTrie, ctx);
+}
+
+export function registerTypeSubModeOn(
+  trie: CommandTrie, type: SlaOperationType, ctx: IpSlaCommandContext,
+): void {
+  const spec = TYPE_SPECS.find(candidate => candidate.type === type);
+  if (!spec) return;
+  for (const parameter of spec.parameters) registerParameter(trie, parameter, ctx);
+}
+
+export function registerIpSlaHttpRawOn(
+  rawTrie: CommandTrie, ctx: IpSlaCommandContext,
+): void {
   rawTrie.registerGreedy('exit', 'Exit the raw HTTP request mode', () => {
     ctx.setMode('config-ipsla-http');
     return '';
   });
+}
+
+/**
+ * Les bornes viennent d'`IPSLA_RANGES`, la table que le gestionnaire lit
+ * deja pour refuser une valeur : deux vues du meme fait ne peuvent donc
+ * pas se contredire, et une commande annonce exactement l'intervalle
+ * qu'elle accepte.
+ */
+function borne(
+  nom: string, description: string,
+  plage: readonly [number, number],
+): ArgumentSpec {
+  return { name: nom, type: 'INT', description, range: [plage[0], plage[1]] };
+}
+
+const HISTORY_KEYWORDS: ReadonlyArray<AdapterKeyword> = [
+  {
+    keyword: 'lives-kept', description: 'Number of lives kept',
+    argument: borne('lives', 'Number of lives', IPSLA_RANGES.livesKept),
+  },
+  {
+    keyword: 'buckets-kept', description: 'Number of history buckets kept',
+    argument: borne('buckets', 'Number of buckets', IPSLA_RANGES.bucketsKept),
+  },
+  {
+    keyword: 'filter', description: 'Type of information kept in the history table',
+    argument: {
+      name: 'filtre', type: 'ENUM', description: 'What the history keeps',
+      values: [
+        { keyword: 'none', description: 'Keep no history' },
+        { keyword: 'all', description: 'Keep every operation' },
+        { keyword: 'overThreshold', description: 'Keep the operations over the threshold' },
+        { keyword: 'failures', description: 'Keep the operations that failed' },
+      ],
+    },
+  },
+  {
+    keyword: 'distributions-of-statistics-kept',
+    description: 'Number of statistics distributions kept',
+    argument: borne('distributions', 'Number of distributions', IPSLA_RANGES.distributions),
+  },
+  {
+    keyword: 'statistics-distribution-interval',
+    description: 'Statistics distribution interval in milliseconds',
+    argument: borne('intervalle', 'Interval in milliseconds', IPSLA_RANGES.distributionInterval),
+  },
+  {
+    keyword: 'hours-of-statistics-kept', description: 'Number of hours of statistics kept',
+    argument: borne('heures', 'Number of hours', IPSLA_RANGES.hoursKept),
+  },
+  {
+    keyword: 'enhanced', description: 'Enhanced history parameters',
+    argument: { name: 'reste', type: 'REST', optional: true,
+      description: 'Enhanced history parameters' },
+  },
+];
+
+const PARAMETER_ARGUMENTS:
+Readonly<Record<string, ArgumentSpec | readonly ArgumentSpec[] | null>> = {
+  frequency: borne('secondes', 'Frequency in seconds', IPSLA_RANGES.frequency),
+  timeout: borne('millisecondes', 'Timeout in milliseconds', IPSLA_RANGES.timeout),
+  threshold: borne('millisecondes', 'Threshold in milliseconds', IPSLA_RANGES.threshold),
+  'request-data-size': borne('octets', 'Payload size in bytes', IPSLA_RANGES.requestDataSize),
+  tos: borne('tos', 'Type of service value', IPSLA_RANGES.tos),
+  tag: { name: 'etiquette', type: 'REST', literal: 'LINE',
+    description: 'User defined tag for this operation' },
+  owner: { name: 'proprietaire', type: 'REST', literal: 'LINE',
+    description: 'Owner of this operation' },
+  precision: {
+    name: 'precision', type: 'ENUM', description: 'Unit the timestamps are kept in',
+    values: [
+      { keyword: 'milliseconds', description: 'Keep timestamps to the millisecond' },
+      { keyword: 'microseconds', description: 'Keep timestamps to the microsecond' },
+    ],
+  },
+  vrf: { name: 'instance', type: 'WORD', description: 'Name of the VRF' },
+  history: null,
+};
+
+/**
+ * Ce que chaque type d'operation prend apres son mot-cle.
+ *
+ * La cible seule ne suffit pas : trois types portent un PORT en
+ * deuxieme position et `http` ne prend pas de cible du tout mais un
+ * verbe suivi d'une URL. Un `REST` unique les couvrirait toutes en
+ * n'en decrivant aucune.
+ */
+const TYPE_ARGUMENTS:
+Readonly<Record<string, ArgumentSpec | readonly ArgumentSpec[]>> = {
+  'icmp-echo': [
+    { name: 'cible', type: 'IP_ADDR', description: 'Destination IP address' },
+    { name: 'reste', type: 'REST', optional: true,
+      description: 'source-interface, source-ip' },
+  ],
+  'icmp-jitter': [
+    { name: 'cible', type: 'IP_ADDR', description: 'Destination IP address' },
+    { name: 'reste', type: 'REST', optional: true,
+      description: 'num-packets, interval, source-ip' },
+  ],
+  'path-echo': [
+    { name: 'cible', type: 'IP_ADDR', description: 'Destination IP address' },
+    { name: 'reste', type: 'REST', optional: true,
+      description: 'source-interface, source-ip' },
+  ],
+  'udp-echo': [
+    { name: 'cible', type: 'IP_ADDR', description: 'Destination IP address' },
+    { name: 'port', type: 'INT', description: 'Destination port', range: [1, 65535] },
+    { name: 'reste', type: 'REST', optional: true,
+      description: 'source-ip, source-port, control' },
+  ],
+  'udp-jitter': [
+    { name: 'cible', type: 'IP_ADDR', description: 'Destination IP address' },
+    { name: 'port', type: 'INT', description: 'Destination port', range: [1, 65535] },
+    { name: 'reste', type: 'REST', optional: true,
+      description: 'codec, num-packets, interval, source-ip' },
+  ],
+  'tcp-connect': [
+    { name: 'cible', type: 'IP_ADDR', description: 'Destination IP address' },
+    { name: 'port', type: 'INT', description: 'Destination port', range: [1, 65535] },
+    { name: 'reste', type: 'REST', optional: true,
+      description: 'source-ip, source-port, control' },
+  ],
+  dns: [
+    { name: 'nom', type: 'WORD', description: 'Name to resolve' },
+    { name: 'reste', type: 'REST', description: 'name-server <A.B.C.D>' },
+  ],
+  http: [
+    {
+      name: 'verbe', type: 'ENUM', description: 'How the request is built',
+      values: [
+        { keyword: 'get', description: 'Build the request from the URL' },
+        { keyword: 'raw', description: 'Type the request by hand' },
+      ],
+    },
+    { name: 'reste', type: 'REST', description: 'URL, then name-server or version' },
+  ],
+};
+
+export function ipSlaSubmodeSpecs(ctx: IpSlaCommandContext): CommandSpec[] {
+  return specsFromTrieRegistrations(
+    (collector) => registerOperationTypes(collector as unknown as CommandTrie, ctx),
+    {
+      modes: ['config-ipsla'], minPrivilege: 15,
+      argumentFor: (path) => TYPE_ARGUMENTS[path],
+    },
+  );
+}
+
+export function ipSlaTypeSubmodeSpecs(ctx: IpSlaCommandContext): CommandSpec[] {
+  const specs: CommandSpec[] = [];
+  for (const type of Object.keys(IPSLA_TYPE_MODES) as SlaOperationType[]) {
+    const mode = IPSLA_TYPE_MODES[type];
+    specs.push(...specsFromTrieRegistrations(
+      (collector) =>
+        registerTypeSubModeOn(collector as unknown as CommandTrie, type, ctx),
+      {
+        modes: [mode], minPrivilege: 15,
+        undoFromNegatedPaths: true,
+        argumentFor: (path) => PARAMETER_ARGUMENTS[path],
+        keywordsFor: (path) => path === 'history' ? HISTORY_KEYWORDS : undefined,
+      },
+    ));
+  }
+  return specs;
+}
+
+export function ipSlaHttpRawSpecs(ctx: IpSlaCommandContext): CommandSpec[] {
+  return specsFromTrieRegistrations(
+    (collector) => registerIpSlaHttpRawOn(collector as unknown as CommandTrie, ctx),
+    {
+      modes: ['config-ipsla-http-raw'], minPrivilege: 15,
+      argumentFor: () => null,
+    },
+  );
 }

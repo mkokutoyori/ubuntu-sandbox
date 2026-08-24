@@ -13,6 +13,9 @@
 
 import { CommandTrie } from '../CommandTrie';
 import type { CiscoShellContext } from './CiscoConfigCommands';
+import type { CommandSpec } from '@/cli/CommandTable';
+import type { ArgumentSpec } from '@/cli/ArgumentTypes';
+import { specsFromTrieRegistrations } from '@/cli/commands/trieAdapter';
 
 function eng(ctx: CiscoShellContext) {
   return (ctx.r() as any)._getOrCreateIPSecEngine();
@@ -85,4 +88,39 @@ export function buildGdoiGroupCommands(trie: CommandTrie, ctx: CiscoShellContext
     eng(ctx).registerWithGdoiKeyServer(name);
     return '';
   });
+}
+
+const GDOI_GROUP_ARGUMENTS:
+Readonly<Record<string, ArgumentSpec | readonly ArgumentSpec[] | null>> = {
+  'identity number': {
+    name: 'numero', type: 'INT', range: [1, 2147483647],
+    description: 'Identity of the GDOI group',
+  },
+  'match address ipv4': {
+    name: 'liste', type: 'WORD',
+    description: 'Access list name that selects the protected traffic',
+    alternatives: [
+      { keyword: '<100-199>', description: 'IP extended access list number' },
+    ],
+  },
+  'transform-set': {
+    name: 'nom', type: 'WORD', description: 'Name of the transform set',
+  },
+  'address ipv4': {
+    name: 'adresse', type: 'IP_ADDR', description: 'Local address of the key server',
+  },
+  'server address ipv4': {
+    name: 'adresse', type: 'IP_ADDR', description: 'Address of the key server to register with',
+  },
+};
+
+export function gdoiGroupSpecs(ctx: CiscoShellContext): CommandSpec[] {
+  return specsFromTrieRegistrations(
+    (collector) =>
+      buildGdoiGroupCommands(collector as unknown as CommandTrie, ctx),
+    {
+      modes: ['config-gdoi-group'], minPrivilege: 15,
+      argumentFor: (path) => GDOI_GROUP_ARGUMENTS[path],
+    },
+  );
 }

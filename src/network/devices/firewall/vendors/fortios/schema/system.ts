@@ -11,6 +11,14 @@ import { ADMIN_DISCLAIMER_MESSAGES } from '../../../mgmt/LoginBanners';
 import {
   CONSERVE_THRESHOLD_MIN, CONSERVE_THRESHOLD_MAX, DEFAULT_CONSERVE_THRESHOLDS,
 } from '../../../health/SystemLoad';
+import {
+  DEFAULT_FRAGMENT_MEM_MB, MIN_FRAGMENT_MEM_MB, MAX_FRAGMENT_MEM_MB,
+} from '../../../l3/FragmentReassembly';
+import {
+  DEFAULT_REUSE_PASSWORD_LIMIT, MIN_REUSE_PASSWORD_LIMIT, MAX_REUSE_PASSWORD_LIMIT,
+  DEFAULT_PASSWORD_HISTORY_THRESHOLD, MIN_PASSWORD_HISTORY_THRESHOLD,
+  MAX_PASSWORD_HISTORY_THRESHOLD,
+} from '../../../identity/PasswordHistory';
 
 const ACCESS_SERVICE_HELP: Readonly<Record<ManagementService, string>> = Object.freeze({
   ping: 'PING access.',
@@ -124,6 +132,10 @@ export const SYSTEM_GLOBAL: FortiTableSpec = {
       'Enable/disable the disclaimer shown before the login prompt.'),
     enable('post-login-banner',
       'Enable/disable the disclaimer shown after a successful login.'),
+    count('user-history-password-threshold',
+      'Number of previous passwords kept for each administrator.',
+      MIN_PASSWORD_HISTORY_THRESHOLD, MAX_PASSWORD_HISTORY_THRESHOLD,
+      DEFAULT_PASSWORD_HISTORY_THRESHOLD),
     enable('simulator-hints',
       '[simulator] Add a diagnostic line to refusals.', true),
     {
@@ -238,11 +250,17 @@ export const SYSTEM_PASSWORD_POLICY: FortiTableSpec = {
     enable('expire-status', 'Enable/disable password expiration.'),
     count('expire-day', 'Number of days before an administrator password expires.',
       1, 999, 90),
-    {
-      ...enable('reuse-password', 'Enable/disable reuse of a previous password.', true),
-      unimplemented: 'this simulator keeps no password history to compare against.',
-    },
+    enable('reuse-password', 'Enable/disable reuse of a previous password.', true),
+    count('reuse-password-limit',
+      'Number of the kept passwords that may still be reused.',
+      MIN_REUSE_PASSWORD_LIMIT, MAX_REUSE_PASSWORD_LIMIT,
+      DEFAULT_REUSE_PASSWORD_LIMIT),
   ],
+  onCommit(object, context) {
+    const limit = Number.parseInt(object.effective('reuse-password-limit')[0] ?? '', 10);
+    if (Number.isNaN(limit)) return;
+    return context.device.refuseReuseLimit(limit) ?? undefined;
+  },
 };
 
 export const SYSTEM_CONSOLE: FortiTableSpec = {
@@ -303,6 +321,9 @@ export const SYSTEM_SETTINGS: FortiTableSpec = {
     ], 'profile-based'),
     { ...enable('central-nat', 'Enable/disable central NAT.'),
       availableWhen: (object) => !isTransparent(object) },
+    count('ip-fragment-mem-thresholds',
+      'Maximum memory (MB) used to reassemble IPv4/IPv6 fragments.',
+      MIN_FRAGMENT_MEM_MB, MAX_FRAGMENT_MEM_MB, DEFAULT_FRAGMENT_MEM_MB),
     { ...addressMask('manageip', 'Transparent mode management IP address and mask.'),
       availableWhen: isTransparent },
     { ...address('gateway', 'Transparent mode default gateway.'),
@@ -310,6 +331,9 @@ export const SYSTEM_SETTINGS: FortiTableSpec = {
   ],
   onCommit(object, context) {
     const management = object.effective('manageip');
+    context.device.applyFragmentMemoryThreshold(Number.parseInt(
+      object.effective('ip-fragment-mem-thresholds')[0]
+      ?? String(DEFAULT_FRAGMENT_MEM_MB), 10));
     context.device.applyVdomSettings({
       centralNat: object.effective('central-nat')[0] === 'enable',
       opmode: object.effective('opmode')[0] === 'transparent' ? 'transparent' : 'nat',

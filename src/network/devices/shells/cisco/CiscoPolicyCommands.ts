@@ -7,6 +7,7 @@ import type { CommandTrie } from '../CommandTrie';
 import type { CommandSpec } from '@/cli/CommandTable';
 import { specsFromTrieRegistrations } from '@/cli/commands/trieAdapter';
 import { formatInvalidInput } from '../CommandTrie';
+import type { ArgumentSpec } from '@/cli/ArgumentTypes';
 import type { PolicyRepository, PrefixListEntry }
   from '../../inspection/config/PolicyRepository';
 
@@ -78,7 +79,12 @@ export function buildPolicyConfig(
     return '';
   });
 
-  // ── config-route-map sub-mode ──
+  buildRouteMapSubmodeOn(routeMapTrie, ctx, repo);
+}
+
+export function buildRouteMapSubmodeOn(
+  routeMapTrie: CommandTrie, ctx: Ctx, repo: PolicyRepository,
+): void {
   const clause = () => {
     const sel = ctx.getSelectedRouteMap();
     return sel ? repo.ensureRouteMap(sel.name, 'permit', sel.seq) : null;
@@ -113,6 +119,30 @@ export function buildPolicyConfig(
     const c = clause(); if (c) c.description = args.join(' ');
     return '';
   });
+}
+
+const ROUTE_MAP_ARGUMENTS:
+Readonly<Record<string, ArgumentSpec | readonly ArgumentSpec[] | null>> = {
+  match: { name: 'critere', type: 'REST',
+    description: 'Criterion the route must satisfy' },
+  set: { name: 'action', type: 'REST',
+    description: 'Value the route-map applies to a matching route' },
+  description: { name: 'texte', type: 'REST', literal: 'LINE',
+    description: 'Description of this route-map clause' },
+};
+
+export function routeMapSubmodeSpecs(
+  ctx: Ctx, repo: PolicyRepository,
+): CommandSpec[] {
+  return specsFromTrieRegistrations(
+    (collector) =>
+      buildRouteMapSubmodeOn(collector as unknown as CommandTrie, ctx, repo),
+    {
+      modes: ['config-route-map'], minPrivilege: 15,
+      undoFromNegatedPaths: true,
+      argumentFor: (path) => ROUTE_MAP_ARGUMENTS[path],
+    },
+  );
 }
 
 export function registerPolicyShow(

@@ -39,9 +39,10 @@ export class FortiGate extends Firewall {
     return this.shellInstance;
   }
 
-  protected override createManagementCli(user: string): FortiShell {
+  protected override createManagementCli(user: string, origin: string): FortiShell {
     const shell = new FortiShell(this);
     shell.setAdminIdentity(user.length > 0 ? user : null);
+    shell.setAdministrativeInterface(origin);
     return shell;
   }
 

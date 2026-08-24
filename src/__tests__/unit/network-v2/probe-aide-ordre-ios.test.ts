@@ -100,7 +100,7 @@ describe('M2 — le tri est celui des octets', () => {
   it('les substituts en majuscules ouvrent la liste', async () => {
     const r = await routeur('RC');
     const mots = motsDe(r.cliHelp('ping ')).filter((m) => m !== '<cr>');
-    expect(mots[0]).toBe('A.B.C.D');
+    expect(mots[0]).toBe('WORD');
   });
 });
 

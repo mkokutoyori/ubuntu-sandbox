@@ -2700,6 +2700,321 @@ refusé sont remplacés par un cas qui l'affirme disponible.
 
 ---
 
+## Périmètre pris — FortiOS phase 24 (la bannière s'AFFICHE et s'ACCEPTE)
+
+**Agent `mandeng`.** Deux entrées `[durcissement]` de `TODO.md`, et là
+encore la re-mesure corrige ce qui était écrit.
+
+**Entrée 1 — « la bannière d'après-connexion ne demande pas d'être
+acceptée ».** Le report dit : « la bannière s'affiche, la session s'ouvre
+sans rien demander ». **Le défaut est plus large** :
+`mgmt/LoginBanners.ts` est écrit par `commitDevice` et **lu par
+personne** — `getLoginBanners()` n'a aucun appelant hors de ce point
+d'écriture. Ni `pre-login-banner` ni `post-login-banner` ne paraît
+JAMAIS, sur aucune porte. Les deux réglages sont donc acceptés, rendus
+dans la configuration, et sans effet.
+
+Les deux crochets existent pourtant des deux côtés :
+`ISshServerContext.getBanner?()` (que le contexte du pare-feu
+n'implémente pas) et `FirewallTelnetServerContext.banner()`, qui rend
+`null` en dur.
+
+**Entrée 2 — « `set reuse-password disable` est refusé ».** Le report est
+juste sur la cause (aucun historique de secrets) et le tenait pour
+rédhibitoire. Il ne l'est pas : le magasin de comptes existe, il lui
+manque de garder les N derniers. Les options sont attestées —
+`reuse-password` enable|disable, `reuse-password-limit` 0-20,
+`min-change-characters` 0-128 — et la politique de mot de passe est DÉJÀ
+appliquée pour la longueur et les classes de caractères
+(`schema/passwordPolicy.ts`), donc la seule pièce manquante est la
+mémoire.
+
+Mesure de départ :
+
+- **Aucune bannière ne paraît**, ni en SSH ni en telnet, quel que soit le
+  réglage.
+- **`set reuse-password disable`** est refusé en nommant l'absence
+  d'historique ; **`min-change-characters`** est accepté et n'est comparé
+  à rien.
+
+**Fichiers que la phase 24 prendra** :
+
+```
+firewall/identity/PasswordHistory.ts  ← les N derniers secrets (socle, neuf)
+firewall/mgmt/LoginBanners.ts         ← l'acceptation en attente
+firewall/mgmt/FirewallCliServer.ts    ← les deux portes affichent
+firewall/identity/AdminAccounts.ts    ← l'historique au changement
+vendors/fortios/schema/passwordPolicy.ts ← réutilisation et écart
+vendors/fortios/schema/system.ts      ← `reuse-password` cesse d'être refusé
+```
+
+**Hors périmètre, et c'est une décision déjà prise plutôt qu'un oubli** :
+la troisième entrée `[durcissement]`, `config system replacemsg` au-delà
+du groupe `admin`. Son report tient toujours — les autres groupes
+décrivent des pages servies par des fonctions que ce pare-feu n'a pas, et
+une table acceptée dont le texte ne s'affiche nulle part serait le décor
+que ce dépôt passe son temps à défaire.
+
+### Livré
+
+Les deux entrées `[durcissement]` sont retirées de `TODO.md`.
+
+**La bannière.** `BannerAcceptance` (`mgmt/LoginBanners.ts`) porte
+l'acceptation en attente et les deux portes la lisent :
+`FirewallSshServerContext.getBanner()` rend la bannière d'avant-connexion
+par le mécanisme d'annonce pré-authentification que la pile SSH portait
+déjà (RFC 4252 §5.4 — la bannière part après que le nom est offert et
+avant que le mot de passe soit demandé, ce qui est exactement l'ordre
+d'un vrai FortiGate en CLI), et `FirewallTelnetServerContext.banner()`
+cesse de rendre `null`. La bannière d'APRÈS-connexion passe par
+`motd()` côté telnet et, côté SSH, par la sortie asynchrone que le
+canal poussait déjà pour les traces `debug` — `getMotd()` est déclarée
+sur `ISshServerContext`, implémentée par quatre contextes et **lue par
+personne**, donc s'appuyer dessus aurait été s'appuyer sur un accesseur
+mort.
+
+**Le texte est celui de la vraie machine, pas une invention** : le
+FortiGate écrit la bannière puis `(Press 'a' to accept):`, transcription
+lue sur `rancid-discuss` (octobre 2018) et confirmée par les rapports
+oxidized #2021, netmiko #2775 et paramiko #2034, qui la reconnaissent
+tous par cette même chaîne. Tant que la réponse n'est pas donnée,
+l'invite du shell EST cette question — donc `FGT #` n'apparaît pas et la
+session n'est pas ouverte. **Ce que la documentation Fortinet ne dit
+pas**, et c'est écrit ici plutôt que passé sous silence : ce qui se
+produit si l'on répond autre chose. La règle retenue est que seule la
+lettre `a` accepte et que toute autre réponse FERME la session — c'est la
+seule lecture compatible avec « must be accepted before proceeding », et
+c'est aussi ce que rapportent les outils d'automatisation, dont les
+sauvegardes ÉCHOUENT au lieu de rester en attente.
+
+**L'historique.** `identity/PasswordHistory.ts` garde les secrets par
+compte, alimenté par `applyAdminAccount` — donc au point où un mot de
+passe est réellement accepté, pas à côté. `ManagementPlane` le détient
+comme il détient déjà `secrets`, et `Firewall.getPasswordHistory()` est
+la seule porte.
+
+**Deux sémantiques que la première écriture avait fausses, et que la
+vérification a corrigées** :
+
+- **`reuse-password-limit` n'est pas une profondeur de mémoire** mais un
+  NOMBRE DE REPRISES : « Number of times the password for system
+  administrators or local users can be reused (0 - 20, default = 0) »
+  (FortiOS 7.6.0, *Customizable password reuse thresholds*). La
+  profondeur est un autre réglage, `user-history-password-threshold`
+  (3-15, défaut 3) sous `config system global`, qui n'existait pas ici et
+  est ajouté ; la limite ne peut pas la dépasser, et `refuseReuseLimit`
+  le refuse en le nommant. Écrire la limite comme une profondeur aurait
+  donné une machine qui refuse l'inverse de ce qu'on lui demande.
+- **`min-change-characters` ne compare pas position par position** mais
+  compte les caractères du nouveau mot de passe ABSENTS de l'ancien
+  (« Minimum number of unique characters in new password which do not
+  exist in old password »). La différence est mesurable et un cas la
+  mesure : un mot de passe RETOURNÉ diffère à presque toutes les
+  positions et n'apporte aucun caractère neuf — la première écriture
+  l'aurait accepté, la vraie machine le refuse.
+
+`fortios-bannieres-et-historique.test.ts` (15 cas) est discriminé par
+`git stash push -- src/network/` : 10 tombent avant correctif, et les 5
+qui passent des deux côtés sont nommés dans l'en-tête du fichier avec la
+raison pour laquelle aucun ne prouve le mécanisme.
+`e2e/fortigate-bannieres.spec.ts` (2 cas) rejoue la pose de la bannière
+et le refus d'un mot de passe déjà employé dans le vrai navigateur.
+
+---
+
+## Périmètre pris — FortiOS phase 23 (le journal dit D'OÙ, et le tampon ALERTE)
+
+**Agent `mandeng`.** Deux entrées `[journal]` de `TODO.md`, et **les
+deux reports sont faux** — chacun pour une raison différente, et c'est
+la re-mesure qui l'établit.
+
+**Entrée 1 — « l'origine d'une modification est toujours `jsconsole` ».**
+Le report dit : « le shell ne sait pas par quelle porte il est atteint —
+`FortiShell` est construit une fois par équipement et les sessions
+distantes le partagent ». **C'est faux** :
+`FortiGate.createManagementCli(user)` fait `new FortiShell(this)` — un
+shell PAR SESSION, depuis la phase 14. Les trois portes (onglet du
+terminal, SSH, telnet) portent déjà chacune une `source` (l'adresse du
+pair) jusqu'à `createCli`. Il ne manque que de la transmettre et que
+`administrativeInterface()` la lise au lieu de rendre `'jsconsole'` en
+dur.
+
+Vocabulaire attesté, et rien de plus : la note technique de Fortinet
+écrit que le changement fait par la console graphique porte
+`ui=jsconsole` et celui fait en SSH `ui=ssh` ; la documentation
+d'administration montre la forme parenthésée `jsconsole(2.0.225.112)`.
+
+**Entrée 2 — « le seuil de remplissage du tampon mémoire n'alerte
+pas ».** Le report dit qu'écrire trois événements « inventerait deux
+identifiants », la référence ne portant qu'un `22023`. **Il cherchait
+dans la mauvaise famille.** Les trois existent, en 32xxx :
+
+| Seuil | Identifiant | Symbole |
+|---|---|---|
+| `full-first-warning-threshold` (75 %) | 32023 | `LOG_ID_MEM_LOG_FIRST_FULL` |
+| `full-second-warning-threshold` (90 %) | 32042 | `LOG_ID_MEM_LOG_SECOND_FULL` |
+| `full-final-warning-threshold` (95 %) | 32043 | `LOG_ID_MEM_LOG_FINAL_FULL` |
+
+Et `22023` n'est pas « Memory log first full » mais
+`LOG_ID_LEAVE_EXTREME_LOW_MEM_MODE` — autre sujet. Le sens de 32023 est
+publié : « Memory log full over first warning level ».
+
+Mesure de départ :
+
+- **`administrativeInterface()` rend `'jsconsole'` en dur.** Une
+  modification faite en SSH et une faite dans l'onglet donnent la même
+  ligne, donc l'audit ne distingue pas les deux.
+- **Les trois seuils sont acceptés, rendus, et lus par personne.** Le
+  tampon est pourtant borné pour de bon depuis la phase 16 (il compte ses
+  octets et réserve sa RAM), donc la matière est là : il manque de
+  comparer le remplissage aux seuils et d'émettre.
+
+**Fichiers que la phase 23 prendra** :
+
+```
+firewall/logging/LogFullEvent.ts     ← les trois événements (socle, neuf)
+firewall/logging/FirewallLogStore.ts ← le franchissement, mesuré
+firewall/mgmt/FirewallCliServer.ts   ← la porte descend jusqu'au shell
+firewall/mgmt/ManagementWiring.ts    ← idem
+firewall/Firewall.ts                 ← `createManagementCli(user, origin)`
+vendors/fortios/FortiShell.ts        ← `administrativeInterface()` la lit
+vendors/fortios/schema/log.ts        ← les seuils atteignent le magasin
+```
+
+**Une décision d'avance, parce qu'elle sera posée de toute façon** : un
+franchissement s'annonce UNE FOIS, pas à chaque enregistrement écrit
+au-dessus du seuil — sinon le tampon se remplirait de ses propres
+alarmes. Le retour sous le seuil réarme.
+
+### E69 — Livré, et ce que la mesure a corrigé
+
+**11 cas, 7 tombent avant correctif.** Les deux entrées `[journal]` sont
+fermées.
+
+**La porte descend jusqu'au shell, elle ne s'y devine pas.**
+`createCli(user)` devient `createCli(user, origin)`, et chaque porte
+écrit ce qu'elle EST : `ssh(<adresse>)` côté SSH, `telnet(<adresse>)`
+côté telnet, `jsconsole` par défaut. Rien n'est reconstitué a posteriori,
+donc aucune vue ne peut se tromper sur l'origine d'une ligne.
+
+**Le vocabulaire est celui de Fortinet et rien de plus** : la note
+technique écrit `jsconsole` pour la console graphique et `ssh` pour une
+session SSH ; la forme parenthésée vient de la documentation
+d'administration (`jsconsole(2.0.225.112)`).
+
+**Une session relayée par la grappe reporte `jsconsole`, et c'est un
+choix, pas un repli.** `execute ha manage` (phase 22) donne une VRAIE
+session sur le membre distant : ce membre voit une session locale, comme
+un vrai FortiGate. Inventer un mot pour « venu du lien de grappe » aurait
+été une valeur que personne n'a jamais vue dans ce champ.
+
+**Le franchissement est calculé APRÈS l'insertion et ne se réentre
+pas.** `announceFullness` est gardée par un drapeau, sans quoi l'alarme
+qu'elle écrit relancerait le calcul et le tampon se remplirait de ses
+propres alarmes. Le retour sous le seuil retire le niveau du jeu
+annoncé, donc réarme.
+
+**Le cas qui garde le défaut** : « une modification faite dans l'onglet
+porte `ui=jsconsole` » passe des DEUX côtés, et c'est normal — avant,
+c'était la seule valeur possible. Ce sont ses voisins, SSH et telnet, qui
+prouvent le mécanisme ; lui vérifie que la valeur par défaut n'a pas
+bougé.
+
+---
+
+## Périmètre pris — FortiOS phase 22 (le battement de cœur porte une VOIE DE COMMANDE)
+
+**Agent `mandeng`.** Deux entrées `[ha]` de `TODO.md` reportent la même
+chose, et c'est le report qui nomme la phase : FGCP n'a ici qu'une
+**annonce périodique à sens unique**. Il manque un échange
+requête/réponse, et c'est un seul mécanisme qui ferme les deux.
+
+Mesure de départ :
+
+- **`execute ha manage 1 admin` répond `Connecting to <nom> (<série>)…`
+  et rend la main.** On ne se retrouve jamais sur l'autre machine : le
+  `get system status` suivant répond encore pour le membre local.
+- **`execute ha synchronize start` tapé sur un SECONDAIRE n'attire
+  rien.** Il appelle `requestSynchronisation()`, qui émet le battement
+  du secondaire — c'est-à-dire sa propre configuration, exactement ce
+  dont personne n'a besoin. Rien ne change tant que le primaire n'a pas
+  émis de lui-même.
+
+**Ce que la documentation de Fortinet ajoute, et qui lie les deux
+commandes en un seul geste** : `execute ha synchronize` **se tape depuis
+le subordonné**, et on atteint le subordonné par `execute ha manage`.
+Les deux ne sont pas deux commandes voisines mais les deux moitiés d'un
+seul mode opératoire — `manage`, puis `synchronize start`, puis `exit`.
+La même source précise que `manage` demande un mot de passe **évalué
+contre le magasin de comptes du membre CIBLE**, ce qui est une propriété
+de sécurité vérifiable et pas un détail d'invite.
+
+**Le report disait qu'un registre partagé « contournerait le fil ». Il a
+raison, et c'est pour cela que la voie de commande passe SUR le fil** :
+même `ETHERTYPE_FGCP`, mêmes interfaces de battement, une requête et une
+réponse. Un vrai FortiGate relaie précisément la session CLI par le lien
+de grappe ; le modéliser ainsi est fidèle, pas commode.
+
+**Fichiers que la phase 22 prendra** :
+
+```
+firewall/ha/HaCommandChannel.ts   ← requête/réponse (socle, neuf)
+firewall/ha/HaTypes.ts            ← les deux messages
+firewall/ha/HaAgent.ts            ← émission, réception, routage
+firewall/Firewall.ts              ← le point d'entrée déjà branché
+vendors/fortios/FortiShell.ts     ← `ha manage`, `ha synchronize start`
+```
+
+**Hors périmètre, et dit plutôt que tu** : l'entrée `[ha] les adresses
+MAC VIRTUELLES du cluster n'existent pas` reste ouverte. Elle touche
+`Port` et l'apprentissage MAC de tous les commutateurs du projet — c'est
+un changement du matériel simulé, pas du pare-feu, et il n'a rien à voir
+avec la voie de commande.
+
+### E68 — Livré, et les deux décisions qui tenaient tout
+
+**13 cas, 6 tombent avant correctif.** Deux messages nouveaux sur
+`ETHERTYPE_FGCP` — `fgcp-command-request` et `fgcp-command-reply` — et
+les deux entrées `[ha]` visées se ferment ensemble.
+
+**Décision 1 : la voie passe sur le FIL, et l'échange est synchrone
+parce que la livraison de trames l'est.** `ask()` diffuse la requête et
+relit sa table d'échanges juste après : quand le pair est joignable, sa
+réponse y est déjà. Ce n'est pas un raccourci — c'est la propriété que ce
+simulateur a partout, et c'est elle qui rend une session CLI distante
+possible sans machine à états asynchrone. Le corollaire est ce qui rend
+le cas du câble coupé vrai : rien ne revient, `answered` est faux, et la
+commande le dit.
+
+**Décision 2 : l'authentification est évaluée chez la CIBLE, et la suite
+de la session tient à un JETON.** Une première version envoyait le nom du
+compte à chaque ligne et laissait le distant ré-authentifier — sauf qu'il
+n'y avait plus de mot de passe à présenter, donc soit on acceptait sans
+rien vérifier (une porte ouverte), soit rien ne passait. Le distant
+délivre donc un jeton à l'authentification et n'exécute une ligne que
+sous ce jeton : c'est ce qu'est une session mandatée, et c'est vérifiable
+— le mot de passe du membre LOCAL est refusé, celui du membre cible est
+accepté.
+
+**Ce que la documentation de Fortinet a évité de faire inventer** :
+`execute ha synchronize` se tape depuis le SUBORDONNÉ. Sans cela on
+aurait écrit une commande qui pousse depuis le primaire — utile, et pas
+ce que la commande fait. Sur le primaire elle pousse (comportement
+conservé), sur un secondaire elle demande au primaire d'émettre.
+
+**Un cas DURCI après discrimination** : « câble coupé, la voie ne répond
+plus » passait avec `/fail/`, parce que le mot de passe tapé en clair
+était alors une commande inconnue — donc `Command fail`. Vrai pour la
+mauvaise raison ; il exige désormais le message exact et vérifie que
+l'invite est restée locale.
+
+**Réutilisé plutôt que réécrit** : `createManagementCli(admin)` — le
+constructeur de CLI que le serveur SSH emploie déjà — sert la ligne
+distante, et `management.login()` l'authentifie, avec `ha-cluster` comme
+source. Aucun second chemin d'exécution n'a été écrit.
+
+---
+
 ## Périmètre pris — FortiOS phase 21 (un datagramme fragmenté est RECOLLÉ)
 
 **Agent `mandeng`.** L'entrée `[pare-feu] les fragments recus ne sont pas
@@ -2755,6 +3070,68 @@ vendors/fortios/diag/               ← `diagnose snmp ip frags`
 Rien n'est écrit pour réassembler : `IPv4Reassembler` porte déjà la
 fenêtre, le recouvrement et l'expiration. Ce qui est neuf est la BORNE
 mémoire, qu'il n'a pas, et le branchement.
+
+### E67 — Livré, et ce que la mesure a corrigé
+
+**13 cas, 10 tombent avant correctif.** Le branchement est une ligne dans
+`handleIpv4Frame`, avant `classifyIpv4` : le recollage précède la
+recherche de politique parce que seul le premier fragment porte l'en-tête
+de couche 4.
+
+**Ce que la discrimination a appris, et qui a corrigé la sonde plutôt que
+le produit.** Deux cas écrits comme décisifs — « le datagramme arrive
+ENTIER » et « il ouvre UNE session » — **passaient avant le correctif**.
+La raison n'était pas prévue : sous une politique PERMISSIVE
+(`service "ALL"`), un pare-feu qui ne recolle pas transmet quand même les
+trois fragments, et **c'est le serveur qui les recolle**, avec son propre
+`IPv4Reassembler`. La délivrance ne dit donc rien du pare-feu. Le cas qui
+montre le défaut est celui dont la politique **ne nomme que le port
+5000** : les fragments 2 et 3 ne portent pas ce port, sont refusés un par
+un, et le datagramme n'arrive jamais. C'est la même leçon qu'à la
+phase 20 — l'observable doit être une décision du PARE-FEU, pas ce que
+voit le destinataire.
+
+**Trois pièges rencontrés, chacun mesuré :**
+
+1. **DF est posé par défaut sur tout UDP sortant** (`EndHost.ts`, comme
+   une pile qui découvre le MTU du chemin), donc le routeur intercalé ne
+   fragmentait pas : il rendait un ICMP « Fragmentation Needed » et
+   jetait le datagramme. Rien n'arrivait au pare-feu et les compteurs
+   restaient à zéro — ce qui ressemblait à un branchement mort. La sonde
+   envoie `{ df: false }`, et le comportement observé était juste.
+2. **La borne mémoire ne se remplit pas depuis une maquette** : 32 Mo de
+   fragments demandent vingt-cinq mille datagrammes. Le cas est donc au
+   niveau du module, avec un seuil posé sous le minimum de la CLI, et
+   c'est écrit dans le fichier — les bornes 32-2047 appartiennent au
+   schéma, que le cas de refus vérifie séparément.
+3. **Un jeu incomplet ne se produit pas non plus depuis une maquette** :
+   la livraison de trames est synchrone, donc les fragments d'un même
+   datagramme traversent dans le même appel, et les deux leviers réels
+   qui pourraient en perdre un — perte et corruption de câble — sont
+   PROBABILISTES, incapables de désigner lequel. Inventer un levier
+   « jette le n-ième fragment » aurait été la porte dérobée refusée à la
+   phase 16 ; le cas est au niveau du module, nourri par la VRAIE sortie
+   de `fragmentIPv4`.
+
+**Ce qui a été ajouté au socle plutôt que recopié** : `fragmentKey`,
+`isIPv4Fragment` et `forget` sont exportés de `core/Ipv4Fragmentation.ts`
+et `IPv4Reassembler` les emploie lui-même — la borne mémoire a besoin de
+la même clé que la table qu'elle borne, et deux clés finiraient par
+désigner deux datagrammes différents.
+
+**Une décision écrite plutôt que subie** : au-dessus du seuil, c'est le
+jeu le PLUS ANCIEN qui est perdu. Évincer le plus récent laisserait un
+flot de fragments orphelins chasser le jeu légitime en cours
+d'assemblage, ce qui ferait de la borne une arme contre le trafic
+qu'elle protège.
+
+**Limite mesurée et assumée** : le seuil est déclaré `config system
+settings`, donc par VDOM, parce que c'est là que la documentation de
+Fortinet le place ; la table, elle, est unique pour l'équipement. Deux
+VDOM qui poseraient deux seuils écriraient donc successivement sur la
+même borne. Le modéliser par VDOM demanderait une table par contexte,
+qui n'apporterait rien tant qu'un laboratoire n'a pas deux VDOM sous
+charge de fragments.
 
 ---
 

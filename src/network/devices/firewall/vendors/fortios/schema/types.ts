@@ -262,6 +262,11 @@ export interface FortiMemoryLogPatch {
   readonly enabled?: boolean;
   readonly capacity?: number;
   readonly maxBytes?: number;
+  readonly fullThresholds?: {
+    readonly first?: number;
+    readonly second?: number;
+    readonly final?: number;
+  };
 }
 
 export interface FortiCommitDevice {
@@ -286,6 +291,9 @@ export interface FortiCommitDevice {
   applyGlobalSettings(settings: FortiGlobalSettings): void;
   applyIpsGlobal(settings: FortiIpsGlobalSettings): void;
   applyLdbMonitor(monitor: FortiLdbMonitorPatch): void;
+  applyFragmentMemoryThreshold(megabytes: number): void;
+  refusePasswordReuse(admin: string, secret: string): string | null;
+  refuseReuseLimit(limit: number): string | null;
   removeLdbMonitor(name: string): void;
   applyBalancedVip(vip: FortiBalancedVipPatch): string | void;
   applyReplacementMessage(message: string, buffer: string): void;

@@ -11,6 +11,10 @@
 
 import { CommandTrie } from '../CommandTrie';
 import type { CiscoShellContext } from './CiscoConfigCommands';
+import type { CommandSpec } from '@/cli/CommandTable';
+import type { ArgumentSpec } from '@/cli/ArgumentTypes';
+import type { AdapterKeyword } from '@/cli/commands/trieAdapter';
+import { specsFromTrieRegistrations } from '@/cli/commands/trieAdapter';
 
 function eng(ctx: CiscoShellContext) {
   return (ctx.r() as any)._getOrCreateIPSecEngine();
@@ -305,4 +309,177 @@ export function buildIKEv2ProfileCommands(trie: CommandTrie, ctx: CiscoShellCont
     prof.lifetime = parseInt(args[0] ?? '86400', 10);
     return '';
   });
+}
+
+const IKEV2_ENUM = (
+  name: string, description: string,
+  valeurs: ReadonlyArray<readonly [string, string]>,
+): ArgumentSpec => ({
+  name, type: 'ENUM', description,
+  values: valeurs.map(([keyword, texte]) => ({ keyword, description: texte })),
+});
+
+const AUTRES: ArgumentSpec = {
+  name: 'autres', type: 'REST', optional: true, values: [], description: '',
+};
+
+const GROUPES_DH: ReadonlyArray<readonly [string, string]> = [
+  ['1', 'Diffie-Hellman group 1 (768 bit)'],
+  ['2', 'Diffie-Hellman group 2 (1024 bit)'],
+  ['5', 'Diffie-Hellman group 5 (1536 bit)'],
+  ['14', 'Diffie-Hellman group 14 (2048 bit)'],
+  ['15', 'Diffie-Hellman group 15 (3072 bit)'],
+  ['16', 'Diffie-Hellman group 16 (4096 bit)'],
+  ['19', 'Diffie-Hellman group 19 (256 bit ECP)'],
+  ['20', 'Diffie-Hellman group 20 (384 bit ECP)'],
+  ['21', 'Diffie-Hellman group 21 (521 bit ECP)'],
+  ['24', 'Diffie-Hellman group 24 (2048 bit, 256 bit subgroup)'],
+];
+
+const CONDENSES: ReadonlyArray<readonly [string, string]> = [
+  ['md5', 'Message Digest 5'],
+  ['sha1', 'Secure Hash Standard'],
+  ['sha256', 'Secure Hash Standard 2 (256 bit)'],
+  ['sha384', 'Secure Hash Standard 2 (384 bit)'],
+  ['sha512', 'Secure Hash Standard 2 (512 bit)'],
+];
+
+const METHODE_AUTH = IKEV2_ENUM('methode', 'Authentication method', [
+  ['ecdsa-sig', 'Elliptic Curve Digital Signature Algorithm'],
+  ['pre-share', 'Pre-Shared Key'],
+  ['rsa-sig', 'Rivest-Shamir-Adleman Signature'],
+]);
+
+const IKEV2_PROPOSAL_ARGUMENTS:
+Readonly<Record<string, ArgumentSpec | readonly ArgumentSpec[] | null>> = {
+  encryption: [IKEV2_ENUM('algorithme', 'Encryption algorithm', [
+    ['3des', 'Three key triple DES'],
+    ['aes-cbc-128', 'AES-CBC with a 128 bit key'],
+    ['aes-cbc-192', 'AES-CBC with a 192 bit key'],
+    ['aes-cbc-256', 'AES-CBC with a 256 bit key'],
+    ['aes-gcm-128', 'AES-GCM with a 128 bit key'],
+    ['aes-gcm-256', 'AES-GCM with a 256 bit key'],
+    ['des', 'DES - Data Encryption Standard (56 bit keys)'],
+  ]), AUTRES],
+  integrity: [IKEV2_ENUM('algorithme', 'Integrity algorithm', CONDENSES), AUTRES],
+  group: [IKEV2_ENUM('groupe', 'Diffie-Hellman group', GROUPES_DH), AUTRES],
+  prf: [IKEV2_ENUM('fonction', 'Pseudo-random function', CONDENSES), AUTRES],
+};
+
+const IKEV2_POLICY_ARGUMENTS:
+Readonly<Record<string, ArgumentSpec | readonly ArgumentSpec[] | null>> = {
+  proposal: [{ name: 'nom', type: 'WORD', description: 'Name of the IKEv2 proposal' },
+    AUTRES],
+  'match address local': {
+    name: 'adresse', type: 'IP_ADDR', description: 'Local address the policy matches',
+  },
+};
+
+const IKEV2_KEYRING_ARGUMENTS:
+Readonly<Record<string, ArgumentSpec | readonly ArgumentSpec[] | null>> = {
+  peer: { name: 'nom', type: 'WORD', description: 'Name of the peer block' },
+};
+
+const IKEV2_KEYRING_PEER_ARGUMENTS:
+Readonly<Record<string, ArgumentSpec | readonly ArgumentSpec[] | null>> = {
+  address: [{ name: 'adresse', type: 'IP_ADDR', description: 'Address of the peer' },
+    AUTRES],
+  'pre-shared-key': [{
+    name: 'secret', type: 'WORD', description: 'The shared secret',
+  }, AUTRES],
+};
+
+const IKEV2_KEYRING_PEER_KEYWORDS:
+Readonly<Record<string, ReadonlyArray<AdapterKeyword>>> = {
+  'pre-shared-key': [{
+    keyword: 'local', description: 'Key this router presents',
+    argument: { name: 'secret', type: 'WORD', description: 'The shared secret' },
+  }],
+};
+
+const IKEV2_PROFILE_ARGUMENTS:
+Readonly<Record<string, ArgumentSpec | readonly ArgumentSpec[] | null>> = {
+  'match identity remote address': [
+    { name: 'adresse', type: 'IP_ADDR', description: 'Address of the remote peer' },
+    AUTRES],
+  'authentication local': METHODE_AUTH,
+  'authentication remote': METHODE_AUTH,
+  keyring: { name: 'nom', type: 'WORD', description: 'Name of the IKEv2 keyring' },
+  'keyring local': { name: 'nom', type: 'WORD', description: 'Name of the local IKEv2 keyring' },
+  'identity local': [IKEV2_ENUM('genre', 'Local identity', [
+    ['address', 'Use the interface address as the identity'],
+    ['dn', 'Use the certificate distinguished name'],
+    ['email', 'Use an email address'],
+    ['fqdn', 'Use a fully qualified domain name'],
+    ['key-id', 'Use an opaque key identifier'],
+  ]), AUTRES],
+  'self-identity': [IKEV2_ENUM('genre', 'Local identity', [
+    ['address', 'Use the interface address as the identity'],
+    ['fqdn', 'Use a fully qualified domain name'],
+  ]), AUTRES],
+  dpd: [
+    { name: 'intervalle', type: 'INT', range: [10, 3600], description: 'Interval between liveness checks, in seconds' },
+    { name: 'reprise', type: 'INT', range: [2, 60], description: 'Interval between retries, in seconds' },
+    IKEV2_ENUM('mode', 'When to send the liveness check', [
+      ['on-demand', 'Only when there is no incoming traffic'],
+      ['periodic', 'At every interval'],
+    ]),
+  ],
+  lifetime: { name: 'secondes', type: 'INT', range: [120, 86400], description: 'Lifetime of the IKEv2 SA, in seconds' },
+};
+
+export function ikev2ProposalSpecs(ctx: CiscoShellContext): CommandSpec[] {
+  return specsFromTrieRegistrations(
+    (collector) =>
+      buildIKEv2ProposalCommands(collector as unknown as CommandTrie, ctx),
+    {
+      modes: ['config-ikev2-proposal'], minPrivilege: 15,
+      argumentFor: (path) => IKEV2_PROPOSAL_ARGUMENTS[path],
+    },
+  );
+}
+
+export function ikev2PolicySpecs(ctx: CiscoShellContext): CommandSpec[] {
+  return specsFromTrieRegistrations(
+    (collector) =>
+      buildIKEv2PolicyCommands(collector as unknown as CommandTrie, ctx),
+    {
+      modes: ['config-ikev2-policy'], minPrivilege: 15,
+      argumentFor: (path) => IKEV2_POLICY_ARGUMENTS[path],
+    },
+  );
+}
+
+export function ikev2KeyringSpecs(ctx: CiscoShellContext): CommandSpec[] {
+  return specsFromTrieRegistrations(
+    (collector) =>
+      buildIKEv2KeyringCommands(collector as unknown as CommandTrie, ctx),
+    {
+      modes: ['config-ikev2-keyring'], minPrivilege: 15,
+      argumentFor: (path) => IKEV2_KEYRING_ARGUMENTS[path],
+    },
+  );
+}
+
+export function ikev2KeyringPeerSpecs(ctx: CiscoShellContext): CommandSpec[] {
+  return specsFromTrieRegistrations(
+    (collector) =>
+      buildIKEv2KeyringPeerCommands(collector as unknown as CommandTrie, ctx),
+    {
+      modes: ['config-ikev2-keyring-peer'], minPrivilege: 15,
+      argumentFor: (path) => IKEV2_KEYRING_PEER_ARGUMENTS[path],
+      keywordsFor: (path) => IKEV2_KEYRING_PEER_KEYWORDS[path],
+    },
+  );
+}
+
+export function ikev2ProfileSpecs(ctx: CiscoShellContext): CommandSpec[] {
+  return specsFromTrieRegistrations(
+    (collector) =>
+      buildIKEv2ProfileCommands(collector as unknown as CommandTrie, ctx),
+    {
+      modes: ['config-ikev2-profile'], minPrivilege: 15,
+      argumentFor: (path) => IKEV2_PROFILE_ARGUMENTS[path],
+    },
+  );
 }

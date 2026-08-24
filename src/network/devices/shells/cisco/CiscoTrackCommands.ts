@@ -5,6 +5,11 @@ import {
   type TrackObject, type TrackService, type TrackType,
 } from '../../../ipsla/TrackService';
 import { RETURN_CODE_LABEL } from '../../../ipsla/types';
+import type { CommandSpec } from '@/cli/CommandTable';
+import type { ArgumentSpec } from '@/cli/ArgumentTypes';
+import {
+  specsFromTrieRegistrations, type AdapterKeyword,
+} from '@/cli/commands/trieAdapter';
 
 export interface TrackCommandContext {
   r(): Router;
@@ -173,13 +178,30 @@ export function buildTrackConfigCommands(
   };
 
   configTrie.registerGreedy('track', 'Tracking configuration commands', enterTrack);
-  trackTrie.registerGreedy('track', 'Tracking configuration commands', enterTrack);
 
   configTrie.registerGreedy('no track', 'Remove a tracked object', (args) => {
     const id = parseInt(args[0], 10);
     if (!Number.isNaN(id)) serviceOf(ctx).remove(id);
     return '';
   });
+
+  buildTrackSubmodeOn(trackTrie, ctx);
+}
+
+export function buildTrackSubmodeOn(
+  trackTrie: CommandTrie, ctx: TrackCommandContext,
+): void {
+  const enterTrack = (args: string[]): string => {
+    if (args.length < 1) return '% Incomplete command.';
+    const id = parseInt(args[0], 10);
+    if (Number.isNaN(id)) return '% Invalid track number';
+    const error = defineTrack(serviceOf(ctx), args);
+    if (error) return error;
+    ctx.setSelectedTrack(id);
+    ctx.setMode('config-track');
+    return '';
+  };
+  trackTrie.registerGreedy('track', 'Tracking configuration commands', enterTrack);
 
   trackTrie.registerGreedy('object', 'Add an object to the list', (args) => {
     const object = selectedObject(ctx);
@@ -268,4 +290,81 @@ export function registerTrackShowCommands(trie: CommandTrie, ctx: TrackCommandCo
     }
     return objects.map((object) => renderDetail(ctx, object)).join('\n');
   });
+}
+
+const OBJET_KEYWORDS: ReadonlyArray<AdapterKeyword> = [
+  {
+    keyword: 'not', description: 'Negate the state of this object',
+    afterArguments: true, argument: null,
+  },
+  {
+    keyword: 'weight', description: 'Weight of this object in the list',
+    afterArguments: true,
+    argument: { name: 'poids', type: 'INT', description: 'Weight value', range: [1, 255] },
+  },
+];
+
+/*
+ * `threshold up 2 down 1` et `delay up 10 down 20` posent les DEUX
+ * bornes sur une seule ligne, dans l'ordre qu'on veut : chaque mot-cle
+ * prend donc sa valeur PUIS de quoi accueillir l'autre paire, sans quoi
+ * la seconde moitie de la ligne n'a pas de destination.
+ */
+const AUTRE_BORNE: ArgumentSpec = {
+  name: 'autre', type: 'REST', optional: true,
+  description: 'The other bound, `up <value>` or `down <value>`',
+};
+
+const SEUIL_KEYWORDS: ReadonlyArray<AdapterKeyword> = [
+  {
+    keyword: 'up', description: 'Value at or above which the list is up',
+    argument: [
+      { name: 'valeur', type: 'INT', description: 'Threshold value' }, AUTRE_BORNE,
+    ],
+  },
+  {
+    keyword: 'down', description: 'Value at or below which the list is down',
+    argument: [
+      { name: 'valeur', type: 'INT', description: 'Threshold value' }, AUTRE_BORNE,
+    ],
+  },
+];
+
+const DELAI_KEYWORDS: ReadonlyArray<AdapterKeyword> = [
+  {
+    keyword: 'up', description: 'Delay before reporting the object up',
+    argument: [
+      { name: 'secondes', type: 'INT', description: 'Delay in seconds', range: [0, 180] },
+      AUTRE_BORNE,
+    ],
+  },
+  {
+    keyword: 'down', description: 'Delay before reporting the object down',
+    argument: [
+      { name: 'secondes', type: 'INT', description: 'Delay in seconds', range: [0, 180] },
+      AUTRE_BORNE,
+    ],
+  },
+];
+
+const TRACK_ARGUMENTS:
+Readonly<Record<string, ArgumentSpec | readonly ArgumentSpec[] | null>> = {
+  track: { name: 'numero', type: 'INT', description: 'Tracked object number', range: [1, 1000] },
+  object: { name: 'numero', type: 'INT', description: 'Object number to add', range: [1, 1000] },
+  threshold: null,
+  delay: null,
+};
+
+export function trackSubmodeSpecs(ctx: TrackCommandContext): CommandSpec[] {
+  return specsFromTrieRegistrations(
+    (collector) => buildTrackSubmodeOn(collector as unknown as CommandTrie, ctx),
+    {
+      modes: ['config-track'], minPrivilege: 15,
+      undoFromNegatedPaths: true,
+      argumentFor: (path) => TRACK_ARGUMENTS[path],
+      keywordsFor: (path) => path === 'object' ? OBJET_KEYWORDS
+        : path === 'threshold' ? SEUIL_KEYWORDS
+          : path === 'delay' ? DELAI_KEYWORDS : undefined,
+    },
+  );
 }
