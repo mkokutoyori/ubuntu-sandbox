@@ -1,4 +1,4 @@
-import type { CommandTrie } from '../CommandTrie';
+import { CommandTrie } from '../CommandTrie';
 import type { Router } from '../../Router';
 import type { IpSlaEngine, SlaOperationRuntime } from '../../../ipsla/IpSlaEngine';
 import {
@@ -115,6 +115,46 @@ function applyTarget(config: SlaOperationConfig, args: string[], type: SlaOperat
     config.controlEnabled = false;
   }
   return '';
+}
+
+const IPSLA_GLOBAL_ARGUMENTS:
+Readonly<Record<string, ArgumentSpec | readonly ArgumentSpec[] | null>> = {
+  'ip sla': { name: 'operation', type: 'INT',
+    description: 'Identifier of the IP SLAs operation', range: [1, 2147483647] },
+  'ip sla schedule': { name: 'reste', type: 'REST',
+    description: 'Operation, then `life`, `ageout`, `recurring` or `start-time`' },
+  'ip sla group schedule': { name: 'reste', type: 'REST',
+    description: 'Group name and operation list, then `life` or `ageout`' },
+  'ip sla restart': { name: 'operation', type: 'INT',
+    description: 'Operation to restart', range: [1, 2147483647] },
+  'ip sla reaction-configuration': { name: 'reste', type: 'REST',
+    description: 'Operation, then `react <element>` and its thresholds' },
+  'ip sla reaction-trigger': { name: 'reste', type: 'REST',
+    description: 'Operation that reacts, then the one it starts' },
+  'ip sla responder': { name: 'reste', type: 'REST', optional: true,
+    description: 'Protocol, address and port the responder opens' },
+  'ip sla key-chain': { name: 'chaine', type: 'WORD',
+    description: 'Key chain authenticating the control protocol' },
+  'ip sla enable reaction-alerts': null,
+  'ip sla logging traps': null,
+};
+
+/**
+ * Le constructeur enregistre sur TROIS arbres ; seul celui de mode
+ * `config` reste a migrer, les deux autres l'ayant deja ete. Les
+ * arbres jetables recoivent donc ce qui ne concerne pas ce lot.
+ */
+export function ipSlaGlobalSpecs(ctx: IpSlaCommandContext): CommandSpec[] {
+  return specsFromTrieRegistrations(
+    (collector) => buildIpSlaConfigCommands(
+      collector as unknown as CommandTrie,
+      new CommandTrie(), new CommandTrie(), ctx),
+    {
+      modes: ['config'], minPrivilege: 15,
+      undoFromNegatedPaths: true,
+      argumentFor: (path) => IPSLA_GLOBAL_ARGUMENTS[path],
+    },
+  );
 }
 
 export function buildIpSlaConfigCommands(

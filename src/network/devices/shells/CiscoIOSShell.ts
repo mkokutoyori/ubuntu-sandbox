@@ -72,7 +72,7 @@ import {
 } from './cisco/CiscoKeyChainCommands';
 import {
   buildIpSlaConfigCommands, registerIpSlaTypeSubModes,
-  ipSlaSubmodeSpecs, ipSlaTypeSubmodeSpecs, ipSlaHttpRawSpecs,
+  ipSlaSubmodeSpecs, ipSlaTypeSubmodeSpecs, ipSlaHttpRawSpecs, ipSlaGlobalSpecs,
 } from './cisco/CiscoIpSlaCommands';
 import {
   ipSlaShowSpecs, ipSlaClearSpecs, ipSlaDebugPairs,
@@ -386,6 +386,7 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
       ...ikev2GlobalSpecs(this),
       ...gdoiGlobalSpecs(this),
       ...dhcpGlobalSpecs(this),
+      ...ipSlaGlobalSpecs(this),
       ...dhcpPoolClassSpecs(this),
       ...dhcpClassSpecs(this),
       ...ipv6DhcpPoolSpecs(this),
