@@ -370,6 +370,31 @@ est le SHELL : les méthodes dont la famille a besoin se déclarent en
 interface étroite (`DhcpClientHost`, `TunnelHost`) et le shell les
 implémente en déléguant à l'équipement.
 
+**Migrer une PORTE de sous-mode** — une commande qui change de mode
+(`interface`, `line`, `vlan`, `router ospf`) : elle se déclare pour TOUS
+les modes d'où elle se tape, parce qu'IOS laisse passer d'une interface
+à l'autre sans `exit`. Quatre pièges, chacun mesuré :
+**(1)** la même commande écrite une fois par mode finit par diverger —
+`interface` l'était quatre fois, avec sept écarts, tous du côté du
+sous-mode ; **(2)** une place à `alternatives` perd le `leadingOnly` du
+trie, donc `CompletionEngine` fait primer une FORME déclarée qui
+correspond à la frappe sur les valeurs vivantes qui la prolongent ;
+**(3)** un type sans son numéro REMPLISSAIT une place libre, donc `?`
+annonçait `<cr>` pour une frappe refusée — chaque type est un mot-clé
+avec sa place EXIGÉE (`typesInterfaceEnMotsCles`) ; **(4)** le socle
+admet une commande de `config` depuis un sous-mode par HÉRITAGE, ce qui
+rouvrait le confinement des vues d'analyseur — `confinerSousVue` le pose
+pour les deux moteurs.
+
+`ArgumentSpec.rangeIsAdvisory` — même mot que le trie, même sens : une
+plage qui DÉCRIT sans trancher. À poser quand la borne dépend de l'état,
+ou quand le gestionnaire refuse déjà dans les mots d'IOS ; sinon la règle
+« une plage annoncée est appliquée » remplace le message par un caret.
+
+`argumentFor` n'est JAMAIS consulté pour un chemin `no X` quand `X`
+existe : déclarer la place deux fois y range une entrée que personne ne
+lit.
+
 **Les shells VRP n'ont pas encore de pont vers le socle** — c'est inscrit
 dans `TODO.md`. Tant qu'il n'existe pas, une commande VRP se déclare sur
 son trie et l'entrée du registre est mise à jour.

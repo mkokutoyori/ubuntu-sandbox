@@ -96,7 +96,7 @@ import { showIpOspfNeighbor } from './cisco/CiscoOspfCommands';
 import {
   type CiscoShellMode, type CiscoShellContext,
   buildConfigCommands, buildConfigIfCommands, configIfSpecs, dhcpGlobalSpecs,
-  registerInterfaceEntry, INTERFACE_TYPES,
+  registerInterfaceEntry, INTERFACE_TYPES, typesInterfaceEnMotsCles,
 } from './cisco/CiscoConfigCommands';
 import {
   buildConfigDhcpCommands, buildConfigDhcpPoolClassCommands, dhcpPoolSpecs,
@@ -478,6 +478,7 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
           name: 'interface', type: 'REST', description: 'Interface to configure',
           literal: 'IFACE', alternatives: INTERFACE_TYPES,
         }),
+        keywordsFor: () => typesInterfaceEnMotsCles(INTERFACE_TYPES),
       });
   }
 
@@ -489,6 +490,19 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
       undoFromNegatedPaths: true,
       skip: (path: string) => !garder(path),
       argumentFor: (path: string) => PORTES_DE_ROUTAGE_PLACES[path],
+      /*
+       * `router ospf <pid> vrf <nom>` : la VRF vient APRES l'identifiant,
+       * et la porte gloutonne du trie l'avalait sans la nommer. Declarer
+       * la seule place de l'identifiant la faisait refuser au caret,
+       * c'est-a-dire perdre une forme que la machine accepte.
+       */
+      keywordsFor: (path: string) => path !== 'router ospf' ? undefined : [{
+        keyword: 'vrf', description: 'Specify a VPN Routing/Forwarding instance',
+        afterArguments: true,
+        argument: {
+          name: 'nom', type: 'WORD' as const, description: 'VPN Routing/Forwarding instance name',
+        },
+      }],
     };
 
     return [

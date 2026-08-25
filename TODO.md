@@ -263,6 +263,32 @@ quelque chose — ici l'argument typé, qui a fermé cinq défauts d'un coup —
 et il faut RETIRER l'enregistrement du trie en même temps, sans quoi on
 laisse deux implémentations dont une morte.
 
+### [cli] `line aux 0` ne persiste que deux reglages sur les huit
+Mesure sur un routeur, en configuration : `line aux 0` puis
+`exec-timeout 1 0` est ACCEPTE, et `show running-config` ne rend AUCUN
+bloc `line aux 0`. Le reglage est perdu, donc non rejoue a l'import
+d'une topologie, et rien ne le dit.
+**Cause** : `_getAuxLineConfig()` ne porte que `noExec` et
+`transportInput` ; le gestionnaire partage des vingt mots-cles de ligne
+tombe sur `return ''` pour tous les autres des que la ligne selectionnee
+est l'auxiliaire. Le meme reglage tape sous `line console 0` ou
+`line vty 0 4` est, lui, retenu et rendu.
+**Report** : ce n'est pas la PORTE `line` — qui vient d'etre corrigee et
+qui designe desormais correctement l'auxiliaire — mais le MAGASIN de
+cette ligne, qui n'a que deux champs. L'etendre veut dire lui donner les
+memes champs que la console, donc toucher le rendu de configuration et
+la vue `show line` ; c'est un lot a part.
+
+### [cli] la borne de `line tty` est posee par symetrie, pas par mesure
+`SORTES_DE_LIGNE` borne `tty` a `<0-15>`, la meme valeur que `vty`.
+Console et auxiliaire tiennent de la documentation Cisco (`<0-0>`, un
+chassis n'en a qu'une), les seize terminaux virtuels aussi. Pour `tty`,
+la borne depend des cartes asynchrones presentes et ce simulateur n'en
+modelise aucune : la valeur exacte n'y est donc pas observable.
+**Report** : la borne d'avant — aucune — etait la seule certainement
+fausse, puisqu'elle laissait poser `line tty 99999`. Celle-ci est
+plausible et declaree comme telle plutot que presentee comme mesuree.
+
 ## Routeur Cisco
 
 ### [cli] un sous-mode atteint les commandes GLOBALES, et `show` marche sans `do`

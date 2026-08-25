@@ -130,6 +130,32 @@ export const INTERFACE_TYPES: readonly { keyword: string; description: string }[
   { keyword: 'BVI', description: 'Bridge-Group Virtual Interface' },
 ];
 
+/**
+ * Un TYPE d'interface est un noeud, et le numero qui le suit est exige.
+ *
+ * `interface GigabitEthernet0/0` s'ecrit d'un seul mot et `interface
+ * GigabitEthernet 0/0` en deux : la place libre sert la premiere forme,
+ * ces mots-cles servent la seconde. Sans eux, un type seul REMPLISSAIT
+ * la place libre, donc `interface GigabitEthernet ?` annoncait `<cr>`
+ * pour une frappe que la machine refuse — la promesse que `?` fait
+ * quand il ecrit `<cr>` est la seule qu'il n'ait pas le droit de
+ * rompre. Le numero est declare EXIGE, ce qui est aussi la raison pour
+ * laquelle un type seul repond « Incomplete » plutot que par le caret.
+ */
+export function typesInterfaceEnMotsCles(
+  types: readonly { keyword: string; description: string }[],
+): ReadonlyArray<{
+  keyword: string; description: string; argument: ArgumentSpec;
+}> {
+  return types.filter(type => /^[A-Z]/.test(type.keyword)).map(type => ({
+    keyword: type.keyword, description: type.description,
+    argument: {
+      name: 'numero', type: 'REST' as const,
+      description: `${type.keyword} interface number`,
+    },
+  }));
+}
+
 export function registerInterfaceEntry(trie: CommandTrie, ctx: CiscoShellContext): void {
   trie.registerGreedy('interface', 'Select an interface to configure', (args) => {
     if (args.length < 1) return '% Incomplete command.';
@@ -291,14 +317,6 @@ export function buildConfigCommands(trie: CommandTrie, ctx: CiscoShellContext): 
     return '';
   });
 
-  // `leadingOnly` : une sorte de ligne EXCLUT les autres. Sans lui, la
-  // liste etait reproposee apres qu'on en eut choisi une.
-  trie.registerSuggestions('line', [
-    { keyword: 'console', description: 'Primary terminal line', leadingOnly: true },
-    { keyword: 'vty',     description: 'Virtual terminal', leadingOnly: true },
-    { keyword: 'aux',     description: 'Auxiliary line', leadingOnly: true },
-    { keyword: 'tty',     description: 'Terminal controller', leadingOnly: true },
-  ]);
   trie.registerSuggestions('no', [
     { keyword: 'hostname',  description: 'Reset system hostname' },
     { keyword: 'interface', description: 'Remove an interface' },

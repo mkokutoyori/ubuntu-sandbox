@@ -51,7 +51,7 @@ import {
 } from './cisco/CiscoAclCommands';
 import { IOS_ACL_NUMBERING } from '../router/ACLEngine';
 import { CISCO_ERRORS } from './cli-utils';
-import { estTypeSansNumero } from './cisco/CiscoConfigCommands';
+import { estTypeSansNumero, typesInterfaceEnMotsCles } from './cisco/CiscoConfigCommands';
 import { getNtpAgent } from '../../equipment/RouterServiceCapabilities';
 import {
   buildIdentityConfigCommands, buildIdentitySubmodeCommands,
@@ -170,12 +170,20 @@ const MONITOR_MODES: Readonly<Record<string, readonly string[]>> = {
   'show monitor session': EXEC,
 };
 
+/*
+ * Les deux priorites LACP declarent leur plage pour l'ANNONCER : le
+ * gestionnaire la refuse deja dans les mots d'IOS (« % Invalid value;
+ * valid range is 1 to 65535 »), et laisser la regle generique parler
+ * la premiere remplacerait ce message par un caret muet.
+ */
 const AGREGATION_PLACES: Readonly<Record<string, ArgumentSpec>> = {
   'lacp system-priority': {
-    name: 'priorite', type: 'INT', range: [1, 65535], description: 'LACP system priority',
+    name: 'priorite', type: 'INT', range: [1, 65535], rangeIsAdvisory: true,
+    description: 'LACP system priority',
   },
   'lacp port-priority': {
-    name: 'priorite', type: 'INT', range: [1, 65535], description: 'LACP port priority',
+    name: 'priorite', type: 'INT', range: [1, 65535], rangeIsAdvisory: true,
+    description: 'LACP port priority',
   },
   'lacp rate': {
     name: 'rate', type: 'ENUM', description: 'LACPDU transmission rate',
@@ -323,6 +331,42 @@ const SWITCHPORT_KEYWORDS: Readonly<Record<string, readonly AdapterKeyword[]>> =
     { keyword: 'untagged', description: 'Untagged voice traffic', argument: null },
   ],
 };
+
+type ListeVlan = { ids: number[] } | { erreur: string };
+
+/**
+ * La liste de VLAN d'une commande, lue UNE fois pour `vlan` et `no vlan`.
+ *
+ * Les deux avaient leur lecture, et elles ne bornaient pas la meme
+ * chose : la creation refusait `4095` et les VLAN reserves, la
+ * suppression n'ecartait que ce qui n'est pas un nombre — donc
+ * `no vlan 4095` repondait « VLAN 4095 not found », ce qui decrit un
+ * VLAN absent la ou l'identifiant lui-meme n'existe pas, et
+ * `no vlan 10,20` n'en supprimait qu'un, le premier, en silence.
+ */
+function analyserListeVlan(args: readonly string[]): ListeVlan {
+  if (args.length < 1) return { erreur: CISCO_ERRORS.INCOMPLETE };
+
+  const ids: number[] = [];
+  for (const part of args.join('').split(',')) {
+    const plage = part.match(/^(\d+)-(\d+)$/);
+    if (plage) {
+      const [debut, fin] = [Number(plage[1]), Number(plage[2])];
+      if (fin < debut) return { erreur: '% Invalid VLAN ID' };
+      for (let i = debut; i <= fin; i++) ids.push(i);
+      continue;
+    }
+    if (!/^\d+$/.test(part)) return { erreur: '% Invalid VLAN ID' };
+    ids.push(Number(part));
+  }
+  if (ids.length === 0 || ids.some(i => i < 1 || i > 4094)) {
+    return { erreur: '% Invalid VLAN ID' };
+  }
+  if (ids.some(i => i >= 1002 && i <= 1005)) {
+    return { erreur: '% VLANs 1002-1005 are reserved for legacy FDDI/Token Ring use' };
+  }
+  return { ids };
+}
 
 const CATALYST_INTERFACE_TYPES: readonly { keyword: string; description: string }[] = [
   { keyword: 'FastEthernet', description: 'FastEthernet IEEE 802.3' },
@@ -2326,6 +2370,7 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
       ...this.daiSpecs(),
       ...this.aggregationSpecs(),
       ...this.interfaceEntrySpecs(),
+      ...this.vlanEntrySpecs(),
     ];
   }
 
@@ -2386,6 +2431,7 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
           name: 'interface', type: 'REST', description: 'Interface to configure',
           literal: 'IFACE', alternatives: CATALYST_INTERFACE_TYPES,
         }),
+        keywordsFor: () => typesInterfaceEnMotsCles(CATALYST_INTERFACE_TYPES),
       });
   }
 
@@ -3191,33 +3237,11 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
     ]);
   }
 
-  // ─── Config Commands ──────────────────────────────────────────────
-
-  private registerConfigCommands(): void {
-    // hostname is handled by base class (registerCommonConfigCommands)
-
-    this.configTrie.registerGreedy('vlan', 'VLAN configuration', (args) => {
-      if (args.length < 1) return CISCO_ERRORS.INCOMPLETE;
-      // Accept a single id, a comma list (100,200,300) and ranges
-      // (30-35) — IOS creates them all; only a single id enters
-      // config-vlan.
-      const spec = args.join('');
-      const ids: number[] = [];
-      for (const part of spec.split(',')) {
-        const m = part.match(/^(\d+)-(\d+)$/);
-        if (m) {
-          for (let i = +m[1]; i <= +m[2]; i++) ids.push(i);
-        } else {
-          const n = parseInt(part, 10);
-          if (!isNaN(n)) ids.push(n);
-        }
-      }
-      if (ids.length === 0 || ids.some(i => i < 1 || i > 4094)) {
-        return '% Invalid VLAN ID';
-      }
-      if (ids.some(i => i >= 1002 && i <= 1005)) {
-        return '% VLANs 1002-1005 are reserved for legacy FDDI/Token Ring use';
-      }
+  private registerVlanEntry(trie: CommandTrie): void {
+    trie.registerGreedy('vlan', 'VLAN configuration', (args) => {
+      const lus = analyserListeVlan(args);
+      if ('erreur' in lus) return lus.erreur;
+      const ids = lus.ids;
       if (ids.some(i => i > 1005) && this.optionalVtp()?.allowsExtendedRangeVlans() === false) {
         return '% Extended-range VLANs require VTP version 3 or transparent mode';
       }
@@ -3231,15 +3255,43 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
       return '';
     });
 
-    this.configTrie.registerGreedy('no vlan', 'Delete a VLAN', (args) => {
-      if (args.length < 1) return CISCO_ERRORS.INCOMPLETE;
-      const id = parseInt(args[0], 10);
-      if (isNaN(id)) return '% Invalid VLAN ID';
-      if (id === 1) return '% Default VLAN 1 may not be deleted.';
-      const ok = this.d().deleteVLAN(id);
-      if (ok) this.optionalVtp()?.onLocalVlanChange();
-      return ok ? '' : `% VLAN ${id} not found.`;
+    trie.registerGreedy('no vlan', 'Delete a VLAN', (args) => {
+      const lus = analyserListeVlan(args);
+      if ('erreur' in lus) return lus.erreur;
+      if (lus.ids.includes(1)) return '% Default VLAN 1 may not be deleted.';
+
+      const absents: number[] = [];
+      let supprime = false;
+      for (const id of lus.ids) {
+        if (this.d().deleteVLAN(id)) supprime = true;
+        else absents.push(id);
+      }
+      if (supprime) this.optionalVtp()?.onLocalVlanChange();
+      return absents.length === 0 ? '' : `% VLAN ${absents[0]} not found.`;
     });
+    trie.requireArgs('vlan', 1);
+    trie.requireArgs('no vlan', 1);
+  }
+
+  private vlanEntrySpecs(): CommandSpec[] {
+    return specsFromTrieRegistrations(
+      (collector) => this.registerVlanEntry(collector as unknown as CommandTrie),
+      {
+        modes: ['config', 'config-vlan'], minPrivilege: 15,
+        undoFromNegatedPaths: true,
+        argumentFor: () => ({
+          name: 'ids', type: 'REST', range: [1, 4094], rangeIsAdvisory: true,
+          description: 'ISL VLAN IDs 1-4094',
+        }),
+      });
+  }
+
+  // ─── Config Commands ──────────────────────────────────────────────
+
+  private registerConfigCommands(): void {
+    // hostname is handled by base class (registerCommonConfigCommands)
+
+    this.registerVlanEntry(this.configTrie);
 
     this.registerInterfaceEntry(this.configTrie);
 

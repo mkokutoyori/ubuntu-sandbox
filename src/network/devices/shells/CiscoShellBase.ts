@@ -663,6 +663,64 @@ Readonly<Record<string, ArgumentSpec | readonly ArgumentSpec[] | null>> = {
   ],
 };
 
+/*
+ * Les sortes de ligne, et jusqu'ou chacune est numerotee.
+ *
+ * Un chassis a UNE console et UNE auxiliaire — IOS annonce `<0-0>` pour
+ * les deux — et seize terminaux virtuels, `<0-15>`, ce que la
+ * documentation Cisco donne comme le maximum par defaut d'IOS moderne.
+ * `tty` prend la meme borne faute d'une reference propre : ce simulateur
+ * n'a aucune ligne asynchrone, donc la borne exacte n'y est pas
+ * observable, et l'ancienne — aucune — etait la seule certainement
+ * fausse.
+ */
+const SORTES_DE_LIGNE: Readonly<Record<string, {
+  canonique: 'console' | 'vty' | 'aux' | 'tty'; max: number; description: string;
+}>> = {
+  aux: { canonique: 'aux', max: 0, description: 'Auxiliary line' },
+  con: { canonique: 'console', max: 0, description: 'Primary terminal line' },
+  console: { canonique: 'console', max: 0, description: 'Primary terminal line' },
+  tty: { canonique: 'tty', max: 15, description: 'Terminal controller' },
+  vty: { canonique: 'vty', max: 15, description: 'Virtual terminal' },
+};
+
+type TeteLigne =
+  | { sorte: 'console' | 'vty' | 'aux' | 'tty'; premiere: number; derniere: number }
+  | { erreur: string };
+
+/**
+ * La designation d'une ligne, lue UNE fois pour `line` et pour `no line`.
+ *
+ * Les deux commandes en avaient chacune leur lecture, et elles avaient
+ * diverge jusqu'a l'absurde : `no line` verifiait la sorte, exigeait un
+ * numero, le voulait entier et refusait une plage a l'envers, quand
+ * `line` n'examinait rien du tout — `line zorglub`, `line vty` seul,
+ * `line vty 99`, `line vty zorglub` et `line vty 5 2` etaient tous
+ * acceptes et faisaient entrer dans le sous-mode. L'operateur pouvait
+ * donc poser une plage que la negation refusait ensuite de retirer, et
+ * taper ses reglages d'acces dans un sous-mode qui ne designait aucune
+ * ligne.
+ */
+function analyserTeteLigne(args: readonly string[]): TeteLigne {
+  const mot = (args[0] ?? '').toLowerCase();
+  if (mot === '') return { erreur: CISCO_ERRORS.INCOMPLETE };
+  const sorte = SORTES_DE_LIGNE[mot];
+  if (!sorte) throw new CliInvalidInput({ token: args[0] });
+  if (args[1] === undefined) return { erreur: CISCO_ERRORS.INCOMPLETE };
+
+  const borne = (jeton: string): number => {
+    if (!/^\d+$/.test(jeton)) throw new CliInvalidInput({ token: jeton });
+    const valeur = Number.parseInt(jeton, 10);
+    if (valeur > sorte.max) throw new CliInvalidInput({ token: jeton });
+    return valeur;
+  };
+  const premiere = borne(args[1]);
+  const derniere = args[2] === undefined ? premiere : borne(args[2]);
+  if (derniere < premiere) throw new CliInvalidInput({ token: args[2] as string });
+  if (args[3] !== undefined) throw new CliInvalidInput({ token: args[3] });
+  return { sorte: sorte.canonique, premiere, derniere };
+}
+
 const IDENTITE_ET_AMORCAGE: ReadonlySet<string> = new Set([
   'boot system', 'boot enable-break', 'boot manual', 'config-register',
   'hostname', 'enable secret', 'enable algorithm-type', 'enable password',
@@ -5163,6 +5221,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       ...this.hardeningSpecs(),
       ...this.arpSpecs(),
       ...this.identityBootSpecs(),
+      ...this.lineEntrySpecs(),
       ...this.showSocleSpecs(),
       ...this.archiveSubmodeSpecs(),
       ...this.identitySubmodeSpecs(),
@@ -5327,6 +5386,38 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
         },
       ),
     ];
+  }
+
+  protected lineEntrySpecs(): CommandSpec[] {
+    const places = (max: number): ArgumentSpec[] => [
+      { name: 'premiere', type: 'INT', range: [0, max], description: 'First Line number' },
+      { name: 'derniere', type: 'INT', range: [0, max],
+        description: 'Last Line number', optional: true },
+    ];
+    /*
+     * `con` est l'abreviation de `console` et non une cinquieme sorte :
+     * le socle la resout par prefixe, donc seule la forme canonique se
+     * declare — la declarer deux fois rendrait `line ?` avec une ligne
+     * de trop, que `?` d'IOS n'ecrit pas.
+     */
+    const parCanonique = new Map(
+      Object.values(SORTES_DE_LIGNE).map(sorte => [sorte.canonique, sorte]));
+    const sortes = [...parCanonique.values()]
+      .sort((a, b) => a.canonique.localeCompare(b.canonique))
+      .map(sorte => ({
+        keyword: sorte.canonique, description: sorte.description,
+        argument: places(sorte.max),
+      }));
+
+    return specsFromTrieRegistrations(
+      (collector) => this.registerCommonConfigCommands(collector as unknown as CommandTrie),
+      {
+        modes: ['config', 'config-line'], minPrivilege: 15,
+        undoFromNegatedPaths: true,
+        skip: (path) => path !== 'line' && path !== 'no line',
+        keywordsFor: () => sortes,
+      },
+    );
   }
 
   protected identityBootSpecs(): CommandSpec[] {
@@ -6055,6 +6146,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     // doivent donc etre rendus par le meme traducteur. Sans cela une
     // commande refusee remontait son exception a travers le repartiteur
     // au lieu de rendre le message d'IOS.
+    const modeAvant = this.mode;
     try {
       const output: unknown = handler(session, parsed.args);
       if (typeof output !== 'string') return null;
@@ -6062,7 +6154,8 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
         applyTransition(parsed.spec, parsed.args, session);
         this.adoptSocleSession(session);
       }
-      return output;
+      const confine = this.confinerSousVue(modeAvant, parsed, cmdPart);
+      return confine ?? output;
     } catch (err) {
       if (err instanceof CliInvalidInput) {
         if (err.motAbsent()) return renderCliDiagnostic('incomplete', { line: cmdPart });
@@ -6074,6 +6167,36 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       if (err instanceof CliIncomplete) return renderCliDiagnostic('incomplete', { line: cmdPart });
       throw err;
     }
+  }
+
+  /**
+   * Une commande venue de l'arbre GLOBAL ne deplace pas une session
+   * confinee dans une vue d'analyseur.
+   *
+   * La regle vivait dans `tryGlobalConfigNavigation`, qui ne lit que le
+   * trie : `interface Gi0/0` tapee sous `parser view NOC` y changeait de
+   * mode, si bien que le `exit` suivant quittait l'interface et non la
+   * vue, et la definition restait a moitie faite. Migrer `interface` au
+   * socle rouvrait le trou, parce que le socle admet une commande de
+   * `config` depuis un sous-mode par HERITAGE. La regle appartient a la
+   * CLI et non a l'un des deux moteurs : elle est donc posee ici aussi,
+   * sur la meme condition — le mode a change, et la commande ne declare
+   * pas la vue.
+   */
+  private confinerSousVue(
+    modeAvant: string,
+    parsed: { spec: { modes: readonly string[]; path: readonly unknown[] } },
+    cmdPart: string,
+  ): string | null {
+    if (modeAvant !== 'config-view' || this.mode === modeAvant) return null;
+    if (parsed.spec.modes.includes('config-view')) return null;
+
+    this.mode = modeAvant;
+    this.fsm.mode = modeAvant;
+    return renderCliDiagnostic('invalid', {
+      line: cmdPart,
+      tokenOffset: argumentOffset(cmdPart, CiscoShellBase.keywordCount(parsed.spec), 0),
+    });
   }
 
   private adoptSocleSession(session: CliSession): void {
@@ -8329,27 +8452,21 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     // (exec-timeout, access-class, transport input, …) land in the
     // right VtyLineConfig block.
     trie.registerGreedy('line', 'Enter line configuration', (args) => {
+      const tete = analyserTeteLigne(args);
+      if ('erreur' in tete) return tete.erreur;
+
       this.mode = 'config-line';
-      const kind = args[0]?.toLowerCase();
-      if (kind === 'vty') {
-        const first = Number.parseInt(args[1] ?? '0', 10);
-        const last  = Number.parseInt(args[2] ?? args[1] ?? '0', 10);
-        this.selectedVtyRange = { first, last };
-        this.selectedConsoleLine = null;
+      this.selectedVtyRange = null;
+      this.selectedConsoleLine = null;
+      this.selectedAuxLine = null;
+      if (tete.sorte === 'vty' || tete.sorte === 'tty') {
+        this.selectedVtyRange = { first: tete.premiere, last: tete.derniere };
         const dev = this.d() as unknown as { _getVtyLineConfig?: () => { upsert: (p: object) => void } };
-        dev._getVtyLineConfig?.().upsert({ first, last });
-      } else if (kind === 'console' || kind === 'con') {
-        this.selectedVtyRange = null;
-        this.selectedConsoleLine = Number.parseInt(args[1] ?? '0', 10);
-        this.selectedAuxLine = null;
-      } else if (kind === 'aux') {
-        this.selectedVtyRange = null;
-        this.selectedConsoleLine = null;
-        this.selectedAuxLine = Number.parseInt(args[1] ?? '0', 10);
+        dev._getVtyLineConfig?.().upsert({ first: tete.premiere, last: tete.derniere });
+      } else if (tete.sorte === 'console') {
+        this.selectedConsoleLine = tete.premiere;
       } else {
-        this.selectedVtyRange = null;
-        this.selectedConsoleLine = null;
-        this.selectedAuxLine = null;
+        this.selectedAuxLine = tete.premiere;
       }
       return '';
     });
@@ -8367,33 +8484,25 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
      * pas retirer d'un chassis.
      */
     trie.registerGreedy('no line', 'Remove line configuration', (args) => {
-      const kind = (args[0] ?? '').toLowerCase();
-      if (kind === '') return CISCO_ERRORS.INCOMPLETE;
-      if (kind === 'console' || kind === 'con' || kind === 'aux') {
-        return `% Can't delete ${kind === 'aux' ? 'AUX' : 'console'} line`;
-      }
-      if (kind !== 'vty' && kind !== 'tty') throw new CliInvalidInput({ token: args[0] });
-      if (args[1] === undefined) return CISCO_ERRORS.INCOMPLETE;
-      const first = Number.parseInt(args[1], 10);
-      const last = Number.parseInt(args[2] ?? args[1], 10);
-      if (!Number.isInteger(first) || !Number.isInteger(last) || first < 0 || last < first) {
-        throw new CliInvalidInput({ token: args[2] ?? args[1] });
+      const tete = analyserTeteLigne(args);
+      if ('erreur' in tete) return tete.erreur;
+      if (tete.sorte === 'console' || tete.sorte === 'aux') {
+        return `% Can't delete ${tete.sorte === 'aux' ? 'AUX' : 'console'} line`;
       }
       const dev = this.d() as unknown as {
         _getVtyLineConfig?: () => { remove: (a: number, b: number) => boolean };
       };
-      dev._getVtyLineConfig?.().remove(first, last);
-      if (this.selectedVtyRange?.first === first && this.selectedVtyRange?.last === last) {
+      dev._getVtyLineConfig?.().remove(tete.premiere, tete.derniere);
+      if (this.selectedVtyRange?.first === tete.premiere
+        && this.selectedVtyRange?.last === tete.derniere) {
         this.selectedVtyRange = null;
       }
       return '';
     });
-    trie.registerSuggestions('no line', [
-      { keyword: 'vty', description: 'Virtual terminal', leadingOnly: true },
-      { keyword: 'tty', description: 'Terminal controller', leadingOnly: true },
-      { keyword: 'console', description: 'Primary terminal line', leadingOnly: true },
-      { keyword: 'aux', description: 'Auxiliary line', leadingOnly: true },
-    ]);
+    // Une ligne se DESIGNE : `line` seul, comme `no line` seul, repond
+    // « Incomplete », donc ni l'un ni l'autre n'annonce `<cr>`.
+    trie.requireArgs('line', 1);
+    trie.requireArgs('no line', 1);
 
     // Les vingt mots-clés ci-dessus partagent UN handler, et
     // `autoContinuations` lit le corps d'un handler pour deviner ses

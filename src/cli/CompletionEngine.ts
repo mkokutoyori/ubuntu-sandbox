@@ -110,8 +110,24 @@ function suggestionsAt(
   }
 
   if (argument && trigger === 'TAB') {
+    /*
+     * Une FORME declaree qui correspond deja a la frappe l'emporte sur
+     * les valeurs vivantes qui la prolongent : `interface Fa` ecrit
+     * `FastEthernet` d'un coup, comme une vraie machine, et ce n'est
+     * qu'une fois le type ecrit que `interface FastEthernet0/` propose
+     * les ports. Melanger les deux rendait neuf candidats la ou il n'y a
+     * qu'un mot a completer, donc la tabulation n'ecrivait plus rien.
+     */
+    const formesEnCours = argumentCompletableValues(argument)
+      .map(forme => forme.keyword)
+      .filter(mot => mot.toLowerCase().startsWith(lowered));
+    const prolongeUneForme = (valeur: string): boolean =>
+      formesEnCours.some(forme => valeur.length > forme.length
+        && valeur.toLowerCase().startsWith(forme.toLowerCase()));
+
     for (const valeur of table.liveValuesFor(cursor.path, argument, cursor.prefix)) {
       if (!valeur.toLowerCase().startsWith(lowered)) continue;
+      if (prolongeUneForme(valeur)) continue;
       if (out.some(suggestion => suggestion.value === valeur)) continue;
       out.push({
         value: valeur, description: '', isArgument: true, completable: true,
