@@ -28,3 +28,7 @@ export class TapPoint {
     for (const tap of [...this.taps]) tap(tapped);
   }
 }
+
+export interface FrameSource {
+  attachCapture(tap: FrameTap, iface?: string): DetachTap;
+}

@@ -84,10 +84,30 @@ de `LinuxMachine` bascule dessus. **Sortie** : les 21 suites `tcpdump`
 du dépôt (249 cas), écrites avant ce chantier, passent à travers le
 nouveau mécanisme sans modification.
 
-### Incrément 2 — les autres lecteurs de trames passent au tap
-`RouterDebugService` et `HuaweiDebugService` lisent
-`port.frame.received` pour `debug`. Même bascule. **Sortie** : plus
-aucun abonnement à `port.frame.*` nulle part.
+### Incrément 2 — les autres lecteurs de trames passent au tap — **LIVRÉ**
+`RouterDebugService` et `HuaweiDebugService` prennent un port étroit
+`FrameSource` et lisent le tap. Plus aucun abonnement à `port.frame.*`
+en production.
+
+**Deux choses trouvées en le faisant, et aucune n'était prévue.**
+
+**(1) La capture au niveau machine ne devait pas FIGER l'ensemble des
+ports.** La première version parcourait `this.ports` à l'attache, si bien
+qu'une interface créée ensuite — une sous-interface `dot1q`, un port
+ajouté après coup — n'était jamais écoutée. Sept cas de debug sont tombés
+là-dessus. `Equipment` porte désormais son propre `TapPoint`, chaque port
+y émet dès sa création dans `addPort`, et `attachCapture` s'abonne à la
+machine plutôt qu'à une liste de ports datée.
+
+**(2) `cisco-debug-arp-subscription.test.ts` n'éprouvait pas la
+fonction.** Ses deux injecteurs publiaient un événement de bus
+SYNTHÉTIQUE (`bus.publish({ topic: 'port.frame.received', … })`) sans
+jamais toucher un port : le test pouvait passer alors qu'aucune trame ne
+circulait, et son titre disait le mécanisme (« event subscription »)
+plutôt que le comportement. Il fait désormais RECEVOIR et ÉMETTRE une
+vraie trame sur un vrai port câblé. C'est une correction de test, pas un
+assouplissement : l'exigence — l'opérateur voit la ligne — est
+inchangée, et elle est mieux gardée qu'avant.
 
 ### Incrément 3 — l'UI n'a plus de bus global
 Les crochets React (`useDevices`, `useActivePackets`, `useBusEvents`, …)

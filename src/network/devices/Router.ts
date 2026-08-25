@@ -915,7 +915,7 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
     super.setEventBus(bus);
     if (bus) this.attachLoggingBus(bus);
     if (bus) this.getSnmpService().attachToBus(bus, this.id);
-    this._debugService?.attachToBus(this.getBus(), this.id);
+    this._debugService?.attachToBus(this.getBus(), this.id, this);
     this.ipsecEngine?.setEventBus(this.getBus());
     this.natEngine?.setEventBus(this.getBus());
     if (this._eemEngine) { this._eemEngine.stop(); this._eemEngine.start(); }
@@ -4353,7 +4353,7 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
       };
       svc.setRateLimitResolver(followConfiguredLimit);
     }
-    this._debugService.attachToBus(this.getBus(), this.id);
+    this._debugService.attachToBus(this.getBus(), this.id, this);
     return this._debugService;
   }
 

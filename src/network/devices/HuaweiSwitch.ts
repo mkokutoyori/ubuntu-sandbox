@@ -132,7 +132,7 @@ export class HuaweiSwitch extends Switch {
     // (setEventBus can fire from the base constructor, before the registry
     // field initializer ran — hence the optional chain.)
     this.agents?.restartAll();
-    this._huaweiDebugService?.attachToBus(this.getBus(), this.id);
+    this._huaweiDebugService?.attachToBus(this.getBus(), this.id, this);
   }
 
   private _huaweiDebugService: HuaweiDebugService | null = null;
@@ -149,7 +149,7 @@ export class HuaweiSwitch extends Switch {
       this._huaweiDebugService = new HuaweiDebugService();
       this._huaweiDebugService.setPlatform('switch');
     }
-    this._huaweiDebugService.attachToBus(this.getBus(), this.id);
+    this._huaweiDebugService.attachToBus(this.getBus(), this.id, this);
     return this._huaweiDebugService;
   }
 

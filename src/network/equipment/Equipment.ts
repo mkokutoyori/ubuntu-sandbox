@@ -18,7 +18,7 @@ import { Port } from '../hardware/Port';
 import { EthernetFrame, DeviceType, MACAddress, generateId } from '../core/types';
 import { Logger } from '../core/Logger';
 import { LinkLayer } from '../layers/link/LinkLayer';
-import type { FrameTap, DetachTap } from '../hardware/PortTap';
+import { TapPoint, type FrameTap, type DetachTap } from '../hardware/PortTap';
 import { EquipmentRegistry } from './EquipmentRegistry';
 import { DEVICE_CATALOG } from '../core/deviceCatalog';
 import { getDefaultEventBus, ForwardingEventBus, type IEventBus } from '@/events/EventBus';
@@ -129,6 +129,7 @@ export abstract class Equipment {
   /** This machine's internal bus (lazy) — see refactor-frame-only.md. */
   private machineBus: ForwardingEventBus | null = null;
   private linkLayer: LinkLayer | null = null;
+  private readonly captureTap = new TapPoint();
 
   constructor(deviceType: DeviceType, name: string, x: number = 0, y: number = 0) {
     this.id = generateId();
@@ -169,12 +170,10 @@ export abstract class Equipment {
   }
 
   attachCapture(tap: FrameTap, iface?: string): DetachTap {
-    const detachers: DetachTap[] = [];
-    for (const port of this.ports.values()) {
-      if (iface !== undefined && port.getName() !== iface) continue;
-      detachers.push(port.attachTap(tap));
-    }
-    return () => { for (const detach of detachers) detach(); };
+    return this.captureTap.attach((tapped) => {
+      if (iface !== undefined && tapped.iface !== iface) return;
+      tap(tapped);
+    });
   }
 
   // ─── Identity ───────────────────────────────────────────────────
@@ -315,6 +314,9 @@ export abstract class Equipment {
         return;
       }
       this.handleFrame(portName, frame);
+    });
+    port.attachTap((tapped) => {
+      this.captureTap.emit(tapped.iface, tapped.direction, tapped.frame);
     });
     this.ports.set(port.getName(), port);
   }

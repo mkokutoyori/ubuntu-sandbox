@@ -6852,3 +6852,44 @@ couche lien.
 transitoire à 230 était une erreur de mon propre test, un constructeur à
 quatre arguments là où `CiscoRouter` en prend trois). Lint : 3 erreurs
 dans `EndHost.ts`/`Router.ts`, présentes avant comme après.
+
+---
+
+## Bus partagé — le tap remplace le bus, incréments 1 et 2
+
+**Agent `mandeng`.** Demande de l'utilisateur : supprimer le système de
+bus partagé et faire circuler les messages comme sur un vrai équipement.
+Document : `docs/PRD-Suppression-Bus-Partage.md`.
+
+**La mesure a réduit le problème d'un facteur cent.** 260 fichiers de
+production touchent un bus, 47 le bus GLOBAL — mais il n'existe que
+**trois abonnements** à ce bus global. Les 44 autres publient, ou
+obtiennent le relais interne à leur propre machine. Les trois lecteurs
+sont les seuls à s'en servir comme d'un canal, et deux d'entre eux sont
+de vrais protocoles réseau joués sur un objet global : l'éviction CSS
+d'Oracle RAC (un battement de cœur manqué) et la fusion de cache GCS.
+
+**Ce que je ne m'attribue pas** : la capture de paquets ne fuyait pas.
+Elle s'abonne au bus de sa PROPRE machine et filtre en plus sur
+`deviceId`. Le défaut n'était pas qu'elle voyait le trafic des autres —
+elle ne le voyait pas — mais que le mécanisme le permettait à qui le
+voulait.
+
+**Le remplacement est celui du vrai matériel** : `AF_PACKET` lie un
+index d'interface, `libpcap` ouvre un périphérique par son nom, et aucun
+objet ne permet à un hôte de lire les trames d'un autre. Un tap
+s'attache à un `Port`, un `Port` appartient à exactement une machine :
+« observer une machine qu'on ne possède pas » n'est **pas exprimable**.
+
+**Trois découvertes en chemin.** (1) La capture machine ne devait pas
+figer l'ensemble des ports — sept cas de debug sont tombés sur une
+sous-interface créée après l'attache. (2)
+`cisco-debug-arp-subscription.test.ts` publiait un événement de bus
+synthétique sans jamais toucher un port : il pouvait passer alors
+qu'aucune trame ne circulait. Corrigé pour faire circuler une vraie
+trame. (3) L'échec NetFlow de `probe-debug-02-collecte` est
+**antérieur** — vérifié par `git stash`, il tombe aussi sans mes
+changements.
+
+1322 cas verts sur 95 fichiers (debug, OSPF, tcpdump, tap), un seul
+échec et il est antérieur. Typecheck 229, lint 0 erreur.
