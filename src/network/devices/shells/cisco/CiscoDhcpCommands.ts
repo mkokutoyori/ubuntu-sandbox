@@ -78,13 +78,12 @@ export function buildConfigDhcpCommands(trie: CommandTrie, ctx: CiscoShellContex
       ctx.r()._getDHCPServerInternal().configurePoolLeaseInfinite(pool);
       return '';
     }
-    const leaseArgs = args.map(Number);
-    let seconds = 0;
-    if (leaseArgs.length >= 1) seconds += leaseArgs[0] * 86400; // days
-    if (leaseArgs.length >= 2) seconds += leaseArgs[1] * 3600;  // hours
-    if (leaseArgs.length >= 3) seconds += leaseArgs[2];          // seconds
-    if (seconds === 0) seconds = 86400; // default 1 day
-    ctx.r()._getDHCPServerInternal().configurePoolLease(ctx.getSelectedDHCPPool()!, seconds);
+    if (args.length > 3 || args.some(a => !/^\d+$/.test(a))) return INVALID_INPUT;
+    const [days, hours, minutes] = args.map(Number);
+    if (days > 365 || (hours ?? 0) > 23 || (minutes ?? 0) > 59) return INVALID_INPUT;
+    const seconds = days * 86400 + (hours ?? 0) * 3600 + (minutes ?? 0) * 60;
+    if (seconds === 0) return INVALID_INPUT;
+    ctx.r()._getDHCPServerInternal().configurePoolLease(pool, seconds);
     return '';
   });
 

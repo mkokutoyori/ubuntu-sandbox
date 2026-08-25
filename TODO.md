@@ -541,21 +541,6 @@ ce depot passe son temps a defaire. Ce qui EST ferme depuis le lot
 qui n'est pas une adresse est refusee aux quatre portes.
 
 
-### [dhcp] Le pool DHCP d'un commutateur Cisco n'est pas serialise
-`CiscoShowCommands.runningConfigDhcp` rend `ip dhcp pool <nom>` et ses
-sous-commandes, mais c'est le rendu du ROUTEUR : le commutateur, dont
-`buildRunningConfig` est un autre parcours, n'enumere jamais
-`getAllPools()`. Un pool configure sur un Catalyst est donc perdu a
-l'export d'une topologie, alors que la commande qui le cree est
-acceptee et que `show ip dhcp pool` le decrit.
-**Mesure** : `getAllPools` n'a que trois lecteurs dans les coquilles —
-le rendu du routeur, la vue Huawei et son compteur ; aucun cote
-commutateur Cisco.
-**Report** : c'est le rendu de configuration du commutateur qu'il faut
-completer, pas la famille DHCP ; le meme parcours omet probablement
-d'autres familles, et les mesurer d'abord evite de fermer une seule
-fuite sur plusieurs.
-
 ### [cli] `utilization mark high ?` annonce `<cr>` et `<0-100>`
 Deux infidelites d'AIDE, pas de comportement, laissees par le lot des
 seuils DHCP. **`<cr>`** : la place du pourcentage est declaree

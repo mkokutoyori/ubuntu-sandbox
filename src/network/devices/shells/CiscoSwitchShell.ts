@@ -61,6 +61,7 @@ import { showSwitchVersion, showIpTraffic } from './cisco/CiscoCommonShow';
 import { buildArchiveSubmodeOn, buildArchiveLogSubmodeOn } from './cisco/CiscoArchiveCommands';
 import type { LoggingCommandContext } from './cisco/CiscoLoggingCommands';
 import { buildConfigDhcpCommands, dhcpPoolSpecs } from './cisco/CiscoDhcpCommands';
+import { dhcpRunningConfigLines } from '../../dhcp/dhcpRunningConfig';
 import type { CiscoShellContext } from './cisco/CiscoConfigCommands';
 import type { Router } from '../Router';
 import { vrrpVirtualMac } from '../../vrrp/types';
@@ -3774,6 +3775,9 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
     if (vtyLines.length > 0) { lines.push(...vtyLines); lines.push('!'); }
 
     if (sw.isIpRoutingEnabled()) { lines.push('ip routing'); lines.push('!'); }
+
+    const dhcpLines = dhcpRunningConfigLines(sw._getDHCPServerInternal());
+    if (dhcpLines.length > 0) { lines.push(...dhcpLines); lines.push('!'); }
 
     for (const [id, vlan] of sw.getVLANs()) {
       if (id === 1) continue;

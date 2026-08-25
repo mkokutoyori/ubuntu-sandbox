@@ -6,6 +6,7 @@
  */
 
 import type { Router } from '../../Router';
+import { dhcpRunningConfigLines } from '../../../dhcp/dhcpRunningConfig';
 import { privilegeConfigLines } from '../cli/CliAuthorization';
 import { getPrivilegeRules } from '../../router/security/CiscoPrivilegeStore';
 import type { Port } from '../../../hardware/Port';
@@ -497,38 +498,7 @@ export function showRunningConfig(router: Router): string {
 
   lines.push(...consoleAndAuxLineConfigLines(router, serviceEncryption));
 
-  if (dhcp.isEnabled()) {
-    lines.push('service dhcp');
-  }
-  // IOS emits the exclusions ahead of the pools they carve out of.
-  const excluded = dhcp.getExcludedRanges();
-  for (const range of excluded) {
-    if (range.start === range.end) {
-      lines.push(`ip dhcp excluded-address ${range.start}`);
-    } else {
-      lines.push(`ip dhcp excluded-address ${range.start} ${range.end}`);
-    }
-  }
-  const pools = dhcp.getAllPools();
-  for (const [, pool] of pools) {
-    lines.push('!');
-    lines.push(`ip dhcp pool ${pool.name}`);
-    if (pool.network && pool.mask) lines.push(` network ${pool.network} ${pool.mask}`);
-    const routers = pool.defaultRouters?.length ? pool.defaultRouters : (pool.defaultRouter ? [pool.defaultRouter] : []);
-    if (routers.length > 0) lines.push(` default-router ${routers.join(' ')}`);
-    if (pool.dnsServers.length > 0) lines.push(` dns-server ${pool.dnsServers.join(' ')}`);
-    if (pool.domainName) lines.push(` domain-name ${pool.domainName}`);
-    const days = Math.floor(pool.leaseDuration / 86400);
-    if (days !== 1) lines.push(` lease ${days}`);
-    if (pool.highUtilizationMark !== 100 || pool.highUtilizationLog) {
-      lines.push(` utilization mark high ${pool.highUtilizationMark}`
-        + (pool.highUtilizationLog ? ' log' : ''));
-    }
-    if (pool.lowUtilizationMark !== 0 || pool.lowUtilizationLog) {
-      lines.push(` utilization mark low ${pool.lowUtilizationMark}`
-        + (pool.lowUtilizationLog ? ' log' : ''));
-    }
-  }
+  lines.push(...dhcpRunningConfigLines(dhcp));
 
   lines.push('!');
   const descs = router._getInterfaceDescriptions();
