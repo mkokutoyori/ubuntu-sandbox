@@ -137,15 +137,6 @@ export function registerArpShowCommands(
   );
 }
 
-/**
- * Register `clear arp-cache` on a trie (privileged mode).
- */
-export function registerArpPrivilegedCommands(
-  trie: CommandTrie,
-  getProvider: () => ARPProvider,
-): void {
-}
-
 // ─── Command Registration: Config Commands ──────────────────────────
 
 /**

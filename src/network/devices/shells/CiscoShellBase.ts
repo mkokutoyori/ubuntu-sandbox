@@ -93,7 +93,7 @@ const NTP_SOUS_COMMANDES: ReadonlyArray<{
 import { CISCO_ERRORS, parsePipeFilter, applyPipeFilter, PIPE_WRITERS, PIPE_MODIFIERS, type PipeFilter } from './cli-utils';
 import { isValidIPv4 } from '../../core/ip';
 import {
-  registerArpShowCommands, registerArpPrivilegedCommands, registerArpConfigCommands,
+  registerArpShowCommands, registerArpConfigCommands,
 } from './cisco/CiscoArpCommands';
 import {
   showClock, showUsers, showInventory, showProcessesCpu, showProcessesMemory,
@@ -5119,6 +5119,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       ...this.writeEraseSpecs(),
       ...this.serviceSpecs(),
       ...this.hardeningSpecs(),
+      ...this.arpSpecs(),
       ...this.showSocleSpecs(),
       ...this.archiveSubmodeSpecs(),
       ...this.identitySubmodeSpecs(),
@@ -5256,6 +5257,33 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       run: (_session, args) => drapeau(args.nom, true),
       undo: (_session, args) => drapeau(args.nom, false),
     }];
+  }
+
+  protected arpSpecs(): CommandSpec[] {
+    const provider = () => this.d();
+    return [
+      ...specsFromTrieRegistrations(
+        (collector) =>
+          registerArpShowCommands(collector as unknown as CommandTrie, provider),
+        {
+          modes: ['user', 'privileged'], minPrivilege: 1,
+          restDescriptionFor: () => 'ARP entry address or interface',
+          restLiteralFor: () => 'A.B.C.D',
+        },
+      ),
+      ...specsFromTrieRegistrations(
+        (collector) =>
+          registerArpConfigCommands(collector as unknown as CommandTrie, provider),
+        {
+          modes: ['config'], minPrivilege: 15,
+          undoFromNegatedPaths: true,
+          argumentFor: () => ({
+            name: 'reste', type: 'REST',
+            description: 'IP address of the ARP entry', literal: 'A.B.C.D',
+          }),
+        },
+      ),
+    ];
   }
 
   protected hardeningSpecs(): CommandSpec[] {
@@ -7307,7 +7335,6 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
 
     this.registerCommonShowCommands(this.userTrie, 'user');
     // ARP show commands (shared between router and switch)
-    registerArpShowCommands(this.userTrie, () => this.d());
   }
 
   private registerCommonPrivilegedCommands(): void {
@@ -7614,8 +7641,6 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     // `command-trie-hygiene.test.ts` signale à juste titre.
 
     // ARP commands (shared between router and switch)
-    registerArpShowCommands(this.privilegedTrie, () => this.d());
-    registerArpPrivilegedCommands(this.privilegedTrie, () => this.d());
   }
 
   /**
@@ -8339,7 +8364,6 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     // connexion. La commande d'IOS etait refusee.
 
     // ARP config commands (shared between router and switch)
-    registerArpConfigCommands(this.configTrie, () => this.d());
   }
 
   /**

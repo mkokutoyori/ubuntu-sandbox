@@ -109,7 +109,7 @@ function suggestionsAt(
     }
   }
 
-  if (argument) {
+  if (argument && trigger === 'TAB') {
     for (const valeur of table.liveValuesFor(cursor.path, argument, cursor.prefix)) {
       if (!valeur.toLowerCase().startsWith(lowered)) continue;
       if (out.some(suggestion => suggestion.value === valeur)) continue;
