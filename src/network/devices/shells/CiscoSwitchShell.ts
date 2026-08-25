@@ -22,7 +22,7 @@ import { isValidIPv4 } from '../../core/ip';
 import type { CommandSpec } from '@/cli/CommandTable';
 import type { SocleLegend } from './CiscoShellBase';
 import type { ArgumentSpec } from '@/cli/ArgumentTypes';
-import type { SpecCollector } from '@/cli/commands/trieAdapter';
+import type { SpecCollector, AdapterKeyword } from '@/cli/commands/trieAdapter';
 import { collectRegistrations, specsFromTrieRegistrations }
   from '@/cli/commands/trieAdapter';
 import type { ISwitchShell } from './ISwitchShell';
@@ -150,6 +150,67 @@ const STP_VLAN_VIEWS: ReadonlyArray<{ keyword: string; description: string }> = 
   { keyword: 'detail', description: 'Detailed output' },
   { keyword: 'root', description: 'Root bridge' },
 ];
+
+const PORT_SECURITY_PLACES: Readonly<Record<string, ArgumentSpec | readonly ArgumentSpec[]>> = {
+  'switchport port-security maximum': {
+    name: 'maximum', type: 'INT', range: [1, 3072],
+    description: 'Maximum addresses',
+  },
+  'switchport port-security violation': {
+    name: 'violation', type: 'ENUM', description: 'Security violation mode',
+    values: [
+      { keyword: 'protect', description: 'Security violation protect mode' },
+      { keyword: 'restrict', description: 'Security violation restrict mode' },
+      { keyword: 'shutdown', description: 'Security violation shutdown mode' },
+    ],
+  },
+  'switchport port-security mac-address': {
+    name: 'adresse', type: 'MAC_ADDR', description: '48 bit mac address',
+    alternatives: [
+      { keyword: 'H.H.H', description: '48 bit mac address' },
+      { keyword: 'sticky', description: 'Configure dynamic secure addresses as sticky' },
+    ],
+  },
+  'no switchport port-security mac-address': {
+    name: 'adresse', type: 'MAC_ADDR', description: '48 bit mac address',
+    alternatives: [
+      { keyword: 'H.H.H', description: '48 bit mac address' },
+      { keyword: 'sticky', description: 'Configure dynamic secure addresses as sticky' },
+    ],
+  },
+  'switchport port-security aging time': {
+    name: 'minutes', type: 'INT', range: [0, 1440],
+    description: 'Aging time in minutes',
+  },
+  'switchport port-security aging type': {
+    name: 'type', type: 'ENUM', description: 'Aging type',
+    values: [
+      { keyword: 'absolute', description: 'Absolute aging (default)' },
+      { keyword: 'inactivity', description: 'Aging based on inactivity time period' },
+    ],
+  },
+};
+
+const PORT_SECURITY_KEYWORDS: Readonly<Record<string, readonly AdapterKeyword[]>> = {
+  'switchport port-security mac-address': [
+    {
+      keyword: 'sticky', description: 'Configure dynamic secure addresses as sticky',
+      argument: {
+        name: 'adresse', type: 'MAC_ADDR', optional: true,
+        description: '48 bit mac address',
+      },
+    },
+  ],
+  'no switchport port-security mac-address': [
+    {
+      keyword: 'sticky', description: 'Configure dynamic secure addresses as sticky',
+      argument: {
+        name: 'adresse', type: 'MAC_ADDR', optional: true,
+        description: '48 bit mac address',
+      },
+    },
+  ],
+};
 
 function stpVlanSpecs(action: (args: string[]) => string): CommandSpec[] {
   const words = ['show', 'spanning-tree', 'vlan'];
@@ -857,24 +918,29 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
   }
 
   private registerPortSecurityCommands(): void {
+    this.registerPortSecurityOn(this.configIfTrie);
+    this.registerSviAddressingCommands();
+  }
+
+  private registerPortSecurityOn(trie: CommandTrie): void {
     const parseMac = (s: string): MACAddress | null => {
       try { return new MACAddress(s); } catch { return null; }
     };
 
     // ── enable / disable ──
-    this.configIfTrie.register('switchport port-security', 'Enable port-security', () =>
+    trie.register('switchport port-security', 'Enable port-security', () =>
       this.applyToSelectedInterfaces(p => {
         const port = this.d().getPort(p); if (port) port.getPortSecurity().enable();
         return '';
       }));
-    this.configIfTrie.register('no switchport port-security', 'Disable port-security', () =>
+    trie.register('no switchport port-security', 'Disable port-security', () =>
       this.applyToSelectedInterfaces(p => {
         const port = this.d().getPort(p); if (port) port.getPortSecurity().disable();
         return '';
       }));
 
     // ── maximum ──
-    this.configIfTrie.registerGreedy('switchport port-security maximum',
+    trie.registerGreedy('switchport port-security maximum',
       'Max secure MAC addresses', (args) => {
         const n = parseInt(args[0] ?? '', 10);
         if (isNaN(n) || n < 1) return '% Invalid maximum value';
@@ -885,7 +951,7 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
       });
 
     // ── violation mode ──
-    this.configIfTrie.registerGreedy('switchport port-security violation',
+    trie.registerGreedy('switchport port-security violation',
       'Violation mode', (args) => {
         const m = (args[0] ?? '').toLowerCase();
         if (m !== 'shutdown' && m !== 'restrict' && m !== 'protect') return '% Invalid mode';
@@ -897,7 +963,7 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
       });
 
     // ── mac-address (static + sticky toggle + sticky <mac>) ──
-    this.configIfTrie.registerGreedy('switchport port-security mac-address',
+    trie.registerGreedy('switchport port-security mac-address',
       'Configure secure MAC', (args) => {
         if (args.length === 0) return CISCO_ERRORS.INCOMPLETE;
         if (args[0].toLowerCase() === 'sticky') {
@@ -919,7 +985,7 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
           return '';
         });
       });
-    this.configIfTrie.registerGreedy('no switchport port-security mac-address',
+    trie.registerGreedy('no switchport port-security mac-address',
       'Remove secure MAC', (args) => {
         if (args.length === 0) return CISCO_ERRORS.INCOMPLETE;
         if (args[0].toLowerCase() === 'sticky' && args.length === 1) {
@@ -937,7 +1003,7 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
       });
 
     // ── aging ──
-    this.configIfTrie.registerGreedy('switchport port-security aging time',
+    trie.registerGreedy('switchport port-security aging time',
       'Aging window (minutes)', (args) => {
         const n = parseInt(args[0] ?? '', 10);
         if (isNaN(n) || n < 0) return '% Invalid aging time';
@@ -946,7 +1012,7 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
           return '';
         });
       });
-    this.configIfTrie.registerGreedy('switchport port-security aging type',
+    trie.registerGreedy('switchport port-security aging type',
       'Aging strategy', (args) => {
         const t = (args[0] ?? '').toLowerCase();
         if (t !== 'absolute' && t !== 'inactivity') return '% Invalid aging type';
@@ -955,19 +1021,22 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
           return '';
         });
       });
-    this.configIfTrie.register('switchport port-security aging static',
+    trie.register('switchport port-security aging static',
       'Apply aging to static entries', () =>
         this.applyToSelectedInterfaces(p => {
           const port = this.d().getPort(p); if (port) port.getPortSecurity().setAgingStatic(true);
           return '';
         }));
-    this.configIfTrie.register('no switchport port-security aging static',
+    trie.register('no switchport port-security aging static',
       'Exempt static entries from aging', () =>
         this.applyToSelectedInterfaces(p => {
           const port = this.d().getPort(p); if (port) port.getPortSecurity().setAgingStatic(false);
           return '';
         }));
 
+  }
+
+  private registerSviAddressingCommands(): void {
     // ── SVI (management Vlan interface) L3 addressing ──
     // L2-only switch: physical ports cannot hold an IP. A management SVI
     // (interface Vlan N) may, mirroring a real Layer-2 switch.
@@ -1317,11 +1386,11 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
     }
     if (sec.getAgingTimeMin() > 0) {
       out.push(`switchport port-security aging time ${sec.getAgingTimeMin()}`);
-      if (sec.getAgingType() !== 'absolute') {
-        out.push(`switchport port-security aging type ${sec.getAgingType()}`);
-      }
-      if (sec.getAgingStatic()) out.push('switchport port-security aging static');
     }
+    if (sec.getAgingType() !== 'absolute') {
+      out.push(`switchport port-security aging type ${sec.getAgingType()}`);
+    }
+    if (sec.getAgingStatic()) out.push('switchport port-security aging static');
     return out;
   }
 
@@ -2063,7 +2132,21 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
       ...dhcpPoolSpecs(this.dhcpPoolContext()),
       ...this.vlanVtpShowSpecs(),
       ...this.l2TableSpecs(),
+      ...this.portSecuritySpecs(),
     ];
+  }
+
+  private portSecuritySpecs(): CommandSpec[] {
+    return specsFromTrieRegistrations(
+      (collector) => this.registerPortSecurityOn(collector as unknown as CommandTrie),
+      {
+        modes: ['config-if'], minPrivilege: 15,
+        undoFromNegatedPaths: true,
+        skip: (path) => path.startsWith('ip '),
+        argumentFor: (path) => PORT_SECURITY_PLACES[path] ?? null,
+        keywordsFor: (path) => PORT_SECURITY_KEYWORDS[path],
+      },
+    );
   }
 
   protected override socleLegends(): SocleLegend[] {

@@ -6712,3 +6712,42 @@ exister dans `CISCO_IOS_MODES` (avec son `clearOnExit`) et dans
 `CISCO_IOS_PROMPTS`. `object-group network <nom>` en est le premier
 exemple.
 
+
+---
+
+## `switchport port-security` passe au socle, et deux reglages cessent de disparaitre
+
+Famille migree par `specsFromTrieRegistrations` — ton adaptateur, sans
+rien reecrire : `registerPortSecurityOn(trie)` est extrait tel quel de
+`registerPortSecurityCommands`, appele une fois sur l'arbre et une fois
+sur le collecteur, et l'elagage modal vide la copie du trie. Onze
+chemins de moins dans `configIfTrie`.
+
+**Deux defauts trouves par la sonde, et ils ne sont pas d'affichage.**
+`switchport port-security aging type inactivity` et
+`switchport port-security aging static` n'etaient rendus dans la
+configuration QUE si `aging time` etait non nul — ils sont pourtant
+independants sur un vrai Catalyst. Un operateur qui pose le type sans
+poser le delai voyait donc son reglage accepte, honore en memoire, et
+absent de la configuration : perdu au rechargement d'une topologie.
+
+**Les places sont desormais TYPEES**, avec les bornes de la reference
+Catalyst 2960 : `maximum <1-3072>` (defaut 1), `aging time <0-1440>`
+minutes (defaut 0), `aging type absolute|inactivity` (defaut absolute),
+`violation protect|restrict|shutdown` (defaut shutdown), `mac-address`
+annoncant `H.H.H` ET `sticky`. Avant, `maximum ?` annoncait `WORD` et
+`mac-address ?` ne montrait pas qu'une adresse s'ecrit la.
+
+### Un desaccord mesure, ecrit dans `TODO.md` plutot que tranche seul
+
+Ta regle « un prefixe qu'un mot SUIVANT tranche n'est pas ambigu »
+(`accepteEnsuite`) donne `switchport port-security ma 4` = `maximum`,
+puisque `mac-address` n'accepte pas un nombre. Ma sonde attendait
+`% Ambiguous command`, parce qu'un vrai IOS ECHOE la ligne entiere dans
+ce message — ce qui suggere qu'il decide au premier mot sans regarder la
+suite. J'ai mesure le cout de l'inverse : neutraliser le regard en avant
+fait tomber exactement 3 cas sur 2590, tous dans
+`clear-family-slice.test.ts`. Je n'ai PAS touche a ton analyseur ; ma
+sonde encode ta regle et le doute est ecrit avec sa mesure. Il faut une
+transcription de vraie machine pour trancher, et `cisco.com` est bloque
+par le mandataire.

@@ -239,6 +239,23 @@ laisse deux implémentations dont une morte.
 
 ## Routeur Cisco
 
+### [cli] un prefixe ambigu est-il tranche par le mot SUIVANT ?
+Le socle resout un mot-cle ambigu par le mot SUIVANT
+(`CommandParser.accepteEnsuite`) : `switchport port-security ma 4`
+designe `maximum`, la seule branche qui accepte un nombre, et
+`clear`/`clock` se departagent de la meme facon. La regle est ecrite et
+testee (`clear-family-slice.test.ts`).
+**Le doute, mesure et non tranche** : un vrai IOS repond
+`% Ambiguous command:  "cl arp"` en ECHOANT la ligne entiere, ce qui
+suggere qu'il decide au premier mot sans regarder la suite. Neutraliser
+le regard en avant fait tomber exactement 3 cas sur 2590, tous de cette
+suite-la — donc le choix est bien isole.
+**Pourquoi ce n'est pas ferme** : il faut une transcription de vraie
+machine pour trancher, et `cisco.com` est bloque par le mandataire de
+sortie. Les deux comportements sont defendables ; ce qui ne le serait
+pas, c'est que l'aide et l'execution ne suivent pas la meme regle.
+
+
 ### [acl] deux magasins modelisent « un groupe nomme d'adresses »
 `ACLEngine.ObjectGroup` (membres INLINE : `host <ip>`,
 `<reseau> <masque>`, `any`, compares en echec ferme par
