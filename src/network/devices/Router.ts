@@ -124,7 +124,7 @@ import type { KeyChainRepository } from './inspection/config/KeyChainRepository'
 import { fragmentIPv4, IPv4Reassembler } from '../core/Ipv4Fragmentation';
 import type { FhrpDataPlane } from '../fhrp/types';
 import { DHCPServer, type DhcpUtilizationCrossing } from '../dhcp/DHCPServer';
-import { classifyIpv4Destination, decrementForForwarding } from '../layers/internet/InternetLayer';
+import { classifyIpv4Destination, decrementForForwarding, isDirectedBroadcast } from '../layers/internet/InternetLayer';
 import {
   DHCP_FREE_ADDRESS_HIGH, DHCP_FREE_ADDRESS_LOW, DHCP_SHARED_NET_ENTRY,
   snmpAdminStringIndex,
@@ -2367,6 +2367,15 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
       }
     }
 
+    // C.1-ter: RFC 2644 — a subnet-directed broadcast reaching the router
+    // that is directly connected to the target subnet is exploded onto it
+    // only when the operator asked; blocking is the default.
+    const directedEgress = this.directedBroadcastEgress(destIP);
+    if (directedEgress) {
+      this.explodeDirectedBroadcast(inPort, directedEgress, ipPkt);
+      return;
+    }
+
     // C.1-bis: FHRP — the active/master answers for the VIP (ICMP echo
     // to the default gateway must succeed against the virtual address)
     if (this.fhrpOwnsVip(inPort, destIP.toString())) {
@@ -2446,6 +2455,41 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
    * Control Plane: Handle packets addressed to our interface IPs.
    * Supports: ICMP echo-request → echo-reply, UDP/RIP.
    */
+  private directedBroadcastEgress(destination: IPAddress): Port | null {
+    for (const [, port] of this.ports) {
+      const primary = port.getIPAddress();
+      const mask = port.getSubnetMask();
+      const connected = [
+        ...(primary && mask ? [{ address: primary, mask }] : []),
+        ...port.getSecondaryIPs().map((e) => ({ address: e.ip, mask: e.mask })),
+      ];
+      if (isDirectedBroadcast(destination, connected)) return port;
+    }
+    return null;
+  }
+
+  private explodeDirectedBroadcast(
+    inPort: string, egress: Port, ipPkt: IPv4Packet,
+  ): void {
+    if (!egress.isDirectedBroadcastEnabled()) {
+      Logger.info(this.id, 'ipv4:directed-broadcast-dropped',
+        `${this.name}: directed broadcast to ${ipPkt.destinationIP} dropped `
+        + `(no ip directed-broadcast on ${egress.getName()})`);
+      return;
+    }
+    const decision = decrementForForwarding(ipPkt);
+    if (decision.kind === 'expired') {
+      this.sendICMPError(inPort, ipPkt, 'time-exceeded', 0);
+      return;
+    }
+    this.sendFrame(egress.getName(), {
+      srcMAC: egress.getMAC(),
+      dstMAC: MACAddress.broadcast(),
+      etherType: ETHERTYPE_IPV4,
+      payload: decision.packet,
+    });
+  }
+
   private handleLocalDelivery(inPort: string, ipPkt: IPv4Packet): void {
     // RFC 791 §3.2: hold non-first/more-fragments datagrams until the full
     // set arrives — buffered fragments return null here and are simply

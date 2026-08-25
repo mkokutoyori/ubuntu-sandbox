@@ -1,4 +1,4 @@
-import type { IPv4Packet, IPAddress } from '../../core/types';
+import type { IPv4Packet, IPAddress, SubnetMask } from '../../core/types';
 import { computeIPv4Checksum } from '../../core/types';
 import { isMulticastIpv4 } from '../../core/ip';
 
@@ -18,6 +18,20 @@ export function classifyIpv4Destination(destination: IPAddress): Ipv4Destination
   return octets[0] === 224 && octets[1] === 0 && octets[2] === 0
     ? 'link-local-multicast'
     : 'multicast';
+}
+
+export interface ConnectedIpv4Prefix {
+  readonly address: IPAddress;
+  readonly mask: SubnetMask;
+}
+
+export function isDirectedBroadcast(
+  destination: IPAddress, connected: readonly ConnectedIpv4Prefix[],
+): boolean {
+  if (classifyIpv4Destination(destination) !== 'unicast') return false;
+  return connected.some(({ address, mask }) =>
+    destination.isBroadcastFor(mask)
+    && destination.networkAddress(mask).equals(address.networkAddress(mask)));
 }
 
 export type TtlDecision =

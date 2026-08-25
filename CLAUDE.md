@@ -242,6 +242,26 @@ seule et **ne change aucune sémantique protocolaire** : un moteur qui
   SECONDAIRE — un subordonné a-p n'émet pas sur ses interfaces de
   données, pendant exact de `forwardsTransit()` pour la moitié TRANSIT du
   même fait, posé au seul point d'émission (`sendFrame`).
+  **Incrément 4** : une diffusion dirigée explose ou tombe (RFC 2644,
+  BCP 34). `ip directed-broadcast` était accepté, rangé sur le port et
+  rendu par `show running-config`, et `isDirectedBroadcastEnabled()`
+  n'avait qu'UN appelant — ce rendu ; aucun plan de données ne le lisait,
+  si bien que `ping -b` rendait `100% packet loss` AVEC comme SANS la
+  commande. Le défaut par défaut étant le bon, l'inertie était invisible :
+  le paquet tombait, mais parce que le routeur cherchait à résoudre
+  192.168.20.255 en ARP, pas parce qu'une règle en avait décidé — et cet
+  ARP FUYAIT sur le sous-réseau cible. La commande Cisco « affects only
+  the final transmission of the directed broadcast on its ultimate
+  destination subnet » : ce n'est pas une barrière générale
+  d'acheminement, seul le dernier routeur, directement connecté à la
+  cible, explose en diffusion physique ou jette — d'où sa place dans la
+  décision livrer-ici / faire-suivre / jeter et non dans `forwardPacket`.
+  `isDirectedBroadcast` vit dans la couche et réutilise
+  `IPAddress.isBroadcastFor`. **Ce que la mesure a corrigé** : un cas
+  attendait que la cible RÉPONDE, et il avait tort — un vrai Linux ignore
+  un echo adressé à une diffusion (`icmp_echo_ignore_broadcasts` vaut 1),
+  qui est la contre-mesure Smurf que la RFC 2644 complète côté routeur ;
+  l'observable est la LIVRAISON, pas la réponse.
 
 ### Event/timing infra (`src/events/`)
 

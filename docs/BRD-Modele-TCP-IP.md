@@ -671,6 +671,47 @@ moitié TRANSIT du même fait, et la règle vit au seul point d'émission
 (`sendFrame`). Les trois correctifs partent ensemble parce qu'aucun des
 deux derniers n'était observable sans le premier.
 
+**Incrément 4 — LIVRÉ : la diffusion dirigée, RFC 2644.** Premier
+incrément de cette phase à toucher la décision livrer-ici /
+faire-suivre / jeter elle-même. Mesure : `ip directed-broadcast` était
+accepté, rangé sur le port (`Port.directedBroadcast`), rendu par
+`show running-config` — et `isDirectedBroadcastEnabled()` n'avait qu'UN
+appelant dans tout le dépôt, ce rendu. Aucun plan de données ne le
+lisait. Sur le même laboratoire, `ping -b 192.168.20.255` depuis un hôte
+de 192.168.10.0/24 rendait `100% packet loss` AVEC comme SANS la
+commande : la seule différence observable entre les deux configurations
+était le texte de la configuration. C'est le « ne jamais ranger un
+critère qu'on n'évalue pas » du CLAUDE.md, et le fait que le défaut par
+défaut soit le bon rendait l'inertie invisible — sans la commande le
+paquet tombait, mais pour la mauvaise raison (le routeur cherchait à
+résoudre 192.168.20.255 en ARP, sans succès) et non parce qu'une règle
+en avait décidé.
+
+L'attestation dit une chose qu'il ne fallait pas rater : la commande
+Cisco « affects only the final transmission of the directed broadcast on
+its ultimate destination subnet ». Ce n'est donc PAS une barrière
+générale d'acheminement — un paquet qui TRAVERSE un routeur vers le
+sous-réseau cible est acheminé normalement ; seul le dernier routeur,
+directement connecté à la cible, l'explose en diffusion physique (option
+active) ou le jette (défaut RFC 2644, BCP 34). D'où sa place exacte dans
+la décision de la phase, et non dans `forwardPacket`.
+`isDirectedBroadcast` vit dans la couche et réutilise
+`IPAddress.isBroadcastFor`, déjà écrit.
+
+**Deux choses que la mesure a corrigées de mes suppositions.** (1)
+J'avais écrit un cas attendant que la cible RÉPONDE. Il est tombé, et il
+avait tort : un vrai Linux ne répond pas à un echo adressé à une
+diffusion (`net.ipv4.icmp_echo_ignore_broadcasts` vaut 1 par défaut),
+qui est précisément la contre-mesure Smurf que la RFC 2644 complète côté
+routeur. L'observable est donc la LIVRAISON, pas une réponse — faire
+« marcher » le ping aurait demandé de casser cette contre-mesure-là.
+(2) Deux cas de la sonde passaient pour la mauvaise raison, parce qu'ils
+comptaient n'importe quelle trame : avant correctif le routeur émettait
+une requête ARP de diffusion pour résoudre 192.168.20.255, si bien
+qu'une diffusion dirigée venue de l'extérieur faisait FUIR un ARP sur le
+sous-réseau cible — le paquet ne passait pas, mais le routeur parlait
+quand même au segment qu'on cherchait à atteindre.
+
 ### Phase 3 — RIB et FIB séparées
 **Sortie** : `lookupRoute()` ne réveille plus le plan de contrôle ; une
 route statique récursive (`ip route <net> <mask> <ip-hors-lien>`)
