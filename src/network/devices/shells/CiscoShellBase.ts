@@ -5895,6 +5895,10 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       return renderCliDiagnostic('ambiguous', { line: cmdPart });
     }
     if (parsed.status !== 'ok') return null;
+    if (!parsed.spec.modes.includes(this.mode)
+      && this.getActiveTrie().match(cmdPart).status === 'ok') {
+      return null;
+    }
     const bare = cmdPart.trim().replace(/^no\s+/i, '');
     if (!this.prefixIsUnambiguous(bare, parsed.spec)) return null;
 
