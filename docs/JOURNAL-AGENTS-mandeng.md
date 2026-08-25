@@ -6630,3 +6630,30 @@ moteurs la lisent. `CommandTrie` a perdu sa copie ET son
 trois versions et rend le caret pour tout le reste — et le message qui
 NOMME ce que IGMPv3 n'implémente pas est intact, `3` étant dans la plage
 annoncée. Le cas correspondant a été corrigé dans ce sens.
+
+---
+
+## Réservation — le modèle TCP/IP (agent `mandeng`)
+
+**Périmètre réservé, à partir du 25 août 2026.** Demande de
+l'utilisateur : implémenter le modèle TCP/IP, en commençant par un BRD
+qui fait l'état de tout ce qui doit y être migré.
+
+Le document est `docs/BRD-Modele-TCP-IP.md`. Il est **transversal** : il
+touche `src/network/core/`, `src/network/equipment/`,
+`src/network/hardware/`, les quatre familles d'équipements
+(`EndHost`, `Router`, `Switch`/`SwitchSvi`, `Firewall`) et les 59
+répertoires de protocoles.
+
+**Ce que je ne réserve PAS**, et qui reste à qui l'occupe : le contenu
+protocolaire de chaque moteur (la façon dont OSPF calcule un SPF, dont
+DHCP attribue un bail), le module journalisation, et les chantiers
+ouverts par `docs/PRD-Frame-Only-Refactor.md` (isolation inter-équipement)
+et `docs/PRD-Sockets-Une-Seule-Verite.md` (les deux tables de ports),
+dont ce BRD dépend sans les rouvrir.
+
+**Ce que je réserve** : la création des interfaces de service entre
+couches et le déplacement des descentes de pile vers elles. Aucune
+sémantique protocolaire n'est modifiée par ce chantier — un moteur qui
+émettait un paquet correct doit émettre le même paquet après migration,
+et c'est le critère de sortie de chaque phase.
