@@ -206,6 +206,10 @@ export class LinuxSshServerContext implements ISshServerContext {
           logMgr: this.executor?.logMgr,
         })
       : null;
+    const userMgr = this.executor?.userMgr;
+    if (userMgr) {
+      this.syslogger?.setUidLookup((u) => userMgr.getUser(u)?.uid ?? 1000);
+    }
 
     // Fail2ban jail (sshd) — constructed before the throttler so its
     // `auth_failure` subscription (the "Found <ip>" line) observes each

@@ -789,7 +789,7 @@ describe('§11 — /var/log/auth.log matches SSH activity', () => {
       name: 'auth.log records port and protocol info per OpenSSH',
       setup: (l) => { void l.pc1.executeCommand('ssh alice@10.0.0.2'); },
       on: l => l.pc2,
-      cmd: 'tail -3 /var/log/auth.log',
+      cmd: 'grep sshd /var/log/auth.log',
       contains: [/port \d+ ssh2/],
     },
     {
@@ -1759,7 +1759,7 @@ describe('§26 — SSH public-key authentication', () => {
         await l.pc1.executeCommand('ssh alice@10.0.0.2');
       },
       on: l => l.pc2,
-      cmd: 'tail -3 /var/log/auth.log',
+      cmd: 'grep sshd /var/log/auth.log',
       contains: [/Accepted publickey for alice/],
     },
     {

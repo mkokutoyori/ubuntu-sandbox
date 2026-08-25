@@ -68,7 +68,7 @@ const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
   'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 const DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
-function fmtSyslogTimestamp(d: Date): string {
+export function fmtSyslogTimestamp(d: Date): string {
   const mon = MONTHS[d.getMonth()];
   const day = String(d.getDate()).padStart(2, ' ');
   const hh = String(d.getHours()).padStart(2, '0');
@@ -87,7 +87,7 @@ function fmtIsoTimestamp(d: Date): string {
   return `${yyyy}-${mo}-${dd}T${hh}:${mm}:${ss}+0000`;
 }
 
-function fmtHumanDate(d: Date): string {
+export function fmtHumanDate(d: Date): string {
   const day = DAYS[d.getDay()];
   const mon = MONTHS[d.getMonth()];
   const dd = String(d.getDate()).padStart(2, ' ');

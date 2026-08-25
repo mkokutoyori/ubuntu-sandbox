@@ -31,7 +31,7 @@ import { deliverLocalMessage } from '@/network/smtp/localDelivery';
 import { parseMailArgs, sendMail, parseMailbox, formatMailboxSummary, type MailCommandDeps } from './commands/net/mail/MailCommand';
 import { LinuxIptablesManager } from './LinuxIptablesManager';
 import { LinuxFirewallManager } from './LinuxFirewallManager';
-import { LinuxLogManager } from './LinuxLogManager';
+import { LinuxLogManager, fmtSyslogTimestamp } from './LinuxLogManager';
 import { LinuxNetworkConfigManager } from './LinuxNetworkConfigManager';
 import { type ShellContext, cmdTouch, cmdLs, cmdCat, cmdEcho, cmdCp, cmdMv, cmdRm, cmdMkdir, cmdRmdir, cmdLn, cmdPwd, cmdTee, expandGlob } from './LinuxFileCommands';
 import { cmdGrep, cmdHead, cmdWc, cmdSort, cmdCut, cmdUniq, cmdTr, cmdAwk, cmdSed } from './LinuxTextCommands';
@@ -2054,7 +2054,7 @@ export class LinuxCommandExecutor {
    *  addition to* syslog, not instead of it. */
   writeSudoAuditLine(kind: 'success' | 'not-in-sudoers' | 'command-not-allowed', auth: SudoAuthorization, cmdStr: string): void {
     if (!this.serviceMgr.isActive('rsyslog')) return;
-    const ts = new Date().toUTCString().replace(/^... /, '').slice(0, 15);
+    const ts = fmtSyslogTimestamp(new Date());
     const reasonSuffix = kind === 'success' ? '' : kind === 'not-in-sudoers' ? 'user NOT in sudoers ; ' : 'command not allowed ; ';
     const line = `${ts} ${auth.hostname} sudo: ${auth.invokingUser} : ${reasonSuffix}TTY=pts/0 ; PWD=${this.cwd} ; USER=${auth.runasUser} ; COMMAND=/usr/bin/${cmdStr}\n`;
     const existing = this.vfs.readFile('/var/log/auth.log') ?? '';
@@ -2772,6 +2772,8 @@ export class LinuxCommandExecutor {
    */
   /** Exit code of the most recent execute() call. Cleared per call. */
   lastExitCode = 0;
+
+  sessionHoldSeconds = 0;
 
   /**
    * Run a command in the context of a specific shell session. Implements the
@@ -3545,7 +3547,7 @@ export class LinuxCommandExecutor {
           : '';
         if (!this.userMgr.checkPassword(invokingUser, supplied)) {
           if (this.serviceMgr.isActive('rsyslog')) {
-            const ts = new Date().toUTCString().replace(/^... /, '').slice(0, 15);
+            const ts = fmtSyslogTimestamp(new Date());
             const cmdStr = cmdArgs.filter((a) => !a.includes('\n')).join(' ');
             const fail =
               `${ts} ${hostname} sudo: pam_unix(sudo:auth): authentication failure; ` +
@@ -4832,6 +4834,7 @@ export class LinuxCommandExecutor {
       // but never blocks; the simulator advances time logically.
       case 'sleep': {
         const r = runSleep(args);
+        if (r.exitCode === 0) this.sessionHoldSeconds += r.seconds;
         return { output: r.output, exitCode: r.exitCode };
       }
       // `timeout <N> <cmd ...>` — run the inner command. In real life

@@ -24,6 +24,7 @@ import type { AccountLifecycleVerdict } from '@/network/protocols/ssh/auth/ISshA
 import type { SshForwardingTable } from './SshForwardingTable';
 import type { TcpStack } from '../../../tcp/TcpStack';
 import type { SshAgent } from '../../../protocols/ssh/SshAgent';
+import { fmtHumanDate } from '../LinuxLogManager';
 import type { LinuxMachine } from '../../LinuxMachine';
 import { isSshExecTarget, type SshExecTarget } from '../../../protocols/ssh/server/SshExecTarget';
 import { SshConfig } from '../../../protocols/ssh/SshConfig';
@@ -849,6 +850,7 @@ export function runSshClient(opts: SshClientOpts): SshClientResult {
   // (PC or Server) ships a sshd; everything else refuses on principle.
   const machine = found.device as LinuxMachine & {
     isServiceActive?: (n: string) => boolean;
+    scheduleSshLogout?: (user: string, fromIp: string, holdSeconds: number) => void;
     sshdAcceptsLogin?: (u: string, ctx?: { address?: string; host?: string }) => { ok: boolean; reason?: string };
     recordSshLogin?: (
       u: string,
@@ -1206,6 +1208,7 @@ export function runSshClient(opts: SshClientOpts): SshClientResult {
       // back to the long-lived shell — snapshot/restore around the call.
       const envSnapshot = (machine as unknown as { executor: { env?: Map<string, string> } }).executor?.env;
       const savedEntries = envSnapshot ? Array.from(envSnapshot.entries()) : null;
+      sessionHold(machine);
       // With -t (PTY), bash sources ~/.bashrc before running the
       // command — that's where aliases and shell functions live.
       // Prepend the rc body and `shopt -s expand_aliases` so alias
@@ -1236,6 +1239,7 @@ export function runSshClient(opts: SshClientOpts): SshClientResult {
     // Terminate the remote command's output with a newline (as a real TTY
     // does) so a following local command starts on its own line.
     const normalised = execOut && !execOut.endsWith('\n') ? `${execOut}\n` : execOut;
+    machine.scheduleSshLogout?.(remoteUser, opts.sourceIp, sessionHold(machine));
     return { output: warningBanner + verboseHeader + forwardingError + normalised, exitCode: execRc, connection };
   }
 
@@ -1294,25 +1298,19 @@ export function runSshClient(opts: SshClientOpts): SshClientResult {
   if (banner.trim()) lines.push(banner.replace(/\n*$/, ''));
   lines.push(`Welcome to Ubuntu 22.04.3 LTS (GNU/Linux 5.15.0-91-generic x86_64)`);
   if (printLastLog) {
-    lines.push(`Last login: ${formatLastLoginStamp(new Date())} from ${opts.sourceIp}`);
+    lines.push(`Last login: ${fmtHumanDate(new Date())} from ${opts.sourceIp}`);
   }
   if (printMotd && motd.trim()) lines.push(motd.replace(/\n*$/, ''));
   lines.push(`Connection to ${host} closed.`);
+  machine.scheduleSshLogout?.(remoteUser, opts.sourceIp, 0);
   return { output: warningBanner + verboseHeader + forwardingError + lines.join('\n'), exitCode: 0, connection };
 }
 
-const LAST_LOGIN_MONTHS = [
-  'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
-  'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
-];
-const LAST_LOGIN_DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-
-export function formatLastLoginStamp(at: Date): string {
-  const pad = (n: number) => String(n).padStart(2, '0');
-  return `${LAST_LOGIN_DAYS[at.getDay()]} ${LAST_LOGIN_MONTHS[at.getMonth()]} `
-    + `${String(at.getDate()).padStart(2, ' ')} `
-    + `${pad(at.getHours())}:${pad(at.getMinutes())}:${pad(at.getSeconds())} `
-    + `${at.getFullYear()}`;
+function sessionHold(machine: unknown): number {
+  const exec = (machine as { executor?: { sessionHoldSeconds?: number } }).executor;
+  const held = exec?.sessionHoldSeconds ?? 0;
+  if (exec) exec.sessionHoldSeconds = 0;
+  return held;
 }
 
 /**
@@ -1526,6 +1524,7 @@ function runCrossPlatformExec(
 
   const sessionRegistry = router.getSshSessionRegistry?.();
   const closeSession = () => {
+    target.scheduleSshLogout?.(remoteUser, opts.sourceIp, 0);
     if (!sessionRegistry) return;
     const open = sessionRegistry.list().find(s => s.user === remoteUser && s.fromIp === opts.sourceIp);
     if (open) sessionRegistry.close(open.id, 'logout');

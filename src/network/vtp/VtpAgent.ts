@@ -8,6 +8,7 @@ import {
   ETHERTYPE_VTP, VTP_MULTICAST_MAC,
 } from './types';
 import { MACAddress, type EthernetFrame } from '../core/types';
+import type { LinkSendRequest } from '../layers/link/LinkLayer';
 import { Logger } from '../core/Logger';
 
 export interface VtpHost {
@@ -16,7 +17,7 @@ export interface VtpHost {
   getHostname(): string;
   getPort(name: string): import('../hardware/Port').Port | undefined;
   getPorts(): import('../hardware/Port').Port[];
-  sendFrame(portName: string, frame: EthernetFrame): void;
+  sendOnLink(request: LinkSendRequest): boolean;
   vtpListVlans(): VtpVlanEntry[];
   vtpApplyVlans(vlans: VtpVlanEntry[]): { added: number[]; removed: number[] };
   vtpIsTrunkPort(portName: string): boolean;
@@ -382,13 +383,12 @@ export class VtpAgent extends ReactiveAgentBase {
       vlans: [],
       primaryClaim: { ...this.knownPrimary, forced },
     };
-    const eth: EthernetFrame = {
-      srcMAC: port.getMAC(),
-      dstMAC: new MACAddress(VTP_MULTICAST_MAC),
+    this.host.sendOnLink({
+      iface: portName,
+      destination: new MACAddress(VTP_MULTICAST_MAC),
       etherType: ETHERTYPE_VTP,
       payload,
-    };
-    this.host.sendFrame(portName, eth);
+    });
   }
 
   private handleJoin(portName: string, payload: VtpFrame): void {
@@ -439,13 +439,12 @@ export class VtpAgent extends ReactiveAgentBase {
       vlans: [],
       interestVlans: [...interest],
     };
-    const eth: EthernetFrame = {
-      srcMAC: port.getMAC(),
-      dstMAC: new MACAddress(VTP_MULTICAST_MAC),
+    this.host.sendOnLink({
+      iface: portName,
+      destination: new MACAddress(VTP_MULTICAST_MAC),
       etherType: ETHERTYPE_VTP,
       payload,
-    };
-    this.host.sendFrame(portName, eth);
+    });
   }
 
   advertiseAllTrunks(reason: 'periodic' | 'config-change' | 'local-vlan-change' | 'relay' | 'request-reply'): void {
@@ -537,13 +536,12 @@ export class VtpAgent extends ReactiveAgentBase {
         ? { primaryClaim: { ...this.knownPrimary, forced: false } }
         : {}),
     };
-    const eth: EthernetFrame = {
-      srcMAC: port.getMAC(),
-      dstMAC: new MACAddress(VTP_MULTICAST_MAC),
+    this.host.sendOnLink({
+      iface: portName,
+      destination: new MACAddress(VTP_MULTICAST_MAC),
       etherType: ETHERTYPE_VTP,
       payload,
-    };
-    this.host.sendFrame(portName, eth);
+    });
     this.getBus().publish({
       topic: 'vtp.frame.sent',
       payload: {
@@ -590,8 +588,15 @@ export class VtpAgent extends ReactiveAgentBase {
       if (!port.getIsUp() || !port.isConnected()) continue;
       if (this.advertising.has(name)) continue;
       this.advertising.add(name);
-      try { this.host.sendFrame(name, frame); }
-      finally { this.advertising.delete(name); }
+      try {
+        this.host.sendOnLink({
+          iface: name,
+          source: frame.srcMAC,
+          destination: frame.dstMAC,
+          etherType: frame.etherType,
+          payload: frame.payload,
+        });
+      } finally { this.advertising.delete(name); }
     }
   }
 

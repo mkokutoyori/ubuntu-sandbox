@@ -23,7 +23,7 @@ describe('auth.log mirrors PAM + systemd-logind session lifecycle', () => {
 
   describe('login emits the PAM session-opened line', () => {
     it('auth.log contains pam_unix(sshd:session): session opened for user alice', async () => {
-      await pc.executeCommand('ssh alice@10.0.0.2');
+      await pc.executeCommand('ssh alice@10.0.0.2 sleep 60');
       const log = await srv.executeCommand('cat /var/log/auth.log');
       expect(log).toMatch(/pam_unix\(sshd:session\): session opened for user alice/);
     });
@@ -31,7 +31,7 @@ describe('auth.log mirrors PAM + systemd-logind session lifecycle', () => {
 
   describe('login emits the systemd-logind New session line', () => {
     it('auth.log contains systemd-logind[...] New session N of user alice.', async () => {
-      await pc.executeCommand('ssh alice@10.0.0.2');
+      await pc.executeCommand('ssh alice@10.0.0.2 sleep 60');
       const log = await srv.executeCommand('cat /var/log/auth.log');
       expect(log).toMatch(/systemd-logind\[\d+\]: New session \d+ of user alice\./);
     });
@@ -39,7 +39,7 @@ describe('auth.log mirrors PAM + systemd-logind session lifecycle', () => {
 
   describe('terminate-session emits PAM session-closed + logind Removed-session lines', () => {
     it('auth.log gains session closed for user alice', async () => {
-      await pc.executeCommand('ssh alice@10.0.0.2');
+      await pc.executeCommand('ssh alice@10.0.0.2 sleep 60');
       const sidRow = (await srv.executeCommand('loginctl list-sessions'))
         .split('\n').find((l) => /alice/.test(l)) ?? '';
       const sid = sidRow.trim().split(/\s+/)[0];
@@ -49,13 +49,13 @@ describe('auth.log mirrors PAM + systemd-logind session lifecycle', () => {
     });
 
     it('the journal does NOT include a duplicate -bash[<pid>]: ... spawn line', async () => {
-      await pc.executeCommand('ssh alice@10.0.0.2');
+      await pc.executeCommand('ssh alice@10.0.0.2 sleep 60');
       const log = await srv.executeCommand('journalctl');
       expect(log).not.toMatch(/-bash\[\d+\]:\s+\[\d+\]\s+alice:/);
     });
 
     it('auth.log gains systemd-logind Removed session N.', async () => {
-      await pc.executeCommand('ssh alice@10.0.0.2');
+      await pc.executeCommand('ssh alice@10.0.0.2 sleep 60');
       const sidRow = (await srv.executeCommand('loginctl list-sessions'))
         .split('\n').find((l) => /alice/.test(l)) ?? '';
       const sid = sidRow.trim().split(/\s+/)[0];

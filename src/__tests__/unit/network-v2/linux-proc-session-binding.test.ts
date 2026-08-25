@@ -28,14 +28,14 @@ describe('/proc/<pid>/{loginuid,sessionid,cgroup} bind processes to sessions', (
 
   describe('login-shell process', () => {
     it('cat /proc/<pid>/loginuid matches alice uid', async () => {
-      await pc.executeCommand('ssh alice@10.0.0.2');
+      await pc.executeCommand('ssh alice@10.0.0.2 sleep 60');
       const pid = await alicePid();
       const out = (await srv.executeCommand(`cat /proc/${pid}/loginuid`)).trim();
       expect(out).toBe('1000');
     });
 
     it('cat /proc/<pid>/sessionid matches the loginctl session id', async () => {
-      await pc.executeCommand('ssh alice@10.0.0.2');
+      await pc.executeCommand('ssh alice@10.0.0.2 sleep 60');
       const pid = await alicePid();
       const sessionid = (await srv.executeCommand(`cat /proc/${pid}/sessionid`)).trim();
       const sidRow = (await srv.executeCommand('loginctl list-sessions'))
@@ -45,7 +45,7 @@ describe('/proc/<pid>/{loginuid,sessionid,cgroup} bind processes to sessions', (
     });
 
     it('cat /proc/<pid>/cgroup names the per-session scope and user slice', async () => {
-      await pc.executeCommand('ssh alice@10.0.0.2');
+      await pc.executeCommand('ssh alice@10.0.0.2 sleep 60');
       const pid = await alicePid();
       const out = await srv.executeCommand(`cat /proc/${pid}/cgroup`);
       expect(out).toMatch(/0::\/user\.slice\/user-1000\.slice\/session-\d+\.scope/);

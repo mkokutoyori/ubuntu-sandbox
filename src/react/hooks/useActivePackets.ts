@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { getDefaultEventBus } from '@/events/EventBus';
+import { EquipmentRegistry } from '@/network/equipment/EquipmentRegistry';
 import {
   ETHERTYPE_ARP, ETHERTYPE_IPV4, IP_PROTO_ICMP,
 } from '@/network/core/types';
@@ -32,27 +32,41 @@ export function useActivePackets(): ActivePacket[] {
   const rafRef = useRef<number | null>(null);
 
   useEffect(() => {
-    const bus = getDefaultEventBus();
+    const registry = EquipmentRegistry.getInstance();
     let counter = 0;
-    const off = bus.subscribe('cable.frame.dispatched', (event) => {
-      const payload = event.payload as FrameDispatchedPayload;
-      if (!payload || !payload.cableId || !payload.from || !payload.to) return;
-      const id = `pkt-${Date.now()}-${counter++}`;
-      const startTime = performance.now();
+    let taps: Array<() => void> = [];
+
+    const record = (deviceId: string, iface: string, frame: unknown): void => {
+      const device = registry.getById(deviceId);
+      const port = device?.getPort(iface);
+      const cable = port?.getCable();
+      const far = cable ? (cable.getPortA() === port ? cable.getPortB() : cable.getPortA()) : null;
+      if (!cable || !far) return;
       const next: ActivePacket = {
-        id,
-        connectionId: payload.cableId,
-        sourceDeviceId: payload.from.deviceId,
-        destinationDeviceId: payload.to.deviceId,
+        id: `pkt-${Date.now()}-${counter++}`,
+        connectionId: cable.getId(),
+        sourceDeviceId: deviceId,
+        destinationDeviceId: far.getEquipmentId(),
         progress: 0,
-        type: classifyPacket(payload.frame),
-        startTime,
+        type: classifyPacket(frame as never),
+        startTime: performance.now(),
       };
       setPackets((current) => {
         if (current.length >= MAX_CONCURRENT_PACKETS) return [...current.slice(1), next];
         return [...current, next];
       });
-    });
+    };
+
+    const rebind = (): void => {
+      for (const off of taps) off();
+      taps = registry.getAll().map(device => device.attachCapture((tapped) => {
+        if (tapped.direction !== 'out') return;
+        record(device.getId(), tapped.iface, tapped.frame);
+      }));
+    };
+    rebind();
+    const offRegistry = registry.subscribe(rebind);
+    const off = () => { offRegistry(); for (const t of taps) t(); };
     return off;
   }, []);
 

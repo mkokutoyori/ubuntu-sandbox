@@ -14,6 +14,7 @@ import {
   IPAddress,
   type EthernetFrame, type IPv4Packet,
 } from '../core/types';
+import type { LinkSendRequest } from '../layers/link/LinkLayer';
 import { Logger } from '../core/Logger';
 
 export interface IgmpSnoopingHost {
@@ -22,7 +23,7 @@ export interface IgmpSnoopingHost {
   getHostname(): string;
   getPort(name: string): import('../hardware/Port').Port | undefined;
   getPorts(): import('../hardware/Port').Port[];
-  sendFrame(portName: string, frame: EthernetFrame): void;
+  sendOnLink(request: LinkSendRequest): boolean;
   resolveIngressVlan(portName: string): number | undefined;
   isTrunkPort(portName: string): boolean;
   /** SVI address of the VLAN, used as the snooping querier's source IP. */
@@ -329,7 +330,13 @@ export class IgmpSnoopingAgent extends ReactiveAgentBase {
       const name = port.getName();
       if (!port.getIsUp() || !port.isConnected()) continue;
       if (this.host.resolveIngressVlan(name) !== v.vlan) continue;
-      this.host.sendFrame(name, buildIgmpFrame(port.getMAC(), new IPAddress(srcIp), dst, payload));
+      const built = buildIgmpFrame(port.getMAC(), new IPAddress(srcIp), dst, payload);
+      this.host.sendOnLink({
+        iface: name,
+        destination: built.dstMAC,
+        etherType: built.etherType,
+        payload: built.payload,
+      });
       sentOn++;
     }
     if (sentOn === 0) return;

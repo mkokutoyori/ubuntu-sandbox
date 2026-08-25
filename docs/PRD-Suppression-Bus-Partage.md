@@ -109,11 +109,41 @@ vraie trame sur un vrai port câblé. C'est une correction de test, pas un
 assouplissement : l'exigence — l'opérateur voit la ligne — est
 inchangée, et elle est mieux gardée qu'avant.
 
-### Incrément 3 — l'UI n'a plus de bus global
-Les crochets React (`useDevices`, `useActivePackets`, `useBusEvents`, …)
-lisent aujourd'hui le bus global. Ils deviennent des abonnés du magasin
-et des taps des machines affichées. **Sortie** : `src/react/hooks/` ne
-mentionne plus `getDefaultEventBus`.
+### Incrément 3 — l'UI n'a plus de bus global — **LIVRÉ**
+**Sortie atteinte** : `src/react/hooks/` ne mentionne plus
+`getDefaultEventBus`, et un cas structurel le garde.
+
+**Ce que les huit crochets regardaient se répartit en trois, et chaque
+part a un propriétaire qui n'est pas un bus partagé.**
+
+**Le cycle de vie de la TOPOLOGIE** (`device.registered`,
+`device.deregistered`, `registry.cleared`) appartient au registre qui en
+décide. `EquipmentRegistry.subscribe(listener)` le dit directement, au
+lieu de passer par un bus que n'importe qui peut lire.
+`useDevices`, `useEngineSignal` et `useHostObservables` le lisent.
+
+**L'état PAR APPAREIL** appartient à l'appareil rendu, qui a déjà son bus
+de machine. `useMacTable` tenait déjà l'instance — son filtre par
+`deviceId` devient inutile, ce qui est le signe qu'on a trouvé le bon
+propriétaire. `useConnectionPerf` s'abonne aux deux appareils du câble.
+
+**Les TRAMES** de l'animation appartiennent au tap de l'incrément 1.
+`useActivePackets` quittait `cable.frame.dispatched` : il pose un tap sur
+chaque machine et déduit le câble et le pair du port émetteur.
+
+**`useBusEvents`** est l'échappatoire générique. Son bus était optionnel
+et retombait sur le global ; il est désormais **obligatoire**. Vérifié
+avant de le durcir : ce crochet n'a aucun appelant de production, et son
+seul test passait déjà un bus explicite.
+
+**Une découverte qui a élargi le lot.** `useOracle` écoute
+`oracle.instance.state-changed`, et une instance Oracle publiait sur le
+bus GLOBAL — l'incrément 4 ne l'avait câblée sur le bus de sa machine
+que pour RAC. C'est fait pour toutes. Mais `oracleHooks.test.tsx` a
+nommé le reste : il fait tourner Oracle sur un identifiant d'appareil qui
+n'est PAS dans le registre, donc s'abonner aux appareils ne suffit pas.
+Le vrai propriétaire du cycle de vie d'une instance est la table qui la
+détient : `subscribeOracleInstances` est son observateur.
 
 ### Incrément 4 — l'interconnexion RAC devient du vrai trafic — **LIVRÉ**
 Le battement de cœur CSS et les messages GCS deviennent de vrais

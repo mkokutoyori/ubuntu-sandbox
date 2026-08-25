@@ -43,7 +43,7 @@ describe('who / w / last are coherent with /var/run/utmp and /var/log/wtmp', () 
 
   describe('login appears in wtmp', () => {
     it('a successful SSH login appears in last on the server', async () => {
-      await pc.executeCommand('ssh alice@10.0.0.2');
+      await pc.executeCommand('ssh alice@10.0.0.2 sleep 60');
       const out = await srv.executeCommand('last -n 5');
       expect(out).toMatch(/^alice\b/m);
     });
@@ -51,7 +51,7 @@ describe('who / w / last are coherent with /var/run/utmp and /var/log/wtmp', () 
 
   describe('truncating wtmp clears last output', () => {
     it('echo > /var/log/wtmp removes prior login rows from last', async () => {
-      await pc.executeCommand('ssh alice@10.0.0.2');
+      await pc.executeCommand('ssh alice@10.0.0.2 sleep 60');
       const before = await srv.executeCommand('last -n 10');
       expect(before).toMatch(/^alice\b/m);
       await srv.executeCommand('echo -n > /var/log/wtmp');
@@ -62,7 +62,7 @@ describe('who / w / last are coherent with /var/run/utmp and /var/log/wtmp', () 
 
   describe('truncating utmp clears who/w output', () => {
     it('echo > /var/run/utmp empties the who session list', async () => {
-      await pc.executeCommand('ssh alice@10.0.0.2');
+      await pc.executeCommand('ssh alice@10.0.0.2 sleep 60');
       const before = await srv.executeCommand('who');
       expect(before).toMatch(/^alice\b/m);
       await srv.executeCommand('echo -n > /var/run/utmp');

@@ -2633,7 +2633,7 @@ export abstract class EndHost extends Equipment {
     const port = this.ports.get(iface);
     if (!port) return false;
     return addressAnswersOnLink({
-      sendFrame: (name, frame) => { this.sendFrame(name, frame); },
+      sendOnLink: (request) => this.getLinkLayer().send(request),
       hasNeighbour: (ip) => this.arpTable.has(ip),
       neighbourMac: (ip) => this.arpTable.get(ip)?.mac,
       answersEcho: (from, send) => {

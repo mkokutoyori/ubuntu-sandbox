@@ -58,6 +58,9 @@ export class SshSyslogger {
   private readonly sshdPid: number;
   private readonly port: number;
   private readonly clock: () => Date;
+  private pendingSessionUser: string | null = null;
+  private openSessionUser: string | null = null;
+  private uidLookup: ((user: string) => number) | null = null;
   private readonly logMgr: LinuxLogManager | null;
   private readonly unsubscribe: () => void;
 
@@ -97,6 +100,7 @@ export class SshSyslogger {
         return `Connection from ${event.ip} port ${event.port ?? this.port} on ${this.hostname} port ${this.port}`;
 
       case 'auth_success': {
+        this.pendingSessionUser = event.user;
         if (event.method === 'publickey' && event.keyFingerprint) {
           return `Accepted publickey for ${event.user} from ${event.ip} port ${event.port ?? this.port} ssh2: ED25519 ${event.keyFingerprint}`;
         }
@@ -149,6 +153,10 @@ export class SshSyslogger {
 
       case 'client_disconnected': {
         const port = event.port ?? this.port;
+        if (this.openSessionUser === event.user) {
+          this.openSessionUser = null;
+          this.append(`pam_unix(sshd:session): session closed for user ${event.user}`);
+        }
         if (event.authenticated) {
           return `Disconnected from user ${event.user} ${event.ip} port ${port}`;
         }
@@ -162,7 +170,11 @@ export class SshSyslogger {
         if (event.channelType === 'sftp') {
           return `subsystem request for sftp by user ${event.user}`;
         }
-        return null;
+        if (this.pendingSessionUser !== event.user) return null;
+        this.pendingSessionUser = null;
+        this.openSessionUser = event.user;
+        return `pam_unix(sshd:session): session opened for user ${event.user}`
+          + `(uid=${this.uidOf(event.user)}) by (uid=0)`;
 
       case 'channel_closed':
         return null;
@@ -171,6 +183,10 @@ export class SshSyslogger {
         return null;
     }
   }
+
+  setUidLookup(lookup: (user: string) => number): void { this.uidLookup = lookup; }
+
+  private uidOf(user: string): number { return this.uidLookup?.(user) ?? 1000; }
 
   private append(message: string): void {
     // When wired to a LinuxLogManager the journal owns BOTH the on-disk

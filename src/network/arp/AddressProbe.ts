@@ -3,6 +3,7 @@ import {
   type ARPPacket, type EthernetFrame,
 } from '@/network/core/types';
 import { buildEchoRequest } from '@/network/icmp/IcmpEcho';
+import type { LinkSendRequest } from '@/network/layers/link/LinkLayer';
 
 export interface AddressProbePort {
   getMAC(): MACAddress;
@@ -10,7 +11,7 @@ export interface AddressProbePort {
 }
 
 export interface AddressProbeSink {
-  sendFrame(iface: string, frame: EthernetFrame): void;
+  sendOnLink(request: LinkSendRequest): boolean;
   hasNeighbour(ip: string): boolean;
   neighbourMac(ip: string): MACAddress | undefined;
   answersEcho(from: string, send: () => void): boolean;
@@ -31,8 +32,8 @@ export function addressAnswersOnLink(
       senderMAC: port.getMAC(), senderIP: myIP,
       targetMAC: MACAddress.broadcast(), targetIP: target,
     };
-    sink.sendFrame(iface, {
-      srcMAC: port.getMAC(), dstMAC: MACAddress.broadcast(),
+    sink.sendOnLink({
+      iface, destination: MACAddress.broadcast(),
       etherType: ETHERTYPE_ARP, payload: request,
     });
   }
@@ -43,8 +44,8 @@ export function addressAnswersOnLink(
   const identifier = nextIdentifier++ & 0xffff;
   const packet = buildEchoRequest(myIP.toString(), key, identifier, 0);
   return sink.answersEcho(key, () => {
-    sink.sendFrame(iface, {
-      srcMAC: port.getMAC(), dstMAC: mac,
+    sink.sendOnLink({
+      iface, destination: mac,
       etherType: ETHERTYPE_IPV4, payload: packet,
     });
   });

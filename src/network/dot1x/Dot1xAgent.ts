@@ -14,6 +14,7 @@ import {
   MACAddress,
   type EthernetFrame,
 } from '../core/types';
+import type { LinkSendRequest } from '../layers/link/LinkLayer';
 import { Logger } from '../core/Logger';
 
 /**
@@ -34,7 +35,7 @@ export interface Dot1xHost {
   getHostname(): string;
   getPort(name: string): import('../hardware/Port').Port | undefined;
   getPorts(): import('../hardware/Port').Port[];
-  sendFrame(portName: string, frame: EthernetFrame): void;
+  sendOnLink(request: LinkSendRequest): boolean;
   onDot1xPortAuthorized?(portName: string, authorized: boolean): void;
   /** RFC 3580 §3.31 dynamic VLAN assignment from a RADIUS Access-Accept — actually moving the port is left to the caller. */
   onDot1xVlanAssigned?(portName: string, vlanId: number): void;
@@ -290,13 +291,12 @@ export class Dot1xAgent {
     const dst = rt.lastSupplicantMac
       ? new MACAddress(rt.lastSupplicantMac)
       : new MACAddress(EAPOL_PAE_GROUP_MAC);
-    const frame: EthernetFrame = {
-      srcMAC: port.getMAC(),
-      dstMAC: dst,
+    this.host.sendOnLink({
+      iface: rt.port,
+      destination: dst,
       etherType: ETHERTYPE_EAPOL,
       payload,
-    };
-    this.host.sendFrame(rt.port, frame);
+    });
     this.getBus().publish({
       topic: 'dot1x.packet.sent',
       payload: {

@@ -29,7 +29,7 @@ describe('systemd-logind state mirrors active SSH sessions', () => {
 
   describe('/run/systemd/sessions/<sid> is written on login', () => {
     it('contains UID, USER, TTY, LEADER, SERVICE=sshd, STATE=active', async () => {
-      await pc.executeCommand('ssh alice@10.0.0.2');
+      await pc.executeCommand('ssh alice@10.0.0.2 sleep 60');
       const sid = await sidFor('alice');
       const content = await srv.executeCommand(`cat /run/systemd/sessions/${sid}`);
       expect(content).toMatch(/^UID=\d+$/m);
@@ -45,7 +45,7 @@ describe('systemd-logind state mirrors active SSH sessions', () => {
 
   describe('/run/systemd/users/<uid> is written on login', () => {
     it('contains NAME, STATE=active, SESSIONS, SLICE, RUNTIME', async () => {
-      await pc.executeCommand('ssh alice@10.0.0.2');
+      await pc.executeCommand('ssh alice@10.0.0.2 sleep 60');
       const sid = await sidFor('alice');
       const uidLine = (await srv.executeCommand('loginctl list-sessions'))
         .split('\n').find((l) => l.includes('alice')) ?? '';
@@ -61,7 +61,7 @@ describe('systemd-logind state mirrors active SSH sessions', () => {
 
   describe('/run/user/<uid> runtime dir is provisioned', () => {
     it('exists as a directory after SSH login', async () => {
-      await pc.executeCommand('ssh alice@10.0.0.2');
+      await pc.executeCommand('ssh alice@10.0.0.2 sleep 60');
       const uidLine = (await srv.executeCommand('loginctl list-sessions'))
         .split('\n').find((l) => l.includes('alice')) ?? '';
       const uid = uidLine.trim().split(/\s+/)[1];
@@ -73,7 +73,7 @@ describe('systemd-logind state mirrors active SSH sessions', () => {
 
   describe('logind state is cleaned up on session close', () => {
     it('/run/systemd/sessions/<sid> goes away after terminate-session', async () => {
-      await pc.executeCommand('ssh alice@10.0.0.2');
+      await pc.executeCommand('ssh alice@10.0.0.2 sleep 60');
       const sid = await sidFor('alice');
       const before = await srv.executeCommand(`cat /run/systemd/sessions/${sid}`);
       expect(before).toMatch(/^USER=alice$/m);

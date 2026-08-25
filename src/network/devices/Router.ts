@@ -3913,7 +3913,7 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
     const port = this.ports.get(route.iface);
     if (!port) return false;
     return addressAnswersOnLink({
-      sendFrame: (iface, frame) => { this.sendFrame(iface, frame); },
+      sendOnLink: (request) => this.getLinkLayer().send(request),
       hasNeighbour: (ip) => this.arpTable.has(ip),
       neighbourMac: (ip) => this.arpTable.get(ip)?.mac,
       answersEcho: (from, send) => {
