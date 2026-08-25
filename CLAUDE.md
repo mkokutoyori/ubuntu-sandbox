@@ -262,6 +262,25 @@ seule et **ne change aucune sémantique protocolaire** : un moteur qui
   un echo adressé à une diffusion (`icmp_echo_ignore_broadcasts` vaut 1),
   qui est la contre-mesure Smurf que la RFC 2644 complète côté routeur ;
   l'observable est la LIVRAISON, pas la réponse.
+  **Incrément 5** : une erreur ICMP ne répond pas à n'importe quoi.
+  `mayGenerateICMPError` (RFC 1122 §3.2.2) existait et était juste, lue
+  par `Router`, `Firewall` et `EndHost` ; `SwitchSvi` ne l'appelait NULLE
+  PART, et mesuré sur un Catalyst à deux SVI il émettait une erreur en
+  réponse à une erreur ICMP, à un paquet adressé à 239.1.1.1 et à un
+  fragment non initial — trois interdits sur trois. Quatrième écriture
+  d'un même fait, et encore une fois c'est celle qui a oublié la règle
+  qui est la plus permissive ; le cas du groupe fait du commutateur un
+  amplificateur Smurf, un incrément après la moitié routeur de la même
+  contre-mesure. Fermés avec : `core/IcmpErrors.ts` DÉLÈGUE à ses
+  appelants le contrôle de la diffusion DIRIGÉE et aucun des trois ne le
+  faisait (faisable seulement depuis que l'incrément 4 a posé
+  `isDirectedBroadcast`), et les DEUX émetteurs quasi identiques du SVI —
+  ne différant que par le type et le code, aucun ne lisant
+  `buildICMPError` — n'en font plus qu'un. **La portée est mesurée** :
+  `Router` est déjà couvert par l'incrément 4, et `EndHost` émet zéro
+  erreur sur une diffusion dirigée, attesté par un TÉMOIN unicast monté
+  dans le même laboratoire qui en émet exactement une — sans lui, un
+  laboratoire mal bâti et une absence de défaut seraient indiscernables.
 
 ### Event/timing infra (`src/events/`)
 

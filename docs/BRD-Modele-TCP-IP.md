@@ -712,6 +712,42 @@ qu'une diffusion dirigée venue de l'extérieur faisait FUIR un ARP sur le
 sous-réseau cible — le paquet ne passait pas, mais le routeur parlait
 quand même au segment qu'on cherchait à atteindre.
 
+**Incrément 5 — LIVRÉ : une erreur ICMP ne répond pas à n'importe quoi.**
+Mesure de départ sur un Catalyst à deux SVI : une erreur ICMP en réponse
+à une erreur ICMP (1), à un paquet adressé à 239.1.1.1 (1), à un
+fragment non initial (1) — trois interdits sur trois — pendant qu'un vrai
+TTL expiré en donnait bien une seule. La RFC 1122 §3.2.2 nomme les quatre
+cas, et **la règle existait déjà et était juste** :
+`mayGenerateICMPError` de `core/IcmpErrors.ts`, lue par `Router`,
+`Firewall` et `EndHost`. `SwitchSvi` ne l'appelait NULLE PART —
+quatrième écriture d'un même fait, et comme partout ailleurs dans ce
+dépôt c'est celle qui a oublié la règle qui est la plus permissive. Le
+cas du groupe est le plus coûteux : il fait du commutateur un
+amplificateur Smurf, un incrément après que la moitié routeur de cette
+même contre-mesure a été livrée.
+
+**Deux autres défauts du même sujet, fermés avec.** (1)
+`core/IcmpErrors.ts` DÉLÈGUE à ses appelants le contrôle de la diffusion
+DIRIGÉE — « callers that know the mask must check `isBroadcastFor()`
+themselves » — et **aucun des trois ne le faisait** ; il devient faisable
+ici parce que l'incrément 4 a posé `isDirectedBroadcast` dans la couche.
+(2) Le SVI portait DEUX émetteurs quasi identiques, ne différant que par
+le type et le code, et aucun des deux ne lisait `buildICMPError` du
+module partagé. Il n'en reste qu'un.
+
+**La portée du contrôle de diffusion dirigée est MESURÉE et non
+supposée**, parce que l'ajouter partout « par précaution » rangerait un
+critère que rien n'atteint. `Router` : l'incrément 4 attrape le cas avant
+le chemin d'erreur. `EndHost` : un routeur Linux à deux pattes,
+`ip_forward` à 1, recevant un TTL 1 vers `192.168.20.255` émet ZÉRO
+erreur — et ce zéro est attesté par un TÉMOIN monté dans le même
+laboratoire, un TTL 1 vers `192.168.20.10`, qui en émet exactement une.
+Sans ce témoin, un laboratoire mal bâti et une absence de défaut seraient
+indiscernables — piège dans lequel un cas de la sonde était justement
+tombé : « source non unicast » passait déjà, non par respect de la règle
+mais parce que `lookupRoute(0.0.0.0)` ne trouvait aucune route de retour.
+Le silence était un accident de routage ; il est désormais décidé.
+
 ### Phase 3 — RIB et FIB séparées
 **Sortie** : `lookupRoute()` ne réveille plus le plan de contrôle ; une
 route statique récursive (`ip route <net> <mask> <ip-hors-lien>`)
