@@ -50,6 +50,10 @@ export interface DHCPPoolConfig {
   leaseDuration: number;
   /** Client-identifier deny patterns */
   denyPatterns: string[];
+  highUtilizationMark: number;
+  lowUtilizationMark: number;
+  highUtilizationLog: boolean;
+  lowUtilizationLog: boolean;
   active?: boolean;
   /** Option 58: T1 renewal time in seconds (default: 50% of lease) */
   renewalTime?: number;
@@ -395,6 +399,10 @@ export function createDefaultPoolConfig(name: string): DHCPPoolConfig {
     domainName: null,
     leaseDuration: 86400, // 1 day default
     denyPatterns: [],
+    highUtilizationMark: 100,
+    lowUtilizationMark: 0,
+    highUtilizationLog: false,
+    lowUtilizationLog: false,
   };
 }
 

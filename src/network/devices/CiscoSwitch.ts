@@ -70,6 +70,8 @@ export class CiscoSwitch extends Switch {
   constructor(type: DeviceType = 'switch-cisco', name: string = 'Switch', portCount: number = 50, x: number = 0, y: number = 0) {
     super(type, name, portCount, x, y);
     const hostBase = {
+      sendOnLink: (request: import('../layers/link/LinkLayer').LinkSendRequest) =>
+        this.getLinkLayer().send(request),
       id: this.id, name: this.name,
       getHostname: () => this.getHostname(),
       getType: () => this.getType(),
@@ -247,8 +249,8 @@ export class CiscoSwitch extends Switch {
     if (!this.bpduGuardErrDisabled.delete(portName)) return false;
     const p = this.getPort(portName);
     if (p) p.setUp(true);
-    Logger.info(this.id, 'stp:bpduguard',
-      `${this.name}: Attempting to recover from bpduguard err-disable state on ${portName}`);
+    Logger.warn(this.id, 'pm:err-recover',
+      `Attempting to recover from bpduguard err-disable state on ${portName}`);
     this.getBus().publish({
       topic: 'stp.errdisable.changed',
       payload: {
@@ -292,14 +294,14 @@ export class CiscoSwitch extends Switch {
     // (setEventBus can fire from the base constructor, before the registry
     // field initializer ran — hence the optional chain.)
     this.agents?.restartAll();
-    this._debugService?.attachToBus(this.getBus(), this.id);
+    this._debugService?.attachToBus(this.getBus(), this.id, this);
   }
 
   private _debugService: RouterDebugService | null = null;
 
   getDebugService(): RouterDebugService {
     if (!this._debugService) this._debugService = new RouterDebugService('switch');
-    this._debugService.attachToBus(this.getBus(), this.id);
+    this._debugService.attachToBus(this.getBus(), this.id, this);
     return this._debugService;
   }
 

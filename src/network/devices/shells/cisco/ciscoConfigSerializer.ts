@@ -45,6 +45,7 @@ const BLOCK_ORDER: ReadonlyArray<{ rank: number; test: RegExp }> = [
   { rank: 16, test: /^ip route\b/ },
   { rank: 17, test: /^ip nat\b/ },
   { rank: 18, test: /^ip sla\b/ },
+  { rank: 18.5, test: /^object-group\b/ },
   { rank: 19, test: /^(ip )?access-list\b/ },
   { rank: 19, test: /^ip prefix-list\b/ },
   /**

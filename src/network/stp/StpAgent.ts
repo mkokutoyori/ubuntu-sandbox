@@ -11,6 +11,7 @@ import {
 import { StpVlanInstance, type StpInstanceAgent, type StpForwardState } from './StpVlanInstance';
 import { mstConfigIdentifier, sameMstRegion, type MstConfigIdentifier } from './MstConfigId';
 import { MACAddress, type EthernetFrame } from '../core/types';
+import type { LinkSendRequest } from '../layers/link/LinkLayer';
 import { Logger } from '../core/Logger';
 
 export type { StpForwardState } from './StpVlanInstance';
@@ -21,7 +22,7 @@ export interface StpHost {
   getHostname(): string;
   getPort(name: string): import('../hardware/Port').Port | undefined;
   getPorts(): import('../hardware/Port').Port[];
-  sendFrame(portName: string, frame: EthernetFrame): void;
+  sendOnLink(request: LinkSendRequest): boolean;
   onForwardStateChanged(portName: string, state: StpForwardState, vlan: number): void;
   onStpBpduGuardErrDisable?(portName: string, senderMac: string): void;
   onTopologyChangeAging?(agingSec: number | null): void;
@@ -151,7 +152,7 @@ export class StpAgent extends ReactiveAgentBase implements StpInstanceAgent {
 
   /**
    * The member a bundle actually transmits through: the first one still up
-   * and cabled. A logical name is never handed to `sendFrame` — only real
+   * and cabled. A logical name is never handed to the link layer — only real
    * ports carry frames.
    */
   private txMemberFor(key: string): string {
@@ -1072,9 +1073,9 @@ export class StpAgent extends ReactiveAgentBase implements StpInstanceAgent {
       topologyChange: false,
       topologyChangeAck: false,
     };
-    this.host.sendFrame(this.txMemberFor(portName), {
-      srcMAC: port.getMAC(),
-      dstMAC: new MACAddress(STP_BRIDGE_MAC),
+    this.host.sendOnLink({
+      iface: this.txMemberFor(portName),
+      destination: new MACAddress(STP_BRIDGE_MAC),
       etherType: ETHERTYPE_STP,
       payload: bpdu,
     });
@@ -1161,17 +1162,17 @@ export class StpAgent extends ReactiveAgentBase implements StpInstanceAgent {
     const pvstPlus = this.config.mode !== 'mstp'
       && (this.host.isStpTrunkPort?.(this.hostPortName(portName)) ?? false)
       && key !== nativeVlan;
-    const frame: EthernetFrame & { dot1q?: { tpid: number; pcp: number; dei: number; vid: number } } = {
-      srcMAC: port.getMAC(),
-      dstMAC: new MACAddress(pvstPlus ? PVST_PLUS_MAC : STP_BRIDGE_MAC),
-      etherType: ETHERTYPE_STP,
-      payload: bpdu,
-    };
-    if (pvstPlus) frame.dot1q = { tpid: 0x8100, pcp: 0, dei: 0, vid: key };
     this.advertising.add(adKey);
     this.bpduSentCounts.set(portName, (this.bpduSentCounts.get(portName) ?? 0) + 1);
-    try { this.host.sendFrame(this.txMemberFor(portName), frame); }
-    finally { this.advertising.delete(adKey); }
+    try {
+      this.host.sendOnLink({
+        iface: this.txMemberFor(portName),
+        destination: new MACAddress(pvstPlus ? PVST_PLUS_MAC : STP_BRIDGE_MAC),
+        etherType: ETHERTYPE_STP,
+        payload: bpdu,
+        ...(pvstPlus ? { dot1q: { tpid: 0x8100, pcp: 0, dei: 0, vid: key } } : {}),
+      });
+    } finally { this.advertising.delete(adKey); }
     this.getBus().publish({
       topic: 'stp.bpdu.sent',
       payload: {

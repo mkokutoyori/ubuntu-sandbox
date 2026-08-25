@@ -91,23 +91,15 @@ describe('SshSyslogger — reactive auth.log producer', () => {
     );
   });
 
-  it('logs session opened for channel_opened', () => {
+  it('ne produit PAS de ligne pam_unix pour un canal', () => {
     bus.emit({ kind: 'channel_opened', user: 'alice', channelType: 'shell' });
-    expect(readAuthLog()).toContain(
-      'pam_unix(sshd:session): session opened for user alice',
-    );
+    bus.emit({ kind: 'channel_closed', user: 'alice', channelType: 'shell', durationMs: 5000 });
+    expect(readAuthLog()).not.toContain('pam_unix(sshd:session)');
   });
 
-  it('logs session closed for channel_closed', () => {
-    bus.emit({
-      kind: 'channel_closed',
-      user: 'alice',
-      channelType: 'shell',
-      durationMs: 5000,
-    });
-    expect(readAuthLog()).toContain(
-      'pam_unix(sshd:session): session closed for user alice',
-    );
+  it('mais annonce le sous-systeme sftp, comme le vrai sshd', () => {
+    bus.emit({ kind: 'channel_opened', user: 'alice', channelType: 'sftp' });
+    expect(readAuthLog()).toContain('subsystem request for sftp by user alice');
   });
 
   it('logs throttling decisions for auth_throttled', () => {

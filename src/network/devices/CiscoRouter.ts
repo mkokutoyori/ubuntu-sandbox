@@ -8,6 +8,7 @@
  */
 
 import { Router } from './Router';
+import { isMulticastIpv4 } from '../core/ip';
 import { AgentRegistry } from './AgentRegistry';
 import { cdpToNeighborDTO, lldpToNeighborDTO } from './inspection/neighborConverters';
 import type { IRouterShell } from './shells/IRouterShell';
@@ -177,6 +178,8 @@ export class CiscoRouter extends Router {
   constructor(name: string = 'Router', x: number = 0, y: number = 0) {
     super('router-cisco', name, x, y);
     const hostBase = {
+      sendOnLink: (request: import('../layers/link/LinkLayer').LinkSendRequest) =>
+        this.getLinkLayer().send(request),
       id: this.id, name: this.name,
       getHostname: () => this.getHostname(),
       getType: () => this.getType(),
@@ -406,9 +409,9 @@ export class CiscoRouter extends Router {
       this.lldpAgent.handleFrame(portName, frame);
       return;
     }
-    const octets = frame.dstMAC.getOctets();
-    const isIpv4Multicast = octets[0] === 0x01 && octets[1] === 0x00 && octets[2] === 0x5e;
-    if (frame.etherType === 0x0800 && isIpv4Multicast) {
+    if (frame.etherType === 0x0800
+      && isMulticastIpv4(
+        (frame.payload as IPv4Packet | undefined)?.destinationIP?.toString() ?? '')) {
       const ipPkt = frame.payload as IPv4Packet | undefined;
       if (ipPkt && ipPkt.protocol === IP_PROTO_IGMP) {
         this.igmpAgent.handleIp(portName, ipPkt.sourceIP, ipPkt);

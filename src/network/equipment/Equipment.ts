@@ -15,8 +15,10 @@
  */
 
 import { Port } from '../hardware/Port';
-import { EthernetFrame, DeviceType, generateId } from '../core/types';
+import { EthernetFrame, DeviceType, MACAddress, generateId } from '../core/types';
 import { Logger } from '../core/Logger';
+import { LinkLayer } from '../layers/link/LinkLayer';
+import { TapPoint, type FrameTap, type DetachTap } from '../hardware/PortTap';
 import { EquipmentRegistry } from './EquipmentRegistry';
 import { DEVICE_CATALOG } from '../core/deviceCatalog';
 import { getDefaultEventBus, ForwardingEventBus, type IEventBus } from '@/events/EventBus';
@@ -126,6 +128,8 @@ export abstract class Equipment {
 
   /** This machine's internal bus (lazy) — see refactor-frame-only.md. */
   private machineBus: ForwardingEventBus | null = null;
+  private linkLayer: LinkLayer | null = null;
+  private readonly captureTap = new TapPoint();
 
   constructor(deviceType: DeviceType, name: string, x: number = 0, y: number = 0) {
     this.id = generateId();
@@ -147,6 +151,29 @@ export abstract class Equipment {
     if (this.busOverride) return this.busOverride;
     if (!this.machineBus) this.machineBus = new ForwardingEventBus(getDefaultEventBus());
     return this.machineBus;
+  }
+
+  getLinkLayer(): LinkLayer {
+    if (!this.linkLayer) {
+      this.linkLayer = new LinkLayer({
+        getPort: (name) => this.getPort(name),
+        transmit: (iface, frame) => this.sendFrame(iface, frame),
+        ownsLocalUnicast: (iface, destination) =>
+          this.ownsLocalUnicast(iface, destination),
+      });
+    }
+    return this.linkLayer;
+  }
+
+  protected ownsLocalUnicast(_iface: string, _destination: MACAddress): boolean {
+    return false;
+  }
+
+  attachCapture(tap: FrameTap, iface?: string): DetachTap {
+    return this.captureTap.attach((tapped) => {
+      if (iface !== undefined && tapped.iface !== iface) return;
+      tap(tapped);
+    });
   }
 
   // ─── Identity ───────────────────────────────────────────────────
@@ -287,6 +314,9 @@ export abstract class Equipment {
         return;
       }
       this.handleFrame(portName, frame);
+    });
+    port.attachTap((tapped) => {
+      this.captureTap.emit(tapped.iface, tapped.direction, tapped.frame);
     });
     this.ports.set(port.getName(), port);
   }

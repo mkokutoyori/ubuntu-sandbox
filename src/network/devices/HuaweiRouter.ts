@@ -8,6 +8,7 @@
  */
 
 import { Router } from './Router';
+import { isMulticastIpv4 } from '../core/ip';
 import { VRP_ACL_NUMBERING, VRP_SEQUENCING, VRP_DEFAULT_STEP } from './router/ACLEngine';
 import { AgentRegistry } from './AgentRegistry';
 import { lldpToNeighborDTO } from './inspection/neighborConverters';
@@ -93,6 +94,8 @@ export class HuaweiRouter extends Router {
     // contenant qu'un `deny` bloquait tout le reste du trafic.
     this._setAclUnmatchedDataPlaneAction('permit');
     const hostBase = {
+      sendOnLink: (request: import('../layers/link/LinkLayer').LinkSendRequest) =>
+        this.getLinkLayer().send(request),
       id: this.id, name: this.name,
       getHostname: () => this.getHostname(),
       getType: () => this.getType(),
@@ -180,7 +183,7 @@ export class HuaweiRouter extends Router {
     // (setEventBus can fire from the base constructor, before the registry
     // field initializer ran — hence the optional chain.)
     this.agents?.restartAll();
-    this._huaweiDebugService?.attachToBus(this.getBus(), this.id);
+    this._huaweiDebugService?.attachToBus(this.getBus(), this.id, this);
     this.bindIgmpToPim();
   }
 
@@ -222,7 +225,7 @@ export class HuaweiRouter extends Router {
       this._huaweiDebugService.setPlatform('router');
       this._registerDebugSwitchboards(this._huaweiDebugService);
     }
-    this._huaweiDebugService.attachToBus(this.getBus(), this.id);
+    this._huaweiDebugService.attachToBus(this.getBus(), this.id, this);
     return this._huaweiDebugService;
   }
 
@@ -369,9 +372,9 @@ export class HuaweiRouter extends Router {
         return;
       }
     }
-    const octets = frame.dstMAC.getOctets();
-    const isIpv4Multicast = octets[0] === 0x01 && octets[1] === 0x00 && octets[2] === 0x5e;
-    if (frame.etherType === 0x0800 && isIpv4Multicast) {
+    if (frame.etherType === 0x0800
+      && isMulticastIpv4(
+        (frame.payload as IPv4Packet | undefined)?.destinationIP?.toString() ?? '')) {
       const ipPkt = frame.payload as IPv4Packet | undefined;
       if (ipPkt && ipPkt.protocol === IP_PROTO_IGMP) {
         this.igmpAgent.handleIp(portName, ipPkt.sourceIP, ipPkt);

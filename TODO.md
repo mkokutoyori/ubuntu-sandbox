@@ -139,28 +139,29 @@ libelle — une ligne dans `winUnreachText`.
 
 ## Gestion (SNMP, NTP, syslog)
 
-### [snmp] la moitie du vocabulaire VRP est rangee et jamais evaluee
-Depuis le lot « une communaute SNMP est une communaute », la CLI VRP
-ecrit dans `SnmpService` et un mot que VRP ne connait pas est REFUSE.
-Restent les formes que VRP connait et que ce moteur ne sait pas honorer :
-`mib-view`, `group v3`, `usm-user v3`, `packet max-size`,
+### [snmp] SNMPv3 (USM) et les formes VRP qui restent inertes
+Depuis le lot « une vue MIB filtre vraiment », `mib-view` est EVALUE :
+la vue nommee par une communaute decide, OID par OID, de ce qu'elle
+peut lire, selon la regle du sous-arbre le plus long (RFC 3415).
+
+Restent les formes que VRP connait et que ce moteur ne sait toujours
+pas honorer : `group v3`, `usm-user v3`, `packet max-size`,
 `protocol source-interface`, `protocol version`, et les deux moities
 `target-host trap-hostname` / `trap-paramsname`. Elles vont dans
 `SnmpService.recordVrpLine`, sont rendues telles qu'ecrites, et rien ne
-les lit. Mesure : une communaute restreinte a une vue MIB vide lit quand
-meme `sysName` ; un `usm-user v3` declare ne permet aucune requete v3,
+les lit.
+**Mesure** : un `usm-user v3` declare ne permet aucune requete v3,
 `SnmpAgent` n'ayant ni USM ni v3 du tout.
 **Pourquoi ce n'est pas ferme** : les refuser casserait le rejeu d'une
 configuration reelle et les ferait disparaitre a l'import d'une
-topologie — le meme raisonnement que pour
-`ip ssh server algorithm`. Les evaluer demande trois chantiers
-distincts : une notion de vue MIB filtrant chaque OID resolu, un modele
-USM/v3 (authentification et chiffrement des PDU), et une interface
-d'ecoute par laquelle l'agent repondrait, qui n'existe pas — il repond
-sur le port qui a recu. Ce qui EST evalue depuis ce lot, et qui fixe la
-frontiere : nom et droit de communaute, `acl` (source confrontee a la
-liste, echec ferme), contact, localisation, versions, hote de trap,
-`trap source`, `trap enable`, `local-engineid`.
+topologie — le meme raisonnement que pour `ip ssh server algorithm`.
+Les evaluer demande deux chantiers distincts : un modele USM/v3
+(authentification et chiffrement des PDU, moteur d'horloge et de
+compteur de boots), et une interface d'ecoute par laquelle l'agent
+repondrait, qui n'existe pas — il repond sur le port qui a recu.
+**Limite connue de la vue** : le `mask` de la RFC 3415, que VRP accepte
+derriere le sous-arbre, n'est pas modelise ; une entree en porte un est
+refusee plutot que rangee sans etre lue.
 
 ---
 
@@ -216,22 +217,6 @@ qu'un lot de migration ne doit pas faire ; et les trois cas restants
 demandent chacun une reference propre a la plateforme, la reponse
 n'etant pas la meme sur un 2900 et sur un 2960.
 
-### [nat] `debug ip nat` est enregistre DEUX fois, et l'une des deux est morte
-`registerNATPrivilegedCommands` enregistre `debug ip nat` et
-`no debug ip nat` avec leur propre corps (il allume le moteur puis
-delegue au service de debogage), et ce corps n'a jamais repondu : le
-repartiteur glouton `debug ip` de `CiscoShellBase` sert la commande, et
-lui seul sait ecrire `IP NAT detailed debugging is on`.
-**Mesure** : migrer la paire au socle la fait GAGNER, et
-`debug ip nat detailed` passe de `IP NAT detailed debugging is on` a
-`IP NAT debugging is on for access list detailed` — le message du corps
-mort. Un cas de `debug-family-slice.test.ts` l'a attrape.
-**Report** : les deux corps allument le meme moteur mais ne rendent pas
-le meme texte, donc les fondre demande de decider lequel est fidele
-(c'est celui du repartiteur) et de retirer l'autre — un travail qui
-appartient a la famille du DEBOGAGE, pas au lot `clear ip nat`. La
-migration l'ecarte explicitement par `skip` en attendant.
-
 ### [socle] deux familles sont migrées sur le commutateur VRP
 Le pont existe des DEUX côtés : `VRP_SWITCH_MODES` décrit la hiérarchie
 des treize vues du commutateur, et `HuaweiSwitchShell` consulte le socle
@@ -251,6 +236,61 @@ appris : une famille ne vaut d'être migrée que si le socle lui APPORTE
 quelque chose — ici l'argument typé, qui a fermé cinq défauts d'un coup —
 et il faut RETIRER l'enregistrement du trie en même temps, sans quoi on
 laisse deux implémentations dont une morte.
+
+## Routeur Cisco
+
+### [cli] un prefixe ambigu est-il tranche par le mot SUIVANT ?
+Le socle resout un mot-cle ambigu par le mot SUIVANT
+(`CommandParser.accepteEnsuite`) : `switchport port-security ma 4`
+designe `maximum`, la seule branche qui accepte un nombre, et
+`clear`/`clock` se departagent de la meme facon. La regle est ecrite et
+testee (`clear-family-slice.test.ts`).
+**Le doute, mesure et non tranche** : un vrai IOS repond
+`% Ambiguous command:  "cl arp"` en ECHOANT la ligne entiere, ce qui
+suggere qu'il decide au premier mot sans regarder la suite. Neutraliser
+le regard en avant fait tomber exactement 3 cas sur 2590, tous de cette
+suite-la — donc le choix est bien isole.
+**Pourquoi ce n'est pas ferme** : il faut une transcription de vraie
+machine pour trancher, et `cisco.com` est bloque par le mandataire de
+sortie. Les deux comportements sont defendables ; ce qui ne le serait
+pas, c'est que l'aide et l'execution ne suivent pas la meme regle.
+
+
+### [acl] deux magasins modelisent « un groupe nomme d'adresses »
+`ACLEngine.ObjectGroup` (membres INLINE : `host <ip>`,
+`<reseau> <masque>`, `any`, compares en echec ferme par
+`objectGroupMatches`) et `firewall/model/ObjectStore.ObjectGroup`
+(membres NOMMES, imbrication, detection de recursion, resolution
+FQDN/pays/etiquettes) decrivent le meme concept avec deux modeles de
+membre — et portent le MEME nom de type dans deux modules, ce qui est en
+soi un piege de lecture.
+**Mesure** : `object-group network SERVEURS` sur un routeur et sur un
+ASA remplissent deux magasins sans rapport.
+**Pourquoi ce n'est pas ferme** : fondre le premier dans le second
+demande de synthetiser un objet anonyme par membre inline et de
+reconstruire les lignes d'IOS a l'affichage. En echange, l'imbrication
+(`group-object`) deviendrait possible. C'est un chantier a soi, pas
+l'extension du correctif qui a rendu le groupe evaluable.
+
+### [acl] deux formes du sous-mode `object-group` restent refusees
+La ligne `<reseau> <masque>` SANS mot-cle initial, qu'un vrai IOS
+accepte a l'interieur du sous-mode, est refusee : la table du socle
+comme le trie indexent par le premier mot, et une ligne qui commence par
+une adresse n'en a pas. `network <reseau> <masque>` est exigee.
+`group-object <nom>` est refusee plutot que rangee, faute de resolution
+de l'imbrication : ranger un membre que la comparaison ne lit pas ferait
+d'une ACE citant ce groupe une regle PLUS ETROITE que ce que
+l'operateur a ecrit.
+**Report** : la premiere demande une entree indexee autrement que par un
+mot-cle ; la seconde demande l'entree precedente.
+
+### [acl] le sous-mode `object-group` n'existe pas sur le commutateur
+`CiscoSwitchShell` n'a pas de moteur d'ACL a alimenter — son
+`getVaclEngine()` est un autre magasin — donc `object-group network` est
+declare sur le seul routeur, contre l'uniformite visee entre
+equipements Cisco.
+**Report** : demande de choisir ce qu'un groupe veut dire pour une VACL
+avant de le declarer.
 
 ## Pare-feu FortiGate
 
@@ -540,20 +580,39 @@ ce depot passe son temps a defaire. Ce qui EST ferme depuis le lot
 qui n'est pas une adresse est refusee aux quatre portes.
 
 
-### [dhcp] `utilization mark high|low` n'est pas configurable
-`show ip dhcp pool` rend la ligne
-`Utilization mark (high/low) : 100 / 0`. Les deux valeurs SONT celles
-d'IOS par defaut, mais elles sont constantes : la vue lisait
-`pool.highUtilizationMark`/`lowUtilizationMark`, deux proprietes qui
-n'existent sur aucun `DHCPPoolConfig`, donc les replis `?? 100` / `?? 0`
-etaient tout ce qui s'affichait. Elles sont desormais des constantes
-nommees, ce qui dit la verite au lieu de simuler une lecture.
-**Mesure** : `utilization mark high 80` sous `ip dhcp pool` est refuse, et
-aucun magasin ne porte le reglage.
-**Report** : la commande n'a d'interet qu'avec ce qu'elle declenche —
-`%DHCPD-4-HIGH_UTIL` et la notification SNMP associee —, donc l'accepter
-seule rangerait un seuil que rien ne franchit. C'est un lot avec son
-emetteur, pas un attribut de plus.
+### [cli] `utilization mark high ?` annonce `<cr>` et `<0-100>`
+Deux infidelites d'AIDE, pas de comportement, laissees par le lot des
+seuils DHCP. **`<cr>`** : la place du pourcentage est declaree
+FACULTATIVE parce que c'est la seule facon, dans le socle, qu'un
+`no utilization mark high` — qui s'arrete au mot-cle, comme sur IOS —
+atteigne la commande ; `CommandTable.declare` ne pose une commande sur
+un noeud intermediaire que devant une place facultative. La forme
+positive refuse toujours `utilization mark high` seul, donc l'aide
+promet un `<cr>` que le gestionnaire refuse. **`<0-100>`** : une SEULE
+declaration sert les deux seuils, dont les plages reelles different
+(`<1-100>` pour le haut, `<0-100>` pour le bas), donc l'aide annonce
+leur union et le gestionnaire refuse `high 0`.
+**Mesure** : `utilization mark high ?` rend `<0-100>` puis `<cr>` ;
+`utilization mark high` seul rend `% Incomplete command.` ;
+`utilization mark high 0` rend le caret.
+**Report** : fermer le premier demande que le socle sache poser une
+commande sur un noeud pour sa seule forme NIEE (un `undoPath`, ou un
+`undoRequiresArgument` reellement lu) ; fermer le second demande qu'une
+plage puisse dependre du JETON precedent — `SessionParamRanges`, le
+port pose par le lot `standby version 2`, lit la session et non la
+ligne. Les deux touchent le socle CLI, pas la famille DHCP.
+
+### [dhcp] Un pool sans adresse a distribuer ne franchit aucun seuil
+`utilization mark high|low` est applique, mais `poolLeasableTotal` rend
+zero quand le pool n'a pas de `network`, et l'evaluation SAUTE alors le
+pool : un pool declare et jamais reseaute ne franchit donc rien, meme a
+100 % d'un total nul.
+**Mesure** : `evaluateUtilizationMarks` sort par `if (total === 0)
+continue`.
+**Report** : c'est le choix juste par defaut — un pourcentage d'un
+denominateur nul n'a pas de valeur — mais une vraie machine refuse la
+commande `network` manquante autrement, et savoir laquelle des deux
+elle fait demanderait une capture qu'on n'a pas.
 
 ### [dhcp] Windows : le basculement et l'export restent absents
 `Get-DhcpServerv4Binding`, `Get-/Set-DhcpServerv4DnsSetting` sont
@@ -582,7 +641,63 @@ Windows (c'est la forme BIND du même besoin).
 est écrit plutôt que tu : la sécurisation est RÉELLE et vérifiable, sa
 distribution de clé ne l'est pas.
 
+## SSH
+
+### [ssh] aucune session ne se FERME cote serveur
+Mesure, sur un serveur Linux joint par quatre clients de constructeurs
+differents : les quatre ecrivent « Connection to 10.0.0.1 closed. » et
+le serveur, lui, garde les trois sessions ouvertes pour toujours —
+`who`, `w` et `last` les rendent « still logged in », et le journal ne
+porte ni `pam_unix(sshd:session): session closed` ni
+`Disconnected from user`. `emitSessionClosedLog` n'a qu'UN appelant,
+`loginctl terminate-session` : une deconnexion ORDINAIRE n'a donc aucun
+chemin de fermeture.
+**Ce qui est deja ecrit** : `LinuxMachine.recordSshLogout` ferme la
+session, retire le noeud pts, purge logind, ferme la socket, emet la
+ligne pam et l'evenement de deconnexion. Elle est en place et
+inutilisee.
+**Pourquoi ce n'est pas branche** : l'appeler a la fin d'un
+`ssh hote commande` fait tomber CINQ laboratoires dont la fuite est la
+premisse — §22, §25 (deux cas) et §30 de `linux-lan-ssh-suite`, et les
+quatre cas de `linux-session-logind-state` observent `who`, `w`, `ss` et
+l'etat de logind APRES un `ssh` deja termine. Une vraie machine
+n'offre pas cet instant : il faudrait qu'une session puisse DURER, ce
+que ce simulateur ne modelise pas (l'appel est synchrone, `sleep 60`
+rend la main tout de suite). Le manquant est un modele de duree de
+session, pas une ligne de journal — et refaire la premisse de cinq
+laboratoires est un lot en soi.
+
+### [ssh] la session interactive de terminal n'ouvre aucune session PAM
+Depuis le lot « le journal de sshd dit ce qu'un vrai sshd dit », la
+ligne `pam_unix(sshd:session): session opened` a un seul producteur,
+celui de `LinuxMachine`. Le chemin du TERMINAL interactif
+(`ssh-terminal-stack`) ne le traverse pas : il enregistre bien
+l'`Accepted`, et aucune session PAM.
+**Mesure** : deux commandes distantes dans une session de terminal
+donnent deux `Accepted` et zero `session opened`.
+**Report** : la ligne existait avant par accident — c'est la variante
+INVENTEE du syslogger, emise par canal, qui la produisait, donc deux par
+connexion au lieu d'une. La retirer a expose que ce chemin n'appelle pas
+`recordSshLogin` la ou il faut ; le corriger demande de suivre la
+plomberie du terminal, un sujet distinct du format des messages.
+
 ## Bus d'evenements
+
+### [netflow] un flux reel ne produit aucun enregistrement
+`probe-debug-02-collecte.test.ts`, cas « un flux reel produit un
+enregistrement avec ses ports et compteurs », ECHOUE :
+`show ip cache flow` rend `IP packet size distribution (0 total …` et
+la table de flux ne contient jamais l'adresse du client. Le compteur
+total est a zero, donc rien n'est compte, pas seulement mal rendu.
+**Mesure** : l'echec est reproduit a l'identique sur `b4b300872`,
+c'est-a-dire AVANT tout le lot DHCP de cette session, et sur
+`origin/main` — ce n'est ni une regression de ce lot ni un effet du
+travail en cours sur FortiOS.
+**Report** : le defaut est dans la comptabilisation NetFlow et non dans
+la vue ; le diagnostiquer demande de suivre ou `NetFlowAgent` est
+alimente sur le chemin de donnees, ce qui est un sujet a part entiere et
+non un correctif de commande. Inscrit ici pour qu'un echec rouge de la
+suite ne passe pas pour du bruit.
 
 ### [nhrp] `debug nhrp` n'a toujours pas d'emetteur, faute de transcription
 `NhrpDomainEvent` est desormais dans l'union `DomainEvent`, donc un

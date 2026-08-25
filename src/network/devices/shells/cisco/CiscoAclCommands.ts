@@ -14,6 +14,7 @@ import {
   protocolCarriesPorts,
 } from '../../router/acl/AclSyntax';
 import { IPAddress, SubnetMask } from '../../../core/types';
+import { isValidIPv4 } from '../../../core/ip';
 import type { Router } from '../../Router';
 import { CommandTrie } from '../CommandTrie';
 import type { CommandSpec } from '@/cli/CommandTable';
@@ -42,7 +43,24 @@ export interface CiscoACLShellContext extends CiscoShellContext {
 
 // ─── ACL Parsing Helpers ──────────────────────────────────────────────
 
-function parseAddressWildcard(args: string[], offset: number): { ip: IPAddress; wildcard: SubnetMask; consumed: number } | null {
+interface AdresseAnalysee {
+  ip: IPAddress;
+  wildcard: SubnetMask;
+  consumed: number;
+  /** `object-group <nom>` : le groupe REMPLACE l'adresse et son masque. */
+  objectGroup?: string;
+}
+
+/**
+ * Les quatre formes d'ecriture d'une adresse : `any`, `host <ip>`,
+ * `<reseau> <masque generique>`, et `object-group <nom>`.
+ *
+ * Le groupe porte une adresse et un masque FACTICES : ils ne servent
+ * qu'a satisfaire la forme de l'entree, la comparaison passant par le
+ * nom du groupe. Les laisser vides ferait dependre le resultat de
+ * l'ordre des tests dans le moteur.
+ */
+function parseAddressWildcard(args: string[], offset: number): AdresseAnalysee | null {
   if (offset >= args.length) return null;
 
   const token = args[offset].toLowerCase();
@@ -52,6 +70,15 @@ function parseAddressWildcard(args: string[], offset: number): { ip: IPAddress; 
   if (token === 'host') {
     if (!isDottedQuad(args[offset + 1])) return null;
     return { ip: new IPAddress(args[offset + 1]), wildcard: new SubnetMask('0.0.0.0'), consumed: 2 };
+  }
+  if (token === 'object-group') {
+    if (args[offset + 1] === undefined) return null;
+    return {
+      ip: new IPAddress('0.0.0.0'),
+      wildcard: new SubnetMask('255.255.255.255'),
+      consumed: 2,
+      objectGroup: args[offset + 1],
+    };
   }
   if (!isDottedQuad(args[offset]) || !isDottedQuad(args[offset + 1])) return null;
   return { ip: new IPAddress(args[offset]), wildcard: new SubnetMask(args[offset + 1]), consumed: 2 };
@@ -71,6 +98,24 @@ const ICMP_TYPE_KEYWORDS = new Set([
   'packet-too-big', 'parameter-problem', 'ttl-exceeded',
 ]);
 
+/**
+ * Le TYPE (et le CODE) numeriques vers le mot-cle qui les nomme.
+ *
+ * `8 0` et `echo` designent le meme paquet : les rendre differemment
+ * ferait croire a deux filtres. La cle `<type>/` vaut pour un type sans
+ * code precise.
+ */
+const ICMP_NUMERIC_TO_KEYWORD: Readonly<Record<string, string>> = Object.freeze({
+  '0/': 'echo-reply', '0/0': 'echo-reply',
+  '3/': 'unreachable',
+  '3/0': 'net-unreachable', '3/1': 'host-unreachable',
+  '3/2': 'protocol-unreachable', '3/3': 'port-unreachable',
+  '3/4': 'packet-too-big', '3/13': 'administratively-prohibited',
+  '5/': 'redirect', '5/0': 'redirect',
+  '8/': 'echo', '8/0': 'echo',
+  '11/': 'time-exceeded', '11/0': 'ttl-exceeded',
+});
+
 interface ExtendedOptions {
   srcPortSpec?: import('../../router/ACLEngine').PortSpec;
   dstPortSpec?: import('../../router/ACLEngine').PortSpec;
@@ -89,10 +134,26 @@ interface ExtendedOptions {
   reflectTimeout?: number;
   fragments?: boolean;
   optionName?: string;
+  ttl?: import('../../router/ACLEngine').RangeSpec;
 }
 
 /** `% Invalid input detected at '^' marker.`, tel qu'IOS le rend. */
 export const CISCO_INVALID_INPUT = "% Invalid input detected at '^' marker.";
+
+/**
+ * IOS tronque une remarque a cent caracteres.
+ *
+ * La borne est ici et NULLE PART ailleurs : les quatre endroits qui
+ * rangent une remarque — numerotee, nommee standard, nommee etendue,
+ * IPv6 — la lisent, sinon la meme phrase serait gardee entiere par l'un
+ * et coupee par l'autre.
+ */
+export const IOS_REMARK_MAX = 100;
+
+/** Le texte d'une remarque, borne comme IOS le borne. */
+export function texteDeRemarque(mots: readonly string[]): string {
+  return mots.join(' ').slice(0, IOS_REMARK_MAX);
+}
 
 /**
  * Les mots-clés de queue d'ACE.
@@ -121,6 +182,40 @@ function parseTrailingOptions(
       if (next !== undefined && /^\d+$/.test(next)) {
         opts.icmpCode = parseInt(next, 10);
         i++;
+      }
+      continue;
+    }
+    /*
+     * `permit icmp any any 8 0` — le TYPE et le CODE en chiffres, la
+     * forme que le tutoriel donne comme equivalente a `echo`. Elle
+     * etait refusee : seuls les mots-cles etaient lus, si bien que la
+     * moitie numerique de la grammaire ICMP n'existait pas.
+     *
+     * Le code est FACULTATIF, comme sur IOS, et le type est traduit en
+     * mot-cle quand il en a un — sans quoi la meme ACE se rendrait de
+     * deux facons selon la maniere dont elle a ete tapee.
+     */
+    if (protocol === 'icmp' && /^\d+$/.test(tok) && opts.icmpType === undefined) {
+      const type = parseInt(tok, 10);
+      if (type > 255) { opts.rejected = args[i]; return opts; }
+      i++;
+      let code: number | undefined;
+      const suivant = args[i];
+      if (suivant !== undefined && /^\d+$/.test(suivant)) {
+        code = parseInt(suivant, 10);
+        if (code > 255) { opts.rejected = args[i]; return opts; }
+        i++;
+      }
+      const motCle = ICMP_NUMERIC_TO_KEYWORD[`${type}/${code ?? ''}`]
+        ?? ICMP_NUMERIC_TO_KEYWORD[`${type}/`];
+      if (motCle !== undefined) {
+        opts.icmpType = motCle;
+        if (code !== undefined && ICMP_NUMERIC_TO_KEYWORD[`${type}/${code}`] === undefined) {
+          opts.icmpCode = code;
+        }
+      } else {
+        opts.icmpType = String(type);
+        if (code !== undefined) opts.icmpCode = code;
       }
       continue;
     }
@@ -189,6 +284,16 @@ function parseTrailingOptions(
       i++;
       continue;
     }
+    if (tok === 'ttl') {
+      const spec = parseRangeSpec(args, i + 1, 0, 255);
+      if (!spec) {
+        opts.rejected = args[i + 1] ?? args[i];
+        return opts;
+      }
+      opts.ttl = spec.spec;
+      i += 1 + spec.consumed;
+      continue;
+    }
     if (tok === 'option' && i + 1 < args.length) {
       opts.optionName = args[i + 1];
       i += 2;
@@ -203,7 +308,38 @@ function parseTrailingOptions(
 function isTerminatorKeyword(tok: string): boolean {
   return tok === 'log' || tok === 'log-input' || tok === 'dscp' || tok === 'precedence'
     || tok === 'tos' || tok === 'time-range' || tok === 'reflect' || tok === 'fragments'
-    || tok === 'option' || tok === 'established';
+    || tok === 'option' || tok === 'established' || tok === 'ttl';
+}
+
+/**
+ * `<operateur> <valeur>` — la grammaire commune au port et au `ttl`.
+ *
+ * `parsePortSpec` la reprend sur la table des noms de service ; ici les
+ * bornes sont celles du champ compare, ce qui fait refuser
+ * `ttl eq 300` comme un vrai IOS le refuse.
+ */
+function parseRangeSpec(
+  args: string[], offset: number, min: number, max: number,
+): { spec: import('../../router/ACLEngine').RangeSpec; consumed: number } | null {
+  if (offset >= args.length) return null;
+  const op = args[offset].toLowerCase();
+  const borne = (t: string | undefined): number | null => {
+    if (t === undefined || !/^\d+$/.test(t)) return null;
+    const n = parseInt(t, 10);
+    return n >= min && n <= max ? n : null;
+  };
+  if (op === 'eq' || op === 'neq' || op === 'gt' || op === 'lt') {
+    const v = borne(args[offset + 1]);
+    if (v === null) return null;
+    return { spec: { op: op as 'eq' | 'neq' | 'gt' | 'lt', value: v }, consumed: 2 };
+  }
+  if (op === 'range') {
+    const a = borne(args[offset + 1]);
+    const b = borne(args[offset + 2]);
+    if (a === null || b === null) return null;
+    return { spec: { op: 'range', value: a, endValue: b }, consumed: 3 };
+  }
+  return null;
 }
 
 /** Le resultat d'une analyse d'ACE : les options, ou le message d'erreur. */
@@ -297,6 +433,8 @@ function parseExtendedAce(args: string[], sequence?: number): AceParse {
       srcWildcard: src.wildcard,
       dstIP: dst.ip,
       dstWildcard: dst.wildcard,
+      ...(src.objectGroup ? { srcObjectGroup: src.objectGroup } : {}),
+      ...(dst.objectGroup ? { dstObjectGroup: dst.objectGroup } : {}),
       srcPort: srcPortSpec?.spec.op === 'eq' ? srcPortSpec.spec.port : undefined,
       dstPort: dstPortSpec?.spec.op === 'eq' ? dstPortSpec.spec.port : undefined,
       srcPortSpec: srcPortSpec?.spec,
@@ -338,16 +476,15 @@ function parseStandardSource(args: string[]): { ip: IPAddress; wildcard: SubnetM
     return { ip: new IPAddress('0.0.0.0'), wildcard: new SubnetMask('255.255.255.255'), consumed: 1 };
   }
   if (lower0 === 'host') {
-    if (args.length < 2) return null;
+    if (args.length < 2 || !isValidIPv4(args[1])) return null;
     return { ip: new IPAddress(args[1]), wildcard: new SubnetMask('0.0.0.0'), consumed: 2 };
   }
-  if (args.length < 2 || !/^\d/.test(args[1])) {
+  if (!isValidIPv4(args[0])) return null;
+  if (args.length < 2 || !/^\d/.test(args[1]) || !isValidIPv4(args[1])) {
     return { ip: new IPAddress(args[0]), wildcard: new SubnetMask('0.0.0.0'), consumed: 1 };
   }
   return { ip: new IPAddress(args[0]), wildcard: new SubnetMask(args[1]), consumed: 2 };
 }
-
-export const IOS_REMARK_MAX = 100;
 
 // ─── Global Config Mode: access-list commands ─────────────────────────
 
@@ -359,19 +496,27 @@ export function buildACLConfigCommands(trie: CommandTrie, ctx: CiscoACLShellCont
     if (isNaN(num) || !isValidIosAclNumber(num)) return CISCO_INVALID_INPUT;
 
     const action = args[1].toLowerCase();
+    const type = IOS_ACL_NUMBERING(num);
+
     if (action === 'remark') {
       const texte = args.slice(2).join(' ');
       if (texte.length === 0) return '% Incomplete command.';
       ctx.r().addAccessListEntry(num, 'permit', {
         srcIP: new IPAddress('0.0.0.0'),
         srcWildcard: new SubnetMask('255.255.255.255'),
-        remark: texte.slice(0, IOS_REMARK_MAX),
+        ...(type === 'extended' ? {
+          protocol: 'ip',
+          dstIP: new IPAddress('0.0.0.0'),
+          dstWildcard: new SubnetMask('255.255.255.255'),
+        } : {}),
+        remark: texteDeRemarque(args.slice(2)),
       });
       return '';
     }
+
     if (action !== 'permit' && action !== 'deny') return `% Invalid action "${args[1]}"`;
 
-    const parsed = parseCiscoAce(args.slice(2), IOS_ACL_NUMBERING(num));
+    const parsed = parseCiscoAce(args.slice(2), type);
     if ('error' in parsed) return parsed.error;
     ctx.r().addAccessListEntry(num, action as 'permit' | 'deny', parsed.opts);
     return '';
@@ -496,7 +641,7 @@ export function buildNamedStdACLCommands(trie: CommandTrie, ctx: CiscoACLShellCo
     ctx.r().addNamedAccessListEntry(aclName, 'standard', 'permit', {
       srcIP: new IPAddress('0.0.0.0'),
       srcWildcard: new SubnetMask('255.255.255.255'),
-      remark: args.join(' ').slice(0, IOS_REMARK_MAX),
+      remark: texteDeRemarque(args),
     });
     return '';
   });
@@ -593,7 +738,7 @@ export function buildNamedExtACLCommands(trie: CommandTrie, ctx: CiscoACLShellCo
       srcWildcard: new SubnetMask('255.255.255.255'),
       dstIP: new IPAddress('0.0.0.0'),
       dstWildcard: new SubnetMask('255.255.255.255'),
-      remark: args.join(' ').slice(0, IOS_REMARK_MAX),
+      remark: texteDeRemarque(args),
     });
     return '';
   });
@@ -726,10 +871,14 @@ function formatACLEntry(
     return `${pourAffichage ? action.padEnd(6) : action} ${addr}${tail}`;
   }
   const proto = entry.protocol || 'ip';
-  const src = formatSrcAddr(entry.srcIP, entry.srcWildcard);
-  const dst = entry.dstIP && entry.dstWildcard
-    ? formatSrcAddr(entry.dstIP, entry.dstWildcard)
-    : 'any';
+  const src = entry.srcObjectGroup
+    ? `object-group ${entry.srcObjectGroup}`
+    : formatSrcAddr(entry.srcIP, entry.srcWildcard);
+  const dst = entry.dstObjectGroup
+    ? `object-group ${entry.dstObjectGroup}`
+    : entry.dstIP && entry.dstWildcard
+      ? formatSrcAddr(entry.dstIP, entry.dstWildcard)
+      : 'any';
   let result = `${action} ${proto} ${src}`;
   result += formatPortSpec(entry.srcPortSpec, entry.srcPort);
   result += ` ${dst}`;
@@ -752,6 +901,11 @@ function formatTrailing(entry: import('../../Router').ACLEntry): string {
   if (entry.tos) s += ` tos ${entry.tos}`;
   if (entry.dscp) s += ` dscp ${entry.dscp}`;
   if (entry.fragments) s += ' fragments';
+  if (entry.ttl) {
+    s += entry.ttl.op === 'range'
+      ? ` ttl range ${entry.ttl.value} ${entry.ttl.endValue}`
+      : ` ttl ${entry.ttl.op} ${entry.ttl.value}`;
+  }
   if (entry.optionName) s += ` option ${entry.optionName}`;
   if (entry.timeRange) s += ` time-range ${entry.timeRange}`;
   if (entry.reflect) {
@@ -997,7 +1151,7 @@ export function buildIPv6ACLModeCommands(trie: CommandTrie, ctx: CiscoACLShellCo
     const name = ctx.getSelectedACL();
     if (!name) return '';
     const acl = ctx.r().getIpv6AccessLists().find((a) => a.name === name);
-    if (acl) acl.entries.push({ action: 'permit', protocol: 'ipv6', remark: args.join(' ') });
+    if (acl) acl.entries.push({ action: 'permit', protocol: 'ipv6', remark: texteDeRemarque(args) });
     return '';
   });
 }

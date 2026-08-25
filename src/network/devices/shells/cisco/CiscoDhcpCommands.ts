@@ -78,13 +78,12 @@ export function buildConfigDhcpCommands(trie: CommandTrie, ctx: CiscoShellContex
       ctx.r()._getDHCPServerInternal().configurePoolLeaseInfinite(pool);
       return '';
     }
-    const leaseArgs = args.map(Number);
-    let seconds = 0;
-    if (leaseArgs.length >= 1) seconds += leaseArgs[0] * 86400; // days
-    if (leaseArgs.length >= 2) seconds += leaseArgs[1] * 3600;  // hours
-    if (leaseArgs.length >= 3) seconds += leaseArgs[2];          // seconds
-    if (seconds === 0) seconds = 86400; // default 1 day
-    ctx.r()._getDHCPServerInternal().configurePoolLease(ctx.getSelectedDHCPPool()!, seconds);
+    if (args.length > 3 || args.some(a => !/^\d+$/.test(a))) return INVALID_INPUT;
+    const [days, hours, minutes] = args.map(Number);
+    if (days > 365 || (hours ?? 0) > 23 || (minutes ?? 0) > 59) return INVALID_INPUT;
+    const seconds = days * 86400 + (hours ?? 0) * 3600 + (minutes ?? 0) * 60;
+    if (seconds === 0) return INVALID_INPUT;
+    ctx.r()._getDHCPServerInternal().configurePoolLease(pool, seconds);
     return '';
   });
 
@@ -157,6 +156,32 @@ export function buildConfigDhcpCommands(trie: CommandTrie, ctx: CiscoShellContex
     return '';
   });
 
+  trie.registerGreedy('utilization mark', 'Configure the utilization threshold', (args) => {
+    if (args.length < 1) return '% Incomplete command.';
+    const p = pool();
+    if (!p) return '% No DHCP pool selected';
+    const kind = args[0]?.toLowerCase();
+    if (kind !== 'high' && kind !== 'low') return INVALID_INPUT;
+    if (args.length < 2) return '% Incomplete command.';
+    if (!/^\d+$/.test(args[1])) return INVALID_INPUT;
+    if (args.length > 3) return INVALID_INPUT;
+    if (args.length === 3 && args[2]?.toLowerCase() !== 'log') return INVALID_INPUT;
+    const log = args.length === 3;
+    if (!dhcp().configurePoolUtilizationMark(p, kind, parseInt(args[1], 10), log)) {
+      return INVALID_INPUT;
+    }
+    return '';
+  });
+
+  trie.registerGreedy('no utilization mark', 'Restore the default utilization threshold', (args) => {
+    const p = pool();
+    if (!p) return '% No DHCP pool selected';
+    const kind = args[0]?.toLowerCase();
+    if (kind !== 'high' && kind !== 'low') return INVALID_INPUT;
+    dhcp().resetPoolUtilizationMark(p, kind);
+    return '';
+  });
+
   trie.registerGreedy('class', 'Bind a DHCP class to this pool', (args) => {
     if (!args[0]) return '% Incomplete command.';
     const p = pool(); if (!p) return '';
@@ -200,6 +225,23 @@ Readonly<Record<string, ArgumentSpec | readonly ArgumentSpec[] | null>> = {
   'hardware-address': { name: 'mac', type: 'MAC_ADDR', description: 'Client hardware address' },
   'client-identifier': { name: 'identifiant', type: 'WORD', description: 'Client identifier' },
   'client-identifier deny': { name: 'identifiant', type: 'WORD', description: 'Client identifier to deny' },
+  'utilization mark': [
+    {
+      name: 'seuil', type: 'ENUM', description: 'Utilization threshold to configure',
+      values: [
+        { keyword: 'high', description: 'Configure the high utilization mark' },
+        { keyword: 'low', description: 'Configure the low utilization mark' },
+      ],
+    },
+    {
+      name: 'pourcentage', type: 'INT', range: [0, 100], optional: true,
+      description: 'Percentage of the pool size',
+    },
+    {
+      name: 'journal', type: 'ENUM', optional: true, description: 'Enable the system message',
+      values: [{ keyword: 'log', description: 'Generate a system message when the mark is crossed' }],
+    },
+  ],
   'netbios-node-type': {
     name: 'type', type: 'ENUM', description: 'NetBIOS node type',
     values: [
@@ -225,6 +267,7 @@ export function dhcpPoolSpecs(ctx: CiscoShellContext): CommandSpec[] {
     (collector) => buildConfigDhcpCommands(collector as unknown as CommandTrie, ctx),
     {
       modes: ['config-dhcp'], minPrivilege: 15,
+      undoFromNegatedPaths: true,
       argumentFor: (path) => DHCP_POOL_ARGUMENTS[path],
       keywordsFor: (path) => DHCP_POOL_KEYWORDS[path],
     },

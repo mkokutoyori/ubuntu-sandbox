@@ -13,19 +13,64 @@
  *     real AWR reports, while a lossy/slow one does.
  */
 
-import { getDefaultEventBus } from '@/events/EventBus';
 import { EquipmentRegistry } from '@/network/equipment/EquipmentRegistry';
 import type { HostCapableDevice } from '@/network';
-import { getClusterForDevice, recordTableTouch, type RacCluster, type RacMember } from './RacClusterRegistry';
+import { IPAddress } from '@/network/core/types';
+import type { IEventBus } from '@/events/EventBus';
+import { getClusterByDbName, getClusterForDevice, recordTableTouch, type RacCluster, type RacMember } from './RacClusterRegistry';
+
+export const GCS_PORT = 42425;
 
 const attachedClusters = new Set<string>();
+const attachedMembers = new Set<string>();
+
+interface GcsHost {
+  getBus(): IEventBus;
+  sendUdpDatagram(
+    destinationIP: IPAddress, destinationPort: number, sourcePort: number,
+    payload: unknown, payloadBytes?: number, options?: { iface?: string },
+  ): boolean;
+}
+
+function gcsHostOf(deviceId: string): GcsHost | null {
+  const dev = EquipmentRegistry.getInstance().getById(deviceId) as unknown as GcsHost | null;
+  if (!dev || typeof dev.sendUdpDatagram !== 'function') return null;
+  return dev;
+}
+
+function sendGcsRequest(cluster: RacCluster, requester: RacMember, block: string): void {
+  const host = gcsHostOf(requester.deviceId);
+  if (!host) return;
+  for (const peer of cluster.members.values()) {
+    if (peer.deviceId === requester.deviceId || peer.status !== 'ACTIVE') continue;
+    host.sendUdpDatagram(
+      new IPAddress(peer.interconnectIp), GCS_PORT, GCS_PORT,
+      { kind: 'gcs-request', block, from: requester.hostname }, 128,
+      { iface: requester.interconnectIface });
+  }
+}
 
 export function attachRacCacheFusionAgent(dbName: string): void {
-  if (attachedClusters.has(dbName)) return;
   attachedClusters.add(dbName);
+  const cluster = getClusterByDbName(dbName);
+  if (!cluster) return;
 
-  getDefaultEventBus().subscribe('oracle.dml.executed', (e) => {
-    const payload = e.payload as { deviceId: string; sessionId: string; schema: string; table: string };
+  for (const owner of cluster.members.values()) {
+    if (attachedMembers.has(owner.deviceId)) continue;
+    const host = gcsHostOf(owner.deviceId);
+    if (!host) continue;
+    attachedMembers.add(owner.deviceId);
+    host.getBus().subscribe('oracle.dml.executed', (e) => {
+      onDml(dbName, e.payload as { deviceId: string; sessionId: string; schema: string; table: string });
+    });
+  }
+}
+
+function onDml(
+  dbName: string,
+  payload: { deviceId: string; sessionId: string; schema: string; table: string },
+): void {
+  {
     const cluster = getClusterForDevice(payload.deviceId);
     if (!cluster || cluster.dbName !== dbName) return;
     const member = cluster.members.get(payload.deviceId);
@@ -33,6 +78,8 @@ export function attachRacCacheFusionAgent(dbName: string): void {
 
     const crossed = recordTableTouch(dbName, payload.deviceId, `${payload.schema}.${payload.table}`);
     if (!crossed) return;
+
+    sendGcsRequest(cluster, member, `${payload.schema}.${payload.table}`);
 
     // A GCS round trip crosses BOTH nodes' interconnect links (requester
     // and block master) — checking every member rather than just the
@@ -56,12 +103,12 @@ export function attachRacCacheFusionAgent(dbName: string): void {
         engine?.record(sid, 'gc buffer busy', 6000);
       }
     }
-  });
+  }
 }
 
-/** Test-only: drop the idempotency guard so a fresh test's cluster gets its own subscription. */
 export function _resetRacCacheFusionAgentAttachments(): void {
   attachedClusters.clear();
+  attachedMembers.clear();
 }
 
 function isMemberInterconnectDegraded(member: RacMember): boolean {

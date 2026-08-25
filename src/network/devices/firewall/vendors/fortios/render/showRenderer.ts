@@ -13,19 +13,27 @@ export interface ShowOptions {
   readonly full: boolean;
 }
 
+export function escapeForConfig(value: string): string {
+  return value.split('\\').join('\\\\').split('"').join('\\"');
+}
+
 export function renderValue(spec: FortiAttributeSpec, values: readonly string[]): string {
   if (spec.secret === true) return `ENC ${encodeSecret(values.join(' '))}`;
   if (spec.quoteValue) {
-    return values.map(v => (spec.quoteValue?.(v) === true ? `"${v}"` : v)).join(' ');
+    return values.map(
+      v => (spec.quoteValue?.(v) === true ? `"${escapeForConfig(v)}"` : v)).join(' ');
   }
   if (!isQuoted(spec)) return values.join(' ');
-  return values.map(v => `"${v}"`).join(' ');
+  return values.map(v => `"${escapeForConfig(v)}"`).join(' ');
 }
 
 
 export function renderKey(spec: FortiTableSpec, key: string): string {
-  if (spec.quotedKey !== undefined) return spec.quotedKey ? `"${key}"` : key;
-  return spec.keyType === 'integer' || spec.keyType === 'address' ? key : `"${key}"`;
+  if (spec.quotedKey !== undefined) {
+    return spec.quotedKey ? `"${escapeForConfig(key)}"` : key;
+  }
+  return spec.keyType === 'integer' || spec.keyType === 'address'
+    ? key : `"${escapeForConfig(key)}"`;
 }
 
 function attributeLines(

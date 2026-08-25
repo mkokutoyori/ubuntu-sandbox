@@ -70,6 +70,7 @@ export interface FortiAttributeSpec {
   readonly readOnly?: boolean;
   readonly hidden?: boolean;
   readonly secret?: boolean;
+  readonly allowsReservedCharacters?: boolean;
   readonly appliesImmediately?: (
     values: readonly string[], context: FortiCommitContext,
   ) => void;

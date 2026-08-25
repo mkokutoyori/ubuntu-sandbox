@@ -1,50 +1,151 @@
-/**
- * RacCssAgent — models the real Grid Infrastructure CSSD/CRSD daemons
- * that monitor the private cluster interconnect heartbeat and evict a
- * node once it goes silent.
- *
- * Real CSS uses a misscount-based timer (30s default) before declaring a
- * node dead; there is no network jitter in this simulator for that timer
- * to protect against, so eviction here fires the instant the
- * interconnect NIC itself loses carrier (`port.link.down`) — the same
- * signal a real interconnect switch failure or unplugged cable produces,
- * and the literal trigger every RAC test in this codebase uses
- * (`ip link set eth1 down`).
- */
-
-import { getDefaultEventBus } from '@/events/EventBus';
 import { EquipmentRegistry } from '@/network/equipment/EquipmentRegistry';
 import type { HostCapableDevice } from '@/network';
-import { getClusterForDevice, evictMember, type RacCluster, type RacMember } from './RacClusterRegistry';
+import { IPAddress } from '@/network/core/types';
+import { getDefaultScheduler, type IScheduler, type TimerHandle } from '@/events/Scheduler';
+import {
+  getClusterByDbName, evictMember, type RacCluster, type RacMember,
+} from './RacClusterRegistry';
 
-const attachedClusters = new Set<string>();
+export const CSS_HEARTBEAT_PORT = 42424;
+export const CSS_HEARTBEAT_INTERVAL_MS = 1_000;
+export const CSS_MISSCOUNT_MS = 30_000;
 
-/**
- * Idempotent per dbName — a cluster forms once per test topology, and
- * `getOracleDatabase` calls this on every member's boot, so guard against
- * subscribing more than once for the same cluster (the bus itself is
- * also reset between tests via setupGlobalState.ts, so a later call
- * after a reset correctly rebinds to the current bus).
- */
-export function attachRacCssAgent(dbName: string): void {
-  if (attachedClusters.has(dbName)) return;
-  attachedClusters.add(dbName);
-
-  getDefaultEventBus().subscribe('port.link.down', (e) => {
-    const { deviceId, portName } = e.payload as { deviceId: string; portName: string };
-    const cluster = getClusterForDevice(deviceId);
-    if (!cluster || cluster.dbName !== dbName) return;
-    const member = cluster.members.get(deviceId);
-    if (!member || member.status !== 'ACTIVE' || member.interconnectIface !== portName) return;
-
-    const evicted = evictMember(cluster.dbName, deviceId);
-    if (evicted) writeEvictionLogs(cluster, evicted);
-  });
+interface CssHost {
+  udpBind(port: number, listener: (delivery: { udp: { payload: unknown } }) => void): boolean;
+  sendUdpDatagram(
+    destinationIP: IPAddress, destinationPort: number, sourcePort: number,
+    payload: unknown, payloadBytes?: number, options?: { iface?: string },
+  ): boolean;
 }
 
-/** Test-only: drop the idempotency guard so a fresh test's cluster gets its own subscription. */
+interface CssBeat {
+  readonly kind: 'css-heartbeat';
+  readonly hostname: string;
+  readonly deviceId: string;
+}
+
+const running = new Map<string, ClusterHeartbeat>();
+
+class ClusterHeartbeat {
+  private readonly lastHeard = new Map<string, number>();
+  private readonly bound = new Set<string>();
+  private timer: TimerHandle | null = null;
+
+  constructor(
+    private readonly dbName: string,
+    private readonly scheduler: IScheduler,
+  ) {}
+
+  start(): void {
+    if (this.timer !== null) return;
+    this.timer = this.scheduler.setInterval(
+      () => this.tick(), CSS_HEARTBEAT_INTERVAL_MS);
+    this.tick();
+  }
+
+  stop(): void {
+    if (this.timer !== null) this.scheduler.clear(this.timer);
+    this.timer = null;
+    this.lastHeard.clear();
+    this.bound.clear();
+  }
+
+  private cluster(): RacCluster | null {
+    return getClusterByDbName(this.dbName);
+  }
+
+  private hostOf(deviceId: string): CssHost | null {
+    const dev = EquipmentRegistry.getInstance().getById(deviceId);
+    const host = dev as unknown as CssHost | null;
+    if (!host || typeof host.sendUdpDatagram !== 'function') return null;
+    return host;
+  }
+
+  private tick(): void {
+    const cluster = this.cluster();
+    if (!cluster) return;
+    const now = this.scheduler.now();
+
+    for (const member of cluster.members.values()) {
+      if (member.status !== 'ACTIVE') continue;
+      this.bind(member);
+      if (!this.lastHeard.has(member.deviceId)) this.lastHeard.set(member.deviceId, now);
+    }
+
+    for (const member of cluster.members.values()) {
+      if (member.status !== 'ACTIVE') continue;
+      this.beat(cluster, member);
+    }
+
+    const active = [...cluster.members.values()].filter(m => m.status === 'ACTIVE');
+    const stale = active.filter(
+      m => now - (this.lastHeard.get(m.deviceId) ?? now) >= CSS_MISSCOUNT_MS);
+    if (stale.length === 0) return;
+
+    const survivor = stale.length === active.length
+      ? (active.find(m => this.interconnectUsable(m)) ?? active[0])
+      : null;
+
+    for (const member of stale) {
+      if (survivor && member.deviceId === survivor.deviceId) {
+        this.lastHeard.set(member.deviceId, now);
+        continue;
+      }
+      const evicted = evictMember(cluster.dbName, member.deviceId);
+      if (evicted) {
+        this.lastHeard.delete(member.deviceId);
+        writeEvictionLogs(cluster, evicted);
+      }
+    }
+  }
+
+  private interconnectUsable(member: RacMember): boolean {
+    const dev = EquipmentRegistry.getInstance().getById(member.deviceId) as unknown as
+      { getPorts?: () => Array<{ getName(): string; isAdminDown(): boolean; getCable(): unknown }> } | null;
+    const port = dev?.getPorts?.().find(p => p.getName() === member.interconnectIface);
+    if (!port) return false;
+    return !port.isAdminDown() && port.getCable() !== null;
+  }
+
+  private bind(member: RacMember): void {
+    if (this.bound.has(member.deviceId)) return;
+    const host = this.hostOf(member.deviceId);
+    if (!host) return;
+    const ok = host.udpBind(CSS_HEARTBEAT_PORT, (delivery) => {
+      const beat = delivery.udp?.payload as CssBeat | undefined;
+      if (!beat || beat.kind !== 'css-heartbeat') return;
+      this.lastHeard.set(beat.deviceId, this.scheduler.now());
+    });
+    if (ok) this.bound.add(member.deviceId);
+  }
+
+  private beat(cluster: RacCluster, member: RacMember): void {
+    const host = this.hostOf(member.deviceId);
+    if (!host) return;
+    const beat: CssBeat = {
+      kind: 'css-heartbeat', hostname: member.hostname, deviceId: member.deviceId,
+    };
+    for (const peer of cluster.members.values()) {
+      if (peer.deviceId === member.deviceId || peer.status !== 'ACTIVE') continue;
+      host.sendUdpDatagram(
+        new IPAddress(peer.interconnectIp), CSS_HEARTBEAT_PORT, CSS_HEARTBEAT_PORT,
+        beat, 64, { iface: member.interconnectIface });
+    }
+  }
+}
+
+export function attachRacCssAgent(dbName: string, scheduler?: IScheduler): void {
+  let heartbeat = running.get(dbName);
+  if (!heartbeat) {
+    heartbeat = new ClusterHeartbeat(dbName, scheduler ?? getDefaultScheduler());
+    running.set(dbName, heartbeat);
+  }
+  heartbeat.start();
+}
+
 export function _resetRacCssAgentAttachments(): void {
-  attachedClusters.clear();
+  for (const heartbeat of running.values()) heartbeat.stop();
+  running.clear();
 }
 
 function writeEvictionLogs(cluster: RacCluster, evicted: RacMember): void {

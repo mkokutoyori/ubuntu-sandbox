@@ -217,7 +217,7 @@ export const SYSTEM_REPLACEMSG_ADMIN: FortiTableSpec = {
   ],
   attributes: [
     { ...word('msg-type', 'Message type.'), readOnly: true },
-    text('buffer', 'Message text.'),
+    { ...text('buffer', 'Message text.'), allowsReservedCharacters: true },
     choice('header', 'Header type.', [
       { keyword: 'none', description: 'No header.' },
       { keyword: 'http', description: 'HTTP header.' },

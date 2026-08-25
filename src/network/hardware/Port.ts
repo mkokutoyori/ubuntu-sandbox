@@ -23,6 +23,7 @@ import {
   ethernetFrameBytes,
 } from '../core/types';
 import { Logger } from '../core/Logger';
+import { TapPoint, type FrameTap, type DetachTap } from './PortTap';
 import { PortSecurity } from './PortSecurity';
 import type { Cable } from './Cable';
 import { getDefaultEventBus, type IEventBus } from '@/events/EventBus';
@@ -90,6 +91,7 @@ export class Port {
   private ipv6Enabled: boolean = false;
   private isUp: boolean = true;
   private adminDown: boolean = false;
+  private readonly tapPoint = new TapPoint();
   private devicePoweredOff: boolean = false;
   /**
    * Last value of {@link isTransmitting} propagated to the peer. Seeded
@@ -1029,6 +1031,10 @@ export class Port {
 
   // ─── Frame Transmission ────────────────────────────────────────
 
+  attachTap(tap: FrameTap): DetachTap {
+    return this.tapPoint.attach(tap);
+  }
+
   sendFrame(frame: EthernetFrame): boolean {
     if (!this.isUp || this.adminDown) {
       this.counters.dropsOut++;
@@ -1059,6 +1065,7 @@ export class Port {
       topic: 'port.frame.tx-requested',
       payload: { ...this.portRef(), frame },
     });
+    this.tapPoint.emit(this.name, 'out', frame);
 
     return this.cable.transmit(frame, this);
   }
@@ -1097,6 +1104,7 @@ export class Port {
       topic: 'port.frame.received',
       payload: { ...this.portRef(), frame },
     });
+    this.tapPoint.emit(this.name, 'in', frame);
 
     if (this.frameHandler) {
       this.frameHandler(this.name, frame);

@@ -8,6 +8,7 @@ import {
   ETHERTYPE_LLDP, LLDP_MULTICAST_MAC,
 } from './types';
 import { MACAddress, type DeviceType, type EthernetFrame } from '../core/types';
+import type { LinkSendRequest } from '../layers/link/LinkLayer';
 import { Logger } from '../core/Logger';
 import { C2960_SOFTWARE } from '../devices/shells/cisco/CiscoPlatform';
 
@@ -18,7 +19,7 @@ export interface LldpHost {
   getType(): DeviceType;
   getPort(name: string): import('../hardware/Port').Port | undefined;
   getPorts(): import('../hardware/Port').Port[];
-  sendFrame(portName: string, frame: EthernetFrame): void;
+  sendOnLink(request: LinkSendRequest): boolean;
 }
 
 export type LldpNeighbor = Readonly<LldpNeighborEntry>;
@@ -243,16 +244,16 @@ export class LldpAgent extends ReactiveAgentBase {
       capabilities: [this.deviceCapability()],
       managementAddresses: this.collectAddresses(),
     };
-    const frame: EthernetFrame = {
-      srcMAC: port.getMAC(),
-      dstMAC: new MACAddress(LLDP_MULTICAST_MAC),
-      etherType: ETHERTYPE_LLDP,
-      payload,
-    };
     if (this.advertising.has(portName)) return;
     this.advertising.add(portName);
-    try { this.host.sendFrame(portName, frame); }
-    finally { this.advertising.delete(portName); }
+    try {
+      this.host.sendOnLink({
+        iface: portName,
+        destination: new MACAddress(LLDP_MULTICAST_MAC),
+        etherType: ETHERTYPE_LLDP,
+        payload,
+      });
+    } finally { this.advertising.delete(portName); }
     this.getBus().publish({
       topic: 'lldp.frame.sent',
       payload: {

@@ -677,7 +677,9 @@ export class Firewall extends Equipment {
     return undefined;
   }
 
-  serialNumber(): string { return serialNumberOf(this.name); }
+  private readonly serial: string = serialNumberOf(this.name);
+
+  serialNumber(): string { return this.serial; }
   applySdwan(c: SdwanConfiguration): string | undefined {
     const refusal = this.sdwan.apply(c);
     if (refusal === undefined) this.refreshSdwanRoutes();

@@ -1,5 +1,5 @@
 import {
-  argumentAccepts, outsideEveryAnnouncedRange, resolveEnumValue,
+  argumentAccepts, isQuoted, outsideEveryAnnouncedRange, resolveEnumValue,
 } from './ArgumentTypes';
 import type { CliSession } from './CliSession';
 import type { ReachabilityOptions } from './CommandTable';
@@ -18,14 +18,63 @@ export type ParseResult =
     readonly refusePar?: 'argument' | 'niveau';
   };
 
-export function tokenize(input: string): string[] {
-  return input.trim().split(/\s+/).filter(Boolean);
+export interface TokenizeOptions {
+  readonly escapesAnyCharacter?: boolean;
+}
+
+export function tokenize(input: string, options?: TokenizeOptions): string[] {
+  const anyCharacter = options?.escapesAnyCharacter === true;
+  const out: string[] = [];
+  let current = '';
+  let quoted = false;
+  let started = false;
+  let escaped = false;
+
+  const flush = () => {
+    out.push(escaped && !isQuoted(current) ? `"${current}"` : current);
+    current = '';
+    started = false;
+    escaped = false;
+  };
+
+  for (let at = 0; at < input.length; at++) {
+    const character = input[at];
+    if (character === '\\' && at + 1 < input.length
+      && (anyCharacter || input[at + 1] === ' ')) {
+      current += input[at + 1];
+      started = true;
+      escaped = true;
+      at++;
+      continue;
+    }
+    if (character === '"') {
+      quoted = !quoted;
+      current += character;
+      started = true;
+      continue;
+    }
+    if (!quoted && /\s/.test(character)) {
+      if (started) flush();
+      continue;
+    }
+    current += character;
+    started = true;
+  }
+  if (started) flush();
+  return out;
+}
+
+export function tokenContent(token: string): string {
+  return token.length >= 2 && token.startsWith('"') && token.endsWith('"')
+    ? token.slice(1, -1)
+    : token;
 }
 
 export function parseCommand(
   table: CommandTable, input: string, session: CliSession,
+  options?: TokenizeOptions,
 ): ParseResult {
-  const all = tokenize(input);
+  const all = tokenize(input, options);
   if (all.length === 0) return { status: 'empty' };
 
   const negated = all[0].toLowerCase() === 'no' && all.length > 1;

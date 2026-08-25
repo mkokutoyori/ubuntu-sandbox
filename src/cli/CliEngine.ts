@@ -10,7 +10,7 @@ export function iosAmbiguous(token: string): string {
   return `% Ambiguous command:  "${token}"`;
 }
 
-function applyTransition(
+export function applyTransition(
   spec: CommandSpec, args: Readonly<Record<string, string>>, session: CliSession,
 ): void {
   if (spec.enters === undefined) return;

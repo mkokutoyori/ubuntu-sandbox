@@ -16,8 +16,14 @@ import { resetDeviceCounters } from '@/network/devices/DeviceFactory';
 import { Logger } from '@/network/core/Logger';
 import { resetAllOracleInstances, getOracleDatabase } from '@/terminal/commands/database';
 import { SqlPlusSubShell } from '@/terminal/subshells/SqlPlusSubShell';
+import { VirtualTimeScheduler, __setDefaultScheduler } from '@/events/Scheduler';
+import { CSS_MISSCOUNT_MS, CSS_HEARTBEAT_INTERVAL_MS } from '@/database/oracle/rac/RacCssAgent';
+
+let clock: VirtualTimeScheduler;
 
 beforeEach(() => {
+  clock = new VirtualTimeScheduler();
+  __setDefaultScheduler(clock);
   resetCounters();
   resetDeviceCounters();
   resetAllOracleInstances();
@@ -80,6 +86,7 @@ describe('losing the cluster interconnect on node1 triggers a documented evictio
     const { node1, node2 } = twoNodeCluster();
 
     await node1.executeCommand('ip link set eth1 down');
+    clock.advance(CSS_MISSCOUNT_MS + CSS_HEARTBEAT_INTERVAL_MS);
 
     const cssLog = node2.readFileForEditor('/u01/app/grid/diag/crs/racnode2/crs/trace/cssd.log') ?? '';
     const crsLog = node2.readFileForEditor('/u01/app/grid/diag/crs/racnode2/crs/trace/crsd.log') ?? '';
@@ -92,6 +99,7 @@ describe('losing the cluster interconnect on node1 triggers a documented evictio
   it('V$INSTANCE on the surviving node shows it took over the surviving service', async () => {
     const { node1, node2 } = twoNodeCluster();
     await node1.executeCommand('ip link set eth1 down');
+    clock.advance(CSS_MISSCOUNT_MS + CSS_HEARTBEAT_INTERVAL_MS);
 
     const q2 = SqlPlusSubShell.create(node2, ['/', 'as', 'sysdba']);
     const rows = q2.subShell.processLine('SELECT instance_name, status FROM v$instance;').output.join('\n');

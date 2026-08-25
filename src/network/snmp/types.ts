@@ -1,3 +1,4 @@
+import type { MibViewEntry } from './mibView';
 import type { NetworkPdu } from '@/network/core/NetworkPdu';
 export const UDP_PORT_SNMP = 161;
 export const UDP_PORT_SNMP_TRAP = 162;
@@ -83,6 +84,7 @@ export interface SnmpCommunityAcl {
   community: string;
   access: 'ro' | 'rw';
   aclName?: string;
+  viewName?: string;
 }
 
 export interface SnmpTrapHost {
@@ -95,6 +97,7 @@ export interface SnmpAgentConfig {
   enabled: boolean;
   port: number;
   communities: SnmpCommunityAcl[];
+  mibViews: Map<string, MibViewEntry[]>;
   contact: string;
   /** `snmp-server trap-source <iface>` — the address traps carry. */
   trapSourceInterface: string | null;
@@ -106,6 +109,7 @@ export function createDefaultAgentConfig(): SnmpAgentConfig {
   return {
     enabled: true, port: UDP_PORT_SNMP,
     communities: [{ community: 'public', access: 'ro' }],
+    mibViews: new Map(),
     contact: '', location: '', trapSourceInterface: null,
     trapHosts: [],
   };

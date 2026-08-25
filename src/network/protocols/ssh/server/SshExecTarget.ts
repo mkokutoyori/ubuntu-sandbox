@@ -153,6 +153,8 @@ export interface SshExecTarget {
   sshdAcceptsLogin(user: string): SshLoginDecision;
 
   /** Audit-trail hook called once per connection (accepted or rejected). */
+  recordSshLogout?(user: string, fromIp: string): void;
+
   recordSshLogin(
     user: string,
     fromIp: string,

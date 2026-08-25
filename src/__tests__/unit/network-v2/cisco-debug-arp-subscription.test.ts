@@ -4,6 +4,8 @@ import { EquipmentRegistry } from '@/network/equipment/EquipmentRegistry';
 import { EventBus, __setDefaultEventBus } from '@/events/EventBus';
 import { TerminalManager } from '@/terminal/sessions/TerminalManager';
 import { IPAddress, MACAddress } from '@/network/core/types';
+import { LinuxPC } from '@/network/devices/LinuxPC';
+import { Cable } from '@/network/hardware/Cable';
 import type { CiscoTerminalSession } from '@/terminal/sessions/CiscoTerminalSession';
 import type { KeyEvent } from '@/terminal/sessions/TerminalSession';
 
@@ -19,10 +21,11 @@ async function waitBoot(session: CiscoTerminalSession): Promise<void> {
   }
 }
 
-describe('Cisco debug arp — event subscription streams ARP frames into the terminal', () => {
+describe('Cisco debug arp — a real ARP frame streams into the terminal', () => {
   let bus: EventBus;
   let manager: TerminalManager;
   let router: CiscoRouter;
+  let peer: LinuxPC;
   let session: CiscoTerminalSession;
 
   beforeEach(async () => {
@@ -33,6 +36,10 @@ describe('Cisco debug arp — event subscription streams ARP frames into the ter
     manager = new TerminalManager(bus);
     router = new CiscoRouter('R1');
     router.setEventBus(bus);
+    peer = new LinuxPC('linux-pc', 'PC', -150, 0);
+    peer.powerOn();
+    new Cable('c-dbg').connect(
+      peer.getPort('eth0')!, router.getPort('GigabitEthernet0/0')!);
     const sid = manager.openTerminal(router)!;
     session = manager.getSession(sid) as CiscoTerminalSession;
     await waitBoot(session);
@@ -61,25 +68,13 @@ describe('Cisco debug arp — event subscription streams ARP frames into the ter
   }
 
   function rcvdRequest(): void {
-    bus.publish({
-      topic: 'port.frame.received',
-      payload: {
-        deviceId: router.getId(),
-        portName: 'GigabitEthernet0/0',
-        frame: arpFrame('request', '10.0.0.2', '00:11:22:33:44:55', '10.0.0.1', '00:00:00:00:00:00'),
-      },
-    });
+    router.getPort('GigabitEthernet0/0')!.receiveFrame(
+      arpFrame('request', '10.0.0.2', '00:11:22:33:44:55', '10.0.0.1', '00:00:00:00:00:00'));
   }
 
   function sentReply(): void {
-    bus.publish({
-      topic: 'port.frame.tx-requested',
-      payload: {
-        deviceId: router.getId(),
-        portName: 'GigabitEthernet0/0',
-        frame: arpFrame('reply', '10.0.0.1', 'aa:bb:cc:00:01:00', '10.0.0.2', '00:11:22:33:44:55'),
-      },
-    });
+    router.getPort('GigabitEthernet0/0')!.sendFrame(
+      arpFrame('reply', '10.0.0.1', 'aa:bb:cc:00:01:00', '10.0.0.2', '00:11:22:33:44:55'));
   }
 
   it('streams a live rcvd req line once debug arp is enabled', async () => {

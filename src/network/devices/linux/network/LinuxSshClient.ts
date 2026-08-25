@@ -1294,11 +1294,25 @@ export function runSshClient(opts: SshClientOpts): SshClientResult {
   if (banner.trim()) lines.push(banner.replace(/\n*$/, ''));
   lines.push(`Welcome to Ubuntu 22.04.3 LTS (GNU/Linux 5.15.0-91-generic x86_64)`);
   if (printLastLog) {
-    lines.push(`Last login: ${new Date().toUTCString().replace(/^... /, '')} from ${opts.sourceIp}`);
+    lines.push(`Last login: ${formatLastLoginStamp(new Date())} from ${opts.sourceIp}`);
   }
   if (printMotd && motd.trim()) lines.push(motd.replace(/\n*$/, ''));
   lines.push(`Connection to ${host} closed.`);
   return { output: warningBanner + verboseHeader + forwardingError + lines.join('\n'), exitCode: 0, connection };
+}
+
+const LAST_LOGIN_MONTHS = [
+  'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+  'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
+];
+const LAST_LOGIN_DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+
+export function formatLastLoginStamp(at: Date): string {
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${LAST_LOGIN_DAYS[at.getDay()]} ${LAST_LOGIN_MONTHS[at.getMonth()]} `
+    + `${String(at.getDate()).padStart(2, ' ')} `
+    + `${pad(at.getHours())}:${pad(at.getMinutes())}:${pad(at.getSeconds())} `
+    + `${at.getFullYear()}`;
 }
 
 /**

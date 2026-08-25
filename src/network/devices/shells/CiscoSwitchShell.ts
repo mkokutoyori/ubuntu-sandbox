@@ -22,7 +22,7 @@ import { isValidIPv4 } from '../../core/ip';
 import type { CommandSpec } from '@/cli/CommandTable';
 import type { SocleLegend } from './CiscoShellBase';
 import type { ArgumentSpec } from '@/cli/ArgumentTypes';
-import type { SpecCollector } from '@/cli/commands/trieAdapter';
+import type { SpecCollector, AdapterKeyword } from '@/cli/commands/trieAdapter';
 import { collectRegistrations, specsFromTrieRegistrations }
   from '@/cli/commands/trieAdapter';
 import type { ISwitchShell } from './ISwitchShell';
@@ -40,7 +40,7 @@ import {
   showInterface, consoleAndAuxLineConfigLines, enableLevelSecretConfigLines,
   ipIntBriefRowsFromPorts, renderIpIntBrief, ipInterfaceBlockFor,
   interfaceAclLines, type InterfaceAclRefs,
-  renderInterfacesDescription,
+  renderInterfacesDescription, hostsTableLines,
 } from './cisco/CiscoShowCommands';
 import { orderCiscoConfigBlocks } from './cisco/ciscoConfigSerializer';
 import { describeCiscoArguments } from './cisco/ciscoArgumentHelp';
@@ -61,6 +61,7 @@ import { showSwitchVersion, showIpTraffic } from './cisco/CiscoCommonShow';
 import { buildArchiveSubmodeOn, buildArchiveLogSubmodeOn } from './cisco/CiscoArchiveCommands';
 import type { LoggingCommandContext } from './cisco/CiscoLoggingCommands';
 import { buildConfigDhcpCommands, dhcpPoolSpecs } from './cisco/CiscoDhcpCommands';
+import { dhcpRunningConfigLines } from '../../dhcp/dhcpRunningConfig';
 import type { CiscoShellContext } from './cisco/CiscoConfigCommands';
 import type { Router } from '../Router';
 import { vrrpVirtualMac } from '../../vrrp/types';
@@ -149,6 +150,138 @@ const STP_VLAN_VIEWS: ReadonlyArray<{ keyword: string; description: string }> = 
   { keyword: 'detail', description: 'Detailed output' },
   { keyword: 'root', description: 'Root bridge' },
 ];
+
+const CONFIG_IF_AUTRES: ReadonlySet<string> = new Set([
+  'shutdown', 'no shutdown', 'description', 'no description',
+  'duplex', 'speed', 'channel-group', 'no channel-group',
+  'mls qos trust cos', 'mls qos trust dscp', 'no mls qos trust', 'mls qos cos',
+  'ip dhcp snooping trust', 'ip dhcp snooping limit rate',
+  'l2protocol-tunnel', 'private-vlan mapping',
+]);
+
+const VLAN_PLACE = (name: string, description: string): ArgumentSpec =>
+  ({ name, type: 'VLAN_ID', description });
+
+const SWITCHPORT_PLACES: Readonly<Record<string, ArgumentSpec | readonly ArgumentSpec[]>> = {
+  'switchport access vlan': VLAN_PLACE('vlan', 'VLAN of the access port'),
+  'switchport trunk native vlan': VLAN_PLACE('vlan', 'Native VLAN of the trunk'),
+  'switchport voice vlan': {
+    name: 'vlan', type: 'VLAN_ID', description: 'Voice VLAN of the port',
+    alternatives: [
+      { keyword: '<1-4094>', description: 'Voice VLAN of the port' },
+      { keyword: 'dot1p', description: 'Tag traffic with 802.1p priority' },
+      { keyword: 'none', description: 'Do not tell the telephone which VLAN to use' },
+      { keyword: 'untagged', description: 'Untagged voice traffic' },
+    ],
+  },
+  'channel-group': {
+    name: 'groupe', type: 'INT', range: [1, 64], description: 'Channel group number',
+  },
+  'switchport trunk encapsulation': {
+    name: 'encapsulation', type: 'ENUM', description: 'Trunking encapsulation',
+    values: [
+      { keyword: 'dot1q', description: 'Interface uses only 802.1q trunking encapsulation' },
+      { keyword: 'isl', description: 'Interface uses only ISL trunking encapsulation' },
+      { keyword: 'negotiate', description: 'Device negotiates the trunking encapsulation' },
+    ],
+  },
+};
+
+const VLAN_LIST_KEYWORDS: readonly AdapterKeyword[] = [
+  { keyword: 'add', description: 'Add VLANs to the current list' },
+  { keyword: 'all', description: 'All VLANs' },
+  { keyword: 'except', description: 'All VLANs except the following' },
+  { keyword: 'none', description: 'No VLANs' },
+  { keyword: 'remove', description: 'Remove VLANs from the current list' },
+];
+
+const SWITCHPORT_KEYWORDS: Readonly<Record<string, readonly AdapterKeyword[]>> = {
+  'channel-group': [{
+    keyword: 'mode', description: 'Etherchannel mode of this interface',
+    afterArguments: true,
+    argument: {
+      name: 'mode', type: 'ENUM', description: 'Etherchannel mode',
+      values: [
+        { keyword: 'active', description: 'Enable LACP unconditionally' },
+        { keyword: 'auto', description: 'Enable PAgP only if a PAgP device is detected' },
+        { keyword: 'desirable', description: 'Enable PAgP unconditionally' },
+        { keyword: 'on', description: 'Enable Etherchannel only' },
+        { keyword: 'passive', description: 'Enable LACP only if a LACP device is detected' },
+      ],
+    },
+  }],
+  'switchport trunk allowed vlan': VLAN_LIST_KEYWORDS,
+  'switchport trunk pruning vlan': VLAN_LIST_KEYWORDS,
+  'switchport voice vlan': [
+    { keyword: 'dot1p', description: 'Tag traffic with 802.1p priority', argument: null },
+    {
+      keyword: 'none',
+      description: 'Do not tell the telephone which VLAN to use', argument: null,
+    },
+    { keyword: 'untagged', description: 'Untagged voice traffic', argument: null },
+  ],
+};
+
+const PORT_SECURITY_PLACES: Readonly<Record<string, ArgumentSpec | readonly ArgumentSpec[]>> = {
+  'switchport port-security maximum': {
+    name: 'maximum', type: 'INT', range: [1, 3072],
+    description: 'Maximum addresses',
+  },
+  'switchport port-security violation': {
+    name: 'violation', type: 'ENUM', description: 'Security violation mode',
+    values: [
+      { keyword: 'protect', description: 'Security violation protect mode' },
+      { keyword: 'restrict', description: 'Security violation restrict mode' },
+      { keyword: 'shutdown', description: 'Security violation shutdown mode' },
+    ],
+  },
+  'switchport port-security mac-address': {
+    name: 'adresse', type: 'MAC_ADDR', description: '48 bit mac address',
+    alternatives: [
+      { keyword: 'H.H.H', description: '48 bit mac address' },
+      { keyword: 'sticky', description: 'Configure dynamic secure addresses as sticky' },
+    ],
+  },
+  'no switchport port-security mac-address': {
+    name: 'adresse', type: 'MAC_ADDR', description: '48 bit mac address',
+    alternatives: [
+      { keyword: 'H.H.H', description: '48 bit mac address' },
+      { keyword: 'sticky', description: 'Configure dynamic secure addresses as sticky' },
+    ],
+  },
+  'switchport port-security aging time': {
+    name: 'minutes', type: 'INT', range: [0, 1440],
+    description: 'Aging time in minutes',
+  },
+  'switchport port-security aging type': {
+    name: 'type', type: 'ENUM', description: 'Aging type',
+    values: [
+      { keyword: 'absolute', description: 'Absolute aging (default)' },
+      { keyword: 'inactivity', description: 'Aging based on inactivity time period' },
+    ],
+  },
+};
+
+const PORT_SECURITY_KEYWORDS: Readonly<Record<string, readonly AdapterKeyword[]>> = {
+  'switchport port-security mac-address': [
+    {
+      keyword: 'sticky', description: 'Configure dynamic secure addresses as sticky',
+      argument: {
+        name: 'adresse', type: 'MAC_ADDR', optional: true,
+        description: '48 bit mac address',
+      },
+    },
+  ],
+  'no switchport port-security mac-address': [
+    {
+      keyword: 'sticky', description: 'Configure dynamic secure addresses as sticky',
+      argument: {
+        name: 'adresse', type: 'MAC_ADDR', optional: true,
+        description: '48 bit mac address',
+      },
+    },
+  ],
+};
 
 function stpVlanSpecs(action: (args: string[]) => string): CommandSpec[] {
   const words = ['show', 'spanning-tree', 'vlan'];
@@ -486,7 +619,7 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
     this.registerConfigCommands();
 
     // ── Config-if mode ──
-    this.registerConfigIfCommands();
+    this.registerConfigIfCommands(this.configIfTrie);
 
     // ── Config-vlan mode ──
     this.configVlanTrie.registerGreedy('name', 'Set VLAN name', (args) => {
@@ -856,24 +989,29 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
   }
 
   private registerPortSecurityCommands(): void {
+    this.registerPortSecurityOn(this.configIfTrie);
+    this.registerSviAddressingCommands();
+  }
+
+  private registerPortSecurityOn(trie: CommandTrie): void {
     const parseMac = (s: string): MACAddress | null => {
       try { return new MACAddress(s); } catch { return null; }
     };
 
     // ── enable / disable ──
-    this.configIfTrie.register('switchport port-security', 'Enable port-security', () =>
+    trie.register('switchport port-security', 'Enable port-security', () =>
       this.applyToSelectedInterfaces(p => {
         const port = this.d().getPort(p); if (port) port.getPortSecurity().enable();
         return '';
       }));
-    this.configIfTrie.register('no switchport port-security', 'Disable port-security', () =>
+    trie.register('no switchport port-security', 'Disable port-security', () =>
       this.applyToSelectedInterfaces(p => {
         const port = this.d().getPort(p); if (port) port.getPortSecurity().disable();
         return '';
       }));
 
     // ── maximum ──
-    this.configIfTrie.registerGreedy('switchport port-security maximum',
+    trie.registerGreedy('switchport port-security maximum',
       'Max secure MAC addresses', (args) => {
         const n = parseInt(args[0] ?? '', 10);
         if (isNaN(n) || n < 1) return '% Invalid maximum value';
@@ -884,7 +1022,7 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
       });
 
     // ── violation mode ──
-    this.configIfTrie.registerGreedy('switchport port-security violation',
+    trie.registerGreedy('switchport port-security violation',
       'Violation mode', (args) => {
         const m = (args[0] ?? '').toLowerCase();
         if (m !== 'shutdown' && m !== 'restrict' && m !== 'protect') return '% Invalid mode';
@@ -896,7 +1034,7 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
       });
 
     // ── mac-address (static + sticky toggle + sticky <mac>) ──
-    this.configIfTrie.registerGreedy('switchport port-security mac-address',
+    trie.registerGreedy('switchport port-security mac-address',
       'Configure secure MAC', (args) => {
         if (args.length === 0) return CISCO_ERRORS.INCOMPLETE;
         if (args[0].toLowerCase() === 'sticky') {
@@ -918,7 +1056,7 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
           return '';
         });
       });
-    this.configIfTrie.registerGreedy('no switchport port-security mac-address',
+    trie.registerGreedy('no switchport port-security mac-address',
       'Remove secure MAC', (args) => {
         if (args.length === 0) return CISCO_ERRORS.INCOMPLETE;
         if (args[0].toLowerCase() === 'sticky' && args.length === 1) {
@@ -936,7 +1074,7 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
       });
 
     // ── aging ──
-    this.configIfTrie.registerGreedy('switchport port-security aging time',
+    trie.registerGreedy('switchport port-security aging time',
       'Aging window (minutes)', (args) => {
         const n = parseInt(args[0] ?? '', 10);
         if (isNaN(n) || n < 0) return '% Invalid aging time';
@@ -945,7 +1083,7 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
           return '';
         });
       });
-    this.configIfTrie.registerGreedy('switchport port-security aging type',
+    trie.registerGreedy('switchport port-security aging type',
       'Aging strategy', (args) => {
         const t = (args[0] ?? '').toLowerCase();
         if (t !== 'absolute' && t !== 'inactivity') return '% Invalid aging type';
@@ -954,19 +1092,22 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
           return '';
         });
       });
-    this.configIfTrie.register('switchport port-security aging static',
+    trie.register('switchport port-security aging static',
       'Apply aging to static entries', () =>
         this.applyToSelectedInterfaces(p => {
           const port = this.d().getPort(p); if (port) port.getPortSecurity().setAgingStatic(true);
           return '';
         }));
-    this.configIfTrie.register('no switchport port-security aging static',
+    trie.register('no switchport port-security aging static',
       'Exempt static entries from aging', () =>
         this.applyToSelectedInterfaces(p => {
           const port = this.d().getPort(p); if (port) port.getPortSecurity().setAgingStatic(false);
           return '';
         }));
 
+  }
+
+  private registerSviAddressingCommands(): void {
     // ── SVI (management Vlan interface) L3 addressing ──
     // L2-only switch: physical ports cannot hold an IP. A management SVI
     // (interface Vlan N) may, mirroring a real Layer-2 switch.
@@ -1316,11 +1457,11 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
     }
     if (sec.getAgingTimeMin() > 0) {
       out.push(`switchport port-security aging time ${sec.getAgingTimeMin()}`);
-      if (sec.getAgingType() !== 'absolute') {
-        out.push(`switchport port-security aging type ${sec.getAgingType()}`);
-      }
-      if (sec.getAgingStatic()) out.push('switchport port-security aging static');
     }
+    if (sec.getAgingType() !== 'absolute') {
+      out.push(`switchport port-security aging type ${sec.getAgingType()}`);
+    }
+    if (sec.getAgingStatic()) out.push('switchport port-security aging static');
     return out;
   }
 
@@ -2062,7 +2203,37 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
       ...dhcpPoolSpecs(this.dhcpPoolContext()),
       ...this.vlanVtpShowSpecs(),
       ...this.l2TableSpecs(),
+      ...this.portSecuritySpecs(),
+      ...this.switchportL2Specs(),
     ];
+  }
+
+  private switchportL2Specs(): CommandSpec[] {
+    return specsFromTrieRegistrations(
+      (collector) => this.registerConfigIfCommands(collector as unknown as CommandTrie),
+      {
+        modes: ['config-if'], minPrivilege: 15,
+        undoFromNegatedPaths: true,
+        skip: (path) => !/^(no )?switchport /.test(path) && !CONFIG_IF_AUTRES.has(path),
+        argumentFor: (path) => SWITCHPORT_PLACES[path] ?? undefined,
+        restDescriptionFor: (path) => path === 'description'
+          ? 'Up to 240 characters describing this interface' : undefined,
+        keywordsFor: (path) => SWITCHPORT_KEYWORDS[path],
+      },
+    );
+  }
+
+  private portSecuritySpecs(): CommandSpec[] {
+    return specsFromTrieRegistrations(
+      (collector) => this.registerPortSecurityOn(collector as unknown as CommandTrie),
+      {
+        modes: ['config-if'], minPrivilege: 15,
+        undoFromNegatedPaths: true,
+        skip: (path) => path.startsWith('ip '),
+        argumentFor: (path) => PORT_SECURITY_PLACES[path] ?? null,
+        keywordsFor: (path) => PORT_SECURITY_KEYWORDS[path],
+      },
+    );
   }
 
   protected override socleLegends(): SocleLegend[] {
@@ -3034,9 +3205,9 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
 
   // ─── Config-if Commands ───────────────────────────────────────────
 
-  private registerConfigIfCommands(): void {
+  private registerConfigIfCommands(trie: CommandTrie): void {
     // Cisco IOS: `interface X` from config-if switches to the new interface
-    this.configIfTrie.registerGreedy('interface', 'Select an interface to configure', (args) => {
+    trie.registerGreedy('interface', 'Select an interface to configure', (args) => {
       if (args.length < 1) return CISCO_ERRORS.INCOMPLETE;
       if (args[0].toLowerCase() === 'range') {
         return this.handleInterfaceRange(args.slice(1));
@@ -3061,50 +3232,50 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
       return '';
     });
 
-    this.configIfTrie.register('switchport protected',
+    trie.register('switchport protected',
       'Isolate this port from other protected ports', () =>
         this.applyToSelectedInterfaces(portName => {
           this.d().setPortProtected(portName, true);
           return '';
         }));
-    this.configIfTrie.register('no switchport protected',
+    trie.register('no switchport protected',
       'Stop isolating this port', () =>
         this.applyToSelectedInterfaces(portName => {
           this.d().setPortProtected(portName, false);
           return '';
         }));
 
-    this.configIfTrie.register('switchport mode access', 'Set interface to access mode', () => {
+    trie.register('switchport mode access', 'Set interface to access mode', () => {
       return this.applyToSelectedInterfaces(portName =>
         this.d().setSwitchportMode(portName, 'access') ? '' : '% Error'
       );
     });
 
-    this.configIfTrie.register('switchport mode trunk', 'Set interface to trunk mode', () => {
+    trie.register('switchport mode trunk', 'Set interface to trunk mode', () => {
       return this.applyToSelectedInterfaces(portName =>
         this.d().setSwitchportMode(portName, 'trunk') ? '' : '% Error'
       );
     });
 
-    this.configIfTrie.register('switchport mode dot1q-tunnel', '802.1ad QinQ tunnel port (S-VLAN access port)', () => {
+    trie.register('switchport mode dot1q-tunnel', '802.1ad QinQ tunnel port (S-VLAN access port)', () => {
       return this.applyToSelectedInterfaces(portName =>
         this.d().setSwitchportMode(portName, 'dot1q-tunnel') ? '' : '% Error'
       );
     });
 
-    this.configIfTrie.register('switchport mode private-vlan host', 'Set interface as a private VLAN host port', () => {
+    trie.register('switchport mode private-vlan host', 'Set interface as a private VLAN host port', () => {
       return this.applyToSelectedInterfaces(portName =>
         this.d().setSwitchportMode(portName, 'access') ? '' : '% Error'
       );
     });
 
-    this.configIfTrie.register('switchport mode private-vlan promiscuous', 'Set interface as a private VLAN promiscuous port', () => {
+    trie.register('switchport mode private-vlan promiscuous', 'Set interface as a private VLAN promiscuous port', () => {
       return this.applyToSelectedInterfaces(portName =>
         this.d().setSwitchportMode(portName, 'access') ? '' : '% Error'
       );
     });
 
-    this.configIfTrie.registerGreedy('switchport mode private-vlan trunk', 'Set interface as a private VLAN trunk port', (args) => {
+    trie.registerGreedy('switchport mode private-vlan trunk', 'Set interface as a private VLAN trunk port', (args) => {
       const kind = args[0]?.toLowerCase();
       if (kind !== undefined && kind !== 'promiscuous' && kind !== 'host') {
         return CISCO_ERRORS.INVALID_INPUT;
@@ -3114,7 +3285,7 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
       );
     });
 
-    this.configIfTrie.registerGreedy('switchport private-vlan mapping trunk',
+    trie.registerGreedy('switchport private-vlan mapping trunk',
       'Map a promiscuous trunk to primary/secondary private VLANs', (args) => {
         if (args.length < 2) return CISCO_ERRORS.INCOMPLETE;
         const primary = parseInt(args[0], 10);
@@ -3128,7 +3299,7 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
         });
       });
 
-    this.configIfTrie.registerGreedy('switchport private-vlan association trunk',
+    trie.registerGreedy('switchport private-vlan association trunk',
       'Associate an isolated trunk with its primary/secondary private VLAN', (args) => {
         if (args.length < 2) return CISCO_ERRORS.INCOMPLETE;
         const primary = parseInt(args[0], 10);
@@ -3140,7 +3311,7 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
         });
       });
 
-    this.configIfTrie.registerGreedy('switchport private-vlan host-association',
+    trie.registerGreedy('switchport private-vlan host-association',
       'Associate a host port with its primary/secondary private VLAN', (args) => {
         if (args.length < 2) return CISCO_ERRORS.INCOMPLETE;
         const primary = parseInt(args[0], 10);
@@ -3152,7 +3323,7 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
         });
       });
 
-    this.configIfTrie.registerGreedy('switchport private-vlan mapping',
+    trie.registerGreedy('switchport private-vlan mapping',
       'Map a promiscuous port to primary/secondary private VLANs', (args) => {
         if (args.length < 2) return CISCO_ERRORS.INCOMPLETE;
         const primary = parseInt(args[0], 10);
@@ -3166,7 +3337,7 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
         });
       });
 
-    this.configIfTrie.registerGreedy('private-vlan mapping',
+    trie.registerGreedy('private-vlan mapping',
       'Map secondary VLANs to this primary VLAN SVI', (args) => {
         const vlan = this.sviVlanId(this.selectedInterface ?? '');
         if (vlan === null) return '% Command rejected: not applicable on this interface.';
@@ -3177,35 +3348,35 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
         return '';
       });
 
-    this.configIfTrie.register('switchport mode dynamic auto', 'Negotiate trunk via DTP (passive)', () => {
+    trie.register('switchport mode dynamic auto', 'Negotiate trunk via DTP (passive)', () => {
       return this.applyToSelectedInterfaces(portName => {
         this.requireDtp().setAdminMode(portName, 'dynamic-auto');
         return '';
       });
     });
 
-    this.configIfTrie.register('switchport mode dynamic desirable', 'Negotiate trunk via DTP (active)', () => {
+    trie.register('switchport mode dynamic desirable', 'Negotiate trunk via DTP (active)', () => {
       return this.applyToSelectedInterfaces(portName => {
         this.requireDtp().setAdminMode(portName, 'dynamic-desirable');
         return '';
       });
     });
 
-    this.configIfTrie.register('switchport nonegotiate', 'Force trunk without DTP', () => {
+    trie.register('switchport nonegotiate', 'Force trunk without DTP', () => {
       return this.applyToSelectedInterfaces(portName => {
         this.requireDtp().setAdminMode(portName, 'nonegotiate');
         return '';
       });
     });
 
-    this.configIfTrie.register('no switchport nonegotiate', 'Re-enable DTP negotiation', () => {
+    trie.register('no switchport nonegotiate', 'Re-enable DTP negotiation', () => {
       return this.applyToSelectedInterfaces(portName => {
         this.requireDtp().setAdminMode(portName, 'dynamic-auto');
         return '';
       });
     });
 
-    this.configIfTrie.registerGreedy('switchport access vlan', 'Assign interface to access VLAN', (args) => {
+    trie.registerGreedy('switchport access vlan', 'Assign interface to access VLAN', (args) => {
       if (args.length < 1) return CISCO_ERRORS.INCOMPLETE;
       const vlanId = parseInt(args[0], 10);
       if (isNaN(vlanId) || vlanId < 1 || vlanId > 4094) return '% Invalid VLAN ID';
@@ -3214,7 +3385,7 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
       );
     });
 
-    this.configIfTrie.registerGreedy('l2protocol-tunnel', 'Tunnel a client L2 control protocol across the S-VLAN instead of terminating it locally', (args) => {
+    trie.registerGreedy('l2protocol-tunnel', 'Tunnel a client L2 control protocol across the S-VLAN instead of terminating it locally', (args) => {
       const proto = (args[0] ?? '').toLowerCase();
       if (proto !== 'cdp' && proto !== 'stp' && proto !== 'vtp' && proto !== 'lldp') {
         return CISCO_ERRORS.INVALID_INPUT;
@@ -3226,7 +3397,7 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
       });
     });
 
-    this.configIfTrie.registerGreedy('switchport vlan mapping', 'Selective QinQ: map a client VLAN to a service (S-VLAN)', (args) => {
+    trie.registerGreedy('switchport vlan mapping', 'Selective QinQ: map a client VLAN to a service (S-VLAN)', (args) => {
       if (args.length < 2) return CISCO_ERRORS.INCOMPLETE;
       const cvlan = parseInt(args[0], 10);
       const svlan = parseInt(args[1], 10);
@@ -3240,7 +3411,7 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
       });
     });
 
-    this.configIfTrie.registerGreedy('switchport trunk native vlan', 'Set trunk native VLAN', (args) => {
+    trie.registerGreedy('switchport trunk native vlan', 'Set trunk native VLAN', (args) => {
       if (args.length < 1) return CISCO_ERRORS.INCOMPLETE;
       const vlanId = parseInt(args[0], 10);
       if (isNaN(vlanId)) return '% Invalid VLAN ID';
@@ -3249,7 +3420,7 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
       );
     });
 
-    this.configIfTrie.registerGreedy('switchport trunk allowed vlan', 'Set trunk allowed VLANs', (args) => {
+    trie.registerGreedy('switchport trunk allowed vlan', 'Set trunk allowed VLANs', (args) => {
       if (args.length < 1) return CISCO_ERRORS.INCOMPLETE;
       const sub = args[0].toLowerCase();
 
@@ -3309,7 +3480,7 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
       }
       return '';
     };
-    this.configIfTrie.registerGreedy('switchport trunk encapsulation', 'Trunk encapsulation', (args) => {
+    trie.registerGreedy('switchport trunk encapsulation', 'Trunk encapsulation', (args) => {
       if (this.selectedInterface && this.sviVlanId(this.selectedInterface) !== null) {
         return CISCO_ERRORS.INVALID_INPUT;
       }
@@ -3339,7 +3510,7 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
         throw new CliInvalidInput();
       }
     };
-    this.configIfTrie.registerGreedy('duplex', 'Set interface duplex', (args) => {
+    trie.registerGreedy('duplex', 'Set interface duplex', (args) => {
       rejectOnSvi();
       const a = (args[0] ?? '').toLowerCase();
       if (a !== 'full' && a !== 'half' && a !== 'auto') {
@@ -3352,7 +3523,7 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
       }
       return recordIf(`duplex ${a}`);
     });
-    this.configIfTrie.registerGreedy('speed', 'Set interface speed', (args) => {
+    trie.registerGreedy('speed', 'Set interface speed', (args) => {
       rejectOnSvi();
       const a = (args[0] ?? '').toLowerCase();
       if (a === 'auto') {
@@ -3372,7 +3543,7 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
       'channel-protocol', 'storm-control',
       'mdix', 'power', 'srr-queue', 'load-interval',
     ]) {
-      this.configIfTrie.registerGreedy(sub, `Interface ${sub}`, (args) => {
+      trie.registerGreedy(sub, `Interface ${sub}`, (args) => {
         // These are physical-port-only; an SVI is a virtual L3 interface and
         // rejects them just like real IOS does.
         if (this.selectedInterface && this.sviVlanId(this.selectedInterface) !== null) {
@@ -3391,7 +3562,7 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
       }
       return '';
     };
-    this.configIfTrie.registerGreedy('switchport voice vlan', 'Set the voice VLAN', (args) => {
+    trie.registerGreedy('switchport voice vlan', 'Set the voice VLAN', (args) => {
       if (!args[0]) return CISCO_ERRORS.INCOMPLETE;
       const kw = args[0].toLowerCase();
       const v = parseInt(args[0], 10);
@@ -3405,7 +3576,7 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
       }
       return '';
     });
-    this.configIfTrie.register('no switchport voice vlan', 'Remove voice VLAN', () => {
+    trie.register('no switchport voice vlan', 'Remove voice VLAN', () => {
       const ifs = this.selectedInterface ? [this.selectedInterface] : this.selectedInterfaceRange;
       for (const i of ifs) {
         const cfg = this.d().getSwitchportConfig(i);
@@ -3415,25 +3586,25 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
     });
 
     // ── 802.1p (PCP) trust boundary — mls qos ──────────────────────
-    this.configIfTrie.register('mls qos trust cos', 'Trust the CoS carried in the incoming 802.1Q tag', () =>
+    trie.register('mls qos trust cos', 'Trust the CoS carried in the incoming 802.1Q tag', () =>
       this.applyToSelectedInterfaces(p => {
         const cfg = this.d().getSwitchportConfig(p);
         if (cfg) cfg.trustMode = 'cos';
         return '';
       }));
-    this.configIfTrie.register('mls qos trust dscp', 'Trust the DSCP field, derive CoS from it', () =>
+    trie.register('mls qos trust dscp', 'Trust the DSCP field, derive CoS from it', () =>
       this.applyToSelectedInterfaces(p => {
         const cfg = this.d().getSwitchportConfig(p);
         if (cfg) cfg.trustMode = 'dscp';
         return '';
       }));
-    this.configIfTrie.register('no mls qos trust', 'Reset the port to untrusted', () =>
+    trie.register('no mls qos trust', 'Reset the port to untrusted', () =>
       this.applyToSelectedInterfaces(p => {
         const cfg = this.d().getSwitchportConfig(p);
         if (cfg) cfg.trustMode = 'untrusted';
         return '';
       }));
-    this.configIfTrie.registerGreedy('mls qos cos', 'Default CoS applied to untrusted ingress traffic', (args) => {
+    trie.registerGreedy('mls qos cos', 'Default CoS applied to untrusted ingress traffic', (args) => {
       const n = parseInt(args[0] ?? '', 10);
       if (isNaN(n) || n < 0 || n > 7) return CISCO_ERRORS.INVALID_INPUT;
       return this.applyToSelectedInterfaces(p => {
@@ -3442,7 +3613,7 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
         return '';
       });
     });
-    this.configIfTrie.registerGreedy('switchport priority extend cos', 'Remark the phone\'s downstream PC traffic to a fixed CoS', (args) => {
+    trie.registerGreedy('switchport priority extend cos', 'Remark the phone\'s downstream PC traffic to a fixed CoS', (args) => {
       const n = parseInt(args[0] ?? '', 10);
       if (isNaN(n) || n < 0 || n > 7) return CISCO_ERRORS.INVALID_INPUT;
       return this.applyToSelectedInterfaces(p => {
@@ -3451,14 +3622,14 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
         return '';
       });
     });
-    this.configIfTrie.register('switchport priority extend trust', 'Trust the CoS already set by the downstream PC', () =>
+    trie.register('switchport priority extend trust', 'Trust the CoS already set by the downstream PC', () =>
       this.applyToSelectedInterfaces(p => {
         const cfg = this.d().getSwitchportConfig(p);
         if (cfg) cfg.priorityExtend = { mode: 'trust' };
         return '';
       }));
 
-    this.configIfTrie.registerGreedy('switchport trunk pruning vlan', 'Set pruning-eligible VLANs', (args) => {
+    trie.registerGreedy('switchport trunk pruning vlan', 'Set pruning-eligible VLANs', (args) => {
       if (args.length < 1) return CISCO_ERRORS.INCOMPLETE;
       const sub = args[0].toLowerCase();
       if (sub === 'none') return recordIf('switchport trunk pruning vlan none');
@@ -3470,10 +3641,10 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
       if (!this.parseVlanList(args[0])) return '% Invalid VLAN list';
       return recordIf(`switchport trunk pruning vlan ${args[0]}`);
     });
-    this.configIfTrie.register('no switchport trunk pruning vlan', 'Reset pruning-eligible VLANs', () =>
+    trie.register('no switchport trunk pruning vlan', 'Reset pruning-eligible VLANs', () =>
       removeIf('switchport trunk pruning'));
 
-    this.configIfTrie.registerGreedy('channel-group', 'EtherChannel membership', (args) => {
+    trie.registerGreedy('channel-group', 'EtherChannel membership', (args) => {
       if (args.length < 3) return CISCO_ERRORS.INCOMPLETE;
       const id = parseInt(args[0], 10);
       if (isNaN(id) || id < 1 || id > 64) return '% Invalid channel-group id';
@@ -3495,7 +3666,7 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
         return '';
       });
     });
-    this.configIfTrie.registerGreedy('no channel-group', 'Remove EtherChannel membership', () => {
+    trie.registerGreedy('no channel-group', 'Remove EtherChannel membership', () => {
       return this.applyToSelectedInterfaces(portName => {
         this.requireLacp().removePort(portName);
         return '';
@@ -3505,15 +3676,15 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
     this.registerDot1x();
     this.registerLacp();
 
-    this.configIfTrie.register('shutdown', 'Disable interface', () => {
+    trie.register('shutdown', 'Disable interface', () => {
       return this.applyToSelectedInterfaces(portName => this.setIfAdminState(portName, false));
     });
 
-    this.configIfTrie.register('no shutdown', 'Enable interface', () => {
+    trie.register('no shutdown', 'Enable interface', () => {
       return this.applyToSelectedInterfaces(portName => this.setIfAdminState(portName, true));
     });
 
-    this.configIfTrie.registerGreedy('description', 'Interface description', (args) => {
+    trie.registerGreedy('description', 'Interface description', (args) => {
       if (!this.selectedInterface || args.length < 1) return CISCO_ERRORS.INCOMPLETE;
       return this.applyToSelectedInterfaces(portName => {
         this.d().setInterfaceDescription(portName, args.join(' '));
@@ -3521,7 +3692,7 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
       });
     });
 
-    this.configIfTrie.register('no description', 'Remove interface description', () => {
+    trie.register('no description', 'Remove interface description', () => {
       if (!this.selectedInterface) return '';
       return this.applyToSelectedInterfaces(portName => {
         this.d().setInterfaceDescription(portName, '');
@@ -3529,7 +3700,7 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
       });
     });
 
-    this.configIfTrie.register('ip dhcp snooping trust', 'Set interface as trusted for DHCP snooping', () => {
+    trie.register('ip dhcp snooping trust', 'Set interface as trusted for DHCP snooping', () => {
       const cfg = this.d()._getDHCPSnoopingConfig();
       return this.applyToSelectedInterfaces(portName => {
         cfg.trustedPorts.add(portName);
@@ -3537,7 +3708,7 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
       });
     });
 
-    this.configIfTrie.registerGreedy('ip dhcp snooping limit rate', 'Set DHCP snooping rate limit', (args) => {
+    trie.registerGreedy('ip dhcp snooping limit rate', 'Set DHCP snooping rate limit', (args) => {
       if (args.length < 1) return CISCO_ERRORS.INCOMPLETE;
       const rate = parseInt(args[0], 10);
       if (isNaN(rate) || rate < 1) return '% Invalid rate value';
@@ -3732,7 +3903,7 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
     if (niveaux.length > 0) lines.push(...niveaux);
     if (enableSecret || enablePassword || niveaux.length > 0) lines.push('!');
 
-    const dnsLignes = sw._getDnsConfig().runningConfigLines();
+    const dnsLignes = [...sw._getDnsConfig().runningConfigLines(), ...hostsTableLines(sw)];
     if (dnsLignes.length > 0) { lines.push(...dnsLignes); lines.push('!'); }
     else if (sw.getDomainName()) { lines.push(`ip domain-name ${sw.getDomainName()}`); lines.push('!'); }
     if (sw.getDefaultGateway()) { lines.push(`ip default-gateway ${sw.getDefaultGateway()}`); lines.push('!'); }
@@ -3774,6 +3945,9 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
     if (vtyLines.length > 0) { lines.push(...vtyLines); lines.push('!'); }
 
     if (sw.isIpRoutingEnabled()) { lines.push('ip routing'); lines.push('!'); }
+
+    const dhcpLines = dhcpRunningConfigLines(sw._getDHCPServerInternal());
+    if (dhcpLines.length > 0) { lines.push(...dhcpLines); lines.push('!'); }
 
     for (const [id, vlan] of sw.getVLANs()) {
       if (id === 1) continue;
@@ -5420,36 +5594,6 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
       lines.push(`${b.ipAddress.padEnd(20)}01${b.clientId.replace(/:/g, '').toLowerCase().padEnd(22)}${expire.padEnd(24)}Automatic`);
     }
     return lines.join('\n');
-  }
-
-  private showIpDhcpPool(poolName?: string): string {
-    const dhcp = this.d()._getDHCPServerInternal();
-    let pools = Array.from(dhcp.getAllPools().values());
-    if (poolName) {
-      const match = pools.find(p => p.name.toLowerCase() === poolName.toLowerCase());
-      if (!match) return `% Pool ${poolName} not found`;
-      pools = [match];
-    }
-    if (pools.length === 0) return '';
-    const allBindings = Array.from(dhcp.getBindings().values());
-    const blocks: string[] = [];
-    for (const pool of pools) {
-      const leased = allBindings.filter(
-        b => pool.network && pool.mask && this.ipInSubnet(b.ipAddress, pool.network, pool.mask),
-      ).length;
-      blocks.push([
-        `Pool ${pool.name} :`,
-        ` Utilization mark (high/low)    : 100 / 0`,
-        ` Subnet size (first/next)       : 0 / 0`,
-        ` Total addresses                : 254`,
-        ` Leased addresses               : ${leased}`,
-        ` Pending event                  : none`,
-        ` 1 subnet is currently in the pool :`,
-        ` Current index        IP address range                    Leased addresses`,
-        ` ${(pool.network ?? '?').padEnd(20)} ${(pool.network ?? '?')} - ${pool.network ?? '?'}                ${leased}`,
-      ].join('\n'));
-    }
-    return blocks.join('\n');
   }
 
   private ipInSubnet(ip: string, network: string, mask: string): boolean {

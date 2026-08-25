@@ -1,3 +1,4 @@
+import { oidInMibView, type MibViewEntry } from './mibView';
 import type { IEventBus } from '@/events/EventBus';
 import { getDefaultScheduler, type IScheduler, type TimerHandle } from '@/events/Scheduler';
 import {
@@ -89,10 +90,32 @@ export class SnmpAgent {
     return named ?? egressPort.getIPAddress();
   }
 
-  addCommunity(community: string, access: 'ro' | 'rw', aclName?: string): void {
+  addCommunity(
+    community: string, access: 'ro' | 'rw', aclName?: string, viewName?: string,
+  ): void {
     const existing = this.config.communities.find((c) => c.community === community);
-    if (existing) { existing.access = access; existing.aclName = aclName; return; }
-    this.config.communities.push({ community, access, aclName });
+    if (existing) {
+      existing.access = access; existing.aclName = aclName; existing.viewName = viewName;
+      return;
+    }
+    this.config.communities.push({ community, access, aclName, viewName });
+  }
+
+  setMibView(name: string, entries: readonly MibViewEntry[]): void {
+    this.config.mibViews.set(name, [...entries]);
+  }
+
+  clearMibViews(): void { this.config.mibViews.clear(); }
+
+  /**
+   * Une communaute sans vue voit tout — c'est le defaut de VRP comme
+   * d'IOS. Une communaute qui en NOMME une ne voit que ce que la vue
+   * admet, et une vue qui n'existe pas n'admet rien : nommer une vue
+   * absente est une restriction, pas une permission.
+   */
+  private communitySees(entry: SnmpCommunityAcl, oid: string): boolean {
+    if (!entry.viewName) return true;
+    return oidInMibView(oid, this.config.mibViews.get(entry.viewName) ?? []);
   }
 
   private communityAdmits(entry: SnmpCommunityAcl, srcIp: IPAddress): boolean {
@@ -253,13 +276,13 @@ export class SnmpAgent {
       const reqVb = request.varBindings[i];
       let resolved: SnmpVarBinding | null;
       if (request.pduType === 'get-request') {
-        resolved = this.resolveOid(reqVb.oid);
+        resolved = this.communitySees(acl, reqVb.oid) ? this.resolveOid(reqVb.oid) : null;
         if (!resolved) {
           resolved = vb(reqVb.oid, v('no-such-object', null));
           if (errorStatus === 'no-error') { errorStatus = 'no-such-name'; errorIndex = i + 1; }
         }
       } else {
-        resolved = this.resolveOidNext(reqVb.oid);
+        resolved = this.resolveOidNext(reqVb.oid, (oid) => this.communitySees(acl, oid));
         if (!resolved) {
           resolved = vb(reqVb.oid, v('end-of-mib-view', null));
         }
@@ -308,11 +331,12 @@ export class SnmpAgent {
     return null;
   }
 
-  private resolveOidNext(oid: string): SnmpVarBinding | null {
+  private resolveOidNext(oid: string, visible?: (oid: string) => boolean): SnmpVarBinding | null {
     const known = this.allKnownOids();
     let best: string | null = null;
     for (const k of known) {
       if (oidCompare(k, oid) <= 0) continue;
+      if (visible && !visible(k)) continue;
       if (best === null || oidCompare(k, best) < 0) best = k;
     }
     if (!best) return null;

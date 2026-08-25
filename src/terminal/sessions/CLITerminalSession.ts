@@ -105,6 +105,7 @@ export abstract class CLITerminalSession extends TerminalSession {
    * socket (docs/PRD-VTY-Transport.md §2.1 item 6).
    */
   private telnetSubShell: TelnetInteractiveSubShell | null = null;
+  private quoteNextKey = false;
 
   protected abstract getDefaultPrompt(): string;
 
@@ -430,11 +431,21 @@ export abstract class CLITerminalSession extends TerminalSession {
   }
 
   protected handleNormalKey(e: KeyEvent): boolean {
+    if (e.key.toLowerCase() === 'v' && e.ctrlKey && !e.shiftKey) {
+      this.quoteNextKey = true;
+      return false;
+    }
+
     // ? (inline help — intercepted before reaching input)
     if (e.key === '?' && !e.ctrlKey && !e.altKey && !e.metaKey) {
+      if (this.quoteNextKey) {
+        this.quoteNextKey = false;
+        return false;
+      }
       this.showInlineHelp(this.input);
       return true;
     }
+    if (this.quoteNextKey && e.key.length === 1) this.quoteNextKey = false;
 
     // Ctrl+Z → go to top-level mode
     if (e.key === 'z' && e.ctrlKey) {
@@ -467,9 +478,6 @@ export abstract class CLITerminalSession extends TerminalSession {
       this.notify();
       return true;
     }
-
-    // Ctrl+A/E → cursor (handled by view, but consume)
-    if ((e.key === 'a' || e.key === 'e') && e.ctrlKey) return true;
 
     return super.handleNormalKey(e);
   }

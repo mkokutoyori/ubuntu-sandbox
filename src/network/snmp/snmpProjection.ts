@@ -12,7 +12,12 @@ export function projectSnmpServiceOntoAgent(service: SnmpService, agent: SnmpAge
   for (const c of [...config.communities]) {
     if (!names.has(c.community)) agent.removeCommunity(c.community);
   }
-  for (const c of communities) agent.addCommunity(c.name, c.access, c.aclName);
+  for (const c of communities) agent.addCommunity(c.name, c.access, c.aclName, c.view);
+
+  agent.clearMibViews();
+  for (const [name, entries] of service.getViews()) {
+    agent.setMibView(name, entries.map((e) => ({ oid: e.oid, type: e.type })));
+  }
 
   const hosts = service.getHosts();
   const addresses = new Set(hosts.map((h) => h.host));

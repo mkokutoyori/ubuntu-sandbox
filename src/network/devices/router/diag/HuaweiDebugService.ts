@@ -14,6 +14,7 @@
  */
 
 import type { IEventBus } from '@/events/EventBus';
+import type { FrameSource } from '@/network/hardware/PortTap';
 import { DebugBroadcast, type DebugLineListener, type TerminalDebugSource } from '@/network/devices/diag/DebugBroadcast';
 import { huaweiDisplayInterfaceName } from '@/network/devices/shells/cli-utils';
 import {
@@ -100,7 +101,7 @@ export class HuaweiDebugService implements TerminalDebugSource {
     this.broadcast.fan(line);
   }
 
-  attachToBus(bus: IEventBus, deviceId: string): void {
+  attachToBus(bus: IEventBus, deviceId: string, frames: FrameSource): void {
     if (!this.broadcast.beginAttach(bus, deviceId)) return;
     const mine = (p: { deviceId?: string }) => p.deviceId === undefined || p.deviceId === deviceId;
     const nom = (i: string | undefined) => huaweiDisplayInterfaceName(i ?? '?');
@@ -234,13 +235,8 @@ export class HuaweiDebugService implements TerminalDebugSource {
         this.emit('ip-icmp', `ICMP: ${kind} ${dir}, src=${ip.src}, dst=${ip.dst}`);
       }
     };
-    this.broadcast.track(bus.subscribe('port.frame.received', (e) => {
-      if (!mine(e.payload)) return;
-      onFrame((e.payload as { frame: unknown }).frame, 'received');
-    }));
-    this.broadcast.track(bus.subscribe('port.frame.tx-requested', (e) => {
-      if (!mine(e.payload)) return;
-      onFrame((e.payload as { frame: unknown }).frame, 'sent');
+    this.broadcast.track(frames.attachCapture((tapped) => {
+      onFrame(tapped.frame, tapped.direction === 'in' ? 'received' : 'sent');
     }));
   }
 

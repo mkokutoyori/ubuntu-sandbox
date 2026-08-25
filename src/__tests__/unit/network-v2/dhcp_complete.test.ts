@@ -303,14 +303,14 @@ describe('Group 2: Functional — DORA Process', () => {
       await router.executeCommand('ip dhcp excluded-address 10.0.0.1');
       await router.executeCommand('ip dhcp pool TEST');
       await router.executeCommand('network 10.0.0.0 255.255.255.0');
-      await router.executeCommand('lease 0 0 30'); // 30 seconds lease
+      await router.executeCommand('lease 0 0 1'); // IOS lease is days/hours/MINUTES
       await router.executeCommand('end');
 
       // Get initial lease
       await pc.executeCommand('sudo dhclient -v eth0');
 
-      // Fast-forward to T1 (15 seconds) — renewal succeeds and timers restart
-      vi.advanceTimersByTime(15000);
+      // Fast-forward to T1 (30 seconds) — renewal succeeds and timers restart
+      vi.advanceTimersByTime(30000);
 
       // Should see DHCPREQUEST for renewal
       const logs = pc.getDHCPLogs('eth0');
@@ -325,8 +325,8 @@ describe('Group 2: Functional — DORA Process', () => {
       await router.executeCommand('no service dhcp');
       await router.executeCommand('end');
 
-      // Fast-forward to new T2 (87.5% of new 30s lease = ~26.25s after renewal)
-      vi.advanceTimersByTime(27000);
+      // Fast-forward to new T2 (87.5% of the new 60s lease = ~52.5s after renewal)
+      vi.advanceTimersByTime(54000);
 
       const logs2 = pc.getDHCPLogs('eth0');
       expect(logs2).toContain('REBINDING');

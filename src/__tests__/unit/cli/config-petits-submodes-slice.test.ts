@@ -168,8 +168,14 @@ describe('`?` nomme la place au lieu d\'un mot muet', () => {
     [KEYCHAIN_KEY, 'cryptographic-algorithm ', 'HMAC-SHA-256'],
     [KEYCHAIN_KEY, 'send-id ', '<0-255>'],
     [KEYCHAIN_KEY, 'accept-lifetime ', 'Start time and date'],
-    [ROUTE_MAP, 'match ', 'Criterion the route must satisfy'],
-    [ROUTE_MAP, 'set ', 'Value the route-map applies to a matching route'],
+    /*
+     * Depuis que les criteres et les actions sont NOMMES — les
+     * declarations de `ciscoArgumentHelp` etant mortes avec l'elagage,
+     * elles ont rejoint la table du lot —, `?` annonce les formes et
+     * non plus l'etiquette de la place. C'est ce que rend un vrai IOS.
+     */
+    [ROUTE_MAP, 'match ', 'Match BGP AS path list'],
+    [ROUTE_MAP, 'set ', 'BGP community attribute'],
     [VRF, 'rd ', 'ASN:nn or IP-address:nn'],
     [VRF, 'route-target ', 'import, export or both'],
     [VUE, 'commands ', 'Interface configuration commands'],

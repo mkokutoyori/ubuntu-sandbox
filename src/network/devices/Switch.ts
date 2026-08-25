@@ -65,6 +65,7 @@ import { NtpAgent } from '../ntp/NtpAgent';
 import { UDP_PORT_NTP } from '../ntp/types';
 import type { CiscoPingRow } from './shells/cisco/ciscoPing';
 import { Logger } from '../core/Logger';
+import { isGroupAddress } from '../layers/link/LinkLayer';
 import {
   getDefaultScheduler,
   type IScheduler,
@@ -578,6 +579,7 @@ export abstract class Switch extends Equipment {
     this.initPortSecurity();
     this.initDhcpSnooping();
     this.dhcpServer.setEventBus(this.getBus());
+    this.dhcpServer.setDeviceId(this.id, this.name);
   }
 
   private initPortSecurity(): void {
@@ -2345,9 +2347,7 @@ export abstract class Switch extends Equipment {
     // ANY group address: IPv4 multicast 01:00:5e, IPv6 33:33, protocol
     // MACs 01:80:c2/01:00:0c, … Group frames are never unicast-matched
     // against the MAC table; they are snooped or flooded.
-    const dstOctets = frame.dstMAC.getOctets();
-    const isMulticast = frame.dstMAC.isBroadcast() ||
-                        (dstOctets[0] & 0x01) === 0x01;
+    const isMulticast = isGroupAddress(frame.dstMAC);
 
     if (!isMulticast && this.macTable.get(`${ingressVlan}:${dstMAC}`)?.type === 'blackhole') {
       Logger.debug(this.id, 'switch:mac-blackhole',
@@ -2680,8 +2680,7 @@ export abstract class Switch extends Equipment {
    */
   private egressOnVlan(vlan: number, frame: EthernetFrame): void {
     const dstMAC = frame.dstMAC.toString().toLowerCase();
-    const dstOctets = frame.dstMAC.getOctets();
-    const isGroup = frame.dstMAC.isBroadcast() || (dstOctets[0] & 0x01) === 0x01;
+    const isGroup = isGroupAddress(frame.dstMAC);
     const entry = isGroup ? undefined : this.macTable.get(`${vlan}:${dstMAC}`);
     if (entry) {
       this.forwardToPort(entry.port, frame, vlan);

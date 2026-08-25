@@ -10,7 +10,7 @@ import {
   fortiSystemTime, runExecuteDate, runExecuteTime,
 } from './diag/timeCommands';
 import { applyFilter, splitPipe } from './render/outputFilter';
-import { FortiSocle, VALUE_LIST_VERBS } from './FortiSocle';
+import { FortiSocle, FORTI_TOKENS, VALUE_LIST_VERBS } from './FortiSocle';
 import type { CommandInteractionPlan } from '../../../../../shell/interaction/CommandInteraction';
 import { schemaIndex } from './schema';
 import type {
@@ -68,6 +68,7 @@ import { utmLog } from './log/utmLog';
 import { renderFortiguardServiceStatus } from './diag/fortiguardRenderer';
 import { TftpClientSession } from '@/network/tftp/TftpSession';
 import { IPAddress } from '@/network/core/types';
+import { tokenize } from '@/cli/CommandParser';
 import { encryptConfig, decryptConfig, isEncryptedConfig } from './backup/ConfigEncryption';
 import {
   renderOspfDatabase, renderOspfInterfaces,
@@ -184,6 +185,7 @@ export class FortiShell {
         this.logConfigurationChange(change);
         this.fw.refreshLiveState();
       },
+      expandVariables: (value) => this.expandVariables(value),
     });
     this.socle = new FortiSocle({
       tree: this.tree,
@@ -384,16 +386,21 @@ export class FortiShell {
       this.socle.suggestions(helpPrefix(inputBeforeQuestion), 'QUESTION_MARK'));
   }
 
+  abortContinuation(): boolean {
+    if (this.continuation === null) return false;
+    this.continuation = null;
+    return true;
+  }
+
   execute(rawLine: string): string {
     this.claimTree();
     if (this.continuation !== null) {
-      this.continuation = `${this.continuation}\n${rawLine}`;
-      if (hasOpenQuote(this.continuation)) return '';
-      const whole = this.continuation;
+      const merged = joinContinuation(this.continuation, rawLine);
+      if (stillOpen(merged)) { this.continuation = merged; return ''; }
       this.continuation = null;
-      return this.execute(whole);
+      return this.execute(merged);
     }
-    if (hasOpenQuote(rawLine)) {
+    if (stillOpen(rawLine)) {
       this.continuation = rawLine;
       return '';
     }
@@ -414,13 +421,20 @@ export class FortiShell {
 
     if (/^write\b/.test(line)) return FortiMessages.noSaveNeeded();
     if (/^show\s+full-configuration\b/.test(line)) {
-      return this.show(splitTokens(line).slice(2), true);
+      return this.show(tokenize(line, FORTI_TOKENS).slice(2), true);
     }
 
     const outcome = this.socle.execute(line);
     const text = outcome.handled ? outcome.output : this.refusal(line);
     this.syncActiveVdom();
     return text;
+  }
+
+  private expandVariables(value: string): string {
+    return value
+      .split('$SerialNum').join(this.fw.serialNumber())
+      .split('$USERNAME').join(this.adminName ?? '')
+      .split('$USERFROM').join(this.administrativeInterface());
   }
 
   setAdminIdentity(name: string | null): void {
@@ -464,7 +478,7 @@ export class FortiShell {
   }
 
   private refusal(line: string): string {
-    const tokens = splitTokens(line);
+    const tokens = tokenize(line, FORTI_TOKENS);
     const object = this.nav.currentObject();
 
     if ((tokens[0] === 'set' || tokens[0] === 'unset' || tokens[0] === 'append'
@@ -1209,6 +1223,21 @@ function helpPrefix(input: string): string {
   return input.replace(/^\s+/, '');
 }
 
+const TRAILING_BACKSLASH = /(^|[^\\])\\\s*$/;
+
+function endsWithContinuation(line: string): boolean {
+  return TRAILING_BACKSLASH.test(line) && !hasOpenQuote(line);
+}
+
+function stillOpen(buffer: string): boolean {
+  return hasOpenQuote(buffer) || endsWithContinuation(buffer);
+}
+
+function joinContinuation(buffer: string, next: string): string {
+  if (!endsWithContinuation(buffer)) return `${buffer}\n${next}`;
+  return `${buffer.replace(/\s*\\\s*$/, '')} ${next.replace(/^\s+/, '')}`;
+}
+
 function hasOpenQuote(text: string): boolean {
   let quoted = false;
   let escaped = false;
@@ -1220,19 +1249,4 @@ function hasOpenQuote(text: string): boolean {
   return quoted;
 }
 
-function splitTokens(line: string): string[] {
-  const out: string[] = [];
-  let current = '';
-  let quoted = false;
 
-  for (const character of line) {
-    if (character === '"') { quoted = !quoted; current += character; continue; }
-    if (!quoted && /\s/.test(character)) {
-      if (current.length > 0) { out.push(current); current = ''; }
-      continue;
-    }
-    current += character;
-  }
-  if (current.length > 0) out.push(current);
-  return out;
-}

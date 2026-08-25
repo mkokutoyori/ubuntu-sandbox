@@ -55,6 +55,8 @@ export class HuaweiSwitch extends Switch {
       return this.getSvi(Number(m[1]))?.ip?.toString() ?? null;
     });
     const hostBase = {
+      sendOnLink: (request: import('../layers/link/LinkLayer').LinkSendRequest) =>
+        this.getLinkLayer().send(request),
       id: this.id, name: this.name,
       getHostname: () => this.getHostname(),
       getType: () => this.getType(),
@@ -132,7 +134,7 @@ export class HuaweiSwitch extends Switch {
     // (setEventBus can fire from the base constructor, before the registry
     // field initializer ran — hence the optional chain.)
     this.agents?.restartAll();
-    this._huaweiDebugService?.attachToBus(this.getBus(), this.id);
+    this._huaweiDebugService?.attachToBus(this.getBus(), this.id, this);
   }
 
   private _huaweiDebugService: HuaweiDebugService | null = null;
@@ -149,7 +151,7 @@ export class HuaweiSwitch extends Switch {
       this._huaweiDebugService = new HuaweiDebugService();
       this._huaweiDebugService.setPlatform('switch');
     }
-    this._huaweiDebugService.attachToBus(this.getBus(), this.id);
+    this._huaweiDebugService.attachToBus(this.getBus(), this.id, this);
     return this._huaweiDebugService;
   }
 

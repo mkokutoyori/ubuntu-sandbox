@@ -49,6 +49,7 @@ export type DebugCategory =
   | 'stp.bpdu';
 
 import type { IEventBus } from '@/events/EventBus';
+import type { FrameSource } from '@/network/hardware/PortTap';
 import { DebugBroadcast, type DebugLineListener, type DebugLineJournal, type TerminalDebugSource } from '@/network/devices/diag/DebugBroadcast';
 import { CliInvalidInput } from '@/network/devices/shells/cli/CliDiagnostic';
 import { ospfHelloMismatchLines } from '@/network/ospf/events';
@@ -510,7 +511,7 @@ export class RouterDebugService implements TerminalDebugSource {
     this.emit(category, line);
   }
 
-  attachToBus(bus: IEventBus, deviceId: string): void {
+  attachToBus(bus: IEventBus, deviceId: string, frames: FrameSource): void {
     if (!this.broadcast.beginAttach(bus, deviceId)) return;
     const mine = (p: { deviceId?: string }) => p.deviceId === undefined || p.deviceId === deviceId;
     this.broadcast.track(bus.subscribe('ospf.neighbor.state-changed', (e) => {
@@ -944,15 +945,8 @@ export class RouterDebugService implements TerminalDebugSource {
       if (!mine(e.payload)) return;
       this.emit('mac', `MAC: Flushed address table`);
     }));
-    this.broadcast.track(bus.subscribe('port.frame.received', (e) => {
-      if (!mine(e.payload)) return;
-      const p = e.payload as { frame: unknown; portName?: string };
-      onFrame(p.frame, 'rcvd', p.portName ?? '?');
-    }));
-    this.broadcast.track(bus.subscribe('port.frame.tx-requested', (e) => {
-      if (!mine(e.payload)) return;
-      const p = e.payload as { frame: unknown; portName?: string };
-      onFrame(p.frame, 'sent', p.portName ?? '?');
+    this.broadcast.track(frames.attachCapture((tapped) => {
+      onFrame(tapped.frame, tapped.direction === 'in' ? 'rcvd' : 'sent', tapped.iface);
     }));
   }
 

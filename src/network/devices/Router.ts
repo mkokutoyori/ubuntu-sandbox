@@ -123,7 +123,11 @@ import { md5Hex } from '@/crypto/hash/md5';
 import type { KeyChainRepository } from './inspection/config/KeyChainRepository';
 import { fragmentIPv4, IPv4Reassembler } from '../core/Ipv4Fragmentation';
 import type { FhrpDataPlane } from '../fhrp/types';
-import { DHCPServer } from '../dhcp/DHCPServer';
+import { DHCPServer, type DhcpUtilizationCrossing } from '../dhcp/DHCPServer';
+import {
+  DHCP_FREE_ADDRESS_HIGH, DHCP_FREE_ADDRESS_LOW, DHCP_SHARED_NET_ENTRY,
+  snmpAdminStringIndex,
+} from '../snmp/mibs/DhcpServerMib';
 import { DHCPPacket } from '../dhcp/DHCPPacket';
 import { buildDhcpServerReply } from '../dhcp/DhcpServerExchange';
 import type { DHCPDiscoverParams, DHCPOfferResult } from '../dhcp/types';
@@ -545,6 +549,8 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
     // only approximates (docs/PRD-Frame-Only-Refactor.md P2).
     this.natEngine.setEventBus(this.getBus());
     this.dhcpServer.setEventBus(this.getBus());
+    this.dhcpServer.setDeviceId(this.id, this.name);
+    this.dhcpServer.setUtilizationSink((crossing) => this.emitDhcpUtilizationTrap(crossing));
     this.natEngine.setACLMatchFn((aclId, srcIP, realPkt) => {
       const pkt = realPkt ?? sourceProbePacket(new IPAddress(srcIP));
       // Undefined ACL = no interesting traffic, so require an explicit permit.
@@ -860,6 +866,28 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
     );
   }
 
+  private emitDhcpUtilizationTrap(crossing: DhcpUtilizationCrossing): void {
+    const snmp = this.getSnmpService();
+    if (!snmp.isEnabled()) return;
+    if (!snmp.isTrapEnabled('dhcp', 'pool')) return;
+
+    const index = snmpAdminStringIndex(crossing.pool);
+    const thresholdOid = crossing.crossing === 'high'
+      ? `${DHCP_SHARED_NET_ENTRY}.2.${index}`
+      : `${DHCP_SHARED_NET_ENTRY}.3.${index}`;
+    const usedAtThreshold = crossing.crossing === 'high'
+      ? Math.ceil((crossing.threshold * crossing.total) / 100)
+      : Math.floor((crossing.threshold * crossing.total) / 100);
+    const freeThreshold = Math.max(0, crossing.total - usedAtThreshold);
+    this.sendIpSlaTrap(
+      crossing.crossing === 'high' ? DHCP_FREE_ADDRESS_LOW : DHCP_FREE_ADDRESS_HIGH,
+      [
+        { oid: thresholdOid, kind: 'gauge32', value: freeThreshold },
+        { oid: `${DHCP_SHARED_NET_ENTRY}.4.${index}`, kind: 'gauge32', value: crossing.free },
+      ],
+    );
+  }
+
   protected sendIpSlaTrap(
     oid: string,
     varBindings: Array<{ oid: string; kind: string; value: number | string }>,
@@ -887,7 +915,7 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
     super.setEventBus(bus);
     if (bus) this.attachLoggingBus(bus);
     if (bus) this.getSnmpService().attachToBus(bus, this.id);
-    this._debugService?.attachToBus(this.getBus(), this.id);
+    this._debugService?.attachToBus(this.getBus(), this.id, this);
     this.ipsecEngine?.setEventBus(this.getBus());
     this.natEngine?.setEventBus(this.getBus());
     if (this._eemEngine) { this._eemEngine.stop(); this._eemEngine.start(); }
@@ -2139,31 +2167,24 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
     const port = this.ports.get(portName);
     if (!port) return;
 
-    // Phase A.1: L2 Filter — accept unicast for us, broadcast, or multicast
-    const isForUs = frame.dstMAC.equals(port.getMAC());
-    const isBroadcast = frame.dstMAC.isBroadcast();
-    const octets = frame.dstMAC.getOctets();
-    const isIpv6Multicast = octets[0] === 0x33 && octets[1] === 0x33;
-    // RFC 1112 §6.4 — IPv4 multicast maps to 01:00:5e:…
-    const isIpv4Multicast =
-      octets[0] === 0x01 && octets[1] === 0x00 && octets[2] === 0x5e;
+    const delivery = this.getLinkLayer().deliver(portName, frame);
+    if (!delivery) return;
 
-    if (!isForUs && !isBroadcast && !isIpv6Multicast && !isIpv4Multicast
-      && !this.fhrpOwnsVirtualMac(portName, frame.dstMAC.toString())) {
-      return;
-    }
-
-    // Phase A.2: EtherType dispatch
     if (frame.etherType === ETHERTYPE_ARP) {
       this.handleARP(portName, frame.payload as ARPPacket);
     } else if (frame.etherType === ETHERTYPE_IPV4) {
       this.counters.ifInOctets += (frame.payload as IPv4Packet)?.totalLength || 0;
       this.processIPv4(portName, frame.payload as IPv4Packet);
     } else if (frame.etherType === ETHERTYPE_IPV6) {
-      if (this.ipv6Engine.isRoutingEnabled() || isIpv6Multicast) {
-        this.ipv6Engine.processPacket(portName, frame.payload as IPv6Packet, frame.srcMAC);
+      const ipv6 = frame.payload as IPv6Packet;
+      if (this.ipv6Engine.isRoutingEnabled() || ipv6?.destinationIP?.isMulticast?.()) {
+        this.ipv6Engine.processPacket(portName, ipv6, frame.srcMAC);
       }
     }
+  }
+
+  protected override ownsLocalUnicast(iface: string, destination: MACAddress): boolean {
+    return this.fhrpOwnsVirtualMac(iface, destination.toString());
   }
 
   // ─── Control Plane: ARP Handling ──────────────────────────────
@@ -4332,7 +4353,7 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
       };
       svc.setRateLimitResolver(followConfiguredLimit);
     }
-    this._debugService.attachToBus(this.getBus(), this.id);
+    this._debugService.attachToBus(this.getBus(), this.id, this);
     return this._debugService;
   }
 
@@ -5715,6 +5736,9 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
   _ensureNamedAccessList(name: string, type: 'standard' | 'extended') { this.aclEngine.ensureNamedAccessList(name, type); }
   _aclHasSequence(name: string, seq: number) { return this.aclEngine.hasSequence(name, seq); }
   _getAccessListsInternal() { return this.aclEngine.getAccessListsInternal(); }
+
+  /** @internal Le moteur d'ACL lui-meme, pour les groupes d'objets. */
+  _getACLEngineInternal() { return this.aclEngine; }
   _getInterfaceACLBindingsInternal() { return this.aclEngine.getInterfaceACLBindingsInternal(); }
   _removeNamedACLEntryBySequence(name: string, seq: number) { return this.aclEngine.removeNamedACLEntryBySequence(name, seq); }
   _resequenceNamedACL(name: string, start: number, step: number) { return this.aclEngine.resequenceNamedACL(name, start, step); }

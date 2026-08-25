@@ -184,6 +184,11 @@ export function getOracleDatabase(deviceId: string): OracleDatabase {
       // `primaryDeviceId` only takes effect the first time a cluster is
       // created for this dbName (i.e. for the founding node) — a later
       // joiner's call just adds a member to the existing entry.
+      const busOwner = EquipmentRegistry.getInstance().getById(deviceId) as unknown as
+        { getBus?: () => import('@/events/EventBus').IEventBus } | null;
+      if (busOwner && typeof busOwner.getBus === 'function') {
+        db.instance.setEventBus(busOwner.getBus());
+      }
       joinOrCreateCluster(dbName, deviceId, {
         deviceId, hostname: racInfo.hostname,
         interconnectIp: racInfo.interconnectIp, interconnectIface: racInfo.interconnectIface,

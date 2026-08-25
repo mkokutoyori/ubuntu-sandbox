@@ -63,6 +63,12 @@
 | **F5** | **FortiOS phase 5 — VDOM et modes de deploiement** | 27 | ✅ |
 | **F28** | **FortiOS phase 28 — le plan d'administration écoute** | 15 | ✅ |
 | **F28b** | Tab développe la ligne entière (parité avec Cisco) | 10 | ✅ |
+| **F28c** | La page « CLI basics » : variables, guillemets, espaces | 12 | ✅ |
+| **F28d** | Raccourcis d'édition de ligne (Ctrl+A/E/B/F/D/P/N) | 10+6 | ✅ |
+| **F28e** | Saisie multiligne (`\`), et les mêmes gestes par SSH | 12+7 | ✅ |
+| **F28f** | L'échappement est une option du constructeur, et il se REND | — | ✅ |
+| **F28g** | Caractères réservés refusés ; `grep -n` et expressions | 16 | ✅ |
+| **F28h** | `CTRL-V` rend le `?` littéral (page couverte en entier) | 4 | ✅ |
 | 3 | NAT objet ASA (`nat (dmz,outside) static`) | — | ⏳ |
 | 3 | `ShellFactory` + `DeviceFactory` | — | ⏳ |
 
@@ -2699,6 +2705,193 @@ est celle de FortiOS, `Command fail. Return code -61` précédé de
 
 Les deux cas de `fortios-routage-dynamique.test.ts` qui affirmaient BGP
 refusé sont remplacés par un cas qui l'affirme disponible.
+
+---
+
+## FortiOS — la saisie multiligne (`\` en fin de ligne)
+
+**Agent `mandeng`.** Objectif fixé par l'utilisateur : couvrir toute la
+page « CLI basics », en commençant par la saisie multiligne.
+
+**Ce que la page dit**, et c'est ce qui est implémenté : « *For each line
+that you want to continue in a multiline command, terminate it with a
+backslash ( \ ). To complete the command, enter a space instead of a
+backslash, and then press Enter.* » La section « Command syntax » y
+renvoie : « *Exceptions include multiline command lines, which can be
+entered using an escape sequence.* » Et la touche Échap abandonne une
+saisie interactive en cours.
+
+**Mesure de départ** : le mécanisme n'existe pas.
+
+```
+config system \   -> unknown configuration path "system \"
+interface         -> unknown command "interface"
+```
+
+et toute la suite du bloc s'effondre, faute d'être entrée dans la table.
+
+**Une accusation évitée par la remesure.** Le dépôt porte DÉJÀ une
+continuation — celle du guillemet ouvert — et la première lecture la
+croyait cassée : `set alias "deux` puis `mots"` semblait perdre la
+seconde moitié. C'était le `| grep` de la sonde qui ne montrait qu'une
+ligne. Remesurée sans filtre, elle rend `set alias "deux\nmots"` **et un
+second pare-feu qui rejoue cette configuration porte la même valeur**.
+Elle reste donc comme témoin, et rien n'a été réécrit.
+
+**Une seule notion de « ligne encore ouverte ».** Plutôt que d'ajouter un
+second tampon à côté de celui du guillemet, `stillOpen(buffer)` répond
+pour les deux, et `joinContinuation` sait comment chacune se recolle :
+le guillemet GARDE le saut de ligne (il fait partie de la valeur — c'est
+ce qui permet de coller un certificat), la barre le REMPLACE par une
+espace, exactement ce que la phrase de Fortinet décrit. Les deux se
+combinent donc sans code supplémentaire, et un cas le vérifie.
+
+**Deux décisions.** Une barre au MILIEU d'une ligne n'est pas une
+continuation — seule celle qui termine la ligne l'est, et `\ ` reste
+l'espace échappé du lot précédent, ce qu'un témoin garde. Et **Échap
+abandonne** : `abortContinuation()` sur la coquille, appelé par la
+session FortiOS, qui vide aussi la ligne — sans quoi une saisie
+interrompue resterait en travers de la suivante.
+
+`fortios-saisie-multiligne.test.ts` (10 cas) est discriminé par
+`git stash push -- src/network/ src/terminal/` : 7 tombent avant
+correctif, et les 3 qui passent des deux côtés sont nommés dans
+l'en-tête. `e2e/fortigate-cli-basics.spec.ts` passe à 3 cas et joue le
+bloc coupé en deux dans le vrai navigateur.
+
+**Où en est la page.** Tout est couvert : aide `?`, complétion Tab,
+abréviation, historique, raccourcis d'édition, variables
+d'environnement, caractères spéciaux et guillemets, `| grep`, pagination,
+sauvegarde/restauration, et maintenant la saisie multiligne. Reste la
+seule entrée du `TODO.md` — `CTRL-V` pour un `?` littéral — impossible
+dans un navigateur sans casser le collage.
+
+---
+
+## Terminal — les raccourcis d'édition de ligne de « CLI basics »
+
+**Agent `mandeng`.** Suite de la page « CLI basics » : les raccourcis
+d'édition de ligne, la dernière famille qu'elle décrit.
+
+**Mesure de départ, dans le vrai navigateur.** Sur `get system status`,
+Ctrl+A laissait le curseur à 17 ; sur `config`, Ctrl+B ne bougeait pas de
+6 ; Ctrl+D n'effaçait rien ; Ctrl+P et Ctrl+N ne rendaient aucune
+commande. **Le code portait la preuve écrite du défaut** — dans
+`CLITerminalSession`, `// Ctrl+A/E → cursor (handled by view, but
+consume)`, et le jumeau dans `LinuxTerminalSession`. Une touche consommée
+pour empêcher le navigateur d'agir, et une vue qui n'en faisait rien : la
+touche était donc *neutralisée des deux côtés*.
+
+**Ce que la mesure a appris et qui a réduit le périmètre.** Le dernier
+cas de la sonde — « un caractère tapé au curseur s'insère à sa place » —
+avait été écrit à l'aveugle en supposant que l'insertion était cassée
+elle aussi. Elle ne l'est pas : `handleNormalKey` rend `false` pour un
+caractère imprimable, donc le `<input>` du DOM l'insère nativement au
+caret et `onChange` renvoie la ligne à la session. **Le seul manque était
+le DÉPLACEMENT du curseur** ; l'insertion suit toute seule dès qu'il
+bouge. C'est la mesure qui a tranché, pas la lecture.
+
+**Un seul modèle de curseur, et c'est celui du DOM.** Donner un
+`cursorPos` à la session aurait posé un second curseur à côté de celui
+que le navigateur tient déjà — la duplication que ce carnet raconte
+depuis trente phases, et celle qui se voit le plus vite (le caret
+clignote au mauvais endroit). `terminal/core/lineEditing.ts` ne porte
+donc que la RÈGLE — quelle touche fait quoi à un couple (texte, caret) —
+et la vue l'applique au `<input>` : `setSelectionRange` pour un
+déplacement, `setInput` plus un caret restitué après le rendu pour un
+effacement. Ctrl+P et Ctrl+N sont TRADUITS en flèche haut et flèche bas
+et repartent dans la session, parce que l'historique y est déjà et qu'un
+second parcours d'historique serait le même défaut.
+
+**Deux décisions, chacune parce que l'inverse était possible.** Ctrl+D
+**sur une ligne vide n'est pas pris** : c'est la fin de fichier, et
+`LinuxTerminalSession` la traite déjà (elle ferme la session) — la
+détourner aurait cassé un geste plus ancien et plus fort. Et **Ctrl+V
+n'est délibérément pas pris** : la page le décrit pour saisir un `?`
+littéral, mais dans un navigateur Ctrl+V EST le collage, et le prendre
+casserait le collage de tout le monde pour un caractère. Inscrit au
+`TODO.md` plutôt que forcé.
+
+**Le mécanisme n'est pas propre à FortiOS**, et un cas le vérifie : un
+routeur Cisco du dépôt corrige `show verXsion` en `show version` par les
+mêmes touches. Les deux branches « consommer sans rien faire » sont
+supprimées, donc il n'y a qu'un seul endroit qui décide.
+
+`line-editing-shortcuts.test.ts` (10 cas) éprouve la règle —
+correspondance des sept touches, bornes du curseur, effacement sous le
+curseur et non avant, refus d'Alt/Meta. `e2e/fortigate-raccourcis-edition.spec.ts`
+(6 cas) éprouve le DOM : les 5 cas FortiOS écrits à l'aveugle tombaient
+tous les cinq avant correctif, et le sixième est le témoin Cisco.
+
+---
+
+## FortiOS — la page « CLI basics » decrite, la machine la fait
+
+**Agent `mandeng`.** Demande de l'utilisateur : continuer d'implementer
+les fonctions listees sur la page « CLI basics » de FortiOS.
+
+**Inventaire de la page, mesure par mesure.** Ce qui marchait DEJA est
+garde comme temoin plutot que reecrit : l'abreviation (`g sy stat`), la
+pagination (`config system console` / `set output more`), le filtre
+`| grep` avec `-i`, `-c` et `-f`, la sauvegarde et la restauration par
+TFTP. **Une premiere mesure avait accuse `grep -i` et `grep -f` a tort**
+— le laboratoire n'avait aucune interface configuree, donc le motif
+cherche etait vraiment absent ; le remesurer sur une configuration reelle
+les a innocentes, et les deux cas sont restes comme temoins.
+
+**Deux defauts, mesures.**
+
+*(1) Les variables d'environnement etaient rangees telles quelles.* La
+page en decrit trois, sensibles a la casse — `$USERFROM`, `$USERNAME`,
+`$SerialNum` — et donne l'exemple `set hostname $SerialNum`. Mesure :
+`get system status` repondait `Hostname: $SerialNum`. Elles sont
+desormais substituees **a l'ECRITURE**, au seul point ou une valeur est
+rangee (`FortiNavigator.set`), par un port etroit que la coquille
+remplit — le navigateur ne connait ni l'administrateur connecte ni le
+numero de serie, et n'a pas a les connaitre.
+
+*(2) Une valeur entre guillemets ne pouvait pas contenir d'espace*, alors
+que la page ecrit qu'un espace dans une chaine demande des guillemets ou
+une barre oblique inversee :
+
+```
+set alias "Lien WAN"  -> value parse error before 'Lien WAN'
+                         NOTE: expected WORD.
+edit "serveur web"    -> `edit` only applies inside a table opened
+                         with `config`      (alors qu'on y etait)
+```
+
+**La cause etait UNE, et c'est le defaut que ce depot passe son temps a
+refermer : il y avait DEUX decoupages de ligne.** `FortiShell` portait
+`splitTokens`, qui respecte les guillemets ; le socle portait `tokenize`,
+qui coupe sur tout blanc — et c'est le naif qui etait sur le chemin
+d'execution. Il n'en reste qu'un : `splitTokens` est DEPLACE dans
+`src/cli/CommandParser.ts` et `FortiShell` le lit de la. Une barre
+oblique inversee devant un espace y produit un jeton **entre
+guillemets**, parce que `Lien\ WAN` et `"Lien WAN"` veulent dire la meme
+chose — l'information « l'operateur a fait UNE valeur » est ainsi portee
+par le jeton lui-meme, jusqu'au bout.
+
+**Une regression introduite puis refermee dans le meme lot, et elle est
+instructive.** Faire valider les valeurs AVANT de retirer les guillemets
+a fait tomber 244 cas d'un coup : `FortiValidator` resolvait alors les
+REFERENCES avec les guillemets (`set srcintf "port1"` ne trouvait plus
+`port1`). Le correctif dit ce qu'il faut dire : le validateur juge la
+valeur NUE partout — reference, refus declare, predicat — et ne garde le
+jeton entier que pour la seule question ou le guillemet est
+l'information, « cette valeur est-elle un mot unique ? ».
+
+**Defaut trouve en chemin et corrige avec** : `serialNumber()` etait
+`serialNumberOf(this.name)`, donc **renommer la machine changeait son
+numero de serie**, et `set hostname $SerialNum` posait l'ancien numero
+puis en fabriquait un nouveau. Sur une vraie machine ce numero est grave
+et ne bouge jamais ; il est calcule une fois, a la construction.
+
+`fortios-cli-basics-doc.test.ts` (12 cas) est discrimine par
+`git stash push -- src/network/ src/cli/` : 7 tombent avant correctif, et
+les 5 qui passent des deux cotes sont les temoins, dont c'est l'objet.
+`e2e/fortigate-cli-basics.spec.ts` (2 cas verts) pose `$SerialNum` comme
+nom d'hote et cree `edit "serveur web"` dans le vrai navigateur.
 
 ---
 
@@ -5423,6 +5616,171 @@ n'est câblé par personne.
 **Critère de sortie** : le laboratoire L1 du BRD — interfaces, objets,
 route par défaut, politique, `set nat enable` — se joue de bout en bout
 dans un terminal, et `allowaccess` refuse vraiment une connexion.
+
+---
+
+## FortiOS — l'échappement est une propriété du CONSTRUCTEUR
+
+**Agent `mandeng`.** Dernier point de la page « CLI basics » : la
+barre oblique inversée devant un caractère quelconque.
+
+**Ce que la page dit.** Un caractère spécial se saisit soit entre
+guillemets, soit précédé d'une barre oblique inversée — et elle donne le
+guillemet lui-même comme exemple : `set comment "il a dit \"non\""`.
+Le socle, lui, ne connaissait qu'un seul échappement, celui de l'espace
+(`\ `), hérité du lot précédent.
+
+**La correction naïve casse un autre constructeur, et c'est mesuré.**
+Étendre `tokenize` à tout caractère fait tomber
+`cisco-interface-description` : sur IOS, `description server\\share`
+décrit un chemin UNC et la barre y est un caractère ordinaire — IOS
+n'échappe rien. Un tokeniseur unique ne peut donc pas décider seul ; ce
+qu'il lui manquait n'est pas une règle mais un ARGUMENT. `TokenizeOptions`
+porte `escapesAnyCharacter`, `FORTI_TOKENS` le pose une fois pour
+FortiOS, et `parseCommand` le transmet. **Il n'y a toujours qu'un
+tokeniseur** — c'est l'appelant qui dit dans quelle langue il parle,
+et deux tokeniseurs auraient été le défaut que ce carnet raconte.
+
+**La moitié qui manquait était le RENDU.** Une valeur échappée à la
+saisie ressortait telle quelle dans `show`, donc une configuration
+rendue ne pouvait pas être rejouée : `set comment "il a dit "non""` est
+une ligne que la machine refuse. `escapeForConfig` réarme la barre et le
+guillemet, et `renderValue`/`renderKey` la lisent tous les deux — le
+même sérialiseur pour la valeur et pour la clé, sans quoi `edit "a\"b"`
+serait perdu à l'import.
+
+---
+
+## FortiOS — ce que le FIL conserve, et ce qu'il ne conservait pas
+
+**Agent `mandeng`.** Question de l'utilisateur : les comportements de la
+page « CLI basics » tiennent-ils quand on accède au pare-feu par SSH ?
+Puis, la mesure faite : les raccourcis clavier aussi ?
+
+**La réponse est OUI pour la CLI, et elle est prouvée plutôt que
+supposée.** Deux cas montent un vrai laboratoire — poste Linux câblé,
+`set allowaccess ping ssh`, compte administrateur, `ssh admin@…`, mot de
+passe — et tapent le bloc coupé par `\`, la valeur entre guillemets et
+`$SerialNum` À TRAVERS la session. La configuration relue sur le
+pare-feu porte les trois. C'était attendu : la session SSH sert la même
+coquille que la console, donc la continuation, la substitution et les
+guillemets sont derrière le même objet. Le cas vaut quand même, parce
+que « c'est le même objet » est une lecture et non une mesure.
+
+**La réponse était NON pour les raccourcis clavier**, et seule une sonde
+dans le vrai navigateur pouvait le dire. Diagnostic :
+
+```
+INPUTS [{"name":"terminalPrompt","type":"text","value":""}]
+CARETS 0 0   VALUE "get system statXus"
+```
+
+Le caret ne bougeait pas d'un pouce. **La cause n'est pas dans FortiOS
+ni dans SSH** : une session interactive imbriquée rend un `<input>`
+nommé `terminalPrompt`, et le garde-fou de la vue n'acceptait que
+`terminalInput` — le nom de l'invite ORDINAIRE. Les raccourcis étaient
+donc muets dans toute sous-coquille interactive, quelle qu'elle soit,
+et le pare-feu n'en était que le révélateur.
+
+**Le correctif porte sur la vue et sur elle seule.** Le garde-fou
+accepte les deux invites, et l'écriture suit le champ : `setInputBuf`
+pour l'invite imbriquée, `setInput` pour l'ordinaire. Le caret restitué
+après rendu voyage désormais avec SON élément (`{ at, element }`) plutôt
+qu'avec une référence unique — sans quoi le caret d'une sous-coquille
+serait posé sur le champ de la coquille du dessous.
+
+`fortios-saisie-multiligne.test.ts` passe à 12 cas, `e2e/fortigate-raccourcis-edition.spec.ts`
+à 7 : le cas SSH corrige `get system statXus` en `get system status` par
+Ctrl+A, quinze Ctrl+F et Ctrl+D, puis exécute la commande et lit
+`Serial-Number:` — donc la ligne corrigée est bien celle qui part sur le
+fil, et pas seulement celle qui s'affiche.
+
+**Erreur d'arithmétique de la sonde, corrigée et non masquée** : j'avais
+écrit dix-sept Ctrl+F pour un `X` qui est au quinzième rang.
+
+---
+
+## FortiOS — le RESTE de « CLI basics », inventorié sur la page
+
+**Agent `mandeng`.** L'objectif fixé par l'utilisateur est la page
+entière. Quatre familles n'avaient jamais été mesurées ; j'ai donc
+réouvert la page et inventorié chaque sous-titre plutôt que de me fier
+à ce que le carnet affirmait couvert.
+
+**Deux marchaient déjà** et restent comme témoins : les quatre verbes de
+liste (`set` REMPLACE la liste, `append` ajoute, `select` ne garde que ce
+qui est nommé, `unselect` retire) et la vitesse de console, refus d'une
+valeur hors des cinq attestées compris.
+
+**Défaut 1 — les caractères réservés étaient acceptés.** La page :
+« *The following special characters, also known as reserved characters,
+are not permitted in most CLI fields: <, >, (, ), #, ' and "* ».
+Mesure : `set alias "a<b"`, `set alias "a#b"` et `edit "web(1)"` sont
+tous acceptés en silence et rangés tels quels — donc rejoués à l'import.
+
+**Trois décisions, chacune parce que l'inverse était possible.** Le refus
+porte sur les SEPT caractères attestés et **non sur une liste blanche**
+de ce qu'un nom a le droit de contenir : la liste blanche (lettres,
+chiffres, espace, `-`, `_`) vient d'une source plus faible et
+refuserait des noms légitimes portant un point — implémenter
+l'interdiction attestée plutôt qu'une règle plus stricte dont je ne suis
+pas sûr. `set buffer` d'un message de remplacement porte
+`allowsReservedCharacters`, parce que c'est la seule des exceptions que
+Fortinet énumère (message de remplacement, signature IPS personnalisée,
+motif de fichier bloqué, mot banni, identifiant PPPoE) qui existe dans
+ce schéma, et que son contenu EST du HTML. Et l'échappement ne lève pas
+l'interdit : il sert à faire passer le caractère devant l'analyseur, pas
+à l'autoriser dans le champ.
+
+**TROIS portes créent une clé** — `edit`, `rename`, `clone` — et seule la
+première avait été gardée par la première version de ce correctif ;
+`refusedKey` est la règle unique que les trois lisent. C'est la même
+famille que ce carnet referme depuis trente phases, trouvée cette fois
+avant qu'elle ne coûte quelque chose.
+
+**Défaut 2 — `grep` n'était ni numéroté ni une expression régulière.**
+`| grep -n` rendait le VIDE (l'option tombait hors de la grammaire, donc
+la ligne entière devenait le motif), et `matches` comparait par
+`includes` là où la page dit que grep filtre « *based on regular
+expressions* ». Vérifié avant de changer : les motifs employés par tout
+le dépôt sont des mots littéraux, donc les lire comme des expressions ne
+change aucun résultat existant — mesuré, 110 fichiers verts sans une
+seule correction. Un motif qui ne compile pas retombe sur la comparaison
+littérale plutôt que d'inventer un message d'erreur de grep.
+
+`fortios-cli-basics-reste.test.ts` (16 cas) est discriminé par
+`git stash` : 8 tombent avant correctif, et les 8 qui passent des deux
+côtés sont nommés dans l'en-tête.
+
+---
+
+## Terminal — `CTRL-V`, et une entrée du `TODO.md` qui était fausse
+
+**Agent `mandeng`.** Dernière fonction de la page, et elle était inscrite
+au `TODO.md` comme **impossible dans un navigateur**. C'était faux, et
+c'est moi qui l'avais écrit.
+
+**Ce que la mesure a montré.** La vue ne bloque le collage que si la
+session CONSOMME la touche : `if (consumed) e.preventDefault()`. Or une
+touche de PRÉFIXE n'a aucune raison de la consommer — elle arme le
+prochain `?` et laisse le collage se produire normalement. L'argument
+« Ctrl+V EST le collage, donc le détourner casserait le collage de tout
+le monde » supposait une exclusivité que le code n'impose pas.
+
+`quoteNextKey` vit sur `CLITerminalSession`, donc le geste vaut aussi
+sur un routeur Cisco, dont l'IOS réel a la même touche de citation.
+L'armement ne dure qu'une touche : il s'efface sur le premier caractère
+imprimable, sans quoi un `?` tapé cinq minutes plus tard n'ouvrirait
+plus l'aide sans que rien ne l'explique.
+
+`fortigate-cli-ctrl-v.test.ts` (4 cas) est discriminé par `git stash` :
+UN seul tombe, et c'est exact — le défaut était unique. Les trois autres
+sont nommés dans l'en-tête, dont le cas 4, qui ne prouve rien avant
+correctif puisqu'un armement inexistant ne peut pas durer trop
+longtemps.
+
+**La page « CLI basics » est désormais couverte en entier**, et le
+`TODO.md` n'a plus d'entrée à son sujet.
 
 ---
 

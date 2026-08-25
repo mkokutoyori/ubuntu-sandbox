@@ -97,15 +97,13 @@ export class SshSyslogger {
         return `Connection from ${event.ip} port ${event.port ?? this.port} on ${this.hostname} port ${this.port}`;
 
       case 'auth_success': {
-        const host = event.fromHost && event.fromHost !== event.ip ? ` (${event.fromHost})` : '';
         if (event.method === 'publickey' && event.keyFingerprint) {
-          return `Accepted publickey for ${event.user} from ${event.ip}${host} port ${event.port ?? this.port} ssh2: ED25519 ${event.keyFingerprint}`;
+          return `Accepted publickey for ${event.user} from ${event.ip} port ${event.port ?? this.port} ssh2: ED25519 ${event.keyFingerprint}`;
         }
-        return `Accepted ${event.method} for ${event.user} from ${event.ip}${host} port ${event.port ?? this.port} ssh2`;
+        return `Accepted ${event.method} for ${event.user} from ${event.ip} port ${event.port ?? this.port} ssh2`;
       }
 
       case 'auth_failure': {
-        const host = event.fromHost && event.fromHost !== event.ip ? ` (${event.fromHost})` : '';
         if (event.reason === 'account_expired') {
           return `pam_unix(sshd:account): account ${event.user} has expired (account expired)`;
         }
@@ -113,7 +111,8 @@ export class SshSyslogger {
           return `pam_unix(sshd:auth): authentication failure; logname= uid=0 euid=0 tty=ssh ruser= rhost=${event.ip} user=${event.user}`;
         }
         const method = event.method ?? 'unknown';
-        return `Failed ${method} for ${event.user} from ${event.ip}${host} port ${event.port ?? this.port} ssh2`;
+        const qualite = event.validUser === false ? 'invalid user ' : '';
+        return `Failed ${method} for ${qualite}${event.user} from ${event.ip} port ${event.port ?? this.port} ssh2`;
       }
 
       case 'auth_account_phase':
@@ -142,27 +141,31 @@ export class SshSyslogger {
         if (/DenyGroups/i.test(r)) {
           return `User ${event.user} from ${event.ip} not allowed because a group is listed in DenyGroups`;
         }
-        return `Connection refused for ${event.user} from ${event.ip}: ${r}`;
+        return null;
       }
 
       case 'auth_throttled':
         return `Refusing connection from ${event.ip}: ${event.failuresInWindow} authentication failures in ${event.windowSeconds}s window`;
 
       case 'client_disconnected': {
-        const user = event.user || 'unknown user';
-        const reason = event.reason ?? 'client_disconnect';
-        const prefix = event.user ? 'authenticating user ' : '';
-        return `Connection closed by ${prefix}${user} ${event.ip} [${reason}]`;
+        const port = event.port ?? this.port;
+        if (event.authenticated) {
+          return `Disconnected from user ${event.user} ${event.ip} port ${port}`;
+        }
+        const qui = event.user
+          ? `${event.validUser === false ? 'invalid user' : 'authenticating user'} ${event.user} `
+          : '';
+        return `Connection closed by ${qui}${event.ip} port ${port} [preauth]`;
       }
 
       case 'channel_opened':
         if (event.channelType === 'sftp') {
           return `subsystem request for sftp by user ${event.user}`;
         }
-        return `pam_unix(sshd:session): session opened for user ${event.user} (channel ${event.channelType})`;
+        return null;
 
       case 'channel_closed':
-        return `pam_unix(sshd:session): session closed for user ${event.user} (channel ${event.channelType}, duration=${event.durationMs}ms)`;
+        return null;
 
       default:
         return null;
