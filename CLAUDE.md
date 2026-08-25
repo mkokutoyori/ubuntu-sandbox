@@ -201,6 +201,47 @@ seule et **ne change aucune sémantique protocolaire** : un moteur qui
   décrément là où le routeur écrit `ttl - 1 <= 0` APRÈS — deux
   formulations équivalentes. Les cinq sites étaient d'accord ; la
   déduplication est donc pure, et la sonde le dit dans son en-tête.
+  **Incrément 2** : la CLASSE d'une destination IPv4 (`limited-broadcast`,
+  `link-local-multicast`, `multicast`, `unicast`) se décide au même
+  endroit. Le routeur redécoupait le bloc à la main
+  (`destOctets[0] >= 224 && <= 239`), l'hôte appelait `isMulticastIpv4`
+  pour la même question, le commutateur en portait une **cinquième**
+  écriture dans son filtrage IGMP snooping — bornes du bloc puis
+  exclusion du lien-local par `isReservedMulticast`, c'est-à-dire un même
+  prédicat répondu deux fois de suite — et `TcpdumpFilter.isMulticastIp`
+  recopiait `isMulticastIpv4` mot pour mot. Seul le routeur distinguait
+  le multicast **lien-local** (224.0.0.0/24, que la RFC 1112 interdit
+  d'acheminer) du multicast routable ; l'hôte les confondait, ce qui ne
+  se voyait pas parce qu'un hôte n'achemine pas. **La mesure a imposé la
+  PORTÉE du garde-fou** : passé sur tout `devices/`, il attrapait trois
+  fichiers qui ne sont pas des acheminements et qui ont RAISON d'écrire
+  ces bornes — `CiscoDhcpCommands` et `CiscoRoutingProtoCommands`
+  refusent un argument non unicast (`o[0] === 0 || o[0] >= 224`,
+  `first > 0 && first < 224 && first !== 127`), c'est-à-dire une
+  grammaire d'ARGUMENT et non une classe de destination : 0 et 127 en
+  font partie, et 240.0.0.1 est unicast pour la couche. Les fondre aurait
+  été la fausse réutilisation que le BRD interdit ; le garde-fou porte
+  donc sur les fichiers qui lisent la destination d'un VRAI paquet.
+  **Incrément 3** : un pare-feu ROUTÉ n'accepte que ce qui lui est
+  adressé. `Firewall.handleFrame` n'avait AUCUN filtre de couche lien —
+  une trame portant une adresse MAC de destination étrangère, injectée
+  sur un FortiGate en mode `nat`, était traitée exactement comme en mode
+  `transparent` : les deux modes répondaient la même chose à une question
+  dont ils SONT la différence. Le filtre lit `classifyDestination` de la
+  couche lien (la règle existante, pas une seconde) et le mode
+  transparent le court-circuite, un VDOM transparent étant un pont de
+  niveau 2 qui doit accepter ce qu'il achemine. **Le filtre a révélé deux
+  défauts indépendants que son absence rendait invisibles** : une grappe
+  FGCP n'avait pas d'adresse MAC VIRTUELLE — la vraie formule est
+  `00:09:0f:09:<group-id % 256>:<vcluster + index>`, posée sur toutes les
+  interfaces SAUF le battement de cœur, et c'est elle qui rend un
+  basculement invisible au voisinage dont le cache ARP reste valide ;
+  puis, une fois l'adresse partagée, le subordonné émettait des
+  sollicitations de voisin IPv6 depuis cette même adresse, si bien que le
+  commutateur voisin réapprenait l'adresse virtuelle sur le port du
+  SECONDAIRE — un subordonné a-p n'émet pas sur ses interfaces de
+  données, pendant exact de `forwardsTransit()` pour la moitié TRANSIT du
+  même fait, posé au seul point d'émission (`sendFrame`).
 
 ### Event/timing infra (`src/events/`)
 

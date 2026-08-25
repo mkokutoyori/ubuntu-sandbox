@@ -97,7 +97,7 @@ import { RouterHostsTable } from './router/dns/RouterHostsTable';
 import { NetworkOsAccount, applyCiscoUsernamePatch } from './router/aaa/NetworkOsAccount';
 import type { CiscoUsernamePatch, PasswordHashAlgorithm } from './router/aaa/NetworkOsAccount';
 import { VtyLineConfigStore } from './router/vty/VtyLineConfigStore';
-import { isReservedMulticast } from '../igmp/types';
+import { classifyIpv4Destination } from '../layers/internet/InternetLayer';
 
 // Re-export shell classes for backward compatibility
 export { CiscoSwitchShell } from './shells/CiscoSwitchShell';
@@ -2396,15 +2396,7 @@ export abstract class Switch extends Equipment {
     if (frame.etherType !== ETHERTYPE_IPV4) return null;
     const ipPkt = frame.payload as IPv4Packet | undefined;
     if (!ipPkt || ipPkt.type !== 'ipv4' || !(ipPkt.destinationIP instanceof IPAddress)) return null;
-    const firstOctet = ipPkt.destinationIP.getOctets()[0];
-    if (firstOctet < 224 || firstOctet > 239) return null;
-    // RFC 4541 §2.1.2: the link-local range 224.0.0.0/24 is never
-    // constrained by snooping. Every routing and redundancy protocol
-    // lives there (OSPF 224.0.0.5, RIPv2 .9, EIGRP .10, PIM .13, VRRP
-    // .18, HSRPv2 .102, IGMP itself .1/.2), and no snooping agent ever
-    // records membership for it — so restricting it to the ports learned
-    // for some unrelated group would silently break those adjacencies.
-    if (isReservedMulticast(ipPkt.destinationIP.toString())) return null;
+    if (classifyIpv4Destination(ipPkt.destinationIP) !== 'multicast') return null;
 
     // Both snooping engines answer for the same group; the frame egresses
     // the union of what each one learned. Composing them here — rather

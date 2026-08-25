@@ -39,12 +39,21 @@
  *    cotes parce que `git stash` ne retire pas le fichier de couche,
  *    qui est nouveau : il garde qu'un SIXIEME site n'apparaisse pas
  *    dans `layers/`.
+ *
+ * DISCRIMINATION DE L'INCREMENT 2 (les 7 derniers cas), mesuree en
+ * rendant a HEAD les seuls fichiers d'EQUIPEMENT et en gardant la
+ * couche : 2 tombent — les deux cas structurels. Les 5 autres decrivent
+ * la REGLE de la RFC 1112 et passent des deux cotes, pour la meme raison
+ * que ceux de l'increment 1 : la regle ne change pas, seul son lieu
+ * change, et sans eux rien n'empecherait de la deplacer ET de la casser.
  */
 
 import { describe, it, expect } from 'vitest';
 import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { join } from 'node:path';
-import { decrementForForwarding } from '@/network/layers/internet/InternetLayer';
+import {
+  classifyIpv4Destination, decrementForForwarding,
+} from '@/network/layers/internet/InternetLayer';
 import { createIPv4Packet, computeIPv4Checksum, IPAddress, IP_PROTO_ICMP } from '@/network/core/types';
 
 function fichiersTs(racine: string): string[] {
@@ -104,5 +113,89 @@ describe('et la regle est celle de la RFC 1812 §5.3.1', () => {
     const avant = paquet(64);
     decrementForForwarding(avant);
     expect(avant.ttl).toBe(64);
+  });
+});
+
+/**
+ * INCREMENT 2 — la CLASSE d'une destination IPv4 se decide en un lieu.
+ *
+ * Mesure : le routeur decoupait l'adresse a la main
+ * (`destOctets[0] >= 224 && destOctets[0] <= 239`) pendant que l'hote
+ * appelait `isMulticastIpv4` pour la meme question — deux ecritures d'un
+ * meme predicat, dont une recopiee. Et seul le routeur distinguait le
+ * multicast LIEN-LOCAL (224.0.0.0/24, que la RFC 1112 interdit
+ * d'acheminer) du multicast routable : l'hote les confondait, ce qui ne
+ * se voyait pas parce qu'un hote n'achemine pas.
+ */
+describe('la classe d\'une destination IPv4 se decide en un lieu', () => {
+  const adresse = (t: string) => new IPAddress(t);
+
+  it('la diffusion limitee est reconnue', () => {
+    expect(classifyIpv4Destination(adresse('255.255.255.255')))
+      .toBe('limited-broadcast');
+  });
+
+  it('224.0.0.0/24 est du multicast LIEN-LOCAL, jamais achemine', () => {
+    for (const t of ['224.0.0.1', '224.0.0.5', '224.0.0.251', '224.0.0.255']) {
+      expect(classifyIpv4Destination(adresse(t))).toBe('link-local-multicast');
+    }
+  });
+
+  it('224.0.1.0 et au-dela est du multicast routable', () => {
+    for (const t of ['224.0.1.1', '239.255.255.250', '232.1.2.3']) {
+      expect(classifyIpv4Destination(adresse(t))).toBe('multicast');
+    }
+  });
+
+  it('les bornes du bloc multicast sont celles de la RFC 1112', () => {
+    expect(classifyIpv4Destination(adresse('223.255.255.255'))).toBe('unicast');
+    expect(classifyIpv4Destination(adresse('240.0.0.1'))).toBe('unicast');
+  });
+
+  it('une adresse ordinaire reste unicast', () => {
+    expect(classifyIpv4Destination(adresse('10.0.0.1'))).toBe('unicast');
+  });
+
+  /**
+   * Le garde-fou lit le CODE et non la prose : `Router.ts` cite encore
+   * « 224.0.0.0/24 » et « 224.0.1.0-239.255.255.255 » dans ses
+   * commentaires, ce qui est juste et doit le rester. Ce qu'on interdit
+   * est l'IDIOME — comparer un octet aux bornes du bloc.
+   *
+   * ET LA PORTEE EST CELLE DU PLAN DE DONNEES, ce que la mesure a
+   * impose plutot que l'inverse : passe sur tout `devices/`, ce cas
+   * attrapait trois fichiers qui ne sont pas des acheminements et qui
+   * ont RAISON d'ecrire ces bornes — `CiscoDhcpCommands` refuse une
+   * option d'adresse qui ne serait pas unicast (`o[0] === 0 ||
+   * o[0] >= 224`), `CiscoRoutingProtoCommands` en fait autant pour un
+   * reseau (`first > 0 && first < 224 && first !== 127`). Ce sont des
+   * grammaires d'ARGUMENT et non des classes de destination : elles
+   * repondent « l'operateur a-t-il le droit de taper cela », question
+   * dont 0 et 127 font partie et que `classifyIpv4Destination` ne
+   * tranche pas — 240.0.0.1 y est unicast. Le garde-fou porte donc sur
+   * les fichiers qui lisent la destination d'un VRAI paquet
+   * (`destinationIP`), c'est-a-dire ceux qui en decident le sort.
+   *
+   * Le troisieme, `TcpdumpFilter`, etait en revanche une COPIE :
+   * `isMulticastIp` redisait `isMulticastIpv4` mot pour mot, et il
+   * delegue desormais.
+   */
+  it('aucun plan de donnees ne redecoupe le bloc multicast a la main', () => {
+    const idiome = /[><=]=?\s*224\b|\b239\s*[><=]|[><=]=?\s*239\b/;
+    const sansCommentaire = (t: string) => t
+      .replace(/\/\*[\s\S]*?\*\//g, '')
+      .replace(/\/\/[^\n]*/g, '');
+    const coupables = fichiersTs('src/network/devices')
+      .map((f) => [f, sansCommentaire(readFileSync(f, 'utf8'))] as const)
+      .filter(([, t]) => t.includes('destinationIP') && idiome.test(t))
+      .map(([f]) => f);
+    expect(coupables).toEqual([]);
+  });
+
+  it('et le predicat multicast n\'est pas recopie dans devices/', () => {
+    const copie = /first\s*>=\s*224\s*&&\s*first\s*<=\s*239/;
+    const coupables = fichiersTs('src/network/devices')
+      .filter((f) => copie.test(readFileSync(f, 'utf8')));
+    expect(coupables).toEqual([]);
   });
 });

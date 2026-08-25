@@ -608,6 +608,69 @@ invisible au traceroute. C'est faux : sa garde est en tête de
 cinq sites étaient donc d'accord, et l'incrément est une déduplication
 pure — ce que le §4.1 exige de chaque phase.
 
+**Incrément 2 — LIVRÉ.** La CLASSE d'une destination IPv4 se décide au
+même endroit (`classifyIpv4Destination` : diffusion limitée, multicast
+lien-local, multicast routable, unicast). Mesure de départ : le routeur
+redécoupait le bloc à la main (`destOctets[0] >= 224 && <= 239`),
+l'hôte appelait `isMulticastIpv4` pour la même question, le commutateur
+en portait une **cinquième** écriture dans son filtrage IGMP snooping
+(bornes du bloc, puis exclusion du lien-local par `isReservedMulticast`,
+c'est-à-dire le même prédicat répondu deux fois de suite), et
+`TcpdumpFilter.isMulticastIp` recopiait `isMulticastIpv4` mot pour mot.
+Seul le routeur distinguait le multicast **lien-local** (224.0.0.0/24,
+que la RFC 1112 interdit d'acheminer) du multicast routable ; l'hôte les
+confondait, ce qui ne se voyait pas parce qu'un hôte n'achemine pas —
+une divergence latente, exactement la forme que le §2.7 recense.
+
+**Ce que la mesure a imposé sur la PORTÉE du garde-fou, plutôt que
+l'inverse** : passé sur tout `devices/`, le cas structurel attrapait
+trois fichiers qui ne sont pas des acheminements et qui ont RAISON
+d'écrire ces bornes. `CiscoDhcpCommands` refuse une option d'adresse qui
+ne serait pas unicast (`o[0] === 0 || o[0] >= 224`), et
+`CiscoRoutingProtoCommands` en fait autant pour un réseau
+(`first > 0 && first < 224 && first !== 127`) : ce sont des grammaires
+d'ARGUMENT et non des classes de destination — elles répondent
+« l'opérateur a-t-il le droit de taper cela », question dont 0 et 127
+font partie et que `classifyIpv4Destination` ne tranche pas, puisque
+240.0.0.1 y est unicast. Les fondre aurait été la fausse réutilisation
+que le §4 interdit. Le garde-fou porte donc sur les fichiers qui lisent
+la destination d'un VRAI paquet (`destinationIP`). Le troisième,
+`TcpdumpFilter`, était en revanche une copie franche et délègue
+désormais.
+
+**Incrément 3 — LIVRÉ : le filtre de couche lien du pare-feu**, que
+cette phase s'était explicitement rattaché ci-dessus. Mesure de départ :
+une trame IPv4 portant une adresse MAC de destination étrangère
+(`02:99:99:99:99:99`), injectée sur `port2` d'un FortiGate en mode
+`nat`, est traitée entièrement — `recentTraces()` passe de 1 à 2,
+exactement comme en mode `transparent`. Les deux modes répondaient donc
+la même chose à une question dont ils **sont** la différence.
+`Firewall.handleFrame` consulte désormais `classifyDestination` de la
+couche lien — la règle existante, pas une seconde — et le mode
+transparent la court-circuite : un VDOM transparent est un pont de
+niveau 2 qui achemine sur l'adresse MAC de destination, il doit donc
+accepter ce qui ne lui est pas adressé, sinon il n'a rien à ponter.
+
+**Ce que le filtre a RÉVÉLÉ, et qui justifie l'ordre de ce chantier** :
+deux défauts indépendants que l'absence de filtre rendait invisibles.
+(1) **Une grappe FGCP n'avait aucune adresse MAC virtuelle.** Une vraie
+grappe partage `00:09:0f:09:<group-id % 256>:<vcluster + index>` sur
+toutes ses interfaces sauf le battement de cœur et la gestion réservée —
+c'est ce qui rend un basculement invisible au voisinage, dont le cache
+ARP reste valide. Ici chaque unité gardait la sienne, et le basculement
+ne « marchait » que parce que rien ne vérifiait l'adresse de
+destination : `tuto-fortigate-tp21` est passé au rouge à l'instant où
+quelque chose l'a vérifiée. (2) **Une fois l'adresse virtuelle
+partagée**, le subordonné émettait des sollicitations de voisin IPv6 sur
+ses interfaces de données depuis cette même adresse, si bien que le
+commutateur voisin réapprenait l'adresse virtuelle sur le port du
+SECONDAIRE et la moitié du trafic y mourait. Sur une vraie grappe a-p un
+subordonné n'émet pas sur ses interfaces de données ; c'est le pendant
+exact de `forwardsTransit()`, que ce dépôt avait déjà écrit pour la
+moitié TRANSIT du même fait, et la règle vit au seul point d'émission
+(`sendFrame`). Les trois correctifs partent ensemble parce qu'aucun des
+deux derniers n'était observable sans le premier.
+
 ### Phase 3 — RIB et FIB séparées
 **Sortie** : `lookupRoute()` ne réveille plus le plan de contrôle ; une
 route statique récursive (`ip route <net> <mask> <ip-hors-lien>`)

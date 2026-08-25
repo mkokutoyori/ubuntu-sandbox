@@ -19,7 +19,7 @@
  */
 
 import { Equipment } from '../equipment/Equipment';
-import { decrementForForwarding } from '../layers/internet/InternetLayer';
+import { classifyIpv4Destination, decrementForForwarding } from '../layers/internet/InternetLayer';
 import { Port } from '../hardware/Port';
 import type { IPv4AddressOrigin } from '../hardware/Port';
 import { SocketTable } from '../core/SocketTable';
@@ -2057,13 +2057,14 @@ export abstract class EndHost extends Equipment {
     // limited broadcast 255.255.255.255 — RFC 1122 §3.3.6 requires accepting
     // it even on an unconfigured interface (DHCP clients depend on this).
     const mask = port.getSubnetMask();
-    const isBroadcast = ipPkt.destinationIP.toString() === '255.255.255.255'
+    const destClass = classifyIpv4Destination(ipPkt.destinationIP);
+    const isBroadcast = destClass === 'limited-broadcast'
       || (myIP && mask && ipPkt.destinationIP.isBroadcastFor(mask));
     // Un datagramme multicast n'est adressé à personne en particulier :
     // sans cette branche il tombait dans le « pas pour nous » et l'hôte
     // le jetait, alors que le filtre L2 l'avait justement laissé monter
     // parce que la carte est abonnée au groupe.
-    const isMulticast = isMulticastIpv4(ipPkt.destinationIP.toString());
+    const isMulticast = destClass === 'multicast' || destClass === 'link-local-multicast';
 
     if (isForUs || isBroadcast || isMulticast) {
       // RFC 791 §3.2: reassemble before filtering/dispatch — a non-first

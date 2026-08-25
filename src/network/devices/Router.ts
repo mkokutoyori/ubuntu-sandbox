@@ -124,7 +124,7 @@ import type { KeyChainRepository } from './inspection/config/KeyChainRepository'
 import { fragmentIPv4, IPv4Reassembler } from '../core/Ipv4Fragmentation';
 import type { FhrpDataPlane } from '../fhrp/types';
 import { DHCPServer, type DhcpUtilizationCrossing } from '../dhcp/DHCPServer';
-import { decrementForForwarding } from '../layers/internet/InternetLayer';
+import { classifyIpv4Destination, decrementForForwarding } from '../layers/internet/InternetLayer';
 import {
   DHCP_FREE_ADDRESS_HIGH, DHCP_FREE_ADDRESS_LOW, DHCP_SHARED_NET_ENTRY,
   snmpAdminStringIndex,
@@ -2345,12 +2345,10 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
     // link-local multicast — 224.0.0.0/24 is consumed by the control
     // plane and MUST never be forwarded, RFC 1112/4541)
     const destIP = ipPkt.destinationIP;
-    const isBroadcast = destIP.toString() === '255.255.255.255';
-    const destOctets = destIP.toString().split('.').map(Number);
-    const isMulticast = destOctets[0] >= 224 && destOctets[0] <= 239;
-    const isLinkLocalMulticast = destOctets[0] === 224 && destOctets[1] === 0 && destOctets[2] === 0;
+    const destClass = classifyIpv4Destination(destIP);
+    const isMulticast = destClass === 'multicast';
 
-    if (isBroadcast || isLinkLocalMulticast) {
+    if (destClass === 'limited-broadcast' || destClass === 'link-local-multicast') {
       // Broadcast/link-local-multicast packet — deliver locally, never forward
       this.handleLocalDelivery(inPort, ipPkt);
       return;

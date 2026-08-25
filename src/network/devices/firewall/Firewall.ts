@@ -69,6 +69,8 @@ import {
 } from './FirewallProfile';
 import { ROOT_VDOM, VdomRegistry, type VdomContext } from './vdom/VdomRegistry';
 import { VdomLinkTable } from './vdom/VdomLinkTable';
+import { classifyDestination } from '../../layers/link/LinkLayer';
+import { clusterVirtualMac } from './ha/clusterVirtualMac';
 import { SwitchGroupTable } from './l3/SwitchGroupTable';
 import { logFactsOf } from './logging/logFacts';
 import { emitFirewallEvent, logPipelineOutcome } from './logging/emitFirewallEvent';
@@ -674,7 +676,23 @@ export class Firewall extends Equipment {
 
   applyHa(c: HaConfiguration): string | undefined {
     this.haService.agent.configure(c);
+    this.applyClusterVirtualMacs(c);
     return undefined;
+  }
+
+  private readonly permanentMacs = new Map<string, MACAddress>();
+
+  private applyClusterVirtualMacs(c: HaConfiguration): void {
+    const heartbeat = new Set(c.heartbeatDevices.map((d) => d.iface));
+    this.getPorts().forEach((port, index) => {
+      const name = port.getName();
+      if (!this.permanentMacs.has(name)) this.permanentMacs.set(name, port.getMAC());
+      const permanent = this.permanentMacs.get(name);
+      if (!permanent) return;
+      port.setMAC(c.mode === 'standalone' || heartbeat.has(name)
+        ? permanent
+        : clusterVirtualMac(c.groupId, index));
+    });
   }
 
   private readonly serial: string = serialNumberOf(this.name);
@@ -1205,6 +1223,7 @@ export class Firewall extends Equipment {
       at: this.services.now(), iface: portName, direction: 'in', frame,
     });
     this.bridgeOf(portName).learn(frame.srcMAC.toString(), portName);
+    if (!this.acceptsAtLinkLayer(portName, frame)) return;
 
     if (frame.etherType === ETHERTYPE_FGCP) {
       this.haService.agent.receive(frame);
@@ -1222,6 +1241,28 @@ export class Firewall extends Equipment {
     if (frame.etherType === ETHERTYPE_IPV4) {
       this.handleIpv4Frame(portName, frame.payload as IPv4Packet, frame);
     }
+  }
+
+  sendFrame(portName: string, frame: EthernetFrame): boolean {
+    if (this.subordinateIsSilentOn(portName)) return false;
+    return super.sendFrame(portName, frame);
+  }
+
+  private subordinateIsSilentOn(portName: string): boolean {
+    const ha = this.haService.agent;
+    const config = ha.getConfiguration();
+    if (config.mode !== 'a-p' || ha.role() !== 'slave') return false;
+    return !config.heartbeatDevices.some((device) => device.iface === portName);
+  }
+
+  private acceptsAtLinkLayer(portName: string, frame: EthernetFrame): boolean {
+    if (this.vdoms.contextOfInterface(portName).settings.opmode === 'transparent') {
+      return true;
+    }
+    const port = this.getPort(portName);
+    if (!port) return false;
+    if (port.isPromiscuous()) return true;
+    return classifyDestination(frame.dstMAC, port.getMAC()) !== 'otherhost';
   }
 
   private lookupMac(destination: MACAddress, ingress: string): string | undefined {
