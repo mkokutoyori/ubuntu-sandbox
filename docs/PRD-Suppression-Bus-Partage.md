@@ -184,10 +184,49 @@ table de grappe globale, et `EquipmentRegistry` sert à retrouver un
 pair. Les deux relèvent de `PRD-Frame-Only-Refactor.md`, pas de ce
 document.
 
-### Incrément 5 — `getDefaultEventBus` est supprimé
+### Incrément 5a — plus rien en production ne LIT le bus partagé — **LIVRÉ**
+
+**Sortie atteinte** : `getDefaultEventBus().subscribe` n'apparaît nulle
+part hors de `src/events/` et des tests, et un cas structurel le garde
+en relançant la recherche à chaque exécution.
+
+Deux lecteurs restaient, tous deux trouvés APRÈS la mesure d'ouverture —
+qui n'en annonçait que trois, et disait vrai à l'instant où elle a été
+prise.
+
+**`FortiTerminalSession`** écoutait `device.power-on` sur le bus global
+puis **filtrait par identifiant**. Le filtre est l'aveu : la source était
+plus large que la question. Son appareil a son propre bus, et le filtre
+disparaît avec la migration — c'est le même signe qu'avec `useMacTable`
+à l'incrément 3.
+
+**`networkStore`** relaie `port.link.*` et `port.config.ip-changed` vers
+une révision de canevas. Il lisait déjà le bus global, mais son
+abonnement est armé paresseusement par `getDevices()` — donc le pont
+suit déjà le bus courant plutôt qu'un singleton figé, et rien n'y était
+à corriger. Le cas de comportement le garde : une interface qui tombe
+fait monter la révision sans qu'aucune action du magasin ne soit
+appelée.
+
+**Pourquoi le garde-fou porte sur l'ABONNEMENT et non sur le symbole.**
+Une machine qui relaie ses propres événements, à sens unique, vers un
+observateur est exactement ce que `PRD-Frame-Only-Refactor.md` autorise
+pour Logger, l'UI et les tests. Ce qui ne doit jamais revenir, c'est du
+code de production qui LIT ce relais — c'est la seule forme sous laquelle
+un bus partagé redevient un canal de communication.
+
+### Incrément 5b — `getDefaultEventBus` est supprimé
 Le relais `ForwardingEventBus` ne forwarde plus vers un global ; le
 singleton disparaît. **Sortie** : un garde-fou structurel échoue si
 `getDefaultEventBus` réapparaît, comme le BRD §7 le prescrit.
+
+**Taille mesurée avant de commencer, et c'est pourquoi 5a et 5b sont
+séparés** : **37 fichiers de test s'abonnent** au bus global et **55**
+en injectent un par `__setDefaultEventBus`. Couper le relais les
+convertit tous. L'incrément 5a livre le gain d'architecture — plus aucun
+canal de communication partagé — sans immobiliser le dépôt ; 5b est la
+conversion mécanique, à mener par lots avec l'arbre vert à chaque
+étape.
 
 ---
 
