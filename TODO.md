@@ -680,6 +680,27 @@ passer l'enfant a l'emission, donc de faire voyager cette identite dans
 les evenements du bus — un changement de la forme des evenements, pas
 du format des messages.
 
+## Couche lien
+
+### [vlan] la vue trunk et la vue sous-interface ne portent pas le meme segment
+`scenario-vlan-8021q-trunk.test.ts`, cas « la taille de trame differe
+exactement de 4 octets entre la vue trunk (tagguee) et la vue
+sous-interface (sans tag) d'un meme type de segment TCP », ECHOUE avec
+`expected undefined to be defined` : l'une des deux vues ne trouve
+aucune trame du type cherche, donc la comparaison des tailles n'a pas
+lieu. Les 10 autres cas du fichier passent.
+**Mesure** : l'echec est reproduit a l'identique sur `549f5f4a7`
+(« Couche lien — les dix repertoires L2 emettent par la couche ») ET sur
+son parent `6deee89eb` (« STP, CDP et LLDP emettent PAR la couche ») —
+il est donc anterieur a ces deux commits ou introduit plus tot dans la
+meme serie, et en tout cas ETRANGER au travail SSH/DHCP/NetFlow de cette
+session.
+**Report** : le defaut est dans l'aire que l'autre agent refond en ce
+moment (l'emission par la couche liaison, phase 1 achevee, phase 2 en
+cours). Y toucher en parallele produirait un conflit sur le meme code ;
+l'entree est inscrite pour que le rouge soit NOMME et non pris pour du
+bruit.
+
 ## Bus d'evenements
 
 ### [nhrp] `debug nhrp` n'a toujours pas d'emetteur, faute de transcription
