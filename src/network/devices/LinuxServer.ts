@@ -259,6 +259,10 @@ export class LinuxServer extends LinuxMachine {
     return this.executor.externalPidForOsPid(osPid);
   }
 
+  osPidForExternalPid(externalPid: number): number | undefined {
+    return this.executor.osPidForExternalPid(externalPid);
+  }
+
   /** Clear all externally registered processes. */
   clearSystemProcesses(): void {
     this.executor.clearSystemProcesses();

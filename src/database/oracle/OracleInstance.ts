@@ -10,7 +10,7 @@ import { defaultOracleConfig } from '../engine/types/DatabaseConfig';
 import { ORACLE_CONFIG, ORACLE_ERRORS, TNS_ERRORS } from './OracleConfig';
 import { parseSize } from './views/_fileSize';
 import { OracleError } from '../engine/types/DatabaseError';
-import { ListenerControl } from './listener/ListenerControl';
+import { ListenerControl, BOOT_LISTENER_PID } from './listener/ListenerControl';
 import { type IEventBus } from '@/events/EventBus';
 import { BusHolder } from '@/events/BusHolder';
 import {
@@ -1155,6 +1155,10 @@ export class OracleInstance {
     pdbServices: () => this.multitenant.getAll()
       .filter(p => p.name !== 'PDB$SEED' && (p.openMode === 'READ WRITE' || p.openMode === 'READ ONLY'))
       .map(p => p.name),
+    allocatePid: () => {
+      const procs = this.getBackgroundProcesses();
+      return procs.length > 0 ? procs[procs.length - 1].pid + 1 : BOOT_LISTENER_PID;
+    },
   });
 
   get listener(): ListenerControl { return this._listener; }
@@ -1180,7 +1184,7 @@ export class OracleInstance {
     const endpoint = `(ADDRESS=(PROTOCOL=tcp)(HOST=0.0.0.0)(PORT=${this._listener.port}))`;
     this.getBus().publish({
       topic: 'oracle.listener.event',
-      payload: { ...this.ref(), state: 'running', endpoint, port: this._listener.port },
+      payload: { ...this.ref(), state: 'running', endpoint, port: this._listener.port, pid: this._listener.pid },
     });
     this.getBus().publish({
       topic: 'oracle.service.event',
@@ -1212,7 +1216,7 @@ export class OracleInstance {
     this.logAlert('Listener LISTENER stopped');
     this.getBus().publish({
       topic: 'oracle.listener.event',
-      payload: { ...this.ref(), state: 'stopped', endpoint: '', port: this._listener.port },
+      payload: { ...this.ref(), state: 'stopped', endpoint: '', port: this._listener.port, pid: this._listener.pid },
     });
     this.getBus().publish({
       topic: 'oracle.service.event',

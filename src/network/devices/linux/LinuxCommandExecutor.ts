@@ -2218,6 +2218,10 @@ export class LinuxCommandExecutor {
     return undefined;
   }
 
+  osPidForExternalPid(externalPid: number): number | undefined {
+    return this._externalToOsPid.get(externalPid);
+  }
+
   /** Unregister a previously externally-registered process. */
   unregisterProcess(externalPid: number): boolean {
     const osPid = this._externalToOsPid.get(externalPid);

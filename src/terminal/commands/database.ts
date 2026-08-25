@@ -840,7 +840,7 @@ export function syncOracleProcessesToDevice(device: import('@/network').HostCapa
     }
     // Also register the listener if running
     if (db.instance.listenerStatus === 'running') {
-      dev.registerProcess(procs.length > 0 ? procs[procs.length - 1].pid + 1 : 2000, 'oracle', `tnslsnr LISTENER -inherit`);
+      dev.registerProcess(db.instance.listener.pid, 'oracle', 'tnslsnr LISTENER -inherit');
     }
   }
 }

@@ -38,6 +38,8 @@ export interface ListenerConnectionLogEntry {
 
 const MONTHS = ['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC'];
 
+export const BOOT_LISTENER_PID = 2001;
+
 function formatListenerTimestamp(d: Date): string {
   return `${pad2(d.getUTCDate())}-${MONTHS[d.getUTCMonth()]}-${d.getUTCFullYear()} `
     + `${pad2(d.getUTCHours())}:${pad2(d.getUTCMinutes())}:${pad2(d.getUTCSeconds())}`;
@@ -53,11 +55,13 @@ export class ListenerControl {
   private _connectionLog: ListenerConnectionLogEntry[] = [];
   private _noBanner = false;
   private _logSink: ((line: string) => void) | null = null;
+  private _pid = BOOT_LISTENER_PID;
 
   constructor(private readonly env: {
     sid: () => string;
     instanceState: () => InstanceState;
     pdbServices?: () => string[];
+    allocatePid?: () => number;
   }) {}
 
   private registeredServices(): string[] {
@@ -111,6 +115,7 @@ export class ListenerControl {
     if (this._running) return false;
     this._running = true;
     this._startedAt = new Date();
+    this._pid = this.env.allocatePid?.() ?? this._pid;
     return true;
   }
 
@@ -121,6 +126,8 @@ export class ListenerControl {
     this._startedAt = null;
     return true;
   }
+
+  get pid(): number { return this._pid; }
 
   /** LREG dynamic-registration view, derived from the live instance.
    *  null means the instance is down: nothing is registered. */

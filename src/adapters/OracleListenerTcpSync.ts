@@ -48,13 +48,21 @@ export class OracleListenerTcpSync {
     this.attach(deviceId);
   }
 
+  private daemonPid(dev: unknown, sid: string): number | undefined {
+    const host = dev as { systemdUnitMainPid?: (name: string) => number | undefined };
+    return host.systemdUnitMainPid?.(`oracle-listener-${sid}`);
+  }
+
   private attach(deviceId: string): void {
     this.detach(deviceId);
     const dev = this.ctx.resolveDevice(deviceId) as unknown as TcpCapableEquipment | null;
     const db = this.ctx.resolveDatabase(deviceId);
     if (!dev || typeof dev.getTcpStack !== 'function' || !db) return;
     const host: BindingHost = { getTcpStack: () => dev.getTcpStack!() } as BindingHost;
-    const binding = new OracleListenerNetworkBinding({ host, listener: db.instance.listener });
+    const binding = new OracleListenerNetworkBinding({
+      host, listener: db.instance.listener,
+      listenerPid: this.daemonPid(dev, db.instance.config.sid) ?? db.instance.listener.pid,
+    });
     try {
       binding.attach();
       this.bindings.set(deviceId, binding);

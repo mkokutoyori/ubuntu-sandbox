@@ -3915,6 +3915,10 @@ export abstract class LinuxMachine extends EndHost
    * survives daemon-reload. Used by domain adapters (Oracle, ASM, …)
    * that want to expose themselves to the standard Linux service tooling.
    */
+  systemdUnitMainPid(name: string): number | undefined {
+    return this.executor.serviceMgr.status(name)?.mainPid;
+  }
+
   installSystemdUnit(
     spec: {
       name: string;
