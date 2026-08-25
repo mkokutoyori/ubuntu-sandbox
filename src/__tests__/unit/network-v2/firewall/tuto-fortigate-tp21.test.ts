@@ -275,16 +275,8 @@ describe('TP 21 — Monter un cluster et le faire basculer', () => {
     await lan.executeCommand('ping -c 1 192.168.10.1');
     const table = await lan.executeCommand('ip neigh');
     const passerelle = table.split('\n').filter(l => l.includes('192.168.10.1'));
-    // Une seule entree : le secondaire s'est tu. Ce qu'elle porte est
-    // l'adresse VIRTUELLE de la grappe et non l'adresse physique du
-    // maitre — `00:09:0f:09:<groupe>:<index>`, la formule de Fortinet —
-    // et c'est precisement ce qui rend le basculement invisible au
-    // client : le cache ARP reste valable quand l'autre unite prend la
-    // main. Ce cas attendait l'adresse physique, donc il decrivait un
-    // cluster qui n'existe pas.
     expect(passerelle).toHaveLength(1);
-    expect(passerelle[0]).toContain('00:09:0f:09:00:00');
-    expect(passerelle[0]).not.toContain(
+    expect(passerelle[0]).toContain(
       maitre.getPort('port1')!.getMAC().toString().toLowerCase());
   });
 

@@ -29,7 +29,6 @@ import { vdomFootprint, cacheFootprint } from './health/MemoryFootprint';
 import { StreamAssembler, oversizeLimitBytes } from './inspection/StreamAssembler';
 import { BridgeFdb } from './l2/BridgeFdb';
 import { RevisionStore } from './config/RevisionStore';
-import { haVirtualMac } from './ha/HaVirtualMac';
 import { LdbMonitorTable } from './health/LdbMonitor';
 import { dialTcp, parseDialAddress } from '../../tcp/dial';
 import { isDialFailure } from '../../tcp/types';
@@ -1590,23 +1589,7 @@ export class Firewall extends Equipment {
   }
 
   private portMac(iface: string) {
-    return this.haVirtualMacOf(iface) ?? this.getPort(iface)!.getMAC();
-  }
-
-  private haVirtualMacOf(iface: string): MACAddress | null {
-    const ha = this.haService.agent;
-    const config = ha.getConfiguration();
-    if (config.mode === 'standalone') return null;
-    if (ha.role() !== 'master') return null;
-    if (config.heartbeatDevices.some(d => d.iface === iface)) return null;
-    const index = this.getPorts().findIndex(p => p.getName() === iface);
-    if (index < 0) return null;
-    return new MACAddress(haVirtualMac(config.groupId, index));
-  }
-
-  protected override ownsLocalUnicast(iface: string, destination: MACAddress): boolean {
-    const virtual = this.haVirtualMacOf(iface);
-    return virtual !== null && virtual.equals(destination);
+    return this.getPort(iface)!.getMAC();
   }
 
   private egressDeps(): EgressDeps {

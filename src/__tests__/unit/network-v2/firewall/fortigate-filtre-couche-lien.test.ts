@@ -231,7 +231,8 @@ describe('le trafic normal n a pas change', () => {
 
 describe('une grappe presente une adresse VIRTUELLE, pas celle du chassis', () => {
   it('la formule est celle de Fortinet', async () => {
-    const { haVirtualMac } = await import('@/network/devices/firewall/ha/HaVirtualMac');
+    const { clusterVirtualMac } = await import('@/network/devices/firewall/ha/clusterVirtualMac');
+    const haVirtualMac = (g: number, i: number, v?: 1 | 2) => clusterVirtualMac(g, i, v).toString();
     // 00-09-0f-09-<groupe>-(<vcluster> + <index>) — port1 a l'index 0.
     expect(haVirtualMac(0, 0)).toBe('00:09:0f:09:00:00');
     expect(haVirtualMac(0, 3)).toBe('00:09:0f:09:00:03');
