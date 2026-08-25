@@ -586,6 +586,28 @@ faire suivre » que cette phase-ci déplace dans la couche internet. À
 traiter ici, avec sa propre mesure et son propre témoin en mode
 transparent.
 
+**Incrément 1 — LIVRÉ.** `layers/internet/InternetLayer.ts` porte la
+règle du TTL (`decrementForForwarding`) : décrémenter, décider de
+l'expiration, recalculer la somme de contrôle d'en-tête. Les **cinq**
+corps de §2.2 la lisent — `Router.forwardPacket`,
+`Router.forwardMulticast`, `EndHost.forwardIPv4`,
+`SwitchSvi.forwardIpPacket` et l'étape du pare-feu — et chacun garde ce
+qui lui est PROPRE : son journal, son compteur, et la façon dont il
+annonce l'expiration (le routeur émet un ICMP Time Exceeded, le
+commutateur le sien depuis la SVI d'entrée, le pare-feu refuse par son
+verdict). Un cas structurel échoue en nommant tout fichier de
+`src/network/devices/` qui décrémenterait encore un TTL à la main.
+
+**Ce que la mesure a corrigé d'une supposition, et qui explique que ce
+lot ne change AUCUN comportement** : j'avais d'abord lu `SwitchSvi`
+comme décrémentant sans garde — `{ ...ip, ttl: ip.ttl - 1 }` n'a aucune
+vérification à côté — donc comme émettant des paquets à TTL 0 et restant
+invisible au traceroute. C'est faux : sa garde est en tête de
+`forwardIpPacket`, écrite `ttl <= 1` AVANT le décrément là où le routeur
+écrit `ttl - 1 <= 0` APRÈS. Les deux formulations sont équivalentes. Les
+cinq sites étaient donc d'accord, et l'incrément est une déduplication
+pure — ce que le §4.1 exige de chaque phase.
+
 ### Phase 3 — RIB et FIB séparées
 **Sortie** : `lookupRoute()` ne réveille plus le plan de contrôle ; une
 route statique récursive (`ip route <net> <mask> <ip-hors-lien>`)

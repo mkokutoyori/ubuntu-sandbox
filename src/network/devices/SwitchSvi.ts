@@ -2,8 +2,9 @@ import {
   EthernetFrame, MACAddress, IPAddress, SubnetMask,
   ARPPacket, ICMPPacket, IPv4Packet, UDPPacket,
   ETHERTYPE_ARP, ETHERTYPE_IPV4, IP_PROTO_ICMP, IP_PROTO_UDP,
-  createIPv4Packet, computeIPv4Checksum,
+  createIPv4Packet,
 } from '../core/types';
+import { decrementForForwarding } from '../layers/internet/InternetLayer';
 import { Logger } from '../core/Logger';
 import type { CiscoPingRow } from './shells/cisco/ciscoPing';
 import { DHCPPacket } from '../dhcp/DHCPPacket';
@@ -471,7 +472,8 @@ export class SwitchSvi {
   }
 
   private forwardIpPacket(ingressVlan: number, ip: IPv4Packet, originalPkt: IPv4Packet = ip): void {
-    if (ip.ttl <= 1) {
+    const decision = decrementForForwarding(ip);
+    if (decision.kind === 'expired') {
       const ingressSvi = this.svis.get(ingressVlan);
       if (ingressSvi?.ip) this.sendIcmpTimeExceeded(ingressVlan, ingressSvi.ip, ip);
       return;
@@ -488,8 +490,7 @@ export class SwitchSvi {
       if (ingressSvi?.ip) this.sendIcmpHostUnreachable(ingressVlan, ingressSvi.ip, ip, 1);
       return;
     }
-    let fwd: IPv4Packet = { ...ip, ttl: ip.ttl - 1, headerChecksum: 0 };
-    fwd.headerChecksum = computeIPv4Checksum(fwd);
+    let fwd: IPv4Packet = decision.packet;
 
     if (this.host.natTranslateOutbound) {
       const outIface = `Vlanif${route.egress.vlan}`;

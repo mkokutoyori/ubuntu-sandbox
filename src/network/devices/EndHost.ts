@@ -19,6 +19,7 @@
  */
 
 import { Equipment } from '../equipment/Equipment';
+import { decrementForForwarding } from '../layers/internet/InternetLayer';
 import { Port } from '../hardware/Port';
 import type { IPv4AddressOrigin } from '../hardware/Port';
 import { SocketTable } from '../core/SocketTable';
@@ -2109,8 +2110,8 @@ export abstract class EndHost extends Equipment {
 
   /** Forward an IPv4 packet when ipForwardEnabled is true (NAT gateway). */
   private forwardIPv4(inPort: string, ipPkt: IPv4Packet): void {
-    const newTTL = ipPkt.ttl - 1;
-    if (newTTL <= 0) {
+    const decision = decrementForForwarding(ipPkt);
+    if (decision.kind === 'expired') {
       // RFC 792: a forwarding node MUST send Time Exceeded (Type 11, Code 0)
       // back to the source — this is what makes this hop visible to traceroute.
       Logger.info(this.id, 'ipv4:ttl-expired',
@@ -2142,8 +2143,7 @@ export abstract class EndHost extends Equipment {
     }
 
     // NAT: apply POSTROUTING rules (MASQUERADE/SNAT/DNAT)
-    let fwdPkt: IPv4Packet = { ...ipPkt, ttl: newTTL, headerChecksum: 0 };
-    fwdPkt.headerChecksum = computeIPv4Checksum(fwdPkt);
+    let fwdPkt: IPv4Packet = decision.packet;
 
     const natResult = this.evaluateNat(ipPkt, inPort, outPortName);
     if (natResult) {

@@ -124,6 +124,7 @@ import type { KeyChainRepository } from './inspection/config/KeyChainRepository'
 import { fragmentIPv4, IPv4Reassembler } from '../core/Ipv4Fragmentation';
 import type { FhrpDataPlane } from '../fhrp/types';
 import { DHCPServer, type DhcpUtilizationCrossing } from '../dhcp/DHCPServer';
+import { decrementForForwarding } from '../layers/internet/InternetLayer';
 import {
   DHCP_FREE_ADDRESS_HIGH, DHCP_FREE_ADDRESS_LOW, DHCP_SHARED_NET_ENTRY,
   snmpAdminStringIndex,
@@ -2766,8 +2767,8 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
       this.counters.ipForwDatagrams++;
       return;
     }
-    const newTTL = ipPkt.ttl - 1;
-    if (newTTL <= 0) {
+    const decision = decrementForForwarding(ipPkt);
+    if (decision.kind === 'expired') {
       Logger.info(this.id, 'router:ttl-expired',
         `${this.name}: TTL expired for packet from ${ipPkt.sourceIP} to ${ipPkt.destinationIP}`);
       this.sendICMPError(inPort, ipPkt, 'time-exceeded', 0);
@@ -2786,13 +2787,7 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
       return;
     }
 
-    // Phase D.2: Header mutation — create forwarded packet with new TTL + checksum
-    let fwdPkt: IPv4Packet = {
-      ...ipPkt,
-      ttl: newTTL,
-      headerChecksum: 0,
-    };
-    fwdPkt.headerChecksum = computeIPv4Checksum(fwdPkt);
+    let fwdPkt: IPv4Packet = decision.packet;
 
     const outPort = this.ports.get(route.iface);
     if (!outPort) return;
@@ -2960,11 +2955,9 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
       return;
     }
 
-    const newTTL = ipPkt.ttl - 1;
-    if (newTTL <= 0) return;
-
-    const fwdPktBase: IPv4Packet = { ...ipPkt, ttl: newTTL, headerChecksum: 0 };
-    fwdPktBase.headerChecksum = computeIPv4Checksum(fwdPktBase);
+    const mcastDecision = decrementForForwarding(ipPkt);
+    if (mcastDecision.kind === 'expired') return;
+    const fwdPktBase: IPv4Packet = mcastDecision.packet;
     const dstMAC = new MACAddress(ipv4MulticastToMac(group));
 
     for (const oif of mroute.outgoingInterfaces) {

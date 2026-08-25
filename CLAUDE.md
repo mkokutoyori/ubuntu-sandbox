@@ -172,6 +172,36 @@ Vendor-agnostic shell layer: `IShell`/`IShellBase`, `AbstractShell`, `ShellFacto
   - `SELECT … FOR UPDATE` row-level locking (rapport 07, item #49): `LockManager.rowLocks` (`lock/LockManager.ts`) genuinely tracks which session owns which row, and `NOWAIT`/`SKIP LOCKED` were already correctly wired in `OracleExecutor.lockForUpdateRows()` — but a *plain* `FOR UPDATE` (no wait clause) or `FOR UPDATE WAIT n` against a row another session already held just fell through to `out.push(row)` and silently handed over the row as if the lock had been granted, without ever calling `acquireRowLock`. Two sessions could each believe they held the same row's lock — the core mutual-exclusion guarantee FOR UPDATE exists for was broken exactly when no `NOWAIT` was written. Real Oracle instead blocks the statement (indefinitely for plain `FOR UPDATE`, up to `n` seconds for `WAIT n`) until the holder commits/rolls back, but `OracleExecutor`/`OracleDatabase`/`SQLPlusSession`/`SqlPlusSubShell` are a fully synchronous call chain with no per-statement suspend/resume concept — genuine blocking would need a promise-based wait queue in `LockManager` threaded through that whole chain as `async`, which `ISubShell.processLine`'s `SubShellResult | Promise<SubShellResult>` signature and `interruptForeground()` hook (`terminal/subshells/ISubShell.ts`) already anticipate structurally (per its doc comment, another subshell already returns async), but which touches the single synchronous `OracleExecutor.execute()` core shared by every statement type (DDL, DML, PL/SQL, triggers, scheduler jobs) — a cross-cutting refactor, not a bounded fix. Fixed the bounded half instead: a plain `FOR UPDATE` or `WAIT n` against an already-held row now denies immediately (`ORA-00054`/`ORA-30006` respectively) rather than silently granting a second, phantom lock — trading "hangs forever" for "fails fast," which is honest given the architectural constraint and strictly safer than the previous silent double-grant. `LockManager.lockTable()` (TM/table locks, not row locks) has the identical "record a fake wait, never actually suspend the caller" pattern — tracked separately as item #50, not touched here.
   - TM (table) lock enforcement for ordinary DML (rapport 07, item #50): `LockActor` used to acquire a DML statement's TM lock reactively, off the `oracle.dml.executed` event — which only fires *after* `OracleExecutor.execute()` has already run the INSERT/UPDATE/DELETE against storage (`emitForStatement`/`emitDml` are called post-execution). The lock therefore never protected anything; it was pure `V$LOCK`/`DBA_DML_LOCKS` bookkeeping applied after the fact, and `LockManager.acquireDmlLock`'s catch swallowed everything but `DeadlockError` on top of that. A session holding an explicit `LOCK TABLE t IN EXCLUSIVE MODE` (or any stronger mode) could not actually stop another session's plain DML on that table. Fixed: `OracleExecutor.dispatchStatement()` now calls a new `acquireDmlTableLock()` *before* dispatching to `executeInsert`/`executeUpdate`/`executeDelete`, and `LockManager.acquireDmlLock()` denies immediately (`ORA-00054`) on a real conflicting held lock instead of registering `lockTable()`'s usual fake-pending/wait-for-later entry — same "can't block, so fail fast rather than silently let it through" reasoning as item #49, and low blast radius since ordinary DML's own Row-X(3) mode never conflicts with another session's plain DML (only with an explicit stronger `LOCK TABLE`). `LockActor` no longer subscribes to `oracle.dml.executed` at all (release-side subscriptions — commit/rollback/disconnect — are unchanged and still correct). Explicit `LOCK TABLE`'s own fake-pending/`DBA_WAITERS`/`DBA_BLOCKERS`/`V$SESSION.BLOCKING_SESSION` observability (`execLockTable`, still calling `lockTable()` directly) was deliberately left untouched — those views are a deliberately-accepted simplification for that specific statement, not the MAJEUR-rated complaint this item targets. Not attempted: deadlock detection reachable via pure DML (rated MINEUR in the source audit, and structurally still unreachable regardless of acquisition timing since two Row-X(3) locks never conflict with each other in the compatibility matrix — deadlock among plain DML statements requires a modeled conflict path this simulator doesn't have).
 
+### Couches (`src/network/layers/`)
+
+Le modèle TCP/IP du simulateur (`docs/BRD-Modele-TCP-IP.md`, agent
+`mandeng`). Avant lui il n'existait **aucune notion de couche** : chaque
+protocole réimplémentait sa propre descente jusqu'au câble, et le BRD
+mesure la facture — cinq acheminements IPv4 indépendants, soixante-cinq
+fichiers écrivant directement sur le fil. Chaque phase est livrable
+seule et **ne change aucune sémantique protocolaire** : un moteur qui
+émettait un paquet correct émet le même après migration.
+
+- `link/LinkLayer.ts` (phase 1, complète) — la classification de la
+  destination, la réception, et l'émission. Les dix répertoires de
+  couche lien sont déclarés migrés ; des cas structurels échouent en
+  NOMMANT tout répertoire migré qui appellerait encore `sendFrame` ou
+  poserait un `srcMAC:` à la main.
+- `internet/InternetLayer.ts` (phase 2, incrément 1) — **la règle du TTL
+  vit en un seul lieu**. `decrementForForwarding` décrémente, décide de
+  l'expiration et recalcule la somme de contrôle d'en-tête ; les cinq
+  corps que le BRD avait comptés la lisent (`Router.forwardPacket`,
+  `Router.forwardMulticast`, `EndHost.forwardIPv4`,
+  `SwitchSvi.forwardIpPacket`, l'étape du pare-feu), chacun gardant ce
+  qui lui est propre — son journal, son compteur, et la façon dont il
+  annonce l'expiration. **Ce lot ne change aucun comportement, et c'est
+  vérifié plutôt qu'espéré** : j'avais d'abord lu `SwitchSvi` comme
+  décrémentant sans garde, donc comme émettant des paquets à TTL 0 ; sa
+  garde est en tête de `forwardIpPacket`, écrite `ttl <= 1` AVANT le
+  décrément là où le routeur écrit `ttl - 1 <= 0` APRÈS — deux
+  formulations équivalentes. Les cinq sites étaient d'accord ; la
+  déduplication est donc pure, et la sonde le dit dans son en-tête.
+
 ### Event/timing infra (`src/events/`)
 
 `EventBus`, `Scheduler`, `Signal`, `TimerSet`, `waitForEvent` — shared reactive primitives used by protocol actors (OSPF, IPSec, DHCP, BGP, etc.) that model asynchronous, timer-driven behavior.
