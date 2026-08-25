@@ -46,6 +46,7 @@ export interface NavigatorDeps {
   readonly validator: FortiValidator;
   readonly commitContext: () => FortiCommitContext;
   readonly onConfigured?: (change: FortiConfigChange) => void;
+  readonly expandVariables?: (value: string) => string;
 }
 
 const EMPTY = '';
@@ -192,14 +193,17 @@ export class FortiNavigator {
       );
     }
 
-    const cleaned = spec.secret === true
-      ? [decodeStoredSecret(values.map(unquote))]
-      : values.map(unquote);
-    const verdict = this.deps.validator.validate(spec, cleaned);
+    const verdict = this.deps.validator.validate(spec, values);
     if (!verdict.ok) return verdict.error;
 
-    object.set(attribute, verdict.values);
-    spec.appliesImmediately?.(verdict.values, {
+    const expanded = verdict.values.map(
+      value => this.deps.expandVariables?.(unquote(value)) ?? unquote(value));
+    const cleaned = spec.secret === true
+      ? [decodeStoredSecret(expanded)]
+      : expanded;
+
+    object.set(attribute, cleaned);
+    spec.appliesImmediately?.(cleaned, {
       ...this.deps.commitContext(), position: -1,
     });
     return EMPTY;

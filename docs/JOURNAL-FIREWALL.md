@@ -63,6 +63,7 @@
 | **F5** | **FortiOS phase 5 — VDOM et modes de deploiement** | 27 | ✅ |
 | **F28** | **FortiOS phase 28 — le plan d'administration écoute** | 15 | ✅ |
 | **F28b** | Tab développe la ligne entière (parité avec Cisco) | 10 | ✅ |
+| **F28c** | La page « CLI basics » : variables, guillemets, espaces | 12 | ✅ |
 | 3 | NAT objet ASA (`nat (dmz,outside) static`) | — | ⏳ |
 | 3 | `ShellFactory` + `DeviceFactory` | — | ⏳ |
 
@@ -2699,6 +2700,76 @@ est celle de FortiOS, `Command fail. Return code -61` précédé de
 
 Les deux cas de `fortios-routage-dynamique.test.ts` qui affirmaient BGP
 refusé sont remplacés par un cas qui l'affirme disponible.
+
+---
+
+## FortiOS — la page « CLI basics » decrite, la machine la fait
+
+**Agent `mandeng`.** Demande de l'utilisateur : continuer d'implementer
+les fonctions listees sur la page « CLI basics » de FortiOS.
+
+**Inventaire de la page, mesure par mesure.** Ce qui marchait DEJA est
+garde comme temoin plutot que reecrit : l'abreviation (`g sy stat`), la
+pagination (`config system console` / `set output more`), le filtre
+`| grep` avec `-i`, `-c` et `-f`, la sauvegarde et la restauration par
+TFTP. **Une premiere mesure avait accuse `grep -i` et `grep -f` a tort**
+— le laboratoire n'avait aucune interface configuree, donc le motif
+cherche etait vraiment absent ; le remesurer sur une configuration reelle
+les a innocentes, et les deux cas sont restes comme temoins.
+
+**Deux defauts, mesures.**
+
+*(1) Les variables d'environnement etaient rangees telles quelles.* La
+page en decrit trois, sensibles a la casse — `$USERFROM`, `$USERNAME`,
+`$SerialNum` — et donne l'exemple `set hostname $SerialNum`. Mesure :
+`get system status` repondait `Hostname: $SerialNum`. Elles sont
+desormais substituees **a l'ECRITURE**, au seul point ou une valeur est
+rangee (`FortiNavigator.set`), par un port etroit que la coquille
+remplit — le navigateur ne connait ni l'administrateur connecte ni le
+numero de serie, et n'a pas a les connaitre.
+
+*(2) Une valeur entre guillemets ne pouvait pas contenir d'espace*, alors
+que la page ecrit qu'un espace dans une chaine demande des guillemets ou
+une barre oblique inversee :
+
+```
+set alias "Lien WAN"  -> value parse error before 'Lien WAN'
+                         NOTE: expected WORD.
+edit "serveur web"    -> `edit` only applies inside a table opened
+                         with `config`      (alors qu'on y etait)
+```
+
+**La cause etait UNE, et c'est le defaut que ce depot passe son temps a
+refermer : il y avait DEUX decoupages de ligne.** `FortiShell` portait
+`splitTokens`, qui respecte les guillemets ; le socle portait `tokenize`,
+qui coupe sur tout blanc — et c'est le naif qui etait sur le chemin
+d'execution. Il n'en reste qu'un : `splitTokens` est DEPLACE dans
+`src/cli/CommandParser.ts` et `FortiShell` le lit de la. Une barre
+oblique inversee devant un espace y produit un jeton **entre
+guillemets**, parce que `Lien\ WAN` et `"Lien WAN"` veulent dire la meme
+chose — l'information « l'operateur a fait UNE valeur » est ainsi portee
+par le jeton lui-meme, jusqu'au bout.
+
+**Une regression introduite puis refermee dans le meme lot, et elle est
+instructive.** Faire valider les valeurs AVANT de retirer les guillemets
+a fait tomber 244 cas d'un coup : `FortiValidator` resolvait alors les
+REFERENCES avec les guillemets (`set srcintf "port1"` ne trouvait plus
+`port1`). Le correctif dit ce qu'il faut dire : le validateur juge la
+valeur NUE partout — reference, refus declare, predicat — et ne garde le
+jeton entier que pour la seule question ou le guillemet est
+l'information, « cette valeur est-elle un mot unique ? ».
+
+**Defaut trouve en chemin et corrige avec** : `serialNumber()` etait
+`serialNumberOf(this.name)`, donc **renommer la machine changeait son
+numero de serie**, et `set hostname $SerialNum` posait l'ancien numero
+puis en fabriquait un nouveau. Sur une vraie machine ce numero est grave
+et ne bouge jamais ; il est calcule une fois, a la construction.
+
+`fortios-cli-basics-doc.test.ts` (12 cas) est discrimine par
+`git stash push -- src/network/ src/cli/` : 7 tombent avant correctif, et
+les 5 qui passent des deux cotes sont les temoins, dont c'est l'objet.
+`e2e/fortigate-cli-basics.spec.ts` (2 cas verts) pose `$SerialNum` comme
+nom d'hote et cree `edit "serveur web"` dans le vrai navigateur.
 
 ---
 

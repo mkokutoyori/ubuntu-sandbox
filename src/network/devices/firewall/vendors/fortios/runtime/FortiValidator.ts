@@ -1,5 +1,5 @@
 import {
-  argumentAccepts, argumentPlaceholder, type ArgumentSpec,
+  argumentAccepts, argumentPlaceholder, quotedContent, type ArgumentSpec,
 } from '../../../../../../cli/ArgumentTypes';
 import { FortiMessages } from '../FortiMessages';
 import {
@@ -66,7 +66,7 @@ export class FortiValidator {
     if (!refusals) return null;
 
     for (const value of raw) {
-      const reason = refusals[value];
+      const reason = refusals[quotedContent(value)];
       if (reason) return FortiMessages.unimplementedValue(spec.name, value, reason);
     }
     return null;
@@ -75,21 +75,22 @@ export class FortiValidator {
   private checkOne(
     attribute: FortiAttributeSpec, part: ArgumentSpec, value: string,
   ): string | null {
+    const bare = quotedContent(value);
     if (attribute.referenceTo) {
-      if (attribute.referenceTo.some(target => this.resolve(target, value))) return null;
-      return FortiMessages.unknownReference(attribute.name, value, attribute.referenceTo[0]);
+      if (attribute.referenceTo.some(target => this.resolve(target, bare))) return null;
+      return FortiMessages.unknownReference(attribute.name, bare, attribute.referenceTo[0]);
     }
     if (attribute.valueRefusal) {
-      const refusal = attribute.valueRefusal(value, this.environment);
-      if (refusal !== null) return FortiMessages.valueError(value, refusal);
+      const refusal = attribute.valueRefusal(bare, this.environment);
+      if (refusal !== null) return FortiMessages.valueError(bare, refusal);
     }
     if (attribute.acceptsValue) {
-      if (attribute.acceptsValue(value)) return null;
+      if (attribute.acceptsValue(bare)) return null;
       return FortiMessages.valueError(
-        value, attribute.expectedValue ?? expected(part));
+        bare, attribute.expectedValue ?? expected(part));
     }
     if (argumentAccepts(part, value)) return null;
-    return FortiMessages.valueError(value, expected(part));
+    return FortiMessages.valueError(bare, expected(part));
   }
 }
 

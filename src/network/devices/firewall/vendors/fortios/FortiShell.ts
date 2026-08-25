@@ -68,6 +68,7 @@ import { utmLog } from './log/utmLog';
 import { renderFortiguardServiceStatus } from './diag/fortiguardRenderer';
 import { TftpClientSession } from '@/network/tftp/TftpSession';
 import { IPAddress } from '@/network/core/types';
+import { tokenize as splitTokens } from '@/cli/CommandParser';
 import { encryptConfig, decryptConfig, isEncryptedConfig } from './backup/ConfigEncryption';
 import {
   renderOspfDatabase, renderOspfInterfaces,
@@ -184,6 +185,7 @@ export class FortiShell {
         this.logConfigurationChange(change);
         this.fw.refreshLiveState();
       },
+      expandVariables: (value) => this.expandVariables(value),
     });
     this.socle = new FortiSocle({
       tree: this.tree,
@@ -421,6 +423,13 @@ export class FortiShell {
     const text = outcome.handled ? outcome.output : this.refusal(line);
     this.syncActiveVdom();
     return text;
+  }
+
+  private expandVariables(value: string): string {
+    return value
+      .split('$SerialNum').join(this.fw.serialNumber())
+      .split('$USERNAME').join(this.adminName ?? '')
+      .split('$USERFROM').join(this.administrativeInterface());
   }
 
   setAdminIdentity(name: string | null): void {
@@ -1220,19 +1229,4 @@ function hasOpenQuote(text: string): boolean {
   return quoted;
 }
 
-function splitTokens(line: string): string[] {
-  const out: string[] = [];
-  let current = '';
-  let quoted = false;
 
-  for (const character of line) {
-    if (character === '"') { quoted = !quoted; current += character; continue; }
-    if (!quoted && /\s/.test(character)) {
-      if (current.length > 0) { out.push(current); current = ''; }
-      continue;
-    }
-    current += character;
-  }
-  if (current.length > 0) out.push(current);
-  return out;
-}

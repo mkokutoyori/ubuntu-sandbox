@@ -132,10 +132,16 @@ export const ARGUMENT_TYPES: Readonly<Record<ArgumentType, ArgumentTypeDefinitio
  * serait ambigu avec `serve-only` alors qu'il existe pour lui-meme — et
  * un prefixe partage par plusieurs ne designe rien.
  */
+export function quotedContent(token: string): string {
+  return token.length >= 2 && token.startsWith('"') && token.endsWith('"')
+    ? token.slice(1, -1)
+    : token;
+}
+
 export function resolveEnumValue(
-  spec: ArgumentSpec, token: string,
+  spec: ArgumentSpec, raw: string,
 ): string | undefined {
-  const bas = token.toLowerCase();
+  const bas = quotedContent(raw).toLowerCase();
   const exact = spec.values?.find(value => value.keyword.toLowerCase() === bas);
   if (exact) return exact.keyword;
 
@@ -159,7 +165,16 @@ export function outsideEveryAnnouncedRange(
   });
 }
 
-export function argumentAccepts(spec: ArgumentSpec, token: string): boolean {
+export function isQuoted(token: string): boolean {
+  return token.length >= 2 && token.startsWith('"') && token.endsWith('"');
+}
+
+export function argumentAccepts(spec: ArgumentSpec, raw: string): boolean {
+  const token = quotedContent(raw);
+  if (isQuoted(raw) && (spec.type === 'WORD' || spec.type === 'ENUM')
+    && spec.values === undefined && spec.pattern === undefined) {
+    return token.length > 0;
+  }
   const named = spec.values !== undefined
     && resolveEnumValue(spec, token) !== undefined;
   if (named) return true;

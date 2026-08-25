@@ -1,5 +1,5 @@
 import {
-  argumentAccepts, outsideEveryAnnouncedRange, resolveEnumValue,
+  argumentAccepts, isQuoted, outsideEveryAnnouncedRange, resolveEnumValue,
 } from './ArgumentTypes';
 import type { CliSession } from './CliSession';
 import type { ReachabilityOptions } from './CommandTable';
@@ -19,7 +19,49 @@ export type ParseResult =
   };
 
 export function tokenize(input: string): string[] {
-  return input.trim().split(/\s+/).filter(Boolean);
+  const out: string[] = [];
+  let current = '';
+  let quoted = false;
+  let started = false;
+  let escaped = false;
+
+  const flush = () => {
+    out.push(escaped && !isQuoted(current) ? `"${current}"` : current);
+    current = '';
+    started = false;
+    escaped = false;
+  };
+
+  for (let at = 0; at < input.length; at++) {
+    const character = input[at];
+    if (character === '\\' && input[at + 1] === ' ') {
+      current += ' ';
+      started = true;
+      escaped = true;
+      at++;
+      continue;
+    }
+    if (character === '"') {
+      quoted = !quoted;
+      current += character;
+      started = true;
+      continue;
+    }
+    if (!quoted && /\s/.test(character)) {
+      if (started) flush();
+      continue;
+    }
+    current += character;
+    started = true;
+  }
+  if (started) flush();
+  return out;
+}
+
+export function tokenContent(token: string): string {
+  return token.length >= 2 && token.startsWith('"') && token.endsWith('"')
+    ? token.slice(1, -1)
+    : token;
 }
 
 export function parseCommand(
