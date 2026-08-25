@@ -70,7 +70,7 @@ import {
   buildTrackConfigCommands, registerTrackShowCommands, trackSubmodeSpecs,
 } from './cisco/CiscoTrackCommands';
 import { KeyChainRepository } from '../inspection/config/KeyChainRepository';
-import { specsFromTrieRegistrations, type AdapterKeyword } from '@/cli/commands/trieAdapter';
+import { specsFromTrieRegistrations } from '@/cli/commands/trieAdapter';
 import {
   keyChainSubmodeSpecs, keyChainKeySubmodeSpecs,
 } from './cisco/CiscoKeyChainCommands';
@@ -176,8 +176,9 @@ import {
   registerNATPrivilegedCommands, registerNATShowCommands, natShowSpecs, natExecSpecs,
 } from './cisco/CiscoNATCommands';
 import { iosShortInterfaceName } from '@/network/devices/inspection/InterfaceStatusView';
-import { SOCLE, ROUTEUR_SEUL, appliquerContinuations } from './cisco/ciscoContinuations';
-import { descriptionForKeyword } from './CliKeywordDescriptions';
+import {
+  SOCLE, ROUTEUR_SEUL, appliquerContinuations, continuationsPourLeSocle,
+} from './cisco/ciscoContinuations';
 
 const HORS_PLATEFORME_ISR: ReadonlySet<string> = new Set(['vxlan', 'nve', 'mls']);
 
@@ -194,22 +195,6 @@ Readonly<Record<string, ArgumentSpec | readonly ArgumentSpec[] | null>> = {
   description: { name: 'texte', type: 'REST', literal: 'LINE',
     description: 'Description of this VRF' },
 };
-
-function continuationsDeclarees(path: string): readonly AdapterKeyword[] | undefined {
-  const mots = new Set<string>();
-  for (const table of [SOCLE, ROUTEUR_SEUL]) {
-    for (const portee of ['privileged', 'user'] as const) {
-      for (const mot of table[portee]?.[path] ?? []) mots.add(mot);
-    }
-  }
-  if (mots.size === 0) return undefined;
-  return [...mots].sort().map(keyword => ({
-    keyword,
-    description: descriptionForKeyword(keyword),
-    afterArguments: true,
-    argument: null,
-  }));
-}
 
 const ROUTER_SHOW_VIEWS: ReadonlySet<string> = new Set([
   'show tech-support', 'show bfd summary', 'show table-map',
@@ -460,7 +445,7 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
         modes: ['user', 'privileged'], minPrivilege: 1,
         skip: (path) => !ROUTER_SHOW_VIEWS.has(path),
         modesFor: (path) => path === 'show tech-support' ? ['privileged'] : undefined,
-        keywordsFor: (path) => continuationsDeclarees(path),
+        keywordsFor: (path) => continuationsPourLeSocle(path, SOCLE, ROUTEUR_SEUL),
         restDescriptionFor: (path) => ROUTER_SHOW_ARGUMENTS[path],
         restLiteralFor: (path) => ROUTER_SHOW_ARGUMENTS[path] === undefined ? undefined : 'WORD',
       },

@@ -1,4 +1,5 @@
 import type { CommandTrie } from '../CommandTrie';
+import { descriptionForKeyword } from '../CliKeywordDescriptions';
 
 /**
  * Les suites d'un noeud glouton, ECRITES.
@@ -236,6 +237,31 @@ export const COMMUTATEUR_SEUL: ContinuationTable = {
     'show monitor session': ['all'],
   },
 };
+
+export interface SocleContinuation {
+  readonly keyword: string;
+  readonly description: string;
+  readonly afterArguments: true;
+  readonly argument: null;
+}
+
+export function continuationsPourLeSocle(
+  path: string, ...tables: readonly ContinuationTable[]
+): readonly SocleContinuation[] | undefined {
+  const mots = new Set<string>();
+  for (const table of tables) {
+    for (const chemins of Object.values(table)) {
+      for (const mot of chemins[path] ?? []) mots.add(mot);
+    }
+  }
+  if (mots.size === 0) return undefined;
+  return [...mots].sort().map(keyword => ({
+    keyword,
+    description: descriptionForKeyword(keyword),
+    afterArguments: true as const,
+    argument: null,
+  }));
+}
 
 export function appliquerContinuations(
   tries: Readonly<Record<string, CommandTrie | undefined>>,
