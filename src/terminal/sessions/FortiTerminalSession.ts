@@ -1,6 +1,6 @@
 import type { ICLIDevice } from '@/network';
 import { CLITerminalSession } from './CLITerminalSession';
-import { TerminalTheme, SessionType } from './TerminalSession';
+import { TerminalTheme, SessionType, type KeyEvent } from './TerminalSession';
 import { BSD_TELNET, type TelnetDialect } from '@/terminal/subshells/telnetDialect';
 import { CyclingPolicy, type CompletionPolicy } from '@/terminal/completion';
 import { Firewall } from '@/network/devices/firewall/Firewall';
@@ -62,6 +62,17 @@ export class FortiTerminalSession extends CLITerminalSession {
   override markReconnected(notice?: string): void {
     super.markReconnected(notice);
     this.rearmConsole();
+  }
+
+  protected override handleNormalKey(e: KeyEvent): boolean {
+    if (e.key === 'Escape' && !e.ctrlKey && !e.altKey && !e.metaKey) {
+      const shell = (this.device as FortiGate).getShell?.();
+      if (shell?.abortContinuation()) {
+        this.setInput('');
+        return true;
+      }
+    }
+    return super.handleNormalKey(e);
   }
 
   override platformLabel(): string { return 'Fortinet FortiOS'; }

@@ -386,16 +386,21 @@ export class FortiShell {
       this.socle.suggestions(helpPrefix(inputBeforeQuestion), 'QUESTION_MARK'));
   }
 
+  abortContinuation(): boolean {
+    if (this.continuation === null) return false;
+    this.continuation = null;
+    return true;
+  }
+
   execute(rawLine: string): string {
     this.claimTree();
     if (this.continuation !== null) {
-      this.continuation = `${this.continuation}\n${rawLine}`;
-      if (hasOpenQuote(this.continuation)) return '';
-      const whole = this.continuation;
+      const merged = joinContinuation(this.continuation, rawLine);
+      if (stillOpen(merged)) { this.continuation = merged; return ''; }
       this.continuation = null;
-      return this.execute(whole);
+      return this.execute(merged);
     }
-    if (hasOpenQuote(rawLine)) {
+    if (stillOpen(rawLine)) {
       this.continuation = rawLine;
       return '';
     }
@@ -1216,6 +1221,21 @@ export class FortiShell {
 
 function helpPrefix(input: string): string {
   return input.replace(/^\s+/, '');
+}
+
+const TRAILING_BACKSLASH = /(^|[^\\])\\\s*$/;
+
+function endsWithContinuation(line: string): boolean {
+  return TRAILING_BACKSLASH.test(line) && !hasOpenQuote(line);
+}
+
+function stillOpen(buffer: string): boolean {
+  return hasOpenQuote(buffer) || endsWithContinuation(buffer);
+}
+
+function joinContinuation(buffer: string, next: string): string {
+  if (!endsWithContinuation(buffer)) return `${buffer}\n${next}`;
+  return `${buffer.replace(/\s*\\\s*$/, '')} ${next.replace(/^\s+/, '')}`;
 }
 
 function hasOpenQuote(text: string): boolean {

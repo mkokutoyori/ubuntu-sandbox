@@ -64,6 +64,19 @@ test.describe('FortiGate — ce que la page « CLI basics » decrit', () => {
     await waitForText(page, 'Hostname: FGVMEV');
   });
 
+  test('une ligne terminee par `\\` continue sur la suivante', async ({ page }) => {
+    const id = await poserFortiGate(page);
+    await openTerminal(page, id);
+
+    for (const ligne of [
+      'config system \\', 'interface', 'edit "port1"',
+      'set allowaccess ping \\', 'https ssh', 'next', 'end',
+      'show system interface | grep allowaccess',
+    ]) await typeCmd(page, ligne);
+
+    await waitForText(page, 'set allowaccess ping https ssh');
+  });
+
   test('une valeur entre guillemets peut contenir un espace', async ({ page }) => {
     const id = await poserFortiGate(page);
     await openTerminal(page, id);

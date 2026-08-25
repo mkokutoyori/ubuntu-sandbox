@@ -65,6 +65,7 @@
 | **F28b** | Tab développe la ligne entière (parité avec Cisco) | 10 | ✅ |
 | **F28c** | La page « CLI basics » : variables, guillemets, espaces | 12 | ✅ |
 | **F28d** | Raccourcis d'édition de ligne (Ctrl+A/E/B/F/D/P/N) | 10+6 | ✅ |
+| **F28e** | Saisie multiligne (`\` en fin de ligne, Échap abandonne) | 10 | ✅ |
 | 3 | NAT objet ASA (`nat (dmz,outside) static`) | — | ⏳ |
 | 3 | `ShellFactory` + `DeviceFactory` | — | ⏳ |
 
@@ -2701,6 +2702,66 @@ est celle de FortiOS, `Command fail. Return code -61` précédé de
 
 Les deux cas de `fortios-routage-dynamique.test.ts` qui affirmaient BGP
 refusé sont remplacés par un cas qui l'affirme disponible.
+
+---
+
+## FortiOS — la saisie multiligne (`\` en fin de ligne)
+
+**Agent `mandeng`.** Objectif fixé par l'utilisateur : couvrir toute la
+page « CLI basics », en commençant par la saisie multiligne.
+
+**Ce que la page dit**, et c'est ce qui est implémenté : « *For each line
+that you want to continue in a multiline command, terminate it with a
+backslash ( \ ). To complete the command, enter a space instead of a
+backslash, and then press Enter.* » La section « Command syntax » y
+renvoie : « *Exceptions include multiline command lines, which can be
+entered using an escape sequence.* » Et la touche Échap abandonne une
+saisie interactive en cours.
+
+**Mesure de départ** : le mécanisme n'existe pas.
+
+```
+config system \   -> unknown configuration path "system \"
+interface         -> unknown command "interface"
+```
+
+et toute la suite du bloc s'effondre, faute d'être entrée dans la table.
+
+**Une accusation évitée par la remesure.** Le dépôt porte DÉJÀ une
+continuation — celle du guillemet ouvert — et la première lecture la
+croyait cassée : `set alias "deux` puis `mots"` semblait perdre la
+seconde moitié. C'était le `| grep` de la sonde qui ne montrait qu'une
+ligne. Remesurée sans filtre, elle rend `set alias "deux\nmots"` **et un
+second pare-feu qui rejoue cette configuration porte la même valeur**.
+Elle reste donc comme témoin, et rien n'a été réécrit.
+
+**Une seule notion de « ligne encore ouverte ».** Plutôt que d'ajouter un
+second tampon à côté de celui du guillemet, `stillOpen(buffer)` répond
+pour les deux, et `joinContinuation` sait comment chacune se recolle :
+le guillemet GARDE le saut de ligne (il fait partie de la valeur — c'est
+ce qui permet de coller un certificat), la barre le REMPLACE par une
+espace, exactement ce que la phrase de Fortinet décrit. Les deux se
+combinent donc sans code supplémentaire, et un cas le vérifie.
+
+**Deux décisions.** Une barre au MILIEU d'une ligne n'est pas une
+continuation — seule celle qui termine la ligne l'est, et `\ ` reste
+l'espace échappé du lot précédent, ce qu'un témoin garde. Et **Échap
+abandonne** : `abortContinuation()` sur la coquille, appelé par la
+session FortiOS, qui vide aussi la ligne — sans quoi une saisie
+interrompue resterait en travers de la suivante.
+
+`fortios-saisie-multiligne.test.ts` (10 cas) est discriminé par
+`git stash push -- src/network/ src/terminal/` : 7 tombent avant
+correctif, et les 3 qui passent des deux côtés sont nommés dans
+l'en-tête. `e2e/fortigate-cli-basics.spec.ts` passe à 3 cas et joue le
+bloc coupé en deux dans le vrai navigateur.
+
+**Où en est la page.** Tout est couvert : aide `?`, complétion Tab,
+abréviation, historique, raccourcis d'édition, variables
+d'environnement, caractères spéciaux et guillemets, `| grep`, pagination,
+sauvegarde/restauration, et maintenant la saisie multiligne. Reste la
+seule entrée du `TODO.md` — `CTRL-V` pour un `?` littéral — impossible
+dans un navigateur sans casser le collage.
 
 ---
 
