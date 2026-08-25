@@ -35,7 +35,19 @@ interface Cli {
   executeCommand(command: string): Promise<string>;
   cliTabComplete(input: string): string;
   cliTabCandidates(input: string): string[];
-  getShell(): { enumerateAllExecutablePaths(): string[] };
+  getShell(): { enumerateAllExecutablePaths(): string[]; migratedPaths(): readonly string[] };
+}
+
+/*
+ * Le balayage lit les DEUX moteurs. Ne lire que le trie faisait retrecir
+ * la surface balayee a chaque famille migree — le garde-fou de volume
+ * l'a attrape en tombant a 47 quand `router ospf|rip|eigrp|bgp` est
+ * passe au socle — et aurait fini par ne plus rien prouver, justement
+ * sur la moitie du vocabulaire ou le defaut d'origine vivait.
+ */
+function toutesLesCommandes(cli: Cli): string[] {
+  const shell = cli.getShell();
+  return [...new Set([...shell.enumerateAllExecutablePaths(), ...shell.migratedPaths()])];
 }
 
 let serial = 0;
@@ -96,7 +108,7 @@ describe('le balayage — aucune commande ne garde son abreviation', () => {
     const fautes: string[] = [];
     const vues = new Set<string>();
 
-    for (const chemin of device.getShell().enumerateAllExecutablePaths()) {
+    for (const chemin of toutesLesCommandes(device)) {
       const mots = chemin.split(' ');
       if (mots.length < 2 || mots[0].length < 4) continue;
       const abrege = `${mots[0].slice(0, 3)} ${mots[1].slice(0, Math.max(2, mots[1].length - 1))}`;
@@ -108,7 +120,7 @@ describe('le balayage — aucune commande ne garde son abreviation', () => {
     }
 
     // Sans frappe balayee, le cas ne prouverait rien.
-    expect(vues.size).toBeGreaterThan(50);
+    expect(vues.size).toBeGreaterThan(300);
     expect(fautes, fautes.join('\n')).toEqual([]);
   }, 120_000);
 

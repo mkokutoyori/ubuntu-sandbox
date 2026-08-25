@@ -204,9 +204,6 @@ const DAI_PLACES: Readonly<Record<string, ArgumentSpec>> = {
   'ip arp inspection vlan': {
     name: 'vlans', type: 'REST', description: 'VLAN range', literal: 'WORD',
   },
-  'no ip arp inspection vlan': {
-    name: 'vlans', type: 'REST', description: 'VLAN range', literal: 'WORD',
-  },
   'errdisable recovery interval': {
     name: 'secondes', type: 'INT', range: [30, 86400],
     description: 'Timer interval in seconds',
@@ -327,6 +324,16 @@ const SWITCHPORT_KEYWORDS: Readonly<Record<string, readonly AdapterKeyword[]>> =
   ],
 };
 
+const CATALYST_INTERFACE_TYPES: readonly { keyword: string; description: string }[] = [
+  { keyword: 'FastEthernet', description: 'FastEthernet IEEE 802.3' },
+  { keyword: 'GigabitEthernet', description: 'GigabitEthernet IEEE 802.3z' },
+  { keyword: 'TenGigabitEthernet', description: 'TenGigabitEthernet IEEE 802.3ae' },
+  { keyword: 'Loopback', description: 'Loopback interface' },
+  { keyword: 'Port-channel', description: 'Ethernet Channel of interfaces' },
+  { keyword: 'Vlan', description: 'Catalyst VLANs' },
+  { keyword: 'range', description: 'interface range command' },
+];
+
 const PORT_SECURITY_PLACES: Readonly<Record<string, ArgumentSpec | readonly ArgumentSpec[]>> = {
   'switchport port-security maximum': {
     name: 'maximum', type: 'INT', range: [1, 3072],
@@ -341,13 +348,6 @@ const PORT_SECURITY_PLACES: Readonly<Record<string, ArgumentSpec | readonly Argu
     ],
   },
   'switchport port-security mac-address': {
-    name: 'adresse', type: 'MAC_ADDR', description: '48 bit mac address',
-    alternatives: [
-      { keyword: 'H.H.H', description: '48 bit mac address' },
-      { keyword: 'sticky', description: 'Configure dynamic secure addresses as sticky' },
-    ],
-  },
-  'no switchport port-security mac-address': {
     name: 'adresse', type: 'MAC_ADDR', description: '48 bit mac address',
     alternatives: [
       { keyword: 'H.H.H', description: '48 bit mac address' },
@@ -2325,7 +2325,68 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
       ...this.vtpConfigSpecs(),
       ...this.daiSpecs(),
       ...this.aggregationSpecs(),
+      ...this.interfaceEntrySpecs(),
     ];
+  }
+
+  /*
+   * `interface <nom>` s'ecrivait DEUX fois sur ce commutateur comme sur
+   * le routeur, et les deux avaient diverge de la meme facon : la copie
+   * du sous-mode n'appelait pas `ensureSvi`, donc `interface Vlan10`
+   * tapee depuis une autre interface selectionnait un SVI que personne
+   * n'avait cree, et ne bornait pas le numero, donc `interface Vlan5000`
+   * y etait acceptee alors que la meme frappe est refusee un mode plus
+   * haut.
+   */
+  private registerInterfaceEntry(trie: CommandTrie): void {
+    trie.registerGreedy('interface', 'Select an interface to configure', (args) => {
+      if (args.length < 1) return CISCO_ERRORS.INCOMPLETE;
+
+      if (args[0].toLowerCase() === 'range') {
+        return this.handleInterfaceRange(args.slice(1));
+      }
+
+      const virt = this.virtualInterfaceName(args.join(' '));
+      if (virt) {
+        const vlan = this.sviVlanId(virt);
+        if (vlan !== null) {
+          if (vlan < 1 || vlan > 4094) return CISCO_ERRORS.INVALID_INPUT;
+          this.d().ensureSvi(vlan);
+        }
+        this.selectedInterface = virt;
+        this.selectedInterfaceRange = [virt];
+        this.mode = 'config-if';
+        return '';
+      }
+
+      const portName = this.resolveInterfaceName(args[0]);
+      if (!portName || !this.d().getPort(portName)) {
+        // Un TYPE sans numero est un nom INCOMPLET, pas un nom invalide.
+        // L'aide vient de proposer `FastEthernet` : lui repondre que ce
+        // nom n'existe pas la dementirait, alors qu'il manque seulement
+        // le numero. Le routeur repond deja ainsi.
+        if (args.length === 1 && estTypeSansNumero(args[0])) return CISCO_ERRORS.INCOMPLETE;
+        return `% Invalid interface name "${args[0]}"`;
+      }
+      this.selectedInterface = portName;
+      this.selectedInterfaceRange = [portName];
+      this.mode = 'config-if';
+      return '';
+    });
+    trie.addCompletionKeywords('interface',
+      CATALYST_INTERFACE_TYPES.map(t => ({ ...t, leadingOnly: true })));
+  }
+
+  private interfaceEntrySpecs(): CommandSpec[] {
+    return specsFromTrieRegistrations(
+      (collector) => this.registerInterfaceEntry(collector as unknown as CommandTrie),
+      {
+        modes: ['config', 'config-if', 'config-subif'], minPrivilege: 15,
+        argumentFor: () => ({
+          name: 'interface', type: 'REST', description: 'Interface to configure',
+          literal: 'IFACE', alternatives: CATALYST_INTERFACE_TYPES,
+        }),
+      });
   }
 
   private aggregationSpecs(): CommandSpec[] {
@@ -3180,52 +3241,7 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
       return ok ? '' : `% VLAN ${id} not found.`;
     });
 
-    this.configTrie.registerGreedy('interface', 'Select an interface to configure', (args) => {
-      if (args.length < 1) return CISCO_ERRORS.INCOMPLETE;
-
-      if (args[0].toLowerCase() === 'range') {
-        return this.handleInterfaceRange(args.slice(1));
-      }
-
-      const virt = this.virtualInterfaceName(args.join(' '));
-      if (virt) {
-        const vlan = this.sviVlanId(virt);
-        if (vlan !== null) {
-          if (vlan < 1 || vlan > 4094) return CISCO_ERRORS.INVALID_INPUT;
-          this.d().ensureSvi(vlan);
-        }
-        this.selectedInterface = virt;
-        this.selectedInterfaceRange = [virt];
-        this.mode = 'config-if';
-        return '';
-      }
-
-      const portName = this.resolveInterfaceName(args[0]);
-      if (!portName || !this.d().getPort(portName)) {
-        // Un TYPE sans numero est un nom INCOMPLET, pas un nom invalide.
-        // L'aide vient de proposer `FastEthernet` : lui repondre que ce
-        // nom n'existe pas la dementirait, alors qu'il manque seulement
-        // le numero. Le routeur repond deja ainsi.
-        if (args.length === 1 && estTypeSansNumero(args[0])) return CISCO_ERRORS.INCOMPLETE;
-        return `% Invalid interface name "${args[0]}"`;
-      }
-      this.selectedInterface = portName;
-      this.selectedInterfaceRange = [portName];
-      this.mode = 'config-if';
-      return '';
-    });
-
-    // `leadingOnly` : un type d'interface exclut les autres — voir la
-    // meme declaration cote routeur.
-    this.configTrie.addCompletionKeywords('interface', [
-      { keyword: 'FastEthernet', description: 'FastEthernet IEEE 802.3', leadingOnly: true },
-      { keyword: 'GigabitEthernet', description: 'GigabitEthernet IEEE 802.3z', leadingOnly: true },
-      { keyword: 'TenGigabitEthernet', description: 'TenGigabitEthernet IEEE 802.3ae', leadingOnly: true },
-      { keyword: 'Loopback', description: 'Loopback interface', leadingOnly: true },
-      { keyword: 'Port-channel', description: 'Ethernet Channel of interfaces', leadingOnly: true },
-      { keyword: 'Vlan', description: 'Catalyst VLANs', leadingOnly: true },
-      { keyword: 'range', description: 'interface range command', leadingOnly: true },
-    ]);
+    this.registerInterfaceEntry(this.configTrie);
 
     this.configTrie.registerGreedy('mac address-table aging-time', 'Set MAC address aging time', (args) => {
       if (args.length < 1) return CISCO_ERRORS.INCOMPLETE;
@@ -3399,32 +3415,6 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
   // ─── Config-if Commands ───────────────────────────────────────────
 
   private registerConfigIfCommands(trie: CommandTrie): void {
-    // Cisco IOS: `interface X` from config-if switches to the new interface
-    trie.registerGreedy('interface', 'Select an interface to configure', (args) => {
-      if (args.length < 1) return CISCO_ERRORS.INCOMPLETE;
-      if (args[0].toLowerCase() === 'range') {
-        return this.handleInterfaceRange(args.slice(1));
-      }
-      const virt = this.virtualInterfaceName(args.join(' '));
-      if (virt) {
-        this.selectedInterface = virt;
-        this.selectedInterfaceRange = [virt];
-        return '';
-      }
-      const portName = this.resolveInterfaceName(args[0]);
-      if (!portName || !this.d().getPort(portName)) {
-        // Un TYPE sans numero est un nom INCOMPLET, pas un nom invalide.
-        // L'aide vient de proposer `FastEthernet` : lui repondre que ce
-        // nom n'existe pas la dementirait, alors qu'il manque seulement
-        // le numero. Le routeur repond deja ainsi.
-        if (args.length === 1 && estTypeSansNumero(args[0])) return CISCO_ERRORS.INCOMPLETE;
-        return `% Invalid interface name "${args[0]}"`;
-      }
-      this.selectedInterface = portName;
-      this.selectedInterfaceRange = [portName];
-      return '';
-    });
-
     trie.register('switchport protected',
       'Isolate this port from other protected ports', () =>
         this.applyToSelectedInterfaces(portName => {

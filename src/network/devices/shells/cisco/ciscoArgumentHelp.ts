@@ -174,7 +174,6 @@ function describeArgumentTypes(tries: ArgumentHelpTries): void {
   tries.config.describeArgs('clock set', [
     { name: 'time', type: 'WORD', description: 'Current time', literal: 'hh:mm:ss' },
   ]);
-  tries.configIf.describeArgs('interface', [IFACE('Interface to configure')]);
   tries.config.describeArgs('no alias', [
     ENUM('mode', 'Command mode of the alias', [
       ['configure', 'Global configuration mode'],
@@ -257,9 +256,6 @@ function describeArgumentTypes(tries: ArgumentHelpTries): void {
   ] as const) {
     tries.configRouterOnly.describeArgs(path, [WORD('name', description)]);
   }
-  tries.config.describeArgs('router bgp', [
-    INT('as-number', [1, 65535], 'Autonomous system number'),
-  ]);
   tries.config.describeArgs('track', [
     INT('object', [1, 1000], 'Tracked object number'),
   ]);
@@ -586,12 +582,6 @@ export function describeCiscoArguments(tries: ArgumentHelpTries): void {
   tries.config.describeArgs('ip dhcp excluded-address', [
     IP('low', 'Low IP address'),
     { ...IP('high', 'High IP address'), optional: true },
-  ]);
-  tries.config.describeArgs('router ospf', [
-    INT('process-id', [1, 65535], 'Process ID'),
-  ]);
-  tries.config.describeArgs('router eigrp', [
-    INT('as-number', [1, 65535], 'Autonomous system number'),
   ]);
   tries.config.describeArgs('hostname', [
     WORD('name', 'This system\'s network name'),

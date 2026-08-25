@@ -119,18 +119,18 @@ export interface CiscoShellContext {
   setSelectedGdoiGroup(g: string | null): void;
 }
 
-// ─── Global Config Mode Commands ─────────────────────────────────────
+export const INTERFACE_TYPES: readonly { keyword: string; description: string }[] = [
+  { keyword: 'GigabitEthernet', description: 'GigabitEthernet IEEE 802.3z' },
+  { keyword: 'FastEthernet', description: 'FastEthernet IEEE 802.3u' },
+  { keyword: 'Ethernet', description: 'IEEE 802.3' },
+  { keyword: 'Loopback', description: 'Loopback interface' },
+  { keyword: 'Serial', description: 'Serial' },
+  { keyword: 'Tunnel', description: 'Tunnel interface' },
+  { keyword: 'Port-channel', description: 'Ethernet Channel of interfaces' },
+  { keyword: 'BVI', description: 'Bridge-Group Virtual Interface' },
+];
 
-export function buildConfigCommands(trie: CommandTrie, ctx: CiscoShellContext): void {
-  trie.register('service dhcp', 'Enable DHCP service', () => {
-    ctx.r()._getDHCPServerInternal().enable();
-    return '';
-  });
-  trie.register('no service dhcp', 'Disable DHCP service', () => {
-    ctx.r()._getDHCPServerInternal().disable();
-    return '';
-  });
-
+export function registerInterfaceEntry(trie: CommandTrie, ctx: CiscoShellContext): void {
   trie.registerGreedy('interface', 'Select an interface to configure', (args) => {
     if (args.length < 1) return '% Incomplete command.';
     const typeIdx = args.findIndex((a) => a.toLowerCase() === 'type');
@@ -173,6 +173,23 @@ export function buildConfigCommands(trie: CommandTrie, ctx: CiscoShellContext): 
     ctx.setMode(/\.\d+$/.test(ifName) ? 'config-subif' : 'config-if');
     return '';
   });
+  trie.registerSuggestions('interface',
+    INTERFACE_TYPES.map(t => ({ ...t, leadingOnly: true })));
+}
+
+// ─── Global Config Mode Commands ─────────────────────────────────────
+
+export function buildConfigCommands(trie: CommandTrie, ctx: CiscoShellContext): void {
+  trie.register('service dhcp', 'Enable DHCP service', () => {
+    ctx.r()._getDHCPServerInternal().enable();
+    return '';
+  });
+  trie.register('no service dhcp', 'Disable DHCP service', () => {
+    ctx.r()._getDHCPServerInternal().disable();
+    return '';
+  });
+
+  registerInterfaceEntry(trie, ctx);
 
   trie.registerGreedy('no interface', 'Remove a virtual interface', (args) => {
     if (args.length < 1) return '% Incomplete command.';
@@ -274,21 +291,8 @@ export function buildConfigCommands(trie: CommandTrie, ctx: CiscoShellContext): 
     return '';
   });
 
-  // `leadingOnly` : un type d'interface EXCLUT les autres. Sans lui, la
-  // liste etait reproposee apres qu'on en eut choisi un, et `interface
-  // Ethernet ?` offrait `FastEthernet`, `GigabitEthernet`, `Serial`… —
-  // sept lignes que la machine refuse ensuite. Il en va de meme des
-  // sortes de ligne.
-  trie.registerSuggestions('interface', [
-    { keyword: 'GigabitEthernet',  description: 'GigabitEthernet IEEE 802.3z', leadingOnly: true },
-    { keyword: 'FastEthernet',     description: 'FastEthernet IEEE 802.3u', leadingOnly: true },
-    { keyword: 'Ethernet',         description: 'IEEE 802.3', leadingOnly: true },
-    { keyword: 'Loopback',         description: 'Loopback interface', leadingOnly: true },
-    { keyword: 'Serial',           description: 'Serial', leadingOnly: true },
-    { keyword: 'Tunnel',           description: 'Tunnel interface', leadingOnly: true },
-    { keyword: 'Port-channel',     description: 'Ethernet Channel of interfaces', leadingOnly: true },
-    { keyword: 'BVI',              description: 'Bridge-Group Virtual Interface', leadingOnly: true },
-  ]);
+  // `leadingOnly` : une sorte de ligne EXCLUT les autres. Sans lui, la
+  // liste etait reproposee apres qu'on en eut choisi une.
   trie.registerSuggestions('line', [
     { keyword: 'console', description: 'Primary terminal line', leadingOnly: true },
     { keyword: 'vty',     description: 'Virtual terminal', leadingOnly: true },
@@ -709,37 +713,6 @@ export function buildConfigIfCommands(trie: CommandTrie, ctx: CiscoShellContext)
     if (args[0]) ctx.r().getPort(iface)?.setPolicyRouteMap(args[0]);
     return '';
   });
-  trie.registerGreedy('interface', 'Select an interface to configure', (args) => {
-    if (args.length < 1) return '% Incomplete command.';
-    const raw = args.join(' ');
-    let ifName = resolveInterfaceName(ctx.r(), raw);
-    if (!ifName) {
-      const combined = raw.replace(/\s+/g, '');
-      const vMatch = combined.match(/^(loopback|tunnel|serial)([\d/.]+)$/i);
-      if (vMatch) {
-        const typeMap: Record<string, string> = { 'loopback': 'Loopback', 'tunnel': 'Tunnel', 'serial': 'Serial' };
-        const fullName = `${typeMap[vMatch[1].toLowerCase()]}${vMatch[2]}`;
-        ctx.r()._createVirtualInterface(fullName);
-        ifName = fullName;
-      }
-      if (!ifName) {
-        const subMatch = combined.match(/^([a-z]+\d+\/\d+(?:\/\d+)?)\.(\d+)$/i);
-        if (subMatch) {
-          const baseName = resolveInterfaceName(ctx.r(), subMatch[1]);
-          if (baseName) {
-            const fullName = `${baseName}.${subMatch[2]}`;
-            ctx.r()._createVirtualInterface(fullName);
-            ifName = fullName;
-          }
-        }
-      }
-      if (!ifName) return formatInvalidInput(10);
-    }
-    ctx.setSelectedInterface(ifName);
-    ctx.setMode('config-if');
-    return '';
-  });
-
   function refusSousInterfaceSansEncapsulation(c: CiscoShellContext): string | null {
     const nom = c.getSelectedInterface();
     if (!nom || !/\.\d+$/.test(nom)) return null;

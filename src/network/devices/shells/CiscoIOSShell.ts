@@ -96,6 +96,7 @@ import { showIpOspfNeighbor } from './cisco/CiscoOspfCommands';
 import {
   type CiscoShellMode, type CiscoShellContext,
   buildConfigCommands, buildConfigIfCommands, configIfSpecs, dhcpGlobalSpecs,
+  registerInterfaceEntry, INTERFACE_TYPES,
 } from './cisco/CiscoConfigCommands';
 import {
   buildConfigDhcpCommands, buildConfigDhcpPoolClassCommands, dhcpPoolSpecs,
@@ -194,6 +195,24 @@ Readonly<Record<string, ArgumentSpec | readonly ArgumentSpec[] | null>> = {
     description: 'import, export or both, then ASN:nn' },
   description: { name: 'texte', type: 'REST', literal: 'LINE',
     description: 'Description of this VRF' },
+};
+
+const PORTES_DE_ROUTAGE: ReadonlySet<string> = new Set([
+  'router ospf', 'router rip', 'router eigrp', 'router bgp',
+]);
+
+const PORTES_DE_ROUTAGE_PLACES: Readonly<Record<string, ArgumentSpec>> = {
+  'router ospf': {
+    name: 'process-id', type: 'INT', range: [1, 65535], description: 'Process ID',
+  },
+  'router eigrp': {
+    name: 'as-number', type: 'INT', range: [1, 65535],
+    description: 'Autonomous system number',
+  },
+  'router bgp': {
+    name: 'as-number', type: 'INT', range: [1, 4294967295],
+    description: 'Autonomous system number',
+  },
 };
 
 const ROUTER_SHOW_VIEWS: ReadonlySet<string> = new Set([
@@ -433,8 +452,56 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
       ...ALL_TUNNEL, ...CLEAR_CRYPTO_FAMILY, ...SHOW_CRYPTO_FAMILY,
       ...OBJECT_GROUP_FAMILY,
       ...this.routerShowSpecs(),
+      ...this.routingProtocolSpecs(),
+      ...this.interfaceEntrySpecs(),
       ...this.ipv6NdSpecs(), ...this.ipv6OspfSpecs(), ...this.ipv6ReglagesSpecs(),
       ...this.clearIpv6Specs(),
+    ];
+  }
+
+  /*
+   * `interface <nom>` s'ecrivait DEUX fois — une en configuration
+   * globale, une en configuration d'interface, parce qu'IOS laisse
+   * passer d'une interface a l'autre sans repasser par `exit` — et les
+   * deux avaient diverge : la copie du sous-mode ignorait
+   * `Port-channel`, laissait `config-if` sur une SOUS-interface, rendait
+   * le caret la ou l'autre repond « Incomplete », et son aide decrivait
+   * une place anonyme au lieu des types. Une seule declaration, portee
+   * par les trois modes, ne peut plus se contredire.
+   */
+  private interfaceEntrySpecs(): CommandSpec[] {
+    return specsFromTrieRegistrations(
+      (collector) => registerInterfaceEntry(collector as unknown as CommandTrie, this),
+      {
+        modes: ['config', 'config-if', 'config-subif'], minPrivilege: 15,
+        argumentFor: () => ({
+          name: 'interface', type: 'REST', description: 'Interface to configure',
+          literal: 'IFACE', alternatives: INTERFACE_TYPES,
+        }),
+      });
+  }
+
+  private routingProtocolSpecs(): CommandSpec[] {
+    const garder = (path: string): boolean =>
+      PORTES_DE_ROUTAGE.has(path.replace(/^no /, ''));
+    const options = {
+      modes: ['config'], minPrivilege: 15,
+      undoFromNegatedPaths: true,
+      skip: (path: string) => !garder(path),
+      argumentFor: (path: string) => PORTES_DE_ROUTAGE_PLACES[path],
+    };
+
+    return [
+      ...specsFromTrieRegistrations(
+        (collector) => registerOSPFConfigCommands(collector as unknown as CommandTrie, this),
+        options),
+      ...specsFromTrieRegistrations(
+        (collector) => buildRoutingProtoConfig(
+          collector as unknown as CommandTrie, this.configRouterTrie, this, this.routingCfg),
+        options),
+      ...specsFromTrieRegistrations(
+        (collector) => buildConfigCommands(collector as unknown as CommandTrie, this),
+        options),
     ];
   }
 
