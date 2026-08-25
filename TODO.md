@@ -613,6 +613,22 @@ Yersinia decrivent le SOMMAIRE ; ni l'un ni l'autre ne dit ce que porte un
 Join. Poser le condense « par symetrie » ou exempter le Join du controle
 sont deux inventions opposees, aussi peu attestees l'une que l'autre.
 
+## Terminal
+
+### [terminal] `CTRL-V` pour saisir un `?` litteral n'est pas pris
+La page « CLI basics » de FortiOS decrit `CTRL-V` comme la facon de taper
+un `?` sans declencher l'aide en ligne. Les sept autres raccourcis de la
+page sont implementes (Ctrl+A/E/B/F/D/P/N) ; celui-la ne l'est pas.
+**Mesure** : `?` ouvre toujours l'aide, et `Ctrl+V` colle.
+**Pourquoi ce n'est pas ferme** : dans un navigateur, Ctrl+V EST le
+collage — la vue le traite deja (`onPaste`, plus `Ctrl+Shift+V` pour le
+collage multiligne). Le detourner casserait le collage de tout le monde
+pour gagner un caractere. Fermer cette entree demande de choisir un AUTRE
+geste que la page ne decrit pas, donc d'inventer ; ou d'attendre un mode
+de saisie qui ne soit plus un `<input>` du DOM.
+
+---
+
 ## Outillage
 
 ### [e2e] la PREMIÈRE navigation d'une exécution à froid dépasse le délai

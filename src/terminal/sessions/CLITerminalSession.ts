@@ -468,9 +468,6 @@ export abstract class CLITerminalSession extends TerminalSession {
       return true;
     }
 
-    // Ctrl+A/E → cursor (handled by view, but consume)
-    if ((e.key === 'a' || e.key === 'e') && e.ctrlKey) return true;
-
     return super.handleNormalKey(e);
   }
 

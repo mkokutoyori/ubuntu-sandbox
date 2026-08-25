@@ -25,6 +25,9 @@ import type { TerminalSession, OutputLine, InputMode, TerminalTheme } from '@/te
 import type { LinuxTerminalSession } from '@/terminal/sessions/LinuxTerminalSession';
 import type { WindowsTerminalSession } from '@/terminal/sessions/WindowsTerminalSession';
 import { parseAnsiToSegments, stripAnsi } from '@/terminal/core/OutputFormatter';
+import {
+  applyLineEdit, lineEditActionFor, movesCaretOnly,
+} from '@/terminal/core/lineEditing';
 import { LinuxMachine } from '@/network/devices/LinuxMachine';
 import { LinuxEditorFsContext } from '@/terminal/sessions/LinuxEditorFsContext';
 
@@ -67,6 +70,7 @@ export const TerminalView: React.FC<TerminalViewProps> = ({ session }) => {
 
   const theme = session.getTheme();
   const inputRef = useRef<HTMLInputElement>(null);
+  const pendingCaret = useRef<number | null>(null);
   const hiddenInputRef = useRef<HTMLInputElement>(null);
   const interactiveInputRef = useRef<HTMLInputElement>(null);
   const reverseSearchRef = useRef<HTMLInputElement>(null);
@@ -119,6 +123,13 @@ export const TerminalView: React.FC<TerminalViewProps> = ({ session }) => {
     }
   }, [effectiveMode.type, hasAttachedStream]);
 
+  useEffect(() => {
+    const at = pendingCaret.current;
+    if (at === null) return;
+    pendingCaret.current = null;
+    inputRef.current?.setSelectionRange(at, at);
+  });
+
   // Focus input on click — use effectiveMode for consistency with rendering
   const handleClick = useCallback(() => {
     if (effectiveMode.type === 'password') hiddenInputRef.current?.focus({ preventScroll: true });
@@ -130,6 +141,31 @@ export const TerminalView: React.FC<TerminalViewProps> = ({ session }) => {
 
   // Key handler bridge — converts React event to session KeyEvent
   const handleKeyDown = useCallback((e: React.KeyboardEvent<HTMLInputElement>) => {
+    const element = e.currentTarget;
+    const action = element.name === 'terminalInput' ? lineEditActionFor({
+      key: e.key, ctrlKey: e.ctrlKey, altKey: e.altKey,
+      metaKey: e.metaKey, shiftKey: e.shiftKey,
+    }) : null;
+    if (action === 'history-prev' || action === 'history-next') {
+      e.preventDefault();
+      session.handleKey({
+        key: action === 'history-prev' ? 'ArrowUp' : 'ArrowDown',
+        ctrlKey: false, altKey: false, metaKey: false, shiftKey: false,
+      });
+      return;
+    }
+    if (action !== null && !(action === 'delete' && element.value.length === 0)) {
+      e.preventDefault();
+      const edited = applyLineEdit(action, element.value, element.selectionStart ?? 0);
+      if (movesCaretOnly(action)) {
+        element.setSelectionRange(edited.caret, edited.caret);
+        return;
+      }
+      pendingCaret.current = edited.caret;
+      session.setInput(edited.text);
+      return;
+    }
+
     // Ctrl+Shift+C → copy selection
     if (e.key === 'C' && e.ctrlKey && e.shiftKey) {
       e.preventDefault();

@@ -64,6 +64,7 @@
 | **F28** | **FortiOS phase 28 — le plan d'administration écoute** | 15 | ✅ |
 | **F28b** | Tab développe la ligne entière (parité avec Cisco) | 10 | ✅ |
 | **F28c** | La page « CLI basics » : variables, guillemets, espaces | 12 | ✅ |
+| **F28d** | Raccourcis d'édition de ligne (Ctrl+A/E/B/F/D/P/N) | 10+6 | ✅ |
 | 3 | NAT objet ASA (`nat (dmz,outside) static`) | — | ⏳ |
 | 3 | `ShellFactory` + `DeviceFactory` | — | ⏳ |
 
@@ -2700,6 +2701,63 @@ est celle de FortiOS, `Command fail. Return code -61` précédé de
 
 Les deux cas de `fortios-routage-dynamique.test.ts` qui affirmaient BGP
 refusé sont remplacés par un cas qui l'affirme disponible.
+
+---
+
+## Terminal — les raccourcis d'édition de ligne de « CLI basics »
+
+**Agent `mandeng`.** Suite de la page « CLI basics » : les raccourcis
+d'édition de ligne, la dernière famille qu'elle décrit.
+
+**Mesure de départ, dans le vrai navigateur.** Sur `get system status`,
+Ctrl+A laissait le curseur à 17 ; sur `config`, Ctrl+B ne bougeait pas de
+6 ; Ctrl+D n'effaçait rien ; Ctrl+P et Ctrl+N ne rendaient aucune
+commande. **Le code portait la preuve écrite du défaut** — dans
+`CLITerminalSession`, `// Ctrl+A/E → cursor (handled by view, but
+consume)`, et le jumeau dans `LinuxTerminalSession`. Une touche consommée
+pour empêcher le navigateur d'agir, et une vue qui n'en faisait rien : la
+touche était donc *neutralisée des deux côtés*.
+
+**Ce que la mesure a appris et qui a réduit le périmètre.** Le dernier
+cas de la sonde — « un caractère tapé au curseur s'insère à sa place » —
+avait été écrit à l'aveugle en supposant que l'insertion était cassée
+elle aussi. Elle ne l'est pas : `handleNormalKey` rend `false` pour un
+caractère imprimable, donc le `<input>` du DOM l'insère nativement au
+caret et `onChange` renvoie la ligne à la session. **Le seul manque était
+le DÉPLACEMENT du curseur** ; l'insertion suit toute seule dès qu'il
+bouge. C'est la mesure qui a tranché, pas la lecture.
+
+**Un seul modèle de curseur, et c'est celui du DOM.** Donner un
+`cursorPos` à la session aurait posé un second curseur à côté de celui
+que le navigateur tient déjà — la duplication que ce carnet raconte
+depuis trente phases, et celle qui se voit le plus vite (le caret
+clignote au mauvais endroit). `terminal/core/lineEditing.ts` ne porte
+donc que la RÈGLE — quelle touche fait quoi à un couple (texte, caret) —
+et la vue l'applique au `<input>` : `setSelectionRange` pour un
+déplacement, `setInput` plus un caret restitué après le rendu pour un
+effacement. Ctrl+P et Ctrl+N sont TRADUITS en flèche haut et flèche bas
+et repartent dans la session, parce que l'historique y est déjà et qu'un
+second parcours d'historique serait le même défaut.
+
+**Deux décisions, chacune parce que l'inverse était possible.** Ctrl+D
+**sur une ligne vide n'est pas pris** : c'est la fin de fichier, et
+`LinuxTerminalSession` la traite déjà (elle ferme la session) — la
+détourner aurait cassé un geste plus ancien et plus fort. Et **Ctrl+V
+n'est délibérément pas pris** : la page le décrit pour saisir un `?`
+littéral, mais dans un navigateur Ctrl+V EST le collage, et le prendre
+casserait le collage de tout le monde pour un caractère. Inscrit au
+`TODO.md` plutôt que forcé.
+
+**Le mécanisme n'est pas propre à FortiOS**, et un cas le vérifie : un
+routeur Cisco du dépôt corrige `show verXsion` en `show version` par les
+mêmes touches. Les deux branches « consommer sans rien faire » sont
+supprimées, donc il n'y a qu'un seul endroit qui décide.
+
+`line-editing-shortcuts.test.ts` (10 cas) éprouve la règle —
+correspondance des sept touches, bornes du curseur, effacement sous le
+curseur et non avant, refus d'Alt/Meta. `e2e/fortigate-raccourcis-edition.spec.ts`
+(6 cas) éprouve le DOM : les 5 cas FortiOS écrits à l'aveugle tombaient
+tous les cinq avant correctif, et le sixième est le témoin Cisco.
 
 ---
 

@@ -782,11 +782,6 @@ export class LinuxTerminalSession extends TerminalSession {
   }
 
   protected handleNormalKey(e: KeyEvent): boolean {
-    // Ctrl+A → beginning of line (handled by view's input element, but consume)
-    if (e.key === 'a' && e.ctrlKey) return true;
-    // Ctrl+E → end of line
-    if (e.key === 'e' && e.ctrlKey) return true;
-
     // Tab
     if (e.key === 'Tab') {
       // A here-document body is free text, not a command line: readline
