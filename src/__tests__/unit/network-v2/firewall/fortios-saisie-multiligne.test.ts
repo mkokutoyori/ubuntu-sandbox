@@ -40,6 +40,10 @@
 
 import { describe, it, expect, beforeEach } from 'vitest';
 import { FortiGate } from '@/network/devices/firewall/vendors/fortios/FortiGate';
+import { LinuxPC } from '@/network/devices/LinuxPC';
+import { Cable } from '@/network/hardware/Cable';
+import { LinuxTerminalSession } from '@/terminal/sessions/LinuxTerminalSession';
+import type { TerminalSession, KeyEvent } from '@/terminal/sessions/TerminalSession';
 import { FortiShell } from '@/network/devices/firewall/vendors/fortios/FortiShell';
 import { resetCounters, MACAddress } from '@/network/core/types';
 import { resetDeviceCounters } from '@/network/devices/DeviceFactory';
@@ -138,6 +142,80 @@ describe('une ligne terminee par une barre oblique inversee continue', () => {
     run(sh, 'config system \\', 'global', 'set alias "deux', 'mots"', 'end');
 
     expect(run(sh, 'show system global')).toContain('set alias "deux\nmots"');
+  });
+});
+
+function key(k: string): KeyEvent {
+  return { key: k, ctrlKey: false, altKey: false, metaKey: false, shiftKey: false };
+}
+
+const tick = () => new Promise<void>((r) => setTimeout(r, 25));
+
+async function tapeLigne(host: TerminalSession, line: string): Promise<void> {
+  host.foreground.setInput(line);
+  host.foreground.setInputBuf(line);
+  host.handleKey(key('Enter'));
+  for (let i = 0; i < 10; i++) await tick();
+}
+
+async function laboratoireSsh() {
+  resetCounters(); resetDeviceCounters(); MACAddress.resetCounter(); Logger.reset();
+  EquipmentRegistry.resetInstance();
+
+  const fw = new FortiGate('firewall-fortinet', 'FGT', 0, 0);
+  const poste = new LinuxPC('linux-pc', 'PC', -150, 0);
+  poste.powerOn();
+  new Cable('a').connect(poste.getPort('eth0')!, fw.getPort('port1')!);
+
+  run(fw.getShell(),
+    'config system interface', 'edit "port1"', 'set mode static',
+    'set ip 192.168.1.1 255.255.255.0', 'set allowaccess ping ssh', 'next', 'end',
+    'config system admin', 'edit "admin"',
+    'set password "Secret123"', 'set accprofile "super_admin"', 'next', 'end');
+
+  await poste.executeCommand('ip link set eth0 up');
+  await poste.executeCommand('ip addr add 192.168.1.10/24 dev eth0');
+
+  const host = new LinuxTerminalSession('h', poste);
+  await host.init?.();
+  host.setInput('ssh admin@192.168.1.1');
+  host.handleKey(key('Enter'));
+  for (let i = 0; i < 10 && host.currentInputMode.type !== 'password'; i++) await tick();
+  host.setPasswordBuf('Secret123');
+  host.handleKey(key('Enter'));
+  for (let i = 0; i < 10; i++) await tick();
+
+  return { fw, host };
+}
+
+describe('les memes comportements a travers une vraie session SSH', () => {
+  it('la saisie multiligne, les guillemets et les variables tiennent par le fil',
+    async () => {
+      const { fw, host } = await laboratoireSsh();
+
+      expect(host.foreground.getPrompt()).toMatch(/FGT.*#/);
+
+      for (const ligne of [
+        'config system \\', 'interface', 'edit "port1"',
+        'set allowaccess ping \\', 'https ssh',
+        'set alias "Lien WAN"', 'next', 'end',
+      ]) await tapeLigne(host, ligne);
+
+      const shell = fw.getShell();
+      const vu = shell.execute('show system interface');
+      expect(vu).toContain('set allowaccess ping https ssh');
+      expect(vu).toContain('set alias "Lien WAN"');
+    });
+
+  it('`$SerialNum` est substitue par le fil aussi', async () => {
+    const { fw, host } = await laboratoireSsh();
+
+    for (const ligne of [
+      'config system global', 'set alias $SerialNum', 'end',
+    ]) await tapeLigne(host, ligne);
+
+    expect(fw.getShell().execute('show system global | grep alias'))
+      .toContain(`set alias "${fw.serialNumber()}"`);
   });
 });
 

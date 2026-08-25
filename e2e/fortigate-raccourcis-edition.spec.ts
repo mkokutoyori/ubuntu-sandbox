@@ -62,6 +62,46 @@ async function poserRouteur(page: Page): Promise<string> {
   });
 }
 
+async function poserPoste(page: Page): Promise<string> {
+  return page.evaluate(() => {
+    type S = {
+      addDevice(t: string, x: number, y: number): { id: string };
+      deviceInstances: Map<string, Record<string, unknown>>;
+    };
+    const store = (window as Record<string, unknown>).__networkStore as { getState(): S };
+    const created = store.getState().addDevice('linux-pc', 140, 240);
+    const device = store.getState().deviceInstances.get(created.id) as Record<string, unknown>;
+    (device.powerOn as (() => void) | undefined)?.call(device);
+    return created.id;
+  });
+}
+
+async function cabler(page: Page, fw: string, pc: string): Promise<void> {
+  await page.evaluate(({ a, b }) => {
+    type S = {
+      addConnection(x: string, xi: string, y: string, yi: string, t?: string): unknown;
+    };
+    const store = (window as Record<string, unknown>).__networkStore as { getState(): S };
+    store.getState().addConnection(a, 'port1', b, 'eth0', 'ethernet');
+  }, { a: fw, b: pc });
+  await page.waitForTimeout(500);
+}
+
+async function fermerTerminal(page: Page): Promise<void> {
+  await page.locator('[data-testid="terminal-modal"] button[title="Close"]').click();
+  await page.locator('[data-testid="terminal-modal"]')
+    .waitFor({ state: 'hidden', timeout: 10_000 });
+  await page.waitForTimeout(300);
+}
+
+async function entrer(page: Page, ligne: string): Promise<void> {
+  const input = box(page);
+  await input.focus();
+  await input.fill(ligne);
+  await input.press('Enter');
+  await page.waitForTimeout(300);
+}
+
 test.describe('FortiGate — les raccourcis d\'edition de ligne', () => {
   test.beforeEach(async ({ page }) => {
     test.setTimeout(90_000);
@@ -137,6 +177,53 @@ test.describe('FortiGate — les raccourcis d\'edition de ligne', () => {
     await touche(page, 'Control+d');
 
     expect(await box(page).inputValue()).toBe('show version');
+  });
+
+  test('les memes raccourcis a travers une vraie session SSH', async ({ page }) => {
+    const fw = await poserFortiGate(page);
+    const pc = await poserPoste(page);
+    await cabler(page, fw, pc);
+
+    await openTerminal(page, fw);
+    for (const ligne of [
+      'config system interface', 'edit "port1"', 'set mode static',
+      'set ip 192.168.1.1 255.255.255.0', 'set allowaccess ping ssh', 'next', 'end',
+      'config system admin', 'edit "admin"',
+      'set password "Secret123"', 'set accprofile "super_admin"', 'next', 'end',
+    ]) await entrer(page, ligne);
+    await fermerTerminal(page);
+
+    await page.locator(`[data-device-id="${pc}"]`).first().dblclick({ timeout: 8_000 });
+    await page.locator('[data-testid="terminal-modal"]')
+      .waitFor({ state: 'visible', timeout: 10_000 });
+    await page.waitForTimeout(1200);
+
+    await entrer(page, 'ip link set eth0 up');
+    await entrer(page, 'ip addr add 192.168.1.10/24 dev eth0');
+    await entrer(page, 'ssh admin@192.168.1.1');
+    const secret = page.locator('[data-testid="terminal-modal"] input[type="password"]');
+    await secret.waitFor({ state: 'visible', timeout: 15_000 });
+    await secret.focus();
+    await secret.fill('Secret123');
+    await secret.press('Enter');
+    await page.waitForTimeout(800);
+    await expect.poll(
+      async () => /^\S+ #/m.test(
+        await page.locator('[data-testid="terminal-modal"]').innerText()),
+      { timeout: 15_000 }).toBe(true);
+
+    await tape(page, 'get system statXus');
+    await touche(page, 'Control+a');
+    expect(await caret(page)).toBe(0);
+    for (let i = 0; i < 15; i++) await touche(page, 'Control+f');
+    await touche(page, 'Control+d');
+    expect(await box(page).inputValue()).toBe('get system status');
+
+    await touche(page, 'Control+e');
+    await box(page).press('Enter');
+    await expect.poll(
+      async () => (await page.locator('[data-testid="terminal-modal"]').innerText())
+        .includes('Serial-Number:'), { timeout: 15_000 }).toBe(true);
   });
 
   test('un caractere tape au curseur s\'insere a sa place', async ({ page }) => {

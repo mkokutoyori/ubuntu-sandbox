@@ -10,7 +10,7 @@ import {
   fortiSystemTime, runExecuteDate, runExecuteTime,
 } from './diag/timeCommands';
 import { applyFilter, splitPipe } from './render/outputFilter';
-import { FortiSocle, VALUE_LIST_VERBS } from './FortiSocle';
+import { FortiSocle, FORTI_TOKENS, VALUE_LIST_VERBS } from './FortiSocle';
 import type { CommandInteractionPlan } from '../../../../../shell/interaction/CommandInteraction';
 import { schemaIndex } from './schema';
 import type {
@@ -68,7 +68,7 @@ import { utmLog } from './log/utmLog';
 import { renderFortiguardServiceStatus } from './diag/fortiguardRenderer';
 import { TftpClientSession } from '@/network/tftp/TftpSession';
 import { IPAddress } from '@/network/core/types';
-import { tokenize as splitTokens } from '@/cli/CommandParser';
+import { tokenize } from '@/cli/CommandParser';
 import { encryptConfig, decryptConfig, isEncryptedConfig } from './backup/ConfigEncryption';
 import {
   renderOspfDatabase, renderOspfInterfaces,
@@ -421,7 +421,7 @@ export class FortiShell {
 
     if (/^write\b/.test(line)) return FortiMessages.noSaveNeeded();
     if (/^show\s+full-configuration\b/.test(line)) {
-      return this.show(splitTokens(line).slice(2), true);
+      return this.show(tokenize(line, FORTI_TOKENS).slice(2), true);
     }
 
     const outcome = this.socle.execute(line);
@@ -478,7 +478,7 @@ export class FortiShell {
   }
 
   private refusal(line: string): string {
-    const tokens = splitTokens(line);
+    const tokens = tokenize(line, FORTI_TOKENS);
     const object = this.nav.currentObject();
 
     if ((tokens[0] === 'set' || tokens[0] === 'unset' || tokens[0] === 'append'

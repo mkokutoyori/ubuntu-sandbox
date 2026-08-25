@@ -18,7 +18,12 @@ export type ParseResult =
     readonly refusePar?: 'argument' | 'niveau';
   };
 
-export function tokenize(input: string): string[] {
+export interface TokenizeOptions {
+  readonly escapesAnyCharacter?: boolean;
+}
+
+export function tokenize(input: string, options?: TokenizeOptions): string[] {
+  const anyCharacter = options?.escapesAnyCharacter === true;
   const out: string[] = [];
   let current = '';
   let quoted = false;
@@ -34,8 +39,9 @@ export function tokenize(input: string): string[] {
 
   for (let at = 0; at < input.length; at++) {
     const character = input[at];
-    if (character === '\\' && input[at + 1] === ' ') {
-      current += ' ';
+    if (character === '\\' && at + 1 < input.length
+      && (anyCharacter || input[at + 1] === ' ')) {
+      current += input[at + 1];
       started = true;
       escaped = true;
       at++;
@@ -66,8 +72,9 @@ export function tokenContent(token: string): string {
 
 export function parseCommand(
   table: CommandTable, input: string, session: CliSession,
+  options?: TokenizeOptions,
 ): ParseResult {
-  const all = tokenize(input);
+  const all = tokenize(input, options);
   if (all.length === 0) return { status: 'empty' };
 
   const negated = all[0].toLowerCase() === 'no' && all.length > 1;

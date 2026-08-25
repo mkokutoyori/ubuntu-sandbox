@@ -70,7 +70,7 @@ export const TerminalView: React.FC<TerminalViewProps> = ({ session }) => {
 
   const theme = session.getTheme();
   const inputRef = useRef<HTMLInputElement>(null);
-  const pendingCaret = useRef<number | null>(null);
+  const pendingCaret = useRef<{ at: number; element: HTMLInputElement } | null>(null);
   const hiddenInputRef = useRef<HTMLInputElement>(null);
   const interactiveInputRef = useRef<HTMLInputElement>(null);
   const reverseSearchRef = useRef<HTMLInputElement>(null);
@@ -124,10 +124,10 @@ export const TerminalView: React.FC<TerminalViewProps> = ({ session }) => {
   }, [effectiveMode.type, hasAttachedStream]);
 
   useEffect(() => {
-    const at = pendingCaret.current;
-    if (at === null) return;
+    const wanted = pendingCaret.current;
+    if (wanted === null) return;
     pendingCaret.current = null;
-    inputRef.current?.setSelectionRange(at, at);
+    wanted.element.setSelectionRange(wanted.at, wanted.at);
   });
 
   // Focus input on click — use effectiveMode for consistency with rendering
@@ -142,7 +142,8 @@ export const TerminalView: React.FC<TerminalViewProps> = ({ session }) => {
   // Key handler bridge — converts React event to session KeyEvent
   const handleKeyDown = useCallback((e: React.KeyboardEvent<HTMLInputElement>) => {
     const element = e.currentTarget;
-    const action = element.name === 'terminalInput' ? lineEditActionFor({
+    const edits = element.name === 'terminalInput' || element.name === 'terminalPrompt';
+    const action = edits ? lineEditActionFor({
       key: e.key, ctrlKey: e.ctrlKey, altKey: e.altKey,
       metaKey: e.metaKey, shiftKey: e.shiftKey,
     }) : null;
@@ -161,8 +162,9 @@ export const TerminalView: React.FC<TerminalViewProps> = ({ session }) => {
         element.setSelectionRange(edited.caret, edited.caret);
         return;
       }
-      pendingCaret.current = edited.caret;
-      session.setInput(edited.text);
+      pendingCaret.current = { at: edited.caret, element };
+      if (element.name === 'terminalPrompt') session.setInputBuf(edited.text);
+      else session.setInput(edited.text);
       return;
     }
 

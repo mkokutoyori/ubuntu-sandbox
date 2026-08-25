@@ -78,6 +78,8 @@ const LEGENDS: ReadonlyArray<readonly [readonly string[], string]> = Object.free
 export const VALUE_LIST_VERBS = Object.freeze(
   ['set', 'append', 'select', 'unselect'] as const);
 
+export const FORTI_TOKENS = Object.freeze({ escapesAnyCharacter: true });
+
 const FORTI_MODES = Object.freeze({ forti: { parent: null } });
 const FORTI_PROMPTS = Object.freeze({ forti: '{host} # ' });
 const MODE = ['forti'];
@@ -117,7 +119,7 @@ export class FortiSocle {
   execute(line: string): FortiOutcome {
     const table = this.contextTable();
     const session = this.session();
-    const parsed = parseCommand(table, line, session);
+    const parsed = parseCommand(table, line, session, FORTI_TOKENS);
 
     switch (parsed.status) {
       case 'empty': return done('');

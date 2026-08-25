@@ -65,7 +65,8 @@
 | **F28b** | Tab développe la ligne entière (parité avec Cisco) | 10 | ✅ |
 | **F28c** | La page « CLI basics » : variables, guillemets, espaces | 12 | ✅ |
 | **F28d** | Raccourcis d'édition de ligne (Ctrl+A/E/B/F/D/P/N) | 10+6 | ✅ |
-| **F28e** | Saisie multiligne (`\` en fin de ligne, Échap abandonne) | 10 | ✅ |
+| **F28e** | Saisie multiligne (`\`), et les mêmes gestes par SSH | 12+7 | ✅ |
+| **F28f** | L'échappement est une option du constructeur, et il se REND | — | ✅ |
 | 3 | NAT objet ASA (`nat (dmz,outside) static`) | — | ⏳ |
 | 3 | `ShellFactory` + `DeviceFactory` | — | ⏳ |
 
@@ -5613,6 +5614,87 @@ n'est câblé par personne.
 **Critère de sortie** : le laboratoire L1 du BRD — interfaces, objets,
 route par défaut, politique, `set nat enable` — se joue de bout en bout
 dans un terminal, et `allowaccess` refuse vraiment une connexion.
+
+---
+
+## FortiOS — l'échappement est une propriété du CONSTRUCTEUR
+
+**Agent `mandeng`.** Dernier point de la page « CLI basics » : la
+barre oblique inversée devant un caractère quelconque.
+
+**Ce que la page dit.** Un caractère spécial se saisit soit entre
+guillemets, soit précédé d'une barre oblique inversée — et elle donne le
+guillemet lui-même comme exemple : `set comment "il a dit \"non\""`.
+Le socle, lui, ne connaissait qu'un seul échappement, celui de l'espace
+(`\ `), hérité du lot précédent.
+
+**La correction naïve casse un autre constructeur, et c'est mesuré.**
+Étendre `tokenize` à tout caractère fait tomber
+`cisco-interface-description` : sur IOS, `description server\\share`
+décrit un chemin UNC et la barre y est un caractère ordinaire — IOS
+n'échappe rien. Un tokeniseur unique ne peut donc pas décider seul ; ce
+qu'il lui manquait n'est pas une règle mais un ARGUMENT. `TokenizeOptions`
+porte `escapesAnyCharacter`, `FORTI_TOKENS` le pose une fois pour
+FortiOS, et `parseCommand` le transmet. **Il n'y a toujours qu'un
+tokeniseur** — c'est l'appelant qui dit dans quelle langue il parle,
+et deux tokeniseurs auraient été le défaut que ce carnet raconte.
+
+**La moitié qui manquait était le RENDU.** Une valeur échappée à la
+saisie ressortait telle quelle dans `show`, donc une configuration
+rendue ne pouvait pas être rejouée : `set comment "il a dit "non""` est
+une ligne que la machine refuse. `escapeForConfig` réarme la barre et le
+guillemet, et `renderValue`/`renderKey` la lisent tous les deux — le
+même sérialiseur pour la valeur et pour la clé, sans quoi `edit "a\"b"`
+serait perdu à l'import.
+
+---
+
+## FortiOS — ce que le FIL conserve, et ce qu'il ne conservait pas
+
+**Agent `mandeng`.** Question de l'utilisateur : les comportements de la
+page « CLI basics » tiennent-ils quand on accède au pare-feu par SSH ?
+Puis, la mesure faite : les raccourcis clavier aussi ?
+
+**La réponse est OUI pour la CLI, et elle est prouvée plutôt que
+supposée.** Deux cas montent un vrai laboratoire — poste Linux câblé,
+`set allowaccess ping ssh`, compte administrateur, `ssh admin@…`, mot de
+passe — et tapent le bloc coupé par `\`, la valeur entre guillemets et
+`$SerialNum` À TRAVERS la session. La configuration relue sur le
+pare-feu porte les trois. C'était attendu : la session SSH sert la même
+coquille que la console, donc la continuation, la substitution et les
+guillemets sont derrière le même objet. Le cas vaut quand même, parce
+que « c'est le même objet » est une lecture et non une mesure.
+
+**La réponse était NON pour les raccourcis clavier**, et seule une sonde
+dans le vrai navigateur pouvait le dire. Diagnostic :
+
+```
+INPUTS [{"name":"terminalPrompt","type":"text","value":""}]
+CARETS 0 0   VALUE "get system statXus"
+```
+
+Le caret ne bougeait pas d'un pouce. **La cause n'est pas dans FortiOS
+ni dans SSH** : une session interactive imbriquée rend un `<input>`
+nommé `terminalPrompt`, et le garde-fou de la vue n'acceptait que
+`terminalInput` — le nom de l'invite ORDINAIRE. Les raccourcis étaient
+donc muets dans toute sous-coquille interactive, quelle qu'elle soit,
+et le pare-feu n'en était que le révélateur.
+
+**Le correctif porte sur la vue et sur elle seule.** Le garde-fou
+accepte les deux invites, et l'écriture suit le champ : `setInputBuf`
+pour l'invite imbriquée, `setInput` pour l'ordinaire. Le caret restitué
+après rendu voyage désormais avec SON élément (`{ at, element }`) plutôt
+qu'avec une référence unique — sans quoi le caret d'une sous-coquille
+serait posé sur le champ de la coquille du dessous.
+
+`fortios-saisie-multiligne.test.ts` passe à 12 cas, `e2e/fortigate-raccourcis-edition.spec.ts`
+à 7 : le cas SSH corrige `get system statXus` en `get system status` par
+Ctrl+A, quinze Ctrl+F et Ctrl+D, puis exécute la commande et lit
+`Serial-Number:` — donc la ligne corrigée est bien celle qui part sur le
+fil, et pas seulement celle qui s'affiche.
+
+**Erreur d'arithmétique de la sonde, corrigée et non masquée** : j'avais
+écrit dix-sept Ctrl+F pour un `X` qui est au quinzième rang.
 
 ---
 
