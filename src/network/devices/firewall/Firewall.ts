@@ -29,6 +29,7 @@ import { vdomFootprint, cacheFootprint } from './health/MemoryFootprint';
 import { StreamAssembler, oversizeLimitBytes } from './inspection/StreamAssembler';
 import { BridgeFdb } from './l2/BridgeFdb';
 import { RevisionStore } from './config/RevisionStore';
+import { haVirtualMac } from './ha/HaVirtualMac';
 import { LdbMonitorTable } from './health/LdbMonitor';
 import { dialTcp, parseDialAddress } from '../../tcp/dial';
 import { isDialFailure } from '../../tcp/types';
@@ -69,7 +70,6 @@ import {
 } from './FirewallProfile';
 import { ROOT_VDOM, VdomRegistry, type VdomContext } from './vdom/VdomRegistry';
 import { VdomLinkTable } from './vdom/VdomLinkTable';
-import { classifyDestination } from '../../layers/link/LinkLayer';
 import { clusterVirtualMac } from './ha/clusterVirtualMac';
 import { SwitchGroupTable } from './l3/SwitchGroupTable';
 import { logFactsOf } from './logging/logFacts';
@@ -1225,6 +1225,8 @@ export class Firewall extends Equipment {
     this.bridgeOf(portName).learn(frame.srcMAC.toString(), portName);
     if (!this.acceptsAtLinkLayer(portName, frame)) return;
 
+    if (!this.acceptsAtLinkLayer(portName, frame)) return;
+
     if (frame.etherType === ETHERTYPE_FGCP) {
       this.haService.agent.receive(frame);
       return;
@@ -1256,13 +1258,8 @@ export class Firewall extends Equipment {
   }
 
   private acceptsAtLinkLayer(portName: string, frame: EthernetFrame): boolean {
-    if (this.vdoms.contextOfInterface(portName).settings.opmode === 'transparent') {
-      return true;
-    }
-    const port = this.getPort(portName);
-    if (!port) return false;
-    if (port.isPromiscuous()) return true;
-    return classifyDestination(frame.dstMAC, port.getMAC()) !== 'otherhost';
+    if (this.vdoms.contextOfInterface(portName).settings.opmode === 'transparent') return true;
+    return this.getLinkLayer().deliver(portName, frame) !== null;
   }
 
   private lookupMac(destination: MACAddress, ingress: string): string | undefined {
@@ -1593,7 +1590,23 @@ export class Firewall extends Equipment {
   }
 
   private portMac(iface: string) {
-    return this.getPort(iface)!.getMAC();
+    return this.haVirtualMacOf(iface) ?? this.getPort(iface)!.getMAC();
+  }
+
+  private haVirtualMacOf(iface: string): MACAddress | null {
+    const ha = this.haService.agent;
+    const config = ha.getConfiguration();
+    if (config.mode === 'standalone') return null;
+    if (ha.role() !== 'master') return null;
+    if (config.heartbeatDevices.some(d => d.iface === iface)) return null;
+    const index = this.getPorts().findIndex(p => p.getName() === iface);
+    if (index < 0) return null;
+    return new MACAddress(haVirtualMac(config.groupId, index));
+  }
+
+  protected override ownsLocalUnicast(iface: string, destination: MACAddress): boolean {
+    const virtual = this.haVirtualMacOf(iface);
+    return virtual !== null && virtual.equals(destination);
   }
 
   private egressDeps(): EgressDeps {

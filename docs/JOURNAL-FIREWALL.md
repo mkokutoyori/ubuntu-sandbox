@@ -5804,3 +5804,24 @@ Puis phases 4 à 15 : diagnostics et journaux, FortiOS, cadre ALG, PAN-OS
 (configuration candidate), écrans et profils, Junos (validation du contrat,
 AC-C1), modes de déploiement, VPN, haute disponibilité, virtualisation,
 identification, QoS.
+
+---
+
+## Filtre de couche lien et adresse MAC virtuelle de grappe
+
+Rattache au `BRD-Modele-TCP-IP.md` phase 2, qui avait mesure le
+manquement pendant la phase 1 et l'avait reporte ici : `handleFrame`
+n'avait **aucun** filtre de couche lien.
+
+- **Mode NAT/route** : une interface routee ecarte desormais ce qui ne
+  lui est pas adresse, en lisant `LinkLayer.deliver` — la meme regle que
+  l'hote et le routeur, pas une copie.
+- **Mode transparent** : le pont accepte tout, sinon il ne ponte rien.
+- **Adresse MAC virtuelle FGCP** (`00:09:0f:09:<groupe>:<vcluster+index>`,
+  formule documentee par Fortinet) : c'est elle que le maitre presente,
+  et c'est ce qui rend le basculement invisible au client. Le TP 21
+  attendait l'adresse PHYSIQUE du maitre dans le cache ARP du client,
+  donc il decrivait une grappe qui n'existe pas ; corrige.
+
+Le secondaire ne presente pas l'adresse virtuelle — seul le primaire y
+repond, ce que l'etape 7 du TP epingle deja.
