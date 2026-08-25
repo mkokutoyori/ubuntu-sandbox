@@ -5950,7 +5950,15 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     table: CommandTable, ligne: string,
     brutes: Array<{ keyword: string; description: string; isArgument: boolean }>,
   ): Array<{ keyword: string; description: string; isArgument: boolean }> {
-    if (ligne.trim() !== '' || !this.isConfigMode()) return brutes;
+    /*
+     * `?` liste au rang vide, la tabulation part d'une frappe partielle :
+     * limiter l'offre au rang vide faisait annoncer `no` par l'aide sans
+     * que Tab sache l'ecrire. Le garde-fou de parite l'a attrape sur
+     * `config-vlan`, ou tout ce qui se defait vient du socle.
+     */
+    const frappe = ligne.trim().toLowerCase();
+    if (/\s/.test(frappe) || !'no'.startsWith(frappe)) return brutes;
+    if (!this.isConfigMode()) return brutes;
     if (brutes.some(s => s.keyword.toLowerCase() === 'no')) return brutes;
     if (!CiscoShellBase.negationSous(table, [], this.mode)) return brutes;
     return [...brutes, {
