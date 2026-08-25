@@ -151,6 +151,36 @@ const STP_VLAN_VIEWS: ReadonlyArray<{ keyword: string; description: string }> = 
   { keyword: 'root', description: 'Root bridge' },
 ];
 
+const DAI_CHEMINS: ReadonlySet<string> = new Set([
+  'ip arp inspection vlan', 'ip arp inspection validate', 'ip arp inspection filter',
+  'errdisable recovery cause arp-inspection', 'errdisable recovery cause bpduguard',
+  'errdisable recovery interval',
+  'ip arp inspection trust', 'ip arp inspection limit rate',
+  'clear ip arp inspection statistics',
+]);
+
+const DAI_MODES: Readonly<Record<string, readonly string[]>> = {
+  'ip arp inspection trust': ['config-if'],
+  'ip arp inspection limit rate': ['config-if'],
+  'clear ip arp inspection statistics': ['user', 'privileged'],
+};
+
+const DAI_PLACES: Readonly<Record<string, ArgumentSpec>> = {
+  'ip arp inspection vlan': {
+    name: 'vlans', type: 'REST', description: 'VLAN range', literal: 'WORD',
+  },
+  'no ip arp inspection vlan': {
+    name: 'vlans', type: 'REST', description: 'VLAN range', literal: 'WORD',
+  },
+  'errdisable recovery interval': {
+    name: 'secondes', type: 'INT', range: [30, 86400],
+    description: 'Timer interval in seconds',
+  },
+  'ip arp inspection limit rate': {
+    name: 'rate', type: 'INT', range: [0, 2048], description: 'Packets per second',
+  },
+};
+
 const VTP_PLACES: Readonly<Record<string, ArgumentSpec>> = {
   'vtp domain': { name: 'nom', type: 'WORD', description: 'The ascii name for the VTP administrative domain' },
   'vtp password': { name: 'secret', type: 'WORD', description: 'The ascii password for the VTP administrative domain' },
@@ -809,7 +839,10 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
       this.d().getVaclEngine().removeNamedAccessList(args[1]);
       return '';
     });
-    this.registerDaiCommands();
+    this.registerDaiCommands({
+      config: this.configTrie, configIf: this.configIfTrie,
+      privileged: this.privilegedTrie,
+    });
     this.registerPortSecurityCommands();
     this.registerVtpCommands(this.configTrie);
     this.registerUdldCommands();
@@ -858,7 +891,9 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
     this.registerShowCompletionKeywords();
   }
 
-  private registerDaiCommands(): void {
+  private registerDaiCommands(trie: {
+    config: CommandTrie; configIf: CommandTrie; privileged: CommandTrie;
+  }): void {
     const parseList = (spec: string): number[] => {
       const out: number[] = [];
       for (const part of spec.split(',')) {
@@ -870,18 +905,18 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
     };
 
     // ── Global ── ip arp inspection vlan <list>
-    this.configTrie.registerGreedy('ip arp inspection vlan', 'Enable DAI on VLAN(s)', (args) => {
+    trie.config.registerGreedy('ip arp inspection vlan', 'Enable DAI on VLAN(s)', (args) => {
       if (args.length < 1) return CISCO_ERRORS.INCOMPLETE;
       const cfg = this.d()._getArpInspectionConfig();
       for (const v of parseList(args.join(','))) cfg.vlans.add(v);
       return '';
     });
-    this.configTrie.registerGreedy('no ip arp inspection vlan', 'Disable DAI on VLAN(s)', (args) => {
+    trie.config.registerGreedy('no ip arp inspection vlan', 'Disable DAI on VLAN(s)', (args) => {
       const cfg = this.d()._getArpInspectionConfig();
       for (const v of parseList(args.join(','))) cfg.vlans.delete(v);
       return '';
     });
-    this.configTrie.registerGreedy('ip arp inspection validate', 'Extra DAI checks', (args) => {
+    trie.config.registerGreedy('ip arp inspection validate', 'Extra DAI checks', (args) => {
       const cfg = this.d()._getArpInspectionConfig();
       for (const tok of args) {
         const k = tok.toLowerCase();
@@ -891,7 +926,7 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
       }
       return '';
     });
-    this.configTrie.registerGreedy('no ip arp inspection validate', 'Clear DAI checks', (args) => {
+    trie.config.registerGreedy('no ip arp inspection validate', 'Clear DAI checks', (args) => {
       const cfg = this.d()._getArpInspectionConfig();
       if (args.length === 0) {
         cfg.validate.srcMac = false; cfg.validate.dstMac = false; cfg.validate.ip = false;
@@ -903,7 +938,7 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
       }
       return '';
     });
-    this.configTrie.registerGreedy('ip arp inspection filter', 'Apply ARP ACL to VLAN(s)', (args) => {
+    trie.config.registerGreedy('ip arp inspection filter', 'Apply ARP ACL to VLAN(s)', (args) => {
       // ip arp inspection filter <acl> vlan <list> [static]
       const aclName = args[0]; const vlanIdx = args.indexOf('vlan');
       if (!aclName || vlanIdx < 1) return CISCO_ERRORS.INCOMPLETE;
@@ -914,19 +949,19 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
       for (const v of parseList(list)) cfg.vlanAclFilters.set(v, { aclName, staticMode: isStatic });
       return '';
     });
-    this.configTrie.registerGreedy('errdisable recovery cause arp-inspection',
+    trie.config.registerGreedy('errdisable recovery cause arp-inspection',
       'Auto-recover DAI err-disabled ports', () => {
         const cfg = this.d()._getArpInspectionConfig();
         if (cfg.errDisableRecoverySec <= 0) this.d()._setArpRecoverySec(30);
         return '';
       });
-    this.configTrie.registerGreedy('errdisable recovery cause bpduguard',
+    trie.config.registerGreedy('errdisable recovery cause bpduguard',
       'Auto-recover BPDU Guard err-disabled ports', () => {
         const sw = this.d();
         if (sw._getBpduGuardRecoverySec?.() === 0) sw._setBpduGuardRecoverySec?.(30);
         return '';
       });
-    this.configTrie.registerGreedy('errdisable recovery interval',
+    trie.config.registerGreedy('errdisable recovery interval',
       'Auto-recovery interval (sec)', (args) => {
         const n = parseInt(args[0] ?? '', 10);
         if (isNaN(n) || n <= 0) return '';
@@ -938,7 +973,7 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
       });
 
     // ── arp access-list ──
-    this.configTrie.registerGreedy('arp access-list', 'Define an ARP ACL', (args) => {
+    trie.config.registerGreedy('arp access-list', 'Define an ARP ACL', (args) => {
       const name = args[0]; if (!name) return CISCO_ERRORS.INCOMPLETE;
       const map = this.d()._getArpAccessLists();
       if (!map.has(name)) map.set(name, { name, entries: [] });
@@ -949,7 +984,7 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
     });
 
     // ── Interface ── trust + limit rate
-    this.configIfTrie.registerGreedy('mtu', 'Set MTU', (args) => {
+    trie.configIf.registerGreedy('mtu', 'Set MTU', (args) => {
       const n = parseInt(args[0] ?? '', 10);
       if (!Number.isFinite(n)) throw new CliInvalidInput();
       if (n < 68) return `% Invalid MTU: ${n}. Minimum is 68 (IPv4 minimum).`;
@@ -961,15 +996,15 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
       }
       return '';
     });
-    this.configIfTrie.register('ip arp inspection trust', 'Trust port for DAI', () => {
+    trie.configIf.register('ip arp inspection trust', 'Trust port for DAI', () => {
       const cfg = this.d()._getArpInspectionConfig();
       return this.applyToSelectedInterfaces(p => { cfg.trustedPorts.add(p); return ''; });
     });
-    this.configIfTrie.register('no ip arp inspection trust', 'Untrust port for DAI', () => {
+    trie.configIf.register('no ip arp inspection trust', 'Untrust port for DAI', () => {
       const cfg = this.d()._getArpInspectionConfig();
       return this.applyToSelectedInterfaces(p => { cfg.trustedPorts.delete(p); return ''; });
     });
-    this.configIfTrie.registerGreedy('ip arp inspection limit rate', 'Per-port pps cap', (args) => {
+    trie.configIf.registerGreedy('ip arp inspection limit rate', 'Per-port pps cap', (args) => {
       const r = parseInt(args[0] ?? '', 10);
       if (isNaN(r) || r < 0) return '% Invalid rate value';
       const cfg = this.d()._getArpInspectionConfig();
@@ -979,20 +1014,20 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
     // ── Show ──
 
     // ── clear / recovery ──
-    this.privilegedTrie.register('clear ip arp inspection statistics',
+    trie.privileged.register('clear ip arp inspection statistics',
       'Reset DAI counters', () => { this.d()._resetArpInspectionStats(); return ''; });
-    this.privilegedTrie.registerGreedy('clear spanning-tree detected-protocols',
+    trie.privileged.registerGreedy('clear spanning-tree detected-protocols',
       'Restart protocol migration', () => '');
-    this.privilegedTrie.registerGreedy('clear spanning-tree counters',
+    trie.privileged.registerGreedy('clear spanning-tree counters',
       'Clear spanning-tree counters', () => '');
     // Quatre noeuds INTERMEDIAIRES nes de l'enregistrement de chemins
     // plus profonds, donc sans description propre : `?` les offrait nus.
     // Ils n'etaient visibles que depuis l'EXEC d'un Catalyst, que le
     // garde-fou des descriptions ne parcourait pas ; `do ?` les expose
     // desormais depuis la configuration, ou il passe.
-    this.privilegedTrie.describeNode('clear spanning-tree', 'Spanning trees');
-    this.privilegedTrie.describeNode('show errdisable', 'Error-disable configuration');
-    this.privilegedTrie.describeNode('show queuing', 'Show queueing configuration');
+    trie.privileged.describeNode('clear spanning-tree', 'Spanning trees');
+    trie.privileged.describeNode('show errdisable', 'Error-disable configuration');
+    trie.privileged.describeNode('show queuing', 'Show queueing configuration');
   }
 
   private handleArpAclLine(kw: string, args: string[]): string {
@@ -2247,7 +2282,26 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
       ...this.switchportL2Specs(),
       ...this.dot1xSpecs(),
       ...this.vtpConfigSpecs(),
+      ...this.daiSpecs(),
     ];
+  }
+
+  private daiSpecs(): CommandSpec[] {
+    return specsFromTrieRegistrations(
+      (collector) => {
+        const partage = collector as unknown as CommandTrie;
+        this.registerDaiCommands({
+          config: partage, configIf: partage, privileged: partage,
+        });
+      },
+      {
+        modes: ['config'], minPrivilege: 15,
+        undoFromNegatedPaths: true,
+        skip: (path) => !DAI_CHEMINS.has(path.replace(/^no /, '')),
+        modesFor: (path) => DAI_MODES[path.replace(/^no /, '')],
+        argumentFor: (path) => DAI_PLACES[path],
+      },
+    );
   }
 
   private vtpConfigSpecs(): CommandSpec[] {
