@@ -19,6 +19,7 @@ import {
 } from '@/cli/commands/trieAdapter';
 import { newSession, type CliSession } from '@/cli/CliSession';
 import { parseCommand, uniqueChild } from '@/cli/CommandParser';
+import { applyTransition } from '@/cli/CliEngine';
 import { argumentAccepts } from '@/cli/ArgumentTypes';
 import type { ArgumentSpec } from '@/cli/ArgumentTypes';
 import type { CommandSpec, TreeNode } from '@/cli/CommandTable';
@@ -780,6 +781,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
   protected reinitialiserSessionApresRedemarrage(): void {
     this.mode = 'user';
     this.fsm.mode = 'user';
+    this.clearSocleFields(Object.keys(this.socleFields));
     this.currentPrivilegeLevel = 1;
     this.activeParserView = null;
   }
@@ -3230,6 +3232,12 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
   private socleCheminsParPortee?: Map<string, string[][]>;
   private socleUndoSansValeur?: Set<string>;
 
+  private readonly socleFields: Record<string, string | undefined> = {};
+
+  protected clearSocleFields(fields: readonly string[]): void {
+    for (const field of fields) delete this.socleFields[field];
+  }
+
   /**
    * Ce que cette plateforme declare sur le socle.
    *
@@ -5622,10 +5630,12 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       }) !== 'absent',
     });
 
-    return newSession(this.d().getHostname?.() ?? 'Router', this, {
+    const session = newSession(this.d().getHostname?.() ?? 'Router', this, {
       initialMode: this.mode,
       privilegeLevel: this.currentPrivilegeLevel,
     });
+    Object.assign(session.fields, this.socleFields);
+    return session;
   }
 
   /**
@@ -5909,7 +5919,12 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     // au lieu de rendre le message d'IOS.
     try {
       const output: unknown = handler(session, parsed.args);
-      return typeof output === 'string' ? output : null;
+      if (typeof output !== 'string') return null;
+      if (!parsed.negated && parsed.spec.enters !== undefined) {
+        applyTransition(parsed.spec, parsed.args, session);
+        this.adoptSocleSession(session);
+      }
+      return output;
     } catch (err) {
       if (err instanceof CliInvalidInput) {
         if (err.motAbsent()) return renderCliDiagnostic('incomplete', { line: cmdPart });
@@ -5921,6 +5936,14 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       if (err instanceof CliIncomplete) return renderCliDiagnostic('incomplete', { line: cmdPart });
       throw err;
     }
+  }
+
+  private adoptSocleSession(session: CliSession): void {
+    if (session.mode !== this.mode) {
+      this.mode = session.mode;
+      this.fsm.mode = session.mode;
+    }
+    Object.assign(this.socleFields, session.fields);
   }
 
   protected executeOnTrie(cmdPart: string): string {
@@ -6257,6 +6280,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     this.activeParserView = null;
     this.mode = 'user';
     this.fsm.mode = 'user';
+    this.clearSocleFields(Object.keys(this.socleFields));
     this.cmdHistory = [];
     // `terminal history size` ne vaut que pour la session : la suivante
     // repart du reglage de la LIGNE, sans quoi un `terminal` tape une
@@ -6273,6 +6297,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     const { newMode, fieldsToCllear } = this.fsm.exit();
     this.mode = this.modeDeRetour(newMode);
     this.clearFields(fieldsToCllear);
+    this.clearSocleFields(fieldsToCllear);
     this.announceConfigExit(wasConfig);
     return '';
   }
@@ -6283,6 +6308,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     const { newMode, fieldsToCllear } = this.fsm.end();
     this.mode = this.modeDeRetour(newMode);
     this.clearFields(fieldsToCllear);
+    this.clearSocleFields(fieldsToCllear);
     this.announceConfigExit(wasConfig);
     return '';
   }

@@ -113,6 +113,7 @@ export const CISCO_IOS_PROMPTS: PromptMap = {
   'config-ipv6-dhcp':          '{host}(config-dhcpv6)#',
   'config-keychain':           '{host}(config-keychain)#',
   'config-keychain-key':       '{host}(config-keychain-key)#',
+  'config-network-group':      '{host}(config-network-group)#',
 };
 
 // ─── Cisco Switch Prompt Map ──────────────────────────────────────

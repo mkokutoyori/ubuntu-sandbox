@@ -12,6 +12,7 @@ import { getPrivilegeRules } from '../../router/security/CiscoPrivilegeStore';
 import type { Port } from '../../../hardware/Port';
 import { IPAddress, SubnetMask, RIP_METRIC_INFINITY } from '../../../core/types';
 import { runningConfigACL, runningConfigInterfaceACL } from './CiscoAclCommands';
+import { runningConfigObjectGroups } from '@/cli/commands/objectGroup/objectGroupFamily';
 import { runningConfigNAT, runningConfigInterfaceNAT } from './CiscoNATCommands';
 import { ipSlaRunningConfigLines, trackRunningConfigLines } from './ciscoIpSlaRunningConfig';
 import { orderCiscoConfigBlocks, routingProcessConfigLines, policyConfigLines } from './ciscoConfigSerializer';
@@ -506,6 +507,9 @@ export function showRunningConfig(router: Router): string {
     lines.push(...interfaceConfigLines(router, name, port, descs, dhcp));
     lines.push('!');
   }
+
+  const groupLines = runningConfigObjectGroups(router._getACLEngineInternal().listObjectGroups());
+  if (groupLines.length > 0) lines.push(...groupLines);
 
   // ACL configuration
   const aclLines = runningConfigACL(router);

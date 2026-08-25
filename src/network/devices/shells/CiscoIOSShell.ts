@@ -24,6 +24,10 @@ import type { ArgumentSpec } from '@/cli/ArgumentTypes';
 import { dhcpClientFamily, type DhcpClientLeaseView } from '@/cli/commands/dhcp/dhcpClientFamily';
 import type { DebugPair } from '@/cli/commands/debug/debugFamily';
 import { ALL_TUNNEL } from '@/cli/commands/tunnel/tunnelFamily';
+import {
+  OBJECT_GROUP_FAMILY,
+  type ObjectGroupStore,
+} from '@/cli/commands/objectGroup/objectGroupFamily';
 import { CLEAR_CRYPTO_FAMILY } from '@/cli/commands/clear/clearCrypto';
 import { SHOW_CRYPTO_FAMILY } from '@/cli/commands/show/showCrypto';
 import type { Router } from '../Router';
@@ -409,6 +413,7 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
       ...ospfClearSpecs(() => this.d()),
       ...ipSlaClearSpecs(this),
       ...ALL_TUNNEL, ...CLEAR_CRYPTO_FAMILY, ...SHOW_CRYPTO_FAMILY,
+      ...OBJECT_GROUP_FAMILY,
       ...this.ipv6NdSpecs(), ...this.ipv6OspfSpecs(), ...this.ipv6ReglagesSpecs(),
       ...this.clearIpv6Specs(),
     ];
@@ -614,6 +619,7 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
       [['show', 'eigrp', 'address-family', 'ipv4'], 'IPv4 address family'],
       [['show', 'ip', 'nat'], 'Network Address Translation'],
       [['show', 'ip', 'nat', 'nvi'], 'NAT Virtual Interface'],
+      [['object-group'], 'Configure object-group'],
     ];
   }
 
@@ -1115,6 +1121,8 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
   resolveInterfaceName(input: string): string | null {
     return resolveInterfaceName(this.r(), input);
   }
+
+  objectGroupStore(): ObjectGroupStore { return this.r()._getACLEngineInternal(); }
 
   getSelectedACL(): string | null { return this.selectedACL; }
   setSelectedACL(name: string | null): void { this.selectedACL = name; }

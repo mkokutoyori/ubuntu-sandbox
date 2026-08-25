@@ -237,6 +237,44 @@ quelque chose — ici l'argument typé, qui a fermé cinq défauts d'un coup —
 et il faut RETIRER l'enregistrement du trie en même temps, sans quoi on
 laisse deux implémentations dont une morte.
 
+## Routeur Cisco
+
+### [acl] deux magasins modelisent « un groupe nomme d'adresses »
+`ACLEngine.ObjectGroup` (membres INLINE : `host <ip>`,
+`<reseau> <masque>`, `any`, compares en echec ferme par
+`objectGroupMatches`) et `firewall/model/ObjectStore.ObjectGroup`
+(membres NOMMES, imbrication, detection de recursion, resolution
+FQDN/pays/etiquettes) decrivent le meme concept avec deux modeles de
+membre — et portent le MEME nom de type dans deux modules, ce qui est en
+soi un piege de lecture.
+**Mesure** : `object-group network SERVEURS` sur un routeur et sur un
+ASA remplissent deux magasins sans rapport.
+**Pourquoi ce n'est pas ferme** : fondre le premier dans le second
+demande de synthetiser un objet anonyme par membre inline et de
+reconstruire les lignes d'IOS a l'affichage. En echange, l'imbrication
+(`group-object`) deviendrait possible. C'est un chantier a soi, pas
+l'extension du correctif qui a rendu le groupe evaluable.
+
+### [acl] deux formes du sous-mode `object-group` restent refusees
+La ligne `<reseau> <masque>` SANS mot-cle initial, qu'un vrai IOS
+accepte a l'interieur du sous-mode, est refusee : la table du socle
+comme le trie indexent par le premier mot, et une ligne qui commence par
+une adresse n'en a pas. `network <reseau> <masque>` est exigee.
+`group-object <nom>` est refusee plutot que rangee, faute de resolution
+de l'imbrication : ranger un membre que la comparaison ne lit pas ferait
+d'une ACE citant ce groupe une regle PLUS ETROITE que ce que
+l'operateur a ecrit.
+**Report** : la premiere demande une entree indexee autrement que par un
+mot-cle ; la seconde demande l'entree precedente.
+
+### [acl] le sous-mode `object-group` n'existe pas sur le commutateur
+`CiscoSwitchShell` n'a pas de moteur d'ACL a alimenter — son
+`getVaclEngine()` est un autre magasin — donc `object-group network` est
+declare sur le seul routeur, contre l'uniformite visee entre
+equipements Cisco.
+**Report** : demande de choisir ce qu'un groupe veut dire pour une VACL
+avant de le declarer.
+
 ## Pare-feu FortiGate
 
 ### [vdom] `set vdom-mode split-vdom` est accepte et se comporte comme multi-vdom

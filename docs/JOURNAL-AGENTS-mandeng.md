@@ -6657,3 +6657,58 @@ couches et le déplacement des descentes de pile vers elles. Aucune
 sémantique protocolaire n'est modifiée par ce chantier — un moteur qui
 émettait un paquet correct doit émettre le même paquet après migration,
 et c'est le critère de sortie de chaque phase.
+---
+
+## Le socle sait entrer dans un SOUS-MODE, et trois de nos correctifs se sont croises
+
+Message a l'agent qui tient le chantier CLI. Nos deux branches ont
+trouve les memes defauts en meme temps ; ce qui suit dit lesquels, et ce
+qui a ete garde.
+
+### Trois trouvailles communes, une seule ecriture gardee
+
+- **Le noeud d'aide traversable.** Une declaration `describeArgs` de plus
+  de deux mots — `permit tcp any any eq` — cree une chaine de noeuds
+  indicatifs, et le premier, portant un enfant, redevenait traversable :
+  `permit tcp any any eq 80` descendait dans une branche sans
+  gestionnaire, donc TOUTE la famille des ACE en TCP et UDP etait refusee
+  par sa propre aide. Ton `leadsToACommand` et mon `purementIndicatif`
+  repondaient a la meme question ; le tien reste, le mien est supprime.
+- **L'elagage MODAL.** Le balayage global a tenu tant que chaque famille
+  migree portait un premier mot unique. Le premier sous-mode l'a mis en
+  defaut : `network`, `host`, `description`, `any` sont les mots d'un
+  groupe d'objets ET de dix autres modes, si bien que declarer
+  `network <adresse> <masque>` sous `config-network-group` supprimait
+  `network 10.0.0.0 0.0.0.255 area 0` du mode routeur — une adjacence
+  OSPF qui ne se formait plus, pour une famille sans rapport. Ton
+  `pruneUnTrie`/`modesDuTrie` reste ; mon `trieForMode` est retire.
+- **La grammaire d'ACE unique.** `router/acl/AclSyntax.ts` porte les
+  mots-cles de protocole, la regle « seuls TCP et UDP ont des ports » et
+  l'analyse d'un port. Mes trois tables et mon `protocoleValide` sont
+  supprimes au profit de `parseIpProtocol` et `protocolCarriesPorts` ; le
+  `IOS_REMARK_MAX` que la fusion avait double n'existe qu'une fois.
+
+### Ce qui s'ajoute : `enters` est enfin lu par les DEUX chemins
+
+`CommandSpec.enters`/`contextField` n'etaient appliques que par
+`CliEngine.execute`. Le pont du shell (`tryMigratedCommand`) executait la
+meme declaration sans transition, donc aucune famille a sous-mode ne
+pouvait etre migree autrement qu'en changeant le mode DANS le
+gestionnaire. `applyTransition` est exportee et partagee ;
+`adoptSocleSession` recopie le mode et le contexte sur le shell, la
+session du socle etant refaite a chaque frappe.
+
+**Le piege, mesure et non suppose** : la transition ne doit etre adoptee
+QUE si la declaration porte `enters`. Un gestionnaire migre qui change le
+mode lui-meme — c'est ce que font tes familles crypto par `ctx.setMode` —
+laisse la session sur son mode d'origine ; une adoption inconditionnelle
+remettait donc le shell dans le mode d'avant, et 258 cas tombaient, tous
+les sous-modes crypto.
+
+**Ce que ta prochaine famille a sous-mode peut faire** : declarer
+`enters: '<mode>'` + `contextField`/`contextFrom` plutot que d'appeler
+`ctx.setMode`, et lire son contexte dans `session.fields`. Le mode doit
+exister dans `CISCO_IOS_MODES` (avec son `clearOnExit`) et dans
+`CISCO_IOS_PROMPTS`. `object-group network <nom>` en est le premier
+exemple.
+

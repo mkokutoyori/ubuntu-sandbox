@@ -147,6 +147,43 @@ export interface PortSpec {
   endPort?: number;
 }
 
+/**
+ * Un critere NUMERIQUE compare par un operateur : c'est la grammaire du
+ * port, et `ttl` la reprend mot pour mot. Un seul type pour les deux
+ * evite que l'un accepte `range` et l'autre non.
+ */
+export interface RangeSpec {
+  op: PortOperator;
+  value: number;
+  endValue?: number;
+}
+
+/** Le verdict d'un `RangeSpec` sur une valeur. */
+export function rangeSpecMatches(spec: RangeSpec, value: number): boolean {
+  switch (spec.op) {
+    case 'eq': return value === spec.value;
+    case 'neq': return value !== spec.value;
+    case 'lt': return value < spec.value;
+    case 'gt': return value > spec.value;
+    case 'range':
+      return value >= spec.value && value <= (spec.endValue ?? spec.value);
+  }
+}
+
+/** Un groupe nomme d'adresses, reutilisable dans plusieurs ACE. */
+export interface ObjectGroupMember {
+  ip: IPAddress;
+  /** Masque GENERIQUE, deja converti depuis le masque reseau saisi. */
+  wildcard: SubnetMask;
+}
+
+export interface ObjectGroup {
+  name: string;
+  kind: 'network';
+  description?: string;
+  members: ObjectGroupMember[];
+}
+
 export interface ACLEntry {
   sequence?: number;
   /** L'opérateur a-t-il ÉCRIT ce numéro ? IOS ne le rend en configuration que dans ce cas. */
@@ -184,6 +221,12 @@ export interface ACLEntry {
   fragments?: boolean;
   optionName?: string;
   remark?: string;
+  /** `ttl <operateur> <valeur>` — la duree de vie du paquet. */
+  ttl?: RangeSpec;
+  /** `object-group <nom>` a la place d'une adresse source. */
+  srcObjectGroup?: string;
+  /** `object-group <nom>` a la place d'une adresse destination. */
+  dstObjectGroup?: string;
   matchCount: number;
 }
 
@@ -218,6 +261,9 @@ export interface ACLEntryOptions {
   fragments?: boolean;
   optionName?: string;
   remark?: string;
+  ttl?: RangeSpec;
+  srcObjectGroup?: string;
+  dstObjectGroup?: string;
 }
 
 export interface AccessList {
@@ -725,7 +771,9 @@ export class ACLEngine {
     // liste commentée devenait une liste ouverte.
     if (entry.remark !== undefined) return false;
 
-    if (!this.wildcardMatch(ipPkt.sourceIP, entry.srcIP, entry.srcWildcard)) {
+    if (entry.srcObjectGroup !== undefined) {
+      if (!this.objectGroupMatches(entry.srcObjectGroup, ipPkt.sourceIP)) return false;
+    } else if (!this.wildcardMatch(ipPkt.sourceIP, entry.srcIP, entry.srcWildcard)) {
       return false;
     }
 
@@ -733,13 +781,26 @@ export class ACLEngine {
       return true;
     }
 
-    if (entry.dstIP && entry.dstWildcard) {
+    if (entry.dstObjectGroup !== undefined) {
+      if (!ipPkt.destinationIP) return false;
+      if (!this.objectGroupMatches(entry.dstObjectGroup, ipPkt.destinationIP)) return false;
+    } else if (entry.dstIP && entry.dstWildcard) {
       // Une sonde peut ne pas porter de destination. Le critère est alors
       // intranchable — il échoue, il ne fait pas planter l'évaluation.
       if (!ipPkt.destinationIP) return false;
       if (!this.wildcardMatch(ipPkt.destinationIP, entry.dstIP, entry.dstWildcard)) {
         return false;
       }
+    }
+
+    /*
+     * `ttl` se compare comme un port : meme grammaire, meme evaluateur.
+     * Un paquet sans champ `ttl` rend le critere intranchable, donc il
+     * echoue — la regle de ce moteur pour tout critere indecidable.
+     */
+    if (entry.ttl) {
+      if (typeof ipPkt.ttl !== 'number') return false;
+      if (!rangeSpecMatches(entry.ttl, ipPkt.ttl)) return false;
     }
 
     if (entry.protocol && entry.protocol !== 'ip') {
@@ -887,6 +948,63 @@ export class ACLEngine {
       }
     }
     return true;
+  }
+
+  /*
+   * Les groupes d'objets vivent dans le moteur qui les LIT.
+   *
+   * Les ranger ailleurs demanderait un port de resolution, donc un
+   * second endroit ou la meme question se pose ; ici la declaration et
+   * la comparaison lisent la meme table.
+   */
+  private objectGroups = new Map<string, ObjectGroup>();
+
+  ensureObjectGroup(name: string, kind: 'network' = 'network'): ObjectGroup {
+    const existant = this.objectGroups.get(name);
+    if (existant) return existant;
+    const cree: ObjectGroup = { name, kind, members: [] };
+    this.objectGroups.set(name, cree);
+    return cree;
+  }
+
+  getObjectGroup(name: string): ObjectGroup | undefined {
+    return this.objectGroups.get(name);
+  }
+
+  listObjectGroups(): ObjectGroup[] {
+    return [...this.objectGroups.values()];
+  }
+
+  removeObjectGroup(name: string): boolean {
+    return this.objectGroups.delete(name);
+  }
+
+  addObjectGroupMember(name: string, ip: IPAddress, wildcard: SubnetMask): void {
+    this.ensureObjectGroup(name).members.push({ ip, wildcard });
+  }
+
+  removeObjectGroupMember(name: string, ip: IPAddress, wildcard: SubnetMask): boolean {
+    const groupe = this.objectGroups.get(name);
+    if (!groupe) return false;
+    const avant = groupe.members.length;
+    groupe.members = groupe.members.filter(
+      m => !(m.ip.toString() === ip.toString()
+        && m.wildcard.toString() === wildcard.toString()));
+    return groupe.members.length !== avant;
+  }
+
+  /**
+   * Un groupe ABSENT ne correspond a rien.
+   *
+   * C'est la regle d'echec ferme de ce moteur : un critere que
+   * l'evaluation ne peut pas trancher fait echouer la correspondance.
+   * Le faire reussir ferait qu'une ACE citant un groupe mal orthographie
+   * s'appliquerait a TOUT le trafic — un trou que la CLI ne montre pas.
+   */
+  private objectGroupMatches(name: string, address: IPAddress): boolean {
+    const groupe = this.objectGroups.get(name);
+    if (!groupe || groupe.members.length === 0) return false;
+    return groupe.members.some(m => this.wildcardMatch(address, m.ip, m.wildcard));
   }
 
   private getProtocolName(proto: number): string {

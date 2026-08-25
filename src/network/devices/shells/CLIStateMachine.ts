@@ -150,6 +150,7 @@ export const CISCO_IOS_MODES: ModeHierarchy = {
   'config-ikev2-profile':      { parent: 'config', clearOnExit: ['selectedIKEv2Profile'] },
   'config-gdoi-group':         { parent: 'config', clearOnExit: ['selectedGdoiGroup'] },
   'config-time-range':         { parent: 'config', clearOnExit: ['selectedTimeRange'] },
+  'config-network-group':      { parent: 'config', clearOnExit: ['selectedObjectGroup'] },
   'config-cmap':               { parent: 'config', clearOnExit: ['selectedClassMap'] },
   'config-pmap':               { parent: 'config', clearOnExit: ['selectedPolicyMap'] },
   'config-pmap-c':             { parent: 'config-pmap', clearOnExit: ['selectedPolicyClass'] },

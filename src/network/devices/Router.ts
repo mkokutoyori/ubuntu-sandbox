@@ -5743,6 +5743,9 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
   _ensureNamedAccessList(name: string, type: 'standard' | 'extended') { this.aclEngine.ensureNamedAccessList(name, type); }
   _aclHasSequence(name: string, seq: number) { return this.aclEngine.hasSequence(name, seq); }
   _getAccessListsInternal() { return this.aclEngine.getAccessListsInternal(); }
+
+  /** @internal Le moteur d'ACL lui-meme, pour les groupes d'objets. */
+  _getACLEngineInternal() { return this.aclEngine; }
   _getInterfaceACLBindingsInternal() { return this.aclEngine.getInterfaceACLBindingsInternal(); }
   _removeNamedACLEntryBySequence(name: string, seq: number) { return this.aclEngine.removeNamedACLEntryBySequence(name, seq); }
   _resequenceNamedACL(name: string, start: number, step: number) { return this.aclEngine.resequenceNamedACL(name, start, step); }
