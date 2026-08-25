@@ -11,6 +11,7 @@ import {
   MACAddress,
   type EthernetFrame,
 } from '../core/types';
+import type { LinkSendRequest } from '../layers/link/LinkLayer';
 import { Logger } from '../core/Logger';
 
 export interface UdldHost {
@@ -19,7 +20,7 @@ export interface UdldHost {
   getHostname(): string;
   getPort(name: string): import('../hardware/Port').Port | undefined;
   getPorts(): import('../hardware/Port').Port[];
-  sendFrame(portName: string, frame: EthernetFrame): void;
+  sendOnLink(request: LinkSendRequest): boolean;
   onUdldErrDisable?(portName: string): void;
 }
 
@@ -225,13 +226,12 @@ export class UdldAgent extends ReactiveAgentBase {
       timeoutInterval: this.config.messageTimeoutSec,
       echo,
     };
-    const frame: EthernetFrame = {
-      srcMAC: port.getMAC(),
-      dstMAC: new MACAddress(UDLD_MULTICAST_MAC),
+    this.host.sendOnLink({
+      iface: portName,
+      destination: new MACAddress(UDLD_MULTICAST_MAC),
       etherType: ETHERTYPE_UDLD,
       payload,
-    };
-    this.host.sendFrame(portName, frame);
+    });
     this.getBus().publish({
       topic: 'udld.packet.sent',
       payload: {
@@ -254,13 +254,12 @@ export class UdldAgent extends ReactiveAgentBase {
       timeoutInterval: this.config.messageTimeoutSec,
       echo: [],
     };
-    const frame: EthernetFrame = {
-      srcMAC: port.getMAC(),
-      dstMAC: new MACAddress(UDLD_MULTICAST_MAC),
+    this.host.sendOnLink({
+      iface: portName,
+      destination: new MACAddress(UDLD_MULTICAST_MAC),
       etherType: ETHERTYPE_UDLD,
       payload,
-    };
-    this.host.sendFrame(portName, frame);
+    });
   }
 
   protected isEnabled(): boolean { return this.config.enabled; }

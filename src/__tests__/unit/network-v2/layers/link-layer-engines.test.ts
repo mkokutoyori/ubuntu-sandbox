@@ -36,7 +36,9 @@ import { resetDeviceCounters } from '@/network/devices/DeviceFactory';
 import { Logger } from '@/network/core/Logger';
 import { getDefaultEventBus } from '@/events/EventBus';
 
-const MIGRATED_ENGINES = ['stp', 'cdp', 'lldp'];
+const MIGRATED_ENGINES = [
+  'stp', 'cdp', 'lldp', 'lacp', 'dtp', 'udld', 'vtp', 'dot1x', 'igmp-snooping', 'arp',
+];
 
 const CDP_GROUP = '01:00:0c:cc:cc:cc';
 const LLDP_GROUP = '01:80:c2:00:00:0e';

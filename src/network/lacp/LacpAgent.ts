@@ -9,6 +9,7 @@ import {
   LACP_FLAG_SYNC, LACP_FLAG_COLLECTING, LACP_FLAG_DISTRIBUTING,
 } from './types';
 import { MACAddress, type EthernetFrame } from '../core/types';
+import type { LinkSendRequest } from '../layers/link/LinkLayer';
 import { Logger } from '../core/Logger';
 
 export interface LacpHost {
@@ -17,7 +18,7 @@ export interface LacpHost {
   getHostname(): string;
   getPort(name: string): import('../hardware/Port').Port | undefined;
   getPorts(): import('../hardware/Port').Port[];
-  sendFrame(portName: string, frame: EthernetFrame): void;
+  sendOnLink(request: LinkSendRequest): boolean;
   /**
    * A port joined or left an aggregate. STP knows a bundled port by its
    * group name, so the change has to reach it — same host-callback shape
@@ -190,16 +191,16 @@ export class LacpAgent extends ReactiveAgentBase {
       type: 'lacp', subtype: 0x01, version: 0x01,
       actor, partner, collectorMaxDelay: 0,
     };
-    const eth: EthernetFrame = {
-      srcMAC: port.getMAC(),
-      dstMAC: new MACAddress(LACP_SLOW_MAC),
-      etherType: ETHERTYPE_LACP,
-      payload,
-    };
     if (this.advertising.has(portName)) return;
     this.advertising.add(portName);
-    try { this.host.sendFrame(portName, eth); }
-    finally { this.advertising.delete(portName); }
+    try {
+      this.host.sendOnLink({
+        iface: portName,
+        destination: new MACAddress(LACP_SLOW_MAC),
+        etherType: ETHERTYPE_LACP,
+        payload,
+      });
+    } finally { this.advertising.delete(portName); }
     this.lacpduSent.set(portName, (this.lacpduSent.get(portName) ?? 0) + 1);
     this.getBus().publish({
       topic: 'lacp.frame.sent',

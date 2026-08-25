@@ -553,13 +553,19 @@ existant l'a attrapé. Et un commentaire de `StpAgent` promettait qu'« un
 nom logique n'est jamais passé à `sendFrame` » : il est corrigé plutôt
 que laissé mentir.
 
-**Incrément 2, reste.** Les huit autres moteurs de couche lien
-(LACP, DTP, UDLD, VTP, 802.1X, IGMP snooping, et les deux du répertoire
-`arp/`) construisent encore leur trame Ethernet
-eux-mêmes et appellent `sendFrame`. Le garde-fou de cet incrément est
-celui que §7 décrit : **échouer si un répertoire déclaré migré appelle
-encore `sendFrame`**, la liste des répertoires migrés grossissant à
-chaque lot.
+**Incrément 2, second lot — LIVRÉ, et la phase 1 est complète.** LACP,
+DTP, UDLD, VTP, 802.1X, IGMP snooping et `arp/` lisent la couche à leur
+tour. **Les dix répertoires de couche lien sont déclarés migrés** et le
+garde-fou porte sur tous : aucun n'appelle `sendFrame`, aucun ne pose de
+`srcMAC:`.
+
+Deux cas ont demandé un traitement propre plutôt qu'un remplacement
+mécanique. **VTP RELAIE** une trame reçue sur ses autres agrégats, et un
+relais conserve l'adresse de l'ORIGINAL — c'est exactement à quoi sert
+le champ `source?` de `LinkSendRequest`, qui aurait autrement été du
+décor. Et **IGMP snooping** passait par `buildIgmpFrame`, qui fabrique la
+trame entière : l'agent lui demande maintenant les pièces et laisse la
+couche signer.
 
 ### Phase 2 — La couche internet existe, avec un seul acheminement
 Créer `layers/internet/`. Migrer `Router.forwardPacket` dedans, puis y

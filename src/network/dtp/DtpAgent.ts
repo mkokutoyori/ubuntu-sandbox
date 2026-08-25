@@ -8,6 +8,7 @@ import {
   ETHERTYPE_DTP, DTP_MULTICAST_MAC,
 } from './types';
 import { MACAddress, type EthernetFrame } from '../core/types';
+import type { LinkSendRequest } from '../layers/link/LinkLayer';
 import { Logger } from '../core/Logger';
 
 export interface DtpHost {
@@ -16,7 +17,7 @@ export interface DtpHost {
   getHostname(): string;
   getPort(name: string): import('../hardware/Port').Port | undefined;
   getPorts(): import('../hardware/Port').Port[];
-  sendFrame(portName: string, frame: EthernetFrame): void;
+  sendOnLink(request: LinkSendRequest): boolean;
   onOperationalModeChanged(portName: string, mode: DtpOperationalMode): void;
 }
 
@@ -160,16 +161,16 @@ export class DtpAgent extends ReactiveAgentBase {
       trunkEncapsulation: s.trunkEncapsulation,
       neighborMac: port.getMAC().toString().toLowerCase(),
     };
-    const frame: EthernetFrame = {
-      srcMAC: port.getMAC(),
-      dstMAC: new MACAddress(DTP_MULTICAST_MAC),
-      etherType: ETHERTYPE_DTP,
-      payload,
-    };
     if (this.advertising.has(portName)) return;
     this.advertising.add(portName);
-    try { this.host.sendFrame(portName, frame); }
-    finally { this.advertising.delete(portName); }
+    try {
+      this.host.sendOnLink({
+        iface: portName,
+        destination: new MACAddress(DTP_MULTICAST_MAC),
+        etherType: ETHERTYPE_DTP,
+        payload,
+      });
+    } finally { this.advertising.delete(portName); }
     this.getBus().publish({
       topic: 'dtp.frame.sent',
       payload: {
