@@ -115,13 +115,44 @@ lisent aujourd'hui le bus global. Ils deviennent des abonnés du magasin
 et des taps des machines affichées. **Sortie** : `src/react/hooks/` ne
 mentionne plus `getDefaultEventBus`.
 
-### Incrément 4 — l'interconnexion RAC devient du vrai trafic
+### Incrément 4 — l'interconnexion RAC devient du vrai trafic — **LIVRÉ**
 Le battement de cœur CSS et les messages GCS deviennent de vrais
 datagrammes sur le port d'interconnexion. **Sortie** : une éviction se
 produit parce que le battement **n'arrive plus** — la cause réelle — et
 non parce qu'un événement a été lu sur un bus. Le témoin obligatoire :
-un laboratoire où l'interconnexion est coupée par `tc qdisc` évince, et
-le même laboratoire sans coupure n'évince pas.
+un laboratoire où l'interconnexion est coupée évince, et le même
+laboratoire sans coupure n'évince pas.
+
+**Ce qui a réellement changé.** Le fichier avouait son raccourci dans son
+propre en-tête : « *eviction here fires the instant the interconnect NIC
+itself loses carrier (`port.link.down`)* ». C'est remplacé par un vrai
+battement de cœur : chaque membre ÉMET un datagramme sur l'interconnexion
+toutes les secondes et chaque membre ÉCOUTE ; l'éviction suit le
+`misscount` de 30 s, comme le vrai CSSD. **Le cas qui prouve la
+différence** est celui d'un nœud ÉTEINT : aucun `port.link.down` n'est
+publié pour son propre port, donc l'ancien mécanisme ne pouvait pas le
+remarquer — le nouveau l'évince, parce que le battement cesse.
+
+**Une règle a dû être ajoutée, et elle vient du vrai produit** : quand
+l'interconnexion tombe, les deux nœuds cessent de s'entendre
+MUTUELLEMENT, donc une lecture naïve les évince tous les deux et le
+laboratoire perd sa base. Un vrai CSS garde la cohorte survivante ; ici
+le survivant est le membre dont l'interface d'interconnexion est encore
+utilisable. Le quorum par disque de vote n'est pas modélisé, et c'est
+écrit ici plutôt que sous-entendu.
+
+**Deux conséquences assumées.** L'éviction n'est plus INSTANTANÉE : les
+deux cas de `scenario-oracle-07` avancent désormais une horloge virtuelle
+de `misscount`, parce qu'un battement de cœur ne peut pas conclure sans
+que le temps passe — leur ancienne forme encodait le raccourci comme
+contrat. Et l'instance Oracle publie ses événements sur le bus de SA
+machine (`db.instance.setEventBus(device.getBus())`), sans quoi la fusion
+de cache ne pouvait pas quitter le bus global.
+
+**Reste partagé, et ce n'est pas le bus** : `RacClusterRegistry` est une
+table de grappe globale, et `EquipmentRegistry` sert à retrouver un
+pair. Les deux relèvent de `PRD-Frame-Only-Refactor.md`, pas de ce
+document.
 
 ### Incrément 5 — `getDefaultEventBus` est supprimé
 Le relais `ForwardingEventBus` ne forwarde plus vers un global ; le
