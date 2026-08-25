@@ -43,7 +43,6 @@ import { Cable } from '@/network/hardware/Cable';
 import { resetCounters, MACAddress } from '@/network/core/types';
 import { resetDeviceCounters } from '@/network/devices/DeviceFactory';
 import { Logger } from '@/network/core/Logger';
-import { getDefaultEventBus } from '@/events/EventBus';
 
 beforeEach(() => {
   resetCounters();
@@ -231,14 +230,12 @@ describe('`authentication-mode` authentifie', () => {
     // Les deux motifs envoient l'operateur a deux endroits : une
     // commande qui manque, ou un secret qui differe.
     const motifs: string[] = [];
-    // Le bus par defaut est celui que `getDefaultEventBus()` sert a tout
-    // le monde ; `Equipment.getBus` est protege, et le forcer serait
-    // eteindre le compilateur pour lire un evenement qui passe deja par
-    // le bus observateur.
-    getDefaultEventBus().subscribe('vrrp.auth.rejected',
-      (e) => { motifs.push((e.payload as { reason: string }).reason); });
     const b = new HuaweiRouter(`Z${++serie}`);
     const a = new HuaweiRouter(`Y${serie}`);
+    for (const r of [a, b]) {
+      r.getBus().subscribe('vrrp.auth.rejected',
+        (e) => { motifs.push((e.payload as { reason: string }).reason); });
+    }
     new Cable(`w${serie}`).connect(
       a.getPort('GE0/0/0')!, b.getPort('GE0/0/0')!);
     for (const [r, ip, conf] of [

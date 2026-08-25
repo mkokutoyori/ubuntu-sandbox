@@ -31,7 +31,6 @@ import { resetCounters } from '@/network/core/types';
 import { resetDeviceCounters } from '@/network/devices/DeviceFactory';
 import { EquipmentRegistry } from '@/network/equipment/EquipmentRegistry';
 import { Logger } from '@/network/core/Logger';
-import { getDefaultEventBus } from '@/events/EventBus';
 
 interface AclDenyLog {
   denies: Array<{ deviceId: string; iface: string; src: string; dst: string; direction: 'in' | 'out' }>;
@@ -39,14 +38,13 @@ interface AclDenyLog {
 
 function captureAclDenyLog(): AclDenyLog {
   const log: AclDenyLog = { denies: [] };
-  getDefaultEventBus().subscribe('log', (e) => {
-    const p = e.payload as { source?: string; event?: string; message?: string };
+  Logger.subscribe((entry) => {
     const dir: 'in' | 'out' | null =
-      p.event === 'router:acl-deny-in' ? 'in'
-      : p.event === 'router:acl-deny-out' ? 'out' : null;
+      entry.event === 'router:acl-deny-in' ? 'in'
+      : entry.event === 'router:acl-deny-out' ? 'out' : null;
     if (!dir) return;
-    const m = (p.message || '').match(/ACL denied \S+ on (\S+): (\S+) → (\S+)/);
-    if (m) log.denies.push({ deviceId: p.source || '', iface: m[1], src: m[2], dst: m[3], direction: dir });
+    const m = (entry.message || '').match(/ACL denied \S+ on (\S+): (\S+) → (\S+)/);
+    if (m) log.denies.push({ deviceId: entry.source || '', iface: m[1], src: m[2], dst: m[3], direction: dir });
   });
   return log;
 }

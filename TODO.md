@@ -703,6 +703,29 @@ bruit.
 
 ## Bus d'evenements
 
+### [bus] un composant PAR MACHINE se replie encore sur le bus global
+`Equipment.getBus()` ne relaie plus rien vers un singleton (increment 5b
+de `PRD-Suppression-Bus-Partage.md`), mais une trentaine de composants
+qui appartiennent a UNE machine portent encore un repli
+`busOverride ?? getDefaultEventBus()` : OSPF, OSPFv3, RIP, IPSec, NAT,
+DHCP client et serveur, IP SLA, TrackService, IpSlaResponder, EEM,
+FilterChain, KdcSession, les roles Windows (NPS, ADCS, cluster, DFS,
+RDP, replication AD) et `OracleInstance`.
+**Mesure** : `grep -rl getDefaultEventBus src/ | grep -v __tests__`
+rend 33 fichiers de production ; chacun lu, chaque occurrence est soit
+ce repli, soit un observateur legitime (`Logger`, `EquipmentRegistry`,
+`Cable`, `networkStore`, `TerminalManager`).
+**Pourquoi c'est un defaut et pas une commodite** : le repli n'est
+atteint QUE lorsque personne n'a injecte de bus, c'est-a-dire lorsque
+l'objet n'est rattache a aucune machine — et il publie alors dans un
+canal que toutes les machines partagent. Retirer le repli fait de cette
+situation une erreur visible au lieu d'une fuite silencieuse.
+**Non ferme ici** : chaque retrait demande de verifier le site de
+CONSTRUCTION du composant (qui doit lui passer le bus de son
+proprietaire), et ils sont dans neuf sous-systemes differents. C'est
+l'increment 5c, mene sous-systeme par sous-systeme, arbre vert a chaque
+etape.
+
 ### [nhrp] `debug nhrp` n'a toujours pas d'emetteur, faute de transcription
 `NhrpDomainEvent` est desormais dans l'union `DomainEvent`, donc un
 abonnement compile — c'etait le blocage que

@@ -35,7 +35,6 @@ import {
   LLMNR_UNIQUENESS_VERIFY_TIMES, llmnrFlagOverrides,
   type LlmnrNameState,
 } from './types';
-import { getDefaultEventBus } from '@/events/EventBus';
 
 export class LlmnrAgent {
   private bound = false;
@@ -118,7 +117,7 @@ export class LlmnrAgent {
       const holders = await this.askLink(label, LLMNR_TIMEOUT_MS);
       if (holders.length > 0) {
         this.state = 'conflicted';
-        getDefaultEventBus().publish({
+        this.host.getBus().publish({
           topic: 'llmnr.conflict.detected',
           payload: {
             deviceId: this.host.getId(), hostname: this.host.getHostname(),
@@ -168,7 +167,7 @@ export class LlmnrAgent {
       conflict: this.state === 'conflicted',
       tentative: this.state === 'tentative',
     });
-    getDefaultEventBus().publish({
+    this.host.getBus().publish({
       topic: 'llmnr.responded',
       payload: {
         deviceId: this.host.getId(), hostname: this.host.getHostname(), name: asked,
@@ -211,7 +210,7 @@ export class LlmnrAgent {
     const label = name.toLowerCase().replace(/\.$/, '');
     if (label.includes('.') || label === '') return [];
 
-    getDefaultEventBus().publish({
+    this.host.getBus().publish({
       topic: 'llmnr.query.sent',
       payload: {
         deviceId: this.host.getId(), hostname: this.host.getHostname(), name: label,
@@ -224,7 +223,7 @@ export class LlmnrAgent {
     const addresses = announcedAddresses(
       queryMulticastDnsSync(this.host, LLMNR_BINDING, query));
     if (addresses.length > 0) {
-      getDefaultEventBus().publish({
+      this.host.getBus().publish({
         topic: 'llmnr.resolved',
         payload: {
           deviceId: this.host.getId(), hostname: this.host.getHostname(),
@@ -246,7 +245,7 @@ export class LlmnrAgent {
     // une question qui ne regarde pas le lien.
     if (label.includes('.') || label === '') return [];
 
-    getDefaultEventBus().publish({
+    this.host.getBus().publish({
       topic: 'llmnr.query.sent',
       payload: {
         deviceId: this.host.getId(), hostname: this.host.getHostname(), name: label,
@@ -254,7 +253,7 @@ export class LlmnrAgent {
     });
     const addresses = await this.askLink(label, timeoutMs);
     if (addresses.length > 0) {
-      getDefaultEventBus().publish({
+      this.host.getBus().publish({
         topic: 'llmnr.resolved',
         payload: {
           deviceId: this.host.getId(), hostname: this.host.getHostname(),
@@ -274,7 +273,7 @@ export class LlmnrAgent {
     const label = name.toLowerCase().replace(/\.$/, '');
     if (label.includes('.') || label === '') return [];
 
-    getDefaultEventBus().publish({
+    this.host.getBus().publish({
       topic: 'llmnr.query.sent',
       payload: {
         deviceId: this.host.getId(), hostname: this.host.getHostname(), name: label,
@@ -282,7 +281,7 @@ export class LlmnrAgent {
     });
     const addresses = await this.askLink(label, timeoutMs, 'AAAA');
     if (addresses.length > 0) {
-      getDefaultEventBus().publish({
+      this.host.getBus().publish({
         topic: 'llmnr.resolved',
         payload: {
           deviceId: this.host.getId(), hostname: this.host.getHostname(),

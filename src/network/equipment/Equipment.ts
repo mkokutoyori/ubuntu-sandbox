@@ -145,6 +145,7 @@ export abstract class Equipment {
   setEventBus(bus: IEventBus | null): void {
     this.busOverride = bus;
     for (const port of this.ports.values()) port.setEventBus(this.getBus());
+    EquipmentRegistry.getInstance().notifyDeviceChanged();
   }
 
   getBus(): IEventBus {

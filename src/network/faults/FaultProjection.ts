@@ -23,7 +23,6 @@ import { getDefaultEventBus } from '@/events/EventBus';
 // the events it reacts to carry no more than an id.
 // eslint-disable-next-line no-restricted-imports
 import { EquipmentRegistry } from '../equipment/EquipmentRegistry';
-// eslint-disable-next-line no-restricted-imports
 import { watchDevices } from '../equipment/DeviceWatch';
 import type { FaultRegistry } from './FaultRegistry';
 import { getFaultRegistry } from './FaultRegistry';

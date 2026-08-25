@@ -10,21 +10,25 @@ export function watchDevices<T extends DomainEventTopic>(
   topics: readonly T[],
   handler: DeviceEventHandler<T>,
 ): Unsubscribe {
-  const watched = new Map<string, Unsubscribe[]>();
+  const watched = new Map<string, { bus: unknown; subs: Unsubscribe[] }>();
 
   const stopWatching = (id: string): void => {
-    const subs = watched.get(id);
-    if (!subs) return;
-    for (const stop of subs) { try { stop(); } catch { /* already gone */ } }
+    const entry = watched.get(id);
+    if (!entry) return;
+    for (const stop of entry.subs) { try { stop(); } catch { /* already gone */ } }
     watched.delete(id);
   };
 
   const startWatching = (device: Equipment): void => {
     const id = device.getId();
-    if (watched.has(id)) return;
     const bus = device.getBus();
-    watched.set(id, topics.map(topic =>
-      bus.subscribe(topic, (event: DomainEvent) => handler(event as EventOf<T>, device))));
+    if (watched.get(id)?.bus === bus) return;
+    stopWatching(id);
+    watched.set(id, {
+      bus,
+      subs: topics.map(topic =>
+        bus.subscribe(topic, (event: DomainEvent) => handler(event as EventOf<T>, device))),
+    });
   };
 
   const resync = (): void => {

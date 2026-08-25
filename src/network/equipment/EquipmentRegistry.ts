@@ -78,6 +78,8 @@ export class EquipmentRegistry {
     for (const listener of [...this.listeners]) listener();
   }
 
+  notifyDeviceChanged(): void { this.announce(); }
+
   /** Register a device in the registry */
   register(device: Equipment): void {
     const id = device.getId();

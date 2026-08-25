@@ -43,7 +43,6 @@ import { EquipmentRegistry } from '@/network/equipment/EquipmentRegistry';
 import { CertificateAuthority } from '@/network/pki/CertificateAuthority';
 import { OcspResponder } from '@/network/pki/OcspResponder';
 import { CertificateVerifier } from '@/network/pki/CertificateVerifier';
-import { getDefaultEventBus } from '@/events/EventBus';
 import { pingOnSimulatedClock } from '../../support/fastPing';
 
 const NOW = Date.parse('2026-07-01T00:00:00Z');
@@ -56,14 +55,13 @@ interface CertRevokedLog {
 
 function captureCertRevokedLog(): CertRevokedLog {
   const log: CertRevokedLog = { entries: [] };
-  getDefaultEventBus().subscribe('log', (e) => {
-    const p = e.payload as { source?: string; event?: string; message?: string };
-    if (p.event === 'ipsec:cert-revoked' || p.event === 'ipsec:cert-verify-failed') {
+  Logger.subscribe((entry) => {
+    if (entry.event === 'ipsec:cert-revoked' || entry.event === 'ipsec:cert-verify-failed') {
       log.entries.push({
-        deviceId: p.source || '',
+        deviceId: entry.source || '',
         timestamp: Date.now(),
-        message: p.message || '',
-        event: p.event,
+        message: entry.message || '',
+        event: entry.event,
       });
     }
   });

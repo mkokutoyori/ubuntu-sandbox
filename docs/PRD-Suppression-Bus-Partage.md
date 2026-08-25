@@ -201,12 +201,13 @@ disparaît avec la migration — c'est le même signe qu'avec `useMacTable`
 à l'incrément 3.
 
 **`networkStore`** relaie `port.link.*` et `port.config.ip-changed` vers
-une révision de canevas. Il lisait déjà le bus global, mais son
-abonnement est armé paresseusement par `getDevices()` — donc le pont
-suit déjà le bus courant plutôt qu'un singleton figé, et rien n'y était
-à corriger. Le cas de comportement le garde : une interface qui tombe
-fait monter la révision sans qu'aucune action du magasin ne soit
-appelée.
+une révision de canevas. **Ce paragraphe disait que rien n'y était à
+corriger, et c'était faux** — le pont lisait bel et bien le bus global,
+à travers une variable locale que le garde-fou de cet incrément ne
+voyait pas. Corrigé à l'incrément 5b : le magasin surveille les
+appareils qu'il DÉTIENT. Le cas de comportement, lui, reste le bon : une
+interface qui tombe fait monter la révision sans qu'aucune action du
+magasin ne soit appelée.
 
 **Pourquoi le garde-fou porte sur l'ABONNEMENT et non sur le symbole.**
 Une machine qui relaie ses propres événements, à sens unique, vers un
@@ -215,18 +216,52 @@ pour Logger, l'UI et les tests. Ce qui ne doit jamais revenir, c'est du
 code de production qui LIT ce relais — c'est la seule forme sous laquelle
 un bus partagé redevient un canal de communication.
 
-### Incrément 5b — `getDefaultEventBus` est supprimé
-Le relais `ForwardingEventBus` ne forwarde plus vers un global ; le
-singleton disparaît. **Sortie** : un garde-fou structurel échoue si
-`getDefaultEventBus` réapparaît, comme le BRD §7 le prescrit.
+### Incrément 5b — le relais est COUPÉ (LIVRÉ)
+`Equipment.getBus()` rendait un `ForwardingEventBus` recopiant chaque
+événement interne vers le singleton global. Il rend un `EventBus` nu :
+plus aucun événement de machine ne quitte sa machine.
 
-**Taille mesurée avant de commencer, et c'est pourquoi 5a et 5b sont
-séparés** : **37 fichiers de test s'abonnent** au bus global et **55**
-en injectent un par `__setDefaultEventBus`. Couper le relais les
-convertit tous. L'incrément 5a livre le gain d'architecture — plus aucun
-canal de communication partagé — sans immobiliser le dépôt ; 5b est la
-conversion mécanique, à mener par lots avec l'arbre vert à chaque
-étape.
+**Le garde-fou de 5a était trop faible, et c'est ce qui l'a montré.** Il
+cherchait le texte `getDefaultEventBus().subscribe` ; un bus rangé dans
+une variable locale le contourne, et `networkStore` le contournait
+exactement ainsi. Une orthographe ne garde pas une propriété.
+`machine-bus-is-not-shared.test.ts` l'éprouve par le COMPORTEMENT : une
+machine publie, une autre n'entend rien, le bus partagé non plus. Deux
+TÉMOINS empêchent qu'un bus qui ne livrerait rien satisfasse la règle.
+
+**Ce que la coupure a rendu sourd, et qui est réparé.** Trois
+observateurs globaux vivaient du relais : `networkStore`,
+`TerminalManager` (gel des terminaux à l'extinction) et
+`FaultProjection` (tout son plan F1/F2/F3/F6). Plutôt que trois boucles
+identiques, `equipment/DeviceWatch.ts` porte UNE implantation :
+`watchDevices(topics, handler)` suit le registre, s'abonne au bus propre
+de chaque appareil qui arrive, se désabonne de celui qui part.
+
+**Ce qui reste sur le bus global, et pourquoi.** Un `Cable` est
+PHYSIQUEMENT partagé par deux machines — c'est ce qu'est un câble — donc
+`cable.frame.*` y demeure sans contredire la règle. `Logger` et
+`EquipmentRegistry` sont des observateurs à l'échelle du simulateur, pas
+des machines ; ils gardent leur canal, et aucune production ne le LIT.
+Le symbole `getDefaultEventBus` n'est donc pas encore supprimé : le
+supprimer demande de leur donner un nom qui dit ce qu'ils sont, et c'est
+l'objet de l'incrément 5c.
+
+**34 fichiers de test convertis**, mes trois sondes d'abord — il aurait
+été malvenu de prêcher contre le bus global dans des sondes qui le
+lisent. `support/wireWatch.ts` porte l'observation de trames une seule
+fois, là où trois suites de mirroring recopiaient le même
+`captureFramesOn`. Deux agents publiaient EN DUR sur le global
+(`MdnsAgent`, `LlmnrAgent`, 16 sites) alors qu'ils appartiennent à un
+hôte : ils publient sur le bus de cet hôte.
+
+### Incrément 5c — le symbole disparaît (à faire)
+Chaque composant PAR MACHINE (OSPF, RIP, DHCP, NAT, IPSec, IP SLA,
+syslog, EEM, rôles Windows, Oracle) porte encore un repli
+`busOverride ?? getDefaultEventBus()`. Le repli est le défaut : un objet
+qui appartient à une machine doit recevoir le bus de cette machine, et
+n'en avoir aucun autre. Une fois les replis retirés, ce qui reste
+(`Logger`, `EquipmentRegistry`, `Cable`, le magasin) est un bus
+d'OBSERVATION, à nommer comme tel.
 
 ---
 

@@ -20,7 +20,6 @@ import { IPAddress, SubnetMask, MACAddress, resetCounters } from '@/network/core
 import { resetDeviceCounters } from '@/network/devices/DeviceFactory';
 import { Logger } from '@/network/core/Logger';
 import { EquipmentRegistry } from '@/network/equipment/EquipmentRegistry';
-import { getDefaultEventBus } from '@/events/EventBus';
 import { DNSSD_RECORD_TTL } from '@/network/dnssd/DnsSdRegistry';
 
 beforeEach(() => {
@@ -110,7 +109,7 @@ describe('Scénario 1 — une entrée ne survit pas à son TTL', () => {
   it('l\'expiration est annoncée sur le bus', async () => {
     const { a, b, avance } = await lab();
     const expires: string[] = [];
-    getDefaultEventBus().subscribe('mdns.service.expired', (e) => expires.push(e.payload.name));
+    a.getBus().subscribe('mdns.service.expired', (e) => expires.push(e.payload.name));
 
     await publier(b, 'w.dnssd', SITE);
     await b.getMdnsAgent().whenReady();
@@ -125,7 +124,7 @@ describe('Scénario 1 — une entrée ne survit pas à son TTL', () => {
   it('l\'expiration ne se produit qu\'une fois', async () => {
     const { a, b, avance } = await lab();
     const expires: string[] = [];
-    getDefaultEventBus().subscribe('mdns.service.expired', (e) => expires.push(e.payload.name));
+    a.getBus().subscribe('mdns.service.expired', (e) => expires.push(e.payload.name));
 
     await publier(b, 'w.dnssd', SITE);
     await b.getMdnsAgent().whenReady();

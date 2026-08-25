@@ -5,7 +5,6 @@ import { Cable } from '@/network/hardware/Cable';
 import { resetDeviceCounters } from '@/network/devices/DeviceFactory';
 import { Logger } from '@/network/core/Logger';
 import { EquipmentRegistry } from '@/network/equipment/EquipmentRegistry';
-import { getDefaultEventBus } from '@/events/EventBus';
 
 beforeEach(() => {
   resetCounters();
@@ -42,11 +41,11 @@ describe('link-down is observable on the event bus (docs/PRD-Link-State.md §1.3
     cable.connect(r1.getPorts()[0], r2.getPorts()[0]);
 
     const downs: string[] = [];
-    const unsub = getDefaultEventBus().subscribe('port.link.down', (p) => {
-      downs.push(`${(p as { deviceId: string }).deviceId}`);
-    });
+    const unsubs = [r1, r2].map(r => r.getBus().subscribe('port.link.down', (e) => {
+      downs.push(e.payload.deviceId);
+    }));
     cable.disconnect();
-    unsub();
+    unsubs.forEach(u => u());
 
     expect(downs).toHaveLength(2);
   });
@@ -58,9 +57,9 @@ describe('link-down is observable on the event bus (docs/PRD-Link-State.md §1.3
     cable.connect(r1.getPorts()[0], r2.getPorts()[0]);
 
     const downs: string[] = [];
-    const unsub = getDefaultEventBus().subscribe('port.link.down', () => { downs.push('x'); });
+    const unsubs = [r1, r2].map(r => r.getBus().subscribe('port.link.down', () => { downs.push('x'); }));
     cable.setUp(false);
-    unsub();
+    unsubs.forEach(u => u());
 
     expect(downs).toHaveLength(2);
   });

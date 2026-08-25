@@ -38,7 +38,6 @@ import { Cable } from '@/network/hardware/Cable';
 import { resetCounters, MACAddress } from '@/network/core/types';
 import { resetDeviceCounters } from '@/network/devices/DeviceFactory';
 import { Logger } from '@/network/core/Logger';
-import { getDefaultEventBus } from '@/events/EventBus';
 
 beforeEach(() => {
   resetCounters();
@@ -50,9 +49,13 @@ beforeEach(() => {
 let serie = 0;
 
 /** Deux routeurs IOS dans le meme groupe GLBP, sur un vrai cable. */
-async function paire(lignesA: string[], lignesB: string[]) {
+async function paire(
+  lignesA: string[], lignesB: string[],
+  ecouter?: (a: CiscoRouter, b: CiscoRouter) => void,
+) {
   const a = new CiscoRouter(`A${++serie}`);
   const b = new CiscoRouter(`B${serie}`);
+  ecouter?.(a, b);
   new Cable(`g${serie}`).connect(
     a.getPort('GigabitEthernet0/0')!, b.getPort('GigabitEthernet0/0')!);
   const monter = async (r: CiscoRouter, ip: string, lignes: string[]) => {
@@ -132,11 +135,15 @@ describe('deux cles differentes s\'ignorent', () => {
 describe('le refus se voit, et il nomme sa raison', () => {
   it('l\'evenement distingue le TYPE de la CLE', async () => {
     const motifs: string[] = [];
-    getDefaultEventBus().subscribe('glbp.auth.rejected',
-      (e) => { motifs.push((e.payload as { reason: string }).reason); });
     await paire(
       ['glbp 1 authentication md5 key-string CelleDeA', VIP],
-      ['glbp 1 authentication md5 key-string CelleDeB', VIP]);
+      ['glbp 1 authentication md5 key-string CelleDeB', VIP],
+      (a, b) => {
+        for (const r of [a, b]) {
+          r.getBus().subscribe('glbp.auth.rejected',
+            (e) => { motifs.push((e.payload as { reason: string }).reason); });
+        }
+      });
     expect(motifs).toContain('key');
     expect(motifs).not.toContain('type');
   });

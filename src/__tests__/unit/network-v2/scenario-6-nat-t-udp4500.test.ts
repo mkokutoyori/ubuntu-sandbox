@@ -27,7 +27,7 @@ import { resetCounters, IP_PROTO_ESP, IP_PROTO_UDP, IPv4Packet, UDPPacket, Ether
 import { resetDeviceCounters } from '@/network/devices/DeviceFactory';
 import { EquipmentRegistry } from '@/network/equipment/EquipmentRegistry';
 import { Logger } from '@/network/core/Logger';
-import { getDefaultEventBus } from '@/events/EventBus';
+import type { Equipment } from '@/network/equipment/Equipment';
 import { VirtualTimeScheduler } from '@/events/Scheduler';
 import { pingOnSimulatedClock } from '../../support/fastPing';
 
@@ -38,7 +38,7 @@ interface WireProbe {
   frames: EthernetFrame[];
 }
 
-function probePort(deviceId: string, portName: string): WireProbe {
+function probePort(device: Equipment, portName: string): WireProbe {
   const probe: WireProbe = { udp4500: 0, udp500: 0, rawEsp: 0, frames: [] };
   const inspect = (frame: EthernetFrame): void => {
     if (frame.etherType !== ETHERTYPE_IPV4) return;
@@ -54,14 +54,7 @@ function probePort(deviceId: string, portName: string): WireProbe {
     }
     probe.frames.push(frame);
   };
-  getDefaultEventBus().subscribe('port.frame.tx-requested', (e) => {
-    const p = e.payload as { deviceId?: string; portName?: string; frame: EthernetFrame };
-    if (p.deviceId === deviceId && p.portName === portName) inspect(p.frame);
-  });
-  getDefaultEventBus().subscribe('port.frame.received', (e) => {
-    const p = e.payload as { deviceId?: string; portName?: string; frame: EthernetFrame };
-    if (p.deviceId === deviceId && p.portName === portName) inspect(p.frame);
-  });
+  device.attachCapture(({ frame }) => inspect(frame), portName);
   return probe;
 }
 
@@ -199,7 +192,7 @@ beforeEach(() => {
 describe('Scenario 6 — NAT-T: ESP-in-UDP 4500 + periodic keepalives', () => {
   it('6.01 — with NAT on path, packets on the WAN link are UDP/4500 (no raw ESP)', async () => {
     const { r1, pc2 } = await buildTunnel({ withNat: true, natKeepalive: 20 });
-    const wan = probePort(r1.getId(), 'GigabitEthernet0/1');
+    const wan = probePort(r1, 'GigabitEthernet0/1');
 
     const out = await pingOnSimulatedClock(pc2, 'ping -c 4 192.168.1.10');
     expect(out).toContain('4 received');
@@ -210,7 +203,7 @@ describe('Scenario 6 — NAT-T: ESP-in-UDP 4500 + periodic keepalives', () => {
 
   it('6.02 — without NAT on path, packets on the WAN link are raw ESP (proto 50), no UDP/4500', async () => {
     const { r1, pc2 } = await buildTunnel({ withNat: false });
-    const wan = probePort(r1.getId(), 'GigabitEthernet0/1');
+    const wan = probePort(r1, 'GigabitEthernet0/1');
 
     const out = await pingOnSimulatedClock(pc2, 'ping -c 4 192.168.1.10');
     expect(out).toContain('4 received');
@@ -242,7 +235,7 @@ describe('Scenario 6 — NAT-T: ESP-in-UDP 4500 + periodic keepalives', () => {
     const initHandshake = await pingOnSimulatedClock(pc2, 'ping -c 1 192.168.1.10');
     expect(initHandshake).toContain('1 received');
 
-    const wanR2 = probePort(r2.getId(), 'GigabitEthernet0/1');
+    const wanR2 = probePort(r2, 'GigabitEthernet0/1');
     scheduler.advance(65 * 1000);
 
     expect(wanR2.udp4500).toBeGreaterThanOrEqual(3);
@@ -279,7 +272,7 @@ describe('Scenario 6 — NAT-T: ESP-in-UDP 4500 + periodic keepalives', () => {
       ._getIPSecEngineInternal().setScheduler(scheduler);
     await pingOnSimulatedClock(pc2, 'ping -c 1 192.168.1.10');
 
-    const wanR2 = probePort(r2.getId(), 'GigabitEthernet0/1');
+    const wanR2 = probePort(r2, 'GigabitEthernet0/1');
     scheduler.advance(65 * 1000);
 
     expect(wanR2.udp4500).toBe(0);

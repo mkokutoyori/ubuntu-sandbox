@@ -24,7 +24,6 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import { CiscoRouter } from '@/network/devices/CiscoRouter';
 import { Cable } from '@/network/hardware/Cable';
 import { EquipmentRegistry } from '@/network/equipment/EquipmentRegistry';
-import { getDefaultEventBus } from '@/events/EventBus';
 import {
   __assumeCarrierOnUncabledPorts,
 } from '@/network/devices/inspection/InterfaceStatusView';
@@ -69,7 +68,7 @@ describe('BGP — voisin configuré et injoignable', () => {
     r.powerOn?.();
 
     const drops = new Map<string, number>();
-    const off = getDefaultEventBus().subscribe('tcp.segment.dropped', (e) => {
+    const off = r.getBus().subscribe('tcp.segment.dropped', (e) => {
       const reason = (e.payload as { reason: string }).reason;
       drops.set(reason, (drops.get(reason) ?? 0) + 1);
     });

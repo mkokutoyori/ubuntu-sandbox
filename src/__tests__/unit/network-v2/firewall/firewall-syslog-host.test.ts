@@ -28,7 +28,6 @@ import { Cable } from '@/network/hardware/Cable';
 import { resetCounters, MACAddress } from '@/network/core/types';
 import { resetDeviceCounters } from '@/network/devices/DeviceFactory';
 import { Logger } from '@/network/core/Logger';
-import { getDefaultEventBus } from '@/events/EventBus';
 import { pingOnSimulatedClock } from '../../../support/fastPing';
 
 interface Cmd { executeCommand(cmd: string): Promise<string> }
@@ -69,11 +68,9 @@ async function buildLab() {
 
 function countSyslogFrames(fw: AsaFirewall): () => number {
   let sent = 0;
-  const port = fw.getPort('GigabitEthernet0/1')!;
-  getDefaultEventBus().subscribe('port.frame.tx-requested', (event) => {
-    const payload = event.payload as { portName?: string; deviceId?: string };
-    if (payload.deviceId === fw.getId() && payload.portName === port.getName()) sent++;
-  });
+  fw.attachCapture(({ direction }) => {
+    if (direction === 'out') sent++;
+  }, 'GigabitEthernet0/1');
   return () => sent;
 }
 
