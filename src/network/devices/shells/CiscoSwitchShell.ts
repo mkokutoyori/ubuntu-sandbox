@@ -151,6 +151,41 @@ const STP_VLAN_VIEWS: ReadonlyArray<{ keyword: string; description: string }> = 
   { keyword: 'root', description: 'Root bridge' },
 ];
 
+const EXEC: readonly string[] = ['user', 'privileged'];
+
+const LACP_MODES: Readonly<Record<string, readonly string[]>> = {
+  'lacp rate': ['config-if'],
+  'lacp port-priority': ['config-if'],
+  'show lacp': EXEC,
+  'show pagp': EXEC,
+};
+
+const UDLD_MODES: Readonly<Record<string, readonly string[]>> = {
+  'udld port': ['config-if'],
+  'show udld': EXEC,
+};
+
+const MONITOR_MODES: Readonly<Record<string, readonly string[]>> = {
+  'show monitor': EXEC,
+  'show monitor session': EXEC,
+};
+
+const AGREGATION_PLACES: Readonly<Record<string, ArgumentSpec>> = {
+  'lacp system-priority': {
+    name: 'priorite', type: 'INT', range: [1, 65535], description: 'LACP system priority',
+  },
+  'lacp port-priority': {
+    name: 'priorite', type: 'INT', range: [1, 65535], description: 'LACP port priority',
+  },
+  'lacp rate': {
+    name: 'rate', type: 'ENUM', description: 'LACPDU transmission rate',
+    values: [
+      { keyword: 'fast', description: 'Send LACPDUs every second' },
+      { keyword: 'normal', description: 'Send LACPDUs every 30 seconds' },
+    ],
+  },
+};
+
 const DAI_CHEMINS: ReadonlySet<string> = new Set([
   'ip arp inspection vlan', 'ip arp inspection validate', 'ip arp inspection filter',
   'errdisable recovery cause arp-inspection', 'errdisable recovery cause bpduguard',
@@ -845,10 +880,16 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
     });
     this.registerPortSecurityCommands();
     this.registerVtpCommands(this.configTrie);
-    this.registerUdldCommands();
+    this.registerUdldCommands({
+      config: this.configTrie, configIf: this.configIfTrie,
+      privileged: this.privilegedTrie,
+    });
     this.registerIgmpSnoopingCommands();
     this.registerPimSnoopingCommands();
-    this.registerMonitorSessionCommands();
+    this.registerMonitorSessionCommands({
+      config: this.configTrie, configIf: this.configIfTrie,
+      privileged: this.privilegedTrie,
+    });
     for (const kw of ['permit', 'deny', 'remark', 'no', 'evaluate']) {
       this.configAclTrie.registerGreedy(kw, `ACL ${kw}`, (args) => {
         if (this.selectedArpAcl) return this.handleArpAclLine(kw, args);
@@ -1664,8 +1705,8 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
 
   }
 
-  private registerUdldCommands(): void {
-    this.configTrie.registerGreedy('udld', 'UDLD global configuration', (args) => {
+  private registerUdldCommands(trie: { config: CommandTrie; configIf: CommandTrie; privileged: CommandTrie }): void {
+    trie.config.registerGreedy('udld', 'UDLD global configuration', (args) => {
       const a = (args[0] ?? '').toLowerCase();
       const agent = this.requireUdld();
       if (a === 'enable') { agent.setGlobalMode('normal'); return ''; }
@@ -1684,18 +1725,18 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
       { keyword: 'aggressive', description: 'Enable UDLD in aggressive mode on fibre ports' },
       { keyword: 'message', description: 'Set the message interval' },
     ]);
-    this.configTrie.registerGreedy('no udld', 'Disable UDLD globally', () => {
+    trie.config.registerGreedy('no udld', 'Disable UDLD globally', () => {
       this.requireUdld().setGlobalMode('disabled');
       return '';
     });
-    this.configIfTrie.registerGreedy('udld port', 'UDLD per-port configuration', (args) => {
+    trie.configIf.registerGreedy('udld port', 'UDLD per-port configuration', (args) => {
       const ports = this.selectedPortsForConfigIf();
       const m = (args[0] ?? '').toLowerCase();
       const mode = m === 'aggressive' ? 'aggressive' : 'normal';
       for (const p of ports) this.requireUdld().setPortMode(p, mode);
       return '';
     });
-    this.configIfTrie.register('no udld port', 'Disable UDLD on this port', () => {
+    trie.configIf.register('no udld port', 'Disable UDLD on this port', () => {
       const ports = this.selectedPortsForConfigIf();
       for (const p of ports) this.requireUdld().setPortMode(p, 'disabled');
       return '';
@@ -2283,6 +2324,36 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
       ...this.dot1xSpecs(),
       ...this.vtpConfigSpecs(),
       ...this.daiSpecs(),
+      ...this.aggregationSpecs(),
+    ];
+  }
+
+  private aggregationSpecs(): CommandSpec[] {
+    const partager = (
+      enregistrer: (t: {
+        config: CommandTrie; configIf: CommandTrie; privileged: CommandTrie;
+      }) => void,
+    ) => (collector: SpecCollector) => {
+      const un = collector as unknown as CommandTrie;
+      enregistrer({ config: un, configIf: un, privileged: un });
+    };
+
+    const famille = (
+      enregistrer: (t: {
+        config: CommandTrie; configIf: CommandTrie; privileged: CommandTrie;
+      }) => void,
+      modesParChemin: Readonly<Record<string, readonly string[]>>,
+    ): CommandSpec[] => specsFromTrieRegistrations(partager(enregistrer), {
+      modes: ['config'], minPrivilege: 15,
+      undoFromNegatedPaths: true,
+      modesFor: (path) => modesParChemin[path.replace(/^no /, '')],
+      argumentFor: (path) => AGREGATION_PLACES[path],
+    });
+
+    return [
+      ...famille((t) => this.registerLacp(t), LACP_MODES),
+      ...famille((t) => this.registerUdldCommands(t), UDLD_MODES),
+      ...famille((t) => this.registerMonitorSessionCommands(t), MONITOR_MODES),
     ];
   }
 
@@ -3253,10 +3324,10 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
 
   }
 
-  private registerMonitorSessionCommands(): void {
-    this.configTrie.registerGreedy('monitor session', 'Configure SPAN session', (args) =>
+  private registerMonitorSessionCommands(trie: { config: CommandTrie; configIf: CommandTrie; privileged: CommandTrie }): void {
+    trie.config.registerGreedy('monitor session', 'Configure SPAN session', (args) =>
       this.handleMonitorSession(args, false));
-    this.configTrie.registerGreedy('no monitor session', 'Delete a SPAN session', (args) =>
+    trie.config.registerGreedy('no monitor session', 'Delete a SPAN session', (args) =>
       this.handleMonitorSession(args, true));
 
     for (const t of [this.userTrie, this.privilegedTrie]) {
@@ -3799,7 +3870,10 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
       config: this.configTrie, configIf: this.configIfTrie,
       privileged: this.privilegedTrie,
     });
-    this.registerLacp();
+    this.registerLacp({
+      config: this.configTrie, configIf: this.configIfTrie,
+      privileged: this.privilegedTrie,
+    });
 
     trie.register('shutdown', 'Disable interface', () => {
       return this.applyToSelectedInterfaces(portName => this.setIfAdminState(portName, false));
@@ -5789,21 +5863,21 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
    * here groups members for STP and nothing distributes data frames
    * across them, so the method would have nothing to decide.
    */
-  private registerLacp(): void {
+  private registerLacp(trie: { config: CommandTrie; configIf: CommandTrie; privileged: CommandTrie }): void {
     const agent = () => this.requireLacp();
 
-    this.configTrie.registerGreedy('lacp system-priority', 'LACP system priority', (args) => {
+    trie.config.registerGreedy('lacp system-priority', 'LACP system priority', (args) => {
       const v = parseInt(args[0] ?? '', 10);
       if (isNaN(v) || v < 1 || v > 65535) return '% Invalid value, valid range is 1 to 65535.';
       agent().setSystemPriority(v);
       return '';
     });
 
-    this.configTrie.registerGreedy('port-channel load-balance', 'EtherChannel load-balancing', () =>
+    trie.config.registerGreedy('port-channel load-balance', 'EtherChannel load-balancing', () =>
       '% Load-balancing is not supported: a bundle here groups members for spanning tree, '
       + 'it does not distribute frames across them.');
 
-    this.configIfTrie.registerGreedy('lacp rate', 'LACPDU rate', (args) => {
+    trie.configIf.registerGreedy('lacp rate', 'LACPDU rate', (args) => {
       const rate = (args[0] ?? '').toLowerCase();
       if (rate !== 'fast' && rate !== 'normal') return CISCO_ERRORS.INVALID_INPUT;
       // The engine keeps one rate for the whole device, so this is not
@@ -5812,7 +5886,7 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
       return '';
     });
 
-    this.configIfTrie.registerGreedy('lacp port-priority', 'LACP port priority', (args) => {
+    trie.configIf.registerGreedy('lacp port-priority', 'LACP port priority', (args) => {
       const v = parseInt(args[0] ?? '', 10);
       if (isNaN(v) || v < 1 || v > 65535) return '% Invalid value, valid range is 1 to 65535.';
       return this.applyToSelectedInterfaces(portName => {
@@ -5821,8 +5895,8 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
       });
     });
 
-    this.privilegedTrie.registerGreedy('show lacp', 'Display LACP state', (args) => this.showLacp(args));
-    this.privilegedTrie.registerGreedy('show pagp', 'Display PAgP state', () =>
+    trie.privileged.registerGreedy('show lacp', 'Display LACP state', (args) => this.showLacp(args));
+    trie.privileged.registerGreedy('show pagp', 'Display PAgP state', () =>
       '% PAgP is not implemented: this switch aggregates with LACP only.');
   }
 
