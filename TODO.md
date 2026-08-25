@@ -139,28 +139,29 @@ libelle — une ligne dans `winUnreachText`.
 
 ## Gestion (SNMP, NTP, syslog)
 
-### [snmp] la moitie du vocabulaire VRP est rangee et jamais evaluee
-Depuis le lot « une communaute SNMP est une communaute », la CLI VRP
-ecrit dans `SnmpService` et un mot que VRP ne connait pas est REFUSE.
-Restent les formes que VRP connait et que ce moteur ne sait pas honorer :
-`mib-view`, `group v3`, `usm-user v3`, `packet max-size`,
+### [snmp] SNMPv3 (USM) et les formes VRP qui restent inertes
+Depuis le lot « une vue MIB filtre vraiment », `mib-view` est EVALUE :
+la vue nommee par une communaute decide, OID par OID, de ce qu'elle
+peut lire, selon la regle du sous-arbre le plus long (RFC 3415).
+
+Restent les formes que VRP connait et que ce moteur ne sait toujours
+pas honorer : `group v3`, `usm-user v3`, `packet max-size`,
 `protocol source-interface`, `protocol version`, et les deux moities
 `target-host trap-hostname` / `trap-paramsname`. Elles vont dans
 `SnmpService.recordVrpLine`, sont rendues telles qu'ecrites, et rien ne
-les lit. Mesure : une communaute restreinte a une vue MIB vide lit quand
-meme `sysName` ; un `usm-user v3` declare ne permet aucune requete v3,
+les lit.
+**Mesure** : un `usm-user v3` declare ne permet aucune requete v3,
 `SnmpAgent` n'ayant ni USM ni v3 du tout.
 **Pourquoi ce n'est pas ferme** : les refuser casserait le rejeu d'une
 configuration reelle et les ferait disparaitre a l'import d'une
-topologie — le meme raisonnement que pour
-`ip ssh server algorithm`. Les evaluer demande trois chantiers
-distincts : une notion de vue MIB filtrant chaque OID resolu, un modele
-USM/v3 (authentification et chiffrement des PDU), et une interface
-d'ecoute par laquelle l'agent repondrait, qui n'existe pas — il repond
-sur le port qui a recu. Ce qui EST evalue depuis ce lot, et qui fixe la
-frontiere : nom et droit de communaute, `acl` (source confrontee a la
-liste, echec ferme), contact, localisation, versions, hote de trap,
-`trap source`, `trap enable`, `local-engineid`.
+topologie — le meme raisonnement que pour `ip ssh server algorithm`.
+Les evaluer demande deux chantiers distincts : un modele USM/v3
+(authentification et chiffrement des PDU, moteur d'horloge et de
+compteur de boots), et une interface d'ecoute par laquelle l'agent
+repondrait, qui n'existe pas — il repond sur le port qui a recu.
+**Limite connue de la vue** : le `mask` de la RFC 3415, que VRP accepte
+derriere le sous-arbre, n'est pas modelise ; une entree en porte un est
+refusee plutot que rangee sans etre lue.
 
 ---
 

@@ -11,6 +11,7 @@ export type ActionSnmpVrp =
   | { quoi: 'trap-source'; nom: string }
   | { quoi: 'engine-id'; id: string }
   | { quoi: 'trap-enable'; fonction?: string }
+  | { quoi: 'mib-view'; vue: string; oid: string; type: 'included' | 'excluded' }
   | { quoi: 'brut'; ligne: string }
   | { quoi: 'enable' };
 
@@ -132,8 +133,59 @@ function targetHost(reste: readonly string[], args: readonly string[]): AnalyseS
 }
 
 const SANS_MOTEUR = Object.freeze([
-  'mib-view', 'group', 'usm-user', 'packet', 'notification-log', 'acl', 'extend',
+  'group', 'usm-user', 'packet', 'notification-log', 'acl', 'extend',
 ]);
+
+/**
+ * Les noms de sous-arbre que VRP accepte a la place d'un OID. La liste
+ * est celle des vues par defaut de VRP — `internet` et les trois MIB de
+ * l'administration SNMPv3 — plus `iso`, la racine.
+ */
+const SOUS_ARBRES: Readonly<Record<string, string>> = Object.freeze({
+  iso: '1',
+  internet: '1.3.6.1',
+  mib_2: '1.3.6.1.2.1',
+  'mib-2': '1.3.6.1.2.1',
+  system: '1.3.6.1.2.1.1',
+  interfaces: '1.3.6.1.2.1.2',
+  snmpvacmmib: '1.3.6.1.6.3.16',
+  snmpusmmib: '1.3.6.1.6.3.15',
+  snmpcommunitymib: '1.3.6.1.6.3.18',
+});
+
+function sousArbre(token: string): string | null {
+  if (/^\d+(\.\d+)*$/.test(token)) return token;
+  return SOUS_ARBRES[token.toLowerCase()] ?? null;
+}
+
+/**
+ * `snmp-agent mib-view { included | excluded } <vue> <sous-arbre>` et sa
+ * forme jumelle `<vue> { include | exclude } <sous-arbre>` : les deux
+ * sont attestees, et VRP les traite comme une seule commande.
+ */
+function mibView(reste: readonly string[]): AnalyseSnmpVrp {
+  const typeDe = (mot: string): 'included' | 'excluded' | null => {
+    const m = mot.toLowerCase();
+    if (m === 'included' || m === 'include') return 'included';
+    if (m === 'excluded' || m === 'exclude') return 'excluded';
+    return null;
+  };
+
+  if (reste.length === 0) return incomplet();
+  const premier = typeDe(reste[0]);
+  const vue = premier === null ? reste[0] : reste[1];
+  const type = premier ?? (reste[1] === undefined ? null : typeDe(reste[1]));
+  const cible = reste[2];
+
+  if (vue === undefined || type === null && reste[1] === undefined) return incomplet();
+  if (type === null) return mauvais(reste[1]);
+  if (cible === undefined) return incomplet();
+  if (reste.length > 3) return mauvais(reste[3]);
+
+  const oid = sousArbre(cible);
+  if (oid === null) return mauvais(cible);
+  return ok({ quoi: 'mib-view', vue, oid, type });
+}
 
 function trap(reste: readonly string[], args: readonly string[]): AnalyseSnmpVrp {
   if (!reste[0]) return incomplet();
@@ -177,6 +229,7 @@ export function analyserSnmpVrp(args: readonly string[]): AnalyseSnmpVrp {
       if (!reste[0]) return incomplet();
       return ok({ quoi: 'engine-id', id: reste[0] });
     default:
+      if (tete === 'mib-view') return mibView(reste);
       if (SANS_MOTEUR.includes(tete)) {
         if (!reste[0]) return incomplet();
         return ok({ quoi: 'brut', ligne: args.join(' ') });
@@ -201,6 +254,7 @@ export function appliquerSnmpVrp(service: SnmpService, action: ActionSnmpVrp): v
     case 'trap-source': service.setTrapSourceInterface(action.nom); break;
     case 'engine-id': service.setEngineId(action.id); break;
     case 'trap-enable': service.enableTrap(action.fonction); break;
+    case 'mib-view': service.setMibViewEntry(action.vue, action.oid, action.type); break;
     case 'brut': service.recordVrpLine(action.ligne); break;
     case 'enable': service.enable(); break;
   }
@@ -249,6 +303,9 @@ export function lignesConfigSnmpVrp(service: SnmpService | undefined): string[] 
   }
   for (const t of service.getEnabledTraps()) {
     lignes.push(t === 'all' ? 'snmp-agent trap enable' : `snmp-agent trap enable feature-name ${t}`);
+  }
+  for (const [nom, entrees] of service.getViews()) {
+    for (const e of entrees) lignes.push(`snmp-agent mib-view ${e.type} ${nom} ${e.oid}`);
   }
   for (const l of service.getVrpLines()) lignes.push(`snmp-agent ${l}`);
   if (lignes.length === 0) lignes.push('snmp-agent');

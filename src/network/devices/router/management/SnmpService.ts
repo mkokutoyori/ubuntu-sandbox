@@ -260,10 +260,26 @@ export class SnmpService {
     const oid = args[2];
     const type = (args[3]?.toLowerCase() === 'excluded' ? 'excluded' : 'included') as 'included' | 'excluded';
     if (!name || !oid) return;
-    if (!this.views.has(name)) this.views.set(name, []);
-    this.views.get(name)!.push({ name, oid, type });
+    this.setMibViewEntry(name, oid, type);
+  }
+
+  /**
+   * Rejouer la commande sur le MEME sous-arbre remplace l'entree ; sur
+   * un autre, les deux coexistent. C'est ce que VRP documente, et la
+   * pile precedente accumulait les doublons — une meme ligne tapee deux
+   * fois faisait deux entrees que la regle du sous-arbre le plus long
+   * departageait par hasard.
+   */
+  setMibViewEntry(name: string, oid: string, type: 'included' | 'excluded'): void {
+    const entries = this.views.get(name) ?? [];
+    const at = entries.findIndex((e) => e.oid === oid);
+    if (at >= 0) entries[at] = { name, oid, type };
+    else entries.push({ name, oid, type });
+    this.views.set(name, entries);
     this.enable();
   }
+
+  removeMibView(name: string): boolean { return this.views.delete(name); }
 
   enable(): void { this.enabled = true; }
   disable(): void { this.enabled = false; }
