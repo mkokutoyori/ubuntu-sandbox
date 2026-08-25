@@ -588,6 +588,22 @@ distribution de clé ne l'est pas.
 
 ## Bus d'evenements
 
+### [vrf] `no ip vrf forwarding` ne retire l'interface d'aucune VRF
+`scenario-15-multi-tenant-vrf-isolation.test.ts`, cas « no ip vrf
+forwarding on an interface removes it from every VRF », ECHOUE :
+apres la negation, `GigabitEthernet…` figure encore dans la table des
+interfaces d'au moins une VRF. Une interface reste donc rattachee a une
+VRF qu'on vient de lui retirer, ce qui est exactement l'isolation que ce
+scenario existe pour eprouver.
+**Mesure** : l'echec est reproduit a l'identique sur `b4b300872`,
+c'est-a-dire AVANT tout le travail de cette session.
+**Report** : le correctif est dans le gestionnaire de la negation et non
+dans la vue, mais `_vrfs` est une carte manipulee directement par
+plusieurs sites (`ip vrf`, `ip vrf forwarding`, la negation, le rendu de
+configuration) ; y toucher demande de mesurer les quatre ensemble.
+Inscrit ici pour qu'un echec rouge de la suite ne passe pas pour du
+bruit.
+
 ### [netflow] un flux reel ne produit aucun enregistrement
 `probe-debug-02-collecte.test.ts`, cas « un flux reel produit un
 enregistrement avec ses ports et compteurs », ECHOUE :
