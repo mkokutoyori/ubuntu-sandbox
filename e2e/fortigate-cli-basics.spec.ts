@@ -89,4 +89,25 @@ test.describe('FortiGate — ce que la page « CLI basics » decrit', () => {
 
     await waitForText(page, 'edit "serveur web"');
   });
+
+  test('un caractere reserve est refuse et grep numerote', async ({ page }) => {
+    const id = await poserFortiGate(page);
+    await openTerminal(page, id);
+
+    for (const ligne of [
+      'config system interface', 'edit "port1"', 'set mode static',
+      'set ip 192.168.1.1 255.255.255.0', 'set allowaccess ping https', 'next', 'end',
+    ]) await typeCmd(page, ligne);
+
+    await typeCmd(page, 'config firewall address');
+    await typeCmd(page, 'edit "web(1)"');
+    await waitForText(page, 'reserved character');
+    await typeCmd(page, 'end');
+
+    await typeCmd(page, 'show system interface | grep -n allowaccess');
+    await expect.poll(
+      async () => /\d+:\s*set allowaccess ping https/.test(
+        await page.locator('[data-testid="terminal-modal"]').innerText()),
+      { timeout: 12_000 }).toBe(true);
+  });
 });

@@ -6,6 +6,7 @@ import {
   attributeArity, EMPTY_ENVIRONMENT,
   type FortiAttributeSpec, type FortiSchemaEnvironment,
 } from '../schema/types';
+import { reservedCharacterHint, reservedCharacterIn } from '../schema/reservedCharacters';
 
 export interface ValidationResult {
   readonly ok: boolean;
@@ -62,6 +63,16 @@ export class FortiValidator {
   private refusedValue(
     spec: FortiAttributeSpec, raw: readonly string[],
   ): string | null {
+    if (spec.allowsReservedCharacters !== true) {
+      for (const value of raw) {
+        const character = reservedCharacterIn(quotedContent(value));
+        if (character !== null) {
+          return FortiMessages.valueError(
+            quotedContent(value), reservedCharacterHint(character));
+        }
+      }
+    }
+
     const refusals = spec.unimplementedValues;
     if (!refusals) return null;
 

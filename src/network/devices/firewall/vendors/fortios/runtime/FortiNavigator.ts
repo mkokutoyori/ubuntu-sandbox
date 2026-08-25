@@ -6,6 +6,7 @@ import { FortiObject, type FortiObjectSnapshot } from './FortiObject';
 import { FortiTable, type MovePosition } from './FortiTable';
 import { FortiValidator } from './FortiValidator';
 import { clearOf, ENC_PREFIX } from './secretEncoding';
+import { reservedCharacterHint, reservedCharacterIn } from '../schema/reservedCharacters';
 
 export interface TableFrame {
   readonly kind: 'table';
@@ -169,6 +170,9 @@ export class FortiNavigator {
     if (spec.keyType === 'integer' && !/^\d+$/.test(resolved)) {
       return FortiMessages.valueError(key, 'the key of this table is an integer.');
     }
+
+    const refusedKey = this.refusedKey(resolved);
+    if (refusedKey) return refusedKey;
 
     const existed = table.has(resolved);
     const object = table.ensure(resolved);
@@ -337,12 +341,20 @@ export class FortiNavigator {
     return EMPTY;
   }
 
+  private refusedKey(key: string): string | null {
+    const character = reservedCharacterIn(key);
+    if (character === null) return null;
+    return FortiMessages.valueError(key, reservedCharacterHint(character));
+  }
+
   clone(words: readonly string[]): string {
     const table = this.currentTable();
     if (!table) return FortiMessages.outsideTable('clone');
 
     const parsed = parsePair(words, 'to');
     if (!parsed) return FortiMessages.incomplete('`clone <key> to <new-key>`');
+    const refused = this.refusedKey(parsed.to);
+    if (refused) return refused;
     if (!table.has(parsed.from)) return FortiMessages.unknownKey(parsed.from);
     if (table.has(parsed.to)) return FortiMessages.duplicate(parsed.to);
 
@@ -359,6 +371,8 @@ export class FortiNavigator {
 
     const parsed = parsePair(words, 'to');
     if (!parsed) return FortiMessages.incomplete('`rename <key> to <new-key>`');
+    const refused = this.refusedKey(parsed.to);
+    if (refused) return refused;
     if (!table.has(parsed.from)) return FortiMessages.unknownKey(parsed.from);
     if (table.has(parsed.to)) return FortiMessages.duplicate(parsed.to);
 

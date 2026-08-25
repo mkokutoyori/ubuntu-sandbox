@@ -67,6 +67,8 @@
 | **F28d** | Raccourcis d'édition de ligne (Ctrl+A/E/B/F/D/P/N) | 10+6 | ✅ |
 | **F28e** | Saisie multiligne (`\`), et les mêmes gestes par SSH | 12+7 | ✅ |
 | **F28f** | L'échappement est une option du constructeur, et il se REND | — | ✅ |
+| **F28g** | Caractères réservés refusés ; `grep -n` et expressions | 16 | ✅ |
+| **F28h** | `CTRL-V` rend le `?` littéral (page couverte en entier) | 4 | ✅ |
 | 3 | NAT objet ASA (`nat (dmz,outside) static`) | — | ⏳ |
 | 3 | `ShellFactory` + `DeviceFactory` | — | ⏳ |
 
@@ -5695,6 +5697,90 @@ fil, et pas seulement celle qui s'affiche.
 
 **Erreur d'arithmétique de la sonde, corrigée et non masquée** : j'avais
 écrit dix-sept Ctrl+F pour un `X` qui est au quinzième rang.
+
+---
+
+## FortiOS — le RESTE de « CLI basics », inventorié sur la page
+
+**Agent `mandeng`.** L'objectif fixé par l'utilisateur est la page
+entière. Quatre familles n'avaient jamais été mesurées ; j'ai donc
+réouvert la page et inventorié chaque sous-titre plutôt que de me fier
+à ce que le carnet affirmait couvert.
+
+**Deux marchaient déjà** et restent comme témoins : les quatre verbes de
+liste (`set` REMPLACE la liste, `append` ajoute, `select` ne garde que ce
+qui est nommé, `unselect` retire) et la vitesse de console, refus d'une
+valeur hors des cinq attestées compris.
+
+**Défaut 1 — les caractères réservés étaient acceptés.** La page :
+« *The following special characters, also known as reserved characters,
+are not permitted in most CLI fields: <, >, (, ), #, ' and "* ».
+Mesure : `set alias "a<b"`, `set alias "a#b"` et `edit "web(1)"` sont
+tous acceptés en silence et rangés tels quels — donc rejoués à l'import.
+
+**Trois décisions, chacune parce que l'inverse était possible.** Le refus
+porte sur les SEPT caractères attestés et **non sur une liste blanche**
+de ce qu'un nom a le droit de contenir : la liste blanche (lettres,
+chiffres, espace, `-`, `_`) vient d'une source plus faible et
+refuserait des noms légitimes portant un point — implémenter
+l'interdiction attestée plutôt qu'une règle plus stricte dont je ne suis
+pas sûr. `set buffer` d'un message de remplacement porte
+`allowsReservedCharacters`, parce que c'est la seule des exceptions que
+Fortinet énumère (message de remplacement, signature IPS personnalisée,
+motif de fichier bloqué, mot banni, identifiant PPPoE) qui existe dans
+ce schéma, et que son contenu EST du HTML. Et l'échappement ne lève pas
+l'interdit : il sert à faire passer le caractère devant l'analyseur, pas
+à l'autoriser dans le champ.
+
+**TROIS portes créent une clé** — `edit`, `rename`, `clone` — et seule la
+première avait été gardée par la première version de ce correctif ;
+`refusedKey` est la règle unique que les trois lisent. C'est la même
+famille que ce carnet referme depuis trente phases, trouvée cette fois
+avant qu'elle ne coûte quelque chose.
+
+**Défaut 2 — `grep` n'était ni numéroté ni une expression régulière.**
+`| grep -n` rendait le VIDE (l'option tombait hors de la grammaire, donc
+la ligne entière devenait le motif), et `matches` comparait par
+`includes` là où la page dit que grep filtre « *based on regular
+expressions* ». Vérifié avant de changer : les motifs employés par tout
+le dépôt sont des mots littéraux, donc les lire comme des expressions ne
+change aucun résultat existant — mesuré, 110 fichiers verts sans une
+seule correction. Un motif qui ne compile pas retombe sur la comparaison
+littérale plutôt que d'inventer un message d'erreur de grep.
+
+`fortios-cli-basics-reste.test.ts` (16 cas) est discriminé par
+`git stash` : 8 tombent avant correctif, et les 8 qui passent des deux
+côtés sont nommés dans l'en-tête.
+
+---
+
+## Terminal — `CTRL-V`, et une entrée du `TODO.md` qui était fausse
+
+**Agent `mandeng`.** Dernière fonction de la page, et elle était inscrite
+au `TODO.md` comme **impossible dans un navigateur**. C'était faux, et
+c'est moi qui l'avais écrit.
+
+**Ce que la mesure a montré.** La vue ne bloque le collage que si la
+session CONSOMME la touche : `if (consumed) e.preventDefault()`. Or une
+touche de PRÉFIXE n'a aucune raison de la consommer — elle arme le
+prochain `?` et laisse le collage se produire normalement. L'argument
+« Ctrl+V EST le collage, donc le détourner casserait le collage de tout
+le monde » supposait une exclusivité que le code n'impose pas.
+
+`quoteNextKey` vit sur `CLITerminalSession`, donc le geste vaut aussi
+sur un routeur Cisco, dont l'IOS réel a la même touche de citation.
+L'armement ne dure qu'une touche : il s'efface sur le premier caractère
+imprimable, sans quoi un `?` tapé cinq minutes plus tard n'ouvrirait
+plus l'aide sans que rien ne l'explique.
+
+`fortigate-cli-ctrl-v.test.ts` (4 cas) est discriminé par `git stash` :
+UN seul tombe, et c'est exact — le défaut était unique. Les trois autres
+sont nommés dans l'en-tête, dont le cas 4, qui ne prouve rien avant
+correctif puisqu'un armement inexistant ne peut pas durer trop
+longtemps.
+
+**La page « CLI basics » est désormais couverte en entier**, et le
+`TODO.md` n'a plus d'entrée à son sujet.
 
 ---
 
