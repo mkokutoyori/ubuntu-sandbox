@@ -18,6 +18,7 @@ import { Port } from '../hardware/Port';
 import { EthernetFrame, DeviceType, MACAddress, generateId } from '../core/types';
 import { Logger } from '../core/Logger';
 import { LinkLayer } from '../layers/link/LinkLayer';
+import type { FrameTap, DetachTap } from '../hardware/PortTap';
 import { EquipmentRegistry } from './EquipmentRegistry';
 import { DEVICE_CATALOG } from '../core/deviceCatalog';
 import { getDefaultEventBus, ForwardingEventBus, type IEventBus } from '@/events/EventBus';
@@ -165,6 +166,15 @@ export abstract class Equipment {
 
   protected ownsLocalUnicast(_iface: string, _destination: MACAddress): boolean {
     return false;
+  }
+
+  attachCapture(tap: FrameTap, iface?: string): DetachTap {
+    const detachers: DetachTap[] = [];
+    for (const port of this.ports.values()) {
+      if (iface !== undefined && port.getName() !== iface) continue;
+      detachers.push(port.attachTap(tap));
+    }
+    return () => { for (const detach of detachers) detach(); };
   }
 
   // ─── Identity ───────────────────────────────────────────────────

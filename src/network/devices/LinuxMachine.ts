@@ -4342,12 +4342,10 @@ export abstract class LinuxMachine extends EndHost
     const dedupedSink = LinuxMachine.makeTcpSegmentDedupSink(sink);
 
     if (wantPort) {
-      const match = (p: { deviceId: string; portName: string }) =>
-        p.deviceId === id && (iface === 'any' || p.portName === iface);
-      unsubs.push(bus.subscribeWhere('port.frame.received', match,
-        (e) => dedupedSink(decodeEthernetFrame(e.payload.frame, e.payload.portName, 'in', new Date()), true)));
-      unsubs.push(bus.subscribeWhere('port.frame.tx-requested', match,
-        (e) => dedupedSink(decodeEthernetFrame(e.payload.frame, e.payload.portName, 'out', new Date()), true)));
+      unsubs.push(this.attachCapture(
+        (tapped) => dedupedSink(
+          decodeEthernetFrame(tapped.frame, tapped.iface, tapped.direction, new Date()), true),
+        iface === 'any' ? undefined : iface));
     }
 
     if (wantLoopback) {
