@@ -682,22 +682,6 @@ du format des messages.
 
 ## Bus d'evenements
 
-### [netflow] un flux reel ne produit aucun enregistrement
-`probe-debug-02-collecte.test.ts`, cas « un flux reel produit un
-enregistrement avec ses ports et compteurs », ECHOUE :
-`show ip cache flow` rend `IP packet size distribution (0 total …` et
-la table de flux ne contient jamais l'adresse du client. Le compteur
-total est a zero, donc rien n'est compte, pas seulement mal rendu.
-**Mesure** : l'echec est reproduit a l'identique sur `b4b300872`,
-c'est-a-dire AVANT tout le lot DHCP de cette session, et sur
-`origin/main` — ce n'est ni une regression de ce lot ni un effet du
-travail en cours sur FortiOS.
-**Report** : le defaut est dans la comptabilisation NetFlow et non dans
-la vue ; le diagnostiquer demande de suivre ou `NetFlowAgent` est
-alimente sur le chemin de donnees, ce qui est un sujet a part entiere et
-non un correctif de commande. Inscrit ici pour qu'un echec rouge de la
-suite ne passe pas pour du bruit.
-
 ### [nhrp] `debug nhrp` n'a toujours pas d'emetteur, faute de transcription
 `NhrpDomainEvent` est desormais dans l'union `DomainEvent`, donc un
 abonnement compile — c'etait le blocage que
