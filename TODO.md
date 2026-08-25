@@ -239,6 +239,26 @@ laisse deux implémentations dont une morte.
 
 ## Routeur Cisco
 
+### [cli] un sous-mode atteint les commandes GLOBALES, et `show` marche sans `do`
+Mesure sur un Catalyst en `config-if` : `hostname ZORGLUB`,
+`dot1x system-auth-control` et `ip finger` sont ACCEPTES, et
+`show dot1x` comme `show version` repondent en configuration sans `do`.
+Un vrai IOS refuse les trois premiers (`% Invalid input`) et exige `do`
+pour les deux dernieres.
+**Ce qui le produit** : deux mecanismes distincts, et c'est pour cela
+que ce n'est pas un correctif d'une ligne — le socle admet une commande
+dont le mode est un ANCETRE du mode courant (`CommandTable.modeAdmits`
+lit `session.configAncestors()`), et le shell a par ailleurs un repli
+qui laisse une vue repondre en configuration.
+**Pourquoi ce n'est pas ferme** : la regle des ancetres est ce qui rend
+atteignables, depuis un sous-mode, les familles que le socle declare en
+`config` — la fermer d'un coup demanderait de declarer explicitement
+tous les modes de chaque famille migree, donc de rouvrir toutes les
+migrations faites. Et le repli de `show` est probablement voulu : un
+laboratoire tape `show running-config` sans quitter la configuration a
+longueur de temps. A trancher AVANT que le trie ne disparaisse, pas
+apres.
+
 ### [cli] un prefixe ambigu est-il tranche par le mot SUIVANT ?
 Le socle resout un mot-cle ambigu par le mot SUIVANT
 (`CommandParser.accepteEnsuite`) : `switchport port-security ma 4`
