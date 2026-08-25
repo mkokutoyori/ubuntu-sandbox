@@ -645,9 +645,9 @@ une trame IPv4 portant une adresse MAC de destination étrangère
 `nat`, est traitée entièrement — `recentTraces()` passe de 1 à 2,
 exactement comme en mode `transparent`. Les deux modes répondaient donc
 la même chose à une question dont ils **sont** la différence.
-`Firewall.handleFrame` consulte désormais `classifyDestination` de la
-couche lien — la règle existante, pas une seconde — et le mode
-transparent la court-circuite : un VDOM transparent est un pont de
+`Firewall.handleFrame` consulte désormais `LinkLayer.deliver` — la règle
+existante, celle que l'hôte et le routeur lisent déjà, pas une seconde —
+et le mode transparent la court-circuite : un VDOM transparent est un pont de
 niveau 2 qui achemine sur l'adresse MAC de destination, il doit donc
 accepter ce qui ne lui est pas adressé, sinon il n'a rien à ponter.
 

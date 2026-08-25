@@ -1224,8 +1224,6 @@ export class Firewall extends Equipment {
     this.bridgeOf(portName).learn(frame.srcMAC.toString(), portName);
     if (!this.acceptsAtLinkLayer(portName, frame)) return;
 
-    if (!this.acceptsAtLinkLayer(portName, frame)) return;
-
     if (frame.etherType === ETHERTYPE_FGCP) {
       this.haService.agent.receive(frame);
       return;

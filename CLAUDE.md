@@ -227,15 +227,17 @@ seule et **ne change aucune sémantique protocolaire** : un moteur qui
   une trame portant une adresse MAC de destination étrangère, injectée
   sur un FortiGate en mode `nat`, était traitée exactement comme en mode
   `transparent` : les deux modes répondaient la même chose à une question
-  dont ils SONT la différence. Le filtre lit `classifyDestination` de la
-  couche lien (la règle existante, pas une seconde) et le mode
-  transparent le court-circuite, un VDOM transparent étant un pont de
+  dont ils SONT la différence. Le filtre lit `LinkLayer.deliver` — la
+  règle existante, celle de l'hôte et du routeur, pas une seconde — et le
+  mode transparent le court-circuite, un VDOM transparent étant un pont de
   niveau 2 qui doit accepter ce qu'il achemine. **Le filtre a révélé deux
   défauts indépendants que son absence rendait invisibles** : une grappe
   FGCP n'avait pas d'adresse MAC VIRTUELLE — la vraie formule est
-  `00:09:0f:09:<group-id % 256>:<vcluster + index>`, posée sur toutes les
-  interfaces SAUF le battement de cœur, et c'est elle qui rend un
-  basculement invisible au voisinage dont le cache ARP reste valide ;
+  `<préfixe>:<group-id % 256>:<vcluster + index>`, où le préfixe dépend de
+  la tranche du group-id (`00:09:0f:09` pour 0-255, puis `e0:23:ff:fc/fd/fe`)
+  et le décalage du cluster virtuel vaut 0x00 ou 0x20 ; elle est posée sur
+  toutes les interfaces SAUF le battement de cœur, et c'est elle qui rend
+  un basculement invisible au voisinage dont le cache ARP reste valide ;
   puis, une fois l'adresse partagée, le subordonné émettait des
   sollicitations de voisin IPv6 depuis cette même adresse, si bien que le
   commutateur voisin réapprenait l'adresse virtuelle sur le port du
