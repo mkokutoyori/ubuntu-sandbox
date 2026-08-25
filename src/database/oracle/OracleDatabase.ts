@@ -432,12 +432,16 @@ export class OracleDatabase implements SqlCommandHost {
     // the audit bus. The executor publishes `oracle.audit.recorded` for
     // every audited DCL statement (GRANT/REVOKE never fire `oracle.ddl
     // .executed` because they're DCL, not DDL).
-    this.instance.getBus().subscribe('oracle.audit.recorded', (e) => {
-      if (e.payload.deviceId !== this.instance.getDeviceId()) return;
-      const a = e.payload.actionName.toUpperCase();
-      if (a === 'GRANT' || a === 'REVOKE' || a === 'CREATE USER' || a === 'ALTER USER') {
-        this.sodEvaluator.scanAll();
-      }
+    let stopAuditWatch: (() => void) | null = null;
+    this.instance.onBusChanged((bus) => {
+      stopAuditWatch?.();
+      stopAuditWatch = bus.subscribe('oracle.audit.recorded', (e) => {
+        if (e.payload.deviceId !== this.instance.getDeviceId()) return;
+        const a = e.payload.actionName.toUpperCase();
+        if (a === 'GRANT' || a === 'REVOKE' || a === 'CREATE USER' || a === 'ALTER USER') {
+          this.sodEvaluator.scanAll();
+        }
+      });
     });
   }
 

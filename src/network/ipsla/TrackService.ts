@@ -1,5 +1,5 @@
 import type { IEventBus } from '@/events/EventBus';
-import { getDefaultEventBus } from '@/events/EventBus';
+import { ownBusProvider } from '@/events/BusHolder';
 import { getDefaultScheduler, type IScheduler, type TimerHandle } from '@/events/Scheduler';
 import type { IpSlaEngine } from './IpSlaEngine';
 
@@ -154,7 +154,7 @@ export class TrackService {
   constructor(
     private readonly host: TrackHost,
     private readonly getIpSla: () => IpSlaEngine | null,
-    private readonly getBus: () => IEventBus = () => getDefaultEventBus(),
+    private readonly getBus: () => IEventBus = ownBusProvider(),
     private readonly getScheduler: () => IScheduler = () => getDefaultScheduler(),
   ) {}
 

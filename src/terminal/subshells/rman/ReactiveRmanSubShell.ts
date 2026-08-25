@@ -24,7 +24,6 @@ import { RmanLoggerActor } from './actors/RmanLoggerActor';
 import { OracleInstanceWatcherActor } from './actors/OracleInstanceWatcherActor';
 import { DeviceCatalogRegistry } from './catalog/DeviceCatalogRegistry';
 import { DeviceConfigRegistry } from './session/DeviceConfigRegistry';
-import { getDefaultEventBus } from '@/events/EventBus';
 import type { Equipment } from '@/network';
 
 export class ReactiveRmanSubShell implements ISubShell {
@@ -76,7 +75,7 @@ export class ReactiveRmanSubShell implements ISubShell {
     args: string[],
   ): { subShell: ReactiveRmanSubShell; banner: string[] } {
     const ctx = LinuxRmanContext.forDevice(device);
-    const bus = getDefaultEventBus();
+    const bus = device.getBus();
     const sessionId = `${(device as { id?: string }).id ?? 'device'}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
 
     const builder = new RmanSessionOptionsBuilder()

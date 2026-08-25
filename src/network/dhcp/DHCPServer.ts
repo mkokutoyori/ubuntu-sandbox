@@ -33,7 +33,8 @@ import {
 import type { IProtocolEngine } from '../core/interfaces';
 import { DHCP_CONSTANTS } from '../core/constants';
 import { Logger } from '../core/Logger';
-import { getDefaultEventBus, type IEventBus } from '@/events/EventBus';
+import { type IEventBus } from '@/events/EventBus';
+import { BusHolder } from '@/events/BusHolder';
 import {
   DHCPServerSignalStore,
   makeReadonlyDHCPServerObservables,
@@ -125,7 +126,7 @@ export class DHCPServer implements IProtocolEngine {
   private staticBindings: Map<string, DHCPStaticBinding[]> = new Map();
 
   // ─── Reactive plumbing (Phase 4b2-DHCP server) ─────────────────────
-  private busOverride: IEventBus | null = null;
+  private readonly busHolder = new BusHolder();
   private deviceId: string = '';
   private hostname: string = '';
   private readonly serverSignalStore = new DHCPServerSignalStore();
@@ -135,14 +136,14 @@ export class DHCPServer implements IProtocolEngine {
   private utilizationSink: DhcpUtilizationSink | null = null;
   private readonly highUtilizationNotified: Set<string> = new Set();
 
-  setEventBus(bus: IEventBus | null): void { this.busOverride = bus; }
+  setEventBus(bus: IEventBus | null): void { this.busHolder.set(bus); }
   setUtilizationSink(sink: DhcpUtilizationSink | null): void { this.utilizationSink = sink; }
   setDeviceId(id: string, hostname?: string): void {
     this.deviceId = id;
     if (hostname !== undefined) this.hostname = hostname;
   }
   getDeviceId(): string { return this.deviceId; }
-  private getBus(): IEventBus { return this.busOverride ?? getDefaultEventBus(); }
+  private getBus(): IEventBus { return this.busHolder.get(); }
   private deviceRef() { return { deviceId: this.deviceId, hostname: this.hostname }; }
 
   /** Refresh server-side observables (called after every binding mutation). */

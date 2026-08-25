@@ -10,7 +10,8 @@
 
 import type { Equipment } from './Equipment';
 import type { DeviceType } from '../core/types';
-import { getDefaultEventBus, type IEventBus } from '@/events/EventBus';
+import { type IEventBus } from '@/events/EventBus';
+import { BusHolder } from '@/events/BusHolder';
 
 /**
  * Injectable registry for Equipment instances.
@@ -34,18 +35,18 @@ export class EquipmentRegistry {
 
   /**
    * Optional bus injection. When unset, lifecycle events are published on
-   * the default singleton bus (see `getDefaultEventBus()`).
-   * Phase 2 of the reactive refactor — cf. §10.3.
+   * the registry's own bus — it is a registry of machines, not a machine,
+   * so this channel carries no machine's traffic.
    */
-  private busOverride: IEventBus | null = null;
+  private readonly busHolder = new BusHolder();
 
   /** Inject a custom bus for tests / multi-topology scenarios. */
   setEventBus(bus: IEventBus | null): void {
-    this.busOverride = bus;
+    this.busHolder.set(bus);
   }
 
-  private getBus(): IEventBus {
-    return this.busOverride ?? getDefaultEventBus();
+  getBus(): IEventBus {
+    return this.busHolder.get();
   }
 
   /**

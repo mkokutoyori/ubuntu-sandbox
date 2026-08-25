@@ -26,7 +26,8 @@
  * branching workflows use a state machine.
  */
 
-import { type IEventBus, getDefaultEventBus } from '@/events/EventBus';
+import { type IEventBus } from '@/events/EventBus';
+import { ownBusProvider } from '@/events/BusHolder';
 
 // ── Verdicts ────────────────────────────────────────────────────────────
 
@@ -132,7 +133,7 @@ export class FilterChain<T> {
       const fixedBus = options.bus;
       this.busProvider = () => fixedBus;
     } else {
-      this.busProvider = () => getDefaultEventBus();
+      this.busProvider = ownBusProvider();
     }
     this.emitEvents = options.emitEvents ?? true;
   }

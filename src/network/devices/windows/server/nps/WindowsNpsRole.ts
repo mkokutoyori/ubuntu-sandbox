@@ -29,7 +29,8 @@
 import type { EndHost } from '@/network/devices/EndHost';
 import { RadiusServerAgent, type RadiusServerHost, type RadiusUserResolverContext } from '@/network/radius/RadiusServerAgent';
 import { attr, type RadiusUser, type RadiusAttribute } from '@/network/radius/types';
-import { getDefaultEventBus, type IEventBus } from '@/events/EventBus';
+import { type IEventBus } from '@/events/EventBus';
+import { ownBusProvider } from '@/events/BusHolder';
 import { IPAddress } from '@/network/core/types';
 import type { WindowsUserManager } from '@/network/devices/windows/WindowsUserManager';
 import type { DirectoryStore } from '@/network/devices/windows/server/ad/DirectoryStore';
@@ -87,7 +88,7 @@ export class WindowsNpsRole {
     private readonly userStore: NpsUserStore,
     private readonly eventLog: PSEventLogProvider,
     private readonly getNow: () => Date = () => new Date(),
-    private readonly getHostBus: () => IEventBus = () => getDefaultEventBus(),
+    private readonly getHostBus: () => IEventBus = ownBusProvider(),
   ) {
     const radiusHost: RadiusServerHost = {
       id: host.getId(), name: host.getName(),

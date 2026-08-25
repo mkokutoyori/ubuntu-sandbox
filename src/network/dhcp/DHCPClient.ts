@@ -29,7 +29,8 @@ import {
   createDefaultClientState,
 } from './types';
 import type { IProtocolEngine } from '../core/interfaces';
-import { getDefaultEventBus, type IEventBus } from '@/events/EventBus';
+import { type IEventBus } from '@/events/EventBus';
+import { BusHolder } from '@/events/BusHolder';
 import { getDefaultScheduler, type IScheduler } from '@/events/Scheduler';
 import { TimerSet } from '@/events/TimerSet';
 import {
@@ -119,7 +120,7 @@ export class DHCPClient implements IProtocolEngine {
   private running = false;
 
   // ─── Reactive plumbing (Phase 4b2-DHCP) ────────────────────────────
-  private busOverride: IEventBus | null = null;
+  private readonly busHolder = new BusHolder();
   private schedulerOverride: IScheduler | null = null;
   private readonly timers = new TimerSet(() => this.getScheduler());
   private readonly signalStore = new DHCPClientSignalStore();
@@ -144,7 +145,7 @@ export class DHCPClient implements IProtocolEngine {
   private conflicts = 0;
 
   setEventBus(bus: IEventBus | null): void {
-    this.busOverride = bus;
+    this.busHolder.set(bus);
     this.attachActors();
   }
   setScheduler(scheduler: IScheduler | null): void { this.schedulerOverride = scheduler; }
@@ -154,7 +155,7 @@ export class DHCPClient implements IProtocolEngine {
     if (hostname !== undefined) this.hostname = hostname;
   }
   getDeviceId(): string { return this.deviceId; }
-  private getBus(): IEventBus { return this.busOverride ?? getDefaultEventBus(); }
+  private getBus(): IEventBus { return this.busHolder.get(); }
   private getScheduler(): IScheduler { return this.schedulerOverride ?? getDefaultScheduler(); }
   private deviceRef() { return { deviceId: this.deviceId, hostname: this.hostname }; }
 

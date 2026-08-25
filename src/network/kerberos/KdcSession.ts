@@ -26,7 +26,8 @@ import {
   KU_TGS_REQ_AUTHENTICATOR, KU_TGS_REP_ENC_PART,
 } from './crypto';
 import { deriveInterrealmKey, referralPrincipal } from './crossRealm';
-import { getDefaultEventBus, type IEventBus } from '@/events/EventBus';
+import { type IEventBus } from '@/events/EventBus';
+import { BusHolder } from '@/events/BusHolder';
 
 const TICKET_LIFETIME_SECONDS = 10 * 3600; // AD's default domain Kerberos policy: "Maximum lifetime for user ticket" = 10 hours
 const RENEWABLE_LIFETIME_SECONDS = 7 * 24 * 3600; // AD's default: "Maximum lifetime for user ticket renewal" = 7 days
@@ -48,6 +49,8 @@ function kerberosStatusHex(errorCode: number): string {
 }
 
 export class KdcSessionHandler {
+  private readonly fallbackBus = new BusHolder();
+
   constructor(private readonly ctx: KdcContext) {}
 
   register(socket: TcpSocket): void {
@@ -74,7 +77,7 @@ export class KdcSessionHandler {
 
   /** Bus to publish `kerberos.*` events on (§5 P12) — a `KerberosSignalRefreshActor` subscribing elsewhere, not this handler, is what feeds a `KerberosSignalStore`. */
   private bus(): IEventBus {
-    return this.ctx.bus ?? getDefaultEventBus();
+    return this.ctx.bus ?? this.fallbackBus.get();
   }
 
   /** Sends the KRB-ERROR and, unless it's the expected first-round PREAUTH_REQUIRED (part of every normal AS exchange, not a real failure), publishes an `as.failed` event (§5 P12) and writes the real Security-log entry (4771 for a bad password, 4772 otherwise). */

@@ -16,7 +16,6 @@ import {
   Logger,
 } from '@/network';
 import { EquipmentRegistry } from '@/network/equipment/EquipmentRegistry';
-import { getDefaultEventBus } from '@/events/EventBus';
 
 /**
  * Network interface config for UI rendering
@@ -338,7 +337,7 @@ function doRemoveDevice(id: string, get: GetFn, set: SetFn): { device: Equipment
   // store, so subscribers (TerminalManager, supervisors) can read final
   // state. We emit `device.removed` (user-initiated) alongside the bus's
   // own `device.deregistered`, which the registry will fire below.
-  getDefaultEventBus().publish({
+  EquipmentRegistry.getInstance().getBus().publish({
     topic: 'device.removed',
     payload: {
       id: device.getId(),

@@ -18,7 +18,8 @@ import { formatDN } from '../ldap/LdapDN';
 import {
   type HighWatermarkVectorWire, encodeHighWatermarkVector, decodeHighWatermarkVector,
 } from './HighWatermarkVector';
-import { getDefaultEventBus, type IEventBus } from '@/events/EventBus';
+import { type IEventBus } from '@/events/EventBus';
+import { detachedBus } from '@/events/BusHolder';
 
 export const AD_REPLICATION_PORT = 135;
 
@@ -96,7 +97,7 @@ export class ReplicationServerHandler {
   constructor(
     private readonly store: DirectoryStore,
     private readonly deviceId?: string,
-    private readonly bus: IEventBus = getDefaultEventBus(),
+    private readonly bus: IEventBus = detachedBus(),
     private readonly ownIp?: string,
     /** `repadmin /syncall ... /P` (push mode) handling — called with the notifying partner's address so this DC can pull from it right away. Omitted, syncNotify messages are ignored (this DC doesn't support being pushed to). */
     private readonly onSyncNotify?: (partnerIp: string) => void,

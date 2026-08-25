@@ -25,7 +25,8 @@ import {
   RIP_V2_MULTICAST_IP, RIP_V2_MULTICAST_MAC,
 } from '../core/constants';
 import { Logger } from '../core/Logger';
-import { getDefaultEventBus, type IEventBus } from '@/events/EventBus';
+import { type IEventBus } from '@/events/EventBus';
+import { BusHolder } from '@/events/BusHolder';
 import { getDefaultScheduler, type IScheduler } from '@/events/Scheduler';
 import { TimerSet } from '@/events/TimerSet';
 import {
@@ -190,7 +191,7 @@ export class RIPEngine implements IProtocolEngine {
   private running: boolean = false;
 
   // ── Reactive plumbing (Phase 4b2-RIP) ───────────────────────────────
-  private busOverride: IEventBus | null = null;
+  private readonly busHolder = new BusHolder();
   private schedulerOverride: IScheduler | null = null;
   private readonly timers = new TimerSet(() => this.getScheduler());
   private readonly signalStore = new RIPSignalStore();
@@ -217,7 +218,7 @@ export class RIPEngine implements IProtocolEngine {
   private routesRemovedCount = 0;
 
   setEventBus(bus: IEventBus | null): void {
-    this.busOverride = bus;
+    this.busHolder.set(bus);
     this.attachActors();
   }
   setScheduler(scheduler: IScheduler | null): void { this.schedulerOverride = scheduler; }
@@ -269,7 +270,7 @@ export class RIPEngine implements IProtocolEngine {
       this.sendPeriodicUpdate();
     }
   }
-  private getBus(): IEventBus { return this.busOverride ?? getDefaultEventBus(); }
+  private getBus(): IEventBus { return this.busHolder.get(); }
   private getScheduler(): IScheduler { return this.schedulerOverride ?? getDefaultScheduler(); }
   /** Public — used by `RIPSignalRefreshActor` to filter events. */
   getDeviceId(): string { return this.equipmentId; }

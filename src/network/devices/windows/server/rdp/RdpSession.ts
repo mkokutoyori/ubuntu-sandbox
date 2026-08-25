@@ -20,7 +20,8 @@ import {
   encodeCredSspRequest, decodeCredSspRequest, encodeCredSspResponse, decodeCredSspResponse,
   verifyCredSsp, type CredSspAuthContext,
 } from './CredSsp';
-import { getDefaultEventBus, type IEventBus } from '@/events/EventBus';
+import { type IEventBus } from '@/events/EventBus';
+import { detachedBus } from '@/events/BusHolder';
 
 export const RDP_PORT = 3389;
 
@@ -123,7 +124,7 @@ export interface RdpSessionState {
 export class RdpSessionTable {
   private readonly sessions = new Map<number, { userName: string; state: 'Active' | 'Disconnected'; clientAddress: string }>();
   private nextId = 1;
-  private bus: IEventBus = getDefaultEventBus();
+  private bus: IEventBus = detachedBus();
   private deviceId = '';
 
   /** Wires this table into the reactive bus (PRD-Windows-Server-Advanced.md §5 P23) — mirrors `WindowsUserManager.attachBus`'s own convention, called once from `WindowsPC.wireReactiveProjections`. */

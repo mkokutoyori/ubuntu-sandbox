@@ -254,14 +254,48 @@ fois, là où trois suites de mirroring recopiaient le même
 (`MdnsAgent`, `LlmnrAgent`, 16 sites) alors qu'ils appartiennent à un
 hôte : ils publient sur le bus de cet hôte.
 
-### Incrément 5c — le symbole disparaît (à faire)
-Chaque composant PAR MACHINE (OSPF, RIP, DHCP, NAT, IPSec, IP SLA,
-syslog, EEM, rôles Windows, Oracle) porte encore un repli
-`busOverride ?? getDefaultEventBus()`. Le repli est le défaut : un objet
-qui appartient à une machine doit recevoir le bus de cette machine, et
-n'en avoir aucun autre. Une fois les replis retirés, ce qui reste
-(`Logger`, `EquipmentRegistry`, `Cable`, le magasin) est un bus
-d'OBSERVATION, à nommer comme tel.
+### Incrément 5c — plus aucun repli vers un canal partagé (LIVRÉ)
+Vingt-huit fichiers de production portaient encore
+`busOverride ?? getDefaultEventBus()`. **Le repli EST le défaut** : il
+n'est atteint que lorsque personne n'a injecté de bus — c'est-à-dire
+lorsque l'objet n'appartient à aucune machine — et il publie alors dans
+un canal que toutes les machines partagent. `events/BusHolder.ts` porte
+la règle une seule fois : le bus qu'on m'a donné, sinon le mien.
+
+**Trois défauts réels que le relais cachait**, tous trouvés parce que la
+suppression les a rendus visibles :
+
+1. **Les quatre adaptateurs Oracle écoutaient le bus partagé** pendant
+   que l'instance publiait sur celui de son équipement. Ils ne
+   recevaient rien par eux-mêmes ; le relais leur recopiait tout. Sept
+   cas sont tombés à la coupure, cinq se sont relevés en leur donnant le
+   bus de l'hôte.
+2. **`OracleDatabase` s'abonnait au bus de l'instance À SA
+   CONSTRUCTION**, et `setEventBus` le remplaçait juste après. Son
+   abonnement restait donc sur le bus d'avant, et le ré-balayage SoD
+   après un `GRANT` ne se déclenchait que par le relais. `onBusChanged`
+   ré-abonne, ce qu'un changement de bus doit faire.
+3. **`SyslogAgent` et `LoggingConfig` s'abonnaient DEUX fois** — au bus
+   de la machine et au bus partagé — avec un filtre anti-doublon pour
+   réparer la conséquence. La seconde était morte de toute façon
+   (`device.syslog.entry` n'est publié que sur le bus de la machine) ;
+   `LoggingConfig` lit désormais `Logger` par son API propre, qui filtre
+   déjà par équipement.
+
+**Ce qui garde légitimement un canal partagé, et pourquoi.** `Cable`
+est PHYSIQUEMENT partagé par deux machines — c'est ce qu'est un câble.
+`Logger` est un observateur à l'échelle du simulateur et porte sa propre
+API d'abonnement. `EquipmentRegistry` n'est pas une machine mais le
+registre des machines : il possède maintenant son bus (il ne se replie
+plus sur un global), et c'est là que vivent `device.registered`,
+`device.deregistered`, `device.removed` et `registry.cleared` — que le
+magasin, `TerminalManager` et `FaultProjection` lisent.
+
+**Le garde-fou est structurel et grandit tout seul** :
+`no-component-falls-back-to-a-shared-bus.test.ts` REFAIT la recherche à
+chaque exécution et NOMME ses contrevenants, au lieu d'une liste écrite
+à la main qui pourrit. Trois fichiers y sont autorisés, chacun pour la
+raison ci-dessus.
 
 ---
 

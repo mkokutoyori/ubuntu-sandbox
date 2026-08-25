@@ -41,7 +41,8 @@ import { IPAddress } from '../core/types';
 import { Logger } from '../core/Logger';
 import { OSPF_CONSTANTS } from '../core/constants';
 import { ipToUint32, networkAddress, inSameSubnet, wildcardMatches } from '../core/ip';
-import { getDefaultEventBus, type IEventBus } from '@/events/EventBus';
+import { type IEventBus } from '@/events/EventBus';
+import { BusHolder } from '@/events/BusHolder';
 import { getDefaultScheduler, type IScheduler } from '@/events/Scheduler';
 import { TimerSet } from '@/events/TimerSet';
 import {
@@ -196,7 +197,7 @@ export class OSPFEngine implements IProtocolEngine {
 
   // ─── Reactive plumbing (Phase 4b2) ──────────────────────────────────
   /** Optional bus override. Falls back to the singleton when null. */
-  private busOverride: IEventBus | null = null;
+  private readonly busHolder = new BusHolder();
   /** Optional scheduler override. Falls back to the singleton when null. */
   private schedulerOverride: IScheduler | null = null;
   /** Optional device id, populated when the engine is attached to an Equipment. */
@@ -293,7 +294,7 @@ export class OSPFEngine implements IProtocolEngine {
    *  actors are re-attached to the new bus so the engine remains
    *  fully reactive against whichever bus the caller picks. */
   setEventBus(bus: IEventBus | null): void {
-    this.busOverride = bus;
+    this.busHolder.set(bus);
     this.attachActors();
   }
 
@@ -311,7 +312,7 @@ export class OSPFEngine implements IProtocolEngine {
   }
 
   private getBus(): IEventBus {
-    return this.busOverride ?? getDefaultEventBus();
+    return this.busHolder.get();
   }
 
   private getScheduler(): IScheduler {

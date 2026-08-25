@@ -15,7 +15,6 @@
  */
 
 import type { IEventBus, Unsubscribe } from '@/events/EventBus';
-import { getDefaultEventBus } from '@/events/EventBus';
 // This projection observes the topology to describe it, it never forwards
 // anything — the layer docs/PRD-Frame-Only-Refactor.md §2.2 exempts, the
 // same exemption `linux/network/HostLookup.ts` takes for the UI/terminal
@@ -285,7 +284,7 @@ let projection: FaultProjection | null = null;
  * subscribe-once-at-import would go dead after the first test of a file.
  */
 export function ensureFaultProjection(): FaultProjection {
-  const bus = getDefaultEventBus();
+  const bus = EquipmentRegistry.getInstance().getBus();
   if (bus !== attachedBus || !projection) {
     projection?.dispose();
     attachedBus = bus;

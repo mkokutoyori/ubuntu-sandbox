@@ -17,7 +17,6 @@ import { GenericSwitch } from '@/network/devices/GenericSwitch';
 import { Cable } from '@/network/hardware/Cable';
 import { IPAddress, SubnetMask } from '@/network/core/types';
 import { EquipmentRegistry } from '@/network/equipment/EquipmentRegistry';
-import { getDefaultEventBus } from '@/events/EventBus';
 import { getFaultRegistry } from '@/network/faults/FaultRegistry';
 import { ensureFaultProjection } from '@/network/faults/FaultProjection';
 
@@ -37,7 +36,7 @@ function lab(): Lab {
   EquipmentRegistry.getInstance().clear();
   // Touch the bus first so the projection attaches to the same instance
   // the devices will publish on.
-  getDefaultEventBus();
+  EquipmentRegistry.getInstance().getBus();
   ensureFaultProjection();
 
   const pc = new LinuxPC('linux-pc', 'PC1');
@@ -74,7 +73,7 @@ describe('F1 — pulling a cable raises a link fault', () => {
 
   it('an unaddressed port is only a notice — severity follows the consequence', () => {
     EquipmentRegistry.getInstance().clear();
-    getDefaultEventBus();
+    EquipmentRegistry.getInstance().getBus();
     ensureFaultProjection();
 
     const a = new LinuxPC('linux-pc', 'PC1');
@@ -202,7 +201,7 @@ describe('F2 — powering a device off', () => {
 describe('F3 — port security', () => {
   it('raises LINK_ERRDISABLE when a violation shuts the port', async () => {
     EquipmentRegistry.getInstance().clear();
-    getDefaultEventBus();
+    EquipmentRegistry.getInstance().getBus();
     ensureFaultProjection();
     const sw = new GenericSwitch('switch-generic', 'SW1');
 
@@ -224,7 +223,7 @@ describe('F3 — port security', () => {
 
   it('recovery clears it', () => {
     EquipmentRegistry.getInstance().clear();
-    getDefaultEventBus();
+    EquipmentRegistry.getInstance().getBus();
     ensureFaultProjection();
     const sw = new GenericSwitch('switch-generic', 'SW1');
     const portName = sw.getPortNames()[0];
@@ -313,7 +312,7 @@ describe('lifecycle', () => {
     srv.getPorts()[0].getCable()?.disconnect();
     expect(faults().forDevice(srv.getId()).length).toBeGreaterThan(0);
 
-    getDefaultEventBus().publish({ topic: 'device.removed', payload: { id: srv.getId() } });
+    EquipmentRegistry.getInstance().getBus().publish({ topic: 'device.removed', payload: { id: srv.getId() } });
 
     // Otherwise the incident centre accumulates references to devices that
     // are no longer on the canvas (docs/PRD-Pannes.md §F2.8).

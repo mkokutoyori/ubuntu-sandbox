@@ -15,7 +15,8 @@
 import type { TcpStack, TcpSocket } from '@/network/tcp/TcpStack';
 import type { WindowsFileSystem } from '@/network/devices/windows/WindowsFileSystem';
 import type { EndHost } from '@/network/devices/EndHost';
-import { getDefaultEventBus, type IEventBus } from '@/events/EventBus';
+import { type IEventBus } from '@/events/EventBus';
+import { detachedBus } from '@/events/BusHolder';
 
 export const DFSR_PORT = 5722;
 
@@ -190,7 +191,7 @@ export class WindowsDfsrRole {
   constructor(
     private readonly host: EndHost,
     private readonly fs: WindowsFileSystem,
-    private readonly bus: IEventBus = getDefaultEventBus(),
+    private readonly bus: IEventBus = detachedBus(),
     private readonly deviceId: string = '',
   ) {}
 

@@ -11,7 +11,8 @@ import { ORACLE_CONFIG, ORACLE_ERRORS, TNS_ERRORS } from './OracleConfig';
 import { parseSize } from './views/_fileSize';
 import { OracleError } from '../engine/types/DatabaseError';
 import { ListenerControl } from './listener/ListenerControl';
-import { getDefaultEventBus, type IEventBus } from '@/events/EventBus';
+import { type IEventBus } from '@/events/EventBus';
+import { BusHolder } from '@/events/BusHolder';
 import {
   OracleSignalStore,
   makeReadonlyOracleObservables,
@@ -130,8 +131,9 @@ export class OracleInstance {
   private _checkpointTime = new Date();
 
   // ── Reactive (Phase 7) ───────────────────────────────────────────
-  /** Bus override; defaults to the global singleton at publish time. */
+  /** Bus override; an instance with no host publishes on its own. */
   private _bus: IEventBus | null = null;
+  private readonly _ownBus = new BusHolder();
   /** deviceId scoping the events emitted by this instance. */
   private _deviceId: string = 'default';
   /** Reactive signal store + read-only view exposed to UI consumers. */
@@ -229,6 +231,14 @@ export class OracleInstance {
   setEventBus(bus: IEventBus | null): void {
     this._bus = bus;
     this.reattachRefreshActor();
+    for (const rebind of this._busRebinders) rebind(this.getBus());
+  }
+
+  private readonly _busRebinders: Array<(bus: IEventBus) => void> = [];
+
+  onBusChanged(rebind: (bus: IEventBus) => void): void {
+    this._busRebinders.push(rebind);
+    rebind(this.getBus());
   }
 
   /**
@@ -489,7 +499,7 @@ export class OracleInstance {
 
   /** Public bus accessor — used by OracleExecutor / SQLPlusSession to
    *  reuse the same bus binding as the instance. */
-  getBus(): IEventBus { return this._bus ?? getDefaultEventBus(); }
+  getBus(): IEventBus { return this._bus ?? this._ownBus.get(); }
   /** Public deviceId accessor. */
   getDeviceId(): string { return this._deviceId; }
   private ref() { return { deviceId: this._deviceId, sid: this.config.sid }; }

@@ -1,4 +1,4 @@
-import { getDefaultEventBus } from '@/events/EventBus';
+import { Logger } from '@/network/core/Logger';
 import { DuplicateEventFilter } from '@/events/DuplicateEventFilter';
 import { isValidIPv4 } from '@/network/core/ip';
 import { ospfHelloMismatchLines } from '@/network/ospf/events';
@@ -1357,8 +1357,9 @@ export class LoggingConfig {
       }
     };
     unsubs.push(bus.subscribe('log', logHandler));
-    const defaultBus = getDefaultEventBus();
-    if (defaultBus !== bus) unsubs.push(defaultBus.subscribe('log', logHandler));
+    const loggerSubscription = Logger.subscribe(
+      (entry) => logHandler({ payload: entry }), { source: deviceId });
+    unsubs.push(() => Logger.unsubscribe(loggerSubscription));
     this.busUnsub = () => {
       for (const u of unsubs) u();
       this.attachedBus = null;

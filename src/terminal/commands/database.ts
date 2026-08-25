@@ -14,7 +14,8 @@ import { OracleFilesystemSync } from '@/adapters/OracleFilesystemSync';
 import { OracleSystemdSync } from '@/adapters/OracleSystemdSync';
 import { OracleAuditSyslogSync } from '@/adapters/OracleAuditSyslogSync';
 import { OracleListenerTcpSync } from '@/adapters/OracleListenerTcpSync';
-import { getDefaultEventBus } from '@/events/EventBus';
+import { detachedBus } from '@/events/BusHolder';
+import type { IEventBus } from '@/events/EventBus';
 import { EquipmentRegistry } from '@/network/equipment/EquipmentRegistry';
 import { DeviceCatalogRegistry } from '@/terminal/subshells/rman/catalog/DeviceCatalogRegistry';
 import { resolveOracleConnectTarget, parseConnectIdentifier, primaryIpv4 } from './oracleNet';
@@ -24,6 +25,17 @@ import { DeviceConfigRegistry } from '@/terminal/subshells/rman/session/DeviceCo
 import { resolveRacMembership, joinOrCreateCluster, resetRacClusterRegistry } from '@/database/oracle/rac/RacClusterRegistry';
 import { attachRacCssAgent, _resetRacCssAgentAttachments } from '@/database/oracle/rac/RacCssAgent';
 import { attachRacCacheFusionAgent, _resetRacCacheFusionAgentAttachments } from '@/database/oracle/rac/RacCacheFusionAgent';
+
+const detachedOracleBuses: Map<string, IEventBus> = new Map();
+
+function oracleBusFor(deviceId: string): IEventBus {
+  const owner = EquipmentRegistry.getInstance().getById(deviceId) as unknown as
+    { getBus?: () => IEventBus } | null;
+  if (owner && typeof owner.getBus === 'function') return owner.getBus();
+  let bus = detachedOracleBuses.get(deviceId);
+  if (!bus) { bus = detachedBus(); detachedOracleBuses.set(deviceId, bus); }
+  return bus;
+}
 
 /** Per-device Oracle database instances. */
 const oracleInstances: Map<string, OracleDatabase> = new Map();
@@ -62,7 +74,7 @@ export function getOracleDatabase(deviceId: string): OracleDatabase {
     // Phase 7c: wire bus + deviceId BEFORE startup so the boot sequence
     // (state-changed, background-process-started, alert log) is materialised
     // by the FS sync adapter without manual *ToDevice helper calls.
-    db.instance.setEventBus(getDefaultEventBus());
+    db.instance.setEventBus(oracleBusFor(deviceId));
     db.instance.setDeviceId(deviceId);
     // Device VFS reader for server-side reads (UTL_FILE, external tables,
     // BFILE, CREATE PFILE/SPFILE FROM …) — runs as the `oracle` OS user
@@ -128,39 +140,34 @@ export function getOracleDatabase(deviceId: string): OracleDatabase {
         local as import('@/network').HostCapableDevice, connectString, getOracleDatabase);
     });
 
-    const sync = new OracleFilesystemSync(getDefaultEventBus(), {
+    const sync = new OracleFilesystemSync(oracleBusFor(deviceId), {
       resolveDevice: (id) => EquipmentRegistry.getInstance().getById(id) ?? null,
       resolveDatabase: (id) => oracleInstances.get(id) ?? null,
     });
     sync.start();
     oracleFsSyncs.set(deviceId, sync);
 
-    const systemd = new OracleSystemdSync(getDefaultEventBus(), {
+    const systemd = new OracleSystemdSync(oracleBusFor(deviceId), {
       resolveDevice: (id) => EquipmentRegistry.getInstance().getById(id) ?? null,
       resolveDatabase: (id) => oracleInstances.get(id) ?? null,
     });
     systemd.start();
     oracleSystemdSyncs.set(deviceId, systemd);
 
-    const auditSyslog = new OracleAuditSyslogSync(getDefaultEventBus(), {
+    const auditSyslog = new OracleAuditSyslogSync(oracleBusFor(deviceId), {
       resolveDevice: (id) => EquipmentRegistry.getInstance().getById(id) ?? null,
       resolveDatabase: (id) => oracleInstances.get(id) ?? null,
     });
     auditSyslog.start();
     oracleAuditSyslogSyncs.set(deviceId, auditSyslog);
 
-    const listenerTcp = new OracleListenerTcpSync(getDefaultEventBus(), {
+    const listenerTcp = new OracleListenerTcpSync(oracleBusFor(deviceId), {
       resolveDevice: (id) => EquipmentRegistry.getInstance().getById(id) ?? null,
       resolveDatabase: (id) => oracleInstances.get(id) ?? null,
     });
     listenerTcp.start();
     oracleListenerTcpSyncs.set(deviceId, listenerTcp);
 
-    const busOwner = EquipmentRegistry.getInstance().getById(deviceId) as unknown as
-      { getBus?: () => import('@/events/EventBus').IEventBus } | null;
-    if (busOwner && typeof busOwner.getBus === 'function') {
-      db.instance.setEventBus(busOwner.getBus());
-    }
     db.instance.startup();
     // A freshly provisioned server boots with the listener running
     // (dbstart/systemd would have started it); `lsnrctl stop` still
