@@ -151,6 +151,14 @@ const STP_VLAN_VIEWS: ReadonlyArray<{ keyword: string; description: string }> = 
   { keyword: 'root', description: 'Root bridge' },
 ];
 
+const CONFIG_IF_AUTRES: ReadonlySet<string> = new Set([
+  'shutdown', 'no shutdown', 'description', 'no description',
+  'duplex', 'speed', 'channel-group', 'no channel-group',
+  'mls qos trust cos', 'mls qos trust dscp', 'no mls qos trust', 'mls qos cos',
+  'ip dhcp snooping trust', 'ip dhcp snooping limit rate',
+  'l2protocol-tunnel', 'private-vlan mapping',
+]);
+
 const VLAN_PLACE = (name: string, description: string): ArgumentSpec =>
   ({ name, type: 'VLAN_ID', description });
 
@@ -166,6 +174,10 @@ const SWITCHPORT_PLACES: Readonly<Record<string, ArgumentSpec | readonly Argumen
       { keyword: 'untagged', description: 'Untagged voice traffic' },
     ],
   },
+  'channel-group': {
+    name: 'groupe', type: 'INT', range: [1, 64], description: 'Channel group number',
+  },
+  description: { name: 'texte', type: 'LINE', description: 'Up to 240 characters describing this interface' },
   'switchport trunk encapsulation': {
     name: 'encapsulation', type: 'ENUM', description: 'Trunking encapsulation',
     values: [
@@ -185,6 +197,20 @@ const VLAN_LIST_KEYWORDS: readonly AdapterKeyword[] = [
 ];
 
 const SWITCHPORT_KEYWORDS: Readonly<Record<string, readonly AdapterKeyword[]>> = {
+  'channel-group': [{
+    keyword: 'mode', description: 'Etherchannel mode of this interface',
+    afterArguments: true,
+    argument: {
+      name: 'mode', type: 'ENUM', description: 'Etherchannel mode',
+      values: [
+        { keyword: 'active', description: 'Enable LACP unconditionally' },
+        { keyword: 'auto', description: 'Enable PAgP only if a PAgP device is detected' },
+        { keyword: 'desirable', description: 'Enable PAgP unconditionally' },
+        { keyword: 'on', description: 'Enable Etherchannel only' },
+        { keyword: 'passive', description: 'Enable LACP only if a LACP device is detected' },
+      ],
+    },
+  }],
   'switchport trunk allowed vlan': VLAN_LIST_KEYWORDS,
   'switchport trunk pruning vlan': VLAN_LIST_KEYWORDS,
   'switchport voice vlan': [
@@ -2189,7 +2215,7 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
       {
         modes: ['config-if'], minPrivilege: 15,
         undoFromNegatedPaths: true,
-        skip: (path) => !/^(no )?switchport /.test(path),
+        skip: (path) => !/^(no )?switchport /.test(path) && !CONFIG_IF_AUTRES.has(path),
         argumentFor: (path) => SWITCHPORT_PLACES[path] ?? undefined,
         keywordsFor: (path) => SWITCHPORT_KEYWORDS[path],
       },
