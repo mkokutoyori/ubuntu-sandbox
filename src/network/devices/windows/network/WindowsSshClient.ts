@@ -232,5 +232,8 @@ export async function runWindowsSshClient(
   // Interactive form: the remote command-prompt banner, then the
   // OpenSSH "Connection to <host> closed." line.
   const lines = [remote.getSshMotd().replace(/^\n+/, ''), '', `Connection to ${host} closed.`];
+  (remote as unknown as {
+    scheduleSshLogout?: (u: string, ip: string, hold: number) => void;
+  }).scheduleSshLogout?.(remoteUser, opts.sourceIp, 0);
   return { output: lines.join('\n'), exitCode: 0 };
 }

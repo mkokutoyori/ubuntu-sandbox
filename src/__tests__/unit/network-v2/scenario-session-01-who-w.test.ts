@@ -44,15 +44,15 @@ async function buildLan() {
 describe('Scénario 1 — who / w : sessions actives', () => {
   it('who liste user/terminal/heure/(ip) pour chaque session SSH active', async () => {
     const { pc1, srv } = await buildLan();
-    await pc1.executeCommand('ssh alice@10.0.0.10 whoami');
+    await pc1.executeCommand('ssh alice@10.0.0.10 sleep 60');
     const out = await srv.executeCommand('who');
     expect(out).toMatch(/alice\s+pts\/\d+\s+\d{4}-\d{2}-\d{2} \d{2}:\d{2} \(10\.0\.0\.1\)/);
   });
 
   it('who -q affiche les noms uniques et le total', async () => {
     const { pc1, pc2, srv } = await buildLan();
-    await pc1.executeCommand('ssh alice@10.0.0.10 whoami');
-    await pc2.executeCommand('ssh bob@10.0.0.10 whoami');
+    await pc1.executeCommand('ssh alice@10.0.0.10 sleep 60');
+    await pc2.executeCommand('ssh bob@10.0.0.10 sleep 60');
     const out = await srv.executeCommand('who -q');
     expect(out).toContain('alice');
     expect(out).toContain('bob');
@@ -76,8 +76,8 @@ describe('Scénario 1 — who / w : sessions actives', () => {
 
   it('who | wc -l compte les sessions pts actives + la console locale', async () => {
     const { pc1, pc2, srv } = await buildLan();
-    await pc1.executeCommand('ssh alice@10.0.0.10 whoami');
-    await pc2.executeCommand('ssh bob@10.0.0.10 whoami');
+    await pc1.executeCommand('ssh alice@10.0.0.10 sleep 60');
+    await pc2.executeCommand('ssh bob@10.0.0.10 sleep 60');
     const whoCount = Number((await srv.executeCommand('who | wc -l')).trim());
     const ptsCount = Number((await srv.executeCommand("ls -1 /dev/pts/ | grep -v ptmx | wc -l")).trim());
     // who compte aussi la console locale (tty1), absente de /dev/pts/.
@@ -87,7 +87,7 @@ describe('Scénario 1 — who / w : sessions actives', () => {
 
   it('chaque terminal listé par who existe réellement sous /dev/', async () => {
     const { pc1, srv } = await buildLan();
-    await pc1.executeCommand('ssh alice@10.0.0.10 whoami');
+    await pc1.executeCommand('ssh alice@10.0.0.10 sleep 60');
     const who = await srv.executeCommand('who');
     const ttys = who.split('\n').filter(Boolean).map((l) => l.split(/\s+/)[1]);
     for (const tty of ttys) {
@@ -98,7 +98,7 @@ describe('Scénario 1 — who / w : sessions actives', () => {
 
   it('w affiche l\'en-tête uptime/load puis une ligne par session', async () => {
     const { pc1, srv } = await buildLan();
-    await pc1.executeCommand('ssh alice@10.0.0.10 whoami');
+    await pc1.executeCommand('ssh alice@10.0.0.10 sleep 60');
     const out = await srv.executeCommand('w');
     const lines = out.split('\n');
     expect(lines[0]).toMatch(/up.*load average:/);
@@ -108,8 +108,8 @@ describe('Scénario 1 — who / w : sessions actives', () => {
 
   it('who et w rapportent le même nombre de sessions', async () => {
     const { pc1, pc2, srv } = await buildLan();
-    await pc1.executeCommand('ssh alice@10.0.0.10 whoami');
-    await pc2.executeCommand('ssh bob@10.0.0.10 whoami');
+    await pc1.executeCommand('ssh alice@10.0.0.10 sleep 60');
+    await pc2.executeCommand('ssh bob@10.0.0.10 sleep 60');
     const whoCount = Number((await srv.executeCommand('who | wc -l')).trim());
     const wCount = Number((await srv.executeCommand('w -h | wc -l')).trim());
     expect(whoCount).toBe(wCount);
@@ -117,7 +117,7 @@ describe('Scénario 1 — who / w : sessions actives', () => {
 
   it('who -a inclut boot, runlevel et la liste des sessions', async () => {
     const { pc1, srv } = await buildLan();
-    await pc1.executeCommand('ssh alice@10.0.0.10 whoami');
+    await pc1.executeCommand('ssh alice@10.0.0.10 sleep 60');
     const out = await srv.executeCommand('who -a');
     expect(out).toMatch(/system boot/);
     expect(out).toMatch(/run-level/);

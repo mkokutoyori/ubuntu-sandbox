@@ -1865,6 +1865,7 @@ export abstract class LinuxMachine extends EndHost
       session.shellPid = shell.pid;
       this.utmpSync?.updateSessionPids(session.tty, shell.pid, sshdChild.pid);
       this.persistLogindSession(session.tty, uid, user, shell.pid, fromIp);
+      events.emit({ kind: 'channel_opened', user, channelType: 'shell' });
       this.emitSessionOpenedLog(user, uid, sshdChild.pid, String(shell.pid));
       const myIp = this.getPorts()
         .map((p) => p.getIPAddress()?.toString())
@@ -1881,6 +1882,14 @@ export abstract class LinuxMachine extends EndHost
         { ip: myIp, port: 22 },
       );
     }
+  }
+
+  scheduleSshLogout(user: string, fromIp: string, holdSeconds: number): void {
+    if (holdSeconds <= 0) { this.recordSshLogout(user, fromIp); return; }
+    this.getScheduler().setTimeout(
+      () => this.recordSshLogout(user, fromIp),
+      holdSeconds * 1000,
+    );
   }
 
   recordSshLogout(user: string, fromIp: string): void {
@@ -2163,6 +2172,12 @@ export abstract class LinuxMachine extends EndHost
       this.removePtsNode(s.tty);
       this.dropLogindSession(sessionId, s.uid);
       this.emitSessionClosedLog(s.user, sshdPid, sessionId);
+      this.getSshServerContext().events.emit({
+        kind: 'client_disconnected', user: s.user, ip: s.fromIp,
+        port: this.sshClientPort(s.fromIp), authenticated: true,
+        reason: 'admin_disconnect',
+      });
+      this.sshForgetPeerPort(s.fromIp);
       return { ok: true };
     };
     return {
@@ -2210,12 +2225,7 @@ export abstract class LinuxMachine extends EndHost
   }
 
   private emitSessionOpenedLog(user: string, uid: number, sshdPid: number, sid: string): void {
-    this.executor.logMgr.logAuth(
-      'sshd',
-      `pam_unix(sshd:session): session opened for user ${user}(uid=${uid}) by (uid=0)`,
-      sshdPid,
-      'ssh',
-    );
+    void uid; void sshdPid;
     this.executor.logMgr.logAuth(
       'systemd-logind',
       `New session ${sid} of user ${user}.`,
@@ -2231,12 +2241,7 @@ export abstract class LinuxMachine extends EndHost
   }
 
   private emitSessionClosedLog(user: string, sshdPid: number, sid: string): void {
-    this.executor.logMgr.logAuth(
-      'sshd',
-      `pam_unix(sshd:session): session closed for user ${user}`,
-      sshdPid,
-      'ssh',
-    );
+    void sshdPid;
     this.executor.logMgr.logAuth(
       'systemd-logind',
       `Session ${sid} logged out. Waiting for processes to exit.`,

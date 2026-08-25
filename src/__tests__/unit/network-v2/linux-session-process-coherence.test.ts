@@ -23,13 +23,13 @@ describe('Sessions are coherent with the process table and loginctl', () => {
 
   describe('SSH login spawns a shell process in ps', () => {
     it('after ssh login, ps -ef shows a bash process owned by the SSH user', async () => {
-      await pc.executeCommand('ssh alice@10.0.0.2');
+      await pc.executeCommand('ssh alice@10.0.0.2 sleep 60');
       const out = await srv.executeCommand('ps -ef');
       expect(out).toMatch(/^alice\s+\d+.+(\b-?bash\b)/m);
     });
 
     it('the PID who -u reports for the SSH user appears in ps', async () => {
-      await pc.executeCommand('ssh alice@10.0.0.2');
+      await pc.executeCommand('ssh alice@10.0.0.2 sleep 60');
       const whoOut = await srv.executeCommand('who -u');
       const aliceLine = whoOut.split('\n').find((l) => /^alice\b/.test(l)) ?? '';
       const m = aliceLine.match(/(\d+)\s+\(/);
@@ -42,7 +42,7 @@ describe('Sessions are coherent with the process table and loginctl', () => {
 
   describe('loginctl list-sessions is coherent with who', () => {
     it('shows one row per active session', async () => {
-      await pc.executeCommand('ssh alice@10.0.0.2');
+      await pc.executeCommand('ssh alice@10.0.0.2 sleep 60');
       const out = await srv.executeCommand('loginctl list-sessions');
       const lines = out.split('\n').filter(Boolean);
       expect(lines[0]).toMatch(/^SESSION\s+UID\s+USER\b/);
@@ -50,8 +50,8 @@ describe('Sessions are coherent with the process table and loginctl', () => {
     });
 
     it('the "N sessions listed" footer matches the active count', async () => {
-      await pc.executeCommand('ssh alice@10.0.0.2');
-      await pc.executeCommand('ssh alice@10.0.0.2');
+      await pc.executeCommand('ssh alice@10.0.0.2 sleep 60');
+      await pc.executeCommand('ssh alice@10.0.0.2 sleep 60');
       const out = await srv.executeCommand('loginctl list-sessions');
       const m = out.match(/(\d+) sessions? listed\./);
       expect(m).not.toBeNull();
@@ -62,7 +62,7 @@ describe('Sessions are coherent with the process table and loginctl', () => {
 
   describe('loginctl show-session reports per-session detail', () => {
     it('loginctl show-session <id> exposes User= and TTY= matching who', async () => {
-      await pc.executeCommand('ssh alice@10.0.0.2');
+      await pc.executeCommand('ssh alice@10.0.0.2 sleep 60');
       const listOut = await srv.executeCommand('loginctl list-sessions');
       const sessRow = listOut.split('\n').find((l) => /alice/.test(l)) ?? '';
       const sid = sessRow.trim().split(/\s+/)[0];
@@ -74,7 +74,7 @@ describe('Sessions are coherent with the process table and loginctl', () => {
     });
 
     it('Leader= in loginctl show-session matches a real -bash PID in ps', async () => {
-      await pc.executeCommand('ssh alice@10.0.0.2');
+      await pc.executeCommand('ssh alice@10.0.0.2 sleep 60');
       const listOut = await srv.executeCommand('loginctl list-sessions');
       const sessRow = listOut.split('\n').find((l) => /alice/.test(l)) ?? '';
       const sid = sessRow.trim().split(/\s+/)[0];
@@ -89,7 +89,7 @@ describe('Sessions are coherent with the process table and loginctl', () => {
 
   describe('loginctl list-users mirrors active session users', () => {
     it('alice appears once in list-users after an SSH login', async () => {
-      await pc.executeCommand('ssh alice@10.0.0.2');
+      await pc.executeCommand('ssh alice@10.0.0.2 sleep 60');
       const out = await srv.executeCommand('loginctl list-users');
       expect(out).toMatch(/^\s*\d+\s+alice\b/m);
       expect(out).toMatch(/\d+ users listed\./);
@@ -98,7 +98,7 @@ describe('Sessions are coherent with the process table and loginctl', () => {
 
   describe('pgrep aligns with the active sessions', () => {
     it('pgrep -u alice finds the spawned login shell', async () => {
-      await pc.executeCommand('ssh alice@10.0.0.2');
+      await pc.executeCommand('ssh alice@10.0.0.2 sleep 60');
       const out = await srv.executeCommand('pgrep -u alice');
       expect(out.trim().split('\n').filter(Boolean).length).toBeGreaterThanOrEqual(1);
     });
@@ -106,7 +106,7 @@ describe('Sessions are coherent with the process table and loginctl', () => {
 
   describe('loginctl terminate-session closes the session everywhere', () => {
     it('removes the session from who, kills its bash, and stamps a close in wtmp', async () => {
-      await pc.executeCommand('ssh alice@10.0.0.2');
+      await pc.executeCommand('ssh alice@10.0.0.2 sleep 60');
       const listOut = await srv.executeCommand('loginctl list-sessions');
       const sessRow = listOut.split('\n').find((l) => /alice/.test(l)) ?? '';
       const sid = sessRow.trim().split(/\s+/)[0];
@@ -131,7 +131,7 @@ describe('Sessions are coherent with the process table and loginctl', () => {
 
   describe('loginctl kill-session sends the requested signal', () => {
     it('kill-session --signal=SIGTERM also closes the session', async () => {
-      await pc.executeCommand('ssh alice@10.0.0.2');
+      await pc.executeCommand('ssh alice@10.0.0.2 sleep 60');
       const listOut = await srv.executeCommand('loginctl list-sessions');
       const sid = (listOut.split('\n').find((l) => /alice/.test(l)) ?? '').trim().split(/\s+/)[0];
       await srv.executeCommand(`loginctl kill-session --signal=SIGTERM ${sid}`);
