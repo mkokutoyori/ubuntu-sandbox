@@ -21,6 +21,7 @@ export interface Cursor {
   readonly node: TreeNode;
   readonly prefix: string;
   readonly resolved: boolean;
+  readonly path: readonly string[];
 }
 
 export function locateCursor(
@@ -32,18 +33,23 @@ export function locateCursor(
   const prefix = endsWithSpace ? '' : (tokens[tokens.length - 1] ?? '');
 
   let node = table.rootNode();
+  const path: string[] = [];
   for (const token of walked) {
     const child = uniqueChild(node, token, table, session);
-    if (child) { node = child; continue; }
+    if (child) {
+      node = child;
+      if (child.keyword) path.push(child.keyword.toLowerCase());
+      continue;
+    }
 
     const argument = table.argumentAt(node, session, AIDE);
     if (argument?.argument && argumentAccepts(argument.argument, token)) {
       node = argument;
       continue;
     }
-    return { node, prefix, resolved: false };
+    return { node, prefix, resolved: false, path };
   }
-  return { node, prefix, resolved: true };
+  return { node, prefix, resolved: true, path };
 }
 
 export function complete(
@@ -99,6 +105,16 @@ function suggestionsAt(
       out.push({
         value: suggestion.keyword, description: suggestion.description,
         isArgument: true, completable: true,
+      });
+    }
+  }
+
+  if (argument) {
+    for (const valeur of table.liveValuesFor(cursor.path, argument, cursor.prefix)) {
+      if (!valeur.toLowerCase().startsWith(lowered)) continue;
+      if (out.some(suggestion => suggestion.value === valeur)) continue;
+      out.push({
+        value: valeur, description: '', isArgument: true, completable: true,
       });
     }
   }

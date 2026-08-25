@@ -624,6 +624,7 @@ export function showRunningConfig(router: Router): string {
     _getDnsConfig?: () => import('../../router/dns/CiscoDnsConfig').CiscoDnsConfig;
   })._getDnsConfig?.();
   if (dnsCfg) lines.push(...dnsCfg.runningConfigLines());
+  lines.push(...hostsTableLines(router));
 
   const mgmtForSsh = (router as unknown as { getManagementService?: () => import('../../router/management/RouterManagementService').RouterManagementService }).getManagementService?.();
   if (mgmtForSsh) {
@@ -1785,4 +1786,10 @@ export function enableLevelSecretConfigLines(
     out.push(`enable password level ${e.level} ${renderPasswordField(e.value, e.algo, serviceEncryption, false, `enable:${e.level}`)}`);
   }
   return out;
+}
+
+export function hostsTableLines(device: unknown): string[] {
+  const hosts = (device as { _getHostsTable?: () => { renderCisco: () => string[] } })
+    ._getHostsTable?.();
+  return hosts ? hosts.renderCisco() : [];
 }

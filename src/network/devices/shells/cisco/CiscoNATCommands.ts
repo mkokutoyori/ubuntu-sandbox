@@ -934,9 +934,6 @@ export function runningConfigNAT(router: Router): string[] {
   for (const o of engine.getOutsideStaticEntries()) {
     lines.push(`ip nat outside source static ${o.outsideGlobal} ${o.outsideLocal}`);
   }
-  const hosts = (router as unknown as { _getHostsTable?: () => { renderCisco: () => string[] } })._getHostsTable?.();
-  if (hosts) lines.unshift(...hosts.renderCisco());
-
   for (const r of engine.getDynamicRules()) {
     const vrfTail = (r as any).vrf ? ` vrf ${(r as any).vrf}` : '';
     if (r.type === 'overload') {

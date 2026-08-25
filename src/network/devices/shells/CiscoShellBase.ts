@@ -22,7 +22,7 @@ import { parseCommand, uniqueChild } from '@/cli/CommandParser';
 import { applyTransition } from '@/cli/CliEngine';
 import { argumentAccepts } from '@/cli/ArgumentTypes';
 import type { ArgumentSpec } from '@/cli/ArgumentTypes';
-import type { CommandSpec, TreeNode } from '@/cli/CommandTable';
+import type { CommandSpec, TreeNode, LiveValuesPort } from '@/cli/CommandTable';
 
 /**
  * Un libelle de noeud, et les modes ou il vaut.
@@ -46,8 +46,8 @@ import { complete as socleComplete, type CompletionTrigger } from '@/cli/Complet
 import { projectLoggingOntoSyslogAgent } from '@/network/syslog/loggingProjection';
 import { projectSnmpServiceOntoAgent } from '@/network/snmp/snmpProjection';
 import { renderStartupConfig } from './cisco/ciscoConfigSerializer';
-import { CommandTrie } from './CommandTrie';
-import { EquipmentParamResolver, type SessionParamRanges } from './EquipmentParamResolver';
+import { CommandTrie, type ParamType } from './CommandTrie';
+import { EquipmentParamResolver, type SessionParamRanges, type CompletableDevice } from './EquipmentParamResolver';
 import { getDefaultScheduler, type IScheduler, type TimerHandle } from '@/events/Scheduler';
 import { runSshClient } from '../linux/network/LinuxSshClient';
 import { findHostByAddress } from '../linux/network/HostLookup';
@@ -661,6 +661,22 @@ Readonly<Record<string, ArgumentSpec | readonly ArgumentSpec[] | null>> = {
       description: 'Host addresses, or `ns` then the name server address' },
   ],
 };
+
+type HardeningEntry = readonly [
+  readonly string[], string, string,
+  (sec: ReturnType<typeof getSecurityConfig>, on: boolean) => void,
+];
+
+const IOS_HARDENING: readonly HardeningEntry[] = [
+  [['ip', 'source-route'], 'Accept source-routed packets',
+    'Drop source-routed packets', (sec, on) => { sec.ipSourceRoute = on; }],
+  [['ip', 'bootp', 'server'], 'Enable BOOTP server',
+    'Disable BOOTP server', (sec, on) => { sec.ipBootpServer = on; }],
+  [['ip', 'gratuitous-arps'], 'Send gratuitous ARP',
+    'Stop sending gratuitous ARP', (sec, on) => { sec.ipGratuitousArps = on; }],
+  [['ip', 'finger'], 'Enable finger service',
+    'Disable finger service', (sec, on) => { sec.ipFinger = on; }],
+];
 
 export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
   // ─── State ───────────────────────────────────────────────────────
@@ -5102,6 +5118,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       ...this.clearSpecs(),
       ...this.writeEraseSpecs(),
       ...this.serviceSpecs(),
+      ...this.hardeningSpecs(),
       ...this.showSocleSpecs(),
       ...this.archiveSubmodeSpecs(),
       ...this.identitySubmodeSpecs(),
@@ -5239,6 +5256,26 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       run: (_session, args) => drapeau(args.nom, true),
       undo: (_session, args) => drapeau(args.nom, false),
     }];
+  }
+
+  protected hardeningSpecs(): CommandSpec[] {
+    const poser = (
+      applique: (sec: ReturnType<typeof getSecurityConfig>, on: boolean) => void, on: boolean,
+    ): string => {
+      applique(getSecurityConfig(this.d()), on);
+      return '';
+    };
+
+    return IOS_HARDENING.map(([mots, description, undoDescription, applique]) => ({
+      id: `hardening-${mots.join('-')}`,
+      path: [...mots],
+      description,
+      undoDescription,
+      modes: ['config'],
+      minPrivilege: 15,
+      run: () => poser(applique, true),
+      undo: () => poser(applique, false),
+    }));
   }
 
   protected writeEraseSpecs(): CommandSpec[] {
@@ -5620,6 +5657,21 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     return spec.path.filter(step => typeof step === 'string').length;
   }
 
+  private socleLiveValues(): LiveValuesPort | null {
+    const device = this.deviceRef;
+    if (!device) return null;
+
+    const resolver = new EquipmentParamResolver(
+      device as unknown as CompletableDevice, this.sessionParamRanges());
+    return {
+      candidatesFor: (contexte) => resolver.candidatesFor({
+        path: contexte.path,
+        paramType: contexte.paramType as ParamType | null,
+        partial: contexte.partial,
+      }),
+    };
+  }
+
   private socleSession(table: CommandTable): CliSession {
     table.attachAuthorization({
       authorizes: (commandText, defaultLevel) => this.autorisation().authorize({
@@ -5629,6 +5681,8 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
         defaultLevel,
       }) !== 'absent',
     });
+
+    table.attachLiveValues(this.socleLiveValues());
 
     const session = newSession(this.d().getHostname?.() ?? 'Router', this, {
       initialMode: this.mode,
@@ -7792,23 +7846,6 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       return '';
     });
     registerCiscoDnsCommands(this.configTrie, this.dnsCommandContext());
-    const durcissement = (
-      commande: string, description: string, undoDescription: string,
-      applique: (sec: ReturnType<typeof getSecurityConfig>, on: boolean) => void,
-    ): void => {
-      this.configTrie.register(commande, description,
-        () => { applique(getSecurityConfig(this.d()), true); return ''; });
-      this.configTrie.register(`no ${commande}`, undoDescription,
-        () => { applique(getSecurityConfig(this.d()), false); return ''; });
-    };
-    durcissement('ip source-route', 'Accept source-routed packets',
-      'Drop source-routed packets', (sec, on) => { sec.ipSourceRoute = on; });
-    durcissement('ip bootp server', 'Enable BOOTP server',
-      'Disable BOOTP server', (sec, on) => { sec.ipBootpServer = on; });
-    durcissement('ip gratuitous-arps', 'Send gratuitous ARP',
-      'Stop sending gratuitous ARP', (sec, on) => { sec.ipGratuitousArps = on; });
-    durcissement('ip finger', 'Enable finger service',
-      'Disable finger service', (sec, on) => { sec.ipFinger = on; });
     this.configTrie.register('no banner motd', 'Clear MOTD banner', () => {
       const dev = this.d() as unknown as {
         _setSshBanner?: (b: string) => void;

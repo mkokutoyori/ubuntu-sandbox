@@ -40,7 +40,7 @@ import {
   showInterface, consoleAndAuxLineConfigLines, enableLevelSecretConfigLines,
   ipIntBriefRowsFromPorts, renderIpIntBrief, ipInterfaceBlockFor,
   interfaceAclLines, type InterfaceAclRefs,
-  renderInterfacesDescription,
+  renderInterfacesDescription, hostsTableLines,
 } from './cisco/CiscoShowCommands';
 import { orderCiscoConfigBlocks } from './cisco/ciscoConfigSerializer';
 import { describeCiscoArguments } from './cisco/ciscoArgumentHelp';
@@ -177,7 +177,6 @@ const SWITCHPORT_PLACES: Readonly<Record<string, ArgumentSpec | readonly Argumen
   'channel-group': {
     name: 'groupe', type: 'INT', range: [1, 64], description: 'Channel group number',
   },
-  description: { name: 'texte', type: 'LINE', description: 'Up to 240 characters describing this interface' },
   'switchport trunk encapsulation': {
     name: 'encapsulation', type: 'ENUM', description: 'Trunking encapsulation',
     values: [
@@ -2217,6 +2216,8 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
         undoFromNegatedPaths: true,
         skip: (path) => !/^(no )?switchport /.test(path) && !CONFIG_IF_AUTRES.has(path),
         argumentFor: (path) => SWITCHPORT_PLACES[path] ?? undefined,
+        restDescriptionFor: (path) => path === 'description'
+          ? 'Up to 240 characters describing this interface' : undefined,
         keywordsFor: (path) => SWITCHPORT_KEYWORDS[path],
       },
     );
@@ -3902,7 +3903,7 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
     if (niveaux.length > 0) lines.push(...niveaux);
     if (enableSecret || enablePassword || niveaux.length > 0) lines.push('!');
 
-    const dnsLignes = sw._getDnsConfig().runningConfigLines();
+    const dnsLignes = [...sw._getDnsConfig().runningConfigLines(), ...hostsTableLines(sw)];
     if (dnsLignes.length > 0) { lines.push(...dnsLignes); lines.push('!'); }
     else if (sw.getDomainName()) { lines.push(`ip domain-name ${sw.getDomainName()}`); lines.push('!'); }
     if (sw.getDefaultGateway()) { lines.push(`ip default-gateway ${sw.getDefaultGateway()}`); lines.push('!'); }
