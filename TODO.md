@@ -98,6 +98,32 @@ n'est pas ferme ici** : les rendre inscriptibles demande de donner un
 COMPORTEMENT a chacune, sans quoi on rangerait une valeur que rien
 n'evalue. C'est un chantier par knob, pas un correctif de commande.
 
+### [icmp] `net.ipv4.icmp_echo_ignore_broadcasts` n'existe pas, et son comportement est cable
+Trouve en fermant la diffusion dirigee (RFC 2644) cote routeur : un hote
+Linux de ce simulateur ne repond JAMAIS a un echo adresse a une
+diffusion. C'est le bon defaut — une vraie Ubuntu met
+`net.ipv4.icmp_echo_ignore_broadcasts` a 1, et c'est la moitie HOTE de la
+contre-mesure Smurf dont la RFC 2644 est la moitie ROUTEUR — mais c'est
+CABLE et non regle : la cle n'est publiee nulle part sous `/proc/sys`
+(seuls trois knobs ont un ecrivain — `ip_forward`, `tcp_tw_reuse`,
+`ip_local_port_range`), donc `sysctl net.ipv4.icmp_echo_ignore_broadcasts`
+repond `cannot stat`.
+**Mesure** : le laboratoire de `probe-diffusion-dirigee-rfc2644` livre
+bien la diffusion sur le sous-reseau cible — comptee sur le fil — et
+aucune reponse ne revient. Deux fichiers de `src/__tests__/debug/` tapent
+deja la commande (`icmp.debug.test.ts` la lit, `acl-security.debug.test.ts`
+l'ecrit a 1), donc la porte est attendue par des transcriptions
+existantes.
+**Consequence pedagogique** : le laboratoire qui rend l'amplification
+Smurf VISIBLE — poser le knob a 0, voir les hotes du segment repondre en
+masse a un seul paquet — ne peut pas etre joue, alors que la moitie
+routeur vient d'etre livree.
+**Pourquoi ce n'est pas ferme ici** : c'est le chantier « un knob, un
+comportement » de l'entree precedente, applique a une cle qui, elle, a un
+vrai comportement derriere (le refus de repondre vit dans `EndHost`). A
+fermer en publiant la cle ET en faisant lire sa valeur par le chemin de
+reponse ICMP, pas en la rangeant seule.
+
 ---
 
 ## Postes Windows
