@@ -94,6 +94,8 @@ export class HuaweiRouter extends Router {
     // contenant qu'un `deny` bloquait tout le reste du trafic.
     this._setAclUnmatchedDataPlaneAction('permit');
     const hostBase = {
+      sendOnLink: (request: import('../layers/link/LinkLayer').LinkSendRequest) =>
+        this.getLinkLayer().send(request),
       id: this.id, name: this.name,
       getHostname: () => this.getHostname(),
       getType: () => this.getType(),

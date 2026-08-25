@@ -37,6 +37,7 @@ export interface LinkSendRequest {
   readonly payload: unknown;
   readonly source?: MACAddress;
   readonly vlanId?: number;
+  readonly dot1q?: { tpid: number; pcp: number; dei: number; vid: number };
 }
 
 export interface LinkLayerPorts {
@@ -58,6 +59,7 @@ export class LinkLayer {
       etherType: request.etherType,
       payload: request.payload,
       ...(request.vlanId !== undefined ? { vlanId: request.vlanId } : {}),
+      ...(request.dot1q !== undefined ? { dot1q: request.dot1q } : {}),
     };
     return this.ports.transmit
       ? this.ports.transmit(request.iface, frame)

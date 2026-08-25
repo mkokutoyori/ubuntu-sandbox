@@ -538,9 +538,24 @@ court-circuité. Deux cas structurels parcourent
 `src/network/devices/` et nomment tout fichier qui énumérerait encore un
 préfixe multicast ou dériverait le bit I/G à la main.
 
-**Incrément 2 — RESTE À FAIRE.** Les onze autres moteurs de couche lien
-(STP, CDP, LLDP, LACP, DTP, UDLD, VTP, 802.1X, IGMP snooping, et les
-deux du répertoire `arp/`) construisent encore leur trame Ethernet
+**Incrément 2 — PREMIER LOT LIVRÉ.** STP, CDP et LLDP ne construisent
+plus de trame : leur contrat d'hôte offre `sendOnLink(request)` et la
+couche remplit l'adresse source. Deux cas structurels échouent en NOMMANT
+tout répertoire déclaré migré qui appellerait encore `sendFrame` ou
+poserait un `srcMAC:` à la main, et la liste déclarée grossit à chaque
+lot. Trois cas de fil épinglent ce qui ne doit PAS changer — groupe de
+destination, adresse source, ethertype.
+
+Trouvé en migrant : `LinkSendRequest` a dû porter `dot1q`, parce que
+PVST+ envoie sa BPDU **étiquetée 802.1Q** vers une adresse propriétaire,
+et que `vlanId` n'est pas la même chose que l'étiquette — un cas
+existant l'a attrapé. Et un commentaire de `StpAgent` promettait qu'« un
+nom logique n'est jamais passé à `sendFrame` » : il est corrigé plutôt
+que laissé mentir.
+
+**Incrément 2, reste.** Les huit autres moteurs de couche lien
+(LACP, DTP, UDLD, VTP, 802.1X, IGMP snooping, et les deux du répertoire
+`arp/`) construisent encore leur trame Ethernet
 eux-mêmes et appellent `sendFrame`. Le garde-fou de cet incrément est
 celui que §7 décrit : **échouer si un répertoire déclaré migré appelle
 encore `sendFrame`**, la liste des répertoires migrés grossissant à

@@ -33,6 +33,7 @@ import {
 import {
   MACAddress, type EthernetFrame, type DeviceType,
 } from '../core/types';
+import type { LinkSendRequest } from '../layers/link/LinkLayer';
 import { Logger } from '../core/Logger';
 import { C2960_SOFTWARE, ciscoSoftwareDescriptor } from '../devices/shells/cisco/CiscoPlatform';
 
@@ -43,7 +44,7 @@ export interface CdpHost {
   getType(): DeviceType;
   getPort(name: string): import('../hardware/Port').Port | undefined;
   getPorts(): import('../hardware/Port').Port[];
-  sendFrame(portName: string, frame: EthernetFrame): void;
+  sendOnLink(request: LinkSendRequest): boolean;
   /** Optional native VLAN for a port (switches only). */
   getNativeVlan?(portName: string): number | undefined;
   getVoiceVlan?(portName: string): number | undefined;
@@ -283,16 +284,15 @@ export class CdpAgent extends ReactiveAgentBase {
       voiceVlan: this.host.getVoiceVlan?.(portName),
       duplex: this.portDuplex(port),
     };
-    const frame: EthernetFrame = {
-      srcMAC: port.getMAC(),
-      dstMAC: new MACAddress(CDP_MULTICAST_MAC),
-      etherType: ETHERTYPE_CDP,
-      payload,
-    };
     if (this.advertising.has(portName)) return;
     this.advertising.add(portName);
     try {
-      this.host.sendFrame(portName, frame);
+      this.host.sendOnLink({
+        iface: portName,
+        destination: new MACAddress(CDP_MULTICAST_MAC),
+        etherType: ETHERTYPE_CDP,
+        payload,
+      });
     } finally {
       this.advertising.delete(portName);
     }

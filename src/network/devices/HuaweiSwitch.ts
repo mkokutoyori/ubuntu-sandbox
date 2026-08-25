@@ -55,6 +55,8 @@ export class HuaweiSwitch extends Switch {
       return this.getSvi(Number(m[1]))?.ip?.toString() ?? null;
     });
     const hostBase = {
+      sendOnLink: (request: import('../layers/link/LinkLayer').LinkSendRequest) =>
+        this.getLinkLayer().send(request),
       id: this.id, name: this.name,
       getHostname: () => this.getHostname(),
       getType: () => this.getType(),

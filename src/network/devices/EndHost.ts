@@ -475,6 +475,8 @@ export abstract class EndHost extends Equipment {
   getLldpAgent(): LldpAgent {
     if (!this._lldpAgent) {
       this._lldpAgent = new LldpAgent({
+        sendOnLink: (request: import('../layers/link/LinkLayer').LinkSendRequest) =>
+          this.getLinkLayer().send(request),
         id: this.id, name: this.name,
         getHostname: () => this.getHostname(),
         getType: () => this.getType(),
@@ -821,6 +823,8 @@ export abstract class EndHost extends Equipment {
   constructor(type: any, name: string, x: number, y: number) {
     super(type, name, x, y);
     const hostBase = {
+      sendOnLink: (request: import('../layers/link/LinkLayer').LinkSendRequest) =>
+        this.getLinkLayer().send(request),
       id: this.id, name: this.name,
       getHostname: () => this.getHostname(),
       getPort: (n: string) => this.getPort(n),
