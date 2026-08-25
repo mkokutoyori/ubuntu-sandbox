@@ -1788,6 +1788,24 @@ export abstract class LinuxMachine extends EndHost
     return { ok: true };
   }
 
+  private readonly sshPeerPorts: Map<string, number> = new Map();
+  private sshNextClientPort = 0;
+
+  private sshClientPort(fromIp: string): number {
+    const known = this.sshPeerPorts.get(fromIp);
+    if (known !== undefined) return known;
+    const { min, max } = this.getTcpStack().getEphemeralRange();
+    if (this.sshNextClientPort === 0) this.sshNextClientPort = min;
+    const port = this.sshNextClientPort;
+    this.sshNextClientPort = port >= max ? min : port + 1;
+    this.sshPeerPorts.set(fromIp, port);
+    return port;
+  }
+
+  sshForgetPeerPort(fromIp: string): void {
+    this.sshPeerPorts.delete(fromIp);
+  }
+
   /**
    * Append a syslog-style line to /var/log/auth.log on this machine.
    * Used by inbound SSH (this device) to log a login from a remote.
@@ -1801,10 +1819,18 @@ export abstract class LinuxMachine extends EndHost
     failureReason = 'authentication failure',
   ): void {
     const events = this.getSshServerContext().events;
+    const port = this.sshClientPort(fromIp);
     if (accepted) {
-      events.emit({ kind: 'auth_success', user, method: authMethod, ip: fromIp, fromHost, port: 50000 });
+      events.emit({ kind: 'auth_success', user, method: authMethod, ip: fromIp, fromHost, port });
     } else {
-      events.emit({ kind: 'auth_failure', user, method: authMethod, ip: fromIp, fromHost, port: 50000, reason: failureReason });
+      const validUser = this.executor.userMgr.getUser(user) !== undefined;
+      if (!validUser) {
+        events.emit({ kind: 'auth_invalid_user', user, ip: fromIp, port });
+      }
+      events.emit({
+        kind: 'auth_failure', user, method: authMethod, ip: fromIp, fromHost,
+        port, reason: failureReason, validUser,
+      });
       this.sessionTable.recordFailedLogin(user, fromIp);
     }
     if (accepted) {
@@ -1843,7 +1869,7 @@ export abstract class LinuxMachine extends EndHost
       const myIp = this.getPorts()
         .map((p) => p.getIPAddress()?.toString())
         .find((ip): ip is string => !!ip) ?? '0.0.0.0';
-      const peerPort = 49152 + (this.sessionTable.list().length * 7) % 16000;
+      const peerPort = this.sshClientPort(fromIp);
       try {
         this.socketTable.connect(
           'tcp', myIp, 22, fromIp, peerPort,
@@ -1855,6 +1881,29 @@ export abstract class LinuxMachine extends EndHost
         { ip: myIp, port: 22 },
       );
     }
+  }
+
+  recordSshLogout(user: string, fromIp: string): void {
+    const session = this.sessionTable.list()
+      .find((s) => s.user === user && s.fromIp === fromIp && !s.closedAt);
+    const port = this.sshClientPort(fromIp);
+    if (session) {
+      const sid = String(session.shellPid ?? session.sshdPid ?? 0);
+      if (session.shellPid) this.executor.processMgr.reap(session.shellPid);
+      if (session.sshdPid) this.executor.processMgr.reap(session.sshdPid);
+      this.sessionTable.close(session.tty, 'normal');
+      this.removePtsNode(session.tty);
+      this.dropLogindSession(sid, session.uid);
+      this.emitSessionClosedLog(user, session.sshdPid ?? 0, sid);
+      this.socketTable.removeConnection({
+        protocol: 'tcp', localPort: 22, remoteAddress: fromIp, remotePort: port,
+      });
+    }
+    this.getSshServerContext().events.emit({
+      kind: 'client_disconnected', user, ip: fromIp, port,
+      authenticated: session !== undefined, reason: 'client_disconnect',
+    });
+    this.sshForgetPeerPort(fromIp);
   }
 
   isSshActive(): boolean { return this.isServiceActive('ssh'); }

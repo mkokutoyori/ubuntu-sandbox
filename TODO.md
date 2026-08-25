@@ -641,6 +641,46 @@ Windows (c'est la forme BIND du même besoin).
 est écrit plutôt que tu : la sécurisation est RÉELLE et vérifiable, sa
 distribution de clé ne l'est pas.
 
+## SSH
+
+### [ssh] aucune session ne se FERME cote serveur
+Mesure, sur un serveur Linux joint par quatre clients de constructeurs
+differents : les quatre ecrivent « Connection to 10.0.0.1 closed. » et
+le serveur, lui, garde les trois sessions ouvertes pour toujours —
+`who`, `w` et `last` les rendent « still logged in », et le journal ne
+porte ni `pam_unix(sshd:session): session closed` ni
+`Disconnected from user`. `emitSessionClosedLog` n'a qu'UN appelant,
+`loginctl terminate-session` : une deconnexion ORDINAIRE n'a donc aucun
+chemin de fermeture.
+**Ce qui est deja ecrit** : `LinuxMachine.recordSshLogout` ferme la
+session, retire le noeud pts, purge logind, ferme la socket, emet la
+ligne pam et l'evenement de deconnexion. Elle est en place et
+inutilisee.
+**Pourquoi ce n'est pas branche** : l'appeler a la fin d'un
+`ssh hote commande` fait tomber CINQ laboratoires dont la fuite est la
+premisse — §22, §25 (deux cas) et §30 de `linux-lan-ssh-suite`, et les
+quatre cas de `linux-session-logind-state` observent `who`, `w`, `ss` et
+l'etat de logind APRES un `ssh` deja termine. Une vraie machine
+n'offre pas cet instant : il faudrait qu'une session puisse DURER, ce
+que ce simulateur ne modelise pas (l'appel est synchrone, `sleep 60`
+rend la main tout de suite). Le manquant est un modele de duree de
+session, pas une ligne de journal — et refaire la premisse de cinq
+laboratoires est un lot en soi.
+
+### [ssh] la session interactive de terminal n'ouvre aucune session PAM
+Depuis le lot « le journal de sshd dit ce qu'un vrai sshd dit », la
+ligne `pam_unix(sshd:session): session opened` a un seul producteur,
+celui de `LinuxMachine`. Le chemin du TERMINAL interactif
+(`ssh-terminal-stack`) ne le traverse pas : il enregistre bien
+l'`Accepted`, et aucune session PAM.
+**Mesure** : deux commandes distantes dans une session de terminal
+donnent deux `Accepted` et zero `session opened`.
+**Report** : la ligne existait avant par accident — c'est la variante
+INVENTEE du syslogger, emise par canal, qui la produisait, donc deux par
+connexion au lieu d'une. La retirer a expose que ce chemin n'appelle pas
+`recordSshLogin` la ou il faut ; le corriger demande de suivre la
+plomberie du terminal, un sujet distinct du format des messages.
+
 ## Bus d'evenements
 
 ### [netflow] un flux reel ne produit aucun enregistrement

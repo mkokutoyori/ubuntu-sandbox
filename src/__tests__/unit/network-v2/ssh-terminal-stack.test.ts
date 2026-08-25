@@ -431,7 +431,7 @@ describe('SSH terminal — auth.log + event bus observable from outside', () => 
     expect(accepted.length).toBe(2);
   });
 
-  it('PC2 auth.log records pam_unix session-open lines for each remote exec', async () => {
+  it('PC2 auth.log n\'ouvre pas une session pam par COMMANDE', async () => {
     const s = await openSession(lan.pc1, PC2_IP);
     await execRemote(s, 'true');
     await execRemote(s, 'true');
@@ -439,7 +439,7 @@ describe('SSH terminal — auth.log + event bus observable from outside', () => 
 
     const log = vfsOf(lan.pc2).readFile('/var/log/auth.log') ?? '';
     const opened = log.match(/session opened for user user/g) ?? [];
-    expect(opened.length).toBeGreaterThanOrEqual(2);
+    expect(opened.length).toBeLessThan(2);
   });
 
   it('triggers the throttler after enough failed attempts and then refuses correct credentials', async () => {

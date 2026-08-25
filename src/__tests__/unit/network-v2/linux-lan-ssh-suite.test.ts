@@ -779,11 +779,11 @@ describe('§11 — /var/log/auth.log matches SSH activity', () => {
       contains: [/^3\b/],
     },
     {
-      name: 'auth.log contains the source hostname in parentheses',
+      name: 'auth.log names the source ADDRESS, as OpenSSH does — never a hostname',
       setup: (l) => { void l.pc1.executeCommand('ssh alice@10.0.0.2'); },
       on: l => l.pc2,
       cmd: 'cat /var/log/auth.log',
-      contains: [/pc1/],
+      contains: [/Accepted \w+ for alice from 10\.0\.0\.1 port \d+ ssh2/],
     },
     {
       name: 'auth.log records port and protocol info per OpenSSH',

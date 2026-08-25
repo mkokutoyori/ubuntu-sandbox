@@ -68,6 +68,7 @@ export type SshServerEvent =
       method?: string;
       port?: number;
       fromHost?: string;
+      validUser?: boolean;
       timestamp?: number;
     }
   | {
@@ -130,7 +131,10 @@ export type SshServerEvent =
       kind: 'client_disconnected';
       user: string;
       ip: string;
+      port?: number;
       reason?: DisconnectReason;
+      authenticated?: boolean;
+      validUser?: boolean;
       timestamp?: number;
     };
 
