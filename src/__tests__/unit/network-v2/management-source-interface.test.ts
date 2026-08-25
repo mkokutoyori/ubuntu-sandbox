@@ -25,7 +25,7 @@ import { CiscoRouter } from '@/network/devices/CiscoRouter';
 import { LinuxPC } from '@/network/devices/LinuxPC';
 import { Cable } from '@/network/hardware/Cable';
 import { IPAddress, SubnetMask, IPv4Packet, UDPPacket } from '@/network/core/types';
-import { getDefaultEventBus } from '@/events/EventBus';
+import type { Equipment } from '@/network/equipment/Equipment';
 
 const cfg = async (r: CiscoRouter, lines: string[]): Promise<string[]> => {
   const out: string[] = [];
@@ -34,11 +34,11 @@ const cfg = async (r: CiscoRouter, lines: string[]): Promise<string[]> => {
 };
 
 /** Source addresses of the datagrams actually sent to `port`. */
-function sourcesSentTo(port: number): string[] {
+function sourcesSentTo(source: Equipment, port: number): string[] {
   const seen: string[] = [];
-  getDefaultEventBus().subscribe('port.frame.tx-requested', (e) => {
-    const p = e.payload as { frame: { payload: unknown } };
-    const ip = p.frame?.payload as IPv4Packet | undefined;
+  source.attachCapture(({ direction, frame }) => {
+    if (direction !== 'out') return;
+    const ip = frame.payload as IPv4Packet | undefined;
     if (ip?.type !== 'ipv4') return;
     const udp = ip.payload as UDPPacket | undefined;
     if (udp?.type === 'udp' && udp.destinationPort === port) seen.push(ip.sourceIP.toString());
@@ -83,21 +83,21 @@ describe('syslog', () => {
     // The core of the defect: it used to leave by the loopback, so it
     // never left at all.
     const { r } = await lab(true);
-    const syslog = sourcesSentTo(514);
+    const syslog = sourcesSentTo(r, 514);
     await shakeLink(r);
     expect(syslog.length).toBeGreaterThan(0);
   });
 
   it('and carries the configured address', async () => {
     const { r } = await lab(true);
-    const syslog = sourcesSentTo(514);
+    const syslog = sourcesSentTo(r, 514);
     await shakeLink(r);
     expect([...new Set(syslog)]).toEqual(['1.1.1.1']);
   });
 
   it('without the command it carries the egress address', async () => {
     const { r } = await lab(false);
-    const syslog = sourcesSentTo(514);
+    const syslog = sourcesSentTo(r, 514);
     await shakeLink(r);
     expect([...new Set(syslog)]).toEqual(['10.0.0.1']);
   });
@@ -106,14 +106,14 @@ describe('syslog', () => {
 describe('snmp traps', () => {
   it('carry the trap-source address', async () => {
     const { r } = await lab(true);
-    const traps = sourcesSentTo(162);
+    const traps = sourcesSentTo(r, 162);
     await shakeLink(r);
     expect([...new Set(traps)]).toEqual(['1.1.1.1']);
   });
 
   it('without the command they carry the egress address', async () => {
     const { r } = await lab(false);
-    const traps = sourcesSentTo(162);
+    const traps = sourcesSentTo(r, 162);
     await shakeLink(r);
     expect([...new Set(traps)]).toEqual(['10.0.0.1']);
   });
@@ -124,8 +124,8 @@ describe('what the source interface does not change', () => {
     // A source address that also rerouted the packet would be the very
     // bug this fixes, in the other direction.
     const { r } = await lab(true);
-    const syslog = sourcesSentTo(514);
-    const traps = sourcesSentTo(162);
+    const syslog = sourcesSentTo(r, 514);
+    const traps = sourcesSentTo(r, 162);
     await shakeLink(r);
     expect(syslog.length).toBeGreaterThan(0);
     expect(traps.length).toBeGreaterThan(0);
@@ -144,7 +144,7 @@ describe('what the source interface does not change', () => {
       'logging host 10.0.0.50', 'logging trap debugging',
       'logging source-interface Loopback9', 'end',
     ]);
-    const syslog = sourcesSentTo(514);
+    const syslog = sourcesSentTo(r, 514);
     await shakeLink(r);
     // Silence here would be the original defect all over again.
     expect([...new Set(syslog)]).toEqual(['10.0.0.1']);

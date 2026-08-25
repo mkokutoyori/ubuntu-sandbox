@@ -206,7 +206,7 @@ describe('F3 — port security', () => {
     ensureFaultProjection();
     const sw = new GenericSwitch('switch-generic', 'SW1');
 
-    getDefaultEventBus().publish({
+    sw.getBus().publish({
       topic: 'port.security.errdisable.set',
       payload: {
         deviceId: sw.getId(),
@@ -229,11 +229,11 @@ describe('F3 — port security', () => {
     const sw = new GenericSwitch('switch-generic', 'SW1');
     const portName = sw.getPortNames()[0];
 
-    getDefaultEventBus().publish({
+    sw.getBus().publish({
       topic: 'port.security.errdisable.set',
       payload: { deviceId: sw.getId(), portName, mac: { toString: () => 'aa:bb' } as never },
     });
-    getDefaultEventBus().publish({
+    sw.getBus().publish({
       topic: 'port.security.errdisable.cleared',
       payload: { deviceId: sw.getId(), portName },
     });
@@ -246,7 +246,7 @@ describe('F6 — services', () => {
   it('a failed unit becomes a critical incident carrying systemd\'s own reason', () => {
     const { srv } = lab();
 
-    getDefaultEventBus().publish({
+    srv.getBus().publish({
       topic: 'linux.service.failed',
       payload: {
         deviceId: srv.getId(),
@@ -265,7 +265,7 @@ describe('F6 — services', () => {
   it('a start-limited unit says so in systemd\'s wording', () => {
     const { srv } = lab();
 
-    getDefaultEventBus().publish({
+    srv.getBus().publish({
       topic: 'linux.service.start-limited',
       payload: { deviceId: srv.getId(), hostname: srv.getHostname(), name: 'ssh' },
     });
@@ -278,7 +278,7 @@ describe('F6 — services', () => {
 
   it('starting the unit again resolves both service faults', () => {
     const { srv } = lab();
-    const bus = getDefaultEventBus();
+    const bus = srv.getBus();
     const ref = { deviceId: srv.getId(), hostname: srv.getHostname(), name: 'ssh' };
 
     bus.publish({ topic: 'linux.service.failed', payload: { ...ref, reason: 'x' } });
@@ -295,7 +295,7 @@ describe('F6 — services', () => {
     const { srv } = lab();
     srv.powerOff();
 
-    getDefaultEventBus().publish({
+    srv.getBus().publish({
       topic: 'linux.service.failed',
       payload: { deviceId: srv.getId(), hostname: srv.getHostname(), name: 'ssh', reason: 'x' },
     });

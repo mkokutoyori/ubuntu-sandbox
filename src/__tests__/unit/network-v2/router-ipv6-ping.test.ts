@@ -33,7 +33,7 @@ import { Cable } from '@/network/hardware/Cable';
 import { IPv6Address, MACAddress, resetCounters } from '@/network/core/types';
 import { resetDeviceCounters } from '@/network/devices/DeviceFactory';
 import { Logger } from '@/network/core/Logger';
-import { getDefaultEventBus } from '@/events/EventBus';
+import type { Equipment } from '@/network/equipment/Equipment';
 import type { EthernetFrame, IPv6Packet, ICMPv6Packet } from '@/network/core/types';
 import { pingOnSimulatedClock } from '../../support/fastPing';
 
@@ -44,12 +44,11 @@ beforeEach(() => {
   Logger.reset();
 });
 
-/** Every ICMPv6 type actually put on the wire, in order. */
-function watchIcmpv6(): string[] {
+/** Every ICMPv6 type crossing this machine's own ports, in order. */
+function watchIcmpv6(source: Equipment): string[] {
   const seen: string[] = [];
-  getDefaultEventBus().subscribe('port.frame.tx-requested', (e) => {
-    const f = (e.payload as { frame?: EthernetFrame }).frame;
-    const pkt = f?.payload as IPv6Packet | undefined;
+  source.attachCapture(({ frame }) => {
+    const pkt = frame.payload as IPv6Packet | undefined;
     if (!pkt || pkt.type !== 'ipv6') return;
     const icmp = pkt.payload as ICMPv6Packet | undefined;
     if (icmp?.type === 'icmpv6') seen.push(icmp.icmpType);
@@ -90,7 +89,7 @@ async function vrpPair(): Promise<{ a: HuaweiRouter; b: HuaweiRouter }> {
 describe('a Cisco router pings IPv6', () => {
   it('`ping ipv6` succeeds and really sends Echo Requests', async () => {
     const { a } = await ciscoPair();
-    const icmp = watchIcmpv6();
+    const icmp = watchIcmpv6(a);
     const out = await pingOnSimulatedClock(a, 'ping ipv6 2001:db8::2');
     expect(out).toContain('Sending 5, 100-byte ICMP Echos to 2001:db8::2');
     expect(out).toMatch(/Success rate is 100 percent \(5\/5\)/);
@@ -108,7 +107,7 @@ describe('a Cisco router pings IPv6', () => {
 
   it('`repeat` and `size` reach the probe', async () => {
     const { a } = await ciscoPair();
-    const icmp = watchIcmpv6();
+    const icmp = watchIcmpv6(a);
     const out = await pingOnSimulatedClock(a, 'ping ipv6 2001:db8::2 repeat 2 size 200');
     expect(out).toContain('Sending 2, 200-byte ICMP Echos');
     expect(out).toMatch(/\(2\/2\)/);
@@ -129,7 +128,7 @@ describe('a Cisco router pings IPv6', () => {
 
   it('its own address answers without leaving the box', async () => {
     const { a } = await ciscoPair();
-    const icmp = watchIcmpv6();
+    const icmp = watchIcmpv6(a);
     const out = await pingOnSimulatedClock(a, 'ping ipv6 2001:db8::1 repeat 2');
     expect(out).toMatch(/Success rate is 100 percent/);
     expect(icmp.filter((t) => t === 'echo-request')).toHaveLength(0);
@@ -139,7 +138,7 @@ describe('a Cisco router pings IPv6', () => {
 describe('a Huawei router pings IPv6', () => {
   it('`ping ipv6` reports hop limit, and the requests are real', async () => {
     const { a } = await vrpPair();
-    const icmp = watchIcmpv6();
+    const icmp = watchIcmpv6(a);
     const out = await pingOnSimulatedClock(a, 'ping ipv6 -c 3 2001:db8::2');
     expect(out).toContain('PING 2001:db8::2 : 56  data bytes');
     // `hop limit` and not `ttl`: IPv6 has no TTL field, and VRP says so.
@@ -230,7 +229,7 @@ describe('the neighbour cache is viewable', () => {
 describe('a router traces an IPv6 route', () => {
   it('IOS reaches the destination in one hop, over real packets', async () => {
     const { a } = await ciscoPair();
-    const icmp = watchIcmpv6();
+    const icmp = watchIcmpv6(a);
     const out = await a.executeCommand('traceroute ipv6 2001:db8::2');
     expect(out).toContain('Tracing the route to 2001:db8::2');
     expect(out).toContain('2001:db8::2');

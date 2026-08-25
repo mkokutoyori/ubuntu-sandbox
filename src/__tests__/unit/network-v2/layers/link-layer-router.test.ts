@@ -31,7 +31,6 @@ import { LinuxPC } from '@/network/devices/LinuxPC';
 import { Cable } from '@/network/hardware/Cable';
 import { resetDeviceCounters } from '@/network/devices/DeviceFactory';
 import { Logger } from '@/network/core/Logger';
-import { getDefaultEventBus } from '@/events/EventBus';
 
 const STP_GROUP = '01:80:c2:00:00:00';
 const CDP_GROUP = '01:00:0c:cc:cc:cc';
@@ -74,12 +73,13 @@ function repliesTo(
   router: CiscoRouter, peer: LinuxPC, destination: string, target = '10.0.0.1',
 ): number {
   let replies = 0;
-  getDefaultEventBus().subscribe('port.frame.received', (event) => {
-    const { frame } = event.payload as { frame: EthernetFrame };
+  const detach = peer.attachCapture(({ direction, frame }) => {
+    if (direction !== 'in') return;
     if (frame.etherType !== ETHERTYPE_ARP) return;
     if ((frame.payload as ARPPacket).operation === 'reply') replies++;
-  });
+  }, 'eth0');
   router.getPort('GigabitEthernet0/0')!.receiveFrame(arpFor(peer, target, destination));
+  detach();
   return replies;
 }
 

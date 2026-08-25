@@ -23,8 +23,8 @@
  * machine where `ip link set eth0 promisc on` really sets the flag.
  *
  * OBSERVABILITY, and why the probe looks the way it does. A packet
- * capture subscribes to `port.frame.received`, which fires BELOW this
- * filter, so a capture cannot tell the two behaviours apart. The only
+ * capture taps the port, which is BELOW this filter, so a capture cannot
+ * tell the two behaviours apart on the receiving side. The only
  * observable consequence of the filter is whether the frame reaches a
  * protocol — so the probe sends an ARP request FOR THIS HOST'S OWN
  * ADDRESS to a group destination the old enumeration does not know, and
@@ -42,7 +42,6 @@ import { LinuxPC } from '@/network/devices/LinuxPC';
 import { Cable } from '@/network/hardware/Cable';
 import { resetDeviceCounters } from '@/network/devices/DeviceFactory';
 import { Logger } from '@/network/core/Logger';
-import { getDefaultEventBus } from '@/events/EventBus';
 
 const STP_GROUP = '01:80:c2:00:00:00';
 const CDP_GROUP = '01:00:0c:cc:cc:cc';
@@ -80,12 +79,13 @@ function arpRequestFor(peer: LinuxPC, destination: string): EthernetFrame {
 
 function repliesTo(host: LinuxPC, peer: LinuxPC, destination: string): number {
   let replies = 0;
-  getDefaultEventBus().subscribe('port.frame.received', (event) => {
-    const { frame } = event.payload as { frame: EthernetFrame };
+  const detach = peer.attachCapture(({ direction, frame }) => {
+    if (direction !== 'in') return;
     if (frame.etherType !== ETHERTYPE_ARP) return;
     if ((frame.payload as ARPPacket).operation === 'reply') replies++;
-  });
+  }, 'eth0');
   host.getPort('eth0')!.receiveFrame(arpRequestFor(peer, destination));
+  detach();
   return replies;
 }
 

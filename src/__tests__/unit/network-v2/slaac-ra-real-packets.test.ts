@@ -20,23 +20,25 @@ import { CiscoRouter } from '@/network/devices/CiscoRouter';
 import { LinuxPC } from '@/network/devices/LinuxPC';
 import { Cable } from '@/network/hardware/Cable';
 import { IPv6Packet, ICMPv6Packet } from '@/network/core/types';
-import { getDefaultEventBus } from '@/events/EventBus';
+import type { Equipment } from '@/network/equipment/Equipment';
 
-/** The NDP messages actually sent, read off the bus. */
-function observeNdp(): Array<{ deviceId: string; type: string; dst: string }> {
+/** The NDP messages actually sent, read off each machine's own ports. */
+function observeNdp(...sources: Equipment[]): Array<{ deviceId: string; type: string; dst: string }> {
   const seen: Array<{ deviceId: string; type: string; dst: string }> = [];
-  getDefaultEventBus().subscribe('port.frame.tx-requested', (e) => {
-    const p = e.payload as { deviceId: string; frame: { payload: unknown } };
-    const ip = p.frame?.payload as IPv6Packet | undefined;
-    if (!ip || ip.type !== 'ipv6') return;
-    const icmp = ip.payload as ICMPv6Packet | undefined;
-    if (!icmp?.icmpType) return;
-    seen.push({
-      deviceId: p.deviceId,
-      type: String(icmp.icmpType),
-      dst: ip.destinationIP.toString(),
+  for (const source of sources) {
+    source.attachCapture(({ direction, frame }) => {
+      if (direction !== 'out') return;
+      const ip = frame.payload as IPv6Packet | undefined;
+      if (!ip || ip.type !== 'ipv6') return;
+      const icmp = ip.payload as ICMPv6Packet | undefined;
+      if (!icmp?.icmpType) return;
+      seen.push({
+        deviceId: source.getId(),
+        type: String(icmp.icmpType),
+        dst: ip.destinationIP.toString(),
+      });
     });
-  });
+  }
   return seen;
 }
 
@@ -50,7 +52,7 @@ async function lab(options: { cablerAvant?: boolean } = {}): Promise<{
   const r = new CiscoRouter('R1');
   const h = new LinuxPC('H');
   h.powerOn();
-  const ndp = observeNdp();
+  const ndp = observeNdp(r, h);
   const cabler = (): void => {
     new Cable('c').connect(r.getPort('GigabitEthernet0/0')!, h.getPort('eth0')!);
   };
@@ -123,7 +125,7 @@ describe('what the router does not advertise', () => {
     const r = new CiscoRouter('R1');
     const h = new LinuxPC('H');
     h.powerOn();
-    const ndp = observeNdp();
+    const ndp = observeNdp(r, h);
     // No `ipv6 unicast-routing`: the machine is not a router.
     await cfg(r, ['enable', 'configure terminal', 'interface GigabitEthernet0/0',
       'ipv6 address 2001:db8::1/64', 'no shutdown', 'end']);

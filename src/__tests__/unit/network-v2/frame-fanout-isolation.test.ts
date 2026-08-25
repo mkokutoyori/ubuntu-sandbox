@@ -31,7 +31,6 @@ import {
 } from '@/network/core/types';
 import { resetDeviceCounters } from '@/network/devices/DeviceFactory';
 import { Logger } from '@/network/core/Logger';
-import { getDefaultEventBus } from '@/events/EventBus';
 import { ipv4MulticastToMac } from '@/network/igmp/types';
 
 function makeFrame(srcMAC?: MACAddress, dstMAC?: MACAddress): EthernetFrame {
@@ -190,17 +189,16 @@ describe('Router multicast replication gives each OIF its own packet object', ()
     r1.getPimAgent().joinGroup('239.5.5.5', 'GigabitEthernet0/1');
     r1.getPimAgent().joinGroup('239.5.5.5', 'GigabitEthernet0/2');
 
-    const receiverPortIds = new Set([
-      rcv1.getPort('FastEthernet0/1')!.getEquipmentId(),
-      rcv2.getPort('FastEthernet0/1')!.getEquipmentId(),
-    ]);
     const received: Array<{ deviceId: string; ip: IPv4Packet }> = [];
-    getDefaultEventBus().subscribe('port.frame.received', (e) => {
-      const p = e.payload as { deviceId: string; frame: EthernetFrame };
-      if (!receiverPortIds.has(p.deviceId)) return;
-      const ip = p.frame.payload as IPv4Packet | undefined;
-      if (ip?.type === 'ipv4' && ip.protocol === IP_PROTO_UDP) received.push({ deviceId: p.deviceId, ip });
-    });
+    for (const receiver of [rcv1, rcv2]) {
+      receiver.attachCapture(({ direction, frame }) => {
+        if (direction !== 'in') return;
+        const ip = frame.payload as IPv4Packet | undefined;
+        if (ip?.type === 'ipv4' && ip.protocol === IP_PROTO_UDP) {
+          received.push({ deviceId: receiver.getId(), ip });
+        }
+      }, 'FastEthernet0/1');
+    }
 
     const udp: UDPPacket = { type: 'udp', sourcePort: 1234, destinationPort: 5000, length: 8, checksum: 0 };
     const ipPkt: IPv4Packet = {

@@ -19,21 +19,16 @@ import { IPAddress, SubnetMask, MACAddress, resetCounters } from '@/network/core
 import { resetDeviceCounters } from '@/network/devices/DeviceFactory';
 import { Logger } from '@/network/core/Logger';
 import { EquipmentRegistry } from '@/network/equipment/EquipmentRegistry';
-import { getDefaultEventBus } from '@/events/EventBus';
+import { framesReceivedOn } from '../../support/wireWatch';
 import type { EthernetFrame } from '@/network/core/types';
 import { pingOnSimulatedClock } from '../../support/fastPing';
 
 /**
- * Ce qui arrive réellement sur un port, lu sur le bus d'observation —
+ * Ce qui arrive réellement sur un port, lu sur le tap de ce port —
  * c'est le même point d'écoute que les autres suites de mirroring.
  */
 function capturerSur(pc: LinuxPC): EthernetFrame[] {
-  const recus: EthernetFrame[] = [];
-  getDefaultEventBus().subscribe('port.frame.received', (e) => {
-    const p = e.payload as { deviceId?: string; portName?: string; frame: EthernetFrame };
-    if (p.deviceId === pc.getId() && p.portName === 'eth0') recus.push(p.frame);
-  });
-  return recus;
+  return framesReceivedOn(pc, 'eth0');
 }
 
 beforeEach(() => {
