@@ -151,6 +151,23 @@ const STP_VLAN_VIEWS: ReadonlyArray<{ keyword: string; description: string }> = 
   { keyword: 'root', description: 'Root bridge' },
 ];
 
+const VTP_PLACES: Readonly<Record<string, ArgumentSpec>> = {
+  'vtp domain': { name: 'nom', type: 'WORD', description: 'The ascii name for the VTP administrative domain' },
+  'vtp password': { name: 'secret', type: 'WORD', description: 'The ascii password for the VTP administrative domain' },
+  'vtp mode': {
+    name: 'mode', type: 'ENUM', description: 'VTP device mode',
+    values: [
+      { keyword: 'client', description: 'Set the device to client mode' },
+      { keyword: 'off', description: 'Set the device to off mode' },
+      { keyword: 'server', description: 'Set the device to server mode' },
+      { keyword: 'transparent', description: 'Set the device to transparent mode' },
+    ],
+  },
+  'vtp version': {
+    name: 'version', type: 'INT', range: [1, 3], description: 'Set the administrative domain VTP version number',
+  },
+};
+
 const DOT1X_MODES: Readonly<Record<string, readonly string[]>> = {
   'dot1x system-auth-control': ['config'],
   'show dot1x': ['user', 'privileged'],
@@ -794,7 +811,7 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
     });
     this.registerDaiCommands();
     this.registerPortSecurityCommands();
-    this.registerVtpCommands();
+    this.registerVtpCommands(this.configTrie);
     this.registerUdldCommands();
     this.registerIgmpSnoopingCommands();
     this.registerPimSnoopingCommands();
@@ -1576,13 +1593,13 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
     return lines.join('\n');
   }
 
-  private registerVtpCommands(): void {
-    this.configTrie.registerGreedy('vtp domain', 'Set VTP domain', (args) => {
+  private registerVtpCommands(trie: CommandTrie): void {
+    trie.registerGreedy('vtp domain', 'Set VTP domain', (args) => {
       if (args.length < 1) return CISCO_ERRORS.INCOMPLETE;
       this.requireVtp().setDomain(args[0]);
       return '';
     });
-    this.configTrie.registerGreedy('vtp mode', 'Set VTP mode', (args) => {
+    trie.registerGreedy('vtp mode', 'Set VTP mode', (args) => {
       const m = (args[0] ?? '').toLowerCase();
       if (m !== 'server' && m !== 'client' && m !== 'transparent' && m !== 'off') {
         return '% Invalid VTP mode';
@@ -1590,22 +1607,22 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
       this.requireVtp().setMode(m);
       return '';
     });
-    this.configTrie.registerGreedy('vtp password', 'Set VTP password', (args) => {
+    trie.registerGreedy('vtp password', 'Set VTP password', (args) => {
       if (args.length < 1) return CISCO_ERRORS.INCOMPLETE;
       this.requireVtp().setPassword(args[0]);
       return '';
     });
-    this.configTrie.registerGreedy('vtp version', 'Set VTP version', (args) => {
+    trie.registerGreedy('vtp version', 'Set VTP version', (args) => {
       const v = parseInt(args[0] ?? '', 10);
       if (v !== 1 && v !== 2 && v !== 3) return '% Invalid VTP version';
       this.requireVtp().setVersion(v as 1 | 2 | 3);
       return '';
     });
-    this.configTrie.register('vtp pruning', 'Enable VTP pruning', () => {
+    trie.register('vtp pruning', 'Enable VTP pruning', () => {
       this.requireVtp().setPruning(true);
       return '';
     });
-    this.configTrie.register('no vtp pruning', 'Disable VTP pruning', () => {
+    trie.register('no vtp pruning', 'Disable VTP pruning', () => {
       this.requireVtp().setPruning(false);
       return '';
     });
@@ -2229,7 +2246,19 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
       ...this.portSecuritySpecs(),
       ...this.switchportL2Specs(),
       ...this.dot1xSpecs(),
+      ...this.vtpConfigSpecs(),
     ];
+  }
+
+  private vtpConfigSpecs(): CommandSpec[] {
+    return specsFromTrieRegistrations(
+      (collector) => this.registerVtpCommands(collector as unknown as CommandTrie),
+      {
+        modes: ['config'], minPrivilege: 15,
+        undoFromNegatedPaths: true,
+        argumentFor: (path) => VTP_PLACES[path],
+      },
+    );
   }
 
   private dot1xSpecs(): CommandSpec[] {

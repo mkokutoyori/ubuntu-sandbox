@@ -70,7 +70,7 @@ import {
   buildTrackConfigCommands, registerTrackShowCommands, trackSubmodeSpecs,
 } from './cisco/CiscoTrackCommands';
 import { KeyChainRepository } from '../inspection/config/KeyChainRepository';
-import { specsFromTrieRegistrations } from '@/cli/commands/trieAdapter';
+import { specsFromTrieRegistrations, type AdapterKeyword } from '@/cli/commands/trieAdapter';
 import {
   keyChainSubmodeSpecs, keyChainKeySubmodeSpecs,
 } from './cisco/CiscoKeyChainCommands';
@@ -177,6 +177,7 @@ import {
 } from './cisco/CiscoNATCommands';
 import { iosShortInterfaceName } from '@/network/devices/inspection/InterfaceStatusView';
 import { SOCLE, ROUTEUR_SEUL, appliquerContinuations } from './cisco/ciscoContinuations';
+import { descriptionForKeyword } from './CliKeywordDescriptions';
 
 const HORS_PLATEFORME_ISR: ReadonlySet<string> = new Set(['vxlan', 'nve', 'mls']);
 
@@ -192,6 +193,38 @@ Readonly<Record<string, ArgumentSpec | readonly ArgumentSpec[] | null>> = {
     description: 'import, export or both, then ASN:nn' },
   description: { name: 'texte', type: 'REST', literal: 'LINE',
     description: 'Description of this VRF' },
+};
+
+function continuationsDeclarees(path: string): readonly AdapterKeyword[] | undefined {
+  const mots = new Set<string>();
+  for (const table of [SOCLE, ROUTEUR_SEUL]) {
+    for (const portee of ['privileged', 'user'] as const) {
+      for (const mot of table[portee]?.[path] ?? []) mots.add(mot);
+    }
+  }
+  if (mots.size === 0) return undefined;
+  return [...mots].sort().map(keyword => ({
+    keyword,
+    description: descriptionForKeyword(keyword),
+    afterArguments: true,
+    argument: null,
+  }));
+}
+
+const ROUTER_SHOW_VIEWS: ReadonlySet<string> = new Set([
+  'show tech-support', 'show bfd summary', 'show table-map',
+  'show ip nbar protocol-discovery', 'show queueing interface',
+  'show traffic-shape', 'show ip policy', 'show ip static route',
+  'show ip interface brief', 'show ip rip database', 'show counters',
+  'show ip rip', 'show vlans',
+]);
+
+const ROUTER_SHOW_ARGUMENTS: Readonly<Record<string, string>> = {
+  'show interfaces': 'Interface name',
+  'show ip interface': 'Interface name',
+  'show queueing interface': 'Interface name',
+  'show traffic-shape': 'Interface name',
+  'show ip rip database': 'Network prefix',
 };
 
 export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShell, CiscoShellContext, CiscoACLShellContext {
@@ -414,9 +447,24 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
       ...ipSlaClearSpecs(this),
       ...ALL_TUNNEL, ...CLEAR_CRYPTO_FAMILY, ...SHOW_CRYPTO_FAMILY,
       ...OBJECT_GROUP_FAMILY,
+      ...this.routerShowSpecs(),
       ...this.ipv6NdSpecs(), ...this.ipv6OspfSpecs(), ...this.ipv6ReglagesSpecs(),
       ...this.clearIpv6Specs(),
     ];
+  }
+
+  private routerShowSpecs(): CommandSpec[] {
+    return specsFromTrieRegistrations(
+      (collector) => this.registerRouterShowViews(collector as unknown as CommandTrie),
+      {
+        modes: ['user', 'privileged'], minPrivilege: 1,
+        skip: (path) => !ROUTER_SHOW_VIEWS.has(path),
+        modesFor: (path) => path === 'show tech-support' ? ['privileged'] : undefined,
+        keywordsFor: (path) => continuationsDeclarees(path),
+        restDescriptionFor: (path) => ROUTER_SHOW_ARGUMENTS[path],
+        restLiteralFor: (path) => ROUTER_SHOW_ARGUMENTS[path] === undefined ? undefined : 'WORD',
+      },
+    );
   }
 
   private clearIpv6Specs(): CommandSpec[] {
@@ -1665,7 +1713,6 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
   // ─── Show Commands (Router-specific) ──────────────────────────────
 
   private registerShowCommands(trie: CommandTrie): void {
-    const getRouter = () => this.d();
     registerRoutingProtoShow(trie, this, this.routingCfg);
     registerHsrpShowCommands(trie, this, this.fhrp);
     registerVrrpGlbpShowCommands(trie, this, this.fhrp);
@@ -1675,7 +1722,12 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
     if (this.hasVxlanHardware()) registerVxlanShowCommands(trie, { r: () => this.d() });
     registerTrackShowCommands(trie, this);
     registerPolicyShow(trie, this.policy);
+    this.registerRouterShowViews(trie);
     trie.pruneSubtreeChildren('show', HORS_PLATEFORME_ISR);
+  }
+
+  private registerRouterShowViews(trie: CommandTrie): void {
+    const getRouter = () => this.d();
 
 
 
