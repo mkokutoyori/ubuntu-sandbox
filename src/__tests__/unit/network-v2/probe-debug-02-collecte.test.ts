@@ -238,21 +238,36 @@ describe('Scénario 15 — export de flux NetFlow', () => {
     expect(etat).toContain('192.168.1.60');
   }, LONG);
 
-  it('un flux réel produit un enregistrement avec ses ports et compteurs', async () => {
+  /**
+   * NetFlow compte le trafic de TRANSIT, pas celui qui se termine sur le
+   * routeur : ce cas fait donc traverser un vrai paquet d'un LAN vers
+   * l'autre. La version precedente pingait l'adresse du routeur LUI-MEME
+   * et attendait un enregistrement — une premisse fausse, et la seule
+   * raison pour laquelle il echouait.
+   */
+  it('un flux de TRANSIT produit un enregistrement dans le cache', async () => {
     const r = new CiscoRouter('R1', 0, 0);
     const client = new LinuxPC('linux-pc', 'CLIENT', 0, 0);
-    r.powerOn(); client.powerOn();
-    new Cable('c').connect(r.getPorts()[0], client.getPort('eth0')!);
-    client.configureInterface('eth0', new IPAddress('192.168.1.10'), new SubnetMask('255.255.255.0'));
+    const serveur = new LinuxPC('linux-pc', 'SERVEUR', 0, 0);
+    r.powerOn(); client.powerOn(); serveur.powerOn();
+    new Cable('c1').connect(r.getPorts()[0], client.getPort('eth0')!);
+    new Cable('c2').connect(r.getPorts()[1], serveur.getPort('eth0')!);
+    const m = new SubnetMask('255.255.255.0');
+    client.configureInterface('eth0', new IPAddress('192.168.1.10'), m);
+    serveur.configureInterface('eth0', new IPAddress('192.168.2.10'), m);
+    await client.executeCommand('sudo ip route add default via 192.168.1.1');
+    await serveur.executeCommand('sudo ip route add default via 192.168.2.1');
     for (const c of [
       'enable', 'configure terminal',
       `interface ${r.getPortNames()[0]}`,
       'ip address 192.168.1.1 255.255.255.0', 'no shutdown', 'ip flow ingress', 'exit',
+      `interface ${r.getPortNames()[1]}`,
+      'ip address 192.168.2.1 255.255.255.0', 'no shutdown', 'ip flow ingress', 'exit',
       'ip flow-export destination 192.168.1.10 9996',
       'end',
     ]) await r.executeCommand(c);
 
-    await pingOnSimulatedClock(client, 'ping -c 2 -W 1 192.168.1.1');
+    await pingOnSimulatedClock(client, 'ping -c 2 -W 1 192.168.2.10');
 
     const cache = await r.executeCommand('show ip cache flow');
     expect(cache, 'le cache de flux doit connaître le trafic observé').not.toContain('Invalid input');

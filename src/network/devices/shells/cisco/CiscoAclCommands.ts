@@ -366,7 +366,7 @@ export function parseCiscoAce(
 
 function parseStandardAce(args: string[], sequence?: number): AceParse {
   const src = parseStandardSource(args);
-  if (!src) return { error: '% Incomplete command.' };
+  if (!src) return { error: incompleteOrInvalid(args, 0) };
   const tail = parseTrailingOptions(args, src.consumed, 'ip');
   if (tail.rejected) return { error: CISCO_INVALID_INPUT };
   return {

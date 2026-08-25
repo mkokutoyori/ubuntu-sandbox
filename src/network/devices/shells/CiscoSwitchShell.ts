@@ -151,6 +151,29 @@ const STP_VLAN_VIEWS: ReadonlyArray<{ keyword: string; description: string }> = 
   { keyword: 'root', description: 'Root bridge' },
 ];
 
+const DOT1X_MODES: Readonly<Record<string, readonly string[]>> = {
+  'dot1x system-auth-control': ['config'],
+  'show dot1x': ['user', 'privileged'],
+};
+
+const DOT1X_PLACES: Readonly<Record<string, ArgumentSpec>> = {
+  'dot1x pae': {
+    name: 'role', type: 'ENUM', description: '802.1X PAE role',
+    values: [
+      { keyword: 'authenticator', description: 'Set the port as an IEEE 802.1X authenticator' },
+      { keyword: 'supplicant', description: 'Set the port as an IEEE 802.1X supplicant' },
+    ],
+  },
+  'dot1x port-control': {
+    name: 'mode', type: 'ENUM', description: '802.1X port control mode',
+    values: [
+      { keyword: 'auto', description: 'Authorise the port through 802.1X' },
+      { keyword: 'force-authorized', description: 'Force the port authorised' },
+      { keyword: 'force-unauthorized', description: 'Force the port unauthorised' },
+    ],
+  },
+};
+
 const CONFIG_IF_AUTRES: ReadonlySet<string> = new Set([
   'shutdown', 'no shutdown', 'description', 'no description',
   'duplex', 'speed', 'channel-group', 'no channel-group',
@@ -2205,7 +2228,23 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
       ...this.l2TableSpecs(),
       ...this.portSecuritySpecs(),
       ...this.switchportL2Specs(),
+      ...this.dot1xSpecs(),
     ];
+  }
+
+  private dot1xSpecs(): CommandSpec[] {
+    return specsFromTrieRegistrations(
+      (collector) => {
+        const partage = collector as unknown as CommandTrie;
+        this.registerDot1x({ config: partage, configIf: partage, privileged: partage });
+      },
+      {
+        modes: ['config-if'], minPrivilege: 15,
+        undoFromNegatedPaths: true,
+        modesFor: (path) => DOT1X_MODES[path.replace(/^no /, '')],
+        argumentFor: (path) => DOT1X_PLACES[path],
+      },
+    );
   }
 
   private switchportL2Specs(): CommandSpec[] {
@@ -3673,7 +3712,10 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
       });
     });
 
-    this.registerDot1x();
+    this.registerDot1x({
+      config: this.configTrie, configIf: this.configIfTrie,
+      privileged: this.privilegedTrie,
+    });
     this.registerLacp();
 
     trie.register('shutdown', 'Disable interface', () => {
@@ -5814,21 +5856,23 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
    * has nothing to vary, and it has no periodic re-authentication timer
    * (its `reauthCount` counts EAP request retries, not re-auth cycles).
    */
-  private registerDot1x(): void {
+  private registerDot1x(trie: {
+    config: CommandTrie; configIf: CommandTrie; privileged: CommandTrie;
+  }): void {
     const agent = () => this.d().getDot1xAgent();
 
-    this.configTrie.register('dot1x system-auth-control', 'Enable 802.1X globally', () => {
+    trie.config.register('dot1x system-auth-control', 'Enable 802.1X globally', () => {
       agent().setSystemAuthControl(true);
       return '';
     });
-    this.configTrie.register('no dot1x system-auth-control', 'Disable 802.1X globally', () => {
+    trie.config.register('no dot1x system-auth-control', 'Disable 802.1X globally', () => {
       agent().setSystemAuthControl(false);
       return '';
     });
 
     // The PAE role registers the port with the authenticator; on its own
     // it does not control anything — `port-control` decides that.
-    this.configIfTrie.registerGreedy('dot1x pae', '802.1X PAE role', (args) => {
+    trie.configIf.registerGreedy('dot1x pae', '802.1X PAE role', (args) => {
       const role = (args[0] ?? '').toLowerCase();
       if (role !== 'authenticator') {
         return '% Only the authenticator role is supported (no supplicant implementation).';
@@ -5838,9 +5882,9 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
         return '';
       });
     });
-    this.configIfTrie.register('no dot1x pae authenticator', 'Remove 802.1X PAE role', () =>
+    trie.configIf.register('no dot1x pae authenticator', 'Remove 802.1X PAE role', () =>
       this.applyToSelectedInterfaces(portName => {
-        agent().setPortMode(portName, 'disabled');
+        agent().removePort(portName);
         return '';
       }));
 
@@ -5849,7 +5893,7 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
       'force-authorized': 'force-authorized',
       'force-unauthorized': 'force-unauthorized',
     };
-    this.configIfTrie.registerGreedy('dot1x port-control', '802.1X port control mode', (args) => {
+    trie.configIf.registerGreedy('dot1x port-control', '802.1X port control mode', (args) => {
       const mode = MODES[(args[0] ?? '').toLowerCase()];
       if (!mode) return CISCO_ERRORS.INVALID_INPUT;
       return this.applyToSelectedInterfaces(portName => {
@@ -5858,7 +5902,7 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
       });
     });
 
-    this.configIfTrie.registerGreedy('dot1x timeout', '802.1X timers', (args) => {
+    trie.configIf.registerGreedy('dot1x timeout', '802.1X timers', (args) => {
       const which = (args[0] ?? '').toLowerCase();
       const value = parseInt(args[1] ?? '', 10);
       if (which !== 'quiet-period') {
@@ -5871,12 +5915,12 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
       });
     });
 
-    this.configIfTrie.registerGreedy('dot1x host-mode', '802.1X host mode', () =>
+    trie.configIf.registerGreedy('dot1x host-mode', '802.1X host mode', () =>
       '% Host modes are not supported: a port authorises a single supplicant.');
-    this.configIfTrie.register('dot1x reauthentication', 'Periodic re-authentication', () =>
+    trie.configIf.register('dot1x reauthentication', 'Periodic re-authentication', () =>
       '% Periodic re-authentication is not supported on this switch.');
 
-    this.privilegedTrie.registerGreedy('show dot1x', 'Display 802.1X state', (args) =>
+    trie.privileged.registerGreedy('show dot1x', 'Display 802.1X state', (args) =>
       this.showDot1x(args));
   }
 

@@ -110,6 +110,10 @@ export class Dot1xAgent {
 
   removeLocalUser(username: string): void { this.config.localUsers.delete(username); }
 
+  removePort(portName: string): void {
+    this.config.ports.delete(portName);
+  }
+
   getPortRuntime(portName: string): Dot1xPortRuntime | undefined {
     return this.config.ports.get(portName);
   }
