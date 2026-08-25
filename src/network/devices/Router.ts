@@ -2167,31 +2167,24 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
     const port = this.ports.get(portName);
     if (!port) return;
 
-    // Phase A.1: L2 Filter — accept unicast for us, broadcast, or multicast
-    const isForUs = frame.dstMAC.equals(port.getMAC());
-    const isBroadcast = frame.dstMAC.isBroadcast();
-    const octets = frame.dstMAC.getOctets();
-    const isIpv6Multicast = octets[0] === 0x33 && octets[1] === 0x33;
-    // RFC 1112 §6.4 — IPv4 multicast maps to 01:00:5e:…
-    const isIpv4Multicast =
-      octets[0] === 0x01 && octets[1] === 0x00 && octets[2] === 0x5e;
+    const delivery = this.getLinkLayer().deliver(portName, frame);
+    if (!delivery) return;
 
-    if (!isForUs && !isBroadcast && !isIpv6Multicast && !isIpv4Multicast
-      && !this.fhrpOwnsVirtualMac(portName, frame.dstMAC.toString())) {
-      return;
-    }
-
-    // Phase A.2: EtherType dispatch
     if (frame.etherType === ETHERTYPE_ARP) {
       this.handleARP(portName, frame.payload as ARPPacket);
     } else if (frame.etherType === ETHERTYPE_IPV4) {
       this.counters.ifInOctets += (frame.payload as IPv4Packet)?.totalLength || 0;
       this.processIPv4(portName, frame.payload as IPv4Packet);
     } else if (frame.etherType === ETHERTYPE_IPV6) {
-      if (this.ipv6Engine.isRoutingEnabled() || isIpv6Multicast) {
-        this.ipv6Engine.processPacket(portName, frame.payload as IPv6Packet, frame.srcMAC);
+      const ipv6 = frame.payload as IPv6Packet;
+      if (this.ipv6Engine.isRoutingEnabled() || ipv6?.destinationIP?.isMulticast?.()) {
+        this.ipv6Engine.processPacket(portName, ipv6, frame.srcMAC);
       }
     }
+  }
+
+  protected override ownsLocalUnicast(iface: string, destination: MACAddress): boolean {
+    return this.fhrpOwnsVirtualMac(iface, destination.toString());
   }
 
   // ─── Control Plane: ARP Handling ──────────────────────────────

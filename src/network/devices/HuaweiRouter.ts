@@ -8,6 +8,7 @@
  */
 
 import { Router } from './Router';
+import { isMulticastIpv4 } from '../core/ip';
 import { VRP_ACL_NUMBERING, VRP_SEQUENCING, VRP_DEFAULT_STEP } from './router/ACLEngine';
 import { AgentRegistry } from './AgentRegistry';
 import { lldpToNeighborDTO } from './inspection/neighborConverters';
@@ -369,9 +370,9 @@ export class HuaweiRouter extends Router {
         return;
       }
     }
-    const octets = frame.dstMAC.getOctets();
-    const isIpv4Multicast = octets[0] === 0x01 && octets[1] === 0x00 && octets[2] === 0x5e;
-    if (frame.etherType === 0x0800 && isIpv4Multicast) {
+    if (frame.etherType === 0x0800
+      && isMulticastIpv4(
+        (frame.payload as IPv4Packet | undefined)?.destinationIP?.toString() ?? '')) {
       const ipPkt = frame.payload as IPv4Packet | undefined;
       if (ipPkt && ipPkt.protocol === IP_PROTO_IGMP) {
         this.igmpAgent.handleIp(portName, ipPkt.sourceIP, ipPkt);

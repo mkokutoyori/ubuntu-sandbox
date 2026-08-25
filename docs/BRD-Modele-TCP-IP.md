@@ -524,13 +524,46 @@ dépend encore.
 ### Phase 1 — La couche lien existe et porte le drapeau de diffusion
 Créer `layers/link/`. `Equipment` l'expose. Les 12 moteurs L2 la
 consomment. **Sortie** : `wasLinkBroadcast` est décidé en un seul lieu,
-et les 13 `handleFrame` ne le recalculent plus.
+et les `handleFrame` ne le recalculent plus.
+
+**Incrément 1 — LIVRÉ.** La règle (`classifyDestination`,
+`isGroupAddress`) et la réception (`deliver`) vivent dans
+`layers/link/LinkLayer.ts` ; `Equipment` l'expose ;
+`EndHost`, `Router`, `CiscoRouter`, `HuaweiRouter` et `Switch` la
+lisent. `ownsLocalUnicast` porte les adresses unicast supplémentaires
+(MAC virtuelle FHRP). L'émission (`send`) a ses premiers consommateurs
+de production — les deux ARP de l'hôte — et transmet **par**
+`Equipment.sendFrame`, dont le contrôle d'alimentation ne doit pas être
+court-circuité. Deux cas structurels parcourent
+`src/network/devices/` et nomment tout fichier qui énumérerait encore un
+préfixe multicast ou dériverait le bit I/G à la main.
+
+**Incrément 2 — RESTE À FAIRE.** Les onze autres moteurs de couche lien
+(STP, CDP, LLDP, LACP, DTP, UDLD, VTP, 802.1X, IGMP snooping, et les
+deux du répertoire `arp/`) construisent encore leur trame Ethernet
+eux-mêmes et appellent `sendFrame`. Le garde-fou de cet incrément est
+celui que §7 décrit : **échouer si un répertoire déclaré migré appelle
+encore `sendFrame`**, la liste des répertoires migrés grossissant à
+chaque lot.
 
 ### Phase 2 — La couche internet existe, avec un seul acheminement
 Créer `layers/internet/`. Migrer `Router.forwardPacket` dedans, puis y
 faire pointer `EndHost`, `SwitchSvi` et le pare-feu. **Sortie** : un seul
 site décrémente un TTL ; les cinq de §2.2 deviennent un.
 **C'est la phase la plus risquée du chantier.**
+
+**Mesuré pendant la phase 1 et rattaché ici plutôt qu'ailleurs** :
+`Firewall.handleFrame` n'a **aucun** filtre de couche lien — il accepte
+toute trame quelle qu'en soit la destination MAC. Ce n'est donc pas une
+copie de la règle et la phase 1 n'avait rien à y dédupliquer. En mode
+transparent c'est correct (un pont accepte tout) ; en mode routé, un
+vrai FortiGate n'accepte que ce qui lui est adressé. Donner une règle au
+pare-feu **change un comportement**, ce que le contrat de phase 1
+interdit explicitement (§4.1), et la décision dépend du MODE de
+l'interface — c'est-à-dire précisément de la question « livrer ici ou
+faire suivre » que cette phase-ci déplace dans la couche internet. À
+traiter ici, avec sa propre mesure et son propre témoin en mode
+transparent.
 
 ### Phase 3 — RIB et FIB séparées
 **Sortie** : `lookupRoute()` ne réveille plus le plan de contrôle ; une

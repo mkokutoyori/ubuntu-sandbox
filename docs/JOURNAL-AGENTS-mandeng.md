@@ -6751,3 +6751,104 @@ fait tomber exactement 3 cas sur 2590, tous dans
 sonde encode ta regle et le doute est ecrit avec sa mesure. Il faut une
 transcription de vraie machine pour trancher, et `cisco.com` est bloque
 par le mandataire.
+
+---
+
+## Modèle TCP/IP — phase 1 : la couche lien existe et porte le drapeau
+
+**Agent `mandeng`.** Première phase du `docs/BRD-Modele-TCP-IP.md`, menée
+en TDD : les tests ont été écrits **à l'aveugle avant** la moindre ligne
+de `src/network/layers/link/`.
+
+**Les deux ancres normatives sont citées, pas rappelées de mémoire.**
+RFC 1122 §2.4 : « *The packet receive interface between the IP layer and
+the link layer MUST include a flag to indicate whether the incoming
+packet was addressed to a link-layer broadcast address.* » Et IEEE 802 :
+le bit I/G est **le bit de poids faible du premier octet**, la diffusion
+étant « *a special, predefined group address of all 1's* ». La
+classification en réception reprend les noms de `packet(7)` —
+`PACKET_HOST` / `PACKET_BROADCAST` / `PACKET_MULTICAST` /
+`PACKET_OTHERHOST` — parce que ce sont des noms attestés plutôt
+qu'inventés. `PACKET_OUTGOING` est délibérément absent : rien ici ne
+reboucle une trame émise localement vers une socket paquet, et une
+valeur que rien ne peut produire serait du décor.
+
+**Ce que la mesure a trouvé, et qui dépasse le refactoring.** Aucun
+équipement ne lisait le bit I/G : `EndHost.handleFrame` et
+`Router.handleFrame` **énuméraient deux préfixes** (`33:33` et
+`01:00:5e`) — deux copies de la même règle fausse. La conséquence est
+observable : **toute autre adresse de groupe était jetée par un hôte**,
+STP `01:80:c2`, CDP/VTP `01:00:0c`, LACP. Le fichier portait déjà la
+preuve que le défaut était connu : LLDP avait reçu une **sortie anticipée
+écrite à la main**, dont le commentaire dit que sans elle « *le filtre L2
+jetterait la trame et l'hôte ne découvrirait jamais son voisin* ». Une
+exception avait été écrite pour un protocole ; la règle, elle, restait
+fausse pour tous les autres. Et **`port.isPromiscuous()` n'était consulté
+nulle part** dans ce filtre, sur une machine où `ip link set eth0 promisc
+on` pose vraiment le drapeau.
+
+**Un point d'extension plutôt qu'un cas particulier.** Le routeur accepte
+en plus la MAC virtuelle HSRP/VRRP/GLBP (`fhrpOwnsVirtualMac`) — ce n'est
+pas un défaut mais un fait : une vraie carte porte plusieurs filtres
+unicast. `LinkLayerPorts.ownsLocalUnicast` est ce point d'extension,
+`Equipment` le rend `false` par défaut et `Router` le surcharge ; deux
+cas FHRP le gardent.
+
+**Deux fausses accusations évitées par les TÉMOINS**, et c'est
+exactement leur raison d'être. Au premier jet, les deux témoins ARP
+tombaient AUSSI — donc le laboratoire était faux, pas le produit. Cause
+n°1 : les ports publient sur le bus global et non sur `device.getBus()`.
+Cause n°2 : `ARPPacket.operation` est la chaîne `'request'`/`'reply'` et
+non `1`/`2` ; j'avais écrit `1`. Sans témoins, j'aurais accusé le filtre
+L2 de ne pas répondre à une diffusion.
+
+**Une sixième copie évitée de justesse.** J'ai d'abord écrit
+`ipv4.destinationIP.isMulticast()` — méthode qui n'existe que sur
+`IPv6Address`. En cherchant le bon prédicat, mesure : **cinq copies** de
+`first >= 224 && first <= 239` dans le dépôt (`core/ip.ts`,
+`nat/rewrite.ts`, `ipsec/IPSecEngine.ts`, `tcpdump/TcpdumpFilter.ts`,
+`Router.ts`). `isMulticastIpv4` de `core/ip.ts` **était déjà importé
+dans `EndHost.ts`** : la sixième copie se serait écrite à côté de son
+propre import.
+
+**Le garde-fou grossit**, comme le BRD le demande : un cas structurel
+parcourt tout `src/network/devices/` et échoue en NOMMANT les fichiers
+qui énumèrent encore un préfixe multicast. Il a attrapé `CiscoRouter.ts`
+et `HuaweiRouter.ts`, où l'énumération sert de garde de *dispatch* et non
+de filtre — remplacée par le prédicat d'adresse, qui est la vraie
+question.
+
+**Le commutateur, lui, avait la règle JUSTE** — `(dstOctets[0] & 0x01)
+=== 0x01`, le bit I/G correctement lu — mais écrite **deux fois** en
+ligne. C'est donc une déduplication pure, sans changement de
+comportement, et c'est le garde-fou élargi qui l'a nommée plutôt que ma
+lecture.
+
+**Mesuré et NON traité ici, avec sa raison** : `Firewall.handleFrame`
+n'a aucun filtre de couche lien — il accepte toute trame. Ce n'est pas
+une copie de la règle, il n'en a pas, donc la phase 1 n'avait rien à y
+dédupliquer ; et lui en donner une **changerait un comportement**, ce
+que le contrat de phase 1 interdit (§4.1 du BRD). La décision dépend du
+MODE de l'interface — transparent accepte tout, routé non — c'est-à-dire
+de la question « livrer ici ou faire suivre » que la phase 2 déplace
+dans la couche internet. Inscrit dans la phase 2 du BRD, pas dans un
+coin.
+
+**`send()` ne devait pas naître mort.** Après la moitié RÉCEPTION, la
+moitié ÉMISSION n'avait pour appelants que ses propres tests — c'est-à-
+dire exactement le défaut que le BRD §2.4 reproche à
+`core/packetBuilders.ts`, écrit pour dédupliquer et jamais branché. Les
+deux émissions ARP de l'hôte (la réponse et la requête) passent donc par
+`link.send()`, qui remplit l'adresse source à leur place. Un cas écrit
+avant le correctif a montré que la câbler naïvement aurait été une
+**régression** : `Equipment.sendFrame` porte un contrôle d'alimentation
+que la couche court-circuitait, donc une machine éteinte émettait. La
+couche transmet désormais PAR l'équipement (`LinkLayerPorts.transmit`)
+au lieu d'écrire sur le port — ce qui est d'ailleurs le bon sens des
+dépendances : `Equipment.sendFrame` EST la primitive d'émission de la
+couche lien.
+
+37 cas sur trois fichiers. Typecheck : 229 avant, 229 après (l'écart
+transitoire à 230 était une erreur de mon propre test, un constructeur à
+quatre arguments là où `CiscoRouter` en prend trois). Lint : 3 erreurs
+dans `EndHost.ts`/`Router.ts`, présentes avant comme après.

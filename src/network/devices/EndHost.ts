@@ -1719,45 +1719,29 @@ export abstract class EndHost extends Equipment {
     const port = this.ports.get(portName);
     if (!port) return;
 
-    // LLDP voyage vers 01:80:c2:00:00:0e, qui n'est ni broadcast ni l'un
-    // des deux préfixes multicast IP reconnus plus bas : sans cette sortie
-    // anticipée le filtre L2 jetterait la trame et l'hôte ne découvrirait
-    // jamais son voisin.
-    if (frame.etherType === ETHERTYPE_LLDP
-      && frame.dstMAC.toString().toLowerCase() === LLDP_MULTICAST_MAC.toLowerCase()) {
-      this.getLldpAgent().handleFrame(portName, frame);
-      return;
-    }
+    const delivery = this.getLinkLayer().deliver(portName, frame);
+    if (!delivery) return;
 
-    // L2 filter: accept frames addressed to us, broadcast, or multicast
-    const isForUs = frame.dstMAC.equals(port.getMAC());
-    const isBroadcast = frame.dstMAC.isBroadcast();
-    // IPv6 multicast MAC: 33:33:XX:XX:XX:XX
-    // IPv4 multicast MAC (RFC 1112 §6.4): 01:00:5E:XX:XX:XX
-    const octets = frame.dstMAC.getOctets();
-    const isMulticast = octets[0] === 0x33 && octets[1] === 0x33;
-    const isIpv4Multicast = octets[0] === 0x01 && octets[1] === 0x00 && octets[2] === 0x5e;
-
-    if (!isForUs && !isBroadcast && !isMulticast && !isIpv4Multicast) {
-      return;
-    }
-
-    // A NIC only passes up the IPv4 groups this host actually joined —
-    // plus the always-joined link-local range (all-systems, IGMP Queries).
-    if (isIpv4Multicast && frame.etherType === ETHERTYPE_IPV4) {
+    if (delivery.wasLinkMulticast && frame.etherType === ETHERTYPE_IPV4) {
       const ipv4 = frame.payload as IPv4Packet;
-      if (!this.getIgmpHostAgent().acceptsGroup(portName, ipv4.destinationIP.toString())) {
+      const group = ipv4.destinationIP.toString();
+      if (isMulticastIpv4(group)
+        && !this.getIgmpHostAgent().acceptsGroup(portName, group)) {
         return;
       }
     }
 
-    // For multicast, verify we're actually subscribed (have matching IPv6 address)
-    if (isMulticast && frame.etherType === ETHERTYPE_IPV6) {
-      // Accept all-nodes multicast (ff02::1) and solicited-node multicast for our addresses
+    if (delivery.wasLinkMulticast && frame.etherType === ETHERTYPE_IPV6) {
       const ipv6 = frame.payload as IPv6Packet;
       if (!this.shouldAcceptIPv6Multicast(port, ipv6.destinationIP)) {
         return;
       }
+    }
+
+    if (frame.etherType === ETHERTYPE_LLDP
+      && frame.dstMAC.toString().toLowerCase() === LLDP_MULTICAST_MAC.toLowerCase()) {
+      this.getLldpAgent().handleFrame(portName, frame);
+      return;
     }
 
     if (frame.etherType === ETHERTYPE_ARP) {
@@ -1853,9 +1837,9 @@ export abstract class EndHost extends Equipment {
         targetIP: arp.senderIP,
       };
 
-      this.sendFrame(portName, {
-        srcMAC: port.getMAC(),
-        dstMAC: arp.senderMAC,
+      this.getLinkLayer().send({
+        iface: portName,
+        destination: arp.senderMAC,
         etherType: ETHERTYPE_ARP,
         payload: reply,
       });
@@ -2231,8 +2215,9 @@ export abstract class EndHost extends Equipment {
         targetMAC: MACAddress.broadcast(), targetIP: nextHopIP,
       };
       this.emitArpRequestSent(outPort, key);
-      this.sendFrame(outPort, {
-        srcMAC: port.getMAC(), dstMAC: MACAddress.broadcast(),
+      this.getLinkLayer().send({
+        iface: outPort,
+        destination: MACAddress.broadcast(),
         etherType: ETHERTYPE_ARP, payload: arpReq,
       });
     }
