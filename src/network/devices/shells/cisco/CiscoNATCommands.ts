@@ -619,37 +619,11 @@ export function natExecSpecs(getRouter: () => Router): CommandSpec[] {
       modes: ['privileged'], minPrivilege: 15,
       undoFromNegatedPaths: true,
       argumentFor: (path) => NAT_EXEC_ARGUMENTS[path],
-      /*
-       * `debug ip nat` est enregistre ici et n'a jamais repondu : c'est
-       * le repartiteur `debug ip` de `CiscoShellBase` qui le sert, et
-       * lui seul sait dire `IP NAT detailed debugging is on`. Le migrer
-       * le ferait GAGNER et changerait le message ; la famille du debogage
-       * est un autre sujet, donc ce lot ne prend que `clear ip nat`.
-       */
-      skip: (path) => !path.replace(/^no\s+/i, '').startsWith('clear ip nat'),
     },
   );
 }
 
 export function registerNATPrivilegedCommands(trie: CommandTrie, getRouter: () => Router): void {
-  const debugSvc = () => getRouter().getDebugService();
-  trie.registerGreedy('debug ip nat', 'Enable NAT packet-translation debugging', (args) => {
-    const arg = args.join(' ').trim();
-    const nat = getRouter()._getNATEngine();
-    nat.setDebugEnabled(true);
-    if (/^detailed$/i.test(arg)) {
-      nat.setDebugDetailed(true);
-      return debugSvc().enable('ip.nat', 'detailed');
-    }
-    nat.setDebugDetailed(false);
-    return arg ? debugSvc().enable('ip.nat', arg) : debugSvc().enable('ip.nat');
-  }, ['detailed']);
-  trie.registerGreedy('no debug ip nat', 'Disable NAT packet-translation debugging', () => {
-    const nat = getRouter()._getNATEngine();
-    nat.setDebugEnabled(false);
-    nat.setDebugDetailed(false);
-    return debugSvc().disable('ip.nat');
-  }, ['detailed']);
   trie.register('clear ip nat translation *', 'Clear all dynamic NAT translations', () => {
     getRouter()._getNATEngine().clearTranslations();
     return '';

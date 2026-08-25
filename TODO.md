@@ -217,22 +217,6 @@ qu'un lot de migration ne doit pas faire ; et les trois cas restants
 demandent chacun une reference propre a la plateforme, la reponse
 n'etant pas la meme sur un 2900 et sur un 2960.
 
-### [nat] `debug ip nat` est enregistre DEUX fois, et l'une des deux est morte
-`registerNATPrivilegedCommands` enregistre `debug ip nat` et
-`no debug ip nat` avec leur propre corps (il allume le moteur puis
-delegue au service de debogage), et ce corps n'a jamais repondu : le
-repartiteur glouton `debug ip` de `CiscoShellBase` sert la commande, et
-lui seul sait ecrire `IP NAT detailed debugging is on`.
-**Mesure** : migrer la paire au socle la fait GAGNER, et
-`debug ip nat detailed` passe de `IP NAT detailed debugging is on` a
-`IP NAT debugging is on for access list detailed` — le message du corps
-mort. Un cas de `debug-family-slice.test.ts` l'a attrape.
-**Report** : les deux corps allument le meme moteur mais ne rendent pas
-le meme texte, donc les fondre demande de decider lequel est fidele
-(c'est celui du repartiteur) et de retirer l'autre — un travail qui
-appartient a la famille du DEBOGAGE, pas au lot `clear ip nat`. La
-migration l'ecarte explicitement par `skip` en attendant.
-
 ### [socle] deux familles sont migrées sur le commutateur VRP
 Le pont existe des DEUX côtés : `VRP_SWITCH_MODES` décrit la hiérarchie
 des treize vues du commutateur, et `HuaweiSwitchShell` consulte le socle
@@ -603,6 +587,22 @@ est écrit plutôt que tu : la sécurisation est RÉELLE et vérifiable, sa
 distribution de clé ne l'est pas.
 
 ## Bus d'evenements
+
+### [netflow] un flux reel ne produit aucun enregistrement
+`probe-debug-02-collecte.test.ts`, cas « un flux reel produit un
+enregistrement avec ses ports et compteurs », ECHOUE :
+`show ip cache flow` rend `IP packet size distribution (0 total …` et
+la table de flux ne contient jamais l'adresse du client. Le compteur
+total est a zero, donc rien n'est compte, pas seulement mal rendu.
+**Mesure** : l'echec est reproduit a l'identique sur `b4b300872`,
+c'est-a-dire AVANT tout le lot DHCP de cette session, et sur
+`origin/main` — ce n'est ni une regression de ce lot ni un effet du
+travail en cours sur FortiOS.
+**Report** : le defaut est dans la comptabilisation NetFlow et non dans
+la vue ; le diagnostiquer demande de suivre ou `NetFlowAgent` est
+alimente sur le chemin de donnees, ce qui est un sujet a part entiere et
+non un correctif de commande. Inscrit ici pour qu'un echec rouge de la
+suite ne passe pas pour du bruit.
 
 ### [nhrp] `debug nhrp` n'a toujours pas d'emetteur, faute de transcription
 `NhrpDomainEvent` est desormais dans l'union `DomainEvent`, donc un
