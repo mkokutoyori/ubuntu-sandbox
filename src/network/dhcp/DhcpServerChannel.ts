@@ -20,6 +20,7 @@ import type {
   DHCPReleaseParams,
   DHCPPoolConfig,
 } from './types';
+import { createDefaultPoolConfig } from './types';
 
 export interface DhcpServerChannel {
   /** `null` for a wire channel that has not yet received an OFFER/ACK. */
@@ -107,7 +108,7 @@ export class WireDhcpChannel implements DhcpServerChannel {
     const rebindingTime = num(offer.getOption(DHCP_OPTION.REBINDING_TIME));
     // The wire client only knows what the OFFER's options carry.
     const pool: DHCPPoolConfig = {
-      name: 'wire',
+      ...createDefaultPoolConfig('wire'),
       network: null,
       mask: str(offer.getOption(DHCP_OPTION.SUBNET_MASK)),
       defaultRouter: str(offer.getOption(DHCP_OPTION.ROUTER)),

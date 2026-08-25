@@ -578,6 +578,7 @@ export abstract class Switch extends Equipment {
     this.initPortSecurity();
     this.initDhcpSnooping();
     this.dhcpServer.setEventBus(this.getBus());
+    this.dhcpServer.setDeviceId(this.id, this.name);
   }
 
   private initPortSecurity(): void {

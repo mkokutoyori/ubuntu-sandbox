@@ -123,7 +123,11 @@ import { md5Hex } from '@/crypto/hash/md5';
 import type { KeyChainRepository } from './inspection/config/KeyChainRepository';
 import { fragmentIPv4, IPv4Reassembler } from '../core/Ipv4Fragmentation';
 import type { FhrpDataPlane } from '../fhrp/types';
-import { DHCPServer } from '../dhcp/DHCPServer';
+import { DHCPServer, type DhcpUtilizationCrossing } from '../dhcp/DHCPServer';
+import {
+  DHCP_FREE_ADDRESS_HIGH, DHCP_FREE_ADDRESS_LOW, DHCP_SHARED_NET_ENTRY,
+  snmpAdminStringIndex,
+} from '../snmp/mibs/DhcpServerMib';
 import { DHCPPacket } from '../dhcp/DHCPPacket';
 import { buildDhcpServerReply } from '../dhcp/DhcpServerExchange';
 import type { DHCPDiscoverParams, DHCPOfferResult } from '../dhcp/types';
@@ -545,6 +549,8 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
     // only approximates (docs/PRD-Frame-Only-Refactor.md P2).
     this.natEngine.setEventBus(this.getBus());
     this.dhcpServer.setEventBus(this.getBus());
+    this.dhcpServer.setDeviceId(this.id, this.name);
+    this.dhcpServer.setUtilizationSink((crossing) => this.emitDhcpUtilizationTrap(crossing));
     this.natEngine.setACLMatchFn((aclId, srcIP, realPkt) => {
       const pkt = realPkt ?? sourceProbePacket(new IPAddress(srcIP));
       // Undefined ACL = no interesting traffic, so require an explicit permit.
@@ -856,6 +862,28 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
         { oid: `1.3.6.1.2.1.2.2.1.1.${index}`, kind: 'integer', value: index },
         { oid: `1.3.6.1.2.1.2.2.1.7.${index}`, kind: 'integer', value: adminUp ? 1 : 2 },
         { oid: `1.3.6.1.2.1.2.2.1.8.${index}`, kind: 'integer', value: monte ? 1 : 2 },
+      ],
+    );
+  }
+
+  private emitDhcpUtilizationTrap(crossing: DhcpUtilizationCrossing): void {
+    const snmp = this.getSnmpService();
+    if (!snmp.isEnabled()) return;
+    if (!snmp.isTrapEnabled('dhcp', 'pool')) return;
+
+    const index = snmpAdminStringIndex(crossing.pool);
+    const thresholdOid = crossing.crossing === 'high'
+      ? `${DHCP_SHARED_NET_ENTRY}.2.${index}`
+      : `${DHCP_SHARED_NET_ENTRY}.3.${index}`;
+    const usedAtThreshold = crossing.crossing === 'high'
+      ? Math.ceil((crossing.threshold * crossing.total) / 100)
+      : Math.floor((crossing.threshold * crossing.total) / 100);
+    const freeThreshold = Math.max(0, crossing.total - usedAtThreshold);
+    this.sendIpSlaTrap(
+      crossing.crossing === 'high' ? DHCP_FREE_ADDRESS_LOW : DHCP_FREE_ADDRESS_HIGH,
+      [
+        { oid: thresholdOid, kind: 'gauge32', value: freeThreshold },
+        { oid: `${DHCP_SHARED_NET_ENTRY}.4.${index}`, kind: 'gauge32', value: crossing.free },
       ],
     );
   }

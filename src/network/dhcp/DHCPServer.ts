@@ -43,8 +43,17 @@ import {
 
 /** Default pending offer timeout from centralized constants */
 const PENDING_OFFER_TIMEOUT_MS = DHCP_CONSTANTS.PENDING_OFFER_TIMEOUT_MS;
-const IOS_UTILIZATION_MARK_HIGH = 100;
-const IOS_UTILIZATION_MARK_LOW = 0;
+
+export interface DhcpUtilizationCrossing {
+  pool: string;
+  crossing: 'high' | 'low';
+  threshold: number;
+  used: number;
+  total: number;
+  free: number;
+}
+
+export type DhcpUtilizationSink = (crossing: DhcpUtilizationCrossing) => void;
 
 /** Default conflict TTL: infinite (0 = never expire) */
 const DEFAULT_CONFLICT_TTL = 0;
@@ -123,7 +132,11 @@ export class DHCPServer implements IProtocolEngine {
   /** Read-only observables (leases, stats). */
   readonly observables: DHCPServerObservables = makeReadonlyDHCPServerObservables(this.serverSignalStore);
 
+  private utilizationSink: DhcpUtilizationSink | null = null;
+  private readonly highUtilizationNotified: Set<string> = new Set();
+
   setEventBus(bus: IEventBus | null): void { this.busOverride = bus; }
+  setUtilizationSink(sink: DhcpUtilizationSink | null): void { this.utilizationSink = sink; }
   setDeviceId(id: string, hostname?: string): void {
     this.deviceId = id;
     if (hostname !== undefined) this.hostname = hostname;
@@ -151,6 +164,86 @@ export class DHCPServer implements IProtocolEngine {
       activeLeases: this.bindings.size,
       reservationsCount: Array.from(this.staticBindings.values()).reduce((s, arr) => s + arr.length, 0),
     });
+    this.evaluateUtilizationMarks();
+  }
+
+  configurePoolUtilizationMark(
+    name: string, kind: 'high' | 'low', percentage: number, log: boolean,
+  ): boolean {
+    const pool = this.pools.get(name);
+    if (!pool) return false;
+    if (!Number.isInteger(percentage)) return false;
+    const floor = kind === 'high' ? 1 : 0;
+    if (percentage < floor || percentage > 100) return false;
+    if (kind === 'high') {
+      pool.highUtilizationMark = percentage;
+      pool.highUtilizationLog = log;
+    } else {
+      pool.lowUtilizationMark = percentage;
+      pool.lowUtilizationLog = log;
+    }
+    this.highUtilizationNotified.delete(name);
+    this.refreshServerSignals();
+    return true;
+  }
+
+  resetPoolUtilizationMark(name: string, kind: 'high' | 'low'): boolean {
+    const pool = this.pools.get(name);
+    if (!pool) return false;
+    if (kind === 'high') {
+      pool.highUtilizationMark = 100;
+      pool.highUtilizationLog = false;
+    } else {
+      pool.lowUtilizationMark = 0;
+      pool.lowUtilizationLog = false;
+    }
+    this.highUtilizationNotified.delete(name);
+    this.refreshServerSignals();
+    return true;
+  }
+
+  poolLeasableTotal(pool: DHCPPoolConfig): number {
+    return Math.max(0, this.countTotalAddresses(pool) - this.countExcludedForPool(pool));
+  }
+
+  poolUtilizationPercent(pool: DHCPPoolConfig): number {
+    const total = this.poolLeasableTotal(pool);
+    if (total === 0) return 0;
+    return Math.floor((this.countBindingsForPool(pool.name) * 100) / total);
+  }
+
+  private evaluateUtilizationMarks(): void {
+    for (const [name, pool] of this.pools) {
+      const total = this.poolLeasableTotal(pool);
+      if (total === 0) continue;
+      const used = this.countBindingsForPool(name);
+      const percent = Math.floor((used * 100) / total);
+      const armed = this.highUtilizationNotified.has(name);
+      if (!armed && percent >= pool.highUtilizationMark) {
+        this.highUtilizationNotified.add(name);
+        this.announceUtilization(pool, 'high', used, total);
+      } else if (armed && percent <= pool.lowUtilizationMark) {
+        this.highUtilizationNotified.delete(name);
+        this.announceUtilization(pool, 'low', used, total);
+      }
+    }
+  }
+
+  private announceUtilization(
+    pool: DHCPPoolConfig, crossing: 'high' | 'low', used: number, total: number,
+  ): void {
+    const threshold = crossing === 'high' ? pool.highUtilizationMark : pool.lowUtilizationMark;
+    const free = Math.max(0, total - used);
+    this.getBus().publish({
+      topic: 'dhcp.pool.utilization',
+      payload: { ...this.deviceRef(), pool: pool.name, crossing, threshold, used, total, free },
+    });
+    const wantsLog = crossing === 'high' ? pool.highUtilizationLog : pool.lowUtilizationLog;
+    if (wantsLog) {
+      Logger.info(this.deviceId, `dhcpd:${crossing}-util`,
+        `Pool '${pool.name}' is in ${crossing} utilization state (${used} addresses used out of ${total})`);
+    }
+    this.utilizationSink?.({ pool: pool.name, crossing, threshold, used, total, free });
   }
 
   // ─── IProtocolEngine ─────────────────────────────────────────────
@@ -230,6 +323,7 @@ export class DHCPServer implements IProtocolEngine {
   }
 
   deletePool(name: string): boolean {
+    this.highUtilizationNotified.delete(name);
     return this.pools.delete(name);
   }
 
@@ -998,20 +1092,26 @@ export class DHCPServer implements IProtocolEngine {
 
   clearBindings(): void {
     this.bindings.clear();
+    this.refreshServerSignals();
   }
 
   clearBinding(ip: string): boolean {
-    return this.bindings.delete(ip);
+    const removed = this.bindings.delete(ip);
+    if (removed) this.refreshServerSignals();
+    return removed;
   }
 
   /** Remove bindings whose lease has expired */
   cleanExpiredBindings(): void {
     const now = Date.now();
+    let removed = false;
     for (const [ip, binding] of this.bindings) {
       if (binding.leaseExpiration <= now) {
         this.bindings.delete(ip);
+        removed = true;
       }
     }
+    if (removed) this.refreshServerSignals();
   }
 
   // ─── Statistics ───────────────────────────────────────────────────
@@ -1240,7 +1340,7 @@ export class DHCPServer implements IProtocolEngine {
 
     const lines = [
       `Pool ${pool.name} :`,
-      ` Utilization mark (high/low)    : ${IOS_UTILIZATION_MARK_HIGH} / ${IOS_UTILIZATION_MARK_LOW}`,
+      ` Utilization mark (high/low)    : ${pool.highUtilizationMark} / ${pool.lowUtilizationMark}`,
       ` Subnet size (first/next)       : 0 / 0`,
       ` Total addresses                : ${total}`,
       ` Leased addresses               : ${loues}`,

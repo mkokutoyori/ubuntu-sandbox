@@ -541,20 +541,54 @@ ce depot passe son temps a defaire. Ce qui EST ferme depuis le lot
 qui n'est pas une adresse est refusee aux quatre portes.
 
 
-### [dhcp] `utilization mark high|low` n'est pas configurable
-`show ip dhcp pool` rend la ligne
-`Utilization mark (high/low) : 100 / 0`. Les deux valeurs SONT celles
-d'IOS par defaut, mais elles sont constantes : la vue lisait
-`pool.highUtilizationMark`/`lowUtilizationMark`, deux proprietes qui
-n'existent sur aucun `DHCPPoolConfig`, donc les replis `?? 100` / `?? 0`
-etaient tout ce qui s'affichait. Elles sont desormais des constantes
-nommees, ce qui dit la verite au lieu de simuler une lecture.
-**Mesure** : `utilization mark high 80` sous `ip dhcp pool` est refuse, et
-aucun magasin ne porte le reglage.
-**Report** : la commande n'a d'interet qu'avec ce qu'elle declenche —
-`%DHCPD-4-HIGH_UTIL` et la notification SNMP associee —, donc l'accepter
-seule rangerait un seuil que rien ne franchit. C'est un lot avec son
-emetteur, pas un attribut de plus.
+### [dhcp] Le pool DHCP d'un commutateur Cisco n'est pas serialise
+`CiscoShowCommands.runningConfigDhcp` rend `ip dhcp pool <nom>` et ses
+sous-commandes, mais c'est le rendu du ROUTEUR : le commutateur, dont
+`buildRunningConfig` est un autre parcours, n'enumere jamais
+`getAllPools()`. Un pool configure sur un Catalyst est donc perdu a
+l'export d'une topologie, alors que la commande qui le cree est
+acceptee et que `show ip dhcp pool` le decrit.
+**Mesure** : `getAllPools` n'a que trois lecteurs dans les coquilles —
+le rendu du routeur, la vue Huawei et son compteur ; aucun cote
+commutateur Cisco.
+**Report** : c'est le rendu de configuration du commutateur qu'il faut
+completer, pas la famille DHCP ; le meme parcours omet probablement
+d'autres familles, et les mesurer d'abord evite de fermer une seule
+fuite sur plusieurs.
+
+### [cli] `utilization mark high ?` annonce `<cr>` et `<0-100>`
+Deux infidelites d'AIDE, pas de comportement, laissees par le lot des
+seuils DHCP. **`<cr>`** : la place du pourcentage est declaree
+FACULTATIVE parce que c'est la seule facon, dans le socle, qu'un
+`no utilization mark high` — qui s'arrete au mot-cle, comme sur IOS —
+atteigne la commande ; `CommandTable.declare` ne pose une commande sur
+un noeud intermediaire que devant une place facultative. La forme
+positive refuse toujours `utilization mark high` seul, donc l'aide
+promet un `<cr>` que le gestionnaire refuse. **`<0-100>`** : une SEULE
+declaration sert les deux seuils, dont les plages reelles different
+(`<1-100>` pour le haut, `<0-100>` pour le bas), donc l'aide annonce
+leur union et le gestionnaire refuse `high 0`.
+**Mesure** : `utilization mark high ?` rend `<0-100>` puis `<cr>` ;
+`utilization mark high` seul rend `% Incomplete command.` ;
+`utilization mark high 0` rend le caret.
+**Report** : fermer le premier demande que le socle sache poser une
+commande sur un noeud pour sa seule forme NIEE (un `undoPath`, ou un
+`undoRequiresArgument` reellement lu) ; fermer le second demande qu'une
+plage puisse dependre du JETON precedent — `SessionParamRanges`, le
+port pose par le lot `standby version 2`, lit la session et non la
+ligne. Les deux touchent le socle CLI, pas la famille DHCP.
+
+### [dhcp] Un pool sans adresse a distribuer ne franchit aucun seuil
+`utilization mark high|low` est applique, mais `poolLeasableTotal` rend
+zero quand le pool n'a pas de `network`, et l'evaluation SAUTE alors le
+pool : un pool declare et jamais reseaute ne franchit donc rien, meme a
+100 % d'un total nul.
+**Mesure** : `evaluateUtilizationMarks` sort par `if (total === 0)
+continue`.
+**Report** : c'est le choix juste par defaut — un pourcentage d'un
+denominateur nul n'a pas de valeur — mais une vraie machine refuse la
+commande `network` manquante autrement, et savoir laquelle des deux
+elle fait demanderait une capture qu'on n'a pas.
 
 ### [dhcp] Windows : le basculement et l'export restent absents
 `Get-DhcpServerv4Binding`, `Get-/Set-DhcpServerv4DnsSetting` sont

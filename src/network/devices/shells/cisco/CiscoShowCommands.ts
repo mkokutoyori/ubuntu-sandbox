@@ -520,6 +520,14 @@ export function showRunningConfig(router: Router): string {
     if (pool.domainName) lines.push(` domain-name ${pool.domainName}`);
     const days = Math.floor(pool.leaseDuration / 86400);
     if (days !== 1) lines.push(` lease ${days}`);
+    if (pool.highUtilizationMark !== 100 || pool.highUtilizationLog) {
+      lines.push(` utilization mark high ${pool.highUtilizationMark}`
+        + (pool.highUtilizationLog ? ' log' : ''));
+    }
+    if (pool.lowUtilizationMark !== 0 || pool.lowUtilizationLog) {
+      lines.push(` utilization mark low ${pool.lowUtilizationMark}`
+        + (pool.lowUtilizationLog ? ' log' : ''));
+    }
   }
 
   lines.push('!');

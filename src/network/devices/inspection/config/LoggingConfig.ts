@@ -35,6 +35,8 @@ const EVENT_MNEMONICS: Readonly<Record<string, string | null>> = {
   'cable:duplex-mismatch': 'DUPLEX_MISMATCH',
   'cable:loop-guard': 'LOOPGUARD_BLOCK',
   'dhcp:pool-exhausted': 'POOL_EXHAUSTED',
+  'dhcpd:high-util': 'HIGH_UTIL',
+  'dhcpd:low-util': 'LOW_UTIL',
   'eigrp:goodbye': 'NBRCHANGE',
   'eigrp:hold-expired': 'NBRCHANGE',
   'eigrp:iface-down': 'NBRCHANGE',
@@ -54,6 +56,7 @@ const EVENT_MNEMONICS: Readonly<Record<string, string | null>> = {
   'ipv4:checksum-fail': null,
   'nat:debug': null,
   'ospf:auth-fail': 'ERRRCV',
+  'pm:err-recover': 'ERR_RECOVER',
   'port:security-shutdown': 'ERR_DISABLE',
   'port:security-violation': 'PSECURE_VIOLATION',
   'radius:acct-timeout': 'RADIUS_DEAD',
@@ -1349,6 +1352,8 @@ export class LoggingConfig {
         this.append('errors', this.tagFromEvent(p.event), p.message, true, mnemonic);
       } else if (p.level === 'warn') {
         this.append('warnings', this.tagFromEvent(p.event), p.message, true, mnemonic);
+      } else if (p.level === 'info') {
+        this.append('informational', this.tagFromEvent(p.event), p.message, true, mnemonic);
       }
     };
     unsubs.push(bus.subscribe('log', logHandler));

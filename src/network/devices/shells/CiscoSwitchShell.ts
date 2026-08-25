@@ -5422,36 +5422,6 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
     return lines.join('\n');
   }
 
-  private showIpDhcpPool(poolName?: string): string {
-    const dhcp = this.d()._getDHCPServerInternal();
-    let pools = Array.from(dhcp.getAllPools().values());
-    if (poolName) {
-      const match = pools.find(p => p.name.toLowerCase() === poolName.toLowerCase());
-      if (!match) return `% Pool ${poolName} not found`;
-      pools = [match];
-    }
-    if (pools.length === 0) return '';
-    const allBindings = Array.from(dhcp.getBindings().values());
-    const blocks: string[] = [];
-    for (const pool of pools) {
-      const leased = allBindings.filter(
-        b => pool.network && pool.mask && this.ipInSubnet(b.ipAddress, pool.network, pool.mask),
-      ).length;
-      blocks.push([
-        `Pool ${pool.name} :`,
-        ` Utilization mark (high/low)    : 100 / 0`,
-        ` Subnet size (first/next)       : 0 / 0`,
-        ` Total addresses                : 254`,
-        ` Leased addresses               : ${leased}`,
-        ` Pending event                  : none`,
-        ` 1 subnet is currently in the pool :`,
-        ` Current index        IP address range                    Leased addresses`,
-        ` ${(pool.network ?? '?').padEnd(20)} ${(pool.network ?? '?')} - ${pool.network ?? '?'}                ${leased}`,
-      ].join('\n'));
-    }
-    return blocks.join('\n');
-  }
-
   private ipInSubnet(ip: string, network: string, mask: string): boolean {
     try {
       const ipN = new IPAddress(ip);

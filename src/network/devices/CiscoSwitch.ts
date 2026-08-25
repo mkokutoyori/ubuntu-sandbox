@@ -247,8 +247,8 @@ export class CiscoSwitch extends Switch {
     if (!this.bpduGuardErrDisabled.delete(portName)) return false;
     const p = this.getPort(portName);
     if (p) p.setUp(true);
-    Logger.info(this.id, 'stp:bpduguard',
-      `${this.name}: Attempting to recover from bpduguard err-disable state on ${portName}`);
+    Logger.warn(this.id, 'pm:err-recover',
+      `Attempting to recover from bpduguard err-disable state on ${portName}`);
     this.getBus().publish({
       topic: 'stp.errdisable.changed',
       payload: {
