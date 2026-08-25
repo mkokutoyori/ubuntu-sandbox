@@ -13,7 +13,6 @@
 
 import { useEffect, useMemo, useState, useSyncExternalStore } from 'react';
 import { EquipmentRegistry } from '@/network/equipment/EquipmentRegistry';
-import { getDefaultEventBus } from '@/events/EventBus';
 import type {
   HostObservables,
   HostArpEntryVM,
@@ -47,14 +46,8 @@ function useHostSignal<K extends keyof HostObservables>(
   // Track registry version so that a late-registering device shows up.
   const [version, setVersion] = useState(0);
   useEffect(() => {
-    const bus = getDefaultEventBus();
-    const bump = () => setVersion((v) => v + 1);
-    const subs = [
-      bus.subscribe('device.registered', bump),
-      bus.subscribe('device.deregistered', bump),
-      bus.subscribe('registry.cleared', bump),
-    ];
-    return () => { for (const u of subs) u(); };
+    return EquipmentRegistry.getInstance().subscribe(
+      () => setVersion((v) => v + 1));
   }, []);
 
   const signal = useMemo(() => {

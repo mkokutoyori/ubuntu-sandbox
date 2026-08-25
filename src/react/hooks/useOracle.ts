@@ -10,7 +10,8 @@
  */
 
 import { useEffect, useMemo, useState, useSyncExternalStore } from 'react';
-import { getDefaultEventBus } from '@/events/EventBus';
+import { EquipmentRegistry } from '@/network/equipment/EquipmentRegistry';
+import { subscribeOracleInstances, listOracleDatabases } from '@/terminal/commands/database';
 import type { Signal } from '@/events/Signal';
 import type { OracleObservables, OracleInstanceStateVM, OracleProcessVM,
   OracleAlertLogVM, OracleSessionVM, OracleStatsVM } from '@/database/oracle/observables';
@@ -35,15 +36,22 @@ function resolveObs(deviceId: string): OracleObservables | null {
 function useOracleLifecycleVersion(): number {
   const [version, setVersion] = useState(0);
   useEffect(() => {
-    const bus = getDefaultEventBus();
     const bump = () => setVersion((v) => v + 1);
-    // Any oracle.* state-changed or session.connected may be the first signal
-    // that an instance is now alive on this device.
-    const subs = [
-      bus.subscribe('oracle.instance.state-changed', bump),
-      bus.subscribe('oracle.session.connected', bump),
-    ];
-    return () => { for (const u of subs) u(); };
+    const registry = EquipmentRegistry.getInstance();
+    let subs: Array<() => void> = [];
+    const rebind = () => {
+      for (const off of subs) off();
+      const buses = new Set(registry.getAll().map(device => device.getBus()));
+      for (const db of listOracleDatabases()) buses.add(db.instance.getBus());
+      subs = [...buses].flatMap(bus => [
+        bus.subscribe('oracle.instance.state-changed', bump),
+        bus.subscribe('oracle.session.connected', bump),
+      ]);
+    };
+    rebind();
+    const offRegistry = registry.subscribe(() => { rebind(); bump(); });
+    const offInstances = subscribeOracleInstances(() => { rebind(); bump(); });
+    return () => { offRegistry(); offInstances(); for (const off of subs) off(); };
   }, []);
   return version;
 }

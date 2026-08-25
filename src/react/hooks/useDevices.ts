@@ -10,7 +10,6 @@
 
 import { useEffect, useMemo, useState, useSyncExternalStore } from 'react';
 import { EquipmentRegistry } from '@/network/equipment/EquipmentRegistry';
-import { getDefaultEventBus } from '@/events/EventBus';
 import type { Equipment } from '@/network/equipment/Equipment';
 
 export interface DeviceVM {
@@ -40,16 +39,8 @@ function projectAll(registry: EquipmentRegistry): DeviceVM[] {
  */
 function useRegistryVersion(): number {
   const [version, setVersion] = useState(0);
-  useEffect(() => {
-    const bus = getDefaultEventBus();
-    const bump = () => setVersion((v) => v + 1);
-    const subs = [
-      bus.subscribe('device.registered', bump),
-      bus.subscribe('device.deregistered', bump),
-      bus.subscribe('registry.cleared', bump),
-    ];
-    return () => { for (const u of subs) u(); };
-  }, []);
+  useEffect(() => EquipmentRegistry.getInstance().subscribe(
+    () => setVersion((v) => v + 1)), []);
   return version;
 }
 

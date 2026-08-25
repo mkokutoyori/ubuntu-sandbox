@@ -156,6 +156,11 @@ export function getOracleDatabase(deviceId: string): OracleDatabase {
     listenerTcp.start();
     oracleListenerTcpSyncs.set(deviceId, listenerTcp);
 
+    const busOwner = EquipmentRegistry.getInstance().getById(deviceId) as unknown as
+      { getBus?: () => import('@/events/EventBus').IEventBus } | null;
+    if (busOwner && typeof busOwner.getBus === 'function') {
+      db.instance.setEventBus(busOwner.getBus());
+    }
     db.instance.startup();
     // A freshly provisioned server boots with the listener running
     // (dbstart/systemd would have started it); `lsnrctl stop` still
@@ -166,6 +171,7 @@ export function getOracleDatabase(deviceId: string): OracleDatabase {
     // against data that already has them.
     if (!racPrimaryDb) installAllDemoSchemas(db);
     oracleInstances.set(deviceId, db);
+    announceOracleInstances();
     // The boot provisioning (initOracleFilesystem) wrote the seed
     // datafiles before the database existed — tell the FS sync they are
     // materialised so it never recreates a file the user later deletes.
@@ -184,11 +190,6 @@ export function getOracleDatabase(deviceId: string): OracleDatabase {
       // `primaryDeviceId` only takes effect the first time a cluster is
       // created for this dbName (i.e. for the founding node) — a later
       // joiner's call just adds a member to the existing entry.
-      const busOwner = EquipmentRegistry.getInstance().getById(deviceId) as unknown as
-        { getBus?: () => import('@/events/EventBus').IEventBus } | null;
-      if (busOwner && typeof busOwner.getBus === 'function') {
-        db.instance.setEventBus(busOwner.getBus());
-      }
       joinOrCreateCluster(dbName, deviceId, {
         deviceId, hostname: racInfo.hostname,
         interconnectIp: racInfo.interconnectIp, interconnectIface: racInfo.interconnectIface,
@@ -392,6 +393,7 @@ export function removeOracleDatabase(deviceId: string): void {
     try { db.instance.shutdown('IMMEDIATE'); } catch { /* ignore */ }
   }
   oracleInstances.delete(deviceId);
+  announceOracleInstances();
   // Tear down the RMAN device-scoped catalog + config so a subsequent
   // getOracleDatabase(deviceId) starts fresh.
   DeviceCatalogRegistry.dispose(deviceId);
@@ -403,6 +405,21 @@ export function removeOracleDatabase(deviceId: string): void {
  * Intended for test isolation — clears both the instance map
  * and the filesystem-initialized tracking set.
  */
+export function listOracleDatabases(): OracleDatabase[] {
+  return [...oracleInstances.values()];
+}
+
+const oracleInstanceListeners = new Set<() => void>();
+
+export function subscribeOracleInstances(listener: () => void): () => void {
+  oracleInstanceListeners.add(listener);
+  return () => { oracleInstanceListeners.delete(listener); };
+}
+
+function announceOracleInstances(): void {
+  for (const listener of [...oracleInstanceListeners]) listener();
+}
+
 export function resetAllOracleInstances(): void {
   for (const sync of oracleFsSyncs.values()) sync.stop();
   oracleFsSyncs.clear();

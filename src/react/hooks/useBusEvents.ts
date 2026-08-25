@@ -7,7 +7,7 @@
  */
 
 import { useEffect, useRef, useState } from 'react';
-import { getDefaultEventBus, type IEventBus } from '@/events/EventBus';
+import type { IEventBus } from '@/events/EventBus';
 import type { DomainEventTopic, EventOf, PayloadOf } from '@/events/types';
 
 export interface UseBusEventsOptions<T extends DomainEventTopic> {
@@ -30,7 +30,8 @@ export function useBusEvents<T extends DomainEventTopic>(
   const [events, setEvents] = useState<EventOf<T>[]>([]);
 
   useEffect(() => {
-    const bus = opts.bus ?? getDefaultEventBus();
+    const bus = opts.bus;
+    if (!bus) return;
     const unsubscribe = bus.subscribe(topic, (event) => {
       const typed = event as EventOf<T>;
       // PayloadOf<T> is a deferred conditional type — two separate

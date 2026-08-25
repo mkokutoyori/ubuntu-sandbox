@@ -67,6 +67,17 @@ export class EquipmentRegistry {
 
   // ─── Core CRUD ────────────────────────────────────────────────────
 
+  private readonly listeners = new Set<() => void>();
+
+  subscribe(listener: () => void): () => void {
+    this.listeners.add(listener);
+    return () => { this.listeners.delete(listener); };
+  }
+
+  private announce(): void {
+    for (const listener of [...this.listeners]) listener();
+  }
+
   /** Register a device in the registry */
   register(device: Equipment): void {
     const id = device.getId();
@@ -80,6 +91,7 @@ export class EquipmentRegistry {
         name: device.getName(),
       },
     });
+    this.announce();
   }
 
   /** Deregister a device (e.g., on removal from topology) */
@@ -90,6 +102,7 @@ export class EquipmentRegistry {
         topic: 'device.deregistered',
         payload: { id },
       });
+      this.announce();
     }
     return removed;
   }
@@ -141,5 +154,6 @@ export class EquipmentRegistry {
       topic: 'registry.cleared',
       payload: {},
     });
+    this.announce();
   }
 }

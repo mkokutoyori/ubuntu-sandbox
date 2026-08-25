@@ -1,5 +1,4 @@
 import { useEffect, useState } from 'react';
-import { getDefaultEventBus } from '@/events/EventBus';
 import type { Equipment } from '@/network';
 
 export interface MacTableRow {
@@ -30,15 +29,11 @@ export function useMacTable(instance: Equipment | null): MacTableRow[] {
 
   useEffect(() => {
     if (!deviceId) return;
-    const bus = getDefaultEventBus();
-    const subs = MAC_TOPICS.map(topic =>
-      bus.subscribe(topic, (e) => {
-        if ((e.payload as { deviceId?: string }).deviceId === deviceId) {
-          setVersion(v => v + 1);
-        }
-      }));
+    const bus = instance?.getBus();
+    if (!bus) return;
+    const subs = MAC_TOPICS.map(topic => bus.subscribe(topic, () => setVersion(v => v + 1)));
     return () => { for (const off of subs) off(); };
-  }, [deviceId]);
+  }, [deviceId, instance]);
 
   if (!instance || !hasMacTable(instance)) return [];
   return instance.getMACTable().map(e => ({

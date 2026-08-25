@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { getDefaultEventBus } from '@/events/EventBus';
+import { EquipmentRegistry } from '@/network/equipment/EquipmentRegistry';
 import type { Equipment } from '@/network';
 import type { Port } from '@/network/hardware/Port';
 import type { Connection } from '@/store/networkStore';
@@ -69,6 +69,11 @@ function computePerf(
   };
 }
 
+const PERF_TOPICS = [
+  'port.config.speed-changed', 'port.config.duplex-changed',
+  'port.link.up', 'port.link.down',
+] as const;
+
 export function useConnectionPerf(
   connection: Connection | null,
   resolveDevice: (id: string) => Equipment | undefined,
@@ -81,26 +86,18 @@ export function useConnectionPerf(
 
   useEffect(() => {
     if (!connection || connection.type === 'console') return;
-    const bus = getDefaultEventBus();
+    const registry = EquipmentRegistry.getInstance();
+    const buses = [srcDev, tgtDev]
+      .map(id => (id ? registry.getById(id)?.getBus() : null))
+      .filter((b): b is NonNullable<typeof b> => !!b);
     const matches = (payload: unknown): boolean => {
       const p = payload as { deviceId?: string; portName?: string };
       return (p.deviceId === srcDev && p.portName === srcIf)
         || (p.deviceId === tgtDev && p.portName === tgtIf);
     };
-    const subs = [
-      bus.subscribe('port.config.speed-changed', (e) => {
-        if (matches(e.payload)) setVersion(v => v + 1);
-      }),
-      bus.subscribe('port.config.duplex-changed', (e) => {
-        if (matches(e.payload)) setVersion(v => v + 1);
-      }),
-      bus.subscribe('port.link.up', (e) => {
-        if (matches(e.payload)) setVersion(v => v + 1);
-      }),
-      bus.subscribe('port.link.down', (e) => {
-        if (matches(e.payload)) setVersion(v => v + 1);
-      }),
-    ];
+    const bump = (payload: unknown) => { if (matches(payload)) setVersion(v => v + 1); };
+    const subs = PERF_TOPICS.flatMap(topic =>
+      buses.map(b => b.subscribe(topic, (e) => bump(e.payload))));
     return () => { for (const off of subs) off(); };
   }, [connection, srcDev, srcIf, tgtDev, tgtIf]);
 
