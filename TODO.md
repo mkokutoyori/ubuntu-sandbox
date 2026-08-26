@@ -289,6 +289,32 @@ modelise aucune : la valeur exacte n'y est donc pas observable.
 fausse, puisqu'elle laissait poser `line tty 99999`. Celle-ci est
 plausible et declaree comme telle plutot que presentee comme mesuree.
 
+### [cli] `spanning-tree vlan <n> priority ?` n'annonce pas sa plage
+La branche `vlan` de `spanning-tree` reste un noeud GLOUTON, donc l'aide
+y rend la liste du parent (`backbonefast`, `bpdufilter`, …) au lieu de
+`<0-61440>`. **La plage est bien APPLIQUEE** — `priority 61441` et
+`priority 4097` sont refuses, le second dans les mots d'IOS — seule son
+annonce manque.
+**Pourquoi ce n'est pas un oubli** : la declarer demande un mot-cle
+APRES une place (`vlan <liste> priority <valeur>`), et la valeur depend
+du mot-cle — `priority` vaut 0-61440, `hello-time` 1-10, `max-age` 6-40.
+Une declaration POSITIONNELLE annoncerait donc une plage fausse pour les
+minuteries, ce qui serait pire que l'absence. C'est la migration au
+socle qui porte cette forme.
+
+### [cli] la priorite de PORT est ARRONDIE la ou IOS refuse
+`spanning-tree port-priority 100` est accepte et l'agent arrondit a 96.
+La documentation Cisco donne la plage « 0 a 240, par pas de 16 », et
+pour la priorite de PONT — meme formulation — elle precise que toute
+autre valeur est REJETEE (`% Bridge Priority must be in increments of
+4096.`), ce que ce depot applique desormais.
+**Report** : l'arrondi est un choix DEJA pris, ecrit dans le code et
+epingle par `stp-prd-fidelity` (« port-priority lands in the high byte
+of the port ID, rounded like IOS »), avec pour motif que deux refus pour
+une meme saisie seraient un refus de trop. Le renverser sans que l'agent
+qui l'a pris le dise ferait tomber son cas ; l'ecart est donc inscrit
+ici plutot que tranche unilateralement.
+
 ## Routeur Cisco
 
 ### [cli] un sous-mode atteint les commandes GLOBALES, et `show` marche sans `do`

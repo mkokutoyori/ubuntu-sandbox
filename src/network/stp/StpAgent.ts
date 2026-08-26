@@ -747,9 +747,16 @@ export class StpAgent extends ReactiveAgentBase implements StpInstanceAgent {
   runningConfigGlobalLines(): string[] {
     const out: string[] = [];
     if (!this.config.enabled) out.push('no spanning-tree vlan 1');
-    if (this.config.mode !== 'stp') {
-      out.push(`spanning-tree mode ${this.config.mode === 'mstp' ? 'mst' : 'rapid-pvst'}`);
-    }
+    /*
+     * Le mode est rendu MEME quand c'est le defaut. Un Catalyst ecrit
+     * `spanning-tree mode pvst` dans sa configuration d'usine — la
+     * sortie `show running-config | section spanning` d'un vrai 2960 le
+     * montre — et l'omettre au motif que c'est le defaut faisait
+     * disparaitre la ligne que l'operateur venait de taper.
+     */
+    out.push(`spanning-tree mode ${
+      this.config.mode === 'mstp' ? 'mst'
+        : this.config.mode === 'rstp' ? 'rapid-pvst' : 'pvst'}`);
     if (this.config.bridgePriority !== 32768) {
       out.push(`spanning-tree vlan 1 priority ${this.config.bridgePriority}`);
     }

@@ -106,6 +106,169 @@ function isUnsupportedOnThisSwitch(e: unknown): boolean {
   return e instanceof UnsupportedOnThisSwitchError;
 }
 
+/**
+ * Un entier dans ses bornes, ou le caret d'IOS a l'endroit du mot.
+ *
+ * `revision 70000` et `instance 5000 vlan 10` etaient acceptes puis
+ * silencieusement ignores par un `isNaN` qui ne regardait que la forme :
+ * la region MST prenait alors une revision que le voisin ne verra
+ * jamais, et deux commutateurs cessaient d'etre dans la meme region sans
+ * qu'un seul message le dise.
+ */
+function entierBorne(jeton: string, min: number, max: number): number {
+  if (!/^\d+$/.test(jeton)) throw new CliInvalidInput({ token: jeton });
+  const valeur = Number(jeton);
+  if (valeur < min || valeur > max) throw new CliInvalidInput({ token: jeton });
+  return valeur;
+}
+
+const STP_MODES: ReadonlyArray<string> = ['pvst', 'rapid-pvst', 'mst'];
+
+const PRIORITE_PAR_PAS_DE_4096 = '% Bridge Priority must be in increments of 4096.';
+
+/**
+ * Les minuteries du pont, avec les bornes d'IEEE 802.1D qu'IOS applique.
+ */
+const STP_MINUTERIES: Readonly<Record<string, readonly [number, number]>> = {
+  'hello-time': [1, 10],
+  'forward-time': [4, 30],
+  'max-age': [6, 40],
+};
+
+/**
+ * Ce que `spanning-tree …` accepte en configuration GLOBALE.
+ *
+ * Le gestionnaire etait un aiguillage qui n'examinait rien : tout ce
+ * qu'il ne reconnaissait pas traversait et rendait la chaine vide, donc
+ * `spanning-tree mode zorglub`, `spanning-tree cost 100` — un reglage
+ * d'INTERFACE — et `spanning-tree portfast` seul etaient acceptes en
+ * silence. Les valeurs ne l'etaient pas davantage : une priorite de pont
+ * se pose par PAS de 4096 et IOS refuse tout le reste en le disant
+ * (`% Bridge Priority must be in increments of 4096.`), ce que ce
+ * simulateur arrondissait sans mot dire — donc `priority 4097` posait
+ * 4096 et l'apprenant ne rencontrait jamais la regle.
+ *
+ * La lecture est faite UNE fois, avant l'aiguillage, pour que la forme
+ * acceptee et la forme executee ne puissent pas differer.
+ */
+function refusReglageStpGlobal(args: readonly string[]): string | null {
+  const mot = (i: number): string => (args[i] ?? '').toLowerCase();
+  const tete = mot(0);
+  if (tete === '') return CISCO_ERRORS.INCOMPLETE;
+
+  const entier = (jeton: string): number | null =>
+    /^\d+$/.test(jeton) ? Number(jeton) : null;
+
+  const refusPriorite = (jeton: string): string | null => {
+    const valeur = entier(jeton);
+    if (valeur === null || valeur > 61440) throw new CliInvalidInput({ token: jeton });
+    return valeur % 4096 === 0 ? null : PRIORITE_PAR_PAS_DE_4096;
+  };
+
+  if (tete === 'mode') {
+    if (args[1] === undefined) return CISCO_ERRORS.INCOMPLETE;
+    if (!STP_MODES.includes(mot(1))) throw new CliInvalidInput({ token: args[1] });
+    return null;
+  }
+
+  if (tete === 'priority') {
+    if (args[1] === undefined) return CISCO_ERRORS.INCOMPLETE;
+    return refusPriorite(args[1]);
+  }
+
+  if (tete === 'vlan') {
+    if (args[1] === undefined) return CISCO_ERRORS.INCOMPLETE;
+    const liste = analyserListeVlan([args[1]]);
+    if ('erreur' in liste) return liste.erreur;
+    if (args[2] === undefined) return null;
+
+    const reglage = mot(2);
+    if (reglage === 'priority') {
+      if (args[3] === undefined) return CISCO_ERRORS.INCOMPLETE;
+      return refusPriorite(args[3]);
+    }
+    if (reglage === 'root') {
+      if (args[3] === undefined) return CISCO_ERRORS.INCOMPLETE;
+      if (mot(3) !== 'primary' && mot(3) !== 'secondary') {
+        throw new CliInvalidInput({ token: args[3] });
+      }
+      return null;
+    }
+    const bornes = STP_MINUTERIES[reglage];
+    if (bornes === undefined) throw new CliInvalidInput({ token: args[2] });
+    if (args[3] === undefined) return CISCO_ERRORS.INCOMPLETE;
+    const valeur = entier(args[3]);
+    if (valeur === null || valeur < bornes[0] || valeur > bornes[1]) {
+      throw new CliInvalidInput({ token: args[3] });
+    }
+    return null;
+  }
+
+  if (tete === 'portfast') {
+    /*
+     * `spanning-tree portfast` SEUL est une commande d'interface : en
+     * configuration globale il lui faut le mot qui dit sur quoi elle
+     * porte, et IOS repond « Incomplete » plutot que le caret puisque le
+     * mot-cle existe bien.
+     */
+    if (args[1] === undefined) return CISCO_ERRORS.INCOMPLETE;
+    const sous = mot(1);
+    if (sous === 'default' || sous === 'edge') return null;
+    if (sous === 'bpduguard' || sous === 'bpdufilter') {
+      if (args[2] === undefined) return CISCO_ERRORS.INCOMPLETE;
+      if (mot(2) !== 'default') throw new CliInvalidInput({ token: args[2] });
+      return null;
+    }
+    throw new CliInvalidInput({ token: args[1] });
+  }
+
+  if (tete === 'loopguard') {
+    if (args[1] === undefined) return CISCO_ERRORS.INCOMPLETE;
+    if (mot(1) !== 'default') throw new CliInvalidInput({ token: args[1] });
+    return null;
+  }
+
+  if (tete === 'pathcost') {
+    if (args[1] === undefined) return CISCO_ERRORS.INCOMPLETE;
+    if (mot(1) !== 'method') throw new CliInvalidInput({ token: args[1] });
+    if (args[2] === undefined) return CISCO_ERRORS.INCOMPLETE;
+    if (mot(2) !== 'long' && mot(2) !== 'short') {
+      throw new CliInvalidInput({ token: args[2] });
+    }
+    return null;
+  }
+
+  if (tete === 'extend') {
+    if (args[1] === undefined) return CISCO_ERRORS.INCOMPLETE;
+    if (mot(1) !== 'system-id') throw new CliInvalidInput({ token: args[1] });
+    return null;
+  }
+
+  if (tete === 'uplinkfast' || tete === 'backbonefast') return null;
+
+  throw new CliInvalidInput({ token: args[0] });
+}
+
+/*
+ * Les suites de `spanning-tree` sur un PORT, DECLAREES.
+ *
+ * Faute de declaration, l'aide les derivait du texte du gestionnaire et
+ * n'en trouvait qu'une partie : `spanning-tree ?` offrait `cost` et
+ * `port-priority` mais pas `portfast`, le mot le plus tape de la
+ * famille, parce qu'il n'apparait dans le corps que sous la forme
+ * `isPortFast`. N'y figure que ce que ce commutateur honore vraiment ;
+ * `link-type` et `mst`, qui n'ont rien derriere, n'y sont pas.
+ */
+const STP_INTERFACE_CONTINUATIONS: ReadonlyArray<{ keyword: string; description: string }> = [
+  { keyword: 'bpdufilter', description: 'Don\'t send or receive BPDUs on this interface' },
+  { keyword: 'bpduguard', description: 'Don\'t accept BPDUs on this interface' },
+  { keyword: 'cost', description: 'Change an interface\'s spanning tree path cost' },
+  { keyword: 'guard', description: 'Change an interface\'s spanning tree guard mode' },
+  { keyword: 'port-priority', description: 'Change an interface\'s spanning tree port priority' },
+  { keyword: 'portfast', description: 'Enable an interface to move directly to forwarding on link up' },
+  { keyword: 'vlan', description: 'VLAN Switch Spanning Tree' },
+];
+
 const STP_GLOBAL_CONTINUATIONS: ReadonlyArray<{ keyword: string; description: string }> = [
   { keyword: 'backbonefast', description: 'Enable BackboneFast' },
   { keyword: 'bpdufilter', description: 'Default BPDU filtering on portfast ports' },
@@ -2016,15 +2179,65 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
     }
   }
 
+  /**
+   * La configuration d'un port oublie le reglage que `no` vient de defaire.
+   *
+   * `ifStp` est un JOURNAL de ce qui a ete tape, et c'est lui que rend
+   * `show running-config` : la negation touchait l'agent et laissait la
+   * ligne positive dans le journal, si bien que `spanning-tree portfast`
+   * puis `no spanning-tree portfast` rendait une configuration ou le
+   * portfast est encore pose — et un import de topologie le reposait
+   * vraiment.
+   */
+  private oublierLigneStp(port: string, tete: string, knob: string): void {
+    const lignes = this.ifStp.get(port);
+    if (!lignes) return;
+    const cible = tete === 'vlan' ? knob : tete;
+    const restantes = lignes.filter(ligne => {
+      const mots = ligne.split(/\s+/).slice(1).map(m => m.toLowerCase());
+      const sienne = mots[0] === 'vlan' ? mots[2] : mots[0];
+      return sienne !== cible;
+    });
+    if (restantes.length === 0) this.ifStp.delete(port);
+    else this.ifStp.set(port, restantes);
+  }
+
   private registerStpCommands(): void {
     this.configTrie.register('spanning-tree mst configuration',
       'Enter MST configuration sub-mode', () => {
         this.mode = 'config-mst';
         return '';
       });
-    // Global: every other `spanning-tree …` is accepted (mode/priority/
+    /*
+     * `mode` est un NOEUD, pas un mot avale par le glouton : sans lui,
+     * `spanning-tree mode ?` rendait la liste du parent — `backbonefast`,
+     * `bpdufilter`, … — c'est-a-dire tout sauf les trois modes, sur la
+     * commande dont c'est la seule question.
+     */
+    this.configTrie.registerGreedy('spanning-tree mode', 'Spanning tree operating mode',
+      (args) => {
+        const refus = refusReglageStpGlobal(['mode', ...args]);
+        if (refus !== null) return refus;
+        this.stpMode = args[0];
+        const m = args[0].toLowerCase();
+        this.requireStp().setMode(
+          m === 'mst' ? 'mstp' : m === 'rapid-pvst' ? 'rstp' : 'stp');
+        return '';
+      });
+    this.configTrie.describeArgs('spanning-tree mode', [{
+      name: 'mode', type: 'ENUM', description: 'Spanning tree operating mode',
+      values: [
+        { keyword: 'mst', description: 'Multiple spanning tree mode' },
+        { keyword: 'pvst', description: 'Per-VLAN spanning tree mode' },
+        { keyword: 'rapid-pvst', description: 'Per-VLAN rapid spanning tree mode' },
+      ],
+    }]);
+
+    // Global: every other `spanning-tree …` is accepted (priority/
     // root/extend/portfast/loopguard/…). Track the mode for `show`.
     this.configTrie.registerGreedy('spanning-tree', 'Spanning Tree configuration', (args) => {
+      const refus = refusReglageStpGlobal(args);
+      if (refus !== null) return refus;
       if (args[0]?.toLowerCase() === 'mode' && args[1]) {
         this.stpMode = args[1];
         const m = args[1].toLowerCase();
@@ -2092,6 +2305,10 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
       else if (a0 === 'uplinkfast') agent.setUplinkFast(false);
       else if (a0 === 'backbonefast') agent.setBackboneFast(false);
       else if (a0 === 'pathcost') agent.setPathcostMethod('short');
+      // `no spanning-tree mode` REVIENT au defaut du Catalyst, PVST+ ;
+      // la negation etait acceptee et ne defaisait rien, donc un mode
+      // pose restait pose et la configuration rendue le gardait.
+      else if (a0 === 'mode') { this.stpMode = 'pvst'; agent.setMode('stp'); }
       return '';
     });
 
@@ -2148,7 +2365,7 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
         this.ifStp.set(i, l);
       }
       return '';
-    });
+    }, STP_INTERFACE_CONTINUATIONS);
     this.configIfTrie.registerGreedy('no spanning-tree', 'Disable interface STP knob', (args) => {
       const ifs = this.selectedInterface
         ? [this.selectedInterface] : this.selectedInterfaceRange;
@@ -2165,6 +2382,7 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
         else if (a[0] === 'bpdufilter') agent.setPortBpduFilter(i, false);
         else if (a[0] === 'guard' && a[1] === 'loop') agent.setPortLoopGuard(i, false);
         else if (a[0] === 'guard') agent.setPortRootGuard(i, false);
+        this.oublierLigneStp(i, a[0], noKnob);
       }
       return '';
     });
@@ -2190,21 +2408,23 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
       return '';
     });
     this.configMstTrie.registerGreedy('revision', 'Set MST revision', (a) => {
-      const n = parseInt(a[0], 10);
-      if (!isNaN(n)) {
-        this.stpAgentOf(this.d())?.setMstRevision(n);
-        this.requireVtp().onLocalMstChange();
-      }
+      if (a[0] === undefined) return CISCO_ERRORS.INCOMPLETE;
+      const n = entierBorne(a[0], 0, 65535);
+      this.stpAgentOf(this.d())?.setMstRevision(n);
+      this.requireVtp().onLocalMstChange();
       return '';
     });
     this.configMstTrie.registerGreedy('instance', 'Map VLANs to an MST instance', (a) => {
-      const id = parseInt(a[0], 10);
-      if (!isNaN(id)) {
-        const reste = a.slice(1);
-        if (reste[0]?.toLowerCase() === 'vlan') reste.shift();
-        this.stpAgentOf(this.d())?.mapMstInstance(id, reste.join(' '));
-        this.requireVtp().onLocalMstChange();
+      if (a[0] === undefined) return CISCO_ERRORS.INCOMPLETE;
+      const id = entierBorne(a[0], 0, 4094);
+      const reste = a.slice(1);
+      if (reste[0]?.toLowerCase() === 'vlan') reste.shift();
+      if (reste.length > 0) {
+        const liste = analyserListeVlan([reste.join('')]);
+        if ('erreur' in liste) return liste.erreur;
       }
+      this.stpAgentOf(this.d())?.mapMstInstance(id, reste.join(' '));
+      this.requireVtp().onLocalMstChange();
       return '';
     });
     this.configMstTrie.register('show current', 'Show current MST config', () =>
