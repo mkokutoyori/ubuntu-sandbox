@@ -19,7 +19,9 @@
  */
 
 import { Equipment } from '../equipment/Equipment';
-import { classifyIpv4Destination, decrementForForwarding } from '../layers/internet/InternetLayer';
+import {
+  classifyIpv4Destination, decrementForForwarding, ipv4HeaderProblem,
+} from '../layers/internet/InternetLayer';
 import { Port } from '../hardware/Port';
 import type { IPv4AddressOrigin } from '../hardware/Port';
 import { SocketTable } from '../core/SocketTable';
@@ -2013,10 +2015,10 @@ export abstract class EndHost extends Equipment {
   private handleIPv4(portName: string, ipPkt: IPv4Packet, srcMac?: string): void {
     if (!ipPkt || ipPkt.type !== 'ipv4') return;
 
-    // Verify checksum
-    if (!verifyIPv4Checksum(ipPkt)) {
-      Logger.warn(this.id, 'ipv4:checksum-fail',
-        `${this.name}: invalid IPv4 checksum, dropping packet`);
+    const headerProblem = ipv4HeaderProblem(ipPkt);
+    if (headerProblem) {
+      Logger.warn(this.id, `ipv4:${headerProblem}-fail`,
+        `${this.name}: IPv4 header ${headerProblem}, dropping packet`);
       return;
     }
 

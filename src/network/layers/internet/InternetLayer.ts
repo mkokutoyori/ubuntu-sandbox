@@ -1,5 +1,5 @@
 import type { IPv4Packet, IPAddress, SubnetMask } from '../../core/types';
-import { computeIPv4Checksum } from '../../core/types';
+import { computeIPv4Checksum, verifyIPv4Checksum } from '../../core/types';
 import { isMulticastIpv4 } from '../../core/ip';
 
 export type Ipv4DestinationClass =
@@ -32,6 +32,16 @@ export function isDirectedBroadcast(
   return connected.some(({ address, mask }) =>
     destination.isBroadcastFor(mask)
     && destination.networkAddress(mask).equals(address.networkAddress(mask)));
+}
+
+export type Ipv4HeaderProblem = 'checksum' | 'version' | 'ihl' | 'total-length';
+
+export function ipv4HeaderProblem(packet: IPv4Packet): Ipv4HeaderProblem | null {
+  if (!verifyIPv4Checksum(packet)) return 'checksum';
+  if (packet.version !== 4) return 'version';
+  if (packet.ihl < 5) return 'ihl';
+  if (packet.totalLength < packet.ihl * 4) return 'total-length';
+  return null;
 }
 
 export type TtlDecision =

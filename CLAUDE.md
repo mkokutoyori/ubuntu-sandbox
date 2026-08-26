@@ -296,6 +296,17 @@ seule et **ne change aucune sémantique protocolaire** : un moteur qui
   de la RFC et non une facilité : répondre par une erreur ICMP à un
   en-tête corrompu répondrait à une victime choisie par l'erreur, l'adresse
   source étant elle-même suspecte.
+  **Incrément 7** : les QUATRE contrôles d'en-tête, une seule écriture.
+  Le bloc « Phase B » du routeur porte somme, version, IHL et longueur
+  totale, en quatre `if` qui répètent le même geste (compteur, journal,
+  retour) ; l'hôte, le commutateur L3 et le pare-feu n'en avaient qu'UN,
+  la somme. Mesuré : `version = 6` dans une trame IPv4, `ihl = 2` et
+  `totalLength = 4` — chacun avec une somme RECALCULÉE pour que seul le
+  champ visé soit en cause — traversaient les deux, six paquets livrés
+  sur six. `ipv4HeaderProblem` rend la RAISON et non un booléen, le
+  routeur comptant `ipInHdrErrors` et journalisant un message par
+  contrôle ; l'ORDRE est celui du routeur et il compte, la somme d'abord,
+  un en-tête dont la somme est fausse n'étant pas lisible.
 
 ### Event/timing infra (`src/events/`)
 

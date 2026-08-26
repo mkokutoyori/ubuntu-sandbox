@@ -124,7 +124,10 @@ import type { KeyChainRepository } from './inspection/config/KeyChainRepository'
 import { fragmentIPv4, IPv4Reassembler } from '../core/Ipv4Fragmentation';
 import type { FhrpDataPlane } from '../fhrp/types';
 import { DHCPServer, type DhcpUtilizationCrossing } from '../dhcp/DHCPServer';
-import { classifyIpv4Destination, decrementForForwarding, isDirectedBroadcast } from '../layers/internet/InternetLayer';
+import {
+  classifyIpv4Destination, decrementForForwarding, isDirectedBroadcast,
+  ipv4HeaderProblem,
+} from '../layers/internet/InternetLayer';
 import {
   DHCP_FREE_ADDRESS_HIGH, DHCP_FREE_ADDRESS_LOW, DHCP_SHARED_NET_ENTRY,
   snmpAdminStringIndex,
@@ -2299,36 +2302,11 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
     if (!ipPkt || ipPkt.type !== 'ipv4') return;
 
     // Phase B: L3 Header Sanity Check (RFC 1812 §5.2.2)
-
-    // B.1: Checksum verification
-    if (!verifyIPv4Checksum(ipPkt)) {
+    const headerProblem = ipv4HeaderProblem(ipPkt);
+    if (headerProblem) {
       this.counters.ipInHdrErrors++;
-      Logger.warn(this.id, 'router:checksum-fail',
-        `${this.name}: invalid IPv4 checksum, dropping`);
-      return;
-    }
-
-    // B.2: Version check — must be 4
-    if (ipPkt.version !== 4) {
-      this.counters.ipInHdrErrors++;
-      Logger.warn(this.id, 'router:version-fail',
-        `${this.name}: IPv4 version ${ipPkt.version} != 4, dropping`);
-      return;
-    }
-
-    // B.3: IHL check — must be >= 5 (20 bytes minimum header)
-    if (ipPkt.ihl < 5) {
-      this.counters.ipInHdrErrors++;
-      Logger.warn(this.id, 'router:ihl-fail',
-        `${this.name}: IHL ${ipPkt.ihl} < 5, dropping`);
-      return;
-    }
-
-    // B.4: TotalLength check — must be at least IHL*4
-    if (ipPkt.totalLength < ipPkt.ihl * 4) {
-      this.counters.ipInHdrErrors++;
-      Logger.warn(this.id, 'router:length-fail',
-        `${this.name}: totalLength ${ipPkt.totalLength} < header ${ipPkt.ihl * 4}, dropping`);
+      Logger.warn(this.id, `router:${headerProblem}-fail`,
+        `${this.name}: IPv4 header ${headerProblem}, dropping`);
       return;
     }
 

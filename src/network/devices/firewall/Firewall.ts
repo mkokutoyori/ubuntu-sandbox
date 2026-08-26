@@ -15,7 +15,6 @@ import {
   type EthernetFrame,
   type IPv4Packet,
   type UDPPacket,
-  verifyIPv4Checksum,
 } from '../../core/types';
 import {
   buildICMPError, mayGenerateICMPError,
@@ -71,6 +70,7 @@ import {
 import { ROOT_VDOM, VdomRegistry, type VdomContext } from './vdom/VdomRegistry';
 import { VdomLinkTable } from './vdom/VdomLinkTable';
 import { clusterVirtualMac } from './ha/clusterVirtualMac';
+import { ipv4HeaderProblem } from '../../layers/internet/InternetLayer';
 import { SwitchGroupTable } from './l3/SwitchGroupTable';
 import { logFactsOf } from './logging/logFacts';
 import { emitFirewallEvent, logPipelineOutcome } from './logging/emitFirewallEvent';
@@ -1419,7 +1419,7 @@ export class Firewall extends Equipment {
     portName: string, packet: IPv4Packet, frame?: EthernetFrame,
   ): void {
     if (!packet || packet.type !== 'ipv4') return;
-    if (!verifyIPv4Checksum(packet)) return;
+    if (ipv4HeaderProblem(packet)) return;
 
     const recolle = this.fragments.accept(packet, this.services.now());
     if (recolle === null) return;

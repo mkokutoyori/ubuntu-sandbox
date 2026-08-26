@@ -33,9 +33,43 @@
  * elle-meme suspecte — on repondrait a une victime choisie par l'erreur.
  * C'est la meme famille que l'increment 5.
  *
- * DISCRIMINATION (`git stash` sur `SwitchSvi.ts` et `Firewall.ts`) : les
- * 2 cas de rejet tombent, les 2 TEMOINS passent des deux cotes et LE
- * DOIVENT — sans eux, jeter TOUT paquet passerait la sonde.
+ * DISCRIMINATION DE L'INCREMENT 6 (`git stash` sur `SwitchSvi.ts` et
+ * `Firewall.ts`) : les 2 cas de rejet tombent, les 2 TEMOINS passent des
+ * deux cotes et LE DOIVENT — sans eux, jeter TOUT paquet passerait la
+ * sonde.
+ *
+ * ─────────────────────────────────────────────────────────────────────
+ *
+ * INCREMENT 7 — les QUATRE controles, et une seule ecriture.
+ *
+ * L'increment 6 n'avait donne que la somme de controle. En relisant le
+ * bloc « Phase B » du routeur pour l'ecrire, on voit qu'il porte QUATRE
+ * controles — somme, version, IHL, longueur totale — ecrits en quatre
+ * `if` qui repetent chacun le meme geste (compteur, journal, retour). Et
+ * les trois autres equipements n'en avaient qu'UN :
+ *
+ *   routeur          4 controles
+ *   hote             1 (la somme)
+ *   commutateur L3   1 (la somme, depuis l'increment 6)
+ *   pare-feu         1 (la somme, depuis l'increment 6)
+ *
+ * Mesure des trois manquants, sur les deux equipements ou ils manquaient
+ * le plus : `version = 6` dans une trame IPv4, `ihl = 2` — plus court
+ * qu'un en-tete —, `totalLength = 4`, chacun avec une somme RECALCULEE
+ * pour que seul le champ vise soit en cause. Six cas, six paquets
+ * LIVRES. La RFC 1812 §5.2.2 exige le rejet silencieux des trois.
+ *
+ * `ipv4HeaderProblem` rend la RAISON et non un booleen, parce que le
+ * routeur compte `ipInHdrErrors` et journalise un message par controle :
+ * garder la raison laisse a chaque appelant ses propres mots, ce que
+ * l'increment 1 avait deja etabli comme la regle de ce chantier. L'ORDRE
+ * est celui du routeur et il compte — la somme d'abord, un en-tete dont
+ * la somme est fausse n'etant pas lisible ; un cas l'epingle.
+ *
+ * DISCRIMINATION DE L'INCREMENT 7 (`git stash` des cinq fichiers, donc
+ * retour a l'increment 6) : 8 des 12 cas tombent — les 6 cas
+ * d'equipement et les 2 cas unitaires de la regle. Les 4 restants sont
+ * les 2 rejets de somme, deja acquis a l'increment 6, et les 2 TEMOINS.
  */
 
 import { describe, it, expect, beforeEach } from 'vitest';
@@ -45,8 +79,9 @@ import { LinuxPC } from '@/network/devices/LinuxPC';
 import { Cable } from '@/network/hardware/Cable';
 import {
   resetCounters, MACAddress, IPAddress, ETHERTYPE_IPV4,
-  createIPv4Packet, IP_PROTO_ICMP,
+  createIPv4Packet, IP_PROTO_ICMP, computeIPv4Checksum,
 } from '@/network/core/types';
+import { ipv4HeaderProblem } from '@/network/layers/internet/InternetLayer';
 import type { EthernetFrame, ICMPPacket, IPv4Packet } from '@/network/core/types';
 import { resetDeviceCounters } from '@/network/devices/DeviceFactory';
 import { Logger } from '@/network/core/Logger';
@@ -85,6 +120,20 @@ function paquet(somme?: number): IPv4Packet {
   if (somme !== undefined) p.headerChecksum = somme;
   return p;
 }
+
+function paquetAbime(retoucher: (p: IPv4Packet) => void): IPv4Packet {
+  const p = paquet();
+  retoucher(p);
+  p.headerChecksum = 0;
+  p.headerChecksum = computeIPv4Checksum(p);
+  return p;
+}
+
+const ABIMES: ReadonlyArray<readonly [string, (p: IPv4Packet) => void]> = [
+  ['version 6 dans une trame IPv4', (p) => { p.version = 6; }],
+  ['IHL de 2, plus court qu\'un en-tete', (p) => { p.ihl = 2; }],
+  ['longueur totale plus courte que l\'en-tete', (p) => { p.totalLength = 4; }],
+];
 
 async function laboratoireCommutateur() {
   const commutateur = new CiscoSwitch('switch-cisco', 'SW1', 8);
@@ -178,4 +227,45 @@ describe('et un pare-feu aussi', () => {
     });
     expect(compte()).toBeGreaterThan(0);
   });
+});
+
+describe('et la regle entiere de la RFC 1812 §5.2.2 vit en un lieu', () => {
+  it('les quatre controles sont rendus par la couche', () => {
+    expect(ipv4HeaderProblem(paquet())).toBeNull();
+    expect(ipv4HeaderProblem(paquet(0x1234))).toBe('checksum');
+    expect(ipv4HeaderProblem(paquetAbime((p) => { p.version = 6; }))).toBe('version');
+    expect(ipv4HeaderProblem(paquetAbime((p) => { p.ihl = 2; }))).toBe('ihl');
+    expect(ipv4HeaderProblem(paquetAbime((p) => { p.totalLength = 4; })))
+      .toBe('total-length');
+  });
+
+  it('la somme est jugee AVANT le reste, un en-tete faux n\'etant pas lisible', () => {
+    const p = paquetAbime((q) => { q.version = 6; });
+    p.headerChecksum = 0x1234;
+    expect(ipv4HeaderProblem(p)).toBe('checksum');
+  });
+
+  for (const [nom, retoucher] of ABIMES) {
+    it(`un commutateur de niveau 3 jette : ${nom}`, async () => {
+      const { commutateur, a, b } = await laboratoireCommutateur();
+      const compte = compteurIpv4(b);
+      commutateur.getPort('FastEthernet0/1')!.receiveFrame({
+        srcMAC: a.getPort('eth0')!.getMAC(),
+        dstMAC: commutateur.getPort('FastEthernet0/1')!.getMAC(),
+        etherType: ETHERTYPE_IPV4, payload: paquetAbime(retoucher),
+      });
+      expect(compte()).toBe(0);
+    });
+
+    it(`un pare-feu jette : ${nom}`, async () => {
+      const { fgt, a, b } = await laboratoirePareFeu();
+      const compte = compteurIpv4(b);
+      fgt.getPort('port2')!.receiveFrame({
+        srcMAC: a.getPort('eth0')!.getMAC(),
+        dstMAC: fgt.getPort('port2')!.getMAC(),
+        etherType: ETHERTYPE_IPV4, payload: paquetAbime(retoucher),
+      });
+      expect(compte()).toBe(0);
+    });
+  }
 });

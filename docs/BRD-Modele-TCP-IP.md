@@ -775,6 +775,33 @@ dépôt.
 de cet en-tête étant elle-même suspecte — on répondrait à une victime
 choisie par l'erreur. Même famille que l'incrément 5.
 
+**Incrément 7 — LIVRÉ : les QUATRE contrôles d'en-tête, une seule
+écriture.** L'incrément 6 n'avait donné que la somme de contrôle. En
+relisant le bloc « Phase B » du routeur pour l'écrire, on voit qu'il
+porte QUATRE contrôles — somme, version, IHL, longueur totale — écrits en
+quatre `if` qui répètent chacun le même geste (compteur, journal,
+retour), et que les trois autres équipements n'en avaient qu'UN :
+
+| équipement | contrôles avant |
+|---|---|
+| routeur | 4 |
+| hôte | 1 (la somme) |
+| commutateur L3 | 1 (la somme, incrément 6) |
+| pare-feu | 1 (la somme, incrément 6) |
+
+Mesure des trois manquants : `version = 6` dans une trame IPv4,
+`ihl = 2` — plus court qu'un en-tête —, `totalLength = 4`, chacun avec
+une somme RECALCULÉE pour que seul le champ visé soit en cause. Six cas
+sur les deux équipements, six paquets LIVRÉS ; la RFC 1812 §5.2.2 exige
+le rejet silencieux des trois.
+
+`ipv4HeaderProblem` rend la RAISON et non un booléen, parce que le
+routeur compte `ipInHdrErrors` et journalise un message par contrôle :
+garder la raison laisse à chaque appelant ses propres mots, ce que
+l'incrément 1 avait établi comme la règle de ce chantier. L'ORDRE est
+celui du routeur et il compte — la somme d'abord, un en-tête dont la
+somme est fausse n'étant pas lisible ; un cas l'épingle.
+
 ### Phase 3 — RIB et FIB séparées
 **Sortie** : `lookupRoute()` ne réveille plus le plan de contrôle ; une
 route statique récursive (`ip route <net> <mask> <ip-hors-lien>`)

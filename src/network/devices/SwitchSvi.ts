@@ -2,10 +2,11 @@ import {
   EthernetFrame, MACAddress, IPAddress, SubnetMask,
   ARPPacket, ICMPPacket, IPv4Packet, UDPPacket,
   ETHERTYPE_ARP, ETHERTYPE_IPV4, IP_PROTO_ICMP, IP_PROTO_UDP,
-  createIPv4Packet, verifyIPv4Checksum,
+  createIPv4Packet,
 } from '../core/types';
 import {
-  decrementForForwarding, isDirectedBroadcast, type ConnectedIpv4Prefix,
+  decrementForForwarding, isDirectedBroadcast, ipv4HeaderProblem,
+  type ConnectedIpv4Prefix,
 } from '../layers/internet/InternetLayer';
 import {
   buildICMPError, mayGenerateICMPError, type ICMPErrorType,
@@ -316,9 +317,10 @@ export class SwitchSvi {
     if (frame.etherType === ETHERTYPE_IPV4) {
       const ip = frame.payload as IPv4Packet;
       if (!ip || ip.type !== 'ipv4') return forUs;
-      if (!verifyIPv4Checksum(ip)) {
-        Logger.warn(this.host.deviceId, 'svi:checksum-fail',
-          'invalid IPv4 header checksum, dropping');
+      const headerProblem = ipv4HeaderProblem(ip);
+      if (headerProblem) {
+        Logger.warn(this.host.deviceId, `svi:${headerProblem}-fail`,
+          `invalid IPv4 header (${headerProblem}), dropping`);
         return true;
       }
 
