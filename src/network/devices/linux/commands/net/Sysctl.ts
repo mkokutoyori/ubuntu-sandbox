@@ -177,6 +177,14 @@ function sysctlWriter(key: string): SysctlWriter | null {
   if (key === 'net.ipv4.ip_forward') {
     return (ctx, value) => ctx.net.setIpForward(value === '1');
   }
+  if (key === 'net.ipv4.icmp_echo_ignore_broadcasts') {
+    return (ctx, value) => {
+      const host = (ctx.executor as unknown as {
+        localDevice?: { setIgnoresBroadcastEcho?(on: boolean): void };
+      }).localDevice;
+      host?.setIgnoresBroadcastEcho?.(value === '1');
+    };
+  }
   if (key === 'net.ipv4.tcp_tw_reuse') {
     return (ctx, value) => {
       const st = (ctx.executor as unknown as { socketTable?: { setTcpTwReuse(v: boolean): void } }).socketTable;

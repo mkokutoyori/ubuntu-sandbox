@@ -381,6 +381,11 @@ export abstract class EndHost extends Equipment {
   /** Whether IPv4 forwarding is enabled (sysctl net.ipv4.ip_forward=1) */
   protected ipForwardEnabled: boolean = false;
 
+  private broadcastEchoIgnored = true;
+
+  ignoresBroadcastEcho(): boolean { return this.broadcastEchoIgnored; }
+  setIgnoresBroadcastEcho(on: boolean): void { this.broadcastEchoIgnored = on; }
+
   /** Set by subclasses that own a real GreAgent, to decapsulate inbound GRE. */
   protected greAgent: GreDecapsulator | null = null;
 
@@ -2296,6 +2301,7 @@ export abstract class EndHost extends Equipment {
     if (!icmp || icmp.type !== 'icmp') return;
 
     if (icmp.icmpType === 'echo-request') {
+      if (this.broadcastEchoIgnored && !this.getPortOwningIP(ipPkt.destinationIP)) return;
       this.sendEchoReply(portName, ipPkt, icmp);
     } else if (icmp.icmpType === 'echo-reply') {
       // Phase 5.6: settle the awaiting `sendPing` promise via the bus.
