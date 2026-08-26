@@ -15,6 +15,7 @@ import {
   type EthernetFrame,
   type IPv4Packet,
   type UDPPacket,
+  verifyIPv4Checksum,
 } from '../../core/types';
 import {
   buildICMPError, mayGenerateICMPError,
@@ -1418,6 +1419,7 @@ export class Firewall extends Equipment {
     portName: string, packet: IPv4Packet, frame?: EthernetFrame,
   ): void {
     if (!packet || packet.type !== 'ipv4') return;
+    if (!verifyIPv4Checksum(packet)) return;
 
     const recolle = this.fragments.accept(packet, this.services.now());
     if (recolle === null) return;

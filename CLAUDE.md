@@ -283,6 +283,19 @@ seule et **ne change aucune sémantique protocolaire** : un moteur qui
   erreur sur une diffusion dirigée, attesté par un TÉMOIN unicast monté
   dans le même laboratoire qui en émet exactement une — sans lui, un
   laboratoire mal bâti et une absence de défaut seraient indiscernables.
+  **Incrément 6** : la somme de contrôle d'en-tête est VÉRIFIÉE. Même
+  forme, un cran plus bas — `verifyIPv4Checksum` existe dans
+  `core/types.ts`, `Router` (qui compte `ipInHdrErrors`) et `EndHost`
+  l'appellent, `SwitchSvi` et `Firewall` ne l'appelaient nulle part, et un
+  datagramme portant `headerChecksum = 0x1234` traversait les deux
+  jusqu'à l'hôte de destination. Le champ était ÉCRIT par trente-huit
+  sites et LU par deux. La fonction n'est délibérément PAS déplacée dans
+  `layers/internet/` : elle est déjà l'unique implantation partagée, et la
+  déménager churnerait trente-huit sites d'appel sans rien dédupliquer —
+  la règle de réutilisation demande de l'APPELER. Le silence est la règle
+  de la RFC et non une facilité : répondre par une erreur ICMP à un
+  en-tête corrompu répondrait à une victime choisie par l'erreur, l'adresse
+  source étant elle-même suspecte.
 
 ### Event/timing infra (`src/events/`)
 

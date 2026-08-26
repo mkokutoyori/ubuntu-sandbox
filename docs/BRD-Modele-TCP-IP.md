@@ -748,6 +748,33 @@ tombé : « source non unicast » passait déjà, non par respect de la règle
 mais parce que `lookupRoute(0.0.0.0)` ne trouvait aucune route de retour.
 Le silence était un accident de routage ; il est désormais décidé.
 
+**Incrément 6 — LIVRÉ : la somme de contrôle d'en-tête est VÉRIFIÉE.**
+Même forme que l'incrément 5, un cran plus bas. La RFC 1812 §5.2.2 est
+sans ambiguïté — un routeur DOIT vérifier la somme de contrôle d'en-tête
+de tout datagramme reçu et jeter EN SILENCE celui dont elle est fausse —
+et `verifyIPv4Checksum` existe dans `core/types.ts` depuis toujours.
+`Router` l'appelle (et compte `ipInHdrErrors`), `EndHost` l'appelle ;
+`SwitchSvi` et `Firewall` ne l'appelaient NULLE PART. Mesure : un
+datagramme portant `headerChecksum = 0x1234` traverse le commutateur de
+niveau 3 et traverse le pare-feu, dans les deux cas jusqu'à l'hôte de
+destination. Le champ était ÉCRIT par trente-huit sites
+(`headerChecksum = computeIPv4Checksum(...)`) et LU par deux : un champ
+calculé partout et vérifié presque nulle part est exactement le
+« critère rangé et jamais évalué » que le CLAUDE.md interdit.
+
+**Ce qui n'a délibérément PAS été fait** : `verifyIPv4Checksum` n'est pas
+déplacée dans `layers/internet/`. Elle est déjà l'unique implantation,
+partagée, et la déménager churnerait trente-huit sites d'appel sans rien
+dédupliquer — la règle de réutilisation demande de l'APPELER, pas de la
+déplacer. Le §3.3 dit que la somme de contrôle « vit » dans la couche
+internet ; elle y vit déjà au sens qui compte, un seul corps pour tout le
+dépôt.
+
+**Le silence est la règle et non une facilité** : émettre une erreur ICMP
+à propos d'un en-tête corrompu serait doublement faux, l'adresse source
+de cet en-tête étant elle-même suspecte — on répondrait à une victime
+choisie par l'erreur. Même famille que l'incrément 5.
+
 ### Phase 3 — RIB et FIB séparées
 **Sortie** : `lookupRoute()` ne réveille plus le plan de contrôle ; une
 route statique récursive (`ip route <net> <mask> <ip-hors-lien>`)
