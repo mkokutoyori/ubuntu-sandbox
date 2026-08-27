@@ -16,26 +16,23 @@ import { resetDeviceCounters } from '@/network/devices/DeviceFactory';
 import { Logger } from '@/network/core/Logger';
 import { PowerShellSubShell } from '@/terminal/subshells/PowerShellSubShell';
 import { dialKdc } from '@/network/kerberos/KerberosClient';
-import { EventBus, __setDefaultEventBus } from '@/events/EventBus';
 import type { KerberosDomainEvent } from '@/network/kerberos/events';
 import type { ReplicationDomainEvent } from '@/network/devices/windows/server/ad/replication/events';
-
-let bus: EventBus;
 
 beforeEach(() => {
   resetCounters();
   resetDeviceCounters();
   Logger.reset();
-  bus = new EventBus();
-  __setDefaultEventBus(bus);
 });
 
 const ps = (d: WindowsServer) => PowerShellSubShell.create(d).subShell;
 const run = async (sh: ReturnType<typeof ps>, l: string) => (await sh.processLine(l)).output.join('\n');
 
-function collect<T extends KerberosDomainEvent['topic'] | ReplicationDomainEvent['topic']>(topic: T): unknown[] {
+function collect<T extends KerberosDomainEvent['topic'] | ReplicationDomainEvent['topic']>(
+  publisher: WindowsServer, topic: T,
+): unknown[] {
   const out: unknown[] = [];
-  bus.subscribe(topic as never, (e: { payload: unknown }) => out.push(e.payload));
+  publisher.getBus().subscribe(topic as never, (e: { payload: unknown }) => out.push(e.payload));
   return out;
 }
 
@@ -59,7 +56,7 @@ async function buildLab(): Promise<{ dc: WindowsServer; client: LinuxServer; cCl
 describe('Kerberos observability (§5 P12) — AS exchange', () => {
   it('records a succeeded AS exchange in both the signal store and the event bus', async () => {
     const { dc, client, cClient } = await buildLab();
-    const succeeded = collect('kerberos.as.succeeded');
+    const succeeded = collect(dc, 'kerberos.as.succeeded');
     const framesBefore = cClient.getStats().framesTransmitted;
 
     const conn = dialKdc(client.getTcpStack(), '192.168.97.10');
@@ -77,7 +74,7 @@ describe('Kerberos observability (§5 P12) — AS exchange', () => {
 
   it('records a failed AS exchange (bad password) but not the routine PREAUTH_REQUIRED round-trip', async () => {
     const { dc, client } = await buildLab();
-    const failed = collect('kerberos.as.failed');
+    const failed = collect(dc, 'kerberos.as.failed');
 
     const conn = dialKdc(client.getTcpStack(), '192.168.97.10');
     const res = conn.client!.asExchange('alice', 'wrongpassword', 'LAB.LOCAL');
@@ -91,7 +88,7 @@ describe('Kerberos observability (§5 P12) — AS exchange', () => {
 describe('Kerberos observability (§5 P12) — TGS exchange', () => {
   it('records a succeeded (non-referral) TGS exchange', async () => {
     const { dc, client } = await buildLab();
-    const succeeded = collect('kerberos.tgs.succeeded');
+    const succeeded = collect(dc, 'kerberos.tgs.succeeded');
 
     const conn = dialKdc(client.getTcpStack(), '192.168.97.10');
     const as = conn.client!.asExchange('alice', 'alicepw', 'LAB.LOCAL');
@@ -106,7 +103,7 @@ describe('Kerberos observability (§5 P12) — TGS exchange', () => {
 
   it('records a failed TGS exchange (unknown service)', async () => {
     const { dc, client } = await buildLab();
-    const failed = collect('kerberos.tgs.failed');
+    const failed = collect(dc, 'kerberos.tgs.failed');
 
     const conn = dialKdc(client.getTcpStack(), '192.168.97.10');
     const as = conn.client!.asExchange('alice', 'alicepw', 'LAB.LOCAL');
@@ -137,7 +134,7 @@ describe('AD replication observability (§5 P12)', () => {
 
     dc2.setCurrentUser('Administrator');
     await run(ps(dc2), 'Install-WindowsFeature AD-Domain-Services');
-    const completed = collect('replication.pull.completed');
+    const completed = collect(dc2, 'replication.pull.completed');
     const framesBefore = cDc2.getStats().framesTransmitted;
     await run(
       ps(dc2),
@@ -162,7 +159,7 @@ describe('AD replication observability (§5 P12)', () => {
     await run(ps(dc), 'Install-WindowsFeature AD-Domain-Services');
     await run(ps(dc), 'Install-ADDSForest -DomainName lab.local -SafeModeAdministratorPassword (ConvertTo-SecureString "P@ssw0rd" -AsPlainText -Force)');
 
-    const failed = collect('replication.pull.failed');
+    const failed = collect(dc, 'replication.pull.failed');
     const result = dc.replicateFrom('192.168.97.99');
     expect(result.ok).toBe(false);
 
