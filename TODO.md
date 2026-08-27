@@ -982,3 +982,22 @@ défauts — la méthode vaut d'être reprise sur le reliquat.
 - `tsc --noEmit -p tsconfig.json` ne vérifiait RIEN (fichier de solution,
   `"files": []`) — `npm run typecheck` ajouté et le piège écrit dans
   `CLAUDE.md`.
+
+- La passe d'ENUMERATION de l'adaptateur écrivait dans les vrais arbres —
+  fermée. `registerCommonConfigCommands(trie)` ignorait son paramètre en
+  quatre points (`this.configTrie`) et `registerConfigIfCommands` bâtissait
+  son paquet dot1x/LACP sur les arbres réels ; `buildRoutingProtoConfig`
+  recevait le vrai sous-arbre `router`. Chaque `specsFromTrieRegistrations`
+  réenregistrait donc la famille entière : 237 écrasements silencieux, et
+  `command-trie-hygiene` — le garde-fou dont c'est l'objet — était rouge
+  depuis 633 commits (premier mauvais : 8fb3a105).
+- `minPrivilegeFor` sur l'adaptateur — ajouté. Un constructeur partagé
+  porte des commandes de DEUX portées ; un privilège unique de famille les
+  mettait toutes au niveau 15, donc `show dot1x`, `show lacp` et
+  `show pagp` étaient refusées avant `enable` alors qu'un Catalyst y répond.
+- `SwitchTries` — le paquet des arbres du commutateur était réécrit à
+  l'identique en sept endroits ; il porte désormais `user`, sans quoi les
+  vues `show udld` / `show monitor` n'atteignaient jamais le socle.
+- Les événements d'observabilité Kerberos et de réplication AD se lisaient
+  sur le bus GLOBAL alors que le bus d'une machine est le sien depuis
+  5ff22d9b — la sonde lisait le mauvais bus, la fonction était juste.

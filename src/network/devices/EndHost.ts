@@ -2657,7 +2657,12 @@ export abstract class EndHost extends Equipment {
   }
 
   public udpBind(port: number, listener: UdpListener, processName?: string): boolean {
-    this.socketTable.bind('udp', '0.0.0.0', port, undefined, processName);
+    try {
+      this.socketTable.bind('udp', '0.0.0.0', port, undefined, processName);
+    } catch (error) {
+      if (error instanceof Error && error.message.startsWith('EADDRINUSE')) return false;
+      throw error;
+    }
     this.udpListeners.set(port, listener);
     return true;
   }
