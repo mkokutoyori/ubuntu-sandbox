@@ -129,6 +129,16 @@ export function renderArpTable(arp: ArpService): string {
   ], FIXED_TABLE).join('\n');
 }
 
+export function renderArpKernelList(arp: ArpService, indexOf: (iface: string) => number): string {
+  const lignes: string[] = [];
+  for (const [address, entry] of arp.getCache().entries()) {
+    lignes.push(`index=${indexOf(entry.iface)} devname=${entry.iface}`
+      + ` ifname=${entry.iface} ${address} state=00000002`
+      + ` use=0 confirm=0 update=0 ref=1 mac=${entry.mac.toString()}`);
+  }
+  return lignes.join('\n');
+}
+
 const ROUTE_CODE: Readonly<Record<string, string>> = Object.freeze({
   connected: 'C',
   static: 'S',

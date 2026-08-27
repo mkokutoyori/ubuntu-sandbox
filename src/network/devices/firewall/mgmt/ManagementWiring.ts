@@ -56,6 +56,7 @@ export interface ManagementHost {
   loginBannerLines(stage: LoginBannerStage): readonly string[];
   adminHttpsRedirect(): boolean;
   adminServerCertificate(): AdminServerCertificate | undefined;
+  managementServedAnywhere(service: 'http' | 'https'): boolean;
   adminHttpApp(): AdminHttpApp | null;
 }
 
@@ -109,6 +110,7 @@ export function buildManagementServices(host: ManagementHost): ManagementService
     app: () => host.adminHttpApp(),
     capturePort: () => (captivePortal.isArmed() ? CAPTURED_HTTP_PORT : null),
     capturedResponse: (client) => captivePortal.responseFor(client),
+    servedAnywhere: (service) => host.managementServedAnywhere(service),
   });
 
   const captivePortal = new CaptivePortalRedirect({

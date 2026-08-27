@@ -31,6 +31,7 @@ export interface AdminHttpServerDeps {
   app(): AdminHttpApp | null;
   capturePort(): number | null;
   capturedResponse(client: { ip: string; port: number }): HttpMessage | null;
+  servedAnywhere?(service: 'http' | 'https'): boolean;
 }
 
 export function redirectResponse(location: string): HttpMessage {
@@ -73,12 +74,12 @@ export class AdminHttpServer {
 
   refresh(): void {
     const admin = this.deps.ports().http;
-    this.http = this.rebindPlain(this.http, this.wanted(admin));
+    this.http = this.rebindPlain(this.http, this.served('http', this.wanted(admin)));
     const captured = this.deps.capturePort();
     this.capture = this.rebindPlain(
       this.capture,
       captured === null || captured === admin ? null : this.wanted(captured));
-    this.rebindHttps(this.wanted(this.deps.ports().https));
+    this.rebindHttps(this.served('https', this.wanted(this.deps.ports().https)));
   }
 
   detach(): void {
@@ -106,6 +107,12 @@ export class AdminHttpServer {
       return null;
     }
     return { port, session };
+  }
+
+  private served(service: 'http' | 'https', port: number | null): number | null {
+    if (port === null) return null;
+    if (service === 'http' && this.deps.capturePort() !== null) return port;
+    return this.deps.servedAnywhere?.(service) === false ? null : port;
   }
 
   private wanted(port: number): number | null {

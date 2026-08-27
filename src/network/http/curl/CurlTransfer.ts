@@ -215,6 +215,8 @@ function resolveLocation(base: CurlUrl, location: string): UrlParse {
   return parseCurlUrl(`${base.scheme}://${authority}${dir}${location}`);
 }
 
+class CurlConnectRefused extends Error {}
+
 export async function performCurlRequest(
   host: CurlHost,
   first: CurlUrl,
@@ -304,8 +306,20 @@ export async function performCurlRequest(
       const verifier = opts.insecure
         ? new InsecureCertificateVerifier({ trustAnchors: [] })
         : new CertificateVerifier({ trustAnchors: anchors });
+      const porte = host.tcpStack().connect(address, url.port);
+      const refuse = !porte || porte.state !== 'established';
+      porte?.close();
+      if (refuse) {
+        failure = {
+          ok: false, code: 7,
+          message: `curl: (7) Failed to connect to ${url.host} port ${url.port}: Connection refused`,
+          url, remoteIp, method, numRedirects: redirects, trace,
+        };
+      }
+
       let session: HttpsClientSession | null = null;
       try {
+        if (refuse) throw new CurlConnectRefused();
         session = new HttpsClientSession(host.tcpStack(), address, url.port, { verifier });
         const result = await session.sendAsync(request);
         if (!result.ok || !result.response) {
@@ -341,12 +355,14 @@ export async function performCurlRequest(
             response = result.response;
           }
         }
-      } catch {
-        failure = {
-          ok: false, code: 35,
-          message: `curl: (35) OpenSSL SSL_connect: SSL routines::wrong version number in connection to ${url.host}:${url.port}`,
-          url, remoteIp, method, numRedirects: redirects, trace,
-        };
+      } catch (error) {
+        if (!(error instanceof CurlConnectRefused)) {
+          failure = {
+            ok: false, code: 35,
+            message: `curl: (35) OpenSSL SSL_connect: SSL routines::wrong version number in connection to ${url.host}:${url.port}`,
+            url, remoteIp, method, numRedirects: redirects, trace,
+          };
+        }
       } finally {
         session?.close();
       }

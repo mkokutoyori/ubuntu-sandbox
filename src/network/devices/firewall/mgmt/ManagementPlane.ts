@@ -72,12 +72,21 @@ export class ManagementPlane {
 
   setAllowedAccess(iface: string, services: readonly string[]): void {
     this.allowed.set(iface, new Set(services.map(s => s.toLowerCase())));
+    this.adminServer?.refresh();
   }
 
   allowsAccess(iface: string, service: string): boolean {
     const declared = this.allowed.get(iface);
     if (declared === undefined) return true;
     return declared.has(service.toLowerCase());
+  }
+
+  servedAnywhere(service: string): boolean {
+    if (this.allowed.size === 0) return true;
+    for (const services of this.allowed.values()) {
+      if (services.has(service.toLowerCase())) return true;
+    }
+    return false;
   }
 
   allowedAccessOn(iface: string): readonly string[] {

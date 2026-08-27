@@ -1,4 +1,5 @@
 import { conserveModeLines } from './systemLoad';
+import { renderArpKernelList } from './getViews';
 import type { IPv4Packet } from '../../../../../core/types';
 import type { Firewall } from '../../../Firewall';
 import type { FirewallLogDraft } from '../../../logging/FirewallLogStore';
@@ -172,6 +173,10 @@ function diagnoseIpv6(rest: readonly string[], deps: FortiDiagDeps): string {
 }
 
 function diagnoseIp(rest: readonly string[], deps: FortiDiagDeps): string {
+  if (rest[0] === 'arp' && rest[1] === 'list') {
+    return renderArpKernelList(
+      deps.fw.getArpService(), (iface) => deps.fw.interfaceIndex(iface));
+  }
   if (rest[0] !== 'address' || rest[1] !== 'list') {
     return FortiMessages.unknownPath(`ip ${rest.join(' ')}`);
   }
