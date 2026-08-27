@@ -831,12 +831,26 @@ fermés sont exactement les cas de la récursion, et les 11 restants sont
 antérieurs (10 `ospfv3-real-packets`, 1 `probe-ip-sla-real-probe` qui ne
 tombe qu'en contexte de lot).
 
-**Reste de la phase 3** : `lookupRoute()` appelle toujours
-`dynamicRouting.refresh()` — le plan de données réveille le plan de
-contrôle. Deux cas de la sonde épinglent la conséquence observable (la
-table ne change pas quand on achemine) et ils passent déjà ; ce qui reste
-est la dépendance elle-même, qui demande de déplacer le rafraîchissement
-vers les minuteurs des protocoles.
+**Incrément 2 — LIVRÉ, et il l'était déjà : le plan de données ne
+réveille plus le plan de contrôle.** Ce document affirmait qu'il restait
+à faire ; la mesure dit le contraire, et l'affirmation était fausse.
+`refresh()` n'a plus d'appelant de production depuis d9bfdcf3 (6 août),
+qui l'a supprimé plutôt que de le laisser en code mort : restent trois
+voies, une par rôle réel — `converge()` sur configuration et évènement de
+lien, `eigrpRibUpdate()` sur paquet EIGRP reçu, et le `setOnRibChange`
+que BGP avait déjà sur UPDATE accepté.
+
+`tcp-ip-phase3-plan-de-controle.test.ts` (8 cas) le PIN au lieu de le
+supposer, et mesure la propriété plutôt que l'absence d'un appel : un
+compteur d'évènements du bus compte les recalculs publiés pendant vingt
+acheminements — **zéro** —, la table est identique octet pour octet
+avant et après, et un paquet vers un réseau inconnu ne recalcule pas non
+plus. Le troisième groupe existe pour que le vert ne puisse pas être
+obtenu en ne convergeant JAMAIS : un lien qui tombe fait disparaître la
+route apprise, le lien qui remonte la fait revenir, et une route statique
+paraît sans qu'on achemine.
+
+**La phase 3 est donc close.**
 
 **Sortie** : `lookupRoute()` ne réveille plus le plan de contrôle ; une
 route statique récursive (`ip route <net> <mask> <ip-hors-lien>`)
