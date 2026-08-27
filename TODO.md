@@ -1011,3 +1011,13 @@ défauts — la méthode vaut d'être reprise sur le reliquat.
   le proxy de sortie et la documentation en HTML ecrase les blancs, qui
   sont precisement l'information cherchee — il faut une capture texte
   (jeu `ntc-templates`), absente de cette image.
+
+- `sntp server` avait DEUX corps — fermée. Le même mot enregistré sur
+  l'arbre privilégié et sur celui de configuration, avec des corps qui
+  avaient déjà divergé : celui de configuration retient la ligne par
+  `_recordUnhandledConfigLine` quand la machine n'a pas d'agent NTP,
+  l'autre la perd en silence. Sans conséquence observable aujourd'hui —
+  routeur comme Catalyst portent un agent, donc la branche divergente est
+  inatteignable — mais c'est exactement la duplication qui finit par
+  répondre deux choses à une même commande. Un seul corps, posé sur les
+  deux arbres.

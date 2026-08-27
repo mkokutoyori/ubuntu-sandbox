@@ -7786,15 +7786,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       { keyword: 'vty', description: 'Virtual terminal' },
     ]);
     registerLineExecCommands(this.privilegedTrie, () => getSessionRegistry(this.d()));
-    this.privilegedTrie.registerGreedy('sntp server', 'SNTP server (alias for ntp server)', (args) => {
-      if (!args[0]) return '% Incomplete command.';
-      const target = this.resolveNtpTarget(args[0]);
-      if (!target) return `Translating "${args[0]}"...domain server (255.255.255.255)\n% Bad IP address or host name`;
-      const agent = getNtpAgent(this.d());
-      agent?.addServer(target, args[1]?.toLowerCase() === 'prefer', undefined, 'sntp');
-      return '';
-    });
-    this.configTrie.registerGreedy('sntp server', 'SNTP server (alias for ntp server)', (args) => {
+    const poserSntpServer = (args: string[]): string => {
       if (!args[0]) return '% Incomplete command.';
       const target = this.resolveNtpTarget(args[0]);
       if (!target) return `Translating "${args[0]}"...domain server (255.255.255.255)\n% Bad IP address or host name`;
@@ -7803,7 +7795,10 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       if (agent) agent.addServer(target, args[1]?.toLowerCase() === 'prefer', undefined, 'sntp');
       else dev._recordUnhandledConfigLine?.(`sntp server ${args.join(' ')}`);
       return '';
-    });
+    };
+    for (const trie of [this.privilegedTrie, this.configTrie]) {
+      trie.registerGreedy('sntp server', 'SNTP server (alias for ntp server)', poserSntpServer);
+    }
     this.configTrie.registerGreedy('sntp unicast', 'SNTP unicast client', (_args) => {
       const dev = this.d() as unknown as { _recordUnhandledConfigLine?: (line: string) => void };
       dev._recordUnhandledConfigLine?.('sntp unicast client');
