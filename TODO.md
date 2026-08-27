@@ -1028,3 +1028,12 @@ défauts — la méthode vaut d'être reprise sur le reliquat.
   à l'autre ; plusieurs terminaux pouvaient s'ouvrir sur un port console
   qui est unique ; `show system interface` ne suivait pas l'ordre du
   châssis ; l'auto-complétion était sensible à la casse.
+- `config system vdom` n'est pas modélisé sur le FortiGate — ouvert.
+  `show system vdom` résout `vdom` par abréviation vers `vdom-link` et rend
+  donc une AUTRE table, ce qui est le comportement d'abréviation de FortiOS
+  appliqué à une table absente. Le multi-vdom existe par ailleurs
+  (`set vdom-mode multi-vdom`, `config global`, vdom actif `root`).
+- `diagnose hardware sysinfo memory` n'est pas implémenté — ouvert. Le
+  refus nomme désormais la commande entière et non le verbe `diagnose`,
+  qui est connu ; reste à décider si un modèle mémoire mérite d'exister
+  (les seuils de conserve-mode sont déjà déclarés au schéma).

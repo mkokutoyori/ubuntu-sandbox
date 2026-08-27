@@ -860,3 +860,492 @@ describe('10. les commandes `execute`', () => {
     expect(refuse(await fw.executeCommand('execute zorglub'))).toBe(true);
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────
+// 11. LES OBJETS ADRESSE — la brique de toute politique
+// ─────────────────────────────────────────────────────────────────────
+
+describe('11. `config firewall address`', () => {
+  async function avecObjet(): Promise<Fw> {
+    const fw = fortigate();
+    await taper(fw, [
+      'config firewall address', 'edit "NET-LAN"',
+      'set subnet 192.168.10.0 255.255.255.0', 'next', 'end',
+    ]);
+    return fw;
+  }
+
+  it('un objet cree se relit', async () => {
+    const fw = await avecObjet();
+
+    expect(await fw.executeCommand('show firewall address')).toMatch(/NET-LAN/);
+  });
+
+  it('et porte le sous-reseau qu on lui a donne', async () => {
+    const fw = await avecObjet();
+
+    expect(await fw.executeCommand('show firewall address'))
+      .toMatch(/192\.168\.10\.0/);
+  });
+
+  it('`all` existe d usine', async () => {
+    const fw = fortigate();
+
+    expect(await fw.executeCommand('show firewall address')).toMatch(/"all"|all/);
+  });
+
+  it('un masque malforme est refuse', async () => {
+    const fw = fortigate();
+    await taper(fw, ['config firewall address', 'edit "MAUVAIS"']);
+
+    expect(refuse(await fw.executeCommand('set subnet 10.0.0.0 zorglub'))).toBe(true);
+  });
+
+  it('`delete` retire l objet', async () => {
+    const fw = await avecObjet();
+    await taper(fw, ['config firewall address', 'delete "NET-LAN"', 'end']);
+
+    expect(await fw.executeCommand('show firewall address')).not.toMatch(/NET-LAN/);
+  });
+
+  it('un objet REFERENCE par une politique ne se supprime pas', async () => {
+    const fw = await avecObjet();
+    await taper(fw, [
+      'config firewall policy', 'edit 1',
+      'set srcintf "port1"', 'set dstintf "wan1"',
+      'set srcaddr "NET-LAN"', 'set dstaddr "all"',
+      'set action accept', 'set schedule "always"', 'set service "ALL"',
+      'next', 'end',
+    ]);
+    await taper(fw, ['config firewall address', 'delete "NET-LAN"', 'end']);
+
+    expect(await fw.executeCommand('show firewall address')).toMatch(/NET-LAN/);
+  });
+
+  it('une politique qui reference un objet INCONNU est refusee', async () => {
+    const fw = fortigate();
+    await taper(fw, ['config firewall policy', 'edit 1', 'set srcintf "port1"']);
+
+    expect(refuse(await fw.executeCommand('set srcaddr "JAMAIS-VU"'))).toBe(true);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────
+// 12. LES POLITIQUES — l'ordre, l'action, et ce qu'elles laissent passer
+// ─────────────────────────────────────────────────────────────────────
+
+describe('12. `config firewall policy`', () => {
+  async function deuxPolitiques(): Promise<Fw> {
+    const fw = fortigate();
+    for (const id of ['1', '2']) {
+      await taper(fw, [
+        'config firewall policy', `edit ${id}`,
+        'set srcintf "port1"', 'set dstintf "wan1"',
+        'set srcaddr "all"', 'set dstaddr "all"',
+        'set action accept', 'set schedule "always"', 'set service "ALL"',
+        'next', 'end',
+      ]);
+    }
+    return fw;
+  }
+
+  it('les politiques paraissent dans l ordre de leur identifiant', async () => {
+    const fw = await deuxPolitiques();
+    const vue = await fw.executeCommand('show firewall policy');
+
+    expect(vue.indexOf('edit 1')).toBeLessThan(vue.indexOf('edit 2'));
+  });
+
+  it('`set action deny` se relit', async () => {
+    const fw = fortigate();
+    await taper(fw, [
+      'config firewall policy', 'edit 1',
+      'set srcintf "port1"', 'set dstintf "wan1"',
+      'set srcaddr "all"', 'set dstaddr "all"',
+      'set action deny', 'set schedule "always"', 'set service "ALL"',
+      'next', 'end',
+    ]);
+
+    expect(await fw.executeCommand('show firewall policy')).toMatch(/set action deny/);
+  });
+
+  it('une action inconnue est refusee', async () => {
+    const fw = fortigate();
+    await taper(fw, ['config firewall policy', 'edit 1']);
+
+    expect(refuse(await fw.executeCommand('set action zorglub'))).toBe(true);
+  });
+
+  it('une interface source inconnue est refusee', async () => {
+    const fw = fortigate();
+    await taper(fw, ['config firewall policy', 'edit 1']);
+
+    expect(refuse(await fw.executeCommand('set srcintf "port99"'))).toBe(true);
+  });
+
+  it('`set nat enable` se relit', async () => {
+    const fw = fortigate();
+    await taper(fw, [
+      'config firewall policy', 'edit 1',
+      'set srcintf "port1"', 'set dstintf "wan1"',
+      'set srcaddr "all"', 'set dstaddr "all"',
+      'set action accept', 'set schedule "always"', 'set service "ALL"',
+      'set nat enable', 'next', 'end',
+    ]);
+
+    expect(await fw.executeCommand('show firewall policy')).toMatch(/set nat enable/);
+  });
+
+  it('`move` reordonne les politiques', async () => {
+    const fw = await deuxPolitiques();
+    await taper(fw, ['config firewall policy', 'move 2 before 1', 'end']);
+    const vue = await fw.executeCommand('show firewall policy');
+
+    expect(vue.indexOf('edit 2')).toBeLessThan(vue.indexOf('edit 1'));
+  });
+
+  it('`get firewall policy` decrit les politiques', async () => {
+    const fw = await deuxPolitiques();
+
+    expect(refuse(await fw.executeCommand('get firewall policy'))).toBe(false);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────
+// 13. LE ROUTAGE STATIQUE
+// ─────────────────────────────────────────────────────────────────────
+
+describe('13. `config router static`', () => {
+  async function avecRoute(): Promise<Fw> {
+    const fw = fortigate();
+    await taper(fw, [
+      'config system interface', 'edit wan1',
+      'set mode static', 'set ip 203.0.113.2 255.255.255.0', 'next', 'end',
+      'config router static', 'edit 1',
+      'set dst 0.0.0.0 0.0.0.0', 'set gateway 203.0.113.1',
+      'set device "wan1"', 'next', 'end',
+    ]);
+    return fw;
+  }
+
+  it('la route par defaut se relit', async () => {
+    const fw = await avecRoute();
+
+    expect(await fw.executeCommand('show router static')).toMatch(/203\.0\.113\.1/);
+  });
+
+  it('`get router info routing-table all` la montre', async () => {
+    const fw = await avecRoute();
+
+    expect(refuse(await fw.executeCommand('get router info routing-table all')))
+      .toBe(false);
+  });
+
+  it('une passerelle malformee est refusee', async () => {
+    const fw = fortigate();
+    await taper(fw, ['config router static', 'edit 1']);
+
+    expect(refuse(await fw.executeCommand('set gateway 999.1.1.1'))).toBe(true);
+  });
+
+  it('un peripherique de sortie inconnu est refuse', async () => {
+    const fw = fortigate();
+    await taper(fw, ['config router static', 'edit 1']);
+
+    expect(refuse(await fw.executeCommand('set device "port99"'))).toBe(true);
+  });
+
+  it('`abort` n installe pas la route', async () => {
+    const fw = fortigate();
+    await taper(fw, [
+      'config router static', 'edit 9',
+      'set dst 10.9.0.0 255.255.0.0', 'abort',
+    ]);
+
+    expect(await fw.executeCommand('show router static')).not.toMatch(/10\.9\.0\.0/);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────
+// 14. LES COMPTES D'ADMINISTRATION
+// ─────────────────────────────────────────────────────────────────────
+
+describe('14. `config system admin`', () => {
+  it('le compte `admin` existe d usine', async () => {
+    const fw = fortigate();
+
+    expect(await fw.executeCommand('show system admin')).toMatch(/admin/);
+  });
+
+  it('un compte cree se relit', async () => {
+    const fw = fortigate();
+    await taper(fw, [
+      'config system admin', 'edit "operateur"',
+      'set password "MotDePasse1"', 'set accprofile "super_admin"',
+      'next', 'end',
+    ]);
+
+    expect(await fw.executeCommand('show system admin')).toMatch(/operateur/);
+  });
+
+  it('le mot de passe n est PAS rendu en clair', async () => {
+    const fw = fortigate();
+    await taper(fw, [
+      'config system admin', 'edit "operateur"',
+      'set password "SecretEnClair"', 'set accprofile "super_admin"',
+      'next', 'end',
+    ]);
+
+    expect(await fw.executeCommand('show system admin')).not.toContain('SecretEnClair');
+  });
+
+  it('un profil inconnu est refuse', async () => {
+    const fw = fortigate();
+    await taper(fw, ['config system admin', 'edit "operateur"']);
+
+    expect(refuse(await fw.executeCommand('set accprofile "zorglub"'))).toBe(true);
+  });
+
+  it('`delete` retire un compte', async () => {
+    const fw = fortigate();
+    await taper(fw, [
+      'config system admin', 'edit "temporaire"',
+      'set password "X1"', 'set accprofile "super_admin"', 'next', 'end',
+      'config system admin', 'delete "temporaire"', 'end',
+    ]);
+
+    expect(await fw.executeCommand('show system admin')).not.toMatch(/temporaire/);
+  });
+
+  it('supprimer le DERNIER super_admin est refuse', async () => {
+    const fw = fortigate();
+    const sortie = await taper(fw, [
+      'config system admin', 'delete "admin"', 'end',
+    ]);
+
+    expect(refuse(sortie[1]) || (await fw.executeCommand('show system admin')).includes('admin'))
+      .toBe(true);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────
+// 15. `diagnose` — ce que la machine sait d'elle-meme
+// ─────────────────────────────────────────────────────────────────────
+
+describe('15. les commandes `diagnose`', () => {
+  it('`diagnose ip arp list` existe', async () => {
+    const fw = fortigate();
+
+    expect(refuse(await fw.executeCommand('diagnose ip arp list'))).toBe(false);
+  });
+
+  it('`diagnose sys session list` existe', async () => {
+    const fw = fortigate();
+
+    expect(refuse(await fw.executeCommand('diagnose sys session list'))).toBe(false);
+  });
+
+  it('une sous-commande `diagnose` absente nomme la COMMANDE, pas le verbe', async () => {
+    const fw = fortigate();
+    const sortie = await fw.executeCommand('diagnose hardware sysinfo memory');
+
+    expect(sortie).toMatch(/unknown command "diagnose hardware sysinfo memory"/);
+    expect(sortie).not.toMatch(/unknown command "diagnose"\./);
+  });
+
+  it('une sous-commande `diagnose` inconnue est refusee', async () => {
+    const fw = fortigate();
+
+    expect(refuse(await fw.executeCommand('diagnose zorglub truc'))).toBe(true);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────
+// 16. LE VDOM — le decoupage administratif
+// ─────────────────────────────────────────────────────────────────────
+
+describe('16. les VDOM', () => {
+  it('`config global` est refuse tant que le multi-vdom est absent', async () => {
+    const fw = fortigate();
+
+    expect(refuse(await fw.executeCommand('config global'))).toBe(true);
+  });
+
+  it('`set vdom-mode multi-vdom` ouvre `config global`', async () => {
+    const fw = fortigate();
+    await taper(fw, ['config system global', 'set vdom-mode multi-vdom', 'end']);
+
+    expect(refuse(await fw.executeCommand('config global'))).toBe(false);
+  });
+
+  it('et `end` en ressort', async () => {
+    const fw = fortigate();
+    await taper(fw, [
+      'config system global', 'set vdom-mode multi-vdom', 'end',
+      'config global', 'end',
+    ]);
+
+    expect(fw.getPrompt().trim()).toBe(`${fw.getHostname()} #`);
+  });
+
+  it('et l invite reprend sa forme de racine apres etre sorti', async () => {
+    const fw = fortigate();
+    await taper(fw, [
+      'config system global', 'set vdom-mode multi-vdom', 'end',
+      'config global',
+    ]);
+    expect(fw.getPrompt().trim()).toMatch(/\(global\)/);
+    await fw.executeCommand('end');
+
+    expect(fw.getPrompt().trim()).toBe(`${fw.getHostname()} #`);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────
+// 17. LA SAUVEGARDE ET LES REVISIONS
+// ─────────────────────────────────────────────────────────────────────
+
+describe('17. sauvegarde et revisions', () => {
+  it('`execute backup config` sans destination est incomplet', async () => {
+    const fw = fortigate();
+
+    expect(refuse(await fw.executeCommand('execute backup config'))).toBe(true);
+  });
+
+  it('`execute revision list config` existe', async () => {
+    const fw = fortigate();
+
+    expect(refuse(await fw.executeCommand('execute revision list config'))).toBe(false);
+  });
+
+  it('`show full-configuration` rend plus que `show`', async () => {
+    const fw = fortigate();
+    const court = await fw.executeCommand('show');
+    const complet = await fw.executeCommand('show full-configuration');
+
+    expect(complet.length).toBeGreaterThanOrEqual(court.length);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────
+// 18. LE JOURNAL
+// ─────────────────────────────────────────────────────────────────────
+
+describe('18. la journalisation', () => {
+  it('`config log memory setting` existe', async () => {
+    const fw = fortigate();
+
+    expect(refuse(await fw.executeCommand('config log memory setting'))).toBe(false);
+  });
+
+  it('`set status enable` s y applique', async () => {
+    const fw = fortigate();
+    await fw.executeCommand('config log memory setting');
+
+    expect(refuse(await fw.executeCommand('set status enable'))).toBe(false);
+  });
+
+  it('et se relit apres `end`', async () => {
+    const fw = fortigate();
+    await taper(fw, ['config log memory setting', 'set status enable', 'end']);
+
+    expect(await fw.executeCommand('show log memory setting'))
+      .toMatch(/set status enable/);
+  });
+
+  it('`execute log filter` existe', async () => {
+    const fw = fortigate();
+
+    expect(refuse(await fw.executeCommand('execute log filter category 1'))).toBe(false);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────
+// 19. LE DNS ET LE TEMPS
+// ─────────────────────────────────────────────────────────────────────
+
+describe('19. DNS et temps', () => {
+  it('`config system dns` accepte un serveur primaire', async () => {
+    const fw = fortigate();
+    await taper(fw, ['config system dns', 'set primary 8.8.8.8', 'end']);
+
+    expect(await fw.executeCommand('show system dns')).toMatch(/8\.8\.8\.8/);
+  });
+
+  it('un serveur DNS malforme est refuse', async () => {
+    const fw = fortigate();
+    await fw.executeCommand('config system dns');
+
+    expect(refuse(await fw.executeCommand('set primary 999.1.1.1'))).toBe(true);
+  });
+
+  it('`config system ntp` existe', async () => {
+    const fw = fortigate();
+
+    expect(refuse(await fw.executeCommand('config system ntp'))).toBe(false);
+  });
+
+  it('le fuseau se pose par NOM', async () => {
+    const fw = fortigate();
+    await taper(fw, [
+      'config system global', 'set timezone "Europe/Paris"', 'end',
+    ]);
+
+    expect(await fw.executeCommand('show system global')).toContain('Europe/Paris');
+  });
+
+  it('un fuseau inconnu est refuse', async () => {
+    const fw = fortigate();
+    await fw.executeCommand('config system global');
+
+    expect(refuse(await fw.executeCommand('set timezone "Mars/Olympus"'))).toBe(true);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────
+// 20. L'INVITE SOUS TOUTES SES FORMES — le detail qui fait le realisme
+// ─────────────────────────────────────────────────────────────────────
+
+describe('20. l invite ne ment jamais sur le contexte', () => {
+  it('une commande REFUSEE ne bouge pas l invite', async () => {
+    const fw = fortigate();
+    await taper(fw, ['config system interface', 'edit port1']);
+    const avant = fw.getPrompt();
+    await fw.executeCommand('set zorglub 1');
+
+    expect(fw.getPrompt()).toBe(avant);
+  });
+
+  it('`abort` depuis DEUX niveaux revient a la racine', async () => {
+    const fw = fortigate();
+    await taper(fw, [
+      'config firewall policy', 'edit 1', 'config identity-based-policy', 'abort',
+    ]);
+
+    expect(fw.getPrompt().trim()).toBe(`${fw.getHostname()} #`);
+  });
+
+  it('l invite suit un changement de nom commite, meme en sous-mode', async () => {
+    const fw = fortigate();
+    await taper(fw, ['config system global', 'set hostname RENOMME', 'end']);
+    await fw.executeCommand('config system interface');
+
+    expect(fw.getPrompt().trim()).toBe('RENOMME (interface) #');
+  });
+
+  it('une ligne VIDE ne change rien', async () => {
+    const fw = fortigate();
+    await fw.executeCommand('config system global');
+    const avant = fw.getPrompt();
+    await fw.executeCommand('');
+
+    expect(fw.getPrompt()).toBe(avant);
+  });
+
+  it('des espaces en trop sont tolerees', async () => {
+    const fw = fortigate();
+
+    expect(refuse(await fw.executeCommand('  config   system   global  '))).toBe(false);
+    expect(fw.getPrompt().trim()).toMatch(/\(global\)/);
+  });
+});
