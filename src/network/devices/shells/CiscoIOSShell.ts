@@ -511,7 +511,7 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
         options),
       ...specsFromTrieRegistrations(
         (collector) => buildRoutingProtoConfig(
-          collector as unknown as CommandTrie, this.configRouterTrie, this, this.routingCfg),
+          collector as unknown as CommandTrie, new CommandTrie(), this, this.routingCfg),
         options),
       ...specsFromTrieRegistrations(
         (collector) => buildConfigCommands(collector as unknown as CommandTrie, this),

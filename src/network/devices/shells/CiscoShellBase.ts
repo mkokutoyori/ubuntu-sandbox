@@ -15,7 +15,7 @@
 import { CiscoFileSystem } from './cisco/CiscoFileSystem';
 import { CommandTable } from '@/cli/CommandTable';
 import {
-  specsFromTrieRegistrations, type AdapterKeyword,
+  specsFromTrieRegistrations, isCollector, type AdapterKeyword,
 } from '@/cli/commands/trieAdapter';
 import { newSession, type CliSession } from '@/cli/CliSession';
 import { parseCommand, uniqueChild } from '@/cli/CommandParser';
@@ -8048,7 +8048,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     // start / stop the per-device protocol agent so `show cdp neighbors`
     // reflects real learnt state (and stops learning when disabled).
     flag('ip cef', 'ip cef', 'CEF');
-    this.registerHttpServerOn(this.configTrie);
+    this.registerHttpServerOn(trie);
     // `ip routing` / `ipv6 unicast-routing` enable forms are owned by
     // the router (CiscoOspfCommands, device-specific); only record the
     // negation here so it's recognised on both vendors without
@@ -8057,7 +8057,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       this.configState.set('ip routing', false);
       return '';
     });
-    registerCiscoDnsCommands(this.configTrie, this.dnsCommandContext());
+    registerCiscoDnsCommands(trie, this.dnsCommandContext());
     trie.register('no banner motd', 'Clear MOTD banner', () => {
       const dev = this.d() as unknown as {
         _setSshBanner?: (b: string) => void;
@@ -8275,8 +8275,8 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       else if (which === 'incoming') dev._setIncomingBanner?.('');
       return '';
     });
-    registerLoggingConfigCommands(this.configTrie, this.loggingCommandContext());
-    registerSequenceNumbersCommand(this.configTrie, this.loggingCommandContext());
+    registerLoggingConfigCommands(trie, this.loggingCommandContext());
+    registerSequenceNumbersCommand(trie, this.loggingCommandContext());
     trie.registerGreedy('service timestamps', 'Timestamp log/debug messages', (args) =>
       this.applyServiceTimestamps(args, false));
     trie.registerGreedy('no service timestamps', 'Stop timestamping messages', (args) =>
@@ -8523,7 +8523,8 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
 
     // `exec-timeout <minutes> [seconds]` — persisted on the VTY block
     // so show running-config can echo it back exactly.
-    this.registerViewSubmodeOn(this.configViewTrie);
+    this.registerViewSubmodeOn(
+      isCollector(trie) ? new CommandTrie() : this.configViewTrie);
 
     /**
      * La commande existe-t-elle dans l'arbre de ce mode ?

@@ -231,6 +231,8 @@ export interface RouteEntry extends IIPv4Route {
   ifaceConfigured?: boolean;
 }
 
+const RECURSION_MAX = 4;
+
 // ─── Performance Counters (SNMP-ready) ──────────────────────────────
 
 export interface RouterCounters {
@@ -1203,10 +1205,45 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
    * un objet suivi qui tombe est une condition explicite posée par
    * l'opérateur, pas une panne d'interface.
    */
-  isRouteUsable(route: { iface: string; track?: string; permanent?: boolean }): boolean {
+  isRouteUsable(route: {
+    iface: string; track?: string; permanent?: boolean; nextHop?: IPAddress | null;
+  }): boolean {
     if (!this.isRouteTrackUp(route.track)) return false;
     if (route.permanent) return true;
-    return this.isRouteInterfaceUsable(route.iface);
+    if (route.iface !== '') return this.isRouteInterfaceUsable(route.iface);
+    return this.resolveRecursiveNextHop(route.nextHop ?? null) !== null;
+  }
+
+  resolveRecursiveNextHop(
+    nextHop: IPAddress | null, depth = 0,
+  ): { iface: string; nextHop: IPAddress } | null {
+    if (!nextHop || depth > RECURSION_MAX) return null;
+
+    const direct = this.findInterfaceForIP(nextHop);
+    if (direct) {
+      const name = direct.getName();
+      return this.isRouteInterfaceUsable(name) ? { iface: name, nextHop } : null;
+    }
+
+    const covering = this.routeCovering(nextHop);
+    if (!covering) return null;
+    if (covering.iface !== '' && covering.nextHop) {
+      return this.isRouteInterfaceUsable(covering.iface)
+        ? { iface: covering.iface, nextHop: covering.nextHop }
+        : null;
+    }
+    return this.resolveRecursiveNextHop(covering.nextHop ?? null, depth + 1);
+  }
+
+  private routeCovering(address: IPAddress): RouteEntry | null {
+    let best: RouteEntry | null = null;
+    for (const route of this.routingTable) {
+      if (!route.nextHop && route.iface === '') continue;
+      if (route.mask.toCIDR() === 0) continue;
+      if (!route.network.isInSameSubnet(address, route.mask)) continue;
+      if (!best || route.mask.toCIDR() > best.mask.toCIDR()) best = route;
+    }
+    return best;
   }
 
   installedRoutes(): RouteEntry[] {
@@ -1851,14 +1888,21 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
     }
 
     if (candidates.length === 0) return null;
-    if (candidates.length === 1) return candidates[0];
+    if (candidates.length === 1) return this.forwardable(candidates[0]);
     // Le plafond du protocole s'applique ICI, sur le groupe de chemins à
     // égalité, et non route par route : `maximum-paths` borne un NOMBRE
     // DE CHEMINS vers une destination, pas la validité d'une route.
     const plafond = this.maximumPathsFor(candidates[0].type);
     const retenus = candidates.length > plafond ? candidates.slice(0, plafond) : candidates;
-    if (retenus.length === 1) return retenus[0];
-    return retenus[this.ecmpCursor++ % retenus.length];
+    if (retenus.length === 1) return this.forwardable(retenus[0]);
+    return this.forwardable(retenus[this.ecmpCursor++ % retenus.length]);
+  }
+
+  private forwardable(route: RouteEntry): RouteEntry {
+    if (route.iface !== '') return route;
+    const resolved = this.resolveRecursiveNextHop(route.nextHop ?? null);
+    if (!resolved) return route;
+    return { ...route, iface: resolved.iface, nextHop: resolved.nextHop };
   }
 
   private findInterfaceForIP(targetIP: IPAddress): Port | null {

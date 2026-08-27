@@ -464,6 +464,7 @@ export class Firewall extends Equipment {
       loginBannerLines: (stage) => this.loginBanners.lines(stage),
       adminHttpsRedirect: () => this.management.adminHttpsRedirect(),
       adminServerCertificate: () => this.adminServerCertificate(),
+      managementServedAnywhere: (service) => this.management.servedAnywhere(service),
       adminHttpApp: () => this.adminHttpApp(),
     });
     this.portals = mgmt.portals;

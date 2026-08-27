@@ -127,11 +127,11 @@ describe('Closed UDP ports (RFC 1122 §4.1.3.1)', () => {
 });
 
 describe('UDP port bindings and the socket table', () => {
-  it('throws EADDRINUSE when binding an already-bound port', () => {
+  it('refuses an already-bound port, and says so rather than throwing', () => {
     const { pc2 } = buildLanTopology();
     pc2.udpBind(9999, () => {});
 
-    expect(() => pc2.udpBind(9999, () => {})).toThrow(/EADDRINUSE/);
+    expect(pc2.udpBind(9999, () => {})).toBe(false);
   });
 
   it('allows rebinding after udpClose', () => {
