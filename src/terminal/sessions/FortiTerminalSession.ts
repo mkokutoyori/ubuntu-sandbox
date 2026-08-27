@@ -11,7 +11,6 @@ import type { CapturedFrame } from '@/network/devices/firewall/diag/PacketCaptur
 import {
   snifferHeader, snifferTrailer, renderFrame,
 } from '@/network/devices/firewall/vendors/fortios/diag/snifferRenderer';
-import { getDefaultEventBus } from '@/events/EventBus';
 
 const PING_INTERVAL_MS = 300;
 const SNIFFER_POLL_MS = 50;
@@ -43,10 +42,8 @@ export class FortiTerminalSession extends CLITerminalSession {
 
   private watchPowerCycle(): void {
     if (!(this.device instanceof Firewall)) return;
-    const stop = getDefaultEventBus().subscribe('device.power-on', (event) => {
-      if ((event.payload as { id?: string }).id !== this.device.id) return;
-      this.rearmConsole();
-    });
+    const stop = this.device.getBus().subscribe(
+      'device.power-on', () => this.rearmConsole());
     this.registerTearDown(stop);
   }
 

@@ -21,7 +21,7 @@ import { LinkLayer } from '../layers/link/LinkLayer';
 import { TapPoint, type FrameTap, type DetachTap } from '../hardware/PortTap';
 import { EquipmentRegistry } from './EquipmentRegistry';
 import { DEVICE_CATALOG } from '../core/deviceCatalog';
-import { getDefaultEventBus, ForwardingEventBus, type IEventBus } from '@/events/EventBus';
+import { EventBus, type IEventBus } from '@/events/EventBus';
 
 export abstract class Equipment {
   readonly id: string;
@@ -127,7 +127,7 @@ export abstract class Equipment {
   private busOverride: IEventBus | null = null;
 
   /** This machine's internal bus (lazy) — see refactor-frame-only.md. */
-  private machineBus: ForwardingEventBus | null = null;
+  private machineBus: EventBus | null = null;
   private linkLayer: LinkLayer | null = null;
   private readonly captureTap = new TapPoint();
 
@@ -145,11 +145,12 @@ export abstract class Equipment {
   setEventBus(bus: IEventBus | null): void {
     this.busOverride = bus;
     for (const port of this.ports.values()) port.setEventBus(this.getBus());
+    EquipmentRegistry.getInstance().notifyDeviceChanged();
   }
 
   getBus(): IEventBus {
     if (this.busOverride) return this.busOverride;
-    if (!this.machineBus) this.machineBus = new ForwardingEventBus(getDefaultEventBus());
+    if (!this.machineBus) this.machineBus = new EventBus();
     return this.machineBus;
   }
 

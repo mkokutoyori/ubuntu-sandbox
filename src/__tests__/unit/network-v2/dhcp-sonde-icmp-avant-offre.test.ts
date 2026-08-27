@@ -5,7 +5,7 @@ import { Cable } from '@/network/hardware/Cable';
 import { resetCounters, MACAddress, IPAddress, SubnetMask } from '@/network/core/types';
 import { resetDeviceCounters } from '@/network/devices/DeviceFactory';
 import { Logger } from '@/network/core/Logger';
-import { getDefaultEventBus } from '@/events/EventBus';
+import type { Equipment } from '@/network/equipment/Equipment';
 
 beforeEach(() => {
   resetCounters(); resetDeviceCounters(); MACAddress.resetCounter(); Logger.reset();
@@ -16,11 +16,10 @@ const run = (d: unknown, c: string) =>
 
 interface TramesVues { arp: number; icmp: number }
 
-function compterTrames(): { lire(): TramesVues; stop(): void } {
+function compterTrames(equipement: Equipment): { lire(): TramesVues; stop(): void } {
   const vues: TramesVues = { arp: 0, icmp: 0 };
-  const stop = getDefaultEventBus().subscribe('port.frame.tx-requested', (e) => {
-    const frame = (e.payload as { frame?: { etherType?: number; payload?: unknown } }).frame;
-    if (!frame) return;
+  const stop = equipement.attachCapture(({ direction, frame }) => {
+    if (direction !== 'out') return;
     if (frame.etherType === 0x0806) { vues.arp++; return; }
     const ip = frame.payload as { protocol?: number } | undefined;
     if (ip?.protocol === 1) vues.icmp++;
@@ -49,7 +48,7 @@ async function laboratoire() {
 describe('avant d offrir, le serveur envoie un ICMP Echo', () => {
   it('un ICMP part vraiment sur le fil', async () => {
     const { routeur } = await laboratoire();
-    const compteur = compterTrames();
+    const compteur = compterTrames(routeur);
     await run(routeur, 'show ip dhcp pool');
     const avant = compteur.lire();
 

@@ -184,10 +184,118 @@ table de grappe globale, et `EquipmentRegistry` sert à retrouver un
 pair. Les deux relèvent de `PRD-Frame-Only-Refactor.md`, pas de ce
 document.
 
-### Incrément 5 — `getDefaultEventBus` est supprimé
-Le relais `ForwardingEventBus` ne forwarde plus vers un global ; le
-singleton disparaît. **Sortie** : un garde-fou structurel échoue si
-`getDefaultEventBus` réapparaît, comme le BRD §7 le prescrit.
+### Incrément 5a — plus rien en production ne LIT le bus partagé — **LIVRÉ**
+
+**Sortie atteinte** : `getDefaultEventBus().subscribe` n'apparaît nulle
+part hors de `src/events/` et des tests, et un cas structurel le garde
+en relançant la recherche à chaque exécution.
+
+Deux lecteurs restaient, tous deux trouvés APRÈS la mesure d'ouverture —
+qui n'en annonçait que trois, et disait vrai à l'instant où elle a été
+prise.
+
+**`FortiTerminalSession`** écoutait `device.power-on` sur le bus global
+puis **filtrait par identifiant**. Le filtre est l'aveu : la source était
+plus large que la question. Son appareil a son propre bus, et le filtre
+disparaît avec la migration — c'est le même signe qu'avec `useMacTable`
+à l'incrément 3.
+
+**`networkStore`** relaie `port.link.*` et `port.config.ip-changed` vers
+une révision de canevas. **Ce paragraphe disait que rien n'y était à
+corriger, et c'était faux** — le pont lisait bel et bien le bus global,
+à travers une variable locale que le garde-fou de cet incrément ne
+voyait pas. Corrigé à l'incrément 5b : le magasin surveille les
+appareils qu'il DÉTIENT. Le cas de comportement, lui, reste le bon : une
+interface qui tombe fait monter la révision sans qu'aucune action du
+magasin ne soit appelée.
+
+**Pourquoi le garde-fou porte sur l'ABONNEMENT et non sur le symbole.**
+Une machine qui relaie ses propres événements, à sens unique, vers un
+observateur est exactement ce que `PRD-Frame-Only-Refactor.md` autorise
+pour Logger, l'UI et les tests. Ce qui ne doit jamais revenir, c'est du
+code de production qui LIT ce relais — c'est la seule forme sous laquelle
+un bus partagé redevient un canal de communication.
+
+### Incrément 5b — le relais est COUPÉ (LIVRÉ)
+`Equipment.getBus()` rendait un `ForwardingEventBus` recopiant chaque
+événement interne vers le singleton global. Il rend un `EventBus` nu :
+plus aucun événement de machine ne quitte sa machine.
+
+**Le garde-fou de 5a était trop faible, et c'est ce qui l'a montré.** Il
+cherchait le texte `getDefaultEventBus().subscribe` ; un bus rangé dans
+une variable locale le contourne, et `networkStore` le contournait
+exactement ainsi. Une orthographe ne garde pas une propriété.
+`machine-bus-is-not-shared.test.ts` l'éprouve par le COMPORTEMENT : une
+machine publie, une autre n'entend rien, le bus partagé non plus. Deux
+TÉMOINS empêchent qu'un bus qui ne livrerait rien satisfasse la règle.
+
+**Ce que la coupure a rendu sourd, et qui est réparé.** Trois
+observateurs globaux vivaient du relais : `networkStore`,
+`TerminalManager` (gel des terminaux à l'extinction) et
+`FaultProjection` (tout son plan F1/F2/F3/F6). Plutôt que trois boucles
+identiques, `equipment/DeviceWatch.ts` porte UNE implantation :
+`watchDevices(topics, handler)` suit le registre, s'abonne au bus propre
+de chaque appareil qui arrive, se désabonne de celui qui part.
+
+**Ce qui reste sur le bus global, et pourquoi.** Un `Cable` est
+PHYSIQUEMENT partagé par deux machines — c'est ce qu'est un câble — donc
+`cable.frame.*` y demeure sans contredire la règle. `Logger` et
+`EquipmentRegistry` sont des observateurs à l'échelle du simulateur, pas
+des machines ; ils gardent leur canal, et aucune production ne le LIT.
+Le symbole `getDefaultEventBus` n'est donc pas encore supprimé : le
+supprimer demande de leur donner un nom qui dit ce qu'ils sont, et c'est
+l'objet de l'incrément 5c.
+
+**34 fichiers de test convertis**, mes trois sondes d'abord — il aurait
+été malvenu de prêcher contre le bus global dans des sondes qui le
+lisent. `support/wireWatch.ts` porte l'observation de trames une seule
+fois, là où trois suites de mirroring recopiaient le même
+`captureFramesOn`. Deux agents publiaient EN DUR sur le global
+(`MdnsAgent`, `LlmnrAgent`, 16 sites) alors qu'ils appartiennent à un
+hôte : ils publient sur le bus de cet hôte.
+
+### Incrément 5c — plus aucun repli vers un canal partagé (LIVRÉ)
+Vingt-huit fichiers de production portaient encore
+`busOverride ?? getDefaultEventBus()`. **Le repli EST le défaut** : il
+n'est atteint que lorsque personne n'a injecté de bus — c'est-à-dire
+lorsque l'objet n'appartient à aucune machine — et il publie alors dans
+un canal que toutes les machines partagent. `events/BusHolder.ts` porte
+la règle une seule fois : le bus qu'on m'a donné, sinon le mien.
+
+**Trois défauts réels que le relais cachait**, tous trouvés parce que la
+suppression les a rendus visibles :
+
+1. **Les quatre adaptateurs Oracle écoutaient le bus partagé** pendant
+   que l'instance publiait sur celui de son équipement. Ils ne
+   recevaient rien par eux-mêmes ; le relais leur recopiait tout. Sept
+   cas sont tombés à la coupure, cinq se sont relevés en leur donnant le
+   bus de l'hôte.
+2. **`OracleDatabase` s'abonnait au bus de l'instance À SA
+   CONSTRUCTION**, et `setEventBus` le remplaçait juste après. Son
+   abonnement restait donc sur le bus d'avant, et le ré-balayage SoD
+   après un `GRANT` ne se déclenchait que par le relais. `onBusChanged`
+   ré-abonne, ce qu'un changement de bus doit faire.
+3. **`SyslogAgent` et `LoggingConfig` s'abonnaient DEUX fois** — au bus
+   de la machine et au bus partagé — avec un filtre anti-doublon pour
+   réparer la conséquence. La seconde était morte de toute façon
+   (`device.syslog.entry` n'est publié que sur le bus de la machine) ;
+   `LoggingConfig` lit désormais `Logger` par son API propre, qui filtre
+   déjà par équipement.
+
+**Ce qui garde légitimement un canal partagé, et pourquoi.** `Cable`
+est PHYSIQUEMENT partagé par deux machines — c'est ce qu'est un câble.
+`Logger` est un observateur à l'échelle du simulateur et porte sa propre
+API d'abonnement. `EquipmentRegistry` n'est pas une machine mais le
+registre des machines : il possède maintenant son bus (il ne se replie
+plus sur un global), et c'est là que vivent `device.registered`,
+`device.deregistered`, `device.removed` et `registry.cleared` — que le
+magasin, `TerminalManager` et `FaultProjection` lisent.
+
+**Le garde-fou est structurel et grandit tout seul** :
+`no-component-falls-back-to-a-shared-bus.test.ts` REFAIT la recherche à
+chaque exécution et NOMME ses contrevenants, au lieu d'une liste écrite
+à la main qui pourrit. Trois fichiers y sont autorisés, chacun pour la
+raison ci-dessus.
 
 ---
 

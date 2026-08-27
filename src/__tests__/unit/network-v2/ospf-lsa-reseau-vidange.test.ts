@@ -25,7 +25,6 @@ import { CiscoRouter } from '@/network/devices/CiscoRouter';
 import { CiscoSwitch } from '@/network/devices/CiscoSwitch';
 import { Cable } from '@/network/hardware/Cable';
 import { VirtualTimeScheduler, __setDefaultScheduler } from '@/events/Scheduler';
-import { getDefaultEventBus } from '@/events/EventBus';
 
 let horloge: VirtualTimeScheduler;
 
@@ -104,7 +103,7 @@ describe('un LSA de reseau ne survit pas au reseau qu il decrit', () => {
   it('la vidange est ANNONCEE, donc inondee, et non simplement oubliee', async () => {
     const { r1, cables } = await labo(2);
     const vus: { lsType: number }[] = [];
-    const stop = getDefaultEventBus().subscribe('ospf.lsa.flushed', (e) => {
+    const stop = r1.getBus().subscribe('ospf.lsa.flushed', (e) => {
       vus.push((e.payload as { lsa: { lsType: number } }).lsa);
     });
     cables[1].disconnect();

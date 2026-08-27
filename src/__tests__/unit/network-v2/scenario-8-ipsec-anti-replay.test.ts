@@ -35,7 +35,7 @@ import { resetCounters, ETHERTYPE_IPV4, IP_PROTO_ESP, EthernetFrame, IPv4Packet 
 import { resetDeviceCounters } from '@/network/devices/DeviceFactory';
 import { EquipmentRegistry } from '@/network/equipment/EquipmentRegistry';
 import { Logger } from '@/network/core/Logger';
-import { getDefaultEventBus } from '@/events/EventBus';
+import type { Equipment } from '@/network/equipment/Equipment';
 import type { Port } from '@/network/hardware/Port';
 
 interface AntiReplayLog {
@@ -44,10 +44,9 @@ interface AntiReplayLog {
 
 function captureAntiReplayLog(): AntiReplayLog {
   const log: AntiReplayLog = { entries: [] };
-  getDefaultEventBus().subscribe('log', (e) => {
-    const p = e.payload as { source?: string; event?: string; message?: string };
-    if (p.event === 'ipsec:anti-replay') {
-      log.entries.push({ deviceId: p.source || '', message: p.message || '' });
+  Logger.subscribe((entry) => {
+    if (entry.event === 'ipsec:anti-replay') {
+      log.entries.push({ deviceId: entry.source || '', message: entry.message || '' });
     }
   });
   return log;
@@ -57,16 +56,15 @@ interface WireProbe {
   espFrames: EthernetFrame[];
 }
 
-function probeInboundEsp(deviceId: string, portName: string): WireProbe {
+function probeInboundEsp(device: Equipment, portName: string): WireProbe {
   const probe: WireProbe = { espFrames: [] };
-  getDefaultEventBus().subscribe('port.frame.received', (e) => {
-    const p = e.payload as { deviceId?: string; portName?: string; frame: EthernetFrame };
-    if (p.deviceId !== deviceId || p.portName !== portName) return;
-    if (p.frame.etherType !== ETHERTYPE_IPV4) return;
-    const ip = p.frame.payload as IPv4Packet | undefined;
+  device.attachCapture(({ direction, frame }) => {
+    if (direction !== 'in') return;
+    if (frame.etherType !== ETHERTYPE_IPV4) return;
+    const ip = frame.payload as IPv4Packet | undefined;
     if (!ip || ip.protocol !== IP_PROTO_ESP) return;
-    probe.espFrames.push(cloneFrame(p.frame));
-  });
+    probe.espFrames.push(cloneFrame(frame));
+  }, portName);
   return probe;
 }
 
@@ -215,7 +213,7 @@ describe('Scenario 8 — IPsec anti-replay detection and prevention', () => {
   describe('8.B — replayed ESP frame is dropped and counted', () => {
     it('a single re-injected ESP frame increments #pkts replay failed (rcv) by exactly 1 on R1', async () => {
       const { r1, pc2, clock } = await buildTunnel();
-      const probe = probeInboundEsp(r1.getId(), 'GigabitEthernet0/1');
+      const probe = probeInboundEsp(r1, 'GigabitEthernet0/1');
       await clock.advanceUntilSettled(pc2.executeCommand('ping -c 3 192.168.1.10'));
       expect(probe.espFrames.length).toBeGreaterThan(0);
 
@@ -228,7 +226,7 @@ describe('Scenario 8 — IPsec anti-replay detection and prevention', () => {
 
     it('the replayed frame is never decapsulated: #pkts decaps does not grow', async () => {
       const { r1, pc2, clock } = await buildTunnel();
-      const probe = probeInboundEsp(r1.getId(), 'GigabitEthernet0/1');
+      const probe = probeInboundEsp(r1, 'GigabitEthernet0/1');
       await clock.advanceUntilSettled(pc2.executeCommand('ping -c 3 192.168.1.10'));
 
       const decapsBefore = readDecapsCounter(await r1.executeCommand('show crypto ipsec sa'));
@@ -242,7 +240,7 @@ describe('Scenario 8 — IPsec anti-replay detection and prevention', () => {
     it('emits an ipsec:anti-replay log per drop with SPI, seq and peer', async () => {
       const log = captureAntiReplayLog();
       const { r1, pc2, clock } = await buildTunnel();
-      const probe = probeInboundEsp(r1.getId(), 'GigabitEthernet0/1');
+      const probe = probeInboundEsp(r1, 'GigabitEthernet0/1');
       await clock.advanceUntilSettled(pc2.executeCommand('ping -c 2 192.168.1.10'));
 
       const port = r1.getPort('GigabitEthernet0/1') as Port;
@@ -260,7 +258,7 @@ describe('Scenario 8 — IPsec anti-replay detection and prevention', () => {
   describe('8.C — N re-injected frames produce exactly N counted drops', () => {
     it('replaying every captured ESP frame once increments the counter by that same N', async () => {
       const { r1, pc2, clock } = await buildTunnel();
-      const probe = probeInboundEsp(r1.getId(), 'GigabitEthernet0/1');
+      const probe = probeInboundEsp(r1, 'GigabitEthernet0/1');
       await clock.advanceUntilSettled(pc2.executeCommand('ping -c 4 192.168.1.10'));
       expect(probe.espFrames.length).toBeGreaterThanOrEqual(4);
 
@@ -274,7 +272,7 @@ describe('Scenario 8 — IPsec anti-replay detection and prevention', () => {
 
     it('replaying the same frame K times counts K, not 1 (each attempt is scored)', async () => {
       const { r1, pc2, clock } = await buildTunnel();
-      const probe = probeInboundEsp(r1.getId(), 'GigabitEthernet0/1');
+      const probe = probeInboundEsp(r1, 'GigabitEthernet0/1');
       await clock.advanceUntilSettled(pc2.executeCommand('ping -c 2 192.168.1.10'));
 
       const before = readReplayCounter(await r1.executeCommand('show crypto ipsec sa'));
@@ -288,7 +286,7 @@ describe('Scenario 8 — IPsec anti-replay detection and prevention', () => {
   describe('8.D — concurrent legitimate traffic is unaffected', () => {
     it('a ping issued after a replay salvo still succeeds end-to-end', async () => {
       const { r1, pc2, clock } = await buildTunnel();
-      const probe = probeInboundEsp(r1.getId(), 'GigabitEthernet0/1');
+      const probe = probeInboundEsp(r1, 'GigabitEthernet0/1');
       await clock.advanceUntilSettled(pc2.executeCommand('ping -c 2 192.168.1.10'));
 
       const port = r1.getPort('GigabitEthernet0/1') as Port;
@@ -345,7 +343,7 @@ describe('Scenario 8 — IPsec anti-replay detection and prevention', () => {
       await r1.executeCommand('configure terminal');
       await r1.executeCommand('crypto ipsec security-association replay window-size 0');
       await r1.executeCommand('end');
-      const probe = probeInboundEsp(r1.getId(), 'GigabitEthernet0/1');
+      const probe = probeInboundEsp(r1, 'GigabitEthernet0/1');
       await clock.advanceUntilSettled(pc2.executeCommand('ping -c 2 192.168.1.10'));
 
       const engine = (r1 as unknown as {
@@ -366,7 +364,7 @@ describe('Scenario 8 — IPsec anti-replay detection and prevention', () => {
   describe('8.G — cross-check counter consistency', () => {
     it('the delta reported by the CLI matches the internal SA counter to the unit', async () => {
       const { r1, pc2, clock } = await buildTunnel();
-      const probe = probeInboundEsp(r1.getId(), 'GigabitEthernet0/1');
+      const probe = probeInboundEsp(r1, 'GigabitEthernet0/1');
       await clock.advanceUntilSettled(pc2.executeCommand('ping -c 3 192.168.1.10'));
 
       const port = r1.getPort('GigabitEthernet0/1') as Port;

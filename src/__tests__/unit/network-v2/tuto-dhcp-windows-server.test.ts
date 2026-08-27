@@ -9,7 +9,6 @@ import { Cable } from '@/network/hardware/Cable';
 import { resetDeviceCounters } from '@/network/devices/DeviceFactory';
 import { Logger } from '@/network/core/Logger';
 import { PowerShellSubShell } from '@/terminal/subshells/PowerShellSubShell';
-import { getDefaultEventBus } from '@/events/EventBus';
 
 beforeEach(() => {
   resetCounters();
@@ -313,7 +312,7 @@ describe('DHCP Windows — un relais injoignable ne echoue plus en SILENCE', () 
     router.configureInterface('GigabitEthernet0/1', new IPAddress('192.168.50.1'), new SubnetMask('255.255.255.0'));
 
     const seen: Array<Record<string, unknown>> = [];
-    getDefaultEventBus().subscribe('dhcp.server.reply-undeliverable',
+    srv.getBus().subscribe('dhcp.server.reply-undeliverable',
       (e: { payload: Record<string, unknown> }) => seen.push(e.payload));
 
     const sh = ps(srv);

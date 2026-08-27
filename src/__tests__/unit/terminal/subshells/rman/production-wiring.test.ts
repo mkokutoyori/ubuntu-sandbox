@@ -1,23 +1,32 @@
 /**
  * Production wiring — ReactiveRmanSubShell.create() participates in the
- * shared IEventBus, with an automatic logger actor.
+ * bus of the MACHINE it runs on, with an automatic logger actor.
  *
  * When a sub-shell is built for a real device:
- *   - the session forwards rman.* topics onto the shared bus
+ *   - the session forwards rman.* topics onto that device's bus
  *   - a RmanLoggerActor is bound for the session lifetime and emits
  *     `log` events into the project-wide logging pipeline
  *   - dispose() tears the actor down
  */
 
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { getDefaultEventBus, __setDefaultEventBus, EventBus } from '@/events/EventBus';
+import { __setDefaultEventBus, EventBus, type IEventBus } from '@/events/EventBus';
 import type { DomainEvent } from '@/events/types';
 import { ReactiveRmanSubShell } from '@/terminal/subshells/rman';
 import { removeOracleDatabase } from '@/terminal/commands/database';
 
+const deviceBuses = new Map<string, IEventBus>();
+
+function busOf(id: string): IEventBus {
+  let bus = deviceBuses.get(id);
+  if (!bus) { bus = new EventBus(); deviceBuses.set(id, bus); }
+  return bus;
+}
+
 function fakeDevice(id: string) {
   return {
     id,
+    getBus: () => busOf(id),
     writeFileFromEditor: () => true,
     readFile: () => '',
     deleteFile: () => true,
@@ -33,7 +42,7 @@ describe('ReactiveRmanSubShell — shared-bus wiring', () => {
   });
 
   it('forwards rman.* events to the default shared bus', () => {
-    const bus = getDefaultEventBus();
+    const bus = busOf('prod-A');
     const seen: DomainEvent[] = [];
     bus.subscribeAll(e => seen.push(e));
 
@@ -51,7 +60,7 @@ describe('ReactiveRmanSubShell — shared-bus wiring', () => {
   });
 
   it('emits log events via the RmanLoggerActor', () => {
-    const bus = getDefaultEventBus();
+    const bus = busOf('prod-A');
     const logs: DomainEvent[] = [];
     bus.subscribe('log', e => logs.push(e));
 
@@ -66,7 +75,7 @@ describe('ReactiveRmanSubShell — shared-bus wiring', () => {
   });
 
   it('two concurrent sessions stay scoped by sessionId on the shared bus', () => {
-    const bus = getDefaultEventBus();
+    const bus = busOf('prod-A');
     const seenByA: string[] = [];
     bus.subscribeWhere(
       'rman.job.completed',
@@ -87,7 +96,7 @@ describe('ReactiveRmanSubShell — shared-bus wiring', () => {
   });
 
   it('dispose() unbinds the logger actor', () => {
-    const bus = getDefaultEventBus();
+    const bus = busOf('prod-A');
     const logs: DomainEvent[] = [];
     bus.subscribe('log', e => logs.push(e));
 

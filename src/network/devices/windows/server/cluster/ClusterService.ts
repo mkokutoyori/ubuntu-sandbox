@@ -24,7 +24,8 @@ import type { EndHost, UdpDelivery } from '@/network/devices/EndHost';
 import { IPAddress } from '@/network/core/types';
 import type { IScheduler, TimerHandle } from '@/events/Scheduler';
 import { getDefaultScheduler } from '@/events/Scheduler';
-import { getDefaultEventBus, type IEventBus } from '@/events/EventBus';
+import { type IEventBus } from '@/events/EventBus';
+import { detachedBus } from '@/events/BusHolder';
 import { ClusterGroupRegistry } from './ClusterResourceGroup';
 
 export const CLUSTER_HEARTBEAT_PORT = 3343;
@@ -67,7 +68,7 @@ export class ClusterService {
     readonly selfNodeName: string,
     peers: readonly ClusterPeerConfig[],
     private readonly getScheduler: () => IScheduler = () => getDefaultScheduler(),
-    private readonly bus: IEventBus = getDefaultEventBus(),
+    private readonly bus: IEventBus = detachedBus(),
   ) {
     const now = this.getScheduler().now();
     for (const p of peers) this.peerState.set(p.name, { ip: p.ip, lastHeartbeatAt: now });

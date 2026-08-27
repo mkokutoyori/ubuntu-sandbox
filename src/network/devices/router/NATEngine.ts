@@ -17,7 +17,8 @@ import type { UDPPacket, TCPPacket, ICMPPacket } from '../../core/types';
 import { computeTcpChecksum, computeUdpChecksum } from '../../tcp/types';
 import type { TcpSegment, UdpChecksumInput } from '../../tcp/types';
 import { tryIpToUint32, uint32ToIp, prefixLengthToMaskUint32 } from '../../core/ip';
-import { getDefaultEventBus, type IEventBus } from '@/events/EventBus';
+import { type IEventBus } from '@/events/EventBus';
+import { BusHolder } from '@/events/BusHolder';
 import { Logger } from '../../core/Logger';
 import {
   NATSignalStore,
@@ -192,7 +193,7 @@ export class NATEngine {
   private outboundTranslations = 0;
 
   // ─── Reactive plumbing (Phase 4b2-NAT) ────────────────────────────
-  private busOverride: IEventBus | null = null;
+  private readonly busHolder = new BusHolder();
   private deviceId: string = '';
   private routerName: string = '';
   private readonly signalStore = new NATSignalStore();
@@ -201,7 +202,7 @@ export class NATEngine {
   private signalRefreshActor: NATSignalRefreshActor | null = null;
 
   setEventBus(bus: IEventBus | null): void {
-    this.busOverride = bus;
+    this.busHolder.set(bus);
     this.attachActors();
   }
   setDeviceId(id: string, routerName?: string): void {
@@ -209,7 +210,7 @@ export class NATEngine {
     if (routerName !== undefined) this.routerName = routerName;
   }
   getDeviceId(): string { return this.deviceId; }
-  private getBus(): IEventBus { return this.busOverride ?? getDefaultEventBus(); }
+  private getBus(): IEventBus { return this.busHolder.get(); }
   private deviceRef() { return { deviceId: this.deviceId, routerName: this.routerName }; }
 
   private attachActors(): void {

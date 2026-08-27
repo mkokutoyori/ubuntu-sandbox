@@ -321,6 +321,8 @@ export abstract class LinuxMachine extends EndHost
       () => `${this.ipForwardEnabled ? 1 : 0}\n`, 0o644);
     this.executor.vfs.registerGeneratedFile('/proc/sys/net/ipv4/tcp_tw_reuse',
       () => `${this.socketTable.getTcpTwReuse() ? 1 : 0}\n`, 0o644);
+    this.executor.vfs.registerGeneratedFile('/proc/sys/net/ipv4/icmp_echo_ignore_broadcasts',
+      () => `${this.ignoresBroadcastEcho() ? 1 : 0}\n`, 0o644);
     this.executor.setSessionTable(this.sessionTable);
     this.executor.setTcpProbe((ip, port) => {
       if (ip.includes(':')) return this.tcpProbeSyncIPv6(ip, port);
@@ -3915,6 +3917,10 @@ export abstract class LinuxMachine extends EndHost
    * survives daemon-reload. Used by domain adapters (Oracle, ASM, …)
    * that want to expose themselves to the standard Linux service tooling.
    */
+  systemdUnitMainPid(name: string): number | undefined {
+    return this.executor.serviceMgr.status(name)?.mainPid;
+  }
+
   installSystemdUnit(
     spec: {
       name: string;

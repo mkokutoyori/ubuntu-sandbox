@@ -61,7 +61,9 @@ export class LinuxDhcpdService {
   private served: ServedInterface[] = [];
   private lastConfig: DhcpdConfig | null = null;
 
-  constructor(private readonly host: EndHost, private readonly fs: DhcpdFsPort) {}
+  constructor(private readonly host: EndHost, private readonly fs: DhcpdFsPort) {
+    this.engine.setEventBus(host.getBus());
+  }
 
   isRunning(): boolean { return this.running; }
 

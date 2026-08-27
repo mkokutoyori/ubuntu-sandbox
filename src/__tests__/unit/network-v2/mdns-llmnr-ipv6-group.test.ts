@@ -17,7 +17,7 @@ import { LinuxPC } from '@/network/devices/LinuxPC';
 import { CiscoSwitch } from '@/network/devices/CiscoSwitch';
 import { Cable } from '@/network/hardware/Cable';
 import { IPv6Address, IPv6Packet } from '@/network/core/types';
-import { getDefaultEventBus } from '@/events/EventBus';
+import type { Equipment } from '@/network/equipment/Equipment';
 import { MDNS_IPV6_GROUP, MDNS_BINDING, MDNS_PORT } from '@/network/mdns/types';
 import { LLMNR_IPV6_GROUP, LLMNR_BINDING, LLMNR_PORT } from '@/network/llmnr/types';
 
@@ -29,20 +29,17 @@ interface V6Datagram {
 }
 
 /** The v6 UDP datagrams actually requested on a port. */
-function observeWire(): V6Datagram[] {
+function observeWire(source: Equipment): V6Datagram[] {
   const seen: V6Datagram[] = [];
-  getDefaultEventBus().subscribe('port.frame.tx-requested', (e) => {
-    const p = e.payload as {
-      deviceId: string;
-      frame: { dstMAC: { toString(): string }; payload: unknown };
-    };
-    const ip = p.frame?.payload as IPv6Packet | undefined;
+  source.attachCapture(({ direction, frame }) => {
+    if (direction !== 'out') return;
+    const ip = frame.payload as IPv6Packet | undefined;
     if (!ip || ip.type !== 'ipv6') return;
     const udp = ip.payload as { type?: string; destinationPort?: number } | undefined;
     if (udp?.type !== 'udp') return;
     seen.push({
-      deviceId: p.deviceId,
-      dstMAC: p.frame.dstMAC.toString().toLowerCase(),
+      deviceId: source.getId(),
+      dstMAC: frame.dstMAC.toString().toLowerCase(),
       destinationIP: ip.destinationIP.toString(),
       destinationPort: udp.destinationPort ?? -1,
     });
@@ -88,7 +85,7 @@ describe('mDNS sends on ff02::fb', () => {
     agent!.start();
     await agent!.whenReady();
 
-    const wire = observeWire();
+    const wire = observeWire(a);
     expect(agent!.announce()).toBe(true);
 
     const toGroup = wire.filter((d) => d.destinationIP === MDNS_IPV6_GROUP);
@@ -105,7 +102,7 @@ describe('LLMNR sends on ff02::1:3', () => {
     expect(agent).toBeTruthy();
     agent!.start();
 
-    const wire = observeWire();
+    const wire = observeWire(a);
     await agent!.resolve('beta');
 
     const toGroup = wire.filter((d) => d.destinationIP === LLMNR_IPV6_GROUP);

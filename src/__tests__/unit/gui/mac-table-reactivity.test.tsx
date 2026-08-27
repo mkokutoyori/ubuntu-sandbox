@@ -8,7 +8,6 @@ import { Cable } from '@/network/hardware/Cable';
 import { IPAddress, SubnetMask, resetCounters } from '@/network/core/types';
 import { resetDeviceCounters } from '@/network/devices/DeviceFactory';
 import { Logger } from '@/network/core/Logger';
-import { getDefaultEventBus } from '@/events/EventBus';
 import { useMacTable } from '@/react/hooks';
 
 beforeEach(() => {
@@ -22,7 +21,6 @@ function lan() {
   const b = new LinuxPC('linux-pc', 'pcB', 0, 0);
   const sw = new GenericSwitch('switch-generic', 'sw1', 8, 0, 0);
   a.powerOn(); b.powerOn(); sw.powerOn();
-  sw.setEventBus(getDefaultEventBus());
   new Cable('c1').connect(a.getPorts()[0], sw.getPorts()[0]);
   new Cable('c2').connect(b.getPorts()[0], sw.getPorts()[1]);
   const mask = new SubnetMask('255.255.255.0');
@@ -42,10 +40,8 @@ describe('switch MAC bus events', () => {
   it('learning publishes switch.mac.learned with the entry', async () => {
     const { a, sw } = lan();
     const learned: { mac: string; port: string }[] = [];
-    const off = getDefaultEventBus().subscribe('switch.mac.learned', (e) => {
-      if (e.payload.deviceId === sw.getId()) {
-        learned.push({ mac: e.payload.mac, port: e.payload.port });
-      }
+    const off = sw.getBus().subscribe('switch.mac.learned', (e) => {
+      learned.push({ mac: e.payload.mac, port: e.payload.port });
     });
     await a.executeCommand('ping -c 1 10.0.0.2');
     off();
@@ -57,9 +53,7 @@ describe('switch MAC bus events', () => {
   it('clearMACTable publishes switch.mac.cleared', () => {
     const { sw } = lan();
     let cleared = 0;
-    const off = getDefaultEventBus().subscribe('switch.mac.cleared', (e) => {
-      if (e.payload.deviceId === sw.getId()) cleared++;
-    });
+    const off = sw.getBus().subscribe('switch.mac.cleared', () => { cleared++; });
     sw.clearMACTable();
     off();
     expect(cleared).toBe(1);

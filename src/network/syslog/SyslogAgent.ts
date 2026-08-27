@@ -1,5 +1,4 @@
 import type { IEventBus } from '@/events/EventBus';
-import { getDefaultEventBus } from '@/events/EventBus';
 import { getDefaultScheduler, type IScheduler, type TimerHandle } from '@/events/Scheduler';
 import { DuplicateEventFilter } from '@/events/DuplicateEventFilter';
 import {
@@ -193,7 +192,6 @@ export class SyslogAgent {
 
   private installSubscribers(): void {
     const localBus = this.getBus();
-    const defaultBus = getDefaultEventBus();
     const once = new DuplicateEventFilter();
     const subscribeEntryOn = (bus: IEventBus): void => {
       this.unsubscribers.push(bus.subscribeWhere(
@@ -212,7 +210,6 @@ export class SyslogAgent {
       ));
     };
     subscribeEntryOn(localBus);
-    if (localBus !== defaultBus) subscribeEntryOn(defaultBus);
   }
 
   private onLoggingEntry(p: {

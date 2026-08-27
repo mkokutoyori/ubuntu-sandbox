@@ -172,6 +172,142 @@ Vendor-agnostic shell layer: `IShell`/`IShellBase`, `AbstractShell`, `ShellFacto
   - `SELECT … FOR UPDATE` row-level locking (rapport 07, item #49): `LockManager.rowLocks` (`lock/LockManager.ts`) genuinely tracks which session owns which row, and `NOWAIT`/`SKIP LOCKED` were already correctly wired in `OracleExecutor.lockForUpdateRows()` — but a *plain* `FOR UPDATE` (no wait clause) or `FOR UPDATE WAIT n` against a row another session already held just fell through to `out.push(row)` and silently handed over the row as if the lock had been granted, without ever calling `acquireRowLock`. Two sessions could each believe they held the same row's lock — the core mutual-exclusion guarantee FOR UPDATE exists for was broken exactly when no `NOWAIT` was written. Real Oracle instead blocks the statement (indefinitely for plain `FOR UPDATE`, up to `n` seconds for `WAIT n`) until the holder commits/rolls back, but `OracleExecutor`/`OracleDatabase`/`SQLPlusSession`/`SqlPlusSubShell` are a fully synchronous call chain with no per-statement suspend/resume concept — genuine blocking would need a promise-based wait queue in `LockManager` threaded through that whole chain as `async`, which `ISubShell.processLine`'s `SubShellResult | Promise<SubShellResult>` signature and `interruptForeground()` hook (`terminal/subshells/ISubShell.ts`) already anticipate structurally (per its doc comment, another subshell already returns async), but which touches the single synchronous `OracleExecutor.execute()` core shared by every statement type (DDL, DML, PL/SQL, triggers, scheduler jobs) — a cross-cutting refactor, not a bounded fix. Fixed the bounded half instead: a plain `FOR UPDATE` or `WAIT n` against an already-held row now denies immediately (`ORA-00054`/`ORA-30006` respectively) rather than silently granting a second, phantom lock — trading "hangs forever" for "fails fast," which is honest given the architectural constraint and strictly safer than the previous silent double-grant. `LockManager.lockTable()` (TM/table locks, not row locks) has the identical "record a fake wait, never actually suspend the caller" pattern — tracked separately as item #50, not touched here.
   - TM (table) lock enforcement for ordinary DML (rapport 07, item #50): `LockActor` used to acquire a DML statement's TM lock reactively, off the `oracle.dml.executed` event — which only fires *after* `OracleExecutor.execute()` has already run the INSERT/UPDATE/DELETE against storage (`emitForStatement`/`emitDml` are called post-execution). The lock therefore never protected anything; it was pure `V$LOCK`/`DBA_DML_LOCKS` bookkeeping applied after the fact, and `LockManager.acquireDmlLock`'s catch swallowed everything but `DeadlockError` on top of that. A session holding an explicit `LOCK TABLE t IN EXCLUSIVE MODE` (or any stronger mode) could not actually stop another session's plain DML on that table. Fixed: `OracleExecutor.dispatchStatement()` now calls a new `acquireDmlTableLock()` *before* dispatching to `executeInsert`/`executeUpdate`/`executeDelete`, and `LockManager.acquireDmlLock()` denies immediately (`ORA-00054`) on a real conflicting held lock instead of registering `lockTable()`'s usual fake-pending/wait-for-later entry — same "can't block, so fail fast rather than silently let it through" reasoning as item #49, and low blast radius since ordinary DML's own Row-X(3) mode never conflicts with another session's plain DML (only with an explicit stronger `LOCK TABLE`). `LockActor` no longer subscribes to `oracle.dml.executed` at all (release-side subscriptions — commit/rollback/disconnect — are unchanged and still correct). Explicit `LOCK TABLE`'s own fake-pending/`DBA_WAITERS`/`DBA_BLOCKERS`/`V$SESSION.BLOCKING_SESSION` observability (`execLockTable`, still calling `lockTable()` directly) was deliberately left untouched — those views are a deliberately-accepted simplification for that specific statement, not the MAJEUR-rated complaint this item targets. Not attempted: deadlock detection reachable via pure DML (rated MINEUR in the source audit, and structurally still unreachable regardless of acquisition timing since two Row-X(3) locks never conflict with each other in the compatibility matrix — deadlock among plain DML statements requires a modeled conflict path this simulator doesn't have).
 
+### Couches (`src/network/layers/`)
+
+Le modèle TCP/IP du simulateur (`docs/BRD-Modele-TCP-IP.md`, agent
+`mandeng`). Avant lui il n'existait **aucune notion de couche** : chaque
+protocole réimplémentait sa propre descente jusqu'au câble, et le BRD
+mesure la facture — cinq acheminements IPv4 indépendants, soixante-cinq
+fichiers écrivant directement sur le fil. Chaque phase est livrable
+seule et **ne change aucune sémantique protocolaire** : un moteur qui
+émettait un paquet correct émet le même après migration.
+
+- `link/LinkLayer.ts` (phase 1, complète) — la classification de la
+  destination, la réception, et l'émission. Les dix répertoires de
+  couche lien sont déclarés migrés ; des cas structurels échouent en
+  NOMMANT tout répertoire migré qui appellerait encore `sendFrame` ou
+  poserait un `srcMAC:` à la main.
+- `internet/InternetLayer.ts` (phase 2, incrément 1) — **la règle du TTL
+  vit en un seul lieu**. `decrementForForwarding` décrémente, décide de
+  l'expiration et recalcule la somme de contrôle d'en-tête ; les cinq
+  corps que le BRD avait comptés la lisent (`Router.forwardPacket`,
+  `Router.forwardMulticast`, `EndHost.forwardIPv4`,
+  `SwitchSvi.forwardIpPacket`, l'étape du pare-feu), chacun gardant ce
+  qui lui est propre — son journal, son compteur, et la façon dont il
+  annonce l'expiration. **Ce lot ne change aucun comportement, et c'est
+  vérifié plutôt qu'espéré** : j'avais d'abord lu `SwitchSvi` comme
+  décrémentant sans garde, donc comme émettant des paquets à TTL 0 ; sa
+  garde est en tête de `forwardIpPacket`, écrite `ttl <= 1` AVANT le
+  décrément là où le routeur écrit `ttl - 1 <= 0` APRÈS — deux
+  formulations équivalentes. Les cinq sites étaient d'accord ; la
+  déduplication est donc pure, et la sonde le dit dans son en-tête.
+  **Incrément 2** : la CLASSE d'une destination IPv4 (`limited-broadcast`,
+  `link-local-multicast`, `multicast`, `unicast`) se décide au même
+  endroit. Le routeur redécoupait le bloc à la main
+  (`destOctets[0] >= 224 && <= 239`), l'hôte appelait `isMulticastIpv4`
+  pour la même question, le commutateur en portait une **cinquième**
+  écriture dans son filtrage IGMP snooping — bornes du bloc puis
+  exclusion du lien-local par `isReservedMulticast`, c'est-à-dire un même
+  prédicat répondu deux fois de suite — et `TcpdumpFilter.isMulticastIp`
+  recopiait `isMulticastIpv4` mot pour mot. Seul le routeur distinguait
+  le multicast **lien-local** (224.0.0.0/24, que la RFC 1112 interdit
+  d'acheminer) du multicast routable ; l'hôte les confondait, ce qui ne
+  se voyait pas parce qu'un hôte n'achemine pas. **La mesure a imposé la
+  PORTÉE du garde-fou** : passé sur tout `devices/`, il attrapait trois
+  fichiers qui ne sont pas des acheminements et qui ont RAISON d'écrire
+  ces bornes — `CiscoDhcpCommands` et `CiscoRoutingProtoCommands`
+  refusent un argument non unicast (`o[0] === 0 || o[0] >= 224`,
+  `first > 0 && first < 224 && first !== 127`), c'est-à-dire une
+  grammaire d'ARGUMENT et non une classe de destination : 0 et 127 en
+  font partie, et 240.0.0.1 est unicast pour la couche. Les fondre aurait
+  été la fausse réutilisation que le BRD interdit ; le garde-fou porte
+  donc sur les fichiers qui lisent la destination d'un VRAI paquet.
+  **Incrément 3** : un pare-feu ROUTÉ n'accepte que ce qui lui est
+  adressé. `Firewall.handleFrame` n'avait AUCUN filtre de couche lien —
+  une trame portant une adresse MAC de destination étrangère, injectée
+  sur un FortiGate en mode `nat`, était traitée exactement comme en mode
+  `transparent` : les deux modes répondaient la même chose à une question
+  dont ils SONT la différence. Le filtre lit `LinkLayer.deliver` — la
+  règle existante, celle de l'hôte et du routeur, pas une seconde — et le
+  mode transparent le court-circuite, un VDOM transparent étant un pont de
+  niveau 2 qui doit accepter ce qu'il achemine. **Le filtre a révélé deux
+  défauts indépendants que son absence rendait invisibles** : une grappe
+  FGCP n'avait pas d'adresse MAC VIRTUELLE — la vraie formule est
+  `<préfixe>:<group-id % 256>:<vcluster + index>`, où le préfixe dépend de
+  la tranche du group-id (`00:09:0f:09` pour 0-255, puis `e0:23:ff:fc/fd/fe`)
+  et le décalage du cluster virtuel vaut 0x00 ou 0x20 ; elle est posée sur
+  toutes les interfaces SAUF le battement de cœur, et c'est elle qui rend
+  un basculement invisible au voisinage dont le cache ARP reste valide ;
+  puis, une fois l'adresse partagée, le subordonné émettait des
+  sollicitations de voisin IPv6 depuis cette même adresse, si bien que le
+  commutateur voisin réapprenait l'adresse virtuelle sur le port du
+  SECONDAIRE — un subordonné a-p n'émet pas sur ses interfaces de
+  données, pendant exact de `forwardsTransit()` pour la moitié TRANSIT du
+  même fait, posé au seul point d'émission (`sendFrame`).
+  **Incrément 4** : une diffusion dirigée explose ou tombe (RFC 2644,
+  BCP 34). `ip directed-broadcast` était accepté, rangé sur le port et
+  rendu par `show running-config`, et `isDirectedBroadcastEnabled()`
+  n'avait qu'UN appelant — ce rendu ; aucun plan de données ne le lisait,
+  si bien que `ping -b` rendait `100% packet loss` AVEC comme SANS la
+  commande. Le défaut par défaut étant le bon, l'inertie était invisible :
+  le paquet tombait, mais parce que le routeur cherchait à résoudre
+  192.168.20.255 en ARP, pas parce qu'une règle en avait décidé — et cet
+  ARP FUYAIT sur le sous-réseau cible. La commande Cisco « affects only
+  the final transmission of the directed broadcast on its ultimate
+  destination subnet » : ce n'est pas une barrière générale
+  d'acheminement, seul le dernier routeur, directement connecté à la
+  cible, explose en diffusion physique ou jette — d'où sa place dans la
+  décision livrer-ici / faire-suivre / jeter et non dans `forwardPacket`.
+  `isDirectedBroadcast` vit dans la couche et réutilise
+  `IPAddress.isBroadcastFor`. **Ce que la mesure a corrigé** : un cas
+  attendait que la cible RÉPONDE, et il avait tort — un vrai Linux ignore
+  un echo adressé à une diffusion (`icmp_echo_ignore_broadcasts` vaut 1),
+  qui est la contre-mesure Smurf que la RFC 2644 complète côté routeur ;
+  l'observable est la LIVRAISON, pas la réponse.
+  **Incrément 5** : une erreur ICMP ne répond pas à n'importe quoi.
+  `mayGenerateICMPError` (RFC 1122 §3.2.2) existait et était juste, lue
+  par `Router`, `Firewall` et `EndHost` ; `SwitchSvi` ne l'appelait NULLE
+  PART, et mesuré sur un Catalyst à deux SVI il émettait une erreur en
+  réponse à une erreur ICMP, à un paquet adressé à 239.1.1.1 et à un
+  fragment non initial — trois interdits sur trois. Quatrième écriture
+  d'un même fait, et encore une fois c'est celle qui a oublié la règle
+  qui est la plus permissive ; le cas du groupe fait du commutateur un
+  amplificateur Smurf, un incrément après la moitié routeur de la même
+  contre-mesure. Fermés avec : `core/IcmpErrors.ts` DÉLÈGUE à ses
+  appelants le contrôle de la diffusion DIRIGÉE et aucun des trois ne le
+  faisait (faisable seulement depuis que l'incrément 4 a posé
+  `isDirectedBroadcast`), et les DEUX émetteurs quasi identiques du SVI —
+  ne différant que par le type et le code, aucun ne lisant
+  `buildICMPError` — n'en font plus qu'un. **La portée est mesurée** :
+  `Router` est déjà couvert par l'incrément 4, et `EndHost` émet zéro
+  erreur sur une diffusion dirigée, attesté par un TÉMOIN unicast monté
+  dans le même laboratoire qui en émet exactement une — sans lui, un
+  laboratoire mal bâti et une absence de défaut seraient indiscernables.
+  **Incrément 6** : la somme de contrôle d'en-tête est VÉRIFIÉE. Même
+  forme, un cran plus bas — `verifyIPv4Checksum` existe dans
+  `core/types.ts`, `Router` (qui compte `ipInHdrErrors`) et `EndHost`
+  l'appellent, `SwitchSvi` et `Firewall` ne l'appelaient nulle part, et un
+  datagramme portant `headerChecksum = 0x1234` traversait les deux
+  jusqu'à l'hôte de destination. Le champ était ÉCRIT par trente-huit
+  sites et LU par deux. La fonction n'est délibérément PAS déplacée dans
+  `layers/internet/` : elle est déjà l'unique implantation partagée, et la
+  déménager churnerait trente-huit sites d'appel sans rien dédupliquer —
+  la règle de réutilisation demande de l'APPELER. Le silence est la règle
+  de la RFC et non une facilité : répondre par une erreur ICMP à un
+  en-tête corrompu répondrait à une victime choisie par l'erreur, l'adresse
+  source étant elle-même suspecte.
+  **Incrément 7** : les QUATRE contrôles d'en-tête, une seule écriture.
+  Le bloc « Phase B » du routeur porte somme, version, IHL et longueur
+  totale, en quatre `if` qui répètent le même geste (compteur, journal,
+  retour) ; l'hôte, le commutateur L3 et le pare-feu n'en avaient qu'UN,
+  la somme. Mesuré : `version = 6` dans une trame IPv4, `ihl = 2` et
+  `totalLength = 4` — chacun avec une somme RECALCULÉE pour que seul le
+  champ visé soit en cause — traversaient les deux, six paquets livrés
+  sur six. `ipv4HeaderProblem` rend la RAISON et non un booléen, le
+  routeur comptant `ipInHdrErrors` et journalisant un message par
+  contrôle ; l'ORDRE est celui du routeur et il compte, la somme d'abord,
+  un en-tête dont la somme est fausse n'étant pas lisible.
+
 ### Event/timing infra (`src/events/`)
 
 `EventBus`, `Scheduler`, `Signal`, `TimerSet`, `waitForEvent` — shared reactive primitives used by protocol actors (OSPF, IPSec, DHCP, BGP, etc.) that model asynchronous, timer-driven behavior.
@@ -257,6 +393,31 @@ La famille se branche dans `socleSpecs()` du shell concerné
 est le SHELL : les méthodes dont la famille a besoin se déclarent en
 interface étroite (`DhcpClientHost`, `TunnelHost`) et le shell les
 implémente en déléguant à l'équipement.
+
+**Migrer une PORTE de sous-mode** — une commande qui change de mode
+(`interface`, `line`, `vlan`, `router ospf`) : elle se déclare pour TOUS
+les modes d'où elle se tape, parce qu'IOS laisse passer d'une interface
+à l'autre sans `exit`. Quatre pièges, chacun mesuré :
+**(1)** la même commande écrite une fois par mode finit par diverger —
+`interface` l'était quatre fois, avec sept écarts, tous du côté du
+sous-mode ; **(2)** une place à `alternatives` perd le `leadingOnly` du
+trie, donc `CompletionEngine` fait primer une FORME déclarée qui
+correspond à la frappe sur les valeurs vivantes qui la prolongent ;
+**(3)** un type sans son numéro REMPLISSAIT une place libre, donc `?`
+annonçait `<cr>` pour une frappe refusée — chaque type est un mot-clé
+avec sa place EXIGÉE (`typesInterfaceEnMotsCles`) ; **(4)** le socle
+admet une commande de `config` depuis un sous-mode par HÉRITAGE, ce qui
+rouvrait le confinement des vues d'analyseur — `confinerSousVue` le pose
+pour les deux moteurs.
+
+`ArgumentSpec.rangeIsAdvisory` — même mot que le trie, même sens : une
+plage qui DÉCRIT sans trancher. À poser quand la borne dépend de l'état,
+ou quand le gestionnaire refuse déjà dans les mots d'IOS ; sinon la règle
+« une plage annoncée est appliquée » remplace le message par un caret.
+
+`argumentFor` n'est JAMAIS consulté pour un chemin `no X` quand `X`
+existe : déclarer la place deux fois y range une entrée que personne ne
+lit.
 
 **Les shells VRP n'ont pas encore de pont vers le socle** — c'est inscrit
 dans `TODO.md`. Tant qu'il n'existe pas, une commande VRP se déclare sur

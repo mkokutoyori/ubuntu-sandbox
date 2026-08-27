@@ -19,6 +19,9 @@
  */
 
 import { Equipment } from '../equipment/Equipment';
+import {
+  classifyIpv4Destination, decrementForForwarding, ipv4HeaderProblem,
+} from '../layers/internet/InternetLayer';
 import { Port } from '../hardware/Port';
 import type { IPv4AddressOrigin } from '../hardware/Port';
 import { SocketTable } from '../core/SocketTable';
@@ -377,6 +380,11 @@ export abstract class EndHost extends Equipment {
   // ─── IP Forwarding / NAT (for NAT-T topologies) ──────────────────
   /** Whether IPv4 forwarding is enabled (sysctl net.ipv4.ip_forward=1) */
   protected ipForwardEnabled: boolean = false;
+
+  private broadcastEchoIgnored = true;
+
+  ignoresBroadcastEcho(): boolean { return this.broadcastEchoIgnored; }
+  setIgnoresBroadcastEcho(on: boolean): void { this.broadcastEchoIgnored = on; }
 
   /** Set by subclasses that own a real GreAgent, to decapsulate inbound GRE. */
   protected greAgent: GreDecapsulator | null = null;
@@ -2012,10 +2020,10 @@ export abstract class EndHost extends Equipment {
   private handleIPv4(portName: string, ipPkt: IPv4Packet, srcMac?: string): void {
     if (!ipPkt || ipPkt.type !== 'ipv4') return;
 
-    // Verify checksum
-    if (!verifyIPv4Checksum(ipPkt)) {
-      Logger.warn(this.id, 'ipv4:checksum-fail',
-        `${this.name}: invalid IPv4 checksum, dropping packet`);
+    const headerProblem = ipv4HeaderProblem(ipPkt);
+    if (headerProblem) {
+      Logger.warn(this.id, `ipv4:${headerProblem}-fail`,
+        `${this.name}: IPv4 header ${headerProblem}, dropping packet`);
       return;
     }
 
@@ -2056,13 +2064,14 @@ export abstract class EndHost extends Equipment {
     // limited broadcast 255.255.255.255 — RFC 1122 §3.3.6 requires accepting
     // it even on an unconfigured interface (DHCP clients depend on this).
     const mask = port.getSubnetMask();
-    const isBroadcast = ipPkt.destinationIP.toString() === '255.255.255.255'
+    const destClass = classifyIpv4Destination(ipPkt.destinationIP);
+    const isBroadcast = destClass === 'limited-broadcast'
       || (myIP && mask && ipPkt.destinationIP.isBroadcastFor(mask));
     // Un datagramme multicast n'est adressé à personne en particulier :
     // sans cette branche il tombait dans le « pas pour nous » et l'hôte
     // le jetait, alors que le filtre L2 l'avait justement laissé monter
     // parce que la carte est abonnée au groupe.
-    const isMulticast = isMulticastIpv4(ipPkt.destinationIP.toString());
+    const isMulticast = destClass === 'multicast' || destClass === 'link-local-multicast';
 
     if (isForUs || isBroadcast || isMulticast) {
       // RFC 791 §3.2: reassemble before filtering/dispatch — a non-first
@@ -2109,8 +2118,8 @@ export abstract class EndHost extends Equipment {
 
   /** Forward an IPv4 packet when ipForwardEnabled is true (NAT gateway). */
   private forwardIPv4(inPort: string, ipPkt: IPv4Packet): void {
-    const newTTL = ipPkt.ttl - 1;
-    if (newTTL <= 0) {
+    const decision = decrementForForwarding(ipPkt);
+    if (decision.kind === 'expired') {
       // RFC 792: a forwarding node MUST send Time Exceeded (Type 11, Code 0)
       // back to the source — this is what makes this hop visible to traceroute.
       Logger.info(this.id, 'ipv4:ttl-expired',
@@ -2142,8 +2151,7 @@ export abstract class EndHost extends Equipment {
     }
 
     // NAT: apply POSTROUTING rules (MASQUERADE/SNAT/DNAT)
-    let fwdPkt: IPv4Packet = { ...ipPkt, ttl: newTTL, headerChecksum: 0 };
-    fwdPkt.headerChecksum = computeIPv4Checksum(fwdPkt);
+    let fwdPkt: IPv4Packet = decision.packet;
 
     const natResult = this.evaluateNat(ipPkt, inPort, outPortName);
     if (natResult) {
@@ -2293,6 +2301,7 @@ export abstract class EndHost extends Equipment {
     if (!icmp || icmp.type !== 'icmp') return;
 
     if (icmp.icmpType === 'echo-request') {
+      if (this.broadcastEchoIgnored && !this.getPortOwningIP(ipPkt.destinationIP)) return;
       this.sendEchoReply(portName, ipPkt, icmp);
     } else if (icmp.icmpType === 'echo-reply') {
       // Phase 5.6: settle the awaiting `sendPing` promise via the bus.

@@ -10,8 +10,9 @@ import { defaultOracleConfig } from '../engine/types/DatabaseConfig';
 import { ORACLE_CONFIG, ORACLE_ERRORS, TNS_ERRORS } from './OracleConfig';
 import { parseSize } from './views/_fileSize';
 import { OracleError } from '../engine/types/DatabaseError';
-import { ListenerControl } from './listener/ListenerControl';
-import { getDefaultEventBus, type IEventBus } from '@/events/EventBus';
+import { ListenerControl, BOOT_LISTENER_PID } from './listener/ListenerControl';
+import { type IEventBus } from '@/events/EventBus';
+import { BusHolder } from '@/events/BusHolder';
 import {
   OracleSignalStore,
   makeReadonlyOracleObservables,
@@ -130,8 +131,9 @@ export class OracleInstance {
   private _checkpointTime = new Date();
 
   // ── Reactive (Phase 7) ───────────────────────────────────────────
-  /** Bus override; defaults to the global singleton at publish time. */
+  /** Bus override; an instance with no host publishes on its own. */
   private _bus: IEventBus | null = null;
+  private readonly _ownBus = new BusHolder();
   /** deviceId scoping the events emitted by this instance. */
   private _deviceId: string = 'default';
   /** Reactive signal store + read-only view exposed to UI consumers. */
@@ -229,6 +231,14 @@ export class OracleInstance {
   setEventBus(bus: IEventBus | null): void {
     this._bus = bus;
     this.reattachRefreshActor();
+    for (const rebind of this._busRebinders) rebind(this.getBus());
+  }
+
+  private readonly _busRebinders: Array<(bus: IEventBus) => void> = [];
+
+  onBusChanged(rebind: (bus: IEventBus) => void): void {
+    this._busRebinders.push(rebind);
+    rebind(this.getBus());
   }
 
   /**
@@ -489,7 +499,7 @@ export class OracleInstance {
 
   /** Public bus accessor — used by OracleExecutor / SQLPlusSession to
    *  reuse the same bus binding as the instance. */
-  getBus(): IEventBus { return this._bus ?? getDefaultEventBus(); }
+  getBus(): IEventBus { return this._bus ?? this._ownBus.get(); }
   /** Public deviceId accessor. */
   getDeviceId(): string { return this._deviceId; }
   private ref() { return { deviceId: this._deviceId, sid: this.config.sid }; }
@@ -1145,6 +1155,10 @@ export class OracleInstance {
     pdbServices: () => this.multitenant.getAll()
       .filter(p => p.name !== 'PDB$SEED' && (p.openMode === 'READ WRITE' || p.openMode === 'READ ONLY'))
       .map(p => p.name),
+    allocatePid: () => {
+      const procs = this.getBackgroundProcesses();
+      return procs.length > 0 ? procs[procs.length - 1].pid + 1 : BOOT_LISTENER_PID;
+    },
   });
 
   get listener(): ListenerControl { return this._listener; }
@@ -1170,7 +1184,7 @@ export class OracleInstance {
     const endpoint = `(ADDRESS=(PROTOCOL=tcp)(HOST=0.0.0.0)(PORT=${this._listener.port}))`;
     this.getBus().publish({
       topic: 'oracle.listener.event',
-      payload: { ...this.ref(), state: 'running', endpoint, port: this._listener.port },
+      payload: { ...this.ref(), state: 'running', endpoint, port: this._listener.port, pid: this._listener.pid },
     });
     this.getBus().publish({
       topic: 'oracle.service.event',
@@ -1202,7 +1216,7 @@ export class OracleInstance {
     this.logAlert('Listener LISTENER stopped');
     this.getBus().publish({
       topic: 'oracle.listener.event',
-      payload: { ...this.ref(), state: 'stopped', endpoint: '', port: this._listener.port },
+      payload: { ...this.ref(), state: 'stopped', endpoint: '', port: this._listener.port, pid: this._listener.pid },
     });
     this.getBus().publish({
       topic: 'oracle.service.event',

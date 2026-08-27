@@ -26,7 +26,8 @@ import { Logger } from '../core/Logger';
 import { TapPoint, type FrameTap, type DetachTap } from './PortTap';
 import { PortSecurity } from './PortSecurity';
 import type { Cable } from './Cable';
-import { getDefaultEventBus, type IEventBus } from '@/events/EventBus';
+import { type IEventBus } from '@/events/EventBus';
+import { BusHolder } from '@/events/BusHolder';
 
 export type FrameHandler = (portName: string, frame: EthernetFrame) => void;
 export type LinkChangeHandler = (state: 'up' | 'down') => void;
@@ -291,7 +292,7 @@ export class Port {
    * `onLinkChange`) for the duration of the migration; phase 8 removes
    * those callbacks.
    */
-  private busOverride: IEventBus | null = null;
+  private readonly busHolder = new BusHolder();
 
   /**
    * Une interface de BOUCLAGE : aucun médium derrière, donc ni porteuse
@@ -336,11 +337,11 @@ export class Port {
 
   /** Test-only / multi-topology bus injection. */
   setEventBus(bus: IEventBus | null): void {
-    this.busOverride = bus;
+    this.busHolder.set(bus);
   }
 
   private getBus(): IEventBus {
-    return this.busOverride ?? getDefaultEventBus();
+    return this.busHolder.get();
   }
 
   private portRef() {

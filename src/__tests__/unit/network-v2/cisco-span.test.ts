@@ -5,7 +5,7 @@ import { Cable } from '@/network/hardware/Cable';
 import { EthernetFrame, MACAddress, resetCounters } from '@/network/core/types';
 import { Logger } from '@/network/core/Logger';
 import { EquipmentRegistry } from '@/network/equipment/EquipmentRegistry';
-import { getDefaultEventBus } from '@/events/EventBus';
+import { framesReceivedOn } from '../../support/wireWatch';
 
 async function buildLab() {
   const sw = new CiscoSwitch('switch-cisco', 'Switch1', 8, 0, 0);
@@ -28,14 +28,7 @@ async function buildLab() {
 }
 
 function captureFramesOn(pc: LinuxPC): EthernetFrame[] {
-  const captured: EthernetFrame[] = [];
-  getDefaultEventBus().subscribe('port.frame.received', (e) => {
-    const payload = e.payload as { deviceId?: string; portName?: string; frame: EthernetFrame };
-    if (payload.deviceId === pc.getId() && payload.portName === 'eth0') {
-      captured.push(payload.frame);
-    }
-  });
-  return captured;
+  return framesReceivedOn(pc, 'eth0');
 }
 
 describe('Cisco SPAN — port mirror config + forwarding', () => {

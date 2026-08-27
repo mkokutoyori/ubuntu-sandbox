@@ -31,7 +31,7 @@ import { CiscoRouter } from '@/network/devices/CiscoRouter';
 import { CiscoSwitch } from '@/network/devices/CiscoSwitch';
 import { LinuxPC } from '@/network/devices/LinuxPC';
 import { Cable } from '@/network/hardware/Cable';
-import { getDefaultEventBus } from '@/events/EventBus';
+import type { Equipment } from '@/network/equipment/Equipment';
 
 async function cfg(dev: { executeCommand(c: string): Promise<string> | string },
   lines: string[]): Promise<string[]> {
@@ -66,9 +66,9 @@ async function lab(marks: string[], traps: string[] = []): Promise<{
   return { r, pc, outputs };
 }
 
-function observeTraps(): string[] {
+function observeTraps(source: Equipment): string[] {
   const seen: string[] = [];
-  getDefaultEventBus().subscribe('snmp.trap.sent', (e) => {
+  source.getBus().subscribe('snmp.trap.sent', (e) => {
     seen.push((e.payload as { trapOid: string }).trapOid);
   });
   return seen;
@@ -167,22 +167,22 @@ describe('le franchissement se declenche', () => {
   });
 
   it('la notification part quand `snmp-server enable traps dhcp` l\'arme', async () => {
-    const traps = observeTraps();
-    const { pc } = await lab(['utilization mark high 50 log'], [
+    const { pc, r } = await lab(['utilization mark high 50 log'], [
       'snmp-server community public RO',
       'snmp-server host 10.0.0.50 version 2c public',
       'snmp-server enable traps dhcp pool',
     ]);
+    const traps = observeTraps(r);
     await pc.executeCommand('sudo dhclient eth0');
     expect(traps).toContain('1.3.6.1.4.1.9.10.102.0.2.0.1');
   });
 
   it('aucune notification quand les traps ne sont pas armes', async () => {
-    const traps = observeTraps();
-    const { pc } = await lab(['utilization mark high 50 log'], [
+    const { pc, r } = await lab(['utilization mark high 50 log'], [
       'snmp-server community public RO',
       'snmp-server host 10.0.0.50 version 2c public',
     ]);
+    const traps = observeTraps(r);
     await pc.executeCommand('sudo dhclient eth0');
     expect(traps).not.toContain('1.3.6.1.4.1.9.10.102.0.2.0.1');
   });

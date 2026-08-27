@@ -104,6 +104,7 @@ export class WindowsDhcpServerRole {
 
   constructor(private readonly host: EndHost) {
     this.engine.setPingPacketCount(0);
+    this.engine.setEventBus(host.getBus());
   }
 
   isRunning(): boolean { return this.running; }

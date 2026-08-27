@@ -16,7 +16,6 @@ import {
   Logger,
 } from '@/network';
 import { EquipmentRegistry } from '@/network/equipment/EquipmentRegistry';
-import { getDefaultEventBus } from '@/events/EventBus';
 
 /**
  * Network interface config for UI rendering
@@ -338,7 +337,7 @@ function doRemoveDevice(id: string, get: GetFn, set: SetFn): { device: Equipment
   // store, so subscribers (TerminalManager, supervisors) can read final
   // state. We emit `device.removed` (user-initiated) alongside the bus's
   // own `device.deregistered`, which the registry will fire below.
-  getDefaultEventBus().publish({
+  EquipmentRegistry.getInstance().getBus().publish({
     topic: 'device.removed',
     payload: {
       id: device.getId(),
@@ -446,24 +445,26 @@ function applyCommand(cmd: HistoryCommand, direction: 'undo' | 'redo', get: GetF
  * NOT `subscribeAll`, which also carries per-frame traffic events and
  * would reintroduce the re-render storm item #52 removed.
  *
- * Re-checked (cheap reference compare) on every `getDevices()` call
- * rather than subscribed once at module load: tests reset the default
- * EventBus between runs (`__setDefaultEventBus(null)`, see
- * `setupGlobalState.ts`), and a one-time subscription at import time
- * would silently go dead against the discarded bus.
+ * Each device is watched on ITS OWN bus: the store holds the instances,
+ * so it can ask each one, and no machine has to publish onto a channel
+ * every other machine can read. Re-checked on every `getDevices()` call
+ * because the set of devices changes.
  */
 const AUTONOMOUS_REVISION_TOPICS = ['port.link.up', 'port.link.down', 'port.config.ip-changed'] as const;
-let subscribedBus: ReturnType<typeof getDefaultEventBus> | null = null;
-let unsubscribeAutonomousEvents: (() => void) | null = null;
+const watchedDevices = new Map<string, () => void>();
 
 function ensureAutonomousEventBridge(): void {
-  const bus = getDefaultEventBus();
-  if (bus === subscribedBus) return;
-  unsubscribeAutonomousEvents?.();
-  subscribedBus = bus;
+  const instances = useNetworkStore.getState().deviceInstances;
+  for (const [id, stop] of watchedDevices) {
+    if (!instances.has(id)) { stop(); watchedDevices.delete(id); }
+  }
   const bump = () => useNetworkStore.setState(state => ({ revision: state.revision + 1 }));
-  const unsubs = AUTONOMOUS_REVISION_TOPICS.map(topic => bus.subscribe(topic, bump));
-  unsubscribeAutonomousEvents = () => unsubs.forEach(u => u());
+  for (const [id, device] of instances) {
+    if (watchedDevices.has(id)) continue;
+    const bus = device.getBus();
+    const unsubs = AUTONOMOUS_REVISION_TOPICS.map(topic => bus.subscribe(topic, bump));
+    watchedDevices.set(id, () => unsubs.forEach(u => u()));
+  }
 }
 
 export const useNetworkStore = create<NetworkState>((set, get) => ({

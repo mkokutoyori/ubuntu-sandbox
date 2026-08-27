@@ -25,14 +25,14 @@ import { CiscoRouter } from '@/network/devices/CiscoRouter';
 import { LinuxPC } from '@/network/devices/LinuxPC';
 import { Cable } from '@/network/hardware/Cable';
 import { IPv6Packet, ICMPv6Packet, NDPRouterAdvertisement } from '@/network/core/types';
-import { getDefaultEventBus } from '@/events/EventBus';
+import type { Equipment } from '@/network/equipment/Equipment';
 
-/** The advertisements actually sent, read off the bus. */
-function observeAdvertisements(): NDPRouterAdvertisement[] {
+/** The advertisements actually sent, read off this router's own ports. */
+function observeAdvertisements(source: Equipment): NDPRouterAdvertisement[] {
   const vues: NDPRouterAdvertisement[] = [];
-  getDefaultEventBus().subscribe('port.frame.tx-requested', (e) => {
-    const p = e.payload as { frame: { payload: unknown } };
-    const ip = p.frame?.payload as IPv6Packet | undefined;
+  source.attachCapture(({ direction, frame }) => {
+    if (direction !== 'out') return;
+    const ip = frame.payload as IPv6Packet | undefined;
     const icmp = ip?.payload as ICMPv6Packet | undefined;
     if (icmp?.icmpType === 'router-advertisement') {
       vues.push(icmp.ndp as NDPRouterAdvertisement);
@@ -54,7 +54,7 @@ async function lab(ndCommands: string[]): Promise<{
   const r = new CiscoRouter('R1');
   const h = new LinuxPC('H');
   h.powerOn();
-  const annonces = observeAdvertisements();
+  const annonces = observeAdvertisements(r);
   const outputs = await cfg(r, [
     'enable', 'configure terminal', 'ipv6 unicast-routing',
     'interface GigabitEthernet0/0', 'ipv6 address 2001:db8::1/64',

@@ -1,5 +1,5 @@
 import type { IEventBus } from '@/events/EventBus';
-import { getDefaultEventBus } from '@/events/EventBus';
+import { ownBusProvider } from '@/events/BusHolder';
 import { getDefaultScheduler, type IScheduler, type TimerHandle } from '@/events/Scheduler';
 import { IPAddress } from '../core/types';
 import {
@@ -124,7 +124,7 @@ export class IpSlaEngine {
 
   constructor(
     private readonly host: IpSlaHost,
-    private readonly getBus: () => IEventBus = () => getDefaultEventBus(),
+    private readonly getBus: () => IEventBus = ownBusProvider(),
     private readonly getScheduler: () => IScheduler = () => getDefaultScheduler(),
   ) {
     this.responder = new IpSlaResponder(

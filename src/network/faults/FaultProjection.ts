@@ -15,7 +15,6 @@
  */
 
 import type { IEventBus, Unsubscribe } from '@/events/EventBus';
-import { getDefaultEventBus } from '@/events/EventBus';
 // This projection observes the topology to describe it, it never forwards
 // anything — the layer docs/PRD-Frame-Only-Refactor.md §2.2 exempts, the
 // same exemption `linux/network/HostLookup.ts` takes for the UI/terminal
@@ -23,6 +22,7 @@ import { getDefaultEventBus } from '@/events/EventBus';
 // the events it reacts to carry no more than an id.
 // eslint-disable-next-line no-restricted-imports
 import { EquipmentRegistry } from '../equipment/EquipmentRegistry';
+import { watchDevices } from '../equipment/DeviceWatch';
 import type { FaultRegistry } from './FaultRegistry';
 import { getFaultRegistry } from './FaultRegistry';
 import { faultId } from './FaultTypes';
@@ -31,6 +31,10 @@ import { faultId } from './FaultTypes';
  * Human name for a device id, falling back to the id when the device has
  * already left the registry (a power-off racing a removal).
  */
+const REGISTRY_TOPICS = new Set<string>([
+  'device.removed', 'device.deregistered', 'registry.cleared',
+]);
+
 function deviceName(deviceId: string): string {
   const dev = EquipmentRegistry.getInstance().getById(deviceId);
   return dev?.getHostname?.() ?? dev?.getName?.() ?? deviceId;
@@ -97,10 +101,19 @@ export class FaultProjection {
   }
 
   private wire(): void {
+    const perDevice = new Map<string, Parameters<IEventBus['subscribe']>[1][]>();
     const on = <T extends Parameters<IEventBus['subscribe']>[0]>(
       topic: T,
       handler: Parameters<IEventBus['subscribe']>[1],
-    ) => { this.unsubs.push(this.bus.subscribe(topic, handler as never)); };
+    ) => {
+      if (REGISTRY_TOPICS.has(topic)) {
+        this.unsubs.push(this.bus.subscribe(topic, handler as never));
+        return;
+      }
+      const existing = perDevice.get(topic);
+      if (existing) existing.push(handler);
+      else perDevice.set(topic, [handler]);
+    };
 
     // ── F1 — physical ────────────────────────────────────────────
     on('port.link.down', ({ payload }) => {
@@ -239,6 +252,13 @@ export class FaultProjection {
     on('linux.service.started', clearService);
     on('linux.service.restarted', clearService);
     on('linux.service.stopped', clearService);
+
+    const topics = [...perDevice.keys()] as Parameters<IEventBus['subscribe']>[0][];
+    this.unsubs.push(watchDevices(topics, (event) => {
+      for (const handler of perDevice.get(event.topic) ?? []) {
+        (handler as (e: unknown) => void)(event);
+      }
+    }));
   }
 
   /**
@@ -264,7 +284,7 @@ let projection: FaultProjection | null = null;
  * subscribe-once-at-import would go dead after the first test of a file.
  */
 export function ensureFaultProjection(): FaultProjection {
-  const bus = getDefaultEventBus();
+  const bus = EquipmentRegistry.getInstance().getBus();
   if (bus !== attachedBus || !projection) {
     projection?.dispose();
     attachedBus = bus;

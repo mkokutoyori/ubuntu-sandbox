@@ -2,8 +2,15 @@ import {
   EthernetFrame, MACAddress, IPAddress, SubnetMask,
   ARPPacket, ICMPPacket, IPv4Packet, UDPPacket,
   ETHERTYPE_ARP, ETHERTYPE_IPV4, IP_PROTO_ICMP, IP_PROTO_UDP,
-  createIPv4Packet, computeIPv4Checksum,
+  createIPv4Packet,
 } from '../core/types';
+import {
+  decrementForForwarding, isDirectedBroadcast, ipv4HeaderProblem,
+  type ConnectedIpv4Prefix,
+} from '../layers/internet/InternetLayer';
+import {
+  buildICMPError, mayGenerateICMPError, type ICMPErrorType,
+} from '../core/IcmpErrors';
 import { Logger } from '../core/Logger';
 import type { CiscoPingRow } from './shells/cisco/ciscoPing';
 import { DHCPPacket } from '../dhcp/DHCPPacket';
@@ -310,6 +317,12 @@ export class SwitchSvi {
     if (frame.etherType === ETHERTYPE_IPV4) {
       const ip = frame.payload as IPv4Packet;
       if (!ip || ip.type !== 'ipv4') return forUs;
+      const headerProblem = ipv4HeaderProblem(ip);
+      if (headerProblem) {
+        Logger.warn(this.host.deviceId, `svi:${headerProblem}-fail`,
+          `invalid IPv4 header (${headerProblem}), dropping`);
+        return true;
+      }
 
       // A relay hop may reply with a broadcast dstMAC but an IP destination
       // that's genuinely one of our own SVIs (mirrors Router's own local-
@@ -471,25 +484,25 @@ export class SwitchSvi {
   }
 
   private forwardIpPacket(ingressVlan: number, ip: IPv4Packet, originalPkt: IPv4Packet = ip): void {
-    if (ip.ttl <= 1) {
+    const decision = decrementForForwarding(ip);
+    if (decision.kind === 'expired') {
       const ingressSvi = this.svis.get(ingressVlan);
-      if (ingressSvi?.ip) this.sendIcmpTimeExceeded(ingressVlan, ingressSvi.ip, ip);
+      if (ingressSvi?.ip) this.sendIcmpError(ip, 'time-exceeded', 0);
       return;
     }
     const route = this.lookupRoute(ip.destinationIP);
     if (!route) {
       const ingressSvi = this.svis.get(ingressVlan);
-      if (ingressSvi?.ip) this.sendIcmpHostUnreachable(ingressVlan, ingressSvi.ip, ip, 0);
+      if (ingressSvi?.ip) this.sendIcmpError(ip, 'destination-unreachable', 0);
       return;
     }
     const nextHopMac = this.resolveArpFresh(route.egress.vlan, route.egress.ip!, route.nextHop);
     if (!nextHopMac) {
       const ingressSvi = this.svis.get(ingressVlan);
-      if (ingressSvi?.ip) this.sendIcmpHostUnreachable(ingressVlan, ingressSvi.ip, ip, 1);
+      if (ingressSvi?.ip) this.sendIcmpError(ip, 'destination-unreachable', 1);
       return;
     }
-    let fwd: IPv4Packet = { ...ip, ttl: ip.ttl - 1, headerChecksum: 0 };
-    fwd.headerChecksum = computeIPv4Checksum(fwd);
+    let fwd: IPv4Packet = decision.packet;
 
     if (this.host.natTranslateOutbound) {
       const outIface = `Vlanif${route.egress.vlan}`;
@@ -507,29 +520,27 @@ export class SwitchSvi {
     });
   }
 
-  private sendIcmpTimeExceeded(_vlan: number, _selfIp: IPAddress, orig: IPv4Packet): void {
-    const replyRoute = this.lookupRoute(orig.sourceIP);
-    if (!replyRoute || !replyRoute.egress.ip) return;
-    const replyMac = this.resolveArp(replyRoute.egress.vlan, replyRoute.egress.ip, replyRoute.nextHop);
-    if (!replyMac) return;
-    const icmp: ICMPPacket = { type: 'icmp', icmpType: 'time-exceeded', code: 0, id: 0, sequence: 0, dataSize: 0, originalPacket: orig };
-    const pkt = createIPv4Packet(replyRoute.egress.ip, orig.sourceIP, IP_PROTO_ICMP, 64, icmp);
-    this.host.egressOnVlan(replyRoute.egress.vlan, {
-      srcMAC: this.host.getBridgeMac(), dstMAC: replyMac,
-      etherType: ETHERTYPE_IPV4, payload: pkt,
-    });
+  private connectedPrefixes(): ConnectedIpv4Prefix[] {
+    const out: ConnectedIpv4Prefix[] = [];
+    for (const svi of this.svis.values()) {
+      if (svi.ip && svi.mask) out.push({ address: svi.ip, mask: svi.mask });
+    }
+    return out;
   }
 
-  private sendIcmpHostUnreachable(_vlan: number, _selfIp: IPAddress, orig: IPv4Packet, code: number): void {
+  private sendIcmpError(
+    orig: IPv4Packet, icmpType: ICMPErrorType, code: number,
+  ): void {
+    if (!mayGenerateICMPError(orig)) return;
+    if (isDirectedBroadcast(orig.destinationIP, this.connectedPrefixes())) return;
     const replyRoute = this.lookupRoute(orig.sourceIP);
     if (!replyRoute || !replyRoute.egress.ip) return;
     const replyMac = this.resolveArp(replyRoute.egress.vlan, replyRoute.egress.ip, replyRoute.nextHop);
     if (!replyMac) return;
-    const icmp: ICMPPacket = { type: 'icmp', icmpType: 'destination-unreachable', code, id: 0, sequence: 0, dataSize: 0, originalPacket: orig };
-    const pkt = createIPv4Packet(replyRoute.egress.ip, orig.sourceIP, IP_PROTO_ICMP, 64, icmp);
     this.host.egressOnVlan(replyRoute.egress.vlan, {
       srcMAC: this.host.getBridgeMac(), dstMAC: replyMac,
-      etherType: ETHERTYPE_IPV4, payload: pkt,
+      etherType: ETHERTYPE_IPV4,
+      payload: buildICMPError(replyRoute.egress.ip, orig, icmpType, code, 64),
     });
   }
 

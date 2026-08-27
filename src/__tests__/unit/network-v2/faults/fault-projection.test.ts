@@ -17,7 +17,6 @@ import { GenericSwitch } from '@/network/devices/GenericSwitch';
 import { Cable } from '@/network/hardware/Cable';
 import { IPAddress, SubnetMask } from '@/network/core/types';
 import { EquipmentRegistry } from '@/network/equipment/EquipmentRegistry';
-import { getDefaultEventBus } from '@/events/EventBus';
 import { getFaultRegistry } from '@/network/faults/FaultRegistry';
 import { ensureFaultProjection } from '@/network/faults/FaultProjection';
 
@@ -37,7 +36,7 @@ function lab(): Lab {
   EquipmentRegistry.getInstance().clear();
   // Touch the bus first so the projection attaches to the same instance
   // the devices will publish on.
-  getDefaultEventBus();
+  EquipmentRegistry.getInstance().getBus();
   ensureFaultProjection();
 
   const pc = new LinuxPC('linux-pc', 'PC1');
@@ -74,7 +73,7 @@ describe('F1 — pulling a cable raises a link fault', () => {
 
   it('an unaddressed port is only a notice — severity follows the consequence', () => {
     EquipmentRegistry.getInstance().clear();
-    getDefaultEventBus();
+    EquipmentRegistry.getInstance().getBus();
     ensureFaultProjection();
 
     const a = new LinuxPC('linux-pc', 'PC1');
@@ -202,11 +201,11 @@ describe('F2 — powering a device off', () => {
 describe('F3 — port security', () => {
   it('raises LINK_ERRDISABLE when a violation shuts the port', async () => {
     EquipmentRegistry.getInstance().clear();
-    getDefaultEventBus();
+    EquipmentRegistry.getInstance().getBus();
     ensureFaultProjection();
     const sw = new GenericSwitch('switch-generic', 'SW1');
 
-    getDefaultEventBus().publish({
+    sw.getBus().publish({
       topic: 'port.security.errdisable.set',
       payload: {
         deviceId: sw.getId(),
@@ -224,16 +223,16 @@ describe('F3 — port security', () => {
 
   it('recovery clears it', () => {
     EquipmentRegistry.getInstance().clear();
-    getDefaultEventBus();
+    EquipmentRegistry.getInstance().getBus();
     ensureFaultProjection();
     const sw = new GenericSwitch('switch-generic', 'SW1');
     const portName = sw.getPortNames()[0];
 
-    getDefaultEventBus().publish({
+    sw.getBus().publish({
       topic: 'port.security.errdisable.set',
       payload: { deviceId: sw.getId(), portName, mac: { toString: () => 'aa:bb' } as never },
     });
-    getDefaultEventBus().publish({
+    sw.getBus().publish({
       topic: 'port.security.errdisable.cleared',
       payload: { deviceId: sw.getId(), portName },
     });
@@ -246,7 +245,7 @@ describe('F6 — services', () => {
   it('a failed unit becomes a critical incident carrying systemd\'s own reason', () => {
     const { srv } = lab();
 
-    getDefaultEventBus().publish({
+    srv.getBus().publish({
       topic: 'linux.service.failed',
       payload: {
         deviceId: srv.getId(),
@@ -265,7 +264,7 @@ describe('F6 — services', () => {
   it('a start-limited unit says so in systemd\'s wording', () => {
     const { srv } = lab();
 
-    getDefaultEventBus().publish({
+    srv.getBus().publish({
       topic: 'linux.service.start-limited',
       payload: { deviceId: srv.getId(), hostname: srv.getHostname(), name: 'ssh' },
     });
@@ -278,7 +277,7 @@ describe('F6 — services', () => {
 
   it('starting the unit again resolves both service faults', () => {
     const { srv } = lab();
-    const bus = getDefaultEventBus();
+    const bus = srv.getBus();
     const ref = { deviceId: srv.getId(), hostname: srv.getHostname(), name: 'ssh' };
 
     bus.publish({ topic: 'linux.service.failed', payload: { ...ref, reason: 'x' } });
@@ -295,7 +294,7 @@ describe('F6 — services', () => {
     const { srv } = lab();
     srv.powerOff();
 
-    getDefaultEventBus().publish({
+    srv.getBus().publish({
       topic: 'linux.service.failed',
       payload: { deviceId: srv.getId(), hostname: srv.getHostname(), name: 'ssh', reason: 'x' },
     });
@@ -313,7 +312,7 @@ describe('lifecycle', () => {
     srv.getPorts()[0].getCable()?.disconnect();
     expect(faults().forDevice(srv.getId()).length).toBeGreaterThan(0);
 
-    getDefaultEventBus().publish({ topic: 'device.removed', payload: { id: srv.getId() } });
+    EquipmentRegistry.getInstance().getBus().publish({ topic: 'device.removed', payload: { id: srv.getId() } });
 
     // Otherwise the incident centre accumulates references to devices that
     // are no longer on the canvas (docs/PRD-Pannes.md §F2.8).

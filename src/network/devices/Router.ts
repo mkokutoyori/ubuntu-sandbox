@@ -125,6 +125,10 @@ import { fragmentIPv4, IPv4Reassembler } from '../core/Ipv4Fragmentation';
 import type { FhrpDataPlane } from '../fhrp/types';
 import { DHCPServer, type DhcpUtilizationCrossing } from '../dhcp/DHCPServer';
 import {
+  classifyIpv4Destination, decrementForForwarding, isDirectedBroadcast,
+  ipv4HeaderProblem,
+} from '../layers/internet/InternetLayer';
+import {
   DHCP_FREE_ADDRESS_HIGH, DHCP_FREE_ADDRESS_LOW, DHCP_SHARED_NET_ENTRY,
   snmpAdminStringIndex,
 } from '../snmp/mibs/DhcpServerMib';
@@ -2298,36 +2302,11 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
     if (!ipPkt || ipPkt.type !== 'ipv4') return;
 
     // Phase B: L3 Header Sanity Check (RFC 1812 §5.2.2)
-
-    // B.1: Checksum verification
-    if (!verifyIPv4Checksum(ipPkt)) {
+    const headerProblem = ipv4HeaderProblem(ipPkt);
+    if (headerProblem) {
       this.counters.ipInHdrErrors++;
-      Logger.warn(this.id, 'router:checksum-fail',
-        `${this.name}: invalid IPv4 checksum, dropping`);
-      return;
-    }
-
-    // B.2: Version check — must be 4
-    if (ipPkt.version !== 4) {
-      this.counters.ipInHdrErrors++;
-      Logger.warn(this.id, 'router:version-fail',
-        `${this.name}: IPv4 version ${ipPkt.version} != 4, dropping`);
-      return;
-    }
-
-    // B.3: IHL check — must be >= 5 (20 bytes minimum header)
-    if (ipPkt.ihl < 5) {
-      this.counters.ipInHdrErrors++;
-      Logger.warn(this.id, 'router:ihl-fail',
-        `${this.name}: IHL ${ipPkt.ihl} < 5, dropping`);
-      return;
-    }
-
-    // B.4: TotalLength check — must be at least IHL*4
-    if (ipPkt.totalLength < ipPkt.ihl * 4) {
-      this.counters.ipInHdrErrors++;
-      Logger.warn(this.id, 'router:length-fail',
-        `${this.name}: totalLength ${ipPkt.totalLength} < header ${ipPkt.ihl * 4}, dropping`);
+      Logger.warn(this.id, `router:${headerProblem}-fail`,
+        `${this.name}: IPv4 header ${headerProblem}, dropping`);
       return;
     }
 
@@ -2344,12 +2323,10 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
     // link-local multicast — 224.0.0.0/24 is consumed by the control
     // plane and MUST never be forwarded, RFC 1112/4541)
     const destIP = ipPkt.destinationIP;
-    const isBroadcast = destIP.toString() === '255.255.255.255';
-    const destOctets = destIP.toString().split('.').map(Number);
-    const isMulticast = destOctets[0] >= 224 && destOctets[0] <= 239;
-    const isLinkLocalMulticast = destOctets[0] === 224 && destOctets[1] === 0 && destOctets[2] === 0;
+    const destClass = classifyIpv4Destination(destIP);
+    const isMulticast = destClass === 'multicast';
 
-    if (isBroadcast || isLinkLocalMulticast) {
+    if (destClass === 'limited-broadcast' || destClass === 'link-local-multicast') {
       // Broadcast/link-local-multicast packet — deliver locally, never forward
       this.handleLocalDelivery(inPort, ipPkt);
       return;
@@ -2366,6 +2343,15 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
         this.handleLocalDelivery(inPort, ipPkt);
         return;
       }
+    }
+
+    // C.1-ter: RFC 2644 — a subnet-directed broadcast reaching the router
+    // that is directly connected to the target subnet is exploded onto it
+    // only when the operator asked; blocking is the default.
+    const directedEgress = this.directedBroadcastEgress(destIP);
+    if (directedEgress) {
+      this.explodeDirectedBroadcast(inPort, directedEgress, ipPkt);
+      return;
     }
 
     // C.1-bis: FHRP — the active/master answers for the VIP (ICMP echo
@@ -2447,6 +2433,41 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
    * Control Plane: Handle packets addressed to our interface IPs.
    * Supports: ICMP echo-request → echo-reply, UDP/RIP.
    */
+  private directedBroadcastEgress(destination: IPAddress): Port | null {
+    for (const [, port] of this.ports) {
+      const primary = port.getIPAddress();
+      const mask = port.getSubnetMask();
+      const connected = [
+        ...(primary && mask ? [{ address: primary, mask }] : []),
+        ...port.getSecondaryIPs().map((e) => ({ address: e.ip, mask: e.mask })),
+      ];
+      if (isDirectedBroadcast(destination, connected)) return port;
+    }
+    return null;
+  }
+
+  private explodeDirectedBroadcast(
+    inPort: string, egress: Port, ipPkt: IPv4Packet,
+  ): void {
+    if (!egress.isDirectedBroadcastEnabled()) {
+      Logger.info(this.id, 'ipv4:directed-broadcast-dropped',
+        `${this.name}: directed broadcast to ${ipPkt.destinationIP} dropped `
+        + `(no ip directed-broadcast on ${egress.getName()})`);
+      return;
+    }
+    const decision = decrementForForwarding(ipPkt);
+    if (decision.kind === 'expired') {
+      this.sendICMPError(inPort, ipPkt, 'time-exceeded', 0);
+      return;
+    }
+    this.sendFrame(egress.getName(), {
+      srcMAC: egress.getMAC(),
+      dstMAC: MACAddress.broadcast(),
+      etherType: ETHERTYPE_IPV4,
+      payload: decision.packet,
+    });
+  }
+
   private handleLocalDelivery(inPort: string, ipPkt: IPv4Packet): void {
     // RFC 791 §3.2: hold non-first/more-fragments datagrams until the full
     // set arrives — buffered fragments return null here and are simply
@@ -2766,8 +2787,8 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
       this.counters.ipForwDatagrams++;
       return;
     }
-    const newTTL = ipPkt.ttl - 1;
-    if (newTTL <= 0) {
+    const decision = decrementForForwarding(ipPkt);
+    if (decision.kind === 'expired') {
       Logger.info(this.id, 'router:ttl-expired',
         `${this.name}: TTL expired for packet from ${ipPkt.sourceIP} to ${ipPkt.destinationIP}`);
       this.sendICMPError(inPort, ipPkt, 'time-exceeded', 0);
@@ -2786,13 +2807,7 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
       return;
     }
 
-    // Phase D.2: Header mutation — create forwarded packet with new TTL + checksum
-    let fwdPkt: IPv4Packet = {
-      ...ipPkt,
-      ttl: newTTL,
-      headerChecksum: 0,
-    };
-    fwdPkt.headerChecksum = computeIPv4Checksum(fwdPkt);
+    let fwdPkt: IPv4Packet = decision.packet;
 
     const outPort = this.ports.get(route.iface);
     if (!outPort) return;
@@ -2960,11 +2975,9 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
       return;
     }
 
-    const newTTL = ipPkt.ttl - 1;
-    if (newTTL <= 0) return;
-
-    const fwdPktBase: IPv4Packet = { ...ipPkt, ttl: newTTL, headerChecksum: 0 };
-    fwdPktBase.headerChecksum = computeIPv4Checksum(fwdPktBase);
+    const mcastDecision = decrementForForwarding(ipPkt);
+    if (mcastDecision.kind === 'expired') return;
+    const fwdPktBase: IPv4Packet = mcastDecision.packet;
     const dstMAC = new MACAddress(ipv4MulticastToMac(group));
 
     for (const oif of mroute.outgoingInterfaces) {

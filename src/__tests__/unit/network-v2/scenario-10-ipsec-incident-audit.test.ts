@@ -40,7 +40,8 @@ import { resetCounters, ETHERTYPE_IPV4, IP_PROTO_ESP, EthernetFrame, IPv4Packet 
 import { resetDeviceCounters } from '@/network/devices/DeviceFactory';
 import { EquipmentRegistry } from '@/network/equipment/EquipmentRegistry';
 import { Logger } from '@/network/core/Logger';
-import { getDefaultEventBus } from '@/events/EventBus';
+import type { Equipment } from '@/network/equipment/Equipment';
+import { watchDevices } from '@/network/equipment/DeviceWatch';
 import type { DomainEventTopic } from '@/events/types';
 import type { Port } from '@/network/hardware/Port';
 import { pingOnSimulatedClock } from '../../support/fastPing';
@@ -56,9 +57,7 @@ type EventRow = {
 
 function collectAll(): { rows: EventRow[]; unsub: () => void } {
   const rows: EventRow[] = [];
-  const bus = getDefaultEventBus();
   const topics: DomainEventTopic[] = [
-    'log',
     'ipsec.engine.started', 'ipsec.engine.stopped',
     'ipsec.ike.sa-installed', 'ipsec.ike.sa-deleted',
     'ipsec.sa.installed', 'ipsec.sa.deleted',
@@ -67,35 +66,35 @@ function collectAll(): { rows: EventRow[]; unsub: () => void } {
     'host.icmp.echo-sent', 'host.icmp.echo-reply',
     'host.icmp.echo-timeout', 'host.icmp.echo-failed',
   ];
-  const unsubs: Array<() => void> = [];
-  for (const topic of topics) {
-    unsubs.push(bus.subscribe(topic, (e) => {
-      const p = e.payload as Record<string, unknown>;
-      rows.push({
-        timestamp: Date.now(),
-        topic,
-        source: (p.source as string) || (p.deviceId as string) || '',
-        event: p.event as string | undefined,
-        message: p.message as string | undefined,
-        payload: p,
-      });
-    }));
-  }
+  const record = (topic: string, p: Record<string, unknown>): void => {
+    rows.push({
+      timestamp: Date.now(),
+      topic,
+      source: (p.source as string) || (p.deviceId as string) || '',
+      event: p.event as string | undefined,
+      message: p.message as string | undefined,
+      payload: p,
+    });
+  };
+  const logSubscription = Logger.subscribe((entry) => record('log', { ...entry }));
+  const unsubs: Array<() => void> = [
+    watchDevices(topics, (e) => record(e.topic, e.payload as Record<string, unknown>)),
+    () => Logger.unsubscribe(logSubscription),
+  ];
   return { rows, unsub: () => { for (const u of unsubs) u(); } };
 }
 
 interface EspProbe { frames: EthernetFrame[] }
 
-function captureInboundEsp(deviceId: string, portName: string): EspProbe {
+function captureInboundEsp(device: Equipment, portName: string): EspProbe {
   const probe: EspProbe = { frames: [] };
-  getDefaultEventBus().subscribe('port.frame.received', (e) => {
-    const p = e.payload as { deviceId?: string; portName?: string; frame: EthernetFrame };
-    if (p.deviceId !== deviceId || p.portName !== portName) return;
-    if (p.frame.etherType !== ETHERTYPE_IPV4) return;
-    const ip = p.frame.payload as IPv4Packet | undefined;
+  device.attachCapture(({ direction, frame }) => {
+    if (direction !== 'in') return;
+    if (frame.etherType !== ETHERTYPE_IPV4) return;
+    const ip = frame.payload as IPv4Packet | undefined;
     if (!ip || ip.protocol !== IP_PROTO_ESP) return;
-    probe.frames.push({ ...p.frame });
-  });
+    probe.frames.push({ ...frame });
+  }, portName);
   return probe;
 }
 
@@ -222,7 +221,7 @@ describe('Scenario 10 — cross-equipment log audit for incident reconstruction'
 
     const collector = collectAll();
     const { r1, r2, pc1, pc2 } = await buildTunnel();
-    const espProbe = captureInboundEsp(r1.getId(), 'GigabitEthernet0/1');
+    const espProbe = captureInboundEsp(r1, 'GigabitEthernet0/1');
     const timeline = await runIncidentTimeline(r1, r2, pc1, pc2, espProbe);
     collector.unsub();
     fixture = { r1, r2, pc1, pc2, rows: collector.rows, timeline };

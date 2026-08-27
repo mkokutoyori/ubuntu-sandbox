@@ -27,7 +27,9 @@ import { consolePortUnique } from '@/network/equipment/HostCapabilities';
  * machine.
  */
 export type LigneTerminal = 'console' | 'vty';
-import { getDefaultEventBus, type IEventBus, type Unsubscribe } from '@/events/EventBus';
+import { type IEventBus, type Unsubscribe } from '@/events/EventBus';
+import { EquipmentRegistry } from '@/network/equipment/EquipmentRegistry';
+import { watchDevices } from '@/network/equipment/DeviceWatch';
 
 let nextSessionId = 1;
 
@@ -62,14 +64,8 @@ export class TerminalManager {
    */
   private attachToBus(): void {
     this.detachFromBus();
-    const bus = this.bus ?? getDefaultEventBus();
+    const bus = this.bus ?? EquipmentRegistry.getInstance().getBus();
     this.busSubs.push(
-      bus.subscribe('device.power-off', ({ payload }) => {
-        this.onDevicePoweredOff(payload.id);
-      }),
-      bus.subscribe('device.power-on', ({ payload }) => {
-        this.onDevicePoweredOn(payload.id);
-      }),
       bus.subscribe('device.removed', ({ payload }) => {
         this.onDeviceRemoved(payload.id, payload.name);
       }),
@@ -78,6 +74,10 @@ export class TerminalManager {
       }),
       bus.subscribe('registry.cleared', () => {
         this.disposeAll();
+      }),
+      watchDevices(['device.power-on', 'device.power-off'], (event) => {
+        if (event.topic === 'device.power-off') this.onDevicePoweredOff(event.payload.id);
+        else this.onDevicePoweredOn(event.payload.id);
       }),
     );
   }

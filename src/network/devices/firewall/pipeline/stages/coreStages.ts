@@ -1,7 +1,8 @@
 import { Continue, Drop, type FilterVerdict } from '../../../../core/FilterChain';
+import { decrementForForwarding } from '../../../../layers/internet/InternetLayer';
 import { getPacketDstPort, getPacketSrcPort, rewriteSrcIP } from '../../../../nat/rewrite';
 import {
-  IP_PROTO_TCP, computeIPv4Checksum,
+  IP_PROTO_TCP,
   type IPv4Packet, type MACAddress, type TCPPacket,
 } from '../../../../core/types';
 import { IPV4_FLAG_DF } from '../../../../core/Ipv4Fragmentation';
@@ -721,11 +722,10 @@ function transitTtl(
   if (!packet) return null;
   if (context.egressPort === undefined) return null;
   if (vdom(services, context).opmode === 'transparent') return null;
-  if (packet.ttl <= 1) return deny(context, stage, 'ttl-expired');
+  const decision = decrementForForwarding(packet);
+  if (decision.kind === 'expired') return deny(context, stage, 'ttl-expired');
 
-  const forwarded: IPv4Packet = { ...packet, ttl: packet.ttl - 1, headerChecksum: 0 };
-  forwarded.headerChecksum = computeIPv4Checksum(forwarded);
-  context.packet = forwarded;
+  context.packet = decision.packet;
   return null;
 }
 

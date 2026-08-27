@@ -586,6 +586,222 @@ faire suivre » que cette phase-ci déplace dans la couche internet. À
 traiter ici, avec sa propre mesure et son propre témoin en mode
 transparent.
 
+**Incrément 1 — LIVRÉ.** `layers/internet/InternetLayer.ts` porte la
+règle du TTL (`decrementForForwarding`) : décrémenter, décider de
+l'expiration, recalculer la somme de contrôle d'en-tête. Les **cinq**
+corps de §2.2 la lisent — `Router.forwardPacket`,
+`Router.forwardMulticast`, `EndHost.forwardIPv4`,
+`SwitchSvi.forwardIpPacket` et l'étape du pare-feu — et chacun garde ce
+qui lui est PROPRE : son journal, son compteur, et la façon dont il
+annonce l'expiration (le routeur émet un ICMP Time Exceeded, le
+commutateur le sien depuis la SVI d'entrée, le pare-feu refuse par son
+verdict). Un cas structurel échoue en nommant tout fichier de
+`src/network/devices/` qui décrémenterait encore un TTL à la main.
+
+**Ce que la mesure a corrigé d'une supposition, et qui explique que ce
+lot ne change AUCUN comportement** : j'avais d'abord lu `SwitchSvi`
+comme décrémentant sans garde — `{ ...ip, ttl: ip.ttl - 1 }` n'a aucune
+vérification à côté — donc comme émettant des paquets à TTL 0 et restant
+invisible au traceroute. C'est faux : sa garde est en tête de
+`forwardIpPacket`, écrite `ttl <= 1` AVANT le décrément là où le routeur
+écrit `ttl - 1 <= 0` APRÈS. Les deux formulations sont équivalentes. Les
+cinq sites étaient donc d'accord, et l'incrément est une déduplication
+pure — ce que le §4.1 exige de chaque phase.
+
+**Incrément 2 — LIVRÉ.** La CLASSE d'une destination IPv4 se décide au
+même endroit (`classifyIpv4Destination` : diffusion limitée, multicast
+lien-local, multicast routable, unicast). Mesure de départ : le routeur
+redécoupait le bloc à la main (`destOctets[0] >= 224 && <= 239`),
+l'hôte appelait `isMulticastIpv4` pour la même question, le commutateur
+en portait une **cinquième** écriture dans son filtrage IGMP snooping
+(bornes du bloc, puis exclusion du lien-local par `isReservedMulticast`,
+c'est-à-dire le même prédicat répondu deux fois de suite), et
+`TcpdumpFilter.isMulticastIp` recopiait `isMulticastIpv4` mot pour mot.
+Seul le routeur distinguait le multicast **lien-local** (224.0.0.0/24,
+que la RFC 1112 interdit d'acheminer) du multicast routable ; l'hôte les
+confondait, ce qui ne se voyait pas parce qu'un hôte n'achemine pas —
+une divergence latente, exactement la forme que le §2.7 recense.
+
+**Ce que la mesure a imposé sur la PORTÉE du garde-fou, plutôt que
+l'inverse** : passé sur tout `devices/`, le cas structurel attrapait
+trois fichiers qui ne sont pas des acheminements et qui ont RAISON
+d'écrire ces bornes. `CiscoDhcpCommands` refuse une option d'adresse qui
+ne serait pas unicast (`o[0] === 0 || o[0] >= 224`), et
+`CiscoRoutingProtoCommands` en fait autant pour un réseau
+(`first > 0 && first < 224 && first !== 127`) : ce sont des grammaires
+d'ARGUMENT et non des classes de destination — elles répondent
+« l'opérateur a-t-il le droit de taper cela », question dont 0 et 127
+font partie et que `classifyIpv4Destination` ne tranche pas, puisque
+240.0.0.1 y est unicast. Les fondre aurait été la fausse réutilisation
+que le §4 interdit. Le garde-fou porte donc sur les fichiers qui lisent
+la destination d'un VRAI paquet (`destinationIP`). Le troisième,
+`TcpdumpFilter`, était en revanche une copie franche et délègue
+désormais.
+
+**Incrément 3 — LIVRÉ : le filtre de couche lien du pare-feu**, que
+cette phase s'était explicitement rattaché ci-dessus. Mesure de départ :
+une trame IPv4 portant une adresse MAC de destination étrangère
+(`02:99:99:99:99:99`), injectée sur `port2` d'un FortiGate en mode
+`nat`, est traitée entièrement — `recentTraces()` passe de 1 à 2,
+exactement comme en mode `transparent`. Les deux modes répondaient donc
+la même chose à une question dont ils **sont** la différence.
+`Firewall.handleFrame` consulte désormais `LinkLayer.deliver` — la règle
+existante, celle que l'hôte et le routeur lisent déjà, pas une seconde —
+et le mode transparent la court-circuite : un VDOM transparent est un pont de
+niveau 2 qui achemine sur l'adresse MAC de destination, il doit donc
+accepter ce qui ne lui est pas adressé, sinon il n'a rien à ponter.
+
+**Ce que le filtre a RÉVÉLÉ, et qui justifie l'ordre de ce chantier** :
+deux défauts indépendants que l'absence de filtre rendait invisibles.
+(1) **Une grappe FGCP n'avait aucune adresse MAC virtuelle.** Une vraie
+grappe partage `00:09:0f:09:<group-id % 256>:<vcluster + index>` sur
+toutes ses interfaces sauf le battement de cœur et la gestion réservée —
+c'est ce qui rend un basculement invisible au voisinage, dont le cache
+ARP reste valide. Ici chaque unité gardait la sienne, et le basculement
+ne « marchait » que parce que rien ne vérifiait l'adresse de
+destination : `tuto-fortigate-tp21` est passé au rouge à l'instant où
+quelque chose l'a vérifiée. (2) **Une fois l'adresse virtuelle
+partagée**, le subordonné émettait des sollicitations de voisin IPv6 sur
+ses interfaces de données depuis cette même adresse, si bien que le
+commutateur voisin réapprenait l'adresse virtuelle sur le port du
+SECONDAIRE et la moitié du trafic y mourait. Sur une vraie grappe a-p un
+subordonné n'émet pas sur ses interfaces de données ; c'est le pendant
+exact de `forwardsTransit()`, que ce dépôt avait déjà écrit pour la
+moitié TRANSIT du même fait, et la règle vit au seul point d'émission
+(`sendFrame`). Les trois correctifs partent ensemble parce qu'aucun des
+deux derniers n'était observable sans le premier.
+
+**Incrément 4 — LIVRÉ : la diffusion dirigée, RFC 2644.** Premier
+incrément de cette phase à toucher la décision livrer-ici /
+faire-suivre / jeter elle-même. Mesure : `ip directed-broadcast` était
+accepté, rangé sur le port (`Port.directedBroadcast`), rendu par
+`show running-config` — et `isDirectedBroadcastEnabled()` n'avait qu'UN
+appelant dans tout le dépôt, ce rendu. Aucun plan de données ne le
+lisait. Sur le même laboratoire, `ping -b 192.168.20.255` depuis un hôte
+de 192.168.10.0/24 rendait `100% packet loss` AVEC comme SANS la
+commande : la seule différence observable entre les deux configurations
+était le texte de la configuration. C'est le « ne jamais ranger un
+critère qu'on n'évalue pas » du CLAUDE.md, et le fait que le défaut par
+défaut soit le bon rendait l'inertie invisible — sans la commande le
+paquet tombait, mais pour la mauvaise raison (le routeur cherchait à
+résoudre 192.168.20.255 en ARP, sans succès) et non parce qu'une règle
+en avait décidé.
+
+L'attestation dit une chose qu'il ne fallait pas rater : la commande
+Cisco « affects only the final transmission of the directed broadcast on
+its ultimate destination subnet ». Ce n'est donc PAS une barrière
+générale d'acheminement — un paquet qui TRAVERSE un routeur vers le
+sous-réseau cible est acheminé normalement ; seul le dernier routeur,
+directement connecté à la cible, l'explose en diffusion physique (option
+active) ou le jette (défaut RFC 2644, BCP 34). D'où sa place exacte dans
+la décision de la phase, et non dans `forwardPacket`.
+`isDirectedBroadcast` vit dans la couche et réutilise
+`IPAddress.isBroadcastFor`, déjà écrit.
+
+**Deux choses que la mesure a corrigées de mes suppositions.** (1)
+J'avais écrit un cas attendant que la cible RÉPONDE. Il est tombé, et il
+avait tort : un vrai Linux ne répond pas à un echo adressé à une
+diffusion (`net.ipv4.icmp_echo_ignore_broadcasts` vaut 1 par défaut),
+qui est précisément la contre-mesure Smurf que la RFC 2644 complète côté
+routeur. L'observable est donc la LIVRAISON, pas une réponse — faire
+« marcher » le ping aurait demandé de casser cette contre-mesure-là.
+(2) Deux cas de la sonde passaient pour la mauvaise raison, parce qu'ils
+comptaient n'importe quelle trame : avant correctif le routeur émettait
+une requête ARP de diffusion pour résoudre 192.168.20.255, si bien
+qu'une diffusion dirigée venue de l'extérieur faisait FUIR un ARP sur le
+sous-réseau cible — le paquet ne passait pas, mais le routeur parlait
+quand même au segment qu'on cherchait à atteindre.
+
+**Incrément 5 — LIVRÉ : une erreur ICMP ne répond pas à n'importe quoi.**
+Mesure de départ sur un Catalyst à deux SVI : une erreur ICMP en réponse
+à une erreur ICMP (1), à un paquet adressé à 239.1.1.1 (1), à un
+fragment non initial (1) — trois interdits sur trois — pendant qu'un vrai
+TTL expiré en donnait bien une seule. La RFC 1122 §3.2.2 nomme les quatre
+cas, et **la règle existait déjà et était juste** :
+`mayGenerateICMPError` de `core/IcmpErrors.ts`, lue par `Router`,
+`Firewall` et `EndHost`. `SwitchSvi` ne l'appelait NULLE PART —
+quatrième écriture d'un même fait, et comme partout ailleurs dans ce
+dépôt c'est celle qui a oublié la règle qui est la plus permissive. Le
+cas du groupe est le plus coûteux : il fait du commutateur un
+amplificateur Smurf, un incrément après que la moitié routeur de cette
+même contre-mesure a été livrée.
+
+**Deux autres défauts du même sujet, fermés avec.** (1)
+`core/IcmpErrors.ts` DÉLÈGUE à ses appelants le contrôle de la diffusion
+DIRIGÉE — « callers that know the mask must check `isBroadcastFor()`
+themselves » — et **aucun des trois ne le faisait** ; il devient faisable
+ici parce que l'incrément 4 a posé `isDirectedBroadcast` dans la couche.
+(2) Le SVI portait DEUX émetteurs quasi identiques, ne différant que par
+le type et le code, et aucun des deux ne lisait `buildICMPError` du
+module partagé. Il n'en reste qu'un.
+
+**La portée du contrôle de diffusion dirigée est MESURÉE et non
+supposée**, parce que l'ajouter partout « par précaution » rangerait un
+critère que rien n'atteint. `Router` : l'incrément 4 attrape le cas avant
+le chemin d'erreur. `EndHost` : un routeur Linux à deux pattes,
+`ip_forward` à 1, recevant un TTL 1 vers `192.168.20.255` émet ZÉRO
+erreur — et ce zéro est attesté par un TÉMOIN monté dans le même
+laboratoire, un TTL 1 vers `192.168.20.10`, qui en émet exactement une.
+Sans ce témoin, un laboratoire mal bâti et une absence de défaut seraient
+indiscernables — piège dans lequel un cas de la sonde était justement
+tombé : « source non unicast » passait déjà, non par respect de la règle
+mais parce que `lookupRoute(0.0.0.0)` ne trouvait aucune route de retour.
+Le silence était un accident de routage ; il est désormais décidé.
+
+**Incrément 6 — LIVRÉ : la somme de contrôle d'en-tête est VÉRIFIÉE.**
+Même forme que l'incrément 5, un cran plus bas. La RFC 1812 §5.2.2 est
+sans ambiguïté — un routeur DOIT vérifier la somme de contrôle d'en-tête
+de tout datagramme reçu et jeter EN SILENCE celui dont elle est fausse —
+et `verifyIPv4Checksum` existe dans `core/types.ts` depuis toujours.
+`Router` l'appelle (et compte `ipInHdrErrors`), `EndHost` l'appelle ;
+`SwitchSvi` et `Firewall` ne l'appelaient NULLE PART. Mesure : un
+datagramme portant `headerChecksum = 0x1234` traverse le commutateur de
+niveau 3 et traverse le pare-feu, dans les deux cas jusqu'à l'hôte de
+destination. Le champ était ÉCRIT par trente-huit sites
+(`headerChecksum = computeIPv4Checksum(...)`) et LU par deux : un champ
+calculé partout et vérifié presque nulle part est exactement le
+« critère rangé et jamais évalué » que le CLAUDE.md interdit.
+
+**Ce qui n'a délibérément PAS été fait** : `verifyIPv4Checksum` n'est pas
+déplacée dans `layers/internet/`. Elle est déjà l'unique implantation,
+partagée, et la déménager churnerait trente-huit sites d'appel sans rien
+dédupliquer — la règle de réutilisation demande de l'APPELER, pas de la
+déplacer. Le §3.3 dit que la somme de contrôle « vit » dans la couche
+internet ; elle y vit déjà au sens qui compte, un seul corps pour tout le
+dépôt.
+
+**Le silence est la règle et non une facilité** : émettre une erreur ICMP
+à propos d'un en-tête corrompu serait doublement faux, l'adresse source
+de cet en-tête étant elle-même suspecte — on répondrait à une victime
+choisie par l'erreur. Même famille que l'incrément 5.
+
+**Incrément 7 — LIVRÉ : les QUATRE contrôles d'en-tête, une seule
+écriture.** L'incrément 6 n'avait donné que la somme de contrôle. En
+relisant le bloc « Phase B » du routeur pour l'écrire, on voit qu'il
+porte QUATRE contrôles — somme, version, IHL, longueur totale — écrits en
+quatre `if` qui répètent chacun le même geste (compteur, journal,
+retour), et que les trois autres équipements n'en avaient qu'UN :
+
+| équipement | contrôles avant |
+|---|---|
+| routeur | 4 |
+| hôte | 1 (la somme) |
+| commutateur L3 | 1 (la somme, incrément 6) |
+| pare-feu | 1 (la somme, incrément 6) |
+
+Mesure des trois manquants : `version = 6` dans une trame IPv4,
+`ihl = 2` — plus court qu'un en-tête —, `totalLength = 4`, chacun avec
+une somme RECALCULÉE pour que seul le champ visé soit en cause. Six cas
+sur les deux équipements, six paquets LIVRÉS ; la RFC 1812 §5.2.2 exige
+le rejet silencieux des trois.
+
+`ipv4HeaderProblem` rend la RAISON et non un booléen, parce que le
+routeur compte `ipInHdrErrors` et journalise un message par contrôle :
+garder la raison laisse à chaque appelant ses propres mots, ce que
+l'incrément 1 avait établi comme la règle de ce chantier. L'ORDRE est
+celui du routeur et il compte — la somme d'abord, un en-tête dont la
+somme est fausse n'étant pas lisible ; un cas l'épingle.
+
 ### Phase 3 — RIB et FIB séparées
 **Sortie** : `lookupRoute()` ne réveille plus le plan de contrôle ; une
 route statique récursive (`ip route <net> <mask> <ip-hors-lien>`)

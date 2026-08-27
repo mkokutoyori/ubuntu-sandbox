@@ -65,10 +65,12 @@ import {
   type SimulationResult,
 } from './pipeline/Simulation';
 import {
-  GENERIC_PROFILE, type DeploymentMode, type FirewallProfile,
+  GENERIC_PROFILE, type DeploymentMode, type FirewallProfile, type FirewallPortSpec,
 } from './FirewallProfile';
 import { ROOT_VDOM, VdomRegistry, type VdomContext } from './vdom/VdomRegistry';
 import { VdomLinkTable } from './vdom/VdomLinkTable';
+import { clusterVirtualMac } from './ha/clusterVirtualMac';
+import { ipv4HeaderProblem } from '../../layers/internet/InternetLayer';
 import { SwitchGroupTable } from './l3/SwitchGroupTable';
 import { logFactsOf } from './logging/logFacts';
 import { emitFirewallEvent, logPipelineOutcome } from './logging/emitFirewallEvent';
@@ -273,6 +275,15 @@ export class Firewall extends Equipment {
   private activeVdom = ROOT_VDOM;
   private readonly fqdnVips = new Map<string, () => void>();
 
+  static chassisPorts(profile: FirewallProfile): readonly FirewallPortSpec[] {
+    if (profile.ports !== undefined) return profile.ports;
+    const first = profile.portFirstIndex;
+    return Array.from({ length: profile.portCount }, (_unused, offset) => ({
+      name: `${profile.portPrefix}${first + offset}`,
+      role: 'undefined' as const,
+    }));
+  }
+
   constructor(
     deviceType: DeviceType, name: string, x = 0, y = 0, options: FirewallOptions = {},
   ) {
@@ -282,12 +293,14 @@ export class Firewall extends Equipment {
     this.profile = profile;
     this.pipelines = new PipelineCache(this.id, profile, this.registry);
 
-    const first = profile.portFirstIndex;
-    for (let index = first; index < first + profile.portCount; index++) {
-      const port = new Port(`${profile.portPrefix}${index}`, 'ethernet');
+    for (const declare of Firewall.chassisPorts(profile)) {
+      const port = new Port(declare.name, 'ethernet');
       this.addPort(port);
       this.watchBridgePort(port);
-      this.interfaces.configure(port.getName(), { up: port.getIsUp() });
+      this.interfaces.configure(port.getName(), {
+        up: port.getIsUp(),
+        ...(declare.ip ? { ip: declare.ip, mask: declare.mask } : {}),
+      });
     }
 
     this.vdomLinks = new VdomLinkTable({
@@ -674,7 +687,23 @@ export class Firewall extends Equipment {
 
   applyHa(c: HaConfiguration): string | undefined {
     this.haService.agent.configure(c);
+    this.applyClusterVirtualMacs(c);
     return undefined;
+  }
+
+  private readonly permanentMacs = new Map<string, MACAddress>();
+
+  private applyClusterVirtualMacs(c: HaConfiguration): void {
+    const heartbeat = new Set(c.heartbeatDevices.map((d) => d.iface));
+    this.getPorts().forEach((port, index) => {
+      const name = port.getName();
+      if (!this.permanentMacs.has(name)) this.permanentMacs.set(name, port.getMAC());
+      const permanent = this.permanentMacs.get(name);
+      if (!permanent) return;
+      port.setMAC(c.mode === 'standalone' || heartbeat.has(name)
+        ? permanent
+        : clusterVirtualMac(c.groupId, index));
+    });
   }
 
   private readonly serial: string = serialNumberOf(this.name);
@@ -1205,6 +1234,7 @@ export class Firewall extends Equipment {
       at: this.services.now(), iface: portName, direction: 'in', frame,
     });
     this.bridgeOf(portName).learn(frame.srcMAC.toString(), portName);
+    if (!this.acceptsAtLinkLayer(portName, frame)) return;
 
     if (frame.etherType === ETHERTYPE_FGCP) {
       this.haService.agent.receive(frame);
@@ -1222,6 +1252,23 @@ export class Firewall extends Equipment {
     if (frame.etherType === ETHERTYPE_IPV4) {
       this.handleIpv4Frame(portName, frame.payload as IPv4Packet, frame);
     }
+  }
+
+  sendFrame(portName: string, frame: EthernetFrame): boolean {
+    if (this.subordinateIsSilentOn(portName)) return false;
+    return super.sendFrame(portName, frame);
+  }
+
+  private subordinateIsSilentOn(portName: string): boolean {
+    const ha = this.haService.agent;
+    const config = ha.getConfiguration();
+    if (config.mode !== 'a-p' || ha.role() !== 'slave') return false;
+    return !config.heartbeatDevices.some((device) => device.iface === portName);
+  }
+
+  private acceptsAtLinkLayer(portName: string, frame: EthernetFrame): boolean {
+    if (this.vdoms.contextOfInterface(portName).settings.opmode === 'transparent') return true;
+    return this.getLinkLayer().deliver(portName, frame) !== null;
   }
 
   private lookupMac(destination: MACAddress, ingress: string): string | undefined {
@@ -1383,6 +1430,7 @@ export class Firewall extends Equipment {
     portName: string, packet: IPv4Packet, frame?: EthernetFrame,
   ): void {
     if (!packet || packet.type !== 'ipv4') return;
+    if (ipv4HeaderProblem(packet)) return;
 
     const recolle = this.fragments.accept(packet, this.services.now());
     if (recolle === null) return;

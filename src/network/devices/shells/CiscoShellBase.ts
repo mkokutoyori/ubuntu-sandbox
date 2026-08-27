@@ -22,6 +22,7 @@ import { parseCommand, uniqueChild } from '@/cli/CommandParser';
 import { applyTransition } from '@/cli/CliEngine';
 import { argumentAccepts } from '@/cli/ArgumentTypes';
 import type { ArgumentSpec } from '@/cli/ArgumentTypes';
+import { SOCLE, continuationsPourLeSocle } from './cisco/ciscoContinuations';
 import type { CommandSpec, TreeNode, LiveValuesPort } from '@/cli/CommandTable';
 
 /**
@@ -660,6 +661,105 @@ Readonly<Record<string, ArgumentSpec | readonly ArgumentSpec[] | null>> = {
     { name: 'reste', type: 'REST', optional: true,
       description: 'Host addresses, or `ns` then the name server address' },
   ],
+};
+
+/*
+ * Les sortes de ligne, et jusqu'ou chacune est numerotee.
+ *
+ * Un chassis a UNE console et UNE auxiliaire — IOS annonce `<0-0>` pour
+ * les deux — et seize terminaux virtuels, `<0-15>`, ce que la
+ * documentation Cisco donne comme le maximum par defaut d'IOS moderne.
+ * `tty` prend la meme borne faute d'une reference propre : ce simulateur
+ * n'a aucune ligne asynchrone, donc la borne exacte n'y est pas
+ * observable, et l'ancienne — aucune — etait la seule certainement
+ * fausse.
+ */
+const SORTES_DE_LIGNE: Readonly<Record<string, {
+  canonique: 'console' | 'vty' | 'aux' | 'tty'; max: number; description: string;
+}>> = {
+  aux: { canonique: 'aux', max: 0, description: 'Auxiliary line' },
+  con: { canonique: 'console', max: 0, description: 'Primary terminal line' },
+  console: { canonique: 'console', max: 0, description: 'Primary terminal line' },
+  tty: { canonique: 'tty', max: 15, description: 'Terminal controller' },
+  vty: { canonique: 'vty', max: 15, description: 'Virtual terminal' },
+};
+
+type TeteLigne =
+  | { sorte: 'console' | 'vty' | 'aux' | 'tty'; premiere: number; derniere: number }
+  | { erreur: string };
+
+/**
+ * La designation d'une ligne, lue UNE fois pour `line` et pour `no line`.
+ *
+ * Les deux commandes en avaient chacune leur lecture, et elles avaient
+ * diverge jusqu'a l'absurde : `no line` verifiait la sorte, exigeait un
+ * numero, le voulait entier et refusait une plage a l'envers, quand
+ * `line` n'examinait rien du tout — `line zorglub`, `line vty` seul,
+ * `line vty 99`, `line vty zorglub` et `line vty 5 2` etaient tous
+ * acceptes et faisaient entrer dans le sous-mode. L'operateur pouvait
+ * donc poser une plage que la negation refusait ensuite de retirer, et
+ * taper ses reglages d'acces dans un sous-mode qui ne designait aucune
+ * ligne.
+ */
+function analyserTeteLigne(args: readonly string[]): TeteLigne {
+  const mot = (args[0] ?? '').toLowerCase();
+  if (mot === '') return { erreur: CISCO_ERRORS.INCOMPLETE };
+  const sorte = SORTES_DE_LIGNE[mot];
+  if (!sorte) throw new CliInvalidInput({ token: args[0] });
+  if (args[1] === undefined) return { erreur: CISCO_ERRORS.INCOMPLETE };
+
+  const borne = (jeton: string): number => {
+    if (!/^\d+$/.test(jeton)) throw new CliInvalidInput({ token: jeton });
+    const valeur = Number.parseInt(jeton, 10);
+    if (valeur > sorte.max) throw new CliInvalidInput({ token: jeton });
+    return valeur;
+  };
+  const premiere = borne(args[1]);
+  const derniere = args[2] === undefined ? premiere : borne(args[2]);
+  if (derniere < premiere) throw new CliInvalidInput({ token: args[2] as string });
+  if (args[3] !== undefined) throw new CliInvalidInput({ token: args[3] });
+  return { sorte: sorte.canonique, premiere, derniere };
+}
+
+const IDENTITE_ET_AMORCAGE: ReadonlySet<string> = new Set([
+  'boot system', 'boot enable-break', 'boot manual', 'config-register',
+  'hostname', 'enable secret', 'enable algorithm-type', 'enable password',
+]);
+
+const ALGORITHM_TYPE_PLACES: readonly ArgumentSpec[] = [
+  {
+    name: 'algorithm', type: 'ENUM', description: 'Algorithm to hash the secret with',
+    values: [
+      { keyword: 'md5', description: 'Select MD5 as the hashing algorithm' },
+      { keyword: 'scrypt', description: 'Select scrypt as the hashing algorithm' },
+      { keyword: 'sha256', description: 'Select PBKDF2 with SHA256 as the hashing algorithm' },
+    ],
+  },
+  {
+    name: 'kind', type: 'ENUM', description: 'What to set',
+    values: [{ keyword: 'secret', description: 'Assign the privileged level secret' }],
+  },
+  { name: 'secret', type: 'LINE', description: 'The UNENCRYPTED (cleartext) enable secret' },
+];
+
+const IDENTITE_PLACES:
+  Readonly<Record<string, ArgumentSpec | readonly ArgumentSpec[]>> = {
+  hostname: { name: 'nom', type: 'WORD', description: 'This system\'s network name' },
+  'config-register': {
+    name: 'valeur', type: 'WORD', description: 'Config register value, in hex',
+  },
+  'boot system': {
+    name: 'image', type: 'REST', description: 'System image file', literal: 'WORD',
+  },
+  'enable secret': {
+    name: 'reste', type: 'REST',
+    description: 'Assign the privileged level secret', literal: 'LINE',
+  },
+  'enable password': {
+    name: 'reste', type: 'REST',
+    description: 'Assign the privileged level password', literal: 'LINE',
+  },
+  'enable algorithm-type': ALGORITHM_TYPE_PLACES,
 };
 
 type HardeningEntry = readonly [
@@ -5120,6 +5220,8 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       ...this.serviceSpecs(),
       ...this.hardeningSpecs(),
       ...this.arpSpecs(),
+      ...this.identityBootSpecs(),
+      ...this.lineEntrySpecs(),
       ...this.showSocleSpecs(),
       ...this.archiveSubmodeSpecs(),
       ...this.identitySubmodeSpecs(),
@@ -5284,6 +5386,51 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
         },
       ),
     ];
+  }
+
+  protected lineEntrySpecs(): CommandSpec[] {
+    const places = (max: number): ArgumentSpec[] => [
+      { name: 'premiere', type: 'INT', range: [0, max], description: 'First Line number' },
+      { name: 'derniere', type: 'INT', range: [0, max],
+        description: 'Last Line number', optional: true },
+    ];
+    /*
+     * `con` est l'abreviation de `console` et non une cinquieme sorte :
+     * le socle la resout par prefixe, donc seule la forme canonique se
+     * declare — la declarer deux fois rendrait `line ?` avec une ligne
+     * de trop, que `?` d'IOS n'ecrit pas.
+     */
+    const parCanonique = new Map(
+      Object.values(SORTES_DE_LIGNE).map(sorte => [sorte.canonique, sorte]));
+    const sortes = [...parCanonique.values()]
+      .sort((a, b) => a.canonique.localeCompare(b.canonique))
+      .map(sorte => ({
+        keyword: sorte.canonique, description: sorte.description,
+        argument: places(sorte.max),
+      }));
+
+    return specsFromTrieRegistrations(
+      (collector) => this.registerCommonConfigCommands(collector as unknown as CommandTrie),
+      {
+        modes: ['config', 'config-line'], minPrivilege: 15,
+        undoFromNegatedPaths: true,
+        skip: (path) => path !== 'line' && path !== 'no line',
+        keywordsFor: () => sortes,
+      },
+    );
+  }
+
+  protected identityBootSpecs(): CommandSpec[] {
+    return specsFromTrieRegistrations(
+      (collector) => this.registerCommonConfigCommands(collector as unknown as CommandTrie),
+      {
+        modes: ['config'], minPrivilege: 15,
+        undoFromNegatedPaths: true,
+        skip: (path) => !IDENTITE_ET_AMORCAGE.has(path.replace(/^no /, '')),
+        argumentFor: (path) => IDENTITE_PLACES[path],
+        keywordsFor: (path) => continuationsPourLeSocle(path, SOCLE),
+      },
+    );
   }
 
   protected hardeningSpecs(): CommandSpec[] {
@@ -5803,7 +5950,15 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     table: CommandTable, ligne: string,
     brutes: Array<{ keyword: string; description: string; isArgument: boolean }>,
   ): Array<{ keyword: string; description: string; isArgument: boolean }> {
-    if (ligne.trim() !== '' || !this.isConfigMode()) return brutes;
+    /*
+     * `?` liste au rang vide, la tabulation part d'une frappe partielle :
+     * limiter l'offre au rang vide faisait annoncer `no` par l'aide sans
+     * que Tab sache l'ecrire. Le garde-fou de parite l'a attrape sur
+     * `config-vlan`, ou tout ce qui se defait vient du socle.
+     */
+    const frappe = ligne.trim().toLowerCase();
+    if (/\s/.test(frappe) || !'no'.startsWith(frappe)) return brutes;
+    if (!this.isConfigMode()) return brutes;
     if (brutes.some(s => s.keyword.toLowerCase() === 'no')) return brutes;
     if (!CiscoShellBase.negationSous(table, [], this.mode)) return brutes;
     return [...brutes, {
@@ -5999,6 +6154,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     // doivent donc etre rendus par le meme traducteur. Sans cela une
     // commande refusee remontait son exception a travers le repartiteur
     // au lieu de rendre le message d'IOS.
+    const modeAvant = this.mode;
     try {
       const output: unknown = handler(session, parsed.args);
       if (typeof output !== 'string') return null;
@@ -6006,7 +6162,8 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
         applyTransition(parsed.spec, parsed.args, session);
         this.adoptSocleSession(session);
       }
-      return output;
+      const confine = this.confinerSousVue(modeAvant, parsed, cmdPart);
+      return confine ?? output;
     } catch (err) {
       if (err instanceof CliInvalidInput) {
         if (err.motAbsent()) return renderCliDiagnostic('incomplete', { line: cmdPart });
@@ -6018,6 +6175,36 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       if (err instanceof CliIncomplete) return renderCliDiagnostic('incomplete', { line: cmdPart });
       throw err;
     }
+  }
+
+  /**
+   * Une commande venue de l'arbre GLOBAL ne deplace pas une session
+   * confinee dans une vue d'analyseur.
+   *
+   * La regle vivait dans `tryGlobalConfigNavigation`, qui ne lit que le
+   * trie : `interface Gi0/0` tapee sous `parser view NOC` y changeait de
+   * mode, si bien que le `exit` suivant quittait l'interface et non la
+   * vue, et la definition restait a moitie faite. Migrer `interface` au
+   * socle rouvrait le trou, parce que le socle admet une commande de
+   * `config` depuis un sous-mode par HERITAGE. La regle appartient a la
+   * CLI et non a l'un des deux moteurs : elle est donc posee ici aussi,
+   * sur la meme condition — le mode a change, et la commande ne declare
+   * pas la vue.
+   */
+  private confinerSousVue(
+    modeAvant: string,
+    parsed: { spec: { modes: readonly string[]; path: readonly unknown[] } },
+    cmdPart: string,
+  ): string | null {
+    if (modeAvant !== 'config-view' || this.mode === modeAvant) return null;
+    if (parsed.spec.modes.includes('config-view')) return null;
+
+    this.mode = modeAvant;
+    this.fsm.mode = modeAvant;
+    return renderCliDiagnostic('invalid', {
+      line: cmdPart,
+      tokenOffset: argumentOffset(cmdPart, CiscoShellBase.keywordCount(parsed.spec), 0),
+    });
   }
 
   private adoptSocleSession(session: CliSession): void {
@@ -7777,21 +7964,21 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     return hk ? { keyType: hk.type, publicKey: hk.publicKey } : null;
   }
 
-  private registerCommonConfigCommands(): void {
+  private registerCommonConfigCommands(trie: CommandTrie = this.configTrie): void {
     // `configure terminal` while already in config is an idempotent
     // no-op (re-issuing it must not error mid-sequence).
-    this.configTrie.register('configure terminal', 'Already in global config', () => '');
+    trie.register('configure terminal', 'Already in global config', () => '');
 
     // La séquence de démarrage. `config-register 0x2142` est la moitié
     // de la récupération de mot de passe la plus enseignée du cours ;
     // le registre est réellement stocké et son bit 0x40 réellement lu.
-    this.configTrie.registerGreedy('boot system', 'Specify system image to load', (args) => {
+    trie.registerGreedy('boot system', 'Specify system image to load', (args) => {
       const image = (args[0] ?? '').replace(/^flash:\/?/i, '');
       if (!image) return '% Incomplete command.';
       this.fs().addBootSystem(image);
       return '';
     });
-    this.configTrie.registerGreedy('no boot system', 'Remove a system image from the boot list', (args) => {
+    trie.registerGreedy('no boot system', 'Remove a system image from the boot list', (args) => {
       const image = (args[0] ?? '').replace(/^flash:\/?/i, '');
       this.fs().removeBootSystem(image || undefined);
       return '';
@@ -7799,17 +7986,17 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     if (!this.hasConfigRegister()) {
       // Les deux seuls reglages d'amorcage d'un Catalyst, et les deux
       // seuls champs de son `show boot` qu'un operateur peut changer.
-      this.configTrie.register('boot enable-break', 'Enable the Break key during boot',
+      trie.register('boot enable-break', 'Enable the Break key during boot',
         () => { this.fs().setEnableBreak(true); return ''; });
-      this.configTrie.register('no boot enable-break', 'Disable the Break key during boot',
+      trie.register('no boot enable-break', 'Disable the Break key during boot',
         () => { this.fs().setEnableBreak(false); return ''; });
-      this.configTrie.register('boot manual', 'Boot into the boot loader instead of the image',
+      trie.register('boot manual', 'Boot into the boot loader instead of the image',
         () => { this.fs().setManualBoot(true); return ''; });
-      this.configTrie.register('no boot manual', 'Boot the image automatically',
+      trie.register('no boot manual', 'Boot the image automatically',
         () => { this.fs().setManualBoot(false); return ''; });
     }
     if (this.hasConfigRegister()) {
-      this.configTrie.registerGreedy('config-register', 'Set configuration register', (args) => {
+      trie.registerGreedy('config-register', 'Set configuration register', (args) => {
         const val = args[0] ?? '';
         if (!this.fs().setConfigRegister(val)) {
           return '% Invalid config register value';
@@ -7818,27 +8005,27 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       });
     }
 
-    this.configTrie.registerGreedy('hostname', 'Set system hostname', (args) => {
+    trie.registerGreedy('hostname', 'Set system hostname', (args) => {
       if (args.length < 1) return '% Incomplete command.';
       this.d()._setHostnameInternal(args[0]);
       return '';
     });
 
-    this.configTrie.register('no hostname', 'Reset hostname', () => {
+    trie.register('no hostname', 'Reset hostname', () => {
       const dev = this.d();
       dev._setHostnameInternal(dev.defaultHostname());
       return '';
     });
 
     // `alias <mode> <name> <command…>` — real, working aliases.
-    this.configTrie.registerGreedy('alias', 'Create a command alias', (args) => {
+    trie.registerGreedy('alias', 'Create a command alias', (args) => {
       if (args.length < 3) return '% Incomplete command.';
       const [modeTok, name, ...rest] = args;
       if (name.length > 31) return '% Alias name exceeds 31 characters.';
       this.aliases.set(this.aliasMode(modeTok), name, rest.join(' '));
       return '';
     });
-    this.configTrie.registerGreedy('no alias', 'Remove a command alias', (args) => {
+    trie.registerGreedy('no alias', 'Remove a command alias', (args) => {
       if (args.length < 2) return '% Incomplete command.';
       this.aliases.remove(this.aliasMode(args[0]), args[1]);
       return '';
@@ -7848,11 +8035,11 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     // Repository (shared switch + router, DRY). `show cdp`/`show lldp`
     // and `show running-config` project this real state.
     const flag = (feature: string, enableCmd: string, desc: string) => {
-      this.configTrie.registerGreedy(enableCmd, desc, () => {
+      trie.registerGreedy(enableCmd, desc, () => {
         this.configState.set(feature, true);
         return '';
       });
-      this.configTrie.registerGreedy(`no ${enableCmd}`, `Disable ${desc}`, () => {
+      trie.registerGreedy(`no ${enableCmd}`, `Disable ${desc}`, () => {
         this.configState.set(feature, false);
         return '';
       });
@@ -7866,12 +8053,12 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     // the router (CiscoOspfCommands, device-specific); only record the
     // negation here so it's recognised on both vendors without
     // shadowing that specific handler.
-    this.configTrie.registerGreedy('no ip routing', 'Disable IP routing', () => {
+    trie.registerGreedy('no ip routing', 'Disable IP routing', () => {
       this.configState.set('ip routing', false);
       return '';
     });
     registerCiscoDnsCommands(this.configTrie, this.dnsCommandContext());
-    this.configTrie.register('no banner motd', 'Clear MOTD banner', () => {
+    trie.register('no banner motd', 'Clear MOTD banner', () => {
       const dev = this.d() as unknown as {
         _setSshBanner?: (b: string) => void;
         _setMotdBanner?: (b: string) => void;
@@ -7880,7 +8067,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       dev._setMotdBanner?.('');
       return '';
     });
-    this.configTrie.registerGreedy('vrf', 'VRF configuration', (args, raw) => {
+    trie.registerGreedy('vrf', 'VRF configuration', (args, raw) => {
       const r = this.d() as unknown as { _recordUnhandledConfigLine?: (l: string) => void };
       r._recordUnhandledConfigLine?.(raw ?? `vrf ${args.join(' ')}`);
       return '';
@@ -7890,7 +8077,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     // deux orthographes d'une seule commande donnaient deux résultats
     // — l'une entrait en config-vrf, l'autre notait une ligne et rendait
     // la main en configuration globale.
-    this.configTrie.registerGreedy('vrf definition', 'Configure a VRF', (args) => {
+    trie.registerGreedy('vrf definition', 'Configure a VRF', (args) => {
       if (args.length < 1) return CISCO_ERRORS.INCOMPLETE;
       const name = args[0];
       const dev = this.d() as unknown as {
@@ -7902,7 +8089,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       this.mode = 'config-vrf';
       return '';
     });
-    this.configTrie.registerGreedy('ip community-list', 'Define BGP community list', (args, raw) => {
+    trie.registerGreedy('ip community-list', 'Define BGP community list', (args, raw) => {
       if (args.length < 3) return CISCO_ERRORS.INCOMPLETE;
       const kind = args[0].toLowerCase();
       const named = kind === 'standard' || kind === 'expanded';
@@ -7917,7 +8104,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       r._recordUnhandledConfigLine?.(raw ?? `ip community-list ${args.join(' ')}`);
       return '';
     });
-    this.configTrie.registerGreedy('ip as-path access-list', 'Define BGP AS-path filter', (args, raw) => {
+    trie.registerGreedy('ip as-path access-list', 'Define BGP AS-path filter', (args, raw) => {
       if (args.length < 3) return CISCO_ERRORS.INCOMPLETE;
       const store = this.asPathLists();
       const list = store.get(args[0]) ?? [];
@@ -7927,12 +8114,12 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       r._recordUnhandledConfigLine?.(raw ?? `ip as-path access-list ${args.join(' ')}`);
       return '';
     });
-    this.configTrie.registerGreedy('priority-list', 'Legacy PQ list', (args, raw) => {
+    trie.registerGreedy('priority-list', 'Legacy PQ list', (args, raw) => {
       const r = this.d() as unknown as { _recordUnhandledConfigLine?: (l: string) => void };
       r._recordUnhandledConfigLine?.(raw ?? `priority-list ${args.join(' ')}`);
       return '';
     });
-    this.configTrie.registerGreedy('queue-list', 'Legacy CQ list', (args, raw) => {
+    trie.registerGreedy('queue-list', 'Legacy CQ list', (args, raw) => {
       const r = this.d() as unknown as { _recordUnhandledConfigLine?: (l: string) => void };
       r._recordUnhandledConfigLine?.(raw ?? `queue-list ${args.join(' ')}`);
       return '';
@@ -7952,7 +8139,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
      * parait dans la configuration, se recharge a l'import, et
      * n'autorise jamais rien.
      */
-    this.configTrie.registerGreedy('privilege', 'Configure command privilege levels', (args, raw) => {
+    trie.registerGreedy('privilege', 'Configure command privilege levels', (args, raw) => {
       const regle = this.analyserRegleDePrivilege(args);
       if (regle.niveau === null) {
         return this.reinitialiserNiveauDeCommande(regle.scope, regle.commande);
@@ -7975,7 +8162,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
      * restreinte pourrait s'octroyer des commandes, ce qui viderait le
      * mecanisme de son sens).
      */
-    this.configTrie.registerGreedy('parser view', 'Define a CLI view', (args) => {
+    trie.registerGreedy('parser view', 'Define a CLI view', (args) => {
       if (args.length === 0) throw new CliIncomplete();
       const sec = getSecurityConfig(this.d());
       if (!sec.aaaNewModel) {
@@ -8025,23 +8212,23 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       this.mode = 'config-view';
       return '';
     }, [{ keyword: 'superview', description: 'Define this view as a superview' }]);
-    this.configTrie.registerGreedy('no parser view', 'Remove a CLI view', (args) => {
+    trie.registerGreedy('no parser view', 'Remove a CLI view', (args) => {
       if (args.length === 0) throw new CliIncomplete();
       getSecurityConfig(this.d()).parserViews.delete(args[0]);
       return '';
     });
     // Après les deux enregistrements, qui créent les nœuds : sans cela
     // `?` proposerait `parser` et `no parser` nus.
-    this.configTrie.describeNode('parser', 'Configure parser');
-    this.configTrie.describeNode('no parser', 'Negate a parser command');
+    trie.describeNode('parser', 'Configure parser');
+    trie.describeNode('no parser', 'Negate a parser command');
 
-    this.configTrie.registerGreedy('no privilege', 'Remove privilege command rule', (args) => {
+    trie.registerGreedy('no privilege', 'Remove privilege command rule', (args) => {
       const regle = this.analyserRegleDePrivilege(args);
       this.autorisation().resetCommandLevel(regle.scope, regle.commande);
       return '';
     });
 
-    this.configTrie.registerGreedy('banner', 'Set a banner', (args, rawLine) => {
+    trie.registerGreedy('banner', 'Set a banner', (args, rawLine) => {
       const which = args[0]?.toLowerCase();
       if (!which || !['motd', 'login', 'exec', 'incoming'].includes(which)) {
         return CISCO_ERRORS.INVALID_INPUT;
@@ -8073,7 +8260,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       };
       return `Enter TEXT message.  End with the character '${delim}'.`;
     });
-    this.configTrie.registerGreedy('no banner', 'Remove a banner', (args) => {
+    trie.registerGreedy('no banner', 'Remove a banner', (args) => {
       const which = args[0]?.toLowerCase();
       const dev = this.d() as unknown as {
         _setMotdBanner?: (b: string) => void;
@@ -8090,9 +8277,9 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     });
     registerLoggingConfigCommands(this.configTrie, this.loggingCommandContext());
     registerSequenceNumbersCommand(this.configTrie, this.loggingCommandContext());
-    this.configTrie.registerGreedy('service timestamps', 'Timestamp log/debug messages', (args) =>
+    trie.registerGreedy('service timestamps', 'Timestamp log/debug messages', (args) =>
       this.applyServiceTimestamps(args, false));
-    this.configTrie.registerGreedy('no service timestamps', 'Stop timestamping messages', (args) =>
+    trie.registerGreedy('no service timestamps', 'Stop timestamping messages', (args) =>
       this.applyServiceTimestamps(args, true));
     // Chaque sous-commande de `ntp` est un VRAI noeud de l'arbre.
     //
@@ -8110,7 +8297,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     //
     // Declarer les vrais enfants les exclut de l'extraction, donne a
     // chacun sa propre aide, et fait refuser ce qui n'existe pas.
-    this.configTrie.register('ntp', 'Configure NTP', () => CISCO_ERRORS.INCOMPLETE);
+    trie.register('ntp', 'Configure NTP', () => CISCO_ERRORS.INCOMPLETE);
 
 
     // Même chemin exact que la forme d'EXEC privilégié : deux analyseurs
@@ -8121,17 +8308,17 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     // suites du code de son propre gestionnaire, et proposait donc un
     // `timezone` sans description depuis que la sous-commande de ce nom
     // est passee au socle.
-    this.configTrie.register('clock calendar-valid',
+    trie.register('clock calendar-valid',
       'Hardware calendar is a valid time source', (_args, raw) => {
         const dev = this.d() as unknown as { _recordUnhandledConfigLine?: (l: string) => void };
         dev._recordUnhandledConfigLine?.(raw ?? 'clock calendar-valid');
         return '';
       });
-    this.configTrie.register('clock', 'Configure time-of-day clock', () => {
+    trie.register('clock', 'Configure time-of-day clock', () => {
       throw new CliIncomplete();
     });
 
-    this.configTrie.registerGreedy('enable secret', 'Set enable secret', (args) => {
+    trie.registerGreedy('enable secret', 'Set enable secret', (args) => {
       const dev = this.d() as unknown as { _setEnableSecretForLevel?: (level: number, s: string, algo: 'plain' | 'md5' | 'sha256' | 'scrypt' | 'type-7') => void };
       let algo: 'plain' | 'md5' | 'sha256' | 'scrypt' | 'type-7' = 'md5';
       let secret = '';
@@ -8181,7 +8368,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     // `enable algorithm-type {md5|scrypt|sha256} secret [level N] <pwd>` —
     // explicit-algorithm form of `enable secret` (IOS 15.3+), always takes
     // a cleartext password and hashes it with the named algorithm.
-    this.configTrie.registerGreedy('enable algorithm-type', 'Set enable secret with an explicit hash algorithm', (args) => {
+    trie.registerGreedy('enable algorithm-type', 'Set enable secret with an explicit hash algorithm', (args) => {
       const dev = this.d() as unknown as { _setEnableSecretForLevel?: (level: number, s: string, algo: 'plain' | 'md5' | 'sha256' | 'scrypt' | 'type-7') => void };
       const algoName = args[0]?.toLowerCase();
       const algoMap: Record<string, 'md5' | 'scrypt' | 'sha256'> = { md5: 'md5', scrypt: 'scrypt', sha256: 'sha256' };
@@ -8207,7 +8394,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       dev._setEnableSecretForLevel?.(level, secret, algo);
       return '';
     });
-    this.configTrie.registerGreedy('enable password', 'Set enable password', (args) => {
+    trie.registerGreedy('enable password', 'Set enable password', (args) => {
       const dev = this.d() as unknown as {
         _setEnablePasswordForLevel?: (level: number, p: string, algo: 'plain' | 'type-7') => void;
         getServiceFlags?: () => ReadonlyMap<string, boolean>;
@@ -8235,12 +8422,12 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       }
       return '';
     });
-    this.configTrie.register('no enable secret', 'Remove enable secret', () => {
+    trie.register('no enable secret', 'Remove enable secret', () => {
       const dev = this.d() as unknown as { _setEnableSecret?: (s: string, algo: 'plain') => void };
       dev._setEnableSecret?.('', 'plain');
       return '';
     });
-    this.configTrie.register('no enable password', 'Remove enable password', () => {
+    trie.register('no enable password', 'Remove enable password', () => {
       const dev = this.d() as unknown as { _setEnablePassword?: (p: string, algo: 'plain') => void };
       dev._setEnablePassword?.('', 'plain');
       return '';
@@ -8248,7 +8435,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     // `username <name> [privilege N] [secret|password] <pwd>` — captures
     // the local-user database so the sshd dispatch can validate inbound
     // logins. Anything we don't parse is still accepted silently.
-    this.configTrie.registerGreedy('crypto', 'Encryption module', (args, raw) => {
+    trie.registerGreedy('crypto', 'Encryption module', (args, raw) => {
       const dev = this.d() as unknown as { _recordUnhandledConfigLine?: (l: string) => void };
       dev._recordUnhandledConfigLine?.(raw ?? `crypto ${args.join(' ')}`);
       return '';
@@ -8256,7 +8443,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     // `service timestamps` has its own registration above and the trie
     // routes to the more specific one, so the second parser this handler
     // used to carry never ran — it could only ever contradict the first.
-    this.configTrie.registerGreedy('no username', 'Remove a local user', (args) => {
+    trie.registerGreedy('no username', 'Remove a local user', (args) => {
       const dev = this.d() as unknown as { _removeLocalUser?: (n: string) => void };
       if (args[0] && typeof dev._removeLocalUser === 'function') dev._removeLocalUser(args[0]);
       return '';
@@ -8272,28 +8459,22 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     // We remember the selected VTY range so subsequent directives
     // (exec-timeout, access-class, transport input, …) land in the
     // right VtyLineConfig block.
-    this.configTrie.registerGreedy('line', 'Enter line configuration', (args) => {
+    trie.registerGreedy('line', 'Enter line configuration', (args) => {
+      const tete = analyserTeteLigne(args);
+      if ('erreur' in tete) return tete.erreur;
+
       this.mode = 'config-line';
-      const kind = args[0]?.toLowerCase();
-      if (kind === 'vty') {
-        const first = Number.parseInt(args[1] ?? '0', 10);
-        const last  = Number.parseInt(args[2] ?? args[1] ?? '0', 10);
-        this.selectedVtyRange = { first, last };
-        this.selectedConsoleLine = null;
+      this.selectedVtyRange = null;
+      this.selectedConsoleLine = null;
+      this.selectedAuxLine = null;
+      if (tete.sorte === 'vty' || tete.sorte === 'tty') {
+        this.selectedVtyRange = { first: tete.premiere, last: tete.derniere };
         const dev = this.d() as unknown as { _getVtyLineConfig?: () => { upsert: (p: object) => void } };
-        dev._getVtyLineConfig?.().upsert({ first, last });
-      } else if (kind === 'console' || kind === 'con') {
-        this.selectedVtyRange = null;
-        this.selectedConsoleLine = Number.parseInt(args[1] ?? '0', 10);
-        this.selectedAuxLine = null;
-      } else if (kind === 'aux') {
-        this.selectedVtyRange = null;
-        this.selectedConsoleLine = null;
-        this.selectedAuxLine = Number.parseInt(args[1] ?? '0', 10);
+        dev._getVtyLineConfig?.().upsert({ first: tete.premiere, last: tete.derniere });
+      } else if (tete.sorte === 'console') {
+        this.selectedConsoleLine = tete.premiere;
       } else {
-        this.selectedVtyRange = null;
-        this.selectedConsoleLine = null;
-        this.selectedAuxLine = null;
+        this.selectedAuxLine = tete.premiere;
       }
       return '';
     });
@@ -8310,34 +8491,26 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
      * IOS refuse d'ailleurs `no line console 0`, une ligne qu'on ne peut
      * pas retirer d'un chassis.
      */
-    this.configTrie.registerGreedy('no line', 'Remove line configuration', (args) => {
-      const kind = (args[0] ?? '').toLowerCase();
-      if (kind === '') return CISCO_ERRORS.INCOMPLETE;
-      if (kind === 'console' || kind === 'con' || kind === 'aux') {
-        return `% Can't delete ${kind === 'aux' ? 'AUX' : 'console'} line`;
-      }
-      if (kind !== 'vty' && kind !== 'tty') throw new CliInvalidInput({ token: args[0] });
-      if (args[1] === undefined) return CISCO_ERRORS.INCOMPLETE;
-      const first = Number.parseInt(args[1], 10);
-      const last = Number.parseInt(args[2] ?? args[1], 10);
-      if (!Number.isInteger(first) || !Number.isInteger(last) || first < 0 || last < first) {
-        throw new CliInvalidInput({ token: args[2] ?? args[1] });
+    trie.registerGreedy('no line', 'Remove line configuration', (args) => {
+      const tete = analyserTeteLigne(args);
+      if ('erreur' in tete) return tete.erreur;
+      if (tete.sorte === 'console' || tete.sorte === 'aux') {
+        return `% Can't delete ${tete.sorte === 'aux' ? 'AUX' : 'console'} line`;
       }
       const dev = this.d() as unknown as {
         _getVtyLineConfig?: () => { remove: (a: number, b: number) => boolean };
       };
-      dev._getVtyLineConfig?.().remove(first, last);
-      if (this.selectedVtyRange?.first === first && this.selectedVtyRange?.last === last) {
+      dev._getVtyLineConfig?.().remove(tete.premiere, tete.derniere);
+      if (this.selectedVtyRange?.first === tete.premiere
+        && this.selectedVtyRange?.last === tete.derniere) {
         this.selectedVtyRange = null;
       }
       return '';
     });
-    this.configTrie.registerSuggestions('no line', [
-      { keyword: 'vty', description: 'Virtual terminal', leadingOnly: true },
-      { keyword: 'tty', description: 'Terminal controller', leadingOnly: true },
-      { keyword: 'console', description: 'Primary terminal line', leadingOnly: true },
-      { keyword: 'aux', description: 'Auxiliary line', leadingOnly: true },
-    ]);
+    // Une ligne se DESIGNE : `line` seul, comme `no line` seul, repond
+    // « Incomplete », donc ni l'un ni l'autre n'annonce `<cr>`.
+    trie.requireArgs('line', 1);
+    trie.requireArgs('no line', 1);
 
     // Les vingt mots-clés ci-dessus partagent UN handler, et
     // `autoContinuations` lit le corps d'un handler pour deviner ses

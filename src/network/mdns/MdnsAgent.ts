@@ -67,7 +67,6 @@ import {
   MDNS_TIMEOUT_MS, MDNS_PROBE_COUNT, MDNS_PROBE_INTERVAL_MS, MDNS_MAX_RENAMES,
   isLocalName, nextCandidateName, type MdnsNameState,
 } from './types';
-import { getDefaultEventBus } from '@/events/EventBus';
 import { DnsSdRegistry, DNSSD_RECORD_TTL } from '@/network/dnssd/DnsSdRegistry';
 import {
   DNSSD_ENUM_NAME, instanceName, parseInstanceName, serviceTypeName,
@@ -185,7 +184,7 @@ export class MdnsAgent {
     for (const [key, entry] of this.heard) {
       if (entry.expiresAtMs > now) continue;
       this.heard.delete(key);
-      getDefaultEventBus().publish({
+      this.host.getBus().publish({
         topic: 'mdns.service.expired',
         payload: {
           deviceId: this.host.getId(), hostname: this.host.getHostname(),
@@ -205,7 +204,7 @@ export class MdnsAgent {
     const sent = announceMulticastDns(
       this.host, MDNS_BINDING, this.buildRecordResponse(nextDnsTransactionId(), records, []));
     if (sent) {
-      getDefaultEventBus().publish({
+      this.host.getBus().publish({
         topic: goodbye ? 'mdns.service.goodbye' : 'mdns.service.announced',
         payload: {
           deviceId: this.host.getId(), hostname: this.host.getHostname(),
@@ -316,7 +315,7 @@ export class MdnsAgent {
 
       if (await this.probe(candidate)) {
         this.state = 'claimed';
-        getDefaultEventBus().publish({
+        this.host.getBus().publish({
           topic: 'mdns.name.claimed',
           payload: {
             deviceId: this.host.getId(), hostname: this.host.getHostname(),
@@ -332,7 +331,7 @@ export class MdnsAgent {
         return;
       }
 
-      getDefaultEventBus().publish({
+      this.host.getBus().publish({
         topic: 'mdns.conflict.detected',
         payload: {
           deviceId: this.host.getId(), hostname: this.host.getHostname(),
@@ -399,7 +398,7 @@ export class MdnsAgent {
     const message = this.buildResponse(nextDnsTransactionId(), records, true);
     const sent = announceMulticastDns(this.host, MDNS_BINDING, message);
     if (sent) {
-      getDefaultEventBus().publish({
+      this.host.getBus().publish({
         topic: 'mdns.announced',
         payload: {
           deviceId: this.host.getId(), hostname: this.host.getHostname(),
@@ -490,7 +489,7 @@ export class MdnsAgent {
       ? { ...buildLegacyResponseMessage(query, 'NOERROR', []), answers, additionals: found.additionals }
       : this.buildRecordResponse(query.id, answers, found.additionals);
 
-    getDefaultEventBus().publish({
+    this.host.getBus().publish({
       topic: 'mdns.responded',
       payload: {
         deviceId: this.host.getId(), hostname: this.host.getHostname(),
@@ -615,7 +614,7 @@ export class MdnsAgent {
     const target = name.toLowerCase().replace(/\.$/, '');
     if (!isLocalName(target)) return [];
 
-    getDefaultEventBus().publish({
+    this.host.getBus().publish({
       topic: 'mdns.query.sent',
       payload: {
         deviceId: this.host.getId(), hostname: this.host.getHostname(), name: target,
@@ -635,7 +634,7 @@ export class MdnsAgent {
     const target = name.toLowerCase().replace(/\.$/, '');
     if (!isLocalName(target)) return [];
 
-    getDefaultEventBus().publish({
+    this.host.getBus().publish({
       topic: 'mdns.query.sent',
       payload: {
         deviceId: this.host.getId(), hostname: this.host.getHostname(), name: target,

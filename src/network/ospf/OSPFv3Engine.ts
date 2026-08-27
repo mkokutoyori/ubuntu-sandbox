@@ -31,7 +31,8 @@ import {
   createDefaultOSPFConfig,
 } from './types';
 import type { IProtocolEngine } from '../core/interfaces';
-import { getDefaultEventBus, type IEventBus } from '@/events/EventBus';
+import { type IEventBus } from '@/events/EventBus';
+import { BusHolder } from '@/events/BusHolder';
 import { computeOSPFv3LSAChecksum } from './checksum';
 import { getDefaultScheduler, type IScheduler } from '@/events/Scheduler';
 import { TimerSet } from '@/events/TimerSet';
@@ -92,18 +93,18 @@ export class OSPFv3Engine implements IProtocolEngine {
   private spfPending = false;
 
   // ─── Reactive plumbing (Phase 4b2) ────────────────────────────────
-  private busOverride: IEventBus | null = null;
+  private readonly busHolder = new BusHolder();
   private schedulerOverride: IScheduler | null = null;
   private deviceId: string | undefined = undefined;
   private readonly timers: TimerSet = new TimerSet(() => this.getScheduler());
 
   setEventBus(bus: IEventBus | null): void {
-    this.busOverride = bus;
+    this.busHolder.set(bus);
     this.attachActors();
   }
   setScheduler(scheduler: IScheduler | null): void { this.schedulerOverride = scheduler; }
   setDeviceId(id: string | undefined): void { this.deviceId = id; }
-  private getBus(): IEventBus { return this.busOverride ?? getDefaultEventBus(); }
+  private getBus(): IEventBus { return this.busHolder.get(); }
   private getScheduler(): IScheduler { return this.schedulerOverride ?? getDefaultScheduler(); }
   private routerRef() {
     return {

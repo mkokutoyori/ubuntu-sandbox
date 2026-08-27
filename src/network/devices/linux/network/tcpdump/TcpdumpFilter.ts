@@ -1,4 +1,5 @@
 import { IPAddress, SubnetMask, IP_PROTO_ICMP, IP_PROTO_TCP, IP_PROTO_UDP } from '@/network/core/types';
+import { isMulticastIpv4 } from '@/network/core/ip';
 import type { CaptureFrame } from './CaptureFrame';
 
 export type CapturePredicate = (f: CaptureFrame) => boolean;
@@ -30,8 +31,7 @@ function isBroadcastMac(mac: string | undefined): boolean {
 function isMulticastIp(ip: string | undefined): boolean {
   if (!ip) return false;
   if (ip.includes(':')) return ip.toLowerCase().startsWith('ff');
-  const first = parseInt(ip.split('.')[0] ?? '0', 10);
-  return first >= 224 && first <= 239;
+  return isMulticastIpv4(ip);
 }
 
 function isBroadcastIp(ip: string | undefined): boolean {

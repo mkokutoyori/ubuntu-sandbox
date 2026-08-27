@@ -13,7 +13,8 @@ import { CertificateAuthority, type IssuedCertificate } from '@/network/pki/Cert
 import type { X509Certificate } from '@/network/pki/X509Certificate';
 import type { PkiPrivateKey } from '@/network/pki/PkiKeyPair';
 import { DEFAULT_CERT_TEMPLATES, type CertTemplateDef } from './CertificateTemplate';
-import { getDefaultEventBus, type IEventBus } from '@/events/EventBus';
+import { type IEventBus } from '@/events/EventBus';
+import { detachedBus } from '@/events/BusHolder';
 
 export interface AdcsOpResult { ok: boolean; message: string }
 
@@ -45,7 +46,7 @@ export class WindowsAdcsRole {
 
   constructor(
     private readonly now: () => number,
-    private readonly bus: IEventBus = getDefaultEventBus(),
+    private readonly bus: IEventBus = detachedBus(),
     private readonly deviceId: string = '',
   ) {}
 

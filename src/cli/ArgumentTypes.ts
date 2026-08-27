@@ -34,6 +34,18 @@ export interface ArgumentSpec {
    */
   readonly range?: readonly [number, number];
   /**
+   * La plage DECRIT sans trancher.
+   *
+   * Deux cas, et un seul vocabulaire avec le trie, qui porte deja ce
+   * drapeau. Une borne peut dependre de l'ETAT — le groupe HSRP vaut
+   * 0-255 en version 1 et 0-4095 en version 2 — et le gestionnaire est
+   * alors le seul a pouvoir la lire. Ou le gestionnaire refuse deja avec
+   * les mots d'IOS (`% Invalid value; valid range is 1 to 65535`) la ou
+   * cette regle rendrait le caret generique : deux refus pour une saisie
+   * seraient un refus de trop, et c'est le plus precis qui doit parler.
+   */
+  readonly rangeIsAdvisory?: boolean;
+  /**
    * Les valeurs qu'un mot-cle-argument accepte, avec leur description.
    *
    * C'est ce qui distingue `logging console ?` — qui doit rendre les
@@ -190,7 +202,7 @@ export function argumentAccepts(spec: ArgumentSpec, raw: string): boolean {
   if (spec.values && !spec.range) return false;
   if (!ARGUMENT_TYPES[spec.type].accepts(token)) return false;
   if (spec.pattern && !spec.pattern.test(token)) return false;
-  if (!spec.range) return true;
+  if (!spec.range || spec.rangeIsAdvisory) return true;
 
   const value = Number(token);
   return Number.isInteger(value) && value >= spec.range[0] && value <= spec.range[1];

@@ -1,4 +1,5 @@
-import { getDefaultEventBus, type IEventBus, type Unsubscribe } from '@/events/EventBus';
+import { type IEventBus, type Unsubscribe } from '@/events/EventBus';
+import { ownBusProvider } from '@/events/BusHolder';
 import { getDefaultScheduler, type IScheduler, type TimerHandle } from '@/events/Scheduler';
 import { CronSchedule } from '../../linux/LinuxCronManager';
 import type { SnmpAgent } from '../../../snmp/SnmpAgent';
@@ -61,7 +62,7 @@ export class EemEngine {
   constructor(
     private readonly host: EemHost,
     private readonly service: EemService,
-    private readonly getBus: () => IEventBus = () => getDefaultEventBus(),
+    private readonly getBus: () => IEventBus = ownBusProvider(),
     private readonly getScheduler: () => IScheduler = () => getDefaultScheduler(),
   ) {}
 

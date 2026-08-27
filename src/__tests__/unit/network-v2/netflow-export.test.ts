@@ -25,7 +25,7 @@ import { CiscoRouter } from '@/network/devices/CiscoRouter';
 import { LinuxPC } from '@/network/devices/LinuxPC';
 import { Cable } from '@/network/hardware/Cable';
 import { IPAddress, SubnetMask, IPv4Packet, UDPPacket } from '@/network/core/types';
-import { getDefaultEventBus } from '@/events/EventBus';
+import type { Equipment } from '@/network/equipment/Equipment';
 import { VirtualTimeScheduler, __setDefaultScheduler } from '@/events/Scheduler';
 
 const cfg = async (r: CiscoRouter, lines: string[]): Promise<string[]> => {
@@ -69,11 +69,11 @@ async function lab(options: { exportTo?: boolean } = {}): Promise<{
 }
 
 /** The UDP datagrams actually sent to the collector's port. */
-function observeExports(): Array<{ dst: string }> {
+function observeExports(source: Equipment): Array<{ dst: string }> {
   const seen: Array<{ dst: string }> = [];
-  getDefaultEventBus().subscribe('port.frame.tx-requested', (e) => {
-    const p = e.payload as { frame: { payload: unknown } };
-    const ip = p.frame?.payload as IPv4Packet | undefined;
+  source.attachCapture(({ direction, frame }) => {
+    if (direction !== 'out') return;
+    const ip = frame.payload as IPv4Packet | undefined;
     if (ip?.type !== 'ipv4') return;
     const udp = ip.payload as UDPPacket | undefined;
     if (udp?.type === 'udp' && udp.destinationPort === 9996) {
@@ -85,8 +85,8 @@ function observeExports(): Array<{ dst: string }> {
 
 describe('a cached flow eventually leaves', () => {
   it('nothing before the inactive timeout, a datagram after', async () => {
-    const { a, clock } = await lab();
-    const exports = observeExports();
+    const { a, clock, r } = await lab();
+    const exports = observeExports(r);
     await clock.advanceUntilSettled(a.executeCommand('ping -c 2 10.0.1.10'));
     // Export is driven by expiry, not by the packet: checking here is
     // what made an earlier reading of mine conclude "nothing exports".
@@ -98,8 +98,8 @@ describe('a cached flow eventually leaves', () => {
   });
 
   it('and it goes to the configured collector', async () => {
-    const { a, clock } = await lab();
-    const exports = observeExports();
+    const { a, clock, r } = await lab();
+    const exports = observeExports(r);
     await clock.advanceUntilSettled(a.executeCommand('ping -c 2 10.0.1.10'));
     clock.advance(60_000);
     await new Promise((r) => setTimeout(r, 0));
@@ -110,8 +110,8 @@ describe('a cached flow eventually leaves', () => {
 
 describe('what does not export', () => {
   it('no destination configured, no datagram', async () => {
-    const { a, clock } = await lab({ exportTo: false });
-    const exports = observeExports();
+    const { a, clock, r } = await lab({ exportTo: false });
+    const exports = observeExports(r);
     await clock.advanceUntilSettled(a.executeCommand('ping -c 2 10.0.1.10'));
     clock.advance(60_000);
     await new Promise((r) => setTimeout(r, 0));
@@ -120,11 +120,11 @@ describe('what does not export', () => {
 
   it('a flow names the endpoints that crossed, not the router', async () => {
     const flows: Array<{ src: string; dst: string }> = [];
-    getDefaultEventBus().subscribe('netflow.flow.recorded', (e) => {
+    const { a, clock, r } = await lab();
+    r.getBus().subscribe('netflow.flow.recorded', (e) => {
       const p = e.payload as { sourceIp: string; destinationIp: string };
       flows.push({ src: p.sourceIp, dst: p.destinationIp });
     });
-    const { a, clock } = await lab();
     await clock.advanceUntilSettled(a.executeCommand('ping -c 2 10.0.1.10'));
     expect(flows.length).toBeGreaterThan(0);
     expect(flows.some((f) => f.src === '10.0.0.10' && f.dst === '10.0.1.10')).toBe(true);

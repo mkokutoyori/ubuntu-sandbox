@@ -21,7 +21,7 @@ import { CiscoRouter } from '@/network/devices/CiscoRouter';
 import { LinuxPC } from '@/network/devices/LinuxPC';
 import { Cable } from '@/network/hardware/Cable';
 import { IPAddress, SubnetMask, IPv4Packet, UDPPacket } from '@/network/core/types';
-import { getDefaultEventBus } from '@/events/EventBus';
+import type { Equipment } from '@/network/equipment/Equipment';
 
 const cfg = async (r: CiscoRouter, lines: string[]): Promise<string[]> => {
   const out: string[] = [];
@@ -60,20 +60,20 @@ async function lab(traps: string[] = ['snmp linkdown linkup']): Promise<{
 }
 
 /** Les OID de notification reellement emis. */
-function observeTraps(): string[] {
+function observeTraps(source: Equipment): string[] {
   const seen: string[] = [];
-  getDefaultEventBus().subscribe('snmp.trap.sent', (e) => {
+  source.getBus().subscribe('snmp.trap.sent', (e) => {
     seen.push((e.payload as { trapOid: string }).trapOid);
   });
   return seen;
 }
 
 /** Les datagrammes UDP reellement partis vers le port des notifications. */
-function observeUdp162(): number[] {
+function observeUdp162(source: Equipment): number[] {
   const seen: number[] = [];
-  getDefaultEventBus().subscribe('port.frame.tx-requested', (e) => {
-    const p = e.payload as { frame: { payload: unknown } };
-    const ip = p.frame?.payload as IPv4Packet | undefined;
+  source.attachCapture(({ direction, frame }) => {
+    if (direction !== 'out') return;
+    const ip = frame.payload as IPv4Packet | undefined;
     if (ip?.type !== 'ipv4') return;
     const udp = ip.payload as UDPPacket | undefined;
     if (udp?.type === 'udp' && udp.destinationPort === 162) seen.push(udp.destinationPort);
@@ -87,7 +87,7 @@ const LINK_UP = '1.3.6.1.6.3.1.1.5.4';
 describe('une interface qui tombe le fait savoir', () => {
   it('shutdown emet linkDown, no shutdown emet linkUp', async () => {
     const { r } = await lab();
-    const traps = observeTraps();
+    const traps = observeTraps(r);
     await cfg(r, ['configure terminal', 'interface GigabitEthernet0/1', 'shutdown', 'end']);
     expect(traps).toEqual([LINK_DOWN]);
     await cfg(r, ['configure terminal', 'interface GigabitEthernet0/1', 'no shutdown', 'end']);
@@ -96,7 +96,7 @@ describe('une interface qui tombe le fait savoir', () => {
 
   it('et la notification part vraiment sur le wire, en UDP/162', async () => {
     const { r } = await lab();
-    const udp = observeUdp162();
+    const udp = observeUdp162(r);
     await cfg(r, ['configure terminal', 'interface GigabitEthernet0/1', 'shutdown', 'end']);
     expect(udp.length).toBeGreaterThan(0);
   });
@@ -105,14 +105,14 @@ describe('une interface qui tombe le fait savoir', () => {
 describe('ce qui n\'est pas arme ne part pas', () => {
   it('sans `enable traps`, rien n\'est emis', async () => {
     const { r } = await lab([]);
-    const traps = observeTraps();
+    const traps = observeTraps(r);
     await cfg(r, ['configure terminal', 'interface GigabitEthernet0/1', 'shutdown', 'end']);
     expect(traps).toEqual([]);
   });
 
   it('`enable traps snmp linkdown` seul n\'arme pas linkUp', async () => {
     const { r } = await lab(['snmp linkdown']);
-    const traps = observeTraps();
+    const traps = observeTraps(r);
     await cfg(r, ['configure terminal', 'interface GigabitEthernet0/1', 'shutdown', 'end']);
     await cfg(r, ['configure terminal', 'interface GigabitEthernet0/1', 'no shutdown', 'end']);
     expect(traps).toEqual([LINK_DOWN]);
@@ -120,7 +120,7 @@ describe('ce qui n\'est pas arme ne part pas', () => {
 
   it('`enable traps` all court arme les deux', async () => {
     const { r } = await lab(['']);
-    const traps = observeTraps();
+    const traps = observeTraps(r);
     await cfg(r, ['configure terminal', 'interface GigabitEthernet0/1', 'shutdown', 'end']);
     await cfg(r, ['configure terminal', 'interface GigabitEthernet0/1', 'no shutdown', 'end']);
     expect(traps).toEqual([LINK_DOWN, LINK_UP]);
@@ -132,7 +132,7 @@ describe('un etat qui ne change pas ne se notifie pas', () => {
     // Measured: `shutdown` then `no shutdown` on an uncabled interface
     // both leave the link down. A real router notifies once.
     const { r } = await lab();
-    const traps = observeTraps();
+    const traps = observeTraps(r);
     await cfg(r, ['configure terminal', 'interface GigabitEthernet0/2', 'shutdown', 'end']);
     await cfg(r, ['configure terminal', 'interface GigabitEthernet0/2', 'no shutdown', 'end']);
     expect(traps).toEqual([LINK_DOWN]);

@@ -96,6 +96,7 @@ import { showIpOspfNeighbor } from './cisco/CiscoOspfCommands';
 import {
   type CiscoShellMode, type CiscoShellContext,
   buildConfigCommands, buildConfigIfCommands, configIfSpecs, dhcpGlobalSpecs,
+  registerInterfaceEntry, INTERFACE_TYPES, typesInterfaceEnMotsCles,
 } from './cisco/CiscoConfigCommands';
 import {
   buildConfigDhcpCommands, buildConfigDhcpPoolClassCommands, dhcpPoolSpecs,
@@ -176,7 +177,9 @@ import {
   registerNATPrivilegedCommands, registerNATShowCommands, natShowSpecs, natExecSpecs,
 } from './cisco/CiscoNATCommands';
 import { iosShortInterfaceName } from '@/network/devices/inspection/InterfaceStatusView';
-import { SOCLE, ROUTEUR_SEUL, appliquerContinuations } from './cisco/ciscoContinuations';
+import {
+  SOCLE, ROUTEUR_SEUL, appliquerContinuations, continuationsPourLeSocle,
+} from './cisco/ciscoContinuations';
 
 const HORS_PLATEFORME_ISR: ReadonlySet<string> = new Set(['vxlan', 'nve', 'mls']);
 
@@ -192,6 +195,40 @@ Readonly<Record<string, ArgumentSpec | readonly ArgumentSpec[] | null>> = {
     description: 'import, export or both, then ASN:nn' },
   description: { name: 'texte', type: 'REST', literal: 'LINE',
     description: 'Description of this VRF' },
+};
+
+const PORTES_DE_ROUTAGE: ReadonlySet<string> = new Set([
+  'router ospf', 'router rip', 'router eigrp', 'router bgp',
+]);
+
+const PORTES_DE_ROUTAGE_PLACES: Readonly<Record<string, ArgumentSpec>> = {
+  'router ospf': {
+    name: 'process-id', type: 'INT', range: [1, 65535], description: 'Process ID',
+  },
+  'router eigrp': {
+    name: 'as-number', type: 'INT', range: [1, 65535],
+    description: 'Autonomous system number',
+  },
+  'router bgp': {
+    name: 'as-number', type: 'INT', range: [1, 4294967295],
+    description: 'Autonomous system number',
+  },
+};
+
+const ROUTER_SHOW_VIEWS: ReadonlySet<string> = new Set([
+  'show tech-support', 'show bfd summary', 'show table-map',
+  'show ip nbar protocol-discovery', 'show queueing interface',
+  'show traffic-shape', 'show ip policy', 'show ip static route',
+  'show ip interface brief', 'show ip rip database', 'show counters',
+  'show ip rip', 'show vlans',
+]);
+
+const ROUTER_SHOW_ARGUMENTS: Readonly<Record<string, string>> = {
+  'show interfaces': 'Interface name',
+  'show ip interface': 'Interface name',
+  'show queueing interface': 'Interface name',
+  'show traffic-shape': 'Interface name',
+  'show ip rip database': 'Network prefix',
 };
 
 export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShell, CiscoShellContext, CiscoACLShellContext {
@@ -414,9 +451,86 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
       ...ipSlaClearSpecs(this),
       ...ALL_TUNNEL, ...CLEAR_CRYPTO_FAMILY, ...SHOW_CRYPTO_FAMILY,
       ...OBJECT_GROUP_FAMILY,
+      ...this.routerShowSpecs(),
+      ...this.routingProtocolSpecs(),
+      ...this.interfaceEntrySpecs(),
       ...this.ipv6NdSpecs(), ...this.ipv6OspfSpecs(), ...this.ipv6ReglagesSpecs(),
       ...this.clearIpv6Specs(),
     ];
+  }
+
+  /*
+   * `interface <nom>` s'ecrivait DEUX fois — une en configuration
+   * globale, une en configuration d'interface, parce qu'IOS laisse
+   * passer d'une interface a l'autre sans repasser par `exit` — et les
+   * deux avaient diverge : la copie du sous-mode ignorait
+   * `Port-channel`, laissait `config-if` sur une SOUS-interface, rendait
+   * le caret la ou l'autre repond « Incomplete », et son aide decrivait
+   * une place anonyme au lieu des types. Une seule declaration, portee
+   * par les trois modes, ne peut plus se contredire.
+   */
+  private interfaceEntrySpecs(): CommandSpec[] {
+    return specsFromTrieRegistrations(
+      (collector) => registerInterfaceEntry(collector as unknown as CommandTrie, this),
+      {
+        modes: ['config', 'config-if', 'config-subif'], minPrivilege: 15,
+        argumentFor: () => ({
+          name: 'interface', type: 'REST', description: 'Interface to configure',
+          literal: 'IFACE', alternatives: INTERFACE_TYPES,
+        }),
+        keywordsFor: () => typesInterfaceEnMotsCles(INTERFACE_TYPES),
+      });
+  }
+
+  private routingProtocolSpecs(): CommandSpec[] {
+    const garder = (path: string): boolean =>
+      PORTES_DE_ROUTAGE.has(path.replace(/^no /, ''));
+    const options = {
+      modes: ['config'], minPrivilege: 15,
+      undoFromNegatedPaths: true,
+      skip: (path: string) => !garder(path),
+      argumentFor: (path: string) => PORTES_DE_ROUTAGE_PLACES[path],
+      /*
+       * `router ospf <pid> vrf <nom>` : la VRF vient APRES l'identifiant,
+       * et la porte gloutonne du trie l'avalait sans la nommer. Declarer
+       * la seule place de l'identifiant la faisait refuser au caret,
+       * c'est-a-dire perdre une forme que la machine accepte.
+       */
+      keywordsFor: (path: string) => path !== 'router ospf' ? undefined : [{
+        keyword: 'vrf', description: 'Specify a VPN Routing/Forwarding instance',
+        afterArguments: true,
+        argument: {
+          name: 'nom', type: 'WORD' as const, description: 'VPN Routing/Forwarding instance name',
+        },
+      }],
+    };
+
+    return [
+      ...specsFromTrieRegistrations(
+        (collector) => registerOSPFConfigCommands(collector as unknown as CommandTrie, this),
+        options),
+      ...specsFromTrieRegistrations(
+        (collector) => buildRoutingProtoConfig(
+          collector as unknown as CommandTrie, this.configRouterTrie, this, this.routingCfg),
+        options),
+      ...specsFromTrieRegistrations(
+        (collector) => buildConfigCommands(collector as unknown as CommandTrie, this),
+        options),
+    ];
+  }
+
+  private routerShowSpecs(): CommandSpec[] {
+    return specsFromTrieRegistrations(
+      (collector) => this.registerRouterShowViews(collector as unknown as CommandTrie),
+      {
+        modes: ['user', 'privileged'], minPrivilege: 1,
+        skip: (path) => !ROUTER_SHOW_VIEWS.has(path),
+        modesFor: (path) => path === 'show tech-support' ? ['privileged'] : undefined,
+        keywordsFor: (path) => continuationsPourLeSocle(path, SOCLE, ROUTEUR_SEUL),
+        restDescriptionFor: (path) => ROUTER_SHOW_ARGUMENTS[path],
+        restLiteralFor: (path) => ROUTER_SHOW_ARGUMENTS[path] === undefined ? undefined : 'WORD',
+      },
+    );
   }
 
   private clearIpv6Specs(): CommandSpec[] {
@@ -1665,7 +1779,6 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
   // ─── Show Commands (Router-specific) ──────────────────────────────
 
   private registerShowCommands(trie: CommandTrie): void {
-    const getRouter = () => this.d();
     registerRoutingProtoShow(trie, this, this.routingCfg);
     registerHsrpShowCommands(trie, this, this.fhrp);
     registerVrrpGlbpShowCommands(trie, this, this.fhrp);
@@ -1675,7 +1788,12 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
     if (this.hasVxlanHardware()) registerVxlanShowCommands(trie, { r: () => this.d() });
     registerTrackShowCommands(trie, this);
     registerPolicyShow(trie, this.policy);
+    this.registerRouterShowViews(trie);
     trie.pruneSubtreeChildren('show', HORS_PLATEFORME_ISR);
+  }
+
+  private registerRouterShowViews(trie: CommandTrie): void {
+    const getRouter = () => this.d();
 
 
 

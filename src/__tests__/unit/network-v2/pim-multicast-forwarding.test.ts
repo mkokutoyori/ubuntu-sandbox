@@ -9,7 +9,6 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import { CiscoRouter } from '@/network/devices/CiscoRouter';
 import { CiscoSwitch } from '@/network/devices/CiscoSwitch';
 import { Cable } from '@/network/hardware/Cable';
-import { getDefaultEventBus } from '@/events/EventBus';
 import {
   MACAddress, IPAddress, SubnetMask, resetCounters,
   type IPv4Packet, type EthernetFrame, type UDPPacket,
@@ -79,19 +78,15 @@ function topology() {
   r1.getIgmpAgent().enableInterface('GigabitEthernet0/2');
 
   const received: Array<{ device: string; group: string; destinationPort: number }> = [];
-  const nameByPortId = new Map<string, string>([
-    [rcv.getPort('FastEthernet0/1')!.getEquipmentId(), 'RCV'],
-    [other.getPort('FastEthernet0/1')!.getEquipmentId(), 'OTHER'],
-  ]);
-  getDefaultEventBus().subscribe('port.frame.received', (e) => {
-    const p = e.payload as { deviceId: string; frame: EthernetFrame };
-    const ip = p.frame.payload as IPv4Packet | undefined;
-    if (ip?.type === 'ipv4' && ip.protocol === IP_PROTO_UDP) {
-      const name = nameByPortId.get(p.deviceId);
+  for (const [name, device] of [['RCV', rcv], ['OTHER', other]] as const) {
+    device.attachCapture(({ direction, frame }) => {
+      if (direction !== 'in') return;
+      const ip = frame.payload as IPv4Packet | undefined;
+      if (ip?.type !== 'ipv4' || ip.protocol !== IP_PROTO_UDP) return;
       const udp = ip.payload as UDPPacket;
-      if (name) received.push({ device: name, group: ip.destinationIP.toString(), destinationPort: udp.destinationPort });
-    }
-  });
+      received.push({ device: name, group: ip.destinationIP.toString(), destinationPort: udp.destinationPort });
+    }, 'FastEthernet0/1');
+  }
 
   return { r1, src, rcv, other, received };
 }

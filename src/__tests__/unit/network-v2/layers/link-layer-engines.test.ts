@@ -34,7 +34,7 @@ import { CiscoRouter } from '@/network/devices/CiscoRouter';
 import { Cable } from '@/network/hardware/Cable';
 import { resetDeviceCounters } from '@/network/devices/DeviceFactory';
 import { Logger } from '@/network/core/Logger';
-import { getDefaultEventBus } from '@/events/EventBus';
+import type { Equipment } from '@/network/equipment/Equipment';
 
 const MIGRATED_ENGINES = [
   'stp', 'cdp', 'lldp', 'lacp', 'dtp', 'udld', 'vtp', 'dot1x', 'igmp-snooping', 'arp',
@@ -54,16 +54,18 @@ beforeEach(() => {
   resetCounters(); resetDeviceCounters(); MACAddress.resetCounter(); Logger.reset();
 });
 
-function watchWire(): Seen[] {
+function watchWire(...devices: Equipment[]): Seen[] {
   const seen: Seen[] = [];
-  getDefaultEventBus().subscribe('port.frame.received', (event) => {
-    const { frame } = event.payload as { frame: EthernetFrame };
-    seen.push({
-      source: frame.srcMAC.toString().toLowerCase(),
-      destination: frame.dstMAC.toString().toLowerCase(),
-      etherType: frame.etherType,
+  for (const device of devices) {
+    device.attachCapture(({ direction, frame }: { direction: string; frame: EthernetFrame }) => {
+      if (direction !== 'in') return;
+      seen.push({
+        source: frame.srcMAC.toString().toLowerCase(),
+        destination: frame.dstMAC.toString().toLowerCase(),
+        etherType: frame.etherType,
+      });
     });
-  });
+  }
   return seen;
 }
 
@@ -75,7 +77,7 @@ describe('a migrated engine puts the same frame on the wire', () => {
   it('CDP still leaves with the port own address toward its group', () => {
     const router = new CiscoRouter('R1', 0, 0);
     const peer = new CiscoSwitch('switch-cisco', 'SW1', 8, -150, 0);
-    const seen = watchWire();
+    const seen = watchWire(router, peer);
 
     new Cable('c1').connect(
       router.getPort('GigabitEthernet0/0')!, peer.getPort('FastEthernet0/1')!);
@@ -91,7 +93,7 @@ describe('a migrated engine puts the same frame on the wire', () => {
   it('LLDP still leaves toward its own group', () => {
     const router = new CiscoRouter('R1', 0, 0);
     const peer = new CiscoSwitch('switch-cisco', 'SW1', 8, -150, 0);
-    const seen = watchWire();
+    const seen = watchWire(router, peer);
     for (const line of ['enable', 'configure terminal', 'lldp run', 'end']) {
       void router.executeCommand(line);
     }
@@ -105,7 +107,7 @@ describe('a migrated engine puts the same frame on the wire', () => {
   it('STP still leaves toward its own group with a real source', () => {
     const a = new CiscoSwitch('switch-cisco', 'SW1', 8, 0, 0);
     const b = new CiscoSwitch('switch-cisco', 'SW2', 8, -150, 0);
-    const seen = watchWire();
+    const seen = watchWire(a, b);
 
     new Cable('c1').connect(a.getPort('FastEthernet0/1')!, b.getPort('FastEthernet0/1')!);
 

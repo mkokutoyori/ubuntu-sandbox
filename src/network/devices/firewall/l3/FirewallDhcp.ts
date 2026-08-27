@@ -50,16 +50,17 @@ export class FirewallDhcp {
 
   constructor(private readonly deps: FirewallDhcpDeps) {
     this.server.setDeviceId(deps.deviceId, deps.hostname());
+    this.server.setEventBus(deps.bus());
     this.client = new DHCPClient(
       (iface) => deps.portMac(iface)?.toString() ?? '00:00:00:00:00:00',
       (iface, ip, mask, gateway) => { deps.configureInterface(iface, ip, mask, gateway); },
       (iface) => { deps.clearInterface(iface); });
     this.client.setDeviceId(deps.deviceId, deps.hostname());
+    this.client.setEventBus(deps.bus());
     this.client.setWireChannelFactory((iface) => this.channelFor(iface));
   }
 
   acquireLease(iface: string): string {
-    this.client.setEventBus(this.deps.bus());
     return this.client.requestLease(iface, {});
   }
 

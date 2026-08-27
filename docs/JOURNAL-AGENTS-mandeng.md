@@ -215,6 +215,77 @@ qui passe maintenant par un `CommandSpec`. `show ip interface` et
 `show vlan access-map`/`show vlan filter` ne sont pas migrés : ils sont à
 vous sans réserve.
 
+### LIVRÉ — les trois PORTES de sous-mode : `interface`, `line`, `vlan`
+
+Les trois commandes qui font entrer dans un sous-mode passent au socle,
+déclarées pour les modes qu'elles servent (`interface` : `config`,
+`config-if`, `config-subif` ; `line` : `config`, `config-line` ; `vlan` :
+`config`, `config-vlan`).
+
+**Ce qui vous concerne d'abord** : `interface` s'écrivait QUATRE fois
+dans ce dépôt — deux dans `CiscoConfigCommands` (config et config-if),
+deux dans `CiscoSwitchShell` — et les copies avaient divergé sur sept
+points, TOUS du côté « depuis une interface déjà sélectionnée » : une
+sous-interface laissait `config-if` au lieu de `config-subif`,
+`Port-channel`/`po` étaient refusés, `interface Vlan5000` était accepté
+sur le commutateur, `ensureSvi` n'était pas appelé, un type sans numéro
+rendait le caret au lieu de « Incomplete », et `interface ?` décrivait
+une place anonyme au lieu des types. Il n'y a plus qu'une écriture par
+plateforme (elles diffèrent pour de bon : `range`/`Vlan`/SVI d'un côté,
+sous-interfaces/`Tunnel`/`Serial` de l'autre).
+
+**Trois règles ajoutées au socle, qui valent pour vos migrations** :
+
+1. `ArgumentSpec.rangeIsAdvisory` — le même mot que le trie, et pour la
+   même raison. Une plage qui DÉCRIT sans trancher, quand le
+   gestionnaire refuse déjà dans les mots d'IOS. Sans lui, votre règle
+   « une plage annoncée est une plage appliquée » remplace
+   `% Invalid value; valid range is 1 to 65535` par un caret muet —
+   mesuré sur `lacp system-priority`, corrigé là.
+
+2. **Une FORME déclarée qui correspond à la frappe l'emporte sur les
+   valeurs vivantes qui la prolongent** (`CompletionEngine`). C'est la
+   sémantique de `leadingOnly` du trie, qu'une place à `alternatives`
+   perdait : `interface Fa` rendait neuf candidats (le type plus les huit
+   ports) là où une vraie machine écrit `FastEthernet` d'un coup.
+
+3. **Le confinement d'une vue d'analyseur vaut pour les DEUX moteurs.**
+   La règle vivait dans `tryGlobalConfigNavigation`, qui ne lit que le
+   trie ; migrer `interface` la rouvrait, parce que le socle admet une
+   commande de `config` depuis un sous-mode par héritage. Elle est
+   maintenant posée dans `tryMigratedCommand` aussi (`confinerSousVue`).
+   **Si vous migrez une autre commande qui change de mode, elle est déjà
+   couverte** — mais vérifiez-le, `cisco-view-declaration` est le
+   garde-fou.
+
+**Deux têtes d'analyse dédoublées, refermées** : `line`/`no line` et
+`vlan`/`no vlan` avaient chacune DEUX lectures qui ne bornaient pas la
+même chose. `line` n'examinait rien (`line zorglub`, `line vty 99`,
+`line vty 5 2` tous acceptés et entrant dans le sous-mode) quand
+`no line` vérifiait tout — donc une plage posable et non retirable ;
+`no vlan` n'écartait que ce qui n'est pas un nombre, donc `no vlan 4095`
+répondait « VLAN 4095 not found » et `no vlan 10,20` n'en supprimait
+qu'un. `analyserTeteLigne` et `analyserListeVlan` sont les lectures
+uniques.
+
+**Le garde-fou du balayage d'abréviations lisait un seul moteur** :
+`tab-completion-abbreviations` ne parcourait que le trie, donc sa surface
+rétrécissait à chaque famille migrée — son garde de volume est tombé à 47
+quand les portes de routage sont parties. Il lit maintenant les deux
+(`enumerateAllExecutablePaths` + `migratedPaths`) : 359 abréviations au
+lieu de 47. **Si vous migrez une famille, ce garde-fou vous couvre
+désormais aussi.**
+
+**Un piège de l'adaptateur, mesuré** : `argumentFor` n'est JAMAIS
+consulté pour un chemin `no X` quand `X` existe — l'entrée niée est
+écartée avant, et la forme nue est construite depuis la commande
+positive. J'avais déclaré la place deux fois dans trois tables ; les
+entrées `no …` étaient rangées et lues par personne. Supprimées.
+
+Reste à vous sans réserve : `show interfaces` / `show ip interface`
+(le socle ne sait pas déclarer une continuation à DEUX positions), et
+les coquilles VRP, qui n'ont toujours aucun pont vers le socle.
+
 ### LIVRÉ — le tutoriel ACL Cisco, de bout en bout
 
 Demande : « assure-toi que notre plateforme permet de suivre le tutoriel

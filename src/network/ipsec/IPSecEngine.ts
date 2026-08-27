@@ -42,7 +42,8 @@ import { encodePacket, decodePacket } from './packetCodec';
 import { computeOuterTos } from './DscpTunnelMarker';
 import type { IProtocolEngine } from '../core/interfaces';
 import { IPSEC_CONSTANTS } from '../core/constants';
-import { getDefaultEventBus, type IEventBus } from '@/events/EventBus';
+import { type IEventBus } from '@/events/EventBus';
+import { BusHolder } from '@/events/BusHolder';
 import { getDefaultScheduler, type IScheduler } from '@/events/Scheduler';
 import { TimerSet } from '@/events/TimerSet';
 import { type Signal } from '@/events/Signal';
@@ -750,7 +751,7 @@ export class IPSecEngine implements IProtocolEngine {
 
   // ─── Reactive plumbing (Phase 4b2-IPSec) ───────────────────────────
   /** Optional bus override. Falls back to the default singleton. */
-  private busOverride: IEventBus | null = null;
+  private readonly busHolder = new BusHolder();
   /** Optional scheduler override. Falls back to the default singleton. */
   private schedulerOverride: IScheduler | null = null;
   /** Owns every scheduler timer (fragment reassembly today, more later). */
@@ -780,12 +781,12 @@ export class IPSecEngine implements IProtocolEngine {
   }
 
   setEventBus(bus: IEventBus | null): void {
-    this.busOverride = bus;
+    this.busHolder.set(bus);
     this.attachActors();
   }
   /** Test-only scheduler injection. */
   setScheduler(scheduler: IScheduler | null): void { this.schedulerOverride = scheduler; }
-  private getBus(): IEventBus { return this.busOverride ?? getDefaultEventBus(); }
+  private getBus(): IEventBus { return this.busHolder.get(); }
   private getScheduler(): IScheduler { return this.schedulerOverride ?? getDefaultScheduler(); }
   /** Public read of the device id, used by `IPSecSignalRefreshActor`
    *  to filter events from this engine instance only. */

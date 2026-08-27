@@ -98,6 +98,26 @@ n'est pas ferme ici** : les rendre inscriptibles demande de donner un
 COMPORTEMENT a chacune, sans quoi on rangerait une valeur que rien
 n'evalue. C'est un chantier par knob, pas un correctif de commande.
 
+### [icmp] `ping -b` n'emet RIEN vers une diffusion dirigee
+Trouve en fermant l'entree precedente : la cle
+`net.ipv4.icmp_echo_ignore_broadcasts` existe et gouverne bien la
+REPONSE, mais le laboratoire Smurf reste injouable parce que l'EMETTEUR
+ne sait pas envoyer.
+**Mesure** : `ping -b -c 1 10.0.0.255` depuis un hote du segment rend
+`From  icmp_seq=1 Destination Host Unreachable` — noter l'adresse VIDE
+apres `From`, un ICMP fabrique localement — et `100% packet loss`. Aucune
+trame ne part. La cause est en amont : la destination est resolue par
+ARP au lieu d'etre reconnue comme diffusion de sous-reseau et envoyee a
+`ff:ff:ff:ff:ff:ff`, ce qu'une vraie pile fait sans resolution.
+**Consequence** : la sonde de la cle observe donc le RECEPTEUR
+directement (trame livree, reponse comptee sur son tap) plutot que par
+un `ping`, faute d'emetteur capable.
+**Pourquoi ce n'est pas ferme ici** : c'est un defaut du chemin
+d'EMISSION ICMP, pas de la cle — `EndHost` a deja `sendUdpToGroup` pour
+le multicast et rien d'equivalent pour la diffusion dirigee. A fermer
+avec sa propre mesure, en donnant a l'echo la meme regle de destination
+de couche lien que l'UDP.
+
 ---
 
 ## Postes Windows
@@ -236,6 +256,58 @@ appris : une famille ne vaut d'être migrée que si le socle lui APPORTE
 quelque chose — ici l'argument typé, qui a fermé cinq défauts d'un coup —
 et il faut RETIRER l'enregistrement du trie en même temps, sans quoi on
 laisse deux implémentations dont une morte.
+
+### [cli] `line aux 0` ne persiste que deux reglages sur les huit
+Mesure sur un routeur, en configuration : `line aux 0` puis
+`exec-timeout 1 0` est ACCEPTE, et `show running-config` ne rend AUCUN
+bloc `line aux 0`. Le reglage est perdu, donc non rejoue a l'import
+d'une topologie, et rien ne le dit.
+**Cause** : `_getAuxLineConfig()` ne porte que `noExec` et
+`transportInput` ; le gestionnaire partage des vingt mots-cles de ligne
+tombe sur `return ''` pour tous les autres des que la ligne selectionnee
+est l'auxiliaire. Le meme reglage tape sous `line console 0` ou
+`line vty 0 4` est, lui, retenu et rendu.
+**Report** : ce n'est pas la PORTE `line` — qui vient d'etre corrigee et
+qui designe desormais correctement l'auxiliaire — mais le MAGASIN de
+cette ligne, qui n'a que deux champs. L'etendre veut dire lui donner les
+memes champs que la console, donc toucher le rendu de configuration et
+la vue `show line` ; c'est un lot a part.
+
+### [cli] la borne de `line tty` est posee par symetrie, pas par mesure
+`SORTES_DE_LIGNE` borne `tty` a `<0-15>`, la meme valeur que `vty`.
+Console et auxiliaire tiennent de la documentation Cisco (`<0-0>`, un
+chassis n'en a qu'une), les seize terminaux virtuels aussi. Pour `tty`,
+la borne depend des cartes asynchrones presentes et ce simulateur n'en
+modelise aucune : la valeur exacte n'y est donc pas observable.
+**Report** : la borne d'avant — aucune — etait la seule certainement
+fausse, puisqu'elle laissait poser `line tty 99999`. Celle-ci est
+plausible et declaree comme telle plutot que presentee comme mesuree.
+
+### [cli] `spanning-tree vlan <n> priority ?` n'annonce pas sa plage
+La branche `vlan` de `spanning-tree` reste un noeud GLOUTON, donc l'aide
+y rend la liste du parent (`backbonefast`, `bpdufilter`, …) au lieu de
+`<0-61440>`. **La plage est bien APPLIQUEE** — `priority 61441` et
+`priority 4097` sont refuses, le second dans les mots d'IOS — seule son
+annonce manque.
+**Pourquoi ce n'est pas un oubli** : la declarer demande un mot-cle
+APRES une place (`vlan <liste> priority <valeur>`), et la valeur depend
+du mot-cle — `priority` vaut 0-61440, `hello-time` 1-10, `max-age` 6-40.
+Une declaration POSITIONNELLE annoncerait donc une plage fausse pour les
+minuteries, ce qui serait pire que l'absence. C'est la migration au
+socle qui porte cette forme.
+
+### [cli] la priorite de PORT est ARRONDIE la ou IOS refuse
+`spanning-tree port-priority 100` est accepte et l'agent arrondit a 96.
+La documentation Cisco donne la plage « 0 a 240, par pas de 16 », et
+pour la priorite de PONT — meme formulation — elle precise que toute
+autre valeur est REJETEE (`% Bridge Priority must be in increments of
+4096.`), ce que ce depot applique desormais.
+**Report** : l'arrondi est un choix DEJA pris, ecrit dans le code et
+epingle par `stp-prd-fidelity` (« port-priority lands in the high byte
+of the port ID, rounded like IOS »), avec pour motif que deux refus pour
+une meme saisie seraient un refus de trop. Le renverser sans que l'agent
+qui l'a pris le dise ferait tomber son cas ; l'ecart est donc inscrit
+ici plutot que tranche unilateralement.
 
 ## Routeur Cisco
 

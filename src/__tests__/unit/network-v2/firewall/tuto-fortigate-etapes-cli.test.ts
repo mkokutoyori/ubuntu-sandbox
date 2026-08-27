@@ -73,7 +73,7 @@ describe('TP 1 etape 7 — verifier l\'acces d\'administration en CLI', () => {
     new Cable('t').connect(poste.getPort('eth0')!, fgt.getPort('port1')!);
     await taper(fgt, [
       'config system interface', 'edit "port1"', 'set mode static',
-      'set ip 192.168.100.99 255.255.255.0', 'next', 'end',
+      'set ip 192.168.100.99 255.255.255.0', 'unset allowaccess', 'next', 'end',
     ]);
     await taper(poste, [
       'ip link set eth0 up', 'ip addr add 192.168.100.10/24 dev eth0',
