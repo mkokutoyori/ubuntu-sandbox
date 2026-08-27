@@ -803,6 +803,41 @@ celui du routeur et il compte — la somme d'abord, un en-tête dont la
 somme est fausse n'étant pas lisible ; un cas l'épingle.
 
 ### Phase 3 — RIB et FIB séparées
+
+**Incrément 1 — LIVRÉ : la récursion du saut suivant.** Ce que la phase
+annonçait est mesuré et fermé : `ip route <net> <mask> <ip-hors-lien>`
+était accepté, la route n'apparaissait **pas** dans `show ip route`, et
+aucun paquet ne partait — `addStaticRoute` résolvait l'interface par
+`findInterfaceForIP(nextHop)` au moment de la CONFIGURATION, qui rend
+`null` pour un saut hors lien, donc la route était installée avec une
+interface vide et `isRouteUsable` l'écartait.
+
+La séparation est ce qui le corrige, et c'est le sujet de la phase : la
+**RIB garde ce qui a été configuré** — `show ip route <net>` nomme le
+saut suivant tapé, comme IOS —, et la **FIB résout au moment de la
+consultation**. `resolveRecursiveNextHop` marche la table jusqu'à un
+saut sur le lien (profondeur bornée à 4) et `lookupRoute` rend une
+entrée RÉSOLUE, si bien que les huit sites qui lisaient `route.iface`
+pour émettre bénéficient de la récursion sans être touchés.
+
+Trois conséquences épinglées : la route disparaît quand la route
+INTERMÉDIAIRE disparaît ; un saut que rien ne résout n'installe pas de
+route active ; et un ping traverse pour de bon (`0% packet loss`), ce
+qui distingue « la route est dans la table » de « le paquet part ».
+
+**Discrimination** : `tcp-ip-phase3-rib-fib.test.ts`, 12 cas. Le lot
+routage (164 fichiers, 2099 cas) passe de **14 rouges à 11** — les 3
+fermés sont exactement les cas de la récursion, et les 11 restants sont
+antérieurs (10 `ospfv3-real-packets`, 1 `probe-ip-sla-real-probe` qui ne
+tombe qu'en contexte de lot).
+
+**Reste de la phase 3** : `lookupRoute()` appelle toujours
+`dynamicRouting.refresh()` — le plan de données réveille le plan de
+contrôle. Deux cas de la sonde épinglent la conséquence observable (la
+table ne change pas quand on achemine) et ils passent déjà ; ce qui reste
+est la dépendance elle-même, qui demande de déplacer le rafraîchissement
+vers les minuteurs des protocoles.
+
 **Sortie** : `lookupRoute()` ne réveille plus le plan de contrôle ; une
 route statique récursive (`ip route <net> <mask> <ip-hors-lien>`)
 achemine vraiment. **Mesuré, pas supposé** : `Router.addStaticRoute`
