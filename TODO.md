@@ -1021,3 +1021,10 @@ défauts — la méthode vaut d'être reprise sur le reliquat.
   inatteignable — mais c'est exactement la duplication qui finit par
   répondre deux choses à une même commande. Un seul corps, posé sur les
   deux arbres.
+
+- FortiGate — cinq manquements signalés par l'utilisateur, tous fermés :
+  `set hostname` s'appliquait AVANT le `end` et `abort` reposait le nom
+  d'usine ; la console gardait son curseur de configuration d'une session
+  à l'autre ; plusieurs terminaux pouvaient s'ouvrir sur un port console
+  qui est unique ; `show system interface` ne suivait pas l'ordre du
+  châssis ; l'auto-complétion était sensible à la casse.

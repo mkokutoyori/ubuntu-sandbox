@@ -342,8 +342,10 @@ export class FortiShell {
     ];
 
     const developpee = this.canonicalHead(head);
+    const lowered = bare.toLowerCase();
     return [...new Set(proposed)]
-      .filter(value => value.startsWith(bare) && value !== bare)
+      .filter(value => value.toLowerCase().startsWith(lowered)
+        && value.toLowerCase() !== lowered)
       .map(value => `${developpee}${quote}${value}${quote}`);
   }
 
@@ -468,6 +470,12 @@ export class FortiShell {
     if (!admin) return 'absent';
 
     return this.fw.getAccessMatrix().authorize(admin.profile, spec.accessGroup, intent);
+  }
+
+  beginConsoleSession(): void {
+    this.nav.abort();
+    this.globalScope = false;
+    this.fw.setActiveVdom('root');
   }
 
   private enterGlobal(): string {

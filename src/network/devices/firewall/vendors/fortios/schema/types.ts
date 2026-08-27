@@ -310,7 +310,6 @@ export interface FortiCommitDevice {
   applyBalancedVip(vip: FortiBalancedVipPatch): string | void;
   applyReplacementMessage(message: string, buffer: string): void;
   applyConsoleSettings(settings: ConsoleSettingsPatch): void;
-  applyHostname(hostname: string): void;
   applyDnsSettings(settings: FirewallDnsSettings): void;
   applyDnsServerInterface(entry: DnsServerInterface): void;
   removeDnsServerInterface(iface: string): void;

@@ -32,6 +32,8 @@ const FORTI_THEME: TerminalTheme = {
 export class FortiTerminalSession extends CLITerminalSession {
   constructor(id: string, device: ICLIDevice) {
     super(id, device);
+    const fg = device as unknown as { getShell?(): { beginConsoleSession?(): void } };
+    fg.getShell?.().beginConsoleSession?.();
   }
 
   override async init(): Promise<void> {

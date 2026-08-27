@@ -24,14 +24,21 @@ function propre(sorties: string[]): void {
 }
 
 describe('TP 2 — rendre son FortiGate identifiable et a l\'heure', () => {
-  it('etape 1 : `set hostname` change l\'invite AVANT le `end`', async () => {
+  it('etape 1 : `set hostname` ne change l\'invite qu\'au `end`', async () => {
     const fgt = new FortiGate('firewall-fortinet', 'FortiGate-VM64', 0, 0);
     await fgt.executeCommand('config system global');
     expect(fgt.getPrompt()).toBe('FortiGate-VM64 (global) # ');
     await fgt.executeCommand('set hostname FGT-01');
-    expect(fgt.getPrompt()).toBe('FGT-01 (global) # ');
+    expect(fgt.getPrompt()).toBe('FortiGate-VM64 (global) # ');
     await fgt.executeCommand('end');
     expect(fgt.getPrompt()).toBe('FGT-01 # ');
+  });
+
+  it('etape 1b : `abort` laisse le nom d\'avant', async () => {
+    const fgt = new FortiGate('firewall-fortinet', 'FortiGate-VM64', 0, 0);
+    await taper(fgt, ['config system global', 'set hostname FGT-01', 'abort']);
+
+    expect(fgt.getPrompt()).toBe('FortiGate-VM64 # ');
   });
 
   it('etape 2 : le fuseau se pose par NUMERO et par NOM normalise', async () => {

@@ -38,12 +38,12 @@ export function resolvePathWords(
 
   for (const word of typed) {
     const known = [...new Set(vocabulary(words))];
-    if (known.includes(word) || known.length === 0) {
-      words.push(word);
-      continue;
-    }
+    const lowered = word.toLowerCase();
+    const exact = known.find(name => name.toLowerCase() === lowered);
+    if (exact !== undefined) { words.push(exact); continue; }
+    if (known.length === 0) { words.push(word); continue; }
 
-    const candidates = known.filter(name => name.startsWith(word));
+    const candidates = known.filter(name => name.toLowerCase().startsWith(lowered));
     if (candidates.length === 1) { words.push(candidates[0]); continue; }
     if (candidates.length > 1) {
       return { words: [...words, word], ambiguous: { typed: word, candidates } };
