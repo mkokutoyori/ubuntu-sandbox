@@ -72,7 +72,8 @@ function pareFeu(): FortiGate {
 }
 
 function acces(fw: FortiGate): string {
-  return run(fw.getShell(), 'show system interface | grep allowaccess').trim();
+  return run(fw.getShell(), 'show system interface | grep allowaccess')
+    .trim().split('\n')[0].trim();
 }
 
 beforeEach(() => { Logger.reset(); });
@@ -221,8 +222,7 @@ describe('grep numerote et lit une expression reguliere', () => {
   it('TEMOIN : un motif litteral marche toujours', () => {
     const fw = pareFeu();
 
-    expect(run(fw.getShell(), 'show system interface | grep allowaccess').trim())
-      .toBe('set allowaccess ping https ssh');
+    expect(acces(fw)).toBe('set allowaccess ping https ssh');
   });
 });
 

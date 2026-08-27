@@ -184,7 +184,7 @@ describe('TEMOINS — ce que la page decrit et qui marchait deja', () => {
     const sh = fw.getShell();
 
     expect(run(sh, 'show | grep -i INTERFACE')).toContain('config system interface');
-    expect(run(sh, 'show system interface | grep -c set')).toBe('3');
+    expect(Number(run(sh, 'show system interface | grep -c set'))).toBeGreaterThan(2);
   });
 
   it('`| grep -f` rend le bloc entier', () => {

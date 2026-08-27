@@ -1,7 +1,7 @@
 import { PREDEFINED_ADDRESSES, PREDEFINED_SERVICES } from './schema/predefined';
 import type { RuleAction } from '../../model/SecurityRule';
 import type { ZoneType } from '../../model/SecurityZone';
-import type { FirewallProfile } from '../../FirewallProfile';
+import type { FirewallProfile, FirewallPortSpec } from '../../FirewallProfile';
 
 export const FORTIOS_PIPELINE: readonly string[] = Object.freeze([
   'ha-standby',
@@ -39,6 +39,20 @@ export const FORTIOS_TRANSPARENT_PIPELINE: readonly string[] = Object.freeze([
   'auth-check',
   'utm-inspect',
   'session-install',
+]);
+
+const FORTIGATE_60F_PORTS: readonly FirewallPortSpec[] = Object.freeze([
+  {
+    name: 'port1', role: 'lan' as const,
+    ip: '192.168.1.99', mask: '255.255.255.0',
+    allowaccess: Object.freeze(['ping', 'https', 'ssh', 'http', 'fgfm']),
+  },
+  ...([2, 3, 4, 5, 6, 7] as const).map(n => ({
+    name: `port${n}`, role: 'lan' as const,
+  })),
+  { name: 'wan1', role: 'wan' as const, allowaccess: Object.freeze(['ping']) },
+  { name: 'wan2', role: 'wan' as const },
+  { name: 'dmz', role: 'dmz' as const },
 ]);
 
 export const FORTIOS_PROFILE: FirewallProfile = Object.freeze({
@@ -94,6 +108,7 @@ export const FORTIOS_PROFILE: FirewallProfile = Object.freeze({
   portPrefix: 'port',
   portCount: 8,
   portFirstIndex: 1,
+  ports: FORTIGATE_60F_PORTS,
 
   chassis: Object.freeze({
     cpuCount: 1,

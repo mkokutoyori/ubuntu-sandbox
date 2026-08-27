@@ -307,9 +307,19 @@ export class FortiNavigator {
       const frame = this.stack.pop()!;
       if (frame.kind !== 'object') continue;
       if (!frame.existed && frame.owner) frame.owner.remove(frame.object.key);
-      else frame.object.restore(frame.snapshot);
+      else {
+        frame.object.restore(frame.snapshot);
+        this.reapplyImmediate(frame.object);
+      }
     }
     return EMPTY;
+  }
+
+  private reapplyImmediate(object: FortiObject): void {
+    for (const spec of object.availableAttributes()) {
+      if (!spec.appliesImmediately) continue;
+      spec.appliesImmediately(object.effective(spec.name), this.deps.commitContext());
+    }
   }
 
   delete(key: string | undefined): string {

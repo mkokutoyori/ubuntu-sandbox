@@ -32,6 +32,16 @@ export interface SessionTimeoutProfile {
   readonly other: number;
 }
 
+export type FirewallPortRole = 'wan' | 'lan' | 'dmz' | 'mgmt' | 'undefined';
+
+export interface FirewallPortSpec {
+  readonly name: string;
+  readonly role: FirewallPortRole;
+  readonly ip?: string;
+  readonly mask?: string;
+  readonly allowaccess?: readonly string[];
+}
+
 export interface FirewallProfile {
   readonly syslogCatalog?: FirewallSyslogCatalog;
   readonly vendor: VendorId;
@@ -70,6 +80,7 @@ export interface FirewallProfile {
   readonly portPrefix: string;
   readonly portCount: number;
   readonly portFirstIndex: number;
+  readonly ports?: readonly FirewallPortSpec[];
 
   readonly chassis: ChassisResources;
 }

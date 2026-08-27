@@ -32,7 +32,7 @@ import { renderIpv6RoutingTable } from './diag/ipv6Renderers';
 import { renderGet } from './render/getRenderer';
 import { buildCommitDevice } from './runtime/commitDevice';
 import { vipAddress } from '../../model/AddressObject';
-import type { Firewall } from '../../Firewall';
+import { Firewall } from '../../Firewall';
 import { identityCommitHandlers } from './commit/identityCommits';
 import { vpnCommitHandlers } from './commit/vpnCommits';
 import {
@@ -239,6 +239,24 @@ export class FortiShell {
             .sourceIP.toString())));
       },
     });
+    this.seedChassisInterfaces();
+  }
+
+  private seedChassisInterfaces(): void {
+    const spec = this.tree.spec(['system', 'interface']);
+    if (!spec) return;
+    const table = this.tree.table(spec);
+
+    for (const port of Firewall.chassisPorts(this.fw.getProfile())) {
+      if (table.has(port.name)) continue;
+      const entry = table.ensure(port.name);
+      entry.set('name', [port.name]);
+      entry.set('vdom', ['root']);
+      entry.set('type', ['physical']);
+      entry.set('role', [port.role]);
+      if (port.ip) entry.set('ip', [port.ip, port.mask ?? '255.255.255.0']);
+      if (port.allowaccess) entry.set('allowaccess', [...port.allowaccess]);
+    }
   }
 
   private loggedIdentity(address: string) {

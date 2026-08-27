@@ -65,7 +65,7 @@ import {
   type SimulationResult,
 } from './pipeline/Simulation';
 import {
-  GENERIC_PROFILE, type DeploymentMode, type FirewallProfile,
+  GENERIC_PROFILE, type DeploymentMode, type FirewallProfile, type FirewallPortSpec,
 } from './FirewallProfile';
 import { ROOT_VDOM, VdomRegistry, type VdomContext } from './vdom/VdomRegistry';
 import { VdomLinkTable } from './vdom/VdomLinkTable';
@@ -275,6 +275,15 @@ export class Firewall extends Equipment {
   private activeVdom = ROOT_VDOM;
   private readonly fqdnVips = new Map<string, () => void>();
 
+  static chassisPorts(profile: FirewallProfile): readonly FirewallPortSpec[] {
+    if (profile.ports !== undefined) return profile.ports;
+    const first = profile.portFirstIndex;
+    return Array.from({ length: profile.portCount }, (_unused, offset) => ({
+      name: `${profile.portPrefix}${first + offset}`,
+      role: 'undefined' as const,
+    }));
+  }
+
   constructor(
     deviceType: DeviceType, name: string, x = 0, y = 0, options: FirewallOptions = {},
   ) {
@@ -284,12 +293,14 @@ export class Firewall extends Equipment {
     this.profile = profile;
     this.pipelines = new PipelineCache(this.id, profile, this.registry);
 
-    const first = profile.portFirstIndex;
-    for (let index = first; index < first + profile.portCount; index++) {
-      const port = new Port(`${profile.portPrefix}${index}`, 'ethernet');
+    for (const declare of Firewall.chassisPorts(profile)) {
+      const port = new Port(declare.name, 'ethernet');
       this.addPort(port);
       this.watchBridgePort(port);
-      this.interfaces.configure(port.getName(), { up: port.getIsUp() });
+      this.interfaces.configure(port.getName(), {
+        up: port.getIsUp(),
+        ...(declare.ip ? { ip: declare.ip, mask: declare.mask } : {}),
+      });
     }
 
     this.vdomLinks = new VdomLinkTable({
