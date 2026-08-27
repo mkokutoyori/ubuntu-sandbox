@@ -1001,3 +1001,13 @@ défauts — la méthode vaut d'être reprise sur le reliquat.
 - Les événements d'observabilité Kerberos et de réplication AD se lisaient
   sur le bus GLOBAL alors que le bus d'une machine est le sien depuis
   5ff22d9b — la sonde lisait le mauvais bus, la fonction était juste.
+
+- Un routeur porte une SECONDE table de ports, et elle n'a pas de porte —
+  ouvert. `ControlPlaneUdpEndpoint` garde ses liaisons dans un
+  `Map<number, handler>` prive alors que `Router` n'a AUCUNE `SocketTable` ;
+  `boundPorts()`, le seul accesseur qui pourrait la montrer, n'a aucun
+  appelant dans tout le depot. `show ip sockets` reste donc a ecrire, et
+  la mesure des largeurs de colonnes est BLOQUEE : cisco.com est coupe par
+  le proxy de sortie et la documentation en HTML ecrase les blancs, qui
+  sont precisement l'information cherchee — il faut une capture texte
+  (jeu `ntc-templates`), absente de cette image.

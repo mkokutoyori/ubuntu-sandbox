@@ -19,7 +19,7 @@ import {
 import { resetDeviceCounters } from '@/network/devices/DeviceFactory';
 import { Logger } from '@/network/core/Logger';
 import { EquipmentRegistry } from '@/network/equipment/EquipmentRegistry';
-import { computeUdpChecksum, verifyUdpChecksum } from '@/network/tcp/types';
+import { computeUdpChecksum, verifyUdpChecksum } from '@/network/layers/transport/UdpChecksum';
 
 beforeEach(() => {
   resetCounters();

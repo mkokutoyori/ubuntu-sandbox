@@ -14,8 +14,10 @@
 
 import { IPAddress, IPv4Packet, computeIPv4Checksum, IP_PROTO_ICMP, IP_PROTO_TCP, IP_PROTO_UDP } from '../../core/types';
 import type { UDPPacket, TCPPacket, ICMPPacket } from '../../core/types';
-import { computeTcpChecksum, computeUdpChecksum } from '../../tcp/types';
-import type { TcpSegment, UdpChecksumInput } from '../../tcp/types';
+import { computeTcpChecksum } from '../../tcp/types';
+import { computeUdpChecksum } from '@/network/layers/transport/UdpChecksum';
+import type { TcpSegment } from '../../tcp/types';
+import type { UdpChecksumInput } from '@/network/layers/transport/UdpChecksum';
 import { tryIpToUint32, uint32ToIp, prefixLengthToMaskUint32 } from '../../core/ip';
 import { type IEventBus } from '@/events/EventBus';
 import { BusHolder } from '@/events/BusHolder';

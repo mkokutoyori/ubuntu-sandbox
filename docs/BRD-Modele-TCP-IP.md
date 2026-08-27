@@ -862,6 +862,43 @@ commande est acceptée, la route paraît dans la table, et aucun paquet ne
 part.
 
 ### Phase 4 — La couche transport existe, et UDP a un lieu
+
+**Incrément 1 — LIVRÉ : la somme de contrôle UDP a quitté `tcp/types.ts`.**
+`src/network/layers/transport/` existe désormais à côté de `link/` et
+`internet/`. Le déménagement n'a pas consisté à recopier : les primitives
+que TCP et UDP PARTAGENT — pseudo-en-tête (v4 et v6), découpage en mots,
+complément à un, `payloadBytes` — sont extraites dans `L4Checksum.ts`, et
+`UdpChecksum.ts` ne porte plus que ce qui est propre à la RFC 768.
+`tcp/types.ts` les LIT au lieu de les détenir ; les huit fichiers qui
+importaient la moitié UDP depuis `tcp/types` pointent sur la couche, et
+`TcpStack` prend `payloadBytes` à la même source. **Aucun ré-export n'est
+laissé derrière** : deux chemins d'import vers un même symbole sont la
+duplication qu'on vient de refermer, pas une commodité.
+
+Aucun comportement ne change, et c'est vérifiable plutôt qu'affirmé :
+`udp-checksum`, `ipv6-l4-checksum`, `tcp-handshake-close-lifecycle`,
+`udp-transport-endhost` et `nat-port-forward-reply-leg` passent sans une
+seule modification.
+
+**Incrément 2 — LIVRÉ : une liaison UDP refusée se DIT.** Voir le commit
+« Une liaison UDP refusée se DIT, elle ne se lève pas ». `udpBind` est
+déclaré `: boolean` aux cinq endroits qui le nomment ; `EndHost` ne
+rendait jamais `false`, il levait, tandis que `ControlPlaneUdpEndpoint` —
+l'autre implantation de la même interface — rendait `false` sans jamais
+lever. `TftpSession` tourne sur les deux et recevait donc deux modes
+d'échec pour le même événement.
+
+**Reste de la phase 4** : `Router` n'a AUCUNE `SocketTable` — son
+`ControlPlaneUdpEndpoint` garde ses liaisons dans une `Map` privée, donc
+un routeur porte bien une seconde table de ports. Elle n'a pas de porte :
+`boundPorts()`, écrit pour la montrer, n'a aucun appelant dans le dépôt,
+et `show ip sockets` n'existe pas. La mesure des largeurs de colonnes est
+BLOQUÉE — cisco.com est coupé par le proxy de sortie et la documentation
+HTML écrase les blancs, qui sont précisément l'information cherchée ; il
+faut une capture texte (`ntc-templates`), absente de cette image. Écrire
+la vue sur des largeurs devinées serait exactement ce que
+`ciscoTableLayouts.ts` existe pour empêcher.
+
 **Sortie** : la somme de contrôle UDP sort de `tcp/types.ts` ; une seule
 table de ports.
 

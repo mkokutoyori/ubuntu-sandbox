@@ -1,4 +1,8 @@
-import { IPv6Address } from '@/network/core/types';
+import {
+  IP_PROTO_TCP_NUMBER, onesComplement, payloadBytes,
+  pushBytesAsWords, pushPseudoHeader,
+} from '@/network/layers/transport/L4Checksum';
+
 
 export type TcpState =
   | 'closed'
@@ -126,54 +130,6 @@ export function seqLt(a: number, b: number): boolean {
   return ((a - b) >>> 0) > 0x7fffffff;
 }
 
-const IP_PROTO_TCP_NUMBER = 6;
-const IP_PROTO_UDP_NUMBER = 17;
-
-function pushPseudoHeader(
-  words: number[], srcIp: string, dstIp: string, protocol: number, l4Length: number,
-): void {
-  if (srcIp.includes(':') || dstIp.includes(':')) {
-    for (const ip of [srcIp, dstIp]) {
-      for (const hextet of new IPv6Address(ip).getHextets()) words.push(hextet & 0xffff);
-    }
-    words.push((l4Length >>> 16) & 0xffff, l4Length & 0xffff);
-    words.push(0x0000, protocol & 0xffff);
-    return;
-  }
-  for (const ip of [srcIp, dstIp]) {
-    const o = ip.split('.').map(Number);
-    words.push(((o[0] ?? 0) << 8) | (o[1] ?? 0), ((o[2] ?? 0) << 8) | (o[3] ?? 0));
-  }
-  words.push(protocol & 0xffff, l4Length & 0xffff);
-}
-
-export function payloadBytes(payload: unknown): number[] {
-  if (typeof payload === 'string') {
-    const bytes: number[] = [];
-    for (let i = 0; i < payload.length; i++) bytes.push(payload.charCodeAt(i) & 0xff);
-    return bytes;
-  }
-  if (payload instanceof Uint8Array) return Array.from(payload);
-  return [];
-}
-
-function pushBytesAsWords(words: number[], bytes: number[]): void {
-  for (let i = 0; i < bytes.length; i += 2) {
-    const hi = bytes[i] & 0xff;
-    const lo = i + 1 < bytes.length ? bytes[i + 1] & 0xff : 0;
-    words.push((hi << 8) | lo);
-  }
-}
-
-function onesComplement(words: number[]): number {
-  let sum = 0;
-  for (const w of words) {
-    sum += w;
-    sum = (sum & 0xffff) + (sum >>> 16);
-  }
-  return (~sum) & 0xffff;
-}
-
 export function computeTcpChecksum(
   seg: TcpSegment, srcIp: string, dstIp: string,
 ): number {
@@ -196,27 +152,6 @@ export function computeTcpChecksum(
   return onesComplement(words);
 }
 
-export interface UdpChecksumInput {
-  sourcePort: number;
-  destinationPort: number;
-  payload: unknown;
-}
-
-export function computeUdpChecksum(
-  udp: UdpChecksumInput, srcIp: string, dstIp: string,
-): number {
-  const bytes = payloadBytes(udp.payload);
-  const udpLen = 8 + bytes.length;
-
-  const words: number[] = [];
-  pushPseudoHeader(words, srcIp, dstIp, IP_PROTO_UDP_NUMBER, udpLen);
-  words.push(udp.sourcePort & 0xffff, udp.destinationPort & 0xffff);
-  words.push(udpLen & 0xffff, 0);
-  pushBytesAsWords(words, bytes);
-
-  return onesComplement(words);
-}
-
 /**
  * Verify a received segment's checksum. A checksum of 0 is treated as
  * "not computed" (checksum offload) and accepted — segments built by
@@ -227,20 +162,6 @@ export function verifyTcpChecksum(
 ): boolean {
   if (seg.checksum === 0) return true;
   return computeTcpChecksum(seg, srcIp, dstIp) === seg.checksum;
-}
-
-/**
- * Verify a received datagram's checksum. A checksum of 0 is treated as
- * "not computed" (RFC 768's IPv4 opt-out) and accepted — the many internal
- * protocol agents (RIP, DHCP, IKE, SNMP, …) that build `UDPPacket`s with
- * structured (non-byte) payloads still stamp `checksum: 0` and are
- * unaffected by this check.
- */
-export function verifyUdpChecksum(
-  udp: UdpChecksumInput & { checksum: number }, srcIp: string, dstIp: string,
-): boolean {
-  if (udp.checksum === 0) return true;
-  return computeUdpChecksum(udp, srcIp, dstIp) === udp.checksum;
 }
 
 export function flagsString(f: TcpFlags): string {

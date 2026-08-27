@@ -9,10 +9,12 @@ import {
 } from '../core/types';
 import {
   computeTcpChecksum,
-  computeUdpChecksum,
   type TcpSegment,
-  type UdpChecksumInput,
 } from '../tcp/types';
+import {
+  computeUdpChecksum,
+  type UdpChecksumInput,
+} from '../layers/transport/UdpChecksum';
 
 export function recomputeL4Checksum(result: IPv4Packet): void {
   const payload = result.payload as (UDPPacket | TCPPacket | undefined);
