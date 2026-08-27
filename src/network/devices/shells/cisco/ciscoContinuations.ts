@@ -181,7 +181,7 @@ export const ROUTEUR_SEUL: ContinuationTable = {
 /** Ce que seul un Catalyst porte. */
 export const COMMUTATEUR_SEUL: ContinuationTable = {
   config: {
-    'ip access-list': ['standard'],
+    'ip access-list': ['extended', 'resequence', 'standard'],
     'ip arp inspection filter': ['static', 'vlan'],
     'ip igmp snooping': ['immediate-leave', 'mrouter', 'querier', 'vlan'],
     'line': ['aux', 'console', 'vty'],
