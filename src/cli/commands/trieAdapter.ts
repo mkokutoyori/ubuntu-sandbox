@@ -86,6 +86,12 @@ export interface SpecCollector {
   setCompletionFilter(filter: (path: readonly string[], keyword: string) => boolean): void;
 }
 
+const COLLECTOR_BRAND = Symbol.for('cli.trieAdapter.collector');
+
+export function isCollector(cible: unknown): boolean {
+  return typeof cible === 'object' && cible !== null && COLLECTOR_BRAND in cible;
+}
+
 function normaliseKeywords(
   keywords?: ReadonlyArray<{ keyword: string; description: string } | string>,
 ): ReadonlyArray<AdapterKeyword> | undefined {
@@ -99,7 +105,8 @@ export function collectRegistrations(
   const collected: CollectedRegistration[] = [];
   const hidden = new Set<string>();
   const exigent = new Set<string>();
-  const collector: SpecCollector = {
+  const collector: SpecCollector & { [COLLECTOR_BRAND]: true } = {
+    [COLLECTOR_BRAND]: true,
     register(path, description, action) {
       collected.push({ path, description, action, greedy: false, hidden: false });
     },
@@ -142,6 +149,7 @@ export interface SpecFromTrieOptions {
    */
   modesFor?: (path: string) => readonly string[] | undefined;
   minPrivilege: number;
+  minPrivilegeFor?: (path: string) => number | undefined;
   restName?: string;
   restDescription?: string;
   restDescriptionFor?: (path: string) => string | undefined;
@@ -190,6 +198,8 @@ export function specsFromTrieRegistrations(
   options: SpecFromTrieOptions,
 ): CommandSpec[] {
   const restName = options.restName ?? 'reste';
+  const privilegeDe = (chemin: string): number =>
+    options.minPrivilegeFor?.(chemin) ?? options.minPrivilege;
   const collected = collectRegistrations(register);
   const negation = options.undoFrom === undefined
     ? undefined
@@ -288,7 +298,7 @@ export function specsFromTrieRegistrations(
       path,
       description: entry.description,
       modes: modesIci,
-      minPrivilege: options.minPrivilege,
+      minPrivilege: privilegeDe(entry.path),
       ...(cache ? { hidden: true } : {}),
       ...(contexte ? { reachableWhen: contexte } : {}),
       ...(negationSeule ? {
@@ -388,7 +398,7 @@ export function specsFromTrieRegistrations(
         path: [...words],
         description: entry.description,
         modes: modesIci,
-        minPrivilege: options.minPrivilege,
+        minPrivilege: privilegeDe(entry.path),
         existsOnlyNegated: true,
         ...(cache ? { hidden: true } : {}),
         ...(contexte ? { reachableWhen: contexte } : {}),
@@ -412,7 +422,7 @@ export function specsFromTrieRegistrations(
         path: [...amont, sub.keyword, ...placesFille],
         description: sub.description,
         modes: modesIci,
-        minPrivilege: options.minPrivilege,
+        minPrivilege: privilegeDe(entry.path),
         ...(cache ? { hidden: true } : {}),
         ...(sub.reachableWhen ? { reachableWhen: sub.reachableWhen }
           : contexte ? { reachableWhen: contexte } : {}),

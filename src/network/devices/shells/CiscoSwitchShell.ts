@@ -23,7 +23,7 @@ import type { CommandSpec } from '@/cli/CommandTable';
 import type { SocleLegend } from './CiscoShellBase';
 import type { ArgumentSpec } from '@/cli/ArgumentTypes';
 import type { SpecCollector, AdapterKeyword } from '@/cli/commands/trieAdapter';
-import { collectRegistrations, specsFromTrieRegistrations }
+import { collectRegistrations, specsFromTrieRegistrations, isCollector }
   from '@/cli/commands/trieAdapter';
 import type { ISwitchShell } from './ISwitchShell';
 import type { Switch, SwitchportConfig } from '../Switch';
@@ -625,6 +625,18 @@ function stpVlanSpecs(action: (args: string[]) => string): CommandSpec[] {
   return specs;
 }
 
+const privilegeSelonModes = (
+  modesParChemin: Readonly<Record<string, readonly string[]>>,
+) => (path: string): number | undefined =>
+  modesParChemin[path.replace(/^no /, '')]?.includes('user') ? 1 : undefined;
+
+interface SwitchTries {
+  config: CommandTrie;
+  configIf: CommandTrie;
+  privileged: CommandTrie;
+  user: CommandTrie;
+}
+
 export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISwitchShell {
   override versionText(): string {
     return showSwitchVersion(this.d());
@@ -1083,19 +1095,19 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
     });
     this.registerDaiCommands({
       config: this.configTrie, configIf: this.configIfTrie,
-      privileged: this.privilegedTrie,
+      privileged: this.privilegedTrie, user: this.userTrie,
     });
     this.registerPortSecurityCommands();
     this.registerVtpCommands(this.configTrie);
     this.registerUdldCommands({
       config: this.configTrie, configIf: this.configIfTrie,
-      privileged: this.privilegedTrie,
+      privileged: this.privilegedTrie, user: this.userTrie,
     });
     this.registerIgmpSnoopingCommands();
     this.registerPimSnoopingCommands();
     this.registerMonitorSessionCommands({
       config: this.configTrie, configIf: this.configIfTrie,
-      privileged: this.privilegedTrie,
+      privileged: this.privilegedTrie, user: this.userTrie,
     });
     for (const kw of ['permit', 'deny', 'remark', 'no', 'evaluate']) {
       this.configAclTrie.registerGreedy(kw, `ACL ${kw}`, (args) => {
@@ -1139,9 +1151,7 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
     this.registerShowCompletionKeywords();
   }
 
-  private registerDaiCommands(trie: {
-    config: CommandTrie; configIf: CommandTrie; privileged: CommandTrie;
-  }): void {
+  private registerDaiCommands(trie: SwitchTries): void {
     const parseList = (spec: string): number[] => {
       const out: number[] = [];
       for (const part of spec.split(',')) {
@@ -1912,7 +1922,7 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
 
   }
 
-  private registerUdldCommands(trie: { config: CommandTrie; configIf: CommandTrie; privileged: CommandTrie }): void {
+  private registerUdldCommands(trie: SwitchTries): void {
     trie.config.registerGreedy('udld', 'UDLD global configuration', (args) => {
       const a = (args[0] ?? '').toLowerCase();
       const agent = this.requireUdld();
@@ -1948,7 +1958,7 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
       for (const p of ports) this.requireUdld().setPortMode(p, 'disabled');
       return '';
     });
-    for (const t of [this.userTrie, this.privilegedTrie]) {
+    for (const t of [trie.user, trie.privileged]) {
       t.registerGreedy('show udld', 'Display UDLD state', (args) => {
         const agent = this.requireUdld();
         const target = args[0];
@@ -2657,23 +2667,20 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
 
   private aggregationSpecs(): CommandSpec[] {
     const partager = (
-      enregistrer: (t: {
-        config: CommandTrie; configIf: CommandTrie; privileged: CommandTrie;
-      }) => void,
+      enregistrer: (t: SwitchTries) => void,
     ) => (collector: SpecCollector) => {
       const un = collector as unknown as CommandTrie;
-      enregistrer({ config: un, configIf: un, privileged: un });
+      enregistrer({ config: un, configIf: un, privileged: un, user: new CommandTrie() });
     };
 
     const famille = (
-      enregistrer: (t: {
-        config: CommandTrie; configIf: CommandTrie; privileged: CommandTrie;
-      }) => void,
+      enregistrer: (t: SwitchTries) => void,
       modesParChemin: Readonly<Record<string, readonly string[]>>,
     ): CommandSpec[] => specsFromTrieRegistrations(partager(enregistrer), {
       modes: ['config'], minPrivilege: 15,
       undoFromNegatedPaths: true,
       modesFor: (path) => modesParChemin[path.replace(/^no /, '')],
+      minPrivilegeFor: privilegeSelonModes(modesParChemin),
       argumentFor: (path) => AGREGATION_PLACES[path],
     });
 
@@ -2690,6 +2697,7 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
         const partage = collector as unknown as CommandTrie;
         this.registerDaiCommands({
           config: partage, configIf: partage, privileged: partage,
+          user: new CommandTrie(),
         });
       },
       {
@@ -2697,6 +2705,7 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
         undoFromNegatedPaths: true,
         skip: (path) => !DAI_CHEMINS.has(path.replace(/^no /, '')),
         modesFor: (path) => DAI_MODES[path.replace(/^no /, '')],
+        minPrivilegeFor: privilegeSelonModes(DAI_MODES),
         argumentFor: (path) => DAI_PLACES[path],
       },
     );
@@ -2723,6 +2732,7 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
         modes: ['config-if'], minPrivilege: 15,
         undoFromNegatedPaths: true,
         modesFor: (path) => DOT1X_MODES[path.replace(/^no /, '')],
+        minPrivilegeFor: privilegeSelonModes(DOT1X_MODES),
         argumentFor: (path) => DOT1X_PLACES[path],
       },
     );
@@ -3612,13 +3622,13 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
 
   }
 
-  private registerMonitorSessionCommands(trie: { config: CommandTrie; configIf: CommandTrie; privileged: CommandTrie }): void {
+  private registerMonitorSessionCommands(trie: SwitchTries): void {
     trie.config.registerGreedy('monitor session', 'Configure SPAN session', (args) =>
       this.handleMonitorSession(args, false));
     trie.config.registerGreedy('no monitor session', 'Delete a SPAN session', (args) =>
       this.handleMonitorSession(args, true));
 
-    for (const t of [this.userTrie, this.privilegedTrie]) {
+    for (const t of [trie.user, trie.privileged]) {
       t.register('show monitor', 'Display SPAN sessions', () => this.showMonitor(null));
       t.registerGreedy('show monitor session', 'Display SPAN session(s)', (args) => {
         if (args.length === 0 || args[0].toLowerCase() === 'all') return this.showMonitor(null);
@@ -4128,14 +4138,14 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
       });
     });
 
-    this.registerDot1x({
-      config: this.configTrie, configIf: this.configIfTrie,
-      privileged: this.privilegedTrie,
-    });
-    this.registerLacp({
-      config: this.configTrie, configIf: this.configIfTrie,
-      privileged: this.privilegedTrie,
-    });
+    const paquet: SwitchTries = isCollector(trie)
+      ? { config: trie, configIf: trie, privileged: trie, user: new CommandTrie() }
+      : {
+        config: this.configTrie, configIf: this.configIfTrie,
+        privileged: this.privilegedTrie, user: this.userTrie,
+      };
+    this.registerDot1x(paquet);
+    this.registerLacp(paquet);
 
     trie.register('shutdown', 'Disable interface', () => {
       return this.applyToSelectedInterfaces(portName => this.setIfAdminState(portName, false));
@@ -6125,7 +6135,7 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
    * here groups members for STP and nothing distributes data frames
    * across them, so the method would have nothing to decide.
    */
-  private registerLacp(trie: { config: CommandTrie; configIf: CommandTrie; privileged: CommandTrie }): void {
+  private registerLacp(trie: SwitchTries): void {
     const agent = () => this.requireLacp();
 
     trie.config.registerGreedy('lacp system-priority', 'LACP system priority', (args) => {
