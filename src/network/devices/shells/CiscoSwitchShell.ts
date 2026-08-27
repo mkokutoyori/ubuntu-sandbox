@@ -627,8 +627,11 @@ function stpVlanSpecs(action: (args: string[]) => string): CommandSpec[] {
 
 const privilegeSelonModes = (
   modesParChemin: Readonly<Record<string, readonly string[]>>,
-) => (path: string): number | undefined =>
-  modesParChemin[path.replace(/^no /, '')]?.includes('user') ? 1 : undefined;
+) => (path: string): number | undefined => {
+  const nu = path.replace(/^no /, '');
+  if (!nu.startsWith('show ')) return undefined;
+  return modesParChemin[nu]?.includes('user') ? 1 : undefined;
+};
 
 interface SwitchTries {
   config: CommandTrie;
