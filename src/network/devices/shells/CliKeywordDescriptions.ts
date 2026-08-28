@@ -546,6 +546,8 @@ const KEYWORD_DESCRIPTIONS: ReadonlyMap<string, string> = new Map<string, string
   ['global-duration', 'Global lifetime of the security association'],
   ['message-transmission', 'LLDP message transmission parameters'],
   ['routing-table', 'Routing table'],
+  ['behavior', 'Traffic behavior'],
+  ['classifier', 'Traffic classifier'],
 ]);
 
 /**

@@ -94,7 +94,7 @@ function declarerAritesVrp(tries: HuaweiArgumentHelpTries): void {
     'route-policy', 'screen-length', 'screen-width', 'traffic behavior',
     'traffic classifier', 'traffic policy',
     'undo', 'undo acl', 'undo info-center', 'undo nqa-server',
-    'undo route-policy',
+    'undo route-policy', 'clock timezone', 'time-range', 'port-group', 'undo port-group',
   ]) tries.system.requireArgs(chemin, 1);
   // `arp static` prend une adresse ET une MAC : un seul argument la
   // laisse incomplete.
@@ -112,6 +112,7 @@ function declarerAritesVrp(tries: HuaweiArgumentHelpTries): void {
   for (const trie of [tries.user, tries.system]) {
     trie.requireArgs('display acl', 1);
     trie.requireArgs('display current-configuration interface', 1);
+    trie.requireArgs('display dhcp', 1);
   }
   // `acl` ne se distingue pas par le NOMBRE d'arguments mais par leur
   // contenu : `acl 2000` se valide, `acl name` attend encore le nom —
@@ -119,6 +120,15 @@ function declarerAritesVrp(tries: HuaweiArgumentHelpTries): void {
   // existe pour dire, et l'arite seule ne pouvait pas l'exprimer.
   tries.system.executableWhen('acl',
     (args) => !(args.length === 1 && /^(name|number|basic|advanced)$/i.test(args[0])));
+  // `clock` est glouton : `clock timezone` compte pour un argument, donc
+  // l'arite est satisfaite alors qu'il manque le nom du fuseau.
+  tries.system.executableWhen('clock',
+    (args) => !(args.length === 1 && args[0].toLowerCase() === 'timezone'));
+  // `port-group NOM` entre dans le groupe nomme, `port-group
+  // group-member` attend encore ses ports : un seul argument dans les
+  // deux cas, donc l'arite ne peut pas les separer.
+  tries.system.executableWhen('port-group',
+    (args) => !(args.length === 1 && args[0].toLowerCase() === 'group-member'));
   // Deux `<cr>` que le balayage ne pouvait pas voir tant que la commande
   // repondait « mot inconnu » : corriger le refus les a decouverts.
   tries.system.requireArgs('multicast', 1);

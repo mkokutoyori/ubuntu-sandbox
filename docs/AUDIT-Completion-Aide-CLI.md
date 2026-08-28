@@ -1502,7 +1502,26 @@ plutôt que dans le produit** — parce que c'est là qu'était la faute :
 sont les balayages du commutateur qui passaient déjà et le cas de refus
 d'un mot réellement inexistant.
 
-Non-régression : 323 fichiers, 7 127 cas. `tsc` : 344 avant, 344 après.
+**Le cliquet a servi avant même d'être poussé.** Le rebasage a apporté le
+travail d'une session concurrente — `mac-address blackhole|static`,
+`clock timezone`, `time-range`, `port-group`, `display dhcp`,
+`display traffic` — et les balayages ont immédiatement nommé sept fautes
+neuves des mêmes familles : cinq `<cr>` sans arité, deux descriptions
+manquantes, et un sélecteur qui rouvrait ses alternatives
+(`mac-address blackhole ?` offrait `aging-time`). Toutes corrigées dans le
+même geste. C'est exactement ce à quoi sert une liste à égalité exacte :
+elle ne dit pas seulement où l'on en était, elle refuse ce qui arrive
+après.
+
+Sur ce dernier point, la correction a d'abord été tentée par
+`leadingOnly` et **n'a rien changé** ; la déclaration juste est un
+paramètre **ENUM** — une place, trois valeurs — qui dit ce qu'une liste de
+suggestions ne peut pas dire : que les trois se disputent le même rang.
+
+Non-régression : 323 fichiers, 7 128 cas. Deux échecs subsistent
+(`another_rip`, `scenario-vlan-8021q-trunk`) et **ne sont pas les miens** :
+ils tombent à l'identique une fois mes changements remisés, donc ils
+viennent des commits amont rebasés. `tsc` : 233 avant, 233 après.
 
 **Reste connu, et vide.** Les six listes du cliquet VRP sont toutes à zéro
 — aucune faute nommée, donc aucune ne peut apparaître sans faire échouer

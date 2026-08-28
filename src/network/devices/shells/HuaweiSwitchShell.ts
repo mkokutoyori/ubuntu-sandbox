@@ -1315,10 +1315,19 @@ export class HuaweiSwitchShell implements ISwitchShell {
             : refuseMotInattenduVrp(brut, a.token);
       }
     });
-    this.systemTrie.addCompletionKeywords('mac-address', [
-      { keyword: 'aging-time', description: 'Aging time of dynamic MAC address entries' },
-      { keyword: 'blackhole', description: 'Blackhole MAC address entry' },
-      { keyword: 'static', description: 'Static MAC address entry' },
+    // Les trois sont des ALTERNATIVES a la premiere place, pas des
+    // suites : `mac-address blackhole aging-time` n'existe pas, et
+    // l'aide le proposait des que l'un des trois etait sur la ligne.
+    // Un parametre ENUM dit exactement cela — une place, trois valeurs —
+    // la ou une liste de suggestions les rendait a tous les rangs.
+    this.systemTrie.describeArgs('mac-address', [
+      { name: 'kind', type: 'ENUM', description: 'MAC address entry type',
+        validator: () => true,
+        values: [
+          { keyword: 'aging-time', description: 'Aging time of dynamic MAC address entries' },
+          { keyword: 'blackhole', description: 'Blackhole MAC address entry' },
+          { keyword: 'static', description: 'Static MAC address entry' },
+        ] },
     ]);
     // Aucune des trois formes ne se valide sur son seul selecteur : le
     // mot compte pour un argument, donc l'arite est satisfaite alors
