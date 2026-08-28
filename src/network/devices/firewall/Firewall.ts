@@ -9,7 +9,6 @@ import {
   IPAddress,
   IP_PROTO_UDP,
   MACAddress,
-  SubnetMask,
   type ARPPacket,
   type DeviceType,
   type EthernetFrame,
@@ -183,7 +182,7 @@ const DEFAULT_INTERFACE_MTU = 1500;
 export class Firewall extends Equipment {
   consoleLineCount(): number { return 1; }
 
-  private readonly interfaces = new InterfaceTable();
+  private readonly interfaces = new InterfaceTable((name) => this.getPort(name));
   private readonly vdoms: VdomRegistry;
   private readonly switchGroups = new SwitchGroupTable();
   private readonly vdomLinks: VdomLinkTable;
@@ -939,12 +938,6 @@ export class Firewall extends Equipment {
 
   configureInterface(name: string, config: InterfaceConfig): void {
     this.interfaces.configure(name, config);
-
-    const port = this.getPort(name);
-    const iface = this.interfaces.get(name);
-    if (port && iface?.ip && iface.mask) {
-      port.configureIP(new IPAddress(iface.ip), new SubnetMask(iface.mask));
-    }
     this.routing.refreshInterfaces();
   }
 
@@ -967,7 +960,6 @@ export class Firewall extends Equipment {
 
   setInterfaceUp(name: string, up: boolean): void {
     this.interfaces.setUp(name, up);
-    this.getPort(name)?.setAdminShutdown(!up);
   }
 
   now(): number { return this.services.now(); }

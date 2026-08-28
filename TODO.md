@@ -386,6 +386,46 @@ avant de le declarer.
 
 ## Pare-feu FortiGate
 
+### [interface] `allowaccess` du PROFIL n'est applique a personne
+**Constat.** `FORTIGATE_60F_PORTS` declare `allowaccess` sur `port1`
+(`ping https ssh http fgfm`) et sur `wan1` (`ping`), et le constructeur
+de `Firewall` ne lit que `ip`/`mask` de ces declarations. Le magasin du
+plan de gestion reste donc VIDE a la sortie d'usine, alors que
+`show system interface port1` rend bien la ligne `set allowaccess ...`
+— deux reponses a la meme question sur la meme machine.
+
+**Mesure.** Machine d'usine, aucune commande tapee :
+`allowedAccessOn('port1')` rend `[]` pendant que la configuration rendue
+annonce cinq services. Le defaut n'est pas visible aujourd'hui parce que
+`ManagementPlane.allowsAccess` rend `true` quand l'interface n'est pas
+declaree — l'absence est donc PERMISSIVE, et tout passe.
+
+**Report.** Appliquer la declaration RESTREINT pour de bon : `wan1`
+n'accepterait plus que `ping`, donc ssh et https sur `wan1` cesseraient
+de repondre. C'est le comportement d'un vrai FortiGate, mais c'est un
+changement du plan de GESTION et non de la relation interface/port que
+le lot courant referme, et il demande de reprendre les laboratoires qui
+joignent l'administration par une interface WAN.
+
+### [ssh] un mot de passe VIDE ne traverse pas le terminal interactif
+**Constat.** Le compte `admin` d'usine a un mot de passe vide et le
+pare-feu l'accepte — `authenticateAdmin('admin', '')` rend `true`, et
+`ManagementPlane.requiresPasswordChange` existe justement pour ce cas.
+Mais `ssh admin@192.168.1.99` depuis un terminal, en validant une saisie
+vide a l'invite, rend `Permission denied, please try again.`
+
+**Mesure.** Meme laboratoire, deux cas : mot de passe vide → refus ;
+`set password "Secret123"` puis ce mot de passe → la session s'ouvre sur
+l'invite `FGT #`. Le serveur n'est donc pas en cause, son
+`checkPassword` delegue directement a `authenticateAdmin`.
+
+**Report.** Le refus vient du chemin CLIENT (la saisie vide n'est pas
+soumise), qui est commun a toutes les plateformes et non propre au
+pare-feu ; le trancher demande de mesurer d'abord ce que fait la meme
+saisie vers un hote Linux dont le compte n'a pas de mot de passe, sans
+quoi on corrigerait un symptome sur une seule cible.
+
+
 ### [vdom] `set vdom-mode split-vdom` est accepte et se comporte comme multi-vdom
 **Constat.** `vdom-mode` accepte trois valeurs. `no-vdom` et `multi-vdom`
 sont honorees ; `split-vdom` est range et se replie sur `multi-vdom` —
