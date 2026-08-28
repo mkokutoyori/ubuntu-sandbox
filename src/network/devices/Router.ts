@@ -2474,9 +2474,7 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
       `${this.name}: ACL denied inbound on ${inPort}: ${ipPkt.sourceIP} → ${ipPkt.destinationIP}`);
     this._debugService?.emitLine('ip.packet',
       `IP: s=${ipPkt.sourceIP} (${inPort}), d=${ipPkt.destinationIP}, len ${ipPkt.totalLength}, access denied`);
-    if (this.isIcmpUnreachablesEnabled(inPort)) {
-      this.sendICMPError(inPort, ipPkt, 'destination-unreachable', 13);
-    }
+    this.sendICMPError(inPort, ipPkt, 'destination-unreachable', 13);
     return true;
   }
 
@@ -2902,9 +2900,7 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
           `${this.name}: ACL denied outbound on ${route.iface}: ${fwdPkt.sourceIP} → ${fwdPkt.destinationIP}`);
         this._debugService?.emitLine('ip.packet',
           `IP: s=${fwdPkt.sourceIP} (${inPort}), d=${fwdPkt.destinationIP}, len ${fwdPkt.totalLength}, access denied`);
-        if (this.isIcmpUnreachablesEnabled(inPort)) {
-          this.sendICMPError(inPort, fwdPkt, 'destination-unreachable', 13);
-        }
+        this.sendICMPError(inPort, fwdPkt, 'destination-unreachable', 13);
         return;
       }
     }
@@ -3110,6 +3106,9 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
     // RFC 1122 §3.2.2: never generate an error about an ICMP error,
     // a fragment, or a broadcast/multicast packet (prevents error storms).
     if (!mayGenerateICMPError(offendingPkt)) return;
+
+    if (icmpType === 'destination-unreachable'
+      && !this.isIcmpUnreachablesEnabled(inPort)) return;
 
     const inPortObj = this.ports.get(inPort);
     if (!inPortObj) return;

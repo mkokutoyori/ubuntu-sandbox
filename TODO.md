@@ -231,31 +231,27 @@ blancs — c'est-a-dire precisement l'information cherchee.
 que `cisco/ciscoTableLayouts.ts` existe pour empecher. Il faut une
 transcription TEXTE d'une vraie machine.
 
-### [icmp] `no ip unreachables` n'est honore qu'a 2 sites d'appel sur 8
-**Constat.** La commande existe, est stockee
-(`CiscoSecurityConfig.ifaceFlags(i).noUnreachables`), est rendue dans la
-configuration et lue par `Router.isIcmpUnreachablesEnabled`. Mais ce
-predicat est consulte AU SITE D'APPEL, deux fois, et non dans
-`sendICMPError` — donc six emissions sur huit l'ignorent.
+### [icmp] le pendant VRP est accepte et inerte, et son `undo` n'existe pas
+**Constat.** Cote Cisco, `no ip unreachables` est desormais honore par
+`sendICMPError`. Cote Huawei, les commandes equivalentes
+`icmp ttl-exceeded send` et `icmp host-unreachable send` sont enregistrees
+dans `HuaweiVRPShell` et rangees par `_setGlobalToggle` dans un sac que
+le plan de donnees ne relit JAMAIS.
 
-**Mesure.** `Router.ts` porte 10 appels a `sendICMPError`, dont 8 de type
-`destination-unreachable` (codes 13, 3, 0, 4, 13, 4, 4, 1) ; seuls les
-DEUX refus par liste de controle (code 13) sont gardes. Les trois `code
-4` ne le sont pas.
+**Mesure.** `_getGlobalToggle` n'a que deux lecteurs — `HuaweiDisplayCommands`
+pour `telnet server` et `SocketInventory` pour les ports d'ecoute — et
+aucun ne consulte les cles `icmp`. Pire : aucune forme `undo icmp ...`
+n'est enregistree, donc l'operateur ne peut meme pas couper le message
+qu'il croit pouvoir regler.
 
-**Ce que dit la vraie machine.** La documentation Cisco et plusieurs
-sources d'exploitation concordent : `no ip unreachables` supprime TOUT le
-type 3, code 4 compris — c'est exactement pourquoi cette commande casse
-la decouverte de MTU de chemin, defaut operationnel classique. Le
-simulateur ne peut donc pas l'enseigner aujourd'hui : la commande est
-posee, le `Fragmentation Needed` part quand meme.
-
-**Report.** Le correctif est court — deplacer le predicat dans
-`sendICMPError` pour `destination-unreachable` et retirer les deux gardes
-de site, une seule ecriture — mais il CHANGE le comportement de six
-emissions existantes (net, host, port, frag-needed), donc il demande sa
-propre non-regression complete. Le BRD veut chaque lot livrable et vert
-seul ; c'est un lot a part.
+**Report.** Le modele de VRP n'est pas celui d'IOS et le correctif n'est
+donc pas une recopie : la commande est GLOBALE (vue systeme) et non par
+interface, et elle est decoupee PAR MESSAGE (`ttl-exceeded`,
+`host-unreachable`, `port-unreachable`) la ou IOS coupe tout le type 3
+d'un coup. Le predicat `Router.isIcmpUnreachablesEnabled` lit
+`CiscoSecurityConfig` et rend `true` sur un Huawei ; lui donner un second
+magasin sans repenser la granularite ferait deux reglages pour une meme
+question. C'est un lot a part, avec sa propre mesure.
 
 ### [udp] IGMP, PIM et GRE sont encore interceptes AVANT la decision de transit
 **Constat.** L'increment 3 a deplace la chaine UDP des sous-classes vers
