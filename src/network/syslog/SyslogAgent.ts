@@ -9,10 +9,12 @@ import {
   SYSLOG_SEVERITY, SYSLOG_FACILITY, syslogTagOf,
 } from './types';
 import {
-  MACAddress, IPAddress,
-  type EthernetFrame, type IPv4Packet, type UDPPacket,
-  IP_PROTO_UDP, ETHERTYPE_IPV4, nextIPv4Id, computeIPv4Checksum,
+  IPAddress,
+  type EthernetFrame, type IPv4Packet,
 } from '../core/types';
+import {
+  buildUdpOverIpv4, type UdpSendRequest,
+} from '../layers/transport/UdpEgress';
 
 export interface SyslogHost {
   readonly id: string;
@@ -23,6 +25,8 @@ export interface SyslogHost {
   sendFrame(portName: string, frame: EthernetFrame): void;
   /** ARP-aware send (queues on a cold cache instead of broadcasting) — falls back to broadcast when absent (mirrors `TcpHost`). */
   sendIpv4FrameArpAware?(outPortName: string, ipPkt: IPv4Packet, nextHopIP: IPAddress): void;
+  /** Transport-layer egress (BRD-Modele-TCP-IP.md phase 5) — the agent hands over a datagram and knows nothing of MAC, TTL or checksum. */
+  sendUdpDatagram?(request: UdpSendRequest): boolean;
   /** `logging server-arp` : resoudre le collecteur des sa configuration. */
   sendArpRequestFor?(ifaceName: string, targetIP: IPAddress): boolean;
   /**
@@ -255,12 +259,12 @@ export class SyslogAgent {
   private deliverInterne(s: SyslogServer, severity: SyslogSeverityName, tag: string, message: string): void {
     if (s.transport === 'tcp') { this.deliverTcp(s, severity, tag, message); return; }
     const egress = this.resolveEgress(s.ip);
-    if (!egress) { this.dropped(s.ip, 'no-route'); return; }
-    if (!egress.port.getIsUp() || !egress.port.isConnected()) {
+    if (egress && (!egress.port.getIsUp() || !egress.port.isConnected())) {
       this.dropped(s.ip, 'link-down'); return;
     }
-    const srcIp = this.sourceIpFor(egress.port);
-    if (!srcIp) { this.dropped(s.ip, 'no-source-ip'); return; }
+    const srcIp = egress ? this.sourceIpFor(egress.port) : this.configuredSourceIp();
+    if (!egress && !this.host.sendUdpDatagram) { this.dropped(s.ip, 'no-route'); return; }
+    if (egress && !srcIp) { this.dropped(s.ip, 'no-source-ip'); return; }
     const facilityNum = SYSLOG_FACILITY[s.facility];
     const severityNum = SYSLOG_SEVERITY[severity];
     const payload: SyslogPacket = {
@@ -270,32 +274,22 @@ export class SyslogAgent {
       tag, message,
       timestamp: bsdTimestamp(Date.now()),
     };
-    const udp: UDPPacket = {
-      type: 'udp',
-      sourcePort: 49152 + ((s.count + 1) & 0x3fff),
+    const request: UdpSendRequest = {
+      destination: new IPAddress(s.ip),
       destinationPort: s.port,
-      length: 8 + payload.message.length + payload.tag.length + 32,
-      checksum: 0, payload,
+      sourcePort: 49152 + ((s.count + 1) & 0x3fff),
+      payload,
+      payloadBytes: payload.message.length + payload.tag.length + 32,
+      ...(srcIp ? { source: srcIp } : {}),
     };
-    const ipPkt: IPv4Packet = {
-      type: 'ipv4', version: 4, ihl: 5, tos: 0,
-      totalLength: 20 + udp.length,
-      identification: nextIPv4Id(), flags: 0, fragmentOffset: 0,
-      ttl: 64, protocol: IP_PROTO_UDP, headerChecksum: 0,
-      sourceIP: srcIp, destinationIP: new IPAddress(s.ip),
-      payload: udp,
-    };
-    ipPkt.headerChecksum = computeIPv4Checksum(ipPkt);
-    if (this.host.sendIpv4FrameArpAware) {
-      this.host.sendIpv4FrameArpAware(egress.name, ipPkt, new IPAddress(s.ip));
+    if (this.host.sendUdpDatagram) {
+      if (!this.host.sendUdpDatagram(request)) { this.dropped(s.ip, 'no-route'); return; }
+    } else if (egress && srcIp && this.host.sendIpv4FrameArpAware) {
+      this.host.sendIpv4FrameArpAware(
+        egress.name, buildUdpOverIpv4(srcIp, request), request.destination);
     } else {
-      const eth: EthernetFrame = {
-        srcMAC: egress.port.getMAC(),
-        dstMAC: MACAddress.broadcast(),
-        etherType: ETHERTYPE_IPV4,
-        payload: ipPkt,
-      };
-      this.host.sendFrame(egress.name, eth);
+      this.dropped(s.ip, 'no-route');
+      return;
     }
     this.compter(s, severity, tag, message);
   }
@@ -451,6 +445,12 @@ export class SyslogAgent {
       ? this.host.getPort(this.config.sourceInterface)?.getIPAddress() ?? null
       : null;
     return named ?? egressPort.getIPAddress();
+  }
+
+  private configuredSourceIp(): import('../core/types').IPAddress | null {
+    return this.config.sourceInterface
+      ? this.host.getPort(this.config.sourceInterface)?.getIPAddress() ?? null
+      : null;
   }
 
   private resolveEgress(targetIp: string): { name: string; port: import('../hardware/Port').Port } | null {

@@ -16,6 +16,7 @@ import type { CiscoPingRow } from './shells/cisco/ciscoPing';
 import { DHCPPacket } from '../dhcp/DHCPPacket';
 import type { DHCPServer } from '../dhcp/DHCPServer';
 import { buildDhcpServerReply } from '../dhcp/DhcpServerExchange';
+import { buildUdpOverIpv4, type UdpSendRequest } from '../layers/transport/UdpEgress';
 
 /** A Switched Virtual Interface. Exists (IP-less) once `interface Vlan N` is
  *  entered; gains an address on `ip address`. */
@@ -447,26 +448,28 @@ export class SwitchSvi {
    * emprunte deja, extrait pour que le plan de controle puisse s'en
    * servir sans redecouvrir la route et l'ARP.
    */
+  sendUdpDatagram(request: UdpSendRequest): boolean {
+    const route = this.lookupRoute(request.destination);
+    if (!route || !route.egress.ip) return false;
+    const nextHopMac = this.resolveArp(route.egress.vlan, route.egress.ip, route.nextHop);
+    if (!nextHopMac) return false;
+
+    this.host.egressOnVlan(route.egress.vlan, {
+      srcMAC: this.host.getBridgeMac(), dstMAC: nextHopMac,
+      etherType: ETHERTYPE_IPV4,
+      payload: buildUdpOverIpv4(request.source ?? route.egress.ip, request),
+    });
+    return true;
+  }
+
   sendUdpBytes(
     destination: IPAddress, destinationPort: number,
     sourcePort: number, payload: Uint8Array,
   ): boolean {
-    const route = this.lookupRoute(destination);
-    if (!route || !route.egress.ip) return false;
-    const nextHopMac = this.resolveArp(route.egress.vlan, route.egress.ip, route.nextHop);
-    if (!nextHopMac) return false;
-    const udp: UDPPacket = {
-      type: 'udp', sourcePort, destinationPort,
-      length: 8 + payload.length, checksum: 0, payload,
-    };
-    const out = createIPv4Packet(
-      route.egress.ip, destination, IP_PROTO_UDP, 64, udp, 8 + payload.length,
-    );
-    this.host.egressOnVlan(route.egress.vlan, {
-      srcMAC: this.host.getBridgeMac(), dstMAC: nextHopMac,
-      etherType: ETHERTYPE_IPV4, payload: out,
+    return this.sendUdpDatagram({
+      destination, destinationPort, sourcePort,
+      payload, payloadBytes: payload.length,
     });
-    return true;
   }
 
   /** A relayed OFFER/ACK/NAK addressed back to one of our SVIs (giaddr): strip Option 82 and broadcast it onto the client's own VLAN. */

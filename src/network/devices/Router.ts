@@ -273,6 +273,7 @@ import type { IRouterShell } from './shells/IRouterShell';
 import { iosInterfaceUsable, interfacesBootShutdown, routerPortCountOverride } from './inspection/InterfaceStatusView';
 import { ciscoPasswordMatches } from './shells/cisco/ciscoPasswordVerify';
 import { DHCP_SERVER_PORT, DHCP_CLIENT_PORT } from '../core/WellKnownPorts';
+import { buildUdpOverIpv4, type UdpSendRequest } from '../layers/transport/UdpEgress';
 
 // ─── Router (Abstract Base) ──────────────────────────────────────────
 
@@ -4938,31 +4939,28 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
    * retrait d'IPv4 de la RFC 768, et c'est ce que font déjà tous les
    * agents internes de ce simulateur.
    */
+  sendUdpDatagram(request: UdpSendRequest): boolean {
+    const route = this.lookupRoute(request.destination);
+    if (!route) return false;
+    const egress = this.ports.get(route.iface);
+    if (!egress || !egress.isOperationallyUp()) return false;
+    const source = request.source ?? egress.getIPAddress();
+    if (!source) return false;
+
+    this.sendIpv4FrameArpAware(
+      route.iface, buildUdpOverIpv4(source, request),
+      route.nextHop ?? request.destination);
+    return true;
+  }
+
   private sendUdpBytesThroughFib(
     destination: IPAddress, destinationPort: number,
     sourcePort: number, payload: Uint8Array,
   ): boolean {
-    const route = this.lookupRoute(destination);
-    if (!route) return false;
-    const egress = this.ports.get(route.iface);
-    const sourceIp = egress?.getIPAddress();
-    if (!egress || !sourceIp || !egress.isOperationallyUp()) return false;
-    const udp: UDPPacket = {
-      type: 'udp', sourcePort, destinationPort,
-      length: 8 + payload.length, checksum: 0, payload,
-    };
-    const packet = createIPv4Packet(
-      sourceIp, destination, IP_PROTO_UDP, 64, udp, 8 + payload.length,
-    );
-    const arpHit = this.arpTable.get((route.nextHop ?? destination).toString())
-      ?? this.arpTable.get(destination.toString());
-    this.sendFrame(route.iface, {
-      srcMAC: egress.getMAC(),
-      dstMAC: arpHit ? arpHit.mac : MACAddress.broadcast(),
-      etherType: ETHERTYPE_IPV4,
-      payload: packet,
+    return this.sendUdpDatagram({
+      destination, destinationPort, sourcePort,
+      payload, payloadBytes: payload.length,
     });
-    return true;
   }
 
   /**

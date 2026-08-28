@@ -2798,6 +2798,12 @@ export abstract class Switch extends Equipment {
   hasSvi(vlan: number): boolean { return this.svi.hasSvi(vlan); }
   setIpRoutingEnabled(v: boolean): void { this.ipRoutingEnabled = v; }
   isIpRoutingEnabled(): boolean { return this.ipRoutingEnabled; }
+  sendUdpDatagram(
+    request: import('../layers/transport/UdpEgress').UdpSendRequest,
+  ): boolean {
+    return this.svi.sendUdpDatagram(request);
+  }
+
   getSvis(): SviInterface[] { return this.svi.list(); }
   getSvi(vlan: number): SviInterface | undefined { return this.svi.getSvi(vlan); }
   isSviLineUp(svi: SviInterface): boolean { return this.svi.isLineUp(svi); }

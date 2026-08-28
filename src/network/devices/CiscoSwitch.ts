@@ -78,6 +78,8 @@ export class CiscoSwitch extends Switch {
       getPort: (n: string) => this.getPort(n),
       getPorts: () => this.getPorts(),
       sendFrame: (p: string, f: EthernetFrame) => { this.sendFrame(p, f); },
+      sendUdpDatagram: (request: import('../layers/transport/UdpEgress').UdpSendRequest) =>
+        this.sendUdpDatagram(request),
     };
     this.cdpAgent = new CdpAgent({
       ...hostBase,

@@ -187,6 +187,45 @@ refusee plutot que rangee sans etre lue.
 
 ## Couche transport (BRD TCP/IP)
 
+### [rib] `Port.configureIP` n'installe AUCUNE route connectee
+**Constat.** Poser une adresse par la CLI (`ip address 10.0.0.1
+255.255.255.0` sous une interface) installe la route connectee ; poser la
+MEME adresse par `Port.configureIP` directement n'en installe aucune.
+
+**Mesure.** Deux routeurs identiques, cables au meme commutateur :
+`lookupRoute(10.0.0.99)` rend l'entree `connected` sur celui configure
+par la CLI, et `null` sur celui configure par le port. L'etat du port est
+pourtant identique des deux cotes (`getIsUp`, `isAdminDown`,
+`isConnected`, `isOperationallyUp` tous pareils).
+
+**Ce que ca casse.** Toute voie qui pose une adresse sans passer par la
+CLI — import de topologie, bail DHCP, montage de laboratoire — laisse un
+routeur qui porte l'adresse et ne sait pas router vers son propre
+sous-reseau. Le lot syslog l'a rencontre de plein fouet : le nouveau
+chemin route par le FIB comme le reste du routeur, donc il ne trouvait
+rien la ou l'agent, qui parcourait ses ports a la main, trouvait.
+
+**Report.** Le correctif touche la RIB et le point ou elle est
+rafraichie (`_setupPortMonitoring` observe deja le lien, pas l'adresse) ;
+c'est un lot a part, avec sa propre non-regression, la table de routage
+etant lue par tous les protocoles.
+
+### [arp] un commutateur JETTE sur cache ARP froid, un routeur met en file
+**Constat.** `SwitchSvi.sendUdpDatagram` appelle `resolveArp` et rend
+`false` quand le cache est froid ; le datagramme est perdu.
+`Router.sendUdpDatagram` passe par `sendIpv4FrameArpAware`, qui MET EN
+FILE et emet des que la reponse arrive.
+
+**Mesure.** Meme laboratoire, meme collecteur : le premier message
+syslog d'un routeur part apres resolution, celui d'un commutateur est
+compte comme envoye et n'existe pas. Le cas de `syslog-protocol` visait
+d'ailleurs un collecteur INEXISTANT, ce qui masquait l'ecart.
+
+**Report.** Donner une file d'attente ARP a la SVI est un changement du
+plan de donnees du commutateur, distinct du lot syslog ; il demande son
+propre temoin (une premiere trame differee, pas perdue).
+
+
 ### [icmp] le pendant VRP est accepte et inerte, et son `undo` n'existe pas
 **Constat.** Cote Cisco, `no ip unreachables` est desormais honore par
 `sendICMPError`. Cote Huawei, les commandes equivalentes

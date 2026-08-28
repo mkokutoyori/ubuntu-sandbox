@@ -1012,6 +1012,47 @@ réseaux, donc c'est lui qui éprouvera le plus l'interface.
 **Sortie par lot** : `sendFrame` disparaît du répertoire, et les cas
 existants du protocole restent verts sans modification.
 
+**Lot 1 — syslog : LIVRÉ, et il a fermé un défaut mesuré.**
+`layers/transport/UdpEgress.ts` porte l'offre vers le haut :
+`UdpSendRequest` (destination, ports, charge utile, adresse source
+facultative) et `buildUdpOverIpv4`, seule construction du datagramme et
+de son paquet. `SyslogAgent` ne fabrique plus ni UDP, ni IPv4, ni trame
+Ethernet ; il remplit une requête et la remet à son hôte. Six imports de
+`core/types` sont devenus inutilisés dans l'agent, ce qui est la preuve
+que la construction à la main a bien disparu.
+
+**Le défaut, mesuré avec un TÉMOIN et sur le fil.** Un `tcpdump udp
+port 514` sur le collecteur voit le datagramme d'un ROUTEUR, adressé à
+sa propre MAC ; il ne voit RIEN d'un Catalyst, alors que `show logging`
+du même commutateur annonce `Logging to 10.0.0.9 (udp port 514 … link
+up)` et compte ses messages. Deux causes empilées : `CiscoSwitch`
+n'offrait pas `sendIpv4FrameArpAware`, donc l'agent tombait sur un repli
+qui fabrique une trame à `dstMAC: broadcast` — un syslog unicast inondé
+à tout le VLAN ; et ce repli ne partait même pas, parce que
+`resolveEgress` de l'agent cherche un `Port` PHYSIQUE portant une
+adresse, or sur un Catalyst l'adresse est sur une SVI. L'agent faisait
+donc son PROPRE routage, ce que cette phase existe pour supprimer.
+
+`Router.sendUdpDatagram` et `SwitchSvi.sendUdpDatagram` sont les deux
+implantations de l'offre, et chacune a fait disparaître une duplication :
+`Router.sendUdpBytesThroughFib` et `SwitchSvi.sendUdpBytes` délèguent
+désormais au même corps au lieu de reconstruire l'UDP et l'IPv4. Le
+premier retombait lui aussi sur `MACAddress.broadcast()` quand l'ARP
+manquait ; il passe par `sendIpv4FrameArpAware`, qui met en file.
+
+**Corrigé dans les laboratoires plutôt que dans le code**, parce qu'ils
+encodaient un raccourci : cinq cas de `syslog-protocol` posaient
+l'adresse par `Port.configureIP` directement, ce qui ne pose AUCUNE route
+connectée — le nouveau chemin route par le FIB comme le reste du routeur,
+donc il ne trouvait rien. Ils configurent par la CLI, chacun dans les
+mots de son constructeur, et le laboratoire du commutateur a un vrai
+collecteur au lieu d'une adresse que personne ne porte.
+
+**Deux manquements mesurés en chemin, inscrits au `TODO.md`** :
+`Port.configureIP` n'installe pas la route connectée (seule la CLI le
+fait), et un commutateur JETTE sur cache ARP froid là où un routeur met
+en file.
+
 ### Phase 6 — `core/packetBuilders.ts` : brancher ou supprimer
 Une fois la couche internet en place, ce module est soit son mécanisme
 interne, soit un mort à retirer. **Il ne restera pas dans son état

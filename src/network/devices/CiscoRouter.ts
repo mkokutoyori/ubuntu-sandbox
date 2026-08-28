@@ -202,6 +202,8 @@ export class CiscoRouter extends Router {
       resolveRoute: (ip: string) => this.resolveRouteForHost(ip),
       sendIpv4FrameArpAware: (p: string, ipPkt: IPv4Packet, nextHopIP: IPAddress) =>
         this.sendIpv4FrameArpAware(p, ipPkt, nextHopIP),
+      sendUdpDatagram: (request: import('../layers/transport/UdpEgress').UdpSendRequest) =>
+        this.sendUdpDatagram(request),
       sendArpRequestFor: (iface: string, target: IPAddress) =>
         this.sendArpRequestFor(iface, target),
       tcpConnect: (ip: string, port: number, opts: { onOpen?: () => void; onClose?: () => void }) =>
