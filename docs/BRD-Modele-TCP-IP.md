@@ -978,9 +978,17 @@ parce que trois changements arrivaient ensemble et qu'aucun ne pouvait
 **Discrimination** : `tcp-ip-phase4-transit-udp.test.ts` (6 cas) et
 `tcp-ip-phase4-udp-demux.test.ts` (11 cas), dont trois bords qu'il ne
 fallait pas casser — une diffusion, un multicast et un DHCP DISCOVER ne
-tirent AUCUNE erreur ICMP. Non-régression : les deux seuls fichiers
-rouges de `network-v2` après correctif (`ospfv3-real-packets`,
-`scenario-vlan-8021q-trunk`) le sont AUSSI avant, 11 cas des deux côtés.
+tirent AUCUNE erreur ICMP.
+
+**Non-régression, chiffre complet.** `network-v2` entier : 1691 fichiers,
+26 316 cas, **18 rouges dans 5 fichiers**. Les cinq sont ANTÉRIEURS, et
+c'est mesuré plutôt qu'affirmé — rejoués contre `1990651f`, l'état de la
+branche avant ce chantier, ils donnent exactement les mêmes 18. Ce sont
+`ospfv3-real-packets` (10), `new-roles-observability` (5),
+`scenario-vlan-8021q-trunk` (1), `probe-plage-annoncee-est-appliquee` (1)
+et `nat-engine-own-bus` (1) ; ils sont inscrits au `TODO.md`. Une
+première lecture n'en avait vu que deux, parce qu'elle s'appuyait sur une
+passe interrompue : le chiffre complet dit cinq.
 
 **Reste de la phase 4** : `Router` n'a AUCUNE `SocketTable` — son
 `ControlPlaneUdpEndpoint` garde ses liaisons dans une `Map` privée, donc

@@ -367,7 +367,10 @@ seule et **ne change aucune sémantique protocolaire** : un moteur qui
     ricochet). La revendication est inconditionnelle et c'est le
     RÉCEPTEUR qui lit `this.ipsecEngine?.` à la remise ; règle générale,
     une déclaration mise en cache ne peut pas dépendre d'un moteur créé
-    paresseusement. Restent ouverts et inscrits
+    paresseusement. **Non-regression** : `network-v2` entier rend 18 rouges
+    dans 5 fichiers, et les cinq sont ANTERIEURS — rejoues contre l'etat
+    de la branche avant le chantier, ils donnent exactement les memes 18,
+    et ils sont nommes au `TODO.md`. Restent ouverts et inscrits
     au `TODO.md` : `show ip sockets` (la matière est prête, la capture de
     référence n'existe pas — `ntc-templates` porte 139 gabarits
     `cisco_ios` et aucun pour les sockets), et les interceptions IGMP/PIM/

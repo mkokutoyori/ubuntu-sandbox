@@ -187,6 +187,25 @@ refusee plutot que rangee sans etre lue.
 
 ## Couche transport (BRD TCP/IP)
 
+### [suite] 18 cas rouges ANTERIEURS dans `network-v2`, dans 5 fichiers
+**Constat.** La passe complete de `src/__tests__/unit/network-v2/` rend
+1691 fichiers / 26 316 cas avec 18 rouges repartis dans cinq fichiers :
+`ospfv3-real-packets` (10), `new-roles-observability` (5),
+`scenario-vlan-8021q-trunk` (1), `probe-plage-annoncee-est-appliquee` (1)
+et `nat-engine-own-bus` (1).
+
+**Mesure.** Rejoues contre `1990651f` — l'etat de la branche avant le
+chantier de la couche transport — ils donnent EXACTEMENT les memes 18,
+donc aucun n'est une regression de ce chantier. Ils echouent aussi
+ISOLEMENT, donc ce ne sont pas des interferences d'ordre de lot.
+
+**Report.** Chacun releve d'un sujet different (OSPFv3, observabilite des
+roles Windows, agregat 802.1Q, plages annoncees par la CLI, bus du moteur
+NAT) et aucun n'a ete diagnostique ici. Les nommer evite qu'un prochain
+lot les prenne pour les siens — c'est la confusion qui a failli se
+produire sur ce lot-ci.
+
+
 ### [udp] `show ip sockets` n'a AUCUNE capture de reference
 **Constat.** La matiere existe depuis l'increment 3 de la phase 4 :
 `ControlPlaneUdpEndpoint.ownerOf(port)` nomme le proprietaire d'un port
