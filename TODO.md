@@ -185,6 +185,90 @@ refusee plutot que rangee sans etre lue.
 
 ---
 
+## Couche transport (BRD TCP/IP)
+
+### [suite] 18 cas rouges ANTERIEURS dans `network-v2`, dans 5 fichiers
+**Constat.** La passe complete de `src/__tests__/unit/network-v2/` rend
+1691 fichiers / 26 316 cas avec 18 rouges repartis dans cinq fichiers :
+`ospfv3-real-packets` (10), `new-roles-observability` (5),
+`scenario-vlan-8021q-trunk` (1), `probe-plage-annoncee-est-appliquee` (1)
+et `nat-engine-own-bus` (1).
+
+**Mesure.** Rejoues contre `1990651f` — l'etat de la branche avant le
+chantier de la couche transport — ils donnent EXACTEMENT les memes 18,
+donc aucun n'est une regression de ce chantier. Ils echouent aussi
+ISOLEMENT, donc ce ne sont pas des interferences d'ordre de lot.
+
+**Report.** Chacun releve d'un sujet different (OSPFv3, observabilite des
+roles Windows, agregat 802.1Q, plages annoncees par la CLI, bus du moteur
+NAT) et aucun n'a ete diagnostique ici. Les nommer evite qu'un prochain
+lot les prenne pour les siens — c'est la confusion qui a failli se
+produire sur ce lot-ci.
+
+
+### [udp] `show ip sockets` n'a AUCUNE capture de reference
+**Constat.** La matiere existe depuis l'increment 3 de la phase 4 :
+`ControlPlaneUdpEndpoint.ownerOf(port)` nomme le proprietaire d'un port
+et `boundPorts()` les enumere, ce qui est exactement ce que la vue
+attend. La vue, elle, n'existe pas.
+
+**Mesure.** Le corpus `ntc-templates` a ete telecharge et son `index`
+compte 139 gabarits `cisco_ios` — et pas un seul pour les sockets
+(`grep -i sock` ne rend rien). `cisco.com`, `community.cisco.com`,
+`blog.ipspace.net` et `rfc-editor.org` sont tous coupes par le proxy de
+sortie de cette image ; seul `raw.githubusercontent.com` passe. Les
+exemples trouves par recherche viennent de pages HTML, qui ECRASENT les
+blancs — c'est-a-dire precisement l'information cherchee.
+
+**Report.** Ecrire les largeurs de colonnes de memoire est exactement ce
+que `cisco/ciscoTableLayouts.ts` existe pour empecher. Il faut une
+transcription TEXTE d'une vraie machine.
+
+### [icmp] `no ip unreachables` n'est honore qu'a 2 sites d'appel sur 8
+**Constat.** La commande existe, est stockee
+(`CiscoSecurityConfig.ifaceFlags(i).noUnreachables`), est rendue dans la
+configuration et lue par `Router.isIcmpUnreachablesEnabled`. Mais ce
+predicat est consulte AU SITE D'APPEL, deux fois, et non dans
+`sendICMPError` — donc six emissions sur huit l'ignorent.
+
+**Mesure.** `Router.ts` porte 10 appels a `sendICMPError`, dont 8 de type
+`destination-unreachable` (codes 13, 3, 0, 4, 13, 4, 4, 1) ; seuls les
+DEUX refus par liste de controle (code 13) sont gardes. Les trois `code
+4` ne le sont pas.
+
+**Ce que dit la vraie machine.** La documentation Cisco et plusieurs
+sources d'exploitation concordent : `no ip unreachables` supprime TOUT le
+type 3, code 4 compris — c'est exactement pourquoi cette commande casse
+la decouverte de MTU de chemin, defaut operationnel classique. Le
+simulateur ne peut donc pas l'enseigner aujourd'hui : la commande est
+posee, le `Fragmentation Needed` part quand meme.
+
+**Report.** Le correctif est court — deplacer le predicat dans
+`sendICMPError` pour `destination-unreachable` et retirer les deux gardes
+de site, une seule ecriture — mais il CHANGE le comportement de six
+emissions existantes (net, host, port, frag-needed), donc il demande sa
+propre non-regression complete. Le BRD veut chaque lot livrable et vert
+seul ; c'est un lot a part.
+
+### [udp] IGMP, PIM et GRE sont encore interceptes AVANT la decision de transit
+**Constat.** L'increment 3 a deplace la chaine UDP des sous-classes vers
+`receiveControlPlaneUdp`, donc apres la decision « pour nous ou
+transit ». Les trois interceptions par PROTOCOLE IP qui la precedaient
+dans `CiscoRouter.processIPv4` et `HuaweiRouter.processIPv4` — IGMP (2),
+PIM (103) et GRE (47) — sont restees ou elles etaient.
+
+**Mesure.** Constat de STRUCTURE, lu dans le code et non eprouve sur le
+fil : ces trois `if` sont bien places avant `super.processIPv4`, donc
+avant le test « cette adresse est-elle a nous ». Le cas UDP mesure au
+meme endroit donnait un datagramme de transit avale par l'agent local.
+
+**Report.** Le deplacement n'est PAS mecanique comme il l'etait pour UDP.
+Un rapport IGMP est adresse au GROUPE et non au routeur, donc pour un
+groupe routable (239.x) la base l'envoie a `forwardMulticast` et non a la
+remise locale : le deplacer tel quel casserait IGMP. Trancher demande de
+mesurer, groupe par groupe, quel chemin la base emprunte — c'est un
+increment a part, avec son propre temoin.
+
 ## Socle CLI
 
 ### [cli] les declarations d'arguments decrivent, elles ne tranchent pas

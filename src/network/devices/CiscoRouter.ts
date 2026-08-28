@@ -69,6 +69,18 @@ import {
   formatIosUptime,
 } from './shells/cisco/CiscoCommonShow';
 
+const CISCO_UDP_OWNERS: ReadonlyMap<number, string> = new Map([
+  [UDP_PORT_HSRP, 'hsrp'],
+  [UDP_PORT_NTP, 'ntp'],
+  [UDP_PORT_GLBP, 'glbp'],
+  [UDP_PORT_BFD_CONTROL, 'bfd'],
+  [UDP_PORT_RADIUS_AUTH, 'radius'],
+  [UDP_PORT_RADIUS_ACCT, 'radius-acct'],
+  [UDP_PORT_RADIUS_COA, 'radius-coa'],
+  [UDP_PORT_SNMP, 'snmp'],
+  [UDP_PORT_VXLAN, 'vxlan'],
+]);
+
 export class CiscoRouter extends Router {
   protected bootsInterfacesShutdown(): boolean {
     return true;
@@ -329,6 +341,64 @@ export class CiscoRouter extends Router {
     return this.ntpAgent.isSynced();
   }
 
+  protected override controlPlaneUdpOwner(port: number): string | null {
+    return CISCO_UDP_OWNERS.get(port) ?? super.controlPlaneUdpOwner(port);
+  }
+
+  protected override receiveControlPlaneUdp(
+    inPort: string, ipPkt: IPv4Packet, udp: UDPPacket,
+  ): boolean {
+    if (udp.destinationPort === UDP_PORT_HSRP) {
+      this.hsrpAgent.handleUdp(inPort, ipPkt.sourceIP, udp);
+      return true;
+    }
+    if (udp.destinationPort === UDP_PORT_NTP || udp.sourcePort === UDP_PORT_NTP) {
+      this.ntpAgent.handleUdp(inPort, ipPkt.sourceIP, udp);
+      return true;
+    }
+    if (udp.destinationPort === UDP_PORT_GLBP) {
+      this.glbpAgent.handleUdp(inPort, ipPkt.sourceIP, udp);
+      return true;
+    }
+    if (udp.destinationPort === UDP_PORT_BFD_CONTROL) {
+      this.bfdAgent.handleUdp(inPort, ipPkt.sourceIP, udp);
+      return true;
+    }
+    if (udp.destinationPort === UDP_PORT_RADIUS_AUTH) {
+      this.radiusServer.handleUdp(inPort, ipPkt.sourceIP, udp);
+      return true;
+    }
+    if (udp.sourcePort === UDP_PORT_RADIUS_AUTH) {
+      this.radiusClient.handleUdp(inPort, ipPkt.sourceIP, udp);
+      return true;
+    }
+    if (udp.destinationPort === UDP_PORT_RADIUS_ACCT) {
+      this.radiusServer.handleAcctUdp(inPort, ipPkt.sourceIP, udp);
+      return true;
+    }
+    if (udp.sourcePort === UDP_PORT_RADIUS_ACCT) {
+      this.radiusAccountingClient.handleUdp(inPort, ipPkt.sourceIP, udp);
+      return true;
+    }
+    if (udp.destinationPort === UDP_PORT_RADIUS_COA) {
+      this.coaListener.handleUdp(inPort, ipPkt.sourceIP, udp);
+      return true;
+    }
+    if (udp.sourcePort === UDP_PORT_RADIUS_COA) {
+      this.coaClient.handleUdp(inPort, ipPkt.sourceIP, udp);
+      return true;
+    }
+    if (udp.destinationPort === UDP_PORT_SNMP || udp.sourcePort === UDP_PORT_SNMP) {
+      this.snmpAgent.handleUdp(inPort, ipPkt.sourceIP, udp);
+      return true;
+    }
+    if (udp.destinationPort === UDP_PORT_VXLAN) {
+      this.vxlanAgent.handleUdp(inPort, ipPkt.sourceIP, udp);
+      return true;
+    }
+    return false;
+  }
+
   protected override processIPv4(inPort: string, ipPkt: IPv4Packet): void {
     if (ipPkt.protocol === IP_PROTO_IGMP) {
       this.igmpAgent.handleIp(inPort, ipPkt.sourceIP, ipPkt);
@@ -342,59 +412,6 @@ export class CiscoRouter extends Router {
       const inner = this.greAgent.handleIp(inPort, ipPkt.sourceIP, ipPkt);
       if (inner) this.processIPv4(inPort, inner);
       return;
-    }
-    if (ipPkt.protocol === IP_PROTO_UDP) {
-      const udp = ipPkt.payload as UDPPacket | undefined;
-      if (udp && udp.type === 'udp') {
-        if (udp.destinationPort === UDP_PORT_HSRP) {
-          this.hsrpAgent.handleUdp(inPort, ipPkt.sourceIP, udp);
-          return;
-        }
-        if (udp.destinationPort === UDP_PORT_NTP || udp.sourcePort === UDP_PORT_NTP) {
-          this.ntpAgent.handleUdp(inPort, ipPkt.sourceIP, udp);
-          return;
-        }
-        if (udp.destinationPort === UDP_PORT_GLBP) {
-          this.glbpAgent.handleUdp(inPort, ipPkt.sourceIP, udp);
-          return;
-        }
-        if (udp.destinationPort === UDP_PORT_BFD_CONTROL) {
-          this.bfdAgent.handleUdp(inPort, ipPkt.sourceIP, udp);
-          return;
-        }
-        if (udp.destinationPort === UDP_PORT_RADIUS_AUTH) {
-          this.radiusServer.handleUdp(inPort, ipPkt.sourceIP, udp);
-          return;
-        }
-        if (udp.sourcePort === UDP_PORT_RADIUS_AUTH) {
-          this.radiusClient.handleUdp(inPort, ipPkt.sourceIP, udp);
-          return;
-        }
-        if (udp.destinationPort === UDP_PORT_RADIUS_ACCT) {
-          this.radiusServer.handleAcctUdp(inPort, ipPkt.sourceIP, udp);
-          return;
-        }
-        if (udp.sourcePort === UDP_PORT_RADIUS_ACCT) {
-          this.radiusAccountingClient.handleUdp(inPort, ipPkt.sourceIP, udp);
-          return;
-        }
-        if (udp.destinationPort === UDP_PORT_RADIUS_COA) {
-          this.coaListener.handleUdp(inPort, ipPkt.sourceIP, udp);
-          return;
-        }
-        if (udp.sourcePort === UDP_PORT_RADIUS_COA) {
-          this.coaClient.handleUdp(inPort, ipPkt.sourceIP, udp);
-          return;
-        }
-        if (udp.destinationPort === UDP_PORT_SNMP || udp.sourcePort === UDP_PORT_SNMP) {
-          this.snmpAgent.handleUdp(inPort, ipPkt.sourceIP, udp);
-          return;
-        }
-        if (udp.destinationPort === UDP_PORT_VXLAN) {
-          this.vxlanAgent.handleUdp(inPort, ipPkt.sourceIP, udp);
-          return;
-        }
-      }
     }
     super.processIPv4(inPort, ipPkt);
   }

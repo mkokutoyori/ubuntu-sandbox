@@ -10,13 +10,13 @@ import {
   parseDhcpdConf, parseDhcpdInterfaces, mergedOptions,
   type DhcpdConfig, type DhcpdSubnet,
 } from './DhcpdConfig';
+import { DHCP_SERVER_PORT, DHCP_CLIENT_PORT } from '@/network/core/WellKnownPorts';
 import {
   DHCPD_BANNER, DHCPD_CONF_PATH, DHCPD_DEFAULTS_PATH, DHCPD_LEASES_PATH,
   DHCPD_LEASES_HEADER, DHCPD_PID_PATH, DHCPD_VERSION,
 } from './DhcpdFiles';
 
-const DHCP_SERVER_PORT = 67;
-const DHCP_CLIENT_PORT = 68;
+
 const PROCESS_NAME = 'dhcpd';
 
 export interface DhcpdOperationResult {

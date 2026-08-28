@@ -1,5 +1,6 @@
 import type { IPAddress } from '@/network/core/types';
 import type { TftpEndpoint, TftpUdpDelivery } from '@/network/tftp/types';
+import { UdpPortTable, type PortClaim } from '@/network/layers/transport/UdpPortTable';
 
 export interface ControlPlaneUdpTransport {
   sendUdpBytes(
@@ -8,34 +9,32 @@ export interface ControlPlaneUdpTransport {
   ): boolean;
 }
 
-const EPHEMERAL_MIN = 49152;
-const EPHEMERAL_MAX = 65535;
-
 export class ControlPlaneUdpEndpoint implements TftpEndpoint {
-  private readonly binds = new Map<number, (delivery: TftpUdpDelivery) => void>();
+  private readonly ports: UdpPortTable<TftpUdpDelivery>;
 
-  constructor(private readonly transport: ControlPlaneUdpTransport) {}
-
-  allocateEphemeralPort(): number {
-    const range = EPHEMERAL_MAX - EPHEMERAL_MIN + 1;
-    for (let attempt = 0; attempt < 256; attempt++) {
-      const port = EPHEMERAL_MIN + Math.floor(Math.random() * range);
-      if (!this.binds.has(port)) return port;
-    }
-    for (let port = EPHEMERAL_MIN; port <= EPHEMERAL_MAX; port++) {
-      if (!this.binds.has(port)) return port;
-    }
-    throw new Error('EADDRINUSE: No ephemeral ports available');
+  constructor(
+    private readonly transport: ControlPlaneUdpTransport,
+    claimedByControlPlane: PortClaim = () => null,
+  ) {
+    this.ports = new UdpPortTable<TftpUdpDelivery>(claimedByControlPlane);
   }
 
-  udpBind(port: number, handler: (delivery: TftpUdpDelivery) => void): boolean {
-    if (this.binds.has(port)) return false;
-    this.binds.set(port, handler);
-    return true;
+  allocateEphemeralPort(): number {
+    return this.ports.allocateEphemeralPort();
+  }
+
+  udpBind(
+    port: number, handler: (delivery: TftpUdpDelivery) => void, owner?: string,
+  ): boolean {
+    return this.ports.bind(port, handler, owner);
   }
 
   udpClose(port: number): void {
-    this.binds.delete(port);
+    this.ports.close(port);
+  }
+
+  ownerOf(port: number): string | null {
+    return this.ports.ownerOf(port);
   }
 
   sendUdpDatagramTo(
@@ -46,13 +45,14 @@ export class ControlPlaneUdpEndpoint implements TftpEndpoint {
   }
 
   deliver(sourceIP: IPAddress, destinationPort: number, sourcePort: number, payload: unknown): boolean {
-    const handler = this.binds.get(destinationPort);
-    if (!handler) return false;
-    handler({ udp: { sourcePort, payload }, sourceIP });
-    return true;
+    return this.ports.deliver(destinationPort, { udp: { sourcePort, payload }, sourceIP });
   }
 
   boundPorts(): number[] {
-    return [...this.binds.keys()].sort((a, b) => a - b);
+    return this.ports.boundPorts();
+  }
+
+  owners(): ReadonlyMap<number, string> {
+    return this.ports.owners();
   }
 }

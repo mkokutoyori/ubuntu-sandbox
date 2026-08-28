@@ -888,6 +888,108 @@ l'autre implantation de la même interface — rendait `false` sans jamais
 lever. `TftpSession` tourne sur les deux et recevait donc deux modes
 d'échec pour le même événement.
 
+**Incrément 3 — LIVRÉ : un routeur cesse d'AVALER le trafic de transit,
+et un port que personne n'écoute se DIT.**
+
+La mesure de départ a trouvé bien pire que ce que ce document annonçait.
+`CiscoRouter.processIPv4` et `HuaweiRouter.processIPv4` interceptaient
+l'UDP de leurs agents **avant** `super.processIPv4`, c'est-à-dire **avant
+la décision « pour nous ou transit »** — décision que la base prend
+pourtant correctement (§C.1). Conséquence mesurée sur un laboratoire
+`L — R1 — R` : un datagramme de bout en bout sur 161 (SNMP), 123 (NTP),
+1812 (RADIUS), 3784 (BFD) ou 1985 (HSRP) n'arrivait **jamais** à
+destination — le routeur le donnait à son propre agent. Un poste ne
+pouvait donc pas interroger un serveur SNMP, NTP ou RADIUS situé de
+l'autre côté d'un routeur. Le TÉMOIN (port 40001) traversait, ce qui
+prouve que le laboratoire était bon — et sa première version ne l'était
+pas : sans `no shutdown` le témoin échouait aussi, donc la mesure
+n'aurait rien distingué.
+
+**La cause est celle que ce document combat** : la décision « livrer ici
+ou faire suivre » était écrite deux fois, et la copie des sous-classes ne
+la posait pas. `Router.receiveControlPlaneUdp` est le point d'extension
+unique, consulté depuis `handleLocalDelivery`, donc **après** la
+décision ; les deux constructeurs y déplacent leur chaîne. Rien n'est
+perdu au passage : HSRP et GLBP arrivent sur 224.0.0.2 / 224.0.0.102,
+que la base route déjà vers la remise locale au titre du multicast
+lien-local, et les réponses NTP / SNMP / RADIUS sont adressées au routeur
+lui-même.
+
+**Second défaut, RFC en main.** RFC 1122 §4.1.3.1 : « If a datagram
+arrives addressed to a UDP port for which there is no pending LISTEN
+call, UDP SHOULD send an ICMP Port Unreachable message », et RFC 1812
+§6.1 : « A router that implements UDP MUST be compliant […] with the
+requirements of [INTRO:2] », où `[INTRO:2]` est RFC 1122. Mesuré : un
+hôte Linux répondait `Destination unreachable … code 3`, le routeur et la
+SVI d'un Catalyst ne répondaient **rien**. Les trois répondent
+désormais, chacun par son propre émetteur, tous derrière le même
+`mayGenerateICMPError` — donc jamais sur une diffusion, un multicast, un
+fragment ni une erreur ICMP.
+
+**Troisième défaut : `udpBind` acceptait un port déjà possédé.**
+`udpBind(520)` rendait `true` sur un routeur où RIP sert déjà 520 : la
+liaison était acceptée et **inerte**, la chaîne codée en dur passant
+avant. Les ports du plan de contrôle sont maintenant DÉCLARÉS une fois
+(`controlPlaneUdpClaims`), et cette déclaration a deux lecteurs qui ne
+peuvent plus se contredire — le répartiteur et le refus de liaison.
+`ownerOf(port)` nomme le propriétaire, ce qui est la matière que
+`show ip sockets` attend.
+
+**Deux duplications refermées en chemin**, chacune mesurée :
+`ControlPlaneUdpEndpoint.allocateEphemeralPort` était la copie mot pour
+mot de `SocketTable.allocateEphemeralPort`, avec ses propres constantes
+49152/65535 codées en dur là où l'autre les importe de
+`WellKnownPorts` — les deux lisent désormais
+`layers/transport/EphemeralPorts.ts`, et la table de ports UDP elle-même
+vit dans `layers/transport/UdpPortTable.ts`, ce qui donne à UDP le lieu
+que §3.5 lui promet. Et `DHCP_SERVER_PORT = 67` / `DHCP_CLIENT_PORT = 68`
+étaient écrits **quatre fois** (Linux, Windows, pare-feu, plus deux
+littéraux nus dans `Router`) : une seule déclaration dans
+`WellKnownPorts`, quatre lecteurs.
+
+**Ce qui reste de la phase 4**, et la mesure a confirmé le blocage plutôt
+que de le supposer : `show ip sockets` n'a **aucune** capture de
+référence — le corpus `ntc-templates` porte 139 gabarits `cisco_ios` et
+pas un seul pour les sockets (vérifié en téléchargeant son `index`), et
+cisco.com reste coupé par le proxy de sortie. Écrire la vue sur des
+largeurs devinées reste ce que `ciscoTableLayouts.ts` existe pour
+empêcher. La matière, elle, est prête : `ownerOf` et `boundPorts()`
+répondent.
+
+**Le piège que la non-régression a attrapé, et qu'il faut écrire.** La
+première version conditionnait la revendication du port 500 à
+l'existence du moteur IPsec (`if (this.ipsecEngine)`) — ce qui paraît
+plus honnête : un port n'est possédé que si quelqu'un le possède. Mais la
+carte des revendications est CONSTRUITE UNE FOIS et mise en cache, et
+`ipsecEngine` naît PLUS TARD, à la configuration `crypto`. Le port 500
+n'était donc jamais revendiqué, IKE ne recevait plus rien, et sept cas de
+`scenario-6-nat-t-udp4500` et `ipsec-nat-dpd` tombaient — plus, par
+ricochet, huit cas de `nat-pat-other` et
+`scenario-debug-07-crypto-isakmp-ipsec`. La revendication est donc
+inconditionnelle et c'est le RÉCEPTEUR qui lit `this.ipsecEngine?.` au
+moment de la remise, comme le faisait la chaîne d'origine. **Règle
+générale** : une déclaration mise en cache ne peut pas dépendre d'un
+moteur créé paresseusement — soit on ne met pas en cache, soit la
+dépendance est lue à l'usage. L'isolement a demandé trois A/B successifs
+(sans l'erreur ICMP, sans la revendication du 4500, puis sans la garde),
+parce que trois changements arrivaient ensemble et qu'aucun ne pouvait
+être disculpé par raisonnement.
+
+**Discrimination** : `tcp-ip-phase4-transit-udp.test.ts` (6 cas) et
+`tcp-ip-phase4-udp-demux.test.ts` (11 cas), dont trois bords qu'il ne
+fallait pas casser — une diffusion, un multicast et un DHCP DISCOVER ne
+tirent AUCUNE erreur ICMP.
+
+**Non-régression, chiffre complet.** `network-v2` entier : 1691 fichiers,
+26 316 cas, **18 rouges dans 5 fichiers**. Les cinq sont ANTÉRIEURS, et
+c'est mesuré plutôt qu'affirmé — rejoués contre `1990651f`, l'état de la
+branche avant ce chantier, ils donnent exactement les mêmes 18. Ce sont
+`ospfv3-real-packets` (10), `new-roles-observability` (5),
+`scenario-vlan-8021q-trunk` (1), `probe-plage-annoncee-est-appliquee` (1)
+et `nat-engine-own-bus` (1) ; ils sont inscrits au `TODO.md`. Une
+première lecture n'en avait vu que deux, parce qu'elle s'appuyait sur une
+passe interrompue : le chiffre complet dit cinq.
+
 **Reste de la phase 4** : `Router` n'a AUCUNE `SocketTable` — son
 `ControlPlaneUdpEndpoint` garde ses liaisons dans une `Map` privée, donc
 un routeur porte bien une seconde table de ports. Elle n'a pas de porte :

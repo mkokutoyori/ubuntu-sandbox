@@ -21,6 +21,10 @@ export const EPHEMERAL_PORT_MIN = 49152;
 /** Last ephemeral port per RFC 6335 */
 export const EPHEMERAL_PORT_MAX = 65535;
 
+/** RFC 2131 §4.1 — the two BOOTP/DHCP ports. */
+export const DHCP_SERVER_PORT = 67;
+export const DHCP_CLIENT_PORT = 68;
+
 // ─── IANA service name table ─────────────────────────────────────────
 // Values: { tcp?: name, udp?: name }
 // A missing key means that protocol is not assigned for that port.

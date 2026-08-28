@@ -27,6 +27,7 @@ import {
   dhcidIdentityFromChaddr, dhcidIdentityFromClientId, dhcidMatches,
   DHCID_DIGEST_SHA256, computeDhcidDigest, type DhcidIdentity,
 } from '@/network/dns/wire/Dhcid';
+import { DHCP_SERVER_PORT, DHCP_CLIENT_PORT } from '@/network/core/WellKnownPorts';
 import {
   IPAddress, SubnetMask, MACAddress, createIPv4Packet, ETHERTYPE_IPV4, IP_PROTO_UDP,
   type UDPPacket,
@@ -71,8 +72,7 @@ export interface DhcpLeaseInfo {
   type: 'automatic' | 'manual';
 }
 
-const DHCP_SERVER_PORT = 67;
-const DHCP_CLIENT_PORT = 68;
+
 
 function bindingToLease(binding: DHCPBinding, scopeId: string): DhcpLeaseInfo {
   return {

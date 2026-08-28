@@ -115,7 +115,7 @@ import type { IIPv4Route } from '../core/interfaces';
 import { ipv4MulticastToMac, tryIpToUint32 } from '../core/ip';
 import { Logger } from '../core/Logger';
 import { CarPolicer } from '../qos/CarPolicer';
-import { buildICMPError, mayGenerateICMPError, type ICMPErrorType } from '../core/IcmpErrors';
+import { buildICMPError, mayGenerateICMPError, ICMP_UNREACH_PORT, type ICMPErrorType } from '../core/IcmpErrors';
 import { IpSlaEngine } from '../ipsla/IpSlaEngine';
 import { TrackService } from '../ipsla/TrackService';
 import type { IpSlaEgress } from '../ipsla/types';
@@ -272,6 +272,7 @@ interface QueuedPacket {
 import type { IRouterShell } from './shells/IRouterShell';
 import { iosInterfaceUsable, interfacesBootShutdown, routerPortCountOverride } from './inspection/InterfaceStatusView';
 import { ciscoPasswordMatches } from './shells/cisco/ciscoPasswordVerify';
+import { DHCP_SERVER_PORT, DHCP_CLIENT_PORT } from '../core/WellKnownPorts';
 
 // ─── Router (Abstract Base) ──────────────────────────────────────────
 
@@ -294,6 +295,11 @@ export interface IPv6ACLEntry {
 export interface IPv6ACL {
   name: string;
   entries: IPv6ACLEntry[];
+}
+
+interface ControlPlaneUdpClaim {
+  readonly owner: string;
+  readonly receive: (inPort: string, ipPkt: IPv4Packet, udp: UDPPacket) => void;
 }
 
 export abstract class Router extends Equipment implements CredentialAuthenticator {
@@ -2708,28 +2714,17 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
         return;
       }
 
-      // Dispatch by destination port
-      if (udp.destinationPort === UDP_PORT_RIP) {
-        const rip = udp.payload as RIPPacket;
-        if (!rip || rip.type !== 'rip') return;
-        this.ripEngine.processPacket(inPort, ipPkt.sourceIP, rip);
-      } else if (udp.destinationPort === 67) {
-        this.handleDhcpUdp(inPort, ipPkt, udp);
-      } else if (udp.destinationPort === 68) {
-        const reply = udp.payload as DHCPPacket | undefined;
-        if (reply && reply.type === 'dhcp') {
-          this.dhcpClientAgent.deliver(inPort, reply);
-        }
-      } else if (udp.destinationPort === UDP_PORT_IKE) {
-        this.ipsecEngine?.handleIkeUdp(inPort, ipPkt, udp);
-      } else if (this.ipSlaEngine.handleUdp(ipPkt.sourceIP, udp)) {
-        return;
-      } else if (this.udpEndpoint?.deliver(
+      if (this.receiveControlPlaneUdp(inPort, ipPkt, udp)) return;
+
+      const claim = this.controlPlaneUdpClaims().get(udp.destinationPort);
+      if (claim) { claim.receive(inPort, ipPkt, udp); return; }
+
+      if (this.ipSlaEngine.handleUdp(ipPkt.sourceIP, udp)) return;
+      if (this.udpEndpoint?.deliver(
         ipPkt.sourceIP, udp.destinationPort, udp.sourcePort, udp.payload,
-      )) {
-        return;
-      }
-      // Other UDP ports silently dropped (no DNS/DHCP/etc. yet)
+      )) return;
+
+      this.sendICMPError(inPort, ipPkt, 'destination-unreachable', ICMP_UNREACH_PORT);
     }
   }
 
@@ -3061,6 +3056,48 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
       }
     }
     return false;
+  }
+
+  protected receiveControlPlaneUdp(
+    _inPort: string, _ipPkt: IPv4Packet, _udp: UDPPacket,
+  ): boolean {
+    return false;
+  }
+
+  private baseUdpClaims: Map<number, ControlPlaneUdpClaim> | null = null;
+
+  protected controlPlaneUdpClaims(): Map<number, ControlPlaneUdpClaim> {
+    if (this.baseUdpClaims) return this.baseUdpClaims;
+    const claims = new Map<number, ControlPlaneUdpClaim>();
+    claims.set(UDP_PORT_RIP, {
+      owner: 'rip',
+      receive: (inPort, ipPkt, udp) => {
+        const rip = udp.payload as RIPPacket;
+        if (rip && rip.type === 'rip') this.ripEngine.processPacket(inPort, ipPkt.sourceIP, rip);
+      },
+    });
+    claims.set(DHCP_SERVER_PORT, {
+      owner: 'dhcpd',
+      receive: (inPort, ipPkt, udp) => { this.handleDhcpUdp(inPort, ipPkt, udp); },
+    });
+    claims.set(DHCP_CLIENT_PORT, {
+      owner: 'dhclient',
+      receive: (inPort, _ipPkt, udp) => {
+        const reply = udp.payload as DHCPPacket | undefined;
+        if (reply && reply.type === 'dhcp') this.dhcpClientAgent.deliver(inPort, reply);
+      },
+    });
+    claims.set(UDP_PORT_IKE, {
+      owner: 'isakmp',
+      receive: (inPort, ipPkt, udp) => { this.ipsecEngine?.handleIkeUdp(inPort, ipPkt, udp); },
+    });
+    claims.set(UDP_PORT_IKE_NAT_T, { owner: 'isakmp-natt', receive: () => undefined });
+    this.baseUdpClaims = claims;
+    return claims;
+  }
+
+  protected controlPlaneUdpOwner(port: number): string | null {
+    return this.controlPlaneUdpClaims().get(port)?.owner ?? null;
   }
 
   private sendICMPError(
@@ -4891,7 +4928,7 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
       this.udpEndpoint = new ControlPlaneUdpEndpoint({
         sendUdpBytes: (dst, dstPort, srcPort, payload) =>
           this.sendUdpBytesThroughFib(dst, dstPort, srcPort, payload),
-      });
+      }, (port) => this.controlPlaneUdpOwner(port));
     }
     return this.udpEndpoint;
   }

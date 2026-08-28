@@ -310,6 +310,73 @@ seule et **ne change aucune sémantique protocolaire** : un moteur qui
   contrôle ; l'ORDRE est celui du routeur et il compte, la somme d'abord,
   un en-tête dont la somme est fausse n'étant pas lisible.
 
+- `layers/transport/` (phase 4, incréments 1-3) — **UDP a un lieu, et le
+  démultiplexage a une règle**. `L4Checksum.ts`/`UdpChecksum.ts` (inc. 1)
+  ont sorti la somme de contrôle de `tcp/types.ts`. `EphemeralPorts.ts`
+  et `UdpPortTable.ts` (inc. 3) ferment deux duplications mesurées :
+  `ControlPlaneUdpEndpoint.allocateEphemeralPort` était la copie mot pour
+  mot de `SocketTable.allocateEphemeralPort` — même algorithme (256
+  tirages puis balayage linéaire), même message `EADDRINUSE`, et ses
+  propres constantes 49152/65535 codées en dur là où l'autre les importe
+  de `WellKnownPorts` ; les deux lisent maintenant la même fonction. Une
+  table de ports UDP nomme le PROPRIÉTAIRE de chaque liaison
+  (`ownerOf`), ce que le paramètre `owner` de `udpBind` déclarait déjà et
+  que l'implémentation JETAIT.
+  - **Un routeur cesse d'AVALER le trafic de transit.**
+    `CiscoRouter.processIPv4` et `HuaweiRouter.processIPv4`
+    interceptaient l'UDP de leurs agents **avant** `super.processIPv4`,
+    donc avant la décision « pour nous ou transit » que la base prend
+    pourtant correctement. Mesuré sur `L — R1 — R` : un datagramme de
+    bout en bout sur 161 (SNMP), 123 (NTP), 1812 (RADIUS), 3784 (BFD) ou
+    1985 (HSRP) n'arrivait **jamais** — le routeur le donnait à son propre
+    agent, si bien qu'un poste ne pouvait interroger aucun de ces
+    serveurs à travers un routeur. `Router.receiveControlPlaneUdp` est le
+    point d'extension unique, consulté depuis `handleLocalDelivery`, donc
+    APRÈS la décision. Rien n'est perdu : HSRP et GLBP arrivent sur
+    224.0.0.2 / 224.0.0.102, que la base envoie déjà en remise locale au
+    titre du multicast lien-local, et les réponses NTP/SNMP/RADIUS sont
+    adressées au routeur lui-même. **Le TÉMOIN a été indispensable** : sa
+    première version échouait aussi, parce que le laboratoire oubliait
+    `no shutdown` — un labo mal bâti et un défaut auraient été
+    indiscernables.
+  - **Un port UDP que personne n'écoute se DIT.** RFC 1122 §4.1.3.1 :
+    « If a datagram arrives addressed to a UDP port for which there is no
+    pending LISTEN call, UDP SHOULD send an ICMP Port Unreachable
+    message » ; RFC 1812 §6.1 : « A router that implements UDP MUST be
+    compliant […] with the requirements of [INTRO:2] », où `[INTRO:2]`
+    est RFC 1122 (vérifié dans la bibliographie du RFC, pas de mémoire).
+    Mesuré : un hôte Linux répondait `Destination unreachable … code 3`,
+    le routeur et la SVI d'un Catalyst ne répondaient **rien**. Les trois
+    répondent désormais, chacun par son propre émetteur mais tous
+    derrière le même `mayGenerateICMPError`, donc jamais sur une
+    diffusion, un multicast, un fragment ni une erreur ICMP.
+  - **Une liaison sur un port déjà possédé est REFUSÉE.** `udpBind(520)`
+    rendait `true` sur un routeur où RIP sert déjà 520 : acceptée et
+    **inerte**, la chaîne codée en dur passant avant. Les ports du plan de
+    contrôle sont DÉCLARÉS une fois (`controlPlaneUdpClaims`) et cette
+    déclaration a deux lecteurs qui ne peuvent plus se contredire — le
+    répartiteur et le refus de liaison. Fermé avec : `DHCP_SERVER_PORT`
+    et `DHCP_CLIENT_PORT` étaient écrits **quatre fois** (Linux, Windows,
+    pare-feu, plus deux littéraux nus dans `Router`) ; une déclaration
+    dans `WellKnownPorts`, quatre lecteurs. **Le piège que la
+    non-régression a attrapé** : conditionner la revendication du port 500
+    à l'existence du moteur IPsec paraît plus honnête, mais la carte est
+    construite UNE FOIS et mise en cache tandis que `ipsecEngine` naît
+    plus tard, à la configuration `crypto` — le port n'était donc jamais
+    revendiqué et IKE ne recevait plus rien (7 cas NAT-T, plus 8 par
+    ricochet). La revendication est inconditionnelle et c'est le
+    RÉCEPTEUR qui lit `this.ipsecEngine?.` à la remise ; règle générale,
+    une déclaration mise en cache ne peut pas dépendre d'un moteur créé
+    paresseusement. **Non-regression** : `network-v2` entier rend 18 rouges
+    dans 5 fichiers, et les cinq sont ANTERIEURS — rejoues contre l'etat
+    de la branche avant le chantier, ils donnent exactement les memes 18,
+    et ils sont nommes au `TODO.md`. Restent ouverts et inscrits
+    au `TODO.md` : `show ip sockets` (la matière est prête, la capture de
+    référence n'existe pas — `ntc-templates` porte 139 gabarits
+    `cisco_ios` et aucun pour les sockets), et les interceptions IGMP/PIM/
+    GRE, qui précèdent encore la même décision mais dont le déplacement
+    n'est pas mécanique (un rapport IGMP est adressé au GROUPE).
+
 ### Event/timing infra (`src/events/`)
 
 `EventBus`, `Scheduler`, `Signal`, `TimerSet`, `waitForEvent` — shared reactive primitives used by protocol actors (OSPF, IPSec, DHCP, BGP, etc.) that model asynchronous, timer-driven behavior.
