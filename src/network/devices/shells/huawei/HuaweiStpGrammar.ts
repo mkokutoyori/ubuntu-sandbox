@@ -19,6 +19,7 @@
  */
 
 import type { ErreurGrammaireVrp } from '../cli-utils';
+import type { ParamSpec } from '../CommandTrie';
 
 /** Ce qu'un mot-cle attend derriere lui. */
 type Attendu =
@@ -128,6 +129,104 @@ export const STP_INTERFACE: readonly RegleStp[] = [
   { mot: 'loop-protection', attendu: RIEN },
   { mot: 'tc-restriction', attendu: RIEN },
 ];
+
+/**
+ * L'aide de `stp` est DERIVEE de cette table, comme l'analyse.
+ *
+ * Le defaut mesure : `stp converge ?` rendait `WORD  Spanning Tree
+ * Protocol configuration` et un `<cr>`, alors que la table dit depuis
+ * toujours que ce mot attend `fast` ou `normal` et que la commande nue
+ * repond « Incomplete command ». La grammaire et l'aide etaient deux
+ * enonces separes sur la meme syntaxe, donc capables de se contredire.
+ *
+ * `stp` est glouton : l'arite seule ne peut pas le decrire, puisque
+ * `stp enable` se valide avec un argument et `stp converge` non. C'est
+ * le CONTENU de l'argument qui tranche, et la table le sait.
+ */
+export function declarerAideStp(
+  trie: {
+    describeArgs(path: string, specs: readonly ParamSpec[]): void;
+    requireArgs(path: string, n: number): void;
+    executableWhen(path: string, pred: (args: readonly string[]) => boolean): void;
+    describeNode?(path: string, description: string): void;
+  },
+  regles: readonly RegleStp[],
+  chemin: string,
+  descriptions: ReadonlyArray<{ keyword: string; description: string }> = [],
+): void {
+  // La table de grammaire ne porte pas de description : elle sert
+  // l'ANALYSE. Declarer un argument cree pourtant le noeud, et un noeud
+  // sans description propre se rabat sur la table generale des
+  // mots-cles — d'ou `mode  Set trunking mode of the interface` sous
+  // `stp ?`, la description d'une AUTRE commande. Les descriptions
+  // curatees sont donc passees ici, et c'est la meme liste que l'ENUM
+  // deja rendu, si bien que les deux ne peuvent pas diverger.
+  const decrit = new Map(descriptions.map((d) => [d.keyword.toLowerCase(), d.description]));
+  const specDe = (a: Attendu): ParamSpec | null => {
+    if (a.forme === 'enum') {
+      return {
+        name: 'valeur', type: 'ENUM', description: 'Value',
+        values: a.valeurs.map((v) => ({ keyword: v, description: descriptionValeurStp(v) })),
+      };
+    }
+    if (a.forme === 'entier') {
+      return { name: 'valeur', type: 'INT', description: 'Value', range: [a.min, a.max] };
+    }
+    return null;
+  };
+  /** Les mots qui se valident SEULS, donc les seuls a porter `<cr>`. */
+  const seuls = new Set<string>();
+  for (const r of regles) {
+    const p = `${chemin} ${r.mot}`;
+    const propre = decrit.get(r.mot.toLowerCase());
+    // `describeNode` sort en SILENCE sur un noeud absent : l'appel doit
+    // donc SUIVRE la declaration qui cree le noeud, jamais la preceder.
+    const nommer = () => { if (propre) trie.describeNode?.(p, propre); };
+    if (r.attendu.forme === 'rien') { seuls.add(r.mot.toLowerCase()); continue; }
+    if (r.attendu.forme === 'sequence') {
+      const specs = r.attendu.parties
+        .map((partie) => specDe(partie))
+        .filter((x): x is ParamSpec => x !== null);
+      if (specs.length > 0) trie.describeArgs(p, specs);
+      trie.requireArgs(p, specs.length);
+      nommer();
+      continue;
+    }
+    const spec = specDe(r.attendu);
+    if (spec) { trie.describeArgs(p, [spec]); trie.requireArgs(p, 1); nommer(); }
+  }
+  trie.executableWhen(chemin,
+    (args) => args.length !== 1 || seuls.has(args[0].toLowerCase()));
+}
+
+/**
+ * Ce que vaut une valeur de la grammaire, en un mot.
+ *
+ * La table n'en portait aucune : elle sert l'analyse, qui n'a pas
+ * besoin de decrire. L'aide, elle, en a besoin — un mot offert sans
+ * description est le troisieme garde-fou de la campagne.
+ */
+function descriptionValeurStp(v: string): string {
+  const table: Readonly<Record<string, string>> = {
+    stp: 'Spanning Tree Protocol (802.1D)',
+    rstp: 'Rapid Spanning Tree Protocol (802.1w)',
+    mstp: 'Multiple Spanning Tree Protocol (802.1s)',
+    primary: 'Set the device as the primary root bridge',
+    secondary: 'Set the device as the secondary root bridge',
+    default: 'Restore the default value',
+    'dot1d-1998': 'IEEE 802.1D-1998 path cost standard',
+    dot1t: 'IEEE 802.1t path cost standard',
+    legacy: 'Huawei legacy path cost standard',
+    fast: 'Fast convergence mode',
+    normal: 'Normal convergence mode',
+    enable: 'Enable the function',
+    disable: 'Disable the function',
+    hello: 'Hello timer',
+    'forward-delay': 'Forward delay timer',
+    'max-age': 'Maximum age timer',
+  };
+  return table[v.toLowerCase()] ?? '';
+}
 
 export type StpAnalyse =
   | { statut: 'ok'; mot: string; args: readonly string[] }

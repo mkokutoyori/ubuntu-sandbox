@@ -2043,11 +2043,19 @@ export function registerDisplayCommands(
     if (args.length === 0) {
       return getState().renderLogbuffer?.() ?? commonDisplayLogbuffer();
     }
-    if (args[0]?.toLowerCase() !== 'level' || args.length !== 2) {
+    if (args[0]?.toLowerCase() !== 'level') {
       return `Error: Unrecognized command found at '^' position.`;
     }
-    const seuil = normVrpSeverity(args[1]);
-    if (seuil === null) return `Error: Wrong parameter found at '^' position.`;
+    // Un mot ABSENT n'est pas un mot faux : `display logbuffer level`
+    // reclame la severite, il ne nie pas le mot-cle que son aide vient
+    // de proposer.
+    if (args.length === 1) return `Error: Incomplete command found at '^' position.`;
+    if (args.length > 2) return `Error: Unrecognized command found at '^' position.`;
+    // VRP nomme ses severites ET les numerote : `level 5` est la forme
+    // la plus tapee, et elle etait refusee comme un mot inconnu.
+    const rang = /^[0-8]$/.test(args[1]) ? Number(args[1]) : null;
+    const seuil = rang === null ? normVrpSeverity(args[1]) : VRP_SEVERITIES[rang];
+    if (!seuil) return `Error: Wrong parameter found at '^' position.`;
     return getState().renderLogbuffer?.(VRP_SEVERITIES.indexOf(seuil)) ?? commonDisplayLogbuffer();
   });
   trie.addCompletionKeywords('display logbuffer', [

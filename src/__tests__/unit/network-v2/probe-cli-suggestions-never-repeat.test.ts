@@ -68,6 +68,14 @@ function keywords(help: string): string[] {
  * faults: a keyword offered a second time when it is already on the
  * line.
  */
+/**
+ * Les places ou la VALEUR attendue porte le nom de la commande.
+ *
+ * Relevees plutot qu'ouvertes : l'egalite est exacte, donc une nouvelle
+ * homonymie ne peut pas s'y glisser sans etre ecrite ici.
+ */
+const VALEUR_HOMONYME = new Set(['stp mode stp']);
+
 async function walk(
   cli: Cli, mode: string[], label: string, depth = 3,
 ): Promise<string[]> {
@@ -88,6 +96,12 @@ async function walk(
       typed.filter((t, i) => !(i === 0 && /^(do|default)$/i.test(t)))
         .map((t) => t.toLowerCase()));
     for (const k of offered) {
+      // Une VALEUR n'est pas un mot-cle, et elle peut porter le meme nom
+      // que la commande : VRP repond bien `stp` a `stp mode ?`, puisque
+      // `stp mode stp` selectionne le protocole 802.1D. La regle « jamais
+      // deux fois » parle des mots-cles qui se SUIVENT ; ici le second
+      // `stp` est la valeur du premier, et une vraie machine l'offre.
+      if (VALEUR_HOMONYME.has(`${prefix.trim()} ${k}`.toLowerCase())) continue;
       if (already.has(k.toLowerCase())) {
         faults.push(`${label}: "${prefix}?" offre encore « ${k} », déjà tapé`);
         continue;
@@ -312,6 +326,9 @@ async function walkTab(
     // Tab en fait est ce qu'on vérifie.
     for (const k of keywords(cli.cliHelp(prefix))) {
       for (const t of tabWords(cli, `${prefix}${k[0]}`)) {
+        // Meme exception que pour `?` : une valeur homonyme de sa
+        // commande est ce qu'une vraie machine complete la.
+        if (VALEUR_HOMONYME.has(`${prefix.trim()} ${t}`.toLowerCase())) continue;
         if (already.has(t.toLowerCase())) {
           faults.push(`${label}: Tab après "${prefix}${k[0]}" propose « ${t} », déjà tapé`);
         }

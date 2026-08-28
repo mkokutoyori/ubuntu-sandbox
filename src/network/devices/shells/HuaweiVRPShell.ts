@@ -354,6 +354,7 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
       iface: this.interfaceTrie,
       ospf: this.ospfTrie,
       vty: this.uiTrie,
+      user: this.userTrie,
     });
     for (const t of [
       this.userTrie, this.systemTrie, this.interfaceTrie, this.dhcpPoolTrie,
@@ -2021,8 +2022,15 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
     registerHuaweiPimDisplayCommands(t, () => this.r());
     t.registerGreedy('multicast', 'Multicast configuration', (args) => {
       const sub = (args[0] ?? '').toLowerCase();
+      // `multicast` seul reclame sa sous-commande : l'aide de la vue
+      // systeme le propose, et repondre « ce mot n'existe pas » a une
+      // ligne ou aucun mot n'a ete tape la dementait.
+      if (sub === '') return 'Error: Incomplete command found at \'^\' position.';
       return sub === 'routing-enable' ? '' : 'Error: Unrecognized command found at \'^\' position.';
     });
+    t.addCompletionKeywords('multicast', [
+      { keyword: 'routing-enable', description: 'Enable IP multicast routing' },
+    ]);
     t.registerGreedy('undo multicast', 'Disable multicast routing', () => '');
     t.register('pim', 'Enter the PIM view', () => { this.mode = 'pim'; return ''; });
     registerHuaweiPimViewCommands(this.pimTrie, this);

@@ -4626,6 +4626,55 @@ pare-feu peut atterrir dans le `/var/log/syslog` d'une vraie machine.
 
 ---
 
+### E74 — Deux sessions ont écrit la même traction, et la mienne est retirée
+
+Périmètre pris : l'entrée ouverte « `execute ha synchronize start` ne tire
+rien depuis un secondaire ». **Le résultat livré n'est pas mon implémentation
+mais celle de l'autre session**, et c'est écrit ici parce que la manière dont
+la collision s'est résolue vaut plus que le code que j'ai jeté.
+
+**Ce que j'avais écrit** : un drapeau `syncRequested` sur le battement de
+cœur, à usage unique, auquel le primaire répondait par un battement immédiat.
+Cela marchait — 3 des 7 cas de ma sonde tombaient avant, 7 passaient après.
+
+**Ce que l'autre session avait écrit pendant ce temps** : un vrai échange
+requête/réponse ADRESSÉ (`fgcp-command-request` / réponse, `HaCommandKind`
+dont `sync-pull`), qui sert aussi `execute ha manage` — l'entrée voisine, que
+mon approche ne pouvait pas servir. Le rebasage a mis les deux face à face
+dans `HaAgent.ts`.
+
+**J'ai retiré la mienne**, sans hésitation et sans compromis : deux mécanismes
+pour la même question, c'est exactement ce que ce dépôt passe son temps à
+défaire, et le leur est le plus général des deux — un drapeau sur une annonce
+diffusée ne peut pas porter une commande adressée à UN membre, alors qu'une
+requête adressée peut porter une demande de synchronisation. `syncRequested`
+est retiré de `HaHeartbeat`, `pendingSyncRequest` de `HaAgent`.
+
+**Ma sonde, elle, est GARDÉE** — et c'est le seul apport de ce lot. Elle a été
+écrite à l'aveugle contre le tutoriel, pas contre une implémentation, donc
+**6 de ses 7 cas passent tels quels sur un mécanisme qu'elle n'a pas vu
+naître** : c'est ce qui la rend utile comme témoin indépendant. Le septième
+comptait les trames et encodait MA conception (deux battements) ; il décrit
+maintenant l'échange réel — demande, réponse, battement porteur de
+configuration, **exactement trois trames** — ce qui reste une borne utile
+contre l'aller-retour sans fin, sur leur mécanisme.
+
+**Corrigé en chemin dans ma propre sonde, avant même la collision** : j'avais
+écrit un cas « hors grappe, la commande ne fait rien », qui échouait — mais le
+produit avait raison, `executeHa` refuse toute commande HA sur une unité
+autonome en le disant. Le cas pose le refus comme contrat.
+
+**Deux entrées de `TODO.md` que je m'apprêtais à traiter étaient déjà
+fermées** par l'autre session au moment du rebasage : celle-ci et `[execute]
+ping6` — dont j'avais mesuré, à tort dans le sens du pessimisme, qu'elle
+demandait « tout le plan IPv6 » et plusieurs séances. Elle est livrée. La
+leçon est la même que d'habitude : on relit l'état avant d'estimer, y compris
+quand l'estimation est la sienne.
+
+**Vérifié** : les 7 cas de la sonde passent sur le mécanisme livré.
+
+---
+
 ### E59 — Le MTU de sortie est respecté, et `set mtu` était rangé par personne
 
 Périmètre : l'entrée jumelle de celle du TTL — « la fragmentation n'existe

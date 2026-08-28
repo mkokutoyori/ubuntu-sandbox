@@ -1420,3 +1420,109 @@ cinquante-deux. Dans les trois cas, une sonde exécutant vraiment la
 commande a tranché en une minute ce qu'une lecture du code aurait discuté
 longtemps — et deux fois sur trois, la correction juste était l'inverse de
 la première idée.
+
+---
+
+## Étape 10 — les trois garde-fous, portés à VRP
+
+`src/__tests__/unit/network-v2/probe-aide-vrp-tient-ses-promesses.test.ts`
+
+Les trois balayages que la campagne Cisco laisse derrière elle n'énoncent
+rien de propre à IOS : un mot que `?` propose existe, un `<cr>` annoncé se
+valide, un mot offert porte une description. Portés à VRP tels quels — les
+deux refus s'y disent autrement (`Unrecognized command` / `Incomplete
+command`), la distinction est la même — ils trouvent **104 fautes** :
+
+| famille | mesuré |
+|---|---|
+| `<cr>` menteurs | 47 |
+| descriptions manquantes | 55 |
+| promesses non tenues | 2 |
+
+**La cause des 47 est celle qu'on connaît déjà** : `HuaweiVRPShell`
+portait **une seule** déclaration d'arité dans tout le fichier
+(`user-interface`), donc l'arité minimale de `acl`, `dns domain`,
+`local-user`, `route-policy`, `undo`… valait zéro et la machine annonçait
+qu'on pouvait les valider nues. Elles sont déclarées d'après le balayage,
+qui les a nommées. Deux commandes ne se distinguent pas par le NOMBRE
+d'arguments mais par leur contenu — `acl 2000` se valide, `acl name`
+attend encore le nom — et c'est `executableWhen` qui le dit, comme pour
+`class-map` côté IOS.
+
+**Les 2 promesses non tenues étaient de vraies commandes absentes**, pas
+des mots inventés : `display logbuffer level <n>` refusait la forme
+numérique alors que VRP numérote ses sévérités (`level 5` est la plus
+tapée), et répondait « mot inconnu » à `display logbuffer level` là où il
+manque seulement la valeur ; `multicast` niait un mot qu'aucun opérateur
+n'avait tapé, au lieu de réclamer sa sous-commande. Corriger les deux
+refus a **découvert deux `<cr>` de plus**, invisibles tant que la commande
+répondait « inconnu » — le balayage ne peut voir un `<cr>` menteur que
+derrière une commande qui existe.
+
+**Le commutateur ne recevait pas `describeHuaweiArguments` du tout** —
+même écart que celui refermé côté Catalyst. Le module ne crée aucun nœud :
+il décrit des nœuds existants, donc un chemin que le commutateur n'a pas
+est un no-op silencieux. N'appeler la déclaration que depuis le routeur
+laissait les deux machines se contredire sur les mêmes commandes.
+
+**Le point le plus intéressant est `stp`.** `stp converge ?` rendait
+`WORD  Spanning Tree Protocol configuration` et un `<cr>` que la commande
+refuse — alors que `HuaweiStpGrammar.ts` DIT depuis toujours que ce mot
+attend `fast` ou `normal`. La grammaire et l'aide étaient deux énoncés
+séparés sur la même syntaxe, donc capables de diverger. `declarerAideStp`
+dérive l'aide de la table qui sert déjà l'analyse : une place, une source.
+`stp` étant glouton, l'arité seule ne suffit pas — `stp enable` se valide
+avec un argument, `stp converge` non — donc la table dit aussi **quels
+mots se valident seuls**, et c'est le prédicat.
+
+**Trois régressions provoquées et corrigées, dont deux dans les tests
+plutôt que dans le produit** — parce que c'est là qu'était la faute :
+
+1. Déclarer un argument **crée le nœud**, et un nœud sans description
+   propre se rabat sur la table générale des mots-clés : `stp ?` s'est mis
+   à rendre `mode  Set trunking mode of the interface`, la description
+   d'une AUTRE commande. Les descriptions curatées — la même liste que
+   l'ENUM déjà rendu — sont passées à `declarerAideStp`, si bien que les
+   deux ne peuvent pas diverger. Piège dans le piège : `describeNode` sort
+   en **silence** sur un nœud absent, donc l'appel doit SUIVRE la
+   déclaration qui le crée, jamais la précéder.
+2. `probe-cli-suggestions-never-repeat` a signalé que `stp mode ?` offre
+   `stp`, déjà tapé. C'est **une valeur, pas un mot-clé** : `stp mode stp`
+   sélectionne 802.1D, et une vraie machine l'offre. L'invariant parle des
+   mots-clés qui se suivent ; l'homonymie est relevée nommément, à
+   égalité exacte, dans les deux moitiés du balayage (`?` et `Tab`).
+3. `huawei-vty-help-consistency` vérifiait qu'une vue utilisateur ne
+   contient pas la **sous-chaîne** `interface` — et `free`, décrit pour la
+   première fois, est « Release a user terminal **interface** ». Le
+   contrôle porte désormais sur la colonne des mots-clés, pas sur la
+   phrase : la même leçon que l'alignement des tableaux, découper aux
+   bornes plutôt qu'aux blancs.
+
+**Discrimination.** 15 cas : **12 tombent** avant correctif. Les 3 témoins
+sont les balayages du commutateur qui passaient déjà et le cas de refus
+d'un mot réellement inexistant.
+
+**Le cliquet a servi avant même d'être poussé.** Le rebasage a apporté le
+travail d'une session concurrente — `mac-address blackhole|static`,
+`clock timezone`, `time-range`, `port-group`, `display dhcp`,
+`display traffic` — et les balayages ont immédiatement nommé sept fautes
+neuves des mêmes familles : cinq `<cr>` sans arité, deux descriptions
+manquantes, et un sélecteur qui rouvrait ses alternatives
+(`mac-address blackhole ?` offrait `aging-time`). Toutes corrigées dans le
+même geste. C'est exactement ce à quoi sert une liste à égalité exacte :
+elle ne dit pas seulement où l'on en était, elle refuse ce qui arrive
+après.
+
+Sur ce dernier point, la correction a d'abord été tentée par
+`leadingOnly` et **n'a rien changé** ; la déclaration juste est un
+paramètre **ENUM** — une place, trois valeurs — qui dit ce qu'une liste de
+suggestions ne peut pas dire : que les trois se disputent le même rang.
+
+Non-régression : 323 fichiers, 7 128 cas. Deux échecs subsistent
+(`another_rip`, `scenario-vlan-8021q-trunk`) et **ne sont pas les miens** :
+ils tombent à l'identique une fois mes changements remisés, donc ils
+viennent des commits amont rebasés. `tsc` : 233 avant, 233 après.
+
+**Reste connu, et vide.** Les six listes du cliquet VRP sont toutes à zéro
+— aucune faute nommée, donc aucune ne peut apparaître sans faire échouer
+ce fichier.
