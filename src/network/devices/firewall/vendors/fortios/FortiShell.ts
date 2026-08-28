@@ -791,7 +791,7 @@ export class FortiShell {
         mode: this.interfaceSetting(iface.name, 'mode') ?? 'static',
         ip: `${iface.ip ?? '0.0.0.0'} ${iface.mask ?? '0.0.0.0'}`,
         ipv6: '::/0',
-        status: iface.up && (port === undefined || linked) ? 'up' : 'down',
+        status: iface.up ? 'up' : 'down',
         speed: linked && port !== undefined
           ? `${port.getNegotiatedSpeed()}Mbps (Duplex: ${port.getNegotiatedDuplex()})`
           : 'n/a',

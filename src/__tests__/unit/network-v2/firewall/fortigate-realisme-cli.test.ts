@@ -1349,3 +1349,64 @@ describe('20. l invite ne ment jamais sur le contexte', () => {
     expect(fw.getPrompt().trim()).toMatch(/\(global\)/);
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────
+// 21. L'ETAT D'UNE INTERFACE — l'ADMINISTRATIF et le LIEN sont deux faits
+// ─────────────────────────────────────────────────────────────────────
+
+function blocInterface(vue: string, nom: string): string {
+  const debut = vue.indexOf(`== [${nom}]`);
+  const suite = vue.indexOf('== [', debut + 1);
+  return suite < 0 ? vue.slice(debut) : vue.slice(debut, suite);
+}
+
+describe('21. `get system interface` rend l etat ADMINISTRATIF', () => {
+  it('un port sans cable mais admin-up est `status: up`', async () => {
+    const fw = fortigate();
+
+    expect(blocInterface(await fw.executeCommand('get system interface'), 'port1'))
+      .toMatch(/status: up/);
+  });
+
+  it('et sa vitesse est `n/a` — c est LA que le lien se voit', async () => {
+    const fw = fortigate();
+
+    expect(blocInterface(await fw.executeCommand('get system interface'), 'port1'))
+      .toMatch(/speed: n\/a/);
+  });
+
+  it('`set status down` le fait passer a `down`', async () => {
+    const fw = fortigate();
+    await taper(fw, [
+      'config system interface', 'edit port1', 'set status down', 'next', 'end',
+    ]);
+
+    expect(blocInterface(await fw.executeCommand('get system interface'), 'port1'))
+      .toMatch(/status: down/);
+  });
+
+  it('un port CABLE et admin-up annonce sa vitesse', async () => {
+    const fw = fortigate();
+    const pc = new LinuxPC('linux-pc', 'PC1', 400, 0);
+    pc.powerOn();
+    new Cable('lien').connect(fw.getPort('port1') as never, pc.getPort('eth0') as never);
+    await pc.executeCommand('ip link set eth0 up');
+
+    const bloc = blocInterface(await fw.executeCommand('get system interface'), 'port1');
+    expect(bloc).toMatch(/status: up/);
+    expect(bloc).toMatch(/speed: \d+Mbps/);
+  });
+
+  it('un port cable mais admin-DOWN reste `status: down`', async () => {
+    const fw = fortigate();
+    const pc = new LinuxPC('linux-pc', 'PC1', 400, 0);
+    pc.powerOn();
+    new Cable('lien').connect(fw.getPort('port1') as never, pc.getPort('eth0') as never);
+    await taper(fw, [
+      'config system interface', 'edit port1', 'set status down', 'next', 'end',
+    ]);
+
+    expect(blocInterface(await fw.executeCommand('get system interface'), 'port1'))
+      .toMatch(/status: down/);
+  });
+});
