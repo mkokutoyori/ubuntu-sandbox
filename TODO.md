@@ -187,50 +187,6 @@ refusee plutot que rangee sans etre lue.
 
 ## Couche transport (BRD TCP/IP)
 
-### [suite] 18 cas rouges ANTERIEURS dans `network-v2`, dans 5 fichiers
-**Constat.** La passe complete de `src/__tests__/unit/network-v2/` rend
-1691 fichiers / 26 316 cas avec 18 rouges repartis dans cinq fichiers :
-`ospfv3-real-packets` (10), `new-roles-observability` (5),
-`scenario-vlan-8021q-trunk` (1), `probe-plage-annoncee-est-appliquee` (1)
-et `nat-engine-own-bus` (1).
-
-**Mesure.** Rejoues contre `1990651f` — l'etat de la branche avant le
-chantier de la couche transport — ils donnent EXACTEMENT les memes 18,
-donc aucun n'est une regression de ce chantier. Ils echouent aussi
-ISOLEMENT, donc ce ne sont pas des interferences d'ordre de lot.
-
-**Et ils ne sont PAS corriges en amont**, contrairement a ce qui avait ete
-suppose. Les cinq fichiers sont bien touches par des commits que `main`
-portait et que la branche n'avait pas, ce qui rendait l'hypothese
-plausible ; la branche a ete remise a niveau sur `main` (5a830f75) et les
-memes 18 cas tombent. Ce sont donc des defauts OUVERTS sur `main`
-aujourd'hui, pas une dette locale.
-
-**Report.** Chacun releve d'un sujet different (OSPFv3, observabilite des
-roles Windows, agregat 802.1Q, plages annoncees par la CLI, bus du moteur
-NAT) et aucun n'a ete diagnostique ici. Les nommer evite qu'un prochain
-lot les prenne pour les siens — c'est la confusion qui a failli se
-produire sur ce lot-ci.
-
-
-### [udp] `show ip sockets` n'a AUCUNE capture de reference
-**Constat.** La matiere existe depuis l'increment 3 de la phase 4 :
-`ControlPlaneUdpEndpoint.ownerOf(port)` nomme le proprietaire d'un port
-et `boundPorts()` les enumere, ce qui est exactement ce que la vue
-attend. La vue, elle, n'existe pas.
-
-**Mesure.** Le corpus `ntc-templates` a ete telecharge et son `index`
-compte 139 gabarits `cisco_ios` — et pas un seul pour les sockets
-(`grep -i sock` ne rend rien). `cisco.com`, `community.cisco.com`,
-`blog.ipspace.net` et `rfc-editor.org` sont tous coupes par le proxy de
-sortie de cette image ; seul `raw.githubusercontent.com` passe. Les
-exemples trouves par recherche viennent de pages HTML, qui ECRASENT les
-blancs — c'est-a-dire precisement l'information cherchee.
-
-**Report.** Ecrire les largeurs de colonnes de memoire est exactement ce
-que `cisco/ciscoTableLayouts.ts` existe pour empecher. Il faut une
-transcription TEXTE d'une vraie machine.
-
 ### [icmp] le pendant VRP est accepte et inerte, et son `undo` n'existe pas
 **Constat.** Cote Cisco, `no ip unreachables` est desormais honore par
 `sendICMPError`. Cote Huawei, les commandes equivalentes

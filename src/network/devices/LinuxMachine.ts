@@ -2634,14 +2634,8 @@ export abstract class LinuxMachine extends EndHost
         ...frame,
         dot1q: { tpid: 0x8100, pcp: 0, dei: 0, vid: vlanSub.vid },
       };
-      // Real transmission already happened above; this is a second,
-      // capture-only signal so `tcpdump -i eth0.100` sees the untagged
-      // frame (the subinterface has no `Cable` of its own to publish it).
       const sent = super.sendFrame(vlanSub.parent, tagged);
-      this.getBus().publish({
-        topic: 'port.frame.tx-requested',
-        payload: { deviceId: this.id, portName, frame },
-      });
+      this.getPort(portName)?.recordOutboundFrame(frame);
       return sent;
     }
     return super.sendFrame(portName, frame);

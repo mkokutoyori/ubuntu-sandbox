@@ -43,9 +43,11 @@ afterEach(() => {
 const ps = (d: WindowsServer) => PowerShellSubShell.create(d).subShell;
 const run = async (sh: ReturnType<typeof ps>, l: string) => (await sh.processLine(l)).output.join('\n');
 
-function collect<T extends { topic: string }>(topic: T['topic']): unknown[] {
+function collect<T extends { topic: string }>(
+  publisher: WindowsServer, topic: T['topic'],
+): unknown[] {
   const out: unknown[] = [];
-  bus.subscribe(topic as never, (e: { payload: unknown }) => out.push(e.payload));
+  publisher.getBus().subscribe(topic as never, (e: { payload: unknown }) => out.push(e.payload));
   return out;
 }
 
@@ -53,7 +55,7 @@ describe('AD CS observability (§5 P23)', () => {
   it('publishes adcs.certificate.issued and records it in the signal store', async () => {
     const dc = new WindowsServer('CA1');
     dc.setCurrentUser('Administrator');
-    const events = collect<AdcsDomainEvent>('adcs.certificate.issued');
+    const events = collect<AdcsDomainEvent>(dc, 'adcs.certificate.issued');
 
     await run(ps(dc), 'Install-WindowsFeature AD-Certificate');
     await run(ps(dc), 'Install-AdcsCertificationAuthority -CACommonName "Lab Root CA"');
@@ -77,8 +79,8 @@ describe('RDP observability (§5 P23)', () => {
     client.getPorts()[0].configureIP(new IPAddress('192.168.99.20'), mask);
     server.setCurrentUser('Administrator');
 
-    const established = collect<RdpDomainEvent>('rdp.session.established');
-    const closed = collect<RdpDomainEvent>('rdp.session.closed');
+    const established = collect<RdpDomainEvent>(server, 'rdp.session.established');
+    const closed = collect<RdpDomainEvent>(server, 'rdp.session.closed');
 
     await run(ps(server), 'Enable-RemoteDesktop');
     const verifier = new CertificateVerifier({ trustAnchors: [server.getRdpTlsCertificate()] });
@@ -115,7 +117,7 @@ describe('DFSR observability (§5 P23)', () => {
     target1.getFileSystem().mkdirp('C:\\DfsData');
     target1.getFileSystem().createFile('C:\\DfsData\\report.txt', 'quarterly numbers v1');
 
-    const synced = collect<DfsDomainEvent>('dfs.replication.synced');
+    const synced = collect<DfsDomainEvent>(target2, 'dfs.replication.synced');
     await run(ps(target2), 'Sync-DfsReplicationGroup -GroupName RG1 -PartnerServer 192.168.99.30');
 
     expect(synced.length).toBe(1);
@@ -145,8 +147,8 @@ describe('WSFC cluster observability (§5 P23)', () => {
     await run(ps(srv2), 'New-Cluster -Name CLUS1 -Node SRV2,SRV1 -NodeAddress 192.168.99.41,192.168.99.40');
     await run(ps(srv1), 'Add-ClusterFileServerRole -Name FS1 -Node SRV2,SRV1');
 
-    const nodeDown = collect<ClusterDomainEvent>('cluster.node.down');
-    const groupMoved = collect<ClusterDomainEvent>('cluster.group.moved');
+    const nodeDown = collect<ClusterDomainEvent>(srv1, 'cluster.node.down');
+    const groupMoved = collect<ClusterDomainEvent>(srv1, 'cluster.group.moved');
 
     c2.disconnect();
     scheduler.advance(MISSED_THRESHOLD_MS + 1000);
@@ -177,7 +179,7 @@ describe('WSFC cluster observability (§5 P23)', () => {
     await run(ps(srv2), 'New-Cluster -Name CLUS1 -Node SRV2,SRV1 -NodeAddress 192.168.99.51,192.168.99.50');
     await run(ps(srv1), 'Add-ClusterFileServerRole -Name FS1 -Node SRV1,SRV2');
 
-    const groupMoved = collect<ClusterDomainEvent>('cluster.group.moved');
+    const groupMoved = collect<ClusterDomainEvent>(srv1, 'cluster.group.moved');
     await run(ps(srv1), 'Move-ClusterGroup -Name FS1 -Node SRV2');
 
     expect(groupMoved.length).toBe(1);

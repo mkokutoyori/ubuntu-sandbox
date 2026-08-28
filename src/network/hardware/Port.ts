@@ -1057,6 +1057,12 @@ export class Port {
       return false;
     }
 
+    this.recordOutboundFrame(frame);
+
+    return this.cable.transmit(frame, this);
+  }
+
+  recordOutboundFrame(frame: EthernetFrame): void {
     this.counters.framesOut++;
     this.counters.bytesOut += ethernetFrameBytes(frame);
     Logger.debug(this.equipmentId, 'port:send',
@@ -1067,8 +1073,6 @@ export class Port {
       payload: { ...this.portRef(), frame },
     });
     this.tapPoint.emit(this.name, 'out', frame);
-
-    return this.cable.transmit(frame, this);
   }
 
   receiveFrame(frame: EthernetFrame): void {

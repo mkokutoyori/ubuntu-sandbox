@@ -19,7 +19,6 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import { CiscoRouter } from '@/network/devices/CiscoRouter';
 import { Cable } from '@/network/hardware/Cable';
 import { IPv6Packet } from '@/network/core/types';
-import { getDefaultEventBus } from '@/events/EventBus';
 
 const IP_PROTO_OSPF = 89;
 
@@ -33,11 +32,10 @@ interface V3Frame {
   packetType: number;
 }
 
-/** What was ACTUALLY sent, read off the bus rather than the engine. */
-function observeWire(): { sent: V3Frame[]; receivedFrames: V3Frame[] } {
+/** What was ACTUALLY sent, read off each device's own bus rather than the engine. */
+function observeWire(...devices: CiscoRouter[]): { sent: V3Frame[]; receivedFrames: V3Frame[] } {
   const sent: V3Frame[] = [];
   const receivedFrames: V3Frame[] = [];
-  const bus = getDefaultEventBus();
 
   const lire = (e: { payload: unknown }, dans: V3Frame[]): void => {
     const p = e.payload as {
@@ -58,8 +56,11 @@ function observeWire(): { sent: V3Frame[]; receivedFrames: V3Frame[] } {
     });
   };
 
-  bus.subscribe('port.frame.tx-requested', (e) => lire(e, sent));
-  bus.subscribe('port.frame.received', (e) => lire(e, receivedFrames));
+  for (const device of devices) {
+    const bus = device.getBus();
+    bus.subscribe('port.frame.tx-requested', (e) => lire(e, sent));
+    bus.subscribe('port.frame.received', (e) => lire(e, receivedFrames));
+  }
   return { sent, receivedFrames };
 }
 
@@ -97,7 +98,7 @@ async function twoRouterLab(
   new Cable('c12').connect(r1.getPort('GigabitEthernet0/0')!, r2.getPort('GigabitEthernet0/0')!);
   // Observation starts AFTER cabling: what is counted is what the
   // convergence triggered by the next command produces.
-  const wire = observeWire();
+  const wire = observeWire(r1, r2);
   await r1.executeCommand('show ipv6 ospf neighbor');
   return { r1, r2, wire };
 }
@@ -200,7 +201,7 @@ describe('what stops a packet stops the adjacency', () => {
     await setUpOspfv3(r1, '1.1.1.1', '2001:db8:12::1', { passive: true });
     await setUpOspfv3(r2, '1.1.1.2', '2001:db8:12::2');
     new Cable('c12').connect(r1.getPort('GigabitEthernet0/0')!, r2.getPort('GigabitEthernet0/0')!);
-    const wire = observeWire();
+    const wire = observeWire(r1, r2);
     await r1.executeCommand('show ipv6 ospf neighbor');
 
     // R2 does send: the Hello ARRIVES on R1's passive interface.
@@ -217,7 +218,7 @@ describe('what stops a packet stops the adjacency', () => {
     await setUpOspfv3(r1, '1.1.1.1', '2001:db8:12::1', { hello: 30 });
     await setUpOspfv3(r2, '1.1.1.2', '2001:db8:12::2');
     new Cable('c12').connect(r1.getPort('GigabitEthernet0/0')!, r2.getPort('GigabitEthernet0/0')!);
-    const wire = observeWire();
+    const wire = observeWire(r1, r2);
     await r1.executeCommand('show ipv6 ospf neighbor');
 
     // Both send: RECEPTION is what refuses, not sending.
@@ -231,7 +232,7 @@ describe('what stops a packet stops the adjacency', () => {
     const r2 = new CiscoRouter('R2');
     await setUpOspfv3(r1, '1.1.1.1', '2001:db8:12::1');
     await setUpOspfv3(r2, '1.1.1.2', '2001:db8:12::2');
-    const wire = observeWire();
+    const wire = observeWire(r1, r2);
     await r1.executeCommand('show ipv6 ospf neighbor');
     expect(wire.sent).toEqual([]);
     expect(neighbours(r1)).toEqual([]);
