@@ -18,7 +18,8 @@ import {
 } from '@/network/core/types';
 import type { Dot1QTag, TaggedEthernetFrame } from '../../../Switch';
 import type { TcpSegment, TcpOption } from '@/network/tcp/types';
-import { computeTcpChecksum, computeUdpChecksum } from '@/network/tcp/types';
+import { computeTcpChecksum } from '@/network/tcp/types';
+import { computeUdpChecksum } from '@/network/layers/transport/UdpChecksum';
 import type { DnsMessage } from '@/network/dns/wire/DnsMessage';
 import type { ResourceRecord, ResourceRecordData } from '@/network/dns/wire/ResourceRecord';
 import { RRType } from '@/network/dns/wire/RRType';

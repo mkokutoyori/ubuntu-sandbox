@@ -77,12 +77,7 @@ export const SYSTEM_GLOBAL: FortiTableSpec = {
   renderOrder: 10,
   help: 'Configure global attributes.',
   attributes: [
-    {
-      ...word('hostname', 'FortiGate unit name.', 'FortiGate'),
-      appliesImmediately: (values, context) => {
-        context.device.applyHostname(values[0] ?? '');
-      },
-    },
+    word('hostname', 'FortiGate unit name.', 'FortiGate'),
     word('alias', 'Alias for this FortiGate unit.'),
     count('admintimeout', 'Number of minutes before an idle administrator times out.',
       1, 480, 5),

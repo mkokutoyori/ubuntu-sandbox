@@ -181,6 +181,8 @@ const ICMP_ERROR_TTL = 64;
 const DEFAULT_INTERFACE_MTU = 1500;
 
 export class Firewall extends Equipment {
+  consoleLineCount(): number { return 1; }
+
   private readonly interfaces = new InterfaceTable();
   private readonly vdoms: VdomRegistry;
   private readonly switchGroups = new SwitchGroupTable();

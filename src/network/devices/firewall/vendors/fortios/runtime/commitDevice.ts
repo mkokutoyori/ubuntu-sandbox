@@ -128,12 +128,10 @@ export function buildCommitDevice(
       applyConsoleSettings(settings) {
         fw.getConsoleSettings().apply(settings);
       },
-      applyHostname(hostname) {
-        if (hostname.length > 0) fw.setName(hostname);
-      },
       applyGlobalSettings(settings) {
         if (settings.hostname !== undefined && settings.hostname.length > 0) {
           fw.setName(settings.hostname);
+          fw.setHostname(settings.hostname);
         }
         const zone = settings.timezone === undefined
           ? null : resolveFortiTimezone(settings.timezone);

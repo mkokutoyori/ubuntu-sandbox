@@ -436,11 +436,11 @@ async function tab(session: FortiTerminalSession, saisie: string): Promise<strin
 describe('la meme chose DANS LE TERMINAL, la ou l\'operateur tape', () => {
   it('Tab complete un nom d\'objet entre guillemets', async () => {
     const fgt = new FortiGate('firewall-fortinet', 'FGT-01', 0, 0);
+    const session = await terminal(fgt);
     for (const ligne of ['config firewall address', 'edit "NET-LAN"',
       'set subnet 192.168.10.0 255.255.255.0', 'next', 'end',
       'config firewall policy', 'edit 1']) await fgt.executeCommand(ligne);
 
-    const session = await terminal(fgt);
     expect(await tab(session, 'set srcaddr "N')).toBe('set srcaddr "NET-LAN" ');
   });
 

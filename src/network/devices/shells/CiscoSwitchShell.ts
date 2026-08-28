@@ -40,7 +40,7 @@ import {
   showInterface, consoleAndAuxLineConfigLines, enableLevelSecretConfigLines,
   ipIntBriefRowsFromPorts, renderIpIntBrief, ipInterfaceBlockFor,
   interfaceAclLines, type InterfaceAclRefs,
-  renderInterfacesDescription, hostsTableLines,
+  renderInterfacesDescription, hostsTableLines, serviceFlagLines,
 } from './cisco/CiscoShowCommands';
 import { orderCiscoConfigBlocks } from './cisco/ciscoConfigSerializer';
 import { describeCiscoArguments } from './cisco/ciscoArgumentHelp';
@@ -627,8 +627,11 @@ function stpVlanSpecs(action: (args: string[]) => string): CommandSpec[] {
 
 const privilegeSelonModes = (
   modesParChemin: Readonly<Record<string, readonly string[]>>,
-) => (path: string): number | undefined =>
-  modesParChemin[path.replace(/^no /, '')]?.includes('user') ? 1 : undefined;
+) => (path: string): number | undefined => {
+  const nu = path.replace(/^no /, '');
+  if (!nu.startsWith('show ')) return undefined;
+  return modesParChemin[nu]?.includes('user') ? 1 : undefined;
+};
 
 interface SwitchTries {
   config: CommandTrie;
@@ -1060,9 +1063,26 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
       if (Number.isFinite(id)) this.trackObjects.delete(id);
       return '';
     });
+    this.configTrie.register('service dhcp', 'Enable DHCP service', () => {
+      this.d()._getDHCPServerInternal().enable();
+      return '';
+    });
+    this.configTrie.register('no service dhcp', 'Disable DHCP service', () => {
+      this.d()._getDHCPServerInternal().disable();
+      return '';
+    });
+
     this.configTrie.registerGreedy('ip access-list', 'Named ACL', (args) => {
-      // ip access-list {standard|extended} <name>
       const kind = args[0]?.toLowerCase();
+      if (kind === 'resequence') {
+        const [, name, debut, pas] = args;
+        if (!name || debut === undefined || pas === undefined) return CISCO_ERRORS.INCOMPLETE;
+        const start = parseInt(debut, 10);
+        const step = parseInt(pas, 10);
+        if (isNaN(start) || isNaN(step)) return CISCO_ERRORS.INVALID_INPUT;
+        return this.d().getVaclEngine().resequenceNamedACL(name, start, step)
+          ? '' : `% Access-list ${name} not found`;
+      }
       if (kind !== 'standard' && kind !== 'extended') return CISCO_ERRORS.INVALID_INPUT;
       // Le nom etait facultatif par accident (`args[1] ?? args[0]`), de
       // sorte que `ip access-list standard` creait une liste NOMMEE
@@ -1135,8 +1155,10 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
     for (const t of [this.userTrie, this.privilegedTrie]) {
       t.register('show ip interface brief', 'Display IP interface brief', () =>
         this.showIpInterfaceBrief());
-      t.registerGreedy('show access-lists', 'Display ACLs', (args) =>
-        showAccessListsFrom(this.d().getVaclEngine().getAccessListsInternal(), args[0]));
+      const vueAcl = (args: string[]): string =>
+        showAccessListsFrom(this.d().getVaclEngine().getAccessListsInternal(), args[0]);
+      t.registerGreedy('show access-lists', 'Display ACLs', vueAcl);
+      t.registerGreedy('show ip access-lists', 'Display IP access lists', vueAcl);
       t.registerGreedy('show port-security', 'Display port security', (args) => {
         if (args[0]?.toLowerCase() === 'interface' && args[1]) {
           return this.showPortSecurityInterface(this.d(), args.slice(1).join(' '));
@@ -4416,6 +4438,9 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
     if (vtyLines.length > 0) { lines.push(...vtyLines); lines.push('!'); }
 
     if (sw.isIpRoutingEnabled()) { lines.push('ip routing'); lines.push('!'); }
+
+    const drapeaux = serviceFlagLines(sw);
+    if (drapeaux.length > 0) { lines.push(...drapeaux); lines.push('!'); }
 
     const dhcpLines = dhcpRunningConfigLines(sw._getDHCPServerInternal());
     if (dhcpLines.length > 0) { lines.push(...dhcpLines); lines.push('!'); }

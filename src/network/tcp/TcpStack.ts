@@ -5,9 +5,10 @@ import {
   type TcpSegment, type TcpFlags, type TcpState, type TcpCloseReason,
   type UnackedSegment, type TcpOption,
   noFlags, flagsString, nextIsn, makeSocketKey, makeListenerKey,
-  computeTcpChecksum, verifyTcpChecksum, seqLt, payloadBytes,
+  computeTcpChecksum, verifyTcpChecksum, seqLt,
   TCP_DEFAULT_MSS, TCP_DEFAULT_WINDOW, TCP_TIME_WAIT_MS, TCP_MIN_MSS,
 } from './types';
+import { payloadBytes } from '@/network/layers/transport/L4Checksum';
 import { RttEstimator, TCP_MAX_RETRANSMITS, TCP_INITIAL_RTO_MS, TCP_MAX_RTO_MS } from './RttEstimator';
 import { TcpCongestionControl } from './TcpCongestionControl';
 import { encodeOptions, decodeOptions, optionsDataOffset } from './TcpOptionsCodec';

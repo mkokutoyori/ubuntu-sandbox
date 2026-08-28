@@ -342,8 +342,10 @@ export class FortiShell {
     ];
 
     const developpee = this.canonicalHead(head);
+    const lowered = bare.toLowerCase();
     return [...new Set(proposed)]
-      .filter(value => value.startsWith(bare) && value !== bare)
+      .filter(value => value.toLowerCase().startsWith(lowered)
+        && value.toLowerCase() !== lowered)
       .map(value => `${developpee}${quote}${value}${quote}`);
   }
 
@@ -470,6 +472,26 @@ export class FortiShell {
     return this.fw.getAccessMatrix().authorize(admin.profile, spec.accessGroup, intent);
   }
 
+  private motInconnu(tokens: readonly string[]): string {
+    if (tokens.length <= 1) return tokens[0] ?? '';
+    return this.socle.suggestions(`${tokens[0]} `, 'QUESTION_MARK').length === 0
+      ? tokens[0] : tokens.join(' ');
+  }
+
+  private leaveOneLevel(): string {
+    if (this.nav.frames().length === 0 && this.globalScope) {
+      this.globalScope = false;
+      return '';
+    }
+    return this.nav.end();
+  }
+
+  beginConsoleSession(): void {
+    this.nav.abort();
+    this.globalScope = false;
+    this.fw.setActiveVdom('root');
+  }
+
   private enterGlobal(): string {
     if (!this.fw.multiVdomEnabled()) {
       return FortiMessages.commandFail(
@@ -544,9 +566,9 @@ export class FortiShell {
     if (tokens[0] === 'next' || tokens[0] === 'abort') {
       return FortiMessages.outsideObject(tokens[0]);
     }
-    if (tokens[0] === 'end') return this.nav.end();
+    if (tokens[0] === 'end') return this.leaveOneLevel();
 
-    return FortiMessages.unknownCommand(tokens[0]);
+    return FortiMessages.unknownCommand(this.motInconnu(tokens));
   }
 
   private applyTableVerb(tokens: readonly string[]): string {
@@ -769,7 +791,7 @@ export class FortiShell {
         mode: this.interfaceSetting(iface.name, 'mode') ?? 'static',
         ip: `${iface.ip ?? '0.0.0.0'} ${iface.mask ?? '0.0.0.0'}`,
         ipv6: '::/0',
-        status: iface.up && (port === undefined || linked) ? 'up' : 'down',
+        status: iface.up ? 'up' : 'down',
         speed: linked && port !== undefined
           ? `${port.getNegotiatedSpeed()}Mbps (Duplex: ${port.getNegotiatedDuplex()})`
           : 'n/a',

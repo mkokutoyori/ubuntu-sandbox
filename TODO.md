@@ -1001,3 +1001,58 @@ défauts — la méthode vaut d'être reprise sur le reliquat.
 - Les événements d'observabilité Kerberos et de réplication AD se lisaient
   sur le bus GLOBAL alors que le bus d'une machine est le sien depuis
   5ff22d9b — la sonde lisait le mauvais bus, la fonction était juste.
+
+- Un routeur porte une SECONDE table de ports, et elle n'a pas de porte —
+  ouvert. `ControlPlaneUdpEndpoint` garde ses liaisons dans un
+  `Map<number, handler>` prive alors que `Router` n'a AUCUNE `SocketTable` ;
+  `boundPorts()`, le seul accesseur qui pourrait la montrer, n'a aucun
+  appelant dans tout le depot. `show ip sockets` reste donc a ecrire, et
+  la mesure des largeurs de colonnes est BLOQUEE : cisco.com est coupe par
+  le proxy de sortie et la documentation en HTML ecrase les blancs, qui
+  sont precisement l'information cherchee — il faut une capture texte
+  (jeu `ntc-templates`), absente de cette image.
+
+- `sntp server` avait DEUX corps — fermée. Le même mot enregistré sur
+  l'arbre privilégié et sur celui de configuration, avec des corps qui
+  avaient déjà divergé : celui de configuration retient la ligne par
+  `_recordUnhandledConfigLine` quand la machine n'a pas d'agent NTP,
+  l'autre la perd en silence. Sans conséquence observable aujourd'hui —
+  routeur comme Catalyst portent un agent, donc la branche divergente est
+  inatteignable — mais c'est exactement la duplication qui finit par
+  répondre deux choses à une même commande. Un seul corps, posé sur les
+  deux arbres.
+
+- FortiGate — cinq manquements signalés par l'utilisateur, tous fermés :
+  `set hostname` s'appliquait AVANT le `end` et `abort` reposait le nom
+  d'usine ; la console gardait son curseur de configuration d'une session
+  à l'autre ; plusieurs terminaux pouvaient s'ouvrir sur un port console
+  qui est unique ; `show system interface` ne suivait pas l'ordre du
+  châssis ; l'auto-complétion était sensible à la casse.
+- `config system vdom` n'est pas modélisé sur le FortiGate — ouvert.
+  `show system vdom` résout `vdom` par abréviation vers `vdom-link` et rend
+  donc une AUTRE table, ce qui est le comportement d'abréviation de FortiOS
+  appliqué à une table absente. Le multi-vdom existe par ailleurs
+  (`set vdom-mode multi-vdom`, `config global`, vdom actif `root`).
+- `diagnose hardware sysinfo memory` n'est pas implémenté — ouvert. Le
+  refus nomme désormais la commande entière et non le verbe `diagnose`,
+  qui est connu ; reste à décider si un modèle mémoire mérite d'exister
+  (les seuils de conserve-mode sont déjà déclarés au schéma).
+- Une politique de pare-feu INCOMPLETE est acceptee en silence — ouvert.
+  Un vrai FortiGate refuse au `next` une politique sans ses attributs
+  obligatoires. Le controle a ete ECRIT puis RETIRE : il faisait tomber 13
+  cas de 7 fichiers, et l'examen a montre que c'etait ma regle qui etait
+  fausse — une politique IPv6 se declare par `srcaddr6`/`dstaddr6` et n'a
+  pas besoin de la paire v4. Ni l'ensemble exact des attributs requis ni
+  le message de refus ne sont attestables depuis ce reseau ; les inventer
+  serait le defaut que ce depot refuse.
+- `execute reboot`, `execute shutdown` et `execute factoryreset` ne font
+  RIEN par la voie scriptee — ouvert. Elles sont cablees sur le plan
+  d'interaction du terminal, donc `executeCommand` rend la chaine vide et
+  l'appareil reste allume. Un vrai FortiGate demande confirmation
+  (`Do you want to continue? (y/n)`) ; decider ce que rend une voie sans
+  interaction est un choix de conception, pas une correction evidente.
+- Famille `service` — les drapeaux se rendent des DEUX cotes, fermée.
+  `service password-encryption` était stockée sur `Equipment` (magasin déjà
+  partagé) mais rendue par le seul parcours du routeur, donc perdue au
+  rechargement d'une topologie sur un Catalyst ; `service dhcp` n'était pas
+  déclarée du tout sur le commutateur, donc absente de l'aide et sans effet.

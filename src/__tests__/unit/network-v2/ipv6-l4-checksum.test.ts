@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { computeTcpChecksum, verifyTcpChecksum, computeUdpChecksum, noFlags } from '@/network/tcp/types';
+import { computeTcpChecksum, verifyTcpChecksum, noFlags } from '@/network/tcp/types';
+import { computeUdpChecksum } from '@/network/layers/transport/UdpChecksum';
 import type { TcpSegment } from '@/network/tcp/types';
 import type { UDPPacket } from '@/network/core/types';
 
