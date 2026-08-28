@@ -14,11 +14,11 @@
  */
 
 import type { IProtocolEngine } from '../core/interfaces';
-import type { RIPPacket, RIPRouteEntry, UDPPacket } from '../core/types';
+import type { RIPPacket, RIPRouteEntry } from '../core/types';
 import {
   IPAddress, SubnetMask, MACAddress,
-  IP_PROTO_UDP, UDP_PORT_RIP, RIP_METRIC_INFINITY, RIP_MAX_ENTRIES_PER_MESSAGE,
-  ETHERTYPE_IPV4, createIPv4Packet,
+  UDP_PORT_RIP, RIP_METRIC_INFINITY, RIP_MAX_ENTRIES_PER_MESSAGE,
+  ETHERTYPE_IPV4,
 } from '../core/types';
 import {
   RIP_TIMERS, ADMINISTRATIVE_DISTANCE,
@@ -38,6 +38,7 @@ import {
 } from './observables';
 import { RIPSignalRefreshActor } from './actors';
 import { md5Hex } from '@/crypto/hash';
+import { buildUdpOverIpv4 } from '../layers/transport/UdpEgress';
 
 /**
  * RFC 2453 §4.1 puts the authentication in the first entry of the
@@ -832,18 +833,13 @@ export class RIPEngine implements IProtocolEngine {
 
     const ripSize = 4 + ripPkt.entries.length * 20 + (ripPkt.auth ? 20 : 0);
 
-    const udpPkt: UDPPacket = {
-      type: 'udp',
-      sourcePort: UDP_PORT_RIP,
-      destinationPort: UDP_PORT_RIP,
-      length: 8 + ripSize,
-      checksum: 0,
-      payload: ripPkt,
-    };
-
     const destination = destIP ?? this.destinationIp();
-    const ipPkt = createIPv4Packet(
-      myIP, destination, IP_PROTO_UDP, 1, udpPkt, 8 + ripSize);
+    const ipPkt = buildUdpOverIpv4(myIP, {
+      destination,
+      destinationPort: UDP_PORT_RIP, sourcePort: UDP_PORT_RIP,
+      payload: ripPkt, payloadBytes: ripSize,
+      source: myIP, ttl: 1,
+    });
 
     // RFC 2453 §3.9.1 — la réponse à une demande retourne à celui qui l'a
     // posée, en unicast : elle emprunte donc la résolution d'adresse

@@ -11,6 +11,7 @@ export interface UdpSendRequest {
   readonly payloadBytes: number;
   readonly source?: IPAddress;
   readonly ttl?: number;
+  readonly tos?: number;
 }
 
 export interface UdpEgressHost {
@@ -34,5 +35,6 @@ export function buildUdpOverIpv4(source: IPAddress, request: UdpSendRequest): IP
   const udp = buildUdpDatagram(request);
   return createIPv4Packet(
     source, request.destination, IP_PROTO_UDP,
-    request.ttl ?? DEFAULT_TTL, udp, udp.length);
+    request.ttl ?? DEFAULT_TTL, udp, udp.length,
+    request.tos === undefined ? {} : { tos: request.tos });
 }

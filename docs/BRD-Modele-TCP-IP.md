@@ -1053,6 +1053,36 @@ collecteur au lieu d'une adresse que personne ne porte.
 fait), et un commutateur JETTE sur cache ARP froid là où un routeur met
 en file.
 
+**Lots 2 à 6 — NTP, NetFlow, SNMP, BFD, RIP : LIVRÉS.** Tous construisent
+désormais leur datagramme par `buildUdpOverIpv4`, seule construction du
+dépôt. Ce que chacun a apporté en propre :
+
+- **NTP** portait DEUX copies du même bloc de vingt lignes (`envoyer` et
+  `envoyerControle`) ; il n'en reste qu'une, `emettreUdp`.
+- **NetFlow** et **SNMP** ne sont hébergés que par les deux routeurs, qui
+  portent tous deux le chemin ARP : leur repli `dstMAC: broadcast` est donc
+  **supprimé** plutôt que conservé — un export unicast n'a aucune raison
+  d'être inondé.
+- **BFD** diffusait INCONDITIONNELLEMENT, sans même une branche ARP. Il
+  passe par `sendIpv4FrameArpAware`, et `UdpSendRequest` gagne `tos` pour
+  porter les valeurs que la RFC 5881 impose (TTL 255, TOS 0xc0).
+- **RIP** était déjà juste — MAC multicast pour v2, diffusion pour v1
+  (RFC 2453 §4.3), réponse unicast par le chemin ARP — et n'avait que sa
+  construction à déplacer. Le dire vaut mieux que de « corriger » ce qui
+  ne l'était pas.
+
+**Corrigé dans un laboratoire plutôt que dans le code** : le cas « format
+sur le fil » de BFD n'avait AUCUN voisin à l'adresse visée, et ne passait
+que parce que le repli en diffusion faisait paraître sur le fil une trame
+qu'un vrai routeur n'émet pas — il ARP dans le vide et n'envoie rien. Le
+laboratoire a maintenant un vrai voisin, ce qu'un laboratoire BFD a par
+définition.
+
+**Reste de la phase 5** : RADIUS et DHCP. Le blocage est nommé au
+`TODO.md` — `EndHost` porte déjà un `sendUdpDatagram` POSITIONNEL alors
+que l'offre de la couche prend une requête, et trancher ce nom touche
+tous ses appelants.
+
 ### Phase 6 — `core/packetBuilders.ts` : brancher ou supprimer
 Une fois la couche internet en place, ce module est soit son mécanisme
 interne, soit un mort à retirer. **Il ne restera pas dans son état

@@ -7,11 +7,11 @@ import {
   NETFLOW_V5_MAX_RECORDS, NETFLOW_V5_VERSION, UDP_PORT_NETFLOW,
 } from './types';
 import {
-  MACAddress, IPAddress,
-  type EthernetFrame, type IPv4Packet, type UDPPacket,
-  IP_PROTO_UDP, ETHERTYPE_IPV4, nextIPv4Id, computeIPv4Checksum,
+  IPAddress,
+  type EthernetFrame, type IPv4Packet,
 } from '../core/types';
 import { Logger } from '../core/Logger';
+import { buildUdpOverIpv4, type UdpSendRequest } from '../layers/transport/UdpEgress';
 
 export interface NetFlowHost {
   readonly id: string;
@@ -219,32 +219,18 @@ export class NetFlowAgent {
     };
     this.flowSequence = (this.flowSequence + chunk.length) >>> 0;
     const payload: NetFlowV5Packet = { type: 'netflow-v5', header, records: chunk };
-    const udp: UDPPacket = {
-      type: 'udp',
-      sourcePort: 49152 + (this.flowSequence & 0x3fff),
+    const destination = new IPAddress(collector.ip);
+    const request: UdpSendRequest = {
+      destination,
       destinationPort: collector.port,
-      length: 8 + 24 + chunk.length * 48,
-      checksum: 0, payload,
+      sourcePort: 49152 + (this.flowSequence & 0x3fff),
+      payload,
+      payloadBytes: 24 + chunk.length * 48,
+      source: srcIp,
     };
-    const ipPkt: IPv4Packet = {
-      type: 'ipv4', version: 4, ihl: 5, tos: 0,
-      totalLength: 20 + udp.length,
-      identification: nextIPv4Id(), flags: 0, fragmentOffset: 0,
-      ttl: 64, protocol: IP_PROTO_UDP, headerChecksum: 0,
-      sourceIP: srcIp, destinationIP: new IPAddress(collector.ip),
-      payload: udp,
-    };
-    ipPkt.headerChecksum = computeIPv4Checksum(ipPkt);
-    if (this.host.sendIpv4FrameArpAware) {
-      this.host.sendIpv4FrameArpAware(egress.name, ipPkt, new IPAddress(collector.ip));
-    } else {
-      const eth: EthernetFrame = {
-        srcMAC: egress.port.getMAC(),
-        dstMAC: MACAddress.broadcast(),
-        etherType: ETHERTYPE_IPV4, payload: ipPkt,
-      };
-      this.host.sendFrame(egress.name, eth);
-    }
+    if (!this.host.sendIpv4FrameArpAware) return;
+    this.host.sendIpv4FrameArpAware(
+      egress.name, buildUdpOverIpv4(srcIp, request), destination);
     collector.exportedPackets++;
     collector.exportedFlows += chunk.length;
     collector.lastExportMs = this.nowMs();

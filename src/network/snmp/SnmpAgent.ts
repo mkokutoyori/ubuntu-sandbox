@@ -13,11 +13,11 @@ import {
   OID_IF_ADMIN_STATUS_PREFIX, OID_IF_OPER_STATUS_PREFIX,
 } from './types';
 import {
-  MACAddress, IPAddress,
+  IPAddress,
   type EthernetFrame, type IPv4Packet, type UDPPacket,
-  IP_PROTO_UDP, ETHERTYPE_IPV4, nextIPv4Id, computeIPv4Checksum,
 } from '../core/types';
 import { Logger } from '../core/Logger';
+import { buildUdpOverIpv4 } from '../layers/transport/UdpEgress';
 
 export interface SnmpHost {
   readonly id: string;
@@ -380,32 +380,16 @@ export class SnmpAgent {
   private transmit(portName: string, port: import('../hardware/Port').Port,
                    dstIp: IPAddress, srcIp: IPAddress, dstPort: number,
                    payload: SnmpPacket): void {
-    const udp: UDPPacket = {
-      type: 'udp',
-      sourcePort: dstPort === UDP_PORT_SNMP ? 49152 + (payload.requestId & 0x3fff) : UDP_PORT_SNMP,
+    if (!this.host.sendIpv4FrameArpAware) return;
+    this.host.sendIpv4FrameArpAware(portName, buildUdpOverIpv4(srcIp, {
+      destination: dstIp,
       destinationPort: dstPort,
-      length: 8 + 48 + payload.varBindings.length * 16,
-      checksum: 0, payload,
-    };
-    const ipPkt: IPv4Packet = {
-      type: 'ipv4', version: 4, ihl: 5, tos: 0,
-      totalLength: 20 + udp.length,
-      identification: nextIPv4Id(), flags: 0, fragmentOffset: 0,
-      ttl: 64, protocol: IP_PROTO_UDP, headerChecksum: 0,
-      sourceIP: srcIp, destinationIP: dstIp,
-      payload: udp,
-    };
-    ipPkt.headerChecksum = computeIPv4Checksum(ipPkt);
-    if (this.host.sendIpv4FrameArpAware) {
-      this.host.sendIpv4FrameArpAware(portName, ipPkt, dstIp);
-    } else {
-      const eth: EthernetFrame = {
-        srcMAC: port.getMAC(),
-        dstMAC: MACAddress.broadcast(),
-        etherType: ETHERTYPE_IPV4, payload: ipPkt,
-      };
-      this.host.sendFrame(portName, eth);
-    }
+      sourcePort: dstPort === UDP_PORT_SNMP
+        ? 49152 + (payload.requestId & 0x3fff) : UDP_PORT_SNMP,
+      payload,
+      payloadBytes: 48 + payload.varBindings.length * 16,
+      source: srcIp,
+    }), dstIp);
     this.getBus().publish({
       topic: 'snmp.packet.sent',
       payload: {
