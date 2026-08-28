@@ -1051,3 +1051,8 @@ défauts — la méthode vaut d'être reprise sur le reliquat.
   l'appareil reste allume. Un vrai FortiGate demande confirmation
   (`Do you want to continue? (y/n)`) ; decider ce que rend une voie sans
   interaction est un choix de conception, pas une correction evidente.
+- Famille `service` — les drapeaux se rendent des DEUX cotes, fermée.
+  `service password-encryption` était stockée sur `Equipment` (magasin déjà
+  partagé) mais rendue par le seul parcours du routeur, donc perdue au
+  rechargement d'une topologie sur un Catalyst ; `service dhcp` n'était pas
+  déclarée du tout sur le commutateur, donc absente de l'aide et sans effet.

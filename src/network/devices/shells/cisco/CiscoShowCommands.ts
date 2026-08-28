@@ -32,6 +32,14 @@ import { renderCounterTable, renderTable, type TableColumn } from '../cli/TextTa
 import { getHttpService } from '@/network/equipment/RouterServiceCapabilities';
 import { IPV6_NEIGHBORS_COLUMNS, IPV6_NEIGHBORS_STYLE, type Ipv6NeighborRow } from './ciscoTableLayouts';
 
+export function serviceFlagLines(
+  device: { getServiceFlags?: () => ReadonlyMap<string, boolean> },
+): string[] {
+  const flags = device.getServiceFlags?.();
+  if (!flags) return [];
+  return [...flags].map(([name, on]) => `${on ? '' : 'no '}service ${name}`);
+}
+
 export function showVersion(
   router: Router, profile: CiscoChassisProfile = 'router-isr2911',
   registerLine?: string,
@@ -616,9 +624,7 @@ export function showRunningConfig(router: Router): string {
     lines.push(`enable password ${renderPasswordField(enablePassword.value, enablePassword.algo, serviceEncryption, false, 'enable')}`);
   }
   lines.push(...enableLevelSecretConfigLines(router, serviceEncryption));
-  for (const [name, on] of router.getServiceFlags()) {
-    lines.push(`${on ? '' : 'no '}service ${name}`);
-  }
+  lines.push(...serviceFlagLines(router));
 
   const dnsCfg = (router as unknown as {
     _getDnsConfig?: () => import('../../router/dns/CiscoDnsConfig').CiscoDnsConfig;

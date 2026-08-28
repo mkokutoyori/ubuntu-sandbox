@@ -40,7 +40,7 @@ import {
   showInterface, consoleAndAuxLineConfigLines, enableLevelSecretConfigLines,
   ipIntBriefRowsFromPorts, renderIpIntBrief, ipInterfaceBlockFor,
   interfaceAclLines, type InterfaceAclRefs,
-  renderInterfacesDescription, hostsTableLines,
+  renderInterfacesDescription, hostsTableLines, serviceFlagLines,
 } from './cisco/CiscoShowCommands';
 import { orderCiscoConfigBlocks } from './cisco/ciscoConfigSerializer';
 import { describeCiscoArguments } from './cisco/ciscoArgumentHelp';
@@ -1063,6 +1063,15 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
       if (Number.isFinite(id)) this.trackObjects.delete(id);
       return '';
     });
+    this.configTrie.register('service dhcp', 'Enable DHCP service', () => {
+      this.d()._getDHCPServerInternal().enable();
+      return '';
+    });
+    this.configTrie.register('no service dhcp', 'Disable DHCP service', () => {
+      this.d()._getDHCPServerInternal().disable();
+      return '';
+    });
+
     this.configTrie.registerGreedy('ip access-list', 'Named ACL', (args) => {
       const kind = args[0]?.toLowerCase();
       if (kind === 'resequence') {
@@ -4429,6 +4438,9 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
     if (vtyLines.length > 0) { lines.push(...vtyLines); lines.push('!'); }
 
     if (sw.isIpRoutingEnabled()) { lines.push('ip routing'); lines.push('!'); }
+
+    const drapeaux = serviceFlagLines(sw);
+    if (drapeaux.length > 0) { lines.push(...drapeaux); lines.push('!'); }
 
     const dhcpLines = dhcpRunningConfigLines(sw._getDHCPServerInternal());
     if (dhcpLines.length > 0) { lines.push(...dhcpLines); lines.push('!'); }
