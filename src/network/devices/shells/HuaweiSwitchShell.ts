@@ -53,7 +53,8 @@ import {
   rendreInterfaceBrief, rendreInterfaceDescription, huaweiMacAddress,
   type LigneArp, rendreArpSwitch, rendreMacAddress,
 } from './huawei/huaweiTableLayouts';
-import { analyserStp, STP_SYSTEME, STP_INTERFACE, borneTimerStp } from './huawei/HuaweiStpGrammar';
+import { analyserStp, STP_SYSTEME, STP_INTERFACE, borneTimerStp, declarerAideStp,
+} from './huawei/HuaweiStpGrammar';
 import { vrpStpGlobalLines, vrpStpRegionLines } from './huawei/HuaweiStpRender';
 import { analyserPlagePorts, etendrePlage, portGroupRunningConfigLines, renduDisplayPortGroup } from './huawei/HuaweiPortGroup';
 import { completerBorne } from './cli/interfaceRange';
@@ -85,6 +86,7 @@ import {
   describeHuaweiInterfaceArg, wordArg,
   STP_SYSTEM_KEYWORDS, STP_INTERFACE_KEYWORDS,
 } from './huawei/huaweiInterfaceHelp';
+import { describeHuaweiArguments } from './huawei/huaweiArgumentHelp';
 
 const VUES_SWITCH = [
   'user', 'system', 'interface', 'vlan', 'mst-region', 'port-group',
@@ -269,6 +271,18 @@ export class HuaweiSwitchShell implements ISwitchShell {
     this.buildDhcpCommands();
     this.wireHuaweiNAT();
     this.buildPortMirroringCommands();
+    // Apres TOUS les enregistrements, et sur le commutateur AUSSI : ce
+    // module ne creait aucun noeud, il decrit les arguments et l'arite
+    // de noeuds existants, donc un chemin que le commutateur n'a pas
+    // est un no-op silencieux. Ne l'appeler que depuis le routeur
+    // laissait les deux machines se contredire sur les memes commandes.
+    describeHuaweiArguments({
+      system: this.systemTrie,
+      iface: this.interfaceTrie,
+      ospf: new CommandTrie(),
+      vty: this.userIfTrie,
+      user: this.userTrie,
+    });
   }
 
   private natContext(): HuaweiShellContext {
@@ -915,6 +929,15 @@ export class HuaweiSwitchShell implements ISwitchShell {
       this.swRef?.addVoiceVlanOui?.(macHex, maskHex, description);
       return '';
     });
+    // Le gestionnaire exige `<mac> mask <mask>` : l'aide annoncait
+    // pourtant `WORD` et un `<cr>` que la commande refuse ensuite.
+    this.systemTrie.describeArgs('voice-vlan mac-address', [
+      { name: 'oui', type: 'MAC_ADDR', description: 'OUI address, in H-H-H format' },
+    ]);
+    this.systemTrie.addCompletionKeywords('voice-vlan mac-address', [
+      { keyword: 'mask', description: 'Mask of the OUI address' },
+    ]);
+    this.systemTrie.requireArgs('voice-vlan mac-address', 3);
 
     // undo <subcommand>
     this.systemTrie.registerGreedy('undo', 'Undo configuration', (args, raw) => {
@@ -1296,6 +1319,18 @@ export class HuaweiSwitchShell implements ISwitchShell {
       { keyword: 'aging-time', description: 'Aging time of dynamic MAC address entries' },
       { keyword: 'blackhole', description: 'Blackhole MAC address entry' },
       { keyword: 'static', description: 'Static MAC address entry' },
+    ]);
+    // Aucune des trois formes ne se valide sur son seul selecteur : le
+    // mot compte pour un argument, donc l'arite est satisfaite alors
+    // qu'il manque la duree ou l'adresse. C'est ce que `executableWhen`
+    // existe pour dire, et l'aide annoncait sinon un `<cr>` que la
+    // commande refuse.
+    this.systemTrie.requireArgs('mac-address', 2);
+    this.systemTrie.executableWhen('mac-address',
+      (args) => !(args.length === 1 && /^(aging-time|blackhole|static)$/i.test(args[0])));
+    this.systemTrie.describeArgs('mac-address aging-time', [
+      { name: 'seconds', type: 'INT', description: 'Aging time in seconds',
+        range: [0, 1000000] },
     ]);
 
     this.systemTrie.register('ip routing-enable', 'Enable IP routing', () => {
@@ -2978,6 +3013,10 @@ export class HuaweiSwitchShell implements ISwitchShell {
           return '';
       }
     });
+    // L'aide vient de la MEME table que l'analyse : `stp converge ?`
+    // rendait un `WORD` et un `<cr>` que la commande refuse, alors que
+    // la grammaire dit `fast|normal` depuis toujours.
+    declarerAideStp(trie, STP_SYSTEME, 'stp', STP_SYSTEM_KEYWORDS);
   }
 
   private registerMqcDisplay(trie: CommandTrie): void {
@@ -3160,6 +3199,10 @@ export class HuaweiSwitchShell implements ISwitchShell {
           return '';
       }
     });
+    // L'aide vient de la MEME table que l'analyse : `stp converge ?`
+    // rendait un `WORD` et un `<cr>` que la commande refuse, alors que
+    // la grammaire dit `fast|normal` depuis toujours.
+    declarerAideStp(trie, STP_INTERFACE, 'stp', STP_INTERFACE_KEYWORDS);
   }
 
   /**

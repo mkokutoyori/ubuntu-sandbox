@@ -100,7 +100,13 @@ describe('Huawei router `?` help follows the per-vty mode', () => {
     b.handleKey(key('?'));
     await flush();
     const bOut = screen(b);
-    expect(bOut).not.toContain('interface');
+    // Le MOT-CLE, pas le texte : `interface` figure legitimement dans la
+    // description de `free` (« Release a user terminal interface »), et
+    // chercher la sous-chaine faisait echouer ce controle sur une phrase
+    // au lieu d'une commande. Un mot-cle est ce qui ouvre une ligne.
+    const motsCles = bOut.split('\n')
+      .map((l) => /^\s\s(\S+)/.exec(l)?.[1]).filter(Boolean);
+    expect(motsCles).not.toContain('interface');
 
     // A, in system-view, still sees interface help correctly.
     a.setInput('interface ');
