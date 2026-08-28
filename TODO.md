@@ -199,6 +199,13 @@ chantier de la couche transport — ils donnent EXACTEMENT les memes 18,
 donc aucun n'est une regression de ce chantier. Ils echouent aussi
 ISOLEMENT, donc ce ne sont pas des interferences d'ordre de lot.
 
+**Et ils ne sont PAS corriges en amont**, contrairement a ce qui avait ete
+suppose. Les cinq fichiers sont bien touches par des commits que `main`
+portait et que la branche n'avait pas, ce qui rendait l'hypothese
+plausible ; la branche a ete remise a niveau sur `main` (5a830f75) et les
+memes 18 cas tombent. Ce sont donc des defauts OUVERTS sur `main`
+aujourd'hui, pas une dette locale.
+
 **Report.** Chacun releve d'un sujet different (OSPFv3, observabilite des
 roles Windows, agregat 802.1Q, plages annoncees par la CLI, bus du moteur
 NAT) et aucun n'a ete diagnostique ici. Les nommer evite qu'un prochain
