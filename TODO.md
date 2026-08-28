@@ -187,6 +187,26 @@ refusee plutot que rangee sans etre lue.
 
 ## Couche transport (BRD TCP/IP)
 
+### [udp] le repli en DIFFUSION subsiste sur quatre familles d'hotes
+**Constat.** Quand l'hote n'offre pas `sendIpv4FrameArpAware`, les agents
+d'application retombent sur une trame fabriquee a `dstMAC: broadcast` —
+un datagramme UNICAST inonde a tout le domaine de diffusion. Le lot
+syslog l'a ferme pour syslog ; NTP le porte encore, et il n'est pas seul.
+
+**Mesure.** `sendIpv4FrameArpAware` n'existe que sur `CiscoRouter` et
+`HuaweiRouter`. Or `NtpAgent` est construit aussi par `LinuxMachine`,
+`WindowsPC`, `Switch` et le pare-feu : sur ces quatre familles, chaque
+paquet NTP part donc a l'adresse de diffusion.
+
+**Ce qui bloque la fermeture immediate.** `EndHost` porte DEJA une
+methode nommee `sendUdpDatagram`, mais POSITIONNELLE
+(`destinationIP, destinationPort, sourcePort, payload, payloadBytes`),
+tandis que le port de la couche transport prend une requete
+(`UdpSendRequest`). Brancher les hotes de bout sur l'offre demande donc
+de trancher le nom — deux signatures pour un meme nom a travers le depot
+est exactement la duplication que ce chantier referme —, ce qui touche
+tous les appelants de `EndHost.sendUdpDatagram`. C'est un lot a part.
+
 ### [rib] `Port.configureIP` n'installe AUCUNE route connectee
 **Constat.** Poser une adresse par la CLI (`ip address 10.0.0.1
 255.255.255.0` sous une interface) installe la route connectee ; poser la

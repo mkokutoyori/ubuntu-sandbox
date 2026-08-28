@@ -9,7 +9,7 @@ import {
 import {
   MACAddress, IPAddress,
   type EthernetFrame, type IPv4Packet, type UDPPacket,
-  IP_PROTO_UDP, ETHERTYPE_IPV4, nextIPv4Id, computeIPv4Checksum,
+  ETHERTYPE_IPV4,
 } from '../core/types';
 import { Logger } from '../core/Logger';
 import { calculerMacNtp, verifierMacNtp } from './auth';
@@ -23,6 +23,7 @@ import {
   disciplinerHorloge, appliquerDecision, creerEtatHorloge,
   type EtatHorloge, type DecisionDiscipline, type ReglagesDiscipline,
 } from './discipline';
+import { buildUdpOverIpv4 } from '../layers/transport/UdpEgress';
 
 export interface NtpHost {
   readonly id: string;
@@ -805,32 +806,32 @@ export class NtpAgent {
     // requete, reponse de serveur et reponse symetrique doivent porter
     // le meme condensé, et trois endroits finiraient par diverger.
     const payload = this.signer(brut);
-    const udp: UDPPacket = {
-      type: 'udp', sourcePort: UDP_PORT_NTP, destinationPort: UDP_PORT_NTP,
-      length: 8 + 48, checksum: 0, payload,
-    };
-    const ipPkt: IPv4Packet = {
-      type: 'ipv4', version: 4, ihl: 5, tos: 0, totalLength: 20 + 8 + 48,
-      identification: nextIPv4Id(), flags: 0, fragmentOffset: 0,
-      ttl: 64, protocol: IP_PROTO_UDP, headerChecksum: 0,
-      sourceIP: srcIp, destinationIP: dstIp, payload: udp,
-    };
-    ipPkt.headerChecksum = computeIPv4Checksum(ipPkt);
-    const key = `${portName}|${dstIp.toString()}`;
+    this.emettreUdp(portName, port, srcIp, dstIp, payload, 48,
+      `${portName}|${dstIp.toString()}`);
+  }
+
+  private emettreUdp(
+    portName: string, port: import('../hardware/Port').Port,
+    srcIp: IPAddress, dstIp: IPAddress,
+    payload: unknown, payloadBytes: number, key: string,
+  ): void {
+    const ipPkt = buildUdpOverIpv4(srcIp, {
+      destination: dstIp,
+      destinationPort: UDP_PORT_NTP, sourcePort: UDP_PORT_NTP,
+      payload, payloadBytes, source: srcIp,
+    });
     if (this.emitting.has(key)) return;
     this.emitting.add(key);
     try {
       if (this.host.sendIpv4FrameArpAware) {
         this.host.sendIpv4FrameArpAware(portName, ipPkt, dstIp);
       } else {
-        const frame: EthernetFrame = {
+        this.host.sendFrame(portName, {
           srcMAC: port.getMAC(), dstMAC: MACAddress.broadcast(),
           etherType: ETHERTYPE_IPV4, payload: ipPkt,
-        };
-        this.host.sendFrame(portName, frame);
+        });
       }
-    }
-    finally { this.emitting.delete(key); }
+    } finally { this.emitting.delete(key); }
   }
 
   private startTimer(): void {
@@ -1061,31 +1062,8 @@ export class NtpAgent {
     if (!port) return;
     this.config.counters.sent++;
     this.config.counters.sentControl++;
-    const taille = 12 + pkt.data.length;
-    const udp: UDPPacket = {
-      type: 'udp', sourcePort: UDP_PORT_NTP, destinationPort: UDP_PORT_NTP,
-      length: 8 + taille, checksum: 0, payload: pkt,
-    };
-    const ipPkt: IPv4Packet = {
-      type: 'ipv4', version: 4, ihl: 5, tos: 0, totalLength: 20 + 8 + taille,
-      identification: nextIPv4Id(), flags: 0, fragmentOffset: 0,
-      ttl: 64, protocol: IP_PROTO_UDP, headerChecksum: 0,
-      sourceIP: srcIp, destinationIP: dstIp, payload: udp,
-    };
-    ipPkt.headerChecksum = computeIPv4Checksum(ipPkt);
-    const key = `ctl|${portName}|${dstIp.toString()}`;
-    if (this.emitting.has(key)) return;
-    this.emitting.add(key);
-    try {
-      if (this.host.sendIpv4FrameArpAware) {
-        this.host.sendIpv4FrameArpAware(portName, ipPkt, dstIp);
-      } else {
-        this.host.sendFrame(portName, {
-          srcMAC: port.getMAC(), dstMAC: MACAddress.broadcast(),
-          etherType: ETHERTYPE_IPV4, payload: ipPkt,
-        });
-      }
-    } finally { this.emitting.delete(key); }
+    this.emettreUdp(portName, port, srcIp, dstIp, pkt, 12 + pkt.data.length,
+      `ctl|${portName}|${dstIp.toString()}`);
   }
 
   /** L'identifiant qu'une vue doit afficher pour une association. */
