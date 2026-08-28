@@ -13,6 +13,7 @@
  */
 
 import { EPHEMERAL_PORT_MIN, EPHEMERAL_PORT_MAX } from './WellKnownPorts';
+import { allocateEphemeralPort } from '../layers/transport/EphemeralPorts';
 
 export type SocketProtocol = 'tcp' | 'udp';
 
@@ -406,19 +407,8 @@ export class SocketTable {
    * Tries a random port first, then falls back to linear scan.
    */
   allocateEphemeralPort(): number {
-    const range = this.ephemeralMax - this.ephemeralMin + 1;
-    for (let attempt = 0; attempt < 256; attempt++) {
-      const port = this.ephemeralMin + Math.floor(Math.random() * range);
-      if (!this.isPortBound(port, 'tcp') && !this.isPortBound(port, 'udp')) {
-        return port;
-      }
-    }
-    for (let port = this.ephemeralMin; port <= this.ephemeralMax; port++) {
-      if (!this.isPortBound(port, 'tcp') && !this.isPortBound(port, 'udp')) {
-        return port;
-      }
-    }
-    throw new Error('EADDRINUSE: No ephemeral ports available');
+    return allocateEphemeralPort(this.ephemeralMin, this.ephemeralMax,
+      (port) => this.isPortBound(port, 'tcp') || this.isPortBound(port, 'udp'));
   }
 
   // ─── Lifecycle ───────────────────────────────────────────────────────

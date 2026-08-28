@@ -53,10 +53,20 @@ import { VxlanAgent } from '../vxlan/VxlanAgent';
 import { UDP_PORT_VXLAN } from '../vxlan/types';
 import { TcpStack } from '../tcp/TcpStack';
 import type { EthernetFrame, IPv4Packet, UDPPacket, IPAddress } from '../core/types';
-import { IP_PROTO_UDP, IP_PROTO_TCP } from '../core/types';
+import { IP_PROTO_TCP } from '../core/types';
 import type { NeighborDTO } from './inspection/DeviceStateView';
 import type { IEventBus } from '@/events/EventBus';
 import { HuaweiDebugService } from './router/diag/HuaweiDebugService';
+
+const HUAWEI_UDP_OWNERS: ReadonlyMap<number, string> = new Map([
+  [UDP_PORT_NTP, 'ntp'],
+  [UDP_PORT_BFD_CONTROL, 'bfd'],
+  [UDP_PORT_RADIUS_AUTH, 'radius'],
+  [UDP_PORT_RADIUS_ACCT, 'radius-acct'],
+  [UDP_PORT_RADIUS_COA, 'radius-coa'],
+  [UDP_PORT_SNMP, 'snmp'],
+  [UDP_PORT_VXLAN, 'vxlan'],
+]);
 
 export class HuaweiRouter extends Router {
   private readonly lldpAgent: LldpAgent;
@@ -297,6 +307,56 @@ export class HuaweiRouter extends Router {
     return this.getKeypairService().list().length > 0;
   }
 
+  protected override controlPlaneUdpOwner(port: number): string | null {
+    return HUAWEI_UDP_OWNERS.get(port) ?? super.controlPlaneUdpOwner(port);
+  }
+
+  protected override receiveControlPlaneUdp(
+    inPort: string, ipPkt: IPv4Packet, udp: UDPPacket,
+  ): boolean {
+      if ((udp.destinationPort === UDP_PORT_NTP || udp.sourcePort === UDP_PORT_NTP)) {
+        this.ntpAgent.handleUdp(inPort, ipPkt.sourceIP, udp);
+        return true;
+      }
+      if (udp.destinationPort === UDP_PORT_BFD_CONTROL) {
+        this.bfdAgent.handleUdp(inPort, ipPkt.sourceIP, udp);
+        return true;
+      }
+      if (udp.destinationPort === UDP_PORT_RADIUS_AUTH) {
+        this.radiusServer.handleUdp(inPort, ipPkt.sourceIP, udp);
+        return true;
+      }
+      if (udp.sourcePort === UDP_PORT_RADIUS_AUTH) {
+        this.radiusClient.handleUdp(inPort, ipPkt.sourceIP, udp);
+        return true;
+      }
+      if (udp.destinationPort === UDP_PORT_RADIUS_ACCT) {
+        this.radiusServer.handleAcctUdp(inPort, ipPkt.sourceIP, udp);
+        return true;
+      }
+      if (udp.sourcePort === UDP_PORT_RADIUS_ACCT) {
+        this.radiusAccountingClient.handleUdp(inPort, ipPkt.sourceIP, udp);
+        return true;
+      }
+      if (udp.destinationPort === UDP_PORT_RADIUS_COA) {
+        this.coaListener.handleUdp(inPort, ipPkt.sourceIP, udp);
+        return true;
+      }
+      if (udp.sourcePort === UDP_PORT_RADIUS_COA) {
+        this.coaClient.handleUdp(inPort, ipPkt.sourceIP, udp);
+        return true;
+      }
+      if ((udp.destinationPort === UDP_PORT_SNMP || udp.sourcePort === UDP_PORT_SNMP)) {
+        this.snmpAgent.handleUdp(inPort, ipPkt.sourceIP, udp);
+        return true;
+      }
+      if (udp.destinationPort === UDP_PORT_VXLAN) {
+        this.vxlanAgent.handleUdp(inPort, ipPkt.sourceIP, udp);
+        return true;
+      }
+    return false;
+  }
+
   protected override processIPv4(inPort: string, ipPkt: IPv4Packet): void {
     if (ipPkt.protocol === IP_PROTO_IGMP) {
       this.igmpAgent.handleIp(inPort, ipPkt.sourceIP, ipPkt);
@@ -310,51 +370,6 @@ export class HuaweiRouter extends Router {
       const inner = this.greAgent.handleIp(inPort, ipPkt.sourceIP, ipPkt);
       if (inner) this.processIPv4(inPort, inner);
       return;
-    }
-    if (ipPkt.protocol === IP_PROTO_UDP) {
-      const udp = ipPkt.payload as UDPPacket | undefined;
-      if (udp && udp.type === 'udp'
-          && (udp.destinationPort === UDP_PORT_NTP || udp.sourcePort === UDP_PORT_NTP)) {
-        this.ntpAgent.handleUdp(inPort, ipPkt.sourceIP, udp);
-        return;
-      }
-      if (udp && udp.type === 'udp' && udp.destinationPort === UDP_PORT_BFD_CONTROL) {
-        this.bfdAgent.handleUdp(inPort, ipPkt.sourceIP, udp);
-        return;
-      }
-      if (udp && udp.type === 'udp' && udp.destinationPort === UDP_PORT_RADIUS_AUTH) {
-        this.radiusServer.handleUdp(inPort, ipPkt.sourceIP, udp);
-        return;
-      }
-      if (udp && udp.type === 'udp' && udp.sourcePort === UDP_PORT_RADIUS_AUTH) {
-        this.radiusClient.handleUdp(inPort, ipPkt.sourceIP, udp);
-        return;
-      }
-      if (udp && udp.type === 'udp' && udp.destinationPort === UDP_PORT_RADIUS_ACCT) {
-        this.radiusServer.handleAcctUdp(inPort, ipPkt.sourceIP, udp);
-        return;
-      }
-      if (udp && udp.type === 'udp' && udp.sourcePort === UDP_PORT_RADIUS_ACCT) {
-        this.radiusAccountingClient.handleUdp(inPort, ipPkt.sourceIP, udp);
-        return;
-      }
-      if (udp && udp.type === 'udp' && udp.destinationPort === UDP_PORT_RADIUS_COA) {
-        this.coaListener.handleUdp(inPort, ipPkt.sourceIP, udp);
-        return;
-      }
-      if (udp && udp.type === 'udp' && udp.sourcePort === UDP_PORT_RADIUS_COA) {
-        this.coaClient.handleUdp(inPort, ipPkt.sourceIP, udp);
-        return;
-      }
-      if (udp && udp.type === 'udp'
-          && (udp.destinationPort === UDP_PORT_SNMP || udp.sourcePort === UDP_PORT_SNMP)) {
-        this.snmpAgent.handleUdp(inPort, ipPkt.sourceIP, udp);
-        return;
-      }
-      if (udp && udp.type === 'udp' && udp.destinationPort === UDP_PORT_VXLAN) {
-        this.vxlanAgent.handleUdp(inPort, ipPkt.sourceIP, udp);
-        return;
-      }
     }
     super.processIPv4(inPort, ipPkt);
   }

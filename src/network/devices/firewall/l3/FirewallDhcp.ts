@@ -9,9 +9,9 @@ import { WireDhcpChannel } from '../../../dhcp/DhcpServerChannel';
 import { DHCPPacket } from '../../../dhcp/DHCPPacket';
 import { buildDhcpServerReply } from '../../../dhcp/DhcpServerExchange';
 import type { IEventBus } from '../../../../events/EventBus';
+import { DHCP_SERVER_PORT, DHCP_CLIENT_PORT } from '@/network/core/WellKnownPorts';
 
-export const DHCP_SERVER_PORT = 67;
-export const DHCP_CLIENT_PORT = 68;
+
 
 export interface DhcpScope {
   readonly id: string;

@@ -9,7 +9,7 @@ import {
   type ConnectedIpv4Prefix,
 } from '../layers/internet/InternetLayer';
 import {
-  buildICMPError, mayGenerateICMPError, type ICMPErrorType,
+  buildICMPError, mayGenerateICMPError, ICMP_UNREACH_PORT, type ICMPErrorType,
 } from '../core/IcmpErrors';
 import { Logger } from '../core/Logger';
 import type { CiscoPingRow } from './shells/cisco/ciscoPing';
@@ -369,9 +369,12 @@ export class SwitchSvi {
             // Tout ce qui n'est pas DHCP tombait ici en silence, donc un
             // Catalyst ne pouvait etre le client d'aucun protocole UDP :
             // il emettait la question et n'entendait jamais la reponse.
-            this.host.deliverLocalUdp?.(
+            const claimed = this.host.deliverLocalUdp?.(
               workingIp.sourceIP, udp.destinationPort, udp.sourcePort, udp.payload,
-            );
+            ) ?? false;
+            if (!claimed) {
+              this.sendIcmpError(workingIp, 'destination-unreachable', ICMP_UNREACH_PORT);
+            }
           }
         }
         return true;
