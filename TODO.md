@@ -284,39 +284,6 @@ d'un coup. Le predicat `Router.isIcmpUnreachablesEnabled` lit
 magasin sans repenser la granularite ferait deux reglages pour une meme
 question. C'est un lot a part, avec sa propre mesure.
 
-### [udp] IGMP, PIM, VRRP et GRE de TRANSIT sont encore avales
-**Ce qui a ete ferme entre-temps.** Ces interceptions ne precedent plus
-la liste de controle ENTRANTE : elles sont passees de `handleFrame` et
-de la tete de `processIPv4` vers `receiveControlPlaneIpv4`, consultee
-juste apres la liste. HSRP et GLBP y etaient deja par
-`receiveControlPlaneUdp`, et leur presence dans `handleFrame` etait un
-DOUBLON qui l'ombrait. Reste la moitie TRANSIT, la couture etant
-consultee avant la decision « pour nous ou transit ».
-
-**Mesure, desormais faite sur le fil et non lue dans le code.** Maquette
-A — R — B, un paquet de A vers B portant un protocole de controle, donc
-un vrai transit adresse a B :
-
-    protocole 47 (GRE)   -> recu par B : 0
-    protocole 103 (PIM)  -> recu par B : 0
-    protocole 2 (IGMP)   -> recu par B : 0
-    protocole 1 (ICMP)   -> recu par B : 1   (TEMOIN)
-
-Le temoin est ce qui rend la mesure lisible : la maquette achemine bien,
-donc les trois zeros sont un avalement et non un cablage absent.
-
-**Ce que la mesure a appris et qui change le report.** L'ancienne
-redaction disait que deplacer la couture casserait IGMP, un rapport
-etant adresse au GROUPE. C'est verifie et c'est vrai pour
-`handleLocalDelivery` — mais la couture actuelle est posee AVANT la
-decision d'acheminement, et un cas de
-`probe-fhrp-passe-par-la-liste-entrante` mesure qu'un abonnement a
-239.1.1.1 parvient bien au routeur a travers elle. La regle qui reste a
-poser n'est donc pas un deplacement mais une GARDE : ne consulter la
-couture que si le paquet est adresse au routeur OU n'est pas unicast —
-ce qui couvre les groupes d'IGMP, PIM et VRRP comme le point de
-terminaison d'un tunnel GRE, et laisse filer le transit.
-
 ## Socle CLI
 
 ### [cli] l'ambiguite entre les DEUX moteurs n'est vue qu'au PREMIER mot

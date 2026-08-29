@@ -2404,7 +2404,7 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
     const originalPkt = ipPkt;
     if (!reinjected && this.deniedByInboundACL(inPort, originalPkt)) return;
 
-    if (this.receiveControlPlaneIpv4(inPort, ipPkt)) return;
+    if (this.addressedToUs(ipPkt) && this.receiveControlPlaneIpv4(inPort, ipPkt)) return;
 
     const natInbound = this.natEngine.translateInbound(ipPkt, inPort);
     if (natInbound) ipPkt = natInbound;
@@ -3124,6 +3124,15 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
   }
 
   protected receiveControlPlaneIpv4(_inPort: string, _ipPkt: IPv4Packet): boolean {
+    return false;
+  }
+
+  private addressedToUs(ipPkt: IPv4Packet): boolean {
+    const destIP = ipPkt.destinationIP;
+    if (classifyIpv4Destination(destIP) !== 'unicast') return true;
+    for (const [, port] of this.ports) {
+      if (port.ownsIPv4(destIP)) return true;
+    }
     return false;
   }
 
