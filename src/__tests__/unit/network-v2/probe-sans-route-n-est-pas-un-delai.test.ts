@@ -67,7 +67,7 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import { CiscoRouter } from '@/network/devices/CiscoRouter';
 import { LinuxPC } from '@/network/devices/LinuxPC';
 import { Cable } from '@/network/hardware/Cable';
-import { resetCounters, MACAddress } from '@/network/core/types';
+import { resetCounters, MACAddress, IPAddress, SubnetMask } from '@/network/core/types';
 import { resetDeviceCounters } from '@/network/devices/DeviceFactory';
 import { Logger } from '@/network/core/Logger';
 
@@ -116,6 +116,18 @@ describe('une destination sans route n\'est pas un delai', () => {
     expect(sansRoute).toContain('connect:errno=101');
     const refuse = await poste.executeCommand('openssl s_client -connect 10.0.0.1:9999');
     expect(refuse).toContain('connect:errno=111');
+  });
+
+  it('nmap donne la RAISON de nmap : net-unreach, pas no-response', async () => {
+    const { poste } = await maquette();
+    const lointain = new LinuxPC('LOIN');
+    new Cable('c2').connect(lointain.getPorts()[0], poste.getPorts()[1]);
+    lointain.getPorts()[0].configureIP(
+      new IPAddress('172.16.9.9'), new SubnetMask('255.255.255.0'));
+
+    const sortie = await poste.executeCommand('nmap --reason -p 22 172.16.9.9');
+    expect(sortie).toContain('net-unreach');
+    expect(sortie).not.toContain('no-response');
   });
 
   it('TEMOIN : un pair joignable qui n\'ecoute pas REFUSE, il n\'est pas injoignable', async () => {

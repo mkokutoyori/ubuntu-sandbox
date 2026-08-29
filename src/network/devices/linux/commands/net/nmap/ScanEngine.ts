@@ -22,6 +22,13 @@ export interface HostProbes {
   ackReaches?(ip: string, port: number): boolean;
 }
 
+const TCP_SCAN_REASON: Readonly<Record<TcpWireOutcome, string>> = {
+  open: 'syn-ack',
+  refused: 'reset',
+  timeout: 'no-response',
+  unreachable: 'net-unreach',
+};
+
 export interface PortResult {
   port: number;
   protocol: 'tcp' | 'udp';
@@ -85,7 +92,7 @@ function effectivePorts(options: NmapOptions): number[] {
 function tcpResult(options: NmapOptions, probes: HostProbes, ip: string, port: number): PortResult {
   const outcome = probes.tcpOutcome(ip, port);
   const state: PortState = outcome === 'open' ? 'open' : outcome === 'refused' ? 'closed' : 'filtered';
-  const reason = outcome === 'open' ? 'syn-ack' : outcome === 'refused' ? 'reset' : 'no-response';
+  const reason = TCP_SCAN_REASON[outcome];
   let service = serviceName(port, 'tcp');
   let version: string | undefined;
   if (options.versionScan && state === 'open') {

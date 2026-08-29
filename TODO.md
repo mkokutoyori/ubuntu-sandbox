@@ -257,6 +257,24 @@ pour le refus, `% Destination unreachable; gateway or host down` l'est
 pour telnet, mais rien ne dit que le client SSH ecrit le meme). L'ecrire
 sans capture serait l'invention que ce depot refuse.
 
+### [nmap] une adresse valide qu'aucun equipement ne porte est « Failed to resolve »
+**Constat.** `nmap -p 22 10.0.0.55` depuis une machine en 10.0.0.1/24 rend
+`Failed to resolve "10.0.0.55".` et compte `0 IP addresses (0 hosts up)`.
+`10.0.0.55` est un quadruplet pointe : il n'y a rien a resoudre, et un
+vrai nmap le SCANNE — il rapporte l'hote injoignable ou tous ses ports
+filtres, pas une panne de resolution. Meme famille que l'entree telnet
+ci-dessous : la cible est cherchee dans la TOPOLOGIE, et « pas trouvee »
+est traduit par « pas resolue ».
+
+**Mesure.** Faite sur une maquette a un commutateur ; l'adresse d'un
+equipement REEL mais hors route est bien scannee (`filtered … net-unreach`
+depuis que le verdict distingue l'absence de route), donc c'est bien la
+resolution par topologie, et elle seule, qui est en cause.
+
+**Raison du report.** Meme cause et meme correctif que l'entree telnet :
+ces commandes court-circuitent le fil. Le corriger isolement pour nmap
+deplacerait une phrase sans traiter la raison.
+
 ### [telnet] le chemin SCRIPTE annonce une panne de DNS pour une adresse
 **Constat.** `telnet 203.0.113.9` depuis un hote Linux rend
 `telnet: could not resolve 203.0.113.9/23: Name or service not known`.
