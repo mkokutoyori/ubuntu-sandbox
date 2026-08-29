@@ -21,7 +21,9 @@
 import { Equipment } from '../equipment/Equipment';
 import {
   classifyIpv4Destination, decrementForForwarding, ipv4HeaderProblem,
+  connectedPrefixesOfPort, type ConnectedIpv4Prefix,
 } from '../layers/internet/InternetLayer';
+import { linkDestinationFor } from '../layers/internet/Ipv4Egress';
 import { Port } from '../hardware/Port';
 import type { IPv4AddressOrigin } from '../hardware/Port';
 import { SocketTable } from '../core/SocketTable';
@@ -2292,9 +2294,23 @@ export abstract class EndHost extends Equipment {
     return true;
   }
 
+  private connectedIpv4Prefixes(): ConnectedIpv4Prefix[] {
+    const out: ConnectedIpv4Prefix[] = [];
+    for (const [, port] of this.ports) out.push(...connectedPrefixesOfPort(port));
+    return out;
+  }
+
   public sendIpv4FrameArpAware(outPortName: string, ipPkt: IPv4Packet, nextHopIP: IPAddress): void {
     const port = this.getPort(outPortName);
     if (!port) return;
+    const surLien = linkDestinationFor(nextHopIP, this.connectedIpv4Prefixes());
+    if (surLien) {
+      this.sendFrame(outPortName, {
+        srcMAC: port.getMAC(), dstMAC: surLien,
+        etherType: ETHERTYPE_IPV4, payload: ipPkt,
+      });
+      return;
+    }
     const cached = this.arpTable.get(nextHopIP.toString());
     if (cached) {
       this.sendFrame(outPortName, {
@@ -3603,10 +3619,15 @@ export abstract class EndHost extends Equipment {
 
     // ARP resolution (for next-hop, not necessarily the final destination)
     let nextHopMAC: MACAddress;
-    try {
-      nextHopMAC = await this.resolveARP(portName, route.nextHopIP, timeoutMs);
-    } catch {
-      return []; // ARP failed = no replies
+    const surLien = linkDestinationFor(route.nextHopIP, this.connectedIpv4Prefixes());
+    if (surLien) {
+      nextHopMAC = surLien;
+    } else {
+      try {
+        nextHopMAC = await this.resolveARP(portName, route.nextHopIP, timeoutMs);
+      } catch {
+        return []; // ARP failed = no replies
+      }
     }
 
     // Send pings
@@ -3683,9 +3704,10 @@ export abstract class EndHost extends Equipment {
     if (!myIP) return { success: false, rttMs: 0, ttl: 0 };
 
     const nextHopIpStr = route.nextHopIP.toString();
-    this.resolveArpSync(targetIP);
-    const arpEntry = this.arpTable.get(nextHopIpStr);
-    if (!arpEntry) return { success: false, rttMs: 0, ttl: 0 };
+    const surLien = linkDestinationFor(route.nextHopIP, this.connectedIpv4Prefixes());
+    if (!surLien) this.resolveArpSync(targetIP);
+    const destinationMac = surLien ?? this.arpTable.get(nextHopIpStr)?.mac;
+    if (!destinationMac) return { success: false, rttMs: 0, ttl: 0 };
 
     this.pingIdCounter++;
     const id = this.pingIdCounter;
@@ -3725,7 +3747,7 @@ export abstract class EndHost extends Equipment {
     }
 
     this.sendFrame(portName, {
-      srcMAC: port.getMAC(), dstMAC: arpEntry.mac,
+      srcMAC: port.getMAC(), dstMAC: destinationMac,
       etherType: ETHERTYPE_IPV4, payload: ipPkt,
     });
 
