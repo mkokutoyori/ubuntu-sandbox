@@ -305,6 +305,40 @@ increment a part, avec son propre temoin.
 
 ## Socle CLI
 
+### [cli] l'ambiguite entre les DEUX moteurs n'est vue qu'au PREMIER mot
+**Constat.** Le socle et le trie portent chacun une partie du
+vocabulaire, et une abreviation ambigue ENTRE les deux n'est detectee
+qu'au premier mot de la ligne. `rout rip` rend desormais
+`% Ambiguous command` — `rout` abrege `router` (socle) autant que
+`route-map` (trie) — mais `ip ro 10.0.0.0 255.0.0.0 192.168.1.1` est
+encore accepte en silence alors que `ro` abrege `route` autant que
+`routing` sous `ip`, et qu'un vrai IOS refuse.
+
+**Mesure.** Machine neuve, mode `config` : `rout` seul repondait DEJA
+`% Ambiguous command`, `rout rip` entrait en `config-router` — la meme
+abreviation tranchee differemment selon qu'un argument suit. Pire,
+`rout 1` entrait en `config-route-map` : le MEME prefixe resolu vers
+DEUX commandes selon le mot suivant. La trace montre que le trie n'est
+jamais atteint pour `rout rip` : le socle sert la commande avant lui, et
+`prefixIsUnambiguous` est le seul pont entre les deux vocabulaires.
+
+**Ce qui a ete ferme.** `firstWordIsAmbiguous` : quand le mot tape
+abrege a la fois le mot-cle du socle et un mot-cle DIFFERENT du trie, la
+ligne est ambigue quel que soit ce qui suit. `prefixMatches` ecartait ce
+cas par sa regle de longueur — un chemin du trie plus COURT que la
+frappe n'etait pas tenu pour un rival — et `trieSpellsWhatSocleAbbreviates`
+renoncait des que le mot tape abregeait le mot-cle du socle, ce qui est
+precisement le cas ambigu.
+
+**Raison du report.** Etendre la regle a TOUS les rangs demande de
+comparer rang par rang deux vocabulaires dont l'un (le trie) enumere des
+LIGNES et l'autre (le socle) des specs a arguments types — et le
+mecanisme qui tranche aujourd'hui au rang 0 s'appuie sur le fait que le
+premier mot est toujours un mot-cle, ce qui n'est plus vrai aux rangs
+suivants (`ip route <A.B.C.D>` a un argument au rang 2). Le faire en
+passant ferait de chaque argument un rival potentiel.
+
+
 ### [cli] les declarations d'arguments decrivent, elles ne tranchent pas
 Depuis le lot « une plage annoncee est une plage appliquee », un jeton
 NUMERIQUE hors d'un intervalle affiche par `?` est refuse. Le reste

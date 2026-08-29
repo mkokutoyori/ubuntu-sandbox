@@ -5604,9 +5604,20 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     for (const path of this.getActiveTrie().enumerateCommandPaths()) {
       const words = path.toLowerCase().split(' ');
       if (CiscoShellBase.sameKeywords(words, canonical)) continue;
+      if (CiscoShellBase.firstWordIsAmbiguous(typed, words, canonical)) return false;
       if (CiscoShellBase.prefixMatches(typed, words, canonical, absorbe)) return false;
     }
     return true;
+  }
+
+  private static firstWordIsAmbiguous(
+    typed: readonly string[], words: readonly string[], canonical: readonly string[],
+  ): boolean {
+    if (typed.length === 0 || words.length === 0 || canonical.length === 0) return false;
+    const tape = typed[0];
+    if (tape === canonical[0]) return false;
+    if (!canonical[0].startsWith(tape)) return false;
+    return words[0] !== canonical[0] && words[0].startsWith(tape);
   }
 
   /**
