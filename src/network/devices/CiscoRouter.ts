@@ -10,7 +10,6 @@
 import { Router } from './Router';
 import type { Ipv4SendRequest } from '../layers/internet/Ipv4Egress';
 import type { UdpSendRequest } from '../layers/transport/UdpEgress';
-import { isMulticastIpv4 } from '../core/ip';
 import { AgentRegistry } from './AgentRegistry';
 import { cdpToNeighborDTO, lldpToNeighborDTO } from './inspection/neighborConverters';
 import type { IRouterShell } from './shells/IRouterShell';
@@ -27,7 +26,6 @@ import { ETHERTYPE_LLDP, LLDP_MULTICAST_MAC } from '../lldp/types';
 import { HsrpAgent } from '../hsrp/HsrpAgent';
 import { UDP_PORT_HSRP } from '../hsrp/types';
 import { VrrpAgent } from '../vrrp/VrrpAgent';
-import { IP_PROTO_VRRP } from '../vrrp/types';
 import { NtpAgent } from '../ntp/NtpAgent';
 import { UDP_PORT_NTP } from '../ntp/types';
 import { GlbpAgent } from '../glbp/GlbpAgent';
@@ -35,9 +33,7 @@ import { UDP_PORT_GLBP } from '../glbp/types';
 import { BfdAgent } from '../bfd/BfdAgent';
 import { UDP_PORT_BFD_CONTROL } from '../bfd/types';
 import { IgmpAgent } from '../igmp/IgmpAgent';
-import { IP_PROTO_IGMP } from '../igmp/types';
 import { PimAgent } from '../pim/PimAgent';
-import { IP_PROTO_PIM } from '../pim/types';
 import { SyslogAgent } from '../syslog/SyslogAgent';
 import { RadiusClientAgent } from '../radius/RadiusClientAgent';
 import { RadiusServerAgent } from '../radius/RadiusServerAgent';
@@ -47,7 +43,6 @@ import { CoaClient } from '../radius/CoaClient';
 import { RadiusTcpClient, RadiusTcpServer } from '../radius/RadiusTcpTransport';
 import { UDP_PORT_RADIUS_AUTH, UDP_PORT_RADIUS_ACCT, UDP_PORT_RADIUS_COA } from '../radius/types';
 import { GreAgent } from '../gre/GreAgent';
-import { IP_PROTO_GRE } from '../gre/types';
 import { SnmpAgent } from '../snmp/SnmpAgent';
 import { v, vb } from '../snmp/types';
 import { registerRttMonOperation } from '../snmp/mibs/RttMonMib';
@@ -61,6 +56,7 @@ import { TcpStack } from '../tcp/TcpStack';
 import type { EthernetFrame, IPv4Packet, UDPPacket } from '../core/types';
 import type { IPAddress } from '../core/types';
 import { IP_PROTO_TCP } from '../core/types';
+import { dispatchControlPlaneIpv4 } from './router/controlPlaneIpv4';
 import type { NeighborDTO } from './inspection/DeviceStateView';
 import type { IEventBus } from '@/events/EventBus';
 import { CertificateVerifier as CertificateVerifierImpl } from '../pki/CertificateVerifier';
@@ -404,25 +400,13 @@ export class CiscoRouter extends Router {
   }
 
   protected override receiveControlPlaneIpv4(inPort: string, ipPkt: IPv4Packet): boolean {
-    if (ipPkt.protocol === IP_PROTO_IGMP) {
-      this.igmpAgent.handleIp(inPort, ipPkt.sourceIP, ipPkt);
-      return true;
-    }
-    if (ipPkt.protocol === IP_PROTO_PIM) {
-      this.pimAgent.handleIp(inPort, ipPkt.sourceIP, ipPkt);
-      return true;
-    }
-    if (ipPkt.protocol === IP_PROTO_VRRP
-        && isMulticastIpv4(ipPkt.destinationIP.toString())) {
-      this.vrrpAgent.handleIp(inPort, ipPkt.sourceIP, ipPkt);
-      return true;
-    }
-    if (ipPkt.protocol === IP_PROTO_GRE) {
-      const inner = this.greAgent.handleIp(inPort, ipPkt.sourceIP, ipPkt);
-      if (inner) this.processIPv4(inPort, inner, true);
-      return true;
-    }
-    return false;
+    return dispatchControlPlaneIpv4({
+      igmp: this.igmpAgent,
+      pim: this.pimAgent,
+      vrrp: this.vrrpAgent,
+      gre: this.greAgent,
+      reinject: (port, inner) => this.processIPv4(port, inner, true),
+    }, inPort, ipPkt);
   }
 
   protected override handleFrame(portName: string, frame: EthernetFrame): void {
