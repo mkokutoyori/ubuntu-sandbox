@@ -187,28 +187,49 @@ refusee plutot que rangee sans etre lue.
 
 ## Couche transport (BRD TCP/IP)
 
-### [ssh] le refus SSH parle OpenSSH sur TOUTES les plateformes
-**Constat.** `ssh: connect to host <h> port <p>: No route to host` est
-ecrit EN DUR dans cinq endroits — `terminal/ssh/wireSshLogin.ts` (x2),
-`CLITerminalSession.ts` (x2), `WindowsTerminalSession.ts` (x2),
-`LinuxTerminalSession.ts` — donc un routeur Cisco et une machine Windows
-rendent tous deux la phrase d'OpenSSH. C'est exactement le defaut que
-`telnetDialect.ts` a ferme pour telnet (« le client BSD sur un prompt
-IOS »), la moitie SSH n'ayant jamais ete faite.
+### [ssh] le refus SSH parle OpenSSH sur les CLI constructeur, et se trompe d'errno partout
+**Constat, en DEUX defauts distincts qu'il ne faut pas confondre.**
+
+**(a) La mauvaise plateforme.** `ssh: connect to host <h> port <p>: No
+route to host` est ecrit EN DUR dans cinq endroits —
+`terminal/ssh/wireSshLogin.ts` (x2), `CLITerminalSession.ts` (x2),
+`WindowsTerminalSession.ts` (x2), `LinuxTerminalSession.ts` — donc un
+routeur Cisco rend la phrase d'OpenSSH sur un prompt IOS. C'est le defaut
+que `telnetDialect.ts` a ferme pour telnet, la moitie SSH n'ayant jamais
+ete faite. **VERIFIE plutot que suppose, et le resultat corrige une
+premiere lecture de ce meme constat : WINDOWS EST CORRECT.** Le `ssh.exe`
+de Windows EST le portage d'OpenSSH (`C:\Windows\System32\OpenSSH\ssh.exe`,
+documentation Microsoft « OpenSSH for Windows overview », disponible en
+fonctionnalite a la demande depuis la version 1809), donc il rend bien
+les phrases d'OpenSSH. Seules les sessions CLI Cisco et Huawei sont en
+cause ; « corriger » Windows casserait ce qui est juste.
+
+**(b) Le mauvais errno, et celui-la vaut sur TOUTES les plateformes, y
+compris celles ou OpenSSH est le bon client.** `No route to host` est le
+texte d'EHOSTUNREACH (113), c'est-a-dire l'ARP qui echoue sur le lien ou
+une erreur ICMP revenue ; l'ABSENCE DE ROUTE est ENETUNREACH (101),
+`Network is unreachable` — nombres lus dans
+`include/uapi/asm-generic/errno.h`. Les sites concernes rendent
+`No route to host` des que la machine n'est pas trouvee dans la
+topologie, donc y compris quand aucune route ne dessert la destination.
 
 **Mesure.** Sur un routeur Cisco sans route vers la cible,
 `ssh -l admin 203.0.113.9` rend
-`ssh: connect to host 203.0.113.9 port 22: No route to host`. Une vraie
-machine IOS rend `% Destination unreachable; gateway or host down`.
-S'y ajoute que `No route to host` est EHOSTUNREACH, alors que l'absence
-de route est ENETUNREACH — `Network is unreachable` — meme sous Linux.
+`ssh: connect to host 203.0.113.9 port 22: No route to host` — mauvaise
+plateforme ET mauvais errno d'un coup.
 
-**Raison du report.** Le correctif est un `SshDialect` calque sur
-`TelnetDialect` (quatre plateformes, une table, les sites d'appel qui la
-lisent), plus le choix d'un mot par plateforme ; c'est un lot a part
-entiere et non l'appendice de celui qui vient de distinguer
-`unreachable` de `timeout` dans le transport. La matiere est prete :
-`SshError` porte desormais `CONNECTION_UNREACHABLE`.
+**Raison du report.** Pour (a), le correctif est un `SshDialect` calque
+sur `TelnetDialect`, et **la matiere manque** : le message du client SSH
+d'IOS pour une absence de route n'est atteste par aucune source
+atteignable depuis ce reseau (`% Connection refused by remote host` l'est
+pour le refus, `% Destination unreachable; gateway or host down` l'est
+pour telnet, mais rien ne dit que le client SSH ecrit le meme). L'ecrire
+sans capture serait l'invention que ce depot refuse. Pour (b), le
+correctif demande de distinguer « aucune route » de « route mais pas de
+reponse », ce que `TcpStack.hasEgressTo` sait desormais faire — mais ces
+sites interrogent la TOPOLOGIE et non la pile, donc le corriger
+proprement rejoint le chantier des chemins scriptes ci-dessous. La
+matiere transport est prete : `SshError` porte `CONNECTION_UNREACHABLE`.
 
 ### [telnet] le chemin SCRIPTE annonce une panne de DNS pour une adresse
 **Constat.** `telnet 203.0.113.9` depuis un hote Linux rend
