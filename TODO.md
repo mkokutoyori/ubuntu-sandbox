@@ -1169,6 +1169,20 @@ défauts — la méthode vaut d'être reprise sur le reliquat.
   open-ports` — il n'existe donc pas de capture texte a lire, et les
   blancs sont precisement l'information cherchee.
 
+- Un tunnel GRE et un tunnel VXLAN DIFFUSENT leur paquet exterieur —
+  ouvert. `GreAgent` et `VxlanAgent` batissent le paquet exterieur puis
+  l'emettent avec `destinationMac: MACAddress.broadcast()`, alors que ce
+  paquet est un unicast IPv4 ordinaire : une vraie machine le route et le
+  resout par ARP, vers UNE adresse MAC. Diffuser signifie que toutes les
+  stations du segment recoivent la charge encapsulee — un tunnel qui fuit
+  son contenu a tout le LAN. `NhrpEngine` fait mieux sans etre juste : il
+  lit un cache et retombe sur la diffusion quand il est froid, au lieu de
+  mettre en file et de resoudre. Le correctif est l'offre de la couche
+  internet que le BRD §3.3 decrit (`send({ dst, protocol, ... })`) et que
+  `Router.sendIpv4FrameArpAware` sait deja realiser ; il n'est pas fait
+  ici parce qu'il porte le meme lot que la descente de PIM, VRRP, HSRP,
+  GLBP et IGMP, tous encore constructeurs de leur propre trame.
+
 - `show tcp brief` et `show sockets` annoncent un en-tete et ne rendent
   JAMAIS de ligne — ouvert. `showTcpBrief()` et `showSockets()`
   (`cisco/CiscoCommonShow.ts`) rendent une CONSTANTE : une ligne
