@@ -8,15 +8,14 @@ import {
   type PimBootstrapBody, type PimCandidateRpBody,
   createDefaultPimConfig, defaultInterfaceRuntime, makeNeighborKey, makeMroutKey,
   compareDrCandidate, compareBsrCandidate, getOption, matchesGroupRange, ipToUint32,
-  IP_PROTO_PIM, PIM_ALL_ROUTERS, PIM_ALL_ROUTERS_MAC,
+  IP_PROTO_PIM, PIM_ALL_ROUTERS,
 } from './types';
 import {
-  MACAddress,
   IPAddress,
   type EthernetFrame,
   type IPv4Packet,
 } from '../core/types';
-import { buildIpv4Frame } from '../layers/internet/InternetLayer';
+import type { Ipv4SendRequest } from '../layers/internet/Ipv4Egress';
 import { Logger } from '../core/Logger';
 
 export interface PimHost {
@@ -26,6 +25,7 @@ export interface PimHost {
   getPort(name: string): import('../hardware/Port').Port | undefined;
   getPorts(): import('../hardware/Port').Port[];
   sendFrame(portName: string, frame: EthernetFrame): void;
+  sendIpv4Packet(request: Ipv4SendRequest): boolean;
 }
 
 export class PimAgent {
@@ -646,14 +646,13 @@ export class PimAgent {
       senderIp: srcIp.toString(),
     };
     fill(payload);
-    const eth = buildIpv4Frame({
-      sourceIp: srcIp, destinationIp: new IPAddress(PIM_ALL_ROUTERS),
-      sourceMac: port.getMAC(), destinationMac: new MACAddress(PIM_ALL_ROUTERS_MAC),
+    if (!this.host.sendIpv4Packet({
+      destination: new IPAddress(PIM_ALL_ROUTERS), source: srcIp,
+      iface,
       protocol: IP_PROTO_PIM, ttl: 1,
       payload, payloadBytes: bodyBytes,
-      options: { tos: 0xc0, flags: 0 },
-    });
-    this.host.sendFrame(iface, eth);
+      tos: 0xc0, flags: 0,
+    })) return;
     this.getBus().publish({
       topic: 'pim.packet.sent',
       payload: {
@@ -772,14 +771,13 @@ export class PimAgent {
       options: opts,
       senderIp: srcIp.toString(),
     };
-    const eth = buildIpv4Frame({
-      sourceIp: srcIp, destinationIp: new IPAddress(PIM_ALL_ROUTERS),
-      sourceMac: port.getMAC(), destinationMac: new MACAddress(PIM_ALL_ROUTERS_MAC),
+    if (!this.host.sendIpv4Packet({
+      destination: new IPAddress(PIM_ALL_ROUTERS), source: srcIp,
+      iface: rt.iface,
       protocol: IP_PROTO_PIM, ttl: 1,
       payload, payloadBytes: 8 + opts.length * 8,
-      options: { tos: 0xc0, flags: 0 },
-    });
-    this.host.sendFrame(rt.iface, eth);
+      tos: 0xc0, flags: 0,
+    })) return;
     rt.lastHelloSentMs = this.nowMs();
     this.getBus().publish({
       topic: 'pim.packet.sent',

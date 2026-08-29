@@ -14,12 +14,13 @@
  * to speak (`isSpeakingState`).
  */
 import type { IEventBus } from '@/events/EventBus';
+import type { Ipv4SendRequest } from '../layers/internet/Ipv4Egress';
 import {
   getDefaultScheduler, type IScheduler, type TimerHandle,
 } from '@/events/Scheduler';
 import {
   IPAddress, MACAddress, ETHERTYPE_ARP,
-  type ARPPacket, type EthernetFrame,
+  type ARPPacket,
 } from '../core/types';
 import {
   normalizeVirtualMac,
@@ -233,11 +234,11 @@ implements FhrpDataPlane {
    * we emit can synchronously trigger a peer's reply, which must not
    * recurse into another emission for the same group.
    */
-  protected sendGuarded(g: G, frame: EthernetFrame): void {
+  protected sendGuarded(g: G, request: Omit<Ipv4SendRequest, 'iface'>): void {
     const key = this.keyOf(g.iface, this.groupId(g));
     if (this.emitting.has(key)) return;
     this.emitting.add(key);
-    try { this.host.sendFrame(g.iface, frame); }
+    try { this.host.sendIpv4Packet({ ...request, iface: g.iface }); }
     finally { this.emitting.delete(key); }
   }
 

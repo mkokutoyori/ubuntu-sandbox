@@ -127,10 +127,10 @@ import type { FhrpDataPlane } from '../fhrp/types';
 import { DHCPServer, type DhcpUtilizationCrossing } from '../dhcp/DHCPServer';
 import {
   classifyIpv4Destination, decrementForForwarding, isDirectedBroadcast,
-  ipv4HeaderProblem, buildIpv4Frame,
+  ipv4HeaderProblem,
 } from '../layers/internet/InternetLayer';
 import {
-  DEFAULT_IPV4_TTL, ipv4HeaderOptionsOf, linkDestinationFor, requiresNamedInterface,
+  DEFAULT_IPV4_TTL, ipv4HeaderOptionsOf, requiresNamedInterface, sendOnNamedInterface,
   type Ipv4SendRequest,
 } from '../layers/internet/Ipv4Egress';
 import {
@@ -4965,18 +4965,10 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
     const options = ipv4HeaderOptionsOf(request);
 
     if (requiresNamedInterface(request.destination)) {
-      if (!request.iface) return false;
-      const port = this.ports.get(request.iface);
-      if (!port || !port.isOperationallyUp()) return false;
-      const source = request.source ?? port.getIPAddress();
-      if (!source) return false;
-      return this.sendFrame(request.iface, buildIpv4Frame({
-        sourceIp: source, destinationIp: request.destination,
-        sourceMac: port.getMAC(), destinationMac: linkDestinationFor(request.destination),
-        protocol: request.protocol, ttl,
-        payload: request.payload, payloadBytes: request.payloadBytes,
-        options,
-      }));
+      return sendOnNamedInterface({
+        getPort: (name) => this.getPort(name),
+        sendFrame: (name, frame) => this.sendFrame(name, frame),
+      }, request);
     }
 
     const route = this.lookupRoute(request.destination);

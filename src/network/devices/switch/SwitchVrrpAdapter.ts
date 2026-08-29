@@ -15,6 +15,7 @@
  */
 
 import type { EthernetFrame } from '../../core/types';
+import { sendOnNamedInterface } from '../../layers/internet/Ipv4Egress';
 import { MACAddress, IPAddress, SubnetMask } from '../../core/types';
 import type { Port } from '../../hardware/Port';
 import type { FhrpHost } from '../../fhrp/types';
@@ -39,7 +40,7 @@ export interface SwitchVlanBridge {
  * `bridge` is its VLAN forwarding surface (used for Vlanif egress).
  */
 export function makeSwitchVrrpHost(sw: Switch, bridge: SwitchVlanBridge): FhrpHost {
-  return {
+  const host: FhrpHost = {
     id: sw.getId(),
     name: sw.getName(),
     getHostname: () => sw.getHostname(),
@@ -54,7 +55,9 @@ export function makeSwitchVrrpHost(sw: Switch, bridge: SwitchVlanBridge): FhrpHo
       if (vlan === null) { sw.sendFrame(portName, frame); return; }
       bridge.egressOnVlan(vlan, frame);
     },
+    sendIpv4Packet: (request) => sendOnNamedInterface(host, request),
   };
+  return host;
 }
 
 /**
@@ -99,6 +102,8 @@ function makeVlanifSyntheticPort(
     getSubnetMask: () => svi?.mask ?? null,
     getIsUp: () => !!svi?.adminUp,
     isConnected: () =>
+      !!svi?.adminUp && bridge.vlanHasActivePort(vlan),
+    isOperationallyUp: () =>
       !!svi?.adminUp && bridge.vlanHasActivePort(vlan),
     getEquipmentId: () => sw.getId(),
     getCable: () => null,

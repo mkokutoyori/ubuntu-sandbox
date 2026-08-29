@@ -11,12 +11,10 @@ import {
   UDP_PORT_HSRP, HSRP_MULTICAST_V1, HSRP_MULTICAST_V2,
 } from './types';
 import {
-  MACAddress,
   IPAddress,
   type UDPPacket,
   IP_PROTO_UDP,
 } from '../core/types';
-import { buildIpv4Frame } from '../layers/internet/InternetLayer';
 import { Logger } from '../core/Logger';
 import { FhrpAgentBase } from '../fhrp/FhrpAgentBase';
 import type { FhrpHost, FhrpRecomputeReason } from '../fhrp/types';
@@ -247,18 +245,17 @@ export class HsrpAgent extends FhrpAgentBase<HsrpGroupRuntime> {
       length: 8 + 20, checksum: 0, payload,
     };
     const dstIp = new IPAddress(g.version === 2 ? HSRP_MULTICAST_V2 : HSRP_MULTICAST_V1);
-    const eth = buildIpv4Frame({
-      sourceIp: srcIp, destinationIp: dstIp,
-      sourceMac: port.getMAC(), destinationMac: multicastMacFor(dstIp),
+    const request = {
+      destination: dstIp, source: srcIp,
       protocol: IP_PROTO_UDP, ttl: 1,
       payload: udp, payloadBytes: udp.length,
-      options: { flags: 0 },
-    });
+      flags: 0,
+    };
     // A resign is edge-triggered (once per active→non-active transition)
     // and often fires inside the synchronous receive cascade where the
     // re-entrancy guard is held — send it directly.
-    if (opcode === 'resign') this.host.sendFrame(g.iface, eth);
-    else this.sendGuarded(g, eth);
+    if (opcode === 'resign') this.host.sendIpv4Packet({ ...request, iface: g.iface });
+    else this.sendGuarded(g, request);
     this.getBus().publish({
       topic: 'hsrp.packet.sent',
       payload: {
@@ -430,7 +427,3 @@ export class HsrpAgent extends FhrpAgentBase<HsrpGroupRuntime> {
   }
 }
 
-function multicastMacFor(ip: IPAddress): MACAddress {
-  const octets = ip.getOctets();
-  return new MACAddress([0x01, 0x00, 0x5e, octets[1] & 0x7f, octets[2], octets[3]]);
-}

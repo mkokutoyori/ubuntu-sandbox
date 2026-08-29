@@ -1240,12 +1240,50 @@ n'émet pas du tout — et son propre témoin GRE a attrapé, non pas un
 défaut du produit, mais un import fautif dans la sonde (`IP_PROTO_GRE`
 vit dans `gre/types.ts`, pas dans `core/types.ts`).
 
-**Reste à descendre par cette offre** : PIM, VRRP, HSRP et GLBP, qui
-émettent aujourd'hui correctement (multicast lien-local, bonne interface,
-bonne adresse de couche lien) mais bâtissent leur trame eux-mêmes ; et
-IGMP, dont le cas est particulier — son en-tête porte l'option Router
-Alert (`ihl: 6`), que ni `createIPv4Packet` ni cette offre ne savent
-poser. Ils sont inscrits au `TODO.md`.
+**PIM, VRRP, HSRP et GLBP sont descendus.** Ils émettaient DÉJÀ
+correctement — bon groupe, bonne interface, bonne adresse de couche lien,
+bon TTL — donc ce lot ne corrige aucun défaut de comportement : il retire
+la duplication, et le dire franchement importe, la plupart des cas de sa
+sonde passant des deux côtés.
+
+Ce que la duplication coûtait est mesurable. Chaque moteur bâtissait sa
+trame et portait **en dur l'adresse de couche lien de son groupe** —
+`VRRP_MULTICAST_MAC`, `GLBP_MULTICAST_MAC`, `PIM_ALL_ROUTERS_MAC` —
+c'est-à-dire un second fait qui doit s'accorder avec le premier,
+l'adresse de groupe, sans que rien ne l'y oblige ; HSRP portait
+`multicastMacFor`, une SECONDE implantation de la dérivation que
+`ipv4MulticastToMac` fait déjà. `linkDestinationFor` la dérive désormais
+de l'adresse du groupe : les deux faits n'en font plus qu'un.
+
+`FhrpAgentBase.sendGuarded` — le point d'émission unique de la famille,
+avec sa garde de ré-entrance — prend une requête au lieu d'une trame, si
+bien que les trois FHRP descendent par une seule modification. Le
+commutateur les héberge aussi : `makeSwitchVrrpHost` réalise l'offre en
+lisant **le même corps partagé** (`sendOnNamedInterface`) que `Router` et
+`EndHost`, plutôt qu'une troisième copie. Le port synthétique `Vlanif`
+gagne l'`isOperationallyUp` qui lui manquait — c'était un `Port` par
+`cast` dont l'appel aurait levé.
+
+**Sur quelle autorité ces valeurs sont vérifiées**, et ce n'est pas la
+même pour les quatre : VRRP est une norme ouverte (RFC 5798, Standards
+Track) et 224.0.0.18 une affectation IANA ; PIM-SM de même (RFC 7761),
+avec 224.0.0.13 « All PIM Routers ». **HSRP est propriétaire Cisco** — la
+RFC 2281 existe mais elle est INFORMATIVE, pas Standards Track, et ne
+décrit que la version 1 ; la version 2 (224.0.0.102, UDP 1985) n'a aucune
+RFC. **GLBP est propriétaire Cisco et n'a aucune RFC du tout.** Pour ces
+deux-là l'autorité est la documentation de Cisco, et citer une RFC serait
+invoquer un texte qui ne fait pas foi. La dérivation de l'adresse de
+couche lien tient, elle, à l'affectation par l'IANA du bloc OUI 01:00:5E
+aux adresses multicast IPv4.
+
+Fermé dans le même lot, un piège laissé par la phase 7 dans son propre
+helper : `linkDestinationFor` rendait la DIFFUSION pour une destination
+unicast — exactement le défaut que cette phase venait de fermer sur les
+tunnels. Elle rend `null`, et le régime « interface nommée » refuse.
+
+**Reste** : IGMP, dont le cas est particulier — son en-tête porte
+l'option Router Alert (`ihl: 6`), que ni `createIPv4Packet` ni cette
+offre ne savent poser. Inscrit au `TODO.md`.
 
 ---
 

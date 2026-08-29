@@ -1203,15 +1203,12 @@ défauts — la méthode vaut d'être reprise sur le reliquat.
   open-ports` — il n'existe donc pas de capture texte a lire, et les
   blancs sont precisement l'information cherchee.
 
-- PIM, VRRP, HSRP et GLBP batissent encore leur propre trame — ouvert.
-  Ils emettent CORRECTEMENT (multicast lien-local, bonne interface, bonne
-  adresse de couche lien), donc ce n'est pas un defaut de comportement :
-  c'est la descente qui reste a faire par
-  `Router.sendIpv4Packet` (BRD §3.3), dont le regime « interface nommee »
-  est ecrit pour eux. IGMP est un cas a part et ne peut PAS y passer en
-  l'etat : son en-tete porte l'option Router Alert (`ihl: 6`, RFC 2113,
-  exigee par la RFC 2236 §2) que ni `createIPv4Packet` ni l'offre ne
-  savent poser — l'y forcer retirerait l'option en silence.
+- IGMP ne peut pas descendre par l'offre de la couche internet — ouvert.
+  Son en-tete porte l'option Router Alert (`ihl: 6`), exigee sur chaque
+  message IGMP, que ni `createIPv4Packet` ni `Ipv4SendRequest` ne savent
+  poser : les deux fixent `ihl: 5` et `totalLength = 20 + n`. L'y forcer
+  retirerait l'option en SILENCE. PIM, VRRP, HSRP et GLBP, eux, sont
+  descendus.
 
 - Un tunnel GRE et un tunnel VXLAN DIFFUSENT leur paquet exterieur —
   FERME. `GreAgent` et `VxlanAgent` batissent le paquet exterieur puis
