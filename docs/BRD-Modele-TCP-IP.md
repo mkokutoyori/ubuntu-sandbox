@@ -1604,6 +1604,49 @@ tombe. Les deux autres sont nommés — le cas EHOSTUNREACH passe des deux
 côtés et le doit, c'est celui qui était déjà juste et c'est justement
 pour cela que le défaut se voyait mal.
 
+#### Lot 7 — `ssh` parle la langue de sa plateforme
+
+Le lot 6 avait inscrit ce chantier au `TODO.md` plutôt que de l'écrire,
+**faute de matière** : rien n'attestait ce qu'un client SSH d'IOS écrit.
+La recherche l'a fournie, et c'est elle qui a débloqué le lot :
+
+| issue | IOS, attesté |
+|---|---|
+| absence de route | `% Destination unreachable; gateway or host down` |
+| refus | `% Connection refused by remote host` |
+| délai | `% Connection timed out; remote host not responding` |
+
+Les deux premières sont MOT POUR MOT celles du client telnet d'IOS, ce
+qui se comprend — les deux clients partagent le chemin de connexion TCP
+de la plateforme — et la troisième est rapportée sur un Catalyst 4900,
+commande à l'appui. Côté VRP, la documentation Huawei donne la sortie du
+client STelnet (`Trying … / Press CTRL+K to abort / Error: Failed to
+connect to the remote host`), UNE seule formule pour toutes les causes :
+la table VRP est donc celle que `VRP_TELNET` portait déjà.
+
+**Où était le défaut, précisément.** Le client SSH sortant d'IOS comme
+celui de VRP **délègue au client Linux** (`runSshClient`) et rend sa
+sortie TELLE QUELLE : ils ne parlaient donc pas OpenSSH par recopie d'une
+phrase, ils EXÉCUTAIENT OpenSSH. Le correctif ne réécrit pas cette
+délégation — il fait trancher la JOIGNABILITÉ par le routeur lui-même,
+sur sa propre table (`hasEgressTo`), avant de déléguer la session ; même
+forme que le correctif telnet du lot 5. `sshDialect.ts` porte les trois
+tables, et `CLITerminalSession` gagne le `getSshDialect()` qui manquait à
+côté du `getTelnetDialect()` déjà là, chaque session vendeur le
+réalisant.
+
+**Linux et Windows ne sont pas touchés, et c'est délibéré** : les phrases
+d'OpenSSH y sont JUSTES, le `ssh.exe` de Windows étant le portage
+d'OpenSSH. Une première lecture de ce défaut comptait Windows parmi les
+fautifs ; la vérification l'a corrigée.
+
+Reste non attesté et écrit comme tel : le nom NON RÉSOLU côté SSH d'IOS.
+
+`probe-ssh-parle-la-langue-de-la-plateforme.test.ts` (6 cas) est
+discriminé : 2 tombent, et ce sont les deux qui observent une VRAIE
+machine. Les trois cas de table ne peuvent pas discriminer — le module
+est nouveau — et le témoin Linux passe des deux côtés.
+
 ---
 
 ---

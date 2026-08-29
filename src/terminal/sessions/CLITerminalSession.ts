@@ -14,6 +14,8 @@
  */
 
 import type { Equipment, ICLIDevice } from '@/network';
+import { sshUnreachableReason } from '@/terminal/ssh/wireSshLogin';
+import type { SshDialect } from '@/terminal/ssh/sshDialect';
 import {
   TerminalSession, TerminalTheme, SessionType,
   KeyEvent, InputMode,
@@ -126,6 +128,8 @@ export abstract class CLITerminalSession extends TerminalSession {
    * platform's voice.
    */
   protected abstract getTelnetDialect(): TelnetDialect;
+
+  protected abstract getSshDialect(): SshDialect;
 
   /**
    * Command-owned interactive flows (IoC): the DEVICE SHELL declares which
@@ -652,7 +656,7 @@ export abstract class CLITerminalSession extends TerminalSession {
     const sourceIp = this.firstLocalIp();
     const localHostname = this.device.getHostname?.() ?? '';
     if (!sourceIp) {
-      return [{ type: 'output', outputLines: [`ssh: connect to host ${host} port ${port}: Network is unreachable`] }];
+      return [{ type: 'output', outputLines: [this.getSshDialect().unreachable(host, port)] }];
     }
     // Matches the exec-mode client's own default (runOutboundSshClient) —
     // real IOS/VRP `ssh host` with no `-l`/`user@` defaults to 'admin'.
@@ -662,19 +666,18 @@ export abstract class CLITerminalSession extends TerminalSession {
     // client can actually reach across the cable plant (docs/PRD-Link-
     // State.md §2.1 P6) — a pulled cable stops the target from being
     // found at all, not just from reporting a fake "interface down".
+    const dialect = this.getSshDialect();
     const found = findHostByAddress(host, undefined, this.device);
     if (!found) {
-      // A numeric IPv4 that nothing reachable owns is a routing failure
-      // ("No route to host"); a name that fails to resolve at all keeps
-      // the DNS-style error — matches the same distinction LinuxSshClient
-      // already draws for the non-interactive path.
       const outputLines = [IPAddress.isValid(host)
-        ? `ssh: connect to host ${host} port ${port}: No route to host`
-        : `ssh: Could not resolve hostname ${host}: Name or service not known`];
+        ? (sshUnreachableReason(this.device, host) === 'Network is unreachable'
+          ? dialect.unreachable(host, port)
+          : dialect.timedOut(host, port))
+        : dialect.unresolved(host, port)];
       return [{ type: 'output', outputLines }];
     }
     if (found.poweredOff || found.interfaceDown) {
-      return [{ type: 'output', outputLines: [`ssh: connect to host ${host} port ${port}: No route to host`] }];
+      return [{ type: 'output', outputLines: [dialect.timedOut(host, port)] }];
     }
 
     type RemoteSurface = {
@@ -694,7 +697,7 @@ export abstract class CLITerminalSession extends TerminalSession {
       : remote.getSshHost?.()?.isSshActive?.() ?? false;
     if (!sshActive) {
       remote.recordSshLogin?.(user, sourceIp, localHostname, false);
-      return [{ type: 'output', outputLines: [`ssh: connect to host ${host} port ${port}: Connection refused`] }];
+      return [{ type: 'output', outputLines: [dialect.refused(host, port)] }];
     }
 
     const gate = remote.sshdAcceptsLogin?.(user) ?? remote.getSshHost?.()?.acceptsLogin?.(user) ?? { ok: true };

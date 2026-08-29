@@ -212,99 +212,23 @@ expose `resolvePath` et `sendFrameNdpAware`, et `selectIpv6SourceAddress`
 repond a « quelle adresse source ».
 
 
-### [ssh] le refus SSH parle OpenSSH sur les CLI constructeur, et se trompe d'errno partout
-**Constat, en DEUX defauts distincts qu'il ne faut pas confondre.**
+### [ssh] le nom NON RESOLU cote SSH d'IOS n'est pas atteste
+**Constat.** `sshDialect.ts` porte les trois issues d'echec d'IOS sur
+transcription reelle — absence de route, refus, delai. La quatrieme, le
+nom qu'IOS ne sait pas traduire, ne l'est pas : `% Bad IP address or host
+name` est ce qu'IOS rend pour une saisie qu'il ne sait pas lire, et c'est
+ce que la table porte, mais aucune capture ne montre le client SSH dans
+ce cas precis.
 
-**(a) La mauvaise plateforme.** `ssh: connect to host <h> port <p>: No
-route to host` est ecrit EN DUR dans cinq endroits —
-`terminal/ssh/wireSshLogin.ts` (x2), `CLITerminalSession.ts` (x2),
-`WindowsTerminalSession.ts` (x2), `LinuxTerminalSession.ts` — donc un
-routeur Cisco rend la phrase d'OpenSSH sur un prompt IOS. C'est le defaut
-que `telnetDialect.ts` a ferme pour telnet, la moitie SSH n'ayant jamais
-ete faite. **VERIFIE plutot que suppose, et le resultat corrige une
-premiere lecture de ce meme constat : WINDOWS EST CORRECT.** Le `ssh.exe`
-de Windows EST le portage d'OpenSSH (`C:\Windows\System32\OpenSSH\ssh.exe`,
-documentation Microsoft « OpenSSH for Windows overview », disponible en
-fonctionnalite a la demande depuis la version 1809), donc il rend bien
-les phrases d'OpenSSH. Seules les sessions CLI Cisco et Huawei sont en
-cause ; « corriger » Windows casserait ce qui est juste.
+**Mesure.** Les trois autres viennent de transcriptions (une montrant
+`ssh -l SSHadmin 192.168.1.1` suivi de `% Destination unreachable;
+gateway or host down`, une autre `ssh -v 2 -l mariano 192.168.4.17` suivi
+de `% Connection timed out; remote host not responding`) ; aucune
+recherche n'a rendu l'equivalent pour un nom.
 
-**(b) Le mauvais errno, et celui-la vaut sur TOUTES les plateformes, y
-compris celles ou OpenSSH est le bon client.** `No route to host` est le
-texte d'EHOSTUNREACH (113), c'est-a-dire l'ARP qui echoue sur le lien ou
-une erreur ICMP revenue ; l'ABSENCE DE ROUTE est ENETUNREACH (101),
-`Network is unreachable` — nombres lus dans
-`include/uapi/asm-generic/errno.h`. Les sites concernes rendent
-`No route to host` des que la machine n'est pas trouvee dans la
-topologie, donc y compris quand aucune route ne dessert la destination.
-
-**Mesure.** Sur un routeur Cisco sans route vers la cible,
-`ssh -l admin 203.0.113.9` rend
-`ssh: connect to host 203.0.113.9 port 22: No route to host` — mauvaise
-plateforme ET mauvais errno d'un coup.
-
-**(b) est FERME** : `sshUnreachableReason` lit la pile
-(`TcpStack.hasEgressTo`) et rend `Network is unreachable` quand aucune
-route ne dessert la destination, `No route to host` quand une route
-existe mais que personne ne repond ; les deux chemins — interactif
-(`wireSshLogin`) et scripte (`LinuxSshClient`) — la lisent.
-
-**Raison du report de (a).** Le correctif est un `SshDialect` calque sur
-`TelnetDialect`, et la matiere est PARTIELLE. Ce qui est desormais
-atteste pour le client SSH d'IOS, et qui ne l'etait pas quand cette
-entree a ete ouverte :
-
-- **absence de route** : `% Destination unreachable; gateway or host down`
-  — transcription reelle montrant `ssh -l SSHadmin 192.168.1.1` suivi de
-  cette ligne, plus un fil de Cisco Community sur le meme message ; c'est
-  donc bien le MEME texte que telnet, ce qui se comprend, les deux
-  clients partageant le chemin de connexion TCP d'IOS ;
-- **refus** : `% Connection refused by remote host`.
-
-Cote VRP, atteste aussi depuis : le client STelnet rend
-
-    Trying 10.1.1.1 ...
-    Press CTRL+K to abort
-    Error: Failed to connect to the remote host
-
-c'est-a-dire EXACTEMENT ce que `VRP_TELNET` porte deja — une seule
-formule pour toutes les causes, comme sur la boite. La table VRP est donc
-ecrivable telle quelle.
-
-Le DELAI d'IOS est atteste depuis, et il n'a donc plus besoin d'etre
-deduit : des utilisateurs rapportent `ssh -v 2 -l mariano 192.168.4.17`
-sur un Catalyst 4900 rendant `% Connection timed out; remote host not
-responding` — le MEME texte que telnet, comme pour l'absence de route.
-Les trois issues d'echec d'IOS sont donc ecrivables :
-
-| issue | texte atteste |
-|---|---|
-| absence de route | `% Destination unreachable; gateway or host down` |
-| refus | `% Connection refused by remote host` |
-| delai | `% Connection timed out; remote host not responding` |
-
-Ne manque plus que le nom NON RESOLU cote SSH d'IOS. La table telnet du
-depot a deja tranche ce cas ; reprendre sa decision garde les deux
-clients d'accord, ce qui est mieux que d'en inventer une seconde, et
-c'est a dire dans le code qui l'ecrira.
-
-### [nmap] une adresse valide qu'aucun equipement ne porte est « Failed to resolve »
-**Constat.** `nmap -p 22 10.0.0.55` depuis une machine en 10.0.0.1/24 rend
-`Failed to resolve "10.0.0.55".` et compte `0 IP addresses (0 hosts up)`.
-`10.0.0.55` est un quadruplet pointe : il n'y a rien a resoudre, et un
-vrai nmap le SCANNE — il rapporte l'hote injoignable ou tous ses ports
-filtres, pas une panne de resolution. Meme famille que l'entree telnet
-ci-dessous : la cible est cherchee dans la TOPOLOGIE, et « pas trouvee »
-est traduit par « pas resolue ».
-
-**Mesure.** Faite sur une maquette a un commutateur ; l'adresse d'un
-equipement REEL mais hors route est bien scannee (`filtered … net-unreach`
-depuis que le verdict distingue l'absence de route), donc c'est bien la
-resolution par topologie, et elle seule, qui est en cause.
-
-**Raison du report.** Meme cause et meme correctif que l'entree telnet :
-ces commandes court-circuitent le fil. Le corriger isolement pour nmap
-deplacerait une phrase sans traiter la raison.
+**Report.** Le cas est le moins frequent des quatre et la valeur portee
+est plausible plutot qu'inventee — mais elle n'est pas mesuree, et c'est
+ecrit ici pour que personne ne la prenne pour telle.
 
 ### [telnet] le chemin SCRIPTE annonce une panne de DNS pour une adresse
 **Constat.** `telnet 203.0.113.9` depuis un hote Linux rend

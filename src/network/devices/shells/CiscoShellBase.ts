@@ -14,6 +14,7 @@
 
 import { CiscoFileSystem } from './cisco/CiscoFileSystem';
 import { IPAddress } from '@/network/core/types';
+import { IOS_SSH } from '@/terminal/ssh/sshDialect';
 import { CommandTable } from '@/cli/CommandTable';
 import {
   specsFromTrieRegistrations, isCollector, type AdapterKeyword,
@@ -7924,6 +7925,11 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       if (ip && p.getIsUp()) { sourceIp = ip.toString(); break; }
     }
     if (!sourceIp) return '% No usable interface IP for outbound SSH';
+    const sshStack = (this.d() as unknown as { getTcpStack?: () => { hasEgressTo(ip: string): boolean } })
+      .getTcpStack?.();
+    if (sshStack && IPAddress.tryParse(host) && !sshStack.hasEgressTo(host)) {
+      return IOS_SSH.unreachable(host, Number(port ?? 22));
+    }
     const clientArgs: string[] = [];
     if (port) clientArgs.push('-p', port);
     clientArgs.push('-o', 'StrictHostKeyChecking=accept-new');

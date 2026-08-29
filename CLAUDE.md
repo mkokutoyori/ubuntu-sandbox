@@ -460,6 +460,31 @@ seule et **ne change aucune sémantique protocolaire** : un moteur qui
   le message d'IOS, au lieu de `gateway or route not found`, qui n'est
   d'aucune machine réelle.
 
+- **`ssh` parle la langue de sa plateforme** (phase 8, lot 7). Un routeur
+  Cisco et un routeur Huawei rendaient la phrase du client d'OpenSSH sur
+  leur propre invite — le défaut que `telnetDialect.ts` avait fermé pour
+  telnet, la moitié SSH n'ayant jamais été faite. **Où il était,
+  précisément** : leur client SSH sortant DÉLÈGUE au client Linux
+  (`runSshClient`) et rend sa sortie TELLE QUELLE, donc ils ne recopiaient
+  pas une phrase d'OpenSSH, ils EXÉCUTAIENT OpenSSH ; le correctif ne
+  réécrit pas cette délégation, il fait trancher la JOIGNABILITÉ par le
+  routeur lui-même sur sa propre table (`hasEgressTo`) avant de déléguer
+  la session — même forme que le correctif telnet. `sshDialect.ts` porte
+  les trois tables et `CLITerminalSession` gagne le `getSshDialect()` qui
+  manquait à côté du `getTelnetDialect()` déjà là. **Ce lot avait d'abord
+  été INSCRIT au `TODO.md` plutôt qu'écrit, faute de matière** : rien
+  n'attestait ce qu'un client SSH d'IOS écrit, et la recherche a fourni
+  les trois issues d'échec sur transcription réelle — `% Destination
+  unreachable; gateway or host down`, `% Connection refused by remote
+  host`, `% Connection timed out; remote host not responding` —, les deux
+  premières étant MOT POUR MOT celles du client telnet d'IOS, ce qui se
+  comprend, les deux clients partageant le chemin de connexion TCP de la
+  plateforme. Côté VRP la documentation Huawei donne une seule formule
+  pour toutes les causes, celle que `VRP_TELNET` portait déjà. Linux et
+  Windows ne sont **pas** touchés et c'est délibéré : les phrases
+  d'OpenSSH y sont justes. Reste non attesté et écrit comme tel : le nom
+  non résolu côté SSH d'IOS.
+
 - **`ssh` rend l'errno de la vraie machine, et un laboratoire injoignable
   a été corrigé avec** (phase 8, lot 6). `ssh admin@203.0.113.9` depuis un
   hôte Linux — adresse qu'aucune route ne dessert — rendait `No route to
