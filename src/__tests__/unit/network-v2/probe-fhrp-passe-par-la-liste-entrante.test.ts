@@ -60,15 +60,16 @@
  *
  * ── Discrimination ──────────────────────────────────────────────────
  *
- * 6 des 18 cas tombent contre l'etat d'avant — les CINQ
- * `deny ip any any`, un par protocole, plus le cas du mot-cle qui ne
- * designe pas 112. Les 12 autres sont nommes ici plutot que laisses a
+ * 7 des 22 cas tombent contre l'etat d'avant — les SIX refus de tout
+ * (cinq `deny ip any any` cote Cisco, un par protocole, et le
+ * `rule deny ip` cote Huawei), plus le cas du mot-cle qui ne designe
+ * pas 112. Les 15 autres sont nommes ici plutot que laisses a
  * decouvrir, chacun avec sa raison de passer des deux cotes :
  *
- *   les CINQ cas sans liste       le pair, le relayeur, le groupe ou le
+ *   les SIX cas sans liste        le pair, le relayeur, le groupe ou le
  *                                 voisin doivent etre vus, c'est ce qui
  *                                 prouve que la maquette converge ;
- *   les SIX cas `permit`          ils passaient DEJA — non parce que la
+ *   les SEPT cas `permit`         ils passaient DEJA — non parce que la
  *                                 liste permettait, mais parce qu'elle
  *                                 ne voyait RIEN et que le paquet
  *                                 arrivait de toute facon ;
@@ -82,7 +83,12 @@
  *                                 restaient litteraux et n'appariaient
  *                                 rien.
  *
- * Les six cas `permit` ne prouvent donc rien seuls : ils ne valent qu'a
+ *   le refus de `permit vrrp`    VRP n'a pas ce mot-cle et le refusait
+ *                                 deja correctement ; ce cas garde que
+ *                                 le correctif numerique n'a pas rendu
+ *                                 l'analyseur permissif.
+ *
+ * Les sept cas `permit` ne prouvent donc rien seuls : ils ne valent qu'a
  * cote de leur voisin `deny ip any any`, qui, lui, tombe. C'est le
  * couple qui mesure, pas la ligne.
  *
@@ -95,6 +101,7 @@
  */
 import { describe, it, expect, beforeEach } from 'vitest';
 import { CiscoRouter } from '@/network/devices/CiscoRouter';
+import { HuaweiRouter } from '@/network/devices/HuaweiRouter';
 import { LinuxPC } from '@/network/devices/LinuxPC';
 import { Cable } from '@/network/hardware/Cable';
 import { resetCounters, MACAddress } from '@/network/core/types';
@@ -290,6 +297,64 @@ describe('PIM passe par la liste, sous le protocole 103', () => {
     const vue = await routeur.executeCommand('show access-lists');
     expect(vue).toContain('permit pim any any');
     expect(vue).toContain('permit 112 any any');
+  });
+});
+
+/**
+ * Le correctif touche les DEUX constructeurs, `HuaweiRouter` portant la
+ * meme interception de couche lien que `CiscoRouter`. Sans ce bloc, la
+ * moitie Huawei du changement ne serait couverte par aucun test — et
+ * c'est precisement la moitie qu'un correctif recopie oublie.
+ *
+ * VRP applique sa liste par `traffic-filter inbound acl <n>` et n'a PAS
+ * de mot-cle `vrrp` : `rule permit vrrp` est refuse par la machine avec
+ * ses propres mots, et l'operateur doit ecrire le numero. C'est donc le
+ * constructeur ou le correctif numerique est le plus visible.
+ */
+async function etatVrrpVrp(regles: readonly string[]): Promise<string> {
+  const horloge = new VirtualTimeScheduler();
+  __setDefaultScheduler(horloge);
+  const r1 = new HuaweiRouter('R1');
+  const r2 = new HuaweiRouter('R2');
+  new Cable('cv').connect(r1.getPorts()[0], r2.getPorts()[0]);
+  const nomPort = r1.getPorts()[0].getName();
+
+  for (const [routeur, n] of [[r1, '1'], [r2, '2']] as const) {
+    for (const commande of ['system-view',
+      ...(routeur === r1 ? regles : []),
+      `interface ${nomPort}`, `ip address 10.0.12.${n} 255.255.255.0`, 'undo shutdown',
+      'vrrp vrid 1 virtual-ip 10.0.12.253',
+      ...(routeur === r1 && regles.length ? ['traffic-filter inbound acl 3000'] : []),
+      'quit', 'return']) {
+      await routeur.executeCommand(commande);
+    }
+  }
+  horloge.advance(120000);
+  return (await r1.executeCommand('display vrrp')).match(/State\s*:\s*(\S+)/)?.[1] ?? 'absent';
+}
+
+describe('la moitie Huawei du correctif', () => {
+  it('TEMOIN : sans liste, R1 reste Backup derriere R2', async () => {
+    expect(await etatVrrpVrp([])).toBe('Backup');
+  });
+
+  it('`rule deny ip` le fait passer Master', async () => {
+    expect(await etatVrrpVrp(
+      ['acl number 3000', 'rule 5 deny ip', 'quit'])).toBe('Master');
+  });
+
+  it('`rule permit 112` le remet en Backup', async () => {
+    expect(await etatVrrpVrp(
+      ['acl number 3000', 'rule 5 permit 112', 'rule 10 deny ip', 'quit'])).toBe('Backup');
+  });
+
+  it('VRP n\'a pas de mot-cle `vrrp`, et le dit au lieu de se taire', async () => {
+    const routeur = new HuaweiRouter('R');
+    await routeur.executeCommand('system-view');
+    await routeur.executeCommand('acl number 3000');
+    const refus = await routeur.executeCommand('rule 5 permit vrrp');
+    expect(refus).toContain('Unrecognized command');
+    expect(await routeur.executeCommand('display acl 3000')).not.toContain('permit');
   });
 });
 
