@@ -225,49 +225,6 @@ recherche n'a rendu l'equivalent pour un nom.
 est plausible plutot qu'inventee — mais elle n'est pas mesuree, et c'est
 ecrit ici pour que personne ne la prenne pour telle.
 
-### [udp] le repli en DIFFUSION subsiste sur quatre familles d'hotes
-**Constat.** Quand l'hote n'offre pas `sendIpv4FrameArpAware`, les agents
-d'application retombent sur une trame fabriquee a `dstMAC: broadcast` —
-un datagramme UNICAST inonde a tout le domaine de diffusion. Le lot
-syslog l'a ferme pour syslog ; NTP le porte encore, et il n'est pas seul.
-
-**Mesure.** `sendIpv4FrameArpAware` n'existe que sur `CiscoRouter` et
-`HuaweiRouter`. Or `NtpAgent` est construit aussi par `LinuxMachine`,
-`WindowsPC`, `Switch` et le pare-feu : sur ces quatre familles, chaque
-paquet NTP part donc a l'adresse de diffusion.
-
-**Ce qui bloque la fermeture immediate.** `EndHost` porte DEJA une
-methode nommee `sendUdpDatagram`, mais POSITIONNELLE
-(`destinationIP, destinationPort, sourcePort, payload, payloadBytes`),
-tandis que le port de la couche transport prend une requete
-(`UdpSendRequest`). Brancher les hotes de bout sur l'offre demande donc
-de trancher le nom — deux signatures pour un meme nom a travers le depot
-est exactement la duplication que ce chantier referme —, ce qui touche
-tous les appelants de `EndHost.sendUdpDatagram`. C'est un lot a part.
-
-### [rib] `Port.configureIP` n'installe AUCUNE route connectee
-**Constat.** Poser une adresse par la CLI (`ip address 10.0.0.1
-255.255.255.0` sous une interface) installe la route connectee ; poser la
-MEME adresse par `Port.configureIP` directement n'en installe aucune.
-
-**Mesure.** Deux routeurs identiques, cables au meme commutateur :
-`lookupRoute(10.0.0.99)` rend l'entree `connected` sur celui configure
-par la CLI, et `null` sur celui configure par le port. L'etat du port est
-pourtant identique des deux cotes (`getIsUp`, `isAdminDown`,
-`isConnected`, `isOperationallyUp` tous pareils).
-
-**Ce que ca casse.** Toute voie qui pose une adresse sans passer par la
-CLI — import de topologie, bail DHCP, montage de laboratoire — laisse un
-routeur qui porte l'adresse et ne sait pas router vers son propre
-sous-reseau. Le lot syslog l'a rencontre de plein fouet : le nouveau
-chemin route par le FIB comme le reste du routeur, donc il ne trouvait
-rien la ou l'agent, qui parcourait ses ports a la main, trouvait.
-
-**Report.** Le correctif touche la RIB et le point ou elle est
-rafraichie (`_setupPortMonitoring` observe deja le lien, pas l'adresse) ;
-c'est un lot a part, avec sa propre non-regression, la table de routage
-etant lue par tous les protocoles.
-
 ### [arp] un commutateur JETTE sur cache ARP froid, un routeur met en file
 **Constat.** `SwitchSvi.sendUdpDatagram` appelle `resolveArp` et rend
 `false` quand le cache est froid ; le datagramme est perdu.

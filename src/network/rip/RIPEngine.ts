@@ -23,8 +23,7 @@ import {
 } from '../core/types';
 import {
   RIP_TIMERS, ADMINISTRATIVE_DISTANCE,
-  RIP_V2_MULTICAST_IP, RIP_V2_MULTICAST_MAC,
-} from '../core/constants';
+  RIP_V2_MULTICAST_IP, } from '../core/constants';
 import { Logger } from '../core/Logger';
 import { type IEventBus } from '@/events/EventBus';
 import { BusHolder } from '@/events/BusHolder';
@@ -814,12 +813,6 @@ export class RIPEngine implements IProtocolEngine {
     return this.ripVersion() === 2
       ? new IPAddress(RIP_V2_MULTICAST_IP)
       : new IPAddress('255.255.255.255');
-  }
-
-  private destinationMac(): MACAddress {
-    return this.ripVersion() === 2
-      ? new MACAddress(RIP_V2_MULTICAST_MAC)
-      : MACAddress.broadcast();
   }
 
   private sendPacket(outIface: string, ripPkt: RIPPacket, destIP?: IPAddress): void {
