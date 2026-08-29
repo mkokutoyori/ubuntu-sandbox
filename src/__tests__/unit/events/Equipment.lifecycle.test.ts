@@ -6,31 +6,42 @@ import { __setDefaultEventBus } from '@/events/EventBus';
 import type { DomainEvent } from '@/events/types';
 
 /**
- * Phase 2: Equipment emits power/position/rename lifecycle events through
- * the default bus. These events feed the future DevicesProjection (Phase 6).
+ * Phase 2: Equipment emits power/position/rename lifecycle events.
+ *
+ * These cases used to subscribe to the DEFAULT bus and observe nothing,
+ * because `Equipment.getBus()` returns a bus of its own — deliberately,
+ * so an event of A is never delivered on the bus of B. The convention
+ * `kerberos-replication-observability` already followed is to subscribe
+ * to the bus of the device that PUBLISHES; three other files were moved
+ * onto it earlier and this one was missed.
+ *
+ * `traceOf` therefore takes the device, and every case names the
+ * publisher rather than assuming a global. Note what makes the old
+ * shape dangerous rather than merely wrong: an `expect(...).toHaveLength(0)`
+ * on a bus nobody publishes to passes for the wrong reason, so each case
+ * here also asserts a NON-empty outcome — the witness that something was
+ * emitted at all.
  */
 describe('Equipment lifecycle events (Phase 2)', () => {
-  let bus: EventBus;
-  let trace: DomainEvent[];
-
   beforeEach(() => {
     EquipmentRegistry.resetInstance();
-    bus = new EventBus();
-    __setDefaultEventBus(bus);
-    EquipmentRegistry.getInstance().setEventBus(bus);
-    trace = [];
-    bus.subscribeAll((e) => trace.push(e));
+    __setDefaultEventBus(new EventBus());
   });
 
   afterEach(() => {
-    EquipmentRegistry.getInstance().setEventBus(null);
     EquipmentRegistry.resetInstance();
     __setDefaultEventBus(null);
   });
 
+  function traceOf(device: LinuxPC): DomainEvent[] {
+    const trace: DomainEvent[] = [];
+    device.getBus().subscribeAll((e) => trace.push(e));
+    return trace;
+  }
+
   it('emits device.power-off then device.power-on on transitions', () => {
     const pc = new LinuxPC('linux-pc', 'PC1');
-    trace.length = 0;
+    const trace = traceOf(pc);
 
     pc.powerOff();
     pc.powerOn();
@@ -45,7 +56,7 @@ describe('Equipment lifecycle events (Phase 2)', () => {
 
   it('does not emit power events for no-op toggles', () => {
     const pc = new LinuxPC('linux-pc', 'PC2');
-    trace.length = 0;
+    const trace = traceOf(pc);
 
     // already powered on; powerOn should be a no-op event-wise
     pc.powerOn();
@@ -58,7 +69,7 @@ describe('Equipment lifecycle events (Phase 2)', () => {
 
   it('emits device.position-changed only when coordinates change', () => {
     const pc = new LinuxPC('linux-pc', 'PC3');
-    trace.length = 0;
+    const trace = traceOf(pc);
 
     pc.setPosition(10, 20);
     pc.setPosition(10, 20); // no-op
@@ -75,7 +86,7 @@ describe('Equipment lifecycle events (Phase 2)', () => {
 
   it('emits device.renamed on setName when the name actually changes', () => {
     const pc = new LinuxPC('linux-pc', 'PC4');
-    trace.length = 0;
+    const trace = traceOf(pc);
 
     pc.setName('PC4');   // no-op
     pc.setName('PC4-bis');
@@ -87,5 +98,17 @@ describe('Equipment lifecycle events (Phase 2)', () => {
       oldName: 'PC4',
       newName: 'PC4-bis',
     });
+  });
+
+  it('TEMOIN : le bus d\'une machine ne recoit pas les evenements d\'une AUTRE', () => {
+    const a = new LinuxPC('linux-pc', 'PCA');
+    const b = new LinuxPC('linux-pc', 'PCB');
+    const traceA = traceOf(a);
+    const traceB = traceOf(b);
+
+    a.setName('PCA-bis');
+
+    expect(traceA.filter((e) => e.topic === 'device.renamed')).toHaveLength(1);
+    expect(traceB.filter((e) => e.topic === 'device.renamed')).toHaveLength(0);
   });
 });
