@@ -284,24 +284,38 @@ d'un coup. Le predicat `Router.isIcmpUnreachablesEnabled` lit
 magasin sans repenser la granularite ferait deux reglages pour une meme
 question. C'est un lot a part, avec sa propre mesure.
 
-### [udp] IGMP, PIM et GRE sont encore interceptes AVANT la decision de transit
-**Constat.** L'increment 3 a deplace la chaine UDP des sous-classes vers
-`receiveControlPlaneUdp`, donc apres la decision « pour nous ou
-transit ». Les trois interceptions par PROTOCOLE IP qui la precedaient
-dans `CiscoRouter.processIPv4` et `HuaweiRouter.processIPv4` — IGMP (2),
-PIM (103) et GRE (47) — sont restees ou elles etaient.
+### [udp] IGMP, PIM, VRRP et GRE de TRANSIT sont encore avales
+**Ce qui a ete ferme entre-temps.** Ces interceptions ne precedent plus
+la liste de controle ENTRANTE : elles sont passees de `handleFrame` et
+de la tete de `processIPv4` vers `receiveControlPlaneIpv4`, consultee
+juste apres la liste. HSRP et GLBP y etaient deja par
+`receiveControlPlaneUdp`, et leur presence dans `handleFrame` etait un
+DOUBLON qui l'ombrait. Reste la moitie TRANSIT, la couture etant
+consultee avant la decision « pour nous ou transit ».
 
-**Mesure.** Constat de STRUCTURE, lu dans le code et non eprouve sur le
-fil : ces trois `if` sont bien places avant `super.processIPv4`, donc
-avant le test « cette adresse est-elle a nous ». Le cas UDP mesure au
-meme endroit donnait un datagramme de transit avale par l'agent local.
+**Mesure, desormais faite sur le fil et non lue dans le code.** Maquette
+A — R — B, un paquet de A vers B portant un protocole de controle, donc
+un vrai transit adresse a B :
 
-**Report.** Le deplacement n'est PAS mecanique comme il l'etait pour UDP.
-Un rapport IGMP est adresse au GROUPE et non au routeur, donc pour un
-groupe routable (239.x) la base l'envoie a `forwardMulticast` et non a la
-remise locale : le deplacer tel quel casserait IGMP. Trancher demande de
-mesurer, groupe par groupe, quel chemin la base emprunte — c'est un
-increment a part, avec son propre temoin.
+    protocole 47 (GRE)   -> recu par B : 0
+    protocole 103 (PIM)  -> recu par B : 0
+    protocole 2 (IGMP)   -> recu par B : 0
+    protocole 1 (ICMP)   -> recu par B : 1   (TEMOIN)
+
+Le temoin est ce qui rend la mesure lisible : la maquette achemine bien,
+donc les trois zeros sont un avalement et non un cablage absent.
+
+**Ce que la mesure a appris et qui change le report.** L'ancienne
+redaction disait que deplacer la couture casserait IGMP, un rapport
+etant adresse au GROUPE. C'est verifie et c'est vrai pour
+`handleLocalDelivery` — mais la couture actuelle est posee AVANT la
+decision d'acheminement, et un cas de
+`probe-fhrp-passe-par-la-liste-entrante` mesure qu'un abonnement a
+239.1.1.1 parvient bien au routeur a travers elle. La regle qui reste a
+poser n'est donc pas un deplacement mais une GARDE : ne consulter la
+couture que si le paquet est adresse au routeur OU n'est pas unicast —
+ce qui couvre les groupes d'IGMP, PIM et VRRP comme le point de
+terminaison d'un tunnel GRE, et laisse filer le transit.
 
 ## Socle CLI
 
