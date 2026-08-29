@@ -271,13 +271,22 @@ c'est-a-dire EXACTEMENT ce que `VRP_TELNET` porte deja — une seule
 formule pour toutes les causes, comme sur la boite. La table VRP est donc
 ecrivable telle quelle.
 
-Ce qui MANQUE encore : le texte d'IOS pour un DELAI et pour un nom non
-resolu cote SSH. Le client telnet d'IOS rend
-`% Connection timed out; remote host not responding` pour le delai, et
-les deux clients partagent manifestement le chemin de connexion TCP
-d'IOS — c'est ce que montre le message d'absence de route, identique mot
-pour mot des deux cotes — mais le reprendre reste une DEDUCTION et non
-une capture, et c'est a dire dans le code qui l'ecrira.
+Le DELAI d'IOS est atteste depuis, et il n'a donc plus besoin d'etre
+deduit : des utilisateurs rapportent `ssh -v 2 -l mariano 192.168.4.17`
+sur un Catalyst 4900 rendant `% Connection timed out; remote host not
+responding` — le MEME texte que telnet, comme pour l'absence de route.
+Les trois issues d'echec d'IOS sont donc ecrivables :
+
+| issue | texte atteste |
+|---|---|
+| absence de route | `% Destination unreachable; gateway or host down` |
+| refus | `% Connection refused by remote host` |
+| delai | `% Connection timed out; remote host not responding` |
+
+Ne manque plus que le nom NON RESOLU cote SSH d'IOS. La table telnet du
+depot a deja tranche ce cas ; reprendre sa decision garde les deux
+clients d'accord, ce qui est mieux que d'en inventer une seconde, et
+c'est a dire dans le code qui l'ecrira.
 
 ### [nmap] une adresse valide qu'aucun equipement ne porte est « Failed to resolve »
 **Constat.** `nmap -p 22 10.0.0.55` depuis une machine en 10.0.0.1/24 rend
