@@ -60,24 +60,33 @@
  *
  * ── Discrimination ──────────────────────────────────────────────────
  *
- * 3 des 7 cas tombent contre l'etat d'avant — j'en avais annonce 4 avant
- * de mesurer, et c'est la mesure qui a raison. Les 4 TEMOINS sont
- * nommes ici plutot que laisses a decouvrir :
+ * 5 des 13 cas tombent contre l'etat d'avant — les quatre
+ * `deny ip any any`, un par protocole, plus le cas du mot-cle qui ne
+ * designe pas 112. Les 8 autres sont nommes ici plutot que laisses a
+ * decouvrir, chacun avec sa raison de passer des deux cotes :
  *
- *   les DEUX cas sans liste       le pair doit etre vu, c'est ce qui
- *                                 prouve que la maquette converge ;
- *   `permit udp … eq 1985`        passait DEJA, et le cas `permit 112`
- *   `permit 112 any any`          aussi — non parce que la liste
- *                                 permettait, mais parce qu'elle ne
- *                                 voyait RIEN et que le paquet
+ *   les QUATRE cas sans liste     le pair, le relayeur ou le groupe
+ *                                 doivent etre vus, c'est ce qui prouve
+ *                                 que la maquette converge ;
+ *   les QUATRE cas `permit`       ils passaient DEJA — non parce que la
+ *                                 liste permettait, mais parce qu'elle
+ *                                 ne voyait RIEN et que le paquet
  *                                 arrivait de toute facon.
  *
- * Ces deux derniers ne prouvent donc rien seuls : ils ne valent qu'a
+ * Ces quatre derniers ne prouvent donc rien seuls : ils ne valent qu'a
  * cote de leur voisin `deny ip any any`, qui, lui, tombe. C'est le
  * couple qui mesure, pas la ligne.
+ *
+ * Note pour qui refera la mesure : ces cinq cas ne tombent que si les
+ * CINQ fichiers du correctif sont restaures ensemble
+ * (`Router`, `CiscoRouter`, `HuaweiRouter`, `ACLEngine`, `AclSyntax`).
+ * Retirer le parametre de la seule base ne change RIEN, les deux
+ * redefinitions le laissant tomber en appelant `super` — c'est
+ * exactement ce qui avait cache le correctif au premier essai.
  */
 import { describe, it, expect, beforeEach } from 'vitest';
 import { CiscoRouter } from '@/network/devices/CiscoRouter';
+import { LinuxPC } from '@/network/devices/LinuxPC';
 import { Cable } from '@/network/hardware/Cable';
 import { resetCounters, MACAddress } from '@/network/core/types';
 import { resetDeviceCounters } from '@/network/devices/DeviceFactory';
@@ -141,6 +150,79 @@ describe('HSRP passe par la liste entrante', () => {
   it('`permit udp any any eq 1985` le retablit', async () => {
     expect(await pairHsrp(
       ['access-list 100 permit udp any any eq 1985', DENY_TOUT])).toBe('10.0.12.2');
+  });
+});
+
+/**
+ * GLBP apprend ses relayeurs par ses hellos : R1 declare le sien et
+ * APPREND celui de R2. Un relayeur `(learnt)` est donc la preuve qu'un
+ * paquet du pair est arrive, la ou `show glbp brief` reste identique
+ * dans les trois cas et ne distingue rien.
+ */
+async function relayeursGlbp(acl: readonly string[]): Promise<number> {
+  const r1 = await paireFhrp(acl, ['glbp 1 ip 10.0.12.252']);
+  const vue = await r1.executeCommand('show glbp');
+  return (vue.match(/\(learnt\)/g) ?? []).length;
+}
+
+/**
+ * Un rapport IGMP est adresse au GROUPE — 239.1.1.1, c'est-a-dire du
+ * multicast ROUTABLE — et non a 224.0.0.0/24. C'est ce cas qui a decide
+ * de l'endroit ou poser la couture : `processIPv4` envoie une telle
+ * destination a `forwardMulticast` et non a la remise locale, donc une
+ * couture posee dans `handleLocalDelivery` l'aurait rendue
+ * inatteignable. Mesure plutot que raisonnement.
+ */
+async function groupeVuParLeRouteur(acl: readonly string[]): Promise<boolean> {
+  const horloge = new VirtualTimeScheduler();
+  __setDefaultScheduler(horloge);
+  const routeur = new CiscoRouter('R');
+  const poste = new LinuxPC('P');
+  new Cable('cm').connect(routeur.getPorts()[0], poste.getPorts()[0]);
+  for (const commande of ['enable', 'configure terminal', 'ip multicast-routing',
+    'interface GigabitEthernet0/0', 'ip address 10.0.0.1 255.255.255.0', 'no shutdown',
+    'ip pim sparse-mode', 'ip igmp version 2', 'exit',
+    ...acl,
+    ...(acl.length ? ['interface GigabitEthernet0/0', 'ip access-group 100 in', 'exit'] : []),
+    'end']) {
+    await routeur.executeCommand(commande);
+  }
+  await poste.executeCommand('sudo ip addr add 10.0.0.10/24 dev eth0');
+  await poste.executeCommand('sudo ip link set eth0 up');
+  await poste.executeCommand('sudo ip route add default via 10.0.0.1');
+  horloge.advance(5000);
+  await poste.executeCommand('sudo ip maddr add 239.1.1.1 dev eth0');
+  horloge.advance(5000);
+  return (await routeur.executeCommand('show ip igmp groups')).includes('239.1.1.1');
+}
+
+describe('GLBP aussi — le relayeur APPRIS est la preuve du paquet recu', () => {
+  it('TEMOIN : sans liste, R1 apprend le relayeur de R2', async () => {
+    expect(await relayeursGlbp([])).toBe(1);
+  });
+
+  it('`deny ip any any` le laisse seul avec le sien', async () => {
+    expect(await relayeursGlbp([DENY_TOUT])).toBe(0);
+  });
+
+  it('`permit udp any any eq 3222` le retablit', async () => {
+    expect(await relayeursGlbp(
+      ['access-list 100 permit udp any any eq 3222', DENY_TOUT])).toBe(1);
+  });
+});
+
+describe('IGMP passe par la liste, et son groupe est ROUTABLE', () => {
+  it('TEMOIN : sans liste, le routeur voit l\'abonnement a 239.1.1.1', async () => {
+    expect(await groupeVuParLeRouteur([])).toBe(true);
+  });
+
+  it('`deny ip any any` le lui cache', async () => {
+    expect(await groupeVuParLeRouteur([DENY_TOUT])).toBe(false);
+  });
+
+  it('`permit igmp any any` le retablit', async () => {
+    expect(await groupeVuParLeRouteur(
+      ['access-list 100 permit igmp any any', DENY_TOUT])).toBe(true);
   });
 });
 
