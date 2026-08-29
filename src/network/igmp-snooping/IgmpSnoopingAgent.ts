@@ -9,11 +9,13 @@ import {
   IP_PROTO_IGMP, isReservedMulticast, isMulticastIpv4, compareQuerier,
   IGMP_ALL_SYSTEMS, type IgmpPacket,
 } from '../igmp/types';
-import { buildIgmpFrame, igmpQuery } from '../igmp/frames';
+import { igmpSendRequest, igmpQuery } from '../igmp/frames';
+import {
+  buildIpv4Packet, linkDestinationFor,
+} from '../layers/internet/Ipv4Egress';
 import {
   IPAddress,
-  type EthernetFrame, type IPv4Packet,
-} from '../core/types';
+  type EthernetFrame, type IPv4Packet, ETHERTYPE_IPV4 } from '../core/types';
 import type { LinkSendRequest } from '../layers/link/LinkLayer';
 import { Logger } from '../core/Logger';
 
@@ -330,12 +332,14 @@ export class IgmpSnoopingAgent extends ReactiveAgentBase {
       const name = port.getName();
       if (!port.getIsUp() || !port.isConnected()) continue;
       if (this.host.resolveIngressVlan(name) !== v.vlan) continue;
-      const built = buildIgmpFrame(port.getMAC(), new IPAddress(srcIp), dst, payload);
+      const request = igmpSendRequest(name, new IPAddress(srcIp), dst, payload);
+      const linkDestination = linkDestinationFor(dst);
+      if (!linkDestination) continue;
       this.host.sendOnLink({
         iface: name,
-        destination: built.dstMAC,
-        etherType: built.etherType,
-        payload: built.payload,
+        destination: linkDestination,
+        etherType: ETHERTYPE_IPV4,
+        payload: buildIpv4Packet(new IPAddress(srcIp), request),
       });
       sentOn++;
     }

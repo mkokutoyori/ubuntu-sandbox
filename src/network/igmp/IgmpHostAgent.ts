@@ -12,13 +12,14 @@
  * sends a Leave Group — an IGMPv1 host has no such message.
  */
 import type { IEventBus } from '@/events/EventBus';
+import type { Ipv4SendRequest } from '../layers/internet/Ipv4Egress';
 import { getDefaultScheduler, type IScheduler, type TimerHandle } from '@/events/Scheduler';
 import {
   isMulticastIpv4, isReservedMulticast,
   type IgmpPacket,
   IP_PROTO_IGMP,
 } from './types';
-import { buildIgmpFrame, igmpReport, igmpLeave, igmpDestination } from './frames';
+import { igmpSendRequest, igmpReport, igmpLeave, igmpDestination } from './frames';
 import { IPAddress, type EthernetFrame, type IPv4Packet } from '../core/types';
 import { Logger } from '../core/Logger';
 
@@ -28,6 +29,7 @@ export interface IgmpHostAgentHost {
   getHostname(): string;
   getPort(name: string): import('../hardware/Port').Port | undefined;
   sendFrame(portName: string, frame: EthernetFrame): void;
+  sendIpv4Packet(request: Ipv4SendRequest): boolean;
 }
 
 interface HostMembership {
@@ -215,7 +217,7 @@ export class IgmpHostAgent {
     // reports, sourced from 0.0.0.0.
     const srcIp = port.getIPAddress() ?? new IPAddress('0.0.0.0');
     const dstIp = new IPAddress(igmpDestination(payload));
-    this.host.sendFrame(iface, buildIgmpFrame(port.getMAC(), srcIp, dstIp, payload));
+    if (!this.host.sendIpv4Packet(igmpSendRequest(iface, srcIp, dstIp, payload))) return;
     this.getBus().publish({
       topic: 'igmp.packet.sent',
       payload: {

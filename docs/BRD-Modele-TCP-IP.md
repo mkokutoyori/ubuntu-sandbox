@@ -1281,9 +1281,43 @@ helper : `linkDestinationFor` rendait la DIFFUSION pour une destination
 unicast — exactement le défaut que cette phase venait de fermer sur les
 tunnels. Elle rend `null`, et le régime « interface nommée » refuse.
 
-**Reste** : IGMP, dont le cas est particulier — son en-tête porte
-l'option Router Alert (`ihl: 6`), que ni `createIPv4Packet` ni cette
-offre ne savent poser. Inscrit au `TODO.md`.
+**IGMP descend aussi, et la limite qui l'en empêchait est levée.**
+`createIPv4Packet` fixait `ihl: 5` et `totalLength = 20 + n`, donc l'y
+forcer aurait retiré l'option Router Alert en silence.
+`IPv4HeaderOptions.headerBytes` exprime désormais l'en-tête à options —
+`ihl` et `totalLength` en DÉRIVENT, et `ipv4HeaderProblem` les valide
+déjà, donc ce n'est pas un champ inerte. `buildIgmpFrame` devient
+`igmpSendRequest`, et les trois émetteurs (requête du routeur, rapport de
+l'hôte, querier de snooping du commutateur) partagent une seule
+description du paquet.
+
+**Un défaut trouvé en changeant de source d'autorité, pas en lisant une
+RFC.** Le simulateur écrivait `flags: 0` — DF CLAIR — sur chaque message
+IGMP. La RFC 2236 §2 exige l'option Router Alert et ne dit rien de DF ;
+c'est l'implantation retenue qui tranche, et le noyau Linux pose `IP_DF`
+sur les DEUX chemins IGMP (`net/ipv4/igmp.c`, rapport et requête), avec
+`ihl = (sizeof(iphdr)+4)>>2`, `tos = 0xc0`, `ttl = 1` et `IPOPT_RA`
+écrit juste après l'en-tête. Le simulateur était donc juste sur IHL, TOS
+et TTL, et faux sur DF. Vérifié dans le même mouvement et CONFORMES,
+donc laissés tels quels : VRRP (FRR `vrrpd/vrrp.c` — `IP_MULTICAST_TTL`
+255, `IPTOS_PREC_INTERNETCONTROL`, pas de DF explicite) et PIM (FRR
+`pimd/pim_pim.c` — « TTL for packets destined to ALL-PIM-ROUTERS is 1 »).
+
+**Une seconde correction, trouvée par la sonde.** Un rapport IGMP est
+adressé au GROUPE (239.1.1.1), c'est-à-dire du multicast ROUTABLE :
+l'offre le confiait à la table de routage unicast, qui n'a rien pour lui,
+et rien ne partait. Un multicast ne se route jamais par la RIB unicast —
+il s'émet sur l'interface nommée — donc `requiresNamedInterface` couvre
+maintenant tout ce qui n'est pas unicast, ce qui rend vivante la branche
+`multicast` de `linkDestinationFor` restée morte jusque-là.
+
+Le querier de snooping garde délibérément son propre `sendOnLink` : il
+émet PORT PAR PORT sur un VLAN, décision de couche lien qu'il prend déjà,
+et passer par `sendFrame` lui ferait perdre l'étiquetage que la couche
+lien applique. Seule la construction du PAQUET descend.
+
+**La phase 7 est donc close** : plus aucun moteur de `src/network/` ne
+bâtit son propre en-tête IPv4.
 
 ---
 

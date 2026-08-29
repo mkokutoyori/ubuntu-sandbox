@@ -474,6 +474,7 @@ export abstract class EndHost extends Equipment {
         getHostname: () => this.getHostname(),
         getPort: (n: string) => this.ports.get(n),
         sendFrame: (p: string, f: EthernetFrame) => { this.sendFrame(p, f); },
+        sendIpv4Packet: (request) => this.sendIpv4Packet(request),
       }, () => this.getBus());
     }
     return this._igmpHostAgent;

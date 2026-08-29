@@ -1180,12 +1180,12 @@ défauts — la méthode vaut d'être reprise sur le reliquat.
   open-ports` — il n'existe donc pas de capture texte a lire, et les
   blancs sont precisement l'information cherchee.
 
-- IGMP ne peut pas descendre par l'offre de la couche internet — ouvert.
-  Son en-tete porte l'option Router Alert (`ihl: 6`), exigee sur chaque
-  message IGMP, que ni `createIPv4Packet` ni `Ipv4SendRequest` ne savent
-  poser : les deux fixent `ihl: 5` et `totalLength = 20 + n`. L'y forcer
-  retirerait l'option en SILENCE. PIM, VRRP, HSRP et GLBP, eux, sont
-  descendus.
+- IGMP ne peut pas descendre par l'offre de la couche internet — FERME.
+  `IPv4HeaderOptions.headerBytes` exprime l'en-tete a options, `ihl` et
+  `totalLength` en derivent, et les trois emetteurs partagent
+  `igmpSendRequest`. Le DF etait FAUX au passage (`flags: 0` alors que le
+  noyau Linux pose `IP_DF` sur les deux chemins d'`net/ipv4/igmp.c`) et
+  est corrige.
 
 - Un tunnel GRE et un tunnel VXLAN DIFFUSENT leur paquet exterieur —
   FERME. `GreAgent` et `VxlanAgent` batissent le paquet exterieur puis

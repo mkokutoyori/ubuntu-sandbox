@@ -27,11 +27,13 @@
  *
  * ── Les deux exceptions, mesurees et non supposees ──────────────────
  *
- * - **IGMP** (`igmp/frames.ts`) ecrit `ihl: 6`, parce que RFC 2236 §2 exige
- *   l'option Router Alert (RFC 2113) sur chaque message IGMP — c'est elle
- *   qui fait remonter le paquet au processus du routeur au lieu d'etre
- *   commute. `createIPv4Packet` fixe `ihl: 5` et `totalLength = 20 + n`,
- *   donc convertir ce site retirerait l'option en silence.
+ * - **IGMP** ecrivait `ihl: 6` parce que `createIPv4Packet` fixait
+ *   `ihl: 5` et `totalLength = 20 + n` : convertir le site aurait retire
+ *   l'option Router Alert en silence. **Cette limite est LEVEE** —
+ *   `IPv4HeaderOptions.headerBytes` exprime l'en-tete a options, et IGMP
+ *   est descendu comme les autres. Le cas ci-dessous a change de sens en
+ *   consequence : il n'atteste plus une impossibilite, il atteste que
+ *   l'option SURVIT a la descente.
  * - **ICMP echo** (`icmp/IcmpEcho.ts`) DERIVE son identification de
  *   l'identifiant et du numero de sequence au lieu de bruler un
  *   `nextIPv4Id()`, ce qui la rend reproductible pour une meme sonde.
@@ -59,7 +61,8 @@ import { resetCounters, MACAddress, IPAddress } from '@/network/core/types';
 import { resetDeviceCounters } from '@/network/devices/DeviceFactory';
 import { Logger } from '@/network/core/Logger';
 import { IP_PROTO_VRRP } from '@/network/vrrp/types';
-import { buildIgmpFrame } from '@/network/igmp/frames';
+import { igmpSendRequest } from '@/network/igmp/frames';
+import { buildIpv4Packet } from '@/network/layers/internet/Ipv4Egress';
 import { buildEchoRequest } from '@/network/icmp/IcmpEcho';
 import { buildIpv4Frame } from '@/network/layers/internet/InternetLayer';
 import { verifyIPv4Checksum, type IPv4Packet, type EthernetFrame } from '@/network/core/types';
@@ -141,17 +144,19 @@ describe('la conversion n\'a pas pose DF', () => {
   });
 });
 
-describe('les deux exceptions gardent ce qui les rend exceptionnelles', () => {
-  it('IGMP porte l\'option Router Alert, que createIPv4Packet ne sait pas poser', () => {
-    const frame: EthernetFrame = buildIgmpFrame(
-      new MACAddress('00:11:22:33:44:55'),
+describe('l\'exception qui reste, et celle qui a ete levee', () => {
+  it('IGMP demande un en-tete de 24 octets, et createIPv4Packet sait le poser', () => {
+    const request = igmpSendRequest(
+      'GigabitEthernet0/0',
       new IPAddress('10.0.0.1'),
       new IPAddress('224.0.0.1'),
       { type: 'igmp', version: 2, messageType: 'query', groupAddress: '0.0.0.0', maxRespTime: 100 },
     );
-    const packet = frame.payload as IPv4Packet;
+    expect(request.headerBytes).toBe(24);
+    const packet = buildIpv4Packet(new IPAddress('10.0.0.1'), request);
     expect(packet.ihl).toBe(6);
     expect(packet.totalLength).toBe(24 + 8);
+    expect(packet.flags).toBe(0b010);
     expect(verifyIPv4Checksum(packet)).toBe(true);
   });
 

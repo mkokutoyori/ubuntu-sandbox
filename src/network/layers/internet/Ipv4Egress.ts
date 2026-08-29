@@ -1,6 +1,9 @@
-import { MACAddress, type EthernetFrame, type IPAddress, type IPv4HeaderOptions } from '../../core/types';
+import {
+  MACAddress, createIPv4Packet,
+  type EthernetFrame, type IPAddress, type IPv4HeaderOptions, type IPv4Packet,
+} from '../../core/types';
 import { ipv4MulticastToMac } from '../../core/ip';
-import { classifyIpv4Destination, buildIpv4Frame } from './InternetLayer';
+import { classifyIpv4Destination, wrapIpv4InEthernet } from './InternetLayer';
 
 export interface Ipv4SendRequest {
   readonly destination: IPAddress;
@@ -12,6 +15,7 @@ export interface Ipv4SendRequest {
   readonly ttl?: number;
   readonly tos?: number;
   readonly flags?: number;
+  readonly headerBytes?: number;
 }
 
 export interface Ipv4EgressHost {
@@ -24,12 +28,12 @@ export function ipv4HeaderOptionsOf(request: Ipv4SendRequest): IPv4HeaderOptions
   return {
     ...(request.tos === undefined ? {} : { tos: request.tos }),
     ...(request.flags === undefined ? {} : { flags: request.flags }),
+    ...(request.headerBytes === undefined ? {} : { headerBytes: request.headerBytes }),
   };
 }
 
 export function requiresNamedInterface(destination: IPAddress): boolean {
-  const kind = classifyIpv4Destination(destination);
-  return kind === 'link-local-multicast' || kind === 'limited-broadcast';
+  return classifyIpv4Destination(destination) !== 'unicast';
 }
 
 export function linkDestinationFor(destination: IPAddress): MACAddress | null {
@@ -66,11 +70,12 @@ export function sendOnNamedInterface(
   const linkDestination = linkDestinationFor(request.destination);
   if (!linkDestination) return false;
 
-  return host.sendFrame(request.iface, buildIpv4Frame({
-    sourceIp: source, destinationIp: request.destination,
-    sourceMac: port.getMAC(), destinationMac: linkDestination,
-    protocol: request.protocol, ttl: request.ttl ?? DEFAULT_IPV4_TTL,
-    payload: request.payload, payloadBytes: request.payloadBytes,
-    options: ipv4HeaderOptionsOf(request),
-  })) !== false;
+  return host.sendFrame(request.iface, wrapIpv4InEthernet(
+    buildIpv4Packet(source, request), port.getMAC(), linkDestination)) !== false;
+}
+
+export function buildIpv4Packet(source: IPAddress, request: Ipv4SendRequest): IPv4Packet {
+  return createIPv4Packet(
+    source, request.destination, request.protocol, request.ttl ?? DEFAULT_IPV4_TTL,
+    request.payload, request.payloadBytes, ipv4HeaderOptionsOf(request));
 }

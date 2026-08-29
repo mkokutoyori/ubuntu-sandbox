@@ -44,6 +44,9 @@ import { VlanSet } from './switch/VlanSet';
 import { RouterDhcpClient } from './router/RouterDhcpClient';
 import { SwitchSvi, type SviInterface } from './SwitchSvi';
 import { ControlPlaneUdpEndpoint } from './udp/ControlPlaneUdpEndpoint';
+import {
+  requiresNamedInterface, sendOnNamedInterface, type Ipv4SendRequest,
+} from '../layers/internet/Ipv4Egress';
 import { getSecurityConfig } from './shells/cisco/CiscoSecurityCommands';
 import { AaaAuthenticator } from './router/aaa/AaaAuthenticator';
 import { isInteractionPlanner } from '@/shell/interaction/CommandInteraction';
@@ -2802,6 +2805,14 @@ export abstract class Switch extends Equipment {
     request: import('../layers/transport/UdpEgress').UdpSendRequest,
   ): boolean {
     return this.svi.sendUdpDatagram(request);
+  }
+
+  sendIpv4Packet(request: Ipv4SendRequest): boolean {
+    if (!requiresNamedInterface(request.destination)) return false;
+    return sendOnNamedInterface({
+      getPort: (name) => this.getPort(name),
+      sendFrame: (name, frame) => this.sendFrame(name, frame),
+    }, request);
   }
 
   getSvis(): SviInterface[] { return this.svi.list(); }

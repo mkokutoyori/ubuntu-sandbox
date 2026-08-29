@@ -24,12 +24,17 @@
  *
  * `layers/internet/Ipv4Egress.ts` pose ce que le BRD §3.3 decrit :
  * `sendIpv4Packet({ dst, protocol, payload, ... })`. Elle tranche entre
- * DEUX regimes, et la distinction est celle de la RFC : un multicast
- * LIEN-LOCAL (224.0.0.0/24) ou une diffusion limitee ne se ROUTE pas --
- * elle s'emet sur une interface que l'appelant NOMME -- tandis que tout
- * le reste passe par la table de routage et le chemin ARP. `Router` et
- * `EndHost` la realisent tous deux, et `Router.sendUdpDatagram` est
- * desormais ecrit PAR-DESSUS elle plutot qu'a cote.
+ * DEUX regimes : ce qui n'est pas unicast -- multicast et diffusion
+ * limitee -- ne se ROUTE pas, il s'emet sur une interface que l'appelant
+ * NOMME, tandis qu'un unicast passe par la table de routage et le chemin
+ * ARP. La premiere version de ce fichier bornait le premier regime au
+ * multicast LIEN-LOCAL, et le lot IGMP a montre que c'etait trop
+ * etroit : un rapport IGMP est adresse au GROUPE (239.1.1.1), donc du
+ * multicast routable, et la table de routage unicast n'a rien pour lui.
+ *
+ * `Router` et `EndHost` realisent tous deux cette offre, et
+ * `Router.sendUdpDatagram` est desormais ecrit PAR-DESSUS elle plutot
+ * qu'a cote.
  *
  * ── Discrimination ─────────────────────────────────────────────────
  *
@@ -215,14 +220,16 @@ describe('un tunnel VXLAN n\'inonde pas son segment', () => {
 });
 
 describe('l\'offre de la couche internet tranche entre les deux regimes', () => {
-  it('un multicast lien-local exige une interface nommee, un unicast est route', () => {
+  it('seul un unicast est route ; tout le reste exige une interface nommee', () => {
     expect(requiresNamedInterface(new IPAddress('224.0.0.18'))).toBe(true);
     expect(requiresNamedInterface(new IPAddress('255.255.255.255'))).toBe(true);
-    expect(requiresNamedInterface(new IPAddress('239.1.1.1'))).toBe(false);
+    expect(requiresNamedInterface(new IPAddress('239.1.1.1'))).toBe(true);
     expect(requiresNamedInterface(new IPAddress('10.0.0.2'))).toBe(false);
 
-    expect(linkDestinationFor(new IPAddress('224.0.0.18')).toString()).toBe('01:00:5e:00:00:12');
-    expect(linkDestinationFor(new IPAddress('255.255.255.255')).toString())
+    expect(linkDestinationFor(new IPAddress('224.0.0.18'))?.toString()).toBe('01:00:5e:00:00:12');
+    expect(linkDestinationFor(new IPAddress('239.1.1.1'))?.toString()).toBe('01:00:5e:01:01:01');
+    expect(linkDestinationFor(new IPAddress('255.255.255.255'))?.toString())
       .toBe(MACAddress.broadcast().toString());
+    expect(linkDestinationFor(new IPAddress('10.0.0.2'))).toBeNull();
   });
 });
