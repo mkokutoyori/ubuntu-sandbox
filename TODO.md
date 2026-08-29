@@ -645,21 +645,32 @@ qu'est une table vide. Les unifier est juste, mais toucher au rendu de
 `show` demande de verifier ce qu'un vrai FortiGate ecrit pour chaque
 singleton — la mesure n'est pas faite.
 
-### [ha] les adresses MAC VIRTUELLES du cluster n'existent pas
-FGCP donne a chaque interface du cluster une adresse MAC virtuelle, portee
-par le membre primaire : c'est ce qui rend le basculement invisible aux
-commutateurs et aux caches ARP du reseau. Ici, chaque membre garde la MAC
-de son propre port ; le secondaire se tait (il ne repond plus a l'ARP et ne
-fait passer aucun paquet), donc le cas nominal est juste, mais apres un
-basculement le voisinage doit RE-resoudre l'adresse au lieu de continuer a
-emettre vers la meme MAC.
-**Mesure** : `ip neigh` sur le poste du LAN nomme la MAC du membre primaire
-et non une MAC de grappe ; apres bascule, la valeur change.
-**Report** : poser une MAC virtuelle demande que `Port` accepte une seconde
-adresse decidee par le cluster et que l'emission comme la reception la
-suivent — c'est un changement du materiel simule, pas du pare-feu, et il
-touche l'apprentissage MAC de tous les commutateurs du projet. L'ARP
-gratuit qui accompagne le basculement en depend egalement.
+### [ha] l'ARP GRATUIT du basculement n'est pas emis
+L'adresse MAC virtuelle de grappe, que cette entree reclamait, EXISTE
+desormais : `clusterVirtualMac` implante la formule de Fortinet
+(`<prefixe>:<group-id % 256>:<vcluster + index>`, les quatre tranches de
+group-id, les deux clusters virtuels), `applyClusterVirtualMacs` la pose
+sur le port, et les deux membres la portent — `probe-pare-feu-filtre-au-
+niveau-lien` epingle `00:09:0f:09:00:00` et l'egalite entre les deux
+membres. **La prevision de report etait fausse, et c'est instructif** :
+elle annoncait qu'il faudrait une SECONDE adresse sur `Port` et une
+retouche de l'apprentissage MAC de tous les commutateurs du projet. Ni
+l'un ni l'autre — une adresse virtuelle n'est pas une seconde adresse,
+c'est l'adresse que l'interface PRESENTE, donc poser celle du port a
+suffi et aucun commutateur n'a bouge.
+
+Reste ouvert : **l'ARP gratuit**. Un vrai FortiGate, en devenant
+primaire, emet une rafale d'ARP gratuits pour que les commutateurs
+reapprennent l'adresse virtuelle sur SON port.
+**Mesure** : `grep -rn "gratuitous\|garp"` sur `devices/firewall/` ne
+rend rien ; apres bascule, le commutateur voisin garde l'adresse
+virtuelle apprise sur le port de l'ancien primaire jusqu'a ce que le
+nouveau emette quelque chose de lui-meme.
+**Pourquoi ce n'est pas ferme ici** : le basculement fonctionne sans lui
+dans ce simulateur, parce que le nouveau primaire emet des sa premiere
+reponse et que la table du commutateur se corrige alors. L'ARP gratuit
+change le DELAI, pas l'issue — et un delai n'est observable que sous une
+horloge que les laboratoires de grappe n'avancent pas aujourd'hui.
 
 ### [linux] un poste Linux n'a pas de démon IKE
 La commande `ipsec` lit désormais vraiment `/etc/ipsec.conf` et
