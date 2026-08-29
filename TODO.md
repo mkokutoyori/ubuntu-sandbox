@@ -187,33 +187,6 @@ refusee plutot que rangee sans etre lue.
 
 ## Couche transport (BRD TCP/IP)
 
-### [tcp] un routeur n'ouvre AUCUNE connexion TCP en IPv6
-**Constat.** `TcpStack.resolveEgress6` sort par son garde
-`if (!this.host.resolveRoute6 || !this.host.localAddress6) return null;`
-avant meme de regarder l'adresse : l'objet `tcpHost` que `Router`
-construit ne declare NI l'un NI l'autre. Un routeur Cisco ou Huawei ne
-peut donc joindre aucune destination IPv6 en TCP — pas de session BGP
-IPv6, pas de SSH sortant vers une adresse v6 — et le refus est muet.
-
-**Mesure.** `grep resolveRoute6 src/network/devices/Router.ts` ne rend
-rien, tandis que `EndHost.ts` les declare tous les deux (lignes 867 et
-872). Constate en ecrivant
-`probe-tcp-refuse-le-non-unicast.test.ts` : son cas IPv6, d'abord monte
-sur un routeur, passait des DEUX cotes de la discrimination — pas parce
-que le refus fonctionnait, mais parce qu'aucune sortie n'etait jamais
-trouvee. Le cas a ete deplace sur un hote Linux, qui declare les deux
-crochets, et il discrimine.
-
-**Raison du report.** C'est le jumeau IPv6 exact du defaut ferme pour
-IPv4 par « TCP originé par un routeur suit la table de routage », sur le
-meme objet — mais le fermer demande plus qu'une ligne : `Router` porte
-bien une table IPv6 (`IPv6DataPlane`), et il faut etablir par la mesure
-quelle methode repond a « quelle est la source pour cette
-destination ? » cote v6, la selection d'adresse source IPv6 (RFC 6724)
-n'etant pas la meme question qu'en IPv4. Le faire dans le meme lot
-aurait fait passer deux defauts pour un.
-
-
 ### [udp] le repli en DIFFUSION subsiste sur quatre familles d'hotes
 **Constat.** Quand l'hote n'offre pas `sendIpv4FrameArpAware`, les agents
 d'application retombent sur une trame fabriquee a `dstMAC: broadcast` —

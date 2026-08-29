@@ -1460,12 +1460,55 @@ porte » aurait été celle de `TcpStack`.
 
 `probe-tcp-suit-la-table.test.ts` (3 cas, 2 tombent) et
 `probe-tcp-refuse-le-non-unicast.test.ts` (6 cas, 4 tombent) sont
-discriminés. Trouvé en écrivant le second et inscrit au `TODO.md` plutôt
-que forcé : le `tcpHost` du routeur ne déclare pas davantage
-`resolveRoute6` ni `localAddress6`, donc **un routeur n'ouvre AUCUNE
-connexion TCP en IPv6**, quelle qu'en soit la destination — c'est le
-jumeau IPv6 du défaut (1), sur le même objet, et son cas de sonde a dû
-être monté sur un hôte Linux pour discriminer quoi que ce soit.
+discriminés. Trouvé en écrivant le second : le `tcpHost` du routeur ne
+déclare pas davantage `resolveRoute6` ni `localAddress6` — c'est le
+jumeau IPv6 du défaut (1), sur le même objet, et le lot 4 le ferme.
+
+#### Lot 4 — un routeur ouvre ET accepte du TCP en IPv6
+
+Le lot 3 avait inscrit au `TODO.md` le jumeau IPv6 du défaut (1). Le
+fermer en a découvert **trois empilés**, dont un qui n'a rien à voir avec
+le routeur.
+
+**(1) Les crochets manquaient.** `resolveEgress6` sort par son garde
+`if (!this.host.resolveRoute6 || !this.host.localAddress6)` avant même de
+regarder l'adresse ; le `tcpHost` de `Router` ne déclarait ni l'un ni
+l'autre. Pas de session BGP IPv6, pas de SSH sortant vers une adresse v6.
+
+**(2) La livraison manquait aussi.** `IPv6DataPlane.handleLocalDelivery`
+aiguille OSPFv3, ICMPv6 et le DHCPv6 porté par UDP — et **rien** pour
+TCP. Corriger le seul (1) ne suffisait donc pas, et la mesure le dit
+sans ambiguïté : le pair ACCEPTAIT la connexion pendant que le routeur
+restait en `syn-sent`. Un routeur ne pouvait pas davantage RECEVOIR une
+session TCP en IPv6. `TcpStack.handleIp6` existait déjà, sans appelant.
+
+**(3) Le démultiplexage TCP était sensible à l'ORTHOGRAPHE.** `connect()`
+rangeait l'adresse distante telle que l'appelant l'avait écrite, tandis
+que `handleSegment` reçoit celle du paquet, normalisée par `IPv6Address` ;
+les sockets étant indexés par une chaîne, `connect('2001:DB8::2', …)` ne
+retrouvait jamais la réponse venue de `2001:db8::2`. Une majuscule
+suffisait à laisser la connexion en `syn-sent`, **entre deux hôtes Linux
+comme ailleurs** — IPv4 n'y était pas exposée, sa notation pointée étant
+déjà canonique, ce qui explique que le défaut ait pu vivre si longtemps.
+La règle du dépôt le corrige à sa racine : on ANALYSE À LA FRONTIÈRE,
+donc `connect()` canonicalise une fois pour toutes.
+
+**Réutilisation.** `resolvePath` est **extrait** de `resolveEgress`
+plutôt que recopié, si bien que la route d'une connexion TCP est celle
+d'un paquet de transit ; `queueAndResolve` — qui met en file sur cache
+froid au lieu de lire le cache et d'espérer — est l'envoi employé, ce qui
+compte puisque le premier paquet d'une connexion arrive justement sur un
+cache froid. La sélection d'adresse source était écrite **deux** fois
+(le `tcpHost` d'`EndHost`, `IPv6DataPlane.resolveEgress`) ; elle descend
+dans `layers/internet/Ipv6Egress.ts` et les trois appelants la lisent.
+L'autorité en est la **RFC 6724** (Standards Track, remplace la
+RFC 3484), dont c'est la **règle 2, « Prefer appropriate scope »** ; ce
+qui est appliqué ici en est un sous-ensemble assumé — deux portées,
+lien-local et globale — et non les huit règles.
+
+`probe-routeur-tcp-ipv6.test.ts` (5 cas) est discriminé : 4 tombent. Le
+cinquième est le TÉMOIN IPv4 monté dans le même laboratoire, et il passe
+des deux côtés comme il le doit.
 
 ---
 

@@ -70,6 +70,7 @@ import {
   DEFAULT_IPV4_TTL, ipv4HeaderOptionsOf, requiresNamedInterface, sendOnNamedInterface,
   type Ipv4SendRequest,
 } from '../layers/internet/Ipv4Egress';
+import { selectIpv6SourceAddress } from '../layers/internet/Ipv6Egress';
 import type { UdpSendRequest } from '../layers/transport/UdpEgress';
 import { Logger } from '../core/Logger';
 import {
@@ -872,9 +873,7 @@ export abstract class EndHost extends Equipment {
       localAddress6: (iface: string, remoteIp: string) => {
         const port = this.getPort(iface);
         if (!port) return null;
-        const src = new IPv6Address(remoteIp).isLinkLocal()
-          ? port.getLinkLocalIPv6()
-          : (port.getGlobalIPv6() || port.getLinkLocalIPv6());
+        const src = selectIpv6SourceAddress(port, new IPv6Address(remoteIp));
         return src ? src.toString() : null;
       },
       sendIpv4FrameArpAware: (outPortName: string, ipPkt: IPv4Packet, nextHopIP: IPAddress) =>

@@ -12,11 +12,12 @@ import type { IEventBus } from '@/events/EventBus';
 import type { IScheduler } from '@/events/Scheduler';
 import { TimerSet } from '@/events/TimerSet';
 import { stampUdpChecksum } from '../../layers/transport/UdpChecksum';
+import { selectIpv6SourceAddress } from '../../layers/internet/Ipv6Egress';
 import {
   IPv6Address, IPv6Packet, ICMPv6Packet, MACAddress, UDPPacket,
   NDPNeighborSolicitation, NDPNeighborAdvertisement, NDPRouterSolicitation,
   EthernetFrame,
-  ETHERTYPE_IPV6, IP_PROTO_ICMPV6, IP_PROTO_UDP, IP_PROTO_OSPF,
+  ETHERTYPE_IPV6, IP_PROTO_ICMPV6, IP_PROTO_UDP, IP_PROTO_OSPF, IP_PROTO_TCP,
   createIPv6Packet, createNeighborSolicitation, createNeighborAdvertisement, createRouterAdvertisement,
   createICMPv6EchoReply, createICMPv6EchoRequest,
   IPV6_ALL_NODES_MULTICAST,
@@ -84,6 +85,7 @@ export interface IPv6RouterContext {
   getScheduler(): IScheduler;
   /** DHCPv6 (RFC 8415) server engine, shared with the router's CLI layer. */
   getDhcpv6Server(): DHCPv6Server;
+  deliverTcp6?(inPort: string, ipv6: IPv6Packet): void;
   /** `ipv6 dhcp server <pool>` binding for a directly-attached interface. */
   getDhcpv6ServerPool(iface: string): string | undefined;
   /** `ipv6 dhcp relay destination <addr>` targets for a relaying interface. */
@@ -156,6 +158,12 @@ export function emptyIpv6Counters(): Ipv6Counters {
 }
 
 /** Where a locally-originated IPv6 packet leaves, once resolved. */
+export interface IPv6PathResolution {
+  iface: string;
+  port: Port;
+  nextHopIP: IPv6Address;
+}
+
 export interface IPv6EgressResolution {
   iface: string;
   port: Port;
@@ -405,6 +413,11 @@ export class IPv6DataPlane {
       return;
     }
 
+    if (ipv6.nextHeader === IP_PROTO_TCP) {
+      this.ctx.deliverTcp6?.(inPort, ipv6);
+      return;
+    }
+
     if (ipv6.nextHeader === IP_PROTO_ICMPV6) {
       this.handleICMPv6(inPort, ipv6);
     } else if (ipv6.nextHeader === IP_PROTO_UDP) {
@@ -614,7 +627,7 @@ export class IPv6DataPlane {
    * next hop cannot be resolved — the three distinct reasons a probe
    * never reaches the wire.
    */
-  resolveEgress(destIP: IPv6Address, sourceIPStr?: string): IPv6EgressResolution | null {
+  resolvePath(destIP: IPv6Address): IPv6PathResolution | null {
     let iface: string | null = null;
     let nextHopIP = destIP;
     if (destIP.isLinkLocal() || destIP.isMulticast()) {
@@ -630,15 +643,17 @@ export class IPv6DataPlane {
     if (!iface) return null;
     const port = this.ctx.getPorts().get(iface);
     if (!port || !port.isOperationallyUp()) return null;
+    return { iface, port, nextHopIP };
+  }
 
-    let sourceIP: IPv6Address | null;
-    if (sourceIPStr) {
-      sourceIP = new IPv6Address(sourceIPStr);
-    } else {
-      sourceIP = destIP.isLinkLocal()
-        ? port.getLinkLocalIPv6()
-        : (port.getGlobalIPv6() || port.getLinkLocalIPv6());
-    }
+  resolveEgress(destIP: IPv6Address, sourceIPStr?: string): IPv6EgressResolution | null {
+    const path = this.resolvePath(destIP);
+    if (!path) return null;
+    const { iface, port, nextHopIP } = path;
+
+    let sourceIP: IPv6Address | null = sourceIPStr
+      ? new IPv6Address(sourceIPStr)
+      : selectIpv6SourceAddress(port, destIP);
     if (!sourceIP) return null;
     // A zone index is LOCAL metadata — it is not part of the 128 bits and
     // never goes on the wire. A receiver notes the interface it heard the
@@ -1115,6 +1130,20 @@ export class IPv6DataPlane {
       etherType: ETHERTYPE_IPV6,
       payload: errorPkt,
     });
+  }
+
+  sendFrameNdpAware(iface: string, pkt: IPv6Packet, nextHopIP: IPv6Address): void {
+    const port = this.ctx.getPorts().get(iface);
+    if (!port) return;
+    const cached = this.neighborCache.markUsed(nextHopIP.toString());
+    if (cached) {
+      this.ctx.sendFrame(iface, {
+        srcMAC: port.getMAC(), dstMAC: cached.mac,
+        etherType: ETHERTYPE_IPV6, payload: pkt,
+      });
+      return;
+    }
+    this.queueAndResolve(pkt, iface, nextHopIP, port);
   }
 
   // ─── NDP Resolution + Packet Queue ────────────────────────────

@@ -136,6 +136,7 @@ import {
   DEFAULT_IPV4_TTL, ipv4HeaderOptionsOf, requiresNamedInterface, sendOnNamedInterface,
   type Ipv4SendRequest,
 } from '../layers/internet/Ipv4Egress';
+import { selectIpv6SourceAddress } from '../layers/internet/Ipv6Egress';
 import {
   DHCP_FREE_ADDRESS_HIGH, DHCP_FREE_ADDRESS_LOW, DHCP_SHARED_NET_ENTRY,
   snmpAdminStringIndex,
@@ -521,6 +522,7 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
       getDhcpv6RelayDestinations: (iface) => this.dhcpv6RelayDestinations.get(iface) ?? [],
       deliverOspfv3: (inPort, srcIP, packet, ipsecProtected) =>
         this.ospfIntegration?.receivePacketV3(inPort, srcIP, packet, ipsecProtected),
+      deliverTcp6: (inPort, ipv6) => { this.tcpv2.handleIp6(inPort, ipv6.sourceIP, ipv6); },
       ipv6FilterPermits: (iface, direction, pkt) => this.ipv6FilterPermits(iface, direction, pkt),
       onIcmpv6EchoReply: (p) => this.emitIcmpEchoReply({ ...p, ttl: p.hopLimit, rttMs: 0 }),
       onIcmpv6EchoFailed: (p) => this.emitIcmpEchoFailed({
@@ -618,6 +620,18 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
       sendIpv4FrameArpAware: (p: string, ipPkt: IPv4Packet, nextHopIP: IPAddress) =>
         this.sendIpv4FrameArpAware(p, ipPkt, nextHopIP),
       resolveRoute: (targetIp: string) => this.resolveRouteForHost(targetIp),
+      resolveRoute6: (targetIp: string) => {
+        const path = this.ipv6Engine.resolvePath(new IPv6Address(targetIp));
+        return path ? { iface: path.iface, nextHopIp: path.nextHopIP.toString() } : null;
+      },
+      localAddress6: (iface: string, remoteIp: string) => {
+        const port = this.getPort(iface);
+        if (!port) return null;
+        const src = selectIpv6SourceAddress(port, new IPv6Address(remoteIp));
+        return src ? src.withScopeId(null).toString() : null;
+      },
+      sendIpv6FrameNdpAware: (iface: string, pkt: IPv6Packet, nextHopIP: IPv6Address) =>
+        this.ipv6Engine.sendFrameNdpAware(iface, pkt, nextHopIP),
     };
     this.tcpv2 = new TcpStack(tcpHost, () => this.getBus(),
       () => this.getRouterScheduler());

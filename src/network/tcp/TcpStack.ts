@@ -39,6 +39,11 @@ export function ipFamilyOf(ip: string): IpFamily {
   return ip.includes(':') ? 'ipv6' : 'ipv4';
 }
 
+export function canonicalIpText(ip: string): string {
+  if (ipFamilyOf(ip) === 'ipv4') return IPAddress.tryParse(ip)?.toString() ?? ip;
+  try { return new IPv6Address(ip).withScopeId(null).toString(); } catch { return ip; }
+}
+
 export interface TcpHost {
   readonly id: string;
   readonly name: string;
@@ -446,8 +451,9 @@ export class TcpStack {
     socket.ownerPid = pid;
   }
 
-  connect(remoteIp: string, remotePort: number, opts: TcpConnectOptions = {}): TcpSocket | null {
+  connect(rawRemoteIp: string, remotePort: number, opts: TcpConnectOptions = {}): TcpSocket | null {
     if (!this.enabled) return null;
+    const remoteIp = canonicalIpText(rawRemoteIp);
     const egress = this.resolveEgress(remoteIp);
     if (!egress) { this.dropped(remoteIp, remotePort, 'no-egress'); return null; }
     const localIp = egress.srcIp;
