@@ -5,7 +5,7 @@
  * Manages numbered/named ACLs and interface bindings.
  */
 
-import { protocolKeywordFor } from './acl/AclSyntax';
+import { ipProtocolMatches } from './acl/AclSyntax';
 import type { SubnetMask, IPv4Packet, UDPPacket, ICMPPacket, TCPPacket } from '../../core/types';
 import { IPAddress } from '../../core/types';
 import { IP_PROTO_TCP } from '../../core/types';
@@ -804,8 +804,7 @@ export class ACLEngine {
     }
 
     if (entry.protocol && entry.protocol !== 'ip') {
-      const pktProto = this.getProtocolName(ipPkt.protocol);
-      if (pktProto !== entry.protocol) return false;
+      if (!ipProtocolMatches(entry.protocol, ipPkt.protocol)) return false;
 
       if (entry.protocol === 'tcp' || entry.protocol === 'udp') {
         if (!this.portCriteriaMatch(entry, ipPkt)) return false;
@@ -1005,10 +1004,6 @@ export class ACLEngine {
     const groupe = this.objectGroups.get(name);
     if (!groupe || groupe.members.length === 0) return false;
     return groupe.members.some(m => this.wildcardMatch(address, m.ip, m.wildcard));
-  }
-
-  private getProtocolName(proto: number): string {
-    return protocolKeywordFor(proto);
   }
 
   /** @internal Direct access to ACL list for CLI shells */

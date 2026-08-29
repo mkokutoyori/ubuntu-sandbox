@@ -26,7 +26,7 @@ import { resolveHuaweiInterfaceName as resolveHuaweiIfName } from './shells/cli-
 import { LldpAgent } from '../lldp/LldpAgent';
 import { ETHERTYPE_LLDP, LLDP_MULTICAST_MAC } from '../lldp/types';
 import { VrrpAgent } from '../vrrp/VrrpAgent';
-import { IP_PROTO_VRRP, VRRP_MULTICAST_MAC } from '../vrrp/types';
+import { IP_PROTO_VRRP } from '../vrrp/types';
 import { NtpAgent } from '../ntp/NtpAgent';
 import { UDP_PORT_NTP } from '../ntp/types';
 import { BfdAgent } from '../bfd/BfdAgent';
@@ -34,7 +34,7 @@ import { UDP_PORT_BFD_CONTROL } from '../bfd/types';
 import { IgmpAgent } from '../igmp/IgmpAgent';
 import { IP_PROTO_IGMP } from '../igmp/types';
 import { PimAgent } from '../pim/PimAgent';
-import { IP_PROTO_PIM, PIM_ALL_ROUTERS_MAC } from '../pim/types';
+import { IP_PROTO_PIM } from '../pim/types';
 import { SyslogAgent } from '../syslog/SyslogAgent';
 import { RadiusClientAgent } from '../radius/RadiusClientAgent';
 import { RadiusServerAgent } from '../radius/RadiusServerAgent';
@@ -361,21 +361,26 @@ export class HuaweiRouter extends Router {
     return false;
   }
 
-  protected override processIPv4(inPort: string, ipPkt: IPv4Packet): void {
+  protected override receiveControlPlaneIpv4(inPort: string, ipPkt: IPv4Packet): boolean {
     if (ipPkt.protocol === IP_PROTO_IGMP) {
       this.igmpAgent.handleIp(inPort, ipPkt.sourceIP, ipPkt);
-      return;
+      return true;
     }
     if (ipPkt.protocol === IP_PROTO_PIM) {
       this.pimAgent.handleIp(inPort, ipPkt.sourceIP, ipPkt);
-      return;
+      return true;
+    }
+    if (ipPkt.protocol === IP_PROTO_VRRP
+        && isMulticastIpv4(ipPkt.destinationIP.toString())) {
+      this.vrrpAgent.handleIp(inPort, ipPkt.sourceIP, ipPkt);
+      return true;
     }
     if (ipPkt.protocol === IP_PROTO_GRE) {
       const inner = this.greAgent.handleIp(inPort, ipPkt.sourceIP, ipPkt);
-      if (inner) this.processIPv4(inPort, inner);
-      return;
+      if (inner) this.processIPv4(inPort, inner, true);
+      return true;
     }
-    super.processIPv4(inPort, ipPkt);
+    return false;
   }
 
   protected override handleFrame(portName: string, frame: EthernetFrame): void {
@@ -383,26 +388,6 @@ export class HuaweiRouter extends Router {
     if (frame.etherType === ETHERTYPE_LLDP && dst === LLDP_MULTICAST_MAC) {
       this.lldpAgent.handleFrame(portName, frame);
       return;
-    }
-    if (frame.etherType === 0x0800 && dst === VRRP_MULTICAST_MAC) {
-      const ipPkt = frame.payload as IPv4Packet | undefined;
-      if (ipPkt && ipPkt.protocol === IP_PROTO_VRRP) {
-        this.vrrpAgent.handleIp(portName, ipPkt.sourceIP, ipPkt);
-        return;
-      }
-    }
-    if (frame.etherType === 0x0800
-      && isMulticastIpv4(
-        (frame.payload as IPv4Packet | undefined)?.destinationIP?.toString() ?? '')) {
-      const ipPkt = frame.payload as IPv4Packet | undefined;
-      if (ipPkt && ipPkt.protocol === IP_PROTO_IGMP) {
-        this.igmpAgent.handleIp(portName, ipPkt.sourceIP, ipPkt);
-        return;
-      }
-      if (ipPkt && ipPkt.protocol === IP_PROTO_PIM && dst === PIM_ALL_ROUTERS_MAC) {
-        this.pimAgent.handleIp(portName, ipPkt.sourceIP, ipPkt);
-        return;
-      }
     }
     super.handleFrame(portName, frame);
   }

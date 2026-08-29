@@ -429,6 +429,44 @@ ici plutot que tranche unilateralement.
 
 ## Routeur Cisco
 
+### [acl] GRE n'est pas eprouvable sur un routeur Cisco
+La matrice « chaque protocole a son transport » couvre OSPF, EIGRP, RIP,
+BGP, DHCP et IPsec, et laisse GRE dehors.
+**Mesure** : le moteur d'encapsulation (`GreAgent`) est reel mais n'est
+cable que pour la commande Linux `ip tunnel` ; la CLI Cisco
+`tunnel source` / `tunnel destination` ne remplit aucune table lue par
+le plan de donnees. Un cas GRE sur routeur Cisco mesurerait donc
+l'absence du tunnel, pas la liste.
+**Report** : c'est le manquement GRE deja connu (`docs/roadmap.md`
+§14.5), pas un defaut d'ACL. La couture d'apres-liste posee ici
+(`receiveControlPlaneIpv4`) accueille deja GRE, donc le jour ou le
+tunnel Cisco transporte, la liste le verra sans autre changement.
+
+### [acl/ipsec] l'autre moitie de « Crypto Access Check on Clear-Text Packets »
+La moitie ENTRANTE est fermee : une liste `in` ne rejuge plus le paquet
+dechiffre, ni les paquets que le routeur EMET. Reste la moitie
+SORTANTE de la meme fonction d'IOS 12.3(8)T — le paquet en clair est
+encore controle contre la liste SORTANTE AVANT chiffrement, la ou une
+machine moderne y soumet le paquet CHIFFRE.
+**Mesure** : `forwardPacket` evalue `getInterfaceACL(route.iface, 'out')`
+puis chiffre ; les deux etapes sont dans cet ordre dans le corps de la
+methode. Une liste sortante `deny esp any any` ne voit donc rien alors
+qu'une vraie machine refuserait le tunnel.
+**Report** : inverser les deux deplace le chiffrement dans le pipeline
+au lieu d'ajouter une garde, et le chiffrement est suivi d'une
+re-entree qui reroute le paquet — donc la liste sortante de l'interface
+FINALEMENT choisie n'est pas forcement celle qu'on vient d'evaluer.
+C'est une reorganisation de `forwardPacket`, pas un parametre.
+
+### [acl/ipsec] les listes declarees SOUS la crypto map n'existent pas
+`set ip access-group <n> in|out` est la maniere moderne de filtrer le
+trafic en clair d'un tunnel, celle qu'IOS 12.3(8)T offre en echange du
+double controle qu'il retire. La commande n'est pas reconnue.
+**Mesure** : `set ip access-group 150 in` sous `crypto map CMAP 10
+ipsec-isakmp` repond `% Invalid input detected`.
+**Report** : demande un point de filtrage propre au tunnel, la ou le
+plan de donnees ne connait aujourd'hui que les listes d'INTERFACE.
+
 ### [cli] un sous-mode atteint les commandes GLOBALES, et `show` marche sans `do`
 Mesure sur un Catalyst en `config-if` : `hostname ZORGLUB`,
 `dot1x system-auth-control` et `ip finger` sont ACCEPTES, et

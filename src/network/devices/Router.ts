@@ -2388,7 +2388,7 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
 
   // ─── Data Plane: Phase B+C — IPv4 Processing ──────────────────
 
-  protected processIPv4(inPort: string, ipPkt: IPv4Packet): void {
+  protected processIPv4(inPort: string, ipPkt: IPv4Packet, reinjected = false): void {
     if (!ipPkt || ipPkt.type !== 'ipv4') return;
 
     // Phase B: L3 Header Sanity Check (RFC 1812 §5.2.2)
@@ -2402,7 +2402,9 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
 
     // C.1a: Inbound ACL
     const originalPkt = ipPkt;
-    if (this.deniedByInboundACL(inPort, originalPkt)) return;
+    if (!reinjected && this.deniedByInboundACL(inPort, originalPkt)) return;
+
+    if (this.receiveControlPlaneIpv4(inPort, ipPkt)) return;
 
     const natInbound = this.natEngine.translateInbound(ipPkt, inPort);
     if (natInbound) ipPkt = natInbound;
@@ -2595,7 +2597,7 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
       const inner = isMcast
         ? this.ipsecEngine.processMulticastInboundESP(ipPkt)
         : this.ipsecEngine.processInboundESP(ipPkt);
-      if (inner) this.processIPv4(inPort, inner);
+      if (inner) this.processIPv4(inPort, inner, true);
       return;
     }
     if (ipPkt.protocol === IP_PROTO_AH && this.ipsecEngine) {
@@ -2603,7 +2605,7 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
       const inner = isMcast
         ? this.ipsecEngine.processMulticastInboundAH(ipPkt)
         : this.ipsecEngine.processInboundAH(ipPkt);
-      if (inner) this.processIPv4(inPort, inner);
+      if (inner) this.processIPv4(inPort, inner, true);
       return;
     }
     // NAT-T: ESP-in-UDP on port 4500 (RFC 3948)
@@ -2619,7 +2621,7 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
             payload: esp,
           };
           const inner = this.ipsecEngine.processInboundESP(espPkt);
-          if (inner) this.processIPv4(inPort, inner);
+          if (inner) this.processIPv4(inPort, inner, true);
           return;
         }
       }
@@ -2994,7 +2996,7 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
               }
               return;
             }
-            for (const p of encPkts) this.processIPv4(route.iface, p);
+            for (const p of encPkts) this.processIPv4(route.iface, p, true);
             return;
           }
         }
@@ -3011,7 +3013,7 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
             }
             return;
           }
-          for (const p of encPkts) this.processIPv4(route.iface, p);
+          for (const p of encPkts) this.processIPv4(route.iface, p, true);
           return;
         }
       }
@@ -3118,6 +3120,10 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
   protected receiveControlPlaneUdp(
     _inPort: string, _ipPkt: IPv4Packet, _udp: UDPPacket,
   ): boolean {
+    return false;
+  }
+
+  protected receiveControlPlaneIpv4(_inPort: string, _ipPkt: IPv4Packet): boolean {
     return false;
   }
 
