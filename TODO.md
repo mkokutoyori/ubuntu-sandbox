@@ -261,11 +261,23 @@ entree a ete ouverte :
   clients partageant le chemin de connexion TCP d'IOS ;
 - **refus** : `% Connection refused by remote host`.
 
-Ce qui MANQUE encore, et qui empeche d'ecrire la table entiere sans
-inventer : le texte d'IOS pour un DELAI et pour un nom non resolu cote
-SSH, et **tout** le cote VRP. Une table dont la moitie serait devinee
-serait pire que l'etat actuel, ou au moins la phrase rendue est celle
-d'un vrai client, fut-il d'une autre plateforme.
+Cote VRP, atteste aussi depuis : le client STelnet rend
+
+    Trying 10.1.1.1 ...
+    Press CTRL+K to abort
+    Error: Failed to connect to the remote host
+
+c'est-a-dire EXACTEMENT ce que `VRP_TELNET` porte deja — une seule
+formule pour toutes les causes, comme sur la boite. La table VRP est donc
+ecrivable telle quelle.
+
+Ce qui MANQUE encore : le texte d'IOS pour un DELAI et pour un nom non
+resolu cote SSH. Le client telnet d'IOS rend
+`% Connection timed out; remote host not responding` pour le delai, et
+les deux clients partagent manifestement le chemin de connexion TCP
+d'IOS — c'est ce que montre le message d'absence de route, identique mot
+pour mot des deux cotes — mais le reprendre reste une DEDUCTION et non
+une capture, et c'est a dire dans le code qui l'ecrira.
 
 ### [nmap] une adresse valide qu'aucun equipement ne porte est « Failed to resolve »
 **Constat.** `nmap -p 22 10.0.0.55` depuis une machine en 10.0.0.1/24 rend
