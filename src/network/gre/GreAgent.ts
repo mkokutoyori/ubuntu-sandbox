@@ -5,10 +5,12 @@ import {
   IP_PROTO_GRE, GRE_PROTOCOL_IPV4,
 } from './types';
 import {
-  MACAddress, IPAddress,
-  type EthernetFrame, type IPv4Packet,
-  ETHERTYPE_IPV4, nextIPv4Id, computeIPv4Checksum,
+  MACAddress,
+  IPAddress,
+  type EthernetFrame,
+  type IPv4Packet,
 } from '../core/types';
+import { buildIpv4Frame } from '../layers/internet/InternetLayer';
 import { Logger } from '../core/Logger';
 
 export interface GreHost {
@@ -130,25 +132,16 @@ export class GreAgent {
       + (t.checksumEnabled ? 4 : 0)
       + (t.key !== null ? 4 : 0)
       + (t.sequenceEnabled ? 4 : 0);
-    const outer: IPv4Packet = {
-      type: 'ipv4', version: 4, ihl: 5, tos: 0,
-      totalLength: 20 + headerLen + innerPacket.totalLength,
-      identification: nextIPv4Id(), flags: 0, fragmentOffset: 0,
-      ttl: t.ttl, protocol: IP_PROTO_GRE, headerChecksum: 0,
-      sourceIP: new IPAddress(t.sourceIp),
-      destinationIP: new IPAddress(t.destinationIp),
-      payload: gre,
-    };
-    outer.headerChecksum = computeIPv4Checksum(outer);
-    const eth: EthernetFrame = {
-      srcMAC: egress.port.getMAC(),
-      dstMAC: MACAddress.broadcast(),
-      etherType: ETHERTYPE_IPV4,
-      payload: outer,
-    };
+    const eth = buildIpv4Frame({
+      sourceIp: new IPAddress(t.sourceIp), destinationIp: new IPAddress(t.destinationIp),
+      sourceMac: egress.port.getMAC(), destinationMac: MACAddress.broadcast(),
+      protocol: IP_PROTO_GRE, ttl: t.ttl,
+      payload: gre, payloadBytes: headerLen + innerPacket.totalLength,
+      options: { flags: 0 },
+    });
     this.host.sendFrame(egress.name, eth);
     t.packetsOut++;
-    t.bytesOut += outer.totalLength;
+    t.bytesOut += (eth.payload as IPv4Packet).totalLength;
     this.getBus().publish({
       topic: 'gre.packet.encapsulated',
       payload: {

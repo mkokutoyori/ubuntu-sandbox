@@ -19,9 +19,16 @@ const TCP_WINDOW_SCALE_SHIFT = 7;
 /** Bound on out-of-order data buffered for reassembly (PRD-TCP.md P6) — one window's worth. */
 const TCP_REASSEMBLY_MAX_BYTES = TCP_DEFAULT_WINDOW;
 import {
-  MACAddress, IPAddress, IPv6Address,
-  type EthernetFrame, type IPv4Packet, type IPv6Packet,
-  IP_PROTO_TCP, ETHERTYPE_IPV4, ETHERTYPE_IPV6, nextIPv4Id, computeIPv4Checksum,
+  MACAddress,
+  IPAddress,
+  IPv6Address,
+  type EthernetFrame,
+  type IPv4Packet,
+  type IPv6Packet,
+  IP_PROTO_TCP,
+  ETHERTYPE_IPV4,
+  ETHERTYPE_IPV6,
+  createIPv4Packet,
   createIPv6Packet,
 } from '../core/types';
 import { Logger } from '../core/Logger';
@@ -1531,19 +1538,12 @@ export class TcpStack {
 
   private buildIpv4Segment(srcIp: string, dstIp: string, seg: TcpSegment): IPv4Packet {
     const tcpHeaderBytes = seg.dataOffset * 4;
-    const ipPkt: IPv4Packet = {
-      type: 'ipv4', version: 4, ihl: 5, tos: 0,
-      totalLength: 20 + tcpHeaderBytes + payloadBytes(seg.payload).length,
-      // PRD-TCP.md P7 (RFC 1191 §1) — DF set, matching real TCP stacks:
-      // without it, a smaller-MTU router would just silently fragment
-      // instead of reporting back so PMTUD can shrink our MSS.
-      identification: nextIPv4Id(), flags: 0b010, fragmentOffset: 0,
-      ttl: 64, protocol: IP_PROTO_TCP, headerChecksum: 0,
-      sourceIP: new IPAddress(srcIp), destinationIP: new IPAddress(dstIp),
-      payload: seg,
-    };
-    ipPkt.headerChecksum = computeIPv4Checksum(ipPkt);
-    return ipPkt;
+    // PRD-TCP.md P7 (RFC 1191 §1) — DF set, matching real TCP stacks:
+    // without it, a smaller-MTU router would just silently fragment
+    // instead of reporting back so PMTUD can shrink our MSS.
+    return createIPv4Packet(
+      new IPAddress(srcIp), new IPAddress(dstIp), IP_PROTO_TCP, 64,
+      seg, tcpHeaderBytes + payloadBytes(seg.payload).length, { flags: 0b010 });
   }
 
   private buildIpv6Segment(srcIp: string, dstIp: string, seg: TcpSegment): IPv6Packet {

@@ -1093,10 +1093,45 @@ familles NTP encore hébergées par un hôte : RADIUS et DHCP sont hébergés
 par le routeur et le commutateur, qui portent tous deux la forme en
 requête. Le reliquat NTP reste inscrit au `TODO.md`.
 
-### Phase 6 — `core/packetBuilders.ts` : brancher ou supprimer
-Une fois la couche internet en place, ce module est soit son mécanisme
-interne, soit un mort à retirer. **Il ne restera pas dans son état
-actuel** — écrit, testé, sans appelant.
+### Phase 6 — `core/packetBuilders.ts` : brancher ou supprimer — FERMÉE
+**Mesure de départ** : les trois fonctions du module (`buildIpv4Frame`,
+`buildUdpIpv4Frame`, `wrapIpv4InEthernet`) n'avaient **aucun appelant de
+production** — seul leur propre test les appelait. Pendant ce temps
+**dix** sites écrivaient l'en-tête IPv4 à la main : les dix champs,
+`headerChecksum: 0`, puis un `computeIPv4Checksum`, c'est-à-dire les
+règles que `createIPv4Packet` porte déjà. Dix écritures d'un même fait
+ne restent pas égales.
+
+Le module est **supprimé**. `buildIpv4Frame` et `wrapIpv4InEthernet`
+descendent dans `layers/internet/InternetLayer.ts` — la brique interne
+de la couche, comme §2.4 le prévoyait — et **huit** des dix sites les
+appellent : HSRP, VRRP, GLBP, PIM (deux), VXLAN, GRE, et le segment TCP
+(qui ne construit qu'un paquet, donc lit `createIPv4Packet`
+directement). `buildUdpIpv4Frame` n'est pas reprise : `buildUdpOverIpv4`
+la remplace depuis la phase 5, et la porter serait rouvrir le doublon.
+
+**Le piège de la conversion, et il est silencieux** :
+`createIPv4Packet` pose le drapeau DF par DÉFAUT (`flags: 0b010`) là où
+les huit sites écrivaient tous `flags: 0`. Convertir sans passer
+`options: { flags: 0 }` aurait donc posé DF sur toutes les annonces
+FHRP, sur les hellos PIM et sur l'encapsulation VXLAN et GRE — et
+**aucun test existant ne l'aurait vu**, aucun n'observant ce champ sur
+une trame émise. La sonde l'observe SUR LE FIL, par un `attachTap` sur
+le port du voisin.
+
+**Les deux exceptions sont mesurées, et gardent leur écriture** :
+- **IGMP** (`igmp/frames.ts`) pose `ihl: 6` parce que la RFC 2236 §2
+  exige l'option Router Alert (RFC 2113) sur chaque message — c'est elle
+  qui fait remonter le paquet au processus du routeur au lieu d'être
+  commuté. `createIPv4Packet` fixe `ihl: 5` et `totalLength = 20 + n`,
+  donc convertir ce site retirerait l'option en silence.
+- **ICMP echo** (`icmp/IcmpEcho.ts`) DÉRIVE son identification de
+  l'identifiant et du numéro de séquence au lieu de brûler un
+  `nextIPv4Id()`, ce qui la rend reproductible pour une même sonde.
+
+`probe-entete-ipv4-une-seule-ecriture.test.ts` (6 cas) porte le
+garde-fou de structure : il échoue en NOMMANT tout fichier hors de ces
+deux-là qui réintroduirait un en-tête écrit à la main.
 ---
 
 ## 7. Méthode de vérification

@@ -11,10 +11,12 @@ import {
   IP_PROTO_PIM, PIM_ALL_ROUTERS, PIM_ALL_ROUTERS_MAC,
 } from './types';
 import {
-  MACAddress, IPAddress,
-  type EthernetFrame, type IPv4Packet,
-  ETHERTYPE_IPV4, nextIPv4Id, computeIPv4Checksum,
+  MACAddress,
+  IPAddress,
+  type EthernetFrame,
+  type IPv4Packet,
 } from '../core/types';
+import { buildIpv4Frame } from '../layers/internet/InternetLayer';
 import { Logger } from '../core/Logger';
 
 export interface PimHost {
@@ -644,21 +646,13 @@ export class PimAgent {
       senderIp: srcIp.toString(),
     };
     fill(payload);
-    const ipPkt: IPv4Packet = {
-      type: 'ipv4', version: 4, ihl: 5, tos: 0xc0,
-      totalLength: 20 + bodyBytes,
-      identification: nextIPv4Id(), flags: 0, fragmentOffset: 0,
-      ttl: 1, protocol: IP_PROTO_PIM, headerChecksum: 0,
-      sourceIP: srcIp, destinationIP: new IPAddress(PIM_ALL_ROUTERS),
-      payload,
-    };
-    ipPkt.headerChecksum = computeIPv4Checksum(ipPkt);
-    const eth: EthernetFrame = {
-      srcMAC: port.getMAC(),
-      dstMAC: new MACAddress(PIM_ALL_ROUTERS_MAC),
-      etherType: ETHERTYPE_IPV4,
-      payload: ipPkt,
-    };
+    const eth = buildIpv4Frame({
+      sourceIp: srcIp, destinationIp: new IPAddress(PIM_ALL_ROUTERS),
+      sourceMac: port.getMAC(), destinationMac: new MACAddress(PIM_ALL_ROUTERS_MAC),
+      protocol: IP_PROTO_PIM, ttl: 1,
+      payload, payloadBytes: bodyBytes,
+      options: { tos: 0xc0, flags: 0 },
+    });
     this.host.sendFrame(iface, eth);
     this.getBus().publish({
       topic: 'pim.packet.sent',
@@ -778,21 +772,13 @@ export class PimAgent {
       options: opts,
       senderIp: srcIp.toString(),
     };
-    const ipPkt: IPv4Packet = {
-      type: 'ipv4', version: 4, ihl: 5, tos: 0xc0,
-      totalLength: 20 + 8 + opts.length * 8,
-      identification: nextIPv4Id(), flags: 0, fragmentOffset: 0,
-      ttl: 1, protocol: IP_PROTO_PIM, headerChecksum: 0,
-      sourceIP: srcIp, destinationIP: new IPAddress(PIM_ALL_ROUTERS),
-      payload,
-    };
-    ipPkt.headerChecksum = computeIPv4Checksum(ipPkt);
-    const eth: EthernetFrame = {
-      srcMAC: port.getMAC(),
-      dstMAC: new MACAddress(PIM_ALL_ROUTERS_MAC),
-      etherType: ETHERTYPE_IPV4,
-      payload: ipPkt,
-    };
+    const eth = buildIpv4Frame({
+      sourceIp: srcIp, destinationIp: new IPAddress(PIM_ALL_ROUTERS),
+      sourceMac: port.getMAC(), destinationMac: new MACAddress(PIM_ALL_ROUTERS_MAC),
+      protocol: IP_PROTO_PIM, ttl: 1,
+      payload, payloadBytes: 8 + opts.length * 8,
+      options: { tos: 0xc0, flags: 0 },
+    });
     this.host.sendFrame(rt.iface, eth);
     rt.lastHelloSentMs = this.nowMs();
     this.getBus().publish({

@@ -13,10 +13,11 @@ import {
   IP_PROTO_VRRP, VRRP_MULTICAST_IP, VRRP_MULTICAST_MAC,
 } from './types';
 import {
-  MACAddress, IPAddress,
-  type EthernetFrame, type IPv4Packet,
-  ETHERTYPE_IPV4, nextIPv4Id, computeIPv4Checksum,
+  MACAddress,
+  IPAddress,
+  type IPv4Packet,
 } from '../core/types';
+import { buildIpv4Frame } from '../layers/internet/InternetLayer';
 import { Logger } from '../core/Logger';
 import { FhrpAgentBase } from '../fhrp/FhrpAgentBase';
 import type { FhrpHost, FhrpRecomputeReason } from '../fhrp/types';
@@ -217,18 +218,13 @@ export class VrrpAgent extends FhrpAgentBase<VrrpGroupRuntime> {
       authType: g.authMode === 'simple' ? 1 : g.authMode === 'md5' ? 2 : 0,
       authData: g.authMode && g.authMode !== 'none' ? (g.authKey ?? '') : undefined,
     };
-    const ipPkt: IPv4Packet = {
-      type: 'ipv4', version: 4, ihl: 5, tos: 0xc0, totalLength: 20 + 8 + (g.vip ? 4 : 0),
-      identification: nextIPv4Id(), flags: 0, fragmentOffset: 0,
-      ttl: 255, protocol: IP_PROTO_VRRP, headerChecksum: 0,
-      sourceIP: srcIp, destinationIP: new IPAddress(VRRP_MULTICAST_IP),
-      payload,
-    };
-    ipPkt.headerChecksum = computeIPv4Checksum(ipPkt);
-    const eth: EthernetFrame = {
-      srcMAC: port.getMAC(), dstMAC: new MACAddress(VRRP_MULTICAST_MAC),
-      etherType: ETHERTYPE_IPV4, payload: ipPkt,
-    };
+    const eth = buildIpv4Frame({
+      sourceIp: srcIp, destinationIp: new IPAddress(VRRP_MULTICAST_IP),
+      sourceMac: port.getMAC(), destinationMac: new MACAddress(VRRP_MULTICAST_MAC),
+      protocol: IP_PROTO_VRRP, ttl: 255,
+      payload, payloadBytes: 8 + (g.vip ? 4 : 0),
+      options: { tos: 0xc0, flags: 0 },
+    });
     this.sendGuarded(g, eth);
     const c = this.stats(g);
     c.sentAdvertisements++;

@@ -4,13 +4,16 @@ import {
   type VxlanPacket, type VxlanHeader,
   createDefaultVxlanConfig, defaultInterface, defaultRemoteVtep,
   makeVtepKey, makeMacKey, isValidVni,
-  UDP_PORT_VXLAN, VXLAN_FLAG_I,
+  VXLAN_FLAG_I,
 } from './types';
 import {
-  MACAddress, IPAddress,
-  type EthernetFrame, type IPv4Packet, type UDPPacket,
-  IP_PROTO_UDP, ETHERTYPE_IPV4, nextIPv4Id, computeIPv4Checksum,
+  MACAddress,
+  IPAddress,
+  type EthernetFrame,
+  type UDPPacket,
+  IP_PROTO_UDP,
 } from '../core/types';
+import { buildIpv4Frame } from '../layers/internet/InternetLayer';
 import { Logger } from '../core/Logger';
 
 export interface VxlanHost {
@@ -214,20 +217,13 @@ export class VxlanAgent {
       destinationPort: this.config.port,
       length: 8 + 8 + 64, checksum: 0, payload,
     };
-    const ipPkt: IPv4Packet = {
-      type: 'ipv4', version: 4, ihl: 5, tos: 0,
-      totalLength: 20 + udp.length,
-      identification: nextIPv4Id(), flags: 0, fragmentOffset: 0,
-      ttl: 64, protocol: IP_PROTO_UDP, headerChecksum: 0,
-      sourceIP: srcIp, destinationIP: new IPAddress(remoteVtepIp),
-      payload: udp,
-    };
-    ipPkt.headerChecksum = computeIPv4Checksum(ipPkt);
-    const eth: EthernetFrame = {
-      srcMAC: egress.port.getMAC(),
-      dstMAC: MACAddress.broadcast(),
-      etherType: ETHERTYPE_IPV4, payload: ipPkt,
-    };
+    const eth = buildIpv4Frame({
+      sourceIp: srcIp, destinationIp: new IPAddress(remoteVtepIp),
+      sourceMac: egress.port.getMAC(), destinationMac: MACAddress.broadcast(),
+      protocol: IP_PROTO_UDP, ttl: 64,
+      payload: udp, payloadBytes: udp.length,
+      options: { flags: 0 },
+    });
     this.host.sendFrame(egress.name, eth);
     const knownVtep = this.config.remoteVteps.get(makeVtepKey(vni, remoteVtepIp));
     if (knownVtep) knownVtep.packetsOut++;
