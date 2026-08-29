@@ -190,6 +190,11 @@ export class IPAddress {
     return true;
   }
 
+  /** RFC 1122 §3.2.1.3 — 0.0.0.0, « this host », jamais une destination. */
+  isUnspecified(): boolean {
+    return this.octets.every(o => o === 0);
+  }
+
   /** True for any address in the loopback block 127.0.0.0/8 (RFC 1122 §3.2.1.3). */
   isLoopback(): boolean {
     return this.octets[0] === 127;

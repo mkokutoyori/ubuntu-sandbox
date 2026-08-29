@@ -1272,6 +1272,12 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
     return this.resolveRecursiveNextHop(covering.nextHop ?? null, depth + 1);
   }
 
+  private nextHopTarget(
+    nextHop: IPAddress | null | undefined, destination: IPAddress,
+  ): IPAddress {
+    return nextHop && !nextHop.isUnspecified() ? nextHop : destination;
+  }
+
   private routeCovering(address: IPAddress): RouteEntry | null {
     let best: RouteEntry | null = null;
     for (const route of this.routingTable) {
@@ -2915,7 +2921,7 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
       }
     }
 
-    const nextHopIP = route.nextHop || ipPkt.destinationIP;
+    const nextHopIP = this.nextHopTarget(route.nextHop, ipPkt.destinationIP);
 
     this._debugService?.emitLine('ip.packet',
       `IP: s=${ipPkt.sourceIP} (${inPort}), d=${ipPkt.destinationIP} (${route.iface}), g=${nextHopIP}, len ${fwdPkt.totalLength}, forward`);
@@ -3198,7 +3204,8 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
     const outPort = this.ports.get(route.iface);
     if (!outPort) return false;
     this.counters.ifOutOctets += ipPkt.totalLength;
-    this.sendIpv4FrameArpAware(route.iface, ipPkt, route.nextHop || destination);
+    this.sendIpv4FrameArpAware(
+      route.iface, ipPkt, this.nextHopTarget(route.nextHop, destination));
     return true;
   }
 
@@ -5370,7 +5377,7 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
     }
 
     // Determine next-hop IP
-    const nextHopIP = route.nextHop || targetIP;
+    const nextHopIP = this.nextHopTarget(route.nextHop, targetIP);
 
     const existingArp = this.arpTable.get(nextHopIP.toString());
     let nextHopMAC: MACAddress | null = existingArp ? existingArp.mac : null;
@@ -5597,7 +5604,7 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
     const myIP = outPort.getIPAddress();
     if (!myIP) return [];
 
-    const nextHopIP = route.nextHop || targetIP;
+    const nextHopIP = this.nextHopTarget(route.nextHop, targetIP);
 
     // ARP resolve first-hop MAC
     const existingArp = this.arpTable.get(nextHopIP.toString());
