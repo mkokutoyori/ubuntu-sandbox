@@ -460,6 +460,41 @@ seule et **ne change aucune sémantique protocolaire** : un moteur qui
   le message d'IOS, au lieu de `gateway or route not found`, qui n'est
   d'aucune machine réelle.
 
+- **Un routeur émet ET reçoit de l'UDP en IPv6** (phase 8, lot 9), jumeau
+  UDP du lot 4 sur le même objet, et les DEUX moitiés manquaient : à
+  l'émission `Router.sendUdpDatagram` n'avait aucun pendant v6, donc un
+  routeur ne pouvait adresser AUCUN datagramme UDP à une destination
+  IPv6 ; à la réception `IPv6DataPlane.handleLocalDelivery` n'aiguillait
+  sous UDP que le port 547, tout le reste étant jeté EN SILENCE, sans même
+  l'erreur que la RFC 4443 demande. Rien de neuf n'est écrit :
+  `resolvePath`, `selectIpv6SourceAddress` et `sendFrameNdpAware`
+  existaient, et le port fermé répond par `sendICMPv6Error`, l'émetteur du
+  plan d'acheminement. **La somme de contrôle est posée ET vérifiée**,
+  parce qu'en IPv6 elle est OBLIGATOIRE (RFC 8200 §8.1) là où la RFC 768
+  laisse le choix en IPv4. Fermé en chemin : une QUATRIÈME copie de la
+  règle de sélection d'adresse source vivait dans
+  `EndHost.sendUdpDatagram6` — le lot 4 en avait fermé trois et manqué
+  celle-là. **Reste v4 seulement, mesuré et écrit** : les agents de
+  `receiveControlPlaneUdp` (HSRP, NTP, GLBP, BFD, les cinq RADIUS, SNMP,
+  VXLAN) prennent tous un `IPAddress` ; les élargir est une campagne par
+  agent et non la suite mécanique du socle, lequel a un appelant réel — la
+  table de ports où TFTP et le client DNS se lient.
+
+- **Une adresse littérale n'est pas une panne de DNS** (phase 8, lot 8).
+  `nmap -p 22 10.0.0.55` rendait `Failed to resolve "10.0.0.55".` et
+  `0 IP addresses`, et `telnet 203.0.113.9` rendait `could not resolve
+  203.0.113.9/23: Name or service not known` — pour des quadruplets
+  pointés, où il n'y a RIEN à résoudre : le diagnostic envoie vérifier le
+  DNS quand le problème est le routage. Les deux commandes cherchent la
+  cible dans la TOPOLOGIE et traduisent « pas trouvée » par « pas
+  résolue ». Le vrai nmap SCANNE une adresse littérale et la rapporte en
+  panne (`output.cc:2500` porte la condition et le texte, et l'hôte est
+  COMPTÉ comme scanné) ; le rendu d'un hôte en panne existait déjà dans le
+  formateur, donc le correctif tient dans le moteur. Côté telnet le texte
+  est celui de l'errno, `sshUnreachableReason` du lot 6 étant LUE et non
+  recopiée. Limite écrite : seule la cible SIMPLE est traitée, une plage
+  continuant de ne compter que les hôtes trouvés.
+
 - **`ssh` parle la langue de sa plateforme** (phase 8, lot 7). Un routeur
   Cisco et un routeur Huawei rendaient la phrase du client d'OpenSSH sur
   leur propre invite — le défaut que `telnetDialect.ts` avait fermé pour

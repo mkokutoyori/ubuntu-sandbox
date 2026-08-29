@@ -1,4 +1,4 @@
-import type { IPAddress } from '@/network/core/types';
+import type { IPAddress, IPv6Address } from '@/network/core/types';
 import type { TftpEndpoint, TftpUdpDelivery } from '@/network/tftp/types';
 import { UdpPortTable, type PortClaim } from '@/network/layers/transport/UdpPortTable';
 
@@ -45,6 +45,12 @@ export class ControlPlaneUdpEndpoint implements TftpEndpoint {
   }
 
   deliver(sourceIP: IPAddress, destinationPort: number, sourcePort: number, payload: unknown): boolean {
+    return this.ports.deliver(destinationPort, { udp: { sourcePort, payload }, sourceIP });
+  }
+
+  deliver6(
+    sourceIP: IPv6Address, destinationPort: number, sourcePort: number, payload: unknown,
+  ): boolean {
     return this.ports.deliver(destinationPort, { udp: { sourcePort, payload }, sourceIP });
   }
 

@@ -187,30 +187,25 @@ refusee plutot que rangee sans etre lue.
 
 ## Couche transport (BRD TCP/IP)
 
-### [udp6] un routeur n'emet ni ne recoit d'UDP en IPv6 (hors DHCPv6)
-**Constat, les deux moities.** A l'EMISSION, `Router.sendUdpDatagram` est
-ecrit sur l'offre IPv4 (`sendIpv4Packet`) et n'a aucun pendant v6 : un
-routeur ne peut adresser aucun datagramme UDP a une destination IPv6. A
-la RECEPTION, `IPv6DataPlane.handleLocalDelivery` aiguille OSPFv3,
-ICMPv6, et sous UDP le SEUL port 547 (DHCPv6) — tout le reste est jete en
-silence. Consequence : ni NTP, ni syslog, ni SNMP, ni RADIUS en IPv6 sur
-un routeur, alors que les quatre fonctionnent en IPv4.
+### [udp6] les AGENTS du plan de controle restent en IPv4
+**Constat.** Le socle UDP/IPv6 d'un routeur existe depuis le lot 9 —
+`sendUdpDatagram6` emet, `deliverUdp6` remet a la table de ports, un port
+ferme repond ICMPv6 — mais les agents que `receiveControlPlaneUdp` sert
+(HSRP, NTP, GLBP, BFD, les cinq RADIUS, SNMP, VXLAN) prennent tous un
+`IPAddress` et ne voient donc que l'IPv4.
 
-**Mesure.** `grep -n "IP_PROTO_UDP" src/network/devices/router/IPv6DataPlane.ts`
-ne montre qu'une branche, gardee par `udp.destinationPort === 547` ; et
-`Router` ne porte aucun `udpBind`, sa reception de plan de controle
-passant par `receiveControlPlaneUdp`, dont la carte de revendications
-(`controlPlaneUdpClaims`) est purement IPv4.
+**Mesure.** Les onze branches de `CiscoRouter.receiveControlPlaneUdp`
+passent `ipPkt.sourceIP`, de type `IPAddress` ; aucune n'est atteignable
+depuis le chemin v6, qui s'arrete a la table de ports.
 
-**Raison du report.** C'est le pendant v6 de tout ce que la phase 4 a
-bati pour IPv4 — la table de ports, les revendications de plan de
-controle, `sourceAddressFor`, le regime « interface nommee » pour un
-groupe — et non un branchement d'une ligne ; le lot 4 vient de faire la
-moitie TCP de ce chantier et la moitie UDP en est le jumeau, de taille
-comparable. Le prerequis est desormais en place : `IPv6DataPlane`
-expose `resolvePath` et `sendFrameNdpAware`, et `selectIpv6SourceAddress`
-repond a « quelle adresse source ».
-
+**Raison du report.** C'est une campagne PAR AGENT — elargir chaque
+`handleUdp` a une adresse des deux familles, et decider pour chacun ce
+que la version v6 du protocole veut dire (HSRPv6 et GLBP ont leurs
+propres adresses de groupe ; NTP, BFD, RADIUS et SNMP sont les memes
+protocoles sur une autre couche 3) — et non la suite mecanique du socle.
+Le socle, lui, a un appelant reel (la table de ports du plan de controle,
+ou TFTP et le client DNS se lient), donc ce n'est pas un moteur sans
+porte.
 
 ### [ssh] le nom NON RESOLU cote SSH d'IOS n'est pas atteste
 **Constat.** `sshDialect.ts` porte les trois issues d'echec d'IOS sur

@@ -86,6 +86,7 @@ export interface IPv6RouterContext {
   /** DHCPv6 (RFC 8415) server engine, shared with the router's CLI layer. */
   getDhcpv6Server(): DHCPv6Server;
   deliverTcp6?(inPort: string, ipv6: IPv6Packet): void;
+  deliverUdp6?(inPort: string, ipv6: IPv6Packet, udp: UDPPacket): boolean;
   /** `ipv6 dhcp server <pool>` binding for a directly-attached interface. */
   getDhcpv6ServerPool(iface: string): string | undefined;
   /** `ipv6 dhcp relay destination <addr>` targets for a relaying interface. */
@@ -158,6 +159,8 @@ export function emptyIpv6Counters(): Ipv6Counters {
 }
 
 /** Where a locally-originated IPv6 packet leaves, once resolved. */
+const ICMPV6_UNREACH_PORT = 4;
+
 export interface IPv6PathResolution {
   iface: string;
   port: Port;
@@ -422,9 +425,13 @@ export class IPv6DataPlane {
       this.handleICMPv6(inPort, ipv6);
     } else if (ipv6.nextHeader === IP_PROTO_UDP) {
       const udp = ipv6.payload as UDPPacket | undefined;
-      if (udp?.type === 'udp' && udp.destinationPort === 547) {
+      if (udp?.type !== 'udp') return;
+      if (udp.destinationPort === 547) {
         this.handleDhcpv6Udp(inPort, ipv6, udp, srcMAC);
+        return;
       }
+      if (this.ctx.deliverUdp6?.(inPort, ipv6, udp)) return;
+      this.sendICMPv6Error(inPort, ipv6, 'destination-unreachable', ICMPV6_UNREACH_PORT);
     }
   }
 

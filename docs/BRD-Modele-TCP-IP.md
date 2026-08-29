@@ -1692,6 +1692,43 @@ discriminé : 4 tombent. Les deux témoins sont les NOMS, un par commande,
 et ils doivent passer des deux côtés — sans eux, un correctif qui
 supprimerait le message de résolution passerait la sonde.
 
+#### Lot 9 — un routeur émet ET reçoit de l'UDP en IPv6
+
+Le jumeau UDP du lot 4, sur le même objet, et les DEUX moitiés
+manquaient. À l'ÉMISSION, `Router.sendUdpDatagram` est écrit sur l'offre
+IPv4 et n'avait aucun pendant v6 : un routeur ne pouvait adresser AUCUN
+datagramme UDP à une destination IPv6. À la RÉCEPTION,
+`IPv6DataPlane.handleLocalDelivery` n'aiguillait sous UDP que le port 547
+(DHCPv6) — tout le reste était jeté EN SILENCE, sans même l'erreur que la
+RFC 4443 demande.
+
+**Réutilisation, plutôt qu'une seconde pile.** Rien de neuf n'est écrit :
+`resolvePath` (la recherche de route du plan d'acheminement),
+`selectIpv6SourceAddress` (la règle RFC 6724 §2 descendue dans la couche
+au lot 4) et `sendFrameNdpAware` (l'envoi qui met en file sur cache
+froid) existaient tous les trois ; le port fermé répond par
+`sendICMPv6Error`, l'émetteur que le plan d'acheminement emploie déjà.
+
+**La somme de contrôle UDP est posée ET vérifiée**, parce qu'en IPv6 elle
+est OBLIGATOIRE — RFC 8200 §8.1, « unlike IPv4, when UDP packets are
+originated by an IPv6 node, the UDP checksum is not optional » —, là où
+la RFC 768 laisse le choix en IPv4.
+
+**Fermé en chemin** : une QUATRIÈME copie de la règle de sélection
+d'adresse source vivait encore dans `EndHost.sendUdpDatagram6`, écrite à
+la main ; le lot 4 en avait fermé trois et manqué celle-là.
+
+**Ce qui reste v4 seulement, mesuré et écrit** : les agents que
+`receiveControlPlaneUdp` sert — HSRP, NTP, GLBP, BFD, les cinq RADIUS,
+SNMP, VXLAN — prennent tous un `IPAddress`. Les élargir est une campagne
+PAR AGENT, chacun demandant de décider ce que sa version v6 veut dire, et
+non la suite mécanique du socle. Le socle livré ici a un appelant réel —
+la table de ports du plan de contrôle, où TFTP et le client DNS se lient
+— donc ce n'est pas un moteur sans porte.
+
+`probe-routeur-udp-ipv6.test.ts` (4 cas) est discriminé : 3 tombent. Le
+quatrième est le TÉMOIN IPv4 monté dans le même laboratoire.
+
 ---
 
 ---

@@ -2954,9 +2954,7 @@ export abstract class EndHost extends Equipment {
 
     const route = this.resolveIPv6Route(destinationIP);
     if (!route) return false;
-    const srcIP = destinationIP.isLinkLocal()
-      ? route.port.getLinkLocalIPv6()
-      : (route.port.getGlobalIPv6() || route.port.getLinkLocalIPv6());
+    const srcIP = selectIpv6SourceAddress(route.port, destinationIP);
     if (!srcIP) return false;
 
     const ipPkt = createIPv6Packet(

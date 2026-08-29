@@ -68,7 +68,7 @@ import { TimerSet } from '@/events/TimerSet';
 import { TcpStack, type TcpSocket } from '../tcp/TcpStack';
 import type { TcpStream, TcpDialFailure } from '../tcp/types';
 import { isDialFailure } from '../tcp/types';
-import { verifyUdpChecksum } from '@/network/layers/transport/UdpChecksum';
+import { verifyUdpChecksum, stampUdpChecksum } from '@/network/layers/transport/UdpChecksum';
 import { dialTcp, parseDialAddress, type DialAddress } from '../tcp/dial';
 import { SystemClock } from '../core/SystemClock';
 import { PortNumber } from '../core/ports/PortNumber';
@@ -108,7 +108,7 @@ import {
   TCPPacket,
   createIPv4Packet,
   DeviceType,
-  IPv6Address, IPv6Packet,
+  IPv6Address, IPv6Packet, createIPv6Packet,
 } from '../core/types';
 import type { ARPEntry } from '../core/types';
 import type { IIPv4Route } from '../core/interfaces';
@@ -523,6 +523,7 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
       deliverOspfv3: (inPort, srcIP, packet, ipsecProtected) =>
         this.ospfIntegration?.receivePacketV3(inPort, srcIP, packet, ipsecProtected),
       deliverTcp6: (inPort, ipv6) => { this.tcpv2.handleIp6(inPort, ipv6.sourceIP, ipv6); },
+      deliverUdp6: (_inPort, ipv6, udp) => this.deliverUdp6(ipv6, udp),
       ipv6FilterPermits: (iface, direction, pkt) => this.ipv6FilterPermits(iface, direction, pkt),
       onIcmpv6EchoReply: (p) => this.emitIcmpEchoReply({ ...p, ttl: p.hopLimit, rttMs: 0 }),
       onIcmpv6EchoFailed: (p) => this.emitIcmpEchoFailed({
@@ -2749,6 +2750,34 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
 
       this.sendICMPError(inPort, ipPkt, 'destination-unreachable', ICMP_UNREACH_PORT);
     }
+  }
+
+  private deliverUdp6(ipv6: IPv6Packet, udp: UDPPacket): boolean {
+    if (!verifyUdpChecksum(udp, ipv6.sourceIP.toString(), ipv6.destinationIP.toString())) return true;
+    return this.udpEndpoint?.deliver6(
+      ipv6.sourceIP, udp.destinationPort, udp.sourcePort, udp.payload,
+    ) ?? false;
+  }
+
+  sendUdpDatagram6(
+    destination: IPv6Address, destinationPort: number, sourcePort: number,
+    payload: unknown, payloadBytes = 0,
+  ): boolean {
+    const path = this.ipv6Engine.resolvePath(destination);
+    if (!path) return false;
+    const source = selectIpv6SourceAddress(path.port, destination);
+    if (!source) return false;
+    const udp: UDPPacket = {
+      type: 'udp', sourcePort, destinationPort,
+      length: 8 + payloadBytes, checksum: 0, payload,
+    };
+    const packet = createIPv6Packet(
+      source.withScopeId(null), destination, IP_PROTO_UDP, 64,
+      stampUdpChecksum(udp, source.withScopeId(null).toString(), destination.toString()),
+      udp.length,
+    );
+    this.ipv6Engine.sendFrameNdpAware(path.iface, packet, path.nextHopIP);
+    return true;
   }
 
   /** @internal ISAKMP payload as a UDP 500→500 datagram through the FIB (DPD). */
