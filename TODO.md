@@ -218,18 +218,19 @@ topologie, donc y compris quand aucune route ne dessert la destination.
 `ssh: connect to host 203.0.113.9 port 22: No route to host` — mauvaise
 plateforme ET mauvais errno d'un coup.
 
-**Raison du report.** Pour (a), le correctif est un `SshDialect` calque
-sur `TelnetDialect`, et **la matiere manque** : le message du client SSH
+**(b) est FERME** : `sshUnreachableReason` lit la pile
+(`TcpStack.hasEgressTo`) et rend `Network is unreachable` quand aucune
+route ne dessert la destination, `No route to host` quand une route
+existe mais que personne ne repond ; les deux chemins — interactif
+(`wireSshLogin`) et scripte (`LinuxSshClient`) — la lisent.
+
+**Raison du report de (a).** Le correctif est un `SshDialect` calque sur
+`TelnetDialect`, et **la matiere manque** : le message du client SSH
 d'IOS pour une absence de route n'est atteste par aucune source
 atteignable depuis ce reseau (`% Connection refused by remote host` l'est
 pour le refus, `% Destination unreachable; gateway or host down` l'est
 pour telnet, mais rien ne dit que le client SSH ecrit le meme). L'ecrire
-sans capture serait l'invention que ce depot refuse. Pour (b), le
-correctif demande de distinguer « aucune route » de « route mais pas de
-reponse », ce que `TcpStack.hasEgressTo` sait desormais faire — mais ces
-sites interrogent la TOPOLOGIE et non la pile, donc le corriger
-proprement rejoint le chantier des chemins scriptes ci-dessous. La
-matiere transport est prete : `SshError` porte `CONNECTION_UNREACHABLE`.
+sans capture serait l'invention que ce depot refuse.
 
 ### [telnet] le chemin SCRIPTE annonce une panne de DNS pour une adresse
 **Constat.** `telnet 203.0.113.9` depuis un hote Linux rend

@@ -460,6 +460,33 @@ seule et **ne change aucune sémantique protocolaire** : un moteur qui
   le message d'IOS, au lieu de `gateway or route not found`, qui n'est
   d'aucune machine réelle.
 
+- **`ssh` rend l'errno de la vraie machine, et un laboratoire injoignable
+  a été corrigé avec** (phase 8, lot 6). `ssh admin@203.0.113.9` depuis un
+  hôte Linux — adresse qu'aucune route ne dessert — rendait `No route to
+  host`, qui est le texte d'EHOSTUNREACH (113) ; l'absence de route est
+  ENETUNREACH (101), `Network is unreachable` (nombres lus dans
+  `include/uapi/asm-generic/errno.h`, et `sshconnect.c:554`
+  d'openssh-portable rend `strerror(errno)` tel quel). Les deux ne se
+  diagnostiquent pas pareil : le premier dit que la machine n'a AUCUN
+  chemin — on regarde sa table de routage —, le second qu'un chemin existe
+  et que personne ne répond au bout. `sshUnreachableReason` porte la règle
+  une fois, lue par le chemin interactif et par le chemin scripté, et le
+  fait est lu sur la PILE (`hasEgressTo`), donc sur la vraie table de
+  routage et non sur la topologie. **Vérifié plutôt que supposé** : ces
+  phrases sont celles d'OpenSSH et elles sont JUSTES sous Windows aussi,
+  dont le `ssh.exe` EST le portage d'OpenSSH — « corriger » Windows aurait
+  cassé ce qui est juste ; ce qui reste faux est qu'une session CLI Cisco
+  ou Huawei les rende, autre défaut inscrit au `TODO.md` faute d'une
+  capture attestant ce qu'un client SSH d'IOS écrit là. **Trouvé par la
+  non-régression complète et raconté plutôt que tu** : le lot 3 avait posé
+  une régression dans `ad-sites.test.ts`, dont la maquette place deux
+  contrôleurs de domaine dans deux /24 DISTINCTS sur un même segment
+  commuté SANS routeur — la promotion ne fonctionnait que par le repli que
+  le lot 3 a retiré, et sur une vraie machine ce laboratoire rend
+  ENETUNREACH. Le masque passe à /16, les sous-réseaux AD restent en /24
+  et continuent de placer chaque DC dans un site distinct : c'est le test
+  qui encodait l'inaccessible comme praticable.
+
 - **Un routeur ouvre ET accepte du TCP en IPv6** (phase 8, lot 4), et il
   y avait TROIS défauts empilés. (1) Le `tcpHost` de `Router` ne déclarait
   ni `resolveRoute6` ni `localAddress6`, si bien que `resolveEgress6`

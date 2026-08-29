@@ -224,7 +224,7 @@ describe('SSH UI — basic password authentication flow', () => {
     expect(session.isInsideSshSession).toBe(false);
   });
 
-  it('shows "No route to host" when the target is unreachable', async () => {
+  it('shows "Network is unreachable" when no route reaches the target', async () => {
     // PRD-TCP.md P2: a SYN to an address nothing ever answers now really
     // waits through the RTO retry window (P1) instead of failing on the
     // same tick — fast-forward a virtual clock so the retries actually
@@ -236,7 +236,7 @@ describe('SSH UI — basic password authentication flow', () => {
     // Unreachable target — connect fails at TCP level before the auth phase,
     // so the password prompt never opens. Just wait for the error line.
     await waitFor(() =>
-      hasLine(session, /No route to host|Connection refused/),
+      hasLine(session, /Network is unreachable/),
     );
 
     expect(session.isInsideSshSession).toBe(false);

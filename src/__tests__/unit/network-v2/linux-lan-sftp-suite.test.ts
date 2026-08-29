@@ -987,10 +987,10 @@ describe('§16 — sftp against an unreachable target', () => {
 
   const rows: Row[] = [
     {
-      name: 'IP off-topology yields no route to host',
+      name: 'IP hors du reseau : ENETUNREACH, donc "Network is unreachable"',
       on: l => l.pc1,
       cmd: sftp('alice@192.0.2.99', ['pwd']),
-      contains: [/no route to host|Could not resolve/i],
+      contains: [/Network is unreachable/],
       excludes: [/Connected to/],
     },
     {

@@ -30,9 +30,9 @@ async function buildTwoDcs(): Promise<{ dc1: WindowsServer; dc2: WindowsServer }
   const sw = new GenericSwitch('switch-generic', 'SW1');
   new Cable('c-dc1').connect(dc1.getPorts()[0], sw.getPorts()[0]);
   new Cable('c-dc2').connect(dc2.getPorts()[0], sw.getPorts()[1]);
-  const mask = new SubnetMask('255.255.255.0');
-  dc1.getPorts()[0].configureIP(new IPAddress('192.168.80.10'), mask);
-  dc2.getPorts()[0].configureIP(new IPAddress('192.168.81.10'), mask);
+  const bothDcsOnOneRouterlessSegment = new SubnetMask('255.255.0.0');
+  dc1.getPorts()[0].configureIP(new IPAddress('192.168.80.10'), bothDcsOnOneRouterlessSegment);
+  dc2.getPorts()[0].configureIP(new IPAddress('192.168.81.10'), bothDcsOnOneRouterlessSegment);
 
   dc1.setCurrentUser('Administrator');
   await run(ps(dc1), 'Install-WindowsFeature AD-Domain-Services');

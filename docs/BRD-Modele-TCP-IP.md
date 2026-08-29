@@ -1560,6 +1560,52 @@ routeur Cisco et une machine Windows rendent la phrase d'OpenSSH — qui
 demande un `SshDialect` calqué sur `TelnetDialect` ; et le `telnet`
 scripté de Linux, qui annonce une panne de DNS pour un quadruplet pointé.
 
+#### Lot 6 — `ssh` rend l'errno de la vraie machine, et la régression que le lot 3 avait posée
+
+Deux choses, dont la seconde est une **régression introduite par le lot 3
+et trouvée par la non-régression complète** — elle est racontée ici plutôt
+que passée sous silence.
+
+**(1) ENETUNREACH n'est pas EHOSTUNREACH.** `ssh admin@203.0.113.9`
+depuis un hôte Linux — adresse qu'aucune route ne dessert — rendait
+`No route to host`, qui est le texte d'EHOSTUNREACH (113) ; l'absence de
+route est ENETUNREACH (101), `Network is unreachable`. Les deux ne se
+diagnostiquent pas pareil, et c'est pour cela que les confondre coûte :
+le premier dit que la machine n'a AUCUN chemin (on regarde sa table de
+routage), le second qu'un chemin existe et que personne ne répond au bout
+(on regarde la machine d'en face). `sshUnreachableReason` porte la règle
+une fois, lue par le chemin interactif (`wireSshLogin`) et par le chemin
+scripté (`LinuxSshClient`), et le fait est lu sur la PILE
+(`TcpStack.hasEgressTo`) — donc sur la vraie table de routage, pas sur la
+topologie. **Vérifié plutôt que supposé** : ces phrases sont celles
+d'OpenSSH et elles sont JUSTES sous Linux comme sous Windows, dont le
+`ssh.exe` EST le portage d'OpenSSH ; ce qui reste faux est qu'une session
+CLI Cisco ou Huawei les rende aussi, autre défaut, inscrit au `TODO.md`
+faute d'une capture attestant ce qu'un client SSH d'IOS écrit là.
+
+**(2) `ad-sites.test.ts` est tombé, et il avait tort.** La non-régression
+complète (1707 fichiers, 26 407 cas) a rendu **3 rouges**, tous dans ce
+fichier, et la bissection les impute au lot 3. Sa maquette place DC1 en
+`192.168.80.10/24` et DC2 en `192.168.81.10/24` **sur un même segment
+commuté, sans routeur** : deux /24 distincts, aucune route de l'un vers
+l'autre. La promotion de DC2 contre `-Server 192.168.80.10` ne
+fonctionnait que par le repli « le premier port adressé et up », qui
+ARPait la destination directement — c'est-à-dire par le défaut même que
+le lot 3 a fermé. **Sur une vraie machine ce laboratoire ne marche pas**,
+il rend ENETUNREACH. Le masque des interfaces passe donc à /16, ce qui
+les rend réellement joignables ; les sous-réseaux AD déclarés par
+`New-ADReplicationSubnet` restent en /24 et continuent de placer chaque
+DC dans un site distinct, qui est ce que ces cas éprouvent. Corrigé dans
+le test parce que c'est le test qui encodait l'inaccessible comme
+praticable.
+
+`probe-ssh-errno-de-la-vraie-machine.test.ts` (3 cas) est discriminé : 1
+tombe. Les deux autres sont nommés — le cas EHOSTUNREACH passe des deux
+côtés et le doit, c'est celui qui était déjà juste et c'est justement
+pour cela que le défaut se voyait mal.
+
+---
+
 ---
 
 ---
