@@ -3,7 +3,7 @@ import { getDefaultScheduler, type IScheduler } from '@/events/Scheduler';
 import { TimerSet } from '@/events/TimerSet';
 import {
   type TcpSegment, type TcpFlags, type TcpState, type TcpCloseReason,
-  type UnackedSegment, type TcpOption,
+  type UnackedSegment, type TcpOption, type TcpWireOutcome,
   noFlags, flagsString, nextIsn, makeSocketKey, makeListenerKey,
   computeTcpChecksum, verifyTcpChecksum, seqLt,
   TCP_DEFAULT_MSS, TCP_DEFAULT_WINDOW, TCP_TIME_WAIT_MS, TCP_MIN_MSS,
@@ -488,16 +488,22 @@ export class TcpStack {
    * Synchronous connect probe whose result is derived entirely from the
    * wire: 'open' on an established handshake, 'refused' when the peer
    * answers with a RST or an ICMP unreachable (host firewall REJECT / no
-   * listener), 'timeout' when nothing comes back (silent DROP / no route).
+   * listener), 'timeout' when nothing comes back (silent DROP), and
+   * 'unreachable' when the attempt never left this machine because no
+   * route resolves — ENETUNREACH, which a real stack reports at once.
    */
-  connectOutcome(remoteIp: string, remotePort: number): 'open' | 'refused' | 'timeout' {
+  connectOutcome(remoteIp: string, remotePort: number): TcpWireOutcome {
     const socket = this.connect(remoteIp, remotePort);
-    if (!socket) return 'timeout';
+    if (!socket) return this.hasEgressTo(remoteIp) ? 'timeout' : 'unreachable';
     if (socket.everEstablished) {
       socket.close();
       return 'open';
     }
     return socket.connectRefused ? 'refused' : 'timeout';
+  }
+
+  hasEgressTo(remoteIp: string): boolean {
+    return this.resolveEgress(canonicalIpText(remoteIp)) !== null;
   }
 
   /**

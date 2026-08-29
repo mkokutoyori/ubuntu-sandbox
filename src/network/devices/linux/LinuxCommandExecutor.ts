@@ -3,6 +3,7 @@
  */
 
 import { VirtualFileSystem, type INode } from './VirtualFileSystem';
+import type { TcpWireOutcome } from '../../tcp/types';
 import { LinuxUserManager } from './LinuxUserManager';
 import { loadSudoPolicy, type SudoActor } from './iam/SudoPolicyEngine';
 
@@ -484,8 +485,8 @@ export class LinuxCommandExecutor {
   /** Unsubscribe handle for the identity-file re-seed subscription. */
   private identityFilesUnsub: (() => void) | null = null;
   /** TCP liveness probe over the wire — injected by the owning machine. */
-  private wireProbe: ((ip: string, port: number) => 'open' | 'refused' | 'timeout') | null = null;
-  setWireProbe(probe: ((ip: string, port: number) => 'open' | 'refused' | 'timeout') | null): void {
+  private wireProbe: ((ip: string, port: number) => TcpWireOutcome) | null = null;
+  setWireProbe(probe: ((ip: string, port: number) => TcpWireOutcome) | null): void {
     this.wireProbe = probe;
   }
   /**

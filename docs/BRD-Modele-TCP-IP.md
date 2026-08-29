@@ -1510,6 +1510,56 @@ lien-local et globale — et non les huit règles.
 cinquième est le TÉMOIN IPv4 monté dans le même laboratoire, et il passe
 des deux côtés comme il le doit.
 
+#### Lot 5 — « pas de route » et « personne ne répond » sont deux diagnostics
+
+Le lot 3 a rendu ce cas ATTEIGNABLE en retirant le repli « le premier
+port adressé et up » : une sortie indécidable échoue désormais au lieu de
+partir n'importe où. La qualité du diagnostic compte donc à partir de là,
+ce qui n'était pas le cas tant que la retombée masquait la question.
+
+`connectOutcome` rendait `'timeout'` pour une destination qu'AUCUNE route
+ne dessert, et son propre commentaire assumait la confusion : « 'timeout'
+when nothing comes back (silent DROP / **no route**) ». C'est la
+distinction la plus coûteuse à rendre à l'envers — « délai dépassé »
+envoie chercher un pare-feu qui jette en silence, quand la machine n'a
+aucun chemin et n'a rien émis du tout.
+
+**L'autorité, lue et non citée de mémoire.** `tcp_v4_connect()` rend
+l'erreur de `ip_route_connect()` telle quelle et compte
+`IPSTATS_MIB_OUTNOROUTES` sur `-ENETUNREACH` : l'échec est IMMÉDIAT et
+distinct d'un délai. Le client le rend mot pour mot —
+`sshconnect.c:554` d'openssh-portable écrit
+`error("ssh: connect to host %s port %s: %s", …, strerror(errno))`, donc
+`Network is unreachable` pour ENETUNREACH, et non `No route to host`,
+qui est EHOSTUNREACH — l'ARP qui échoue sur le lien, ou une erreur ICMP
+revenue. Côté IOS le message est `% Destination unreachable; gateway or
+host down`, attesté par plusieurs fils indépendants de Cisco Community.
+
+**Trouvé en chemin et corrigé.** Le chemin SCRIPTÉ d'IOS ne consultait
+pas la table de routage du tout : il cherchait la machine dans la
+TOPOLOGIE et répondait « délai dépassé » quand il ne la trouvait pas, si
+bien qu'une adresse qu'aucune route ne dessert était rendue comme un pair
+muet. Il demande maintenant la sortie à la vraie pile (`hasEgressTo`)
+avant tout le reste, et sa seconde formule — `% Destination unreachable;
+gateway or route not found`, qui n'est d'aucune machine réelle — est
+remplacée par celle d'IOS.
+
+**Une seule écriture.** Le verdict était écrit SEPT fois
+(`'open' | 'refused' | 'timeout'` dans `sshLauncher`, `OpenSslHost`,
+`LinuxMachine`, `LinuxCommandExecutor`, `LinuxNetKernel`, `ScanEngine` et
+la pile) ; `TcpWireOutcome` — le nom qui existait déjà dans
+`sshLauncher` — vit dans `tcp/types.ts` et les sept la lisent.
+
+`probe-sans-route-n-est-pas-un-delai.test.ts` (5 cas, 3 tombent) est
+discriminé ; les deux témoins (refus par un pair joignable, connexion qui
+aboutit) passent des deux côtés, sans quoi une pile répondant
+`unreachable` à tout passerait la sonde. **Restent ouverts et inscrits au
+`TODO.md`** : la moitié SSH de la même question — `ssh: connect to host
+… : No route to host` est écrit en dur dans cinq endroits, donc un
+routeur Cisco et une machine Windows rendent la phrase d'OpenSSH — qui
+demande un `SshDialect` calqué sur `TelnetDialect` ; et le `telnet`
+scripté de Linux, qui annonce une panne de DNS pour un quadruplet pointé.
+
 ---
 
 ---

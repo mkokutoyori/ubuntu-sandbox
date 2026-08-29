@@ -77,6 +77,7 @@ export type SshError =
   | { kind: 'AUTH_FAILED'; user: string; attemptsLeft: number }
   | { kind: 'CONNECTION_REFUSED'; host: string; port: number }
   | { kind: 'CONNECTION_TIMEOUT'; host: string; port: number }
+  | { kind: 'CONNECTION_UNREACHABLE'; host: string; port: number }
   | { kind: 'PERMISSION_DENIED'; path: string; operation: string }
   | { kind: 'NOT_AUTHENTICATED' }
   | { kind: 'CHANNEL_ERROR'; channelId: number; message: string }

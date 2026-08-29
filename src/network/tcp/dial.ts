@@ -18,7 +18,7 @@ export async function dialTcp(
   stack: TcpStack, destination: DialAddress, port: PortNumber,
 ): Promise<TcpSocket | TcpDialFailure> {
   const socket = stack.connect(destination.toString(), port.value);
-  if (!socket) return { dialFailed: 'timeout' };
+  if (!socket) return { dialFailed: stack.hasEgressTo(destination.toString()) ? 'timeout' : 'unreachable' };
   if (socket.state === 'established') return socket;
   if (socket.closed) return dialFailureOf(socket);
 

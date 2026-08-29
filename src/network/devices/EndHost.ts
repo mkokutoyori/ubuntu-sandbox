@@ -26,7 +26,7 @@ import { Port } from '../hardware/Port';
 import type { IPv4AddressOrigin } from '../hardware/Port';
 import { SocketTable } from '../core/SocketTable';
 import { TcpStack } from '../tcp/TcpStack';
-import type { TcpSegment, TcpDialFailure } from '../tcp/types';
+import type { TcpSegment, TcpDialFailure, TcpWireOutcome } from '../tcp/types';
 import type { UdpChecksumInput } from '@/network/layers/transport/UdpChecksum';
 import { computeTcpChecksum, isDialFailure } from '../tcp/types';
 import {
@@ -3799,16 +3799,17 @@ export abstract class EndHost extends Equipment {
 
   /**
    * Connect probe whose verdict is read from the wire: 'open',
-   * 'refused' (RST or ICMP unreachable), or 'timeout' (silent drop / no
-   * route). Lets clients (nc, telnet, ssh) distinguish a filtered port
-   * from a closed one without inspecting the peer's firewall state.
+   * 'refused' (RST or ICMP unreachable), 'timeout' (silent drop) or
+   * 'unreachable' (no route resolves, so nothing was ever sent). Lets
+   * clients (nc, telnet, ssh) distinguish a filtered port from a closed
+   * one without inspecting the peer's firewall state.
    */
-  tcpConnectOutcome(targetIP: IPAddress, port: number): 'open' | 'refused' | 'timeout' {
+  tcpConnectOutcome(targetIP: IPAddress, port: number): TcpWireOutcome {
     this.resolveArpSync(targetIP);
     return this.tcpv2.connectOutcome(targetIP.toString(), port);
   }
 
-  tcpConnectOutcome6(targetIP: IPv6Address, port: number): 'open' | 'refused' | 'timeout' {
+  tcpConnectOutcome6(targetIP: IPv6Address, port: number): TcpWireOutcome {
     this.resolveNdpSync(targetIP);
     return this.tcpv2.connectOutcome(targetIP.toString(), port);
   }

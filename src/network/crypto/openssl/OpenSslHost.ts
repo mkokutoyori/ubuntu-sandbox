@@ -1,4 +1,5 @@
 import type { X509Certificate } from '@/network/pki/X509Certificate';
+import type { TcpWireOutcome } from '@/network/tcp/types';
 /**
  * docs/PRD-OpenSSL.md §6 — le port étroit que la plateforme remplit.
  *
@@ -40,7 +41,7 @@ export interface OpenSslHost {
    * asynchrone appelée — et n'en déclarer qu'une casserait
    * `sudo openssl`, qui reste sur le chemin synchrone.
    */
-  tcpConnect(ip: string, port: number): 'open' | 'refused' | 'timeout';
+  tcpConnect(ip: string, port: number): TcpWireOutcome;
 
   /**
    * La chaine REELLEMENT presentee par le pair, obtenue en deroulant la

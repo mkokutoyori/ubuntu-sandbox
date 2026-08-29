@@ -13,6 +13,7 @@
  */
 
 import { CiscoFileSystem } from './cisco/CiscoFileSystem';
+import { IPAddress } from '@/network/core/types';
 import { CommandTable } from '@/cli/CommandTable';
 import {
   specsFromTrieRegistrations, isCollector, type AdapterKeyword,
@@ -7855,12 +7856,18 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     }
     if (!sourceIp) return `Trying ${display} ...\n% Destination unreachable; no source interface for outbound Telnet`;
 
+    const stack = (this.d() as unknown as { getTcpStack?: () => { hasEgressTo(ip: string): boolean } })
+      .getTcpStack?.();
+    if (stack && IPAddress.tryParse(host) && !stack.hasEgressTo(host)) {
+      return `Trying ${display} ...\n% Destination unreachable; gateway or host down`;
+    }
+
     const remote = findHostByAddress(host, undefined, this.d() as never);
     if (!remote || remote.poweredOff || remote.interfaceDown) {
       return `Trying ${display} ...\n% Connection timed out; remote host not responding`;
     }
     if (!isPathReachable(sourceIp, remote.ip, this.d() as never)) {
-      return `Trying ${display} ...\n% Destination unreachable; gateway or route not found`;
+      return `Trying ${display} ...\n% Destination unreachable; gateway or host down`;
     }
     if (!this.remoteAcceptsTelnet(remote.device, port)) {
       return `Trying ${display} ...\n% Connection refused by remote host`;

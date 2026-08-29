@@ -23,6 +23,7 @@
  */
 
 import { EndHost, type PingResult, type ARPEntry, type HostRouteEntry, type HostPolicyRule, getNUDState } from './EndHost';
+import type { TcpWireOutcome } from '../tcp/types';
 import type { UserAccountHost, ShellIdentityHost, FileEditorHost } from '../equipment/HostCapabilities';
 import type { PathActor } from './linux/VfsPath';
 import { findHostByAddress } from './linux/network/HostLookup';
@@ -3491,7 +3492,7 @@ export abstract class LinuxMachine extends EndHost
         if (target.includes(':')) return this.tcpProbeSyncIPv6(target, port);
         return this.tcpProbeSync(new IPAddress(target), port);
       },
-      tcpConnectOutcome: (target: string, port: number): 'open' | 'refused' | 'timeout' => {
+      tcpConnectOutcome: (target: string, port: number): TcpWireOutcome => {
         if (target.includes(':')) return this.tcpConnectOutcome6(new IPv6Address(target), port);
         return this.tcpConnectOutcome(new IPAddress(target), port);
       },

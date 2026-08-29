@@ -1,4 +1,5 @@
 import type { NmapOptions } from './NmapOptions';
+import type { TcpWireOutcome } from '@/network/tcp/types';
 import { topPorts, serviceName, DEFAULT_TOP_COUNT } from './ServiceRegistry';
 
 export type PortState = 'open' | 'closed' | 'filtered' | 'open|filtered' | 'unfiltered';
@@ -15,7 +16,7 @@ export interface HostState {
 
 export interface HostProbes {
   hostState(target: string): HostState | null;
-  tcpOutcome(ip: string, port: number): 'open' | 'refused' | 'timeout';
+  tcpOutcome(ip: string, port: number): TcpWireOutcome;
   udpState(ip: string, port: number): 'open' | 'closed' | 'open|filtered';
   banner(ip: string, port: number): { service: string; version?: string } | null;
   ackReaches?(ip: string, port: number): boolean;

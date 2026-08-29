@@ -424,6 +424,73 @@ seule et **ne change aucune sémantique protocolaire** : un moteur qui
     GRE, qui précèdent encore la même décision mais dont le déplacement
     n'est pas mécanique (un rapport IGMP est adressé au GROUPE).
 
+- **La sortie TCP suit la table, refuse le non-unicast, et sait dire
+  qu'il n'y a pas de route** (phase 8, lots 3 et 5). `Router` construisait
+  son `tcpHost` SANS `resolveRoute` : la pile sautait donc la RIB et
+  tombait sur son balayage par sous-réseau, dont le `nextHopIp: targetIp`
+  traite toute destination comme si elle était sur le lien — mesuré sur
+  une machine à deux liaisons montantes, la connexion partait par le
+  MAUVAIS port en ARPant la destination au lieu du saut suivant. Le repli
+  final (« le premier port adressé, up et câblé ») est retiré avec : c'est
+  la forme que la phase 5 avait déjà retirée de syslog, NetFlow et SNMP,
+  et elle répond par l'ordre des ports à une question de direction. Une
+  sortie indécidable ÉCHOUE désormais, **et tout de suite** — `connect()`
+  rend `null` sans qu'aucune trame n'existe, comme `tcp_v4_connect()`
+  (net/ipv4/tcp_ipv4.c), qui rend l'erreur de route telle quelle et
+  compte `IPSTATS_MIB_OUTNOROUTES` sur `-ENETUNREACH`. **TCP refuse aussi
+  le non-unicast** : mesuré sur un routeur portant une route par défaut —
+  qui correspond à tout, groupes compris — `connect()` vers `224.0.0.1`,
+  `255.255.255.255` et la diffusion DIRIGÉE `10.0.0.255` rendait un socket
+  en `syn-sent`, donc un SYN réellement émis vers plusieurs machines à la
+  fois. Le noyau refuse les trois (`rt->rt_flags & (RTCF_MULTICAST |
+  RTCF_BROADCAST)` → `-ENETUNREACH` ; côté v6 le refus est la PREMIÈRE
+  chose faite, avant toute recherche de route). Aucun quatrième prédicat
+  n'a été écrit : `isUnicastDestination` COMPOSE `classifyIpv4Destination`
+  et `isDirectedBroadcast`, et `connectedPrefixesOfPort` ferme la recopie
+  que `Router` portait à la main. Enfin, **« pas de route » n'est plus
+  rendu comme un délai** : `connectOutcome` rendait `'timeout'` pour une
+  destination qu'aucune route ne dessert — son propre commentaire assumait
+  la confusion — alors que c'est la distinction la plus coûteuse à rendre
+  à l'envers, « délai dépassé » envoyant chercher un pare-feu qui jette en
+  silence quand la machine n'a rien émis du tout ; `TcpWireOutcome` gagne
+  `unreachable`, et le verdict, qui était écrit SEPT fois, n'a plus qu'une
+  déclaration. Le chemin scripté d'IOS, qui cherchait la machine dans la
+  TOPOLOGIE et répondait « délai dépassé », demande maintenant la sortie à
+  la vraie pile et rend `% Destination unreachable; gateway or host down`,
+  le message d'IOS, au lieu de `gateway or route not found`, qui n'est
+  d'aucune machine réelle.
+
+- **Un routeur ouvre ET accepte du TCP en IPv6** (phase 8, lot 4), et il
+  y avait TROIS défauts empilés. (1) Le `tcpHost` de `Router` ne déclarait
+  ni `resolveRoute6` ni `localAddress6`, si bien que `resolveEgress6`
+  sortait par son garde avant même de regarder l'adresse : **aucune**
+  connexion TCP IPv6 n'était possible — ni session BGP IPv6, ni SSH
+  sortant vers une adresse v6 — et le refus était muet. (2) Corriger le
+  seul (1) ne suffisait pas : `IPv6DataPlane.handleLocalDelivery` aiguille
+  OSPFv3, ICMPv6 et le DHCPv6 porté par UDP et **rien** pour TCP, donc un
+  segment adressé au routeur était jeté en silence — la mesure montrait le
+  pair ACCEPTER pendant que le routeur restait en `syn-sent`.
+  `TcpStack.handleIp6` existait déjà, sans appelant côté routeur. (3) **Le
+  démultiplexage TCP était sensible à l'ORTHOGRAPHE** : `connect()`
+  rangeait l'adresse distante telle que l'appelant l'avait écrite tandis
+  que `handleSegment` reçoit celle du paquet, normalisée — les sockets
+  étant indexés par une chaîne, `connect('2001:DB8::2', …)` ne retrouvait
+  jamais la réponse venue de `2001:db8::2`, et une majuscule suffisait à
+  laisser la connexion en `syn-sent`, **entre deux hôtes Linux comme
+  ailleurs** ; IPv4 n'y était pas exposée, sa notation pointée étant déjà
+  canonique. On analyse À LA FRONTIÈRE, donc `connect()` canonicalise une
+  fois pour toutes. Réutilisation plutôt qu'une seconde pile :
+  `resolvePath` est EXTRAIT de `resolveEgress` (la route d'une connexion
+  est celle d'un paquet de transit) et l'envoi employé est
+  `queueAndResolve`, qui MET EN FILE sur cache froid au lieu de lire le
+  cache et d'espérer — ce qui compte, le premier paquet d'une connexion
+  arrivant justement sur un cache froid. La sélection d'adresse source
+  était écrite DEUX fois ; elle descend dans
+  `layers/internet/Ipv6Egress.ts` et les trois appelants la lisent. Son
+  autorité est la **RFC 6724** (Standards Track, remplace la RFC 3484),
+  règle 2 « Prefer appropriate scope » ; ce qui est appliqué ici en est un
+  sous-ensemble assumé — deux portées — et non les huit règles.
+
 - **Un bus est PAR MACHINE, et une sonde qui l'oublie ne mesure rien.**
   `Equipment.getBus()` rend un `EventBus` propre a l'equipement (sauf
   `setEventBus`), ce qui est voulu : un evenement de A ne doit jamais

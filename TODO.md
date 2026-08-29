@@ -187,6 +187,47 @@ refusee plutot que rangee sans etre lue.
 
 ## Couche transport (BRD TCP/IP)
 
+### [ssh] le refus SSH parle OpenSSH sur TOUTES les plateformes
+**Constat.** `ssh: connect to host <h> port <p>: No route to host` est
+ecrit EN DUR dans cinq endroits — `terminal/ssh/wireSshLogin.ts` (x2),
+`CLITerminalSession.ts` (x2), `WindowsTerminalSession.ts` (x2),
+`LinuxTerminalSession.ts` — donc un routeur Cisco et une machine Windows
+rendent tous deux la phrase d'OpenSSH. C'est exactement le defaut que
+`telnetDialect.ts` a ferme pour telnet (« le client BSD sur un prompt
+IOS »), la moitie SSH n'ayant jamais ete faite.
+
+**Mesure.** Sur un routeur Cisco sans route vers la cible,
+`ssh -l admin 203.0.113.9` rend
+`ssh: connect to host 203.0.113.9 port 22: No route to host`. Une vraie
+machine IOS rend `% Destination unreachable; gateway or host down`.
+S'y ajoute que `No route to host` est EHOSTUNREACH, alors que l'absence
+de route est ENETUNREACH — `Network is unreachable` — meme sous Linux.
+
+**Raison du report.** Le correctif est un `SshDialect` calque sur
+`TelnetDialect` (quatre plateformes, une table, les sites d'appel qui la
+lisent), plus le choix d'un mot par plateforme ; c'est un lot a part
+entiere et non l'appendice de celui qui vient de distinguer
+`unreachable` de `timeout` dans le transport. La matiere est prete :
+`SshError` porte desormais `CONNECTION_UNREACHABLE`.
+
+### [telnet] le chemin SCRIPTE annonce une panne de DNS pour une adresse
+**Constat.** `telnet 203.0.113.9` depuis un hote Linux rend
+`telnet: could not resolve 203.0.113.9/23: Name or service not known`.
+`203.0.113.9` est un quadruplet pointe : il n'y a RIEN a resoudre. Le
+diagnostic envoie verifier le DNS quand le probleme est le routage.
+
+**Mesure.** Faite sur une maquette a deux machines ou l'adresse
+n'appartient a personne ; le chemin scripte
+(`LinuxCommandExecutor.runTelnetClient`) cherche la machine dans la
+TOPOLOGIE et traite « pas trouvee » comme « pas resolue ».
+
+**Raison du report.** Le vrai correctif n'est pas le message mais le
+chemin : ces clients scriptes court-circuitent le fil (recherche par
+objet plutot qu'emission), limite deja decrite dans `CLAUDE.md`. Les
+faire passer par la pile est le meme chantier que l'unification des deux
+piles SSH, et le corriger ici ne ferait que deplacer une phrase inventee.
+
+
 ### [udp] le repli en DIFFUSION subsiste sur quatre familles d'hotes
 **Constat.** Quand l'hote n'offre pas `sendIpv4FrameArpAware`, les agents
 d'application retombent sur une trame fabriquee a `dstMAC: broadcast` —

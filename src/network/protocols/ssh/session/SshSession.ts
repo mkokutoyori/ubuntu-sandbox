@@ -92,11 +92,15 @@ export class SshSession implements ISshSession {
 
     const dialed = await this.deps.tcpConnector(opts.host, opts.port);
     if (!dialed || isDialFailure(dialed)) {
-      const silent = isDialFailure(dialed) && dialed.dialFailed === 'timeout';
+      const reason = isDialFailure(dialed) ? dialed.dialFailed : 'refused';
       this.transition(disconnected(
-        silent ? 'connection timed out' : 'connection refused'));
+        reason === 'timeout' ? 'connection timed out'
+          : reason === 'unreachable' ? 'network is unreachable'
+            : 'connection refused'));
       return err({
-        kind: silent ? 'CONNECTION_TIMEOUT' : 'CONNECTION_REFUSED',
+        kind: reason === 'timeout' ? 'CONNECTION_TIMEOUT'
+          : reason === 'unreachable' ? 'CONNECTION_UNREACHABLE'
+            : 'CONNECTION_REFUSED',
         host: opts.host,
         port: opts.port,
       });

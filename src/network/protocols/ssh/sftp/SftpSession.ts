@@ -494,6 +494,8 @@ function formatConnectError(
       return `ssh: connect to host ${host} port 22: Connection refused`;
     case 'CONNECTION_TIMEOUT':
       return `ssh: connect to host ${host} port 22: Connection timed out`;
+    case 'CONNECTION_UNREACHABLE':
+      return `ssh: connect to host ${host} port 22: Network is unreachable`;
     case 'HOST_KEY_REJECTED':
       return `Host key verification failed.`;
     case 'HOST_KEY_CHANGED':
