@@ -2429,12 +2429,9 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
       this.forwardMulticast(inPort, ipPkt);
       return;
     }
-    for (const [, port] of this.ports) {
-      if (port.ownsIPv4(destIP)) {
-        // Control plane — the inbound ACL has already had its say (C.1a)
-        this.handleLocalDelivery(inPort, ipPkt);
-        return;
-      }
+    if (this.ownsIPv4Address(destIP)) {
+      this.handleLocalDelivery(inPort, ipPkt);
+      return;
     }
 
     // C.1-ter: RFC 2644 — a subnet-directed broadcast reaching the router
@@ -3127,13 +3124,17 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
     return false;
   }
 
-  private addressedToUs(ipPkt: IPv4Packet): boolean {
-    const destIP = ipPkt.destinationIP;
-    if (classifyIpv4Destination(destIP) !== 'unicast') return true;
+  private ownsIPv4Address(destIP: IPAddress): boolean {
     for (const [, port] of this.ports) {
       if (port.ownsIPv4(destIP)) return true;
     }
     return false;
+  }
+
+  private addressedToUs(ipPkt: IPv4Packet): boolean {
+    const destIP = ipPkt.destinationIP;
+    if (classifyIpv4Destination(destIP) !== 'unicast') return true;
+    return this.ownsIPv4Address(destIP);
   }
 
   private baseUdpClaims: Map<number, ControlPlaneUdpClaim> | null = null;

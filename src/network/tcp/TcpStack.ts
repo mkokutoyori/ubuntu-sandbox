@@ -1331,7 +1331,6 @@ export class TcpStack {
         + (offending.flags.fin ? 1 : 0)
         + segmentPayloadSize(offending)) >>> 0;
     }
-    const srcIp = localIp === '' ? egress.srcIp : localIp;
     const seg: TcpSegment = {
       type: 'tcp',
       sourcePort: offending.destinationPort, destinationPort: offending.sourcePort,
@@ -1339,8 +1338,8 @@ export class TcpStack {
       dataOffset: 5, flags, window: 0, checksum: 0, urgentPointer: 0,
       options: [], payload: undefined,
     };
-    seg.checksum = computeTcpChecksum(seg, srcIp, remoteIp);
-    this.shipSegment(egress, srcIp, remoteIp, seg);
+    seg.checksum = computeTcpChecksum(seg, localIp, remoteIp);
+    this.shipSegment(egress, localIp, remoteIp, seg);
   }
 
   /**
