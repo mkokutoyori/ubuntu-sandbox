@@ -7,13 +7,12 @@ import {
   VXLAN_FLAG_I,
 } from './types';
 import {
-  MACAddress,
   IPAddress,
   type EthernetFrame,
   type UDPPacket,
   IP_PROTO_UDP,
 } from '../core/types';
-import { buildIpv4Frame } from '../layers/internet/InternetLayer';
+import type { Ipv4SendRequest } from '../layers/internet/Ipv4Egress';
 import { Logger } from '../core/Logger';
 
 export interface VxlanHost {
@@ -23,6 +22,7 @@ export interface VxlanHost {
   getPort(name: string): import('../hardware/Port').Port | undefined;
   getPorts(): import('../hardware/Port').Port[];
   sendFrame(portName: string, frame: EthernetFrame): void;
+  sendIpv4Packet(request: Ipv4SendRequest): boolean;
   onVxlanDecapsulated?(vni: number, innerFrame: EthernetFrame, fromRemoteVtepIp: string): void;
 }
 
@@ -203,11 +203,6 @@ export class VxlanAgent {
       this.dropped(vni, remoteVtepIp, 'no-source-ip');
       return;
     }
-    const egress = this.resolveEgress(remoteVtepIp);
-    if (!egress) {
-      this.dropped(vni, remoteVtepIp, 'no-egress');
-      return;
-    }
     const srcIp = new IPAddress(localIface.localVtepIp);
     const header: VxlanHeader = { flags: VXLAN_FLAG_I, reserved1: 0, vni, reserved2: 0 };
     const payload: VxlanPacket = { type: 'vxlan', header, innerFrame };
@@ -217,14 +212,13 @@ export class VxlanAgent {
       destinationPort: this.config.port,
       length: 8 + 8 + 64, checksum: 0, payload,
     };
-    const eth = buildIpv4Frame({
-      sourceIp: srcIp, destinationIp: new IPAddress(remoteVtepIp),
-      sourceMac: egress.port.getMAC(), destinationMac: MACAddress.broadcast(),
+    if (!this.host.sendIpv4Packet({
+      destination: new IPAddress(remoteVtepIp),
+      source: srcIp,
       protocol: IP_PROTO_UDP, ttl: 64,
       payload: udp, payloadBytes: udp.length,
-      options: { flags: 0 },
-    });
-    this.host.sendFrame(egress.name, eth);
+      flags: 0,
+    })) { this.dropped(vni, remoteVtepIp, 'no-egress'); return; }
     const knownVtep = this.config.remoteVteps.get(makeVtepKey(vni, remoteVtepIp));
     if (knownVtep) knownVtep.packetsOut++;
     this.getBus().publish({
@@ -258,25 +252,4 @@ export class VxlanAgent {
     });
   }
 
-  private resolveEgress(targetIp: string): { name: string; port: import('../hardware/Port').Port } | null {
-    const target = targetIp.split('.').map(Number);
-    for (const port of this.host.getPorts()) {
-      const ip = port.getIPAddress();
-      const mask = port.getSubnetMask();
-      if (!ip || !mask) continue;
-      const local = ip.toString().split('.').map(Number);
-      const maskBits = mask.toString().split('.').map(Number);
-      let same = true;
-      for (let i = 0; i < 4; i++) {
-        if ((local[i] & maskBits[i]) !== (target[i] & maskBits[i])) { same = false; break; }
-      }
-      if (same) return { name: port.getName(), port };
-    }
-    for (const port of this.host.getPorts()) {
-      if (port.getIPAddress() && port.getIsUp() && port.isConnected()) {
-        return { name: port.getName(), port };
-      }
-    }
-    return null;
-  }
 }

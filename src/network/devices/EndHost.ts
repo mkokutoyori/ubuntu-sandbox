@@ -64,6 +64,11 @@ import {
   createICMPv6EchoRequest, createICMPv6EchoReply, createRouterSolicitation,
   IPV6_ALL_NODES_MULTICAST, IPV6_ALL_ROUTERS_MULTICAST,
 } from '../core/types';
+import { buildIpv4Frame } from '../layers/internet/InternetLayer';
+import {
+  DEFAULT_IPV4_TTL, ipv4HeaderOptionsOf, linkDestinationFor, requiresNamedInterface,
+  type Ipv4SendRequest,
+} from '../layers/internet/Ipv4Egress';
 import { Logger } from '../core/Logger';
 import {
   buildICMPError,
@@ -2246,6 +2251,38 @@ export abstract class EndHost extends Equipment {
    * destination itself for a directly-connected peer, or the gateway
    * for anything a caller has already resolved a route for.
    */
+  public sendIpv4Packet(request: Ipv4SendRequest): boolean {
+    const ttl = request.ttl ?? DEFAULT_IPV4_TTL;
+    const options = ipv4HeaderOptionsOf(request);
+
+    if (requiresNamedInterface(request.destination)) {
+      if (!request.iface) return false;
+      const port = this.getPort(request.iface);
+      if (!port || !port.isOperationallyUp()) return false;
+      const source = request.source ?? port.getIPAddress();
+      if (!source) return false;
+      return this.sendFrame(request.iface, buildIpv4Frame({
+        sourceIp: source, destinationIp: request.destination,
+        sourceMac: port.getMAC(), destinationMac: linkDestinationFor(request.destination),
+        protocol: request.protocol, ttl,
+        payload: request.payload, payloadBytes: request.payloadBytes,
+        options,
+      }));
+    }
+
+    const route = this.resolveRoute(request.destination);
+    if (!route || !route.port.isOperationallyUp()) return false;
+    const source = request.source ?? route.port.getIPAddress();
+    if (!source) return false;
+
+    this.sendIpv4FrameArpAware(
+      route.iface,
+      createIPv4Packet(source, request.destination, request.protocol, ttl,
+        request.payload, request.payloadBytes, options),
+      route.nextHopIP);
+    return true;
+  }
+
   public sendIpv4FrameArpAware(outPortName: string, ipPkt: IPv4Packet, nextHopIP: IPAddress): void {
     const port = this.getPort(outPortName);
     if (!port) return;

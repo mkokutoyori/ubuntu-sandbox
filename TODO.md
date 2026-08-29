@@ -1180,8 +1180,18 @@ défauts — la méthode vaut d'être reprise sur le reliquat.
   open-ports` — il n'existe donc pas de capture texte a lire, et les
   blancs sont precisement l'information cherchee.
 
+- PIM, VRRP, HSRP et GLBP batissent encore leur propre trame — ouvert.
+  Ils emettent CORRECTEMENT (multicast lien-local, bonne interface, bonne
+  adresse de couche lien), donc ce n'est pas un defaut de comportement :
+  c'est la descente qui reste a faire par
+  `Router.sendIpv4Packet` (BRD §3.3), dont le regime « interface nommee »
+  est ecrit pour eux. IGMP est un cas a part et ne peut PAS y passer en
+  l'etat : son en-tete porte l'option Router Alert (`ihl: 6`, RFC 2113,
+  exigee par la RFC 2236 §2) que ni `createIPv4Packet` ni l'offre ne
+  savent poser — l'y forcer retirerait l'option en silence.
+
 - Un tunnel GRE et un tunnel VXLAN DIFFUSENT leur paquet exterieur —
-  ouvert. `GreAgent` et `VxlanAgent` batissent le paquet exterieur puis
+  FERME. `GreAgent` et `VxlanAgent` batissent le paquet exterieur puis
   l'emettent avec `destinationMac: MACAddress.broadcast()`, alors que ce
   paquet est un unicast IPv4 ordinaire : une vraie machine le route et le
   resout par ARP, vers UNE adresse MAC. Diffuser signifie que toutes les
@@ -1191,8 +1201,10 @@ défauts — la méthode vaut d'être reprise sur le reliquat.
   mettre en file et de resoudre. Le correctif est l'offre de la couche
   internet que le BRD §3.3 decrit (`send({ dst, protocol, ... })`) et que
   `Router.sendIpv4FrameArpAware` sait deja realiser ; il n'est pas fait
-  ici parce qu'il porte le meme lot que la descente de PIM, VRRP, HSRP,
-  GLBP et IGMP, tous encore constructeurs de leur propre trame.
+  ici : `layers/internet/Ipv4Egress.ts` pose l'offre, `Router` et
+  `EndHost` la realisent, et les deux tunnels routent desormais leur
+  paquet exterieur. `probe-tunnel-ne-diffuse-pas.test.ts` observe la fuite
+  la ou elle se voit — sur une machine tierce du meme segment.
 
 - `show tcp brief` et `show sockets` annoncent un en-tete et ne rendent
   JAMAIS de ligne — ouvert. `showTcpBrief()` et `showSockets()`

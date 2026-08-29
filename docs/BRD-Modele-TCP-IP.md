@@ -1192,6 +1192,54 @@ le port du voisin.
 `probe-entete-ipv4-une-seule-ecriture.test.ts` (6 cas) porte le
 garde-fou de structure : il échoue en NOMMANT tout fichier hors de ces
 deux-là qui réintroduirait un en-tête écrit à la main.
+### Phase 7 — L'offre de la couche internet (§3.3) — LIVRÉE pour les tunnels
+`layers/internet/Ipv4Egress.ts` pose ce que §3.3 décrit :
+`sendIpv4Packet({ dst, protocol, payload, ... })`, le pendant exact de
+`sendUdpDatagram` un étage plus bas. **Elle tranche entre DEUX régimes**,
+et la distinction est celle de la RFC plutôt qu'une commodité : un
+multicast LIEN-LOCAL (224.0.0.0/24) ou une diffusion limitée ne se
+**route** pas — il s'émet sur une interface que l'appelant NOMME —
+tandis que tout le reste passe par la table de routage et le chemin ARP.
+`classifyIpv4Destination` (phase 2, incrément 2) fournit le verdict, donc
+la règle n'est écrite qu'une fois. `Router` et `EndHost` la réalisent
+tous deux, et `Router.sendUdpDatagram` est désormais écrit PAR-DESSUS
+elle plutôt qu'à côté.
+
+**Le défaut qu'elle ferme n'est pas cosmétique.** `GreAgent` et
+`VxlanAgent` émettaient leur paquet extérieur avec
+`destinationMac: MACAddress.broadcast()`. Ce paquet est un unicast IPv4
+ordinaire : une vraie machine le route et résout son prochain saut par
+ARP, vers UNE adresse. Diffuser signifie que **toutes les stations du
+segment reçoivent la charge encapsulée** — un tunnel qui fuit son contenu
+à tout le LAN, c'est-à-dire l'inverse de ce qu'un tunnel existe pour
+faire. La sonde le montre là où cela se voit : sur une machine tierce
+branchée au même commutateur, qui n'a rien à voir avec le tunnel.
+
+Chacun des deux portait de surcroît **sa propre copie de
+`resolveEgress`** — la cinquième et la sixième du dépôt, mot pour mot
+celle que le lot 8 venait de retirer de syslog, NetFlow et SNMP, repli
+compris. Elles disparaissent avec.
+
+Converti au passage : le client DHCP du routeur écrivait sa trame de
+diffusion à la main (`dstMAC: broadcast`, `ETHERTYPE_IPV4`) ; c'est
+exactement le régime « interface nommée » de l'offre, et il l'emprunte.
+
+`probe-tunnel-ne-diffuse-pas.test.ts` (6 cas) : QUATRE tombent contre
+l'état d'avant. La première version du fichier n'avait pas de témoin
+VXLAN — « le tiers ne reçoit rien » y était satisfait par un tunnel qui
+n'émet pas du tout — et son propre témoin GRE a attrapé, non pas un
+défaut du produit, mais un import fautif dans la sonde (`IP_PROTO_GRE`
+vit dans `gre/types.ts`, pas dans `core/types.ts`).
+
+**Reste à descendre par cette offre** : PIM, VRRP, HSRP et GLBP, qui
+émettent aujourd'hui correctement (multicast lien-local, bonne interface,
+bonne adresse de couche lien) mais bâtissent leur trame eux-mêmes ; et
+IGMP, dont le cas est particulier — son en-tête porte l'option Router
+Alert (`ihl: 6`), que ni `createIPv4Packet` ni cette offre ne savent
+poser. Ils sont inscrits au `TODO.md`.
+
+---
+
 ---
 
 ## 7. Méthode de vérification

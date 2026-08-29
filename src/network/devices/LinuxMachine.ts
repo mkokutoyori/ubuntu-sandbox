@@ -372,6 +372,7 @@ export abstract class LinuxMachine extends EndHost
       getPort: (n: string) => this.getPort(n),
       getPorts: () => this.getPorts(),
       sendFrame: (p: string, f: EthernetFrame) => { this.sendFrame(p, f); },
+      sendIpv4Packet: (request) => this.sendIpv4Packet(request),
     };
     this.greAgentInstance = new GreAgent(greHost, () => this.getBus());
     this.greAgentInstance.start();

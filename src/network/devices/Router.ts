@@ -127,8 +127,12 @@ import type { FhrpDataPlane } from '../fhrp/types';
 import { DHCPServer, type DhcpUtilizationCrossing } from '../dhcp/DHCPServer';
 import {
   classifyIpv4Destination, decrementForForwarding, isDirectedBroadcast,
-  ipv4HeaderProblem,
+  ipv4HeaderProblem, buildIpv4Frame,
 } from '../layers/internet/InternetLayer';
+import {
+  DEFAULT_IPV4_TTL, ipv4HeaderOptionsOf, linkDestinationFor, requiresNamedInterface,
+  type Ipv4SendRequest,
+} from '../layers/internet/Ipv4Egress';
 import {
   DHCP_FREE_ADDRESS_HIGH, DHCP_FREE_ADDRESS_LOW, DHCP_SHARED_NET_ENTRY,
   snmpAdminStringIndex,
@@ -273,7 +277,7 @@ import type { IRouterShell } from './shells/IRouterShell';
 import { iosInterfaceUsable, interfacesBootShutdown, routerPortCountOverride } from './inspection/InterfaceStatusView';
 import { ciscoPasswordMatches } from './shells/cisco/ciscoPasswordVerify';
 import { DHCP_SERVER_PORT, DHCP_CLIENT_PORT } from '../core/WellKnownPorts';
-import { buildUdpOverIpv4, type UdpSendRequest } from '../layers/transport/UdpEgress';
+import { buildUdpDatagram, type UdpSendRequest } from '../layers/transport/UdpEgress';
 
 // ─── Router (Abstract Base) ──────────────────────────────────────────
 
@@ -1276,18 +1280,18 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
   getDhcpClientAgent(): RouterDhcpClient { return this.dhcpClientAgent; }
 
   private sendDhcpClientFrame(iface: string, pkt: DHCPPacket): void {
-    const port = this.ports.get(iface);
-    if (!port) return;
-    const ipPkt = buildUdpOverIpv4(new IPAddress('0.0.0.0'), {
+    const datagram = buildUdpDatagram({
       destination: new IPAddress('255.255.255.255'),
       destinationPort: DHCP_SERVER_PORT, sourcePort: DHCP_CLIENT_PORT,
       payload: pkt, payloadBytes: 300,
     });
-    this.sendFrame(iface, {
-      srcMAC: port.getMAC(),
-      dstMAC: MACAddress.broadcast(),
-      etherType: ETHERTYPE_IPV4,
-      payload: ipPkt,
+    this.sendIpv4Packet({
+      destination: new IPAddress('255.255.255.255'),
+      iface,
+      source: new IPAddress('0.0.0.0'),
+      protocol: IP_PROTO_UDP,
+      payload: datagram,
+      payloadBytes: datagram.length,
     });
   }
 
@@ -4944,6 +4948,37 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
    * agents internes de ce simulateur.
    */
   sendUdpDatagram(request: UdpSendRequest): boolean {
+    const datagram = buildUdpDatagram(request);
+    return this.sendIpv4Packet({
+      destination: request.destination,
+      protocol: IP_PROTO_UDP,
+      payload: datagram,
+      payloadBytes: datagram.length,
+      ...(request.source ? { source: request.source } : {}),
+      ...(request.ttl === undefined ? {} : { ttl: request.ttl }),
+      ...(request.tos === undefined ? {} : { tos: request.tos }),
+    });
+  }
+
+  sendIpv4Packet(request: Ipv4SendRequest): boolean {
+    const ttl = request.ttl ?? DEFAULT_IPV4_TTL;
+    const options = ipv4HeaderOptionsOf(request);
+
+    if (requiresNamedInterface(request.destination)) {
+      if (!request.iface) return false;
+      const port = this.ports.get(request.iface);
+      if (!port || !port.isOperationallyUp()) return false;
+      const source = request.source ?? port.getIPAddress();
+      if (!source) return false;
+      return this.sendFrame(request.iface, buildIpv4Frame({
+        sourceIp: source, destinationIp: request.destination,
+        sourceMac: port.getMAC(), destinationMac: linkDestinationFor(request.destination),
+        protocol: request.protocol, ttl,
+        payload: request.payload, payloadBytes: request.payloadBytes,
+        options,
+      }));
+    }
+
     const route = this.lookupRoute(request.destination);
     if (!route) return false;
     const egress = this.ports.get(route.iface);
@@ -4952,7 +4987,9 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
     if (!source) return false;
 
     this.sendIpv4FrameArpAware(
-      route.iface, buildUdpOverIpv4(source, request),
+      route.iface,
+      createIPv4Packet(source, request.destination, request.protocol, ttl,
+        request.payload, request.payloadBytes, options),
       route.nextHop ?? request.destination);
     return true;
   }

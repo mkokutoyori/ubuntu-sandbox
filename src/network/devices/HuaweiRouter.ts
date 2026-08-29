@@ -8,6 +8,7 @@
  */
 
 import { Router } from './Router';
+import type { Ipv4SendRequest } from '../layers/internet/Ipv4Egress';
 import { isMulticastIpv4 } from '../core/ip';
 import { VRP_ACL_NUMBERING, VRP_SEQUENCING, VRP_DEFAULT_STEP } from './router/ACLEngine';
 import { AgentRegistry } from './AgentRegistry';
@@ -116,6 +117,7 @@ export class HuaweiRouter extends Router {
       resolveRoute: (ip: string) => this.resolveRouteForHost(ip),
       sendIpv4FrameArpAware: (p: string, ipPkt: IPv4Packet, nextHopIP: IPAddress) =>
         this.sendIpv4FrameArpAware(p, ipPkt, nextHopIP),
+      sendIpv4Packet: (request: Ipv4SendRequest) => this.sendIpv4Packet(request),
       sendUdpDatagram: (request: import('../layers/transport/UdpEgress').UdpSendRequest) =>
         this.sendUdpDatagram(request),
       sendArpRequestFor: (iface: string, target: IPAddress) =>
