@@ -10,10 +10,11 @@ import {
 import { type ErrorCause, readErrorCause } from './coa';
 import {
   MACAddress, IPAddress,
-  type EthernetFrame, type IPv4Packet, type UDPPacket,
-  IP_PROTO_UDP, ETHERTYPE_IPV4, nextIPv4Id, computeIPv4Checksum,
+  type EthernetFrame, type UDPPacket,
+  ETHERTYPE_IPV4,
 } from '../core/types';
 import { Logger } from '../core/Logger';
+import { buildUdpOverIpv4 } from '../layers/transport/UdpEgress';
 
 export interface CoaNasTarget {
   ip: string;
@@ -184,21 +185,11 @@ export class CoaClient {
     if (!egress) return;
     const srcIp = egress.port.getIPAddress();
     if (!srcIp) return;
-    const udp: UDPPacket = {
-      type: 'udp',
-      sourcePort: 49220 + (pending.identifier & 0x3fff),
-      destinationPort: pending.nas.port,
-      length: 20, checksum: 0, payload: pending.request,
-    };
-    const ipPkt: IPv4Packet = {
-      type: 'ipv4', version: 4, ihl: 5, tos: 0,
-      totalLength: 20 + udp.length,
-      identification: nextIPv4Id(), flags: 0, fragmentOffset: 0,
-      ttl: 64, protocol: IP_PROTO_UDP, headerChecksum: 0,
-      sourceIP: srcIp, destinationIP: new IPAddress(pending.nas.ip),
-      payload: udp,
-    };
-    ipPkt.headerChecksum = computeIPv4Checksum(ipPkt);
+    const ipPkt = buildUdpOverIpv4(srcIp, {
+      destination: new IPAddress(pending.nas.ip),
+      destinationPort: pending.nas.port, sourcePort: 49220 + (pending.identifier & 0x3fff),
+      payload: pending.request, payloadBytes: 12,
+    });
     const eth: EthernetFrame = {
       srcMAC: egress.port.getMAC(),
       dstMAC: this.host.resolveMac?.(pending.nas.ip) ?? MACAddress.broadcast(),

@@ -12,10 +12,11 @@ import {
 } from './coa';
 import {
   MACAddress, IPAddress,
-  type EthernetFrame, type IPv4Packet, type UDPPacket,
-  IP_PROTO_UDP, ETHERTYPE_IPV4, nextIPv4Id, computeIPv4Checksum,
+  type EthernetFrame, type UDPPacket,
+  ETHERTYPE_IPV4,
 } from '../core/types';
 import { Logger } from '../core/Logger';
+import { buildUdpOverIpv4 } from '../layers/transport/UdpEgress';
 
 export type CoaActionResult = { ok: true } | { ok: false; errorCause: ErrorCause };
 
@@ -140,19 +141,11 @@ export class CoaListener {
     if (!port) return;
     const srcIp = port.getIPAddress();
     if (!srcIp) return;
-    const udp: UDPPacket = {
-      type: 'udp', sourcePort: this.port, destinationPort: clientPort,
-      length: 20, checksum: 0, payload: response,
-    };
-    const ipPkt: IPv4Packet = {
-      type: 'ipv4', version: 4, ihl: 5, tos: 0,
-      totalLength: 20 + udp.length,
-      identification: nextIPv4Id(), flags: 0, fragmentOffset: 0,
-      ttl: 64, protocol: IP_PROTO_UDP, headerChecksum: 0,
-      sourceIP: srcIp, destinationIP: dstIp,
-      payload: udp,
-    };
-    ipPkt.headerChecksum = computeIPv4Checksum(ipPkt);
+    const ipPkt = buildUdpOverIpv4(srcIp, {
+      destination: dstIp,
+      destinationPort: clientPort, sourcePort: this.port,
+      payload: response, payloadBytes: 12,
+    });
     const eth: EthernetFrame = {
       srcMAC: port.getMAC(),
       dstMAC: this.host.resolveMac?.(dstIp.toString()) ?? MACAddress.broadcast(),

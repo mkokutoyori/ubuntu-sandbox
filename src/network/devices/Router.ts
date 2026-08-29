@@ -1276,13 +1276,11 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
   private sendDhcpClientFrame(iface: string, pkt: DHCPPacket): void {
     const port = this.ports.get(iface);
     if (!port) return;
-    const udp: UDPPacket = {
-      type: 'udp', sourcePort: 68, destinationPort: 67,
-      length: 8 + 300, checksum: 0, payload: pkt,
-    };
-    const ipPkt = createIPv4Packet(
-      new IPAddress('0.0.0.0'), new IPAddress('255.255.255.255'),
-      IP_PROTO_UDP, 64, udp, 8 + 300);
+    const ipPkt = buildUdpOverIpv4(new IPAddress('0.0.0.0'), {
+      destination: new IPAddress('255.255.255.255'),
+      destinationPort: DHCP_SERVER_PORT, sourcePort: DHCP_CLIENT_PORT,
+      payload: pkt, payloadBytes: 300,
+    });
     this.sendFrame(iface, {
       srcMAC: port.getMAC(),
       dstMAC: MACAddress.broadcast(),

@@ -27,11 +27,12 @@ import { EapTlsServerSession } from './eaptls/EapTlsServerSession';
 import type { EapTlsConfig } from './eaptls/EapTlsConfig';
 import {
   MACAddress, IPAddress,
-  type EthernetFrame, type IPv4Packet, type UDPPacket,
-  IP_PROTO_UDP, ETHERTYPE_IPV4, nextIPv4Id, computeIPv4Checksum,
+  type EthernetFrame, type UDPPacket,
+  ETHERTYPE_IPV4,
 } from '../core/types';
 import type { Port } from '../hardware/Port';
 import { Logger } from '../core/Logger';
+import { buildUdpOverIpv4 } from '../layers/transport/UdpEgress';
 
 /** RFC 2548 §2.4.1 — Salt only needs to be unique-ish per attribute; `encryptMppeKey` forces its top bit to 1. */
 function randomSalt(): number {
@@ -918,21 +919,11 @@ export class RadiusServerAgent {
     inPort: string, port: Port, srcIp: IPAddress, dstIp: IPAddress,
     clientPort: number, sourcePort: number, response: RadiusPacket,
   ): void {
-    const udp: UDPPacket = {
-      type: 'udp',
-      sourcePort,
-      destinationPort: clientPort,
-      length: 20 + 16, checksum: 0, payload: response,
-    };
-    const ipPkt: IPv4Packet = {
-      type: 'ipv4', version: 4, ihl: 5, tos: 0,
-      totalLength: 20 + udp.length,
-      identification: nextIPv4Id(), flags: 0, fragmentOffset: 0,
-      ttl: 64, protocol: IP_PROTO_UDP, headerChecksum: 0,
-      sourceIP: srcIp, destinationIP: dstIp,
-      payload: udp,
-    };
-    ipPkt.headerChecksum = computeIPv4Checksum(ipPkt);
+    const ipPkt = buildUdpOverIpv4(srcIp, {
+      destination: dstIp,
+      destinationPort: clientPort, sourcePort,
+      payload: response, payloadBytes: 20 + 16 - 8,
+    });
     const eth: EthernetFrame = {
       srcMAC: port.getMAC(),
       dstMAC: this.host.resolveMac?.(dstIp.toString()) ?? MACAddress.broadcast(),

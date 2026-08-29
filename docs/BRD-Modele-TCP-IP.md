@@ -1078,16 +1078,25 @@ qu'un vrai routeur n'émet pas — il ARP dans le vide et n'envoie rien. Le
 laboratoire a maintenant un vrai voisin, ce qu'un laboratoire BFD a par
 définition.
 
-**Reste de la phase 5** : RADIUS et DHCP. Le blocage est nommé au
-`TODO.md` — `EndHost` porte déjà un `sendUdpDatagram` POSITIONNEL alors
-que l'offre de la couche prend une requête, et trancher ce nom touche
-tous ses appelants.
+**RADIUS et DHCP** ferment la phase. RADIUS portait **sept** blocs
+identiques répartis sur cinq fichiers (client, serveur, comptabilité,
+CoA client et écouteur) ; ils appellent tous `buildUdpOverIpv4`. Le
+client DHCP du routeur écrivait la paire 68→67 en clair, alors que
+`WellKnownPorts` les nomme désormais (`DHCP_SERVER_PORT`,
+`DHCP_CLIENT_PORT`, RFC 2131) — trois copies locales de ces deux nombres
+sont retirées.
+
+**Le blocage annoncé n'en était pas un.** Le `TODO.md` nommait la
+collision de nom entre le `sendUdpDatagram` POSITIONNEL d'`EndHost` et
+l'offre de la couche, qui prend une requête. Elle ne concerne que les
+familles NTP encore hébergées par un hôte : RADIUS et DHCP sont hébergés
+par le routeur et le commutateur, qui portent tous deux la forme en
+requête. Le reliquat NTP reste inscrit au `TODO.md`.
 
 ### Phase 6 — `core/packetBuilders.ts` : brancher ou supprimer
 Une fois la couche internet en place, ce module est soit son mécanisme
 interne, soit un mort à retirer. **Il ne restera pas dans son état
 actuel** — écrit, testé, sans appelant.
-
 ---
 
 ## 7. Méthode de vérification

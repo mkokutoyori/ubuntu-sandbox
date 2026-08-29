@@ -5,10 +5,11 @@ import { withAccountingRequestAuthenticator, verifyResponseAuthenticator } from 
 import { acctAttributesFor, generateAcctSessionId, type AcctRecord, type AcctTerminateCause } from './accounting';
 import {
   MACAddress, IPAddress,
-  type EthernetFrame, type IPv4Packet, type UDPPacket,
-  IP_PROTO_UDP, ETHERTYPE_IPV4, nextIPv4Id, computeIPv4Checksum,
+  type EthernetFrame, type UDPPacket,
+  ETHERTYPE_IPV4,
 } from '../core/types';
 import { Logger } from '../core/Logger';
+import { buildUdpOverIpv4 } from '../layers/transport/UdpEgress';
 
 export interface RadiusAcctServerConfig {
   ip: string;
@@ -219,21 +220,11 @@ export class RadiusAccountingClient {
     };
     payload = withAccountingRequestAuthenticator(payload, pending.server.sharedSecret);
     pending.authenticator = payload.authenticator;
-    const udp: UDPPacket = {
-      type: 'udp',
-      sourcePort: 49200 + (pending.identifier & 0x3fff),
-      destinationPort: pending.server.acctPort,
-      length: 20, checksum: 0, payload,
-    };
-    const ipPkt: IPv4Packet = {
-      type: 'ipv4', version: 4, ihl: 5, tos: 0,
-      totalLength: 20 + udp.length,
-      identification: nextIPv4Id(), flags: 0, fragmentOffset: 0,
-      ttl: 64, protocol: IP_PROTO_UDP, headerChecksum: 0,
-      sourceIP: srcIp, destinationIP: new IPAddress(pending.server.ip),
-      payload: udp,
-    };
-    ipPkt.headerChecksum = computeIPv4Checksum(ipPkt);
+    const ipPkt = buildUdpOverIpv4(srcIp, {
+      destination: new IPAddress(pending.server.ip),
+      destinationPort: pending.server.acctPort, sourcePort: 49200 + (pending.identifier & 0x3fff),
+      payload, payloadBytes: 12,
+    });
     const eth: EthernetFrame = {
       srcMAC: egress.port.getMAC(),
       dstMAC: this.host.resolveMac?.(pending.server.ip) ?? MACAddress.broadcast(),

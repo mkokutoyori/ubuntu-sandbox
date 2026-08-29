@@ -19,9 +19,10 @@ import { generateNtResponse, generateAuthenticatorResponse } from './mschapv2';
 import {
   MACAddress, IPAddress,
   type EthernetFrame, type IPv4Packet, type UDPPacket,
-  IP_PROTO_UDP, ETHERTYPE_IPV4, nextIPv4Id, computeIPv4Checksum,
+  ETHERTYPE_IPV4,
 } from '../core/types';
 import { Logger } from '../core/Logger';
+import { buildUdpOverIpv4 } from '../layers/transport/UdpEgress';
 
 export interface RadiusClientHost {
   readonly id: string;
@@ -328,21 +329,11 @@ export class RadiusClientAgent {
       authenticator: pending.authenticator, attributes: attrs,
     };
     payload = withMessageAuthenticator(payload, pending.authenticator, server.sharedSecret);
-    const udp: UDPPacket = {
-      type: 'udp',
-      sourcePort: 49180 + (pending.identifier & 0x3fff),
-      destinationPort: server.authPort,
-      length: 20, checksum: 0, payload,
-    };
-    const ipPkt: IPv4Packet = {
-      type: 'ipv4', version: 4, ihl: 5, tos: 0,
-      totalLength: 20 + udp.length,
-      identification: nextIPv4Id(), flags: 0, fragmentOffset: 0,
-      ttl: 64, protocol: IP_PROTO_UDP, headerChecksum: 0,
-      sourceIP: srcIp, destinationIP: new IPAddress(server.ip),
-      payload: udp,
-    };
-    ipPkt.headerChecksum = computeIPv4Checksum(ipPkt);
+    const ipPkt = buildUdpOverIpv4(srcIp, {
+      destination: new IPAddress(server.ip),
+      destinationPort: server.authPort, sourcePort: 49180 + (pending.identifier & 0x3fff),
+      payload, payloadBytes: 12,
+    });
     this.getBus().publish({
       topic: 'radius.packet.sent',
       payload: {
@@ -442,21 +433,12 @@ export class RadiusClientAgent {
       authenticator: pending.authenticator, attributes: attrs,
     };
     payload = withMessageAuthenticator(payload, pending.authenticator, server.sharedSecret);
-    const udp: UDPPacket = {
-      type: 'udp',
-      sourcePort: this.fixedSourcePort ?? (49180 + (pending.identifier & 0x3fff)),
+    const ipPkt = buildUdpOverIpv4(srcIp, {
+      destination: new IPAddress(server.ip),
       destinationPort: server.authPort,
-      length: 20, checksum: 0, payload,
-    };
-    const ipPkt: IPv4Packet = {
-      type: 'ipv4', version: 4, ihl: 5, tos: 0,
-      totalLength: 20 + udp.length,
-      identification: nextIPv4Id(), flags: 0, fragmentOffset: 0,
-      ttl: 64, protocol: IP_PROTO_UDP, headerChecksum: 0,
-      sourceIP: srcIp, destinationIP: new IPAddress(server.ip),
-      payload: udp,
-    };
-    ipPkt.headerChecksum = computeIPv4Checksum(ipPkt);
+      sourcePort: this.fixedSourcePort ?? (49180 + (pending.identifier & 0x3fff)),
+      payload, payloadBytes: 12,
+    });
     this.getBus().publish({
       topic: 'radius.packet.sent',
       payload: {
@@ -775,22 +757,12 @@ export class RadiusClientAgent {
       attributes: attrs,
     };
     payload = withMessageAuthenticator(payload, pending.authenticator, server.sharedSecret);
-    const udp: UDPPacket = {
-      type: 'udp',
-      sourcePort: this.fixedSourcePort ?? (49152 + (pending.identifier & 0x3fff)),
+    const ipPkt = buildUdpOverIpv4(srcIp, {
+      destination: new IPAddress(server.ip),
       destinationPort: server.authPort,
-      length: 20 + 32 + pending.username.length + pending.password.length,
-      checksum: 0, payload,
-    };
-    const ipPkt: IPv4Packet = {
-      type: 'ipv4', version: 4, ihl: 5, tos: 0,
-      totalLength: 20 + udp.length,
-      identification: nextIPv4Id(), flags: 0, fragmentOffset: 0,
-      ttl: 64, protocol: IP_PROTO_UDP, headerChecksum: 0,
-      sourceIP: srcIp, destinationIP: new IPAddress(server.ip),
-      payload: udp,
-    };
-    ipPkt.headerChecksum = computeIPv4Checksum(ipPkt);
+      sourcePort: this.fixedSourcePort ?? (49152 + (pending.identifier & 0x3fff)),
+      payload, payloadBytes: 20 + 32 + pending.username.length + pending.password.length - 8,
+    });
     // Published before the actual send: delivery is synchronous, so a
     // multi-round exchange (e.g. an Access-Challenge round-trip) can run to
     // completion *inside* this call — publishing after would report this
