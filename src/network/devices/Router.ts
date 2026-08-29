@@ -3832,7 +3832,7 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
     const dest = new IPAddress(destIp);
     const route = this.lookupRoute(dest);
     if (!route) return null;
-    return { iface: route.iface, nextHopIp: (route.nextHop ?? dest).toString() };
+    return { iface: route.iface, nextHopIp: this.nextHopTarget(route.nextHop, dest).toString() };
   }
 
   /** Add a static ARP entry */

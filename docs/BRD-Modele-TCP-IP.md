@@ -1729,6 +1729,39 @@ la table de ports du plan de contrôle, où TFTP et le client DNS se lient
 `probe-routeur-udp-ipv6.test.ts` (4 cas) est discriminé : 3 tombent. Le
 quatrième est le TÉMOIN IPv4 monté dans le même laboratoire.
 
+#### Lot 10 — le cinquième site du même idiome, sur le chemin du lot 3
+
+Une autre session a fermé « On n'envoie pas d'ARP pour 0.0.0.0 » en
+corrigeant QUATRE sites écrivant `route.nextHop || destination` :
+l'idiome dit bien « à défaut de saut suivant, vise la destination », mais
+`0.0.0.0` est un OBJET `IPAddress`, donc VRAI — juste pour un `null`,
+faux pour l'adresse non spécifiée. En relisant ce correctif contre le
+mien, un CINQUIÈME site apparaît, et il est sur le chemin que le lot 3 a
+ouvert : `resolveRouteForHost`, par lequel la pile TCP consulte la table
+du routeur, écrit `route.nextHop ?? dest`. Le `??` échappe à une
+recherche du `||` — même défaut, autre orthographe.
+
+Mesuré : un routeur portant `ip route 10.5.0.0 255.255.0.0
+GigabitEthernet0/1` et ouvrant une connexion TCP vers 10.5.0.9 émettait
+`arpTarget=0.0.0.0`, à quoi personne ne peut répondre (RFC 1122 §3.2.1.3
+fait de 0.0.0.0 « this host on this network »). Le correctif LIT
+`nextHopTarget`, la règle que l'autre session a posée, au lieu d'écrire
+un sixième idiome.
+
+**Le jumeau IPv6 est INATTEIGNABLE, mesuré et non supposé.**
+`IPv6DataPlane` porte la même forme en quatre endroits, mais
+`ipv6 route 2001:DB8:5::/64 GigabitEthernet0/1` n'installe RIEN — la
+forme par interface seule n'est pas gérée côté v6, ce que
+`show ipv6 route` confirme. Aucun saut suivant non spécifié ne peut donc
+exister dans cette table. C'est inscrit au `TODO.md` plutôt que corrigé à
+l'aveugle : corriger une forme qu'aucune commande ne produit serait
+inventer.
+
+`probe-tcp-n-arpe-pas-le-non-specifie.test.ts` (3 cas) est discriminé :
+2 tombent ; le TÉMOIN au vrai saut suivant passe des deux côtés, et c'est
+parce qu'il marchait que le défaut ne se voyait que sur la forme par
+interface.
+
 ---
 
 ---

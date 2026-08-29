@@ -187,6 +187,26 @@ refusee plutot que rangee sans etre lue.
 
 ## Couche transport (BRD TCP/IP)
 
+### [ipv6] `ipv6 route <prefixe> <interface>` n'installe RIEN
+**Constat.** La forme par INTERFACE SEULE d'une route statique IPv6 est
+acceptee sans message et n'apparait pas dans la table :
+`show ipv6 route` ne rend que la route connectee. La forme equivalente
+existe et fonctionne cote IPv4 (`ip route <reseau> <masque> <interface>`).
+
+**Mesure.** Faite en cherchant le jumeau IPv6 du defaut « ARP pour
+0.0.0.0 » : `ipv6 route 2001:DB8:5::/64 GigabitEthernet0/1` puis
+`show ipv6 route` rend `C 2001:db8:1::/64 [0/0], GigabitEthernet0/1` et
+rien d'autre.
+
+**Consequence utile pour qui reprendra.** `IPv6DataPlane` porte en quatre
+endroits le meme idiome que le lot 10 vient de corriger cote v4
+(`route.nextHop ?? dstIp`, `route.nextHop || ipv6.destinationIP`), mais il
+est INATTEIGNABLE tant que rien ne peut installer une route sans saut
+suivant : aucune sollicitation de voisin pour `::` n'est observable. Le
+corriger avant que la commande existe serait corriger une forme
+qu'aucune commande ne produit.
+
+
 ### [udp6] les AGENTS du plan de controle restent en IPv4
 **Constat.** Le socle UDP/IPv6 d'un routeur existe depuis le lot 9 —
 `sendUdpDatagram6` emet, `deliverUdp6` remet a la table de ports, un port
