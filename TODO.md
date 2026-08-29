@@ -1180,6 +1180,12 @@ défauts — la méthode vaut d'être reprise sur le reliquat.
   open-ports` — il n'existe donc pas de capture texte a lire, et les
   blancs sont precisement l'information cherchee.
 
+- `EndHost.sendUdpDatagram` est POSITIONNEL alors que l'offre prend une
+  requete — FERME. Il accepte les deux ECRITURES sur une SEULE
+  implantation (`emitUdpDatagram`), donc les 83 appels positionnels
+  restent valides et un agent heberge par un hote appelle l'offre comme
+  sur un routeur.
+
 - IGMP ne peut pas descendre par l'offre de la couche internet — FERME.
   `IPv4HeaderOptions.headerBytes` exprime l'en-tete a options, `ihl` et
   `totalLength` en derivent, et les trois emetteurs partagent

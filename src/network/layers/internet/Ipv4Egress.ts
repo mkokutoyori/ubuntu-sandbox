@@ -20,6 +20,7 @@ export interface Ipv4SendRequest {
 
 export interface Ipv4EgressHost {
   sendIpv4Packet(request: Ipv4SendRequest): boolean;
+  sourceAddressFor(destination: IPAddress): IPAddress | null;
 }
 
 export const DEFAULT_IPV4_TTL = 64;

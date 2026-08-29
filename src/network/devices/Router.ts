@@ -4963,9 +4963,17 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
       payload: datagram,
       payloadBytes: datagram.length,
       ...(request.source ? { source: request.source } : {}),
+      ...(request.iface === undefined ? {} : { iface: request.iface }),
       ...(request.ttl === undefined ? {} : { ttl: request.ttl }),
       ...(request.tos === undefined ? {} : { tos: request.tos }),
     });
+  }
+
+  sourceAddressFor(destination: IPAddress): IPAddress | null {
+    if (requiresNamedInterface(destination)) return null;
+    const route = this.lookupRoute(destination);
+    if (!route) return null;
+    return this.ports.get(route.iface)?.getIPAddress() ?? null;
   }
 
   sendIpv4Packet(request: Ipv4SendRequest): boolean {

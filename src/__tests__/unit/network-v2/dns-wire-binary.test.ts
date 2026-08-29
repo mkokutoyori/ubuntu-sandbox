@@ -200,12 +200,14 @@ describe('PTR lookups travel as in-addr.arpa QNAMEs', () => {
     // Sniff what actually goes on the cable by decoding what the PC sends.
     const captured: DnsMessage[] = [];
     const pcSend = pc.sendUdpDatagram.bind(pc);
-    pc.sendUdpDatagram = (dst, dport, sport, payload, bytes) => {
+    pc.sendUdpDatagram = ((...args: unknown[]) => {
+      const [dst, dport, sport, payload, bytes] =
+        args as [IPAddress, number, number, unknown, number];
       if (dport === 53 && payload instanceof Uint8Array) {
         captured.push(decodeDnsMessage(payload));
       }
       return pcSend(dst, dport, sport, payload, bytes);
-    };
+    }) as typeof pc.sendUdpDatagram;
 
     const reply = await pc.queryDnsServer(new IPAddress(SERVER_IP), '10.0.1.88', 'PTR', 500);
 

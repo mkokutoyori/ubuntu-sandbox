@@ -448,6 +448,23 @@ export class SwitchSvi {
    * emprunte deja, extrait pour que le plan de controle puisse s'en
    * servir sans redecouvrir la route et l'ARP.
    */
+  sendIpv4FrameArpAware(packet: IPv4Packet, nextHop: IPAddress): boolean {
+    const route = this.lookupRoute(nextHop);
+    if (!route || !route.egress.ip) return false;
+    const nextHopMac = this.resolveArp(route.egress.vlan, route.egress.ip, route.nextHop);
+    if (!nextHopMac) return false;
+
+    this.host.egressOnVlan(route.egress.vlan, {
+      srcMAC: this.host.getBridgeMac(), dstMAC: nextHopMac,
+      etherType: ETHERTYPE_IPV4, payload: packet,
+    });
+    return true;
+  }
+
+  sourceAddressFor(destination: IPAddress): IPAddress | null {
+    return this.lookupRoute(destination)?.egress.ip ?? null;
+  }
+
   sendUdpDatagram(request: UdpSendRequest): boolean {
     const route = this.lookupRoute(request.destination);
     if (!route || !route.egress.ip) return false;

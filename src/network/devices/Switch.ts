@@ -2807,6 +2807,15 @@ export abstract class Switch extends Equipment {
     return this.svi.sendUdpDatagram(request);
   }
 
+  sendIpv4FrameArpAware(_iface: string, packet: IPv4Packet, nextHop: IPAddress): void {
+    this.svi.sendIpv4FrameArpAware(packet, nextHop);
+  }
+
+  sourceAddressFor(destination: IPAddress): IPAddress | null {
+    if (requiresNamedInterface(destination)) return null;
+    return this.svi.sourceAddressFor(destination);
+  }
+
   sendIpv4Packet(request: Ipv4SendRequest): boolean {
     if (!requiresNamedInterface(request.destination)) return false;
     return sendOnNamedInterface({

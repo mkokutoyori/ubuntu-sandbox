@@ -29,6 +29,8 @@ export interface RoutingPortFacts {
 }
 
 export interface FirewallRoutingDeps {
+  readonly sendArpAware: (
+    iface: string, packet: IPv4Packet, nextHop: IPAddress) => void;
   readonly deviceId: string;
   readonly hostname: () => string;
   readonly bus: () => IEventBus;
@@ -289,6 +291,8 @@ export class FirewallRouting {
         this.deps.sendFrame(name, frame);
         return true;
       },
+      sendIpv4ArpAware: (name: string, packet: IPv4Packet, nextHop: IPAddress) =>
+        this.deps.sendArpAware(name, packet, nextHop),
       getRoutingTable: () => this.deps.connectedRoutes().map(route => ({
         network: new IPAddress(route.network),
         mask: new SubnetMask(route.mask),

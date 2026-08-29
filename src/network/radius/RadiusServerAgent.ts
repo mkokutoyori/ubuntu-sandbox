@@ -1,4 +1,5 @@
 import type { IEventBus } from '@/events/EventBus';
+import type { UdpSendRequest } from '../layers/transport/UdpEgress';
 import { hexToBytes, bytesToHex, utf8ToBytes } from '@/crypto/encoding';
 import { md4 } from '@/crypto/hash';
 import { getDefaultScheduler, type IScheduler, type TimerHandle } from '@/events/Scheduler';
@@ -26,9 +27,9 @@ import {
 import { EapTlsServerSession } from './eaptls/EapTlsServerSession';
 import type { EapTlsConfig } from './eaptls/EapTlsConfig';
 import {
-  MACAddress, IPAddress,
+  IPAddress,
   type EthernetFrame, type UDPPacket,
-  ETHERTYPE_IPV4,
+  type IPv4Packet,
 } from '../core/types';
 import type { Port } from '../hardware/Port';
 import { Logger } from '../core/Logger';
@@ -67,9 +68,10 @@ export interface RadiusServerHost {
   getPorts(): import('../hardware/Port').Port[];
   sendFrame(portName: string, frame: EthernetFrame): void;
   /** ARP-resolved next-hop MAC, when known — falls back to broadcast otherwise (mirrors `TcpHost`). */
-  resolveMac?(ip: string): MACAddress | null;
+  sendIpv4FrameArpAware(outPortName: string, ipPkt: IPv4Packet, nextHopIP: IPAddress): void;
+  sendUdpDatagram(request: UdpSendRequest): boolean;
+  sourceAddressFor(destination: IPAddress): IPAddress | null;
   /** Real RIB lookup (LPM) — needed to reach a proxy realm's home server on another subnet (mirrors `RadiusClientHost`). */
-  resolveRoute?(targetIp: string): { iface: string; nextHopIp: string } | null;
 }
 
 /** How long a served response is kept for retransmission dedup (RFC 2865 §2). */
@@ -786,8 +788,8 @@ export class RadiusServerAgent {
     inPort: string, nasIp: IPAddress, nasPort: number, request: RadiusPacket,
     username: string, realm: string, route: RealmRoute, dedupKey: string,
   ): void {
-    const egress = this.resolveEgress(route.homeServerIp);
-    if (!egress) {
+    const homeSrcIp = this.host.sourceAddressFor(new IPAddress(route.homeServerIp));
+    if (!homeSrcIp) {
       this.publishRejected(nasIp.toString(), username, 'client-not-authorized');
       this.reply(inPort, nasIp, nasPort, request, false, undefined, dedupKey);
       return;
@@ -815,7 +817,7 @@ export class RadiusServerAgent {
         attrs.push(attr('user-password', encryptUserPassword(decrypted, route.homeSecret, outAuthenticator)));
       }
     }
-    attrs.push(attr('nas-ip-address', egress.srcIp.toString()));
+    attrs.push(attr('nas-ip-address', homeSrcIp.toString()));
 
     const outbound: RadiusPacket = {
       type: 'radius', code: 'access-request', identifier: outIdentifier,
@@ -843,7 +845,11 @@ export class RadiusServerAgent {
     });
     Logger.info(this.host.id, 'radius:proxy',
       `${this.host.name}: forwarding ${username} (realm ${realm}) → home server ${route.homeServerIp}`);
-    this.sendRadiusFrame(egress.name, egress.port, egress.srcIp, new IPAddress(route.homeServerIp), route.homePort, this.config.port, outbound);
+    this.host.sendUdpDatagram({
+      destination: new IPAddress(route.homeServerIp), source: homeSrcIp,
+      destinationPort: route.homePort, sourcePort: this.config.port,
+      payload: outbound, payloadBytes: 20 + 16 - 8,
+    });
   }
 
   /** The home server's Access-Accept/Reject for a request we forwarded — translate it back to the original NAS. Returns false when the reply doesn't match any pending proxied request (so the caller can fall through to normal handling). */
@@ -886,34 +892,6 @@ export class RadiusServerAgent {
   }
 
   /** Egress toward an arbitrary target IP (the home server, typically off-subnet) — mirrors `RadiusClientAgent`'s own resolver. */
-  private resolveEgress(targetIp: string): { name: string; port: Port; srcIp: IPAddress } | null {
-    if (this.host.resolveRoute) {
-      const route = this.host.resolveRoute(targetIp);
-      if (route) {
-        const port = this.host.getPort(route.iface);
-        const src = port?.getIPAddress();
-        if (port && src && port.getIsUp()) return { name: route.iface, port, srcIp: src };
-      }
-    }
-    const target = targetIp.split('.').map(Number);
-    for (const port of this.host.getPorts()) {
-      const ip = port.getIPAddress();
-      const mask = port.getSubnetMask();
-      if (!ip || !mask || !port.getIsUp()) continue;
-      const local = ip.toString().split('.').map(Number);
-      const maskBits = mask.toString().split('.').map(Number);
-      let same = true;
-      for (let i = 0; i < 4; i++) {
-        if ((local[i] & maskBits[i]) !== (target[i] & maskBits[i])) { same = false; break; }
-      }
-      if (same) return { name: port.getName(), port, srcIp: ip };
-    }
-    for (const port of this.host.getPorts()) {
-      const ip = port.getIPAddress();
-      if (ip && port.getIsUp() && port.isConnected()) return { name: port.getName(), port, srcIp: ip };
-    }
-    return null;
-  }
 
   private sendRadiusFrame(
     inPort: string, port: Port, srcIp: IPAddress, dstIp: IPAddress,
@@ -924,11 +902,6 @@ export class RadiusServerAgent {
       destinationPort: clientPort, sourcePort,
       payload: response, payloadBytes: 20 + 16 - 8,
     });
-    const eth: EthernetFrame = {
-      srcMAC: port.getMAC(),
-      dstMAC: this.host.resolveMac?.(dstIp.toString()) ?? MACAddress.broadcast(),
-      etherType: ETHERTYPE_IPV4, payload: ipPkt,
-    };
-    this.host.sendFrame(inPort, eth);
+    this.host.sendIpv4FrameArpAware(inPort, ipPkt, dstIp);
   }
 }

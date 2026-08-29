@@ -6,10 +6,9 @@ import { acctAttributesFor, generateAcctSessionId, type AcctRecord, type AcctTer
 import {
   MACAddress, IPAddress,
   type EthernetFrame, type UDPPacket,
-  ETHERTYPE_IPV4,
 } from '../core/types';
 import { Logger } from '../core/Logger';
-import { buildUdpOverIpv4 } from '../layers/transport/UdpEgress';
+import { type UdpSendRequest } from '../layers/transport/UdpEgress';
 
 export interface RadiusAcctServerConfig {
   ip: string;
@@ -26,8 +25,8 @@ export interface RadiusAccountingHost {
   getPort(name: string): import('../hardware/Port').Port | undefined;
   getPorts(): import('../hardware/Port').Port[];
   sendFrame(portName: string, frame: EthernetFrame): void;
-  resolveMac?(ip: string): MACAddress | null;
-  resolveRoute?(targetIp: string): { iface: string; nextHopIp: string } | null;
+  sendUdpDatagram(request: UdpSendRequest): boolean;
+  sourceAddressFor(destination: IPAddress): IPAddress | null;
 }
 
 export interface RadiusAcctSessionInfo {
@@ -205,9 +204,7 @@ export class RadiusAccountingClient {
   }
 
   private transmit(pending: PendingAcct): void {
-    const egress = this.resolveEgress(pending.server.ip);
-    if (!egress) return;
-    const srcIp = egress.port.getIPAddress();
+    const srcIp = this.host.sourceAddressFor(new IPAddress(pending.server.ip));
     if (!srcIp) return;
     const record: AcctRecord = {
       ...pending.record, nasIp: srcIp.toString(),
@@ -220,15 +217,11 @@ export class RadiusAccountingClient {
     };
     payload = withAccountingRequestAuthenticator(payload, pending.server.sharedSecret);
     pending.authenticator = payload.authenticator;
-    const ipPkt = buildUdpOverIpv4(srcIp, {
+    const datagram = {
       destination: new IPAddress(pending.server.ip),
       destinationPort: pending.server.acctPort, sourcePort: 49200 + (pending.identifier & 0x3fff),
       payload, payloadBytes: 12,
-    });
-    const eth: EthernetFrame = {
-      srcMAC: egress.port.getMAC(),
-      dstMAC: this.host.resolveMac?.(pending.server.ip) ?? MACAddress.broadcast(),
-      etherType: ETHERTYPE_IPV4, payload: ipPkt,
+      source: srcIp,
     };
     this.getBus().publish({
       topic: 'radius.packet.sent',
@@ -238,37 +231,9 @@ export class RadiusAccountingClient {
         identifier: pending.identifier, username: pending.record.username,
       },
     });
-    this.host.sendFrame(egress.name, eth);
+    this.host.sendUdpDatagram(datagram);
   }
 
-  private resolveEgress(targetIp: string): { name: string; port: import('../hardware/Port').Port } | null {
-    if (this.host.resolveRoute) {
-      const route = this.host.resolveRoute(targetIp);
-      if (route) {
-        const port = this.host.getPort(route.iface);
-        if (port && port.getIsUp()) return { name: route.iface, port };
-      }
-    }
-    const target = targetIp.split('.').map(Number);
-    for (const port of this.host.getPorts()) {
-      const ip = port.getIPAddress();
-      const mask = port.getSubnetMask();
-      if (!ip || !mask) continue;
-      const local = ip.toString().split('.').map(Number);
-      const maskBits = mask.toString().split('.').map(Number);
-      let same = true;
-      for (let i = 0; i < 4; i++) {
-        if ((local[i] & maskBits[i]) !== (target[i] & maskBits[i])) { same = false; break; }
-      }
-      if (same) return { name: port.getName(), port };
-    }
-    for (const port of this.host.getPorts()) {
-      if (port.getIPAddress() && port.getIsUp() && port.isConnected()) {
-        return { name: port.getName(), port };
-      }
-    }
-    return null;
-  }
 }
 
 function elapsedSeconds(sinceMs: number): number {

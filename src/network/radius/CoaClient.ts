@@ -11,10 +11,9 @@ import { type ErrorCause, readErrorCause } from './coa';
 import {
   MACAddress, IPAddress,
   type EthernetFrame, type UDPPacket,
-  ETHERTYPE_IPV4,
 } from '../core/types';
 import { Logger } from '../core/Logger';
-import { buildUdpOverIpv4 } from '../layers/transport/UdpEgress';
+import { type UdpSendRequest } from '../layers/transport/UdpEgress';
 
 export interface CoaNasTarget {
   ip: string;
@@ -31,8 +30,8 @@ export interface CoaClientHost {
   getPort(name: string): import('../hardware/Port').Port | undefined;
   getPorts(): import('../hardware/Port').Port[];
   sendFrame(portName: string, frame: EthernetFrame): void;
-  resolveMac?(ip: string): MACAddress | null;
-  resolveRoute?(targetIp: string): { iface: string; nextHopIp: string } | null;
+  sendUdpDatagram(request: UdpSendRequest): boolean;
+  sourceAddressFor(destination: IPAddress): IPAddress | null;
 }
 
 export type CoaResult =
@@ -181,49 +180,15 @@ export class CoaClient {
   }
 
   private transmit(pending: PendingCoa): void {
-    const egress = this.resolveEgress(pending.nas.ip);
-    if (!egress) return;
-    const srcIp = egress.port.getIPAddress();
+    const srcIp = this.host.sourceAddressFor(new IPAddress(pending.nas.ip));
     if (!srcIp) return;
-    const ipPkt = buildUdpOverIpv4(srcIp, {
+    const datagram = {
       destination: new IPAddress(pending.nas.ip),
       destinationPort: pending.nas.port, sourcePort: 49220 + (pending.identifier & 0x3fff),
       payload: pending.request, payloadBytes: 12,
-    });
-    const eth: EthernetFrame = {
-      srcMAC: egress.port.getMAC(),
-      dstMAC: this.host.resolveMac?.(pending.nas.ip) ?? MACAddress.broadcast(),
-      etherType: ETHERTYPE_IPV4, payload: ipPkt,
+      source: srcIp,
     };
-    this.host.sendFrame(egress.name, eth);
+    this.host.sendUdpDatagram(datagram);
   }
 
-  private resolveEgress(targetIp: string): { name: string; port: import('../hardware/Port').Port } | null {
-    if (this.host.resolveRoute) {
-      const route = this.host.resolveRoute(targetIp);
-      if (route) {
-        const port = this.host.getPort(route.iface);
-        if (port && port.getIsUp()) return { name: route.iface, port };
-      }
-    }
-    const target = targetIp.split('.').map(Number);
-    for (const port of this.host.getPorts()) {
-      const ip = port.getIPAddress();
-      const mask = port.getSubnetMask();
-      if (!ip || !mask) continue;
-      const local = ip.toString().split('.').map(Number);
-      const maskBits = mask.toString().split('.').map(Number);
-      let same = true;
-      for (let i = 0; i < 4; i++) {
-        if ((local[i] & maskBits[i]) !== (target[i] & maskBits[i])) { same = false; break; }
-      }
-      if (same) return { name: port.getName(), port };
-    }
-    for (const port of this.host.getPorts()) {
-      if (port.getIPAddress() && port.getIsUp() && port.isConnected()) {
-        return { name: port.getName(), port };
-      }
-    }
-    return null;
-  }
 }

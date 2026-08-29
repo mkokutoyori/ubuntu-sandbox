@@ -7,9 +7,8 @@ import {
   UDP_PORT_NTP,
 } from './types';
 import {
-  MACAddress, IPAddress,
+  IPAddress,
   type EthernetFrame, type IPv4Packet, type UDPPacket,
-  ETHERTYPE_IPV4,
 } from '../core/types';
 import { Logger } from '../core/Logger';
 import { calculerMacNtp, verifierMacNtp } from './auth';
@@ -33,7 +32,7 @@ export interface NtpHost {
   getPorts(): import('../hardware/Port').Port[];
   sendFrame(portName: string, frame: EthernetFrame): void;
   /** ARP-aware send (queues on a cold cache instead of broadcasting) — falls back to broadcast when absent (mirrors `TcpHost`). */
-  sendIpv4FrameArpAware?(outPortName: string, ipPkt: IPv4Packet, nextHopIP: IPAddress): void;
+  sendIpv4FrameArpAware(outPortName: string, ipPkt: IPv4Packet, nextHopIP: IPAddress): void;
 }
 
 export class NtpAgent {
@@ -823,14 +822,7 @@ export class NtpAgent {
     if (this.emitting.has(key)) return;
     this.emitting.add(key);
     try {
-      if (this.host.sendIpv4FrameArpAware) {
-        this.host.sendIpv4FrameArpAware(portName, ipPkt, dstIp);
-      } else {
-        this.host.sendFrame(portName, {
-          srcMAC: port.getMAC(), dstMAC: MACAddress.broadcast(),
-          etherType: ETHERTYPE_IPV4, payload: ipPkt,
-        });
-      }
+      this.host.sendIpv4FrameArpAware(portName, ipPkt, dstIp);
     } finally { this.emitting.delete(key); }
   }
 

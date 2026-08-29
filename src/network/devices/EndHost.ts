@@ -70,6 +70,7 @@ import {
   DEFAULT_IPV4_TTL, ipv4HeaderOptionsOf, requiresNamedInterface, sendOnNamedInterface,
   type Ipv4SendRequest,
 } from '../layers/internet/Ipv4Egress';
+import type { UdpSendRequest } from '../layers/transport/UdpEgress';
 import { Logger } from '../core/Logger';
 import {
   buildICMPError,
@@ -2264,6 +2265,11 @@ export abstract class EndHost extends Equipment {
    * destination itself for a directly-connected peer, or the gateway
    * for anything a caller has already resolved a route for.
    */
+  public sourceAddressFor(destination: IPAddress): IPAddress | null {
+    if (requiresNamedInterface(destination)) return null;
+    return this.resolveRoute(destination)?.port.getIPAddress() ?? null;
+  }
+
   public sendIpv4Packet(request: Ipv4SendRequest): boolean {
     const ttl = request.ttl ?? DEFAULT_IPV4_TTL;
     const options = ipv4HeaderOptionsOf(request);
@@ -2743,7 +2749,33 @@ export abstract class EndHost extends Equipment {
    * touching the wire. Returns false when there is no route or no source
    * address (caller maps that to ENETUNREACH-style errors).
    */
+  public sendUdpDatagram(request: UdpSendRequest): boolean;
   public sendUdpDatagram(
+    destinationIP: IPAddress,
+    destinationPort: number,
+    sourcePort: number,
+    payload: unknown,
+    payloadBytes?: number,
+    options?: { df?: boolean; iface?: string },
+  ): boolean;
+  public sendUdpDatagram(
+    first: IPAddress | UdpSendRequest,
+    port?: number,
+    source?: number,
+    body?: unknown,
+    bytes: number = 0,
+    opts: { df?: boolean; iface?: string } = {},
+  ): boolean {
+    if (!(first instanceof IPAddress)) {
+      return this.emitUdpDatagram(
+        first.destination, first.destinationPort, first.sourcePort,
+        first.payload, first.payloadBytes,
+        first.iface === undefined ? {} : { iface: first.iface });
+    }
+    return this.emitUdpDatagram(first, port as number, source as number, body, bytes, opts);
+  }
+
+  private emitUdpDatagram(
     destinationIP: IPAddress,
     destinationPort: number,
     sourcePort: number,

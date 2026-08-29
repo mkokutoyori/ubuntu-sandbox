@@ -1,4 +1,5 @@
 import type { EthernetFrame, IPAddress, IPv4Packet } from '../../core/types';
+import type { UdpSendRequest } from '../../layers/transport/UdpEgress';
 import { UDP_PORT_IKE } from '../../core/types';
 import type { Port } from '../../hardware/Port';
 import type { IEventBus } from '../../../events/EventBus';
@@ -20,6 +21,8 @@ export interface FirewallAgentDeps {
   readonly resolveMac: (ip: string) => ReturnType<Port['getMAC']> | null;
   readonly sendArpAware: (
     port: string, packet: IPv4Packet, nextHop: IPAddress) => void;
+  readonly sendUdpDatagram: (request: UdpSendRequest) => boolean;
+  readonly sourceAddressFor: (destination: IPAddress) => IPAddress | null;
   readonly sendUdp: (destIp: string, port: number, payload: unknown) => boolean;
   readonly localIp: (iface: string) => string | null;
   readonly localIps: () => string[];
@@ -58,6 +61,8 @@ export function buildFirewallAgents(deps: FirewallAgentDeps): FirewallAgents {
     sendFrame: deps.send,
     resolveMac: deps.resolveMac,
     sendIpv4FrameArpAware: deps.sendArpAware,
+    sendUdpDatagram: deps.sendUdpDatagram,
+    sourceAddressFor: deps.sourceAddressFor,
   };
 
   const tcp = new TcpStack(host, deps.bus);

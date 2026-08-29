@@ -96,6 +96,10 @@ export class WindowsNpsRole {
       getPort: (n: string) => host.getPort(n),
       getPorts: () => host.getPorts(),
       sendFrame: (p: string, f) => { host.sendFrame(p, f); },
+      sendIpv4FrameArpAware: (p, ipPkt, nextHopIP) =>
+        host.sendIpv4FrameArpAware(p, ipPkt, nextHopIP),
+      sendUdpDatagram: (request) => host.sendUdpDatagram(request),
+      sourceAddressFor: (destination) => host.sourceAddressFor(destination),
     };
     this.agent = new RadiusServerAgent(radiusHost, () => this.getHostBus());
     this.agent.setUserResolver((username, context) => this.resolveUser(username, context));

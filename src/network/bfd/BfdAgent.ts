@@ -7,9 +7,8 @@ import {
   UDP_PORT_BFD_CONTROL,
 } from './types';
 import {
-  MACAddress, IPAddress,
+  IPAddress,
   type EthernetFrame, type IPv4Packet, type UDPPacket,
-  IP_PROTO_UDP, ETHERTYPE_IPV4, nextIPv4Id, computeIPv4Checksum,
 } from '../core/types';
 import { Logger } from '../core/Logger';
 import { buildUdpOverIpv4 } from '../layers/transport/UdpEgress';
@@ -21,7 +20,7 @@ export interface BfdHost {
   getPort(name: string): import('../hardware/Port').Port | undefined;
   getPorts(): import('../hardware/Port').Port[];
   sendFrame(portName: string, frame: EthernetFrame): void;
-  sendIpv4FrameArpAware?(outPortName: string, ipPkt: IPv4Packet, nextHopIP: IPAddress): void;
+  sendIpv4FrameArpAware(outPortName: string, ipPkt: IPv4Packet, nextHopIP: IPAddress): void;
 }
 
 export class BfdAgent {
@@ -209,14 +208,7 @@ export class BfdAgent {
       payload, payloadBytes: 24, source: srcIp,
       ttl: 255, tos: 0xc0,
     });
-    if (this.host.sendIpv4FrameArpAware) {
-      this.host.sendIpv4FrameArpAware(s.iface, ipPkt, destination);
-    } else {
-      this.host.sendFrame(s.iface, {
-        srcMAC: port.getMAC(), dstMAC: MACAddress.broadcast(),
-        etherType: ETHERTYPE_IPV4, payload: ipPkt,
-      });
-    }
+    this.host.sendIpv4FrameArpAware(s.iface, ipPkt, destination);
     s.lastTxMs = Date.now();
     this.getBus().publish({
       topic: 'bfd.packet.sent',

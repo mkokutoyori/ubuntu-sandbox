@@ -19,10 +19,9 @@ import { generateNtResponse, generateAuthenticatorResponse } from './mschapv2';
 import {
   MACAddress, IPAddress,
   type EthernetFrame, type IPv4Packet, type UDPPacket,
-  ETHERTYPE_IPV4,
 } from '../core/types';
 import { Logger } from '../core/Logger';
-import { buildUdpOverIpv4 } from '../layers/transport/UdpEgress';
+import { type UdpSendRequest } from '../layers/transport/UdpEgress';
 
 export interface RadiusClientHost {
   readonly id: string;
@@ -31,12 +30,10 @@ export interface RadiusClientHost {
   getPort(name: string): import('../hardware/Port').Port | undefined;
   getPorts(): import('../hardware/Port').Port[];
   sendFrame(portName: string, frame: EthernetFrame): void;
-  /** ARP-resolved next-hop MAC, when known — falls back to broadcast otherwise (mirrors `TcpHost`). */
-  resolveMac?(ip: string): MACAddress | null;
-  /** Real RIB lookup (LPM) — falls back to same-subnet/first-up-port heuristics when unset. */
-  resolveRoute?(targetIp: string): { iface: string; nextHopIp: string } | null;
   /** ARP-aware send (queues on a cold cache instead of broadcasting) — falls back to broadcast when absent (mirrors `TcpHost`). */
   sendIpv4FrameArpAware?(outPortName: string, ipPkt: IPv4Packet, nextHopIP: IPAddress): void;
+  sendUdpDatagram(request: UdpSendRequest): boolean;
+  sourceAddressFor(destination: IPAddress): IPAddress | null;
 }
 
 type RadiusAuthMethod = 'pap' | 'chap';
@@ -310,9 +307,7 @@ export class RadiusClientAgent {
   }
 
   private transmitEap(server: RadiusServerConfig, pending: PendingEapRound): void {
-    const egress = this.resolveEgress(server.ip);
-    if (!egress) return;
-    const srcIp = egress.port.getIPAddress();
+    const srcIp = this.host.sourceAddressFor(new IPAddress(server.ip));
     if (!srcIp) return;
     const attrs: RadiusAttribute[] = [
       attr('user-name', pending.username),
@@ -329,11 +324,12 @@ export class RadiusClientAgent {
       authenticator: pending.authenticator, attributes: attrs,
     };
     payload = withMessageAuthenticator(payload, pending.authenticator, server.sharedSecret);
-    const ipPkt = buildUdpOverIpv4(srcIp, {
+    const datagram = {
       destination: new IPAddress(server.ip),
       destinationPort: server.authPort, sourcePort: 49180 + (pending.identifier & 0x3fff),
       payload, payloadBytes: 12,
-    });
+      source: srcIp,
+    };
     this.getBus().publish({
       topic: 'radius.packet.sent',
       payload: {
@@ -342,16 +338,7 @@ export class RadiusClientAgent {
         identifier: pending.identifier, username: pending.username,
       },
     });
-    if (this.host.sendIpv4FrameArpAware) {
-      this.host.sendIpv4FrameArpAware(egress.name, ipPkt, new IPAddress(egress.nextHopIp));
-    } else {
-      const eth: EthernetFrame = {
-        srcMAC: egress.port.getMAC(),
-        dstMAC: this.host.resolveMac?.(server.ip) ?? MACAddress.broadcast(),
-        etherType: ETHERTYPE_IPV4, payload: ipPkt,
-      };
-      this.host.sendFrame(egress.name, eth);
-    }
+    this.host.sendUdpDatagram(datagram);
   }
 
   private armEapTimeout(server: RadiusServerConfig, pending: PendingEapRound): void {
@@ -410,9 +397,7 @@ export class RadiusClientAgent {
   }
 
   private transmitMsChap(server: RadiusServerConfig, pending: PendingMsChapRound): void {
-    const egress = this.resolveEgress(server.ip);
-    if (!egress) return;
-    const srcIp = egress.port.getIPAddress();
+    const srcIp = this.host.sourceAddressFor(new IPAddress(server.ip));
     if (!srcIp) return;
     const msChap2Response = new Uint8Array(50);
     msChap2Response[0] = pending.identifier & 0xff; // Ident
@@ -433,12 +418,13 @@ export class RadiusClientAgent {
       authenticator: pending.authenticator, attributes: attrs,
     };
     payload = withMessageAuthenticator(payload, pending.authenticator, server.sharedSecret);
-    const ipPkt = buildUdpOverIpv4(srcIp, {
+    const datagram = {
       destination: new IPAddress(server.ip),
       destinationPort: server.authPort,
       sourcePort: this.fixedSourcePort ?? (49180 + (pending.identifier & 0x3fff)),
       payload, payloadBytes: 12,
-    });
+      source: srcIp,
+    };
     this.getBus().publish({
       topic: 'radius.packet.sent',
       payload: {
@@ -447,16 +433,7 @@ export class RadiusClientAgent {
         identifier: pending.identifier, username: pending.username,
       },
     });
-    if (this.host.sendIpv4FrameArpAware) {
-      this.host.sendIpv4FrameArpAware(egress.name, ipPkt, new IPAddress(egress.nextHopIp));
-    } else {
-      const eth: EthernetFrame = {
-        srcMAC: egress.port.getMAC(),
-        dstMAC: this.host.resolveMac?.(server.ip) ?? MACAddress.broadcast(),
-        etherType: ETHERTYPE_IPV4, payload: ipPkt,
-      };
-      this.host.sendFrame(egress.name, eth);
-    }
+    this.host.sendUdpDatagram(datagram);
   }
 
   private armMsChapTimeout(server: RadiusServerConfig, pending: PendingMsChapRound): void {
@@ -735,9 +712,7 @@ export class RadiusClientAgent {
   }
 
   private transmit(server: RadiusServerConfig, pending: PendingRequest): void {
-    const egress = this.resolveEgress(server.ip);
-    if (!egress) return;
-    const srcIp = egress.port.getIPAddress();
+    const srcIp = this.host.sourceAddressFor(new IPAddress(server.ip));
     if (!srcIp) return;
     const attrs: RadiusAttribute[] = [attr('user-name', pending.username)];
     if (pending.authMethod === 'chap') {
@@ -757,12 +732,13 @@ export class RadiusClientAgent {
       attributes: attrs,
     };
     payload = withMessageAuthenticator(payload, pending.authenticator, server.sharedSecret);
-    const ipPkt = buildUdpOverIpv4(srcIp, {
+    const datagram = {
       destination: new IPAddress(server.ip),
       destinationPort: server.authPort,
       sourcePort: this.fixedSourcePort ?? (49152 + (pending.identifier & 0x3fff)),
       payload, payloadBytes: 20 + 32 + pending.username.length + pending.password.length - 8,
-    });
+      source: srcIp,
+    };
     // Published before the actual send: delivery is synchronous, so a
     // multi-round exchange (e.g. an Access-Challenge round-trip) can run to
     // completion *inside* this call — publishing after would report this
@@ -775,48 +751,7 @@ export class RadiusClientAgent {
         identifier: pending.identifier, username: pending.username,
       },
     });
-    if (this.host.sendIpv4FrameArpAware) {
-      this.host.sendIpv4FrameArpAware(egress.name, ipPkt, new IPAddress(egress.nextHopIp));
-    } else {
-      const eth: EthernetFrame = {
-        srcMAC: egress.port.getMAC(),
-        dstMAC: this.host.resolveMac?.(server.ip) ?? MACAddress.broadcast(),
-        etherType: ETHERTYPE_IPV4, payload: ipPkt,
-      };
-      this.host.sendFrame(egress.name, eth);
-    }
+    this.host.sendUdpDatagram(datagram);
   }
 
-  private resolveEgress(targetIp: string): { name: string; port: import('../hardware/Port').Port; nextHopIp: string } | null {
-    if (this.config.sourceInterface) {
-      const p = this.host.getPort(this.config.sourceInterface);
-      if (p) return { name: this.config.sourceInterface, port: p, nextHopIp: targetIp };
-    }
-    if (this.host.resolveRoute) {
-      const route = this.host.resolveRoute(targetIp);
-      if (route) {
-        const port = this.host.getPort(route.iface);
-        if (port && port.getIsUp()) return { name: route.iface, port, nextHopIp: route.nextHopIp };
-      }
-    }
-    const target = targetIp.split('.').map(Number);
-    for (const port of this.host.getPorts()) {
-      const ip = port.getIPAddress();
-      const mask = port.getSubnetMask();
-      if (!ip || !mask) continue;
-      const local = ip.toString().split('.').map(Number);
-      const maskBits = mask.toString().split('.').map(Number);
-      let same = true;
-      for (let i = 0; i < 4; i++) {
-        if ((local[i] & maskBits[i]) !== (target[i] & maskBits[i])) { same = false; break; }
-      }
-      if (same) return { name: port.getName(), port, nextHopIp: targetIp };
-    }
-    for (const port of this.host.getPorts()) {
-      if (port.getIPAddress() && port.getIsUp() && port.isConnected()) {
-        return { name: port.getName(), port, nextHopIp: targetIp };
-      }
-    }
-    return null;
-  }
 }

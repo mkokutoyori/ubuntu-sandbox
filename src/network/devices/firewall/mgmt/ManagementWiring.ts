@@ -1,4 +1,4 @@
-import type { EthernetFrame, IPv4Packet } from '../../../core/types';
+import type { EthernetFrame, IPv4Packet, IPAddress } from '../../../core/types';
 import type { IEventBus } from '../../../../events/EventBus';
 import type { TcpStack } from '../../../tcp/TcpStack';
 import type { Port } from '../../../hardware/Port';
@@ -37,6 +37,7 @@ export interface ManagementHost {
   port(iface: string): Port | undefined;
   ports(): Port[];
   sendFrame(iface: string, frame: EthernetFrame): void;
+  sendArpAware(iface: string, ipPkt: IPv4Packet, nextHopIP: IPAddress): void;
   sessions(): SessionTable;
   connectedRoutes(): ReadonlyArray<{ network: string; mask: string; iface: string }>;
   addressOf(iface: string): string | undefined;
@@ -99,6 +100,7 @@ export function buildManagementServices(host: ManagementHost): ManagementService
     port: (name) => host.port(name),
     ports: () => host.ports(),
     sendFrame: (name, frame) => { host.sendFrame(name, frame); },
+    sendArpAware: (name, ipPkt, nextHopIP) => host.sendArpAware(name, ipPkt, nextHopIP),
     bus: () => host.bus(),
   });
 

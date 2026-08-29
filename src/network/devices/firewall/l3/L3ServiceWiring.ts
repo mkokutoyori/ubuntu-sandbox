@@ -12,7 +12,7 @@ import {
 } from './FirewallDhcp';
 import { deliverToRoutingProtocol } from '../routing/RoutingWiring';
 import { SdwanService } from '../sdwan/SdwanService';
-import type { IPv4Packet } from '../../../core/types';
+import type { IPv4Packet, IPAddress } from '../../../core/types';
 
 export interface L3ServiceHost {
   readonly deviceId: string;
@@ -24,6 +24,7 @@ export interface L3ServiceHost {
   port(iface: string): Port | undefined;
   resolvedMac(ip: string): MACAddress | undefined;
   emitFrame(iface: string, frame: EthernetFrame): void;
+  emitArpAware(iface: string, packet: IPv4Packet, nextHop: IPAddress): void;
   assignAddress(iface: string, ip: string, mask: string): void;
   forward(iface: string, packet: IPv4Packet, gateway?: string): void;
   systemDnsServers?(): readonly string[];
@@ -46,6 +47,7 @@ export function buildL3Services(host: L3ServiceHost): L3Services {
     resolvedMac: (ip) => host.resolvedMac(ip),
     tcp: () => host.tcp(),
     emitFrame: (iface, frame) => { host.emitFrame(iface, frame); },
+    emitArpAware: (iface, packet, nextHop) => { host.emitArpAware(iface, packet, nextHop); },
   });
 
   const dhcp = createFirewallDhcp({

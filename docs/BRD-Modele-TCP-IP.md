@@ -1326,6 +1326,68 @@ décrit plus rien laisserait rentrer en silence ce qu'elle bornait.
 
 ---
 
+### Phase 8 — Les derniers émetteurs descendent pour de bon
+Le lot 7 de la phase 5 avait converti la CONSTRUCTION du paquet RADIUS et
+laissé l'ÉMISSION intacte : les cinq fichiers de `radius/` bâtissaient
+encore leur trame, chacun avec sa copie de `resolveEgress` et la même
+retombée `resolveMac?.(ip) ?? MACAddress.broadcast()`. NTP et BFD
+portaient la même retombée derrière un `if (host.sendIpv4FrameArpAware)`.
+
+**Ce que la mesure a établi, et qu'il faut dire avant le reste** : sur un
+routeur, cette retombée n'était **pas atteignable**. Le client passait par
+la branche ARP, que tout routeur fournit ; la réponse du serveur, elle
+sans garde, trouvait toujours l'adresse dans le cache que la trame de la
+requête venait d'y mettre. Elle était vive sur un hôte ne fournissant pas
+`resolveMac` du tout — le `RadiusServerHost` de `WindowsNpsRole` —, où
+`?? broadcast()` était inconditionnel. La retombée disparaît partout.
+
+**Un défaut, lui, était bien vivant** : `RIPEngine` choisissait entre la
+réponse unicast (RFC 2453 §3.9.1) et le groupe par
+`if (destIP && this.callbacks.sendIpv4ArpAware)` — une condition qui mêle
+« ai-je un destinataire unicast ? » et « mon hôte sait-il résoudre ? ».
+Seul `Router` fournissait ce rappel, si bien que **sur un pare-feu la
+réponse unicast partait avec l'adresse de couche lien du GROUPE**. La
+condition ne porte plus que sur `destIP`, le rappel est obligatoire, et
+`FirewallRouting` le fournit. Au passage `destinationMac()` disparaît :
+l'adresse de couche lien se dérive de l'adresse de destination par
+`linkDestinationFor`, comme partout ailleurs depuis la phase 7.
+
+**Deux pièces manquaient à l'offre pour que la descente soit possible.**
+
+1. **`sourceAddressFor`** — une application qui doit NOMMER sa propre
+   adresse dans son message (`nas-ip-address` pour RADIUS, comme
+   `agent-addr` pour SNMP) doit savoir laquelle la pile emploiera AVANT
+   d'émettre. C'est ce que `ip route get` répond sur une vraie machine.
+   La couche ne savait pas le dire, et c'est pour cela que chaque agent
+   gardait son `resolveEgress`. `Router`, `EndHost`, `Switch` et
+   `Firewall` la réalisent.
+
+2. **`UdpSendRequest.iface`** — un multicast ou une diffusion ne se
+   route pas, il s'émet sur une interface nommée ; l'offre transport ne
+   savait pas la transporter jusqu'à l'offre internet.
+
+**Le blocage nommé au `TODO.md` est levé.** `EndHost.sendUdpDatagram`
+était POSITIONNEL là où `Router` et `Switch` prennent une requête — un
+même nom pour deux formes. Il accepte désormais les deux ÉCRITURES sur
+une SEULE implantation (`emitUdpDatagram`), donc les 83 appels positionnels
+restent valides et un agent hébergé par un hôte appelle l'offre comme sur
+un routeur. Une convenance à deux orthographes n'est pas la duplication
+que ce document combat : celle-ci a une seule implantation.
+
+Trouvé et refermé en chemin : le `NtpHost` du commutateur était construit
+par un `as unknown as` depuis le `FhrpHost`, si bien que le compilateur ne
+pouvait pas voir qu'il lui manquait `sendIpv4FrameArpAware` — rendre ce
+rappel obligatoire a cassé NTP sur commutateur à l'exécution, pas à la
+compilation. `Switch`/`SwitchSvi` portent maintenant un vrai envoi
+ARP-conscient (route + ARP du plan SVI), et `FhrpHost` déclare la
+capacité au lieu de la laisser au cast.
+
+`probe-radius-ne-diffuse-pas.test.ts` (6 cas) : **UN seul tombe**, le cas
+de structure, et son en-tête dit pourquoi les cinq autres sont des
+témoins plutôt que des preuves.
+
+---
+
 ---
 
 ## 7. Méthode de vérification

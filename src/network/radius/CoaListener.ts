@@ -1,7 +1,7 @@
 import type { IEventBus } from '@/events/EventBus';
 import {
   type RadiusPacket, type RadiusAttribute,
-  getAttr, UDP_PORT_RADIUS_COA,
+  UDP_PORT_RADIUS_COA,
 } from './types';
 import {
   verifyAccountingRequestAuthenticator, withResponseAuthenticator,
@@ -11,9 +11,9 @@ import {
   errorCauseAttr, readSessionIdentifiers,
 } from './coa';
 import {
-  MACAddress, IPAddress,
+  IPAddress,
   type EthernetFrame, type UDPPacket,
-  ETHERTYPE_IPV4,
+  type IPv4Packet,
 } from '../core/types';
 import { Logger } from '../core/Logger';
 import { buildUdpOverIpv4 } from '../layers/transport/UdpEgress';
@@ -33,7 +33,7 @@ export interface CoaListenerHost {
   getPort(name: string): import('../hardware/Port').Port | undefined;
   getPorts(): import('../hardware/Port').Port[];
   sendFrame(portName: string, frame: EthernetFrame): void;
-  resolveMac?(ip: string): MACAddress | null;
+  sendIpv4FrameArpAware(outPortName: string, ipPkt: IPv4Packet, nextHopIP: IPAddress): void;
 }
 
 const DEDUP_TTL_MS = 30_000;
@@ -146,11 +146,6 @@ export class CoaListener {
       destinationPort: clientPort, sourcePort: this.port,
       payload: response, payloadBytes: 12,
     });
-    const eth: EthernetFrame = {
-      srcMAC: port.getMAC(),
-      dstMAC: this.host.resolveMac?.(dstIp.toString()) ?? MACAddress.broadcast(),
-      etherType: ETHERTYPE_IPV4, payload: ipPkt,
-    };
-    this.host.sendFrame(inPort, eth);
+    this.host.sendIpv4FrameArpAware(inPort, ipPkt, dstIp);
   }
 }

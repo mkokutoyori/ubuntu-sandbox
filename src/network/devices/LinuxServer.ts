@@ -67,6 +67,9 @@ export class LinuxServer extends LinuxMachine {
       },
       sendIpv4FrameArpAware: (outPortName: string, ipPkt: IPv4Packet, nextHopIP: IPAddress) =>
         this.sendIpv4FrameArpAware(outPortName, ipPkt, nextHopIP),
+      sendUdpDatagram: (request: import('../layers/transport/UdpEgress').UdpSendRequest) =>
+        this.sendUdpDatagram(request),
+      sourceAddressFor: (destination: IPAddress) => this.sourceAddressFor(destination),
     };
     this.radiusServer = new RadiusServerAgent(radiusHost, () => this.getBus());
     this.radiusTcpServer = new RadiusTcpServer(radiusHost, () => this.getBus(), () => this.getTcpStack());

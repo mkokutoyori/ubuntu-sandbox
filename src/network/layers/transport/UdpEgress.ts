@@ -10,6 +10,7 @@ export interface UdpSendRequest {
   readonly payload: unknown;
   readonly payloadBytes: number;
   readonly source?: IPAddress;
+  readonly iface?: string;
   readonly ttl?: number;
   readonly tos?: number;
 }

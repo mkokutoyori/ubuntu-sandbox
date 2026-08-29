@@ -56,6 +56,8 @@ export function makeSwitchVrrpHost(sw: Switch, bridge: SwitchVlanBridge): FhrpHo
       bridge.egressOnVlan(vlan, frame);
     },
     sendIpv4Packet: (request) => sendOnNamedInterface(host, request),
+    sendIpv4FrameArpAware: (iface, packet, nextHop) =>
+      sw.sendIpv4FrameArpAware(iface, packet, nextHop),
   };
   return host;
 }

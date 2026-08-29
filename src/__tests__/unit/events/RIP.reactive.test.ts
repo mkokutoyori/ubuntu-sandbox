@@ -23,6 +23,7 @@ function makeCallbacks(): RIPCallbacks {
     getPortMAC: () => MACAddress.generate(),
     getPortNames: () => ['eth0', 'eth1'],
     sendFrame: () => true,
+    sendIpv4ArpAware: () => undefined,
     getRoutingTable: () => [],
     installRoute: () => {},
     removeRoute: () => {},

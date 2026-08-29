@@ -14,6 +14,7 @@
  */
 
 import type { IProtocolEngine } from '../core/interfaces';
+import { linkDestinationFor } from '../layers/internet/Ipv4Egress';
 import type { RIPPacket, RIPRouteEntry } from '../core/types';
 import {
   IPAddress, SubnetMask, MACAddress,
@@ -139,7 +140,7 @@ export interface RIPCallbacks {
   /** Whether a route's egress interface can still carry traffic. */
   isInterfaceUsable?(iface: string): boolean;
   /** Unicast an IPv4 packet, resolving the destination's MAC by ARP. */
-  sendIpv4ArpAware?(iface: string, packet: import('../core/types').IPv4Packet, nextHop: IPAddress): void;
+  sendIpv4ArpAware(iface: string, packet: import('../core/types').IPv4Packet, nextHop: IPAddress): void;
 }
 
 export interface RIPInterfaceAuth {
@@ -844,12 +845,14 @@ export class RIPEngine implements IProtocolEngine {
     // RFC 2453 §3.9.1 — la réponse à une demande retourne à celui qui l'a
     // posée, en unicast : elle emprunte donc la résolution d'adresse
     // ordinaire au lieu du groupe.
-    if (destIP && this.callbacks.sendIpv4ArpAware) {
+    if (destIP) {
       this.callbacks.sendIpv4ArpAware(outIface, ipPkt, destIP);
     } else {
+      const groupMac = linkDestinationFor(destination);
+      if (!groupMac) return;
       this.callbacks.sendFrame(outIface, {
         srcMAC: this.callbacks.getPortMAC(outIface),
-        dstMAC: this.destinationMac(),
+        dstMAC: groupMac,
         etherType: ETHERTYPE_IPV4,
         payload: ipPkt,
       });

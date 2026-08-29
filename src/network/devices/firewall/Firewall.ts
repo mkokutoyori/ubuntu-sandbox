@@ -1,4 +1,5 @@
 import { Equipment } from '../../equipment/Equipment';
+import { buildUdpOverIpv4, type UdpSendRequest } from '../../layers/transport/UdpEgress';
 import { Port } from '../../hardware/Port';
 import {
   ETHERTYPE_ARP,
@@ -420,6 +421,8 @@ export class Firewall extends Equipment {
       resolveMac: (ip) => this.arp.resolved(ip) ?? null,
       sendArpAware: (p, packet, nextHop) =>
         this.sendIpv4FrameArpAware(p, packet, nextHop),
+      sendUdpDatagram: (request) => this.sendUdpDatagram(request),
+      sourceAddressFor: (destination) => this.sourceAddressFor(destination),
       sendUdp: (destIp, port, payload) => this.sendUdpToPeer(destIp, port, payload),
       ...ipsecHostFacts({
         interfaces: this.interfaces,
@@ -443,6 +446,8 @@ export class Firewall extends Equipment {
       serial: () => this.serialNumber(),
       port: (iface) => this.getPort(iface),
       ports: () => [...this.getPorts().values()],
+      sendArpAware: (iface, ipPkt, nextHopIP) =>
+        this.sendIpv4FrameArpAware(iface, ipPkt, nextHopIP),
       sendFrame: (iface, frame) => { this.sendFrame(iface, frame); },
       sessions: () => this.getVdom().sessions,
       connectedRoutes: () => this.interfaces.connectedRoutes(),
@@ -494,6 +499,8 @@ export class Firewall extends Equipment {
         this.capture.record({ at: this.services.now(), iface, direction: 'out', frame });
         this.sendFrame(iface, frame);
       },
+      emitArpAware: (iface, packet, nextHop) =>
+        this.sendIpv4FrameArpAware(iface, packet, nextHop),
       assignAddress: (iface, ip, mask) => { this.configureInterface(iface, { ip, mask }); },
       forward: (iface, packet, gateway) => { this.forward(iface, packet, gateway); },
       systemDnsServers: () => {
@@ -885,6 +892,26 @@ export class Firewall extends Equipment {
     if (iface === undefined || source === undefined) return false;
 
     this.forward(iface, udpDatagram(source, destIp, port, port, payload), route?.nextHop);
+    return true;
+  }
+
+  sourceAddressFor(destination: IPAddress): IPAddress | null {
+    const target = destination.toString();
+    const route = this.getVdom().routes.resolveNextHop(target);
+    const iface = route?.iface ?? this.interfaces.interfaceForDestination(target);
+    const source = iface === undefined ? undefined : this.interfaces.get(iface)?.ip;
+    return source === undefined ? null : new IPAddress(source);
+  }
+
+  sendUdpDatagram(request: UdpSendRequest): boolean {
+    const target = request.destination.toString();
+    const route = this.getVdom().routes.resolveNextHop(target);
+    const iface = route?.iface ?? this.interfaces.interfaceForDestination(target);
+    const source = request.source?.toString()
+      ?? (iface === undefined ? undefined : this.interfaces.get(iface)?.ip);
+    if (iface === undefined || source === undefined) return false;
+
+    this.forward(iface, buildUdpOverIpv4(new IPAddress(source), request), route?.nextHop);
     return true;
   }
 
