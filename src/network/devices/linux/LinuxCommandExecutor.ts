@@ -3,6 +3,7 @@
  */
 
 import { VirtualFileSystem, type INode } from './VirtualFileSystem';
+import { sshUnreachableReason } from '@/terminal/ssh/wireSshLogin';
 import type { TcpWireOutcome } from '../../tcp/types';
 import { LinuxUserManager } from './LinuxUserManager';
 import { loadSudoPolicy, type SudoActor } from './iam/SudoPolicyEngine';
@@ -1666,6 +1667,13 @@ export class LinuxCommandExecutor {
     }
     const found = findHostByAddress(host, { readFile: (p) => this.vfs.readFile(p) }, this.localDevice as never);
     if (!found) {
+      if (IPAddress.tryParse(host)) {
+        const reason = sshUnreachableReason(this.localDevice, host);
+        return {
+          output: `Trying ${host}...\ntelnet: connect to address ${host}: ${reason}`,
+          exitCode: 1,
+        };
+      }
       return { output: `telnet: could not resolve ${host}/${port}: Name or service not known`, exitCode: 1 };
     }
     // Resolve the device that actually owns the address over the cable plant.

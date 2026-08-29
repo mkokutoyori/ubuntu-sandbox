@@ -1,4 +1,5 @@
 import type { NmapOptions } from './NmapOptions';
+import { IPAddress } from '@/network/core/types';
 import type { TcpWireOutcome } from '@/network/tcp/types';
 import { topPorts, serviceName, DEFAULT_TOP_COUNT } from './ServiceRegistry';
 
@@ -180,6 +181,10 @@ function scanHost(options: NmapOptions, probes: HostProbes, target: string): Hos
   return { ip: info.ip, hostname: info.hostname, up: true, latencyMs, osGuess, ports, notShown };
 }
 
+function isIpLiteral(target: string): boolean {
+  return IPAddress.tryParse(target) !== null;
+}
+
 export function scan(options: NmapOptions, probes: HostProbes): NmapReport {
   const hosts: HostReport[] = [];
   const unresolved: string[] = [];
@@ -187,7 +192,10 @@ export function scan(options: NmapOptions, probes: HostProbes): NmapReport {
 
   for (const target of options.targets) {
     for (const address of enumerateTargets(target)) {
-      const report = scanHost(options, probes, address);
+      const report = scanHost(options, probes, address)
+        ?? (target === address && isIpLiteral(address)
+          ? { ip: address, up: false, latencyMs: 0, downReason: 'no response', ports: [] }
+          : null);
       if (!report) {
         if (target === address) unresolved.push(address);
         continue;

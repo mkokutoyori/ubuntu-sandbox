@@ -1647,6 +1647,51 @@ discriminé : 2 tombent, et ce sont les deux qui observent une VRAIE
 machine. Les trois cas de table ne peuvent pas discriminer — le module
 est nouveau — et le témoin Linux passe des deux côtés.
 
+#### Lot 8 — une adresse littérale n'est pas une panne de DNS
+
+Deux entrées du `TODO.md` fermées ensemble, parce qu'elles n'avaient
+qu'une cause. Depuis un hôte en 10.0.0.1/24 :
+
+    nmap -p 22 10.0.0.55  ->  Failed to resolve "10.0.0.55".
+                              Nmap done: 0 IP addresses (0 hosts up)
+    telnet 203.0.113.9    ->  telnet: could not resolve 203.0.113.9/23:
+                              Name or service not known
+
+Ce sont des quadruplets pointés : il n'y a RIEN à résoudre. Le diagnostic
+envoie vérifier le DNS quand le problème est le routage. Les deux
+commandes cherchent la cible dans la TOPOLOGIE et traduisent « pas
+trouvée » par « pas résolue ».
+
+**nmap SCANNE une adresse littérale que personne ne porte**, et la
+rapporte en panne. `output.cc:2500` porte la condition et le texte :
+
+```c
+if (o.numhosts_scanned == 1 && o.numhosts_up == 0 && !o.listscan &&
+    o.pingtype != PINGTYPE_NONE)
+  log_write(LOG_STDOUT, "Note: Host seems down. If it is really up, but
+            blocking our ping probes, try -Pn\n");
+```
+
+— donc l'hôte est COMPTÉ comme scanné, ce que le décompte final doit
+dire, et « Failed to resolve » est réservé aux noms. Le rendu d'un hôte
+en panne existait déjà dans le formateur, note comprise : le correctif
+tient entièrement dans le moteur.
+
+**Côté telnet**, l'échec est celui de la connexion et son texte est celui
+de l'errno — `sshUnreachableReason` du lot 6 est LUE, pas recopiée, donc
+une adresse sans route donne `Network is unreachable` et une adresse sur
+le lien que personne ne porte `No route to host`.
+
+Limite assumée et écrite : seule la cible SIMPLE est traitée. Une plage
+(`10.0.0.1-10`) continue de ne compter que les hôtes trouvés, là où le
+vrai nmap compte toute la plage comme scannée — c'est un autre calcul,
+qui changerait le décompte de toutes les sorties de plage.
+
+`probe-adresse-litterale-n-est-pas-une-panne-dns.test.ts` (6 cas) est
+discriminé : 4 tombent. Les deux témoins sont les NOMS, un par commande,
+et ils doivent passer des deux côtés — sans eux, un correctif qui
+supprimerait le message de résolution passerait la sonde.
+
 ---
 
 ---
