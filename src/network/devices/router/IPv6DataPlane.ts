@@ -11,6 +11,7 @@ import type { RouterCounters } from '../Router';
 import type { IEventBus } from '@/events/EventBus';
 import type { IScheduler } from '@/events/Scheduler';
 import { TimerSet } from '@/events/TimerSet';
+import { stampUdpChecksum } from '../../layers/transport/UdpChecksum';
 import {
   IPv6Address, IPv6Packet, ICMPv6Packet, MACAddress, UDPPacket,
   NDPNeighborSolicitation, NDPNeighborAdvertisement, NDPRouterSolicitation,
@@ -497,7 +498,8 @@ export class IPv6DataPlane {
     const udp: UDPPacket = {
       type: 'udp', sourcePort: 547, destinationPort: 546, length: 8 + 300, checksum: 0, payload: reply,
     };
-    const ipPkt = createIPv6Packet(srcIp, dstIp, IP_PROTO_UDP, this.defaultHopLimit, udp, 8 + 300);
+    const ipPkt = createIPv6Packet(srcIp, dstIp, IP_PROTO_UDP, this.defaultHopLimit,
+      stampUdpChecksum(udp, srcIp.toString(), dstIp.toString()), 8 + 300);
     this.ctx.sendFrame(inPort, { srcMAC: port.getMAC(), dstMAC: mac, etherType: ETHERTYPE_IPV6, payload: ipPkt });
   }
 
@@ -521,7 +523,8 @@ export class IPv6DataPlane {
       const udp: UDPPacket = {
         type: 'udp', sourcePort: 547, destinationPort: 547, length: 8 + 300, checksum: 0, payload: relayForw,
       };
-      const relayedPkt = createIPv6Packet(egressSrcIp, dstIp, IP_PROTO_UDP, this.defaultHopLimit, udp, 8 + 300);
+      const relayedPkt = createIPv6Packet(egressSrcIp, dstIp, IP_PROTO_UDP, this.defaultHopLimit,
+        stampUdpChecksum(udp, egressSrcIp.toString(), dstIp.toString()), 8 + 300);
       this.ctx.sendFrame(route.iface, {
         srcMAC: egressPort.getMAC(), dstMAC: nextHopMac, etherType: ETHERTYPE_IPV6, payload: relayedPkt,
       });
@@ -570,7 +573,8 @@ export class IPv6DataPlane {
     const udp: UDPPacket = {
       type: 'udp', sourcePort: 547, destinationPort: 547, length: 8 + 300, checksum: 0, payload: relayRepl,
     };
-    const replyPkt = createIPv6Packet(egressSrcIp, dstIp, IP_PROTO_UDP, this.defaultHopLimit, udp, 8 + 300);
+    const replyPkt = createIPv6Packet(egressSrcIp, dstIp, IP_PROTO_UDP, this.defaultHopLimit,
+      stampUdpChecksum(udp, egressSrcIp.toString(), dstIp.toString()), 8 + 300);
     this.ctx.sendFrame(route.iface, {
       srcMAC: egressPort.getMAC(), dstMAC: nextHopMac, etherType: ETHERTYPE_IPV6, payload: replyPkt,
     });

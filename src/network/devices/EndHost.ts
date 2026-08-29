@@ -29,7 +29,9 @@ import { TcpStack } from '../tcp/TcpStack';
 import type { TcpSegment, TcpDialFailure } from '../tcp/types';
 import type { UdpChecksumInput } from '@/network/layers/transport/UdpChecksum';
 import { computeTcpChecksum, isDialFailure } from '../tcp/types';
-import { computeUdpChecksum, verifyUdpChecksum } from '@/network/layers/transport/UdpChecksum';
+import {
+  computeUdpChecksum, verifyUdpChecksum, stampUdpChecksum,
+} from '@/network/layers/transport/UdpChecksum';
 import { dialTcp, parseDialAddress, type DialAddress } from '../tcp/dial';
 import { PortNumber } from '../core/ports/PortNumber';
 import { TimerSet } from '@/events/TimerSet';
@@ -621,7 +623,10 @@ export abstract class EndHost extends Equipment {
         ? (port.getLinkLocalIPv6() ?? port.getGlobalIPv6())
         : (port.getGlobalIPv6() ?? port.getLinkLocalIPv6());
       if (!srcIP) continue;
-      const ipPkt = createIPv6Packet(srcIP, group, protocol, hopLimit, payload, payloadLength);
+      const charge = protocol === IP_PROTO_UDP && (payload as UDPPacket | undefined)?.type === 'udp'
+        ? stampUdpChecksum(payload as UDPPacket, srcIP.toString(), group.toString())
+        : payload;
+      const ipPkt = createIPv6Packet(srcIP, group, protocol, hopLimit, charge, payloadLength);
       if (this.firewallFilter6(name, ipPkt, 'out') !== 'accept') continue;
       this.sendFrame(name, {
         srcMAC: port.getMAC(), dstMAC, etherType: ETHERTYPE_IPV6, payload: ipPkt,
@@ -1064,7 +1069,9 @@ export abstract class EndHost extends Equipment {
     const udp: UDPPacket = {
       type: 'udp', sourcePort: 546, destinationPort: 547, length: 8 + 300, checksum: 0, payload: pkt,
     };
-    const ipPkt = createIPv6Packet(srcIp, dst, IP_PROTO_UDP, 1, udp, 8 + 300);
+    const ipPkt = createIPv6Packet(
+      srcIp, dst, IP_PROTO_UDP, 1,
+      stampUdpChecksum(udp, srcIp.toString(), dst.toString()), 8 + 300);
     this.sendFrame(iface, {
       srcMAC: port.getMAC(), dstMAC: dst.toMulticastMAC(), etherType: ETHERTYPE_IPV6, payload: ipPkt,
     });
@@ -2895,7 +2902,9 @@ export abstract class EndHost extends Equipment {
 
     if (destinationIP.isLoopback() || this.getPortOwningIPv6(destinationIP)) {
       const localPkt = createIPv6Packet(
-        destinationIP, destinationIP, IP_PROTO_UDP, this.defaultHopLimit, udp, udp.length,
+        destinationIP, destinationIP, IP_PROTO_UDP, this.defaultHopLimit,
+        stampUdpChecksum(udp, destinationIP.toString(), destinationIP.toString()),
+        udp.length,
       );
       this.deliverUDP6('lo', localPkt);
       return true;
@@ -2915,7 +2924,8 @@ export abstract class EndHost extends Equipment {
     if (!srcIP) return false;
 
     const ipPkt = createIPv6Packet(
-      srcIP, destinationIP, IP_PROTO_UDP, this.defaultHopLimit, udp, udp.length,
+      srcIP, destinationIP, IP_PROTO_UDP, this.defaultHopLimit,
+      stampUdpChecksum(udp, srcIP.toString(), destinationIP.toString()), udp.length,
     );
 
     const outPortName = route.port.getName();
@@ -2999,6 +3009,13 @@ export abstract class EndHost extends Equipment {
   private deliverUDP6(portName: string, ipv6: IPv6Packet): void {
     const udp = ipv6.payload as UDPPacket;
     if (!udp || udp.type !== 'udp') return;
+
+    if (!verifyUdpChecksum(
+      udp, ipv6.sourceIP.toString(), ipv6.destinationIP.toString())) {
+      Logger.warn(this.id, 'udp6:checksum-fail',
+        `${this.name}: invalid UDP checksum over IPv6, dropping`);
+      return;
+    }
 
     if (this.dispatchUdpToListener(portName, udp, ipv6.sourceIP, ipv6.destinationIP)) return;
 

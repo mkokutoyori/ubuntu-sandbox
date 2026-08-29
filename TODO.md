@@ -122,29 +122,6 @@ de couche lien que l'UDP.
 
 ## Postes Windows
 
-### [udp] la somme de controle UDP est ABSENTE sur IPv6, dans les deux sens
-Trouve en evaluant la couche transport du BRD contre la RFC 8200. En
-IPv4 la somme UDP est facultative et ce depot la calcule quand meme
-(`sendUdpDatagram` la tamponne, `deliverUDP` et le routeur la verifient).
-En IPv6 elle est OBLIGATOIRE — RFC 8200 §8.1, un recepteur DOIT jeter un
-datagramme UDP a somme nulle, les exceptions des RFC 6935/6936 ne visant
-que des tunnels — et elle est ici entierement absente : c'est l'inverse
-exact des deux cotes.
-**Mesure** : `EndHost.sendUdpDatagram6` pose `checksum: 0` en dur ;
-`deliverUDP6` ne verifie rien et livre a l'ecouteur ; les quatre autres
-constructeurs de datagrammes UDP sur IPv6 font de meme — le client
-DHCPv6 d'`EndHost` et les trois points d'`IPv6DataPlane` (serveur et
-relais DHCPv6).
-**Ce qui est DEJA fait** : `verifyUdpChecksum` applique desormais la
-regle — une somme nulle recue est refusee si l'une des deux adresses est
-une IPv6. Il ne manque donc que les EMETTEURS et le point de
-verification du chemin v6.
-**Pourquoi ce n'est pas ferme ici** : l'ordre est contraint. Verifier
-avant de calculer ferait tomber TOUT le trafic DHCPv6 du depot, qui part
-a somme nulle. Il faut calculer aux CINQ points d'emission, puis brancher
-la verification dans `deliverUDP6`, puis mesurer les laboratoires mDNS,
-LLMNR et DHCPv6 — c'est un lot a soi seul, pas un correctif de fonction.
-
 ### [ping] les mots de `ping.exe` pour le code 13 restent non attestés
 Depuis le lot « le code ICMP decide de ce que ping ecrit », la moitie
 Windows lit le code et distingue le RESEAU (code 0) de l'HOTE (code 1)

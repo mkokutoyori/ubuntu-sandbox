@@ -35,3 +35,9 @@ export function verifyUdpChecksum(
   if (udp.checksum === 0) return !isIpv6(srcIp, dstIp);
   return computeUdpChecksum(udp, srcIp, dstIp) === udp.checksum;
 }
+
+export function stampUdpChecksum<T extends UdpChecksumInput>(
+  udp: T, srcIp: string, dstIp: string,
+): T & { checksum: number } {
+  return { ...udp, checksum: computeUdpChecksum(udp, srcIp, dstIp) };
+}
