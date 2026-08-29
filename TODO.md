@@ -1180,6 +1180,31 @@ défauts — la méthode vaut d'être reprise sur le reliquat.
   open-ports` — il n'existe donc pas de capture texte a lire, et les
   blancs sont precisement l'information cherchee.
 
+- `NhrpEngine` retombe sur la DIFFUSION, sans garde — ouvert. Meme
+  defaut que la phase 8 vient de refermer sur RADIUS, NTP et BFD, mais
+  celui-ci n'a AUCUNE garde :
+  `const dstMAC = cached ? cached.mac : MACAddress.broadcast()` — il LIT
+  le cache ARP et diffuse quand il est froid, c'est-a-dire au PREMIER
+  paquet. NHRP (protocole 54) porte l'enregistrement d'un client DMVPN
+  aupres de son concentrateur ; le diffuser le donne a tout le segment.
+  Le correctif est `sendIpv4Packet` (l'offre le route et le resout), et
+  il n'est pas fait ici parce que ce lot etait deja long.
+
+- Trois emetteurs restent hors de l'offre, et deux d'entre eux ne sont
+  PAS des defauts — mesure faite apres la phase 8 plutot qu'affirmee.
+  `ipsla/probes/IcmpEchoProbe.ts` batit sa trame mais son appelant a deja
+  RESOLU l'adresse de destination : c'est une descente a faire, pas une
+  fuite. La branche multicast de `RIPEngine` emet sur une interface
+  nommee avec l'adresse derivee par `linkDestinationFor`, ce qui est
+  exactement le regime prevu ; la faire passer par `sendIpv4Packet` ne
+  serait qu'une uniformisation. `TcpStack` porte son propre chemin IPv4
+  (§5.3 du BRD le prevoit : TCP DEMENAGE dans la couche transport), et
+  c'est le dernier acheminement IPv4 distinct du depot.
+  Faux positifs verifies au passage : `DhcpServerChannel.sendFrame` est
+  un `(iface, pkt: DHCPPacket) => void` et non l'envoi de couche lien, et
+  le `sendFrame` de `FhrpAgentBase` est un ARP gratuit, donc L2 par
+  nature.
+
 - `EndHost.sendUdpDatagram` est POSITIONNEL alors que l'offre prend une
   requete — FERME. Il accepte les deux ECRITURES sur une SEULE
   implantation (`emitUdpDatagram`), donc les 83 appels positionnels

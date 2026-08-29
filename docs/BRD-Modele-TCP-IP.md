@@ -1386,6 +1386,19 @@ capacité au lieu de la laisser au cast.
 de structure, et son en-tête dit pourquoi les cinq autres sont des
 témoins plutôt que des preuves.
 
+**Ce qui reste, mesuré après le lot plutôt qu'affirmé.** Un seul défaut
+vivant : `NhrpEngine` porte la même retombée en diffusion, et **sans
+garde** — NHRP (protocole 54) porte l'enregistrement d'un client DMVPN,
+et le diffuser le donne au segment entier. Les deux autres émetteurs ne
+sont pas des fuites : la sonde ICMP d'IP SLA bâtit sa trame mais son
+appelant a déjà résolu l'adresse, et la branche multicast de `RIPEngine`
+émet sur une interface nommée avec l'adresse dérivée — c'est le régime
+prévu. Reste `TcpStack`, dernier acheminement IPv4 distinct, dont §5.3
+prévoit le déménagement. Deux faux positifs écartés par vérification :
+`DhcpServerChannel.sendFrame` est un `(iface, pkt: DHCPPacket) => void`
+et non l'envoi de couche lien, et celui de `FhrpAgentBase` est un ARP
+gratuit, donc L2 par nature.
+
 ---
 
 ---
