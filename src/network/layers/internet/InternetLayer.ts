@@ -38,6 +38,28 @@ export function isDirectedBroadcast(
     && destination.networkAddress(mask).equals(address.networkAddress(mask)));
 }
 
+export interface ConnectedIpv4Port {
+  getIPAddress(): IPAddress | null;
+  getSubnetMask(): SubnetMask | null;
+  getSecondaryIPs?(): readonly { ip: IPAddress; mask: SubnetMask }[];
+}
+
+export function connectedPrefixesOfPort(port: ConnectedIpv4Port): ConnectedIpv4Prefix[] {
+  const primary = port.getIPAddress();
+  const mask = port.getSubnetMask();
+  return [
+    ...(primary && mask ? [{ address: primary, mask }] : []),
+    ...(port.getSecondaryIPs?.() ?? []).map((e) => ({ address: e.ip, mask: e.mask })),
+  ];
+}
+
+export function isUnicastDestination(
+  destination: IPAddress, connected: readonly ConnectedIpv4Prefix[],
+): boolean {
+  return classifyIpv4Destination(destination) === 'unicast'
+    && !isDirectedBroadcast(destination, connected);
+}
+
 export type Ipv4HeaderProblem = 'checksum' | 'version' | 'ihl' | 'total-length';
 
 export function ipv4HeaderProblem(packet: IPv4Packet): Ipv4HeaderProblem | null {

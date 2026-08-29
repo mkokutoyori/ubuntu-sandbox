@@ -129,7 +129,7 @@ import { fragmentIPv4, IPv4Reassembler } from '../core/Ipv4Fragmentation';
 import type { FhrpDataPlane } from '../fhrp/types';
 import { DHCPServer, type DhcpUtilizationCrossing } from '../dhcp/DHCPServer';
 import {
-  classifyIpv4Destination, decrementForForwarding, isDirectedBroadcast,
+  classifyIpv4Destination, connectedPrefixesOfPort, decrementForForwarding, isDirectedBroadcast,
   ipv4HeaderProblem,
 } from '../layers/internet/InternetLayer';
 import {
@@ -2501,13 +2501,7 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
    */
   private directedBroadcastEgress(destination: IPAddress): Port | null {
     for (const [, port] of this.ports) {
-      const primary = port.getIPAddress();
-      const mask = port.getSubnetMask();
-      const connected = [
-        ...(primary && mask ? [{ address: primary, mask }] : []),
-        ...port.getSecondaryIPs().map((e) => ({ address: e.ip, mask: e.mask })),
-      ];
-      if (isDirectedBroadcast(destination, connected)) return port;
+      if (isDirectedBroadcast(destination, connectedPrefixesOfPort(port))) return port;
     }
     return null;
   }

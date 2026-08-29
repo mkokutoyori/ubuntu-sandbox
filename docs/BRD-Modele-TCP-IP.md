@@ -1403,6 +1403,70 @@ prévoit le déménagement. Deux faux positifs écartés par vérification :
 et non l'envoi de couche lien, et celui de `FhrpAgentBase` est un ARP
 gratuit, donc L2 par nature.
 
+#### Lot 3 — la sortie TCP suit la table, et refuse le non-unicast
+
+Deux défauts d'une même décision, `TcpStack.resolveEgress`, mesurés l'un
+après l'autre et fermés séparément.
+
+**(1) Un routeur n'employait pas sa propre table.** Sur une machine à
+DEUX liaisons montantes, une connexion vers un réseau joignable par route
+statique partait sur l'AUTRE port, en ARPant la destination au lieu du
+saut suivant : `Router`'s `tcpHost` ne déclarait pas `resolveRoute`, donc
+la pile sautait la RIB et tombait sur son balayage par sous-réseau. Le
+repli final — « le premier port adressé, up et câblé » — est retiré avec :
+c'est la forme de repli que la phase 5 avait déjà retirée de syslog,
+NetFlow et SNMP, et elle répond par l'ordre des ports à une question de
+direction. Une sortie indécidable échoue désormais, et **tout de suite** :
+`tcp_v4_connect()` (`net/ipv4/tcp_ipv4.c`) rend l'erreur de route telle
+quelle et compte `IPSTATS_MIB_OUTNOROUTES` sur `-ENETUNREACH`, donc rien
+ne part et l'appelant n'attend aucun délai.
+
+**(2) TCP adressait des groupes et des diffusions.** Mesuré sur un
+routeur portant une route par défaut — qui correspond à tout, groupes
+compris — `connect()` vers `224.0.0.1`, vers `255.255.255.255` et vers la
+diffusion DIRIGÉE `10.0.0.255` rendait un socket en `syn-sent` : un SYN
+réellement construit et émis, vers plusieurs machines à la fois. Une
+poignée de main suppose UN pair ; dans le cas des diffusions, c'est le
+segment entier qui répond.
+
+**L'autorité est le noyau, lu et non cité de mémoire.** `tcp_v4_connect()`
+refuse après la recherche de route :
+
+```c
+if (rt->rt_flags & (RTCF_MULTICAST | RTCF_BROADCAST)) {
+        ip_rt_put(rt);
+        return -ENETUNREACH;
+}
+```
+
+`RTCF_BROADCAST` couvre les DEUX diffusions, la générale et la dirigée,
+la route étant classée contre les adresses que la machine porte — d'où
+le besoin des préfixes connectés et non de la seule adresse. Côté v6,
+`tcp_v6_connect()` (`net/ipv6/tcp_ipv6.c`) est plus direct : le refus est
+la PREMIÈRE chose faite, avant toute recherche de route.
+
+```c
+addr_type = ipv6_addr_type(&usin->sin6_addr);
+if (addr_type & IPV6_ADDR_MULTICAST)
+        return -ENETUNREACH;
+```
+
+**Aucun quatrième prédicat n'a été écrit.** `classifyIpv4Destination` et
+`isDirectedBroadcast` portent déjà la question depuis les incréments 2 et
+4 de la phase 2 ; `isUnicastDestination` ne fait que les composer. Et
+`connectedPrefixesOfPort` ferme au passage la recopie que `Router`
+portait à la main — la troisième écriture de « les préfixes que ce port
+porte » aurait été celle de `TcpStack`.
+
+`probe-tcp-suit-la-table.test.ts` (3 cas, 2 tombent) et
+`probe-tcp-refuse-le-non-unicast.test.ts` (6 cas, 4 tombent) sont
+discriminés. Trouvé en écrivant le second et inscrit au `TODO.md` plutôt
+que forcé : le `tcpHost` du routeur ne déclare pas davantage
+`resolveRoute6` ni `localAddress6`, donc **un routeur n'ouvre AUCUNE
+connexion TCP en IPv6**, quelle qu'en soit la destination — c'est le
+jumeau IPv6 du défaut (1), sur le même objet, et son cas de sonde a dû
+être monté sur un hôte Linux pour discriminer quoi que ce soit.
+
 ---
 
 ---

@@ -9,6 +9,9 @@ import {
   TCP_DEFAULT_MSS, TCP_DEFAULT_WINDOW, TCP_TIME_WAIT_MS, TCP_MIN_MSS,
 } from './types';
 import { payloadBytes } from '@/network/layers/transport/L4Checksum';
+import {
+  connectedPrefixesOfPort, isUnicastDestination, type ConnectedIpv4Prefix,
+} from '@/network/layers/internet/InternetLayer';
 import { RttEstimator, TCP_MAX_RETRANSMITS, TCP_INITIAL_RTO_MS, TCP_MAX_RTO_MS } from './RttEstimator';
 import { TcpCongestionControl } from './TcpCongestionControl';
 import { encodeOptions, decodeOptions, optionsDataOffset } from './TcpOptionsCodec';
@@ -1604,6 +1607,7 @@ export class TcpStack {
     // qu'on ne sait pas lire est simplement une destination sans route.
     const parsedTarget = IPAddress.tryParse(targetIp);
     if (!parsedTarget) return null;
+    if (!isUnicastDestination(parsedTarget, this.connectedPrefixes())) return null;
     // Avant la recherche de route, et c'est l'ordre du noyau : la table
     // `local` est consultée en premier, si bien qu'un paquet adressé à
     // une adresse que la machine PORTE ne sort jamais sur le fil.
@@ -1649,6 +1653,10 @@ export class TcpStack {
    * depuis la machine qui l'exécute — `curl 127.0.0.1` répondait et
    * `curl 10.0.0.2` restait sur « Trying… » indéfiniment.
    */
+  private connectedPrefixes(): ConnectedIpv4Prefix[] {
+    return this.host.getPorts().flatMap((port) => connectedPrefixesOfPort(port));
+  }
+
   private isLocalDestination(targetIp: string, family: IpFamily): boolean {
     if (family === 'ipv6') {
       let v6: IPv6Address;
@@ -1675,6 +1683,8 @@ export class TcpStack {
   private resolveEgress6(
     targetIp: string,
   ): { name: string; port?: import('../hardware/Port').Port; srcIp: string; nextHopIp: string } | null {
+    const parsed6 = (() => { try { return new IPv6Address(targetIp); } catch { return null; } })();
+    if (parsed6?.isMulticast()) return null;
     if (this.isLocalDestination(targetIp, 'ipv6')) {
       return { name: 'lo', srcIp: targetIp, nextHopIp: targetIp };
     }
