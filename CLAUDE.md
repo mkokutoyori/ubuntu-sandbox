@@ -584,6 +584,20 @@ raconter le correctif dans son message de commit.
   vars. Treat its warnings as real: in a security engine, a declared-and-never-read field
   is the exact signature of a criterion that is parsed, displayed, and never enforced —
   which is how seven ACL findings were introduced (see `AUDIT-ACL-CISCO.md`).
+- **Choisir la source d'autorite AVANT de citer.** Une RFC n'est pas
+  automatiquement la reference. Ce qui fait foi est le **standard
+  officiellement retenu** et, a defaut, **la documentation du
+  constructeur** ; une transcription capturee l'emporte sur les deux
+  quand elles divergent, parce que c'est elle que l'apprenant compare a
+  sa propre sortie. Trois cas se distinguent et les confondre fait
+  invoquer un texte qui ne s'applique pas : une norme ouverte adoptee
+  (VRRP RFC 5798, PIM-SM RFC 7761, les affectations IANA) se cite ; un
+  protocole PROPRIETAIRE ne se cite pas par RFC — HSRP est de Cisco et sa
+  RFC 2281 est INFORMATIVE, pas Standards Track, et ne couvre que la
+  version 1, tandis que GLBP n'a aucune RFC, donc l'autorite est la
+  documentation de Cisco ; et quand la source ne peut pas etre atteinte,
+  on l'ecrit et on n'implemente pas plutot que de deviner.
+
 - **Failure posture — security criteria fail CLOSED.** In any matching engine (ACL, VACL,
   route policy, firewall rule), *a criterion the engine cannot decide must fail the match*.
   Never succeed, never "skip the criterion". An unknown keyword, a missing L4 payload, an

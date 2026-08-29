@@ -1303,8 +1303,25 @@ La méthode du dépôt, appliquée à chaque phase sans exception :
    bloc.
 5. **e2e Playwright** quand le comportement est observable dans le
    navigateur.
-6. **Vérification externe** : tout comportement affirmé est confronté à
-   la RFC ou à une transcription réelle.
+6. **Vérification externe**, et la source d'autorité se choisit avant de
+   citer. Une RFC n'est pas automatiquement la référence : ce qui fait
+   foi est **le standard officiellement retenu** et, à défaut, **la
+   documentation du constructeur**. Trois cas se distinguent, et les
+   confondre fait invoquer un texte qui ne s'applique pas :
+   - **Norme ouverte adoptée** — VRRP (RFC 5798, Standards Track),
+     PIM-SM (RFC 7761), et les affectations de l'IANA (adresses de
+     groupe, numéros de protocole, blocs OUI). La citer est exact.
+   - **Protocole propriétaire** — HSRP et GLBP sont de Cisco. La
+     RFC 2281 d'HSRP est INFORMATIVE, pas Standards Track, et ne décrit
+     que la version 1 ; GLBP n'a aucune RFC. **L'autorité est la
+     documentation de Cisco**, et citer une RFC y serait une erreur.
+   - **Ce que la machine fait vraiment** — une transcription capturée
+     l'emporte sur les deux quand elles divergent, parce que c'est elle
+     que l'apprenant compare à sa propre sortie. C'est déjà la règle de
+     `ciscoTableLayouts.ts` pour les largeurs de colonnes.
+   Quand la source ne peut pas être atteinte, on l'écrit et on
+   n'implémente pas — c'est ce qui laisse `show control-plane host
+   open-ports` ouvert plutôt que deviné.
 
 Un garde-fou spécifique à ce chantier, à écrire en phase 1 et à faire
 grossir à chaque phase : **un test de structure** qui échoue si un
