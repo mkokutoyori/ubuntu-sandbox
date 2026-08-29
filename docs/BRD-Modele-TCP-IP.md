@@ -1316,8 +1316,13 @@ Le querier de snooping garde délibérément son propre `sendOnLink` : il
 et passer par `sendFrame` lui ferait perdre l'étiquetage que la couche
 lien applique. Seule la construction du PAQUET descend.
 
-**La phase 7 est donc close** : plus aucun moteur de `src/network/` ne
-bâtit son propre en-tête IPv4.
+**La phase 7 est donc close.** Il ne reste dans tout `src/network/` qu'UN
+en-tête IPv4 écrit à la main, `icmp/IcmpEcho.ts`, et c'est l'exception
+mesurée de la phase 6 : il DÉRIVE son identification de l'identifiant et
+du numéro de séquence de la sonde au lieu de brûler un `nextIPv4Id()`,
+ce que l'offre ne sait pas exprimer. Le garde-fou de structure le nomme,
+et `igmp/frames.ts` sort de sa liste d'exemptions — une exemption qui ne
+décrit plus rien laisserait rentrer en silence ce qu'elle bornait.
 
 ---
 

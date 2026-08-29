@@ -31,9 +31,11 @@
  *   `ihl: 5` et `totalLength = 20 + n` : convertir le site aurait retire
  *   l'option Router Alert en silence. **Cette limite est LEVEE** —
  *   `IPv4HeaderOptions.headerBytes` exprime l'en-tete a options, et IGMP
- *   est descendu comme les autres. Le cas ci-dessous a change de sens en
- *   consequence : il n'atteste plus une impossibilite, il atteste que
- *   l'option SURVIT a la descente.
+ *   est descendu comme les autres. Deux consequences : le cas ci-dessous
+ *   a change de sens (il n'atteste plus une impossibilite, il atteste que
+ *   l'option SURVIT a la descente), et `igmp/frames.ts` SORT de la liste
+ *   d'exemptions — une exemption qui ne decrit plus rien laisserait
+ *   rentrer en silence ce qu'elle etait censee borner.
  * - **ICMP echo** (`icmp/IcmpEcho.ts`) DERIVE son identification de
  *   l'identifiant et du numero de sequence au lieu de bruler un
  *   `nextIPv4Id()`, ce qui la rend reproductible pour une meme sonde.
@@ -75,7 +77,7 @@ beforeEach(() => {
 });
 
 const NETWORK_ROOT = 'src/network';
-const EXCEPTIONS = ['src/network/igmp/frames.ts', 'src/network/icmp/IcmpEcho.ts'];
+const EXCEPTIONS = ['src/network/icmp/IcmpEcho.ts'];
 
 function typescriptFiles(root: string): string[] {
   const out: string[] = [];
