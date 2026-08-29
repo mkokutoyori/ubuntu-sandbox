@@ -21,12 +21,17 @@ export function computeUdpChecksum(
   words.push(udpLen & 0xffff, 0);
   pushBytesAsWords(words, bytes);
 
-  return onesComplement(words);
+  const sum = onesComplement(words);
+  return sum === 0 ? 0xffff : sum;
+}
+
+function isIpv6(srcIp: string, dstIp: string): boolean {
+  return srcIp.includes(':') || dstIp.includes(':');
 }
 
 export function verifyUdpChecksum(
   udp: UdpChecksumInput & { checksum: number }, srcIp: string, dstIp: string,
 ): boolean {
-  if (udp.checksum === 0) return true;
+  if (udp.checksum === 0) return !isIpv6(srcIp, dstIp);
   return computeUdpChecksum(udp, srcIp, dstIp) === udp.checksum;
 }
