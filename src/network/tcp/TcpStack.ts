@@ -899,12 +899,45 @@ export class TcpStack {
     }
   }
 
+  /**
+   * RFC 9293 §3.10.7.3-4, refined by RFC 5961 §3.2 — an arriving RST is
+   * accepted only where it cannot have been guessed. In SYN-SENT the
+   * proof is the ACK field: it must acknowledge the SYN we just sent. In
+   * every other state it is the sequence number: exactly RCV.NXT resets
+   * the connection, anything else inside the window earns a challenge
+   * ACK, and anything outside it is dropped without a word.
+   */
+  private _processReset(socket: TcpSocket, seg: TcpSegment): void {
+    if (socket.state === 'syn-sent') {
+      if (!seg.flags.ack || seg.acknowledgement !== socket.sendNext) {
+        this.dropped(socket.remoteIp, socket.remotePort, 'bad-state');
+        return;
+      }
+      socket.connectRefused = true;
+      this._teardown(socket, 'rst');
+      return;
+    }
+
+    if (seg.sequence === socket.recvNext) {
+      if (socket.state === 'syn-received') socket.connectRefused = true;
+      this._teardown(socket, 'rst');
+      return;
+    }
+
+    const windowEnd = (socket.recvNext + socket.windowSize) >>> 0;
+    const inWindow = !seqLt(seg.sequence, socket.recvNext) && seqLt(seg.sequence, windowEnd);
+    if (!inWindow) {
+      this.dropped(socket.remoteIp, socket.remotePort, 'bad-state');
+      return;
+    }
+
+    const challenge = noFlags(); challenge.ack = true;
+    this.transmit(socket, challenge, socket.sendNext, socket.recvNext, undefined);
+  }
+
   private _processSegment(socket: TcpSocket, seg: TcpSegment, payloadSize: number): void {
     if (seg.flags.rst) {
-      if (socket.state === 'syn-sent' || socket.state === 'syn-received') {
-        socket.connectRefused = true;
-      }
-      this._teardown(socket, 'rst');
+      this._processReset(socket, seg);
       return;
     }
     // Any ACK (whether or not it also carries data/FIN) can retire queued
