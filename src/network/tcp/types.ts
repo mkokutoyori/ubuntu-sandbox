@@ -152,15 +152,9 @@ export function computeTcpChecksum(
   return onesComplement(words);
 }
 
-/**
- * Verify a received segment's checksum. A checksum of 0 is treated as
- * "not computed" (checksum offload) and accepted — segments built by
- * this stack always carry a real checksum.
- */
 export function verifyTcpChecksum(
   seg: TcpSegment, srcIp: string, dstIp: string,
 ): boolean {
-  if (seg.checksum === 0) return true;
   return computeTcpChecksum(seg, srcIp, dstIp) === seg.checksum;
 }
 
