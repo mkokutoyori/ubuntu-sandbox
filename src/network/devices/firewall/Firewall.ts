@@ -18,6 +18,7 @@ import {
 import {
   buildICMPError, mayGenerateICMPError,
   ICMP_TTL_EXPIRED_IN_TRANSIT, ICMP_UNREACH_FRAG_NEEDED,
+  ICMP_FRAG_REASSEMBLY_TIME_EXCEEDED,
 } from '../../core/IcmpErrors';
 import { fragmentIPv4, IPV4_FLAG_DF } from '../../core/Ipv4Fragmentation';
 import { FragmentReassembly } from './l3/FragmentReassembly';
@@ -289,6 +290,8 @@ export class Firewall extends Equipment {
     deviceType: DeviceType, name: string, x = 0, y = 0, options: FirewallOptions = {},
   ) {
     super(deviceType, name, x, y);
+
+    this.attachReassemblyTimeout();
 
     const profile = options.profile ?? GENERIC_PROFILE;
     this.profile = profile;
@@ -1277,6 +1280,13 @@ export class Firewall extends Equipment {
 
   getFragmentReassembly(): FragmentReassembly { return this.fragments; }
 
+  private attachReassemblyTimeout(): void {
+    this.fragments.setTimeoutHandler((firstFragment, ingressPort) => {
+      this.sendIcmpError(ingressPort, firstFragment, 'time-exceeded',
+        ICMP_FRAG_REASSEMBLY_TIME_EXCEEDED, {});
+    });
+  }
+
   private portMap(): Map<string, Port> {
     const map = new Map<string, Port>();
     for (const port of this.getPorts()) map.set(port.getName(), port);
@@ -1427,7 +1437,7 @@ export class Firewall extends Equipment {
     if (!packet || packet.type !== 'ipv4') return;
     if (ipv4HeaderProblem(packet)) return;
 
-    const recolle = this.fragments.accept(packet, this.services.now());
+    const recolle = this.fragments.accept(packet, this.services.now(), portName);
     if (recolle === null) return;
     packet = recolle;
 

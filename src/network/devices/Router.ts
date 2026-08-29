@@ -115,7 +115,10 @@ import type { IIPv4Route } from '../core/interfaces';
 import { ipv4MulticastToMac, tryIpToUint32 } from '../core/ip';
 import { Logger } from '../core/Logger';
 import { CarPolicer } from '../qos/CarPolicer';
-import { buildICMPError, mayGenerateICMPError, ICMP_UNREACH_PORT, type ICMPErrorType } from '../core/IcmpErrors';
+import {
+  buildICMPError, mayGenerateICMPError, ICMP_UNREACH_PORT,
+  ICMP_FRAG_REASSEMBLY_TIME_EXCEEDED, type ICMPErrorType,
+} from '../core/IcmpErrors';
 import { IpSlaEngine } from '../ipsla/IpSlaEngine';
 import { TrackService } from '../ipsla/TrackService';
 import type { IpSlaEgress } from '../ipsla/types';
@@ -469,7 +472,12 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
    *  pendingARPs use as a "request-already-sent" check (Phase 5.8). */
   private inFlightFwdARPs: Set<string> = new Set();
   /** Reassembles fragments of datagrams addressed to this router itself (RFC 791 §3.2). */
-  private readonly ipv4Reassembler = new IPv4Reassembler();
+  private readonly ipv4Reassembler = new IPv4Reassembler(
+    (firstFragment, ingressPort) => {
+      if (!firstFragment || !ingressPort) return;
+      this.sendICMPError(ingressPort, firstFragment, 'time-exceeded',
+        ICMP_FRAG_REASSEMBLY_TIME_EXCEEDED);
+    });
 
   // ── Management Plane (vendor CLI shell) ───────────────────────
   private shell: IRouterShell;
@@ -2531,7 +2539,7 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
     // set arrives — buffered fragments return null here and are simply
     // dropped from this call; the reassembled datagram continues through
     // the same dispatch a non-fragmented one would.
-    const reassembled = this.ipv4Reassembler.add(ipPkt);
+    const reassembled = this.ipv4Reassembler.add(ipPkt, undefined, inPort);
     if (!reassembled) return;
     ipPkt = reassembled;
 

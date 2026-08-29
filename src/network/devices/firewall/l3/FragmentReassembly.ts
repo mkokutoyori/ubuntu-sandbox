@@ -32,11 +32,20 @@ export class FragmentReassembly {
   private reasmOKs = 0;
   private reasmFails = 0;
 
+  private onTimeout?: (firstFragment: IPv4Packet, ingressPort: string) => void;
+
   constructor() {
-    this.engine = new IPv4Reassembler((firstFragment) => {
+    this.engine = new IPv4Reassembler((firstFragment, ingressPort) => {
       if (firstFragment) this.release(fragmentKey(firstFragment));
       this.reasmFails++;
+      if (firstFragment && ingressPort) this.onTimeout?.(firstFragment, ingressPort);
     });
+  }
+
+  setTimeoutHandler(
+    handler: (firstFragment: IPv4Packet, ingressPort: string) => void,
+  ): void {
+    this.onTimeout = handler;
   }
 
   setThresholdMegabytes(megabytes: number): void {
@@ -58,7 +67,7 @@ export class FragmentReassembly {
     });
   }
 
-  accept(packet: IPv4Packet, nowMs: number): IPv4Packet | null {
+  accept(packet: IPv4Packet, nowMs: number, ingressPort?: string): IPv4Packet | null {
     this.engine.purgeExpired(nowMs);
     if (!isIPv4Fragment(packet)) return packet;
 
@@ -69,7 +78,7 @@ export class FragmentReassembly {
     const key = fragmentKey(packet);
     if (!this.held.has(key)) return null;
 
-    const whole = this.engine.add(packet, nowMs);
+    const whole = this.engine.add(packet, nowMs, ingressPort);
     if (whole === null) return null;
     this.release(key);
     this.reasmOKs++;

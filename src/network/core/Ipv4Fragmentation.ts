@@ -91,6 +91,7 @@ interface PendingDatagram {
   firstSeenMs: number;
   fragments: PendingFragment[];
   lastOffsetSeen: number | null;
+  ingressPort?: string;
 }
 
 /**
@@ -102,7 +103,11 @@ interface PendingDatagram {
 export class IPv4Reassembler {
   private readonly pending = new Map<string, PendingDatagram>();
 
-  constructor(private readonly onExpire?: (firstFragment: IPv4Packet | null) => void) {}
+  constructor(
+    private readonly onExpire?: (
+      firstFragment: IPv4Packet | null, ingressPort?: string,
+    ) => void,
+  ) {}
 
   private key(pkt: IPv4Packet): string {
     return fragmentKey(pkt);
@@ -113,7 +118,9 @@ export class IPv4Reassembler {
    * Returns the reassembled datagram once every fragment has arrived,
    * `null` while the set is still incomplete.
    */
-  add(pkt: IPv4Packet, nowMs: number = Date.now()): IPv4Packet | null {
+  add(
+    pkt: IPv4Packet, nowMs: number = Date.now(), ingressPort?: string,
+  ): IPv4Packet | null {
     if (!isIPv4Fragment(pkt)) return pkt;
 
     this.purgeExpired(nowMs);
@@ -121,7 +128,7 @@ export class IPv4Reassembler {
     const key = this.key(pkt);
     let entry = this.pending.get(key);
     if (!entry) {
-      entry = { firstSeenMs: nowMs, fragments: [], lastOffsetSeen: null };
+      entry = { firstSeenMs: nowMs, fragments: [], lastOffsetSeen: null, ingressPort };
       this.pending.set(key, entry);
     }
     const headerBytes = pkt.ihl * 4;
@@ -171,7 +178,7 @@ export class IPv4Reassembler {
       if (nowMs - entry.firstSeenMs > REASSEMBLY_TIMEOUT_MS) {
         this.pending.delete(key);
         const firstFrag = entry.fragments.find(f => f.offsetBytes === 0)?.pkt ?? null;
-        this.onExpire?.(firstFrag);
+        this.onExpire?.(firstFrag, entry.ingressPort);
       }
     }
   }

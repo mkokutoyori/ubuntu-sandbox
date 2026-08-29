@@ -74,6 +74,7 @@ import { Logger } from '../core/Logger';
 import {
   buildICMPError,
   mayGenerateICMPError,
+  ICMP_FRAG_REASSEMBLY_TIME_EXCEEDED,
   ICMP_UNREACH_NET,
   ICMP_UNREACH_HOST,
   ICMP_UNREACH_PROTO,
@@ -330,7 +331,12 @@ export abstract class EndHost extends Equipment {
    *  fwdQueueAndResolve (replaces the pendingARPs map after Phase 5.5). */
   private inFlightFwdARPs: Set<string> = new Set();
   /** Reassembles fragments of datagrams addressed to this host (RFC 791 §3.2). */
-  private readonly ipv4Reassembler = new IPv4Reassembler();
+  private readonly ipv4Reassembler = new IPv4Reassembler(
+    (firstFragment, ingressPort) => {
+      if (!firstFragment) return;
+      this.sendICMPError(ingressPort ?? '', firstFragment, 'time-exceeded',
+        ICMP_FRAG_REASSEMBLY_TIME_EXCEEDED);
+    });
   /** Monotonically increasing ICMP echo identifier */
   protected pingIdCounter: number = 0;
   /** Default gateway IP (set via `ip route add default via ...` or `route add`) */
@@ -2091,7 +2097,7 @@ export abstract class EndHost extends Equipment {
       // RFC 791 §3.2: reassemble before filtering/dispatch — a non-first
       // fragment carries no L4 header for the firewall or upper layer to
       // inspect, so hold it here until the full datagram is back together.
-      const reassembled = this.ipv4Reassembler.add(ipPkt);
+      const reassembled = this.ipv4Reassembler.add(ipPkt, undefined, portName);
       if (!reassembled) return;
       ipPkt = reassembled;
 
