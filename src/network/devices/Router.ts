@@ -106,7 +106,7 @@ import {
   IP_PROTO_EIGRP,
   UDP_PORT_RIP, UDP_PORT_IKE, UDP_PORT_IKE_NAT_T,
   TCPPacket,
-  createIPv4Packet, verifyIPv4Checksum, computeIPv4Checksum,
+  createIPv4Packet,
   DeviceType,
   IPv6Address, IPv6Packet,
 } from '../core/types';
@@ -617,6 +617,7 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
       sendFrame: (p: string, f: EthernetFrame) => { this.sendFrame(p, f); },
       sendIpv4FrameArpAware: (p: string, ipPkt: IPv4Packet, nextHopIP: IPAddress) =>
         this.sendIpv4FrameArpAware(p, ipPkt, nextHopIP),
+      resolveRoute: (targetIp: string) => this.resolveRouteForHost(targetIp),
     };
     this.tcpv2 = new TcpStack(tcpHost, () => this.getBus(),
       () => this.getRouterScheduler());

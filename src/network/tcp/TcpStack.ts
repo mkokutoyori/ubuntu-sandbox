@@ -1634,12 +1634,6 @@ export class TcpStack {
       }
       if (same) return { name: port.getName(), port, srcIp: ip.toString(), nextHopIp: targetIp };
     }
-    for (const port of this.host.getPorts()) {
-      const ip = port.getIPAddress();
-      if (ip && port.getIsUp() && port.isConnected()) {
-        return { name: port.getName(), port, srcIp: ip.toString(), nextHopIp: targetIp };
-      }
-    }
     return null;
   }
 
