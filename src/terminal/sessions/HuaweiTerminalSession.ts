@@ -7,6 +7,7 @@
  */
 
 import type { ICLIDevice } from '@/network';
+import { VRP_SSH, type SshDialect } from '@/terminal/ssh/sshDialect';
 import { CLITerminalSession } from './CLITerminalSession';
 import { TerminalTheme, SessionType, withTimeout, DeviceOfflineError } from './TerminalSession';
 import type { InteractiveStep } from '@/terminal/core/types';
@@ -134,6 +135,8 @@ export class HuaweiTerminalSession extends CLITerminalSession {
   protected getPagerIndicator(): string { return '  ---- More ----'; }
 
   protected getTelnetDialect(): TelnetDialect { return VRP_TELNET; }
+
+  protected getSshDialect(): SshDialect { return VRP_SSH; }
 
   protected isTopLevelExit(line: string): boolean {
     const w = line.trim().toLowerCase();

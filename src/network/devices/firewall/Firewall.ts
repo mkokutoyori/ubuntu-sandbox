@@ -1,4 +1,5 @@
 import { Equipment } from '../../equipment/Equipment';
+import { buildUdpOverIpv4, type UdpSendRequest } from '../../layers/transport/UdpEgress';
 import { Port } from '../../hardware/Port';
 import {
   ETHERTYPE_ARP,
@@ -18,6 +19,7 @@ import {
 import {
   buildICMPError, mayGenerateICMPError,
   ICMP_TTL_EXPIRED_IN_TRANSIT, ICMP_UNREACH_FRAG_NEEDED,
+  ICMP_FRAG_REASSEMBLY_TIME_EXCEEDED,
 } from '../../core/IcmpErrors';
 import { fragmentIPv4, IPV4_FLAG_DF } from '../../core/Ipv4Fragmentation';
 import { FragmentReassembly } from './l3/FragmentReassembly';
@@ -290,6 +292,8 @@ export class Firewall extends Equipment {
   ) {
     super(deviceType, name, x, y);
 
+    this.attachReassemblyTimeout();
+
     const profile = options.profile ?? GENERIC_PROFILE;
     this.profile = profile;
     this.pipelines = new PipelineCache(this.id, profile, this.registry);
@@ -414,9 +418,10 @@ export class Firewall extends Equipment {
       port: (n) => this.getPort(n),
       ports: () => this.getPorts(),
       send: (p, f) => { this.sendFrame(p, f); },
-      resolveMac: (ip) => this.arp.resolved(ip) ?? null,
       sendArpAware: (p, packet, nextHop) =>
         this.sendIpv4FrameArpAware(p, packet, nextHop),
+      sendUdpDatagram: (request) => this.sendUdpDatagram(request),
+      sourceAddressFor: (destination) => this.sourceAddressFor(destination),
       sendUdp: (destIp, port, payload) => this.sendUdpToPeer(destIp, port, payload),
       ...ipsecHostFacts({
         interfaces: this.interfaces,
@@ -440,6 +445,8 @@ export class Firewall extends Equipment {
       serial: () => this.serialNumber(),
       port: (iface) => this.getPort(iface),
       ports: () => [...this.getPorts().values()],
+      sendArpAware: (iface, ipPkt, nextHopIP) =>
+        this.sendIpv4FrameArpAware(iface, ipPkt, nextHopIP),
       sendFrame: (iface, frame) => { this.sendFrame(iface, frame); },
       sessions: () => this.getVdom().sessions,
       connectedRoutes: () => this.interfaces.connectedRoutes(),
@@ -491,6 +498,8 @@ export class Firewall extends Equipment {
         this.capture.record({ at: this.services.now(), iface, direction: 'out', frame });
         this.sendFrame(iface, frame);
       },
+      emitArpAware: (iface, packet, nextHop) =>
+        this.sendIpv4FrameArpAware(iface, packet, nextHop),
       assignAddress: (iface, ip, mask) => { this.configureInterface(iface, { ip, mask }); },
       forward: (iface, packet, gateway) => { this.forward(iface, packet, gateway); },
       systemDnsServers: () => {
@@ -882,6 +891,26 @@ export class Firewall extends Equipment {
     if (iface === undefined || source === undefined) return false;
 
     this.forward(iface, udpDatagram(source, destIp, port, port, payload), route?.nextHop);
+    return true;
+  }
+
+  sourceAddressFor(destination: IPAddress): IPAddress | null {
+    const target = destination.toString();
+    const route = this.getVdom().routes.resolveNextHop(target);
+    const iface = route?.iface ?? this.interfaces.interfaceForDestination(target);
+    const source = iface === undefined ? undefined : this.interfaces.get(iface)?.ip;
+    return source === undefined ? null : new IPAddress(source);
+  }
+
+  sendUdpDatagram(request: UdpSendRequest): boolean {
+    const target = request.destination.toString();
+    const route = this.getVdom().routes.resolveNextHop(target);
+    const iface = route?.iface ?? this.interfaces.interfaceForDestination(target);
+    const source = request.source?.toString()
+      ?? (iface === undefined ? undefined : this.interfaces.get(iface)?.ip);
+    if (iface === undefined || source === undefined) return false;
+
+    this.forward(iface, buildUdpOverIpv4(new IPAddress(source), request), route?.nextHop);
     return true;
   }
 
@@ -1277,6 +1306,13 @@ export class Firewall extends Equipment {
 
   getFragmentReassembly(): FragmentReassembly { return this.fragments; }
 
+  private attachReassemblyTimeout(): void {
+    this.fragments.setTimeoutHandler((firstFragment, ingressPort) => {
+      this.sendIcmpError(ingressPort, firstFragment, 'time-exceeded',
+        ICMP_FRAG_REASSEMBLY_TIME_EXCEEDED, {});
+    });
+  }
+
   private portMap(): Map<string, Port> {
     const map = new Map<string, Port>();
     for (const port of this.getPorts()) map.set(port.getName(), port);
@@ -1427,7 +1463,7 @@ export class Firewall extends Equipment {
     if (!packet || packet.type !== 'ipv4') return;
     if (ipv4HeaderProblem(packet)) return;
 
-    const recolle = this.fragments.accept(packet, this.services.now());
+    const recolle = this.fragments.accept(packet, this.services.now(), portName);
     if (recolle === null) return;
     packet = recolle;
 

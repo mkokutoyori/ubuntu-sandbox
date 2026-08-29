@@ -7,11 +7,11 @@ import {
   NETFLOW_V5_MAX_RECORDS, NETFLOW_V5_VERSION, UDP_PORT_NETFLOW,
 } from './types';
 import {
-  MACAddress, IPAddress,
-  type EthernetFrame, type IPv4Packet, type UDPPacket,
-  IP_PROTO_UDP, ETHERTYPE_IPV4, nextIPv4Id, computeIPv4Checksum,
+  IPAddress,
+  type EthernetFrame,
 } from '../core/types';
 import { Logger } from '../core/Logger';
+import { type UdpSendRequest } from '../layers/transport/UdpEgress';
 
 export interface NetFlowHost {
   readonly id: string;
@@ -20,8 +20,7 @@ export interface NetFlowHost {
   getPort(name: string): import('../hardware/Port').Port | undefined;
   getPorts(): import('../hardware/Port').Port[];
   sendFrame(portName: string, frame: EthernetFrame): void;
-  /** ARP-aware send (queues on a cold cache instead of broadcasting) — falls back to broadcast when absent (mirrors `TcpHost`). */
-  sendIpv4FrameArpAware?(outPortName: string, ipPkt: IPv4Packet, nextHopIP: IPAddress): void;
+  sendUdpDatagram(request: UdpSendRequest): boolean;
 }
 
 interface ActiveFlow extends NetFlowV5Record {
@@ -202,10 +201,7 @@ export class NetFlowAgent {
   }
 
   private exportTo(collector: NetFlowCollector, chunk: NetFlowV5Record[]): void {
-    const egress = this.resolveEgress(collector.ip);
-    if (!egress) return;
-    const srcIp = this.sourceIpFor(egress.port);
-    if (!srcIp) return;
+    const source = this.configuredSourceIp();
     const header: NetFlowV5Header = {
       version: NETFLOW_V5_VERSION,
       count: chunk.length,
@@ -219,32 +215,15 @@ export class NetFlowAgent {
     };
     this.flowSequence = (this.flowSequence + chunk.length) >>> 0;
     const payload: NetFlowV5Packet = { type: 'netflow-v5', header, records: chunk };
-    const udp: UDPPacket = {
-      type: 'udp',
-      sourcePort: 49152 + (this.flowSequence & 0x3fff),
+    const request: UdpSendRequest = {
+      destination: new IPAddress(collector.ip),
       destinationPort: collector.port,
-      length: 8 + 24 + chunk.length * 48,
-      checksum: 0, payload,
+      sourcePort: 49152 + (this.flowSequence & 0x3fff),
+      payload,
+      payloadBytes: 24 + chunk.length * 48,
+      ...(source ? { source } : {}),
     };
-    const ipPkt: IPv4Packet = {
-      type: 'ipv4', version: 4, ihl: 5, tos: 0,
-      totalLength: 20 + udp.length,
-      identification: nextIPv4Id(), flags: 0, fragmentOffset: 0,
-      ttl: 64, protocol: IP_PROTO_UDP, headerChecksum: 0,
-      sourceIP: srcIp, destinationIP: new IPAddress(collector.ip),
-      payload: udp,
-    };
-    ipPkt.headerChecksum = computeIPv4Checksum(ipPkt);
-    if (this.host.sendIpv4FrameArpAware) {
-      this.host.sendIpv4FrameArpAware(egress.name, ipPkt, new IPAddress(collector.ip));
-    } else {
-      const eth: EthernetFrame = {
-        srcMAC: egress.port.getMAC(),
-        dstMAC: MACAddress.broadcast(),
-        etherType: ETHERTYPE_IPV4, payload: ipPkt,
-      };
-      this.host.sendFrame(egress.name, eth);
-    }
+    if (!this.host.sendUdpDatagram(request)) return;
     collector.exportedPackets++;
     collector.exportedFlows += chunk.length;
     collector.lastExportMs = this.nowMs();
@@ -324,32 +303,9 @@ export class NetFlowAgent {
    * machine at all — the command silenced the very feature it
    * configures.
    */
-  private sourceIpFor(egressPort: import('../hardware/Port').Port): import('../core/types').IPAddress | null {
-    const named = this.config.sourceInterface
+  private configuredSourceIp(): import('../core/types').IPAddress | null {
+    return this.config.sourceInterface
       ? this.host.getPort(this.config.sourceInterface)?.getIPAddress() ?? null
       : null;
-    return named ?? egressPort.getIPAddress();
-  }
-
-  private resolveEgress(targetIp: string): { name: string; port: import('../hardware/Port').Port } | null {
-    const target = targetIp.split('.').map(Number);
-    for (const port of this.host.getPorts()) {
-      const ip = port.getIPAddress();
-      const mask = port.getSubnetMask();
-      if (!ip || !mask) continue;
-      const local = ip.toString().split('.').map(Number);
-      const maskBits = mask.toString().split('.').map(Number);
-      let same = true;
-      for (let i = 0; i < 4; i++) {
-        if ((local[i] & maskBits[i]) !== (target[i] & maskBits[i])) { same = false; break; }
-      }
-      if (same) return { name: port.getName(), port };
-    }
-    for (const port of this.host.getPorts()) {
-      if (port.getIPAddress() && port.getIsUp() && port.isConnected()) {
-        return { name: port.getName(), port };
-      }
-    }
-    return null;
   }
 }

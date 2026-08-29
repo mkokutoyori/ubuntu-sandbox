@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { CiscoRouter } from '@/network/devices/CiscoRouter';
+import { LinuxPC } from '@/network/devices/LinuxPC';
 import { GenericSwitch } from '@/network/devices/GenericSwitch';
 import { Cable } from '@/network/hardware/Cable';
 import { IPAddress, SubnetMask, MACAddress, resetCounters } from '@/network/core/types';
@@ -15,68 +16,89 @@ beforeEach(() => {
   EquipmentRegistry.resetInstance();
 });
 
-const MASK = '255.255.255.0';
+const MASK = new SubnetMask('255.255.255.0');
 
-async function natRouter(name: string, ip: string): Promise<CiscoRouter> {
+interface Cli { executeCommand(command: string): Promise<string> }
+
+async function type(device: Cli, lines: readonly string[]): Promise<void> {
+  for (const line of lines) await device.executeCommand(line);
+}
+
+async function natRouter(name: string, insideIp: string, outsideIp: string): Promise<CiscoRouter> {
   const r = new CiscoRouter(name, 0, 0);
-  const iface = r.getPortNames()[0];
-  for (const cmd of [
-    'enable', 'configure terminal', `hostname ${name}`,
-    `interface ${iface}`, `ip address ${ip} ${MASK}`, 'ip nat inside', 'no shutdown', 'exit',
+  r.powerOn();
+  await type(r as unknown as Cli, [
+    'enable', 'configure terminal',
+    'interface GigabitEthernet0/0', `ip address ${insideIp} 255.255.255.0`,
+    'ip nat inside', 'no shutdown', 'exit',
+    'interface GigabitEthernet0/1', `ip address ${outsideIp} 255.255.255.0`,
+    'ip nat outside', 'no shutdown', 'exit',
     'access-list 1 permit 10.0.0.0 0.0.0.255',
-    `ip nat inside source list 1 interface ${iface} overload`,
+    'ip nat inside source list 1 interface GigabitEthernet0/1 overload',
     'end',
-  ]) await r.executeCommand(cmd);
+  ]);
   return r;
 }
 
-/** Every `nat.*` topic this engine can publish, seen on one bus. */
-function collectNatTopics(router: CiscoRouter): string[] {
+function natTopicsOf(router: CiscoRouter): string[] {
   const seen: string[] = [];
-  const bus = (router as unknown as { getBus: () => { subscribeAll?: (h: (e: { topic: string }) => void) => void } }).getBus();
-  bus.subscribeAll?.((e) => { if (e.topic.startsWith('nat.')) seen.push(e.topic); });
+  (router as unknown as { getBus(): { subscribeAll(h: (e: { topic: string }) => void): void } })
+    .getBus().subscribeAll((e) => { if (e.topic.startsWith('nat.')) seen.push(e.topic); });
   return seen;
 }
 
-describe('a router\'s NAT engine publishes on its own bus, not a shared one', () => {
-  it('nothing a router\'s NAT engine publishes reaches another router\'s bus', async () => {
-    const sw = new GenericSwitch('switch-generic', 'sw', 8, 0, 0);
-    const a = await natRouter('R_A', '10.0.0.1');
-    const b = await natRouter('R_B', '10.0.0.2');
-    new Cable('ca').connect(a.getPorts()[0], sw.getPorts()[0]);
-    new Cable('cb').connect(b.getPorts()[0], sw.getPorts()[1]);
+async function host(name: string, ip: string, gateway: string): Promise<LinuxPC> {
+  const pc = new LinuxPC('linux-pc', name, 0, 0);
+  pc.powerOn();
+  await type(pc as unknown as Cli, ['ip link set eth0 up']);
+  pc.getPort('eth0')!.configureIP(new IPAddress(ip), MASK);
+  await type(pc as unknown as Cli, [`ip route add default via ${gateway}`]);
+  return pc;
+}
 
-    const onA = collectNatTopics(a);
-    const onB = collectNatTopics(b);
+describe('a router NAT engine publishes on its own bus, not a shared one', () => {
+  it('a real translated flow is seen on the translating router and nowhere else', async () => {
+    const a = await natRouter('R_A', '10.0.0.1', '203.0.113.1');
+    const b = await natRouter('R_B', '10.1.0.1', '203.0.113.2');
+    const sw = new GenericSwitch('switch-generic', 'SW', 8, 0, 0);
+    const client = await host('CLIENT', '10.0.0.10', '10.0.0.1');
+    const server = await host('SERVER', '203.0.113.9', '203.0.113.1');
 
-    // Make A's NAT engine emit: a translation is the engine's own event,
-    // published on whichever bus it was wired to.
-    const natA = (a as unknown as { natEngine: { translateOutbound?: (...args: unknown[]) => unknown } }).natEngine;
-    (natA as unknown as { emitSignalRefresh?: () => void }).emitSignalRefresh?.();
-    await a.executeCommand('show ip nat translations');
+    new Cable('c1').connect(client.getPort('eth0')!, a.getPort('GigabitEthernet0/0')!);
+    new Cable('c2').connect(a.getPort('GigabitEthernet0/1')!, sw.getPorts()[0]);
+    new Cable('c3').connect(server.getPort('eth0')!, sw.getPorts()[1]);
+    new Cable('c4').connect(b.getPort('GigabitEthernet0/1')!, sw.getPorts()[2]);
 
+    const onA = natTopicsOf(a);
+    const onB = natTopicsOf(b);
+
+    const ping = await client.executeCommand('ping -c 2 203.0.113.9');
+
+    expect(ping, 'the lab must actually carry traffic, or nothing below proves anything')
+      .toMatch(/, 0% packet loss/);
+    expect(onA, 'the translating router sees its own NAT events').not.toEqual([]);
     expect(
       onB,
-      'B subscribed to its own bus — an event from A must never be delivered there, ' +
-      'not merely filtered out by a predicate once it has arrived',
+      'B subscribed to its own bus — an event from A must never be delivered there, '
+      + 'not merely filtered out by a predicate once it has arrived',
     ).toEqual([]);
-    expect(Array.isArray(onA)).toBe(true);
   }, 30000);
 
-  it('the NAT engine is wired to the router\'s bus, not the global one', async () => {
-    const r = await natRouter('R_C', '10.0.0.3');
-    const ownBus = (r as unknown as { getBus: () => unknown }).getBus();
-    const engineBus = (r as unknown as {
-      natEngine: { getBus?: () => unknown; busOverride?: unknown };
-    }).natEngine;
+  it('the translation is visible on the translating router alone', async () => {
+    const a = await natRouter('R_A', '10.0.0.1', '203.0.113.1');
+    const b = await natRouter('R_B', '10.1.0.1', '203.0.113.2');
+    const sw = new GenericSwitch('switch-generic', 'SW', 8, 0, 0);
+    const client = await host('CLIENT', '10.0.0.10', '10.0.0.1');
+    const server = await host('SERVER', '203.0.113.9', '203.0.113.1');
 
-    // Reading the engine's own wiring: a bus it never received leaves it
-    // on the process-wide default, which is what makes cross-router
-    // delivery possible in the first place.
-    const wired = (engineBus as unknown as { busOverride?: unknown }).busOverride;
-    expect(
-      wired,
-      'the owning router must hand its bus to the NAT engine, as it already does for IPSec',
-    ).toBe(ownBus);
+    new Cable('c1').connect(client.getPort('eth0')!, a.getPort('GigabitEthernet0/0')!);
+    new Cable('c2').connect(a.getPort('GigabitEthernet0/1')!, sw.getPorts()[0]);
+    new Cable('c3').connect(server.getPort('eth0')!, sw.getPorts()[1]);
+    new Cable('c4').connect(b.getPort('GigabitEthernet0/1')!, sw.getPorts()[2]);
+
+    await client.executeCommand('ping -c 2 203.0.113.9');
+
+    expect(await a.executeCommand('show ip nat translations')).toContain('10.0.0.10');
+    expect(await b.executeCommand('show ip nat translations')).not.toContain('10.0.0.10');
   }, 30000);
 });

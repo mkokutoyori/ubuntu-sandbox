@@ -19,20 +19,30 @@ beforeEach(() => {
   Logger.reset();
 });
 
+
+async function addressViaCli(
+  device: { executeCommand(c: string): Promise<string> }, iface: string, ip: string,
+): Promise<void> {
+  for (const line of [
+    'enable', 'configure terminal', `interface ${iface}`,
+    `ip address ${ip} 255.255.255.0`, 'no shutdown', 'end',
+  ]) await device.executeCommand(line);
+}
+
 describe('Syslog — pure helpers', () => {
-  it('priValue follows RFC 3164 facility*8 + severity', () => {
+  it('priValue follows RFC 3164 facility*8 + severity', async () => {
     expect(priValue(SYSLOG_FACILITY.local7, SYSLOG_SEVERITY.informational)).toBe(23 * 8 + 6);
     expect(priValue(SYSLOG_FACILITY.kern, SYSLOG_SEVERITY.emergency)).toBe(0);
   });
 
-  it('severityFromLogLevel maps internal log levels to syslog severities', () => {
+  it('severityFromLogLevel maps internal log levels to syslog severities', async () => {
     expect(severityFromLogLevel('debug')).toBe('debugging');
     expect(severityFromLogLevel('info')).toBe('informational');
     expect(severityFromLogLevel('warn')).toBe('warning');
     expect(severityFromLogLevel('error')).toBe('error');
   });
 
-  it('shouldForward respects the configured threshold (lower number is higher priority)', () => {
+  it('shouldForward respects the configured threshold (lower number is higher priority)', async () => {
     expect(shouldForward('informational', 'error')).toBe(true);
     expect(shouldForward('informational', 'informational')).toBe(true);
     expect(shouldForward('informational', 'debugging')).toBe(false);
@@ -40,7 +50,7 @@ describe('Syslog — pure helpers', () => {
     expect(shouldForward('warning', 'warning')).toBe(true);
   });
 
-  it('formatBsdSyslog produces the canonical <pri>TIMESTAMP HOSTNAME TAG: MSG shape', () => {
+  it('formatBsdSyslog produces the canonical <pri>TIMESTAMP HOSTNAME TAG: MSG shape', async () => {
     const ts = bsdTimestamp(Date.UTC(2025, 0, 5, 13, 22, 7));
     const out = formatBsdSyslog({
       type: 'syslog',
@@ -53,7 +63,7 @@ describe('Syslog — pure helpers', () => {
 });
 
 describe('Syslog — server management', () => {
-  it('addServer / removeServer publish syslog.server.changed', () => {
+  it('addServer / removeServer publish syslog.server.changed', async () => {
     const bus = new EventBus();
     const r = new CiscoRouter('R1');
     r.setEventBus(bus);
@@ -67,7 +77,7 @@ describe('Syslog — server management', () => {
     ]);
   });
 
-  it('listServers returns the configured collectors sorted by IP', () => {
+  it('listServers returns the configured collectors sorted by IP', async () => {
     const r = new CiscoRouter('R1');
     r.getSyslogAgent().addServer('10.0.0.20');
     r.getSyslogAgent().addServer('10.0.0.10');
@@ -104,8 +114,8 @@ describe('Syslog — wire format', () => {
     });
     cable.connect(r.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/1')!);
     new Cable('c2').connect(collector.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/2')!);
-    r.getPort('GigabitEthernet0/0')!.configureIP(new IPAddress('10.0.0.1'), new SubnetMask('255.255.255.0'));
-    collector.getPort('GigabitEthernet0/0')!.configureIP(new IPAddress('10.0.0.99'), new SubnetMask('255.255.255.0'));
+    await addressViaCli(r, 'GigabitEthernet0/0', '10.0.0.1');
+    await addressViaCli(collector, 'GigabitEthernet0/0', '10.0.0.99');
     r.getSyslogAgent().addServer('10.0.0.99');
     r.getSyslogAgent().sendImmediate('notification', '%SYS-5-RESTART',
       'Configuration changed by console');
@@ -119,13 +129,13 @@ describe('Syslog — wire format', () => {
 });
 
 describe('Syslog — reactive bus', () => {
-  it('publishes syslog.packet.sent on every successful forward', () => {
+  it('publishes syslog.packet.sent on every successful forward', async () => {
     const bus = new EventBus();
     const r = new CiscoRouter('R1');
     const sw = new CiscoSwitch('switch-cisco', 'SW', 4);
     r.setEventBus(bus); sw.setEventBus(bus);
     new Cable('c').connect(r.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/1')!);
-    r.getPort('GigabitEthernet0/0')!.configureIP(new IPAddress('10.0.0.1'), new SubnetMask('255.255.255.0'));
+    await addressViaCli(r, 'GigabitEthernet0/0', '10.0.0.1');
     r.getSyslogAgent().addServer('10.0.0.99');
     const sent: Array<{ serverIp: string; severity: string }> = [];
     bus.subscribe('syslog.packet.sent', (e) => sent.push(e.payload));
@@ -137,13 +147,13 @@ describe('Syslog — reactive bus', () => {
     expect(sent[1].severity).toBe('error');
   });
 
-  it('drops messages below the configured threshold', () => {
+  it('drops messages below the configured threshold', async () => {
     const bus = new EventBus();
     const r = new CiscoRouter('R1');
     const sw = new CiscoSwitch('switch-cisco', 'SW', 4);
     r.setEventBus(bus); sw.setEventBus(bus);
     new Cable('c').connect(r.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/1')!);
-    r.getPort('GigabitEthernet0/0')!.configureIP(new IPAddress('10.0.0.1'), new SubnetMask('255.255.255.0'));
+    await addressViaCli(r, 'GigabitEthernet0/0', '10.0.0.1');
     r.getSyslogAgent().addServer('10.0.0.99', { severityThreshold: 'warning' });
     const sent: Array<{ severity: string }> = [];
     const dropped: Array<{ reason: string }> = [];
@@ -160,7 +170,7 @@ describe('Syslog — reactive bus', () => {
 describe('Syslog — IOS CLI mirrors into the agent', () => {
   it('`logging host X` provisions the SyslogAgent through the existing LoggingConfig', async () => {
     const r = new CiscoRouter('R1');
-    r.getPort('GigabitEthernet0/0')!.configureIP(new IPAddress('10.0.0.1'), new SubnetMask('255.255.255.0'));
+    await addressViaCli(r, 'GigabitEthernet0/0', '10.0.0.1');
     await r.executeCommand('enable');
     await r.executeCommand('configure terminal');
     await r.executeCommand('logging host 10.0.0.99');
@@ -174,7 +184,7 @@ describe('Syslog — IOS CLI mirrors into the agent', () => {
 
   it('`no logging host X` retires the server', async () => {
     const r = new CiscoRouter('R1');
-    r.getPort('GigabitEthernet0/0')!.configureIP(new IPAddress('10.0.0.1'), new SubnetMask('255.255.255.0'));
+    await addressViaCli(r, 'GigabitEthernet0/0', '10.0.0.1');
     await r.executeCommand('enable');
     await r.executeCommand('configure terminal');
     await r.executeCommand('logging host 10.0.0.99');
@@ -185,13 +195,16 @@ describe('Syslog — IOS CLI mirrors into the agent', () => {
 });
 
 describe('Syslog — vendor-neutral', () => {
-  it('Huawei router also forwards logs via UDP/514', () => {
+  it('Huawei router also forwards logs via UDP/514', async () => {
     const bus = new EventBus();
     const r = new HuaweiRouter('HW');
     const sw = new CiscoSwitch('switch-cisco', 'SW', 4);
     r.setEventBus(bus); sw.setEventBus(bus);
     new Cable('c').connect(r.getPort('GE0/0/0')!, sw.getPort('FastEthernet0/1')!);
-    r.getPort('GE0/0/0')!.configureIP(new IPAddress('10.0.0.1'), new SubnetMask('255.255.255.0'));
+    for (const line of [
+      'system-view', 'interface GE0/0/0',
+      'ip address 10.0.0.1 255.255.255.0', 'undo shutdown', 'quit', 'quit',
+    ]) await r.executeCommand(line);
     r.getSyslogAgent().addServer('10.0.0.99');
     const sent: Array<{ message: string }> = [];
     bus.subscribe('syslog.packet.sent', (e) => sent.push(e.payload));
@@ -202,13 +215,14 @@ describe('Syslog — vendor-neutral', () => {
 });
 
 describe('Syslog — switch as source', () => {
-  it('CiscoSwitch also exposes a SyslogAgent and forwards its own logs', () => {
+  it('CiscoSwitch also exposes a SyslogAgent and forwards its own logs', async () => {
     const bus = new EventBus();
     const sw1 = new CiscoSwitch('switch-cisco', 'SW1', 4);
     const sw2 = new CiscoSwitch('switch-cisco', 'SW2', 4);
     sw1.setEventBus(bus); sw2.setEventBus(bus);
     new Cable('c').connect(sw1.getPort('FastEthernet0/1')!, sw2.getPort('FastEthernet0/1')!);
-    sw1.getPort('FastEthernet0/1')!.configureIP(new IPAddress('10.0.0.1'), new SubnetMask('255.255.255.0'));
+    await addressViaCli(sw1, 'Vlan1', '10.0.0.1');
+    await addressViaCli(sw2, 'Vlan1', '10.0.0.99');
     sw1.getSyslogAgent().addServer('10.0.0.99');
     const sent: Array<{ deviceId: string }> = [];
     bus.subscribe('syslog.packet.sent', (e) => sent.push(e.payload));

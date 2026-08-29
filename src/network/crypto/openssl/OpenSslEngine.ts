@@ -9,6 +9,7 @@
  * empreinte dépend de l'outil qui la calcule.
  */
 
+import type { TcpWireOutcome } from '@/network/tcp/types';
 import { md4, md5Hex, sha1Hex, sha256Hex, sha512Hex, MD5, SHA1, SHA256, SHA512 } from '@/crypto/hash';
 import { hmacHex } from '@/crypto/mac';
 import { md5Crypt } from '@/crypto/passwords';
@@ -1081,6 +1082,12 @@ function runRehash(host: OpenSslHost, argv: readonly string[]): OpenSslResult {
 
 const IPV4_RE = /^\d{1,3}(\.\d{1,3}){3}$/;
 
+const CONNECT_ERRNO: Readonly<Record<Exclude<TcpWireOutcome, 'open'>, number>> = {
+  refused: 111,
+  timeout: 110,
+  unreachable: 101,
+};
+
 /**
  * `s_client -connect hôte:port` — une VRAIE connexion par la pile TCP du
  * simulateur, comme `curl` et `nc` en ouvrent déjà. Il n'y a rien à
@@ -1108,9 +1115,7 @@ function runSClient(host: OpenSslHost, argv: readonly string[]): OpenSslResult {
 
   const verdict = host.tcpConnect(ip, port);
   if (verdict !== 'open') {
-    // Le vrai client rend `errno=111` sur un refus et `errno=110` sur un
-    // délai dépassé ; ce sont les nombres qu'un opérateur reconnaît.
-    return fail(`connect:errno=${verdict === 'refused' ? 111 : 110}`, 1);
+    return fail(`connect:errno=${CONNECT_ERRNO[verdict]}`, 1);
   }
 
   const lignes: string[] = ['CONNECTED(00000003)'];

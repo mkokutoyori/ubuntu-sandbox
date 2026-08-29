@@ -17,6 +17,7 @@
  */
 
 import type { Port } from '../../hardware/Port';
+import type { TcpWireOutcome } from '../../tcp/types';
 import type { IPAddress, IPv6Address, SubnetMask, MACAddress, IPv4Packet } from '../../core/types';
 import type { ARPEntry, HostRouteEntry, HostIPv6RouteEntry, HostPolicyRule, PingResult } from '../EndHost';
 import type { DHCPClient } from '../../dhcp/DHCPClient';
@@ -150,7 +151,7 @@ export interface LinuxNetKernel {
    */
   tcpProbe(target: string, port: number): boolean;
 
-  tcpConnectOutcome(target: string, port: number): 'open' | 'refused' | 'timeout';
+  tcpConnectOutcome(target: string, port: number): TcpWireOutcome;
 
   /** Le service systemd-resolved de l'hôte (stub, cache, config par lien). */
   getResolvedService(): import('./net/ResolvedService').ResolvedService;

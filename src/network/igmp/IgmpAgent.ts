@@ -1,4 +1,5 @@
 import type { IEventBus } from '@/events/EventBus';
+import type { Ipv4SendRequest } from '../layers/internet/Ipv4Egress';
 import { getDefaultScheduler, type IScheduler, type TimerHandle } from '@/events/Scheduler';
 import {
   type IgmpConfig, type IgmpInterfaceRuntime, type IgmpGroupRecord,
@@ -10,7 +11,7 @@ import {
   compareQuerier,
   IP_PROTO_IGMP, IGMP_ALL_SYSTEMS,
 } from './types';
-import { buildIgmpFrame, igmpQuery, igmpReport, igmpDestination } from './frames';
+import { igmpSendRequest, igmpQuery, igmpReport, igmpDestination } from './frames';
 import {
   IPAddress,
   type EthernetFrame, type IPv4Packet,
@@ -24,6 +25,7 @@ export interface IgmpHost {
   getPort(name: string): import('../hardware/Port').Port | undefined;
   getPorts(): import('../hardware/Port').Port[];
   sendFrame(portName: string, frame: EthernetFrame): void;
+  sendIpv4Packet(request: Ipv4SendRequest): boolean;
 }
 
 export class IgmpAgent {
@@ -390,10 +392,7 @@ export class IgmpAgent {
   }
 
   private sendIgmp(rt: IgmpInterfaceRuntime, srcIp: IPAddress, dstIp: IPAddress, payload: IgmpPacket): void {
-    const port = this.host.getPort(rt.iface);
-    if (!port) return;
-    const eth: EthernetFrame = buildIgmpFrame(port.getMAC(), srcIp, dstIp, payload);
-    this.host.sendFrame(rt.iface, eth);
+    if (!this.host.sendIpv4Packet(igmpSendRequest(rt.iface, srcIp, dstIp, payload))) return;
     this.getBus().publish({
       topic: 'igmp.packet.sent',
       payload: {

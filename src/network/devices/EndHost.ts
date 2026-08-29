@@ -26,10 +26,12 @@ import { Port } from '../hardware/Port';
 import type { IPv4AddressOrigin } from '../hardware/Port';
 import { SocketTable } from '../core/SocketTable';
 import { TcpStack } from '../tcp/TcpStack';
-import type { TcpSegment, TcpDialFailure } from '../tcp/types';
+import type { TcpSegment, TcpDialFailure, TcpWireOutcome } from '../tcp/types';
 import type { UdpChecksumInput } from '@/network/layers/transport/UdpChecksum';
 import { computeTcpChecksum, isDialFailure } from '../tcp/types';
-import { computeUdpChecksum, verifyUdpChecksum } from '@/network/layers/transport/UdpChecksum';
+import {
+  computeUdpChecksum, verifyUdpChecksum, stampUdpChecksum,
+} from '@/network/layers/transport/UdpChecksum';
 import { dialTcp, parseDialAddress, type DialAddress } from '../tcp/dial';
 import { PortNumber } from '../core/ports/PortNumber';
 import { TimerSet } from '@/events/TimerSet';
@@ -64,10 +66,18 @@ import {
   createICMPv6EchoRequest, createICMPv6EchoReply, createRouterSolicitation,
   IPV6_ALL_NODES_MULTICAST, IPV6_ALL_ROUTERS_MULTICAST,
 } from '../core/types';
+import {
+  DEFAULT_IPV4_TTL, ipv4HeaderOptionsOf, requiresNamedInterface, sendOnNamedInterface,
+  type Ipv4SendRequest,
+} from '../layers/internet/Ipv4Egress';
+import { selectIpv6SourceAddress } from '../layers/internet/Ipv6Egress';
+import type { UdpSendRequest } from '../layers/transport/UdpEgress';
 import { Logger } from '../core/Logger';
 import {
   buildICMPError,
   mayGenerateICMPError,
+  mayGenerateICMPv6Error,
+  ICMP_FRAG_REASSEMBLY_TIME_EXCEEDED,
   ICMP_UNREACH_NET,
   ICMP_UNREACH_HOST,
   ICMP_UNREACH_PROTO,
@@ -324,7 +334,12 @@ export abstract class EndHost extends Equipment {
    *  fwdQueueAndResolve (replaces the pendingARPs map after Phase 5.5). */
   private inFlightFwdARPs: Set<string> = new Set();
   /** Reassembles fragments of datagrams addressed to this host (RFC 791 §3.2). */
-  private readonly ipv4Reassembler = new IPv4Reassembler();
+  private readonly ipv4Reassembler = new IPv4Reassembler(
+    (firstFragment, ingressPort) => {
+      if (!firstFragment) return;
+      this.sendICMPError(ingressPort ?? '', firstFragment, 'time-exceeded',
+        ICMP_FRAG_REASSEMBLY_TIME_EXCEEDED);
+    });
   /** Monotonically increasing ICMP echo identifier */
   protected pingIdCounter: number = 0;
   /** Default gateway IP (set via `ip route add default via ...` or `route add`) */
@@ -468,6 +483,7 @@ export abstract class EndHost extends Equipment {
         getHostname: () => this.getHostname(),
         getPort: (n: string) => this.ports.get(n),
         sendFrame: (p: string, f: EthernetFrame) => { this.sendFrame(p, f); },
+        sendIpv4Packet: (request) => this.sendIpv4Packet(request),
       }, () => this.getBus());
     }
     return this._igmpHostAgent;
@@ -617,7 +633,10 @@ export abstract class EndHost extends Equipment {
         ? (port.getLinkLocalIPv6() ?? port.getGlobalIPv6())
         : (port.getGlobalIPv6() ?? port.getLinkLocalIPv6());
       if (!srcIP) continue;
-      const ipPkt = createIPv6Packet(srcIP, group, protocol, hopLimit, payload, payloadLength);
+      const charge = protocol === IP_PROTO_UDP && (payload as UDPPacket | undefined)?.type === 'udp'
+        ? stampUdpChecksum(payload as UDPPacket, srcIP.toString(), group.toString())
+        : payload;
+      const ipPkt = createIPv6Packet(srcIP, group, protocol, hopLimit, charge, payloadLength);
       if (this.firewallFilter6(name, ipPkt, 'out') !== 'accept') continue;
       this.sendFrame(name, {
         srcMAC: port.getMAC(), dstMAC, etherType: ETHERTYPE_IPV6, payload: ipPkt,
@@ -840,7 +859,6 @@ export abstract class EndHost extends Equipment {
       getPort: (n: string) => this.getPort(n),
       getPorts: () => this.getPorts(),
       sendFrame: (p: string, f: EthernetFrame) => { this.sendFrame(p, f); },
-      resolveMac: (nextHopIp: string) => this.arpTable.get(nextHopIp)?.mac ?? null,
       resolveRoute: (targetIp: string) => {
         const addr = IPAddress.tryParse(targetIp);
         if (!addr) return null;
@@ -848,7 +866,6 @@ export abstract class EndHost extends Equipment {
         if (!r) return null;
         return { iface: r.port.getName(), nextHopIp: r.nextHopIP.toString() };
       },
-      resolveMac6: (nextHopIp: string) => this.neighborCache.get(nextHopIp)?.mac ?? null,
       resolveRoute6: (targetIp: string) => {
         const r = this.resolveIPv6Route(new IPv6Address(targetIp));
         if (!r) return null;
@@ -857,9 +874,7 @@ export abstract class EndHost extends Equipment {
       localAddress6: (iface: string, remoteIp: string) => {
         const port = this.getPort(iface);
         if (!port) return null;
-        const src = new IPv6Address(remoteIp).isLinkLocal()
-          ? port.getLinkLocalIPv6()
-          : (port.getGlobalIPv6() || port.getLinkLocalIPv6());
+        const src = selectIpv6SourceAddress(port, new IPv6Address(remoteIp));
         return src ? src.toString() : null;
       },
       sendIpv4FrameArpAware: (outPortName: string, ipPkt: IPv4Packet, nextHopIP: IPAddress) =>
@@ -1060,7 +1075,9 @@ export abstract class EndHost extends Equipment {
     const udp: UDPPacket = {
       type: 'udp', sourcePort: 546, destinationPort: 547, length: 8 + 300, checksum: 0, payload: pkt,
     };
-    const ipPkt = createIPv6Packet(srcIp, dst, IP_PROTO_UDP, 1, udp, 8 + 300);
+    const ipPkt = createIPv6Packet(
+      srcIp, dst, IP_PROTO_UDP, 1,
+      stampUdpChecksum(udp, srcIp.toString(), dst.toString()), 8 + 300);
     this.sendFrame(iface, {
       srcMAC: port.getMAC(), dstMAC: dst.toMulticastMAC(), etherType: ETHERTYPE_IPV6, payload: ipPkt,
     });
@@ -2079,7 +2096,7 @@ export abstract class EndHost extends Equipment {
       // RFC 791 §3.2: reassemble before filtering/dispatch — a non-first
       // fragment carries no L4 header for the firewall or upper layer to
       // inspect, so hold it here until the full datagram is back together.
-      const reassembled = this.ipv4Reassembler.add(ipPkt);
+      const reassembled = this.ipv4Reassembler.add(ipPkt, undefined, portName);
       if (!reassembled) return;
       ipPkt = reassembled;
 
@@ -2246,6 +2263,35 @@ export abstract class EndHost extends Equipment {
    * destination itself for a directly-connected peer, or the gateway
    * for anything a caller has already resolved a route for.
    */
+  public sourceAddressFor(destination: IPAddress): IPAddress | null {
+    if (requiresNamedInterface(destination)) return null;
+    return this.resolveRoute(destination)?.port.getIPAddress() ?? null;
+  }
+
+  public sendIpv4Packet(request: Ipv4SendRequest): boolean {
+    const ttl = request.ttl ?? DEFAULT_IPV4_TTL;
+    const options = ipv4HeaderOptionsOf(request);
+
+    if (requiresNamedInterface(request.destination)) {
+      return sendOnNamedInterface({
+        getPort: (name) => this.getPort(name),
+        sendFrame: (name, frame) => this.sendFrame(name, frame),
+      }, request);
+    }
+
+    const route = this.resolveRoute(request.destination);
+    if (!route || !route.port.isOperationallyUp()) return false;
+    const source = request.source ?? route.port.getIPAddress();
+    if (!source) return false;
+
+    this.sendIpv4FrameArpAware(
+      route.iface,
+      createIPv4Packet(source, request.destination, request.protocol, ttl,
+        request.payload, request.payloadBytes, options),
+      route.nextHopIP);
+    return true;
+  }
+
   public sendIpv4FrameArpAware(outPortName: string, ipPkt: IPv4Packet, nextHopIP: IPAddress): void {
     const port = this.getPort(outPortName);
     if (!port) return;
@@ -2701,7 +2747,33 @@ export abstract class EndHost extends Equipment {
    * touching the wire. Returns false when there is no route or no source
    * address (caller maps that to ENETUNREACH-style errors).
    */
+  public sendUdpDatagram(request: UdpSendRequest): boolean;
   public sendUdpDatagram(
+    destinationIP: IPAddress,
+    destinationPort: number,
+    sourcePort: number,
+    payload: unknown,
+    payloadBytes?: number,
+    options?: { df?: boolean; iface?: string },
+  ): boolean;
+  public sendUdpDatagram(
+    first: IPAddress | UdpSendRequest,
+    port?: number,
+    source?: number,
+    body?: unknown,
+    bytes: number = 0,
+    opts: { df?: boolean; iface?: string } = {},
+  ): boolean {
+    if (!(first instanceof IPAddress)) {
+      return this.emitUdpDatagram(
+        first.destination, first.destinationPort, first.sourcePort,
+        first.payload, first.payloadBytes,
+        first.iface === undefined ? {} : { iface: first.iface });
+    }
+    return this.emitUdpDatagram(first, port as number, source as number, body, bytes, opts);
+  }
+
+  private emitUdpDatagram(
     destinationIP: IPAddress,
     destinationPort: number,
     sourcePort: number,
@@ -2867,7 +2939,9 @@ export abstract class EndHost extends Equipment {
 
     if (destinationIP.isLoopback() || this.getPortOwningIPv6(destinationIP)) {
       const localPkt = createIPv6Packet(
-        destinationIP, destinationIP, IP_PROTO_UDP, this.defaultHopLimit, udp, udp.length,
+        destinationIP, destinationIP, IP_PROTO_UDP, this.defaultHopLimit,
+        stampUdpChecksum(udp, destinationIP.toString(), destinationIP.toString()),
+        udp.length,
       );
       this.deliverUDP6('lo', localPkt);
       return true;
@@ -2881,13 +2955,12 @@ export abstract class EndHost extends Equipment {
 
     const route = this.resolveIPv6Route(destinationIP);
     if (!route) return false;
-    const srcIP = destinationIP.isLinkLocal()
-      ? route.port.getLinkLocalIPv6()
-      : (route.port.getGlobalIPv6() || route.port.getLinkLocalIPv6());
+    const srcIP = selectIpv6SourceAddress(route.port, destinationIP);
     if (!srcIP) return false;
 
     const ipPkt = createIPv6Packet(
-      srcIP, destinationIP, IP_PROTO_UDP, this.defaultHopLimit, udp, udp.length,
+      srcIP, destinationIP, IP_PROTO_UDP, this.defaultHopLimit,
+      stampUdpChecksum(udp, srcIP.toString(), destinationIP.toString()), udp.length,
     );
 
     const outPortName = route.port.getName();
@@ -2972,19 +3045,23 @@ export abstract class EndHost extends Equipment {
     const udp = ipv6.payload as UDPPacket;
     if (!udp || udp.type !== 'udp') return;
 
+    if (!verifyUdpChecksum(
+      udp, ipv6.sourceIP.toString(), ipv6.destinationIP.toString())) {
+      Logger.warn(this.id, 'udp6:checksum-fail',
+        `${this.name}: invalid UDP checksum over IPv6, dropping`);
+      return;
+    }
+
     if (this.dispatchUdpToListener(portName, udp, ipv6.sourceIP, ipv6.destinationIP)) return;
 
-    if (!ipv6.destinationIP.isMulticast()) {
-      this.sendICMPv6Unreachable(portName, ipv6);
-    }
+    this.sendICMPv6Unreachable(portName, ipv6);
   }
 
   private sendICMPv6Unreachable(portName: string, offendingPkt: IPv6Packet, code: number = ICMPV6_UNREACH_PORT): void {
+    if (!mayGenerateICMPv6Error(offendingPkt, 'destination-unreachable')) return;
     const port = this.ports.get(portName);
     if (!port || !port.isIPv6Enabled()) return;
-    const srcIP = offendingPkt.destinationIP.isMulticast()
-      ? (port.getGlobalIPv6() || port.getLinkLocalIPv6())
-      : offendingPkt.destinationIP;
+    const srcIP = offendingPkt.destinationIP;
     if (!srcIP) return;
 
     const icmpError: ICMPv6Packet = {
@@ -3718,16 +3795,17 @@ export abstract class EndHost extends Equipment {
 
   /**
    * Connect probe whose verdict is read from the wire: 'open',
-   * 'refused' (RST or ICMP unreachable), or 'timeout' (silent drop / no
-   * route). Lets clients (nc, telnet, ssh) distinguish a filtered port
-   * from a closed one without inspecting the peer's firewall state.
+   * 'refused' (RST or ICMP unreachable), 'timeout' (silent drop) or
+   * 'unreachable' (no route resolves, so nothing was ever sent). Lets
+   * clients (nc, telnet, ssh) distinguish a filtered port from a closed
+   * one without inspecting the peer's firewall state.
    */
-  tcpConnectOutcome(targetIP: IPAddress, port: number): 'open' | 'refused' | 'timeout' {
+  tcpConnectOutcome(targetIP: IPAddress, port: number): TcpWireOutcome {
     this.resolveArpSync(targetIP);
     return this.tcpv2.connectOutcome(targetIP.toString(), port);
   }
 
-  tcpConnectOutcome6(targetIP: IPv6Address, port: number): 'open' | 'refused' | 'timeout' {
+  tcpConnectOutcome6(targetIP: IPv6Address, port: number): TcpWireOutcome {
     this.resolveNdpSync(targetIP);
     return this.tcpv2.connectOutcome(targetIP.toString(), port);
   }

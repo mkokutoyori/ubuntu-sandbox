@@ -3,6 +3,8 @@
  */
 
 import { VirtualFileSystem, type INode } from './VirtualFileSystem';
+import { sshUnreachableReason } from '@/terminal/ssh/wireSshLogin';
+import type { TcpWireOutcome } from '../../tcp/types';
 import { LinuxUserManager } from './LinuxUserManager';
 import { loadSudoPolicy, type SudoActor } from './iam/SudoPolicyEngine';
 
@@ -484,8 +486,8 @@ export class LinuxCommandExecutor {
   /** Unsubscribe handle for the identity-file re-seed subscription. */
   private identityFilesUnsub: (() => void) | null = null;
   /** TCP liveness probe over the wire — injected by the owning machine. */
-  private wireProbe: ((ip: string, port: number) => 'open' | 'refused' | 'timeout') | null = null;
-  setWireProbe(probe: ((ip: string, port: number) => 'open' | 'refused' | 'timeout') | null): void {
+  private wireProbe: ((ip: string, port: number) => TcpWireOutcome) | null = null;
+  setWireProbe(probe: ((ip: string, port: number) => TcpWireOutcome) | null): void {
     this.wireProbe = probe;
   }
   /**
@@ -1665,6 +1667,13 @@ export class LinuxCommandExecutor {
     }
     const found = findHostByAddress(host, { readFile: (p) => this.vfs.readFile(p) }, this.localDevice as never);
     if (!found) {
+      if (IPAddress.tryParse(host)) {
+        const reason = sshUnreachableReason(this.localDevice, host);
+        return {
+          output: `Trying ${host}...\ntelnet: connect to address ${host}: ${reason}`,
+          exitCode: 1,
+        };
+      }
       return { output: `telnet: could not resolve ${host}/${port}: Name or service not known`, exitCode: 1 };
     }
     // Resolve the device that actually owns the address over the cable plant.

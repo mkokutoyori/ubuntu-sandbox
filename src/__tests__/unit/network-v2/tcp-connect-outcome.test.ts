@@ -49,9 +49,9 @@ describe('EndHost.tcpConnectOutcome — result derived from the wire (RFC 793)',
     expect(pc.tcpConnectOutcome(TARGET, 22)).toBe('refused');
   });
 
-  it("reports 'timeout' when there is no route to the destination", async () => {
+  it("reports 'unreachable' when there is no route — ENETUNREACH, not a delay", async () => {
     const { pc } = await buildPair();
-    expect(pc.tcpConnectOutcome(new IPAddress('192.0.2.99'), 22)).toBe('timeout');
+    expect(pc.tcpConnectOutcome(new IPAddress('192.0.2.99'), 22)).toBe('unreachable');
   });
 
   it('leaves no established or half-open socket behind after a probe (TIME-WAIT only)', async () => {

@@ -97,9 +97,16 @@ describe('BFD — wire format', () => {
         }
       }
     });
+    // BFD is a protocol between two NEIGHBOURS: without a peer at .2 the
+    // router ARPs into the void and, like a real one, sends nothing.
+    const peer = new CiscoRouter('R2');
+    peer.setEventBus(bus);
+    new Cable('c2').connect(peer.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/2')!);
     cable.connect(r.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/1')!);
     r.getPort('GigabitEthernet0/0')!.configureIP(new IPAddress('10.0.0.1'), new SubnetMask('255.255.255.0'));
+    peer.getPort('GigabitEthernet0/0')!.configureIP(new IPAddress('10.0.0.2'), new SubnetMask('255.255.255.0'));
     r.getBfdAgent().ensureSession('GigabitEthernet0/0', '10.0.0.2');
+    await new Promise((resolve) => setTimeout(resolve, 30));
 
     expect(seen).not.toBeNull();
     expect(seen!.dport).toBe(UDP_PORT_BFD_CONTROL);

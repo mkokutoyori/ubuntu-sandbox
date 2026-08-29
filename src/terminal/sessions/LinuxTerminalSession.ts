@@ -10,6 +10,7 @@
  */
 
 import { Equipment, type HostCapableDevice } from '@/network';
+import { sshUnreachableReason } from '@/terminal/ssh/wireSshLogin';
 import { IPAddress } from '@/network/core/types';
 import { PortNumber } from '@/network/core/ports/PortNumber';
 import { parseDialAddress, type DialAddress } from '@/network/tcp/dial';
@@ -2956,7 +2957,7 @@ export class LinuxTerminalSession extends TerminalSession {
     // key exchange or password prompt (docs/PRD-Link-State.md §2.1 P6).
     const reachable = this.remoteLivenessProbe(host);
     if (reachable && !reachable()) {
-      this.addLine(`ssh: connect to host ${host} port ${meta.port}: No route to host`, 'error');
+      this.addLine(`ssh: connect to host ${host} port ${meta.port}: ${sshUnreachableReason(this.device, host)}`, 'error');
       session.disconnect();
       this.pendingSshIO = null;
       this.notify();

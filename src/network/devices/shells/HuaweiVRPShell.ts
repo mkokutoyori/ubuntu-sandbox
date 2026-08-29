@@ -19,6 +19,7 @@
  */
 
 import type { Router } from '../Router';
+import { VRP_SSH } from '@/terminal/ssh/sshDialect';
 import { VrpSocle } from '@/cli/vendors/vrp/vrpSocle';
 import { vrpDhcpClientFamily, type VrpDhcpLeaseView } from '@/cli/vendors/vrp/vrpDhcpClientFamily';
 import { vrpMtuFamily, vrpBandwidthFamily } from '@/cli/vendors/vrp/vrpInterfaceParamsFamily';
@@ -828,6 +829,12 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
       if (ip && p.getIsUp()) { sourceIp = ip.toString(); break; }
     }
     if (!sourceIp) return 'Error: no usable interface IP for outbound SSH';
+    const sshStack = (this.routerRef as unknown as {
+      getTcpStack?: () => { hasEgressTo(ip: string): boolean };
+    } | null)?.getTcpStack?.();
+    if (sshStack && IPAddress.tryParse(host) && !sshStack.hasEgressTo(host)) {
+      return VRP_SSH.unreachable(host, 22);
+    }
     const clientArgs: string[] = [];
     if (port) clientArgs.push('-p', port);
     clientArgs.push('-o', 'StrictHostKeyChecking=accept-new');

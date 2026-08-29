@@ -397,6 +397,7 @@ export class Port {
       topic: 'port.config.ip-changed',
       payload: { ...this.portRef(), ip, mask },
     });
+    this.addressListener?.(this.name);
   }
 
   clearIP(): void {
@@ -409,18 +410,28 @@ export class Port {
       topic: 'port.config.ip-changed',
       payload: { ...this.portRef(), ip: null, mask: null },
     });
+    this.addressListener?.(this.name);
   }
 
   getSecondaryIPs(): Array<{ ip: IPAddress; mask: SubnetMask }> { return this.secondaryIPs; }
+
+  private addressListener: ((iface: string) => void) | null = null;
+
+  setAddressListener(listener: (iface: string) => void): void {
+    this.addressListener = listener;
+    listener(this.name);
+  }
 
   addSecondaryIP(ip: IPAddress, mask: SubnetMask): void {
     if (this.secondaryIPs.some((e) => e.ip.equals(ip))) return;
     this.secondaryIPs.push({ ip, mask });
     Logger.info(this.equipmentId, 'port:ip-config', `${this.name}: secondary IP ${ip}/${mask.toCIDR()}`);
+    this.addressListener?.(this.name);
   }
 
   removeSecondaryIP(ip: IPAddress): void {
     this.secondaryIPs = this.secondaryIPs.filter((e) => !e.ip.equals(ip));
+    this.addressListener?.(this.name);
   }
 
   ownsIPv4(ip: IPAddress): boolean {
@@ -1057,6 +1068,12 @@ export class Port {
       return false;
     }
 
+    this.recordOutboundFrame(frame);
+
+    return this.cable.transmit(frame, this);
+  }
+
+  recordOutboundFrame(frame: EthernetFrame): void {
     this.counters.framesOut++;
     this.counters.bytesOut += ethernetFrameBytes(frame);
     Logger.debug(this.equipmentId, 'port:send',
@@ -1067,8 +1084,6 @@ export class Port {
       payload: { ...this.portRef(), frame },
     });
     this.tapPoint.emit(this.name, 'out', frame);
-
-    return this.cable.transmit(frame, this);
   }
 
   receiveFrame(frame: EthernetFrame): void {

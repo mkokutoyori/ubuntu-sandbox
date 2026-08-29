@@ -12,6 +12,7 @@ import { Logger } from '@/network/core/Logger';
 import { LinuxTerminalSession } from '@/terminal/sessions/LinuxTerminalSession';
 import { WindowsTerminalSession } from '@/terminal/sessions/WindowsTerminalSession';
 import { CLITerminalSession } from '@/terminal/sessions/CLITerminalSession';
+import { CiscoTerminalSession } from '@/terminal/sessions/CiscoTerminalSession';
 import type { TerminalSession } from '@/terminal/sessions/TerminalSession';
 import { installDefaultShells } from '@/shell/registerDefaults';
 
@@ -83,7 +84,7 @@ async function labFor(clientKind: ClientKind): Promise<Lab> {
       `interface ${cisco.getPortNames()[0]}`, 'ip address 10.0.80.3 255.255.255.0', 'no shutdown', 'exit',
       'ip domain-name lab.local', 'crypto key generate rsa modulus 2048', 'ip ssh version 2', 'end',
     ]) await cisco.executeCommand(cmd);
-    term = new CLITerminalSession('t1', cisco);
+    term = new CiscoTerminalSession('t1', cisco);
   }
   await term.init?.();
   return { term, server: srv };
@@ -102,6 +103,12 @@ function abandonedConnections(server: LinuxServer): number {
 }
 
 const CLIENTS: readonly ClientKind[] = ['linux', 'windows', 'cisco'];
+
+const UNREACHABLE_WORDING: Readonly<Record<ClientKind, RegExp>> = {
+  linux: /ssh: connect to host 10\.0\.80\.9 port 22: No route to host/,
+  windows: /ssh: connect to host 10\.0\.80\.9 port 22: No route to host/,
+  cisco: /% Connection timed out; remote host not responding/,
+};
 
 describe.each(CLIENTS)('one `ssh` from a %s client', (clientKind) => {
   it('opens exactly one connection, and never abandons one', async () => {
@@ -130,7 +137,7 @@ describe.each(CLIENTS)('one `ssh` from a %s client', (clientKind) => {
     expect(
       text,
       'dropping the pre-flight probe must not turn an unreachable host into a hang or a login',
-    ).toMatch(/ssh: connect to host 10\.0\.80\.9/);
+    ).toMatch(UNREACHABLE_WORDING[clientKind]);
     expect(term.foreground.getPrompt()).not.toMatch(/alice@/);
   }, 40000);
 });

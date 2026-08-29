@@ -1,4 +1,6 @@
 import type { NmapOptions } from './NmapOptions';
+import { IPAddress } from '@/network/core/types';
+import type { TcpWireOutcome } from '@/network/tcp/types';
 import { topPorts, serviceName, DEFAULT_TOP_COUNT } from './ServiceRegistry';
 
 export type PortState = 'open' | 'closed' | 'filtered' | 'open|filtered' | 'unfiltered';
@@ -15,11 +17,18 @@ export interface HostState {
 
 export interface HostProbes {
   hostState(target: string): HostState | null;
-  tcpOutcome(ip: string, port: number): 'open' | 'refused' | 'timeout';
+  tcpOutcome(ip: string, port: number): TcpWireOutcome;
   udpState(ip: string, port: number): 'open' | 'closed' | 'open|filtered';
   banner(ip: string, port: number): { service: string; version?: string } | null;
   ackReaches?(ip: string, port: number): boolean;
 }
+
+const TCP_SCAN_REASON: Readonly<Record<TcpWireOutcome, string>> = {
+  open: 'syn-ack',
+  refused: 'reset',
+  timeout: 'no-response',
+  unreachable: 'net-unreach',
+};
 
 export interface PortResult {
   port: number;
@@ -84,7 +93,7 @@ function effectivePorts(options: NmapOptions): number[] {
 function tcpResult(options: NmapOptions, probes: HostProbes, ip: string, port: number): PortResult {
   const outcome = probes.tcpOutcome(ip, port);
   const state: PortState = outcome === 'open' ? 'open' : outcome === 'refused' ? 'closed' : 'filtered';
-  const reason = outcome === 'open' ? 'syn-ack' : outcome === 'refused' ? 'reset' : 'no-response';
+  const reason = TCP_SCAN_REASON[outcome];
   let service = serviceName(port, 'tcp');
   let version: string | undefined;
   if (options.versionScan && state === 'open') {
@@ -172,6 +181,10 @@ function scanHost(options: NmapOptions, probes: HostProbes, target: string): Hos
   return { ip: info.ip, hostname: info.hostname, up: true, latencyMs, osGuess, ports, notShown };
 }
 
+function isIpLiteral(target: string): boolean {
+  return IPAddress.tryParse(target) !== null;
+}
+
 export function scan(options: NmapOptions, probes: HostProbes): NmapReport {
   const hosts: HostReport[] = [];
   const unresolved: string[] = [];
@@ -179,7 +192,10 @@ export function scan(options: NmapOptions, probes: HostProbes): NmapReport {
 
   for (const target of options.targets) {
     for (const address of enumerateTargets(target)) {
-      const report = scanHost(options, probes, address);
+      const report = scanHost(options, probes, address)
+        ?? (target === address && isIpLiteral(address)
+          ? { ip: address, up: false, latencyMs: 0, downReason: 'no response', ports: [] }
+          : null);
       if (!report) {
         if (target === address) unresolved.push(address);
         continue;

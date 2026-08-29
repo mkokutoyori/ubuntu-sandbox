@@ -1,5 +1,9 @@
-import type { IPv4Packet, IPAddress, SubnetMask } from '../../core/types';
-import { computeIPv4Checksum, verifyIPv4Checksum } from '../../core/types';
+import type {
+  EthernetFrame, IPv4Packet, IPv4HeaderOptions, IPAddress, MACAddress, SubnetMask,
+} from '../../core/types';
+import {
+  computeIPv4Checksum, verifyIPv4Checksum, createIPv4Packet, ETHERTYPE_IPV4,
+} from '../../core/types';
 import { isMulticastIpv4 } from '../../core/ip';
 
 export type Ipv4DestinationClass =
@@ -34,6 +38,28 @@ export function isDirectedBroadcast(
     && destination.networkAddress(mask).equals(address.networkAddress(mask)));
 }
 
+export interface ConnectedIpv4Port {
+  getIPAddress(): IPAddress | null;
+  getSubnetMask(): SubnetMask | null;
+  getSecondaryIPs?(): readonly { ip: IPAddress; mask: SubnetMask }[];
+}
+
+export function connectedPrefixesOfPort(port: ConnectedIpv4Port): ConnectedIpv4Prefix[] {
+  const primary = port.getIPAddress();
+  const mask = port.getSubnetMask();
+  return [
+    ...(primary && mask ? [{ address: primary, mask }] : []),
+    ...(port.getSecondaryIPs?.() ?? []).map((e) => ({ address: e.ip, mask: e.mask })),
+  ];
+}
+
+export function isUnicastDestination(
+  destination: IPAddress, connected: readonly ConnectedIpv4Prefix[],
+): boolean {
+  return classifyIpv4Destination(destination) === 'unicast'
+    && !isDirectedBroadcast(destination, connected);
+}
+
 export type Ipv4HeaderProblem = 'checksum' | 'version' | 'ihl' | 'total-length';
 
 export function ipv4HeaderProblem(packet: IPv4Packet): Ipv4HeaderProblem | null {
@@ -53,4 +79,32 @@ export function decrementForForwarding(packet: IPv4Packet): TtlDecision {
   const forwarded: IPv4Packet = { ...packet, ttl: packet.ttl - 1, headerChecksum: 0 };
   forwarded.headerChecksum = computeIPv4Checksum(forwarded);
   return { kind: 'forward', packet: forwarded };
+}
+
+export interface Ipv4FrameRequest {
+  readonly sourceIp: IPAddress;
+  readonly destinationIp: IPAddress;
+  readonly sourceMac: MACAddress;
+  readonly destinationMac: MACAddress;
+  readonly protocol: number;
+  readonly ttl: number;
+  readonly payload: unknown;
+  readonly payloadBytes: number;
+  readonly options?: IPv4HeaderOptions;
+}
+
+export function wrapIpv4InEthernet(
+  packet: IPv4Packet, sourceMac: MACAddress, destinationMac: MACAddress,
+): EthernetFrame {
+  return {
+    srcMAC: sourceMac, dstMAC: destinationMac,
+    etherType: ETHERTYPE_IPV4, payload: packet,
+  };
+}
+
+export function buildIpv4Frame(request: Ipv4FrameRequest): EthernetFrame {
+  const packet = createIPv4Packet(
+    request.sourceIp, request.destinationIp, request.protocol, request.ttl,
+    request.payload, request.payloadBytes, request.options ?? {});
+  return wrapIpv4InEthernet(packet, request.sourceMac, request.destinationMac);
 }

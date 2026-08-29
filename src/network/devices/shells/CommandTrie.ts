@@ -706,7 +706,7 @@ export class CommandTrie {
       }
 
       if (matches.length > 1) {
-        if (i < tokens.length - 1) {
+        if (i > 0 && i < tokens.length - 1) {
           const nextToken = tokens[i + 1].toLowerCase();
           const viable = matches.filter(m => {
             const exactNext = m.children.get(nextToken);

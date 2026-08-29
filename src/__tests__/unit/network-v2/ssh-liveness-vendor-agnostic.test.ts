@@ -13,6 +13,7 @@ import { Logger } from '@/network/core/Logger';
 import { LinuxTerminalSession } from '@/terminal/sessions/LinuxTerminalSession';
 import { WindowsTerminalSession } from '@/terminal/sessions/WindowsTerminalSession';
 import { CLITerminalSession } from '@/terminal/sessions/CLITerminalSession';
+import { CiscoTerminalSession } from '@/terminal/sessions/CiscoTerminalSession';
 import type { TerminalSession } from '@/terminal/sessions/TerminalSession';
 import { installDefaultShells } from '@/shell/registerDefaults';
 
@@ -140,7 +141,7 @@ async function labFor(clientKind: Vendor, peerKind: Vendor): Promise<Lab> {
     const cisco = new CiscoRouter('router-cisco', 'R1');
     clientCable.connect(cisco.getPorts()[0], sw.getPorts()[3]);
     await configureCiscoPeer(cisco, '10.0.70.3', 'R1');
-    term = new CLITerminalSession('t1', cisco);
+    term = new CiscoTerminalSession('t1', cisco);
   }
 
   await term.init?.();

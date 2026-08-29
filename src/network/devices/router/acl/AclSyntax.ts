@@ -58,6 +58,12 @@ export function protocolCarriesPorts(protocol: string | undefined): boolean {
   return protocol === 'tcp' || protocol === 'udp' || protocol === 'sctp';
 }
 
+export function ipProtocolMatches(entryProtocol: string, packetProtocol: number): boolean {
+  if (entryProtocol === 'ip') return true;
+  if (/^\d+$/.test(entryProtocol)) return packetProtocol === parseInt(entryProtocol, 10);
+  return IP_PROTOCOL_KEYWORDS[entryProtocol] === packetProtocol;
+}
+
 export const PORT_KEYWORDS: Readonly<Record<string, number>> = {
   ftp: 21, 'ftp-data': 20, ftp_data: 20, ssh: 22, telnet: 23, smtp: 25,
   domain: 53, www: 80, http: 80, pop3: 110, ntp: 123, snmp: 161,

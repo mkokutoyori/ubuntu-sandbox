@@ -1,4 +1,5 @@
 import type { ICLIDevice } from '@/network';
+import { IOS_SSH, type SshDialect } from '@/terminal/ssh/sshDialect';
 import { CLITerminalSession } from './CLITerminalSession';
 import { TerminalTheme, SessionType } from './TerminalSession';
 import { IOS_TELNET, type TelnetDialect } from '@/terminal/subshells/telnetDialect';
@@ -35,6 +36,8 @@ export class AsaTerminalSession extends CLITerminalSession {
   protected getPagerIndicator(): string { return '<--- More --->'; }
 
   protected getTelnetDialect(): TelnetDialect { return IOS_TELNET; }
+
+  protected getSshDialect(): SshDialect { return IOS_SSH; }
 
   protected isTopLevelExit(line: string): boolean {
     const word = line.trim().toLowerCase();

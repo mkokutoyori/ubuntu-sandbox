@@ -44,6 +44,9 @@ import { VlanSet } from './switch/VlanSet';
 import { RouterDhcpClient } from './router/RouterDhcpClient';
 import { SwitchSvi, type SviInterface } from './SwitchSvi';
 import { ControlPlaneUdpEndpoint } from './udp/ControlPlaneUdpEndpoint';
+import {
+  requiresNamedInterface, sendOnNamedInterface, type Ipv4SendRequest,
+} from '../layers/internet/Ipv4Egress';
 import { getSecurityConfig } from './shells/cisco/CiscoSecurityCommands';
 import { AaaAuthenticator } from './router/aaa/AaaAuthenticator';
 import { isInteractionPlanner } from '@/shell/interaction/CommandInteraction';
@@ -2798,6 +2801,29 @@ export abstract class Switch extends Equipment {
   hasSvi(vlan: number): boolean { return this.svi.hasSvi(vlan); }
   setIpRoutingEnabled(v: boolean): void { this.ipRoutingEnabled = v; }
   isIpRoutingEnabled(): boolean { return this.ipRoutingEnabled; }
+  sendUdpDatagram(
+    request: import('../layers/transport/UdpEgress').UdpSendRequest,
+  ): boolean {
+    return this.svi.sendUdpDatagram(request);
+  }
+
+  sendIpv4FrameArpAware(_iface: string, packet: IPv4Packet, nextHop: IPAddress): void {
+    this.svi.sendIpv4FrameArpAware(packet, nextHop);
+  }
+
+  sourceAddressFor(destination: IPAddress): IPAddress | null {
+    if (requiresNamedInterface(destination)) return null;
+    return this.svi.sourceAddressFor(destination);
+  }
+
+  sendIpv4Packet(request: Ipv4SendRequest): boolean {
+    if (!requiresNamedInterface(request.destination)) return false;
+    return sendOnNamedInterface({
+      getPort: (name) => this.getPort(name),
+      sendFrame: (name, frame) => this.sendFrame(name, frame),
+    }, request);
+  }
+
   getSvis(): SviInterface[] { return this.svi.list(); }
   getSvi(vlan: number): SviInterface | undefined { return this.svi.getSvi(vlan); }
   isSviLineUp(svi: SviInterface): boolean { return this.svi.isLineUp(svi); }

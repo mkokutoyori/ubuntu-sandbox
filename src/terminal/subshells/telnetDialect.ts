@@ -25,6 +25,8 @@ export interface TelnetDialect {
   refused(host: string, ip: string, port: number): string[];
   /** Nothing came back at all — the packet was dropped, not rejected. */
   timedOut(host: string, ip: string, port: number): string[];
+  /** No route resolves, so nothing was ever sent — ENETUNREACH. */
+  unreachable(host: string, ip: string, port: number): string[];
   /** The session is open; these lines precede the remote's own output. */
   connected(host: string, ip: string): string[];
 }
@@ -42,6 +44,10 @@ export const BSD_TELNET: TelnetDialect = {
   timedOut: (_host, ip) => [
     `Trying ${ip}...`,
     `telnet: connect to address ${ip}: Connection timed out`,
+  ],
+  unreachable: (_host, ip) => [
+    `Trying ${ip}...`,
+    `telnet: connect to address ${ip}: Network is unreachable`,
   ],
   connected: (host, ip) => [
     `Trying ${ip}...`,
@@ -72,6 +78,10 @@ export const IOS_TELNET: TelnetDialect = {
     `Trying ${host} ...`,
     '% Connection timed out; remote host not responding',
   ],
+  unreachable: (host) => [
+    `Trying ${host} ...`,
+    '% Destination unreachable; gateway or host down',
+  ],
   connected: (host) => [`Trying ${host} ...`, 'Open'],
 };
 
@@ -87,6 +97,10 @@ export const VRP_TELNET: TelnetDialect = {
     'Error: Failed to connect to the remote host.',
   ],
   timedOut: (host) => [
+    `Trying ${host} ...`,
+    'Error: Failed to connect to the remote host.',
+  ],
+  unreachable: (host) => [
     `Trying ${host} ...`,
     'Error: Failed to connect to the remote host.',
   ],
@@ -108,6 +122,9 @@ export const WINDOWS_TELNET: TelnetDialect = {
   ],
   timedOut: (host, _ip, port) => [
     `Connecting To ${host}...Could not open connection to the host, on port ${port}: Connect failed`,
+  ],
+  unreachable: (host, _ip, port) => [
+    `Connecting To ${host}...Could not open connection to the host, on port ${port}: Network is unreachable`,
   ],
   connected: (host) => [
     `Connecting To ${host}...`,

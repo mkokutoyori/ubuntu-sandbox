@@ -10,12 +10,12 @@ import {
   type GlbpHelloTlv, type GlbpAssignTlv,
   defaultGroupRuntime, makeKey,
   glbpVirtualMac, compareCandidate, effectiveWeighting,
-  UDP_PORT_GLBP, GLBP_MULTICAST_IP, GLBP_MULTICAST_MAC,
+  UDP_PORT_GLBP, GLBP_MULTICAST_IP,
 } from './types';
 import {
-  MACAddress, IPAddress,
-  type EthernetFrame, type IPv4Packet, type UDPPacket,
-  IP_PROTO_UDP, ETHERTYPE_IPV4, nextIPv4Id, computeIPv4Checksum,
+  IPAddress,
+  type UDPPacket,
+  IP_PROTO_UDP,
 } from '../core/types';
 import { Logger } from '../core/Logger';
 import type { GlbpAuthMode } from './types';
@@ -435,19 +435,12 @@ export class GlbpAgent extends FhrpAgentBase<GlbpGroupRuntime> {
       type: 'udp', sourcePort: UDP_PORT_GLBP, destinationPort: UDP_PORT_GLBP,
       length: 8 + 16 + tlvs.length * 28, checksum: 0, payload,
     };
-    const ipPkt: IPv4Packet = {
-      type: 'ipv4', version: 4, ihl: 5, tos: 0xc0, totalLength: 20 + udp.length,
-      identification: nextIPv4Id(), flags: 0, fragmentOffset: 0,
-      ttl: 255, protocol: IP_PROTO_UDP, headerChecksum: 0,
-      sourceIP: srcIp, destinationIP: new IPAddress(GLBP_MULTICAST_IP),
-      payload: udp,
-    };
-    ipPkt.headerChecksum = computeIPv4Checksum(ipPkt);
-    const eth: EthernetFrame = {
-      srcMAC: port.getMAC(), dstMAC: new MACAddress(GLBP_MULTICAST_MAC),
-      etherType: ETHERTYPE_IPV4, payload: ipPkt,
-    };
-    this.sendGuarded(g, eth);
+    this.sendGuarded(g, {
+      destination: new IPAddress(GLBP_MULTICAST_IP), source: srcIp,
+      protocol: IP_PROTO_UDP, ttl: 255,
+      payload: udp, payloadBytes: udp.length,
+      tos: 0xc0, flags: 0,
+    });
     this.getBus().publish({
       topic: 'glbp.packet.sent',
       payload: {

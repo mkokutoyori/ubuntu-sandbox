@@ -10,12 +10,11 @@ import {
   compareCandidate, masterDownIntervalMs, effectivePriority,
   type VrrpStats, type VrrpGlobalStats, type VrrpAuthMode,
   createVrrpStats, createVrrpGlobalStats,
-  IP_PROTO_VRRP, VRRP_MULTICAST_IP, VRRP_MULTICAST_MAC,
+  IP_PROTO_VRRP, VRRP_MULTICAST_IP,
 } from './types';
 import {
-  MACAddress, IPAddress,
-  type EthernetFrame, type IPv4Packet,
-  ETHERTYPE_IPV4, nextIPv4Id, computeIPv4Checksum,
+  IPAddress,
+  type IPv4Packet,
 } from '../core/types';
 import { Logger } from '../core/Logger';
 import { FhrpAgentBase } from '../fhrp/FhrpAgentBase';
@@ -217,19 +216,12 @@ export class VrrpAgent extends FhrpAgentBase<VrrpGroupRuntime> {
       authType: g.authMode === 'simple' ? 1 : g.authMode === 'md5' ? 2 : 0,
       authData: g.authMode && g.authMode !== 'none' ? (g.authKey ?? '') : undefined,
     };
-    const ipPkt: IPv4Packet = {
-      type: 'ipv4', version: 4, ihl: 5, tos: 0xc0, totalLength: 20 + 8 + (g.vip ? 4 : 0),
-      identification: nextIPv4Id(), flags: 0, fragmentOffset: 0,
-      ttl: 255, protocol: IP_PROTO_VRRP, headerChecksum: 0,
-      sourceIP: srcIp, destinationIP: new IPAddress(VRRP_MULTICAST_IP),
-      payload,
-    };
-    ipPkt.headerChecksum = computeIPv4Checksum(ipPkt);
-    const eth: EthernetFrame = {
-      srcMAC: port.getMAC(), dstMAC: new MACAddress(VRRP_MULTICAST_MAC),
-      etherType: ETHERTYPE_IPV4, payload: ipPkt,
-    };
-    this.sendGuarded(g, eth);
+    this.sendGuarded(g, {
+      destination: new IPAddress(VRRP_MULTICAST_IP), source: srcIp,
+      protocol: IP_PROTO_VRRP, ttl: 255,
+      payload, payloadBytes: 8 + (g.vip ? 4 : 0),
+      tos: 0xc0, flags: 0,
+    });
     const c = this.stats(g);
     c.sentAdvertisements++;
     if (payload.priority === 0) c.sentPriorityZero++;

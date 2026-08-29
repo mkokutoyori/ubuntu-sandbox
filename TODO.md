@@ -187,89 +187,138 @@ refusee plutot que rangee sans etre lue.
 
 ## Couche transport (BRD TCP/IP)
 
-### [suite] 18 cas rouges ANTERIEURS dans `network-v2`, dans 5 fichiers
-**Constat.** La passe complete de `src/__tests__/unit/network-v2/` rend
-1691 fichiers / 26 316 cas avec 18 rouges repartis dans cinq fichiers :
-`ospfv3-real-packets` (10), `new-roles-observability` (5),
-`scenario-vlan-8021q-trunk` (1), `probe-plage-annoncee-est-appliquee` (1)
-et `nat-engine-own-bus` (1).
+### [port] le port 0 se lie LITTERALEMENT au lieu d'en attribuer un
+**Constat.** `PortNumber.isValid(0)` est VRAI — la RFC 6335 compte 0 dans
+la plage — donc `udpBind(0)` et `listen(0)` reussissent et posent un
+ecouteur sur le port 0. Sur une vraie machine, `bind()` avec le port 0 a
+un sens PARTICULIER : « attribue-m'en un ephemere », et l'appelant relit
+ensuite le port reellement obtenu par `getsockname()`.
 
-**Mesure.** Rejoues contre `1990651f` — l'etat de la branche avant le
-chantier de la couche transport — ils donnent EXACTEMENT les memes 18,
-donc aucun n'est une regression de ce chantier. Ils echouent aussi
-ISOLEMENT, donc ce ne sont pas des interferences d'ordre de lot.
+**Mesure.** Faite en fermant le lot 14 : des cinq ports impossibles
+essayes (99999, -1, 65536, 1.5, NaN) les cinq sont desormais refuses, et
+le port 0 reste accepte tel quel — un ecouteur qu'aucune trame ordinaire
+n'atteindra, puisque rien n'adresse le port 0.
 
-**Report.** Chacun releve d'un sujet different (OSPFv3, observabilite des
-roles Windows, agregat 802.1Q, plages annoncees par la CLI, bus du moteur
-NAT) et aucun n'a ete diagnostique ici. Les nommer evite qu'un prochain
-lot les prenne pour les siens — c'est la confusion qui a failli se
-produire sur ce lot-ci.
+**Raison du report.** Trois comportements sont defendables et le choix
+n'est pas mecanique : refuser (mais on s'ecarte alors de la plage
+normalisee que `PortNumber` encode), honorer le sens reel (il faut alors
+rendre le port attribue a l'appelant, donc changer la signature des deux
+points de liaison et de leurs appelants), ou laisser tel quel. Trancher
+en passant, dans un lot qui portait sur les ports IMPOSSIBLES, aurait
+melange deux questions.
 
 
-### [udp] `show ip sockets` n'a AUCUNE capture de reference
-**Constat.** La matiere existe depuis l'increment 3 de la phase 4 :
-`ControlPlaneUdpEndpoint.ownerOf(port)` nomme le proprietaire d'un port
-et `boundPorts()` les enumere, ce qui est exactement ce que la vue
-attend. La vue, elle, n'existe pas.
+### [udp6] les AGENTS du plan de controle restent en IPv4
+**Constat.** Le socle UDP/IPv6 d'un routeur existe depuis le lot 9 —
+`sendUdpDatagram6` emet, `deliverUdp6` remet a la table de ports, un port
+ferme repond ICMPv6 — mais les agents que `receiveControlPlaneUdp` sert
+(HSRP, NTP, GLBP, BFD, les cinq RADIUS, SNMP, VXLAN) prennent tous un
+`IPAddress` et ne voient donc que l'IPv4.
 
-**Mesure.** Le corpus `ntc-templates` a ete telecharge et son `index`
-compte 139 gabarits `cisco_ios` — et pas un seul pour les sockets
-(`grep -i sock` ne rend rien). `cisco.com`, `community.cisco.com`,
-`blog.ipspace.net` et `rfc-editor.org` sont tous coupes par le proxy de
-sortie de cette image ; seul `raw.githubusercontent.com` passe. Les
-exemples trouves par recherche viennent de pages HTML, qui ECRASENT les
-blancs — c'est-a-dire precisement l'information cherchee.
+**Mesure.** Les onze branches de `CiscoRouter.receiveControlPlaneUdp`
+passent `ipPkt.sourceIP`, de type `IPAddress` ; aucune n'est atteignable
+depuis le chemin v6, qui s'arrete a la table de ports.
 
-**Report.** Ecrire les largeurs de colonnes de memoire est exactement ce
-que `cisco/ciscoTableLayouts.ts` existe pour empecher. Il faut une
-transcription TEXTE d'une vraie machine.
+**Raison du report.** C'est une campagne PAR AGENT — elargir chaque
+`handleUdp` a une adresse des deux familles, et decider pour chacun ce
+que la version v6 du protocole veut dire (HSRPv6 et GLBP ont leurs
+propres adresses de groupe ; NTP, BFD, RADIUS et SNMP sont les memes
+protocoles sur une autre couche 3) — et non la suite mecanique du socle.
+Le socle, lui, a un appelant reel (la table de ports du plan de controle,
+ou TFTP et le client DNS se lient), donc ce n'est pas un moteur sans
+porte.
 
-### [icmp] `no ip unreachables` n'est honore qu'a 2 sites d'appel sur 8
-**Constat.** La commande existe, est stockee
-(`CiscoSecurityConfig.ifaceFlags(i).noUnreachables`), est rendue dans la
-configuration et lue par `Router.isIcmpUnreachablesEnabled`. Mais ce
-predicat est consulte AU SITE D'APPEL, deux fois, et non dans
-`sendICMPError` — donc six emissions sur huit l'ignorent.
+### [ssh] le nom NON RESOLU cote SSH d'IOS n'est pas atteste
+**Constat.** `sshDialect.ts` porte les trois issues d'echec d'IOS sur
+transcription reelle — absence de route, refus, delai. La quatrieme, le
+nom qu'IOS ne sait pas traduire, ne l'est pas : `% Bad IP address or host
+name` est ce qu'IOS rend pour une saisie qu'il ne sait pas lire, et c'est
+ce que la table porte, mais aucune capture ne montre le client SSH dans
+ce cas precis.
 
-**Mesure.** `Router.ts` porte 10 appels a `sendICMPError`, dont 8 de type
-`destination-unreachable` (codes 13, 3, 0, 4, 13, 4, 4, 1) ; seuls les
-DEUX refus par liste de controle (code 13) sont gardes. Les trois `code
-4` ne le sont pas.
+**Mesure.** Les trois autres viennent de transcriptions (une montrant
+`ssh -l SSHadmin 192.168.1.1` suivi de `% Destination unreachable;
+gateway or host down`, une autre `ssh -v 2 -l mariano 192.168.4.17` suivi
+de `% Connection timed out; remote host not responding`) ; aucune
+recherche n'a rendu l'equivalent pour un nom.
 
-**Ce que dit la vraie machine.** La documentation Cisco et plusieurs
-sources d'exploitation concordent : `no ip unreachables` supprime TOUT le
-type 3, code 4 compris — c'est exactement pourquoi cette commande casse
-la decouverte de MTU de chemin, defaut operationnel classique. Le
-simulateur ne peut donc pas l'enseigner aujourd'hui : la commande est
-posee, le `Fragmentation Needed` part quand meme.
+**Report.** Le cas est le moins frequent des quatre et la valeur portee
+est plausible plutot qu'inventee — mais elle n'est pas mesuree, et c'est
+ecrit ici pour que personne ne la prenne pour telle.
 
-**Report.** Le correctif est court — deplacer le predicat dans
-`sendICMPError` pour `destination-unreachable` et retirer les deux gardes
-de site, une seule ecriture — mais il CHANGE le comportement de six
-emissions existantes (net, host, port, frag-needed), donc il demande sa
-propre non-regression complete. Le BRD veut chaque lot livrable et vert
-seul ; c'est un lot a part.
+### [arp] un commutateur JETTE sur cache ARP froid, un routeur met en file
+**Constat.** `SwitchSvi.sendUdpDatagram` appelle `resolveArp` et rend
+`false` quand le cache est froid ; le datagramme est perdu.
+`Router.sendUdpDatagram` passe par `sendIpv4FrameArpAware`, qui MET EN
+FILE et emet des que la reponse arrive.
 
-### [udp] IGMP, PIM et GRE sont encore interceptes AVANT la decision de transit
-**Constat.** L'increment 3 a deplace la chaine UDP des sous-classes vers
-`receiveControlPlaneUdp`, donc apres la decision « pour nous ou
-transit ». Les trois interceptions par PROTOCOLE IP qui la precedaient
-dans `CiscoRouter.processIPv4` et `HuaweiRouter.processIPv4` — IGMP (2),
-PIM (103) et GRE (47) — sont restees ou elles etaient.
+**Mesure.** Meme laboratoire, meme collecteur : le premier message
+syslog d'un routeur part apres resolution, celui d'un commutateur est
+compte comme envoye et n'existe pas. Le cas de `syslog-protocol` visait
+d'ailleurs un collecteur INEXISTANT, ce qui masquait l'ecart.
 
-**Mesure.** Constat de STRUCTURE, lu dans le code et non eprouve sur le
-fil : ces trois `if` sont bien places avant `super.processIPv4`, donc
-avant le test « cette adresse est-elle a nous ». Le cas UDP mesure au
-meme endroit donnait un datagramme de transit avale par l'agent local.
+**Report.** Donner une file d'attente ARP a la SVI est un changement du
+plan de donnees du commutateur, distinct du lot syslog ; il demande son
+propre temoin (une premiere trame differee, pas perdue).
 
-**Report.** Le deplacement n'est PAS mecanique comme il l'etait pour UDP.
-Un rapport IGMP est adresse au GROUPE et non au routeur, donc pour un
-groupe routable (239.x) la base l'envoie a `forwardMulticast` et non a la
-remise locale : le deplacer tel quel casserait IGMP. Trancher demande de
-mesurer, groupe par groupe, quel chemin la base emprunte — c'est un
-increment a part, avec son propre temoin.
+
+### [icmp] le pendant VRP est accepte et inerte, et son `undo` n'existe pas
+**Constat.** Cote Cisco, `no ip unreachables` est desormais honore par
+`sendICMPError`. Cote Huawei, les commandes equivalentes
+`icmp ttl-exceeded send` et `icmp host-unreachable send` sont enregistrees
+dans `HuaweiVRPShell` et rangees par `_setGlobalToggle` dans un sac que
+le plan de donnees ne relit JAMAIS.
+
+**Mesure.** `_getGlobalToggle` n'a que deux lecteurs — `HuaweiDisplayCommands`
+pour `telnet server` et `SocketInventory` pour les ports d'ecoute — et
+aucun ne consulte les cles `icmp`. Pire : aucune forme `undo icmp ...`
+n'est enregistree, donc l'operateur ne peut meme pas couper le message
+qu'il croit pouvoir regler.
+
+**Report.** Le modele de VRP n'est pas celui d'IOS et le correctif n'est
+donc pas une recopie : la commande est GLOBALE (vue systeme) et non par
+interface, et elle est decoupee PAR MESSAGE (`ttl-exceeded`,
+`host-unreachable`, `port-unreachable`) la ou IOS coupe tout le type 3
+d'un coup. Le predicat `Router.isIcmpUnreachablesEnabled` lit
+`CiscoSecurityConfig` et rend `true` sur un Huawei ; lui donner un second
+magasin sans repenser la granularite ferait deux reglages pour une meme
+question. C'est un lot a part, avec sa propre mesure.
 
 ## Socle CLI
+
+### [cli] l'ambiguite entre les DEUX moteurs n'est vue qu'au PREMIER mot
+**Constat.** Le socle et le trie portent chacun une partie du
+vocabulaire, et une abreviation ambigue ENTRE les deux n'est detectee
+qu'au premier mot de la ligne. `rout rip` rend desormais
+`% Ambiguous command` — `rout` abrege `router` (socle) autant que
+`route-map` (trie) — mais `ip ro 10.0.0.0 255.0.0.0 192.168.1.1` est
+encore accepte en silence alors que `ro` abrege `route` autant que
+`routing` sous `ip`, et qu'un vrai IOS refuse.
+
+**Mesure.** Machine neuve, mode `config` : `rout` seul repondait DEJA
+`% Ambiguous command`, `rout rip` entrait en `config-router` — la meme
+abreviation tranchee differemment selon qu'un argument suit. Pire,
+`rout 1` entrait en `config-route-map` : le MEME prefixe resolu vers
+DEUX commandes selon le mot suivant. La trace montre que le trie n'est
+jamais atteint pour `rout rip` : le socle sert la commande avant lui, et
+`prefixIsUnambiguous` est le seul pont entre les deux vocabulaires.
+
+**Ce qui a ete ferme.** `firstWordIsAmbiguous` : quand le mot tape
+abrege a la fois le mot-cle du socle et un mot-cle DIFFERENT du trie, la
+ligne est ambigue quel que soit ce qui suit. `prefixMatches` ecartait ce
+cas par sa regle de longueur — un chemin du trie plus COURT que la
+frappe n'etait pas tenu pour un rival — et `trieSpellsWhatSocleAbbreviates`
+renoncait des que le mot tape abregeait le mot-cle du socle, ce qui est
+precisement le cas ambigu.
+
+**Raison du report.** Etendre la regle a TOUS les rangs demande de
+comparer rang par rang deux vocabulaires dont l'un (le trie) enumere des
+LIGNES et l'autre (le socle) des specs a arguments types — et le
+mecanisme qui tranche aujourd'hui au rang 0 s'appuie sur le fait que le
+premier mot est toujours un mot-cle, ce qui n'est plus vrai aux rangs
+suivants (`ip route <A.B.C.D>` a un argument au rang 2). Le faire en
+passant ferait de chaque argument un rival potentiel.
+
 
 ### [cli] les declarations d'arguments decrivent, elles ne tranchent pas
 Depuis le lot « une plage annoncee est une plage appliquee », un jeton
@@ -394,6 +443,44 @@ qui l'a pris le dise ferait tomber son cas ; l'ecart est donc inscrit
 ici plutot que tranche unilateralement.
 
 ## Routeur Cisco
+
+### [acl] GRE n'est pas eprouvable sur un routeur Cisco
+La matrice « chaque protocole a son transport » couvre OSPF, EIGRP, RIP,
+BGP, DHCP et IPsec, et laisse GRE dehors.
+**Mesure** : le moteur d'encapsulation (`GreAgent`) est reel mais n'est
+cable que pour la commande Linux `ip tunnel` ; la CLI Cisco
+`tunnel source` / `tunnel destination` ne remplit aucune table lue par
+le plan de donnees. Un cas GRE sur routeur Cisco mesurerait donc
+l'absence du tunnel, pas la liste.
+**Report** : c'est le manquement GRE deja connu (`docs/roadmap.md`
+§14.5), pas un defaut d'ACL. La couture d'apres-liste posee ici
+(`receiveControlPlaneIpv4`) accueille deja GRE, donc le jour ou le
+tunnel Cisco transporte, la liste le verra sans autre changement.
+
+### [acl/ipsec] l'autre moitie de « Crypto Access Check on Clear-Text Packets »
+La moitie ENTRANTE est fermee : une liste `in` ne rejuge plus le paquet
+dechiffre, ni les paquets que le routeur EMET. Reste la moitie
+SORTANTE de la meme fonction d'IOS 12.3(8)T — le paquet en clair est
+encore controle contre la liste SORTANTE AVANT chiffrement, la ou une
+machine moderne y soumet le paquet CHIFFRE.
+**Mesure** : `forwardPacket` evalue `getInterfaceACL(route.iface, 'out')`
+puis chiffre ; les deux etapes sont dans cet ordre dans le corps de la
+methode. Une liste sortante `deny esp any any` ne voit donc rien alors
+qu'une vraie machine refuserait le tunnel.
+**Report** : inverser les deux deplace le chiffrement dans le pipeline
+au lieu d'ajouter une garde, et le chiffrement est suivi d'une
+re-entree qui reroute le paquet — donc la liste sortante de l'interface
+FINALEMENT choisie n'est pas forcement celle qu'on vient d'evaluer.
+C'est une reorganisation de `forwardPacket`, pas un parametre.
+
+### [acl/ipsec] les listes declarees SOUS la crypto map n'existent pas
+`set ip access-group <n> in|out` est la maniere moderne de filtrer le
+trafic en clair d'un tunnel, celle qu'IOS 12.3(8)T offre en echange du
+double controle qu'il retire. La commande n'est pas reconnue.
+**Mesure** : `set ip access-group 150 in` sous `crypto map CMAP 10
+ipsec-isakmp` repond `% Invalid input detected`.
+**Report** : demande un point de filtrage propre au tunnel, la ou le
+plan de donnees ne connait aujourd'hui que les listes d'INTERFACE.
 
 ### [cli] un sous-mode atteint les commandes GLOBALES, et `show` marche sans `do`
 Mesure sur un Catalyst en `config-if` : `hostname ZORGLUB`,
@@ -627,21 +714,32 @@ qu'est une table vide. Les unifier est juste, mais toucher au rendu de
 `show` demande de verifier ce qu'un vrai FortiGate ecrit pour chaque
 singleton — la mesure n'est pas faite.
 
-### [ha] les adresses MAC VIRTUELLES du cluster n'existent pas
-FGCP donne a chaque interface du cluster une adresse MAC virtuelle, portee
-par le membre primaire : c'est ce qui rend le basculement invisible aux
-commutateurs et aux caches ARP du reseau. Ici, chaque membre garde la MAC
-de son propre port ; le secondaire se tait (il ne repond plus a l'ARP et ne
-fait passer aucun paquet), donc le cas nominal est juste, mais apres un
-basculement le voisinage doit RE-resoudre l'adresse au lieu de continuer a
-emettre vers la meme MAC.
-**Mesure** : `ip neigh` sur le poste du LAN nomme la MAC du membre primaire
-et non une MAC de grappe ; apres bascule, la valeur change.
-**Report** : poser une MAC virtuelle demande que `Port` accepte une seconde
-adresse decidee par le cluster et que l'emission comme la reception la
-suivent — c'est un changement du materiel simule, pas du pare-feu, et il
-touche l'apprentissage MAC de tous les commutateurs du projet. L'ARP
-gratuit qui accompagne le basculement en depend egalement.
+### [ha] l'ARP GRATUIT du basculement n'est pas emis
+L'adresse MAC virtuelle de grappe, que cette entree reclamait, EXISTE
+desormais : `clusterVirtualMac` implante la formule de Fortinet
+(`<prefixe>:<group-id % 256>:<vcluster + index>`, les quatre tranches de
+group-id, les deux clusters virtuels), `applyClusterVirtualMacs` la pose
+sur le port, et les deux membres la portent — `probe-pare-feu-filtre-au-
+niveau-lien` epingle `00:09:0f:09:00:00` et l'egalite entre les deux
+membres. **La prevision de report etait fausse, et c'est instructif** :
+elle annoncait qu'il faudrait une SECONDE adresse sur `Port` et une
+retouche de l'apprentissage MAC de tous les commutateurs du projet. Ni
+l'un ni l'autre — une adresse virtuelle n'est pas une seconde adresse,
+c'est l'adresse que l'interface PRESENTE, donc poser celle du port a
+suffi et aucun commutateur n'a bouge.
+
+Reste ouvert : **l'ARP gratuit**. Un vrai FortiGate, en devenant
+primaire, emet une rafale d'ARP gratuits pour que les commutateurs
+reapprennent l'adresse virtuelle sur SON port.
+**Mesure** : `grep -rn "gratuitous\|garp"` sur `devices/firewall/` ne
+rend rien ; apres bascule, le commutateur voisin garde l'adresse
+virtuelle apprise sur le port de l'ancien primaire jusqu'a ce que le
+nouveau emette quelque chose de lui-meme.
+**Pourquoi ce n'est pas ferme ici** : le basculement fonctionne sans lui
+dans ce simulateur, parce que le nouveau primaire emet des sa premiere
+reponse et que la table du commutateur se corrige alors. L'ARP gratuit
+change le DELAI, pas l'issue — et un delai n'est observable que sous une
+horloge que les laboratoires de grappe n'avancent pas aujourd'hui.
 
 ### [linux] un poste Linux n'a pas de démon IKE
 La commande `ipsec` lit désormais vraiment `/etc/ipsec.conf` et
@@ -1126,15 +1224,95 @@ défauts — la méthode vaut d'être reprise sur le reliquat.
   sur le bus GLOBAL alors que le bus d'une machine est le sien depuis
   5ff22d9b — la sonde lisait le mauvais bus, la fonction était juste.
 
-- Un routeur porte une SECONDE table de ports, et elle n'a pas de porte —
-  ouvert. `ControlPlaneUdpEndpoint` garde ses liaisons dans un
-  `Map<number, handler>` prive alors que `Router` n'a AUCUNE `SocketTable` ;
-  `boundPorts()`, le seul accesseur qui pourrait la montrer, n'a aucun
-  appelant dans tout le depot. `show ip sockets` reste donc a ecrire, et
-  la mesure des largeurs de colonnes est BLOQUEE : cisco.com est coupe par
-  le proxy de sortie et la documentation en HTML ecrase les blancs, qui
-  sont precisement l'information cherchee — il faut une capture texte
-  (jeu `ntc-templates`), absente de cette image.
+- Les ports ouverts d'un routeur n'ont pas de vue — ouvert, et la mesure
+  a corrige DEUX affirmations de l'entree precedente. (1) La commande a
+  ecrire n'est PAS `show ip sockets` : elle n'existe plus a partir
+  d'IOS 12.4(x)T, donc sur tout le train 15.x, et cette image se declare
+  `Version 15.7(3)M5` — l'ecrire apprendrait une commande que la vraie
+  machine refuse. Son remplacante est
+  `show control-plane host open-ports`, qui liste en plus les sockets
+  TCP la ou `show ip sockets` ne montrait que l'UDP. (2) « Une SECONDE
+  table de ports » etait trop simple : `SocketTable` (la vue observable
+  d'un hote — etat TCP, TIME_WAIT, pid, banniere, ce que lisent `ss` et
+  `netstat`) et `UdpPortTable` (le demultiplexeur port -> gestionnaire)
+  repondent a deux questions differentes, et `ownerOf` lit deja les
+  revendications de protocole a travers. Ce qui manque vraiment est la
+  VUE : les ecouteurs TCP du routeur vivent dans `TcpStack.listeners`,
+  ses liaisons UDP dans `ControlPlaneUdpEndpoint`, et aucune question
+  unique ne les rassemble — `attachSocketSink`, le port par lequel
+  `TcpStack` alimente une vue, n'est branche que par `EndHost`.
+  La mesure des largeurs reste BLOQUEE, et la verification est allee
+  jusqu'a la source cette fois : cisco.com et les blogs qui citent la
+  sortie sont coupes par le proxy de sortie, et l'index des modeles
+  `ntc-templates` (atteignable, lui) ne porte AUCUN gabarit pour
+  `show ip sockets`, `show tcp brief` ni `show control-plane host
+  open-ports` — il n'existe donc pas de capture texte a lire, et les
+  blancs sont precisement l'information cherchee.
+
+- `NhrpEngine` retombait sur la DIFFUSION, sans garde — FERME. Il passe
+  par `sendIpv4Packet`, qui route et resout. Contrairement aux retombees
+  de la phase 8, celle-ci etait ATTEIGNABLE : la sonde montre le tiers du
+  segment recevant l'enregistrement DMVPN avant correctif.
+
+- Trois emetteurs restent hors de l'offre, et deux d'entre eux ne sont
+  PAS des defauts — mesure faite apres la phase 8 plutot qu'affirmee.
+  `ipsla/probes/IcmpEchoProbe.ts` batit sa trame mais son appelant a deja
+  RESOLU l'adresse de destination : c'est une descente a faire, pas une
+  fuite. La branche multicast de `RIPEngine` emet sur une interface
+  nommee avec l'adresse derivee par `linkDestinationFor`, ce qui est
+  exactement le regime prevu ; la faire passer par `sendIpv4Packet` ne
+  serait qu'une uniformisation. `TcpStack` porte son propre chemin IPv4
+  (§5.3 du BRD le prevoit : TCP DEMENAGE dans la couche transport), et
+  c'est le dernier acheminement IPv4 distinct du depot — mais sa retombee
+  en diffusion est RETIREE et `resolveMac` supprime du depot avec elle,
+  la mesure ayant etabli qu'elle n'etait atteignable par aucun hote.
+  Faux positifs verifies au passage : `DhcpServerChannel.sendFrame` est
+  un `(iface, pkt: DHCPPacket) => void` et non l'envoi de couche lien, et
+  le `sendFrame` de `FhrpAgentBase` est un ARP gratuit, donc L2 par
+  nature.
+
+- `EndHost.sendUdpDatagram` est POSITIONNEL alors que l'offre prend une
+  requete — FERME. Il accepte les deux ECRITURES sur une SEULE
+  implantation (`emitUdpDatagram`), donc les 83 appels positionnels
+  restent valides et un agent heberge par un hote appelle l'offre comme
+  sur un routeur.
+
+- IGMP ne peut pas descendre par l'offre de la couche internet — FERME.
+  `IPv4HeaderOptions.headerBytes` exprime l'en-tete a options, `ihl` et
+  `totalLength` en derivent, et les trois emetteurs partagent
+  `igmpSendRequest`. Le DF etait FAUX au passage (`flags: 0` alors que le
+  noyau Linux pose `IP_DF` sur les deux chemins d'`net/ipv4/igmp.c`) et
+  est corrige.
+
+- Un tunnel GRE et un tunnel VXLAN DIFFUSENT leur paquet exterieur —
+  FERME. `GreAgent` et `VxlanAgent` batissent le paquet exterieur puis
+  l'emettent avec `destinationMac: MACAddress.broadcast()`, alors que ce
+  paquet est un unicast IPv4 ordinaire : une vraie machine le route et le
+  resout par ARP, vers UNE adresse MAC. Diffuser signifie que toutes les
+  stations du segment recoivent la charge encapsulee — un tunnel qui fuit
+  son contenu a tout le LAN. `NhrpEngine` fait mieux sans etre juste : il
+  lit un cache et retombe sur la diffusion quand il est froid, au lieu de
+  mettre en file et de resoudre. Le correctif est l'offre de la couche
+  internet que le BRD §3.3 decrit (`send({ dst, protocol, ... })`) et que
+  `Router.sendIpv4FrameArpAware` sait deja realiser ; il n'est pas fait
+  ici : `layers/internet/Ipv4Egress.ts` pose l'offre, `Router` et
+  `EndHost` la realisent, et les deux tunnels routent desormais leur
+  paquet exterieur. `probe-tunnel-ne-diffuse-pas.test.ts` observe la fuite
+  la ou elle se voit — sur une machine tierce du meme segment.
+
+- `show tcp brief` et `show sockets` annoncent un en-tete et ne rendent
+  JAMAIS de ligne — ouvert. `showTcpBrief()` et `showSockets()`
+  (`cisco/CiscoCommonShow.ts`) rendent une CONSTANTE : une ligne
+  d'en-tete, rien d'autre, sur une machine qui porte pour de bon des
+  ecouteurs TCP sur 22 et 23 et de vraies sessions etablies que
+  `TcpStack.listListeners()` et `listSockets()` savent enumerer. Une vue
+  qui annonce « voici les connexions » et n'en montre aucune est pire
+  qu'une commande absente. L'en-tete de `show sockets` est de surcroit
+  INVENTE (`Proto Local Address Foreign Address State`), la vraie
+  commande ecrivant `Proto Remote Port Local Port In Out Stat TTY
+  OutputIF`. Meme blocage que ci-dessus : les largeurs ne sont pas
+  mesurables depuis ce reseau, et les ecrire au juge est exactement ce
+  que `ciscoTableLayouts.ts` existe pour empecher.
 
 - `sntp server` avait DEUX corps — fermée. Le même mot enregistré sur
   l'arbre privilégié et sur celui de configuration, avec des corps qui

@@ -80,7 +80,8 @@ function parseSshLine(line: string): ParsedSshLine | null {
   return { flags, user, host, command: remainder.length > 0 ? remainder : null };
 }
 
-export type TcpWireOutcome = 'open' | 'refused' | 'timeout';
+import type { TcpWireOutcome } from '@/network/tcp/types';
+export type { TcpWireOutcome };
 
 export interface SshLaunchOptions {
   /** Default user when the ssh line omits `user@`. */

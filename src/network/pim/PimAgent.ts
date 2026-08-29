@@ -8,13 +8,14 @@ import {
   type PimBootstrapBody, type PimCandidateRpBody,
   createDefaultPimConfig, defaultInterfaceRuntime, makeNeighborKey, makeMroutKey,
   compareDrCandidate, compareBsrCandidate, getOption, matchesGroupRange, ipToUint32,
-  IP_PROTO_PIM, PIM_ALL_ROUTERS, PIM_ALL_ROUTERS_MAC,
+  IP_PROTO_PIM, PIM_ALL_ROUTERS,
 } from './types';
 import {
-  MACAddress, IPAddress,
-  type EthernetFrame, type IPv4Packet,
-  ETHERTYPE_IPV4, nextIPv4Id, computeIPv4Checksum,
+  IPAddress,
+  type EthernetFrame,
+  type IPv4Packet,
 } from '../core/types';
+import type { Ipv4SendRequest } from '../layers/internet/Ipv4Egress';
 import { Logger } from '../core/Logger';
 
 export interface PimHost {
@@ -24,6 +25,7 @@ export interface PimHost {
   getPort(name: string): import('../hardware/Port').Port | undefined;
   getPorts(): import('../hardware/Port').Port[];
   sendFrame(portName: string, frame: EthernetFrame): void;
+  sendIpv4Packet(request: Ipv4SendRequest): boolean;
 }
 
 export class PimAgent {
@@ -644,22 +646,13 @@ export class PimAgent {
       senderIp: srcIp.toString(),
     };
     fill(payload);
-    const ipPkt: IPv4Packet = {
-      type: 'ipv4', version: 4, ihl: 5, tos: 0xc0,
-      totalLength: 20 + bodyBytes,
-      identification: nextIPv4Id(), flags: 0, fragmentOffset: 0,
-      ttl: 1, protocol: IP_PROTO_PIM, headerChecksum: 0,
-      sourceIP: srcIp, destinationIP: new IPAddress(PIM_ALL_ROUTERS),
-      payload,
-    };
-    ipPkt.headerChecksum = computeIPv4Checksum(ipPkt);
-    const eth: EthernetFrame = {
-      srcMAC: port.getMAC(),
-      dstMAC: new MACAddress(PIM_ALL_ROUTERS_MAC),
-      etherType: ETHERTYPE_IPV4,
-      payload: ipPkt,
-    };
-    this.host.sendFrame(iface, eth);
+    if (!this.host.sendIpv4Packet({
+      destination: new IPAddress(PIM_ALL_ROUTERS), source: srcIp,
+      iface,
+      protocol: IP_PROTO_PIM, ttl: 1,
+      payload, payloadBytes: bodyBytes,
+      tos: 0xc0, flags: 0,
+    })) return;
     this.getBus().publish({
       topic: 'pim.packet.sent',
       payload: {
@@ -778,22 +771,13 @@ export class PimAgent {
       options: opts,
       senderIp: srcIp.toString(),
     };
-    const ipPkt: IPv4Packet = {
-      type: 'ipv4', version: 4, ihl: 5, tos: 0xc0,
-      totalLength: 20 + 8 + opts.length * 8,
-      identification: nextIPv4Id(), flags: 0, fragmentOffset: 0,
-      ttl: 1, protocol: IP_PROTO_PIM, headerChecksum: 0,
-      sourceIP: srcIp, destinationIP: new IPAddress(PIM_ALL_ROUTERS),
-      payload,
-    };
-    ipPkt.headerChecksum = computeIPv4Checksum(ipPkt);
-    const eth: EthernetFrame = {
-      srcMAC: port.getMAC(),
-      dstMAC: new MACAddress(PIM_ALL_ROUTERS_MAC),
-      etherType: ETHERTYPE_IPV4,
-      payload: ipPkt,
-    };
-    this.host.sendFrame(rt.iface, eth);
+    if (!this.host.sendIpv4Packet({
+      destination: new IPAddress(PIM_ALL_ROUTERS), source: srcIp,
+      iface: rt.iface,
+      protocol: IP_PROTO_PIM, ttl: 1,
+      payload, payloadBytes: 8 + opts.length * 8,
+      tos: 0xc0, flags: 0,
+    })) return;
     rt.lastHelloSentMs = this.nowMs();
     this.getBus().publish({
       topic: 'pim.packet.sent',

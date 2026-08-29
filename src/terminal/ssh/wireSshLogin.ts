@@ -115,6 +115,26 @@ export type WireSshConnectOutcome =
  * `/var/log/syslog` must not see, because a single `ssh` is a single
  * login.
  */
+/**
+ * ENETUNREACH and EHOSTUNREACH are different failures and OpenSSH prints
+ * `strerror(errno)` verbatim (sshconnect.c). No route at all is
+ * ENETUNREACH — `Network is unreachable`; a route that resolves but a
+ * peer that never answers is EHOSTUNREACH — `No route to host`. Numbers
+ * and texts from include/uapi/asm-generic/errno.h (101 and 113).
+ */
+export function sshUnreachableReason(device: unknown, host: string): string {
+  const stack = (device as {
+    getTcpStack?: () => { hasEgressTo(ip: string): boolean };
+  } | null)?.getTcpStack?.();
+  const routed = stack ? stack.hasEgressTo(host) : true;
+  return routed ? 'No route to host' : 'Network is unreachable';
+}
+
+function unreachableMessage(req: WireSshLoginRequest): string {
+  return `ssh: connect to host ${req.host} port ${req.port}: `
+    + sshUnreachableReason(req.device, req.host);
+}
+
 export async function openWireSshConnection(
   req: WireSshLoginRequest,
 ): Promise<WireSshConnectOutcome> {
@@ -123,11 +143,8 @@ export async function openWireSshConnection(
     return { kind: 'unreachable', message: `ssh: connect to host ${req.host} port ${req.port}: Network is unreachable` };
   }
 
-  // Is there a path at all. Read off the topology — the connection made
-  // just below is what actually settles it, and probing first would cost
-  // a second connection for nothing.
   if (IPAddress.tryParse(req.host) && !peerLiveness(req.device, req.host)()) {
-    return { kind: 'unreachable', message: `ssh: connect to host ${req.host} port ${req.port}: No route to host` };
+    return { kind: 'unreachable', message: unreachableMessage(req) };
   }
 
   const session = new SshSession({

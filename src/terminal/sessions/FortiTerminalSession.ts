@@ -1,4 +1,5 @@
 import type { ICLIDevice } from '@/network';
+import { OPENSSH_SSH, type SshDialect } from '@/terminal/ssh/sshDialect';
 import { CLITerminalSession } from './CLITerminalSession';
 import { TerminalTheme, SessionType, type KeyEvent } from './TerminalSession';
 import { BSD_TELNET, type TelnetDialect } from '@/terminal/subshells/telnetDialect';
@@ -91,6 +92,8 @@ export class FortiTerminalSession extends CLITerminalSession {
   protected getPagerIndicator(): string { return '--More--'; }
 
   protected getTelnetDialect(): TelnetDialect { return BSD_TELNET; }
+
+  protected getSshDialect(): SshDialect { return OPENSSH_SSH; }
 
   protected isTopLevelExit(line: string): boolean {
     const word = line.trim().toLowerCase();

@@ -3,12 +3,16 @@ import { getDefaultScheduler, type IScheduler } from '@/events/Scheduler';
 import { TimerSet } from '@/events/TimerSet';
 import {
   type TcpSegment, type TcpFlags, type TcpState, type TcpCloseReason,
-  type UnackedSegment, type TcpOption,
+  type UnackedSegment, type TcpOption, type TcpWireOutcome,
   noFlags, flagsString, nextIsn, makeSocketKey, makeListenerKey,
   computeTcpChecksum, verifyTcpChecksum, seqLt,
   TCP_DEFAULT_MSS, TCP_DEFAULT_WINDOW, TCP_TIME_WAIT_MS, TCP_MIN_MSS,
 } from './types';
 import { payloadBytes } from '@/network/layers/transport/L4Checksum';
+import { PortNumber } from '@/network/core/ports/PortNumber';
+import {
+  connectedPrefixesOfPort, isUnicastDestination, type ConnectedIpv4Prefix,
+} from '@/network/layers/internet/InternetLayer';
 import { RttEstimator, TCP_MAX_RETRANSMITS, TCP_INITIAL_RTO_MS, TCP_MAX_RTO_MS } from './RttEstimator';
 import { TcpCongestionControl } from './TcpCongestionControl';
 import { encodeOptions, decodeOptions, optionsDataOffset } from './TcpOptionsCodec';
@@ -19,9 +23,13 @@ const TCP_WINDOW_SCALE_SHIFT = 7;
 /** Bound on out-of-order data buffered for reassembly (PRD-TCP.md P6) — one window's worth. */
 const TCP_REASSEMBLY_MAX_BYTES = TCP_DEFAULT_WINDOW;
 import {
-  MACAddress, IPAddress, IPv6Address,
-  type EthernetFrame, type IPv4Packet, type IPv6Packet,
-  IP_PROTO_TCP, ETHERTYPE_IPV4, ETHERTYPE_IPV6, nextIPv4Id, computeIPv4Checksum,
+  IPAddress,
+  IPv6Address,
+  type EthernetFrame,
+  type IPv4Packet,
+  type IPv6Packet,
+  IP_PROTO_TCP,
+  createIPv4Packet,
   createIPv6Packet,
 } from '../core/types';
 import { Logger } from '../core/Logger';
@@ -32,6 +40,16 @@ export function ipFamilyOf(ip: string): IpFamily {
   return ip.includes(':') ? 'ipv6' : 'ipv4';
 }
 
+export function canonicalIpText(ip: string): string {
+  if (ipFamilyOf(ip) === 'ipv4') return IPAddress.tryParse(ip)?.toString() ?? ip;
+  try { return new IPv6Address(ip).withScopeId(null).toString(); } catch { return ip; }
+}
+
+export function segmentPayloadSize(seg: TcpSegment): number {
+  if (seg.payload === undefined) return 0;
+  return typeof seg.payload === 'string' ? seg.payload.length : 1;
+}
+
 export interface TcpHost {
   readonly id: string;
   readonly name: string;
@@ -39,17 +57,15 @@ export interface TcpHost {
   getPort(name: string): import('../hardware/Port').Port | undefined;
   getPorts(): import('../hardware/Port').Port[];
   sendFrame(portName: string, frame: EthernetFrame): void;
-  resolveMac?(nextHopIp: string): MACAddress | null;
   resolveRoute?(targetIp: string): { iface: string; nextHopIp: string } | null;
-  resolveMac6?(nextHopIp: string): MACAddress | null;
   resolveRoute6?(targetIp: string): { iface: string; nextHopIp: string } | null;
   localAddress6?(iface: string, remoteIp: string): string | null;
   /**
-   * Preferred send path (PRD audit #26): queues on a cold ARP cache and
-   * resolves the real next-hop MAC instead of falling back to broadcast.
-   * When absent, shipSegment() keeps the old resolveMac-or-broadcast path.
+   * The send path: queues on a cold ARP cache and resolves the real
+   * next-hop MAC. Mandatory — the broadcast fallback it replaced would
+   * have flooded a segment with a TCP segment.
    */
-  sendIpv4FrameArpAware?(outPortName: string, ipPkt: IPv4Packet, nextHopIP: IPAddress): void;
+  sendIpv4FrameArpAware(outPortName: string, ipPkt: IPv4Packet, nextHopIP: IPAddress): void;
   sendIpv6FrameNdpAware?(outPortName: string, ipPkt: IPv6Packet, nextHopIP: IPv6Address): void;
 }
 
@@ -373,6 +389,9 @@ export class TcpStack {
   private socketSink: ListenerSocketSink | null = null;
 
   listen(localPort: number, opts: TcpListenOptions, localIp = '0.0.0.0'): TcpListener {
+    if (!PortNumber.isValid(localPort)) {
+      throw new Error(`TCP listener port out of range: ${localPort} (EINVAL)`);
+    }
     const listener = new TcpListener(localIp, localPort, opts.onAccept, opts.identity ?? {});
     if (this.listeners.has(listener.key())) {
       throw new Error(`TCP listener already bound on ${localIp}:${localPort} (EADDRINUSE)`);
@@ -441,8 +460,9 @@ export class TcpStack {
     socket.ownerPid = pid;
   }
 
-  connect(remoteIp: string, remotePort: number, opts: TcpConnectOptions = {}): TcpSocket | null {
+  connect(rawRemoteIp: string, remotePort: number, opts: TcpConnectOptions = {}): TcpSocket | null {
     if (!this.enabled) return null;
+    const remoteIp = canonicalIpText(rawRemoteIp);
     const egress = this.resolveEgress(remoteIp);
     if (!egress) { this.dropped(remoteIp, remotePort, 'no-egress'); return null; }
     const localIp = egress.srcIp;
@@ -477,16 +497,22 @@ export class TcpStack {
    * Synchronous connect probe whose result is derived entirely from the
    * wire: 'open' on an established handshake, 'refused' when the peer
    * answers with a RST or an ICMP unreachable (host firewall REJECT / no
-   * listener), 'timeout' when nothing comes back (silent DROP / no route).
+   * listener), 'timeout' when nothing comes back (silent DROP), and
+   * 'unreachable' when the attempt never left this machine because no
+   * route resolves — ENETUNREACH, which a real stack reports at once.
    */
-  connectOutcome(remoteIp: string, remotePort: number): 'open' | 'refused' | 'timeout' {
+  connectOutcome(remoteIp: string, remotePort: number): TcpWireOutcome {
     const socket = this.connect(remoteIp, remotePort);
-    if (!socket) return 'timeout';
+    if (!socket) return this.hasEgressTo(remoteIp) ? 'timeout' : 'unreachable';
     if (socket.everEstablished) {
       socket.close();
       return 'open';
     }
     return socket.connectRefused ? 'refused' : 'timeout';
+  }
+
+  hasEgressTo(remoteIp: string): boolean {
+    return this.resolveEgress(canonicalIpText(remoteIp)) !== null;
   }
 
   /**
@@ -584,7 +610,7 @@ export class TcpStack {
    */
   sendResetForSegment(localIp: string, senderIp: string, seg: TcpSegment): void {
     if (seg.flags.rst) return;
-    this.sendRst(localIp, seg.destinationPort, senderIp, seg.sourcePort, seg.sequence);
+    this.sendRst(localIp, senderIp, seg);
   }
 
   private externalPortClaim: ((port: number) => boolean) | null = null;
@@ -630,7 +656,7 @@ export class TcpStack {
       return true;
     }
 
-    const payloadSize = seg.payload === undefined ? 0 : (typeof seg.payload === 'string' ? seg.payload.length : 1);
+    const payloadSize = segmentPayloadSize(seg);
     this.getBus().publish({
       topic: 'tcp.segment.received',
       payload: {
@@ -652,7 +678,7 @@ export class TcpStack {
     if (seg.flags.syn && !seg.flags.ack) {
       const listener = this.findListener(dstIp, seg.destinationPort);
       if (!listener) {
-        this.sendRst(dstIp, seg.destinationPort, senderIp, seg.sourcePort, seg.sequence);
+        this.sendRst(dstIp, senderIp, seg);
         this.dropped(senderIp, seg.sourcePort, 'no-listener');
         return true;
       }
@@ -694,7 +720,7 @@ export class TcpStack {
       return true;
     }
     this.dropped(senderIp, seg.sourcePort, 'no-socket');
-    this.sendRst(dstIp, seg.destinationPort, senderIp, seg.sourcePort, seg.sequence);
+    this.sendRst(dstIp, senderIp, seg);
     return true;
   }
 
@@ -882,12 +908,45 @@ export class TcpStack {
     }
   }
 
+  /**
+   * RFC 9293 §3.10.7.3-4, refined by RFC 5961 §3.2 — an arriving RST is
+   * accepted only where it cannot have been guessed. In SYN-SENT the
+   * proof is the ACK field: it must acknowledge the SYN we just sent. In
+   * every other state it is the sequence number: exactly RCV.NXT resets
+   * the connection, anything else inside the window earns a challenge
+   * ACK, and anything outside it is dropped without a word.
+   */
+  private _processReset(socket: TcpSocket, seg: TcpSegment): void {
+    if (socket.state === 'syn-sent') {
+      if (!seg.flags.ack || seg.acknowledgement !== socket.sendNext) {
+        this.dropped(socket.remoteIp, socket.remotePort, 'bad-state');
+        return;
+      }
+      socket.connectRefused = true;
+      this._teardown(socket, 'rst');
+      return;
+    }
+
+    if (seg.sequence === socket.recvNext) {
+      if (socket.state === 'syn-received') socket.connectRefused = true;
+      this._teardown(socket, 'rst');
+      return;
+    }
+
+    const windowEnd = (socket.recvNext + socket.windowSize) >>> 0;
+    const inWindow = !seqLt(seg.sequence, socket.recvNext) && seqLt(seg.sequence, windowEnd);
+    if (!inWindow) {
+      this.dropped(socket.remoteIp, socket.remotePort, 'bad-state');
+      return;
+    }
+
+    const challenge = noFlags(); challenge.ack = true;
+    this.transmit(socket, challenge, socket.sendNext, socket.recvNext, undefined);
+  }
+
   private _processSegment(socket: TcpSocket, seg: TcpSegment, payloadSize: number): void {
     if (seg.flags.rst) {
-      if (socket.state === 'syn-sent' || socket.state === 'syn-received') {
-        socket.connectRefused = true;
-      }
-      this._teardown(socket, 'rst');
+      this._processReset(socket, seg);
       return;
     }
     // Any ACK (whether or not it also carries data/FIN) can retire queued
@@ -1256,20 +1315,31 @@ export class TcpStack {
     this.rearmKeepAliveTimer(socket);
   }
 
-  private sendRst(localIp: string, localPort: number, remoteIp: string, remotePort: number, ackForSeq: number): void {
+  private sendRst(localIp: string, remoteIp: string, offending: TcpSegment): void {
     const egress = this.resolveEgress(remoteIp);
     if (!egress) return;
-    const flags = noFlags(); flags.rst = true; flags.ack = true;
+    const flags = noFlags();
+    flags.rst = true;
+    let sequence = 0;
+    let acknowledgement = 0;
+    if (offending.flags.ack) {
+      sequence = offending.acknowledgement;
+    } else {
+      flags.ack = true;
+      acknowledgement = (offending.sequence
+        + (offending.flags.syn ? 1 : 0)
+        + (offending.flags.fin ? 1 : 0)
+        + segmentPayloadSize(offending)) >>> 0;
+    }
     const seg: TcpSegment = {
       type: 'tcp',
-      sourcePort: localPort, destinationPort: remotePort,
-      sequence: 0, acknowledgement: (ackForSeq + 1) >>> 0,
+      sourcePort: offending.destinationPort, destinationPort: offending.sourcePort,
+      sequence, acknowledgement,
       dataOffset: 5, flags, window: 0, checksum: 0, urgentPointer: 0,
       options: [], payload: undefined,
     };
-    seg.checksum = computeTcpChecksum(seg, egress.srcIp, remoteIp);
-    this.shipSegment(egress, egress.srcIp, remoteIp, seg);
-    void localIp;
+    seg.checksum = computeTcpChecksum(seg, localIp, remoteIp);
+    this.shipSegment(egress, localIp, remoteIp, seg);
   }
 
   /**
@@ -1500,7 +1570,7 @@ export class TcpStack {
         sourcePort: seg.sourcePort, destinationPort: seg.destinationPort,
         flagsText: flagsString(seg.flags),
         sequence: seg.sequence, acknowledgement: seg.acknowledgement,
-        payloadSize: seg.payload === undefined ? 0 : (typeof seg.payload === 'string' ? seg.payload.length : 1),
+        payloadSize: segmentPayloadSize(seg),
       },
     });
     if (this.isLocalDestination(dstIp, family)) {
@@ -1509,41 +1579,22 @@ export class TcpStack {
     }
     const nextHopIp = egress.nextHopIp ?? dstIp;
     if (family === 'ipv6') {
-      if (this.host.sendIpv6FrameNdpAware) {
-        this.host.sendIpv6FrameNdpAware(egress.name, l3Packet as IPv6Packet, new IPv6Address(nextHopIp));
-        return;
-      }
-    } else if (this.host.sendIpv4FrameArpAware) {
-      this.host.sendIpv4FrameArpAware(egress.name, l3Packet as IPv4Packet, new IPAddress(nextHopIp));
+      this.host.sendIpv6FrameNdpAware?.(
+        egress.name, l3Packet as IPv6Packet, new IPv6Address(nextHopIp));
       return;
     }
-    const resolvedMac = family === 'ipv6'
-      ? (this.host.resolveMac6?.(dstIp) ?? null)
-      : (this.host.resolveMac?.(dstIp) ?? null);
-    const eth: EthernetFrame = {
-      srcMAC: egress.port!.getMAC(),
-      dstMAC: resolvedMac ?? MACAddress.broadcast(),
-      etherType: family === 'ipv6' ? ETHERTYPE_IPV6 : ETHERTYPE_IPV4,
-      payload: l3Packet,
-    };
-    this.host.sendFrame(egress.name, eth);
+    this.host.sendIpv4FrameArpAware(
+      egress.name, l3Packet as IPv4Packet, new IPAddress(nextHopIp));
   }
 
   private buildIpv4Segment(srcIp: string, dstIp: string, seg: TcpSegment): IPv4Packet {
     const tcpHeaderBytes = seg.dataOffset * 4;
-    const ipPkt: IPv4Packet = {
-      type: 'ipv4', version: 4, ihl: 5, tos: 0,
-      totalLength: 20 + tcpHeaderBytes + payloadBytes(seg.payload).length,
-      // PRD-TCP.md P7 (RFC 1191 §1) — DF set, matching real TCP stacks:
-      // without it, a smaller-MTU router would just silently fragment
-      // instead of reporting back so PMTUD can shrink our MSS.
-      identification: nextIPv4Id(), flags: 0b010, fragmentOffset: 0,
-      ttl: 64, protocol: IP_PROTO_TCP, headerChecksum: 0,
-      sourceIP: new IPAddress(srcIp), destinationIP: new IPAddress(dstIp),
-      payload: seg,
-    };
-    ipPkt.headerChecksum = computeIPv4Checksum(ipPkt);
-    return ipPkt;
+    // PRD-TCP.md P7 (RFC 1191 §1) — DF set, matching real TCP stacks:
+    // without it, a smaller-MTU router would just silently fragment
+    // instead of reporting back so PMTUD can shrink our MSS.
+    return createIPv4Packet(
+      new IPAddress(srcIp), new IPAddress(dstIp), IP_PROTO_TCP, 64,
+      seg, tcpHeaderBytes + payloadBytes(seg.payload).length, { flags: 0b010 });
   }
 
   private buildIpv6Segment(srcIp: string, dstIp: string, seg: TcpSegment): IPv6Packet {
@@ -1621,6 +1672,7 @@ export class TcpStack {
     // qu'on ne sait pas lire est simplement une destination sans route.
     const parsedTarget = IPAddress.tryParse(targetIp);
     if (!parsedTarget) return null;
+    if (!isUnicastDestination(parsedTarget, this.connectedPrefixes())) return null;
     // Avant la recherche de route, et c'est l'ordre du noyau : la table
     // `local` est consultée en premier, si bien qu'un paquet adressé à
     // une adresse que la machine PORTE ne sort jamais sur le fil.
@@ -1651,12 +1703,6 @@ export class TcpStack {
       }
       if (same) return { name: port.getName(), port, srcIp: ip.toString(), nextHopIp: targetIp };
     }
-    for (const port of this.host.getPorts()) {
-      const ip = port.getIPAddress();
-      if (ip && port.getIsUp() && port.isConnected()) {
-        return { name: port.getName(), port, srcIp: ip.toString(), nextHopIp: targetIp };
-      }
-    }
     return null;
   }
 
@@ -1672,6 +1718,10 @@ export class TcpStack {
    * depuis la machine qui l'exécute — `curl 127.0.0.1` répondait et
    * `curl 10.0.0.2` restait sur « Trying… » indéfiniment.
    */
+  private connectedPrefixes(): ConnectedIpv4Prefix[] {
+    return this.host.getPorts().flatMap((port) => connectedPrefixesOfPort(port));
+  }
+
   private isLocalDestination(targetIp: string, family: IpFamily): boolean {
     if (family === 'ipv6') {
       let v6: IPv6Address;
@@ -1698,6 +1748,8 @@ export class TcpStack {
   private resolveEgress6(
     targetIp: string,
   ): { name: string; port?: import('../hardware/Port').Port; srcIp: string; nextHopIp: string } | null {
+    const parsed6 = (() => { try { return new IPv6Address(targetIp); } catch { return null; } })();
+    if (parsed6?.isMulticast()) return null;
     if (this.isLocalDestination(targetIp, 'ipv6')) {
       return { name: 'lo', srcIp: targetIp, nextHopIp: targetIp };
     }

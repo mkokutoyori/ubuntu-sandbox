@@ -1,7 +1,7 @@
 import type { IEventBus } from '@/events/EventBus';
 import {
   type RadiusPacket, type RadiusAttribute,
-  getAttr, UDP_PORT_RADIUS_COA,
+  UDP_PORT_RADIUS_COA,
 } from './types';
 import {
   verifyAccountingRequestAuthenticator, withResponseAuthenticator,
@@ -11,11 +11,12 @@ import {
   errorCauseAttr, readSessionIdentifiers,
 } from './coa';
 import {
-  MACAddress, IPAddress,
-  type EthernetFrame, type IPv4Packet, type UDPPacket,
-  IP_PROTO_UDP, ETHERTYPE_IPV4, nextIPv4Id, computeIPv4Checksum,
+  IPAddress,
+  type EthernetFrame, type UDPPacket,
+  type IPv4Packet,
 } from '../core/types';
 import { Logger } from '../core/Logger';
+import { buildUdpOverIpv4 } from '../layers/transport/UdpEgress';
 
 export type CoaActionResult = { ok: true } | { ok: false; errorCause: ErrorCause };
 
@@ -32,7 +33,7 @@ export interface CoaListenerHost {
   getPort(name: string): import('../hardware/Port').Port | undefined;
   getPorts(): import('../hardware/Port').Port[];
   sendFrame(portName: string, frame: EthernetFrame): void;
-  resolveMac?(ip: string): MACAddress | null;
+  sendIpv4FrameArpAware(outPortName: string, ipPkt: IPv4Packet, nextHopIP: IPAddress): void;
 }
 
 const DEDUP_TTL_MS = 30_000;
@@ -140,24 +141,11 @@ export class CoaListener {
     if (!port) return;
     const srcIp = port.getIPAddress();
     if (!srcIp) return;
-    const udp: UDPPacket = {
-      type: 'udp', sourcePort: this.port, destinationPort: clientPort,
-      length: 20, checksum: 0, payload: response,
-    };
-    const ipPkt: IPv4Packet = {
-      type: 'ipv4', version: 4, ihl: 5, tos: 0,
-      totalLength: 20 + udp.length,
-      identification: nextIPv4Id(), flags: 0, fragmentOffset: 0,
-      ttl: 64, protocol: IP_PROTO_UDP, headerChecksum: 0,
-      sourceIP: srcIp, destinationIP: dstIp,
-      payload: udp,
-    };
-    ipPkt.headerChecksum = computeIPv4Checksum(ipPkt);
-    const eth: EthernetFrame = {
-      srcMAC: port.getMAC(),
-      dstMAC: this.host.resolveMac?.(dstIp.toString()) ?? MACAddress.broadcast(),
-      etherType: ETHERTYPE_IPV4, payload: ipPkt,
-    };
-    this.host.sendFrame(inPort, eth);
+    const ipPkt = buildUdpOverIpv4(srcIp, {
+      destination: dstIp,
+      destinationPort: clientPort, sourcePort: this.port,
+      payload: response, payloadBytes: 12,
+    });
+    this.host.sendIpv4FrameArpAware(inPort, ipPkt, dstIp);
   }
 }

@@ -3,6 +3,8 @@
  * (HSRP, VRRP, GLBP). SRP: data shapes + pure helpers only.
  */
 import type { EthernetFrame } from '../core/types';
+import type { IPv4Packet, IPAddress } from '../core/types';
+import type { Ipv4SendRequest } from '../layers/internet/Ipv4Egress';
 import type { Port } from '../hardware/Port';
 
 /** Device-side seam every FHRP agent speaks to (DIP: no Router import). */
@@ -13,6 +15,8 @@ export interface FhrpHost {
   getPort(name: string): Port | undefined;
   getPorts(): Port[];
   sendFrame(portName: string, frame: EthernetFrame): void;
+  sendIpv4Packet(request: Ipv4SendRequest): boolean;
+  sendIpv4FrameArpAware(iface: string, packet: IPv4Packet, nextHop: IPAddress): void;
 }
 
 /** Why a group's state machine was re-evaluated. */

@@ -5,10 +5,11 @@ import {
   IP_PROTO_GRE, GRE_PROTOCOL_IPV4,
 } from './types';
 import {
-  MACAddress, IPAddress,
-  type EthernetFrame, type IPv4Packet,
-  ETHERTYPE_IPV4, nextIPv4Id, computeIPv4Checksum,
+  IPAddress,
+  type EthernetFrame,
+  type IPv4Packet,
 } from '../core/types';
+import type { Ipv4SendRequest } from '../layers/internet/Ipv4Egress';
 import { Logger } from '../core/Logger';
 
 export interface GreHost {
@@ -18,6 +19,7 @@ export interface GreHost {
   getPort(name: string): import('../hardware/Port').Port | undefined;
   getPorts(): import('../hardware/Port').Port[];
   sendFrame(portName: string, frame: EthernetFrame): void;
+  sendIpv4Packet(request: Ipv4SendRequest): boolean;
 }
 
 export class GreAgent {
@@ -107,10 +109,7 @@ export class GreAgent {
     const t = this.config.tunnels.get(tunnelId);
     if (!t) { this.dropped('0.0.0.0', '0.0.0.0', 'no-tunnel'); return false; }
     if (!t.enabled) { this.dropped(t.sourceIp, t.destinationIp, 'tunnel-down'); return false; }
-    const egress = this.resolveEgress(t.destinationIp);
-    if (!egress) { this.dropped(t.sourceIp, t.destinationIp, 'no-egress'); return false; }
-    const srcIp = egress.port.getIPAddress();
-    if (!srcIp) { this.dropped(t.sourceIp, t.destinationIp, 'no-source-ip'); return false; }
+    if (!t.sourceIp) { this.dropped(t.sourceIp, t.destinationIp, 'no-source-ip'); return false; }
     const sequence = t.sequenceEnabled ? t.sendSeq : null;
     if (t.sequenceEnabled) t.sendSeq = (t.sendSeq + 1) >>> 0;
     const gre: GrePacket = {
@@ -130,25 +129,16 @@ export class GreAgent {
       + (t.checksumEnabled ? 4 : 0)
       + (t.key !== null ? 4 : 0)
       + (t.sequenceEnabled ? 4 : 0);
-    const outer: IPv4Packet = {
-      type: 'ipv4', version: 4, ihl: 5, tos: 0,
-      totalLength: 20 + headerLen + innerPacket.totalLength,
-      identification: nextIPv4Id(), flags: 0, fragmentOffset: 0,
-      ttl: t.ttl, protocol: IP_PROTO_GRE, headerChecksum: 0,
-      sourceIP: new IPAddress(t.sourceIp),
-      destinationIP: new IPAddress(t.destinationIp),
-      payload: gre,
-    };
-    outer.headerChecksum = computeIPv4Checksum(outer);
-    const eth: EthernetFrame = {
-      srcMAC: egress.port.getMAC(),
-      dstMAC: MACAddress.broadcast(),
-      etherType: ETHERTYPE_IPV4,
-      payload: outer,
-    };
-    this.host.sendFrame(egress.name, eth);
+    const outerBytes = headerLen + innerPacket.totalLength;
+    if (!this.host.sendIpv4Packet({
+      destination: new IPAddress(t.destinationIp),
+      source: new IPAddress(t.sourceIp),
+      protocol: IP_PROTO_GRE, ttl: t.ttl,
+      payload: gre, payloadBytes: outerBytes,
+      flags: 0,
+    })) { this.dropped(t.sourceIp, t.destinationIp, 'no-egress'); return false; }
     t.packetsOut++;
-    t.bytesOut += outer.totalLength;
+    t.bytesOut += 20 + outerBytes;
     this.getBus().publish({
       topic: 'gre.packet.encapsulated',
       payload: {
@@ -230,25 +220,4 @@ export class GreAgent {
     });
   }
 
-  private resolveEgress(targetIp: string): { name: string; port: import('../hardware/Port').Port } | null {
-    const target = targetIp.split('.').map(Number);
-    for (const port of this.host.getPorts()) {
-      const ip = port.getIPAddress();
-      const mask = port.getSubnetMask();
-      if (!ip || !mask) continue;
-      const local = ip.toString().split('.').map(Number);
-      const maskBits = mask.toString().split('.').map(Number);
-      let same = true;
-      for (let i = 0; i < 4; i++) {
-        if ((local[i] & maskBits[i]) !== (target[i] & maskBits[i])) { same = false; break; }
-      }
-      if (same) return { name: port.getName(), port };
-    }
-    for (const port of this.host.getPorts()) {
-      if (port.getIPAddress() && port.getIsUp() && port.isConnected()) {
-        return { name: port.getName(), port };
-      }
-    }
-    return null;
-  }
 }

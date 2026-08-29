@@ -1,6 +1,6 @@
 import {
   IP_PROTO_OSPF,
-  type EthernetFrame, type IPv4Packet, type MACAddress,
+  type EthernetFrame, type IPv4Packet, type MACAddress, type IPAddress,
 } from '../../../core/types';
 import type { IEventBus } from '../../../../events/EventBus';
 import type { ConnectedRoute, InterfaceTable } from '../l3/InterfaceTable';
@@ -20,6 +20,7 @@ export interface RoutingWiringHost {
   interfaceAddresses(): readonly RoutingPortFacts[];
   resolvedMac(ip: string): MACAddress | undefined;
   emitFrame(iface: string, frame: EthernetFrame): void;
+  emitArpAware(iface: string, packet: IPv4Packet, nextHop: IPAddress): void;
   tcp(): TcpStack;
 }
 
@@ -30,6 +31,7 @@ export function createFirewallRouting(host: RoutingWiringHost): FirewallRouting 
     bus: () => host.bus(),
     ports: () => host.interfaceAddresses(),
     sendFrame: (iface, frame) => { host.emitFrame(iface, frame); },
+    sendArpAware: (iface, packet, nextHop) => { host.emitArpAware(iface, packet, nextHop); },
     connectedRoutes: () => host.connectedRoutes(),
     installRoute: (route) => {
       host.routes().addStatic(route.network, route.mask, route.nextHop, {

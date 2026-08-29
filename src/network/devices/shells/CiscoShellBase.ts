@@ -13,6 +13,8 @@
  */
 
 import { CiscoFileSystem } from './cisco/CiscoFileSystem';
+import { IPAddress } from '@/network/core/types';
+import { IOS_SSH } from '@/terminal/ssh/sshDialect';
 import { CommandTable } from '@/cli/CommandTable';
 import {
   specsFromTrieRegistrations, isCollector, type AdapterKeyword,
@@ -5602,9 +5604,20 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     for (const path of this.getActiveTrie().enumerateCommandPaths()) {
       const words = path.toLowerCase().split(' ');
       if (CiscoShellBase.sameKeywords(words, canonical)) continue;
+      if (CiscoShellBase.firstWordIsAmbiguous(typed, words, canonical)) return false;
       if (CiscoShellBase.prefixMatches(typed, words, canonical, absorbe)) return false;
     }
     return true;
+  }
+
+  private static firstWordIsAmbiguous(
+    typed: readonly string[], words: readonly string[], canonical: readonly string[],
+  ): boolean {
+    if (typed.length === 0 || words.length === 0 || canonical.length === 0) return false;
+    const tape = typed[0];
+    if (tape === canonical[0]) return false;
+    if (!canonical[0].startsWith(tape)) return false;
+    return words[0] !== canonical[0] && words[0].startsWith(tape);
   }
 
   /**
@@ -7855,12 +7868,18 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     }
     if (!sourceIp) return `Trying ${display} ...\n% Destination unreachable; no source interface for outbound Telnet`;
 
+    const stack = (this.d() as unknown as { getTcpStack?: () => { hasEgressTo(ip: string): boolean } })
+      .getTcpStack?.();
+    if (stack && IPAddress.tryParse(host) && !stack.hasEgressTo(host)) {
+      return `Trying ${display} ...\n% Destination unreachable; gateway or host down`;
+    }
+
     const remote = findHostByAddress(host, undefined, this.d() as never);
     if (!remote || remote.poweredOff || remote.interfaceDown) {
       return `Trying ${display} ...\n% Connection timed out; remote host not responding`;
     }
     if (!isPathReachable(sourceIp, remote.ip, this.d() as never)) {
-      return `Trying ${display} ...\n% Destination unreachable; gateway or route not found`;
+      return `Trying ${display} ...\n% Destination unreachable; gateway or host down`;
     }
     if (!this.remoteAcceptsTelnet(remote.device, port)) {
       return `Trying ${display} ...\n% Connection refused by remote host`;
@@ -7917,6 +7936,11 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       if (ip && p.getIsUp()) { sourceIp = ip.toString(); break; }
     }
     if (!sourceIp) return '% No usable interface IP for outbound SSH';
+    const sshStack = (this.d() as unknown as { getTcpStack?: () => { hasEgressTo(ip: string): boolean } })
+      .getTcpStack?.();
+    if (sshStack && IPAddress.tryParse(host) && !sshStack.hasEgressTo(host)) {
+      return IOS_SSH.unreachable(host, Number(port ?? 22));
+    }
     const clientArgs: string[] = [];
     if (port) clientArgs.push('-p', port);
     clientArgs.push('-o', 'StrictHostKeyChecking=accept-new');

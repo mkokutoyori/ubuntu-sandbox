@@ -17,6 +17,7 @@
  */
 
 import { findHostByAddress, isPathReachable, transitTcpAclVerdict } from './HostLookup';
+import { sshUnreachableReason } from '@/terminal/ssh/wireSshLogin';
 import { IPAddress } from '../../../core/types';
 import { type SshHostKeyType } from './SshKnownHostEntry';
 import { SshPortForward } from './SshPortForward';
@@ -813,7 +814,7 @@ export function runSshClient(opts: SshClientOpts): SshClientResult {
     const isValidIPv4 = IPAddress.isValid(lookupHost);
     return {
       output: isValidIPv4
-        ? `ssh: connect to host ${host} port ${port}: No route to host\n`
+        ? `ssh: connect to host ${host} port ${port}: ${sshUnreachableReason(opts.sourceDevice, lookupHost)}\n`
         : `ssh: Could not resolve hostname ${host}: Name or service not known\n`,
       exitCode: 255,
     };

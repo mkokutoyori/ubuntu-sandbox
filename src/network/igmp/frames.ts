@@ -7,22 +7,22 @@
  * snooping querier (`IgmpSnoopingAgent`). They share this module so the
  * wire format can never drift between them.
  *
- * Header shape follows RFC 2236 §2: IGMP rides directly on IPv4
- * (protocol 2) with TTL 1 and the Router Alert option (IHL 6, tos 0xc0),
- * destined to a multicast group address.
+ * Header shape is the one Linux itself emits (`net/ipv4/igmp.c`, both
+ * the report and the query path): IHL 6 — a 24-byte header carrying the
+ * 4-byte Router Alert option — tos 0xc0, TTL 1, DF set, protocol 2,
+ * destined to a multicast group address. RFC 2236 §2 requires the option
+ * but says nothing about DF; the kernel is what sets it.
  */
-import {
-  MACAddress, IPAddress,
-  type EthernetFrame, type IPv4Packet,
-  ETHERTYPE_IPV4, nextIPv4Id, computeIPv4Checksum,
-} from '../core/types';
+import { type IPAddress } from '../core/types';
+import type { Ipv4SendRequest } from '../layers/internet/Ipv4Egress';
 import {
   IP_PROTO_IGMP, IGMP_ALL_SYSTEMS, IGMP_ALL_ROUTERS,
-  ipv4MulticastToMac, type IgmpPacket,
+  type IgmpPacket,
 } from './types';
 
 const IGMP_HEADER_BYTES = 8;
 const IPV4_RA_HEADER_BYTES = 24;
+const IPV4_FLAG_DF = 0b010;
 
 /** General Query (group 0.0.0.0) or Group-Specific Query. */
 export function igmpQuery(group: string, maxRespTimeDs: number): IgmpPacket {
@@ -73,25 +73,17 @@ export function igmpDestination(payload: IgmpPacket): string {
   }
 }
 
-export function buildIgmpFrame(
-  srcMac: MACAddress,
+export function igmpSendRequest(
+  iface: string,
   srcIp: IPAddress,
   dstIp: IPAddress,
   payload: IgmpPacket,
-): EthernetFrame {
-  const ipPkt: IPv4Packet = {
-    type: 'ipv4', version: 4, ihl: 6, tos: 0xc0,
-    totalLength: IPV4_RA_HEADER_BYTES + IGMP_HEADER_BYTES,
-    identification: nextIPv4Id(), flags: 0, fragmentOffset: 0,
-    ttl: 1, protocol: IP_PROTO_IGMP, headerChecksum: 0,
-    sourceIP: srcIp, destinationIP: dstIp,
-    payload,
-  };
-  ipPkt.headerChecksum = computeIPv4Checksum(ipPkt);
+): Ipv4SendRequest {
   return {
-    srcMAC: srcMac,
-    dstMAC: new MACAddress(ipv4MulticastToMac(dstIp.toString())),
-    etherType: ETHERTYPE_IPV4,
-    payload: ipPkt,
+    destination: dstIp, source: srcIp, iface,
+    protocol: IP_PROTO_IGMP, ttl: 1,
+    payload, payloadBytes: IGMP_HEADER_BYTES,
+    tos: 0xc0, flags: IPV4_FLAG_DF,
+    headerBytes: IPV4_RA_HEADER_BYTES,
   };
 }

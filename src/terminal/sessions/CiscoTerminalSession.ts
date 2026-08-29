@@ -7,6 +7,7 @@
  */
 
 import { expandBannerTokens } from '@/network/devices/shells/cisco/ciscoBannerTokens';
+import { IOS_SSH, type SshDialect } from '@/terminal/ssh/sshDialect';
 import type { ICLIDevice } from '@/network';
 import { CLITerminalSession } from './CLITerminalSession';
 import { TerminalTheme, SessionType, withTimeout, DeviceOfflineError } from './TerminalSession';
@@ -708,6 +709,8 @@ export class CiscoTerminalSession extends CLITerminalSession {
   protected getPagerIndicator(): string { return ' --More-- '; }
 
   protected getTelnetDialect(): TelnetDialect { return IOS_TELNET; }
+
+  protected getSshDialect(): SshDialect { return IOS_SSH; }
 
   protected isTopLevelExit(line: string): boolean {
     const w = line.trim().toLowerCase();

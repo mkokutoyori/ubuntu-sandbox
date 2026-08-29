@@ -81,8 +81,11 @@ export async function launchTelnet(
       : null;
 
   if (!dialed || isDialFailure(dialed)) {
-    const silent = isDialFailure(dialed) && dialed.dialFailed === 'timeout';
-    return fail((silent ? dialect.timedOut : dialect.refused)(host, found.ip, port));
+    const reason = isDialFailure(dialed) ? dialed.dialFailed : 'refused';
+    const wording = reason === 'timeout' ? dialect.timedOut
+      : reason === 'unreachable' ? dialect.unreachable
+        : dialect.refused;
+    return fail(wording(host, found.ip, port));
   }
   const socket = dialed as TelnetClientTransport;
 

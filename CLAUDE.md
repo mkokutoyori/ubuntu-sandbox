@@ -45,6 +45,20 @@ Equipment-driven architecture — no central simulator mediator. Devices process
   - **Une interface de bouclage est un vrai port** (`docs/PRD-Loopback.md`), sur les quatre plateformes. Ce que la mesure a trouvé, en rejouant le tutoriel loopback comme laboratoire : sous Linux, `lo` était une FICTION DE RENDU — `getInterfaceInfo('lo')` fabriquait un objet à la demande sans qu'aucun port n'existe derrière, si bien que `ip link show lo` décrivait la boucle pendant que `ip addr add 10.0.0.1/32 dev lo` répondait `Cannot find device "lo"` sur la même machine au même instant. `LinuxMachine.createLoopbackPort()` la crée au démarrage comme le noyau le fait (MTU 65536, MAC nulle, 127.0.0.1/8 + ::1/128, indestructible). `Port` a dû nommer deux notions distinctes, chacune pour ce qu'elle décide : **`loopback`** fixe le plafond de MTU (9216 est la taille d'une trame Ethernet jumbo — sans objet pour une interface qui n'émet pas de trame, et poser 65536 échouait sur un plafond emprunté à un autre médium), **`carrierless`** fixe l'état rapporté (`UNKNOWN`, jamais `UP`/`DOWN`, et `NOARP` au lieu de `MULTICAST` — vrai de `lo` comme d'une interface `dummy`, qui sortait `<NO-CARRIER…> state DOWN`). **`lo` est créée APRÈS les ports physiques**, mesuré et non supposé : la créer en premier faisait câbler `lo` au commutateur dans les laboratoires qui désignent « la première carte » par `getPorts()[0]` et faisait tomber 170 cas ; l'affichage la place en tête explicitement, comme le vrai, et son index reste 1 sans occuper un rang dans la numérotation des autres. Deux défauts GÉNÉRAUX (non propres à la boucle) trouvés en chemin : `buildFullRoutingTable` ne posait de route que pour l'adresse PRIMAIRE d'un port, et `getPortOwningIP` ne consultait que la primaire — donc toute adresse ajoutée par `ip addr add`, sur n'importe quelle interface, existait sans être joignable, y compris par la machine qui la portait (`Port.ownsIPv4` portait déjà le prédicat exact) ; et `valid_lft` manquait sur TOUTES les adresses IPv4, ce que seule la comparaison avec un `eth0` réel a révélé. Le `scope` vient de l'ADRESSE et non de l'interface (127.0.0.0/8 → `host`, le reste `global`) : le déduire de l'interface annonçait `scope host` pour une adresse posée sur `lo`, donc la décrivait comme injoignable alors qu'elle est là pour être annoncée. `formeLien()` est la règle unique d'état/file/longueur de file, lue par `ip addr`, `ip link` et `ip -br`, qui la calculaient chacun de leur côté et se contredisaient. `modprobe` n'existait pas sur une machine où `ip link add … type dummy` fonctionne : `KernelModuleTable.load()` et son catalogue `CHARGEABLES` décrivent ce que l'image porte VRAIMENT (`dummy` seul, parce qu'un vrai comportement existe derrière), un `modprobe` d'autre chose échoue en nommant le répertoire, et `ip link add … type dummy` charge le module tout seul par la même table. Références mesurées contre `iproute2` installé, pas de mémoire.
   - **Côté Cisco et Huawei** (même PRD) : le type de réseau OSPF `loopback` n'existait pas, donc une loopback était `broadcast`, passait par l'élection et se déclarait DR d'elle-même. La conséquence n'est pas cosmétique — RFC 2328 §12.4.1.1 fait annoncer une loopback en HÔTE ISOLÉ /32 quel que soit son masque, et `ip ospf network point-to-point` fait annoncer le préfixe configuré ; les deux moitiés sont vérifiées sur la table du VOISIN. `setInterfaceNetworkType` relance la machine à états (l'écriture directe laissait l'état et les minuteurs d'avant). MTU 1514 / BW 8000000 / DLY 5000 sont posés sur le PORT à sa création, donc `bandwidth`/`delay`/`mtu` les surchargent par la voie normale et EIGRP lit la même valeur que la vue affiche. `show ip interface <nom>` rendait le texte de `show interfaces` — l'AUTRE commande — et écrivait `MTU is 1500`/`Proxy ARP is enabled` en dur, contredisant la configuration de la même machine. `passive-interface` était accepté, honoré, et rendu NULLE PART (EIGRP et RIP le rendent tous deux dans le même sérialiseur), donc perdu à la relecture d'une topologie. Sur VRP, `protocoleSpoofe` est la règle unique derrière `up(s)` et `UP (spoofing)` — la façon dont VRP dit que l'état est DÉCRÉTÉ, donc la propriété qui rend une loopback utilisable comme Router ID — étendue aux vues de détail qui répondaient `UP` sec ; portée à `LoopBack` et `NULL`, `Tunnel` restant dehors faute de référence. `source LoopBack 0` ne gardait que le premier mot (configuration rendue : `source LoopBack`, une interface inexistante) et `undo interface LoopBack 0` était accepté sans rien supprimer — il supprime, refuse un port physique, et prévient avant par le mécanisme de plans qui portait déjà `save`/`reboot`. **Côté Windows**, `route print` sortait une table `Active Routes:` VIDE pendant que `Get-NetRoute` déclarait une route en dur et que le fournisseur PowerShell en déclarait une troisième avec une autre métrique : `WindowsLoopbackRoutes.ts` les déclare une fois, les trois vues les lisent. Limite assumée et écrite dans le PRD : `netsh`/`New-NetIPAddress` sur `Loopback Pseudo-Interface 1` et `Get-NetAdapter -IncludeHidden` restent hors de portée tant que cette pseudo-interface n'est pas un vrai port de `WindowsPC` — une quatrième copie écrite en dur serait exactement le défaut qu'on vient de refermer.
   - No FCS field exists on `EthernetFrame` (rapport 04, item #45), and adding a bare one would be decorative — there's no byte-level frame encoding to corrupt against. Instead, `Cable` now has a `corruptionRate` knob mirroring the pre-existing `packetLossRate` one (`setCorruptionRate`/`getCorruptionRate`, `CableStats.framesCorrupted`): a "corrupted" frame never reaches the receiver's `handleFrame()` (same observable effect as a real NIC silently discarding a bad-FCS frame) and increments the previously-dead `Port.errorsIn` counter, distinct from generic simulated loss. Also fixed: `Cable.transmit`/`Port.sendFrame`/`receiveFrame` intentionally deliver the *same* frame object end to end (asserted by identity in `hardware.test.ts`, kept that way — cloning every frame would be the hottest path in the simulator for no observed bug), but several **fan-out** call sites were handing that same object to *multiple* destinations instead of a fresh one per destination: `Hub.handleFrame`, `Switch.floodFrame`'s `stripTag`/`stripOuterTag` (returned the input frame unchanged for the common untagged case), `Switch.emitMirror` (SPAN destination shared the real egress frame), and `Router.forwardMulticast` (one `IPv4Packet` object reused as the `payload` of every OIF's frame). Nothing currently mutates a frame/packet in place post-handoff, so this was latent rather than an active bug — but a landmine for the next feature that does. Fixed by giving each fan-out destination its own shallow copy; BGP/IS-IS-style deep immutability (`Object.freeze`, already used elsewhere for config objects) was not applied to the hot data-plane path.
+- **Une sous-interface VLAN emet par sa PROPRE prise de capture.**
+  `LinuxMachine.sendFrame` etiquette la trame, l'emet par le port PARENT
+  — ce qui est juste, la sous-interface n'a pas de cable — puis publiait
+  a la main un `port.frame.tx-requested` « de capture » sur le bus. Ce
+  signal etait un DOUBLON synthetique de ce que `Port.sendFrame` publie
+  pour un vrai port, et surtout il n'atteignait pas la prise de capture :
+  `tcpdump -i eth0.10 tcp` capturait ZERO alors que `tcpdump -i eth0.10`
+  sans filtre voyait passer l'ARP entrant (la reception, elle, passe bien
+  par le port de la sous-interface). La moitie observabilite de
+  `Port.sendFrame` est extraite en `recordOutboundFrame` — compteurs,
+  journal, evenement, prise — et la sous-interface l'appelle sur son
+  propre port : une seule ecriture, deux appelants, et la capture voit
+  desormais la trame non etiquetee comme le fait un vrai `eth0.10`.
+
 - `core/types.ts` — frame/packet structures (`EthernetFrame`, `IPv4Packet`, `ARPPacket`, `ICMPPacket`, `UDPPacket`, `RIPPacket`), address types (`MACAddress`, `IPAddress`, `SubnetMask`), protocol constants, ID/checksum helpers.
 - `core/` also holds shared infra: `Logger.ts` (pub/sub network event log), `RoutingTable.ts`, `PacketQueue.ts`, `SocketTable.ts`, `TcpConnection.ts`, `FilterChain.ts`, `NeighborResolver.ts`, `WellKnownPorts.ts`, `Ipv4Fragmentation.ts` (RFC 791 §3.2 `fragmentIPv4`/`IPv4Reassembler` — used by `Router.forwardPacket` and `EndHost.forwardIPv4` when a datagram crosses onto a smaller-MTU link with DF clear; DF=1 still gets ICMP Fragmentation Needed instead).
 - UDP checksum (RFC 768) — `computeUdpChecksum`/`verifyUdpChecksum` live in `tcp/types.ts` (shared L4-checksum module with TCP's `computeTcpChecksum`, despite the filename). `EndHost.sendUdpDatagram` stamps a real checksum; `EndHost.deliverUDP` and `Router`'s self-destined UDP dispatch verify and silently drop a mismatch. Internal protocol agents (RIP, DHCP, IKE, SNMP, …) still build `UDPPacket`s with `checksum: 0` — that's RFC 768's IPv4 "not computed" opt-out and is accepted unconditionally, same as those agents' payloads not being real serialized bytes in the first place.
@@ -53,7 +67,40 @@ Equipment-driven architecture — no central simulator mediator. Devices process
   - **Une interface de pare-feu EST son port**, et il y en avait deux (`l3/InterfaceTable.ts`). `InterfaceTable` etait une `Map<string, InterfaceRecord>` autonome portant nom, adresse, masque, etat, MTU et description — c'est-a-dire exactement ce que `Port` porte deja — sans aucun lien avec lui. Le constructeur de `Firewall` posait l'adresse d'usine du profil (`port1` = `192.168.1.99/24` sur un FortiGate 60F) dans cette table SEULE, si bien qu'un pare-feu sorti d'usine repondait `set ip 192.168.1.99 255.255.255.0` a `show system interface port1` pendant que `port1.getIPAddress()` rendait `null` sur la meme machine au meme instant. **La consequence n'etait pas cosmetique, et elle touchait trois choses a la fois** : l'UI construit `NetworkDeviceUI.interfaces` en lisant `port.getIPAddress()` (`networkStore.ts`), donc la liste des interfaces affichait le port sans adresse ; `HostLookup` resout un equipement par IP en parcourant `dev.getPorts()`, donc le pare-feu etait INVISIBLE a toute resolution et `ssh admin@192.168.1.99` repondait `No route to host` — le diagnostic qui envoie verifier un cablage quand la machine est la ; et un vrai appel TCP vers `:22`, `:80` ou `:443` n'aboutissait pas, alors que les ecouteurs etaient bel et bien lies (mesure : `tcp.listeners` = `0.0.0.0:22,23,80,443`). Le `ping`, lui, FONCTIONNAIT — ARP et ICMP lisent la table — et c'est precisement ce qui rendait le defaut invisible : la machine repondait, donc elle semblait joignable. `InterfaceTable` prend desormais un accesseur de port etroit (`InterfacePort`, dans le style des capacites segregees du depot) et **le port est le magasin** : `read()` lit l'adresse, le masque, l'etat, le MTU et la description sur le port des qu'il y en a un, `configure()` les y projette, et la `Map` ne garde plus que l'APPARTENANCE (quelles interfaces existent, dans l'ordre du chassis) et les interfaces qui n'ont pas de port du tout — tunnels IPsec, liens inter-VDOM avant leur port. Les deux recopies manuelles que `Firewall` portait (`configureInterface` posait `port.configureIP`, `setInterfaceUp` posait `port.setAdminShutdown`) sont retirees : elles etaient la moitie juste d'un mecanisme qui n'existait qu'a moitie, et c'est exactement pourquoi seul le chemin CLI fonctionnait tandis que l'etat d'usine ne fonctionnait pas. **Trois verifications faites avant d'ecrire, plutot que supposees** : les defauts des deux cotes coincident (`Port.isUp = true` / `up = true`, `Port.mtu = 1500` / `DEFAULT_MTU = 1500`), le schema FortiOS borne deja `mtu` a `68..9216`, c'est-a-dire exactement la plage que `Port.setMTU` accepte — donc aucune valeur atteignable par la CLI ne peut etre refusee par le port —, et `addressMask()` fait de l'adresse et du masque UN seul attribut, donc le cas « adresse sans masque » n'est pas atteignable par la CLI. La projection n'ecrit que lorsque la valeur CHANGE, `configureIP` et `setMTU` publiant chacun un evenement et journalisant. `probe-interface-is-a-port.test.ts` (8 cas) est discrimine par `git stash` : 5 tombent avant correctif, et les 3 autres sont nommes ici plutot que laisses a decouvrir — « l'adresse suit la CLI » et « l'interface fermee ferme le port » passaient grace aux deux recopies manuelles, seuls chemins qui marchaient, et le `ping` est le TEMOIN, dont c'est l'objet de passer des deux cotes. Deux manquements mesures en chemin sont inscrits au `TODO.md` plutot que forces, chacun etant un autre sujet : le `allowaccess` declare par le profil n'alimente aucun magasin (inerte mais PERMISSIF aujourd'hui, donc l'appliquer RESTREINDRAIT `wan1` a `ping`), et une saisie de mot de passe VIDE ne traverse pas le terminal interactif alors que le compte `admin` d'usine en a un vide et que `authenticateAdmin('admin', '')` rend `true`.
   - `devices/router/` — router subsystems: ACL, NAT, IPv6 data plane, dynamic routing (OSPF/RIP integration), AAA, BFD, DNS, EEM, NetFlow, NHRP, redundancy (HSRP/VRRP/GLBP), policy, management, CLI.
   - `devices/router/policy/{RoutePolicy,IpPrefixList}.ts` (rapport 02, item #44) — `IpPrefixList.evaluate()` was already a real, correct RFC-shaped prefix matcher, just never called from redistribution. `RoutePolicy`/`RoutePolicyNode` had no evaluation logic at all — pure config storage for `display`. Fixed the bounded slice: `RoutePolicy.evaluate()` now matches `if-match ip-prefix` (via `IpPrefixListStore`), `tag`, and `route-type` — the only match kinds with real data on a redistributed route today — and fails a node closed (doesn't match) if it also references `acl`/`community`/`as-path`/`interface`/`ext-community`, since none of those have a backing value to check yet; no match on any node is an implicit deny, like real VRP. Wired into both directions: Huawei RIP's `import-route ... route-policy <name>` (`RIPEngine.advertisableMetric()` via a new `RIPCallbacks.evaluateRoutePolicy` seam) and Huawei OSPF's `filter-policy { <acl> | ip-prefix <name> } { import | export }` (`RouterOSPFIntegration.isFilteredByDistributeList()`, gating both `installRoutes()` for `import` and `originateRedistributedRoutes()` for `export` — the `export`/`out` direction and the `ip-prefix` form of `filter-policy` were previously silently dropped by the CLI parser entirely). Not attempted: `apply`-clause mutation (cost/tag/next-hop rewriting on a permitted route), BGP/IS-IS redistribution (both are separately-tracked dead config — `BGPEngine.redistribute` and `HuaweiRoutingExtras.importedRoutes` are never read by anything), and Cisco's `route-map`/`PolicyRepository` equivalent (stores raw strings, no structured match at all — a larger lift than Huawei's already-structured-but-unused stores).
+  - **`resolveMac` a disparu du depot, et TCP n'a plus de retombee en diffusion** (BRD §5.3). `TcpStack.shipSegment` portait la meme forme que RADIUS, NTP, BFD et NHRP : la branche ARP-consciente, puis `resolveMac?.(dstIp) ?? MACAddress.broadcast()`. **Mesure d'abord, et elle dit que cette retombee n'etait ATTEIGNABLE nulle part** : les TROIS hotes qui construisent une pile TCP (`Router`, `EndHost`, `Firewall`) fournissent tous `sendIpv4FrameArpAware` ; cote IPv6, `Router` et `Firewall` ne fournissent ni `sendIpv6FrameNdpAware` ni `resolveRoute6`, et `resolveEgress6` rend `null` sans eux, donc l'emission s'arrete AVANT la retombee. Ce n'est donc pas un defaut corrige mais un PIEGE retire — le dire ainsi evite de le compter pour ce qu'il n'est pas — et ce qui aurait transite par la est un SEGMENT TCP, c'est-a-dire la charge applicative, diffusee au segment entier. **Le retrait a permis de fermer autre chose** : `resolveMac` LIT le cache ARP sans resoudre et n'existait que pour nourrir ces retombees ; la derniere partie, il n'avait plus AUCUN lecteur dans `src/network` et ses sept fournisseurs l'alimentaient pour personne. Declaration et fournisseurs supprimes, donc la forme « lire le cache et esperer » n'est plus disponible pour etre reintroduite. `probe-tcp-ne-diffuse-pas.test.ts` (3 cas) est discrimine par `git stash` : 2 tombent, et ce sont les deux cas de STRUCTURE — aucun laboratoire ne peut montrer une retombee inatteignable, et le troisieme est le TEMOIN de la poignee de main, seule chose qu'un retrait de code mort pouvait casser.
+  - **L'enregistrement NHRP d'un client DMVPN partait en DIFFUSION** (BRD phase 8, suite). `NhrpEngine.transmit` batissait sa trame et choisissait `const dstMAC = cached ? cached.mac : MACAddress.broadcast()` — `getArpEntry` LIT le cache ARP sans resoudre, et contrairement aux retombees que la phase 8 a retirees de RADIUS, NTP et BFD, celle-ci n'avait AUCUNE garde. Elle etait donc ATTEIGNABLE, et pas seulement latente : le PREMIER paquet d'un client DMVPN est justement son enregistrement (adresse de superposition, adresse NBMA reelle, duree de bail), donc le cache est froid et la trame part en diffusion — le segment entier recoit ce qui identifie le client aupres de son concentrateur. Corrige par `sendIpv4Packet`, qui route, resout, et met en file sur cache froid au lieu d'inonder. `probe-nhrp-ne-diffuse-pas.test.ts` (3 cas) est discrimine par `git stash` : 2 tombent, et le tiers du segment recoit bel et bien l'enregistrement avant correctif — c'est la difference avec RADIUS, ou la meme forme de retombee n'etait pas atteignable sur un routeur.
+  - **Les derniers emetteurs descendent, et RIP repondait au GROUPE sur un pare-feu** (BRD phase 8). Le lot 7 de la phase 5 avait converti la CONSTRUCTION du paquet RADIUS et laisse l'EMISSION intacte : les cinq fichiers de `radius/` batissaient encore leur trame, chacun avec sa copie de `resolveEgress` et la retombee `resolveMac?.(ip) ?? MACAddress.broadcast()` ; NTP et BFD portaient la meme derriere un `if (host.sendIpv4FrameArpAware)`. **Ce que la mesure a etabli, et qui compte avant le reste** : sur un ROUTEUR cette retombee n'etait PAS atteignable — le client passait par la branche ARP que tout routeur fournit, et la reponse du serveur, sans garde, trouvait toujours l'adresse dans le cache que la trame de la requete venait d'y mettre. Elle etait vive sur un hote sans `resolveMac` du tout (le `RadiusServerHost` de `WindowsNpsRole`), ou `?? broadcast()` etait inconditionnel. **Un defaut etait bien vivant, lui** : `RIPEngine` tranchait entre reponse unicast (RFC 2453 §3.9.1) et groupe par `if (destIP && this.callbacks.sendIpv4ArpAware)`, une condition melant « ai-je un destinataire unicast ? » et « mon hote sait-il resoudre ? » ; seul `Router` fournissait ce rappel, donc **sur un pare-feu la reponse unicast partait avec l'adresse de couche lien du GROUPE**. La condition ne porte plus que sur `destIP`, le rappel est obligatoire, `FirewallRouting` le fournit, et `destinationMac()` disparait au profit de `linkDestinationFor`. **Deux pieces manquaient a l'offre** : `sourceAddressFor` — ce que `ip route get` repond, dont une application a besoin pour NOMMER sa propre adresse dans son message (`nas-ip-address`, `agent-addr`) AVANT d'emettre, et sans quoi chaque agent gardait son `resolveEgress` — realisee par `Router`, `EndHost`, `Switch` et `Firewall` ; et `UdpSendRequest.iface`, un multicast ne se routant pas. **Le blocage du `TODO.md` est leve** : `EndHost.sendUdpDatagram` accepte les deux ECRITURES sur une SEULE implantation, donc les 83 appels positionnels restent valides. Trouve en chemin : le `NtpHost` du commutateur etait construit par un `as unknown as` depuis le `FhrpHost`, si bien que le compilateur ne voyait pas qu'il manquait `sendIpv4FrameArpAware` — le rendre obligatoire a casse NTP sur commutateur a l'EXECUTION et non a la compilation ; `Switch`/`SwitchSvi` portent desormais un vrai envoi ARP-conscient et `FhrpHost` declare la capacite. `probe-radius-ne-diffuse-pas.test.ts` (6 cas) : UN seul tombe, celui de STRUCTURE, et son en-tete dit pourquoi les cinq autres sont des TEMOINS et non des preuves.
+  - **IGMP descend, et son DF etait FAUX** (BRD phase 7, dernier moteur). Deux corrections d'un coup. **(1) Le DF.** Le simulateur ecrivait `flags: 0` — DF CLAIR — sur chaque message IGMP. Ce n'est pas une RFC qui le contredit : la RFC 2236 §2 exige l'option Router Alert et ne dit RIEN de DF ; c'est l'IMPLANTATION retenue qui tranche, et le noyau Linux pose `IP_DF` sur les DEUX chemins IGMP (`net/ipv4/igmp.c`, rapport et requete) avec `ihl = (sizeof(iphdr)+4)>>2`, `tos = 0xc0`, `ttl = 1` et `IPOPT_RA` juste apres l'en-tete. Le simulateur etait donc juste sur IHL, TOS et TTL et faux sur DF — un apprenant comparant sa capture aurait lu « Don't fragment: Not set » la ou le noyau ecrit « Set ». Verifies dans le meme mouvement et CONFORMES, donc laisses tels quels : VRRP (FRR `vrrpd/vrrp.c`, `IP_MULTICAST_TTL` 255 et `IPTOS_PREC_INTERNETCONTROL`, pas de DF explicite) et PIM (FRR `pimd/pim_pim.c`, « TTL for packets destined to ALL-PIM-ROUTERS is 1 »). **(2) La descente.** IGMP ne POUVAIT pas descendre : `createIPv4Packet` fixait `ihl: 5` et `totalLength = 20 + n`, donc l'y forcer retirait l'option en silence. `IPv4HeaderOptions.headerBytes` exprime l'en-tete a options, `ihl` et `totalLength` en DERIVENT, et `ipv4HeaderProblem` les valide deja — ce n'est donc pas un champ inerte. `buildIgmpFrame` devient `igmpSendRequest` et les TROIS emetteurs (requete du routeur, rapport de l'hote, querier de snooping) partagent une seule description du paquet. **Le querier de snooping garde deliberement son `sendOnLink`** : il emet PORT PAR PORT sur un VLAN, decision de couche lien qu'il prend deja, et passer par `sendFrame` lui ferait perdre l'etiquetage ; seule la construction du PAQUET descend. **Trouve par la sonde et corrige** : un rapport IGMP est adresse au GROUPE (239.1.1.1), c'est-a-dire du multicast ROUTABLE, et l'offre le confiait a la table de routage unicast — rien ne partait. Un multicast ne se route JAMAIS par la RIB unicast, il s'emet sur l'interface nommee ; `requiresNamedInterface` couvre desormais tout ce qui n'est pas unicast, ce qui rend vivante la branche `multicast` de `linkDestinationFor`, morte jusque-la. Apres ce lot il ne reste dans tout `src/network/` qu'UN en-tete IPv4 ecrit a la main, `icmp/IcmpEcho.ts`, exception mesuree de la phase 6 (identification DERIVEE de la sonde plutot que tiree du compteur) ; `igmp/frames.ts` sort de la liste d'exemptions du garde-fou de structure, une exemption qui ne decrit plus rien laissant rentrer en silence ce qu'elle bornait. `probe-igmp-descend-et-df.test.ts` (6 cas) est discrimine par `git stash` : 4 tombent. Deux lecons de sa redaction : sa premiere version du cas QUERIER etait VACUE (un `forceQuerierTick?.()` inexistant plus un `if (length === 0) return` qui cachait qu'aucune trame n'etait observee), et le laboratoire corrige — VLAN, port d'acces et SVI montes par la CLI, agent demarre, horloge virtuelle avancee — en fait le PREMIER test du depot a declencher ce querier.
+  - **VRRP, HSRP, GLBP et PIM descendent par la couche internet, et l'adresse de couche lien se DERIVE du groupe** (BRD phase 7). Les quatre emettaient DEJA correctement — bon groupe, bonne interface, bonne adresse de couche lien, bon TTL — donc ce lot ne corrige aucun defaut de comportement : il retire la DUPLICATION, et le dire franchement importe puisque la plupart des cas de sa sonde passent des deux cotes. Ce que la duplication coutait est mesurable : chaque moteur batissait sa trame et portait EN DUR l'adresse de couche lien de son groupe (`VRRP_MULTICAST_MAC`, `GLBP_MULTICAST_MAC`, `PIM_ALL_ROUTERS_MAC`), c'est-a-dire un second fait devant s'accorder avec l'adresse de groupe sans que rien ne l'y oblige ; HSRP portait `multicastMacFor`, une SECONDE implantation de la derivation que `ipv4MulticastToMac` fait deja. `linkDestinationFor` la derive desormais du groupe : les deux faits n'en font plus qu'un. `FhrpAgentBase.sendGuarded` — le point d'emission unique de la famille, avec sa garde de re-entrance — prend une requete au lieu d'une trame, si bien que les trois FHRP descendent par UNE modification ; le commutateur les hebergeant aussi, `makeSwitchVrrpHost` realise l'offre en lisant le MEME corps partage (`sendOnNamedInterface`) que `Router` et `EndHost` plutot qu'une troisieme copie, et le port synthetique `Vlanif` gagne l'`isOperationallyUp` qui lui manquait (c'etait un `Port` par `cast` dont l'appel aurait leve). **L'autorite n'est pas la meme pour les quatre, et c'est le point a ne pas rater** : VRRP est une norme ouverte (RFC 5798, Standards Track) avec 224.0.0.18 affecte par l'IANA, PIM-SM de meme (RFC 7761, 224.0.0.13) ; **HSRP est PROPRIETAIRE Cisco** — la RFC 2281 existe mais elle est INFORMATIVE, pas Standards Track, et ne decrit que la version 1, la version 2 (224.0.0.102, UDP 1985) n'ayant aucune RFC — et **GLBP est proprietaire Cisco sans aucune RFC**. Pour ces deux-la l'autorite est la documentation de Cisco, et citer une RFC serait invoquer un texte qui ne fait pas foi. Ferme dans le meme lot, un piege que la phase 7 avait laisse dans son PROPRE helper : `linkDestinationFor` rendait la DIFFUSION pour une destination unicast, exactement le defaut qu'elle venait de fermer sur les tunnels ; elle rend `null` et le regime « interface nommee » refuse. Reste dehors : IGMP, dont l'en-tete porte l'option Router Alert (`ihl: 6`) que ni `createIPv4Packet` ni l'offre ne savent poser. `probe-fhrp-pim-descendent.test.ts` (7 cas) est discrimine par `git stash` : 2 tombent — le cas de STRUCTURE et le refus de l'unicast — les 5 autres observant SUR LE FIL que rien n'a change, ce qui est leur role.
+  - **Le paquet EXTERIEUR d'un tunnel est un unicast route, pas une diffusion** (`layers/internet/Ipv4Egress.ts`, BRD phase 7). `GreAgent` et `VxlanAgent` emettaient leur paquet exterieur avec `destinationMac: MACAddress.broadcast()` alors que c'est un unicast IPv4 ordinaire, qu'une vraie machine route et resout par ARP vers UNE adresse : diffuser signifie que TOUTES les stations du segment recoivent la charge encapsulee — un tunnel qui fuit son contenu a tout le LAN, l'inverse de ce qu'un tunnel existe pour faire. Chacun portait de surcroit sa PROPRE copie de `resolveEgress`, la cinquieme et la sixieme du depot, repli compris (« le premier port adresse et up », quelle que soit la direction de la cible). `Ipv4EgressHost.sendIpv4Packet({ dst, protocol, payload, ... })` est l'offre que le BRD §3.3 decrivait, pendant exact de `sendUdpDatagram` un etage plus bas, et **elle tranche entre DEUX regimes** : un multicast LIEN-LOCAL (224.0.0.0/24) ou une diffusion limitee ne se ROUTE pas — il s'emet sur une interface que l'appelant NOMME — tandis que tout le reste passe par la table et le chemin ARP ; le verdict vient de `classifyIpv4Destination`, donc la regle n'est ecrite qu'une fois. `Router` et `EndHost` la realisent, `Router.sendUdpDatagram` est desormais ecrit PAR-DESSUS elle, et le client DHCP du routeur — qui ecrivait sa trame de diffusion a la main — emprunte le regime « interface nommee ». **Deliberement pas encore descendus** : PIM, VRRP, HSRP et GLBP, qui emettent correctement mais batissent leur trame eux-memes ; et IGMP, qui ne PEUT pas y passer en l'etat, son en-tete portant l'option Router Alert (`ihl: 6`) que ni `createIPv4Packet` ni l'offre ne savent poser. `probe-tunnel-ne-diffuse-pas.test.ts` (6 cas) est discrimine par `git stash` : 4 tombent, et il observe la fuite la ou elle se voit — sur une machine TIERCE du meme segment, qui n'a rien a voir avec le tunnel.
+  - **Une adresse posee sur un port pose sa route connectee, et une seule methode l'ecrit** (`hardware/Port.ts`, `devices/Router.ts`, BRD phase 5 lot 8). `port.configureIP()` posait l'adresse SANS poser la route : seul `Router.configureInterface()` le faisait, si bien qu'une machine pouvait porter une adresse et n'avoir aucune route vers son propre sous-reseau — ce qu'aucun vrai routeur ne fait, configurer une adresse ETANT ce qui cree la route connectee. Le piege etait ouvert a tout appelant : vingt-quatre cas de quatre fichiers etaient tombes dedans, et le client DHCP du routeur n'y echappait qu'en appelant les DEUX methodes l'une apres l'autre. Il est reste invisible tant qu'aucun plan de donnees ne consultait la table pour du trafic ORIGINE par la machine ; la conversion de syslog, NetFlow et SNMP vers la table de routage l'a revele d'un coup. `Port.setAddressListener` previent le proprietaire a chaque changement — primaire, secondaire, effacement — et `Router.reconcileConnectedRoutes` est le SEUL ecrivain des routes connectees, `configureInterface` et `unconfigureInterface` le lisant au lieu de porter chacun sa moitie de la regle (l'un oubliait les sous-reseaux secondaires, l'autre les effacait tous). Le crochet est pose **depuis l'interieur et non par un abonnement au bus**, pour la raison qu'`attachSocketSink` inscrit deja dans `TcpStack` : le bus est remis a zero avant chaque test, et un abonne mort ne se voit pas. Consequence du meme lot : syslog, NetFlow et SNMP portaient chacun une copie mot pour mot de `resolveEgress` — « quel port est sur le meme sous-reseau que la cible ? », ecrite a la main en `split('.').map(Number)` — qui ne repond pas a la question d'un routeur et dont le REPLI prend LE PREMIER PORT adresse et up, quelle que soit la direction de la cible ; les trois copies sont supprimees au profit de `Router.sendUdpDatagram`. **La reponse SNMP (`get-response`) n'est deliberement PAS routee** : elle repart par l'interface d'ARRIVEE, son adresse source devant etre celle que le gestionnaire a composee, sans quoi il rejette la reponse — ce n'est pas une decision de routage. `probe-egress-par-la-table-de-routage.test.ts` (7 cas) est discrimine par `git stash` : 4 tombent, et son laboratoire donne DEUX liaisons montantes a l'exportateur parce qu'avec une seule le repli donnait la bonne reponse par accident — la premiere version de la sonde ne discriminait rien, et c'est la mesure qui l'a dit.
   - `Router.ts`'s RIB (`private routingTable: RouteEntry[]`) has no separate FIB and no next-hop recursion: `lookupRoute()` (the data-plane forwarding seam) reads the very same live array every protocol integration mutates directly, and it's called on *every* forwarding decision, which in turn calls `dynamicRouting.refresh()` — control-plane recomputation triggered by data-plane packet processing, backwards from a real router's independent timer-driven control plane. There's also no recursive next-hop resolution: every route's next-hop must be on a directly-connected subnet, so a classic recursive static route (`ip route <net> <mask> <off-link-ip>`) or loopback-to-loopback iBGP is accepted by the CLI but never actually resolves/forwards. Real ECMP (ties on prefix/AD/metric round-robin across all tied RIB entries — see `lookupRoute`'s `candidates` array and `RouterOSPFIntegration.installRoutes`'s per-nextHop loop over `OSPFRouteEntry.nextHops[]`) was fixed; full RIB/FIB separation and route recursion were not — both are genuine architectural gaps (rapport 02 audit item #40), not bounded fixes.
+  - **`no ip unreachables` coupe le type 3, et RIEN d'autre.** La commande
+    existait, etait stockee (`CiscoSecurityConfig.ifaceFlags(i).noUnreachables`),
+    rendue dans la configuration et lue par `Router.isIcmpUnreachablesEnabled` —
+    mais le predicat etait consulte AU SITE D'APPEL, deux fois, et non dans
+    `sendICMPError`. Mesure : `Router.ts` porte 10 appels a `sendICMPError`,
+    dont 8 de type `destination-unreachable` (codes 13, 3, 0, 4, 13, 4, 4, 1),
+    et **seuls les DEUX refus par liste de controle etaient gardes** ; les six
+    autres ignoraient la commande. La consequence n'est pas cosmetique : les
+    trois `code 4` sont les `Fragmentation Needed`, et la documentation Cisco
+    comme les analyses d'exploitation concordent — `no ip unreachables` supprime
+    TOUT le type 3, code 4 compris, et **c'est exactement pourquoi cette
+    commande casse la decouverte de MTU de chemin**, defaut operationnel
+    classique que le simulateur ne pouvait donc pas enseigner. Le predicat vit
+    desormais dans `sendICMPError`, une seule ecriture, et les deux gardes de
+    site sont retirees. **La portee est verifiee et non supposee** : la commande
+    ne touche PAS le type 11, donc `Time Exceeded` continue de partir et
+    traceroute fonctionne — un cas l'epingle, sans quoi un correctif trop large
+    aurait casse traceroute en silence. Le pendant VRP (`icmp ttl-exceeded send`,
+    `icmp host-unreachable send`) est accepte, range dans un sac que rien ne
+    relit, et sa forme `undo` n'existe pas : inscrit au `TODO.md` plutot que
+    recopie, le modele de VRP etant global et decoupe par message la ou IOS
+    coupe tout le type 3 d'un coup. `icmp-no-ip-unreachables.test.ts` (7 cas)
+    est discrimine : 3 tombent avant correctif, et les 4 autres sont nommes —
+    le TEMOIN, le cas `Time Exceeded` (dont c'est l'objet de passer des deux
+    cotes), la granularite par interface et le retour par `ip unreachables`,
+    qui passaient parce que le message partait de toute facon.
   - **`archive` writes a real file, and `rate-limit` really polices** (audit 13). `ArchiveService.capture()` was written and called from nowhere, so no revision could exist: `show archive` said "No archives configured" while the same machine's running-config listed the `archive` block with its path, `archive config` did not exist, and `write-memory` — whose meaning IS "archive on every save" — was stored and read by nobody. It also pushed "No backups exist on archive path" unconditionally, including right before enumerating the backups. Fixed by giving the service the device's own `flash:` (`CiscoShellBase.archiveService()` attaches `this.fs()` — the same object `dir` and `more` read, not a copy) and having `capture()` WRITE the configuration there: `dir flash:` shows the file with its size, `more flash:cfg-1` reads the archived config back, free space is accounted, a full flash fails the archive, and `maximum` DELETES the oldest file rather than forgetting its record — without the delete, rotation would be a leak. The whole family was refused on the Cisco switch although a Catalyst knows it; it is built by the same module as the router's (`shells/cisco/CiscoArchiveCommands.ts`) rather than copied, and a test pins that both platforms render the same output for the same configuration. **`rate-limit` (legacy CAR)** was accepted, absent from the running-config, viewless, and had no effect on any packet; a first fix that only stored and displayed it with zero counters was decoration and was replaced. `router/qos/CarPolicer.ts` is a real token bucket on the data path — input before the routing decision (CAR applies at interface ingress on real IOS), output before the ACL, on the routing-chosen interface, metered on `totalLength`. A ping crossing a router whose burst is smaller than one packet is genuinely dropped (100% packet loss) and the view reports `exceeded 3 packets, 252 bytes` — a measurement. A malformed rule is refused rather than stored inert. Two deliberate limits, written into the file: Cisco's MAXIMUM burst (the probabilistic behaviour between the two thresholds) is stored and rendered but the random draw is not performed — a teaching simulator whose same traffic gives a different result each run would be uninterpretable and untestable; `continue` and the `set-*-transmit` actions are treated as a pass, for want of a priority field carried end to end. Found in passing and fixed: `_getRunningConfigText` is defined on NO device — it was only ever read, so `show running-config all` returned nothing but its banner while `show running-config` rendered its lines on the same machine; the method both `Router` and `Switch` actually carry is `getRunningConfig()`. `probe-archive-et-rate-limit.test.ts` (34 cases) is git-stash discriminated: 27 fail authentically pre-fix.
   - **`service timestamps` chooses a format, and the format is real.** The measurement started from a regression — the bare `service timestamps` form was refused although IOS accepts it (it means `service timestamps debug uptime`) — and found the command far hollower than that one refusal. **`uptime` was accepted and did nothing**: `service timestamps log uptime` wrote `*Aug  4 13:45:46:`, which is the *other* format; the keyword that selects the form was read and thrown away. **The running-config did not reproduce what was typed**: every accepted form came back as `service timestamps log datetime msec` — `log uptime` became a date, `log datetime` gained milliseconds, and the whole `debug` channel was rendered nowhere — which matters beyond display, since the running-config is replayed on topology import. **`localtime`/`show-timezone` were accepted and ignored** although `clock timezone` already carried the data they need. And **the `*` marker was unconditional**: on a router it means "time is not authoritative", but the flag governing it (`horlogeSynchronisee`) was set by nobody, so a router synchronised by NTP still stamped it. Fixed as one feature: `LoggingConfig` now holds a per-channel `TimestampSpec` (`enabled`/`format`/`msec`/`localtime`/`showTimezone`/`year`) instead of three booleans, `timestampConfigLine()` renders each channel as the operator would have had to type it, `formatUptimeStamp` implements IOS's own abbreviation (`HH:MM:SS`, then `1d02h`, then `1w2d` — the short forms carry no milliseconds because there is nowhere to put them), and a narrow `LoggingClockSource` port (attached in `CiscoShellBase.attachLoggingToDevice`) reads the device's own boot counter, `clock set` clock, `clock timezone` and NTP sync state, so a switch — which has none of the last three — takes the defaults rather than silently changing platform. Unknown keywords are refused rather than stored, and the date options are refused behind `uptime` since a counter since boot has no timezone. One consequence deliberately changed at the same time: **the buffer now stores the line as it was written**, stamp included, rather than re-formatting at render time — otherwise changing `service timestamps` re-dated every message already logged, rewriting history. Found and removed in passing: a SECOND `service timestamps` parser inside the generic `service` handler, dead because the trie routes to the more specific registration, which could only ever contradict the first. `probe-service-timestamps.test.ts` (20 cases) is git-stash discriminated: 16 fail authentically pre-fix.
   - **`terminal monitor` is a property of the session, not of the device.** `LoggingConfig` carried a single device-wide `terminalMonitor` boolean gating the monitor fan-out, and only Cisco's shell ever set it — so a Huawei vty that had typed `terminal monitor` received nothing at all, VRP having its own per-session flag. The boolean was wrong by construction anyway: one device serves several sessions, and `terminal no monitor` on one would have silenced the others. It is removed. The gate is the subscription itself — a session subscribes because its own vty asked — which is what `Router`'s vty plumbing already documented ("what is per-session is who agreed to receive them, and that answer is read at delivery time"); what stays on `LoggingConfig` is `logging monitor` and its severity, which genuinely are device-wide because they are configured rather than typed on a line. Three cases in `exigences-ios-debug-icmp-ospf.test.ts` had encoded the device-wide premise by subscribing to `LoggingConfig` directly; they now test what that object decides alone (`no logging monitor`, monitor severity) and the per-session contract is left to the two suites that drive real sessions. **Still open, measured and deliberately not touched here** because it is a different subject and pre-existing: `%OSPF-5-ADJCHG` is produced by TWO engines from one bus event — `LoggingConfig` as a severity-5 syslog notification (which a console session receives without asking, correct on IOS) and `RouterDebugService` as a `debug ip ospf adj` line — and a terminal with that debug flag on was measured receiving both, `%OSPF-5-ADJCHG: …` and `OSPF-5-ADJCHG: …`, for a single adjacency change. Closing it means `debug ip ospf adj` emitting its own protocol lines instead of repeating syslog's message, which is a change to what that command prints rather than to how it is delivered.
@@ -377,6 +424,251 @@ seule et **ne change aucune sémantique protocolaire** : un moteur qui
     GRE, qui précèdent encore la même décision mais dont le déplacement
     n'est pas mécanique (un rapport IGMP est adressé au GROUPE).
 
+- **La sortie TCP suit la table, refuse le non-unicast, et sait dire
+  qu'il n'y a pas de route** (phase 8, lots 3 et 5). `Router` construisait
+  son `tcpHost` SANS `resolveRoute` : la pile sautait donc la RIB et
+  tombait sur son balayage par sous-réseau, dont le `nextHopIp: targetIp`
+  traite toute destination comme si elle était sur le lien — mesuré sur
+  une machine à deux liaisons montantes, la connexion partait par le
+  MAUVAIS port en ARPant la destination au lieu du saut suivant. Le repli
+  final (« le premier port adressé, up et câblé ») est retiré avec : c'est
+  la forme que la phase 5 avait déjà retirée de syslog, NetFlow et SNMP,
+  et elle répond par l'ordre des ports à une question de direction. Une
+  sortie indécidable ÉCHOUE désormais, **et tout de suite** — `connect()`
+  rend `null` sans qu'aucune trame n'existe, comme `tcp_v4_connect()`
+  (net/ipv4/tcp_ipv4.c), qui rend l'erreur de route telle quelle et
+  compte `IPSTATS_MIB_OUTNOROUTES` sur `-ENETUNREACH`. **TCP refuse aussi
+  le non-unicast** : mesuré sur un routeur portant une route par défaut —
+  qui correspond à tout, groupes compris — `connect()` vers `224.0.0.1`,
+  `255.255.255.255` et la diffusion DIRIGÉE `10.0.0.255` rendait un socket
+  en `syn-sent`, donc un SYN réellement émis vers plusieurs machines à la
+  fois. Le noyau refuse les trois (`rt->rt_flags & (RTCF_MULTICAST |
+  RTCF_BROADCAST)` → `-ENETUNREACH` ; côté v6 le refus est la PREMIÈRE
+  chose faite, avant toute recherche de route). Aucun quatrième prédicat
+  n'a été écrit : `isUnicastDestination` COMPOSE `classifyIpv4Destination`
+  et `isDirectedBroadcast`, et `connectedPrefixesOfPort` ferme la recopie
+  que `Router` portait à la main. Enfin, **« pas de route » n'est plus
+  rendu comme un délai** : `connectOutcome` rendait `'timeout'` pour une
+  destination qu'aucune route ne dessert — son propre commentaire assumait
+  la confusion — alors que c'est la distinction la plus coûteuse à rendre
+  à l'envers, « délai dépassé » envoyant chercher un pare-feu qui jette en
+  silence quand la machine n'a rien émis du tout ; `TcpWireOutcome` gagne
+  `unreachable`, et le verdict, qui était écrit SEPT fois, n'a plus qu'une
+  déclaration. Le chemin scripté d'IOS, qui cherchait la machine dans la
+  TOPOLOGIE et répondait « délai dépassé », demande maintenant la sortie à
+  la vraie pile et rend `% Destination unreachable; gateway or host down`,
+  le message d'IOS, au lieu de `gateway or route not found`, qui n'est
+  d'aucune machine réelle.
+
+- **Un port qu'aucun paquet ne peut porter ne se lie pas** (audit,
+  lot 14). `udpBind` et `TcpStack.listen` acceptaient TOUT — 99999, -1,
+  65536, 1.5, et même `NaN`, qui se liait proprement puisque `Map`
+  l'accepte comme clé. Le champ de port fait SEIZE BITS sur le fil : ce
+  qu'on obtenait était un écouteur MUET, lié et visible dans la table mais
+  hors d'atteinte de toute trame, si bien qu'une faute de frappe donnait
+  un serveur qui ne répond jamais sans un mot pour le dire. Le correctif
+  LIT `PortNumber.isValid` — la règle RFC 6335 que `core/ports/` portait
+  déjà, dont l'en-tête promettait justement qu'« an invalid port can never
+  propagate » — au lieu d'écrire une seconde vérification ; chaque
+  plateforme refuse dans ses mots (`udpBind` rend `false` comme pour un
+  port pris, `listen` LÈVE comme pour EADDRINUSE). **Le port 0 reste
+  accepté délibérément** : la RFC le compte dans la plage, et son sens
+  réel — « attribue-m'en un éphémère » — est une autre fonction, inscrite
+  au `TODO.md` plutôt que tranchée en passant.
+
+- **Un RST n'est cru que là où il n'a pas pu être deviné** (audit, lot 12).
+  `_processSegment` acceptait le drapeau RST INCONDITIONNELLEMENT, sans
+  regarder le numéro de séquence : mesuré, un RST porté à
+  `recvNext + 99999` fermait une connexion ÉTABLIE — l'injection de RST en
+  aveugle, où qui connaît les deux adresses et les deux ports coupe la
+  connexion sans avoir vu un octet du flux. `tcp_validate_incoming`
+  (net/ipv4/tcp_input.c) applique la RFC 5961 §3.2 en trois issues :
+  séquence exactement `RCV.NXT` → la connexion tombe ; dans la fenêtre
+  mais décalée → *challenge ACK*, connexion intacte ; hors fenêtre →
+  jetée sans un mot. **SYN-SENT est un cas à part** (RFC 9293 §3.10.7.3),
+  le RST y étant jugé sur le champ ACK — l'oublier casse le refus sur port
+  fermé. Non faits, et c'est le côté sûr : la limitation de débit des
+  *challenge ACK* (rien ici ne mesure un débit) et les deux tolérances de
+  `tcp_reset_check`, qui ÉLARGISSENT l'acceptation.
+
+- **Une erreur ICMPv6 ne répond pas à tout** (audit, lot 13).
+  `mayGenerateICMPError` porte les règles de la RFC 1122 §3.2.2 pour IPv4
+  et ses trois appelants la lisent ; `sendICMPv6Error` n'avait AUCUN
+  équivalent — même asymétrie v4/v6 que le reste de cet audit, et le lot 9
+  venait de la rendre plus atteignable : un datagramme adressé à un GROUPE
+  sur un port fermé faisait répondre le routeur à la source, à la fois
+  interdit et amplificateur. `mayGenerateICMPv6Error` applique la
+  RFC 4443 §2.4 (e) telle que `icmp6_send` la code, **exception
+  `packet-too-big` comprise** — seul message d'erreur qu'un groupe peut
+  déclencher, et le rater casserait la découverte de MTU sur un trajet
+  multicast. La discrimination a corrigé mon annonce : j'attendais trois
+  cas, il en tombe UN ; les deux cas de source passaient déjà mais **par
+  accident** — on ne route rien vers `::` ni vers un voisin multicast
+  absent du cache —, donc la règle rend ce silence intentionnel plutôt
+  qu'elle ne le crée.
+
+- **`ipv6 route <préfixe> <interface>` installe enfin une route, et le
+  saut suivant absent est une ABSENCE** (phase 8, lots 10-11). Deux
+  défauts jumeaux. Côté v4, `route.nextHop || destination` est FAUX pour
+  `0.0.0.0`, qui est un OBJET `IPAddress` donc vrai : une autre session a
+  corrigé quatre sites, et un CINQUIÈME survivait sur le chemin ouvert par
+  le lot 3 — `resolveRouteForHost` écrit `route.nextHop ?? dest`, et le
+  `??` échappe à une recherche du `||`. Mesuré : une connexion TCP sur une
+  route par interface émettait `arpTarget=0.0.0.0`, à quoi personne ne
+  peut répondre (RFC 1122 §3.2.1.3). Corrigé en LISANT `nextHopTarget`, la
+  règle posée par l'autre session, plutôt qu'en écrivant un sixième
+  idiome. Côté v6, le même idiome existait en quatre endroits mais était
+  INATTEIGNABLE : `ipv6 route 2001:DB8:5::/64 GigabitEthernet0/1` —
+  syntaxe réelle d'IOS — était acceptée sans message et n'installait
+  RIEN, un `catch` avalant l'exception et rangeant la ligne dans un sac
+  que rien ne lit (le même `catch` avalait aussi un préfixe ou un saut
+  suivant malformés, contre la règle « on ne range pas un critère qu'on
+  n'évalue pas »). La commande vivante, la route porte `nextHop: null` —
+  ce que `IPv6RouteEntry` admettait déjà — donc l'idiome rend la
+  destination sans qu'on le touche : l'absence est représentée par une
+  absence, et le défaut ne peut pas naître de ce côté.
+
+- **Un routeur émet ET reçoit de l'UDP en IPv6** (phase 8, lot 9), jumeau
+  UDP du lot 4 sur le même objet, et les DEUX moitiés manquaient : à
+  l'émission `Router.sendUdpDatagram` n'avait aucun pendant v6, donc un
+  routeur ne pouvait adresser AUCUN datagramme UDP à une destination
+  IPv6 ; à la réception `IPv6DataPlane.handleLocalDelivery` n'aiguillait
+  sous UDP que le port 547, tout le reste étant jeté EN SILENCE, sans même
+  l'erreur que la RFC 4443 demande. Rien de neuf n'est écrit :
+  `resolvePath`, `selectIpv6SourceAddress` et `sendFrameNdpAware`
+  existaient, et le port fermé répond par `sendICMPv6Error`, l'émetteur du
+  plan d'acheminement. **La somme de contrôle est posée ET vérifiée**,
+  parce qu'en IPv6 elle est OBLIGATOIRE (RFC 8200 §8.1) là où la RFC 768
+  laisse le choix en IPv4. Fermé en chemin : une QUATRIÈME copie de la
+  règle de sélection d'adresse source vivait dans
+  `EndHost.sendUdpDatagram6` — le lot 4 en avait fermé trois et manqué
+  celle-là. **Reste v4 seulement, mesuré et écrit** : les agents de
+  `receiveControlPlaneUdp` (HSRP, NTP, GLBP, BFD, les cinq RADIUS, SNMP,
+  VXLAN) prennent tous un `IPAddress` ; les élargir est une campagne par
+  agent et non la suite mécanique du socle, lequel a un appelant réel — la
+  table de ports où TFTP et le client DNS se lient.
+
+- **Une adresse littérale n'est pas une panne de DNS** (phase 8, lot 8).
+  `nmap -p 22 10.0.0.55` rendait `Failed to resolve "10.0.0.55".` et
+  `0 IP addresses`, et `telnet 203.0.113.9` rendait `could not resolve
+  203.0.113.9/23: Name or service not known` — pour des quadruplets
+  pointés, où il n'y a RIEN à résoudre : le diagnostic envoie vérifier le
+  DNS quand le problème est le routage. Les deux commandes cherchent la
+  cible dans la TOPOLOGIE et traduisent « pas trouvée » par « pas
+  résolue ». Le vrai nmap SCANNE une adresse littérale et la rapporte en
+  panne (`output.cc:2500` porte la condition et le texte, et l'hôte est
+  COMPTÉ comme scanné) ; le rendu d'un hôte en panne existait déjà dans le
+  formateur, donc le correctif tient dans le moteur. Côté telnet le texte
+  est celui de l'errno, `sshUnreachableReason` du lot 6 étant LUE et non
+  recopiée. Limite écrite : seule la cible SIMPLE est traitée, une plage
+  continuant de ne compter que les hôtes trouvés.
+
+- **`ssh` parle la langue de sa plateforme** (phase 8, lot 7). Un routeur
+  Cisco et un routeur Huawei rendaient la phrase du client d'OpenSSH sur
+  leur propre invite — le défaut que `telnetDialect.ts` avait fermé pour
+  telnet, la moitié SSH n'ayant jamais été faite. **Où il était,
+  précisément** : leur client SSH sortant DÉLÈGUE au client Linux
+  (`runSshClient`) et rend sa sortie TELLE QUELLE, donc ils ne recopiaient
+  pas une phrase d'OpenSSH, ils EXÉCUTAIENT OpenSSH ; le correctif ne
+  réécrit pas cette délégation, il fait trancher la JOIGNABILITÉ par le
+  routeur lui-même sur sa propre table (`hasEgressTo`) avant de déléguer
+  la session — même forme que le correctif telnet. `sshDialect.ts` porte
+  les trois tables et `CLITerminalSession` gagne le `getSshDialect()` qui
+  manquait à côté du `getTelnetDialect()` déjà là. **Ce lot avait d'abord
+  été INSCRIT au `TODO.md` plutôt qu'écrit, faute de matière** : rien
+  n'attestait ce qu'un client SSH d'IOS écrit, et la recherche a fourni
+  les trois issues d'échec sur transcription réelle — `% Destination
+  unreachable; gateway or host down`, `% Connection refused by remote
+  host`, `% Connection timed out; remote host not responding` —, les deux
+  premières étant MOT POUR MOT celles du client telnet d'IOS, ce qui se
+  comprend, les deux clients partageant le chemin de connexion TCP de la
+  plateforme. Côté VRP la documentation Huawei donne une seule formule
+  pour toutes les causes, celle que `VRP_TELNET` portait déjà. Linux et
+  Windows ne sont **pas** touchés et c'est délibéré : les phrases
+  d'OpenSSH y sont justes. Reste non attesté et écrit comme tel : le nom
+  non résolu côté SSH d'IOS.
+
+- **`ssh` rend l'errno de la vraie machine, et un laboratoire injoignable
+  a été corrigé avec** (phase 8, lot 6). `ssh admin@203.0.113.9` depuis un
+  hôte Linux — adresse qu'aucune route ne dessert — rendait `No route to
+  host`, qui est le texte d'EHOSTUNREACH (113) ; l'absence de route est
+  ENETUNREACH (101), `Network is unreachable` (nombres lus dans
+  `include/uapi/asm-generic/errno.h`, et `sshconnect.c:554`
+  d'openssh-portable rend `strerror(errno)` tel quel). Les deux ne se
+  diagnostiquent pas pareil : le premier dit que la machine n'a AUCUN
+  chemin — on regarde sa table de routage —, le second qu'un chemin existe
+  et que personne ne répond au bout. `sshUnreachableReason` porte la règle
+  une fois, lue par le chemin interactif et par le chemin scripté, et le
+  fait est lu sur la PILE (`hasEgressTo`), donc sur la vraie table de
+  routage et non sur la topologie. **Vérifié plutôt que supposé** : ces
+  phrases sont celles d'OpenSSH et elles sont JUSTES sous Windows aussi,
+  dont le `ssh.exe` EST le portage d'OpenSSH — « corriger » Windows aurait
+  cassé ce qui est juste ; ce qui reste faux est qu'une session CLI Cisco
+  ou Huawei les rende, autre défaut inscrit au `TODO.md` faute d'une
+  capture attestant ce qu'un client SSH d'IOS écrit là. **Trouvé par la
+  non-régression complète et raconté plutôt que tu** : le lot 3 avait posé
+  une régression dans `ad-sites.test.ts`, dont la maquette place deux
+  contrôleurs de domaine dans deux /24 DISTINCTS sur un même segment
+  commuté SANS routeur — la promotion ne fonctionnait que par le repli que
+  le lot 3 a retiré, et sur une vraie machine ce laboratoire rend
+  ENETUNREACH. Le masque passe à /16, les sous-réseaux AD restent en /24
+  et continuent de placer chaque DC dans un site distinct : c'est le test
+  qui encodait l'inaccessible comme praticable.
+
+- **Un routeur ouvre ET accepte du TCP en IPv6** (phase 8, lot 4), et il
+  y avait TROIS défauts empilés. (1) Le `tcpHost` de `Router` ne déclarait
+  ni `resolveRoute6` ni `localAddress6`, si bien que `resolveEgress6`
+  sortait par son garde avant même de regarder l'adresse : **aucune**
+  connexion TCP IPv6 n'était possible — ni session BGP IPv6, ni SSH
+  sortant vers une adresse v6 — et le refus était muet. (2) Corriger le
+  seul (1) ne suffisait pas : `IPv6DataPlane.handleLocalDelivery` aiguille
+  OSPFv3, ICMPv6 et le DHCPv6 porté par UDP et **rien** pour TCP, donc un
+  segment adressé au routeur était jeté en silence — la mesure montrait le
+  pair ACCEPTER pendant que le routeur restait en `syn-sent`.
+  `TcpStack.handleIp6` existait déjà, sans appelant côté routeur. (3) **Le
+  démultiplexage TCP était sensible à l'ORTHOGRAPHE** : `connect()`
+  rangeait l'adresse distante telle que l'appelant l'avait écrite tandis
+  que `handleSegment` reçoit celle du paquet, normalisée — les sockets
+  étant indexés par une chaîne, `connect('2001:DB8::2', …)` ne retrouvait
+  jamais la réponse venue de `2001:db8::2`, et une majuscule suffisait à
+  laisser la connexion en `syn-sent`, **entre deux hôtes Linux comme
+  ailleurs** ; IPv4 n'y était pas exposée, sa notation pointée étant déjà
+  canonique. On analyse À LA FRONTIÈRE, donc `connect()` canonicalise une
+  fois pour toutes. Réutilisation plutôt qu'une seconde pile :
+  `resolvePath` est EXTRAIT de `resolveEgress` (la route d'une connexion
+  est celle d'un paquet de transit) et l'envoi employé est
+  `queueAndResolve`, qui MET EN FILE sur cache froid au lieu de lire le
+  cache et d'espérer — ce qui compte, le premier paquet d'une connexion
+  arrivant justement sur un cache froid. La sélection d'adresse source
+  était écrite DEUX fois ; elle descend dans
+  `layers/internet/Ipv6Egress.ts` et les trois appelants la lisent. Son
+  autorité est la **RFC 6724** (Standards Track, remplace la RFC 3484),
+  règle 2 « Prefer appropriate scope » ; ce qui est appliqué ici en est un
+  sous-ensemble assumé — deux portées — et non les huit règles.
+
+- **Un bus est PAR MACHINE, et une sonde qui l'oublie ne mesure rien.**
+  `Equipment.getBus()` rend un `EventBus` propre a l'equipement (sauf
+  `setEventBus`), ce qui est voulu : un evenement de A ne doit jamais
+  etre livre sur le bus de B. Trois fichiers de test s'abonnaient au bus
+  DEFAUT global et n'observaient donc rien —
+  `ospfv3-real-packets` (10 cas : « expected 0 to be greater than 0 »,
+  aucun paquet vu alors que l'adjacence se formait), `new-roles-observability`
+  (5 cas) — pendant que la convention deja etablie par
+  `kerberos-replication-observability` s'abonne, elle, par
+  `publisher.getBus()`. Les trois lisent desormais le bus de l'equipement
+  qui PUBLIE, et pour DFSR c'est le serveur qui SYNCHRONISE, pas sa cible.
+  **La lecon vaut au-dela de ces fichiers** : un `expect(x).toEqual([])`
+  sur un bus non branche passe a vide, donc un test d'ISOLATION doit
+  toujours porter un temoin qui prouve que quelque chose a bien ete emis.
+  `nat-engine-own-bus` en etait l'exemple : son cas vert n'emettait rien
+  du tout (il appelait un `emitSignalRefresh?.()` qui n'existe pas) et son
+  cas rouge lisait un champ `busOverride` que `NATEngine` n'a jamais porte
+  — le moteur range son bus dans un `BusHolder`, et `Router.ts` le lui
+  passe correctement. Les deux cas sont refaits sur du TRAFIC REEL : un
+  ping traverse le NAT (`0% packet loss` comme temoin), l'evenement parait
+  sur le routeur qui traduit, et `show ip nat translations` ne le montre
+  que la.
+
 ### Event/timing infra (`src/events/`)
 
 `EventBus`, `Scheduler`, `Signal`, `TimerSet`, `waitForEvent` — shared reactive primitives used by protocol actors (OSPF, IPSec, DHCP, BGP, etc.) that model asynchronous, timer-driven behavior.
@@ -518,6 +810,20 @@ raconter le correctif dans son message de commit.
   vars. Treat its warnings as real: in a security engine, a declared-and-never-read field
   is the exact signature of a criterion that is parsed, displayed, and never enforced —
   which is how seven ACL findings were introduced (see `AUDIT-ACL-CISCO.md`).
+- **Choisir la source d'autorite AVANT de citer.** Une RFC n'est pas
+  automatiquement la reference. Ce qui fait foi est le **standard
+  officiellement retenu** et, a defaut, **la documentation du
+  constructeur** ; une transcription capturee l'emporte sur les deux
+  quand elles divergent, parce que c'est elle que l'apprenant compare a
+  sa propre sortie. Trois cas se distinguent et les confondre fait
+  invoquer un texte qui ne s'applique pas : une norme ouverte adoptee
+  (VRRP RFC 5798, PIM-SM RFC 7761, les affectations IANA) se cite ; un
+  protocole PROPRIETAIRE ne se cite pas par RFC — HSRP est de Cisco et sa
+  RFC 2281 est INFORMATIVE, pas Standards Track, et ne couvre que la
+  version 1, tandis que GLBP n'a aucune RFC, donc l'autorite est la
+  documentation de Cisco ; et quand la source ne peut pas etre atteinte,
+  on l'ecrit et on n'implemente pas plutot que de deviner.
+
 - **Failure posture — security criteria fail CLOSED.** In any matching engine (ACL, VACL,
   route policy, firewall rule), *a criterion the engine cannot decide must fail the match*.
   Never succeed, never "skip the criterion". An unknown keyword, a missing L4 payload, an

@@ -23,6 +23,7 @@
  */
 
 import { EndHost, type PingResult, type ARPEntry, type HostRouteEntry, type HostPolicyRule, getNUDState } from './EndHost';
+import type { TcpWireOutcome } from '../tcp/types';
 import type { UserAccountHost, ShellIdentityHost, FileEditorHost } from '../equipment/HostCapabilities';
 import type { PathActor } from './linux/VfsPath';
 import { findHostByAddress } from './linux/network/HostLookup';
@@ -372,6 +373,7 @@ export abstract class LinuxMachine extends EndHost
       getPort: (n: string) => this.getPort(n),
       getPorts: () => this.getPorts(),
       sendFrame: (p: string, f: EthernetFrame) => { this.sendFrame(p, f); },
+      sendIpv4Packet: (request) => this.sendIpv4Packet(request),
     };
     this.greAgentInstance = new GreAgent(greHost, () => this.getBus());
     this.greAgentInstance.start();
@@ -2634,14 +2636,8 @@ export abstract class LinuxMachine extends EndHost
         ...frame,
         dot1q: { tpid: 0x8100, pcp: 0, dei: 0, vid: vlanSub.vid },
       };
-      // Real transmission already happened above; this is a second,
-      // capture-only signal so `tcpdump -i eth0.100` sees the untagged
-      // frame (the subinterface has no `Cable` of its own to publish it).
       const sent = super.sendFrame(vlanSub.parent, tagged);
-      this.getBus().publish({
-        topic: 'port.frame.tx-requested',
-        payload: { deviceId: this.id, portName, frame },
-      });
+      this.getPort(portName)?.recordOutboundFrame(frame);
       return sent;
     }
     return super.sendFrame(portName, frame);
@@ -3496,7 +3492,7 @@ export abstract class LinuxMachine extends EndHost
         if (target.includes(':')) return this.tcpProbeSyncIPv6(target, port);
         return this.tcpProbeSync(new IPAddress(target), port);
       },
-      tcpConnectOutcome: (target: string, port: number): 'open' | 'refused' | 'timeout' => {
+      tcpConnectOutcome: (target: string, port: number): TcpWireOutcome => {
         if (target.includes(':')) return this.tcpConnectOutcome6(new IPv6Address(target), port);
         return this.tcpConnectOutcome(new IPAddress(target), port);
       },

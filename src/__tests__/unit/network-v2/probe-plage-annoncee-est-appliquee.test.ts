@@ -12,6 +12,13 @@
  * `radius-server acct-port 65536`, `tacacs-server timeout 1001`,
  * `access-list 2700`, `priority-list 17`, `queue-list 17`...).
  *
+ * `router bgp` a depuis change de PLAGE, et le cas a suivi : IOS accepte
+ * les numeros de systeme autonome sur quatre octets (RFC 6793, forme
+ * asplain), l'aide annonce `<1-4294967295>`, donc 65536 est DEDANS et
+ * doit etre accepte. Le cas porte desormais sur la borne reellement
+ * annoncee — 4294967296 et 0 — et verifie l'annonce avant de l'eprouver,
+ * pour que le jour ou la plage rebouge, c'est l'annonce qui le dise.
+ *
  * Les quatre autres sont nommes plutot que laisses a decouvrir. Le
  * TEMOIN et les deux NON-REGRESSION passent des deux cotes, et c'est
  * leur objet. « Un refus de sous-mode n'est plus rattrape par l'arbre
@@ -65,8 +72,10 @@ describe('IOS : une valeur hors de la plage annoncee est refusee', () => {
 
   it('`router bgp` refuse un numero de systeme autonome hors plage', async () => {
     const r = await config();
+    expect(r.cliHelp('router bgp ')).toContain('<1-4294967295>');
 
-    expect(refuse(String(await r.executeCommand('router bgp 65536')))).toBe(true);
+    expect(refuse(String(await r.executeCommand('router bgp 4294967296')))).toBe(true);
+    expect(refuse(String(await r.executeCommand('router bgp 0')))).toBe(true);
   });
 
   it('une plage declaree par une CONTINUATION est appliquee elle aussi', async () => {

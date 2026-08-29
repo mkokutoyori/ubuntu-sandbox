@@ -68,7 +68,7 @@ import { TimerSet } from '@/events/TimerSet';
 import { TcpStack, type TcpSocket } from '../tcp/TcpStack';
 import type { TcpStream, TcpDialFailure } from '../tcp/types';
 import { isDialFailure } from '../tcp/types';
-import { verifyUdpChecksum } from '@/network/layers/transport/UdpChecksum';
+import { verifyUdpChecksum, stampUdpChecksum } from '@/network/layers/transport/UdpChecksum';
 import { dialTcp, parseDialAddress, type DialAddress } from '../tcp/dial';
 import { SystemClock } from '../core/SystemClock';
 import { PortNumber } from '../core/ports/PortNumber';
@@ -106,16 +106,19 @@ import {
   IP_PROTO_EIGRP,
   UDP_PORT_RIP, UDP_PORT_IKE, UDP_PORT_IKE_NAT_T,
   TCPPacket,
-  createIPv4Packet, verifyIPv4Checksum, computeIPv4Checksum,
+  createIPv4Packet,
   DeviceType,
-  IPv6Address, IPv6Packet,
+  IPv6Address, IPv6Packet, createIPv6Packet,
 } from '../core/types';
 import type { ARPEntry } from '../core/types';
 import type { IIPv4Route } from '../core/interfaces';
 import { ipv4MulticastToMac, tryIpToUint32 } from '../core/ip';
 import { Logger } from '../core/Logger';
 import { CarPolicer } from '../qos/CarPolicer';
-import { buildICMPError, mayGenerateICMPError, ICMP_UNREACH_PORT, type ICMPErrorType } from '../core/IcmpErrors';
+import {
+  buildICMPError, mayGenerateICMPError, ICMP_UNREACH_PORT,
+  ICMP_FRAG_REASSEMBLY_TIME_EXCEEDED, type ICMPErrorType,
+} from '../core/IcmpErrors';
 import { IpSlaEngine } from '../ipsla/IpSlaEngine';
 import { TrackService } from '../ipsla/TrackService';
 import type { IpSlaEgress } from '../ipsla/types';
@@ -126,9 +129,14 @@ import { fragmentIPv4, IPv4Reassembler } from '../core/Ipv4Fragmentation';
 import type { FhrpDataPlane } from '../fhrp/types';
 import { DHCPServer, type DhcpUtilizationCrossing } from '../dhcp/DHCPServer';
 import {
-  classifyIpv4Destination, decrementForForwarding, isDirectedBroadcast,
+  classifyIpv4Destination, connectedPrefixesOfPort, decrementForForwarding, isDirectedBroadcast,
   ipv4HeaderProblem,
 } from '../layers/internet/InternetLayer';
+import {
+  DEFAULT_IPV4_TTL, ipv4HeaderOptionsOf, requiresNamedInterface, sendOnNamedInterface,
+  type Ipv4SendRequest,
+} from '../layers/internet/Ipv4Egress';
+import { selectIpv6SourceAddress } from '../layers/internet/Ipv6Egress';
 import {
   DHCP_FREE_ADDRESS_HIGH, DHCP_FREE_ADDRESS_LOW, DHCP_SHARED_NET_ENTRY,
   snmpAdminStringIndex,
@@ -273,6 +281,7 @@ import type { IRouterShell } from './shells/IRouterShell';
 import { iosInterfaceUsable, interfacesBootShutdown, routerPortCountOverride } from './inspection/InterfaceStatusView';
 import { ciscoPasswordMatches } from './shells/cisco/ciscoPasswordVerify';
 import { DHCP_SERVER_PORT, DHCP_CLIENT_PORT } from '../core/WellKnownPorts';
+import { buildUdpDatagram, type UdpSendRequest } from '../layers/transport/UdpEgress';
 
 // ─── Router (Abstract Base) ──────────────────────────────────────────
 
@@ -464,7 +473,12 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
    *  pendingARPs use as a "request-already-sent" check (Phase 5.8). */
   private inFlightFwdARPs: Set<string> = new Set();
   /** Reassembles fragments of datagrams addressed to this router itself (RFC 791 §3.2). */
-  private readonly ipv4Reassembler = new IPv4Reassembler();
+  private readonly ipv4Reassembler = new IPv4Reassembler(
+    (firstFragment, ingressPort) => {
+      if (!firstFragment || !ingressPort) return;
+      this.sendICMPError(ingressPort, firstFragment, 'time-exceeded',
+        ICMP_FRAG_REASSEMBLY_TIME_EXCEEDED);
+    });
 
   // ── Management Plane (vendor CLI shell) ───────────────────────
   private shell: IRouterShell;
@@ -508,6 +522,8 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
       getDhcpv6RelayDestinations: (iface) => this.dhcpv6RelayDestinations.get(iface) ?? [],
       deliverOspfv3: (inPort, srcIP, packet, ipsecProtected) =>
         this.ospfIntegration?.receivePacketV3(inPort, srcIP, packet, ipsecProtected),
+      deliverTcp6: (inPort, ipv6) => { this.tcpv2.handleIp6(inPort, ipv6.sourceIP, ipv6); },
+      deliverUdp6: (_inPort, ipv6, udp) => this.deliverUdp6(ipv6, udp),
       ipv6FilterPermits: (iface, direction, pkt) => this.ipv6FilterPermits(iface, direction, pkt),
       onIcmpv6EchoReply: (p) => this.emitIcmpEchoReply({ ...p, ttl: p.hopLimit, rttMs: 0 }),
       onIcmpv6EchoFailed: (p) => this.emitIcmpEchoFailed({
@@ -602,9 +618,21 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
       getPort: (n: string) => this.getPort(n),
       getPorts: () => this.getPorts(),
       sendFrame: (p: string, f: EthernetFrame) => { this.sendFrame(p, f); },
-      resolveMac: (nextHopIp: string) => this.arpTable.get(nextHopIp)?.mac ?? null,
       sendIpv4FrameArpAware: (p: string, ipPkt: IPv4Packet, nextHopIP: IPAddress) =>
         this.sendIpv4FrameArpAware(p, ipPkt, nextHopIP),
+      resolveRoute: (targetIp: string) => this.resolveRouteForHost(targetIp),
+      resolveRoute6: (targetIp: string) => {
+        const path = this.ipv6Engine.resolvePath(new IPv6Address(targetIp));
+        return path ? { iface: path.iface, nextHopIp: path.nextHopIP.toString() } : null;
+      },
+      localAddress6: (iface: string, remoteIp: string) => {
+        const port = this.getPort(iface);
+        if (!port) return null;
+        const src = selectIpv6SourceAddress(port, new IPv6Address(remoteIp));
+        return src ? src.withScopeId(null).toString() : null;
+      },
+      sendIpv6FrameNdpAware: (iface: string, pkt: IPv6Packet, nextHopIP: IPv6Address) =>
+        this.ipv6Engine.sendFrameNdpAware(iface, pkt, nextHopIP),
     };
     this.tcpv2 = new TcpStack(tcpHost, () => this.getBus(),
       () => this.getRouterScheduler());
@@ -1142,7 +1170,9 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
     const adminDown = this.bootsInterfacesShutdown() && interfacesBootShutdown();
     for (let i = 0; i < portCount; i++) {
       const portName = this.getVendorPortName(i);
-      this.addPort(new Port(portName, 'ethernet', undefined, { adminDown }));
+      const port = new Port(portName, 'ethernet', undefined, { adminDown });
+      port.setAddressListener((iface) => this.reconcileConnectedRoutes(iface));
+      this.addPort(port);
     }
   }
 
@@ -1242,6 +1272,12 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
     return this.resolveRecursiveNextHop(covering.nextHop ?? null, depth + 1);
   }
 
+  private nextHopTarget(
+    nextHop: IPAddress | null | undefined, destination: IPAddress,
+  ): IPAddress {
+    return nextHop && !nextHop.isUnspecified() ? nextHop : destination;
+  }
+
   private routeCovering(address: IPAddress): RouteEntry | null {
     let best: RouteEntry | null = null;
     for (const route of this.routingTable) {
@@ -1273,20 +1309,18 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
   getDhcpClientAgent(): RouterDhcpClient { return this.dhcpClientAgent; }
 
   private sendDhcpClientFrame(iface: string, pkt: DHCPPacket): void {
-    const port = this.ports.get(iface);
-    if (!port) return;
-    const udp: UDPPacket = {
-      type: 'udp', sourcePort: 68, destinationPort: 67,
-      length: 8 + 300, checksum: 0, payload: pkt,
-    };
-    const ipPkt = createIPv4Packet(
-      new IPAddress('0.0.0.0'), new IPAddress('255.255.255.255'),
-      IP_PROTO_UDP, 64, udp, 8 + 300);
-    this.sendFrame(iface, {
-      srcMAC: port.getMAC(),
-      dstMAC: MACAddress.broadcast(),
-      etherType: ETHERTYPE_IPV4,
-      payload: ipPkt,
+    const datagram = buildUdpDatagram({
+      destination: new IPAddress('255.255.255.255'),
+      destinationPort: DHCP_SERVER_PORT, sourcePort: DHCP_CLIENT_PORT,
+      payload: pkt, payloadBytes: 300,
+    });
+    this.sendIpv4Packet({
+      destination: new IPAddress('255.255.255.255'),
+      iface,
+      source: new IPAddress('0.0.0.0'),
+      protocol: IP_PROTO_UDP,
+      payload: datagram,
+      payloadBytes: datagram.length,
     });
   }
 
@@ -1433,6 +1467,7 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
       const parent = this.ports.get(name.slice(0, dot));
       if (parent) port.setMAC(parent.getMAC());
     }
+    port.setAddressListener((iface) => this.reconcileConnectedRoutes(iface));
     this.addPort(port);
     // Register OSPF monitor
     port.onLinkChange((state) => {
@@ -1606,6 +1641,32 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
   /**
    * Configure an IP on an interface. Automatically adds a connected route.
    */
+  reconcileConnectedRoutes(ifName: string): void {
+    const port = this.ports.get(ifName);
+    this.routingTable = this.routingTable.filter(
+      (r) => !(r.type === 'connected' && r.iface === ifName));
+    if (!port) return;
+
+    const addresses = [
+      ...(port.getIPAddress() && port.getSubnetMask()
+        ? [{ ip: port.getIPAddress() as IPAddress, mask: port.getSubnetMask() as SubnetMask }]
+        : []),
+      ...port.getSecondaryIPs(),
+    ];
+    for (const { ip, mask } of addresses) {
+      this.routingTable.push({
+        network: ip.networkAddress(mask),
+        mask,
+        nextHop: null,
+        iface: ifName,
+        type: 'connected',
+        ad: 0,
+        metric: 0,
+        installedAt: Date.now(),
+      });
+    }
+  }
+
   configureInterface(ifName: string, ip: IPAddress, mask: SubnetMask, secondary = false): boolean {
     const port = this.ports.get(ifName);
     if (!port) return false;
@@ -1614,28 +1675,8 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
       port.addSecondaryIP(ip, mask);
     } else {
       port.configureIP(ip, mask);
-      // Remove old primary connected route for this interface, keeping
-      // routes belonging to secondary subnets still configured.
-      const secondaryNets = port.getSecondaryIPs().map((e) =>
-        e.ip.getOctets().map((o, i) => o & e.mask.getOctets()[i]).join('.'));
-      this.routingTable = this.routingTable.filter(
-        r => !(r.type === 'connected' && r.iface === ifName
-          && !secondaryNets.includes(String(r.network)))
-      );
     }
-
-    // Add connected route
-    const networkOctets = ip.getOctets().map((o, i) => o & mask.getOctets()[i]);
-    this.routingTable.push({
-      network: new IPAddress(networkOctets),
-      mask,
-      nextHop: null,
-      iface: ifName,
-      type: 'connected',
-      ad: 0,
-      metric: 0,
-      installedAt: Date.now(),
-    });
+    this.reconcileConnectedRoutes(ifName);
 
     Logger.info(this.id, 'router:interface-config',
       `${this.name}: ${ifName} configured ${ip}/${mask.toCIDR()}`);
@@ -1671,10 +1712,7 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
     if (!port) return false;
 
     port.clearIP();
-
-    this.routingTable = this.routingTable.filter(
-      r => !(r.type === 'connected' && r.iface === ifName)
-    );
+    this.reconcileConnectedRoutes(ifName);
 
     Logger.info(this.id, 'router:interface-config',
       `${this.name}: ${ifName} IP address removed`);
@@ -1938,10 +1976,11 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
   getIPv6RoutingTable() { return this.ipv6Engine.getRoutingTable(); }
 
   addIPv6StaticRoute(
-    prefix: IPv6Address, prefixLength: number, nextHop: IPv6Address, metric: number = 0,
+    prefix: IPv6Address, prefixLength: number, nextHop: IPv6Address | null, metric: number = 0,
     opts?: { iface?: string; preference?: number },
   ): boolean {
-    const ifaceName = opts?.iface ?? this._findInterfaceForIPv6(nextHop)?.getName() ?? '';
+    const ifaceName = opts?.iface
+      ?? (nextHop ? this._findInterfaceForIPv6(nextHop)?.getName() : undefined) ?? '';
     this.ipv6Engine.addStaticRoute(prefix.getNetworkPrefix(prefixLength), prefixLength, nextHop, ifaceName, metric);
     const table = this.ipv6Engine.getRoutingTableInternal();
     const entry = table[table.length - 1];
@@ -2349,7 +2388,7 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
 
   // ─── Data Plane: Phase B+C — IPv4 Processing ──────────────────
 
-  protected processIPv4(inPort: string, ipPkt: IPv4Packet): void {
+  protected processIPv4(inPort: string, ipPkt: IPv4Packet, reinjected = false): void {
     if (!ipPkt || ipPkt.type !== 'ipv4') return;
 
     // Phase B: L3 Header Sanity Check (RFC 1812 §5.2.2)
@@ -2363,7 +2402,9 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
 
     // C.1a: Inbound ACL
     const originalPkt = ipPkt;
-    if (this.deniedByInboundACL(inPort, originalPkt)) return;
+    if (!reinjected && this.deniedByInboundACL(inPort, originalPkt)) return;
+
+    if (this.addressedToUs(ipPkt) && this.receiveControlPlaneIpv4(inPort, ipPkt)) return;
 
     const natInbound = this.natEngine.translateInbound(ipPkt, inPort);
     if (natInbound) ipPkt = natInbound;
@@ -2388,12 +2429,9 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
       this.forwardMulticast(inPort, ipPkt);
       return;
     }
-    for (const [, port] of this.ports) {
-      if (port.ownsIPv4(destIP)) {
-        // Control plane — the inbound ACL has already had its say (C.1a)
-        this.handleLocalDelivery(inPort, ipPkt);
-        return;
-      }
+    if (this.ownsIPv4Address(destIP)) {
+      this.handleLocalDelivery(inPort, ipPkt);
+      return;
     }
 
     // C.1-ter: RFC 2644 — a subnet-directed broadcast reaching the router
@@ -2474,9 +2512,7 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
       `${this.name}: ACL denied inbound on ${inPort}: ${ipPkt.sourceIP} → ${ipPkt.destinationIP}`);
     this._debugService?.emitLine('ip.packet',
       `IP: s=${ipPkt.sourceIP} (${inPort}), d=${ipPkt.destinationIP}, len ${ipPkt.totalLength}, access denied`);
-    if (this.isIcmpUnreachablesEnabled(inPort)) {
-      this.sendICMPError(inPort, ipPkt, 'destination-unreachable', 13);
-    }
+    this.sendICMPError(inPort, ipPkt, 'destination-unreachable', 13);
     return true;
   }
 
@@ -2486,13 +2522,7 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
    */
   private directedBroadcastEgress(destination: IPAddress): Port | null {
     for (const [, port] of this.ports) {
-      const primary = port.getIPAddress();
-      const mask = port.getSubnetMask();
-      const connected = [
-        ...(primary && mask ? [{ address: primary, mask }] : []),
-        ...port.getSecondaryIPs().map((e) => ({ address: e.ip, mask: e.mask })),
-      ];
-      if (isDirectedBroadcast(destination, connected)) return port;
+      if (isDirectedBroadcast(destination, connectedPrefixesOfPort(port))) return port;
     }
     return null;
   }
@@ -2524,7 +2554,7 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
     // set arrives — buffered fragments return null here and are simply
     // dropped from this call; the reassembled datagram continues through
     // the same dispatch a non-fragmented one would.
-    const reassembled = this.ipv4Reassembler.add(ipPkt);
+    const reassembled = this.ipv4Reassembler.add(ipPkt, undefined, inPort);
     if (!reassembled) return;
     ipPkt = reassembled;
 
@@ -2564,7 +2594,7 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
       const inner = isMcast
         ? this.ipsecEngine.processMulticastInboundESP(ipPkt)
         : this.ipsecEngine.processInboundESP(ipPkt);
-      if (inner) this.processIPv4(inPort, inner);
+      if (inner) this.processIPv4(inPort, inner, true);
       return;
     }
     if (ipPkt.protocol === IP_PROTO_AH && this.ipsecEngine) {
@@ -2572,7 +2602,7 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
       const inner = isMcast
         ? this.ipsecEngine.processMulticastInboundAH(ipPkt)
         : this.ipsecEngine.processInboundAH(ipPkt);
-      if (inner) this.processIPv4(inPort, inner);
+      if (inner) this.processIPv4(inPort, inner, true);
       return;
     }
     // NAT-T: ESP-in-UDP on port 4500 (RFC 3948)
@@ -2588,7 +2618,7 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
             payload: esp,
           };
           const inner = this.ipsecEngine.processInboundESP(espPkt);
-          if (inner) this.processIPv4(inPort, inner);
+          if (inner) this.processIPv4(inPort, inner, true);
           return;
         }
       }
@@ -2728,6 +2758,34 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
     }
   }
 
+  private deliverUdp6(ipv6: IPv6Packet, udp: UDPPacket): boolean {
+    if (!verifyUdpChecksum(udp, ipv6.sourceIP.toString(), ipv6.destinationIP.toString())) return true;
+    return this.udpEndpoint?.deliver6(
+      ipv6.sourceIP, udp.destinationPort, udp.sourcePort, udp.payload,
+    ) ?? false;
+  }
+
+  sendUdpDatagram6(
+    destination: IPv6Address, destinationPort: number, sourcePort: number,
+    payload: unknown, payloadBytes = 0,
+  ): boolean {
+    const path = this.ipv6Engine.resolvePath(destination);
+    if (!path) return false;
+    const source = selectIpv6SourceAddress(path.port, destination);
+    if (!source) return false;
+    const udp: UDPPacket = {
+      type: 'udp', sourcePort, destinationPort,
+      length: 8 + payloadBytes, checksum: 0, payload,
+    };
+    const packet = createIPv6Packet(
+      source.withScopeId(null), destination, IP_PROTO_UDP, 64,
+      stampUdpChecksum(udp, source.withScopeId(null).toString(), destination.toString()),
+      udp.length,
+    );
+    this.ipv6Engine.sendFrameNdpAware(path.iface, packet, path.nextHopIP);
+    return true;
+  }
+
   /** @internal ISAKMP payload as a UDP 500→500 datagram through the FIB (DPD). */
   _sendIkeUdp(destIp: string, payload: unknown): boolean {
     const dst = new IPAddress(destIp);
@@ -2863,7 +2921,7 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
       }
     }
 
-    const nextHopIP = route.nextHop || ipPkt.destinationIP;
+    const nextHopIP = this.nextHopTarget(route.nextHop, ipPkt.destinationIP);
 
     this._debugService?.emitLine('ip.packet',
       `IP: s=${ipPkt.sourceIP} (${inPort}), d=${ipPkt.destinationIP} (${route.iface}), g=${nextHopIP}, len ${fwdPkt.totalLength}, forward`);
@@ -2902,9 +2960,7 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
           `${this.name}: ACL denied outbound on ${route.iface}: ${fwdPkt.sourceIP} → ${fwdPkt.destinationIP}`);
         this._debugService?.emitLine('ip.packet',
           `IP: s=${fwdPkt.sourceIP} (${inPort}), d=${fwdPkt.destinationIP}, len ${fwdPkt.totalLength}, access denied`);
-        if (this.isIcmpUnreachablesEnabled(inPort)) {
-          this.sendICMPError(inPort, fwdPkt, 'destination-unreachable', 13);
-        }
+        this.sendICMPError(inPort, fwdPkt, 'destination-unreachable', 13);
         return;
       }
     }
@@ -2937,7 +2993,7 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
               }
               return;
             }
-            for (const p of encPkts) this.processIPv4(route.iface, p);
+            for (const p of encPkts) this.processIPv4(route.iface, p, true);
             return;
           }
         }
@@ -2954,7 +3010,7 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
             }
             return;
           }
-          for (const p of encPkts) this.processIPv4(route.iface, p);
+          for (const p of encPkts) this.processIPv4(route.iface, p, true);
           return;
         }
       }
@@ -3064,6 +3120,23 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
     return false;
   }
 
+  protected receiveControlPlaneIpv4(_inPort: string, _ipPkt: IPv4Packet): boolean {
+    return false;
+  }
+
+  private ownsIPv4Address(destIP: IPAddress): boolean {
+    for (const [, port] of this.ports) {
+      if (port.ownsIPv4(destIP)) return true;
+    }
+    return false;
+  }
+
+  private addressedToUs(ipPkt: IPv4Packet): boolean {
+    const destIP = ipPkt.destinationIP;
+    if (classifyIpv4Destination(destIP) !== 'unicast') return true;
+    return this.ownsIPv4Address(destIP);
+  }
+
   private baseUdpClaims: Map<number, ControlPlaneUdpClaim> | null = null;
 
   protected controlPlaneUdpClaims(): Map<number, ControlPlaneUdpClaim> {
@@ -3111,6 +3184,9 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
     // a fragment, or a broadcast/multicast packet (prevents error storms).
     if (!mayGenerateICMPError(offendingPkt)) return;
 
+    if (icmpType === 'destination-unreachable'
+      && !this.isIcmpUnreachablesEnabled(inPort)) return;
+
     const inPortObj = this.ports.get(inPort);
     if (!inPortObj) return;
     const myIP = inPortObj.getIPAddress();
@@ -3145,7 +3221,8 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
     const outPort = this.ports.get(route.iface);
     if (!outPort) return false;
     this.counters.ifOutOctets += ipPkt.totalLength;
-    this.sendIpv4FrameArpAware(route.iface, ipPkt, route.nextHop || destination);
+    this.sendIpv4FrameArpAware(
+      route.iface, ipPkt, this.nextHopTarget(route.nextHop, destination));
     return true;
   }
 
@@ -3772,7 +3849,7 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
     const dest = new IPAddress(destIp);
     const route = this.lookupRoute(dest);
     if (!route) return null;
-    return { iface: route.iface, nextHopIp: (route.nextHop ?? dest).toString() };
+    return { iface: route.iface, nextHopIp: this.nextHopTarget(route.nextHop, dest).toString() };
   }
 
   /** Add a static ARP entry */
@@ -4482,6 +4559,7 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
           name: this.name,
           getPorts: () => this.ports,
           sendFrame: (iface, frame) => { this.sendFrame(iface, frame); },
+          sendIpv4Packet: (request) => this.sendIpv4Packet(request),
           getArpEntry: (ip) => this.arpTable.get(ip),
         },
         this.getNhrpService(),
@@ -4939,31 +5017,61 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
    * retrait d'IPv4 de la RFC 768, et c'est ce que font déjà tous les
    * agents internes de ce simulateur.
    */
+  sendUdpDatagram(request: UdpSendRequest): boolean {
+    const datagram = buildUdpDatagram(request);
+    return this.sendIpv4Packet({
+      destination: request.destination,
+      protocol: IP_PROTO_UDP,
+      payload: datagram,
+      payloadBytes: datagram.length,
+      ...(request.source ? { source: request.source } : {}),
+      ...(request.iface === undefined ? {} : { iface: request.iface }),
+      ...(request.ttl === undefined ? {} : { ttl: request.ttl }),
+      ...(request.tos === undefined ? {} : { tos: request.tos }),
+    });
+  }
+
+  sourceAddressFor(destination: IPAddress): IPAddress | null {
+    if (requiresNamedInterface(destination)) return null;
+    const route = this.lookupRoute(destination);
+    if (!route) return null;
+    return this.ports.get(route.iface)?.getIPAddress() ?? null;
+  }
+
+  sendIpv4Packet(request: Ipv4SendRequest): boolean {
+    const ttl = request.ttl ?? DEFAULT_IPV4_TTL;
+    const options = ipv4HeaderOptionsOf(request);
+
+    if (requiresNamedInterface(request.destination)) {
+      return sendOnNamedInterface({
+        getPort: (name) => this.getPort(name),
+        sendFrame: (name, frame) => this.sendFrame(name, frame),
+      }, request);
+    }
+
+    const route = this.lookupRoute(request.destination);
+    if (!route) return false;
+    const egress = this.ports.get(route.iface);
+    if (!egress || !egress.isOperationallyUp()) return false;
+    const source = request.source ?? egress.getIPAddress();
+    if (!source) return false;
+
+    this.sendIpv4FrameArpAware(
+      route.iface,
+      createIPv4Packet(source, request.destination, request.protocol, ttl,
+        request.payload, request.payloadBytes, options),
+      route.nextHop ?? request.destination);
+    return true;
+  }
+
   private sendUdpBytesThroughFib(
     destination: IPAddress, destinationPort: number,
     sourcePort: number, payload: Uint8Array,
   ): boolean {
-    const route = this.lookupRoute(destination);
-    if (!route) return false;
-    const egress = this.ports.get(route.iface);
-    const sourceIp = egress?.getIPAddress();
-    if (!egress || !sourceIp || !egress.isOperationallyUp()) return false;
-    const udp: UDPPacket = {
-      type: 'udp', sourcePort, destinationPort,
-      length: 8 + payload.length, checksum: 0, payload,
-    };
-    const packet = createIPv4Packet(
-      sourceIp, destination, IP_PROTO_UDP, 64, udp, 8 + payload.length,
-    );
-    const arpHit = this.arpTable.get((route.nextHop ?? destination).toString())
-      ?? this.arpTable.get(destination.toString());
-    this.sendFrame(route.iface, {
-      srcMAC: egress.getMAC(),
-      dstMAC: arpHit ? arpHit.mac : MACAddress.broadcast(),
-      etherType: ETHERTYPE_IPV4,
-      payload: packet,
+    return this.sendUdpDatagram({
+      destination, destinationPort, sourcePort,
+      payload, payloadBytes: payload.length,
     });
-    return true;
   }
 
   /**
@@ -5286,7 +5394,7 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
     }
 
     // Determine next-hop IP
-    const nextHopIP = route.nextHop || targetIP;
+    const nextHopIP = this.nextHopTarget(route.nextHop, targetIP);
 
     const existingArp = this.arpTable.get(nextHopIP.toString());
     let nextHopMAC: MACAddress | null = existingArp ? existingArp.mac : null;
@@ -5513,7 +5621,7 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
     const myIP = outPort.getIPAddress();
     if (!myIP) return [];
 
-    const nextHopIP = route.nextHop || targetIP;
+    const nextHopIP = this.nextHopTarget(route.nextHop, targetIP);
 
     // ARP resolve first-hop MAC
     const existingArp = this.arpTable.get(nextHopIP.toString());

@@ -4,13 +4,15 @@ import {
   type VxlanPacket, type VxlanHeader,
   createDefaultVxlanConfig, defaultInterface, defaultRemoteVtep,
   makeVtepKey, makeMacKey, isValidVni,
-  UDP_PORT_VXLAN, VXLAN_FLAG_I,
+  VXLAN_FLAG_I,
 } from './types';
 import {
-  MACAddress, IPAddress,
-  type EthernetFrame, type IPv4Packet, type UDPPacket,
-  IP_PROTO_UDP, ETHERTYPE_IPV4, nextIPv4Id, computeIPv4Checksum,
+  IPAddress,
+  type EthernetFrame,
+  type UDPPacket,
+  IP_PROTO_UDP,
 } from '../core/types';
+import type { Ipv4SendRequest } from '../layers/internet/Ipv4Egress';
 import { Logger } from '../core/Logger';
 
 export interface VxlanHost {
@@ -20,6 +22,7 @@ export interface VxlanHost {
   getPort(name: string): import('../hardware/Port').Port | undefined;
   getPorts(): import('../hardware/Port').Port[];
   sendFrame(portName: string, frame: EthernetFrame): void;
+  sendIpv4Packet(request: Ipv4SendRequest): boolean;
   onVxlanDecapsulated?(vni: number, innerFrame: EthernetFrame, fromRemoteVtepIp: string): void;
 }
 
@@ -200,11 +203,6 @@ export class VxlanAgent {
       this.dropped(vni, remoteVtepIp, 'no-source-ip');
       return;
     }
-    const egress = this.resolveEgress(remoteVtepIp);
-    if (!egress) {
-      this.dropped(vni, remoteVtepIp, 'no-egress');
-      return;
-    }
     const srcIp = new IPAddress(localIface.localVtepIp);
     const header: VxlanHeader = { flags: VXLAN_FLAG_I, reserved1: 0, vni, reserved2: 0 };
     const payload: VxlanPacket = { type: 'vxlan', header, innerFrame };
@@ -214,21 +212,13 @@ export class VxlanAgent {
       destinationPort: this.config.port,
       length: 8 + 8 + 64, checksum: 0, payload,
     };
-    const ipPkt: IPv4Packet = {
-      type: 'ipv4', version: 4, ihl: 5, tos: 0,
-      totalLength: 20 + udp.length,
-      identification: nextIPv4Id(), flags: 0, fragmentOffset: 0,
-      ttl: 64, protocol: IP_PROTO_UDP, headerChecksum: 0,
-      sourceIP: srcIp, destinationIP: new IPAddress(remoteVtepIp),
-      payload: udp,
-    };
-    ipPkt.headerChecksum = computeIPv4Checksum(ipPkt);
-    const eth: EthernetFrame = {
-      srcMAC: egress.port.getMAC(),
-      dstMAC: MACAddress.broadcast(),
-      etherType: ETHERTYPE_IPV4, payload: ipPkt,
-    };
-    this.host.sendFrame(egress.name, eth);
+    if (!this.host.sendIpv4Packet({
+      destination: new IPAddress(remoteVtepIp),
+      source: srcIp,
+      protocol: IP_PROTO_UDP, ttl: 64,
+      payload: udp, payloadBytes: udp.length,
+      flags: 0,
+    })) { this.dropped(vni, remoteVtepIp, 'no-egress'); return; }
     const knownVtep = this.config.remoteVteps.get(makeVtepKey(vni, remoteVtepIp));
     if (knownVtep) knownVtep.packetsOut++;
     this.getBus().publish({
@@ -262,25 +252,4 @@ export class VxlanAgent {
     });
   }
 
-  private resolveEgress(targetIp: string): { name: string; port: import('../hardware/Port').Port } | null {
-    const target = targetIp.split('.').map(Number);
-    for (const port of this.host.getPorts()) {
-      const ip = port.getIPAddress();
-      const mask = port.getSubnetMask();
-      if (!ip || !mask) continue;
-      const local = ip.toString().split('.').map(Number);
-      const maskBits = mask.toString().split('.').map(Number);
-      let same = true;
-      for (let i = 0; i < 4; i++) {
-        if ((local[i] & maskBits[i]) !== (target[i] & maskBits[i])) { same = false; break; }
-      }
-      if (same) return { name: port.getName(), port };
-    }
-    for (const port of this.host.getPorts()) {
-      if (port.getIPAddress() && port.getIsUp() && port.isConnected()) {
-        return { name: port.getName(), port };
-      }
-    }
-    return null;
-  }
 }

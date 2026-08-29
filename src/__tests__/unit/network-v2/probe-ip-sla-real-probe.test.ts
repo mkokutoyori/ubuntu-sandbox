@@ -23,7 +23,7 @@ afterEach(() => {
 });
 
 async function settle(ms: number): Promise<void> {
-  const step = 10;
+  const step = 100;
   for (let elapsed = 0; elapsed < ms; elapsed += step) {
     clock.advance(step);
     await new Promise((resolve) => globalThis.setTimeout(resolve, 0));

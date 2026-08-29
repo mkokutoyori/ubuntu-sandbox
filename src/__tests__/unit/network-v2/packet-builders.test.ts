@@ -5,102 +5,119 @@ import {
   type IPv4Packet, type UDPPacket,
 } from '@/network/core/types';
 import {
-  buildIpv4Frame, buildUdpIpv4Frame, wrapIpv4InEthernet,
-} from '@/network/core/packetBuilders';
+  buildIpv4Frame, wrapIpv4InEthernet,
+} from '@/network/layers/internet/InternetLayer';
+import { buildUdpOverIpv4 } from '@/network/layers/transport/UdpEgress';
 
 beforeEach(() => {
   resetCounters();
   MACAddress.resetCounter();
 });
 
-const srcMac = new MACAddress('00:11:22:33:44:55');
-const dstMac = new MACAddress('01:00:5e:00:00:12');
-const srcIp = new IPAddress('10.0.0.1');
-const dstIp = new IPAddress('224.0.0.18');
+const sourceMac = new MACAddress('00:11:22:33:44:55');
+const destinationMac = new MACAddress('01:00:5e:00:00:12');
+const sourceIp = new IPAddress('10.0.0.1');
+const destinationIp = new IPAddress('224.0.0.18');
 
 describe('buildIpv4Frame', () => {
   it('produces an Ethernet frame with a checksum-valid IPv4 packet', () => {
     const frame = buildIpv4Frame({
-      srcIp, dstIp, srcMac, dstMac,
+      sourceIp, destinationIp, sourceMac, destinationMac,
       protocol: 112, ttl: 255,
-      payload: { type: 'vrrp' }, payloadLength: 12,
+      payload: { type: 'vrrp' }, payloadBytes: 12,
     });
     expect(frame.etherType).toBe(ETHERTYPE_IPV4);
-    expect(frame.srcMAC.toString()).toBe(srcMac.toString());
-    expect(frame.dstMAC.toString()).toBe(dstMac.toString());
-    const pkt = frame.payload as IPv4Packet;
-    expect(pkt.protocol).toBe(112);
-    expect(pkt.ttl).toBe(255);
-    expect(pkt.totalLength).toBe(20 + 12);
-    expect(verifyIPv4Checksum(pkt)).toBe(true);
+    expect(frame.srcMAC.toString()).toBe(sourceMac.toString());
+    expect(frame.dstMAC.toString()).toBe(destinationMac.toString());
+    const packet = frame.payload as IPv4Packet;
+    expect(packet.protocol).toBe(112);
+    expect(packet.ttl).toBe(255);
+    expect(packet.totalLength).toBe(20 + 12);
+    expect(verifyIPv4Checksum(packet)).toBe(true);
   });
 
   it('honors tos and flags overrides', () => {
     const frame = buildIpv4Frame({
-      srcIp, dstIp, srcMac, dstMac,
+      sourceIp, destinationIp, sourceMac, destinationMac,
       protocol: 112, ttl: 255,
-      payload: null, payloadLength: 0,
+      payload: null, payloadBytes: 0,
       options: { tos: 0xc0, flags: 0 },
     });
-    const pkt = frame.payload as IPv4Packet;
-    expect(pkt.tos).toBe(0xc0);
-    expect(pkt.flags).toBe(0);
-    expect(verifyIPv4Checksum(pkt)).toBe(true);
+    const packet = frame.payload as IPv4Packet;
+    expect(packet.tos).toBe(0xc0);
+    expect(packet.flags).toBe(0);
+    expect(verifyIPv4Checksum(packet)).toBe(true);
   });
 
   it('defaults to tos 0 and the DF flag like createIPv4Packet', () => {
     const frame = buildIpv4Frame({
-      srcIp, dstIp, srcMac, dstMac,
+      sourceIp, destinationIp, sourceMac, destinationMac,
       protocol: 1, ttl: 64,
-      payload: null, payloadLength: 8,
+      payload: null, payloadBytes: 8,
     });
-    const pkt = frame.payload as IPv4Packet;
-    expect(pkt.tos).toBe(0);
-    expect(pkt.flags).toBe(0b010);
+    const packet = frame.payload as IPv4Packet;
+    expect(packet.tos).toBe(0);
+    expect(packet.flags).toBe(0b010);
   });
 });
 
-describe('buildUdpIpv4Frame', () => {
+describe('buildUdpOverIpv4', () => {
   it('wraps the payload in UDP with correct ports and lengths', () => {
-    const frame = buildUdpIpv4Frame({
-      srcIp, dstIp, srcMac, dstMac,
-      srcPort: 1985, dstPort: 1985,
-      payload: { type: 'hsrp' }, payloadLength: 20,
-      ttl: 1, options: { flags: 0 },
+    const packet = buildUdpOverIpv4(sourceIp, {
+      destination: destinationIp,
+      sourcePort: 1985, destinationPort: 1985,
+      payload: { type: 'hsrp' }, payloadBytes: 20,
+      ttl: 1,
     });
-    const pkt = frame.payload as IPv4Packet;
-    expect(pkt.protocol).toBe(IP_PROTO_UDP);
-    expect(pkt.ttl).toBe(1);
-    const udp = pkt.payload as UDPPacket;
+    expect(packet.protocol).toBe(IP_PROTO_UDP);
+    expect(packet.ttl).toBe(1);
+    const udp = packet.payload as UDPPacket;
     expect(udp.sourcePort).toBe(1985);
     expect(udp.destinationPort).toBe(1985);
     expect(udp.length).toBe(8 + 20);
-    expect(pkt.totalLength).toBe(20 + 8 + 20);
-    expect(verifyIPv4Checksum(pkt)).toBe(true);
+    expect(packet.totalLength).toBe(20 + 8 + 20);
+    expect(verifyIPv4Checksum(packet)).toBe(true);
   });
 
   it('handles a zero-length payload (UDP header only)', () => {
-    const frame = buildUdpIpv4Frame({
-      srcIp, dstIp, srcMac, dstMac,
-      srcPort: 53, dstPort: 53,
-      payload: undefined, payloadLength: 0,
-      ttl: 64,
+    const packet = buildUdpOverIpv4(sourceIp, {
+      destination: destinationIp,
+      sourcePort: 53, destinationPort: 53,
+      payload: undefined, payloadBytes: 0,
     });
-    const pkt = frame.payload as IPv4Packet;
-    const udp = pkt.payload as UDPPacket;
+    const udp = packet.payload as UDPPacket;
     expect(udp.length).toBe(8);
-    expect(pkt.totalLength).toBe(28);
+    expect(packet.totalLength).toBe(28);
+  });
+
+  it('defaults the ttl to 64 and carries an explicit tos', () => {
+    const plain = buildUdpOverIpv4(sourceIp, {
+      destination: destinationIp,
+      sourcePort: 520, destinationPort: 520,
+      payload: null, payloadBytes: 4,
+    });
+    expect(plain.ttl).toBe(64);
+    expect(plain.tos).toBe(0);
+
+    const marked = buildUdpOverIpv4(sourceIp, {
+      destination: destinationIp,
+      sourcePort: 3784, destinationPort: 3784,
+      payload: null, payloadBytes: 4,
+      ttl: 255, tos: 0xc0,
+    });
+    expect(marked.ttl).toBe(255);
+    expect(marked.tos).toBe(0xc0);
   });
 });
 
 describe('wrapIpv4InEthernet', () => {
   it('frames an existing packet without mutating it', () => {
     const inner = buildIpv4Frame({
-      srcIp, dstIp, srcMac, dstMac,
-      protocol: 89, ttl: 1, payload: null, payloadLength: 4,
+      sourceIp, destinationIp, sourceMac, destinationMac,
+      protocol: 89, ttl: 1, payload: null, payloadBytes: 4,
     }).payload as IPv4Packet;
     const checksum = inner.headerChecksum;
-    const frame = wrapIpv4InEthernet(inner, srcMac, dstMac);
+    const frame = wrapIpv4InEthernet(inner, sourceMac, destinationMac);
     expect(frame.payload).toBe(inner);
     expect(inner.headerChecksum).toBe(checksum);
     expect(frame.etherType).toBe(ETHERTYPE_IPV4);

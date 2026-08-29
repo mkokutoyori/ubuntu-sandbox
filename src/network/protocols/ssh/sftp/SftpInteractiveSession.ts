@@ -20,6 +20,7 @@ function sshErrorMessage(e: SshError): string {
     case 'INVALID_ARGUMENT':   return e.message;
     case 'CONNECTION_REFUSED': return 'Connection refused';
     case 'CONNECTION_TIMEOUT': return 'Connection timed out';
+    case 'CONNECTION_UNREACHABLE': return 'Network is unreachable';
     case 'NOT_AUTHENTICATED':  return 'Not authenticated';
     case 'AUTH_FAILED':        return 'Authentication failed';
     case 'CHANNEL_ERROR':      return e.message;

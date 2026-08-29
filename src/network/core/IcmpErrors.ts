@@ -9,10 +9,14 @@
 
 import {
   ICMPPacket,
+  ICMPv6Packet,
+  ICMPv6Type,
   IPv4Packet,
+  IPv6Packet,
   IPAddress,
   createIPv4Packet,
   IP_PROTO_ICMP,
+  IP_PROTO_ICMPV6,
 } from './types';
 
 // ─── ICMP codes (RFC 792 / RFC 1812) ─────────────────────────────────
@@ -83,6 +87,34 @@ export function mayGenerateICMPError(offendingPkt: IPv4Packet): boolean {
   if (offendingPkt.fragmentOffset !== 0) return false;
   if (isMulticastOrLimitedBroadcast(offendingPkt.destinationIP)) return false;
   if (!isUnicastSource(offendingPkt.sourceIP)) return false;
+  return true;
+}
+
+const ICMPV6_ERROR_TYPES: ReadonlySet<ICMPv6Type> = new Set<ICMPv6Type>([
+  'destination-unreachable', 'packet-too-big', 'time-exceeded',
+]);
+
+export function isICMPv6ErrorMessage(pkt: IPv6Packet): boolean {
+  if (pkt.nextHeader !== IP_PROTO_ICMPV6) return false;
+  const icmp = pkt.payload as ICMPv6Packet | undefined;
+  return !!icmp && icmp.type === 'icmpv6' && ICMPV6_ERROR_TYPES.has(icmp.icmpType);
+}
+
+/**
+ * RFC 4443 §2.4 (e) — the IPv6 twin of {@link mayGenerateICMPError}. An
+ * error is never a reply to another error, never answers a packet sent
+ * to a group, and never goes to a source that does not name one node.
+ * Packet Too Big is the exception the RFC carves out of the group rule,
+ * because Path MTU Discovery would otherwise be impossible on a
+ * multicast path.
+ */
+export function mayGenerateICMPv6Error(
+  offendingPkt: IPv6Packet, errorType: ICMPv6Type,
+): boolean {
+  if (isICMPv6ErrorMessage(offendingPkt)) return false;
+  if (offendingPkt.destinationIP.isMulticast() && errorType !== 'packet-too-big') return false;
+  const source = offendingPkt.sourceIP;
+  if (source.isUnspecified() || source.isMulticast()) return false;
   return true;
 }
 

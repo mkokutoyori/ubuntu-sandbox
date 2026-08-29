@@ -11,9 +11,9 @@ import {
   UDP_PORT_HSRP, HSRP_MULTICAST_V1, HSRP_MULTICAST_V2,
 } from './types';
 import {
-  MACAddress, IPAddress,
-  type EthernetFrame, type IPv4Packet, type UDPPacket,
-  IP_PROTO_UDP, ETHERTYPE_IPV4, nextIPv4Id, computeIPv4Checksum,
+  IPAddress,
+  type UDPPacket,
+  IP_PROTO_UDP,
 } from '../core/types';
 import { Logger } from '../core/Logger';
 import { FhrpAgentBase } from '../fhrp/FhrpAgentBase';
@@ -245,22 +245,17 @@ export class HsrpAgent extends FhrpAgentBase<HsrpGroupRuntime> {
       length: 8 + 20, checksum: 0, payload,
     };
     const dstIp = new IPAddress(g.version === 2 ? HSRP_MULTICAST_V2 : HSRP_MULTICAST_V1);
-    const ipPkt: IPv4Packet = {
-      type: 'ipv4', version: 4, ihl: 5, tos: 0, totalLength: 20 + udp.length,
-      identification: nextIPv4Id(), flags: 0, fragmentOffset: 0,
-      ttl: 1, protocol: IP_PROTO_UDP, headerChecksum: 0,
-      sourceIP: srcIp, destinationIP: dstIp, payload: udp,
-    };
-    ipPkt.headerChecksum = computeIPv4Checksum(ipPkt);
-    const eth: EthernetFrame = {
-      srcMAC: port.getMAC(), dstMAC: multicastMacFor(dstIp),
-      etherType: ETHERTYPE_IPV4, payload: ipPkt,
+    const request = {
+      destination: dstIp, source: srcIp,
+      protocol: IP_PROTO_UDP, ttl: 1,
+      payload: udp, payloadBytes: udp.length,
+      flags: 0,
     };
     // A resign is edge-triggered (once per active→non-active transition)
     // and often fires inside the synchronous receive cascade where the
     // re-entrancy guard is held — send it directly.
-    if (opcode === 'resign') this.host.sendFrame(g.iface, eth);
-    else this.sendGuarded(g, eth);
+    if (opcode === 'resign') this.host.sendIpv4Packet({ ...request, iface: g.iface });
+    else this.sendGuarded(g, request);
     this.getBus().publish({
       topic: 'hsrp.packet.sent',
       payload: {
@@ -432,7 +427,3 @@ export class HsrpAgent extends FhrpAgentBase<HsrpGroupRuntime> {
   }
 }
 
-function multicastMacFor(ip: IPAddress): MACAddress {
-  const octets = ip.getOctets();
-  return new MACAddress([0x01, 0x00, 0x5e, octets[1] & 0x7f, octets[2], octets[3]]);
-}
