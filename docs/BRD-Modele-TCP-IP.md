@@ -1387,9 +1387,13 @@ de structure, et son en-tête dit pourquoi les cinq autres sont des
 témoins plutôt que des preuves.
 
 **Ce qui reste, mesuré après le lot plutôt qu'affirmé.** Un seul défaut
-vivant : `NhrpEngine` porte la même retombée en diffusion, et **sans
-garde** — NHRP (protocole 54) porte l'enregistrement d'un client DMVPN,
-et le diffuser le donne au segment entier. Les deux autres émetteurs ne
+vivant, et il est **fermé dans la foulée** : `NhrpEngine` portait la même
+retombée en diffusion, **sans garde** — NHRP (protocole 54) porte
+l'enregistrement d'un client DMVPN, et le premier paquet d'un client EST
+son enregistrement, donc le cache était froid et la trame partait en
+diffusion. Contrairement aux retombées de RADIUS, celle-ci était
+ATTEIGNABLE : `probe-nhrp-ne-diffuse-pas.test.ts` montre le tiers du
+segment recevant l'enregistrement avant correctif (2 cas sur 3 tombent). Les deux autres émetteurs ne
 sont pas des fuites : la sonde ICMP d'IP SLA bâtit sa trame mais son
 appelant a déjà résolu l'adresse, et la branche multicast de `RIPEngine`
 émet sur une interface nommée avec l'adresse dérivée — c'est le régime

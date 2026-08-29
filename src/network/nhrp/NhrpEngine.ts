@@ -1,9 +1,9 @@
 import type { IEventBus } from '@/events/EventBus';
+import type { Ipv4SendRequest } from '../layers/internet/Ipv4Egress';
 import type { Port } from '../hardware/Port';
 import {
   MACAddress, IPAddress,
-  type EthernetFrame, type IPv4Packet,
-  ETHERTYPE_IPV4, createIPv4Packet,
+  type EthernetFrame,
 } from '../core/types';
 import { Logger } from '../core/Logger';
 import type { NhrpService } from '../devices/router/nhrp/NhrpService';
@@ -21,6 +21,7 @@ export interface NhrpEngineHost {
   readonly name: string;
   getPorts(): Map<string, Port>;
   sendFrame(iface: string, frame: EthernetFrame): void;
+  sendIpv4Packet(request: Ipv4SendRequest): boolean;
   getArpEntry(ip: string): { mac: MACAddress; iface: string } | undefined;
 }
 
@@ -104,11 +105,11 @@ export class NhrpEngine {
     if (!port) return false;
     const myIP = port.getIPAddress();
     if (!myIP) return false;
-    const ipPkt: IPv4Packet = createIPv4Packet(myIP, new IPAddress(destNbma), IP_PROTO_NHRP, 64, pkt, 64);
-    const cached = this.host.getArpEntry(destNbma);
-    const dstMAC = cached ? cached.mac : MACAddress.broadcast();
-    const frame: EthernetFrame = { srcMAC: port.getMAC(), dstMAC, etherType: ETHERTYPE_IPV4, payload: ipPkt };
-    this.host.sendFrame(physicalIfName, frame);
+    if (!this.host.sendIpv4Packet({
+      destination: new IPAddress(destNbma), source: myIP,
+      protocol: IP_PROTO_NHRP, ttl: 64,
+      payload: pkt, payloadBytes: 64,
+    })) return false;
     this.getBus().publish({
       topic: 'nhrp.packet.sent',
       payload: { deviceId: this.host.id, hostname: this.host.name, ifName: physicalIfName, opcode: pkt.opcode, destNbmaAddr: destNbma },

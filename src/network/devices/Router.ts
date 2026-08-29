@@ -4498,6 +4498,7 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
           name: this.name,
           getPorts: () => this.ports,
           sendFrame: (iface, frame) => { this.sendFrame(iface, frame); },
+          sendIpv4Packet: (request) => this.sendIpv4Packet(request),
           getArpEntry: (ip) => this.arpTable.get(ip),
         },
         this.getNhrpService(),

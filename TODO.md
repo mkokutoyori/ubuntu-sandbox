@@ -1180,15 +1180,10 @@ défauts — la méthode vaut d'être reprise sur le reliquat.
   open-ports` — il n'existe donc pas de capture texte a lire, et les
   blancs sont precisement l'information cherchee.
 
-- `NhrpEngine` retombe sur la DIFFUSION, sans garde — ouvert. Meme
-  defaut que la phase 8 vient de refermer sur RADIUS, NTP et BFD, mais
-  celui-ci n'a AUCUNE garde :
-  `const dstMAC = cached ? cached.mac : MACAddress.broadcast()` — il LIT
-  le cache ARP et diffuse quand il est froid, c'est-a-dire au PREMIER
-  paquet. NHRP (protocole 54) porte l'enregistrement d'un client DMVPN
-  aupres de son concentrateur ; le diffuser le donne a tout le segment.
-  Le correctif est `sendIpv4Packet` (l'offre le route et le resout), et
-  il n'est pas fait ici parce que ce lot etait deja long.
+- `NhrpEngine` retombait sur la DIFFUSION, sans garde — FERME. Il passe
+  par `sendIpv4Packet`, qui route et resout. Contrairement aux retombees
+  de la phase 8, celle-ci etait ATTEIGNABLE : la sonde montre le tiers du
+  segment recevant l'enregistrement DMVPN avant correctif.
 
 - Trois emetteurs restent hors de l'offre, et deux d'entre eux ne sont
   PAS des defauts — mesure faite apres la phase 8 plutot qu'affirmee.
