@@ -45,6 +45,11 @@ export function canonicalIpText(ip: string): string {
   try { return new IPv6Address(ip).withScopeId(null).toString(); } catch { return ip; }
 }
 
+export function segmentPayloadSize(seg: TcpSegment): number {
+  if (seg.payload === undefined) return 0;
+  return typeof seg.payload === 'string' ? seg.payload.length : 1;
+}
+
 export interface TcpHost {
   readonly id: string;
   readonly name: string;
@@ -605,7 +610,7 @@ export class TcpStack {
    */
   sendResetForSegment(localIp: string, senderIp: string, seg: TcpSegment): void {
     if (seg.flags.rst) return;
-    this.sendRst(localIp, seg.destinationPort, senderIp, seg.sourcePort, seg.sequence);
+    this.sendRst(localIp, senderIp, seg);
   }
 
   private externalPortClaim: ((port: number) => boolean) | null = null;
@@ -651,7 +656,7 @@ export class TcpStack {
       return true;
     }
 
-    const payloadSize = seg.payload === undefined ? 0 : (typeof seg.payload === 'string' ? seg.payload.length : 1);
+    const payloadSize = segmentPayloadSize(seg);
     this.getBus().publish({
       topic: 'tcp.segment.received',
       payload: {
@@ -673,7 +678,7 @@ export class TcpStack {
     if (seg.flags.syn && !seg.flags.ack) {
       const listener = this.findListener(dstIp, seg.destinationPort);
       if (!listener) {
-        this.sendRst(dstIp, seg.destinationPort, senderIp, seg.sourcePort, seg.sequence);
+        this.sendRst(dstIp, senderIp, seg);
         this.dropped(senderIp, seg.sourcePort, 'no-listener');
         return true;
       }
@@ -715,7 +720,7 @@ export class TcpStack {
       return true;
     }
     this.dropped(senderIp, seg.sourcePort, 'no-socket');
-    this.sendRst(dstIp, seg.destinationPort, senderIp, seg.sourcePort, seg.sequence);
+    this.sendRst(dstIp, senderIp, seg);
     return true;
   }
 
@@ -1310,20 +1315,32 @@ export class TcpStack {
     this.rearmKeepAliveTimer(socket);
   }
 
-  private sendRst(localIp: string, localPort: number, remoteIp: string, remotePort: number, ackForSeq: number): void {
+  private sendRst(localIp: string, remoteIp: string, offending: TcpSegment): void {
     const egress = this.resolveEgress(remoteIp);
     if (!egress) return;
-    const flags = noFlags(); flags.rst = true; flags.ack = true;
+    const flags = noFlags();
+    flags.rst = true;
+    let sequence = 0;
+    let acknowledgement = 0;
+    if (offending.flags.ack) {
+      sequence = offending.acknowledgement;
+    } else {
+      flags.ack = true;
+      acknowledgement = (offending.sequence
+        + (offending.flags.syn ? 1 : 0)
+        + (offending.flags.fin ? 1 : 0)
+        + segmentPayloadSize(offending)) >>> 0;
+    }
+    const srcIp = localIp === '' ? egress.srcIp : localIp;
     const seg: TcpSegment = {
       type: 'tcp',
-      sourcePort: localPort, destinationPort: remotePort,
-      sequence: 0, acknowledgement: (ackForSeq + 1) >>> 0,
+      sourcePort: offending.destinationPort, destinationPort: offending.sourcePort,
+      sequence, acknowledgement,
       dataOffset: 5, flags, window: 0, checksum: 0, urgentPointer: 0,
       options: [], payload: undefined,
     };
-    seg.checksum = computeTcpChecksum(seg, egress.srcIp, remoteIp);
-    this.shipSegment(egress, egress.srcIp, remoteIp, seg);
-    void localIp;
+    seg.checksum = computeTcpChecksum(seg, srcIp, remoteIp);
+    this.shipSegment(egress, srcIp, remoteIp, seg);
   }
 
   /**
@@ -1554,7 +1571,7 @@ export class TcpStack {
         sourcePort: seg.sourcePort, destinationPort: seg.destinationPort,
         flagsText: flagsString(seg.flags),
         sequence: seg.sequence, acknowledgement: seg.acknowledgement,
-        payloadSize: seg.payload === undefined ? 0 : (typeof seg.payload === 'string' ? seg.payload.length : 1),
+        payloadSize: segmentPayloadSize(seg),
       },
     });
     if (this.isLocalDestination(dstIp, family)) {
