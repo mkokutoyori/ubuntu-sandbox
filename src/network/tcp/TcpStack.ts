@@ -19,15 +19,12 @@ const TCP_WINDOW_SCALE_SHIFT = 7;
 /** Bound on out-of-order data buffered for reassembly (PRD-TCP.md P6) — one window's worth. */
 const TCP_REASSEMBLY_MAX_BYTES = TCP_DEFAULT_WINDOW;
 import {
-  MACAddress,
   IPAddress,
   IPv6Address,
   type EthernetFrame,
   type IPv4Packet,
   type IPv6Packet,
   IP_PROTO_TCP,
-  ETHERTYPE_IPV4,
-  ETHERTYPE_IPV6,
   createIPv4Packet,
   createIPv6Packet,
 } from '../core/types';
@@ -46,17 +43,15 @@ export interface TcpHost {
   getPort(name: string): import('../hardware/Port').Port | undefined;
   getPorts(): import('../hardware/Port').Port[];
   sendFrame(portName: string, frame: EthernetFrame): void;
-  resolveMac?(nextHopIp: string): MACAddress | null;
   resolveRoute?(targetIp: string): { iface: string; nextHopIp: string } | null;
-  resolveMac6?(nextHopIp: string): MACAddress | null;
   resolveRoute6?(targetIp: string): { iface: string; nextHopIp: string } | null;
   localAddress6?(iface: string, remoteIp: string): string | null;
   /**
-   * Preferred send path (PRD audit #26): queues on a cold ARP cache and
-   * resolves the real next-hop MAC instead of falling back to broadcast.
-   * When absent, shipSegment() keeps the old resolveMac-or-broadcast path.
+   * The send path: queues on a cold ARP cache and resolves the real
+   * next-hop MAC. Mandatory — the broadcast fallback it replaced would
+   * have flooded a segment with a TCP segment.
    */
-  sendIpv4FrameArpAware?(outPortName: string, ipPkt: IPv4Packet, nextHopIP: IPAddress): void;
+  sendIpv4FrameArpAware(outPortName: string, ipPkt: IPv4Packet, nextHopIP: IPAddress): void;
   sendIpv6FrameNdpAware?(outPortName: string, ipPkt: IPv6Packet, nextHopIP: IPv6Address): void;
 }
 
@@ -1516,24 +1511,12 @@ export class TcpStack {
     }
     const nextHopIp = egress.nextHopIp ?? dstIp;
     if (family === 'ipv6') {
-      if (this.host.sendIpv6FrameNdpAware) {
-        this.host.sendIpv6FrameNdpAware(egress.name, l3Packet as IPv6Packet, new IPv6Address(nextHopIp));
-        return;
-      }
-    } else if (this.host.sendIpv4FrameArpAware) {
-      this.host.sendIpv4FrameArpAware(egress.name, l3Packet as IPv4Packet, new IPAddress(nextHopIp));
+      this.host.sendIpv6FrameNdpAware?.(
+        egress.name, l3Packet as IPv6Packet, new IPv6Address(nextHopIp));
       return;
     }
-    const resolvedMac = family === 'ipv6'
-      ? (this.host.resolveMac6?.(dstIp) ?? null)
-      : (this.host.resolveMac?.(dstIp) ?? null);
-    const eth: EthernetFrame = {
-      srcMAC: egress.port!.getMAC(),
-      dstMAC: resolvedMac ?? MACAddress.broadcast(),
-      etherType: family === 'ipv6' ? ETHERTYPE_IPV6 : ETHERTYPE_IPV4,
-      payload: l3Packet,
-    };
-    this.host.sendFrame(egress.name, eth);
+    this.host.sendIpv4FrameArpAware(
+      egress.name, l3Packet as IPv4Packet, new IPAddress(nextHopIp));
   }
 
   private buildIpv4Segment(srcIp: string, dstIp: string, seg: TcpSegment): IPv4Packet {

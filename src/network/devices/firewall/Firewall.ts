@@ -418,7 +418,6 @@ export class Firewall extends Equipment {
       port: (n) => this.getPort(n),
       ports: () => this.getPorts(),
       send: (p, f) => { this.sendFrame(p, f); },
-      resolveMac: (ip) => this.arp.resolved(ip) ?? null,
       sendArpAware: (p, packet, nextHop) =>
         this.sendIpv4FrameArpAware(p, packet, nextHop),
       sendUdpDatagram: (request) => this.sendUdpDatagram(request),

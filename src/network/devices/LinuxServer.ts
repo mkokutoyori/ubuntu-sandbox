@@ -58,7 +58,6 @@ export class LinuxServer extends LinuxMachine {
       getPort: (n: string) => this.getPort(n),
       getPorts: () => this.getPorts(),
       sendFrame: (p: string, f: EthernetFrame) => { this.sendFrame(p, f); },
-      resolveMac: (ip: string) => this.arpTable.get(ip)?.mac ?? null,
       resolveRoute: (ip: string) => {
         const addr = IPAddress.tryParse(ip);
         if (!addr) return null;

@@ -857,7 +857,6 @@ export abstract class EndHost extends Equipment {
       getPort: (n: string) => this.getPort(n),
       getPorts: () => this.getPorts(),
       sendFrame: (p: string, f: EthernetFrame) => { this.sendFrame(p, f); },
-      resolveMac: (nextHopIp: string) => this.arpTable.get(nextHopIp)?.mac ?? null,
       resolveRoute: (targetIp: string) => {
         const addr = IPAddress.tryParse(targetIp);
         if (!addr) return null;
@@ -865,7 +864,6 @@ export abstract class EndHost extends Equipment {
         if (!r) return null;
         return { iface: r.port.getName(), nextHopIp: r.nextHopIP.toString() };
       },
-      resolveMac6: (nextHopIp: string) => this.neighborCache.get(nextHopIp)?.mac ?? null,
       resolveRoute6: (targetIp: string) => {
         const r = this.resolveIPv6Route(new IPv6Address(targetIp));
         if (!r) return null;

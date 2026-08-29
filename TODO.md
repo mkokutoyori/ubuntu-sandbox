@@ -1194,7 +1194,9 @@ défauts — la méthode vaut d'être reprise sur le reliquat.
   exactement le regime prevu ; la faire passer par `sendIpv4Packet` ne
   serait qu'une uniformisation. `TcpStack` porte son propre chemin IPv4
   (§5.3 du BRD le prevoit : TCP DEMENAGE dans la couche transport), et
-  c'est le dernier acheminement IPv4 distinct du depot.
+  c'est le dernier acheminement IPv4 distinct du depot — mais sa retombee
+  en diffusion est RETIREE et `resolveMac` supprime du depot avec elle,
+  la mesure ayant etabli qu'elle n'etait atteignable par aucun hote.
   Faux positifs verifies au passage : `DhcpServerChannel.sendFrame` est
   un `(iface, pkt: DHCPPacket) => void` et non l'envoi de couche lien, et
   le `sendFrame` de `FhrpAgentBase` est un ARP gratuit, donc L2 par

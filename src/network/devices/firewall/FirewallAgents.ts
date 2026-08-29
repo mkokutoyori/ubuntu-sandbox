@@ -18,7 +18,6 @@ export interface FirewallAgentDeps {
   readonly port: (name: string) => Port | undefined;
   readonly ports: () => Port[];
   readonly send: (port: string, frame: EthernetFrame) => void;
-  readonly resolveMac: (ip: string) => ReturnType<Port['getMAC']> | null;
   readonly sendArpAware: (
     port: string, packet: IPv4Packet, nextHop: IPAddress) => void;
   readonly sendUdpDatagram: (request: UdpSendRequest) => boolean;
@@ -59,7 +58,6 @@ export function buildFirewallAgents(deps: FirewallAgentDeps): FirewallAgents {
     getPort: deps.port,
     getPorts: deps.ports,
     sendFrame: deps.send,
-    resolveMac: deps.resolveMac,
     sendIpv4FrameArpAware: deps.sendArpAware,
     sendUdpDatagram: deps.sendUdpDatagram,
     sourceAddressFor: deps.sourceAddressFor,
