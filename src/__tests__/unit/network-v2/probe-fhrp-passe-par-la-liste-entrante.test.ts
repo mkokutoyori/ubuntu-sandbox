@@ -60,20 +60,29 @@
  *
  * ── Discrimination ──────────────────────────────────────────────────
  *
- * 5 des 13 cas tombent contre l'etat d'avant — les quatre
+ * 6 des 18 cas tombent contre l'etat d'avant — les CINQ
  * `deny ip any any`, un par protocole, plus le cas du mot-cle qui ne
- * designe pas 112. Les 8 autres sont nommes ici plutot que laisses a
+ * designe pas 112. Les 12 autres sont nommes ici plutot que laisses a
  * decouvrir, chacun avec sa raison de passer des deux cotes :
  *
- *   les QUATRE cas sans liste     le pair, le relayeur ou le groupe
- *                                 doivent etre vus, c'est ce qui prouve
- *                                 que la maquette converge ;
- *   les QUATRE cas `permit`       ils passaient DEJA — non parce que la
+ *   les CINQ cas sans liste       le pair, le relayeur, le groupe ou le
+ *                                 voisin doivent etre vus, c'est ce qui
+ *                                 prouve que la maquette converge ;
+ *   les SIX cas `permit`          ils passaient DEJA — non parce que la
  *                                 liste permettait, mais parce qu'elle
  *                                 ne voyait RIEN et que le paquet
- *                                 arrivait de toute facon.
+ *                                 arrivait de toute facon ;
+ *   le rendu `103` -> `pim`       il etait deja juste, et c'est ce qui
+ *                                 explique la portee etroite du
+ *                                 correctif numerique : `parseIpProtocol`
+ *                                 canonicalise un numero CONNU en son
+ *                                 mot-cle des l'analyse, donc PIM 103
+ *                                 n'a jamais souffert. Seuls les
+ *                                 numeros sans mot-cle — 112 en tete —
+ *                                 restaient litteraux et n'appariaient
+ *                                 rien.
  *
- * Ces quatre derniers ne prouvent donc rien seuls : ils ne valent qu'a
+ * Les six cas `permit` ne prouvent donc rien seuls : ils ne valent qu'a
  * cote de leur voisin `deny ip any any`, qui, lui, tombe. C'est le
  * couple qui mesure, pas la ligne.
  *
@@ -223,6 +232,64 @@ describe('IGMP passe par la liste, et son groupe est ROUTABLE', () => {
   it('`permit igmp any any` le retablit', async () => {
     expect(await groupeVuParLeRouteur(
       ['access-list 100 permit igmp any any', DENY_TOUT])).toBe(true);
+  });
+});
+
+/**
+ * PIM forme un voisinage par ses hellos, comme OSPF, mais sous le
+ * protocole 103 et sur 224.0.0.13. Le voisin vu par R1 est donc la
+ * preuve qu'un paquet de R2 a traverse la liste.
+ */
+async function voisinPim(acl: readonly string[]): Promise<boolean> {
+  const horloge = new VirtualTimeScheduler();
+  __setDefaultScheduler(horloge);
+  const r1 = new CiscoRouter('R1');
+  const r2 = new CiscoRouter('R2');
+  new Cable('cp').connect(r1.getPorts()[0], r2.getPorts()[0]);
+  for (const [routeur, n] of [[r1, '1'], [r2, '2']] as const) {
+    for (const commande of ['enable', 'configure terminal', 'ip multicast-routing',
+      'interface GigabitEthernet0/0', `ip address 10.0.12.${n} 255.255.255.0`,
+      'no shutdown', 'ip pim sparse-mode', 'exit',
+      ...(routeur === r1 ? acl : []),
+      ...(routeur === r1 && acl.length
+        ? ['interface GigabitEthernet0/0', 'ip access-group 100 in', 'exit'] : []),
+      'end']) {
+      await routeur.executeCommand(commande);
+    }
+  }
+  horloge.advance(120000);
+  return (await r1.executeCommand('show ip pim neighbor')).includes('10.0.12.2');
+}
+
+describe('PIM passe par la liste, sous le protocole 103', () => {
+  it('TEMOIN : sans liste, R1 voit son voisin PIM', async () => {
+    expect(await voisinPim([])).toBe(true);
+  });
+
+  it('`deny ip any any` le fait disparaitre', async () => {
+    expect(await voisinPim([DENY_TOUT])).toBe(false);
+  });
+
+  it('`permit pim any any` le retablit', async () => {
+    expect(await voisinPim(['access-list 100 permit pim any any', DENY_TOUT])).toBe(true);
+  });
+
+  it('`permit 103 any any` fait la MEME chose — le numero vaut le mot-cle', async () => {
+    expect(await voisinPim(['access-list 100 permit 103 any any', DENY_TOUT])).toBe(true);
+  });
+
+  it('et un numero connu se rend par son mot-cle, la ou 112 reste un numero', async () => {
+    const horloge = new VirtualTimeScheduler();
+    __setDefaultScheduler(horloge);
+    const routeur = new CiscoRouter('R');
+    for (const commande of ['enable', 'configure terminal',
+      'access-list 100 permit 103 any any',
+      'access-list 101 permit 112 any any', 'end']) {
+      await routeur.executeCommand(commande);
+    }
+    const vue = await routeur.executeCommand('show access-lists');
+    expect(vue).toContain('permit pim any any');
+    expect(vue).toContain('permit 112 any any');
   });
 });
 
