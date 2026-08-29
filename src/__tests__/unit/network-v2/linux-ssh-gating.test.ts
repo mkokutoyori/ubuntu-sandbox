@@ -65,11 +65,9 @@ describe('ssh client — remote sshd gating', () => {
     expect(out).toMatch(/Connection refused/);
   });
 
-  it('refuses when the IP is not on the topology at all', async () => {
+  it('refuses with ENETUNREACH when no route reaches the IP', async () => {
     const out = await client.executeCommand('ssh user@192.0.2.99');
-    // Valid-looking IPv4 with no owner on the LAN is a routing failure,
-    // not a DNS failure — matches real OpenSSH for an unreachable IP.
-    expect(out).toMatch(/No route to host|Could not resolve hostname/);
+    expect(out).toMatch(/Network is unreachable/);
   });
 
   it('records a syslog line in /var/log/auth.log on the remote on success', async () => {

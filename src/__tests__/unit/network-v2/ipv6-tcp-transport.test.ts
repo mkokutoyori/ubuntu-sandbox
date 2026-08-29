@@ -109,10 +109,10 @@ describe('TCP over IPv6 — real handshake (RFC 9293)', () => {
     expect(outcome).toBe('refused');
   });
 
-  it('times out when no cabled path reaches the IPv6 destination', () => {
+  it('reports unreachable when no route reaches the IPv6 destination', () => {
     const { pc } = buildLan();
     const outcome = pc.tcpConnectOutcome6(new IPv6Address('2001:dead::9'), 80);
-    expect(outcome).toBe('timeout');
+    expect(outcome).toBe('unreachable');
   });
 
   it('a dual-stack :: listener accepts an IPv6 connection', async () => {

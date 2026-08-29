@@ -2249,10 +2249,10 @@ describe('§34 — SCP error paths', () => {
       contains: [/not a regular file|^scp:/m],
     },
     {
-      name: 'unknown remote host yields "no route to host"',
+      name: 'unknown remote host yields "Network is unreachable"',
       setup: async (l) => { await l.linux1.executeCommand('echo data > /tmp/lonely'); },
       on: l => l.linux1, cmd: 'scp /tmp/lonely alice@192.0.2.250:/tmp/lonely',
-      contains: [/^scp:/m, /no route to host|No route to host/i],
+      contains: [/^scp:/m, /Network is unreachable/],
     },
     {
       name: 'usage line printed when only one argv positional is given',

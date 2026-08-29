@@ -122,6 +122,8 @@ describe('une destination sans route n\'est pas un delai', () => {
     const { poste } = await maquette();
     const lointain = new LinuxPC('LOIN');
     new Cable('c2').connect(lointain.getPorts()[0], poste.getPorts()[1]);
+    poste.getPorts()[1].setAdminShutdown(false);
+    lointain.getPorts()[0].setAdminShutdown(false);
     lointain.getPorts()[0].configureIP(
       new IPAddress('172.16.9.9'), new SubnetMask('255.255.255.0'));
 
