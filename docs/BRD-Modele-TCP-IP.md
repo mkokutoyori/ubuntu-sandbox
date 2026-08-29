@@ -521,6 +521,15 @@ aura son PRD. **L'ordre est celui du risque croissant**, et il est
 délibérément *ascendant* : on livre d'abord la couche dont personne ne
 dépend encore.
 
+**État au terme du chantier** : les phases 1 à 6 sont CLOSES. La phase 7
+n'était pas au plan d'origine — elle est née de la phase 6, qui a livré la
+brique interne (`buildIpv4Frame`) et rendu visible que **l'offre** de la
+couche internet, décrite au §3.3, n'existait toujours pas ; elle est
+livrée pour les tunnels et reste ouverte pour PIM, VRRP, HSRP et GLBP.
+Deux points sont mesurés, bloqués et nommés plutôt que devinés : la vue
+des ports ouverts d'un routeur (phase 4) et l'option Router Alert d'IGMP
+(phase 7), tous deux inscrits au `TODO.md`.
+
 ### Phase 1 — La couche lien existe et porte le drapeau de diffusion
 Créer `layers/link/`. `Equipment` l'expose. Les 12 moteurs L2 la
 consomment. **Sortie** : `wasLinkBroadcast` est décidé en un seul lieu,
