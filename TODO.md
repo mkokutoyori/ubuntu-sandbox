@@ -187,6 +187,31 @@ refusee plutot que rangee sans etre lue.
 
 ## Couche transport (BRD TCP/IP)
 
+### [udp6] un routeur n'emet ni ne recoit d'UDP en IPv6 (hors DHCPv6)
+**Constat, les deux moities.** A l'EMISSION, `Router.sendUdpDatagram` est
+ecrit sur l'offre IPv4 (`sendIpv4Packet`) et n'a aucun pendant v6 : un
+routeur ne peut adresser aucun datagramme UDP a une destination IPv6. A
+la RECEPTION, `IPv6DataPlane.handleLocalDelivery` aiguille OSPFv3,
+ICMPv6, et sous UDP le SEUL port 547 (DHCPv6) — tout le reste est jete en
+silence. Consequence : ni NTP, ni syslog, ni SNMP, ni RADIUS en IPv6 sur
+un routeur, alors que les quatre fonctionnent en IPv4.
+
+**Mesure.** `grep -n "IP_PROTO_UDP" src/network/devices/router/IPv6DataPlane.ts`
+ne montre qu'une branche, gardee par `udp.destinationPort === 547` ; et
+`Router` ne porte aucun `udpBind`, sa reception de plan de controle
+passant par `receiveControlPlaneUdp`, dont la carte de revendications
+(`controlPlaneUdpClaims`) est purement IPv4.
+
+**Raison du report.** C'est le pendant v6 de tout ce que la phase 4 a
+bati pour IPv4 — la table de ports, les revendications de plan de
+controle, `sourceAddressFor`, le regime « interface nommee » pour un
+groupe — et non un branchement d'une ligne ; le lot 4 vient de faire la
+moitie TCP de ce chantier et la moitie UDP en est le jumeau, de taille
+comparable. Le prerequis est desormais en place : `IPv6DataPlane`
+expose `resolvePath` et `sendFrameNdpAware`, et `selectIpv6SourceAddress`
+repond a « quelle adresse source ».
+
+
 ### [ssh] le refus SSH parle OpenSSH sur les CLI constructeur, et se trompe d'errno partout
 **Constat, en DEUX defauts distincts qu'il ne faut pas confondre.**
 
