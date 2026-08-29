@@ -281,7 +281,7 @@ export class IPv6DataPlane {
     this.sendRouterAdvertisement(portName, null);
   }
 
-  addStaticRoute(prefix: IPv6Address, prefixLength: number, nextHop: IPv6Address, iface: string, metric: number = 0): void {
+  addStaticRoute(prefix: IPv6Address, prefixLength: number, nextHop: IPv6Address | null, iface: string, metric: number = 0): void {
     this.routingTable.push({
       prefix,
       prefixLength,

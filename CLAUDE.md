@@ -460,6 +460,27 @@ seule et **ne change aucune sémantique protocolaire** : un moteur qui
   le message d'IOS, au lieu de `gateway or route not found`, qui n'est
   d'aucune machine réelle.
 
+- **`ipv6 route <préfixe> <interface>` installe enfin une route, et le
+  saut suivant absent est une ABSENCE** (phase 8, lots 10-11). Deux
+  défauts jumeaux. Côté v4, `route.nextHop || destination` est FAUX pour
+  `0.0.0.0`, qui est un OBJET `IPAddress` donc vrai : une autre session a
+  corrigé quatre sites, et un CINQUIÈME survivait sur le chemin ouvert par
+  le lot 3 — `resolveRouteForHost` écrit `route.nextHop ?? dest`, et le
+  `??` échappe à une recherche du `||`. Mesuré : une connexion TCP sur une
+  route par interface émettait `arpTarget=0.0.0.0`, à quoi personne ne
+  peut répondre (RFC 1122 §3.2.1.3). Corrigé en LISANT `nextHopTarget`, la
+  règle posée par l'autre session, plutôt qu'en écrivant un sixième
+  idiome. Côté v6, le même idiome existait en quatre endroits mais était
+  INATTEIGNABLE : `ipv6 route 2001:DB8:5::/64 GigabitEthernet0/1` —
+  syntaxe réelle d'IOS — était acceptée sans message et n'installait
+  RIEN, un `catch` avalant l'exception et rangeant la ligne dans un sac
+  que rien ne lit (le même `catch` avalait aussi un préfixe ou un saut
+  suivant malformés, contre la règle « on ne range pas un critère qu'on
+  n'évalue pas »). La commande vivante, la route porte `nextHop: null` —
+  ce que `IPv6RouteEntry` admettait déjà — donc l'idiome rend la
+  destination sans qu'on le touche : l'absence est représentée par une
+  absence, et le défaut ne peut pas naître de ce côté.
+
 - **Un routeur émet ET reçoit de l'UDP en IPv6** (phase 8, lot 9), jumeau
   UDP du lot 4 sur le même objet, et les DEUX moitiés manquaient : à
   l'émission `Router.sendUdpDatagram` n'avait aucun pendant v6, donc un

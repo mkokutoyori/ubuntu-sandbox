@@ -1976,10 +1976,11 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
   getIPv6RoutingTable() { return this.ipv6Engine.getRoutingTable(); }
 
   addIPv6StaticRoute(
-    prefix: IPv6Address, prefixLength: number, nextHop: IPv6Address, metric: number = 0,
+    prefix: IPv6Address, prefixLength: number, nextHop: IPv6Address | null, metric: number = 0,
     opts?: { iface?: string; preference?: number },
   ): boolean {
-    const ifaceName = opts?.iface ?? this._findInterfaceForIPv6(nextHop)?.getName() ?? '';
+    const ifaceName = opts?.iface
+      ?? (nextHop ? this._findInterfaceForIPv6(nextHop)?.getName() : undefined) ?? '';
     this.ipv6Engine.addStaticRoute(prefix.getNetworkPrefix(prefixLength), prefixLength, nextHop, ifaceName, metric);
     const table = this.ipv6Engine.getRoutingTableInternal();
     const entry = table[table.length - 1];

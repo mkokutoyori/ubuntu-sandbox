@@ -295,6 +295,14 @@ export function buildConfigCommands(trie: CommandTrie, ctx: CiscoShellContext): 
   // register them again here.
 
   // IPv6 static routes
+  const parseIpv6OrNull = (text: string): IPv6Address | null => {
+    try {
+      return new IPv6Address(text);
+    } catch {
+      return null;
+    }
+  };
+
   trie.registerGreedy('ipv6 route', 'Configure IPv6 static route', (args) => {
     if (args.length < 2) return '% Incomplete command.';
     // ipv6 route <prefix>/<len> <next-hop>
@@ -304,16 +312,25 @@ export function buildConfigCommands(trie: CommandTrie, ctx: CiscoShellContext): 
     if (slashIdx === -1) return '% Invalid prefix format';
     const prefix = prefixStr.substring(0, slashIdx);
     const prefixLen = parseInt(prefixStr.substring(slashIdx + 1), 10);
-    if (isNaN(prefixLen)) throw new CliInvalidInput();
+    if (isNaN(prefixLen) || prefixLen < 0 || prefixLen > 128) throw new CliInvalidInput();
+    let prefixAddr: IPv6Address;
     try {
-      const prefixAddr = new IPv6Address(prefix);
-      const nextHop = new IPv6Address(nextHopStr);
-      ctx.r().addIPv6StaticRoute(prefixAddr, prefixLen, nextHop);
-    } catch (e: any) {
-      // Store as unresolved static route for later redistribution
-      (ctx.r() as any)._ipv6StaticRoutes = (ctx.r() as any)._ipv6StaticRoutes || [];
-      (ctx.r() as any)._ipv6StaticRoutes.push({ prefix: prefixStr, nextHop: nextHopStr });
+      prefixAddr = new IPv6Address(prefix);
+    } catch {
+      return '% Invalid prefix format';
     }
+
+    const egress = ctx.r().getPort(nextHopStr);
+    if (egress) {
+      const viaHop = args[2] ? parseIpv6OrNull(args[2]) : null;
+      if (args[2] && !viaHop) return '% Invalid next-hop address';
+      ctx.r().addIPv6StaticRoute(prefixAddr, prefixLen, viaHop, 0, { iface: egress.getName() });
+      return '';
+    }
+
+    const nextHop = parseIpv6OrNull(nextHopStr);
+    if (!nextHop) return '% Invalid next-hop address';
+    ctx.r().addIPv6StaticRoute(prefixAddr, prefixLen, nextHop);
     return '';
   });
 

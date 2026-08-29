@@ -1762,6 +1762,34 @@ inventer.
 parce qu'il marchait que le défaut ne se voyait que sur la forme par
 interface.
 
+#### Lot 11 — `ipv6 route <préfixe> <interface>` installe enfin une route
+
+Le lot 10 avait constaté que le jumeau IPv6 de son défaut était
+INATTEIGNABLE, précisément parce qu'aucune commande ne savait installer
+une route sans saut suivant. Ce lot rend la commande vivante, donc le
+chemin atteignable, et vérifie qu'il est juste.
+
+**Mesuré** : `ipv6 route 2001:DB8:5::/64 GigabitEthernet0/1` — syntaxe
+réelle d'IOS pour une route statique directement attachée — était
+acceptée SANS message et n'installait RIEN ; `show ipv6 route` ne rendait
+que la connectée, alors que l'équivalent IPv4 fonctionne depuis toujours.
+La cause est un `catch` qui avalait tout : `new IPv6Address(
+'GigabitEthernet0/1')` lève, et la branche de rattrapage rangeait la
+ligne dans `_ipv6StaticRoutes`, un sac que RIEN ne lit pour acheminer. Le
+même `catch` avalait un préfixe ou un saut suivant MALFORMÉS, ce que la
+règle du dépôt interdit — on ne range pas un critère qu'on n'évalue pas.
+
+**Le saut suivant absent est une ABSENCE, pas `::`.** La route porte
+`nextHop: null`, ce que `IPv6RouteEntry` admettait déjà, si bien que
+l'idiome `route.nextHop ?? dstIp` du plan de données rend la destination
+sans qu'on ait à le toucher : la sollicitation de voisin vise
+`2001:db8:5::9`. C'est la différence avec le côté v4, où `0.0.0.0` était
+un OBJET donc VRAI — ici l'absence est représentée par une absence, et le
+défaut ne peut pas naître.
+
+`probe-route-ipv6-par-interface.test.ts` (5 cas) est discriminé :
+4 tombent ; le TÉMOIN est la forme par saut suivant, qui marchait déjà.
+
 ---
 
 ---
