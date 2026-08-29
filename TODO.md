@@ -250,12 +250,22 @@ existe mais que personne ne repond ; les deux chemins — interactif
 (`wireSshLogin`) et scripte (`LinuxSshClient`) — la lisent.
 
 **Raison du report de (a).** Le correctif est un `SshDialect` calque sur
-`TelnetDialect`, et **la matiere manque** : le message du client SSH
-d'IOS pour une absence de route n'est atteste par aucune source
-atteignable depuis ce reseau (`% Connection refused by remote host` l'est
-pour le refus, `% Destination unreachable; gateway or host down` l'est
-pour telnet, mais rien ne dit que le client SSH ecrit le meme). L'ecrire
-sans capture serait l'invention que ce depot refuse.
+`TelnetDialect`, et la matiere est PARTIELLE. Ce qui est desormais
+atteste pour le client SSH d'IOS, et qui ne l'etait pas quand cette
+entree a ete ouverte :
+
+- **absence de route** : `% Destination unreachable; gateway or host down`
+  — transcription reelle montrant `ssh -l SSHadmin 192.168.1.1` suivi de
+  cette ligne, plus un fil de Cisco Community sur le meme message ; c'est
+  donc bien le MEME texte que telnet, ce qui se comprend, les deux
+  clients partageant le chemin de connexion TCP d'IOS ;
+- **refus** : `% Connection refused by remote host`.
+
+Ce qui MANQUE encore, et qui empeche d'ecrire la table entiere sans
+inventer : le texte d'IOS pour un DELAI et pour un nom non resolu cote
+SSH, et **tout** le cote VRP. Une table dont la moitie serait devinee
+serait pire que l'etat actuel, ou au moins la phrase rendue est celle
+d'un vrai client, fut-il d'une autre plateforme.
 
 ### [nmap] une adresse valide qu'aucun equipement ne porte est « Failed to resolve »
 **Constat.** `nmap -p 22 10.0.0.55` depuis une machine en 10.0.0.1/24 rend
