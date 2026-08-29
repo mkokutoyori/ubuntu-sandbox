@@ -1,5 +1,6 @@
 import { EPHEMERAL_PORT_MIN, EPHEMERAL_PORT_MAX } from '../../core/WellKnownPorts';
 import { allocateEphemeralPort } from './EphemeralPorts';
+import { PortNumber } from '../../core/ports/PortNumber';
 
 export interface UdpBinding<Delivery> {
   readonly port: number;
@@ -26,6 +27,7 @@ export class UdpPortTable<Delivery> {
   }
 
   bind(port: number, handler: (delivery: Delivery) => void, owner = 'application'): boolean {
+    if (!PortNumber.isValid(port)) return false;
     if (this.isTaken(port)) return false;
     this.bindings.set(port, { port, owner, handler });
     return true;

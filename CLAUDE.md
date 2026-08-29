@@ -460,6 +460,22 @@ seule et **ne change aucune sémantique protocolaire** : un moteur qui
   le message d'IOS, au lieu de `gateway or route not found`, qui n'est
   d'aucune machine réelle.
 
+- **Un port qu'aucun paquet ne peut porter ne se lie pas** (audit,
+  lot 14). `udpBind` et `TcpStack.listen` acceptaient TOUT — 99999, -1,
+  65536, 1.5, et même `NaN`, qui se liait proprement puisque `Map`
+  l'accepte comme clé. Le champ de port fait SEIZE BITS sur le fil : ce
+  qu'on obtenait était un écouteur MUET, lié et visible dans la table mais
+  hors d'atteinte de toute trame, si bien qu'une faute de frappe donnait
+  un serveur qui ne répond jamais sans un mot pour le dire. Le correctif
+  LIT `PortNumber.isValid` — la règle RFC 6335 que `core/ports/` portait
+  déjà, dont l'en-tête promettait justement qu'« an invalid port can never
+  propagate » — au lieu d'écrire une seconde vérification ; chaque
+  plateforme refuse dans ses mots (`udpBind` rend `false` comme pour un
+  port pris, `listen` LÈVE comme pour EADDRINUSE). **Le port 0 reste
+  accepté délibérément** : la RFC le compte dans la plage, et son sens
+  réel — « attribue-m'en un éphémère » — est une autre fonction, inscrite
+  au `TODO.md` plutôt que tranchée en passant.
+
 - **Un RST n'est cru que là où il n'a pas pu être deviné** (audit, lot 12).
   `_processSegment` acceptait le drapeau RST INCONDITIONNELLEMENT, sans
   regarder le numéro de séquence : mesuré, un RST porté à

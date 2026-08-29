@@ -9,6 +9,7 @@ import {
   TCP_DEFAULT_MSS, TCP_DEFAULT_WINDOW, TCP_TIME_WAIT_MS, TCP_MIN_MSS,
 } from './types';
 import { payloadBytes } from '@/network/layers/transport/L4Checksum';
+import { PortNumber } from '@/network/core/ports/PortNumber';
 import {
   connectedPrefixesOfPort, isUnicastDestination, type ConnectedIpv4Prefix,
 } from '@/network/layers/internet/InternetLayer';
@@ -383,6 +384,9 @@ export class TcpStack {
   private socketSink: ListenerSocketSink | null = null;
 
   listen(localPort: number, opts: TcpListenOptions, localIp = '0.0.0.0'): TcpListener {
+    if (!PortNumber.isValid(localPort)) {
+      throw new Error(`TCP listener port out of range: ${localPort} (EINVAL)`);
+    }
     const listener = new TcpListener(localIp, localPort, opts.onAccept, opts.identity ?? {});
     if (this.listeners.has(listener.key())) {
       throw new Error(`TCP listener already bound on ${localIp}:${localPort} (EADDRINUSE)`);

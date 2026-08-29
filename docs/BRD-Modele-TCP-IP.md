@@ -1848,6 +1848,29 @@ ne route rien vers `::` ni vers un voisin multicast absent du cache. La
 règle rend ce silence intentionnel et indépendant de l'état du cache ;
 ces deux cas le GARDENT au lieu de le prouver, et la sonde le dit.
 
+#### Lot 14 — un port qu'aucun paquet ne peut porter ne se lie pas
+
+`udpBind` et `TcpStack.listen` acceptaient TOUT : 99999, -1, 65536, 1.5
+et même `NaN`. Le champ de port fait SEIZE BITS sur le fil, donc aucun
+paquet ne peut en porter un seul — ce qu'on obtenait était un écouteur
+MUET, lié, visible dans la table, hors d'atteinte de toute trame. Une
+faute de frappe donnait un serveur qui ne répond jamais, sans un mot pour
+le dire ; et `NaN` se liait proprement, `Map` l'acceptant comme clé.
+
+Le correctif LIT ce que le dépôt avait déjà : `core/ports/PortNumber.ts`
+porte la règle depuis longtemps — son en-tête dit « Construction fails
+fast on an out-of-range value, so an invalid port can never propagate » —
+et `isValid` est exactement la RFC 6335. Les deux points de liaison la
+lisent au lieu de n'en rien faire, chacun refusant dans ses mots :
+`udpBind` rend `false` comme pour un port déjà pris, `listen` LÈVE comme
+il le fait déjà pour EADDRINUSE.
+
+**Le port 0 reste accepté, délibérément** : `MIN_PORT` vaut 0, la RFC le
+compte dans la plage. Sur une vraie machine `bind(0)` veut dire
+« attribue-m'en un éphémère », sens que cette pile n'implante pas ;
+trancher cela dans un lot qui portait sur les ports IMPOSSIBLES aurait
+mélangé deux questions, donc c'est inscrit au `TODO.md`.
+
 ---
 
 ---

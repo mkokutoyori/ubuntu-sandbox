@@ -187,6 +187,27 @@ refusee plutot que rangee sans etre lue.
 
 ## Couche transport (BRD TCP/IP)
 
+### [port] le port 0 se lie LITTERALEMENT au lieu d'en attribuer un
+**Constat.** `PortNumber.isValid(0)` est VRAI — la RFC 6335 compte 0 dans
+la plage — donc `udpBind(0)` et `listen(0)` reussissent et posent un
+ecouteur sur le port 0. Sur une vraie machine, `bind()` avec le port 0 a
+un sens PARTICULIER : « attribue-m'en un ephemere », et l'appelant relit
+ensuite le port reellement obtenu par `getsockname()`.
+
+**Mesure.** Faite en fermant le lot 14 : des cinq ports impossibles
+essayes (99999, -1, 65536, 1.5, NaN) les cinq sont desormais refuses, et
+le port 0 reste accepte tel quel — un ecouteur qu'aucune trame ordinaire
+n'atteindra, puisque rien n'adresse le port 0.
+
+**Raison du report.** Trois comportements sont defendables et le choix
+n'est pas mecanique : refuser (mais on s'ecarte alors de la plage
+normalisee que `PortNumber` encode), honorer le sens reel (il faut alors
+rendre le port attribue a l'appelant, donc changer la signature des deux
+points de liaison et de leurs appelants), ou laisser tel quel. Trancher
+en passant, dans un lot qui portait sur les ports IMPOSSIBLES, aurait
+melange deux questions.
+
+
 ### [udp6] les AGENTS du plan de controle restent en IPv4
 **Constat.** Le socle UDP/IPv6 d'un routeur existe depuis le lot 9 —
 `sendUdpDatagram6` emet, `deliverUdp6` remet a la table de ports, un port
