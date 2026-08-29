@@ -76,6 +76,7 @@ import { Logger } from '../core/Logger';
 import {
   buildICMPError,
   mayGenerateICMPError,
+  mayGenerateICMPv6Error,
   ICMP_FRAG_REASSEMBLY_TIME_EXCEEDED,
   ICMP_UNREACH_NET,
   ICMP_UNREACH_HOST,
@@ -3053,17 +3054,14 @@ export abstract class EndHost extends Equipment {
 
     if (this.dispatchUdpToListener(portName, udp, ipv6.sourceIP, ipv6.destinationIP)) return;
 
-    if (!ipv6.destinationIP.isMulticast()) {
-      this.sendICMPv6Unreachable(portName, ipv6);
-    }
+    this.sendICMPv6Unreachable(portName, ipv6);
   }
 
   private sendICMPv6Unreachable(portName: string, offendingPkt: IPv6Packet, code: number = ICMPV6_UNREACH_PORT): void {
+    if (!mayGenerateICMPv6Error(offendingPkt, 'destination-unreachable')) return;
     const port = this.ports.get(portName);
     if (!port || !port.isIPv6Enabled()) return;
-    const srcIP = offendingPkt.destinationIP.isMulticast()
-      ? (port.getGlobalIPv6() || port.getLinkLocalIPv6())
-      : offendingPkt.destinationIP;
+    const srcIP = offendingPkt.destinationIP;
     if (!srcIP) return;
 
     const icmpError: ICMPv6Packet = {

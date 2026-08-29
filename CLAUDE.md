@@ -460,6 +460,37 @@ seule et **ne change aucune sémantique protocolaire** : un moteur qui
   le message d'IOS, au lieu de `gateway or route not found`, qui n'est
   d'aucune machine réelle.
 
+- **Un RST n'est cru que là où il n'a pas pu être deviné** (audit, lot 12).
+  `_processSegment` acceptait le drapeau RST INCONDITIONNELLEMENT, sans
+  regarder le numéro de séquence : mesuré, un RST porté à
+  `recvNext + 99999` fermait une connexion ÉTABLIE — l'injection de RST en
+  aveugle, où qui connaît les deux adresses et les deux ports coupe la
+  connexion sans avoir vu un octet du flux. `tcp_validate_incoming`
+  (net/ipv4/tcp_input.c) applique la RFC 5961 §3.2 en trois issues :
+  séquence exactement `RCV.NXT` → la connexion tombe ; dans la fenêtre
+  mais décalée → *challenge ACK*, connexion intacte ; hors fenêtre →
+  jetée sans un mot. **SYN-SENT est un cas à part** (RFC 9293 §3.10.7.3),
+  le RST y étant jugé sur le champ ACK — l'oublier casse le refus sur port
+  fermé. Non faits, et c'est le côté sûr : la limitation de débit des
+  *challenge ACK* (rien ici ne mesure un débit) et les deux tolérances de
+  `tcp_reset_check`, qui ÉLARGISSENT l'acceptation.
+
+- **Une erreur ICMPv6 ne répond pas à tout** (audit, lot 13).
+  `mayGenerateICMPError` porte les règles de la RFC 1122 §3.2.2 pour IPv4
+  et ses trois appelants la lisent ; `sendICMPv6Error` n'avait AUCUN
+  équivalent — même asymétrie v4/v6 que le reste de cet audit, et le lot 9
+  venait de la rendre plus atteignable : un datagramme adressé à un GROUPE
+  sur un port fermé faisait répondre le routeur à la source, à la fois
+  interdit et amplificateur. `mayGenerateICMPv6Error` applique la
+  RFC 4443 §2.4 (e) telle que `icmp6_send` la code, **exception
+  `packet-too-big` comprise** — seul message d'erreur qu'un groupe peut
+  déclencher, et le rater casserait la découverte de MTU sur un trajet
+  multicast. La discrimination a corrigé mon annonce : j'attendais trois
+  cas, il en tombe UN ; les deux cas de source passaient déjà mais **par
+  accident** — on ne route rien vers `::` ni vers un voisin multicast
+  absent du cache —, donc la règle rend ce silence intentionnel plutôt
+  qu'elle ne le crée.
+
 - **`ipv6 route <préfixe> <interface>` installe enfin une route, et le
   saut suivant absent est une ABSENCE** (phase 8, lots 10-11). Deux
   défauts jumeaux. Côté v4, `route.nextHop || destination` est FAUX pour

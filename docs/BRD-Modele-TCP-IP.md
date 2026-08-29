@@ -1790,6 +1790,64 @@ défaut ne peut pas naître.
 `probe-route-ipv6-par-interface.test.ts` (5 cas) est discriminé :
 4 tombent ; le TÉMOIN est la forme par saut suivant, qui marchait déjà.
 
+### Audit de la pile — lots 12 et 13
+
+Audit conduit par la MESURE plutôt que par la lecture : injection de
+paquets forgés sur le fil, et comparaison avec ce que la vraie machine
+fait. La plupart des points contrôlés sont JUSTES et c'est écrit ici,
+parce qu'un audit qui ne rapporte que ses trouvailles laisse croire que
+tout le reste est du même tonneau : la somme de contrôle UDP (y compris
+le refus du checksum nul en IPv6, RFC 8200 §8.1), la fragmentation et le
+réassemblage (clé RFC 791, minuterie RFC 792, `onExpire` réellement
+câblé des deux côtés), le RST sur port fermé, la négociation SACK /
+timestamps / window-scale (RFC 7323), TIME-WAIT, l'absence d'erreur ICMP
+vers une diffusion, et — contre-intuitivement — l'ACCEPTATION d'un
+datagramme à TTL 0 qui nous est destiné, que la RFC 1812 §5.3.1 exige
+explicitement (« a router MUST NOT discard a datagram just because it
+was received with TTL equal to zero or one »).
+
+#### Lot 12 — un RST n'est cru que là où il n'a pas pu être deviné
+
+`_processSegment` acceptait le drapeau RST INCONDITIONNELLEMENT, sans
+regarder le numéro de séquence. Mesuré : un RST porté à
+`recvNext + 99999` fermait une connexion ÉTABLIE. C'est l'injection de
+RST en aveugle — qui connaît les deux adresses et les deux ports coupe la
+connexion sans avoir vu un octet du flux.
+
+`tcp_validate_incoming` (net/ipv4/tcp_input.c) applique la RFC 5961 §3.2,
+et son commentaire l'écrit : séquence exactement `RCV.NXT` → la connexion
+tombe ; dans la fenêtre mais décalée → *challenge ACK* et connexion
+INTACTE ; hors fenêtre → jetée sans un mot. **SYN-SENT est un cas à
+part** (RFC 9293 §3.10.7.3) : le RST y est jugé sur le champ ACK, le pair
+n'ayant encore envoyé aucun numéro qu'on connaisse — l'oublier aurait
+cassé le refus de connexion sur port fermé.
+
+Délibérément non faits : la limitation de débit des *challenge ACK* (rien
+ici ne mesure un débit), et les deux tolérances de `tcp_reset_check`
+(`RCV.NXT - 1` après un FIN, bord droit du dernier bloc SACK) — ce sont
+des ÉLARGISSEMENTS de l'acceptation, donc les omettre est le côté sûr.
+
+#### Lot 13 — une erreur ICMPv6 ne répond pas à tout
+
+`mayGenerateICMPError` porte les règles de la RFC 1122 §3.2.2 pour IPv4 et
+ses trois appelants la lisent ; `sendICMPv6Error` n'avait AUCUN
+équivalent. Même asymétrie v4/v6 que cet audit a déjà rencontrée, et le
+lot 9 venait de la rendre plus atteignable : un datagramme adressé à un
+GROUPE sur un port fermé faisait répondre le routeur à la source — à la
+fois interdit et amplificateur.
+
+`mayGenerateICMPv6Error` applique la RFC 4443 §2.4 (e) telle que
+`icmp6_send` (net/ipv6/icmp.c) la code, **exception `packet-too-big`
+comprise** : c'est le seul message d'erreur qu'un groupe peut déclencher,
+et le rater aurait cassé la découverte de MTU sur un trajet multicast.
+
+**La discrimination a corrigé mon annonce** : j'attendais trois cas, il
+en tombe UN. Les deux cas de SOURCE passaient déjà, mais **par accident
+et non par règle** — `sendICMPv6Error` finit par `resolveEgress`, et on
+ne route rien vers `::` ni vers un voisin multicast absent du cache. La
+règle rend ce silence intentionnel et indépendant de l'état du cache ;
+ces deux cas le GARDENT au lieu de le prouver, et la sonde le dit.
+
 ---
 
 ---

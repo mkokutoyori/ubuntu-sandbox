@@ -13,6 +13,7 @@ import type { IScheduler } from '@/events/Scheduler';
 import { TimerSet } from '@/events/TimerSet';
 import { stampUdpChecksum } from '../../layers/transport/UdpChecksum';
 import { selectIpv6SourceAddress } from '../../layers/internet/Ipv6Egress';
+import { mayGenerateICMPv6Error } from '../../core/IcmpErrors';
 import {
   IPv6Address, IPv6Packet, ICMPv6Packet, MACAddress, UDPPacket,
   NDPNeighborSolicitation, NDPNeighborAdvertisement, NDPRouterSolicitation,
@@ -1099,6 +1100,7 @@ export class IPv6DataPlane {
     code: number,
     mtu?: number,
   ): void {
+    if (!mayGenerateICMPv6Error(offendingPkt, errorType)) return;
     const port = this.ctx.getPorts().get(inPort);
     if (!port) return;
     // RFC 4443 §2.2: a unicast address of the interface the packet came
