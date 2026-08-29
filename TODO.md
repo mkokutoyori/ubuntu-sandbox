@@ -1144,15 +1144,44 @@ défauts — la méthode vaut d'être reprise sur le reliquat.
   sur le bus GLOBAL alors que le bus d'une machine est le sien depuis
   5ff22d9b — la sonde lisait le mauvais bus, la fonction était juste.
 
-- Un routeur porte une SECONDE table de ports, et elle n'a pas de porte —
-  ouvert. `ControlPlaneUdpEndpoint` garde ses liaisons dans un
-  `Map<number, handler>` prive alors que `Router` n'a AUCUNE `SocketTable` ;
-  `boundPorts()`, le seul accesseur qui pourrait la montrer, n'a aucun
-  appelant dans tout le depot. `show ip sockets` reste donc a ecrire, et
-  la mesure des largeurs de colonnes est BLOQUEE : cisco.com est coupe par
-  le proxy de sortie et la documentation en HTML ecrase les blancs, qui
-  sont precisement l'information cherchee — il faut une capture texte
-  (jeu `ntc-templates`), absente de cette image.
+- Les ports ouverts d'un routeur n'ont pas de vue — ouvert, et la mesure
+  a corrige DEUX affirmations de l'entree precedente. (1) La commande a
+  ecrire n'est PAS `show ip sockets` : elle n'existe plus a partir
+  d'IOS 12.4(x)T, donc sur tout le train 15.x, et cette image se declare
+  `Version 15.7(3)M5` — l'ecrire apprendrait une commande que la vraie
+  machine refuse. Son remplacante est
+  `show control-plane host open-ports`, qui liste en plus les sockets
+  TCP la ou `show ip sockets` ne montrait que l'UDP. (2) « Une SECONDE
+  table de ports » etait trop simple : `SocketTable` (la vue observable
+  d'un hote — etat TCP, TIME_WAIT, pid, banniere, ce que lisent `ss` et
+  `netstat`) et `UdpPortTable` (le demultiplexeur port -> gestionnaire)
+  repondent a deux questions differentes, et `ownerOf` lit deja les
+  revendications de protocole a travers. Ce qui manque vraiment est la
+  VUE : les ecouteurs TCP du routeur vivent dans `TcpStack.listeners`,
+  ses liaisons UDP dans `ControlPlaneUdpEndpoint`, et aucune question
+  unique ne les rassemble — `attachSocketSink`, le port par lequel
+  `TcpStack` alimente une vue, n'est branche que par `EndHost`.
+  La mesure des largeurs reste BLOQUEE, et la verification est allee
+  jusqu'a la source cette fois : cisco.com et les blogs qui citent la
+  sortie sont coupes par le proxy de sortie, et l'index des modeles
+  `ntc-templates` (atteignable, lui) ne porte AUCUN gabarit pour
+  `show ip sockets`, `show tcp brief` ni `show control-plane host
+  open-ports` — il n'existe donc pas de capture texte a lire, et les
+  blancs sont precisement l'information cherchee.
+
+- `show tcp brief` et `show sockets` annoncent un en-tete et ne rendent
+  JAMAIS de ligne — ouvert. `showTcpBrief()` et `showSockets()`
+  (`cisco/CiscoCommonShow.ts`) rendent une CONSTANTE : une ligne
+  d'en-tete, rien d'autre, sur une machine qui porte pour de bon des
+  ecouteurs TCP sur 22 et 23 et de vraies sessions etablies que
+  `TcpStack.listListeners()` et `listSockets()` savent enumerer. Une vue
+  qui annonce « voici les connexions » et n'en montre aucune est pire
+  qu'une commande absente. L'en-tete de `show sockets` est de surcroit
+  INVENTE (`Proto Local Address Foreign Address State`), la vraie
+  commande ecrivant `Proto Remote Port Local Port In Out Stat TTY
+  OutputIF`. Meme blocage que ci-dessus : les largeurs ne sont pas
+  mesurables depuis ce reseau, et les ecrire au juge est exactement ce
+  que `ciscoTableLayouts.ts` existe pour empecher.
 
 - `sntp server` avait DEUX corps — fermée. Le même mot enregistré sur
   l'arbre privilégié et sur celui de configuration, avec des corps qui

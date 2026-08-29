@@ -1143,7 +1143,9 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
     const adminDown = this.bootsInterfacesShutdown() && interfacesBootShutdown();
     for (let i = 0; i < portCount; i++) {
       const portName = this.getVendorPortName(i);
-      this.addPort(new Port(portName, 'ethernet', undefined, { adminDown }));
+      const port = new Port(portName, 'ethernet', undefined, { adminDown });
+      port.setAddressListener((iface) => this.reconcileConnectedRoutes(iface));
+      this.addPort(port);
     }
   }
 
@@ -1432,6 +1434,7 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
       const parent = this.ports.get(name.slice(0, dot));
       if (parent) port.setMAC(parent.getMAC());
     }
+    port.setAddressListener((iface) => this.reconcileConnectedRoutes(iface));
     this.addPort(port);
     // Register OSPF monitor
     port.onLinkChange((state) => {
@@ -1605,6 +1608,32 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
   /**
    * Configure an IP on an interface. Automatically adds a connected route.
    */
+  reconcileConnectedRoutes(ifName: string): void {
+    const port = this.ports.get(ifName);
+    this.routingTable = this.routingTable.filter(
+      (r) => !(r.type === 'connected' && r.iface === ifName));
+    if (!port) return;
+
+    const addresses = [
+      ...(port.getIPAddress() && port.getSubnetMask()
+        ? [{ ip: port.getIPAddress() as IPAddress, mask: port.getSubnetMask() as SubnetMask }]
+        : []),
+      ...port.getSecondaryIPs(),
+    ];
+    for (const { ip, mask } of addresses) {
+      this.routingTable.push({
+        network: ip.networkAddress(mask),
+        mask,
+        nextHop: null,
+        iface: ifName,
+        type: 'connected',
+        ad: 0,
+        metric: 0,
+        installedAt: Date.now(),
+      });
+    }
+  }
+
   configureInterface(ifName: string, ip: IPAddress, mask: SubnetMask, secondary = false): boolean {
     const port = this.ports.get(ifName);
     if (!port) return false;
@@ -1613,28 +1642,8 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
       port.addSecondaryIP(ip, mask);
     } else {
       port.configureIP(ip, mask);
-      // Remove old primary connected route for this interface, keeping
-      // routes belonging to secondary subnets still configured.
-      const secondaryNets = port.getSecondaryIPs().map((e) =>
-        e.ip.getOctets().map((o, i) => o & e.mask.getOctets()[i]).join('.'));
-      this.routingTable = this.routingTable.filter(
-        r => !(r.type === 'connected' && r.iface === ifName
-          && !secondaryNets.includes(String(r.network)))
-      );
     }
-
-    // Add connected route
-    const networkOctets = ip.getOctets().map((o, i) => o & mask.getOctets()[i]);
-    this.routingTable.push({
-      network: new IPAddress(networkOctets),
-      mask,
-      nextHop: null,
-      iface: ifName,
-      type: 'connected',
-      ad: 0,
-      metric: 0,
-      installedAt: Date.now(),
-    });
+    this.reconcileConnectedRoutes(ifName);
 
     Logger.info(this.id, 'router:interface-config',
       `${this.name}: ${ifName} configured ${ip}/${mask.toCIDR()}`);
@@ -1670,10 +1679,7 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
     if (!port) return false;
 
     port.clearIP();
-
-    this.routingTable = this.routingTable.filter(
-      r => !(r.type === 'connected' && r.iface === ifName)
-    );
+    this.reconcileConnectedRoutes(ifName);
 
     Logger.info(this.id, 'router:interface-config',
       `${this.name}: ${ifName} IP address removed`);

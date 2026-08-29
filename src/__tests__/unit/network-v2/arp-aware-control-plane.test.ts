@@ -54,8 +54,10 @@ function twoRoutersOnASwitch(nameA: string, ipA: string, nameB: string, ipB: str
   const c2 = new Cable('c2'); c2.setEventBus(bus);
   c1.connect(a.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/1')!);
   c2.connect(b.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/2')!);
-  a.getPort('GigabitEthernet0/0')!.configureIP(new IPAddress(ipA), new SubnetMask('255.255.255.0'));
-  b.getPort('GigabitEthernet0/0')!.configureIP(new IPAddress(ipB), new SubnetMask('255.255.255.0'));
+  a.configureInterface('GigabitEthernet0/0', new IPAddress(ipA), new SubnetMask('255.255.255.0'));
+  b.configureInterface('GigabitEthernet0/0', new IPAddress(ipB), new SubnetMask('255.255.255.0'));
+  a._clearArpEntry(ipB);
+  b._clearArpEntry(ipA);
   return { bus, a, b, sw };
 }
 

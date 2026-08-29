@@ -990,16 +990,35 @@ et `nat-engine-own-bus` (1) ; ils sont inscrits au `TODO.md`. Une
 première lecture n'en avait vu que deux, parce qu'elle s'appuyait sur une
 passe interrompue : le chiffre complet dit cinq.
 
-**Reste de la phase 4** : `Router` n'a AUCUNE `SocketTable` — son
-`ControlPlaneUdpEndpoint` garde ses liaisons dans une `Map` privée, donc
-un routeur porte bien une seconde table de ports. Elle n'a pas de porte :
-`boundPorts()`, écrit pour la montrer, n'a aucun appelant dans le dépôt,
-et `show ip sockets` n'existe pas. La mesure des largeurs de colonnes est
-BLOQUÉE — cisco.com est coupé par le proxy de sortie et la documentation
-HTML écrase les blancs, qui sont précisément l'information cherchée ; il
-faut une capture texte (`ntc-templates`), absente de cette image. Écrire
-la vue sur des largeurs devinées serait exactement ce que
-`ciscoTableLayouts.ts` existe pour empêcher.
+**Reste de la phase 4**, et la mesure a corrigé DEUX affirmations de la
+version précédente de ce paragraphe. **(1) La commande à écrire n'est pas
+`show ip sockets`** : elle disparaît à partir d'IOS 12.4(x)T, donc sur
+tout le train 15.x, et cette image se déclare `Version 15.7(3)M5` —
+l'écrire apprendrait une commande que la vraie machine refuse. Sa
+remplaçante est `show control-plane host open-ports`, qui liste en plus
+les sockets TCP là où `show ip sockets` ne montrait que l'UDP. **(2) « Une
+seconde table de ports » était trop simple** : `SocketTable` (la vue
+observable d'un hôte — état TCP, TIME_WAIT, pid, bannière, ce que lisent
+`ss` et `netstat`) et `UdpPortTable` (le démultiplexeur port → gestionnaire)
+répondent à deux questions différentes, et `ownerOf` lit déjà les
+revendications de protocole à travers. Ce qui manque est la VUE : les
+écouteurs TCP du routeur vivent dans `TcpStack.listeners`, ses liaisons
+UDP dans `ControlPlaneUdpEndpoint`, et aucune question unique ne les
+rassemble — `attachSocketSink`, le port par lequel `TcpStack` alimente une
+vue, n'est branché que par `EndHost`.
+
+La mesure des largeurs reste BLOQUÉE, et la vérification est allée jusqu'à
+la source cette fois plutôt que de répéter le constat : cisco.com et les
+blogs qui citent la sortie sont coupés par le proxy de sortie, et l'index
+des gabarits `ntc-templates` — atteignable, lui — ne porte AUCUN modèle
+pour `show ip sockets`, `show tcp brief` ni
+`show control-plane host open-ports`. Il n'existe donc pas de capture
+texte à lire, et les blancs sont précisément l'information cherchée.
+Écrire la vue sur des largeurs devinées serait exactement ce que
+`ciscoTableLayouts.ts` existe pour empêcher. Trouvé en le mesurant et
+inscrit au `TODO.md` : `show tcp brief` et `show sockets` EXISTENT déjà et
+rendent une CONSTANTE — un en-tête, jamais une ligne — sur une machine qui
+porte de vrais écouteurs et de vraies sessions.
 
 **Sortie** : la somme de contrôle UDP sort de `tcp/types.ts` ; une seule
 table de ports.
@@ -1092,6 +1111,47 @@ l'offre de la couche, qui prend une requête. Elle ne concerne que les
 familles NTP encore hébergées par un hôte : RADIUS et DHCP sont hébergés
 par le routeur et le commutateur, qui portent tous deux la forme en
 requête. Le reliquat NTP reste inscrit au `TODO.md`.
+
+**Lot 8 — la sortie est celle que la TABLE désigne.** Les trois premières
+familles portaient chacune sa copie de `resolveEgress`, mot pour mot la
+même : « quel port est sur le même sous-réseau que la cible ? », écrite à
+la main en `split('.').map(Number)` alors qu'`IPAddress`/`SubnetMask`
+répondent déjà. Elle ne répond pas à la bonne question — un routeur
+consulte sa table — et son REPLI, quand aucun port ne convient, prend LE
+PREMIER PORT qui porte une adresse et dont le lien est up, quelle que soit
+la direction de la cible. Sur un routeur à une seule liaison montante il
+donne la bonne réponse par accident ; avec deux, l'export part du mauvais
+côté. Syslog était déjà passé par la table au lot 1 ; NetFlow et SNMP la
+lisent maintenant aussi, et les trois copies disparaissent.
+
+**Ce qui n'est délibérément PAS converti** : la RÉPONSE SNMP
+(`get-response`) repart par l'interface d'ARRIVÉE, parce que son adresse
+source doit être celle que le gestionnaire a composée — sans quoi il
+rejette la réponse. Ce n'est pas une décision de routage, et la router
+serait un défaut, pas une uniformisation.
+
+**Le défaut que la conversion a révélé est plus grave que la duplication.**
+`port.configureIP()` posait l'adresse SANS poser la route connectée : seul
+`Router.configureInterface()` le faisait. Une machine avec une adresse et
+aucune route n'existe pas — configurer une adresse EST ce qui crée la
+route connectée — et le piège était ouvert à tout appelant : vingt-quatre
+cas de quatre fichiers étaient tombés dedans, et le client DHCP du routeur
+n'y échappait qu'en appelant les deux méthodes l'une après l'autre. Le
+correctif est à la SOURCE plutôt que dans les laboratoires :
+`Port.setAddressListener` prévient son propriétaire à chaque changement
+d'adresse — primaire, secondaire, effacement — et
+`Router.reconcileConnectedRoutes` devient le SEUL écrivain des routes
+connectées, `configureInterface` et `unconfigureInterface` le lisant au
+lieu de porter chacun sa moitié de la règle. Le crochet est posé depuis
+l'intérieur et non par un abonnement au bus, pour la raison
+qu'`attachSocketSink` inscrit déjà dans `TcpStack` : le bus est remis à
+zéro avant chaque test, et un abonné mort ne se voit pas.
+
+`probe-egress-par-la-table-de-routage.test.ts` (7 cas) : QUATRE tombent
+contre l'état d'avant. Le laboratoire discriminant donne DEUX liaisons
+montantes à l'exportateur, sans quoi le repli du parcours donnait la bonne
+réponse par accident — la première version de la sonde ne discriminait
+rien, et c'est la mesure qui l'a dit.
 
 ### Phase 6 — `core/packetBuilders.ts` : brancher ou supprimer — FERMÉE
 **Mesure de départ** : les trois fonctions du module (`buildIpv4Frame`,

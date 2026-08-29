@@ -17,7 +17,7 @@ import {
   type EthernetFrame, type IPv4Packet, type UDPPacket,
 } from '../core/types';
 import { Logger } from '../core/Logger';
-import { buildUdpOverIpv4 } from '../layers/transport/UdpEgress';
+import { buildUdpOverIpv4, type UdpSendRequest } from '../layers/transport/UdpEgress';
 
 export interface SnmpHost {
   readonly id: string;
@@ -30,6 +30,7 @@ export interface SnmpHost {
   getSysObjectId(): string;
   /** ARP-aware send (queues on a cold cache instead of broadcasting) — falls back to broadcast when absent (mirrors `TcpHost`). */
   sendIpv4FrameArpAware?(outPortName: string, ipPkt: IPv4Packet, nextHopIP: IPAddress): void;
+  sendUdpDatagram(request: UdpSendRequest): boolean;
   evaluateAclPermit?(aclName: string, sourceIp: string): boolean;
 }
 
@@ -83,11 +84,10 @@ export class SnmpAgent {
    * nobody — every trap went out with the egress interface's address,
    * so a collector filtering on a loopback saw none of them.
    */
-  private trapSourceIp(egressPort: import('../hardware/Port').Port): IPAddress | null {
-    const named = this.config.trapSourceInterface
+  private trapSourceIp(): IPAddress | null {
+    return this.config.trapSourceInterface
       ? this.host.getPort(this.config.trapSourceInterface)?.getIPAddress() ?? null
       : null;
-    return named ?? egressPort.getIPAddress();
   }
 
   addCommunity(
@@ -179,10 +179,7 @@ export class SnmpAgent {
 
   sendTrap(trapOid: string, varBindings: SnmpVarBinding[] = []): void {
     for (const t of this.config.trapHosts) {
-      const egress = this.resolveEgress(t.ip);
-      if (!egress) continue;
-      const srcIp = this.trapSourceIp(egress.port);
-      if (!srcIp) continue;
+      const srcIp = this.trapSourceIp();
       const standard: SnmpVarBinding[] = [
         vb('1.3.6.1.2.1.1.3.0', v('timeticks', this.uptimeTicks())),
         vb('1.3.6.1.6.3.1.1.4.1.0', v('object-id', trapOid)),
@@ -196,7 +193,7 @@ export class SnmpAgent {
         errorStatus: 'no-error', errorIndex: 0,
         varBindings: standard,
       };
-      this.transmit(egress.name, egress.port, new IPAddress(t.ip), srcIp, t.port, payload);
+      this.transmitRouted(new IPAddress(t.ip), srcIp, t.port, payload);
       this.getBus().publish({
         topic: 'snmp.trap.sent',
         payload: {
@@ -209,10 +206,6 @@ export class SnmpAgent {
 
   private sendRequest(serverIp: string, community: string, pduType: 'get-request' | 'get-next-request', oids: string[]): Promise<SnmpVarBinding[] | null> {
     if (!this.running || !this.config.enabled) return Promise.resolve(null);
-    const egress = this.resolveEgress(serverIp);
-    if (!egress) return Promise.resolve(null);
-    const srcIp = egress.port.getIPAddress();
-    if (!srcIp) return Promise.resolve(null);
     const requestId = this.nextRequestId++ & 0x7fffffff;
     const payload: SnmpPacket = {
       type: 'snmp', version: 'v2c', community,
@@ -223,8 +216,7 @@ export class SnmpAgent {
     return new Promise<SnmpVarBinding[] | null>((resolve) => {
       const pending: PendingRequest = { requestId, serverIp, resolve, timer: null };
       this.pending.set(requestId, pending);
-      this.transmit(egress.name, egress.port, new IPAddress(serverIp), srcIp,
-                    UDP_PORT_SNMP, payload);
+      this.transmitRouted(new IPAddress(serverIp), null, UDP_PORT_SNMP, payload);
       const s = this.getScheduler();
       this.scheduler = s;
       pending.timer = s.setTimeout(() => {
@@ -300,7 +292,7 @@ export class SnmpAgent {
     if (!port) return;
     const replySrc = port.getIPAddress();
     if (!replySrc) return;
-    this.transmit(inPort, port, srcIp, replySrc, UDP_PORT_SNMP, reply);
+    this.transmitVia(inPort, srcIp, replySrc, UDP_PORT_SNMP, reply);
     this.getBus().publish({
       topic: 'snmp.request.served',
       payload: {
@@ -377,19 +369,34 @@ export class SnmpAgent {
     return Math.floor((Date.now() - this.startedAtMs) / 10);
   }
 
-  private transmit(portName: string, port: import('../hardware/Port').Port,
-                   dstIp: IPAddress, srcIp: IPAddress, dstPort: number,
-                   payload: SnmpPacket): void {
-    if (!this.host.sendIpv4FrameArpAware) return;
-    this.host.sendIpv4FrameArpAware(portName, buildUdpOverIpv4(srcIp, {
+  private datagramme(dstIp: IPAddress, srcIp: IPAddress | null, dstPort: number,
+                     payload: SnmpPacket): UdpSendRequest {
+    return {
       destination: dstIp,
       destinationPort: dstPort,
       sourcePort: dstPort === UDP_PORT_SNMP
         ? 49152 + (payload.requestId & 0x3fff) : UDP_PORT_SNMP,
       payload,
       payloadBytes: 48 + payload.varBindings.length * 16,
-      source: srcIp,
-    }), dstIp);
+      ...(srcIp ? { source: srcIp } : {}),
+    };
+  }
+
+  private transmitRouted(dstIp: IPAddress, srcIp: IPAddress | null, dstPort: number,
+                         payload: SnmpPacket): void {
+    if (!this.host.sendUdpDatagram(this.datagramme(dstIp, srcIp, dstPort, payload))) return;
+    this.annoncerEmission(dstIp, payload);
+  }
+
+  private transmitVia(portName: string, dstIp: IPAddress, srcIp: IPAddress,
+                      dstPort: number, payload: SnmpPacket): void {
+    if (!this.host.sendIpv4FrameArpAware) return;
+    this.host.sendIpv4FrameArpAware(
+      portName, buildUdpOverIpv4(srcIp, this.datagramme(dstIp, srcIp, dstPort, payload)), dstIp);
+    this.annoncerEmission(dstIp, payload);
+  }
+
+  private annoncerEmission(dstIp: IPAddress, payload: SnmpPacket): void {
     this.getBus().publish({
       topic: 'snmp.packet.sent',
       payload: {
@@ -400,25 +407,4 @@ export class SnmpAgent {
     });
   }
 
-  private resolveEgress(targetIp: string): { name: string; port: import('../hardware/Port').Port } | null {
-    const target = targetIp.split('.').map(Number);
-    for (const port of this.host.getPorts()) {
-      const ip = port.getIPAddress();
-      const mask = port.getSubnetMask();
-      if (!ip || !mask) continue;
-      const local = ip.toString().split('.').map(Number);
-      const maskBits = mask.toString().split('.').map(Number);
-      let same = true;
-      for (let i = 0; i < 4; i++) {
-        if ((local[i] & maskBits[i]) !== (target[i] & maskBits[i])) { same = false; break; }
-      }
-      if (same) return { name: port.getName(), port };
-    }
-    for (const port of this.host.getPorts()) {
-      if (port.getIPAddress() && port.getIsUp() && port.isConnected()) {
-        return { name: port.getName(), port };
-      }
-    }
-    return null;
-  }
 }
