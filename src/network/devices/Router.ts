@@ -411,6 +411,14 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
     return e;
   })();
 
+  protected isIcmpRedirectsEnabled(ifName: string): boolean {
+    const sec = (this as unknown as Record<symbol, CiscoSecurityConfig | undefined>)[
+      Symbol.for('CiscoSecurityConfig')
+    ];
+    if (!sec) return true;
+    return !sec.ifaceFlags(ifName).noRedirects;
+  }
+
   protected isIcmpUnreachablesEnabled(ifName: string): boolean {
     const sec = (this as unknown as Record<symbol, CiscoSecurityConfig | undefined>)[
       Symbol.for('CiscoSecurityConfig')
@@ -3235,6 +3243,8 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
   }
 
   private sendICMPRedirect(inPort: string, offendingPkt: IPv4Packet, redirectGW: IPAddress): void {
+    if (!mayGenerateICMPError(offendingPkt)) return;
+    if (!this.isIcmpRedirectsEnabled(inPort)) return;
     const inPortObj = this.ports.get(inPort);
     if (!inPortObj) return;
     const myIP = inPortObj.getIPAddress();
