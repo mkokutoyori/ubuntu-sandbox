@@ -1,4 +1,4 @@
-import { readIcmpUnreachable } from '@/network/core/icmpUnreachable';
+import { formatPingFailureLine, formatPingStats } from '@/network/devices/linux/LinuxFormatHelpers';
 import { IPv6Address, IPAddress } from '@/network/core/types';
 import type { LinuxCommand } from '../LinuxCommand';
 import type { LinuxCommandContext } from '../LinuxCommandContext';
@@ -237,36 +237,16 @@ function formatPingHeader(target: string, size: number, hostname?: string): stri
   return `PING ${displayName} (${target}) ${size}(${totalSize}) bytes of data.`;
 }
 
-/** Real ping's per-code wording for a Destination Unreachable reply (RFC 792 codes). */
-function icmpUnreachText(code: number | undefined, mtu: number | undefined): string {
-  switch (code) {
-    case 0: return 'Destination Net Unreachable';
-    case 1: return 'Destination Host Unreachable';
-    case 2: return 'Destination Protocol Unreachable';
-    case 3: return 'Destination Port Unreachable';
-    case 4: return mtu !== undefined ? `Frag needed and DF set (mtu = ${mtu})` : 'Frag needed and DF set';
-    case 9: return 'Destination Net Prohibited';
-    case 10: return 'Destination Host Prohibited';
-    case 13: return 'Packet filtered';
-    default: return 'Destination Host Unreachable';
-  }
-}
-
 function formatReplyLine(r: PingResult, size: number, timestamp: boolean): string {
   const replySize = size + ICMP_HEADER_SIZE;
   let line: string;
   if (r.success) {
     const ms = r.rttMs.toFixed(3);
     line = `${replySize} bytes from ${r.fromIP}: icmp_seq=${r.seq} ttl=${r.ttl} time=${ms} ms`;
-  } else if (r.error?.includes('Time to live exceeded')) {
-    const m = r.error.match(/from ([\d.]+)/);
-    line = `From ${m ? m[1] : 'unknown'} icmp_seq=${r.seq} Time to live exceeded`;
-  } else if (readIcmpUnreachable(r.error)) {
-    const report = readIcmpUnreachable(r.error)!;
-    const from = report.from || (r.fromIP ?? 'unknown');
-    line = `From ${from} icmp_seq=${r.seq} ${icmpUnreachText(report.code, report.mtu)}`;
   } else {
-    return '';
+    const echec = formatPingFailureLine(r);
+    if (!echec) return '';
+    line = echec;
   }
   if (timestamp) {
     const ts = (Date.now() / 1000).toFixed(6);
@@ -275,27 +255,6 @@ function formatReplyLine(r: PingResult, size: number, timestamp: boolean): strin
   return line;
 }
 
-function formatStats(targetStr: string, count: number, results: PingResult[]): string[] {
-  const received = results.filter(r => r.success);
-  const lost = count - received.length;
-  const lossPercent = count === 0 ? 0 : Math.round((lost / count) * 100);
-  const lines = [
-    '',
-    `--- ${targetStr} ping statistics ---`,
-    `${count} packets transmitted, ${received.length} received, ${lossPercent}% packet loss`,
-  ];
-  if (received.length > 0) {
-    const rtts = received.map(r => r.rttMs);
-    const min = Math.min(...rtts).toFixed(3);
-    const max = Math.max(...rtts).toFixed(3);
-    const avg = (rtts.reduce((a, b) => a + b, 0) / rtts.length).toFixed(3);
-    const mdev = Math.sqrt(rtts.reduce((s, r) => s + (r - +avg) ** 2, 0) / rtts.length).toFixed(3);
-    lines.push(`rtt min/avg/max/mdev = ${min}/${avg}/${max}/${mdev} ms`);
-  } else if (lossPercent === 100) {
-    lines.push(`ping: destination host unreachable`);
-  }
-  return lines;
-}
 
 async function runPing(
   ctx: LinuxCommandContext,
@@ -450,7 +409,7 @@ function formatPingOutput(
     }
   }
 
-  lines.push(...formatStats(targetStr, count, results));
+  lines.push(...formatPingStats(targetStr, count, results));
   return lines.join('\n');
 }
 

@@ -3603,6 +3603,18 @@ export abstract class EndHost extends Equipment {
     return results;
   }
 
+  private unreachableResults(localIP: IPAddress | null, count: number): PingResult[] {
+    const from = localIP ? localIP.toString() : '';
+    const results: PingResult[] = [];
+    for (let seq = 1; seq <= count; seq++) {
+      results.push({
+        success: false, rttMs: 0, ttl: 0, seq, bytes: 0, fromIP: from,
+        error: `Destination unreachable from ${from} code 1`,
+      });
+    }
+    return results;
+  }
+
   protected async executePingSequence(
     targetIP: IPAddress,
     count: number = 4,
@@ -3633,7 +3645,7 @@ export abstract class EndHost extends Equipment {
       try {
         nextHopMAC = await this.resolveARP(portName, route.nextHopIP, timeoutMs);
       } catch {
-        return []; // ARP failed = no replies
+        return this.unreachableResults(route.port.getIPAddress(), count);
       }
     }
 

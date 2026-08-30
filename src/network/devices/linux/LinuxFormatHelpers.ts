@@ -17,6 +17,7 @@ import type { PingResult } from '../EndHost';
 import type { Port } from '../../hardware/Port';
 import type { TracerouteHop } from './LinuxNetKernel';
 import { formatIfconfigInterface } from './LinuxNetCommands';
+import { readIcmpUnreachable } from '../../core/icmpUnreachable';
 
 export interface LinuxFormatHelpers {
   /**
@@ -95,22 +96,40 @@ export function isIcmpErrorResult(r: PingResult): boolean {
     && /unreachable|Time to live exceeded/i.test(r.error);
 }
 
+export function icmpUnreachText(code: number | undefined, mtu: number | undefined): string {
+  switch (code) {
+    case 0: return 'Destination Net Unreachable';
+    case 1: return 'Destination Host Unreachable';
+    case 2: return 'Destination Protocol Unreachable';
+    case 3: return 'Destination Port Unreachable';
+    case 4: return mtu !== undefined ? `Frag needed and DF set (mtu = ${mtu})` : 'Frag needed and DF set';
+    case 9: return 'Destination Net Prohibited';
+    case 10: return 'Destination Host Prohibited';
+    case 13: return 'Packet filtered';
+    default: return 'Destination Host Unreachable';
+  }
+}
+
+export function formatPingFailureLine(r: PingResult): string | null {
+  if (r.success) return null;
+  if (r.error?.includes('Time to live exceeded')) {
+    const m = /from ([\d.]+)/.exec(r.error);
+    return `From ${m ? m[1] : 'unknown'} icmp_seq=${r.seq} Time to live exceeded`;
+  }
+  const report = readIcmpUnreachable(r.error);
+  if (!report) return null;
+  const from = report.from || r.fromIP || 'unknown';
+  return `From ${from} icmp_seq=${r.seq} ${icmpUnreachText(report.code, report.mtu)}`;
+}
+
 /** One `ping` reply line for a single probe. Every probe produces one. */
 export function formatPingReplyLine(r: PingResult, size: number = 56): string | null {
   if (r.success) {
     const replySize = size + 8; // data size + ICMP header
     return `${replySize} bytes from ${r.fromIP}: icmp_seq=${r.seq} ttl=${r.ttl} time=${r.rttMs.toFixed(3)} ms`;
   }
-  if (r.error) {
-    if (r.error.includes('Time to live exceeded')) {
-      const match = r.error.match(/from ([\d.]+)/);
-      return `From ${match ? match[1] : 'unknown'} icmp_seq=${r.seq} Time to live exceeded`;
-    }
-    if (r.error.includes('Destination unreachable')) {
-      const match = r.error.match(/from ([\d.]+)/);
-      return `From ${match ? match[1] : 'unknown'} icmp_seq=${r.seq} Destination Host Unreachable`;
-    }
-  }
+  const echec = formatPingFailureLine(r);
+  if (echec) return echec;
   // A probe that simply never came back. Saying so beats printing
   // nothing: a silent gap between the last reply and the summary is
   // exactly what a pulled cable used to look like.
