@@ -1149,9 +1149,9 @@ describe('15. les commandes `diagnose`', () => {
 
   it('une sous-commande `diagnose` absente nomme la COMMANDE, pas le verbe', async () => {
     const fw = fortigate();
-    const sortie = await fw.executeCommand('diagnose hardware sysinfo memory');
+    const sortie = await fw.executeCommand('diagnose hardware sysinfo slab');
 
-    expect(sortie).toMatch(/unknown command "diagnose hardware sysinfo memory"/);
+    expect(sortie).toMatch(/unknown command "diagnose hardware sysinfo slab"/);
     expect(sortie).not.toMatch(/unknown command "diagnose"\./);
   });
 

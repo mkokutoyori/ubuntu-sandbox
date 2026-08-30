@@ -1,4 +1,4 @@
-import { conserveModeLines } from './systemLoad';
+import { conserveModeLines, procMeminfoLines } from './systemLoad';
 import { renderArpKernelList } from './getViews';
 import type { IPv4Packet } from '../../../../../core/types';
 import type { Firewall } from '../../../Firewall';
@@ -91,6 +91,9 @@ export function runDiagnose(rest: readonly string[], deps: FortiDiagDeps): strin
   if (family === 'hardware') {
     if (tail[0] === 'sysinfo' && tail[1] === 'conserve') {
       return conserveModeLines(deps.fw.getSystemLoad()).join('\n');
+    }
+    if (tail[0] === 'sysinfo' && tail[1] === 'memory') {
+      return procMeminfoLines(deps.fw.getSystemLoad()).join('\n');
     }
     return FortiMessages.unknownPath(`hardware ${tail.join(' ')}`);
   }

@@ -1343,10 +1343,15 @@ défauts — la méthode vaut d'être reprise sur le reliquat.
   notre vocabulaire — un vrai boîtier a plusieurs `system vdom-*` et
   répondrait « ambigu » ; inventer ces tables pour provoquer l'ambiguïté
   serait le défaut inverse.
-- `diagnose hardware sysinfo memory` n'est pas implémenté — ouvert. Le
-  refus nomme désormais la commande entière et non le verbe `diagnose`,
-  qui est connu ; reste à décider si un modèle mémoire mérite d'exister
-  (les seuils de conserve-mode sont déjà déclarés au schéma).
+- `diagnose hardware sysinfo memory` rend `/proc/meminfo` — fermée. Le
+  modèle mémoire EXISTAIT (`SystemLoad.memory()`, qui nourrit déjà
+  `get system performance status` et le conserve-mode) ; il lui manquait
+  cette porte. Les valeurs sont donc mesurées, et une sonde les compare
+  entre les deux vues plutôt que de leur faire confiance.
+  `Active`/`Inactive` sont délibérément OMISES : rien ici ne distingue une
+  page active d'une page inactive, et les rendre serait une illustration.
+  C'est la convention que ce dépôt suit déjà (`show ip ssh` tait ses
+  suites cryptographiques, `show ip http server status` son condensé).
 - Une politique de pare-feu INCOMPLETE est refusee au `next` — fermée.
   L'ensemble exigé est `srcintf`, `dstintf`, une source (`srcaddr` OU
   `srcaddr6`), une destination (`dstaddr` OU `dstaddr6`) et `service` ;
