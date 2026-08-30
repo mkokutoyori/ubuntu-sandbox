@@ -411,6 +411,24 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
     return e;
   })();
 
+  private interfaceUrpf(ifName: string): { mode: 'strict' | 'loose' | null; allowDefault?: boolean } | undefined {
+    const sec = (this as unknown as Record<symbol, CiscoSecurityConfig | undefined>)[
+      Symbol.for('CiscoSecurityConfig')
+    ];
+    return sec?.ifaceFlags(ifName).urpf;
+  }
+
+  protected urpfRejects(inPort: string, pkt: IPv4Packet): boolean {
+    const urpf = this.interfaceUrpf(inPort);
+    if (!urpf || !urpf.mode) return false;
+    if (pkt.sourceIP.isUnspecified()
+      && classifyIpv4Destination(pkt.destinationIP) === 'limited-broadcast') return false;
+    const route = this.lookupRoute(pkt.sourceIP);
+    if (!route) return true;
+    if (route.mask.toCIDR() === 0 && !urpf.allowDefault) return true;
+    return urpf.mode === 'strict' && route.iface !== inPort;
+  }
+
   protected isIcmpRedirectsEnabled(ifName: string): boolean {
     const sec = (this as unknown as Record<symbol, CiscoSecurityConfig | undefined>)[
       Symbol.for('CiscoSecurityConfig')
@@ -2411,6 +2429,13 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
     // C.1a: Inbound ACL
     const originalPkt = ipPkt;
     if (!reinjected && this.deniedByInboundACL(inPort, originalPkt)) return;
+
+    if (!reinjected && this.urpfRejects(inPort, ipPkt)) {
+      this.counters.ipInAddrErrors++;
+      Logger.warn(this.id, 'router:urpf-drop',
+        `${this.name}: uRPF failed for ${ipPkt.sourceIP} on ${inPort}, dropping`);
+      return;
+    }
 
     if (this.addressedToUs(ipPkt) && this.receiveControlPlaneIpv4(inPort, ipPkt)) return;
 

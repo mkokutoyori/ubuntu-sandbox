@@ -736,8 +736,11 @@ export class CiscoSecurityConfig {
     if (f.noUnreachables) lines.push(' no ip unreachables');
     if (f.noRedirects) lines.push(' no ip redirects');
     if (f.noProxyArp) lines.push(' no ip proxy-arp');
-    if (f.urpf?.mode === 'strict') lines.push(' ip verify unicast source reachable-via rx');
-    if (f.urpf?.mode === 'loose') lines.push(' ip verify unicast source reachable-via any');
+    if (f.urpf?.mode) {
+      const via = f.urpf.mode === 'loose' ? 'any' : 'rx';
+      lines.push(` ip verify unicast source reachable-via ${via}`
+        + (f.urpf.allowDefault ? ' allow-default' : ''));
+    }
     if (f.zoneMember) lines.push(` zone-member security ${f.zoneMember}`);
     if (f.ipv6TrafficFilter) lines.push(` ipv6 traffic-filter ${f.ipv6TrafficFilter.name} ${f.ipv6TrafficFilter.direction}`);
     return lines;

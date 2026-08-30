@@ -1742,10 +1742,13 @@ export function buildSecurityInterfaceCommands(trie: CommandTrie, ctx: CiscoSecu
   });
   trie.registerGreedy('ip verify unicast', 'Configure uRPF', (args) => {
     const i = ctx.getSelectedInterface(); if (!i) return '';
+    const allowDefault = args.includes('allow-default');
     if (args[0] === 'reverse-path') {
-      sec().ifaceFlags(i).urpf = { mode: 'strict' };
+      sec().ifaceFlags(i).urpf = { mode: 'strict', allowDefault };
     } else if (args[0] === 'source' && args[1] === 'reachable-via' && args[2]) {
-      sec().ifaceFlags(i).urpf = { mode: args[2] === 'any' ? 'loose' : 'strict' };
+      sec().ifaceFlags(i).urpf = {
+        mode: args[2] === 'any' ? 'loose' : 'strict', allowDefault,
+      };
     }
     return '';
   });

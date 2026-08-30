@@ -110,10 +110,11 @@ describe('VRP — le reste de la famille QoS est refusé', () => {
     expect(await r.executeCommand('trust dscp')).toMatch(/no QoS trust boundary/);
   });
 
-  it('refuse `ip urpf`, faute de contrôle de chemin inverse', async () => {
+  it('accepte `ip urpf`, le controle de chemin inverse existant desormais', async () => {
     const r = new HuaweiRouter('R', 0, 0);
     for (const c of ['system-view', 'interface GigabitEthernet0/0/0']) await r.executeCommand(c);
-    expect(await r.executeCommand('ip urpf strict')).toMatch(/no reverse-path check/);
+    expect(await r.executeCommand('ip urpf strict')).toBe('');
+    expect(await r.executeCommand('display this')).toContain('ip urpf strict');
   });
 });
 
