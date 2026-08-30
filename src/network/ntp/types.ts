@@ -4,10 +4,20 @@ export const UDP_PORT_NTP = 123;
 export type NtpMode = 'client' | 'server' | 'symmetric-active' | 'symmetric-passive';
 export type NtpLeapIndicator = 0 | 1 | 2 | 3;
 
+/**
+ * La SEULE version que cet agent emette (RFC 5905).
+ *
+ * Elle etait ecrite en litteral a chaque construction de paquet ET
+ * recopiee par la colonne `Version` de `show sntp`, qui devenait donc
+ * une constante d'affichage a tenir a jour a la main. Une seule
+ * ecriture : la vue lit ce que la machine emet.
+ */
+export const NTP_VERSION = 4;
+
 export interface NtpPacket extends NetworkPdu {
   type: 'ntp';
   leapIndicator: NtpLeapIndicator;
-  version: 4;
+  version: typeof NTP_VERSION;
   mode: NtpMode;
   stratum: number;
   poll: number;
@@ -108,6 +118,34 @@ export interface NtpConfig {
   disabledInterfaces: Set<string>;
   /** Depuis quand le service tourne : `show ntp status` le rend. */
   startedAtMs: number;
+  /**
+   * `ntp logging` / `sntp logging` — eteint par defaut sur IOS.
+   *
+   * Les evenements `%NTP-5-PEERSYNC` et `%NTP-4-PEERUNSYNC` etaient
+   * ecrits au journal SANS condition, donc une machine que personne
+   * n'avait configuree pour cela les recevait quand meme. Le drapeau
+   * n'est pas un decor : c'est la porte que le journal consulte.
+   */
+  logging: boolean;
+  /**
+   * Sous quelle ORTHOGRAPHE la journalisation a ete demandee.
+   *
+   * `ntp logging` et `sntp logging` posent le meme fait, comme
+   * `ntp server` et `sntp server` ; rendre l'une pour l'autre decrirait
+   * une machine que l'operateur n'a pas configuree, et la configuration
+   * rendue est rejouee a l'import d'une topologie.
+   */
+  loggingSpelling: 'ntp' | 'sntp';
+  /**
+   * `sntp broadcast client` — accepte les annonces de mode 5.
+   *
+   * Range et RENDU, jamais evalue : ce moteur ne connait pas le mode
+   * diffusion (aucun `broadcast` dans `NtpAgent`), donc la commande ne
+   * fait rien d'observable. Elle est acceptee parce que la refuser
+   * ferait disparaitre a l'import d'une topologie une ligne qu'une vraie
+   * machine accepte ; le manquement est inscrit au `TODO.md`.
+   */
+  sntpBroadcastClient: boolean;
   /** Les compteurs de paquets (lot N8). */
   counters: NtpCounters;
 }
@@ -189,6 +227,9 @@ export function createDefaultNtpConfig(): NtpConfig {
     updateCalendar: false,
     disabledInterfaces: new Set(),
     startedAtMs: Date.now(),
+    logging: false,
+    loggingSpelling: 'ntp',
+    sntpBroadcastClient: false,
     counters: createNtpCounters(),
   };
 }

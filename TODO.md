@@ -1391,3 +1391,35 @@ défauts — la méthode vaut d'être reprise sur le reliquat.
   partagé) mais rendue par le seul parcours du routeur, donc perdue au
   rechargement d'une topologie sur un Catalyst ; `service dhcp` n'était pas
   déclarée du tout sur le commutateur, donc absente de l'aide et sans effet.
+- `sntp broadcast client` est ACCEPTE, RENDU, et n'est evalue par
+  personne. `NtpAgent` n'a aucune notion de mode diffusion (mode 5) : pas
+  une occurrence de `broadcast` dans tout le module, donc rien ne peut
+  recevoir une annonce. Il est stocke plutot que refuse parce que le
+  refuser ferait disparaitre a l'import d'une topologie une ligne qu'une
+  vraie machine accepte — meme raisonnement que `ip ssh server algorithm`
+  et `snmp-agent mib-view`. Fermer demande un emetteur d'annonces cote
+  serveur et une reception cote client, c'est-a-dire un mode de plus dans
+  le moteur, pas une porte.
+- `sntp source-interface <nom>` est REFUSEE alors que la Basic System
+  Management Command Reference la decrit. Le moteur, lui, sait le faire :
+  `NtpAgent.setSourceInterface` existe et `ntp source` l'ecrit. Ce qui
+  manque est l'ORTHOGRAPHE : le champ est unique et la configuration est
+  rendue `ntp source <nom>`, donc l'accepter telle quelle rendrait a
+  l'operateur une commande qu'il n'a pas tapee, et un import la rejouerait
+  sous l'autre nom. Fermer demande un drapeau d'orthographe, comme
+  `loggingSpelling` vient d'en poser un pour `logging`.
+- `sntp unicast [client]` est acceptee et rangee nulle part. Elle a ete
+  GARDEE plutot que retiree : les pages Cisco atteignables decrivent bien
+  un client SNTP unicast, mais elles portent sur les commutateurs
+  « small business » (SG300/SG550), dont la CLI n'est pas IOS, et la
+  Basic System Management Command Reference — la reference d'IOS — n'est
+  pas atteignable depuis ce reseau. Retirer une commande sur une premisse
+  invérifiée serait pire que la garder ; ce qu'il faut est une capture
+  d'IOS, pas un raisonnement.
+- `show sntp` rend TOUTES les associations, y compris celles declarees
+  par `ntp server`. Elles partagent le meme magasin, et l'association
+  porte deja `configuredAs`, donc le filtre est a portee — mais ce que
+  fait une vraie machine ne l'est pas : IOS n'embarque JAMAIS les deux
+  piles a la fois (l'image porte l'une ou l'autre), donc aucune capture
+  reelle ne peut trancher ce que `show sntp` montre d'une association
+  NTP. Trancher au hasard serait inventer.

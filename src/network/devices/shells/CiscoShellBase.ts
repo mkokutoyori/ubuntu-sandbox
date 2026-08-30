@@ -64,6 +64,8 @@ import type { PromptMap } from './PromptBuilder';
 import { buildPrompt } from './PromptBuilder';
 import { CLIStateMachine, type ModeHierarchy } from './CLIStateMachine';
 import { estGenreAcces } from '../../ntp/accessGroups';
+import { NTP_VERSION } from '../../ntp/types';
+import { hms } from '@/lib/format';
 
 /**
  * Les sous-commandes de `ntp` en configuration globale, avec la
@@ -4155,6 +4157,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
 
     return sequenceFamily([
       { path: ['ntp', 'authenticate'], description: 'Authenticate time sources' },
+      { path: ['ntp', 'logging'], description: 'Enable NTP message logging' },
       {
         path: ['ntp', 'update-calendar'],
         description: 'Periodically update calendar from NTP',
@@ -4234,6 +4237,82 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       apply: (words, negate) =>
         negate ? this.retirerNtp(words) : this.appliquerNtp(words),
     }));
+  }
+
+  /**
+   * `sntp` est la moitie legere de NTP, et elle partage son moteur.
+   *
+   * `sntp server` etait declare sur l'arbre PRIVILEGIE en plus de celui
+   * de configuration, donc une commande de configuration etait acceptee
+   * a l'invite d'EXEC, ou une vraie machine la refuse. Les modes sont
+   * desormais declares, et il n'y en a qu'un.
+   */
+  protected sntpSpecs(): CommandSpec[] {
+    const cible: ArgumentSpec = {
+      name: 'cible', type: 'WORD',
+      description: 'IP address or hostname of the SNTP server',
+    };
+
+    return sequenceFamily([
+      {
+        path: ['sntp', 'server'], description: 'SNTP server (alias for ntp server)',
+        args: [cible],
+        tail: {
+          name: 'options', type: 'REST', optional: true,
+          description: 'Preference of this server',
+          alternatives: [
+            { keyword: 'prefer', description: 'Prefer this peer when possible' },
+          ],
+        },
+      },
+      {
+        path: ['sntp', 'unicast'], description: 'SNTP unicast client',
+        args: [{
+          name: 'client', type: 'ENUM', optional: true,
+          description: 'Act as an SNTP unicast client',
+          values: [{ keyword: 'client', description: 'Act as an SNTP unicast client' }],
+        }],
+      },
+      {
+        path: ['sntp', 'broadcast'], description: 'SNTP broadcast client',
+        args: [{
+          name: 'client', type: 'ENUM',
+          description: 'Act as an SNTP broadcast client',
+          values: [{ keyword: 'client', description: 'Act as an SNTP broadcast client' }],
+        }],
+      },
+      { path: ['sntp', 'logging'], description: 'Enable SNTP message logging' },
+    ], () => ({
+      apply: (words, negate) =>
+        negate ? this.retirerSntp(words) : this.appliquerSntp(words),
+    }));
+  }
+
+  private appliquerSntp(args: string[]): string {
+    const a = args.map(s => s.toLowerCase());
+    const agent = getNtpAgent(this.d());
+    if (a[0] === 'server') {
+      if (!args[1]) return CISCO_ERRORS.INCOMPLETE;
+      const target = this.resolveNtpTarget(args[1]);
+      if (!target) {
+        return `Translating "${args[1]}"...domain server (255.255.255.255)\n% Bad IP address or host name`;
+      }
+      agent?.addServer(target, a.includes('prefer'), undefined, 'sntp');
+    } else if (a[0] === 'broadcast') {
+      agent?.setSntpBroadcastClient(true);
+    } else if (a[0] === 'logging') {
+      agent?.setLogging(true, 'sntp');
+    }
+    return '';
+  }
+
+  private retirerSntp(args: string[]): string {
+    const a = args.map(s => s.toLowerCase());
+    const agent = getNtpAgent(this.d());
+    if (a[0] === 'server' && a[1]) agent?.removeServer(a[1]);
+    else if (a[0] === 'broadcast') agent?.setSntpBroadcastClient(false);
+    else if (a[0] === 'logging') agent?.setLogging(false);
+    return '';
   }
 
 
@@ -4640,18 +4719,24 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
    * l'autre configure.
    */
   private showSntp(): string {
-    const dev = this.d() as unknown as { getUnhandledConfigLines?: () => readonly string[] };
     const entete = 'SNTP server   Stratum   Version   Last Receive';
-    const ligne = (nom: string): string => `${nom.padEnd(14)}1         4         00:00:01`;
+    const agent = getNtpAgent(this.d());
+    const cfg = agent?.getConfig?.();
+    const associations = [...(cfg?.associations?.values() ?? [])];
+    if (associations.length === 0) return 'No SNTP servers configured';
 
-    const cfg = getNtpAgent(this.d())?.getConfig?.();
-    if (cfg?.associations && cfg.associations.size > 0) {
-      return [entete, ...[...cfg.associations.keys()].map(ligne)].join('\n');
-    }
-    const declarees = (dev.getUnhandledConfigLines?.() ?? [])
-      .filter(l => l.startsWith('sntp server'));
-    if (declarees.length === 0) return 'No SNTP servers configured';
-    return [entete, ...declarees.map(l => ligne(l.split(/\s+/)[2] ?? ''))].join('\n');
+    const maintenant = agent?.now?.() ?? Date.now();
+    const ligne = (a: {
+      serverIp: string; stratum: number; lastReplyMs: number; synced: boolean;
+    }): string => [
+      a.serverIp.padEnd(14),
+      String(a.stratum).padEnd(10),
+      String(NTP_VERSION).padEnd(10),
+      (a.lastReplyMs > 0 ? hms(maintenant - a.lastReplyMs) : '-').padEnd(14),
+      a.synced ? 'Synced' : '',
+    ].join('').trimEnd();
+
+    return [entete, ...associations.map(ligne)].join('\n');
   }
 
   private lineSpecs(): CommandSpec[] {
@@ -5239,6 +5324,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       ...this.discoverySpecs(),
       ...this.loggingSpecs(),
       ...this.ntpSpecs(),
+      ...this.sntpSpecs(),
       ...this.snmpSpecs(),
       ...this.clockSpecs(),
       ...this.loginSpecs(),
@@ -6826,6 +6912,8 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
         // vraie machine refuse (lot N6).
         if (!estGenreAcces(a[1])) return CISCO_ERRORS.INVALID_INPUT;
         agent.setAccessGroup(a[1], a[2]);
+      } else if (a[0] === 'logging') {
+        agent.setLogging(true, 'ntp');
       } else if (a[0] === 'update-calendar') {
         agent.setUpdateCalendar(true);
       } else if (a[0] === 'allow' && a[1] === 'mode' && a[2] === 'control') {
@@ -6846,6 +6934,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       else if (a[0] === 'trusted-key' && a[1]) agent.removeTrustedKey(parseInt(a[1], 10));
       else if (a[0] === 'access-group' && a[1]) agent.removeAccessGroup(a[1]);
       else if (a[0] === 'source') agent.setSourceInterface('');
+      else if (a[0] === 'logging') agent.setLogging(false);
       else if (a[0] === 'update-calendar') agent.setUpdateCalendar(false);
       // Le durcissement du §9 : fermer le mode 6, celui de `monlist`.
       else if (a[0] === 'allow' && a[1] === 'mode' && a[2] === 'control') {
@@ -7886,31 +7975,6 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       { keyword: 'vty', description: 'Virtual terminal' },
     ]);
     registerLineExecCommands(this.privilegedTrie, () => getSessionRegistry(this.d()));
-    const poserSntpServer = (args: string[]): string => {
-      if (!args[0]) return '% Incomplete command.';
-      const target = this.resolveNtpTarget(args[0]);
-      if (!target) return `Translating "${args[0]}"...domain server (255.255.255.255)\n% Bad IP address or host name`;
-      const dev = this.d() as unknown as { _recordUnhandledConfigLine?: (line: string) => void };
-      const agent = getNtpAgent(this.d());
-      if (agent) agent.addServer(target, args[1]?.toLowerCase() === 'prefer', undefined, 'sntp');
-      else dev._recordUnhandledConfigLine?.(`sntp server ${args.join(' ')}`);
-      return '';
-    };
-    for (const trie of [this.privilegedTrie, this.configTrie]) {
-      trie.registerGreedy('sntp server', 'SNTP server (alias for ntp server)', poserSntpServer);
-    }
-    this.configTrie.registerGreedy('sntp unicast', 'SNTP unicast client', (_args) => {
-      const dev = this.d() as unknown as { _recordUnhandledConfigLine?: (line: string) => void };
-      dev._recordUnhandledConfigLine?.('sntp unicast client');
-      return '';
-    });
-    this.configTrie.registerGreedy('no sntp server', 'Remove SNTP server', (args) => {
-      const dev = this.d() as unknown as { _removeUnhandledConfigLine?: (l: string) => void };
-      const agent = getNtpAgent(this.d());
-      if (agent?.removeServer && args[0]) agent.removeServer(args[0]);
-      dev._removeUnhandledConfigLine?.(`sntp server ${args.join(' ')}`);
-      return '';
-    });
 
     this.registerCommonShowCommands(this.privilegedTrie);
 
