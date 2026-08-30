@@ -1339,14 +1339,17 @@ défauts — la méthode vaut d'être reprise sur le reliquat.
   refus nomme désormais la commande entière et non le verbe `diagnose`,
   qui est connu ; reste à décider si un modèle mémoire mérite d'exister
   (les seuils de conserve-mode sont déjà déclarés au schéma).
-- Une politique de pare-feu INCOMPLETE est acceptee en silence — ouvert.
-  Un vrai FortiGate refuse au `next` une politique sans ses attributs
-  obligatoires. Le controle a ete ECRIT puis RETIRE : il faisait tomber 13
-  cas de 7 fichiers, et l'examen a montre que c'etait ma regle qui etait
-  fausse — une politique IPv6 se declare par `srcaddr6`/`dstaddr6` et n'a
-  pas besoin de la paire v4. Ni l'ensemble exact des attributs requis ni
-  le message de refus ne sont attestables depuis ce reseau ; les inventer
-  serait le defaut que ce depot refuse.
+- Une politique de pare-feu INCOMPLETE est refusee au `next` — fermée.
+  L'ensemble exigé est `srcintf`, `dstintf`, une source (`srcaddr` OU
+  `srcaddr6`), une destination (`dstaddr` OU `dstaddr6`) et `service` ;
+  `schedule` n'en est PAS, il vaut `always` par défaut au schéma. Le refus
+  nomme l'attribut manquant, sous un `NOTE:` — le message exact de Fortinet
+  n'est pas attestable depuis ce réseau, et c'est la convention que ce dépôt
+  suit déjà pour nginx/apache.
+  Le contrôle a EXPOSÉ un défaut préexistant : `set dstintf` refusait une
+  ZONE SD-WAN (`INTERFACE_TARGETS` ne connaissait que `system interface` et
+  `system zone`), donc la politique était commitée avec un `dstintf` vide,
+  c'est-à-dire incapable de correspondre à quoi que ce soit.
 - `execute reboot`, `execute shutdown` et `execute factoryreset` ne font
   RIEN par la voie scriptee — ouvert. Elles sont cablees sur le plan
   d'interaction du terminal, donc `executeCommand` rend la chaine vide et

@@ -140,7 +140,9 @@ describe('la CLI hierarchique', () => {
 
   it('`next` remonte a la table, `end` a la racine', async () => {
     const { shell } = await buildLab();
-    run(shell, 'config firewall policy', 'edit 1');
+    run(shell, 'config firewall policy', 'edit 1',
+      'set srcintf port2', 'set dstintf port1',
+      'set srcaddr all', 'set dstaddr all', 'set service ALL');
 
     run(shell, 'next');
     expect(shell.getPrompt()).toBe('FGT1 (policy) # ');
@@ -155,6 +157,7 @@ describe('la CLI hierarchique', () => {
 
     run(shell, 'config firewall policy', 'edit 0',
       'set srcintf port2', 'set dstintf port1',
+      'set srcaddr all', 'set dstaddr all', 'set service ALL',
       'set action accept', 'next', 'end');
 
     expect(fw.getPolicyStore().ordered().map(r => r.id)).toEqual(['1', '2']);

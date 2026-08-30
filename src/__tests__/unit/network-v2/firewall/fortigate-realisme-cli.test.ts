@@ -106,6 +106,8 @@ describe('1. l invite dit ou l on est', () => {
     const nom = fw.getHostname();
     await taper(fw, [
       'config firewall policy', 'edit 1',
+      'set srcintf "port1"', 'set dstintf "wan1"',
+      'set srcaddr "all"', 'set dstaddr "all"', 'set service "ALL"',
       'config identity-based-policy',
     ]);
     const imbrique = fw.getPrompt().trim();
