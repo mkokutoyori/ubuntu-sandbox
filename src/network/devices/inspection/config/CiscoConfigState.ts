@@ -68,3 +68,11 @@ export class CiscoConfigState {
     this.flags.clear();
   }
 }
+
+const CONFIG_STATE_KEY = Symbol.for('CiscoConfigState');
+
+export function getConfigState(device: object): CiscoConfigState {
+  const d = device as unknown as Record<symbol, CiscoConfigState>;
+  if (!d[CONFIG_STATE_KEY]) d[CONFIG_STATE_KEY] = new CiscoConfigState();
+  return d[CONFIG_STATE_KEY];
+}

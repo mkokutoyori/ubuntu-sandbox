@@ -122,7 +122,7 @@ import {
 } from './cisco/CiscoDnsCommands';
 import type { CiscoDnsConfig } from '../router/dns/CiscoDnsConfig';
 import type { RouterHostsTable } from '../router/dns/RouterHostsTable';
-import { CiscoConfigState } from '../inspection/config/CiscoConfigState';
+import { CiscoConfigState, getConfigState } from '../inspection/config/CiscoConfigState';
 import { AliasRepository, type AliasMode } from '../inspection/config/AliasRepository';
 import { LoggingConfig, disabledTimestampSpec, bareTimestampSpec, deviceClockSource } from '../inspection/config/LoggingConfig';
 import type { TimestampSpec } from '../inspection/config/LoggingConfig';
@@ -861,7 +861,9 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
    * Config-driven global feature state (cdp/lldp/ip routing…) — a real
    * Repository the CLI mutates and `show` projects (no silent no-ops).
    */
-  protected readonly configState = new CiscoConfigState();
+  protected get configState(): CiscoConfigState {
+    return getConfigState(this.d() as object);
+  }
 
   /** Config-driven CLI aliases — real, working, projected by show. */
   protected readonly aliases = new AliasRepository();
