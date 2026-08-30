@@ -164,6 +164,13 @@ export class FortiShell {
     }
   }
 
+  private seedFactoryVdoms(): void {
+    const spec = this.tree.spec(['vdom']);
+    if (!spec) return;
+    const table = this.tree.table(spec);
+    for (const name of this.fw.vdomNames()) table.ensure(name);
+  }
+
   private vdom = 'root';
   private adminName: string | null = null;
   private globalScope = false;
@@ -181,6 +188,7 @@ export class FortiShell {
     this.tree.bindPhysicalPorts((name) => this.fw.getPort(name) !== undefined);
     this.seedFactoryCertificates();
     this.seedFactoryAdmin();
+    this.seedFactoryVdoms();
     const validator = new FortiValidator(
       (target, name) => this.referenceExists(target, name), this.tree);
     this.nav = new FortiNavigator({
@@ -993,6 +1001,7 @@ export class FortiShell {
     this.fw.applyFactoryIdentity();
     this.seedFactoryCertificates();
     this.seedFactoryAdmin();
+    this.seedFactoryVdoms();
   }
 
   private executeCertificate(rest: readonly string[]): string {

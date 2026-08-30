@@ -1330,11 +1330,19 @@ défauts — la méthode vaut d'être reprise sur le reliquat.
   à l'autre ; plusieurs terminaux pouvaient s'ouvrir sur un port console
   qui est unique ; `show system interface` ne suivait pas l'ordre du
   châssis ; l'auto-complétion était sensible à la casse.
-- `config system vdom` n'est pas modélisé sur le FortiGate — ouvert.
-  `show system vdom` résout `vdom` par abréviation vers `vdom-link` et rend
-  donc une AUTRE table, ce qui est le comportement d'abréviation de FortiOS
-  appliqué à une table absente. Le multi-vdom existe par ailleurs
-  (`set vdom-mode multi-vdom`, `config global`, vdom actif `root`).
+- Le VDOM `root` existe et `show vdom` le montre — fermée, et la premisse
+  de l'entrée précédente était FAUSSE : la vraie commande de FortiOS est
+  `config vdom`, pas `config system vdom`, et elle était déjà modélisée.
+  Le défaut réel était ailleurs : `predefined` ne nourrissait que l'aide et
+  la complétion, jamais l'arbre de configuration, si bien que `show vdom`
+  rendait un bloc VIDE sur une machine dont `get system status` annonce
+  `Current virtual domain: root`. `seedFactoryVdoms()` peuple la table
+  depuis le registre de l'équipement, au démarrage ET au retour d'usine.
+  Reste vrai et non corrigé : `show system vdom` résout `vdom` par
+  abréviation vers `vdom-link`. C'est l'abréviation de FortiOS appliquée à
+  notre vocabulaire — un vrai boîtier a plusieurs `system vdom-*` et
+  répondrait « ambigu » ; inventer ces tables pour provoquer l'ambiguïté
+  serait le défaut inverse.
 - `diagnose hardware sysinfo memory` n'est pas implémenté — ouvert. Le
   refus nomme désormais la commande entière et non le verbe `diagnose`,
   qui est connu ; reste à décider si un modèle mémoire mérite d'exister

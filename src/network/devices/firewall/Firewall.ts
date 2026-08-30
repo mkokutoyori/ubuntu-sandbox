@@ -1094,6 +1094,8 @@ export class Firewall extends Equipment {
   }
 
   activeVdomName(): string { return this.activeVdom; }
+
+  vdomNames(): readonly string[] { return this.vdoms.names(); }
   setMultiVdom(enabled: boolean): void { this.multiVdom = enabled; }
   multiVdomEnabled(): boolean { return this.multiVdom; }
   assignInterfaceToVdom(i: string, v: string): void { this.vdoms.assignInterface(i, v); }
