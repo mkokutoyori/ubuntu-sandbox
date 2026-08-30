@@ -274,6 +274,33 @@ const SERVICES_IOS: ReadonlyArray<readonly [string, string]> = [
   ['unsupported-transceiver', 'Enable support for third-party transceivers'],
 ];
 
+const ARCHIVE_EXEC: ReadonlySet<string> = new Set([
+  'show archive', 'show archive config differences', 'show archive log config',
+  'archive config',
+]);
+
+const ARCHIVE_EXEC_PLACES: Readonly<Record<string, readonly ArgumentSpec[]>> = {
+  'show archive config differences': [
+    {
+      name: 'avant', type: 'WORD', optional: true,
+      description: 'File to compare from (defaults to the latest archive)',
+    },
+    {
+      name: 'apres', type: 'WORD', optional: true,
+      description: 'File to compare to (defaults to the running configuration)',
+    },
+  ],
+  'show archive log config': [{
+    name: 'selection', type: 'REST', optional: true,
+    description: 'Records to show', literal: 'LINE',
+    alternatives: [
+      { keyword: 'all', description: 'All the records' },
+      { keyword: 'statistics', description: 'Memory held by the log' },
+      { keyword: 'user', description: 'Records of one user' },
+    ],
+  }],
+};
+
 type BannerKind = 'motd' | 'login' | 'exec' | 'incoming';
 
 const BANNER_SORTES: ReadonlyArray<readonly [BannerKind, string]> = [
@@ -1769,20 +1796,46 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     return this.socleConnaitDansPortee(scope, commande);
   }
 
+  /**
+   * Une commande ACCORDEE peut porter ses arguments.
+   *
+   * `privilege exec level 5 show archive log config all` nomme une
+   * commande dont le dernier mot est un ARGUMENT, et ce controle
+   * exigeait que la declaration soit au moins aussi LONGUE que la ligne
+   * tapee : la regle etait donc refusee des que la commande passait au
+   * socle, en silence, et l'operateur avait une ligne de moins que ce
+   * qu'il croyait avoir posee. Le trie, lui, l'acceptait — son noeud
+   * glouton avale ce qui suit. Ici la declaration dit ou sont les
+   * places : les mots-cles se comparent par prefixe, une place consomme
+   * un mot, une place libre consomme la fin.
+   */
   private socleConnaitDansPortee(scope: AuthScope, commande: string): boolean {
     const table = this.socleTable();
     if (!table) return false;
 
     const mots = commande.trim().toLowerCase().split(/\s+/);
     for (const spec of table.specs()) {
-      const chemin = spec.path
-        .filter((step): step is string => typeof step === 'string')
-        .map(mot => mot.toLowerCase());
-      if (chemin.length < mots.length) continue;
-      if (!mots.every((mot, rang) => chemin[rang].startsWith(mot))) continue;
-      if (spec.modes.some(mode => scopeForMode(mode) === scope)) return true;
+      if (!spec.modes.some(mode => scopeForMode(mode) === scope)) continue;
+      if (CiscoShellBase.specCouvreLesMots(spec, mots)) return true;
     }
     return false;
+  }
+
+  private static specCouvreLesMots(
+    spec: CommandSpec, mots: readonly string[],
+  ): boolean {
+    let rang = 0;
+    for (const etape of spec.path) {
+      if (rang >= mots.length) return true;
+      if (typeof etape === 'string') {
+        if (!etape.toLowerCase().startsWith(mots[rang])) return false;
+        rang += 1;
+        continue;
+      }
+      if (etape.type === 'REST') return true;
+      rang += 1;
+    }
+    return rang >= mots.length;
   }
 
   /**
@@ -5342,6 +5395,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       ...this.serviceSpecs(),
       ...this.serviceFamilySpecs(),
       ...this.bannerSpecs(),
+      ...this.archiveExecSpecs(),
       ...this.hardeningSpecs(),
       ...this.arpSpecs(),
       ...this.identityBootSpecs(),
@@ -5604,6 +5658,49 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       run: (_session, args) => poser(args.sorte, args.texte ?? ''),
       undo: (_session, args) => retirer(args.sorte),
     }];
+  }
+
+  /**
+   * `show archive`, son journal, son diff, et `archive config`.
+   *
+   * Elles etaient deja declarees UNE fois pour les deux plateformes —
+   * `registerArchiveExecCommands` est appele ici et nulle part
+   * ailleurs — donc la migration ne referme aucun doublon ; elle donne
+   * a la famille ses modes et ses places declarees.
+   */
+  private registerArchiveExecOn(trie: CommandTrie): void {
+    registerArchiveExecCommands(
+      trie,
+      () => this.archiveService(),
+      () => (this.d() as unknown as { getRunningConfig?: () => string }).getRunningConfig?.() ?? '',
+      (url) => this.fs().read(url),
+      () => this.readStartupConfig(),
+      (texte) => {
+        // Un REMPLACEMENT, pas une fusion : l'état rejouable est remis à
+        // zéro avant que le fichier ne soit appliqué, sinon ce que la
+        // configuration courante porte en trop y resterait — ce qui est
+        // précisément la différence avec `copy`.
+        const dev = this.d() as unknown as {
+          _resetConfigurableStateForReload?: () => void;
+          _applyConfigText?: (t: string) => void;
+        };
+        dev._resetConfigurableStateForReload?.();
+        dev._applyConfigText?.(texte);
+        (this.d() as unknown as { _noteConfigChange?: (u: string) => void })
+          ._noteConfigChange?.(this.configSessionLabel);
+      },
+    );
+  }
+
+  protected archiveExecSpecs(): readonly CommandSpec[] {
+    return specsFromTrieRegistrations(
+      (collector) => this.registerArchiveExecOn(collector as unknown as CommandTrie),
+      {
+        modes: ['user', 'privileged'], minPrivilege: 15,
+        skip: (path) => !ARCHIVE_EXEC.has(path),
+        argumentFor: (path) => ARCHIVE_EXEC_PLACES[path],
+      },
+    );
   }
 
   protected arpSpecs(): CommandSpec[] {
@@ -7817,27 +7914,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     // tout autant qu'un routeur et qu'elle était refusée en bloc sur le
     // switch. Un équipement sans service d'archivage rend le message de
     // table vide plutôt que de planter.
-    registerArchiveExecCommands(
-      this.privilegedTrie,
-      () => this.archiveService(),
-      () => (this.d() as unknown as { getRunningConfig?: () => string }).getRunningConfig?.() ?? '',
-      (url) => this.fs().read(url),
-      () => this.readStartupConfig(),
-      (texte) => {
-        // Un REMPLACEMENT, pas une fusion : l'état rejouable est remis à
-        // zéro avant que le fichier ne soit appliqué, sinon ce que la
-        // configuration courante porte en trop y resterait — ce qui est
-        // précisément la différence avec `copy`.
-        const dev = this.d() as unknown as {
-          _resetConfigurableStateForReload?: () => void;
-          _applyConfigText?: (t: string) => void;
-        };
-        dev._resetConfigurableStateForReload?.();
-        dev._applyConfigText?.(texte);
-        (this.d() as unknown as { _noteConfigChange?: (u: string) => void })
-          ._noteConfigChange?.(this.configSessionLabel);
-      },
-    );
+    this.registerArchiveExecOn(this.privilegedTrie);
 
 
     // Single greedy `copy` handler so any source/destination pair is consumed
