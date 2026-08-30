@@ -184,6 +184,11 @@ const DEFAULT_INTERFACE_MTU = 1500;
 export class Firewall extends Equipment {
   consoleLineCount(): number { return 1; }
 
+  applyDeviceName(name: string): void {
+    this.setName(name);
+    this.setHostname(name);
+  }
+
   private readonly interfaces = new InterfaceTable((name) => this.getPort(name));
   private readonly vdoms: VdomRegistry;
   private readonly switchGroups = new SwitchGroupTable();

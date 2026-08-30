@@ -1350,12 +1350,17 @@ défauts — la méthode vaut d'être reprise sur le reliquat.
   ZONE SD-WAN (`INTERFACE_TARGETS` ne connaissait que `system interface` et
   `system zone`), donc la politique était commitée avec un `dstintf` vide,
   c'est-à-dire incapable de correspondre à quoi que ce soit.
-- `execute reboot`, `execute shutdown` et `execute factoryreset` ne font
-  RIEN par la voie scriptee — ouvert. Elles sont cablees sur le plan
-  d'interaction du terminal, donc `executeCommand` rend la chaine vide et
-  l'appareil reste allume. Un vrai FortiGate demande confirmation
-  (`Do you want to continue? (y/n)`) ; decider ce que rend une voie sans
-  interaction est un choix de conception, pas une correction evidente.
+- `execute reboot|shutdown|factoryreset` agissent par les DEUX voies —
+  fermée. La voie scriptée était incohérente avec elle-même :
+  `factoryreset` réinitialisait sans rien annoncer, `reboot` et `shutdown`
+  ne faisaient rien du tout. Elles annoncent désormais et agissent, la
+  confirmation ne pouvant être posée que sur un canal interactif ;
+  `annonceAlimentation()` est l'unique texte, lu par le plan d'interaction
+  ET par la voie scriptée.
+  Trouvé avec : `applyFactoryIdentity` reposait `name` sans `hostname`,
+  donc un retour d'usine laissait l'invite sur le nom configuré —
+  `Firewall.applyDeviceName()` pose l'identité en un seul endroit, lu par
+  le commit de `system global` et par le retour d'usine.
 - Famille `service` — les drapeaux se rendent des DEUX cotes, fermée.
   `service password-encryption` était stockée sur `Equipment` (magasin déjà
   partagé) mais rendue par le seul parcours du routeur, donc perdue au

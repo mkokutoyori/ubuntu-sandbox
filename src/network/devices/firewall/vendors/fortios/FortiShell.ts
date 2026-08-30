@@ -119,6 +119,12 @@ const UNSIMULATED_PING_OPTIONS: Readonly<Record<string, string>> = {
 const TFTP_EXPORT_TIMEOUT_MS = 1_000;
 const TFTP_EXPORT_MAX_RETRIES = 2;
 
+function annonceAlimentation(action: 'reboot' | 'shutdown' | 'factoryreset'): string {
+  return action === 'factoryreset'
+    ? 'This operation will reset the system to factory default!'
+    : `This operation will ${action} the system !`;
+}
+
 export class FortiShell {
   private pendingAsync: Promise<string> | null = null;
 
@@ -1029,6 +1035,13 @@ export class FortiShell {
       words.slice(2), (name) => this.fw.getPort(name) !== undefined);
   }
 
+  private appliquerAlimentation(action: 'reboot' | 'shutdown' | 'factoryreset'): string {
+    if (action === 'reboot') this.fw.rebootNow();
+    else if (action === 'shutdown') this.fw.shutdownNow();
+    else { this.factoryReset(); this.fw.rebootNow(); }
+    return annonceAlimentation(action);
+  }
+
   interactionPlanFor(commandLine: string): CommandInteractionPlan | null {
     const words = commandLine.trim().split(/\s+/);
     if (words.length !== 2 || words[0] !== 'execute') return null;
@@ -1039,9 +1052,7 @@ export class FortiShell {
       return null;
     }
 
-    const announcement = action === 'factoryreset'
-      ? 'This operation will reset the system to factory default!'
-      : `This operation will ${action} the system !`;
+    const announcement = annonceAlimentation(action);
     return {
       steps: [
         { kind: 'output', lines: [announcement] },
@@ -1101,8 +1112,8 @@ export class FortiShell {
       case 'backup': return this.executeBackup(tail);
       case 'restore': return this.executeRestore(tail);
       case 'revision': return this.executeRevision(tail);
-      case 'factoryreset': this.factoryReset(); return '';
-      case 'reboot': case 'shutdown': return '';
+      case 'factoryreset': case 'reboot': case 'shutdown':
+        return this.appliquerAlimentation(resolved.name);
       case 'ssh': case 'telnet':
         return tail.length === 0
           ? FortiMessages.incomplete('a destination')
