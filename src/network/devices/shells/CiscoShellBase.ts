@@ -108,7 +108,7 @@ import {
   showLine, showIpSsh, showSshSessions, showHosts, showIpDnsStatistics, showVrf,
   showVrfDetail, showVrfInterfaces, showAdjacency,
   showRedundancy, showFileSystems, showCalendar, showTerminal,
-  showBuffers, showTcpBrief, showSockets,
+  showBuffers, showTcpBrief, showSockets, type TcpBriefSource,
   showStacks, showReload, showAaa, showEnvironment, showControllers,
   chassisSerial, CISCO_HARDWARE_PROFILES, licenseTable,
   type ShowStateDevice,
@@ -4970,9 +4970,10 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
         () => showFileSystems(this.fs(), this.readStartupConfig()?.length ?? 0)),
       vue(['show', 'file', 'systems'], 'File system information', 1,
         () => showFileSystems(this.fs(), this.readStartupConfig()?.length ?? 0)),
-      vue(['show', 'tcp'], 'Status of TCP connections', 1, () => showTcpBrief()),
+      vue(['show', 'tcp'], 'Status of TCP connections', 1,
+        () => showTcpBrief(this.pileTcp())),
       vue(['show', 'tcp', 'brief'], 'Brief display of TCP connection status', 1,
-        () => showTcpBrief()),
+        () => showTcpBrief(this.pileTcp())),
     ];
 
     const listeNommee = (
@@ -5508,6 +5509,11 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       [['option'], 'Set a raw DHCP option'],
       [['show', 'ip', 'http', 'server'], 'HTTP server information'],
     ];
+  }
+
+  private pileTcp(): TcpBriefSource | null {
+    const dev = this.d() as unknown as { getTcpStack?: () => TcpBriefSource };
+    return dev.getTcpStack?.() ?? null;
   }
 
   protected socleTable(): CommandTable | null {

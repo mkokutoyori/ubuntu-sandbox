@@ -1300,8 +1300,20 @@ défauts — la méthode vaut d'être reprise sur le reliquat.
   paquet exterieur. `probe-tunnel-ne-diffuse-pas.test.ts` observe la fuite
   la ou elle se voit — sur une machine tierce du meme segment.
 
-- `show tcp brief` et `show sockets` annoncent un en-tete et ne rendent
-  JAMAIS de ligne — ouvert. `showTcpBrief()` et `showSockets()`
+- `show tcp brief` rend ses lignes — fermée pour cette moitié.
+  `showTcpBrief()` ne prenait AUCUN argument : une constante, donc sans
+  aucun moyen d'atteindre l'équipement. Elle lit désormais la pile TCP par
+  un accesseur optionnel (un commutateur n'en a pas et garde son en-tête
+  seul), et rend les écouteurs comme les sessions établies.
+  **Aucune largeur n'est inventée** : l'en-tête est celui qui existait déjà,
+  inchangé, et les colonnes s'y alignent. La forme `adresse.port` et le
+  `*.*` d'un écouteur sont attestés par les exemples de la documentation
+  Cisco, dont seuls les BLANCS sont perdus au passage par le HTML.
+  `show sockets` reste OUVERT et n'est pas touché : son en-tête est INVENTÉ
+  (`Proto Local Address Foreign Address State` au lieu de
+  `Proto Remote Port Local Port In Out Stat TTY OutputIF`), donc y ajouter
+  des lignes reviendrait à bâtir sur une invention. Ancien texte de
+  l'entrée, conservé pour ce qui reste : `showTcpBrief()` et `showSockets()`
   (`cisco/CiscoCommonShow.ts`) rendent une CONSTANTE : une ligne
   d'en-tete, rien d'autre, sur une machine qui porte pour de bon des
   ecouteurs TCP sur 22 et 23 et de vraies sessions etablies que
