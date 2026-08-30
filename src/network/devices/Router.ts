@@ -130,7 +130,7 @@ import type { FhrpDataPlane } from '../fhrp/types';
 import { DHCPServer, type DhcpUtilizationCrossing } from '../dhcp/DHCPServer';
 import {
   classifyIpv4Destination, connectedPrefixesOfPort, decrementForForwarding, isDirectedBroadcast,
-  ipv4HeaderProblem,
+  ipv4HeaderProblem, martianSource,
 } from '../layers/internet/InternetLayer';
 import {
   DEFAULT_IPV4_TTL, ipv4HeaderOptionsOf, requiresNamedInterface, sendOnNamedInterface,
@@ -2879,6 +2879,14 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
    * Implements the full RFC 1812 forwarding pipeline.
    */
   private forwardPacket(inPort: string, ipPkt: IPv4Packet, originalPkt: IPv4Packet = ipPkt): void {
+    const martien = martianSource(ipPkt.sourceIP);
+    if (martien) {
+      Logger.warn(this.id, 'router:martian-source',
+        `${this.name}: martian source ${ipPkt.sourceIP} (${martien}) to `
+        + `${ipPkt.destinationIP} on ${inPort}, dropping`);
+      this.counters.ipInHdrErrors++;
+      return;
+    }
     if (!this._ipRoutingEnabled) {
       Logger.info(this.id, 'router:ip-routing-disabled',
         `${this.name}: IP routing is disabled, dropping packet from ${ipPkt.sourceIP} to ${ipPkt.destinationIP}`);

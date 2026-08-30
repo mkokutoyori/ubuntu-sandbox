@@ -21,7 +21,7 @@
 import { Equipment } from '../equipment/Equipment';
 import {
   classifyIpv4Destination, decrementForForwarding, ipv4HeaderProblem,
-  connectedPrefixesOfPort, type ConnectedIpv4Prefix,
+  connectedPrefixesOfPort, martianSource, type ConnectedIpv4Prefix,
 } from '../layers/internet/InternetLayer';
 import { linkDestinationFor } from '../layers/internet/Ipv4Egress';
 import { Port } from '../hardware/Port';
@@ -2139,6 +2139,13 @@ export abstract class EndHost extends Equipment {
 
   /** Forward an IPv4 packet when ipForwardEnabled is true (NAT gateway). */
   private forwardIPv4(inPort: string, ipPkt: IPv4Packet): void {
+    const martien = martianSource(ipPkt.sourceIP);
+    if (martien) {
+      Logger.warn(this.id, 'ipv4:martian-source',
+        `${this.name}: martian source ${ipPkt.sourceIP} (${martien}) to `
+        + `${ipPkt.destinationIP} on ${inPort}, dropping`);
+      return;
+    }
     const decision = decrementForForwarding(ipPkt);
     if (decision.kind === 'expired') {
       // RFC 792: a forwarding node MUST send Time Exceeded (Type 11, Code 0)
