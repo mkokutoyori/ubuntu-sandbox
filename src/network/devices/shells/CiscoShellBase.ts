@@ -55,7 +55,9 @@ import { getDefaultScheduler, type IScheduler, type TimerHandle } from '@/events
 import { runSshClient } from '../linux/network/LinuxSshClient';
 import { findHostByAddress } from '../linux/network/HostLookup';
 import type { Router } from '../Router';
-import { getSecurityConfig, buildIdentityShowCommands } from './cisco/CiscoSecurityCommands';
+import {
+  getSecurityConfig, buildIdentityShowCommands, buildIdentityConfigCommands,
+} from './cisco/CiscoSecurityCommands';
 import { parserViewMode } from '../router/security/CiscoSecurityConfig';
 import type { CiscoDevice } from './CiscoDevice';
 import type { PromptMap } from './PromptBuilder';
@@ -269,6 +271,28 @@ const SERVICES_IOS: ReadonlyArray<readonly [string, string]> = [
   ['udp-small-servers', 'Enable small UDP servers (e.g., ECHO)'],
   ['unsupported-transceiver', 'Enable support for third-party transceivers'],
 ];
+
+const SERVICES_A_MOTEUR: ReadonlySet<string> = new Set([
+  'service sequence-numbers', 'service timestamps',
+]);
+
+const SERVICE_PLACES: Readonly<Record<string, readonly ArgumentSpec[]>> = {
+  'service timestamps': [
+    {
+      name: 'channel', type: 'ENUM', optional: true,
+      description: 'Message class to timestamp',
+      values: [
+        { keyword: 'debug', description: 'Timestamp debug messages' },
+        { keyword: 'log', description: 'Timestamp log messages' },
+      ],
+    },
+    {
+      name: 'format', type: 'REST', optional: true,
+      description: 'Timestamp format and options',
+      literal: 'LINE',
+    },
+  ],
+};
 
 const LINE_ACCESS_CLASS: readonly ArgumentSpec[] = [
   {
@@ -5221,6 +5245,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       ...this.clearSpecs(),
       ...this.writeEraseSpecs(),
       ...this.serviceSpecs(),
+      ...this.serviceFamilySpecs(),
       ...this.hardeningSpecs(),
       ...this.arpSpecs(),
       ...this.identityBootSpecs(),
@@ -5362,6 +5387,62 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       run: (_session, args) => drapeau(args.nom, true),
       undo: (_session, args) => drapeau(args.nom, false),
     }];
+  }
+
+  /**
+   * Les quatre `service` qui commandent un MOTEUR, declares une fois.
+   *
+   * `service dhcp` etait ecrit DEUX fois, mot pour mot — une dans
+   * `buildConfigCommands` du routeur, une dans le corps du commutateur —
+   * pour un seul et meme geste (`_getDHCPServerInternal().enable()`).
+   * Les trois autres restent la ou leur moteur vit, et sont RAMENEES ici
+   * par l'adaptateur, de sorte que la famille se lise en un lieu sans
+   * deplacer les gestionnaires.
+   */
+  protected serviceFamilySpecs(): readonly CommandSpec[] {
+    const identite = this.identitySubmodeContext();
+    const dhcp = (on: boolean) => (): string => {
+      const service = this.dhcpServiceSwitch();
+      if (on) service?.enable(); else service?.disable();
+      return '';
+    };
+
+    return [
+      {
+        id: 'service-dhcp',
+        path: ['service', 'dhcp'],
+        description: 'Enable DHCP service',
+        undoDescription: 'Disable DHCP service',
+        modes: ['config'], minPrivilege: 15,
+        run: dhcp(true), undo: dhcp(false),
+      },
+      ...specsFromTrieRegistrations(
+        (collector) => this.registerCommonConfigCommands(collector as unknown as CommandTrie),
+        {
+          modes: ['config'], minPrivilege: 15,
+          undoFromNegatedPaths: true,
+          skip: (path) => !SERVICES_A_MOTEUR.has(path.replace(/^no /, '')),
+          argumentFor: (path) => SERVICE_PLACES[path.replace(/^no /, '')],
+        },
+      ),
+      ...(identite === null ? [] : specsFromTrieRegistrations(
+        (collector) =>
+          buildIdentityConfigCommands(collector as unknown as CommandTrie, identite),
+        {
+          modes: ['config'], minPrivilege: 15,
+          undoFromNegatedPaths: true,
+          skip: (path) =>
+            path.replace(/^no /, '') !== 'service password-encryption',
+          argumentFor: () => null,
+        },
+      )),
+    ];
+  }
+
+  protected dhcpServiceSwitch(): { enable(): void; disable(): void } | undefined {
+    return (this.d() as unknown as {
+      _getDHCPServerInternal?: () => { enable(): void; disable(): void } | undefined;
+    })._getDHCPServerInternal?.();
   }
 
   protected arpSpecs(): CommandSpec[] {

@@ -206,15 +206,6 @@ export function registerInterfaceEntry(trie: CommandTrie, ctx: CiscoShellContext
 // ─── Global Config Mode Commands ─────────────────────────────────────
 
 export function buildConfigCommands(trie: CommandTrie, ctx: CiscoShellContext): void {
-  trie.register('service dhcp', 'Enable DHCP service', () => {
-    ctx.r()._getDHCPServerInternal().enable();
-    return '';
-  });
-  trie.register('no service dhcp', 'Disable DHCP service', () => {
-    ctx.r()._getDHCPServerInternal().disable();
-    return '';
-  });
-
   registerInterfaceEntry(trie, ctx);
 
   trie.registerGreedy('no interface', 'Remove a virtual interface', (args) => {

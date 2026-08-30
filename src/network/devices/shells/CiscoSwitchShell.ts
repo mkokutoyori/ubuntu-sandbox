@@ -1063,15 +1063,6 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
       if (Number.isFinite(id)) this.trackObjects.delete(id);
       return '';
     });
-    this.configTrie.register('service dhcp', 'Enable DHCP service', () => {
-      this.d()._getDHCPServerInternal().enable();
-      return '';
-    });
-    this.configTrie.register('no service dhcp', 'Disable DHCP service', () => {
-      this.d()._getDHCPServerInternal().disable();
-      return '';
-    });
-
     this.configTrie.registerGreedy('ip access-list', 'Named ACL', (args) => {
       const kind = args[0]?.toLowerCase();
       if (kind === 'resequence') {
