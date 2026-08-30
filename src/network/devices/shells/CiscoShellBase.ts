@@ -274,6 +274,15 @@ const SERVICES_IOS: ReadonlyArray<readonly [string, string]> = [
   ['unsupported-transceiver', 'Enable support for third-party transceivers'],
 ];
 
+type BannerKind = 'motd' | 'login' | 'exec' | 'incoming';
+
+const BANNER_SORTES: ReadonlyArray<readonly [BannerKind, string]> = [
+  ['exec', 'Set EXEC process creation banner'],
+  ['incoming', 'Set incoming terminal line banner'],
+  ['login', 'Set login banner'],
+  ['motd', 'Set Message of the Day banner'],
+];
+
 const SERVICES_A_MOTEUR: ReadonlySet<string> = new Set([
   'service sequence-numbers', 'service timestamps',
 ]);
@@ -1897,7 +1906,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
   /** Apply a banner — single write path shared by the config-trie handler
    *  and the multi-line capture plan (motd also feeds the SSH banner). */
   protected setBanner(
-    kind: 'motd' | 'login' | 'exec' | 'incoming',
+    kind: BannerKind,
     text: string,
     target?: unknown,
   ): void {
@@ -2482,7 +2491,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
    * rest of that line is discarded).
    */
   private bannerCollector: {
-    type: 'motd' | 'login' | 'exec' | 'incoming';
+    type: BannerKind;
     delimiter: string;
     lines: string[];
   } | null = null;
@@ -5332,6 +5341,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       ...this.writeEraseSpecs(),
       ...this.serviceSpecs(),
       ...this.serviceFamilySpecs(),
+      ...this.bannerSpecs(),
       ...this.hardeningSpecs(),
       ...this.arpSpecs(),
       ...this.identityBootSpecs(),
@@ -5529,6 +5539,71 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     return (this.d() as unknown as {
       _getDHCPServerInternal?: () => { enable(): void; disable(): void } | undefined;
     })._getDHCPServerInternal?.();
+  }
+
+  /**
+   * `banner <sorte> <delimiteur>texte<delimiteur>`.
+   *
+   * Le texte est garde TEL QUEL — c'est tout l'objet de la commande — et
+   * c'est pourquoi la place est un `REST`, qui rend depuis peu la
+   * tranche d'origine et non les jetons recolles : `#Deux  blancs#`
+   * posait sinon une banniere a un seul blanc.
+   *
+   * `no banner motd` avait sa PROPRE declaration a cote de la forme
+   * gloutonne qui la couvrait deja, avec le meme corps mot pour mot ; la
+   * plus specifique gagnait, donc la branche `motd` de l'autre etait
+   * morte. Il n'en reste qu'une.
+   */
+  protected bannerSpecs(): CommandSpec[] {
+    const sortes = BANNER_SORTES.map(([keyword, description]) =>
+      ({ keyword, description }));
+    const poser = (sorte: string, reste: string): string => {
+      const texte = reste.replace(/^\s+/, '');
+      if (texte.length === 0) return CISCO_ERRORS.INCOMPLETE;
+      const delim = texte.startsWith('^C') ? '^C' : texte[0];
+      const corps = texte.slice(delim.length);
+      const fin = corps.indexOf(delim);
+      if (fin !== -1) {
+        this.setBanner(sorte as BannerKind, corps.slice(0, fin));
+        return '';
+      }
+      this.bannerCollector = {
+        type: sorte as BannerKind, delimiter: delim,
+        lines: corps.length > 0 ? [corps] : [],
+      };
+      return `Enter TEXT message.  End with the character '${delim}'.`;
+    };
+    const retirer = (sorte: string): string => {
+      const dev = this.d() as unknown as {
+        _setMotdBanner?: (b: string) => void;
+        _setLoginBanner?: (b: string) => void;
+        _setExecBanner?: (b: string) => void;
+        _setIncomingBanner?: (b: string) => void;
+        _setSshBanner?: (b: string) => void;
+      };
+      if (sorte === 'motd') { dev._setMotdBanner?.(''); dev._setSshBanner?.(''); }
+      else if (sorte === 'login') dev._setLoginBanner?.('');
+      else if (sorte === 'exec') dev._setExecBanner?.('');
+      else if (sorte === 'incoming') dev._setIncomingBanner?.('');
+      return '';
+    };
+
+    return [{
+      id: 'banner',
+      path: ['banner',
+        { name: 'sorte', type: 'ENUM', description: 'Type of banner', values: sortes },
+        {
+          name: 'texte', type: 'REST', optional: true,
+          description: 'Message text, delimited by any character',
+          literal: 'LINE',
+        },
+      ],
+      description: 'Define a login banner',
+      undoDescription: 'Remove a banner',
+      modes: ['config'], minPrivilege: 15,
+      run: (_session, args) => poser(args.sorte, args.texte ?? ''),
+      undo: (_session, args) => retirer(args.sorte),
+    }];
   }
 
   protected arpSpecs(): CommandSpec[] {
@@ -8228,15 +8303,6 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       return '';
     });
     registerCiscoDnsCommands(trie, this.dnsCommandContext());
-    trie.register('no banner motd', 'Clear MOTD banner', () => {
-      const dev = this.d() as unknown as {
-        _setSshBanner?: (b: string) => void;
-        _setMotdBanner?: (b: string) => void;
-      };
-      dev._setSshBanner?.('');
-      dev._setMotdBanner?.('');
-      return '';
-    });
     trie.registerGreedy('vrf', 'VRF configuration', (args, raw) => {
       const r = this.d() as unknown as { _recordUnhandledConfigLine?: (l: string) => void };
       r._recordUnhandledConfigLine?.(raw ?? `vrf ${args.join(' ')}`);
@@ -8398,53 +8464,6 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       return '';
     });
 
-    trie.registerGreedy('banner', 'Set a banner', (args, rawLine) => {
-      const which = args[0]?.toLowerCase();
-      if (!which || !['motd', 'login', 'exec', 'incoming'].includes(which)) {
-        return CISCO_ERRORS.INVALID_INPUT;
-      }
-      // The delimiter is the first non-space character after the banner
-      // type; everything after it (spaces included) is content — split
-      // from the raw line, not the collapsed args.
-      const line = rawLine ?? `banner ${args.join(' ')}`;
-      const typePos = line.toLowerCase().indexOf(which);
-      const rest = line.slice(typePos + which.length).replace(/^\s+/, '');
-      if (rest.length === 0) return CISCO_ERRORS.INCOMPLETE;
-      // show running-config renders the delimiter as the two-character
-      // notation ^C (Ctrl-C); accept it back so the output re-pastes.
-      const delim = rest.startsWith('^C') ? '^C' : rest[0];
-      const body = rest.slice(delim.length);
-      const closeIdx = body.indexOf(delim);
-      if (closeIdx !== -1) {
-        // Inline form — content truncates at the FIRST delimiter
-        // occurrence, exactly like IOS.
-        this.setBanner(which as 'motd' | 'login' | 'exec' | 'incoming', body.slice(0, closeIdx));
-        return '';
-      }
-      // Multi-line form: collect subsequent input verbatim until a line
-      // containing the delimiter.
-      this.bannerCollector = {
-        type: which as 'motd' | 'login' | 'exec' | 'incoming',
-        delimiter: delim,
-        lines: body.length > 0 ? [body] : [],
-      };
-      return `Enter TEXT message.  End with the character '${delim}'.`;
-    });
-    trie.registerGreedy('no banner', 'Remove a banner', (args) => {
-      const which = args[0]?.toLowerCase();
-      const dev = this.d() as unknown as {
-        _setMotdBanner?: (b: string) => void;
-        _setLoginBanner?: (b: string) => void;
-        _setExecBanner?: (b: string) => void;
-        _setIncomingBanner?: (b: string) => void;
-        _setSshBanner?: (b: string) => void;
-      };
-      if (which === 'motd') { dev._setMotdBanner?.(''); dev._setSshBanner?.(''); }
-      else if (which === 'login') dev._setLoginBanner?.('');
-      else if (which === 'exec') dev._setExecBanner?.('');
-      else if (which === 'incoming') dev._setIncomingBanner?.('');
-      return '';
-    });
     registerLoggingConfigCommands(trie, this.loggingCommandContext());
     registerSequenceNumbersCommand(trie, this.loggingCommandContext());
     trie.registerGreedy('service timestamps', 'Timestamp log/debug messages', (args) =>
