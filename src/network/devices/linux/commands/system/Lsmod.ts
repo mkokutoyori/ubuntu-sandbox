@@ -67,7 +67,7 @@ export const modinfoCommand: LinuxCommand = {
     const out: string[] = [];
     let failed = false;
     for (const name of names) {
-      const m = table.get(name);
+      const m = table.describe(name);
       if (!m) {
         out.push(`modinfo: ERROR: Module ${name} not found.`);
         failed = true;

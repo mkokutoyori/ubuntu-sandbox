@@ -1170,7 +1170,51 @@ export interface AdapterStatisticsInfo {
   outboundPacketErrors: number;
 }
 
+export interface NicTeamInfo {
+  name: string;
+  members: string[];
+  teamNics: string[];
+  teamingMode: string;
+  loadBalancingAlgorithm: string;
+  lacpTimer: string;
+  status: string;
+}
+
+export interface NicTeamMemberInfo {
+  name: string;
+  interfaceDescription: string;
+  team: string;
+  administrativeMode: string;
+  operationalStatus: string;
+  transmitLinkSpeed: string;
+  receiveLinkSpeed: string;
+  failureReason: string;
+}
+
+export interface NewNicTeamRequest {
+  name: string;
+  teamMembers: string[];
+  teamNicName?: string;
+  teamingMode?: string;
+  loadBalancingAlgorithm?: string;
+  lacpTimer?: string;
+}
+
+export interface SetNicTeamRequest {
+  teamingMode?: string;
+  loadBalancingAlgorithm?: string;
+  lacpTimer?: string;
+}
+
 export interface INetworkProvider {
+  getNicTeams?(): NicTeamInfo[];
+  newNicTeam?(request: NewNicTeamRequest): string;
+  setNicTeam?(name: string, request: SetNicTeamRequest): string;
+  removeNicTeam?(name: string): string;
+  getNicTeamMembers?(team?: string): NicTeamMemberInfo[];
+  addNicTeamMember?(team: string, name: string, administrativeMode?: string): string;
+  setNicTeamMember?(name: string, administrativeMode: string): string;
+  removeNicTeamMember?(name: string): string;
   getHostname(): string;
   getAdapters(): NetworkAdapterInfo[];
   getAdapter(name: string): NetworkAdapterInfo | null;

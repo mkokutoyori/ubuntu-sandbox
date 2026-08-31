@@ -12,6 +12,7 @@
  */
 
 import { DeviceType, EthernetFrame, ETHERTYPE_IPV4, IPv4Packet, IPAddress } from '../core/types';
+import { selectBundleMember, DEFAULT_LOAD_BALANCE, type LoadBalanceMethod } from '@/network/lacp/loadBalance';
 import { AgentRegistry } from './AgentRegistry';
 import { cdpToNeighborDTO, lldpToNeighborDTO } from './inspection/neighborConverters';
 import { Switch, STPPortState, type SwitchportMode } from './Switch';
@@ -197,6 +198,21 @@ export class CiscoSwitch extends Switch {
    * LACP has actually brought up count: a member still negotiating is not
    * part of the aggregate yet and keeps running STP on its own.
    */
+  protected override aggregationEgressPort(
+    portName: string, frame: EthernetFrame, ingressPort?: string,
+  ): string | null {
+    const info = this.lacpAgent.getPortInfo(portName);
+    if (!info || !info.bundled) return portName;
+    if (ingressPort !== undefined
+      && this.lacpAgent.getPortInfo(ingressPort)?.groupId === info.groupId) return null;
+    const membres = this.lacpAgent.getGroupMembers(info.groupId)
+      .filter(p => p.bundled)
+      .map(p => p.portName);
+    const groupe = this.lacpAgent.getAllGroups().find(g => g.id === info.groupId);
+    const methode = (groupe?.loadBalance ?? DEFAULT_LOAD_BALANCE) as LoadBalanceMethod;
+    return selectBundleMember(membres, frame, methode);
+  }
+
   private getStpBundleGroup(portName: string): { groupKey: string; members: string[] } | undefined {
     const info = this.lacpAgent.getPortInfo(portName);
     if (!info || !info.bundled) return undefined;

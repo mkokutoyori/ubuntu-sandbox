@@ -139,6 +139,19 @@ const BASE_MODULES: readonly ModuleSeed[] = [
  */
 const CHARGEABLES: readonly ModuleSeed[] = [
   {
+    name: 'bonding', size: 200704, license: 'GPL',
+    description: 'Ethernet Channel Bonding Driver',
+    author: 'Thomas Davis, tadavis@lbl.gov and many others',
+    path: 'kernel/drivers/net/bonding/bonding.ko',
+    parms: [
+      'max_bonds:Max number of bonded devices (int)',
+      'mode:Mode of operation; 0 for balance-rr, 1 for active-backup, 2 for balance-xor, 3 for broadcast, 4 for 802.3ad, 5 for balance-tlb, 6 for balance-alb (charp)',
+      'miimon:Link check interval in milliseconds (int)',
+      'lacp_rate:LACPDU tx rate to request from 802.3ad partner; 0 for slow, 1 for fast (charp)',
+      'xmit_hash_policy:balance-alb, balance-tlb, balance-xor, 802.3ad hashing method (charp)',
+    ],
+  },
+  {
     name: 'dummy', size: 12288, license: 'GPL',
     description: 'Dummy network driver',
     author: 'Nick Holloway <alfie@dcs.warwick.ac.uk>',
@@ -216,6 +229,18 @@ export class KernelModuleTable {
 
   has(name: string): boolean {
     return this.get(name) !== undefined;
+  }
+
+  /**
+   * `modinfo` lit `/lib/modules`, pas la liste des modules CHARGES : un
+   * module que l'image porte se decrit sans `modprobe` prealable.
+   */
+  describe(name: string): KernelModule | undefined {
+    const canonique = name.replace(/-/g, '_');
+    const charge = this.get(name);
+    if (charge) return charge;
+    const seed = CHARGEABLES.find((m) => m.name === canonique);
+    return seed ? { ...seed, depends: seed.depends ?? [], usedBy: [] } : undefined;
   }
 
   /** `/lib/modules/<release>/<path>` — ce que `modinfo` met en `filename:`. */

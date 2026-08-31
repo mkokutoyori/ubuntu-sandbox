@@ -36,6 +36,7 @@ export interface IpInterfaceInfo {
   isDHCP: boolean;
   txQueueLen?: number;
   promiscuous?: boolean;
+  master?: string | null;
   counters: {
     framesIn: number;
     framesOut: number;
@@ -107,6 +108,10 @@ export interface IpTunnelContext {
 
 export interface IpLinkOpsContext {
   addDummy(name: string): string;
+  addBond(name: string): string;
+  enslave(bond: string, iface: string): string;
+  release(iface: string): string;
+  bondOption(bond: string, key: string, value: string): boolean;
   addVeth(name: string, peerName: string): string;
   addVlan(name: string, parent: string, vid: number): string;
   deleteLink(name: string): string;
@@ -693,7 +698,7 @@ function formatAddrInterface(info: IpInterfaceInfo, idx: number, opts: IpOutputO
 
   const c = opts.color;
   const lines: string[] = [];
-  lines.push(`${idx}: ${c.ifname(`${info.name}: `)}<${uniqueFlags.join(',')}> mtu ${info.mtu} qdisc ${qdisc} state ${c.operstate(state, `${state} `)}group ${group}${qlen}`);
+  lines.push(`${idx}: ${c.ifname(`${info.name}: `)}<${uniqueFlags.join(',')}> mtu ${info.mtu} qdisc ${qdisc}${info.master ? ` master ${info.master}` : ''} state ${c.operstate(state, `${state} `)}group ${group}${qlen}`);
   lines.push(`    link/${isLoopback ? 'loopback' : 'ether'} ${c.mac(String(info.mac))} brd ${c.mac(isLoopback ? '00:00:00:00:00:00' : 'ff:ff:ff:ff:ff:ff')}`);
   if (opts.stats) lines.push(...statsLines(info));
 
@@ -945,6 +950,8 @@ function ipLinkAdd(ctx: IpNetworkContext, args: string[]): string {
 
   if (type === 'dummy') return linkOps.addDummy(name);
 
+  if (type === 'bond') return linkOps.addBond(name);
+
   if (type === 'veth') {
     if (!peerName) return 'Error: veth requires "peer name NAME2".';
     return linkOps.addVeth(name, peerName);
@@ -1019,7 +1026,8 @@ function formatLinkInterface(
   const group = 'default';
 
   const lines: string[] = [];
-  lines.push(`${idx}: ${c.ifname(`${info.name}: `)}<${uniqueFlags.join(',')}> mtu ${info.mtu} qdisc ${qdisc} state ${c.operstate(state, `${state} `)}mode ${mode} group ${group}${qlen}`);
+  const maitre = info.master ? ` master ${info.master}` : '';
+  lines.push(`${idx}: ${c.ifname(`${info.name}: `)}<${uniqueFlags.join(',')}> mtu ${info.mtu} qdisc ${qdisc}${maitre} state ${c.operstate(state, `${state} `)}mode ${mode} group ${group}${qlen}`);
   lines.push(`    link/${isLoopback ? 'loopback' : 'ether'} ${c.mac(String(info.mac))} brd ${c.mac(isLoopback ? '00:00:00:00:00:00' : 'ff:ff:ff:ff:ff:ff')}`);
   if (stats) lines.push(...statsLines(info));
 
@@ -1142,6 +1150,9 @@ function ipLinkSet(ctx: IpNetworkContext, args: string[]): string {
   let lladdr: string | null = null;
   let txqueuelen: number | null = null;
   let promisc: boolean | null = null;
+  let master: string | null = null;
+  let detacher = false;
+  const optionsBond: Array<[string, string]> = [];
 
   for (let i = 0; i < args.length; i++) {
     if (args[i] === 'dev' && args[i + 1]) {
@@ -1161,6 +1172,18 @@ function ipLinkSet(ctx: IpNetworkContext, args: string[]): string {
     } else if (args[i] === 'promisc' && args[i + 1]) {
       promisc = args[i + 1] === 'on';
       i++;
+    } else if (args[i] === 'type' && args[i + 1] === 'bond') {
+      i++;
+      while (i + 2 < args.length) {
+        optionsBond.push([args[i + 1], args[i + 2]]);
+        i += 2;
+      }
+    } else if (args[i] === 'master' && args[i + 1]) {
+      master = args[i + 1];
+      i++;
+    } else if (args[i] === 'nomaster') {
+      master = null;
+      detacher = true;
     } else if (!devName && !args[i].startsWith('-')) {
       devName = args[i];
     } else {
@@ -1195,6 +1218,23 @@ function ipLinkSet(ctx: IpNetworkContext, args: string[]): string {
 
   if (promisc !== null) {
     const r = ctx.setInterfacePromiscuous(devName, promisc);
+    if (r) return r;
+  }
+
+  if (optionsBond.length > 0) {
+    const ops = ctx.linkOps;
+    if (!ops) return 'RTNETLINK answers: Operation not supported';
+    for (const [cle, valeur] of optionsBond) {
+      if (!ops.bondOption(devName, cle, valeur)) {
+        return `Error: argument "${cle}" is wrong: invalid value`;
+      }
+    }
+  }
+
+  if (master !== null || detacher) {
+    const ops = ctx.linkOps;
+    if (!ops) return 'RTNETLINK answers: Operation not supported';
+    const r = master !== null ? ops.enslave(master, devName) : ops.release(devName);
     if (r) return r;
   }
 

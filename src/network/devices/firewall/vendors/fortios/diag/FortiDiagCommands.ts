@@ -45,11 +45,72 @@ import { renderDnsProxy } from './dnsProxyRenderer';
 import { renderIpFrags } from './ipFragsRenderer';
 import { renderSysTop } from './sysTopRenderer';
 import { renderBridgeList, renderBridgeHosts } from './brctlRenderer';
+import {
+  renderAggregateList, renderAggregateDetail, actorStateFlags, type AggregateView,
+} from './aggregateRenderer';
+import { selectBundleMemberForFlow } from '@/network/lacp/loadBalance';
 import { renderAutoupdateVersions } from './fortiguardRenderer';
 import { describeLogCategories, resolveLogCategory } from '../log/logCategories';
 
+function vueAgregat(nom: string, deps: FortiDiagDeps): AggregateView | null {
+  const spec = deps.fw.getAggregates().get(nom);
+  if (!spec) return null;
+  const agent = deps.fw.getLacpAgent();
+  const membres = spec.members.map((m) => {
+    const info = agent.getPortInfo(m);
+    const port = deps.fw.getPort(m);
+    const synced = info?.bundled === true;
+    return {
+      name: m,
+      up: port?.isOperationallyUp() === true,
+      speedMbps: port?.getNegotiatedSpeed() ?? null,
+      actorState: actorStateFlags(spec.lacpMode, spec.lacpSpeed, synced),
+      partnerState: actorStateFlags(spec.lacpMode, spec.lacpSpeed, synced),
+      aggregatorId: info?.groupId ?? 0,
+      partnerMac: info?.partner?.systemId ?? '00:00:00:00:00:00',
+      linkFailureCount: 0,
+    };
+  });
+  return {
+    name: nom,
+    up: membres.filter(m => m.up).length >= spec.minLinks,
+    lacpMode: spec.lacpMode,
+    lacpSpeed: spec.lacpSpeed,
+    algorithm: spec.algorithm,
+    minLinks: spec.minLinks,
+    systemMac: agent.getConfig().systemId,
+    members: membres,
+  };
+}
+
 function diagnoseNetlink(rest: readonly string[], deps: FortiDiagDeps): string {
   const [family, ...tail] = rest;
+
+  if (family === 'aggregate') {
+    if (tail[0] === 'list') {
+      const vues = [...deps.fw.getAggregates().keys()]
+        .map(n => vueAgregat(n, deps))
+        .filter((v): v is AggregateView => v !== null);
+      return renderAggregateList(vues);
+    }
+    if (tail[0] === 'name' && tail[1] !== undefined) {
+      const vue = vueAgregat(tail[1], deps);
+      if (!vue) return `aggregate interface ${tail[1]} does not exist`;
+      return renderAggregateDetail(vue);
+    }
+    return FortiMessages.unknownPath(`netlink aggregate ${tail.join(' ')}`);
+  }
+
+  if (family === 'port' && tail[0] !== undefined) {
+    const vue = vueAgregat(tail[0], deps);
+    if (!vue) return `aggregate interface ${tail[0]} does not exist`;
+    const actifs = vue.members.filter(m => m.up).map(m => m.name);
+    if (actifs.length === 0) return `no member of ${tail[0]} is up`;
+    const cle = tail.slice(1).join('|');
+    const elu = selectBundleMemberForFlow(actifs, cle || tail[0]);
+    return `packet is transmitted from port ${elu}`;
+  }
+
   if (family !== 'brctl') {
     return FortiMessages.unknownPath(`netlink ${rest.join(' ')}`);
   }

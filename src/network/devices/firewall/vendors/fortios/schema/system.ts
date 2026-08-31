@@ -69,6 +69,10 @@ function isVlan(object: FortiObjectView): boolean {
   return interfaceType(object) === 'vlan';
 }
 
+function isAggregate(object: FortiObjectView): boolean {
+  return object.effective('type')[0] === 'aggregate';
+}
+
 export const SYSTEM_GLOBAL: FortiTableSpec = {
   path: ['system', 'global'],
   kind: 'object',
@@ -431,6 +435,45 @@ export const SYSTEM_INTERFACE: FortiTableSpec = {
     },
     { ...reference('interface', 'Parent interface name.', ['system interface']),
       availableWhen: isVlan },
+    {
+      name: 'member',
+      help: 'Physical interfaces that belong to the aggregate or redundant interface.',
+      quoted: true,
+      multiValue: true,
+      referenceTo: ['system interface'],
+      parts: [{
+        name: 'member', type: 'WORD',
+        description: 'Physical interface name.',
+      }],
+      availableWhen: isAggregate,
+    },
+    {
+      ...choice('lacp-mode', 'LACP mode.', [
+        { keyword: 'static', description: 'Static aggregation, no LACP.' },
+        { keyword: 'passive', description: 'Passive LACP: answer, never initiate.' },
+        { keyword: 'active', description: 'Active LACP: initiate the negotiation.' },
+      ], 'active'),
+      availableWhen: isAggregate,
+    },
+    {
+      ...choice('lacp-speed', 'How often the interface sends LACP messages.', [
+        { keyword: 'slow', description: 'Send LACP message every 30 seconds.' },
+        { keyword: 'fast', description: 'Send LACP message every second.' },
+      ], 'slow'),
+      availableWhen: isAggregate,
+    },
+    {
+      ...count('min-links', 'Minimum number of aggregated ports that must be up.', 1, 32, 1),
+      availableWhen: isAggregate,
+    },
+    {
+      ...choice('algorithm', 'Frame distribution algorithm.', [
+        { keyword: 'L2', description: 'Distribute by source and destination MAC.' },
+        { keyword: 'L3', description: 'Distribute by source and destination IP.' },
+        { keyword: 'L4', description: 'Distribute by source and destination IP and port.' },
+      ], 'L4'),
+      availableWhen: isAggregate,
+    },
     { ...count('vlanid', 'VLAN ID.', 1, 4094, 0), availableWhen: isVlan },
     choice('mode', 'Addressing mode.', [
       { keyword: 'static', description: 'Static addressing.' },
@@ -478,6 +521,13 @@ export const SYSTEM_INTERFACE: FortiTableSpec = {
       mtu: object.effective('mtu-override')[0] === 'enable'
         ? Number.parseInt(object.effective('mtu')[0] ?? '', 10) || undefined
         : undefined,
+      aggregate: interfaceType(object) === 'aggregate' ? {
+        members: object.effective('member'),
+        lacpMode: (object.effective('lacp-mode')[0] ?? 'active') as 'active',
+        lacpSpeed: (object.effective('lacp-speed')[0] ?? 'slow') as 'slow',
+        algorithm: (object.effective('algorithm')[0] ?? 'L4') as 'L4',
+        minLinks: Number.parseInt(object.effective('min-links')[0] ?? '1', 10) || 1,
+      } : undefined,
     });
     if (mode === 'dhcp') context.device.acquireDhcpLease(object.key);
     context.device.setCaptivePortalInterface(object.key,

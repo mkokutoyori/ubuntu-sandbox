@@ -1,4 +1,5 @@
 import { DeviceType, EthernetFrame, ETHERTYPE_IPV4, IPAddress, type MACAddress } from '../core/types';
+import { selectBundleMember, DEFAULT_LOAD_BALANCE, type LoadBalanceMethod } from '@/network/lacp/loadBalance';
 import { AgentRegistry } from './AgentRegistry';
 import { lldpToNeighborDTO } from './inspection/neighborConverters';
 import { Switch, STPPortState } from './Switch';
@@ -313,4 +314,20 @@ export class HuaweiSwitch extends Switch {
       'Press ENTER to get started.',
     ].join('\n');
   }
+
+  protected override aggregationEgressPort(
+    portName: string, frame: EthernetFrame, ingressPort?: string,
+  ): string | null {
+    const info = this.lacpAgent.getPortInfo(portName);
+    if (!info || !info.bundled) return portName;
+    if (ingressPort !== undefined
+      && this.lacpAgent.getPortInfo(ingressPort)?.groupId === info.groupId) return null;
+    const membres = this.lacpAgent.getGroupMembers(info.groupId)
+      .filter(p => p.bundled)
+      .map(p => p.portName);
+    const groupe = this.lacpAgent.getAllGroups().find(g => g.id === info.groupId);
+    const methode = (groupe?.loadBalance ?? DEFAULT_LOAD_BALANCE) as LoadBalanceMethod;
+    return selectBundleMember(membres, frame, methode);
+  }
+
 }

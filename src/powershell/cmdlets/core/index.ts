@@ -3,6 +3,11 @@
  * any Windows system providers. Called by PSInterpreter and PowerShellExecutor.
  */
 
+import {
+  GetNetLbfoTeamCmdlet, NewNetLbfoTeamCmdlet, SetNetLbfoTeamCmdlet, RemoveNetLbfoTeamCmdlet,
+  GetNetLbfoTeamMemberCmdlet, AddNetLbfoTeamMemberCmdlet, SetNetLbfoTeamMemberCmdlet,
+  RemoveNetLbfoTeamMemberCmdlet,
+} from './NetLbfoCmdlets';
 import { CmdletRegistry } from '@/powershell/runtime/PSCmdletRegistry';
 import {
   WriteOutputCmdlet, WriteHostCmdlet, WriteErrorCmdlet,
@@ -372,6 +377,14 @@ export function registerCoreCmdlets(registry: CmdletRegistry, opts: { includeSer
 
   // ── Network (provider-backed, partial — see INetworkProvider) ─────────────
   registry.register(new GetNetAdapterCmdlet());
+  registry.register(new GetNetLbfoTeamCmdlet());
+  registry.register(new NewNetLbfoTeamCmdlet());
+  registry.register(new SetNetLbfoTeamCmdlet());
+  registry.register(new RemoveNetLbfoTeamCmdlet());
+  registry.register(new GetNetLbfoTeamMemberCmdlet());
+  registry.register(new AddNetLbfoTeamMemberCmdlet());
+  registry.register(new SetNetLbfoTeamMemberCmdlet());
+  registry.register(new RemoveNetLbfoTeamMemberCmdlet());
   registry.register(new GetNetIPAddressCmdlet());
   registry.register(new GetNetIPInterfaceCmdlet());
   registry.register(new TestConnectionCmdlet());

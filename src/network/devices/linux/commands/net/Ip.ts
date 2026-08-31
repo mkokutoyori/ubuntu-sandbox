@@ -146,6 +146,9 @@ export function buildIpCtx(
         carrierless: port.isCarrierless(),
         txQueueLen: port.getTxQueueLen(),
         promiscuous: port.isPromiscuous(),
+        master: (this.getLocalDevice() as unknown as
+          { bondOwning?(i: string): string | null } | null)
+          ?.bondOwning?.(port.getName()) ?? null,
         counters: {
           framesIn: counters.framesIn,
           framesOut: counters.framesOut,

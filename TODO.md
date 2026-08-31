@@ -1505,3 +1505,32 @@ défauts — la méthode vaut d'être reprise sur le reliquat.
   n'a ni VRF ni processus OSPF. La forme `ospf` y est neanmoins
   ACCEPTEE et rend une table filtree vide, par la table de codes
   partagee — ce qui est ce que fait une vraie machine sans route OSPF.
+- **Un mot-cle declare APRES une place `REST` n'est pas offert par `?`
+  une fois la place remplie**, et c'est ce qui BLOQUE la migration de
+  `show interfaces` au socle. Mesure, sur un routeur, la meme question
+  posee a deux commandes :
+
+      show traffic-shape GigabitEthernet0/0 ?   ->  statistics   (bon)
+      show ip sla statistics 1 ?                ->  <cr> seul    (mauvais)
+
+  Les deux declarent leurs suites de la meme facon
+  (`continuationsPourLeSocle`, `afterArguments: true`) et les deux ont
+  une place `REST`. La difference n'est ni le `literal` (essaye : `WORD`
+  comme `LINE` echouent) ni la forme de la spec : `show traffic-shape`
+  garde un NOEUD dans le trie, dont les enfants `_hintOnly` poses par
+  `declareContinuations` sont ce qui repond — le socle, lui, ne repond
+  pas. `CommandParser` le montre a l'EXECUTION : arrive sur une place
+  `REST`, il prend tout le reste de la saisie et `break`, donc rien ne
+  peut suivre ; l'aide se comporte pareil. `show interfaces` migre perd
+  donc `accounting`, `stats`, `rate-limit`, `summary`, `switchport` et
+  `etherchannel` de son aide, alors que les six s'EXECUTENT toujours —
+  une aide qui tait ce que la machine accepte.
+  Ce qui a ete fait : la sonde `probe-famille-show-interfaces.test.ts`
+  (28 cas, les deux plateformes) est ecrite et VERTE sur le code non
+  migre — elle atteste que la famille est deja fidele et uniforme, et
+  elle gardera le deplacement le jour ou il sera possible. La migration
+  elle-meme est ANNULEE plutot que livree avec une aide amputee.
+  Fermer demande de faire suivre au moteur de completion les etapes de
+  chemin qui viennent APRES une place `REST` ; c'est un correctif du
+  socle et non de la famille, il profite aussi a `show ip sla
+  statistics`, et sa surface de regression est toute l'aide du depot.

@@ -136,11 +136,18 @@ describe('Scénario 3 — ce qui n\'est adossé à rien est refusé', () => {
     expect(await sw1.executeCommand('show pagp neighbor')).toContain('PAgP is not implemented');
   });
 
-  it('la répartition de charge est refusée : rien ne répartit', async () => {
+  it('la répartition de charge est acceptée, et rendue par sa vue', async () => {
     const { sw1 } = await bundle();
     const [, out] = await conf(sw1, ['configure terminal', 'port-channel load-balance src-dst-ip']);
-    expect(out).toContain('not supported');
-    expect(out).toContain('spanning tree');
+    expect(out).toBe('');
+    await sw1.executeCommand('end');
+    expect(await sw1.executeCommand('show etherchannel load-balance')).toContain('src-dst-ip');
+  });
+
+  it('une méthode de répartition inventée est refusée', async () => {
+    const { sw1 } = await bundle();
+    const [, out] = await conf(sw1, ['configure terminal', 'port-channel load-balance zorglub']);
+    expect(out).toContain('Invalid input');
   });
 
   it('les modes LACP réels restent acceptés', async () => {

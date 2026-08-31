@@ -1,4 +1,6 @@
 import { Equipment } from '../../equipment/Equipment';
+import { LacpAgent } from '@/network/lacp/LacpAgent';
+import type { FortiAggregate } from './vendors/fortios/FortiAggregate';
 import { buildUdpOverIpv4, type UdpSendRequest } from '../../layers/transport/UdpEgress';
 import { Port } from '../../hardware/Port';
 import {
@@ -1258,6 +1260,66 @@ export class Firewall extends Equipment {
 
   clearTraces(): void { this.traces.clear(); }
 
+  private lacpAgentInstance: LacpAgent | null = null;
+  private readonly aggregates = new Map<string, FortiAggregate>();
+
+  getLacpAgent(): LacpAgent {
+    if (!this.lacpAgentInstance) {
+      this.lacpAgentInstance = new LacpAgent(
+        {
+          id: this.id, name: this.name,
+          getHostname: () => this.getHostname(),
+          getPort: (n: string) => this.getPort(n),
+          getPorts: () => this.getPorts(),
+          sendOnLink: (request) => this.getLinkLayer().send(request),
+        },
+        () => this.getBus(),
+        this.getPorts()[0]?.getMAC().toString() ?? '00:00:00:00:00:00',
+      );
+      this.lacpAgentInstance.start();
+    }
+    return this.lacpAgentInstance;
+  }
+
+  getAggregates(): ReadonlyMap<string, FortiAggregate> { return this.aggregates; }
+
+  declareAggregate(name: string, spec: FortiAggregate): void {
+    this.aggregates.set(name, spec);
+    this.applyAggregate(name);
+  }
+
+  removeAggregate(name: string): void {
+    const spec = this.aggregates.get(name);
+    if (spec) for (const m of spec.members) this.getLacpAgent().removePort(m);
+    this.aggregates.delete(name);
+  }
+
+  private aggregateGroupId(name: string): number {
+    const m = /(\d+)$/.exec(name);
+    return m ? Number(m[1]) : 1;
+  }
+
+  private applyAggregate(name: string): void {
+    const spec = this.aggregates.get(name);
+    if (!spec) return;
+    const agent = this.getLacpAgent();
+    agent.setFastRate(spec.lacpSpeed === 'fast');
+    const mode = spec.lacpMode === 'static' ? 'on' : spec.lacpMode;
+    for (const membre of spec.members) {
+      if (!this.getPort(membre)) continue;
+      agent.addPortToGroup(membre, this.aggregateGroupId(name), mode);
+    }
+    this.refreshAggregates();
+  }
+
+  private refreshAggregates(): void {
+    for (const [name, spec] of this.aggregates) {
+      const vivants = spec.members.filter(
+        m => this.getPort(m)?.isOperationallyUp() === true);
+      this.interfaces.configure(name, { up: vivants.length >= spec.minLinks });
+    }
+  }
+
   protected handleFrame(portName: string, frame: EthernetFrame): void {
     this.load.recordPacket('kernel');
     this.load.recordBytes('in', frameBytes(frame));
@@ -1269,6 +1331,11 @@ export class Firewall extends Equipment {
 
     if (frame.etherType === ETHERTYPE_FGCP) {
       this.haService.agent.receive(frame);
+      return;
+    }
+    if (frame.etherType === 0x8809) {
+      this.getLacpAgent().handleFrame(portName, frame);
+      this.refreshAggregates();
       return;
     }
     if (frame.etherType === ETHERTYPE_ARP) {

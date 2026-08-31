@@ -4277,6 +4277,12 @@ export class HuaweiSwitchShell implements ISwitchShell {
       lines.push('#');
     }
 
+    for (const [id, t] of [...this.ethTrunks.entries()].sort((x, y) => x[0] - y[0])) {
+      lines.push(`interface Eth-Trunk${id}`);
+      for (const extra of t.cfg) lines.push(` ${extra}`);
+      lines.push('#');
+    }
+
     const macLignes = macRunningConfigLines(sw.getMACTable(), sw.getMACAgingTime());
     if (macLignes.length > 0) { lines.push(...macLignes); lines.push('#'); }
 
