@@ -456,7 +456,42 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
       ...this.interfaceEntrySpecs(),
       ...this.ipv6NdSpecs(), ...this.ipv6OspfSpecs(), ...this.ipv6ReglagesSpecs(),
       ...this.clearIpv6Specs(),
+      ...this.aclNommeeSpecs(),
     ];
+  }
+
+  /**
+   * `ip access-list {standard|extended|resequence} …`.
+   *
+   * Les places sont declarees plutot que subies : le NOM d'une liste
+   * n'est pas un mot-cle et la renumerotation prend deux entiers, que la
+   * place libre de l'adaptateur laissait deviner.
+   */
+  private aclNommeeSpecs(): CommandSpec[] {
+    const nom: ArgumentSpec = {
+      name: 'nom', type: 'WORD', description: 'Access list name',
+    };
+    const places: Readonly<Record<string, readonly ArgumentSpec[]>> = {
+      'ip access-list standard': [nom],
+      'ip access-list extended': [nom],
+      'ip access-list resequence': [
+        nom,
+        { name: 'debut', type: 'INT', range: [1, 2147483647],
+          description: 'First sequence number' },
+        { name: 'pas', type: 'INT', range: [1, 2147483647],
+          description: 'Step between sequence numbers' },
+      ],
+    };
+
+    return specsFromTrieRegistrations(
+      (collector) => buildACLConfigCommands(collector as unknown as CommandTrie, this),
+      {
+        modes: ['config'], minPrivilege: 15,
+        undoFromNegatedPaths: true,
+        skip: (path) => places[path.replace(/^no /, '')] === undefined,
+        argumentFor: (path) => places[path.replace(/^no /, '')],
+      },
+    );
   }
 
   /*
