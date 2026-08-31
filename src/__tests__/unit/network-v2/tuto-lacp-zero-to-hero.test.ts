@@ -330,8 +330,8 @@ describe('Partie 3 — LACP sur Cisco', () => {
   it('§3.4 `show lacp internal` rend l\'etat local de chaque port', async () => {
     const { a } = await laboCisco('active', 'active', 2);
     const sortie = await a.executeCommand('show lacp internal');
-    expect(sortie).toMatch(/Fa0\/1\s+SA\s+bundled/);
-    expect(sortie).toMatch(/Fa0\/2\s+SA\s+bundled/);
+    expect(sortie).toMatch(/Fa0\/1\s+SA\s+bndl/);
+    expect(sortie).toMatch(/Fa0\/2\s+SA\s+bndl/);
   });
 
   it('§3.4 `show lacp counters` compte les LACPDU reellement echangees', async () => {
@@ -352,7 +352,7 @@ describe('Partie 3 — LACP sur Cisco', () => {
   it('§3.4 la forme `show lacp <groupe> neighbor` du tutoriel repond', async () => {
     const { a } = await laboCisco('active', 'active', 2);
     expect(await a.executeCommand('show lacp 1 neighbor')).toMatch(/Fa0\/1\s+32768,/);
-    expect(await a.executeCommand('show lacp 1 internal')).toMatch(/Fa0\/1\s+SA\s+bundled/);
+    expect(await a.executeCommand('show lacp 1 internal')).toMatch(/Fa0\/1\s+SA\s+bndl/);
     expect(await a.executeCommand('show lacp 1 counters')).toMatch(/Fa0\/1\s+\d+\s+\d+/);
   });
 
@@ -777,7 +777,7 @@ describe('Partie 7 — troubleshooting', () => {
 
   it('§7.2 point 1 — `show lacp internal` distingue un port groupe d\'un port isole', async () => {
     const { a } = await laboCisco('passive', 'passive', 2);
-    expect(await a.executeCommand('show lacp internal')).toMatch(/Fa0\/1\s+SP\s+standalone/);
+    expect(await a.executeCommand('show lacp internal')).toMatch(/Fa0\/1\s+SP\s+indep/);
   });
 });
 

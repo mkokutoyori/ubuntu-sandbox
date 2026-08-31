@@ -172,6 +172,32 @@ export class GetNetLbfoTeamMemberCmdlet implements ICmdlet {
   }
 }
 
+export class GetNetLbfoTeamNicCmdlet implements ICmdlet {
+  readonly name = 'get-netlbfoteamnic';
+  readonly displayName = 'Get-NetLbfoTeamNic';
+  readonly aliases = [] as const;
+  readonly parameters = ['Name', 'Team'] as const;
+
+  execute(ctx: CmdletContext): PSValue {
+    const net = requireTeaming(ctx);
+    if (!net.getNicTeamNics) return [] as unknown as PSValue;
+    const team = ctx.named['team'] !== undefined
+      ? psValueToString(ctx.named['team']) : undefined;
+    let nics = net.getNicTeamNics(team);
+    const demandes = names(ctx.named['name'] ?? ctx.positional[0]);
+    if (demandes.length > 0) {
+      nics = nics.filter(n => demandes.some(d => matchesPattern(n.name, d)));
+    }
+    return nics.map(n => ({
+      Name: n.name,
+      Team: n.team,
+      VlanID: n.vlanId,
+      Primary: n.primary,
+      Default: n.isDefault,
+    })) as PSValue;
+  }
+}
+
 export class AddNetLbfoTeamMemberCmdlet implements ICmdlet {
   readonly name = 'add-netlbfoteammember';
   readonly displayName = 'Add-NetLbfoTeamMember';

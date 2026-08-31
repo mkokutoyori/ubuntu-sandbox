@@ -1550,3 +1550,49 @@ défauts — la méthode vaut d'être reprise sur le reliquat.
   n'execute rien de faux, mais avec le mauvais message.
   Regle a suivre d'ici la : avant de migrer une famille a la main,
   MESURER si un mot-cle du trie partage le prefixe du sien.
+  au juge.
+## LACP / 802.1AX — ce que le moteur n'implemente pas encore
+
+Mesure faite contre `drivers/net/bonding/bond_3ad.c`, qui EST une
+implantation de la norme et cite ses clauses. La norme elle-meme n'est
+pas telechargeable depuis ce reseau : `standards.ieee.org`,
+`ieeexplore.ieee.org` et `ieee802.org` sont tous refuses par le mandataire
+de sortie (code 000), et la version « Get Program » gratuite passe par les
+memes hotes. Ce qui suit est donc etabli sur l'implantation du noyau et
+sur les vues des constructeurs, pas sur le texte.
+
+- **La machine a etats de CHURN** (`ad_churn_machine`, 802.1AX §6.4.17)
+  n'existe pas. Elle detecte qu'un port n'atteint jamais la
+  synchronisation et compte les `Actor Churned Count` /
+  `Partner Churned Count` que `/proc/net/bonding` affiche — ce depot les
+  rend a ZERO en dur (`renderProcNetBonding`). Fermer demande une
+  troisieme minuterie par port et une notion d'etat « churn » que le
+  moteur n'a pas ; les compteurs a zero sont aujourd'hui un rendu, pas
+  une mesure.
+- **`ad_select`** (`stable` / `bandwidth` / `count`) : la politique de
+  choix d'AGREGATEUR quand plusieurs sont possibles. Ce moteur n'a
+  qu'un agregateur par groupe, donc la question ne se pose pas encore ;
+  `ip link set bond0 type bond ad_select bandwidth` est accepte, range
+  et lu par personne.
+- **`ad_actor_sys_prio`, `ad_actor_system`, `ad_user_port_key`** : les
+  trois reglages 802.3ad que le noyau expose pour forger l'identite de
+  l'acteur. `systemPriority` existe et est reglable ; les deux autres ne
+  le sont pas, et `ad_user_port_key` decale la cle de 6 bits, ce que
+  rien ici ne modelise.
+- **Le marqueur n'est jamais ORIGINE.** C'est exact pour les quatre
+  plateformes modelisees — le noyau le dit de lui-meme, et ni IOS ni VRP
+  ni FortiOS n'en emettent — donc la colonne `Sent` a zero est la
+  verite. Mais aucun laboratoire de ce simulateur ne peut donc faire
+  bouger `Received` : seule une trame injectee y arrive. Le jour ou un
+  equipement originera des marqueurs, le repondeur est deja la.
+- **`min-links-down`** (FortiOS) est refuse, et c'est deliberement laisse
+  ainsi : aucune source atteignable depuis ce reseau n'atteste cet
+  attribut ni ses valeurs, alors que `lacp-ha-secondary` l'est.
+- **Windows LBFO : les interfaces d'equipe a VLAN.** `Get-NetLbfoTeamNic`
+  enumere l'interface d'equipe PRIMAIRE — celle qui nait avec l'equipe —
+  et rien d'autre, parce que `Add-NetLbfoTeamNic -Team T -VlanID 42`
+  creerait une sous-interface etiquetee « T - VLAN 42 » et que
+  `WindowsPC` n'a aucune notion de sous-interface VLAN (`LinuxMachine`,
+  elle, en a une). Les colonnes `VlanID`, `Primary` et `Default` sont
+  donc justes pour l'unique interface qui existe ; ajouter la cmdlet
+  demande d'abord la sous-interface, pas l'inverse.

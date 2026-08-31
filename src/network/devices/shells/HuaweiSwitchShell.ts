@@ -2985,11 +2985,13 @@ export class HuaweiSwitchShell implements ISwitchShell {
       if (ports.length === 0) return 'Info: No Eth-Trunk is configured.';
       const blocks = ports.map((p) => {
         const stats = agent.getStatistics(p);
+        const marqueur = agent.getMarkerStatistics(p);
         return [
           p,
           '                        LACPDU               Marker',
           '             Sent       Received   Sent       Received',
-          `             ${String(stats.sent).padEnd(11)}${String(stats.received).padEnd(11)}0          0`,
+          `             ${String(stats.sent).padEnd(11)}${String(stats.received).padEnd(11)}`
+          + `${String(marqueur.responseSent).padEnd(11)}${marqueur.received}`,
         ].join('\n');
       });
       return blocks.join('\n\n');

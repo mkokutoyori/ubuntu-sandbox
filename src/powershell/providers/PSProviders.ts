@@ -1180,6 +1180,14 @@ export interface NicTeamInfo {
   status: string;
 }
 
+export interface NicTeamNicInfo {
+  name: string;
+  team: string;
+  vlanId: number | null;
+  primary: boolean;
+  isDefault: boolean;
+}
+
 export interface NicTeamMemberInfo {
   name: string;
   interfaceDescription: string;
@@ -1212,6 +1220,7 @@ export interface INetworkProvider {
   setNicTeam?(name: string, request: SetNicTeamRequest): string;
   removeNicTeam?(name: string): string;
   getNicTeamMembers?(team?: string): NicTeamMemberInfo[];
+  getNicTeamNics?(team?: string): NicTeamNicInfo[];
   addNicTeamMember?(team: string, name: string, administrativeMode?: string): string;
   setNicTeamMember?(name: string, administrativeMode: string): string;
   removeNicTeamMember?(name: string): string;

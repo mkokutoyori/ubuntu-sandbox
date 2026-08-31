@@ -7,6 +7,7 @@ export interface AggregateMemberView {
   aggregatorId: number;
   partnerMac: string;
   linkFailureCount: number;
+  permanentMac: string;
 }
 
 export interface AggregateView {
@@ -66,7 +67,7 @@ export function renderAggregateDetail(v: AggregateView): string {
     lines.push(`slave: ${m.name}`);
     lines.push(`\tstatus: ${m.up ? 'up' : 'down'}`);
     lines.push(`\tlink failure count: ${m.linkFailureCount}`);
-    lines.push(`\tpermanent MAC addr: ${v.systemMac}`);
+    lines.push(`\tpermanent MAC addr: ${m.permanentMac}`);
     lines.push(`\taggregator ID: ${m.aggregatorId}`);
     lines.push(`\tactor state: ${m.actorState}`);
     lines.push(`\tpartner state: ${m.partnerState}`);

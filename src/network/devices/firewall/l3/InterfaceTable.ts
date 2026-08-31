@@ -87,6 +87,16 @@ export class InterfaceTable {
     this.project(name, record);
   }
 
+  /**
+   * A port appeared under a name the table already described — an
+   * aggregate declared after its address was typed. The record is the
+   * store until then, so it has to be pushed onto the port.
+   */
+  reproject(name: string): void {
+    const record = this.interfaces.get(name);
+    if (record) this.project(name, record);
+  }
+
   remove(name: string): boolean {
     this.portOf(name)?.clearIP();
     return this.interfaces.delete(name);

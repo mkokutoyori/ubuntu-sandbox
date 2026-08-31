@@ -5,7 +5,7 @@
  * actifs est INFERIEUR a `min_links`) et contre le drapeau `H` de la
  * legende d'IOS, que ce simulateur imprimait sans jamais l'emettre.
  *
- * DISCRIMINATION : 15 des 23 cas tombent contre l'etat d'avant. Les 8
+ * DISCRIMINATION : 17 des 25 cas tombent contre l'etat d'avant. Les 8
  * autres sont nommes plutot que laisses a decouvrir, et trois d'entre
  * eux donnent la BONNE reponse pour une mauvaise raison, ce qui est
  * exactement pourquoi il fallait les nommer : « un seul lien ne
@@ -132,6 +132,25 @@ describe('Cisco — `port-channel min-links` decide si le faisceau monte', () =>
     expect(out).toMatch(/Fa0\/1\(P\)/);
     expect(out).toMatch(/Fa0\/3\(H\)/);
     expect(out).toMatch(/Fa0\/4\(H\)/);
+  }, 30_000);
+
+  it('`show lacp internal` emploie les abreviations d\'IOS', async () => {
+    const { a } = await laboCisco(4);
+    await taper(a, ['enable', 'configure terminal', 'interface port-channel 1',
+      'lacp max-bundle 2', 'end']);
+    await vi.advanceTimersByTimeAsync(LACP_PERIODIC_MS);
+    const out = await a.executeCommand('show lacp internal');
+    expect(out).toContain('Channel group 1');
+    expect(out).toContain(
+      'Port      Flags   State     Priority      Key       Key     Number      State');
+    expect(out).toMatch(/Fa0\/1\s+SA\s+bndl\s+32768\s+0x1\s+0x1\s+0x1\s+0x3D/);
+    expect(out).toMatch(/Fa0\/3\s+SA\s+hot-sby\s+32768/);
+  }, 30_000);
+
+  it('l\'etat de port rendu est l\'octet de la norme, en hexadecimal', async () => {
+    const { a } = await laboCisco(2);
+    await vi.advanceTimersByTimeAsync(LACP_PERIODIC_MS);
+    expect(await a.executeCommand('show lacp internal')).toContain('0x3D');
   }, 30_000);
 
   it('le membre en attente est nomme par `show etherchannel detail`', async () => {
