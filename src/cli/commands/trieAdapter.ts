@@ -92,6 +92,73 @@ export function isCollector(cible: unknown): boolean {
   return typeof cible === 'object' && cible !== null && COLLECTOR_BRAND in cible;
 }
 
+/**
+ * Les suites d'une entree, offertes des DEUX cotes de sa place.
+ *
+ * Un gestionnaire GLOUTON recoit la ligne entiere et y cherche son
+ * mot-cle ou qu'il soit — `show ip sla statistics` fait litteralement
+ * `args.includes('details')`. Les deux formes s'executent donc :
+ *
+ *     show ip sla statistics details
+ *     show ip sla statistics 1 details
+ *
+ * et `?` n'en annoncait qu'une. Le drapeau `afterArguments` existe pour
+ * dire « celle-ci va apres la place », mais il etait perdu deux fois :
+ * une suite declaree en ligne au 4e argument de `registerGreedy` ne le
+ * porte pas, et `entry.keywords ?? options.keywordsFor(...)` faisait en
+ * plus ECRASER la table par la declaration en ligne, si bien que la
+ * seule des deux qui portait le drapeau n'etait jamais lue. Six
+ * commandes du routeur perdaient ainsi leur aide derriere leur place,
+ * alors que les six formes fonctionnaient.
+ *
+ * La regle posee est celle du glouton lui-meme : tant qu'il porte une
+ * place, une suite qu'on peut taper AVANT se tape aussi APRES. L'ajout
+ * est additif — aucune suite deja offerte ne disparait — et A SENS
+ * UNIQUE : une suite deja declaree `afterArguments` n'est jamais
+ * ramenee devant la place, `area <n> stub` prenant son numero d'abord.
+ * Une entree SANS place ne peut rien porter apres elle : les deux
+ * chemins s'y confondraient et le second serait refuse comme doublon.
+ */
+function suitesDeclarees(
+  entry: { path: string; greedy?: boolean; keywords?: ReadonlyArray<AdapterKeyword> },
+  places: readonly ArgumentSpec[],
+  options: { keywordsFor?: (path: string) => ReadonlyArray<AdapterKeyword> | undefined },
+): ReadonlyArray<AdapterKeyword> {
+  const declarees = entry.keywords ?? options.keywordsFor?.(entry.path) ?? [];
+  if (places.length === 0) return declarees;
+
+  const out: AdapterKeyword[] = [];
+  const vues = new Set<string>();
+  const ajouter = (sub: AdapterKeyword): void => {
+    const cle = `${sub.keyword}|${sub.afterArguments === true}`;
+    if (vues.has(cle)) return;
+    vues.add(cle);
+    out.push(sub);
+  };
+
+  for (const sub of declarees) {
+    ajouter(sub);
+    /*
+     * L'ajout est A SENS UNIQUE, et c'est la mesure qui l'impose. Une
+     * suite qui porte DEJA le drapeau va exclusivement apres la place,
+     * parce que c'est la forme d'IOS : `area <n> stub` prend son numero
+     * AVANT son mot-cle, et offrir `stub` a la place du numero est un
+     * mensonge que ce depot avait deja ecrit noir sur blanc dans un
+     * test. On n'ajoute donc jamais l'avant a une suite declaree apres ;
+     * on ajoute l'apres a une suite qui n'a que l'avant, la ou le
+     * gestionnaire glouton lit la ligne entiere.
+     *
+     * Une suite qui porte son PROPRE argument n'est pas dupliquee non
+     * plus : sa place et celle de l'entree se disputeraient la frappe.
+     */
+    if (sub.afterArguments !== true
+      && (sub.argument === undefined || sub.argument === null)) {
+      ajouter({ ...sub, afterArguments: true });
+    }
+  }
+  return out;
+}
+
 function normaliseKeywords(
   keywords?: ReadonlyArray<{ keyword: string; description: string } | string>,
 ): ReadonlyArray<AdapterKeyword> | undefined {
@@ -409,7 +476,7 @@ export function specsFromTrieRegistrations(
       });
     }
 
-    for (const sub of entry.keywords ?? options.keywordsFor?.(entry.path) ?? []) {
+    for (const sub of suitesDeclarees(entry, places, options)) {
       const placesFille: readonly ArgumentSpec[] = sub.argument === undefined
         ? [{ name: restName, type: 'REST', optional: true,
           description: sub.description, values: [] }]
