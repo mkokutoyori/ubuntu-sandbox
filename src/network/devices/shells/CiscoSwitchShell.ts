@@ -15,7 +15,10 @@
  */
 
 import { CiscoShellBase } from './CiscoShellBase';
-import { LOAD_BALANCE_METHODS, selectBundleMemberForFlow, type LoadBalanceMethod } from '@/network/lacp/loadBalance';
+import {
+  DEFAULT_LOAD_BALANCE, LOAD_BALANCE_METHODS, selectBundleMemberForFlow,
+  type LoadBalanceMethod,
+} from '@/network/lacp/loadBalance';
 import { privilegeConfigLines } from './cli/CliAuthorization';
 import { getPrivilegeRules } from '../router/security/CiscoPrivilegeStore';
 import { CommandTrie, formatInvalidInput } from './CommandTrie';
@@ -387,6 +390,25 @@ const AGREGATION_PLACES: Readonly<Record<string, ArgumentSpec>> = {
     values: [
       { keyword: 'fast', description: 'Send LACPDUs every second' },
       { keyword: 'normal', description: 'Send LACPDUs every 30 seconds' },
+    ],
+  },
+  /*
+   * Les sept methodes etaient acceptees et annoncees NULLE PART : `?`
+   * ne rendait que `<cr>`, si bien qu'une valeur qu'on peut taper
+   * n'etait trouvable que dans la documentation — ce que `?` existe
+   * justement pour eviter. Le gestionnaire les refusait deja hors de
+   * cette liste ; il ne lui manquait que sa declaration.
+   */
+  'port-channel load-balance': {
+    name: 'methode', type: 'ENUM', description: 'Load-balancing method',
+    values: [
+      { keyword: 'dst-ip', description: 'Destination IP address' },
+      { keyword: 'dst-mac', description: 'Destination MAC address' },
+      { keyword: 'src-dst-ip', description: 'Source and destination IP address' },
+      { keyword: 'src-dst-mac', description: 'Source and destination MAC address' },
+      { keyword: 'src-dst-port', description: 'Source and destination TCP/UDP port' },
+      { keyword: 'src-ip', description: 'Source IP address' },
+      { keyword: 'src-mac', description: 'Source MAC address' },
     ],
   },
 };
@@ -4626,7 +4648,7 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
     } }).getLacpAgent?.();
     if (lacpRendu) {
       const lb = lacpRendu.getLoadBalance();
-      if (lb && lb !== 'src-dst-ip') lines.push(`port-channel load-balance ${lb}`);
+      if (lb && lb !== DEFAULT_LOAD_BALANCE) lines.push(`port-channel load-balance ${lb}`);
       for (const g of lacpRendu.getAllGroups()) {
         lines.push(`interface ${g.name}`);
         for (const l of this.ifExtra.get(g.name) ?? []) lines.push(` ${l}`);
