@@ -1539,3 +1539,14 @@ défauts — la méthode vaut d'être reprise sur le reliquat.
   Fermer demande que le trie tienne les chemins du socle pour des
   rivaux dans son calcul d'ambiguite — un correctif du pont, pas d'une
   famille, et sa surface est toute la resolution d'abreviations.
+  VERIFIE sur les familles DEJA migrees : aucune n'execute une commande
+  a la place d'une autre — `show ip i`, `show ip r`, `show i`,
+  `show ip dhcp s` et `ip dhcp s` repondent tous `% Ambiguous command`
+  la ou un rival existe, et `ip dhcp s` sur un Catalyst est
+  legitimement NON ambigu, ce constructeur n'ayant pas de
+  `ip dhcp smart-relay`. Une seule bavure, sans danger : sur le
+  commutateur, `show ip i` repond `% Incomplete command.` la ou IOS dit
+  l'ambiguite entre `interface` et `igmp` — il refuse, donc il
+  n'execute rien de faux, mais avec le mauvais message.
+  Regle a suivre d'ici la : avant de migrer une famille a la main,
+  MESURER si un mot-cle du trie partage le prefixe du sien.
