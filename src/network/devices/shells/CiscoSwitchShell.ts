@@ -45,6 +45,7 @@ import {
 } from './cisco/CiscoShowCommands';
 import { orderCiscoConfigBlocks } from './cisco/ciscoConfigSerializer';
 import { describeCiscoArguments } from './cisco/ciscoArgumentHelp';
+import { buildActorState } from '@/network/lacp/types';
 import { etherChannelLimitFamily } from '@/cli/commands/aggregation/etherChannelLimits';
 import {
   parseCiscoAce, renderCiscoAce, formatCiscoAclEntry,
@@ -329,6 +330,25 @@ const STP_VLAN_VIEWS: ReadonlyArray<{ keyword: string; description: string }> = 
 ];
 
 const EXEC: readonly string[] = ['user', 'privileged'];
+
+/** IOS's own abbreviations in the `State` column of `show lacp internal`. */
+const IOS_LACP_STATE: Readonly<Record<string, string>> = {
+  bundled: 'bndl',
+  standby: 'hot-sby',
+  standalone: 'indep',
+  expired: 'susp',
+  sync: 'susp',
+  collecting: 'susp',
+  distributing: 'susp',
+};
+
+function iosLacpState(state: string): string {
+  return IOS_LACP_STATE[state] ?? state;
+}
+
+function hex(value: number): string {
+  return `0x${value.toString(16).toUpperCase()}`;
+}
 
 const LACP_MODES: Readonly<Record<string, readonly string[]>> = {
   'lacp rate': ['config-if'],
@@ -6414,18 +6434,27 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
     if (what === 'internal') {
       const lines = [
         'Flags:  S - Device is requesting Slow LACPDUs  F - Device is requesting Fast LACPDUs',
-        '',
-        'Port      Flags  State     LACP Port Priority  Admin Key  Port Number',
+        '        A - Device is in Active mode           P - Device is in Passive mode',
       ];
-      for (const m of members) {
-        lines.push(
-          `${this.abbreviateInterface(m.portName).padEnd(10)}`
-          + `${(cfg.fastRate ? 'F' : 'S') + (m.mode === 'active' ? 'A' : 'P')}     `
-          + `${m.state.padEnd(10)}`
-          + `${String(m.portPriority).padEnd(20)}`
-          + `${String(m.groupId).padEnd(11)}`
-          + `${this.d().getPortNames().indexOf(m.portName) + 1}`,
-        );
+      for (const g of groupes) {
+        lines.push('');
+        lines.push(`Channel group ${g.id}`);
+        lines.push('                            LACP port     Admin     Oper    '
+          + 'Port        Port');
+        lines.push('Port      Flags   State     Priority      Key       Key     '
+          + 'Number      State');
+        for (const m of g.members) {
+          const numero = this.d().getPortNames().indexOf(m.portName) + 1;
+          lines.push(
+            `${this.abbreviateInterface(m.portName).padEnd(10)}`
+            + `${((cfg.fastRate ? 'F' : 'S') + (m.mode === 'active' ? 'A' : 'P')).padEnd(8)}`
+            + `${iosLacpState(m.state).padEnd(10)}`
+            + `${String(m.portPriority).padEnd(14)}`
+            + `${hex(m.groupId).padEnd(10)}${hex(m.groupId).padEnd(8)}`
+            + `${hex(numero).padEnd(12)}`
+            + `${hex(buildActorState(m.mode, m, cfg.fastRate))}`,
+          );
+        }
       }
       return lines.join('\n');
     }
