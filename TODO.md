@@ -1561,14 +1561,6 @@ de sortie (code 000), et la version « Get Program » gratuite passe par les
 memes hotes. Ce qui suit est donc etabli sur l'implantation du noyau et
 sur les vues des constructeurs, pas sur le texte.
 
-- **La machine a etats de CHURN** (`ad_churn_machine`, 802.1AX §6.4.17)
-  n'existe pas. Elle detecte qu'un port n'atteint jamais la
-  synchronisation et compte les `Actor Churned Count` /
-  `Partner Churned Count` que `/proc/net/bonding` affiche — ce depot les
-  rend a ZERO en dur (`renderProcNetBonding`). Fermer demande une
-  troisieme minuterie par port et une notion d'etat « churn » que le
-  moteur n'a pas ; les compteurs a zero sont aujourd'hui un rendu, pas
-  une mesure.
 - **`ad_select`** (`stable` / `bandwidth` / `count`) : la politique de
   choix d'AGREGATEUR quand plusieurs sont possibles. Ce moteur n'a
   qu'un agregateur par groupe, donc la question ne se pose pas encore ;

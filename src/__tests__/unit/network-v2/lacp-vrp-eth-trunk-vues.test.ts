@@ -43,6 +43,9 @@ function portFictif(over: Partial<LacpPortInfo> = {}): LacpPortInfo {
       key: 1, portPriority: 32768, portNumber: 1, state: 0,
     },
     selected: true, bundled: true, lastRxMs: 1,
+    churnActorState: 'none', churnPartnerState: 'none',
+    churnActorCount: 0, churnPartnerCount: 0,
+    churnActorDeadlineMs: 0, churnPartnerDeadlineMs: 0,
     ...over,
   };
 }

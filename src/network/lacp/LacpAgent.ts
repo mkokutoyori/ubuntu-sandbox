@@ -138,8 +138,12 @@ export class LacpAgent extends ReactiveAgentBase {
         portName, groupId, mode, portPriority: 32768,
         state: 'standalone', partner: null,
         selected: false, bundled: false, lastRxMs: 0,
+        churnActorState: 'none', churnPartnerState: 'none',
+        churnActorCount: 0, churnPartnerCount: 0,
+        churnActorDeadlineMs: 0, churnPartnerDeadlineMs: 0,
       };
       this.config.ports.set(portName, p);
+      if (mode !== 'on') this.armChurn(p);
     } else {
       p.groupId = groupId;
       p.mode = mode;
@@ -208,11 +212,14 @@ export class LacpAgent extends ReactiveAgentBase {
     if (!p) return;
     if (p.mode === 'on') return;
     this.lacpduReceived.set(portName, (this.lacpduReceived.get(portName) ?? 0) + 1);
+    const etaitCourant = p.partner !== null && p.state !== 'expired';
     p.partner = { ...payload.actor };
     p.lastRxMs = Date.now();
     // A fresh LACPDU revives an expired port (802.3ad receive machine:
     // EXPIRED → CURRENT); selection below re-bundles it.
     if (p.state === 'expired') p.state = 'standalone';
+    // §43.4.17: leaving anything but CURRENT restarts the churn watch.
+    if (!etaitCourant) this.armChurn(p);
     this.getBus().publish({
       topic: 'lacp.frame.received',
       payload: {
@@ -312,7 +319,7 @@ export class LacpAgent extends ReactiveAgentBase {
   protected armTimers(): void {
     this.scheduleInterval('slow', () => this.tick('slow'), 30_000);
     this.scheduleInterval('fast', () => this.tick('fast'), 1_000);
-    this.scheduleInterval('expiry', () => this.expireDue(), 1_000);
+    this.scheduleInterval('expiry', () => { this.expireDue(); this.churnDue(); }, 1_000);
   }
 
   /** current_while (802.3ad §43.4.12): 3 × the interval we requested. */
@@ -341,6 +348,7 @@ export class LacpAgent extends ReactiveAgentBase {
         p.state = 'expired';
         p.selected = false;
         p.bundled = false;
+        this.armChurn(p);
         this.maybeEmitStateChange(p, oldState, oldBundled, 'partner-timeout');
       } else if (p.state === 'expired'
         && elapsed > this.rxTimeoutMs() + LacpAgent.EXPIRED_GRACE_MS) {
@@ -351,6 +359,51 @@ export class LacpAgent extends ReactiveAgentBase {
         p.state = 'standalone';
         this.maybeEmitStateChange(p, oldState, p.bundled);
         this.recompute();
+      }
+    }
+  }
+
+  /**
+   * 802.3ad §43.4.17. Sixty seconds after the port is disturbed, the
+   * machine says whether each end reached synchronisation; if it did
+   * not, that is a CHURN and it is counted. Once settled the machine
+   * stays put until something disturbs the port again — which is why
+   * the deadline is cleared rather than rearmed.
+   */
+  private static readonly CHURN_DETECTION_MS = 60_000;
+
+  private armChurn(p: LacpPortInfo): void {
+    const now = Date.now();
+    p.churnActorState = 'monitoring';
+    p.churnPartnerState = 'monitoring';
+    p.churnActorDeadlineMs = now + LacpAgent.CHURN_DETECTION_MS;
+    p.churnPartnerDeadlineMs = now + LacpAgent.CHURN_DETECTION_MS;
+  }
+
+  private churnDue(): void {
+    const now = Date.now();
+    for (const p of this.config.ports.values()) {
+      if (p.churnActorDeadlineMs !== 0 && now >= p.churnActorDeadlineMs) {
+        p.churnActorDeadlineMs = 0;
+        if (p.churnActorState === 'monitoring') {
+          if (p.selected) {
+            p.churnActorState = 'none';
+          } else {
+            p.churnActorCount += 1;
+            p.churnActorState = 'churned';
+          }
+        }
+      }
+      if (p.churnPartnerDeadlineMs !== 0 && now >= p.churnPartnerDeadlineMs) {
+        p.churnPartnerDeadlineMs = 0;
+        if (p.churnPartnerState === 'monitoring') {
+          if (((p.partner?.state ?? 0) & LACP_FLAG_SYNC) !== 0) {
+            p.churnPartnerState = 'none';
+          } else {
+            p.churnPartnerCount += 1;
+            p.churnPartnerState = 'churned';
+          }
+        }
       }
     }
   }

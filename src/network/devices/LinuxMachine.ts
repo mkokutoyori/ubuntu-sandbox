@@ -2717,6 +2717,10 @@ export abstract class LinuxMachine extends EndHost
       return {
         ...slaveViewFrom(port!, port!.getMAC().toString()),
         aggregatorId: bond.options.mode === '802.3ad' && bundled ? groupId : null,
+        actorChurnState: info?.churnActorState ?? 'none',
+        partnerChurnState: info?.churnPartnerState ?? 'none',
+        actorChurnedCount: info?.churnActorCount ?? 0,
+        partnerChurnedCount: info?.churnPartnerCount ?? 0,
         actorPortNumber: this.getPorts().findIndex(p => p.getName() === nom) + 1,
         actorPortKey: groupId,
         actorPortPriority: info?.portPriority ?? 255,

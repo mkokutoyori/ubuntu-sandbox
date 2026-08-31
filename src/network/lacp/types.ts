@@ -21,6 +21,13 @@ export type LacpPortState =
    */
   | 'expired';
 
+/**
+ * Churn machine states, 802.3ad §43.4.17. The kernel spells them
+ * `monitoring` / `churned` / `none` in `bond_3ad_churn_desc`, which is
+ * what `/proc/net/bonding` prints.
+ */
+export type LacpChurnState = 'monitoring' | 'churned' | 'none';
+
 export interface LacpActorInfo {
   systemPriority: number;
   systemId: string;
@@ -74,6 +81,13 @@ export interface LacpPortInfo {
   selected: boolean;
   bundled: boolean;
   lastRxMs: number;
+  churnActorState: LacpChurnState;
+  churnPartnerState: LacpChurnState;
+  churnActorCount: number;
+  churnPartnerCount: number;
+  /** 0 when the machine has already settled and is not counting down. */
+  churnActorDeadlineMs: number;
+  churnPartnerDeadlineMs: number;
 }
 
 export interface LacpGroup {

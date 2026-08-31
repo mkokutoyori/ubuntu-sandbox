@@ -77,6 +77,10 @@ export interface BondSlaveView {
   permanentHwAddr: string;
   queueId: number;
   aggregatorId: number | null;
+  actorChurnState: string;
+  partnerChurnState: string;
+  actorChurnedCount: number;
+  partnerChurnedCount: number;
   actorPortNumber: number;
   actorPortKey: number;
   actorPortPriority: number;
@@ -165,10 +169,10 @@ export function renderProcNetBonding(view: BondView, kernelRelease: string): str
         lines.push('Aggregator ID: N/A');
       } else {
         lines.push(`Aggregator ID: ${s.aggregatorId}`);
-        lines.push('Actor Churn State: none');
-        lines.push('Partner Churn State: none');
-        lines.push('Actor Churned Count: 0');
-        lines.push('Partner Churned Count: 0');
+        lines.push(`Actor Churn State: ${s.actorChurnState}`);
+        lines.push(`Partner Churn State: ${s.partnerChurnState}`);
+        lines.push(`Actor Churned Count: ${s.actorChurnedCount}`);
+        lines.push(`Partner Churned Count: ${s.partnerChurnedCount}`);
         lines.push('details actor lacp pdu:');
         lines.push(`    system priority: ${o.systemPriority}`);
         lines.push(`    system mac address: ${mac(view.systemMac)}`);
