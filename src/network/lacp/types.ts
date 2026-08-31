@@ -155,6 +155,7 @@ export interface LacpConfig {
   systemPriority: number;
   systemId: string;
   fastRate: boolean;
+  defaultPortPriority: number;
   loadBalance: string;
   ports: Map<string, LacpPortInfo>;
   groups: Map<number, LacpGroup>;
@@ -166,6 +167,7 @@ export function createDefaultLacpConfig(systemId: string): LacpConfig {
     systemPriority: 32768,
     systemId: systemId.toLowerCase(),
     fastRate: false,
+    defaultPortPriority: 32768,
     loadBalance: 'src-dst-ip',
     ports: new Map(),
     groups: new Map(),

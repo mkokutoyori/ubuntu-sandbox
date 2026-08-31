@@ -241,3 +241,52 @@ describe('la cle d\'un acteur LACP est locale', () => {
       .toContain('Aggregator ID: N/A');
   });
 });
+
+/**
+ * `/proc/net/bonding` rendait DEUX valeurs qui ne mesuraient rien :
+ * l'octet d'etat de l'acteur etait la constante 61 quand le lien
+ * groupait et 5 sinon, et la priorite de port etait celle de Cisco
+ * (32768) sur une machine Linux, dont le noyau pose 0xff
+ * (`ad_initialize_port`, `port->actor_port_priority = 0xff`). Le
+ * partenaire, lui, etait deja rendu depuis la vraie trame : les deux
+ * moities du meme bloc se contredisaient.
+ *
+ * DISCRIMINATION : les 2 cas d'acteur tombent contre l'etat d'avant.
+ * Le troisieme, la priorite du PARTENAIRE, est le TEMOIN : elle venait
+ * deja du fil, et sans lui « 255 d'un cote, 32768 de l'autre » ne
+ * distinguerait pas un rendu juste d'un rendu qui aurait simplement
+ * change de constante.
+ */
+describe('le bloc acteur de /proc/net/bonding est une mesure', () => {
+  beforeEach(() => {
+    resetCounters(); resetDeviceCounters(); MACAddress.resetCounter(); Logger.reset();
+    vi.useFakeTimers();
+  });
+  afterEach(() => { vi.useRealTimers(); });
+
+  it('la priorite de port est celle du noyau', async () => {
+    const { srv } = await serveurEtCommutateur(1);
+    const proc = await srv.executeCommand('cat /proc/net/bonding/bond0');
+    const acteur = proc.slice(proc.indexOf('details actor lacp pdu'));
+    expect(acteur.slice(0, acteur.indexOf('details partner')))
+      .toContain('port priority: 255');
+  });
+
+  it('le partenaire garde la sienne, qui vient du fil', async () => {
+    const { srv } = await serveurEtCommutateur(1);
+    const proc = await srv.executeCommand('cat /proc/net/bonding/bond0');
+    expect(proc.slice(proc.indexOf('details partner lacp pdu')))
+      .toContain('port priority: 32768');
+  });
+
+  it('l\'octet d\'etat est calcule et non pose', async () => {
+    const { srv } = await serveurEtCommutateur(1);
+    expect(await srv.executeCommand('cat /proc/net/bonding/bond0'))
+      .toContain('port state: 61');
+    await srv.executeCommand('ip link set bond0 type bond lacp_rate fast');
+    await vi.advanceTimersByTimeAsync(PERIODIC_MS);
+    const proc = await srv.executeCommand('cat /proc/net/bonding/bond0');
+    const acteur = proc.slice(proc.indexOf('details actor lacp pdu'));
+    expect(acteur.slice(0, acteur.indexOf('details partner'))).toContain('port state: 63');
+  });
+});

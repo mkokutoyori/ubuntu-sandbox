@@ -117,6 +117,10 @@ export class LacpAgent extends ReactiveAgentBase {
     this.advertise(portName, true);
   }
 
+  setDefaultPortPriority(priority: number): void {
+    this.config.defaultPortPriority = priority;
+  }
+
   setFastRate(on: boolean): void {
     this.config.fastRate = on;
     if (this.config.enabled) {
@@ -187,7 +191,7 @@ export class LacpAgent extends ReactiveAgentBase {
     let p = this.config.ports.get(portName);
     if (!p) {
       p = {
-        portName, groupId, mode, portPriority: 32768,
+        portName, groupId, mode, portPriority: this.config.defaultPortPriority,
         fastRate: this.pendingFastRate.get(portName) ?? null,
         state: 'standalone', partner: null,
         selected: false, bundled: false, lastRxMs: 0,

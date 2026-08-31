@@ -25,7 +25,7 @@
 import { EndHost, type PingResult, type ARPEntry, type HostRouteEntry, type HostPolicyRule, getNUDState } from './EndHost';
 import { LacpAgent } from '@/network/lacp/LacpAgent';
 import { selectBundleMember } from '@/network/lacp/loadBalance';
-import { adOperPortKey } from '@/network/lacp/types';
+import { adOperPortKey, buildActorState } from '@/network/lacp/types';
 import { LinuxBond, renderProcNetBonding, slaveViewFrom, xmitHashToLoadBalance } from './linux/net/LinuxBonding';
 import type { TcpWireOutcome } from '../tcp/types';
 import type { UserAccountHost, ShellIdentityHost, FileEditorHost } from '../equipment/HostCapabilities';
@@ -2570,6 +2570,7 @@ export abstract class LinuxMachine extends EndHost
         () => this.getBus(),
         this.getPorts()[0]?.getMAC().toString() ?? '00:00:00:00:00:00',
       );
+      this.lacpAgentInstance.setDefaultPortPriority(255);
       this.lacpAgentInstance.start();
     }
     return this.lacpAgentInstance;
@@ -2745,7 +2746,7 @@ export abstract class LinuxMachine extends EndHost
         actorPortNumber: this.getPorts().findIndex(p => p.getName() === nom) + 1,
         actorPortKey: this.bondActorKey(nom, groupId),
         actorPortPriority: info?.portPriority ?? 255,
-        actorPortState: info?.bundled ? 61 : 5,
+        actorPortState: info ? buildActorState(info.mode, info, agent.rateOf(info)) : 0,
         partnerSystemPriority: info?.partner?.systemPriority ?? 65535,
         partnerSystem: info?.partner?.systemId ?? '00:00:00:00:00:00',
         partnerKey: info?.partner?.key ?? 0,
