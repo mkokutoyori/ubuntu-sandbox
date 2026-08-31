@@ -276,7 +276,7 @@ const SERVICES_IOS: ReadonlyArray<readonly [string, string]> = [
 
 const ARCHIVE_EXEC: ReadonlySet<string> = new Set([
   'show archive', 'show archive config differences', 'show archive log config',
-  'archive config',
+  'archive config', 'configure replace',
 ]);
 
 const ARCHIVE_EXEC_PLACES: Readonly<Record<string, readonly ArgumentSpec[]>> = {
@@ -288,6 +288,23 @@ const ARCHIVE_EXEC_PLACES: Readonly<Record<string, readonly ArgumentSpec[]>> = {
     {
       name: 'apres', type: 'WORD', optional: true,
       description: 'File to compare to (defaults to the running configuration)',
+    },
+  ],
+  'configure replace': [
+    {
+      name: 'url', type: 'WORD',
+      description: 'URL of the configuration file to roll back to',
+    },
+    {
+      name: 'options', type: 'REST', optional: true,
+      description: 'How the rollback is performed', literal: 'LINE',
+      alternatives: [
+        { keyword: 'force', description: 'Do not prompt for confirmation' },
+        { keyword: 'list', description: 'List the commands, apply nothing' },
+        { keyword: 'nolock', description: 'Do not lock the configuration' },
+        { keyword: 'revert', description: 'Set the revert options' },
+        { keyword: 'time', description: 'Time for automatic rollback' },
+      ],
     },
   ],
   'show archive log config': [{
@@ -5398,6 +5415,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       ...this.serviceFamilySpecs(),
       ...this.bannerSpecs(),
       ...this.archiveExecSpecs(),
+      ...this.configureSpecs(),
       ...this.hardeningSpecs(),
       ...this.arpSpecs(),
       ...this.identityBootSpecs(),
@@ -5644,22 +5662,42 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       return '';
     };
 
-    return [{
-      id: 'banner',
-      path: ['banner',
-        { name: 'sorte', type: 'ENUM', description: 'Type of banner', values: sortes },
-        {
-          name: 'texte', type: 'REST', optional: true,
+    const sorte: ArgumentSpec = {
+      name: 'sorte', type: 'ENUM', description: 'Type of banner', values: sortes,
+    };
+
+    /*
+     * DEUX declarations, parce que les deux formes n'ont pas la meme
+     * suite. La place du texte n'est pas facultative — `banner motd ?`
+     * annoncait sinon `<cr>` pour une commande qu'IOS declare
+     * incomplete, faute du delimiteur — mais `no banner motd` s'arrete
+     * la : exiger le texte pour effacer aurait refuse la negation que
+     * tout operateur tape. La seconde n'existe QUE niee, donc
+     * `banner motd` seul reste incomplet.
+     */
+    return [
+      {
+        id: 'banner',
+        path: ['banner', sorte, {
+          name: 'texte', type: 'REST',
           description: 'Message text, delimited by any character',
           literal: 'LINE',
-        },
-      ],
-      description: 'Define a login banner',
-      undoDescription: 'Remove a banner',
-      modes: ['config'], minPrivilege: 15,
-      run: (_session, args) => poser(args.sorte, args.texte ?? ''),
-      undo: (_session, args) => retirer(args.sorte),
-    }];
+        }],
+        description: 'Define a login banner',
+        modes: ['config'], minPrivilege: 15,
+        run: (_session, args) => poser(args.sorte, args.texte ?? ''),
+      },
+      {
+        id: 'banner-no',
+        path: ['banner', sorte],
+        description: 'Define a login banner',
+        undoDescription: 'Remove a banner',
+        modes: ['config'], minPrivilege: 15,
+        existsOnlyNegated: true,
+        run: () => CISCO_ERRORS.INCOMPLETE,
+        undo: (_session, args) => retirer(args.sorte),
+      },
+    ];
   }
 
   /**
@@ -5692,6 +5730,35 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
           ._noteConfigChange?.(this.configSessionLabel);
       },
     );
+  }
+
+  /**
+   * `configure terminal` s'ecrivait DEUX fois, et les deux avaient
+   * diverge.
+   *
+   * Une declaration sur l'arbre privilegie — qui pose le mode et annonce
+   * `Enter configuration commands…` — et une AUTRE sur celui de
+   * configuration, decrite « Already in global config » et rendant la
+   * chaine vide. IOS n'a qu'une commande : la retaper depuis
+   * `(config)#` reannonce la meme ligne. Un seul corps, porte par les
+   * deux modes, ne peut plus se contredire.
+   */
+  protected configureSpecs(): readonly CommandSpec[] {
+    return [{
+      id: 'configure-terminal',
+      path: ['configure', 'terminal'],
+      description: 'Configure from the terminal',
+      // Les trois modes, et non les deux qu'IOS documente : ce shell
+      // laisse une session de niveau 1 a 14 en EXEC UTILISATEUR, et
+      // `privilege exec level 7 configure terminal` descend justement
+      // la commande jusque-la. C'est l'autorisation qui tranche, comme
+      // pour `clear`, `write` et la famille de l'archivage.
+      modes: ['user', 'privileged', 'config'], minPrivilege: 15,
+      run: () => {
+        this.mode = 'config';
+        return 'Enter configuration commands, one per line.  End with CNTL/Z.';
+      },
+    }];
   }
 
   protected archiveExecSpecs(): readonly CommandSpec[] {
@@ -7893,11 +7960,6 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     this.privilegedTrie.registerGreedy('enable view', 'Enter a CLI view', (args) =>
       this.entrerDansUneVue(args));
 
-    this.privilegedTrie.register('configure terminal', 'Enter configuration mode', () => {
-      this.mode = 'config';
-      return 'Enter configuration commands, one per line.  End with CNTL/Z.';
-    });
-
     this.privilegedTrie.register('disable', 'Return to user EXEC mode', () => {
       this.mode = 'user';
       this.currentPrivilegeLevel = 1;
@@ -8289,10 +8351,6 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
   }
 
   private registerCommonConfigCommands(trie: CommandTrie = this.configTrie): void {
-    // `configure terminal` while already in config is an idempotent
-    // no-op (re-issuing it must not error mid-sequence).
-    trie.register('configure terminal', 'Already in global config', () => '');
-
     // La séquence de démarrage. `config-register 0x2142` est la moitié
     // de la récupération de mot de passe la plus enseignée du cours ;
     // le registre est réellement stocké et son bit 0x40 réellement lu.
