@@ -180,6 +180,7 @@ import { iosShortInterfaceName } from '@/network/devices/inspection/InterfaceSta
 import {
   SOCLE, ROUTEUR_SEUL, appliquerContinuations, continuationsPourLeSocle,
 } from './cisco/ciscoContinuations';
+import type { ContinuationTable } from './cisco/ciscoContinuations';
 
 const HORS_PLATEFORME_ISR: ReadonlySet<string> = new Set(['vxlan', 'nve', 'mls']);
 
@@ -1945,10 +1946,16 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
     registerNATShowCommands(trie, getRouter);
 
 
-    // `show interface[s] [<name>|description|status|summary]`.
-    // Registered under both the singular and plural IOS spellings;
-    // dispatch logic lives in one place (single source of truth).
-    const showInterfaceCmd = (args: string[]): string => {
+    trie.register('show vlans', 'Display VLANs (router)', () => Show.showVlansRouter(getRouter()));
+  }
+
+  protected override tablesDeContinuations(): readonly ContinuationTable[] {
+    return [SOCLE, ROUTEUR_SEUL];
+  }
+
+  protected override renduInterfaces(cible: string): string {
+    const args = cible.trim().split(/\s+/).filter(Boolean);
+    const getRouter = () => this.d();
       const sub = (args[0] || '').toLowerCase();
       if (args.length === 0) return Show.showInterfacesAll(getRouter());
       if (sub === 'description') return Show.showInterfacesDescription(getRouter());
@@ -1976,9 +1983,6 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
       if (last === 'stats') return Show.showInterfaceStats(getRouter(), ifName);
       if (last === 'rate-limit') return Show.showInterfaceRateLimit(getRouter(), ifName);
       return Show.showInterface(getRouter(), ifName);
-    };
-    trie.registerGreedy('show interfaces', 'Display interface status', showInterfaceCmd);
-    trie.register('show vlans', 'Display VLANs (router)', () => Show.showVlansRouter(getRouter()));
   }
 
   protected override renduIpRoute(cible: string): string {

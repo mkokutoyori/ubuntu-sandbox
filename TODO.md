@@ -1505,32 +1505,48 @@ défauts — la méthode vaut d'être reprise sur le reliquat.
   n'a ni VRF ni processus OSPF. La forme `ospf` y est neanmoins
   ACCEPTEE et rend une table filtree vide, par la table de codes
   partagee — ce qui est ce que fait une vraie machine sans route OSPF.
-- **Un mot-cle declare APRES une place `REST` n'est pas offert par `?`
-  une fois la place remplie**, et c'est ce qui BLOQUE la migration de
-  `show interfaces` au socle. Mesure, sur un routeur, la meme question
-  posee a deux commandes :
+- `show ip eigrp neighbors <iface>` et `show ip eigrp topology <prefixe>`
+  ne declarent AUCUNE place, si bien que `?` repond `% Invalid input` a
+  un argument que les deux commandes EXECUTENT sans broncher :
+  `show ip eigrp neighbors ?` n'offre que `detail` et `<cr>`, et
+  `show ip eigrp neighbors GigabitEthernet0/0` rend pourtant sa vue.
+  C'est le defaut INVERSE de celui que le lot « une suite declaree AVANT
+  une place se tape aussi APRES » vient de fermer : la une suite
+  manquait derriere une place, ici c'est la place qui manque. Fermer
+  demande de MESURER ce que chacune accepte vraiment — un nom
+  d'interface, un prefixe, les deux — plutot que de declarer une place
+  au juge.- **Migrer une famille en SUPPRIMANT son enregistrement du trie fait
+  perdre l'ambiguite de son abreviation, et le trie execute alors une
+  AUTRE commande en silence.** Mesure, sur un routeur, apres avoir
+  declare `ip route` au socle et retire ses deux enregistrements :
 
-      show traffic-shape GigabitEthernet0/0 ?   ->  statistics   (bon)
-      show ip sla statistics 1 ?                ->  <cr> seul    (mauvais)
+      ip rout      ->  % Ambiguous command: "ip rout"    (bon)
+      no ip rout   ->  ""  et `no ip routing` est POSEE   (dangereux)
 
-  Les deux declarent leurs suites de la meme facon
-  (`continuationsPourLeSocle`, `afterArguments: true`) et les deux ont
-  une place `REST`. La difference n'est ni le `literal` (essaye : `WORD`
-  comme `LINE` echouent) ni la forme de la spec : `show traffic-shape`
-  garde un NOEUD dans le trie, dont les enfants `_hintOnly` poses par
-  `declareContinuations` sont ce qui repond — le socle, lui, ne repond
-  pas. `CommandParser` le montre a l'EXECUTION : arrive sur une place
-  `REST`, il prend tout le reste de la saisie et `break`, donc rien ne
-  peut suivre ; l'aide se comporte pareil. `show interfaces` migre perd
-  donc `accounting`, `stats`, `rate-limit`, `summary`, `switchport` et
-  `etherchannel` de son aide, alors que les six s'EXECUTENT toujours —
-  une aide qui tait ce que la machine accepte.
-  Ce qui a ete fait : la sonde `probe-famille-show-interfaces.test.ts`
-  (28 cas, les deux plateformes) est ecrite et VERTE sur le code non
-  migre — elle atteste que la famille est deja fidele et uniforme, et
-  elle gardera le deplacement le jour ou il sera possible. La migration
-  elle-meme est ANNULEE plutot que livree avec une aide amputee.
-  Fermer demande de faire suivre au moteur de completion les etapes de
-  chemin qui viennent APRES une place `REST` ; c'est un correctif du
-  socle et non de la famille, il profite aussi a `show ip sla
-  statistics`, et sa surface de regression est toute l'aide du depot.
+  Une faute de frappe COUPE donc le routage IP la ou une vraie machine
+  refuse. Le mecanisme : `pruneMigratedFromTries` retire l'ACTION d'un
+  noeud et laisse le noeud, donc `prefixMatch` continue de le compter
+  comme rival — mais une famille migree a la main, dont on supprime
+  l'enregistrement, n'a plus de noeud du tout, et `no ip rout` ne
+  rencontre plus qu'un seul candidat. `prefixIsUnambiguous` garde le
+  sens socle → trie ; rien ne garde le sens trie → socle.
+  Consequence pratique : `ip route` ne PEUT pas etre migre tant que ce
+  garde n'existe pas, et toute famille dont un prefixe est partage avec
+  une commande restee au trie court le meme risque.
+  Ce qui a ete fait : la sonde `probe-famille-ip-route.test.ts` (32 cas,
+  les deux plateformes) est ecrite et verte, la migration ANNULEE, et
+  les deux defauts qu'elle avait trouves sont corriges independamment.
+  Fermer demande que le trie tienne les chemins du socle pour des
+  rivaux dans son calcul d'ambiguite — un correctif du pont, pas d'une
+  famille, et sa surface est toute la resolution d'abreviations.
+  VERIFIE sur les familles DEJA migrees : aucune n'execute une commande
+  a la place d'une autre — `show ip i`, `show ip r`, `show i`,
+  `show ip dhcp s` et `ip dhcp s` repondent tous `% Ambiguous command`
+  la ou un rival existe, et `ip dhcp s` sur un Catalyst est
+  legitimement NON ambigu, ce constructeur n'ayant pas de
+  `ip dhcp smart-relay`. Une seule bavure, sans danger : sur le
+  commutateur, `show ip i` repond `% Incomplete command.` la ou IOS dit
+  l'ambiguite entre `interface` et `igmp` — il refuse, donc il
+  n'execute rien de faux, mais avec le mauvais message.
+  Regle a suivre d'ici la : avant de migrer une famille a la main,
+  MESURER si un mot-cle du trie partage le prefixe du sien.

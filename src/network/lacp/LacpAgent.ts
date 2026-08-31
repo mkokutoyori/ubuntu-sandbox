@@ -3,8 +3,8 @@ import { getDefaultScheduler, type IScheduler } from '@/events/Scheduler';
 import { ReactiveAgentBase } from '../core/ReactiveAgentBase';
 import {
   type LacpAdminMode, type LacpConfig, type LacpFrame, type LacpPortInfo,
-  type LacpPortState, type LacpActorInfo,
-  createDefaultLacpConfig, buildActorState, compareSystemId,
+  type LacpPortState, type LacpActorInfo, type LacpGroup,
+  createDefaultLacpConfig, buildActorState, compareSystemId, partnerWantsFastRate,
   ETHERTYPE_LACP, LACP_SLOW_MAC,
   LACP_FLAG_SYNC, LACP_FLAG_COLLECTING, LACP_FLAG_DISTRIBUTING,
 } from './types';
@@ -79,12 +79,34 @@ export class LacpAgent extends ReactiveAgentBase {
   ensureGroup(groupId: number, name?: string, loadBalance?: string): void {
     let g = this.config.groups.get(groupId);
     if (!g) {
-      g = { name: name ?? `Port-channel${groupId}`, loadBalance: loadBalance ?? this.config.loadBalance };
+      g = {
+        name: name ?? `Port-channel${groupId}`,
+        loadBalance: loadBalance ?? this.config.loadBalance,
+        minLinks: 0, maxLinks: 0, preempt: true, preemptDelay: 30,
+      };
       this.config.groups.set(groupId, g);
     } else {
       if (name) g.name = name;
       if (loadBalance) g.loadBalance = loadBalance;
     }
+  }
+
+  setGroupLimits(groupId: number, limits: {
+    minLinks?: number; maxLinks?: number; preempt?: boolean; preemptDelay?: number;
+  }): void {
+    this.ensureGroup(groupId);
+    const g = this.config.groups.get(groupId)!;
+    if (limits.minLinks !== undefined) g.minLinks = limits.minLinks;
+    if (limits.maxLinks !== undefined) g.maxLinks = limits.maxLinks;
+    if (limits.preempt !== undefined) g.preempt = limits.preempt;
+    if (limits.preemptDelay !== undefined) g.preemptDelay = limits.preemptDelay;
+    this.recompute();
+  }
+
+  getGroupLimits(groupId: number): LacpGroup {
+    return this.config.groups.get(groupId)
+      ?? { name: `Port-channel${groupId}`, loadBalance: this.config.loadBalance,
+        minLinks: 0, maxLinks: 0, preempt: true, preemptDelay: 30 };
   }
 
   addPortToGroup(portName: string, groupId: number, mode: LacpAdminMode): void {
@@ -190,7 +212,7 @@ export class LacpAgent extends ReactiveAgentBase {
       key: p.groupId,
       portPriority: p.portPriority,
       portNumber: this.portNumberFor(portName),
-      state: buildActorState(p.mode, p),
+      state: buildActorState(p.mode, p, this.config.fastRate),
     };
     const partner: LacpActorInfo = p.partner ?? {
       systemPriority: 0, systemId: '00:00:00:00:00:00',
@@ -234,9 +256,7 @@ export class LacpAgent extends ReactiveAgentBase {
 
   protected armTimers(): void {
     this.scheduleInterval('slow', () => this.tick('slow'), 30_000);
-    if (this.config.fastRate) {
-      this.scheduleInterval('fast', () => this.tick('fast'), 1_000);
-    }
+    this.scheduleInterval('fast', () => this.tick('fast'), 1_000);
     this.scheduleInterval('expiry', () => this.expireDue(), 1_000);
   }
 
@@ -285,7 +305,10 @@ export class LacpAgent extends ReactiveAgentBase {
       const port = this.host.getPort(p.portName);
       if (!port || !port.getIsUp() || !port.isConnected()) continue;
       if (p.mode !== 'active') continue;
-      if (rate === 'slow' && this.config.fastRate) continue;
+      const rapide = this.config.fastRate
+        || (p.partner !== null && partnerWantsFastRate(p.partner.state));
+      if (rate === 'slow' && rapide) continue;
+      if (rate === 'fast' && !rapide) continue;
       this.advertise(p.portName);
     }
   }
@@ -327,10 +350,45 @@ export class LacpAgent extends ReactiveAgentBase {
     }
   }
 
+  /**
+   * 802.1AX §6.4.15 : le systeme dont l'identifiant est le plus petit
+   * decide, et parmi ses candidats il classe par priorite de port puis
+   * par numero de port.
+   */
+  private static compareCandidates(a: LacpPortInfo, b: LacpPortInfo): number {
+    if (a.portPriority !== b.portPriority) return a.portPriority - b.portPriority;
+    return a.portName.localeCompare(b.portName, undefined, { numeric: true });
+  }
+
+  private holdingSlot = new Set<string>();
+
+  private applyGroupLimits(members: LacpPortInfo[]): void {
+    if (members.length === 0) return;
+    const limites = this.config.groups.get(members[0].groupId);
+    const min = limites?.minLinks ?? 0;
+    const max = limites?.maxLinks ?? 0;
+    const candidats = members.filter(p => p.bundled).sort(LacpAgent.compareCandidates);
+    if (limites?.preempt === false) {
+      const tenants = candidats.filter(p => this.holdingSlot.has(p.portName));
+      const autres = candidats.filter(p => !this.holdingSlot.has(p.portName));
+      candidats.length = 0;
+      candidats.push(...tenants, ...autres);
+    }
+    const retenus = max > 0 ? candidats.slice(0, max) : candidats;
+    this.holdingSlot = new Set(retenus.map(p => p.portName));
+    for (const p of candidats) {
+      if (retenus.includes(p)) continue;
+      p.state = 'standby'; p.selected = false; p.bundled = false;
+    }
+    if (retenus.length >= Math.max(min, 1)) return;
+    for (const p of retenus) {
+      p.state = 'standalone'; p.selected = false; p.bundled = false;
+    }
+  }
+
   private runSelection(members: LacpPortInfo[]): void {
+    const avant = members.map(p => ({ state: p.state, bundled: p.bundled }));
     for (const p of members) {
-      const oldState = p.state;
-      const oldBundled = p.bundled;
       const port = this.host.getPort(p.portName);
       // « un câble est branché » ne suffit pas : un membre dont le pair
       // est désactivé ou hors tension ne porte plus rien et doit quitter
@@ -357,8 +415,9 @@ export class LacpAgent extends ReactiveAgentBase {
       } else {
         p.state = 'standalone'; p.selected = false; p.bundled = false;
       }
-      this.maybeEmitStateChange(p, oldState, oldBundled);
     }
+    this.applyGroupLimits(members);
+    members.forEach((p, i) => this.maybeEmitStateChange(p, avant[i].state, avant[i].bundled));
   }
 
   private maybeEmitStateChange(

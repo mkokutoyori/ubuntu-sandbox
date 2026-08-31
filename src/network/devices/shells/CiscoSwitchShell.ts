@@ -45,6 +45,7 @@ import {
 } from './cisco/CiscoShowCommands';
 import { orderCiscoConfigBlocks } from './cisco/ciscoConfigSerializer';
 import { describeCiscoArguments } from './cisco/ciscoArgumentHelp';
+import { etherChannelLimitFamily } from '@/cli/commands/aggregation/etherChannelLimits';
 import {
   parseCiscoAce, renderCiscoAce, formatCiscoAclEntry,
   showAccessListsFrom, isValidIosAclNumber,
@@ -66,10 +67,10 @@ import { compactVlanList, parseVlanList } from './cli/vlanList';
 
 /** La distance administrative d'une route statique sur IOS. */
 const IOS_STATIC_DISTANCE = 1;
-import { renderIpRouteTable } from './cisco/CiscoShowCommands';
+import { renderIpRouteTable, staticRouteTail } from './cisco/CiscoShowCommands';
 import type { RouteTableHost } from './cisco/CiscoShowCommands';
 import {
-  ROUTE_FILTER_CODES, filterRouteTableByCode, renderRouteEntryDetail,
+  ROUTE_FILTER_CODES, bestRoutesPerPrefix, filterRouteTableByCode, renderRouteEntryDetail,
 } from './cisco/CiscoOspfCommands';
 import {
   dhcpRunningConfigLines, dhcpSnoopingInterfaceLines, dhcpSnoopingRunningConfigLines,
@@ -89,6 +90,7 @@ import {
   SPANNING_TREE_COLUMNS, SPANNING_TREE_STYLE, type SpanningTreePortRow,
 } from './cisco/ciscoTableLayouts';
 import { SOCLE, COMMUTATEUR_SEUL, appliquerContinuations } from './cisco/ciscoContinuations';
+import type { ContinuationTable } from './cisco/ciscoContinuations';
 import { mstConfigDigest, vlansMappedToInstanceZero } from '@/network/stp/MstConfigId';
 
 /** CLI Mode (FSM State) */
@@ -2705,6 +2707,7 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
       ...this.vtpConfigSpecs(),
       ...this.daiSpecs(),
       ...this.aggregationSpecs(),
+      ...etherChannelLimitFamily(),
       ...this.interfaceEntrySpecs(),
       ...this.vlanEntrySpecs(),
       ...this.macTableSpecs(),
@@ -3401,7 +3404,9 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
         for (const g of groups) {
           const protocol = g.members.every(m => m.mode === 'on') ? '-' : 'LACP';
           const portList = g.members.map(m => {
-            const flag = m.bundled ? 'P' : m.state === 'standalone' ? 'I' : 's';
+            const flag = m.bundled ? 'P'
+              : m.state === 'standby' ? 'H'
+              : m.state === 'standalone' ? 'I' : 's';
             return `${this.abbreviateInterface(m.portName)}(${flag})`;
           }).join(' ');
           lines.push(`${String(g.id).padEnd(7)}${g.name.padEnd(14)}${protocol.padEnd(12)}${portList}`);
@@ -3419,6 +3424,10 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
             const port = this.d().getPort(m.portName);
             out.push(`  Port: ${m.portName}`);
             out.push(`    Status: ${m.bundled ? 'bundled' : m.state}`);
+            const limites = lacp.getGroupLimits(g.id);
+            if (m.state === 'standby') {
+              out.push(`    Hot-standby (max-bundle ${limites.maxLinks})`);
+            }
             out.push(`    Mode: ${m.mode}`);
             out.push(`    Partner: ${m.partner?.systemId ?? 'none'}`);
             out.push(`    Link: ${port?.getIsUp() ? 'up' : 'down'}`);
@@ -3468,61 +3477,6 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
       return this.showInterfacesCounters(name);
     });
 
-    this.privilegedTrie.registerGreedy('show interfaces', 'Display interface information', (args) => {
-      if (args.length === 0) return this.showAllInterfacesDetail();
-      const last = args[args.length - 1].toLowerCase();
-      if (last === 'switchport') {
-        const target = args.slice(0, -1).join(' ');
-        if (!target) {
-          return this.d().getPortNames().map((n) => this.showSwitchportDetail(n)).join('\n\n');
-        }
-        const name = this.resolveInterfaceName(target) ?? target;
-        return this.showSwitchportDetail(name);
-      }
-      if (last === 'counters') {
-        const target = args.slice(0, -1).join(' ');
-        if (target) {
-          const name = this.resolveInterfaceName(target);
-          if (!name || !this.d().getPort(name)) {
-            return formatInvalidInput(16);
-          }
-          return this.showInterfacesCounters(name);
-        }
-        return this.showInterfacesCounters(null);
-      }
-      if (last === 'description') return this.showInterfacesDescriptionTable();
-      if (last === 'trunk' && args.length > 1) {
-        const name = this.resolveInterfaceName(args.slice(0, -1).join(' '));
-        if (!name || !this.d().getPort(name)) {
-          return formatInvalidInput(16);
-        }
-        return this.showTrunkTable([name]);
-      }
-      if ('status'.startsWith(last) && last.length >= 3) {
-        if (args.length === 1) return this.showInterfacesStatus(this.d());
-        const name = this.resolveInterfaceName(args.slice(0, -1).join(' '));
-        if (!name || !this.d().getPort(name)) {
-          return formatInvalidInput(16);
-        }
-        return this.showInterfacesStatus(this.d(), name);
-      }
-      const vlanMatch = args.join(' ').match(/^vl(?:an)?\s*(\d+)$/i);
-      if (vlanMatch) return this.showSviInterface(parseInt(vlanMatch[1], 10));
-      // `show interfaces <if> etherchannel` — the per-port view of what
-      // `show etherchannel` gives for the whole group.
-      if (args.length > 1 && args[args.length - 1].toLowerCase() === 'etherchannel') {
-        const target = this.resolveInterfaceName(args.slice(0, -1).join(' '));
-        if (!target || !this.d().getPort(target)) {
-          return formatInvalidInput(16);
-        }
-        return this.showInterfaceEtherchannel(target);
-      }
-      const po = this.portChannelIdOf(args.join(' '));
-      if (po !== null) return this.showPortChannelInterface(po);
-      const name = this.resolveInterfaceName(args.join(' '));
-      if (name && this.d().getPort(name)) return showInterface(this.d(), name, true);
-      return formatInvalidInput(16);
-    });
 
     this.privilegedTrie.registerGreedy('show queuing interface', 'Display the 802.1p trust state of an interface', (args) => {
       const target = args.join(' ');
@@ -4239,6 +4193,7 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
       else return '% Invalid channel-group mode';
       return this.applyToSelectedInterfaces(portName => {
         this.requireLacp().addPortToGroup(portName, id, mode);
+        this.d().inheritAggregateSwitchport(`Port-channel${id}`, portName);
         return '';
       });
     });
@@ -4573,6 +4528,18 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
     const ports = sw._getPortsInternal();
     const configs = sw._getSwitchportConfigs();
     const descs = sw._getInterfaceDescriptions();
+    const agregats = (sw as unknown as { getLacpAgent?: () => {
+      getAllGroups(): Array<{ id: number; name: string }>;
+      getGroupLimits(id: number): { minLinks: number; maxLinks: number };
+    } }).getLacpAgent?.();
+    for (const g of agregats?.getAllGroups() ?? []) {
+      const l = agregats!.getGroupLimits(g.id);
+      if (l.minLinks === 0 && l.maxLinks === 0) continue;
+      lines.push(`interface ${g.name}`);
+      if (l.minLinks > 0) lines.push(` port-channel min-links ${l.minLinks}`);
+      if (l.maxLinks > 0) lines.push(` lacp max-bundle ${l.maxLinks}`);
+      lines.push('!');
+    }
     for (const [portName, port] of ports) {
       const cfg = configs.get(portName);
       if (!cfg) continue;
@@ -4673,10 +4640,19 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
       lines.push('!');
     }
 
-    // Static routes (`ip route NET MASK GW`).
+    /*
+     * Les routes statiques passent par la QUEUE partagee avec le
+     * routeur : ecrite ici a la main, elle perdait la DISTANCE, si bien
+     * qu'une route de secours revenait principale au rechargement d'une
+     * topologie. La distance par defaut d'IOS ne s'ecrit pas, seul
+     * l'ecart en est une.
+     */
     for (const r of sw.getL3RoutingTable()) {
       if (r.proto !== 'static' || !r.nextHop) continue;
-      lines.push(`ip route ${r.network} ${r.mask} ${r.nextHop}`);
+      lines.push(`ip route ${r.network} ${r.mask} ${staticRouteTail({
+        nextHop: r.nextHop, iface: r.iface,
+        preference: r.preference === IOS_STATIC_DISTANCE ? undefined : r.preference,
+      })}`);
     }
 
     for (const l of this.logging.asRunningConfigLines()) lines.push(l);
@@ -5595,6 +5571,7 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
     cfg.register('no ip routing', 'Disable Layer-3 routing', () => { this.d().setIpRoutingEnabled(false); return ''; });
 
     // ip route <net> <mask> <next-hop>
+
     cfg.registerGreedy('ip route', 'Add a static route', (args) => {
       if (args.length < 3) return CISCO_ERRORS.INCOMPLETE;
       let net: IPAddress, mask: SubnetMask, gw: IPAddress;
@@ -6055,11 +6032,79 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
     };
   }
 
+  protected override tablesDeContinuations(): readonly ContinuationTable[] {
+    return [SOCLE, COMMUTATEUR_SEUL];
+  }
+
+  protected override renduInterfaces(cible: string): string {
+    const args = cible.trim().split(/\s+/).filter(Boolean);
+      if (args.length === 0) return this.showAllInterfacesDetail();
+      const last = args[args.length - 1].toLowerCase();
+      if (last === 'switchport') {
+        const target = args.slice(0, -1).join(' ');
+        if (!target) {
+          return this.d().getPortNames().map((n) => this.showSwitchportDetail(n)).join('\n\n');
+        }
+        const name = this.resolveInterfaceName(target) ?? target;
+        return this.showSwitchportDetail(name);
+      }
+      if (last === 'counters') {
+        const target = args.slice(0, -1).join(' ');
+        if (target) {
+          const name = this.resolveInterfaceName(target);
+          if (!name || !this.d().getPort(name)) {
+            return formatInvalidInput(16);
+          }
+          return this.showInterfacesCounters(name);
+        }
+        return this.showInterfacesCounters(null);
+      }
+      if (last === 'description') return this.showInterfacesDescriptionTable();
+      if (last === 'trunk' && args.length > 1) {
+        const name = this.resolveInterfaceName(args.slice(0, -1).join(' '));
+        if (!name || !this.d().getPort(name)) {
+          return formatInvalidInput(16);
+        }
+        return this.showTrunkTable([name]);
+      }
+      if ('status'.startsWith(last) && last.length >= 3) {
+        if (args.length === 1) return this.showInterfacesStatus(this.d());
+        const name = this.resolveInterfaceName(args.slice(0, -1).join(' '));
+        if (!name || !this.d().getPort(name)) {
+          return formatInvalidInput(16);
+        }
+        return this.showInterfacesStatus(this.d(), name);
+      }
+      const vlanMatch = args.join(' ').match(/^vl(?:an)?\s*(\d+)$/i);
+      if (vlanMatch) return this.showSviInterface(parseInt(vlanMatch[1], 10));
+      // `show interfaces <if> etherchannel` — the per-port view of what
+      // `show etherchannel` gives for the whole group.
+      if (args.length > 1 && args[args.length - 1].toLowerCase() === 'etherchannel') {
+        const target = this.resolveInterfaceName(args.slice(0, -1).join(' '));
+        if (!target || !this.d().getPort(target)) {
+          return formatInvalidInput(16);
+        }
+        return this.showInterfaceEtherchannel(target);
+      }
+      const po = this.portChannelIdOf(args.join(' '));
+      if (po !== null) return this.showPortChannelInterface(po);
+      const name = this.resolveInterfaceName(args.join(' '));
+      if (name && this.d().getPort(name)) return showInterface(this.d(), name, true);
+      return formatInvalidInput(16);
+  }
+
   protected override renduIpRoute(cible: string): string {
     const args = cible.trim().split(/\s+/).filter(Boolean);
     if (args[0]?.toLowerCase() === 'summary') return this.showIpRouteSummary();
 
-    const table = renderIpRouteTable(this.hoteTableRoutage(), this.tableRoutageCisco() as never);
+    /*
+     * La MEILLEURE route par prefixe, comme le routeur : sans ce choix,
+     * une route de secours et sa principale paraissaient toutes les
+     * deux, la table annoncant deux chemins la ou la machine n'en
+     * installe qu'un.
+     */
+    const table = renderIpRouteTable(
+      this.hoteTableRoutage(), bestRoutesPerPrefix(this.tableRoutageCisco()) as never);
     if (args.length === 0) return table;
 
     const codes = ROUTE_FILTER_CODES[args[0].toLowerCase()];
@@ -6637,6 +6682,21 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
     return [...new Set(sorties)].join('\n');
   }
 
+  selectedPortChannelIds(): number[] {
+    return this.selectedInterfaceRange
+      .map(n => /^Port-channel(\d+)$/i.exec(n))
+      .filter((m): m is RegExpExecArray => m !== null)
+      .map(m => Number(m[1]));
+  }
+
+  setPortChannelMinLinks(groupId: number, value: number): void {
+    this.requireLacp().setGroupLimits(groupId, { minLinks: value });
+  }
+
+  setPortChannelMaxBundle(groupId: number, value: number): void {
+    this.requireLacp().setGroupLimits(groupId, { maxLinks: value });
+  }
+
   private membresDuPortChannel(nom: string): string[] {
     const m = /^Port-channel(\d+)$/i.exec(nom);
     if (!m) return [];
@@ -6649,11 +6709,15 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
   private applyToSelectedInterfaces(fn: (portName: string) => string): string {
     const results: string[] = [];
     for (const portName of this.selectedInterfaceRange) {
-      const membres = this.membresDuPortChannel(portName);
-      if (membres.length > 0) {
-        for (const membre of membres) {
-          const r = fn(membre);
-          if (r) results.push(r);
+      if (/^Port-channel\d+$/i.test(portName)) {
+        // Sur IOS la configuration de niveau 2 vit sur le Port-channel
+        // et les membres la PRENNENT ; un faisceau encore vide se
+        // configure donc, et le membre qui arrive herite.
+        this.d().ensureAggregateSwitchportConfig(portName);
+        const r = fn(portName);
+        if (r) results.push(r);
+        for (const membre of this.membresDuPortChannel(portName)) {
+          this.d().inheritAggregateSwitchport(portName, membre);
         }
         continue;
       }

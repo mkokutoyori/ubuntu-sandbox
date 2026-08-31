@@ -499,7 +499,8 @@ describe('Partie 4 — LACP sur Huawei', () => {
     expect(sortie).toContain('Least Active-linknumber: 1');
     expect(sortie).toContain('Operate status: up');
     expect(sortie).toContain('Number Of Up Ports In Trunk: 3');
-    expect(sortie).toContain('PortName                      Status      Weight');
+    expect(sortie).toContain(
+      'ActorPortName                Status   PortType PortPri PortNo PortKey PortState Weight');
   });
 
   it('§4.3 chaque membre est Selected avec un poids de 1', async () => {

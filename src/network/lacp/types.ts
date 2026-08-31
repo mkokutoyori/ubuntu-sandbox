@@ -10,6 +10,11 @@ export type LacpPortState =
   | 'distributing'
   | 'bundled'
   /**
+   * 802.1AX §6.7.1 : le port a un partenaire compatible mais l'agregat
+   * a deja son compte de liens ; il attend qu'une place se libere.
+   */
+  | 'standby'
+  /**
    * 802.3ad §43.4.12: no LACPDU from the partner within current_while
    * (3 × the requested interval). The port has left the aggregate;
    * partner info survives one short interval longer, then is defaulted.
@@ -52,6 +57,21 @@ export interface LacpPortInfo {
   lastRxMs: number;
 }
 
+export interface LacpGroup {
+  name: string;
+  loadBalance: string;
+  /** 802.1AX: below this many bundled links the aggregate does not carry. */
+  minLinks: number;
+  /** Above this many, the extra candidates wait in standby. 0 = no cap. */
+  maxLinks: number;
+  /**
+   * VRP `lacp preempt`: when off, a port that already holds a slot keeps
+   * it even if a higher-priority candidate turns up.
+   */
+  preempt: boolean;
+  preemptDelay: number;
+}
+
 export interface LacpConfig {
   enabled: boolean;
   systemPriority: number;
@@ -59,7 +79,7 @@ export interface LacpConfig {
   fastRate: boolean;
   loadBalance: string;
   ports: Map<string, LacpPortInfo>;
-  groups: Map<number, { name: string; loadBalance: string }>;
+  groups: Map<number, LacpGroup>;
 }
 
 export function createDefaultLacpConfig(systemId: string): LacpConfig {
@@ -83,9 +103,12 @@ export const LACP_FLAG_DISTRIBUTING = 0x20;
 export const LACP_FLAG_DEFAULTED = 0x40;
 export const LACP_FLAG_EXPIRED = 0x80;
 
-export function buildActorState(mode: LacpAdminMode, port: LacpPortInfo): number {
+export function buildActorState(
+  mode: LacpAdminMode, port: LacpPortInfo, fastRate = false,
+): number {
   let f = 0;
   if (mode === 'active') f |= LACP_FLAG_ACTIVITY;
+  if (fastRate) f |= LACP_FLAG_TIMEOUT;
   f |= LACP_FLAG_AGGREGATION;
   if (port.selected) f |= LACP_FLAG_SYNC;
   if (port.state === 'collecting' || port.state === 'distributing' || port.state === 'bundled') {
@@ -94,7 +117,21 @@ export function buildActorState(mode: LacpAdminMode, port: LacpPortInfo): number
   if (port.state === 'distributing' || port.state === 'bundled') {
     f |= LACP_FLAG_DISTRIBUTING;
   }
+  if (!port.partner) f |= LACP_FLAG_DEFAULTED;
+  if (port.state === 'expired') f |= LACP_FLAG_EXPIRED;
   return f;
+}
+
+export function partnerWantsFastRate(state: number): boolean {
+  return (state & LACP_FLAG_TIMEOUT) !== 0;
+}
+
+export function lacpStateBits(state: number): string {
+  const ordre = [
+    LACP_FLAG_ACTIVITY, LACP_FLAG_TIMEOUT, LACP_FLAG_AGGREGATION, LACP_FLAG_SYNC,
+    LACP_FLAG_COLLECTING, LACP_FLAG_DISTRIBUTING, LACP_FLAG_DEFAULTED, LACP_FLAG_EXPIRED,
+  ];
+  return ordre.map(bit => ((state & bit) !== 0 ? '1' : '0')).join('');
 }
 
 export function compareSystemId(a: { priority: number; id: string }, b: { priority: number; id: string }): number {
