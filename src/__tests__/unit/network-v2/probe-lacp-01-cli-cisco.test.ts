@@ -54,8 +54,10 @@ describe('Scénario 1 — les réglages atteignent enfin le moteur', () => {
 
     await conf(sw1, ['configure terminal', 'interface FastEthernet0/1', 'lacp rate fast', 'end']);
 
-    expect(sw1.getLacpAgent().getConfig().fastRate).toBe(true);
-    expect(await sw1.executeCommand('show lacp internal')).toMatch(/Fa0\/1\s+FA/);
+    expect(sw1.getLacpAgent().getPortInfo('FastEthernet0/1')?.fastRate).toBe(true);
+    const vue = await sw1.executeCommand('show lacp internal');
+    expect(vue).toMatch(/Fa0\/1\s+FA/);
+    expect(vue).toMatch(/Fa0\/2\s+SA/);
   });
 
   it('`lacp port-priority` ne touche que son port, et voyage dans la LACPDU', async () => {

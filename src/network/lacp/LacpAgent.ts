@@ -35,6 +35,7 @@ export class LacpAgent extends ReactiveAgentBase {
   private readonly advertising = new Map<string, number>();
   private readonly lastAdvertised = new Map<string, number>();
   private advertiseDepth = 0;
+  private readonly pendingFastRate = new Map<string, boolean | null>();
   private readonly lacpduSent = new Map<string, number>();
   private readonly lacpduReceived = new Map<string, number>();
   private readonly markerReceived = new Map<string, number>();
@@ -100,6 +101,20 @@ export class LacpAgent extends ReactiveAgentBase {
     if (!p || priority < 0 || priority > 65535) return;
     p.portPriority = priority;
     this.advertise(portName);
+  }
+
+  rateOf(p: LacpPortInfo): boolean {
+    return p.fastRate ?? this.config.fastRate;
+  }
+
+  setPortFastRate(portName: string, fast: boolean | null): void {
+    const p = this.config.ports.get(portName);
+    if (!p) {
+      this.pendingFastRate.set(portName, fast);
+      return;
+    }
+    p.fastRate = fast;
+    this.advertise(portName, true);
   }
 
   setFastRate(on: boolean): void {
@@ -173,6 +188,7 @@ export class LacpAgent extends ReactiveAgentBase {
     if (!p) {
       p = {
         portName, groupId, mode, portPriority: 32768,
+        fastRate: this.pendingFastRate.get(portName) ?? null,
         state: 'standalone', partner: null,
         selected: false, bundled: false, lastRxMs: 0,
         churnActorState: 'none', churnPartnerState: 'none',
@@ -316,7 +332,7 @@ export class LacpAgent extends ReactiveAgentBase {
       key: this.actorKeyOf(p),
       portPriority: p.portPriority,
       portNumber: this.portNumberFor(portName),
-      state: buildActorState(p.mode, p, this.config.fastRate),
+      state: buildActorState(p.mode, p, this.rateOf(p)),
     };
     const partner: LacpActorInfo = p.partner ?? {
       systemPriority: 0, systemId: '00:00:00:00:00:00',
@@ -353,7 +369,7 @@ export class LacpAgent extends ReactiveAgentBase {
   private maybeAdvertiseBack(portName: string): void {
     const p = this.config.ports.get(portName);
     const ntt = p !== undefined
-      && this.lastAdvertised.get(portName) !== buildActorState(p.mode, p, this.config.fastRate);
+      && this.lastAdvertised.get(portName) !== buildActorState(p.mode, p, this.rateOf(p));
     if ((this.advertising.get(portName) ?? 0) > 0 && !ntt) return;
     if (this.advertiseDepth >= LacpAgent.MAX_NTT_DEPTH) return;
     this.advertiseDepth += 1;
@@ -374,8 +390,8 @@ export class LacpAgent extends ReactiveAgentBase {
   }
 
   /** current_while (802.3ad §43.4.12): 3 × the interval we requested. */
-  private rxTimeoutMs(): number {
-    return this.config.fastRate ? 3_000 : 90_000;
+  private rxTimeoutMs(p: LacpPortInfo): number {
+    return this.rateOf(p) ? 3_000 : 90_000;
   }
 
   /** EXPIRED keeps partner info one short interval before defaulting. */
@@ -393,7 +409,7 @@ export class LacpAgent extends ReactiveAgentBase {
       const port = this.host.getPort(p.portName);
       if (!port || !port.getIsUp() || !port.isConnected()) continue;
       const elapsed = now - p.lastRxMs;
-      if (p.state !== 'expired' && elapsed > this.rxTimeoutMs()) {
+      if (p.state !== 'expired' && elapsed > this.rxTimeoutMs(p)) {
         const oldState = p.state;
         const oldBundled = p.bundled;
         p.state = 'expired';
@@ -402,7 +418,7 @@ export class LacpAgent extends ReactiveAgentBase {
         this.armChurn(p);
         this.maybeEmitStateChange(p, oldState, oldBundled, 'partner-timeout');
       } else if (p.state === 'expired'
-        && elapsed > this.rxTimeoutMs() + LacpAgent.EXPIRED_GRACE_MS) {
+        && elapsed > this.rxTimeoutMs(p) + LacpAgent.EXPIRED_GRACE_MS) {
         // DEFAULTED: forget the partner entirely.
         const oldState = p.state;
         p.partner = null;
@@ -464,7 +480,7 @@ export class LacpAgent extends ReactiveAgentBase {
       const port = this.host.getPort(p.portName);
       if (!port || !port.getIsUp() || !port.isConnected()) continue;
       if (p.mode !== 'active') continue;
-      const rapide = this.config.fastRate
+      const rapide = this.rateOf(p)
         || (p.partner !== null && partnerWantsFastRate(p.partner.state));
       if (rate === 'slow' && rapide) continue;
       if (rate === 'fast' && !rapide) continue;

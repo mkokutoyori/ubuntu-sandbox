@@ -4358,7 +4358,7 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
       if (lacp.systemPriority !== CiscoSwitchShell.DEFAULT_LACP_SYSTEM_PRIORITY) {
         out.push(`lacp system-priority ${lacp.systemPriority}`);
       }
-      if (lacp.fastRate) out.push('lacp rate fast');
+
     }
 
     const udldGlobalMode = sw.getUdldAgent?.()?.getConfig?.().globalMode ?? 'disabled';
@@ -4393,6 +4393,7 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
     if (lacpPort && lacpPort.portPriority !== CiscoSwitchShell.DEFAULT_LACP_PORT_PRIORITY) {
       out.push(`lacp port-priority ${lacpPort.portPriority}`);
     }
+    if (lacpPort?.fastRate === true) out.push('lacp rate fast');
 
     const udld = sw.getUdldAgent?.();
     const udldMode = udld?.getPortRuntime?.(portName)?.mode;
@@ -6289,10 +6290,10 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
     trie.configIf.registerGreedy('lacp rate', 'LACPDU rate', (args) => {
       const rate = (args[0] ?? '').toLowerCase();
       if (rate !== 'fast' && rate !== 'normal') return CISCO_ERRORS.INVALID_INPUT;
-      // The engine keeps one rate for the whole device, so this is not
-      // per-interface the way IOS states it.
-      agent().setFastRate(rate === 'fast');
-      return '';
+      return this.applyToSelectedInterfaces(portName => {
+        agent().setPortFastRate(portName, rate === 'fast' ? true : null);
+        return '';
+      });
     });
 
     trie.configIf.registerGreedy('lacp port-priority', 'LACP port priority', (args) => {
@@ -6402,7 +6403,7 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
       '                            LACP port    Admin     Oper    Port',
       'Port      Flags   State     Priority     Key       Key     Number',
       `${this.abbreviateInterface(portName).padEnd(10)}`
-      + `${(agent.getConfig().fastRate ? 'F' : 'S') + (info.mode === 'active' ? 'A' : 'P')}      `
+      + `${(agent.rateOf(info) ? 'F' : 'S') + (info.mode === 'active' ? 'A' : 'P')}      `
       + `${info.state.padEnd(10)}${String(info.portPriority).padEnd(13)}`
       + `${String(info.groupId).padEnd(10)}${String(info.groupId).padEnd(8)}`
       + `${this.d().getPortNames().indexOf(portName) + 1}`,
@@ -6444,7 +6445,7 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
           `${this.abbreviateInterface(m.portName).padEnd(10)}`
           + `${(p ? `${p.systemPriority},${p.systemId}` : 'none').padEnd(27)}`
           + `${(p ? `${Math.round((Date.now() - m.lastRxMs) / 1000)}s` : '-').padEnd(5)}`
-          + `${(cfg.fastRate ? 'F' : 'S') + (m.mode === 'active' ? 'A' : 'P')}     `
+          + `${(agent.rateOf(m) ? 'F' : 'S') + (m.mode === 'active' ? 'A' : 'P')}     `
           + `${String(p?.portPriority ?? 0).padEnd(11)}`
           + `${String(p?.key ?? 0).padEnd(10)}`
           + `${p?.portNumber ?? 0}`,
@@ -6469,12 +6470,12 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
           const numero = this.d().getPortNames().indexOf(m.portName) + 1;
           lines.push(
             `${this.abbreviateInterface(m.portName).padEnd(10)}`
-            + `${((cfg.fastRate ? 'F' : 'S') + (m.mode === 'active' ? 'A' : 'P')).padEnd(8)}`
+            + `${((agent.rateOf(m) ? 'F' : 'S') + (m.mode === 'active' ? 'A' : 'P')).padEnd(8)}`
             + `${iosLacpState(m.state).padEnd(10)}`
             + `${String(m.portPriority).padEnd(14)}`
             + `${hex(m.groupId).padEnd(10)}${hex(m.groupId).padEnd(8)}`
             + `${hex(numero).padEnd(12)}`
-            + `${hex(buildActorState(m.mode, m, cfg.fastRate))}`,
+            + `${hex(buildActorState(m.mode, m, agent.rateOf(m)))}`,
           );
         }
       }

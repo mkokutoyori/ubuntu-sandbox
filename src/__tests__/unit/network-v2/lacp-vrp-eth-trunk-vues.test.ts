@@ -37,7 +37,7 @@ const LACP_PERIODIC_MS = 35_000;
 function portFictif(over: Partial<LacpPortInfo> = {}): LacpPortInfo {
   return {
     portName: 'GigabitEthernet0/0/0', groupId: 1, mode: 'active',
-    portPriority: 32768, state: 'bundled',
+    portPriority: 32768, fastRate: null, state: 'bundled',
     partner: {
       systemPriority: 32768, systemId: '00:e0:fc:6e:bb:11',
       key: 1, portPriority: 32768, portNumber: 1, state: 0,

@@ -127,6 +127,7 @@ export interface LacpPortInfo {
   churnActorCount: number;
   churnPartnerCount: number;
   /** 0 when the machine has already settled and is not counting down. */
+  fastRate: boolean | null;
   churnActorDeadlineMs: number;
   churnPartnerDeadlineMs: number;
 }
