@@ -5803,7 +5803,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
         id: 'enable-view',
         path: ['enable', 'view', {
           name: 'vue', type: 'WORD', optional: true,
-          description: 'Name of the view',
+          description: 'View name',
         }],
         description: 'Enter a command-line interface view',
         modes: exec, minPrivilege: 1,
