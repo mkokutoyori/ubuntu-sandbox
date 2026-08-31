@@ -1,24 +1,24 @@
 export interface AggregateMemberView {
-  name: string;
-  up: boolean;
-  speedMbps: number | null;
-  actorState: string;
-  partnerState: string;
-  aggregatorId: number;
-  partnerMac: string;
-  linkFailureCount: number;
-  permanentMac: string;
+  readonly name: string;
+  readonly up: boolean;
+  readonly speedMbps: number | null;
+  readonly actorState: string;
+  readonly partnerState: string;
+  readonly aggregatorId: number;
+  readonly partnerMac: string;
+  readonly linkFailureCount: number;
+  readonly permanentMac: string;
 }
 
 export interface AggregateView {
-  name: string;
-  up: boolean;
-  lacpMode: 'static' | 'active' | 'passive';
-  lacpSpeed: 'slow' | 'fast';
-  algorithm: 'L2' | 'L3' | 'L4';
-  minLinks: number;
-  systemMac: string;
-  members: AggregateMemberView[];
+  readonly name: string;
+  readonly up: boolean;
+  readonly lacpMode: 'static' | 'active' | 'passive';
+  readonly lacpSpeed: 'slow' | 'fast';
+  readonly algorithm: 'L2' | 'L3' | 'L4';
+  readonly minLinks: number;
+  readonly systemMac: string;
+  readonly members: readonly AggregateMemberView[];
 }
 
 export const ACTOR_STATE_SYNCED = 'ASAIEE';
