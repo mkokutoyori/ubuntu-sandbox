@@ -24,8 +24,10 @@
  * deux cotes sont nommes plutot que laisses a decouvrir : « le
  * decideur garde ses propres priorites », qui ne pouvait pas
  * discriminer, le chemin du decideur etant justement celui qui etait
- * DEJA juste ; le TEMOIN a un seul cote borne, ou le decideur est
- * aussi le seul a trancher ; le cas a priorites de port identiques,
+ * DEJA juste ; le cas a un seul cote borne, qui ASSERTAIT alors le
+ * defaut suivant — le cote sans borne groupait les trois liens — et
+ * qui a ete refait par le correctif du bit Sync ; le cas a priorites
+ * de port identiques,
  * qui tombait juste par accident, les deux ordres se confondant ; le
  * refus de la commande hors plage ; et la lecture de
  * `lacp system-priority` dans la configuration, deja rendue.
@@ -131,14 +133,15 @@ describe('le systeme de plus faible priorite decide pour les deux', () => {
       .toEqual(['Fa0/2', 'Fa0/3']);
   }, 30_000);
 
-  it('TEMOIN : un seul cote borne, le decideur tranche seul', async () => {
+  it('un seul cote borne : l\'autre met le meme lien en attente', async () => {
     const { a, b } = await laboDeuxCotes({
       sysA: 100, sysB: 200, prioA: [1, 2, 3], prioB: [30, 20, 10], maxA: 2,
     });
     expect(groupes(await a.executeCommand('show etherchannel summary')))
       .toEqual(['Fa0/1', 'Fa0/2']);
-    expect(groupes(await b.executeCommand('show etherchannel summary')))
-      .toHaveLength(3);
+    const vueB = await b.executeCommand('show etherchannel summary');
+    expect(groupes(vueB)).toEqual(['Fa0/1', 'Fa0/2']);
+    expect(vueB).toContain('Fa0/3(H)');
   }, 30_000);
 
   it('a priorites de port identiques les deux cotes concordent', async () => {

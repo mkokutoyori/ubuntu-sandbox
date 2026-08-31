@@ -32,7 +32,9 @@ export interface LacpHost {
 
 export class LacpAgent extends ReactiveAgentBase {
   private config: LacpConfig;
-  private readonly advertising = new Set<string>();
+  private readonly advertising = new Map<string, number>();
+  private readonly lastAdvertised = new Map<string, number>();
+  private advertiseDepth = 0;
   private readonly lacpduSent = new Map<string, number>();
   private readonly lacpduReceived = new Map<string, number>();
   private readonly markerReceived = new Map<string, number>();
@@ -302,7 +304,7 @@ export class LacpAgent extends ReactiveAgentBase {
     }
   }
 
-  advertise(portName: string): void {
+  advertise(portName: string, force = false): void {
     if (!this.config.enabled) return;
     const port = this.host.getPort(portName);
     if (!port || !port.getIsUp() || !port.isConnected()) return;
@@ -324,8 +326,10 @@ export class LacpAgent extends ReactiveAgentBase {
       type: 'lacp', subtype: 0x01, version: 0x01,
       actor, partner, collectorMaxDelay: 0,
     };
-    if (this.advertising.has(portName)) return;
-    this.advertising.add(portName);
+    const enCours = this.advertising.get(portName) ?? 0;
+    if (enCours > 0 && !force) return;
+    this.advertising.set(portName, enCours + 1);
+    this.lastAdvertised.set(portName, actor.state);
     try {
       this.host.sendOnLink({
         iface: portName,
@@ -333,7 +337,7 @@ export class LacpAgent extends ReactiveAgentBase {
         etherType: ETHERTYPE_LACP,
         payload,
       });
-    } finally { this.advertising.delete(portName); }
+    } finally { this.advertising.set(portName, enCours); }
     this.lacpduSent.set(portName, (this.lacpduSent.get(portName) ?? 0) + 1);
     this.getBus().publish({
       topic: 'lacp.frame.sent',
@@ -344,9 +348,16 @@ export class LacpAgent extends ReactiveAgentBase {
     });
   }
 
+  private static readonly MAX_NTT_DEPTH = 6;
+
   private maybeAdvertiseBack(portName: string): void {
-    if (this.advertising.has(portName)) return;
-    this.advertise(portName);
+    const p = this.config.ports.get(portName);
+    const ntt = p !== undefined
+      && this.lastAdvertised.get(portName) !== buildActorState(p.mode, p, this.config.fastRate);
+    if ((this.advertising.get(portName) ?? 0) > 0 && !ntt) return;
+    if (this.advertiseDepth >= LacpAgent.MAX_NTT_DEPTH) return;
+    this.advertiseDepth += 1;
+    try { this.advertise(portName, true); } finally { this.advertiseDepth -= 1; }
   }
 
   private portNumberFor(portName: string): number {
@@ -590,6 +601,15 @@ export class LacpAgent extends ReactiveAgentBase {
     }
   }
 
+  private applyPartnerSync(members: LacpPortInfo[]): void {
+    for (const p of members) {
+      if (!p.bundled || p.mode === 'on' || !p.partner) continue;
+      if ((p.partner.state & LACP_FLAG_SYNC) !== 0) continue;
+      p.state = 'standby';
+      p.bundled = false;
+    }
+  }
+
   private applyGroupLimits(members: LacpPortInfo[]): void {
     if (members.length === 0) return;
     const limites = this.config.groups.get(members[0].groupId);
@@ -648,6 +668,7 @@ export class LacpAgent extends ReactiveAgentBase {
     }
     this.selectActiveAggregate(members);
     this.applyGroupLimits(members);
+    this.applyPartnerSync(members);
     members.forEach((p, i) => this.maybeEmitStateChange(p, avant[i].state, avant[i].bundled));
   }
 
