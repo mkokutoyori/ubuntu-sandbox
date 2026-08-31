@@ -67,10 +67,10 @@ import { compactVlanList, parseVlanList } from './cli/vlanList';
 
 /** La distance administrative d'une route statique sur IOS. */
 const IOS_STATIC_DISTANCE = 1;
-import { renderIpRouteTable } from './cisco/CiscoShowCommands';
+import { renderIpRouteTable, staticRouteTail } from './cisco/CiscoShowCommands';
 import type { RouteTableHost } from './cisco/CiscoShowCommands';
 import {
-  ROUTE_FILTER_CODES, filterRouteTableByCode, renderRouteEntryDetail,
+  ROUTE_FILTER_CODES, bestRoutesPerPrefix, filterRouteTableByCode, renderRouteEntryDetail,
 } from './cisco/CiscoOspfCommands';
 import {
   dhcpRunningConfigLines, dhcpSnoopingInterfaceLines, dhcpSnoopingRunningConfigLines,
@@ -4640,10 +4640,19 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
       lines.push('!');
     }
 
-    // Static routes (`ip route NET MASK GW`).
+    /*
+     * Les routes statiques passent par la QUEUE partagee avec le
+     * routeur : ecrite ici a la main, elle perdait la DISTANCE, si bien
+     * qu'une route de secours revenait principale au rechargement d'une
+     * topologie. La distance par defaut d'IOS ne s'ecrit pas, seul
+     * l'ecart en est une.
+     */
     for (const r of sw.getL3RoutingTable()) {
       if (r.proto !== 'static' || !r.nextHop) continue;
-      lines.push(`ip route ${r.network} ${r.mask} ${r.nextHop}`);
+      lines.push(`ip route ${r.network} ${r.mask} ${staticRouteTail({
+        nextHop: r.nextHop, iface: r.iface,
+        preference: r.preference === IOS_STATIC_DISTANCE ? undefined : r.preference,
+      })}`);
     }
 
     for (const l of this.logging.asRunningConfigLines()) lines.push(l);
@@ -5562,6 +5571,7 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
     cfg.register('no ip routing', 'Disable Layer-3 routing', () => { this.d().setIpRoutingEnabled(false); return ''; });
 
     // ip route <net> <mask> <next-hop>
+
     cfg.registerGreedy('ip route', 'Add a static route', (args) => {
       if (args.length < 3) return CISCO_ERRORS.INCOMPLETE;
       let net: IPAddress, mask: SubnetMask, gw: IPAddress;
@@ -6087,7 +6097,14 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
     const args = cible.trim().split(/\s+/).filter(Boolean);
     if (args[0]?.toLowerCase() === 'summary') return this.showIpRouteSummary();
 
-    const table = renderIpRouteTable(this.hoteTableRoutage(), this.tableRoutageCisco() as never);
+    /*
+     * La MEILLEURE route par prefixe, comme le routeur : sans ce choix,
+     * une route de secours et sa principale paraissaient toutes les
+     * deux, la table annoncant deux chemins la ou la machine n'en
+     * installe qu'un.
+     */
+    const table = renderIpRouteTable(
+      this.hoteTableRoutage(), bestRoutesPerPrefix(this.tableRoutageCisco()) as never);
     if (args.length === 0) return table;
 
     const codes = ROUTE_FILTER_CODES[args[0].toLowerCase()];

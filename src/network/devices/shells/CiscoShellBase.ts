@@ -6169,6 +6169,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
 
   protected renduInterfaces(_cible: string): string { return ''; }
 
+
   /**
    * Les suites d'un chemin, LUES sur la table qui les declare deja.
    *

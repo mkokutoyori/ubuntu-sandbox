@@ -1515,4 +1515,27 @@ défauts — la méthode vaut d'être reprise sur le reliquat.
   manquait derriere une place, ici c'est la place qui manque. Fermer
   demande de MESURER ce que chacune accepte vraiment — un nom
   d'interface, un prefixe, les deux — plutot que de declarer une place
-  au juge.
+  au juge.- **Migrer une famille en SUPPRIMANT son enregistrement du trie fait
+  perdre l'ambiguite de son abreviation, et le trie execute alors une
+  AUTRE commande en silence.** Mesure, sur un routeur, apres avoir
+  declare `ip route` au socle et retire ses deux enregistrements :
+
+      ip rout      ->  % Ambiguous command: "ip rout"    (bon)
+      no ip rout   ->  ""  et `no ip routing` est POSEE   (dangereux)
+
+  Une faute de frappe COUPE donc le routage IP la ou une vraie machine
+  refuse. Le mecanisme : `pruneMigratedFromTries` retire l'ACTION d'un
+  noeud et laisse le noeud, donc `prefixMatch` continue de le compter
+  comme rival — mais une famille migree a la main, dont on supprime
+  l'enregistrement, n'a plus de noeud du tout, et `no ip rout` ne
+  rencontre plus qu'un seul candidat. `prefixIsUnambiguous` garde le
+  sens socle → trie ; rien ne garde le sens trie → socle.
+  Consequence pratique : `ip route` ne PEUT pas etre migre tant que ce
+  garde n'existe pas, et toute famille dont un prefixe est partage avec
+  une commande restee au trie court le meme risque.
+  Ce qui a ete fait : la sonde `probe-famille-ip-route.test.ts` (32 cas,
+  les deux plateformes) est ecrite et verte, la migration ANNULEE, et
+  les deux defauts qu'elle avait trouves sont corriges independamment.
+  Fermer demande que le trie tienne les chemins du socle pour des
+  rivaux dans son calcul d'ambiguite — un correctif du pont, pas d'une
+  famille, et sa surface est toute la resolution d'abreviations.

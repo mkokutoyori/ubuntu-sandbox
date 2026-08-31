@@ -2584,7 +2584,7 @@ function showIpOspfDatabaseSelfOriginate(router: Router): string {
   return lines.join('\n');
 }
 
-function bestRoutesPerPrefix(routes: any[]): any[] {
+export function bestRoutesPerPrefix(routes: any[]): any[] {
   const protoAd: Record<string, number> = {
     connected: 0, static: 1, eigrp: 90, ospf: 110, rip: 120, bgp: 20, default: 1,
   };

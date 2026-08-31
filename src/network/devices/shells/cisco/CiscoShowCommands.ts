@@ -93,7 +93,7 @@ export function showVersion(
  * déduite du prochain saut : sans lui, `ip route … 10.1.1.2` se
  * réécrirait en `ip route … GigabitEthernet0/0 10.1.1.2`.
  */
-function staticRouteTail(r: {
+export function staticRouteTail(r: {
   nextHop: { toString(): string } | null; iface: string;
   ifaceConfigured?: boolean; preference?: number; permanent?: boolean;
   track?: string;
