@@ -1229,6 +1229,9 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
 
   getSelectedDHCPPool(): string | null { return this.selectedDHCPPool; }
   setSelectedDHCPPool(pool: string | null): void { this.selectedDHCPPool = pool; }
+  protected override selectDhcpPool(nom: string | null): void {
+    this.setSelectedDHCPPool(nom);
+  }
   setSelectedVRF(name: string | null): void { this.selectedVRF = name; }
   setSelectedVLAN(id: number | null): void { this.selectedVLAN = id; }
 

@@ -318,6 +318,17 @@ const ARCHIVE_EXEC_PLACES: Readonly<Record<string, readonly ArgumentSpec[]>> = {
   }],
 };
 
+interface DhcpConfigServer {
+  getPool(name: string): unknown;
+  createPool(name: string): void;
+  deletePool(name: string): void;
+  addExcludedRange(start: string, end: string): boolean;
+  addDatabaseAgent(url: string): void;
+  removeDatabaseAgent(url: string): void;
+  enable(): void;
+  disable(): void;
+}
+
 type BannerKind = 'motd' | 'login' | 'exec' | 'incoming';
 
 const BANNER_SORTES: ReadonlyArray<readonly [BannerKind, string]> = [
@@ -5400,6 +5411,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       ...this.serviceFamilySpecs(),
       ...this.bannerSpecs(),
       ...this.archiveExecSpecs(),
+      ...this.dhcpGlobalPartageeSpecs(),
       ...this.enableSpecs(),
       ...this.configureSpecs(),
       ...this.hardeningSpecs(),
@@ -5766,6 +5778,86 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
      */
     const tapes = line.trim().split(/\s+/).filter(Boolean);
     return { vue: cles[1] === 'view', args: tapes.slice(cles.length) };
+  }
+
+  /**
+   * Ce que le pool selectionne devient : chaque coquille le range ou
+   * elle le lit, et la declaration partagee n'a pas a le savoir.
+   */
+  protected selectDhcpPool(_nom: string | null): void { /* par coquille */ }
+
+  /**
+   * Les commandes DHCP globales qu'un routeur ET un Catalyst servent.
+   *
+   * Elles etaient ecrites DEUX fois, et les deux copies avaient
+   * diverge. `ip dhcp pool` du commutateur appelait `dhcp.enable()` —
+   * « IOS auto-enables the DHCP service when a pool is created » — donc
+   * `no service dhcp` suivi de la creation d'un pool RALLUMAIT le
+   * service que l'operateur venait d'eteindre, ce que le routeur ne
+   * faisait pas ; le service est actif par defaut, l'appel n'apportait
+   * rien et defaisait une decision explicite. Et `ip dhcp database`
+   * ecrivait sur DEUX magasins : le commutateur dans l'agent du serveur
+   * DHCP — celui que `show ip dhcp database` lit — le routeur sur une
+   * propriete ad hoc que personne ne relisait.
+   */
+  protected dhcpGlobalPartageeSpecs(): readonly CommandSpec[] {
+    const serveur = () => this.dhcpConfigServer();
+    const nom: ArgumentSpec = {
+      name: 'nom', type: 'WORD', description: 'Pool name',
+    };
+
+    return [
+      {
+        id: 'ip-dhcp-pool',
+        path: ['ip', 'dhcp', 'pool', nom],
+        description: 'Configure DHCP address pools',
+        undoDescription: 'Remove a DHCP address pool',
+        modes: ['config'], minPrivilege: 15,
+        run: (_session, args) => {
+          const dhcp = serveur();
+          if (!dhcp) return '';
+          if (!dhcp.getPool(args.nom)) dhcp.createPool(args.nom);
+          this.selectDhcpPool(args.nom);
+          this.mode = 'config-dhcp';
+          return '';
+        },
+        undo: (_session, args) => { serveur()?.deletePool(args.nom); return ''; },
+      },
+      {
+        id: 'ip-dhcp-excluded-address',
+        path: ['ip', 'dhcp', 'excluded-address',
+          { name: 'basse', type: 'IP_ADDR', description: 'Low IP address' },
+          { name: 'haute', type: 'IP_ADDR', optional: true,
+            description: 'High IP address' },
+        ],
+        description: 'Prevent DHCP from assigning certain addresses',
+        modes: ['config'], minPrivilege: 15,
+        run: (_session, args) => {
+          const haute = args.haute ?? args.basse;
+          if (!serveur()?.addExcludedRange(args.basse, haute)) {
+            throw new CliInvalidInput({ token: haute });
+          }
+          return '';
+        },
+      },
+      {
+        id: 'ip-dhcp-database',
+        path: ['ip', 'dhcp', 'database',
+          { name: 'url', type: 'REST', description: 'Database agent URL', literal: 'LINE' },
+        ],
+        description: 'Configure DHCP database agents',
+        undoDescription: 'Remove a DHCP database agent URL',
+        modes: ['config'], minPrivilege: 15,
+        run: (_session, args) => { serveur()?.addDatabaseAgent(args.url); return ''; },
+        undo: (_session, args) => { serveur()?.removeDatabaseAgent(args.url); return ''; },
+      },
+    ];
+  }
+
+  protected dhcpConfigServer(): DhcpConfigServer | undefined {
+    return (this.d() as unknown as {
+      _getDHCPServerInternal?: () => DhcpConfigServer | undefined;
+    })._getDHCPServerInternal?.();
   }
 
   protected enableSpecs(): readonly CommandSpec[] {

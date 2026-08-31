@@ -414,34 +414,6 @@ export function dhcpGlobalSpecs(ctx: CiscoShellContext): CommandSpec[] {
 export function buildDhcpGlobalOn(
   trie: CommandTrie, ctx: CiscoShellContext,
 ): void {
-  trie.registerGreedy('ip dhcp pool', 'Define a DHCP address pool', (args) => {
-    if (args.length < 1) return '% Incomplete command.';
-    const poolName = args[0];
-    const dhcp = ctx.r()._getDHCPServerInternal();
-    if (!dhcp.getPool(poolName)) {
-      dhcp.createPool(poolName);
-    }
-    ctx.setSelectedDHCPPool(poolName);
-    ctx.setMode('config-dhcp');
-    return '';
-  });
-
-  trie.registerGreedy('no ip dhcp pool', 'Remove a DHCP address pool', (args) => {
-    if (args.length < 1) return '% Incomplete command.';
-    ctx.r()._getDHCPServerInternal().deletePool(args[0]);
-    return '';
-  });
-
-  trie.registerGreedy('ip dhcp excluded-address', 'Prevent DHCP from assigning certain addresses', (args) => {
-    if (args.length < 1) return '% Incomplete command.';
-    const start = args[0];
-    const end = args[1] || start;
-    if (!ctx.r()._getDHCPServerInternal().addExcludedRange(start, end)) {
-      throw new CliInvalidInput({ token: isValidIPv4(start) ? end : start });
-    }
-    return '';
-  });
-
   trie.registerGreedy('ip dhcp class', 'Define DHCP class', (args) => {
     if (!args[0]) return '% Incomplete command.';
     const r = ctx.r() as any;
@@ -479,10 +451,6 @@ export function buildDhcpGlobalOn(
     const n = parseInt(args[0] ?? '', 10);
     if (isNaN(n) || n < 1) return '% Invalid input detected.';
     ctx.r()._getDHCPServerInternal().setPingTimeoutMs(n);
-    return '';
-  });
-  trie.registerGreedy('ip dhcp database', 'Set DHCP database URL', (args, raw) => {
-    (ctx.r() as any)._ciscoDhcpDatabase = raw ?? args.join(' ');
     return '';
   });
   trie.register('ip dhcp bootp ignore', 'Ignore BOOTP requests', () => {

@@ -684,6 +684,10 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
   private configDhcpTrie = new CommandTrie();
   private selectedDhcpPool: string | null = null;
 
+  protected override selectDhcpPool(nom: string | null): void {
+    this.selectedDhcpPool = nom;
+  }
+
   // STP state (switch-only, L2)
   private stpMode = 'pvst';
   private ifStp = new Map<string, string[]>();
@@ -5579,42 +5583,6 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
       try { net = new IPAddress(args[0]); } catch { return `% Invalid network ${args[0]}`; }
       try { mask = new SubnetMask(args[1]); } catch { return `% Invalid mask ${args[1]}`; }
       this.d().removeStaticRoute(net, mask);
-      return '';
-    });
-
-    // ip dhcp pool <name> → enter dhcp-config view, reuse shared builder
-    cfg.registerGreedy('ip dhcp pool', 'Define a DHCP address pool', (args) => {
-      if (args.length < 1) return CISCO_ERRORS.INCOMPLETE;
-      const dhcp = this.d()._getDHCPServerInternal();
-      if (!dhcp.getPool(args[0])) dhcp.createPool(args[0]);
-      dhcp.enable(); // IOS auto-enables the DHCP service when a pool is created
-      this.selectedDhcpPool = args[0];
-      this.mode = 'config-dhcp';
-      return '';
-    });
-    cfg.registerGreedy('no ip dhcp pool', 'Remove a DHCP pool', (args) => {
-      if (args.length < 1) return CISCO_ERRORS.INCOMPLETE;
-      this.d()._getDHCPServerInternal().deletePool(args[0]);
-      return '';
-    });
-    cfg.registerGreedy('ip dhcp excluded-address',
-      'Exclude IP range from DHCP allocation', (args) => {
-        if (args.length < 1) return CISCO_ERRORS.INCOMPLETE;
-        const end = args[1] || args[0];
-        if (!this.d()._getDHCPServerInternal().addExcludedRange(args[0], end)) {
-          throw new CliInvalidInput({ token: isValidIPv4(args[0]) ? end : args[0] });
-        }
-        return '';
-      });
-    cfg.registerGreedy('ip dhcp database', 'Configure a DHCP database agent URL', (args, raw) => {
-      const url = raw ? raw.replace(/^ip dhcp database\s+/i, '') : args.join(' ');
-      if (!url) return CISCO_ERRORS.INCOMPLETE;
-      this.d()._getDHCPServerInternal().addDatabaseAgent(url);
-      return '';
-    });
-    cfg.registerGreedy('no ip dhcp database', 'Remove a DHCP database agent URL', (args, raw) => {
-      const url = raw ? raw.replace(/^no ip dhcp database\s+/i, '') : args.join(' ');
-      if (url) this.d()._getDHCPServerInternal().removeDatabaseAgent(url);
       return '';
     });
 

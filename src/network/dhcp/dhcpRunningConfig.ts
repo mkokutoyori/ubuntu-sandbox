@@ -57,6 +57,14 @@ function poolConfigLines(pool: DHCPPoolConfig): string[] {
 export function dhcpRunningConfigLines(dhcp: DHCPServer): string[] {
   const lines: string[] = [];
   if (!dhcp.isEnabled()) lines.push('no service dhcp');
+  /*
+   * L'agent de sauvegarde etait accepte des deux cotes, range dans deux
+   * magasins differents, et rendu par personne — donc perdu au
+   * rechargement d'une topologie, en silence.
+   */
+  for (const url of dhcp.getDatabaseAgents()) {
+    lines.push(`ip dhcp database ${url}`);
+  }
   for (const range of dhcp.getExcludedRanges()) {
     lines.push(range.start === range.end
       ? `ip dhcp excluded-address ${range.start}`

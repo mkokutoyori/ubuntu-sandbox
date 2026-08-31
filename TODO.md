@@ -1440,3 +1440,13 @@ défauts — la méthode vaut d'être reprise sur le reliquat.
   demande rien, une descente n'etant pas une elevation. Le comportement
   uniforme a ete prefere a deux comportements selon l'endroit d'ou l'on
   tape, faute de reference.
+- `ip dhcp snooping` est accepte et rendu sur un ROUTEUR, avec son
+  PROPRE magasin (`getGlobalConfig`), distinct de celui du commutateur.
+  Deux implantations pour une meme commande, sur deux plateformes. Le
+  routeur n'a pas ete ampute parce que la premisse « un routeur n'a pas
+  cette commande » n'est pas attestable depuis ce reseau — un ISR
+  portant un module EtherSwitch la connait — et parce que deux fichiers
+  de test l'epinglent deliberement, dont un cas nomme « `show ip dhcp
+  snooping` et la configuration lisent le meme magasin ». Fermer demande
+  soit une capture qui tranche, soit d'unifier les deux magasins ; ce
+  n'est pas un choix a faire sans reference.
