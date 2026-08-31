@@ -89,6 +89,7 @@ import {
   SPANNING_TREE_COLUMNS, SPANNING_TREE_STYLE, type SpanningTreePortRow,
 } from './cisco/ciscoTableLayouts';
 import { SOCLE, COMMUTATEUR_SEUL, appliquerContinuations } from './cisco/ciscoContinuations';
+import type { ContinuationTable } from './cisco/ciscoContinuations';
 import { mstConfigDigest, vlansMappedToInstanceZero } from '@/network/stp/MstConfigId';
 
 /** CLI Mode (FSM State) */
@@ -3468,61 +3469,6 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
       return this.showInterfacesCounters(name);
     });
 
-    this.privilegedTrie.registerGreedy('show interfaces', 'Display interface information', (args) => {
-      if (args.length === 0) return this.showAllInterfacesDetail();
-      const last = args[args.length - 1].toLowerCase();
-      if (last === 'switchport') {
-        const target = args.slice(0, -1).join(' ');
-        if (!target) {
-          return this.d().getPortNames().map((n) => this.showSwitchportDetail(n)).join('\n\n');
-        }
-        const name = this.resolveInterfaceName(target) ?? target;
-        return this.showSwitchportDetail(name);
-      }
-      if (last === 'counters') {
-        const target = args.slice(0, -1).join(' ');
-        if (target) {
-          const name = this.resolveInterfaceName(target);
-          if (!name || !this.d().getPort(name)) {
-            return formatInvalidInput(16);
-          }
-          return this.showInterfacesCounters(name);
-        }
-        return this.showInterfacesCounters(null);
-      }
-      if (last === 'description') return this.showInterfacesDescriptionTable();
-      if (last === 'trunk' && args.length > 1) {
-        const name = this.resolveInterfaceName(args.slice(0, -1).join(' '));
-        if (!name || !this.d().getPort(name)) {
-          return formatInvalidInput(16);
-        }
-        return this.showTrunkTable([name]);
-      }
-      if ('status'.startsWith(last) && last.length >= 3) {
-        if (args.length === 1) return this.showInterfacesStatus(this.d());
-        const name = this.resolveInterfaceName(args.slice(0, -1).join(' '));
-        if (!name || !this.d().getPort(name)) {
-          return formatInvalidInput(16);
-        }
-        return this.showInterfacesStatus(this.d(), name);
-      }
-      const vlanMatch = args.join(' ').match(/^vl(?:an)?\s*(\d+)$/i);
-      if (vlanMatch) return this.showSviInterface(parseInt(vlanMatch[1], 10));
-      // `show interfaces <if> etherchannel` — the per-port view of what
-      // `show etherchannel` gives for the whole group.
-      if (args.length > 1 && args[args.length - 1].toLowerCase() === 'etherchannel') {
-        const target = this.resolveInterfaceName(args.slice(0, -1).join(' '));
-        if (!target || !this.d().getPort(target)) {
-          return formatInvalidInput(16);
-        }
-        return this.showInterfaceEtherchannel(target);
-      }
-      const po = this.portChannelIdOf(args.join(' '));
-      if (po !== null) return this.showPortChannelInterface(po);
-      const name = this.resolveInterfaceName(args.join(' '));
-      if (name && this.d().getPort(name)) return showInterface(this.d(), name, true);
-      return formatInvalidInput(16);
-    });
 
     this.privilegedTrie.registerGreedy('show queuing interface', 'Display the 802.1p trust state of an interface', (args) => {
       const target = args.join(' ');
@@ -6053,6 +5999,67 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
         }
       },
     };
+  }
+
+  protected override tablesDeContinuations(): readonly ContinuationTable[] {
+    return [SOCLE, COMMUTATEUR_SEUL];
+  }
+
+  protected override renduInterfaces(cible: string): string {
+    const args = cible.trim().split(/\s+/).filter(Boolean);
+      if (args.length === 0) return this.showAllInterfacesDetail();
+      const last = args[args.length - 1].toLowerCase();
+      if (last === 'switchport') {
+        const target = args.slice(0, -1).join(' ');
+        if (!target) {
+          return this.d().getPortNames().map((n) => this.showSwitchportDetail(n)).join('\n\n');
+        }
+        const name = this.resolveInterfaceName(target) ?? target;
+        return this.showSwitchportDetail(name);
+      }
+      if (last === 'counters') {
+        const target = args.slice(0, -1).join(' ');
+        if (target) {
+          const name = this.resolveInterfaceName(target);
+          if (!name || !this.d().getPort(name)) {
+            return formatInvalidInput(16);
+          }
+          return this.showInterfacesCounters(name);
+        }
+        return this.showInterfacesCounters(null);
+      }
+      if (last === 'description') return this.showInterfacesDescriptionTable();
+      if (last === 'trunk' && args.length > 1) {
+        const name = this.resolveInterfaceName(args.slice(0, -1).join(' '));
+        if (!name || !this.d().getPort(name)) {
+          return formatInvalidInput(16);
+        }
+        return this.showTrunkTable([name]);
+      }
+      if ('status'.startsWith(last) && last.length >= 3) {
+        if (args.length === 1) return this.showInterfacesStatus(this.d());
+        const name = this.resolveInterfaceName(args.slice(0, -1).join(' '));
+        if (!name || !this.d().getPort(name)) {
+          return formatInvalidInput(16);
+        }
+        return this.showInterfacesStatus(this.d(), name);
+      }
+      const vlanMatch = args.join(' ').match(/^vl(?:an)?\s*(\d+)$/i);
+      if (vlanMatch) return this.showSviInterface(parseInt(vlanMatch[1], 10));
+      // `show interfaces <if> etherchannel` — the per-port view of what
+      // `show etherchannel` gives for the whole group.
+      if (args.length > 1 && args[args.length - 1].toLowerCase() === 'etherchannel') {
+        const target = this.resolveInterfaceName(args.slice(0, -1).join(' '));
+        if (!target || !this.d().getPort(target)) {
+          return formatInvalidInput(16);
+        }
+        return this.showInterfaceEtherchannel(target);
+      }
+      const po = this.portChannelIdOf(args.join(' '));
+      if (po !== null) return this.showPortChannelInterface(po);
+      const name = this.resolveInterfaceName(args.join(' '));
+      if (name && this.d().getPort(name)) return showInterface(this.d(), name, true);
+      return formatInvalidInput(16);
   }
 
   protected override renduIpRoute(cible: string): string {

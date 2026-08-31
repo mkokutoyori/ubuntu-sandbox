@@ -25,6 +25,7 @@ import { applyTransition } from '@/cli/CliEngine';
 import { argumentAccepts } from '@/cli/ArgumentTypes';
 import type { ArgumentSpec } from '@/cli/ArgumentTypes';
 import { SOCLE, continuationsPourLeSocle } from './cisco/ciscoContinuations';
+import type { ContinuationTable } from './cisco/ciscoContinuations';
 import type { CommandSpec, TreeNode, LiveValuesPort } from '@/cli/CommandTable';
 
 /**
@@ -5447,6 +5448,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       ...this.dhcpSnoopingSpecs(),
       ...this.showIpInterfaceSpecs(),
       ...this.showIpRouteSpecs(),
+      ...this.showInterfacesSpecs(),
       ...this.cefSpecs(),
       ...this.enableSpecs(),
       ...this.configureSpecs(),
@@ -6098,6 +6100,90 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
   }
 
   protected renduIpRoute(_cible: string): string { return ''; }
+
+  /**
+   * `show interfaces [<nom> | description | status | ...]`, declaree une
+   * fois.
+   *
+   * Ce lot ne change AUCUN comportement : la sonde ecrite a l'aveugle
+   * passe des deux cotes avant comme apres, sur ses vingt-huit cas — les
+   * deux plateformes rendaient deja le meme texte, chacune depuis son
+   * propre enregistrement glouton. Ce qui disparait est la SECONDE
+   * declaration d'une meme grammaire.
+   *
+   * La place est le MEME objet dans les deux formes, et ce n'est pas un
+   * detail : `CommandTable` regroupe les places par SIGNATURE, laquelle
+   * compte les `alternatives`. Une place decoree pour la forme nue et
+   * une place nue pour les suites font donc DEUX noeuds d'argument, le
+   * curseur atterrit sur le premier, et les suites pendent au second
+   * ou personne ne les lit — mesure faite, `show interfaces Gi0/0 ?` ne
+   * rendait plus que `<cr>`.
+   */
+  protected showInterfacesSpecs(): readonly CommandSpec[] {
+    const exec = ['user', 'privileged'];
+    const suites = this.suitesDeclarees('show interfaces');
+    const cible: ArgumentSpec = {
+      name: 'cible', type: 'REST', optional: true, literal: 'LINE',
+      description: 'Interface to describe',
+    };
+
+    return [
+      {
+        id: 'show-interfaces',
+        path: ['show', 'interfaces', cible],
+        description: 'Interface status and configuration',
+        modes: exec, minPrivilege: 1,
+        run: (_session, args) => this.renduInterfaces(args.cible ?? ''),
+      },
+      /*
+       * Chaque suite est declaree DEUX fois, comme un vrai noeud de
+       * chaque cote de la place : `show interfaces accounting` sans nom
+       * rend la vue pour toutes les interfaces, `show interfaces Gi0/0
+       * accounting` pour une seule, et les deux sont des formes d'IOS.
+       *
+       * Un vrai noeud, et non une simple `alternative` decorant la
+       * place : la mesure a montre que le mot tombait alors DANS la
+       * place, si bien que `show interfaces accounting ?` reproposait
+       * `accounting`, `stats` et leurs freres — une aide qui invite a
+       * ecrire `show interfaces accounting accounting`.
+       */
+      ...suites.flatMap(({ keyword, description }): CommandSpec[] => [
+        {
+          id: `show-interfaces-${keyword}`,
+          path: ['show', 'interfaces', keyword],
+          description,
+          modes: exec, minPrivilege: 1,
+          run: () => this.renduInterfaces(keyword),
+        },
+        {
+          id: `show-interfaces-cible-${keyword}`,
+          path: ['show', 'interfaces', cible, keyword],
+          description,
+          modes: exec, minPrivilege: 1,
+          run: (_session, args) =>
+            this.renduInterfaces(`${args.cible ?? ''} ${keyword}`.trim()),
+        },
+      ]),
+    ];
+  }
+
+  protected renduInterfaces(_cible: string): string { return ''; }
+
+  /**
+   * Les suites d'un chemin, LUES sur la table qui les declare deja.
+   *
+   * Une spec ecrite a la main doit annoncer les memes mots que le trie,
+   * et les recopier ici en ferait une seconde declaration — celle qui
+   * finit par diverger. `switchport` et `etherchannel` n'existent que
+   * sur un Catalyst, `summary` et `accounting` que sur un routeur : la
+   * liste est donc PAR PLATEFORME, chaque coquille nommant ses tables.
+   */
+  protected suitesDeclarees(chemin: string): Array<{ keyword: string; description: string }> {
+    const suites = continuationsPourLeSocle(chemin, ...this.tablesDeContinuations());
+    return (suites ?? []).map(({ keyword, description }) => ({ keyword, description }));
+  }
+
+  protected tablesDeContinuations(): readonly ContinuationTable[] { return [SOCLE]; }
 
   protected cefSpecs(): CommandSpec[] {
     const sec = () => getSecurityConfig(this.d());
