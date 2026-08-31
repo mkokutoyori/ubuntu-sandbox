@@ -5446,6 +5446,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       ...this.dhcpGlobalPartageeSpecs(),
       ...this.dhcpSnoopingSpecs(),
       ...this.showIpInterfaceSpecs(),
+      ...this.showIpRouteSpecs(),
       ...this.cefSpecs(),
       ...this.enableSpecs(),
       ...this.configureSpecs(),
@@ -6063,6 +6064,40 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
   }
 
   protected renduIpInterface(_cible: string): string { return ''; }
+
+  /**
+   * `show ip route [<protocole> | <prefixe> | summary | vrf <nom>]`,
+   * declaree une fois.
+   *
+   * Les deux plateformes l'enregistraient chacune de son cote, et le
+   * commutateur avait la version pauvre : sa propre legende — plus
+   * courte, sans `L - local` —, aucune route locale en /32, aucun
+   * regroupement par reseau majeur, la distance d'une statique
+   * FLOTTANTE perdue, aucun filtre par protocole, et le prefixe ignore.
+   * Ce que chaque coquille reste seule a savoir est le contenu de sa
+   * table ; la grammaire n'a plus qu'une declaration.
+   */
+  protected showIpRouteSpecs(): readonly CommandSpec[] {
+    return [
+      {
+        id: 'show-ip-route',
+        path: ['show', 'ip', 'route', {
+          name: 'cible', type: 'REST', optional: true, literal: 'LINE',
+          description: 'Network to display information about',
+          alternatives: [
+            { keyword: 'connected', description: 'Connected routes' },
+            { keyword: 'static', description: 'Static routes' },
+            { keyword: 'summary', description: 'Summary of all routes' },
+          ],
+        }],
+        description: 'IP routing table',
+        modes: ['user', 'privileged'], minPrivilege: 1,
+        run: (_session, args) => this.renduIpRoute(args.cible ?? ''),
+      },
+    ];
+  }
+
+  protected renduIpRoute(_cible: string): string { return ''; }
 
   protected cefSpecs(): CommandSpec[] {
     const sec = () => getSecurityConfig(this.d());

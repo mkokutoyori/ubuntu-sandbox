@@ -92,7 +92,7 @@ import {
 import * as Show from './cisco/CiscoShowCommands';
 import { showProcessesCpu } from './cisco/CiscoCommonShow';
 import { showNATTranslations, showNATStatistics } from './cisco/CiscoNATCommands';
-import { showIpOspfNeighbor } from './cisco/CiscoOspfCommands';
+import { showIpOspfNeighbor, routerIpRouteView } from './cisco/CiscoOspfCommands';
 import {
   type CiscoShellMode, type CiscoShellContext,
   buildConfigCommands, buildConfigIfCommands, configIfSpecs, dhcpGlobalSpecs,
@@ -1979,6 +1979,10 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
     };
     trie.registerGreedy('show interfaces', 'Display interface status', showInterfaceCmd);
     trie.register('show vlans', 'Display VLANs (router)', () => Show.showVlansRouter(getRouter()));
+  }
+
+  protected override renduIpRoute(cible: string): string {
+    return routerIpRouteView(this.d(), cible.trim().split(/\s+/).filter(Boolean));
   }
 
   protected override renduIpInterface(cible: string): string {

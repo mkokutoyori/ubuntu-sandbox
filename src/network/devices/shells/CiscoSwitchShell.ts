@@ -62,6 +62,14 @@ import { buildArchiveSubmodeOn, buildArchiveLogSubmodeOn } from './cisco/CiscoAr
 import type { LoggingCommandContext } from './cisco/CiscoLoggingCommands';
 import { buildConfigDhcpCommands, dhcpPoolSpecs } from './cisco/CiscoDhcpCommands';
 import { compactVlanList, parseVlanList } from './cli/vlanList';
+
+/** La distance administrative d'une route statique sur IOS. */
+const IOS_STATIC_DISTANCE = 1;
+import { renderIpRouteTable } from './cisco/CiscoShowCommands';
+import type { RouteTableHost } from './cisco/CiscoShowCommands';
+import {
+  ROUTE_FILTER_CODES, filterRouteTableByCode, renderRouteEntryDetail,
+} from './cisco/CiscoOspfCommands';
 import {
   dhcpRunningConfigLines, dhcpSnoopingInterfaceLines, dhcpSnoopingRunningConfigLines,
 } from '../../dhcp/dhcpRunningConfig';
@@ -5555,15 +5563,20 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
       try { net = new IPAddress(args[0]); } catch { return `% Invalid network ${args[0]}`; }
       try { mask = new SubnetMask(args[1]); } catch { return `% Invalid mask ${args[1]}`; }
       try { gw = new IPAddress(args[2]); } catch { return `% Invalid next-hop ${args[2]}`; }
-      this.d().addStaticRoute(net, mask, gw);
+      const ad = CiscoSwitchShell.distanceStatiqueIos(args[3]);
+      if (ad === null) return CISCO_ERRORS.INVALID_INPUT;
+      this.d().addStaticRoute(net, mask, gw, ad);
       return '';
     });
     cfg.registerGreedy('no ip route', 'Remove a static route', (args) => {
       if (args.length < 2) return CISCO_ERRORS.INCOMPLETE;
-      let net: IPAddress, mask: SubnetMask;
+      let net: IPAddress, mask: SubnetMask, gw: IPAddress | undefined;
       try { net = new IPAddress(args[0]); } catch { return `% Invalid network ${args[0]}`; }
       try { mask = new SubnetMask(args[1]); } catch { return `% Invalid mask ${args[1]}`; }
-      this.d().removeStaticRoute(net, mask);
+      if (args[2]) {
+        try { gw = new IPAddress(args[2]); } catch { return `% Invalid next-hop ${args[2]}`; }
+      }
+      this.d().removeStaticRoute(net, mask, gw);
       return '';
     });
 
@@ -5617,10 +5630,6 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
 
     // ── Show commands ──────────────────────────────────────────────
     for (const t of [this.userTrie, this.privilegedTrie]) {
-      t.registerGreedy('show ip route', 'Display IP routing table', (args) => {
-        if (args[0]?.toLowerCase() === 'summary') return this.showIpRouteSummary();
-        return this.showIpRoute();
-      });
       t.register('show ip traffic', 'IP traffic statistics', () =>
         showIpTraffic(this.d()._getPortsInternal().values(), this.d()._getArpStats()));
       t.registerGreedy('show adjacency', 'Display CEF adjacency table', (args) =>
@@ -5959,34 +5968,65 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
     return lines.join('\n');
   }
 
-  private showIpRoute(): string {
-    const rows = this.d().getL3RoutingTable();
-    const header = [
-      'Codes: C - connected, S - static, R - RIP, D - EIGRP, O - OSPF',
-      '       B - BGP, * - candidate default',
-      '',
-      'Gateway of last resort is not set',
-      '',
-    ];
-    const lines: string[] = [];
-    // SVI iface naming differs by vendor (Huawei `Vlanif10` vs Cisco
-    // `Vlan10`). The routing-table model lives on the shared Switch
-    // base, so rewrite to IOS-style here for display purposes only.
+  /**
+   * La table du Catalyst, dans la forme que le rendu partage attend.
+   *
+   * Le nom d'une interface de couche 3 differe par constructeur — VRP
+   * ecrit `Vlanif10`, IOS `Vlan10` — et le modele de routage vit sur la
+   * base commune des commutateurs ; la traduction se fait donc ici, ou
+   * la plateforme est connue.
+   */
+  /**
+   * La distance d'une statique tapee en IOS.
+   *
+   * Le magasin de routes est PARTAGE avec le commutateur Huawei, dont le
+   * defaut est la preference 60 de VRP ; la laisser s'appliquer a une
+   * commande d'IOS faisait annoncer `[60/0]` la ou une vraie machine
+   * ecrit `[1/0]`, c'est-a-dire le defaut d'un constructeur dans la vue
+   * de l'autre. Chaque plateforme nomme donc le sien.
+   */
+  private static distanceStatiqueIos(mot: string | undefined): number | null {
+    if (mot === undefined) return IOS_STATIC_DISTANCE;
+    const valeur = Number(mot);
+    if (!Number.isInteger(valeur) || valeur < 1 || valeur > 255) return null;
+    return valeur;
+  }
+
+  private tableRoutageCisco(): Array<Record<string, unknown>> {
     const cisco = (iface: string) => iface.replace(/^Vlanif/, 'Vlan');
-    for (const r of rows) {
-      const dest = `${r.network}/${r.mask.toCIDR()}`;
-      if (r.proto === 'connected') {
-        lines.push(`C    ${dest} is directly connected, ${cisco(r.iface)}`);
-      } else {
-        // Static (or default) route — IOS prefixes a `*` on the
-        // candidate default route entry.
-        const isDefault = r.network.toString() === '0.0.0.0' && r.mask.toCIDR() === 0;
-        const code = isDefault ? 'S*' : 'S';
-        const nh = r.nextHop ? r.nextHop.toString() : r.network.toString();
-        lines.push(`${code}    ${dest} [1/0] via ${nh}`);
-      }
-    }
-    return [...header, ...lines].join('\n');
+    return this.d().getL3RoutingTable().map((r) => ({
+      network: r.network,
+      mask: r.mask,
+      type: r.proto,
+      nextHop: r.nextHop,
+      iface: cisco(r.iface),
+      ad: r.preference,
+      metric: 0,
+    }));
+  }
+
+  private hoteTableRoutage(): RouteTableHost {
+    const sw = this.d();
+    return {
+      *localAddresses() {
+        for (const svi of sw.getSvis()) {
+          if (!svi.adminUp || !svi.ip) continue;
+          yield [`Vlan${svi.vlan}`, svi.ip] as const;
+        }
+      },
+    };
+  }
+
+  protected override renduIpRoute(cible: string): string {
+    const args = cible.trim().split(/\s+/).filter(Boolean);
+    if (args[0]?.toLowerCase() === 'summary') return this.showIpRouteSummary();
+
+    const table = renderIpRouteTable(this.hoteTableRoutage(), this.tableRoutageCisco() as never);
+    if (args.length === 0) return table;
+
+    const codes = ROUTE_FILTER_CODES[args[0].toLowerCase()];
+    if (codes) return filterRouteTableByCode(table, codes);
+    return renderRouteEntryDetail(this.tableRoutageCisco(), args[0]);
   }
 
   private showIpRouteSummary(): string {

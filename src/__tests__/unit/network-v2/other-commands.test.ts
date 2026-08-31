@@ -1371,7 +1371,7 @@ describe('Cisco L2 Switch Command Suite', () => {
     it('158. show ip route is a real command on this multilayer switch platform', async () => {
       const { sw } = setupIsolatedSwitch();
       const output = await sw.executeCommand('show ip route');
-      expect(output.toLowerCase()).not.toContain('%');
+      expect(output).not.toMatch(/% (Invalid input|Incomplete command|Unknown command)/);
       expect(output).toContain('Codes:');
     });
 

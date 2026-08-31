@@ -184,7 +184,10 @@ function maskTextToCidr(text: string): number {
  * fait par préfixe, pas par ordre de configuration.
  */
 export function showIpRoute(router: Router): string {
-  return renderIpRouteTable(router, router.getRoutingTable().filter((r) => router.isRouteUsable(r)));
+  return renderIpRouteTable(
+    routerRouteTableHost(router),
+    router.getRoutingTable().filter((r) => router.isRouteUsable(r)),
+  );
 }
 
 /**
@@ -196,8 +199,32 @@ export function showIpRoute(router: Router): string {
  * c'est le défaut « trois commandes, trois vérités » à l'échelle du
  * routage. Il n'en reste qu'un.
  */
+/**
+ * Ce dont le rendu de la table a besoin de la MACHINE, et rien de plus.
+ *
+ * Les routes locales /32 se derivent des adresses portees par les
+ * interfaces de couche 3 utilisables — des ports sur un routeur, des
+ * SVI sur un Catalyst. Nommer ce besoin est ce qui permet aux deux
+ * plateformes de lire le meme rendu.
+ */
+export interface RouteTableHost {
+  localAddresses(): Iterable<readonly [string, { toUint32(): number; toString(): string }]>;
+}
+
+export function routerRouteTableHost(router: Router): RouteTableHost {
+  return {
+    *localAddresses() {
+      for (const [name, port] of router._getPortsInternal()) {
+        const ip = port.getIPAddress();
+        if (!ip || !router.isRouteInterfaceUsable(name)) continue;
+        yield [name, ip] as const;
+      }
+    },
+  };
+}
+
 export function renderIpRouteTable(
-  router: Router,
+  host: RouteTableHost,
   table: ReadonlyArray<{
     network: { toString(): string; toUint32?: () => number };
     mask: { toCIDR?: () => number; toString(): string };
@@ -247,9 +274,7 @@ export function renderIpRouteTable(
   }
 
   // Les routes locales /32 : une par adresse d'interface utilisable.
-  for (const [name, port] of router._getPortsInternal()) {
-    const ip = port.getIPAddress();
-    if (!ip || !router.isRouteInterfaceUsable(name)) continue;
+  for (const [name, ip] of host.localAddresses()) {
     // Une interface en /32 (une loopback, typiquement) a déjà sa route
     // connectée à la même adresse : IOS n'en affiche pas deux.
     const already = rendered.some((entry) =>

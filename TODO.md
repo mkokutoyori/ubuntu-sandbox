@@ -1492,3 +1492,16 @@ défauts — la méthode vaut d'être reprise sur le reliquat.
   noeud sans commande. Fermer demande de declarer les huit formes
   separement, chacune avec ses places — c'est un lot a soi, pas la queue
   de celui-ci.
+- `show ip route summary` reste PROPRE a chaque plateforme : le routeur
+  a `showIpRouteSummary` dans `CiscoOspfCommands`, le commutateur le sien
+  dans `CiscoSwitchShell`, et les deux comptent differemment (le premier
+  connait OSPF, EIGRP et BGP, le second seulement `connected` et
+  `static`). Les fondre demande de decider ce qu'un Catalyst compte
+  quand il ne fait tourner aucun protocole dynamique, ce qu'aucune
+  capture atteignable ne montre ; les deux ont donc ete laisses tels
+  quels alors que le reste de la famille est passe a un rendu unique.
+- `show ip route vrf` et `show ip route ospf` restent servis par le
+  crochet du ROUTEUR seul, et c'est voulu : un Catalyst de ce depot
+  n'a ni VRF ni processus OSPF. La forme `ospf` y est neanmoins
+  ACCEPTEE et rend une table filtree vide, par la table de codes
+  partagee — ce qui est ce que fait une vraie machine sans route OSPF.

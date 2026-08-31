@@ -11,7 +11,7 @@
 
 import type { Router } from '../../Router';
 import { normalizeOspfRouteType, ospfRouteCode } from '@/network/ospf/routeCodes';
-import { renderIpRouteTable } from './CiscoShowCommands';
+import { renderIpRouteTable, routerRouteTableHost } from './CiscoShowCommands';
 import { CliInvalidInput } from '../cli/CliDiagnostic';
 import { CISCO_ERRORS } from '../cli-utils';
 import { inSameSubnet, isValidIPv4 } from '../../../core/ip';
@@ -1475,27 +1475,6 @@ export function registerOSPFShowCommands(trie: CommandTrie, getRouter: () => Rou
   trie.register('show ip ospf border-routers', 'Display OSPF border routers', () => showIpOspfBorderRouters(getRouter()));
   trie.register('show ip ospf statistics', 'Display OSPF statistics', () => showIpOspfStatistics(getRouter()));
   trie.registerGreedy('show ip route ospf', 'Display OSPF routes', (_args) => showIpRouteOspf(getRouter()));
-  trie.registerGreedy('show ip route', 'Display IP routing table', (args) => {
-    if (args.length === 0) return showIpRouteAll(getRouter());
-    const first = args[0].toLowerCase();
-    if (first === 'vrf') {
-      if (!args[1]) return '% Incomplete command.';
-      return showIpRouteVrf(getRouter(), args[1]);
-    }
-    if (first === 'ospf') return showIpRouteOspf(getRouter());
-    if (first === 'summary') return showIpRouteSummary(getRouter());
-    const codes = ROUTE_FILTER_CODES[first];
-    if (codes) return filterRouteTableByCode(showIpRouteAll(getRouter()), codes);
-    // Ces trois-là sont des vues d'IOS, pas des préfixes. Répondre
-    // `% Network not in table` envoyait chercher une adresse que
-    // personne n'avait demandée ; la table vaut mieux que le mensonge,
-    // et la vue détaillée reste à écrire.
-    if (first === 'repair-paths' || first === 'track-table' || first === 'profile') {
-      return showIpRouteAll(getRouter());
-    }
-    return showIpRouteSpecific(getRouter(), args[0]);
-  });
-
   // OSPFv3 show commands
   trie.registerGreedy('show ipv6 ospf', 'Display OSPFv3 information', (args) => {
     // Handle "show ipv6 ospf <process-id>" and sub-commands
@@ -2638,7 +2617,7 @@ function bestRoutesPerPrefix(routes: any[]): any[] {
  * vide. Et elle jetait les en-têtes `is subnetted` qui structurent la
  * sortie d'IOS.
  */
-const ROUTE_FILTER_CODES: Readonly<Record<string, readonly string[]>> = {
+export const ROUTE_FILTER_CODES: Readonly<Record<string, readonly string[]>> = {
   connected: ['C'],
   local: ['L'],
   static: ['S'],
@@ -2648,7 +2627,7 @@ const ROUTE_FILTER_CODES: Readonly<Record<string, readonly string[]>> = {
   isis: ['i'],
 };
 
-function filterRouteTableByCode(all: string, codes: readonly string[]): string {
+export function filterRouteTableByCode(all: string, codes: readonly string[]): string {
   const lines = all.split('\n');
   // L'en-tête va jusqu'à la passerelle de dernier recours incluse.
   const gw = lines.findIndex((l) => l.startsWith('Gateway of last resort'));
@@ -2689,7 +2668,7 @@ function showIpRouteAll(router: Router): string {
     ((router as any).routingTable as any[]).filter((r) => router.isRouteUsable(r)),
   );
   // Un seul rendu pour toute la table : voir `renderIpRouteTable`.
-  return renderIpRouteTable(router, rt as any, (route) => {
+  return renderIpRouteTable(routerRouteTableHost(router), rt as any, (route) => {
     const r = route as any;
     if (r.type !== 'ospf') return null;
     return getOSPFRouteCode(router, r.network.toString(), maskToCIDR(r.mask.toString()), r);
@@ -2795,13 +2774,26 @@ const OSPF_ROUTE_TYPE_NAME: Record<string, string> = {
   'O N1': 'NSSA extern 1', 'O N2': 'NSSA extern 2',
 };
 
-function showIpRouteSpecific(router: Router, destIP: string): string {
-  router._ospfAutoConverge();
-  const rt = (router as any).routingTable as any[];
+/**
+ * Le detail d'une route, rendu depuis la TABLE et non depuis la machine.
+ *
+ * Les deux plateformes repondent a `show ip route <prefixe>`, et un
+ * Catalyst ne repondait rien : il rendait la table entiere, en ignorant
+ * le prefixe. Ce qui reste PROPRE au routeur — nommer le processus OSPF,
+ * le numero d'AS d'EIGRP, le type d'une route externe — passe par des
+ * crochets facultatifs, parce qu'un commutateur ne produit aucune route
+ * de ces types-la.
+ */
+export interface RouteDetailHooks {
+  readonly sourceName?: (route: { type: string }) => string | null;
+  readonly typeSuffix?: (route: { type: string }, distance: number) => string | null;
+}
 
+export function renderRouteEntryDetail(
+  table: readonly any[], destIP: string, hooks: RouteDetailHooks = {},
+): string {
   let bestLen = -1;
-  for (const r of rt) {
-    if (!router.isRouteUsable(r)) continue;
+  for (const r of table) {
     const cidr = maskToCIDR(r.mask.toString());
     if (ipInSubnet(destIP, r.network.toString(), r.mask.toString()) && cidr > bestLen) {
       bestLen = cidr;
@@ -2809,8 +2801,7 @@ function showIpRouteSpecific(router: Router, destIP: string): string {
   }
   if (bestLen < 0) return '% Network not in table';
 
-  const candidates = rt.filter((r) => router.isRouteUsable(r)
-    && maskToCIDR(r.mask.toString()) === bestLen
+  const candidates = table.filter((r) => maskToCIDR(r.mask.toString()) === bestLen
     && ipInSubnet(destIP, r.network.toString(), r.mask.toString()));
 
   const distanceOf = (r: any) => r.ad ?? DEFAULT_DISTANCE[r.type] ?? 1;
@@ -2822,26 +2813,14 @@ function showIpRouteSpecific(router: Router, destIP: string): string {
 
   const netStr = best.network.toString();
   const cidr = maskToCIDR(best.mask.toString());
-  const distance = bestDistance;
-  const metric = bestMetric;
-
-  const eigrpAsn = router.getEIGRPEngine?.()?.getConfig().asn;
-  const source = best.type === 'ospf' ? `ospf ${getOSPFProcessId(router)}`
-    : best.type === 'default' ? 'static'
-      : best.type === 'eigrp' && eigrpAsn ? `eigrp ${eigrpAsn}`
-        : best.type;
+  const source = hooks.sourceName?.(best)
+    ?? (best.type === 'default' ? 'static' : best.type);
 
   const lines = [`Routing entry for ${netStr}/${cidr}`];
-
-  let header = `  Known via "${source}", distance ${distance}, metric ${metric}`;
-  if (best.type === 'ospf') {
-    const code = getOSPFRouteCode(router, netStr, cidr, best).replace('*', ' ').trim();
-    header += `, type ${OSPF_ROUTE_TYPE_NAME[code] ?? 'intra area'}`;
-  } else if (best.type === 'eigrp') {
-    header += `, type ${distance === EIGRP_EXTERNAL_AD ? 'external' : 'internal'}`;
-  } else if (best.type === 'connected') {
-    header += ' (connected, via interface)';
-  }
+  let header = `  Known via "${source}", distance ${bestDistance}, metric ${bestMetric}`;
+  const suffix = hooks.typeSuffix?.(best, bestDistance);
+  if (suffix) header += suffix;
+  else if (best.type === 'connected') header += ' (connected, via interface)';
   lines.push(header);
 
   if (best.nextHop && best.type !== 'connected') {
@@ -2862,6 +2841,33 @@ function showIpRouteSpecific(router: Router, destIP: string): string {
   }
 
   return lines.join('\n');
+}
+
+function showIpRouteSpecific(router: Router, destIP: string): string {
+  router._ospfAutoConverge();
+  const rt = ((router as any).routingTable as any[]).filter((r) => router.isRouteUsable(r));
+  const eigrpAsn = router.getEIGRPEngine?.()?.getConfig().asn;
+
+  return renderRouteEntryDetail(rt, destIP, {
+    sourceName: (route) => {
+      if (route.type === 'ospf') return `ospf ${getOSPFProcessId(router)}`;
+      if (route.type === 'eigrp' && eigrpAsn) return `eigrp ${eigrpAsn}`;
+      return null;
+    },
+    typeSuffix: (route, distance) => {
+      if (route.type === 'ospf') {
+        const best = route as any;
+        const code = getOSPFRouteCode(
+          router, best.network.toString(), maskToCIDR(best.mask.toString()), best,
+        ).replace('*', ' ').trim();
+        return `, type ${OSPF_ROUTE_TYPE_NAME[code] ?? 'intra area'}`;
+      }
+      if (route.type === 'eigrp') {
+        return `, type ${distance === EIGRP_EXTERNAL_AD ? 'external' : 'internal'}`;
+      }
+      return null;
+    },
+  });
 }
 
 function getOSPFRouteCode(router: Router, net: string, cidr: number, routeEntry?: any): string {
@@ -3178,4 +3184,29 @@ export function ospfClearSpecs(getRouter: () => Router): CommandSpec[] {
         : undefined,
     },
   );
+}
+
+/**
+ * Ce que `show ip route` rend sur un ROUTEUR, une fois la commande
+ * declaree sur le socle.
+ *
+ * Les trois mots `repair-paths`, `track-table` et `profile` sont des
+ * VUES d'IOS et non des prefixes : repondre `% Network not in table`
+ * envoyait chercher une adresse que personne n'avait demandee.
+ */
+export function routerIpRouteView(router: Router, args: readonly string[]): string {
+  if (args.length === 0) return showIpRouteAll(router);
+  const first = args[0].toLowerCase();
+  if (first === 'vrf') {
+    if (!args[1]) return '% Incomplete command.';
+    return showIpRouteVrf(router, args[1]);
+  }
+  if (first === 'ospf') return showIpRouteOspf(router);
+  if (first === 'summary') return showIpRouteSummary(router);
+  const codes = ROUTE_FILTER_CODES[first];
+  if (codes) return filterRouteTableByCode(showIpRouteAll(router), codes);
+  if (first === 'repair-paths' || first === 'track-table' || first === 'profile') {
+    return showIpRouteAll(router);
+  }
+  return showIpRouteSpecific(router, args[0]);
 }
