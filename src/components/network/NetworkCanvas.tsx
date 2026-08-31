@@ -2,11 +2,12 @@
  * NetworkCanvas - Main canvas for network topology design
  */
 
-import { useRef, useCallback, useState, useEffect } from 'react';
+import { useRef, useCallback, useState, useEffect, useMemo } from 'react';
 import { ZoomIn, ZoomOut, Maximize2, X } from 'lucide-react';
 import { useNetworkStore } from '@/store/networkStore';
 import { NetworkDevice } from './NetworkDevice';
 import { ConnectionLine } from './ConnectionLine';
+import { computeBundleSlots } from './connection-line-logic';
 import { PacketAnimation, PacketLegend } from './PacketAnimation';
 import { useActivePackets } from '@/react/hooks/useActivePackets';
 import { Equipment } from '@/network';
@@ -52,6 +53,8 @@ export function NetworkCanvas({ onOpenTerminal }: NetworkCanvasProps) {
   // not a message on every re-render.
   const [announcement, setAnnouncement] = useState('');
   const prevDeviceCount = useRef(devices.length);
+  const bundleSlots = useMemo(() => computeBundleSlots(connections), [connections]);
+
   const prevConnectionCount = useRef(connections.length);
   const prevSelectedDeviceId = useRef(selectedDeviceId);
   const prevSelectedConnectionId = useRef(selectedConnectionId);
@@ -294,6 +297,7 @@ export function NetworkCanvas({ onOpenTerminal }: NetworkCanvasProps) {
                 key={connection.id}
                 connection={connection}
                 devices={devices}
+                slot={bundleSlots.get(connection.id)}
               />
             ))}
 
@@ -317,6 +321,7 @@ export function NetworkCanvas({ onOpenTerminal }: NetworkCanvasProps) {
               if (!connection) return null;
               return (
                 <PacketAnimation
+                  slot={bundleSlots.get(connection.id)}
                   key={packet.id}
                   packet={packet}
                   connection={connection}

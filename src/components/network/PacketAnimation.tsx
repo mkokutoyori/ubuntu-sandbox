@@ -4,6 +4,7 @@
 
 import { memo, useMemo } from 'react';
 import { NetworkDeviceUI, Connection } from '@/store/networkStore';
+import { computeOrthogonalPoints, pointAlongPolyline, type BundleSlot } from './connection-line-logic';
 
 export type PacketKind = 'arp' | 'icmp' | 'broadcast' | 'data';
 
@@ -21,6 +22,7 @@ interface PacketAnimationProps {
   packet: ActivePacket;
   connection: Connection;
   devices: NetworkDeviceUI[];
+  slot?: BundleSlot;
 }
 
 // Colors for different packet types
@@ -39,7 +41,7 @@ const PACKET_GLOWS = {
   data: 'rgba(59, 130, 246, 0.6)'
 };
 
-function PacketAnimationImpl({ packet, connection, devices }: PacketAnimationProps) {
+function PacketAnimationImpl({ packet, connection, devices, slot }: PacketAnimationProps) {
   const { sourceDevice, targetDevice, position } = useMemo(() => {
     const source = devices.find(d => d.id === connection.sourceDeviceId);
     const target = devices.find(d => d.id === connection.targetDeviceId);
@@ -48,27 +50,20 @@ function PacketAnimationImpl({ packet, connection, devices }: PacketAnimationPro
       return { sourceDevice: null, targetDevice: null, position: { x: 0, y: 0 } };
     }
 
-    // Calculate path similar to ConnectionLine
-    const dx = target.x - source.x;
-    const dy = target.y - source.y;
-    const distance = Math.sqrt(dx * dx + dy * dy);
-    const curveFactor = Math.min(distance * 0.3, 50);
-    const midX = (source.x + target.x) / 2;
-    const midY = (source.y + target.y) / 2 - curveFactor * 0.2;
-
+    const points = computeOrthogonalPoints(
+      { x: source.x, y: source.y },
+      { x: target.x, y: target.y },
+      slot,
+    );
     const direction = packet.sourceDeviceId === source.id ? 'forward' : 'reverse';
     const t = direction === 'forward' ? packet.progress : (1 - packet.progress);
-
-    // Quadratic bezier: B(t) = (1-t)²P0 + 2(1-t)tP1 + t²P2
-    const x = Math.pow(1 - t, 2) * source.x + 2 * (1 - t) * t * midX + Math.pow(t, 2) * target.x;
-    const y = Math.pow(1 - t, 2) * source.y + 2 * (1 - t) * t * (midY + curveFactor * 0.2) + Math.pow(t, 2) * target.y;
 
     return {
       sourceDevice: source,
       targetDevice: target,
-      position: { x, y }
+      position: pointAlongPolyline(points, t),
     };
-  }, [packet, connection, devices]);
+  }, [packet, connection, devices, slot]);
 
   if (!sourceDevice || !targetDevice) return null;
 
