@@ -221,11 +221,24 @@ describe('Partie 3 — LACP sur Cisco', () => {
     expect(out).toBe('');
   });
 
-  it('§3.2 MANQUE — `switchport mode trunk` sous un Port-channel est refuse', async () => {
-    const a = new CiscoSwitch('switch-cisco', 'Switch-A', 24, 0, 0);
-    const out = await taper(a, ['enable', 'configure terminal', 'interface port-channel 1',
-      'switchport mode trunk']);
-    expect(out).toContain('% Error');
+  it('§3.2 `switchport mode trunk` sous un Port-channel est HERITE par les membres', async () => {
+    const { a } = await laboCisco('active', 'active', 4);
+    const out = await taper(a, ['enable', 'configure terminal',
+      'interface port-channel 1', 'switchport mode trunk', 'end']);
+    expect(out).toBe('');
+    for (const p of CISCO_PORTS) {
+      expect(await a.executeCommand(`show interfaces ${p} switchport`), p)
+        .toContain('Administrative Mode: trunk');
+    }
+  });
+
+  it('§3.2 la configuration heritee est rejouee sur chaque membre', async () => {
+    const { a } = await laboCisco('active', 'active', 4);
+    await taper(a, ['enable', 'configure terminal',
+      'interface port-channel 1', 'switchport mode trunk', 'end']);
+    const cfg = await a.executeCommand('show running-config');
+    expect(cfg.split('\n').filter((l) => l.trim() === 'switchport mode trunk'))
+      .toHaveLength(CISCO_PORTS.length);
   });
 
   it('§3.2 etape 2 — `channel-group 1 mode active` est acceptee sans un mot', async () => {
@@ -271,12 +284,29 @@ describe('Partie 3 — LACP sur Cisco', () => {
     for (const p of CISCO_PORTS) expect(drapeauDe(sortie, abrege(p)), p).toBe('P');
   });
 
-  it('§3.3 MANQUE — `port-channel load-balance` est refuse, en disant pourquoi', async () => {
+  it('§3.3 `port-channel load-balance` accepte les sept methodes du tutoriel', async () => {
+    const a = new CiscoSwitch('switch-cisco', 'Switch-A', 24, 0, 0);
+    await taper(a, ['enable', 'configure terminal']);
+    for (const m of ['src-mac', 'dst-mac', 'src-dst-mac', 'src-ip', 'dst-ip',
+                     'src-dst-ip', 'src-dst-port']) {
+      expect(await a.executeCommand(`port-channel load-balance ${m}`), m).toBe('');
+    }
+  });
+
+  it('§3.3 une methode inventee est refusee', async () => {
     const a = new CiscoSwitch('switch-cisco', 'Switch-A', 24, 0, 0);
     const out = await taper(a, ['enable', 'configure terminal',
-      'port-channel load-balance src-dst-ip']);
-    expect(out).toContain('not supported');
-    expect(out).toContain('spanning tree');
+      'port-channel load-balance zorglub']);
+    expect(out).toContain('Invalid input');
+  });
+
+  it('§3.3 `show etherchannel load-balance` rend la methode configuree', async () => {
+    const a = new CiscoSwitch('switch-cisco', 'Switch-A', 24, 0, 0);
+    await taper(a, ['enable', 'configure terminal',
+      'port-channel load-balance src-dst-ip', 'end']);
+    const out = await a.executeCommand('show etherchannel load-balance');
+    expect(out).toContain('EtherChannel Load-Balancing Configuration:');
+    expect(out).toContain('src-dst-ip');
   });
 
   it('§3.4 `show etherchannel summary` rend la legende et la ligne du groupe', async () => {
@@ -319,18 +349,49 @@ describe('Partie 3 — LACP sur Cisco', () => {
       /^32768, ([0-9a-f]{2}:){5}[0-9a-f]{2}$/);
   });
 
-  it('§3.4 MANQUE — la forme `show lacp <groupe> neighbor` du tutoriel est refusee', async () => {
+  it('§3.4 la forme `show lacp <groupe> neighbor` du tutoriel repond', async () => {
     const { a } = await laboCisco('active', 'active', 2);
-    for (const c of ['show lacp 1 neighbor', 'show lacp 1 internal', 'show lacp 1 counters']) {
-      expect(await a.executeCommand(c), c).toContain('Invalid input');
-    }
+    expect(await a.executeCommand('show lacp 1 neighbor')).toMatch(/Fa0\/1\s+32768,/);
+    expect(await a.executeCommand('show lacp 1 internal')).toMatch(/Fa0\/1\s+SA\s+bundled/);
+    expect(await a.executeCommand('show lacp 1 counters')).toMatch(/Fa0\/1\s+\d+\s+\d+/);
   });
 
-  it('§3.4 MANQUE — `test etherchannel load-balance` n\'existe pas', async () => {
+  it('§3.4 un groupe qui n\'existe pas est nomme comme tel', async () => {
     const { a } = await laboCisco('active', 'active', 2);
+    expect(await a.executeCommand('show lacp 9 neighbor'))
+      .toBe('% Channel group 9 does not exist');
+  });
+
+  it('§3.4 `test etherchannel load-balance` nomme le lien qu\'un flux emprunterait', async () => {
+    const { a } = await laboCisco('active', 'active', 4);
     const out = await a.executeCommand(
       'test etherchannel load-balance interface port-channel 1 ip 192.168.1.55 10.0.30.1');
-    expect(out).toContain('Invalid input');
+    expect(out).toMatch(/^Would use Fa0\/[1-4]$/);
+  });
+
+  it('§2.4 le MEME flux emprunte TOUJOURS le meme lien', async () => {
+    const { a } = await laboCisco('active', 'active', 4);
+    const q = 'test etherchannel load-balance interface port-channel 1 ip 192.168.1.55 10.0.30.1';
+    const premier = await a.executeCommand(q);
+    expect(await a.executeCommand(q)).toBe(premier);
+  });
+
+  it('§2.4 deux flux differents peuvent emprunter deux liens differents', async () => {
+    const { a } = await laboCisco('active', 'active', 4);
+    const vus = new Set<string>();
+    for (const src of ['192.168.1.55', '192.168.1.60', '192.168.1.70', '192.168.1.80',
+                       '192.168.1.90', '10.1.1.1', '10.2.2.2', '172.16.5.5']) {
+      vus.add(await a.executeCommand(
+        `test etherchannel load-balance interface port-channel 1 ip ${src} 10.0.30.1`));
+    }
+    expect(vus.size).toBeGreaterThan(1);
+  });
+
+  it('§3.4 `test etherchannel load-balance` refuse un groupe inconnu', async () => {
+    const { a } = await laboCisco('active', 'active', 2);
+    expect(await a.executeCommand(
+      'test etherchannel load-balance interface port-channel 9 ip 1.1.1.1 2.2.2.2'))
+      .toBe('% Channel group 9 does not exist');
   });
 
   it('§3.4 MANQUE — `show interface port-channel 1` n\'existe pas', async () => {
@@ -348,10 +409,25 @@ describe('Partie 3 — LACP sur Cisco', () => {
     }
   });
 
-  it('§3.2 MANQUE — `interface Port-channel1` est absente de la configuration rendue', async () => {
+  it('§3.2 `interface Port-channel1` figure dans la configuration rendue', async () => {
     const { a } = await laboCisco('active', 'active', 2);
-    const cfg = await a.executeCommand('show running-config');
-    expect(cfg).not.toContain('interface Port-channel1');
+    expect(await a.executeCommand('show running-config')).toContain('interface Port-channel1');
+  });
+
+  it('§3.3 la methode de repartition figure dans la configuration rendue', async () => {
+    const { a } = await laboCisco('active', 'active', 2);
+    await taper(a, ['enable', 'configure terminal',
+      'port-channel load-balance src-dst-mac', 'end']);
+    expect(await a.executeCommand('show running-config'))
+      .toContain('port-channel load-balance src-dst-mac');
+  });
+
+  it('§3.4 `show etherchannel <N> port-channel` rend l\'agregateur et son compte de ports', async () => {
+    const { a } = await laboCisco('active', 'active', 4);
+    const out = await a.executeCommand('show etherchannel 1 port-channel');
+    expect(out).toContain('Port-channel: Port-channel1    (Primary Aggregator)');
+    expect(out).toContain('Number of ports = 4');
+    expect(out).toContain('Protocol            =   LACP');
   });
 });
 
@@ -444,12 +520,20 @@ describe('Partie 4 — LACP sur Huawei', () => {
     expect(await a.executeCommand('display eth-trunk 1')).toContain('Number Of Up Ports In Trunk: 2');
   });
 
-  it('§4.3 MANQUE — `interface Eth-Trunk1` est absente de la configuration rendue', async () => {
+  it('§4.3 `interface Eth-Trunk1` et son mode figurent dans la configuration rendue', async () => {
     const { a } = await laboHuawei(2);
     const cfg = await a.executeCommand('display current-configuration');
     expect(cfg).toContain('eth-trunk 1');
-    expect(cfg).not.toContain('interface Eth-Trunk1');
-    expect(cfg).not.toContain('mode lacp-static');
+    expect(cfg).toContain('interface Eth-Trunk1');
+    expect(cfg).toContain(' mode lacp-static');
+  });
+
+  it('§4.2 la methode de repartition figure dans la configuration rendue', async () => {
+    const a = new HuaweiSwitch('switch-huawei', 'Switch-A', 24, 0, 0);
+    await taper(a, ['system-view', 'interface Eth-Trunk 1', 'mode lacp-static',
+      'load-balance src-dst-ip', 'quit', 'quit']);
+    expect(await a.executeCommand('display current-configuration'))
+      .toContain(' load-balance src-dst-ip');
   });
 });
 
@@ -611,35 +695,66 @@ describe('Ce que le tutoriel enseigne et que ce simulateur ne modelise pas', () 
   });
   afterEach(() => { vi.useRealTimers(); });
 
-  it('§1.3 et §2.4 MANQUE — aucune des methodes de repartition n\'est acceptee', async () => {
+  it('§1.2 un Port-channel est UN port logique : une diffusion ne sort qu\'une fois', async () => {
     const a = new CiscoSwitch('switch-cisco', 'Switch-A', 24, 0, 0);
-    await taper(a, ['enable', 'configure terminal']);
-    for (const m of ['src-mac', 'dst-mac', 'src-dst-mac', 'src-ip', 'dst-ip',
-                     'src-dst-ip', 'src-dst-port']) {
-      const out = await a.executeCommand(`port-channel load-balance ${m}`);
-      expect(out, m).toContain('not supported');
-    }
-  });
+    const b = new CiscoSwitch('switch-cisco', 'Switch-B', 24, 300, 0);
+    cableCisco(a, b, CISCO_PORTS);
+    const pc1 = new LinuxPC('linux-pc', 'PC1', -200, 0);
+    const pc2 = new LinuxPC('linux-pc', 'PC2', 500, 0);
+    new Cable('acces-a').connect(pc1.getPort('eth0')!, a.getPort('FastEthernet0/10')!);
+    new Cable('acces-b').connect(pc2.getPort('eth0')!, b.getPort('FastEthernet0/10')!);
+    await joindreGroupe(a, CISCO_PORTS, 'active');
+    await joindreGroupe(b, CISCO_PORTS, 'active');
+    await vi.advanceTimersByTimeAsync(LACP_PERIODIC_MS);
 
-  it('§2.4 MANQUE — un groupe forme ne repartit pas les trames sur ses membres', async () => {
-    const { a, b, ports } = await laboCisco('active', 'active', 4);
-    const emisPar = new Map<string, number>();
-    a.getBus().subscribe('port.frame.tx-requested', (e: unknown) => {
-      const p = (e as { payload?: { port?: string } }).payload?.port;
+    let recues = 0;
+    pc2.getBus().subscribe('port.frame.received', (e: unknown) => {
       const f = (e as { payload?: { frame?: EthernetFrame } }).payload?.frame;
-      if (!p || (f?.payload as { type?: string } | undefined)?.type === 'lacp') return;
-      emisPar.set(p, (emisPar.get(p) ?? 0) + 1);
+      if (f?.etherType === 0x88b5) recues += 1;
     });
-    const trame: EthernetFrame = {
-      srcMAC: new MACAddress('02:00:00:00:aa:01'),
-      dstMAC: new MACAddress('02:00:00:00:bb:02'),
-      etherType: 0x0800,
-      payload: { type: 'ipv4' } as never,
-    } as EthernetFrame;
-    b.getPort(ports[0])!.receiveFrame(trame);
-    await vi.advanceTimersByTimeAsync(100);
-    expect(emisPar.size).toBeLessThanOrEqual(1);
-  });
+    const diffusion = {
+      srcMAC: pc1.getPort('eth0')!.getMAC(),
+      dstMAC: MACAddress.broadcast(),
+      etherType: 0x88b5,
+      payload: { type: 'opaque' },
+    } as unknown as EthernetFrame;
+    a.getPort('FastEthernet0/10')!.receiveFrame(diffusion);
+    await vi.advanceTimersByTimeAsync(200);
+    expect(recues).toBe(1);
+  }, 30_000);
+
+  it('§1.2 un faisceau de quatre liens ne fabrique pas de tempete', async () => {
+    const compter = async (nbLiens: number): Promise<number> => {
+      resetCounters(); resetDeviceCounters(); MACAddress.resetCounter(); Logger.reset();
+      const a = new CiscoSwitch('switch-cisco', 'A', 24, 0, 0);
+      const b = new CiscoSwitch('switch-cisco', 'B', 24, 300, 0);
+      const liens = CISCO_PORTS.slice(0, nbLiens);
+      cableCisco(a, b, liens);
+      const pc1 = new LinuxPC('linux-pc', 'PC1', -200, 0);
+      const pc2 = new LinuxPC('linux-pc', 'PC2', 500, 0);
+      new Cable('x1').connect(pc1.getPort('eth0')!, a.getPort('FastEthernet0/10')!);
+      new Cable('x2').connect(pc2.getPort('eth0')!, b.getPort('FastEthernet0/10')!);
+      await joindreGroupe(a, liens, 'active');
+      await joindreGroupe(b, liens, 'active');
+      await vi.advanceTimersByTimeAsync(LACP_PERIODIC_MS);
+      let vues = 0;
+      pc2.getBus().subscribe('port.frame.received', (e: unknown) => {
+        const f = (e as { payload?: { frame?: EthernetFrame } }).payload?.frame;
+        if (f?.etherType === 0x88b5) vues += 1;
+      });
+      a.getPort('FastEthernet0/10')!.receiveFrame({
+        srcMAC: pc1.getPort('eth0')!.getMAC(),
+        dstMAC: MACAddress.broadcast(),
+        etherType: 0x88b5,
+        payload: { type: 'opaque' },
+      } as unknown as EthernetFrame);
+      await vi.advanceTimersByTimeAsync(200);
+      return vues;
+    };
+    expect(await compter(1)).toBe(1);
+    expect(await compter(2)).toBe(1);
+    expect(await compter(4)).toBe(1);
+  }, 60_000);
 
   it('§3.4 le code (P) dit membre du groupe, (I) dit isole', async () => {
     const { a: groupe } = await laboCisco('active', 'active', 2);

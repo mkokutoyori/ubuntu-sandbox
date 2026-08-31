@@ -79,7 +79,7 @@ export class LacpAgent extends ReactiveAgentBase {
   ensureGroup(groupId: number, name?: string, loadBalance?: string): void {
     let g = this.config.groups.get(groupId);
     if (!g) {
-      g = { name: name ?? `Port-channel${groupId}`, loadBalance: loadBalance ?? 'src-dst-mac' };
+      g = { name: name ?? `Port-channel${groupId}`, loadBalance: loadBalance ?? this.config.loadBalance };
       this.config.groups.set(groupId, g);
     } else {
       if (name) g.name = name;
@@ -126,6 +126,15 @@ export class LacpAgent extends ReactiveAgentBase {
 
   getGroupMembers(groupId: number): LacpPortInfo[] {
     return Array.from(this.config.ports.values()).filter(p => p.groupId === groupId);
+  }
+
+  setLoadBalance(method: string): void {
+    this.config.loadBalance = method;
+    for (const g of this.config.groups.values()) g.loadBalance = method;
+  }
+
+  getLoadBalance(): string {
+    return this.config.loadBalance;
   }
 
   getAllGroups(): Array<{ id: number; name: string; loadBalance: string; members: LacpPortInfo[] }> {

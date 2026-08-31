@@ -15,6 +15,7 @@
  */
 
 import { CiscoShellBase } from './CiscoShellBase';
+import { LOAD_BALANCE_METHODS, selectBundleMemberForFlow, type LoadBalanceMethod } from '@/network/lacp/loadBalance';
 import { privilegeConfigLines } from './cli/CliAuthorization';
 import { getPrivilegeRules } from '../router/security/CiscoPrivilegeStore';
 import { CommandTrie, formatInvalidInput } from './CommandTrie';
@@ -3425,6 +3426,28 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
         }
         return out.length > 0 ? out.join('\n') : 'No EtherChannel groups configured';
       }
+      if (args[0]?.toLowerCase() === 'load-balance') {
+        return 'EtherChannel Load-Balancing Configuration:\n'
+          + `        ${lacp.getLoadBalance()}`;
+      }
+      if (args[0]?.toLowerCase() === 'port-channel'
+        || args[1]?.toLowerCase() === 'port-channel') {
+        const vise = /^\d+$/.test(args[0] ?? '') ? Number(args[0]) : null;
+        const out: string[] = ['Port-channels in the group:', '----------------------'];
+        for (const g of groups) {
+          if (vise !== null && g.id !== vise) continue;
+          const actifs = g.members.filter(m => m.bundled);
+          out.push('');
+          out.push(`Port-channel: ${g.name}    (Primary Aggregator)`);
+          out.push('');
+          out.push(`Age of the Port-channel   = 0d:00h:00m:00s`);
+          out.push(`Logical slot/port   = 16/${g.id}   Number of ports = ${actifs.length}`);
+          out.push(`Port state          = Port-channel Ag-Inuse`);
+          out.push(`Protocol            =   ${actifs.length > 0 && g.members.some(m => m.mode !== 'on') ? 'LACP' : '-'}`);
+          out.push(`Port security       = Disabled`);
+        }
+        return out.length > 2 ? out.join('\n') : 'No EtherChannel groups configured';
+      }
       return 'EtherChannel: no detail';
     });
 
@@ -4607,6 +4630,19 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
         lines.push(` shutdown`);
       }
       lines.push('!');
+    }
+
+    const lacpRendu = (sw as unknown as { getLacpAgent?: () => {
+      getAllGroups(): Array<{ id: number; name: string }>; getLoadBalance(): string;
+    } }).getLacpAgent?.();
+    if (lacpRendu) {
+      const lb = lacpRendu.getLoadBalance();
+      if (lb && lb !== 'src-dst-ip') lines.push(`port-channel load-balance ${lb}`);
+      for (const g of lacpRendu.getAllGroups()) {
+        lines.push(`interface ${g.name}`);
+        for (const l of this.ifExtra.get(g.name) ?? []) lines.push(` ${l}`);
+        lines.push('!');
+      }
     }
 
     // SVI (interface Vlan N) blocks — IP address, helper-address, admin
@@ -6153,9 +6189,13 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
       return '';
     });
 
-    trie.config.registerGreedy('port-channel load-balance', 'EtherChannel load-balancing', () =>
-      '% Load-balancing is not supported: a bundle here groups members for spanning tree, '
-      + 'it does not distribute frames across them.');
+    trie.config.registerGreedy('port-channel load-balance', 'EtherChannel load-balancing', (args) => {
+      const methode = (args[0] ?? '').toLowerCase();
+      if (!methode) return CISCO_ERRORS.INCOMPLETE;
+      if (!LOAD_BALANCE_METHODS.has(methode)) return CISCO_ERRORS.INVALID_INPUT;
+      agent().setLoadBalance(methode as LoadBalanceMethod);
+      return '';
+    });
 
     trie.configIf.registerGreedy('lacp rate', 'LACPDU rate', (args) => {
       const rate = (args[0] ?? '').toLowerCase();
@@ -6176,6 +6216,24 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
     });
 
     trie.privileged.registerGreedy('show lacp', 'Display LACP state', (args) => this.showLacp(args));
+    trie.privileged.registerGreedy('test etherchannel load-balance',
+      'Simulate the load-balance decision for a flow', (args) => {
+        const mots = args.map(a => a.toLowerCase());
+        const iPort = mots.indexOf('port-channel');
+        const groupId = iPort >= 0 ? Number(args[iPort + 1]) : NaN;
+        if (!Number.isFinite(groupId)) return CISCO_ERRORS.INCOMPLETE;
+        const groupe = this.requireLacp().getAllGroups().find(g => g.id === groupId);
+        if (!groupe) return `% Channel group ${groupId} does not exist`;
+        const membres = groupe.members.filter(m => m.bundled).map(m => m.portName);
+        if (membres.length === 0) return '% No ports are bundled in this port-channel';
+        const iCle = mots.findIndex(m => m === 'ip' || m === 'mac');
+        if (iCle < 0) return CISCO_ERRORS.INCOMPLETE;
+        const cle = args.slice(iCle + 1).filter(Boolean).join('|');
+        if (!cle) return CISCO_ERRORS.INCOMPLETE;
+        const elu = selectBundleMemberForFlow(membres, cle);
+        return elu ? `Would use ${this.abbreviateInterface(elu)}` : CISCO_ERRORS.INVALID_INPUT;
+      });
+
     trie.privileged.registerGreedy('show pagp', 'Display PAgP state', () =>
       '% PAgP is not implemented: this switch aggregates with LACP only.');
   }
@@ -6212,12 +6270,19 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
   private showLacp(args: string[]): string {
     const agent = this.requireLacp();
     const cfg = agent.getConfig();
-    const what = (args[0] ?? '').toLowerCase();
+    const restreint = /^\d+$/.test(args[0] ?? '') ? Number(args[0]) : null;
+    const reste = restreint === null ? args : args.slice(1);
+    const what = (reste[0] ?? '').toLowerCase();
     const sysId = `${cfg.systemPriority}, ${cfg.systemId}`;
 
     if (what === 'sys-id') return sysId;
 
-    const members = agent.getAllGroups().flatMap(g => g.members);
+    const groupes = agent.getAllGroups()
+      .filter(g => restreint === null || g.id === restreint);
+    if (restreint !== null && groupes.length === 0) {
+      return `% Channel group ${restreint} does not exist`;
+    }
+    const members = groupes.flatMap(g => g.members);
     if (what === 'neighbor') {
       if (members.length === 0) return 'Flags:  S - Device is requesting Slow LACPDUs';
       const lines = [
@@ -6512,9 +6577,26 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
     return [...new Set(sorties)].join('\n');
   }
 
+  private membresDuPortChannel(nom: string): string[] {
+    const m = /^Port-channel(\d+)$/i.exec(nom);
+    if (!m) return [];
+    const lacp = (this.d() as unknown as { getLacpAgent?: () => {
+      getGroupMembers(id: number): Array<{ portName: string }>;
+    } }).getLacpAgent?.();
+    return lacp?.getGroupMembers(Number(m[1])).map(p => p.portName) ?? [];
+  }
+
   private applyToSelectedInterfaces(fn: (portName: string) => string): string {
     const results: string[] = [];
     for (const portName of this.selectedInterfaceRange) {
+      const membres = this.membresDuPortChannel(portName);
+      if (membres.length > 0) {
+        for (const membre of membres) {
+          const r = fn(membre);
+          if (r) results.push(r);
+        }
+        continue;
+      }
       const result = fn(portName);
       if (result) results.push(result);
     }

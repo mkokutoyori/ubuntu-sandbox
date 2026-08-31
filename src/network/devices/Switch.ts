@@ -2485,9 +2485,14 @@ export abstract class Switch extends Equipment {
 
   // ─── Flood within VLAN ────────────────────────────────────────────
 
+  protected aggregationEgressPort(portName: string, _frame: EthernetFrame): string | null {
+    return portName;
+  }
+
   private floodFrame(exceptPort: string, frame: EthernetFrame, vlan: number, cos: number = 0, isQinQ: boolean = false): void {
     for (const [portName, cfg] of this.switchportConfigs) {
       if (portName === exceptPort) continue;
+      if (this.aggregationEgressPort(portName, frame) !== portName) continue;
 
       const port = this.getPort(portName);
       if (!port || !port.getIsUp() || !port.isConnected()) continue;
@@ -2544,7 +2549,8 @@ export abstract class Switch extends Equipment {
 
   // ─── Forward to Specific Port ─────────────────────────────────────
 
-  private forwardToPort(portName: string, frame: EthernetFrame, vlan: number, ingressPort?: string, cos: number = 0, isQinQ: boolean = false): void {
+  private forwardToPort(nominalPort: string, frame: EthernetFrame, vlan: number, ingressPort?: string, cos: number = 0, isQinQ: boolean = false): void {
+    const portName = this.aggregationEgressPort(nominalPort, frame) ?? nominalPort;
     const cfg = this.switchportConfigs.get(portName);
     if (!cfg) return;
 
