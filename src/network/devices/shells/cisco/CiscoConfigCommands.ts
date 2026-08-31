@@ -256,17 +256,6 @@ export function buildConfigCommands(trie: CommandTrie, ctx: CiscoShellContext): 
   trie.registerGreedy('no ip local policy route-map', 'Remove local PBR', () => {
     getGlobalConfig(ctx.r()).localPolicyRouteMap = null; return '';
   });
-  trie.registerGreedy('ip cef load-sharing algorithm', 'CEF load-sharing algorithm', (args) => {
-    const algo = args[0]?.toLowerCase();
-    if (!algo) return CISCO_ERRORS.INCOMPLETE;
-    if (!CEF_LOAD_SHARING_ALGORITHMS.has(algo)) throw new CliInvalidInput({ token: args[0] });
-    getGlobalConfig(ctx.r()).cefLoadSharingAlgorithm = algo;
-    return '';
-  });
-  trie.describeNode('ip cef load-sharing', 'CEF load-sharing');
-  trie.registerGreedy('no ip cef load-sharing algorithm', 'Restore the default algorithm', () => {
-    getGlobalConfig(ctx.r()).cefLoadSharingAlgorithm = null; return '';
-  });
 
   trie.register('router rip', 'Enter RIP routing protocol configuration', () => {
     if (!ctx.r().isRIPEnabled()) ctx.r().enableRIP({ gcTimeout: 60_000 });

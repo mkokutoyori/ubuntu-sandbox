@@ -65,6 +65,9 @@ import { buildPrompt } from './PromptBuilder';
 import { CLIStateMachine, type ModeHierarchy } from './CLIStateMachine';
 import { estGenreAcces } from '../../ntp/accessGroups';
 import { NTP_VERSION } from '../../ntp/types';
+import {
+  getGlobalConfig, CEF_LOAD_SHARING_ALGORITHMS, CEF_ACCOUNTING_KINDS,
+} from '../router/config/CiscoGlobalConfig';
 import { hms } from '@/lib/format';
 
 /**
@@ -5412,6 +5415,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       ...this.bannerSpecs(),
       ...this.archiveExecSpecs(),
       ...this.dhcpGlobalPartageeSpecs(),
+      ...this.cefSpecs(),
       ...this.enableSpecs(),
       ...this.configureSpecs(),
       ...this.hardeningSpecs(),
@@ -5858,6 +5862,89 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     return (this.d() as unknown as {
       _getDHCPServerInternal?: () => DhcpConfigServer | undefined;
     })._getDHCPServerInternal?.();
+  }
+
+  /**
+   * `ip cef` et ses trois reglages, declares une fois pour les deux
+   * plateformes.
+   *
+   * `ip cef` etait enregistre DEUX fois sur le meme arbre : une fois par
+   * la famille de securite, qui ecrit le drapeau que `show ip cef` lit
+   * et que la configuration rend, une fois par un helper du socle qui
+   * ecrivait dans `CiscoConfigState` — une table dont la methode de
+   * rendu n'a aucun appelant de production. La seconde etait donc morte
+   * et ombree ; elle est supprimee, avec son entree dans la table.
+   *
+   * Le noeud etait GLOUTON, donc `ip cef zorglub` et
+   * `ip cef accounting zorglub` etaient acceptes en silence — et
+   * `accounting`, que la commande accepte vraiment, n'etait range nulle
+   * part, donc perdu au rechargement d'une topologie. Les suites sont
+   * desormais declarees, et ce qui n'en fait pas partie est refuse.
+   */
+  protected cefSpecs(): CommandSpec[] {
+    const sec = () => getSecurityConfig(this.d());
+    const glob = () => getGlobalConfig(this.d() as object);
+    const enumere = (
+      name: string, description: string, valeurs: ReadonlySet<string>,
+      mots: Readonly<Record<string, string>>,
+    ): ArgumentSpec => ({
+      name, type: 'ENUM', description,
+      values: [...valeurs].sort().map(keyword => ({
+        keyword, description: mots[keyword] ?? description,
+      })),
+    });
+
+    return [
+      {
+        id: 'ip-cef', path: ['ip', 'cef'],
+        description: 'Enable Cisco Express Forwarding',
+        undoDescription: 'Disable Cisco Express Forwarding',
+        modes: ['config'], minPrivilege: 15,
+        run: () => { sec().ipCef = true; return ''; },
+        undo: () => { sec().ipCef = false; return ''; },
+      },
+      {
+        id: 'ip-cef-distributed', path: ['ip', 'cef', 'distributed'],
+        description: 'Enable distributed Cisco Express Forwarding',
+        undoDescription: 'Disable distributed Cisco Express Forwarding',
+        modes: ['config'], minPrivilege: 15,
+        run: () => { sec().ipCefDistributed = true; return ''; },
+        undo: () => { sec().ipCefDistributed = false; return ''; },
+      },
+      {
+        id: 'ip-cef-load-sharing',
+        path: ['ip', 'cef', 'load-sharing', 'algorithm',
+          enumere('algorithme', 'Load-sharing algorithm',
+            CEF_LOAD_SHARING_ALGORITHMS, {
+              original: 'Original algorithm',
+              tunnel: 'Algorithm for tunnel environments',
+              universal: 'Universal algorithm',
+              'include-ports': 'Algorithm including layer-4 ports',
+            })],
+        description: 'Configure the CEF load-sharing algorithm',
+        undoDescription: 'Restore the default algorithm',
+        modes: ['config'], minPrivilege: 15,
+        run: (_session, args) => {
+          glob().cefLoadSharingAlgorithm = args.algorithme; return '';
+        },
+        undo: () => { glob().cefLoadSharingAlgorithm = null; return ''; },
+      },
+      {
+        id: 'ip-cef-accounting',
+        path: ['ip', 'cef', 'accounting',
+          enumere('quoi', 'What to account for', CEF_ACCOUNTING_KINDS, {
+            'per-prefix': 'Count packets and bytes per prefix',
+            'non-recursive': 'Count only non-recursive prefixes',
+            'load-balance-hash': 'Count per load-balance hash bucket',
+            'prefix-length': 'Count per prefix length',
+          })],
+        description: 'Enable CEF accounting',
+        undoDescription: 'Disable CEF accounting',
+        modes: ['config'], minPrivilege: 15,
+        run: (_session, args) => { glob().cefAccounting.add(args.quoi); return ''; },
+        undo: (_session, args) => { glob().cefAccounting.delete(args.quoi); return ''; },
+      },
+    ];
   }
 
   protected enableSpecs(): readonly CommandSpec[] {
@@ -8545,23 +8632,6 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       return '';
     });
 
-    // Global feature toggles — mutate the real CiscoConfigState
-    // Repository (shared switch + router, DRY). `show cdp`/`show lldp`
-    // and `show running-config` project this real state.
-    const flag = (feature: string, enableCmd: string, desc: string) => {
-      trie.registerGreedy(enableCmd, desc, () => {
-        this.configState.set(feature, true);
-        return '';
-      });
-      trie.registerGreedy(`no ${enableCmd}`, `Disable ${desc}`, () => {
-        this.configState.set(feature, false);
-        return '';
-      });
-    };
-    // cdp/lldp follow the `flag` pattern, but the cdp toggle must also
-    // start / stop the per-device protocol agent so `show cdp neighbors`
-    // reflects real learnt state (and stops learning when disabled).
-    flag('ip cef', 'ip cef', 'CEF');
     this.registerHttpServerOn(trie);
     // `ip routing` / `ipv6 unicast-routing` enable forms are owned by
     // the router (CiscoOspfCommands, device-specific); only record the

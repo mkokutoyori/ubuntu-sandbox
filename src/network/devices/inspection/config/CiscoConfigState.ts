@@ -24,7 +24,6 @@ const DEFAULTS: FeatureDefaults = {
   // Routers route by default; CEF on.
   'ip routing': true,
   'ipv6 unicast-routing': false,
-  'ip cef': true,
   // `ip http server` / `ip http secure-server` ne sont plus ici : un
   // booléen ne peut pas dire sur quel port ni pour qui, et cette table
   // n'a pas de rendu vivant. Ils vivent dans `CiscoHttpService`, qui

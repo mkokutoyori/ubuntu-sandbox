@@ -742,7 +742,6 @@ export function buildSecurityConfigCommands(trie: CommandTrie, ctx: CiscoSecurit
   buildIdentityConfigCommands(trie, ctx);
 
 
-  trie.registerGreedy('ip cef', 'Enable CEF', () => { sec().ipCef = true; return ''; });
   trie.registerGreedy('no ip cef', 'Disable CEF', () => { sec().ipCef = false; return ''; });
   trie.registerGreedy('ip multicast-routing', 'Enable IP multicast routing', () => {
     sec().ipMulticastRouting = true;
