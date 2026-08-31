@@ -269,7 +269,6 @@ export abstract class LinuxMachine extends EndHost
   private readonly virtualInterfaces: Set<string> = new Set();
 
   /** 802.1Q sub-interfaces created via `ip link add ... type vlan`: name → {parent, vid}. */
-  private readonly vlanSubInterfaces: Map<string, { parent: string; vid: number }> = new Map();
 
   /** Network namespaces created via `ip netns add` — each holds its own routing/ARP state. */
   private readonly netNamespaces: Map<string, {
@@ -2797,7 +2796,7 @@ export abstract class LinuxMachine extends EndHost
     port.setUp(true);
     this.addPort(port);
     this.virtualInterfaces.add(name);
-    this.vlanSubInterfaces.set(name, { parent, vid });
+    this.registerVlanSubInterface(name, parent, vid);
     return '';
   }
 
@@ -2809,7 +2808,7 @@ export abstract class LinuxMachine extends EndHost
     }
     this.ports.delete(name);
     this.virtualInterfaces.delete(name);
-    this.vlanSubInterfaces.delete(name);
+    this.unregisterVlanSubInterface(name);
     return '';
   }
 
@@ -2862,54 +2861,6 @@ export abstract class LinuxMachine extends EndHost
       this.arpTable = savedArp;
       this.defaultGateway = savedGateway;
     }
-  }
-
-  override sendFrame(portName: string, frame: EthernetFrame): boolean {
-    const vlanSub = this.vlanSubInterfaces.get(portName);
-    if (vlanSub) {
-      const tagged: TaggedEthernetFrame = {
-        ...frame,
-        dot1q: { tpid: 0x8100, pcp: 0, dei: 0, vid: vlanSub.vid },
-      };
-      const sent = super.sendFrame(vlanSub.parent, tagged);
-      this.getPort(portName)?.recordOutboundFrame(frame);
-      return sent;
-    }
-    return super.sendFrame(portName, frame);
-  }
-
-  protected override handleFrame(portName: string, frame: EthernetFrame): void {
-    const tagged = frame as TaggedEthernetFrame;
-    if (tagged.dot1q) {
-      for (const [subName, sub] of this.vlanSubInterfaces) {
-        if (sub.parent === portName && sub.vid === tagged.dot1q.vid) {
-          const { dot1q, ...untagged } = tagged;
-          const subPort = this.getPort(subName);
-          if (subPort) {
-            subPort.receiveFrame(untagged);
-            return;
-          }
-          super.handleFrame(subName, untagged);
-          return;
-        }
-      }
-      return;
-    }
-    super.handleFrame(portName, frame);
-  }
-
-  /**
-   * A VLAN sub-interface's own `Port` is never cabled (see
-   * `addVlanSubInterface` — frames are tunneled through the parent via
-   * the `sendFrame` override above), so `Port.isOperationallyUp()` on it
-   * always reports no carrier even though the parent link is up. Reflect
-   * the parent's real carrier for a sub-interface instead.
-   */
-  protected override isInterfaceOperationallyUp(portName: string, port: Port): boolean {
-    const vlanSub = this.vlanSubInterfaces.get(portName);
-    if (!vlanSub) return super.isInterfaceOperationallyUp(portName, port);
-    const parentPort = this.ports.get(vlanSub.parent);
-    return port.getIsUp() && !port.isAdminDown() && !!parentPort?.isOperationallyUp();
   }
 
   /** Cached SSH server context — replaced on `systemctl restart sshd`. */

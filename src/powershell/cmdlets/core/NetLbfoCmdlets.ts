@@ -198,6 +198,44 @@ export class GetNetLbfoTeamNicCmdlet implements ICmdlet {
   }
 }
 
+export class AddNetLbfoTeamNicCmdlet implements ICmdlet {
+  readonly name = 'add-netlbfoteamnic';
+  readonly displayName = 'Add-NetLbfoTeamNic';
+  readonly aliases = [] as const;
+  readonly parameters = ['Team', 'VlanID', 'Name', 'Confirm'] as const;
+
+  execute(ctx: CmdletContext): PSValue {
+    const net = requireTeaming(ctx);
+    if (!net.addNicTeamNic) return null;
+    const team = psValueToString(ctx.named['team'] ?? ctx.positional[0] ?? '');
+    const brut = ctx.named['vlanid'] ?? ctx.positional[1];
+    const vlanId = Number(psValueToString(brut ?? ''));
+    const nom = ctx.named['name'] ?? ctx.named['ifalias']
+      ?? ctx.named['interfacealias'] ?? ctx.positional[2];
+    const erreur = net.addNicTeamNic(team, vlanId,
+      nom !== undefined ? psValueToString(nom) : undefined);
+    if (erreur) ctx.emitError(erreur);
+    return null;
+  }
+}
+
+export class RemoveNetLbfoTeamNicCmdlet implements ICmdlet {
+  readonly name = 'remove-netlbfoteamnic';
+  readonly displayName = 'Remove-NetLbfoTeamNic';
+  readonly aliases = [] as const;
+  readonly parameters = ['Team', 'VlanID', 'Confirm'] as const;
+
+  execute(ctx: CmdletContext): PSValue {
+    const net = requireTeaming(ctx);
+    if (!net.removeNicTeamNic) return null;
+    const team = psValueToString(ctx.named['team'] ?? ctx.positional[0] ?? '');
+    const vlanId = Number(psValueToString(ctx.named['vlanid'] ?? ctx.positional[1] ?? ''));
+    const erreur = net.removeNicTeamNic(team, vlanId);
+    if (erreur) ctx.emitError(erreur);
+    return null;
+  }
+}
+
 export class AddNetLbfoTeamMemberCmdlet implements ICmdlet {
   readonly name = 'add-netlbfoteammember';
   readonly displayName = 'Add-NetLbfoTeamMember';

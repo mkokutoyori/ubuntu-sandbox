@@ -130,6 +130,7 @@ export interface GreDecapsulator {
 // ─── Internal Types ────────────────────────────────────────────────
 
 import type { ARPEntry } from '../core/types';
+import type { TaggedEthernetFrame } from './Switch';
 
 const CLIENT_DDNS_TTL = 1200;
 
@@ -1752,7 +1753,46 @@ export abstract class EndHost extends Equipment {
   }
 
 
+  protected readonly vlanSubInterfaces = new Map<string, { parent: string; vid: number }>();
+
+  protected registerVlanSubInterface(name: string, parent: string, vid: number): void {
+    this.vlanSubInterfaces.set(name, { parent, vid });
+  }
+
+  protected unregisterVlanSubInterface(name: string): void {
+    this.vlanSubInterfaces.delete(name);
+  }
+
+  getVlanSubInterface(name: string): { parent: string; vid: number } | undefined {
+    return this.vlanSubInterfaces.get(name);
+  }
+
+  override sendFrame(portName: string, frame: EthernetFrame): boolean {
+    const sub = this.vlanSubInterfaces.get(portName);
+    if (!sub) return super.sendFrame(portName, frame);
+    const tagged: TaggedEthernetFrame = {
+      ...frame,
+      dot1q: { tpid: 0x8100, pcp: 0, dei: 0, vid: sub.vid },
+    };
+    const sent = super.sendFrame(sub.parent, tagged);
+    this.getPort(portName)?.recordOutboundFrame(frame);
+    return sent;
+  }
+
   protected handleFrame(portName: string, frame: EthernetFrame): void {
+    const tagged = frame as TaggedEthernetFrame;
+    if (tagged.dot1q && !this.vlanSubInterfaces.has(portName)) {
+      const parent = this.aggregateIngressPort(portName) ?? portName;
+      for (const [subName, sub] of this.vlanSubInterfaces) {
+        if (sub.parent !== parent || sub.vid !== tagged.dot1q.vid) continue;
+        const { dot1q: _tag, ...untagged } = tagged;
+        const subPort = this.getPort(subName);
+        if (subPort) { subPort.receiveFrame(untagged); return; }
+        this.handleFrame(subName, untagged);
+        return;
+      }
+      return;
+    }
     const port = this.ports.get(portName);
     if (!port) return;
 
@@ -3582,7 +3622,10 @@ export abstract class EndHost extends Equipment {
    * its parent interface's carrier instead of always reporting down.
    */
   protected isInterfaceOperationallyUp(portName: string, port: Port): boolean {
-    return port.isOperationallyUp();
+    const sub = this.vlanSubInterfaces.get(portName);
+    if (!sub) return port.isOperationallyUp();
+    const parent = this.ports.get(sub.parent);
+    return port.getIsUp() && !port.isAdminDown() && !!parent?.isOperationallyUp();
   }
 
   protected linkLocalAutoconfigurationEnabled(): boolean {

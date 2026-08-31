@@ -22,10 +22,16 @@ export interface TeamMember {
   adminMode: AdminMode;
 }
 
+export interface TeamNic {
+  name: string;
+  vlanId: number | null;
+  primary: boolean;
+}
+
 export interface NicTeam {
   name: string;
   members: TeamMember[];
-  teamNic: string;
+  teamNics: TeamNic[];
   teamingMode: TeamingMode;
   loadBalancingAlgorithm: LbAlgorithm;
   lacpTimer: LacpTimer;
@@ -73,7 +79,7 @@ export function defaultTeam(name: string, members: readonly string[]): NicTeam {
   return {
     name,
     members: members.map(m => ({ name: m, adminMode: 'Active' as AdminMode })),
-    teamNic: name,
+    teamNics: [{ name, vlanId: null, primary: true }],
     teamingMode: 'SwitchIndependent',
     loadBalancingAlgorithm: 'Dynamic',
     lacpTimer: 'Slow',
@@ -99,4 +105,12 @@ export function memberFailureReason(
   if (!up) return 'PhysicalMediaDisconnected';
   if (mode === 'LACP' && !bundled) return 'LacpNegotiationIssue';
   return 'NoFailure';
+}
+
+export function primaryTeamNic(team: NicTeam): string {
+  return (team.teamNics.find(n => n.primary) ?? team.teamNics[0]).name;
+}
+
+export function defaultTeamNicName(team: string, vlanId: number): string {
+  return `${team} - VLAN ${vlanId}`;
 }

@@ -1495,11 +1495,12 @@ norme reste hors de portee depuis ce reseau : `standards.ieee.org`,
 `cdn.standards.iteh.ai` sont tous refuses par le mandataire de sortie,
 et la version « Get Program » gratuite passe par les memes hotes.
 
-- **Windows LBFO : les interfaces d'equipe a VLAN.** `Get-NetLbfoTeamNic`
-  enumere l'interface d'equipe PRIMAIRE — celle qui nait avec l'equipe —
-  et rien d'autre, parce que `Add-NetLbfoTeamNic -Team T -VlanID 42`
-  creerait une sous-interface etiquetee « T - VLAN 42 » et que
-  `WindowsPC` n'a aucune notion de sous-interface VLAN (`LinuxMachine`,
-  elle, en a une). Les colonnes `VlanID`, `Primary` et `Default` sont
-  donc justes pour l'unique interface qui existe ; ajouter la cmdlet
-  demande d'abord la sous-interface, pas l'inverse.
+- **Windows LBFO : `Set-NetLbfoTeamNic` n'existe pas.** `Add`, `Remove`
+  et `Get` sont la et l'etiquette voyage vraiment. `Set`, lui, RENOMME
+  l'interface dans TOUS ses cas d'emploi — `-VlanID` la renomme en
+  « T - VLAN n », `-Default` la ramene au nom de l'equipe — et un port
+  ne se renomme pas ici : `Port.name` est `private readonly`, et la
+  cle de `Equipment.ports` n'est pas la seule chose qui porte ce nom
+  (captures, table d'interfaces, routes, ARP). L'ecrire demande de
+  rendre le renommage d'interface possible, ce qui est un autre sujet ;
+  l'accepter sans renommer serait un critere range que rien n'evalue.
