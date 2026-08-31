@@ -9,7 +9,7 @@
  * non, c'est un churn et il se compte. `/proc/net/bonding` ecrivait ces
  * quatre lignes en dur.
  *
- * DISCRIMINATION : 11 des 14 cas tombent contre l'etat d'avant. Les 3
+ * DISCRIMINATION : 13 des 16 cas tombent contre l'etat d'avant. Les 3
  * autres sont nommes : le TEMOIN d'un port statique, qui n'a pas de
  * machine de churn et n'en avait pas non plus avant ; le cas des lignes
  * absentes quand il n'y a pas d'agregateur, que l'ancien rendu
@@ -184,6 +184,22 @@ describe('ce qui DERANGE un port relance la machine', () => {
     const info = agentDe(srv).getPortInfo('eth0')!;
     expect(info.churnActorState).toBe('none');
     expect(info.churnActorCount).toBe(1);
+  }, 30_000);
+
+  it('passer de statique a LACP REINITIALISE le port et relance', async () => {
+    const { srv, sw } = await labo();
+    await vi.advanceTimersByTimeAsync(CHURN_DETECTION_MS + 2_000);
+    expect(agentDe(srv).getPortInfo('eth0')!.churnActorState).toBe('none');
+    agentDe(sw).addPortToGroup('FastEthernet0/1', 1, 'on');
+    agentDe(srv).addPortToGroup('eth0', 1, 'passive');
+    expect(agentDe(srv).getPortInfo('eth0')!.churnActorState).toBe('monitoring');
+  }, 30_000);
+
+  it('reappeler avec le MEME mode ne relance rien', async () => {
+    const { srv } = await labo();
+    await vi.advanceTimersByTimeAsync(CHURN_DETECTION_MS + 2_000);
+    agentDe(srv).addPortToGroup('eth0', 1, 'active');
+    expect(agentDe(srv).getPortInfo('eth0')!.churnActorState).toBe('none');
   }, 30_000);
 
   it('un port STATIQUE n\'a pas de machine de churn — TEMOIN', async () => {

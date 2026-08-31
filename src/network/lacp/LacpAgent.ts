@@ -145,8 +145,13 @@ export class LacpAgent extends ReactiveAgentBase {
       this.config.ports.set(portName, p);
       if (mode !== 'on') this.armChurn(p);
     } else {
+      // Changer le groupe ou le mode REINITIALISE le port (BEGIN), donc
+      // relance la surveillance : sans cela, passer de `on` a `active`
+      // laissait une machine qui n'avait jamais ete armee.
+      const reinitialise = p.groupId !== groupId || p.mode !== mode;
       p.groupId = groupId;
       p.mode = mode;
+      if (reinitialise && mode !== 'on') this.armChurn(p);
     }
     this.recompute();
     if (this.config.enabled && mode === 'active') this.advertise(portName);
