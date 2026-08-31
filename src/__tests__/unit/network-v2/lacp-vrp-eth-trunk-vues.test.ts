@@ -95,6 +95,16 @@ describe('le bit LACP_Timeout de la norme 802.1AX', () => {
       & LACP_FLAG_EXPIRED).toBe(LACP_FLAG_EXPIRED);
   });
 
+  it('les huit valeurs sont celles du dissecteur de Wireshark', () => {
+    // `packet-lacp.c`, « IEEE Std 802.1AX-2014 Section 6.4.2.3 » :
+    // ACTIVITY 0x01 … EXPIRED 0x80, et l'ordre d'affichage est celui-la.
+    expect(LACP_FLAG_TIMEOUT).toBe(0x02);
+    expect(LACP_FLAG_DEFAULTED).toBe(0x40);
+    expect(LACP_FLAG_EXPIRED).toBe(0x80);
+    expect(lacpStateBits(0x01)).toBe('10000000');
+    expect(lacpStateBits(0x80)).toBe('00000001');
+  });
+
   it('les huit bits se lisent dans l\'ordre de la norme', () => {
     expect(lacpStateBits(buildActorState('active', portFictif(), false))).toBe('10111100');
     expect(lacpStateBits(buildActorState('active', portFictif({

@@ -4,6 +4,7 @@ import { ReactiveAgentBase } from '../core/ReactiveAgentBase';
 import {
   type LacpAdminMode, type LacpConfig, type LacpFrame, type LacpPortInfo,
   type LacpPortState, type LacpActorInfo, type LacpGroup, type MarkerFrame,
+  type LacpAggregatorSelection,
   MARKER_RESPONSE,
   createDefaultLacpConfig, buildActorState, compareSystemId, partnerWantsFastRate,
   ETHERTYPE_LACP, LACP_SLOW_MAC,
@@ -104,6 +105,7 @@ export class LacpAgent extends ReactiveAgentBase {
         name: name ?? `Port-channel${groupId}`,
         loadBalance: loadBalance ?? this.config.loadBalance,
         minLinks: 0, maxLinks: 0, preempt: true, preemptDelay: 30,
+        adSelect: 'stable', activeLag: null,
       };
       this.config.groups.set(groupId, g);
     } else {
@@ -114,6 +116,7 @@ export class LacpAgent extends ReactiveAgentBase {
 
   setGroupLimits(groupId: number, limits: {
     minLinks?: number; maxLinks?: number; preempt?: boolean; preemptDelay?: number;
+    adSelect?: LacpAggregatorSelection;
   }): void {
     this.ensureGroup(groupId);
     const g = this.config.groups.get(groupId)!;
@@ -121,13 +124,35 @@ export class LacpAgent extends ReactiveAgentBase {
     if (limits.maxLinks !== undefined) g.maxLinks = limits.maxLinks;
     if (limits.preempt !== undefined) g.preempt = limits.preempt;
     if (limits.preemptDelay !== undefined) g.preemptDelay = limits.preemptDelay;
+    if (limits.adSelect !== undefined) g.adSelect = limits.adSelect;
     this.recompute();
+  }
+
+  /**
+   * The LAG a port belongs to, 802.1AX §6.4.15 and the kernel's own
+   * match in `ad_port_selection_logic`: same actor key, same partner
+   * system and same partner key. Two neighbours are two LAGs.
+   */
+  lagIdOf(p: LacpPortInfo): string {
+    if (!p.partner) return `individual:${p.portName}`;
+    return `${p.groupId}|${p.partner.systemPriority}`
+      + `|${p.partner.systemId.toLowerCase()}|${p.partner.key}`;
+  }
+
+  /** The aggregator id `/proc/net/bonding` prints, stable per LAG. */
+  aggregatorIdOf(p: LacpPortInfo): number {
+    const lags = [...new Set(this.getGroupMembers(p.groupId)
+      .filter(m => m.partner !== null)
+      .map(m => this.lagIdOf(m)))].sort();
+    const rang = lags.indexOf(this.lagIdOf(p));
+    return rang < 0 ? p.groupId : rang + 1;
   }
 
   getGroupLimits(groupId: number): LacpGroup {
     return this.config.groups.get(groupId)
       ?? { name: `Port-channel${groupId}`, loadBalance: this.config.loadBalance,
-        minLinks: 0, maxLinks: 0, preempt: true, preemptDelay: 30 };
+        minLinks: 0, maxLinks: 0, preempt: true, preemptDelay: 30,
+        adSelect: 'stable', activeLag: null };
   }
 
   addPortToGroup(portName: string, groupId: number, mode: LacpAdminMode): void {
@@ -475,6 +500,70 @@ export class LacpAgent extends ReactiveAgentBase {
 
   private holdingSlot = new Set<string>();
 
+  private linkSpeedOf(p: LacpPortInfo): number {
+    return this.host.getPort(p.portName)?.getNegotiatedSpeed() ?? 0;
+  }
+
+  /**
+   * `ad_agg_selection_test` : on prefere d'abord l'agregation dont le
+   * partenaire a REPONDU, puis on applique la politique. `count`
+   * departage a egalite par la bande passante, ce que le noyau fait par
+   * un `fallthrough` explicite.
+   */
+  private betterAggregate(
+    a: { lag: string; ports: LacpPortInfo[] },
+    b: { lag: string; ports: LacpPortInfo[] },
+    policy: LacpAggregatorSelection,
+  ): boolean {
+    const repond = (g: { ports: LacpPortInfo[] }) => g.ports.some(p => p.partner !== null);
+    if (repond(b) !== repond(a)) return repond(b);
+    const bande = (g: { ports: LacpPortInfo[] }) =>
+      g.ports.reduce((t, p) => t + this.linkSpeedOf(p), 0);
+    if (policy === 'count' && b.ports.length !== a.ports.length) {
+      return b.ports.length > a.ports.length;
+    }
+    return bande(b) > bande(a);
+  }
+
+  /**
+   * 802.1AX §6.4.15 : deux voisins font DEUX agregations, et une seule
+   * porte le trafic. Sans cette regle un serveur cable a deux
+   * commutateurs sans MLAG groupait les quatre liens et pontait les
+   * deux commutateurs sans qu'aucun protocole ne le dise.
+   */
+  private selectActiveAggregate(members: LacpPortInfo[]): void {
+    if (members.length === 0) return;
+    const groupe = this.config.groups.get(members[0].groupId);
+    if (!groupe) return;
+    const parLag = new Map<string, LacpPortInfo[]>();
+    for (const p of members) {
+      if (!p.bundled) continue;
+      const lag = this.lagIdOf(p);
+      const liste = parLag.get(lag) ?? [];
+      liste.push(p);
+      parLag.set(lag, liste);
+    }
+    if (parLag.size === 0) { groupe.activeLag = null; return; }
+
+    const candidats = [...parLag.entries()].map(([lag, ports]) => ({ lag, ports }));
+    let meilleur = candidats[0];
+    for (const c of candidats.slice(1)) {
+      if (this.betterAggregate(meilleur, c, groupe.adSelect)) meilleur = c;
+    }
+    // `stable` ne remplace pas l'active tant qu'elle porte encore.
+    const tenante = groupe.activeLag !== null ? parLag.get(groupe.activeLag) : undefined;
+    const actif = groupe.adSelect === 'stable' && tenante && tenante.length > 0
+      ? groupe.activeLag! : meilleur.lag;
+    groupe.activeLag = actif;
+
+    for (const [lag, ports] of parLag) {
+      if (lag === actif) continue;
+      for (const p of ports) {
+        p.state = 'suspended'; p.selected = false; p.bundled = false;
+      }
+    }
+  }
+
   private applyGroupLimits(members: LacpPortInfo[]): void {
     if (members.length === 0) return;
     const limites = this.config.groups.get(members[0].groupId);
@@ -529,6 +618,7 @@ export class LacpAgent extends ReactiveAgentBase {
         p.state = 'standalone'; p.selected = false; p.bundled = false;
       }
     }
+    this.selectActiveAggregate(members);
     this.applyGroupLimits(members);
     members.forEach((p, i) => this.maybeEmitStateChange(p, avant[i].state, avant[i].bundled));
   }

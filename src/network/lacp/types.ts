@@ -15,6 +15,13 @@ export type LacpPortState =
    */
   | 'standby'
   /**
+   * 802.1AX §6.4.15 : le port a un partenaire, mais ce partenaire n'est
+   * pas celui du groupe d'agregation ACTIF — deux voisins distincts font
+   * deux LAG, et un seul peut porter le trafic. IOS l'ecrit `s`
+   * (suspended), le noyau le laisse simplement hors de l'agregateur.
+   */
+  | 'suspended'
+  /**
    * 802.3ad §43.4.12: no LACPDU from the partner within current_while
    * (3 × the requested interval). The port has left the aggregate;
    * partner info survives one short interval longer, then is defaulted.
@@ -27,6 +34,14 @@ export type LacpPortState =
  * what `/proc/net/bonding` prints.
  */
 export type LacpChurnState = 'monitoring' | 'churned' | 'none';
+
+/**
+ * `ad_select` du pilote bonding : laquelle des agregations candidates
+ * porte le trafic quand il y en a plusieurs. `stable` ne remplace pas
+ * l'active tant qu'elle repond, `bandwidth` prend la plus large,
+ * `count` la plus nombreuse puis la plus large.
+ */
+export type LacpAggregatorSelection = 'stable' | 'bandwidth' | 'count';
 
 export interface LacpActorInfo {
   systemPriority: number;
@@ -103,6 +118,9 @@ export interface LacpGroup {
    */
   preempt: boolean;
   preemptDelay: number;
+  adSelect: LacpAggregatorSelection;
+  /** LAG identity of the aggregator currently carrying traffic. */
+  activeLag: string | null;
 }
 
 export interface LacpConfig {

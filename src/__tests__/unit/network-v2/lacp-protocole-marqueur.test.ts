@@ -10,7 +10,12 @@
  * n'en ORIGINE — le noyau Linux le dit de lui-meme en toutes lettres —
  * donc `Sent` reste a zero, ce qui est la verite et non un manque.
  *
- * DISCRIMINATION : 8 des 11 cas tombent contre l'etat d'avant. Les 3
+ * Les deux sous-types et les huit bits d'etat sont recoupes contre le
+ * dissecteur de Wireshark (`packet-marker.c`, `packet-lacp.c`), qui
+ * nomme la clause en tete de fichier et donne le codage champ par
+ * champ : une seconde autorite independante du noyau.
+ *
+ * DISCRIMINATION : 8 des 12 cas tombent contre l'etat d'avant. Les 3
  * autres sont nommes : les deux TEMOINS de comptage LACPDU, qui doivent
  * passer des deux cotes, et le cas « Sent reste a zero », qui passait
  * parce que la colonne etait un zero en dur.
@@ -78,6 +83,13 @@ describe('le marqueur est repondu, jamais origine', () => {
     vi.useFakeTimers();
   });
   afterEach(() => { vi.useRealTimers(); });
+
+  it('les deux sous-types sont ceux du dissecteur de Wireshark', () => {
+    // `packet-marker.c` : MARKERPDU_MARKER_INFO 0x1, _RESPONSE 0x2, en
+    // tete de fichier « IEEE Std 802.1AX-2014 Section 6.5 ».
+    expect(MARKER_INFORMATION).toBe(0x1);
+    expect(MARKER_RESPONSE).toBe(0x2);
+  });
 
   it('un marqueur recu est COMPTE', async () => {
     const { a } = await laboCisco();

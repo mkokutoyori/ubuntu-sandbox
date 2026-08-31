@@ -2686,7 +2686,10 @@ export abstract class LinuxMachine extends EndHost
       return;
     }
     const mode = bond.options.lacpActive ? 'active' : 'passive';
-    agent.setGroupLimits(this.bondGroupId(bondName), { minLinks: bond.options.minLinks });
+    agent.setGroupLimits(this.bondGroupId(bondName), {
+      minLinks: bond.options.minLinks,
+      adSelect: bond.options.adSelect,
+    });
     for (const s of bond.slaves) {
       agent.addPortToGroup(s, this.bondGroupId(bondName), mode);
     }
@@ -2716,7 +2719,8 @@ export abstract class LinuxMachine extends EndHost
       const bundled = info?.bundled === true;
       return {
         ...slaveViewFrom(port!, port!.getMAC().toString()),
-        aggregatorId: bond.options.mode === '802.3ad' && bundled ? groupId : null,
+        aggregatorId: bond.options.mode === '802.3ad' && info && info.partner
+          ? agent.aggregatorIdOf(info) : null,
         actorChurnState: info?.churnActorState ?? 'none',
         partnerChurnState: info?.churnPartnerState ?? 'none',
         actorChurnedCount: info?.churnActorCount ?? 0,
@@ -2742,7 +2746,7 @@ export abstract class LinuxMachine extends EndHost
       systemMac: agent.getConfig().systemId,
       aggregator: bond.options.mode === '802.3ad' && premier
         ? {
-          aggregatorId: groupId,
+          aggregatorId: agent.aggregatorIdOf(premier),
           ports: groupes.length,
           actorKey: groupId,
           partnerKey: premier.partner?.key ?? 0,

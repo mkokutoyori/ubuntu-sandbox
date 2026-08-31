@@ -1553,19 +1553,16 @@ défauts — la méthode vaut d'être reprise sur le reliquat.
   au juge.
 ## LACP / 802.1AX — ce que le moteur n'implemente pas encore
 
-Mesure faite contre `drivers/net/bonding/bond_3ad.c`, qui EST une
-implantation de la norme et cite ses clauses. La norme elle-meme n'est
-pas telechargeable depuis ce reseau : `standards.ieee.org`,
-`ieeexplore.ieee.org` et `ieee802.org` sont tous refuses par le mandataire
-de sortie (code 000), et la version « Get Program » gratuite passe par les
-memes hotes. Ce qui suit est donc etabli sur l'implantation du noyau et
-sur les vues des constructeurs, pas sur le texte.
+Mesure faite contre DEUX implantations independantes qui citent les
+clauses de la norme : `drivers/net/bonding/bond_3ad.c` du noyau, et les
+dissecteurs `packet-lacp.c` / `packet-marker.c` de Wireshark, qui
+nomment « IEEE Std 802.1AX-2014 Section 6.4.2.3 » et « Section 6.5 »
+en tete de fichier et donnent le codage champ par champ. Le TEXTE de la
+norme reste hors de portee depuis ce reseau : `standards.ieee.org`,
+`ieeexplore.ieee.org`, `ieee802.org` et le miroir ISO
+`cdn.standards.iteh.ai` sont tous refuses par le mandataire de sortie,
+et la version « Get Program » gratuite passe par les memes hotes.
 
-- **`ad_select`** (`stable` / `bandwidth` / `count`) : la politique de
-  choix d'AGREGATEUR quand plusieurs sont possibles. Ce moteur n'a
-  qu'un agregateur par groupe, donc la question ne se pose pas encore ;
-  `ip link set bond0 type bond ad_select bandwidth` est accepte, range
-  et lu par personne.
 - **`ad_actor_sys_prio`, `ad_actor_system`, `ad_user_port_key`** : les
   trois reglages 802.3ad que le noyau expose pour forger l'identite de
   l'acteur. `systemPriority` existe et est reglable ; les deux autres ne
