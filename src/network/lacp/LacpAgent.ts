@@ -8,7 +8,7 @@ import {
   MARKER_RESPONSE,
   createDefaultLacpConfig, buildActorState, compareSystemId, partnerWantsFastRate,
   ETHERTYPE_LACP, LACP_SLOW_MAC,
-  LACP_FLAG_SYNC, LACP_FLAG_COLLECTING, LACP_FLAG_DISTRIBUTING,
+  LACP_FLAG_SYNC,
 } from './types';
 import { MACAddress, type EthernetFrame } from '../core/types';
 import type { LinkSendRequest } from '../layers/link/LinkLayer';
