@@ -749,7 +749,7 @@ describe('le moteur de commandes partage', () => {
     run(sh, 'config firewall policy', 'edit 1');
     expect(run(sh, 'set srcaddr ?')).not.toContain('TARDIF');
 
-    run(sh, 'end', 'config firewall address', 'edit "TARDIF"',
+    run(sh, 'abort', 'config firewall address', 'edit "TARDIF"',
       'set subnet 10.9.9.0 255.255.255.0', 'next', 'end');
     run(sh, 'config firewall policy', 'edit 1');
 

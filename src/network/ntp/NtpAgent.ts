@@ -4,7 +4,7 @@ import {
   type NtpAssociation, type NtpConfig, type NtpPacket, type NtpMode,
   type NtpCounters, createNtpCounters,
   createDefaultNtpConfig, defaultAssociation, computeOffsetMs,
-  UDP_PORT_NTP,
+  UDP_PORT_NTP, NTP_VERSION,
 } from './types';
 import {
   IPAddress,
@@ -231,6 +231,12 @@ export class NtpAgent {
   addAuthKey(id: number, algo: string, key: string): void { this.config.authKeys.set(id, { id, algo, key }); }
   addTrustedKey(id: number): void { this.config.trustedKeys.add(id); }
   setAccessGroup(kind: string, acl: string): void { this.config.accessGroups.set(kind, acl); }
+  setLogging(on: boolean, spelling: 'ntp' | 'sntp' = 'ntp'): void {
+    this.config.logging = on;
+    if (on) this.config.loggingSpelling = spelling;
+  }
+  isLogging(): boolean { return this.config.logging; }
+  setSntpBroadcastClient(on: boolean): void { this.config.sntpBroadcastClient = on; }
 
   asRunningConfigLines(): string[] {
     const lines: string[] = [];
@@ -245,6 +251,8 @@ export class NtpAgent {
       const famille = a.configuredAs === 'sntp' ? 'sntp' : 'ntp';
       lines.push(`${famille} ${kind} ${ip}${a.keyId !== undefined ? ' key ' + a.keyId : ''}${a.prefer ? ' prefer' : ''}`);
     }
+    if (this.config.sntpBroadcastClient) lines.push('sntp broadcast client');
+    if (this.config.logging) lines.push(`${this.config.loggingSpelling} logging`);
     if (this.config.sourceInterface) lines.push(`ntp source ${this.config.sourceInterface}`);
     if (this.config.updateCalendar) lines.push('ntp update-calendar');
     if (!this.config.allowModeControl) lines.push('no ntp allow mode control');
@@ -414,7 +422,7 @@ export class NtpAgent {
     if (!srcIp) return;
     const now = this.now();
     const reply: NtpPacket = {
-      type: 'ntp', leapIndicator: 0, version: 4, mode,
+      type: 'ntp', leapIndicator: 0, version: NTP_VERSION, mode,
       stratum: this.config.localStratum, poll: 6, precision: -20,
       rootDelay: 0, rootDispersion: 0,
       refIdentifier: this.config.refIdentifier,
@@ -440,7 +448,7 @@ export class NtpAgent {
     if (!srcIp) return;
     const now = this.now();
     const reply: NtpPacket = {
-      type: 'ntp', leapIndicator: 0, version: 4, mode: 'server',
+      type: 'ntp', leapIndicator: 0, version: NTP_VERSION, mode: 'server',
       stratum: this.config.localStratum, poll: 6, precision: -20,
       rootDelay: 0, rootDispersion: 0,
       refIdentifier: this.config.refIdentifier,
@@ -487,7 +495,7 @@ export class NtpAgent {
     if (!srcIp) return;
     const now = this.now();
     const nak: NtpPacket = {
-      type: 'ntp', leapIndicator: 0, version: 4, mode: 'server',
+      type: 'ntp', leapIndicator: 0, version: NTP_VERSION, mode: 'server',
       stratum: this.config.localStratum, poll: 6, precision: -20,
       rootDelay: 0, rootDispersion: 0,
       refIdentifier: this.config.refIdentifier,
@@ -755,7 +763,7 @@ export class NtpAgent {
     a.lastPollMs = now;
     const mode: NtpMode = a.mode === 'symmetric-active' ? 'symmetric-active' : 'client';
     const request: NtpPacket = {
-      type: 'ntp', leapIndicator: 0, version: 4, mode,
+      type: 'ntp', leapIndicator: 0, version: NTP_VERSION, mode,
       stratum: this.config.localStratum, poll: 6, precision: -20,
       rootDelay: 0, rootDispersion: 0, refIdentifier: this.config.refIdentifier,
       refTimestampMs: this.config.lastSyncMs,

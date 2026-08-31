@@ -1,5 +1,28 @@
 import type { DHCPServer } from './DHCPServer';
-import type { DHCPPoolConfig } from './types';
+import type { DHCPPoolConfig, DHCPSnoopingConfig } from './types';
+import { compactVlanList } from '../devices/shells/cli/vlanList';
+
+export function dhcpSnoopingRunningConfigLines(cfg: DHCPSnoopingConfig): string[] {
+  const lines: string[] = [];
+  if (cfg.enabled) lines.push('ip dhcp snooping');
+  if (cfg.vlans.size > 0) {
+    const sorted = [...cfg.vlans].sort((a, b) => a - b);
+    lines.push(`ip dhcp snooping vlan ${compactVlanList(sorted)}`);
+  }
+  if (cfg.informationOption) lines.push('ip dhcp snooping information option');
+  if (!cfg.verifyMac) lines.push('no ip dhcp snooping verify mac-address');
+  return lines;
+}
+
+export function dhcpSnoopingInterfaceLines(
+  cfg: DHCPSnoopingConfig, ifName: string,
+): string[] {
+  const lines: string[] = [];
+  if (cfg.trustedPorts.has(ifName)) lines.push(' ip dhcp snooping trust');
+  const rate = cfg.rateLimits.get(ifName);
+  if (rate !== undefined && rate > 0) lines.push(` ip dhcp snooping limit rate ${rate}`);
+  return lines;
+}
 
 export function leaseConfigTail(pool: DHCPPoolConfig): string | null {
   if (pool.leaseInfinite) return 'infinite';
@@ -57,6 +80,14 @@ function poolConfigLines(pool: DHCPPoolConfig): string[] {
 export function dhcpRunningConfigLines(dhcp: DHCPServer): string[] {
   const lines: string[] = [];
   if (!dhcp.isEnabled()) lines.push('no service dhcp');
+  /*
+   * L'agent de sauvegarde etait accepte des deux cotes, range dans deux
+   * magasins differents, et rendu par personne — donc perdu au
+   * rechargement d'une topologie, en silence.
+   */
+  for (const url of dhcp.getDatabaseAgents()) {
+    lines.push(`ip dhcp database ${url}`);
+  }
   for (const range of dhcp.getExcludedRanges()) {
     lines.push(range.start === range.end
       ? `ip dhcp excluded-address ${range.start}`

@@ -346,6 +346,15 @@ export interface LoggingClockSource {
   zone(): { name: string; offsetMin: number };
   /** True once NTP has synchronised; IOS drops the `*` marker then. */
   authoritative(): boolean;
+  /**
+   * `ntp logging` / `sntp logging` — la porte de `%NTP-5-PEERSYNC`.
+   *
+   * Facultative parce qu'une plateforme sans NTP n'a rien a en dire, et
+   * son absence vaut ETEINT : c'est le defaut d'IOS, et c'est ce qui
+   * distingue une machine que l'operateur a configuree pour suivre ses
+   * sources de temps d'une machine qui ne l'a jamais demande.
+   */
+  ntpEventsLogged?(): boolean;
 }
 
 /**
@@ -357,7 +366,7 @@ export function deviceClockSource(device: unknown): LoggingClockSource {
     getUptimeMs?: () => number;
     getSystemClockMs?: () => number;
     getManagementService?: () => { getClock: () => { timezone: string; offsetMin: number } };
-    getNtpAgent?: () => { isSynced?: () => boolean };
+    getNtpAgent?: () => { isSynced?: () => boolean; isLogging?: () => boolean };
   };
   return {
     uptimeMs: () => dev.getUptimeMs?.() ?? 0,
@@ -367,6 +376,7 @@ export function deviceClockSource(device: unknown): LoggingClockSource {
       return { name: c?.timezone ?? 'UTC', offsetMin: c?.offsetMin ?? 0 };
     },
     authoritative: () => dev.getNtpAgent?.().isSynced?.() ?? false,
+    ntpEventsLogged: () => dev.getNtpAgent?.().isLogging?.() ?? false,
   };
 }
 
@@ -665,6 +675,8 @@ export class LoggingConfig {
   }
 
   private uptimeNow(): number { return this.clock?.uptimeMs() ?? 0; }
+
+  private ntpEventsLogged(): boolean { return this.clock?.ntpEventsLogged?.() ?? false; }
 
   private formatTimestamp(spec: TimestampSpec, ts: number, uptimeMs: number): string {
     return spec.format === 'uptime'
@@ -1109,11 +1121,13 @@ export class LoggingConfig {
           `DPD: peer ${p.peerIp ?? '?'} declared dead`, true, 'IKE_DPD_TIMEOUT');
       }),
       bus.subscribeWhere('ntp.synced', isOurs, (e) => {
+        if (!this.ntpEventsLogged()) return;
         const p = e.payload as unknown as { serverIp?: string; newStratum?: number; offsetMs?: number };
         this.append('notifications', 'ntp',
           `System clock synchronized to ${p.serverIp ?? '?'} stratum ${p.newStratum ?? '?'} offset ${p.offsetMs ?? 0}ms`, true, 'PEERSYNC');
       }),
       bus.subscribeWhere('ntp.unsynced', isOurs, (e) => {
+        if (!this.ntpEventsLogged()) return;
         const p = e.payload as unknown as { reason?: string };
         this.append('warnings', 'ntp',
           `System clock unsynchronized (${p.reason ?? 'no reachable server'})`, true, 'PEERUNSYNC');

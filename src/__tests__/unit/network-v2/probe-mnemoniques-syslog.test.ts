@@ -105,11 +105,23 @@ describe('Sonde — le mnémonique n\'est plus fabriqué depuis la sévérité',
 
   it('NTP distingue la synchronisation de sa perte', async () => {
     const r = await routeurJournalisant(bus, 'R5');
+    await Promise.resolve(r.executeCommand('configure terminal'));
+    await Promise.resolve(r.executeCommand('ntp logging'));
+    await Promise.resolve(r.executeCommand('end'));
     emettre(bus, 'ntp.synced', { deviceId: r.id, serverIp: '10.0.0.9', newStratum: 3, offsetMs: 4 });
     emettre(bus, 'ntp.unsynced', { deviceId: r.id, reason: 'no reachable server' });
     const out = await Promise.resolve(r.executeCommand('show logging'));
     expect(out).toContain('%NTP-5-PEERSYNC:');
     expect(out).toContain('%NTP-4-PEERUNSYNC:');
+  });
+
+  it('sans `ntp logging`, aucun des deux ne parait', async () => {
+    const r = await routeurJournalisant(bus, 'R5b');
+    emettre(bus, 'ntp.synced', { deviceId: r.id, serverIp: '10.0.0.9', newStratum: 3, offsetMs: 4 });
+    emettre(bus, 'ntp.unsynced', { deviceId: r.id, reason: 'no reachable server' });
+    const out = await Promise.resolve(r.executeCommand('show logging'));
+    expect(out).not.toContain('%NTP-5-PEERSYNC:');
+    expect(out).not.toContain('%NTP-4-PEERUNSYNC:');
   });
 
   it('aucune ligne du journal ne porte un NOM DE SÉVÉRITÉ en mnémonique', async () => {

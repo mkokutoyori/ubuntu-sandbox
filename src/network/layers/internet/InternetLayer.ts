@@ -60,6 +60,17 @@ export function isUnicastDestination(
     && !isDirectedBroadcast(destination, connected);
 }
 
+export type MartianSource = 'network-zero' | 'loopback' | 'not-unicast';
+
+export function martianSource(source: IPAddress): MartianSource | null {
+  const octets = source.getOctets();
+  if (octets[0] === 0) return 'network-zero';
+  if (octets[0] === 127) return 'loopback';
+  if (classifyIpv4Destination(source) !== 'unicast') return 'not-unicast';
+  if (octets[0] >= 240) return 'not-unicast';
+  return null;
+}
+
 export type Ipv4HeaderProblem = 'checksum' | 'version' | 'ihl' | 'total-length';
 
 export function ipv4HeaderProblem(packet: IPv4Packet): Ipv4HeaderProblem | null {

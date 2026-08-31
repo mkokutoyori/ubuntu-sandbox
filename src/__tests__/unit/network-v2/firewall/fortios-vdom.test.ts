@@ -170,6 +170,8 @@ describe('L7 : deux VDOM etanches', () => {
 
     run(sh, 'config vdom', 'edit "VENTES"',
       'config firewall policy', 'edit 1', 'set name "VENTE"', 'set action accept',
+      'set srcintf "port1"', 'set dstintf "port2"',
+      'set srcaddr "all"', 'set dstaddr "all"', 'set service "ALL"',
       'next', 'end', 'next', 'end');
 
     expect(fw.getPolicyStore('VENTES').byId('1')?.name).toBe('VENTE');

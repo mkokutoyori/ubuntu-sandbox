@@ -1,4 +1,5 @@
 import type { NhrpService } from './NhrpService';
+import { hms } from '@/lib/format';
 
 export type DmvpnRole = 'hub' | 'spoke';
 export type DmvpnPhase = 1 | 2 | 3;
@@ -94,7 +95,7 @@ export class DmvpnService {
       const sessions = this.sessions.filter(s => s.ifName === profile.ifName);
       for (let i = 0; i < sessions.length; i++) {
         const s = sessions[i];
-        const upTime = formatHms(Date.now() - s.createdAtMs);
+        const upTime = hms(Date.now() - s.createdAtMs);
         lines.push(`     ${(i + 1).toString().padStart(2, ' ')} ${s.peerNbmaAddress.padEnd(15)} ${s.peerTunnelAddress.padEnd(15)} ${s.state.padEnd(5)} ${upTime}  ${s.attribute}`);
         if (detail) {
           lines.push(`   Type: ${profile.role === 'hub' ? 'Hub' : 'Spoke'}, NHS Status: E --> 1`);
@@ -117,11 +118,3 @@ export class DmvpnService {
   }
 }
 
-function formatHms(ms: number): string {
-  const total = Math.max(0, Math.floor(ms / 1000));
-  const h = Math.floor(total / 3600);
-  const m = Math.floor((total % 3600) / 60);
-  const s = total % 60;
-  return `${pad(h)}:${pad(m)}:${pad(s)}`;
-}
-function pad(n: number): string { return n.toString().padStart(2, '0'); }

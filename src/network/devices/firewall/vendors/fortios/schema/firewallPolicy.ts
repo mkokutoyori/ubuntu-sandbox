@@ -5,7 +5,7 @@ import {
 
 const ADDRESS_TARGETS = ['firewall address', 'firewall addrgrp', 'firewall vip'];
 const ADDRESS6_TARGETS = ['firewall address6', 'firewall addrgrp6'];
-const INTERFACE_TARGETS = ['system interface', 'system zone'];
+const INTERFACE_TARGETS = ['system interface', 'system zone', 'system sdwan zone'];
 const SERVICE_TARGETS = ['firewall service custom', 'firewall service group'];
 const SCHEDULE_TARGETS = ['firewall schedule recurring', 'firewall schedule onetime'];
 
@@ -27,6 +27,20 @@ function denies(object: FortiObjectView): boolean {
 
 function usesUtm(object: FortiObjectView): boolean {
   return object.effective('utm-status')[0] === 'enable';
+}
+
+const POLITIQUE_EXIGE: ReadonlyArray<readonly string[]> = [
+  ['srcintf'], ['dstintf'],
+  ['srcaddr', 'srcaddr6'], ['dstaddr', 'dstaddr6'],
+  ['service'],
+];
+
+function attributManquant(object: FortiObjectView): string | undefined {
+  for (const formes of POLITIQUE_EXIGE) {
+    if (formes.some(nom => object.effective(nom).length > 0)) continue;
+    return formes[0];
+  }
+  return undefined;
 }
 
 export const FIREWALL_POLICY: FortiTableSpec = {
@@ -165,6 +179,11 @@ export const FIREWALL_POLICY: FortiTableSpec = {
     },
   ],
   onCommit(object, context) {
+    const absent = attributManquant(object);
+    if (absent !== undefined) {
+      return `entry not set for "${absent}".`;
+    }
+
     const mismatch = profileModeMismatch(object, context);
     if (mismatch) return mismatch;
 

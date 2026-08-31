@@ -83,3 +83,23 @@ export function conserveModeLines(load: SystemLoad): readonly string[] {
     { header: '', value: (row) => row.share },
   ], { ...FIXED_TABLE, header: false }));
 }
+
+export function procMeminfoLines(load: SystemLoad): readonly string[] {
+  const memory = load.memory();
+  const ligne = (cle: string, kib: number): string =>
+    `${(cle + ':').padEnd(16)}${String(kib).padStart(8)} kB`;
+  return [
+    ligne('MemTotal', memory.totalKib),
+    ligne('MemFree', memory.freeKib),
+    ligne('MemShared', 0),
+    ligne('Buffers', 0),
+    ligne('Cached', memory.freeableKib),
+    ligne('SwapCached', 0),
+    ligne('HighTotal', 0),
+    ligne('HighFree', 0),
+    ligne('LowTotal', memory.totalKib),
+    ligne('LowFree', memory.freeKib),
+    ligne('SwapTotal', 0),
+    ligne('SwapFree', 0),
+  ];
+}

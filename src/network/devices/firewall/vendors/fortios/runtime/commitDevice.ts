@@ -130,8 +130,7 @@ export function buildCommitDevice(
       },
       applyGlobalSettings(settings) {
         if (settings.hostname !== undefined && settings.hostname.length > 0) {
-          fw.setName(settings.hostname);
-          fw.setHostname(settings.hostname);
+          fw.applyDeviceName(settings.hostname);
         }
         const zone = settings.timezone === undefined
           ? null : resolveFortiTimezone(settings.timezone);

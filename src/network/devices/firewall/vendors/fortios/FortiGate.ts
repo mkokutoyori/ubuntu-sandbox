@@ -49,7 +49,7 @@ export class FortiGate extends Firewall {
   private readonly factoryHostname: string;
 
   applyFactoryIdentity(): void {
-    this.setName(this.factoryHostname);
+    this.applyDeviceName(this.factoryHostname);
     for (const existing of this.adminNames()) {
       if (existing !== FACTORY_ADMIN) this.getAccessMatrix().removeAdmin(existing);
     }

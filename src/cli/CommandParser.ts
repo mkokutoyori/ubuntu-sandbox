@@ -22,16 +22,41 @@ export interface TokenizeOptions {
   readonly escapesAnyCharacter?: boolean;
 }
 
+/**
+ * Ce que la frappe contenait AVANT que les blancs ne soient reduits.
+ *
+ * Un argument `REST` etait rendu par `tokens.slice(i).join(' ')`, donc
+ * `banner motd #Deux  blancs#` posait une banniere a un seul blanc : la
+ * commande dont tout l'objet est de garder le texte tel quel le
+ * reecrivait. Les DEBUTS de chaque jeton suffisent a retrouver la
+ * tranche d'origine, et ils sont produits par le meme parcours — un
+ * second decoupage finirait par ne plus dire la meme chose que le
+ * premier.
+ */
+export interface TokensAvecPositions {
+  readonly tokens: string[];
+  readonly starts: number[];
+}
+
 export function tokenize(input: string, options?: TokenizeOptions): string[] {
+  return tokenizeWithPositions(input, options).tokens;
+}
+
+export function tokenizeWithPositions(
+  input: string, options?: TokenizeOptions,
+): TokensAvecPositions {
   const anyCharacter = options?.escapesAnyCharacter === true;
   const out: string[] = [];
+  const starts: number[] = [];
   let current = '';
   let quoted = false;
   let started = false;
   let escaped = false;
+  let debut = 0;
 
   const flush = () => {
     out.push(escaped && !isQuoted(current) ? `"${current}"` : current);
+    starts.push(debut);
     current = '';
     started = false;
     escaped = false;
@@ -39,6 +64,7 @@ export function tokenize(input: string, options?: TokenizeOptions): string[] {
 
   for (let at = 0; at < input.length; at++) {
     const character = input[at];
+    if (!started && !/\s/.test(character)) debut = at;
     if (character === '\\' && at + 1 < input.length
       && (anyCharacter || input[at + 1] === ' ')) {
       current += input[at + 1];
@@ -61,7 +87,7 @@ export function tokenize(input: string, options?: TokenizeOptions): string[] {
     started = true;
   }
   if (started) flush();
-  return out;
+  return { tokens: out, starts };
 }
 
 export function tokenContent(token: string): string {
@@ -74,11 +100,13 @@ export function parseCommand(
   table: CommandTable, input: string, session: CliSession,
   options?: TokenizeOptions,
 ): ParseResult {
-  const all = tokenize(input, options);
+  const decoupe = tokenizeWithPositions(input, options);
+  const all = decoupe.tokens;
   if (all.length === 0) return { status: 'empty' };
 
   const negated = all[0].toLowerCase() === 'no' && all.length > 1;
   const tokens = negated ? all.slice(1) : all;
+  const debuts = negated ? decoupe.starts.slice(1) : decoupe.starts;
 
   let node = table.rootNode();
   const args: Record<string, string> = {};
@@ -108,7 +136,7 @@ export function parseCommand(
       if (outsideEveryAnnouncedRange(token, argument.argument.alternatives ?? [])) {
         return { status: 'invalid', token, position: index, refusePar: 'argument' };
       }
-      args[argument.argument.name] = tokens.slice(index).join(' ');
+      args[argument.argument.name] = input.slice(debuts[index]).trimEnd();
       node = argument;
       break;
     }

@@ -70,10 +70,10 @@ describe('DHCP snooping — verify mac-address', () => {
     expect(sw._getDHCPSnoopingViolations()).toBe(before);
   });
 
-  it('does not check chaddr when verify mac-address is not configured', () => {
+  it('does not check chaddr once verification is turned off', () => {
     const sw = setupSwitch();
     sw._getDHCPSnoopingConfig().enabled = true;
-    // verifyMac left at its default (false)
+    sw._getDHCPSnoopingConfig().verifyMac = false;
 
     const before = sw._getDHCPSnoopingViolations();
     injectDhcp(sw, 'FastEthernet0/1', makeDhcpFrame(REAL_MAC, SPOOFED_CHADDR));

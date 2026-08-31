@@ -629,11 +629,12 @@ describe('Group 3: CLI — DHCP Configuration & Monitoring', () => {
       // Verify configuration
       const snoopingStatus = await switch1.executeCommand('show ip dhcp snooping');
       expect(snoopingStatus).toContain('DHCP snooping is enabled');
-      expect(snoopingStatus).toContain('Trusted ports: Gi0/24');
+      expect(snoopingStatus).toMatch(/^GigabitEthernet0\/24\s+yes\s/m);
+      expect(snoopingStatus).toMatch(/^GigabitEthernet0\/1\s+no\s+no\s+10$/m);
       
       const bindingTable = await switch1.executeCommand('show ip dhcp snooping binding');
       expect(bindingTable).toContain('MacAddress');
-      expect(bindingTable).toContain('IP address');
+      expect(bindingTable).toContain('IpAddress');
       expect(bindingTable).toContain('Lease');
       expect(bindingTable).toContain('VLAN');
     });

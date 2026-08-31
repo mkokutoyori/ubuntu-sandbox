@@ -6,7 +6,14 @@
  */
 
 import type { Router } from '../../Router';
-import { dhcpRunningConfigLines } from '../../../dhcp/dhcpRunningConfig';
+import { dhcpRunningConfigLines, dhcpSnoopingInterfaceLines, dhcpSnoopingRunningConfigLines } from '../../../dhcp/dhcpRunningConfig';
+import { createDefaultSnoopingConfig } from '../../../dhcp/types';
+import type { DHCPSnoopingConfig } from '../../../dhcp/types';
+
+function snoopingConfigOf(device: object): DHCPSnoopingConfig {
+  const holder = device as { _getDHCPSnoopingConfig?: () => DHCPSnoopingConfig };
+  return holder._getDHCPSnoopingConfig?.() ?? createDefaultSnoopingConfig();
+}
 import { privilegeConfigLines } from '../cli/CliAuthorization';
 import { getPrivilegeRules } from '../../router/security/CiscoPrivilegeStore';
 import type { Port } from '../../../hardware/Port';
@@ -177,7 +184,10 @@ function maskTextToCidr(text: string): number {
  * fait par préfixe, pas par ordre de configuration.
  */
 export function showIpRoute(router: Router): string {
-  return renderIpRouteTable(router, router.getRoutingTable().filter((r) => router.isRouteUsable(r)));
+  return renderIpRouteTable(
+    routerRouteTableHost(router),
+    router.getRoutingTable().filter((r) => router.isRouteUsable(r)),
+  );
 }
 
 /**
@@ -189,8 +199,32 @@ export function showIpRoute(router: Router): string {
  * c'est le défaut « trois commandes, trois vérités » à l'échelle du
  * routage. Il n'en reste qu'un.
  */
+/**
+ * Ce dont le rendu de la table a besoin de la MACHINE, et rien de plus.
+ *
+ * Les routes locales /32 se derivent des adresses portees par les
+ * interfaces de couche 3 utilisables — des ports sur un routeur, des
+ * SVI sur un Catalyst. Nommer ce besoin est ce qui permet aux deux
+ * plateformes de lire le meme rendu.
+ */
+export interface RouteTableHost {
+  localAddresses(): Iterable<readonly [string, { toUint32(): number; toString(): string }]>;
+}
+
+export function routerRouteTableHost(router: Router): RouteTableHost {
+  return {
+    *localAddresses() {
+      for (const [name, port] of router._getPortsInternal()) {
+        const ip = port.getIPAddress();
+        if (!ip || !router.isRouteInterfaceUsable(name)) continue;
+        yield [name, ip] as const;
+      }
+    },
+  };
+}
+
 export function renderIpRouteTable(
-  router: Router,
+  host: RouteTableHost,
   table: ReadonlyArray<{
     network: { toString(): string; toUint32?: () => number };
     mask: { toCIDR?: () => number; toString(): string };
@@ -240,9 +274,7 @@ export function renderIpRouteTable(
   }
 
   // Les routes locales /32 : une par adresse d'interface utilisable.
-  for (const [name, port] of router._getPortsInternal()) {
-    const ip = port.getIPAddress();
-    if (!ip || !router.isRouteInterfaceUsable(name)) continue;
+  for (const [name, ip] of host.localAddresses()) {
     // Une interface en /32 (une loopback, typiquement) a déjà sa route
     // connectée à la même adresse : IOS n'en affiche pas deux.
     const already = rendered.some((entry) =>
@@ -508,6 +540,7 @@ export function showRunningConfig(router: Router): string {
   lines.push(...consoleAndAuxLineConfigLines(router, serviceEncryption));
 
   lines.push(...dhcpRunningConfigLines(dhcp));
+  lines.push(...dhcpSnoopingRunningConfigLines(snoopingConfigOf(router)));
 
   lines.push('!');
   const descs = router._getInterfaceDescriptions();
@@ -900,7 +933,6 @@ function ospfInterfaceRunningConfigLines(pending: Record<string, unknown>): stri
 function legacyInterfaceLines(port: Port): string[] {
   const lines: string[] = [];
   const mss = port.getTcpAdjustMss();
-  const rate = port.getDhcpSnoopingRateLimit();
   const pool = port.getIpv6DhcpPool();
   const wfq = port.getFairQueueConfig();
   const pbr = port.getPolicyRouteMap();
@@ -910,8 +942,6 @@ function legacyInterfaceLines(port: Port): string[] {
   if (mss !== null) lines.push(` ip tcp adjust-mss ${mss}`);
   if (port.isIpAccountingEnabled()) lines.push(' ip accounting');
   if (port.isDhcpRelayInfoTrusted()) lines.push(' ip dhcp relay information trusted');
-  if (port.isDhcpSnoopingTrusted()) lines.push(' ip dhcp snooping trust');
-  if (rate !== null) lines.push(` ip dhcp snooping limit rate ${rate}`);
   if (port.isRipV2Broadcast()) lines.push(' ip rip v2-broadcast');
   if (port.isNbarProtocolDiscoveryEnabled()) lines.push(' ip nbar protocol-discovery');
   if (pool) lines.push(` ipv6 dhcp server ${pool}`);
@@ -995,6 +1025,7 @@ function interfaceConfigLines(
   const nf = (router as unknown as { getNetflowService?: () => { asInterfaceRunningConfigLines: (n: string) => string[] } }).getNetflowService?.();
   if (nf) lines.push(...nf.asInterfaceRunningConfigLines(name));
   lines.push(...legacyInterfaceLines(port));
+  lines.push(...dhcpSnoopingInterfaceLines(snoopingConfigOf(router), name));
   lines.push(...igmpInterfaceRunningConfigLines(router, name));
   lines.push(...pimInterfaceRunningConfigLines(router, name));
   // `rate-limit` (CAR historique) était STOCKÉ sur le port et rendu

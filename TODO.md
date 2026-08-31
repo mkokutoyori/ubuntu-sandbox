@@ -1300,8 +1300,20 @@ défauts — la méthode vaut d'être reprise sur le reliquat.
   paquet exterieur. `probe-tunnel-ne-diffuse-pas.test.ts` observe la fuite
   la ou elle se voit — sur une machine tierce du meme segment.
 
-- `show tcp brief` et `show sockets` annoncent un en-tete et ne rendent
-  JAMAIS de ligne — ouvert. `showTcpBrief()` et `showSockets()`
+- `show tcp brief` rend ses lignes — fermée pour cette moitié.
+  `showTcpBrief()` ne prenait AUCUN argument : une constante, donc sans
+  aucun moyen d'atteindre l'équipement. Elle lit désormais la pile TCP par
+  un accesseur optionnel (un commutateur n'en a pas et garde son en-tête
+  seul), et rend les écouteurs comme les sessions établies.
+  **Aucune largeur n'est inventée** : l'en-tête est celui qui existait déjà,
+  inchangé, et les colonnes s'y alignent. La forme `adresse.port` et le
+  `*.*` d'un écouteur sont attestés par les exemples de la documentation
+  Cisco, dont seuls les BLANCS sont perdus au passage par le HTML.
+  `show sockets` reste OUVERT et n'est pas touché : son en-tête est INVENTÉ
+  (`Proto Local Address Foreign Address State` au lieu de
+  `Proto Remote Port Local Port In Out Stat TTY OutputIF`), donc y ajouter
+  des lignes reviendrait à bâtir sur une invention. Ancien texte de
+  l'entrée, conservé pour ce qui reste : `showTcpBrief()` et `showSockets()`
   (`cisco/CiscoCommonShow.ts`) rendent une CONSTANTE : une ligne
   d'en-tete, rien d'autre, sur une machine qui porte pour de bon des
   ecouteurs TCP sur 22 et 23 et de vraies sessions etablies que
@@ -1330,31 +1342,166 @@ défauts — la méthode vaut d'être reprise sur le reliquat.
   à l'autre ; plusieurs terminaux pouvaient s'ouvrir sur un port console
   qui est unique ; `show system interface` ne suivait pas l'ordre du
   châssis ; l'auto-complétion était sensible à la casse.
-- `config system vdom` n'est pas modélisé sur le FortiGate — ouvert.
-  `show system vdom` résout `vdom` par abréviation vers `vdom-link` et rend
-  donc une AUTRE table, ce qui est le comportement d'abréviation de FortiOS
-  appliqué à une table absente. Le multi-vdom existe par ailleurs
-  (`set vdom-mode multi-vdom`, `config global`, vdom actif `root`).
-- `diagnose hardware sysinfo memory` n'est pas implémenté — ouvert. Le
-  refus nomme désormais la commande entière et non le verbe `diagnose`,
-  qui est connu ; reste à décider si un modèle mémoire mérite d'exister
-  (les seuils de conserve-mode sont déjà déclarés au schéma).
-- Une politique de pare-feu INCOMPLETE est acceptee en silence — ouvert.
-  Un vrai FortiGate refuse au `next` une politique sans ses attributs
-  obligatoires. Le controle a ete ECRIT puis RETIRE : il faisait tomber 13
-  cas de 7 fichiers, et l'examen a montre que c'etait ma regle qui etait
-  fausse — une politique IPv6 se declare par `srcaddr6`/`dstaddr6` et n'a
-  pas besoin de la paire v4. Ni l'ensemble exact des attributs requis ni
-  le message de refus ne sont attestables depuis ce reseau ; les inventer
-  serait le defaut que ce depot refuse.
-- `execute reboot`, `execute shutdown` et `execute factoryreset` ne font
-  RIEN par la voie scriptee — ouvert. Elles sont cablees sur le plan
-  d'interaction du terminal, donc `executeCommand` rend la chaine vide et
-  l'appareil reste allume. Un vrai FortiGate demande confirmation
-  (`Do you want to continue? (y/n)`) ; decider ce que rend une voie sans
-  interaction est un choix de conception, pas une correction evidente.
+- Le VDOM `root` existe et `show vdom` le montre — fermée, et la premisse
+  de l'entrée précédente était FAUSSE : la vraie commande de FortiOS est
+  `config vdom`, pas `config system vdom`, et elle était déjà modélisée.
+  Le défaut réel était ailleurs : `predefined` ne nourrissait que l'aide et
+  la complétion, jamais l'arbre de configuration, si bien que `show vdom`
+  rendait un bloc VIDE sur une machine dont `get system status` annonce
+  `Current virtual domain: root`. `seedFactoryVdoms()` peuple la table
+  depuis le registre de l'équipement, au démarrage ET au retour d'usine.
+  Reste vrai et non corrigé : `show system vdom` résout `vdom` par
+  abréviation vers `vdom-link`. C'est l'abréviation de FortiOS appliquée à
+  notre vocabulaire — un vrai boîtier a plusieurs `system vdom-*` et
+  répondrait « ambigu » ; inventer ces tables pour provoquer l'ambiguïté
+  serait le défaut inverse.
+- `diagnose hardware sysinfo memory` rend `/proc/meminfo` — fermée. Le
+  modèle mémoire EXISTAIT (`SystemLoad.memory()`, qui nourrit déjà
+  `get system performance status` et le conserve-mode) ; il lui manquait
+  cette porte. Les valeurs sont donc mesurées, et une sonde les compare
+  entre les deux vues plutôt que de leur faire confiance.
+  `Active`/`Inactive` sont délibérément OMISES : rien ici ne distingue une
+  page active d'une page inactive, et les rendre serait une illustration.
+  C'est la convention que ce dépôt suit déjà (`show ip ssh` tait ses
+  suites cryptographiques, `show ip http server status` son condensé).
+- Une politique de pare-feu INCOMPLETE est refusee au `next` — fermée.
+  L'ensemble exigé est `srcintf`, `dstintf`, une source (`srcaddr` OU
+  `srcaddr6`), une destination (`dstaddr` OU `dstaddr6`) et `service` ;
+  `schedule` n'en est PAS, il vaut `always` par défaut au schéma. Le refus
+  nomme l'attribut manquant, sous un `NOTE:` — le message exact de Fortinet
+  n'est pas attestable depuis ce réseau, et c'est la convention que ce dépôt
+  suit déjà pour nginx/apache.
+  Le contrôle a EXPOSÉ un défaut préexistant : `set dstintf` refusait une
+  ZONE SD-WAN (`INTERFACE_TARGETS` ne connaissait que `system interface` et
+  `system zone`), donc la politique était commitée avec un `dstintf` vide,
+  c'est-à-dire incapable de correspondre à quoi que ce soit.
+- `execute reboot|shutdown|factoryreset` agissent par les DEUX voies —
+  fermée. La voie scriptée était incohérente avec elle-même :
+  `factoryreset` réinitialisait sans rien annoncer, `reboot` et `shutdown`
+  ne faisaient rien du tout. Elles annoncent désormais et agissent, la
+  confirmation ne pouvant être posée que sur un canal interactif ;
+  `annonceAlimentation()` est l'unique texte, lu par le plan d'interaction
+  ET par la voie scriptée.
+  Trouvé avec : `applyFactoryIdentity` reposait `name` sans `hostname`,
+  donc un retour d'usine laissait l'invite sur le nom configuré —
+  `Firewall.applyDeviceName()` pose l'identité en un seul endroit, lu par
+  le commit de `system global` et par le retour d'usine.
 - Famille `service` — les drapeaux se rendent des DEUX cotes, fermée.
   `service password-encryption` était stockée sur `Equipment` (magasin déjà
   partagé) mais rendue par le seul parcours du routeur, donc perdue au
   rechargement d'une topologie sur un Catalyst ; `service dhcp` n'était pas
   déclarée du tout sur le commutateur, donc absente de l'aide et sans effet.
+- `sntp broadcast client` est ACCEPTE, RENDU, et n'est evalue par
+  personne. `NtpAgent` n'a aucune notion de mode diffusion (mode 5) : pas
+  une occurrence de `broadcast` dans tout le module, donc rien ne peut
+  recevoir une annonce. Il est stocke plutot que refuse parce que le
+  refuser ferait disparaitre a l'import d'une topologie une ligne qu'une
+  vraie machine accepte — meme raisonnement que `ip ssh server algorithm`
+  et `snmp-agent mib-view`. Fermer demande un emetteur d'annonces cote
+  serveur et une reception cote client, c'est-a-dire un mode de plus dans
+  le moteur, pas une porte.
+- `sntp source-interface <nom>` est REFUSEE alors que la Basic System
+  Management Command Reference la decrit. Le moteur, lui, sait le faire :
+  `NtpAgent.setSourceInterface` existe et `ntp source` l'ecrit. Ce qui
+  manque est l'ORTHOGRAPHE : le champ est unique et la configuration est
+  rendue `ntp source <nom>`, donc l'accepter telle quelle rendrait a
+  l'operateur une commande qu'il n'a pas tapee, et un import la rejouerait
+  sous l'autre nom. Fermer demande un drapeau d'orthographe, comme
+  `loggingSpelling` vient d'en poser un pour `logging`.
+- `sntp unicast [client]` est acceptee et rangee nulle part. Elle a ete
+  GARDEE plutot que retiree : les pages Cisco atteignables decrivent bien
+  un client SNTP unicast, mais elles portent sur les commutateurs
+  « small business » (SG300/SG550), dont la CLI n'est pas IOS, et la
+  Basic System Management Command Reference — la reference d'IOS — n'est
+  pas atteignable depuis ce reseau. Retirer une commande sur une premisse
+  invérifiée serait pire que la garder ; ce qu'il faut est une capture
+  d'IOS, pas un raisonnement.
+- `show sntp` rend TOUTES les associations, y compris celles declarees
+  par `ntp server`. Elles partagent le meme magasin, et l'association
+  porte deja `configuredAs`, donc le filtre est a portee — mais ce que
+  fait une vraie machine ne l'est pas : IOS n'embarque JAMAIS les deux
+  piles a la fois (l'image porte l'une ou l'autre), donc aucune capture
+  reelle ne peut trancher ce que `show sntp` montre d'une association
+  NTP. Trancher au hasard serait inventer.
+- L'INVITE aux niveaux de privilege 2 a 14 n'est attestee par aucune
+  capture atteignable depuis ce reseau. Ce depot rend `#` —
+  `buildDevicePrompt` mappe explicitement « mode utilisateur au niveau
+  >= 2 » sur l'invite privilegiee — pendant qu'un commentaire du
+  gestionnaire d'`enable` affirmait le contraire (« real IOS never shows
+  '#' below 15 ») ; le commentaire est supprime, la decision du code est
+  gardee, et la question reste ouverte. Les pages qui la trancheraient
+  (cisco.com, study-ccna, networklessons, flylib, tacacs.com) sont
+  toutes bloquees par le mandataire de sortie. Ce qu'il faut est une
+  capture de `Router>enable 7`, pas un raisonnement.
+- `enable <niveau>` depuis l'EXEC PRIVILEGIE traverse desormais la meme
+  porte de secret que depuis l'EXEC utilisateur, parce qu'il n'y a plus
+  qu'une declaration. Ce qu'un vrai IOS demande quand on DESCEND d'un
+  niveau (15 vers 7) n'est pas atteste : il est possible qu'il ne
+  demande rien, une descente n'etant pas une elevation. Le comportement
+  uniforme a ete prefere a deux comportements selon l'endroit d'ou l'on
+  tape, faute de reference.
+- La LARGEUR des colonnes du tableau `Interface / Trusted / Allow option
+  / Rate limit (pps)` de `show ip dhcp snooping` est CALCULEE et non
+  mesuree. Les intitules sont attestes par la documentation Cisco, la
+  mise en page ne l'est pas : aucune transcription de cette vue n'est
+  atteignable depuis ce reseau — `ntc-templates` ne porte un gabarit que
+  pour `show ip dhcp snooping binding`, dont les largeurs SONT donc
+  fixees, et les pages de Cisco, 9tut et firewall.cx sont toutes
+  bloquees par le mandataire. `TextTable` calcule donc la largeur sur le
+  contenu, ce que son propre en-tete reserve aux tableaux « dont la
+  reference ne fixe rien » ; l'en-tete, le filet et les donnees sortent
+  d'une seule declaration, donc ils ne peuvent pas se contredire, mais
+  la colonne n'a pas la largeur d'un vrai Catalyst. Fermer demande une
+  capture.
+- La colonne `Allow option` est DEDUITE de la confiance du port (un port
+  de confiance accepte l'option 82, un autre non), ce qui reproduit la
+  regle par defaut que la documentation enonce — `Option 82 on untrusted
+  port is not allowed` — mais la commande qui la RENVERSE,
+  `ip dhcp snooping information option allow-untrusted`, n'existe pas
+  dans ce depot et n'a donc aucun magasin. Tant qu'elle n'existe pas, la
+  colonne ne peut pas varier autrement. La ligne `Option 82 on untrusted
+  port is not allowed` n'est deliberement PAS rendue : l'ecrire en dur
+  annoncerait un reglage que rien ne porte.
+- `show ip dhcp snooping statistics` reste declaree sur le trie du
+  COMMUTATEUR seul, la ou le reste de la famille est passe au socle. Ses
+  dix compteurs sont des champs de `Switch` (`dhcpSnoopingDropped*`) que
+  `Router` n'a pas, donc la descendre demande soit de porter ces
+  compteurs dans `DHCPSnoopingConfig` — le magasin partage —, soit un
+  crochet de plus. Le premier est le bon, et c'est un lot a soi : ces
+  compteurs sont incrementes par le plan de donnees du commutateur.
+- `ip dhcp snooping` est desormais accepte sur les DEUX plateformes
+  depuis une seule declaration, et le routeur n'a plus de magasin a lui
+   — mais il n'a toujours aucun plan de donnees qui espionne. Ce que le
+  chassis modelise (`c2900`) fait d'un `ip dhcp snooping` reel n'est pas
+  attestable depuis ce reseau : une synthese de recherche affirme qu'un
+  ISR G2 ne connait pas la commande, aucune capture ne le montre, et un
+  ISR portant un module EtherSwitch la connait. Amputer le routeur sur
+  une synthese serait deviner ; il rend donc la meme vue que le
+  commutateur, avec un tableau vide et zero liaison, ce qui est au moins
+  vrai.
+- La tete GLOUTONNE de `spanning-tree` (configuration globale du
+  commutateur) reste au trie. Deux chemins bornes en sont partis —
+  `spanning-tree mode`, qui n'accepte que trois valeurs, et
+  `spanning-tree mst configuration`, qui n'en prend aucune — mais le
+  reste (`vlan <liste> {priority|hello-time|max-age|forward-time|root}`,
+  `portfast [bpduguard|bpdufilter] default`, `loopguard default`,
+  `pathcost method {long|short}`, `uplinkfast`, `backbonefast`,
+  `priority <n>`) n'a pas UNE grammaire mais huit. Mesure : le declarer
+  en une place libre fait refuser `spanning-tree vlan 10`, une frappe que
+  la machine accepte, parce que la continuation `vlan` devient alors un
+  noeud sans commande. Fermer demande de declarer les huit formes
+  separement, chacune avec ses places — c'est un lot a soi, pas la queue
+  de celui-ci.
+- `show ip route summary` reste PROPRE a chaque plateforme : le routeur
+  a `showIpRouteSummary` dans `CiscoOspfCommands`, le commutateur le sien
+  dans `CiscoSwitchShell`, et les deux comptent differemment (le premier
+  connait OSPF, EIGRP et BGP, le second seulement `connected` et
+  `static`). Les fondre demande de decider ce qu'un Catalyst compte
+  quand il ne fait tourner aucun protocole dynamique, ce qu'aucune
+  capture atteignable ne montre ; les deux ont donc ete laisses tels
+  quels alors que le reste de la famille est passe a un rendu unique.
+- `show ip route vrf` et `show ip route ospf` restent servis par le
+  crochet du ROUTEUR seul, et c'est voulu : un Catalyst de ce depot
+  n'a ni VRF ni processus OSPF. La forme `ospf` y est neanmoins
+  ACCEPTEE et rend une table filtree vide, par la table de codes
+  partagee — ce qui est ce que fait une vraie machine sans route OSPF.

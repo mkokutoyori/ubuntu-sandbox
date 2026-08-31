@@ -6,25 +6,24 @@ export const DHCP_RELAY_INFO_POLICIES: ReadonlySet<string> =
 export const CEF_LOAD_SHARING_ALGORITHMS: ReadonlySet<string> =
   new Set(['original', 'universal', 'tunnel', 'include-ports']);
 
+export const CEF_ACCOUNTING_KINDS: ReadonlySet<string> =
+  new Set(['per-prefix', 'non-recursive', 'load-balance-hash', 'prefix-length']);
+
 export class CiscoGlobalConfig {
   dhcpRelayInfoPolicy: DhcpRelayInfoPolicy | null = null;
   dhcpRelayInfoTrustAll = false;
   dhcpSmartRelay = false;
-  dhcpSnooping = false;
-  dhcpSnoopingVlans: string | null = null;
-  dhcpSnoopingInfoOption = false;
   defaultNetwork: string | null = null;
   localPolicyRouteMap: string | null = null;
   cefLoadSharingAlgorithm: string | null = null;
+  cefAccounting: Set<string> = new Set();
 
   runningConfigLines(): string[] {
     const lines: string[] = [];
+    for (const quoi of this.cefAccounting) lines.push(`ip cef accounting ${quoi}`);
     if (this.cefLoadSharingAlgorithm) {
       lines.push(`ip cef load-sharing algorithm ${this.cefLoadSharingAlgorithm}`);
     }
-    if (this.dhcpSnooping) lines.push('ip dhcp snooping');
-    if (this.dhcpSnoopingVlans) lines.push(`ip dhcp snooping vlan ${this.dhcpSnoopingVlans}`);
-    if (this.dhcpSnoopingInfoOption) lines.push('ip dhcp snooping information option');
     if (this.dhcpRelayInfoPolicy) {
       lines.push(`ip dhcp relay information policy ${this.dhcpRelayInfoPolicy}`);
     }

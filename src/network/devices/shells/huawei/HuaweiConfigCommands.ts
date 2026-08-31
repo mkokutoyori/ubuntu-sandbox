@@ -19,6 +19,7 @@ import { refuseUnknownUndo, huaweiTypeInterface, refuseMotInattenduVrp, HUAWEI_E
 import { classfulMask as classfulMaskString } from '@/network/core/ip';
 import { interfacePoolName } from './HuaweiDhcpCommands';
 import { describeHuaweiInterfaceArg, wordArg } from './huaweiInterfaceHelp';
+import { getSecurityConfig } from '../cisco/CiscoSecurityCommands';
 
 // ─── Shell Context Interface ─────────────────────────────────────────
 
@@ -1040,9 +1041,27 @@ export function buildInterfaceCommands(trie: CommandTrie, ctx: HuaweiShellContex
   });
 
   // IPv6 interface commands
-  trie.registerGreedy('ip urpf', 'Configure URPF mode', (args) =>
-    "Error: This simulator performs no reverse-path check on a received packet, "
-    + `so this command would be stored without effect.\nip urpf ${args.join(' ')}`.trimEnd());
+  trie.registerGreedy('ip urpf', 'Configure URPF mode', (args) => {
+    const ifName = ctx.getSelectedInterface();
+    if (!ifName) return '';
+    const mode = args[0];
+    if (mode !== 'strict' && mode !== 'loose') return 'Error: Unrecognized command found at \'^\' position.';
+    const reste = args.slice(1);
+    if (reste.some((a) => a !== 'allow-default-route')) {
+      return 'Error: Unrecognized command found at \'^\' position.';
+    }
+    getSecurityConfig(ctx.r()).ifaceFlags(ifName).urpf = {
+      mode, allowDefault: reste.includes('allow-default-route'),
+    };
+    return '';
+  });
+
+  trie.register('undo ip urpf', 'Disable URPF check', () => {
+    const ifName = ctx.getSelectedInterface();
+    if (!ifName) return '';
+    delete getSecurityConfig(ctx.r()).ifaceFlags(ifName).urpf;
+    return '';
+  });
 
   trie.register('ipv6 enable', 'Enable IPv6 on interface', () => {
     const ifName = ctx.getSelectedInterface();

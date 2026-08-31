@@ -130,7 +130,7 @@ import type { FhrpDataPlane } from '../fhrp/types';
 import { DHCPServer, type DhcpUtilizationCrossing } from '../dhcp/DHCPServer';
 import {
   classifyIpv4Destination, connectedPrefixesOfPort, decrementForForwarding, isDirectedBroadcast,
-  ipv4HeaderProblem,
+  ipv4HeaderProblem, martianSource,
 } from '../layers/internet/InternetLayer';
 import {
   DEFAULT_IPV4_TTL, ipv4HeaderOptionsOf, requiresNamedInterface, sendOnNamedInterface,
@@ -143,7 +143,8 @@ import {
 } from '../snmp/mibs/DhcpServerMib';
 import { DHCPPacket } from '../dhcp/DHCPPacket';
 import { buildDhcpServerReply } from '../dhcp/DhcpServerExchange';
-import type { DHCPDiscoverParams, DHCPOfferResult } from '../dhcp/types';
+import type { DHCPDiscoverParams, DHCPOfferResult, DHCPSnoopingConfig } from '../dhcp/types';
+import { createDefaultSnoopingConfig } from '../dhcp/types';
 import { DHCPv6Server } from '../dhcpv6/DHCPv6Server';
 import { DHCPv6Packet } from '../dhcpv6/DHCPv6Packet';
 import { IPSecEngine } from '../ipsec/IPSecEngine';
@@ -410,6 +411,32 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
     });
     return e;
   })();
+
+  private interfaceUrpf(ifName: string): { mode: 'strict' | 'loose' | null; allowDefault?: boolean } | undefined {
+    const sec = (this as unknown as Record<symbol, CiscoSecurityConfig | undefined>)[
+      Symbol.for('CiscoSecurityConfig')
+    ];
+    return sec?.ifaceFlags(ifName).urpf;
+  }
+
+  protected urpfRejects(inPort: string, pkt: IPv4Packet): boolean {
+    const urpf = this.interfaceUrpf(inPort);
+    if (!urpf || !urpf.mode) return false;
+    if (pkt.sourceIP.isUnspecified()
+      && classifyIpv4Destination(pkt.destinationIP) === 'limited-broadcast') return false;
+    const route = this.lookupRoute(pkt.sourceIP);
+    if (!route) return true;
+    if (route.mask.toCIDR() === 0 && !urpf.allowDefault) return true;
+    return urpf.mode === 'strict' && route.iface !== inPort;
+  }
+
+  protected isIcmpRedirectsEnabled(ifName: string): boolean {
+    const sec = (this as unknown as Record<symbol, CiscoSecurityConfig | undefined>)[
+      Symbol.for('CiscoSecurityConfig')
+    ];
+    if (!sec) return true;
+    return !sec.ifaceFlags(ifName).noRedirects;
+  }
 
   protected isIcmpUnreachablesEnabled(ifName: string): boolean {
     const sec = (this as unknown as Record<symbol, CiscoSecurityConfig | undefined>)[
@@ -2404,6 +2431,13 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
     const originalPkt = ipPkt;
     if (!reinjected && this.deniedByInboundACL(inPort, originalPkt)) return;
 
+    if (!reinjected && this.urpfRejects(inPort, ipPkt)) {
+      this.counters.ipInAddrErrors++;
+      Logger.warn(this.id, 'router:urpf-drop',
+        `${this.name}: uRPF failed for ${ipPkt.sourceIP} on ${inPort}, dropping`);
+      return;
+    }
+
     if (this.addressedToUs(ipPkt) && this.receiveControlPlaneIpv4(inPort, ipPkt)) return;
 
     const natInbound = this.natEngine.translateInbound(ipPkt, inPort);
@@ -2879,6 +2913,14 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
    * Implements the full RFC 1812 forwarding pipeline.
    */
   private forwardPacket(inPort: string, ipPkt: IPv4Packet, originalPkt: IPv4Packet = ipPkt): void {
+    const martien = martianSource(ipPkt.sourceIP);
+    if (martien) {
+      Logger.warn(this.id, 'router:martian-source',
+        `${this.name}: martian source ${ipPkt.sourceIP} (${martien}) to `
+        + `${ipPkt.destinationIP} on ${inPort}, dropping`);
+      this.counters.ipInHdrErrors++;
+      return;
+    }
     if (!this._ipRoutingEnabled) {
       Logger.info(this.id, 'router:ip-routing-disabled',
         `${this.name}: IP routing is disabled, dropping packet from ${ipPkt.sourceIP} to ${ipPkt.destinationIP}`);
@@ -3227,6 +3269,8 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
   }
 
   private sendICMPRedirect(inPort: string, offendingPkt: IPv4Packet, redirectGW: IPAddress): void {
+    if (!mayGenerateICMPError(offendingPkt)) return;
+    if (!this.isIcmpRedirectsEnabled(inPort)) return;
     const inPortObj = this.ports.get(inPort);
     if (!inPortObj) return;
     const myIP = inPortObj.getIPAddress();
@@ -3923,6 +3967,9 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
   _getNeighborCacheInternal() { return this.ipv6Engine.getNeighborCacheInternal(); }
   /** @internal Used by CLI shells */
   _getDHCPServerInternal(): DHCPServer { return this.dhcpServer; }
+
+  private dhcpSnooping: DHCPSnoopingConfig = createDefaultSnoopingConfig();
+  _getDHCPSnoopingConfig(): DHCPSnoopingConfig { return this.dhcpSnooping; }
 
   private handleDhcpUdp(inPort: string, ipPkt: IPv4Packet, udp: UDPPacket): void {
     const pkt = udp.payload as DHCPPacket | undefined;

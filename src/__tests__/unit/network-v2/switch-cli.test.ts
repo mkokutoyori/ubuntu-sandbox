@@ -689,10 +689,17 @@ describe('CommandTrie', () => {
   });
 
   it('should match abbreviated commands unambiguously', () => {
-    // "sh ver" → unique match: show version
-    const result = trie.match('sh ver');
+    // "sho ver" → unique match: show version
+    const result = trie.match('sho ver');
     expect(result.status).toBe('ok');
     expect(result.node?.action?.([], '')).toBe('version-output');
+  });
+
+  it('resolves the first word on the WORD, never on what follows', () => {
+    // "sh" abbreviates both "show" and "shutdown"; IOS refuses it whatever
+    // comes next, and does not let the rest of the line pick a winner.
+    expect(trie.match('sh').status).toBe('ambiguous');
+    expect(trie.match('sh ver').status).toBe('ambiguous');
   });
 
   it('should detect ambiguous abbreviations', () => {

@@ -3,7 +3,10 @@ import {
   type EthernetFrame, type IPAddress, type IPv4HeaderOptions, type IPv4Packet,
 } from '../../core/types';
 import { ipv4MulticastToMac } from '../../core/ip';
-import { classifyIpv4Destination, wrapIpv4InEthernet } from './InternetLayer';
+import {
+  classifyIpv4Destination, wrapIpv4InEthernet, isDirectedBroadcast,
+  type ConnectedIpv4Prefix,
+} from './InternetLayer';
 
 export interface Ipv4SendRequest {
   readonly destination: IPAddress;
@@ -37,7 +40,10 @@ export function requiresNamedInterface(destination: IPAddress): boolean {
   return classifyIpv4Destination(destination) !== 'unicast';
 }
 
-export function linkDestinationFor(destination: IPAddress): MACAddress | null {
+export function linkDestinationFor(
+  destination: IPAddress, connected: readonly ConnectedIpv4Prefix[] = [],
+): MACAddress | null {
+  if (isDirectedBroadcast(destination, connected)) return MACAddress.broadcast();
   switch (classifyIpv4Destination(destination)) {
     case 'limited-broadcast':
       return MACAddress.broadcast();

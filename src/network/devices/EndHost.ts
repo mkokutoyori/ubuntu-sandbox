@@ -21,7 +21,9 @@
 import { Equipment } from '../equipment/Equipment';
 import {
   classifyIpv4Destination, decrementForForwarding, ipv4HeaderProblem,
+  connectedPrefixesOfPort, martianSource, type ConnectedIpv4Prefix,
 } from '../layers/internet/InternetLayer';
+import { linkDestinationFor } from '../layers/internet/Ipv4Egress';
 import { Port } from '../hardware/Port';
 import type { IPv4AddressOrigin } from '../hardware/Port';
 import { SocketTable } from '../core/SocketTable';
@@ -2137,6 +2139,13 @@ export abstract class EndHost extends Equipment {
 
   /** Forward an IPv4 packet when ipForwardEnabled is true (NAT gateway). */
   private forwardIPv4(inPort: string, ipPkt: IPv4Packet): void {
+    const martien = martianSource(ipPkt.sourceIP);
+    if (martien) {
+      Logger.warn(this.id, 'ipv4:martian-source',
+        `${this.name}: martian source ${ipPkt.sourceIP} (${martien}) to `
+        + `${ipPkt.destinationIP} on ${inPort}, dropping`);
+      return;
+    }
     const decision = decrementForForwarding(ipPkt);
     if (decision.kind === 'expired') {
       // RFC 792: a forwarding node MUST send Time Exceeded (Type 11, Code 0)
@@ -2292,9 +2301,23 @@ export abstract class EndHost extends Equipment {
     return true;
   }
 
+  private connectedIpv4Prefixes(): ConnectedIpv4Prefix[] {
+    const out: ConnectedIpv4Prefix[] = [];
+    for (const [, port] of this.ports) out.push(...connectedPrefixesOfPort(port));
+    return out;
+  }
+
   public sendIpv4FrameArpAware(outPortName: string, ipPkt: IPv4Packet, nextHopIP: IPAddress): void {
     const port = this.getPort(outPortName);
     if (!port) return;
+    const surLien = linkDestinationFor(nextHopIP, this.connectedIpv4Prefixes());
+    if (surLien) {
+      this.sendFrame(outPortName, {
+        srcMAC: port.getMAC(), dstMAC: surLien,
+        etherType: ETHERTYPE_IPV4, payload: ipPkt,
+      });
+      return;
+    }
     const cached = this.arpTable.get(nextHopIP.toString());
     if (cached) {
       this.sendFrame(outPortName, {
@@ -3580,6 +3603,18 @@ export abstract class EndHost extends Equipment {
     return results;
   }
 
+  private unreachableResults(localIP: IPAddress | null, count: number): PingResult[] {
+    const from = localIP ? localIP.toString() : '';
+    const results: PingResult[] = [];
+    for (let seq = 1; seq <= count; seq++) {
+      results.push({
+        success: false, rttMs: 0, ttl: 0, seq, bytes: 0, fromIP: from,
+        error: `Destination unreachable from ${from} code 1`,
+      });
+    }
+    return results;
+  }
+
   protected async executePingSequence(
     targetIP: IPAddress,
     count: number = 4,
@@ -3603,10 +3638,15 @@ export abstract class EndHost extends Equipment {
 
     // ARP resolution (for next-hop, not necessarily the final destination)
     let nextHopMAC: MACAddress;
-    try {
-      nextHopMAC = await this.resolveARP(portName, route.nextHopIP, timeoutMs);
-    } catch {
-      return []; // ARP failed = no replies
+    const surLien = linkDestinationFor(route.nextHopIP, this.connectedIpv4Prefixes());
+    if (surLien) {
+      nextHopMAC = surLien;
+    } else {
+      try {
+        nextHopMAC = await this.resolveARP(portName, route.nextHopIP, timeoutMs);
+      } catch {
+        return this.unreachableResults(route.port.getIPAddress(), count);
+      }
     }
 
     // Send pings
@@ -3683,9 +3723,10 @@ export abstract class EndHost extends Equipment {
     if (!myIP) return { success: false, rttMs: 0, ttl: 0 };
 
     const nextHopIpStr = route.nextHopIP.toString();
-    this.resolveArpSync(targetIP);
-    const arpEntry = this.arpTable.get(nextHopIpStr);
-    if (!arpEntry) return { success: false, rttMs: 0, ttl: 0 };
+    const surLien = linkDestinationFor(route.nextHopIP, this.connectedIpv4Prefixes());
+    if (!surLien) this.resolveArpSync(targetIP);
+    const destinationMac = surLien ?? this.arpTable.get(nextHopIpStr)?.mac;
+    if (!destinationMac) return { success: false, rttMs: 0, ttl: 0 };
 
     this.pingIdCounter++;
     const id = this.pingIdCounter;
@@ -3725,7 +3766,7 @@ export abstract class EndHost extends Equipment {
     }
 
     this.sendFrame(portName, {
-      srcMAC: port.getMAC(), dstMAC: arpEntry.mac,
+      srcMAC: port.getMAC(), dstMAC: destinationMac,
       etherType: ETHERTYPE_IPV4, payload: ipPkt,
     });
 

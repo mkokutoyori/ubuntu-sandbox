@@ -1,6 +1,6 @@
 ============================================================
 Router (L3) debug transcript — huawei-router-dhcp-nat
-Generated: 2026-08-23T10:20:02.325Z
+Generated: 2026-08-31T09:01:37.937Z
 Topology: R1(Huawei) GE0/0/1=L1 LAN 192.168.1.0/24, GE0/0/0=WAN 10.0.0.0/30; R2(Huawei) GE0/0/1=W1 LAN 192.168.2.0/24, GE0/0/0=WAN
 focus=VRP DHCP global/relay/v6/snoop + NAT outbound/static/server
 Total steps: 288
@@ -1087,14 +1087,14 @@ Total steps: 288
   Root delay: 0.00 ms
   Root dispersion: 16000.00 ms
   Peer dispersion: 16000.00 ms
-  Reference time: 10:20:02.408  Aug 23 2026(EE3547D2.6872B020)
+  Reference time: 09:01:38.064  Aug 31 2026(EE3FC172.10624DD2)
 
 [218/288] r1 <R1> display ntp session
   Info: No NTP session exists.
 
 [219/288] r1 <R1> display clock
-  2026-08-23 10:20:02
-  Sunday
+  2026-08-31 09:01:38
+  Monday
   Time Zone(UTC) : UTC
 
 [220/288] r1 <R1> display lldp neighbor
@@ -1106,13 +1106,13 @@ Total steps: 288
 [222/288] r1 <R1> display cpu-usage
   CPU Usage Stat. Cycle: 60 (Second)
   CPU Usage            : 11% Max: 38%
-  CPU Usage Stat. Time : 2026-08-23 10:20:02
+  CPU Usage Stat. Time : 2026-08-31 09:01:38
   CPU utilization for five seconds: 11%: one minute: 12%: five minutes: 10%
   
   Max CPU Usage Stat. Time : 0000-00-00 00:00:00.
 
 [223/288] r1 <R1> display memory-usage
-  Memory utilization statistics at 2026-08-23 10:20:02
+  Memory utilization statistics at 2026-08-31 09:01:38
   System Total Memory Is: 536870912 bytes
   Total Memory Used Is: 193273528 bytes
   Memory Using Percentage Is: 36%
@@ -1153,10 +1153,10 @@ Total steps: 288
   Dropped messages : 0
   Overwritten messages : 0
   Current messages : 4
-  2026-08-23 10:20:02 %01LINK/3/ERRORS: Interface GE0/0/1, changed state to up
-  2026-08-23 10:20:02 %01LINEPROTO/5/NOTIFICATIONS: Line protocol on Interface GE0/0/1, changed state to up
-  2026-08-23 10:20:02 %01LINK/3/ERRORS: Interface GE0/0/0, changed state to up
-  2026-08-23 10:20:02 %01LINEPROTO/5/NOTIFICATIONS: Line protocol on Interface GE0/0/0, changed state to up
+  2026-08-31 09:01:37 %01LINK/3/ERRORS: Interface GE0/0/1, changed state to up
+  2026-08-31 09:01:37 %01LINEPROTO/5/NOTIFICATIONS: Line protocol on Interface GE0/0/1, changed state to up
+  2026-08-31 09:01:37 %01LINK/3/ERRORS: Interface GE0/0/0, changed state to up
+  2026-08-31 09:01:37 %01LINEPROTO/5/NOTIFICATIONS: Line protocol on Interface GE0/0/0, changed state to up
 
 [228/288] r1 <R1> display trapbuffer
   Trapping buffer configuration and contents: enabled
@@ -1674,17 +1674,16 @@ Total steps: 288
     route-policy   Remove a route-policy
     screen-length  Restore default screen length
     screen-width   Restore default screen width
+    snmp-agent     Remove SNMP agent configuration
     terminal       Set the terminal line characteristics
     time-range     Remove a time-range
     traffic        Display traffic statistics
-    <cr>
 
 [286/288] r1 [Huawei] acl ?
     advanced  Advanced ACL (3000-3999)
     basic     Basic ACL (2000-2999)
     name      Named ACL
     number    ACL number
-    <cr>
 
 [287/288] r1 [Huawei] return
 <empty>

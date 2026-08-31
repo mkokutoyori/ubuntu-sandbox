@@ -184,6 +184,11 @@ const DEFAULT_INTERFACE_MTU = 1500;
 export class Firewall extends Equipment {
   consoleLineCount(): number { return 1; }
 
+  applyDeviceName(name: string): void {
+    this.setName(name);
+    this.setHostname(name);
+  }
+
   private readonly interfaces = new InterfaceTable((name) => this.getPort(name));
   private readonly vdoms: VdomRegistry;
   private readonly switchGroups = new SwitchGroupTable();
@@ -1089,6 +1094,8 @@ export class Firewall extends Equipment {
   }
 
   activeVdomName(): string { return this.activeVdom; }
+
+  vdomNames(): readonly string[] { return this.vdoms.names(); }
   setMultiVdom(enabled: boolean): void { this.multiVdom = enabled; }
   multiVdomEnabled(): boolean { return this.multiVdom; }
   assignInterfaceToVdom(i: string, v: string): void { this.vdoms.assignInterface(i, v); }

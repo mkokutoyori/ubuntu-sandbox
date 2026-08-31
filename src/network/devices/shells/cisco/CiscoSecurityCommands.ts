@@ -742,7 +742,6 @@ export function buildSecurityConfigCommands(trie: CommandTrie, ctx: CiscoSecurit
   buildIdentityConfigCommands(trie, ctx);
 
 
-  trie.registerGreedy('ip cef', 'Enable CEF', () => { sec().ipCef = true; return ''; });
   trie.registerGreedy('no ip cef', 'Disable CEF', () => { sec().ipCef = false; return ''; });
   trie.registerGreedy('ip multicast-routing', 'Enable IP multicast routing', () => {
     sec().ipMulticastRouting = true;
@@ -1241,10 +1240,27 @@ export function buildTrustpointSubmodeOn(
   };
   trustpointTrie.registerGreedy('enrollment', 'Enrollment configuration', (args) => {
     const t = tp(); if (!t) return '';
-    if (args[0] === 'url' && args[1]) t.enrollmentUrl = args[1];
-    else if (args[0] === 'selfsigned' || args[0] === 'self-signed') t.source = 'self-signed';
-    else if (args[0] === 'terminal') t.source = 'terminal';
-    else if (args[0] === 'profile' && args[1]) t.source = 'scep';
+    if (args.length === 0) return CISCO_ERRORS.INCOMPLETE;
+    const mot = args[0].toLowerCase();
+    if (mot === 'url') {
+      if (!args[1]) return CISCO_ERRORS.INCOMPLETE;
+      t.enrollmentUrl = args[1];
+      delete t.enrollmentProfile;
+      delete t.source;
+      return '';
+    }
+    if (mot === 'profile') {
+      if (!args[1]) return CISCO_ERRORS.INCOMPLETE;
+      t.enrollmentProfile = args[1];
+      delete t.enrollmentUrl;
+      delete t.source;
+      return '';
+    }
+    if (mot === 'selfsigned' || mot === 'self-signed') t.source = 'selfsigned';
+    else if (mot === 'terminal') t.source = 'terminal';
+    else throw new CliInvalidInput({ token: args[0] });
+    delete t.enrollmentUrl;
+    delete t.enrollmentProfile;
     return '';
   });
   trustpointTrie.registerGreedy('subject-name', 'Set subject name', (args) => {
@@ -1742,10 +1758,13 @@ export function buildSecurityInterfaceCommands(trie: CommandTrie, ctx: CiscoSecu
   });
   trie.registerGreedy('ip verify unicast', 'Configure uRPF', (args) => {
     const i = ctx.getSelectedInterface(); if (!i) return '';
+    const allowDefault = args.includes('allow-default');
     if (args[0] === 'reverse-path') {
-      sec().ifaceFlags(i).urpf = { mode: 'strict' };
+      sec().ifaceFlags(i).urpf = { mode: 'strict', allowDefault };
     } else if (args[0] === 'source' && args[1] === 'reachable-via' && args[2]) {
-      sec().ifaceFlags(i).urpf = { mode: args[2] === 'any' ? 'loose' : 'strict' };
+      sec().ifaceFlags(i).urpf = {
+        mode: args[2] === 'any' ? 'loose' : 'strict', allowDefault,
+      };
     }
     return '';
   });

@@ -24,7 +24,6 @@ const DEFAULTS: FeatureDefaults = {
   // Routers route by default; CEF on.
   'ip routing': true,
   'ipv6 unicast-routing': false,
-  'ip cef': true,
   // `ip http server` / `ip http secure-server` ne sont plus ici : un
   // booléen ne peut pas dire sur quel port ni pour qui, et cette table
   // n'a pas de rendu vivant. Ils vivent dans `CiscoHttpService`, qui
@@ -67,4 +66,12 @@ export class CiscoConfigState {
   reset(): void {
     this.flags.clear();
   }
+}
+
+const CONFIG_STATE_KEY = Symbol.for('CiscoConfigState');
+
+export function getConfigState(device: object): CiscoConfigState {
+  const d = device as unknown as Record<symbol, CiscoConfigState>;
+  if (!d[CONFIG_STATE_KEY]) d[CONFIG_STATE_KEY] = new CiscoConfigState();
+  return d[CONFIG_STATE_KEY];
 }

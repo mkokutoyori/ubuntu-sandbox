@@ -206,15 +206,6 @@ export function registerInterfaceEntry(trie: CommandTrie, ctx: CiscoShellContext
 // ─── Global Config Mode Commands ─────────────────────────────────────
 
 export function buildConfigCommands(trie: CommandTrie, ctx: CiscoShellContext): void {
-  trie.register('service dhcp', 'Enable DHCP service', () => {
-    ctx.r()._getDHCPServerInternal().enable();
-    return '';
-  });
-  trie.register('no service dhcp', 'Disable DHCP service', () => {
-    ctx.r()._getDHCPServerInternal().disable();
-    return '';
-  });
-
   registerInterfaceEntry(trie, ctx);
 
   trie.registerGreedy('no interface', 'Remove a virtual interface', (args) => {
@@ -264,17 +255,6 @@ export function buildConfigCommands(trie: CommandTrie, ctx: CiscoShellContext): 
   });
   trie.registerGreedy('no ip local policy route-map', 'Remove local PBR', () => {
     getGlobalConfig(ctx.r()).localPolicyRouteMap = null; return '';
-  });
-  trie.registerGreedy('ip cef load-sharing algorithm', 'CEF load-sharing algorithm', (args) => {
-    const algo = args[0]?.toLowerCase();
-    if (!algo) return CISCO_ERRORS.INCOMPLETE;
-    if (!CEF_LOAD_SHARING_ALGORITHMS.has(algo)) throw new CliInvalidInput({ token: args[0] });
-    getGlobalConfig(ctx.r()).cefLoadSharingAlgorithm = algo;
-    return '';
-  });
-  trie.describeNode('ip cef load-sharing', 'CEF load-sharing');
-  trie.registerGreedy('no ip cef load-sharing algorithm', 'Restore the default algorithm', () => {
-    getGlobalConfig(ctx.r()).cefLoadSharingAlgorithm = null; return '';
   });
 
   trie.register('router rip', 'Enter RIP routing protocol configuration', () => {
@@ -423,34 +403,6 @@ export function dhcpGlobalSpecs(ctx: CiscoShellContext): CommandSpec[] {
 export function buildDhcpGlobalOn(
   trie: CommandTrie, ctx: CiscoShellContext,
 ): void {
-  trie.registerGreedy('ip dhcp pool', 'Define a DHCP address pool', (args) => {
-    if (args.length < 1) return '% Incomplete command.';
-    const poolName = args[0];
-    const dhcp = ctx.r()._getDHCPServerInternal();
-    if (!dhcp.getPool(poolName)) {
-      dhcp.createPool(poolName);
-    }
-    ctx.setSelectedDHCPPool(poolName);
-    ctx.setMode('config-dhcp');
-    return '';
-  });
-
-  trie.registerGreedy('no ip dhcp pool', 'Remove a DHCP address pool', (args) => {
-    if (args.length < 1) return '% Incomplete command.';
-    ctx.r()._getDHCPServerInternal().deletePool(args[0]);
-    return '';
-  });
-
-  trie.registerGreedy('ip dhcp excluded-address', 'Prevent DHCP from assigning certain addresses', (args) => {
-    if (args.length < 1) return '% Incomplete command.';
-    const start = args[0];
-    const end = args[1] || start;
-    if (!ctx.r()._getDHCPServerInternal().addExcludedRange(start, end)) {
-      throw new CliInvalidInput({ token: isValidIPv4(start) ? end : start });
-    }
-    return '';
-  });
-
   trie.registerGreedy('ip dhcp class', 'Define DHCP class', (args) => {
     if (!args[0]) return '% Incomplete command.';
     const r = ctx.r() as any;
@@ -488,10 +440,6 @@ export function buildDhcpGlobalOn(
     const n = parseInt(args[0] ?? '', 10);
     if (isNaN(n) || n < 1) return '% Invalid input detected.';
     ctx.r()._getDHCPServerInternal().setPingTimeoutMs(n);
-    return '';
-  });
-  trie.registerGreedy('ip dhcp database', 'Set DHCP database URL', (args, raw) => {
-    (ctx.r() as any)._ciscoDhcpDatabase = raw ?? args.join(' ');
     return '';
   });
   trie.register('ip dhcp bootp ignore', 'Ignore BOOTP requests', () => {
@@ -533,26 +481,6 @@ export function buildDhcpGlobalOn(
     getGlobalConfig(ctx.r()).dhcpSmartRelay = false; return '';
   });
 
-  trie.register('ip dhcp snooping', 'Enable DHCP snooping globally', () => {
-    getGlobalConfig(ctx.r()).dhcpSnooping = true; return '';
-  });
-  trie.register('no ip dhcp snooping', 'Disable DHCP snooping globally', () => {
-    getGlobalConfig(ctx.r()).dhcpSnooping = false; return '';
-  });
-  trie.registerGreedy('ip dhcp snooping vlan', 'Enable DHCP snooping for VLANs', (args) => {
-    if (args.length === 0) return CISCO_ERRORS.INCOMPLETE;
-    getGlobalConfig(ctx.r()).dhcpSnoopingVlans = args.join(' ');
-    return '';
-  });
-  trie.registerGreedy('no ip dhcp snooping vlan', 'Stop snooping those VLANs', () => {
-    getGlobalConfig(ctx.r()).dhcpSnoopingVlans = null; return '';
-  });
-  trie.register('ip dhcp snooping information option', 'Include option-82 in snooped packets', () => {
-    getGlobalConfig(ctx.r()).dhcpSnoopingInfoOption = true; return '';
-  });
-  trie.register('no ip dhcp snooping information option', 'Drop option-82 from snooped packets', () => {
-    getGlobalConfig(ctx.r()).dhcpSnoopingInfoOption = false; return '';
-  });
 }
 
 /**
@@ -976,21 +904,6 @@ export function buildConfigIfCommands(trie: CommandTrie, ctx: CiscoShellContext)
     if (!ctx.getSelectedInterface()) return '';
     const port = ctx.r().getPort(ctx.getSelectedInterface()!);
     if (port) (port as unknown as { dhcpRelayInfoTrusted?: boolean }).dhcpRelayInfoTrusted = true;
-    return '';
-  });
-  trie.register('ip dhcp snooping trust', 'Trust DHCP snooping on interface', () => {
-    const ifName = ctx.getSelectedInterface();
-    if (!ifName) return '';
-    const port = ctx.r().getPort(ifName);
-    port?.setDhcpSnoopingTrust(true);
-    return '';
-  });
-  trie.registerGreedy('ip dhcp snooping limit rate', 'Snooping rate-limit (pps)', (args) => {
-    const ifName = ctx.getSelectedInterface();
-    if (!ifName) return '';
-    const port = ctx.r().getPort(ifName);
-    const n = parseInt(args[0] ?? '', 10);
-    if (!isNaN(n)) port?.setDhcpSnoopingRateLimit(n);
     return '';
   });
   trie.registerGreedy('ipv6 dhcp server', 'Bind IPv6 DHCP pool to interface', (args) => {

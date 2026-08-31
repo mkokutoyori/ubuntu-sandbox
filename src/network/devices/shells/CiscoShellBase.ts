@@ -55,13 +55,20 @@ import { getDefaultScheduler, type IScheduler, type TimerHandle } from '@/events
 import { runSshClient } from '../linux/network/LinuxSshClient';
 import { findHostByAddress } from '../linux/network/HostLookup';
 import type { Router } from '../Router';
-import { getSecurityConfig, buildIdentityShowCommands } from './cisco/CiscoSecurityCommands';
+import {
+  getSecurityConfig, buildIdentityShowCommands, buildIdentityConfigCommands,
+} from './cisco/CiscoSecurityCommands';
 import { parserViewMode } from '../router/security/CiscoSecurityConfig';
 import type { CiscoDevice } from './CiscoDevice';
 import type { PromptMap } from './PromptBuilder';
 import { buildPrompt } from './PromptBuilder';
 import { CLIStateMachine, type ModeHierarchy } from './CLIStateMachine';
 import { estGenreAcces } from '../../ntp/accessGroups';
+import { NTP_VERSION } from '../../ntp/types';
+import {
+  getGlobalConfig, CEF_LOAD_SHARING_ALGORITHMS, CEF_ACCOUNTING_KINDS,
+} from '../router/config/CiscoGlobalConfig';
+import { hms } from '@/lib/format';
 
 /**
  * Les sous-commandes de `ntp` en configuration globale, avec la
@@ -108,7 +115,7 @@ import {
   showLine, showIpSsh, showSshSessions, showHosts, showIpDnsStatistics, showVrf,
   showVrfDetail, showVrfInterfaces, showAdjacency,
   showRedundancy, showFileSystems, showCalendar, showTerminal,
-  showBuffers, showTcpBrief, showSockets,
+  showBuffers, showTcpBrief, showSockets, type TcpBriefSource,
   showStacks, showReload, showAaa, showEnvironment, showControllers,
   chassisSerial, CISCO_HARDWARE_PROFILES, licenseTable,
   type ShowStateDevice,
@@ -118,7 +125,7 @@ import {
 } from './cisco/CiscoDnsCommands';
 import type { CiscoDnsConfig } from '../router/dns/CiscoDnsConfig';
 import type { RouterHostsTable } from '../router/dns/RouterHostsTable';
-import { CiscoConfigState } from '../inspection/config/CiscoConfigState';
+import { CiscoConfigState, getConfigState } from '../inspection/config/CiscoConfigState';
 import { AliasRepository, type AliasMode } from '../inspection/config/AliasRepository';
 import { LoggingConfig, disabledTimestampSpec, bareTimestampSpec, deviceClockSource } from '../inspection/config/LoggingConfig';
 import type { TimestampSpec } from '../inspection/config/LoggingConfig';
@@ -169,6 +176,35 @@ import {
   CliInvalidInput, CliIncomplete, renderCliDiagnostic, offsetForInvalidInput, argumentOffset,
   tokenSpans, INVALID_INPUT_MESSAGE,
 } from './cli/CliDiagnostic';
+import { renderTable, IOS_RULED_TABLE } from './cli/TextTable';
+import type { TableColumn } from './cli/TextTable';
+import { parseVlanList, compactVlanList } from './cli/vlanList';
+import { createDefaultSnoopingConfig } from '../../dhcp/types';
+import type { DHCPSnoopingConfig, DHCPSnoopingBinding } from '../../dhcp/types';
+
+const SNOOPING_BINDING_COLUMNS: ReadonlyArray<TableColumn<DHCPSnoopingBinding>> = [
+  { header: 'MacAddress', width: 18, value: (b) => b.macAddress },
+  { header: 'IpAddress', width: 16, value: (b) => b.ipAddress },
+  { header: 'Lease(sec)', width: 10, value: (b) => String(b.lease) },
+  { header: 'Type', width: 13, value: (b) => b.type },
+  { header: 'VLAN', width: 4, value: (b) => String(b.vlan) },
+  { header: 'Interface', width: 20, value: (b) => b.port },
+];
+
+const SNOOPING_TRUST_COLUMNS = (
+  cfg: DHCPSnoopingConfig,
+): ReadonlyArray<TableColumn<string>> => [
+  { header: 'Interface', value: (nom) => nom },
+  { header: 'Trusted', value: (nom) => (cfg.trustedPorts.has(nom) ? 'yes' : 'no') },
+  { header: 'Allow option', value: (nom) => (cfg.trustedPorts.has(nom) ? 'yes' : 'no') },
+  {
+    header: 'Rate limit (pps)',
+    value: (nom) => {
+      const debit = cfg.rateLimits.get(nom);
+      return debit !== undefined && debit > 0 ? String(debit) : 'unlimited';
+    },
+  },
+];
 
 /**
  * Ce qu'IOS affiche pendant qu'il écrit : un `!` par tranche envoyée.
@@ -269,6 +305,92 @@ const SERVICES_IOS: ReadonlyArray<readonly [string, string]> = [
   ['udp-small-servers', 'Enable small UDP servers (e.g., ECHO)'],
   ['unsupported-transceiver', 'Enable support for third-party transceivers'],
 ];
+
+const ARCHIVE_EXEC: ReadonlySet<string> = new Set([
+  'show archive', 'show archive config differences', 'show archive log config',
+  'archive config', 'configure replace',
+]);
+
+const ARCHIVE_EXEC_PLACES: Readonly<Record<string, readonly ArgumentSpec[]>> = {
+  'show archive config differences': [
+    {
+      name: 'avant', type: 'WORD', optional: true,
+      description: 'File to compare from (defaults to the latest archive)',
+    },
+    {
+      name: 'apres', type: 'WORD', optional: true,
+      description: 'File to compare to (defaults to the running configuration)',
+    },
+  ],
+  'configure replace': [
+    {
+      name: 'url', type: 'WORD',
+      description: 'URL of the configuration file to roll back to',
+    },
+    {
+      name: 'options', type: 'REST', optional: true,
+      description: 'How the rollback is performed', literal: 'LINE',
+      alternatives: [
+        { keyword: 'force', description: 'Do not prompt for confirmation' },
+        { keyword: 'list', description: 'List the commands, apply nothing' },
+        { keyword: 'nolock', description: 'Do not lock the configuration' },
+        { keyword: 'revert', description: 'Set the revert options' },
+        { keyword: 'time', description: 'Time for automatic rollback' },
+      ],
+    },
+  ],
+  'show archive log config': [{
+    name: 'selection', type: 'REST', optional: true,
+    description: 'Records to show', literal: 'LINE',
+    alternatives: [
+      { keyword: 'all', description: 'All the records' },
+      { keyword: 'statistics', description: 'Memory held by the log' },
+      { keyword: 'user', description: 'Records of one user' },
+    ],
+  }],
+};
+
+interface DhcpConfigServer {
+  getPool(name: string): unknown;
+  createPool(name: string): void;
+  deletePool(name: string): void;
+  addExcludedRange(start: string, end: string): boolean;
+  addDatabaseAgent(url: string): void;
+  removeDatabaseAgent(url: string): void;
+  enable(): void;
+  disable(): void;
+}
+
+type BannerKind = 'motd' | 'login' | 'exec' | 'incoming';
+
+const BANNER_SORTES: ReadonlyArray<readonly [BannerKind, string]> = [
+  ['exec', 'Set EXEC process creation banner'],
+  ['incoming', 'Set incoming terminal line banner'],
+  ['login', 'Set login banner'],
+  ['motd', 'Set Message of the Day banner'],
+];
+
+const SERVICES_A_MOTEUR: ReadonlySet<string> = new Set([
+  'service sequence-numbers', 'service timestamps',
+]);
+
+const SERVICE_PLACES: Readonly<Record<string, readonly ArgumentSpec[]>> = {
+  'service timestamps': [
+    {
+      name: 'channel', type: 'ENUM', optional: true,
+      description: 'Message class to timestamp',
+      values: [
+        { keyword: 'debug', description: 'Timestamp debug messages' },
+        { keyword: 'log', description: 'Timestamp log messages' },
+      ],
+    },
+    {
+      name: 'format', type: 'REST', optional: true,
+      description: 'Timestamp format and options',
+      literal: 'LINE',
+    },
+  ],
+};
 
 const LINE_ACCESS_CLASS: readonly ArgumentSpec[] = [
   {
@@ -799,7 +921,9 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
    * Config-driven global feature state (cdp/lldp/ip routing…) — a real
    * Repository the CLI mutates and `show` projects (no silent no-ops).
    */
-  protected readonly configState = new CiscoConfigState();
+  protected get configState(): CiscoConfigState {
+    return getConfigState(this.d() as object);
+  }
 
   /** Config-driven CLI aliases — real, working, projected by show. */
   protected readonly aliases = new AliasRepository();
@@ -1342,20 +1466,21 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
 
     if (!this.commandVisibleTo(line, mode, ctx)) return null;
 
-    if (mode === 'user') {
-      const um = this.userTrie.match(line);
-      if (um.status === 'ok' && um.node?.action && um.matchedKeywords[0]?.toLowerCase() === 'enable') {
-        // `enable view [<nom>]` a sa propre porte : le secret de la vue,
-        // ou le secret d'activation pour la racine. Le laisser tomber
-        // dans le plan d'`enable` faisait echouer `parseInt('view')`,
-        // donc aucun plan, donc aucune verification.
-        if (um.args[0]?.toLowerCase() === 'view') {
-          return this.enableViewInteractionPlan(um.args.slice(1), ctx?.device);
-        }
-        return this.enableInteractionPlan(um.args, ctx?.device, ctx?.onVtyLine === true);
+    // `enable` vit dans les DEUX EXEC depuis qu'elle n'a plus qu'une
+    // declaration, donc sa porte aussi : `enable 7` tape depuis `#`
+    // traverse le meme secret que depuis `>`. `enable view [<nom>]` a la
+    // sienne — le secret de la vue, ou celui d'activation pour la
+    // racine — et la laisser tomber dans le plan d'`enable` faisait
+    // echouer `parseInt('view')`, donc aucun plan et aucune
+    // verification.
+    if (mode === 'user' || mode === 'privileged') {
+      const em = this.resoudreEnable(line);
+      if (em?.vue === true) return this.enableViewInteractionPlan(em.args, ctx?.device);
+      if (em) {
+        return this.enableInteractionPlan(em.args, ctx?.device, ctx?.onVtyLine === true);
       }
-      return null;
     }
+    if (mode === 'user') return null;
 
     // Config-mode dialogue: `banner <kind> <delim>` with nothing after the
     // delimiter opens real IOS's multi-line capture (lines accumulate
@@ -1382,10 +1507,6 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       ? null : this.cheminCanoniqueDuSocle(`${line} `, mode);
     if (migre === null && (m.status !== 'ok' || !m.node)) return null;
     const path = (migre ?? m.matchedKeywords).join(' ').toLowerCase();
-
-    if (path === 'enable view') {
-      return this.enableViewInteractionPlan(m.args, ctx?.device);
-    }
 
     if (path === 'setup') {
       const target = (ctx?.device ?? this.deviceRef) as unknown as {
@@ -1734,20 +1855,46 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     return this.socleConnaitDansPortee(scope, commande);
   }
 
+  /**
+   * Une commande ACCORDEE peut porter ses arguments.
+   *
+   * `privilege exec level 5 show archive log config all` nomme une
+   * commande dont le dernier mot est un ARGUMENT, et ce controle
+   * exigeait que la declaration soit au moins aussi LONGUE que la ligne
+   * tapee : la regle etait donc refusee des que la commande passait au
+   * socle, en silence, et l'operateur avait une ligne de moins que ce
+   * qu'il croyait avoir posee. Le trie, lui, l'acceptait — son noeud
+   * glouton avale ce qui suit. Ici la declaration dit ou sont les
+   * places : les mots-cles se comparent par prefixe, une place consomme
+   * un mot, une place libre consomme la fin.
+   */
   private socleConnaitDansPortee(scope: AuthScope, commande: string): boolean {
     const table = this.socleTable();
     if (!table) return false;
 
     const mots = commande.trim().toLowerCase().split(/\s+/);
     for (const spec of table.specs()) {
-      const chemin = spec.path
-        .filter((step): step is string => typeof step === 'string')
-        .map(mot => mot.toLowerCase());
-      if (chemin.length < mots.length) continue;
-      if (!mots.every((mot, rang) => chemin[rang].startsWith(mot))) continue;
-      if (spec.modes.some(mode => scopeForMode(mode) === scope)) return true;
+      if (!spec.modes.some(mode => scopeForMode(mode) === scope)) continue;
+      if (CiscoShellBase.specCouvreLesMots(spec, mots)) return true;
     }
     return false;
+  }
+
+  private static specCouvreLesMots(
+    spec: CommandSpec, mots: readonly string[],
+  ): boolean {
+    let rang = 0;
+    for (const etape of spec.path) {
+      if (rang >= mots.length) return true;
+      if (typeof etape === 'string') {
+        if (!etape.toLowerCase().startsWith(mots[rang])) return false;
+        rang += 1;
+        continue;
+      }
+      if (etape.type === 'REST') return true;
+      rang += 1;
+    }
+    return rang >= mots.length;
   }
 
   /**
@@ -1871,7 +2018,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
   /** Apply a banner — single write path shared by the config-trie handler
    *  and the multi-line capture plan (motd also feeds the SSH banner). */
   protected setBanner(
-    kind: 'motd' | 'login' | 'exec' | 'incoming',
+    kind: BannerKind,
     text: string,
     target?: unknown,
   ): void {
@@ -2456,7 +2603,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
    * rest of that line is discarded).
    */
   private bannerCollector: {
-    type: 'motd' | 'login' | 'exec' | 'incoming';
+    type: BannerKind;
     delimiter: string;
     lines: string[];
   } | null = null;
@@ -2740,18 +2887,6 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     return null;
   }
 
-  /**
-   * `privilege exec level N <command>` — an intermediate-level session
-   * (mode stays 'user' for levels 1-14, real IOS never shows '#' below
-   * 15) additionally gets the exact privileged commands explicitly
-   * granted at or below its level. Dispatches through the privileged
-   * trie (the only one with the full parsing/behaviour for that
-   * command) so a granted command works identically to how level 15
-   * runs it — not a stub. Returns null when nothing is granted, so the
-   * caller falls back to the normal "command not found" error, exactly
-   * matching real IOS: a command outside your privilege level simply
-   * isn't in your visible command tree.
-   */
   /**
    * `enable view [<nom>]` — basculer dans une vue, ou revenir a la racine.
    *
@@ -4131,6 +4266,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
 
     return sequenceFamily([
       { path: ['ntp', 'authenticate'], description: 'Authenticate time sources' },
+      { path: ['ntp', 'logging'], description: 'Enable NTP message logging' },
       {
         path: ['ntp', 'update-calendar'],
         description: 'Periodically update calendar from NTP',
@@ -4210,6 +4346,82 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       apply: (words, negate) =>
         negate ? this.retirerNtp(words) : this.appliquerNtp(words),
     }));
+  }
+
+  /**
+   * `sntp` est la moitie legere de NTP, et elle partage son moteur.
+   *
+   * `sntp server` etait declare sur l'arbre PRIVILEGIE en plus de celui
+   * de configuration, donc une commande de configuration etait acceptee
+   * a l'invite d'EXEC, ou une vraie machine la refuse. Les modes sont
+   * desormais declares, et il n'y en a qu'un.
+   */
+  protected sntpSpecs(): CommandSpec[] {
+    const cible: ArgumentSpec = {
+      name: 'cible', type: 'WORD',
+      description: 'IP address or hostname of the SNTP server',
+    };
+
+    return sequenceFamily([
+      {
+        path: ['sntp', 'server'], description: 'SNTP server (alias for ntp server)',
+        args: [cible],
+        tail: {
+          name: 'options', type: 'REST', optional: true,
+          description: 'Preference of this server',
+          alternatives: [
+            { keyword: 'prefer', description: 'Prefer this peer when possible' },
+          ],
+        },
+      },
+      {
+        path: ['sntp', 'unicast'], description: 'SNTP unicast client',
+        args: [{
+          name: 'client', type: 'ENUM', optional: true,
+          description: 'Act as an SNTP unicast client',
+          values: [{ keyword: 'client', description: 'Act as an SNTP unicast client' }],
+        }],
+      },
+      {
+        path: ['sntp', 'broadcast'], description: 'SNTP broadcast client',
+        args: [{
+          name: 'client', type: 'ENUM',
+          description: 'Act as an SNTP broadcast client',
+          values: [{ keyword: 'client', description: 'Act as an SNTP broadcast client' }],
+        }],
+      },
+      { path: ['sntp', 'logging'], description: 'Enable SNTP message logging' },
+    ], () => ({
+      apply: (words, negate) =>
+        negate ? this.retirerSntp(words) : this.appliquerSntp(words),
+    }));
+  }
+
+  private appliquerSntp(args: string[]): string {
+    const a = args.map(s => s.toLowerCase());
+    const agent = getNtpAgent(this.d());
+    if (a[0] === 'server') {
+      if (!args[1]) return CISCO_ERRORS.INCOMPLETE;
+      const target = this.resolveNtpTarget(args[1]);
+      if (!target) {
+        return `Translating "${args[1]}"...domain server (255.255.255.255)\n% Bad IP address or host name`;
+      }
+      agent?.addServer(target, a.includes('prefer'), undefined, 'sntp');
+    } else if (a[0] === 'broadcast') {
+      agent?.setSntpBroadcastClient(true);
+    } else if (a[0] === 'logging') {
+      agent?.setLogging(true, 'sntp');
+    }
+    return '';
+  }
+
+  private retirerSntp(args: string[]): string {
+    const a = args.map(s => s.toLowerCase());
+    const agent = getNtpAgent(this.d());
+    if (a[0] === 'server' && a[1]) agent?.removeServer(a[1]);
+    else if (a[0] === 'broadcast') agent?.setSntpBroadcastClient(false);
+    else if (a[0] === 'logging') agent?.setLogging(false);
+    return '';
   }
 
 
@@ -4616,18 +4828,24 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
    * l'autre configure.
    */
   private showSntp(): string {
-    const dev = this.d() as unknown as { getUnhandledConfigLines?: () => readonly string[] };
     const entete = 'SNTP server   Stratum   Version   Last Receive';
-    const ligne = (nom: string): string => `${nom.padEnd(14)}1         4         00:00:01`;
+    const agent = getNtpAgent(this.d());
+    const cfg = agent?.getConfig?.();
+    const associations = [...(cfg?.associations?.values() ?? [])];
+    if (associations.length === 0) return 'No SNTP servers configured';
 
-    const cfg = getNtpAgent(this.d())?.getConfig?.();
-    if (cfg?.associations && cfg.associations.size > 0) {
-      return [entete, ...[...cfg.associations.keys()].map(ligne)].join('\n');
-    }
-    const declarees = (dev.getUnhandledConfigLines?.() ?? [])
-      .filter(l => l.startsWith('sntp server'));
-    if (declarees.length === 0) return 'No SNTP servers configured';
-    return [entete, ...declarees.map(l => ligne(l.split(/\s+/)[2] ?? ''))].join('\n');
+    const maintenant = agent?.now?.() ?? Date.now();
+    const ligne = (a: {
+      serverIp: string; stratum: number; lastReplyMs: number; synced: boolean;
+    }): string => [
+      a.serverIp.padEnd(14),
+      String(a.stratum).padEnd(10),
+      String(NTP_VERSION).padEnd(10),
+      (a.lastReplyMs > 0 ? hms(maintenant - a.lastReplyMs) : '-').padEnd(14),
+      a.synced ? 'Synced' : '',
+    ].join('').trimEnd();
+
+    return [entete, ...associations.map(ligne)].join('\n');
   }
 
   private lineSpecs(): CommandSpec[] {
@@ -4970,9 +5188,10 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
         () => showFileSystems(this.fs(), this.readStartupConfig()?.length ?? 0)),
       vue(['show', 'file', 'systems'], 'File system information', 1,
         () => showFileSystems(this.fs(), this.readStartupConfig()?.length ?? 0)),
-      vue(['show', 'tcp'], 'Status of TCP connections', 1, () => showTcpBrief()),
+      vue(['show', 'tcp'], 'Status of TCP connections', 1,
+        () => showTcpBrief(this.pileTcp())),
       vue(['show', 'tcp', 'brief'], 'Brief display of TCP connection status', 1,
-        () => showTcpBrief()),
+        () => showTcpBrief(this.pileTcp())),
     ];
 
     const listeNommee = (
@@ -5214,12 +5433,23 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       ...this.discoverySpecs(),
       ...this.loggingSpecs(),
       ...this.ntpSpecs(),
+      ...this.sntpSpecs(),
       ...this.snmpSpecs(),
       ...this.clockSpecs(),
       ...this.loginSpecs(),
       ...this.clearSpecs(),
       ...this.writeEraseSpecs(),
       ...this.serviceSpecs(),
+      ...this.serviceFamilySpecs(),
+      ...this.bannerSpecs(),
+      ...this.archiveExecSpecs(),
+      ...this.dhcpGlobalPartageeSpecs(),
+      ...this.dhcpSnoopingSpecs(),
+      ...this.showIpInterfaceSpecs(),
+      ...this.showIpRouteSpecs(),
+      ...this.cefSpecs(),
+      ...this.enableSpecs(),
+      ...this.configureSpecs(),
       ...this.hardeningSpecs(),
       ...this.arpSpecs(),
       ...this.identityBootSpecs(),
@@ -5361,6 +5591,652 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       run: (_session, args) => drapeau(args.nom, true),
       undo: (_session, args) => drapeau(args.nom, false),
     }];
+  }
+
+  /**
+   * Les quatre `service` qui commandent un MOTEUR, declares une fois.
+   *
+   * `service dhcp` etait ecrit DEUX fois, mot pour mot — une dans
+   * `buildConfigCommands` du routeur, une dans le corps du commutateur —
+   * pour un seul et meme geste (`_getDHCPServerInternal().enable()`).
+   * Les trois autres restent la ou leur moteur vit, et sont RAMENEES ici
+   * par l'adaptateur, de sorte que la famille se lise en un lieu sans
+   * deplacer les gestionnaires.
+   */
+  protected serviceFamilySpecs(): readonly CommandSpec[] {
+    const identite = this.identitySubmodeContext();
+    const dhcp = (on: boolean) => (): string => {
+      const service = this.dhcpServiceSwitch();
+      if (on) service?.enable(); else service?.disable();
+      return '';
+    };
+
+    return [
+      {
+        id: 'service-dhcp',
+        path: ['service', 'dhcp'],
+        description: 'Enable DHCP service',
+        undoDescription: 'Disable DHCP service',
+        modes: ['config'], minPrivilege: 15,
+        run: dhcp(true), undo: dhcp(false),
+      },
+      ...specsFromTrieRegistrations(
+        (collector) => this.registerCommonConfigCommands(collector as unknown as CommandTrie),
+        {
+          modes: ['config'], minPrivilege: 15,
+          undoFromNegatedPaths: true,
+          skip: (path) => !SERVICES_A_MOTEUR.has(path.replace(/^no /, '')),
+          argumentFor: (path) => SERVICE_PLACES[path.replace(/^no /, '')],
+        },
+      ),
+      ...(identite === null ? [] : specsFromTrieRegistrations(
+        (collector) =>
+          buildIdentityConfigCommands(collector as unknown as CommandTrie, identite),
+        {
+          modes: ['config'], minPrivilege: 15,
+          undoFromNegatedPaths: true,
+          skip: (path) =>
+            path.replace(/^no /, '') !== 'service password-encryption',
+          argumentFor: () => null,
+        },
+      )),
+    ];
+  }
+
+  protected dhcpServiceSwitch(): { enable(): void; disable(): void } | undefined {
+    return (this.d() as unknown as {
+      _getDHCPServerInternal?: () => { enable(): void; disable(): void } | undefined;
+    })._getDHCPServerInternal?.();
+  }
+
+  /**
+   * `banner <sorte> <delimiteur>texte<delimiteur>`.
+   *
+   * Le texte est garde TEL QUEL — c'est tout l'objet de la commande — et
+   * c'est pourquoi la place est un `REST`, qui rend depuis peu la
+   * tranche d'origine et non les jetons recolles : `#Deux  blancs#`
+   * posait sinon une banniere a un seul blanc.
+   *
+   * `no banner motd` avait sa PROPRE declaration a cote de la forme
+   * gloutonne qui la couvrait deja, avec le meme corps mot pour mot ; la
+   * plus specifique gagnait, donc la branche `motd` de l'autre etait
+   * morte. Il n'en reste qu'une.
+   */
+  protected bannerSpecs(): CommandSpec[] {
+    const sortes = BANNER_SORTES.map(([keyword, description]) =>
+      ({ keyword, description }));
+    const poser = (sorte: string, reste: string): string => {
+      const texte = reste.replace(/^\s+/, '');
+      if (texte.length === 0) return CISCO_ERRORS.INCOMPLETE;
+      const delim = texte.startsWith('^C') ? '^C' : texte[0];
+      const corps = texte.slice(delim.length);
+      const fin = corps.indexOf(delim);
+      if (fin !== -1) {
+        this.setBanner(sorte as BannerKind, corps.slice(0, fin));
+        return '';
+      }
+      this.bannerCollector = {
+        type: sorte as BannerKind, delimiter: delim,
+        lines: corps.length > 0 ? [corps] : [],
+      };
+      return `Enter TEXT message.  End with the character '${delim}'.`;
+    };
+    const retirer = (sorte: string): string => {
+      const dev = this.d() as unknown as {
+        _setMotdBanner?: (b: string) => void;
+        _setLoginBanner?: (b: string) => void;
+        _setExecBanner?: (b: string) => void;
+        _setIncomingBanner?: (b: string) => void;
+        _setSshBanner?: (b: string) => void;
+      };
+      if (sorte === 'motd') { dev._setMotdBanner?.(''); dev._setSshBanner?.(''); }
+      else if (sorte === 'login') dev._setLoginBanner?.('');
+      else if (sorte === 'exec') dev._setExecBanner?.('');
+      else if (sorte === 'incoming') dev._setIncomingBanner?.('');
+      return '';
+    };
+
+    const sorte: ArgumentSpec = {
+      name: 'sorte', type: 'ENUM', description: 'Type of banner', values: sortes,
+    };
+
+    /*
+     * DEUX declarations, parce que les deux formes n'ont pas la meme
+     * suite. La place du texte n'est pas facultative — `banner motd ?`
+     * annoncait sinon `<cr>` pour une commande qu'IOS declare
+     * incomplete, faute du delimiteur — mais `no banner motd` s'arrete
+     * la : exiger le texte pour effacer aurait refuse la negation que
+     * tout operateur tape. La seconde n'existe QUE niee, donc
+     * `banner motd` seul reste incomplet.
+     */
+    return [
+      {
+        id: 'banner',
+        path: ['banner', sorte, {
+          name: 'texte', type: 'REST',
+          description: 'Message text, delimited by any character',
+          literal: 'LINE',
+        }],
+        description: 'Define a login banner',
+        modes: ['config'], minPrivilege: 15,
+        run: (_session, args) => poser(args.sorte, args.texte ?? ''),
+      },
+      {
+        id: 'banner-no',
+        path: ['banner', sorte],
+        description: 'Define a login banner',
+        undoDescription: 'Remove a banner',
+        modes: ['config'], minPrivilege: 15,
+        existsOnlyNegated: true,
+        run: () => CISCO_ERRORS.INCOMPLETE,
+        undo: (_session, args) => retirer(args.sorte),
+      },
+    ];
+  }
+
+  /**
+   * `show archive`, son journal, son diff, et `archive config`.
+   *
+   * Elles etaient deja declarees UNE fois pour les deux plateformes —
+   * `registerArchiveExecCommands` est appele ici et nulle part
+   * ailleurs — donc la migration ne referme aucun doublon ; elle donne
+   * a la famille ses modes et ses places declarees.
+   */
+  private registerArchiveExecOn(trie: CommandTrie): void {
+    registerArchiveExecCommands(
+      trie,
+      () => this.archiveService(),
+      () => (this.d() as unknown as { getRunningConfig?: () => string }).getRunningConfig?.() ?? '',
+      (url) => this.fs().read(url),
+      () => this.readStartupConfig(),
+      (texte) => {
+        // Un REMPLACEMENT, pas une fusion : l'état rejouable est remis à
+        // zéro avant que le fichier ne soit appliqué, sinon ce que la
+        // configuration courante porte en trop y resterait — ce qui est
+        // précisément la différence avec `copy`.
+        const dev = this.d() as unknown as {
+          _resetConfigurableStateForReload?: () => void;
+          _applyConfigText?: (t: string) => void;
+        };
+        dev._resetConfigurableStateForReload?.();
+        dev._applyConfigText?.(texte);
+        (this.d() as unknown as { _noteConfigChange?: (u: string) => void })
+          ._noteConfigChange?.(this.configSessionLabel);
+      },
+    );
+  }
+
+  /**
+   * `configure terminal` s'ecrivait DEUX fois, et les deux avaient
+   * diverge.
+   *
+   * Une declaration sur l'arbre privilegie — qui pose le mode et annonce
+   * `Enter configuration commands…` — et une AUTRE sur celui de
+   * configuration, decrite « Already in global config » et rendant la
+   * chaine vide. IOS n'a qu'une commande : la retaper depuis
+   * `(config)#` reannonce la meme ligne. Un seul corps, porte par les
+   * deux modes, ne peut plus se contredire.
+   */
+  /**
+   * `enable [<niveau>]` et `enable view [<vue>]`, une seule fois.
+   *
+   * Elles etaient ecrites DEUX fois et les deux avaient diverge. Sur
+   * l'arbre utilisateur, un gestionnaire complet : le niveau, la porte
+   * du secret, la journalisation de `logging userinfo`. Sur l'arbre
+   * privilegie, `enable` rendait la chaine vide — un corps qui ne fait
+   * RIEN — de sorte que `enable 7` tape depuis `#` laissait la session
+   * au niveau 15, alors que c'est exactement ainsi qu'on DESCEND d'un
+   * niveau. Et `enable view` y portait une AUTRE description que dans
+   * l'aide de l'autre arbre, donc `enable ?` ne rendait pas le meme
+   * texte selon l'endroit d'ou on le tapait.
+   */
+  /**
+   * La frappe designe-t-elle `enable` — et laquelle des deux ?
+   *
+   * Le plan d'interaction reconnaissait `enable` en interrogeant le
+   * TRIE, qui ne la porte plus : sans cette resolution la porte du
+   * secret ne s'ouvrait plus du tout et la commande passait
+   * directement, refusee sans avoir rien demande. La resolution passe
+   * par la meme table que l'autorisation, donc les abreviations d'IOS
+   * (`en`, `ena 7`) restent honorees sans comparaison de chaines.
+   */
+  private resoudreEnable(line: string): { vue: boolean; args: string[] } | null {
+    const parts = this.socleCanonicalParts('exec', line);
+    if (parts === null) return null;
+    const cles = parts.keywords.split(/\s+/).filter(Boolean);
+    if (cles[0] !== 'enable') return null;
+    /*
+     * Les arguments sont pris sur la ligne TAPEE et non sur la forme
+     * canonique : celle-ci est mise en minuscules pour comparer des
+     * mots-cles, et un nom de vue est une DONNEE — `enable view
+     * NOC_VIEW` y devenait `noc_view`, une vue qui n'existe pas, donc
+     * `% Access denied` meme avec le bon secret.
+     */
+    const tapes = line.trim().split(/\s+/).filter(Boolean);
+    return { vue: cles[1] === 'view', args: tapes.slice(cles.length) };
+  }
+
+  /**
+   * Ce que le pool selectionne devient : chaque coquille le range ou
+   * elle le lit, et la declaration partagee n'a pas a le savoir.
+   */
+  protected selectDhcpPool(_nom: string | null): void { /* par coquille */ }
+
+  /**
+   * Les commandes DHCP globales qu'un routeur ET un Catalyst servent.
+   *
+   * Elles etaient ecrites DEUX fois, et les deux copies avaient
+   * diverge. `ip dhcp pool` du commutateur appelait `dhcp.enable()` —
+   * « IOS auto-enables the DHCP service when a pool is created » — donc
+   * `no service dhcp` suivi de la creation d'un pool RALLUMAIT le
+   * service que l'operateur venait d'eteindre, ce que le routeur ne
+   * faisait pas ; le service est actif par defaut, l'appel n'apportait
+   * rien et defaisait une decision explicite. Et `ip dhcp database`
+   * ecrivait sur DEUX magasins : le commutateur dans l'agent du serveur
+   * DHCP — celui que `show ip dhcp database` lit — le routeur sur une
+   * propriete ad hoc que personne ne relisait.
+   */
+  protected dhcpGlobalPartageeSpecs(): readonly CommandSpec[] {
+    const serveur = () => this.dhcpConfigServer();
+    const nom: ArgumentSpec = {
+      name: 'nom', type: 'WORD', description: 'Pool name',
+    };
+
+    return [
+      {
+        id: 'ip-dhcp-pool',
+        path: ['ip', 'dhcp', 'pool', nom],
+        description: 'Configure DHCP address pools',
+        undoDescription: 'Remove a DHCP address pool',
+        modes: ['config'], minPrivilege: 15,
+        run: (_session, args) => {
+          const dhcp = serveur();
+          if (!dhcp) return '';
+          if (!dhcp.getPool(args.nom)) dhcp.createPool(args.nom);
+          this.selectDhcpPool(args.nom);
+          this.mode = 'config-dhcp';
+          return '';
+        },
+        undo: (_session, args) => { serveur()?.deletePool(args.nom); return ''; },
+      },
+      {
+        id: 'ip-dhcp-excluded-address',
+        path: ['ip', 'dhcp', 'excluded-address',
+          { name: 'basse', type: 'IP_ADDR', description: 'Low IP address' },
+          { name: 'haute', type: 'IP_ADDR', optional: true,
+            description: 'High IP address' },
+        ],
+        description: 'Prevent DHCP from assigning certain addresses',
+        modes: ['config'], minPrivilege: 15,
+        run: (_session, args) => {
+          const haute = args.haute ?? args.basse;
+          if (!serveur()?.addExcludedRange(args.basse, haute)) {
+            throw new CliInvalidInput({ token: haute });
+          }
+          return '';
+        },
+      },
+      {
+        id: 'ip-dhcp-database',
+        path: ['ip', 'dhcp', 'database',
+          { name: 'url', type: 'REST', description: 'Database agent URL', literal: 'LINE' },
+        ],
+        description: 'Configure DHCP database agents',
+        undoDescription: 'Remove a DHCP database agent URL',
+        modes: ['config'], minPrivilege: 15,
+        run: (_session, args) => { serveur()?.addDatabaseAgent(args.url); return ''; },
+        undo: (_session, args) => { serveur()?.removeDatabaseAgent(args.url); return ''; },
+      },
+    ];
+  }
+
+  protected dhcpConfigServer(): DhcpConfigServer | undefined {
+    return (this.d() as unknown as {
+      _getDHCPServerInternal?: () => DhcpConfigServer | undefined;
+    })._getDHCPServerInternal?.();
+  }
+
+  protected dhcpSnoopingConfig(): DHCPSnoopingConfig | undefined {
+    return (this.d() as unknown as {
+      _getDHCPSnoopingConfig?: () => DHCPSnoopingConfig | undefined;
+    })._getDHCPSnoopingConfig?.();
+  }
+
+  private surPortsEspionnes(fn: (cfg: DHCPSnoopingConfig, port: string) => void): string {
+    const cfg = this.dhcpSnoopingConfig();
+    if (!cfg) return '';
+    for (const port of this.selectedPortsForConfigIf()) fn(cfg, port);
+    return '';
+  }
+
+  protected dhcpSnoopingSpecs(): readonly CommandSpec[] {
+    const cfg = () => this.dhcpSnoopingConfig();
+    const listeVlan: ArgumentSpec = {
+      name: 'liste', type: 'WORD', description: 'DHCP snooping VLAN list',
+    };
+    const debit: ArgumentSpec = {
+      name: 'pps', type: 'INT', range: [1, 2048],
+      description: 'DHCP snooping rate limit (pps)',
+    };
+
+    return [
+      {
+        id: 'ip-dhcp-snooping',
+        path: ['ip', 'dhcp', 'snooping'],
+        description: 'Enable DHCP snooping',
+        undoDescription: 'Disable DHCP snooping',
+        modes: ['config'], minPrivilege: 15,
+        run: () => { const c = cfg(); if (c) c.enabled = true; return ''; },
+        undo: () => { const c = cfg(); if (c) c.enabled = false; return ''; },
+      },
+      {
+        id: 'ip-dhcp-snooping-vlan',
+        path: ['ip', 'dhcp', 'snooping', 'vlan', listeVlan],
+        description: 'DHCP snooping VLAN list',
+        undoDescription: 'Stop snooping those VLANs',
+        modes: ['config'], minPrivilege: 15,
+        run: (_session, args) => {
+          const vlans = parseVlanList(args.liste);
+          if (!vlans) throw new CliInvalidInput({ token: args.liste });
+          const c = cfg();
+          if (c) for (const v of vlans) c.vlans.add(v);
+          return '';
+        },
+        undo: (_session, args) => {
+          const vlans = parseVlanList(args.liste);
+          if (!vlans) throw new CliInvalidInput({ token: args.liste });
+          const c = cfg();
+          if (c) for (const v of vlans) c.vlans.delete(v);
+          return '';
+        },
+      },
+      {
+        id: 'ip-dhcp-snooping-verify-mac',
+        path: ['ip', 'dhcp', 'snooping', 'verify', 'mac-address'],
+        description: 'Verify the source MAC against the client hardware address',
+        undoDescription: 'Stop verifying the source MAC address',
+        modes: ['config'], minPrivilege: 15,
+        run: () => { const c = cfg(); if (c) c.verifyMac = true; return ''; },
+        undo: () => { const c = cfg(); if (c) c.verifyMac = false; return ''; },
+      },
+      {
+        id: 'ip-dhcp-snooping-information-option',
+        path: ['ip', 'dhcp', 'snooping', 'information', 'option'],
+        description: 'Insert option 82 into snooped packets',
+        undoDescription: 'Stop inserting option 82',
+        modes: ['config'], minPrivilege: 15,
+        run: () => { const c = cfg(); if (c) c.informationOption = true; return ''; },
+        undo: () => { const c = cfg(); if (c) c.informationOption = false; return ''; },
+      },
+      {
+        id: 'ip-dhcp-snooping-trust',
+        path: ['ip', 'dhcp', 'snooping', 'trust'],
+        description: 'Trust this interface for DHCP snooping',
+        undoDescription: 'Stop trusting this interface',
+        modes: ['config-if', 'config-subif'], minPrivilege: 15,
+        run: () => this.surPortsEspionnes((c, port) => { c.trustedPorts.add(port); }),
+        undo: () => this.surPortsEspionnes((c, port) => { c.trustedPorts.delete(port); }),
+      },
+      {
+        id: 'ip-dhcp-snooping-limit-rate',
+        path: ['ip', 'dhcp', 'snooping', 'limit', 'rate', debit],
+        description: 'Bound the DHCP message rate on this interface',
+        undoDescription: 'Remove the DHCP message rate bound',
+        modes: ['config-if', 'config-subif'], minPrivilege: 15,
+        run: (_session, args) =>
+          this.surPortsEspionnes((c, port) => { c.rateLimits.set(port, Number(args.pps)); }),
+        undo: () => this.surPortsEspionnes((c, port) => { c.rateLimits.delete(port); }),
+      },
+      {
+        id: 'show-ip-dhcp-snooping',
+        path: ['show', 'ip', 'dhcp', 'snooping'],
+        description: 'DHCP snooping configuration and trusted interfaces',
+        modes: ['user', 'privileged'], minPrivilege: 1,
+        run: () => this.renduShowDhcpSnooping(),
+      },
+      {
+        id: 'show-ip-dhcp-snooping-binding',
+        path: ['show', 'ip', 'dhcp', 'snooping', 'binding'],
+        description: 'DHCP snooping binding table',
+        modes: ['user', 'privileged'], minPrivilege: 1,
+        run: () => this.renduShowDhcpSnoopingBinding(),
+      },
+    ];
+  }
+
+  private renduShowDhcpSnooping(): string {
+    const cfg = this.dhcpSnoopingConfig() ?? createDefaultSnoopingConfig();
+    const vlans = compactVlanList([...cfg.vlans].sort((a, b) => a - b));
+    const lignes = [
+      `Switch DHCP snooping is ${cfg.enabled ? 'enabled' : 'disabled'}`,
+      'DHCP snooping is configured on following VLANs:',
+      vlans.length > 0 ? vlans : 'none',
+      'DHCP snooping is operational on following VLANs:',
+      cfg.enabled && vlans.length > 0 ? vlans : 'none',
+      `Insertion of option 82 is ${cfg.informationOption ? 'enabled' : 'disabled'}`,
+      `Verification of hwaddr field is ${cfg.verifyMac ? 'enabled' : 'disabled'}`,
+      'Verification of giaddr field is enabled',
+      'DHCP snooping trust/rate is configured on the following Interfaces:',
+      '',
+    ];
+
+    const interfaces = [...new Set([...cfg.trustedPorts, ...cfg.rateLimits.keys()])].sort();
+    const table = renderTable(interfaces, SNOOPING_TRUST_COLUMNS(cfg), IOS_RULED_TABLE);
+    return [...lignes, ...table].join('\n');
+  }
+
+  private renduShowDhcpSnoopingBinding(): string {
+    const liaisons = (this.d() as unknown as {
+      _getSnoopingBindings?: () => readonly DHCPSnoopingBinding[];
+    })._getSnoopingBindings?.() ?? [];
+
+    return [
+      ...renderTable(liaisons, SNOOPING_BINDING_COLUMNS, IOS_RULED_TABLE),
+      `Total number of bindings: ${liaisons.length}`,
+    ].join('\n');
+  }
+
+  /**
+   * `show ip interface [brief | <nom>]`, declaree une fois.
+   *
+   * Les deux plateformes avaient leur propre enregistrement, chacune
+   * avec sa place LIBRE : la commande la plus tapee d'IOS n'annoncait
+   * donc ni `brief` ni le nom d'une interface. Ce que chaque coquille
+   * RESTE seule a savoir est le contenu — un routeur rend ses
+   * interfaces, un Catalyst ses SVI — et c'est ce que le crochet porte ;
+   * la GRAMMAIRE, elle, n'a plus qu'une declaration.
+   */
+  protected showIpInterfaceSpecs(): readonly CommandSpec[] {
+    const exec = ['user', 'privileged'];
+    return [
+      {
+        id: 'show-ip-interface',
+        path: ['show', 'ip', 'interface', {
+          name: 'cible', type: 'REST', optional: true, literal: 'LINE',
+          description: 'Interface to describe',
+          alternatives: [{ keyword: 'brief', description: 'Brief summary of IP status' }],
+        }],
+        description: 'IP interface status and configuration',
+        modes: exec, minPrivilege: 1,
+        run: (_session, args) => this.renduIpInterface(args.cible ?? ''),
+      },
+    ];
+  }
+
+  protected renduIpInterface(_cible: string): string { return ''; }
+
+  /**
+   * `show ip route [<protocole> | <prefixe> | summary | vrf <nom>]`,
+   * declaree une fois.
+   *
+   * Les deux plateformes l'enregistraient chacune de son cote, et le
+   * commutateur avait la version pauvre : sa propre legende — plus
+   * courte, sans `L - local` —, aucune route locale en /32, aucun
+   * regroupement par reseau majeur, la distance d'une statique
+   * FLOTTANTE perdue, aucun filtre par protocole, et le prefixe ignore.
+   * Ce que chaque coquille reste seule a savoir est le contenu de sa
+   * table ; la grammaire n'a plus qu'une declaration.
+   */
+  protected showIpRouteSpecs(): readonly CommandSpec[] {
+    return [
+      {
+        id: 'show-ip-route',
+        path: ['show', 'ip', 'route', {
+          name: 'cible', type: 'REST', optional: true, literal: 'LINE',
+          description: 'Network to display information about',
+          alternatives: [
+            { keyword: 'connected', description: 'Connected routes' },
+            { keyword: 'static', description: 'Static routes' },
+            { keyword: 'summary', description: 'Summary of all routes' },
+          ],
+        }],
+        description: 'IP routing table',
+        modes: ['user', 'privileged'], minPrivilege: 1,
+        run: (_session, args) => this.renduIpRoute(args.cible ?? ''),
+      },
+    ];
+  }
+
+  protected renduIpRoute(_cible: string): string { return ''; }
+
+  protected cefSpecs(): CommandSpec[] {
+    const sec = () => getSecurityConfig(this.d());
+    const glob = () => getGlobalConfig(this.d() as object);
+    const enumere = (
+      name: string, description: string, valeurs: ReadonlySet<string>,
+      mots: Readonly<Record<string, string>>,
+    ): ArgumentSpec => ({
+      name, type: 'ENUM', description,
+      values: [...valeurs].sort().map(keyword => ({
+        keyword, description: mots[keyword] ?? description,
+      })),
+    });
+
+    return [
+      {
+        id: 'ip-cef', path: ['ip', 'cef'],
+        description: 'Enable Cisco Express Forwarding',
+        undoDescription: 'Disable Cisco Express Forwarding',
+        modes: ['config'], minPrivilege: 15,
+        run: () => { sec().ipCef = true; return ''; },
+        undo: () => { sec().ipCef = false; return ''; },
+      },
+      {
+        id: 'ip-cef-distributed', path: ['ip', 'cef', 'distributed'],
+        description: 'Enable distributed Cisco Express Forwarding',
+        undoDescription: 'Disable distributed Cisco Express Forwarding',
+        modes: ['config'], minPrivilege: 15,
+        run: () => { sec().ipCefDistributed = true; return ''; },
+        undo: () => { sec().ipCefDistributed = false; return ''; },
+      },
+      {
+        id: 'ip-cef-load-sharing',
+        path: ['ip', 'cef', 'load-sharing', 'algorithm',
+          enumere('algorithme', 'Load-sharing algorithm',
+            CEF_LOAD_SHARING_ALGORITHMS, {
+              original: 'Original algorithm',
+              tunnel: 'Algorithm for tunnel environments',
+              universal: 'Universal algorithm',
+              'include-ports': 'Algorithm including layer-4 ports',
+            })],
+        description: 'Configure the CEF load-sharing algorithm',
+        undoDescription: 'Restore the default algorithm',
+        modes: ['config'], minPrivilege: 15,
+        run: (_session, args) => {
+          glob().cefLoadSharingAlgorithm = args.algorithme; return '';
+        },
+        undo: () => { glob().cefLoadSharingAlgorithm = null; return ''; },
+      },
+      {
+        id: 'ip-cef-accounting',
+        path: ['ip', 'cef', 'accounting',
+          enumere('quoi', 'What to account for', CEF_ACCOUNTING_KINDS, {
+            'per-prefix': 'Count packets and bytes per prefix',
+            'non-recursive': 'Count only non-recursive prefixes',
+            'load-balance-hash': 'Count per load-balance hash bucket',
+            'prefix-length': 'Count per prefix length',
+          })],
+        description: 'Enable CEF accounting',
+        undoDescription: 'Disable CEF accounting',
+        modes: ['config'], minPrivilege: 15,
+        run: (_session, args) => { glob().cefAccounting.add(args.quoi); return ''; },
+        undo: (_session, args) => { glob().cefAccounting.delete(args.quoi); return ''; },
+      },
+    ];
+  }
+
+  protected enableSpecs(): readonly CommandSpec[] {
+    const monter = (niveau: string | undefined): string => {
+      const lvl = niveau === undefined ? 15 : Number(niveau);
+      if (this.enableGateFor(lvl) && !this.consumeEnableAuthorization(lvl)) {
+        return '% Access denied';
+      }
+      this.currentPrivilegeLevel = lvl;
+      this.mode = lvl === 15 ? 'privileged' : 'user';
+      if (this.logging.userInfo) {
+        this.attachLoggingToDevice(this.d());
+        const console = this.configSessionLabel === 'console';
+        this.logging.append('notifications', 'sys',
+          `Privilege level set to ${lvl} by ${console ? 'unknown' : this.configSessionLabel}`
+          + ` on ${console ? 'console' : 'vty'}`,
+          true, 'PRIV_AUTH_PASS');
+      }
+      return '';
+    };
+    const exec = ['user', 'privileged'];
+
+    return [
+      {
+        id: 'enable',
+        path: ['enable', {
+          name: 'niveau', type: 'INT', range: [0, 15], optional: true,
+          description: 'Enable level',
+        }],
+        description: 'Turn on privileged commands',
+        modes: exec, minPrivilege: 1,
+        run: (_session, args) => monter(args.niveau),
+      },
+      {
+        id: 'enable-view',
+        path: ['enable', 'view', {
+          name: 'vue', type: 'WORD', optional: true,
+          description: 'View name',
+        }],
+        description: 'Enter a command-line interface view',
+        modes: exec, minPrivilege: 1,
+        run: (_session, args) =>
+          this.entrerDansUneVue(args.vue === undefined ? [] : [args.vue]),
+      },
+    ];
+  }
+
+  protected configureSpecs(): readonly CommandSpec[] {
+    return [{
+      id: 'configure-terminal',
+      path: ['configure', 'terminal'],
+      description: 'Configure from the terminal',
+      // Les trois modes, et non les deux qu'IOS documente : ce shell
+      // laisse une session de niveau 1 a 14 en EXEC UTILISATEUR, et
+      // `privilege exec level 7 configure terminal` descend justement
+      // la commande jusque-la. C'est l'autorisation qui tranche, comme
+      // pour `clear`, `write` et la famille de l'archivage.
+      modes: ['user', 'privileged', 'config'], minPrivilege: 15,
+      run: () => {
+        this.mode = 'config';
+        return 'Enter configuration commands, one per line.  End with CNTL/Z.';
+      },
+    }];
+  }
+
+  protected archiveExecSpecs(): readonly CommandSpec[] {
+    return specsFromTrieRegistrations(
+      (collector) => this.registerArchiveExecOn(collector as unknown as CommandTrie),
+      {
+        modes: ['user', 'privileged'], minPrivilege: 15,
+        skip: (path) => !ARCHIVE_EXEC.has(path),
+        argumentFor: (path) => ARCHIVE_EXEC_PLACES[path],
+      },
+    );
   }
 
   protected arpSpecs(): CommandSpec[] {
@@ -5508,6 +6384,11 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       [['option'], 'Set a raw DHCP option'],
       [['show', 'ip', 'http', 'server'], 'HTTP server information'],
     ];
+  }
+
+  private pileTcp(): TcpBriefSource | null {
+    const dev = this.d() as unknown as { getTcpStack?: () => TcpBriefSource };
+    return dev.getTcpStack?.() ?? null;
   }
 
   protected socleTable(): CommandTable | null {
@@ -6739,6 +7620,8 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
         // vraie machine refuse (lot N6).
         if (!estGenreAcces(a[1])) return CISCO_ERRORS.INVALID_INPUT;
         agent.setAccessGroup(a[1], a[2]);
+      } else if (a[0] === 'logging') {
+        agent.setLogging(true, 'ntp');
       } else if (a[0] === 'update-calendar') {
         agent.setUpdateCalendar(true);
       } else if (a[0] === 'allow' && a[1] === 'mode' && a[2] === 'control') {
@@ -6759,6 +7642,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       else if (a[0] === 'trusted-key' && a[1]) agent.removeTrustedKey(parseInt(a[1], 10));
       else if (a[0] === 'access-group' && a[1]) agent.removeAccessGroup(a[1]);
       else if (a[0] === 'source') agent.setSourceInterface('');
+      else if (a[0] === 'logging') agent.setLogging(false);
       else if (a[0] === 'update-calendar') agent.setUpdateCalendar(false);
       // Le durcissement du §9 : fermer le mode 6, celui de `monlist`.
       else if (a[0] === 'allow' && a[1] === 'mode' && a[2] === 'control') {
@@ -7507,47 +8391,12 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
   getTerminalWidth(): number { return this.terminalWidth; }
 
   private registerCommonUserCommands(): void {
-    this.userTrie.registerGreedy('enable', 'Enter privileged EXEC at a specific level', (args) => {
-      if (args[0]?.toLowerCase() === 'view') return this.entrerDansUneVue(args.slice(1));
-      const lvl = args[0] ? parseInt(args[0], 10) : 15;
-      if (!Number.isFinite(lvl) || lvl < 0 || lvl > 15) {
-        return CISCO_ERRORS.INVALID_INPUT;
-      }
-      if (this.enableGateFor(lvl) && !this.consumeEnableAuthorization(lvl)) {
-        return '% Access denied';
-      }
-      this.currentPrivilegeLevel = lvl;
-      this.mode = lvl === 15 ? 'privileged' : 'user';
-      // `logging userinfo` : c'est ICI que la commande a un sens, et
-      // c'est le seul endroit où elle peut en avoir. Une console sans
-      // authentification n'a pas d'utilisateur à nommer, et IOS écrit
-      // alors `unknown` plutôt que d'en inventer un.
-      if (this.logging.userInfo) {
-        this.attachLoggingToDevice(this.d());
-        const console = this.configSessionLabel === 'console';
-        this.logging.append('notifications', 'sys',
-          `Privilege level set to ${lvl} by ${console ? 'unknown' : this.configSessionLabel}`
-          + ` on ${console ? 'console' : 'vty'}`,
-          true, 'PRIV_AUTH_PASS');
-      }
-      return '';
-    }, [{ keyword: 'view', description: 'Enter a command-line interface view' }]);
-
     this.registerCommonShowCommands(this.userTrie, 'user');
     // ARP show commands (shared between router and switch)
   }
 
   private registerCommonPrivilegedCommands(): void {
     this.registerTestAaaCommand();
-    this.privilegedTrie.register('enable', 'Turn on privileged commands', () => '');
-    this.privilegedTrie.registerGreedy('enable view', 'Enter a CLI view', (args) =>
-      this.entrerDansUneVue(args));
-
-    this.privilegedTrie.register('configure terminal', 'Enter configuration mode', () => {
-      this.mode = 'config';
-      return 'Enter configuration commands, one per line.  End with CNTL/Z.';
-    });
-
     this.privilegedTrie.register('disable', 'Return to user EXEC mode', () => {
       this.mode = 'user';
       this.currentPrivilegeLevel = 1;
@@ -7566,27 +8415,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     // tout autant qu'un routeur et qu'elle était refusée en bloc sur le
     // switch. Un équipement sans service d'archivage rend le message de
     // table vide plutôt que de planter.
-    registerArchiveExecCommands(
-      this.privilegedTrie,
-      () => this.archiveService(),
-      () => (this.d() as unknown as { getRunningConfig?: () => string }).getRunningConfig?.() ?? '',
-      (url) => this.fs().read(url),
-      () => this.readStartupConfig(),
-      (texte) => {
-        // Un REMPLACEMENT, pas une fusion : l'état rejouable est remis à
-        // zéro avant que le fichier ne soit appliqué, sinon ce que la
-        // configuration courante porte en trop y resterait — ce qui est
-        // précisément la différence avec `copy`.
-        const dev = this.d() as unknown as {
-          _resetConfigurableStateForReload?: () => void;
-          _applyConfigText?: (t: string) => void;
-        };
-        dev._resetConfigurableStateForReload?.();
-        dev._applyConfigText?.(texte);
-        (this.d() as unknown as { _noteConfigChange?: (u: string) => void })
-          ._noteConfigChange?.(this.configSessionLabel);
-      },
-    );
+    this.registerArchiveExecOn(this.privilegedTrie);
 
 
     // Single greedy `copy` handler so any source/destination pair is consumed
@@ -7799,31 +8628,6 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       { keyword: 'vty', description: 'Virtual terminal' },
     ]);
     registerLineExecCommands(this.privilegedTrie, () => getSessionRegistry(this.d()));
-    const poserSntpServer = (args: string[]): string => {
-      if (!args[0]) return '% Incomplete command.';
-      const target = this.resolveNtpTarget(args[0]);
-      if (!target) return `Translating "${args[0]}"...domain server (255.255.255.255)\n% Bad IP address or host name`;
-      const dev = this.d() as unknown as { _recordUnhandledConfigLine?: (line: string) => void };
-      const agent = getNtpAgent(this.d());
-      if (agent) agent.addServer(target, args[1]?.toLowerCase() === 'prefer', undefined, 'sntp');
-      else dev._recordUnhandledConfigLine?.(`sntp server ${args.join(' ')}`);
-      return '';
-    };
-    for (const trie of [this.privilegedTrie, this.configTrie]) {
-      trie.registerGreedy('sntp server', 'SNTP server (alias for ntp server)', poserSntpServer);
-    }
-    this.configTrie.registerGreedy('sntp unicast', 'SNTP unicast client', (_args) => {
-      const dev = this.d() as unknown as { _recordUnhandledConfigLine?: (line: string) => void };
-      dev._recordUnhandledConfigLine?.('sntp unicast client');
-      return '';
-    });
-    this.configTrie.registerGreedy('no sntp server', 'Remove SNTP server', (args) => {
-      const dev = this.d() as unknown as { _removeUnhandledConfigLine?: (l: string) => void };
-      const agent = getNtpAgent(this.d());
-      if (agent?.removeServer && args[0]) agent.removeServer(args[0]);
-      dev._removeUnhandledConfigLine?.(`sntp server ${args.join(' ')}`);
-      return '';
-    });
 
     this.registerCommonShowCommands(this.privilegedTrie);
 
@@ -7984,10 +8788,6 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
   }
 
   private registerCommonConfigCommands(trie: CommandTrie = this.configTrie): void {
-    // `configure terminal` while already in config is an idempotent
-    // no-op (re-issuing it must not error mid-sequence).
-    trie.register('configure terminal', 'Already in global config', () => '');
-
     // La séquence de démarrage. `config-register 0x2142` est la moitié
     // de la récupération de mot de passe la plus enseignée du cours ;
     // le registre est réellement stocké et son bit 0x40 réellement lu.
@@ -8050,23 +8850,6 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       return '';
     });
 
-    // Global feature toggles — mutate the real CiscoConfigState
-    // Repository (shared switch + router, DRY). `show cdp`/`show lldp`
-    // and `show running-config` project this real state.
-    const flag = (feature: string, enableCmd: string, desc: string) => {
-      trie.registerGreedy(enableCmd, desc, () => {
-        this.configState.set(feature, true);
-        return '';
-      });
-      trie.registerGreedy(`no ${enableCmd}`, `Disable ${desc}`, () => {
-        this.configState.set(feature, false);
-        return '';
-      });
-    };
-    // cdp/lldp follow the `flag` pattern, but the cdp toggle must also
-    // start / stop the per-device protocol agent so `show cdp neighbors`
-    // reflects real learnt state (and stops learning when disabled).
-    flag('ip cef', 'ip cef', 'CEF');
     this.registerHttpServerOn(trie);
     // `ip routing` / `ipv6 unicast-routing` enable forms are owned by
     // the router (CiscoOspfCommands, device-specific); only record the
@@ -8077,15 +8860,6 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       return '';
     });
     registerCiscoDnsCommands(trie, this.dnsCommandContext());
-    trie.register('no banner motd', 'Clear MOTD banner', () => {
-      const dev = this.d() as unknown as {
-        _setSshBanner?: (b: string) => void;
-        _setMotdBanner?: (b: string) => void;
-      };
-      dev._setSshBanner?.('');
-      dev._setMotdBanner?.('');
-      return '';
-    });
     trie.registerGreedy('vrf', 'VRF configuration', (args, raw) => {
       const r = this.d() as unknown as { _recordUnhandledConfigLine?: (l: string) => void };
       r._recordUnhandledConfigLine?.(raw ?? `vrf ${args.join(' ')}`);
@@ -8247,53 +9021,6 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       return '';
     });
 
-    trie.registerGreedy('banner', 'Set a banner', (args, rawLine) => {
-      const which = args[0]?.toLowerCase();
-      if (!which || !['motd', 'login', 'exec', 'incoming'].includes(which)) {
-        return CISCO_ERRORS.INVALID_INPUT;
-      }
-      // The delimiter is the first non-space character after the banner
-      // type; everything after it (spaces included) is content — split
-      // from the raw line, not the collapsed args.
-      const line = rawLine ?? `banner ${args.join(' ')}`;
-      const typePos = line.toLowerCase().indexOf(which);
-      const rest = line.slice(typePos + which.length).replace(/^\s+/, '');
-      if (rest.length === 0) return CISCO_ERRORS.INCOMPLETE;
-      // show running-config renders the delimiter as the two-character
-      // notation ^C (Ctrl-C); accept it back so the output re-pastes.
-      const delim = rest.startsWith('^C') ? '^C' : rest[0];
-      const body = rest.slice(delim.length);
-      const closeIdx = body.indexOf(delim);
-      if (closeIdx !== -1) {
-        // Inline form — content truncates at the FIRST delimiter
-        // occurrence, exactly like IOS.
-        this.setBanner(which as 'motd' | 'login' | 'exec' | 'incoming', body.slice(0, closeIdx));
-        return '';
-      }
-      // Multi-line form: collect subsequent input verbatim until a line
-      // containing the delimiter.
-      this.bannerCollector = {
-        type: which as 'motd' | 'login' | 'exec' | 'incoming',
-        delimiter: delim,
-        lines: body.length > 0 ? [body] : [],
-      };
-      return `Enter TEXT message.  End with the character '${delim}'.`;
-    });
-    trie.registerGreedy('no banner', 'Remove a banner', (args) => {
-      const which = args[0]?.toLowerCase();
-      const dev = this.d() as unknown as {
-        _setMotdBanner?: (b: string) => void;
-        _setLoginBanner?: (b: string) => void;
-        _setExecBanner?: (b: string) => void;
-        _setIncomingBanner?: (b: string) => void;
-        _setSshBanner?: (b: string) => void;
-      };
-      if (which === 'motd') { dev._setMotdBanner?.(''); dev._setSshBanner?.(''); }
-      else if (which === 'login') dev._setLoginBanner?.('');
-      else if (which === 'exec') dev._setExecBanner?.('');
-      else if (which === 'incoming') dev._setIncomingBanner?.('');
-      return '';
-    });
     registerLoggingConfigCommands(trie, this.loggingCommandContext());
     registerSequenceNumbersCommand(trie, this.loggingCommandContext());
     trie.registerGreedy('service timestamps', 'Timestamp log/debug messages', (args) =>

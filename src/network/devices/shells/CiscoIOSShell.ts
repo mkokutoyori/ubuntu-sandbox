@@ -92,7 +92,7 @@ import {
 import * as Show from './cisco/CiscoShowCommands';
 import { showProcessesCpu } from './cisco/CiscoCommonShow';
 import { showNATTranslations, showNATStatistics } from './cisco/CiscoNATCommands';
-import { showIpOspfNeighbor } from './cisco/CiscoOspfCommands';
+import { showIpOspfNeighbor, routerIpRouteView } from './cisco/CiscoOspfCommands';
 import {
   type CiscoShellMode, type CiscoShellContext,
   buildConfigCommands, buildConfigIfCommands, configIfSpecs, dhcpGlobalSpecs,
@@ -456,7 +456,76 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
       ...this.interfaceEntrySpecs(),
       ...this.ipv6NdSpecs(), ...this.ipv6OspfSpecs(), ...this.ipv6ReglagesSpecs(),
       ...this.clearIpv6Specs(),
+      ...this.aclNommeeSpecs(),
+      ...this.pkiSpecs(),
     ];
+  }
+
+  /**
+   * `crypto pki {trustpoint|authenticate|enroll|import} <nom>`.
+   *
+   * Les quatre prennent le NOM d'un point de confiance, que la place
+   * libre de l'adaptateur laissait deviner ; `import` en prend un de
+   * plus, le format du certificat.
+   */
+  private pkiSpecs(): CommandSpec[] {
+    const point: ArgumentSpec = {
+      name: 'nom', type: 'WORD', description: 'Trustpoint name',
+    };
+    const places: Readonly<Record<string, readonly ArgumentSpec[]>> = {
+      'crypto pki trustpoint': [point],
+      'crypto pki authenticate': [point],
+      'crypto pki enroll': [point],
+      'crypto pki import': [point, {
+        name: 'forme', type: 'REST', literal: 'LINE',
+        description: 'Certificate format and source',
+      }],
+    };
+
+    return specsFromTrieRegistrations(
+      (collector) =>
+        buildSecurityConfigCommands(collector as unknown as CommandTrie, this),
+      {
+        modes: ['config'], minPrivilege: 15,
+        undoFromNegatedPaths: true,
+        skip: (path) => places[path.replace(/^no /, '')] === undefined,
+        argumentFor: (path) => places[path.replace(/^no /, '')],
+      },
+    );
+  }
+
+  /**
+   * `ip access-list {standard|extended|resequence} …`.
+   *
+   * Les places sont declarees plutot que subies : le NOM d'une liste
+   * n'est pas un mot-cle et la renumerotation prend deux entiers, que la
+   * place libre de l'adaptateur laissait deviner.
+   */
+  private aclNommeeSpecs(): CommandSpec[] {
+    const nom: ArgumentSpec = {
+      name: 'nom', type: 'WORD', description: 'Access list name',
+    };
+    const places: Readonly<Record<string, readonly ArgumentSpec[]>> = {
+      'ip access-list standard': [nom],
+      'ip access-list extended': [nom],
+      'ip access-list resequence': [
+        nom,
+        { name: 'debut', type: 'INT', range: [1, 2147483647],
+          description: 'First sequence number' },
+        { name: 'pas', type: 'INT', range: [1, 2147483647],
+          description: 'Step between sequence numbers' },
+      ],
+    };
+
+    return specsFromTrieRegistrations(
+      (collector) => buildACLConfigCommands(collector as unknown as CommandTrie, this),
+      {
+        modes: ['config'], minPrivilege: 15,
+        undoFromNegatedPaths: true,
+        skip: (path) => places[path.replace(/^no /, '')] === undefined,
+        argumentFor: (path) => places[path.replace(/^no /, '')],
+      },
+    );
   }
 
   /*
@@ -1229,6 +1298,9 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
 
   getSelectedDHCPPool(): string | null { return this.selectedDHCPPool; }
   setSelectedDHCPPool(pool: string | null): void { this.selectedDHCPPool = pool; }
+  protected override selectDhcpPool(nom: string | null): void {
+    this.setSelectedDHCPPool(nom);
+  }
   setSelectedVRF(name: string | null): void { this.selectedVRF = name; }
   setSelectedVLAN(id: number | null): void { this.selectedVLAN = id; }
 
@@ -1907,19 +1979,20 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
     };
     trie.registerGreedy('show interfaces', 'Display interface status', showInterfaceCmd);
     trie.register('show vlans', 'Display VLANs (router)', () => Show.showVlansRouter(getRouter()));
-    // `show ip interface[s] [brief|<name>]` — verbose/all + brief.
-    const showIpInterfaceCmd = (args: string[]): string => {
-      const sub = (args[0] || '').toLowerCase();
-      if (args.length === 0) return Show.showIpInterfaceAll(getRouter());
-      if (sub === 'brief') return Show.showIpIntBrief(getRouter());
-      const ifName = resolveInterfaceName(getRouter(), args.join(' '));
-      if (!ifName) return `% Invalid input detected at '^' marker.`;
-      // `show ip interface <nom>` rendait le bloc de `show interfaces`,
-      // c'est-à-dire l'AUTRE commande : le traitement IP de l'interface
-      // n'était affichable que pour toutes les interfaces à la fois.
-      return Show.showIpInterfaceOne(getRouter(), ifName);
-    };
-    trie.registerGreedy('show ip interface', 'Display IP interface status', showIpInterfaceCmd);
+  }
+
+  protected override renduIpRoute(cible: string): string {
+    return routerIpRouteView(this.d(), cible.trim().split(/\s+/).filter(Boolean));
+  }
+
+  protected override renduIpInterface(cible: string): string {
+    const args = cible.trim().split(/\s+/).filter(Boolean);
+    const getRouter = () => this.d();
+    if (args.length === 0) return Show.showIpInterfaceAll(getRouter());
+    if (args[0].toLowerCase() === 'brief') return Show.showIpIntBrief(getRouter());
+    const ifName = resolveInterfaceName(getRouter(), args.join(' '));
+    if (!ifName) return `% Invalid input detected at '^' marker.`;
+    return Show.showIpInterfaceOne(getRouter(), ifName);
   }
 
   // ─── Ping Command ────────────────────────────────────────────────

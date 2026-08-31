@@ -61,7 +61,18 @@ import { showSwitchVersion, showIpTraffic } from './cisco/CiscoCommonShow';
 import { buildArchiveSubmodeOn, buildArchiveLogSubmodeOn } from './cisco/CiscoArchiveCommands';
 import type { LoggingCommandContext } from './cisco/CiscoLoggingCommands';
 import { buildConfigDhcpCommands, dhcpPoolSpecs } from './cisco/CiscoDhcpCommands';
-import { dhcpRunningConfigLines } from '../../dhcp/dhcpRunningConfig';
+import { compactVlanList, parseVlanList } from './cli/vlanList';
+
+/** La distance administrative d'une route statique sur IOS. */
+const IOS_STATIC_DISTANCE = 1;
+import { renderIpRouteTable } from './cisco/CiscoShowCommands';
+import type { RouteTableHost } from './cisco/CiscoShowCommands';
+import {
+  ROUTE_FILTER_CODES, filterRouteTableByCode, renderRouteEntryDetail,
+} from './cisco/CiscoOspfCommands';
+import {
+  dhcpRunningConfigLines, dhcpSnoopingInterfaceLines, dhcpSnoopingRunningConfigLines,
+} from '../../dhcp/dhcpRunningConfig';
 import type { CiscoShellContext } from './cisco/CiscoConfigCommands';
 import type { Router } from '../Router';
 import { vrrpVirtualMac } from '../../vrrp/types';
@@ -432,6 +443,61 @@ const CONFIG_IF_AUTRES: ReadonlySet<string> = new Set([
   'l2protocol-tunnel', 'private-vlan mapping',
 ]);
 
+/**
+ * Les places de `mac address-table`, declarees plutot que subies.
+ *
+ * La queue est libre parce que chaque forme a sa propre grammaire — un
+ * VLAN et une interface pour une entree statique, l'un OU l'autre pour
+ * l'apprentissage — et que les gestionnaires les lisent deja ; ce que
+ * la declaration apporte, c'est de NOMMER ce qui peut suivre, la ou une
+ * place anonyme laissait l'operateur deviner.
+ */
+/**
+ * Ce que la famille `spanning-tree` globale emmene au socle, et ce
+ * qu'elle y laisse.
+ *
+ * Deux chemins BORNES partent — `mode`, qui n'accepte que trois valeurs,
+ * et `mst configuration`, qui n'en prend aucune. La tete GLOUTONNE
+ * reste au trie, et c'est mesure plutot que prudent : ses formes n'ont
+ * pas la meme grammaire (`vlan <liste> priority <n>`,
+ * `portfast bpduguard default`, `pathcost method long`), et la declarer
+ * en une place libre faisait refuser `spanning-tree vlan 10` — une
+ * frappe que la machine acceptait — parce que la continuation `vlan`
+ * devient alors un noeud sans commande. Le manquement est inscrit au
+ * `TODO.md`.
+ */
+const STP_MODE_PLACE: ArgumentSpec = {
+  name: 'mode', type: 'ENUM', description: 'Spanning tree operating mode',
+  values: [
+    { keyword: 'mst', description: 'Multiple spanning tree mode' },
+    { keyword: 'pvst', description: 'Per-VLAN spanning tree mode' },
+    { keyword: 'rapid-pvst', description: 'Per-VLAN rapid spanning tree mode' },
+  ],
+};
+
+const MAC_TABLE_PLACES: Readonly<Record<string, readonly ArgumentSpec[]>> = {
+  'mac address-table aging-time': [{
+    name: 'secondes', type: 'INT', range: [0, 1000000], rangeIsAdvisory: true,
+    description: 'Aging time in seconds, 0 to disable aging',
+  }],
+  'mac address-table static': [{
+    name: 'reste', type: 'REST', literal: 'H.H.H',
+    description: 'MAC address, then its VLAN and interface',
+    alternatives: [
+      { keyword: 'vlan', description: 'VLAN of the entry' },
+      { keyword: 'interface', description: 'Interface of the entry' },
+    ],
+  }],
+  'mac address-table learning': [{
+    name: 'reste', type: 'REST', optional: true, literal: 'LINE',
+    description: 'Where learning applies',
+    alternatives: [
+      { keyword: 'vlan', description: 'Learning on a VLAN' },
+      { keyword: 'interface', description: 'Learning on an interface' },
+    ],
+  }],
+};
+
 const VLAN_PLACE = (name: string, description: string): ArgumentSpec =>
   ({ name, type: 'VLAN_ID', description });
 
@@ -683,6 +749,10 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
   private configArchiveLogTrie = new CommandTrie();
   private configDhcpTrie = new CommandTrie();
   private selectedDhcpPool: string | null = null;
+
+  protected override selectDhcpPool(nom: string | null): void {
+    this.selectedDhcpPool = nom;
+  }
 
   // STP state (switch-only, L2)
   private stpMode = 'pvst';
@@ -1063,15 +1133,6 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
       if (Number.isFinite(id)) this.trackObjects.delete(id);
       return '';
     });
-    this.configTrie.register('service dhcp', 'Enable DHCP service', () => {
-      this.d()._getDHCPServerInternal().enable();
-      return '';
-    });
-    this.configTrie.register('no service dhcp', 'Disable DHCP service', () => {
-      this.d()._getDHCPServerInternal().disable();
-      return '';
-    });
-
     this.configTrie.registerGreedy('ip access-list', 'Named ACL', (args) => {
       const kind = args[0]?.toLowerCase();
       if (kind === 'resequence') {
@@ -1153,8 +1214,6 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
     });
     this.registerL3Commands();
     for (const t of [this.userTrie, this.privilegedTrie]) {
-      t.register('show ip interface brief', 'Display IP interface brief', () =>
-        this.showIpInterfaceBrief());
       const vueAcl = (args: string[]): string =>
         showAccessListsFrom(this.d().getVaclEngine().getAccessListsInternal(), args[0]);
       t.registerGreedy('show access-lists', 'Display ACLs', vueAcl);
@@ -2235,39 +2294,21 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
   }
 
   private registerStpCommands(): void {
-    this.configTrie.register('spanning-tree mst configuration',
-      'Enter MST configuration sub-mode', () => {
-        this.mode = 'config-mst';
-        return '';
-      });
+    this.registerStpGlobal(this.configTrie);
+    this.registerStpInterface();
+  }
+
+  private registerStpGlobal(trie: CommandTrie): void {
     /*
      * `mode` est un NOEUD, pas un mot avale par le glouton : sans lui,
      * `spanning-tree mode ?` rendait la liste du parent — `backbonefast`,
      * `bpdufilter`, … — c'est-a-dire tout sauf les trois modes, sur la
      * commande dont c'est la seule question.
      */
-    this.configTrie.registerGreedy('spanning-tree mode', 'Spanning tree operating mode',
-      (args) => {
-        const refus = refusReglageStpGlobal(['mode', ...args]);
-        if (refus !== null) return refus;
-        this.stpMode = args[0];
-        const m = args[0].toLowerCase();
-        this.requireStp().setMode(
-          m === 'mst' ? 'mstp' : m === 'rapid-pvst' ? 'rstp' : 'stp');
-        return '';
-      });
-    this.configTrie.describeArgs('spanning-tree mode', [{
-      name: 'mode', type: 'ENUM', description: 'Spanning tree operating mode',
-      values: [
-        { keyword: 'mst', description: 'Multiple spanning tree mode' },
-        { keyword: 'pvst', description: 'Per-VLAN spanning tree mode' },
-        { keyword: 'rapid-pvst', description: 'Per-VLAN rapid spanning tree mode' },
-      ],
-    }]);
 
     // Global: every other `spanning-tree …` is accepted (priority/
     // root/extend/portfast/loopguard/…). Track the mode for `show`.
-    this.configTrie.registerGreedy('spanning-tree', 'Spanning Tree configuration', (args) => {
+    trie.registerGreedy('spanning-tree', 'Spanning Tree configuration', (args) => {
       const refus = refusReglageStpGlobal(args);
       if (refus !== null) return refus;
       if (args[0]?.toLowerCase() === 'mode' && args[1]) {
@@ -2315,7 +2356,7 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
       }
       return '';
     }, STP_GLOBAL_CONTINUATIONS);
-    this.configTrie.registerGreedy('spanning-tree mst', 'MST instance configuration', (args) => {
+    trie.registerGreedy('spanning-tree mst', 'MST instance configuration', (args) => {
       if (args[1]?.toLowerCase() === 'priority') {
         const inst = parseInt(args[0] ?? '', 10);
         const prio = parseInt(args[2] ?? '', 10);
@@ -2324,7 +2365,7 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
       }
       return '';
     });
-    this.configTrie.registerGreedy('no spanning-tree', 'Disable spanning-tree', (args) => {
+    trie.registerGreedy('no spanning-tree', 'Disable spanning-tree', (args) => {
       const agent = this.requireStp();
       const a0 = args[0]?.toLowerCase();
       if (a0 === 'vlan' && args[1]) agent.setEnabled(false);
@@ -2345,6 +2386,48 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
     });
 
     // Interface: spanning-tree portfast/bpduguard/cost/… (tracked).
+  }
+
+  private stpGlobalSpecs(): CommandSpec[] {
+    const poser = (mode: string): string => {
+      this.stpMode = mode;
+      const m = mode.toLowerCase();
+      this.requireStp().setMode(
+        m === 'mst' ? 'mstp' : m === 'rapid-pvst' ? 'rstp' : 'stp');
+      return '';
+    };
+
+    return [
+      {
+        id: 'spanning-tree-mode',
+        path: ['spanning-tree', 'mode', STP_MODE_PLACE],
+        description: 'Spanning tree operating mode',
+        undoDescription: 'Return to the default spanning tree mode',
+        modes: ['config'], minPrivilege: 15,
+        run: (_session, args) => poser(args.mode),
+        undo: () => poser('pvst'),
+      },
+      {
+        id: 'spanning-tree-mode-no',
+        path: ['spanning-tree', 'mode'],
+        description: 'Spanning tree operating mode',
+        undoDescription: 'Return to the default spanning tree mode',
+        modes: ['config'], minPrivilege: 15,
+        existsOnlyNegated: true,
+        run: () => CISCO_ERRORS.INCOMPLETE,
+        undo: () => poser('pvst'),
+      },
+      {
+        id: 'spanning-tree-mst-configuration',
+        path: ['spanning-tree', 'mst', 'configuration'],
+        description: 'Enter MST configuration sub-mode',
+        modes: ['config'], minPrivilege: 15,
+        run: () => { this.mode = 'config-mst'; return ''; },
+      },
+    ];
+  }
+
+  private registerStpInterface(): void {
     this.configIfTrie.registerGreedy('spanning-tree', 'Interface STP configuration', (args) => {
       const ifs = this.selectedInterface
         ? [this.selectedInterface] : this.selectedInterfaceRange;
@@ -2623,6 +2706,8 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
       ...this.aggregationSpecs(),
       ...this.interfaceEntrySpecs(),
       ...this.vlanEntrySpecs(),
+      ...this.macTableSpecs(),
+      ...this.stpGlobalSpecs(),
     ];
   }
 
@@ -3215,14 +3300,6 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
   // ─── User Commands ────────────────────────────────────────────────
 
   private registerUserCommands(): void {
-    this.userTrie.register('show ip dhcp snooping', 'Display DHCP snooping configuration', () => {
-      return this.showDHCPSnooping(this.d());
-    });
-
-    this.userTrie.register('show ip dhcp snooping binding', 'Display DHCP snooping binding table', () => {
-      return this.showDHCPSnoopingBinding(this.d());
-    });
-
 
     this.userTrie.registerGreedy('ping', 'Send echo messages', (args) => this.handlePing(args));
   }
@@ -3435,14 +3512,6 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
       return this.d().writeMemory();
     });
 
-    this.privilegedTrie.register('show ip dhcp snooping', 'Display DHCP snooping configuration', () => {
-      return this.showDHCPSnooping(this.d());
-    });
-
-    this.privilegedTrie.register('show ip dhcp snooping binding', 'Display DHCP snooping binding table', () => {
-      return this.showDHCPSnoopingBinding(this.d());
-    });
-
   }
 
   /**
@@ -3540,14 +3609,15 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
 
   // ─── Config Commands ──────────────────────────────────────────────
 
-  private registerConfigCommands(): void {
-    // hostname is handled by base class (registerCommonConfigCommands)
+  protected override renduIpInterface(cible: string): string {
+    const args = cible.trim().split(/\s+/).filter(Boolean);
+    if (args[0]?.toLowerCase() === 'brief') return this.showIpInterfaceBrief();
+    if (args.length === 0) return this.showIpInterfaceAll();
+    return this.showIpInterfaceVerbose(args.join(' '));
+  }
 
-    this.registerVlanEntry(this.configTrie);
-
-    this.registerInterfaceEntry(this.configTrie);
-
-    this.configTrie.registerGreedy('mac address-table aging-time', 'Set MAC address aging time', (args) => {
+  private registerMacTableConfig(trie: CommandTrie): void {
+    trie.registerGreedy('mac address-table aging-time', 'Set MAC address aging time', (args) => {
       if (args.length < 1) return CISCO_ERRORS.INCOMPLETE;
       const seconds = parseInt(args[0], 10);
       if (isNaN(seconds) || seconds < 0) return '% Invalid aging time';
@@ -3561,14 +3631,14 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
     // type `static` est dans le modèle, et l'apprentissage respecte déjà
     // une entrée statique (elle n'est ni vieillie ni écrasée). Seule la
     // commande manquait (audit 11, §4.2).
-    this.configTrie.registerGreedy('mac address-table learning', 'Enable MAC learning', (args) => {
+    trie.registerGreedy('mac address-table learning', 'Enable MAC learning', (args) => {
       const r = this.parseMacLearningArgs(args);
       if (typeof r === 'string') return r;
       if (r.vlan !== undefined) this.d().setVlanMacLearning(r.vlan, true);
       if (r.iface !== undefined) this.d().setPortMacLearning(r.iface, true);
       return '';
     });
-    this.configTrie.registerGreedy('no mac address-table learning', 'Disable MAC learning', (args) => {
+    trie.registerGreedy('no mac address-table learning', 'Disable MAC learning', (args) => {
       const r = this.parseMacLearningArgs(args);
       if (typeof r === 'string') return r;
       if (r.vlan !== undefined) this.d().setVlanMacLearning(r.vlan, false);
@@ -3576,18 +3646,40 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
       return '';
     });
 
-    this.configTrie.registerGreedy('mac address-table static', 'Add a static MAC entry', (args) => {
+    trie.registerGreedy('mac address-table static', 'Add a static MAC entry', (args) => {
       const r = this.parseStaticMacArgs(args);
       if (typeof r === 'string') return r;
       this.d().addStaticMAC(r.mac, r.vlan, r.port);
       return '';
     });
-    this.configTrie.registerGreedy('no mac address-table static', 'Remove a static MAC entry', (args) => {
+    trie.registerGreedy('no mac address-table static', 'Remove a static MAC entry', (args) => {
       const r = this.parseStaticMacArgs(args);
       if (typeof r === 'string') return r;
       this.d().removeStaticMAC(r.mac, r.vlan);
       return '';
     });
+  }
+
+  private macTableSpecs(): CommandSpec[] {
+    return specsFromTrieRegistrations(
+      (collector) =>
+        this.registerMacTableConfig(collector as unknown as CommandTrie),
+      {
+        modes: ['config'], minPrivilege: 15,
+        undoFromNegatedPaths: true,
+        argumentFor: (path) => MAC_TABLE_PLACES[path.replace(/^no /, '')],
+      });
+  }
+
+  private registerConfigCommands(): void {
+    // hostname is handled by base class (registerCommonConfigCommands)
+
+    this.registerVlanEntry(this.configTrie);
+
+    this.registerInterfaceEntry(this.configTrie);
+
+    this.registerMacTableConfig(this.configTrie);
+
     // `notification change` demande un piège SNMP à chaque mouvement
     // d'adresse. Le simulateur n'a pas de générateur de piège sur ce
     // chemin ; accepter la commande sans rien envoyer serait une
@@ -3611,34 +3703,6 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
     });
     this.configTrie.register('no ip default-gateway', 'Remove the management default gateway', () => {
       this.d()._setDefaultGateway('');
-      return '';
-    });
-
-    this.configTrie.register('ip dhcp snooping', 'Enable DHCP snooping globally', () => {
-      this.d()._getDHCPSnoopingConfig().enabled = true;
-      return '';
-    });
-
-    this.configTrie.registerGreedy('ip dhcp snooping vlan', 'Enable DHCP snooping on VLANs', (args) => {
-      if (args.length < 1) return CISCO_ERRORS.INCOMPLETE;
-      const cfg = this.d()._getDHCPSnoopingConfig();
-      const parts = args[0].split(',');
-      for (const part of parts) {
-        if (part.includes('-')) {
-          const [s, e] = part.split('-').map(Number);
-          if (!isNaN(s) && !isNaN(e)) {
-            for (let i = s; i <= e; i++) cfg.vlans.add(i);
-          }
-        } else {
-          const v = parseInt(part, 10);
-          if (!isNaN(v)) cfg.vlans.add(v);
-        }
-      }
-      return '';
-    });
-
-    this.configTrie.register('ip dhcp snooping verify mac-address', 'Enable MAC address verification', () => {
-      this.d()._getDHCPSnoopingConfig().verifyMac = true;
       return '';
     });
 
@@ -4193,24 +4257,6 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
       });
     });
 
-    trie.register('ip dhcp snooping trust', 'Set interface as trusted for DHCP snooping', () => {
-      const cfg = this.d()._getDHCPSnoopingConfig();
-      return this.applyToSelectedInterfaces(portName => {
-        cfg.trustedPorts.add(portName);
-        return '';
-      });
-    });
-
-    trie.registerGreedy('ip dhcp snooping limit rate', 'Set DHCP snooping rate limit', (args) => {
-      if (args.length < 1) return CISCO_ERRORS.INCOMPLETE;
-      const rate = parseInt(args[0], 10);
-      if (isNaN(rate) || rate < 1) return '% Invalid rate value';
-      const cfg = this.d()._getDHCPSnoopingConfig();
-      return this.applyToSelectedInterfaces(portName => {
-        cfg.rateLimits.set(portName, rate);
-        return '';
-      });
-    });
   }
 
   // ─── Running Config Builder ───────────────────────────────────────
@@ -4283,13 +4329,7 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
       out.push(`no mac address-table learning interface ${port}`);
     }
 
-    const snoop = sw._getDHCPSnoopingConfig();
-    if (snoop.enabled) out.push('ip dhcp snooping');
-    if (snoop.vlans.size > 0) {
-      const sorted = [...snoop.vlans].sort((a, b) => a - b);
-      out.push(`ip dhcp snooping vlan ${this.compactVlanList(sorted)}`);
-    }
-    if (snoop.verifyMac) out.push('ip dhcp snooping verify mac-address');
+    out.push(...dhcpSnoopingRunningConfigLines(sw._getDHCPSnoopingConfig()));
 
     const lacp = sw.getLacpAgent?.()?.getConfig?.();
     if (lacp) {
@@ -4346,10 +4386,8 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
       if (dot1x.mode !== 'disabled') out.push(`dot1x port-control ${dot1x.mode}`);
     }
 
-    const snoop = sw._getDHCPSnoopingConfig();
-    if (snoop.trustedPorts.has(portName)) out.push('ip dhcp snooping trust');
-    const rate = snoop.rateLimits.get(portName);
-    if (rate && rate > 0) out.push(`ip dhcp snooping limit rate ${rate}`);
+    out.push(...dhcpSnoopingInterfaceLines(sw._getDHCPSnoopingConfig(), portName)
+      .map(l => l.trimStart()));
 
     return out;
   }
@@ -5201,60 +5239,6 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
 
   // ─── DHCP Snooping Display ───────────────────────────────────────
 
-  private showDHCPSnooping(sw: CiscoSwitch): string {
-    const cfg = sw._getDHCPSnoopingConfig();
-    const lines: string[] = [];
-
-    lines.push(`Switch DHCP snooping is ${cfg.enabled ? 'enabled' : 'disabled'}`);
-
-    if (cfg.vlans.size > 0) {
-      const vlanList = Array.from(cfg.vlans).sort((a, b) => a - b).join(',');
-      lines.push(`DHCP snooping is configured on following VLANs:`);
-      lines.push(`${vlanList}`);
-    }
-
-    if (cfg.verifyMac) {
-      lines.push(`DHCP snooping verify mac-address is enabled`);
-    }
-
-    if (cfg.trustedPorts.size > 0) {
-      const trusted = Array.from(cfg.trustedPorts)
-        .map(p => this.abbreviateInterface(p))
-        .join(', ');
-      lines.push(`Trusted ports: ${trusted}`);
-    }
-
-    for (const [port, rate] of cfg.rateLimits) {
-      lines.push(`  ${this.abbreviateInterface(port)}: rate limit ${rate} pps`);
-    }
-
-    return lines.join('\n');
-  }
-
-  private showDHCPSnoopingBinding(sw: CiscoSwitch): string {
-    const bindings = sw._getSnoopingBindings();
-    const lines: string[] = [];
-
-    lines.push('MacAddress          IP address        Lease(sec)  Type           VLAN  Interface');
-    lines.push('------------------  ----------------  ----------  -------------  ----  --------------------');
-
-    if (bindings.length === 0) {
-      lines.push('Total number of bindings: 0');
-    } else {
-      for (const b of bindings) {
-        const mac = b.macAddress.padEnd(20);
-        const ip = b.ipAddress.padEnd(18);
-        const lease = String(b.lease).padEnd(12);
-        const type = b.type.padEnd(15);
-        const vlan = String(b.vlan).padEnd(6);
-        lines.push(`${mac}${ip}${lease}${type}${vlan}${b.port}`);
-      }
-      lines.push(`Total number of bindings: ${bindings.length}`);
-    }
-
-    return lines.join('\n');
-  }
-
   private showIpDeviceTracking(sw: CiscoSwitch, args: string[]): string {
     const sub = (args[0] ?? 'all').toLowerCase();
     const dottedMac = (m: string) => {
@@ -5579,51 +5563,20 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
       try { net = new IPAddress(args[0]); } catch { return `% Invalid network ${args[0]}`; }
       try { mask = new SubnetMask(args[1]); } catch { return `% Invalid mask ${args[1]}`; }
       try { gw = new IPAddress(args[2]); } catch { return `% Invalid next-hop ${args[2]}`; }
-      this.d().addStaticRoute(net, mask, gw);
+      const ad = CiscoSwitchShell.distanceStatiqueIos(args[3]);
+      if (ad === null) return CISCO_ERRORS.INVALID_INPUT;
+      this.d().addStaticRoute(net, mask, gw, ad);
       return '';
     });
     cfg.registerGreedy('no ip route', 'Remove a static route', (args) => {
       if (args.length < 2) return CISCO_ERRORS.INCOMPLETE;
-      let net: IPAddress, mask: SubnetMask;
+      let net: IPAddress, mask: SubnetMask, gw: IPAddress | undefined;
       try { net = new IPAddress(args[0]); } catch { return `% Invalid network ${args[0]}`; }
       try { mask = new SubnetMask(args[1]); } catch { return `% Invalid mask ${args[1]}`; }
-      this.d().removeStaticRoute(net, mask);
-      return '';
-    });
-
-    // ip dhcp pool <name> → enter dhcp-config view, reuse shared builder
-    cfg.registerGreedy('ip dhcp pool', 'Define a DHCP address pool', (args) => {
-      if (args.length < 1) return CISCO_ERRORS.INCOMPLETE;
-      const dhcp = this.d()._getDHCPServerInternal();
-      if (!dhcp.getPool(args[0])) dhcp.createPool(args[0]);
-      dhcp.enable(); // IOS auto-enables the DHCP service when a pool is created
-      this.selectedDhcpPool = args[0];
-      this.mode = 'config-dhcp';
-      return '';
-    });
-    cfg.registerGreedy('no ip dhcp pool', 'Remove a DHCP pool', (args) => {
-      if (args.length < 1) return CISCO_ERRORS.INCOMPLETE;
-      this.d()._getDHCPServerInternal().deletePool(args[0]);
-      return '';
-    });
-    cfg.registerGreedy('ip dhcp excluded-address',
-      'Exclude IP range from DHCP allocation', (args) => {
-        if (args.length < 1) return CISCO_ERRORS.INCOMPLETE;
-        const end = args[1] || args[0];
-        if (!this.d()._getDHCPServerInternal().addExcludedRange(args[0], end)) {
-          throw new CliInvalidInput({ token: isValidIPv4(args[0]) ? end : args[0] });
-        }
-        return '';
-      });
-    cfg.registerGreedy('ip dhcp database', 'Configure a DHCP database agent URL', (args, raw) => {
-      const url = raw ? raw.replace(/^ip dhcp database\s+/i, '') : args.join(' ');
-      if (!url) return CISCO_ERRORS.INCOMPLETE;
-      this.d()._getDHCPServerInternal().addDatabaseAgent(url);
-      return '';
-    });
-    cfg.registerGreedy('no ip dhcp database', 'Remove a DHCP database agent URL', (args, raw) => {
-      const url = raw ? raw.replace(/^no ip dhcp database\s+/i, '') : args.join(' ');
-      if (url) this.d()._getDHCPServerInternal().removeDatabaseAgent(url);
+      if (args[2]) {
+        try { gw = new IPAddress(args[2]); } catch { return `% Invalid next-hop ${args[2]}`; }
+      }
+      this.d().removeStaticRoute(net, mask, gw);
       return '';
     });
 
@@ -5677,10 +5630,6 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
 
     // ── Show commands ──────────────────────────────────────────────
     for (const t of [this.userTrie, this.privilegedTrie]) {
-      t.registerGreedy('show ip route', 'Display IP routing table', (args) => {
-        if (args[0]?.toLowerCase() === 'summary') return this.showIpRouteSummary();
-        return this.showIpRoute();
-      });
       t.register('show ip traffic', 'IP traffic statistics', () =>
         showIpTraffic(this.d()._getPortsInternal().values(), this.d()._getArpStats()));
       t.registerGreedy('show adjacency', 'Display CEF adjacency table', (args) =>
@@ -5694,11 +5643,6 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
         dhcp().formatDatabaseShow());
       t.register('show ip dhcp snooping statistics', 'Display DHCP snooping statistics', () =>
         this.showIpDhcpSnoopingStatistics());
-      t.registerGreedy('show ip interface', 'Display verbose L3 state per interface', (args) => {
-        if (args[0]?.toLowerCase() === 'brief') return this.showIpInterfaceBrief();
-        if (args.length === 0) return this.showIpInterfaceAll();
-        return this.showIpInterfaceVerbose(args.join(' '));
-      });
       t.registerGreedy('show track', 'Display tracked objects', (args) => {
         const objs = this.trackObjects.list();
         if (objs.length === 0) return '';
@@ -5924,10 +5868,18 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
       `line protocol is ${lineUp ? 'up' : 'down'}`;
     const lines = [stateLine];
     if (svi.ip && svi.mask) {
-      const network = svi.ip.networkAddress(svi.mask);
-      const bcast = `${network.toString().replace(/\.0$/, '')}.255`;
       lines.push(`  Internet address is ${svi.ip}/${svi.mask.toCIDR()}`);
-      lines.push(`  Broadcast address is ${bcast}`);
+      /*
+       * L'adresse de DIFFUSION que rend `show ip interface` est celle
+       * qui est CONFIGUREE, `255.255.255.255` tant que personne n'a tape
+       * `ip broadcast-address` — c'est ce que rend le routeur, et ce que
+       * montrent les captures. Le commutateur la DEDUISAIT du
+       * sous-reseau par un decoupage de chaine (`.0` remplace par
+       * `.255`), donc il repondait autre chose que le routeur a la meme
+       * question, et faux des qu'un masque n'est pas un /24 :
+       * `10.0.0.1/16` y devenait `10.0.0.255` au lieu de `10.0.255.255`.
+       */
+      lines.push('  Broadcast address is 255.255.255.255');
     } else {
       lines.push('  Internet protocol processing disabled');
     }
@@ -6016,34 +5968,65 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
     return lines.join('\n');
   }
 
-  private showIpRoute(): string {
-    const rows = this.d().getL3RoutingTable();
-    const header = [
-      'Codes: C - connected, S - static, R - RIP, D - EIGRP, O - OSPF',
-      '       B - BGP, * - candidate default',
-      '',
-      'Gateway of last resort is not set',
-      '',
-    ];
-    const lines: string[] = [];
-    // SVI iface naming differs by vendor (Huawei `Vlanif10` vs Cisco
-    // `Vlan10`). The routing-table model lives on the shared Switch
-    // base, so rewrite to IOS-style here for display purposes only.
+  /**
+   * La table du Catalyst, dans la forme que le rendu partage attend.
+   *
+   * Le nom d'une interface de couche 3 differe par constructeur — VRP
+   * ecrit `Vlanif10`, IOS `Vlan10` — et le modele de routage vit sur la
+   * base commune des commutateurs ; la traduction se fait donc ici, ou
+   * la plateforme est connue.
+   */
+  /**
+   * La distance d'une statique tapee en IOS.
+   *
+   * Le magasin de routes est PARTAGE avec le commutateur Huawei, dont le
+   * defaut est la preference 60 de VRP ; la laisser s'appliquer a une
+   * commande d'IOS faisait annoncer `[60/0]` la ou une vraie machine
+   * ecrit `[1/0]`, c'est-a-dire le defaut d'un constructeur dans la vue
+   * de l'autre. Chaque plateforme nomme donc le sien.
+   */
+  private static distanceStatiqueIos(mot: string | undefined): number | null {
+    if (mot === undefined) return IOS_STATIC_DISTANCE;
+    const valeur = Number(mot);
+    if (!Number.isInteger(valeur) || valeur < 1 || valeur > 255) return null;
+    return valeur;
+  }
+
+  private tableRoutageCisco(): Array<Record<string, unknown>> {
     const cisco = (iface: string) => iface.replace(/^Vlanif/, 'Vlan');
-    for (const r of rows) {
-      const dest = `${r.network}/${r.mask.toCIDR()}`;
-      if (r.proto === 'connected') {
-        lines.push(`C    ${dest} is directly connected, ${cisco(r.iface)}`);
-      } else {
-        // Static (or default) route — IOS prefixes a `*` on the
-        // candidate default route entry.
-        const isDefault = r.network.toString() === '0.0.0.0' && r.mask.toCIDR() === 0;
-        const code = isDefault ? 'S*' : 'S';
-        const nh = r.nextHop ? r.nextHop.toString() : r.network.toString();
-        lines.push(`${code}    ${dest} [1/0] via ${nh}`);
-      }
-    }
-    return [...header, ...lines].join('\n');
+    return this.d().getL3RoutingTable().map((r) => ({
+      network: r.network,
+      mask: r.mask,
+      type: r.proto,
+      nextHop: r.nextHop,
+      iface: cisco(r.iface),
+      ad: r.preference,
+      metric: 0,
+    }));
+  }
+
+  private hoteTableRoutage(): RouteTableHost {
+    const sw = this.d();
+    return {
+      *localAddresses() {
+        for (const svi of sw.getSvis()) {
+          if (!svi.adminUp || !svi.ip) continue;
+          yield [`Vlan${svi.vlan}`, svi.ip] as const;
+        }
+      },
+    };
+  }
+
+  protected override renduIpRoute(cible: string): string {
+    const args = cible.trim().split(/\s+/).filter(Boolean);
+    if (args[0]?.toLowerCase() === 'summary') return this.showIpRouteSummary();
+
+    const table = renderIpRouteTable(this.hoteTableRoutage(), this.tableRoutageCisco() as never);
+    if (args.length === 0) return table;
+
+    const codes = ROUTE_FILTER_CODES[args[0].toLowerCase()];
+    if (codes) return filterRouteTableByCode(table, codes);
+    return renderRouteEntryDetail(this.tableRoutageCisco(), args[0]);
   }
 
   private showIpRouteSummary(): string {
@@ -6542,19 +6525,7 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
 
   /** Compact a sorted VLAN list into ranges, e.g. [1,2,3,5] → "1-3,5" */
   private compactVlanList(sorted: number[]): string {
-    if (sorted.length === 0) return '';
-    const ranges: string[] = [];
-    let start = sorted[0], end = sorted[0];
-    for (let i = 1; i < sorted.length; i++) {
-      if (sorted[i] === end + 1) {
-        end = sorted[i];
-      } else {
-        ranges.push(start === end ? String(start) : `${start}-${end}`);
-        start = end = sorted[i];
-      }
-    }
-    ranges.push(start === end ? String(start) : `${start}-${end}`);
-    return ranges.join(',');
+    return compactVlanList(sorted);
   }
 
   private qosRunningConfigLines(cfg: SwitchportConfig): string[] {
@@ -6568,20 +6539,7 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
   }
 
   private parseVlanList(input: string): Set<number> | null {
-    const vlans = new Set<number>();
-    const parts = input.split(',');
-    for (const part of parts) {
-      if (part.includes('-')) {
-        const [start, end] = part.split('-').map(Number);
-        if (isNaN(start) || isNaN(end)) return null;
-        for (let i = start; i <= end; i++) vlans.add(i);
-      } else {
-        const num = parseInt(part, 10);
-        if (isNaN(num)) return null;
-        vlans.add(num);
-      }
-    }
-    return vlans;
+    return parseVlanList(input);
   }
 
   /**

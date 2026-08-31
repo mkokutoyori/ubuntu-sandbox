@@ -106,6 +106,8 @@ describe('1. l invite dit ou l on est', () => {
     const nom = fw.getHostname();
     await taper(fw, [
       'config firewall policy', 'edit 1',
+      'set srcintf "port1"', 'set dstintf "wan1"',
+      'set srcaddr "all"', 'set dstaddr "all"', 'set service "ALL"',
       'config identity-based-policy',
     ]);
     const imbrique = fw.getPrompt().trim();
@@ -1147,9 +1149,9 @@ describe('15. les commandes `diagnose`', () => {
 
   it('une sous-commande `diagnose` absente nomme la COMMANDE, pas le verbe', async () => {
     const fw = fortigate();
-    const sortie = await fw.executeCommand('diagnose hardware sysinfo memory');
+    const sortie = await fw.executeCommand('diagnose hardware sysinfo slab');
 
-    expect(sortie).toMatch(/unknown command "diagnose hardware sysinfo memory"/);
+    expect(sortie).toMatch(/unknown command "diagnose hardware sysinfo slab"/);
     expect(sortie).not.toMatch(/unknown command "diagnose"\./);
   });
 

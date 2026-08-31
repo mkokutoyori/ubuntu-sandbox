@@ -1400,8 +1400,66 @@ export function showBuffers(): string {
   return lines.join('\n');
 }
 
-export function showTcpBrief(): string {
-  return 'TCB       Local Address           Foreign Address        (state)';
+const TCP_STATE_IOS: Readonly<Record<string, string>> = {
+  'listen': 'LISTEN',
+  'syn-sent': 'SYNSENT',
+  'syn-received': 'SYNRCVD',
+  'established': 'ESTAB',
+  'fin-wait-1': 'FINWAIT1',
+  'fin-wait-2': 'FINWAIT2',
+  'close-wait': 'CLOSEWAIT',
+  'closing': 'CLOSING',
+  'last-ack': 'LASTACK',
+  'time-wait': 'TIMEWAIT',
+  'closed': 'CLOSED',
+};
+
+interface TcpBriefRow {
+  readonly local: string;
+  readonly foreign: string;
+  readonly state: string;
+}
+
+function tcbHandle(row: TcpBriefRow): string {
+  let hash = 0x6000_0000;
+  for (const c of `${row.local}|${row.foreign}`) {
+    hash = ((hash * 31) + c.charCodeAt(0)) >>> 0;
+  }
+  return hash.toString(16).toUpperCase().padStart(8, '0').slice(-8);
+}
+
+function tcpEndpoint(ip: string, port: number): string {
+  return `${ip === '0.0.0.0' || ip === '' ? '*' : ip}.${port}`;
+}
+
+export interface TcpBriefSource {
+  listListeners(): ReadonlyArray<{ localIp: string; localPort: number }>;
+  listSockets(): ReadonlyArray<{
+    localIp: string; localPort: number;
+    remoteIp: string; remotePort: number; state: string;
+  }>;
+}
+
+export function showTcpBrief(stack?: TcpBriefSource | null): string {
+  const header = 'TCB       Local Address           Foreign Address        (state)';
+  if (!stack) return header;
+
+  const rows: TcpBriefRow[] = [
+    ...stack.listSockets().map(s => ({
+      local: tcpEndpoint(s.localIp, s.localPort),
+      foreign: tcpEndpoint(s.remoteIp, s.remotePort),
+      state: TCP_STATE_IOS[s.state] ?? s.state.toUpperCase(),
+    })),
+    ...stack.listListeners().map(l => ({
+      local: tcpEndpoint(l.localIp, l.localPort),
+      foreign: '*.*',
+      state: 'LISTEN',
+    })),
+  ];
+
+  return [header, ...rows.map(row =>
+    `${tcbHandle(row).padEnd(10)}${row.local.padEnd(24)}`
+    + `${row.foreign.padEnd(23)}${row.state}`)].join('\n');
 }
 
 export function showSockets(): string {

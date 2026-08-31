@@ -57,6 +57,7 @@ import { normVrpSeverity, VRP_SEVERITIES } from '../../router/management/InfoCen
 import { renderDisplayUserInterface } from './HuaweiUserInterfaceCommands';
 import { getSessionRegistry, getVtyLineConfig } from '../../../equipment/RouterServiceCapabilities';
 import { interfacePoolName } from './HuaweiDhcpCommands';
+import { getSecurityConfig } from '../cisco/CiscoSecurityCommands';
 
 // ─── Display State Accessor (passed from shell) ─────────────────────
 export interface HuaweiDisplayState {
@@ -1241,6 +1242,12 @@ export function vrpTimeRangeLines(router: Router): string[] {
   return out;
 }
 
+export function vrpUrpfInterfaceLines(router: Router, portName: string): string[] {
+  const urpf = getSecurityConfig(router).ifaceFlags(portName).urpf;
+  if (!urpf?.mode) return [];
+  return [` ip urpf ${urpf.mode}${urpf.allowDefault ? ' allow-default-route' : ''}`];
+}
+
 export function vrpNatInterfaceLines(router: Router, portName: string): string[] {
   const engine = (router as any)._getNATEngine?.();
   if (!engine) return [];
@@ -1371,6 +1378,7 @@ export function renderHuaweiInterfaceExtras(router: Router, port: any, portName:
   }
   lines.push(...runningConfigInterfaceACL(router, portName));
   lines.push(...vrpNatInterfaceLines(router, portName));
+  lines.push(...vrpUrpfInterfaceLines(router, portName));
   for (const app of router.getTrafficPolicyStore().listApplications()) {
     if (app.iface !== portName) continue;
     lines.push(` traffic-policy ${app.policy} ${app.direction}`);

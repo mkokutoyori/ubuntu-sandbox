@@ -3,7 +3,7 @@ import {
   type FortiObjectView, type FortiTableSpec,
 } from './types';
 
-const INTERFACE_TARGETS = ['system interface', 'system zone'];
+const INTERFACE_TARGETS = ['system interface', 'system zone', 'system sdwan zone'];
 const ADDRESS_TARGETS = ['firewall address', 'firewall addrgrp'];
 
 const NO_APPLICATION_MONITOR = 'this build probes a real server with an ICMP echo or a '
