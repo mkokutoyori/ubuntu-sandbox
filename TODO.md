@@ -1450,3 +1450,16 @@ défauts — la méthode vaut d'être reprise sur le reliquat.
   snooping` et la configuration lisent le meme magasin ». Fermer demande
   soit une capture qui tranche, soit d'unifier les deux magasins ; ce
   n'est pas un choix a faire sans reference.
+- La tete GLOUTONNE de `spanning-tree` (configuration globale du
+  commutateur) reste au trie. Deux chemins bornes en sont partis —
+  `spanning-tree mode`, qui n'accepte que trois valeurs, et
+  `spanning-tree mst configuration`, qui n'en prend aucune — mais le
+  reste (`vlan <liste> {priority|hello-time|max-age|forward-time|root}`,
+  `portfast [bpduguard|bpdufilter] default`, `loopguard default`,
+  `pathcost method {long|short}`, `uplinkfast`, `backbonefast`,
+  `priority <n>`) n'a pas UNE grammaire mais huit. Mesure : le declarer
+  en une place libre fait refuser `spanning-tree vlan 10`, une frappe que
+  la machine accepte, parce que la continuation `vlan` devient alors un
+  noeud sans commande. Fermer demande de declarer les huit formes
+  separement, chacune avec ses places — c'est un lot a soi, pas la queue
+  de celui-ci.

@@ -441,6 +441,29 @@ const CONFIG_IF_AUTRES: ReadonlySet<string> = new Set([
  * la declaration apporte, c'est de NOMMER ce qui peut suivre, la ou une
  * place anonyme laissait l'operateur deviner.
  */
+/**
+ * Ce que la famille `spanning-tree` globale emmene au socle, et ce
+ * qu'elle y laisse.
+ *
+ * Deux chemins BORNES partent — `mode`, qui n'accepte que trois valeurs,
+ * et `mst configuration`, qui n'en prend aucune. La tete GLOUTONNE
+ * reste au trie, et c'est mesure plutot que prudent : ses formes n'ont
+ * pas la meme grammaire (`vlan <liste> priority <n>`,
+ * `portfast bpduguard default`, `pathcost method long`), et la declarer
+ * en une place libre faisait refuser `spanning-tree vlan 10` — une
+ * frappe que la machine acceptait — parce que la continuation `vlan`
+ * devient alors un noeud sans commande. Le manquement est inscrit au
+ * `TODO.md`.
+ */
+const STP_MODE_PLACE: ArgumentSpec = {
+  name: 'mode', type: 'ENUM', description: 'Spanning tree operating mode',
+  values: [
+    { keyword: 'mst', description: 'Multiple spanning tree mode' },
+    { keyword: 'pvst', description: 'Per-VLAN spanning tree mode' },
+    { keyword: 'rapid-pvst', description: 'Per-VLAN rapid spanning tree mode' },
+  ],
+};
+
 const MAC_TABLE_PLACES: Readonly<Record<string, readonly ArgumentSpec[]>> = {
   'mac address-table aging-time': [{
     name: 'secondes', type: 'INT', range: [0, 1000000], rangeIsAdvisory: true,
@@ -2262,39 +2285,21 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
   }
 
   private registerStpCommands(): void {
-    this.configTrie.register('spanning-tree mst configuration',
-      'Enter MST configuration sub-mode', () => {
-        this.mode = 'config-mst';
-        return '';
-      });
+    this.registerStpGlobal(this.configTrie);
+    this.registerStpInterface();
+  }
+
+  private registerStpGlobal(trie: CommandTrie): void {
     /*
      * `mode` est un NOEUD, pas un mot avale par le glouton : sans lui,
      * `spanning-tree mode ?` rendait la liste du parent — `backbonefast`,
      * `bpdufilter`, … — c'est-a-dire tout sauf les trois modes, sur la
      * commande dont c'est la seule question.
      */
-    this.configTrie.registerGreedy('spanning-tree mode', 'Spanning tree operating mode',
-      (args) => {
-        const refus = refusReglageStpGlobal(['mode', ...args]);
-        if (refus !== null) return refus;
-        this.stpMode = args[0];
-        const m = args[0].toLowerCase();
-        this.requireStp().setMode(
-          m === 'mst' ? 'mstp' : m === 'rapid-pvst' ? 'rstp' : 'stp');
-        return '';
-      });
-    this.configTrie.describeArgs('spanning-tree mode', [{
-      name: 'mode', type: 'ENUM', description: 'Spanning tree operating mode',
-      values: [
-        { keyword: 'mst', description: 'Multiple spanning tree mode' },
-        { keyword: 'pvst', description: 'Per-VLAN spanning tree mode' },
-        { keyword: 'rapid-pvst', description: 'Per-VLAN rapid spanning tree mode' },
-      ],
-    }]);
 
     // Global: every other `spanning-tree …` is accepted (priority/
     // root/extend/portfast/loopguard/…). Track the mode for `show`.
-    this.configTrie.registerGreedy('spanning-tree', 'Spanning Tree configuration', (args) => {
+    trie.registerGreedy('spanning-tree', 'Spanning Tree configuration', (args) => {
       const refus = refusReglageStpGlobal(args);
       if (refus !== null) return refus;
       if (args[0]?.toLowerCase() === 'mode' && args[1]) {
@@ -2342,7 +2347,7 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
       }
       return '';
     }, STP_GLOBAL_CONTINUATIONS);
-    this.configTrie.registerGreedy('spanning-tree mst', 'MST instance configuration', (args) => {
+    trie.registerGreedy('spanning-tree mst', 'MST instance configuration', (args) => {
       if (args[1]?.toLowerCase() === 'priority') {
         const inst = parseInt(args[0] ?? '', 10);
         const prio = parseInt(args[2] ?? '', 10);
@@ -2351,7 +2356,7 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
       }
       return '';
     });
-    this.configTrie.registerGreedy('no spanning-tree', 'Disable spanning-tree', (args) => {
+    trie.registerGreedy('no spanning-tree', 'Disable spanning-tree', (args) => {
       const agent = this.requireStp();
       const a0 = args[0]?.toLowerCase();
       if (a0 === 'vlan' && args[1]) agent.setEnabled(false);
@@ -2372,6 +2377,48 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
     });
 
     // Interface: spanning-tree portfast/bpduguard/cost/… (tracked).
+  }
+
+  private stpGlobalSpecs(): CommandSpec[] {
+    const poser = (mode: string): string => {
+      this.stpMode = mode;
+      const m = mode.toLowerCase();
+      this.requireStp().setMode(
+        m === 'mst' ? 'mstp' : m === 'rapid-pvst' ? 'rstp' : 'stp');
+      return '';
+    };
+
+    return [
+      {
+        id: 'spanning-tree-mode',
+        path: ['spanning-tree', 'mode', STP_MODE_PLACE],
+        description: 'Spanning tree operating mode',
+        undoDescription: 'Return to the default spanning tree mode',
+        modes: ['config'], minPrivilege: 15,
+        run: (_session, args) => poser(args.mode),
+        undo: () => poser('pvst'),
+      },
+      {
+        id: 'spanning-tree-mode-no',
+        path: ['spanning-tree', 'mode'],
+        description: 'Spanning tree operating mode',
+        undoDescription: 'Return to the default spanning tree mode',
+        modes: ['config'], minPrivilege: 15,
+        existsOnlyNegated: true,
+        run: () => CISCO_ERRORS.INCOMPLETE,
+        undo: () => poser('pvst'),
+      },
+      {
+        id: 'spanning-tree-mst-configuration',
+        path: ['spanning-tree', 'mst', 'configuration'],
+        description: 'Enter MST configuration sub-mode',
+        modes: ['config'], minPrivilege: 15,
+        run: () => { this.mode = 'config-mst'; return ''; },
+      },
+    ];
+  }
+
+  private registerStpInterface(): void {
     this.configIfTrie.registerGreedy('spanning-tree', 'Interface STP configuration', (args) => {
       const ifs = this.selectedInterface
         ? [this.selectedInterface] : this.selectedInterfaceRange;
@@ -2651,6 +2698,7 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
       ...this.interfaceEntrySpecs(),
       ...this.vlanEntrySpecs(),
       ...this.macTableSpecs(),
+      ...this.stpGlobalSpecs(),
     ];
   }
 
