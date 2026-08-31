@@ -1423,3 +1423,20 @@ défauts — la méthode vaut d'être reprise sur le reliquat.
   piles a la fois (l'image porte l'une ou l'autre), donc aucune capture
   reelle ne peut trancher ce que `show sntp` montre d'une association
   NTP. Trancher au hasard serait inventer.
+- L'INVITE aux niveaux de privilege 2 a 14 n'est attestee par aucune
+  capture atteignable depuis ce reseau. Ce depot rend `#` —
+  `buildDevicePrompt` mappe explicitement « mode utilisateur au niveau
+  >= 2 » sur l'invite privilegiee — pendant qu'un commentaire du
+  gestionnaire d'`enable` affirmait le contraire (« real IOS never shows
+  '#' below 15 ») ; le commentaire est supprime, la decision du code est
+  gardee, et la question reste ouverte. Les pages qui la trancheraient
+  (cisco.com, study-ccna, networklessons, flylib, tacacs.com) sont
+  toutes bloquees par le mandataire de sortie. Ce qu'il faut est une
+  capture de `Router>enable 7`, pas un raisonnement.
+- `enable <niveau>` depuis l'EXEC PRIVILEGIE traverse desormais la meme
+  porte de secret que depuis l'EXEC utilisateur, parce qu'il n'y a plus
+  qu'une declaration. Ce qu'un vrai IOS demande quand on DESCEND d'un
+  niveau (15 vers 7) n'est pas atteste : il est possible qu'il ne
+  demande rien, une descente n'etant pas une elevation. Le comportement
+  uniforme a ete prefere a deux comportements selon l'endroit d'ou l'on
+  tape, faute de reference.

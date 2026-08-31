@@ -1423,20 +1423,21 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
 
     if (!this.commandVisibleTo(line, mode, ctx)) return null;
 
-    if (mode === 'user') {
-      const um = this.userTrie.match(line);
-      if (um.status === 'ok' && um.node?.action && um.matchedKeywords[0]?.toLowerCase() === 'enable') {
-        // `enable view [<nom>]` a sa propre porte : le secret de la vue,
-        // ou le secret d'activation pour la racine. Le laisser tomber
-        // dans le plan d'`enable` faisait echouer `parseInt('view')`,
-        // donc aucun plan, donc aucune verification.
-        if (um.args[0]?.toLowerCase() === 'view') {
-          return this.enableViewInteractionPlan(um.args.slice(1), ctx?.device);
-        }
-        return this.enableInteractionPlan(um.args, ctx?.device, ctx?.onVtyLine === true);
+    // `enable` vit dans les DEUX EXEC depuis qu'elle n'a plus qu'une
+    // declaration, donc sa porte aussi : `enable 7` tape depuis `#`
+    // traverse le meme secret que depuis `>`. `enable view [<nom>]` a la
+    // sienne — le secret de la vue, ou celui d'activation pour la
+    // racine — et la laisser tomber dans le plan d'`enable` faisait
+    // echouer `parseInt('view')`, donc aucun plan et aucune
+    // verification.
+    if (mode === 'user' || mode === 'privileged') {
+      const em = this.resoudreEnable(line);
+      if (em?.vue === true) return this.enableViewInteractionPlan(em.args, ctx?.device);
+      if (em) {
+        return this.enableInteractionPlan(em.args, ctx?.device, ctx?.onVtyLine === true);
       }
-      return null;
     }
+    if (mode === 'user') return null;
 
     // Config-mode dialogue: `banner <kind> <delim>` with nothing after the
     // delimiter opens real IOS's multi-line capture (lines accumulate
@@ -1463,10 +1464,6 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       ? null : this.cheminCanoniqueDuSocle(`${line} `, mode);
     if (migre === null && (m.status !== 'ok' || !m.node)) return null;
     const path = (migre ?? m.matchedKeywords).join(' ').toLowerCase();
-
-    if (path === 'enable view') {
-      return this.enableViewInteractionPlan(m.args, ctx?.device);
-    }
 
     if (path === 'setup') {
       const target = (ctx?.device ?? this.deviceRef) as unknown as {
@@ -2847,18 +2844,6 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     return null;
   }
 
-  /**
-   * `privilege exec level N <command>` — an intermediate-level session
-   * (mode stays 'user' for levels 1-14, real IOS never shows '#' below
-   * 15) additionally gets the exact privileged commands explicitly
-   * granted at or below its level. Dispatches through the privileged
-   * trie (the only one with the full parsing/behaviour for that
-   * command) so a granted command works identically to how level 15
-   * runs it — not a stub. Returns null when nothing is granted, so the
-   * caller falls back to the normal "command not found" error, exactly
-   * matching real IOS: a command outside your privilege level simply
-   * isn't in your visible command tree.
-   */
   /**
    * `enable view [<nom>]` — basculer dans une vue, ou revenir a la racine.
    *
@@ -5415,6 +5400,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       ...this.serviceFamilySpecs(),
       ...this.bannerSpecs(),
       ...this.archiveExecSpecs(),
+      ...this.enableSpecs(),
       ...this.configureSpecs(),
       ...this.hardeningSpecs(),
       ...this.arpSpecs(),
@@ -5743,6 +5729,90 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
    * `(config)#` reannonce la meme ligne. Un seul corps, porte par les
    * deux modes, ne peut plus se contredire.
    */
+  /**
+   * `enable [<niveau>]` et `enable view [<vue>]`, une seule fois.
+   *
+   * Elles etaient ecrites DEUX fois et les deux avaient diverge. Sur
+   * l'arbre utilisateur, un gestionnaire complet : le niveau, la porte
+   * du secret, la journalisation de `logging userinfo`. Sur l'arbre
+   * privilegie, `enable` rendait la chaine vide — un corps qui ne fait
+   * RIEN — de sorte que `enable 7` tape depuis `#` laissait la session
+   * au niveau 15, alors que c'est exactement ainsi qu'on DESCEND d'un
+   * niveau. Et `enable view` y portait une AUTRE description que dans
+   * l'aide de l'autre arbre, donc `enable ?` ne rendait pas le meme
+   * texte selon l'endroit d'ou on le tapait.
+   */
+  /**
+   * La frappe designe-t-elle `enable` — et laquelle des deux ?
+   *
+   * Le plan d'interaction reconnaissait `enable` en interrogeant le
+   * TRIE, qui ne la porte plus : sans cette resolution la porte du
+   * secret ne s'ouvrait plus du tout et la commande passait
+   * directement, refusee sans avoir rien demande. La resolution passe
+   * par la meme table que l'autorisation, donc les abreviations d'IOS
+   * (`en`, `ena 7`) restent honorees sans comparaison de chaines.
+   */
+  private resoudreEnable(line: string): { vue: boolean; args: string[] } | null {
+    const parts = this.socleCanonicalParts('exec', line);
+    if (parts === null) return null;
+    const cles = parts.keywords.split(/\s+/).filter(Boolean);
+    if (cles[0] !== 'enable') return null;
+    /*
+     * Les arguments sont pris sur la ligne TAPEE et non sur la forme
+     * canonique : celle-ci est mise en minuscules pour comparer des
+     * mots-cles, et un nom de vue est une DONNEE — `enable view
+     * NOC_VIEW` y devenait `noc_view`, une vue qui n'existe pas, donc
+     * `% Access denied` meme avec le bon secret.
+     */
+    const tapes = line.trim().split(/\s+/).filter(Boolean);
+    return { vue: cles[1] === 'view', args: tapes.slice(cles.length) };
+  }
+
+  protected enableSpecs(): readonly CommandSpec[] {
+    const monter = (niveau: string | undefined): string => {
+      const lvl = niveau === undefined ? 15 : Number(niveau);
+      if (this.enableGateFor(lvl) && !this.consumeEnableAuthorization(lvl)) {
+        return '% Access denied';
+      }
+      this.currentPrivilegeLevel = lvl;
+      this.mode = lvl === 15 ? 'privileged' : 'user';
+      if (this.logging.userInfo) {
+        this.attachLoggingToDevice(this.d());
+        const console = this.configSessionLabel === 'console';
+        this.logging.append('notifications', 'sys',
+          `Privilege level set to ${lvl} by ${console ? 'unknown' : this.configSessionLabel}`
+          + ` on ${console ? 'console' : 'vty'}`,
+          true, 'PRIV_AUTH_PASS');
+      }
+      return '';
+    };
+    const exec = ['user', 'privileged'];
+
+    return [
+      {
+        id: 'enable',
+        path: ['enable', {
+          name: 'niveau', type: 'INT', range: [0, 15], optional: true,
+          description: 'Enable level',
+        }],
+        description: 'Turn on privileged commands',
+        modes: exec, minPrivilege: 1,
+        run: (_session, args) => monter(args.niveau),
+      },
+      {
+        id: 'enable-view',
+        path: ['enable', 'view', {
+          name: 'vue', type: 'WORD', optional: true,
+          description: 'Name of the view',
+        }],
+        description: 'Enter a command-line interface view',
+        modes: exec, minPrivilege: 1,
+        run: (_session, args) =>
+          this.entrerDansUneVue(args.vue === undefined ? [] : [args.vue]),
+      },
+    ];
+  }
+
   protected configureSpecs(): readonly CommandSpec[] {
     return [{
       id: 'configure-terminal',
@@ -7924,42 +7994,12 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
   getTerminalWidth(): number { return this.terminalWidth; }
 
   private registerCommonUserCommands(): void {
-    this.userTrie.registerGreedy('enable', 'Enter privileged EXEC at a specific level', (args) => {
-      if (args[0]?.toLowerCase() === 'view') return this.entrerDansUneVue(args.slice(1));
-      const lvl = args[0] ? parseInt(args[0], 10) : 15;
-      if (!Number.isFinite(lvl) || lvl < 0 || lvl > 15) {
-        return CISCO_ERRORS.INVALID_INPUT;
-      }
-      if (this.enableGateFor(lvl) && !this.consumeEnableAuthorization(lvl)) {
-        return '% Access denied';
-      }
-      this.currentPrivilegeLevel = lvl;
-      this.mode = lvl === 15 ? 'privileged' : 'user';
-      // `logging userinfo` : c'est ICI que la commande a un sens, et
-      // c'est le seul endroit où elle peut en avoir. Une console sans
-      // authentification n'a pas d'utilisateur à nommer, et IOS écrit
-      // alors `unknown` plutôt que d'en inventer un.
-      if (this.logging.userInfo) {
-        this.attachLoggingToDevice(this.d());
-        const console = this.configSessionLabel === 'console';
-        this.logging.append('notifications', 'sys',
-          `Privilege level set to ${lvl} by ${console ? 'unknown' : this.configSessionLabel}`
-          + ` on ${console ? 'console' : 'vty'}`,
-          true, 'PRIV_AUTH_PASS');
-      }
-      return '';
-    }, [{ keyword: 'view', description: 'Enter a command-line interface view' }]);
-
     this.registerCommonShowCommands(this.userTrie, 'user');
     // ARP show commands (shared between router and switch)
   }
 
   private registerCommonPrivilegedCommands(): void {
     this.registerTestAaaCommand();
-    this.privilegedTrie.register('enable', 'Turn on privileged commands', () => '');
-    this.privilegedTrie.registerGreedy('enable view', 'Enter a CLI view', (args) =>
-      this.entrerDansUneVue(args));
-
     this.privilegedTrie.register('disable', 'Return to user EXEC mode', () => {
       this.mode = 'user';
       this.currentPrivilegeLevel = 1;

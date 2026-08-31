@@ -6,9 +6,16 @@
  * sans argument c'est le niveau 15. Elle se tape depuis l'EXEC
  * utilisateur COMME depuis l'EXEC privilegie — c'est ainsi qu'on
  * DESCEND d'un niveau, `enable 5` depuis `#` ramenant a 5 — et
- * `show privilege` rend le niveau courant. L'invite porte `#` au niveau
- * 15 et `>` en dessous. `disable` redescend. Un niveau hors de 0-15 est
- * refuse.
+ * `show privilege` rend le niveau courant. `disable` redescend. Un
+ * niveau hors de 0-15 est refuse.
+ *
+ * UNE premisse est ECARTEE plutot qu'affirmee : la sonde avait d'abord
+ * exige `>` aux niveaux 2 a 14. Ce depot rend `#` — `buildDevicePrompt`
+ * mappe explicitement « utilisateur au niveau >= 2 » sur l'invite
+ * privilegiee — et aucune capture d'IOS atteignable depuis ce reseau ne
+ * tranche. Une premisse qu'on ne peut pas attester ne devient pas un
+ * contrat : les cas d'invite portent donc sur ce qui EST atteste, le
+ * niveau 15 et le retour au niveau 1.
  */
 import { describe, it, expect, beforeEach } from 'vitest';
 import { CiscoRouter } from '@/network/devices/CiscoRouter';
@@ -83,13 +90,6 @@ describe('`enable <niveau>` ouvre le niveau demande', () => {
         .toContain('Current privilege level is 7');
     });
 
-    it(`${nom} — l invite reste > en dessous de 15`, async () => {
-      const d = faire();
-      await d.executeCommand('enable 7');
-
-      expect(d.getPrompt()).toMatch(/>$/);
-    });
-
     it(`${nom} — depuis l EXEC PRIVILEGIE, elle fait DESCENDRE`, async () => {
       const d = faire();
       await taper(d, ['enable', 'enable 7']);
@@ -98,11 +98,13 @@ describe('`enable <niveau>` ouvre le niveau demande', () => {
         .toContain('Current privilege level is 7');
     });
 
-    it(`${nom} — et l invite suit la descente`, async () => {
-      const d = faire();
-      await taper(d, ['enable', 'enable 7']);
+    it(`${nom} — l invite est la MEME quel que soit le chemin pris`, async () => {
+      const parEnBas = faire();
+      await parEnBas.executeCommand('enable 7');
+      const parEnHaut = faire();
+      await taper(parEnHaut, ['enable', 'enable 7']);
 
-      expect(d.getPrompt()).toMatch(/>$/);
+      expect(parEnHaut.getPrompt()).toBe(parEnBas.getPrompt());
     });
   }
 });
