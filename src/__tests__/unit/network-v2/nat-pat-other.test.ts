@@ -2422,11 +2422,18 @@ describe('Cisco and Huawei NAT/PAT Command System', () => {
       expect(output).toContain('Total active translations');
     });
 
-    it('216. should support autocomplete on abbreviation cl ip nat tr *', async () => {
+    /*
+     * PREMISSE CORRIGEE PAR LA MESURE : `cl` designe `clear` ET
+     * `clock`. L'abreviation se juge sur le MOT et non sur ce qui suit
+     * — sinon une faute de frappe applique une commande non tapee.
+     * `cle` la departage.
+     */
+    it('216. `cl ip nat tr *` est ambigu, `cle ip nat tr *` tranche', async () => {
       const topo = setupNATTopology();
       await topo.r1.executeCommand('enable');
-      const output = await topo.r1.executeCommand('cl ip nat tr *');
-      expect(output.trim()).toBe('');
+
+      expect(await topo.r1.executeCommand('cl ip nat tr *')).toContain('Ambiguous');
+      expect((await topo.r1.executeCommand('cle ip nat tr *')).trim()).toBe('');
     });
 
     it('217. should show correct translation count inside stats after clear', async () => {
@@ -4281,7 +4288,7 @@ describe('Cisco and Huawei NAT/PAT Command System', () => {
       expect(output.toLowerCase()).toContain('error');
     });
 
-    it('399. should support clearing dynamic stats counters using abbreviation cl ip nat sta', async () => {
+    it('399. should support clearing dynamic stats counters using abbreviation cle ip nat sta', async () => {
       const topo = setupNATTopology();
       await configureBasicNATRouting(topo);
       await topo.r1.executeCommand('enable');
@@ -4290,7 +4297,7 @@ describe('Cisco and Huawei NAT/PAT Command System', () => {
       await topo.r1.executeCommand('end');
 
       await topo.inside_pc1.executeCommand('ping -c 1 198.51.100.10');
-      await topo.r1.executeCommand('cl ip nat sta');
+      await topo.r1.executeCommand('cle ip nat sta');
       const stats = await topo.r1.executeCommand('show ip nat statistics');
       expect(stats).toContain('Hits: 0');
     });

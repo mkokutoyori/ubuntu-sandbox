@@ -82,20 +82,45 @@ describe('un mot en trop est refuse, pas avale', () => {
   });
 });
 
-describe('un prefixe que la SUITE tranche n\'est pas ambigu', () => {
-  // `cl` designe `clear` ET `clock`. Le trie tranchait deja par le mot
-  // suivant — c'est la regle d'IOS — et le socle ne le faisait pas :
-  // migrer `clear arp-cache` suffisait donc a faire refuser `cl arp`,
-  // une frappe que ce depot teste depuis longtemps.
+/**
+ * PREMISSE CORRIGEE PAR LA MESURE.
+ *
+ * Ce bloc affirmait qu'un prefixe ambigu cesse de l'etre quand le mot
+ * SUIVANT ne convient qu'a l'une des branches, et donnait cette
+ * resolution pour « la regle d'IOS » — sans reference. Deux sources
+ * independantes disent l'inverse : IOS rend `% Ambiguous command` sur
+ * une saisie qui porte pourtant un mot de plus (`con t`, `co t`), et
+ * decrit la reparation comme « trouver QUEL mot allonger », ce qui n'a
+ * de sens que si la ligne entiere reste refusee.
+ *
+ * Ce que la resolution par la suite coutait, mesure : `ip rout` seul
+ * etait refuse, et `ip rout 192.168.9.0 255.255.255.0 10.0.0.2` POSAIT
+ * la route — `route` etant la seule des deux branches a accepter une
+ * adresse. La meme frappe decidait ou non selon ce qu'on ecrivait
+ * apres, et une faute de frappe appliquait une commande que personne
+ * n'avait tapee. Entre perdre un raccourci et appliquer une commande
+ * non tapee, ce depot choisit de refuser.
+ *
+ * Ce qui trancherait pour de bon : une transcription reelle ou le mot
+ * suivant ne convient qu'a UNE branche. Ni `con t` ni `co t` ne sont ce
+ * cas — `terminal` et un nom d'hote conviennent aux deux —, et aucune
+ * n'est atteignable depuis ce reseau.
+ */
+describe('un prefixe ambigu le reste, quoi qu on ecrive apres', () => {
   it.each(['cl arp', 'cl arp-cache', 'cl hist'])(
-    '`%s` designe `clear`, la seule branche qui accepte la suite', async (command) => {
-      expect(await (await privileged()).executeCommand(command)).toBe('');
+    '`%s` est refuse — `cl` designe `clear` ET `clock`', async (command) => {
+      expect(await (await privileged()).executeCommand(command))
+        .toMatch(/% Ambiguous command/);
     });
 
-  it('et `cl` SEUL reste ambigu — rien ne le tranche', async () => {
+  it('et `cl` SEUL est refuse de meme', async () => {
     const out = await (await privileged()).executeCommand('cl');
 
     expect(out).not.toBe('');
+  });
+
+  it('un caractere de plus suffit — `cle arp` designe `clear`', async () => {
+    expect(await (await privileged()).executeCommand('cle arp-cache')).toBe('');
   });
 
   it('`clo set` designe `clock`, l\'autre branche — le temoin', async () => {

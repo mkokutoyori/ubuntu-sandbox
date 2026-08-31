@@ -286,40 +286,6 @@ question. C'est un lot a part, avec sa propre mesure.
 
 ## Socle CLI
 
-### [cli] l'ambiguite entre les DEUX moteurs n'est vue qu'au PREMIER mot
-**Constat.** Le socle et le trie portent chacun une partie du
-vocabulaire, et une abreviation ambigue ENTRE les deux n'est detectee
-qu'au premier mot de la ligne. `rout rip` rend desormais
-`% Ambiguous command` — `rout` abrege `router` (socle) autant que
-`route-map` (trie) — mais `ip ro 10.0.0.0 255.0.0.0 192.168.1.1` est
-encore accepte en silence alors que `ro` abrege `route` autant que
-`routing` sous `ip`, et qu'un vrai IOS refuse.
-
-**Mesure.** Machine neuve, mode `config` : `rout` seul repondait DEJA
-`% Ambiguous command`, `rout rip` entrait en `config-router` — la meme
-abreviation tranchee differemment selon qu'un argument suit. Pire,
-`rout 1` entrait en `config-route-map` : le MEME prefixe resolu vers
-DEUX commandes selon le mot suivant. La trace montre que le trie n'est
-jamais atteint pour `rout rip` : le socle sert la commande avant lui, et
-`prefixIsUnambiguous` est le seul pont entre les deux vocabulaires.
-
-**Ce qui a ete ferme.** `firstWordIsAmbiguous` : quand le mot tape
-abrege a la fois le mot-cle du socle et un mot-cle DIFFERENT du trie, la
-ligne est ambigue quel que soit ce qui suit. `prefixMatches` ecartait ce
-cas par sa regle de longueur — un chemin du trie plus COURT que la
-frappe n'etait pas tenu pour un rival — et `trieSpellsWhatSocleAbbreviates`
-renoncait des que le mot tape abregeait le mot-cle du socle, ce qui est
-precisement le cas ambigu.
-
-**Raison du report.** Etendre la regle a TOUS les rangs demande de
-comparer rang par rang deux vocabulaires dont l'un (le trie) enumere des
-LIGNES et l'autre (le socle) des specs a arguments types — et le
-mecanisme qui tranche aujourd'hui au rang 0 s'appuie sur le fait que le
-premier mot est toujours un mot-cle, ce qui n'est plus vrai aux rangs
-suivants (`ip route <A.B.C.D>` a un argument au rang 2). Le faire en
-passant ferait de chaque argument un rival potentiel.
-
-
 ### [cli] les declarations d'arguments decrivent, elles ne tranchent pas
 Depuis le lot « une plage annoncee est une plage appliquee », un jeton
 NUMERIQUE hors d'un intervalle affiche par `?` est refuse. Le reste
@@ -1515,42 +1481,8 @@ défauts — la méthode vaut d'être reprise sur le reliquat.
   manquait derriere une place, ici c'est la place qui manque. Fermer
   demande de MESURER ce que chacune accepte vraiment — un nom
   d'interface, un prefixe, les deux — plutot que de declarer une place
-  au juge.- **Migrer une famille en SUPPRIMANT son enregistrement du trie fait
-  perdre l'ambiguite de son abreviation, et le trie execute alors une
-  AUTRE commande en silence.** Mesure, sur un routeur, apres avoir
-  declare `ip route` au socle et retire ses deux enregistrements :
-
-      ip rout      ->  % Ambiguous command: "ip rout"    (bon)
-      no ip rout   ->  ""  et `no ip routing` est POSEE   (dangereux)
-
-  Une faute de frappe COUPE donc le routage IP la ou une vraie machine
-  refuse. Le mecanisme : `pruneMigratedFromTries` retire l'ACTION d'un
-  noeud et laisse le noeud, donc `prefixMatch` continue de le compter
-  comme rival — mais une famille migree a la main, dont on supprime
-  l'enregistrement, n'a plus de noeud du tout, et `no ip rout` ne
-  rencontre plus qu'un seul candidat. `prefixIsUnambiguous` garde le
-  sens socle → trie ; rien ne garde le sens trie → socle.
-  Consequence pratique : `ip route` ne PEUT pas etre migre tant que ce
-  garde n'existe pas, et toute famille dont un prefixe est partage avec
-  une commande restee au trie court le meme risque.
-  Ce qui a ete fait : la sonde `probe-famille-ip-route.test.ts` (32 cas,
-  les deux plateformes) est ecrite et verte, la migration ANNULEE, et
-  les deux defauts qu'elle avait trouves sont corriges independamment.
-  Fermer demande que le trie tienne les chemins du socle pour des
-  rivaux dans son calcul d'ambiguite — un correctif du pont, pas d'une
-  famille, et sa surface est toute la resolution d'abreviations.
-  VERIFIE sur les familles DEJA migrees : aucune n'execute une commande
-  a la place d'une autre — `show ip i`, `show ip r`, `show i`,
-  `show ip dhcp s` et `ip dhcp s` repondent tous `% Ambiguous command`
-  la ou un rival existe, et `ip dhcp s` sur un Catalyst est
-  legitimement NON ambigu, ce constructeur n'ayant pas de
-  `ip dhcp smart-relay`. Une seule bavure, sans danger : sur le
-  commutateur, `show ip i` repond `% Incomplete command.` la ou IOS dit
-  l'ambiguite entre `interface` et `igmp` — il refuse, donc il
-  n'execute rien de faux, mais avec le mauvais message.
-  Regle a suivre d'ici la : avant de migrer une famille a la main,
-  MESURER si un mot-cle du trie partage le prefixe du sien.
   au juge.
+
 ## LACP / 802.1AX — ce que le moteur n'implemente pas encore
 
 Mesure faite contre DEUX implantations independantes qui citent les

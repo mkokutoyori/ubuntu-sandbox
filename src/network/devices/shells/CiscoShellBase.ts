@@ -6550,6 +6550,74 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       if (spec.undo) paths.push(`no ${texte}`);
     }
     if (paths.length > 0) trie.prunePaths(paths);
+    /*
+     * Elaguer retire l'action d'un noeud EXISTANT. Une famille migree a
+     * la main, dont l'enregistrement a ete supprime, n'en laisse aucun :
+     * le chemin disparait du trie et son abreviation cesse d'etre
+     * ambigue. Le port rend les mots que le socle declare a cet
+     * endroit, pour que le trie les compte comme rivaux sans les
+     * proposer.
+     */
+    trie.setRivalKeywordsPort((chemin, prefixe) => this.motsDuSocleSous(chemin, prefixe));
+  }
+
+  /**
+   * Les mots-cles que le socle declare sous un chemin donne.
+   *
+   * Lus sur les SPECS et non sur l'arbre : une spec porte son chemin
+   * canonique, donc la reponse ne depend d'aucun noeud et ne peut pas
+   * fabriquer de candidat de completion.
+   */
+  private motsDuSocleSous(chemin: readonly string[], prefixe: string): string[] {
+    const table = this.socleTable();
+    if (!table) return [];
+    /*
+     * Un rival que la SESSION ne voit pas n'en est pas un. Sans ce
+     * filtre, `sh run` repondait « ambigu » a un compte dont le niveau
+     * n'atteint pas `show running-config` — la commande restait
+     * refusee, mais avec un message qui affirme l'existence de ce que
+     * la vue cache, la ou IOS repond que le mot n'existe pas.
+     */
+    /*
+     * Le garde de reentrance n'est pas une precaution : construire la
+     * session interroge l'autorisation, qui repasse par la resolution
+     * de commande, qui rappelle ce port — la pile explosait. Quand on
+     * est deja dedans, on ne compte aucun rival : on retombe sur le
+     * comportement d'avant plutot que de boucler.
+     */
+    if (this.dansLeCalculDesRivaux) return [];
+    /*
+     * Sans equipement, pas de session, donc pas de visibilite a
+     * consulter : le planificateur d'interaction appelle `match` HORS
+     * d'`execute` pour canoniser une ligne, et y lever ferait perdre a
+     * `copy run start` son dialogue. On ne compte alors aucun rival.
+     */
+    if (this.deviceRef === null) return [];
+    this.dansLeCalculDesRivaux = true;
+    try {
+      return this.motsVisiblesDuSocle(table, chemin, prefixe);
+    } finally {
+      this.dansLeCalculDesRivaux = false;
+    }
+  }
+
+  private dansLeCalculDesRivaux = false;
+
+  private motsVisiblesDuSocle(
+    table: CommandTable, chemin: readonly string[], prefixe: string,
+  ): string[] {
+    const session = this.socleSession(table);
+    const amont = chemin.map(mot => mot.toLowerCase());
+    const mots = new Set<string>();
+    for (const spec of table.specs()) {
+      if (!table.isReachable(spec, session)) continue;
+      const canonique = CiscoShellBase.keywordPathOf(spec).map(mot => mot.toLowerCase());
+      if (canonique.length <= amont.length) continue;
+      if (!amont.every((mot, rang) => canonique[rang] === mot)) continue;
+      const suivant = canonique[amont.length];
+      if (suivant.startsWith(prefixe)) mots.add(suivant);
+    }
+    return [...mots];
   }
 
   private prefixIsUnambiguous(cmdPart: string, spec: { path: readonly unknown[] }): boolean {

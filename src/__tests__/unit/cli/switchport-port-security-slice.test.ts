@@ -185,19 +185,37 @@ describe('l aide DECRIT chaque place de la famille', () => {
 });
 
 describe('l abreviation d IOS vaut pour toute la famille', () => {
-  it('`ma 4` est tranche par la SUITE — seul `maximum` prend un nombre', async () => {
+  /*
+   * PREMISSE CORRIGEE PAR LA MESURE. Ce cas tenait `ma 4` pour tranche
+   * par sa SUITE — seul `maximum` prend un nombre, `mac-address` non —
+   * et donnait cette resolution pour la regle d'IOS. Deux sources
+   * disent l'inverse : IOS rend `% Ambiguous command` sur une saisie
+   * qui porte pourtant un mot de plus. Ce que la resolution par la
+   * suite coutait, mesure ailleurs dans le depot : `ip rout
+   * 192.168.9.0 …` POSAIT la route quand `ip rout` seul etait refuse,
+   * donc une faute de frappe appliquait une commande non tapee.
+   */
+  it('`ma 4` est refuse — `ma` designe `maximum` ET `mac-address`', async () => {
     const { cli } = await surUnPort();
     await cli.executeCommand('switchport port-security');
-    expect(refuse(await cli.executeCommand('switchport port-security ma 4'))).toBe(false);
+
+    expect(await cli.executeCommand('switchport port-security ma 4'))
+      .toContain('Ambiguous');
+  });
+
+  it('`ma` SEUL est refuse de meme', async () => {
+    const { cli } = await surUnPort();
+    expect(await cli.executeCommand('switchport port-security ma')).toContain('Ambiguous');
+  });
+
+  it('un caractere de plus suffit — `max 4` designe `maximum`', async () => {
+    const { cli } = await surUnPort();
+    await cli.executeCommand('switchport port-security');
+    expect(refuse(await cli.executeCommand('switchport port-security max 4'))).toBe(false);
 
     await cli.executeCommand('end');
     expect(await cli.executeCommand('show running-config'))
       .toContain('switchport port-security maximum 4');
-  });
-
-  it('`ma` SEUL reste ambigu — rien ne le tranche', async () => {
-    const { cli } = await surUnPort();
-    expect(await cli.executeCommand('switchport port-security ma')).toContain('Ambiguous');
   });
 
   it.each([

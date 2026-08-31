@@ -37,17 +37,31 @@
  * ambigue quoi qu'il suive. C'est la regle d'IOS, dont l'analyseur
  * tranche mot par mot et ne regarde pas la suite de la ligne.
  *
- * ── Ce qui n'est deliberement PAS ferme ─────────────────────────────
+ * ── Ce que le lot suivant a ferme ───────────────────────────────────
  *
- * Le correctif ne porte que sur le PREMIER mot. `ip ro 10.0.0.0
- * 255.0.0.0 192.168.1.1` reste accepte alors que `ro` abrege `route`
- * autant que `routing` sous `ip` — l'ambiguite est au rang 1, et
- * l'etendre a tous les rangs demande de comparer deux vocabulaires dont
- * l'un enumere des LIGNES et l'autre des specs a arguments TYPES, la ou
- * la regle du rang 0 s'appuie sur le fait qu'un premier mot est toujours
- * un mot-cle. Inscrit au `TODO.md` avec sa mesure plutot que force ici,
- * et un cas ci-dessous l'EPINGLE tel qu'il est — pour qu'on sache que
- * c'est connu et non oublie.
+ * Le correctif ci-dessus ne portait que sur le PREMIER mot, et un cas
+ * epinglait la limite : `ip ro 10.0.0.0 255.0.0.0 192.168.1.1` restait
+ * accepte alors que `ro` abrege `route` autant que `routing` sous `ip`.
+ * Elle est levee, par un pont qui va dans l'autre sens. Le trie tient
+ * desormais les mots du socle pour des RIVAUX a tous les rangs, via un
+ * port en lecture seule (`setRivalKeywordsPort`) qui rend les mots-cles
+ * declares sous un chemin. Il les rend depuis les SPECS et ne cree
+ * aucun noeud : une premiere version posait un noeud temoin par chemin
+ * migre, et la mesure a montre le cout — `interface FastEthernet` etant
+ * un mot-cle du socle, le temoin ajoutait un enfant au trie et la
+ * tabulation proposait la forme ET les huit ports, la ou elle ecrit le
+ * type d'un coup. Un rival ne doit pas devenir un candidat.
+ *
+ * Le meme lot a retire la resolution PAR LA SUITE, que les deux moteurs
+ * portaient chacun de leur cote : `ip rout` seul etait refuse et
+ * `ip rout 192.168.9.0 …` POSAIT la route, `route` etant le seul des
+ * deux a accepter une adresse. La meme frappe decidait ou non selon ce
+ * qu'on ecrivait apres, et une faute de frappe appliquait une commande
+ * que personne n'avait tapee. IOS tranche l'inverse, sur une saisie qui
+ * porte pourtant un mot de plus : `con t` et `co t` rendent
+ * `% Ambiguous command`, et la documentation decrit la reparation comme
+ * « trouver QUEL mot allonger » — ce qui n'a de sens que si la ligne
+ * entiere reste refusee.
  *
  * ── Discrimination ──────────────────────────────────────────────────
  *
@@ -117,10 +131,99 @@ describe('ce qui est ecrit en entier passe toujours', () => {
   });
 });
 
-describe('la limite assumee du correctif', () => {
-  it('`ip ro` reste accepte — l\'ambiguite au rang 1 n\'est pas traitee', async () => {
+describe('l ambiguite se voit a TOUS les rangs, plus seulement au premier', () => {
+  it('`ip ro` est refuse — `ro` abrege `route` ET `routing` sous `ip`', async () => {
     const routeur = await enConfig();
-    const sortie = await routeur.executeCommand('ip ro 10.0.0.0 255.0.0.0 192.168.1.1');
-    expect(sortie.trim()).toBe('');
+
+    expect(await routeur.executeCommand('ip ro 10.0.0.0 255.0.0.0 192.168.1.1'))
+      .toContain('% Ambiguous command');
+  });
+
+  it('et aucune abreviation ne les separe — seul le mot entier tranche', async () => {
+    const routeur = await enConfig();
+
+    for (const abrege of ['ip ro', 'ip rou', 'ip rout']) {
+      expect(await routeur.executeCommand(`${abrege} 10.0.0.0 255.0.0.0 192.168.1.1`), abrege)
+        .toContain('% Ambiguous command');
+    }
+  });
+
+  it('`show ip i` est refuse — `interface` est au socle, `igmp` au trie', async () => {
+    const routeur = new CiscoRouter('RA', 0, 0);
+    await routeur.executeCommand('enable');
+
+    expect(await routeur.executeCommand('show ip i')).toContain('% Ambiguous command');
+  });
+});
+
+/**
+ * La moitie qui compte vraiment : une abreviation ambigue ne doit rien
+ * APPLIQUER. Le message seul ne suffit pas — c'est l'etat de la machine
+ * qui dit si la commande a ete executee, et `ip rout` designe justement
+ * une commande qui POSE un chemin et une autre qui COUPE le routage.
+ */
+describe('une abreviation ambigue n APPLIQUE rien', () => {
+  it('`no ip rout` ne coupe pas le routage', async () => {
+    const routeur = await enConfig();
+    await routeur.executeCommand('no ip rout');
+    await routeur.executeCommand('end');
+
+    expect(await routeur.executeCommand('show running-config'))
+      .not.toMatch(/^no ip routing$/m);
+  });
+
+  it('`ip rout <prefixe>` ne pose aucune route', async () => {
+    const routeur = await enConfig();
+    await routeur.executeCommand('ip rout 192.168.9.0 255.255.255.0 10.0.0.2');
+    await routeur.executeCommand('end');
+
+    expect(await routeur.executeCommand('show running-config'))
+      .not.toContain('192.168.9.0');
+  });
+});
+
+describe('une frappe EXACTE n est jamais ambigue', () => {
+  it('`ip routing` s execute bien que `ip route` existe', async () => {
+    const routeur = await enConfig();
+
+    expect(await routeur.executeCommand('ip routing')).not.toContain('% Ambiguous');
+  });
+
+  it('`no ip routing` COUPE le routage, lui', async () => {
+    const routeur = await enConfig();
+    await routeur.executeCommand('no ip routing');
+    await routeur.executeCommand('end');
+
+    expect(await routeur.executeCommand('show running-config')).toMatch(/^no ip routing$/m);
+  });
+
+  it('`ip route` pose bien son chemin', async () => {
+    const routeur = await enConfig();
+    await routeur.executeCommand('ip route 192.168.9.0 255.255.255.0 10.0.0.2');
+    await routeur.executeCommand('end');
+
+    expect(await routeur.executeCommand('show running-config'))
+      .toMatch(/^ip route 192\.168\.9\.0 255\.255\.255\.0 10\.0\.0\.2$/m);
+  });
+});
+
+describe('TEMOINS — une abreviation qui ne designe QU UNE commande passe', () => {
+  it.each([
+    ['sh ru', 'Current configuration'],
+    ['sh ip int br', 'IP-Address'],
+    ['sh ver', 'Cisco IOS Software'],
+  ])('`%s`', async (abrege, attendu) => {
+    const routeur = new CiscoRouter('RB', 0, 0);
+    await routeur.executeCommand('enable');
+
+    expect(await routeur.executeCommand(abrege)).toContain(attendu);
+  });
+
+  it('`int g0/0` puis `ip addr` restent servis', async () => {
+    const routeur = await enConfig();
+    await routeur.executeCommand('int g0/0');
+
+    expect(await routeur.executeCommand('ip addr 1.1.1.1 255.255.255.0'))
+      .not.toContain('% ');
   });
 });
