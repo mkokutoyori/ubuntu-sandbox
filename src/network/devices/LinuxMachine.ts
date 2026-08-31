@@ -24,7 +24,8 @@
 
 import { EndHost, type PingResult, type ARPEntry, type HostRouteEntry, type HostPolicyRule, getNUDState } from './EndHost';
 import { LacpAgent } from '@/network/lacp/LacpAgent';
-import { LinuxBond, renderProcNetBonding, slaveViewFrom } from './linux/net/LinuxBonding';
+import { selectBundleMember } from '@/network/lacp/loadBalance';
+import { LinuxBond, renderProcNetBonding, slaveViewFrom, xmitHashToLoadBalance } from './linux/net/LinuxBonding';
 import type { TcpWireOutcome } from '../tcp/types';
 import type { UserAccountHost, ShellIdentityHost, FileEditorHost } from '../equipment/HostCapabilities';
 import type { PathActor } from './linux/VfsPath';
@@ -2594,6 +2595,22 @@ export abstract class LinuxMachine extends EndHost
     for (const nom of this.bonds.keys()) this.refreshBondCarrier(nom);
   }
 
+  protected override aggregateMemberFor(
+    portName: string, frame: EthernetFrame,
+  ): string | null | undefined {
+    const bond = this.bonds.get(portName);
+    if (!bond) return undefined;
+    const vivants = bond.slaves.filter(s => this.ports.get(s)?.isOperationallyUp());
+    if (bond.options.mode !== '802.3ad') return vivants[0] ?? null;
+    const agent = this.getLacpAgent();
+    const groupes = vivants.filter(s => agent.getPortInfo(s)?.bundled);
+    return selectBundleMember(groupes, frame, xmitHashToLoadBalance(bond.options.xmitHashPolicy));
+  }
+
+  protected override aggregateIngressPort(portName: string): string | undefined {
+    return this.bondOwning(portName) ?? undefined;
+  }
+
   bondOwning(iface: string): string | null {
     for (const [nom, b] of this.bonds) if (b.slaves.includes(iface)) return nom;
     return null;
@@ -2608,10 +2625,23 @@ export abstract class LinuxMachine extends EndHost
     }
     const deja = this.bondOwning(iface);
     if (deja) return `Error: argument "${iface}" is wrong: Device already enslaved`;
+    const maitre = this.ports.get(bondName)!;
+    const esclave = this.ports.get(iface)!;
+    if (bond.slaves.length === 0) maitre.setMAC(esclave.getMAC());
+    bond.savedMacs.set(iface, esclave.getMAC().toString());
+    esclave.setMAC(maitre.getMAC());
     bond.addSlave(iface);
     this.applyBondMembership(bondName);
     const port = this.ports.get(iface)!;
-    port.onLinkChange(() => this.refreshBondCarrier(bondName));
+    port.onLinkChange((state) => {
+      this.refreshBondCarrier(bondName);
+      if (this.bondOwning(iface) !== bondName) return;
+      this.executor.logMgr.logKernel('bonding', state === 'up'
+        ? `${bondName}: (slave ${iface}): link status definitely up, `
+          + `${port.getNegotiatedSpeed()} Mbps `
+          + `${port.getNegotiatedDuplex() === 'full' ? 'full' : 'half'} duplex`
+        : `${bondName}: (slave ${iface}): link status definitely down, disabling slave`);
+    });
     this.executor.logMgr.logKernel('bonding', `${bondName}: (slave ${iface}): Enslaving as `
       + `${bond.slaves.length === 1 ? 'an active' : 'a backup'} interface with `
       + `${port.isOperationallyUp() ? 'an up' : 'a down'} link`);
@@ -2621,6 +2651,11 @@ export abstract class LinuxMachine extends EndHost
   releaseFromBond(bondName: string, iface: string): string {
     const bond = this.bonds.get(bondName);
     if (!bond || !bond.removeSlave(iface)) return '';
+    const rendue = bond.savedMacs.get(iface);
+    if (rendue) {
+      this.ports.get(iface)?.setMAC(new MACAddress(rendue));
+      bond.savedMacs.delete(iface);
+    }
     this.getLacpAgent().removePort(iface);
     this.applyBondMembership(bondName);
     this.executor.logMgr.logKernel('bonding', `${bondName}: (slave ${iface}): Releasing backup interface`);

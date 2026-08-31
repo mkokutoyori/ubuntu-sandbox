@@ -1,3 +1,4 @@
+import type { LoadBalanceMethod } from '@/network/lacp/loadBalance';
 import type { Port } from '@/network/hardware/Port';
 
 export const BOND_MODES = [
@@ -17,6 +18,19 @@ export function bondModeIndex(mode: BondMode): number {
 
 export function xmitHashIndex(policy: XmitHashPolicy): number {
   return XMIT_HASH_POLICIES.indexOf(policy);
+}
+
+export function xmitHashToLoadBalance(policy: XmitHashPolicy): LoadBalanceMethod {
+  switch (policy) {
+    case 'layer3+4':
+    case 'encap3+4':
+      return 'src-dst-port';
+    case 'layer2+3':
+    case 'encap2+3':
+      return 'src-dst-ip';
+    default:
+      return 'src-dst-mac';
+  }
 }
 
 export function modeUsesXmitHash(mode: BondMode): boolean {
@@ -189,6 +203,7 @@ export function bondModeDescription(mode: BondMode): string {
 
 export class LinuxBond {
   readonly slaves: string[] = [];
+  readonly savedMacs = new Map<string, string>();
   readonly options: BondOptions = defaultBondOptions();
 
   constructor(readonly name: string) {}

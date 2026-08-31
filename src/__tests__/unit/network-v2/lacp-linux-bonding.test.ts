@@ -7,6 +7,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { CiscoSwitch } from '@/network/devices/CiscoSwitch';
 import { LinuxServer } from '@/network/devices/LinuxServer';
+import { LinuxPC } from '@/network/devices/LinuxPC';
 import { Cable } from '@/network/hardware/Cable';
 import { resetCounters, MACAddress } from '@/network/core/types';
 import { resetDeviceCounters } from '@/network/devices/DeviceFactory';
@@ -340,5 +341,80 @@ describe('le bond vit : esclaves, porteuse, journal', () => {
     await vi.advanceTimersByTimeAsync(1_000);
     const out = await srv.executeCommand('cat /proc/net/bonding/bond0');
     expect(out.split('\n').find((l) => l.startsWith('MII Status:'))).toBe('MII Status: down');
+  }, 30_000);
+});
+
+describe('un bond PORTE le trafic', () => {
+  beforeEach(() => {
+    resetCounters(); resetDeviceCounters(); MACAddress.resetCounter(); Logger.reset();
+    vi.useFakeTimers();
+  });
+  afterEach(() => { vi.useRealTimers(); });
+
+  async function laboAvecPair() {
+    const { srv, sw, nics, cables } = await laboBond();
+    const pair = new LinuxPC('linux-pc', 'pair', 0, 0);
+    pair.powerOn();
+    const c = new Cable('cpair');
+    c.connect(pair.getPorts()[0], sw.getPort('FastEthernet0/5')!);
+    await srv.executeCommand('ip addr add 10.9.0.1/24 dev bond0');
+    await pair.executeCommand('ip addr add 10.9.0.2/24 dev eth0');
+    await vi.advanceTimersByTimeAsync(LACP_PERIODIC_MS);
+    return { srv, sw, pair, nics, cables };
+  }
+
+  it('un ping traverse le bond', async () => {
+    const { srv } = await laboAvecPair();
+    vi.useRealTimers();
+    expect(await srv.executeCommand('ping -c 2 10.9.0.2')).toMatch(/, 0% packet loss/);
+  }, 30_000);
+
+  it('la trame sort par un MEMBRE, jamais par le bond lui-meme', async () => {
+    const { srv, nics } = await laboAvecPair();
+    const vus: string[] = [];
+    srv.attachCapture((t) => { if (t.direction === 'out') vus.push(t.iface); });
+    vi.useRealTimers();
+    await srv.executeCommand('ping -c 2 10.9.0.2');
+    expect(vus.length).toBeGreaterThan(0);
+    expect(vus).not.toContain('bond0');
+    expect(vus.every((n) => nics.includes(n))).toBe(true);
+  }, 30_000);
+
+  it('la reponse arrivee sur un membre est LIVREE au bond', async () => {
+    const { srv, pair } = await laboAvecPair();
+    vi.useRealTimers();
+    expect(await pair.executeCommand('ping -c 2 10.9.0.1')).toMatch(/, 0% packet loss/);
+    expect(await srv.executeCommand('ip neigh')).toContain('10.9.0.2');
+  }, 30_000);
+
+  it('un seul lien survivant porte encore le trafic', async () => {
+    const { srv, cables } = await laboAvecPair();
+    cables[0].disconnect();
+    await vi.advanceTimersByTimeAsync(LACP_PERIODIC_MS);
+    vi.useRealTimers();
+    expect(await srv.executeCommand('ping -c 2 10.9.0.2')).toMatch(/, 0% packet loss/);
+  }, 30_000);
+
+  it('un esclave porte l\'adresse du bond, comme le fait bond_enslave', async () => {
+    const { srv, nics } = await laboBond();
+    const bond = srv.getPort('bond0')!.getMAC().toString();
+    for (const n of nics) expect(srv.getPort(n)!.getMAC().toString()).toBe(bond);
+  }, 30_000);
+
+  it('liberer un esclave lui rend son adresse d\'usine', async () => {
+    const { srv, nics } = await laboBond();
+    const avant = srv.getPort(nics[1])!.getMAC().toString();
+    await srv.executeCommand(`ip link set ${nics[1]} nomaster`);
+    expect(srv.getPort(nics[1])!.getMAC().toString()).not.toBe(avant);
+    expect(srv.getPort(nics[1])!.getMAC().toString())
+      .not.toBe(srv.getPort('bond0')!.getMAC().toString());
+  }, 30_000);
+
+  it('le noyau journalise la chute d\'un lien avec ses propres mots', async () => {
+    const { srv, cables } = await laboBond();
+    cables[0].disconnect();
+    await vi.advanceTimersByTimeAsync(1_000);
+    expect(await srv.executeCommand('dmesg'))
+      .toContain('bond0: (slave eth0): link status definitely down, disabling slave');
   }, 30_000);
 });

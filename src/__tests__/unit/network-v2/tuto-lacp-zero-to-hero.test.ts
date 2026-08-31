@@ -6,8 +6,8 @@
  * ils gardent le refus, ils n'attestent aucune conformite.
  *
  * DISCRIMINATION : en neutralisant la selection LACP (`recompute`),
- * 16 des 59 cas tombent — ceux qui observent un groupe REELLEMENT forme.
- * Les 43 autres ne le peuvent pas et c'est leur role : les « MANQUE »
+ * 23 des 74 cas tombent — ceux qui observent un groupe REELLEMENT forme.
+ * Les 51 autres ne le peuvent pas et c'est leur role : les « MANQUE »
  * gardent un refus, les TEMOINS gardent ce qui repond par ailleurs, et
  * le reste ne verifie que l'acceptation d'une commande.
  */
@@ -394,11 +394,30 @@ describe('Partie 3 — LACP sur Cisco', () => {
       .toBe('% Channel group 9 does not exist');
   });
 
-  it('§3.4 MANQUE — `show interface port-channel 1` n\'existe pas', async () => {
+  it('§3.4 `show interface port-channel 1` decrit le faisceau', async () => {
     const { a } = await laboCisco('active', 'active', 2);
-    for (const c of ['show interface port-channel 1', 'show interfaces port-channel 1']) {
-      expect(await a.executeCommand(c), c).toContain('Invalid input');
+    for (const c of ['show interface port-channel 1', 'show interfaces port-channel 1',
+      'show interfaces Po1']) {
+      const out = await a.executeCommand(c);
+      expect(out, c).toContain('Port-channel1 is up, line protocol is up (connected)');
+      expect(out, c).toContain('Hardware is EtherChannel, address is');
+      expect(out, c).toContain('Encapsulation ARPA, loopback not set');
     }
+  });
+
+  it('§3.4 la bande passante du faisceau est la SOMME de ses membres', async () => {
+    const deux = await laboCisco('active', 'active', 2);
+    expect(await deux.a.executeCommand('show interfaces port-channel 1'))
+      .toContain('BW 200000 Kbit/sec');
+    const quatre = await laboCisco('active', 'active', 4);
+    expect(await quatre.a.executeCommand('show interfaces port-channel 1'))
+      .toContain('BW 400000 Kbit/sec');
+  });
+
+  it('§3.4 un faisceau inexistant est refuse comme une interface inexistante', async () => {
+    const { a } = await laboCisco('active', 'active', 2);
+    expect(await a.executeCommand('show interfaces port-channel 9'))
+      .toContain('Invalid input');
   });
 
   it('§3.2 la configuration rendue rejoue `channel-group` sur chaque membre', async () => {

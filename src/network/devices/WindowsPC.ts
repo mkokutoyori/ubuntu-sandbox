@@ -15,6 +15,13 @@
  */
 
 import { EndHost, PingResult } from './EndHost';
+import { LacpAgent } from '@/network/lacp/LacpAgent';
+import type { NicTeam, TeamMember } from './windows/WindowsNicTeam';
+import { lbAlgorithmToLoadBalance } from './windows/WindowsNicTeam';
+import { selectBundleMember } from '@/network/lacp/loadBalance';
+import type { EthernetFrame } from '../core/types';
+import { MACAddress } from '../core/types';
+import { toDisplayName } from './windows/WindowsInterfaceNaming';
 import { NtpAgent, type NtpHost } from '../ntp/NtpAgent';
 import { W32TimeService } from './windows/W32TimeService';
 import { WindowsDnsCache } from './windows/WinDnsCache';
@@ -3807,6 +3814,177 @@ export class WindowsPC extends EndHost implements UserAccountHost {
   getCurrentUser(): string { return this.userMgr.currentUser; }
 
   /** Get the service manager (for PowerShellExecutor and other integrations) */
+  private lacpAgentInstance: LacpAgent | null = null;
+  private readonly nicTeams = new Map<string, NicTeam>();
+  private readonly teamSavedMacs = new Map<string, string>();
+
+  getLacpAgent(): LacpAgent {
+    if (!this.lacpAgentInstance) {
+      this.lacpAgentInstance = new LacpAgent(
+        {
+          id: this.id, name: this.name,
+          getHostname: () => this.getHostname(),
+          getPort: (n: string) => this.getPort(n),
+          getPorts: () => this.getPorts(),
+          sendOnLink: (request) => this.getLinkLayer().send(request),
+        },
+        () => this.getBus(),
+        this.getPorts()[0]?.getMAC().toString() ?? '00:00:00:00:00:00',
+      );
+      this.lacpAgentInstance.start();
+    }
+    return this.lacpAgentInstance;
+  }
+
+  getNicTeams(): ReadonlyMap<string, NicTeam> { return this.nicTeams; }
+
+  getNicTeam(name: string): NicTeam | undefined {
+    for (const [nom, t] of this.nicTeams) {
+      if (nom.toLowerCase() === name.toLowerCase()) return t;
+    }
+    return undefined;
+  }
+
+  createNicTeam(team: NicTeam): string {
+    if (this.getNicTeam(team.name)) return `A team named '${team.name}' already exists.`;
+    for (const m of team.members) {
+      if (!this.getPort(m.name)) return `The network adapter '${m.name}' was not found.`;
+      const deja = this.teamOwning(m.name);
+      if (deja) return `The network adapter '${m.name}' is already a member of team '${deja.name}'.`;
+    }
+    const primaire = this.getPort(team.members[0]?.name ?? '');
+    const nic = new Port(team.teamNic, 'ethernet',
+      primaire ? new MACAddress(primaire.getMAC().toString()) : undefined,
+      { carrierless: true });
+    nic.setUp(false);
+    this.addPort(nic);
+    this.nicTeams.set(team.name, team);
+    for (const m of team.members) this.adoptTeamMember(team, m);
+    this.applyNicTeam(team.name);
+    return '';
+  }
+
+  removeNicTeam(name: string): boolean {
+    const team = this.getNicTeam(name);
+    if (!team) return false;
+    for (const m of [...team.members]) this.releaseTeamMember(m.name);
+    this.ports.delete(team.teamNic);
+    return this.nicTeams.delete(team.name);
+  }
+
+  addNicTeamMember(teamName: string, member: TeamMember): string {
+    const team = this.getNicTeam(teamName);
+    if (!team) return `The team '${teamName}' was not found.`;
+    if (!this.getPort(member.name)) return `The network adapter '${member.name}' was not found.`;
+    const deja = this.teamOwning(member.name);
+    if (deja) return `The network adapter '${member.name}' is already a member of team '${deja.name}'.`;
+    team.members.push(member);
+    this.adoptTeamMember(team, member);
+    this.applyNicTeam(team.name);
+    return '';
+  }
+
+  removeNicTeamMember(memberName: string): string {
+    const team = this.teamOwning(memberName);
+    if (!team) return `The network adapter '${memberName}' is not a member of any team.`;
+    team.members = team.members.filter(m => m.name !== memberName);
+    this.releaseTeamMember(memberName);
+    this.applyNicTeam(team.name);
+    return '';
+  }
+
+  teamOwning(nic: string): NicTeam | null {
+    for (const t of this.nicTeams.values()) {
+      if (t.members.some(m => m.name.toLowerCase() === nic.toLowerCase())) return t;
+    }
+    return null;
+  }
+
+  private adoptTeamMember(team: NicTeam, member: TeamMember): void {
+    const nic = this.getPort(team.teamNic);
+    const port = this.getPort(member.name);
+    if (!nic || !port) return;
+    this.teamSavedMacs.set(member.name, port.getMAC().toString());
+    port.setMAC(new MACAddress(nic.getMAC().toString()));
+    port.onLinkChange((state) => {
+      this.refreshTeamCarrier(team.name);
+      if (state !== 'down' || this.teamOwning(member.name)?.name !== team.name) return;
+      this.eventLog.writeEventLog(
+        'System', 'Microsoft-Windows-MsLbfoSysEvtProvider', 16949, 'Warning',
+        `Member Nic ${toDisplayName(member.name)} Disconnected.`,
+        { Team: team.name, MemberNic: toDisplayName(member.name) });
+    });
+  }
+
+  private releaseTeamMember(memberName: string): void {
+    this.getLacpAgent().removePort(memberName);
+    const rendue = this.teamSavedMacs.get(memberName);
+    if (rendue) {
+      this.getPort(memberName)?.setMAC(new MACAddress(rendue));
+      this.teamSavedMacs.delete(memberName);
+    }
+  }
+
+  applyNicTeam(name: string): void {
+    const team = this.getNicTeam(name);
+    if (!team) return;
+    const agent = this.getLacpAgent();
+    agent.setFastRate(team.lacpTimer === 'Fast');
+    for (const m of team.members) {
+      if (!this.getPort(m.name)) continue;
+      if (team.teamingMode !== 'LACP' || m.adminMode === 'Standby') {
+        agent.removePort(m.name);
+        continue;
+      }
+      agent.addPortToGroup(m.name, 1, 'active');
+    }
+    this.refreshTeamCarrier(name);
+  }
+
+  private refreshTeamCarrier(name: string): void {
+    const team = this.getNicTeam(name);
+    const nic = team ? this.getPort(team.teamNic) : undefined;
+    if (!team || !nic) return;
+    nic.setUp(this.activeTeamMembers(team).length > 0);
+  }
+
+  activeTeamMembers(team: NicTeam): string[] {
+    const agent = this.getLacpAgent();
+    return team.members
+      .filter(m => m.adminMode === 'Active')
+      .map(m => m.name)
+      .filter(n => this.getPort(n)?.isOperationallyUp())
+      .filter(n => team.teamingMode !== 'LACP' || agent.getPortInfo(n)?.bundled === true);
+  }
+
+  aggregateLinkSpeedMbps(portName: string): number | null {
+    const team = [...this.nicTeams.values()]
+      .find(t => t.teamNic.toLowerCase() === portName.toLowerCase());
+    if (!team) return null;
+    return this.activeTeamMembers(team)
+      .reduce((total, n) => total + (this.getPort(n)?.getNegotiatedSpeed() ?? 0), 0);
+  }
+
+  protected override aggregateMemberFor(
+    portName: string, frame: EthernetFrame,
+  ): string | null | undefined {
+    const team = [...this.nicTeams.values()]
+      .find(t => t.teamNic.toLowerCase() === portName.toLowerCase());
+    if (!team) return undefined;
+    return selectBundleMember(this.activeTeamMembers(team), frame,
+      lbAlgorithmToLoadBalance(team.loadBalancingAlgorithm));
+  }
+
+  protected override aggregateIngressPort(portName: string): string | undefined {
+    return this.teamOwning(portName)?.teamNic;
+  }
+
+  protected override receiveSlowProtocol(portName: string, frame: EthernetFrame): void {
+    if (this.nicTeams.size === 0) return;
+    this.getLacpAgent().handleFrame(portName, frame);
+    for (const nom of this.nicTeams.keys()) this.refreshTeamCarrier(nom);
+  }
+
   getServiceManager(): WindowsServiceManager { return this.svcMgr; }
 
   /**

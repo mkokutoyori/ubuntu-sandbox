@@ -24,6 +24,10 @@ import { PSRegistryProvider, WINDOWS_CLIENT_PRODUCT_IDENTITY, WINDOWS_SERVER_PRO
 import { PSEventLogProvider } from '@/network/devices/windows/PSEventLogProvider';
 import { resolveAdapterName } from '@/network/devices/windows/WinNetsh';
 import { toDisplayName, toPortName, formatLinkSpeedMbps } from '@/network/devices/windows/WindowsInterfaceNaming';
+import {
+  memberFailureReason, memberStatus, normaliseAdminMode, normaliseLacpTimer,
+  normaliseLbAlgorithm, normaliseTeamingMode, teamStatus, type TeamMember,
+} from '@/network/devices/windows/WindowsNicTeam';
 import { IPAddress, MACAddress, SubnetMask } from '@/network/core/types';
 import { isValidIPv4 } from '@/network/core/ip';
 import { findHostByAddress } from '@/network/devices/linux/network/HostLookup';
@@ -89,6 +93,7 @@ import type {
   ConnectionRequestPolicyConditionsInfo, ConnectionRequestPolicyInfo,
   DirEntry, ServiceInfo, ProcessInfo, UserInfo, GroupInfo,
   NetworkAdapterInfo, AdapterStatisticsInfo, IPAddressInfo, RouteInfo, EventLogEntryInfo,
+  NicTeamInfo, NicTeamMemberInfo, NewNicTeamRequest, SetNicTeamRequest,
   VpnConnectionInfo, ScheduledTaskInfo, DiskInfo, VolumeInfo,
 } from '@/powershell/providers/PSProviders';
 import type { PSValue } from '@/powershell/runtime/PSEnvironment';
@@ -1426,20 +1431,134 @@ class WindowsNetworkAdapter implements INetworkProvider {
     return (this.pc as unknown as { name: string }).name;
   }
   getAdapters(): NetworkAdapterInfo[] {
-    const ports = (this.pc as unknown as { getPorts: () => Array<{ name: string; getMAC: () => { toString: () => string }; getIsUp: () => boolean; isAdminDown: () => boolean; isConnected: () => boolean; getNegotiatedSpeed: () => number }> }).getPorts();
+    const ports = (this.pc as unknown as { getPorts: () => Array<{ name: string; getMAC: () => { toString: () => string }; getIsUp: () => boolean; isAdminDown: () => boolean; isConnected: () => boolean; isOperationallyUp: () => boolean; getNegotiatedSpeed: () => number }> }).getPorts();
     return ports.map((p, idx) => {
       const ov = this.state.adapterOverrides.get(p.name.toLowerCase()) ?? {};
-      const connected = p.getIsUp() && p.isConnected();
+      const connected = p.isOperationallyUp();
+      const agrege = this.pc.aggregateLinkSpeedMbps(p.name);
       return {
         name: ov.displayName ?? toDisplayName(p.name),
         displayName: ov.displayName ?? toDisplayName(p.name),
         ifIndex: idx + 1,
         status: p.isAdminDown() ? 'Disabled' : (connected ? 'Up' : 'Disconnected'),
         macAddress: p.getMAC().toString(),
-        linkSpeed: connected ? formatLinkSpeedMbps(p.getNegotiatedSpeed()) : '0 bps',
+        linkSpeed: connected
+          ? formatLinkSpeedMbps(agrege ?? p.getNegotiatedSpeed())
+          : '0 bps',
       };
     });
   }
+  getNicTeams(): NicTeamInfo[] {
+    return [...this.pc.getNicTeams().values()].map(t => ({
+      name: t.name,
+      members: t.members.map(m => toDisplayName(m.name)),
+      teamNics: [t.teamNic],
+      teamingMode: t.teamingMode,
+      loadBalancingAlgorithm: t.loadBalancingAlgorithm,
+      lacpTimer: t.lacpTimer,
+      status: teamStatus(t.members, n => this.pc.activeTeamMembers(t).includes(n)),
+    }));
+  }
+
+  newNicTeam(request: NewNicTeamRequest): string {
+    const membres: TeamMember[] = [];
+    for (const brut of request.teamMembers) {
+      const port = toPortName(brut) ?? brut;
+      membres.push({ name: port, adminMode: 'Active' });
+    }
+    const mode = request.teamingMode
+      ? normaliseTeamingMode(request.teamingMode) : 'SwitchIndependent';
+    if (!mode) return `'${request.teamingMode}' is not a valid teaming mode.`;
+    const algo = request.loadBalancingAlgorithm
+      ? normaliseLbAlgorithm(request.loadBalancingAlgorithm) : 'Dynamic';
+    if (!algo) return `'${request.loadBalancingAlgorithm}' is not a valid load balancing algorithm.`;
+    const timer = request.lacpTimer ? normaliseLacpTimer(request.lacpTimer) : 'Slow';
+    if (!timer) return `'${request.lacpTimer}' is not a valid LACP timer.`;
+    return this.pc.createNicTeam({
+      name: request.name,
+      members: membres,
+      teamNic: request.teamNicName ?? request.name,
+      teamingMode: mode,
+      loadBalancingAlgorithm: algo,
+      lacpTimer: timer,
+    });
+  }
+
+  setNicTeam(name: string, request: SetNicTeamRequest): string {
+    const team = this.pc.getNicTeam(name);
+    if (!team) return `The team '${name}' was not found.`;
+    if (request.teamingMode !== undefined) {
+      const mode = normaliseTeamingMode(request.teamingMode);
+      if (!mode) return `'${request.teamingMode}' is not a valid teaming mode.`;
+      team.teamingMode = mode;
+    }
+    if (request.loadBalancingAlgorithm !== undefined) {
+      const algo = normaliseLbAlgorithm(request.loadBalancingAlgorithm);
+      if (!algo) return `'${request.loadBalancingAlgorithm}' is not a valid load balancing algorithm.`;
+      team.loadBalancingAlgorithm = algo;
+    }
+    if (request.lacpTimer !== undefined) {
+      const timer = normaliseLacpTimer(request.lacpTimer);
+      if (!timer) return `'${request.lacpTimer}' is not a valid LACP timer.`;
+      team.lacpTimer = timer;
+    }
+    this.pc.applyNicTeam(team.name);
+    return '';
+  }
+
+  removeNicTeam(name: string): string {
+    return this.pc.removeNicTeam(name) ? '' : `The team '${name}' was not found.`;
+  }
+
+  getNicTeamMembers(team?: string): NicTeamMemberInfo[] {
+    const out: NicTeamMemberInfo[] = [];
+    for (const t of this.pc.getNicTeams().values()) {
+      if (team !== undefined && t.name.toLowerCase() !== team.toLowerCase()) continue;
+      const actifs = this.pc.activeTeamMembers(t);
+      for (const m of t.members) {
+        const port = this.pc.getPort(m.name);
+        const vitesse = port?.isOperationallyUp()
+          ? formatLinkSpeedMbps(port.getNegotiatedSpeed()) : '0 bps';
+        out.push({
+          name: toDisplayName(m.name),
+          interfaceDescription: toDisplayName(m.name),
+          team: t.name,
+          administrativeMode: m.adminMode,
+          operationalStatus: memberStatus(
+            m, port?.isOperationallyUp() === true, actifs.includes(m.name), t.teamingMode),
+          transmitLinkSpeed: vitesse,
+          receiveLinkSpeed: vitesse,
+          failureReason: memberFailureReason(
+            m, port?.isOperationallyUp() === true, actifs.includes(m.name), t.teamingMode),
+        });
+      }
+    }
+    return out;
+  }
+
+  addNicTeamMember(team: string, name: string, administrativeMode?: string): string {
+    const mode = administrativeMode ? normaliseAdminMode(administrativeMode) : 'Active';
+    if (!mode) return `'${administrativeMode}' is not a valid administrative mode.`;
+    return this.pc.addNicTeamMember(team, { name: toPortName(name) ?? name, adminMode: mode });
+  }
+
+  setNicTeamMember(name: string, administrativeMode: string): string {
+    const mode = normaliseAdminMode(administrativeMode);
+    if (!mode) return `'${administrativeMode}' is not a valid administrative mode.`;
+    const port = toPortName(name) ?? name;
+    const team = this.pc.teamOwning(port);
+    if (!team) return `The network adapter '${name}' is not a member of any team.`;
+    const membre = team.members.find(m => m.name.toLowerCase() === port.toLowerCase());
+    if (!membre) return `The network adapter '${name}' is not a member of any team.`;
+    membre.adminMode = mode;
+    this.pc.applyNicTeam(team.name);
+    return '';
+  }
+
+  removeNicTeamMember(name: string): string {
+    return this.pc.removeNicTeamMember(toPortName(name) ?? name);
+  }
+
   getAdapter(name: string): NetworkAdapterInfo | null {
     const adapters = this.getAdapters();
     const candidates = new Set([name.toLowerCase(), toDisplayName(name).toLowerCase()]);

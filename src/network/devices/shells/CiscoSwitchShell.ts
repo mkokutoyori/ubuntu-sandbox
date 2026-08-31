@@ -3517,6 +3517,8 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
         }
         return this.showInterfaceEtherchannel(target);
       }
+      const po = this.portChannelIdOf(args.join(' '));
+      if (po !== null) return this.showPortChannelInterface(po);
       const name = this.resolveInterfaceName(args.join(' '));
       if (name && this.d().getPort(name)) return showInterface(this.d(), name, true);
       return formatInvalidInput(16);
@@ -6236,6 +6238,64 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
 
     trie.privileged.registerGreedy('show pagp', 'Display PAgP state', () =>
       '% PAgP is not implemented: this switch aggregates with LACP only.');
+  }
+
+  private portChannelIdOf(input: string): number | null {
+    const m = input.trim().replace(/\s+/g, '')
+      .match(/^(?:po|por|port|port-|port-c|port-ch|port-cha|port-chan|port-chann|port-channe|port-channel)(\d+)$/i);
+    return m ? Number(m[1]) : null;
+  }
+
+  private showPortChannelInterface(groupId: number): string {
+    const agent = this.requireLacp();
+    const group = agent.getAllGroups().find(g => g.id === groupId);
+    if (!group) return formatInvalidInput(16);
+    const bundled = group.members.filter(m => m.bundled);
+    const ports = bundled.map(m => this.d().getPort(m.portName)).filter(Boolean);
+    const premier = this.d().getPort(group.members[0]?.portName ?? '');
+    const up = bundled.length > 0;
+    const mac = (ports[0] ?? premier)?.getMAC().toCiscoString() ?? '0000.0000.0000';
+    const bw = ports.length > 0
+      ? ports.reduce((t, p) => t + (p!.getEffectiveBandwidthKbps()), 0)
+      : (premier?.getEffectiveBandwidthKbps() ?? 100000);
+    const dly = (ports[0] ?? premier)?.getDelayUs() ?? 100;
+    const mtu = (ports[0] ?? premier)?.getMTU() ?? 1500;
+    const lignes = [
+      `${group.name} is ${up ? 'up' : 'down'}, line protocol is ${up ? 'up (connected)' : 'down (notconnect)'}`,
+      `  Hardware is EtherChannel, address is ${mac} (bia ${mac})`,
+      `  MTU ${mtu} bytes, BW ${bw} Kbit/sec, DLY ${dly} usec,`,
+      '     reliability 255/255, txload 1/255, rxload 1/255',
+      '  Encapsulation ARPA, loopback not set',
+      '  Keepalive set (10 sec)',
+      '  Auto-duplex, Auto-speed, media type is unknown',
+      '  input flow-control is off, output flow-control is unsupported',
+      '  ARP type: ARPA, ARP Timeout 04:00:00',
+      '  Last input never, output never, output hang never',
+      '  Last clearing of "show interface" counters never',
+      '  Input queue: 0/2000/0/0 (size/max/drops/flushes); Total output drops: 0',
+      '  Queueing strategy: fifo',
+      '  Output queue: 0/40 (size/max)',
+      '  5 minute input rate 0 bits/sec, 0 packets/sec',
+      '  5 minute output rate 0 bits/sec, 0 packets/sec',
+    ];
+    const cin = ports.reduce((t, p) => t + p!.getCounters().framesIn, 0);
+    const bin = ports.reduce((t, p) => t + p!.getCounters().bytesIn, 0);
+    const cout = ports.reduce((t, p) => t + p!.getCounters().framesOut, 0);
+    const bout = ports.reduce((t, p) => t + p!.getCounters().bytesOut, 0);
+    lignes.push(
+      `     ${cin} packets input, ${bin} bytes, 0 no buffer`,
+      '     Received 0 broadcasts (0 multicasts)',
+      '     0 runts, 0 giants, 0 throttles',
+      '     0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored',
+      '     0 input packets with dribble condition detected',
+      `     ${cout} packets output, ${bout} bytes, 0 underruns`,
+      '     0 output errors, 0 collisions, 0 interface resets',
+      '     0 unknown protocol drops',
+      '     0 babbles, 0 late collision, 0 deferred',
+      '     0 lost carrier, 0 no carrier',
+      '     0 output buffer failures, 0 output buffers swapped out',
+    );
+    return lignes.join('\n');
   }
 
   private showInterfaceEtherchannel(portName: string): string {

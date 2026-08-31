@@ -1751,6 +1751,23 @@ export abstract class EndHost extends Equipment {
   protected receiveSlowProtocol(_portName: string, _frame: EthernetFrame): void {
   }
 
+  protected aggregateMemberFor(
+    _portName: string, _frame: EthernetFrame,
+  ): string | null | undefined {
+    return undefined;
+  }
+
+  protected aggregateIngressPort(_portName: string): string | undefined {
+    return undefined;
+  }
+
+  override sendFrame(portName: string, frame: EthernetFrame): boolean {
+    const member = this.aggregateMemberFor(portName, frame);
+    if (member === undefined) return super.sendFrame(portName, frame);
+    if (member === null) return false;
+    return super.sendFrame(member, frame);
+  }
+
   protected handleFrame(portName: string, frame: EthernetFrame): void {
     const port = this.ports.get(portName);
     if (!port) return;
@@ -1785,12 +1802,16 @@ export abstract class EndHost extends Equipment {
       return;
     }
 
+    const logical = this.aggregateIngressPort(portName);
+    if (logical !== undefined && frame.srcMAC.equals(port.getMAC())) return;
+    const iface = logical ?? portName;
+
     if (frame.etherType === ETHERTYPE_ARP) {
-      this.handleARP(portName, frame.payload as ARPPacket);
+      this.handleARP(iface, frame.payload as ARPPacket);
     } else if (frame.etherType === ETHERTYPE_IPV4) {
-      this.handleIPv4(portName, frame.payload as IPv4Packet, frame.srcMAC.toString());
+      this.handleIPv4(iface, frame.payload as IPv4Packet, frame.srcMAC.toString());
     } else if (frame.etherType === ETHERTYPE_IPV6) {
-      this.handleIPv6(portName, frame.payload as IPv6Packet);
+      this.handleIPv6(iface, frame.payload as IPv6Packet);
     }
   }
 

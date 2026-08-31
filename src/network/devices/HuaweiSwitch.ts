@@ -315,9 +315,13 @@ export class HuaweiSwitch extends Switch {
     ].join('\n');
   }
 
-  protected override aggregationEgressPort(portName: string, frame: EthernetFrame): string | null {
+  protected override aggregationEgressPort(
+    portName: string, frame: EthernetFrame, ingressPort?: string,
+  ): string | null {
     const info = this.lacpAgent.getPortInfo(portName);
     if (!info || !info.bundled) return portName;
+    if (ingressPort !== undefined
+      && this.lacpAgent.getPortInfo(ingressPort)?.groupId === info.groupId) return null;
     const membres = this.lacpAgent.getGroupMembers(info.groupId)
       .filter(p => p.bundled)
       .map(p => p.portName);
