@@ -30,6 +30,15 @@ export function buildCommitDevice(
         if (patch.up !== undefined) fw.setInterfaceUp(name, patch.up);
         if (patch.allowAccess) fw.setAllowedAccess(name, patch.allowAccess);
         fw.setInterfaceMtu(name, patch.mtu);
+        if (patch.aggregate) {
+          fw.declareAggregate(name, {
+            members: [...patch.aggregate.members],
+            lacpMode: patch.aggregate.lacpMode,
+            lacpSpeed: patch.aggregate.lacpSpeed,
+            algorithm: patch.aggregate.algorithm,
+            minLinks: patch.aggregate.minLinks,
+          });
+        }
       },
       applyZone(name, members, intrazone) {
         const zones = fw.getZoneTable();

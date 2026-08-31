@@ -91,6 +91,13 @@ export interface FortiInterfacePatch {
   readonly parent?: string;
   readonly vlanId?: number;
   readonly mtu?: number;
+  readonly aggregate?: {
+    readonly members: readonly string[];
+    readonly lacpMode: 'static' | 'active' | 'passive';
+    readonly lacpSpeed: 'slow' | 'fast';
+    readonly algorithm: 'L2' | 'L3' | 'L4';
+    readonly minLinks: number;
+  };
 }
 
 export interface FortiStaticRoute {

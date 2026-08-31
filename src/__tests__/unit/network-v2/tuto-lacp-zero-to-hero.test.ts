@@ -625,30 +625,64 @@ describe('Partie 5 — LACP sur Linux : le bonding', () => {
   });
 });
 
-describe('Partie 6 — LACP sur FortiGate : l\'agregation n\'est pas modelisee', () => {
+describe('Partie 6 — LACP sur FortiGate', () => {
   beforeEach(() => {
     resetCounters(); resetDeviceCounters(); MACAddress.resetCounter(); Logger.reset();
   });
 
-  it('§6.1 MANQUE — `set member` est refuse sous `config system interface`', async () => {
+  it('§6.1 la sequence CLI du tutoriel est acceptee en entier', async () => {
     const fw = new FortiGate('firewall-fortinet', 'FW', 0, 0);
     const out = await taper(fw, ['config system interface', 'edit bond1',
-      'set type aggregate', 'set member port3 port4']);
-    expect(out).toContain('unknown attribute "member"');
+      'set type aggregate', 'set member port3 port4 port5 port6',
+      'set lacp-mode active', 'set ip 10.0.12.1 255.255.255.252',
+      'set allowaccess ping https ssh', 'next', 'end']);
+    expect(out).toBe('');
   });
 
-  it('§6.1 MANQUE — `set lacp-mode active` est refuse', async () => {
+  it('§6.1 la configuration rendue reproduit membres, mode et adresse', async () => {
     const fw = new FortiGate('firewall-fortinet', 'FW', 0, 0);
-    const out = await taper(fw, ['config system interface', 'edit bond1',
-      'set lacp-mode active']);
-    expect(out).toContain('unknown attribute "lacp-mode"');
+    await taper(fw, ['config system interface', 'edit bond1', 'set type aggregate',
+      'set member port3 port4', 'set lacp-mode active',
+      'set ip 10.0.12.1 255.255.255.252', 'next', 'end']);
+    const cfg = await fw.executeCommand('show system interface bond1');
+    expect(cfg).toContain('set type aggregate');
+    expect(cfg).toContain('set member "port3" "port4"');
+    expect(cfg).toContain('set lacp-mode active');
+    expect(cfg).toContain('set ip 10.0.12.1 255.255.255.252');
   });
 
-  it('§6.2 MANQUE — `diagnose netlink aggregate name` n\'existe pas', async () => {
+  it('§6.2 `diagnose netlink aggregate name` rend le mode, la vitesse et les membres', async () => {
     const fw = new FortiGate('firewall-fortinet', 'FW', 0, 0);
-    expect(await fw.executeCommand('diagnose netlink aggregate name bond1'))
-      .toContain('unknown command');
+    await taper(fw, ['config system interface', 'edit bond1', 'set type aggregate',
+      'set member port3 port4', 'set lacp-mode active', 'set lacp-speed fast',
+      'next', 'end']);
+    const out = await fw.executeCommand('diagnose netlink aggregate name bond1');
+    expect(out).toContain('lacp-mode: active');
+    expect(out).toContain('lacp-speed: fast');
+    expect(out).toContain('slave: port3');
+    expect(out).toContain('slave: port4');
   });
+
+  it('§6.2 un membre tombe est rendu `down`, les autres restent `up`', async () => {
+    vi.useFakeTimers();
+    try {
+      const fw = new FortiGate('firewall-fortinet', 'FW', 0, 0);
+      const sw = new CiscoSwitch('switch-cisco', 'SW', 24, 300, 0);
+      const cable = new Cable('m1');
+      cable.connect(fw.getPort('port3')!, sw.getPort('FastEthernet0/1')!);
+      new Cable('m2').connect(fw.getPort('port4')!, sw.getPort('FastEthernet0/2')!);
+      await joindreGroupe(sw, CISCO_PORTS.slice(0, 2), 'active');
+      await taper(fw, ['config system interface', 'edit bond1', 'set type aggregate',
+        'set member port3 port4', 'set lacp-mode active', 'set min-links 1',
+        'next', 'end']);
+      await vi.advanceTimersByTimeAsync(LACP_PERIODIC_MS);
+      cable.disconnect();
+      await vi.advanceTimersByTimeAsync(1_000);
+      const out = await fw.executeCommand('diagnose netlink aggregate name bond1');
+      expect(out).toMatch(/slave: port3\n\tstatus: down/);
+      expect(out).toMatch(/slave: port4\n\tstatus: up/);
+    } finally { vi.useRealTimers(); }
+  }, 30_000);
 
   it('TEMOIN — la CLI FortiGate repond bien par ailleurs : `get system interface`', async () => {
     const fw = new FortiGate('firewall-fortinet', 'FW', 0, 0);
