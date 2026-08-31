@@ -1,5 +1,28 @@
 import type { DHCPServer } from './DHCPServer';
-import type { DHCPPoolConfig } from './types';
+import type { DHCPPoolConfig, DHCPSnoopingConfig } from './types';
+import { compactVlanList } from '../devices/shells/cli/vlanList';
+
+export function dhcpSnoopingRunningConfigLines(cfg: DHCPSnoopingConfig): string[] {
+  const lines: string[] = [];
+  if (cfg.enabled) lines.push('ip dhcp snooping');
+  if (cfg.vlans.size > 0) {
+    const sorted = [...cfg.vlans].sort((a, b) => a - b);
+    lines.push(`ip dhcp snooping vlan ${compactVlanList(sorted)}`);
+  }
+  if (cfg.informationOption) lines.push('ip dhcp snooping information option');
+  if (!cfg.verifyMac) lines.push('no ip dhcp snooping verify mac-address');
+  return lines;
+}
+
+export function dhcpSnoopingInterfaceLines(
+  cfg: DHCPSnoopingConfig, ifName: string,
+): string[] {
+  const lines: string[] = [];
+  if (cfg.trustedPorts.has(ifName)) lines.push(' ip dhcp snooping trust');
+  const rate = cfg.rateLimits.get(ifName);
+  if (rate !== undefined && rate > 0) lines.push(` ip dhcp snooping limit rate ${rate}`);
+  return lines;
+}
 
 export function leaseConfigTail(pool: DHCPPoolConfig): string | null {
   if (pool.leaseInfinite) return 'infinite';

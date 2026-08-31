@@ -373,8 +373,10 @@ export interface DHCPSnoopingConfig {
   trustedPorts: Set<string>;
   /** Rate limit per port (packets/sec), 0 = unlimited */
   rateLimits: Map<string, number>;
-  /** Verify MAC address in DHCP packets */
+  /** Verify MAC address in DHCP packets — enabled by default on IOS */
   verifyMac: boolean;
+  /** RFC 3046 Option 82 insertion on snooped packets */
+  informationOption: boolean;
 }
 
 export interface DHCPSnoopingBinding {
@@ -430,7 +432,8 @@ export function createDefaultSnoopingConfig(): DHCPSnoopingConfig {
     vlans: new Set(),
     trustedPorts: new Set(),
     rateLimits: new Map(),
-    verifyMac: false,
+    verifyMac: true,
+    informationOption: false,
   };
 }
 

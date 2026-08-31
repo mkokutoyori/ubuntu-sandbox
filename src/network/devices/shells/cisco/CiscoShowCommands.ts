@@ -6,7 +6,14 @@
  */
 
 import type { Router } from '../../Router';
-import { dhcpRunningConfigLines } from '../../../dhcp/dhcpRunningConfig';
+import { dhcpRunningConfigLines, dhcpSnoopingInterfaceLines, dhcpSnoopingRunningConfigLines } from '../../../dhcp/dhcpRunningConfig';
+import { createDefaultSnoopingConfig } from '../../../dhcp/types';
+import type { DHCPSnoopingConfig } from '../../../dhcp/types';
+
+function snoopingConfigOf(device: object): DHCPSnoopingConfig {
+  const holder = device as { _getDHCPSnoopingConfig?: () => DHCPSnoopingConfig };
+  return holder._getDHCPSnoopingConfig?.() ?? createDefaultSnoopingConfig();
+}
 import { privilegeConfigLines } from '../cli/CliAuthorization';
 import { getPrivilegeRules } from '../../router/security/CiscoPrivilegeStore';
 import type { Port } from '../../../hardware/Port';
@@ -508,6 +515,7 @@ export function showRunningConfig(router: Router): string {
   lines.push(...consoleAndAuxLineConfigLines(router, serviceEncryption));
 
   lines.push(...dhcpRunningConfigLines(dhcp));
+  lines.push(...dhcpSnoopingRunningConfigLines(snoopingConfigOf(router)));
 
   lines.push('!');
   const descs = router._getInterfaceDescriptions();
@@ -900,7 +908,6 @@ function ospfInterfaceRunningConfigLines(pending: Record<string, unknown>): stri
 function legacyInterfaceLines(port: Port): string[] {
   const lines: string[] = [];
   const mss = port.getTcpAdjustMss();
-  const rate = port.getDhcpSnoopingRateLimit();
   const pool = port.getIpv6DhcpPool();
   const wfq = port.getFairQueueConfig();
   const pbr = port.getPolicyRouteMap();
@@ -910,8 +917,6 @@ function legacyInterfaceLines(port: Port): string[] {
   if (mss !== null) lines.push(` ip tcp adjust-mss ${mss}`);
   if (port.isIpAccountingEnabled()) lines.push(' ip accounting');
   if (port.isDhcpRelayInfoTrusted()) lines.push(' ip dhcp relay information trusted');
-  if (port.isDhcpSnoopingTrusted()) lines.push(' ip dhcp snooping trust');
-  if (rate !== null) lines.push(` ip dhcp snooping limit rate ${rate}`);
   if (port.isRipV2Broadcast()) lines.push(' ip rip v2-broadcast');
   if (port.isNbarProtocolDiscoveryEnabled()) lines.push(' ip nbar protocol-discovery');
   if (pool) lines.push(` ipv6 dhcp server ${pool}`);
@@ -995,6 +1000,7 @@ function interfaceConfigLines(
   const nf = (router as unknown as { getNetflowService?: () => { asInterfaceRunningConfigLines: (n: string) => string[] } }).getNetflowService?.();
   if (nf) lines.push(...nf.asInterfaceRunningConfigLines(name));
   lines.push(...legacyInterfaceLines(port));
+  lines.push(...dhcpSnoopingInterfaceLines(snoopingConfigOf(router), name));
   lines.push(...igmpInterfaceRunningConfigLines(router, name));
   lines.push(...pimInterfaceRunningConfigLines(router, name));
   // `rate-limit` (CAR historique) était STOCKÉ sur le port et rendu

@@ -13,7 +13,6 @@ import type { CommandSpec } from '@/cli/CommandTable';
 import type { ArgumentSpec } from '@/cli/ArgumentTypes';
 import { specsFromTrieRegistrations } from '@/cli/commands/trieAdapter';
 import type { CiscoShellContext } from './CiscoConfigCommands';
-import { getGlobalConfig } from '../../router/config/CiscoGlobalConfig';
 
 const INVALID_INPUT = "% Invalid input detected at '^' marker.";
 
@@ -415,18 +414,6 @@ export function registerDhcpShowCommands(trie: CommandTrie, getRouter: () => Rou
   trie.register('show debug', 'Display debugging flags', () =>
     getRouter().getDebugService().format());
 
-  trie.register('show ip dhcp snooping', 'Display DHCP snooping global state', () => {
-    const r = getRouter() as any;
-    const g = getGlobalConfig(r);
-    if (!g.dhcpSnooping) return 'DHCP snooping is not enabled.';
-    const vlans = g.dhcpSnoopingVlans ?? '(none)';
-    return [
-      'Switch DHCP snooping is enabled',
-      `DHCP snooping VLAN configuration: ${vlans}`,
-      `Insertion of option-82 information: ${g.dhcpSnoopingInfoOption ? 'yes' : 'no'}`,
-    ].join('\n');
-  });
-
   trie.register('show ipv6 dhcp binding', 'Display IPv6 DHCP bindings', () => {
     const r = getRouter() as any;
     const bindings = r._ciscoIpv6DhcpBindings as Map<string, any> | undefined;
@@ -464,9 +451,6 @@ export function registerDhcpShowCommands(trie: CommandTrie, getRouter: () => Rou
     if (lines.length === 0) return 'No IPv6 DHCP interface configuration.';
     return lines.join('\n');
   });
-
-  trie.register('show ip dhcp snooping binding', 'Display DHCP snooping bindings', () =>
-    getRouter()._getDHCPServerInternal().formatBindingsShow());
 
 }
 

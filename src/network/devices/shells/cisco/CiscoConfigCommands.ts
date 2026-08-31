@@ -481,26 +481,6 @@ export function buildDhcpGlobalOn(
     getGlobalConfig(ctx.r()).dhcpSmartRelay = false; return '';
   });
 
-  trie.register('ip dhcp snooping', 'Enable DHCP snooping globally', () => {
-    getGlobalConfig(ctx.r()).dhcpSnooping = true; return '';
-  });
-  trie.register('no ip dhcp snooping', 'Disable DHCP snooping globally', () => {
-    getGlobalConfig(ctx.r()).dhcpSnooping = false; return '';
-  });
-  trie.registerGreedy('ip dhcp snooping vlan', 'Enable DHCP snooping for VLANs', (args) => {
-    if (args.length === 0) return CISCO_ERRORS.INCOMPLETE;
-    getGlobalConfig(ctx.r()).dhcpSnoopingVlans = args.join(' ');
-    return '';
-  });
-  trie.registerGreedy('no ip dhcp snooping vlan', 'Stop snooping those VLANs', () => {
-    getGlobalConfig(ctx.r()).dhcpSnoopingVlans = null; return '';
-  });
-  trie.register('ip dhcp snooping information option', 'Include option-82 in snooped packets', () => {
-    getGlobalConfig(ctx.r()).dhcpSnoopingInfoOption = true; return '';
-  });
-  trie.register('no ip dhcp snooping information option', 'Drop option-82 from snooped packets', () => {
-    getGlobalConfig(ctx.r()).dhcpSnoopingInfoOption = false; return '';
-  });
 }
 
 /**
@@ -924,21 +904,6 @@ export function buildConfigIfCommands(trie: CommandTrie, ctx: CiscoShellContext)
     if (!ctx.getSelectedInterface()) return '';
     const port = ctx.r().getPort(ctx.getSelectedInterface()!);
     if (port) (port as unknown as { dhcpRelayInfoTrusted?: boolean }).dhcpRelayInfoTrusted = true;
-    return '';
-  });
-  trie.register('ip dhcp snooping trust', 'Trust DHCP snooping on interface', () => {
-    const ifName = ctx.getSelectedInterface();
-    if (!ifName) return '';
-    const port = ctx.r().getPort(ifName);
-    port?.setDhcpSnoopingTrust(true);
-    return '';
-  });
-  trie.registerGreedy('ip dhcp snooping limit rate', 'Snooping rate-limit (pps)', (args) => {
-    const ifName = ctx.getSelectedInterface();
-    if (!ifName) return '';
-    const port = ctx.r().getPort(ifName);
-    const n = parseInt(args[0] ?? '', 10);
-    if (!isNaN(n)) port?.setDhcpSnoopingRateLimit(n);
     return '';
   });
   trie.registerGreedy('ipv6 dhcp server', 'Bind IPv6 DHCP pool to interface', (args) => {

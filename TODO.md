@@ -1440,16 +1440,45 @@ défauts — la méthode vaut d'être reprise sur le reliquat.
   demande rien, une descente n'etant pas une elevation. Le comportement
   uniforme a ete prefere a deux comportements selon l'endroit d'ou l'on
   tape, faute de reference.
-- `ip dhcp snooping` est accepte et rendu sur un ROUTEUR, avec son
-  PROPRE magasin (`getGlobalConfig`), distinct de celui du commutateur.
-  Deux implantations pour une meme commande, sur deux plateformes. Le
-  routeur n'a pas ete ampute parce que la premisse « un routeur n'a pas
-  cette commande » n'est pas attestable depuis ce reseau — un ISR
-  portant un module EtherSwitch la connait — et parce que deux fichiers
-  de test l'epinglent deliberement, dont un cas nomme « `show ip dhcp
-  snooping` et la configuration lisent le meme magasin ». Fermer demande
-  soit une capture qui tranche, soit d'unifier les deux magasins ; ce
-  n'est pas un choix a faire sans reference.
+- La LARGEUR des colonnes du tableau `Interface / Trusted / Allow option
+  / Rate limit (pps)` de `show ip dhcp snooping` est CALCULEE et non
+  mesuree. Les intitules sont attestes par la documentation Cisco, la
+  mise en page ne l'est pas : aucune transcription de cette vue n'est
+  atteignable depuis ce reseau — `ntc-templates` ne porte un gabarit que
+  pour `show ip dhcp snooping binding`, dont les largeurs SONT donc
+  fixees, et les pages de Cisco, 9tut et firewall.cx sont toutes
+  bloquees par le mandataire. `TextTable` calcule donc la largeur sur le
+  contenu, ce que son propre en-tete reserve aux tableaux « dont la
+  reference ne fixe rien » ; l'en-tete, le filet et les donnees sortent
+  d'une seule declaration, donc ils ne peuvent pas se contredire, mais
+  la colonne n'a pas la largeur d'un vrai Catalyst. Fermer demande une
+  capture.
+- La colonne `Allow option` est DEDUITE de la confiance du port (un port
+  de confiance accepte l'option 82, un autre non), ce qui reproduit la
+  regle par defaut que la documentation enonce — `Option 82 on untrusted
+  port is not allowed` — mais la commande qui la RENVERSE,
+  `ip dhcp snooping information option allow-untrusted`, n'existe pas
+  dans ce depot et n'a donc aucun magasin. Tant qu'elle n'existe pas, la
+  colonne ne peut pas varier autrement. La ligne `Option 82 on untrusted
+  port is not allowed` n'est deliberement PAS rendue : l'ecrire en dur
+  annoncerait un reglage que rien ne porte.
+- `show ip dhcp snooping statistics` reste declaree sur le trie du
+  COMMUTATEUR seul, la ou le reste de la famille est passe au socle. Ses
+  dix compteurs sont des champs de `Switch` (`dhcpSnoopingDropped*`) que
+  `Router` n'a pas, donc la descendre demande soit de porter ces
+  compteurs dans `DHCPSnoopingConfig` — le magasin partage —, soit un
+  crochet de plus. Le premier est le bon, et c'est un lot a soi : ces
+  compteurs sont incrementes par le plan de donnees du commutateur.
+- `ip dhcp snooping` est desormais accepte sur les DEUX plateformes
+  depuis une seule declaration, et le routeur n'a plus de magasin a lui
+   — mais il n'a toujours aucun plan de donnees qui espionne. Ce que le
+  chassis modelise (`c2900`) fait d'un `ip dhcp snooping` reel n'est pas
+  attestable depuis ce reseau : une synthese de recherche affirme qu'un
+  ISR G2 ne connait pas la commande, aucune capture ne le montre, et un
+  ISR portant un module EtherSwitch la connait. Amputer le routeur sur
+  une synthese serait deviner ; il rend donc la meme vue que le
+  commutateur, avec un tableau vide et zero liaison, ce qui est au moins
+  vrai.
 - La tete GLOUTONNE de `spanning-tree` (configuration globale du
   commutateur) reste au trie. Deux chemins bornes en sont partis —
   `spanning-tree mode`, qui n'accepte que trois valeurs, et

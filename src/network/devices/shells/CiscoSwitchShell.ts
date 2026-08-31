@@ -61,7 +61,10 @@ import { showSwitchVersion, showIpTraffic } from './cisco/CiscoCommonShow';
 import { buildArchiveSubmodeOn, buildArchiveLogSubmodeOn } from './cisco/CiscoArchiveCommands';
 import type { LoggingCommandContext } from './cisco/CiscoLoggingCommands';
 import { buildConfigDhcpCommands, dhcpPoolSpecs } from './cisco/CiscoDhcpCommands';
-import { dhcpRunningConfigLines } from '../../dhcp/dhcpRunningConfig';
+import { compactVlanList, parseVlanList } from './cli/vlanList';
+import {
+  dhcpRunningConfigLines, dhcpSnoopingInterfaceLines, dhcpSnoopingRunningConfigLines,
+} from '../../dhcp/dhcpRunningConfig';
 import type { CiscoShellContext } from './cisco/CiscoConfigCommands';
 import type { Router } from '../Router';
 import { vrrpVirtualMac } from '../../vrrp/types';
@@ -1203,8 +1206,6 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
     });
     this.registerL3Commands();
     for (const t of [this.userTrie, this.privilegedTrie]) {
-      t.register('show ip interface brief', 'Display IP interface brief', () =>
-        this.showIpInterfaceBrief());
       const vueAcl = (args: string[]): string =>
         showAccessListsFrom(this.d().getVaclEngine().getAccessListsInternal(), args[0]);
       t.registerGreedy('show access-lists', 'Display ACLs', vueAcl);
@@ -3291,14 +3292,6 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
   // ─── User Commands ────────────────────────────────────────────────
 
   private registerUserCommands(): void {
-    this.userTrie.register('show ip dhcp snooping', 'Display DHCP snooping configuration', () => {
-      return this.showDHCPSnooping(this.d());
-    });
-
-    this.userTrie.register('show ip dhcp snooping binding', 'Display DHCP snooping binding table', () => {
-      return this.showDHCPSnoopingBinding(this.d());
-    });
-
 
     this.userTrie.registerGreedy('ping', 'Send echo messages', (args) => this.handlePing(args));
   }
@@ -3511,14 +3504,6 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
       return this.d().writeMemory();
     });
 
-    this.privilegedTrie.register('show ip dhcp snooping', 'Display DHCP snooping configuration', () => {
-      return this.showDHCPSnooping(this.d());
-    });
-
-    this.privilegedTrie.register('show ip dhcp snooping binding', 'Display DHCP snooping binding table', () => {
-      return this.showDHCPSnoopingBinding(this.d());
-    });
-
   }
 
   /**
@@ -3710,34 +3695,6 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
     });
     this.configTrie.register('no ip default-gateway', 'Remove the management default gateway', () => {
       this.d()._setDefaultGateway('');
-      return '';
-    });
-
-    this.configTrie.register('ip dhcp snooping', 'Enable DHCP snooping globally', () => {
-      this.d()._getDHCPSnoopingConfig().enabled = true;
-      return '';
-    });
-
-    this.configTrie.registerGreedy('ip dhcp snooping vlan', 'Enable DHCP snooping on VLANs', (args) => {
-      if (args.length < 1) return CISCO_ERRORS.INCOMPLETE;
-      const cfg = this.d()._getDHCPSnoopingConfig();
-      const parts = args[0].split(',');
-      for (const part of parts) {
-        if (part.includes('-')) {
-          const [s, e] = part.split('-').map(Number);
-          if (!isNaN(s) && !isNaN(e)) {
-            for (let i = s; i <= e; i++) cfg.vlans.add(i);
-          }
-        } else {
-          const v = parseInt(part, 10);
-          if (!isNaN(v)) cfg.vlans.add(v);
-        }
-      }
-      return '';
-    });
-
-    this.configTrie.register('ip dhcp snooping verify mac-address', 'Enable MAC address verification', () => {
-      this.d()._getDHCPSnoopingConfig().verifyMac = true;
       return '';
     });
 
@@ -4292,24 +4249,6 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
       });
     });
 
-    trie.register('ip dhcp snooping trust', 'Set interface as trusted for DHCP snooping', () => {
-      const cfg = this.d()._getDHCPSnoopingConfig();
-      return this.applyToSelectedInterfaces(portName => {
-        cfg.trustedPorts.add(portName);
-        return '';
-      });
-    });
-
-    trie.registerGreedy('ip dhcp snooping limit rate', 'Set DHCP snooping rate limit', (args) => {
-      if (args.length < 1) return CISCO_ERRORS.INCOMPLETE;
-      const rate = parseInt(args[0], 10);
-      if (isNaN(rate) || rate < 1) return '% Invalid rate value';
-      const cfg = this.d()._getDHCPSnoopingConfig();
-      return this.applyToSelectedInterfaces(portName => {
-        cfg.rateLimits.set(portName, rate);
-        return '';
-      });
-    });
   }
 
   // ─── Running Config Builder ───────────────────────────────────────
@@ -4382,13 +4321,7 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
       out.push(`no mac address-table learning interface ${port}`);
     }
 
-    const snoop = sw._getDHCPSnoopingConfig();
-    if (snoop.enabled) out.push('ip dhcp snooping');
-    if (snoop.vlans.size > 0) {
-      const sorted = [...snoop.vlans].sort((a, b) => a - b);
-      out.push(`ip dhcp snooping vlan ${this.compactVlanList(sorted)}`);
-    }
-    if (snoop.verifyMac) out.push('ip dhcp snooping verify mac-address');
+    out.push(...dhcpSnoopingRunningConfigLines(sw._getDHCPSnoopingConfig()));
 
     const lacp = sw.getLacpAgent?.()?.getConfig?.();
     if (lacp) {
@@ -4445,10 +4378,8 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
       if (dot1x.mode !== 'disabled') out.push(`dot1x port-control ${dot1x.mode}`);
     }
 
-    const snoop = sw._getDHCPSnoopingConfig();
-    if (snoop.trustedPorts.has(portName)) out.push('ip dhcp snooping trust');
-    const rate = snoop.rateLimits.get(portName);
-    if (rate && rate > 0) out.push(`ip dhcp snooping limit rate ${rate}`);
+    out.push(...dhcpSnoopingInterfaceLines(sw._getDHCPSnoopingConfig(), portName)
+      .map(l => l.trimStart()));
 
     return out;
   }
@@ -5299,60 +5230,6 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
   }
 
   // ─── DHCP Snooping Display ───────────────────────────────────────
-
-  private showDHCPSnooping(sw: CiscoSwitch): string {
-    const cfg = sw._getDHCPSnoopingConfig();
-    const lines: string[] = [];
-
-    lines.push(`Switch DHCP snooping is ${cfg.enabled ? 'enabled' : 'disabled'}`);
-
-    if (cfg.vlans.size > 0) {
-      const vlanList = Array.from(cfg.vlans).sort((a, b) => a - b).join(',');
-      lines.push(`DHCP snooping is configured on following VLANs:`);
-      lines.push(`${vlanList}`);
-    }
-
-    if (cfg.verifyMac) {
-      lines.push(`DHCP snooping verify mac-address is enabled`);
-    }
-
-    if (cfg.trustedPorts.size > 0) {
-      const trusted = Array.from(cfg.trustedPorts)
-        .map(p => this.abbreviateInterface(p))
-        .join(', ');
-      lines.push(`Trusted ports: ${trusted}`);
-    }
-
-    for (const [port, rate] of cfg.rateLimits) {
-      lines.push(`  ${this.abbreviateInterface(port)}: rate limit ${rate} pps`);
-    }
-
-    return lines.join('\n');
-  }
-
-  private showDHCPSnoopingBinding(sw: CiscoSwitch): string {
-    const bindings = sw._getSnoopingBindings();
-    const lines: string[] = [];
-
-    lines.push('MacAddress          IP address        Lease(sec)  Type           VLAN  Interface');
-    lines.push('------------------  ----------------  ----------  -------------  ----  --------------------');
-
-    if (bindings.length === 0) {
-      lines.push('Total number of bindings: 0');
-    } else {
-      for (const b of bindings) {
-        const mac = b.macAddress.padEnd(20);
-        const ip = b.ipAddress.padEnd(18);
-        const lease = String(b.lease).padEnd(12);
-        const type = b.type.padEnd(15);
-        const vlan = String(b.vlan).padEnd(6);
-        lines.push(`${mac}${ip}${lease}${type}${vlan}${b.port}`);
-      }
-      lines.push(`Total number of bindings: ${bindings.length}`);
-    }
-
-    return lines.join('\n');
-  }
 
   private showIpDeviceTracking(sw: CiscoSwitch, args: string[]): string {
     const sub = (args[0] ?? 'all').toLowerCase();
@@ -6608,19 +6485,7 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
 
   /** Compact a sorted VLAN list into ranges, e.g. [1,2,3,5] → "1-3,5" */
   private compactVlanList(sorted: number[]): string {
-    if (sorted.length === 0) return '';
-    const ranges: string[] = [];
-    let start = sorted[0], end = sorted[0];
-    for (let i = 1; i < sorted.length; i++) {
-      if (sorted[i] === end + 1) {
-        end = sorted[i];
-      } else {
-        ranges.push(start === end ? String(start) : `${start}-${end}`);
-        start = end = sorted[i];
-      }
-    }
-    ranges.push(start === end ? String(start) : `${start}-${end}`);
-    return ranges.join(',');
+    return compactVlanList(sorted);
   }
 
   private qosRunningConfigLines(cfg: SwitchportConfig): string[] {
@@ -6634,20 +6499,7 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
   }
 
   private parseVlanList(input: string): Set<number> | null {
-    const vlans = new Set<number>();
-    const parts = input.split(',');
-    for (const part of parts) {
-      if (part.includes('-')) {
-        const [start, end] = part.split('-').map(Number);
-        if (isNaN(start) || isNaN(end)) return null;
-        for (let i = start; i <= end; i++) vlans.add(i);
-      } else {
-        const num = parseInt(part, 10);
-        if (isNaN(num)) return null;
-        vlans.add(num);
-      }
-    }
-    return vlans;
+    return parseVlanList(input);
   }
 
   /**

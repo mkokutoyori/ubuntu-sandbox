@@ -176,6 +176,35 @@ import {
   CliInvalidInput, CliIncomplete, renderCliDiagnostic, offsetForInvalidInput, argumentOffset,
   tokenSpans, INVALID_INPUT_MESSAGE,
 } from './cli/CliDiagnostic';
+import { renderTable, IOS_RULED_TABLE } from './cli/TextTable';
+import type { TableColumn } from './cli/TextTable';
+import { parseVlanList, compactVlanList } from './cli/vlanList';
+import { createDefaultSnoopingConfig } from '../../dhcp/types';
+import type { DHCPSnoopingConfig, DHCPSnoopingBinding } from '../../dhcp/types';
+
+const SNOOPING_BINDING_COLUMNS: ReadonlyArray<TableColumn<DHCPSnoopingBinding>> = [
+  { header: 'MacAddress', width: 18, value: (b) => b.macAddress },
+  { header: 'IpAddress', width: 16, value: (b) => b.ipAddress },
+  { header: 'Lease(sec)', width: 10, value: (b) => String(b.lease) },
+  { header: 'Type', width: 13, value: (b) => b.type },
+  { header: 'VLAN', width: 4, value: (b) => String(b.vlan) },
+  { header: 'Interface', width: 20, value: (b) => b.port },
+];
+
+const SNOOPING_TRUST_COLUMNS = (
+  cfg: DHCPSnoopingConfig,
+): ReadonlyArray<TableColumn<string>> => [
+  { header: 'Interface', value: (nom) => nom },
+  { header: 'Trusted', value: (nom) => (cfg.trustedPorts.has(nom) ? 'yes' : 'no') },
+  { header: 'Allow option', value: (nom) => (cfg.trustedPorts.has(nom) ? 'yes' : 'no') },
+  {
+    header: 'Rate limit (pps)',
+    value: (nom) => {
+      const debit = cfg.rateLimits.get(nom);
+      return debit !== undefined && debit > 0 ? String(debit) : 'unlimited';
+    },
+  },
+];
 
 /**
  * Ce qu'IOS affiche pendant qu'il écrit : un `!` par tranche envoyée.
@@ -5415,6 +5444,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       ...this.bannerSpecs(),
       ...this.archiveExecSpecs(),
       ...this.dhcpGlobalPartageeSpecs(),
+      ...this.dhcpSnoopingSpecs(),
       ...this.showIpInterfaceSpecs(),
       ...this.cefSpecs(),
       ...this.enableSpecs(),
@@ -5865,23 +5895,146 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     })._getDHCPServerInternal?.();
   }
 
-  /**
-   * `ip cef` et ses trois reglages, declares une fois pour les deux
-   * plateformes.
-   *
-   * `ip cef` etait enregistre DEUX fois sur le meme arbre : une fois par
-   * la famille de securite, qui ecrit le drapeau que `show ip cef` lit
-   * et que la configuration rend, une fois par un helper du socle qui
-   * ecrivait dans `CiscoConfigState` — une table dont la methode de
-   * rendu n'a aucun appelant de production. La seconde etait donc morte
-   * et ombree ; elle est supprimee, avec son entree dans la table.
-   *
-   * Le noeud etait GLOUTON, donc `ip cef zorglub` et
-   * `ip cef accounting zorglub` etaient acceptes en silence — et
-   * `accounting`, que la commande accepte vraiment, n'etait range nulle
-   * part, donc perdu au rechargement d'une topologie. Les suites sont
-   * desormais declarees, et ce qui n'en fait pas partie est refuse.
-   */
+  protected dhcpSnoopingConfig(): DHCPSnoopingConfig | undefined {
+    return (this.d() as unknown as {
+      _getDHCPSnoopingConfig?: () => DHCPSnoopingConfig | undefined;
+    })._getDHCPSnoopingConfig?.();
+  }
+
+  private surPortsEspionnes(fn: (cfg: DHCPSnoopingConfig, port: string) => void): string {
+    const cfg = this.dhcpSnoopingConfig();
+    if (!cfg) return '';
+    for (const port of this.selectedPortsForConfigIf()) fn(cfg, port);
+    return '';
+  }
+
+  protected dhcpSnoopingSpecs(): readonly CommandSpec[] {
+    const cfg = () => this.dhcpSnoopingConfig();
+    const listeVlan: ArgumentSpec = {
+      name: 'liste', type: 'WORD', description: 'DHCP snooping VLAN list',
+    };
+    const debit: ArgumentSpec = {
+      name: 'pps', type: 'INT', range: [1, 2048],
+      description: 'DHCP snooping rate limit (pps)',
+    };
+
+    return [
+      {
+        id: 'ip-dhcp-snooping',
+        path: ['ip', 'dhcp', 'snooping'],
+        description: 'Enable DHCP snooping',
+        undoDescription: 'Disable DHCP snooping',
+        modes: ['config'], minPrivilege: 15,
+        run: () => { const c = cfg(); if (c) c.enabled = true; return ''; },
+        undo: () => { const c = cfg(); if (c) c.enabled = false; return ''; },
+      },
+      {
+        id: 'ip-dhcp-snooping-vlan',
+        path: ['ip', 'dhcp', 'snooping', 'vlan', listeVlan],
+        description: 'DHCP snooping VLAN list',
+        undoDescription: 'Stop snooping those VLANs',
+        modes: ['config'], minPrivilege: 15,
+        run: (_session, args) => {
+          const vlans = parseVlanList(args.liste);
+          if (!vlans) throw new CliInvalidInput({ token: args.liste });
+          const c = cfg();
+          if (c) for (const v of vlans) c.vlans.add(v);
+          return '';
+        },
+        undo: (_session, args) => {
+          const vlans = parseVlanList(args.liste);
+          if (!vlans) throw new CliInvalidInput({ token: args.liste });
+          const c = cfg();
+          if (c) for (const v of vlans) c.vlans.delete(v);
+          return '';
+        },
+      },
+      {
+        id: 'ip-dhcp-snooping-verify-mac',
+        path: ['ip', 'dhcp', 'snooping', 'verify', 'mac-address'],
+        description: 'Verify the source MAC against the client hardware address',
+        undoDescription: 'Stop verifying the source MAC address',
+        modes: ['config'], minPrivilege: 15,
+        run: () => { const c = cfg(); if (c) c.verifyMac = true; return ''; },
+        undo: () => { const c = cfg(); if (c) c.verifyMac = false; return ''; },
+      },
+      {
+        id: 'ip-dhcp-snooping-information-option',
+        path: ['ip', 'dhcp', 'snooping', 'information', 'option'],
+        description: 'Insert option 82 into snooped packets',
+        undoDescription: 'Stop inserting option 82',
+        modes: ['config'], minPrivilege: 15,
+        run: () => { const c = cfg(); if (c) c.informationOption = true; return ''; },
+        undo: () => { const c = cfg(); if (c) c.informationOption = false; return ''; },
+      },
+      {
+        id: 'ip-dhcp-snooping-trust',
+        path: ['ip', 'dhcp', 'snooping', 'trust'],
+        description: 'Trust this interface for DHCP snooping',
+        undoDescription: 'Stop trusting this interface',
+        modes: ['config-if', 'config-subif'], minPrivilege: 15,
+        run: () => this.surPortsEspionnes((c, port) => { c.trustedPorts.add(port); }),
+        undo: () => this.surPortsEspionnes((c, port) => { c.trustedPorts.delete(port); }),
+      },
+      {
+        id: 'ip-dhcp-snooping-limit-rate',
+        path: ['ip', 'dhcp', 'snooping', 'limit', 'rate', debit],
+        description: 'Bound the DHCP message rate on this interface',
+        undoDescription: 'Remove the DHCP message rate bound',
+        modes: ['config-if', 'config-subif'], minPrivilege: 15,
+        run: (_session, args) =>
+          this.surPortsEspionnes((c, port) => { c.rateLimits.set(port, Number(args.pps)); }),
+        undo: () => this.surPortsEspionnes((c, port) => { c.rateLimits.delete(port); }),
+      },
+      {
+        id: 'show-ip-dhcp-snooping',
+        path: ['show', 'ip', 'dhcp', 'snooping'],
+        description: 'DHCP snooping configuration and trusted interfaces',
+        modes: ['user', 'privileged'], minPrivilege: 1,
+        run: () => this.renduShowDhcpSnooping(),
+      },
+      {
+        id: 'show-ip-dhcp-snooping-binding',
+        path: ['show', 'ip', 'dhcp', 'snooping', 'binding'],
+        description: 'DHCP snooping binding table',
+        modes: ['user', 'privileged'], minPrivilege: 1,
+        run: () => this.renduShowDhcpSnoopingBinding(),
+      },
+    ];
+  }
+
+  private renduShowDhcpSnooping(): string {
+    const cfg = this.dhcpSnoopingConfig() ?? createDefaultSnoopingConfig();
+    const vlans = compactVlanList([...cfg.vlans].sort((a, b) => a - b));
+    const lignes = [
+      `Switch DHCP snooping is ${cfg.enabled ? 'enabled' : 'disabled'}`,
+      'DHCP snooping is configured on following VLANs:',
+      vlans.length > 0 ? vlans : 'none',
+      'DHCP snooping is operational on following VLANs:',
+      cfg.enabled && vlans.length > 0 ? vlans : 'none',
+      `Insertion of option 82 is ${cfg.informationOption ? 'enabled' : 'disabled'}`,
+      `Verification of hwaddr field is ${cfg.verifyMac ? 'enabled' : 'disabled'}`,
+      'Verification of giaddr field is enabled',
+      'DHCP snooping trust/rate is configured on the following Interfaces:',
+      '',
+    ];
+
+    const interfaces = [...new Set([...cfg.trustedPorts, ...cfg.rateLimits.keys()])].sort();
+    const table = renderTable(interfaces, SNOOPING_TRUST_COLUMNS(cfg), IOS_RULED_TABLE);
+    return [...lignes, ...table].join('\n');
+  }
+
+  private renduShowDhcpSnoopingBinding(): string {
+    const liaisons = (this.d() as unknown as {
+      _getSnoopingBindings?: () => readonly DHCPSnoopingBinding[];
+    })._getSnoopingBindings?.() ?? [];
+
+    return [
+      ...renderTable(liaisons, SNOOPING_BINDING_COLUMNS, IOS_RULED_TABLE),
+      `Total number of bindings: ${liaisons.length}`,
+    ].join('\n');
+  }
+
   /**
    * `show ip interface [brief | <nom>]`, declaree une fois.
    *

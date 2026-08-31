@@ -143,7 +143,8 @@ import {
 } from '../snmp/mibs/DhcpServerMib';
 import { DHCPPacket } from '../dhcp/DHCPPacket';
 import { buildDhcpServerReply } from '../dhcp/DhcpServerExchange';
-import type { DHCPDiscoverParams, DHCPOfferResult } from '../dhcp/types';
+import type { DHCPDiscoverParams, DHCPOfferResult, DHCPSnoopingConfig } from '../dhcp/types';
+import { createDefaultSnoopingConfig } from '../dhcp/types';
 import { DHCPv6Server } from '../dhcpv6/DHCPv6Server';
 import { DHCPv6Packet } from '../dhcpv6/DHCPv6Packet';
 import { IPSecEngine } from '../ipsec/IPSecEngine';
@@ -3966,6 +3967,9 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
   _getNeighborCacheInternal() { return this.ipv6Engine.getNeighborCacheInternal(); }
   /** @internal Used by CLI shells */
   _getDHCPServerInternal(): DHCPServer { return this.dhcpServer; }
+
+  private dhcpSnooping: DHCPSnoopingConfig = createDefaultSnoopingConfig();
+  _getDHCPSnoopingConfig(): DHCPSnoopingConfig { return this.dhcpSnooping; }
 
   private handleDhcpUdp(inPort: string, ipPkt: IPv4Packet, udp: UDPPacket): void {
     const pkt = udp.payload as DHCPPacket | undefined;

@@ -36,7 +36,7 @@ const GLOBAL = [
   'mac address-table static 0011.2233.4455 vlan 1 interface FastEthernet0/1',
   'ip dhcp snooping',
   'ip dhcp snooping vlan 10',
-  'ip dhcp snooping verify mac-address',
+  'no ip dhcp snooping verify mac-address',
   'lacp system-priority 100',
   'udld enable',
   'dot1x system-auth-control',

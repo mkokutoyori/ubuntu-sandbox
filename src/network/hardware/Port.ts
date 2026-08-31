@@ -140,8 +140,6 @@ export class Port {
   private tcpAdjustMss: number | null = null;
   private ipAccounting: boolean = false;
   private dhcpRelayInfoTrusted: boolean = false;
-  private dhcpSnoopingTrust: boolean = false;
-  private dhcpSnoopingRateLimit: number | null = null;
   private ripV2Broadcast: boolean = false;
   private nbarProtocolDiscovery: boolean = false;
   private ipv6DhcpPool: string | null = null;
@@ -200,10 +198,6 @@ export class Port {
   setIpAccounting(on: boolean): void { this.ipAccounting = on; }
   isDhcpRelayInfoTrusted(): boolean { return this.dhcpRelayInfoTrusted; }
   setDhcpRelayInfoTrusted(on: boolean): void { this.dhcpRelayInfoTrusted = on; }
-  isDhcpSnoopingTrusted(): boolean { return this.dhcpSnoopingTrust; }
-  setDhcpSnoopingTrust(on: boolean): void { this.dhcpSnoopingTrust = on; }
-  getDhcpSnoopingRateLimit(): number | null { return this.dhcpSnoopingRateLimit; }
-  setDhcpSnoopingRateLimit(pps: number | null): void { this.dhcpSnoopingRateLimit = pps; }
   isRipV2Broadcast(): boolean { return this.ripV2Broadcast; }
   setRipV2Broadcast(on: boolean): void { this.ripV2Broadcast = on; }
   isNbarProtocolDiscoveryEnabled(): boolean { return this.nbarProtocolDiscovery; }

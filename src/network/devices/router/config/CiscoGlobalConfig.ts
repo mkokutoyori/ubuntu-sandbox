@@ -13,9 +13,6 @@ export class CiscoGlobalConfig {
   dhcpRelayInfoPolicy: DhcpRelayInfoPolicy | null = null;
   dhcpRelayInfoTrustAll = false;
   dhcpSmartRelay = false;
-  dhcpSnooping = false;
-  dhcpSnoopingVlans: string | null = null;
-  dhcpSnoopingInfoOption = false;
   defaultNetwork: string | null = null;
   localPolicyRouteMap: string | null = null;
   cefLoadSharingAlgorithm: string | null = null;
@@ -27,9 +24,6 @@ export class CiscoGlobalConfig {
     if (this.cefLoadSharingAlgorithm) {
       lines.push(`ip cef load-sharing algorithm ${this.cefLoadSharingAlgorithm}`);
     }
-    if (this.dhcpSnooping) lines.push('ip dhcp snooping');
-    if (this.dhcpSnoopingVlans) lines.push(`ip dhcp snooping vlan ${this.dhcpSnoopingVlans}`);
-    if (this.dhcpSnoopingInfoOption) lines.push('ip dhcp snooping information option');
     if (this.dhcpRelayInfoPolicy) {
       lines.push(`ip dhcp relay information policy ${this.dhcpRelayInfoPolicy}`);
     }
