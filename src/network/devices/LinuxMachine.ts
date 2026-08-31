@@ -2686,6 +2686,7 @@ export abstract class LinuxMachine extends EndHost
       return;
     }
     const mode = bond.options.lacpActive ? 'active' : 'passive';
+    agent.setGroupLimits(this.bondGroupId(bondName), { minLinks: bond.options.minLinks });
     for (const s of bond.slaves) {
       agent.addPortToGroup(s, this.bondGroupId(bondName), mode);
     }
@@ -2696,9 +2697,12 @@ export abstract class LinuxMachine extends EndHost
     const bond = this.bonds.get(bondName);
     const port = this.ports.get(bondName);
     if (!bond || !port) return;
-    const vivants = bond.slaves.filter(s => this.ports.get(s)?.isOperationallyUp());
-    port.setUp(vivants.length > bond.options.minLinks
-      || (bond.options.minLinks === 0 && vivants.length > 0));
+    const agent = this.getLacpAgent();
+    const actifs = bond.slaves.filter((s) => {
+      if (!this.ports.get(s)?.isOperationallyUp()) return false;
+      return bond.options.mode !== '802.3ad' || agent.getPortInfo(s)?.bundled === true;
+    });
+    port.setUp(actifs.length > 0 && actifs.length >= bond.options.minLinks);
   }
 
   private renderBond(bondName: string): string {

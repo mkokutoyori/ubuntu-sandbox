@@ -87,6 +87,8 @@ import {
   STP_SYSTEM_KEYWORDS, STP_INTERFACE_KEYWORDS,
 } from './huawei/huaweiInterfaceHelp';
 import { describeHuaweiArguments } from './huawei/huaweiArgumentHelp';
+import { buildActorState, lacpStateBits } from '@/network/lacp/types';
+import { LOAD_BALANCE_METHODS } from '@/network/lacp/loadBalance';
 
 const VUES_SWITCH = [
   'user', 'system', 'interface', 'vlan', 'mst-region', 'port-group',
@@ -145,6 +147,35 @@ function destinationsDistinctes(
   rows: ReadonlyArray<{ network: { toString(): string }; mask: { toCIDR(): number } }>,
 ): number {
   return new Set(rows.map(r => `${r.network}/${r.mask.toCIDR()}`)).size;
+}
+
+const VRP_HASH_ARITHMETIC: Readonly<Record<string, string>> = {
+  'src-dst-ip': 'According to SIP-XOR-DIP',
+  'src-dst-mac': 'According to SA-XOR-DA',
+  'src-ip': 'According to SIP',
+  'dst-ip': 'According to DIP',
+  'src-mac': 'According to SA',
+  'dst-mac': 'According to DA',
+};
+
+function hashArithmeticVrp(mode: string): string {
+  return VRP_HASH_ARITHMETIC[mode] ?? VRP_HASH_ARITHMETIC['src-dst-ip'];
+}
+
+function vrpMacFormat(mac: string): string {
+  const hex = mac.replace(/[^0-9a-f]/gi, '').toLowerCase();
+  return `${hex.slice(0, 4)}-${hex.slice(4, 8)}-${hex.slice(8, 12)}`;
+}
+
+function vrpBandwidth(mbps: number): string {
+  return mbps >= 1000 && mbps % 1000 === 0 ? `${mbps / 1000}G` : `${mbps}M`;
+}
+
+function portTypeVrp(nom: string): string {
+  if (/^GigabitEthernet/i.test(nom)) return '1GE';
+  if (/^TenGigabitEthernet|^XGigabitEthernet/i.test(nom)) return '10GE';
+  if (/^FastEthernet|^Ethernet/i.test(nom)) return '100M';
+  return 'GE';
 }
 
 export class HuaweiSwitchShell implements ISwitchShell {
@@ -257,6 +288,7 @@ export class HuaweiSwitchShell implements ISwitchShell {
   private ethTrunks = new Map<number, {
     mode: string; loadBalance: string; members: string[]; cfg: string[];
   }>();
+  private readonly trunksInitialises = new Set<number>();
 
   constructor() {
     this.buildUserCommands();
@@ -1703,15 +1735,71 @@ export class HuaweiSwitchShell implements ISwitchShell {
       t.cfg.push(`mode ${args.join(' ')}`);
       return '';
     });
-    // `max|least active-linknumber N`, `load-balance <algo>` (Eth-Trunk)
-    for (const kw of ['max', 'least', 'load-balance']) {
-      this.interfaceTrie.registerGreedy(kw, `Eth-Trunk ${kw}`, (args) => {
+    for (const kw of ['max', 'least']) {
+      this.interfaceTrie.registerGreedy(kw, `Eth-Trunk ${kw} active-linknumber`, (args) => {
         const id = trunkId();
         if (id === null) return `Error: Unrecognized command "${kw} ${args.join(' ')}"`;
-        this.ethTrunks.get(id)!.cfg.push(`${kw} ${args.join(' ')}`.trim());
+        if ((args[0] ?? '').toLowerCase() !== 'active-linknumber') {
+          return refuseMotInattenduVrp(`${kw} ${args.join(' ')}`, args[0] ?? kw);
+        }
+        const n = parseInt(args[1] ?? '', 10);
+        if (isNaN(n) || n < 1 || n > 8) {
+          return 'Error: The value of the parameter is out of the range.';
+        }
+        this.ethTrunks.get(id)!.cfg.push(`${kw} active-linknumber ${n}`);
+        this.applyToLacpAgent(a => a.setGroupLimits(id,
+          kw === 'least' ? { minLinks: n } : { maxLinks: n }));
         return '';
       });
     }
+
+    this.interfaceTrie.registerGreedy('lacp', 'Eth-Trunk LACP parameters', (args) => {
+      const id = trunkId();
+      if (id === null) return `Error: Unrecognized command "lacp ${args.join(' ')}"`;
+      const sous = (args[0] ?? '').toLowerCase();
+      if (sous === 'timeout') {
+        const cadence = (args[1] ?? '').toLowerCase();
+        if (cadence !== 'fast' && cadence !== 'slow') {
+          return refuseMotInattenduVrp(`lacp ${args.join(' ')}`, args[1] ?? 'timeout');
+        }
+        this.ethTrunks.get(id)!.cfg.push(`lacp timeout ${cadence}`);
+        this.applyToLacpAgent(a => a.setFastRate(cadence === 'fast'));
+        return '';
+      }
+      if (sous === 'preempt') {
+        const quoi = (args[1] ?? '').toLowerCase();
+        if (quoi === 'enable' || quoi === 'disable') {
+          this.ethTrunks.get(id)!.cfg.push(`lacp preempt ${quoi}`);
+          this.applyToLacpAgent(a => a.setGroupLimits(id, { preempt: quoi === 'enable' }));
+          return '';
+        }
+        if (quoi === 'delay') {
+          const n = parseInt(args[2] ?? '', 10);
+          if (isNaN(n) || n < 0 || n > 180) {
+            return 'Error: The value of the parameter is out of the range.';
+          }
+          this.ethTrunks.get(id)!.cfg.push(`lacp preempt delay ${n}`);
+          this.applyToLacpAgent(a => a.setGroupLimits(id, { preemptDelay: n }));
+          return '';
+        }
+        return refuseMotInattenduVrp(`lacp ${args.join(' ')}`, args[1] ?? 'preempt');
+      }
+      return refuseMotInattenduVrp(`lacp ${args.join(' ')}`, args[0] ?? 'lacp');
+    });
+
+    this.interfaceTrie.registerGreedy('load-balance', 'Eth-Trunk load balancing', (args) => {
+      const id = trunkId();
+      if (id === null) return `Error: Unrecognized command "load-balance ${args.join(' ')}"`;
+      const methode = (args[0] ?? '').toLowerCase();
+      if (!LOAD_BALANCE_METHODS.has(methode)) {
+        return refuseMotInattenduVrp(`load-balance ${args.join(' ')}`, args[0] ?? 'load-balance');
+      }
+      const t = this.ethTrunks.get(id)!;
+      t.loadBalance = methode;
+      t.cfg.push(`load-balance ${methode}`);
+      this.applyToLacpAgent(a => a.setLoadBalance(methode));
+      return '';
+    });
     // `trunkport <if> [to <if>]` — add member ports from the trunk view
     this.interfaceTrie.registerGreedy('trunkport', 'Add member port to Eth-Trunk', (args) => {
       const id = trunkId();
@@ -1735,6 +1823,10 @@ export class HuaweiSwitchShell implements ISwitchShell {
         const lacpMode = t.mode === 'lacp-dynamic' ? 'active'
           : t.mode === 'lacp-static' ? 'active' : 'on';
         a.ensureGroup(id, `Eth-Trunk${id}`, t.loadBalance);
+        if (!this.trunksInitialises.has(id)) {
+          this.trunksInitialises.add(id);
+          a.setGroupLimits(id, { preempt: false, preemptDelay: 30 });
+        }
         a.addPortToGroup(this.selectedInterface!, id, lacpMode);
       });
       return '';
@@ -2502,6 +2594,9 @@ export class HuaweiSwitchShell implements ISwitchShell {
       // par une seconde inscription sur un chemin voisin : deux
       // inscriptions dont l'une écrase l'autre est exactement le défaut
       // que la sonde `command-trie-hygiene` traque.
+      const trunk = args.join(' ').trim().replace(/\s+/g, '')
+        .match(/^eth-trunk(\d+)$/i);
+      if (trunk) return this.displayEthTrunkInterface(Number(trunk[1]));
       const l3 = this.resolveL3InterfaceName(args.join(' '));
       if (l3 && l3.startsWith('LoopBack')) return this.renderL3Interface(l3);
       return this.displayInterface(this.swRef, args.join(' '));
@@ -2863,6 +2958,13 @@ export class HuaweiSwitchShell implements ISwitchShell {
       }
       return lines.join('\n');
     });
+    trie.registerGreedy('display trunkmembership', 'Display Eth-Trunk membership', (args) => {
+      const mots = args.join(' ').trim().replace(/\s+/g, ' ').split(' ');
+      const id = Number(mots[mots.length - 1]);
+      if (!Number.isInteger(id)) return HUAWEI_ERRORS.INCOMPLETE('display trunkmembership');
+      return this.displayTrunkMembership(id);
+    });
+
     trie.registerGreedy('display eth-trunk', 'Display Eth-Trunk information', (args) => {
       const id = parseInt(args[0] ?? '', 10);
       if (isNaN(id)) {
@@ -3786,20 +3888,133 @@ export class HuaweiSwitchShell implements ISwitchShell {
     const liveByPort = new Map(liveMembers.map(m => [m.portName, m] as const));
     const upCount = liveMembers.filter(m => m.bundled).length;
     const operate = upCount > 0 ? 'up' : 'down';
-    const lines = [
-      `Eth-Trunk${id}'s state information is:`,
-      `WorkingMode: ${t.mode.toUpperCase()}`,
-      `Least Active-linknumber: 1   Max Active-linknumber: ${t.members.length || 8}`,
-      `Operate status: ${operate}   Number Of Up Ports In Trunk: ${upCount}`,
-      '--------------------------------------------------------------------------------',
-      'PortName                      Status      Weight',
-      ...t.members.map(m => {
-        const info = liveByPort.get(m);
-        const status = info?.selected ? 'Selected' : 'Unselect';
-        return `${m.padEnd(30)}${status.padEnd(12)}1`;
-      }),
+    const hash = hashArithmeticVrp(t.loadBalance || agent?.getLoadBalance() || 'src-dst-ip');
+    const entete = `Eth-Trunk${id}'s state information is:`;
+    const limites = agent?.getGroupLimits(id)
+      ?? { minLinks: 0, maxLinks: 0, preempt: true, preemptDelay: 30 };
+    const compte = `Least Active-linknumber: ${limites.minLinks || 1}`
+      + `  Max Active-linknumber: ${limites.maxLinks || t.members.length || 8}`;
+    const etat = `Operate status: ${operate}  Number Of Up Ports In Trunk: ${upCount}`;
+    const tiret = '-'.repeat(80);
+
+    if (!t.mode.startsWith('lacp')) {
+      return [
+        entete,
+        `WorkingMode: ${t.mode.toUpperCase()}  Hash arithmetic: ${hash}`,
+        compte,
+        etat,
+        tiret,
+        'PortName                      Status      Weight',
+        ...t.members.map(m => {
+          const info = liveByPort.get(m);
+          const status = info?.selected ? 'Selected' : 'Unselect';
+          return `${m.padEnd(30)}${status.padEnd(12)}1`;
+        }),
+      ].join('\n');
+    }
+
+    const cfg = agent?.getConfig();
+    const lignes = [
+      entete,
+      'Local:',
+      `LAG ID: ${id}  WorkingMode: ${t.mode.toUpperCase()}`,
+      `Preempt Delay: ${limites.preempt ? limites.preemptDelay : 'Disabled'}`
+      + `  Hash arithmetic: ${hash}`,
+      `System Priority: ${cfg?.systemPriority ?? 32768}`
+      + `  System ID: ${vrpMacFormat(cfg?.systemId ?? '00:00:00:00:00:00')}`,
+      compte,
+      etat,
+      tiret,
+      'ActorPortName                Status   PortType PortPri PortNo PortKey PortState Weight',
     ];
-    return lines.join('\n');
+    for (const m of t.members) {
+      const info = liveByPort.get(m);
+      const etatActeur = info
+        ? buildActorState(info.mode, info, cfg?.fastRate ?? false) : 0;
+      lignes.push(
+        `${m.padEnd(29)}${(info?.selected ? 'Selected' : 'Unselect').padEnd(9)}`
+        + `${portTypeVrp(m).padEnd(9)}${String(info?.portPriority ?? 32768).padEnd(8)}`
+        + `${String(this.numeroPortVrp(m)).padEnd(7)}${String(id).padEnd(8)}`
+        + `${lacpStateBits(etatActeur).padEnd(10)}1`);
+    }
+    lignes.push('', 'Partner:', tiret,
+      'ActorPortName                SysPri   SystemID        PortPri PortNo PortKey PortState');
+    for (const m of t.members) {
+      const p = liveByPort.get(m)?.partner;
+      lignes.push(
+        `${m.padEnd(29)}${String(p?.systemPriority ?? 0).padEnd(9)}`
+        + `${vrpMacFormat(p?.systemId ?? '00:00:00:00:00:00').padEnd(16)}`
+        + `${String(p?.portPriority ?? 0).padEnd(8)}${String(p?.portNumber ?? 0).padEnd(7)}`
+        + `${String(p?.key ?? 0).padEnd(8)}${lacpStateBits(p?.state ?? 0)}`);
+    }
+    return lignes.join('\n');
+  }
+
+  /** `display interface Eth-Trunk <id>` — the trunk as an interface. */
+  private displayEthTrunkInterface(id: number): string {
+    const t = this.ethTrunks.get(id);
+    if (!t) return `Error: Wrong parameter found at '^' position.`;
+    const sw = this.swRef;
+    const agent = sw?.getLacpAgent?.();
+    const live = new Map((agent ? agent.getGroupMembers(id) : [])
+      .map(m => [m.portName, m] as const));
+    const montes = t.members.filter(m => sw?.getPort(m)?.isOperationallyUp());
+    const actifs = t.mode.startsWith('lacp')
+      ? t.members.filter(m => live.get(m)?.bundled) : montes;
+    const up = actifs.length > 0;
+    const debit = actifs.reduce(
+      (total, m) => total + (sw?.getPort(m)?.getNegotiatedSpeed() ?? 0), 0);
+    const hash = hashArithmeticVrp(t.loadBalance || agent?.getLoadBalance() || 'src-dst-ip');
+    const tiret = '-'.repeat(80);
+    return [
+      `Eth-Trunk${id} current state : ${up ? 'UP' : 'DOWN'}`,
+      `Line protocol current state : ${up ? 'UP' : 'DOWN'}`,
+      `Description:`,
+      `Switch Port, Hash arithmetic : ${hash}, Maximal BW: ${vrpBandwidth(debit)}, `
+      + `Current BW: ${vrpBandwidth(debit)}, The Maximum Frame Length is 9216`,
+      `IP Sending Frames' Format is PKTFMT_ETHNT_2, `
+      + `Hardware address is ${vrpMacFormat(String(sw?.getBridgeMac() ?? '00:00:00:00:00:00'))}`,
+      tiret,
+      'PortName                      Status      Weight',
+      tiret,
+      ...t.members.map(m => `${m.padEnd(30)}`
+        + `${(actifs.includes(m) ? 'UP' : 'DOWN').padEnd(12)}1`),
+      tiret,
+      `The Number of Ports in Trunk : ${t.members.length}`,
+      `The Number of UP Ports in Trunk : ${actifs.length}`,
+    ].join('\n');
+  }
+
+  private numeroPortVrp(nom: string): number {
+    return (this.swRef?.getPortNames() ?? []).indexOf(nom) + 1;
+  }
+
+  /**
+   * `display trunkmembership eth-trunk <id>` — the membership view,
+   * which names each port's own state rather than the bundle's.
+   */
+  private displayTrunkMembership(id: number): string {
+    const t = this.ethTrunks.get(id);
+    if (!t) return `Error: The Eth-Trunk ${id} does not exist.`;
+    const agent = this.swRef?.getLacpAgent?.();
+    const live = new Map((agent ? agent.getGroupMembers(id) : [])
+      .map(m => [m.portName, m] as const));
+    const lignes = [
+      `Trunk ID: ${id}`,
+      `Used status: ${t.members.length > 0 ? 'VALID' : 'INVALID'}`,
+      `TYPE: ethernet`,
+      `Working Mode : ${t.mode.startsWith('lacp') ? 'Static' : 'Normal'}`,
+      `Number Of Ports in Trunk = ${t.members.length}`,
+      `Number Of Up Ports in Trunk = ${[...live.values()].filter(m => m.bundled).length}`,
+      '',
+    ];
+    for (const m of t.members) {
+      const port = this.swRef?.getPort(m);
+      lignes.push(`Interface ${m}, valid, `
+        + `${port?.isOperationallyUp() ? 'operate up' : 'operate down'}, `
+        + `weight = 1`);
+    }
+    return lignes.join('\n');
   }
 
   // ─── Undo Command ────────────────────────────────────────────────

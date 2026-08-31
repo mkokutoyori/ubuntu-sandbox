@@ -45,6 +45,7 @@ import {
 } from './cisco/CiscoShowCommands';
 import { orderCiscoConfigBlocks } from './cisco/ciscoConfigSerializer';
 import { describeCiscoArguments } from './cisco/ciscoArgumentHelp';
+import { etherChannelLimitFamily } from '@/cli/commands/aggregation/etherChannelLimits';
 import {
   parseCiscoAce, renderCiscoAce, formatCiscoAclEntry,
   showAccessListsFrom, isValidIosAclNumber,
@@ -2706,6 +2707,7 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
       ...this.vtpConfigSpecs(),
       ...this.daiSpecs(),
       ...this.aggregationSpecs(),
+      ...etherChannelLimitFamily(),
       ...this.interfaceEntrySpecs(),
       ...this.vlanEntrySpecs(),
       ...this.macTableSpecs(),
@@ -3402,7 +3404,9 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
         for (const g of groups) {
           const protocol = g.members.every(m => m.mode === 'on') ? '-' : 'LACP';
           const portList = g.members.map(m => {
-            const flag = m.bundled ? 'P' : m.state === 'standalone' ? 'I' : 's';
+            const flag = m.bundled ? 'P'
+              : m.state === 'standby' ? 'H'
+              : m.state === 'standalone' ? 'I' : 's';
             return `${this.abbreviateInterface(m.portName)}(${flag})`;
           }).join(' ');
           lines.push(`${String(g.id).padEnd(7)}${g.name.padEnd(14)}${protocol.padEnd(12)}${portList}`);
@@ -3420,6 +3424,10 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
             const port = this.d().getPort(m.portName);
             out.push(`  Port: ${m.portName}`);
             out.push(`    Status: ${m.bundled ? 'bundled' : m.state}`);
+            const limites = lacp.getGroupLimits(g.id);
+            if (m.state === 'standby') {
+              out.push(`    Hot-standby (max-bundle ${limites.maxLinks})`);
+            }
             out.push(`    Mode: ${m.mode}`);
             out.push(`    Partner: ${m.partner?.systemId ?? 'none'}`);
             out.push(`    Link: ${port?.getIsUp() ? 'up' : 'down'}`);
@@ -4185,6 +4193,7 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
       else return '% Invalid channel-group mode';
       return this.applyToSelectedInterfaces(portName => {
         this.requireLacp().addPortToGroup(portName, id, mode);
+        this.d().inheritAggregateSwitchport(`Port-channel${id}`, portName);
         return '';
       });
     });
@@ -4519,6 +4528,18 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
     const ports = sw._getPortsInternal();
     const configs = sw._getSwitchportConfigs();
     const descs = sw._getInterfaceDescriptions();
+    const agregats = (sw as unknown as { getLacpAgent?: () => {
+      getAllGroups(): Array<{ id: number; name: string }>;
+      getGroupLimits(id: number): { minLinks: number; maxLinks: number };
+    } }).getLacpAgent?.();
+    for (const g of agregats?.getAllGroups() ?? []) {
+      const l = agregats!.getGroupLimits(g.id);
+      if (l.minLinks === 0 && l.maxLinks === 0) continue;
+      lines.push(`interface ${g.name}`);
+      if (l.minLinks > 0) lines.push(` port-channel min-links ${l.minLinks}`);
+      if (l.maxLinks > 0) lines.push(` lacp max-bundle ${l.maxLinks}`);
+      lines.push('!');
+    }
     for (const [portName, port] of ports) {
       const cfg = configs.get(portName);
       if (!cfg) continue;
@@ -6644,6 +6665,21 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
     return [...new Set(sorties)].join('\n');
   }
 
+  selectedPortChannelIds(): number[] {
+    return this.selectedInterfaceRange
+      .map(n => /^Port-channel(\d+)$/i.exec(n))
+      .filter((m): m is RegExpExecArray => m !== null)
+      .map(m => Number(m[1]));
+  }
+
+  setPortChannelMinLinks(groupId: number, value: number): void {
+    this.requireLacp().setGroupLimits(groupId, { minLinks: value });
+  }
+
+  setPortChannelMaxBundle(groupId: number, value: number): void {
+    this.requireLacp().setGroupLimits(groupId, { maxLinks: value });
+  }
+
   private membresDuPortChannel(nom: string): string[] {
     const m = /^Port-channel(\d+)$/i.exec(nom);
     if (!m) return [];
@@ -6656,11 +6692,15 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
   private applyToSelectedInterfaces(fn: (portName: string) => string): string {
     const results: string[] = [];
     for (const portName of this.selectedInterfaceRange) {
-      const membres = this.membresDuPortChannel(portName);
-      if (membres.length > 0) {
-        for (const membre of membres) {
-          const r = fn(membre);
-          if (r) results.push(r);
+      if (/^Port-channel\d+$/i.test(portName)) {
+        // Sur IOS la configuration de niveau 2 vit sur le Port-channel
+        // et les membres la PRENNENT ; un faisceau encore vide se
+        // configure donc, et le membre qui arrive herite.
+        this.d().ensureAggregateSwitchportConfig(portName);
+        const r = fn(portName);
+        if (r) results.push(r);
+        for (const membre of this.membresDuPortChannel(portName)) {
+          this.d().inheritAggregateSwitchport(portName, membre);
         }
         continue;
       }

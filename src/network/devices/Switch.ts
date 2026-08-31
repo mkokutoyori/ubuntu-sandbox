@@ -1054,6 +1054,41 @@ export abstract class Switch extends Equipment {
   }
 
   /**
+   * A Port-channel carries its own layer-2 configuration on IOS, and the
+   * members take it when they join the group. It has no `Port` of its
+   * own here, so the entry is created on demand.
+   */
+  ensureAggregateSwitchportConfig(name: string): SwitchportConfig {
+    let cfg = this.switchportConfigs.get(name);
+    if (!cfg) {
+      cfg = {
+        mode: 'access', explicitMode: false, accessVlan: 1,
+        trunkNativeVlan: 1, trunkAllowedVlans: VlanSet.all(),
+      };
+      this.switchportConfigs.set(name, cfg);
+    }
+    return cfg;
+  }
+
+  /**
+   * Copy an aggregate's layer-2 configuration onto a joining member.
+   * Goes through the ordinary setters so the side effects a member gets
+   * from a typed command — VLAN membership, DTP admin mode — happen here
+   * too rather than being half-applied by a raw write.
+   */
+  inheritAggregateSwitchport(aggregate: string, member: string): void {
+    const source = this.switchportConfigs.get(aggregate);
+    const cible = this.switchportConfigs.get(member);
+    if (!source || !cible) return;
+    cible.trunkAllowedVlans = source.trunkAllowedVlans.clone();
+    cible.trunkNativeVlan = source.trunkNativeVlan;
+    cible.hybridPvid = source.hybridPvid;
+    if (source.explicitMode) this.setSwitchportMode(member, source.mode);
+    if (source.mode === 'access') this.setSwitchportAccessVlan(member, source.accessVlan);
+    else cible.accessVlan = source.accessVlan;
+  }
+
+  /**
    * Whether `proto`'s control frames arriving on `portName` must be relayed
    * as opaque data (L2PT) instead of handed to this switch's own agent —
    * true only on a dot1q-tunnel port with that protocol listed.
