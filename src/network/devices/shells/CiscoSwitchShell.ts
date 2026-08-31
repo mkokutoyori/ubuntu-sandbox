@@ -3616,6 +3616,13 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
 
   // ─── Config Commands ──────────────────────────────────────────────
 
+  protected override renduIpInterface(cible: string): string {
+    const args = cible.trim().split(/\s+/).filter(Boolean);
+    if (args[0]?.toLowerCase() === 'brief') return this.showIpInterfaceBrief();
+    if (args.length === 0) return this.showIpInterfaceAll();
+    return this.showIpInterfaceVerbose(args.join(' '));
+  }
+
   private registerMacTableConfig(trie: CommandTrie): void {
     trie.registerGreedy('mac address-table aging-time', 'Set MAC address aging time', (args) => {
       if (args.length < 1) return CISCO_ERRORS.INCOMPLETE;
@@ -5750,11 +5757,6 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
         dhcp().formatDatabaseShow());
       t.register('show ip dhcp snooping statistics', 'Display DHCP snooping statistics', () =>
         this.showIpDhcpSnoopingStatistics());
-      t.registerGreedy('show ip interface', 'Display verbose L3 state per interface', (args) => {
-        if (args[0]?.toLowerCase() === 'brief') return this.showIpInterfaceBrief();
-        if (args.length === 0) return this.showIpInterfaceAll();
-        return this.showIpInterfaceVerbose(args.join(' '));
-      });
       t.registerGreedy('show track', 'Display tracked objects', (args) => {
         const objs = this.trackObjects.list();
         if (objs.length === 0) return '';
@@ -5980,10 +5982,18 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
       `line protocol is ${lineUp ? 'up' : 'down'}`;
     const lines = [stateLine];
     if (svi.ip && svi.mask) {
-      const network = svi.ip.networkAddress(svi.mask);
-      const bcast = `${network.toString().replace(/\.0$/, '')}.255`;
       lines.push(`  Internet address is ${svi.ip}/${svi.mask.toCIDR()}`);
-      lines.push(`  Broadcast address is ${bcast}`);
+      /*
+       * L'adresse de DIFFUSION que rend `show ip interface` est celle
+       * qui est CONFIGUREE, `255.255.255.255` tant que personne n'a tape
+       * `ip broadcast-address` — c'est ce que rend le routeur, et ce que
+       * montrent les captures. Le commutateur la DEDUISAIT du
+       * sous-reseau par un decoupage de chaine (`.0` remplace par
+       * `.255`), donc il repondait autre chose que le routeur a la meme
+       * question, et faux des qu'un masque n'est pas un /24 :
+       * `10.0.0.1/16` y devenait `10.0.0.255` au lieu de `10.0.255.255`.
+       */
+      lines.push('  Broadcast address is 255.255.255.255');
     } else {
       lines.push('  Internet protocol processing disabled');
     }

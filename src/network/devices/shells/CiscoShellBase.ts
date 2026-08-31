@@ -5415,6 +5415,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       ...this.bannerSpecs(),
       ...this.archiveExecSpecs(),
       ...this.dhcpGlobalPartageeSpecs(),
+      ...this.showIpInterfaceSpecs(),
       ...this.cefSpecs(),
       ...this.enableSpecs(),
       ...this.configureSpecs(),
@@ -5881,6 +5882,35 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
    * part, donc perdu au rechargement d'une topologie. Les suites sont
    * desormais declarees, et ce qui n'en fait pas partie est refuse.
    */
+  /**
+   * `show ip interface [brief | <nom>]`, declaree une fois.
+   *
+   * Les deux plateformes avaient leur propre enregistrement, chacune
+   * avec sa place LIBRE : la commande la plus tapee d'IOS n'annoncait
+   * donc ni `brief` ni le nom d'une interface. Ce que chaque coquille
+   * RESTE seule a savoir est le contenu — un routeur rend ses
+   * interfaces, un Catalyst ses SVI — et c'est ce que le crochet porte ;
+   * la GRAMMAIRE, elle, n'a plus qu'une declaration.
+   */
+  protected showIpInterfaceSpecs(): readonly CommandSpec[] {
+    const exec = ['user', 'privileged'];
+    return [
+      {
+        id: 'show-ip-interface',
+        path: ['show', 'ip', 'interface', {
+          name: 'cible', type: 'REST', optional: true, literal: 'LINE',
+          description: 'Interface to describe',
+          alternatives: [{ keyword: 'brief', description: 'Brief summary of IP status' }],
+        }],
+        description: 'IP interface status and configuration',
+        modes: exec, minPrivilege: 1,
+        run: (_session, args) => this.renduIpInterface(args.cible ?? ''),
+      },
+    ];
+  }
+
+  protected renduIpInterface(_cible: string): string { return ''; }
+
   protected cefSpecs(): CommandSpec[] {
     const sec = () => getSecurityConfig(this.d());
     const glob = () => getGlobalConfig(this.d() as object);

@@ -1979,19 +1979,16 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
     };
     trie.registerGreedy('show interfaces', 'Display interface status', showInterfaceCmd);
     trie.register('show vlans', 'Display VLANs (router)', () => Show.showVlansRouter(getRouter()));
-    // `show ip interface[s] [brief|<name>]` — verbose/all + brief.
-    const showIpInterfaceCmd = (args: string[]): string => {
-      const sub = (args[0] || '').toLowerCase();
-      if (args.length === 0) return Show.showIpInterfaceAll(getRouter());
-      if (sub === 'brief') return Show.showIpIntBrief(getRouter());
-      const ifName = resolveInterfaceName(getRouter(), args.join(' '));
-      if (!ifName) return `% Invalid input detected at '^' marker.`;
-      // `show ip interface <nom>` rendait le bloc de `show interfaces`,
-      // c'est-à-dire l'AUTRE commande : le traitement IP de l'interface
-      // n'était affichable que pour toutes les interfaces à la fois.
-      return Show.showIpInterfaceOne(getRouter(), ifName);
-    };
-    trie.registerGreedy('show ip interface', 'Display IP interface status', showIpInterfaceCmd);
+  }
+
+  protected override renduIpInterface(cible: string): string {
+    const args = cible.trim().split(/\s+/).filter(Boolean);
+    const getRouter = () => this.d();
+    if (args.length === 0) return Show.showIpInterfaceAll(getRouter());
+    if (args[0].toLowerCase() === 'brief') return Show.showIpIntBrief(getRouter());
+    const ifName = resolveInterfaceName(getRouter(), args.join(' '));
+    if (!ifName) return `% Invalid input detected at '^' marker.`;
+    return Show.showIpInterfaceOne(getRouter(), ifName);
   }
 
   // ─── Ping Command ────────────────────────────────────────────────

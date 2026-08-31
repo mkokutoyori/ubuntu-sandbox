@@ -114,7 +114,7 @@ describe('Cisco L3 switch — ip helper-address relays DHCP to a central server'
     const out = await sw.executeCommand('show ip interface Vlan10');
     expect(out).toMatch(/Vlan10 is up, line protocol is up/);
     expect(out).toMatch(/Internet address is 10\.0\.10\.1\/24/);
-    expect(out).toMatch(/Broadcast address is 10\.0\.10\.255/);
+    expect(out).toMatch(/Broadcast address is 255\.255\.255\.255/);
     expect(out).toMatch(/Hardware is EtherSVI/);
     expect(out).toMatch(/Helper address is 10\.0\.100\.1/);
     expect(out).toMatch(/MTU is 1500 bytes/);
