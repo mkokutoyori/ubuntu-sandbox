@@ -325,7 +325,27 @@ export abstract class Equipment {
   /**
    * Send a frame out of a specific port
    */
+  /**
+   * Which member of an aggregate actually carries a frame handed to the
+   * logical interface. `undefined` means the name is not an aggregate;
+   * `null` means it is one with no usable member, so the frame is lost
+   * rather than leaving through a port that has no wire.
+   */
+  protected aggregateMemberFor(
+    _portName: string, _frame: EthernetFrame,
+  ): string | null | undefined {
+    return undefined;
+  }
+
+  /** The logical interface a frame arriving on a member belongs to. */
+  protected aggregateIngressPort(_portName: string): string | undefined {
+    return undefined;
+  }
+
   sendFrame(portName: string, frame: EthernetFrame): boolean {
+    const member = this.aggregateMemberFor(portName, frame);
+    if (member === null) return false;
+    if (member !== undefined) return this.sendFrame(member, frame);
     if (!this.isPoweredOn) {
       Logger.warn(this.id, 'equipment:send-blocked', `${this.name}: powered off, cannot send`);
       return false;

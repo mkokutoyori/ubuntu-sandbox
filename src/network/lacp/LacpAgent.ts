@@ -3,7 +3,8 @@ import { getDefaultScheduler, type IScheduler } from '@/events/Scheduler';
 import { ReactiveAgentBase } from '../core/ReactiveAgentBase';
 import {
   type LacpAdminMode, type LacpConfig, type LacpFrame, type LacpPortInfo,
-  type LacpPortState, type LacpActorInfo, type LacpGroup,
+  type LacpPortState, type LacpActorInfo, type LacpGroup, type MarkerFrame,
+  MARKER_RESPONSE,
   createDefaultLacpConfig, buildActorState, compareSystemId, partnerWantsFastRate,
   ETHERTYPE_LACP, LACP_SLOW_MAC,
   LACP_FLAG_SYNC, LACP_FLAG_COLLECTING, LACP_FLAG_DISTRIBUTING,
@@ -32,10 +33,30 @@ export class LacpAgent extends ReactiveAgentBase {
   private readonly advertising = new Set<string>();
   private readonly lacpduSent = new Map<string, number>();
   private readonly lacpduReceived = new Map<string, number>();
+  private readonly markerReceived = new Map<string, number>();
+  private readonly markerResponseSent = new Map<string, number>();
+  private readonly markerResponseReceived = new Map<string, number>();
 
   /** `display lacp statistics` — real per-port LACPDU tx/rx counts. */
   getStatistics(portName: string): { sent: number; received: number } {
     return { sent: this.lacpduSent.get(portName) ?? 0, received: this.lacpduReceived.get(portName) ?? 0 };
+  }
+
+  /**
+   * Marker Protocol counters, 802.3ad §43.5. Nothing here ORIGINATES a
+   * marker — neither IOS, VRP, FortiOS nor the Linux driver does, the
+   * kernel saying so in as many words — so `sent` stays zero and the
+   * others move only for a marker that really arrived.
+   */
+  getMarkerStatistics(portName: string): {
+    sent: number; received: number; responseSent: number; responseReceived: number;
+  } {
+    return {
+      sent: 0,
+      received: this.markerReceived.get(portName) ?? 0,
+      responseSent: this.markerResponseSent.get(portName) ?? 0,
+      responseReceived: this.markerResponseReceived.get(portName) ?? 0,
+    };
   }
 
   constructor(
@@ -176,8 +197,13 @@ export class LacpAgent extends ReactiveAgentBase {
     // A stopped agent neither speaks nor processes — otherwise it
     // keeps answering partner LACPDUs and looks alive forever.
     if (!this.isRunning() || !this.config.enabled) return;
-    const payload = frame.payload as LacpFrame | undefined;
-    if (!payload || payload.type !== 'lacp') return;
+    const payload = frame.payload as LacpFrame | MarkerFrame | undefined;
+    if (!payload) return;
+    if (payload.type === 'lacp-marker') {
+      this.handleMarker(portName, payload);
+      return;
+    }
+    if (payload.type !== 'lacp') return;
     const p = this.config.ports.get(portName);
     if (!p) return;
     if (p.mode === 'on') return;
@@ -198,6 +224,35 @@ export class LacpAgent extends ReactiveAgentBase {
     });
     this.recompute();
     this.maybeAdvertiseBack(portName);
+  }
+
+  /**
+   * 802.3ad §43.5.3.3 : a Marker Information PDU is echoed back with its
+   * TLV type changed to Response and every other field left as the
+   * requester wrote it — the requester matches its own transaction id.
+   * A Response that arrives is counted and answered by nothing, which
+   * is what `bond_3ad.c` does and what the standard permits.
+   */
+  private handleMarker(portName: string, marker: MarkerFrame): void {
+    const port = this.config.ports.get(portName);
+    if (!port) return;
+    if (marker.tlvType === MARKER_RESPONSE) {
+      this.markerResponseReceived.set(portName,
+        (this.markerResponseReceived.get(portName) ?? 0) + 1);
+      return;
+    }
+    this.markerReceived.set(portName, (this.markerReceived.get(portName) ?? 0) + 1);
+    const reponse: MarkerFrame = { ...marker, tlvType: MARKER_RESPONSE };
+    const envoye = this.host.sendOnLink({
+      iface: portName,
+      destination: new MACAddress(LACP_SLOW_MAC),
+      etherType: ETHERTYPE_LACP,
+      payload: reponse,
+    });
+    if (envoye) {
+      this.markerResponseSent.set(portName,
+        (this.markerResponseSent.get(portName) ?? 0) + 1);
+    }
   }
 
   advertise(portName: string): void {

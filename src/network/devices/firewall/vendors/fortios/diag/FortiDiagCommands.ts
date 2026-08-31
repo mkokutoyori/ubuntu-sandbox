@@ -69,11 +69,12 @@ function vueAgregat(nom: string, deps: FortiDiagDeps): AggregateView | null {
       aggregatorId: info?.groupId ?? 0,
       partnerMac: info?.partner?.systemId ?? '00:00:00:00:00:00',
       linkFailureCount: 0,
+      permanentMac: deps.fw.permanentMacOf(m),
     };
   });
   return {
     name: nom,
-    up: membres.filter(m => m.up).length >= spec.minLinks,
+    up: deps.fw.activeAggregateMembers(nom).length >= Math.max(spec.minLinks, 1),
     lacpMode: spec.lacpMode,
     lacpSpeed: spec.lacpSpeed,
     algorithm: spec.algorithm,

@@ -1,13 +1,26 @@
+import type { LoadBalanceMethod } from '@/network/lacp/loadBalance';
+
 export interface FortiAggregate {
   members: string[];
   lacpMode: 'static' | 'active' | 'passive';
   lacpSpeed: 'slow' | 'fast';
   algorithm: 'L2' | 'L3' | 'L4';
+  lacpHaSecondary: boolean;
   minLinks: number;
 }
 
 export function defaultAggregate(): FortiAggregate {
   return {
-    members: [], lacpMode: 'active', lacpSpeed: 'slow', algorithm: 'L4', minLinks: 1,
+    members: [], lacpMode: 'active', lacpSpeed: 'slow', algorithm: 'L4', minLinks: 1, lacpHaSecondary: true,
   };
+}
+
+export function fortiAlgorithmToLoadBalance(
+  algorithm: FortiAggregate['algorithm'],
+): LoadBalanceMethod {
+  switch (algorithm) {
+    case 'L2': return 'src-dst-mac';
+    case 'L3': return 'src-dst-ip';
+    default: return 'src-dst-port';
+  }
 }

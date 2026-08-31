@@ -37,6 +37,7 @@ export function buildCommitDevice(
             lacpSpeed: patch.aggregate.lacpSpeed,
             algorithm: patch.aggregate.algorithm,
             minLinks: patch.aggregate.minLinks,
+            lacpHaSecondary: patch.aggregate.lacpHaSecondary,
           });
         }
       },

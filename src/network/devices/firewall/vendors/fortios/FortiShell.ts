@@ -185,7 +185,7 @@ export class FortiShell {
   constructor(private readonly fw: FortiGate) {
     this.tree = fw.configTree();
     this.claimTree();
-    this.tree.bindPhysicalPorts((name) => this.fw.getPort(name) !== undefined);
+    this.tree.bindPhysicalPorts((name) => this.fw.isPhysicalPort(name));
     this.seedFactoryCertificates();
     this.seedFactoryAdmin();
     this.seedFactoryVdoms();

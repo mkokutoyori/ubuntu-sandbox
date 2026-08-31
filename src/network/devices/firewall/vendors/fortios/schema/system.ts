@@ -467,6 +467,11 @@ export const SYSTEM_INTERFACE: FortiTableSpec = {
       availableWhen: isAggregate,
     },
     {
+      ...enable('lacp-ha-secondary',
+        'Let the HA secondary take part in the LACP negotiation.', true),
+      availableWhen: isAggregate,
+    },
+    {
       ...choice('algorithm', 'Frame distribution algorithm.', [
         { keyword: 'L2', description: 'Distribute by source and destination MAC.' },
         { keyword: 'L3', description: 'Distribute by source and destination IP.' },
@@ -527,6 +532,7 @@ export const SYSTEM_INTERFACE: FortiTableSpec = {
         lacpSpeed: (object.effective('lacp-speed')[0] ?? 'slow') as 'slow',
         algorithm: (object.effective('algorithm')[0] ?? 'L4') as 'L4',
         minLinks: Number.parseInt(object.effective('min-links')[0] ?? '1', 10) || 1,
+        lacpHaSecondary: object.effective('lacp-ha-secondary')[0] !== 'disable',
       } : undefined,
     });
     if (mode === 'dhcp') context.device.acquireDhcpLease(object.key);

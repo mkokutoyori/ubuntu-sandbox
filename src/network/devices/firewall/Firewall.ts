@@ -3,6 +3,8 @@ import { LacpAgent } from '@/network/lacp/LacpAgent';
 import type { FortiAggregate } from './vendors/fortios/FortiAggregate';
 import { buildUdpOverIpv4, type UdpSendRequest } from '../../layers/transport/UdpEgress';
 import { Port } from '../../hardware/Port';
+import { selectBundleMember } from '@/network/lacp/loadBalance';
+import { fortiAlgorithmToLoadBalance } from './vendors/fortios/FortiAggregate';
 import {
   ETHERTYPE_ARP,
   ETHERTYPE_IPV4,
@@ -1284,14 +1286,97 @@ export class Firewall extends Equipment {
   getAggregates(): ReadonlyMap<string, FortiAggregate> { return this.aggregates; }
 
   declareAggregate(name: string, spec: FortiAggregate): void {
+    const ancien = this.aggregates.get(name);
+    if (ancien) for (const m of ancien.members) this.releaseAggregateMember(m);
     this.aggregates.set(name, spec);
+    const primaire = this.getPort(spec.members[0] ?? '');
+    if (!this.getPort(name)) {
+      const nic = new Port(name, 'ethernet',
+        primaire ? new MACAddress(primaire.getMAC().toString()) : undefined,
+        { carrierless: true });
+      nic.setUp(false);
+      this.addPort(nic);
+      this.interfaces.reproject(name);
+    }
+    for (const m of spec.members) this.adoptAggregateMember(name, m);
     this.applyAggregate(name);
   }
 
   removeAggregate(name: string): void {
     const spec = this.aggregates.get(name);
-    if (spec) for (const m of spec.members) this.getLacpAgent().removePort(m);
+    if (spec) for (const m of spec.members) this.releaseAggregateMember(m);
     this.aggregates.delete(name);
+    this.ports.delete(name);
+  }
+
+  /**
+   * A chassis port, as opposed to an interface the operator declared.
+   * An aggregate carries a real `Port` too — it has to, since that is
+   * where its address lives — so port existence alone cannot answer
+   * this, and answering it wrong drops `set type aggregate` from the
+   * rendered configuration, which a topology import replays.
+   */
+  isPhysicalPort(name: string): boolean {
+    return this.getPort(name) !== undefined && !this.aggregates.has(name);
+  }
+
+  aggregateOwning(member: string): string | null {
+    for (const [name, spec] of this.aggregates) {
+      if (spec.members.includes(member)) return name;
+    }
+    return null;
+  }
+
+  private readonly aggregateSavedMacs = new Map<string, string>();
+
+  /** The member's own factory address, kept while it wears the aggregate's. */
+  permanentMacOf(member: string): string {
+    return this.aggregateSavedMacs.get(member)
+      ?? this.getPort(member)?.getMAC().toString()
+      ?? '00:00:00:00:00:00';
+  }
+
+  private adoptAggregateMember(aggregate: string, member: string): void {
+    const nic = this.getPort(aggregate);
+    const port = this.getPort(member);
+    if (!nic || !port) return;
+    if (!this.aggregateSavedMacs.has(member)) {
+      this.aggregateSavedMacs.set(member, port.getMAC().toString());
+    }
+    port.setMAC(new MACAddress(nic.getMAC().toString()));
+    port.onLinkChange(() => this.refreshAggregates());
+  }
+
+  private releaseAggregateMember(member: string): void {
+    this.getLacpAgent().removePort(member);
+    const rendue = this.aggregateSavedMacs.get(member);
+    if (rendue) {
+      this.getPort(member)?.setMAC(new MACAddress(rendue));
+      this.aggregateSavedMacs.delete(member);
+    }
+  }
+
+  activeAggregateMembers(name: string): string[] {
+    const spec = this.aggregates.get(name);
+    if (!spec) return [];
+    const agent = this.getLacpAgent();
+    return spec.members.filter((m) => {
+      if (this.getPort(m)?.isOperationallyUp() !== true) return false;
+      return spec.lacpMode === 'static' || agent.getPortInfo(m)?.bundled === true;
+    });
+  }
+
+  protected override aggregateMemberFor(
+    portName: string, frame: EthernetFrame,
+  ): string | null | undefined {
+    const spec = this.aggregates.get(portName);
+    if (!spec) return undefined;
+    return selectBundleMember(this.activeAggregateMembers(portName), frame,
+      fortiAlgorithmToLoadBalance(spec.algorithm));
+  }
+
+  protected override aggregateIngressPort(portName: string): string | undefined {
+    return this.aggregateOwning(portName) ?? undefined;
   }
 
   private aggregateGroupId(name: string): number {
@@ -1304,6 +1389,7 @@ export class Firewall extends Equipment {
     if (!spec) return;
     const agent = this.getLacpAgent();
     agent.setFastRate(spec.lacpSpeed === 'fast');
+    agent.setGroupLimits(this.aggregateGroupId(name), { minLinks: spec.minLinks });
     const mode = spec.lacpMode === 'static' ? 'on' : spec.lacpMode;
     for (const membre of spec.members) {
       if (!this.getPort(membre)) continue;
@@ -1314,9 +1400,10 @@ export class Firewall extends Equipment {
 
   private refreshAggregates(): void {
     for (const [name, spec] of this.aggregates) {
-      const vivants = spec.members.filter(
-        m => this.getPort(m)?.isOperationallyUp() === true);
-      this.interfaces.configure(name, { up: vivants.length >= spec.minLinks });
+      const actifs = this.activeAggregateMembers(name);
+      const up = actifs.length > 0 && actifs.length >= spec.minLinks;
+      this.interfaces.configure(name, { up });
+      this.getPort(name)?.setUp(up);
     }
   }
 
@@ -1338,23 +1425,42 @@ export class Firewall extends Equipment {
       this.refreshAggregates();
       return;
     }
+    const logical = this.aggregateIngressPort(portName);
+    if (logical !== undefined
+      && frame.srcMAC.equals(this.getPort(portName)?.getMAC() ?? frame.dstMAC)) return;
+    const iface = logical ?? portName;
+
     if (frame.etherType === ETHERTYPE_ARP) {
-      this.handleArpFrame(portName, frame.payload as ARPPacket);
+      this.handleArpFrame(iface, frame.payload as ARPPacket);
       return;
     }
     if (frame.etherType === ETHERTYPE_IPV6) {
       this.ipv6.dataPlane().processPacket(
-        portName, frame.payload as IPv6Packet, frame.srcMAC);
+        iface, frame.payload as IPv6Packet, frame.srcMAC);
       return;
     }
     if (frame.etherType === ETHERTYPE_IPV4) {
-      this.handleIpv4Frame(portName, frame.payload as IPv4Packet, frame);
+      this.handleIpv4Frame(iface, frame.payload as IPv4Packet, frame);
     }
   }
 
   sendFrame(portName: string, frame: EthernetFrame): boolean {
-    if (this.subordinateIsSilentOn(portName)) return false;
+    if (this.subordinateIsSilentOn(portName) && !this.secondarySpeaksLacpOn(portName, frame)) {
+      return false;
+    }
     return super.sendFrame(portName, frame);
+  }
+
+  /**
+   * `lacp-ha-secondary` is enabled by default on FortiOS, and it exists
+   * so the switch keeps the secondary's links inside the aggregate: the
+   * secondary keeps negotiating while it stays silent on everything
+   * else, which is what makes a failover immediate.
+   */
+  private secondarySpeaksLacpOn(portName: string, frame: EthernetFrame): boolean {
+    if (frame.etherType !== 0x8809) return false;
+    const owner = this.aggregateOwning(portName);
+    return owner !== null && this.aggregates.get(owner)?.lacpHaSecondary === true;
   }
 
   private subordinateIsSilentOn(portName: string): boolean {

@@ -6438,11 +6438,12 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
       ];
       for (const m of members) {
         const s = agent.getStatistics(m.portName);
+        const k = agent.getMarkerStatistics(m.portName);
         lines.push(
           `${this.abbreviateInterface(m.portName).padEnd(11)}`
           + `${String(s.sent).padEnd(7)}${String(s.received).padEnd(9)}`
-          // Marker protocol (802.3ad §43.5) is not implemented here.
-          + `0      0        0      0         0`,
+          + `${String(k.sent).padEnd(7)}${String(k.received).padEnd(9)}`
+          + `${String(k.responseSent).padEnd(7)}${String(k.responseReceived).padEnd(10)}0`,
         );
       }
       return lines.join('\n');

@@ -1751,22 +1751,6 @@ export abstract class EndHost extends Equipment {
   protected receiveSlowProtocol(_portName: string, _frame: EthernetFrame): void {
   }
 
-  protected aggregateMemberFor(
-    _portName: string, _frame: EthernetFrame,
-  ): string | null | undefined {
-    return undefined;
-  }
-
-  protected aggregateIngressPort(_portName: string): string | undefined {
-    return undefined;
-  }
-
-  override sendFrame(portName: string, frame: EthernetFrame): boolean {
-    const member = this.aggregateMemberFor(portName, frame);
-    if (member === undefined) return super.sendFrame(portName, frame);
-    if (member === null) return false;
-    return super.sendFrame(member, frame);
-  }
 
   protected handleFrame(portName: string, frame: EthernetFrame): void {
     const port = this.ports.get(portName);

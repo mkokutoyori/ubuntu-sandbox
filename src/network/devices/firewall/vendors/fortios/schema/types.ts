@@ -97,6 +97,7 @@ export interface FortiInterfacePatch {
     readonly lacpSpeed: 'slow' | 'fast';
     readonly algorithm: 'L2' | 'L3' | 'L4';
     readonly minLinks: number;
+    readonly lacpHaSecondary: boolean;
   };
 }
 

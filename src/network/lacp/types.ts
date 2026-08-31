@@ -30,6 +30,25 @@ export interface LacpActorInfo {
   state: number;
 }
 
+export const MARKER_INFORMATION = 0x01;
+export const MARKER_RESPONSE = 0x02;
+
+/**
+ * Marker Protocol Data Unit, 802.3ad §43.5.3.2. It travels on the same
+ * slow-protocol ethertype and group address as an LACPDU and is told
+ * apart by its subtype (0x02 against the LACPDU's 0x01).
+ */
+export interface MarkerFrame extends NetworkPdu {
+  type: 'lacp-marker';
+  subtype: 0x02;
+  version: 0x01;
+  tlvType: typeof MARKER_INFORMATION | typeof MARKER_RESPONSE;
+  markerLength: 0x16;
+  requesterPort: number;
+  requesterSystem: string;
+  requesterTransactionId: number;
+}
+
 export interface LacpFrame extends NetworkPdu {
   type: 'lacp';
   subtype: 0x01;
