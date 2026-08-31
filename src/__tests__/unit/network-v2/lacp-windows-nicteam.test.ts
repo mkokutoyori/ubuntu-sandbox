@@ -170,6 +170,15 @@ describe('New-NetLbfoTeam cree un vrai agregat', () => {
     expect(out).toContain('TransmitLinkSpeed    : 100 Mbps');
   }, 30_000);
 
+  it('`Get-NetLbfoTeamNic` enumere la colonne TeamNics', async () => {
+    const { ps } = await labo();
+    const out = ps.execute('Get-NetLbfoTeamNic');
+    expect(out).toContain('Name    : Team1');
+    expect(out).toContain('Team    : Team1');
+    expect(out).toContain('Primary : True');
+    expect(out).toContain('Default : True');
+  }, 30_000);
+
   it('un membre porte l\'adresse du team NIC, comme le fait LBFO', async () => {
     const { pc, nics } = await labo();
     const equipe = pc.getPort('Team1')!.getMAC().toString();

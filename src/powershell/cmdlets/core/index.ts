@@ -5,7 +5,8 @@
 
 import {
   GetNetLbfoTeamCmdlet, NewNetLbfoTeamCmdlet, SetNetLbfoTeamCmdlet, RemoveNetLbfoTeamCmdlet,
-  GetNetLbfoTeamMemberCmdlet, AddNetLbfoTeamMemberCmdlet, SetNetLbfoTeamMemberCmdlet,
+  GetNetLbfoTeamMemberCmdlet, GetNetLbfoTeamNicCmdlet, AddNetLbfoTeamMemberCmdlet,
+  SetNetLbfoTeamMemberCmdlet,
   RemoveNetLbfoTeamMemberCmdlet,
 } from './NetLbfoCmdlets';
 import { CmdletRegistry } from '@/powershell/runtime/PSCmdletRegistry';
@@ -382,6 +383,7 @@ export function registerCoreCmdlets(registry: CmdletRegistry, opts: { includeSer
   registry.register(new SetNetLbfoTeamCmdlet());
   registry.register(new RemoveNetLbfoTeamCmdlet());
   registry.register(new GetNetLbfoTeamMemberCmdlet());
+  registry.register(new GetNetLbfoTeamNicCmdlet());
   registry.register(new AddNetLbfoTeamMemberCmdlet());
   registry.register(new SetNetLbfoTeamMemberCmdlet());
   registry.register(new RemoveNetLbfoTeamMemberCmdlet());

@@ -1588,3 +1588,11 @@ sur les vues des constructeurs, pas sur le texte.
 - **`min-links-down`** (FortiOS) est refuse, et c'est deliberement laisse
   ainsi : aucune source atteignable depuis ce reseau n'atteste cet
   attribut ni ses valeurs, alors que `lacp-ha-secondary` l'est.
+- **Windows LBFO : les interfaces d'equipe a VLAN.** `Get-NetLbfoTeamNic`
+  enumere l'interface d'equipe PRIMAIRE — celle qui nait avec l'equipe —
+  et rien d'autre, parce que `Add-NetLbfoTeamNic -Team T -VlanID 42`
+  creerait une sous-interface etiquetee « T - VLAN 42 » et que
+  `WindowsPC` n'a aucune notion de sous-interface VLAN (`LinuxMachine`,
+  elle, en a une). Les colonnes `VlanID`, `Primary` et `Default` sont
+  donc justes pour l'unique interface qui existe ; ajouter la cmdlet
+  demande d'abord la sous-interface, pas l'inverse.

@@ -93,7 +93,7 @@ import type {
   ConnectionRequestPolicyConditionsInfo, ConnectionRequestPolicyInfo,
   DirEntry, ServiceInfo, ProcessInfo, UserInfo, GroupInfo,
   NetworkAdapterInfo, AdapterStatisticsInfo, IPAddressInfo, RouteInfo, EventLogEntryInfo,
-  NicTeamInfo, NicTeamMemberInfo, NewNicTeamRequest, SetNicTeamRequest,
+  NicTeamInfo, NicTeamMemberInfo, NicTeamNicInfo, NewNicTeamRequest, SetNicTeamRequest,
   VpnConnectionInfo, ScheduledTaskInfo, DiskInfo, VolumeInfo,
 } from '@/powershell/providers/PSProviders';
 import type { PSValue } from '@/powershell/runtime/PSEnvironment';
@@ -1532,6 +1532,18 @@ class WindowsNetworkAdapter implements INetworkProvider {
             m, port?.isOperationallyUp() === true, actifs.includes(m.name), t.teamingMode),
         });
       }
+    }
+    return out;
+  }
+
+  getNicTeamNics(team?: string): NicTeamNicInfo[] {
+    const out: NicTeamNicInfo[] = [];
+    for (const t of this.pc.getNicTeams().values()) {
+      if (team !== undefined && t.name.toLowerCase() !== team.toLowerCase()) continue;
+      out.push({
+        name: t.teamNic, team: t.name, vlanId: null,
+        primary: true, isDefault: true,
+      });
     }
     return out;
   }
