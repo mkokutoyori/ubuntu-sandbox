@@ -457,7 +457,41 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
       ...this.ipv6NdSpecs(), ...this.ipv6OspfSpecs(), ...this.ipv6ReglagesSpecs(),
       ...this.clearIpv6Specs(),
       ...this.aclNommeeSpecs(),
+      ...this.pkiSpecs(),
     ];
+  }
+
+  /**
+   * `crypto pki {trustpoint|authenticate|enroll|import} <nom>`.
+   *
+   * Les quatre prennent le NOM d'un point de confiance, que la place
+   * libre de l'adaptateur laissait deviner ; `import` en prend un de
+   * plus, le format du certificat.
+   */
+  private pkiSpecs(): CommandSpec[] {
+    const point: ArgumentSpec = {
+      name: 'nom', type: 'WORD', description: 'Trustpoint name',
+    };
+    const places: Readonly<Record<string, readonly ArgumentSpec[]>> = {
+      'crypto pki trustpoint': [point],
+      'crypto pki authenticate': [point],
+      'crypto pki enroll': [point],
+      'crypto pki import': [point, {
+        name: 'forme', type: 'REST', literal: 'LINE',
+        description: 'Certificate format and source',
+      }],
+    };
+
+    return specsFromTrieRegistrations(
+      (collector) =>
+        buildSecurityConfigCommands(collector as unknown as CommandTrie, this),
+      {
+        modes: ['config'], minPrivilege: 15,
+        undoFromNegatedPaths: true,
+        skip: (path) => places[path.replace(/^no /, '')] === undefined,
+        argumentFor: (path) => places[path.replace(/^no /, '')],
+      },
+    );
   }
 
   /**

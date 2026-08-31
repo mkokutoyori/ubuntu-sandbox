@@ -303,7 +303,20 @@ export interface PkiTrustpoint {
   ipAddress?: 'none' | string;
   serialNumber?: 'none' | string;
   autoEnroll?: { percent?: number; regenerate?: boolean };
-  source?: 'self-signed' | 'scep' | 'terminal';
+  /**
+   * Le mode d'inscription, ECRIT COMME IOS L'ECRIT.
+   *
+   * Il etait canonicalise en `self-signed` alors qu'IOS ecrit
+   * `enrollment selfsigned` en un mot dans sa configuration — verifie
+   * sur des `show running-config` reels, ou le POINT DE CONFIANCE
+   * s'appelle `TP-self-signed-<n>` avec des traits d'union tandis que le
+   * mot-cle n'en porte aucun. Les deux orthographes restent acceptees a
+   * la saisie ; c'est le RENDU qui doit etre celui de la machine, la
+   * configuration etant rejouee a l'import d'une topologie.
+   */
+  source?: 'selfsigned' | 'terminal';
+  /** `enrollment profile <nom>` — le NOM, que `scep` ne disait pas. */
+  enrollmentProfile?: string;
   /** Set by 'crypto pki authenticate': the CA's root cert, this trustpoint's trust anchor. */
   caCert?: import('../../../pki/X509Certificate').X509Certificate;
   /** Set by 'crypto pki enroll': this router's own CA-issued cert + private key. */
@@ -705,7 +718,15 @@ export class CiscoSecurityConfig {
     }
     for (const tp of this.pkiTrustpoints.values()) {
       lines.push(`crypto pki trustpoint ${tp.name}`);
+      /*
+       * L'inscription vient EN PREMIER, comme dans la configuration d'un
+       * vrai IOS, et sur UNE ligne : elle etait rendue en deux morceaux
+       * aux deux bouts du bloc — `enrollment url` en tete, `enrollment
+       * <mode>` en queue — pour une seule et meme commande.
+       */
       if (tp.enrollmentUrl) lines.push(` enrollment url ${tp.enrollmentUrl}`);
+      else if (tp.enrollmentProfile) lines.push(` enrollment profile ${tp.enrollmentProfile}`);
+      else if (tp.source) lines.push(` enrollment ${tp.source}`);
       if (tp.subjectName) lines.push(` subject-name ${tp.subjectName}`);
       if (tp.revocationCheck) lines.push(` revocation-check ${tp.revocationCheck}`);
       if (tp.rsaKeypair) lines.push(` rsakeypair ${tp.rsaKeypair}`);
@@ -714,7 +735,6 @@ export class CiscoSecurityConfig {
       if (tp.serialNumber) lines.push(` serial-number ${tp.serialNumber}`);
       if (tp.autoEnroll) lines.push(` auto-enroll${tp.autoEnroll.percent ? ` ${tp.autoEnroll.percent}` : ''}${tp.autoEnroll.regenerate ? ' regenerate' : ''}`);
       if (tp.fingerprint) lines.push(` fingerprint ${tp.fingerprint}`);
-      if (tp.source) lines.push(` enrollment ${tp.source}`);
     }
     if (this.controlPlane.servicePolicyInput || this.controlPlane.servicePolicyOutput) {
       lines.push('control-plane');
