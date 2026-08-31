@@ -432,6 +432,38 @@ const CONFIG_IF_AUTRES: ReadonlySet<string> = new Set([
   'l2protocol-tunnel', 'private-vlan mapping',
 ]);
 
+/**
+ * Les places de `mac address-table`, declarees plutot que subies.
+ *
+ * La queue est libre parce que chaque forme a sa propre grammaire — un
+ * VLAN et une interface pour une entree statique, l'un OU l'autre pour
+ * l'apprentissage — et que les gestionnaires les lisent deja ; ce que
+ * la declaration apporte, c'est de NOMMER ce qui peut suivre, la ou une
+ * place anonyme laissait l'operateur deviner.
+ */
+const MAC_TABLE_PLACES: Readonly<Record<string, readonly ArgumentSpec[]>> = {
+  'mac address-table aging-time': [{
+    name: 'secondes', type: 'INT', range: [0, 1000000], rangeIsAdvisory: true,
+    description: 'Aging time in seconds, 0 to disable aging',
+  }],
+  'mac address-table static': [{
+    name: 'reste', type: 'REST', literal: 'H.H.H',
+    description: 'MAC address, then its VLAN and interface',
+    alternatives: [
+      { keyword: 'vlan', description: 'VLAN of the entry' },
+      { keyword: 'interface', description: 'Interface of the entry' },
+    ],
+  }],
+  'mac address-table learning': [{
+    name: 'reste', type: 'REST', optional: true, literal: 'LINE',
+    description: 'Where learning applies',
+    alternatives: [
+      { keyword: 'vlan', description: 'Learning on a VLAN' },
+      { keyword: 'interface', description: 'Learning on an interface' },
+    ],
+  }],
+};
+
 const VLAN_PLACE = (name: string, description: string): ArgumentSpec =>
   ({ name, type: 'VLAN_ID', description });
 
@@ -2618,6 +2650,7 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
       ...this.aggregationSpecs(),
       ...this.interfaceEntrySpecs(),
       ...this.vlanEntrySpecs(),
+      ...this.macTableSpecs(),
     ];
   }
 
@@ -3535,14 +3568,8 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
 
   // ─── Config Commands ──────────────────────────────────────────────
 
-  private registerConfigCommands(): void {
-    // hostname is handled by base class (registerCommonConfigCommands)
-
-    this.registerVlanEntry(this.configTrie);
-
-    this.registerInterfaceEntry(this.configTrie);
-
-    this.configTrie.registerGreedy('mac address-table aging-time', 'Set MAC address aging time', (args) => {
+  private registerMacTableConfig(trie: CommandTrie): void {
+    trie.registerGreedy('mac address-table aging-time', 'Set MAC address aging time', (args) => {
       if (args.length < 1) return CISCO_ERRORS.INCOMPLETE;
       const seconds = parseInt(args[0], 10);
       if (isNaN(seconds) || seconds < 0) return '% Invalid aging time';
@@ -3556,14 +3583,14 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
     // type `static` est dans le modèle, et l'apprentissage respecte déjà
     // une entrée statique (elle n'est ni vieillie ni écrasée). Seule la
     // commande manquait (audit 11, §4.2).
-    this.configTrie.registerGreedy('mac address-table learning', 'Enable MAC learning', (args) => {
+    trie.registerGreedy('mac address-table learning', 'Enable MAC learning', (args) => {
       const r = this.parseMacLearningArgs(args);
       if (typeof r === 'string') return r;
       if (r.vlan !== undefined) this.d().setVlanMacLearning(r.vlan, true);
       if (r.iface !== undefined) this.d().setPortMacLearning(r.iface, true);
       return '';
     });
-    this.configTrie.registerGreedy('no mac address-table learning', 'Disable MAC learning', (args) => {
+    trie.registerGreedy('no mac address-table learning', 'Disable MAC learning', (args) => {
       const r = this.parseMacLearningArgs(args);
       if (typeof r === 'string') return r;
       if (r.vlan !== undefined) this.d().setVlanMacLearning(r.vlan, false);
@@ -3571,18 +3598,40 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
       return '';
     });
 
-    this.configTrie.registerGreedy('mac address-table static', 'Add a static MAC entry', (args) => {
+    trie.registerGreedy('mac address-table static', 'Add a static MAC entry', (args) => {
       const r = this.parseStaticMacArgs(args);
       if (typeof r === 'string') return r;
       this.d().addStaticMAC(r.mac, r.vlan, r.port);
       return '';
     });
-    this.configTrie.registerGreedy('no mac address-table static', 'Remove a static MAC entry', (args) => {
+    trie.registerGreedy('no mac address-table static', 'Remove a static MAC entry', (args) => {
       const r = this.parseStaticMacArgs(args);
       if (typeof r === 'string') return r;
       this.d().removeStaticMAC(r.mac, r.vlan);
       return '';
     });
+  }
+
+  private macTableSpecs(): CommandSpec[] {
+    return specsFromTrieRegistrations(
+      (collector) =>
+        this.registerMacTableConfig(collector as unknown as CommandTrie),
+      {
+        modes: ['config'], minPrivilege: 15,
+        undoFromNegatedPaths: true,
+        argumentFor: (path) => MAC_TABLE_PLACES[path.replace(/^no /, '')],
+      });
+  }
+
+  private registerConfigCommands(): void {
+    // hostname is handled by base class (registerCommonConfigCommands)
+
+    this.registerVlanEntry(this.configTrie);
+
+    this.registerInterfaceEntry(this.configTrie);
+
+    this.registerMacTableConfig(this.configTrie);
+
     // `notification change` demande un piège SNMP à chaque mouvement
     // d'adresse. Le simulateur n'a pas de générateur de piège sur ce
     // chemin ; accepter la commande sans rien envoyer serait une
