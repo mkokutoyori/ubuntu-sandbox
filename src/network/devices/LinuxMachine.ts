@@ -25,6 +25,7 @@
 import { EndHost, type PingResult, type ARPEntry, type HostRouteEntry, type HostPolicyRule, getNUDState } from './EndHost';
 import { LacpAgent } from '@/network/lacp/LacpAgent';
 import { selectBundleMember } from '@/network/lacp/loadBalance';
+import { adOperPortKey } from '@/network/lacp/types';
 import { LinuxBond, renderProcNetBonding, slaveViewFrom, xmitHashToLoadBalance } from './linux/net/LinuxBonding';
 import type { TcpWireOutcome } from '../tcp/types';
 import type { UserAccountHost, ShellIdentityHost, FileEditorHost } from '../equipment/HostCapabilities';
@@ -2565,6 +2566,7 @@ export abstract class LinuxMachine extends EndHost
           getPort: (n: string) => this.getPort(n),
           getPorts: () => this.getPorts(),
           sendOnLink: (request) => this.getLinkLayer().send(request),
+          actorKeyFor: (n, groupId) => this.bondActorKey(n, groupId),
         },
         () => this.getBus(),
         this.getPorts()[0]?.getMAC().toString() ?? '00:00:00:00:00:00',
@@ -2609,6 +2611,18 @@ export abstract class LinuxMachine extends EndHost
 
   protected override aggregateIngressPort(portName: string): string | undefined {
     return this.bondOwning(portName) ?? undefined;
+  }
+
+  private bondActorKey(iface: string, groupId: number): number {
+    const nom = this.bondOwning(iface);
+    const bond = nom ? this.bonds.get(nom) : undefined;
+    if (!bond || bond.options.mode !== '802.3ad') return groupId;
+    const port = this.ports.get(iface);
+    if (!port || !port.isOperationallyUp()) {
+      return adOperPortKey(bond.options.userPortKey, null, null);
+    }
+    return adOperPortKey(bond.options.userPortKey,
+      port.getNegotiatedSpeed(), port.getNegotiatedDuplex());
   }
 
   bondOwning(iface: string): string | null {
@@ -2680,6 +2694,10 @@ export abstract class LinuxMachine extends EndHost
     const agent = this.getLacpAgent();
     agent.setFastRate(bond.options.lacpRate === 'fast');
     agent.setSystemPriority(bond.options.systemPriority);
+    agent.setSystemId(bond.options.actorSystem === '00:00:00:00:00:00'
+      ? (this.ports.get(bondName)?.getMAC().toString()
+        ?? this.getPorts()[0]?.getMAC().toString() ?? '00:00:00:00:00:00')
+      : bond.options.actorSystem);
     if (bond.options.mode !== '802.3ad') {
       for (const s of bond.slaves) agent.removePort(s);
       this.refreshBondCarrier(bondName);
@@ -2726,7 +2744,7 @@ export abstract class LinuxMachine extends EndHost
         actorChurnedCount: info?.churnActorCount ?? 0,
         partnerChurnedCount: info?.churnPartnerCount ?? 0,
         actorPortNumber: this.getPorts().findIndex(p => p.getName() === nom) + 1,
-        actorPortKey: groupId,
+        actorPortKey: this.bondActorKey(nom, groupId),
         actorPortPriority: info?.portPriority ?? 255,
         actorPortState: info?.bundled ? 61 : 5,
         partnerSystemPriority: info?.partner?.systemPriority ?? 65535,
@@ -2748,7 +2766,7 @@ export abstract class LinuxMachine extends EndHost
         ? {
           aggregatorId: agent.aggregatorIdOf(premier),
           ports: groupes.length,
-          actorKey: groupId,
+          actorKey: this.bondActorKey(groupes[0], groupId),
           partnerKey: premier.partner?.key ?? 0,
           partnerSystem: premier.partner?.systemId ?? '00:00:00:00:00:00',
         }

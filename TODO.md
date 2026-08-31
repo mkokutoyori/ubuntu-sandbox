@@ -1563,17 +1563,6 @@ norme reste hors de portee depuis ce reseau : `standards.ieee.org`,
 `cdn.standards.iteh.ai` sont tous refuses par le mandataire de sortie,
 et la version « Get Program » gratuite passe par les memes hotes.
 
-- **`ad_actor_sys_prio`, `ad_actor_system`, `ad_user_port_key`** : les
-  trois reglages 802.3ad que le noyau expose pour forger l'identite de
-  l'acteur. `systemPriority` existe et est reglable ; les deux autres ne
-  le sont pas, et `ad_user_port_key` decale la cle de 6 bits, ce que
-  rien ici ne modelise.
-- **Le marqueur n'est jamais ORIGINE.** C'est exact pour les quatre
-  plateformes modelisees — le noyau le dit de lui-meme, et ni IOS ni VRP
-  ni FortiOS n'en emettent — donc la colonne `Sent` a zero est la
-  verite. Mais aucun laboratoire de ce simulateur ne peut donc faire
-  bouger `Received` : seule une trame injectee y arrive. Le jour ou un
-  equipement originera des marqueurs, le repondeur est deja la.
 - **`min-links-down`** (FortiOS) est refuse, et c'est deliberement laisse
   ainsi : aucune source atteignable depuis ce reseau n'atteste cet
   attribut ni ses valeurs, alors que `lacp-ha-secondary` l'est.

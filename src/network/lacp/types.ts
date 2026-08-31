@@ -43,6 +43,32 @@ export type LacpChurnState = 'monitoring' | 'churned' | 'none';
  */
 export type LacpAggregatorSelection = 'stable' | 'bandwidth' | 'count';
 
+export const AD_DUPLEX_KEY_MASK = 0x1;
+export const AD_SPEED_KEY_MASK = 0x3e;
+export const AD_USER_KEY_MASK = 0xffc0;
+
+const AD_LINK_SPEED_CODES: ReadonlyArray<readonly [number, number]> = [
+  [1, 1], [10, 2], [100, 3], [1000, 4], [2500, 5], [5000, 6], [10000, 7],
+  [14000, 8], [20000, 9], [25000, 10], [40000, 11], [50000, 12], [56000, 13],
+  [80000, 14], [100000, 15], [200000, 16], [400000, 17], [800000, 18],
+  [1600000, 19],
+];
+
+export function adLinkSpeedCode(mbps: number | null): number {
+  if (mbps === null) return 0;
+  const found = AD_LINK_SPEED_CODES.find(([speed]) => speed === mbps);
+  return found ? found[1] : 0;
+}
+
+export function adOperPortKey(
+  userKey: number, mbps: number | null, duplex: 'full' | 'half' | null,
+): number {
+  const user = (userKey << 6) & AD_USER_KEY_MASK;
+  if (mbps === null || duplex === null) return user;
+  return user | ((adLinkSpeedCode(mbps) << 1) & AD_SPEED_KEY_MASK)
+    | (duplex === 'full' ? AD_DUPLEX_KEY_MASK : 0);
+}
+
 export interface LacpActorInfo {
   systemPriority: number;
   systemId: string;

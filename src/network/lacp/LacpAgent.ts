@@ -27,6 +27,7 @@ export interface LacpHost {
    * DTP and UDLD already use for their own state changes.
    */
   onLacpBundleChanged?(portName: string, groupKey: string, bundled: boolean): void;
+  actorKeyFor?(portName: string, groupId: number): number;
 }
 
 export class LacpAgent extends ReactiveAgentBase {
@@ -76,6 +77,15 @@ export class LacpAgent extends ReactiveAgentBase {
     if (priority < 0 || priority > 65535) return;
     this.config.systemPriority = priority;
     this.recompute();
+  }
+
+  setSystemId(systemId: string): void {
+    this.config.systemId = systemId.toLowerCase();
+    this.recompute();
+  }
+
+  actorKeyOf(p: LacpPortInfo): number {
+    return this.host.actorKeyFor?.(p.portName, p.groupId) ?? p.groupId;
   }
 
   /**
@@ -135,7 +145,7 @@ export class LacpAgent extends ReactiveAgentBase {
    */
   lagIdOf(p: LacpPortInfo): string {
     if (!p.partner) return `individual:${p.portName}`;
-    return `${p.groupId}|${p.partner.systemPriority}`
+    return `${this.actorKeyOf(p)}|${p.partner.systemPriority}`
       + `|${p.partner.systemId.toLowerCase()}|${p.partner.key}`;
   }
 
@@ -143,7 +153,7 @@ export class LacpAgent extends ReactiveAgentBase {
   aggregatorIdOf(p: LacpPortInfo): number {
     const lags = [...new Set(this.getGroupMembers(p.groupId)
       .filter(m => m.partner !== null)
-      .map(m => this.lagIdOf(m)))].sort();
+      .map(m => this.lagIdOf(m)))];
     const rang = lags.indexOf(this.lagIdOf(p));
     return rang < 0 ? p.groupId : rang + 1;
   }
@@ -301,7 +311,7 @@ export class LacpAgent extends ReactiveAgentBase {
     const actor: LacpActorInfo = {
       systemPriority: this.config.systemPriority,
       systemId: this.config.systemId,
-      key: p.groupId,
+      key: this.actorKeyOf(p),
       portPriority: p.portPriority,
       portNumber: this.portNumberFor(portName),
       state: buildActorState(p.mode, p, this.config.fastRate),
@@ -493,9 +503,25 @@ export class LacpAgent extends ReactiveAgentBase {
    * decide, et parmi ses candidats il classe par priorite de port puis
    * par numero de port.
    */
-  private static compareCandidates(a: LacpPortInfo, b: LacpPortInfo): number {
-    if (a.portPriority !== b.portPriority) return a.portPriority - b.portPriority;
-    return a.portName.localeCompare(b.portName, undefined, { numeric: true });
+  private partnerDecides(candidats: LacpPortInfo[]): boolean {
+    const partenaire = candidats.find(p => p.partner)?.partner;
+    if (!partenaire) return false;
+    return compareSystemId(
+      { priority: partenaire.systemPriority, id: partenaire.systemId },
+      { priority: this.config.systemPriority, id: this.config.systemId },
+    ) < 0;
+  }
+
+  private compareCandidates(suivi: boolean) {
+    return (a: LacpPortInfo, b: LacpPortInfo): number => {
+      const prio = (p: LacpPortInfo) => (suivi ? p.partner?.portPriority : p.portPriority) ?? 32768;
+      if (prio(a) !== prio(b)) return prio(a) - prio(b);
+      const num = (p: LacpPortInfo) => (suivi
+        ? p.partner?.portNumber ?? 0
+        : this.portNumberFor(p.portName));
+      if (num(a) !== num(b)) return num(a) - num(b);
+      return a.portName.localeCompare(b.portName, undefined, { numeric: true });
+    };
   }
 
   private holdingSlot = new Set<string>();
@@ -569,7 +595,8 @@ export class LacpAgent extends ReactiveAgentBase {
     const limites = this.config.groups.get(members[0].groupId);
     const min = limites?.minLinks ?? 0;
     const max = limites?.maxLinks ?? 0;
-    const candidats = members.filter(p => p.bundled).sort(LacpAgent.compareCandidates);
+    const candidats = members.filter(p => p.bundled);
+    candidats.sort(this.compareCandidates(this.partnerDecides(candidats)));
     if (limites?.preempt === false) {
       const tenants = candidats.filter(p => this.holdingSlot.has(p.portName));
       const autres = candidats.filter(p => !this.holdingSlot.has(p.portName));
@@ -595,8 +622,7 @@ export class LacpAgent extends ReactiveAgentBase {
       // « un câble est branché » ne suffit pas : un membre dont le pair
       // est désactivé ou hors tension ne porte plus rien et doit quitter
       // l'agrégat (docs/PRD-Link-State.md §6).
-      const linkUp = !!port && port.isOperationallyUp();
-      if (!linkUp) {
+      if (!port || !port.isOperationallyUp()) {
         p.state = 'standalone'; p.selected = false; p.bundled = false;
       } else if (p.mode === 'on') {
         p.state = 'bundled'; p.selected = true; p.bundled = true;
@@ -604,7 +630,9 @@ export class LacpAgent extends ReactiveAgentBase {
         // Stays out of the aggregate until a fresh LACPDU arrives
         // (handleFrame clears the state) or the partner is defaulted.
         p.selected = false; p.bundled = false;
-      } else if (p.partner && p.partner.key === p.groupId) {
+      } else if (port.getNegotiatedDuplex() === 'half') {
+        p.state = 'standalone'; p.selected = false; p.bundled = false;
+      } else if (p.partner) {
         const sameSystem = compareSystemId(
           { priority: this.config.systemPriority, id: this.config.systemId },
           { priority: p.partner.systemPriority, id: p.partner.systemId },

@@ -50,6 +50,8 @@ export interface BondOptions {
   adSelect: 'stable' | 'bandwidth' | 'count';
   xmitHashPolicy: XmitHashPolicy;
   systemPriority: number;
+  actorSystem: string;
+  userPortKey: number;
 }
 
 export function defaultBondOptions(): BondOptions {
@@ -65,6 +67,8 @@ export function defaultBondOptions(): BondOptions {
     adSelect: 'stable',
     xmitHashPolicy: 'layer2',
     systemPriority: 65535,
+    actorSystem: '00:00:00:00:00:00',
+    userPortKey: 0,
   };
 }
 
@@ -236,15 +240,32 @@ export class LinuxBond {
         return true;
       }
       case 'miimon': case 'updelay': case 'downdelay':
-      case 'peer_notif_delay': case 'min_links': case 'ad_actor_sys_prio': {
+      case 'peer_notif_delay': case 'min_links': {
         const n = Number(value);
         if (!Number.isInteger(n) || n < 0) return false;
         if (key === 'miimon') this.options.miimon = n;
         else if (key === 'updelay') this.options.updelay = n;
         else if (key === 'downdelay') this.options.downdelay = n;
         else if (key === 'peer_notif_delay') this.options.peerNotifDelay = n;
-        else if (key === 'min_links') this.options.minLinks = n;
-        else this.options.systemPriority = n;
+        else this.options.minLinks = n;
+        return true;
+      }
+      case 'ad_actor_sys_prio': {
+        const n = Number(value);
+        if (!Number.isInteger(n) || n < 1 || n > 65535) return false;
+        this.options.systemPriority = n;
+        return true;
+      }
+      case 'ad_user_port_key': {
+        const n = Number(value);
+        if (!Number.isInteger(n) || n < 0 || n > 1023) return false;
+        this.options.userPortKey = n;
+        return true;
+      }
+      case 'ad_actor_system': {
+        if (!/^[0-9a-f]{2}(:[0-9a-f]{2}){5}$/i.test(value)) return false;
+        if ((parseInt(value.slice(0, 2), 16) & 1) !== 0) return false;
+        this.options.actorSystem = value.toLowerCase();
         return true;
       }
       case 'lacp_rate':
