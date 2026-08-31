@@ -7,11 +7,12 @@ export interface FortiAggregate {
   algorithm: 'L2' | 'L3' | 'L4';
   lacpHaSecondary: boolean;
   minLinks: number;
+  minLinksDown: 'operational' | 'administrative';
 }
 
 export function defaultAggregate(): FortiAggregate {
   return {
-    members: [], lacpMode: 'active', lacpSpeed: 'slow', algorithm: 'L4', minLinks: 1, lacpHaSecondary: true,
+    members: [], lacpMode: 'active', lacpSpeed: 'slow', algorithm: 'L4', minLinks: 1, minLinksDown: 'operational', lacpHaSecondary: true,
   };
 }
 

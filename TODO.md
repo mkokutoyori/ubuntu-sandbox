@@ -1563,9 +1563,6 @@ norme reste hors de portee depuis ce reseau : `standards.ieee.org`,
 `cdn.standards.iteh.ai` sont tous refuses par le mandataire de sortie,
 et la version « Get Program » gratuite passe par les memes hotes.
 
-- **`min-links-down`** (FortiOS) est refuse, et c'est deliberement laisse
-  ainsi : aucune source atteignable depuis ce reseau n'atteste cet
-  attribut ni ses valeurs, alors que `lacp-ha-secondary` l'est.
 - **Windows LBFO : les interfaces d'equipe a VLAN.** `Get-NetLbfoTeamNic`
   enumere l'interface d'equipe PRIMAIRE — celle qui nait avec l'equipe —
   et rien d'autre, parce que `Add-NetLbfoTeamNic -Team T -VlanID 42`

@@ -997,6 +997,7 @@ export class Firewall extends Equipment {
   }
 
   setInterfaceUp(name: string, up: boolean): void {
+    this.adminIntent.set(name, up);
     this.interfaces.setUp(name, up);
   }
 
@@ -1379,6 +1380,8 @@ export class Firewall extends Equipment {
     return this.aggregateOwning(portName) ?? undefined;
   }
 
+  private readonly adminIntent = new Map<string, boolean>();
+
   private aggregateGroupId(name: string): number {
     const m = /(\d+)$/.exec(name);
     return m ? Number(m[1]) : 1;
@@ -1401,9 +1404,10 @@ export class Firewall extends Equipment {
   private refreshAggregates(): void {
     for (const [name, spec] of this.aggregates) {
       const actifs = this.activeAggregateMembers(name);
-      const up = actifs.length > 0 && actifs.length >= spec.minLinks;
-      this.interfaces.configure(name, { up });
-      this.getPort(name)?.setUp(up);
+      const assez = actifs.length > 0 && actifs.length >= spec.minLinks;
+      const up = assez && (this.adminIntent.get(name) ?? true);
+      if (spec.minLinksDown === 'administrative') this.interfaces.setUp(name, up);
+      else this.getPort(name)?.setUp(up);
     }
   }
 
