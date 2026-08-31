@@ -537,27 +537,73 @@ describe('Partie 4 — LACP sur Huawei', () => {
   });
 });
 
-describe('Partie 5 — LACP sur Linux : le bonding n\'est pas modelise', () => {
+describe('Partie 5 — LACP sur Linux : le bonding', () => {
   beforeEach(() => {
     resetCounters(); resetDeviceCounters(); MACAddress.resetCounter(); Logger.reset();
   });
 
-  it('§5.1 MANQUE — le module noyau `bonding` n\'est pas dans l\'image', async () => {
+  it('§5.1 le module noyau `bonding` est dans l\'image', async () => {
     const pc = new LinuxPC('linux-pc', 'srv', 0, 0);
-    const out = await pc.executeCommand('modprobe bonding');
-    expect(out).toContain('Module bonding not found');
+    expect(await pc.executeCommand('modprobe bonding')).toBe('');
+    expect(await pc.executeCommand('lsmod')).toContain('bonding');
   });
 
-  it('§5.1 MANQUE — `ip link add ... type bond` est refuse', async () => {
+  it('§5.1 le mode 4 est bien `802.3ad` dans l\'ordre du pilote', async () => {
     const pc = new LinuxPC('linux-pc', 'srv', 0, 0);
-    const out = await pc.executeCommand('ip link add bond0 type bond');
-    expect(out).toContain('unknown link type');
+    await pc.executeCommand('ip link add bond0 type bond');
+    expect(await pc.executeCommand('ip link set bond0 type bond mode 4')).toBe('');
+    expect(await pc.executeCommand('cat /proc/net/bonding/bond0'))
+      .toContain('Bonding Mode: IEEE 802.3ad Dynamic link aggregation');
   });
 
-  it('§5.2 MANQUE — aucun fichier netplan de bond n\'est livre', async () => {
+  it('§5.1 les sept modes du tutoriel existent', async () => {
     const pc = new LinuxPC('linux-pc', 'srv', 0, 0);
-    expect(await pc.executeCommand('ls /etc/netplan/')).not.toContain('bond');
+    await pc.executeCommand('ip link add bond0 type bond');
+    for (const m of ['balance-rr', 'active-backup', 'balance-xor', 'broadcast',
+                     '802.3ad', 'balance-tlb', 'balance-alb']) {
+      expect(await pc.executeCommand(`ip link set bond0 type bond mode ${m}`), m).toBe('');
+    }
   });
+
+  it('§5.2 `lacp-rate: fast` et `transmit-hash-policy` sont reglables', async () => {
+    const pc = new LinuxPC('linux-pc', 'srv', 0, 0);
+    await pc.executeCommand('ip link add bond0 type bond');
+    expect(await pc.executeCommand(
+      'ip link set bond0 type bond mode 802.3ad lacp_rate fast'
+      + ' xmit_hash_policy layer3+4 miimon 100')).toBe('');
+    const out = await pc.executeCommand('cat /proc/net/bonding/bond0');
+    expect(out).toContain('LACP rate: fast');
+    expect(out).toContain('Transmit Hash Policy: layer3+4 (1)');
+    expect(out).toContain('MII Polling Interval (ms): 100');
+  });
+
+  it('§5.4 `/proc/net/bonding/bond0` existe et decrit le bond', async () => {
+    const pc = new LinuxPC('linux-pc', 'srv', 0, 0);
+    await pc.executeCommand('ip link add bond0 type bond');
+    const out = await pc.executeCommand('cat /proc/net/bonding/bond0');
+    expect(out).toContain('Ethernet Channel Bonding Driver:');
+    expect(out).toContain('MII Status:');
+  });
+
+  it('§5.4 le bond agrege pour de vrai face a un commutateur', async () => {
+    vi.useFakeTimers();
+    try {
+      const srv = new LinuxPC('linux-pc', 'srv', 0, 0);
+      const sw = new CiscoSwitch('switch-cisco', 'SW', 24, 300, 0);
+      const nics = srv.getPorts().slice(0, 2).map((p) => p.getName());
+      nics.forEach((n, i) => {
+        new Cable(`bond-${i}`).connect(srv.getPort(n)!, sw.getPort(CISCO_PORTS[i])!);
+      });
+      await joindreGroupe(sw, CISCO_PORTS.slice(0, 2), 'active');
+      await taper(srv, ['ip link add bond0 type bond',
+        'ip link set bond0 type bond mode 802.3ad miimon 100']);
+      for (const n of nics) await srv.executeCommand(`ip link set ${n} master bond0`);
+      await vi.advanceTimersByTimeAsync(LACP_PERIODIC_MS);
+      expect(await srv.executeCommand('cat /proc/net/bonding/bond0'))
+        .toContain('Active Aggregator Info:');
+      expect(await sw.executeCommand('show etherchannel summary')).toContain('Fa0/1(P)');
+    } finally { vi.useRealTimers(); }
+  }, 30_000);
 
   it('§5.3 MANQUE — `nmcli` n\'existe pas', async () => {
     const pc = new LinuxPC('linux-pc', 'srv', 0, 0);
@@ -566,16 +612,9 @@ describe('Partie 5 — LACP sur Linux : le bonding n\'est pas modelise', () => {
     expect(out).toMatch(/not a valid command|not found/);
   });
 
-  it('§5.4 MANQUE — `/proc/net/bonding/bond0` n\'existe pas', async () => {
+  it('§5.2 MANQUE — aucun fichier netplan de bond n\'est livre', async () => {
     const pc = new LinuxPC('linux-pc', 'srv', 0, 0);
-    expect(await pc.executeCommand('cat /proc/net/bonding/bond0'))
-      .toContain('No such file or directory');
-  });
-
-  it('§5.4 MANQUE — `/sys/class/net/bonding_masters` n\'existe pas', async () => {
-    const pc = new LinuxPC('linux-pc', 'srv', 0, 0);
-    expect(await pc.executeCommand('cat /sys/class/net/bonding_masters'))
-      .toContain('No such file or directory');
+    expect(await pc.executeCommand('ls /etc/netplan/')).not.toContain('bond');
   });
 
   it('TEMOIN — la machine repond bien par ailleurs : `ip link show` liste ses cartes', async () => {

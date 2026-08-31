@@ -23,6 +23,8 @@
  */
 
 import { EndHost, type PingResult, type ARPEntry, type HostRouteEntry, type HostPolicyRule, getNUDState } from './EndHost';
+import { LacpAgent } from '@/network/lacp/LacpAgent';
+import { LinuxBond, renderProcNetBonding, slaveViewFrom } from './linux/net/LinuxBonding';
 import type { TcpWireOutcome } from '../tcp/types';
 import type { UserAccountHost, ShellIdentityHost, FileEditorHost } from '../equipment/HostCapabilities';
 import type { PathActor } from './linux/VfsPath';
@@ -2497,6 +2499,14 @@ export abstract class LinuxMachine extends EndHost
       greAgent: this.greAgentInstance,
       linkOps: {
         addDummy: (name: string) => this.addDummyInterface(name),
+      addBond: (name: string) => this.addBondInterface(name),
+        enslave: (bond: string, iface: string) => this.enslaveToBond(bond, iface),
+        release: (iface: string) => {
+          const b = this.bondOwning(iface);
+          return b ? this.releaseFromBond(b, iface) : '';
+        },
+        bondOption: (bond: string, key: string, value: string) =>
+          this.setBondOption(bond, key, value),
         addVeth: (name: string, peerName: string) => this.addVethPair(name, peerName),
         addVlan: (name: string, parent: string, vid: number) => this.addVlanSubInterface(name, parent, vid),
         deleteLink: (name: string) => this.deleteVirtualInterface(name),
@@ -2538,6 +2548,166 @@ export abstract class LinuxMachine extends EndHost
     this.addPort(port);
     this.virtualInterfaces.add(name);
     return '';
+  }
+
+  private readonly bonds = new Map<string, LinuxBond>();
+  private lacpAgentInstance: LacpAgent | null = null;
+
+  getBonds(): ReadonlyMap<string, LinuxBond> { return this.bonds; }
+
+  getLacpAgent(): LacpAgent {
+    if (!this.lacpAgentInstance) {
+      this.lacpAgentInstance = new LacpAgent(
+        {
+          id: this.id, name: this.name,
+          getHostname: () => this.getHostname(),
+          getPort: (n: string) => this.getPort(n),
+          getPorts: () => this.getPorts(),
+          sendOnLink: (request) => this.getLinkLayer().send(request),
+        },
+        () => this.getBus(),
+        this.getPorts()[0]?.getMAC().toString() ?? '00:00:00:00:00:00',
+      );
+      this.lacpAgentInstance.start();
+    }
+    return this.lacpAgentInstance;
+  }
+
+  private addBondInterface(name: string): string {
+    if (this.ports.has(name)) return 'RTNETLINK answers: File exists';
+    this.executor.kernelModules.load('bonding');
+    const port = new Port(name, 'ethernet', undefined, { carrierless: true });
+    port.setUp(false);
+    this.addPort(port);
+    this.virtualInterfaces.add(name);
+    this.bonds.set(name, new LinuxBond(name));
+    this.executor.logMgr.logKernel('bonding', `${name}: Setting up bond`);
+    this.executor.vfs.mkdirp("/proc/net/bonding", 0o755, 0, 0);
+    this.executor.vfs.registerGeneratedFile(`/proc/net/bonding/${name}`,
+      () => this.renderBond(name));
+    return '';
+  }
+
+  protected override receiveSlowProtocol(portName: string, frame: EthernetFrame): void {
+    if (this.bonds.size === 0) return;
+    this.getLacpAgent().handleFrame(portName, frame);
+    for (const nom of this.bonds.keys()) this.refreshBondCarrier(nom);
+  }
+
+  bondOwning(iface: string): string | null {
+    for (const [nom, b] of this.bonds) if (b.slaves.includes(iface)) return nom;
+    return null;
+  }
+
+  enslaveToBond(bondName: string, iface: string): string {
+    const bond = this.bonds.get(bondName);
+    if (!bond) return `Error: argument "${bondName}" is wrong: Not a valid bond`;
+    if (!this.ports.has(iface)) return `Cannot find device "${iface}"`;
+    if (bond.slaves.includes(iface)) {
+      return `Error: argument "${iface}" is wrong: Device already enslaved`;
+    }
+    const deja = this.bondOwning(iface);
+    if (deja) return `Error: argument "${iface}" is wrong: Device already enslaved`;
+    bond.addSlave(iface);
+    this.applyBondMembership(bondName);
+    const port = this.ports.get(iface)!;
+    port.onLinkChange(() => this.refreshBondCarrier(bondName));
+    this.executor.logMgr.logKernel('bonding', `${bondName}: (slave ${iface}): Enslaving as `
+      + `${bond.slaves.length === 1 ? 'an active' : 'a backup'} interface with `
+      + `${port.isOperationallyUp() ? 'an up' : 'a down'} link`);
+    return '';
+  }
+
+  releaseFromBond(bondName: string, iface: string): string {
+    const bond = this.bonds.get(bondName);
+    if (!bond || !bond.removeSlave(iface)) return '';
+    this.getLacpAgent().removePort(iface);
+    this.applyBondMembership(bondName);
+    this.executor.logMgr.logKernel('bonding', `${bondName}: (slave ${iface}): Releasing backup interface`);
+    return '';
+  }
+
+  setBondOption(bondName: string, key: string, value: string): boolean {
+    const bond = this.bonds.get(bondName);
+    if (!bond || !bond.setOption(key, value)) return false;
+    this.applyBondMembership(bondName);
+    return true;
+  }
+
+  private bondGroupId(bondName: string): number {
+    const m = /(\d+)$/.exec(bondName);
+    return m ? Number(m[1]) + 1 : 1;
+  }
+
+  private applyBondMembership(bondName: string): void {
+    const bond = this.bonds.get(bondName);
+    if (!bond) return;
+    const agent = this.getLacpAgent();
+    agent.setFastRate(bond.options.lacpRate === 'fast');
+    agent.setSystemPriority(bond.options.systemPriority);
+    if (bond.options.mode !== '802.3ad') {
+      for (const s of bond.slaves) agent.removePort(s);
+      this.refreshBondCarrier(bondName);
+      return;
+    }
+    const mode = bond.options.lacpActive ? 'active' : 'passive';
+    for (const s of bond.slaves) {
+      agent.addPortToGroup(s, this.bondGroupId(bondName), mode);
+    }
+    this.refreshBondCarrier(bondName);
+  }
+
+  private refreshBondCarrier(bondName: string): void {
+    const bond = this.bonds.get(bondName);
+    const port = this.ports.get(bondName);
+    if (!bond || !port) return;
+    const vivants = bond.slaves.filter(s => this.ports.get(s)?.isOperationallyUp());
+    port.setUp(vivants.length > bond.options.minLinks
+      || (bond.options.minLinks === 0 && vivants.length > 0));
+  }
+
+  private renderBond(bondName: string): string {
+    const bond = this.bonds.get(bondName);
+    if (!bond) return '';
+    const agent = this.getLacpAgent();
+    const groupId = this.bondGroupId(bondName);
+    const membres = bond.slaves.map((nom) => {
+      const port = this.ports.get(nom);
+      const info = agent.getPortInfo(nom);
+      const bundled = info?.bundled === true;
+      return {
+        ...slaveViewFrom(port!, port!.getMAC().toString()),
+        aggregatorId: bond.options.mode === '802.3ad' && bundled ? groupId : null,
+        actorPortNumber: this.getPorts().findIndex(p => p.getName() === nom) + 1,
+        actorPortKey: groupId,
+        actorPortPriority: info?.portPriority ?? 255,
+        actorPortState: info?.bundled ? 61 : 5,
+        partnerSystemPriority: info?.partner?.systemPriority ?? 65535,
+        partnerSystem: info?.partner?.systemId ?? '00:00:00:00:00:00',
+        partnerKey: info?.partner?.key ?? 0,
+        partnerPortPriority: info?.partner?.portPriority ?? 255,
+        partnerPortNumber: info?.partner?.portNumber ?? 0,
+        partnerPortState: info?.partner?.state ?? 0,
+      };
+    });
+    const groupes = bond.slaves.filter(s => agent.getPortInfo(s)?.bundled);
+    const premier = groupes.length > 0 ? agent.getPortInfo(groupes[0]) : null;
+    return renderProcNetBonding({
+      name: bondName,
+      options: bond.options,
+      carrier: this.ports.get(bondName)?.isOperationallyUp() ?? false,
+      systemMac: agent.getConfig().systemId,
+      aggregator: bond.options.mode === '802.3ad' && premier
+        ? {
+          aggregatorId: groupId,
+          ports: groupes.length,
+          actorKey: groupId,
+          partnerKey: premier.partner?.key ?? 0,
+          partnerSystem: premier.partner?.systemId ?? '00:00:00:00:00:00',
+        }
+        : null,
+      slaves: membres,
+    }, this.executor.identity.kernel.release);
   }
 
   private addVethPair(name: string, peerName: string): string {

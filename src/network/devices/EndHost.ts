@@ -1748,6 +1748,9 @@ export abstract class EndHost extends Equipment {
 
   // ─── Frame Handling (L2 → L3 dispatch) ────────────────────────
 
+  protected receiveSlowProtocol(_portName: string, _frame: EthernetFrame): void {
+  }
+
   protected handleFrame(portName: string, frame: EthernetFrame): void {
     const port = this.ports.get(portName);
     if (!port) return;
@@ -1774,6 +1777,11 @@ export abstract class EndHost extends Equipment {
     if (frame.etherType === ETHERTYPE_LLDP
       && frame.dstMAC.toString().toLowerCase() === LLDP_MULTICAST_MAC.toLowerCase()) {
       this.getLldpAgent().handleFrame(portName, frame);
+      return;
+    }
+
+    if (frame.etherType === 0x8809) {
+      this.receiveSlowProtocol(portName, frame);
       return;
     }
 
