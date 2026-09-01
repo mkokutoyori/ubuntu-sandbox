@@ -119,6 +119,7 @@ import {
   buildICMPError, mayGenerateICMPError, ICMP_UNREACH_PORT,
   ICMP_FRAG_REASSEMBLY_TIME_EXCEEDED, type ICMPErrorType,
 } from '../core/IcmpErrors';
+import { FhrpRepository } from './inspection/config/FhrpRepository';
 import { IpSlaEngine } from '../ipsla/IpSlaEngine';
 import { TrackService } from '../ipsla/TrackService';
 import type { IpSlaEgress } from '../ipsla/types';
@@ -742,6 +743,18 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
   );
 
   private readonly nqaService: NqaService = new NqaService(this.ipSlaEngine);
+
+  /**
+   * HSRP, VRRP et GLBP vivent sur l'EQUIPEMENT, pour la raison ecrite
+   * plus haut a propos d'IP SLA : `createVtyShell()` fabrique un shell
+   * NEUF par session, donc un `standby` pose en SSH etait invisible
+   * depuis la console, et la configuration rendue — qui decrit
+   * l'equipement — ne pouvait pas le voir du tout, de sorte que toute la
+   * redondance de premier saut disparaissait a l'import d'une topologie.
+   */
+  private readonly fhrpRepository = new FhrpRepository();
+
+  getFhrpRepository(): FhrpRepository { return this.fhrpRepository; }
 
   getIpSlaEngine(): IpSlaEngine { return this.ipSlaEngine; }
   getTrackService(): TrackService { return this.trackService; }

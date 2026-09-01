@@ -30,6 +30,7 @@ export function buildCommitDevice(
         if (patch.up !== undefined) fw.setInterfaceUp(name, patch.up);
         if (patch.allowAccess) fw.setAllowedAccess(name, patch.allowAccess);
         fw.setInterfaceMtu(name, patch.mtu);
+        if (patch.lldp) fw.setInterfaceLldp(name, patch.lldp.transmission, patch.lldp.reception);
         if (patch.aggregate) {
           fw.declareAggregate(name, {
             members: [...patch.aggregate.members],
@@ -166,6 +167,8 @@ export function buildCommitDevice(
         }
         fw.getLoginBanners().enable('pre', settings.preLoginBanner === true);
         fw.getLoginBanners().enable('post', settings.postLoginBanner === true);
+        fw.setGlobalLldp(
+          settings.lldpTransmission === true, settings.lldpReception === true);
         if (settings.conserveThresholds !== undefined) {
           fw.getSystemLoad().setThresholds(settings.conserveThresholds);
         }

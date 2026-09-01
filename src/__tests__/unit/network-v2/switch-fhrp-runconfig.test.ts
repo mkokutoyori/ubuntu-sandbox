@@ -60,7 +60,6 @@ describe('Cisco show running-config rend le bloc FHRP sur SVI', () => {
 
     expect(out).toMatch(/ vrrp 1 ip 10\.0\.10\.1/);
     expect(out).toMatch(/ vrrp 1 priority 200/);
-    expect(out).toMatch(/ vrrp 1 preempt/);
     expect(out).toMatch(/ vrrp 1 timers advertise 5/);
     expect(out).toMatch(/ vrrp 1 track GigabitEthernet0\/2 decrement 80/);
 
@@ -75,6 +74,15 @@ describe('Cisco show running-config rend le bloc FHRP sur SVI', () => {
     expect(out).toMatch(/ glbp 7 priority 120/);
     expect(out).toMatch(/ glbp 7 weighting 150/);
     expect(out).toMatch(/ glbp 7 load-balancing weighted/);
+  });
+
+  it('VRRP preempte par defaut, donc seul `no vrrp 1 preempt` est rendu', async () => {
+    const { sw } = await build();
+    expect(await sw.executeCommand('show running-config')).not.toMatch(/ vrrp 1 preempt/);
+
+    for (const cmd of ['configure terminal', 'interface Vlan10',
+      'no vrrp 1 preempt', 'end']) await sw.executeCommand(cmd);
+    expect(await sw.executeCommand('show running-config')).toMatch(/ no vrrp 1 preempt/);
   });
 
   it('rejouer le running-config sur un switch vierge restaure l\'état FHRP', async () => {

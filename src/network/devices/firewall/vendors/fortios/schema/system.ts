@@ -1,6 +1,7 @@
 import {
   address, addressMask, choice, count, enable, reference, refList, text, word,
   type FortiObjectView, type FortiTableSpec,
+  type LldpSetting,
 } from './types';
 import {
   MANAGEMENT_SERVICES, type ManagementService,
@@ -94,6 +95,10 @@ export const SYSTEM_GLOBAL: FortiTableSpec = {
     count('admin-lockout-duration', 'Lockout duration in seconds.', 1, 2147483647, 60),
     enable('admin-https-redirect',
       'Redirect HTTP administrative access to HTTPS.', true),
+    enable('lldp-transmission',
+      'Enable/disable Link Layer Discovery Protocol (LLDP) transmission.'),
+    enable('lldp-reception',
+      'Enable/disable Link Layer Discovery Protocol (LLDP) reception.'),
     reference('admin-server-cert',
       'Server certificate that the HTTPS administrative access presents.',
       ['vpn certificate local'], 'self-sign'),
@@ -185,6 +190,8 @@ export const SYSTEM_GLOBAL: FortiTableSpec = {
       adminServerCertificate: object.effective('admin-server-cert')[0] ?? 'self-sign',
       preLoginBanner: object.effective('pre-login-banner')[0] === 'enable',
       postLoginBanner: object.effective('post-login-banner')[0] === 'enable',
+      lldpTransmission: object.effective('lldp-transmission')[0] === 'enable',
+      lldpReception: object.effective('lldp-reception')[0] === 'enable',
       conserveThresholds: {
         extremePercent: number('memory-use-threshold-extreme',
           DEFAULT_CONSERVE_THRESHOLDS.extremePercent),
@@ -517,6 +524,16 @@ export const SYSTEM_INTERFACE: FortiTableSpec = {
     ], 'none'),
     enable('mtu-override', 'Enable to set a custom MTU for this interface.'),
     count('mtu', 'MTU value for this interface.', 68, 9216, 1500),
+    choice('lldp-transmission', 'Enable/disable Link Layer Discovery Protocol (LLDP) transmission.', [
+      { keyword: 'enable', description: 'Transmit LLDP on this interface.' },
+      { keyword: 'disable', description: 'Do not transmit LLDP on this interface.' },
+      { keyword: 'vdom', description: 'Use the global LLDP transmission setting.' },
+    ], 'vdom'),
+    choice('lldp-reception', 'Enable/disable Link Layer Discovery Protocol (LLDP) reception.', [
+      { keyword: 'enable', description: 'Receive LLDP on this interface.' },
+      { keyword: 'disable', description: 'Do not receive LLDP on this interface.' },
+      { keyword: 'vdom', description: 'Use the global LLDP reception setting.' },
+    ], 'vdom'),
   ],
   children: [SYSTEM_INTERFACE_IPV6],
   onCommit(object, context) {
@@ -534,6 +551,10 @@ export const SYSTEM_INTERFACE: FortiTableSpec = {
       mtu: object.effective('mtu-override')[0] === 'enable'
         ? Number.parseInt(object.effective('mtu')[0] ?? '', 10) || undefined
         : undefined,
+      lldp: {
+        transmission: (object.effective('lldp-transmission')[0] ?? 'vdom') as LldpSetting,
+        reception: (object.effective('lldp-reception')[0] ?? 'vdom') as LldpSetting,
+      },
       aggregate: interfaceType(object) === 'aggregate' ? {
         members: object.effective('member'),
         lacpMode: (object.effective('lacp-mode')[0] ?? 'active') as 'active',

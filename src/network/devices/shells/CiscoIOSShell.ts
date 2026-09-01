@@ -42,7 +42,7 @@ import { getSecurityConfig } from './cisco/CiscoSecurityCommands';
 import type { PromptMap } from './PromptBuilder';
 import { CISCO_IOS_PROMPTS } from './PromptBuilder';
 import { CLIStateMachine, CISCO_IOS_MODES } from './CLIStateMachine';
-import { resolveInterfaceName } from './cisco/CiscoConfigCommands';
+import { resolveInterfaceName, cmdIpRoute, cmdNoIpRoute } from './cisco/CiscoConfigCommands';
 import {
   buildHsrpInterfaceCommands, registerHsrpShowCommands, hsrpGroupRange,
 } from './cisco/CiscoHsrpCommands';
@@ -119,7 +119,7 @@ import {
 import { RoutingConfigRepository } from '../inspection/config/RoutingConfigRepository';
 import {
   type CiscoACLShellContext,
-  buildACLConfigCommands, buildACLInterfaceCommands,
+  buildACLConfigCommands,
   buildNamedStdACLCommands, buildNamedExtACLCommands,
   buildIPv6ACLGlobalCommands, buildIPv6ACLModeCommands,
   registerACLShowCommands, registerACLClearCommands, aclShowSpecs,
@@ -1076,7 +1076,7 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
   // ─── Router-specific state ───────────────────────────────────────
   private selectedInterface: string | null = null;
   /** Real config-driven HSRP/VRRP/GLBP state (router-only; L2 switches none). */
-  private readonly fhrp = new FhrpRepository();
+  private get fhrp(): FhrpRepository { return this.d().getFhrpRepository(); }
   private readonly keyChains = new KeyChainRepository();
   getKeyChains(): KeyChainRepository { return this.keyChains; }
   private readonly policy = new PolicyRepository();
@@ -1543,8 +1543,8 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
   // base a appris qu'`exit` depuis le mode privilegie ferme la session.
   // Le switch fermait, le routeur ne faisait rien.
 
-  protected override sessionParamRanges(): SessionParamRanges | null {
-    return hsrpGroupRange(this, this.fhrp);
+  protected override sessionParamRanges(device?: Router): SessionParamRanges | null {
+    return hsrpGroupRange(this, () => (device ?? this.d()).getFhrpRepository());
   }
 
   protected getActiveTrie(): CommandTrie {
@@ -1718,8 +1718,8 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
     // ── Config mode ──
     buildConfigCommands(this.configTrie, this);
     buildConfigIfCommands(this.configIfTrie, this);
-    buildHsrpInterfaceCommands(this.configIfTrie, this, this.fhrp);
-    buildVrrpGlbpInterfaceCommands(this.configIfTrie, this, this.fhrp);
+    buildHsrpInterfaceCommands(this.configIfTrie, this, () => this.fhrp);
+    buildVrrpGlbpInterfaceCommands(this.configIfTrie, this, () => this.fhrp);
     buildBfdInterfaceCommands(this.configIfTrie, {
       selectedPorts: () => this.selectedPortsForConfigIf(),
       r: () => this.d(),
@@ -1746,7 +1746,6 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
       this.configIpSlaHttpRawTrie, this);
     registerIpSlaTypeSubModes(this.configIpSlaTypeTries, this.configIpSlaHttpRawTrie, this);
     buildACLConfigCommands(this.configTrie, this);
-    buildACLInterfaceCommands(this.configIfTrie, this);
     // NAT
     buildNATConfigCommands(this.configTrie, this);
     buildNATInterfaceCommands(this.configIfTrie, this);
@@ -1853,8 +1852,8 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
 
   private registerShowCommands(trie: CommandTrie): void {
     registerRoutingProtoShow(trie, this, this.routingCfg);
-    registerHsrpShowCommands(trie, this, this.fhrp);
-    registerVrrpGlbpShowCommands(trie, this, this.fhrp);
+    registerHsrpShowCommands(trie, this, () => this.fhrp);
+    registerVrrpGlbpShowCommands(trie, this, () => this.fhrp);
     registerBfdShowCommands(trie, { r: () => this.d() });
     registerIgmpShowCommands(trie, this.multicastShowContext());
     registerPimShowCommands(trie, this.multicastShowContext());
@@ -1951,6 +1950,29 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
 
   protected override tablesDeContinuations(): readonly ContinuationTable[] {
     return [SOCLE, ROUTEUR_SEUL];
+  }
+
+  protected override poserRelaisDhcp(iface: string, cible: string): string {
+    this.d()._getDHCPServerInternal().addHelperAddress(iface, cible);
+    return '';
+  }
+
+  protected override retirerRelaisDhcp(iface: string, cible: string): string {
+    const dhcp = this.d()._getDHCPServerInternal() as unknown as {
+      removeHelperAddress?: (iface: string, ip: string) => void;
+    };
+    dhcp.removeHelperAddress?.(iface, cible);
+    return '';
+  }
+
+  protected override moteurDeListes() { return this.d()._getACLEngineInternal(); }
+
+  protected override poserRouteStatique(reste: string): string {
+    return cmdIpRoute(this.d(), reste.trim().split(/\s+/).filter(Boolean));
+  }
+
+  protected override retirerRouteStatique(reste: string): string {
+    return cmdNoIpRoute(this.d(), reste.trim().split(/\s+/).filter(Boolean));
   }
 
   protected override renduInterfaces(cible: string): string {

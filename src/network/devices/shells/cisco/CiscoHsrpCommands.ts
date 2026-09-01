@@ -12,6 +12,11 @@ import { FhrpRepository, hsrpVirtualMac, type HsrpGroup }
 import { hsrpMaxGroup, HSRP_V1_MAX_GROUP } from '../../../hsrp/types';
 import type { SessionParamRanges } from '../EquipmentParamResolver';
 import { getHsrpAgent } from '../../../equipment/RouterServiceCapabilities';
+import { IPAddress } from '../../../core/types';
+import { CISCO_ERRORS } from '../cli-utils';
+import {
+  HSRP_DEFAULT_PRIORITY, HSRP_DEFAULT_HELLO_SEC, HSRP_DEFAULT_HOLD_SEC,
+} from '../../../fhrp/runningConfig';
 import { iosShortInterfaceName } from '@/network/devices/inspection/InterfaceStatusView';
 
 interface HsrpCtx {
@@ -119,6 +124,9 @@ function applyStandby(repo: FhrpRepository, iface: string, args: string[], route
   const rest = args.slice(2);
   switch (kw) {
     case 'ip':
+      if (rest[0] !== undefined && !IPAddress.isValid(rest[0])) {
+        return CISCO_ERRORS.INVALID_INPUT;
+      }
       if (rest[1] === 'secondary') g.secondary.push(rest[0]);
       else {
         g.vip = rest[0] ?? null;
@@ -181,42 +189,71 @@ function applyStandby(repo: FhrpRepository, iface: string, args: string[], route
 }
 
 export function hsrpGroupRange(
-  ctx: HsrpCtx, repo: FhrpRepository,
+  ctx: HsrpCtx, lireRepo: () => FhrpRepository,
 ): SessionParamRanges {
   return {
     rangeFor: (context) => {
       if (context.path[context.path.length - 1]?.toLowerCase() !== 'standby') return null;
       const iface = ctx.getSelectedInterface();
       if (!iface) return null;
-      return [0, hsrpMaxGroup(repo.interfaceVersion(iface))];
+      return [0, hsrpMaxGroup(lireRepo().interfaceVersion(iface))];
     },
   };
 }
 
 export function buildHsrpInterfaceCommands(
-  trie: CommandTrie, ctx: HsrpCtx, repo: FhrpRepository,
+  trie: CommandTrie, ctx: HsrpCtx, lireRepo: () => FhrpRepository,
 ): void {
   trie.registerGreedy('standby', 'HSRP configuration', (args) => {
     const iface = ctx.getSelectedInterface();
     if (!iface) return '% No interface selected';
     if (args.length === 0) return '% Incomplete command.';
-    return applyStandby(repo, iface, args, ctx.r());
+    return applyStandby(lireRepo(), iface, args, ctx.r());
   });
   trie.registerGreedy('no standby', 'Remove HSRP configuration', (args) => {
     const iface = ctx.getSelectedInterface();
     if (!iface) return '% No interface selected';
     const group = parseInt(args[0], 10);
-    if (!Number.isNaN(group) && args.length === 1) repo.remove(iface, group);
-    return '';
+    if (Number.isNaN(group)) return '';
+    if (args.length === 1) { lireRepo().remove(iface, group); return ''; }
+    const g = lireRepo().ensure(iface, group);
+    const agent = getHsrpAgent(ctx.r());
+    switch (args[1]) {
+      case 'preempt':
+        g.preempt = false; g.preemptDelay = undefined;
+        agent?.setPreempt(iface, group, false);
+        return '';
+      case 'priority':
+        g.priority = HSRP_DEFAULT_PRIORITY;
+        agent?.setPriority(iface, group, HSRP_DEFAULT_PRIORITY);
+        return '';
+      case 'ip':
+        g.vip = null; g.secondary = [];
+        return '';
+      case 'timers':
+        g.helloSec = HSRP_DEFAULT_HELLO_SEC; g.holdSec = HSRP_DEFAULT_HOLD_SEC;
+        return '';
+      case 'authentication':
+        g.authText = undefined; g.authMd5 = undefined;
+        return '';
+      case 'name':
+        g.name = undefined;
+        return '';
+      case 'track':
+        g.trackDecr = [];
+        return '';
+      default:
+        return CISCO_ERRORS.INVALID_INPUT;
+    }
   });
 }
 
 export function registerHsrpShowCommands(
-  trie: CommandTrie, ctx: HsrpCtx, repo: FhrpRepository,
+  trie: CommandTrie, ctx: HsrpCtx, lireRepo: () => FhrpRepository,
 ): void {
   trie.registerGreedy('show standby', 'Display HSRP state', (args) => {
     const router = ctx.r();
-    const all = repo.all();
+    const all = lireRepo().all();
     if (args.includes('brief')) {
       return renderBrief(router, all);
     }

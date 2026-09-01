@@ -3,9 +3,9 @@ import { getDefaultScheduler, type IScheduler } from '@/events/Scheduler';
 import { ReactiveAgentBase } from '../core/ReactiveAgentBase';
 import {
   type LldpCapability, type LldpConfig, type LldpFrame, type LldpNeighborEntry,
-  type LldpPortConfig,
+  type LldpOptionalTlv, type LldpPortConfig,
   createDefaultLldpConfig, defaultPortConfig, neighborKey,
-  ETHERTYPE_LLDP, LLDP_MULTICAST_MAC,
+  LLDP_OPTIONAL_TLVS, ETHERTYPE_LLDP, LLDP_MULTICAST_MAC,
 } from './types';
 import { MACAddress, type DeviceType, type EthernetFrame } from '../core/types';
 import type { LinkSendRequest } from '../layers/link/LinkLayer';
@@ -20,14 +20,33 @@ export interface LldpHost {
   getPort(name: string): import('../hardware/Port').Port | undefined;
   getPorts(): import('../hardware/Port').Port[];
   sendOnLink(request: LinkSendRequest): boolean;
+  displayPortName?(portName: string): string;
 }
 
 export type LldpNeighbor = Readonly<LldpNeighborEntry>;
+
+export interface LldpTraffic {
+  framesOut: number;
+  framesIn: number;
+  entriesAged: number;
+  framesInError: number;
+  framesDiscarded: number;
+  tlvsDiscarded: number;
+  tlvsUnrecognized: number;
+}
+
+function emptyTraffic(): LldpTraffic {
+  return {
+    framesOut: 0, framesIn: 0, entriesAged: 0, framesInError: 0,
+    framesDiscarded: 0, tlvsDiscarded: 0, tlvsUnrecognized: 0,
+  };
+}
 
 export class LldpAgent extends ReactiveAgentBase {
   private config: LldpConfig = createDefaultLldpConfig();
   private readonly neighbors = new Map<string, LldpNeighborEntry>();
   private readonly advertising = new Set<string>();
+  private readonly trafficByPort = new Map<string, LldpTraffic>();
 
   constructor(
     private readonly host: LldpHost,
@@ -38,6 +57,36 @@ export class LldpAgent extends ReactiveAgentBase {
   }
 
   getConfig(): Readonly<LldpConfig> { return this.config; }
+
+  getTraffic(portName?: string): Readonly<LldpTraffic> {
+    if (portName !== undefined) return this.portTraffic(portName);
+    const total = emptyTraffic();
+    for (const t of this.trafficByPort.values()) {
+      for (const k of Object.keys(total) as (keyof LldpTraffic)[]) total[k] += t[k];
+    }
+    return total;
+  }
+
+  resetTraffic(portName?: string): void {
+    if (portName === undefined) this.trafficByPort.clear();
+    else this.trafficByPort.delete(portName);
+  }
+
+  private portTraffic(portName: string): LldpTraffic {
+    let t = this.trafficByPort.get(portName);
+    if (!t) { t = emptyTraffic(); this.trafficByPort.set(portName, t); }
+    return t;
+  }
+
+  setPortTlvSelected(portName: string, tlv: LldpOptionalTlv, on: boolean): void {
+    const cfg = this.getOrCreatePort(portName);
+    if (on) cfg.suppressedTlvs.delete(tlv); else cfg.suppressedTlvs.add(tlv);
+    if (this.config.enabled) this.advertise(portName, 'config-change');
+  }
+
+  suppressedTlvs(portName: string): ReadonlySet<LldpOptionalTlv> {
+    return this.config.ports.get(portName)?.suppressedTlvs ?? new Set();
+  }
 
   asRunningConfigLinesVrp(): string[] {
     const lines: string[] = [];
@@ -73,6 +122,11 @@ export class LldpAgent extends ReactiveAgentBase {
     const port = this.config.ports.get(ifName);
     if (port && port.transmit === false) lines.push(' no lldp transmit');
     if (port && port.receive === false) lines.push(' no lldp receive');
+    if (port) {
+      for (const tlv of LLDP_OPTIONAL_TLVS) {
+        if (port.suppressedTlvs.has(tlv)) lines.push(` no lldp tlv-select ${tlv}`);
+      }
+    }
     return lines;
   }
 
@@ -131,8 +185,45 @@ export class LldpAgent extends ReactiveAgentBase {
     return this.config.enabled && (this.config.ports.get(portName)?.receive ?? true);
   }
 
+  localIdentity(portName = this.host.getPorts()[0]?.getName() ?? ''): LldpFrame {
+    const port = this.host.getPort(portName);
+    const label = this.host.displayPortName?.(portName) ?? portName;
+    return {
+      type: 'lldp',
+      chassisId: port?.getMAC().toString().toLowerCase() ?? '',
+      chassisIdSubtype: 'macAddress',
+      portId: label,
+      portIdSubtype: 'interfaceName',
+      ttlSec: this.config.timerSec * this.config.holdtimeMultiplier,
+      portDescription: label,
+      systemName: this.host.getHostname(),
+      systemDescription: this.systemDescription(),
+      capabilities: [this.deviceCapability()],
+      managementAddresses: this.collectAddresses(),
+    };
+  }
+
+  buildAdvertisement(portName: string): LldpFrame {
+    const off = this.suppressedTlvs(portName);
+    const base = this.localIdentity(portName);
+    return {
+      ...base,
+      portDescription: off.has('port-description') ? undefined : base.portDescription,
+      systemName: off.has('system-name') ? undefined : base.systemName,
+      systemDescription: off.has('system-description') ? undefined : base.systemDescription,
+      capabilities: off.has('system-capabilities') ? undefined : base.capabilities,
+      managementAddresses: off.has('management-address')
+        ? undefined : base.managementAddresses,
+    };
+  }
+
   getNeighbors(): LldpNeighbor[] {
     return Array.from(this.neighbors.values());
+  }
+
+  ttlRemainingSec(n: LldpNeighbor): number {
+    const reste = (n.expiresAtMs - this.getScheduler().now()) / 1000;
+    return Math.max(0, Math.min(n.ttlSec, Math.ceil(reste)));
   }
 
   getNeighborsOnPort(portName: string): LldpNeighbor[] {
@@ -155,6 +246,9 @@ export class LldpAgent extends ReactiveAgentBase {
     const out: string[] = [];
     if (!cfg.transmit) out.push('no lldp transmit');
     if (!cfg.receive) out.push('no lldp receive');
+    for (const tlv of LLDP_OPTIONAL_TLVS) {
+      if (cfg.suppressedTlvs.has(tlv)) out.push(`no lldp tlv-select ${tlv}`);
+    }
     return out;
   }
 
@@ -163,6 +257,13 @@ export class LldpAgent extends ReactiveAgentBase {
     if (!this.isPortReceiveEnabled(portName)) return;
     const payload = frame.payload as LldpFrame | undefined;
     if (!payload || payload.type !== 'lldp') return;
+    const stats = this.portTraffic(portName);
+    stats.framesIn += 1;
+    if (!payload.chassisId || !payload.portId) {
+      stats.framesInError += 1;
+      stats.framesDiscarded += 1;
+      return;
+    }
     if (payload.ttlSec === 0) {
       this.expireByShutdownTlv(portName, payload);
       return;
@@ -174,13 +275,16 @@ export class LldpAgent extends ReactiveAgentBase {
     const entry: LldpNeighborEntry = {
       localPort: portName,
       chassisId: payload.chassisId,
+      chassisIdSubtype: payload.chassisIdSubtype ?? 'macAddress',
       portId: payload.portId,
+      portIdSubtype: payload.portIdSubtype ?? 'interfaceName',
       systemName: payload.systemName,
       systemDescription: payload.systemDescription,
       portDescription: payload.portDescription,
-      remoteType: this.capabilityToType(payload.capabilities[0]),
-      remoteCapabilities: [...payload.capabilities],
-      managementAddresses: [...payload.managementAddresses],
+      remoteType: this.capabilityToType(payload.capabilities?.[0]),
+      remoteCapabilities: payload.capabilities ? [...payload.capabilities] : undefined,
+      managementAddresses: payload.managementAddresses
+        ? [...payload.managementAddresses] : undefined,
       learnedAtMs: now,
       ttlSec: payload.ttlSec,
       expiresAtMs,
@@ -200,7 +304,7 @@ export class LldpAgent extends ReactiveAgentBase {
         payload: {
           deviceId: this.host.id, hostname: this.host.getHostname(),
           localPort: portName, remoteSystem: payload.systemName, remotePort: payload.portId,
-          remoteCapabilities: [...payload.capabilities], ttlSec: payload.ttlSec,
+          remoteCapabilities: [...(payload.capabilities ?? [])], ttlSec: payload.ttlSec,
         },
       });
       Logger.info(this.host.id, 'lldp:neighbor-up',
@@ -232,18 +336,7 @@ export class LldpAgent extends ReactiveAgentBase {
     if (!this.isPortTransmitEnabled(portName)) return;
     const port = this.host.getPort(portName);
     if (!port || !port.getIsUp() || !port.isConnected()) return;
-    const ttl = this.config.timerSec * this.config.holdtimeMultiplier;
-    const payload: LldpFrame = {
-      type: 'lldp',
-      chassisId: port.getMAC().toString().toLowerCase(),
-      portId: portName,
-      ttlSec: ttl,
-      portDescription: portName,
-      systemName: this.host.getHostname(),
-      systemDescription: this.systemDescription(),
-      capabilities: [this.deviceCapability()],
-      managementAddresses: this.collectAddresses(),
-    };
+    const payload = this.buildAdvertisement(portName);
     if (this.advertising.has(portName)) return;
     this.advertising.add(portName);
     try {
@@ -254,6 +347,7 @@ export class LldpAgent extends ReactiveAgentBase {
         payload,
       });
     } finally { this.advertising.delete(portName); }
+    this.portTraffic(portName).framesOut += 1;
     this.getBus().publish({
       topic: 'lldp.frame.sent',
       payload: {
@@ -290,6 +384,7 @@ export class LldpAgent extends ReactiveAgentBase {
     for (const [key, n] of this.neighbors) {
       if (n.expiresAtMs <= now) {
         this.neighbors.delete(key);
+        this.portTraffic(n.localPort).entriesAged += 1;
         this.publishExpiry(n, 'ttl');
       }
     }
@@ -353,7 +448,7 @@ export class LldpAgent extends ReactiveAgentBase {
 
   private deviceCapability(): LldpCapability {
     const t = this.host.getType();
-    if (t.startsWith('router')) return 'Router';
+    if (t.startsWith('router') || t.startsWith('firewall')) return 'Router';
     if (t.startsWith('switch')) return 'Bridge';
     return 'Station';
   }
@@ -371,6 +466,7 @@ export class LldpAgent extends ReactiveAgentBase {
       case 'switch-cisco':  return `Cisco IOS Software, C2960 Software, Version ${C2960_SOFTWARE.iosVersion}`;
       case 'router-huawei': return 'Huawei VRP Software, Version 5.160 (AR2200 V200R003C00)';
       case 'switch-huawei': return 'Huawei VRP Software, Version 5.170 (S5720 V200R010C00)';
+      case 'firewall-fortinet': return 'FortiGate';
       default: return t;
     }
   }

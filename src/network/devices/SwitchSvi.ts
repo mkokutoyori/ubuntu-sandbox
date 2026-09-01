@@ -59,6 +59,21 @@ export interface SviHost {
    * with the Vlanif name (e.g. `Vlanif10`) and the requester's IP.
    */
   fhrpVipArpOwner?(vlanIf: string, targetIp: string, requesterIp: string): string | null;
+  /**
+   * `no ip unreachables` sur la SVI d'entree. Le meme reglage que le
+   * routeur applique par `isIcmpUnreachablesEnabled`, lu par la meme
+   * commande et le meme magasin : sans ce port, la commande serait
+   * acceptee, rendue par `show ip interface`, et n'empecherait aucun
+   * message — un critere range et jamais evalue.
+   */
+  icmpUnreachablesEnabled?(vlan: number): boolean;
+  /**
+   * `ip access-group <liste> in|out` sur la Vlanif. Le pendant de
+   * `Router.deniedByInboundACL` et de son controle en sortie, lisant le
+   * MEME moteur que la PACL d'un port physique — un Catalyst n'a qu'un
+   * jeu de listes, quel que soit l'endroit ou on les accroche.
+   */
+  aclDeniesRouted?(vlan: number, direction: 'in' | 'out', pkt: IPv4Packet): boolean;
   /** RFC 3046 Option 82 insertion on relay, shared with the box's DHCP server config. */
   isDhcpRelayInfoEnabled?(): boolean;
   /** Un datagramme UDP adresse a CETTE machine, remis au port ouvert par son plan de controle. */
@@ -346,6 +361,16 @@ export class SwitchSvi {
 
       if (!forUs) return false;
 
+      /*
+       * La liste ENTRANTE est consultee avant la traduction, comme sur
+       * le routeur : une liste ecrite sur l'adresse publique doit voir
+       * l'adresse que le client a composee, pas celle d'apres NAT.
+       */
+      if (this.host.aclDeniesRouted?.(ingressVlan, 'in', ip) === true) {
+        this.sendIcmpError(ip, 'destination-unreachable', 13, ingressVlan);
+        return true;
+      }
+
       const originalPkt = ip;
       const natIn = this.host.natTranslateInbound?.(ip, `Vlanif${ingressVlan}`) ?? null;
       const workingIp = natIn ?? ip;
@@ -374,7 +399,7 @@ export class SwitchSvi {
               workingIp.sourceIP, udp.destinationPort, udp.sourcePort, udp.payload,
             ) ?? false;
             if (!claimed) {
-              this.sendIcmpError(workingIp, 'destination-unreachable', ICMP_UNREACH_PORT);
+              this.sendIcmpError(workingIp, 'destination-unreachable', ICMP_UNREACH_PORT, ingressVlan);
             }
           }
         }
@@ -516,13 +541,13 @@ export class SwitchSvi {
     const route = this.lookupRoute(ip.destinationIP);
     if (!route) {
       const ingressSvi = this.svis.get(ingressVlan);
-      if (ingressSvi?.ip) this.sendIcmpError(ip, 'destination-unreachable', 0);
+      if (ingressSvi?.ip) this.sendIcmpError(ip, 'destination-unreachable', 0, ingressVlan);
       return;
     }
     const nextHopMac = this.resolveArpFresh(route.egress.vlan, route.egress.ip!, route.nextHop);
     if (!nextHopMac) {
       const ingressSvi = this.svis.get(ingressVlan);
-      if (ingressSvi?.ip) this.sendIcmpError(ip, 'destination-unreachable', 1);
+      if (ingressSvi?.ip) this.sendIcmpError(ip, 'destination-unreachable', 1, ingressVlan);
       return;
     }
     let fwd: IPv4Packet = decision.packet;
@@ -535,6 +560,16 @@ export class SwitchSvi {
       const natOut = this.host.natTranslateOutbound(fwd, outIface, inIface,
         isHairpin ? { isHairpin: true, aclMatchPkt: originalPkt } : undefined);
       if (natOut) fwd = natOut;
+    }
+
+    /*
+     * La liste SORTANTE est consultee apres la traduction, comme sur le
+     * routeur : elle voit l'adresse sous laquelle le paquet paraitra
+     * vraiment sur le fil.
+     */
+    if (this.host.aclDeniesRouted?.(route.egress.vlan, 'out', fwd) === true) {
+      this.sendIcmpError(ip, 'destination-unreachable', 13, ingressVlan);
+      return;
     }
 
     this.host.egressOnVlan(route.egress.vlan, {
@@ -552,8 +587,10 @@ export class SwitchSvi {
   }
 
   private sendIcmpError(
-    orig: IPv4Packet, icmpType: ICMPErrorType, code: number,
+    orig: IPv4Packet, icmpType: ICMPErrorType, code: number, ingressVlan?: number,
   ): void {
+    if (icmpType === 'destination-unreachable' && ingressVlan !== undefined
+      && this.host.icmpUnreachablesEnabled?.(ingressVlan) === false) return;
     if (!mayGenerateICMPError(orig)) return;
     if (isDirectedBroadcast(orig.destinationIP, this.connectedPrefixes())) return;
     const replyRoute = this.lookupRoute(orig.sourceIP);

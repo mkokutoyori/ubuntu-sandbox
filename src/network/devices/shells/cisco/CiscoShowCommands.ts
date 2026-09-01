@@ -19,6 +19,7 @@ import { getPrivilegeRules } from '../../router/security/CiscoPrivilegeStore';
 import type { Port } from '../../../hardware/Port';
 import { IPAddress, SubnetMask, RIP_METRIC_INFINITY } from '../../../core/types';
 import { runningConfigACL, runningConfigInterfaceACL } from './CiscoAclCommands';
+import { fhrpRunningConfigLines, type FhrpInterfaceView } from '../../../fhrp/runningConfig';
 import { runningConfigObjectGroups } from '@/cli/commands/objectGroup/objectGroupFamily';
 import { runningConfigNAT, runningConfigInterfaceNAT } from './CiscoNATCommands';
 import { ipSlaRunningConfigLines, trackRunningConfigLines } from './ciscoIpSlaRunningConfig';
@@ -1010,6 +1011,7 @@ function interfaceConfigLines(
   for (const h of helpers) {
     lines.push(` ip helper-address ${h}`);
   }
+  lines.push(...fhrpRunningConfigLines(fhrpViewOf(router, name)));
   lines.push(...runningConfigInterfaceACL(router, name));
   lines.push(...runningConfigInterfaceNAT(router, name));
   for (const l of port.getEigrpSummaries()) lines.push(` ${l}`);
@@ -1564,17 +1566,51 @@ function ntpAgentOf(router: Router): import('@/network/ntp/NtpAgent').NtpAgent |
   return (router as unknown as { getNtpAgent?: () => import('@/network/ntp/NtpAgent').NtpAgent }).getNtpAgent?.();
 }
 
+function fhrpViewOf(router: Router, name: string): FhrpInterfaceView {
+  const repo = (router as unknown as {
+    getFhrpRepository?: () => import('../../inspection/config/FhrpRepository').FhrpRepository;
+  }).getFhrpRepository?.();
+  if (!repo) return { hsrp: [], vrrp: [], glbp: [] };
+  const ici = <G extends { iface: string }>(g: G): boolean => g.iface === name;
+  return {
+    hsrp: repo.all().filter(ici).map((g) => ({
+      group: g.group, version: g.version, vip: g.vip, secondary: g.secondary,
+      priority: g.priority, preempt: g.preempt, preemptDelaySec: g.preemptDelay,
+      helloSec: g.helloSec, holdSec: g.holdSec,
+      authText: g.authText, authMd5: g.authMd5, name: g.name,
+      tracks: g.trackDecr,
+    })),
+    vrrp: repo.allVrrp().filter(ici).map((g) => ({
+      group: g.group, vip: g.vip,
+      priority: g.priority, preempt: g.preempt, preemptDelaySec: g.preemptDelay,
+      advertiseSec: g.advertiseSec, authMd5: g.authMd5, description: g.description,
+      tracks: g.trackDecr,
+    })),
+    glbp: repo.allGlbp().filter(ici).map((g) => ({
+      group: g.group, vip: g.vip,
+      priority: g.priority, preempt: g.preempt, preemptDelaySec: g.preemptDelay,
+      weighting: g.weighting, loadBalancing: g.loadBalancing,
+      authMd5: g.authMd5, name: g.name, tracks: [],
+    })),
+  };
+}
+
 function ipInterfaceBlock(router: Router, name: string, port: Port): string {
   const nat = router._getNATEngine();
   const natTag = nat.isInsideInterface(name) ? ' (nat: inside)'
     : nat.isOutsideInterface(name) ? ' (nat: outside)' : '';
   const flags = (router as unknown as {
-    [k: symbol]: { interfaceFlags?: Map<string, { noRedirects?: boolean; noUnreachables?: boolean }> } | undefined;
+    [k: symbol]: {
+      interfaceFlags?: Map<string, {
+        noRedirects?: boolean; noUnreachables?: boolean; maskReply?: boolean;
+      }>;
+    } | undefined;
   })[Symbol.for('CiscoSecurityConfig')]?.interfaceFlags?.get(name) ?? {};
   const binding = router._getInterfaceACLBindingsInternal().get(name);
   return ipInterfaceBlockFor(name, port, router._getPortsInternal(), natTag,
     router.ripSplitHorizonOn(name), flags,
-    { inbound: binding?.inbound, outbound: binding?.outbound });
+    { inbound: binding?.inbound, outbound: binding?.outbound },
+    router._getDHCPServerInternal().getHelperAddresses(name));
 }
 
 export interface InterfaceAclRefs {
@@ -1600,14 +1636,47 @@ export function interfaceAclLines(acl: InterfaceAclRefs): string[] {
   ];
 }
 
+export function helperAddressLines(cibles: readonly string[]): string[] {
+  if (cibles.length === 0) return ['  Helper address is not set'];
+  return cibles.map((h) => `  Helper address is ${h}`);
+}
+
+export interface IpInterfaceControls {
+  directedBroadcast?: boolean;
+  proxyArp?: boolean;
+  splitHorizon?: boolean;
+  noRedirects?: boolean;
+  noUnreachables?: boolean;
+  maskReply?: boolean;
+}
+
+export function ipInterfaceControlLines(
+  controls: IpInterfaceControls, acl: InterfaceAclRefs = {},
+): string[] {
+  return [
+    `  Directed broadcast forwarding is ${controls.directedBroadcast ? 'enabled' : 'disabled'}`,
+    ...interfaceAclLines(acl),
+    `  Proxy ARP is ${controls.proxyArp === false ? 'disabled' : 'enabled'}`,
+    '  Local Proxy ARP is disabled',
+    '  Security level is default',
+    `  Split horizon is ${controls.splitHorizon === false ? 'disabled' : 'enabled'}`,
+    `  ICMP redirects are ${controls.noRedirects ? 'never sent' : 'always sent'}`,
+    `  ICMP unreachables are ${controls.noUnreachables ? 'never sent' : 'always sent'}`,
+    `  ICMP mask replies are ${controls.maskReply ? 'always sent' : 'never sent'}`,
+    '  IP fast switching is enabled',
+    '  IP CEF switching is enabled',
+  ];
+}
+
 export function ipInterfaceBlockFor(
   name: string,
   port: Port,
   ports: ReadonlyMap<string, Port>,
   natTag = '',
   splitHorizon = true,
-  icmp: { noRedirects?: boolean; noUnreachables?: boolean } = {},
+  icmp: { noRedirects?: boolean; noUnreachables?: boolean; maskReply?: boolean } = {},
   acl: InterfaceAclRefs = {},
+  helpers: readonly string[] = [],
 ): string {
   const view = iosInterfaceStatus(port, name, ports);
   const ip = port.getIPAddress();
@@ -1622,17 +1691,15 @@ export function ipInterfaceBlockFor(
   lines.push('  Broadcast address is 255.255.255.255');
   lines.push(`  Address determined by ${iosAddressMethod(port) === 'DHCP' ? 'DHCP' : 'non-volatile memory'}`);
   lines.push(`  MTU is ${port.getMTU()} bytes`);
-  lines.push('  Helper address is not set');
-  lines.push('  Directed broadcast forwarding is disabled');
-  lines.push(...interfaceAclLines(acl));
-  lines.push(`  Proxy ARP is ${port.isProxyArpEnabled?.() === false ? 'disabled' : 'enabled'}`);
-  lines.push('  Local Proxy ARP is disabled');
-  lines.push('  Security level is default');
-  lines.push(`  Split horizon is ${splitHorizon ? 'enabled' : 'disabled'}`);
-  lines.push(`  ICMP redirects are ${icmp.noRedirects ? 'never sent' : 'always sent'}`);
-  lines.push(`  ICMP unreachables are ${icmp.noUnreachables ? 'never sent' : 'always sent'}`);
-  lines.push('  IP fast switching is enabled');
-  lines.push('  IP CEF switching is enabled');
+  lines.push(...helperAddressLines(helpers));
+  lines.push(...ipInterfaceControlLines({
+    directedBroadcast: port.isDirectedBroadcastEnabled?.(),
+    proxyArp: port.isProxyArpEnabled?.(),
+    splitHorizon,
+    noRedirects: icmp.noRedirects,
+    noUnreachables: icmp.noUnreachables,
+    maskReply: icmp.maskReply,
+  }, acl));
   return lines.join('\n');
 }
 

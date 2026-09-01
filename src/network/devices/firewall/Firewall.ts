@@ -1,5 +1,8 @@
 import { Equipment } from '../../equipment/Equipment';
 import { LacpAgent } from '@/network/lacp/LacpAgent';
+import { LldpAgent } from '@/network/lldp/LldpAgent';
+import { ETHERTYPE_LLDP } from '@/network/lldp/types';
+import type { LldpSetting } from './l2/LldpIntent';
 import type { AggregateSpec } from './l2/AggregateSpec';
 import { buildUdpOverIpv4, type UdpSendRequest } from '../../layers/transport/UdpEgress';
 import { Port } from '../../hardware/Port';
@@ -1087,6 +1090,15 @@ export class Firewall extends Equipment {
 
   protected managementRunningConfig(): string { return ''; }
 
+  getRunningConfig(): string { return this.managementRunningConfig(); }
+
+  async replayConfig(text: string): Promise<void> {
+    for (const line of text.split('\n')) {
+      const trimmed = line.trim();
+      if (trimmed.length > 0) await this.executeCommand(trimmed);
+    }
+  }
+
   getVdomRegistry(): VdomRegistry { return this.vdoms; }
 
   getVdom(name?: string): VdomContext {
@@ -1264,7 +1276,26 @@ export class Firewall extends Equipment {
   clearTraces(): void { this.traces.clear(); }
 
   private lacpAgentInstance: LacpAgent | null = null;
+  private lldpAgentInstance: LldpAgent | null = null;
   private readonly aggregates = new Map<string, AggregateSpec>();
+
+  getLldpAgent(): LldpAgent {
+    if (!this.lldpAgentInstance) {
+      this.lldpAgentInstance = new LldpAgent(
+        {
+          id: this.id, name: this.name,
+          getHostname: () => this.getHostname(),
+          getType: () => this.getType(),
+          getPort: (n: string) => this.getPort(n),
+          getPorts: () => this.getPorts(),
+          sendOnLink: (request) => this.getLinkLayer().send(request),
+        },
+        () => this.getBus(),
+      );
+      this.lldpAgentInstance.start();
+    }
+    return this.lldpAgentInstance;
+  }
 
   getLacpAgent(): LacpAgent {
     if (!this.lacpAgentInstance) {
@@ -1282,6 +1313,41 @@ export class Firewall extends Equipment {
       this.lacpAgentInstance.start();
     }
     return this.lacpAgentInstance;
+  }
+
+  private globalLldpTransmit = false;
+  private globalLldpReceive = false;
+  private readonly lldpIntent = new Map<string, { tx: LldpSetting; rx: LldpSetting }>();
+
+  setGlobalLldp(transmit: boolean, receive: boolean): void {
+    this.globalLldpTransmit = transmit;
+    this.globalLldpReceive = receive;
+    this.applyLldpIntent();
+  }
+
+  setInterfaceLldp(iface: string, transmission: LldpSetting, reception: LldpSetting): void {
+    this.lldpIntent.set(iface, { tx: transmission, rx: reception });
+    this.applyLldpIntent();
+  }
+
+  getInterfaceLldp(iface: string): { tx: LldpSetting; rx: LldpSetting } {
+    return this.lldpIntent.get(iface) ?? { tx: 'vdom', rx: 'vdom' };
+  }
+
+  private applyLldpIntent(): void {
+    const agent = this.getLldpAgent();
+    let anyTransmit = false;
+    for (const port of this.getPorts()) {
+      const name = port.getName();
+      const intent = this.getInterfaceLldp(name);
+      const tx = intent.tx === 'vdom' ? this.globalLldpTransmit : intent.tx === 'enable';
+      const rx = intent.rx === 'vdom' ? this.globalLldpReceive : intent.rx === 'enable';
+      anyTransmit ||= tx;
+      agent.setPortTransmit(name, tx);
+      agent.setPortReceive(name, rx);
+    }
+    agent.setEnabled(anyTransmit || this.globalLldpReceive
+      || [...this.lldpIntent.values()].some(i => i.rx === 'enable'));
   }
 
   getAggregates(): ReadonlyMap<string, AggregateSpec> { return this.aggregates; }
@@ -1383,12 +1449,12 @@ export class Firewall extends Equipment {
     const spec = this.aggregates.get(name);
     if (!spec) return;
     const agent = this.getLacpAgent();
-    agent.setFastRate(spec.lacpSpeed === 'fast');
     agent.setGroupLimits(this.aggregateGroupId(name), { minLinks: spec.minLinks });
     const mode = spec.lacpMode === 'static' ? 'on' : spec.lacpMode;
     for (const membre of spec.members) {
       if (!this.getPort(membre)) continue;
       agent.addPortToGroup(membre, this.aggregateGroupId(name), mode);
+      agent.setPortFastRate(membre, spec.lacpSpeed === 'fast' ? true : null);
     }
     this.refreshAggregates();
   }
@@ -1419,6 +1485,10 @@ export class Firewall extends Equipment {
     if (frame.etherType === 0x8809) {
       this.getLacpAgent().handleFrame(portName, frame);
       this.refreshAggregates();
+      return;
+    }
+    if (frame.etherType === ETHERTYPE_LLDP) {
+      this.getLldpAgent().handleFrame(portName, frame);
       return;
     }
     const logical = this.aggregateIngressPort(portName);

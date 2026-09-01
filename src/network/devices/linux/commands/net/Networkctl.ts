@@ -12,6 +12,9 @@ import type { LinuxCommand, LinuxCommandOption } from '../LinuxCommand';
 import type { LinuxCommandContext } from '../LinuxCommandContext';
 import { Satisfy } from '../../iam/policy/CommandPrivilegePolicy';
 import {
+  lldpCapabilityMask, lldpCapabilityLegend, type LldpCapability,
+} from '@/network/lldp/types';
+import {
   aggregateOnlineState,
   aggregateOperationalState,
   deriveLinkStates,
@@ -171,14 +174,17 @@ function selectLinks(ctx: LinuxCommandContext, patterns: string[]): {
 
 function renderLldp(links: readonly LinkState[], ctx: LinuxCommandContext, opts: ParsedArgs): string {
   const rows: string[][] = [];
+  const seen: LldpCapability[] = [];
   for (const link of links) {
     if (link.type === 'loopback') continue;
     for (const n of ctx.net.getLldpNeighbors(link.name)) {
+      const caps = n.remoteCapabilities ?? [];
+      seen.push(...caps);
       rows.push([
         link.name,
         n.chassisId,
         n.systemName || '-',
-        n.remoteCapabilities.join('') || '-',
+        lldpCapabilityMask(caps),
         n.portId,
         n.portDescription || '-',
       ]);
@@ -190,6 +196,10 @@ function renderLldp(links: readonly LinkState[], ctx: LinuxCommandContext, opts:
   if (opts.legend) lines.push(headers.map((h, i) => pad(h, widths[i])).join(' ').trimEnd());
   for (const row of rows) lines.push(row.map((c, i) => pad(c, widths[i])).join(' ').trimEnd());
   if (opts.legend) {
+    const legend = lldpCapabilityLegend(seen);
+    if (legend.length > 0) {
+      lines.push('', 'Capability Flags:', legend.join('; '));
+    }
     lines.push('');
     lines.push(`${rows.length} neighbors listed.`);
   }

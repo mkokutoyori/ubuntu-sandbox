@@ -638,13 +638,32 @@ describe('concept 10 — filtrer sur le commutateur', () => {
     expect(config).not.toContain('access-list 10');
   });
 
-  it('une PACL qui designe une liste INEXISTANTE est refusee', async () => {
-    const { sw1 } = await laboratoire();
+  /*
+   * Ce cas exigeait `% Access list PAS-LA not found`, un refus que ce
+   * simulateur avait choisi pour la securite de l'apprenant. Une vraie
+   * machine fait l'INVERSE, et la documentation Cisco l'ecrit noir sur
+   * blanc : « when you apply an access list that has not yet been
+   * defined to an interface, the software acts as if the access list has
+   * not been applied to the interface and accepts all packets », en
+   * signalant elle-meme que c'est un point de securite a retenir. Le
+   * piege EST la lecon ; le supprimer apprend une machine qui n'existe
+   * pas, et laissait surtout le routeur et le commutateur repondre deux
+   * choses differentes a la meme commande.
+   */
+  it('une PACL qui designe une liste INEXISTANTE est acceptee, et ne filtre RIEN', async () => {
+    const { sw1, pcLnx, pcAdmin } = await laboratoire();
 
     const sortie = await tape(sw1, 'enable', 'configure terminal',
       'interface FastEthernet0/2', 'ip access-group PAS-LA in');
+    expect(sortie).not.toContain('not found');
+    expect(sortie).not.toContain('Invalid input');
 
-    expect(sortie).toContain('% Access list PAS-LA not found');
+    await tape(sw1, 'end');
+    expect(await tape(sw1, 'show running-config'))
+      .toContain('ip access-group PAS-LA in');
+
+    expect(passe(await tape(pcLnx, `ping -c 1 -W 1 ${PC_WIN}`))).toBe(true);
+    expect(passe(await tape(pcAdmin, `ping -c 1 -W 1 ${SRV_LNX}`))).toBe(true);
   });
 
   it('une PACL bloque VRAIMENT le trafic qu elle nomme', async () => {

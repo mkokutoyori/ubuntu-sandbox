@@ -1723,39 +1723,6 @@ export function securityInterfaceSpecs(
 export function buildSecurityInterfaceCommands(trie: CommandTrie, ctx: CiscoSecurityShellContext): void {
   const sec = () => getSecurityConfig(ctx.r());
 
-  trie.register('ip unreachables', 'Enable ICMP unreachables', () => {
-    const i = ctx.getSelectedInterface(); if (!i) return '';
-    sec().ifaceFlags(i).noUnreachables = false;
-    return '';
-  });
-  trie.register('no ip unreachables', 'Disable ICMP unreachables', () => {
-    const i = ctx.getSelectedInterface(); if (!i) return '';
-    sec().ifaceFlags(i).noUnreachables = true;
-    return '';
-  });
-  trie.register('ip redirects', 'Enable ICMP redirects', () => {
-    const i = ctx.getSelectedInterface(); if (!i) return '';
-    sec().ifaceFlags(i).noRedirects = false;
-    return '';
-  });
-  trie.register('ip proxy-arp', 'Enable proxy-ARP', () => {
-    const i = ctx.getSelectedInterface(); if (!i) return '';
-    sec().ifaceFlags(i).noProxyArp = false;
-    ctx.r().getPort(i)?.setProxyArp(true);
-    return '';
-  });
-  trie.register('no ip redirects', 'Disable ICMP redirects', () => {
-    const i = ctx.getSelectedInterface(); if (!i) return '';
-    sec().ifaceFlags(i).noRedirects = true;
-    return '';
-  });
-  trie.register('no ip proxy-arp', 'Disable proxy-ARP', () => {
-    const i = ctx.getSelectedInterface(); if (!i) return '';
-    sec().ifaceFlags(i).noProxyArp = true;
-    const port = ctx.r().getPort(i);
-    if (port) port.setProxyArp(false);
-    return '';
-  });
   trie.registerGreedy('ip verify unicast', 'Configure uRPF', (args) => {
     const i = ctx.getSelectedInterface(); if (!i) return '';
     const allowDefault = args.includes('allow-default');

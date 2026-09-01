@@ -156,7 +156,8 @@ describe('le seuil de liens et la cadence', () => {
 
   it('`set lacp-speed fast` demande la cadence rapide au partenaire', async () => {
     const { fw, sw } = await labo(['set lacp-speed fast']);
-    expect(fw.getLacpAgent().getConfig().fastRate).toBe(true);
+    const membre = fw.getLacpAgent().getGroupMembers(1)[0];
+    expect(fw.getLacpAgent().rateOf(membre)).toBe(true);
     await vi.advanceTimersByTimeAsync(2_000);
     const chezSw = sw.getLacpAgent().getPortInfo('FastEthernet0/1');
     expect((chezSw?.partner?.state ?? 0) & 0x02).toBe(0x02);

@@ -60,6 +60,13 @@ import {
   getSecurityConfig, buildIdentityShowCommands, buildIdentityConfigCommands,
 } from './cisco/CiscoSecurityCommands';
 import { parserViewMode } from '../router/security/CiscoSecurityConfig';
+import type { InterfaceSecurityFlags } from '../router/security/CiscoSecurityConfig';
+import { MODES_INTERFACE } from './cisco/CiscoConfigCommands';
+
+interface AclBindingEngine {
+  setInterfaceACL(ifName: string, direction: 'in' | 'out', aclRef: number | string): void;
+  removeInterfaceACL(ifName: string, direction: 'in' | 'out'): void;
+}
 import type { CiscoDevice } from './CiscoDevice';
 import type { PromptMap } from './PromptBuilder';
 import { buildPrompt } from './PromptBuilder';
@@ -103,6 +110,15 @@ const NTP_SOUS_COMMANDES: ReadonlyArray<{
 ];
 import { CISCO_ERRORS, parsePipeFilter, applyPipeFilter, PIPE_WRITERS, PIPE_MODIFIERS, type PipeFilter } from './cli-utils';
 import { isValidIPv4 } from '../../core/ip';
+import { LLDP_OPTIONAL_TLVS, type LldpOptionalTlv } from '@/network/lldp/types';
+
+const LLDP_TLV_DESCRIPTIONS: Readonly<Record<LldpOptionalTlv, string>> = {
+  'port-description': 'Port Description TLV',
+  'system-name': 'System Name TLV',
+  'system-description': 'System Description TLV',
+  'system-capabilities': 'System Capabilities TLV',
+  'management-address': 'Management Address TLV',
+};
 import {
   registerArpShowCommands, registerArpConfigCommands,
 } from './cisco/CiscoArpCommands';
@@ -2651,6 +2667,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
   }
 
   protected executeOnDevice(device: TDevice, rawInput: string): string | Promise<string> {
+    this.oublierLesRivaux();
     rawInput = this.applyLineEditing(rawInput);
     // Multi-line banner entry: every line is verbatim content (leading
     // spaces, empty lines, would-be commands) until the delimiter shows up.
@@ -3959,6 +3976,10 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       this.discoveryToggle(['lldp', 'receive'], 'Enable LLDP receive on this interface', 'config-if',
         perPort(port => this.applyToLldpAgent(a => a.setPortReceive(port, true))),
         perPort(port => this.applyToLldpAgent(a => a.setPortReceive(port, false)))),
+      ...LLDP_OPTIONAL_TLVS.map(tlv => this.discoveryToggle(
+        ['lldp', 'tlv-select', tlv], LLDP_TLV_DESCRIPTIONS[tlv], 'config-if',
+        perPort(port => this.applyToLldpAgent(a => a.setPortTlvSelected(port, tlv, true))),
+        perPort(port => this.applyToLldpAgent(a => a.setPortTlvSelected(port, tlv, false))))),
 
       this.discoveryValue(['cdp', 'timer'], 'Advertisement period (sec)',
         5, 254,
@@ -5449,6 +5470,10 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       ...this.showIpInterfaceSpecs(),
       ...this.showIpRouteSpecs(),
       ...this.showInterfacesSpecs(),
+      ...this.ipRouteSpecs(),
+      ...this.icmpArpInterfaceSpecs(),
+      ...this.ipAccessGroupSpecs(),
+      ...this.ipHelperAddressSpecs(),
       ...this.cefSpecs(),
       ...this.enableSpecs(),
       ...this.configureSpecs(),
@@ -6169,6 +6194,64 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
 
   protected renduInterfaces(_cible: string): string { return ''; }
 
+  /**
+   * `ip route` et sa negation, declarees une fois.
+   *
+   * La commande de configuration la plus tapee d'IOS avait DEUX
+   * analyses, une par plateforme, et elles divergeaient : celle du
+   * commutateur perdait la distance administrative — donc une route de
+   * SECOURS revenait principale au rechargement d'une topologie — et sa
+   * vue laissait paraitre les deux routes d'un meme prefixe la ou la
+   * machine n'en installe qu'une.
+   *
+   * Ce que chaque plateforme garde en propre est ce qu'elle sait
+   * HONORER : un routeur retient `permanent`, `track`, `tag` et la forme
+   * par interface de sortie, un Catalyst n'a pas ces champs. La
+   * grammaire n'a plus qu'une declaration, le magasin reste celui de
+   * chacun — les unifier voudrait dire accepter sur le commutateur des
+   * mots-cles que rien n'y evalue.
+   */
+  protected ipRouteSpecs(): readonly CommandSpec[] {
+    const prefixe: ArgumentSpec = {
+      name: 'prefixe', type: 'IP_ADDR', description: 'Destination prefix',
+    };
+    const masque: ArgumentSpec = {
+      name: 'masque', type: 'SUBNET_MASK', description: 'Destination prefix mask',
+    };
+    const reste: ArgumentSpec = {
+      name: 'reste', type: 'REST',
+      description: 'Forwarding router\'s address, or egress interface',
+    };
+    const queue = (args: Record<string, string>, ...tete: string[]): string =>
+      [...tete, args.prefixe ?? '', args.masque ?? '', args.reste ?? '']
+        .filter((m) => m !== '').join(' ');
+    return [
+      {
+        id: 'ip-route',
+        path: ['ip', 'route', prefixe, masque, reste],
+        description: 'Establish static routes',
+        undoDescription: 'Remove static route',
+        modes: ['config'], minPrivilege: 15,
+        run: (_session, args) => this.poserRouteStatique(queue(args)),
+        undo: (_session, args) => this.retirerRouteStatique(queue(args)),
+      },
+      {
+        id: 'ip-route-vrf',
+        path: ['ip', 'route', 'vrf',
+          { name: 'vrf', type: 'WORD', description: 'VPN Routing/Forwarding instance name' },
+          prefixe, masque, reste],
+        description: 'Establish static routes in a VRF',
+        undoDescription: 'Remove static route from a VRF',
+        modes: ['config'], minPrivilege: 15,
+        run: (_session, args) => this.poserRouteStatique(queue(args, 'vrf', args.vrf ?? '')),
+        undo: (_session, args) => this.retirerRouteStatique(queue(args, 'vrf', args.vrf ?? '')),
+      },
+    ];
+  }
+
+  protected poserRouteStatique(_reste: string): string { return ''; }
+  protected retirerRouteStatique(_reste: string): string { return ''; }
+
 
   /**
    * Les suites d'un chemin, LUES sur la table qui les declare deja.
@@ -6185,6 +6268,141 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
   }
 
   protected tablesDeContinuations(): readonly ContinuationTable[] { return [SOCLE]; }
+
+  /**
+   * Le moteur de listes que `ip access-group` accroche a une interface.
+   *
+   * Il n'est demande qu'au moment d'EXECUTER : la table des commandes se
+   * batit une fois, hors de toute frappe, et `d()` leve la — une premiere
+   * version l'interrogeait a la declaration et faisait tomber la famille
+   * entiere avec « Device reference not set ».
+   */
+  protected moteurDeListes(): AclBindingEngine | null { return null; }
+
+  protected ipAccessGroupSpecs(): readonly CommandSpec[] {
+    const liste: ArgumentSpec = {
+      name: 'liste', type: 'WORD', description: 'Access-list name',
+      alternatives: [
+        { keyword: '<1-199>', description: 'IP access list (standard or extended)' },
+        { keyword: '<1300-2699>', description: 'IP expanded access list' },
+      ],
+    };
+    const sens: ArgumentSpec = {
+      name: 'sens', type: 'ENUM', description: 'Direction',
+      values: [
+        { keyword: 'in', description: 'inbound packets' },
+        { keyword: 'out', description: 'outbound packets' },
+      ],
+    };
+    const reference = (mot: string): number | string =>
+      /^\d+$/.test(mot) ? parseInt(mot, 10) : mot;
+    return [{
+      id: 'ip-access-group',
+      path: ['ip', 'access-group', liste, sens],
+      description: 'Specify access control for packets',
+      undoDescription: 'Remove access control from this interface',
+      modes: MODES_INTERFACE, minPrivilege: 15,
+      run: (_session, args) => {
+        const moteur = this.moteurDeListes();
+        if (!moteur) return '';
+        const direction = args.sens as 'in' | 'out';
+        for (const nom of this.selectedPortsForConfigIf()) {
+          moteur.setInterfaceACL(nom, direction, reference(args.liste ?? ''));
+        }
+        return '';
+      },
+      undo: (_session, args) => {
+        const moteur = this.moteurDeListes();
+        if (!moteur) return '';
+        const direction = args.sens as 'in' | 'out';
+        for (const nom of this.selectedPortsForConfigIf()) {
+          moteur.removeInterfaceACL(nom, direction);
+        }
+        return '';
+      },
+    }];
+  }
+
+  /**
+   * Poser ou retirer une cible de relais DHCP sur l'interface nommee.
+   * Chaque plateforme ecrit dans SON magasin — le serveur DHCP du
+   * routeur, la SVI du commutateur — mais la commande, sa grammaire et
+   * ses refus n'ont qu'une declaration.
+   */
+  protected poserRelaisDhcp(_iface: string, _cible: string): string { return ''; }
+  protected retirerRelaisDhcp(_iface: string, _cible: string): string { return ''; }
+
+  /*
+   * Applique a chaque interface selectionnee et rend le PREMIER refus.
+   * Une plateforme peut refuser la commande sur une interface qui ne la
+   * porte pas — `ip helper-address` sur un port L2 d'un Catalyst — et un
+   * gestionnaire qui se tairait laisserait croire qu'elle a pris.
+   */
+  private surChaqueInterface(appliquer: (iface: string) => string): string {
+    for (const nom of this.selectedPortsForConfigIf()) {
+      const refus = appliquer(nom);
+      if (refus !== '') return refus;
+    }
+    return '';
+  }
+
+  protected ipHelperAddressSpecs(): readonly CommandSpec[] {
+    const cible: ArgumentSpec = {
+      name: 'cible', type: 'IP_ADDR',
+      description: 'IP destination address',
+    };
+    return [{
+      id: 'ip-helper-address',
+      path: ['ip', 'helper-address', cible],
+      description: 'Specify a destination address for UDP broadcasts',
+      undoDescription: 'Remove a destination address for UDP broadcasts',
+      modes: MODES_INTERFACE, minPrivilege: 15,
+      run: (_session, args) => this.surChaqueInterface(
+        (nom) => this.poserRelaisDhcp(nom, args.cible ?? '')),
+      undo: (_session, args) => this.surChaqueInterface(
+        (nom) => this.retirerRelaisDhcp(nom, args.cible ?? '')),
+    }];
+  }
+
+  protected icmpArpInterfaceSpecs(): readonly CommandSpec[] {
+    const poser = (
+      appliquer: (f: InterfaceSecurityFlags, nom: string) => void,
+    ) => (): string => {
+      const sec = getSecurityConfig(this.d());
+      for (const nom of this.selectedPortsForConfigIf()) appliquer(sec.ifaceFlags(nom), nom);
+      return '';
+    };
+    const declarer = (
+      id: string, mot: string, description: string, undoDescription: string,
+      allume: (f: InterfaceSecurityFlags, nom: string) => void,
+      eteint: (f: InterfaceSecurityFlags, nom: string) => void,
+    ): CommandSpec => ({
+      id, path: ['ip', mot], description, undoDescription,
+      modes: MODES_INTERFACE, minPrivilege: 15,
+      run: poser(allume), undo: poser(eteint),
+    });
+    const miroirProxyArp = (nom: string, on: boolean): void => {
+      const port = (this.d() as unknown as {
+        getPort?: (n: string) => { setProxyArp?: (v: boolean) => void } | undefined;
+      }).getPort?.(nom);
+      port?.setProxyArp?.(on);
+    };
+    return [
+      declarer('ip-redirects', 'redirects',
+        'Enable sending ICMP Redirect messages', 'Disable sending ICMP Redirect messages',
+        (f) => { f.noRedirects = false; }, (f) => { f.noRedirects = true; }),
+      declarer('ip-unreachables', 'unreachables',
+        'Enable sending ICMP Unreachable messages', 'Disable sending ICMP Unreachable messages',
+        (f) => { f.noUnreachables = false; }, (f) => { f.noUnreachables = true; }),
+      declarer('ip-proxy-arp', 'proxy-arp',
+        'Enable proxy ARP', 'Disable proxy ARP',
+        (f, nom) => { f.noProxyArp = false; miroirProxyArp(nom, true); },
+        (f, nom) => { f.noProxyArp = true; miroirProxyArp(nom, false); }),
+      declarer('ip-mask-reply', 'mask-reply',
+        'Enable sending ICMP Mask Reply messages', 'Disable sending ICMP Mask Reply messages',
+        (f) => { f.maskReply = true; }, (f) => { f.maskReply = false; }),
+    ];
+  }
 
   protected cefSpecs(): CommandSpec[] {
     const sec = () => getSecurityConfig(this.d());
@@ -6559,6 +6777,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
      * proposer.
      */
     trie.setRivalKeywordsPort((chemin, prefixe) => this.motsDuSocleSous(chemin, prefixe));
+    trie.setSocleOwnsKeywordPort((chemin, mot) => this.socleTientCeMot(chemin, mot));
   }
 
   /**
@@ -6590,32 +6809,115 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
      * Sans equipement, pas de session, donc pas de visibilite a
      * consulter : le planificateur d'interaction appelle `match` HORS
      * d'`execute` pour canoniser une ligne, et y lever ferait perdre a
-     * `copy run start` son dialogue. On ne compte alors aucun rival.
+     * `copy run start` son dialogue. On ne compte alors aucun RIVAL —
+     * en inventer un hors session ferait refuser `rel`, qui n'abrege
+     * qu'une commande dans le mode ou on la tape.
      */
     if (this.deviceRef === null) return [];
+    /*
+     * La reponse est RETENUE, et sa cle dit exactement de quoi elle
+     * depend : le chemin, le prefixe, et l'etat qui gouverne la
+     * visibilite — mode, niveau, vue. Une seule frappe de `?` pose la
+     * MEME question une vingtaine de fois, une par completion jugee,
+     * et chacune traversait alors toutes les commandes du socle en
+     * interrogeant l'autorisation. Sans la cle complete ce serait un
+     * cache faux : un `enable` change le niveau, donc la reponse.
+     */
+    const cle = `${this.mode} ${this.currentPrivilegeLevel} `
+      + `${this.activeParserView ?? ''} ${chemin.join(' ')} ${prefixe}`;
+    const retenu = this.rivauxRetenus.get(cle);
+    if (retenu) return retenu;
     this.dansLeCalculDesRivaux = true;
     try {
-      return this.motsVisiblesDuSocle(table, chemin, prefixe);
+      const mots = this.motsVisiblesDuSocle(table, chemin, prefixe);
+      this.rivauxRetenus.set(cle, mots);
+      return mots;
     } finally {
       this.dansLeCalculDesRivaux = false;
     }
   }
 
   private dansLeCalculDesRivaux = false;
+  private readonly rivauxRetenus = new Map<string, string[]>();
+  /*
+   * Une declaration de plus, une regle de privilege posee ou une vue
+   * modifiee changent ce que le socle offre : la memoire est videe
+   * plutot que datee, faute de quoi elle repondrait sur l'etat d'avant.
+   */
+  protected oublierLesRivaux(): void { this.rivauxRetenus.clear(); }
+
+  /**
+   * Le socle declare-t-il EXACTEMENT ce mot sous ce chemin ?
+   *
+   * Lu sur la TABLE et non sur une session : la reponse ne depend
+   * d'aucun privilege, et elle doit valoir hors d'`execute`, la ou
+   * `cliHelp` interroge. Elle ne sert qu'a faire taire le trie quand le
+   * socle possede le mot — `ip route` parti au socle, `route` ne
+   * rencontrait plus ici que `route-cache`, donc `ip route ?` proposait
+   * `flow`, la suite d'une AUTRE commande.
+   */
+  private socleTientCeMot(chemin: readonly string[], mot: string): boolean {
+    const table = this.socleTable();
+    if (!table) return false;
+    return this.motsDuSocleFiltres(table, chemin, mot, null).includes(mot);
+  }
 
   private motsVisiblesDuSocle(
     table: CommandTable, chemin: readonly string[], prefixe: string,
   ): string[] {
-    const session = this.socleSession(table);
-    const amont = chemin.map(mot => mot.toLowerCase());
+    return this.motsDuSocleFiltres(table, chemin, prefixe, this.socleSession(table));
+  }
+
+  /*
+   * Le chemin en minuscules d'une spec est RETENU. Il ne depend que de
+   * la declaration, qui ne change pas, et il etait rebati pour chacune
+   * des mille commandes de la table a chaque mot abrege.
+   */
+  private static readonly cheminMinuscule = new WeakMap<object, readonly string[]>();
+
+  private static cheminEnMinuscules(spec: CommandSpec): readonly string[] {
+    let chemin = CiscoShellBase.cheminMinuscule.get(spec);
+    if (!chemin) {
+      chemin = CiscoShellBase.keywordPathOf(spec).map(mot => mot.toLowerCase());
+      CiscoShellBase.cheminMinuscule.set(spec, chemin);
+    }
+    return chemin;
+  }
+
+  private motsDuSocleFiltres(
+    table: CommandTable, chemin: readonly string[], prefixe: string,
+    session: CliSession | null,
+  ): string[] {
+    /*
+     * `no` n'est pas un mot du socle mais un MODIFICATEUR : une commande
+     * negociable s'y declare `ip route` avec son `undo`, jamais
+     * `no ip route`. Interroger le socle avec `no` en tete ne trouvait
+     * donc aucun rival, et `no ip rout` COUPAIT le routage — la moitie
+     * la plus couteuse du defaut, puisque c'est celle qui applique.
+     */
+    const nie = chemin.length > 0 && chemin[0].toLowerCase() === 'no';
+    const amont = (nie ? chemin.slice(1) : chemin).map(mot => mot.toLowerCase());
+    /*
+     * Le tri par le CHEMIN passe avant la question de la visibilite, et
+     * l'ordre inverse coutait trente-trois millisecondes par mot abrege.
+     * `isReachable` interroge l'autorisation, donc le canoniseur, donc
+     * la marche des arbres : la poser sur les mille commandes de la
+     * table pour n'en retenir qu'une poignee faisait de `sh ?` une
+     * attente de trois secondes. La forme du chemin, elle, se lit sur la
+     * declaration seule. Aucune reponse ne change — les memes specs sont
+     * jugees, dans l'autre sens.
+     */
     const mots = new Set<string>();
     for (const spec of table.specs()) {
-      if (!table.isReachable(spec, session)) continue;
-      const canonique = CiscoShellBase.keywordPathOf(spec).map(mot => mot.toLowerCase());
+      if (nie && spec.undo === undefined) continue;
+      const canonique = CiscoShellBase.cheminEnMinuscules(spec);
       if (canonique.length <= amont.length) continue;
-      if (!amont.every((mot, rang) => canonique[rang] === mot)) continue;
       const suivant = canonique[amont.length];
-      if (suivant.startsWith(prefixe)) mots.add(suivant);
+      if (!suivant.startsWith(prefixe)) continue;
+      if (mots.has(suivant)) continue;
+      if (!amont.every((mot, rang) => canonique[rang] === mot)) continue;
+      if (session !== null && !table.isReachable(spec, session)) continue;
+      mots.add(suivant);
     }
     return [...mots];
   }
@@ -6640,20 +6942,42 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     for (const path of this.getActiveTrie().enumerateCommandPaths()) {
       const words = path.toLowerCase().split(' ');
       if (CiscoShellBase.sameKeywords(words, canonical)) continue;
-      if (CiscoShellBase.firstWordIsAmbiguous(typed, words, canonical)) return false;
+      if (CiscoShellBase.motAmbiguAUnRang(typed, words, canonical)) return false;
       if (CiscoShellBase.prefixMatches(typed, words, canonical, absorbe)) return false;
     }
     return true;
   }
 
-  private static firstWordIsAmbiguous(
+  /**
+   * Le mot tape abrege-t-il a la fois la commande du socle et une AUTRE
+   * du trie ?
+   *
+   * La question se pose a CHAQUE rang, pas au premier seulement. Elle
+   * n'y etait posee que la, et la limite se voyait des qu'une famille
+   * migrait : `ip route` parti au socle, `ip routing` reste au trie,
+   * `ip rout` abrege les deux — le socle ne voyait plus son rival et
+   * POSAIT la route, la ou une vraie machine refuse. Le pont inverse
+   * (`setRivalKeywordsPort`) tient deja le sens trie → socle a tous les
+   * rangs ; celui-ci est son symetrique.
+   *
+   * Les rangs precedents doivent CONCORDER : sans cela `show ip igmp`
+   * serait tenu pour un rival de `show mac address-table`, deux chemins
+   * qui ne se rencontrent jamais. Et un mot tape EN ENTIER n'est jamais
+   * ambigu, meme s'il prefixe l'autre — c'est la regle qui laisse
+   * passer `ip route` quand `ip routing` existe.
+   */
+  private static motAmbiguAUnRang(
     typed: readonly string[], words: readonly string[], canonical: readonly string[],
   ): boolean {
-    if (typed.length === 0 || words.length === 0 || canonical.length === 0) return false;
-    const tape = typed[0];
-    if (tape === canonical[0]) return false;
-    if (!canonical[0].startsWith(tape)) return false;
-    return words[0] !== canonical[0] && words[0].startsWith(tape);
+    const jusqua = Math.min(typed.length, words.length, canonical.length);
+    for (let rang = 0; rang < jusqua; rang += 1) {
+      if (rang > 0 && words[rang - 1] !== canonical[rang - 1]) return false;
+      const tape = typed[rang];
+      if (tape === canonical[rang]) continue;
+      if (!canonical[rang].startsWith(tape)) return false;
+      return words[rang] !== canonical[rang] && words[rang].startsWith(tape);
+    }
+    return false;
   }
 
   /**
@@ -6886,7 +7210,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     if (!device) return null;
 
     const resolver = new EquipmentParamResolver(
-      device as unknown as CompletableDevice, this.sessionParamRanges());
+      device as unknown as CompletableDevice, this.sessionParamRanges(device));
     return {
       candidatesFor: (contexte) => resolver.candidatesFor({
         path: contexte.path,
@@ -7943,7 +8267,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     return reste === '' ? '  <cr>' : CISCO_ERRORS.UNRECOGNIZED_HELP;
   }
 
-  protected sessionParamRanges(): SessionParamRanges | null { return null; }
+  protected sessionParamRanges(_device?: TDevice): SessionParamRanges | null { return null; }
 
   getHelp(input: string, device?: TDevice): string {
     // `show running-config | ?` n'était le nœud d'aucun arbre : le `|`
@@ -7962,7 +8286,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     const aideUniverselle = this.aideDesCommandesUniverselles(input, device);
     if (aideUniverselle !== null) return aideUniverselle;
     const trie = this.getActiveTrie();
-    trie.setDynamicResolver(device ? new EquipmentParamResolver(device, this.sessionParamRanges()) : null);
+    trie.setDynamicResolver(device ? new EquipmentParamResolver(device, this.sessionParamRanges(device)) : null);
     try {
       const filtreNiveau = (ligne: string): boolean => {
         if (!device) return true;
@@ -8084,7 +8408,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     const viaDo = this.doTabCandidates(input, device);
     if (viaDo !== null) return viaDo;
     const trie = this.getActiveTrie();
-    trie.setDynamicResolver(new EquipmentParamResolver(device, this.sessionParamRanges()));
+    trie.setDynamicResolver(new EquipmentParamResolver(device, this.sessionParamRanges(device)));
     try {
       const precedent = this.deviceRef;
       this.deviceRef = device;
@@ -8317,7 +8641,11 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     trie.registerGreedy('show lldp', 'Display LLDP information', (a) =>
       showLldp(this.cs(), a.join(' '), this.configState.isEnabled('lldp')), [
       { keyword: 'neighbors', description: 'LLDP neighbor entries' },
+      { keyword: 'entry',     description: 'Information for specific neighbor entry' },
+      { keyword: 'errors',    description: 'LLDP computational errors and overflows' },
       { keyword: 'interface', description: 'LLDP interface status and configuration' },
+      { keyword: 'local-info', description: 'Local LLDP information' },
+      { keyword: 'traffic',   description: 'LLDP statistics' },
     ]);
     trie.registerGreedy('show snmp', 'Display SNMP status', () => showSnmp(this.cs(), this.getChassisProfile()));
     /**

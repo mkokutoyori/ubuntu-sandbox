@@ -236,6 +236,30 @@ export class RemoveNetLbfoTeamNicCmdlet implements ICmdlet {
   }
 }
 
+export class SetNetLbfoTeamNicCmdlet implements ICmdlet {
+  readonly name = 'set-netlbfoteamnic';
+  readonly displayName = 'Set-NetLbfoTeamNic';
+  readonly aliases = [] as const;
+  readonly parameters = ['Name', 'Team', 'VlanID', 'Default', 'Confirm'] as const;
+
+  execute(ctx: CmdletContext): PSValue {
+    const net = requireTeaming(ctx);
+    if (!net.setNicTeamNic) return null;
+    const nom = ctx.named['name'] ?? ctx.positional[0];
+    if (nom === undefined) {
+      ctx.emitError('Set-NetLbfoTeamNic: the Name parameter is required.');
+      return null;
+    }
+    const brut = ctx.named['vlanid'];
+    const patch: { vlanId?: number; isDefault?: boolean } = {};
+    if (brut !== undefined) patch.vlanId = Number(psValueToString(brut));
+    if (ctx.named['default'] !== undefined) patch.isDefault = true;
+    const erreur = net.setNicTeamNic(psValueToString(nom), patch);
+    if (erreur) ctx.emitError(erreur);
+    return null;
+  }
+}
+
 export class AddNetLbfoTeamMemberCmdlet implements ICmdlet {
   readonly name = 'add-netlbfoteammember';
   readonly displayName = 'Add-NetLbfoTeamMember';

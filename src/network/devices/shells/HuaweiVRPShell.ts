@@ -25,6 +25,9 @@ import { vrpDhcpClientFamily, type VrpDhcpLeaseView } from '@/cli/vendors/vrp/vr
 import { vrpMtuFamily, vrpBandwidthFamily } from '@/cli/vendors/vrp/vrpInterfaceParamsFamily';
 import { vrpClockFamily, VRP_TIMEZONE_DEFAUT } from '@/cli/vendors/vrp/vrpClockFamily';
 import { registerInfoCenterDisplayCommands } from './huawei/HuaweiInfoCenterCommands';
+import {
+  registerVrpLldpDisplayCommands, applyVrpLldpAdminStatus,
+} from './huawei/HuaweiLldpViews';
 import type { IRouterShell } from './IRouterShell';
 import { LoggingConfig } from '../inspection/config/LoggingConfig';
 import { CommandTrie } from './CommandTrie';
@@ -1341,19 +1344,26 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
       config: () => this.r().getManagementService?.().getInfoCenter(),
     });
     t.registerGreedy('reset logbuffer', 'Reset logbuffer', () => '');
-    t.register('display lldp local', 'Display local LLDP info', () => {
-      const cfg = vrpStores(this.r())._huaweiLldp;
-      if (!cfg || !cfg.enabled) return 'Info: LLDP is disabled.';
-      return [` LLDP enabled`, ` Management address: ${cfg.mgmtAddress ?? '-'}`].join('\n');
+    registerVrpLldpDisplayCommands(t, {
+      agent: () => this.lldpAgent(),
+      hostname: () => this.r().getHostname(),
+      portNames: () => this.r().getPorts().map(p => p.getName()),
+      displayName: (n) => huaweiDisplayInterfaceName(n),
+      resolveInterface: (raw) => resolveHuaweiInterfaceName(this.r(), raw),
     });
-    t.registerGreedy('display lldp', 'Display LLDP', (args) => {
-      if (args[0]?.toLowerCase() === 'local') {
-        const cfg = vrpStores(this.r())._huaweiLldp;
-        if (!cfg || !cfg.enabled) return 'Info: LLDP is disabled.';
-        return [` LLDP enabled`, ` Management address: ${cfg.mgmtAddress ?? '-'}`].join('\n');
-      }
-      return ' No LLDP neighbors.';
-    });
+  }
+
+  private lldpAgent(): import('@/network/lldp/LldpAgent').LldpAgent | null {
+    return (this.routerRef as unknown as {
+      getLldpAgent?: () => import('@/network/lldp/LldpAgent').LldpAgent
+    })?.getLldpAgent?.() ?? null;
+  }
+
+  private applyToLldpAgent(
+    fn: (a: import('@/network/lldp/LldpAgent').LldpAgent) => void,
+  ): void {
+    const agent = this.lldpAgent();
+    if (agent) fn(agent);
   }
 
   /** Le magasin unique de l'etat `debugging` de cet equipement. */
@@ -2252,18 +2262,24 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
       return '';
     });
 
-    t.registerGreedy('lldp', 'LLDP configuration', (args, raw) => {
-      const r = vrpStores(this.r());
-      const cfg = r._huaweiLldp ?? (r._huaweiLldp = { enabled: false, mgmtAddress: null, lines: [] });
-      if (args[0]?.toLowerCase() === 'enable') cfg.enabled = true;
-      else if (args[0]?.toLowerCase() === 'management-address' && args[1]) cfg.mgmtAddress = args[1];
-      cfg.lines.push(raw ?? `lldp ${args.join(' ')}`);
+    t.register('lldp enable', 'Enable LLDP globally', () => {
+      this.applyToLldpAgent(a => a.setEnabled(true));
       return '';
     });
-    t.registerGreedy('undo lldp', 'Disable LLDP', () => {
-      const r = vrpStores(this.r());
-      const cfg = r._huaweiLldp ?? (r._huaweiLldp = { enabled: false, mgmtAddress: null, lines: [] });
-      cfg.enabled = false;
+    t.register('undo lldp enable', 'Disable LLDP globally', () => {
+      this.applyToLldpAgent(a => a.setEnabled(false));
+      return '';
+    });
+    t.registerGreedy('lldp message-transmission interval', 'Hello period (sec)', (args) => {
+      const n = parseInt(args[0] ?? '', 10);
+      if (!Number.isFinite(n) || n < 5 || n > 32768) return "Error: Wrong parameter found at '^' position.";
+      this.applyToLldpAgent(a => a.setTimerSec(n));
+      return '';
+    });
+    t.registerGreedy('lldp message-transmission hold-multiplier', 'Hold multiplier', (args) => {
+      const n = parseInt(args[0] ?? '', 10);
+      if (!Number.isFinite(n) || n < 2 || n > 10) return "Error: Wrong parameter found at '^' position.";
+      this.applyToLldpAgent(a => a.setHoldtimeMultiplier(n));
       return '';
     });
 
@@ -2434,10 +2450,23 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
       vrpSetInterfaceAttr(this.r(), bucket, ifName, key, raw ?? args.join(' '));
       return '';
     };
-    const lldpIf = ifAttr('_huaweiLldpIf');
-    t.register('lldp enable', 'Enable LLDP on interface', () => { lldpIf('enable')(['on']); return ''; });
-    t.registerGreedy('lldp admin-status', 'Set LLDP admin-status on interface', lldpIf('adminStatus'));
-    t.register('undo lldp enable', 'Disable LLDP on interface', () => { lldpIf('enable')(['off']); return ''; });
+    t.register('lldp enable', 'Enable LLDP on interface', () => {
+      const port = this.selectedInterface;
+      if (!port) return 'Error: Incomplete command.';
+      this.applyToLldpAgent(a => { a.setPortTransmit(port, true); a.setPortReceive(port, true); });
+      return '';
+    });
+    t.register('undo lldp enable', 'Disable LLDP on interface', () => {
+      const port = this.selectedInterface;
+      if (!port) return 'Error: Incomplete command.';
+      this.applyToLldpAgent(a => { a.setPortTransmit(port, false); a.setPortReceive(port, false); });
+      return '';
+    });
+    t.registerGreedy('lldp admin-status', 'Set LLDP admin-status on interface', (args) => {
+      const port = this.selectedInterface;
+      if (!port) return 'Error: Incomplete command.';
+      return applyVrpLldpAdminStatus(this.lldpAgent(), port, args[0] ?? '');
+    });
 
     const sflowIf = ifAttr('_huaweiSflowIf');
     t.registerGreedy('sflow flow-sampling', 'sFlow flow sampling', sflowIf('flowSampling'));

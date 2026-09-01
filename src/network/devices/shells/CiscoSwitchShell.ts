@@ -43,7 +43,8 @@ import { parsePingArgs, formatCiscoPing } from './cisco/ciscoPing';
 import {
   showInterface, consoleAndAuxLineConfigLines, enableLevelSecretConfigLines,
   ipIntBriefRowsFromPorts, renderIpIntBrief, ipInterfaceBlockFor,
-  interfaceAclLines, type InterfaceAclRefs,
+  interfaceAclLines, type InterfaceAclRefs, ipInterfaceControlLines,
+  helperAddressLines,
   renderInterfacesDescription, hostsTableLines, serviceFlagLines,
 } from './cisco/CiscoShowCommands';
 import { orderCiscoConfigBlocks } from './cisco/ciscoConfigSerializer';
@@ -59,8 +60,10 @@ import { IOS_ACL_NUMBERING } from '../router/ACLEngine';
 import { CISCO_ERRORS } from './cli-utils';
 import { estTypeSansNumero, typesInterfaceEnMotsCles } from './cisco/CiscoConfigCommands';
 import { getNtpAgent } from '../../equipment/RouterServiceCapabilities';
+import { fhrpRunningConfigLines } from '../../fhrp/runningConfig';
+import { hsrpMaxGroup } from '../../hsrp/types';
 import {
-  buildIdentityConfigCommands, buildIdentitySubmodeCommands,
+  buildIdentityConfigCommands, buildIdentitySubmodeCommands, getSecurityConfig,
   type CiscoSecurityShellContext,
 } from './cisco/CiscoSecurityCommands';
 import { showSwitchVersion, showIpTraffic } from './cisco/CiscoCommonShow';
@@ -1595,11 +1598,6 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
     // (`Switch.portAclPermits` interroge `getVaclEngine()` à chaque
     // trame) : le moteur, la liaison et le filtrage existaient, il
     // manquait la commande qui les relie.
-    this.configIfTrie.registerGreedy('ip access-group',
-      'Apply an IP access list to this port', (args) => this.appliquerPacl(args, false));
-    this.configIfTrie.addCompletionKeywords('ip access-group', ['in', 'out']);
-    this.configIfTrie.registerGreedy('no ip access-group',
-      'Remove an IP access list from this port', (args) => this.appliquerPacl(args, true));
     this.configIfTrie.register('no ip address', 'Remove the SVI IP address', () => {
       const vlan = this.sviVlanId(this.selectedInterface ?? '');
       if (vlan === null) return '';
@@ -1608,32 +1606,13 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
       return '';
     });
 
-    // DHCP relay (`ip helper-address X`) — valid on SVI only. Each
-    // helper is appended; `no ip helper-address X` removes one.
-    this.configIfTrie.registerGreedy('ip helper-address',
-      'Set a DHCP relay target on this SVI', (args) => {
-        const vlan = this.sviVlanId(this.selectedInterface ?? '');
-        if (vlan === null) return '% Command rejected: not applicable on this interface.';
-        if (args.length < 1 || !IPAddress.isValid(args[0])) {
-          return CISCO_ERRORS.INVALID_INPUT;
-        }
-        this.d().addSviHelperAddress(vlan, args[0]);
-        return '';
-      });
-    this.configIfTrie.registerGreedy('no ip helper-address',
-      'Remove a DHCP relay target from this SVI', (args) => {
-        const vlan = this.sviVlanId(this.selectedInterface ?? '');
-        if (vlan === null) return '';
-        if (args.length >= 1) this.d().removeSviHelperAddress(vlan, args[0]);
-        return '';
-      });
 
     // ── VRRP on SVI (first-hop redundancy) ──
     // Standard IOS syntax: `vrrp <group> ip <vip>` / `vrrp <group>
     // priority <n>` / `vrrp <group> preempt`. Valid on Vlan SVIs only;
     // a Vlanif alias in `interface Vlan10` view means the group lives
     // on that SVI's VLAN plane.
-    this.configIfTrie.registerGreedy('vrrp', 'VRRP group config', (args) => {
+    this.configIfTrie.registerGreedy('vrrp', 'VRRP configuration', (args) => {
       const vlan = this.sviVlanId(this.selectedInterface ?? '');
       if (vlan === null) return '% VRRP is valid on SVI (Vlan) interfaces only.';
       if (args.length < 2) return CISCO_ERRORS.INCOMPLETE;
@@ -1698,7 +1677,7 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
       return '';
     });
 
-    this.configIfTrie.registerGreedy('standby', 'HSRP group config', (args) => {
+    this.configIfTrie.registerGreedy('standby', 'HSRP configuration', (args) => {
       const vlan = this.sviVlanId(this.selectedInterface ?? '');
       if (vlan === null) return '% HSRP is valid on SVI (Vlan) interfaces only.';
       if (args.length < 2) return CISCO_ERRORS.INCOMPLETE;
@@ -1714,8 +1693,10 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
       const version = this.hsrpVersionByIface.get(iface) ?? 1;
       const group = parseInt(args[0], 10);
       if (Number.isNaN(group)) return '% Invalid HSRP group.';
-      const maxGrp = version === 2 ? 4095 : 255;
-      if (group < 0 || group > maxGrp) return '% Invalid HSRP group.';
+      const maxGrp = hsrpMaxGroup(version);
+      if (group < 0 || group > maxGrp) {
+        return `% Group number out of range. Valid range is 0-${maxGrp} for HSRP version ${version}`;
+      }
       agent.ensureGroup(iface, group, version);
       switch (args[1]) {
         case 'ip':
@@ -1775,7 +1756,7 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
       return '';
     });
 
-    this.configIfTrie.registerGreedy('glbp', 'GLBP group config', (args) => {
+    this.configIfTrie.registerGreedy('glbp', 'GLBP configuration', (args) => {
       const vlan = this.sviVlanId(this.selectedInterface ?? '');
       if (vlan === null) return '% GLBP is valid on SVI (Vlan) interfaces only.';
       if (args.length < 2) return CISCO_ERRORS.INCOMPLETE;
@@ -3912,7 +3893,7 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
     trie.registerGreedy('private-vlan mapping',
       'Map secondary VLANs to this primary VLAN SVI', (args) => {
         const vlan = this.sviVlanId(this.selectedInterface ?? '');
-        if (vlan === null) return '% Command rejected: not applicable on this interface.';
+        if (vlan === null) return CISCO_ERRORS.NOT_APPLICABLE_INTERFACE;
         if (args.length < 1) return CISCO_ERRORS.INCOMPLETE;
         const secondarySet = this.parseVlanList(args[0]);
         if (!secondarySet) return '% Invalid VLAN list';
@@ -4678,6 +4659,9 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
       for (const helper of svi.helperAddresses) {
         lines.push(` ip helper-address ${helper}`);
       }
+      lines.push(...runningConfigInterfaceACLFrom(
+        sw.getVaclEngine().getInterfaceACLBindingsInternal(), `Vlan${svi.vlan}`));
+      lines.push(...getSecurityConfig(sw).asInterfaceRunningConfigLines(`Vlan${svi.vlan}`));
       for (const l of this.renderSviFhrpLines(sw, svi.vlan)) lines.push(l);
       if (!svi.adminUp) lines.push(' shutdown');
       lines.push('!');
@@ -4745,44 +4729,25 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
 
   private renderSviFhrpLines(sw: CiscoSwitch, vlan: number): string[] {
     const iface = `Vlanif${vlan}`;
-    const out: string[] = [];
-
-    const vrrp = sw.getVrrpAgent().listGroups().filter((g) => g.iface === iface);
-    for (const g of vrrp) {
-      if (g.vip) out.push(` vrrp ${g.vrid} ip ${g.vip}`);
-      if (g.priority !== 100) out.push(` vrrp ${g.vrid} priority ${g.priority}`);
-      if (g.preempt) out.push(` vrrp ${g.vrid} preempt`);
-      if (g.advertiseSec !== 1) out.push(` vrrp ${g.vrid} timers advertise ${g.advertiseSec}`);
-      for (const t of g.tracks) {
-        out.push(` vrrp ${g.vrid} track ${t.target}${t.decrement !== 10 ? ` decrement ${t.decrement}` : ''}`);
-      }
-    }
-
-    const hsrpGroups = sw.getHsrpAgent().listGroups().filter((g) => g.iface === iface);
-    if (hsrpGroups.some((g) => g.version === 2)) out.push(' standby version 2');
-    for (const g of hsrpGroups) {
-      if (g.vip) out.push(` standby ${g.group} ip ${g.vip}`);
-      if (g.priority !== 100) out.push(` standby ${g.group} priority ${g.priority}`);
-      if (g.preempt) out.push(` standby ${g.group} preempt`);
-      if (g.helloSec !== 3 || g.holdSec !== 10) out.push(` standby ${g.group} timers ${g.helloSec} ${g.holdSec}`);
-      if (g.authText !== 'cisco') out.push(` standby ${g.group} authentication text ${g.authText}`);
-      for (const t of g.tracks) {
-        out.push(` standby ${g.group} track ${t.target}${t.decrement !== 10 ? ` decrement ${t.decrement}` : ''}`);
-      }
-    }
-
-    const glbp = sw.getGlbpAgent().listGroups().filter((g) => g.iface === iface);
-    for (const g of glbp) {
-      if (g.vip) out.push(` glbp ${g.group} ip ${g.vip}`);
-      if (g.priority !== 100) out.push(` glbp ${g.group} priority ${g.priority}`);
-      if (g.preempt) out.push(` glbp ${g.group} preempt`);
-      if (g.weighting !== 100) out.push(` glbp ${g.group} weighting ${g.weighting}`);
-      if (g.loadBalancing !== 'round-robin') out.push(` glbp ${g.group} load-balancing ${g.loadBalancing}`);
-      for (const t of g.tracks) {
-        out.push(` glbp ${g.group} weighting track ${t.target}${t.decrement !== 10 ? ` decrement ${t.decrement}` : ''}`);
-      }
-    }
-    return out;
+    const ici = <G extends { iface: string }>(g: G): boolean => g.iface === iface;
+    return fhrpRunningConfigLines({
+      hsrp: sw.getHsrpAgent().listGroups().filter(ici).map((g) => ({
+        group: g.group, version: g.version, vip: g.vip,
+        priority: g.priority, preempt: g.preempt, preemptDelaySec: g.preemptDelaySec,
+        helloSec: g.helloSec, holdSec: g.holdSec, authText: g.authText,
+        tracks: g.tracks,
+      })),
+      vrrp: sw.getVrrpAgent().listGroups().filter(ici).map((g) => ({
+        group: g.vrid, vip: g.vip,
+        priority: g.priority, preempt: g.preempt, preemptDelaySec: g.preemptDelaySec,
+        advertiseSec: g.advertiseSec, tracks: g.tracks,
+      })),
+      glbp: sw.getGlbpAgent().listGroups().filter(ici).map((g) => ({
+        group: g.group, vip: g.vip,
+        priority: g.priority, preempt: g.preempt, preemptDelaySec: g.preemptDelaySec,
+        weighting: g.weighting, loadBalancing: g.loadBalancing, tracks: g.tracks,
+      })),
+    });
   }
 
   // ─── Show Command Implementations ────────────────────────────────
@@ -5535,13 +5500,16 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
    * Une liste inconnue est REFUSÉE dans les mots d'IOS plutôt que liée :
    * une PACL qui ne désigne rien ne filtre rien, et l'accepter donnerait
    * un port qu'on croit protégé.
+   *
+   * Sur une SVI la même commande pose une RACL — c'est ainsi qu'un
+   * Catalyst filtre entre VLAN — et le magasin est le même, indexé par
+   * nom d'interface. Elle y était refusée alors que `show ip interface
+   * Vlan<n>` lisait déjà ce magasin : la vue savait rendre une liaison
+   * qu'aucune commande ne pouvait poser.
    */
   private appliquerPacl(args: string[], retirer: boolean): string {
     const iface = this.selectedInterface;
     if (!iface) return CISCO_ERRORS.INCOMPLETE;
-    if (this.sviVlanId(iface) !== null) {
-      return '% Command rejected: not applicable on this interface.';
-    }
     if (args.length < 2) return CISCO_ERRORS.INCOMPLETE;
     const sens = args[1].toLowerCase();
     if (sens !== 'in' && sens !== 'out') return CISCO_ERRORS.INVALID_INPUT;
@@ -5615,28 +5583,6 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
 
     // ip route <net> <mask> <next-hop>
 
-    cfg.registerGreedy('ip route', 'Add a static route', (args) => {
-      if (args.length < 3) return CISCO_ERRORS.INCOMPLETE;
-      let net: IPAddress, mask: SubnetMask, gw: IPAddress;
-      try { net = new IPAddress(args[0]); } catch { return `% Invalid network ${args[0]}`; }
-      try { mask = new SubnetMask(args[1]); } catch { return `% Invalid mask ${args[1]}`; }
-      try { gw = new IPAddress(args[2]); } catch { return `% Invalid next-hop ${args[2]}`; }
-      const ad = CiscoSwitchShell.distanceStatiqueIos(args[3]);
-      if (ad === null) return CISCO_ERRORS.INVALID_INPUT;
-      this.d().addStaticRoute(net, mask, gw, ad);
-      return '';
-    });
-    cfg.registerGreedy('no ip route', 'Remove a static route', (args) => {
-      if (args.length < 2) return CISCO_ERRORS.INCOMPLETE;
-      let net: IPAddress, mask: SubnetMask, gw: IPAddress | undefined;
-      try { net = new IPAddress(args[0]); } catch { return `% Invalid network ${args[0]}`; }
-      try { mask = new SubnetMask(args[1]); } catch { return `% Invalid mask ${args[1]}`; }
-      if (args[2]) {
-        try { gw = new IPAddress(args[2]); } catch { return `% Invalid next-hop ${args[2]}`; }
-      }
-      this.d().removeStaticRoute(net, mask, gw);
-      return '';
-    });
 
     // Pool sub-mode trie: reuse the shared Cisco builder. Only the
     // handful of accessors the pool commands actually call need to be
@@ -5943,23 +5889,14 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
     }
     lines.push('  MTU is 1500 bytes');
     lines.push(`  Hardware is EtherSVI, address is ${this.d().getBridgeMac().toCiscoString()}`);
-    if (svi.helperAddresses.length > 0) {
-      for (const h of svi.helperAddresses) {
-        lines.push(`  Helper address is ${h}`);
-      }
-    } else {
-      lines.push('  Helper address is not set');
-    }
-    lines.push('  Directed broadcast forwarding is disabled');
-    lines.push(...interfaceAclLines(this.liaisonsAcl(`Vlan${vlan}`)));
-    lines.push('  Proxy ARP is enabled');
-    lines.push('  Security level is default');
-    lines.push('  Split horizon is enabled');
-    lines.push('  ICMP redirects are always sent');
-    lines.push('  ICMP unreachables are always sent');
-    lines.push('  ICMP mask replies are never sent');
-    lines.push('  IP fast switching is enabled');
-    lines.push('  IP CEF switching is enabled');
+    lines.push(...helperAddressLines(svi.helperAddresses));
+    const f = getSecurityConfig(this.d()).ifaceFlags(`Vlan${vlan}`);
+    lines.push(...ipInterfaceControlLines({
+      proxyArp: !f.noProxyArp,
+      noRedirects: f.noRedirects,
+      noUnreachables: f.noUnreachables,
+      maskReply: f.maskReply,
+    }, this.liaisonsAcl(`Vlan${vlan}`)));
     return lines.join('\n');
   }
 
@@ -6077,6 +6014,48 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
 
   protected override tablesDeContinuations(): readonly ContinuationTable[] {
     return [SOCLE, COMMUTATEUR_SEUL];
+  }
+
+  protected override poserRelaisDhcp(iface: string, cible: string): string {
+    const vlan = this.sviVlanId(iface);
+    if (vlan === null) return CISCO_ERRORS.NOT_APPLICABLE_INTERFACE;
+    this.d().addSviHelperAddress(vlan, cible);
+    return '';
+  }
+
+  protected override retirerRelaisDhcp(iface: string, cible: string): string {
+    const vlan = this.sviVlanId(iface);
+    if (vlan === null) return CISCO_ERRORS.NOT_APPLICABLE_INTERFACE;
+    this.d().removeSviHelperAddress(vlan, cible);
+    return '';
+  }
+
+  protected override moteurDeListes() { return this.d().getVaclEngine(); }
+
+  protected override poserRouteStatique(reste: string): string {
+    const args = reste.trim().split(/\s+/).filter(Boolean);
+    if (args.length < 3) return CISCO_ERRORS.INCOMPLETE;
+    let net: IPAddress, mask: SubnetMask, gw: IPAddress;
+    try { net = new IPAddress(args[0]); } catch { return `% Invalid network ${args[0]}`; }
+    try { mask = new SubnetMask(args[1]); } catch { return `% Invalid mask ${args[1]}`; }
+    try { gw = new IPAddress(args[2]); } catch { return `% Invalid next-hop ${args[2]}`; }
+    const ad = CiscoSwitchShell.distanceStatiqueIos(args[3]);
+    if (ad === null) return CISCO_ERRORS.INVALID_INPUT;
+    this.d().addStaticRoute(net, mask, gw, ad);
+    return '';
+  }
+
+  protected override retirerRouteStatique(reste: string): string {
+    const args = reste.trim().split(/\s+/).filter(Boolean);
+    if (args.length < 2) return CISCO_ERRORS.INCOMPLETE;
+    let net: IPAddress, mask: SubnetMask, gw: IPAddress | undefined;
+    try { net = new IPAddress(args[0]); } catch { return `% Invalid network ${args[0]}`; }
+    try { mask = new SubnetMask(args[1]); } catch { return `% Invalid mask ${args[1]}`; }
+    if (args[2]) {
+      try { gw = new IPAddress(args[2]); } catch { return `% Invalid next-hop ${args[2]}`; }
+    }
+    this.d().removeStaticRoute(net, mask, gw);
+    return '';
   }
 
   protected override renduInterfaces(cible: string): string {

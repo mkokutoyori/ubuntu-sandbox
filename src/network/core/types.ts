@@ -84,6 +84,10 @@ export class MACAddress {
     return `${hex.slice(0, 4)}.${hex.slice(4, 8)}.${hex.slice(8, 12)}`;
   }
 
+  toHuaweiString(): string {
+    return this.toCiscoString().replace(/\./g, '-');
+  }
+
   toJSON(): string {
     return this.toString();
   }

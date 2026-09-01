@@ -48,6 +48,9 @@ import { renderBridgeList, renderBridgeHosts } from './brctlRenderer';
 import {
   renderAggregateList, renderAggregateDetail, actorStateFlags, type AggregateView,
 } from './aggregateRenderer';
+import {
+  renderLldpNeighborDetails, renderLldpNeighborSummary,
+} from './lldpRenderer';
 import { selectBundleMemberForFlow } from '@/network/lacp/loadBalance';
 import { renderAutoupdateVersions } from './fortiguardRenderer';
 import { describeLogCategories, resolveLogCategory } from '../log/logCategories';
@@ -133,6 +136,24 @@ function diagnoseNetlink(rest: readonly string[], deps: FortiDiagDeps): string {
   return FortiMessages.unknownPath(`netlink brctl ${tail.join(' ')}`);
 }
 
+function diagnoseLldpRx(rest: readonly string[], deps: FortiDiagDeps): string {
+  const agent = deps.fw.getLldpAgent();
+  const ports = deps.fw.getPorts().map(p => p.getName());
+  if (rest[0] === 'neighbor' && rest[1] === 'summary') {
+    return renderLldpNeighborSummary(agent, ports);
+  }
+  if (rest[0] === 'port' && rest[1] === 'neighbor' && rest[2] === 'details'
+    && rest[3] !== undefined) {
+    const name = rest[3];
+    const index = ports.indexOf(name);
+    if (index < 0) return `port ${name} does not exist`;
+    return renderLldpNeighborDetails(
+      agent, name, index + 1,
+      deps.fw.getPort(name)?.getMAC().toString() ?? '');
+  }
+  return FortiMessages.unknownPath(`lldprx ${rest.join(' ')}`);
+}
+
 function bridgePortNumber(deps: FortiDiagDeps, port: string): number {
   const index = deps.fw.getPorts().findIndex(known => known.getName() === port);
   return index < 0 ? 0 : index + 1;
@@ -149,6 +170,7 @@ export function runDiagnose(rest: readonly string[], deps: FortiDiagDeps): strin
   if (family === 'ip') return diagnoseIp(tail, deps);
   if (family === 'test') return diagnoseTest(tail, deps);
   if (family === 'netlink') return diagnoseNetlink(tail, deps);
+  if (family === 'lldprx') return diagnoseLldpRx(tail, deps);
   if (family === 'snmp') return diagnoseSnmp(tail, deps);
   if (family === 'hardware') {
     if (tail[0] === 'sysinfo' && tail[1] === 'conserve') {

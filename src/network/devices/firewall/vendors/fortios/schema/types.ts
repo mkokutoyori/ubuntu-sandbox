@@ -81,6 +81,9 @@ export interface FortiAttributeSpec {
   ) => string | null;
 }
 
+export type { LldpSetting } from '../../../l2/LldpIntent';
+import type { LldpSetting } from '../../../l2/LldpIntent';
+
 export interface FortiInterfacePatch {
   readonly vdom?: string;
   readonly ip?: string;
@@ -99,6 +102,10 @@ export interface FortiInterfacePatch {
     readonly minLinks: number;
     readonly minLinksDown: 'operational' | 'administrative';
     readonly lacpHaSecondary: boolean;
+  };
+  readonly lldp?: {
+    readonly transmission: LldpSetting;
+    readonly reception: LldpSetting;
   };
 }
 
@@ -218,6 +225,8 @@ export interface FortiGlobalSettings {
   readonly adminLockoutDurationSec?: number;
   readonly preLoginBanner?: boolean;
   readonly postLoginBanner?: boolean;
+  readonly lldpTransmission?: boolean;
+  readonly lldpReception?: boolean;
   readonly timezone?: string;
   readonly conserveThresholds?: ConserveThresholds;
   readonly avFailopen?: string;
