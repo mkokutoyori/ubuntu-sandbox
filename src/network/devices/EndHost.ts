@@ -512,6 +512,7 @@ export abstract class EndHost extends Equipment {
         getPort: (n: string) => this.ports.get(n),
         getPorts: () => [...this.ports.values()],
         sendFrame: (p: string, f: EthernetFrame) => { this.sendFrame(p, f); },
+        systemDescription: () => this.lldpSystemDescription(),
       } as never, () => this.getBus());
       // networkd écoute par défaut (`LLDP=yes`) mais n'émet pas
       // (`EmitLLDP=no`) : un poste voit le commutateur auquel il est
@@ -527,6 +528,8 @@ export abstract class EndHost extends Equipment {
     }
     return this._lldpAgent;
   }
+
+  protected lldpSystemDescription(): string { return this.getType(); }
 
   /** `EmitLLDP=` de systemd.network(5) — l'hôte annonce sa présence. */
   setLldpEmission(on: boolean): void {

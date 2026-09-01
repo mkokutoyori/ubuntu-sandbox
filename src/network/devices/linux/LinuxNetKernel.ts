@@ -165,6 +165,9 @@ export interface LinuxNetKernel {
   /** Voisins LLDP découverts sur le câble, tous ports ou un seul. */
   getLldpNeighbors(iface?: string): import('../../lldp/LldpAgent').LldpNeighbor[];
 
+  /** L'agent LLDP de cette machine — ce que `lldpd` pilote et `lldpcli` lit. */
+  getLldpAgent(): import('../../lldp/LldpAgent').LldpAgent;
+
   // ─── DHCP client ─────────────────────────────────────────────────
   getDhcpClient(): DHCPClient;
   autoDiscoverDHCPServers(): void;

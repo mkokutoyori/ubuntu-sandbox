@@ -33,6 +33,8 @@ export const PACKAGE_DB: readonly PackageEntry[] = [
     summary: 'GNU Bourne Again SHell' },
   { name: 'bind9', version: '9.18.12-0ubuntu0.22.04.1', arch: 'amd64', installed: false,
     summary: 'Internet Domain Name Server' },
+  { name: 'lldpd', version: '1.0.16-1', arch: 'amd64', installed: true,
+    summary: 'implementation of IEEE 802.1ab (LLDP)' },
   { name: 'isc-dhcp-server', version: '4.4.1-2.3ubuntu2.4', arch: 'amd64', installed: false,
     summary: 'ISC DHCP server for automatic IP address assignment' },
   // `chronyd`/`chronyc` tournent sur cette image depuis le lot N3 et

@@ -128,6 +128,7 @@ import { newgrpCommand } from './iam/Newgrp';
 import { tracepathCommand } from './net/Tracepath';
 import { mtrCommand } from './net/MtrReport';
 import { conntrackCommand } from './net/Conntrack';
+import { lldpcliCommand } from './net/Lldpcli';
 import { treeCommand } from './coreutils/Tree';
 import { calCommand } from './coreutils/Cal';
 import { yesCommand } from './coreutils/Yes';
@@ -262,6 +263,7 @@ export {
   tracepathCommand,
   mtrCommand,
   conntrackCommand,
+  lldpcliCommand,
   treeCommand,
   calCommand,
   yesCommand,
@@ -407,6 +409,7 @@ export const CORE_LINUX_COMMANDS: readonly LinuxCommand[] = [
   tracepathCommand,
   mtrCommand,
   conntrackCommand,
+  lldpcliCommand,
   treeCommand,
   calCommand,
   yesCommand,

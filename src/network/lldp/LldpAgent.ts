@@ -21,6 +21,7 @@ export interface LldpHost {
   getPorts(): import('../hardware/Port').Port[];
   sendOnLink(request: LinkSendRequest): boolean;
   displayPortName?(portName: string): string;
+  systemDescription?(): string;
 }
 
 export type LldpNeighbor = Readonly<LldpNeighborEntry>;
@@ -467,16 +468,20 @@ export class LldpAgent extends ReactiveAgentBase {
       case 'router-huawei': return 'Huawei VRP Software, Version 5.160 (AR2200 V200R003C00)';
       case 'switch-huawei': return 'Huawei VRP Software, Version 5.170 (S5720 V200R010C00)';
       case 'firewall-fortinet': return 'FortiGate';
-      default: return t;
+      default: return this.host.systemDescription?.() ?? t;
     }
   }
 
   private collectAddresses(): string[] {
     const out: string[] = [];
-    for (const p of this.host.getPorts()) {
+    for (const p of this.manageablePorts()) {
       const ip = p.getIPAddress();
-      if (ip) out.push(ip.toString());
+      if (ip && !ip.toString().startsWith('127.')) out.push(ip.toString());
     }
     return out;
+  }
+
+  manageablePorts(): import('../hardware/Port').Port[] {
+    return this.host.getPorts().filter(p => !p.isLoopback?.());
   }
 }
