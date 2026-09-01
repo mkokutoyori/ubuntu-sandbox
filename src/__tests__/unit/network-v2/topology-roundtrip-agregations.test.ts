@@ -27,16 +27,24 @@
  * l'analyseur qui les relit, de sorte que la grammaire n'existe qu'une
  * fois dans les deux sens.
  *
- * DISCRIMINATION : 6 des 8 cas tombent contre l'etat d'avant. Les 2
+ * QUATRIEME CAUSE, trouvee en elargissant la mesure : le serialiseur
+ * ne nommait `Firewall` NULLE PART, donc un FortiGate perdait sa
+ * configuration ENTIERE — agregats, politiques, objets d'adresse, NAT,
+ * zones. Le rendu et l'application existaient pourtant deja et sont
+ * ceux d'`execute backup config` / `execute restore config` : le
+ * serialiseur les emprunte au lieu d'en ecrire d'autres.
+ *
+ * DISCRIMINATION : 8 des 10 cas tombent contre l'etat d'avant. Les 2
  * autres sont le TEMOIN Cisco, seule plateforme qui survivait deja, et
  * le cas des adresses, qui passe par `interfaces` et n'a jamais
- * dependu de ces trois chemins.
+ * dependu de ces quatre chemins.
  */
 
 import { describe, it, expect, beforeEach } from 'vitest';
 import { WindowsPC } from '@/network/devices/WindowsPC';
 import { LinuxServer } from '@/network/devices/LinuxServer';
 import { CiscoSwitch } from '@/network/devices/CiscoSwitch';
+import { FortiGate } from '@/network/devices/firewall/vendors/fortios/FortiGate';
 import { HuaweiSwitch } from '@/network/devices/HuaweiSwitch';
 import { EquipmentRegistry } from '@/network/equipment/EquipmentRegistry';
 import { exportTopology, importTopology } from '@/store/topologySerializer';
@@ -157,6 +165,38 @@ describe('une agregation survit a un enregistrement', () => {
     expect(await back.executeCommand('display eth-trunk 1'))
       .toContain("Eth-Trunk1's state information is:");
     expect(await back.executeCommand('display vlan')).toContain('77');
+  });
+
+  it('FortiGate : l\'agregat revient avec ses membres et son seuil', async () => {
+    const fw = new FortiGate('firewall-fortinet', 'FGT');
+    fw.powerOn();
+    const ports = fw.getPorts().map(p => p.getName());
+    await taper(fw, ['config system interface', 'edit bond1', 'set type aggregate',
+      `set member ${ports[2]} ${ports[3]}`, 'set lacp-mode active', 'set min-links 2',
+      'set lacp-speed fast', 'set ip 10.5.0.1 255.255.255.0', 'next', 'end']);
+
+    const back = parNom(await allerRetour([fw]), 'FGT') as unknown as Cmd;
+
+    const vue = await back.executeCommand('show system interface bond1');
+    expect(vue).toContain('set type aggregate');
+    expect(vue).toContain('set member "port3" "port4"');
+    expect(vue).toContain('set min-links 2');
+    expect(vue).toContain('set lacp-speed fast');
+  });
+
+  it('FortiGate : le reste de la configuration revient aussi', async () => {
+    const fw = new FortiGate('firewall-fortinet', 'FGT');
+    fw.powerOn();
+    await taper(fw, ['config firewall address', 'edit LAN',
+      'set subnet 10.5.0.0 255.255.255.0', 'next', 'end']);
+    await taper(fw, ['config firewall policy', 'edit 1',
+      'set srcintf port1', 'set dstintf port2', 'set srcaddr LAN', 'set dstaddr all',
+      'set service ALL', 'set action accept', 'next', 'end']);
+
+    const back = parNom(await allerRetour([fw]), 'FGT') as unknown as Cmd;
+
+    expect(await back.executeCommand('show firewall address')).toContain('LAN');
+    expect(await back.executeCommand('show firewall policy')).toContain('edit 1');
   });
 
   it('TEMOIN Cisco : le Port-channel survivait deja', async () => {

@@ -1087,6 +1087,15 @@ export class Firewall extends Equipment {
 
   protected managementRunningConfig(): string { return ''; }
 
+  getRunningConfig(): string { return this.managementRunningConfig(); }
+
+  async replayConfig(text: string): Promise<void> {
+    for (const line of text.split('\n')) {
+      const trimmed = line.trim();
+      if (trimmed.length > 0) await this.executeCommand(trimmed);
+    }
+  }
+
   getVdomRegistry(): VdomRegistry { return this.vdoms; }
 
   getVdom(name?: string): VdomContext {

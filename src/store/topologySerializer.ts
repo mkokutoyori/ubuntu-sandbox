@@ -56,6 +56,7 @@ import {
 } from '@/terminal/commands/database';
 import { VirtualFileSystem } from '@/network/devices/linux/VirtualFileSystem';
 import { bondOptionLines } from '@/network/devices/linux/net/LinuxBonding';
+import { Firewall } from '@/network/devices/firewall/Firewall';
 import { buildConnection, type Connection } from './networkStore';
 
 /** Surfaced by Save/Export UI (rapport 09, item #55) so the user knows
@@ -880,6 +881,10 @@ export function exportTopology(
       const sp = captureSwitchports(device);
       if (sp.length > 0) entry.switchports = sp;
     }
+    if (device instanceof Firewall) {
+      const texte = device.getRunningConfig();
+      if (texte) entry.runningConfigText = texte;
+    }
     if (device instanceof Router || device instanceof Switch) {
       const runningConfigText = device.getRunningConfig();
       if (runningConfigText) entry.runningConfigText = runningConfigText;
@@ -1189,6 +1194,9 @@ export async function importTopology(json: TopologyExport): Promise<ImportResult
       if (devData.windowsServices) restoreWindowsServices(device, devData.windowsServices);
       if (devData.registry) restoreRegistry(device, devData.registry);
       if (devData.windowsTeams) restoreWindowsTeams(device, devData.windowsTeams);
+    }
+    if (device instanceof Firewall && devData.runningConfigText) {
+      await device.replayConfig(devData.runningConfigText);
     }
     if ((device instanceof Router || device instanceof Switch) && devData.runningConfigText) {
       await replayVendorConfig(device, devData.runningConfigText);
