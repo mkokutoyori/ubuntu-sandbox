@@ -1516,3 +1516,13 @@ défauts — la méthode vaut d'être reprise sur le reliquat.
   modifier la configuration — ou s'il faut liberer l'equipement apres
   chaque essai, ce qui suppose une extinction propre qui n'existe pas
   encore. Les deux sont un lot a soi.
+- Une adresse SECONDAIRE sur une SVI de Catalyst est REFUSEE
+  (`% Secondary addresses are not supported on this platform.`) alors
+  qu'un vrai IOS l'accepte. Mesure : `SwitchSvi` range UNE adresse et un
+  masque par VLAN (`configure(vlan, ip, mask)`), et `isOwnAddress`, la
+  resolution ARP et l'acheminement lisent cette adresse-la ; il n'y a
+  donc nulle part ou poser la seconde. C'est un choix ASSUME et non un
+  oubli : avant ce lot la commande etait acceptee et ECRASAIT la
+  primaire — un refus est moins faux qu'une perte silencieuse. Fermer
+  demande une liste d'adresses secondaires sur la SVI et les trois
+  lecteurs du plan de donnees qui vont avec, ce qui est un lot a soi.

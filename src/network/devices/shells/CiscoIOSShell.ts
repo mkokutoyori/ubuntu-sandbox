@@ -42,7 +42,11 @@ import { getSecurityConfig } from './cisco/CiscoSecurityCommands';
 import type { PromptMap } from './PromptBuilder';
 import { CISCO_IOS_PROMPTS } from './PromptBuilder';
 import { CLIStateMachine, CISCO_IOS_MODES } from './CLIStateMachine';
-import { resolveInterfaceName, cmdIpRoute, cmdNoIpRoute } from './cisco/CiscoConfigCommands';
+import {
+  resolveInterfaceName, cmdIpRoute, cmdNoIpRoute,
+  refusSousInterfaceSansEncapsulation,
+} from './cisco/CiscoConfigCommands';
+import type { IpAddressHost } from './cisco/ipAddressInterfaceSpecs';
 import {
   registerHsrpShowCommands, hsrpGroupRange,
 } from './cisco/CiscoHsrpCommands';
@@ -1961,6 +1965,47 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
     };
     dhcp.removeHelperAddress?.(iface, cible);
     return '';
+  }
+
+  protected override ipAddressHost(): IpAddressHost {
+    const iface = (): string | null => this.getSelectedInterface();
+    const poser = (adresse: string, masque: string, secondaire: boolean): string => {
+      const nom = iface();
+      if (!nom) return '% No interface selected';
+      const refus = refusSousInterfaceSansEncapsulation(this);
+      if (refus) return refus;
+      try {
+        if (!secondaire) this.d().getDhcpClientAgent().disable(nom);
+        this.d().configureInterface(
+          nom, new IPAddress(adresse), new SubnetMask(masque), secondaire);
+        return '';
+      } catch (e) {
+        return `% Invalid input: ${e instanceof Error ? e.message : String(e)}`;
+      }
+    };
+    return {
+      setPrimaryAddress: (a, m) => poser(a, m, false),
+      setSecondaryAddress: (a, m) => poser(a, m, true),
+      clearAddress: () => {
+        const nom = iface();
+        if (!nom) return '% No interface selected';
+        this.d().getDhcpClientAgent().disable(nom);
+        this.d().unconfigureInterface(nom);
+        return '';
+      },
+      clearSecondaryAddress: (a, m) => {
+        const nom = iface();
+        if (!nom) return '% No interface selected';
+        this.d().removeSecondaryAddress(nom, new IPAddress(a), new SubnetMask(m));
+        return '';
+      },
+      setNegotiatedAddress: () => {
+        const nom = iface();
+        if (!nom) return '% No interface selected';
+        this.d().setInterfaceAddressMode?.(nom, 'negotiated');
+        return '';
+      },
+    };
   }
 
   protected override moteurDeListes() { return this.d()._getACLEngineInternal(); }

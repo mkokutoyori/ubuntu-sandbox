@@ -52,6 +52,7 @@ import { projectSnmpServiceOntoAgent } from '@/network/snmp/snmpProjection';
 import { renderStartupConfig } from './cisco/ciscoConfigSerializer';
 import { CommandTrie, type ParamType } from './CommandTrie';
 import { fhrpInterfaceSpecs, type FhrpPlacement } from './cisco/fhrpInterfaceSpecs';
+import { ipAddressInterfaceSpecs, type IpAddressHost } from './cisco/ipAddressInterfaceSpecs';
 import type { FhrpRepository } from '../inspection/config/FhrpRepository';
 import { EquipmentParamResolver, type SessionParamRanges, type CompletableDevice } from './EquipmentParamResolver';
 import { getDefaultScheduler, type IScheduler, type TimerHandle } from '@/events/Scheduler';
@@ -5477,6 +5478,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       ...this.ipAccessGroupSpecs(),
       ...this.ipHelperAddressSpecs(),
       ...this.fhrpInterfaceSpecs(),
+      ...ipAddressInterfaceSpecs(() => this.ipAddressHost()),
       ...this.cefSpecs(),
       ...this.enableSpecs(),
       ...this.configureSpecs(),
@@ -6271,6 +6273,16 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
   }
 
   protected resolveTrackedForFhrp(raw: string): string { return raw; }
+
+  protected ipAddressHost(): IpAddressHost {
+    return {
+      setPrimaryAddress: () => CISCO_ERRORS.INVALID_INPUT,
+      setSecondaryAddress: () => CISCO_ERRORS.INVALID_INPUT,
+      clearAddress: () => '',
+      clearSecondaryAddress: () => '',
+      setNegotiatedAddress: () => CISCO_ERRORS.INVALID_INPUT,
+    };
+  }
 
   protected fhrpInterfaceSpecs(): readonly CommandSpec[] {
     return fhrpInterfaceSpecs({

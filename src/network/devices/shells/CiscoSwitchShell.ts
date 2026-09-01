@@ -25,6 +25,11 @@ import { CommandTrie, formatInvalidInput } from './CommandTrie';
 import { isValidIPv4 } from '../../core/ip';
 import type { CommandSpec } from '@/cli/CommandTable';
 import type { FhrpPlacement } from './cisco/fhrpInterfaceSpecs';
+import type { IpAddressHost } from './cisco/ipAddressInterfaceSpecs';
+import { dhcpClientFamily, type DhcpClientLeaseView } from '@/cli/commands/dhcp/dhcpClientFamily';
+
+const SVI_SANS_SECONDAIRE =
+  '% Secondary addresses are not supported on this platform.';
 import type { SocleLegend } from './CiscoShellBase';
 import type { ArgumentSpec } from '@/cli/ArgumentTypes';
 import type { SpecCollector, AdapterKeyword } from '@/cli/commands/trieAdapter';
@@ -1578,38 +1583,12 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
     // ── SVI (management Vlan interface) L3 addressing ──
     // L2-only switch: physical ports cannot hold an IP. A management SVI
     // (interface Vlan N) may, mirroring a real Layer-2 switch.
-    this.configIfTrie.registerGreedy('ip address', 'Set the SVI IP address', (args) => {
-      const iface = this.selectedInterface ?? '';
-      const vlan = this.sviVlanId(iface);
-      if (vlan === null) {
-        return '% IP addresses may not be configured on L2 links.';
-      }
-      if (args[0]?.toLowerCase() === 'dhcp') {
-        if (args.length > 1) return CISCO_ERRORS.INVALID_INPUT;
-        this.d().getDhcpClientAgent().enable(`Vlan${vlan}`, 'ip address dhcp');
-        return '';
-      }
-      if (args.length < 2 || !IPAddress.isValid(args[0]) || !IPAddress.isValid(args[1])) {
-        return CISCO_ERRORS.INVALID_INPUT;
-      }
-      this.d().getDhcpClientAgent().disable(`Vlan${vlan}`);
-      this.d().configureSviIp(vlan, new IPAddress(args[0]), new SubnetMask(args[1]));
-      return '';
-    });
-    this.configIfTrie.addCompletionKeywords('ip address', ['dhcp']);
 
     // La PACL — `ip access-group` sur un port du commutateur — était
     // REFUSÉE, alors que le plan de données la lit depuis toujours
     // (`Switch.portAclPermits` interroge `getVaclEngine()` à chaque
     // trame) : le moteur, la liaison et le filtrage existaient, il
     // manquait la commande qui les relie.
-    this.configIfTrie.register('no ip address', 'Remove the SVI IP address', () => {
-      const vlan = this.sviVlanId(this.selectedInterface ?? '');
-      if (vlan === null) return '';
-      this.d().getDhcpClientAgent().disable(`Vlan${vlan}`);
-      this.d().clearSviIp(vlan);
-      return '';
-    });
 
 
     // ── errdisable recovery ──
@@ -2506,6 +2485,65 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
       : { iface: `Vlanif${vlan}` };
   }
 
+  selectedInterfaceName(): string | null { return this.selectedInterface ?? null; }
+
+  dhcpClientEnable(iface: string, line: string): void {
+    this.d().getDhcpClientAgent().enable(iface, line);
+  }
+
+  dhcpClientDisable(iface: string): boolean {
+    return this.d().getDhcpClientAgent().disable(iface);
+  }
+
+  dhcpClientRelease(iface: string): boolean {
+    return this.d().getDhcpClientAgent().release(iface);
+  }
+
+  dhcpClientRenew(iface: string): boolean {
+    return this.d().getDhcpClientAgent().renew(iface);
+  }
+
+  dhcpClientLeases(): DhcpClientLeaseView[] {
+    return this.d().getDhcpClientAgent().leases().map((l) => ({
+      iface: l.iface,
+      ipAddress: l.ipAddress,
+      subnetMask: l.subnetMask,
+      serverIdentifier: l.serverIdentifier,
+      leaseDuration: l.leaseDuration,
+      renewalTime: l.renewalTime,
+      rebindingTime: l.rebindingTime,
+    }));
+  }
+
+  dhcpClientResolveInterface(name: string): string | null {
+    return this.resolveInterfaceName(name);
+  }
+
+  protected override ipAddressHost(): IpAddressHost {
+    const vlan = (): number | null => this.sviVlanId(this.selectedInterface ?? '');
+    const surSvi = (appliquer: (n: number) => string): string => {
+      const n = vlan();
+      return n === null
+        ? '% IP addresses may not be configured on L2 links.'
+        : appliquer(n);
+    };
+    return {
+      setPrimaryAddress: (adresse, masque) => surSvi((n) => {
+        this.d().getDhcpClientAgent().disable(`Vlan${n}`);
+        this.d().configureSviIp(n, new IPAddress(adresse), new SubnetMask(masque));
+        return '';
+      }),
+      setSecondaryAddress: () => surSvi(() => SVI_SANS_SECONDAIRE),
+      clearAddress: () => surSvi((n) => {
+        this.d().getDhcpClientAgent().disable(`Vlan${n}`);
+        this.d().clearSviIp(n);
+        return '';
+      }),
+      clearSecondaryAddress: () => surSvi(() => SVI_SANS_SECONDAIRE),
+      setNegotiatedAddress: () => surSvi(() => CISCO_ERRORS.INVALID_INPUT),
+    };
+  }
+
   protected override resolveTrackedForFhrp(raw: string): string {
     return this.trackObjects.resolve(raw) ?? this.resolveInterfaceName(raw) ?? raw;
   }
@@ -2513,6 +2551,7 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
   protected override socleSpecs(): readonly CommandSpec[] {
     return [
       ...super.socleSpecs(),
+      ...dhcpClientFamily(),
       ...this.stpShowSpecs(),
       ...dhcpPoolSpecs(this.dhcpPoolContext()),
       ...this.vlanVtpShowSpecs(),
