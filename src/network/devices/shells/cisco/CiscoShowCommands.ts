@@ -19,6 +19,7 @@ import { getPrivilegeRules } from '../../router/security/CiscoPrivilegeStore';
 import type { Port } from '../../../hardware/Port';
 import { IPAddress, SubnetMask, RIP_METRIC_INFINITY } from '../../../core/types';
 import { runningConfigACL, runningConfigInterfaceACL } from './CiscoAclCommands';
+import { fhrpRunningConfigLines, type FhrpInterfaceView } from '../../../fhrp/runningConfig';
 import { runningConfigObjectGroups } from '@/cli/commands/objectGroup/objectGroupFamily';
 import { runningConfigNAT, runningConfigInterfaceNAT } from './CiscoNATCommands';
 import { ipSlaRunningConfigLines, trackRunningConfigLines } from './ciscoIpSlaRunningConfig';
@@ -1010,6 +1011,7 @@ function interfaceConfigLines(
   for (const h of helpers) {
     lines.push(` ip helper-address ${h}`);
   }
+  lines.push(...fhrpRunningConfigLines(fhrpViewOf(router, name)));
   lines.push(...runningConfigInterfaceACL(router, name));
   lines.push(...runningConfigInterfaceNAT(router, name));
   for (const l of port.getEigrpSummaries()) lines.push(` ${l}`);
@@ -1562,6 +1564,35 @@ export function showInterfacesSummary(router: Router): string {
 /** L'agent NTP d'un routeur, quand il en a un. */
 function ntpAgentOf(router: Router): import('@/network/ntp/NtpAgent').NtpAgent | undefined {
   return (router as unknown as { getNtpAgent?: () => import('@/network/ntp/NtpAgent').NtpAgent }).getNtpAgent?.();
+}
+
+function fhrpViewOf(router: Router, name: string): FhrpInterfaceView {
+  const repo = (router as unknown as {
+    getFhrpRepository?: () => import('../../inspection/config/FhrpRepository').FhrpRepository;
+  }).getFhrpRepository?.();
+  if (!repo) return { hsrp: [], vrrp: [], glbp: [] };
+  const ici = <G extends { iface: string }>(g: G): boolean => g.iface === name;
+  return {
+    hsrp: repo.all().filter(ici).map((g) => ({
+      group: g.group, version: g.version, vip: g.vip, secondary: g.secondary,
+      priority: g.priority, preempt: g.preempt, preemptDelaySec: g.preemptDelay,
+      helloSec: g.helloSec, holdSec: g.holdSec,
+      authText: g.authText, authMd5: g.authMd5, name: g.name,
+      tracks: g.trackDecr,
+    })),
+    vrrp: repo.allVrrp().filter(ici).map((g) => ({
+      group: g.group, vip: g.vip,
+      priority: g.priority, preempt: g.preempt, preemptDelaySec: g.preemptDelay,
+      advertiseSec: g.advertiseSec, authMd5: g.authMd5, description: g.description,
+      tracks: g.trackDecr,
+    })),
+    glbp: repo.allGlbp().filter(ici).map((g) => ({
+      group: g.group, vip: g.vip,
+      priority: g.priority, preempt: g.preempt, preemptDelaySec: g.preemptDelay,
+      weighting: g.weighting, loadBalancing: g.loadBalancing,
+      authMd5: g.authMd5, name: g.name, tracks: [],
+    })),
+  };
 }
 
 function ipInterfaceBlock(router: Router, name: string, port: Port): string {

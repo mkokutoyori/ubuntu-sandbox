@@ -60,6 +60,8 @@ import { IOS_ACL_NUMBERING } from '../router/ACLEngine';
 import { CISCO_ERRORS } from './cli-utils';
 import { estTypeSansNumero, typesInterfaceEnMotsCles } from './cisco/CiscoConfigCommands';
 import { getNtpAgent } from '../../equipment/RouterServiceCapabilities';
+import { fhrpRunningConfigLines } from '../../fhrp/runningConfig';
+import { hsrpMaxGroup } from '../../hsrp/types';
 import {
   buildIdentityConfigCommands, buildIdentitySubmodeCommands, getSecurityConfig,
   type CiscoSecurityShellContext,
@@ -1610,7 +1612,7 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
     // priority <n>` / `vrrp <group> preempt`. Valid on Vlan SVIs only;
     // a Vlanif alias in `interface Vlan10` view means the group lives
     // on that SVI's VLAN plane.
-    this.configIfTrie.registerGreedy('vrrp', 'VRRP group config', (args) => {
+    this.configIfTrie.registerGreedy('vrrp', 'VRRP configuration', (args) => {
       const vlan = this.sviVlanId(this.selectedInterface ?? '');
       if (vlan === null) return '% VRRP is valid on SVI (Vlan) interfaces only.';
       if (args.length < 2) return CISCO_ERRORS.INCOMPLETE;
@@ -1675,7 +1677,7 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
       return '';
     });
 
-    this.configIfTrie.registerGreedy('standby', 'HSRP group config', (args) => {
+    this.configIfTrie.registerGreedy('standby', 'HSRP configuration', (args) => {
       const vlan = this.sviVlanId(this.selectedInterface ?? '');
       if (vlan === null) return '% HSRP is valid on SVI (Vlan) interfaces only.';
       if (args.length < 2) return CISCO_ERRORS.INCOMPLETE;
@@ -1691,8 +1693,10 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
       const version = this.hsrpVersionByIface.get(iface) ?? 1;
       const group = parseInt(args[0], 10);
       if (Number.isNaN(group)) return '% Invalid HSRP group.';
-      const maxGrp = version === 2 ? 4095 : 255;
-      if (group < 0 || group > maxGrp) return '% Invalid HSRP group.';
+      const maxGrp = hsrpMaxGroup(version);
+      if (group < 0 || group > maxGrp) {
+        return `% Group number out of range. Valid range is 0-${maxGrp} for HSRP version ${version}`;
+      }
       agent.ensureGroup(iface, group, version);
       switch (args[1]) {
         case 'ip':
@@ -1752,7 +1756,7 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
       return '';
     });
 
-    this.configIfTrie.registerGreedy('glbp', 'GLBP group config', (args) => {
+    this.configIfTrie.registerGreedy('glbp', 'GLBP configuration', (args) => {
       const vlan = this.sviVlanId(this.selectedInterface ?? '');
       if (vlan === null) return '% GLBP is valid on SVI (Vlan) interfaces only.';
       if (args.length < 2) return CISCO_ERRORS.INCOMPLETE;
@@ -4725,44 +4729,25 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
 
   private renderSviFhrpLines(sw: CiscoSwitch, vlan: number): string[] {
     const iface = `Vlanif${vlan}`;
-    const out: string[] = [];
-
-    const vrrp = sw.getVrrpAgent().listGroups().filter((g) => g.iface === iface);
-    for (const g of vrrp) {
-      if (g.vip) out.push(` vrrp ${g.vrid} ip ${g.vip}`);
-      if (g.priority !== 100) out.push(` vrrp ${g.vrid} priority ${g.priority}`);
-      if (g.preempt) out.push(` vrrp ${g.vrid} preempt`);
-      if (g.advertiseSec !== 1) out.push(` vrrp ${g.vrid} timers advertise ${g.advertiseSec}`);
-      for (const t of g.tracks) {
-        out.push(` vrrp ${g.vrid} track ${t.target}${t.decrement !== 10 ? ` decrement ${t.decrement}` : ''}`);
-      }
-    }
-
-    const hsrpGroups = sw.getHsrpAgent().listGroups().filter((g) => g.iface === iface);
-    if (hsrpGroups.some((g) => g.version === 2)) out.push(' standby version 2');
-    for (const g of hsrpGroups) {
-      if (g.vip) out.push(` standby ${g.group} ip ${g.vip}`);
-      if (g.priority !== 100) out.push(` standby ${g.group} priority ${g.priority}`);
-      if (g.preempt) out.push(` standby ${g.group} preempt`);
-      if (g.helloSec !== 3 || g.holdSec !== 10) out.push(` standby ${g.group} timers ${g.helloSec} ${g.holdSec}`);
-      if (g.authText !== 'cisco') out.push(` standby ${g.group} authentication text ${g.authText}`);
-      for (const t of g.tracks) {
-        out.push(` standby ${g.group} track ${t.target}${t.decrement !== 10 ? ` decrement ${t.decrement}` : ''}`);
-      }
-    }
-
-    const glbp = sw.getGlbpAgent().listGroups().filter((g) => g.iface === iface);
-    for (const g of glbp) {
-      if (g.vip) out.push(` glbp ${g.group} ip ${g.vip}`);
-      if (g.priority !== 100) out.push(` glbp ${g.group} priority ${g.priority}`);
-      if (g.preempt) out.push(` glbp ${g.group} preempt`);
-      if (g.weighting !== 100) out.push(` glbp ${g.group} weighting ${g.weighting}`);
-      if (g.loadBalancing !== 'round-robin') out.push(` glbp ${g.group} load-balancing ${g.loadBalancing}`);
-      for (const t of g.tracks) {
-        out.push(` glbp ${g.group} weighting track ${t.target}${t.decrement !== 10 ? ` decrement ${t.decrement}` : ''}`);
-      }
-    }
-    return out;
+    const ici = <G extends { iface: string }>(g: G): boolean => g.iface === iface;
+    return fhrpRunningConfigLines({
+      hsrp: sw.getHsrpAgent().listGroups().filter(ici).map((g) => ({
+        group: g.group, version: g.version, vip: g.vip,
+        priority: g.priority, preempt: g.preempt, preemptDelaySec: g.preemptDelaySec,
+        helloSec: g.helloSec, holdSec: g.holdSec, authText: g.authText,
+        tracks: g.tracks,
+      })),
+      vrrp: sw.getVrrpAgent().listGroups().filter(ici).map((g) => ({
+        group: g.vrid, vip: g.vip,
+        priority: g.priority, preempt: g.preempt, preemptDelaySec: g.preemptDelaySec,
+        advertiseSec: g.advertiseSec, tracks: g.tracks,
+      })),
+      glbp: sw.getGlbpAgent().listGroups().filter(ici).map((g) => ({
+        group: g.group, vip: g.vip,
+        priority: g.priority, preempt: g.preempt, preemptDelaySec: g.preemptDelaySec,
+        weighting: g.weighting, loadBalancing: g.loadBalancing, tracks: g.tracks,
+      })),
+    });
   }
 
   // ─── Show Command Implementations ────────────────────────────────

@@ -1076,7 +1076,7 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
   // ─── Router-specific state ───────────────────────────────────────
   private selectedInterface: string | null = null;
   /** Real config-driven HSRP/VRRP/GLBP state (router-only; L2 switches none). */
-  private readonly fhrp = new FhrpRepository();
+  private get fhrp(): FhrpRepository { return this.d().getFhrpRepository(); }
   private readonly keyChains = new KeyChainRepository();
   getKeyChains(): KeyChainRepository { return this.keyChains; }
   private readonly policy = new PolicyRepository();
@@ -1543,8 +1543,8 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
   // base a appris qu'`exit` depuis le mode privilegie ferme la session.
   // Le switch fermait, le routeur ne faisait rien.
 
-  protected override sessionParamRanges(): SessionParamRanges | null {
-    return hsrpGroupRange(this, this.fhrp);
+  protected override sessionParamRanges(device?: Router): SessionParamRanges | null {
+    return hsrpGroupRange(this, () => (device ?? this.d()).getFhrpRepository());
   }
 
   protected getActiveTrie(): CommandTrie {
@@ -1718,8 +1718,8 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
     // ── Config mode ──
     buildConfigCommands(this.configTrie, this);
     buildConfigIfCommands(this.configIfTrie, this);
-    buildHsrpInterfaceCommands(this.configIfTrie, this, this.fhrp);
-    buildVrrpGlbpInterfaceCommands(this.configIfTrie, this, this.fhrp);
+    buildHsrpInterfaceCommands(this.configIfTrie, this, () => this.fhrp);
+    buildVrrpGlbpInterfaceCommands(this.configIfTrie, this, () => this.fhrp);
     buildBfdInterfaceCommands(this.configIfTrie, {
       selectedPorts: () => this.selectedPortsForConfigIf(),
       r: () => this.d(),
@@ -1852,8 +1852,8 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
 
   private registerShowCommands(trie: CommandTrie): void {
     registerRoutingProtoShow(trie, this, this.routingCfg);
-    registerHsrpShowCommands(trie, this, this.fhrp);
-    registerVrrpGlbpShowCommands(trie, this, this.fhrp);
+    registerHsrpShowCommands(trie, this, () => this.fhrp);
+    registerVrrpGlbpShowCommands(trie, this, () => this.fhrp);
     registerBfdShowCommands(trie, { r: () => this.d() });
     registerIgmpShowCommands(trie, this.multicastShowContext());
     registerPimShowCommands(trie, this.multicastShowContext());

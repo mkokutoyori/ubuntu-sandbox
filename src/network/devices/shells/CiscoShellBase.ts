@@ -7210,7 +7210,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     if (!device) return null;
 
     const resolver = new EquipmentParamResolver(
-      device as unknown as CompletableDevice, this.sessionParamRanges());
+      device as unknown as CompletableDevice, this.sessionParamRanges(device));
     return {
       candidatesFor: (contexte) => resolver.candidatesFor({
         path: contexte.path,
@@ -8267,7 +8267,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     return reste === '' ? '  <cr>' : CISCO_ERRORS.UNRECOGNIZED_HELP;
   }
 
-  protected sessionParamRanges(): SessionParamRanges | null { return null; }
+  protected sessionParamRanges(_device?: TDevice): SessionParamRanges | null { return null; }
 
   getHelp(input: string, device?: TDevice): string {
     // `show running-config | ?` n'était le nœud d'aucun arbre : le `|`
@@ -8286,7 +8286,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     const aideUniverselle = this.aideDesCommandesUniverselles(input, device);
     if (aideUniverselle !== null) return aideUniverselle;
     const trie = this.getActiveTrie();
-    trie.setDynamicResolver(device ? new EquipmentParamResolver(device, this.sessionParamRanges()) : null);
+    trie.setDynamicResolver(device ? new EquipmentParamResolver(device, this.sessionParamRanges(device)) : null);
     try {
       const filtreNiveau = (ligne: string): boolean => {
         if (!device) return true;
@@ -8408,7 +8408,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     const viaDo = this.doTabCandidates(input, device);
     if (viaDo !== null) return viaDo;
     const trie = this.getActiveTrie();
-    trie.setDynamicResolver(new EquipmentParamResolver(device, this.sessionParamRanges()));
+    trie.setDynamicResolver(new EquipmentParamResolver(device, this.sessionParamRanges(device)));
     try {
       const precedent = this.deviceRef;
       this.deviceRef = device;

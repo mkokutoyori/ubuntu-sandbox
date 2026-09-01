@@ -27,6 +27,17 @@ export type ContinuationTable = Readonly<Record<string, Readonly<Record<string, 
 
 /** Ce que le routeur ET le commutateur portent. */
 export const SOCLE: ContinuationTable = {
+  configIf: {
+    'glbp': ['authentication', 'forwarder', 'ip', 'load-balancing', 'name',
+      'preempt', 'priority', 'timers', 'weighting'],
+    'no glbp': ['ip', 'load-balancing', 'name', 'preempt', 'priority', 'weighting'],
+    'no standby': ['authentication', 'ip', 'name', 'preempt', 'priority', 'timers', 'track'],
+    'no vrrp': ['description', 'ip', 'preempt', 'priority', 'timers'],
+    'standby': ['authentication', 'follow', 'ip', 'mac-address', 'name',
+      'preempt', 'priority', 'timers', 'track', 'version'],
+    'vrrp': ['address-family', 'authentication', 'description', 'ip',
+      'preempt', 'priority', 'timers', 'track'],
+  },
   config: {
     'clock summer-time': ['recurring'],
     'enable password': ['level'],
@@ -198,17 +209,12 @@ export const COMMUTATEUR_SEUL: ContinuationTable = {
     'channel-group': ['active', 'auto', 'desirable', 'mode', 'on', 'passive'],
     'dot1x pae': ['authenticator'],
     'dot1x timeout': ['quiet-period'],
-    'glbp': ['decrement', 'delay', 'host-dependent', 'ip', 'key-string', 'md5', 'minimum', 'priority', 'round-robin', 'track', 'weighted'],
     'interface': ['range'],
     'l2protocol-tunnel': ['cdp', 'lldp', 'stp', 'vtp'],
     'lacp rate': ['fast', 'normal'],
-    'no glbp': ['preempt'],
     'no spanning-tree': ['bpdufilter', 'bpduguard', 'guard', 'loop', 'portfast', 'vlan'],
-    'no standby': ['preempt'],
     'no switchport port-security mac-address': ['sticky'],
-    'no vrrp': ['preempt'],
     'spanning-tree': ['disable', 'enable', 'loop', 'root'],
-    'standby': ['decrement', 'delay', 'ip', 'minimum', 'priority', 'text', 'version'],
     'switchport mode private-vlan trunk': ['host', 'promiscuous'],
     'switchport port-security aging type': ['absolute', 'inactivity'],
     'switchport port-security mac-address': ['sticky'],
@@ -218,7 +224,6 @@ export const COMMUTATEUR_SEUL: ContinuationTable = {
     'switchport trunk pruning vlan': ['add', 'except', 'none', 'remove'],
     'switchport voice vlan': ['dot1p', 'none', 'untagged'],
     'udld port': ['aggressive'],
-    'vrrp': ['advertise', 'decrement', 'delay', 'ip', 'minimum', 'priority'],
   },
   configMst: {
     'no': ['instance', 'name', 'revision'],

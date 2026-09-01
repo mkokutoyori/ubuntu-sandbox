@@ -9,6 +9,12 @@ import type {
   FhrpRepository, VrrpGroup, GlbpGroup,
 } from '../../inspection/config/FhrpRepository';
 import { getVrrpAgent, getGlbpAgent } from '../../../equipment/RouterServiceCapabilities';
+import { IPAddress } from '../../../core/types';
+import { CISCO_ERRORS } from '../cli-utils';
+import {
+  VRRP_DEFAULT_PRIORITY, VRRP_DEFAULT_ADVERTISE_SEC,
+  GLBP_DEFAULT_PRIORITY, GLBP_DEFAULT_WEIGHTING, GLBP_DEFAULT_LOAD_BALANCING,
+} from '../../../fhrp/runningConfig';
 
 interface Ctx {
   r(): Router;
@@ -32,6 +38,9 @@ function applyVrrp(repo: FhrpRepository, iface: string, args: string[], router: 
   const rest = args.slice(2);
   switch (args[1]) {
     case 'ip':
+      if (rest[0] !== undefined && !IPAddress.isValid(rest[0])) {
+        return CISCO_ERRORS.INVALID_INPUT;
+      }
       g.vip = rest[0] ?? null;
       if (g.vip) agent?.setVip(iface, group, g.vip);
       return '';
@@ -92,6 +101,9 @@ function applyGlbp(repo: FhrpRepository, iface: string, args: string[], router: 
   const rest = args.slice(2);
   switch (args[1]) {
     case 'ip':
+      if (rest[0] !== undefined && !IPAddress.isValid(rest[0])) {
+        return CISCO_ERRORS.INVALID_INPUT;
+      }
       g.vip = rest[0] ?? null;
       if (g.vip) agent?.setVip(iface, group, g.vip);
       return '';
@@ -229,39 +241,86 @@ function glbpDetail(router: Router, g: GlbpGroup): string {
 }
 
 export function buildVrrpGlbpInterfaceCommands(
-  trie: CommandTrie, ctx: Ctx, repo: FhrpRepository,
+  trie: CommandTrie, ctx: Ctx, lireRepo: () => FhrpRepository,
 ): void {
   trie.registerGreedy('vrrp', 'VRRP configuration', (a) => {
     const i = ctx.getSelectedInterface();
     if (!i) return '% No interface selected';
-    return a.length ? applyVrrp(repo, i, a, ctx.r()) : '% Incomplete command.';
+    return a.length ? applyVrrp(lireRepo(), i, a, ctx.r()) : '% Incomplete command.';
   });
   trie.registerGreedy('no vrrp', 'Remove VRRP group', (a) => {
     const i = ctx.getSelectedInterface();
-    if (i && /^\d+$/.test(a[0] || '') && a.length === 1) {
-      repo.removeVrrp(i, parseInt(a[0], 10));
+    if (!i || !/^\d+$/.test(a[0] || '')) return '';
+    const group = parseInt(a[0], 10);
+    if (a.length === 1) { lireRepo().removeVrrp(i, group); return ''; }
+    const g = lireRepo().ensureVrrp(i, group);
+    const agent = getVrrpAgent(ctx.r());
+    switch (a[1]) {
+      case 'preempt':
+        g.preempt = false; g.preemptDelay = undefined;
+        agent?.setPreempt(i, group, false);
+        return '';
+      case 'priority':
+        g.priority = VRRP_DEFAULT_PRIORITY;
+        agent?.setPriority(i, group, VRRP_DEFAULT_PRIORITY);
+        return '';
+      case 'ip':
+        g.vip = null;
+        return '';
+      case 'timers':
+        g.advertiseSec = VRRP_DEFAULT_ADVERTISE_SEC;
+        return '';
+      case 'description':
+        g.description = undefined;
+        return '';
+      default:
+        return CISCO_ERRORS.INVALID_INPUT;
     }
-    return '';
   });
   trie.registerGreedy('glbp', 'GLBP configuration', (a) => {
     const i = ctx.getSelectedInterface();
     if (!i) return '% No interface selected';
-    return a.length ? applyGlbp(repo, i, a, ctx.r()) : '% Incomplete command.';
+    return a.length ? applyGlbp(lireRepo(), i, a, ctx.r()) : '% Incomplete command.';
   });
   trie.registerGreedy('no glbp', 'Remove GLBP group', (a) => {
     const i = ctx.getSelectedInterface();
-    if (i && /^\d+$/.test(a[0] || '') && a.length === 1) {
-      repo.removeGlbp(i, parseInt(a[0], 10));
+    if (!i || !/^\d+$/.test(a[0] || '')) return '';
+    const group = parseInt(a[0], 10);
+    if (a.length === 1) { lireRepo().removeGlbp(i, group); return ''; }
+    const g = lireRepo().ensureGlbp(i, group);
+    const agent = getGlbpAgent(ctx.r());
+    switch (a[1]) {
+      case 'preempt':
+        g.preempt = false; g.preemptDelay = undefined;
+        agent?.setPreempt(i, group, false);
+        return '';
+      case 'priority':
+        g.priority = GLBP_DEFAULT_PRIORITY;
+        agent?.setPriority(i, group, GLBP_DEFAULT_PRIORITY);
+        return '';
+      case 'ip':
+        g.vip = null;
+        return '';
+      case 'weighting':
+        g.weighting = GLBP_DEFAULT_WEIGHTING;
+        return '';
+      case 'load-balancing':
+        g.loadBalancing = GLBP_DEFAULT_LOAD_BALANCING;
+        return '';
+      case 'name':
+        g.name = undefined;
+        return '';
+      default:
+        return CISCO_ERRORS.INVALID_INPUT;
     }
-    return '';
   });
 }
 
 export function registerVrrpGlbpShowCommands(
-  trie: CommandTrie, ctx: Ctx, repo: FhrpRepository,
+  trie: CommandTrie, ctx: Ctx, lireRepo: () => FhrpRepository,
 ): void {
   trie.registerGreedy('show vrrp', 'Display VRRP state', (a) => {
-    const groups = repo.allVrrp();
+    const groups = lireRepo().allVrrp();
     if (a.includes('brief')) {
       const rows = ['Interface          Grp Pri Time  Own Pre State   Master addr     Group addr'];
       for (const g of groups) {
@@ -278,7 +337,7 @@ export function registerVrrpGlbpShowCommands(
   });
 
   trie.registerGreedy('show glbp', 'Display GLBP state', (a) => {
-    const groups = repo.allGlbp();
+    const groups = lireRepo().allGlbp();
     if (a.includes('brief')) {
       const rows = ['Interface   Grp  Fwd Pri State    Address         Active router   Standby router'];
       for (const g of groups) {
