@@ -30,6 +30,7 @@ import type { LoadMtuHost } from './cisco/interfaceLoadMtuSpecs';
 import {
   switchPortPhysicalSpecs, type PhysicalPortHost,
 } from './cisco/switchPortPhysicalSpecs';
+import { stpInterfaceSpecs, type StpInterfaceHost } from './cisco/stpInterfaceSpecs';
 import { dhcpClientFamily, type DhcpClientLeaseView } from '@/cli/commands/dhcp/dhcpClientFamily';
 
 const SVI_SANS_SECONDAIRE =
@@ -2205,79 +2206,6 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
   }
 
   private registerStpInterface(): void {
-    this.configIfTrie.registerGreedy('spanning-tree', 'Interface STP configuration', (args) => {
-      const ifs = this.selectedInterface
-        ? [this.selectedInterface] : this.selectedInterfaceRange;
-      const a = args.map(s => s.toLowerCase());
-      const agent = this.requireStp();
-      const head = a[0] ?? '';
-      const isGuardRoot = head === 'guard' && a[1] === 'root';
-      const isGuardLoop = head === 'guard' && a[1] === 'loop';
-      const isBpduGuard = head === 'bpduguard';
-      const isBpduFilter = head === 'bpdufilter';
-      const isPortFast = head === 'portfast';
-      // `spanning-tree cost 10` and `spanning-tree vlan 20 cost 10` are the
-      // same command with an optional instance selector in front.
-      const perVlan = head === 'vlan' ? parseInt(a[1], 10) : NaN;
-      const knob = Number.isNaN(perVlan) ? head : a[2];
-      const knobValue = parseInt(Number.isNaN(perVlan) ? a[1] : a[3], 10);
-      const vlanArg = Number.isNaN(perVlan) ? undefined : perVlan;
-      // IOS refuse hors bornes, il n'absorbe pas — et la priorite de port
-      // se pose par pas de 16, ce qu'il dit avec ses propres mots.
-      if (knob === 'cost' && !Number.isNaN(knobValue)
-        && (knobValue < 1 || knobValue > 200_000_000)) {
-        throw new CliInvalidInput();
-      }
-      // Hors bornes, IOS refuse. Une valeur DANS les bornes qui n'est pas
-      // un multiple de 16 est arrondie par l'agent STP, choix déjà pris
-      // et testé ailleurs (`stp-prd-fidelity`) : la refuser ici ferait
-      // deux réponses à une même saisie.
-      if (knob === 'port-priority' && !Number.isNaN(knobValue)
-        && (knobValue < 0 || knobValue > 240)) {
-        throw new CliInvalidInput();
-      }
-      for (const i of ifs) {
-        if (knob === 'cost' && !Number.isNaN(knobValue)) {
-          agent.setPortCost(i, knobValue, vlanArg);
-        } else if (knob === 'port-priority' && !Number.isNaN(knobValue)) {
-          agent.setPortPriority(i, knobValue, vlanArg);
-        } else if (isPortFast) {
-          agent.setPortFast(i, a[1] !== 'disable');
-        } else if (isBpduGuard) {
-          agent.setPortBpduGuard(i, a[1] === 'enable');
-        } else if (isBpduFilter) {
-          agent.setPortBpduFilter(i, a[1] === 'enable');
-        } else if (isGuardRoot) {
-          agent.setPortRootGuard(i, true);
-        } else if (isGuardLoop) {
-          agent.setPortLoopGuard(i, true);
-        }
-        const l = this.ifStp.get(i) ?? [];
-        l.push(`spanning-tree ${args.join(' ')}`.trim());
-        this.ifStp.set(i, l);
-      }
-      return '';
-    }, STP_INTERFACE_CONTINUATIONS);
-    this.configIfTrie.registerGreedy('no spanning-tree', 'Disable interface STP knob', (args) => {
-      const ifs = this.selectedInterface
-        ? [this.selectedInterface] : this.selectedInterfaceRange;
-      const a = args.map(s => s.toLowerCase());
-      const agent = this.requireStp();
-      const noVlan = a[0] === 'vlan' ? parseInt(a[1], 10) : NaN;
-      const noKnob = Number.isNaN(noVlan) ? a[0] : a[2];
-      const noVlanArg = Number.isNaN(noVlan) ? undefined : noVlan;
-      for (const i of ifs) {
-        if (noKnob === 'cost') agent.setPortCost(i, null, noVlanArg);
-        else if (noKnob === 'port-priority') agent.setPortPriority(i, null, noVlanArg);
-        else if (a[0] === 'portfast') agent.setPortFast(i, false);
-        else if (a[0] === 'bpduguard') agent.setPortBpduGuard(i, false);
-        else if (a[0] === 'bpdufilter') agent.setPortBpduFilter(i, false);
-        else if (a[0] === 'guard' && a[1] === 'loop') agent.setPortLoopGuard(i, false);
-        else if (a[0] === 'guard') agent.setPortRootGuard(i, false);
-        this.oublierLigneStp(i, a[0], noKnob);
-      }
-      return '';
-    });
 
     // `archive` — la même famille que sur le routeur, construite par le
     // même module (`CiscoArchiveCommands`) plutôt que recopiée : deux
@@ -2511,6 +2439,20 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
     return this.resolveInterfaceName(name);
   }
 
+  private stpInterfaceHost(): StpInterfaceHost {
+    return {
+      targetInterfaces: () => this.selectedInterface
+        ? [this.selectedInterface] : this.selectedInterfaceRange,
+      stpAgent: () => this.requireStp(),
+      recordStpLine: (iface, ligne) => {
+        const l = this.ifStp.get(iface) ?? [];
+        l.push(ligne);
+        this.ifStp.set(iface, l);
+      },
+      forgetStpLine: (iface, tete, knob) => this.oublierLigneStp(iface, tete, knob),
+    };
+  }
+
   private portPhysiqueHost(): PhysicalPortHost {
     return {
       refusePortPhysique: () =>
@@ -2585,6 +2527,7 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
     return [
       ...super.socleSpecs(),
       ...switchPortPhysicalSpecs(() => this.portPhysiqueHost()),
+      ...stpInterfaceSpecs(() => this.stpInterfaceHost()),
       ...dhcpClientFamily(),
       ...this.stpShowSpecs(),
       ...dhcpPoolSpecs(this.dhcpPoolContext()),
