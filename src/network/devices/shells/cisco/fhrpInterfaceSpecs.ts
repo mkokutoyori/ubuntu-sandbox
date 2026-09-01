@@ -94,13 +94,6 @@ const REPARTITION: ArgumentSpec = {
   ],
 };
 
-/**
- * Le nombre de secondes d'un `preempt delay minimum`, ou rien.
- *
- * Zero veut dire « pas de delai » et non « delai nul » : le prendre au
- * mot faisait ecrire ` preempt delay minimum 0` dans une configuration
- * ou personne n'avait demande de delai.
- */
 function delaiDe(args: Record<string, string | undefined>): number | undefined {
   const brut = args.secondes;
   if (brut === undefined) return undefined;
@@ -114,13 +107,6 @@ function decrementDe(args: Record<string, string | undefined>): number {
 }
 
 export function fhrpInterfaceSpecs(ctx: FhrpContext): CommandSpec[] {
-  /**
-   * Le point unique ou une commande de redondance atteint son magasin.
-   *
-   * Il tranche d'abord OU le groupe vit — un routeur le pose sur le port
-   * selectionne, un Catalyst sur la SVI de son VLAN et nulle part
-   * ailleurs — puis borne le numero de groupe avec les mots d'IOS.
-   */
   function surGroupe(
     protocole: 'HSRP' | 'VRRP' | 'GLBP',
     args: Record<string, string | undefined>,

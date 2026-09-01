@@ -104,12 +104,6 @@ export function stpInterfaceSpecs(ctx: () => StpInterfaceHost): CommandSpec[] {
   const vlanDe = (args: Record<string, string | undefined>): number | undefined =>
     args.vlan === undefined ? undefined : Number(args.vlan);
 
-  /**
-   * La negation d'IOS ne repete PAS la valeur : on tape
-   * `no spanning-tree cost`, jamais `no spanning-tree cost 100`. Une
-   * commande dont le chemin porte une place EXIGE cette place, donc la
-   * forme nue est un chemin a part.
-   */
   const negationNue = (
     id: string, chemin: readonly (string | ArgumentSpec)[],
     description: string, undoDescription: string, tete: string, knob: string,
@@ -178,12 +172,6 @@ export function stpInterfaceSpecs(ctx: () => StpInterfaceHost): CommandSpec[] {
         agent.setPortLoopGuard(iface, false);
       }),
     },
-    /**
-     * `link-type` est RETENU et RENDU sans etre honore : ce moteur STP
-     * ne distingue pas un lien partage d'un lien point a point. Le taire
-     * ferait perdre la ligne au rechargement d'une topologie ; le
-     * refuser refuserait une commande que la machine reelle accepte.
-     */
     {
       id: 'config-if-stp-link-type',
       path: ['spanning-tree', 'link-type', LIEN],

@@ -52,9 +52,6 @@ export function switchPortPhysicalSpecs(ctx: () => PhysicalPortHost): CommandSpe
         return '';
       })(),
     },
-    /**
-     * L'auto-MDIX est ACTIF par defaut : seul son retrait s'ecrit.
-     */
     {
       id: 'config-if-mdix-auto',
       path: ['mdix', 'auto'],
