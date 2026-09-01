@@ -27,6 +27,9 @@ import type { CommandSpec } from '@/cli/CommandTable';
 import type { FhrpPlacement } from './cisco/fhrpInterfaceSpecs';
 import type { IpAddressHost } from './cisco/ipAddressInterfaceSpecs';
 import type { LoadMtuHost } from './cisco/interfaceLoadMtuSpecs';
+import {
+  switchPortPhysicalSpecs, type PhysicalPortHost,
+} from './cisco/switchPortPhysicalSpecs';
 import { dhcpClientFamily, type DhcpClientLeaseView } from '@/cli/commands/dhcp/dhcpClientFamily';
 
 const SVI_SANS_SECONDAIRE =
@@ -2508,6 +2511,24 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
     return this.resolveInterfaceName(name);
   }
 
+  private portPhysiqueHost(): PhysicalPortHost {
+    return {
+      refusePortPhysique: () =>
+        this.selectedInterface !== null
+          && this.sviVlanId(this.selectedInterface) !== null
+          ? CISCO_ERRORS.INVALID_INPUT : null,
+      recordInterfaceLine: (ligne) => this.enregistrerLigneInterface(ligne),
+      removeInterfaceLine: (prefixe) => {
+        const ifs = this.selectedInterface
+          ? [this.selectedInterface] : this.selectedInterfaceRange;
+        for (const i of ifs) {
+          const l = this.ifExtra.get(i);
+          if (l) this.ifExtra.set(i, l.filter((x) => !x.startsWith(prefixe)));
+        }
+      },
+    };
+  }
+
   protected override loadMtuHost(): LoadMtuHost {
     return {
       ...super.loadMtuHost(),
@@ -2563,6 +2584,7 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
   protected override socleSpecs(): readonly CommandSpec[] {
     return [
       ...super.socleSpecs(),
+      ...switchPortPhysicalSpecs(() => this.portPhysiqueHost()),
       ...dhcpClientFamily(),
       ...this.stpShowSpecs(),
       ...dhcpPoolSpecs(this.dhcpPoolContext()),
@@ -3936,9 +3958,7 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
       return recordIf(`speed ${n}`);
     });
     for (const sub of [
-      'switchport voice',
-      'channel-protocol', 'storm-control',
-      'mdix', 'power', 'srr-queue',
+      'switchport voice', 'storm-control', 'srr-queue',
     ]) {
       trie.registerGreedy(sub, `Interface ${sub}`, (args) => {
         // These are physical-port-only; an SVI is a virtual L3 interface and

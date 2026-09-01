@@ -1542,3 +1542,18 @@ défauts — la méthode vaut d'être reprise sur le reliquat.
   demande de decider comment une place s'ecrit dedans (`<nom>`, son type,
   son rang) et de verifier qu'aucun identifiant ecrit a la main n'entre
   alors en collision avec un identifiant derive.
+- `storm-control`, `srr-queue` et `switchport voice` restent servis par
+  la boucle GENERIQUE de `CiscoSwitchShell`, qui les enregistre en
+  glouton, retient le texte tape sans l'analyser et le rend tel quel dans
+  la configuration — donc `storm-control zorglub` est accepte, rendu, et
+  rejoue a l'import. Les trois voisines de la meme boucle
+  (`channel-protocol`, `mdix`, `power`) en sont sorties parce que leur
+  grammaire tient en deux ou trois mots-cles et qu'une source atteignable
+  les atteste. Celles-ci ne sont pas fermees pour une raison precise :
+  leur grammaire est nettement plus riche (seuils en pourcentage ou en
+  paquets par seconde, actions `shutdown`/`trap`, files et poids de
+  `srr-queue`), `docs.cisco.com` est bloque par le mandataire de sortie,
+  et aucune source atteignable ne la donne en entier. Les declarer au
+  juge REFUSERAIT des formes que la vraie machine accepte, ce qui serait
+  un defaut plus couteux que la permissivite actuelle. A rouvrir quand la
+  documentation est atteignable, ou contre une transcription reelle.
