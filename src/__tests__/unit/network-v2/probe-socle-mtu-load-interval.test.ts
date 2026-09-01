@@ -134,6 +134,43 @@ for (const [nom, fabrique] of PLATEFORMES) {
   });
 }
 
+/*
+ * Le plafond de MTU depend du PORT et non du medium : une interface de
+ * bouclage n'emet aucune trame, donc 9216 — la taille d'une trame
+ * Ethernet jumbo — n'a pas de sens pour elle, et ce depot lui donne
+ * 65536 comme le noyau donne a `lo`. Une plage ECRITE dans la
+ * declaration l'ignorerait et refuserait une valeur que la machine
+ * accepte : la plage est donc consultative, et c'est `Port.setMTU` qui
+ * tranche, la plage annoncee suivant le port selectionne.
+ */
+describe('le plafond de MTU vient du PORT, pas de la declaration', () => {
+  it('le refus NOMME le plafond et sa raison', async () => {
+    const r = await routeur();
+    expect(await r.executeCommand('mtu 65536'))
+      .toContain('% Invalid MTU: 65536. Maximum is 9216 (jumbo frame).');
+  });
+
+  it('l aide annonce le plafond du port selectionne', async () => {
+    const r = await routeur();
+    expect(r.cliHelp('mtu ')).toContain('<68-9216>');
+  });
+
+  /*
+   * Une `Loopback0` de Cisco n'est PAS un port de bouclage au sens de
+   * `Port` — seul `LinuxMachine` en cree un — donc elle garde le
+   * plafond d'Ethernet. C'est mesure et non suppose, et c'est inscrit
+   * au `TODO.md` : le plafond de 65536 que ce depot a donne a `lo` ne
+   * lui a jamais ete etendu.
+   */
+  it('une `Loopback0` de Cisco garde le plafond d Ethernet', async () => {
+    const r = new CiscoRouter('RL', 0, 0) as unknown as Cli;
+    r.powerOn();
+    await jouer(r, ['enable', 'configure terminal', 'interface Loopback0']);
+    expect(await r.executeCommand('mtu 65536')).toContain('Maximum is 9216');
+    expect(r.cliHelp('mtu ')).toContain('<68-9216>');
+  });
+});
+
 describe('les deux plateformes repondent la MEME chose', () => {
   const SAISIES = [
     'mtu zorglub', 'mtu 10', 'mtu 99999', 'mtu',

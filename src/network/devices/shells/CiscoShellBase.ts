@@ -54,7 +54,8 @@ import { CommandTrie, type ParamType } from './CommandTrie';
 import { fhrpInterfaceSpecs, type FhrpPlacement } from './cisco/fhrpInterfaceSpecs';
 import { ipAddressInterfaceSpecs, type IpAddressHost } from './cisco/ipAddressInterfaceSpecs';
 import {
-  interfaceLoadMtuSpecs, type LoadMtuHost, type LoadMtuPort,
+  interfaceLoadMtuSpecs, MTU_MIN,
+  type LoadMtuHost, type LoadMtuPort,
 } from './cisco/interfaceLoadMtuSpecs';
 import type { FhrpRepository } from '../inspection/config/FhrpRepository';
 import { EquipmentParamResolver, type SessionParamRanges, type CompletableDevice } from './EquipmentParamResolver';
@@ -8329,7 +8330,38 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     return reste === '' ? '  <cr>' : CISCO_ERRORS.UNRECOGNIZED_HELP;
   }
 
-  protected sessionParamRanges(_device?: TDevice): SessionParamRanges | null { return null; }
+  protected sessionParamRanges(device?: TDevice): SessionParamRanges | null {
+    return this.plageMtuDeLInterface(device);
+  }
+
+  protected plageMtuDeLInterface(device?: TDevice): SessionParamRanges {
+    return {
+      rangeFor: (contexte) => {
+        if (contexte.path[contexte.path.length - 1]?.toLowerCase() !== 'mtu') return null;
+        const nom = this.selectedPortsForConfigIf()[0];
+        if (nom === undefined) return null;
+        const port = ((device ?? this.deviceRef) as unknown as {
+          getPort?: (n: string) => { getMaxMTU?: () => number } | undefined;
+        })?.getPort?.(nom);
+        const plafond = port?.getMaxMTU?.();
+        return plafond === undefined ? null : [MTU_MIN, plafond];
+      },
+    };
+  }
+
+  protected composerPlages(
+    ...sources: ReadonlyArray<SessionParamRanges | null>
+  ): SessionParamRanges {
+    return {
+      rangeFor: (contexte) => {
+        for (const source of sources) {
+          const plage = source?.rangeFor(contexte);
+          if (plage) return plage;
+        }
+        return null;
+      },
+    };
+  }
 
   getHelp(input: string, device?: TDevice): string {
     // `show running-config | ?` n'était le nœud d'aucun arbre : le `|`

@@ -765,6 +765,10 @@ export class Port {
     return this.loopback ? 65536 : 9216;
   }
 
+  getMaxMTU(): number { return this.mtuMax(); }
+
+  static readonly MTU_MIN = 68;
+
   setMTU(mtu: number): void {
     if (mtu < 68) {
       throw new Error(`Invalid MTU: ${mtu}. Minimum is 68 (IPv4 minimum).`);  // MTU.MIN

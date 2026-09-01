@@ -1548,7 +1548,10 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
   // Le switch fermait, le routeur ne faisait rien.
 
   protected override sessionParamRanges(device?: Router): SessionParamRanges | null {
-    return hsrpGroupRange(this, () => (device ?? this.d()).getFhrpRepository());
+    return this.composerPlages(
+      hsrpGroupRange(this, () => (device ?? this.d()).getFhrpRepository()),
+      super.sessionParamRanges(device),
+    );
   }
 
   protected getActiveTrie(): CommandTrie {

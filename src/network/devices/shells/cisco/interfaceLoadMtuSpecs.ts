@@ -3,9 +3,13 @@ import type { CommandSpec } from '@/cli/CommandTable';
 import { CISCO_ERRORS } from '../cli-utils';
 import { LOAD_INTERVAL_MIN_SEC, LOAD_INTERVAL_MAX_SEC } from '../../../hardware/PortLoad';
 
+export const MTU_MIN = 68;
+export const MTU_MAX_ETHERNET = 9216;
+
 export interface LoadMtuPort {
   setMTU(bytes: number): void;
   setLoadIntervalSec(sec: number): boolean;
+  getMaxMTU?(): number;
 }
 
 export interface LoadMtuHost {
@@ -18,7 +22,7 @@ const MODES = ['config-if', 'config-subif'] as const;
 
 const OCTETS: ArgumentSpec = {
   name: 'octets', type: 'INT', description: 'MTU size in bytes',
-  range: [68, 9216],
+  range: [MTU_MIN, MTU_MAX_ETHERNET], rangeIsAdvisory: true,
 };
 
 const SECONDES: ArgumentSpec = {

@@ -1557,3 +1557,15 @@ défauts — la méthode vaut d'être reprise sur le reliquat.
   juge REFUSERAIT des formes que la vraie machine accepte, ce qui serait
   un defaut plus couteux que la permissivite actuelle. A rouvrir quand la
   documentation est atteignable, ou contre une transcription reelle.
+- Une `Loopback0` de Cisco n'est PAS un port de BOUCLAGE au sens de
+  `Port` : seul `LinuxMachine.createLoopbackPort` passe
+  `{ loopback: true }`, si bien que `Port.mtuMax()` rend 9216 pour elle
+  et que `mtu 65536` y est refuse « Maximum is 9216 (jumbo frame) ».
+  C'est exactement le defaut que le PRD de la boucle decrit et corrige
+  pour `lo` — « poser 65536 echouait sur un plafond emprunte a un autre
+  medium » — et qui reste ouvert du cote Cisco. Mesure en declarant la
+  place de `mtu`, et NON corrige ici parce que le drapeau `loopback`
+  entraine aussi `carrierless`, donc l'etat rapporte (`UNKNOWN` au lieu
+  d'`UP`/`DOWN`) et le comportement des vues d'interface : le poser sur
+  les boucles de Cisco est un lot a soi, avec sa propre mesure de ce
+  qu'IOS affiche pour une `Loopback`.
