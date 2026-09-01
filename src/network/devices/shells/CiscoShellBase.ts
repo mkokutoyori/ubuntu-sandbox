@@ -5460,6 +5460,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       ...this.ipRouteSpecs(),
       ...this.icmpArpInterfaceSpecs(),
       ...this.ipAccessGroupSpecs(),
+      ...this.ipHelperAddressSpecs(),
       ...this.cefSpecs(),
       ...this.enableSpecs(),
       ...this.configureSpecs(),
@@ -6306,6 +6307,47 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
         }
         return '';
       },
+    }];
+  }
+
+  /**
+   * Poser ou retirer une cible de relais DHCP sur l'interface nommee.
+   * Chaque plateforme ecrit dans SON magasin — le serveur DHCP du
+   * routeur, la SVI du commutateur — mais la commande, sa grammaire et
+   * ses refus n'ont qu'une declaration.
+   */
+  protected poserRelaisDhcp(_iface: string, _cible: string): string { return ''; }
+  protected retirerRelaisDhcp(_iface: string, _cible: string): string { return ''; }
+
+  /*
+   * Applique a chaque interface selectionnee et rend le PREMIER refus.
+   * Une plateforme peut refuser la commande sur une interface qui ne la
+   * porte pas — `ip helper-address` sur un port L2 d'un Catalyst — et un
+   * gestionnaire qui se tairait laisserait croire qu'elle a pris.
+   */
+  private surChaqueInterface(appliquer: (iface: string) => string): string {
+    for (const nom of this.selectedPortsForConfigIf()) {
+      const refus = appliquer(nom);
+      if (refus !== '') return refus;
+    }
+    return '';
+  }
+
+  protected ipHelperAddressSpecs(): readonly CommandSpec[] {
+    const cible: ArgumentSpec = {
+      name: 'cible', type: 'IP_ADDR',
+      description: 'IP destination address',
+    };
+    return [{
+      id: 'ip-helper-address',
+      path: ['ip', 'helper-address', cible],
+      description: 'Specify a destination address for UDP broadcasts',
+      undoDescription: 'Remove a destination address for UDP broadcasts',
+      modes: MODES_INTERFACE, minPrivilege: 15,
+      run: (_session, args) => this.surChaqueInterface(
+        (nom) => this.poserRelaisDhcp(nom, args.cible ?? '')),
+      undo: (_session, args) => this.surChaqueInterface(
+        (nom) => this.retirerRelaisDhcp(nom, args.cible ?? '')),
     }];
   }
 

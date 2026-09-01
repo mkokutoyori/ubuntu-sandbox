@@ -814,12 +814,6 @@ export function buildConfigIfCommands(trie: CommandTrie, ctx: CiscoShellContext)
     ctx.r().getPort(ctx.getSelectedInterface()!)?.setDirectedBroadcast(false);
     return '';
   });
-  trie.registerGreedy('no ip helper-address', 'Remove DHCP relay helper', (args) => {
-    if (!ctx.getSelectedInterface() || !args[0]) return '';
-    const dhcp = ctx.r()._getDHCPServerInternal() as unknown as { removeHelperAddress?: (iface: string, ip: string) => void };
-    dhcp.removeHelperAddress?.(ctx.getSelectedInterface()!, args[0]);
-    return '';
-  });
   trie.registerGreedy('ip unnumbered', 'Borrow IP from another interface', (args) => {
     if (!ctx.getSelectedInterface() || !args[0]) return '';
     const port = ctx.r().getPort(ctx.getSelectedInterface()!);
@@ -1215,13 +1209,6 @@ export function buildConfigIfCommands(trie: CommandTrie, ctx: CiscoShellContext)
     const iface = ctx.getSelectedInterface();
     if (!iface) return '% No interface selected';
     ctx.r().ripSetInterfaceSplitHorizon(iface, false);
-    return '';
-  });
-
-  trie.registerGreedy('ip helper-address', 'Set DHCP relay agent address', (args) => {
-    if (args.length < 1) return '% Incomplete command.';
-    if (!ctx.getSelectedInterface()) return '% No interface selected';
-    ctx.r()._getDHCPServerInternal().addHelperAddress(ctx.getSelectedInterface()!, args[0]);
     return '';
   });
 

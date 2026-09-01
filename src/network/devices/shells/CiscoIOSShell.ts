@@ -1952,6 +1952,19 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
     return [SOCLE, ROUTEUR_SEUL];
   }
 
+  protected override poserRelaisDhcp(iface: string, cible: string): string {
+    this.d()._getDHCPServerInternal().addHelperAddress(iface, cible);
+    return '';
+  }
+
+  protected override retirerRelaisDhcp(iface: string, cible: string): string {
+    const dhcp = this.d()._getDHCPServerInternal() as unknown as {
+      removeHelperAddress?: (iface: string, ip: string) => void;
+    };
+    dhcp.removeHelperAddress?.(iface, cible);
+    return '';
+  }
+
   protected override moteurDeListes() { return this.d()._getACLEngineInternal(); }
 
   protected override poserRouteStatique(reste: string): string {

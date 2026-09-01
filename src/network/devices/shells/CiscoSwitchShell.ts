@@ -44,6 +44,7 @@ import {
   showInterface, consoleAndAuxLineConfigLines, enableLevelSecretConfigLines,
   ipIntBriefRowsFromPorts, renderIpIntBrief, ipInterfaceBlockFor,
   interfaceAclLines, type InterfaceAclRefs, ipInterfaceControlLines,
+  helperAddressLines,
   renderInterfacesDescription, hostsTableLines, serviceFlagLines,
 } from './cisco/CiscoShowCommands';
 import { orderCiscoConfigBlocks } from './cisco/ciscoConfigSerializer';
@@ -1603,25 +1604,6 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
       return '';
     });
 
-    // DHCP relay (`ip helper-address X`) — valid on SVI only. Each
-    // helper is appended; `no ip helper-address X` removes one.
-    this.configIfTrie.registerGreedy('ip helper-address',
-      'Set a DHCP relay target on this SVI', (args) => {
-        const vlan = this.sviVlanId(this.selectedInterface ?? '');
-        if (vlan === null) return '% Command rejected: not applicable on this interface.';
-        if (args.length < 1 || !IPAddress.isValid(args[0])) {
-          return CISCO_ERRORS.INVALID_INPUT;
-        }
-        this.d().addSviHelperAddress(vlan, args[0]);
-        return '';
-      });
-    this.configIfTrie.registerGreedy('no ip helper-address',
-      'Remove a DHCP relay target from this SVI', (args) => {
-        const vlan = this.sviVlanId(this.selectedInterface ?? '');
-        if (vlan === null) return '';
-        if (args.length >= 1) this.d().removeSviHelperAddress(vlan, args[0]);
-        return '';
-      });
 
     // ── VRRP on SVI (first-hop redundancy) ──
     // Standard IOS syntax: `vrrp <group> ip <vip>` / `vrrp <group>
@@ -3907,7 +3889,7 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
     trie.registerGreedy('private-vlan mapping',
       'Map secondary VLANs to this primary VLAN SVI', (args) => {
         const vlan = this.sviVlanId(this.selectedInterface ?? '');
-        if (vlan === null) return '% Command rejected: not applicable on this interface.';
+        if (vlan === null) return CISCO_ERRORS.NOT_APPLICABLE_INTERFACE;
         if (args.length < 1) return CISCO_ERRORS.INCOMPLETE;
         const secondarySet = this.parseVlanList(args[0]);
         if (!secondarySet) return '% Invalid VLAN list';
@@ -5922,13 +5904,7 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
     }
     lines.push('  MTU is 1500 bytes');
     lines.push(`  Hardware is EtherSVI, address is ${this.d().getBridgeMac().toCiscoString()}`);
-    if (svi.helperAddresses.length > 0) {
-      for (const h of svi.helperAddresses) {
-        lines.push(`  Helper address is ${h}`);
-      }
-    } else {
-      lines.push('  Helper address is not set');
-    }
+    lines.push(...helperAddressLines(svi.helperAddresses));
     const f = getSecurityConfig(this.d()).ifaceFlags(`Vlan${vlan}`);
     lines.push(...ipInterfaceControlLines({
       proxyArp: !f.noProxyArp,
@@ -6053,6 +6029,20 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
 
   protected override tablesDeContinuations(): readonly ContinuationTable[] {
     return [SOCLE, COMMUTATEUR_SEUL];
+  }
+
+  protected override poserRelaisDhcp(iface: string, cible: string): string {
+    const vlan = this.sviVlanId(iface);
+    if (vlan === null) return CISCO_ERRORS.NOT_APPLICABLE_INTERFACE;
+    this.d().addSviHelperAddress(vlan, cible);
+    return '';
+  }
+
+  protected override retirerRelaisDhcp(iface: string, cible: string): string {
+    const vlan = this.sviVlanId(iface);
+    if (vlan === null) return CISCO_ERRORS.NOT_APPLICABLE_INTERFACE;
+    this.d().removeSviHelperAddress(vlan, cible);
+    return '';
   }
 
   protected override moteurDeListes() { return this.d().getVaclEngine(); }

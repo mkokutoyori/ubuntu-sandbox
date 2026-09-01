@@ -1578,7 +1578,8 @@ function ipInterfaceBlock(router: Router, name: string, port: Port): string {
   const binding = router._getInterfaceACLBindingsInternal().get(name);
   return ipInterfaceBlockFor(name, port, router._getPortsInternal(), natTag,
     router.ripSplitHorizonOn(name), flags,
-    { inbound: binding?.inbound, outbound: binding?.outbound });
+    { inbound: binding?.inbound, outbound: binding?.outbound },
+    router._getDHCPServerInternal().getHelperAddresses(name));
 }
 
 export interface InterfaceAclRefs {
@@ -1602,6 +1603,11 @@ export function interfaceAclLines(acl: InterfaceAclRefs): string[] {
     `  Outgoing access list is ${dit(acl.outbound)}`,
     `  Inbound  access list is ${dit(acl.inbound)}`,
   ];
+}
+
+export function helperAddressLines(cibles: readonly string[]): string[] {
+  if (cibles.length === 0) return ['  Helper address is not set'];
+  return cibles.map((h) => `  Helper address is ${h}`);
 }
 
 export interface IpInterfaceControls {
@@ -1639,6 +1645,7 @@ export function ipInterfaceBlockFor(
   splitHorizon = true,
   icmp: { noRedirects?: boolean; noUnreachables?: boolean; maskReply?: boolean } = {},
   acl: InterfaceAclRefs = {},
+  helpers: readonly string[] = [],
 ): string {
   const view = iosInterfaceStatus(port, name, ports);
   const ip = port.getIPAddress();
@@ -1653,7 +1660,7 @@ export function ipInterfaceBlockFor(
   lines.push('  Broadcast address is 255.255.255.255');
   lines.push(`  Address determined by ${iosAddressMethod(port) === 'DHCP' ? 'DHCP' : 'non-volatile memory'}`);
   lines.push(`  MTU is ${port.getMTU()} bytes`);
-  lines.push('  Helper address is not set');
+  lines.push(...helperAddressLines(helpers));
   lines.push(...ipInterfaceControlLines({
     directedBroadcast: port.isDirectedBroadcastEnabled?.(),
     proxyArp: port.isProxyArpEnabled?.(),

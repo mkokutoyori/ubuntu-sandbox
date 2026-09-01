@@ -16,6 +16,10 @@ export const CISCO_ERRORS = {
   // correspondance rend le même refus que n'importe quelle saisie
   // fautive. Le nom est conservé pour ses appelants.
   UNRECOGNIZED_HELP: '% Invalid input detected at \'^\' marker.',
+  // Le refus d'IOS quand la commande EXISTE mais que l'interface
+  // selectionnee ne la porte pas — `ip helper-address` sur un port L2
+  // d'un Catalyst. Il etait ecrit a la main a ses points d'usage.
+  NOT_APPLICABLE_INTERFACE: '% Command rejected: not applicable on this interface.',
 } as const;
 
 /**
