@@ -286,6 +286,22 @@ question. C'est un lot a part, avec sa propre mesure.
 
 ## Socle CLI
 
+### [cli] `probe-aide-tient-ses-promesses` met trois minutes et flanche sous charge
+Mesure : le fichier passe SEUL (20 cas, 188 s de temps de test) et un de
+ses cas depasse son delai de 5 s des qu'il tourne dans un lot de 196
+fichiers. Ce n'est pas l'aide elle-meme — `cliHelp('ip address ')` coute
+30 ms, mesure — mais le laboratoire : chaque cas construit un routeur
+Cisco NEUF, et cette construction est ce qui coute. Vingt routeurs par
+fichier, plus la pression memoire d'un lot parallele, suffisent a faire
+franchir la borne a un cas qui n'a rien de particulier.
+**Pourquoi ce n'est pas ferme ici** : la reparation est soit un routeur
+PARTAGE entre les cas — donc la question de ce qu'un cas laisse a son
+voisin, que ce fichier evite deliberement en repartant de zero — soit
+une construction de `CiscoRouter` moins couteuse, qui est un sujet a
+elle seule (le constructeur bâtit tous les arbres de commandes, tous les
+agents de protocole et tout le socle). Le cout n'a pas bouge avec la
+migration au socle : il etait deja de 191 s avant.
+
 ### [cli] les declarations d'arguments decrivent, elles ne tranchent pas
 Depuis le lot « une plage annoncee est une plage appliquee », un jeton
 NUMERIQUE hors d'un intervalle affiche par `?` est refuse. Le reste

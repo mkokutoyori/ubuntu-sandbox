@@ -67,6 +67,13 @@ export interface SviHost {
    * message — un critere range et jamais evalue.
    */
   icmpUnreachablesEnabled?(vlan: number): boolean;
+  /**
+   * `ip access-group <liste> in|out` sur la Vlanif. Le pendant de
+   * `Router.deniedByInboundACL` et de son controle en sortie, lisant le
+   * MEME moteur que la PACL d'un port physique — un Catalyst n'a qu'un
+   * jeu de listes, quel que soit l'endroit ou on les accroche.
+   */
+  aclDeniesRouted?(vlan: number, direction: 'in' | 'out', pkt: IPv4Packet): boolean;
   /** RFC 3046 Option 82 insertion on relay, shared with the box's DHCP server config. */
   isDhcpRelayInfoEnabled?(): boolean;
   /** Un datagramme UDP adresse a CETTE machine, remis au port ouvert par son plan de controle. */
@@ -354,6 +361,16 @@ export class SwitchSvi {
 
       if (!forUs) return false;
 
+      /*
+       * La liste ENTRANTE est consultee avant la traduction, comme sur
+       * le routeur : une liste ecrite sur l'adresse publique doit voir
+       * l'adresse que le client a composee, pas celle d'apres NAT.
+       */
+      if (this.host.aclDeniesRouted?.(ingressVlan, 'in', ip) === true) {
+        this.sendIcmpError(ip, 'destination-unreachable', 13, ingressVlan);
+        return true;
+      }
+
       const originalPkt = ip;
       const natIn = this.host.natTranslateInbound?.(ip, `Vlanif${ingressVlan}`) ?? null;
       const workingIp = natIn ?? ip;
@@ -543,6 +560,16 @@ export class SwitchSvi {
       const natOut = this.host.natTranslateOutbound(fwd, outIface, inIface,
         isHairpin ? { isHairpin: true, aclMatchPkt: originalPkt } : undefined);
       if (natOut) fwd = natOut;
+    }
+
+    /*
+     * La liste SORTANTE est consultee apres la traduction, comme sur le
+     * routeur : elle voit l'adresse sous laquelle le paquet paraitra
+     * vraiment sur le fil.
+     */
+    if (this.host.aclDeniesRouted?.(route.egress.vlan, 'out', fwd) === true) {
+      this.sendIcmpError(ip, 'destination-unreachable', 13, ingressVlan);
+      return;
     }
 
     this.host.egressOnVlan(route.egress.vlan, {

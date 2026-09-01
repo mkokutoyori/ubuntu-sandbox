@@ -62,6 +62,11 @@ import {
 import { parserViewMode } from '../router/security/CiscoSecurityConfig';
 import type { InterfaceSecurityFlags } from '../router/security/CiscoSecurityConfig';
 import { MODES_INTERFACE } from './cisco/CiscoConfigCommands';
+
+interface AclBindingEngine {
+  setInterfaceACL(ifName: string, direction: 'in' | 'out', aclRef: number | string): void;
+  removeInterfaceACL(ifName: string, direction: 'in' | 'out'): void;
+}
 import type { CiscoDevice } from './CiscoDevice';
 import type { PromptMap } from './PromptBuilder';
 import { buildPrompt } from './PromptBuilder';
@@ -5454,6 +5459,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       ...this.showInterfacesSpecs(),
       ...this.ipRouteSpecs(),
       ...this.icmpArpInterfaceSpecs(),
+      ...this.ipAccessGroupSpecs(),
       ...this.cefSpecs(),
       ...this.enableSpecs(),
       ...this.configureSpecs(),
@@ -6248,6 +6254,60 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
   }
 
   protected tablesDeContinuations(): readonly ContinuationTable[] { return [SOCLE]; }
+
+  /**
+   * Le moteur de listes que `ip access-group` accroche a une interface.
+   *
+   * Il n'est demande qu'au moment d'EXECUTER : la table des commandes se
+   * batit une fois, hors de toute frappe, et `d()` leve la — une premiere
+   * version l'interrogeait a la declaration et faisait tomber la famille
+   * entiere avec « Device reference not set ».
+   */
+  protected moteurDeListes(): AclBindingEngine | null { return null; }
+
+  protected ipAccessGroupSpecs(): readonly CommandSpec[] {
+    const liste: ArgumentSpec = {
+      name: 'liste', type: 'WORD', description: 'Access-list name',
+      alternatives: [
+        { keyword: '<1-199>', description: 'IP access list (standard or extended)' },
+        { keyword: '<1300-2699>', description: 'IP expanded access list' },
+      ],
+    };
+    const sens: ArgumentSpec = {
+      name: 'sens', type: 'ENUM', description: 'Direction',
+      values: [
+        { keyword: 'in', description: 'inbound packets' },
+        { keyword: 'out', description: 'outbound packets' },
+      ],
+    };
+    const reference = (mot: string): number | string =>
+      /^\d+$/.test(mot) ? parseInt(mot, 10) : mot;
+    return [{
+      id: 'ip-access-group',
+      path: ['ip', 'access-group', liste, sens],
+      description: 'Specify access control for packets',
+      undoDescription: 'Remove access control from this interface',
+      modes: MODES_INTERFACE, minPrivilege: 15,
+      run: (_session, args) => {
+        const moteur = this.moteurDeListes();
+        if (!moteur) return '';
+        const direction = args.sens as 'in' | 'out';
+        for (const nom of this.selectedPortsForConfigIf()) {
+          moteur.setInterfaceACL(nom, direction, reference(args.liste ?? ''));
+        }
+        return '';
+      },
+      undo: (_session, args) => {
+        const moteur = this.moteurDeListes();
+        if (!moteur) return '';
+        const direction = args.sens as 'in' | 'out';
+        for (const nom of this.selectedPortsForConfigIf()) {
+          moteur.removeInterfaceACL(nom, direction);
+        }
+        return '';
+      },
+    }];
+  }
 
   protected icmpArpInterfaceSpecs(): readonly CommandSpec[] {
     const poser = (

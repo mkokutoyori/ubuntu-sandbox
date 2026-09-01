@@ -119,7 +119,7 @@ import {
 import { RoutingConfigRepository } from '../inspection/config/RoutingConfigRepository';
 import {
   type CiscoACLShellContext,
-  buildACLConfigCommands, buildACLInterfaceCommands,
+  buildACLConfigCommands,
   buildNamedStdACLCommands, buildNamedExtACLCommands,
   buildIPv6ACLGlobalCommands, buildIPv6ACLModeCommands,
   registerACLShowCommands, registerACLClearCommands, aclShowSpecs,
@@ -1746,7 +1746,6 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
       this.configIpSlaHttpRawTrie, this);
     registerIpSlaTypeSubModes(this.configIpSlaTypeTries, this.configIpSlaHttpRawTrie, this);
     buildACLConfigCommands(this.configTrie, this);
-    buildACLInterfaceCommands(this.configIfTrie, this);
     // NAT
     buildNATConfigCommands(this.configTrie, this);
     buildNATInterfaceCommands(this.configIfTrie, this);
@@ -1952,6 +1951,8 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
   protected override tablesDeContinuations(): readonly ContinuationTable[] {
     return [SOCLE, ROUTEUR_SEUL];
   }
+
+  protected override moteurDeListes() { return this.d()._getACLEngineInternal(); }
 
   protected override poserRouteStatique(reste: string): string {
     return cmdIpRoute(this.d(), reste.trim().split(/\s+/).filter(Boolean));

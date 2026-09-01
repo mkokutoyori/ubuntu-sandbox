@@ -584,37 +584,6 @@ export function buildACLConfigCommands(trie: CommandTrie, ctx: CiscoACLShellCont
   });
 }
 
-// ─── Interface Config Mode: ip access-group ───────────────────────────
-
-export function buildACLInterfaceCommands(trie: CommandTrie, ctx: CiscoACLShellContext): void {
-  trie.registerGreedy('ip access-group', 'Set access group on interface', (args) => {
-    if (args.length < 2) return '% Incomplete command.';
-    const ifName = ctx.getSelectedInterface();
-    if (!ifName) return '% No interface selected';
-
-    const aclRef = args[0];
-    const direction = args[1].toLowerCase();
-    if (direction !== 'in' && direction !== 'out') return `% Invalid direction "${args[1]}"`;
-
-    // Try to parse as number, otherwise use as name
-    const num = parseInt(aclRef, 10);
-    ctx.r().setInterfaceACL(ifName, direction as 'in' | 'out', isNaN(num) ? aclRef : num);
-    return '';
-  });
-
-  trie.registerGreedy('no ip access-group', 'Remove access group from interface', (args) => {
-    if (args.length < 2) return '% Incomplete command.';
-    const ifName = ctx.getSelectedInterface();
-    if (!ifName) return '% No interface selected';
-
-    const direction = args[1].toLowerCase();
-    if (direction !== 'in' && direction !== 'out') return `% Invalid direction "${args[1]}"`;
-
-    ctx.r().removeInterfaceACL(ifName, direction as 'in' | 'out');
-    return '';
-  });
-}
-
 // ─── Named Standard ACL Config Mode ──────────────────────────────────
 
 export function buildNamedStdACLCommands(trie: CommandTrie, ctx: CiscoACLShellContext): void {

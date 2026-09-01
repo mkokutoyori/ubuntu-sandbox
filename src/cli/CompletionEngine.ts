@@ -109,7 +109,17 @@ function suggestionsAt(
     }
   }
 
-  if (argument && trigger === 'TAB') {
+  /*
+   * `?` liste les valeurs VIVANTES lui aussi, et pas seulement la
+   * tabulation : sur une frappe deja commencee, `ip access-group MAV ?`
+   * doit nommer la liste `MAVIE` que la machine porte, comme le trie le
+   * faisait avant que la famille passe au socle. Sur une place VIDE, en
+   * revanche, `?` annonce le TYPE attendu et rien d'autre — un vrai IOS
+   * n'y deverse pas l'inventaire de la machine.
+   */
+  const valeursVivantes = trigger === 'TAB'
+    || (trigger === 'QUESTION_MARK' && cursor.prefix.length > 0);
+  if (argument && valeursVivantes) {
     /*
      * Une FORME declaree qui correspond deja a la frappe l'emporte sur
      * les valeurs vivantes qui la prolongent : `interface Fa` ecrit

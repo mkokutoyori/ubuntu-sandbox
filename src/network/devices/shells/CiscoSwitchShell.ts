@@ -1595,11 +1595,6 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
     // (`Switch.portAclPermits` interroge `getVaclEngine()` à chaque
     // trame) : le moteur, la liaison et le filtrage existaient, il
     // manquait la commande qui les relie.
-    this.configIfTrie.registerGreedy('ip access-group',
-      'Apply an IP access list to this port', (args) => this.appliquerPacl(args, false));
-    this.configIfTrie.addCompletionKeywords('ip access-group', ['in', 'out']);
-    this.configIfTrie.registerGreedy('no ip access-group',
-      'Remove an IP access list from this port', (args) => this.appliquerPacl(args, true));
     this.configIfTrie.register('no ip address', 'Remove the SVI IP address', () => {
       const vlan = this.sviVlanId(this.selectedInterface ?? '');
       if (vlan === null) return '';
@@ -4678,6 +4673,8 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
       for (const helper of svi.helperAddresses) {
         lines.push(` ip helper-address ${helper}`);
       }
+      lines.push(...runningConfigInterfaceACLFrom(
+        sw.getVaclEngine().getInterfaceACLBindingsInternal(), `Vlan${svi.vlan}`));
       lines.push(...getSecurityConfig(sw).asInterfaceRunningConfigLines(`Vlan${svi.vlan}`));
       for (const l of this.renderSviFhrpLines(sw, svi.vlan)) lines.push(l);
       if (!svi.adminUp) lines.push(' shutdown');
@@ -5536,13 +5533,16 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
    * Une liste inconnue est REFUSÉE dans les mots d'IOS plutôt que liée :
    * une PACL qui ne désigne rien ne filtre rien, et l'accepter donnerait
    * un port qu'on croit protégé.
+   *
+   * Sur une SVI la même commande pose une RACL — c'est ainsi qu'un
+   * Catalyst filtre entre VLAN — et le magasin est le même, indexé par
+   * nom d'interface. Elle y était refusée alors que `show ip interface
+   * Vlan<n>` lisait déjà ce magasin : la vue savait rendre une liaison
+   * qu'aucune commande ne pouvait poser.
    */
   private appliquerPacl(args: string[], retirer: boolean): string {
     const iface = this.selectedInterface;
     if (!iface) return CISCO_ERRORS.INCOMPLETE;
-    if (this.sviVlanId(iface) !== null) {
-      return '% Command rejected: not applicable on this interface.';
-    }
     if (args.length < 2) return CISCO_ERRORS.INCOMPLETE;
     const sens = args[1].toLowerCase();
     if (sens !== 'in' && sens !== 'out') return CISCO_ERRORS.INVALID_INPUT;
@@ -6054,6 +6054,8 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
   protected override tablesDeContinuations(): readonly ContinuationTable[] {
     return [SOCLE, COMMUTATEUR_SEUL];
   }
+
+  protected override moteurDeListes() { return this.d().getVaclEngine(); }
 
   protected override poserRouteStatique(reste: string): string {
     const args = reste.trim().split(/\s+/).filter(Boolean);
