@@ -5449,6 +5449,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       ...this.showIpInterfaceSpecs(),
       ...this.showIpRouteSpecs(),
       ...this.showInterfacesSpecs(),
+      ...this.ipRouteSpecs(),
       ...this.cefSpecs(),
       ...this.enableSpecs(),
       ...this.configureSpecs(),
@@ -6169,6 +6170,64 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
 
   protected renduInterfaces(_cible: string): string { return ''; }
 
+  /**
+   * `ip route` et sa negation, declarees une fois.
+   *
+   * La commande de configuration la plus tapee d'IOS avait DEUX
+   * analyses, une par plateforme, et elles divergeaient : celle du
+   * commutateur perdait la distance administrative — donc une route de
+   * SECOURS revenait principale au rechargement d'une topologie — et sa
+   * vue laissait paraitre les deux routes d'un meme prefixe la ou la
+   * machine n'en installe qu'une.
+   *
+   * Ce que chaque plateforme garde en propre est ce qu'elle sait
+   * HONORER : un routeur retient `permanent`, `track`, `tag` et la forme
+   * par interface de sortie, un Catalyst n'a pas ces champs. La
+   * grammaire n'a plus qu'une declaration, le magasin reste celui de
+   * chacun — les unifier voudrait dire accepter sur le commutateur des
+   * mots-cles que rien n'y evalue.
+   */
+  protected ipRouteSpecs(): readonly CommandSpec[] {
+    const prefixe: ArgumentSpec = {
+      name: 'prefixe', type: 'IP_ADDR', description: 'Destination prefix',
+    };
+    const masque: ArgumentSpec = {
+      name: 'masque', type: 'SUBNET_MASK', description: 'Destination prefix mask',
+    };
+    const reste: ArgumentSpec = {
+      name: 'reste', type: 'REST',
+      description: 'Forwarding router\'s address, or egress interface',
+    };
+    const queue = (args: Record<string, string>, ...tete: string[]): string =>
+      [...tete, args.prefixe ?? '', args.masque ?? '', args.reste ?? '']
+        .filter((m) => m !== '').join(' ');
+    return [
+      {
+        id: 'ip-route',
+        path: ['ip', 'route', prefixe, masque, reste],
+        description: 'Establish static routes',
+        undoDescription: 'Remove static route',
+        modes: ['config'], minPrivilege: 15,
+        run: (_session, args) => this.poserRouteStatique(queue(args)),
+        undo: (_session, args) => this.retirerRouteStatique(queue(args)),
+      },
+      {
+        id: 'ip-route-vrf',
+        path: ['ip', 'route', 'vrf',
+          { name: 'vrf', type: 'WORD', description: 'VPN Routing/Forwarding instance name' },
+          prefixe, masque, reste],
+        description: 'Establish static routes in a VRF',
+        undoDescription: 'Remove static route from a VRF',
+        modes: ['config'], minPrivilege: 15,
+        run: (_session, args) => this.poserRouteStatique(queue(args, 'vrf', args.vrf ?? '')),
+        undo: (_session, args) => this.retirerRouteStatique(queue(args, 'vrf', args.vrf ?? '')),
+      },
+    ];
+  }
+
+  protected poserRouteStatique(_reste: string): string { return ''; }
+  protected retirerRouteStatique(_reste: string): string { return ''; }
+
 
   /**
    * Les suites d'un chemin, LUES sur la table qui les declare deja.
@@ -6559,6 +6618,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
      * proposer.
      */
     trie.setRivalKeywordsPort((chemin, prefixe) => this.motsDuSocleSous(chemin, prefixe));
+    trie.setSocleOwnsKeywordPort((chemin, mot) => this.socleTientCeMot(chemin, mot));
   }
 
   /**
@@ -6590,7 +6650,9 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
      * Sans equipement, pas de session, donc pas de visibilite a
      * consulter : le planificateur d'interaction appelle `match` HORS
      * d'`execute` pour canoniser une ligne, et y lever ferait perdre a
-     * `copy run start` son dialogue. On ne compte alors aucun rival.
+     * `copy run start` son dialogue. On ne compte alors aucun RIVAL —
+     * en inventer un hors session ferait refuser `rel`, qui n'abrege
+     * qu'une commande dans le mode ou on la tape.
      */
     if (this.deviceRef === null) return [];
     this.dansLeCalculDesRivaux = true;
@@ -6603,14 +6665,45 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
 
   private dansLeCalculDesRivaux = false;
 
+  /**
+   * Le socle declare-t-il EXACTEMENT ce mot sous ce chemin ?
+   *
+   * Lu sur la TABLE et non sur une session : la reponse ne depend
+   * d'aucun privilege, et elle doit valoir hors d'`execute`, la ou
+   * `cliHelp` interroge. Elle ne sert qu'a faire taire le trie quand le
+   * socle possede le mot — `ip route` parti au socle, `route` ne
+   * rencontrait plus ici que `route-cache`, donc `ip route ?` proposait
+   * `flow`, la suite d'une AUTRE commande.
+   */
+  private socleTientCeMot(chemin: readonly string[], mot: string): boolean {
+    const table = this.socleTable();
+    if (!table) return false;
+    return this.motsDuSocleFiltres(table, chemin, mot, null).includes(mot);
+  }
+
   private motsVisiblesDuSocle(
     table: CommandTable, chemin: readonly string[], prefixe: string,
   ): string[] {
-    const session = this.socleSession(table);
-    const amont = chemin.map(mot => mot.toLowerCase());
+    return this.motsDuSocleFiltres(table, chemin, prefixe, this.socleSession(table));
+  }
+
+  private motsDuSocleFiltres(
+    table: CommandTable, chemin: readonly string[], prefixe: string,
+    session: CliSession | null,
+  ): string[] {
+    /*
+     * `no` n'est pas un mot du socle mais un MODIFICATEUR : une commande
+     * negociable s'y declare `ip route` avec son `undo`, jamais
+     * `no ip route`. Interroger le socle avec `no` en tete ne trouvait
+     * donc aucun rival, et `no ip rout` COUPAIT le routage — la moitie
+     * la plus couteuse du defaut, puisque c'est celle qui applique.
+     */
+    const nie = chemin.length > 0 && chemin[0].toLowerCase() === 'no';
+    const amont = (nie ? chemin.slice(1) : chemin).map(mot => mot.toLowerCase());
     const mots = new Set<string>();
     for (const spec of table.specs()) {
-      if (!table.isReachable(spec, session)) continue;
+      if (nie && spec.undo === undefined) continue;
+      if (session !== null && !table.isReachable(spec, session)) continue;
       const canonique = CiscoShellBase.keywordPathOf(spec).map(mot => mot.toLowerCase());
       if (canonique.length <= amont.length) continue;
       if (!amont.every((mot, rang) => canonique[rang] === mot)) continue;
@@ -6640,20 +6733,42 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     for (const path of this.getActiveTrie().enumerateCommandPaths()) {
       const words = path.toLowerCase().split(' ');
       if (CiscoShellBase.sameKeywords(words, canonical)) continue;
-      if (CiscoShellBase.firstWordIsAmbiguous(typed, words, canonical)) return false;
+      if (CiscoShellBase.motAmbiguAUnRang(typed, words, canonical)) return false;
       if (CiscoShellBase.prefixMatches(typed, words, canonical, absorbe)) return false;
     }
     return true;
   }
 
-  private static firstWordIsAmbiguous(
+  /**
+   * Le mot tape abrege-t-il a la fois la commande du socle et une AUTRE
+   * du trie ?
+   *
+   * La question se pose a CHAQUE rang, pas au premier seulement. Elle
+   * n'y etait posee que la, et la limite se voyait des qu'une famille
+   * migrait : `ip route` parti au socle, `ip routing` reste au trie,
+   * `ip rout` abrege les deux — le socle ne voyait plus son rival et
+   * POSAIT la route, la ou une vraie machine refuse. Le pont inverse
+   * (`setRivalKeywordsPort`) tient deja le sens trie → socle a tous les
+   * rangs ; celui-ci est son symetrique.
+   *
+   * Les rangs precedents doivent CONCORDER : sans cela `show ip igmp`
+   * serait tenu pour un rival de `show mac address-table`, deux chemins
+   * qui ne se rencontrent jamais. Et un mot tape EN ENTIER n'est jamais
+   * ambigu, meme s'il prefixe l'autre — c'est la regle qui laisse
+   * passer `ip route` quand `ip routing` existe.
+   */
+  private static motAmbiguAUnRang(
     typed: readonly string[], words: readonly string[], canonical: readonly string[],
   ): boolean {
-    if (typed.length === 0 || words.length === 0 || canonical.length === 0) return false;
-    const tape = typed[0];
-    if (tape === canonical[0]) return false;
-    if (!canonical[0].startsWith(tape)) return false;
-    return words[0] !== canonical[0] && words[0].startsWith(tape);
+    const jusqua = Math.min(typed.length, words.length, canonical.length);
+    for (let rang = 0; rang < jusqua; rang += 1) {
+      if (rang > 0 && words[rang - 1] !== canonical[rang - 1]) return false;
+      const tape = typed[rang];
+      if (tape === canonical[rang]) continue;
+      if (!canonical[rang].startsWith(tape)) return false;
+      return words[rang] !== canonical[rang] && words[rang].startsWith(tape);
+    }
+    return false;
   }
 
   /**

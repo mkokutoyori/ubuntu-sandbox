@@ -232,14 +232,6 @@ export function buildConfigCommands(trie: CommandTrie, ctx: CiscoShellContext): 
 
   buildDhcpGlobalOn(trie, ctx);
 
-  trie.registerGreedy('ip route', 'Establish static routes', (args) => {
-    return cmdIpRoute(ctx.r(), args);
-  });
-
-  trie.registerGreedy('no ip route', 'Remove static route', (args) => {
-    return cmdNoIpRoute(ctx.r(), args);
-  });
-
   trie.registerGreedy('ip default-network', 'Configure default-network', (args) => {
     if (!args[0] || !isValidIPv4(args[0])) throw new CliInvalidInput({ token: args[0] ?? 'network' });
     getGlobalConfig(ctx.r()).defaultNetwork = args[0];

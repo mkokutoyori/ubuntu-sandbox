@@ -42,7 +42,7 @@ import { getSecurityConfig } from './cisco/CiscoSecurityCommands';
 import type { PromptMap } from './PromptBuilder';
 import { CISCO_IOS_PROMPTS } from './PromptBuilder';
 import { CLIStateMachine, CISCO_IOS_MODES } from './CLIStateMachine';
-import { resolveInterfaceName } from './cisco/CiscoConfigCommands';
+import { resolveInterfaceName, cmdIpRoute, cmdNoIpRoute } from './cisco/CiscoConfigCommands';
 import {
   buildHsrpInterfaceCommands, registerHsrpShowCommands, hsrpGroupRange,
 } from './cisco/CiscoHsrpCommands';
@@ -1951,6 +1951,14 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
 
   protected override tablesDeContinuations(): readonly ContinuationTable[] {
     return [SOCLE, ROUTEUR_SEUL];
+  }
+
+  protected override poserRouteStatique(reste: string): string {
+    return cmdIpRoute(this.d(), reste.trim().split(/\s+/).filter(Boolean));
+  }
+
+  protected override retirerRouteStatique(reste: string): string {
+    return cmdNoIpRoute(this.d(), reste.trim().split(/\s+/).filter(Boolean));
   }
 
   protected override renduInterfaces(cible: string): string {

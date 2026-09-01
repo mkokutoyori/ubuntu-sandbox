@@ -354,6 +354,25 @@ export class CommandTrie {
     this.rivauxDuSocle = port;
   }
 
+  /**
+   * Le socle declare-t-il EXACTEMENT ce mot a cet endroit ?
+   *
+   * Question distincte de celle des rivaux, et c'est pourquoi le port
+   * l'est aussi. Les rivaux servent a REFUSER une abreviation, donc ils
+   * doivent etre filtres par ce que la session voit — sinon on invente
+   * une ambiguite avec une commande d'un autre mode. Celle-ci sert a
+   * faire TAIRE le trie quand le socle possede le mot, et n'a besoin
+   * que de la table : elle repond donc meme hors d'`execute`, la ou
+   * aucune session ne peut etre construite.
+   */
+  private socleTientLeMot: ((path: readonly string[], mot: string) => boolean) | null = null;
+
+  setSocleOwnsKeywordPort(
+    port: ((path: readonly string[], mot: string) => boolean) | null,
+  ): void {
+    this.socleTientLeMot = port;
+  }
+
   prunePaths(paths: readonly string[]): void {
     // Une declaration EN ATTENTE deviendrait un noeud reel apres
     // l'elagage, donc un chemin migre reapparaitrait dans le trie.
@@ -712,6 +731,17 @@ export class CommandTrie {
       const matches = this.prefixMatch(node, tokenLower);
 
       if (matches.length === 1) {
+        /*
+         * Le socle possede-t-il ce mot EXACTEMENT ? Alors il n'est pas
+         * un rival mais la reponse : le trie n'a plus de noeud pour
+         * `ip route` depuis sa migration, donc `route` n'y rencontrait
+         * que `route-cache` et la ligne ressortait « ambigue » la ou
+         * elle est INCOMPLETE. On rend la main plutot que de trancher.
+         */
+        if (matches[0].keyword !== tokenLower
+          && this.socleTientLeMot?.(matchedKeywords, tokenLower) === true) {
+          return { status: 'incomplete', args, matchedKeywords };
+        }
         // Un seul candidat EXECUTABLE ici, mais la machine en declare un
         // autre au socle : c'est une ambiguite, pas une resolution.
         const auSocle = matches[0].keyword === tokenLower ? []
@@ -1203,6 +1233,18 @@ export class CommandTrie {
 
       const matches = this.prefixMatch(node, token);
       if (matches.length === 1) {
+        /*
+         * Un mot-cle EXACT du socle l'emporte sur une correspondance par
+         * prefixe du trie. `ip route` etant parti au socle, son noeud a
+         * disparu d'ici, si bien que `route` ne rencontrait plus que
+         * `route-cache` — un seul candidat, donc la marche y descendait
+         * et `ip route ?` proposait `flow`, une suite de l'AUTRE
+         * commande. Le socle sert deja cette aide ; le trie doit se
+         * taire plutot que repondre a cote.
+         */
+        if (matches[0].keyword !== token && this.socleTientLeMot?.(path, token) === true) {
+          return [];
+        }
         node = matches[0];
         path.push(node.keyword);
         consumedArgs = 0;

@@ -5615,28 +5615,6 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
 
     // ip route <net> <mask> <next-hop>
 
-    cfg.registerGreedy('ip route', 'Add a static route', (args) => {
-      if (args.length < 3) return CISCO_ERRORS.INCOMPLETE;
-      let net: IPAddress, mask: SubnetMask, gw: IPAddress;
-      try { net = new IPAddress(args[0]); } catch { return `% Invalid network ${args[0]}`; }
-      try { mask = new SubnetMask(args[1]); } catch { return `% Invalid mask ${args[1]}`; }
-      try { gw = new IPAddress(args[2]); } catch { return `% Invalid next-hop ${args[2]}`; }
-      const ad = CiscoSwitchShell.distanceStatiqueIos(args[3]);
-      if (ad === null) return CISCO_ERRORS.INVALID_INPUT;
-      this.d().addStaticRoute(net, mask, gw, ad);
-      return '';
-    });
-    cfg.registerGreedy('no ip route', 'Remove a static route', (args) => {
-      if (args.length < 2) return CISCO_ERRORS.INCOMPLETE;
-      let net: IPAddress, mask: SubnetMask, gw: IPAddress | undefined;
-      try { net = new IPAddress(args[0]); } catch { return `% Invalid network ${args[0]}`; }
-      try { mask = new SubnetMask(args[1]); } catch { return `% Invalid mask ${args[1]}`; }
-      if (args[2]) {
-        try { gw = new IPAddress(args[2]); } catch { return `% Invalid next-hop ${args[2]}`; }
-      }
-      this.d().removeStaticRoute(net, mask, gw);
-      return '';
-    });
 
     // Pool sub-mode trie: reuse the shared Cisco builder. Only the
     // handful of accessors the pool commands actually call need to be
@@ -6077,6 +6055,32 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
 
   protected override tablesDeContinuations(): readonly ContinuationTable[] {
     return [SOCLE, COMMUTATEUR_SEUL];
+  }
+
+  protected override poserRouteStatique(reste: string): string {
+    const args = reste.trim().split(/\s+/).filter(Boolean);
+    if (args.length < 3) return CISCO_ERRORS.INCOMPLETE;
+    let net: IPAddress, mask: SubnetMask, gw: IPAddress;
+    try { net = new IPAddress(args[0]); } catch { return `% Invalid network ${args[0]}`; }
+    try { mask = new SubnetMask(args[1]); } catch { return `% Invalid mask ${args[1]}`; }
+    try { gw = new IPAddress(args[2]); } catch { return `% Invalid next-hop ${args[2]}`; }
+    const ad = CiscoSwitchShell.distanceStatiqueIos(args[3]);
+    if (ad === null) return CISCO_ERRORS.INVALID_INPUT;
+    this.d().addStaticRoute(net, mask, gw, ad);
+    return '';
+  }
+
+  protected override retirerRouteStatique(reste: string): string {
+    const args = reste.trim().split(/\s+/).filter(Boolean);
+    if (args.length < 2) return CISCO_ERRORS.INCOMPLETE;
+    let net: IPAddress, mask: SubnetMask, gw: IPAddress | undefined;
+    try { net = new IPAddress(args[0]); } catch { return `% Invalid network ${args[0]}`; }
+    try { mask = new SubnetMask(args[1]); } catch { return `% Invalid mask ${args[1]}`; }
+    if (args[2]) {
+      try { gw = new IPAddress(args[2]); } catch { return `% Invalid next-hop ${args[2]}`; }
+    }
+    this.d().removeStaticRoute(net, mask, gw);
+    return '';
   }
 
   protected override renduInterfaces(cible: string): string {
