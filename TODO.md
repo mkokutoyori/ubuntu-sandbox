@@ -1526,3 +1526,19 @@ défauts — la méthode vaut d'être reprise sur le reliquat.
   primaire — un refus est moins faux qu'une perte silencieuse. Fermer
   demande une liste d'adresses secondaires sur la SVI et les trois
   lecteurs du plan de donnees qui vont avec, ce qui est un lot a soi.
+- L'IDENTIFIANT d'une spec derivee du trie est bati en JOIGNANT les
+  elements du chemin, places d'argument comprises, si bien qu'une place
+  s'y ecrit `[object Object]` : le routeur porte
+  `config-if-ip-rip-receive-version-[object Object]-1`,
+  `…-[object Object]-2`, `config-if-ip-rip-authentication-[object Object]-mode`
+  et d'autres (`trieAdapter.ts`, `id: [modesIci[0], ...words].join('-')`).
+  Un identifiant est cense NOMMER une commande ; celui-ci nomme sa place
+  par le mot que JavaScript ecrit quand on convertit un objet en chaine,
+  donc deux commandes qui ne different que par le TYPE de leur place
+  portent le meme nom. La consequence est aujourd'hui bornee —
+  `CommandTable.specById` est le seul lecteur et le controle de doublon
+  porte sur le CHEMIN, pas sur l'identifiant — ce qui est exactement
+  pourquoi ce n'est pas corrige a la va-vite : rendre l'identifiant exact
+  demande de decider comment une place s'ecrit dedans (`<nom>`, son type,
+  son rang) et de verifier qu'aucun identifiant ecrit a la main n'entre
+  alors en collision avec un identifiant derive.

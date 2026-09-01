@@ -22,7 +22,9 @@ import { IPAddress, SubnetMask, RIP_METRIC_INFINITY } from '../../../core/types'
 import { runningConfigACL, runningConfigInterfaceACL } from './CiscoAclCommands';
 import { fhrpRunningConfigLines, type FhrpInterfaceView } from '../../../fhrp/runningConfig';
 import { runningConfigObjectGroups } from '@/cli/commands/objectGroup/objectGroupFamily';
-import { runningConfigNAT, runningConfigInterfaceNAT } from './CiscoNATCommands';
+import {
+  runningConfigNAT, runningConfigInterfaceNAT, interfaceVrfName,
+} from './CiscoNATCommands';
 import { ipSlaRunningConfigLines, trackRunningConfigLines } from './ciscoIpSlaRunningConfig';
 import { orderCiscoConfigBlocks, routingProcessConfigLines, policyConfigLines } from './ciscoConfigSerializer';
 import { igmpInterfaceRunningConfigLines } from './CiscoIgmpCommands';
@@ -996,6 +998,8 @@ function interfaceConfigLines(
   // pas de distinguer une interface sans adresse d'une interface dont
   // l'adresse aurait été omise — et c'est ce texte que l'import de
   // topologie rejoue.
+  const vrf = interfaceVrfName(router, name);
+  if (vrf !== undefined) lines.push(` ip vrf forwarding ${vrf}`);
   if (port.isDhcpClient()) lines.push(' ip address dhcp');
   else if (ip && mask) lines.push(` ip address ${ip} ${mask}`);
   else if (!/^(Tunnel|Loopback|Vlan|BVI|Port-channel|Null)/i.test(name)) {
@@ -1070,7 +1074,7 @@ function interfaceConfigLines(
       lines.push(` bfd interval ${pending.bfdInterval}${pending.bfdMinRx !== undefined ? ' min_rx ' + pending.bfdMinRx : ''}${pending.bfdMultiplier !== undefined ? ' multiplier ' + pending.bfdMultiplier : ''}`);
     }
     if (pending.bfdTemplate) lines.push(` bfd template ${pending.bfdTemplate}`);
-    if (pending.bfdEcho) lines.push(' bfd echo');
+    if (pending.bfdEchoDisabled) lines.push(' no bfd echo');
     const fr = pending.frameRelay as Record<string, unknown> | undefined;
     if (fr) {
       if (fr.dlci !== undefined) lines.push(` frame-relay interface-dlci ${fr.dlci}`);

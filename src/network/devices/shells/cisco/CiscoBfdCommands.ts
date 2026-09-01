@@ -35,15 +35,43 @@ Readonly<Record<string, ArgumentSpec | readonly ArgumentSpec[] | null>> = {
   },
 };
 
+/**
+ * Le mode echo est ACTIF par defaut sur IOS, donc seul `no bfd echo`
+ * porte une information : ecrire le defaut ferait dire a la
+ * configuration ce qu'aucune vraie machine n'y met, et taire l'ecart
+ * ferait perdre a l'import la seule des deux lignes qui compte.
+ */
+function bfdEchoSpecs(ctx: IfCtx): CommandSpec[] {
+  const poser = (desactive: boolean) => (): string => {
+    const extra = ctx.r()._getOSPFExtraConfig();
+    for (const iface of ctx.selectedPorts()) {
+      const pending = extra.pendingIfConfig.get(iface) ?? {};
+      if (desactive) pending.bfdEchoDisabled = true;
+      else delete pending.bfdEchoDisabled;
+      extra.pendingIfConfig.set(iface, pending);
+    }
+    return '';
+  };
+  return [{
+    id: 'config-if-bfd-echo',
+    path: ['bfd', 'echo'],
+    description: 'Enable BFD echo mode',
+    undoDescription: 'Disable BFD echo mode',
+    modes: MODES_INTERFACE, minPrivilege: 15,
+    run: poser(false),
+    undo: poser(true),
+  }];
+}
+
 export function bfdInterfaceSpecs(ctx: IfCtx): CommandSpec[] {
-  return specsFromTrieRegistrations(
+  return [...bfdEchoSpecs(ctx), ...specsFromTrieRegistrations(
     (collector) => buildBfdInterfaceCommands(collector as unknown as CommandTrie, ctx),
     {
       modes: MODES_INTERFACE, minPrivilege: 15,
       undoFromNegatedPaths: true,
       argumentFor: (path) => BFD_ARGUMENTS[path],
     },
-  );
+  )];
 }
 
 export function buildBfdInterfaceCommands(trie: CommandTrie, ctx: IfCtx): void {

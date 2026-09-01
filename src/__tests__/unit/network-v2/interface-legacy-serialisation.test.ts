@@ -119,11 +119,13 @@ describe('running-config — les réglages d\'interface hérités y figurent', (
     expect(cfg).toContain('ip summary-address eigrp 100 192.168.0.0 255.255.0.0');
   });
 
-  it('`no bfd echo` retire vraiment la ligne que `bfd echo` a posée', async () => {
+  it('le mode echo étant ACTIF par défaut, seul `no bfd echo` s\'écrit', async () => {
     const r = await routeur();
     await surIface(r, ['bfd echo']);
-    expect(await sectionIface(r)).toContain('bfd echo');
+    expect(await sectionIface(r)).not.toContain('bfd echo');
     await surIface(r, ['no bfd echo']);
+    expect(await sectionIface(r)).toContain('no bfd echo');
+    await surIface(r, ['bfd echo']);
     expect(await sectionIface(r)).not.toContain('bfd echo');
   });
 });

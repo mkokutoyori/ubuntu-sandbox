@@ -1125,16 +1125,9 @@ export function registerOSPFInterfaceCommands(configIfTrie: CommandTrie, ctx: Ci
     else if (sub === 'min_rx' && args[1]) pending.bfdMinRx = parseInt(args[1], 10);
     else if (sub === 'multiplier' && args[1]) pending.bfdMultiplier = parseInt(args[1], 10);
     else if (sub === 'template' && args[1]) pending.bfdTemplate = args[1];
-    else if (sub === 'echo') pending.bfdEcho = true;
-    else (pending as any).bfd = args.join(' ');
+    else if (sub === undefined) return CISCO_ERRORS.INCOMPLETE;
+    else return CISCO_ERRORS.INVALID_INPUT;
     extra.pendingIfConfig.set(ifName, pending);
-    return '';
-  });
-
-  configIfTrie.registerGreedy('no bfd echo', 'Disable BFD echo on interface', () => {
-    const ifName = ctx.getSelectedInterface(); if (!ifName) return '';
-    const pending = ctx.r()._getOSPFExtraConfig().pendingIfConfig.get(ifName);
-    if (pending) delete pending.bfdEcho;
     return '';
   });
 
