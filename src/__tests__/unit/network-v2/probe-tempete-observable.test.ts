@@ -197,6 +197,17 @@ describe('la tempête est observable', () => {
     expect(load.rates().inBitsPerSec).toBeLessThan(premier);
   });
 
+  it('clear counters remet aussi la MOYENNE à zéro', async () => {
+    const { a } = await boucle(false);
+    const port = a.getPort('FastEthernet0/1')!;
+    expect(port.getLoadRates().inBitsPerSec).toBeGreaterThan(0);
+    port.resetCounters();
+    horloge.advance(10_000);
+    const apres = port.getLoadRates();
+    expect(apres.inBitsPerSec).toBe(0);
+    expect(apres.inPacketsPerSec).toBe(0);
+  });
+
   it('une lecture rapprochée ne rééchantillonne pas', () => {
     const load = new PortLoad();
     load.sample(0, { bytesIn: 0, framesIn: 0, bytesOut: 0, framesOut: 0 });

@@ -45,7 +45,7 @@ export class PortLoad {
     const elapsedSec = (nowMs - previous.atMs) / 1000;
     if (elapsedSec < LOAD_SAMPLE_PERIOD_SEC) { this.last = previous; return; }
     const decay = Math.exp(-elapsedSec / this.intervalSec);
-    const perSec = (delta: number) => delta / elapsedSec;
+    const perSec = (delta: number) => Math.max(0, delta) / elapsedSec;
     this.inBps = this.blend(this.inBps, perSec((counters.bytesIn - previous.bytesIn) * 8), decay);
     this.inPps = this.blend(this.inPps, perSec(counters.framesIn - previous.framesIn), decay);
     this.outBps = this.blend(this.outBps, perSec((counters.bytesOut - previous.bytesOut) * 8), decay);

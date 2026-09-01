@@ -867,6 +867,7 @@ export class Port {
       crcErrorsIn: 0,
       dropsIn: 0, dropsOut: 0,
     };
+    this.load.reset();
   }
 
   incrementErrorsIn(): void { this.counters.errorsIn++; }
