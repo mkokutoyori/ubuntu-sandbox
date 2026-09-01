@@ -6,7 +6,7 @@
 import {
   GetNetLbfoTeamCmdlet, NewNetLbfoTeamCmdlet, SetNetLbfoTeamCmdlet, RemoveNetLbfoTeamCmdlet,
   GetNetLbfoTeamMemberCmdlet, GetNetLbfoTeamNicCmdlet, AddNetLbfoTeamMemberCmdlet,
-  AddNetLbfoTeamNicCmdlet, RemoveNetLbfoTeamNicCmdlet,
+  AddNetLbfoTeamNicCmdlet, RemoveNetLbfoTeamNicCmdlet, SetNetLbfoTeamNicCmdlet,
   SetNetLbfoTeamMemberCmdlet,
   RemoveNetLbfoTeamMemberCmdlet,
 } from './NetLbfoCmdlets';
@@ -387,6 +387,7 @@ export function registerCoreCmdlets(registry: CmdletRegistry, opts: { includeSer
   registry.register(new GetNetLbfoTeamNicCmdlet());
   registry.register(new AddNetLbfoTeamNicCmdlet());
   registry.register(new RemoveNetLbfoTeamNicCmdlet());
+  registry.register(new SetNetLbfoTeamNicCmdlet());
   registry.register(new AddNetLbfoTeamMemberCmdlet());
   registry.register(new SetNetLbfoTeamMemberCmdlet());
   registry.register(new RemoveNetLbfoTeamMemberCmdlet());

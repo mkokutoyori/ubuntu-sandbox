@@ -322,6 +322,15 @@ export abstract class Equipment {
     this.ports.set(port.getName(), port);
   }
 
+  protected renamePort(oldName: string, newName: string): boolean {
+    const port = this.ports.get(oldName);
+    if (!port || this.ports.has(newName)) return false;
+    this.ports.delete(oldName);
+    port.rename(newName);
+    this.ports.set(newName, port);
+    return true;
+  }
+
   /**
    * Send a frame out of a specific port
    */

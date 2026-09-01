@@ -1558,6 +1558,10 @@ class WindowsNetworkAdapter implements INetworkProvider {
     return this.pc.removeNicTeamNic(team, vlanId);
   }
 
+  setNicTeamNic(name: string, patch: { vlanId?: number; isDefault?: boolean }): string {
+    return this.pc.setNicTeamNic(name, patch);
+  }
+
   addNicTeamMember(team: string, name: string, administrativeMode?: string): string {
     const mode = administrativeMode ? normaliseAdminMode(administrativeMode) : 'Active';
     if (!mode) return `'${administrativeMode}' is not a valid administrative mode.`;

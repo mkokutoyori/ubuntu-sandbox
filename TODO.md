@@ -1483,24 +1483,3 @@ défauts — la méthode vaut d'être reprise sur le reliquat.
   d'interface, un prefixe, les deux — plutot que de declarer une place
   au juge.
 
-## LACP / 802.1AX — ce que le moteur n'implemente pas encore
-
-Mesure faite contre DEUX implantations independantes qui citent les
-clauses de la norme : `drivers/net/bonding/bond_3ad.c` du noyau, et les
-dissecteurs `packet-lacp.c` / `packet-marker.c` de Wireshark, qui
-nomment « IEEE Std 802.1AX-2014 Section 6.4.2.3 » et « Section 6.5 »
-en tete de fichier et donnent le codage champ par champ. Le TEXTE de la
-norme reste hors de portee depuis ce reseau : `standards.ieee.org`,
-`ieeexplore.ieee.org`, `ieee802.org` et le miroir ISO
-`cdn.standards.iteh.ai` sont tous refuses par le mandataire de sortie,
-et la version « Get Program » gratuite passe par les memes hotes.
-
-- **Windows LBFO : `Set-NetLbfoTeamNic` n'existe pas.** `Add`, `Remove`
-  et `Get` sont la et l'etiquette voyage vraiment. `Set`, lui, RENOMME
-  l'interface dans TOUS ses cas d'emploi — `-VlanID` la renomme en
-  « T - VLAN n », `-Default` la ramene au nom de l'equipe — et un port
-  ne se renomme pas ici : `Port.name` est `private readonly`, et la
-  cle de `Equipment.ports` n'est pas la seule chose qui porte ce nom
-  (captures, table d'interfaces, routes, ARP). L'ecrire demande de
-  rendre le renommage d'interface possible, ce qui est un autre sujet ;
-  l'accepter sans renommer serait un critere range que rien n'evalue.

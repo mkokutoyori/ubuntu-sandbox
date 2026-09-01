@@ -3919,6 +3919,69 @@ export class WindowsPC extends EndHost implements UserAccountHost {
     return null;
   }
 
+  setNicTeamNic(name: string, patch: { vlanId?: number; isDefault?: boolean }): string {
+    const trouve = this.findNicTeamNic(name);
+    if (!trouve) return `The team interface '${name}' was not found.`;
+    const { team, nic } = trouve;
+    if (patch.isDefault) {
+      if (!nic.primary) {
+        return 'Only the team interface that was created with the team can be set to Default mode.';
+      }
+      return this.renameTeamNic(team, nic, team.name, null);
+    }
+    if (patch.vlanId === undefined) return '';
+    const vlanId = patch.vlanId;
+    if (!Number.isInteger(vlanId) || vlanId < 0 || vlanId >= 4095) {
+      return `The VLAN ID '${vlanId}' is not valid. VlanID values must meet the criteria 0 <= VlanID < 4095.`;
+    }
+    if (team.teamNics.some(n => n !== nic && n.vlanId === vlanId)) {
+      return `A team interface with VLAN ID ${vlanId} already exists on team '${team.name}'.`;
+    }
+    return this.renameTeamNic(team, nic, defaultTeamNicName(team.name, vlanId), vlanId);
+  }
+
+  private renameTeamNic(
+    team: NicTeam, nic: TeamNic, nouveau: string, vlanId: number | null,
+  ): string {
+    const ancien = nic.name;
+    if (nouveau.toLowerCase() !== ancien.toLowerCase()) {
+      if (this.getPort(nouveau)) return `An interface named '${nouveau}' already exists.`;
+      if (!this.renamePort(ancien, nouveau)) {
+        return `The team interface '${ancien}' was not found.`;
+      }
+      this.renameInterfaceReferences(ancien, nouveau);
+    }
+    this.unregisterVlanSubInterface(nouveau);
+    nic.name = nouveau;
+    nic.vlanId = vlanId;
+    if (!nic.primary && vlanId !== null) {
+      this.registerVlanSubInterface(nouveau, primaryTeamNic(team), vlanId);
+    }
+    if (nic.primary) {
+      for (const autre of team.teamNics) {
+        if (autre.primary || autre.vlanId === null) continue;
+        this.unregisterVlanSubInterface(autre.name);
+        this.registerVlanSubInterface(autre.name, nouveau, autre.vlanId);
+      }
+    }
+    return '';
+  }
+
+  private renameInterfaceReferences(ancien: string, nouveau: string): void {
+    const pareil = (n: string) => n.toLowerCase() === ancien.toLowerCase();
+    for (const route of this.routingTable) {
+      if (pareil(route.iface)) route.iface = nouveau;
+    }
+    for (const [cle, entree] of this.extraIPs) {
+      if (pareil(entree.ifAlias)) this.extraIPs.set(cle, { ...entree, ifAlias: nouveau });
+    }
+    const sub = this.getVlanSubInterface(ancien);
+    if (sub) {
+      this.unregisterVlanSubInterface(ancien);
+      this.registerVlanSubInterface(nouveau, sub.parent, sub.vid);
+    }
+  }
+
   addNicTeamMember(teamName: string, member: TeamMember): string {
     const team = this.getNicTeam(teamName);
     if (!team) return `The team '${teamName}' was not found.`;

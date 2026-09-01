@@ -76,7 +76,7 @@ export interface IPv6AddressEntry {
 export type IPv4AddressOrigin = 'manual' | 'dhcp' | 'link-local';
 
 export class Port {
-  private readonly name: string;
+  private name: string;
   private readonly mac: MACAddress;
   private readonly type: ConnectionType;
   private cable: Cable | null = null;
@@ -345,6 +345,8 @@ export class Port {
   // ─── Identity ───────────────────────────────────────────────────
 
   getName(): string { return this.name; }
+
+  rename(newName: string): void { this.name = newName; }
   getMAC(): MACAddress { return this.mac; }
 
   /**

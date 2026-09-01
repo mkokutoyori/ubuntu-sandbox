@@ -1223,6 +1223,7 @@ export interface INetworkProvider {
   getNicTeamNics?(team?: string): NicTeamNicInfo[];
   addNicTeamNic?(team: string, vlanId: number, name?: string): string;
   removeNicTeamNic?(team: string, vlanId: number): string;
+  setNicTeamNic?(name: string, patch: { vlanId?: number; isDefault?: boolean }): string;
   addNicTeamMember?(team: string, name: string, administrativeMode?: string): string;
   setNicTeamMember?(name: string, administrativeMode: string): string;
   removeNicTeamMember?(name: string): string;
