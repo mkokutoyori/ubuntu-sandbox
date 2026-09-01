@@ -240,10 +240,14 @@ describe('Huawei — `least`/`max active-linknumber` sont APPLIQUES', () => {
   }, 30_000);
 
   it('`lacp timeout fast` demande la cadence rapide au partenaire', async () => {
-    const { a } = await laboVrp(2);
+    const { a, b } = await laboVrp(2);
     expect(await taper(a, ['system-view', 'interface Eth-Trunk 1',
       'lacp timeout fast'])).toBe('');
-    expect(a.getLacpAgent().getConfig().fastRate).toBe(true);
+    const membre = a.getLacpAgent().getGroupMembers(1)[0];
+    expect(a.getLacpAgent().rateOf(membre)).toBe(true);
+    await vi.advanceTimersByTimeAsync(2_000);
+    const chezB = b.getLacpAgent().getPortInfo(membre.portName);
+    expect((chezB?.partner?.state ?? 0) & 0x02).toBe(0x02);
   }, 30_000);
 
   it('`lacp preempt` est desactive d\'usine, et son delai n\'apparait qu\'active', async () => {

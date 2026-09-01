@@ -1383,12 +1383,12 @@ export class Firewall extends Equipment {
     const spec = this.aggregates.get(name);
     if (!spec) return;
     const agent = this.getLacpAgent();
-    agent.setFastRate(spec.lacpSpeed === 'fast');
     agent.setGroupLimits(this.aggregateGroupId(name), { minLinks: spec.minLinks });
     const mode = spec.lacpMode === 'static' ? 'on' : spec.lacpMode;
     for (const membre of spec.members) {
       if (!this.getPort(membre)) continue;
       agent.addPortToGroup(membre, this.aggregateGroupId(name), mode);
+      agent.setPortFastRate(membre, spec.lacpSpeed === 'fast' ? true : null);
     }
     this.refreshAggregates();
   }

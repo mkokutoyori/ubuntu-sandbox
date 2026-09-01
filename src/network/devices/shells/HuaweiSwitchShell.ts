@@ -246,6 +246,15 @@ export class HuaweiSwitchShell implements ISwitchShell {
     const ag = this.swRef?.getLacpAgent?.();
     if (ag) fn(ag);
   }
+
+  private appliquerCadenceTrunk(id: number): void {
+    const trunk = this.ethTrunks.get(id);
+    if (!trunk) return;
+    const rapide = trunk.fastTimeout ?? null;
+    this.applyToLacpAgent(a => {
+      for (const membre of trunk.members) a.setPortFastRate(membre, rapide);
+    });
+  }
   private history: string[] = [];
 
   getCmdHistory(): readonly string[] { return [...this.history]; }
@@ -287,6 +296,7 @@ export class HuaweiSwitchShell implements ISwitchShell {
   /** Eth-Trunk (link-aggregation) groups, keyed by trunk id. */
   private ethTrunks = new Map<number, {
     mode: string; loadBalance: string; members: string[]; cfg: string[];
+    fastTimeout?: boolean;
   }>();
   private readonly trunksInitialises = new Set<number>();
 
@@ -1762,8 +1772,10 @@ export class HuaweiSwitchShell implements ISwitchShell {
         if (cadence !== 'fast' && cadence !== 'slow') {
           return refuseMotInattenduVrp(`lacp ${args.join(' ')}`, args[1] ?? 'timeout');
         }
-        this.ethTrunks.get(id)!.cfg.push(`lacp timeout ${cadence}`);
-        this.applyToLacpAgent(a => a.setFastRate(cadence === 'fast'));
+        const trunk = this.ethTrunks.get(id)!;
+        trunk.cfg.push(`lacp timeout ${cadence}`);
+        trunk.fastTimeout = cadence === 'fast';
+        this.appliquerCadenceTrunk(id);
         return '';
       }
       if (sous === 'preempt') {
@@ -1829,6 +1841,7 @@ export class HuaweiSwitchShell implements ISwitchShell {
         }
         a.addPortToGroup(this.selectedInterface!, id, lacpMode);
       });
+      this.appliquerCadenceTrunk(id);
       return '';
     });
 
