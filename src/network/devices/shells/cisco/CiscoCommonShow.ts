@@ -18,7 +18,11 @@ import {
 } from './CiscoLineViews';
 import { nomLoopfilterIos } from '@/network/ntp/discipline';
 import { C3560_SOFTWARE, ciscoSoftwareDescriptor } from './CiscoPlatform';
+import { CliInvalidInput } from '../cli/CliDiagnostic';
 import { iosInterfaceStatus } from '@/network/devices/inspection/InterfaceStatusView';
+import { lldpCapabilityLetters } from '@/network/lldp/types';
+import { MACAddress } from '@/network/core/types';
+import type { LldpNeighbor } from '@/network/lldp/LldpAgent';
 
 /**
  * Minimal device surface these show helpers read real state from.
@@ -343,9 +347,10 @@ function interfaceNameMatches(fullName: string, spec: string): boolean {
   return fn === pn && pt.length > 0 && ft.startsWith(pt);
 }
 
-function cdpDetailBlock(n: import('@/network/cdp/CdpAgent').CdpNeighbor): string {
+function cdpDetailBlock(
+  n: import('@/network/cdp/CdpAgent').CdpNeighbor, holdSec: number,
+): string {
   const addressLines = n.remoteAddresses.map((addr) => `  IP address: ${addr}`);
-  const holdSec = Math.max(0, Math.round((n.expiresAtMs - Date.now()) / 1000));
   return [
     '-------------------------',
     `Device ID: ${n.remoteHost}`,
@@ -406,7 +411,9 @@ export function showCdp(dev: ShowStateDevice, arg = '', enabled = true): string 
       ? all
       : all.filter((n) => n.remoteHost.toLowerCase() === spec.toLowerCase());
     if (!matches.length) return `Total cdp entries displayed : 0`;
-    const blocks = matches.map(cdpDetailBlock);
+    const agentCdp = dev.getCdpAgent?.();
+    const blocks = matches.map(n => cdpDetailBlock(
+      n, agentCdp?.holdtimeRemainingSec(n) ?? n.holdtimeSec));
     return `${blocks.join('\n\n')}\n\nTotal cdp entries displayed : ${matches.length}`;
   }
   if (a.includes('traffic')) {
@@ -428,9 +435,11 @@ export function showCdp(dev: ShowStateDevice, arg = '', enabled = true): string 
     const ns = cdpNeighbours(dev);
     const detail = a.includes('detail');
     if (detail) {
-      const learned = dev.getCdpAgent?.()?.getNeighbors() ?? [];
+      const agentCdp = dev.getCdpAgent?.();
+      const learned = agentCdp?.getNeighbors() ?? [];
       if (!learned.length) return 'Total cdp entries displayed : 0';
-      const blocks = learned.map(cdpDetailBlock);
+      const blocks = learned.map(n => cdpDetailBlock(
+        n, agentCdp?.holdtimeRemainingSec(n) ?? n.holdtimeSec));
       return `${blocks.join('\n\n')}\n\nTotal cdp entries displayed : ${learned.length}`;
     }
     const hdr = [
@@ -463,14 +472,143 @@ export function showCdp(dev: ShowStateDevice, arg = '', enabled = true): string 
   ].join('\n');
 }
 
-function lldpNeighbours(dev: ShowStateDevice): NeighborDTO[] {
-  const learnt = dev.getLldpNeighbors?.();
-  if (!learnt) return new EquipmentStateView(dev).neighbors();
-  const linkPeers = new EquipmentStateView(dev).neighbors();
-  const byKey = new Map<string, NeighborDTO>();
-  for (const p of linkPeers) byKey.set(p.localPort, p);
-  for (const p of learnt) byKey.set(p.localPort, p);
-  return Array.from(byKey.values());
+const LLDP_IF_ABBREV: ReadonlyArray<readonly [RegExp, string]> = [
+  [/^TenGigabitEthernet/i, 'Te'],
+  [/^FortyGigabitEthernet/i, 'Fo'],
+  [/^GigabitEthernet/i, 'Gi'],
+  [/^FastEthernet/i, 'Fa'],
+  [/^Ethernet/i, 'Et'],
+  [/^Serial/i, 'Se'],
+  [/^Loopback/i, 'Lo'],
+  [/^Port-channel/i, 'Po'],
+  [/^Vlan/i, 'Vl'],
+];
+
+function lldpShortIf(name: string): string {
+  for (const [re, abbr] of LLDP_IF_ABBREV) {
+    if (re.test(name)) return name.replace(re, abbr);
+  }
+  return name;
+}
+
+function lldpChassisId(n: { chassisId: string; chassisIdSubtype: string }): string {
+  if (n.chassisIdSubtype !== 'macAddress') return n.chassisId;
+  try { return new MACAddress(n.chassisId).toCiscoString(); } catch { return n.chassisId; }
+}
+
+function notAdvertised(label: string, value: string | undefined): string {
+  return value ? `${label}: ${value}` : `${label} - not advertised`;
+}
+
+function lldpDetailBlock(n: LldpNeighbor, remaining: number): string {
+  const lines = [
+    '------------------------------------------------',
+    `Local Intf: ${lldpShortIf(n.localPort)}`,
+    `Chassis id: ${lldpChassisId(n)}`,
+    `Port id: ${n.portId}`,
+    notAdvertised('Port Description', n.portDescription),
+    notAdvertised('System Name', n.systemName),
+    '',
+  ];
+  if (n.systemDescription) {
+    lines.push('System Description:', n.systemDescription, '');
+  } else {
+    lines.push('System Description - not advertised', '');
+  }
+  lines.push(`Time remaining: ${remaining} seconds`);
+  const caps = lldpCapabilityLetters(n.remoteCapabilities ?? []);
+  lines.push(notAdvertised('System Capabilities', n.remoteCapabilities ? caps : undefined));
+  lines.push(notAdvertised('Enabled Capabilities', n.remoteCapabilities ? caps : undefined));
+  if (n.managementAddresses && n.managementAddresses.length > 0) {
+    lines.push('Management Addresses:');
+    for (const a of n.managementAddresses) lines.push(`    IP: ${a}`);
+  } else {
+    lines.push('Management Addresses - not advertised');
+  }
+  lines.push('Auto Negotiation - not supported');
+  lines.push('Physical media capabilities - not advertised');
+  lines.push('Media Attachment Unit type - not advertised');
+  lines.push('Vlan ID: - not advertised');
+  return lines.join('\n');
+}
+
+const LLDP_CAP_LEGEND = [
+  'Capability codes:',
+  '    (R) Router, (B) Bridge, (T) Telephone, (C) DOCSIS Cable Device',
+  '    (W) WLAN Access Point, (P) Repeater, (S) Station, (O) Other',
+  '',
+];
+
+function lldpGlobalBlock(timer: number, ttl: number, reinit: number): string {
+  return [
+    'Global LLDP Information:',
+    '    Status: ACTIVE',
+    `    LLDP advertisements are sent every ${timer} seconds`,
+    `    LLDP hold time advertised is ${ttl} seconds`,
+    `    LLDP interface reinitialisation delay is ${reinit} seconds`,
+  ].join('\n');
+}
+
+function lldpLocalInfo(dev: ShowStateDevice, ttl: number): string {
+  const agent = dev.getLldpAgent?.();
+  const ports = dev.getPorts();
+  if (!agent || ports.length === 0) return 'LLDP is not enabled';
+  const self = agent.localIdentity(ports[0].getName());
+  const caps = lldpCapabilityLetters(self.capabilities ?? []);
+  const lines = [
+    'Local LLDP Information:',
+    `    Chassis ID: ${lldpChassisId(self)}`,
+    `    ${notAdvertised('System Name', self.systemName)}`,
+  ];
+  if (self.systemDescription) {
+    lines.push('    System Description:', `    ${self.systemDescription}`);
+  } else {
+    lines.push('    System Description - not advertised');
+  }
+  lines.push('');
+  lines.push(`    ${notAdvertised('System Capabilities', self.capabilities ? caps : undefined)}`);
+  lines.push(`    ${notAdvertised('Enabled Capabilities', self.capabilities ? caps : undefined)}`);
+  if (self.managementAddresses && self.managementAddresses.length > 0) {
+    lines.push('    Management Addresses:');
+    for (const addr of self.managementAddresses) lines.push(`        IP: ${addr}`);
+  } else {
+    lines.push('    Management Addresses - not advertised');
+  }
+  lines.push(`    TTL: ${ttl} seconds`, '');
+  for (const p of ports) {
+    const name = p.getName();
+    if (!agent.isPortTransmitEnabled(name)) continue;
+    const adv = agent.buildAdvertisement(name);
+    lines.push(`Port ID: ${adv.portId}`);
+    lines.push(`    ${notAdvertised('Port Description', adv.portDescription)}`);
+  }
+  return lines.join('\n');
+}
+
+function lldpTraffic(dev: ShowStateDevice): string {
+  const t = dev.getLldpAgent?.()?.getTraffic();
+  return [
+    'LLDP traffic statistics:',
+    '',
+    `    Total frames out: ${t?.framesOut ?? 0}`,
+    `    Total entries aged: ${t?.entriesAged ?? 0}`,
+    `    Total frames in: ${t?.framesIn ?? 0}`,
+    `    Total frames received in error: ${t?.framesInError ?? 0}`,
+    `    Total frames discarded: ${t?.framesDiscarded ?? 0}`,
+    `    Total TLVs discarded: ${t?.tlvsDiscarded ?? 0}`,
+    `    Total TLVs unrecognized: ${t?.tlvsUnrecognized ?? 0}`,
+  ].join('\n');
+}
+
+function lldpEntries(dev: ShowStateDevice, filter: string): string {
+  const agent = dev.getLldpAgent?.();
+  const all = agent?.getNeighbors() ?? [];
+  const wanted = filter === '*' || filter === ''
+    ? all
+    : all.filter(n => (n.systemName ?? '').toLowerCase() === filter.toLowerCase());
+  if (wanted.length === 0) return 'Total entries displayed: 0';
+  const blocks = wanted.map(n => lldpDetailBlock(n, agent?.ttlRemainingSec(n) ?? n.ttlSec));
+  return `${blocks.join('\n\n')}\n\nTotal entries displayed: ${wanted.length}`;
 }
 
 export function showLldp(dev: ShowStateDevice, arg = '', enabled = true): string {
@@ -479,55 +617,44 @@ export function showLldp(dev: ShowStateDevice, arg = '', enabled = true): string
   const mul = cfg?.holdtimeMultiplier ?? 4;
   const ttl = timer * mul;
   const reinit = cfg?.reinitDelaySec ?? 2;
+  const a = arg.toLowerCase().trim();
   if (!enabled) {
-    if (arg.toLowerCase().includes('neighbor')) {
-      return 'Capability codes:\n' +
-        '    (R) Router, (B) Bridge, (T) Telephone, (C) DOCSIS Cable Device\n' +
-        '    (W) WLAN Access Point, (P) Repeater, (S) Station, (O) Other\n\n' +
-        'Device ID           Local Intf     Hold-time  Capability      Port ID\n\n' +
-        'Total entries displayed: 0';
+    if (a.startsWith('neighbor')) {
+      return [...LLDP_CAP_LEGEND,
+        'Device ID           Local Intf     Hold-time  Capability      Port ID',
+        '',
+        'Total entries displayed: 0'].join('\n');
     }
+    if (a.startsWith('entry')) return 'Total entries displayed: 0';
     return '% LLDP is not enabled';
   }
-  if (arg.toLowerCase().includes('neighbor')) {
-    const ns = lldpNeighbours(dev);
-    const detail = arg.toLowerCase().includes('detail');
-    if (detail) {
-      const agent = dev.getLldpAgent?.();
-      const learned = agent?.getNeighbors() ?? [];
-      if (learned.length === 0 && ns.length === 0) return 'Total entries displayed: 0';
-      const blocks = learned.map((n) => [
-        '------------------------------------------------',
-        `Local Intf: ${n.localPort}`,
-        `Chassis id: ${n.chassisId}`,
-        `Port id: ${n.portId}`,
-        `Port Description: ${n.portDescription}`,
-        `System Name: ${n.systemName}`,
-        `System Description:`,
-        n.systemDescription,
-        `Time remaining: ${Math.max(0, Math.floor((n.expiresAtMs - Date.now()) / 1000))} seconds`,
-        `System Capabilities: ${n.remoteCapabilities.join(', ')}`,
-        `Enabled Capabilities: ${n.remoteCapabilities.join(', ')}`,
-        `Management Addresses:`,
-        ...(n.managementAddresses.length > 0
-          ? n.managementAddresses.map((a) => `    IP: ${a}`)
-          : ['    not advertised']),
-      ].join('\n'));
+  if (a.startsWith('neighbor')) {
+    const agent = dev.getLldpAgent?.();
+    const learned = agent?.getNeighbors() ?? [];
+    if (a.includes('detail')) {
+      if (learned.length === 0) return 'Total entries displayed: 0';
+      const blocks = learned.map(n => lldpDetailBlock(n, agent?.ttlRemainingSec(n) ?? n.ttlSec));
       return `${blocks.join('\n\n')}\n\nTotal entries displayed: ${learned.length}`;
     }
-    const hdr = [
-      'Capability codes:',
-      '    (R) Router, (B) Bridge, (T) Telephone, (C) DOCSIS Cable Device',
-      '    (W) WLAN Access Point, (P) Repeater, (S) Station, (O) Other',
-      '',
+    const rows = learned.map((n) =>
+      `${(n.systemName ?? '').padEnd(20)}${lldpShortIf(n.localPort).padEnd(15)}` +
+      `${String(agent?.ttlRemainingSec(n) ?? n.ttlSec).padEnd(11)}` +
+      `${lldpCapabilityLetters(n.remoteCapabilities ?? []).padEnd(16)}${n.portId}`);
+    return [...LLDP_CAP_LEGEND,
       'Device ID           Local Intf     Hold-time  Capability      Port ID',
-    ];
-    const rows = ns.map((n) =>
-      `${n.remoteHost.padEnd(20)}${shortIf(n.localPort).padEnd(15)}${String(ttl).padEnd(11)}` +
-      `${n.remoteCapability.padEnd(16)}${n.remotePort}`);
-    return [...hdr, ...rows, '', `Total entries displayed: ${ns.length}`].join('\n');
+      ...rows, '', `Total entries displayed: ${learned.length}`].join('\n');
   }
-  if (arg.toLowerCase().includes('interface')) {
+  if (a.startsWith('entry')) return lldpEntries(dev, arg.trim().split(/\s+/)[1] ?? '*');
+  if (a.startsWith('traffic')) return lldpTraffic(dev);
+  if (a.startsWith('local')) return lldpLocalInfo(dev, ttl);
+  if (a.startsWith('errors')) {
+    return ['LLDP errors/overflows:', '',
+      '    Total memory allocation failures: 0',
+      '    Total encapsulation failures: 0',
+      '    Total input queue overflows: 0',
+      '    Total table overflows: 0'].join('\n');
+  }
+  if (a.startsWith('interface')) {
     const agent = dev.getLldpAgent?.();
     const lines: string[] = [];
     for (const p of dev.getPorts()) {
@@ -541,13 +668,8 @@ export function showLldp(dev: ShowStateDevice, arg = '', enabled = true): string
     }
     return lines.length ? lines.join('\n') : 'LLDP is not enabled on any interface';
   }
-  return [
-    'Global LLDP Information:',
-    '    Status: ACTIVE',
-    `    LLDP advertisements are sent every ${timer} seconds`,
-    `    LLDP hold time advertised is ${ttl} seconds`,
-    `    LLDP interface reinitialisation delay is ${reinit} seconds`,
-  ].join('\n');
+  if (a !== '') throw new CliInvalidInput({ token: arg.trim().split(/\s+/)[0] });
+  return lldpGlobalBlock(timer, ttl, reinit);
 }
 
 /**

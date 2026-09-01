@@ -180,9 +180,9 @@ describe('LLDP — global knobs', () => {
     await enableLldp(r1);
     await enableLldp(r2);
     const out = await r1.executeCommand('show lldp neighbors detail');
-    expect(out).toMatch(/Local Intf: GigabitEthernet0\/1/);
+    expect(out).toMatch(/Local Intf: Gi0\/1/);
     expect(out).toMatch(/System Name: R2/);
-    expect(out).toMatch(/Chassis id: [0-9a-f:]+/);
+    expect(out).toMatch(/Chassis id: [0-9a-f]{4}\.[0-9a-f]{4}\.[0-9a-f]{4}/);
     expect(out).toMatch(/Time remaining: \d+ seconds/);
   });
 });

@@ -110,6 +110,15 @@ const NTP_SOUS_COMMANDES: ReadonlyArray<{
 ];
 import { CISCO_ERRORS, parsePipeFilter, applyPipeFilter, PIPE_WRITERS, PIPE_MODIFIERS, type PipeFilter } from './cli-utils';
 import { isValidIPv4 } from '../../core/ip';
+import { LLDP_OPTIONAL_TLVS, type LldpOptionalTlv } from '@/network/lldp/types';
+
+const LLDP_TLV_DESCRIPTIONS: Readonly<Record<LldpOptionalTlv, string>> = {
+  'port-description': 'Port Description TLV',
+  'system-name': 'System Name TLV',
+  'system-description': 'System Description TLV',
+  'system-capabilities': 'System Capabilities TLV',
+  'management-address': 'Management Address TLV',
+};
 import {
   registerArpShowCommands, registerArpConfigCommands,
 } from './cisco/CiscoArpCommands';
@@ -3967,6 +3976,10 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       this.discoveryToggle(['lldp', 'receive'], 'Enable LLDP receive on this interface', 'config-if',
         perPort(port => this.applyToLldpAgent(a => a.setPortReceive(port, true))),
         perPort(port => this.applyToLldpAgent(a => a.setPortReceive(port, false)))),
+      ...LLDP_OPTIONAL_TLVS.map(tlv => this.discoveryToggle(
+        ['lldp', 'tlv-select', tlv], LLDP_TLV_DESCRIPTIONS[tlv], 'config-if',
+        perPort(port => this.applyToLldpAgent(a => a.setPortTlvSelected(port, tlv, true))),
+        perPort(port => this.applyToLldpAgent(a => a.setPortTlvSelected(port, tlv, false))))),
 
       this.discoveryValue(['cdp', 'timer'], 'Advertisement period (sec)',
         5, 254,
@@ -8628,7 +8641,11 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     trie.registerGreedy('show lldp', 'Display LLDP information', (a) =>
       showLldp(this.cs(), a.join(' '), this.configState.isEnabled('lldp')), [
       { keyword: 'neighbors', description: 'LLDP neighbor entries' },
+      { keyword: 'entry',     description: 'Information for specific neighbor entry' },
+      { keyword: 'errors',    description: 'LLDP computational errors and overflows' },
       { keyword: 'interface', description: 'LLDP interface status and configuration' },
+      { keyword: 'local-info', description: 'Local LLDP information' },
+      { keyword: 'traffic',   description: 'LLDP statistics' },
     ]);
     trie.registerGreedy('show snmp', 'Display SNMP status', () => showSnmp(this.cs(), this.getChassisProfile()));
     /**

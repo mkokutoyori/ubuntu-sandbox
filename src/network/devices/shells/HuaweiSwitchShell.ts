@@ -25,6 +25,9 @@ import {
 import { EquipmentParamResolver } from './EquipmentParamResolver';
 import { huaweiInteractionPlanFor } from './huawei/HuaweiInteractionPlans';
 import type { CommandInteractionPlan } from '@/shell/interaction/CommandInteraction';
+import {
+  registerVrpLldpDisplayCommands, applyVrpLldpAdminStatus,
+} from './huawei/HuaweiLldpViews';
 import type { ISwitchShell } from './ISwitchShell';
 import type { Switch } from '../Switch';
 import { MACAddress, IPAddress, SubnetMask, type PortViolationMode } from '../../core/types';
@@ -1458,15 +1461,8 @@ export class HuaweiSwitchShell implements ISwitchShell {
     });
     this.interfaceTrie.registerGreedy('lldp admin-status', 'LLDP admin status', (args) => {
       if (!this.selectedInterface) return 'Error: Incomplete command.';
-      const port = this.selectedInterface;
-      const m = (args[0] ?? '').toLowerCase();
-      this.applyToLldpAgent(a => {
-        if (m === 'tx') { a.setPortTransmit(port, true); a.setPortReceive(port, false); }
-        else if (m === 'rx') { a.setPortTransmit(port, false); a.setPortReceive(port, true); }
-        else if (m === 'txrx') { a.setPortTransmit(port, true); a.setPortReceive(port, true); }
-        else if (m === 'disable') { a.setPortTransmit(port, false); a.setPortReceive(port, false); }
-      });
-      return '';
+      return applyVrpLldpAdminStatus(
+        this.swRef?.getLldpAgent?.() ?? null, this.selectedInterface, args[0] ?? '');
     });
     this.registerInterfacePhysicalCommands(this.interfaceTrie);
 
@@ -3570,52 +3566,12 @@ export class HuaweiSwitchShell implements ISwitchShell {
       for (const [id, v] of region?.instances ?? []) lines.push(`  ${String(id).padEnd(11)}${v}`);
       return lines.join('\n');
     });
-    trie.registerGreedy('display lldp neighbor', 'Display LLDP neighbours', (args) => {
-      if (!this.swRef) return '';
-      const ag = this.swRef?.getLldpAgent?.();
-      if (!ag) return '';
-      const ns = ag.getNeighbors();
-      const brief = args.some(a => a.toLowerCase() === 'brief');
-      if (brief) {
-        const lines = ['Local Intf                Neighbor Dev    Neighbor Intf   Exptime(s)'];
-        for (const n of ns) {
-          const remain = Math.max(0, Math.floor((n.expiresAtMs - Date.now()) / 1000));
-          lines.push(`${n.localPort.padEnd(25)} ${n.systemName.padEnd(15)} ${n.portId.padEnd(15)} ${remain}`);
-        }
-        lines.push(`Total: ${ns.length}`);
-        return lines.join('\n');
-      }
-      const lines: string[] = [];
-      for (const n of ns) {
-        lines.push(`${n.localPort} has 1 neighbor(s):`);
-        lines.push(`  Neighbor index : 1`);
-        lines.push(`  Chassis type   : MAC address`);
-        lines.push(`  Chassis ID     : ${n.chassisId}`);
-        lines.push(`  Port ID type   : Interface name`);
-        lines.push(`  Port ID        : ${n.portId}`);
-        lines.push(`  Port description: ${n.portDescription}`);
-        lines.push(`  System name    : ${n.systemName}`);
-        lines.push(`  System description:`);
-        lines.push(`  ${n.systemDescription}`);
-        const remain = Math.max(0, Math.floor((n.expiresAtMs - Date.now()) / 1000));
-        lines.push(`  Expired time   : ${remain} s`);
-        lines.push('');
-      }
-      lines.push(`Total: ${ns.length}`);
-      return lines.join('\n');
-    });
-    trie.register('display lldp local', 'Display LLDP local info', () => {
-      if (!this.swRef) return '';
-      const ag = this.swRef?.getLldpAgent?.();
-      const cfg = ag?.getConfig();
-      return [
-        'Local LLDP information:',
-        `System name      : ${this.swRef.getHostname()}`,
-        `LLDP status      : ${cfg?.enabled ? 'enabled' : 'disabled'}`,
-        `Message tx interval : ${cfg?.timerSec ?? 30} s`,
-        `Message tx hold-multiplier : ${cfg?.holdtimeMultiplier ?? 4}`,
-        `Reinit delay : ${cfg?.reinitDelaySec ?? 2} s`,
-      ].join('\n');
+    registerVrpLldpDisplayCommands(trie, {
+      agent: () => this.swRef?.getLldpAgent?.() ?? null,
+      hostname: () => this.swRef?.getHostname() ?? '',
+      portNames: () => this.swRef?.getPorts().map(p => p.getName()) ?? [],
+      displayName: (n) => huaweiDisplayInterfaceName(n),
+      resolveInterface: (raw) => this.resolveInterfaceName(raw) || null,
     });
     trie.registerGreedy('display stp interface', 'Display STP for an interface', (args) => {
       if (!this.swRef || args.length < 1) return 'Error: Incomplete command.';

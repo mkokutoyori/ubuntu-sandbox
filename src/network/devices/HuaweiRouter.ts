@@ -21,7 +21,7 @@ import {
   displayCurrentConfig,
   displayIpIntBrief,
 } from './shells/huawei/HuaweiDisplayCommands';
-import { resolveHuaweiInterfaceName as resolveHuaweiIfName } from './shells/cli-utils';
+import { huaweiDisplayInterfaceName, resolveHuaweiInterfaceName as resolveHuaweiIfName } from './shells/cli-utils';
 import { LldpAgent } from '../lldp/LldpAgent';
 import { ETHERTYPE_LLDP, LLDP_MULTICAST_MAC } from '../lldp/types';
 import { VrrpAgent } from '../vrrp/VrrpAgent';
@@ -123,7 +123,9 @@ export class HuaweiRouter extends Router {
       evaluateAclPermit: (aclName: string, sourceIp: string) =>
         this.evaluateAclPermit(aclName, sourceIp),
     };
-    this.lldpAgent = new LldpAgent(hostBase, () => this.getBus());
+    this.lldpAgent = new LldpAgent(
+      { ...hostBase, displayPortName: (n) => huaweiDisplayInterfaceName(n) },
+      () => this.getBus());
     this.vrrpAgent = new VrrpAgent(hostBase, () => this.getBus());
     this.ntpAgent = new NtpAgent(hostBase, () => this.getBus());
     // Un routeur repond a `ntpq` ; un poste sous chronyd non.

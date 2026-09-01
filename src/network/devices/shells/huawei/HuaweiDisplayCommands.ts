@@ -1177,6 +1177,13 @@ function appendManagementConfig(lines: string[], router: Router): void {
     lines.push('#');
     lines.push(...nqa);
   }
+  const lldp = (router as unknown as {
+    getLldpAgent?: () => import('@/network/lldp/LldpAgent').LldpAgent
+  }).getLldpAgent?.().asRunningConfigLinesVrp() ?? [];
+  if (lldp.length > 0) {
+    lines.push('#');
+    lines.push(...lldp);
+  }
 }
 
 export function displayCurrentConfigInterface(router: Router, ifName: string): string {
@@ -1339,6 +1346,9 @@ export function renderHuaweiInterfaceExtras(router: Router, port: any, portName:
   const pending = extra.pendingIfConfig?.get(portName) as any;
   lines.push(...vrpOspfInterfaceLines(pending));
   lines.push(...vrpRipInterfaceLines(port));
+  for (const l of (router as unknown as {
+    getLldpAgent?: () => import('@/network/lldp/LldpAgent').LldpAgent
+  }).getLldpAgent?.().vrpInterfaceLines(portName) ?? []) lines.push(` ${l}`);
   if (port.isNegotiationAuto?.() === false) {
     const vitesse = port.getSpeed?.();
     if (vitesse) lines.push(` speed ${vitesse}`);
@@ -1789,31 +1799,6 @@ export function registerDisplayCommands(
       `Collectors: ${sf.collectors.length}`,
       `Samplers: ${sf.samplers.length}`,
     ].join('\n');
-  });
-
-  trie.register('display lldp neighbor', 'Display LLDP neighbors', () => {
-    const agent = (getRouter() as unknown as { getLldpAgent?: () => { getNeighbors: () => readonly { localPort: string; chassisId: string; portId: string; systemName: string; portDescription: string; expiresAtMs: number }[] } }).getLldpAgent?.();
-    const neighbors = agent?.getNeighbors() ?? [];
-    if (neighbors.length === 0) return 'Info: No LLDP neighbor is found.';
-    return neighbors.map(n => [
-      `Local Intf: ${n.localPort}`,
-      `Chassis id: ${n.chassisId}`,
-      `Port id: ${n.portId}`,
-      `Port description: ${n.portDescription}`,
-      `System name: ${n.systemName}`,
-      `Time remaining: ${Math.max(0, Math.floor((n.expiresAtMs - Date.now()) / 1000))} seconds`,
-    ].join('\n')).join('\n\n');
-  });
-
-  trie.register('display lldp neighbor brief', 'Display LLDP brief', () => {
-    const agent = (getRouter() as unknown as { getLldpAgent?: () => { getNeighbors: () => readonly { localPort: string; systemName: string; portId: string; expiresAtMs: number }[] } }).getLldpAgent?.();
-    const neighbors = agent?.getNeighbors() ?? [];
-    const lines = ['Local Intf    Neighbor Dev    Neighbor Intf    Exptime(s)'];
-    for (const n of neighbors) {
-      const exp = Math.max(0, Math.floor((n.expiresAtMs - Date.now()) / 1000));
-      lines.push(`${n.localPort.padEnd(14)}${n.systemName.padEnd(16)}${n.portId.padEnd(17)}${exp}`);
-    }
-    return lines.join('\n');
   });
 
   trie.registerGreedy('display bgp peer', 'Display BGP peers', () => {

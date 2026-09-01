@@ -93,13 +93,19 @@ describe('Cisco common show family (router & switch, DRY)', () => {
     expect(cdpDetail).toContain('R2');
     expect(cdpDetail).toMatch(/Port ID \(outgoing port\): GigabitEthernet0\/1/);
 
-    // LLDP is disabled by default on Cisco — enabling it is real state.
-    await r1.executeCommand('configure terminal');
-    await r1.executeCommand('lldp run');
-    await r1.executeCommand('end');
+    // LLDP is disabled by default on Cisco — enabling it is real state,
+    // and it takes BOTH ends: a peer only appears once it has actually
+    // sent an LLDP frame, exactly as CDP above.
+    for (const r of [r1, r2]) {
+      await r.executeCommand('enable');
+      await r.executeCommand('configure terminal');
+      await r.executeCommand('lldp run');
+      await r.executeCommand('end');
+    }
     const lldp = await r1.executeCommand('show lldp neighbors');
     expect(lldp).toContain('R2');
-    expect(lldp).toMatch(/Total entries displayed: 2/);
+    expect(lldp).not.toContain('L1');
+    expect(lldp).toMatch(/Total entries displayed: 1/);
   });
 
   it('REAL state: show interfaces reflects configured IP & link', async () => {
