@@ -1,4 +1,7 @@
 export const DEFAULT_LOAD_INTERVAL_SEC = 300;
+export const LOAD_INTERVAL_MIN_SEC = 30;
+export const LOAD_INTERVAL_MAX_SEC = 600;
+export const LOAD_INTERVAL_STEP_SEC = 30;
 export const LOAD_SAMPLE_PERIOD_SEC = 5;
 
 export interface LoadRates {
@@ -26,7 +29,8 @@ export class PortLoad {
   private outPps = 0;
 
   setIntervalSec(sec: number): boolean {
-    if (!Number.isInteger(sec) || sec < 30 || sec > 600 || sec % 30 !== 0) return false;
+    if (!Number.isInteger(sec) || sec < LOAD_INTERVAL_MIN_SEC
+      || sec > LOAD_INTERVAL_MAX_SEC || sec % LOAD_INTERVAL_STEP_SEC !== 0) return false;
     this.intervalSec = sec;
     return true;
   }

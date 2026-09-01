@@ -53,6 +53,9 @@ import { renderStartupConfig } from './cisco/ciscoConfigSerializer';
 import { CommandTrie, type ParamType } from './CommandTrie';
 import { fhrpInterfaceSpecs, type FhrpPlacement } from './cisco/fhrpInterfaceSpecs';
 import { ipAddressInterfaceSpecs, type IpAddressHost } from './cisco/ipAddressInterfaceSpecs';
+import {
+  interfaceLoadMtuSpecs, type LoadMtuHost, type LoadMtuPort,
+} from './cisco/interfaceLoadMtuSpecs';
 import type { FhrpRepository } from '../inspection/config/FhrpRepository';
 import { EquipmentParamResolver, type SessionParamRanges, type CompletableDevice } from './EquipmentParamResolver';
 import { getDefaultScheduler, type IScheduler, type TimerHandle } from '@/events/Scheduler';
@@ -5479,6 +5482,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       ...this.ipHelperAddressSpecs(),
       ...this.fhrpInterfaceSpecs(),
       ...ipAddressInterfaceSpecs(() => this.ipAddressHost()),
+      ...interfaceLoadMtuSpecs(() => this.loadMtuHost()),
       ...this.cefSpecs(),
       ...this.enableSpecs(),
       ...this.configureSpecs(),
@@ -6273,6 +6277,16 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
   }
 
   protected resolveTrackedForFhrp(raw: string): string { return raw; }
+
+  protected loadMtuHost(): LoadMtuHost {
+    return {
+      targetPorts: () => this.selectedPortsForConfigIf()
+        .map((nom) => (this.d() as unknown as {
+          getPort?: (n: string) => LoadMtuPort | undefined;
+        }).getPort?.(nom))
+        .filter((port): port is LoadMtuPort => port !== undefined),
+    };
+  }
 
   protected ipAddressHost(): IpAddressHost {
     return {

@@ -26,6 +26,7 @@ import { isValidIPv4 } from '../../core/ip';
 import type { CommandSpec } from '@/cli/CommandTable';
 import type { FhrpPlacement } from './cisco/fhrpInterfaceSpecs';
 import type { IpAddressHost } from './cisco/ipAddressInterfaceSpecs';
+import type { LoadMtuHost } from './cisco/interfaceLoadMtuSpecs';
 import { dhcpClientFamily, type DhcpClientLeaseView } from '@/cli/commands/dhcp/dhcpClientFamily';
 
 const SVI_SANS_SECONDAIRE =
@@ -1381,18 +1382,6 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
     });
 
     // ── Interface ── trust + limit rate
-    trie.configIf.registerGreedy('mtu', 'Set MTU', (args) => {
-      const n = parseInt(args[0] ?? '', 10);
-      if (!Number.isFinite(n)) throw new CliInvalidInput();
-      if (n < 68) return `% Invalid MTU: ${n}. Minimum is 68 (IPv4 minimum).`;
-      if (n > 9216) return `% Invalid MTU: ${n}. Maximum is 9216 (jumbo frame).`;
-      const ifs = this.selectedInterface ? [this.selectedInterface] : this.selectedInterfaceRange;
-      for (const i of ifs) {
-        const port = this.d().getPort(i);
-        if (port) (port as unknown as { setMTU?: (m: number) => void }).setMTU?.(n);
-      }
-      return '';
-    });
     trie.configIf.register('ip arp inspection trust', 'Trust port for DAI', () => {
       const cfg = this.d()._getArpInspectionConfig();
       return this.applyToSelectedInterfaces(p => { cfg.trustedPorts.add(p); return ''; });
@@ -2517,6 +2506,29 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
 
   dhcpClientResolveInterface(name: string): string | null {
     return this.resolveInterfaceName(name);
+  }
+
+  protected override loadMtuHost(): LoadMtuHost {
+    return {
+      ...super.loadMtuHost(),
+      refuseOnSelected: (commande) =>
+        commande === 'load-interval' && this.selectedInterface !== null
+          && this.sviVlanId(this.selectedInterface) !== null
+          ? CISCO_ERRORS.INVALID_INPUT : null,
+      onInterfaceLine: (ligne) => this.enregistrerLigneInterface(ligne),
+    };
+  }
+
+  private enregistrerLigneInterface(ligne: string): void {
+    const ifs = this.selectedInterface
+      ? [this.selectedInterface] : this.selectedInterfaceRange;
+    const verbe = ligne.split(' ').slice(0, 3).join(' ');
+    for (const i of ifs) {
+      const l = (this.ifExtra.get(i) ?? []).filter(
+        (existante) => existante.split(' ').slice(0, 3).join(' ') !== verbe);
+      l.push(ligne);
+      this.ifExtra.set(i, l);
+    }
   }
 
   protected override ipAddressHost(): IpAddressHost {
@@ -3922,18 +3934,6 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
         port.setNegotiationAuto(false);
       }
       return recordIf(`speed ${n}`);
-    });
-    trie.registerGreedy('load-interval', 'Set load calculation interval', (args) => {
-      if (this.selectedInterface && this.sviVlanId(this.selectedInterface) !== null) {
-        return CISCO_ERRORS.INVALID_INPUT;
-      }
-      const n = parseInt(args[0] ?? '', 10);
-      for (const port of targetPorts()) {
-        if (!port.setLoadIntervalSec(n)) {
-          throw new CliInvalidInput({ argIndex: 0, token: args[0] });
-        }
-      }
-      return recordIf(`load-interval ${n}`);
     });
     for (const sub of [
       'switchport voice',

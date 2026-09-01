@@ -678,14 +678,6 @@ export function buildConfigIfCommands(trie: CommandTrie, ctx: CiscoShellContext)
     if (args[0]) ctx.r().getPort(iface)?.setPolicyRouteMap(args[0]);
     return '';
   });
-  trie.registerGreedy('mtu', 'Set MTU', (args) => {
-    if (!ctx.getSelectedInterface()) return '% No interface selected';
-    const port = ctx.r().getPort(ctx.getSelectedInterface()!);
-    if (!port) return '';
-    if (!/^\d+$/.test(args[0] ?? '')) return "% Invalid input detected at '^' marker.";
-    try { port.setMTU(parseInt(args[0], 10)); } catch (e: unknown) { return e instanceof Error ? `% ${e.message}` : '% Invalid MTU'; }
-    return '';
-  });
   trie.registerGreedy('bandwidth', 'Set interface bandwidth (kbps)', (args) => {
     if (!ctx.getSelectedInterface()) return '% No interface selected';
     const port = ctx.r().getPort(ctx.getSelectedInterface()!);
@@ -1086,13 +1078,6 @@ export function buildConfigIfCommands(trie: CommandTrie, ctx: CiscoShellContext)
     return '';
   });
 
-  trie.registerGreedy('load-interval', 'Set load calculation interval', (args) => {
-    if (!ctx.getSelectedInterface()) return '';
-    const port = ctx.r().getPort(ctx.getSelectedInterface()!);
-    const n = parseInt(args[0] ?? '', 10);
-    if (port && !isNaN(n) && !port.setLoadIntervalSec(n)) return CISCO_ERRORS.INVALID_INPUT;
-    return '';
-  });
   trie.registerGreedy('encapsulation', 'Set encapsulation', (args) => {
     if (!ctx.getSelectedInterface()) return '';
     const port = ctx.r().getPort(ctx.getSelectedInterface()!);

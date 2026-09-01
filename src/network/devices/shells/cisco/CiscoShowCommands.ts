@@ -6,7 +6,7 @@
  */
 
 import type { Router } from '../../Router';
-import { loadIntervalLabel } from '../../../hardware/PortLoad';
+import { loadIntervalLabel, DEFAULT_LOAD_INTERVAL_SEC } from '../../../hardware/PortLoad';
 import { dhcpRunningConfigLines, dhcpSnoopingInterfaceLines, dhcpSnoopingRunningConfigLines } from '../../../dhcp/dhcpRunningConfig';
 import { createDefaultSnoopingConfig } from '../../../dhcp/types';
 import type { DHCPSnoopingConfig } from '../../../dhcp/types';
@@ -955,6 +955,8 @@ function legacyInterfaceLines(port: Port): string[] {
   const wfq = port.getFairQueueConfig();
   const pbr = port.getPolicyRouteMap();
 
+  const charge = port.getLoadIntervalSec();
+  if (charge !== DEFAULT_LOAD_INTERVAL_SEC) lines.push(` load-interval ${charge}`);
   if (pbr) lines.push(` ip policy route-map ${pbr}`);
   if (port.isDirectedBroadcastEnabled()) lines.push(' ip directed-broadcast');
   if (mss !== null) lines.push(` ip tcp adjust-mss ${mss}`);
