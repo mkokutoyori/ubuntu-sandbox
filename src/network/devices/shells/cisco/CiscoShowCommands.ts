@@ -1569,7 +1569,11 @@ function ipInterfaceBlock(router: Router, name: string, port: Port): string {
   const natTag = nat.isInsideInterface(name) ? ' (nat: inside)'
     : nat.isOutsideInterface(name) ? ' (nat: outside)' : '';
   const flags = (router as unknown as {
-    [k: symbol]: { interfaceFlags?: Map<string, { noRedirects?: boolean; noUnreachables?: boolean }> } | undefined;
+    [k: symbol]: {
+      interfaceFlags?: Map<string, {
+        noRedirects?: boolean; noUnreachables?: boolean; maskReply?: boolean;
+      }>;
+    } | undefined;
   })[Symbol.for('CiscoSecurityConfig')]?.interfaceFlags?.get(name) ?? {};
   const binding = router._getInterfaceACLBindingsInternal().get(name);
   return ipInterfaceBlockFor(name, port, router._getPortsInternal(), natTag,
@@ -1600,13 +1604,40 @@ export function interfaceAclLines(acl: InterfaceAclRefs): string[] {
   ];
 }
 
+export interface IpInterfaceControls {
+  directedBroadcast?: boolean;
+  proxyArp?: boolean;
+  splitHorizon?: boolean;
+  noRedirects?: boolean;
+  noUnreachables?: boolean;
+  maskReply?: boolean;
+}
+
+export function ipInterfaceControlLines(
+  controls: IpInterfaceControls, acl: InterfaceAclRefs = {},
+): string[] {
+  return [
+    `  Directed broadcast forwarding is ${controls.directedBroadcast ? 'enabled' : 'disabled'}`,
+    ...interfaceAclLines(acl),
+    `  Proxy ARP is ${controls.proxyArp === false ? 'disabled' : 'enabled'}`,
+    '  Local Proxy ARP is disabled',
+    '  Security level is default',
+    `  Split horizon is ${controls.splitHorizon === false ? 'disabled' : 'enabled'}`,
+    `  ICMP redirects are ${controls.noRedirects ? 'never sent' : 'always sent'}`,
+    `  ICMP unreachables are ${controls.noUnreachables ? 'never sent' : 'always sent'}`,
+    `  ICMP mask replies are ${controls.maskReply ? 'always sent' : 'never sent'}`,
+    '  IP fast switching is enabled',
+    '  IP CEF switching is enabled',
+  ];
+}
+
 export function ipInterfaceBlockFor(
   name: string,
   port: Port,
   ports: ReadonlyMap<string, Port>,
   natTag = '',
   splitHorizon = true,
-  icmp: { noRedirects?: boolean; noUnreachables?: boolean } = {},
+  icmp: { noRedirects?: boolean; noUnreachables?: boolean; maskReply?: boolean } = {},
   acl: InterfaceAclRefs = {},
 ): string {
   const view = iosInterfaceStatus(port, name, ports);
@@ -1623,16 +1654,14 @@ export function ipInterfaceBlockFor(
   lines.push(`  Address determined by ${iosAddressMethod(port) === 'DHCP' ? 'DHCP' : 'non-volatile memory'}`);
   lines.push(`  MTU is ${port.getMTU()} bytes`);
   lines.push('  Helper address is not set');
-  lines.push('  Directed broadcast forwarding is disabled');
-  lines.push(...interfaceAclLines(acl));
-  lines.push(`  Proxy ARP is ${port.isProxyArpEnabled?.() === false ? 'disabled' : 'enabled'}`);
-  lines.push('  Local Proxy ARP is disabled');
-  lines.push('  Security level is default');
-  lines.push(`  Split horizon is ${splitHorizon ? 'enabled' : 'disabled'}`);
-  lines.push(`  ICMP redirects are ${icmp.noRedirects ? 'never sent' : 'always sent'}`);
-  lines.push(`  ICMP unreachables are ${icmp.noUnreachables ? 'never sent' : 'always sent'}`);
-  lines.push('  IP fast switching is enabled');
-  lines.push('  IP CEF switching is enabled');
+  lines.push(...ipInterfaceControlLines({
+    directedBroadcast: port.isDirectedBroadcastEnabled?.(),
+    proxyArp: port.isProxyArpEnabled?.(),
+    splitHorizon,
+    noRedirects: icmp.noRedirects,
+    noUnreachables: icmp.noUnreachables,
+    maskReply: icmp.maskReply,
+  }, acl));
   return lines.join('\n');
 }
 

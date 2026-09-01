@@ -520,6 +520,8 @@ export abstract class Switch extends Equipment {
       ?? this._hsrpAgent?.vipArpOwner(vlanIf, targetIp, requesterIp)
       ?? this._glbpAgent?.vipArpOwner(vlanIf, targetIp, requesterIp)
       ?? null,
+    icmpUnreachablesEnabled: (vlan) =>
+      !getSecurityConfig(this).ifaceFlags(`Vlan${vlan}`).noUnreachables,
     isDhcpRelayInfoEnabled: () => this.dhcpServer.isRelayInformationOptionEnabled(),
     getDhcpServer: () => this.dhcpServer,
     recordArp: (dir, op) => this.arpStats.record(dir, op),

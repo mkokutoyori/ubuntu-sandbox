@@ -408,6 +408,37 @@ une meme saisie seraient un refus de trop. Le renverser sans que l'agent
 qui l'a pris le dise ferait tomber son cas ; l'ecart est donc inscrit
 ici plutot que tranche unilateralement.
 
+### [cli] `sh ?` coute 3,5 SECONDES la ou `show ?` en coute 0,04
+Mesure sur un routeur Cisco neuf, sans aucune regle de privilege, les
+deux frappes rendant la MEME liste de vingt entrees :
+`cliHelp('show ')` 43 ms, `cliHelp('sh ')` 3545 ms — quatre-vingts fois
+plus cher pour la meme question, la seule difference etant que le
+premier mot est ABREGE. Le terminal appelle cette porte a chaque `?`,
+donc un apprenant qui tape `sh ?` attend trois secondes et demie.
+**Ou passe le temps**, mesure piece par piece : `getHelp` juge chacune
+des vingt entrees par `laSessionVoit`, qui coute 12 ms sur `show
+version` et 277 ms sur `sh version` ; dans ces 277 ms,
+`niveauParDefautDe` en prend 54 (deux `trie.match` sur une abreviation)
+et l'appel a `authorize` le reste — c'est le canonicaliseur qui resout
+l'abreviation, sans memoire d'un appel a l'autre alors que les vingt
+appels d'une meme frappe partagent le meme premier mot.
+`executableTelleQuelle` et `meneAQuelqueChoseDeVisible` sont a 0 ms :
+la marche des descendants, qu'on soupconnerait la premiere, n'y est
+pour rien.
+**Ce n'est pas la migration au socle** : les memes chiffres sont releves
+avec et sans le pont d'ambiguite trie/socle (277 ms contre 300 ms), donc
+le port des rivaux ajoute 8 % a un cout qui existait avant lui.
+**Consequence sur un test** : le cas « l aide ne propose pas ce que l
+execution refuse, meme sur prefixe abrege » de
+`cisco-privilege-abbreviation.test.ts` depasse son delai de 5 s. Il
+tombe a l'identique sur `origin/mandeng` sans aucune modification
+locale, donc c'est bien ce cout et non une regression de migration.
+**Pourquoi ce n'est pas ferme ici** : la reparation est une memoire de
+canonicalisation portee par la frappe — donc un cycle de vie a poser
+(quand l'invalider : une regle de privilege posee, une vue changee, une
+commande migree) — et non un reglage local. C'est un sujet a soi, pas
+un incident de la famille en cours de migration.
+
 ## Routeur Cisco
 
 ### [acl] GRE n'est pas eprouvable sur un routeur Cisco

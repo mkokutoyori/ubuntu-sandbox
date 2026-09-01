@@ -59,6 +59,14 @@ export interface SviHost {
    * with the Vlanif name (e.g. `Vlanif10`) and the requester's IP.
    */
   fhrpVipArpOwner?(vlanIf: string, targetIp: string, requesterIp: string): string | null;
+  /**
+   * `no ip unreachables` sur la SVI d'entree. Le meme reglage que le
+   * routeur applique par `isIcmpUnreachablesEnabled`, lu par la meme
+   * commande et le meme magasin : sans ce port, la commande serait
+   * acceptee, rendue par `show ip interface`, et n'empecherait aucun
+   * message — un critere range et jamais evalue.
+   */
+  icmpUnreachablesEnabled?(vlan: number): boolean;
   /** RFC 3046 Option 82 insertion on relay, shared with the box's DHCP server config. */
   isDhcpRelayInfoEnabled?(): boolean;
   /** Un datagramme UDP adresse a CETTE machine, remis au port ouvert par son plan de controle. */
@@ -374,7 +382,7 @@ export class SwitchSvi {
               workingIp.sourceIP, udp.destinationPort, udp.sourcePort, udp.payload,
             ) ?? false;
             if (!claimed) {
-              this.sendIcmpError(workingIp, 'destination-unreachable', ICMP_UNREACH_PORT);
+              this.sendIcmpError(workingIp, 'destination-unreachable', ICMP_UNREACH_PORT, ingressVlan);
             }
           }
         }
@@ -516,13 +524,13 @@ export class SwitchSvi {
     const route = this.lookupRoute(ip.destinationIP);
     if (!route) {
       const ingressSvi = this.svis.get(ingressVlan);
-      if (ingressSvi?.ip) this.sendIcmpError(ip, 'destination-unreachable', 0);
+      if (ingressSvi?.ip) this.sendIcmpError(ip, 'destination-unreachable', 0, ingressVlan);
       return;
     }
     const nextHopMac = this.resolveArpFresh(route.egress.vlan, route.egress.ip!, route.nextHop);
     if (!nextHopMac) {
       const ingressSvi = this.svis.get(ingressVlan);
-      if (ingressSvi?.ip) this.sendIcmpError(ip, 'destination-unreachable', 1);
+      if (ingressSvi?.ip) this.sendIcmpError(ip, 'destination-unreachable', 1, ingressVlan);
       return;
     }
     let fwd: IPv4Packet = decision.packet;
@@ -552,8 +560,10 @@ export class SwitchSvi {
   }
 
   private sendIcmpError(
-    orig: IPv4Packet, icmpType: ICMPErrorType, code: number,
+    orig: IPv4Packet, icmpType: ICMPErrorType, code: number, ingressVlan?: number,
   ): void {
+    if (icmpType === 'destination-unreachable' && ingressVlan !== undefined
+      && this.host.icmpUnreachablesEnabled?.(ingressVlan) === false) return;
     if (!mayGenerateICMPError(orig)) return;
     if (isDirectedBroadcast(orig.destinationIP, this.connectedPrefixes())) return;
     const replyRoute = this.lookupRoute(orig.sourceIP);

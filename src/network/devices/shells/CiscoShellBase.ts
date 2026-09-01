@@ -60,6 +60,8 @@ import {
   getSecurityConfig, buildIdentityShowCommands, buildIdentityConfigCommands,
 } from './cisco/CiscoSecurityCommands';
 import { parserViewMode } from '../router/security/CiscoSecurityConfig';
+import type { InterfaceSecurityFlags } from '../router/security/CiscoSecurityConfig';
+import { MODES_INTERFACE } from './cisco/CiscoConfigCommands';
 import type { CiscoDevice } from './CiscoDevice';
 import type { PromptMap } from './PromptBuilder';
 import { buildPrompt } from './PromptBuilder';
@@ -5450,6 +5452,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       ...this.showIpRouteSpecs(),
       ...this.showInterfacesSpecs(),
       ...this.ipRouteSpecs(),
+      ...this.icmpArpInterfaceSpecs(),
       ...this.cefSpecs(),
       ...this.enableSpecs(),
       ...this.configureSpecs(),
@@ -6244,6 +6247,46 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
   }
 
   protected tablesDeContinuations(): readonly ContinuationTable[] { return [SOCLE]; }
+
+  protected icmpArpInterfaceSpecs(): readonly CommandSpec[] {
+    const poser = (
+      appliquer: (f: InterfaceSecurityFlags, nom: string) => void,
+    ) => (): string => {
+      const sec = getSecurityConfig(this.d());
+      for (const nom of this.selectedPortsForConfigIf()) appliquer(sec.ifaceFlags(nom), nom);
+      return '';
+    };
+    const declarer = (
+      id: string, mot: string, description: string, undoDescription: string,
+      allume: (f: InterfaceSecurityFlags, nom: string) => void,
+      eteint: (f: InterfaceSecurityFlags, nom: string) => void,
+    ): CommandSpec => ({
+      id, path: ['ip', mot], description, undoDescription,
+      modes: MODES_INTERFACE, minPrivilege: 15,
+      run: poser(allume), undo: poser(eteint),
+    });
+    const miroirProxyArp = (nom: string, on: boolean): void => {
+      const port = (this.d() as unknown as {
+        getPort?: (n: string) => { setProxyArp?: (v: boolean) => void } | undefined;
+      }).getPort?.(nom);
+      port?.setProxyArp?.(on);
+    };
+    return [
+      declarer('ip-redirects', 'redirects',
+        'Enable sending ICMP Redirect messages', 'Disable sending ICMP Redirect messages',
+        (f) => { f.noRedirects = false; }, (f) => { f.noRedirects = true; }),
+      declarer('ip-unreachables', 'unreachables',
+        'Enable sending ICMP Unreachable messages', 'Disable sending ICMP Unreachable messages',
+        (f) => { f.noUnreachables = false; }, (f) => { f.noUnreachables = true; }),
+      declarer('ip-proxy-arp', 'proxy-arp',
+        'Enable proxy ARP', 'Disable proxy ARP',
+        (f, nom) => { f.noProxyArp = false; miroirProxyArp(nom, true); },
+        (f, nom) => { f.noProxyArp = true; miroirProxyArp(nom, false); }),
+      declarer('ip-mask-reply', 'mask-reply',
+        'Enable sending ICMP Mask Reply messages', 'Disable sending ICMP Mask Reply messages',
+        (f) => { f.maskReply = true; }, (f) => { f.maskReply = false; }),
+    ];
+  }
 
   protected cefSpecs(): CommandSpec[] {
     const sec = () => getSecurityConfig(this.d());

@@ -43,7 +43,7 @@ import { parsePingArgs, formatCiscoPing } from './cisco/ciscoPing';
 import {
   showInterface, consoleAndAuxLineConfigLines, enableLevelSecretConfigLines,
   ipIntBriefRowsFromPorts, renderIpIntBrief, ipInterfaceBlockFor,
-  interfaceAclLines, type InterfaceAclRefs,
+  interfaceAclLines, type InterfaceAclRefs, ipInterfaceControlLines,
   renderInterfacesDescription, hostsTableLines, serviceFlagLines,
 } from './cisco/CiscoShowCommands';
 import { orderCiscoConfigBlocks } from './cisco/ciscoConfigSerializer';
@@ -60,7 +60,7 @@ import { CISCO_ERRORS } from './cli-utils';
 import { estTypeSansNumero, typesInterfaceEnMotsCles } from './cisco/CiscoConfigCommands';
 import { getNtpAgent } from '../../equipment/RouterServiceCapabilities';
 import {
-  buildIdentityConfigCommands, buildIdentitySubmodeCommands,
+  buildIdentityConfigCommands, buildIdentitySubmodeCommands, getSecurityConfig,
   type CiscoSecurityShellContext,
 } from './cisco/CiscoSecurityCommands';
 import { showSwitchVersion, showIpTraffic } from './cisco/CiscoCommonShow';
@@ -4678,6 +4678,7 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
       for (const helper of svi.helperAddresses) {
         lines.push(` ip helper-address ${helper}`);
       }
+      lines.push(...getSecurityConfig(sw).asInterfaceRunningConfigLines(`Vlan${svi.vlan}`));
       for (const l of this.renderSviFhrpLines(sw, svi.vlan)) lines.push(l);
       if (!svi.adminUp) lines.push(' shutdown');
       lines.push('!');
@@ -5928,16 +5929,13 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
     } else {
       lines.push('  Helper address is not set');
     }
-    lines.push('  Directed broadcast forwarding is disabled');
-    lines.push(...interfaceAclLines(this.liaisonsAcl(`Vlan${vlan}`)));
-    lines.push('  Proxy ARP is enabled');
-    lines.push('  Security level is default');
-    lines.push('  Split horizon is enabled');
-    lines.push('  ICMP redirects are always sent');
-    lines.push('  ICMP unreachables are always sent');
-    lines.push('  ICMP mask replies are never sent');
-    lines.push('  IP fast switching is enabled');
-    lines.push('  IP CEF switching is enabled');
+    const f = getSecurityConfig(this.d()).ifaceFlags(`Vlan${vlan}`);
+    lines.push(...ipInterfaceControlLines({
+      proxyArp: !f.noProxyArp,
+      noRedirects: f.noRedirects,
+      noUnreachables: f.noUnreachables,
+      maskReply: f.maskReply,
+    }, this.liaisonsAcl(`Vlan${vlan}`)));
     return lines.join('\n');
   }
 

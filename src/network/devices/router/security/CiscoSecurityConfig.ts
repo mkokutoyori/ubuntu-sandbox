@@ -207,6 +207,7 @@ export interface InterfaceSecurityFlags {
   noUnreachables: boolean;
   noRedirects: boolean;
   noProxyArp: boolean;
+  maskReply: boolean;
   zoneMember?: string;
   ipv6TrafficFilter?: { name: string; direction: 'in' | 'out' };
   urpf?: InterfaceUrpf;
@@ -487,7 +488,10 @@ export class CiscoSecurityConfig {
   ifaceFlags(ifName: string): InterfaceSecurityFlags {
     let f = this.interfaceFlags.get(ifName);
     if (!f) {
-      f = { noUnreachables: false, noRedirects: false, noProxyArp: false };
+      f = {
+        noUnreachables: false, noRedirects: false, noProxyArp: false,
+        maskReply: false,
+      };
       this.interfaceFlags.set(ifName, f);
     }
     return f;
@@ -756,6 +760,7 @@ export class CiscoSecurityConfig {
     if (f.noUnreachables) lines.push(' no ip unreachables');
     if (f.noRedirects) lines.push(' no ip redirects');
     if (f.noProxyArp) lines.push(' no ip proxy-arp');
+    if (f.maskReply) lines.push(' ip mask-reply');
     if (f.urpf?.mode) {
       const via = f.urpf.mode === 'loose' ? 'any' : 'rx';
       lines.push(` ip verify unicast source reachable-via ${via}`
