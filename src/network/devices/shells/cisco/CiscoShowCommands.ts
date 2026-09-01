@@ -1566,7 +1566,7 @@ function ntpAgentOf(router: Router): import('@/network/ntp/NtpAgent').NtpAgent |
   return (router as unknown as { getNtpAgent?: () => import('@/network/ntp/NtpAgent').NtpAgent }).getNtpAgent?.();
 }
 
-function fhrpViewOf(router: Router, name: string): FhrpInterfaceView {
+export function fhrpViewOf(router: object, name: string): FhrpInterfaceView {
   const repo = (router as unknown as {
     getFhrpRepository?: () => import('../../inspection/config/FhrpRepository').FhrpRepository;
   }).getFhrpRepository?.();
@@ -1589,8 +1589,9 @@ function fhrpViewOf(router: Router, name: string): FhrpInterfaceView {
     glbp: repo.allGlbp().filter(ici).map((g) => ({
       group: g.group, vip: g.vip,
       priority: g.priority, preempt: g.preempt, preemptDelaySec: g.preemptDelay,
-      weighting: g.weighting, loadBalancing: g.loadBalancing,
-      authMd5: g.authMd5, name: g.name, tracks: [],
+      weighting: g.weighting, weightingLower: g.weightingLower,
+      weightingUpper: g.weightingUpper, loadBalancing: g.loadBalancing,
+      authMd5: g.authMd5, name: g.name, tracks: g.trackDecr,
     })),
   };
 }

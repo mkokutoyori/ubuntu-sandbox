@@ -59,6 +59,7 @@ import { IP_PROTO_VRRP } from '../vrrp/types';
 import { HsrpAgent } from '../hsrp/HsrpAgent';
 import { UDP_PORT_HSRP } from '../hsrp/types';
 import { GlbpAgent } from '../glbp/GlbpAgent';
+import { FhrpRepository } from './inspection/config/FhrpRepository';
 import { UDP_PORT_GLBP } from '../glbp/types';
 import { IP_PROTO_UDP, createIPv4Packet } from '../core/types';
 import type { ARPEntry } from '../core/types';
@@ -3484,6 +3485,10 @@ export abstract class Switch extends Equipment {
   getVrrpAgent(): VrrpAgent { return this.ensureVrrpAgent(); }
   getHsrpAgent(): HsrpAgent { return this.ensureHsrpAgent(); }
   getGlbpAgent(): GlbpAgent { return this.ensureGlbpAgent(); }
+
+  private readonly fhrpRepository = new FhrpRepository();
+
+  getFhrpRepository(): FhrpRepository { return this.fhrpRepository; }
 
   // ─── ARP Accessors (ARPProvider interface) ──────────────────────
 

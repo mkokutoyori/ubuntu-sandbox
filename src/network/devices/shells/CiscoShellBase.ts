@@ -51,6 +51,8 @@ import { projectLoggingOntoSyslogAgent } from '@/network/syslog/loggingProjectio
 import { projectSnmpServiceOntoAgent } from '@/network/snmp/snmpProjection';
 import { renderStartupConfig } from './cisco/ciscoConfigSerializer';
 import { CommandTrie, type ParamType } from './CommandTrie';
+import { fhrpInterfaceSpecs, type FhrpPlacement } from './cisco/fhrpInterfaceSpecs';
+import type { FhrpRepository } from '../inspection/config/FhrpRepository';
 import { EquipmentParamResolver, type SessionParamRanges, type CompletableDevice } from './EquipmentParamResolver';
 import { getDefaultScheduler, type IScheduler, type TimerHandle } from '@/events/Scheduler';
 import { runSshClient } from '../linux/network/LinuxSshClient';
@@ -5474,6 +5476,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       ...this.icmpArpInterfaceSpecs(),
       ...this.ipAccessGroupSpecs(),
       ...this.ipHelperAddressSpecs(),
+      ...this.fhrpInterfaceSpecs(),
       ...this.cefSpecs(),
       ...this.enableSpecs(),
       ...this.configureSpecs(),
@@ -6251,6 +6254,34 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
 
   protected poserRouteStatique(_reste: string): string { return ''; }
   protected retirerRouteStatique(_reste: string): string { return ''; }
+
+  /**
+   * OU un groupe de redondance vit, et s'il a le droit de vivre ici.
+   *
+   * Un routeur le pose sur le port selectionne ; un Catalyst sur la SVI
+   * de son VLAN et nulle part ailleurs. C'est la SEULE chose que les
+   * deux plateformes ne repondent pas pareil — les bornes, les messages
+   * et les places sont une seule declaration.
+   */
+  protected placementFhrp(protocole: 'HSRP' | 'VRRP' | 'GLBP'): FhrpPlacement {
+    const nom = this.selectedPortsForConfigIf()[0];
+    return nom === undefined
+      ? { refus: `% ${protocole} is not valid on this interface.` }
+      : { iface: nom };
+  }
+
+  protected resolveTrackedForFhrp(raw: string): string { return raw; }
+
+  protected fhrpInterfaceSpecs(): readonly CommandSpec[] {
+    return fhrpInterfaceSpecs({
+      device: () => this.d() as object,
+      repository: () => (this.d() as unknown as {
+        getFhrpRepository(): FhrpRepository;
+      }).getFhrpRepository(),
+      placement: (protocole) => this.placementFhrp(protocole),
+      resolveTracked: (raw) => this.resolveTrackedForFhrp(raw),
+    });
+  }
 
 
   /**
@@ -7213,6 +7244,11 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       device as unknown as CompletableDevice, this.sessionParamRanges(device));
     return {
       candidatesFor: (contexte) => resolver.candidatesFor({
+        path: contexte.path,
+        paramType: contexte.paramType as ParamType | null,
+        partial: contexte.partial,
+      }),
+      rangeFor: (contexte) => resolver.rangeFor({
         path: contexte.path,
         paramType: contexte.paramType as ParamType | null,
         partial: contexte.partial,

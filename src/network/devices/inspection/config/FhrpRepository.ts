@@ -61,10 +61,13 @@ export interface GlbpGroup {
   /** `preempt delay minimum <s>` — pour le rendu ; l'agent porte l'effet. */
   preemptDelay?: number;
   weighting: number;           // default 100
+  weightingLower?: number;
+  weightingUpper?: number;
   loadBalancing: string;       // default 'round-robin'
   name?: string;
   /** `authentication { text | md5 key-string } <c>` — idem. */
   authMd5?: string;
+  trackDecr: Array<{ target: string; decrement: number }>;
 }
 
 function vrrpDefaults(iface: string, group: number): VrrpGroup {
@@ -77,7 +80,7 @@ function vrrpDefaults(iface: string, group: number): VrrpGroup {
 function glbpDefaults(iface: string, group: number): GlbpGroup {
   return {
     iface, group, vip: null, priority: 100, preempt: false,
-    weighting: 100, loadBalancing: 'round-robin',
+    weighting: 100, loadBalancing: 'round-robin', trackDecr: [],
   };
 }
 

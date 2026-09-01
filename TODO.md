@@ -1499,3 +1499,20 @@ défauts — la méthode vaut d'être reprise sur le reliquat.
   d'interface, un prefixe, les deux — plutot que de declarer une place
   au juge.
 
+- `probe-aide-tient-ses-promesses.test.ts` EPUISE LE TAS et meurt sans
+  rendre de verdict (`Mark-Compact … allocation failure`, puis
+  « Worker exited unexpectedly » ; 1 a 2 cas sur 20 aboutissent). Ce
+  n'est pas une regression du lot FHRP : le meme fichier, la meme
+  commande, avec `--max-old-space-size=6144`, meurt IDENTIQUEMENT sur
+  l'etat d'AVANT le lot, mesure par `git stash` — c'est donc un cout
+  du garde-fou lui-meme et non de ce qu'il garde. La cause probable est
+  son economie : il fabrique un `CiscoRouter` NEUF par chemin essaye, et
+  il y en a 484 a la seule profondeur 3 du mode interface (mesure, contre
+  483 avant le lot : la migration en ajoute UN, `standby version`), donc
+  environ sept cents equipements par cas et quatre cas par fichier ;
+  `EquipmentRegistry` les retient tous jusqu'au `beforeEach` suivant.
+  Fermer demande de decider si le balayage peut REUTILISER une machine —
+  ce que son en-tete refuse explicitement, une commande essayee pouvant
+  modifier la configuration — ou s'il faut liberer l'equipement apres
+  chaque essai, ce qui suppose une extinction propre qui n'existe pas
+  encore. Les deux sont un lot a soi.

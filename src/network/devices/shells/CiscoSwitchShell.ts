@@ -24,6 +24,7 @@ import { getPrivilegeRules } from '../router/security/CiscoPrivilegeStore';
 import { CommandTrie, formatInvalidInput } from './CommandTrie';
 import { isValidIPv4 } from '../../core/ip';
 import type { CommandSpec } from '@/cli/CommandTable';
+import type { FhrpPlacement } from './cisco/fhrpInterfaceSpecs';
 import type { SocleLegend } from './CiscoShellBase';
 import type { ArgumentSpec } from '@/cli/ArgumentTypes';
 import type { SpecCollector, AdapterKeyword } from '@/cli/commands/trieAdapter';
@@ -61,6 +62,7 @@ import { CISCO_ERRORS } from './cli-utils';
 import { estTypeSansNumero, typesInterfaceEnMotsCles } from './cisco/CiscoConfigCommands';
 import { getNtpAgent } from '../../equipment/RouterServiceCapabilities';
 import { fhrpRunningConfigLines } from '../../fhrp/runningConfig';
+import { fhrpViewOf } from './cisco/CiscoShowCommands';
 import { hsrpMaxGroup } from '../../hsrp/types';
 import {
   buildIdentityConfigCommands, buildIdentitySubmodeCommands, getSecurityConfig,
@@ -1607,231 +1609,6 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
     });
 
 
-    // ── VRRP on SVI (first-hop redundancy) ──
-    // Standard IOS syntax: `vrrp <group> ip <vip>` / `vrrp <group>
-    // priority <n>` / `vrrp <group> preempt`. Valid on Vlan SVIs only;
-    // a Vlanif alias in `interface Vlan10` view means the group lives
-    // on that SVI's VLAN plane.
-    this.configIfTrie.registerGreedy('vrrp', 'VRRP configuration', (args) => {
-      const vlan = this.sviVlanId(this.selectedInterface ?? '');
-      if (vlan === null) return '% VRRP is valid on SVI (Vlan) interfaces only.';
-      if (args.length < 2) return CISCO_ERRORS.INCOMPLETE;
-      const group = parseInt(args[0], 10);
-      if (Number.isNaN(group) || group < 1 || group > 255) return '% Invalid VRRP group.';
-      const iface = `Vlanif${vlan}`;
-      const agent = this.d().getVrrpAgent();
-      agent.ensureGroup(iface, group);
-      switch (args[1]) {
-        case 'ip':
-          if (args[2] && !IPAddress.isValid(args[2])) return CISCO_ERRORS.INVALID_INPUT;
-          if (args[2]) agent.setVip(iface, group, args[2]);
-          return '';
-        case 'priority': {
-          const p = parseInt(args[2] ?? '', 10);
-          if (!Number.isFinite(p) || p < 1 || p > 254) return '% Invalid priority (1..254).';
-          agent.setPriority(iface, group, p);
-          return '';
-        }
-        case 'preempt': {
-          // Le Catalyst a son PROPRE analyseur, distinct de celui du
-          // routeur : le correctif du lot V18 ne l'atteignait donc pas,
-          // et `preempt delay minimum` y laissait encore tomber sa
-          // valeur. C'est la meme faute que V18 a trouvee entre les deux
-          // constructeurs, ici entre les deux plateformes.
-          let delai: number | undefined;
-          if (args[2] === 'delay' && args[3] === 'minimum') {
-            const n = parseInt(args[4] ?? '', 10);
-            delai = Number.isFinite(n) && n > 0 ? n : undefined;
-          }
-          agent.setPreempt(iface, group, true, delai);
-          return '';
-        }
-        case 'track': {
-          const raw = args[2] ?? '';
-          const target = this.trackObjects.resolve(raw) ?? this.resolveInterfaceName(raw) ?? raw;
-          if (!target) return '% Missing tracked interface.';
-          const decrIdx = args.indexOf('decrement');
-          const decr = decrIdx >= 0 ? (parseInt(args[decrIdx + 1] ?? '10', 10) || 10) : 10;
-          agent.addTrack(iface, group, target, decr);
-          return '';
-        }
-        case 'timers': {
-          if (args[2] !== 'advertise') return CISCO_ERRORS.INCOMPLETE;
-          const sec = parseInt(args[3] ?? '', 10);
-          if (!Number.isFinite(sec) || sec < 1) return '% Invalid advertise interval.';
-          agent.setAdvertiseSec(iface, group, sec);
-          return '';
-        }
-        default: return '';
-      }
-    });
-    this.configIfTrie.registerGreedy('no vrrp', 'Remove a VRRP group', (args) => {
-      const vlan = this.sviVlanId(this.selectedInterface ?? '');
-      if (vlan === null) return '';
-      const group = parseInt(args[0] ?? '', 10);
-      if (!Number.isFinite(group)) return '';
-      const iface = `Vlanif${vlan}`;
-      const agent = this.d().getVrrpAgent();
-      if (args[1] === 'preempt') { agent.setPreempt(iface, group, false); return ''; }
-      agent.removeGroup(iface, group);
-      return '';
-    });
-
-    this.configIfTrie.registerGreedy('standby', 'HSRP configuration', (args) => {
-      const vlan = this.sviVlanId(this.selectedInterface ?? '');
-      if (vlan === null) return '% HSRP is valid on SVI (Vlan) interfaces only.';
-      if (args.length < 2) return CISCO_ERRORS.INCOMPLETE;
-      const iface = `Vlanif${vlan}`;
-      const agent = this.d().getHsrpAgent();
-      if (args[0] === 'version') {
-        const v = parseInt(args[1] ?? '', 10);
-        if (v !== 1 && v !== 2) return '% Invalid version (1..2).';
-        this.hsrpVersionByIface.set(iface, v as 1 | 2);
-        agent.setVersion(iface, v as 1 | 2);
-        return '';
-      }
-      const version = this.hsrpVersionByIface.get(iface) ?? 1;
-      const group = parseInt(args[0], 10);
-      if (Number.isNaN(group)) return '% Invalid HSRP group.';
-      const maxGrp = hsrpMaxGroup(version);
-      if (group < 0 || group > maxGrp) {
-        return `% Group number out of range. Valid range is 0-${maxGrp} for HSRP version ${version}`;
-      }
-      agent.ensureGroup(iface, group, version);
-      switch (args[1]) {
-        case 'ip':
-          if (args[2] && !IPAddress.isValid(args[2])) return CISCO_ERRORS.INVALID_INPUT;
-          if (args[2]) agent.setVip(iface, group, args[2]);
-          return '';
-        case 'priority': {
-          const p = parseInt(args[2] ?? '', 10);
-          if (!Number.isFinite(p) || p < 0 || p > 255) return '% Invalid priority (0..255).';
-          agent.setPriority(iface, group, p);
-          return '';
-        }
-        case 'preempt': {
-          let delai: number | undefined;
-          if (args[2] === 'delay' && args[3] === 'minimum') {
-            const n = parseInt(args[4] ?? '', 10);
-            delai = Number.isFinite(n) && n > 0 ? n : undefined;
-          }
-          agent.setPreempt(iface, group, true, delai);
-          return '';
-        }
-        case 'track': {
-          const raw = args[2] ?? '';
-          const target = this.trackObjects.resolve(raw) ?? this.resolveInterfaceName(raw) ?? raw;
-          if (!target) return '% Missing tracked interface.';
-          const decrIdx = args.indexOf('decrement');
-          const decr = decrIdx >= 0 ? (parseInt(args[decrIdx + 1] ?? '10', 10) || 10) : 10;
-          agent.addTrack(iface, group, target, decr);
-          return '';
-        }
-        case 'timers': {
-          const hello = parseInt(args[2] ?? '', 10);
-          const hold = parseInt(args[3] ?? '', 10);
-          if (!Number.isFinite(hello) || !Number.isFinite(hold) || hello < 1 || hold <= hello) {
-            return '% Invalid timers (hello >= 1, hold > hello).';
-          }
-          agent.setTimers(iface, group, hello, hold);
-          return '';
-        }
-        case 'authentication': {
-          if (args[2] === 'text' && args[3]) { agent.setAuth(iface, group, args[3]); return ''; }
-          if (args[2]) { agent.setAuth(iface, group, args[2]); return ''; }
-          return '% Missing authentication text.';
-        }
-        default: return '';
-      }
-    });
-    this.configIfTrie.registerGreedy('no standby', 'Remove an HSRP group', (args) => {
-      const vlan = this.sviVlanId(this.selectedInterface ?? '');
-      if (vlan === null) return '';
-      const group = parseInt(args[0] ?? '', 10);
-      if (!Number.isFinite(group)) return '';
-      const iface = `Vlanif${vlan}`;
-      const agent = this.d().getHsrpAgent();
-      if (args[1] === 'preempt') { agent.setPreempt(iface, group, false); return ''; }
-      agent.removeGroup(iface, group);
-      return '';
-    });
-
-    this.configIfTrie.registerGreedy('glbp', 'GLBP configuration', (args) => {
-      const vlan = this.sviVlanId(this.selectedInterface ?? '');
-      if (vlan === null) return '% GLBP is valid on SVI (Vlan) interfaces only.';
-      if (args.length < 2) return CISCO_ERRORS.INCOMPLETE;
-      const group = parseInt(args[0], 10);
-      if (Number.isNaN(group) || group < 0 || group > 1023) return '% Invalid GLBP group.';
-      const iface = `Vlanif${vlan}`;
-      const agent = this.d().getGlbpAgent();
-      agent.ensureGroup(iface, group);
-      switch (args[1]) {
-        case 'ip':
-          if (args[2] && !IPAddress.isValid(args[2])) return CISCO_ERRORS.INVALID_INPUT;
-          if (args[2]) agent.setVip(iface, group, args[2]);
-          return '';
-        case 'priority': {
-          const p = parseInt(args[2] ?? '', 10);
-          if (!Number.isFinite(p) || p < 1 || p > 255) return '% Invalid priority (1..255).';
-          agent.setPriority(iface, group, p);
-          return '';
-        }
-        case 'preempt': {
-          let delai: number | undefined;
-          if (args[2] === 'delay' && args[3] === 'minimum') {
-            const n = parseInt(args[4] ?? '', 10);
-            delai = Number.isFinite(n) && n > 0 ? n : undefined;
-          }
-          agent.setPreempt(iface, group, true, delai);
-          return '';
-        }
-        case 'authentication': {
-          // Elle n'existait pas du tout sur le Catalyst : le mot-cle
-          // tombait dans le `default: return ''`, donc la commande etait
-          // acceptee et ne laissait aucune trace.
-          const iKey = args.indexOf('key-string');
-          const md5 = args[2] === 'md5';
-          const cle = iKey >= 0 ? args[iKey + 1] : args[args.length - 1];
-          agent.setAuth(iface, group, md5 ? 'md5' : 'text', cle);
-          return '';
-        }
-        case 'weighting': {
-          if (args[2] === 'track') {
-            const raw = args[3] ?? '';
-            const target = this.trackObjects.resolve(raw) ?? this.resolveInterfaceName(raw) ?? raw;
-            if (!target) return '% Missing tracked interface.';
-            const decrIdx = args.indexOf('decrement');
-            const decr = decrIdx >= 0 ? (parseInt(args[decrIdx + 1] ?? '10', 10) || 10) : 10;
-            agent.addTrack(iface, group, target, decr);
-            return '';
-          }
-          const w = parseInt(args[2] ?? '', 10);
-          if (!Number.isFinite(w) || w < 1 || w > 254) return '% Invalid weighting (1..254).';
-          agent.setWeighting(iface, group, w);
-          return '';
-        }
-        case 'load-balancing': {
-          const mode = args[2];
-          if (mode === 'round-robin' || mode === 'weighted' || mode === 'host-dependent') {
-            agent.setLoadBalancing(iface, group, mode);
-          }
-          return '';
-        }
-        default: return '';
-      }
-    });
-    this.configIfTrie.registerGreedy('no glbp', 'Remove a GLBP group', (args) => {
-      const vlan = this.sviVlanId(this.selectedInterface ?? '');
-      if (vlan === null) return '';
-      const group = parseInt(args[0] ?? '', 10);
-      if (!Number.isFinite(group)) return '';
-      const iface = `Vlanif${vlan}`;
-      const agent = this.d().getGlbpAgent();
-      if (args[1] === 'preempt') { agent.setPreempt(iface, group, false); return ''; }
-      agent.removeGroup(iface, group);
-      return '';
-    });
-
     // ── errdisable recovery ──
     this.configTrie.register('errdisable recovery cause psecure-violation',
       'Auto-recover ports err-disabled by port-security', () => {
@@ -2715,6 +2492,19 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
       setAaaGroup: (n: string | null) => { this.selectedAaaGroup = n; },
       getAaaGroup: () => this.selectedAaaGroup,
     } as unknown as CiscoSecurityShellContext;
+  }
+
+  protected override placementFhrp(
+    protocole: 'HSRP' | 'VRRP' | 'GLBP',
+  ): FhrpPlacement {
+    const vlan = this.sviVlanId(this.selectedInterface ?? '');
+    return vlan === null
+      ? { refus: `% ${protocole} is valid on SVI (Vlan) interfaces only.` }
+      : { iface: `Vlanif${vlan}` };
+  }
+
+  protected override resolveTrackedForFhrp(raw: string): string {
+    return this.trackObjects.resolve(raw) ?? this.resolveInterfaceName(raw) ?? raw;
   }
 
   protected override socleSpecs(): readonly CommandSpec[] {
@@ -4728,26 +4518,7 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
   }
 
   private renderSviFhrpLines(sw: CiscoSwitch, vlan: number): string[] {
-    const iface = `Vlanif${vlan}`;
-    const ici = <G extends { iface: string }>(g: G): boolean => g.iface === iface;
-    return fhrpRunningConfigLines({
-      hsrp: sw.getHsrpAgent().listGroups().filter(ici).map((g) => ({
-        group: g.group, version: g.version, vip: g.vip,
-        priority: g.priority, preempt: g.preempt, preemptDelaySec: g.preemptDelaySec,
-        helloSec: g.helloSec, holdSec: g.holdSec, authText: g.authText,
-        tracks: g.tracks,
-      })),
-      vrrp: sw.getVrrpAgent().listGroups().filter(ici).map((g) => ({
-        group: g.vrid, vip: g.vip,
-        priority: g.priority, preempt: g.preempt, preemptDelaySec: g.preemptDelaySec,
-        advertiseSec: g.advertiseSec, tracks: g.tracks,
-      })),
-      glbp: sw.getGlbpAgent().listGroups().filter(ici).map((g) => ({
-        group: g.group, vip: g.vip,
-        priority: g.priority, preempt: g.preempt, preemptDelaySec: g.preemptDelaySec,
-        weighting: g.weighting, loadBalancing: g.loadBalancing, tracks: g.tracks,
-      })),
-    });
+    return fhrpRunningConfigLines(fhrpViewOf(sw, `Vlanif${vlan}`));
   }
 
   // ─── Show Command Implementations ────────────────────────────────

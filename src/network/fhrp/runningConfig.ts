@@ -38,6 +38,8 @@ export interface GlbpGroupView {
   preempt: boolean;
   preemptDelaySec?: number;
   weighting: number;
+  weightingLower?: number;
+  weightingUpper?: number;
   loadBalancing: string;
   name?: string;
   authMd5?: string;
@@ -135,8 +137,11 @@ function glbpLines(groups: readonly GlbpGroupView[]): string[] {
       out.push(` glbp ${g.group} priority ${g.priority}`);
     }
     if (g.preempt) out.push(preemptLine('glbp', g.group, g.preemptDelaySec));
-    if (g.weighting !== GLBP_DEFAULT_WEIGHTING) {
-      out.push(` glbp ${g.group} weighting ${g.weighting}`);
+    if (g.weighting !== GLBP_DEFAULT_WEIGHTING
+      || g.weightingLower !== undefined || g.weightingUpper !== undefined) {
+      out.push(` glbp ${g.group} weighting ${g.weighting}`
+        + (g.weightingLower === undefined ? '' : ` lower ${g.weightingLower}`)
+        + (g.weightingUpper === undefined ? '' : ` upper ${g.weightingUpper}`));
     }
     if (g.loadBalancing !== GLBP_DEFAULT_LOAD_BALANCING) {
       out.push(` glbp ${g.group} load-balancing ${g.loadBalancing}`);

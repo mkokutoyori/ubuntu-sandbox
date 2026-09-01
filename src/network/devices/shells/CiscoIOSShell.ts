@@ -44,11 +44,11 @@ import { CISCO_IOS_PROMPTS } from './PromptBuilder';
 import { CLIStateMachine, CISCO_IOS_MODES } from './CLIStateMachine';
 import { resolveInterfaceName, cmdIpRoute, cmdNoIpRoute } from './cisco/CiscoConfigCommands';
 import {
-  buildHsrpInterfaceCommands, registerHsrpShowCommands, hsrpGroupRange,
+  registerHsrpShowCommands, hsrpGroupRange,
 } from './cisco/CiscoHsrpCommands';
 import type { SessionParamRanges } from './EquipmentParamResolver';
 import {
-  buildVrrpGlbpInterfaceCommands, registerVrrpGlbpShowCommands,
+  registerVrrpGlbpShowCommands,
 } from './cisco/CiscoVrrpGlbpCommands';
 import {
   buildBfdInterfaceCommands, registerBfdShowCommands, bfdInterfaceSpecs,
@@ -1718,8 +1718,6 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
     // ── Config mode ──
     buildConfigCommands(this.configTrie, this);
     buildConfigIfCommands(this.configIfTrie, this);
-    buildHsrpInterfaceCommands(this.configIfTrie, this, () => this.fhrp);
-    buildVrrpGlbpInterfaceCommands(this.configIfTrie, this, () => this.fhrp);
     buildBfdInterfaceCommands(this.configIfTrie, {
       selectedPorts: () => this.selectedPortsForConfigIf(),
       r: () => this.d(),
