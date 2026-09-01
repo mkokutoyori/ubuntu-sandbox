@@ -72,8 +72,15 @@ describe('Cisco feature toggles mutate real state (router & switch)', () => {
     await r1.executeCommand('configure terminal');
     await r1.executeCommand('lldp run');
     await r1.executeCommand('end');
-    const on = await r1.executeCommand('show lldp neighbors');
-    expect(on).toContain('L1');
+
+    // Le poste ne parle pas LLDP tant que `lldpd` ne tourne pas — c'est
+    // le defaut de systemd-networkd (`LLDP=yes`, `EmitLLDP=no`), donc il
+    // n'a rien a annoncer et n'apparait pas. Ce cas attendait l'inverse,
+    // et ne passait que parce que la vue FABRIQUAIT ses voisins depuis
+    // le plan de cablage.
+    expect(await r1.executeCommand('show lldp neighbors')).not.toContain('L1');
+    await pc.executeCommand('sudo systemctl start lldpd');
+    expect(await r1.executeCommand('show lldp neighbors')).toContain('L1');
   });
 
   it('switch: the same toggles are recognised and real (DRY)', async () => {
