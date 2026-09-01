@@ -14,6 +14,7 @@ import { validateSshdConfig } from '@/network/protocols/ssh/server/SshSshdConfig
  */
 export const sshdCommand: LinuxCommand = {
   name: 'sshd',
+  package: 'openssh-server',
   needsNetworkContext: true,
   usage: 'sshd -t [-f config_file] | sshd -T',
   help: 'Test the sshd configuration file syntax (-t) or print the effective configuration (-T).',

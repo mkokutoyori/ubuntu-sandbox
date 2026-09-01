@@ -3,6 +3,7 @@ import type { LinuxCommandContext } from '../LinuxCommandContext';
 
 export const fail2banClientCommand: LinuxCommand = {
   name: 'fail2ban-client',
+  package: 'fail2ban',
   needsNetworkContext: true,
   usage: 'fail2ban-client [status [JAIL] | set JAIL unbanip IP | get JAIL bantime | version | ping]',
   run(ctx: LinuxCommandContext, args: string[]): string {

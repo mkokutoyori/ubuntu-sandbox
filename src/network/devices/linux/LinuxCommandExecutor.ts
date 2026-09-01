@@ -82,7 +82,13 @@ import { parseDstatArgs, DSTAT_USAGE, DSTAT_VERSION, DSTAT_LISTING } from './sys
 import { MountTable, MountEntry } from './MountTable';
 import { SysfsTree } from './Sysfs';
 import { cmdNetstat, cmdWget, cmdTcpdump, parseTcpdumpArgs } from './LinuxNetCommands';
-import { PACKAGE_DB } from './packages/PackageDatabase';
+import { PACKAGE_DB, findPackage } from './packages/PackageDatabase';
+
+function dpkgMatch(pattern: string, name: string): boolean {
+  const rx = new RegExp(`^${pattern.replace(/[.+^${}()|[\]\\]/g, '\\$&')
+    .replace(/\*/g, '.*').replace(/\?/g, '.')}$`);
+  return rx.test(name);
+}
 import { PacketCaptureLog } from './network/PacketCaptureLog';
 import { publishWireSegment } from './network/WireCaptureBus';
 import { ensureCaptureRouterInstalled } from './network/CaptureRouter';
@@ -5030,17 +5036,35 @@ export class LinuxCommandExecutor {
       case 'apt-get': {
         const sub = args[0] || '';
         if (sub === 'update') return { output: 'Hit:1 http://archive.ubuntu.com/ubuntu jammy InRelease\nReading package lists... Done', exitCode: 0 };
-        if (sub === 'install') {
-          const pkgs = args.slice(1).filter(a => !a.startsWith('-'));
-          if (pkgs.includes('bind9')) this.provisionBind9Defaults();
-          return { output: `Reading package lists... Done\nBuilding dependency tree... Done\n${args.slice(1).join(', ')} is already the newest version.\n0 upgraded, 0 newly installed, 0 to remove and 0 not upgraded.`, exitCode: 0 };
+        if (sub === 'install' || sub === 'remove' || sub === 'purge') {
+          const noms = args.slice(1).filter(a => !a.startsWith('-'));
+          const entete = ['Reading package lists... Done', 'Building dependency tree... Done'];
+          if (noms.length === 0) {
+            return { output: [...entete, '0 upgraded, 0 newly installed, 0 to remove and 0 not upgraded.'].join('\n'), exitCode: 0 };
+          }
+          const inconnus = noms.filter((n) => !findPackage(n));
+          if (inconnus.length > 0) {
+            return {
+              output: [...entete,
+                ...inconnus.map((n) => `E: Unable to locate package ${n}`)].join('\n'),
+              exitCode: 100,
+            };
+          }
+          if (noms.includes('bind9')) this.provisionBind9Defaults();
+          const lignes = noms.map((n) => {
+            const p = findPackage(n)!;
+            return sub === 'install'
+              ? `${n} is already the newest version (${p.version}).`
+              : `Package '${n}' is not installed, so not removed`;
+          });
+          return {
+            output: [...entete, ...lignes,
+              '0 upgraded, 0 newly installed, 0 to remove and 0 not upgraded.'].join('\n'),
+            exitCode: 0,
+          };
         }
         if (sub === 'upgrade') return { output: 'Reading package lists... Done\nBuilding dependency tree... Done\nCalculating upgrade... Done\n0 upgraded, 0 newly installed, 0 to remove and 0 not upgraded.', exitCode: 0 };
-        if (sub === 'remove' || sub === 'purge') return { output: 'Reading package lists... Done\nBuilding dependency tree... Done\n0 upgraded, 0 newly installed, 0 to remove and 0 not upgraded.', exitCode: 0 };
         if (sub === 'list' && args.includes('--installed')) {
-          // Une seule table de paquets pour `apt`, `dpkg` et `apt-cache` :
-          // trois listes codées en dur n'avaient aucune raison de rester
-          // d'accord, et ne l'étaient déjà pas.
           const lignes = PACKAGE_DB.filter((p) => p.installed)
             .map((p) => `${p.name}/jammy,now ${p.version} ${p.arch} [installed]`);
           return { output: ['Listing... Done', ...lignes].join('\n'), exitCode: 0 };
@@ -5055,7 +5079,16 @@ export class LinuxCommandExecutor {
             '||/ Name                Version          Architecture Description',
             '+++-===================-================-============-================================',
           ];
-          const lignes = PACKAGE_DB.filter((p) => p.installed).map((p) =>
+          const motifs = args.slice(1).filter((a) => !a.startsWith('-'));
+          const retenus = PACKAGE_DB.filter((p) => p.installed)
+            .filter((p) => motifs.length === 0 || motifs.some((m) => dpkgMatch(m, p.name)));
+          if (motifs.length > 0 && retenus.length === 0) {
+            return {
+              output: motifs.map((m) => `dpkg-query: no packages found matching ${m}`).join('\n'),
+              exitCode: 1,
+            };
+          }
+          const lignes = retenus.map((p) =>
             `ii  ${p.name.padEnd(19)} ${p.version.padEnd(16)} ${p.arch.padEnd(12)} ${p.summary}`);
           return { output: [...entetes, ...lignes].join('\n'), exitCode: 0 };
         }

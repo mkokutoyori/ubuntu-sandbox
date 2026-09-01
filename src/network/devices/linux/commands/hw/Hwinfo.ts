@@ -127,6 +127,7 @@ function helpText(): string {
 
 export const hwinfoCommand: LinuxCommand = {
   name: 'hwinfo',
+  package: 'hwinfo',
   needsNetworkContext: true,
   usage: 'hwinfo [OPTIONS]',
   run(ctx: LinuxCommandContext, args: string[]): string {

@@ -20,6 +20,7 @@ function service(ctx: LinuxCommandContext) {
 
 export const rsyslogdCommand: LinuxCommand = {
   name: 'rsyslogd',
+  package: 'rsyslog',
   needsNetworkContext: true,
   binaryPath: RSYSLOGD_BINARY,
   complete: makeArgCompleter({ flags: ['-N', '-n', '-v', '-f', '-d'] }),

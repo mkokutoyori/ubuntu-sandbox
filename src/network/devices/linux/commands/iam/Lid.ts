@@ -53,6 +53,7 @@ export function membersOf(ctx: LinuxCommandContext, group: string): string[] {
 
 export const lidCommand: LinuxCommand = {
   name: 'lid',
+  package: 'libuser',
   aliases: ['libuser-lid'],
   needsNetworkContext: true,
   usage: 'lid [-g] name',
@@ -94,6 +95,7 @@ export const lidCommand: LinuxCommand = {
 
 export const membersCommand: LinuxCommand = {
   name: 'members',
+  package: 'members',
   needsNetworkContext: true,
   usage: 'members [-p|-s|-a] group',
   manSection: 1,

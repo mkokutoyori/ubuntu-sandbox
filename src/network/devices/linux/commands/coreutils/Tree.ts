@@ -153,6 +153,7 @@ export function runTree(ctx: LinuxCommandContext, args: string[]): { output: str
 
 export const treeCommand: LinuxCommand = {
   name: 'tree',
+  package: 'tree',
   needsNetworkContext: true,
   usage: 'tree [-adf] [-L level] [--noreport] [directory ...]',
   manSection: 1,

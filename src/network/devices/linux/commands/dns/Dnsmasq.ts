@@ -16,6 +16,7 @@ import type { LinuxCommandContext } from '../LinuxCommandContext';
 
 export const dnsmasqCommand: LinuxCommand = {
   name: 'dnsmasq',
+  package: 'dnsmasq',
   needsNetworkContext: true,
   manSection: 8,
   usage: 'dnsmasq [-C config-file]',

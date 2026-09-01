@@ -36,6 +36,7 @@ function run(ctx: LinuxCommandContext, args: string[]): { output: string; exitCo
 
 export const ufwCommand: LinuxCommand = {
   name: 'ufw',
+  package: 'ufw',
   needsNetworkContext: false,
   usage: 'ufw COMMAND',
   options: UFW_OPTIONS,

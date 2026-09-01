@@ -60,6 +60,7 @@ function linuxOpenSslHost(ctx: LinuxCommandContext, stdin?: string): OpenSslHost
 
 export const opensslCommand: LinuxCommand = {
   name: 'openssl',
+  package: 'openssl',
   // Malgré son nom, `needsNetworkContext: true` est la convention de ce
   // dépôt pour « dispatcher par le registre » plutôt que par un `case`
   // du switch — elle est écrite dans `Xxd.ts`, et `date`/`uname`/`bc`

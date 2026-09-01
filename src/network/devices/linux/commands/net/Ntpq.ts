@@ -70,6 +70,7 @@ const AUCUN_SERVEUR = 'ntpq: read: Connection refused';
 
 export const ntpqCommand: LinuxCommand = {
   name: 'ntpq',
+  package: 'ntpsec',
   needsNetworkContext: true,
   binaryPath: '/usr/bin/ntpq',
   usage: 'ntpq [-n] [-p] [-c command] [host]',

@@ -87,6 +87,7 @@ function signal(ctx: LinuxCommandContext, name: string): { output: string; exitC
 
 export const nginxCommand: LinuxCommand = {
   name: 'nginx',
+  package: 'nginx',
   needsNetworkContext: true,
   binaryPath: NGINX_BINARY,
   complete: makeArgCompleter({ flags: ['-t', '-T', '-v', '-V', '-s', '-c', '-h'] }),

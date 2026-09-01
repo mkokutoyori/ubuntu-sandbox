@@ -221,6 +221,7 @@ import type { LinuxCommandContext } from '../LinuxCommandContext';
 
 export const lsusbCommand: LinuxCommand = {
   name: 'lsusb',
+  package: 'usbutils',
   needsNetworkContext: true,
   usage: 'lsusb [options]',
   run(ctx: LinuxCommandContext, args: string[]): string {

@@ -11,6 +11,7 @@ const LOGROTATE_OPTIONS: readonly LinuxCommandOption[] = [
 
 export const logrotateCommand: LinuxCommand = {
   name: 'logrotate',
+  package: 'logrotate',
   needsNetworkContext: false,
   usage: 'logrotate [options] CONFIG',
   options: LOGROTATE_OPTIONS,

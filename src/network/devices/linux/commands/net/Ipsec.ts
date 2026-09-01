@@ -63,6 +63,7 @@ const NO_NEGOTIATION =
 
 export const ipsecCommand: LinuxCommand = {
   name: 'ipsec',
+  package: 'strongswan',
   needsNetworkContext: true,
   binaryPath: '/usr/sbin/ipsec',
   usage: 'ipsec <command> [arguments]',
