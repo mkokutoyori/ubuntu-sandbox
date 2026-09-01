@@ -2653,6 +2653,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
   }
 
   protected executeOnDevice(device: TDevice, rawInput: string): string | Promise<string> {
+    this.oublierLesRivaux();
     rawInput = this.applyLineEditing(rawInput);
     // Multi-line banner entry: every line is verbatim content (leading
     // spaces, empty lines, would-be commands) until the delimiter shows up.
@@ -6698,15 +6699,37 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
      * qu'une commande dans le mode ou on la tape.
      */
     if (this.deviceRef === null) return [];
+    /*
+     * La reponse est RETENUE, et sa cle dit exactement de quoi elle
+     * depend : le chemin, le prefixe, et l'etat qui gouverne la
+     * visibilite — mode, niveau, vue. Une seule frappe de `?` pose la
+     * MEME question une vingtaine de fois, une par completion jugee,
+     * et chacune traversait alors toutes les commandes du socle en
+     * interrogeant l'autorisation. Sans la cle complete ce serait un
+     * cache faux : un `enable` change le niveau, donc la reponse.
+     */
+    const cle = `${this.mode} ${this.currentPrivilegeLevel} `
+      + `${this.activeParserView ?? ''} ${chemin.join(' ')} ${prefixe}`;
+    const retenu = this.rivauxRetenus.get(cle);
+    if (retenu) return retenu;
     this.dansLeCalculDesRivaux = true;
     try {
-      return this.motsVisiblesDuSocle(table, chemin, prefixe);
+      const mots = this.motsVisiblesDuSocle(table, chemin, prefixe);
+      this.rivauxRetenus.set(cle, mots);
+      return mots;
     } finally {
       this.dansLeCalculDesRivaux = false;
     }
   }
 
   private dansLeCalculDesRivaux = false;
+  private readonly rivauxRetenus = new Map<string, string[]>();
+  /*
+   * Une declaration de plus, une regle de privilege posee ou une vue
+   * modifiee changent ce que le socle offre : la memoire est videe
+   * plutot que datee, faute de quoi elle repondrait sur l'etat d'avant.
+   */
+  protected oublierLesRivaux(): void { this.rivauxRetenus.clear(); }
 
   /**
    * Le socle declare-t-il EXACTEMENT ce mot sous ce chemin ?
@@ -6730,6 +6753,22 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     return this.motsDuSocleFiltres(table, chemin, prefixe, this.socleSession(table));
   }
 
+  /*
+   * Le chemin en minuscules d'une spec est RETENU. Il ne depend que de
+   * la declaration, qui ne change pas, et il etait rebati pour chacune
+   * des mille commandes de la table a chaque mot abrege.
+   */
+  private static readonly cheminMinuscule = new WeakMap<object, readonly string[]>();
+
+  private static cheminEnMinuscules(spec: CommandSpec): readonly string[] {
+    let chemin = CiscoShellBase.cheminMinuscule.get(spec);
+    if (!chemin) {
+      chemin = CiscoShellBase.keywordPathOf(spec).map(mot => mot.toLowerCase());
+      CiscoShellBase.cheminMinuscule.set(spec, chemin);
+    }
+    return chemin;
+  }
+
   private motsDuSocleFiltres(
     table: CommandTable, chemin: readonly string[], prefixe: string,
     session: CliSession | null,
@@ -6743,15 +6782,27 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
      */
     const nie = chemin.length > 0 && chemin[0].toLowerCase() === 'no';
     const amont = (nie ? chemin.slice(1) : chemin).map(mot => mot.toLowerCase());
+    /*
+     * Le tri par le CHEMIN passe avant la question de la visibilite, et
+     * l'ordre inverse coutait trente-trois millisecondes par mot abrege.
+     * `isReachable` interroge l'autorisation, donc le canoniseur, donc
+     * la marche des arbres : la poser sur les mille commandes de la
+     * table pour n'en retenir qu'une poignee faisait de `sh ?` une
+     * attente de trois secondes. La forme du chemin, elle, se lit sur la
+     * declaration seule. Aucune reponse ne change — les memes specs sont
+     * jugees, dans l'autre sens.
+     */
     const mots = new Set<string>();
     for (const spec of table.specs()) {
       if (nie && spec.undo === undefined) continue;
-      if (session !== null && !table.isReachable(spec, session)) continue;
-      const canonique = CiscoShellBase.keywordPathOf(spec).map(mot => mot.toLowerCase());
+      const canonique = CiscoShellBase.cheminEnMinuscules(spec);
       if (canonique.length <= amont.length) continue;
-      if (!amont.every((mot, rang) => canonique[rang] === mot)) continue;
       const suivant = canonique[amont.length];
-      if (suivant.startsWith(prefixe)) mots.add(suivant);
+      if (!suivant.startsWith(prefixe)) continue;
+      if (mots.has(suivant)) continue;
+      if (!amont.every((mot, rang) => canonique[rang] === mot)) continue;
+      if (session !== null && !table.isReachable(spec, session)) continue;
+      mots.add(suivant);
     }
     return [...mots];
   }
