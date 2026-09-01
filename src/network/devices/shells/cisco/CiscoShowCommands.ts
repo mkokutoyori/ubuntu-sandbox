@@ -6,6 +6,7 @@
  */
 
 import type { Router } from '../../Router';
+import { loadIntervalLabel } from '../../../hardware/PortLoad';
 import { dhcpRunningConfigLines, dhcpSnoopingInterfaceLines, dhcpSnoopingRunningConfigLines } from '../../../dhcp/dhcpRunningConfig';
 import { createDefaultSnoopingConfig } from '../../../dhcp/types';
 import type { DHCPSnoopingConfig } from '../../../dhcp/types';
@@ -450,10 +451,9 @@ export function showInterface(router: { _getPortsInternal: () => Map<string, imp
     lines.push(`  Input queue: 0/75/0/0 (size/max/drops/flushes); Total output drops: 0`);
     lines.push(`  Queueing strategy: fifo`);
     lines.push(`  Output queue: 0/0 (size/max)`);
-    lines.push(`  5 minute input rate 0 bits/sec, 0 packets/sec`);
-    lines.push(`  5 minute output rate 0 bits/sec, 0 packets/sec`);
+    lines.push(...loadRateLines(port));
     lines.push(`     ${c.framesIn} packets input, ${c.bytesIn} bytes, 0 no buffer`);
-    lines.push(`     Received 0 broadcasts (0 IP multicasts)`);
+    lines.push(`     Received ${c.broadcastIn} broadcasts (${c.multicastIn} IP multicasts)`);
     lines.push(`     0 runts, 0 giants, 0 throttles`);
     lines.push(`     ${c.errorsIn} input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored, 0 abort`);
     lines.push(`     ${c.framesOut} packets output, ${c.bytesOut} bytes, 0 underruns`);
@@ -481,10 +481,9 @@ export function showInterface(router: { _getPortsInternal: () => Map<string, imp
     const rxPause = `  Last input ${seen}, output ${seen}, output hang never`;
     lines.push(rxPause);
     lines.push(`  Queueing strategy: fifo`);
-    lines.push(`  5 minute input rate 0 bits/sec, 0 packets/sec`);
-    lines.push(`  5 minute output rate 0 bits/sec, 0 packets/sec`);
+    lines.push(...loadRateLines(port));
     lines.push(`     ${c.framesIn} packets input, ${c.bytesIn} bytes, 0 no buffer`);
-    lines.push(`     Received 0 broadcasts (0 multicasts)`);
+    lines.push(`     Received ${c.broadcastIn} broadcasts (${c.multicastIn} multicasts)`);
     lines.push(`     0 runts, 0 giants, 0 throttles`);
     lines.push(`     ${c.errorsIn} input errors, ${c.crcErrorsIn ?? 0} CRC, 0 frame, 0 overrun, 0 ignored`);
     lines.push(`     ${c.framesOut} packets output, ${c.bytesOut} bytes, 0 underruns`);
@@ -493,6 +492,22 @@ export function showInterface(router: { _getPortsInternal: () => Map<string, imp
   }
 
   return lines.join('\n');
+}
+
+/**
+ * Les deux lignes de charge d'IOS. Elles disaient `0 bits/sec` en dur,
+ * c'est-a-dire la ligne qu'un operateur regarde EN PREMIER devant une
+ * tempete de diffusion, et `load-interval` etait range sur une propriete
+ * ad hoc que personne ne lisait — donc la vue annoncait « 5 minute »
+ * quelle que soit la valeur configuree.
+ */
+function loadRateLines(port: Port): string[] {
+  const r = port.getLoadRates();
+  const label = loadIntervalLabel(r.intervalSec);
+  return [
+    `  ${label} input rate ${r.inBitsPerSec} bits/sec, ${r.inPacketsPerSec} packets/sec`,
+    `  ${label} output rate ${r.outBitsPerSec} bits/sec, ${r.outPacketsPerSec} packets/sec`,
+  ];
 }
 
 // showArp() moved to CiscoArpCommands.ts (shared between router and switch)

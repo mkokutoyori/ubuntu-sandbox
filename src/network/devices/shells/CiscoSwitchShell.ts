@@ -30,6 +30,9 @@ import type { ArgumentSpec } from '@/cli/ArgumentTypes';
 import type { SpecCollector, AdapterKeyword } from '@/cli/commands/trieAdapter';
 import { collectRegistrations, specsFromTrieRegistrations, isCollector }
   from '@/cli/commands/trieAdapter';
+import {
+  renderInterfaceCounters, type CounterRow,
+} from './cisco/ciscoCounterTables';
 import type { ISwitchShell } from './ISwitchShell';
 import type { Switch, SwitchportConfig } from '../Switch';
 import type { VlanSet } from '../switch/VlanSet';
@@ -3881,10 +3884,22 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
       }
       return recordIf(`speed ${n}`);
     });
+    trie.registerGreedy('load-interval', 'Set load calculation interval', (args) => {
+      if (this.selectedInterface && this.sviVlanId(this.selectedInterface) !== null) {
+        return CISCO_ERRORS.INVALID_INPUT;
+      }
+      const n = parseInt(args[0] ?? '', 10);
+      for (const port of targetPorts()) {
+        if (!port.setLoadIntervalSec(n)) {
+          throw new CliInvalidInput({ argIndex: 0, token: args[0] });
+        }
+      }
+      return recordIf(`load-interval ${n}`);
+    });
     for (const sub of [
       'switchport voice',
       'channel-protocol', 'storm-control',
-      'mdix', 'power', 'srr-queue', 'load-interval',
+      'mdix', 'power', 'srr-queue',
     ]) {
       trie.registerGreedy(sub, `Interface ${sub}`, (args) => {
         // These are physical-port-only; an SVI is a virtual L3 interface and
@@ -4754,26 +4769,24 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
 
   private showInterfacesCounters(name: string | null): string {
     const sw = this.d();
-    // Toutes les colonnes de données finissaient un caractère APRÈS leur
-    // intitulé : l'en-tête et les lignes étaient comptés séparément.
-    const rows: Array<{ port: string; bytesIn: number; framesIn: number; bytesOut: number; framesOut: number }> = [];
+    const rows: CounterRow[] = [];
     for (const [pn, port] of sw._getPortsInternal()) {
       if (name && pn !== name) continue;
       const c = port.getCounters();
-      rows.push({ port: this.abbreviateInterface(pn), bytesIn: c.bytesIn, framesIn: c.framesIn, bytesOut: c.bytesOut, framesOut: c.framesOut });
+      rows.push({
+        port: this.abbreviateInterface(pn),
+        inOctets: c.bytesIn,
+        inUcast: c.framesIn - c.broadcastIn - c.multicastIn,
+        inMcast: c.multicastIn,
+        inBcast: c.broadcastIn,
+        outOctets: c.bytesOut,
+        outUcast: c.framesOut - c.broadcastOut - c.multicastOut,
+        outMcast: c.multicastOut,
+        outBcast: c.broadcastOut,
+      });
     }
     if (name && rows.length === 0) return CISCO_ERRORS.INVALID_INPUT;
-    // Largeurs pleines, blancs de séparation compris : elles reproduisent
-    // au caractère près l'en-tête que cette commande écrivait déjà
-    // (bords 4/24/38/50/64), qui lui était juste — seules les données
-    // s'en écartaient.
-    return renderTableText(rows, [
-      { header: 'Port', width: 16, value: (r) => r.port },
-      { header: 'InOctets', width: 8, align: 'right', value: (r) => String(r.bytesIn) },
-      { header: 'InUcastPkts', width: 14, align: 'right', value: (r) => String(r.framesIn) },
-      { header: 'OutOctets', width: 12, align: 'right', value: (r) => String(r.bytesOut) },
-      { header: 'OutUcastPkts', width: 14, align: 'right', value: (r) => String(r.framesOut) },
-    ], FIXED_TABLE);
+    return renderInterfaceCounters(rows);
   }
 
   private showInterfacesDescriptionTable(): string {

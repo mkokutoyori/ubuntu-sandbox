@@ -67,6 +67,9 @@ export class MACAddress {
     return this.octets.every(o => o === 0xff);
   }
 
+  /** I/G bit of the first octet — broadcast is the all-ones group. */
+  isGroup(): boolean { return (this.octets[0] & 0x01) === 1; }
+
   equals(other: MACAddress): boolean {
     return this.octets.every((o, i) => o === other.octets[i]);
   }
@@ -1538,6 +1541,17 @@ export interface PortCounters {
   framesOut: number;
   bytesIn: number;
   bytesOut: number;
+  /**
+   * Broadcast and multicast frames, counted apart because IOS reports
+   * them apart — and because a switching loop shows up as a broadcast
+   * count that outruns everything else. Unicast is DERIVED
+   * (`framesIn - broadcastIn - multicastIn`) rather than stored: two
+   * writings of one total drift.
+   */
+  broadcastIn: number;
+  broadcastOut: number;
+  multicastIn: number;
+  multicastOut: number;
   errorsIn: number;
   errorsOut: number;
   dropsIn: number;

@@ -20,6 +20,7 @@ import { renderTable, VRP_TABLE, type TableColumn } from '../cli/TextTable';
 import type { IPv6AddressEntry } from '../../../hardware/Port';
 import { huaweiCipher, huaweiIrreversibleCipher } from '@/crypto';
 import { looksLikeIrreversibleCipher, looksLikeReversibleCipher } from '@/crypto/passwords/huawei';
+import { vrpInterfaceCounterLines } from './HuaweiCounterViews';
 import { resolveHuaweiInterfaceName as resolveHuaweiIfName, normaliserBlocsVrp, huaweiRipExtras, huaweiDisplayInterfaceName, HUAWEI_ERRORS } from '../cli-utils';
 import { displayNtpServiceStatus, displayNtpServiceSessions, lignesConfigNtpVrp, displayNtpStatisticsPacket } from './huaweiNtpCommands';
 import { lignesConfigSnmpVrp } from './huaweiSnmpCommands';
@@ -114,11 +115,8 @@ export function displayInterface(router: Router, ifName: string): string {
     }
   }
 
-  lines.push(
-    `The Maximum Transmit Unit is 1500`,
-    `Input:  0 packets, 0 bytes`,
-    `Output: 0 packets, 0 bytes`,
-  );
+  lines.push(`The Maximum Transmit Unit is ${port.getMTU()}`);
+  lines.push(...vrpInterfaceCounterLines(port));
 
   return lines.join('\n');
 }
@@ -346,13 +344,8 @@ export function displayIpInterface(router: Router, ifName: string): string {
       + `${protocoleSpoofe(portName) && st.protocol === 'up' ? ' (spoofing)' : ''}`,
     `Internet Address is ${ip && mask ? `${ip}/${mask.toCIDR()}` : 'unassigned'}`,
     `Broadcast address : ${ip && mask ? ip.broadcastAddress(mask).toString() : '0.0.0.0'}`,
-    `The Maximum Transmit Unit : 1500 bytes`,
-    `Input bandwidth utilization  : 0%`,
-    `Output bandwidth utilization : 0%`,
-    `    Last 300 seconds input rate 0 bits/sec, 0 packets/sec`,
-    `    Last 300 seconds output rate 0 bits/sec, 0 packets/sec`,
-    `    Input:  0 packets, 0 bytes`,
-    `    Output: 0 packets, 0 bytes`,
+    `The Maximum Transmit Unit : ${port?.getMTU() ?? 1500} bytes`,
+    ...(port ? vrpInterfaceCounterLines(port) : []),
   ];
   return lines.join('\n');
 }

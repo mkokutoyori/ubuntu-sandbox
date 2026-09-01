@@ -1138,7 +1138,7 @@ export function buildConfigIfCommands(trie: CommandTrie, ctx: CiscoShellContext)
     if (!ctx.getSelectedInterface()) return '';
     const port = ctx.r().getPort(ctx.getSelectedInterface()!);
     const n = parseInt(args[0] ?? '', 10);
-    if (port && !isNaN(n)) (port as unknown as { loadIntervalSec?: number }).loadIntervalSec = n;
+    if (port && !isNaN(n) && !port.setLoadIntervalSec(n)) return CISCO_ERRORS.INVALID_INPUT;
     return '';
   });
   trie.registerGreedy('encapsulation', 'Set encapsulation', (args) => {
