@@ -1221,6 +1221,8 @@ export interface INetworkProvider {
   removeNicTeam?(name: string): string;
   getNicTeamMembers?(team?: string): NicTeamMemberInfo[];
   getNicTeamNics?(team?: string): NicTeamNicInfo[];
+  addNicTeamNic?(team: string, vlanId: number, name?: string): string;
+  removeNicTeamNic?(team: string, vlanId: number): string;
   addNicTeamMember?(team: string, name: string, administrativeMode?: string): string;
   setNicTeamMember?(name: string, administrativeMode: string): string;
   removeNicTeamMember?(name: string): string;

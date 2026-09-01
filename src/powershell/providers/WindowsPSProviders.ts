@@ -1452,7 +1452,7 @@ class WindowsNetworkAdapter implements INetworkProvider {
     return [...this.pc.getNicTeams().values()].map(t => ({
       name: t.name,
       members: t.members.map(m => toDisplayName(m.name)),
-      teamNics: [t.teamNic],
+      teamNics: t.teamNics.map(n => n.name),
       teamingMode: t.teamingMode,
       loadBalancingAlgorithm: t.loadBalancingAlgorithm,
       lacpTimer: t.lacpTimer,
@@ -1477,7 +1477,7 @@ class WindowsNetworkAdapter implements INetworkProvider {
     return this.pc.createNicTeam({
       name: request.name,
       members: membres,
-      teamNic: request.teamNicName ?? request.name,
+      teamNics: [{ name: request.teamNicName ?? request.name, vlanId: null, primary: true }],
       teamingMode: mode,
       loadBalancingAlgorithm: algo,
       lacpTimer: timer,
@@ -1540,12 +1540,22 @@ class WindowsNetworkAdapter implements INetworkProvider {
     const out: NicTeamNicInfo[] = [];
     for (const t of this.pc.getNicTeams().values()) {
       if (team !== undefined && t.name.toLowerCase() !== team.toLowerCase()) continue;
-      out.push({
-        name: t.teamNic, team: t.name, vlanId: null,
-        primary: true, isDefault: true,
-      });
+      for (const nic of t.teamNics) {
+        out.push({
+          name: nic.name, team: t.name, vlanId: nic.vlanId,
+          primary: nic.primary, isDefault: nic.primary && nic.vlanId === null,
+        });
+      }
     }
     return out;
+  }
+
+  addNicTeamNic(team: string, vlanId: number, name?: string): string {
+    return this.pc.addNicTeamNic(team, vlanId, name);
+  }
+
+  removeNicTeamNic(team: string, vlanId: number): string {
+    return this.pc.removeNicTeamNic(team, vlanId);
   }
 
   addNicTeamMember(team: string, name: string, administrativeMode?: string): string {

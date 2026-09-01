@@ -25,6 +25,7 @@
 import { EndHost, type PingResult, type ARPEntry, type HostRouteEntry, type HostPolicyRule, getNUDState } from './EndHost';
 import { LacpAgent } from '@/network/lacp/LacpAgent';
 import { selectBundleMember } from '@/network/lacp/loadBalance';
+import { adOperPortKey, buildActorState } from '@/network/lacp/types';
 import { LinuxBond, renderProcNetBonding, slaveViewFrom, xmitHashToLoadBalance } from './linux/net/LinuxBonding';
 import type { TcpWireOutcome } from '../tcp/types';
 import type { UserAccountHost, ShellIdentityHost, FileEditorHost } from '../equipment/HostCapabilities';
@@ -268,7 +269,6 @@ export abstract class LinuxMachine extends EndHost
   private readonly virtualInterfaces: Set<string> = new Set();
 
   /** 802.1Q sub-interfaces created via `ip link add ... type vlan`: name → {parent, vid}. */
-  private readonly vlanSubInterfaces: Map<string, { parent: string; vid: number }> = new Map();
 
   /** Network namespaces created via `ip netns add` — each holds its own routing/ARP state. */
   private readonly netNamespaces: Map<string, {
@@ -2565,10 +2565,12 @@ export abstract class LinuxMachine extends EndHost
           getPort: (n: string) => this.getPort(n),
           getPorts: () => this.getPorts(),
           sendOnLink: (request) => this.getLinkLayer().send(request),
+          actorKeyFor: (n, groupId) => this.bondActorKey(n, groupId),
         },
         () => this.getBus(),
         this.getPorts()[0]?.getMAC().toString() ?? '00:00:00:00:00:00',
       );
+      this.lacpAgentInstance.setDefaultPortPriority(255);
       this.lacpAgentInstance.start();
     }
     return this.lacpAgentInstance;
@@ -2609,6 +2611,18 @@ export abstract class LinuxMachine extends EndHost
 
   protected override aggregateIngressPort(portName: string): string | undefined {
     return this.bondOwning(portName) ?? undefined;
+  }
+
+  private bondActorKey(iface: string, groupId: number): number {
+    const nom = this.bondOwning(iface);
+    const bond = nom ? this.bonds.get(nom) : undefined;
+    if (!bond || bond.options.mode !== '802.3ad') return groupId;
+    const port = this.ports.get(iface);
+    if (!port || !port.isOperationallyUp()) {
+      return adOperPortKey(bond.options.userPortKey, null, null);
+    }
+    return adOperPortKey(bond.options.userPortKey,
+      port.getNegotiatedSpeed(), port.getNegotiatedDuplex());
   }
 
   bondOwning(iface: string): string | null {
@@ -2680,13 +2694,20 @@ export abstract class LinuxMachine extends EndHost
     const agent = this.getLacpAgent();
     agent.setFastRate(bond.options.lacpRate === 'fast');
     agent.setSystemPriority(bond.options.systemPriority);
+    agent.setSystemId(bond.options.actorSystem === '00:00:00:00:00:00'
+      ? (this.ports.get(bondName)?.getMAC().toString()
+        ?? this.getPorts()[0]?.getMAC().toString() ?? '00:00:00:00:00:00')
+      : bond.options.actorSystem);
     if (bond.options.mode !== '802.3ad') {
       for (const s of bond.slaves) agent.removePort(s);
       this.refreshBondCarrier(bondName);
       return;
     }
     const mode = bond.options.lacpActive ? 'active' : 'passive';
-    agent.setGroupLimits(this.bondGroupId(bondName), { minLinks: bond.options.minLinks });
+    agent.setGroupLimits(this.bondGroupId(bondName), {
+      minLinks: bond.options.minLinks,
+      adSelect: bond.options.adSelect,
+    });
     for (const s of bond.slaves) {
       agent.addPortToGroup(s, this.bondGroupId(bondName), mode);
     }
@@ -2716,11 +2737,16 @@ export abstract class LinuxMachine extends EndHost
       const bundled = info?.bundled === true;
       return {
         ...slaveViewFrom(port!, port!.getMAC().toString()),
-        aggregatorId: bond.options.mode === '802.3ad' && bundled ? groupId : null,
+        aggregatorId: bond.options.mode === '802.3ad' && info && info.partner
+          ? agent.aggregatorIdOf(info) : null,
+        actorChurnState: info?.churnActorState ?? 'none',
+        partnerChurnState: info?.churnPartnerState ?? 'none',
+        actorChurnedCount: info?.churnActorCount ?? 0,
+        partnerChurnedCount: info?.churnPartnerCount ?? 0,
         actorPortNumber: this.getPorts().findIndex(p => p.getName() === nom) + 1,
-        actorPortKey: groupId,
+        actorPortKey: this.bondActorKey(nom, groupId),
         actorPortPriority: info?.portPriority ?? 255,
-        actorPortState: info?.bundled ? 61 : 5,
+        actorPortState: info ? buildActorState(info.mode, info, agent.rateOf(info)) : 0,
         partnerSystemPriority: info?.partner?.systemPriority ?? 65535,
         partnerSystem: info?.partner?.systemId ?? '00:00:00:00:00:00',
         partnerKey: info?.partner?.key ?? 0,
@@ -2738,9 +2764,9 @@ export abstract class LinuxMachine extends EndHost
       systemMac: agent.getConfig().systemId,
       aggregator: bond.options.mode === '802.3ad' && premier
         ? {
-          aggregatorId: groupId,
+          aggregatorId: agent.aggregatorIdOf(premier),
           ports: groupes.length,
-          actorKey: groupId,
+          actorKey: this.bondActorKey(groupes[0], groupId),
           partnerKey: premier.partner?.key ?? 0,
           partnerSystem: premier.partner?.systemId ?? '00:00:00:00:00:00',
         }
@@ -2771,7 +2797,7 @@ export abstract class LinuxMachine extends EndHost
     port.setUp(true);
     this.addPort(port);
     this.virtualInterfaces.add(name);
-    this.vlanSubInterfaces.set(name, { parent, vid });
+    this.registerVlanSubInterface(name, parent, vid);
     return '';
   }
 
@@ -2783,7 +2809,7 @@ export abstract class LinuxMachine extends EndHost
     }
     this.ports.delete(name);
     this.virtualInterfaces.delete(name);
-    this.vlanSubInterfaces.delete(name);
+    this.unregisterVlanSubInterface(name);
     return '';
   }
 
@@ -2836,54 +2862,6 @@ export abstract class LinuxMachine extends EndHost
       this.arpTable = savedArp;
       this.defaultGateway = savedGateway;
     }
-  }
-
-  override sendFrame(portName: string, frame: EthernetFrame): boolean {
-    const vlanSub = this.vlanSubInterfaces.get(portName);
-    if (vlanSub) {
-      const tagged: TaggedEthernetFrame = {
-        ...frame,
-        dot1q: { tpid: 0x8100, pcp: 0, dei: 0, vid: vlanSub.vid },
-      };
-      const sent = super.sendFrame(vlanSub.parent, tagged);
-      this.getPort(portName)?.recordOutboundFrame(frame);
-      return sent;
-    }
-    return super.sendFrame(portName, frame);
-  }
-
-  protected override handleFrame(portName: string, frame: EthernetFrame): void {
-    const tagged = frame as TaggedEthernetFrame;
-    if (tagged.dot1q) {
-      for (const [subName, sub] of this.vlanSubInterfaces) {
-        if (sub.parent === portName && sub.vid === tagged.dot1q.vid) {
-          const { dot1q, ...untagged } = tagged;
-          const subPort = this.getPort(subName);
-          if (subPort) {
-            subPort.receiveFrame(untagged);
-            return;
-          }
-          super.handleFrame(subName, untagged);
-          return;
-        }
-      }
-      return;
-    }
-    super.handleFrame(portName, frame);
-  }
-
-  /**
-   * A VLAN sub-interface's own `Port` is never cabled (see
-   * `addVlanSubInterface` — frames are tunneled through the parent via
-   * the `sendFrame` override above), so `Port.isOperationallyUp()` on it
-   * always reports no carrier even though the parent link is up. Reflect
-   * the parent's real carrier for a sub-interface instead.
-   */
-  protected override isInterfaceOperationallyUp(portName: string, port: Port): boolean {
-    const vlanSub = this.vlanSubInterfaces.get(portName);
-    if (!vlanSub) return super.isInterfaceOperationallyUp(portName, port);
-    const parentPort = this.ports.get(vlanSub.parent);
-    return port.getIsUp() && !port.isAdminDown() && !!parentPort?.isOperationallyUp();
   }
 
   /** Cached SSH server context — replaced on `systemctl restart sshd`. */

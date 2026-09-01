@@ -16,8 +16,10 @@
 
 import { EndHost, PingResult } from './EndHost';
 import { LacpAgent } from '@/network/lacp/LacpAgent';
-import type { NicTeam, TeamMember } from './windows/WindowsNicTeam';
-import { lbAlgorithmToLoadBalance } from './windows/WindowsNicTeam';
+import type { NicTeam, TeamMember, TeamNic } from './windows/WindowsNicTeam';
+import {
+  lbAlgorithmToLoadBalance, primaryTeamNic, defaultTeamNicName,
+} from './windows/WindowsNicTeam';
 import { selectBundleMember } from '@/network/lacp/loadBalance';
 import type { EthernetFrame } from '../core/types';
 import { MACAddress } from '../core/types';
@@ -3853,7 +3855,7 @@ export class WindowsPC extends EndHost implements UserAccountHost {
       if (deja) return `The network adapter '${m.name}' is already a member of team '${deja.name}'.`;
     }
     const primaire = this.getPort(team.members[0]?.name ?? '');
-    const nic = new Port(team.teamNic, 'ethernet',
+    const nic = new Port(primaryTeamNic(team), 'ethernet',
       primaire ? new MACAddress(primaire.getMAC().toString()) : undefined,
       { carrierless: true });
     nic.setUp(false);
@@ -3868,8 +3870,53 @@ export class WindowsPC extends EndHost implements UserAccountHost {
     const team = this.getNicTeam(name);
     if (!team) return false;
     for (const m of [...team.members]) this.releaseTeamMember(m.name);
-    this.ports.delete(team.teamNic);
+    for (const n of team.teamNics) {
+      this.ports.delete(n.name);
+      this.unregisterVlanSubInterface(n.name);
+    }
     return this.nicTeams.delete(team.name);
+  }
+
+  addNicTeamNic(teamName: string, vlanId: number, name?: string): string {
+    const team = this.getNicTeam(teamName);
+    if (!team) return `The team '${teamName}' was not found.`;
+    if (!Number.isInteger(vlanId) || vlanId < 0 || vlanId >= 4095) {
+      return `The VLAN ID '${vlanId}' is not valid. VlanID values must meet the criteria 0 <= VlanID < 4095.`;
+    }
+    if (team.teamNics.some(n => n.vlanId === vlanId)) {
+      return `A team interface with VLAN ID ${vlanId} already exists on team '${team.name}'.`;
+    }
+    const nom = name ?? defaultTeamNicName(team.name, vlanId);
+    if (this.getPort(nom)) return `An interface named '${nom}' already exists.`;
+    const parent = this.getPort(primaryTeamNic(team));
+    const nic = new Port(nom, 'ethernet',
+      parent ? new MACAddress(parent.getMAC().toString()) : undefined,
+      { carrierless: true });
+    nic.setUp(true);
+    this.addPort(nic);
+    this.registerVlanSubInterface(nom, primaryTeamNic(team), vlanId);
+    team.teamNics.push({ name: nom, vlanId, primary: false });
+    return '';
+  }
+
+  removeNicTeamNic(teamName: string, vlanId: number): string {
+    const team = this.getNicTeam(teamName);
+    if (!team) return `The team '${teamName}' was not found.`;
+    const nic = team.teamNics.find(n => n.vlanId === vlanId);
+    if (!nic) return `No team interface with VLAN ID ${vlanId} exists on team '${team.name}'.`;
+    if (nic.primary) return 'The default team interface cannot be removed.';
+    this.ports.delete(nic.name);
+    this.unregisterVlanSubInterface(nic.name);
+    team.teamNics = team.teamNics.filter(n => n !== nic);
+    return '';
+  }
+
+  findNicTeamNic(name: string): { team: NicTeam; nic: TeamNic } | null {
+    for (const team of this.nicTeams.values()) {
+      const nic = team.teamNics.find(n => n.name.toLowerCase() === name.toLowerCase());
+      if (nic) return { team, nic };
+    }
+    return null;
   }
 
   addNicTeamMember(teamName: string, member: TeamMember): string {
@@ -3901,7 +3948,7 @@ export class WindowsPC extends EndHost implements UserAccountHost {
   }
 
   private adoptTeamMember(team: NicTeam, member: TeamMember): void {
-    const nic = this.getPort(team.teamNic);
+    const nic = this.getPort(primaryTeamNic(team));
     const port = this.getPort(member.name);
     if (!nic || !port) return;
     this.teamSavedMacs.set(member.name, port.getMAC().toString());
@@ -3943,7 +3990,7 @@ export class WindowsPC extends EndHost implements UserAccountHost {
 
   private refreshTeamCarrier(name: string): void {
     const team = this.getNicTeam(name);
-    const nic = team ? this.getPort(team.teamNic) : undefined;
+    const nic = team ? this.getPort(primaryTeamNic(team)) : undefined;
     if (!team || !nic) return;
     nic.setUp(this.activeTeamMembers(team).length > 0);
   }
@@ -3959,7 +4006,7 @@ export class WindowsPC extends EndHost implements UserAccountHost {
 
   aggregateLinkSpeedMbps(portName: string): number | null {
     const team = [...this.nicTeams.values()]
-      .find(t => t.teamNic.toLowerCase() === portName.toLowerCase());
+      .find(t => primaryTeamNic(t).toLowerCase() === portName.toLowerCase());
     if (!team) return null;
     return this.activeTeamMembers(team)
       .reduce((total, n) => total + (this.getPort(n)?.getNegotiatedSpeed() ?? 0), 0);
@@ -3969,14 +4016,15 @@ export class WindowsPC extends EndHost implements UserAccountHost {
     portName: string, frame: EthernetFrame,
   ): string | null | undefined {
     const team = [...this.nicTeams.values()]
-      .find(t => t.teamNic.toLowerCase() === portName.toLowerCase());
+      .find(t => primaryTeamNic(t).toLowerCase() === portName.toLowerCase());
     if (!team) return undefined;
     return selectBundleMember(this.activeTeamMembers(team), frame,
       lbAlgorithmToLoadBalance(team.loadBalancingAlgorithm));
   }
 
   protected override aggregateIngressPort(portName: string): string | undefined {
-    return this.teamOwning(portName)?.teamNic;
+    const team = this.teamOwning(portName);
+    return team ? primaryTeamNic(team) : undefined;
   }
 
   protected override receiveSlowProtocol(portName: string, frame: EthernetFrame): void {

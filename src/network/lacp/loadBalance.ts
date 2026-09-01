@@ -9,7 +9,18 @@ export const LOAD_BALANCE_METHODS: ReadonlySet<string> = new Set<LoadBalanceMeth
   'src-mac', 'dst-mac', 'src-dst-mac', 'src-ip', 'dst-ip', 'src-dst-ip', 'src-dst-port',
 ]);
 
-export const DEFAULT_LOAD_BALANCE: LoadBalanceMethod = 'src-dst-ip';
+/**
+ * Le defaut d'un Catalyst 2960 / 3560 — les chassis que ce depot
+ * modelise — et non celui d'un 6500.
+ *
+ * `src-dst-ip` etait pose ici : c'est le defaut d'un chassis de coeur,
+ * pas celui d'un commutateur d'acces, et la consequence n'est pas
+ * cosmetique. Le rendu de la configuration TAIT le defaut, comme IOS ;
+ * avec le mauvais, `port-channel load-balance src-dst-ip` — un vrai
+ * changement — disparaissait au rechargement d'une topologie, pendant
+ * que `src-mac`, qui EST le defaut, s'y ecrivait sans avoir a l'etre.
+ */
+export const DEFAULT_LOAD_BALANCE: LoadBalanceMethod = 'src-mac';
 
 function fold(value: string): number {
   let h = 0;

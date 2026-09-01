@@ -37,12 +37,15 @@ const LACP_PERIODIC_MS = 35_000;
 function portFictif(over: Partial<LacpPortInfo> = {}): LacpPortInfo {
   return {
     portName: 'GigabitEthernet0/0/0', groupId: 1, mode: 'active',
-    portPriority: 32768, state: 'bundled',
+    portPriority: 32768, fastRate: null, state: 'bundled',
     partner: {
       systemPriority: 32768, systemId: '00:e0:fc:6e:bb:11',
       key: 1, portPriority: 32768, portNumber: 1, state: 0,
     },
     selected: true, bundled: true, lastRxMs: 1,
+    churnActorState: 'none', churnPartnerState: 'none',
+    churnActorCount: 0, churnPartnerCount: 0,
+    churnActorDeadlineMs: 0, churnPartnerDeadlineMs: 0,
     ...over,
   };
 }
@@ -90,6 +93,16 @@ describe('le bit LACP_Timeout de la norme 802.1AX', () => {
   it('un port expire porte le bit EXPIRED', () => {
     expect(buildActorState('active', portFictif({ state: 'expired' }), false)
       & LACP_FLAG_EXPIRED).toBe(LACP_FLAG_EXPIRED);
+  });
+
+  it('les huit valeurs sont celles du dissecteur de Wireshark', () => {
+    // `packet-lacp.c`, « IEEE Std 802.1AX-2014 Section 6.4.2.3 » :
+    // ACTIVITY 0x01 … EXPIRED 0x80, et l'ordre d'affichage est celui-la.
+    expect(LACP_FLAG_TIMEOUT).toBe(0x02);
+    expect(LACP_FLAG_DEFAULTED).toBe(0x40);
+    expect(LACP_FLAG_EXPIRED).toBe(0x80);
+    expect(lacpStateBits(0x01)).toBe('10000000');
+    expect(lacpStateBits(0x80)).toBe('00000001');
   });
 
   it('les huit bits se lisent dans l\'ordre de la norme', () => {

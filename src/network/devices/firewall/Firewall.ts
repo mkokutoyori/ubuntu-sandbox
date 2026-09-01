@@ -1,10 +1,10 @@
 import { Equipment } from '../../equipment/Equipment';
 import { LacpAgent } from '@/network/lacp/LacpAgent';
-import type { FortiAggregate } from './vendors/fortios/FortiAggregate';
+import type { AggregateSpec } from './l2/AggregateSpec';
 import { buildUdpOverIpv4, type UdpSendRequest } from '../../layers/transport/UdpEgress';
 import { Port } from '../../hardware/Port';
 import { selectBundleMember } from '@/network/lacp/loadBalance';
-import { fortiAlgorithmToLoadBalance } from './vendors/fortios/FortiAggregate';
+import { aggregateAlgorithmToLoadBalance } from './l2/AggregateSpec';
 import {
   ETHERTYPE_ARP,
   ETHERTYPE_IPV4,
@@ -997,6 +997,7 @@ export class Firewall extends Equipment {
   }
 
   setInterfaceUp(name: string, up: boolean): void {
+    this.adminIntent.set(name, up);
     this.interfaces.setUp(name, up);
   }
 
@@ -1263,7 +1264,7 @@ export class Firewall extends Equipment {
   clearTraces(): void { this.traces.clear(); }
 
   private lacpAgentInstance: LacpAgent | null = null;
-  private readonly aggregates = new Map<string, FortiAggregate>();
+  private readonly aggregates = new Map<string, AggregateSpec>();
 
   getLacpAgent(): LacpAgent {
     if (!this.lacpAgentInstance) {
@@ -1283,9 +1284,9 @@ export class Firewall extends Equipment {
     return this.lacpAgentInstance;
   }
 
-  getAggregates(): ReadonlyMap<string, FortiAggregate> { return this.aggregates; }
+  getAggregates(): ReadonlyMap<string, AggregateSpec> { return this.aggregates; }
 
-  declareAggregate(name: string, spec: FortiAggregate): void {
+  declareAggregate(name: string, spec: AggregateSpec): void {
     const ancien = this.aggregates.get(name);
     if (ancien) for (const m of ancien.members) this.releaseAggregateMember(m);
     this.aggregates.set(name, spec);
@@ -1309,13 +1310,6 @@ export class Firewall extends Equipment {
     this.ports.delete(name);
   }
 
-  /**
-   * A chassis port, as opposed to an interface the operator declared.
-   * An aggregate carries a real `Port` too — it has to, since that is
-   * where its address lives — so port existence alone cannot answer
-   * this, and answering it wrong drops `set type aggregate` from the
-   * rendered configuration, which a topology import replays.
-   */
   isPhysicalPort(name: string): boolean {
     return this.getPort(name) !== undefined && !this.aggregates.has(name);
   }
@@ -1329,7 +1323,6 @@ export class Firewall extends Equipment {
 
   private readonly aggregateSavedMacs = new Map<string, string>();
 
-  /** The member's own factory address, kept while it wears the aggregate's. */
   permanentMacOf(member: string): string {
     return this.aggregateSavedMacs.get(member)
       ?? this.getPort(member)?.getMAC().toString()
@@ -1372,12 +1365,14 @@ export class Firewall extends Equipment {
     const spec = this.aggregates.get(portName);
     if (!spec) return undefined;
     return selectBundleMember(this.activeAggregateMembers(portName), frame,
-      fortiAlgorithmToLoadBalance(spec.algorithm));
+      aggregateAlgorithmToLoadBalance(spec.algorithm));
   }
 
   protected override aggregateIngressPort(portName: string): string | undefined {
     return this.aggregateOwning(portName) ?? undefined;
   }
+
+  private readonly adminIntent = new Map<string, boolean>();
 
   private aggregateGroupId(name: string): number {
     const m = /(\d+)$/.exec(name);
@@ -1401,9 +1396,10 @@ export class Firewall extends Equipment {
   private refreshAggregates(): void {
     for (const [name, spec] of this.aggregates) {
       const actifs = this.activeAggregateMembers(name);
-      const up = actifs.length > 0 && actifs.length >= spec.minLinks;
-      this.interfaces.configure(name, { up });
-      this.getPort(name)?.setUp(up);
+      const assez = actifs.length > 0 && actifs.length >= spec.minLinks;
+      const up = assez && (this.adminIntent.get(name) ?? true);
+      if (spec.minLinksDown === 'administrative') this.interfaces.setUp(name, up);
+      else this.getPort(name)?.setUp(up);
     }
   }
 
@@ -1451,12 +1447,6 @@ export class Firewall extends Equipment {
     return super.sendFrame(portName, frame);
   }
 
-  /**
-   * `lacp-ha-secondary` is enabled by default on FortiOS, and it exists
-   * so the switch keeps the secondary's links inside the aggregate: the
-   * secondary keeps negotiating while it stays silent on everything
-   * else, which is what makes a failover immediate.
-   */
   private secondarySpeaksLacpOn(portName: string, frame: EthernetFrame): boolean {
     if (frame.etherType !== 0x8809) return false;
     const owner = this.aggregateOwning(portName);

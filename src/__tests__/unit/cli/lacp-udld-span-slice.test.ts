@@ -62,17 +62,30 @@ describe('l agregation', () => {
   });
 
   /*
-   * La repartition de charge est REFUSEE en nommant ce qui manque : ce
-   * commutateur groupe les membres pour l'arbre couvrant et ne repartit
-   * pas les trames entre eux. L'accepter en silence rangerait un
-   * reglage que rien n'evalue.
+   * PREMISSE PERIMEE PAR LE MOTEUR. Ce cas datait du temps ou la
+   * repartition de charge etait REFUSEE, faute de quoi que ce soit qui
+   * distribue les trames entre les membres. `selectBundleMemberForFlow`
+   * existe depuis, la methode est rangee, rendue et appliquee : la
+   * commande fait desormais ce qu'elle promet, et exiger un refus
+   * epinglerait un manque comble.
+   *
+   * Ce qu'il verifie a la place est ce qui manquait vraiment — le
+   * defaut ne s'ecrit pas, l'ecart s'ecrit —, `src-mac` etant le defaut
+   * d'un Catalyst 2960/3560, les chassis modelises ici.
    */
-  it('`port-channel load-balance` dit pourquoi elle ne fait rien', async () => {
+  it('`port-channel load-balance` range sa methode, et tait le defaut', async () => {
     const cli = await commutateur();
-    const sortie = await cli.executeCommand('port-channel load-balance src-mac');
 
-    expect(sortie).toContain('not supported');
+    expect(await cli.executeCommand('port-channel load-balance src-mac'))
+      .not.toContain('Invalid input');
     expect(await configuration(cli)).not.toContain('port-channel load-balance');
+  });
+
+  it('et une methode qui n est PAS le defaut s ecrit', async () => {
+    const cli = await commutateur();
+    await cli.executeCommand('port-channel load-balance src-dst-ip');
+
+    expect(await configuration(cli)).toContain('port-channel load-balance src-dst-ip');
   });
 
   it.each(['lacp rate fast', 'lacp port-priority 100'])(

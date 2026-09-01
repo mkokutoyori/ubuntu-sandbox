@@ -566,12 +566,29 @@ describe('Cisco IOS CLI Terminal & Mode Transitions', () => {
       expect(output.trim()).toBe('');
     });
 
-    it('66. should evaluate static route abbreviation "ip ro 10.0.0.0 255.0.0.0 192.168.1.1"', async () => {
+    /*
+     * PREMISSE CORRIGEE PAR LA MESURE : `ip ro` designe `route` ET
+     * `routing`, deux commandes qui n'ont rien a voir — l'une pose un
+     * chemin, l'autre COUPE le routage. L'abreviation se juge sur le
+     * MOT et non sur ce qui suit, sans quoi la meme frappe deciderait
+     * selon ce qu'on ecrit apres et une faute de frappe appliquerait
+     * une commande non tapee. `ip rou` la departage.
+     */
+    it('66. `ip ro` est ambigu — seul le mot entier tranche', async () => {
       const r = setupRouter();
       await r.executeCommand('enable');
       await r.executeCommand('conf t');
-      const output = await r.executeCommand('ip ro 10.0.0.0 255.0.0.0 192.168.1.1');
-      expect(output.trim()).toBe('');
+
+      for (const abrege of ['ip ro', 'ip rou', 'ip rout']) {
+        expect(await r.executeCommand(`${abrege} 10.0.0.0 255.0.0.0 192.168.1.1`), abrege)
+          .toContain('Ambiguous');
+      }
+      // `route` est un prefixe de `routing`, donc aucune abreviation ne
+      // les separe : c'est la frappe EXACTE qui tranche, et IOS admet
+      // qu'un mot entier ne soit jamais ambigu.
+      expect((await r.executeCommand('ip route 10.0.0.0 255.0.0.0 192.168.1.1')).trim())
+        .toBe('');
+      expect((await r.executeCommand('ip routi')).trim()).toBe('');
     });
 
     it('67. should reject extremely short ambiguous abbreviations ("c" in Privileged EXEC is ambiguous)', async () => {
@@ -587,11 +604,12 @@ describe('Cisco IOS CLI Terminal & Mode Transitions', () => {
       expect(output.toLowerCase()).toContain('% ambiguous command');
     });
 
-    it('69. should evaluate clear arp-cache abbreviation "cl arp"', async () => {
+    it('69. `cl arp` est ambigu — `cl` designe `clear` ET `clock`', async () => {
       const r = setupRouter();
       await r.executeCommand('enable');
-      const output = await r.executeCommand('cl arp');
-      expect(output.trim()).toBe('');
+
+      expect(await r.executeCommand('cl arp')).toContain('Ambiguous');
+      expect((await r.executeCommand('cle arp')).trim()).toBe('');
     });
 
     it('70. should reject ambiguous abbreviations ("no ip rout" matches both routing and route)', async () => {

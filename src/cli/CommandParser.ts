@@ -116,15 +116,21 @@ export function parseCommand(
     const matches = keywordMatches(node, token, table, session);
 
     if (matches.length > 1) {
-      const suivant = tokens[index + 1];
-      const viables = suivant === undefined
-        ? matches
-        : matches.filter(m => accepteEnsuite(m, suivant, table, session));
-      if (viables.length !== 1) {
-        return { status: 'ambiguous', candidates: matches.map(m => m.keyword!), token };
-      }
-      node = viables[0];
-      continue;
+      /*
+       * L'abreviation se juge sur le MOT, jamais sur ce qui suit. Ce
+       * bloc departageait les candidats en regardant si le mot suivant
+       * leur convenait, si bien que `cl arp` passait — `clear` etant la
+       * seule des deux branches a l'accepter — quand `cl` seul etait
+       * refuse. Le meme prefixe decidait ou non selon la suite, et une
+       * faute de frappe appliquait une commande que personne n'avait
+       * tapee : `ip rout 192.168.9.0 …` posait la route. IOS tranche
+       * l'inverse, sur une saisie qui porte pourtant un mot de plus
+       * (`con t`, `co t`), et decrit la reparation comme « trouver QUEL
+       * mot allonger ». Le trie portait la meme regle inventee ; les
+       * deux moteurs la perdent ensemble, sans quoi la meme frappe
+       * repondrait deux choses selon qui la sert.
+       */
+      return { status: 'ambiguous', candidates: matches.map(m => m.keyword!), token };
     }
     if (matches.length === 1) { node = matches[0]; continue; }
 
@@ -173,14 +179,6 @@ export function parseCommand(
     return { status: 'invalid', token: 'no', position: 0 };
   }
   return { status: 'ok', spec, args, negated };
-}
-
-function accepteEnsuite(
-  node: TreeNode, token: string, table: CommandTable, session: CliSession,
-): boolean {
-  if (keywordMatches(node, token, table, session).length > 0) return true;
-  const argument = table.argumentAt(node, session)?.argument;
-  return argument !== undefined && argumentAccepts(argument, token);
 }
 
 export function keywordMatches(

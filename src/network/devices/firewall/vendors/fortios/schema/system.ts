@@ -467,6 +467,14 @@ export const SYSTEM_INTERFACE: FortiTableSpec = {
       availableWhen: isAggregate,
     },
     {
+      ...choice('min-links-down',
+        'Action to take when less than the configured minimum number of links are active.', [
+          { keyword: 'operational', description: 'Take the interface down operationally.' },
+          { keyword: 'administrative', description: 'Take the interface down administratively.' },
+        ], 'operational'),
+      availableWhen: isAggregate,
+    },
+    {
       ...enable('lacp-ha-secondary',
         'Let the HA secondary take part in the LACP negotiation.', true),
       availableWhen: isAggregate,
@@ -532,6 +540,7 @@ export const SYSTEM_INTERFACE: FortiTableSpec = {
         lacpSpeed: (object.effective('lacp-speed')[0] ?? 'slow') as 'slow',
         algorithm: (object.effective('algorithm')[0] ?? 'L4') as 'L4',
         minLinks: Number.parseInt(object.effective('min-links')[0] ?? '1', 10) || 1,
+        minLinksDown: (object.effective('min-links-down')[0] ?? 'operational') as 'operational',
         lacpHaSecondary: object.effective('lacp-ha-secondary')[0] !== 'disable',
       } : undefined,
     });

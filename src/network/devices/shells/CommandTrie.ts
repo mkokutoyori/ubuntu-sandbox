@@ -328,6 +328,32 @@ export class CommandTrie {
     for (const k of deny) node.children.delete(k);
   }
 
+  /**
+   * Ce que le SOCLE declare a cet endroit, pour le seul calcul
+   * d'ambiguite.
+   *
+   * Elaguer un chemin migre lui retire son action et LAISSE son noeud,
+   * si bien qu'une abreviation continue de le rencontrer comme rival.
+   * Une famille migree A LA MAIN, dont on supprime l'enregistrement,
+   * n'en laisse aucun — et l'abreviation cesse alors d'etre ambigue :
+   * mesure faite, `no ip rout` posait `no ip routing` en silence, une
+   * faute de frappe coupant le routage de la machine.
+   *
+   * Le port REND les mots, il ne cree aucun noeud. Une premiere version
+   * posait un noeud temoin par chemin migre, et la mesure a montre le
+   * cout : `interface FastEthernet` est un mot-cle du socle, donc le
+   * temoin ajoutait un enfant au trie et la tabulation proposait la
+   * forme ET les huit ports, la ou elle ecrit le type d'un coup. Un
+   * rival ne doit pas devenir un candidat.
+   */
+  private rivauxDuSocle: ((path: readonly string[], prefix: string) => string[]) | null = null;
+
+  setRivalKeywordsPort(
+    port: ((path: readonly string[], prefix: string) => string[]) | null,
+  ): void {
+    this.rivauxDuSocle = port;
+  }
+
   prunePaths(paths: readonly string[]): void {
     // Une declaration EN ATTENTE deviendrait un noeud reel apres
     // l'elagage, donc un chemin migre reapparaitrait dans le trie.
@@ -686,6 +712,21 @@ export class CommandTrie {
       const matches = this.prefixMatch(node, tokenLower);
 
       if (matches.length === 1) {
+        // Un seul candidat EXECUTABLE ici, mais la machine en declare un
+        // autre au socle : c'est une ambiguite, pas une resolution.
+        const auSocle = matches[0].keyword === tokenLower ? []
+          : (this.rivauxDuSocle?.(matchedKeywords, tokenLower) ?? [])
+            .filter(mot => mot !== matches[0].keyword);
+        if (auSocle.length > 0) {
+          return {
+            status: 'ambiguous',
+            args,
+            matchedKeywords,
+            error: `% Ambiguous command: "${token}" (matches: `
+              + `${[matches[0].keyword, ...auSocle].join(', ')})`,
+            errorPos: input.indexOf(token),
+          };
+        }
         node = matches[0];
         matchedKeywords.push(node.keyword);
         paramIdx = 0;
@@ -706,28 +747,17 @@ export class CommandTrie {
       }
 
       if (matches.length > 1) {
-        if (i > 0 && i < tokens.length - 1) {
-          const nextToken = tokens[i + 1].toLowerCase();
-          const viable = matches.filter(m => {
-            const exactNext = m.children.get(nextToken);
-            if (exactNext) return true;
-            const prefixNext = this.prefixMatch(m, nextToken);
-            if (prefixNext.length > 0) return true;
-            if (m.greedy && m.children.size === 0) return true;
-            return false;
-          });
-          if (viable.length === 1) {
-            node = viable[0];
-            matchedKeywords.push(node.keyword);
-            paramIdx = 0;
-            if (node.greedy && i < tokens.length - 1) {
-              args.push(...tokens.slice(i + 1));
-              return this.finish(node, args, matchedKeywords, input);
-            }
-            continue;
-          }
-        }
-
+        /*
+         * L'abreviation se juge sur le MOT, jamais sur ce qui suit. Ce
+         * bloc departageait les candidats en regardant si le mot
+         * suivant leur convenait : `ip rout 192.168.9.0 …` posait donc
+         * la route, `route` etant le seul des deux a accepter une
+         * adresse, alors que `ip rout` seul etait refuse. La meme
+         * frappe decidait ou non selon ce qu'on ecrivait apres, et une
+         * faute de frappe appliquait une commande que personne n'avait
+         * tapee. IOS tranche l'inverse, sur une saisie qui porte
+         * pourtant un mot de plus : `con t` rend `% Ambiguous command`.
+         */
         const matchNames = matches.map(m => m.keyword).join(', ');
         return {
           status: 'ambiguous',

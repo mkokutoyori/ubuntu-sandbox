@@ -3932,7 +3932,7 @@ export class HuaweiSwitchShell implements ISwitchShell {
     for (const m of t.members) {
       const info = liveByPort.get(m);
       const etatActeur = info
-        ? buildActorState(info.mode, info, cfg?.fastRate ?? false) : 0;
+        ? buildActorState(info.mode, info, agent?.rateOf(info) ?? false) : 0;
       lignes.push(
         `${m.padEnd(29)}${(info?.selected ? 'Selected' : 'Unselect').padEnd(9)}`
         + `${portTypeVrp(m).padEnd(9)}${String(info?.portPriority ?? 32768).padEnd(8)}`

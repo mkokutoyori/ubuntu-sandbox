@@ -4,10 +4,11 @@ import { ReactiveAgentBase } from '../core/ReactiveAgentBase';
 import {
   type LacpAdminMode, type LacpConfig, type LacpFrame, type LacpPortInfo,
   type LacpPortState, type LacpActorInfo, type LacpGroup, type MarkerFrame,
+  type LacpAggregatorSelection,
   MARKER_RESPONSE,
   createDefaultLacpConfig, buildActorState, compareSystemId, partnerWantsFastRate,
   ETHERTYPE_LACP, LACP_SLOW_MAC,
-  LACP_FLAG_SYNC, LACP_FLAG_COLLECTING, LACP_FLAG_DISTRIBUTING,
+  LACP_FLAG_SYNC,
 } from './types';
 import { MACAddress, type EthernetFrame } from '../core/types';
 import type { LinkSendRequest } from '../layers/link/LinkLayer';
@@ -26,11 +27,15 @@ export interface LacpHost {
    * DTP and UDLD already use for their own state changes.
    */
   onLacpBundleChanged?(portName: string, groupKey: string, bundled: boolean): void;
+  actorKeyFor?(portName: string, groupId: number): number;
 }
 
 export class LacpAgent extends ReactiveAgentBase {
   private config: LacpConfig;
-  private readonly advertising = new Set<string>();
+  private readonly advertising = new Map<string, number>();
+  private readonly lastAdvertised = new Map<string, number>();
+  private advertiseDepth = 0;
+  private readonly pendingFastRate = new Map<string, boolean | null>();
   private readonly lacpduSent = new Map<string, number>();
   private readonly lacpduReceived = new Map<string, number>();
   private readonly markerReceived = new Map<string, number>();
@@ -77,6 +82,15 @@ export class LacpAgent extends ReactiveAgentBase {
     this.recompute();
   }
 
+  setSystemId(systemId: string): void {
+    this.config.systemId = systemId.toLowerCase();
+    this.recompute();
+  }
+
+  actorKeyOf(p: LacpPortInfo): number {
+    return this.host.actorKeyFor?.(p.portName, p.groupId) ?? p.groupId;
+  }
+
   /**
    * `lacp port-priority`. Advertised to the partner, which is the
    * field's real job; nothing here arbitrates on it, since this engine
@@ -87,6 +101,24 @@ export class LacpAgent extends ReactiveAgentBase {
     if (!p || priority < 0 || priority > 65535) return;
     p.portPriority = priority;
     this.advertise(portName);
+  }
+
+  rateOf(p: LacpPortInfo): boolean {
+    return p.fastRate ?? this.config.fastRate;
+  }
+
+  setPortFastRate(portName: string, fast: boolean | null): void {
+    const p = this.config.ports.get(portName);
+    if (!p) {
+      this.pendingFastRate.set(portName, fast);
+      return;
+    }
+    p.fastRate = fast;
+    this.advertise(portName, true);
+  }
+
+  setDefaultPortPriority(priority: number): void {
+    this.config.defaultPortPriority = priority;
   }
 
   setFastRate(on: boolean): void {
@@ -104,6 +136,7 @@ export class LacpAgent extends ReactiveAgentBase {
         name: name ?? `Port-channel${groupId}`,
         loadBalance: loadBalance ?? this.config.loadBalance,
         minLinks: 0, maxLinks: 0, preempt: true, preemptDelay: 30,
+        adSelect: 'stable', activeLag: null,
       };
       this.config.groups.set(groupId, g);
     } else {
@@ -114,6 +147,7 @@ export class LacpAgent extends ReactiveAgentBase {
 
   setGroupLimits(groupId: number, limits: {
     minLinks?: number; maxLinks?: number; preempt?: boolean; preemptDelay?: number;
+    adSelect?: LacpAggregatorSelection;
   }): void {
     this.ensureGroup(groupId);
     const g = this.config.groups.get(groupId)!;
@@ -121,13 +155,35 @@ export class LacpAgent extends ReactiveAgentBase {
     if (limits.maxLinks !== undefined) g.maxLinks = limits.maxLinks;
     if (limits.preempt !== undefined) g.preempt = limits.preempt;
     if (limits.preemptDelay !== undefined) g.preemptDelay = limits.preemptDelay;
+    if (limits.adSelect !== undefined) g.adSelect = limits.adSelect;
     this.recompute();
+  }
+
+  /**
+   * The LAG a port belongs to, 802.1AX §6.4.15 and the kernel's own
+   * match in `ad_port_selection_logic`: same actor key, same partner
+   * system and same partner key. Two neighbours are two LAGs.
+   */
+  lagIdOf(p: LacpPortInfo): string {
+    if (!p.partner) return `individual:${p.portName}`;
+    return `${this.actorKeyOf(p)}|${p.partner.systemPriority}`
+      + `|${p.partner.systemId.toLowerCase()}|${p.partner.key}`;
+  }
+
+  /** The aggregator id `/proc/net/bonding` prints, stable per LAG. */
+  aggregatorIdOf(p: LacpPortInfo): number {
+    const lags = [...new Set(this.getGroupMembers(p.groupId)
+      .filter(m => m.partner !== null)
+      .map(m => this.lagIdOf(m)))];
+    const rang = lags.indexOf(this.lagIdOf(p));
+    return rang < 0 ? p.groupId : rang + 1;
   }
 
   getGroupLimits(groupId: number): LacpGroup {
     return this.config.groups.get(groupId)
       ?? { name: `Port-channel${groupId}`, loadBalance: this.config.loadBalance,
-        minLinks: 0, maxLinks: 0, preempt: true, preemptDelay: 30 };
+        minLinks: 0, maxLinks: 0, preempt: true, preemptDelay: 30,
+        adSelect: 'stable', activeLag: null };
   }
 
   addPortToGroup(portName: string, groupId: number, mode: LacpAdminMode): void {
@@ -135,14 +191,24 @@ export class LacpAgent extends ReactiveAgentBase {
     let p = this.config.ports.get(portName);
     if (!p) {
       p = {
-        portName, groupId, mode, portPriority: 32768,
+        portName, groupId, mode, portPriority: this.config.defaultPortPriority,
+        fastRate: this.pendingFastRate.get(portName) ?? null,
         state: 'standalone', partner: null,
         selected: false, bundled: false, lastRxMs: 0,
+        churnActorState: 'none', churnPartnerState: 'none',
+        churnActorCount: 0, churnPartnerCount: 0,
+        churnActorDeadlineMs: 0, churnPartnerDeadlineMs: 0,
       };
       this.config.ports.set(portName, p);
+      if (mode !== 'on') this.armChurn(p);
     } else {
+      // Changer le groupe ou le mode REINITIALISE le port (BEGIN), donc
+      // relance la surveillance : sans cela, passer de `on` a `active`
+      // laissait une machine qui n'avait jamais ete armee.
+      const reinitialise = p.groupId !== groupId || p.mode !== mode;
       p.groupId = groupId;
       p.mode = mode;
+      if (reinitialise && mode !== 'on') this.armChurn(p);
     }
     this.recompute();
     if (this.config.enabled && mode === 'active') this.advertise(portName);
@@ -208,11 +274,14 @@ export class LacpAgent extends ReactiveAgentBase {
     if (!p) return;
     if (p.mode === 'on') return;
     this.lacpduReceived.set(portName, (this.lacpduReceived.get(portName) ?? 0) + 1);
+    const etaitCourant = p.partner !== null && p.state !== 'expired';
     p.partner = { ...payload.actor };
     p.lastRxMs = Date.now();
     // A fresh LACPDU revives an expired port (802.3ad receive machine:
     // EXPIRED → CURRENT); selection below re-bundles it.
     if (p.state === 'expired') p.state = 'standalone';
+    // §43.4.17: leaving anything but CURRENT restarts the churn watch.
+    if (!etaitCourant) this.armChurn(p);
     this.getBus().publish({
       topic: 'lacp.frame.received',
       payload: {
@@ -255,7 +324,7 @@ export class LacpAgent extends ReactiveAgentBase {
     }
   }
 
-  advertise(portName: string): void {
+  advertise(portName: string, force = false): void {
     if (!this.config.enabled) return;
     const port = this.host.getPort(portName);
     if (!port || !port.getIsUp() || !port.isConnected()) return;
@@ -264,10 +333,10 @@ export class LacpAgent extends ReactiveAgentBase {
     const actor: LacpActorInfo = {
       systemPriority: this.config.systemPriority,
       systemId: this.config.systemId,
-      key: p.groupId,
+      key: this.actorKeyOf(p),
       portPriority: p.portPriority,
       portNumber: this.portNumberFor(portName),
-      state: buildActorState(p.mode, p, this.config.fastRate),
+      state: buildActorState(p.mode, p, this.rateOf(p)),
     };
     const partner: LacpActorInfo = p.partner ?? {
       systemPriority: 0, systemId: '00:00:00:00:00:00',
@@ -277,8 +346,10 @@ export class LacpAgent extends ReactiveAgentBase {
       type: 'lacp', subtype: 0x01, version: 0x01,
       actor, partner, collectorMaxDelay: 0,
     };
-    if (this.advertising.has(portName)) return;
-    this.advertising.add(portName);
+    const enCours = this.advertising.get(portName) ?? 0;
+    if (enCours > 0 && !force) return;
+    this.advertising.set(portName, enCours + 1);
+    this.lastAdvertised.set(portName, actor.state);
     try {
       this.host.sendOnLink({
         iface: portName,
@@ -286,7 +357,7 @@ export class LacpAgent extends ReactiveAgentBase {
         etherType: ETHERTYPE_LACP,
         payload,
       });
-    } finally { this.advertising.delete(portName); }
+    } finally { this.advertising.set(portName, enCours); }
     this.lacpduSent.set(portName, (this.lacpduSent.get(portName) ?? 0) + 1);
     this.getBus().publish({
       topic: 'lacp.frame.sent',
@@ -297,9 +368,16 @@ export class LacpAgent extends ReactiveAgentBase {
     });
   }
 
+  private static readonly MAX_NTT_DEPTH = 6;
+
   private maybeAdvertiseBack(portName: string): void {
-    if (this.advertising.has(portName)) return;
-    this.advertise(portName);
+    const p = this.config.ports.get(portName);
+    const ntt = p !== undefined
+      && this.lastAdvertised.get(portName) !== buildActorState(p.mode, p, this.rateOf(p));
+    if ((this.advertising.get(portName) ?? 0) > 0 && !ntt) return;
+    if (this.advertiseDepth >= LacpAgent.MAX_NTT_DEPTH) return;
+    this.advertiseDepth += 1;
+    try { this.advertise(portName, true); } finally { this.advertiseDepth -= 1; }
   }
 
   private portNumberFor(portName: string): number {
@@ -312,12 +390,12 @@ export class LacpAgent extends ReactiveAgentBase {
   protected armTimers(): void {
     this.scheduleInterval('slow', () => this.tick('slow'), 30_000);
     this.scheduleInterval('fast', () => this.tick('fast'), 1_000);
-    this.scheduleInterval('expiry', () => this.expireDue(), 1_000);
+    this.scheduleInterval('expiry', () => { this.expireDue(); this.churnDue(); }, 1_000);
   }
 
   /** current_while (802.3ad §43.4.12): 3 × the interval we requested. */
-  private rxTimeoutMs(): number {
-    return this.config.fastRate ? 3_000 : 90_000;
+  private rxTimeoutMs(p: LacpPortInfo): number {
+    return this.rateOf(p) ? 3_000 : 90_000;
   }
 
   /** EXPIRED keeps partner info one short interval before defaulting. */
@@ -335,15 +413,16 @@ export class LacpAgent extends ReactiveAgentBase {
       const port = this.host.getPort(p.portName);
       if (!port || !port.getIsUp() || !port.isConnected()) continue;
       const elapsed = now - p.lastRxMs;
-      if (p.state !== 'expired' && elapsed > this.rxTimeoutMs()) {
+      if (p.state !== 'expired' && elapsed > this.rxTimeoutMs(p)) {
         const oldState = p.state;
         const oldBundled = p.bundled;
         p.state = 'expired';
         p.selected = false;
         p.bundled = false;
+        this.armChurn(p);
         this.maybeEmitStateChange(p, oldState, oldBundled, 'partner-timeout');
       } else if (p.state === 'expired'
-        && elapsed > this.rxTimeoutMs() + LacpAgent.EXPIRED_GRACE_MS) {
+        && elapsed > this.rxTimeoutMs(p) + LacpAgent.EXPIRED_GRACE_MS) {
         // DEFAULTED: forget the partner entirely.
         const oldState = p.state;
         p.partner = null;
@@ -355,12 +434,57 @@ export class LacpAgent extends ReactiveAgentBase {
     }
   }
 
+  /**
+   * 802.3ad §43.4.17. Sixty seconds after the port is disturbed, the
+   * machine says whether each end reached synchronisation; if it did
+   * not, that is a CHURN and it is counted. Once settled the machine
+   * stays put until something disturbs the port again — which is why
+   * the deadline is cleared rather than rearmed.
+   */
+  private static readonly CHURN_DETECTION_MS = 60_000;
+
+  private armChurn(p: LacpPortInfo): void {
+    const now = Date.now();
+    p.churnActorState = 'monitoring';
+    p.churnPartnerState = 'monitoring';
+    p.churnActorDeadlineMs = now + LacpAgent.CHURN_DETECTION_MS;
+    p.churnPartnerDeadlineMs = now + LacpAgent.CHURN_DETECTION_MS;
+  }
+
+  private churnDue(): void {
+    const now = Date.now();
+    for (const p of this.config.ports.values()) {
+      if (p.churnActorDeadlineMs !== 0 && now >= p.churnActorDeadlineMs) {
+        p.churnActorDeadlineMs = 0;
+        if (p.churnActorState === 'monitoring') {
+          if (p.selected) {
+            p.churnActorState = 'none';
+          } else {
+            p.churnActorCount += 1;
+            p.churnActorState = 'churned';
+          }
+        }
+      }
+      if (p.churnPartnerDeadlineMs !== 0 && now >= p.churnPartnerDeadlineMs) {
+        p.churnPartnerDeadlineMs = 0;
+        if (p.churnPartnerState === 'monitoring') {
+          if (((p.partner?.state ?? 0) & LACP_FLAG_SYNC) !== 0) {
+            p.churnPartnerState = 'none';
+          } else {
+            p.churnPartnerCount += 1;
+            p.churnPartnerState = 'churned';
+          }
+        }
+      }
+    }
+  }
+
   private tick(rate: 'slow' | 'fast'): void {
     for (const p of this.config.ports.values()) {
       const port = this.host.getPort(p.portName);
       if (!port || !port.getIsUp() || !port.isConnected()) continue;
       if (p.mode !== 'active') continue;
-      const rapide = this.config.fastRate
+      const rapide = this.rateOf(p)
         || (p.partner !== null && partnerWantsFastRate(p.partner.state));
       if (rate === 'slow' && rapide) continue;
       if (rate === 'fast' && !rapide) continue;
@@ -410,19 +534,109 @@ export class LacpAgent extends ReactiveAgentBase {
    * decide, et parmi ses candidats il classe par priorite de port puis
    * par numero de port.
    */
-  private static compareCandidates(a: LacpPortInfo, b: LacpPortInfo): number {
-    if (a.portPriority !== b.portPriority) return a.portPriority - b.portPriority;
-    return a.portName.localeCompare(b.portName, undefined, { numeric: true });
+  private partnerDecides(candidats: LacpPortInfo[]): boolean {
+    const partenaire = candidats.find(p => p.partner)?.partner;
+    if (!partenaire) return false;
+    return compareSystemId(
+      { priority: partenaire.systemPriority, id: partenaire.systemId },
+      { priority: this.config.systemPriority, id: this.config.systemId },
+    ) < 0;
+  }
+
+  private compareCandidates(suivi: boolean) {
+    return (a: LacpPortInfo, b: LacpPortInfo): number => {
+      const prio = (p: LacpPortInfo) => (suivi ? p.partner?.portPriority : p.portPriority) ?? 32768;
+      if (prio(a) !== prio(b)) return prio(a) - prio(b);
+      const num = (p: LacpPortInfo) => (suivi
+        ? p.partner?.portNumber ?? 0
+        : this.portNumberFor(p.portName));
+      if (num(a) !== num(b)) return num(a) - num(b);
+      return a.portName.localeCompare(b.portName, undefined, { numeric: true });
+    };
   }
 
   private holdingSlot = new Set<string>();
+
+  private linkSpeedOf(p: LacpPortInfo): number {
+    return this.host.getPort(p.portName)?.getNegotiatedSpeed() ?? 0;
+  }
+
+  /**
+   * `ad_agg_selection_test` : on prefere d'abord l'agregation dont le
+   * partenaire a REPONDU, puis on applique la politique. `count`
+   * departage a egalite par la bande passante, ce que le noyau fait par
+   * un `fallthrough` explicite.
+   */
+  private betterAggregate(
+    a: { lag: string; ports: LacpPortInfo[] },
+    b: { lag: string; ports: LacpPortInfo[] },
+    policy: LacpAggregatorSelection,
+  ): boolean {
+    const repond = (g: { ports: LacpPortInfo[] }) => g.ports.some(p => p.partner !== null);
+    if (repond(b) !== repond(a)) return repond(b);
+    const bande = (g: { ports: LacpPortInfo[] }) =>
+      g.ports.reduce((t, p) => t + this.linkSpeedOf(p), 0);
+    if (policy === 'count' && b.ports.length !== a.ports.length) {
+      return b.ports.length > a.ports.length;
+    }
+    return bande(b) > bande(a);
+  }
+
+  /**
+   * 802.1AX §6.4.15 : deux voisins font DEUX agregations, et une seule
+   * porte le trafic. Sans cette regle un serveur cable a deux
+   * commutateurs sans MLAG groupait les quatre liens et pontait les
+   * deux commutateurs sans qu'aucun protocole ne le dise.
+   */
+  private selectActiveAggregate(members: LacpPortInfo[]): void {
+    if (members.length === 0) return;
+    const groupe = this.config.groups.get(members[0].groupId);
+    if (!groupe) return;
+    const parLag = new Map<string, LacpPortInfo[]>();
+    for (const p of members) {
+      if (!p.bundled) continue;
+      const lag = this.lagIdOf(p);
+      const liste = parLag.get(lag) ?? [];
+      liste.push(p);
+      parLag.set(lag, liste);
+    }
+    if (parLag.size === 0) { groupe.activeLag = null; return; }
+
+    const candidats = [...parLag.entries()].map(([lag, ports]) => ({ lag, ports }));
+    let meilleur = candidats[0];
+    for (const c of candidats.slice(1)) {
+      if (this.betterAggregate(meilleur, c, groupe.adSelect)) meilleur = c;
+    }
+    // `stable` ne remplace pas l'active tant qu'elle porte encore.
+    const tenante = groupe.activeLag !== null ? parLag.get(groupe.activeLag) : undefined;
+    const actif = groupe.adSelect === 'stable' && tenante && tenante.length > 0
+      ? groupe.activeLag! : meilleur.lag;
+    groupe.activeLag = actif;
+
+    for (const [lag, ports] of parLag) {
+      if (lag === actif) continue;
+      for (const p of ports) {
+        p.state = 'suspended'; p.selected = false; p.bundled = false;
+      }
+    }
+  }
+
+  private applyPartnerSync(members: LacpPortInfo[]): void {
+    for (const p of members) {
+      if (!p.bundled || p.mode === 'on' || !p.partner) continue;
+      if ((p.partner.state & LACP_FLAG_SYNC) !== 0) continue;
+      p.state = 'standby';
+      p.bundled = false;
+    }
+  }
 
   private applyGroupLimits(members: LacpPortInfo[]): void {
     if (members.length === 0) return;
     const limites = this.config.groups.get(members[0].groupId);
     const min = limites?.minLinks ?? 0;
     const max = limites?.maxLinks ?? 0;
-    const candidats = members.filter(p => p.bundled).sort(LacpAgent.compareCandidates);
+    const candidats = members.filter(p => p.bundled);
+    candidats.sort(this.compareCandidates(this.partnerDecides(candidats)));
     if (limites?.preempt === false) {
       const tenants = candidats.filter(p => this.holdingSlot.has(p.portName));
       const autres = candidats.filter(p => !this.holdingSlot.has(p.portName));
@@ -448,8 +662,7 @@ export class LacpAgent extends ReactiveAgentBase {
       // « un câble est branché » ne suffit pas : un membre dont le pair
       // est désactivé ou hors tension ne porte plus rien et doit quitter
       // l'agrégat (docs/PRD-Link-State.md §6).
-      const linkUp = !!port && port.isOperationallyUp();
-      if (!linkUp) {
+      if (!port || !port.isOperationallyUp()) {
         p.state = 'standalone'; p.selected = false; p.bundled = false;
       } else if (p.mode === 'on') {
         p.state = 'bundled'; p.selected = true; p.bundled = true;
@@ -457,7 +670,9 @@ export class LacpAgent extends ReactiveAgentBase {
         // Stays out of the aggregate until a fresh LACPDU arrives
         // (handleFrame clears the state) or the partner is defaulted.
         p.selected = false; p.bundled = false;
-      } else if (p.partner && p.partner.key === p.groupId) {
+      } else if (port.getNegotiatedDuplex() === 'half') {
+        p.state = 'standalone'; p.selected = false; p.bundled = false;
+      } else if (p.partner) {
         const sameSystem = compareSystemId(
           { priority: this.config.systemPriority, id: this.config.systemId },
           { priority: p.partner.systemPriority, id: p.partner.systemId },
@@ -471,7 +686,9 @@ export class LacpAgent extends ReactiveAgentBase {
         p.state = 'standalone'; p.selected = false; p.bundled = false;
       }
     }
+    this.selectActiveAggregate(members);
     this.applyGroupLimits(members);
+    this.applyPartnerSync(members);
     members.forEach((p, i) => this.maybeEmitStateChange(p, avant[i].state, avant[i].bundled));
   }
 
