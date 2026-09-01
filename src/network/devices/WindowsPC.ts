@@ -2582,7 +2582,7 @@ export class WindowsPC extends EndHost implements UserAccountHost {
               throw e;
             }
           },
-        }, args);
+        }, args, splitCmdArgs(expanded, true).slice(1));
       case 'ver':     return WindowsPC.VER_STRING;
       case 'hostname': return this.hostname;
       case 'systeminfo': return this.cmdSysteminfo();

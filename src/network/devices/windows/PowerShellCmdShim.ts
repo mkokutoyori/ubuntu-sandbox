@@ -80,9 +80,9 @@ function quoteForPs(path: string): string {
   return `'${path.replace(/'/g, "''")}'`;
 }
 
-function extractPsScript(args: string[]): string {
+function psScriptStart(args: string[]): number {
   const cIdx = args.findIndex(a => /^-c(ommand)?$/i.test(a));
-  if (cIdx !== -1) return args.slice(cIdx + 1).join(' ');
+  if (cIdx !== -1) return cIdx + 1;
   let i = 0;
   while (i < args.length) {
     const a = args[i].toLowerCase();
@@ -91,12 +91,13 @@ function extractPsScript(args: string[]): string {
     if (a === '-' || a === '--') { i++; break; }
     break;
   }
-  return args.slice(i).join(' ');
+  return i;
 }
 
 export async function runPowerShellShim(
   ctx: PsCmdShimContext,
   args: string[],
+  rawArgs?: string[],
 ): Promise<string> {
   const file = extractFileInvocation(args);
   if (file) {
@@ -107,7 +108,8 @@ export async function runPowerShellShim(
     return String(await ctx.runFullPs(call)).replace(/\s+$/, '');
   }
 
-  const raw = extractPsScript(args).trim();
+  const source = rawArgs && rawArgs.length === args.length ? rawArgs : args;
+  const raw = source.slice(psScriptStart(args)).join(' ').trim();
   if (!raw) return '';
   const script = stripBalancedQuotes(raw);
   const state: State = ctx.shimState ?? createShimState();
@@ -115,7 +117,10 @@ export async function runPowerShellShim(
 }
 
 function stripBalancedQuotes(s: string): string {
-  if (s.length >= 2 && ((s[0] === '"' && s[s.length - 1] === '"') || (s[0] === "'" && s[s.length - 1] === "'"))) {
+  if (s.length >= 2 && s[0] === '"' && s[s.length - 1] === '"') {
+    return s.slice(1, -1).replace(/""/g, '"');
+  }
+  if (s.length >= 2 && s[0] === "'" && s[s.length - 1] === "'") {
     return s.slice(1, -1);
   }
   return s;
