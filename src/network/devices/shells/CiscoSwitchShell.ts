@@ -2439,6 +2439,39 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
     return this.resolveInterfaceName(name);
   }
 
+  private dot1xPaeSpecs(): CommandSpec[] {
+    const role: ArgumentSpec = {
+      name: 'role', type: 'ENUM', description: '802.1X PAE role',
+      values: [
+        { keyword: 'authenticator', description: 'Set the port as authenticator' },
+        { keyword: 'both', description: 'Set the port as both supplicant and authenticator' },
+        { keyword: 'supplicant', description: 'Set the port as supplicant' },
+      ],
+    };
+    const agent = () => this.d().getDot1xAgent();
+    return [{
+      id: 'config-if-dot1x-pae',
+      path: ['dot1x', 'pae', role],
+      description: 'Set the PAE role of this interface',
+      undoDescription: 'Remove the PAE role from this interface',
+      modes: ['config-if'], minPrivilege: 15,
+      run: (_session, args) => {
+        if (args.role !== 'authenticator') {
+          return '% Only the authenticator role is supported '
+            + '(no supplicant implementation).';
+        }
+        return this.applyToSelectedInterfaces((portName) => {
+          agent().setPortMode(portName, 'disabled');
+          return '';
+        });
+      },
+      undo: () => this.applyToSelectedInterfaces((portName) => {
+        agent().removePort(portName);
+        return '';
+      }),
+    }];
+  }
+
   private stpInterfaceHost(): StpInterfaceHost {
     return {
       targetInterfaces: () => this.selectedInterface
@@ -2528,6 +2561,7 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
       ...super.socleSpecs(),
       ...switchPortPhysicalSpecs(() => this.portPhysiqueHost()),
       ...stpInterfaceSpecs(() => this.stpInterfaceHost()),
+      ...this.dot1xPaeSpecs(),
       ...dhcpClientFamily(),
       ...this.stpShowSpecs(),
       ...dhcpPoolSpecs(this.dhcpPoolContext()),
@@ -6297,21 +6331,6 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
 
     // The PAE role registers the port with the authenticator; on its own
     // it does not control anything — `port-control` decides that.
-    trie.configIf.registerGreedy('dot1x pae', '802.1X PAE role', (args) => {
-      const role = (args[0] ?? '').toLowerCase();
-      if (role !== 'authenticator') {
-        return '% Only the authenticator role is supported (no supplicant implementation).';
-      }
-      return this.applyToSelectedInterfaces(portName => {
-        agent().setPortMode(portName, 'disabled');
-        return '';
-      });
-    });
-    trie.configIf.register('no dot1x pae authenticator', 'Remove 802.1X PAE role', () =>
-      this.applyToSelectedInterfaces(portName => {
-        agent().removePort(portName);
-        return '';
-      }));
 
     const MODES: Record<string, import('@/network/dot1x/types').Dot1xPortMode> = {
       auto: 'auto',
