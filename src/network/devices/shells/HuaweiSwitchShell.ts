@@ -4485,6 +4485,10 @@ export class HuaweiSwitchShell implements ISwitchShell {
     return blocs;
   }
 
+  buildRunningConfig(sw: HuaweiSwitchDevice): string {
+    return this.displayCurrentConfig(sw);
+  }
+
   private displayCurrentConfig(sw: HuaweiSwitchDevice): string {
     const lines = [
       '#',

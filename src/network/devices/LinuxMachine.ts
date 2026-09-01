@@ -2556,6 +2556,15 @@ export abstract class LinuxMachine extends EndHost
 
   getBonds(): ReadonlyMap<string, LinuxBond> { return this.bonds; }
 
+  restoreBond(name: string, options: readonly string[], slaves: readonly string[]): void {
+    if (!this.bonds.has(name)) this.addBondInterface(name);
+    for (const ligne of options) {
+      const espace = ligne.indexOf(' ');
+      if (espace > 0) this.setBondOption(name, ligne.slice(0, espace), ligne.slice(espace + 1));
+    }
+    for (const esclave of slaves) this.enslaveToBond(name, esclave);
+  }
+
   getLacpAgent(): LacpAgent {
     if (!this.lacpAgentInstance) {
       this.lacpAgentInstance = new LacpAgent(

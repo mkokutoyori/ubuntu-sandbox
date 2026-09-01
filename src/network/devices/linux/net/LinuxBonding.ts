@@ -72,6 +72,28 @@ export function defaultBondOptions(): BondOptions {
   };
 }
 
+export function bondOptionLines(options: BondOptions): string[] {
+  const defauts = defaultBondOptions();
+  const paires: [string, string, string][] = [
+    ['mode', options.mode, defauts.mode],
+    ['miimon', String(options.miimon), String(defauts.miimon)],
+    ['updelay', String(options.updelay), String(defauts.updelay)],
+    ['downdelay', String(options.downdelay), String(defauts.downdelay)],
+    ['peer_notif_delay', String(options.peerNotifDelay), String(defauts.peerNotifDelay)],
+    ['min_links', String(options.minLinks), String(defauts.minLinks)],
+    ['lacp_rate', options.lacpRate, defauts.lacpRate],
+    ['lacp_active', options.lacpActive ? 'on' : 'off', defauts.lacpActive ? 'on' : 'off'],
+    ['xmit_hash_policy', options.xmitHashPolicy, defauts.xmitHashPolicy],
+    ['ad_select', options.adSelect, defauts.adSelect],
+    ['ad_actor_sys_prio', String(options.systemPriority), String(defauts.systemPriority)],
+    ['ad_actor_system', options.actorSystem, defauts.actorSystem],
+    ['ad_user_port_key', String(options.userPortKey), String(defauts.userPortKey)],
+  ];
+  return paires
+    .filter(([, valeur, defaut]) => valeur !== defaut)
+    .map(([cle, valeur]) => `${cle} ${valeur}`);
+}
+
 export interface BondSlaveView {
   name: string;
   mii: 'up' | 'down';

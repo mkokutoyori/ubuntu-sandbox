@@ -55,6 +55,7 @@ import {
   captureOracleState, restoreOracleState, type OracleTopologyState,
 } from '@/terminal/commands/database';
 import { VirtualFileSystem } from '@/network/devices/linux/VirtualFileSystem';
+import { bondOptionLines } from '@/network/devices/linux/net/LinuxBonding';
 import { buildConnection, type Connection } from './networkStore';
 
 /** Surfaced by Save/Export UI (rapport 09, item #55) so the user knows
@@ -144,6 +145,21 @@ interface TopologyLinuxServiceExport {
   active: boolean;
 }
 
+interface TopologyLinuxBondExport {
+  name: string;
+  options: string[];
+  slaves: string[];
+}
+
+interface TopologyWindowsTeamExport {
+  name: string;
+  teamingMode: string;
+  loadBalancingAlgorithm: string;
+  lacpTimer: string;
+  members: { name: string; adminMode: string }[];
+  teamNics: { name: string; vlanId: number | null; primary: boolean }[];
+}
+
 /**
  * A registry diff.
  *
@@ -226,6 +242,8 @@ interface TopologyDeviceExport {
    * again. A lab whose whole point is a stopped daemon came back healthy.
    */
   linuxServices?: TopologyLinuxServiceExport[];
+  linuxBonds?: TopologyLinuxBondExport[];
+  windowsTeams?: TopologyWindowsTeamExport[];
   /**
    * The device's Oracle database: its accounts, and a Data Pump dump of
    * everything they own. Absent on a machine that never opened one — the
@@ -639,6 +657,53 @@ function serviceMgrOf(device: LinuxMachine): {
   }).executor.serviceMgr;
 }
 
+function captureLinuxBonds(device: LinuxMachine): TopologyLinuxBondExport[] {
+  return [...device.getBonds().entries()].map(([name, bond]) => ({
+    name,
+    options: bondOptionLines(bond.options),
+    slaves: [...bond.slaves],
+  }));
+}
+
+function restoreLinuxBonds(device: LinuxMachine, bonds: TopologyLinuxBondExport[]): void {
+  for (const bond of bonds) device.restoreBond(bond.name, bond.options, bond.slaves);
+}
+
+function captureWindowsTeams(device: WindowsPC): TopologyWindowsTeamExport[] {
+  return [...device.getNicTeams().values()].map(team => ({
+    name: team.name,
+    teamingMode: team.teamingMode,
+    loadBalancingAlgorithm: team.loadBalancingAlgorithm,
+    lacpTimer: team.lacpTimer,
+    members: team.members.map(m => ({ name: m.name, adminMode: m.adminMode })),
+    teamNics: team.teamNics.map(n => ({ name: n.name, vlanId: n.vlanId, primary: n.primary })),
+  }));
+}
+
+function restoreWindowsTeams(device: WindowsPC, teams: TopologyWindowsTeamExport[]): void {
+  for (const team of teams) {
+    const primaire = team.teamNics.find(n => n.primary) ?? team.teamNics[0];
+    device.createNicTeam({
+      name: team.name,
+      members: team.members.map(m => ({
+        name: m.name, adminMode: m.adminMode as 'Active' | 'Standby',
+      })),
+      teamNics: [{
+        name: primaire?.name ?? team.name,
+        vlanId: primaire?.vlanId ?? null,
+        primary: true,
+      }],
+      teamingMode: team.teamingMode as 'LACP',
+      loadBalancingAlgorithm: team.loadBalancingAlgorithm as 'Dynamic',
+      lacpTimer: team.lacpTimer as 'Slow',
+    });
+    for (const nic of team.teamNics) {
+      if (nic.primary || nic.vlanId === null) continue;
+      device.addNicTeamNic(team.name, nic.vlanId, nic.name);
+    }
+  }
+}
+
 function captureLinuxServices(device: LinuxMachine): TopologyLinuxServiceExport[] {
   return serviceMgrOf(device).list().map((u) => ({
     name: u.name,
@@ -790,6 +855,8 @@ export function exportTopology(
       const { v4, v6 } = captureIptables(device);
       if (v4) entry.iptablesRules = v4;
       if (v6) entry.ip6tablesRules = v6;
+      const bonds = captureLinuxBonds(device);
+      if (bonds.length > 0) entry.linuxBonds = bonds;
       const services = captureLinuxServices(device);
       if (services.length > 0) entry.linuxServices = services;
     }
@@ -802,6 +869,8 @@ export function exportTopology(
       entry.windowsAccounts = { users: mgr.getAllUsers(), groups: mgr.getAllGroups() };
       const registry = captureRegistry(device);
       if (registry) entry.registry = registry;
+      const teams = captureWindowsTeams(device);
+      if (teams.length > 0) entry.windowsTeams = teams;
       const services = captureWindowsServices(device);
       if (services.length > 0) entry.windowsServices = services;
     }
@@ -1101,6 +1170,7 @@ export async function importTopology(json: TopologyExport): Promise<ImportResult
       // After the files, because a unit file the lab wrote has to exist
       // before the manager can be asked to enable or start it.
       if (devData.linuxServices) restoreLinuxServices(device, devData.linuxServices);
+      if (devData.linuxBonds) restoreLinuxBonds(device, devData.linuxBonds);
     }
     if (devData.oracle) restoreOracleState(device.getId(), devData.oracle);
     if (device instanceof WindowsPC) {
@@ -1118,6 +1188,7 @@ export async function importTopology(json: TopologyExport): Promise<ImportResult
       // ends up showing exactly what was saved, projection included.
       if (devData.windowsServices) restoreWindowsServices(device, devData.windowsServices);
       if (devData.registry) restoreRegistry(device, devData.registry);
+      if (devData.windowsTeams) restoreWindowsTeams(device, devData.windowsTeams);
     }
     if ((device instanceof Router || device instanceof Switch) && devData.runningConfigText) {
       await replayVendorConfig(device, devData.runningConfigText);
