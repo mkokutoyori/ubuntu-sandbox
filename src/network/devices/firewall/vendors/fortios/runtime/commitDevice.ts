@@ -27,6 +27,9 @@ export function buildCommitDevice(
   return {
       applyInterface(name, patch) {
         if (patch.vdom) fw.assignInterfaceToVdom(name, patch.vdom);
+        if (patch.addressingMode) {
+          fw.getDhcp().setClientMode(name, patch.addressingMode === 'dhcp');
+        }
         if (patch.ip && patch.mask) fw.configureInterface(name, { ip: patch.ip, mask: patch.mask });
         if (patch.up !== undefined) fw.setInterfaceUp(name, patch.up);
         if (patch.allowAccess) fw.setAllowedAccess(name, patch.allowAccess);

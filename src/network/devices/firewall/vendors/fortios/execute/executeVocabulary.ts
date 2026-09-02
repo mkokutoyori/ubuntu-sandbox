@@ -35,6 +35,12 @@ export const FORTI_EXECUTE_COMMANDS: readonly FortiExecuteCommand[] = Object.fre
   { name: 'enter', help: 'Select virtual domain.' },
   { name: 'factoryreset', help: 'Reset the configuration to factory default.' },
   { name: 'ha', help: 'Cluster operations.' },
+  { name: 'interface', help: 'Interface client operations.',
+    options: [
+      { keyword: 'dhcpclient-renew', description: 'Renew the DHCP lease.' },
+      { keyword: 'dhcp6client-renew', description: 'Renew the DHCPv6 lease.' },
+      { keyword: 'pppoe-reconnect', description: 'Reconnect to the PPPoE server.' },
+    ] },
   { name: 'log', help: 'Log operations.' },
   { name: 'ping', help: 'Send ICMP echo requests.' },
   { name: 'ping6', help: 'Send IPv6 ICMP echo requests.' },

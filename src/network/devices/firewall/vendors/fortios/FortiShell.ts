@@ -1142,6 +1142,7 @@ export class FortiShell {
       case 'ha': return this.executeHa(tail);
       case 'dhcp': return this.executeDhcp(tail);
       case 'dhcp6': return this.executeDhcp6(tail);
+      case 'interface': return this.executeInterface(tail);
       case 'traceroute':
         return tail.length === 0
           ? FortiMessages.incomplete('a destination')
@@ -1302,6 +1303,31 @@ export class FortiShell {
     }
     return this.fw.bringUpIpsecTunnel(name)
       ? '' : FortiMessages.commandFail(`tunnel \`${name}\` did not come up.`);
+  }
+
+  private executeInterface(rest: readonly string[]): string {
+    const action = rest[0];
+    if (action === undefined) return FortiMessages.incomplete('an interface operation');
+    if (action !== 'dhcpclient-renew' && action !== 'dhcp6client-renew'
+      && action !== 'pppoe-reconnect') {
+      return FortiMessages.unknownAction(`interface ${action}`);
+    }
+    const name = rest[1];
+    if (name === undefined) return FortiMessages.incomplete('an interface name');
+    if (!this.fw.getInterfaceTable().get(name)) return FortiMessages.unknownKey(name);
+
+    if (action === 'dhcpclient-renew') {
+      if (!this.fw.getDhcp().isClientInterface(name)) {
+        return FortiMessages.commandFail(`${name} is not a DHCP client.`);
+      }
+      this.fw.getDhcp().acquireLease(name);
+      return `renewing dhcp lease on ${name}`;
+    }
+    return FortiMessages.unimplementedAction(`interface ${action} ${name}`,
+      action === 'dhcp6client-renew'
+        ? 'this build has no DHCPv6 client; an interface takes its IPv6 '
+          + 'address by `set ip6-address` or by autoconfiguration.'
+        : 'this build has no PPPoE client.');
   }
 
   private executeDhcp(rest: readonly string[]): string {

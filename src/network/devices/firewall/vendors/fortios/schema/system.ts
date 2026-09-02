@@ -552,6 +552,7 @@ export const SYSTEM_INTERFACE: FortiTableSpec = {
     const ip = mode === 'static' && isRouted(object) ? object.effective('ip') : [];
     context.device.applyInterface(object.key, {
       vdom: object.effective('vdom')[0],
+      addressingMode: (mode ?? 'static') as 'static' | 'dhcp' | 'pppoe',
       ip: ip[0],
       mask: ip[1],
       up: object.effective('status')[0] !== 'down',

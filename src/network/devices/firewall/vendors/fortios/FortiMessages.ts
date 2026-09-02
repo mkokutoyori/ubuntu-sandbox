@@ -82,6 +82,13 @@ export const FortiMessages = {
     );
   },
 
+  unimplementedAction(action: string, reason: string): string {
+    return fail(
+      FORTI_COMMAND_FAIL,
+      `\`execute ${action}\` exists on a real FortiGate; ${reason}`,
+    );
+  },
+
   needsConsole(action: string): string {
     return fail(
       FORTI_COMMAND_FAIL,
