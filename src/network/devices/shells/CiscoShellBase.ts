@@ -52,7 +52,11 @@ import { projectSnmpServiceOntoAgent } from '@/network/snmp/snmpProjection';
 import { renderStartupConfig } from './cisco/ciscoConfigSerializer';
 import { CommandTrie, type ParamType } from './CommandTrie';
 import { fhrpInterfaceSpecs, type FhrpPlacement } from './cisco/fhrpInterfaceSpecs';
+import {
+  parseSummerTimeRule, type SummerTimeRule,
+} from './cisco/clockSummerTime';
 import { privilegeRuleSpecs, type PrivilegeRuleHost } from './cisco/privilegeRuleSpecs';
+import { ipSshSpecs, type IpSshHost } from './cisco/ipSshSpecs';
 import { ipAddressInterfaceSpecs, type IpAddressHost } from './cisco/ipAddressInterfaceSpecs';
 import {
   interfaceLoadMtuSpecs, MTU_MIN,
@@ -151,7 +155,9 @@ import {
 import type { CiscoDnsConfig } from '../router/dns/CiscoDnsConfig';
 import type { RouterHostsTable } from '../router/dns/RouterHostsTable';
 import { CiscoConfigState, getConfigState } from '../inspection/config/CiscoConfigState';
-import { AliasRepository, type AliasMode } from '../inspection/config/AliasRepository';
+import {
+  AliasRepository, parseAliasMode, type AliasMode,
+} from '../inspection/config/AliasRepository';
 import { LoggingConfig, disabledTimestampSpec, bareTimestampSpec, deviceClockSource } from '../inspection/config/LoggingConfig';
 import type { TimestampSpec } from '../inspection/config/LoggingConfig';
 import { isPathReachable } from '../linux/network/HostLookup';
@@ -926,6 +932,10 @@ const IOS_HARDENING: readonly HardeningEntry[] = [
   [['ip', 'finger'], 'Enable finger service',
     'Disable finger service', (sec, on) => { sec.ipFinger = on; }],
 ];
+
+export const AS_PATH_LIST_RANGE: readonly [number, number] = [1, 500];
+export const COMMUNITY_LIST_RANGE: readonly [number, number] = [1, 500];
+export const LEGACY_QUEUE_LIST_RANGE: readonly [number, number] = [1, 16];
 
 export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
   // ─── State ───────────────────────────────────────────────────────
@@ -1974,6 +1984,27 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     if (mots.length === 0) throw new CliIncomplete();
     this.exigerCommandeConnue(scope, mots);
     return { scope, tous, niveau, commande: mots.join(' ') };
+  }
+
+  protected ipSshHost(): IpSshHost {
+    return {
+      sshConfig: () => getSecurityConfig(this.d()).ssh,
+      hasRsaKeys: () => getSecurityConfig(this.d()).cryptoKeys.length > 0,
+      onAuthRetriesChanged: (retries) => {
+        (this.d() as unknown as { _configureSshAuthRetries?: (n: number) => void })
+          ._configureSshAuthRetries?.(retries);
+      },
+    };
+  }
+
+  private exigerNumeroDeListe(
+    jeton: string | undefined, [min, max]: readonly [number, number],
+  ): number {
+    if (jeton === undefined) throw new CliIncomplete();
+    if (!/^\d+$/.test(jeton)) throw new CliInvalidInput({ token: jeton });
+    const numero = Number(jeton);
+    if (numero < min || numero > max) throw new CliInvalidInput({ token: jeton });
+    return numero;
   }
 
   protected privilegeRuleHost(): PrivilegeRuleHost {
@@ -4618,19 +4649,35 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
             { keyword: 'recurring', description: 'Recurring summer time' },
           ],
         },
+        undoArgs: [],
+        undoArgsOnlyNegated: true,
       },
-    ], () => ({ apply: (words) => this.applyClock(words) }));
+    ], () => ({ apply: (words, negate) => this.applyClock(words, negate) }));
   }
 
-  private applyClock(words: string[]): string {
+  private applyClock(words: string[], negate = false): string {
     const [tete, ...reste] = words;
     if (tete === 'set') return this.applyClockSet(reste);
+
+    let regle: SummerTimeRule | null = null;
+    if (tete === 'summer-time' && !negate) {
+      const verdict = parseSummerTimeRule(reste.slice(1));
+      if (verdict.badToken !== undefined) {
+        throw new CliInvalidInput({ token: verdict.badToken });
+      }
+      regle = verdict.rule;
+    }
 
     const mgmt = getManagementService(this.d());
     if (!mgmt) return '';
     const config = mgmt.getClock();
 
     if (tete === 'timezone') {
+      if (negate) {
+        config.timezone = 'UTC';
+        config.offsetMin = 0;
+        return '';
+      }
       const heures = parseInt(reste[1] ?? '', 10);
       const minutes = parseInt(reste[2] ?? '0', 10);
       config.timezone = reste[0];
@@ -4639,11 +4686,17 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       return '';
     }
 
-    config.summerTimezone = reste[0];
-    if (reste[1]?.toLowerCase() === 'recurring') {
-      config.daylightStart = reste.slice(2, 6).join(' ');
-      config.daylightEnd = reste.slice(6, 10).join(' ');
+    if (negate) {
+      config.summerTimezone = '';
+      config.daylightStart = '';
+      config.daylightEnd = '';
+      return '';
     }
+
+    config.summerTimezone = reste[0] ?? '';
+    config.summerKind = regle?.kind ?? 'recurring';
+    config.daylightStart = regle?.start ?? '';
+    config.daylightEnd = regle?.end ?? '';
     return '';
   }
 
@@ -5506,6 +5559,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       ...this.arpSpecs(),
       ...this.identityBootSpecs(),
       ...privilegeRuleSpecs(() => this.privilegeRuleHost()),
+      ...ipSshSpecs(() => this.ipSshHost()),
       ...this.lineEntrySpecs(),
       ...this.showSocleSpecs(),
       ...this.archiveSubmodeSpecs(),
@@ -7269,7 +7323,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       .replace(/^no\s+/i, '').split(/\s+/)[0] ?? '';
     if (premier.length === 0) return false;
     return !this.getActiveTrie().enumerateCommandPaths()
-      .some(path => path.toLowerCase().split(' ')[0].startsWith(premier));
+      .some((path) => path.toLowerCase().split(' ')[0].startsWith(premier));
   }
 
   private trieProlonge(cmdPart: string): boolean {
@@ -8840,14 +8894,6 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
   }
 
   /** Map a CLI alias mode keyword to the repository's AliasMode. */
-  private aliasMode(token: string): AliasMode {
-    switch (token) {
-      case 'configure': return 'configure';
-      case 'interface': return 'interface';
-      case 'router': return 'router';
-      default: return 'exec';
-    }
-  }
 
   /**
    * Handle `terminal length <n>` / `terminal width <n>` / `terminal no length`
@@ -9440,15 +9486,21 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
 
     // `alias <mode> <name> <command…>` — real, working aliases.
     trie.registerGreedy('alias', 'Create a command alias', (args) => {
+      if (args.length === 0) return '% Incomplete command.';
+      const mode = parseAliasMode(args[0]);
+      if (mode === null) throw new CliInvalidInput({ token: args[0] });
       if (args.length < 3) return '% Incomplete command.';
-      const [modeTok, name, ...rest] = args;
+      const [, name, ...rest] = args;
       if (name.length > 31) return '% Alias name exceeds 31 characters.';
-      this.aliases.set(this.aliasMode(modeTok), name, rest.join(' '));
+      this.aliases.set(mode, name, rest.join(' '));
       return '';
     });
     trie.registerGreedy('no alias', 'Remove a command alias', (args) => {
+      if (args.length === 0) return '% Incomplete command.';
+      const mode = parseAliasMode(args[0]);
+      if (mode === null) throw new CliInvalidInput({ token: args[0] });
       if (args.length < 2) return '% Incomplete command.';
-      this.aliases.remove(this.aliasMode(args[0]), args[1]);
+      this.aliases.remove(mode, args[1]);
       return '';
     });
 
@@ -9485,9 +9537,11 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       return '';
     });
     trie.registerGreedy('ip community-list', 'Define BGP community list', (args, raw) => {
-      if (args.length < 3) return CISCO_ERRORS.INCOMPLETE;
+      if (args.length === 0) throw new CliIncomplete();
       const kind = args[0].toLowerCase();
       const named = kind === 'standard' || kind === 'expanded';
+      if (!named) this.exigerNumeroDeListe(args[0], COMMUNITY_LIST_RANGE);
+      if (args.length < 3) return CISCO_ERRORS.INCOMPLETE;
       const name = named ? args[1] : args[0];
       const rule = (named ? args.slice(2) : args.slice(1)).join(' ');
       const store = this.communityLists();
@@ -9500,6 +9554,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       return '';
     });
     trie.registerGreedy('ip as-path access-list', 'Define BGP AS-path filter', (args, raw) => {
+      this.exigerNumeroDeListe(args[0], AS_PATH_LIST_RANGE);
       if (args.length < 3) return CISCO_ERRORS.INCOMPLETE;
       const store = this.asPathLists();
       const list = store.get(args[0]) ?? [];
@@ -9510,11 +9565,13 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       return '';
     });
     trie.registerGreedy('priority-list', 'Legacy PQ list', (args, raw) => {
+      this.exigerNumeroDeListe(args[0], LEGACY_QUEUE_LIST_RANGE);
       const r = this.d() as unknown as { _recordUnhandledConfigLine?: (l: string) => void };
       r._recordUnhandledConfigLine?.(raw ?? `priority-list ${args.join(' ')}`);
       return '';
     });
     trie.registerGreedy('queue-list', 'Legacy CQ list', (args, raw) => {
+      this.exigerNumeroDeListe(args[0], LEGACY_QUEUE_LIST_RANGE);
       const r = this.d() as unknown as { _recordUnhandledConfigLine?: (l: string) => void };
       r._recordUnhandledConfigLine?.(raw ?? `queue-list ${args.join(' ')}`);
       return '';

@@ -114,11 +114,6 @@ export const SYSTEM_GLOBAL: FortiTableSpec = {
       ], 'no-vdom'),
       hidden: true,
     },
-    choice('firewall-session-dirty', 'Select how to manage sessions when a policy changes.', [
-      { keyword: 'check-all', description: 'Flush all current sessions and re-evaluate.' },
-      { keyword: 'check-new', description: 'Keep existing sessions, check new ones.' },
-      { keyword: 'check-policy-option', description: 'Use the policy setting.' },
-    ], 'check-all'),
     count('memory-use-threshold-extreme',
       'Threshold at which memory usage is considered extreme and new sessions'
       + ' are dropped, in percent of total RAM.',
@@ -141,6 +136,11 @@ export const SYSTEM_GLOBAL: FortiTableSpec = {
     ], 'pass'),
     count('auth-http-port', 'Port the captive portal answers HTTP on.', 1, 65535, 1000),
     count('auth-https-port', 'Port the captive portal answers HTTPS on.', 1, 65535, 1003),
+    enable('auth-keepalive',
+      'Enable to prevent user authentication sessions from timing out when idle.'),
+    count('ip-fragment-mem-thresholds',
+      'Maximum memory (MB) used to reassemble IPv4/IPv6 fragments.',
+      MIN_FRAGMENT_MEM_MB, MAX_FRAGMENT_MEM_MB, DEFAULT_FRAGMENT_MEM_MB),
     {
       name: 'timezone',
       help: 'Time zone.',
@@ -178,6 +178,8 @@ export const SYSTEM_GLOBAL: FortiTableSpec = {
       multiVdom: object.effective('vdom-mode')[0] !== 'no-vdom',
       authHttpPort: number('auth-http-port', 1000),
       authHttpsPort: number('auth-https-port', 1003),
+      authKeepAlive: object.effective('auth-keepalive')[0] === 'enable',
+      fragmentMemoryMb: number('ip-fragment-mem-thresholds', DEFAULT_FRAGMENT_MEM_MB),
       adminSshPort: number('admin-ssh-port', 22),
       adminTelnetPort: number('admin-telnet-port', 23),
       adminHttpPort: number('admin-port', 80),
@@ -350,13 +352,16 @@ export const SYSTEM_SETTINGS: FortiTableSpec = {
     ], 'profile-based'),
     { ...enable('central-nat', 'Enable/disable central NAT.'),
       availableWhen: (object) => !isTransparent(object) },
-    count('ip-fragment-mem-thresholds',
-      'Maximum memory (MB) used to reassemble IPv4/IPv6 fragments.',
-      MIN_FRAGMENT_MEM_MB, MAX_FRAGMENT_MEM_MB, DEFAULT_FRAGMENT_MEM_MB),
     { ...addressMask('manageip', 'Transparent mode management IP address and mask.'),
       availableWhen: isTransparent },
     { ...address('gateway', 'Transparent mode default gateway.'),
       availableWhen: isTransparent },
+    choice('firewall-session-dirty',
+      'Select how to manage sessions affected by firewall policy configuration changes.', [
+        { keyword: 'check-all', description: 'Flush the sessions the policy accepted.' },
+        { keyword: 'check-new', description: 'Keep existing sessions, check new ones.' },
+        { keyword: 'check-policy-option', description: 'Use each policy own setting.' },
+      ], 'check-all'),
     choice('lldp-transmission',
       'Enable/disable Link Layer Discovery Protocol (LLDP) for this VDOM '
       + 'or apply global settings to this VDOM.', [
@@ -377,9 +382,8 @@ export const SYSTEM_SETTINGS: FortiTableSpec = {
     context.device.setVdomLldp(
       (object.effective('lldp-transmission')[0] ?? 'global') as LldpVdomSetting,
       (object.effective('lldp-reception')[0] ?? 'global') as LldpVdomSetting);
-    context.device.applyFragmentMemoryThreshold(Number.parseInt(
-      object.effective('ip-fragment-mem-thresholds')[0]
-      ?? String(DEFAULT_FRAGMENT_MEM_MB), 10));
+    context.device.setSessionDirtyMode(
+      object.effective('firewall-session-dirty')[0] ?? 'check-all');
     context.device.applyVdomSettings({
       centralNat: object.effective('central-nat')[0] === 'enable',
       opmode: object.effective('opmode')[0] === 'transparent' ? 'transparent' : 'nat',

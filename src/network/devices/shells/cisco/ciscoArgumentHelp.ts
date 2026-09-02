@@ -1,6 +1,12 @@
 import type { CommandTrie, ParamSpec } from '../CommandTrie';
 import { estTypeSansNumero } from './CiscoConfigCommands';
-import { PASSWORD_MIN_LENGTH_MAX } from './CiscoSecurityCommands';
+import { ALIAS_MODE_VALUES } from '../../inspection/config/AliasRepository';
+import {
+  PASSWORD_MIN_LENGTH_MAX, RSA_MODULUS_MIN, RSA_MODULUS_MAX,
+} from './CiscoSecurityCommands';
+import {
+  AS_PATH_LIST_RANGE, COMMUNITY_LIST_RANGE, LEGACY_QUEUE_LIST_RANGE,
+} from '../CiscoShellBase';
 
 const IP = (name: string, description: string): ParamSpec =>
   ({ name, type: 'IP_ADDR', description });
@@ -157,16 +163,14 @@ function describeArgumentTypes(tries: ArgumentHelpTries): void {
 
   // ── Configuration globale ──
   tries.config.describeArgs('alias', [
-    ENUM('mode', 'Command mode of the alias', [
-      ['configure', 'Global configuration mode'],
-      ['exec', 'Exec mode'],
-      ['interface', 'Interface configuration mode'],
-      ['router', 'Router configuration mode'],
-    ]),
+    {
+      name: 'mode', type: 'ENUM', description: 'Command mode of the alias',
+      values: ALIAS_MODE_VALUES.map((v) => ({ ...v })),
+    },
     WORD('alias', 'Alias name'),
     LINE('command', 'Command the alias stands for'),
   ]);
-  for (const mode of ['configure', 'exec', 'interface', 'router']) {
+  for (const { keyword: mode } of ALIAS_MODE_VALUES) {
     tries.config.describeArgs(`alias ${mode}`, [
       WORD('alias', 'Alias name'),
       LINE('command', 'Command the alias stands for'),
@@ -176,12 +180,10 @@ function describeArgumentTypes(tries: ArgumentHelpTries): void {
     { name: 'time', type: 'WORD', description: 'Current time', literal: 'hh:mm:ss' },
   ]);
   tries.config.describeArgs('no alias', [
-    ENUM('mode', 'Command mode of the alias', [
-      ['configure', 'Global configuration mode'],
-      ['exec', 'Exec mode'],
-      ['interface', 'Interface configuration mode'],
-      ['router', 'Router configuration mode'],
-    ]),
+    {
+      name: 'mode', type: 'ENUM', description: 'Command mode of the alias',
+      values: ALIAS_MODE_VALUES.map((v) => ({ ...v })),
+    },
   ]);
   tries.config.describeArgs('arp', [IP('address', 'IP address of ARP entry'), MAC('48-bit hardware address')]);
   tries.config.describeArgs('no arp', [IP('address', 'IP address of ARP entry')]);
@@ -269,8 +271,14 @@ function describeArgumentTypes(tries: ArgumentHelpTries): void {
     ['priority-list', 'Priority list number'],
     ['queue-list', 'Custom queue list number'],
   ] as const) {
-    tries.config.describeArgs(path, [INT('list', [1, 16], description)]);
+    tries.config.describeArgs(path,
+      [INT('list', LEGACY_QUEUE_LIST_RANGE, description)]);
   }
+  tries.config.describeArgs('ip as-path access-list',
+    [INT('list', AS_PATH_LIST_RANGE, 'AS path access list number')]);
+  tries.config.requireArgs('ip as-path access-list', 1);
+  tries.config.describeArgs('ip community-list',
+    [INT('list', COMMUNITY_LIST_RANGE, 'Community list number')]);
 
   // ── Configuration d'interface ──
   tries.configIf.describeArgs('arp timeout', [
@@ -527,9 +535,6 @@ export function describeCiscoArguments(tries: ArgumentHelpTries): void {
     IP('prefix', 'Destination prefix'),
     MASK('Destination prefix mask'),
   ]);
-  tries.config.describeArgs('ip ssh time-out', [
-    INT('seconds', [1, 120], 'SSH time-out interval in seconds'),
-  ]);
   tries.config.describeArgs('ntp server', [
     IP('address', 'IP address of peer'),
   ]);
@@ -671,6 +676,11 @@ export function describeCiscoArguments(tries: ArgumentHelpTries): void {
     ]),
   ]);
 
+  tries.config.describeArgs('crypto key generate rsa modulus', [
+    INT('bits', [RSA_MODULUS_MIN, RSA_MODULUS_MAX],
+      'Size of the key modulus, in bits'),
+  ]);
+  tries.config.requireArgs('crypto key generate rsa modulus', 1);
   tries.config.describeArgs('ip domain-name', [
     { name: 'name', type: 'WORD', description: 'Default domain name', literal: 'WORD' },
   ]);

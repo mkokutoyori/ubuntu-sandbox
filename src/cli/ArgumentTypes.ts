@@ -227,7 +227,7 @@ export function argumentCompletableValues(spec: ArgumentSpec): readonly EnumValu
   return [...(spec.alternatives ?? []), ...(spec.values ?? [])]
     .filter(value => value.keyword !== placeholder)
     .filter(value => !PLACEHOLDER_SHAPE.test(value.keyword))
-    .filter(value => /^[A-Za-z0-9][A-Za-z0-9:._-]*$/.test(value.keyword));
+    .filter(value => /^[A-Za-z0-9][A-Za-z0-9:._+-]*$/.test(value.keyword));
 }
 
 const PLACEHOLDER_SHAPE = /^(<.*>|[A-Z]\.[A-Z]\.[A-Z]\.[A-Z].*|WORD|LINE|STRING|NAME)$/;

@@ -269,19 +269,13 @@ export const USER_SETTING: FortiTableSpec = {
       { keyword: 'hard-timeout', description: 'Absolute, from authentication.' },
       { keyword: 'new-session', description: 'Reset on a new session.' },
     ], 'idle-timeout'),
-    count('auth-http-port', 'HTTP authentication port.', 1, 65535, 1000),
-    count('auth-https-port', 'HTTPS authentication port.', 1, 65535, 1003),
     enable('auth-secure-http', 'Enable/disable redirecting the login page to HTTPS.', false),
-    enable('auth-keepalive', 'Enable/disable keeping the session alive from the browser.', false),
   ],
   onCommit(object, context) {
     context.device.applyAuthSetting({
       timeoutMinutes: Number.parseInt(object.effective('auth-timeout')[0] ?? '5', 10),
       timeoutType: object.effective('auth-timeout-type')[0] ?? 'idle-timeout',
-      httpPort: Number.parseInt(object.effective('auth-http-port')[0] ?? '1000', 10),
-      httpsPort: Number.parseInt(object.effective('auth-https-port')[0] ?? '1003', 10),
       secureHttp: object.effective('auth-secure-http')[0] === 'enable',
-      keepAlive: object.effective('auth-keepalive')[0] === 'enable',
     });
   },
 };

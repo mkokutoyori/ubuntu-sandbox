@@ -35,6 +35,7 @@ export class RouterManagementService {
     timezone: 'UTC',
     offsetMin: 0,
     summerTimezone: '',
+    summerKind: 'recurring' as 'recurring' | 'date',
     daylightStart: '',
     daylightEnd: '',
     daylightOffsetMin: 60,

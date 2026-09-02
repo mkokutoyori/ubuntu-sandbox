@@ -198,10 +198,10 @@ describe('le portail est un vrai serveur HTTP sur la pile du pare-feu', () => {
     expect(fw.getAuthPortalPorts().http).toBe(1000);
   });
 
-  it('`config user setting` deplace le port du portail', async () => {
+  it('`config system global` deplace le port du portail', async () => {
     const { fw, sh } = await laboratoire();
 
-    run(sh, 'config user setting', 'set auth-http-port 8000', 'end');
+    run(sh, 'config system global', 'set auth-http-port 8000', 'end');
 
     expect(fw.getAuthPortalPorts().http).toBe(8000);
   });

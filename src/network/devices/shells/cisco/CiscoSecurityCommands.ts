@@ -16,7 +16,8 @@ import type { ArgumentSpec, EnumValue } from '@/cli/ArgumentTypes';
 import {
   specsFromTrieRegistrations, type AdapterKeyword,
 } from '@/cli/commands/trieAdapter';
-import { CliInvalidInput } from '../cli/CliDiagnostic';
+import { CliInvalidInput, CliIncomplete } from '../cli/CliDiagnostic';
+import { isValidIPv4 } from '@/network/core/ip';
 import { CISCO_ERRORS } from '../cli-utils';
 import { encryptType7, md5Hex } from '@/crypto';
 import { pad2 } from '@/lib/format';
@@ -60,15 +61,13 @@ export const TACACS_SERVER_CONTINUATIONS: ReadonlyArray<{
     valeur: [{ keyword: '<1-1000>', description: 'Wait time in seconds' }] },
 ];
 
-export const IP_SSH_CONTINUATIONS: ReadonlyArray<{ keyword: string; description: string }> = [
-  { keyword: 'authentication-retries', description: 'Number of authentication retries' },
-  { keyword: 'dh', description: 'Diffie-Hellman key exchange parameters' },
-  { keyword: 'logging', description: 'Log SSH events' },
-  { keyword: 'server', description: 'SSH server options' },
-  { keyword: 'source-interface', description: 'Interface the SSH client sources from' },
-  { keyword: 'time-out', description: 'Authentication timeout' },
-  { keyword: 'version', description: 'SSH protocol version to accept' },
-];
+export const RSA_MODULUS_MIN = 360;
+export const RSA_MODULUS_MAX = 4096;
+export const RSA_MODULUS_DEFAUT = 1024;
+
+const RSA_GENERATE_KEYWORDS: ReadonlySet<string> = new Set([
+  'general-keys', 'signature', 'encryption', 'exportable',
+]);
 
 export const NO_AAA_CONTINUATIONS: ReadonlyArray<{ keyword: string; description: string }> = [
   { keyword: 'new-model', description: 'Disable the AAA access control model' },
@@ -177,6 +176,30 @@ export const AAA_SERVICES: Record<AaaPhase, readonly string[]> = {
   authorization: ['exec', 'commands', 'network', 'config-commands', 'reverse-access'],
   accounting: ['exec', 'commands', 'network', 'system', 'connection'],
 };
+
+export const AAA_METHODS: Record<AaaPhase, readonly string[]> = {
+  authentication: [
+    'enable', 'group', 'krb5', 'krb5-telnet', 'line', 'local', 'local-case', 'none',
+  ],
+  authorization: ['group', 'if-authenticated', 'krb5-instance', 'local', 'none'],
+  accounting: ['broadcast', 'group', 'none'],
+};
+
+export const AAA_COMMAND_LEVEL_RANGE: readonly [number, number] = [0, 15];
+
+export const RADIUS_HOST_RANGES: Readonly<Record<string, readonly [number, number]>> = {
+  'auth-port': [0, 65535],
+  'acct-port': [0, 65535],
+  timeout: [1, 1000],
+  retransmit: [0, 100],
+};
+
+export const TACACS_HOST_RANGES: Readonly<Record<string, readonly [number, number]>> = {
+  port: [1, 65535],
+  timeout: [1, 1000],
+};
+
+const AAA_GROUP_BUILTINS: ReadonlySet<string> = new Set(['radius', 'tacacs+']);
 
 /**
  * Accepts any Cisco device (router or switch) — the config is stashed
@@ -464,6 +487,32 @@ export function buildIdentityConfigCommands(
    * vont pas au meme endroit, donc les confondre enverrait les traces sur
    * le port des demandes.
    */
+  const lireOptions = (
+    args: readonly string[], depuis: number,
+    bornes: Readonly<Record<string, readonly [number, number]>>,
+  ): Record<string, string> => {
+    const lues: Record<string, string> = {};
+    for (let i = depuis; i < args.length; i++) {
+      const mot = args[i].toLowerCase();
+      const valeur = args[i + 1];
+      if (mot === 'key') {
+        if (valeur === undefined) throw new CliIncomplete();
+        lues.key = args.slice(i + 1).join(' ');
+        return lues;
+      }
+      const borne = bornes[mot];
+      if (borne === undefined) throw new CliInvalidInput({ token: args[i] });
+      if (valeur === undefined) throw new CliIncomplete();
+      if (!/^\d+$/.test(valeur)
+        || Number(valeur) < borne[0] || Number(valeur) > borne[1]) {
+        throw new CliInvalidInput({ token: valeur });
+      }
+      lues[mot] = valeur;
+      i++;
+    }
+    return lues;
+  };
+
   trie.registerGreedy('radius-server', 'Legacy radius host', (args) => {
     if (args[0] === 'key' && args[1]) { sec().radiusDefaults.key = args.slice(1).join(' '); return ''; }
     if (args[0] === 'timeout' || args[0] === 'retransmit') {
@@ -474,20 +523,16 @@ export function buildIdentityConfigCommands(
       else sec().radiusDefaults.retransmit = n;
       return '';
     }
-    if (args[0] !== 'host' || !args[1]) return '';
+    if (args[0] !== 'host') throw new CliInvalidInput({ token: args[0] });
+    if (!args[1]) return CISCO_ERRORS.INCOMPLETE;
+    if (!isValidIPv4(args[1])) throw new CliInvalidInput({ token: args[1] });
     const host = args[1];
-    let key: string | undefined;
-    let authPort = 1645;
-    let acctPort = 1646;
-    let timeoutSec: number | undefined;
-    let retransmit: number | undefined;
-    for (let i = 2; i < args.length; i++) {
-      if (args[i] === 'key' && args[i + 1]) { key = args[i + 1]; i++; }
-      else if (args[i] === 'auth-port' && args[i + 1]) { authPort = Number(args[i + 1]) || authPort; i++; }
-      else if (args[i] === 'acct-port' && args[i + 1]) { acctPort = Number(args[i + 1]) || acctPort; i++; }
-      else if (args[i] === 'timeout' && args[i + 1]) { timeoutSec = Number(args[i + 1]) || timeoutSec; i++; }
-      else if (args[i] === 'retransmit' && args[i + 1]) { retransmit = Number(args[i + 1]) || retransmit; i++; }
-    }
+    const lues = lireOptions(args, 2, RADIUS_HOST_RANGES);
+    const key = lues.key;
+    const authPort = lues['auth-port'] ? Number(lues['auth-port']) : 1645;
+    const acctPort = lues['acct-port'] ? Number(lues['acct-port']) : 1646;
+    const timeoutSec = lues.timeout ? Number(lues.timeout) : undefined;
+    const retransmit = lues.retransmit ? Number(lues.retransmit) : undefined;
     const existant = sec().radiusServers.get(host);
     if (existant) {
       existant.key = key ?? existant.key;
@@ -534,16 +579,14 @@ export function buildIdentityConfigCommands(
       sec().tacacsDefaults.timeoutSec = n;
       return '';
     }
-    if (args[0] !== 'host' || !args[1]) return '';
+    if (args[0] !== 'host') throw new CliInvalidInput({ token: args[0] });
+    if (!args[1]) return CISCO_ERRORS.INCOMPLETE;
+    if (!isValidIPv4(args[1])) throw new CliInvalidInput({ token: args[1] });
     const host = args[1];
-    let key: string | undefined;
-    let port = 49;
-    let timeoutSec: number | undefined;
-    for (let i = 2; i < args.length; i++) {
-      if (args[i] === 'key' && args[i + 1]) { key = args[i + 1]; i++; }
-      else if (args[i] === 'port' && args[i + 1]) { port = Number(args[i + 1]) || 49; i++; }
-      else if (args[i] === 'timeout' && args[i + 1]) { timeoutSec = Number(args[i + 1]) || 5; i++; }
-    }
+    const lues = lireOptions(args, 2, TACACS_HOST_RANGES);
+    const key = lues.key;
+    const port = lues.port ? Number(lues.port) : 49;
+    const timeoutSec = lues.timeout ? Number(lues.timeout) : undefined;
     const existant = sec().tacacsServers.get(host);
     if (existant) {
       existant.key = key ?? existant.key;
@@ -581,7 +624,7 @@ export function buildIdentityConfigCommands(
     if (!domain) {
       return '% Please define a domain-name first.';
     }
-    let modulus = 1024;
+    let modulus = RSA_MODULUS_DEFAUT;
     // Sans `label`, IOS nomme la paire d'après l'identité pleinement
     // qualifiée du routeur — c'est pour cela qu'il exige un nom de
     // domaine avant de la générer.
@@ -591,9 +634,24 @@ export function buildIdentityConfigCommands(
     // sont `usage-keys` qui en produisent deux, dont une de signature.
     let general = true;
     for (let i = 0; i < args.length; i++) {
-      if (args[i] === 'modulus' && args[i + 1]) modulus = parseInt(args[i + 1], 10);
-      if (args[i] === 'label' && args[i + 1]) label = args[i + 1];
-      if (args[i] === 'usage-keys') general = false;
+      const mot = args[i].toLowerCase();
+      if (mot === 'modulus') {
+        const brut = args[i + 1];
+        if (brut === undefined) throw new CliIncomplete();
+        if (!/^\d+$/.test(brut)) throw new CliInvalidInput({ token: brut });
+        const taille = Number(brut);
+        if (taille < RSA_MODULUS_MIN || taille > RSA_MODULUS_MAX) {
+          throw new CliInvalidInput({ token: brut });
+        }
+        modulus = taille; i++; continue;
+      }
+      if (mot === 'label') {
+        if (args[i + 1] === undefined) throw new CliIncomplete();
+        label = args[i + 1]; i++; continue;
+      }
+      if (mot === 'usage-keys') { general = false; continue; }
+      if (RSA_GENERATE_KEYWORDS.has(mot)) continue;
+      throw new CliInvalidInput({ token: args[i] });
     }
     const generatedAtMs = Date.now();
     sec().cryptoKeys.push({ label, modulus, general, generatedAtMs });
@@ -627,64 +685,6 @@ export function buildIdentityConfigCommands(
     dev._refreshSshAvailability?.();
     return `% Keys to be removed are named ${fqdn}.`;
   });
-
-  trie.registerGreedy('ip ssh', 'SSH config', (args) => {
-    if (args[0] === 'version' && args[1]) {
-      const version = parseInt(args[1], 10);
-      if (version !== 1 && version !== 2) throw new CliInvalidInput({ token: args[1] });
-      const cles = sec().cryptoKeys;
-      if (!cles || cles.length === 0) {
-        return `Please create RSA keys (of at least 768 bits size) to enable SSH v${version}.`;
-      }
-      sec().ssh.version = version;
-      return '';
-    }
-    if (args[0] === 'time-out' && args[1]) { sec().ssh.timeoutSec = parseInt(args[1], 10); return ''; }
-    if (args[0] === 'authentication-retries' && args[1]) {
-      const n = parseInt(args[1], 10);
-      sec().ssh.authRetries = n;
-      const r = ctx.r() as unknown as { _configureSshAuthRetries?: (n: number) => void };
-      if (r._configureSshAuthRetries && !isNaN(n)) r._configureSshAuthRetries(n);
-      return '';
-    }
-    if (args[0] === 'source-interface' && args[1]) { sec().ssh.sourceInterface = args[1]; return ''; }
-    if (args[0] === 'dh' && args[1] === 'min' && args[2] === 'size' && args[3]) { sec().ssh.dhMinBits = parseInt(args[3], 10); return ''; }
-    if (args[0] === 'logging' && args[1] === 'events') { sec().ssh.loggingEvents = true; return ''; }
-    // `ip ssh server algorithm {mac|encryption|kex} <liste>` etait accepte
-    // et range NULLE PART : la commande de durcissement disparaissait de
-    // la configuration relue.
-    if (args[0] === 'server' && args[1] === 'algorithm' && args[2] && args[3]) {
-      const liste = args.slice(3);
-      if (args[2] === 'mac') { sec().ssh.macAlgorithms = liste; return ''; }
-      if (args[2] === 'encryption') { sec().ssh.encryptionAlgorithms = liste; return ''; }
-      if (args[2] === 'kex') { sec().ssh.kexAlgorithms = liste; return ''; }
-      throw new CliInvalidInput({ token: args[2] });
-    }
-    return '';
-  }, IP_SSH_CONTINUATIONS);
-
-  // Registered at `ip scp` rather than at the full path, the way `ip ssh`
-  // is: the trie describes each node it offers under `?`, and an
-  // intermediate node spelled out in the path carries no description.
-  const scpServerArgs = (args: string[]): boolean =>
-    args[0] === 'server' && args[1] === 'enable';
-  // `ip scp server` sans `enable` n'est pas une commande fausse mais une
-  // commande INACHEVEE, et l'aide venait de proposer `server`.
-  const scpInacheve = (args: string[]): boolean =>
-    args.length === 0 || (args.length === 1 && 'server'.startsWith(args[0].toLowerCase()));
-  trie.registerGreedy('ip scp', 'SCP server config', (args) => {
-    if (scpInacheve(args)) return CISCO_ERRORS.INCOMPLETE;
-    if (!scpServerArgs(args)) throw new CliInvalidInput({ token: args[0] ?? 'scp' });
-    sec().ssh.scpServerEnabled = true;
-    return '';
-  }, [{ keyword: 'server', description: 'Enable the SCP server' }]);
-  trie.registerGreedy('no ip scp', 'Disable the SCP server', (args) => {
-    if (scpInacheve(args)) return CISCO_ERRORS.INCOMPLETE;
-    if (!scpServerArgs(args)) throw new CliInvalidInput({ token: args[0] ?? 'scp' });
-    sec().ssh.scpServerEnabled = false;
-    return '';
-  }, [{ keyword: 'server', description: 'Enable the SCP server' }]);
-
 
   trie.registerGreedy('service password-encryption', 'Enable password encryption', () => {
     sec().servicePasswordEncryption = true;
@@ -917,9 +917,15 @@ function parseAaaMethod(sec: CiscoSecurityConfig, phase: AaaPhase, args: string[
   const service = args[0] as AaaServiceKind;
   let i = 1;
   let privilegeLevel: number | undefined;
-  if (service === 'commands' && args[i] !== undefined) {
-    const lvl = parseInt(args[i], 10);
-    if (!isNaN(lvl)) { privilegeLevel = lvl; i++; }
+  if (service === 'commands') {
+    const brut = args[i];
+    if (brut === undefined) return CISCO_ERRORS.INCOMPLETE;
+    const [min, max] = AAA_COMMAND_LEVEL_RANGE;
+    if (!/^\d+$/.test(brut) || Number(brut) < min || Number(brut) > max) {
+      throw new CliInvalidInput({ token: brut });
+    }
+    privilegeLevel = Number(brut);
+    i++;
   }
   const listName = args[i++];
   let recordType: 'start-stop' | 'stop-only' | 'wait-start' | 'none' | undefined;
@@ -929,24 +935,35 @@ function parseAaaMethod(sec: CiscoSecurityConfig, phase: AaaPhase, args: string[
   }
   const methods = args.slice(i);
   if (methods.length === 0) return CISCO_ERRORS.INCOMPLETE;
-  // Les methodes d'ACCOUNTING ne sont pas celles d'authentification.
-  // IOS n'accepte ici que `group <nom>`, `group radius|tacacs+`, `none`
-  // et `broadcast` : il n'y a PAS de methode `local`, parce qu'un
-  // enregistrement de comptabilite part vers un collecteur — il n'y a
-  // rien de local ou l'ecrire. `aaa accounting exec default start-stop
-  // local` etait accepte, range, rendu dans la configuration, et
-  // n'emettait jamais rien : la commande promettait une trace qui ne
-  // venait pas, ce qui est pire que son refus.
-  if (phase === 'accounting') {
-    const permis = new Set(['group', 'none', 'broadcast', 'radius', 'tacacs+']);
-    for (let k = 0; k < methods.length; k++) {
-      const mot = methods[k].toLowerCase();
-      if (permis.has(mot)) { if (mot === 'group') k++; continue; }
-      throw new CliInvalidInput({ token: methods[k] });
-    }
-  }
+  const incomplet = verifierMethodesAaa(phase, methods);
+  if (incomplet) return incomplet;
   sec.aaaMethods.push({ phase, service, listName, privilegeLevel, recordType, methods });
   return '';
+}
+
+/**
+ * Les methodes d'une phase, et rien d'autre.
+ *
+ * Chaque phase a SON jeu : il n'y a pas de `local` en comptabilite —
+ * un enregistrement part vers un collecteur, il n'y a rien de local ou
+ * l'ecrire — ni de `line` en autorisation. Une methode inventee est une
+ * entree que rien ne sait appliquer, donc une liste qui n'authentifie
+ * personne la ou l'operateur croit avoir pose un repli.
+ */
+function verifierMethodesAaa(phase: AaaPhase, methods: readonly string[]): string | null {
+  const permis = AAA_METHODS[phase];
+  for (let k = 0; k < methods.length; k++) {
+    const mot = methods[k].toLowerCase();
+    if (!permis.includes(mot)) throw new CliInvalidInput({ token: methods[k] });
+    if (mot !== 'group') continue;
+    const nom = methods[k + 1];
+    if (nom === undefined) return CISCO_ERRORS.INCOMPLETE;
+    if (!AAA_GROUP_BUILTINS.has(nom.toLowerCase()) && permis.includes(nom.toLowerCase())) {
+      return CISCO_ERRORS.INCOMPLETE;
+    }
+    k++;
+  }
+  return null;
 }
 
 /**
@@ -1948,6 +1965,20 @@ export function buildIdentityShowCommands(
     return lines.join('\n');
   });
 
+  vue(['show', 'crypto', 'key', 'mypubkey', 'rsa'], 'Show RSA public keys', 1, () => {
+    const s = sec();
+    if (s.cryptoKeys.length === 0) return '% No RSA key generated.';
+    return s.cryptoKeys.map((k) => [
+      `% Key pair was generated at: ${formatIosKeyDate(k.generatedAtMs)}`,
+      `Key name: ${k.label}`,
+      ' Storage Device: not specified',
+      ` Usage: ${k.general ? 'General Purpose' : 'Signature'} Key`,
+      ' Key is not exportable.',
+      ' Key Data:',
+      ` ${rsaPublicKeyMaterial(k.label, k.modulus, k.generatedAtMs)}`,
+    ].join('\n')).join('\n\n');
+  });
+
   return vues;
 }
 
@@ -2038,20 +2069,6 @@ export function buildSecurityShowCommands(trie: CommandTrie, getRouter: () => Ro
     }).join('\n\n');
   });
 
-
-  trie.register('show crypto key mypubkey rsa', 'Show RSA keys', () => {
-    const s = sec();
-    if (s.cryptoKeys.length === 0) return '% No RSA key generated.';
-    return s.cryptoKeys.map(k => [
-      `% Key pair was generated at: ${formatIosKeyDate(k.generatedAtMs)}`,
-      `Key name: ${k.label}`,
-      ` Storage Device: not specified`,
-      ` Usage: ${k.general ? 'General Purpose' : 'Signature'} Key`,
-      ` Key is not exportable.`,
-      ` Key Data:`,
-      ` ${rsaPublicKeyMaterial(k.label, k.modulus, k.generatedAtMs)}`,
-    ].join('\n')).join('\n\n');
-  });
 
   trie.register('show policy-map control-plane', 'Show CoPP policy', () => {
     const s = sec();

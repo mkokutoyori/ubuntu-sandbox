@@ -42,6 +42,7 @@ export class IdentityTable {
   private readonly now: () => number;
   private nextId = 1;
   private timeoutType: AuthTimeoutType = 'idle-timeout';
+  private keepAlive = false;
   private timeoutSec = DEFAULT_AUTH_TIMEOUT_SEC;
 
   constructor(deps: IdentityTableDeps = {}) {
@@ -52,6 +53,12 @@ export class IdentityTable {
     this.timeoutType = type;
     this.timeoutSec = seconds;
   }
+
+  setKeepAlive(on: boolean): void {
+    this.keepAlive = on;
+  }
+
+  keepsAlive(): boolean { return this.keepAlive; }
 
   timeoutPolicy(): { type: AuthTimeoutType; seconds: number } {
     return { type: this.timeoutType, seconds: this.timeoutSec };
@@ -175,6 +182,7 @@ export class IdentityTable {
   }
 
   private expired(identity: AuthenticatedIdentity): boolean {
+    if (this.keepAlive && this.timeoutType === 'idle-timeout') return false;
     return this.now() >= identity.expiresAt;
   }
 }

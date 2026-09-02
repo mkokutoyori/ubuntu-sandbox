@@ -1,4 +1,5 @@
 import { resolveFortiTimezone } from '../schema/timezones';
+import { isSessionDirtyMode } from '../../../session/SessionDirty';
 import { FortiMessages } from '../FortiMessages';
 import type { Firewall } from '../../../Firewall';
 import type { AntivirusFailopen } from '../../../health/SystemLoad';
@@ -120,6 +121,13 @@ export function buildCommitDevice(
       setVdomLldp(transmission, reception) {
         fw.setVdomLldp(transmission, reception);
       },
+      setSessionDirtyMode(mode) {
+        if (isSessionDirtyMode(mode)) fw.setSessionDirtyMode(mode);
+      },
+      onPolicyChanged(policyId, policyMode) {
+        fw.onPolicyChanged(policyId,
+          isSessionDirtyMode(policyMode) ? policyMode : 'check-all');
+      },
       applyDnsSettings(settings) {
         fw.getDnsClient().applySettings(settings);
       },
@@ -153,6 +161,12 @@ export function buildCommitDevice(
         fw.setMultiVdom(settings.multiVdom);
         if (settings.authHttpPort !== undefined && settings.authHttpsPort !== undefined) {
           fw.setAuthPortalPorts(settings.authHttpPort, settings.authHttpsPort);
+        }
+        if (settings.authKeepAlive !== undefined) {
+          fw.getIdentityTable().setKeepAlive(settings.authKeepAlive);
+        }
+        if (settings.fragmentMemoryMb !== undefined) {
+          fw.getFragmentReassembly().setThresholdMegabytes(settings.fragmentMemoryMb);
         }
         fw.setManagementPorts({
           ssh: settings.adminSshPort,

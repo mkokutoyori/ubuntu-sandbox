@@ -36,6 +36,15 @@ export interface SequenceEntry {
    */
   readonly undoArgs?: readonly ArgumentSpec[];
   /**
+   * La forme d'`undoArgs` n'existe QUE niee.
+   *
+   * `no clock summer-time` se tape sans zone, la ou `clock summer-time`
+   * en exige une. Sans ce drapeau la forme courte serait aussi une
+   * commande POSITIVE complete, donc `clock summer-time` seul passerait
+   * pour valide alors qu'IOS le declare incomplet.
+   */
+  readonly undoArgsOnlyNegated?: boolean;
+  /**
    * Faux quand le moteur derriere n'a AUCUNE notion de negation.
    *
    * Declarer un `undo` ferait accepter `no <commande>` pour appeler le
@@ -104,7 +113,10 @@ export function sequenceFamily(
       entry, [...(entry.args ?? []), ...(entry.tail ? [entry.tail] : [])], '', host));
 
     if (entry.undoArgs && entry.negatable !== false) {
-      specs.push(specFor(entry, entry.undoArgs, '-undo', host));
+      const undo = specFor(entry, entry.undoArgs, '-undo', host);
+      specs.push(entry.undoArgsOnlyNegated
+        ? { ...undo, existsOnlyNegated: true, run: () => '% Incomplete command.' }
+        : undo);
     }
   }
   return specs;

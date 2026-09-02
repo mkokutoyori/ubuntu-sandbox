@@ -152,6 +152,11 @@ export const FIREWALL_POLICY: FortiTableSpec = {
         ['firewall profile-protocol-options']),
       availableWhen: usesUtm,
     },
+    choice('firewall-session-dirty',
+      'How to handle sessions if the configuration of this policy changes.', [
+        { keyword: 'check-all', description: 'Flush the sessions this policy accepted.' },
+        { keyword: 'check-new', description: 'Continue to allow sessions already accepted.' },
+      ], 'check-all'),
     choice('inspection-mode', 'Policy inspection mode.', [
       { keyword: 'proxy', description: 'Proxy based inspection.' },
       { keyword: 'flow', description: 'Flow based inspection.' },
@@ -231,10 +236,13 @@ export const FIREWALL_POLICY: FortiTableSpec = {
       sessionTimeoutOverrideSec: sessionTtl(object.effective('session-ttl')[0]),
       comment: comment === '' ? undefined : comment,
     });
+    context.device.onPolicyChanged(String(object.key),
+      object.effective('firewall-session-dirty')[0] ?? 'check-all');
     context.device.refreshCaptivePortal();
   },
   onDelete(key, context) {
     context.policy.remove(key);
+    context.device.onPolicyChanged(String(key), 'check-all');
     context.device.refreshCaptivePortal();
   },
 };

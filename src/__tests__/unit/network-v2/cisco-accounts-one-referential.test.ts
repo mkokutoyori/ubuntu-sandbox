@@ -30,7 +30,7 @@ describe('the account store is the only source, and every reader sees it', () =>
   it('a Cisco router lists all four factory accounts in its configuration', async () => {
     const r = new CiscoRouter('R1');
     const cfg = await run(r as unknown as WithAccounts, ['enable', 'show running-config']);
-    for (const u of FACTORY) expect(cfg).toContain(`username ${u} privilege 1`);
+    for (const u of FACTORY) expect(cfg).toContain(`username ${u} secret 5 $1$`);
   });
 
   it('a Cisco switch shows exactly the accounts its own store holds', async () => {
@@ -119,8 +119,8 @@ describe('two entries sharing a password never share a salt', () => {
     const r = new CiscoRouter('R1');
     const cfg = await run(r as unknown as WithAccounts, ['enable', 'show running-config']);
     for (const u of FACTORY) {
-      expect(cfg).toContain(`username ${u} privilege 1 secret 5 $1$`);
-      expect(cfg).not.toContain(`username ${u} privilege 1 secret 0 ${u}`);
+      expect(cfg).toContain(`username ${u} secret 5 $1$`);
+      expect(cfg).not.toContain(`username ${u} secret 0 ${u}`);
     }
   });
 });
