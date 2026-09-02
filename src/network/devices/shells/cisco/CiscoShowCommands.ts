@@ -730,7 +730,10 @@ export function showRunningConfig(router: Router): string {
       lines.push(`clock timezone ${clock.timezone} ${sign}${Math.floor(abs / 60)} ${abs % 60}`);
     }
     if (clock.summerTimezone) {
-      lines.push(`clock summer-time ${clock.summerTimezone} recurring ${clock.daylightStart} ${clock.daylightEnd}`);
+      lines.push([
+        'clock summer-time', clock.summerTimezone, clock.summerKind,
+        clock.daylightStart, clock.daylightEnd,
+      ].filter((m) => m.length > 0).join(' '));
     }
   }
 

@@ -52,6 +52,9 @@ import { projectSnmpServiceOntoAgent } from '@/network/snmp/snmpProjection';
 import { renderStartupConfig } from './cisco/ciscoConfigSerializer';
 import { CommandTrie, type ParamType } from './CommandTrie';
 import { fhrpInterfaceSpecs, type FhrpPlacement } from './cisco/fhrpInterfaceSpecs';
+import {
+  parseSummerTimeRule, type SummerTimeRule,
+} from './cisco/clockSummerTime';
 import { privilegeRuleSpecs, type PrivilegeRuleHost } from './cisco/privilegeRuleSpecs';
 import { ipSshSpecs, type IpSshHost } from './cisco/ipSshSpecs';
 import { ipAddressInterfaceSpecs, type IpAddressHost } from './cisco/ipAddressInterfaceSpecs';
@@ -4646,19 +4649,35 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
             { keyword: 'recurring', description: 'Recurring summer time' },
           ],
         },
+        undoArgs: [],
+        undoArgsOnlyNegated: true,
       },
-    ], () => ({ apply: (words) => this.applyClock(words) }));
+    ], () => ({ apply: (words, negate) => this.applyClock(words, negate) }));
   }
 
-  private applyClock(words: string[]): string {
+  private applyClock(words: string[], negate = false): string {
     const [tete, ...reste] = words;
     if (tete === 'set') return this.applyClockSet(reste);
+
+    let regle: SummerTimeRule | null = null;
+    if (tete === 'summer-time' && !negate) {
+      const verdict = parseSummerTimeRule(reste.slice(1));
+      if (verdict.badToken !== undefined) {
+        throw new CliInvalidInput({ token: verdict.badToken });
+      }
+      regle = verdict.rule;
+    }
 
     const mgmt = getManagementService(this.d());
     if (!mgmt) return '';
     const config = mgmt.getClock();
 
     if (tete === 'timezone') {
+      if (negate) {
+        config.timezone = 'UTC';
+        config.offsetMin = 0;
+        return '';
+      }
       const heures = parseInt(reste[1] ?? '', 10);
       const minutes = parseInt(reste[2] ?? '0', 10);
       config.timezone = reste[0];
@@ -4667,11 +4686,17 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       return '';
     }
 
-    config.summerTimezone = reste[0];
-    if (reste[1]?.toLowerCase() === 'recurring') {
-      config.daylightStart = reste.slice(2, 6).join(' ');
-      config.daylightEnd = reste.slice(6, 10).join(' ');
+    if (negate) {
+      config.summerTimezone = '';
+      config.daylightStart = '';
+      config.daylightEnd = '';
+      return '';
     }
+
+    config.summerTimezone = reste[0] ?? '';
+    config.summerKind = regle?.kind ?? 'recurring';
+    config.daylightStart = regle?.start ?? '';
+    config.daylightEnd = regle?.end ?? '';
     return '';
   }
 

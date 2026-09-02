@@ -286,6 +286,26 @@ question. C'est un lot a part, avec sa propre mesure.
 
 ## Socle CLI
 
+### [horloge] un Catalyst n'a pas d'horloge : `clock timezone` y est inerte
+`clock timezone CET 1` et `clock summer-time CEST recurring` sont
+ACCEPTES sur un commutateur Cisco, ne paraissent dans aucune
+configuration, et `show clock` continue d'annoncer `UTC` — la ou le
+routeur repond `CET` apres la meme saisie. La grammaire, elle, est
+desormais jugee des deux cotes : une saisie fautive est refusee
+identiquement, seule la POSE se perd.
+**Mesure** : `getManagementService(sw)` rend `undefined` sur un
+`CiscoSwitch`, et `applyClock` sort par `if (!mgmt) return ''` — donc en
+silence. `show running-config` d'un Catalyst ne porte aucune ligne
+`clock`.
+**Report** : ce n'est pas la commande qui manque mais le MAGASIN. Donner
+une horloge au commutateur veut dire soit lui attacher un
+`RouterManagementService` (qui porte bien plus que l'horloge : NTP,
+info-center, sFlow, SSH…), soit extraire la configuration d'horloge dans
+un porteur a part que les deux plateformes tiennent — le second est le
+bon geste et c'est un chantier de decoupage, pas de grammaire. En
+attendant, un `no-op` SILENCIEUX reste le pire des trois etats possibles
+et merite d'etre ferme.
+
 ### [uniformite] `track <mot>` refuse avec DEUX messages selon la plateforme
 `track zorglub interface GigabitEthernet0/0 line-protocol` rend
 `% Invalid track number` sur un routeur Cisco et `% Invalid track id.`
