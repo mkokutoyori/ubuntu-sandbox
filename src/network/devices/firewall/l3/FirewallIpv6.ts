@@ -5,6 +5,8 @@ import {
 } from '../../../core/types';
 import type { PolicyProbe } from '../policy/PolicyProbe';
 import type { LocalInTraffic, LocalInVerdict } from '../policy/LocalInPolicy';
+import type { DosTraffic } from '../dos/DosGate';
+import type { AnomalyAction } from '../dos/DosSensor';
 import { icmpv6TypeNumber, makeFlowKey } from '../session/FlowKey';
 import type { SessionTable } from '../session/SessionTable';
 
@@ -31,6 +33,7 @@ export interface FirewallIpv6Deps {
   onEchoFailed?(payload: { fromIp: string; reason: string }): void;
   transitPermitted(probe: PolicyProbe): boolean;
   localInVerdict?(iface: string, traffic: LocalInTraffic): LocalInVerdict;
+  dosVerdict?(iface: string, traffic: DosTraffic): AnomalyAction | 'none';
   sessions(): SessionTable;
   dhcpv6Server(): DHCPv6Server;
   dhcpv6PoolFor(iface: string): string | undefined;
@@ -108,6 +111,7 @@ export class FirewallIpv6 {
     iface: string, direction: 'in' | 'out', packet: IPv6Packet, ingress?: string,
   ): boolean {
     if (direction === 'out') return this.transitPermitted(iface, packet, ingress);
+    if (this.deps.dosVerdict?.(iface, dosTrafficOf(packet)) === 'block') return false;
     if (!this.addressedToUs(packet.destinationIP)) return true;
     if (this.deps.localInVerdict?.(iface, localInTrafficOf(packet)) === 'deny') return false;
     if (!this.isEchoRequest(packet)) return true;
@@ -163,6 +167,10 @@ export class FirewallIpv6 {
 function protocolOf(packet: IPv6Packet): number {
   const payload = packet.payload as { type?: string } | undefined;
   return payload?.type === 'icmpv6' ? IP_PROTO_ICMPV6 : packet.nextHeader;
+}
+
+function dosTrafficOf(packet: IPv6Packet): DosTraffic {
+  return { ...localInTrafficOf(packet), version: 6 };
 }
 
 function localInTrafficOf(packet: IPv6Packet): LocalInTraffic {

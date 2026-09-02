@@ -666,6 +666,7 @@ export interface FortiCommitContext {
   readonly localIn: PolicyStore;
   readonly localIn6: PolicyStore;
   readonly dos: DosPolicyStore;
+  readonly dos6: DosPolicyStore;
   readonly objects: ObjectStore;
   readonly device: FortiCommitDevice;
   readonly vdom: string;

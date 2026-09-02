@@ -1,4 +1,6 @@
-import { IP_PROTO_ICMP, IP_PROTO_TCP, IP_PROTO_UDP } from '../../../core/types';
+import {
+  IP_PROTO_ICMP, IP_PROTO_ICMPV6, IP_PROTO_TCP, IP_PROTO_UDP,
+} from '../../../core/types';
 
 export const IP_PROTO_SCTP = 132;
 
@@ -55,15 +57,19 @@ export function anomalyDefaultThresholds(): ReadonlyMap<string, number> {
   return new Map(ANOMALY_CATALOG.map(entry => [entry.name, entry.defaultThreshold]));
 }
 
-const FAMILY_PROTOCOL: Readonly<Record<AnomalyFamily, number | null>> = {
-  tcp: IP_PROTO_TCP,
-  udp: IP_PROTO_UDP,
-  icmp: IP_PROTO_ICMP,
-  sctp: IP_PROTO_SCTP,
-  ip: null,
+export type IpVersion = 4 | 6;
+
+const FAMILY_PROTOCOL: Readonly<Record<AnomalyFamily, Readonly<Record<IpVersion, number | null>>>> = {
+  tcp: { 4: IP_PROTO_TCP, 6: IP_PROTO_TCP },
+  udp: { 4: IP_PROTO_UDP, 6: IP_PROTO_UDP },
+  icmp: { 4: IP_PROTO_ICMP, 6: IP_PROTO_ICMPV6 },
+  sctp: { 4: IP_PROTO_SCTP, 6: IP_PROTO_SCTP },
+  ip: { 4: null, 6: null },
 };
 
-export function familyCovers(family: AnomalyFamily, protocol: number): boolean {
-  const declared = FAMILY_PROTOCOL[family];
+export function familyCovers(
+  family: AnomalyFamily, protocol: number, version: IpVersion,
+): boolean {
+  const declared = FAMILY_PROTOCOL[family][version];
   return declared === null || declared === protocol;
 }

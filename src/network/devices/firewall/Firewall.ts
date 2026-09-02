@@ -172,7 +172,8 @@ import {
 } from './policy/LocalInPolicy';
 import { anomalyDefaultThresholds } from './dos/AnomalyCatalog';
 import type { DosPolicyStore } from './dos/DosPolicyStore';
-import type { DosFinding } from './dos/DosSensor';
+import type { AnomalyAction, DosFinding } from './dos/DosSensor';
+import { dosFinding, type DosTraffic } from './dos/DosGate';
 import { LoggingConfig } from '../inspection/config/LoggingConfig';
 import { SyslogAgent } from '../../syslog/SyslogAgent';
 import { SyslogCollectorTable } from './logging/SyslogCollectors';
@@ -191,7 +192,7 @@ export interface TrafficLogger {
   onSessionOpened(session: FirewallSession, rule?: SecurityRule): void;
   onSessionClosed(session: FirewallSession, reason: SessionCloseReason): void;
   onDenied(context: PacketContext): void;
-  onDosAnomaly?(finding: DosFinding, iface: string, packet: IPv4Packet): void;
+  onDosAnomaly?(finding: DosFinding, iface: string, traffic: DosTraffic): void;
 }
 
 const ETHERNET_OVERHEAD_BYTES = 18;
@@ -236,6 +237,7 @@ export class Firewall extends Equipment {
     },
     transitPermitted: (probe) => this.ipv6TransitPermitted(probe),
     localInVerdict: (iface, traffic) => this.localInVerdict6(iface, traffic),
+    dosVerdict: (iface, traffic) => this.dosVerdict6(iface, traffic),
     sessions: () => this.getSessionTable(),
     dhcpv6Server: () => this.dhcp6.getServer(),
     dhcpv6PoolFor: (iface) => this.dhcp6.poolOfInterface(iface),
@@ -1961,6 +1963,21 @@ export class Firewall extends Equipment {
   getLocalInPolicy6(vdom?: string): PolicyStore { return this.getVdom(vdom).localIn6; }
 
   getDosPolicy(vdom?: string): DosPolicyStore { return this.getVdom(vdom).dos; }
+
+  getDosPolicy6(vdom?: string): DosPolicyStore { return this.getVdom(vdom).dos6; }
+
+  dosVerdict6(iface: string, traffic: DosTraffic): AnomalyAction | 'none' {
+    const context = this.vdoms.contextOfInterface(iface);
+    const finding = dosFinding({
+      policies: context.dos6,
+      evaluator: context.evaluator,
+      sensor: context.dosSensor6,
+      zoneOf: (name) => context.zones.zoneOf(name) ?? '',
+    }, iface, traffic);
+    if (!finding) return 'none';
+    if (finding.log) this.trafficLogger?.onDosAnomaly?.(finding, iface, traffic);
+    return finding.action;
+  }
 
   dosAnomalyDefaults(): ReadonlyMap<string, number> { return anomalyDefaultThresholds(); }
 

@@ -3,6 +3,7 @@ import type { PacketContext } from '../../../pipeline/PacketContext';
 import type { FirewallLogDraft } from '../../../logging/FirewallLogStore';
 import { portsOf } from '../../../diag/PacketCapture';
 import type { IPv4Packet } from '../../../../../core/types';
+import type { DosTraffic } from '../../../dos/DosGate';
 
 interface UtmShape {
   readonly subtype: string;
@@ -30,9 +31,8 @@ export function anomalyLog(
   finding: {
     anomaly: string; action: string; observed: number; threshold: number;
   },
-  iface: string, packet: IPv4Packet, now: number,
+  iface: string, traffic: DosTraffic, now: number,
 ): FirewallLogDraft {
-  const ports = portsOf(packet);
   return {
     at: now,
     type: 'utm',
@@ -40,12 +40,12 @@ export function anomalyLog(
     level: finding.action === 'block' ? 'alert' : 'warning',
     id: '0720018432',
     fields: {
-      srcip: packet.sourceIP.toString(),
-      srcport: ports.source ?? 0,
+      srcip: traffic.sourceIP,
+      srcport: traffic.sourcePort ?? 0,
       srcintf: iface,
-      dstip: packet.destinationIP.toString(),
-      dstport: ports.destination ?? 0,
-      proto: packet.protocol,
+      dstip: traffic.destIP,
+      dstport: traffic.destPort ?? 0,
+      proto: traffic.protocol,
       attack: finding.anomaly,
       action: finding.action === 'block' ? 'clear_session' : 'detected',
       count: finding.observed,

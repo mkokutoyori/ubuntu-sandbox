@@ -5999,3 +5999,40 @@ pipeline, donc la table serait acceptee sans etre evaluee.
 d'avant, et 2 en retirant seulement l'etage de l'ordre du pipeline — les
 deux qui observent un blocage. Les 2450 cas du repertoire `firewall/`
 passent.
+
+## `firewall DoS-policy6` — IPv6 (livre)
+
+Le lot precedent avait laisse la table v6 hors du schema plutot que de
+l'accepter sans l'evaluer, le chemin IPv6 ne traversant pas le pipeline
+ou vit l'etage `dos-policy`. Ce lot pose la porte dans
+`FirewallIpv6.permits`, branche `in`, AVANT `addressedToUs` — une
+politique DoS est un controle d'ENTREE et couvre donc le transit comme
+le trafic destine au pare-feu.
+
+**Ce que la version change, et qu'il ne fallait pas rater** : sur une
+politique v6, `icmp_flood` compte de l'ICMPv6 — protocole 58 — et non le
+protocole 1, qu'aucun paquet IPv6 ne porte. Se tromper la donnerait une
+anomalie qui ne se declenche JAMAIS, c'est-a-dire un decor qui passe
+pour une protection. `familyCovers` prend desormais la version et la
+table `FAMILY_PROTOCOL` porte les deux colonnes.
+
+Reutilise plutot que reecrit : `dosFinding` prend un descripteur de
+trafic au lieu d'un `IPv4Packet`, donc une seule implantation sert les
+deux familles ; la separation des familles vient de `PolicyEvaluator`
+comme pour `local-in-policy6` (la forme v6 range dans
+`source6`/`destination6`, la v4 dans `source`/`destination`, et une
+liste vide ne correspond a rien) ; et `anomalyLog` lit le meme
+descripteur, donc le journal d'anomalie est ecrit une fois pour les deux
+versions.
+
+**Defaut du laboratoire, ecrit plutot que tu** : le cas « ne vaut que
+sur l'interface nommee » visait `port2` sur une maquette a deux ports et
+echouait a juste titre — un echo est un aller-retour, donc les reponses
+ARRIVENT sur port2 et une politique posee la les compte, ce qu'un vrai
+FortiGate fait. Sur une maquette a deux ports, « l'autre interface »
+n'existe pas ; il faut un troisieme port sans trafic, et c'est pour
+cette raison que le cas jumeau du lot IPv4 passait.
+
+`fortigate-dos-policy6.test.ts` (13 cas) : 4 tombent contre l'etat
+d'avant, 2 en retirant seulement la porte v6. Les 2479 cas du repertoire
+`firewall/` passent.

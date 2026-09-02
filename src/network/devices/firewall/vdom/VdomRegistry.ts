@@ -43,7 +43,9 @@ export interface VdomContext {
   readonly localIn: PolicyStore;
   readonly localIn6: PolicyStore;
   readonly dos: DosPolicyStore;
+  readonly dos6: DosPolicyStore;
   readonly dosSensor: DosSensor;
+  readonly dosSensor6: DosSensor;
   readonly natPolicy: NatPolicyStore;
   readonly pools: IpPoolAllocator;
   readonly nat: FirewallNatEngine;
@@ -182,6 +184,7 @@ export class VdomRegistry {
     const localIn = new PolicyStore();
     const localIn6 = new PolicyStore();
     const dos = new DosPolicyStore();
+    const dos6 = new DosPolicyStore();
     const natPolicy = new NatPolicyStore();
     const pools = new IpPoolAllocator(deps.now);
     const schedules = new ScheduleStore();
@@ -238,7 +241,9 @@ export class VdomRegistry {
       localIn,
       localIn6,
       dos,
+      dos6,
       dosSensor: new DosSensor({ now: deps.now, sessions: () => sessions.view() }),
+      dosSensor6: new DosSensor({ now: deps.now, sessions: () => sessions.view() }),
       natPolicy,
       pools,
       nat,

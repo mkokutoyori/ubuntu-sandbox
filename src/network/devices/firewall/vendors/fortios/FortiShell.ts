@@ -643,6 +643,7 @@ export class FortiShell {
       localIn: this.fw.getLocalInPolicy(),
       localIn6: this.fw.getLocalInPolicy6(),
       dos: this.fw.getDosPolicy(),
+      dos6: this.fw.getDosPolicy6(),
       objects: this.fw.getObjectStore(),
       device: this.commitDevice(),
       vdom: this.vdom,

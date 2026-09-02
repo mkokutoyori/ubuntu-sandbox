@@ -22,7 +22,7 @@ import type { IdentityTable } from '../../identity/IdentityTable';
 import type { ZoneTable } from '../../model/ZoneTable';
 import type { PolicyEvaluator } from '../../policy/PolicyEvaluator';
 import { transportPorts } from '../../policy/probeFields';
-import { dosFinding } from '../../dos/DosGate';
+import { dosFinding, dosTrafficOfIpv4, type DosTraffic } from '../../dos/DosGate';
 import type { DosPolicyStore } from '../../dos/DosPolicyStore';
 import type { DosFinding, DosSensor } from '../../dos/DosSensor';
 import { flowKeyFromPacket, reverseFlowKey, type FlowKey } from '../../session/FlowKey';
@@ -82,7 +82,7 @@ export interface FirewallServices {
   flowInspectionPosture?: () => 'normal' | 'bypass' | 'block';
   assembleStream?: StreamJoiner;
   onInspection?: () => void;
-  onDosAnomaly?: (finding: DosFinding, iface: string, packet: IPv4Packet) => void;
+  onDosAnomaly?: (finding: DosFinding, iface: string, traffic: DosTraffic) => void;
 }
 
 function vdom(services: FirewallServices, context: PacketContext): VdomServices {
@@ -439,15 +439,16 @@ function dosPolicyStage(services: FirewallServices): PipelineStage {
       if (!scope.dos || !scope.dosSensor) {
         return proceed(context, 'dos-policy', 'no-sensor');
       }
+      const traffic = dosTrafficOfIpv4(packet);
       const finding = dosFinding({
         policies: scope.dos,
         evaluator: scope.evaluator,
         sensor: scope.dosSensor,
         zoneOf: (iface) => zoneNameFor(services, iface) ?? '',
-      }, context.ingressPort, packet);
+      }, context.ingressPort, traffic);
       if (!finding) return proceed(context, 'dos-policy', 'no-anomaly');
 
-      services.onDosAnomaly?.(finding, context.ingressPort, packet);
+      services.onDosAnomaly?.(finding, context.ingressPort, traffic);
       if (finding.action === 'pass') {
         return proceed(context, 'dos-policy', `${finding.anomaly}:pass`);
       }

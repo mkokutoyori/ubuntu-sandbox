@@ -6,6 +6,7 @@ import { ANOMALY_CATALOG, anomalySpec } from '../../../dos/AnomalyCatalog';
 import type { AnomalyAction, AnomalySetting } from '../../../dos/DosSensor';
 
 const ADDRESS_TARGETS = ['firewall address', 'firewall addrgrp'];
+const ADDRESS6_TARGETS = ['firewall address6', 'firewall addrgrp6'];
 const INTERFACE_TARGETS = ['system interface', 'system zone'];
 const SERVICE_TARGETS = ['firewall service custom', 'firewall service group'];
 
@@ -81,10 +82,12 @@ interface DosFamily {
   readonly help: string;
   readonly renderOrder: number;
   readonly addressTargets: readonly string[];
+  readonly store: 'dos' | 'dos6';
   readonly v6: boolean;
 }
 
 function dosSpec(family: DosFamily): FortiTableSpec {
+  const { store } = family;
   return {
     path: [...family.path],
     kind: 'table',
@@ -115,7 +118,7 @@ function dosSpec(family: DosFamily): FortiTableSpec {
       const destination = normaliseAny(object.effective('dstaddr'));
       const comment = object.effective('comments')[0];
 
-      context.dos.upsert({
+      context[store].upsert({
         id: object.key,
         from: listOrAny(object.effective('interface')),
         to: ['any'],
@@ -130,7 +133,7 @@ function dosSpec(family: DosFamily): FortiTableSpec {
       }, anomalySettings(object));
     },
     onDelete(key, context) {
-      context.dos.remove(key);
+      context[store].remove(key);
     },
   };
 }
@@ -140,7 +143,17 @@ export const FIREWALL_DOS_POLICY = dosSpec({
   help: 'Configure IPv4 DoS policies.',
   renderOrder: 235,
   addressTargets: ADDRESS_TARGETS,
+  store: 'dos',
   v6: false,
+});
+
+export const FIREWALL_DOS_POLICY6 = dosSpec({
+  path: ['firewall', 'DoS-policy6'],
+  help: 'Configure IPv6 DoS policies.',
+  renderOrder: 237,
+  addressTargets: ADDRESS6_TARGETS,
+  store: 'dos6',
+  v6: true,
 });
 
 export const DOS_ANOMALY_NAMES: readonly string[] =
