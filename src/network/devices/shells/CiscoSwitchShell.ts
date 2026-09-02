@@ -4303,6 +4303,12 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
       lines.push('!');
     }
 
+    const lignesAlias = this._getAliasRunningConfigLines();
+    if (lignesAlias.length > 0) {
+      lines.push(...lignesAlias);
+      lines.push('!');
+    }
+
     // `line console 0` et `line aux 0` — le MEME rendu que le routeur.
     // Ils n'etaient ecrits que la, donc un Catalyst acceptait
     // `password`/`login` sur sa console et ne les rendait nulle part.

@@ -8,8 +8,20 @@
  * default exec aliases (real device identity, not fabricated data).
  */
 
-/** IOS CLI modes that support aliases (subset we model). */
-export type AliasMode = 'exec' | 'configure' | 'interface' | 'router';
+export const ALIAS_MODE_VALUES = [
+  { keyword: 'configure', description: 'Global configuration mode' },
+  { keyword: 'exec', description: 'Exec mode' },
+  { keyword: 'interface', description: 'Interface configuration mode' },
+  { keyword: 'router', description: 'Router configuration mode' },
+] as const;
+
+export type AliasMode = typeof ALIAS_MODE_VALUES[number]['keyword'];
+
+export function parseAliasMode(token: string): AliasMode | null {
+  const bas = token.toLowerCase();
+  const trouve = ALIAS_MODE_VALUES.find((v) => v.keyword === bas);
+  return trouve ? trouve.keyword : null;
+}
 
 /** Real Cisco IOS built-in exec aliases. */
 const DEFAULT_EXEC: ReadonlyArray<[string, string]> = [

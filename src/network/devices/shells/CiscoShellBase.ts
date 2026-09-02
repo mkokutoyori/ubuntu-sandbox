@@ -152,7 +152,9 @@ import {
 import type { CiscoDnsConfig } from '../router/dns/CiscoDnsConfig';
 import type { RouterHostsTable } from '../router/dns/RouterHostsTable';
 import { CiscoConfigState, getConfigState } from '../inspection/config/CiscoConfigState';
-import { AliasRepository, type AliasMode } from '../inspection/config/AliasRepository';
+import {
+  AliasRepository, parseAliasMode, type AliasMode,
+} from '../inspection/config/AliasRepository';
 import { LoggingConfig, disabledTimestampSpec, bareTimestampSpec, deviceClockSource } from '../inspection/config/LoggingConfig';
 import type { TimestampSpec } from '../inspection/config/LoggingConfig';
 import { isPathReachable } from '../linux/network/HostLookup';
@@ -8867,14 +8869,6 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
   }
 
   /** Map a CLI alias mode keyword to the repository's AliasMode. */
-  private aliasMode(token: string): AliasMode {
-    switch (token) {
-      case 'configure': return 'configure';
-      case 'interface': return 'interface';
-      case 'router': return 'router';
-      default: return 'exec';
-    }
-  }
 
   /**
    * Handle `terminal length <n>` / `terminal width <n>` / `terminal no length`
@@ -9467,15 +9461,21 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
 
     // `alias <mode> <name> <command…>` — real, working aliases.
     trie.registerGreedy('alias', 'Create a command alias', (args) => {
+      if (args.length === 0) return '% Incomplete command.';
+      const mode = parseAliasMode(args[0]);
+      if (mode === null) throw new CliInvalidInput({ token: args[0] });
       if (args.length < 3) return '% Incomplete command.';
-      const [modeTok, name, ...rest] = args;
+      const [, name, ...rest] = args;
       if (name.length > 31) return '% Alias name exceeds 31 characters.';
-      this.aliases.set(this.aliasMode(modeTok), name, rest.join(' '));
+      this.aliases.set(mode, name, rest.join(' '));
       return '';
     });
     trie.registerGreedy('no alias', 'Remove a command alias', (args) => {
+      if (args.length === 0) return '% Incomplete command.';
+      const mode = parseAliasMode(args[0]);
+      if (mode === null) throw new CliInvalidInput({ token: args[0] });
       if (args.length < 2) return '% Incomplete command.';
-      this.aliases.remove(this.aliasMode(args[0]), args[1]);
+      this.aliases.remove(mode, args[1]);
       return '';
     });
 

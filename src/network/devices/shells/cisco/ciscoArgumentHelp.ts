@@ -1,5 +1,6 @@
 import type { CommandTrie, ParamSpec } from '../CommandTrie';
 import { estTypeSansNumero } from './CiscoConfigCommands';
+import { ALIAS_MODE_VALUES } from '../../inspection/config/AliasRepository';
 import {
   PASSWORD_MIN_LENGTH_MAX, RSA_MODULUS_MIN, RSA_MODULUS_MAX,
 } from './CiscoSecurityCommands';
@@ -162,16 +163,14 @@ function describeArgumentTypes(tries: ArgumentHelpTries): void {
 
   // ── Configuration globale ──
   tries.config.describeArgs('alias', [
-    ENUM('mode', 'Command mode of the alias', [
-      ['configure', 'Global configuration mode'],
-      ['exec', 'Exec mode'],
-      ['interface', 'Interface configuration mode'],
-      ['router', 'Router configuration mode'],
-    ]),
+    {
+      name: 'mode', type: 'ENUM', description: 'Command mode of the alias',
+      values: ALIAS_MODE_VALUES.map((v) => ({ ...v })),
+    },
     WORD('alias', 'Alias name'),
     LINE('command', 'Command the alias stands for'),
   ]);
-  for (const mode of ['configure', 'exec', 'interface', 'router']) {
+  for (const { keyword: mode } of ALIAS_MODE_VALUES) {
     tries.config.describeArgs(`alias ${mode}`, [
       WORD('alias', 'Alias name'),
       LINE('command', 'Command the alias stands for'),
@@ -181,12 +180,10 @@ function describeArgumentTypes(tries: ArgumentHelpTries): void {
     { name: 'time', type: 'WORD', description: 'Current time', literal: 'hh:mm:ss' },
   ]);
   tries.config.describeArgs('no alias', [
-    ENUM('mode', 'Command mode of the alias', [
-      ['configure', 'Global configuration mode'],
-      ['exec', 'Exec mode'],
-      ['interface', 'Interface configuration mode'],
-      ['router', 'Router configuration mode'],
-    ]),
+    {
+      name: 'mode', type: 'ENUM', description: 'Command mode of the alias',
+      values: ALIAS_MODE_VALUES.map((v) => ({ ...v })),
+    },
   ]);
   tries.config.describeArgs('arp', [IP('address', 'IP address of ARP entry'), MAC('48-bit hardware address')]);
   tries.config.describeArgs('no arp', [IP('address', 'IP address of ARP entry')]);
