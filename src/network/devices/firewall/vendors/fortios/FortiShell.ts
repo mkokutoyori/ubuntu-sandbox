@@ -1160,6 +1160,7 @@ export class FortiShell {
       case 'ping6-options':
         return this.executePingOptions(this.fw.getPing6Options(), 'ping6-options', tail);
       case 'clear': return this.executeClear(tail);
+      case 'router': return this.executeRouter(tail);
       case 'update-now': return this.executeFortiguardUpdate();
       case 'update-av': return this.executeFortiguardUpdate('antivirus');
       case 'update-ips': return this.executeFortiguardUpdate('ips');
@@ -1209,6 +1210,47 @@ export class FortiShell {
     this.vdom = name;
     this.fw.setActiveVdom(name);
     return '';
+  }
+
+  private executeRouter(rest: readonly string[]): string {
+    if (rest.length === 0) return FortiMessages.incomplete('a routing operation');
+    if (rest[0] === 'restart') {
+      this.fw.getRouting().getBgp().clearSessions({ kind: 'all' });
+      this.fw.getRouting().restartOspf();
+      return '';
+    }
+    if (rest[0] !== 'clear') return FortiMessages.unknownAction(`router ${rest[0]}`);
+    if (rest[1] === 'ospf' && rest[2] === 'process') {
+      return this.fw.getRouting().restartOspf()
+        ? '' : FortiMessages.commandFail('OSPF is not running.');
+    }
+    if (rest[1] !== 'bgp') {
+      return FortiMessages.unknownAction(`router clear ${rest.slice(1).join(' ')}`);
+    }
+    return this.clearBgpSessions(rest.slice(2));
+  }
+
+  private clearBgpSessions(rest: readonly string[]): string {
+    if (this.fw.getRouting().getBgp().getEngine() === null) {
+      return FortiMessages.commandFail('BGP is not running.');
+    }
+    const scope = rest[0];
+    if (scope === 'all' || scope === 'external') {
+      this.fw.getRouting().getBgp().clearSessions({ kind: scope });
+      return '';
+    }
+    if (scope !== 'ip' && scope !== 'as') {
+      return scope === undefined
+        ? FortiMessages.incomplete('what to clear')
+        : FortiMessages.unknownAction(`router clear bgp ${scope}`);
+    }
+    if (rest[1] === undefined) {
+      return FortiMessages.incomplete(scope === 'ip' ? 'a neighbour address' : 'an AS number');
+    }
+    const reset = this.fw.getRouting().getBgp()
+      .clearSessions({ kind: scope, value: rest[1] });
+    return reset.length > 0 ? '' : FortiMessages.commandFail(
+      `no established BGP peering matches ${scope} ${rest[1]}.`);
   }
 
   private executeClear(rest: readonly string[]): string {
