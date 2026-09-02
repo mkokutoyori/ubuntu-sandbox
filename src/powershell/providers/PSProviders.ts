@@ -12,6 +12,8 @@
  *     → all nulls, used by the standalone PSInterpreter (no Windows device)
  */
 
+import type { AddsForestOptions } from '@/network/devices/windows/server/ad/adFunctionalLevels';
+
 // ─── Entry types re-exported for cmdlet use ────────────────────────────────
 
 export interface DirEntry {
@@ -223,7 +225,7 @@ export interface AdUpToDatenessVectorRowInfo { server: string; usnFilter: number
 
 export interface IAdProvider {
   /** `Install-ADDSForest` — promotes this server to a new forest's first DC. Fails if already promoted. */
-  installForest(domainName: string, netbiosName: string | undefined, safeModeAdminPassword: string, opts?: { installDns?: boolean }): AdOpResult;
+  installForest(domainName: string, netbiosName: string | undefined, safeModeAdminPassword: string, opts?: AddsForestOptions): AdOpResult;
   /** Whether this server has already been promoted (`Install-ADDSForest` succeeded). */
   isForestInstalled(): boolean;
   /** `Install-ADDSDomainController` (PRD-Windows-Server-Advanced.md §5 P5) — promotes this server as an additional DC of a domain that already exists at `sourceDcAddress`, via a real initial replication sync. */

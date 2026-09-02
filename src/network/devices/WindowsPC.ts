@@ -255,7 +255,15 @@ export class WindowsPC extends EndHost implements UserAccountHost {
   private env: Map<string, string> = new Map();
   /** Exposes the env map so subshells (PS / cmd) share the same source.
    *  Reads are case-insensitive on Windows. */
-  getEnvVars(): Map<string, string> { return this.env; }
+  getEnvVars(): Map<string, string> {
+    const merged = this.wellKnownEnv();
+    for (const [k, v] of this.env) merged.set(k.toUpperCase(), v);
+    return merged;
+  }
+
+  setEnvVar(name: string, value: string): void { this.env.set(name.toUpperCase(), value); }
+
+  removeEnvVar(name: string): void { this.env.delete(name.toUpperCase()); }
   getEnvVar(name: string): string | undefined {
     const u = name.toUpperCase();
     for (const [k, v] of this.env) if (k.toUpperCase() === u) return v;
@@ -441,7 +449,6 @@ export class WindowsPC extends EndHost implements UserAccountHost {
     // celle qui horodate le journal, sans quoi un filtre temporel écarte
     // les événements que la machine vient d'écrire.
     this.eventLog.attachClock(() => this.simulatedDate().getTime());
-    this.initEnv();
     this.initDefaultSockets();
     this.wireReactiveProjections();
     this.auditPolicy.seedDefaults(type === 'windows-server' ? 'server' : 'client');
@@ -2105,23 +2112,50 @@ export class WindowsPC extends EndHost implements UserAccountHost {
     }
   }
 
-  private initEnv(): void {
-    this.env.set('USERNAME', 'User');
-    this.env.set('COMPUTERNAME', this.hostname);
-    this.env.set('HOMEDRIVE', 'C:');
-    this.env.set('HOMEPATH', '\\Users\\User');
-    this.env.set('USERPROFILE', 'C:\\Users\\User');
-    this.env.set('WINDIR', 'C:\\Windows');
-    this.env.set('SYSTEMROOT', 'C:\\Windows');
-    this.env.set('SYSTEMDRIVE', 'C:');
-    this.env.set('COMSPEC', 'C:\\Windows\\System32\\cmd.exe');
-    this.env.set('PATH', 'C:\\Windows\\System32;C:\\Windows;C:\\Windows\\System32\\Wbem');
-    this.env.set('PATHEXT', '.COM;.EXE;.BAT;.CMD;.VBS;.JS;.WSH;.MSC');
-    this.env.set('TEMP', 'C:\\Users\\User\\AppData\\Local\\Temp');
-    this.env.set('TMP', 'C:\\Users\\User\\AppData\\Local\\Temp');
-    this.env.set('OS', 'Windows_NT');
-    this.env.set('PROCESSOR_ARCHITECTURE', 'AMD64');
-    this.env.set('NUMBER_OF_PROCESSORS', '4');
+  protected logonDomainNames(): { netbios: string; dns: string } | null {
+    const m = this.domainMembership;
+    if (!this.domainSession || !m) return null;
+    return { netbios: m.netbiosName, dns: m.dnsName };
+  }
+
+  wellKnownEnv(): Map<string, string> {
+    const u = this.userMgr.currentUser || 'User';
+    const host = this.hostname;
+    const domain = this.logonDomainNames();
+    const out = new Map<string, string>([
+      ['ALLUSERSPROFILE', 'C:\\ProgramData'],
+      ['APPDATA', `C:\\Users\\${u}\\AppData\\Roaming`],
+      ['COMPUTERNAME', host],
+      ['COMSPEC', 'C:\\Windows\\System32\\cmd.exe'],
+      ['HOMEDRIVE', 'C:'],
+      ['HOMEPATH', `\\Users\\${u}`],
+      ['LOCALAPPDATA', `C:\\Users\\${u}\\AppData\\Local`],
+      ['LOGONSERVER', `\\\\${host}`],
+      ['NUMBER_OF_PROCESSORS', '4'],
+      ['OS', 'Windows_NT'],
+      ['PATH', 'C:\\Windows\\System32;C:\\Windows;C:\\Windows\\System32\\Wbem;C:\\Windows\\System32\\WindowsPowerShell\\v1.0'],
+      ['PATHEXT', '.COM;.EXE;.BAT;.CMD;.VBS;.VBE;.JS;.JSE;.WSF;.WSH;.MSC;.PS1'],
+      ['PROCESSOR_ARCHITECTURE', 'AMD64'],
+      ['PROGRAMDATA', 'C:\\ProgramData'],
+      ['PROGRAMFILES', 'C:\\Program Files'],
+      ['PROGRAMFILES(X86)', 'C:\\Program Files (x86)'],
+      ['PSMODULEPATH', `C:\\Users\\${u}\\Documents\\WindowsPowerShell\\Modules;C:\\Program Files\\WindowsPowerShell\\Modules;C:\\Windows\\system32\\WindowsPowerShell\\v1.0\\Modules`],
+      ['PUBLIC', 'C:\\Users\\Public'],
+      ['SESSIONNAME', 'Console'],
+      ['SYSTEMDRIVE', 'C:'],
+      ['SYSTEMROOT', 'C:\\Windows'],
+      ['TEMP', `C:\\Users\\${u}\\AppData\\Local\\Temp`],
+      ['TMP', `C:\\Users\\${u}\\AppData\\Local\\Temp`],
+      ['USERDOMAIN', domain ? domain.netbios : host],
+      ['USERNAME', u],
+      ['USERPROFILE', `C:\\Users\\${u}`],
+      ['WINDIR', 'C:\\Windows'],
+    ]);
+    if (domain) {
+      out.set('USERDNSDOMAIN', domain.dns.toUpperCase());
+      out.set('USERDOMAIN_ROAMINGPROFILE', domain.netbios);
+    }
+    return out;
   }
 
   private static readonly HOSTS_FILE = 'C:\\Windows\\System32\\drivers\\etc\\hosts';
@@ -2164,7 +2198,6 @@ export class WindowsPC extends EndHost implements UserAccountHost {
    */
   override setHostname(hostname: string): void {
     super.setHostname(hostname);
-    this.env.set('COMPUTERNAME', hostname);
     this.syncHostsFile(hostname);
   }
 
@@ -2586,7 +2619,7 @@ export class WindowsPC extends EndHost implements UserAccountHost {
       case 'ver':     return WindowsPC.VER_STRING;
       case 'hostname': return this.hostname;
       case 'systeminfo': return this.cmdSysteminfo();
-      case 'whoami':  return cmdWhoami({ hostname: this.hostname, userManager: this.userMgr, domainSession: this.domainSession }, args);
+      case 'whoami':  return cmdWhoami({ hostname: this.hostname, logonDomain: this.getEnvVars().get('USERDOMAIN'), userManager: this.userMgr, domainSession: this.domainSession }, args);
       case 'icacls':  return cmdIcacls({ fs: this.fs, cwd: this.cwd, userManager: this.userMgr }, args);
       case 'runas':   return this.cmdRunas(args);
       case 'vol':     return this.cmdVol(args);
@@ -2880,7 +2913,7 @@ export class WindowsPC extends EndHost implements UserAccountHost {
     return text.replace(/%([^%]+)%/g, (match, varName) => {
       const upper = varName.toUpperCase();
       if (upper === 'CD') return this.cwd;
-      return this.env.get(upper) ?? match;
+      return this.getEnvVars().get(upper) ?? match;
     });
   }
 
@@ -3023,7 +3056,8 @@ export class WindowsPC extends EndHost implements UserAccountHost {
       fs: this.fs,
       cwd: this.cwd,
       hostname: this.hostname,
-      env: this.env,
+      env: this.getEnvVars(),
+      setEnv: (name: string, value: string) => this.setEnvVar(name, value),
       setCwd: (path: string) => {
         // When the new cwd belongs to a different drive than the old one,
         // remember the previous drive's cwd in the active session's
@@ -3804,11 +3838,7 @@ export class WindowsPC extends EndHost implements UserAccountHost {
   setCurrentUser(name: string): void {
     this.domainSession = null;
     this.kerberosTicketCache.clear();
-    if (this.userMgr.setCurrentUser(name)) {
-      this.env.set('USERNAME', this.userMgr.currentUser);
-      this.env.set('USERPROFILE', `C:\\Users\\${this.userMgr.currentUser}`);
-      this.env.set('HOMEPATH', `\\Users\\${this.userMgr.currentUser}`);
-    }
+    this.userMgr.setCurrentUser(name);
   }
 
   /** Override Equipment's hard-coded 'user' default so syncDeviceState
@@ -5352,9 +5382,10 @@ export class WindowsPC extends EndHost implements UserAccountHost {
    * so the session may freely mutate via `set FOO=bar` without leaking).
    */
   openShellSession(init?: { user?: string; cwd?: string; env?: Map<string, string> }): WindowsShellSession {
-    const user = init?.user ?? (this.env.get('USERNAME') ?? 'User');
-    const profile = this.env.get('USERPROFILE') ?? 'C:\\Users\\User';
-    const env = new Map(init?.env ?? this.env);
+    const deviceEnv = this.getEnvVars();
+    const user = init?.user ?? (deviceEnv.get('USERNAME') ?? 'User');
+    const profile = deviceEnv.get('USERPROFILE') ?? 'C:\\Users\\User';
+    const env = new Map(init?.env ?? deviceEnv);
     const session = new WindowsShellSession({
       user,
       cwd: init?.cwd ?? profile,

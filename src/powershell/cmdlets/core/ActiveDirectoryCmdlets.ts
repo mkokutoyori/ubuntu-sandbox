@@ -26,6 +26,7 @@ import { psValueToString } from '@/powershell/runtime/PSExpansion';
 import { makeTimeSpan } from './DateTimeCmdlets';
 import { parseCredentialArg } from './RemotingCmdlets';
 import { WindowsSecurityAudit, type SecurityEventSink } from '@/network/devices/windows/WindowsSecurityAudit';
+import { type AdFunctionalLevel, adFunctionalLevelKeywords, parseAdFunctionalLevel } from '@/network/devices/windows/server/ad/adFunctionalLevels';
 
 function requireAd(ctx: CmdletContext, cmdletName: string): IAdProvider {
   if (!ctx.providers.ad) {
@@ -92,6 +93,22 @@ function identityOrObjectOf(ctx: CmdletContext): string {
 
 function installDnsOf(ctx: CmdletContext): boolean {
   return ctx.named['installdns'] !== false;
+}
+
+function pathArg(ctx: CmdletContext, key: string): string | undefined {
+  return ctx.named[key] !== undefined ? psValueToString(ctx.named[key]) : undefined;
+}
+
+function functionalLevelArg(
+  ctx: CmdletContext, key: string, cmdlet: string, label: string,
+): AdFunctionalLevel | null | 'invalid' {
+  if (ctx.named[key] === undefined) return null;
+  const level = parseAdFunctionalLevel(psValueToString(ctx.named[key]));
+  if (!level) {
+    ctx.emitError(`${cmdlet} : Cannot bind parameter '${label}'. Acceptable values are: ${adFunctionalLevelKeywords()}, Default.`);
+    return 'invalid';
+  }
+  return level;
 }
 
 interface AdFilterClause { prop: string; op: string; value: string }
@@ -224,7 +241,8 @@ function ouToPSObject(ou: AdOrgUnitInfo): Record<string, PSValue> {
 export class InstallADDSForestCmdlet implements ICmdlet {
   readonly name = 'install-addsforest';
   readonly aliases = [] as const;
-  readonly parameters = ['DomainName', 'DomainNetbiosName', 'SafeModeAdministratorPassword', 'InstallDns', 'Force'] as const;
+  readonly parameters = ['DomainName', 'DomainNetbiosName', 'SafeModeAdministratorPassword', 'InstallDns',
+    'DomainMode', 'ForestMode', 'DatabasePath', 'LogPath', 'SysvolPath', 'Force', 'WhatIf', 'Confirm'] as const;
 
   execute(ctx: CmdletContext): PSValue {
     const ad = requireAd(ctx, 'Install-ADDSForest');
@@ -239,8 +257,21 @@ export class InstallADDSForestCmdlet implements ICmdlet {
       return null;
     }
     const netbiosName = ctx.named['domainnetbiosname'] !== undefined ? psValueToString(ctx.named['domainnetbiosname']) : undefined;
-    const res = ad.installForest(domainName, netbiosName, password, { installDns: installDnsOf(ctx) });
+    const forestMode = functionalLevelArg(ctx, 'forestmode', 'Install-ADDSForest', 'ForestMode');
+    if (forestMode === 'invalid') return null;
+    const domainMode = functionalLevelArg(ctx, 'domainmode', 'Install-ADDSForest', 'DomainMode');
+    if (domainMode === 'invalid') return null;
+    const res = ad.installForest(domainName, netbiosName, password, {
+      installDns: installDnsOf(ctx),
+      forestMode: forestMode ?? undefined,
+      domainMode: domainMode ?? undefined,
+      databasePath: pathArg(ctx, 'databasepath'),
+      logPath: pathArg(ctx, 'logpath'),
+      sysvolPath: pathArg(ctx, 'sysvolpath'),
+      whatIf: ctx.named['whatif'] === true,
+    });
     if (!res.ok) { ctx.emitError(res.message); return null; }
+    if (res.message) { ctx.emit(res.message); return null; }
     return { Message: 'Success.', Context: 'DCPromo', RebootRequired: false, Status: 0 } as Record<string, PSValue>;
   }
 }

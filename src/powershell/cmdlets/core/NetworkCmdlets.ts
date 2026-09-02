@@ -1038,9 +1038,8 @@ export class WhoamiCmdlet implements ICmdlet {
   execute(ctx: CmdletContext): PSValue {
     if (!ctx.providers.network) throw new PSRuntimeError('whoami is not recognized in this context');
     const host = ctx.providers.network.getHostname();
-    // The simulator stores the current user on env via $env:USERNAME — use
-    // it if available so output stays consistent with `$env:USERNAME`.
     const user = ctx.env.get('env:username') ?? ctx.runtime.executeForValue('$env:USERNAME') ?? 'user';
-    return `${host}\\${user}`.toLowerCase();
+    const domain = ctx.providers.environment?.get('USERDOMAIN') ?? host;
+    return `${domain}\\${user}`;
   }
 }

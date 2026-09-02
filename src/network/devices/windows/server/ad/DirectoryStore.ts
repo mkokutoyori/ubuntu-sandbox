@@ -29,6 +29,7 @@ import { SchemaValidator } from './schema/SchemaValidator';
 import { SchemaPartition, seedDefaultSchema } from './schema/SchemaPartition';
 import type { AttributeSchema, ObjectClassSchema, SchemaOpResult } from './schema/SchemaValidator';
 import { TrustRegistry, type TrustDirection, type TrustOpResult, type TrustInfo, type TrustRecord } from './forest/TrustRelationship';
+import { DEFAULT_AD_FUNCTIONAL_LEVEL } from './adFunctionalLevels';
 
 export interface DirOpResult { ok: boolean; message: string }
 
@@ -130,6 +131,8 @@ export class DirectoryStore {
    * wall-clock have diverged.
    */
   private readonly now: () => Date;
+
+  domainMode: string = DEFAULT_AD_FUNCTIONAL_LEVEL.domainMode;
 
   constructor(
     readonly dnsName: string,

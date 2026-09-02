@@ -1723,3 +1723,43 @@ défauts — la méthode vaut d'être reprise sur le reliquat.
   vers le socle, donc la place ne peut pas y etre declaree comme elle
   vient de l'etre cote Cisco. A rouvrir avec le pont VRP, ou contre une
   transcription reelle qui donne les bornes.
+- `%LOGONSERVER%` vaut `\\<nom de machine>` meme quand la machine est
+  MEMBRE d'un domaine, alors qu'un vrai Windows y met le nom NetBIOS du
+  contrôleur qui a valide l'ouverture de session. Mesure faite en
+  ecrivant la table d'environnement unique de `WindowsPC.wellKnownEnv` :
+  `DomainMembership` ne porte que `dcAddress`, documente comme « Hostname
+  or IP » — donc la valeur serait `\\192.168.1.10` la ou la vraie machine
+  ecrit `\\DC01`. La reponse est JUSTE dans les deux autres cas (compte
+  local, et controleur de domaine, ou le serveur d'ouverture de session
+  EST la machine), et l'inventer pour le troisieme afficherait une
+  adresse la ou on attend un nom. A rouvrir quand `DomainMembership`
+  portera le nom du contrôleur (`discoverDcHostname` le calcule deja dans
+  `DomainJoinClient` et le jette).
+- `Install-ADDSForest` ne REDEMARRE pas la machine, alors que la
+  documentation officielle du cmdlet ecrit, sous `-NoRebootOnCompletion`,
+  qu'« omitting this parameter indicates the computer is rebooted upon
+  completion of the command, regardless of success or failure ». Le
+  parametre n'est donc ni declare ni evalue, plutot que declare et
+  inerte. Non ferme parce que le redemarrage est le comportement par
+  DEFAUT : le poser ferait redemarrer la machine dans la vingtaine de
+  laboratoires du depot qui promeuvent un contrôleur puis continuent a
+  taper des commandes dessus, et ce que `RebootRequired` doit alors
+  rendre n'est atteste par aucune transcription atteignable depuis ce
+  reseau. A rouvrir avec un modele de redemarrage et une capture reelle
+  de la sortie du cmdlet.
+- Les parametres `-SkipPreChecks`, `-CreateDnsDelegation`,
+  `-DnsDelegationCredential`, `-NoDnsOnNetwork`, `-SkipAutoConfigureDns`
+  et `-Confirm` d'`Install-ADDSForest` ne sont pas declares : chacun
+  gouverne un mecanisme que ce simulateur n'a pas (verifications
+  prealables de DCPromo, delegation DNS dans la zone parente, decouverte
+  DNS sur le reseau, invite de confirmation). Les declarer les rangerait
+  sans que rien ne les evalue, ce que la convention du depot interdit.
+  `-SysvolPath` est declare et accepte mais SYSVOL est toujours pose sous
+  `C:\Windows\SYSVOL`, `provisionSysvol` ne prenant pas de chemin.
+- `Install-ADDSForest` REFUSE quand `-SafeModeAdministratorPassword`
+  manque, alors que la vraie commande INVITE l'operateur a la saisir (son
+  bloc de parametre dit `Required: False` avec `Default value:
+  <mandatory>`, et l'exemple 1 de la documentation l'omet en precisant
+  « causes the user to be prompted »). Ce n'est pas ferme ici parce que
+  le chemin de saisie interactive de ce cmdlet n'existe pas et qu'une
+  vingtaine de laboratoires passent deja le mot de passe.

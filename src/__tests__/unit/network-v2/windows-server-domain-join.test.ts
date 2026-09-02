@@ -393,7 +393,7 @@ describe('Domain logon — LAB\\alice / alice@lab.local, validated over the real
     await run(ps(member), 'Add-Computer -DomainName lab.local -Credential "Administrator:P@ssw0rd" -Server 192.168.40.10');
     member.logonDomain('LAB\\alice', 'alicepw');
     const who = await member.executeCmdCommand('whoami');
-    expect(who).toBe('lab\\alice');
+    expect(who).toBe('LAB\\alice');
     const groups = await member.executeCmdCommand('whoami /groups');
     expect(groups).toContain('LAB\\Engineers');
   });
@@ -404,7 +404,7 @@ describe('Domain logon — LAB\\alice / alice@lab.local, validated over the real
     member.logonDomain('LAB\\alice', 'alicepw');
     member.setCurrentUser('Administrator');
     const who = await member.executeCmdCommand('whoami');
-    expect(who).toBe('srv1\\Administrator');
+    expect(who).toBe('SRV1\\Administrator');
     expect(member.getDomainSession()).toBeNull();
   });
 });
