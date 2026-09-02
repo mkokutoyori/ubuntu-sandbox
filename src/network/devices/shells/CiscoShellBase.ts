@@ -52,6 +52,7 @@ import { projectSnmpServiceOntoAgent } from '@/network/snmp/snmpProjection';
 import { renderStartupConfig } from './cisco/ciscoConfigSerializer';
 import { CommandTrie, type ParamType } from './CommandTrie';
 import { fhrpInterfaceSpecs, type FhrpPlacement } from './cisco/fhrpInterfaceSpecs';
+import { privilegeRuleSpecs, type PrivilegeRuleHost } from './cisco/privilegeRuleSpecs';
 import { ipAddressInterfaceSpecs, type IpAddressHost } from './cisco/ipAddressInterfaceSpecs';
 import {
   interfaceLoadMtuSpecs, MTU_MIN,
@@ -1973,6 +1974,20 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     if (mots.length === 0) throw new CliIncomplete();
     this.exigerCommandeConnue(scope, mots);
     return { scope, tous, niveau, commande: mots.join(' ') };
+  }
+
+  protected privilegeRuleHost(): PrivilegeRuleHost {
+    return {
+      applyPrivilegeRule: (words, negate) => {
+        const regle = this.analyserRegleDePrivilege(words);
+        if (negate || regle.niveau === null) {
+          return this.reinitialiserNiveauDeCommande(regle.scope, regle.commande);
+        }
+        this.autorisation()
+          .setCommandLevel(regle.scope, regle.commande, regle.niveau, regle.tous);
+        return '';
+      },
+    };
   }
 
   protected setupConfigurableInterfaces(deviceCtx?: unknown): string[] {
@@ -5490,6 +5505,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       ...this.hardeningSpecs(),
       ...this.arpSpecs(),
       ...this.identityBootSpecs(),
+      ...privilegeRuleSpecs(() => this.privilegeRuleHost()),
       ...this.lineEntrySpecs(),
       ...this.showSocleSpecs(),
       ...this.archiveSubmodeSpecs(),
@@ -7248,6 +7264,14 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       (mot, rang) => mot.toLowerCase() === (tapes[rang] ?? ''));
   }
 
+  private trieIgnoreLaRacine(cmdPart: string): boolean {
+    const premier = cmdPart.trim().toLowerCase()
+      .replace(/^no\s+/i, '').split(/\s+/)[0] ?? '';
+    if (premier.length === 0) return false;
+    return !this.getActiveTrie().enumerateCommandPaths()
+      .some(path => path.toLowerCase().split(' ')[0].startsWith(premier));
+  }
+
   private trieProlonge(cmdPart: string): boolean {
     const typed = cmdPart.trim().toLowerCase().replace(/^no\s+/i, '').split(/\s+/);
 
@@ -7565,7 +7589,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     // dire que la commande entiere lui est etrangere — et IOS en fait
     // alors un nom d'hote a joindre, ce qui ne lui appartient pas.
     if (parsed.status === 'invalid' && parsed.position > 0
-      && parsed.refusePar !== undefined
+      && (parsed.refusePar !== undefined || this.trieIgnoreLaRacine(cmdPart))
       && !this.trieProlonge(cmdPart)
       && !this.trieConnait(cmdPart, parsed.position)) {
       if (parsed.refusePar === 'niveau') return CISCO_ERRORS.INVALID_INPUT;
@@ -8337,7 +8361,8 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
   protected plageMtuDeLInterface(device?: TDevice): SessionParamRanges {
     return {
       rangeFor: (contexte) => {
-        if (contexte.path[contexte.path.length - 1]?.toLowerCase() !== 'mtu') return null;
+        if (contexte.path.length !== 1
+          || contexte.path[0]?.toLowerCase() !== 'mtu') return null;
         const nom = this.selectedPortsForConfigIf()[0];
         if (nom === undefined) return null;
         const port = ((device ?? this.deviceRef) as unknown as {
@@ -9495,35 +9520,6 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       return '';
     });
     /**
-     * `privilege <mode> [all] {level <n> | reset} <commande>`.
-     *
-     * Les deux diagnostics d'IOS ne sont pas interchangeables : `%
-     * Incomplete command.` dit « continue de taper », `% Invalid input`
-     * dit « ce mot-la est faux » et POSE LE CURSEUR dessous. Cette
-     * analyse rendait le premier pour un mot-cle mal ecrit — une ligne
-     * a qui il ne manque rien — et posait le curseur ailleurs que sur
-     * le mot fautif quand elle rendait le second.
-     *
-     * Et la COMMANDE elle-meme est verifiee, comme `commands <mode>
-     * include` la verifie deja : une regle nee sur une faute de frappe
-     * parait dans la configuration, se recharge a l'import, et
-     * n'autorise jamais rien.
-     */
-    trie.registerGreedy('privilege', 'Configure command privilege levels', (args, raw) => {
-      const regle = this.analyserRegleDePrivilege(args);
-      if (regle.niveau === null) {
-        return this.reinitialiserNiveauDeCommande(regle.scope, regle.commande);
-      }
-      // La regle N'EST PAS enregistree comme « ligne non traitee » : elle
-      // est rendue depuis la table qui decide (`privilegeConfigLines`).
-      // Deux magasins pour un fait, c'est ce qui laissait une regle
-      // paraitre dans la configuration sans avoir le moindre effet.
-      void raw;
-      this.autorisation()
-        .setCommandLevel(regle.scope, regle.commande, regle.niveau, regle.tous);
-      return '';
-    });
-    /**
      * `parser view <nom>` — declarer une vue CLI (le RBAC d'IOS).
      *
      * Deux conditions d'IOS, et ce ne sont pas des formalites : il faut
@@ -9591,12 +9587,6 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     // `?` proposerait `parser` et `no parser` nus.
     trie.describeNode('parser', 'Configure parser');
     trie.describeNode('no parser', 'Negate a parser command');
-
-    trie.registerGreedy('no privilege', 'Remove privilege command rule', (args) => {
-      const regle = this.analyserRegleDePrivilege(args);
-      this.autorisation().resetCommandLevel(regle.scope, regle.commande);
-      return '';
-    });
 
     registerLoggingConfigCommands(trie, this.loggingCommandContext());
     registerSequenceNumbersCommand(trie, this.loggingCommandContext());

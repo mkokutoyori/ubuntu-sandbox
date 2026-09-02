@@ -286,6 +286,26 @@ question. C'est un lot a part, avec sa propre mesure.
 
 ## Socle CLI
 
+### [autorisation] `privilege` ne connait que quatre modes sur les onze d'IOS
+`privilege router level 5 network` et `privilege route-map level 5 match`
+sont REFUSES au caret ; une vraie machine les accepte. `AuthScope` ne
+porte que `exec`, `configure`, `interface` et `line`, ce que le module
+declare en toutes lettres depuis toujours — ce n'est donc pas une
+surprise, mais c'est un ecart mesure.
+**Mesure** : sur routeur ET commutateur, les deux formes ci-dessus
+rendent `% Invalid input detected at '^' marker.` avec le curseur sous
+le nom du mode, la ou `privilege interface level 8 shutdown` passe.
+**Pourquoi ce n'est pas ferme ici** : ce n'est pas la grammaire de la
+commande qui manque — la place est une enumeration, y ajouter un mot
+coute une ligne — mais le MOTEUR derriere. Un mode de plus veut dire un
+espace de nommage de plus dans `CommandLevelTable`, une entree de plus
+dans `scopeForMode` (qui traduit le mode de la CLI en espace), et une
+regle de plus dans `filterConfigForLevel`, qui attribue une ligne
+indentee au bloc qui la porte — sans ces trois, `privilege router level
+5 network` serait range et ne gouvernerait rien, c'est-a-dire le defaut
+que ce depot passe son temps a refermer. Accepter le mot sans le moteur
+serait pire que le refus actuel.
+
 ### [cli] `probe-aide-tient-ses-promesses` met trois minutes et flanche sous charge
 Mesure : le fichier passe SEUL (20 cas, 188 s de temps de test) et un de
 ses cas depasse son delai de 5 s des qu'il tourne dans un lot de 196

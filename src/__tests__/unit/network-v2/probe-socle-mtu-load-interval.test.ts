@@ -171,6 +171,21 @@ describe('le plafond de MTU vient du PORT, pas de la declaration', () => {
   });
 });
 
+/*
+ * TROIS commandes finissent par le mot `mtu` et chacune a son propre
+ * PLANCHER : le port a 68, `ip mtu` a 68, `ipv6 mtu` a 1280 (RFC 8200
+ * §5, la MTU minimale d'un lien IPv6). Le plafond lu sur le port ne
+ * vaut que pour la premiere — sans ce cas, une regle ecrite pour l'une
+ * gouverne les autres en silence, ce qui est arrive.
+ */
+describe('chaque `mtu` annonce SON plancher', () => {
+  it('`ipv6 mtu` garde 1280, que le port ne connait pas', async () => {
+    const r = await routeur();
+    expect(r.cliHelp('ipv6 mtu ')).toContain('<1280-9216>');
+    expect(r.cliHelp('mtu ')).toContain('<68-');
+  });
+});
+
 describe('les deux plateformes repondent la MEME chose', () => {
   const SAISIES = [
     'mtu zorglub', 'mtu 10', 'mtu 99999', 'mtu',

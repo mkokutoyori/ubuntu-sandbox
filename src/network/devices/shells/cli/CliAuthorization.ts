@@ -43,8 +43,16 @@ import type { CommandCanonicalizer } from './CommandCanonicalizer';
  */
 export type AuthScope = 'exec' | 'configure' | 'interface' | 'line';
 
-/** Les quatre espaces, dans l'ordre ou `privilege ?` les propose. */
-export const AUTH_SCOPES: readonly AuthScope[] = ['exec', 'configure', 'interface', 'line'];
+export const AUTH_SCOPE_VALUES: ReadonlyArray<{
+  readonly keyword: AuthScope; readonly description: string;
+}> = [
+  { keyword: 'configure', description: 'Global configuration mode' },
+  { keyword: 'exec', description: 'Exec mode' },
+  { keyword: 'interface', description: 'Interface configuration mode' },
+  { keyword: 'line', description: 'Line configuration mode' },
+];
+
+export const AUTH_SCOPES: readonly AuthScope[] = AUTH_SCOPE_VALUES.map((v) => v.keyword);
 
 /** Ce qu'est une session, du point de vue de l'autorisation. */
 export interface CliPrincipal {

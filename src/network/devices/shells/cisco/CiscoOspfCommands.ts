@@ -1130,6 +1130,7 @@ export function registerOSPFInterfaceCommands(configIfTrie: CommandTrie, ctx: Ci
     extra.pendingIfConfig.set(ifName, pending);
     return '';
   });
+  configIfTrie.requireArgs('bfd', 1);
 
   // Frame relay (no-op for simulation)
   configIfTrie.registerGreedy('frame-relay', 'Frame-relay configuration', (args) => {
