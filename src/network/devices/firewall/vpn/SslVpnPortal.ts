@@ -5,6 +5,7 @@ import type { TcpStack } from '../../../tcp/TcpStack';
 import type { X509Certificate } from '../../../pki/X509Certificate';
 import type { PkiPrivateKey } from '../../../pki/PkiKeyPair';
 import { parseForm, type PortalCredentials, type PortalOutcome } from '../auth/AuthPortal';
+import { SslVpnSessionTable } from './SslVpnSessionTable';
 
 export const SSL_VPN_DEFAULT_PORT = 10443;
 
@@ -26,6 +27,7 @@ export interface SslVpnPortalDeps {
     address: string, credentials: PortalCredentials) => Promise<PortalOutcome>;
   readonly groupsOf: (user: string) => readonly string[];
   readonly certificate: (name: string) => SslVpnServerCertificate | undefined;
+  readonly now?: () => number;
 }
 
 export interface SslVpnSettings {
@@ -34,6 +36,7 @@ export interface SslVpnSettings {
   readonly serverCertificate: string;
   readonly sourceInterfaces: readonly string[];
   readonly rules: readonly SslVpnAuthenticationRule[];
+  readonly idleTimeout?: number;
 }
 
 export const SSL_VPN_DEFAULTS: SslVpnSettings = Object.freeze({
@@ -42,17 +45,24 @@ export const SSL_VPN_DEFAULTS: SslVpnSettings = Object.freeze({
   serverCertificate: '',
   sourceInterfaces: Object.freeze([]),
   rules: Object.freeze([]),
+  idleTimeout: 300,
 });
 
 export class SslVpnPortal {
   private session: HttpsServerSession | null = null;
   private settings: SslVpnSettings = SSL_VPN_DEFAULTS;
+  private readonly sessions: SslVpnSessionTable;
 
-  constructor(private readonly deps: SslVpnPortalDeps) {}
+  constructor(private readonly deps: SslVpnPortalDeps) {
+    this.sessions = new SslVpnSessionTable(deps.now);
+  }
+
+  sessionTable(): SslVpnSessionTable { return this.sessions; }
 
   apply(settings: SslVpnSettings): string | undefined {
     this.stop();
     this.settings = settings;
+    this.sessions.setIdleTimeout(settings.idleTimeout ?? 300);
     if (!settings.enabled) return undefined;
 
     const material = this.deps.certificate(settings.serverCertificate);
@@ -112,9 +122,16 @@ export class SslVpnPortal {
     return this.authenticate(peer?.ip ?? '0.0.0.0', {
       username: submitted.get('username') ?? '',
       password: submitted.get('password') ?? '',
-    }).then(outcome => (outcome.ok
-      ? page(200, 'OK', welcomePage(outcome.user))
-      : page(401, 'Authorization Required', deniedPage())));
+    }).then((outcome) => {
+      if (!outcome.ok) return page(401, 'Authorization Required', deniedPage());
+      this.sessions.open({
+        user: outcome.user,
+        group: this.deps.groupsOf(outcome.user)[0] ?? '',
+        sourceIp: peer?.ip ?? '0.0.0.0',
+        mode: 'web',
+      });
+      return page(200, 'OK', welcomePage(outcome.user));
+    });
   }
 }
 

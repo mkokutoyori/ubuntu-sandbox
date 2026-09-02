@@ -486,6 +486,7 @@ export interface FortiSslVpnPatch {
   readonly port: number;
   readonly serverCertificate: string;
   readonly sourceInterfaces: readonly string[];
+  readonly idleTimeout?: number;
   readonly rules: readonly FortiSslVpnRulePatch[];
 }
 

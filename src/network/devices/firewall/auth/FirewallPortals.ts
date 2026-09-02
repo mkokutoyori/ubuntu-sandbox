@@ -40,6 +40,7 @@ export function buildFirewallPortals(deps: FirewallPortalDeps): FirewallPortals 
 
   const sslVpn = new SslVpnPortal({
     tcp: deps.tcp,
+    now: deps.now,
     authenticate: (address, credentials) => auth.authenticate(address, credentials),
     groupsOf: (user) => deps.vdom().users.groupsOf(user),
     certificate: (name) => {

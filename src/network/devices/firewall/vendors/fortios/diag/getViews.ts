@@ -373,6 +373,44 @@ export function renderDhcpLeases(
   return lines.join('\n');
 }
 
+export interface SslVpnListRow {
+  readonly index: number;
+  readonly user: string;
+  readonly group: string;
+  readonly sourceIp: string;
+  readonly authType: string;
+  readonly timeout: number;
+  readonly duration: number;
+  readonly tunnelIp: string;
+}
+
+export function renderSslVpnLoginUsers(rows: readonly SslVpnListRow[]): string {
+  const lines = ['SSL VPN Login Users:'];
+  lines.push(...renderTable(rows, [
+    { header: 'Index', width: 8, value: row => String(row.index) },
+    { header: 'User', width: 16, value: row => row.user },
+    { header: 'Auth Type', width: 16, value: row => row.authType },
+    { header: 'Timeout', width: 16, value: row => String(row.timeout) },
+    { header: 'From', width: 16, value: row => row.sourceIp },
+    { header: 'HTTP in/out', width: 16, value: () => '0/0' },
+    { header: 'HTTPS in/out', width: 0, value: () => '0/0' },
+  ], FIXED_TABLE).map(line => ` ${line}`));
+  return lines.join('\n');
+}
+
+export function renderSslVpnSessions(rows: readonly SslVpnListRow[]): string {
+  const lines = ['SSL VPN sessions:'];
+  lines.push(...renderTable(rows, [
+    { header: 'Index', width: 8, value: row => String(row.index) },
+    { header: 'User', width: 16, value: row => row.user },
+    { header: 'Source IP', width: 16, value: row => row.sourceIp },
+    { header: 'Duration', width: 16, value: row => String(row.duration) },
+    { header: 'I/O Bytes', width: 16, value: () => '0/0' },
+    { header: 'Tunnel/Dest IP', width: 0, value: row => row.tunnelIp },
+  ], FIXED_TABLE).map(line => ` ${line}`));
+  return lines.join('\n');
+}
+
 export function renderDhcp6Leases(
   leases: ReadonlyArray<{
     iface: string; ip: string; duid: string; expiresAt: number; serverId: string;

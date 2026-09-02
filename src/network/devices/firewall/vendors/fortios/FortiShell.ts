@@ -59,8 +59,10 @@ import {
   renderArpTable, renderInterfaceStatus, renderPerformanceStatus,
   type InterfaceStatusFacts,
   renderBgpNeighbors, renderBgpSummary, renderDhcpLeases, renderDhcp6Leases,
+  renderSslVpnLoginUsers, renderSslVpnSessions, type SslVpnListRow,
   renderOspfNeighbors, renderRoutingTable, renderSystemStatus,
 } from './diag/getViews';
+import type { SslVpnSessionMode } from '../../vpn/SslVpnSessionTable';
 import { renderHaChecksum, renderHaStatus } from './diag/haRenderer';
 import type { FortiLogFormat } from './log/fortiLogFormat';
 import {
@@ -1155,6 +1157,7 @@ export class FortiShell {
         if (tail.length === 0) return FortiMessages.incomplete('a VPN operation');
         if (tail[0] === 'certificate') return this.executeCertificate(tail.slice(1));
         if (tail[0] === 'ipsec') return this.executeIpsecTunnel(tail.slice(1));
+        if (tail[0] === 'sslvpn') return this.executeSslVpn(tail.slice(1));
         return FortiMessages.unknownAction(`vpn ${tail[0]}`);
       case 'time': return runExecuteTime(tail, this.fw);
       case 'date': return runExecuteDate(tail, this.fw);
@@ -1278,6 +1281,66 @@ export class FortiShell {
   ): readonly T[] {
     if (iface === undefined) return leases;
     return leases.filter(lease => lease.iface === iface);
+  }
+
+  private sslVpnRows(mode?: SslVpnSessionMode): readonly SslVpnListRow[] {
+    const table = this.fw.getSslVpnPortal().sessionTable();
+    return table.list(mode).map(session => ({
+      index: session.index,
+      user: session.user,
+      group: session.group,
+      sourceIp: session.sourceIp,
+      authType: session.authType,
+      timeout: table.remaining(session),
+      duration: table.durationOf(session),
+      tunnelIp: session.tunnelIp,
+    }));
+  }
+
+  private executeSslVpn(rest: readonly string[]): string {
+    const action = rest[0];
+    if (action === undefined) return FortiMessages.incomplete('an SSL-VPN operation');
+    const table = this.fw.getSslVpnPortal().sessionTable();
+
+    if (action === 'list') {
+      const which = rest[1];
+      if (which !== undefined && which !== 'web' && which !== 'tunnel') {
+        return FortiMessages.unknownAction(`vpn sslvpn list ${which}`);
+      }
+      if (which === 'web') return renderSslVpnLoginUsers(this.sslVpnRows('web'));
+      if (which === 'tunnel') return renderSslVpnSessions(this.sslVpnRows('tunnel'));
+      return [
+        renderSslVpnLoginUsers(this.sslVpnRows('web')),
+        '',
+        renderSslVpnSessions(this.sslVpnRows('tunnel')),
+      ].join('\n');
+    }
+
+    if (action === 'del-all') {
+      const which = rest[1];
+      if (which !== undefined && which !== 'tunnel') {
+        return FortiMessages.unknownAction(`vpn sslvpn del-all ${which}`);
+      }
+      table.closeAll(which as SslVpnSessionMode | undefined);
+      return '';
+    }
+
+    if (action === 'del-web' || action === 'del-tunnel') {
+      if (rest[1] === undefined) return FortiMessages.incomplete('an index');
+      const index = Number.parseInt(rest[1], 10);
+      if (!Number.isInteger(index) || String(index) !== rest[1]) {
+        return FortiMessages.unknownKey(rest[1]);
+      }
+      const wanted: SslVpnSessionMode = action === 'del-web' ? 'web' : 'tunnel';
+      const session = table.byIndex(index);
+      if (!session || session.mode !== wanted) {
+        return FortiMessages.commandFail(`no ${wanted} connection at index ${index}.`);
+      }
+      table.close(index);
+      return '';
+    }
+
+    return FortiMessages.unknownAction(`vpn sslvpn ${action}`);
   }
 
   private executeIpsecTunnel(rest: readonly string[]): string {

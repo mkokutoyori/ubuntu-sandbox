@@ -69,6 +69,7 @@ export const FORTI_EXECUTE_COMMANDS: readonly FortiExecuteCommand[] = Object.fre
     options: [
       { keyword: 'certificate', description: 'Certificate operations.' },
       { keyword: 'ipsec', description: 'IPsec tunnel operations.' },
+      { keyword: 'sslvpn', description: 'SSL-VPN connection operations.' },
     ] },
 ]);
 
