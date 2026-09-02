@@ -3388,10 +3388,12 @@ export abstract class EndHost extends Equipment {
     const useTtl = ttl ?? this.defaultTTL;
 
     // Phase 5.6: settle through the bus instead of a pendingPings Map.
+    const toBroadcast = linkDestinationFor(targetIP, this.connectedIpv4Prefixes()) !== null;
     const replyPromise = waitForEvent(
       this.getBus(),
       'host.icmp.echo-reply',
-      (p) => p.deviceId === this.id && p.fromIp === targetIpStr && p.id === id && p.seq === seq,
+      (p) => p.deviceId === this.id && p.id === id && p.seq === seq
+        && (toBroadcast || p.fromIp === targetIpStr),
       { timeoutMs, scheduler: this.getScheduler() },
     );
     const failedPromise = waitForEvent(

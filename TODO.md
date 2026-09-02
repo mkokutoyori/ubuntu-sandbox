@@ -98,26 +98,6 @@ n'est pas ferme ici** : les rendre inscriptibles demande de donner un
 COMPORTEMENT a chacune, sans quoi on rangerait une valeur que rien
 n'evalue. C'est un chantier par knob, pas un correctif de commande.
 
-### [icmp] `ping -b` n'emet RIEN vers une diffusion dirigee
-Trouve en fermant l'entree precedente : la cle
-`net.ipv4.icmp_echo_ignore_broadcasts` existe et gouverne bien la
-REPONSE, mais le laboratoire Smurf reste injouable parce que l'EMETTEUR
-ne sait pas envoyer.
-**Mesure** : `ping -b -c 1 10.0.0.255` depuis un hote du segment rend
-`From  icmp_seq=1 Destination Host Unreachable` — noter l'adresse VIDE
-apres `From`, un ICMP fabrique localement — et `100% packet loss`. Aucune
-trame ne part. La cause est en amont : la destination est resolue par
-ARP au lieu d'etre reconnue comme diffusion de sous-reseau et envoyee a
-`ff:ff:ff:ff:ff:ff`, ce qu'une vraie pile fait sans resolution.
-**Consequence** : la sonde de la cle observe donc le RECEPTEUR
-directement (trame livree, reponse comptee sur son tap) plutot que par
-un `ping`, faute d'emetteur capable.
-**Pourquoi ce n'est pas ferme ici** : c'est un defaut du chemin
-d'EMISSION ICMP, pas de la cle — `EndHost` a deja `sendUdpToGroup` pour
-le multicast et rien d'equivalent pour la diffusion dirigee. A fermer
-avec sa propre mesure, en donnant a l'echo la meme regle de destination
-de couche lien que l'UDP.
-
 ---
 
 ## Postes Windows
