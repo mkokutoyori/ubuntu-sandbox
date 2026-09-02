@@ -533,6 +533,35 @@ ici plutot que tranche unilateralement.
 
 ## Routeur Cisco
 
+### [acl/ssh] une liste POSEE coupe SSH meme quand elle permet tout
+**Constat.** Mesure faite en discriminant `acl-protocoles-applicatifs` :
+avec `ACLEngine.evaluateForDataPlane` neutralise — c'est-a-dire rendant
+`permit` sans meme lire la liste — `ssh alice@… whoami` rend bien
+`alice` tant qu'AUCUNE liste n'est appliquee, et expire des qu'une liste
+l'est, quelle qu'elle soit. `deny ip any any` comme
+`permit tcp any any eq 22` donnent le meme delai depasse.
+
+**Ce que cela veut dire.** La simple PRESENCE d'une liste sur
+l'interface suffit a couper SSH par un chemin qui n'est PAS
+`evaluateForDataPlane` — sans quoi la neutralisation l'aurait ouvert.
+Les autres protocoles applicatifs (HTTP, SMTP, FTP, FTPS) ne montrent
+pas ce comportement : leurs cas de blocage tombent correctement sous la
+meme neutralisation.
+
+**Mesure complementaire.** Sous moteur NORMAL, SSH se comporte
+correctement : sans liste il marche, `deny ip any any` le coupe,
+`permit tcp any any eq 22` le retablit, `eq 23` ne le sauve pas. Le
+comportement observable est donc juste ; c'est la sensibilite a la
+neutralisation qui ne s'explique pas.
+
+**Raison du report.** Je n'ai pas identifie le chemin en cause. Une prise
+posee sur le port du serveur ne voit AUCUN segment TCP meme dans les cas
+qui reussissent, donc le client `ssh` de `executeCommand` n'emprunte pas
+la voie que cette prise observe — trouver le vrai chemin est le
+prealable, et c'est un sujet en soi (le depot documente deja deux piles
+SSH qui n'interoperent pas). Inscrit ici pour ne pas etre perdu.
+
+
 ### [acl] GRE n'est pas eprouvable sur un routeur Cisco
 La matrice « chaque protocole a son transport » couvre OSPF, EIGRP, RIP,
 BGP, DHCP et IPsec, et laisse GRE dehors.
