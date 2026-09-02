@@ -1,6 +1,6 @@
 import { renderTable, FIXED_TABLE } from '../../../shells/cli/TextTable';
 import type { EnumValue } from '../../../../../cli/ArgumentTypes';
-import type { Suggestion } from '../../../../../cli/CompletionEngine';
+import type { Suggestion, CompletionTrigger } from '../../../../../cli/CompletionEngine';
 import type { FortiGate } from './FortiGate';
 import { FORTIOS_PROFILE } from './FortiProfile';
 import {
@@ -10,7 +10,9 @@ import {
   fortiSystemTime, runExecuteDate, runExecuteTime,
 } from './diag/timeCommands';
 import { applyFilter, splitPipe } from './render/outputFilter';
-import { FortiSocle, FORTI_TOKENS, VALUE_LIST_VERBS } from './FortiSocle';
+import {
+  FortiSocle, FORTI_TOKENS, VALUE_LIST_VERBS, branchHelp, existingEntryHelp,
+} from './FortiSocle';
 import type { CommandInteractionPlan } from '../../../../../shell/interaction/CommandInteraction';
 import { schemaIndex } from './schema';
 import type {
@@ -340,6 +342,25 @@ export class FortiShell {
     return this.tree;
   }
 
+  private candidates(input: string, trigger: CompletionTrigger): readonly Suggestion[] {
+    const prefix = input.trimStart();
+    const head = prefix.slice(0, prefix.lastIndexOf(' ') + 1);
+    const typed = prefix.slice(head.length);
+    const bare = typed.startsWith('"') ? typed.slice(1) : typed;
+
+    const out: Suggestion[] = [];
+    const seen = new Set<string>();
+    for (const suggestion of [
+      ...this.socle.suggestions(this.socleProbe(head, bare), trigger),
+      ...this.viewPathSuggestions(head, bare),
+    ]) {
+      if (seen.has(suggestion.value)) continue;
+      seen.add(suggestion.value);
+      out.push(suggestion);
+    }
+    return out;
+  }
+
   completions(input: string): readonly string[] {
     this.claimTree();
     const prefix = input.trimStart();
@@ -348,16 +369,11 @@ export class FortiShell {
     const quote = typed.startsWith('"') ? '"' : '';
     const bare = typed.slice(quote.length);
 
-    const proposed = [
-      ...this.socle.suggestions(this.socleProbe(head, bare), 'TAB')
-        .filter(s => !s.isArgument || s.completable === true)
-        .map(s => s.value),
-      ...this.viewPathCompletions(head, bare),
-    ];
-
     const developpee = this.canonicalHead(head);
     const lowered = bare.toLowerCase();
-    return [...new Set(proposed)]
+    return this.candidates(input, 'TAB')
+      .filter(s => !s.isArgument || s.completable === true)
+      .map(s => s.value)
       .filter(value => value.toLowerCase().startsWith(lowered)
         && value.toLowerCase() !== lowered)
       .map(value => `${developpee}${quote}${value}${quote}`);
@@ -398,26 +414,35 @@ export class FortiShell {
       .some(spec => spec.name === attribute && spec.multiValue === true);
   }
 
-  private viewPathCompletions(head: string, typed: string): readonly string[] {
+  private viewPathSuggestions(head: string, typed: string): readonly Suggestion[] {
     const words = this.canonicalWords(head);
     if (words[0] !== 'show' && words[0] !== 'get') return [];
 
     const walked = words.slice(1);
+    const lowered = typed.toLowerCase();
+    const retenu = (value: string) => value.toLowerCase().startsWith(lowered);
+    const proposition = (value: string, description: string): Suggestion =>
+      ({ value, description, isArgument: true, completable: true });
+
     const branches = [...new Set([
       ...this.tree.branchNames(walked),
       ...(words[0] === 'get' ? viewContinuations(FORTI_GET_VIEWS, walked) : []),
     ])].sort();
-    if (branches.length > 0) return branches;
+    if (branches.length > 0) {
+      return branches.filter(retenu).map(word =>
+        proposition(word, branchHelp(this.tree.spec([...walked, word]), word)));
+    }
 
     const spec = this.tree.spec(walked);
     if (!spec || spec.kind !== 'table') return [];
-    return this.tree.table(spec).keys();
+    return this.tree.table(spec).keys().filter(retenu)
+      .map(key => proposition(key, existingEntryHelp(key)));
   }
 
   help(inputBeforeQuestion = ''): readonly string[] {
     this.claimTree();
     return this.describe(
-      this.socle.suggestions(helpPrefix(inputBeforeQuestion), 'QUESTION_MARK'));
+      this.candidates(helpPrefix(inputBeforeQuestion), 'QUESTION_MARK'));
   }
 
   abortContinuation(): boolean {

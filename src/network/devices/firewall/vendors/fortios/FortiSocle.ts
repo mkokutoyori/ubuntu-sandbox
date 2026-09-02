@@ -112,6 +112,14 @@ function done(output: string): FortiOutcome {
   return { handled: true, output };
 }
 
+export function existingEntryHelp(key: string): string {
+  return `Existing entry ${key}.`;
+}
+
+export function branchHelp(spec: { help: string } | undefined, word: string): string {
+  return spec ? spec.help : `Configure ${word}.`;
+}
+
 export class FortiSocle {
   private readonly cache = new Map<string, CommandTable>();
 
@@ -519,7 +527,7 @@ export class FortiSocle {
   private tableSpecs(table: FortiTable): CommandSpec[] {
     const spec = table.spec;
     const keys: readonly EnumValue[] = table.keys().map(k => ({
-      keyword: k, description: `Existing entry ${k}.`,
+      keyword: k, description: existingEntryHelp(k),
     }));
     const keyArgument: ArgumentSpec = {
       name: 'key',
@@ -666,7 +674,7 @@ export class FortiSocle {
       if (head === undefined || seen.has(head)) continue;
       const spec = this.deps.tree.spec(path);
       if (!spec || this.verdict(spec, 'read') === 'absent') continue;
-      seen.set(head, path.length === 1 ? spec.help : `Configure ${head}.`);
+      seen.set(head, branchHelp(path.length === 1 ? spec : undefined, head));
     }
     return [...seen.entries()]
       .sort(([a], [b]) => a.localeCompare(b))
