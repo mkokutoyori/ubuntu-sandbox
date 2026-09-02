@@ -434,6 +434,17 @@ export class FortiSocle {
       this.plain('execute log delete-all', ['execute', 'log', 'delete-all'],
         'Delete every stored log record.',
         () => this.deps.runExecute(['log', 'delete-all'])),
+      this.withArgument('execute log delete',
+        ['execute', 'log', 'delete', {
+          name: 'category', type: 'WORD', optional: true,
+          description: 'Log category.',
+          alternatives: LOG_CATEGORIES.map(entry => ({
+            keyword: String(entry.index), description: entry.name,
+          })),
+        }],
+        'Delete local logs of one category.',
+        (_s, args) => this.deps.runExecute(
+          ['log', 'delete', ...(args.category ? [args.category] : [])])),
       this.withArgument('execute log filter',
         ['execute', 'log', 'filter', rest('rest', 'Filter criterion.')],
         'Set the log display filter.', run2(['log', 'filter'])),

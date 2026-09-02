@@ -151,6 +151,13 @@ export class FirewallLogStore {
     return this.droppedCount;
   }
 
+  deleteMatching(filter: FirewallLogFilter): number {
+    const kept = this.records.filter(record => !matches(record, filter));
+    const removed = this.records.length - kept.length;
+    this.records = kept;
+    return removed;
+  }
+
   clear(): number {
     const removed = this.records.length;
     this.records = [];

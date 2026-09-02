@@ -314,6 +314,19 @@ export function runExecuteLog(rest: readonly string[], deps: FortiDiagDeps): str
   if (rest[0] === 'delete-all') {
     return `${deps.fw.getLogStore().clear()} log entries deleted`;
   }
+  if (rest[0] === 'delete') {
+    const raw = rest[1];
+    if (raw === undefined || raw === '?') return describeLogCategories();
+    const category = resolveLogCategory(raw);
+    if (!category) {
+      return FortiMessages.valueError(raw,
+        `known categories:\n${describeLogCategories()}`);
+    }
+    const removed = deps.fw.getLogStore().deleteMatching({
+      type: category.type, subtype: category.subtype,
+    });
+    return `${removed} log entries deleted`;
+  }
   if (rest[0] === 'filter') return setLogFilter(rest.slice(1), deps);
   if (rest[0] !== 'display') return FortiMessages.unknownPath(`log ${rest.join(' ')}`);
 

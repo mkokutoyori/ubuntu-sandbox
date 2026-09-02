@@ -1145,6 +1145,7 @@ export class FortiShell {
       case 'dhcp': return this.executeDhcp(tail);
       case 'dhcp6': return this.executeDhcp6(tail);
       case 'interface': return this.executeInterface(tail);
+      case 'policy-packet-capture': return this.executePolicyPacketCapture(tail);
       case 'traceroute':
         return tail.length === 0
           ? FortiMessages.incomplete('a destination')
@@ -1295,6 +1296,16 @@ export class FortiShell {
       duration: table.durationOf(session),
       tunnelIp: session.tunnelIp,
     }));
+  }
+
+  private executePolicyPacketCapture(rest: readonly string[]): string {
+    if (rest[0] === undefined) return FortiMessages.incomplete('a capture operation');
+    if (rest[0] !== 'delete-all') {
+      return FortiMessages.unknownAction(`policy-packet-capture ${rest[0]}`);
+    }
+    const removed = this.fw.getPacketCapture().count();
+    this.fw.getPacketCapture().clear();
+    return `${removed} captured packets deleted`;
   }
 
   private executeSslVpn(rest: readonly string[]): string {

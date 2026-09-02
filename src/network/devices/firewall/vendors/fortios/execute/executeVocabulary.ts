@@ -43,6 +43,8 @@ export const FORTI_EXECUTE_COMMANDS: readonly FortiExecuteCommand[] = Object.fre
     ] },
   { name: 'log', help: 'Log operations.' },
   { name: 'ping', help: 'Send ICMP echo requests.' },
+  { name: 'policy-packet-capture', help: 'Captured-packet operations.',
+    options: [{ keyword: 'delete-all', description: 'Delete all captured packets.' }] },
   { name: 'ping6', help: 'Send IPv6 ICMP echo requests.' },
   { name: 'ping-options', help: 'Set ICMP echo request (ping) options.',
     options: pingOptionKeywords('ipv4') },
