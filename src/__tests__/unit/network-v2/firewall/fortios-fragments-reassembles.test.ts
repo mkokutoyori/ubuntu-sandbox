@@ -20,8 +20,8 @@
  *      fragmente. Sans recollage, les fragments qui suivent le premier ne
  *      portent pas ce port et echappent a la regle qui les nomme : c'est
  *      l'evasion par fragmentation.
- *   4. `set ip-fragment-mem-thresholds` existe, vaut 32 par defaut, et
- *      accepte 32 a 2047 (megaoctets).
+ *   4. `set ip-fragment-mem-thresholds` existe SOUS `config system
+ *      global`, vaut 32 par defaut, et accepte 32 a 2047 (megaoctets).
  *   5. Une valeur hors bornes est refusee plutot que rangee.
  *   6. `diagnose snmp ip frags` rend les compteurs de la MIB IP.
  *   7. Ces compteurs MESURENT : un recollage reussi fait monter
@@ -229,25 +229,25 @@ describe('phase 21 — un datagramme fragmente est recolle', () => {
     async () => {
       const { sh } = await laboratoire();
 
-      expect(run(sh, 'show full-configuration system settings'))
+      expect(run(sh, 'show full-configuration system global'))
         .toContain('set ip-fragment-mem-thresholds 32');
 
       expect(run(sh,
-        'config system settings',
+        'config system global',
         'set ip-fragment-mem-thresholds 256', 'end')).not.toContain('error');
-      expect(run(sh, 'show system settings'))
+      expect(run(sh, 'show system global'))
         .toContain('set ip-fragment-mem-thresholds 256');
     });
 
   it('une valeur hors bornes est refusee', async () => {
     const { sh } = await laboratoire();
 
-    run(sh, 'config system settings');
+    run(sh, 'config system global');
     expect(run(sh, 'set ip-fragment-mem-thresholds 16')).toMatch(/value parse error|range/i);
     expect(run(sh, 'set ip-fragment-mem-thresholds 4096')).toMatch(/value parse error|range/i);
     run(sh, 'end');
 
-    expect(run(sh, 'show full-configuration system settings'))
+    expect(run(sh, 'show full-configuration system global'))
       .toContain('set ip-fragment-mem-thresholds 32');
   });
 

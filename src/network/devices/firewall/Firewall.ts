@@ -3,6 +3,7 @@ import { LacpAgent } from '@/network/lacp/LacpAgent';
 import { LldpAgent } from '@/network/lldp/LldpAgent';
 import { ETHERTYPE_LLDP } from '@/network/lldp/types';
 import { resolveLldp } from './l2/LldpIntent';
+import type { SessionDirtyMode } from './session/SessionDirty';
 import type {
   LldpIntent, LldpSetting, LldpVdomIntent, LldpVdomSetting,
 } from './l2/LldpIntent';
@@ -1316,6 +1317,22 @@ export class Firewall extends Equipment {
       this.lacpAgentInstance.start();
     }
     return this.lacpAgentInstance;
+  }
+
+  private sessionDirtyMode: SessionDirtyMode = 'check-all';
+
+  setSessionDirtyMode(mode: SessionDirtyMode): void {
+    this.sessionDirtyMode = mode;
+  }
+
+  getSessionDirtyMode(): SessionDirtyMode { return this.sessionDirtyMode; }
+
+  onPolicyChanged(policyId: string, policyMode: SessionDirtyMode): number {
+    const effective = this.sessionDirtyMode === 'check-policy-option'
+      ? policyMode : this.sessionDirtyMode;
+    if (effective !== 'check-all') return 0;
+    return this.getSessionTable()
+      .clearMatching(session => session.policyId === policyId);
   }
 
   private globalLldp = { tx: false, rx: false };

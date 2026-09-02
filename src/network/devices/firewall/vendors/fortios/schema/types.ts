@@ -217,6 +217,7 @@ export interface FortiGlobalSettings {
   readonly authHttpPort?: number;
   readonly authHttpsPort?: number;
   readonly authKeepAlive?: boolean;
+  readonly fragmentMemoryMb?: number;
   readonly adminSshPort?: number;
   readonly adminTelnetPort?: number;
   readonly adminHttpPort?: number;
@@ -302,6 +303,8 @@ export interface FortiCommitDevice {
   removeSchedule(name: string): void;
   applyVdomSettings(settings: FortiVdomSettings): void;
   setVdomLldp(transmission: LldpVdomSetting, reception: LldpVdomSetting): void;
+  setSessionDirtyMode(mode: string): void;
+  onPolicyChanged(policyId: string, policyMode: string): void;
   applyIpPool(pool: FortiIpPoolPatch): void;
   removeIpPool(name: string): void;
   applyVip(vip: FortiVipPatch): void;
