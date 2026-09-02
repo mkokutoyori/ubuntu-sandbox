@@ -533,34 +533,39 @@ ici plutot que tranche unilateralement.
 
 ## Routeur Cisco
 
-### [acl/ssh] une liste POSEE coupe SSH meme quand elle permet tout
-**Constat.** Mesure faite en discriminant `acl-protocoles-applicatifs` :
-avec `ACLEngine.evaluateForDataPlane` neutralise — c'est-a-dire rendant
-`permit` sans meme lire la liste — `ssh alice@… whoami` rend bien
-`alice` tant qu'AUCUNE liste n'est appliquee, et expire des qu'une liste
-l'est, quelle qu'elle soit. `deny ip any any` comme
-`permit tcp any any eq 22` donnent le meme delai depasse.
+### [ssh] `ssh` entre deux hotes ne traverse PAS le fil
+**Constat.** `ssh alice@10.0.2.10 whoami` lance par `executeCommand`
+rend `alice` sans qu'AUCUNE trame n'atteigne le serveur. Mesure : une
+prise posee sur le port du serveur voit les deux trames d'un `ping`
+(`in/ipv4/1`, `out/ipv4/1`) et ZERO pendant le SSH qui reussit.
 
-**Ce que cela veut dire.** La simple PRESENCE d'une liste sur
-l'interface suffit a couper SSH par un chemin qui n'est PAS
-`evaluateForDataPlane` — sans quoi la neutralisation l'aurait ouvert.
-Les autres protocoles applicatifs (HTTP, SMTP, FTP, FTPS) ne montrent
-pas ce comportement : leurs cas de blocage tombent correctement sous la
-meme neutralisation.
+**Ce qui tient lieu de reseau.** `LinuxSshClient` appelle
+`transitTcpAclVerdict` (`devices/linux/network/HostLookup.ts`), qui
+parcourt la topologie depuis le port source, suit les cables, et evalue
+un SYN SYNTHETIQUE contre la liste de chaque routeur rencontre — par
+`evaluateACLByName`. C'est une SECONDE implantation de « ce paquet
+passerait-il ? », a cote de `evaluateForDataPlane` que suit le vrai plan
+de donnees, et les deux peuvent diverger sans que rien ne l'empeche.
 
-**Mesure complementaire.** Sous moteur NORMAL, SSH se comporte
-correctement : sans liste il marche, `deny ip any any` le coupe,
-`permit tcp any any eq 22` le retablit, `eq 23` ne le sauve pas. Le
-comportement observable est donc juste ; c'est la sensibilite a la
-neutralisation qui ne s'explique pas.
+**Comment cela a ete trouve.** En discriminant
+`acl-protocoles-applicatifs` : les cas de blocage SSH ne tombaient pas
+avec `evaluateForDataPlane` neutralise, alors que HTTP, SMTP et FTP
+tombaient. Neutraliser `evaluateACLByName` a la place les fait tomber
+tous les deux — donc c'est bien cette fonction, et non le plan de
+donnees, qui decide du sort de SSH.
 
-**Raison du report.** Je n'ai pas identifie le chemin en cause. Une prise
-posee sur le port du serveur ne voit AUCUN segment TCP meme dans les cas
-qui reussissent, donc le client `ssh` de `executeCommand` n'emprunte pas
-la voie que cette prise observe — trouver le vrai chemin est le
-prealable, et c'est un sujet en soi (le depot documente deja deux piles
-SSH qui n'interoperent pas). Inscrit ici pour ne pas etre perdu.
+**Consequence, et elle depasse l'ACL.** Le verdict rendu est JUSTE
+aujourd'hui (sans liste ca marche, `deny ip any any` coupe,
+`permit tcp … eq 22` retablit, `eq 23` ne sauve pas), mais il est
+REJOUE et non SUBI : rien ne garantit qu'il suive le plan de donnees le
+jour ou l'un des deux change. Et cela contredit la regle que ce depot
+pose comme obligatoire — tout echange entre deux machines doit traverser
+le reseau simule comme de vraies trames.
 
+**Raison du report.** Faire passer ce client par une vraie session TCP
+est le chantier d'unification des deux piles SSH que le depot documente
+deja comme large ; `transitTcpAclVerdict` a par ailleurs d'autres
+lecteurs (traceroute, sondes UDP) qui disparaitraient avec lui.
 
 ### [acl] GRE n'est pas eprouvable sur un routeur Cisco
 La matrice « chaque protocole a son transport » couvre OSPF, EIGRP, RIP,

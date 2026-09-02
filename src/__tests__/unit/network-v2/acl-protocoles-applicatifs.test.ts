@@ -53,20 +53,28 @@
  * « la bonne ligne retablit » passent des deux cotes par construction,
  * leur verdict attendu etant que le trafic passe.
  *
- * **Les quatre cas SSH ne tombent PAS, et je ne sais pas pourquoi.**
- * Le dire plutot que l'habiller : sous moteur neutralise et SANS liste,
- * `ssh … whoami` rend bien `alice` ; des qu'une liste est POSEE — meme
- * une que le moteur neutralise permet integralement — la connexion
- * expire. La presence d'une liste suffit donc a couper SSH par un
- * chemin qui n'est pas `evaluateForDataPlane`, et je n'ai pas identifie
- * lequel. C'est inscrit au `TODO.md` comme une question ouverte.
+ * **Les quatre cas SSH ne tombent pas sous CETTE neutralisation, et la
+ * raison a ete trouvee.** `ssh … whoami` lance depuis `executeCommand`
+ * ne traverse PAS le fil : une prise posee sur le port du serveur voit
+ * les deux trames d'un `ping` et ZERO trame pendant un SSH qui reussit
+ * pourtant. `LinuxSshClient` appelle `transitTcpAclVerdict`
+ * (`network/HostLookup.ts`), qui parcourt la topologie et evalue un SYN
+ * SYNTHETIQUE contre la liste de chaque routeur du chemin — par
+ * `evaluateACLByName`, une SECONDE implantation de « ce paquet
+ * passerait-il ? », distincte de `evaluateForDataPlane` que suit le vrai
+ * plan de donnees.
  *
- * Ce que les cas SSH mesurent malgre cela est reel et verifie quatre
- * fois : sans liste la commande distante s'execute, `deny ip any any` la
- * fait expirer, `permit tcp … eq 22` la retablit, et `eq 23` ne la sauve
- * pas. Leur discrimination vient de ce COUPLE — 22 marche, 23 non, sur
- * le meme laboratoire —, qu'un moteur ignorant les ports ne pourrait
- * pas produire ; elle ne vient pas de la neutralisation.
+ * D'ou les trois observations qui semblaient contradictoires : aucune
+ * trame, la liste mord quand meme, et neutraliser le plan de donnees ne
+ * change rien. Neutraliser `evaluateACLByName` a la place fait tomber
+ * EXACTEMENT ces deux cas de blocage — verifie.
+ *
+ * Ces cas discriminent donc bien, sur l'autre fonction ; et ils gardent
+ * en plus le COUPLE `eq 22` marche / `eq 23` non, sur le meme
+ * laboratoire, qu'un moteur ignorant les ports ne produirait pas. Le
+ * defaut de fond — SSH ne traverse pas le fil — est inscrit au
+ * `TODO.md`, la regle du depot etant que tout echange entre deux
+ * machines DOIT passer par de vraies trames.
  *
  * Note pour qui refera la mesure : le plan de donnees appelle
  * `evaluateForDataPlane` et non `evaluateACL`.
