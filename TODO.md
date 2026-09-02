@@ -286,6 +286,26 @@ question. C'est un lot a part, avec sa propre mesure.
 
 ## Socle CLI
 
+### [aide] `aaa` est un noeud GLOUTON, donc son aide s'arrete a deux mots
+`aaa authentication login ?` et `aaa authentication login default ?`
+annoncent `<cr>` — la touche Entree — alors que la machine repond
+`% Incomplete command.` aux deux. Et les METHODES (`local`, `none`,
+`group`, `enable`, `line`…) ne sont annoncees nulle part, bien qu'elles
+soient desormais declarees et APPLIQUEES (`AAA_METHODS`).
+**Mesure** : `aaa ?` et `aaa authentication ?` rendent la bonne liste ;
+tout ce qui suit rend `<cr>` et rien d'autre, sur les deux plateformes.
+**Ce qui a ete tente et retire** : `requireArgs('aaa authentication
+login', 1)` est INERTE — `aaa` est enregistre en glouton, donc aucun
+noeud n'existe a cette profondeur pour porter la declaration, et une
+declaration que personne ne lit est exactement ce que ce depot retire
+ailleurs. Elle n'a donc pas ete laissee en place.
+**Report** : la reparation est la MIGRATION de la famille `aaa` vers le
+socle, ou chaque forme est un chemin declare avec ses places — c'est la
+seule facon de porter une aide a cette profondeur, et c'est un lot a
+part entiere : la grammaire d'`aaa` a quatre niveaux, une liste nommee
+libre au milieu, et une suite de methodes de longueur variable dont
+`group` consomme le mot suivant.
+
 ### [horloge] un Catalyst n'a pas d'horloge : `clock timezone` y est inerte
 `clock timezone CET 1` et `clock summer-time CEST recurring` sont
 ACCEPTES sur un commutateur Cisco, ne paraissent dans aucune

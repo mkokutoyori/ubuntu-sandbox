@@ -176,6 +176,18 @@ export const AAA_SERVICES: Record<AaaPhase, readonly string[]> = {
   accounting: ['exec', 'commands', 'network', 'system', 'connection'],
 };
 
+export const AAA_METHODS: Record<AaaPhase, readonly string[]> = {
+  authentication: [
+    'enable', 'group', 'krb5', 'krb5-telnet', 'line', 'local', 'local-case', 'none',
+  ],
+  authorization: ['group', 'if-authenticated', 'krb5-instance', 'local', 'none'],
+  accounting: ['broadcast', 'group', 'none'],
+};
+
+export const AAA_COMMAND_LEVEL_RANGE: readonly [number, number] = [0, 15];
+
+const AAA_GROUP_BUILTINS: ReadonlySet<string> = new Set(['radius', 'tacacs+']);
+
 /**
  * Accepts any Cisco device (router or switch) — the config is stashed
  * under a private symbol key, so it works identically regardless of the
@@ -872,9 +884,15 @@ function parseAaaMethod(sec: CiscoSecurityConfig, phase: AaaPhase, args: string[
   const service = args[0] as AaaServiceKind;
   let i = 1;
   let privilegeLevel: number | undefined;
-  if (service === 'commands' && args[i] !== undefined) {
-    const lvl = parseInt(args[i], 10);
-    if (!isNaN(lvl)) { privilegeLevel = lvl; i++; }
+  if (service === 'commands') {
+    const brut = args[i];
+    if (brut === undefined) return CISCO_ERRORS.INCOMPLETE;
+    const [min, max] = AAA_COMMAND_LEVEL_RANGE;
+    if (!/^\d+$/.test(brut) || Number(brut) < min || Number(brut) > max) {
+      throw new CliInvalidInput({ token: brut });
+    }
+    privilegeLevel = Number(brut);
+    i++;
   }
   const listName = args[i++];
   let recordType: 'start-stop' | 'stop-only' | 'wait-start' | 'none' | undefined;
@@ -884,24 +902,35 @@ function parseAaaMethod(sec: CiscoSecurityConfig, phase: AaaPhase, args: string[
   }
   const methods = args.slice(i);
   if (methods.length === 0) return CISCO_ERRORS.INCOMPLETE;
-  // Les methodes d'ACCOUNTING ne sont pas celles d'authentification.
-  // IOS n'accepte ici que `group <nom>`, `group radius|tacacs+`, `none`
-  // et `broadcast` : il n'y a PAS de methode `local`, parce qu'un
-  // enregistrement de comptabilite part vers un collecteur — il n'y a
-  // rien de local ou l'ecrire. `aaa accounting exec default start-stop
-  // local` etait accepte, range, rendu dans la configuration, et
-  // n'emettait jamais rien : la commande promettait une trace qui ne
-  // venait pas, ce qui est pire que son refus.
-  if (phase === 'accounting') {
-    const permis = new Set(['group', 'none', 'broadcast', 'radius', 'tacacs+']);
-    for (let k = 0; k < methods.length; k++) {
-      const mot = methods[k].toLowerCase();
-      if (permis.has(mot)) { if (mot === 'group') k++; continue; }
-      throw new CliInvalidInput({ token: methods[k] });
-    }
-  }
+  const incomplet = verifierMethodesAaa(phase, methods);
+  if (incomplet) return incomplet;
   sec.aaaMethods.push({ phase, service, listName, privilegeLevel, recordType, methods });
   return '';
+}
+
+/**
+ * Les methodes d'une phase, et rien d'autre.
+ *
+ * Chaque phase a SON jeu : il n'y a pas de `local` en comptabilite —
+ * un enregistrement part vers un collecteur, il n'y a rien de local ou
+ * l'ecrire — ni de `line` en autorisation. Une methode inventee est une
+ * entree que rien ne sait appliquer, donc une liste qui n'authentifie
+ * personne la ou l'operateur croit avoir pose un repli.
+ */
+function verifierMethodesAaa(phase: AaaPhase, methods: readonly string[]): string | null {
+  const permis = AAA_METHODS[phase];
+  for (let k = 0; k < methods.length; k++) {
+    const mot = methods[k].toLowerCase();
+    if (!permis.includes(mot)) throw new CliInvalidInput({ token: methods[k] });
+    if (mot !== 'group') continue;
+    const nom = methods[k + 1];
+    if (nom === undefined) return CISCO_ERRORS.INCOMPLETE;
+    if (!AAA_GROUP_BUILTINS.has(nom.toLowerCase()) && permis.includes(nom.toLowerCase())) {
+      return CISCO_ERRORS.INCOMPLETE;
+    }
+    k++;
+  }
+  return null;
 }
 
 /**
