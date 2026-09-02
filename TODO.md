@@ -286,6 +286,19 @@ question. C'est un lot a part, avec sa propre mesure.
 
 ## Socle CLI
 
+### [uniformite] `track <mot>` refuse avec DEUX messages selon la plateforme
+`track zorglub interface GigabitEthernet0/0 line-protocol` rend
+`% Invalid track number` sur un routeur Cisco et `% Invalid track id.`
+sur un Catalyst. Les deux refusent — c'est le bon verdict — mais la
+meme commande, sur le meme IOS, ne dit pas la meme chose.
+**Mesure** : les deux textes ci-dessus, releves au meme instant sur les
+deux plateformes.
+**Report** : aucun des deux libelles n'est atteste depuis ce reseau, et
+choisir l'un des deux graverait une invention dans la moitie des
+machines. Ce qui manque est une transcription de vraie machine ; unifier
+sur un texte non atteste rendrait le desaccord invisible sans le rendre
+juste.
+
 ### [ssh] les cles RSA ne survivent pas a l'import d'une topologie
 Un routeur qui porte une paire RSA et `ip ssh version 2` revient d'un
 aller-retour de topologie SANS cle, donc avec SSH muet et

@@ -928,6 +928,10 @@ const IOS_HARDENING: readonly HardeningEntry[] = [
     'Disable finger service', (sec, on) => { sec.ipFinger = on; }],
 ];
 
+export const AS_PATH_LIST_RANGE: readonly [number, number] = [1, 500];
+export const COMMUNITY_LIST_RANGE: readonly [number, number] = [1, 500];
+export const LEGACY_QUEUE_LIST_RANGE: readonly [number, number] = [1, 16];
+
 export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
   // ─── State ───────────────────────────────────────────────────────
   protected mode: string = 'user';
@@ -1986,6 +1990,16 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
           ._configureSshAuthRetries?.(retries);
       },
     };
+  }
+
+  private exigerNumeroDeListe(
+    jeton: string | undefined, [min, max]: readonly [number, number],
+  ): number {
+    if (jeton === undefined) throw new CliIncomplete();
+    if (!/^\d+$/.test(jeton)) throw new CliInvalidInput({ token: jeton });
+    const numero = Number(jeton);
+    if (numero < min || numero > max) throw new CliInvalidInput({ token: jeton });
+    return numero;
   }
 
   protected privilegeRuleHost(): PrivilegeRuleHost {
@@ -9498,9 +9512,11 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       return '';
     });
     trie.registerGreedy('ip community-list', 'Define BGP community list', (args, raw) => {
-      if (args.length < 3) return CISCO_ERRORS.INCOMPLETE;
+      if (args.length === 0) throw new CliIncomplete();
       const kind = args[0].toLowerCase();
       const named = kind === 'standard' || kind === 'expanded';
+      if (!named) this.exigerNumeroDeListe(args[0], COMMUNITY_LIST_RANGE);
+      if (args.length < 3) return CISCO_ERRORS.INCOMPLETE;
       const name = named ? args[1] : args[0];
       const rule = (named ? args.slice(2) : args.slice(1)).join(' ');
       const store = this.communityLists();
@@ -9513,6 +9529,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       return '';
     });
     trie.registerGreedy('ip as-path access-list', 'Define BGP AS-path filter', (args, raw) => {
+      this.exigerNumeroDeListe(args[0], AS_PATH_LIST_RANGE);
       if (args.length < 3) return CISCO_ERRORS.INCOMPLETE;
       const store = this.asPathLists();
       const list = store.get(args[0]) ?? [];
@@ -9523,11 +9540,13 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       return '';
     });
     trie.registerGreedy('priority-list', 'Legacy PQ list', (args, raw) => {
+      this.exigerNumeroDeListe(args[0], LEGACY_QUEUE_LIST_RANGE);
       const r = this.d() as unknown as { _recordUnhandledConfigLine?: (l: string) => void };
       r._recordUnhandledConfigLine?.(raw ?? `priority-list ${args.join(' ')}`);
       return '';
     });
     trie.registerGreedy('queue-list', 'Legacy CQ list', (args, raw) => {
+      this.exigerNumeroDeListe(args[0], LEGACY_QUEUE_LIST_RANGE);
       const r = this.d() as unknown as { _recordUnhandledConfigLine?: (l: string) => void };
       r._recordUnhandledConfigLine?.(raw ?? `queue-list ${args.join(' ')}`);
       return '';
