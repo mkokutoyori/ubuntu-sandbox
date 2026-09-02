@@ -73,7 +73,7 @@ import {
 import { IOS_ACL_NUMBERING } from '../router/ACLEngine';
 import { CISCO_ERRORS } from './cli-utils';
 import { estTypeSansNumero, typesInterfaceEnMotsCles } from './cisco/CiscoConfigCommands';
-import { getNtpAgent } from '../../equipment/RouterServiceCapabilities';
+import { getNtpAgent, getSnmpService } from '../../equipment/RouterServiceCapabilities';
 import { fhrpRunningConfigLines } from '../../fhrp/runningConfig';
 import { fhrpViewOf } from './cisco/CiscoShowCommands';
 import { hsrpMaxGroup } from '../../hsrp/types';
@@ -4321,6 +4321,9 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
     // et ne la rendait nulle part.
     const lignesNtp = getNtpAgent(sw)?.asRunningConfigLines() ?? [];
     if (lignesNtp.length > 0) { lines.push(...lignesNtp); lines.push('!'); }
+
+    const lignesSnmp = getSnmpService(sw)?.asRunningConfigLines() ?? [];
+    if (lignesSnmp.length > 0) { lines.push(...lignesSnmp); lines.push('!'); }
 
     // VTY line configuration (transport input, login, password, …).
     const vtyLines = sw._getVtyLineConfig().renderAllCisco(chiffre);

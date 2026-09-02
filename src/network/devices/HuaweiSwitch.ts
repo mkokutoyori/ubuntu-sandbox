@@ -21,7 +21,6 @@ import type { NeighborDTO } from './inspection/DeviceStateView';
 import type { IEventBus } from '@/events/EventBus';
 import { HuaweiDebugService } from './router/diag/HuaweiDebugService';
 import { RouterManagementService } from './router/management/RouterManagementService';
-import { SnmpService } from './router/management/SnmpService';
 
 export class HuaweiSwitch extends Switch {
   static readonly MAX_PORT_GROUPS = 32;
@@ -218,12 +217,6 @@ export class HuaweiSwitch extends Switch {
   getManagementService(): RouterManagementService {
     if (!this._managementService) this._managementService = new RouterManagementService();
     return this._managementService;
-  }
-
-  private _snmpService: SnmpService | null = null;
-  getSnmpService(): SnmpService {
-    if (!this._snmpService) this._snmpService = new SnmpService();
-    return this._snmpService;
   }
 
   getLldpAgent(): LldpAgent { return this.lldpAgent; }

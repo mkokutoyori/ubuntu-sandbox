@@ -574,11 +574,17 @@ describe('`snmp-server` a un vrai sous-arbre, plus un noeud glouton', () => {
       .toContain('Invalid input');
   });
 
-  it('`no snmp-server ...` reste REFUSE — le moteur ne sait pas defaire', async () => {
+  it('`no snmp-server community` retire, des deux cotes', async () => {
     const machines = await enConfig();
 
-    expect(await machines.get('routeur')!.executeCommand('no snmp-server community LECTURE'))
-      .toContain('Invalid input');
+    for (const nom of ['routeur', 'commutateur']) {
+      const machine = machines.get(nom)!;
+      await machine.executeCommand('snmp-server community LECTURE RO');
+      expect(await machine.executeCommand('no snmp-server community LECTURE'), nom)
+        .not.toContain('Invalid input');
+      expect(await machine.executeCommand('do show running-config'), nom)
+        .not.toContain('snmp-server community LECTURE');
+    }
   });
 });
 

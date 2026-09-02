@@ -49,6 +49,61 @@ elles.
 
 ## Commutateur Cisco
 
+### [snmp] le Catalyst RANGE sa configuration SNMP, mais rien n'ecoute sur 161
+`snmp-server community|host|contact|location|chassis-id` sont desormais
+retenus, servis par `show snmp`, `show snmp community`, `show snmp host`
+et rendus dans la configuration — mais `CiscoSwitch` n'instancie aucun
+`SnmpAgent`, la ou `CiscoRouter` en porte un et lui aiguille l'UDP 161.
+Un vrai `snmpget` vers un Catalyst n'obtient donc rien.
+**Mesure** : `show snmp` y rend `0 SNMP packets input` quoi qu'il arrive,
+ce qui est VRAI (aucun paquet ne peut arriver) et non un compteur mort.
+**Report** : `SnmpHost` demande `getSysDescr`, `getSysObjectId` et
+`sendUdpDatagram` en plus de la surface que `makeSwitchNtpHost` fournit
+deja ; le brancher est un travail de plan de donnees (aiguillage du 161
+dans `deliverLocalUdp`, enregistrement dans `agents`), distinct de la
+CLI que ce lot refermait.
+
+---
+
+## SNMP (les deux plateformes Cisco)
+
+### [snmp] `snmp-server host <ip> version ?` ne nomme pas 1 / 2c / 3
+Un vrai IOS annonce `1`, `2c`, `3` apres `version`, puis `auth`,
+`noauth`, `priv` et `WORD` apres `version 3`. Ici la queue de
+`snmp-server host` est UNE place `REST` : ses formes sont annoncees a
+chaque rang, donc `version ?` propose encore `version`.
+**Mesure** : `snmp-server host 10.0.0.1 version ?` rend les quatre
+suites (`informs`/`traps`/`udp-port`/`version`) et pas les versions.
+Depuis ce lot l'aide ne REFUSE plus a ce rang, ce qu'elle faisait.
+**Report** : nommer des valeurs par POSITION demande a `sequenceFamily`
+le mecanisme de continuations que `loggingFamily` porte deja
+(`logging host <ip> transport tcp`). Le donner a `sequenceFamily` est un
+enrichissement du declarateur partage, pas une retouche de SNMP — et
+declarer a cote quelques chemins types ferait DEUX grammaires pour une
+commande, le defaut que ce depot passe son temps a refermer.
+
+### [snmp] `snmp-server host <ip> vrf <nom>` est lu comme la communaute
+IOS ecrit `snmp-server host <hote> [vrf <nom>] [traps|informs] …`.
+`configHost` ne connait pas `vrf` : le mot est pris pour la communaute et
+le nom de la VRF devient un type de notification.
+**Mesure** : `snmp-server host 10.0.0.1 vrf MGMT public` est accepte et
+revient `snmp-server host 10.0.0.1 version 1 vrf MGMT public` — une
+communaute nommee `vrf`.
+**Report** : `SnmpHost` n'a pas de champ de VRF, et en ajouter un sans
+que rien ne le lise serait le critere range-mais-jamais-evalue que
+`CLAUDE.md` interdit. A faire avec le jour ou les traps suivent une VRF.
+
+### [snmp] les types de notification d'un hote ne sont pas juges
+Ce qui suit la communaute est repris tel quel : `snmp-server host
+10.0.0.1 public zorglub-notif` est accepte et rendu.
+**Mesure** : la ligne revient telle quelle dans `show running-config`,
+donc elle est rejouee a l'import d'une topologie.
+**Report** : la liste des types d'IOS est longue et depend de la
+plateforme ; en refuser une partie ferait refuser des formes qu'une vraie
+machine prend, ce qui est pire que l'inverse. Il faudrait la liste
+attestee des types que CE simulateur sait emettre — `getEnabledTraps`
+en connait trois.
+
 ---
 
 ## Postes Linux

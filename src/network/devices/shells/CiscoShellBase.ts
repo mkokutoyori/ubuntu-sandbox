@@ -4577,15 +4577,18 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       {
         path: ['snmp-server', 'contact'], description: 'Text for mib object sysContact',
         args: [texte('contact', 'Contact information')],
+        undoArgs: [], undoArgsOnlyNegated: true,
       },
       {
         path: ['snmp-server', 'location'], description: 'Text for mib object sysLocation',
         args: [texte('emplacement', 'Physical location of this node')],
+        undoArgs: [], undoArgsOnlyNegated: true,
       },
       {
         path: ['snmp-server', 'chassis-id'],
         description: 'String to uniquely identify this chassis',
         args: [texte('identifiant', 'Chassis identifier')],
+        undoArgs: [], undoArgsOnlyNegated: true,
       },
       {
         path: ['snmp-server', 'trap-source'],
@@ -4594,6 +4597,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
           name: 'interface', type: 'INTERFACE',
           description: 'Interface used as the source address',
         }],
+        undoArgs: [], undoArgsOnlyNegated: true,
       },
       {
         path: ['snmp-server', 'trap-timeout'],
@@ -4602,28 +4606,29 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
           name: 'secondes', type: 'INT', range: [1, 1000],
           description: 'Retransmission timeout in seconds',
         }],
+        undoArgs: [], undoArgsOnlyNegated: true,
       },
       {
         path: ['snmp-server', 'engineid', 'local'],
         description: 'Configure a local SNMP engine ID',
         args: [nom('identifiant', 'Engine ID octet string')],
+        undoArgs: [], undoArgsOnlyNegated: true,
       },
     ];
 
-    // `SnmpService.configure()` ne prend pas de drapeau de negation et
-    // rien n'enregistre `no snmp-server` aujourd'hui : declarer un `undo`
-    // ferait REPOSER ce qu'on demande de retirer.
-    return sequenceFamily(
-      entries.map(entry => ({ ...entry, negatable: false })),
-      () => ({
-        apply: (words) => {
-          const svc = getSnmpService(this.d());
-          if (!svc) return '';
-          svc.configure(words);
-          this.syncSnmpAgent();
-          return '';
-        },
-      }));
+    return sequenceFamily(entries, () => ({
+      apply: (words, negate) => {
+        const svc = getSnmpService(this.d());
+        if (!svc) return '';
+        if (negate) svc.unconfigure(words);
+        else {
+          const refuse = svc.configure(words);
+          if (refuse !== null) throw new CliInvalidInput({ token: refuse });
+        }
+        this.syncSnmpAgent();
+        return '';
+      },
+    }));
   }
 
 

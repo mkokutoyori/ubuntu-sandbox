@@ -180,12 +180,23 @@ describe('the bridge crosses in the NEGATIVE direction too', () => {
     expect(offeredKeywords(router.cliHelp(input))).toContain(expected);
   });
 
-  it('a family the socle cannot undo announces nothing — and refuses too', async () => {
+  it('a command the socle cannot undo announces nothing — and refuses too', async () => {
     const router = await inGlobalConfig();
 
-    expect(router.cliHelp('no snmp-server ')).toContain('Invalid input');
-    expect(await router.executeCommand('no snmp-server community public'))
+    expect(offeredKeywords(router.cliHelp('no clock '))).not.toContain('set');
+    expect(await router.executeCommand('no clock set 10:00:00'))
       .toContain('Invalid input');
+  });
+
+  it('and `no snmp-server` is now on the other side of that rule', async () => {
+    const router = await inGlobalConfig();
+
+    expect(offeredKeywords(router.cliHelp('no snmp-server '))).toContain('community');
+    await router.executeCommand('snmp-server community public RO');
+    expect(await router.executeCommand('no snmp-server community public'))
+      .not.toContain('Invalid input');
+    expect(await router.executeCommand('do show running-config'))
+      .not.toContain('snmp-server community public');
   });
 
   it('`no` borrows the undo wording where the command declares one', async () => {
