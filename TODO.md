@@ -286,6 +286,37 @@ question. C'est un lot a part, avec sa propre mesure.
 
 ## Socle CLI
 
+### [cli] le curseur d'un mot-cle inconnu recule d'un mot sous une racine PARTAGEE
+`ip ssh zorglub 5` et `ip scp zorglub` rendent le bon message —
+`% Invalid input detected at '^' marker.` — avec le curseur sous `ssh`
+ou `scp` au lieu du mot fautif. Une valeur refusee, elle, est pointee
+juste (`ip ssh time-out zorglub` met le curseur sous `zorglub`), et
+`privilege exec badkeyword 5 show` aussi.
+**Mesure** : colonne 14 obtenue contre 18 attendue pour `ip ssh
+zorglub 5`, sur les deux plateformes.
+**Cause** : `tryMigratedCommand` n'autorise le socle a poser un curseur
+que s'il a refuse PAR UN ARGUMENT, ou si le trie ne porte RIEN sous le
+premier mot de la frappe. `privilege` remplit la seconde condition — son
+premier mot est a lui seul — mais `ip` reste peuple de dizaines de
+commandes du trie, donc le socle se tait et c'est le trie qui repond, a
+son propre noeud `ip`.
+**Deux elargissements mesures et ANNULES**, ecrits ici pour que le
+prochain ne les retente pas : (1) laisser le socle parler des que le
+trie ne prefixe pas la frappe (`trieConnait(cmd, 0)`) fait rendre un
+curseur la ou une commande est CACHEE par l'autorisation — six cas de
+`tuto-privileges-cisco-verifie` tombent, IOS repondant la un message nu ;
+(2) y ajouter « sauf si le socle declare quand meme la frappe » compare
+un nombre de MOTS-CLES a un index de JETONS TAPES, deux systemes de
+coordonnees differents, et fait tomber `track 2 interface … line-protocol`
+depuis le sous-mode `track`. Un troisieme elargissement, plus ancien,
+avait coute 102 cas dans 25 fichiers.
+**Report** : la bonne question est « le socle possede-t-il ENTIEREMENT
+cette branche ? », et y repondre demande de comparer les chemins des
+deux moteurs sur les memes positions — c'est-a-dire de savoir combien de
+jetons chaque place a consommes. Le socle le sait a l'analyse et ne le
+rend pas ; l'exposer est un changement du resultat d'analyse, pas de
+cette garde.
+
 ### [autorisation] `privilege` ne connait que quatre modes sur les onze d'IOS
 `privilege router level 5 network` et `privilege route-map level 5 match`
 sont REFUSES au caret ; une vraie machine les accepte. `AuthScope` ne

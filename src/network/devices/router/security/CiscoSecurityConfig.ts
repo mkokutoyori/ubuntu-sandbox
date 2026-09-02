@@ -109,6 +109,12 @@ export interface AaaLegacyServerHost {
   port?: number;
 }
 
+export const SSH_DEFAULTS = Object.freeze({
+  version: 1, timeoutSec: 120, authRetries: 3, dhMinBits: 1024, loggingEvents: false,
+  macAlgorithms: [] as string[], encryptionAlgorithms: [] as string[],
+  kexAlgorithms: [] as string[], scpServerEnabled: false,
+});
+
 export interface SshConfig {
   version: number;
   timeoutSec: number;
@@ -437,10 +443,7 @@ export class CiscoSecurityConfig {
   radiusDefaults: { key?: string; timeoutSec?: number; retransmit?: number } = {};
   tacacsDefaults: { key?: string; timeoutSec?: number } = {};
 
-  ssh: SshConfig = {
-    version: 1, timeoutSec: 120, authRetries: 3, dhMinBits: 1024, loggingEvents: false,
-    macAlgorithms: [], encryptionAlgorithms: [], kexAlgorithms: [], scpServerEnabled: false,
-  };
+  ssh: SshConfig = { ...SSH_DEFAULTS };
   cryptoKeys: CryptoRsaKey[] = [];
   enableSecret?: string;
   servicePasswordEncryption = false;
@@ -600,11 +603,19 @@ export class CiscoSecurityConfig {
     if (this.ipFinger) lines.push('ip finger');
     if (this.ipv6Cef) lines.push('ipv6 cef');
     if (this.ipMulticastRouting) lines.push('ip multicast-routing');
-    if (this.ssh.version !== 1) lines.push(`ip ssh version ${this.ssh.version}`);
-    if (this.ssh.timeoutSec !== 120) lines.push(`ip ssh time-out ${this.ssh.timeoutSec}`);
-    if (this.ssh.authRetries !== 3) lines.push(`ip ssh authentication-retries ${this.ssh.authRetries}`);
+    if (this.ssh.version !== SSH_DEFAULTS.version) {
+      lines.push(`ip ssh version ${this.ssh.version}`);
+    }
+    if (this.ssh.timeoutSec !== SSH_DEFAULTS.timeoutSec) {
+      lines.push(`ip ssh time-out ${this.ssh.timeoutSec}`);
+    }
+    if (this.ssh.authRetries !== SSH_DEFAULTS.authRetries) {
+      lines.push(`ip ssh authentication-retries ${this.ssh.authRetries}`);
+    }
     if (this.ssh.sourceInterface) lines.push(`ip ssh source-interface ${this.ssh.sourceInterface}`);
-    if (this.ssh.dhMinBits !== 1024) lines.push(`ip ssh dh min size ${this.ssh.dhMinBits}`);
+    if (this.ssh.dhMinBits !== SSH_DEFAULTS.dhMinBits) {
+      lines.push(`ip ssh dh min size ${this.ssh.dhMinBits}`);
+    }
     if (this.ssh.loggingEvents) lines.push('ip ssh logging events');
     if (this.ssh.macAlgorithms.length) {
       lines.push(`ip ssh server algorithm mac ${this.ssh.macAlgorithms.join(' ')}`);

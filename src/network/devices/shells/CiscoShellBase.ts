@@ -53,6 +53,7 @@ import { renderStartupConfig } from './cisco/ciscoConfigSerializer';
 import { CommandTrie, type ParamType } from './CommandTrie';
 import { fhrpInterfaceSpecs, type FhrpPlacement } from './cisco/fhrpInterfaceSpecs';
 import { privilegeRuleSpecs, type PrivilegeRuleHost } from './cisco/privilegeRuleSpecs';
+import { ipSshSpecs, type IpSshHost } from './cisco/ipSshSpecs';
 import { ipAddressInterfaceSpecs, type IpAddressHost } from './cisco/ipAddressInterfaceSpecs';
 import {
   interfaceLoadMtuSpecs, MTU_MIN,
@@ -1974,6 +1975,17 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     if (mots.length === 0) throw new CliIncomplete();
     this.exigerCommandeConnue(scope, mots);
     return { scope, tous, niveau, commande: mots.join(' ') };
+  }
+
+  protected ipSshHost(): IpSshHost {
+    return {
+      sshConfig: () => getSecurityConfig(this.d()).ssh,
+      hasRsaKeys: () => getSecurityConfig(this.d()).cryptoKeys.length > 0,
+      onAuthRetriesChanged: (retries) => {
+        (this.d() as unknown as { _configureSshAuthRetries?: (n: number) => void })
+          ._configureSshAuthRetries?.(retries);
+      },
+    };
   }
 
   protected privilegeRuleHost(): PrivilegeRuleHost {
@@ -5506,6 +5518,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       ...this.arpSpecs(),
       ...this.identityBootSpecs(),
       ...privilegeRuleSpecs(() => this.privilegeRuleHost()),
+      ...ipSshSpecs(() => this.ipSshHost()),
       ...this.lineEntrySpecs(),
       ...this.showSocleSpecs(),
       ...this.archiveSubmodeSpecs(),
@@ -7269,7 +7282,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       .replace(/^no\s+/i, '').split(/\s+/)[0] ?? '';
     if (premier.length === 0) return false;
     return !this.getActiveTrie().enumerateCommandPaths()
-      .some(path => path.toLowerCase().split(' ')[0].startsWith(premier));
+      .some((path) => path.toLowerCase().split(' ')[0].startsWith(premier));
   }
 
   private trieProlonge(cmdPart: string): boolean {

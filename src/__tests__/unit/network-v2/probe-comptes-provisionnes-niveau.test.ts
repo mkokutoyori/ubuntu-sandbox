@@ -131,20 +131,24 @@ describe('la configuration decrit les comptes au bon niveau', () => {
     await d.executeCommand('enable');
     const rc = await d.executeCommand('show running-config');
     for (const nom of COMPTES) {
-      expect(rc, nom).toContain(`username ${nom} privilege 1 `);
+      expect(rc, nom).toContain(`username ${nom} `);
+      // Le niveau 1 est le DEFAUT et IOS ne l'ecrit pas : toute clause
+      // `privilege` sur ces comptes voudrait donc dire un autre niveau.
       expect(rc, `${nom} n'est pas un administrateur`)
-        .not.toContain(`username ${nom} privilege 15`);
+        .not.toContain(`username ${nom} privilege`);
     }
   }, 30_000);
 
-  it('un compte cree par l\'operateur y figure tel qu\'il a ete tape', async () => {
+  it('un compte cree au niveau 1 y figure sans clause `privilege`', async () => {
     const d = new CiscoRouter('R1', 0, 0);
     d.powerOn();
     await d.executeCommand('enable');
     await d.executeCommand('configure terminal');
     await d.executeCommand('username mandeng privilege 1 secret x');
     await d.executeCommand('end');
-    expect(await d.executeCommand('show running-config')).toContain('username mandeng privilege 1');
+    const rc = await d.executeCommand('show running-config');
+    expect(rc).toMatch(/^username mandeng secret /m);
+    expect(rc).not.toContain('username mandeng privilege');
   }, 30_000);
 
   it('elever un compte livre le rend au niveau 15', async () => {

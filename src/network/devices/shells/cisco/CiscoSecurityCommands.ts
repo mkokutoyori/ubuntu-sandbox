@@ -60,16 +60,6 @@ export const TACACS_SERVER_CONTINUATIONS: ReadonlyArray<{
     valeur: [{ keyword: '<1-1000>', description: 'Wait time in seconds' }] },
 ];
 
-export const IP_SSH_CONTINUATIONS: ReadonlyArray<{ keyword: string; description: string }> = [
-  { keyword: 'authentication-retries', description: 'Number of authentication retries' },
-  { keyword: 'dh', description: 'Diffie-Hellman key exchange parameters' },
-  { keyword: 'logging', description: 'Log SSH events' },
-  { keyword: 'server', description: 'SSH server options' },
-  { keyword: 'source-interface', description: 'Interface the SSH client sources from' },
-  { keyword: 'time-out', description: 'Authentication timeout' },
-  { keyword: 'version', description: 'SSH protocol version to accept' },
-];
-
 export const NO_AAA_CONTINUATIONS: ReadonlyArray<{ keyword: string; description: string }> = [
   { keyword: 'new-model', description: 'Disable the AAA access control model' },
   { keyword: 'authentication', description: 'Remove an authentication method list' },
@@ -627,64 +617,6 @@ export function buildIdentityConfigCommands(
     dev._refreshSshAvailability?.();
     return `% Keys to be removed are named ${fqdn}.`;
   });
-
-  trie.registerGreedy('ip ssh', 'SSH config', (args) => {
-    if (args[0] === 'version' && args[1]) {
-      const version = parseInt(args[1], 10);
-      if (version !== 1 && version !== 2) throw new CliInvalidInput({ token: args[1] });
-      const cles = sec().cryptoKeys;
-      if (!cles || cles.length === 0) {
-        return `Please create RSA keys (of at least 768 bits size) to enable SSH v${version}.`;
-      }
-      sec().ssh.version = version;
-      return '';
-    }
-    if (args[0] === 'time-out' && args[1]) { sec().ssh.timeoutSec = parseInt(args[1], 10); return ''; }
-    if (args[0] === 'authentication-retries' && args[1]) {
-      const n = parseInt(args[1], 10);
-      sec().ssh.authRetries = n;
-      const r = ctx.r() as unknown as { _configureSshAuthRetries?: (n: number) => void };
-      if (r._configureSshAuthRetries && !isNaN(n)) r._configureSshAuthRetries(n);
-      return '';
-    }
-    if (args[0] === 'source-interface' && args[1]) { sec().ssh.sourceInterface = args[1]; return ''; }
-    if (args[0] === 'dh' && args[1] === 'min' && args[2] === 'size' && args[3]) { sec().ssh.dhMinBits = parseInt(args[3], 10); return ''; }
-    if (args[0] === 'logging' && args[1] === 'events') { sec().ssh.loggingEvents = true; return ''; }
-    // `ip ssh server algorithm {mac|encryption|kex} <liste>` etait accepte
-    // et range NULLE PART : la commande de durcissement disparaissait de
-    // la configuration relue.
-    if (args[0] === 'server' && args[1] === 'algorithm' && args[2] && args[3]) {
-      const liste = args.slice(3);
-      if (args[2] === 'mac') { sec().ssh.macAlgorithms = liste; return ''; }
-      if (args[2] === 'encryption') { sec().ssh.encryptionAlgorithms = liste; return ''; }
-      if (args[2] === 'kex') { sec().ssh.kexAlgorithms = liste; return ''; }
-      throw new CliInvalidInput({ token: args[2] });
-    }
-    return '';
-  }, IP_SSH_CONTINUATIONS);
-
-  // Registered at `ip scp` rather than at the full path, the way `ip ssh`
-  // is: the trie describes each node it offers under `?`, and an
-  // intermediate node spelled out in the path carries no description.
-  const scpServerArgs = (args: string[]): boolean =>
-    args[0] === 'server' && args[1] === 'enable';
-  // `ip scp server` sans `enable` n'est pas une commande fausse mais une
-  // commande INACHEVEE, et l'aide venait de proposer `server`.
-  const scpInacheve = (args: string[]): boolean =>
-    args.length === 0 || (args.length === 1 && 'server'.startsWith(args[0].toLowerCase()));
-  trie.registerGreedy('ip scp', 'SCP server config', (args) => {
-    if (scpInacheve(args)) return CISCO_ERRORS.INCOMPLETE;
-    if (!scpServerArgs(args)) throw new CliInvalidInput({ token: args[0] ?? 'scp' });
-    sec().ssh.scpServerEnabled = true;
-    return '';
-  }, [{ keyword: 'server', description: 'Enable the SCP server' }]);
-  trie.registerGreedy('no ip scp', 'Disable the SCP server', (args) => {
-    if (scpInacheve(args)) return CISCO_ERRORS.INCOMPLETE;
-    if (!scpServerArgs(args)) throw new CliInvalidInput({ token: args[0] ?? 'scp' });
-    sec().ssh.scpServerEnabled = false;
-    return '';
-  }, [{ keyword: 'server', description: 'Enable the SCP server' }]);
-
 
   trie.registerGreedy('service password-encryption', 'Enable password encryption', () => {
     sec().servicePasswordEncryption = true;

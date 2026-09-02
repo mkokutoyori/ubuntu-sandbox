@@ -527,9 +527,6 @@ export function describeCiscoArguments(tries: ArgumentHelpTries): void {
     IP('prefix', 'Destination prefix'),
     MASK('Destination prefix mask'),
   ]);
-  tries.config.describeArgs('ip ssh time-out', [
-    INT('seconds', [1, 120], 'SSH time-out interval in seconds'),
-  ]);
   tries.config.describeArgs('ntp server', [
     IP('address', 'IP address of peer'),
   ]);
