@@ -28,15 +28,6 @@ export type ContinuationTable = Readonly<Record<string, Readonly<Record<string, 
 /** Ce que le routeur ET le commutateur portent. */
 export const SOCLE: ContinuationTable = {
   configIf: {
-    'glbp': ['authentication', 'forwarder', 'ip', 'load-balancing', 'name',
-      'preempt', 'priority', 'timers', 'weighting'],
-    'no glbp': ['ip', 'load-balancing', 'name', 'preempt', 'priority', 'weighting'],
-    'no standby': ['authentication', 'ip', 'name', 'preempt', 'priority', 'timers', 'track'],
-    'no vrrp': ['description', 'ip', 'preempt', 'priority', 'timers'],
-    'standby': ['authentication', 'follow', 'ip', 'mac-address', 'name',
-      'preempt', 'priority', 'timers', 'track', 'version'],
-    'vrrp': ['address-family', 'authentication', 'description', 'ip',
-      'preempt', 'priority', 'timers', 'track'],
   },
   config: {
     'clock summer-time': ['recurring'],

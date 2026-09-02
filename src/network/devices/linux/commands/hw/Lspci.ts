@@ -212,6 +212,7 @@ import type { LinuxCommandContext } from '../LinuxCommandContext';
 
 export const lspciCommand: LinuxCommand = {
   name: 'lspci',
+  package: 'pciutils',
   needsNetworkContext: true,
   usage: 'lspci [options]',
   run(ctx: LinuxCommandContext, args: string[]): string {

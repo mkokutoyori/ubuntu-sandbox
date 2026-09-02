@@ -48,6 +48,7 @@ function xxdReverse(dumpText: string): Uint8Array {
 
 export const xxdCommand: LinuxCommand = {
   name: 'xxd',
+  package: 'xxd',
   // Despite the name, `needsNetworkContext: true` is this codebase's
   // actual convention for "dispatch through the LinuxCommand registry"
   // (see LinuxMachine.containsNetworkCommand / hasNetworkCommandIn) —

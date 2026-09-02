@@ -2,6 +2,7 @@ import type { LinuxCommand } from '../LinuxCommand';
 
 export const firewallCmdCommand: LinuxCommand = {
   name: 'firewall-cmd',
+  package: 'firewalld',
   needsNetworkContext: true,
   usage: 'firewall-cmd [options]',
   run(): string {

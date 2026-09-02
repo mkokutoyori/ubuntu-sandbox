@@ -180,6 +180,7 @@ function isPrivileged(ctx: LinuxCommandContext): boolean {
 
 export const hdparmCommand: LinuxCommand = {
   name: 'hdparm',
+  package: 'hdparm',
   needsNetworkContext: true,
   usage: 'hdparm [options] [device ...]',
   privilege: {

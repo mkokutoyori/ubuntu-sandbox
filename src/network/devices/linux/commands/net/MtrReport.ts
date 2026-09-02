@@ -25,6 +25,7 @@ import { makeArgCompleter } from '../completionHelpers';
 
 export const mtrCommand: LinuxCommand = {
   name: 'mtr',
+  package: 'mtr-tiny',
   needsNetworkContext: true,
   manSection: 8,
   usage: 'mtr [-r|--report] [-c count] [-m max_hops] [-n] HOSTNAME',

@@ -131,6 +131,7 @@ export function runLsbRelease(ctx: LinuxCommandContext, argv: string[]): { outpu
 
 export const lsbReleaseCommand: LinuxCommand = {
   name: 'lsb_release',
+  package: 'lsb-release',
   needsNetworkContext: true,
   usage: 'lsb_release [-adcirsv]',
   manSection: 1,

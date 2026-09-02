@@ -151,6 +151,7 @@ function execute(ctx: LinuxCommandContext, args: string[]): { output: string; ex
 
 export const ethtoolCommand: LinuxCommand = {
   name: 'ethtool',
+  package: 'ethtool',
   needsNetworkContext: true,
   complete: (ctx, args) => {
     const partial = args[args.length - 1] ?? '';

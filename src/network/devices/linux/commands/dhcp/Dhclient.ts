@@ -19,6 +19,7 @@ import type { LinuxCommandContext } from '../LinuxCommandContext';
 
 export const dhclientCommand: LinuxCommand = {
   name: 'dhclient',
+  package: 'isc-dhcp-client',
   needsNetworkContext: true,
   manSection: 8,
   usage: 'dhclient [-v] [-d] [-r] [-x] [-s server] [-w] [-t timeout] <interface>',

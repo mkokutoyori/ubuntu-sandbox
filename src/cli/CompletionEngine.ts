@@ -88,7 +88,15 @@ function suggestionsAt(
     });
   }
 
-  const argument = table.argumentAt(cursor.node, session, AIDE)?.argument;
+  const declaree = table.argumentAt(cursor.node, session, AIDE)?.argument;
+  /*
+   * Une plage qui depend de l'etat est LUE, pas recopiee : sans cela
+   * `standby ?` annoncait <0-4095> sur une interface en version 1, ou la
+   * meme machine refuse 256.
+   */
+  const vivante = declaree ? table.sessionRangeFor(cursor.path, declaree) : null;
+  const argument = declaree && vivante
+    ? { ...declaree, range: vivante } : declaree;
   if (argument && trigger === 'QUESTION_MARK'
     && (argument.values || argument.alternatives || cursor.prefix.length === 0)) {
     for (const suggestion of argumentSuggestions(argument)) {

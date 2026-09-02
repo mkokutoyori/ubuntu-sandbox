@@ -787,6 +787,11 @@ export abstract class LinuxMachine extends EndHost
    * simples réglages : chacun tient un vrai port UDP sur son groupe
    * multicast et répond pour le nom de cet hôte.
    */
+  protected override lldpSystemDescription(): string {
+    const k = this.executor.identity.kernel;
+    return `${this.getHostname()} ${k.sysname} ${k.release} ${k.machine}`;
+  }
+
   getLlmnrAgent(): LlmnrAgent {
     if (!this._llmnrAgent) this._llmnrAgent = new LlmnrAgent(this);
     return this._llmnrAgent;
@@ -1359,6 +1364,10 @@ export abstract class LinuxMachine extends EndHost
     // de bon. Sans cela, `systemctl stop rsyslog` laisserait le port 514
     // ouvert et la machine continuerait de recevoir apres l'arret.
     this.executor.serviceMgr.onLifecycle((event, name) => {
+      if (name === 'lldpd') {
+        this.setLldpEmission(event !== 'stop');
+        return;
+      }
       if (name !== 'rsyslog') return;
       const svc = this.rsyslogService;
       if (!svc) return;
@@ -3711,6 +3720,7 @@ export abstract class LinuxMachine extends EndHost
       syncLinkLocalResponders: () => this.syncLinkLocalResponders(),
       getMdnsAgent: () => this.getMdnsAgent(),
       getLldpNeighbors: (iface?: string) => this.getLldpNeighbors(iface),
+      getLldpAgent: () => this.getLldpAgent(),
       getDhcpClient: (): DHCPClient => {
         return this.dhcpClient;
       },

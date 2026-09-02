@@ -7,14 +7,6 @@ import type { ArgumentSpec } from '../../ArgumentTypes';
  * Le trie construit deux arbres entiers — un sous `logging`, un sous
  * `no logging` — par la meme boucle, donc deux chemins par entree. Le
  * socle porte l'entree une fois : `run` applique, `undo` retire.
- *
- * La tranche migree ici est celle que le socle sait exprimer SANS RIEN
- * PERDRE. Les sous-commandes a plusieurs parametres ou a continuations
- * (`buffered`, `console`, `discriminator`, `history`, `host`,
- * `persistent`, `rate-limit`, `reload`) restent au trie : leur aide y
- * decrit des mots-cles qui suivent l'argument, et migrer avant de savoir
- * les rendre echangerait une aide precise contre une aide generique —
- * l'erreur commise puis annulee sur la famille `ntp`.
  */
 export interface LoggingContinuation {
   readonly keyword: string;

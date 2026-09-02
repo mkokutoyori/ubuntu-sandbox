@@ -522,15 +522,88 @@ export function buildNATConfigCommands(trie: CommandTrie, ctx: CiscoShellContext
 
 // ─── Interface Config Mode ────────────────────────────────────────────────────
 
-export function natInterfaceSpecs(ctx: CiscoShellContext): CommandSpec[] {
-  return specsFromTrieRegistrations(
-    (collector) => buildNATInterfaceCommands(collector as unknown as CommandTrie, ctx),
+interface VrfTable {
+  _vrfs?: Map<string, { name: string; interfaces: Set<string> }>;
+  _ifaceVrf?: Map<string, string>;
+}
+
+export function interfaceVrfName(router: Router, iface: string): string | undefined {
+  return (router as unknown as VrfTable)._ifaceVrf?.get(iface);
+}
+
+function vrfInterfaceSpecs(ctx: CiscoShellContext): CommandSpec[] {
+  const nom: ArgumentSpec = {
+    name: 'vrf', type: 'WORD',
+    description: 'VPN Routing/Forwarding instance name',
+  };
+  const table = (): VrfTable => ctx.r() as unknown as VrfTable;
+  const detacher = (iface: string): void => {
+    const t = table();
+    const lie = t._ifaceVrf?.get(iface);
+    if (lie === undefined) return;
+    t._vrfs?.get(lie)?.interfaces.delete(iface);
+    t._ifaceVrf?.delete(iface);
+  };
+  return [
     {
+      id: 'config-if-ip-vrf-forwarding',
+      path: ['ip', 'vrf', 'forwarding', nom],
+      description: 'Configure forwarding table',
+      undoDescription: 'Remove the interface from its forwarding table',
       modes: MODES_INTERFACE, minPrivilege: 15,
-      undoFromNegatedPaths: true,
-      argumentFor: () => null,
+      run: (_session, args) => {
+        const iface = ctx.getSelectedInterface();
+        if (!iface) return '% No interface selected.';
+        const cible = args.vrf ?? '';
+        const t = table();
+        if (!t._vrfs?.has(cible)) return `% VRF ${cible} not configured`;
+        detacher(iface);
+        t._vrfs.get(cible)!.interfaces.add(iface);
+        (t._ifaceVrf ??= new Map()).set(iface, cible);
+        const port = ctx.r().getPort?.(iface);
+        const adresse = port?.getIPAddress?.();
+        if (!adresse) return '';
+        ctx.r().unconfigureInterface(iface);
+        return `% Interface ${iface} IP address ${adresse.toString()} `
+          + `removed due to enabling VRF ${cible}`;
+      },
+      undo: (_session) => {
+        const iface = ctx.getSelectedInterface();
+        if (!iface) return '% No interface selected.';
+        detacher(iface);
+        return '';
+      },
     },
-  );
+    {
+      id: 'config-if-ip-vrf-forwarding-nu',
+      path: ['ip', 'vrf', 'forwarding'],
+      description: 'Configure forwarding table',
+      undoDescription: 'Remove the interface from its forwarding table',
+      existsOnlyNegated: true,
+      modes: MODES_INTERFACE, minPrivilege: 15,
+      run: () => '% Incomplete command.',
+      undo: () => {
+        const iface = ctx.getSelectedInterface();
+        if (!iface) return '% No interface selected.';
+        detacher(iface);
+        return '';
+      },
+    },
+  ];
+}
+
+export function natInterfaceSpecs(ctx: CiscoShellContext): CommandSpec[] {
+  return [
+    ...specsFromTrieRegistrations(
+      (collector) => buildNATInterfaceCommands(collector as unknown as CommandTrie, ctx),
+      {
+        modes: MODES_INTERFACE, minPrivilege: 15,
+        undoFromNegatedPaths: true,
+        argumentFor: () => null,
+      },
+    ),
+    ...vrfInterfaceSpecs(ctx),
+  ];
 }
 
 export function buildNATInterfaceCommands(trie: CommandTrie, ctx: CiscoShellContext): void {

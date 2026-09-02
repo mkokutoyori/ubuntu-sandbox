@@ -345,13 +345,25 @@ describe('les sorties des équipements, mesurées', () => {
     for (const l of lignes) expect(l).toBe(l.trimEnd());
   });
 
+  // Cette commande rendait UNE table mêlant les deux sens, forme
+  // qu'aucun IOS ne produit : la vraie en rend DEUX, l'entrée puis la
+  // sortie, chacune avec ses colonnes unicast, multicast et diffusion.
+  // L'ancien en-tête n'était pas attesté, seulement cohérent avec
+  // lui-même — et sa colonne `InUcastPkts` comptait TOUTES les trames,
+  // diffusions comprises.
   it('commutateur Cisco : `show interfaces counters`', async () => {
     const s = new CiscoSwitch('switch-cisco', 'SW1', 4);
     await s.executeCommand('enable');
-    const lignes = String(await s.executeCommand('show interfaces counters')).split('\n');
-    expect(lignes[0]).toBe('Port            InOctets   InUcastPkts   OutOctets  OutUcastPkts');
-    verifierColonnes(lignes, colonnes([[0, 16], [16, 24], [24, 38], [38, 50], [50, 64]],
-      ['left', 'right', 'right', 'right', 'right']));
+    const texte = String(await s.executeCommand('show interfaces counters'));
+    const [entree, sortie] = texte.split('\n\n').map((t) => t.split('\n'));
+    expect(entree[0]).toBe(
+      'Port                InOctets    InUcastPkts    InMcastPkts    InBcastPkts');
+    expect(sortie[0]).toBe(
+      'Port               OutOctets   OutUcastPkts   OutMcastPkts   OutBcastPkts');
+    const bornes = colonnes([[0, 16], [16, 28], [28, 43], [43, 58], [58, 73]],
+      ['left', 'right', 'right', 'right', 'right']);
+    verifierColonnes(entree, bornes);
+    verifierColonnes(sortie, bornes);
   });
 
   it('commutateur Cisco : `show interfaces status` rend exactement l\'en-tête d\'un vrai Catalyst', async () => {

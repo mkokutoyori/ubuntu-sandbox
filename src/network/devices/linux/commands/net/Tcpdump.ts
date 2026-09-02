@@ -5,6 +5,7 @@ import { makeArgCompleter } from '../completionHelpers';
 
 export const tcpdumpCommand: LinuxCommand = {
   name: 'tcpdump',
+  package: 'tcpdump',
   needsNetworkContext: true,
   complete: makeArgCompleter({
     flags: ['-A', '-D', '-X', '-c', '-e', '-i', '-n', '-q', '-r', '-s', '-t',

@@ -60,6 +60,7 @@ function isPrivileged(ctx: LinuxCommandContext): boolean {
 
 export const partedCommand: LinuxCommand = {
   name: 'parted',
+  package: 'parted',
   needsNetworkContext: true,
   usage: 'parted [OPTION]... [DEVICE [COMMAND [PARAMETERS]...]...]',
   privilege: {

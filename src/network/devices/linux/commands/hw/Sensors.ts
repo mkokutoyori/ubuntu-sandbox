@@ -73,6 +73,7 @@ export function runSensors(ctx: LinuxCommandContext): { output: string; exitCode
 
 export const sensorsCommand: LinuxCommand = {
   name: 'sensors',
+  package: 'lm-sensors',
   needsNetworkContext: true,
   usage: 'sensors [-A] [-f] [chip ...]',
   manSection: 1,

@@ -6,6 +6,7 @@
  */
 
 import type { Router } from '../../Router';
+import { loadIntervalLabel, DEFAULT_LOAD_INTERVAL_SEC } from '../../../hardware/PortLoad';
 import { dhcpRunningConfigLines, dhcpSnoopingInterfaceLines, dhcpSnoopingRunningConfigLines } from '../../../dhcp/dhcpRunningConfig';
 import { createDefaultSnoopingConfig } from '../../../dhcp/types';
 import type { DHCPSnoopingConfig } from '../../../dhcp/types';
@@ -21,7 +22,9 @@ import { IPAddress, SubnetMask, RIP_METRIC_INFINITY } from '../../../core/types'
 import { runningConfigACL, runningConfigInterfaceACL } from './CiscoAclCommands';
 import { fhrpRunningConfigLines, type FhrpInterfaceView } from '../../../fhrp/runningConfig';
 import { runningConfigObjectGroups } from '@/cli/commands/objectGroup/objectGroupFamily';
-import { runningConfigNAT, runningConfigInterfaceNAT } from './CiscoNATCommands';
+import {
+  runningConfigNAT, runningConfigInterfaceNAT, interfaceVrfName,
+} from './CiscoNATCommands';
 import { ipSlaRunningConfigLines, trackRunningConfigLines } from './ciscoIpSlaRunningConfig';
 import { orderCiscoConfigBlocks, routingProcessConfigLines, policyConfigLines } from './ciscoConfigSerializer';
 import { igmpInterfaceRunningConfigLines } from './CiscoIgmpCommands';
@@ -450,10 +453,9 @@ export function showInterface(router: { _getPortsInternal: () => Map<string, imp
     lines.push(`  Input queue: 0/75/0/0 (size/max/drops/flushes); Total output drops: 0`);
     lines.push(`  Queueing strategy: fifo`);
     lines.push(`  Output queue: 0/0 (size/max)`);
-    lines.push(`  5 minute input rate 0 bits/sec, 0 packets/sec`);
-    lines.push(`  5 minute output rate 0 bits/sec, 0 packets/sec`);
+    lines.push(...loadRateLines(port));
     lines.push(`     ${c.framesIn} packets input, ${c.bytesIn} bytes, 0 no buffer`);
-    lines.push(`     Received 0 broadcasts (0 IP multicasts)`);
+    lines.push(`     Received ${c.broadcastIn} broadcasts (${c.multicastIn} IP multicasts)`);
     lines.push(`     0 runts, 0 giants, 0 throttles`);
     lines.push(`     ${c.errorsIn} input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored, 0 abort`);
     lines.push(`     ${c.framesOut} packets output, ${c.bytesOut} bytes, 0 underruns`);
@@ -481,10 +483,9 @@ export function showInterface(router: { _getPortsInternal: () => Map<string, imp
     const rxPause = `  Last input ${seen}, output ${seen}, output hang never`;
     lines.push(rxPause);
     lines.push(`  Queueing strategy: fifo`);
-    lines.push(`  5 minute input rate 0 bits/sec, 0 packets/sec`);
-    lines.push(`  5 minute output rate 0 bits/sec, 0 packets/sec`);
+    lines.push(...loadRateLines(port));
     lines.push(`     ${c.framesIn} packets input, ${c.bytesIn} bytes, 0 no buffer`);
-    lines.push(`     Received 0 broadcasts (0 multicasts)`);
+    lines.push(`     Received ${c.broadcastIn} broadcasts (${c.multicastIn} multicasts)`);
     lines.push(`     0 runts, 0 giants, 0 throttles`);
     lines.push(`     ${c.errorsIn} input errors, ${c.crcErrorsIn ?? 0} CRC, 0 frame, 0 overrun, 0 ignored`);
     lines.push(`     ${c.framesOut} packets output, ${c.bytesOut} bytes, 0 underruns`);
@@ -493,6 +494,22 @@ export function showInterface(router: { _getPortsInternal: () => Map<string, imp
   }
 
   return lines.join('\n');
+}
+
+/**
+ * Les deux lignes de charge d'IOS. Elles disaient `0 bits/sec` en dur,
+ * c'est-a-dire la ligne qu'un operateur regarde EN PREMIER devant une
+ * tempete de diffusion, et `load-interval` etait range sur une propriete
+ * ad hoc que personne ne lisait — donc la vue annoncait « 5 minute »
+ * quelle que soit la valeur configuree.
+ */
+function loadRateLines(port: Port): string[] {
+  const r = port.getLoadRates();
+  const label = loadIntervalLabel(r.intervalSec);
+  return [
+    `  ${label} input rate ${r.inBitsPerSec} bits/sec, ${r.inPacketsPerSec} packets/sec`,
+    `  ${label} output rate ${r.outBitsPerSec} bits/sec, ${r.outPacketsPerSec} packets/sec`,
+  ];
 }
 
 // showArp() moved to CiscoArpCommands.ts (shared between router and switch)
@@ -938,6 +955,8 @@ function legacyInterfaceLines(port: Port): string[] {
   const wfq = port.getFairQueueConfig();
   const pbr = port.getPolicyRouteMap();
 
+  const charge = port.getLoadIntervalSec();
+  if (charge !== DEFAULT_LOAD_INTERVAL_SEC) lines.push(` load-interval ${charge}`);
   if (pbr) lines.push(` ip policy route-map ${pbr}`);
   if (port.isDirectedBroadcastEnabled()) lines.push(' ip directed-broadcast');
   if (mss !== null) lines.push(` ip tcp adjust-mss ${mss}`);
@@ -981,6 +1000,8 @@ function interfaceConfigLines(
   // pas de distinguer une interface sans adresse d'une interface dont
   // l'adresse aurait été omise — et c'est ce texte que l'import de
   // topologie rejoue.
+  const vrf = interfaceVrfName(router, name);
+  if (vrf !== undefined) lines.push(` ip vrf forwarding ${vrf}`);
   if (port.isDhcpClient()) lines.push(' ip address dhcp');
   else if (ip && mask) lines.push(` ip address ${ip} ${mask}`);
   else if (!/^(Tunnel|Loopback|Vlan|BVI|Port-channel|Null)/i.test(name)) {
@@ -1055,7 +1076,7 @@ function interfaceConfigLines(
       lines.push(` bfd interval ${pending.bfdInterval}${pending.bfdMinRx !== undefined ? ' min_rx ' + pending.bfdMinRx : ''}${pending.bfdMultiplier !== undefined ? ' multiplier ' + pending.bfdMultiplier : ''}`);
     }
     if (pending.bfdTemplate) lines.push(` bfd template ${pending.bfdTemplate}`);
-    if (pending.bfdEcho) lines.push(' bfd echo');
+    if (pending.bfdEchoDisabled) lines.push(' no bfd echo');
     const fr = pending.frameRelay as Record<string, unknown> | undefined;
     if (fr) {
       if (fr.dlci !== undefined) lines.push(` frame-relay interface-dlci ${fr.dlci}`);
@@ -1566,7 +1587,7 @@ function ntpAgentOf(router: Router): import('@/network/ntp/NtpAgent').NtpAgent |
   return (router as unknown as { getNtpAgent?: () => import('@/network/ntp/NtpAgent').NtpAgent }).getNtpAgent?.();
 }
 
-function fhrpViewOf(router: Router, name: string): FhrpInterfaceView {
+export function fhrpViewOf(router: object, name: string): FhrpInterfaceView {
   const repo = (router as unknown as {
     getFhrpRepository?: () => import('../../inspection/config/FhrpRepository').FhrpRepository;
   }).getFhrpRepository?.();
@@ -1589,8 +1610,9 @@ function fhrpViewOf(router: Router, name: string): FhrpInterfaceView {
     glbp: repo.allGlbp().filter(ici).map((g) => ({
       group: g.group, vip: g.vip,
       priority: g.priority, preempt: g.preempt, preemptDelaySec: g.preemptDelay,
-      weighting: g.weighting, loadBalancing: g.loadBalancing,
-      authMd5: g.authMd5, name: g.name, tracks: [],
+      weighting: g.weighting, weightingLower: g.weightingLower,
+      weightingUpper: g.weightingUpper, loadBalancing: g.loadBalancing,
+      authMd5: g.authMd5, name: g.name, tracks: g.trackDecr,
     })),
   };
 }

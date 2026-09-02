@@ -139,6 +139,7 @@ export const ANACRON_DEFAULT_SPOOL = '/var/spool/anacron';
 
 export const anacronCommand: LinuxCommand = {
   name: 'anacron',
+  package: 'anacron',
   needsNetworkContext: true,
   usage: 'anacron [-fudnT] [-s] [-t anacrontab] [-S spooldir] [job] ...',
   options: ANACRON_OPTIONS,

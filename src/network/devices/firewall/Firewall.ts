@@ -2,7 +2,10 @@ import { Equipment } from '../../equipment/Equipment';
 import { LacpAgent } from '@/network/lacp/LacpAgent';
 import { LldpAgent } from '@/network/lldp/LldpAgent';
 import { ETHERTYPE_LLDP } from '@/network/lldp/types';
-import type { LldpSetting } from './l2/LldpIntent';
+import { resolveLldp } from './l2/LldpIntent';
+import type {
+  LldpIntent, LldpSetting, LldpVdomIntent, LldpVdomSetting,
+} from './l2/LldpIntent';
 import type { AggregateSpec } from './l2/AggregateSpec';
 import { buildUdpOverIpv4, type UdpSendRequest } from '../../layers/transport/UdpEgress';
 import { Port } from '../../hardware/Port';
@@ -1315,39 +1318,51 @@ export class Firewall extends Equipment {
     return this.lacpAgentInstance;
   }
 
-  private globalLldpTransmit = false;
-  private globalLldpReceive = false;
-  private readonly lldpIntent = new Map<string, { tx: LldpSetting; rx: LldpSetting }>();
+  private globalLldp = { tx: false, rx: false };
+  private vdomLldp: LldpVdomIntent = { tx: 'global', rx: 'global' };
+  private readonly lldpIntent = new Map<string, LldpIntent>();
 
   setGlobalLldp(transmit: boolean, receive: boolean): void {
-    this.globalLldpTransmit = transmit;
-    this.globalLldpReceive = receive;
+    this.globalLldp = { tx: transmit, rx: receive };
     this.applyLldpIntent();
   }
+
+  setVdomLldp(transmission: LldpVdomSetting, reception: LldpVdomSetting): void {
+    this.vdomLldp = { tx: transmission, rx: reception };
+    this.applyLldpIntent();
+  }
+
+  getVdomLldp(): LldpVdomIntent { return this.vdomLldp; }
 
   setInterfaceLldp(iface: string, transmission: LldpSetting, reception: LldpSetting): void {
     this.lldpIntent.set(iface, { tx: transmission, rx: reception });
     this.applyLldpIntent();
   }
 
-  getInterfaceLldp(iface: string): { tx: LldpSetting; rx: LldpSetting } {
+  getInterfaceLldp(iface: string): LldpIntent {
     return this.lldpIntent.get(iface) ?? { tx: 'vdom', rx: 'vdom' };
+  }
+
+  transmitsLldpOn(iface: string): boolean {
+    return resolveLldp(this.getInterfaceLldp(iface).tx, this.vdomLldp.tx, this.globalLldp.tx);
+  }
+
+  receivesLldpOn(iface: string): boolean {
+    return resolveLldp(this.getInterfaceLldp(iface).rx, this.vdomLldp.rx, this.globalLldp.rx);
   }
 
   private applyLldpIntent(): void {
     const agent = this.getLldpAgent();
-    let anyTransmit = false;
+    let live = false;
     for (const port of this.getPorts()) {
       const name = port.getName();
-      const intent = this.getInterfaceLldp(name);
-      const tx = intent.tx === 'vdom' ? this.globalLldpTransmit : intent.tx === 'enable';
-      const rx = intent.rx === 'vdom' ? this.globalLldpReceive : intent.rx === 'enable';
-      anyTransmit ||= tx;
+      const tx = this.transmitsLldpOn(name);
+      const rx = this.receivesLldpOn(name);
+      live ||= tx || rx;
       agent.setPortTransmit(name, tx);
       agent.setPortReceive(name, rx);
     }
-    agent.setEnabled(anyTransmit || this.globalLldpReceive
-      || [...this.lldpIntent.values()].some(i => i.rx === 'enable'));
+    agent.setEnabled(live);
   }
 
   getAggregates(): ReadonlyMap<string, AggregateSpec> { return this.aggregates; }

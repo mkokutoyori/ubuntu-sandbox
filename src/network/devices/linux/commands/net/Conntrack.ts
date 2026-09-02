@@ -140,6 +140,7 @@ export function runConntrack(
 
 export const conntrackCommand: LinuxCommand = {
   name: 'conntrack',
+  package: 'conntrack',
   needsNetworkContext: true,
   usage: 'conntrack [-L | -S | -F | -C] [-p proto]',
   manSection: 8,

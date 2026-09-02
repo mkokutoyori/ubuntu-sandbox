@@ -9,6 +9,7 @@ const FAILLOCK_OPTIONS: readonly LinuxCommandOption[] = [
 
 export const faillockCommand: LinuxCommand = {
   name: 'faillock',
+  package: 'libpam-modules',
   needsNetworkContext: false,
   usage: 'faillock [--user LOGIN] [--reset]',
   options: FAILLOCK_OPTIONS,

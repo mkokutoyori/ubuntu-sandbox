@@ -84,6 +84,7 @@ async function runRadtest(ctx: LinuxCommandContext, args: string[]): Promise<str
 
 export const radtestCommand: LinuxCommand = {
   name: 'radtest',
+  package: 'freeradius-utils',
   needsNetworkContext: true,
   manSection: 1,
   usage: USAGE,

@@ -120,6 +120,7 @@ function openTcpListener(ctx: LinuxCommandContext, port: number): boolean {
 
 export const ncCommand: LinuxCommand = {
   name: 'nc',
+  package: 'netcat-openbsd',
   aliases: ['ncat'],
   needsNetworkContext: true,
   complete: makeArgCompleter({

@@ -49,6 +49,13 @@ export interface LinuxCommand {
   readonly aliases?: readonly string[];
 
   /**
+   * The Debian package that ships this command, as `dpkg -l` names it.
+   * Declared here so the package database can READ what the machine
+   * provides instead of keeping a second list of its own.
+   */
+  readonly package?: string;
+
+  /**
    * If true, the command needs access to the network kernel (ping,
    * traceroute, dhclient, ...) and must be routed directly by
    * `LinuxMachine`, bypassing the bash interpreter inside

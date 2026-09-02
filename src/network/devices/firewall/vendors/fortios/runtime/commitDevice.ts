@@ -117,6 +117,9 @@ export function buildCommitDevice(
             settings.manageMask ?? '255.255.255.0', settings.gateway);
         }
       },
+      setVdomLldp(transmission, reception) {
+        fw.setVdomLldp(transmission, reception);
+      },
       applyDnsSettings(settings) {
         fw.getDnsClient().applySettings(settings);
       },

@@ -84,7 +84,7 @@ describe('un compte SANS mot de passe n\'en rend pas un', () => {
 
     const rendu = (await usernameLines(device)).find(l => l.includes('sansmdp'))!;
 
-    expect(rendu).toBe('username sansmdp privilege 1 nopassword');
+    expect(rendu).toBe('username sansmdp nopassword');
     expect(rendu).not.toContain('secret');
   });
 
@@ -117,10 +117,10 @@ describe('la configuration REPRODUIT le compte, option comprise', () => {
   it.each([
     ['username u description Chef du reseau', 'username u description Chef du reseau'],
     ['username u autocommand show clock', 'username u autocommand show clock'],
-    ['username u access-class 10 secret x', 'username u privilege 1 access-class 10 secret'],
-    ['username u user-maxlinks 3 secret x', 'username u privilege 1 user-maxlinks 3 secret'],
-    ['username u one-time secret x', 'username u privilege 1 one-time secret'],
-    ['username u nohangup autocommand show clock', 'username u privilege 1 nohangup'],
+    ['username u access-class 10 secret x', 'username u access-class 10 secret'],
+    ['username u user-maxlinks 3 secret x', 'username u user-maxlinks 3 secret'],
+    ['username u one-time secret x', 'username u one-time secret'],
+    ['username u nohangup autocommand show clock', 'username u nohangup'],
   ])('`%s` ressort dans la configuration', async (command, attendu) => {
     const device = await configured(command);
 
@@ -255,7 +255,7 @@ describe('le commutateur applique la MEME regle — un seul rendu', () => {
     const device = await switchDevice('username sansmdp nopassword');
 
     expect((await usernameLines(device)).join('\n'))
-      .toContain('username sansmdp privilege 1 nopassword');
+      .toContain('username sansmdp nopassword');
   });
 
   it('et `description` y ressort aussi', async () => {

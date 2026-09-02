@@ -661,77 +661,21 @@ export function configIfSpecs(ctx: CiscoShellContext): CommandSpec[] {
   );
 }
 
+export function refusSousInterfaceSansEncapsulation(c: CiscoShellContext): string | null {
+  const nom = c.getSelectedInterface();
+  if (!nom || !/\.\d+$/.test(nom)) return null;
+  const port = c.r().getPort(nom);
+  const encap = (port as unknown as { encapsulation?: { type?: string } } | undefined)?.encapsulation;
+  if (encap?.type) return null;
+  return '% Configuring IP routing on a LAN subinterface is only allowed if that '
+    + 'subinterface is already configured as part of an 802.1Q, or ISL vlan.';
+}
+
 export function buildConfigIfCommands(trie: CommandTrie, ctx: CiscoShellContext): void {
   trie.registerGreedy('ip policy route-map', 'Apply PBR on interface', (args) => {
     const iface = ctx.getSelectedInterface();
     if (!iface) return '';
     if (args[0]) ctx.r().getPort(iface)?.setPolicyRouteMap(args[0]);
-    return '';
-  });
-  function refusSousInterfaceSansEncapsulation(c: CiscoShellContext): string | null {
-    const nom = c.getSelectedInterface();
-    if (!nom || !/\.\d+$/.test(nom)) return null;
-    const port = c.r().getPort(nom);
-    const encap = (port as unknown as { encapsulation?: { type?: string } } | undefined)?.encapsulation;
-    if (encap?.type) return null;
-    return '% Configuring IP routing on a LAN subinterface is only allowed if that '
-      + 'subinterface is already configured as part of an 802.1Q, or ISL vlan.';
-  }
-
-  trie.registerGreedy('ip address', 'Set interface IP address', (args) => {
-    if (!ctx.getSelectedInterface()) return '% No interface selected';
-    // `ip address dhcp` / `ip address negotiated` — l'adresse est
-    // apprise, pas saisie : c'est le cas normal d'un lien opérateur, et
-    // `negotiated` répondait « Incomplete command » faute d'être
-    // reconnu avant le test de longueur. `dhcp` passe par le client DHCP
-    // réel de l'interface ; `negotiated` est la forme PPP/IPCP, que ce
-    // simulateur n'a pas — elle est donc mémorisée pour la
-    // running-config et l'interface reste sans adresse, ce qui est
-    // exactement ce que montre un vrai routeur tant que la négociation
-    // n'a pas abouti.
-    const mot = (args[0] ?? '').toLowerCase();
-    if (mot === 'negotiated') {
-      if (args.length > 1) return "% Invalid input detected at '^' marker.";
-      ctx.r().setInterfaceAddressMode?.(ctx.getSelectedInterface()!, 'negotiated');
-      return '';
-    }
-    if (args.length < 2) return '% Incomplete command.';
-    if (!isValidIPv4(args[0]) || !isValidSubnetMask(args[1])) {
-      return "% Invalid input detected at '^' marker.";
-    }
-    const refus = refusSousInterfaceSansEncapsulation(ctx);
-    if (refus) return refus;
-    const secondary = args[2]?.toLowerCase() === 'secondary';
-    if (args[2] !== undefined && !secondary) {
-      return "% Invalid input detected at '^' marker.";
-    }
-    try {
-      if (!secondary) ctx.r().getDhcpClientAgent().disable(ctx.getSelectedInterface()!);
-      ctx.r().configureInterface(ctx.getSelectedInterface()!, new IPAddress(args[0]), new SubnetMask(args[1]), secondary);
-      return '';
-    } catch (e: any) {
-      return `% Invalid input: ${e.message}`;
-    }
-  });
-
-  trie.registerGreedy('no ip address', 'Remove interface IP address', (args) => {
-    const ifName = ctx.getSelectedInterface();
-    if (!ifName) return '% No interface selected';
-    ctx.r().getDhcpClientAgent().disable(ifName);
-    if (args[2]?.toLowerCase() === 'secondary' && isValidIPv4(args[0]) && isValidSubnetMask(args[1])) {
-      ctx.r().removeSecondaryAddress(ifName, new IPAddress(args[0]), new SubnetMask(args[1]));
-      return '';
-    }
-    ctx.r().unconfigureInterface(ifName);
-    return '';
-  });
-
-  trie.registerGreedy('mtu', 'Set MTU', (args) => {
-    if (!ctx.getSelectedInterface()) return '% No interface selected';
-    const port = ctx.r().getPort(ctx.getSelectedInterface()!);
-    if (!port) return '';
-    if (!/^\d+$/.test(args[0] ?? '')) return "% Invalid input detected at '^' marker.";
-    try { port.setMTU(parseInt(args[0], 10)); } catch (e: unknown) { return e instanceof Error ? `% ${e.message}` : '% Invalid MTU'; }
     return '';
   });
   trie.registerGreedy('bandwidth', 'Set interface bandwidth (kbps)', (args) => {
@@ -1134,13 +1078,6 @@ export function buildConfigIfCommands(trie: CommandTrie, ctx: CiscoShellContext)
     return '';
   });
 
-  trie.registerGreedy('load-interval', 'Set load calculation interval', (args) => {
-    if (!ctx.getSelectedInterface()) return '';
-    const port = ctx.r().getPort(ctx.getSelectedInterface()!);
-    const n = parseInt(args[0] ?? '', 10);
-    if (port && !isNaN(n)) (port as unknown as { loadIntervalSec?: number }).loadIntervalSec = n;
-    return '';
-  });
   trie.registerGreedy('encapsulation', 'Set encapsulation', (args) => {
     if (!ctx.getSelectedInterface()) return '';
     const port = ctx.r().getPort(ctx.getSelectedInterface()!);

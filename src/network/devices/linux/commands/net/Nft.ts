@@ -3,6 +3,7 @@ import type { LinuxCommandContext } from '../LinuxCommandContext';
 
 export const nftCommand: LinuxCommand = {
   name: 'nft',
+  package: 'nftables',
   needsNetworkContext: true,
   usage: 'nft list ruleset',
   run(ctx: LinuxCommandContext, args: string[]): string {

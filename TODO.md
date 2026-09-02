@@ -286,6 +286,26 @@ question. C'est un lot a part, avec sa propre mesure.
 
 ## Socle CLI
 
+### [autorisation] `privilege` ne connait que quatre modes sur les onze d'IOS
+`privilege router level 5 network` et `privilege route-map level 5 match`
+sont REFUSES au caret ; une vraie machine les accepte. `AuthScope` ne
+porte que `exec`, `configure`, `interface` et `line`, ce que le module
+declare en toutes lettres depuis toujours — ce n'est donc pas une
+surprise, mais c'est un ecart mesure.
+**Mesure** : sur routeur ET commutateur, les deux formes ci-dessus
+rendent `% Invalid input detected at '^' marker.` avec le curseur sous
+le nom du mode, la ou `privilege interface level 8 shutdown` passe.
+**Pourquoi ce n'est pas ferme ici** : ce n'est pas la grammaire de la
+commande qui manque — la place est une enumeration, y ajouter un mot
+coute une ligne — mais le MOTEUR derriere. Un mode de plus veut dire un
+espace de nommage de plus dans `CommandLevelTable`, une entree de plus
+dans `scopeForMode` (qui traduit le mode de la CLI en espace), et une
+regle de plus dans `filterConfigForLevel`, qui attribue une ligne
+indentee au bloc qui la porte — sans ces trois, `privilege router level
+5 network` serait range et ne gouvernerait rien, c'est-a-dire le defaut
+que ce depot passe son temps a refermer. Accepter le mot sans le moteur
+serait pire que le refus actuel.
+
 ### [cli] `probe-aide-tient-ses-promesses` met trois minutes et flanche sous charge
 Mesure : le fichier passe SEUL (20 cas, 188 s de temps de test) et un de
 ses cas depasse son delai de 5 s des qu'il tourne dans un lot de 196
@@ -1499,3 +1519,86 @@ défauts — la méthode vaut d'être reprise sur le reliquat.
   d'interface, un prefixe, les deux — plutot que de declarer une place
   au juge.
 
+- `probe-aide-tient-ses-promesses.test.ts` EPUISE LE TAS et meurt sans
+  rendre de verdict (`Mark-Compact … allocation failure`, puis
+  « Worker exited unexpectedly » ; 1 a 2 cas sur 20 aboutissent). Ce
+  n'est pas une regression du lot FHRP : le meme fichier, la meme
+  commande, avec `--max-old-space-size=6144`, meurt IDENTIQUEMENT sur
+  l'etat d'AVANT le lot, mesure par `git stash` — c'est donc un cout
+  du garde-fou lui-meme et non de ce qu'il garde. La cause probable est
+  son economie : il fabrique un `CiscoRouter` NEUF par chemin essaye, et
+  il y en a 484 a la seule profondeur 3 du mode interface (mesure, contre
+  483 avant le lot : la migration en ajoute UN, `standby version`), donc
+  environ sept cents equipements par cas et quatre cas par fichier ;
+  `EquipmentRegistry` les retient tous jusqu'au `beforeEach` suivant.
+  Fermer demande de decider si le balayage peut REUTILISER une machine —
+  ce que son en-tete refuse explicitement, une commande essayee pouvant
+  modifier la configuration — ou s'il faut liberer l'equipement apres
+  chaque essai, ce qui suppose une extinction propre qui n'existe pas
+  encore. Les deux sont un lot a soi.
+- Une adresse SECONDAIRE sur une SVI de Catalyst est REFUSEE
+  (`% Secondary addresses are not supported on this platform.`) alors
+  qu'un vrai IOS l'accepte. Mesure : `SwitchSvi` range UNE adresse et un
+  masque par VLAN (`configure(vlan, ip, mask)`), et `isOwnAddress`, la
+  resolution ARP et l'acheminement lisent cette adresse-la ; il n'y a
+  donc nulle part ou poser la seconde. C'est un choix ASSUME et non un
+  oubli : avant ce lot la commande etait acceptee et ECRASAIT la
+  primaire — un refus est moins faux qu'une perte silencieuse. Fermer
+  demande une liste d'adresses secondaires sur la SVI et les trois
+  lecteurs du plan de donnees qui vont avec, ce qui est un lot a soi.
+- L'IDENTIFIANT d'une spec derivee du trie est bati en JOIGNANT les
+  elements du chemin, places d'argument comprises, si bien qu'une place
+  s'y ecrit `[object Object]` : le routeur porte
+  `config-if-ip-rip-receive-version-[object Object]-1`,
+  `…-[object Object]-2`, `config-if-ip-rip-authentication-[object Object]-mode`
+  et d'autres (`trieAdapter.ts`, `id: [modesIci[0], ...words].join('-')`).
+  Un identifiant est cense NOMMER une commande ; celui-ci nomme sa place
+  par le mot que JavaScript ecrit quand on convertit un objet en chaine,
+  donc deux commandes qui ne different que par le TYPE de leur place
+  portent le meme nom. La consequence est aujourd'hui bornee —
+  `CommandTable.specById` est le seul lecteur et le controle de doublon
+  porte sur le CHEMIN, pas sur l'identifiant — ce qui est exactement
+  pourquoi ce n'est pas corrige a la va-vite : rendre l'identifiant exact
+  demande de decider comment une place s'ecrit dedans (`<nom>`, son type,
+  son rang) et de verifier qu'aucun identifiant ecrit a la main n'entre
+  alors en collision avec un identifiant derive.
+- `storm-control`, `srr-queue` et `switchport voice` restent servis par
+  la boucle GENERIQUE de `CiscoSwitchShell`, qui les enregistre en
+  glouton, retient le texte tape sans l'analyser et le rend tel quel dans
+  la configuration — donc `storm-control zorglub` est accepte, rendu, et
+  rejoue a l'import. Les trois voisines de la meme boucle
+  (`channel-protocol`, `mdix`, `power`) en sont sorties parce que leur
+  grammaire tient en deux ou trois mots-cles et qu'une source atteignable
+  les atteste. Celles-ci ne sont pas fermees pour une raison precise :
+  leur grammaire est nettement plus riche (seuils en pourcentage ou en
+  paquets par seconde, actions `shutdown`/`trap`, files et poids de
+  `srr-queue`), `docs.cisco.com` est bloque par le mandataire de sortie,
+  et aucune source atteignable ne la donne en entier. Les declarer au
+  juge REFUSERAIT des formes que la vraie machine accepte, ce qui serait
+  un defaut plus couteux que la permissivite actuelle. A rouvrir quand la
+  documentation est atteignable, ou contre une transcription reelle.
+- Une `Loopback0` de Cisco n'est PAS un port de BOUCLAGE au sens de
+  `Port` : seul `LinuxMachine.createLoopbackPort` passe
+  `{ loopback: true }`, si bien que `Port.mtuMax()` rend 9216 pour elle
+  et que `mtu 65536` y est refuse « Maximum is 9216 (jumbo frame) ».
+  C'est exactement le defaut que le PRD de la boucle decrit et corrige
+  pour `lo` — « poser 65536 echouait sur un plafond emprunte a un autre
+  medium » — et qui reste ouvert du cote Cisco. Mesure en declarant la
+  place de `mtu`, et NON corrige ici parce que le drapeau `loopback`
+  entraine aussi `carrierless`, donc l'etat rapporte (`UNKNOWN` au lieu
+  d'`UP`/`DOWN`) et le comportement des vues d'interface : le poser sur
+  les boucles de Cisco est un lot a soi, avec sa propre mesure de ce
+  qu'IOS affiche pour une `Loopback`.
+- `password-policy min-length|expire|alert-before-expire` de VRP porte la
+  MEME forme de defaut que `security passwords min-length` d'IOS que ce
+  lot vient de fermer : `const n = parseInt(args[1], 10); if (!isNaN(n))
+  policy.X = n;` dans `HuaweiVRPShell` (trois reglages, un seul patron),
+  donc une valeur non numerique est acceptee en SILENCE et ne pose rien —
+  l'operateur croit avoir arme une politique de mots de passe qui n'existe
+  pas. Ce n'est PAS ferme ici pour deux raisons mesurees : les bornes de
+  VRP ne sont pas attestees depuis ce reseau (la documentation Huawei
+  n'est pas atteignable, et les inventer refuserait des valeurs que la
+  vraie machine accepte), et les coquilles VRP n'ont pas encore de pont
+  vers le socle, donc la place ne peut pas y etre declaree comme elle
+  vient de l'etre cote Cisco. A rouvrir avec le pont VRP, ou contre une
+  transcription reelle qui donne les bornes.

@@ -151,7 +151,7 @@ describe('non-regression — ce qui allait deja bien ne bouge pas', () => {
     for (const c of ['enable', 'configure terminal', 'interface FastEthernet0/1']) {
       await s.executeCommand(c);
     }
-    expect(mots(s.cliHelp('mdix '))).toContain('WORD');
+    expect(mots(s.cliHelp('mdix '))).toContain('auto');
     expect(mots(s.cliHelp('switchport mode '))).toContain('access');
     expect(mots(s.cliHelp('switchport access vlan '))).toContain('<1-4094>');
   });

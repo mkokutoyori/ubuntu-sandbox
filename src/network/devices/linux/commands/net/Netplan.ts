@@ -3,6 +3,7 @@ import type { LinuxCommandContext } from '../LinuxCommandContext';
 
 export const netplanCommand: LinuxCommand = {
   name: 'netplan',
+  package: 'netplan.io',
   needsNetworkContext: true,
   usage: 'netplan [ apply | try | status ]',
   run(ctx: LinuxCommandContext, args: string[]): string {

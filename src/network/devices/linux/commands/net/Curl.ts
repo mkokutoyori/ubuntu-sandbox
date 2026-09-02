@@ -31,6 +31,7 @@ function linuxCurlHost(ctx: LinuxCommandContext): CurlHost {
 
 export const curlCommand: LinuxCommand = {
   name: 'curl',
+  package: 'curl',
   needsNetworkContext: true,
   complete: makeArgCompleter({ flags: [...CURL_FLAGS] }),
   manSection: 1,

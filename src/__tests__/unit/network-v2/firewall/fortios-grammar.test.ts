@@ -703,11 +703,49 @@ describe('le moteur de commandes partage', () => {
     expect(dit).toContain('select');
   });
 
-  it('mais elle ne l`est PLUS des que l`attribut departage', () => {
+  // Le mot SUIVANT ne departage pas : la resolution du verbe precede
+  // l'analyse de ses arguments, ici comme sur la vraie machine. Fortinet
+  // l'ecrit dans ses references CLI (FortiOS, FortiADC, FortiWeb) :
+  // « Valid command lines must be unambiguous if abbreviated », et
+  // « you can abbreviate words in the command line to their smallest
+  // number of non-ambiguous characters ». `se` n'est pas ce plus petit
+  // nombre pour `set` tant que `select` existe -- et `select` est bien
+  // offert dans un contexte `edit`.
+  it('une abreviation ambigue le RESTE, quel que soit ce qui suit', () => {
     const { sh } = shell();
     run(sh, 'config firewall policy', 'edit 1');
 
-    expect(run(sh, 'se action accept')).not.toContain('ambigu');
+    expect(run(sh, 'se action accept')).toContain('ambigu');
+    expect(run(sh, 'se srcaddr "all"')).toContain('ambigu');
+  });
+
+  it('un prefixe plus long departage, et le verbe est alors resolu', () => {
+    const { sh } = shell();
+    run(sh, 'config firewall policy', 'edit 1');
+
+    // `sel` ne prefixe que `select` : ce qui manque est la VALEUR, pas
+    // le verbe -- sans ce cas, un moteur qui refuserait TOUTE
+    // abreviation passerait celui d'au-dessus.
+    const dit = run(sh, 'sel srcaddr');
+    expect(dit).not.toContain('ambigu');
+    expect(dit).toContain('missing');
+  });
+
+  // Ce qui departage n'est pas l'attribut mais le CONTEXTE : `select`
+  // n'est offert que la ou il y a une liste dont selectionner une
+  // valeur. Un objet `firewall address` n'a aucun attribut multivalue,
+  // donc `select` n'y existe pas et `se` designe `set` sans ambiguite --
+  // tandis qu'une politique, qui a `srcaddr`, `dstaddr` et `service`,
+  // l'offre. Les deux contextes ci-dessous ne se contredisent donc pas.
+  it('sans attribut multivalue, `select` n existe pas et `se` suffit', () => {
+    const { fw, sh } = shell();
+    run(sh, 'config firewall address', 'edit "SANS-LISTE"');
+
+    expect(run(sh, 'se subnet 10.8.0.0 255.255.255.0')).not.toContain('ambigu');
+    expect(run(sh, 'sel subnet 10.8.0.0')).toContain('unknown command');
+    run(sh, 'next', 'end');
+
+    expect(fw.getObjectStore().getAddress('SANS-LISTE')?.value).toBe('10.8.0.0');
   });
 
   it('`?` annonce la plage REELLE d\'un entier', () => {

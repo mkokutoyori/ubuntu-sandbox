@@ -12,6 +12,7 @@ function identity(cert: X509Certificate): string {
 
 export const updateCaCertificatesCommand: LinuxCommand = {
   name: 'update-ca-certificates',
+  package: 'ca-certificates',
   needsNetworkContext: true,
   binaryPath: '/usr/sbin/update-ca-certificates',
   manSection: 8,

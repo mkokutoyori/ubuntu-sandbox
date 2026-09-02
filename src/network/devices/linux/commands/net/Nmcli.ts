@@ -3,6 +3,7 @@ import type { LinuxCommandContext } from '../LinuxCommandContext';
 
 export const nmcliCommand: LinuxCommand = {
   name: 'nmcli',
+  package: 'network-manager',
   needsNetworkContext: true,
   usage: 'nmcli [ device status | device show INTERFACE ]',
   run(ctx: LinuxCommandContext, args: string[]): string {

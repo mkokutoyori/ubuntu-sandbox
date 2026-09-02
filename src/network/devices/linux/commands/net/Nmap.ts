@@ -105,6 +105,7 @@ function localSourceAddress(ctx: LinuxCommandContext): string {
 
 export const nmapCommand: LinuxCommand = {
   name: 'nmap',
+  package: 'nmap',
   needsNetworkContext: true,
   complete: makeArgCompleter({
     flags: ['-6', '-A', '-F', '-O', '-P0', '-Pn', '-R', '-T', '-d', '-n',

@@ -328,6 +328,15 @@ const BASE_UNITS: DefaultUnit[] = [
     enabledByDefault: true,
   },
   {
+    name: 'lldpd',
+    description: 'LLDP daemon',
+    type: 'notify',
+    execStart: '/usr/sbin/lldpd',
+    user: 'root',
+    after: ['network-online.target'],
+    enabledByDefault: false,
+  },
+  {
     name: 'named',
     description: 'BIND Domain Name Server',
     type: 'forking',
@@ -497,6 +506,7 @@ export const SERVICE_LISTENERS: Readonly<Record<string, ServiceListenerSpec>> = 
     processName: 'apache2',
     sockets: [{ port: 80, protocol: 'tcp' }, { port: 443, protocol: 'tcp' }],
   },
+  lldpd: { processName: 'lldpd', sockets: [] },
   nginx: {
     processName: 'nginx',
     sockets: [{ port: 80, protocol: 'tcp' }, { port: 443, protocol: 'tcp' }],

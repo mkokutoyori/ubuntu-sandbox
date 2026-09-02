@@ -24,11 +24,25 @@ import { getPrivilegeRules } from '../router/security/CiscoPrivilegeStore';
 import { CommandTrie, formatInvalidInput } from './CommandTrie';
 import { isValidIPv4 } from '../../core/ip';
 import type { CommandSpec } from '@/cli/CommandTable';
+import type { FhrpPlacement } from './cisco/fhrpInterfaceSpecs';
+import type { IpAddressHost } from './cisco/ipAddressInterfaceSpecs';
+import type { LoadMtuHost } from './cisco/interfaceLoadMtuSpecs';
+import {
+  switchPortPhysicalSpecs, type PhysicalPortHost,
+} from './cisco/switchPortPhysicalSpecs';
+import { stpInterfaceSpecs, type StpInterfaceHost } from './cisco/stpInterfaceSpecs';
+import { dhcpClientFamily, type DhcpClientLeaseView } from '@/cli/commands/dhcp/dhcpClientFamily';
+
+const SVI_SANS_SECONDAIRE =
+  '% Secondary addresses are not supported on this platform.';
 import type { SocleLegend } from './CiscoShellBase';
 import type { ArgumentSpec } from '@/cli/ArgumentTypes';
 import type { SpecCollector, AdapterKeyword } from '@/cli/commands/trieAdapter';
 import { collectRegistrations, specsFromTrieRegistrations, isCollector }
   from '@/cli/commands/trieAdapter';
+import {
+  renderInterfaceCounters, type CounterRow,
+} from './cisco/ciscoCounterTables';
 import type { ISwitchShell } from './ISwitchShell';
 import type { Switch, SwitchportConfig } from '../Switch';
 import type { VlanSet } from '../switch/VlanSet';
@@ -61,6 +75,7 @@ import { CISCO_ERRORS } from './cli-utils';
 import { estTypeSansNumero, typesInterfaceEnMotsCles } from './cisco/CiscoConfigCommands';
 import { getNtpAgent } from '../../equipment/RouterServiceCapabilities';
 import { fhrpRunningConfigLines } from '../../fhrp/runningConfig';
+import { fhrpViewOf } from './cisco/CiscoShowCommands';
 import { hsrpMaxGroup } from '../../hsrp/types';
 import {
   buildIdentityConfigCommands, buildIdentitySubmodeCommands, getSecurityConfig,
@@ -1371,18 +1386,6 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
     });
 
     // ── Interface ── trust + limit rate
-    trie.configIf.registerGreedy('mtu', 'Set MTU', (args) => {
-      const n = parseInt(args[0] ?? '', 10);
-      if (!Number.isFinite(n)) throw new CliInvalidInput();
-      if (n < 68) return `% Invalid MTU: ${n}. Minimum is 68 (IPv4 minimum).`;
-      if (n > 9216) return `% Invalid MTU: ${n}. Maximum is 9216 (jumbo frame).`;
-      const ifs = this.selectedInterface ? [this.selectedInterface] : this.selectedInterfaceRange;
-      for (const i of ifs) {
-        const port = this.d().getPort(i);
-        if (port) (port as unknown as { setMTU?: (m: number) => void }).setMTU?.(n);
-      }
-      return '';
-    });
     trie.configIf.register('ip arp inspection trust', 'Trust port for DAI', () => {
       const cfg = this.d()._getArpInspectionConfig();
       return this.applyToSelectedInterfaces(p => { cfg.trustedPorts.add(p); return ''; });
@@ -1573,264 +1576,13 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
     // ── SVI (management Vlan interface) L3 addressing ──
     // L2-only switch: physical ports cannot hold an IP. A management SVI
     // (interface Vlan N) may, mirroring a real Layer-2 switch.
-    this.configIfTrie.registerGreedy('ip address', 'Set the SVI IP address', (args) => {
-      const iface = this.selectedInterface ?? '';
-      const vlan = this.sviVlanId(iface);
-      if (vlan === null) {
-        return '% IP addresses may not be configured on L2 links.';
-      }
-      if (args[0]?.toLowerCase() === 'dhcp') {
-        if (args.length > 1) return CISCO_ERRORS.INVALID_INPUT;
-        this.d().getDhcpClientAgent().enable(`Vlan${vlan}`, 'ip address dhcp');
-        return '';
-      }
-      if (args.length < 2 || !IPAddress.isValid(args[0]) || !IPAddress.isValid(args[1])) {
-        return CISCO_ERRORS.INVALID_INPUT;
-      }
-      this.d().getDhcpClientAgent().disable(`Vlan${vlan}`);
-      this.d().configureSviIp(vlan, new IPAddress(args[0]), new SubnetMask(args[1]));
-      return '';
-    });
-    this.configIfTrie.addCompletionKeywords('ip address', ['dhcp']);
 
     // La PACL — `ip access-group` sur un port du commutateur — était
     // REFUSÉE, alors que le plan de données la lit depuis toujours
     // (`Switch.portAclPermits` interroge `getVaclEngine()` à chaque
     // trame) : le moteur, la liaison et le filtrage existaient, il
     // manquait la commande qui les relie.
-    this.configIfTrie.register('no ip address', 'Remove the SVI IP address', () => {
-      const vlan = this.sviVlanId(this.selectedInterface ?? '');
-      if (vlan === null) return '';
-      this.d().getDhcpClientAgent().disable(`Vlan${vlan}`);
-      this.d().clearSviIp(vlan);
-      return '';
-    });
 
-
-    // ── VRRP on SVI (first-hop redundancy) ──
-    // Standard IOS syntax: `vrrp <group> ip <vip>` / `vrrp <group>
-    // priority <n>` / `vrrp <group> preempt`. Valid on Vlan SVIs only;
-    // a Vlanif alias in `interface Vlan10` view means the group lives
-    // on that SVI's VLAN plane.
-    this.configIfTrie.registerGreedy('vrrp', 'VRRP configuration', (args) => {
-      const vlan = this.sviVlanId(this.selectedInterface ?? '');
-      if (vlan === null) return '% VRRP is valid on SVI (Vlan) interfaces only.';
-      if (args.length < 2) return CISCO_ERRORS.INCOMPLETE;
-      const group = parseInt(args[0], 10);
-      if (Number.isNaN(group) || group < 1 || group > 255) return '% Invalid VRRP group.';
-      const iface = `Vlanif${vlan}`;
-      const agent = this.d().getVrrpAgent();
-      agent.ensureGroup(iface, group);
-      switch (args[1]) {
-        case 'ip':
-          if (args[2] && !IPAddress.isValid(args[2])) return CISCO_ERRORS.INVALID_INPUT;
-          if (args[2]) agent.setVip(iface, group, args[2]);
-          return '';
-        case 'priority': {
-          const p = parseInt(args[2] ?? '', 10);
-          if (!Number.isFinite(p) || p < 1 || p > 254) return '% Invalid priority (1..254).';
-          agent.setPriority(iface, group, p);
-          return '';
-        }
-        case 'preempt': {
-          // Le Catalyst a son PROPRE analyseur, distinct de celui du
-          // routeur : le correctif du lot V18 ne l'atteignait donc pas,
-          // et `preempt delay minimum` y laissait encore tomber sa
-          // valeur. C'est la meme faute que V18 a trouvee entre les deux
-          // constructeurs, ici entre les deux plateformes.
-          let delai: number | undefined;
-          if (args[2] === 'delay' && args[3] === 'minimum') {
-            const n = parseInt(args[4] ?? '', 10);
-            delai = Number.isFinite(n) && n > 0 ? n : undefined;
-          }
-          agent.setPreempt(iface, group, true, delai);
-          return '';
-        }
-        case 'track': {
-          const raw = args[2] ?? '';
-          const target = this.trackObjects.resolve(raw) ?? this.resolveInterfaceName(raw) ?? raw;
-          if (!target) return '% Missing tracked interface.';
-          const decrIdx = args.indexOf('decrement');
-          const decr = decrIdx >= 0 ? (parseInt(args[decrIdx + 1] ?? '10', 10) || 10) : 10;
-          agent.addTrack(iface, group, target, decr);
-          return '';
-        }
-        case 'timers': {
-          if (args[2] !== 'advertise') return CISCO_ERRORS.INCOMPLETE;
-          const sec = parseInt(args[3] ?? '', 10);
-          if (!Number.isFinite(sec) || sec < 1) return '% Invalid advertise interval.';
-          agent.setAdvertiseSec(iface, group, sec);
-          return '';
-        }
-        default: return '';
-      }
-    });
-    this.configIfTrie.registerGreedy('no vrrp', 'Remove a VRRP group', (args) => {
-      const vlan = this.sviVlanId(this.selectedInterface ?? '');
-      if (vlan === null) return '';
-      const group = parseInt(args[0] ?? '', 10);
-      if (!Number.isFinite(group)) return '';
-      const iface = `Vlanif${vlan}`;
-      const agent = this.d().getVrrpAgent();
-      if (args[1] === 'preempt') { agent.setPreempt(iface, group, false); return ''; }
-      agent.removeGroup(iface, group);
-      return '';
-    });
-
-    this.configIfTrie.registerGreedy('standby', 'HSRP configuration', (args) => {
-      const vlan = this.sviVlanId(this.selectedInterface ?? '');
-      if (vlan === null) return '% HSRP is valid on SVI (Vlan) interfaces only.';
-      if (args.length < 2) return CISCO_ERRORS.INCOMPLETE;
-      const iface = `Vlanif${vlan}`;
-      const agent = this.d().getHsrpAgent();
-      if (args[0] === 'version') {
-        const v = parseInt(args[1] ?? '', 10);
-        if (v !== 1 && v !== 2) return '% Invalid version (1..2).';
-        this.hsrpVersionByIface.set(iface, v as 1 | 2);
-        agent.setVersion(iface, v as 1 | 2);
-        return '';
-      }
-      const version = this.hsrpVersionByIface.get(iface) ?? 1;
-      const group = parseInt(args[0], 10);
-      if (Number.isNaN(group)) return '% Invalid HSRP group.';
-      const maxGrp = hsrpMaxGroup(version);
-      if (group < 0 || group > maxGrp) {
-        return `% Group number out of range. Valid range is 0-${maxGrp} for HSRP version ${version}`;
-      }
-      agent.ensureGroup(iface, group, version);
-      switch (args[1]) {
-        case 'ip':
-          if (args[2] && !IPAddress.isValid(args[2])) return CISCO_ERRORS.INVALID_INPUT;
-          if (args[2]) agent.setVip(iface, group, args[2]);
-          return '';
-        case 'priority': {
-          const p = parseInt(args[2] ?? '', 10);
-          if (!Number.isFinite(p) || p < 0 || p > 255) return '% Invalid priority (0..255).';
-          agent.setPriority(iface, group, p);
-          return '';
-        }
-        case 'preempt': {
-          let delai: number | undefined;
-          if (args[2] === 'delay' && args[3] === 'minimum') {
-            const n = parseInt(args[4] ?? '', 10);
-            delai = Number.isFinite(n) && n > 0 ? n : undefined;
-          }
-          agent.setPreempt(iface, group, true, delai);
-          return '';
-        }
-        case 'track': {
-          const raw = args[2] ?? '';
-          const target = this.trackObjects.resolve(raw) ?? this.resolveInterfaceName(raw) ?? raw;
-          if (!target) return '% Missing tracked interface.';
-          const decrIdx = args.indexOf('decrement');
-          const decr = decrIdx >= 0 ? (parseInt(args[decrIdx + 1] ?? '10', 10) || 10) : 10;
-          agent.addTrack(iface, group, target, decr);
-          return '';
-        }
-        case 'timers': {
-          const hello = parseInt(args[2] ?? '', 10);
-          const hold = parseInt(args[3] ?? '', 10);
-          if (!Number.isFinite(hello) || !Number.isFinite(hold) || hello < 1 || hold <= hello) {
-            return '% Invalid timers (hello >= 1, hold > hello).';
-          }
-          agent.setTimers(iface, group, hello, hold);
-          return '';
-        }
-        case 'authentication': {
-          if (args[2] === 'text' && args[3]) { agent.setAuth(iface, group, args[3]); return ''; }
-          if (args[2]) { agent.setAuth(iface, group, args[2]); return ''; }
-          return '% Missing authentication text.';
-        }
-        default: return '';
-      }
-    });
-    this.configIfTrie.registerGreedy('no standby', 'Remove an HSRP group', (args) => {
-      const vlan = this.sviVlanId(this.selectedInterface ?? '');
-      if (vlan === null) return '';
-      const group = parseInt(args[0] ?? '', 10);
-      if (!Number.isFinite(group)) return '';
-      const iface = `Vlanif${vlan}`;
-      const agent = this.d().getHsrpAgent();
-      if (args[1] === 'preempt') { agent.setPreempt(iface, group, false); return ''; }
-      agent.removeGroup(iface, group);
-      return '';
-    });
-
-    this.configIfTrie.registerGreedy('glbp', 'GLBP configuration', (args) => {
-      const vlan = this.sviVlanId(this.selectedInterface ?? '');
-      if (vlan === null) return '% GLBP is valid on SVI (Vlan) interfaces only.';
-      if (args.length < 2) return CISCO_ERRORS.INCOMPLETE;
-      const group = parseInt(args[0], 10);
-      if (Number.isNaN(group) || group < 0 || group > 1023) return '% Invalid GLBP group.';
-      const iface = `Vlanif${vlan}`;
-      const agent = this.d().getGlbpAgent();
-      agent.ensureGroup(iface, group);
-      switch (args[1]) {
-        case 'ip':
-          if (args[2] && !IPAddress.isValid(args[2])) return CISCO_ERRORS.INVALID_INPUT;
-          if (args[2]) agent.setVip(iface, group, args[2]);
-          return '';
-        case 'priority': {
-          const p = parseInt(args[2] ?? '', 10);
-          if (!Number.isFinite(p) || p < 1 || p > 255) return '% Invalid priority (1..255).';
-          agent.setPriority(iface, group, p);
-          return '';
-        }
-        case 'preempt': {
-          let delai: number | undefined;
-          if (args[2] === 'delay' && args[3] === 'minimum') {
-            const n = parseInt(args[4] ?? '', 10);
-            delai = Number.isFinite(n) && n > 0 ? n : undefined;
-          }
-          agent.setPreempt(iface, group, true, delai);
-          return '';
-        }
-        case 'authentication': {
-          // Elle n'existait pas du tout sur le Catalyst : le mot-cle
-          // tombait dans le `default: return ''`, donc la commande etait
-          // acceptee et ne laissait aucune trace.
-          const iKey = args.indexOf('key-string');
-          const md5 = args[2] === 'md5';
-          const cle = iKey >= 0 ? args[iKey + 1] : args[args.length - 1];
-          agent.setAuth(iface, group, md5 ? 'md5' : 'text', cle);
-          return '';
-        }
-        case 'weighting': {
-          if (args[2] === 'track') {
-            const raw = args[3] ?? '';
-            const target = this.trackObjects.resolve(raw) ?? this.resolveInterfaceName(raw) ?? raw;
-            if (!target) return '% Missing tracked interface.';
-            const decrIdx = args.indexOf('decrement');
-            const decr = decrIdx >= 0 ? (parseInt(args[decrIdx + 1] ?? '10', 10) || 10) : 10;
-            agent.addTrack(iface, group, target, decr);
-            return '';
-          }
-          const w = parseInt(args[2] ?? '', 10);
-          if (!Number.isFinite(w) || w < 1 || w > 254) return '% Invalid weighting (1..254).';
-          agent.setWeighting(iface, group, w);
-          return '';
-        }
-        case 'load-balancing': {
-          const mode = args[2];
-          if (mode === 'round-robin' || mode === 'weighted' || mode === 'host-dependent') {
-            agent.setLoadBalancing(iface, group, mode);
-          }
-          return '';
-        }
-        default: return '';
-      }
-    });
-    this.configIfTrie.registerGreedy('no glbp', 'Remove a GLBP group', (args) => {
-      const vlan = this.sviVlanId(this.selectedInterface ?? '');
-      if (vlan === null) return '';
-      const group = parseInt(args[0] ?? '', 10);
-      if (!Number.isFinite(group)) return '';
-      const iface = `Vlanif${vlan}`;
-      const agent = this.d().getGlbpAgent();
-      if (args[1] === 'preempt') { agent.setPreempt(iface, group, false); return ''; }
-      agent.removeGroup(iface, group);
-      return '';
-    });
 
     // ── errdisable recovery ──
     this.configTrie.register('errdisable recovery cause psecure-violation',
@@ -2454,79 +2206,6 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
   }
 
   private registerStpInterface(): void {
-    this.configIfTrie.registerGreedy('spanning-tree', 'Interface STP configuration', (args) => {
-      const ifs = this.selectedInterface
-        ? [this.selectedInterface] : this.selectedInterfaceRange;
-      const a = args.map(s => s.toLowerCase());
-      const agent = this.requireStp();
-      const head = a[0] ?? '';
-      const isGuardRoot = head === 'guard' && a[1] === 'root';
-      const isGuardLoop = head === 'guard' && a[1] === 'loop';
-      const isBpduGuard = head === 'bpduguard';
-      const isBpduFilter = head === 'bpdufilter';
-      const isPortFast = head === 'portfast';
-      // `spanning-tree cost 10` and `spanning-tree vlan 20 cost 10` are the
-      // same command with an optional instance selector in front.
-      const perVlan = head === 'vlan' ? parseInt(a[1], 10) : NaN;
-      const knob = Number.isNaN(perVlan) ? head : a[2];
-      const knobValue = parseInt(Number.isNaN(perVlan) ? a[1] : a[3], 10);
-      const vlanArg = Number.isNaN(perVlan) ? undefined : perVlan;
-      // IOS refuse hors bornes, il n'absorbe pas — et la priorite de port
-      // se pose par pas de 16, ce qu'il dit avec ses propres mots.
-      if (knob === 'cost' && !Number.isNaN(knobValue)
-        && (knobValue < 1 || knobValue > 200_000_000)) {
-        throw new CliInvalidInput();
-      }
-      // Hors bornes, IOS refuse. Une valeur DANS les bornes qui n'est pas
-      // un multiple de 16 est arrondie par l'agent STP, choix déjà pris
-      // et testé ailleurs (`stp-prd-fidelity`) : la refuser ici ferait
-      // deux réponses à une même saisie.
-      if (knob === 'port-priority' && !Number.isNaN(knobValue)
-        && (knobValue < 0 || knobValue > 240)) {
-        throw new CliInvalidInput();
-      }
-      for (const i of ifs) {
-        if (knob === 'cost' && !Number.isNaN(knobValue)) {
-          agent.setPortCost(i, knobValue, vlanArg);
-        } else if (knob === 'port-priority' && !Number.isNaN(knobValue)) {
-          agent.setPortPriority(i, knobValue, vlanArg);
-        } else if (isPortFast) {
-          agent.setPortFast(i, a[1] !== 'disable');
-        } else if (isBpduGuard) {
-          agent.setPortBpduGuard(i, a[1] === 'enable');
-        } else if (isBpduFilter) {
-          agent.setPortBpduFilter(i, a[1] === 'enable');
-        } else if (isGuardRoot) {
-          agent.setPortRootGuard(i, true);
-        } else if (isGuardLoop) {
-          agent.setPortLoopGuard(i, true);
-        }
-        const l = this.ifStp.get(i) ?? [];
-        l.push(`spanning-tree ${args.join(' ')}`.trim());
-        this.ifStp.set(i, l);
-      }
-      return '';
-    }, STP_INTERFACE_CONTINUATIONS);
-    this.configIfTrie.registerGreedy('no spanning-tree', 'Disable interface STP knob', (args) => {
-      const ifs = this.selectedInterface
-        ? [this.selectedInterface] : this.selectedInterfaceRange;
-      const a = args.map(s => s.toLowerCase());
-      const agent = this.requireStp();
-      const noVlan = a[0] === 'vlan' ? parseInt(a[1], 10) : NaN;
-      const noKnob = Number.isNaN(noVlan) ? a[0] : a[2];
-      const noVlanArg = Number.isNaN(noVlan) ? undefined : noVlan;
-      for (const i of ifs) {
-        if (noKnob === 'cost') agent.setPortCost(i, null, noVlanArg);
-        else if (noKnob === 'port-priority') agent.setPortPriority(i, null, noVlanArg);
-        else if (a[0] === 'portfast') agent.setPortFast(i, false);
-        else if (a[0] === 'bpduguard') agent.setPortBpduGuard(i, false);
-        else if (a[0] === 'bpdufilter') agent.setPortBpduFilter(i, false);
-        else if (a[0] === 'guard' && a[1] === 'loop') agent.setPortLoopGuard(i, false);
-        else if (a[0] === 'guard') agent.setPortRootGuard(i, false);
-        this.oublierLigneStp(i, a[0], noKnob);
-      }
-      return '';
-    });
 
     // `archive` — la même famille que sur le routeur, construite par le
     // même module (`CiscoArchiveCommands`) plutôt que recopiée : deux
@@ -2717,9 +2396,173 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
     } as unknown as CiscoSecurityShellContext;
   }
 
+  protected override placementFhrp(
+    protocole: 'HSRP' | 'VRRP' | 'GLBP',
+  ): FhrpPlacement {
+    const vlan = this.sviVlanId(this.selectedInterface ?? '');
+    return vlan === null
+      ? { refus: `% ${protocole} is valid on SVI (Vlan) interfaces only.` }
+      : { iface: `Vlanif${vlan}` };
+  }
+
+  selectedInterfaceName(): string | null { return this.selectedInterface ?? null; }
+
+  dhcpClientEnable(iface: string, line: string): void {
+    this.d().getDhcpClientAgent().enable(iface, line);
+  }
+
+  dhcpClientDisable(iface: string): boolean {
+    return this.d().getDhcpClientAgent().disable(iface);
+  }
+
+  dhcpClientRelease(iface: string): boolean {
+    return this.d().getDhcpClientAgent().release(iface);
+  }
+
+  dhcpClientRenew(iface: string): boolean {
+    return this.d().getDhcpClientAgent().renew(iface);
+  }
+
+  dhcpClientLeases(): DhcpClientLeaseView[] {
+    return this.d().getDhcpClientAgent().leases().map((l) => ({
+      iface: l.iface,
+      ipAddress: l.ipAddress,
+      subnetMask: l.subnetMask,
+      serverIdentifier: l.serverIdentifier,
+      leaseDuration: l.leaseDuration,
+      renewalTime: l.renewalTime,
+      rebindingTime: l.rebindingTime,
+    }));
+  }
+
+  dhcpClientResolveInterface(name: string): string | null {
+    return this.resolveInterfaceName(name);
+  }
+
+  private dot1xPaeSpecs(): CommandSpec[] {
+    const role: ArgumentSpec = {
+      name: 'role', type: 'ENUM', description: '802.1X PAE role',
+      values: [
+        { keyword: 'authenticator', description: 'Set the port as authenticator' },
+        { keyword: 'both', description: 'Set the port as both supplicant and authenticator' },
+        { keyword: 'supplicant', description: 'Set the port as supplicant' },
+      ],
+    };
+    const agent = () => this.d().getDot1xAgent();
+    return [{
+      id: 'config-if-dot1x-pae',
+      path: ['dot1x', 'pae', role],
+      description: 'Set the PAE role of this interface',
+      undoDescription: 'Remove the PAE role from this interface',
+      modes: ['config-if'], minPrivilege: 15,
+      run: (_session, args) => {
+        if (args.role !== 'authenticator') {
+          return '% Only the authenticator role is supported '
+            + '(no supplicant implementation).';
+        }
+        return this.applyToSelectedInterfaces((portName) => {
+          agent().setPortMode(portName, 'disabled');
+          return '';
+        });
+      },
+      undo: () => this.applyToSelectedInterfaces((portName) => {
+        agent().removePort(portName);
+        return '';
+      }),
+    }];
+  }
+
+  private stpInterfaceHost(): StpInterfaceHost {
+    return {
+      targetInterfaces: () => this.selectedInterface
+        ? [this.selectedInterface] : this.selectedInterfaceRange,
+      stpAgent: () => this.requireStp(),
+      recordStpLine: (iface, ligne) => {
+        const l = this.ifStp.get(iface) ?? [];
+        l.push(ligne);
+        this.ifStp.set(iface, l);
+      },
+      forgetStpLine: (iface, tete, knob) => this.oublierLigneStp(iface, tete, knob),
+    };
+  }
+
+  private portPhysiqueHost(): PhysicalPortHost {
+    return {
+      refusePortPhysique: () =>
+        this.selectedInterface !== null
+          && this.sviVlanId(this.selectedInterface) !== null
+          ? CISCO_ERRORS.INVALID_INPUT : null,
+      recordInterfaceLine: (ligne) => this.enregistrerLigneInterface(ligne),
+      removeInterfaceLine: (prefixe) => {
+        const ifs = this.selectedInterface
+          ? [this.selectedInterface] : this.selectedInterfaceRange;
+        for (const i of ifs) {
+          const l = this.ifExtra.get(i);
+          if (l) this.ifExtra.set(i, l.filter((x) => !x.startsWith(prefixe)));
+        }
+      },
+    };
+  }
+
+  protected override loadMtuHost(): LoadMtuHost {
+    return {
+      ...super.loadMtuHost(),
+      refuseOnSelected: (commande) =>
+        commande === 'load-interval' && this.selectedInterface !== null
+          && this.sviVlanId(this.selectedInterface) !== null
+          ? CISCO_ERRORS.INVALID_INPUT : null,
+      onInterfaceLine: (ligne) => this.enregistrerLigneInterface(ligne),
+    };
+  }
+
+  private enregistrerLigneInterface(ligne: string): void {
+    const ifs = this.selectedInterface
+      ? [this.selectedInterface] : this.selectedInterfaceRange;
+    const verbe = ligne.split(' ').slice(0, 3).join(' ');
+    for (const i of ifs) {
+      const l = (this.ifExtra.get(i) ?? []).filter(
+        (existante) => existante.split(' ').slice(0, 3).join(' ') !== verbe);
+      l.push(ligne);
+      this.ifExtra.set(i, l);
+    }
+  }
+
+  protected override ipAddressHost(): IpAddressHost {
+    const vlan = (): number | null => this.sviVlanId(this.selectedInterface ?? '');
+    const surSvi = (appliquer: (n: number) => string): string => {
+      const n = vlan();
+      return n === null
+        ? '% IP addresses may not be configured on L2 links.'
+        : appliquer(n);
+    };
+    return {
+      setPrimaryAddress: (adresse, masque) => surSvi((n) => {
+        this.d().getDhcpClientAgent().disable(`Vlan${n}`);
+        this.d().configureSviIp(n, new IPAddress(adresse), new SubnetMask(masque));
+        return '';
+      }),
+      setSecondaryAddress: () => surSvi(() => SVI_SANS_SECONDAIRE),
+      clearAddress: () => surSvi((n) => {
+        this.d().getDhcpClientAgent().disable(`Vlan${n}`);
+        this.d().clearSviIp(n);
+        return '';
+      }),
+      clearSecondaryAddress: () => surSvi(() => SVI_SANS_SECONDAIRE),
+      setNegotiatedAddress: () => surSvi(() => CISCO_ERRORS.INVALID_INPUT),
+    };
+  }
+
+  protected override resolveTrackedForFhrp(raw: string): string {
+    return this.trackObjects.resolve(raw) ?? this.resolveInterfaceName(raw) ?? raw;
+  }
+
   protected override socleSpecs(): readonly CommandSpec[] {
     return [
       ...super.socleSpecs(),
+      ...switchPortPhysicalSpecs(() => this.portPhysiqueHost()),
+      ...stpInterfaceSpecs(() => this.stpInterfaceHost()),
+      ...this.dot1xPaeSpecs(),
+      ...dhcpClientFamily(),
       ...this.stpShowSpecs(),
       ...dhcpPoolSpecs(this.dhcpPoolContext()),
       ...this.vlanVtpShowSpecs(),
@@ -4092,9 +3935,7 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
       return recordIf(`speed ${n}`);
     });
     for (const sub of [
-      'switchport voice',
-      'channel-protocol', 'storm-control',
-      'mdix', 'power', 'srr-queue', 'load-interval',
+      'switchport voice', 'storm-control', 'srr-queue',
     ]) {
       trie.registerGreedy(sub, `Interface ${sub}`, (args) => {
         // These are physical-port-only; an SVI is a virtual L3 interface and
@@ -4728,26 +4569,7 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
   }
 
   private renderSviFhrpLines(sw: CiscoSwitch, vlan: number): string[] {
-    const iface = `Vlanif${vlan}`;
-    const ici = <G extends { iface: string }>(g: G): boolean => g.iface === iface;
-    return fhrpRunningConfigLines({
-      hsrp: sw.getHsrpAgent().listGroups().filter(ici).map((g) => ({
-        group: g.group, version: g.version, vip: g.vip,
-        priority: g.priority, preempt: g.preempt, preemptDelaySec: g.preemptDelaySec,
-        helloSec: g.helloSec, holdSec: g.holdSec, authText: g.authText,
-        tracks: g.tracks,
-      })),
-      vrrp: sw.getVrrpAgent().listGroups().filter(ici).map((g) => ({
-        group: g.vrid, vip: g.vip,
-        priority: g.priority, preempt: g.preempt, preemptDelaySec: g.preemptDelaySec,
-        advertiseSec: g.advertiseSec, tracks: g.tracks,
-      })),
-      glbp: sw.getGlbpAgent().listGroups().filter(ici).map((g) => ({
-        group: g.group, vip: g.vip,
-        priority: g.priority, preempt: g.preempt, preemptDelaySec: g.preemptDelaySec,
-        weighting: g.weighting, loadBalancing: g.loadBalancing, tracks: g.tracks,
-      })),
-    });
+    return fhrpRunningConfigLines(fhrpViewOf(sw, `Vlanif${vlan}`));
   }
 
   // ─── Show Command Implementations ────────────────────────────────
@@ -4983,26 +4805,24 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
 
   private showInterfacesCounters(name: string | null): string {
     const sw = this.d();
-    // Toutes les colonnes de données finissaient un caractère APRÈS leur
-    // intitulé : l'en-tête et les lignes étaient comptés séparément.
-    const rows: Array<{ port: string; bytesIn: number; framesIn: number; bytesOut: number; framesOut: number }> = [];
+    const rows: CounterRow[] = [];
     for (const [pn, port] of sw._getPortsInternal()) {
       if (name && pn !== name) continue;
       const c = port.getCounters();
-      rows.push({ port: this.abbreviateInterface(pn), bytesIn: c.bytesIn, framesIn: c.framesIn, bytesOut: c.bytesOut, framesOut: c.framesOut });
+      rows.push({
+        port: this.abbreviateInterface(pn),
+        inOctets: c.bytesIn,
+        inUcast: c.framesIn - c.broadcastIn - c.multicastIn,
+        inMcast: c.multicastIn,
+        inBcast: c.broadcastIn,
+        outOctets: c.bytesOut,
+        outUcast: c.framesOut - c.broadcastOut - c.multicastOut,
+        outMcast: c.multicastOut,
+        outBcast: c.broadcastOut,
+      });
     }
     if (name && rows.length === 0) return CISCO_ERRORS.INVALID_INPUT;
-    // Largeurs pleines, blancs de séparation compris : elles reproduisent
-    // au caractère près l'en-tête que cette commande écrivait déjà
-    // (bords 4/24/38/50/64), qui lui était juste — seules les données
-    // s'en écartaient.
-    return renderTableText(rows, [
-      { header: 'Port', width: 16, value: (r) => r.port },
-      { header: 'InOctets', width: 8, align: 'right', value: (r) => String(r.bytesIn) },
-      { header: 'InUcastPkts', width: 14, align: 'right', value: (r) => String(r.framesIn) },
-      { header: 'OutOctets', width: 12, align: 'right', value: (r) => String(r.bytesOut) },
-      { header: 'OutUcastPkts', width: 14, align: 'right', value: (r) => String(r.framesOut) },
-    ], FIXED_TABLE);
+    return renderInterfaceCounters(rows);
   }
 
   private showInterfacesDescriptionTable(): string {
@@ -6511,21 +6331,6 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
 
     // The PAE role registers the port with the authenticator; on its own
     // it does not control anything — `port-control` decides that.
-    trie.configIf.registerGreedy('dot1x pae', '802.1X PAE role', (args) => {
-      const role = (args[0] ?? '').toLowerCase();
-      if (role !== 'authenticator') {
-        return '% Only the authenticator role is supported (no supplicant implementation).';
-      }
-      return this.applyToSelectedInterfaces(portName => {
-        agent().setPortMode(portName, 'disabled');
-        return '';
-      });
-    });
-    trie.configIf.register('no dot1x pae authenticator', 'Remove 802.1X PAE role', () =>
-      this.applyToSelectedInterfaces(portName => {
-        agent().removePort(portName);
-        return '';
-      }));
 
     const MODES: Record<string, import('@/network/dot1x/types').Dot1xPortMode> = {
       auto: 'auto',

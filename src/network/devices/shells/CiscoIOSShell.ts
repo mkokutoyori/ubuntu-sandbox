@@ -42,13 +42,17 @@ import { getSecurityConfig } from './cisco/CiscoSecurityCommands';
 import type { PromptMap } from './PromptBuilder';
 import { CISCO_IOS_PROMPTS } from './PromptBuilder';
 import { CLIStateMachine, CISCO_IOS_MODES } from './CLIStateMachine';
-import { resolveInterfaceName, cmdIpRoute, cmdNoIpRoute } from './cisco/CiscoConfigCommands';
 import {
-  buildHsrpInterfaceCommands, registerHsrpShowCommands, hsrpGroupRange,
+  resolveInterfaceName, cmdIpRoute, cmdNoIpRoute,
+  refusSousInterfaceSansEncapsulation,
+} from './cisco/CiscoConfigCommands';
+import type { IpAddressHost } from './cisco/ipAddressInterfaceSpecs';
+import {
+  registerHsrpShowCommands, hsrpGroupRange,
 } from './cisco/CiscoHsrpCommands';
 import type { SessionParamRanges } from './EquipmentParamResolver';
 import {
-  buildVrrpGlbpInterfaceCommands, registerVrrpGlbpShowCommands,
+  registerVrrpGlbpShowCommands,
 } from './cisco/CiscoVrrpGlbpCommands';
 import {
   buildBfdInterfaceCommands, registerBfdShowCommands, bfdInterfaceSpecs,
@@ -1544,7 +1548,10 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
   // Le switch fermait, le routeur ne faisait rien.
 
   protected override sessionParamRanges(device?: Router): SessionParamRanges | null {
-    return hsrpGroupRange(this, () => (device ?? this.d()).getFhrpRepository());
+    return this.composerPlages(
+      hsrpGroupRange(this, () => (device ?? this.d()).getFhrpRepository()),
+      super.sessionParamRanges(device),
+    );
   }
 
   protected getActiveTrie(): CommandTrie {
@@ -1718,8 +1725,6 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
     // ── Config mode ──
     buildConfigCommands(this.configTrie, this);
     buildConfigIfCommands(this.configIfTrie, this);
-    buildHsrpInterfaceCommands(this.configIfTrie, this, () => this.fhrp);
-    buildVrrpGlbpInterfaceCommands(this.configIfTrie, this, () => this.fhrp);
     buildBfdInterfaceCommands(this.configIfTrie, {
       selectedPorts: () => this.selectedPortsForConfigIf(),
       r: () => this.d(),
@@ -1749,32 +1754,6 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
     // NAT
     buildNATConfigCommands(this.configTrie, this);
     buildNATInterfaceCommands(this.configIfTrie, this);
-    this.configIfTrie.registerGreedy('ip vrf forwarding', 'Bind interface to a VRF', (args) => {
-      if (args.length < 1) return '% Incomplete command.';
-      const vrfName = args[0];
-      const ifName = this.getSelectedInterface?.();
-      if (!ifName) return '% No interface selected.';
-      const router = this.d() as unknown as { _vrfs?: Map<string, { name: string; interfaces: Set<string> }>; _ifaceVrf?: Map<string, string> };
-      if (!router._vrfs?.has(vrfName)) return `% VRF ${vrfName} not configured`;
-      router._vrfs.get(vrfName)!.interfaces.add(ifName);
-      (router._ifaceVrf ??= new Map()).set(ifName, vrfName);
-      for (const [name, vrf] of router._vrfs) {
-        if (name !== vrfName) vrf.interfaces.delete(ifName);
-      }
-      return '';
-    });
-    this.configIfTrie.registerGreedy('no ip vrf forwarding', 'Unbind interface from VRF', (args) => {
-      const ifName = this.getSelectedInterface?.();
-      if (!ifName) return '% No interface selected.';
-      const router = this.d() as unknown as { _vrfs?: Map<string, { name: string; interfaces: Set<string> }>; _ifaceVrf?: Map<string, string> };
-      const bound = router._ifaceVrf?.get(ifName);
-      if (bound) {
-        router._vrfs?.get(bound)?.interfaces.delete(ifName);
-        router._ifaceVrf?.delete(ifName);
-      }
-      void args;
-      return '';
-    });
     buildConfigDhcpCommands(this.configDhcpTrie, this);
     buildConfigDhcpPoolClassCommands(this.configDhcpPoolClassTrie, this);
     buildConfigDhcpClassCommands(this.configDhcpClassTrie, this);
@@ -1963,6 +1942,47 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
     };
     dhcp.removeHelperAddress?.(iface, cible);
     return '';
+  }
+
+  protected override ipAddressHost(): IpAddressHost {
+    const iface = (): string | null => this.getSelectedInterface();
+    const poser = (adresse: string, masque: string, secondaire: boolean): string => {
+      const nom = iface();
+      if (!nom) return '% No interface selected';
+      const refus = refusSousInterfaceSansEncapsulation(this);
+      if (refus) return refus;
+      try {
+        if (!secondaire) this.d().getDhcpClientAgent().disable(nom);
+        this.d().configureInterface(
+          nom, new IPAddress(adresse), new SubnetMask(masque), secondaire);
+        return '';
+      } catch (e) {
+        return `% Invalid input: ${e instanceof Error ? e.message : String(e)}`;
+      }
+    };
+    return {
+      setPrimaryAddress: (a, m) => poser(a, m, false),
+      setSecondaryAddress: (a, m) => poser(a, m, true),
+      clearAddress: () => {
+        const nom = iface();
+        if (!nom) return '% No interface selected';
+        this.d().getDhcpClientAgent().disable(nom);
+        this.d().unconfigureInterface(nom);
+        return '';
+      },
+      clearSecondaryAddress: (a, m) => {
+        const nom = iface();
+        if (!nom) return '% No interface selected';
+        this.d().removeSecondaryAddress(nom, new IPAddress(a), new SubnetMask(m));
+        return '';
+      },
+      setNegotiatedAddress: () => {
+        const nom = iface();
+        if (!nom) return '% No interface selected';
+        this.d().setInterfaceAddressMode?.(nom, 'negotiated');
+        return '';
+      },
+    };
   }
 
   protected override moteurDeListes() { return this.d()._getACLEngineInternal(); }

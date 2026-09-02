@@ -139,6 +139,7 @@ function isPrivileged(ctx: LinuxCommandContext): boolean {
 
 export const lshwCommand: LinuxCommand = {
   name: 'lshw',
+  package: 'lshw',
   needsNetworkContext: true,
   usage: 'lshw [-format] [-options ...]',
   run(ctx: LinuxCommandContext, args: string[]): string {

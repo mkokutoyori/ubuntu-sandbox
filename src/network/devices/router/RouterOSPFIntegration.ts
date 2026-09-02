@@ -55,7 +55,7 @@ export interface OSPFExtraConfig {
     demandCircuit?: boolean; networkType?: string;
     mtuIgnore?: boolean; retransmitInterval?: number; transmitDelay?: number;
     authKeyId?: number; silent?: boolean;
-    bfd?: boolean; bfdEcho?: boolean; bfdInterval?: number;
+    bfd?: boolean; bfdEchoDisabled?: boolean; bfdInterval?: number;
     bfdMinRx?: number; bfdMultiplier?: number; bfdTemplate?: string;
   }>;
   pendingV3IfConfig: Map<string, {

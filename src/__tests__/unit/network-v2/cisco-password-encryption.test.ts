@@ -101,7 +101,7 @@ describe('Scénario 4 — avec service password-encryption : type 7 pour les deu
     await r.executeCommand('service password-encryption');
     await r.executeCommand('end');
     const rc = await r.executeCommand('show running-config');
-    const m = /username admin privilege \d+ password 7 ([0-9A-F]+)/.exec(rc);
+    const m = /username admin password 7 ([0-9A-F]+)/.exec(rc);
     expect(m).not.toBeNull();
     expect(decryptType7(m![1])).toBe('ClearText123');
     expect(rc).not.toContain('password 0 ClearText123');
@@ -124,7 +124,7 @@ describe('Scénario 4 — avec service password-encryption : type 7 pour les deu
     await r.executeCommand('username operateur password Level7@2025');
     await r.executeCommand('end');
     const rc = await r.executeCommand('show running-config');
-    expect(rc).toMatch(/username operateur privilege \d+ password 7 [0-9A-F]+/);
+    expect(rc).toMatch(/username operateur password 7 [0-9A-F]+/);
     expect(rc).not.toContain('Level7@2025');
   });
 
@@ -174,10 +174,9 @@ describe("Scénario 4 — username secret vs username password : étiquette corr
     await r.executeCommand('username operateur password 7 120A00170803192E');
     await r.executeCommand('end');
     const rc = await r.executeCommand('show running-config');
-    expect(rc).toMatch(/username admin privilege \d+ secret 5 \$1\$/);
-    expect(rc).toContain('username operateur privilege');
-    expect(rc).toContain('password 7 120A00170803192E');
-    expect(rc).not.toContain('username operateur privilege 1 secret 7 120A00170803192E');
+    expect(rc).toMatch(/username admin secret 5 \$1\$/);
+    expect(rc).toContain('username operateur password 7 120A00170803192E');
+    expect(rc).not.toContain('username operateur secret 7 120A00170803192E');
   });
 
   // L'objet de ce cas est l'ÉTIQUETTE — `secret` et non `password` —
@@ -190,7 +189,7 @@ describe("Scénario 4 — username secret vs username password : étiquette corr
     await r.executeCommand('username lecture secret 0 Read@2025');
     await r.executeCommand('end');
     const rc = await r.executeCommand('show running-config');
-    expect(rc).toMatch(/^username lecture privilege 1 secret 5 \$1\$/m);
+    expect(rc).toMatch(/^username lecture secret 5 \$1\$/m);
     expect(rc).not.toContain('Read@2025');
   });
 });

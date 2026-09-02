@@ -1,5 +1,6 @@
 import type { CommandTrie, ParamSpec } from '../CommandTrie';
 import { estTypeSansNumero } from './CiscoConfigCommands';
+import { PASSWORD_MIN_LENGTH_MAX } from './CiscoSecurityCommands';
 
 const IP = (name: string, description: string): ParamSpec =>
   ({ name, type: 'IP_ADDR', description });
@@ -211,6 +212,8 @@ function describeArgumentTypes(tries: ArgumentHelpTries): void {
     { name: 'value', type: 'WORD', description: 'Configuration register value', literal: '0x0-0xFFFF' },
   ]);
   tries.config.describeArgs('ip default-network', [IP('network', 'Default network number')]);
+  tries.config.describeArgs('security passwords min-length',
+    [INT('longueur', [0, PASSWORD_MIN_LENGTH_MAX], 'Minimum password length')]);
   tries.config.describeArgs('ip host', [WORD('name', 'Name of host'), IP('address', 'Host IP address')]);
   tries.config.describeArgs('login delay', [
     INT('seconds', [1, 65535], 'Delay between successive login attempts'),
@@ -441,7 +444,6 @@ function describeArgumentTypes(tries: ArgumentHelpTries): void {
     'class-map', 'class-map match-all', 'class-map match-any',
     'clock', 'crypto map', 'ip community-list', 'ip sla',
     'no logging', 'policy-map',
-    'privilege configure', 'privilege exec', 'privilege interface', 'privilege line',
     'route-map', 'sntp server', 'zone-pair security',
   ]) tries.config.requireArgs(chemin, 1);
   for (const chemin of [
@@ -477,10 +479,8 @@ function describeArgumentTypes(tries: ArgumentHelpTries): void {
   tries.configIf.requireArgs('ip rip authentication', 2);
   // Quand le mot suivant est ABSORBE par un noeud glouton, l'arite seule
   // ne suffit pas : c'est le meme nombre d'arguments qui, selon leur
-  // contenu, complete la commande ou non. `privilege exec` en porte
-  // trois au minimum (le mode, le verbe, la commande visee), et
-  // `rate-limit input` attend encore son debit.
-  tries.config.requireArgs('privilege', 3);
+  // contenu, complete la commande ou non. `rate-limit input` attend
+  // encore son debit.
   tries.configIf.requireArgs('rate-limit', 2);
   // `class-map NOM` se valide ; `class-map match-all` attend son nom.
   // Un seul argument dans les deux cas — seul son contenu les separe.
@@ -688,21 +688,6 @@ export function describeCiscoArguments(tries: ArgumentHelpTries): void {
     { keyword: 'on', description: 'Enable logging to all supported destinations' },
     { keyword: 'trap', description: 'Set syslog server logging level' },
   ]);
-  // `privilege ?` n'offrait que `level`, un mot-clé qui vient après le
-  // mode : `privilege level` seul n'existe pas, IOS demande d'abord de
-  // quel mode on parle.
-  const MODE_DE_PRIVILEGE = () => ENUM('mode', 'Command mode', [
-    ['configure', 'Global configuration mode'],
-    ['exec', 'Exec mode'],
-    ['interface', 'Interface configuration mode'],
-    ['line', 'Line configuration mode'],
-  ]);
-  tries.config.describeArgs('privilege', [MODE_DE_PRIVILEGE()]);
-  // La forme qui RETIRE prend le meme argument que celle qui pose : sans
-  // sa propre description, `no privilege ?` recopiait celle de son
-  // parent, c'est-a-dire la phrase qui decrit la commande entiere la ou
-  // IOS nomme ce qu'il attend.
-  tries.config.describeArgs('no privilege', [MODE_DE_PRIVILEGE()]);
   // `aaa authentication ?` retombait sur les mots-clés de la RACINE
   // `aaa` (il proposait `new-model`, `attempts`, `session-id`…), parce
   // que rien ne décrivait ce qui vient après. Chaque niveau porte

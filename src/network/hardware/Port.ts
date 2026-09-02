@@ -17,6 +17,8 @@
  *   Cable.transmit(frame, fromPort) → otherPort.receiveFrame(frame) → Equipment.handleFrame(portName, frame)
  */
 
+import { getDefaultScheduler } from '@/events/Scheduler';
+import { PortLoad, type LoadRates } from './PortLoad';
 import {
   MACAddress, IPAddress, SubnetMask, EthernetFrame, PortInfo, ConnectionType, IPv6Address,
   PortDuplex, PortSpeed, PortCounters, VALID_PORT_SPEEDS, PortViolationMode,
@@ -271,10 +273,32 @@ export class Port {
   private counters: PortCounters = {
     framesIn: 0, framesOut: 0,
     bytesIn: 0, bytesOut: 0,
+    broadcastIn: 0, broadcastOut: 0,
+    multicastIn: 0, multicastOut: 0,
     errorsIn: 0, errorsOut: 0,
     dropsIn: 0, dropsOut: 0,
     crcErrorsIn: 0,
   };
+
+  private readonly load = new PortLoad();
+
+  setLoadIntervalSec(sec: number): boolean { return this.load.setIntervalSec(sec); }
+
+  getLoadIntervalSec(): number { return this.load.getIntervalSec(); }
+
+  /**
+   * Charge moyennée sur l'intervalle, comme IOS la rend. Elle est
+   * échantillonnée à la LECTURE : rien ne tourne en arrière-plan, et la
+   * valeur ne bouge que si l'horloge a avancé d'au moins une période —
+   * ce qu'un vrai commutateur fait aussi.
+   */
+  getLoadRates(): LoadRates {
+    this.load.sample(getDefaultScheduler().now(), {
+      bytesIn: this.counters.bytesIn, framesIn: this.counters.framesIn,
+      bytesOut: this.counters.bytesOut, framesOut: this.counters.framesOut,
+    });
+    return this.load.rates();
+  }
 
   // ─── Link state observers ───────────────────────────────────────
   private linkChangeHandlers: LinkChangeHandler[] = [];
@@ -741,6 +765,10 @@ export class Port {
     return this.loopback ? 65536 : 9216;
   }
 
+  getMaxMTU(): number { return this.mtuMax(); }
+
+  static readonly MTU_MIN = 68;
+
   setMTU(mtu: number): void {
     if (mtu < 68) {
       throw new Error(`Invalid MTU: ${mtu}. Minimum is 68 (IPv4 minimum).`);  // MTU.MIN
@@ -837,10 +865,13 @@ export class Port {
     this.counters = {
       framesIn: 0, framesOut: 0,
       bytesIn: 0, bytesOut: 0,
+      broadcastIn: 0, broadcastOut: 0,
+      multicastIn: 0, multicastOut: 0,
       errorsIn: 0, errorsOut: 0,
       crcErrorsIn: 0,
       dropsIn: 0, dropsOut: 0,
     };
+    this.load.reset();
   }
 
   incrementErrorsIn(): void { this.counters.errorsIn++; }
@@ -1072,6 +1103,8 @@ export class Port {
   recordOutboundFrame(frame: EthernetFrame): void {
     this.counters.framesOut++;
     this.counters.bytesOut += ethernetFrameBytes(frame);
+    if (frame.dstMAC.isBroadcast()) this.counters.broadcastOut++;
+    else if (frame.dstMAC.isGroup()) this.counters.multicastOut++;
     Logger.debug(this.equipmentId, 'port:send',
       `${this.name}: sending frame ${frame.srcMAC} → ${frame.dstMAC}`,
       { etherType: frame.etherType });
@@ -1109,6 +1142,8 @@ export class Port {
 
     this.counters.framesIn++;
     this.counters.bytesIn += ethernetFrameBytes(frame);
+    if (frame.dstMAC.isBroadcast()) this.counters.broadcastIn++;
+    else if (frame.dstMAC.isGroup()) this.counters.multicastIn++;
     Logger.debug(this.equipmentId, 'port:recv',
       `${this.name}: received frame ${frame.srcMAC} → ${frame.dstMAC}`,
       { etherType: frame.etherType });

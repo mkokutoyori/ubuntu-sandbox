@@ -507,6 +507,7 @@ function bcRun(ctx: LinuxCommandContext, args: string[], stdin?: string): { outp
 
 export const bcCommand: LinuxCommand = {
   name: 'bc',
+  package: 'bc',
   needsNetworkContext: true,
   readsStdin: true,
   manSection: 1,
