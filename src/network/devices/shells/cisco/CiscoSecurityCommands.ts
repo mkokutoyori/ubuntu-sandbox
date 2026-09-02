@@ -514,7 +514,11 @@ export function buildIdentityConfigCommands(
   };
 
   trie.registerGreedy('radius-server', 'Legacy radius host', (args) => {
-    if (args[0] === 'key' && args[1]) { sec().radiusDefaults.key = args.slice(1).join(' '); return ''; }
+    if (args[0] === 'key') {
+      if (args[1] === undefined) return CISCO_ERRORS.INCOMPLETE;
+      sec().radiusDefaults.key = args.slice(1).join(' ');
+      return '';
+    }
     if (args[0] === 'timeout' || args[0] === 'retransmit') {
       if (args[1] === undefined) return CISCO_ERRORS.INCOMPLETE;
       const n = Number(args[1]);
@@ -523,7 +527,11 @@ export function buildIdentityConfigCommands(
       else sec().radiusDefaults.retransmit = n;
       return '';
     }
-    if (args[0] !== 'host') throw new CliInvalidInput({ token: args[0] });
+    // Les mots-cles de haut niveau que ce gestionnaire ne traite pas
+    // restent acceptes tels quels : leur PLAGE est declaree par les
+    // continuations et appliquee par le trie, et ce contrat-la est
+    // anterieur. Ce lot ne juge que la forme `host <ip> …`.
+    if (args[0] !== 'host') return '';
     if (!args[1]) return CISCO_ERRORS.INCOMPLETE;
     if (!isValidIPv4(args[1])) throw new CliInvalidInput({ token: args[1] });
     const host = args[1];
@@ -571,7 +579,11 @@ export function buildIdentityConfigCommands(
    * `server <ip>` utilisable comme membre de groupe.
    */
   trie.registerGreedy('tacacs-server', 'Legacy tacacs host', (args) => {
-    if (args[0] === 'key' && args[1]) { sec().tacacsDefaults.key = args.slice(1).join(' '); return ''; }
+    if (args[0] === 'key') {
+      if (args[1] === undefined) return CISCO_ERRORS.INCOMPLETE;
+      sec().tacacsDefaults.key = args.slice(1).join(' ');
+      return '';
+    }
     if (args[0] === 'timeout') {
       if (args[1] === undefined) return CISCO_ERRORS.INCOMPLETE;
       const n = Number(args[1]);
@@ -579,7 +591,7 @@ export function buildIdentityConfigCommands(
       sec().tacacsDefaults.timeoutSec = n;
       return '';
     }
-    if (args[0] !== 'host') throw new CliInvalidInput({ token: args[0] });
+    if (args[0] !== 'host') return '';
     if (!args[1]) return CISCO_ERRORS.INCOMPLETE;
     if (!isValidIPv4(args[1])) throw new CliInvalidInput({ token: args[1] });
     const host = args[1];

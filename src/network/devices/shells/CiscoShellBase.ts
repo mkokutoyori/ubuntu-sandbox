@@ -933,6 +933,7 @@ const IOS_HARDENING: readonly HardeningEntry[] = [
     'Disable finger service', (sec, on) => { sec.ipFinger = on; }],
 ];
 
+export const ENABLE_LEVEL_RANGE: readonly [number, number] = [0, 15];
 export const AS_PATH_LIST_RANGE: readonly [number, number] = [1, 500];
 export const COMMUNITY_LIST_RANGE: readonly [number, number] = [1, 500];
 export const LEGACY_QUEUE_LIST_RANGE: readonly [number, number] = [1, 16];
@@ -1995,6 +1996,19 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
           ._configureSshAuthRetries?.(retries);
       },
     };
+  }
+
+  private lireNiveauEnable(
+    mots: readonly string[],
+  ): { level: number; reste: readonly string[] } {
+    if (mots[0]?.toLowerCase() !== 'level') return { level: 15, reste: mots };
+    const brut = mots[1];
+    if (brut === undefined) throw new CliIncomplete();
+    const [min, max] = ENABLE_LEVEL_RANGE;
+    if (!/^\d+$/.test(brut) || Number(brut) < min || Number(brut) > max) {
+      throw new CliInvalidInput({ token: brut });
+    }
+    return { level: Number(brut), reste: mots.slice(2) };
   }
 
   private exigerNumeroDeListe(
@@ -9704,11 +9718,9 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       // machine — `enable secret level 12 5 $1$…` — n'etait donc pas
       // relisible par elle-meme, et le coffre du palier disparaissait a
       // l'import d'une topologie, sans rien dire.
-      let reste = args;
-      if (reste[0]?.toLowerCase() === 'level' && /^\d+$/.test(reste[1] ?? '')) {
-        level = parseInt(reste[1], 10);
-        reste = reste.slice(2);
-      }
+      const lu = this.lireNiveauEnable(args);
+      level = lu.level;
+      const reste = lu.reste;
       const chiffres: Record<string, 'plain' | 'md5' | 'sha256' | 'scrypt' | 'type-7'> = {
         '0': 'plain', '5': 'md5', '7': 'type-7', '8': 'sha256', '9': 'scrypt',
       };
@@ -9749,13 +9761,9 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       if (!algo) return CISCO_ERRORS.INVALID_INPUT;
       if (args[1] === undefined) return CISCO_ERRORS.INCOMPLETE;
       if (args[1].toLowerCase() !== 'secret') return CISCO_ERRORS.INVALID_INPUT;
-      let level = 15;
-      let rest = args.slice(2);
-      if (rest[0]?.toLowerCase() === 'level' && /^\d+$/.test(rest[1] ?? '')) {
-        level = parseInt(rest[1], 10);
-        rest = rest.slice(2);
-      }
-      const secret = rest.join(' ');
+      const lu = this.lireNiveauEnable(args.slice(2));
+      const level = lu.level;
+      const secret = lu.reste.join(' ');
       if (secret === '') return CISCO_ERRORS.INCOMPLETE;
       const minLength = getSecurityConfig(this.d()).passwords.minLength;
       if (minLength && secret.length < minLength) {
@@ -9773,12 +9781,14 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       let password = '';
       let level = 15;
       let plaintextEntered: string | undefined;
-      if (args[0] === '0') { algo = 'plain'; password = args.slice(1).join(' '); plaintextEntered = password; }
-      else if (args[0] === '7') { algo = 'type-7'; password = args.slice(1).join(' '); }
-      else if (args[0] === 'level' && /^\d+$/.test(args[1] ?? '')) {
-        level = parseInt(args[1], 10);
-        password = args.slice(2).join(' '); plaintextEntered = password;
-      } else { password = args.join(' '); plaintextEntered = password; }
+      const lu = this.lireNiveauEnable(args);
+      level = lu.level;
+      const apres = lu.reste;
+      if (apres[0] === '0') {
+        algo = 'plain'; password = apres.slice(1).join(' '); plaintextEntered = password;
+      } else if (apres[0] === '7') {
+        algo = 'type-7'; password = apres.slice(1).join(' ');
+      } else { password = apres.join(' '); plaintextEntered = password; }
       if (password === '') return '% Incomplete command.';
       const minLength = getSecurityConfig(this.d()).passwords.minLength;
       if (plaintextEntered !== undefined && minLength && plaintextEntered.length < minLength) {
