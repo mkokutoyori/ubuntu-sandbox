@@ -26,6 +26,34 @@ export const UTM_CATEGORY_BY_SUBTYPE: Readonly<Record<string, number>> = Object.
   ssh: 13, ssl: 14, 'file-filter': 15, icap: 16,
 });
 
+export function anomalyLog(
+  finding: {
+    anomaly: string; action: string; observed: number; threshold: number;
+  },
+  iface: string, packet: IPv4Packet, now: number,
+): FirewallLogDraft {
+  const ports = portsOf(packet);
+  return {
+    at: now,
+    type: 'utm',
+    subtype: 'anomaly',
+    level: finding.action === 'block' ? 'alert' : 'warning',
+    id: '0720018432',
+    fields: {
+      srcip: packet.sourceIP.toString(),
+      srcport: ports.source ?? 0,
+      srcintf: iface,
+      dstip: packet.destinationIP.toString(),
+      dstport: ports.destination ?? 0,
+      proto: packet.protocol,
+      attack: finding.anomaly,
+      action: finding.action === 'block' ? 'clear_session' : 'detected',
+      count: finding.observed,
+      crscore: finding.threshold,
+    },
+  };
+}
+
 export function utmLog(
   context: PacketContext, verdict: UtmVerdict, now: number,
 ): FirewallLogDraft | undefined {

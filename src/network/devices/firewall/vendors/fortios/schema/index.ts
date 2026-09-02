@@ -9,6 +9,7 @@ import { FIREWALL_POLICY } from './firewallPolicy';
 import {
   FIREWALL_LOCAL_IN_POLICY, FIREWALL_LOCAL_IN_POLICY6,
 } from './firewallLocalIn';
+import { FIREWALL_DOS_POLICY } from './firewallDos';
 import {
   FIREWALL_CENTRAL_SNAT_MAP, FIREWALL_IPPOOL, FIREWALL_VIP, LDB_MONITOR,
 } from './firewallNat';
@@ -51,6 +52,7 @@ export const FORTIOS_SCHEMA: readonly FortiTableSpec[] = Object.freeze([
   FIREWALL_POLICY,
   FIREWALL_LOCAL_IN_POLICY,
   FIREWALL_LOCAL_IN_POLICY6,
+  FIREWALL_DOS_POLICY,
   FIREWALL_CENTRAL_SNAT_MAP,
   ...LOG_SPECS,
 ]);

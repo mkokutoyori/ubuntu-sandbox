@@ -11,6 +11,8 @@ import { RouteTable } from '../l3/RouteTable';
 import { PolicyRouteTable } from '../l3/PolicyRouteTable';
 import { SessionTable, type FirewallSession, type SessionCloseReason } from '../session/SessionTable';
 import { PolicyEvaluator } from '../policy/PolicyEvaluator';
+import { DosPolicyStore } from '../dos/DosPolicyStore';
+import { DosSensor } from '../dos/DosSensor';
 import { ScheduleStore } from '../model/ScheduleObject';
 import { FirewallLogStore } from '../logging/FirewallLogStore';
 import { UtmProfileStore } from '../inspection/UtmProfiles';
@@ -40,6 +42,8 @@ export interface VdomContext {
   readonly policy: PolicyStore;
   readonly localIn: PolicyStore;
   readonly localIn6: PolicyStore;
+  readonly dos: DosPolicyStore;
+  readonly dosSensor: DosSensor;
   readonly natPolicy: NatPolicyStore;
   readonly pools: IpPoolAllocator;
   readonly nat: FirewallNatEngine;
@@ -177,6 +181,7 @@ export class VdomRegistry {
     const policy = new PolicyStore();
     const localIn = new PolicyStore();
     const localIn6 = new PolicyStore();
+    const dos = new DosPolicyStore();
     const natPolicy = new NatPolicyStore();
     const pools = new IpPoolAllocator(deps.now);
     const schedules = new ScheduleStore();
@@ -232,6 +237,8 @@ export class VdomRegistry {
       policy,
       localIn,
       localIn6,
+      dos,
+      dosSensor: new DosSensor({ now: deps.now, sessions: () => sessions.view() }),
       natPolicy,
       pools,
       nat,

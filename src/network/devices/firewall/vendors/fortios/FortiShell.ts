@@ -67,7 +67,7 @@ import {
   configChangeLog,
   shouldLogTraffic, shouldLogTrafficStart, trafficCloseLog, trafficStartLog,
 } from './log/trafficLog';
-import { utmLog } from './log/utmLog';
+import { anomalyLog, utmLog } from './log/utmLog';
 import { renderFortiguardServiceStatus } from './diag/fortiguardRenderer';
 import type { FortiGuardFamily } from '../../mgmt/FortiGuardDatabases';
 import { TftpClientSession } from '@/network/tftp/TftpSession';
@@ -250,6 +250,10 @@ export class FortiShell {
           session, rule, now: this.fw.now(),
           identity: this.loggedIdentity(session.c2s.sourceIP),
         }, reason));
+      },
+      onDosAnomaly: (finding, iface, packet) => {
+        this.fw.getLogStore().append(
+          anomalyLog(finding, iface, packet, this.fw.now()));
       },
       onDenied: (context) => {
         const utm = context.utmVerdict === undefined
@@ -636,6 +640,7 @@ export class FortiShell {
       policy: this.fw.getPolicyStore(),
       localIn: this.fw.getLocalInPolicy(),
       localIn6: this.fw.getLocalInPolicy6(),
+      dos: this.fw.getDosPolicy(),
       objects: this.fw.getObjectStore(),
       device: this.commitDevice(),
       vdom: this.vdom,

@@ -5958,3 +5958,44 @@ passent.
 temps : 5 tombent contre l'etat d'avant le lot, 4 en ne retirant que la
 porte du plan de donnees — le cinquieme etant l'affaire du schema. Les 8
 qui passent des deux cotes sont nommes dans l'en-tete du fichier.
+
+## `firewall DoS-policy` — IPv4 (livre)
+
+Source : `official_docs/forti-cli-ref-60.txt` p. 191-193, et les valeurs
+par defaut relevees sur de vraies machines.
+
+**La reference definit QUATRE anomalies et elles ne mesurent pas la meme
+chose** — c'est ce qu'il ne fallait pas rater. `Flooding` et `Scan` sont
+un DEBIT (« in one second », en paquets par seconde), respectivement par
+destination et par source ; `Source/Destination session limit` sont un
+ETAT INSTANTANE, le nombre de sessions CONCURRENTES. Les confondre
+donnerait une machine qui bloque au bon moment pour la mauvaise raison.
+`DosSensor` porte donc deux mesures distinctes : un compteur a fenetre
+d'une seconde, et une jauge qui LIT la `SessionTable` existante plutot
+que de tenir son propre compte — deux comptes de sessions finiraient par
+se contredire.
+
+Reutilise plutot que reecrit : le rapprochement politique
+(interface / srcaddr / dstaddr / service) passe par `PolicyEvaluator` et
+`PolicyStore`, comme `firewall policy` et `local-in-policy` ; l'etage du
+plan de donnees est un `PipelineStage` nomme, insere dans l'ordre declare
+par `FortiProfile` apres `ingress-zone` et AVANT `session-lookup`, comme
+sur un vrai FortiGate ou le controle DoS precede la recherche de session ;
+et le journal reprend la categorie `utm-anomaly` que `logCategories.ts`
+declarait deja sans que rien ne l'ecrive.
+
+**Ce qui est refuse en nommant ce qui manque** plutot qu'accepte a vide :
+l'action `proxy` (aucun controle de flux par mandataire ici) et
+`quarantine attacker` (aucune table d'utilisateurs bannis). Les deux
+passent par `unimplementedValues`, le mecanisme que le schema portait
+deja. `fixedKeys` est ajoute a `FortiTableSpec` pour que la liste des
+anomalies soit CLOSE, la reference ecrivant « The list of anomalies can
+be updated only when the FortiGate firmware image is upgraded ».
+
+**`DoS-policy6` n'est pas livre** : le chemin IPv6 ne traverse pas ce
+pipeline, donc la table serait acceptee sans etre evaluee.
+
+`fortigate-dos-policy.test.ts` (16 cas) : 6 tombent contre l'etat
+d'avant, et 2 en retirant seulement l'etage de l'ordre du pipeline — les
+deux qui observent un blocage. Les 2450 cas du repertoire `firewall/`
+passent.

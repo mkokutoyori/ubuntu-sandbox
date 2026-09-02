@@ -169,6 +169,9 @@ import {
   localInTrafficOfIpv4, localInVerdict,
   type LocalInTraffic, type LocalInVerdict,
 } from './policy/LocalInPolicy';
+import { anomalyDefaultThresholds } from './dos/AnomalyCatalog';
+import type { DosPolicyStore } from './dos/DosPolicyStore';
+import type { DosFinding } from './dos/DosSensor';
 import { LoggingConfig } from '../inspection/config/LoggingConfig';
 import { SyslogAgent } from '../../syslog/SyslogAgent';
 import { SyslogCollectorTable } from './logging/SyslogCollectors';
@@ -187,6 +190,7 @@ export interface TrafficLogger {
   onSessionOpened(session: FirewallSession, rule?: SecurityRule): void;
   onSessionClosed(session: FirewallSession, reason: SessionCloseReason): void;
   onDenied(context: PacketContext): void;
+  onDosAnomaly?(finding: DosFinding, iface: string, packet: IPv4Packet): void;
 }
 
 const ETHERNET_OVERHEAD_BYTES = 18;
@@ -434,6 +438,10 @@ export class Firewall extends Equipment {
       assembleStream: (key, chunk, limitMb) =>
         this.streams.append(key, chunk, oversizeLimitBytes(limitMb)),
       onInspection: () => { this.load.recordPacket('inspection'); },
+      onDosAnomaly: (finding, iface, packet) => {
+        if (!finding.log) return;
+        this.trafficLogger?.onDosAnomaly?.(finding, iface, packet);
+      },
       bridgedWith: (ingress, egress) => this.sameSwitchInterface(ingress, egress),
       macLookup: (destination, ingress) => this.lookupMac(destination, ingress),
       natOrder: {
@@ -1919,6 +1927,10 @@ export class Firewall extends Equipment {
   getLocalInPolicy(vdom?: string): PolicyStore { return this.getVdom(vdom).localIn; }
 
   getLocalInPolicy6(vdom?: string): PolicyStore { return this.getVdom(vdom).localIn6; }
+
+  getDosPolicy(vdom?: string): DosPolicyStore { return this.getVdom(vdom).dos; }
+
+  dosAnomalyDefaults(): ReadonlyMap<string, number> { return anomalyDefaultThresholds(); }
 
   private forward(
     egressPort: string, packet: IPv4Packet, gateway?: string, bridged?: BridgedFrame,

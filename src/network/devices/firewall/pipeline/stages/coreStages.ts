@@ -22,6 +22,9 @@ import type { IdentityTable } from '../../identity/IdentityTable';
 import type { ZoneTable } from '../../model/ZoneTable';
 import type { PolicyEvaluator } from '../../policy/PolicyEvaluator';
 import { transportPorts } from '../../policy/probeFields';
+import { dosFinding } from '../../dos/DosGate';
+import type { DosPolicyStore } from '../../dos/DosPolicyStore';
+import type { DosFinding, DosSensor } from '../../dos/DosSensor';
 import { flowKeyFromPacket, reverseFlowKey, type FlowKey } from '../../session/FlowKey';
 import type { AssembledStream } from '../../inspection/StreamAssembler';
 import type { SessionTable, SessionTranslation } from '../../session/SessionTable';
@@ -47,6 +50,8 @@ export interface VdomServices {
   identities?: IdentityTable;
   centralNat?: boolean;
   opmode?: 'nat' | 'transparent';
+  dos?: DosPolicyStore;
+  dosSensor?: DosSensor;
 }
 
 export interface HaStandby {
@@ -77,6 +82,7 @@ export interface FirewallServices {
   flowInspectionPosture?: () => 'normal' | 'bypass' | 'block';
   assembleStream?: StreamJoiner;
   onInspection?: () => void;
+  onDosAnomaly?: (finding: DosFinding, iface: string, packet: IPv4Packet) => void;
 }
 
 function vdom(services: FirewallServices, context: PacketContext): VdomServices {
@@ -139,6 +145,7 @@ export function createCoreStages(services: FirewallServices): PipelineStage[] {
     vdomBindStage(services),
     switchBridgeStage(services),
     ingressZoneStage(services),
+    dosPolicyStage(services),
     sessionLookupStage(services),
     tcpStateCheckStage(services),
     natDestinationStage(services),
@@ -417,6 +424,34 @@ function ingressZoneStage(services: FirewallServices): PipelineStage {
 
       context.ingressZone = zone;
       return proceed(context, 'ingress-zone', zone);
+    },
+  };
+}
+
+function dosPolicyStage(services: FirewallServices): PipelineStage {
+  return {
+    name: 'dos-policy',
+    apply(context) {
+      const packet = ipv4(context);
+      if (!packet) return proceed(context, 'dos-policy', 'not-ipv4');
+
+      const scope = vdom(services, context);
+      if (!scope.dos || !scope.dosSensor) {
+        return proceed(context, 'dos-policy', 'no-sensor');
+      }
+      const finding = dosFinding({
+        policies: scope.dos,
+        evaluator: scope.evaluator,
+        sensor: scope.dosSensor,
+        zoneOf: (iface) => zoneNameFor(services, iface) ?? '',
+      }, context.ingressPort, packet);
+      if (!finding) return proceed(context, 'dos-policy', 'no-anomaly');
+
+      services.onDosAnomaly?.(finding, context.ingressPort, packet);
+      if (finding.action === 'pass') {
+        return proceed(context, 'dos-policy', `${finding.anomaly}:pass`);
+      }
+      return deny(context, 'dos-policy', 'dos-anomaly', finding.anomaly);
     },
   };
 }

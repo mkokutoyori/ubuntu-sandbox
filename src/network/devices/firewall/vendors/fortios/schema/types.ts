@@ -5,6 +5,7 @@ import type { LdbMethod } from '../../../nat/RealServerPool';
 import type { ArgumentSpec, EnumValue } from '../../../../../../cli/ArgumentTypes';
 import type { ObjectStore } from '../../../model/ObjectStore';
 import type { PolicyStore } from '../../../model/PolicyStore';
+import type { DosPolicyStore } from '../../../dos/DosPolicyStore';
 
 import type { AccessGroup } from '../../../authz/AccessMatrix';
 import type { SdwanConfiguration } from '../../../sdwan/SdwanTable';
@@ -651,6 +652,7 @@ export interface FortiCommitContext {
   readonly policy: PolicyStore;
   readonly localIn: PolicyStore;
   readonly localIn6: PolicyStore;
+  readonly dos: DosPolicyStore;
   readonly objects: ObjectStore;
   readonly device: FortiCommitDevice;
   readonly vdom: string;
@@ -670,6 +672,7 @@ export interface FortiTableSpec {
   readonly attributes: readonly FortiAttributeSpec[];
   readonly children?: readonly FortiTableSpec[];
   readonly predefined?: readonly string[];
+  readonly fixedKeys?: readonly string[];
   readonly keyOnConfigLine?: boolean;
   readonly scopeOnly?: boolean;
   readonly unavailable?: string;
