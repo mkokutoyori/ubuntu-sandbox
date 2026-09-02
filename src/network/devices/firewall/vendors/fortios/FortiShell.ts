@@ -635,6 +635,7 @@ export class FortiShell {
     return {
       policy: this.fw.getPolicyStore(),
       localIn: this.fw.getLocalInPolicy(),
+      localIn6: this.fw.getLocalInPolicy6(),
       objects: this.fw.getObjectStore(),
       device: this.commitDevice(),
       vdom: this.vdom,
@@ -688,7 +689,7 @@ export class FortiShell {
   }
 
   private referenceExists(target: string, name: string): boolean {
-    if (name === 'all' || name === 'any' || name === 'ALL') return true;
+    if (name === 'any') return true;
     return this.candidatesFor([target]).some(c => c.keyword === name);
   }
 

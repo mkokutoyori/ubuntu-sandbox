@@ -4,6 +4,7 @@ import {
 } from './types';
 
 const ADDRESS_TARGETS = ['firewall address', 'firewall addrgrp'];
+const ADDRESS6_TARGETS = ['firewall address6', 'firewall addrgrp6'];
 const INTERFACE_TARGETS = ['system interface', 'system zone'];
 const SERVICE_TARGETS = ['firewall service custom', 'firewall service group'];
 const SCHEDULE_TARGETS = [
@@ -40,19 +41,27 @@ const ACTION_CHOICES = [
   { keyword: 'deny', description: 'Deny or block traffic matching this policy.' },
 ];
 
-function localInSpec(
-  path: readonly string[], help: string, addressTargets: readonly string[],
-  extra: readonly FortiTableSpec['attributes'][number][],
-): FortiTableSpec {
+interface LocalInFamily {
+  readonly path: readonly string[];
+  readonly help: string;
+  readonly renderOrder: number;
+  readonly addressTargets: readonly string[];
+  readonly store: 'localIn' | 'localIn6';
+  readonly extra: readonly FortiTableSpec['attributes'][number][];
+}
+
+function localInSpec(family: LocalInFamily): FortiTableSpec {
+  const { addressTargets, extra, store } = family;
+  const v6 = store === 'localIn6';
   return {
-    path: [...path],
+    path: [...family.path],
     kind: 'table',
     keyType: 'integer',
     ordered: true,
     scope: 'vdom',
     accessGroup: 'fwgrp',
-    renderOrder: 241,
-    help,
+    renderOrder: family.renderOrder,
+    help: family.help,
     attributes: [
       {
         name: 'policyid', help: 'User defined local in policy ID.',
@@ -82,14 +91,19 @@ function localInSpec(
       const comment = object.effective('comments')[0];
       const intf = object.effective('intf');
 
-      context.localIn.remove(object.key);
+      const source = normaliseAny(object.effective('srcaddr'));
+      const destination = normaliseAny(object.effective('dstaddr'));
+
+      context[store].remove(object.key);
       const insertion = context.position < 0 ? Number.MAX_SAFE_INTEGER : context.position;
-      context.localIn.insertAt(insertion, {
+      context[store].insertAt(insertion, {
         id: object.key,
         from: listOrAny(intf),
         to: ['any'],
-        source: normaliseAny(object.effective('srcaddr')),
-        destination: normaliseAny(object.effective('dstaddr')),
+        source: v6 ? [] : source,
+        destination: v6 ? [] : destination,
+        source6: v6 ? source : [],
+        destination6: v6 ? destination : [],
         service: normaliseAny(object.effective('service')),
         action,
         enabled: object.effective('status')[0] !== 'disable',
@@ -98,15 +112,26 @@ function localInSpec(
       });
     },
     onDelete(key, context) {
-      context.localIn.remove(key);
+      context[store].remove(key);
     },
   };
 }
 
-export const FIREWALL_LOCAL_IN_POLICY = localInSpec(
-  ['firewall', 'local-in-policy'],
-  'Configure user defined IPv4 local-in policies.',
-  ADDRESS_TARGETS,
-  [enable('ha-mgmt-intf-only',
+export const FIREWALL_LOCAL_IN_POLICY = localInSpec({
+  path: ['firewall', 'local-in-policy'],
+  help: 'Configure user defined IPv4 local-in policies.',
+  renderOrder: 241,
+  addressTargets: ADDRESS_TARGETS,
+  store: 'localIn',
+  extra: [enable('ha-mgmt-intf-only',
     'Enable/disable dedicating the HA management interface only for local-in policy.')],
-);
+});
+
+export const FIREWALL_LOCAL_IN_POLICY6 = localInSpec({
+  path: ['firewall', 'local-in-policy6'],
+  help: 'Configure user defined IPv6 local-in policies.',
+  renderOrder: 242,
+  addressTargets: ADDRESS6_TARGETS,
+  store: 'localIn6',
+  extra: [],
+});

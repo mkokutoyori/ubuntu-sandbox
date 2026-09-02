@@ -39,6 +39,7 @@ export interface VdomContext {
   readonly objects: ObjectStore;
   readonly policy: PolicyStore;
   readonly localIn: PolicyStore;
+  readonly localIn6: PolicyStore;
   readonly natPolicy: NatPolicyStore;
   readonly pools: IpPoolAllocator;
   readonly nat: FirewallNatEngine;
@@ -175,6 +176,7 @@ export class VdomRegistry {
 
     const policy = new PolicyStore();
     const localIn = new PolicyStore();
+    const localIn6 = new PolicyStore();
     const natPolicy = new NatPolicyStore();
     const pools = new IpPoolAllocator(deps.now);
     const schedules = new ScheduleStore();
@@ -229,6 +231,7 @@ export class VdomRegistry {
       objects,
       policy,
       localIn,
+      localIn6,
       natPolicy,
       pools,
       nat,

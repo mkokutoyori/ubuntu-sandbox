@@ -5912,11 +5912,47 @@ dans `pipeline/stages/coreStages.ts` ; il vit maintenant dans
 `policy/probeFields.ts`, lu par les deux appelants, plutot qu'une
 troisieme copie.
 
-**`local-in-policy6` n'est PAS livre**, et n'est pas non plus accepte a
-vide : le chemin IPv6 n'a pas encore de porte pour le trafic qui lui est
-destine, et declarer la table sans l'evaluer rangerait un critere que
-rien ne juge. Le schema est ecrit pour deux tables, une seule est
-enregistree ; c'est le lot suivant.
+## `firewall local-in-policy6` — IPv6 (livre)
+
+Le lot precedent avait laisse la table v6 hors du schema plutot que de
+l'accepter sans l'evaluer. Ce lot pose la porte et l'enregistre.
+
+**La separation des familles ne coute rien, parce que l'evaluateur la
+faisait deja** : `addressListFor` choisit `source6`/`destination6` quand
+le candidat est v6, et `matchesAddresses` refuse une liste VIDE. Il
+suffit donc que la forme v6 range dans `source6`/`destination6` en
+laissant `source`/`destination` vides, et l'inverse pour la v4, pour
+qu'aucune des deux ne puisse juger de l'autre. Les deux sens sont
+eprouves — un seul ne dirait rien de l'autre.
+
+La porte v6 est posee dans `FirewallIpv6.permits`, branche `in`, juste
+apres `addressedToUs` : une politique local-in gouverne TOUT ce qui nous
+est adresse, pas seulement l'echo, donc elle passe avant le controle
+d'echo. `localInVerdict` prend desormais un descripteur de trafic plutot
+qu'un `IPv4Packet`, si bien qu'une seule implantation sert les deux
+familles.
+
+**Defaut de socle trouve en chemin, et corrige** : `referenceExists`
+acceptait `all`, `any` et `ALL` pour N'IMPORTE quelle source de donnees.
+Or `all` est l'objet d'adresse IPv4 predefini, `all6` son homologue v6 et
+`ALL` le service predefini — trois espaces de noms confondus en un. La
+consequence n'etait pas cosmetique : `set srcaddr "all"` sur une table v6
+etait accepte en SILENCE et rangeait un nom que l'evaluateur v6 ne peut
+jamais faire correspondre, donc une politique qui ne se declenche jamais
+sans que rien ne le dise. Seul `any` reste general, les tables qui
+predefinissent `all`/`all6`/`ALL` etant deja enumerees par
+`candidatesFor`.
+
+Corrige dans des TESTS plutot que dans le code, parce qu'ils encodaient
+cette laxite comme contrat : deux cas de
+`probe-politique-incomplete-refusee.test.ts` posaient `set srcaddr6
+"all"`, c'est-a-dire un objet v4 sur un attribut v6 ; la reference donne
+`firewall.address6.name, firewall.addrgrp6.name` pour toute forme v6.
+
+`fortigate-local-in-policy6.test.ts` (14 cas) : 6 tombent contre l'etat
+d'avant, 3 en ne retirant que la porte v6, et le cas de la source de
+donnees se discrimine seul. Les 2420 cas du repertoire `firewall/`
+passent.
 
 `fortigate-local-in-policy.test.ts` (12 cas) est discrimine en deux
 temps : 5 tombent contre l'etat d'avant le lot, 4 en ne retirant que la

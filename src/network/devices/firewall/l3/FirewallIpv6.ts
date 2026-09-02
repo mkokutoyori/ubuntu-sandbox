@@ -1,10 +1,11 @@
 import type { Port } from '../../../hardware/Port';
 import {
   IP_PROTO_ICMPV6,
-  type EthernetFrame, type IPv6Address, type IPv6Packet,
+  type EthernetFrame, type ICMPv6Type, type IPv6Address, type IPv6Packet,
 } from '../../../core/types';
 import type { PolicyProbe } from '../policy/PolicyProbe';
-import { makeFlowKey } from '../session/FlowKey';
+import type { LocalInTraffic, LocalInVerdict } from '../policy/LocalInPolicy';
+import { icmpv6TypeNumber, makeFlowKey } from '../session/FlowKey';
 import type { SessionTable } from '../session/SessionTable';
 
 export const IPV6_SESSION_TIMEOUT_SEC = 300;
@@ -28,6 +29,7 @@ export interface FirewallIpv6Deps {
     fromIp: string; toIp: string; id: number; seq: number; hopLimit: number;
   }): void;
   transitPermitted(probe: PolicyProbe): boolean;
+  localInVerdict?(iface: string, traffic: LocalInTraffic): LocalInVerdict;
   sessions(): SessionTable;
 }
 
@@ -90,17 +92,16 @@ export class FirewallIpv6 {
     iface: string, direction: 'in' | 'out', packet: IPv6Packet, ingress?: string,
   ): boolean {
     if (direction === 'out') return this.transitPermitted(iface, packet, ingress);
-    if (!this.isEchoRequest(packet)) return true;
     if (!this.addressedToUs(packet.destinationIP)) return true;
+    if (this.deps.localInVerdict?.(iface, localInTrafficOf(packet)) === 'deny') return false;
+    if (!this.isEchoRequest(packet)) return true;
     return this.allowsAccess(iface, 'ping');
   }
 
   private transitPermitted(
     egress: string, packet: IPv6Packet, ingress: string | undefined,
   ): boolean {
-    const payload = packet.payload as { type?: string } | undefined;
-    const protocol = payload?.type === 'icmpv6'
-      ? IP_PROTO_ICMPV6 : packet.nextHeader;
+    const protocol = protocolOf(packet);
     const ports = transportPortsOf(packet);
     const source = packet.sourceIP.toString();
     const destination = packet.destinationIP.toString();
@@ -141,6 +142,24 @@ export class FirewallIpv6 {
     }
     return false;
   }
+}
+
+function protocolOf(packet: IPv6Packet): number {
+  const payload = packet.payload as { type?: string } | undefined;
+  return payload?.type === 'icmpv6' ? IP_PROTO_ICMPV6 : packet.nextHeader;
+}
+
+function localInTrafficOf(packet: IPv6Packet): LocalInTraffic {
+  const payload = packet.payload as { icmpType?: ICMPv6Type; code?: number } | undefined;
+  const icmp = protocolOf(packet) === IP_PROTO_ICMPV6;
+  return {
+    sourceIP: packet.sourceIP.toString(),
+    destIP: packet.destinationIP.toString(),
+    protocol: protocolOf(packet),
+    bytes: packet.payloadLength,
+    ...transportPortsOf(packet),
+    ...(icmp ? { icmpType: icmpv6TypeNumber(payload?.icmpType), icmpCode: payload?.code } : {}),
+  };
 }
 
 function transportPortsOf(

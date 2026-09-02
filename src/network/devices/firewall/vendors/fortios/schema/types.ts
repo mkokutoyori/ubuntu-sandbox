@@ -650,6 +650,7 @@ export interface FortiProtocolOptionsPatch {
 export interface FortiCommitContext {
   readonly policy: PolicyStore;
   readonly localIn: PolicyStore;
+  readonly localIn6: PolicyStore;
   readonly objects: ObjectStore;
   readonly device: FortiCommitDevice;
   readonly vdom: string;

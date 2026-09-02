@@ -124,7 +124,7 @@ describe('une politique INCOMPLETE est refusee au `next`', () => {
 describe('une politique IPv6 se declare par la paire v6', () => {
   const COMPLETE_V6 = [
     'set srcintf "port1"', 'set dstintf "wan1"',
-    'set srcaddr6 "all"', 'set dstaddr6 "all"',
+    'set srcaddr6 "all6"', 'set dstaddr6 "all6"',
     'set schedule "always"', 'set service "ALL"',
   ];
 
@@ -162,7 +162,7 @@ describe('une politique IPv6 se declare par la paire v6', () => {
     const sorties = await taper(fw, [
       'config firewall policy', 'edit 1',
       'set srcintf "port1"', 'set dstintf "wan1"',
-      'set srcaddr6 "all"', 'set dstaddr "all"',
+      'set srcaddr6 "all6"', 'set dstaddr "all"',
       'set schedule "always"', 'set service "ALL"', 'next',
     ]);
 

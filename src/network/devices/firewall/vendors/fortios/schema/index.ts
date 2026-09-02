@@ -6,7 +6,9 @@ import {
   FIREWALL_SERVICE_CATEGORY, FIREWALL_SERVICE_CUSTOM, FIREWALL_SERVICE_GROUP,
 } from './firewallObjects';
 import { FIREWALL_POLICY } from './firewallPolicy';
-import { FIREWALL_LOCAL_IN_POLICY } from './firewallLocalIn';
+import {
+  FIREWALL_LOCAL_IN_POLICY, FIREWALL_LOCAL_IN_POLICY6,
+} from './firewallLocalIn';
 import {
   FIREWALL_CENTRAL_SNAT_MAP, FIREWALL_IPPOOL, FIREWALL_VIP, LDB_MONITOR,
 } from './firewallNat';
@@ -48,6 +50,7 @@ export const FORTIOS_SCHEMA: readonly FortiTableSpec[] = Object.freeze([
   ...ROUTER_SPECS,
   FIREWALL_POLICY,
   FIREWALL_LOCAL_IN_POLICY,
+  FIREWALL_LOCAL_IN_POLICY6,
   FIREWALL_CENTRAL_SNAT_MAP,
   ...LOG_SPECS,
 ]);

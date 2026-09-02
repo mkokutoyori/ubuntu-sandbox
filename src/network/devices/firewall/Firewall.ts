@@ -164,7 +164,10 @@ import { TraceRing, TRACE_HISTORY } from './diag/TraceRing';
 import type { UtmProfileStore } from './inspection/UtmProfiles';
 import type { FirewallSession, SessionCloseReason } from './session/SessionTable';
 import type { SecurityRule } from './model/SecurityRule';
-import { localInVerdict, type LocalInVerdict } from './policy/LocalInPolicy';
+import {
+  localInTrafficOfIpv4, localInVerdict,
+  type LocalInTraffic, type LocalInVerdict,
+} from './policy/LocalInPolicy';
 import { LoggingConfig } from '../inspection/config/LoggingConfig';
 import { SyslogAgent } from '../../syslog/SyslogAgent';
 import { SyslogCollectorTable } from './logging/SyslogCollectors';
@@ -220,6 +223,7 @@ export class Firewall extends Equipment {
     managementAllows: (iface, service) => this.ipv6.allowsAccess(iface, service),
     onEchoReply: (payload) => { this.ping6.observeReply(payload); },
     transitPermitted: (probe) => this.ipv6TransitPermitted(probe),
+    localInVerdict: (iface, traffic) => this.localInVerdict6(iface, traffic),
     sessions: () => this.getSessionTable(),
   });
 
@@ -1882,16 +1886,28 @@ export class Firewall extends Equipment {
   }
 
   localInVerdict(iface: string, packet: IPv4Packet): LocalInVerdict {
+    return this.localInDecision(iface, localInTrafficOfIpv4(packet), 'localIn');
+  }
+
+  localInVerdict6(iface: string, traffic: LocalInTraffic): LocalInVerdict {
+    return this.localInDecision(iface, traffic, 'localIn6');
+  }
+
+  private localInDecision(
+    iface: string, traffic: LocalInTraffic, store: 'localIn' | 'localIn6',
+  ): LocalInVerdict {
     if (this.profile.selfTrafficHandling !== 'local-in-policy') return 'no-match';
     const context = this.vdoms.contextOfInterface(iface);
     return localInVerdict({
-      rules: context.localIn.ordered(),
+      rules: context[store].ordered(),
       evaluator: context.evaluator,
       zoneOf: (name) => context.zones.zoneOf(name) ?? '',
-    }, iface, packet);
+    }, iface, traffic);
   }
 
   getLocalInPolicy(vdom?: string): PolicyStore { return this.getVdom(vdom).localIn; }
+
+  getLocalInPolicy6(vdom?: string): PolicyStore { return this.getVdom(vdom).localIn6; }
 
   private forward(
     egressPort: string, packet: IPv4Packet, gateway?: string, bridged?: BridgedFrame,
