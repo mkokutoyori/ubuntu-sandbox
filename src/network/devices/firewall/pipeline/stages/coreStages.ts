@@ -8,8 +8,6 @@ import {
 import { IPV4_FLAG_DF } from '../../../../core/Ipv4Fragmentation';
 import type { InterfaceTable } from '../../l3/InterfaceTable';
 import type { RouteTable } from '../../l3/RouteTable';
-import { icmpTypeNumber } from '../../session/FlowKey';
-import type { ICMPType } from '../../../../core/types';
 import type { ObjectStore } from '../../model/ObjectStore';
 import type { PolicyStore } from '../../model/PolicyStore';
 import { isDenyAction, type SecurityRule } from '../../model/SecurityRule';
@@ -23,6 +21,7 @@ import type { ProtocolOptions, UtmProfileStore } from '../../inspection/UtmProfi
 import type { IdentityTable } from '../../identity/IdentityTable';
 import type { ZoneTable } from '../../model/ZoneTable';
 import type { PolicyEvaluator } from '../../policy/PolicyEvaluator';
+import { transportPorts } from '../../policy/probeFields';
 import { flowKeyFromPacket, reverseFlowKey, type FlowKey } from '../../session/FlowKey';
 import type { AssembledStream } from '../../inspection/StreamAssembler';
 import type { SessionTable, SessionTranslation } from '../../session/SessionTable';
@@ -897,18 +896,3 @@ function policyDestination(
   return original.type === 'ipv4' ? original : packet;
 }
 
-function transportPorts(packet: IPv4Packet): {
-  sourcePort?: number; destPort?: number; icmpType?: number; icmpCode?: number;
-} {
-  const payload = packet.payload as {
-    type?: string; sourcePort?: number; destinationPort?: number;
-    icmpType?: ICMPType; code?: number;
-  } | null;
-  if (payload && (payload.type === 'tcp' || payload.type === 'udp')) {
-    return { sourcePort: payload.sourcePort, destPort: payload.destinationPort };
-  }
-  if (payload?.type === 'icmp' && payload.icmpType !== undefined) {
-    return { icmpType: icmpTypeNumber(payload.icmpType), icmpCode: payload.code };
-  }
-  return {};
-}

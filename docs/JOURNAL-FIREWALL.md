@@ -5874,3 +5874,51 @@ n'avait **aucun** filtre de couche lien.
 
 Le secondaire ne presente pas l'adresse virtuelle — seul le primaire y
 repond, ce que l'etape 7 du TP epingle deja.
+
+---
+
+## `firewall local-in-policy` — IPv4 (livre)
+
+Source : `official_docs/forti-cli-ref-60.txt` p. 219, et la documentation
+d'administration de Fortinet pour la regle de bout de liste.
+
+Constat de depart : `FirewallProfile.selfTrafficHandling` est declare sur
+les trois profils (`'local-in-policy'` cote FortiOS, `'control-plane-acl'`
+cote ASA) et n'etait LU nulle part — le mecanisme qu'il nomme n'existait
+pas. Le seul filtre du trafic destine au pare-feu etait `allowaccess`,
+qui ne connait ni adresse source, ni service, ni horaire : on pouvait
+ouvrir SSH sur une interface, pas l'ouvrir a une seule machine.
+
+**La regle a ne pas rater** — Fortinet l'ecrit mot pour mot : « Unlike
+IPv4 policies, there is no default implicit deny policy. The implicit
+deny policy should be placed at the bottom of the list of
+local-in-policies. » Une liste local-in ne se termine donc PAS par un
+refus ; ce qui ne correspond a rien retombe sur `allowaccess`, et c'est
+ce qui rend la fonction ADDITIVE. A distinguer d'un fait voisin : la
+valeur par defaut de l'attribut `action` est bien `deny`.
+
+**Ce que ce lot n'ecrit PAS**, parce que la pile existante repond deja :
+aucun magasin (une seconde instance de `PolicyStore`), aucun moteur de
+correspondance (`PolicyEvaluator`, donc adresses, services, horaires et
+zones passent par `ObjectStore`/`ScheduleStore`), aucun chemin de donnees
+neuf (la porte est posee dans `l3/LocalDelivery.ts`, le point ou le
+trafic pour nous etait deja trie). La boucle de `PolicyEvaluator` a ete
+EXTRAITE en `firstMatch` — `evaluate` et le nouveau `evaluateExplicit`
+la partagent — plutot que recopiee, la seule difference entre les deux
+etant la regle terminale.
+
+Duplication trouvee en chemin et fermee : `transportPorts` etait prive
+dans `pipeline/stages/coreStages.ts` ; il vit maintenant dans
+`policy/probeFields.ts`, lu par les deux appelants, plutot qu'une
+troisieme copie.
+
+**`local-in-policy6` n'est PAS livre**, et n'est pas non plus accepte a
+vide : le chemin IPv6 n'a pas encore de porte pour le trafic qui lui est
+destine, et declarer la table sans l'evaluer rangerait un critere que
+rien ne juge. Le schema est ecrit pour deux tables, une seule est
+enregistree ; c'est le lot suivant.
+
+`fortigate-local-in-policy.test.ts` (12 cas) est discrimine en deux
+temps : 5 tombent contre l'etat d'avant le lot, 4 en ne retirant que la
+porte du plan de donnees — le cinquieme etant l'affaire du schema. Les 8
+qui passent des deux cotes sont nommes dans l'en-tete du fichier.

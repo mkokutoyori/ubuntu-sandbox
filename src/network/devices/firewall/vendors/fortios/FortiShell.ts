@@ -628,6 +628,7 @@ export class FortiShell {
   private commitContext(): FortiCommitContext {
     return {
       policy: this.fw.getPolicyStore(),
+      localIn: this.fw.getLocalInPolicy(),
       objects: this.fw.getObjectStore(),
       device: this.commitDevice(),
       vdom: this.vdom,

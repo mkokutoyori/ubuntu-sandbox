@@ -162,6 +162,7 @@ import { TraceRing, TRACE_HISTORY } from './diag/TraceRing';
 import type { UtmProfileStore } from './inspection/UtmProfiles';
 import type { FirewallSession, SessionCloseReason } from './session/SessionTable';
 import type { SecurityRule } from './model/SecurityRule';
+import { localInVerdict, type LocalInVerdict } from './policy/LocalInPolicy';
 import { LoggingConfig } from '../inspection/config/LoggingConfig';
 import { SyslogAgent } from '../../syslog/SyslogAgent';
 import { SyslogCollectorTable } from './logging/SyslogCollectors';
@@ -1864,8 +1865,21 @@ export class Firewall extends Equipment {
       admitsTcp: (iface, p) => this.management.admitsTcp(iface, p),
       allowsPing: (iface) => this.allowsAccess(iface, 'ping'),
       reply: (iface, p) => { this.forward(iface, p); },
+      localInVerdict: (iface, p) => this.localInVerdict(iface, p),
     }, portName, packet);
   }
+
+  localInVerdict(iface: string, packet: IPv4Packet): LocalInVerdict {
+    if (this.profile.selfTrafficHandling !== 'local-in-policy') return 'no-match';
+    const context = this.vdoms.contextOfInterface(iface);
+    return localInVerdict({
+      rules: context.localIn.ordered(),
+      evaluator: context.evaluator,
+      zoneOf: (name) => context.zones.zoneOf(name) ?? '',
+    }, iface, packet);
+  }
+
+  getLocalInPolicy(vdom?: string): PolicyStore { return this.getVdom(vdom).localIn; }
 
   private forward(
     egressPort: string, packet: IPv4Packet, gateway?: string, bridged?: BridgedFrame,
