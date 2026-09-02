@@ -65,6 +65,19 @@ export interface ArgumentSpec {
    */
   readonly alternatives?: readonly EnumValue[];
   /**
+   * Les formes ne valent qu'en TETE de la place.
+   *
+   * Une place `REST` sert deux grammaires que le moteur ne peut pas
+   * distinguer seul. `snmp-server host <ip> traps version 2c public
+   * udp-port …` est une SUITE : chaque mot-cle s'ajoute, et ceux qui
+   * restent sont encore offerts. `show system global` est un CHEMIN :
+   * la premiere branche choisie ferme les treize autres, et la suite
+   * appartient a cette branche-la. Sans ce drapeau, la seconde heritait
+   * de la premiere et `show system interface ?` offrait `antivirus`,
+   * `dlp`, `webfilter` avant les vrais noms de ports.
+   */
+  readonly leadingOnly?: boolean;
+  /**
    * Le rendu impose, quand le type ne suffit pas a le decrire (`hh:mm`).
    */
   readonly literal?: string;

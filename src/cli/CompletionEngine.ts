@@ -80,6 +80,7 @@ function sansLesFormesDejaTapees(
   argument: ArgumentSpec, restWords: readonly string[],
 ): ArgumentSpec {
   if (!argument.alternatives || restWords.length === 0) return argument;
+  if (argument.leadingOnly) return { ...argument, alternatives: undefined };
   const tapes = new Set(restWords.map(mot => mot.toLowerCase()));
   return {
     ...argument,

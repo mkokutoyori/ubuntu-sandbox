@@ -704,14 +704,14 @@ export class FortiSocle {
     return [
       this.withArgument('show', ['show',
         {
-          name: 'path', type: 'REST', optional: true,
+          name: 'path', type: 'REST', optional: true, leadingOnly: true,
           description: 'Configuration path.', alternatives: branches,
         }],
         'Show configuration.',
         (_s, args) => this.deps.view(words(args.path), false)),
       this.withArgument('get', ['get',
         {
-          name: 'path', type: 'REST', optional: true,
+          name: 'path', type: 'REST', optional: true, leadingOnly: true,
           description: 'Object path.', alternatives: branches,
         }],
         'Get dynamic and system information.',
