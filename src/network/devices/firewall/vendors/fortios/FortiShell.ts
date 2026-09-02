@@ -1147,6 +1147,7 @@ export class FortiShell {
         return this.executePingOptions(this.fw.getPingOptions(), 'ping-options', tail);
       case 'ping6-options':
         return this.executePingOptions(this.fw.getPing6Options(), 'ping6-options', tail);
+      case 'clear': return this.executeClear(tail);
       case 'backup': return this.executeBackup(tail);
       case 'restore': return this.executeRestore(tail);
       case 'revision': return this.executeRevision(tail);
@@ -1158,6 +1159,15 @@ export class FortiShell {
           : FortiMessages.needsConsole(resolved.name);
       default: return FortiMessages.unknownAction(resolved.name);
     }
+  }
+
+  private executeClear(rest: readonly string[]): string {
+    if (rest.length === 0) return FortiMessages.incomplete('what to clear');
+    if (rest[0] === 'system' && rest[1] === 'arp' && rest[2] === 'table') {
+      this.fw.getArpService().clear();
+      return '';
+    }
+    return FortiMessages.unknownAction(`clear ${rest.join(' ')}`);
   }
 
   private executeDhcp(rest: readonly string[]): string {

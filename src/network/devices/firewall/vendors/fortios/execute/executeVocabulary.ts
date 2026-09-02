@@ -18,6 +18,8 @@ function pingOptionKeywords(family: 'ipv4' | 'ipv6'): readonly FortiExecuteOptio
 
 export const FORTI_EXECUTE_COMMANDS: readonly FortiExecuteCommand[] = Object.freeze([
   { name: 'backup', help: 'Backup the configuration to a remote server.' },
+  { name: 'clear', help: 'Clear system tables.',
+    options: [{ keyword: 'system', description: 'System tables.' }] },
   { name: 'date', help: 'Display or set the system date.' },
   { name: 'dhcp', help: 'DHCP server operations.' },
   { name: 'factoryreset', help: 'Reset the configuration to factory default.' },
