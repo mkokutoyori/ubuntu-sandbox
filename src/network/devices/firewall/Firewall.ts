@@ -220,7 +220,8 @@ export class Firewall extends Equipment {
     sessions: () => this.getSessionTable(),
   });
 
-  private readonly ping6 = new FirewallPing6(() => this.ipv6.dataPlane());
+  private readonly ping6 = new FirewallPing6(
+    () => this.ipv6.dataPlane(), () => this.ping6Options);
 
   private readonly ipv6Routes = new Map<string, string>();
   private readonly revisions: RevisionStore;
@@ -579,6 +580,8 @@ export class Firewall extends Equipment {
 
   getPingOptions(): PingOptions { return this.pingOptions; }
 
+  getPing6Options(): PingOptions { return this.ping6Options; }
+
   getConsoleSettings(): ConsoleSettings { return this.consoleSettings; }
 
   getLoginBanners(): LoginBanners { return this.loginBanners; }
@@ -619,6 +622,8 @@ export class Firewall extends Equipment {
   }
 
   private readonly pingOptions = new PingOptions();
+
+  private readonly ping6Options = new PingOptions('ipv6');
 
   private readonly consoleSettings = new ConsoleSettings();
   private readonly loginBanners = new LoginBanners();

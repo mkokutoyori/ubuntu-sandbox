@@ -286,6 +286,7 @@ export class FortiSocle {
       `execute ${command.name}`,
       ['execute', command.name, {
         name: 'rest', type: 'REST', optional: true, description: command.help,
+        ...(command.options ? { alternatives: [...command.options] } : {}),
       }],
       command.help,
       (_s, args) => this.deps.runExecute(

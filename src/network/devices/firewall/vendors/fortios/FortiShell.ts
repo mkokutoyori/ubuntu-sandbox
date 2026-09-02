@@ -3,6 +3,7 @@ import type { EnumValue } from '../../../../../cli/ArgumentTypes';
 import type { Suggestion, CompletionTrigger } from '../../../../../cli/CompletionEngine';
 import type { FortiGate } from './FortiGate';
 import { FORTIOS_PROFILE } from './FortiProfile';
+import type { PingOptions } from '../../diag/PingOptions';
 import {
   FortiMessages, FORTI_COMMAND_FAIL, setHintsEnabled,
 } from './FortiMessages';
@@ -1142,7 +1143,10 @@ export class FortiShell {
         return tail.length === 0
           ? FortiMessages.incomplete('a destination')
           : this.fw.getPing6().run(tail[0]);
-      case 'ping-options': return this.executePingOptions(tail);
+      case 'ping-options':
+        return this.executePingOptions(this.fw.getPingOptions(), 'ping-options', tail);
+      case 'ping6-options':
+        return this.executePingOptions(this.fw.getPing6Options(), 'ping6-options', tail);
       case 'backup': return this.executeBackup(tail);
       case 'restore': return this.executeRestore(tail);
       case 'revision': return this.executeRevision(tail);
@@ -1167,14 +1171,18 @@ export class FortiShell {
     return FortiMessages.unknownAction(`dhcp ${rest[0]}`);
   }
 
-  private executePingOptions(rest: readonly string[]): string {
+  private executePingOptions(
+    store: PingOptions, commande: string, rest: readonly string[],
+  ): string {
     if (rest.length === 0) return FortiMessages.incomplete('a ping option');
-    if (rest[0] === 'view-settings') return this.fw.getPingOptions().viewSettings();
+    if (rest[0] === 'view-settings') return store.viewSettings();
 
     const refused = UNSIMULATED_PING_OPTIONS[rest[0]];
-    if (refused) return FortiMessages.unimplemented(`ping-options ${rest[0]}`, refused);
+    if (refused && store.knows(rest[0])) {
+      return FortiMessages.unimplemented(`${commande} ${rest[0]}`, refused);
+    }
 
-    const outcome = this.fw.getPingOptions().set(rest[0], rest[1]);
+    const outcome = store.set(rest[0], rest[1]);
     return outcome.ok ? '' : FortiMessages.commandFail(outcome.message);
   }
 

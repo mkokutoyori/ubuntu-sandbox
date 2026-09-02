@@ -1,6 +1,19 @@
+import { pingOptionsFor } from '../../../diag/PingOptions';
+
+export interface FortiExecuteOption {
+  readonly keyword: string;
+  readonly description: string;
+}
+
 export interface FortiExecuteCommand {
   readonly name: string;
   readonly help: string;
+  readonly options?: readonly FortiExecuteOption[];
+}
+
+function pingOptionKeywords(family: 'ipv4' | 'ipv6'): readonly FortiExecuteOption[] {
+  return pingOptionsFor(family)
+    .map(spec => ({ keyword: spec.name, description: spec.help }));
 }
 
 export const FORTI_EXECUTE_COMMANDS: readonly FortiExecuteCommand[] = Object.freeze([
@@ -12,7 +25,10 @@ export const FORTI_EXECUTE_COMMANDS: readonly FortiExecuteCommand[] = Object.fre
   { name: 'log', help: 'Log operations.' },
   { name: 'ping', help: 'Send ICMP echo requests.' },
   { name: 'ping6', help: 'Send IPv6 ICMP echo requests.' },
-  { name: 'ping-options', help: 'Set ICMP echo request (ping) options.' },
+  { name: 'ping-options', help: 'Set ICMP echo request (ping) options.',
+    options: pingOptionKeywords('ipv4') },
+  { name: 'ping6-options', help: 'Set IPv6 ICMP echo request (ping6) options.',
+    options: pingOptionKeywords('ipv6') },
   { name: 'reboot', help: 'Reboot this device.' },
   { name: 'restore', help: 'Restore the configuration from a remote server.' },
   { name: 'revision', help: 'List or delete stored configuration revisions.' },

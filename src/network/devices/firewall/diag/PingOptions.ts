@@ -22,15 +22,51 @@ export const PING_DEFAULTS: Readonly<PingOptionsState> = Object.freeze({
   sourceAddress: 'auto',
 });
 
+export type PingFamily = 'ipv4' | 'ipv6';
+
+export interface PingOptionSpec {
+  readonly name: string;
+  readonly help: string;
+  readonly ipv4Only?: boolean;
+}
+
+export const PING_OPTION_SPECS: readonly PingOptionSpec[] = Object.freeze([
+  { name: 'adaptive-ping', help: 'Adaptive ping <enable | disable>.' },
+  { name: 'data-size', help: 'Integer value to specify datagram size in bytes.' },
+  { name: 'df-bit', help: 'Set DF bit in IP header <yes | no>.', ipv4Only: true },
+  { name: 'interface', help: 'Auto | <outgoing interface>.' },
+  { name: 'interval', help: 'Integer value to specify seconds between two pings.' },
+  { name: 'pattern', help: 'Hex pattern for the datagram payload.' },
+  { name: 'repeat-count', help: 'Integer value to specify how many times to repeat PING.' },
+  { name: 'reset', help: 'Reset settings.' },
+  { name: 'source', help: 'Auto | <source interface IP>.' },
+  { name: 'timeout', help: 'Integer value to specify timeout in seconds.' },
+  { name: 'tos', help: 'IP type-of-service option.' },
+  { name: 'ttl', help: 'Integer value to specify time-to-live.' },
+  { name: 'validate-reply', help: 'Validate the reply data <yes | no>.' },
+  { name: 'view-settings', help: 'View the current settings for PING option.' },
+]);
+
+export function pingOptionsFor(family: PingFamily): readonly PingOptionSpec[] {
+  return PING_OPTION_SPECS.filter(spec => family === 'ipv4' || spec.ipv4Only !== true);
+}
+
 export interface PingOptionOutcome {
   readonly ok: boolean;
   readonly message: string;
 }
 
 const IPV4 = /^\d{1,3}(\.\d{1,3}){3}$/;
+const IPV6 = /^[0-9A-Fa-f:]+$/;
 
 export class PingOptions {
   private state: PingOptionsState = { ...PING_DEFAULTS };
+
+  constructor(private readonly family: PingFamily = 'ipv4') {}
+
+  knows(option: string): boolean {
+    return pingOptionsFor(this.family).some(spec => spec.name === option);
+  }
 
   current(): Readonly<PingOptionsState> { return { ...this.state }; }
 
@@ -43,7 +79,15 @@ export class PingOptions {
       return Number.isInteger(parsed) && parsed >= min && parsed <= max ? parsed : null;
     };
 
+    if (!this.knows(option)) {
+      return { ok: false, message: `unknown ping option "${option}".` };
+    }
+
     switch (option) {
+      case 'reset': {
+        this.reset();
+        return { ok: true, message: '' };
+      }
       case 'repeat-count': {
         const n = integer(1, 1000);
         if (n === null) return refuse(value, 'an integer between 1 and 1000');
@@ -87,7 +131,8 @@ export class PingOptions {
       }
       case 'source': {
         if (value === undefined) return refuse(value, '`auto` or an interface address');
-        if (value !== 'auto' && !IPV4.test(value)) {
+        const shape = this.family === 'ipv6' ? IPV6 : IPV4;
+        if (value !== 'auto' && !shape.test(value)) {
           return refuse(value, '`auto` or an interface address');
         }
         this.state.sourceAddress = value;
@@ -114,7 +159,7 @@ export class PingOptions {
       `    Interval: ${s.intervalSeconds}`,
       `    TTL: ${s.ttl}`,
       `    TOS: ${s.tos}`,
-      `    DF bit: ${s.dfBit ? 'set' : 'unset'}`,
+      ...(this.family === 'ipv4' ? [`    DF bit: ${s.dfBit ? 'set' : 'unset'}`] : []),
       `    Source Address: ${s.sourceAddress}`,
     ].join('\n');
   }
