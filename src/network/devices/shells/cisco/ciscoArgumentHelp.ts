@@ -1,6 +1,8 @@
 import type { CommandTrie, ParamSpec } from '../CommandTrie';
 import { estTypeSansNumero } from './CiscoConfigCommands';
-import { PASSWORD_MIN_LENGTH_MAX } from './CiscoSecurityCommands';
+import {
+  PASSWORD_MIN_LENGTH_MAX, RSA_MODULUS_MIN, RSA_MODULUS_MAX,
+} from './CiscoSecurityCommands';
 
 const IP = (name: string, description: string): ParamSpec =>
   ({ name, type: 'IP_ADDR', description });
@@ -668,6 +670,11 @@ export function describeCiscoArguments(tries: ArgumentHelpTries): void {
     ]),
   ]);
 
+  tries.config.describeArgs('crypto key generate rsa modulus', [
+    INT('bits', [RSA_MODULUS_MIN, RSA_MODULUS_MAX],
+      'Size of the key modulus, in bits'),
+  ]);
+  tries.config.requireArgs('crypto key generate rsa modulus', 1);
   tries.config.describeArgs('ip domain-name', [
     { name: 'name', type: 'WORD', description: 'Default domain name', literal: 'WORD' },
   ]);

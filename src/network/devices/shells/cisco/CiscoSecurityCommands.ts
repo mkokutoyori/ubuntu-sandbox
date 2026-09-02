@@ -16,7 +16,7 @@ import type { ArgumentSpec, EnumValue } from '@/cli/ArgumentTypes';
 import {
   specsFromTrieRegistrations, type AdapterKeyword,
 } from '@/cli/commands/trieAdapter';
-import { CliInvalidInput } from '../cli/CliDiagnostic';
+import { CliInvalidInput, CliIncomplete } from '../cli/CliDiagnostic';
 import { CISCO_ERRORS } from '../cli-utils';
 import { encryptType7, md5Hex } from '@/crypto';
 import { pad2 } from '@/lib/format';
@@ -59,6 +59,14 @@ export const TACACS_SERVER_CONTINUATIONS: ReadonlyArray<{
   { keyword: 'timeout', description: 'Time to wait for a TACACS+ server to reply',
     valeur: [{ keyword: '<1-1000>', description: 'Wait time in seconds' }] },
 ];
+
+export const RSA_MODULUS_MIN = 360;
+export const RSA_MODULUS_MAX = 4096;
+export const RSA_MODULUS_DEFAUT = 1024;
+
+const RSA_GENERATE_KEYWORDS: ReadonlySet<string> = new Set([
+  'general-keys', 'signature', 'encryption', 'exportable',
+]);
 
 export const NO_AAA_CONTINUATIONS: ReadonlyArray<{ keyword: string; description: string }> = [
   { keyword: 'new-model', description: 'Disable the AAA access control model' },
@@ -571,7 +579,7 @@ export function buildIdentityConfigCommands(
     if (!domain) {
       return '% Please define a domain-name first.';
     }
-    let modulus = 1024;
+    let modulus = RSA_MODULUS_DEFAUT;
     // Sans `label`, IOS nomme la paire d'après l'identité pleinement
     // qualifiée du routeur — c'est pour cela qu'il exige un nom de
     // domaine avant de la générer.
@@ -581,9 +589,24 @@ export function buildIdentityConfigCommands(
     // sont `usage-keys` qui en produisent deux, dont une de signature.
     let general = true;
     for (let i = 0; i < args.length; i++) {
-      if (args[i] === 'modulus' && args[i + 1]) modulus = parseInt(args[i + 1], 10);
-      if (args[i] === 'label' && args[i + 1]) label = args[i + 1];
-      if (args[i] === 'usage-keys') general = false;
+      const mot = args[i].toLowerCase();
+      if (mot === 'modulus') {
+        const brut = args[i + 1];
+        if (brut === undefined) throw new CliIncomplete();
+        if (!/^\d+$/.test(brut)) throw new CliInvalidInput({ token: brut });
+        const taille = Number(brut);
+        if (taille < RSA_MODULUS_MIN || taille > RSA_MODULUS_MAX) {
+          throw new CliInvalidInput({ token: brut });
+        }
+        modulus = taille; i++; continue;
+      }
+      if (mot === 'label') {
+        if (args[i + 1] === undefined) throw new CliIncomplete();
+        label = args[i + 1]; i++; continue;
+      }
+      if (mot === 'usage-keys') { general = false; continue; }
+      if (RSA_GENERATE_KEYWORDS.has(mot)) continue;
+      throw new CliInvalidInput({ token: args[i] });
     }
     const generatedAtMs = Date.now();
     sec().cryptoKeys.push({ label, modulus, general, generatedAtMs });
@@ -1880,6 +1903,20 @@ export function buildIdentityShowCommands(
     return lines.join('\n');
   });
 
+  vue(['show', 'crypto', 'key', 'mypubkey', 'rsa'], 'Show RSA public keys', 1, () => {
+    const s = sec();
+    if (s.cryptoKeys.length === 0) return '% No RSA key generated.';
+    return s.cryptoKeys.map((k) => [
+      `% Key pair was generated at: ${formatIosKeyDate(k.generatedAtMs)}`,
+      `Key name: ${k.label}`,
+      ' Storage Device: not specified',
+      ` Usage: ${k.general ? 'General Purpose' : 'Signature'} Key`,
+      ' Key is not exportable.',
+      ' Key Data:',
+      ` ${rsaPublicKeyMaterial(k.label, k.modulus, k.generatedAtMs)}`,
+    ].join('\n')).join('\n\n');
+  });
+
   return vues;
 }
 
@@ -1970,20 +2007,6 @@ export function buildSecurityShowCommands(trie: CommandTrie, getRouter: () => Ro
     }).join('\n\n');
   });
 
-
-  trie.register('show crypto key mypubkey rsa', 'Show RSA keys', () => {
-    const s = sec();
-    if (s.cryptoKeys.length === 0) return '% No RSA key generated.';
-    return s.cryptoKeys.map(k => [
-      `% Key pair was generated at: ${formatIosKeyDate(k.generatedAtMs)}`,
-      `Key name: ${k.label}`,
-      ` Storage Device: not specified`,
-      ` Usage: ${k.general ? 'General Purpose' : 'Signature'} Key`,
-      ` Key is not exportable.`,
-      ` Key Data:`,
-      ` ${rsaPublicKeyMaterial(k.label, k.modulus, k.generatedAtMs)}`,
-    ].join('\n')).join('\n\n');
-  });
 
   trie.register('show policy-map control-plane', 'Show CoPP policy', () => {
     const s = sec();
