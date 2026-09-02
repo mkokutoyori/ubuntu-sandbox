@@ -1655,6 +1655,12 @@ export class Firewall extends Equipment {
 
   getIpv6(): FirewallIpv6 { return this.ipv6; }
 
+  applyIpv6RouterAdvertisement(iface: string, options: {
+    send: boolean; managed: boolean; other: boolean;
+  }): void {
+    this.ipv6.setRouterAdvertisement(iface, options);
+  }
+
   getIpv6Counters(): Ipv6Counters { return this.ipv6.counterView(); }
 
   configureIpv6Interface(iface: string, address: string, prefixLength: number): boolean {

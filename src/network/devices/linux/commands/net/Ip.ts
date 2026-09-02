@@ -52,6 +52,18 @@ function buildTunnelCtx(greAgent: GreAgent): IpTunnelContext {
   };
 }
 
+function interfaceTowardIpv6(net: LinuxNetKernel, nextHop: IPv6Address | null): string | null {
+  for (const [name, port] of net.getPorts()) {
+    if (!port.isIPv6Enabled()) continue;
+    if (nextHop === null) return name;
+    if (nextHop.isLinkLocal()) return name;
+    for (const entry of port.getIPv6Addresses()) {
+      if (entry.address.isInSameSubnet(nextHop, entry.prefixLength)) return name;
+    }
+  }
+  return null;
+}
+
 function cidrToNetworkMask(cidr: string): { network: IPAddress; mask: SubnetMask } | null {
   const slashIdx = cidr.indexOf('/');
   if (slashIdx === -1) return null;
@@ -207,6 +219,30 @@ export function buildIpCtx(
       if (port.getIPAddress()?.equals(ip)) { net.clearInterfaceIP(ifName); return ''; }
       if (port.getSecondaryIPs().some(e => e.ip.equals(ip))) { port.removeSecondaryIP(ip); return ''; }
       return 'RTNETLINK answers: Cannot assign requested address';
+    },
+    addIPv6Route(prefix: string, prefixLength: number, gateway: string | null,
+      dev: string | null, metric?: number): string {
+      if (dev && !net.getPorts().get(dev)) return `Cannot find device "${dev}"`;
+      try {
+        const nextHop = gateway === null ? null : new IPv6Address(gateway);
+        if (prefixLength === 0 && nextHop) { net.setDefaultGateway6(nextHop); return ''; }
+        const iface = dev ?? interfaceTowardIpv6(net, nextHop);
+        if (!iface) return 'RTNETLINK answers: Network is unreachable';
+        net.addIPv6StaticRoute(
+          new IPv6Address(prefix), prefixLength, nextHop, iface, metric ?? 0);
+        return '';
+      } catch (e) {
+        return `Error: ${e instanceof Error ? e.message : String(e)}`;
+      }
+    },
+    deleteIPv6Route(prefix: string, prefixLength: number, gateway: string | null): string {
+      try {
+        const nextHop = gateway === null ? null : new IPv6Address(gateway);
+        return net.removeIPv6StaticRoute(new IPv6Address(prefix), prefixLength, nextHop)
+          ? '' : 'RTNETLINK answers: No such process';
+      } catch (e) {
+        return `Error: ${e instanceof Error ? e.message : String(e)}`;
+      }
     },
     getIPv6RoutingTable() {
       return net.getIPv6RoutingTable().map(r => ({

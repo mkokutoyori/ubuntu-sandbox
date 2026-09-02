@@ -586,6 +586,11 @@ export const SYSTEM_INTERFACE: FortiTableSpec = {
     }
     context.device.applyIpv6AllowAccess(
       object.key, object.childSetting('ipv6', 'ip6-allowaccess'));
+    context.device.applyIpv6RouterAdvertisement(object.key, {
+      send: object.childSetting('ipv6', 'ip6-send-adv')[0] === 'enable',
+      managed: object.childSetting('ipv6', 'ip6-manage-flag')[0] === 'enable',
+      other: object.childSetting('ipv6', 'ip6-other-flag')[0] === 'enable',
+    });
   },
 };
 

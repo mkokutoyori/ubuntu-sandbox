@@ -81,6 +81,9 @@ export function buildCommitDevice(
       removeDhcpScope(id) {
         fw.getDhcp().removeScope(id);
       },
+      applyIpv6RouterAdvertisement(iface, options) {
+        fw.applyIpv6RouterAdvertisement(iface, options);
+      },
       applyDhcp6Scope(scope) {
         fw.applyDhcp6Scope(scope);
       },

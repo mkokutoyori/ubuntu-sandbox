@@ -1101,11 +1101,18 @@ export abstract class EndHost extends Equipment {
     try { this.requestDhcpv6Lease(iface); } catch { /* pas de serveur : on reste sans bail */ }
   }
 
-  /** Fetch the other configuration once per interface, for the O flag. */
+  /**
+   * Fetch the other configuration once per interface, for the O flag.
+   * An attempt that brought nothing back does not count: marking it
+   * would leave a host that booted before its server silent for good,
+   * whereas the M flag's guard — already holding a lease — self-corrects.
+   */
   private requestDhcpv6InfoIfNeeded(iface: string): void {
     if (this.dhcpv6InfoRequested.has(iface)) return;
+    try {
+      if (this.fetchDhcpv6Information(iface) === null) return;
+    } catch { return; }
     this.dhcpv6InfoRequested.add(iface);
-    try { this.requestDhcpv6Information(iface); } catch { this.dhcpv6InfoRequested.delete(iface); }
   }
 
   private dhcpv6InfoRequested = new Set<string>();
@@ -1118,28 +1125,36 @@ export abstract class EndHost extends Equipment {
   requestDhcpv6Information(iface: string, verbose = false): string {
     const port = this.ports.get(iface);
     if (!port) return verbose ? `${iface}: no such interface` : '';
+
+    const servers = this.fetchDhcpv6Information(iface);
+    if (!verbose) return '';
+    if (servers === null) {
+      return ['DHCPv6 INFORMATION-REQUEST', 'No DHCPv6 REPLY received'].join('\n');
+    }
+    return ['DHCPv6 INFORMATION-REQUEST', servers.length > 0
+      ? `DHCPv6 REPLY with nameserver ${servers.join(', ')}`
+      : 'DHCPv6 REPLY with no configuration'].join('\n');
+  }
+
+  /** The exchange itself; `null` when no REPLY came back. */
+  private fetchDhcpv6Information(iface: string): readonly string[] | null {
+    const port = this.ports.get(iface);
+    if (!port) return null;
     if (!port.isIPv6Enabled()) port.enableIPv6();
     this.ensureDhcpv6Udp546Listener();
 
     const clientDuid = this.buildDhcpv6ClientDuid(iface);
     const xid = (this.dhcpv6XidCounter = (this.dhcpv6XidCounter + 1) & 0xffffff);
-    const lines: string[] = [];
 
     this.dhcpv6Inbox.set(iface, []);
     this.sendDhcpv6Frame(iface, DHCPv6Packet.createInformationRequest(clientDuid, xid));
-    if (verbose) lines.push('DHCPv6 INFORMATION-REQUEST');
 
     const reply = (this.dhcpv6Inbox.get(iface) ?? [])
       .find(p => p.msgType === 'REPLY' && p.transactionId === xid);
-    if (!reply) return verbose ? [...lines, 'No DHCPv6 REPLY received'].join('\n') : '';
+    if (!reply) return null;
 
-    if (verbose) {
-      lines.push(reply.dnsServers.length > 0
-        ? `DHCPv6 REPLY with nameserver ${reply.dnsServers.join(', ')}`
-        : 'DHCPv6 REPLY with no configuration');
-    }
     this.onDhcpv6LeaseConfigured(iface, reply.dnsServers ?? [], reply.domainList?.[0] ?? null);
-    return lines.join('\n');
+    return reply.dnsServers ?? [];
   }
 
   /** Real DHCPv6 SOLICIT->ADVERTISE->REQUEST->REPLY. Returns a verbose transcript, or '' on failure/no verbose. */
@@ -4228,6 +4243,33 @@ export abstract class EndHost extends Equipment {
 
   getIPv6RoutingTable(): HostIPv6RouteEntry[] {
     return [...this.ipv6RoutingTable];
+  }
+
+  addIPv6StaticRoute(
+    prefix: IPv6Address, prefixLength: number,
+    nextHop: IPv6Address | null, iface: string, metric = 0,
+  ): void {
+    this.ipv6RoutingTable.push({
+      prefix: prefix.getNetworkPrefix(prefixLength),
+      prefixLength, nextHop, iface, type: 'static', metric,
+    });
+  }
+
+  removeIPv6StaticRoute(
+    prefix: IPv6Address, prefixLength: number, nextHop?: IPv6Address | null,
+  ): boolean {
+    const wanted = prefix.getNetworkPrefix(prefixLength);
+    const before = this.ipv6RoutingTable.length;
+    this.ipv6RoutingTable = this.ipv6RoutingTable.filter((route) => {
+      if (route.type === 'connected') return true;
+      if (route.prefixLength !== prefixLength || !route.prefix.equals(wanted)) return true;
+      if (nextHop && !(route.nextHop?.equals(nextHop) ?? false)) return true;
+      return false;
+    });
+    if (prefixLength === 0 && this.ipv6RoutingTable.every(r => r.type !== 'default')) {
+      this.defaultGateway6 = null;
+    }
+    return this.ipv6RoutingTable.length !== before;
   }
 
   getDefaultGateway6(): IPv6Address | null {

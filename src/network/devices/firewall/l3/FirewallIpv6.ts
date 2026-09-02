@@ -66,6 +66,18 @@ export class FirewallIpv6 {
     return [...(this.allowAccess.get(iface) ?? [])];
   }
 
+  setRouterAdvertisement(iface: string, options: {
+    send: boolean; managed: boolean; other: boolean;
+  }): void {
+    this.engine.configureRA(iface, {
+      enabled: options.send,
+      suppressAll: !options.send,
+      managedFlag: options.managed,
+      otherConfigFlag: options.other,
+    });
+    if (options.send) this.engine.advertiseOnInterface(iface);
+  }
+
   allowsAccess(iface: string, service: string): boolean {
     const declared = this.allowAccess.get(iface);
     if (declared === undefined) return false;
@@ -81,6 +93,7 @@ export class FirewallIpv6 {
       getCounters: () => this.counters,
       getBus: () => this.deps.bus(),
       getScheduler: () => this.deps.scheduler(),
+      advertisesWithoutConfig: () => false,
       getDhcpv6Server: () => this.deps.dhcpv6Server(),
       getDhcpv6ServerPool: (iface) => this.deps.dhcpv6PoolFor(iface),
       getDhcpv6RelayDestinations: () => [],

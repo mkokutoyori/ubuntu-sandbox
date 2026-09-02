@@ -381,8 +381,14 @@ export interface FortiCommitDevice {
   applyBgp(settings: BgpConfiguration): string | void;
   applyDhcpScope(scope: DhcpScope): void;
   removeDhcpScope(id: string): void;
+  applyIpv6RouterAdvertisement(iface: string, options: {
+    send: boolean; managed: boolean; other: boolean;
+  }): void;
   applyDhcp6Scope(scope: Dhcp6Scope): void;
   removeDhcp6Scope(id: string): void;
+  applyIpv6RouterAdvertisement(iface: string, options: {
+    send: boolean; managed: boolean; other: boolean;
+  }): void;
   applyDhcp6Scope(scope: Dhcp6Scope): void;
   removeDhcp6Scope(id: string): void;
   acquireDhcpLease(iface: string): void;
