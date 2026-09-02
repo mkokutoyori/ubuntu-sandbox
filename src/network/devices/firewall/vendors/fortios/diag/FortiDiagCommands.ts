@@ -185,7 +185,7 @@ export function runDiagnose(rest: readonly string[], deps: FortiDiagDeps): strin
     if (tail[0] !== 'versions') {
       return FortiMessages.unknownPath(`autoupdate ${tail.join(' ')}`);
     }
-    return renderAutoupdateVersions();
+    return renderAutoupdateVersions(deps.fw.getFortiGuard().list());
   }
   return FortiMessages.unknownPath(rest.join(' '));
 }

@@ -69,6 +69,7 @@ import {
 } from './log/trafficLog';
 import { utmLog } from './log/utmLog';
 import { renderFortiguardServiceStatus } from './diag/fortiguardRenderer';
+import type { FortiGuardFamily } from '../../mgmt/FortiGuardDatabases';
 import { TftpClientSession } from '@/network/tftp/TftpSession';
 import { IPAddress } from '@/network/core/types';
 import { tokenize } from '@/cli/CommandParser';
@@ -107,6 +108,9 @@ interface HaPendingLogin {
 interface HaRemoteSession extends HaPendingLogin {
   readonly token: string;
 }
+
+const FORTIGUARD_UNREACHABLE =
+  'Objects updated: 0\nFortiGuard Distribution Network is not reachable.';
 
 const NO_PING_PAYLOAD = 'an echo request carries no operator-chosen payload here — '
   + 'its data field is a byte count, not bytes — so a pattern could be set and never '
@@ -1155,6 +1159,9 @@ export class FortiShell {
       case 'ping6-options':
         return this.executePingOptions(this.fw.getPing6Options(), 'ping6-options', tail);
       case 'clear': return this.executeClear(tail);
+      case 'update-now': return this.executeFortiguardUpdate();
+      case 'update-av': return this.executeFortiguardUpdate('antivirus');
+      case 'update-ips': return this.executeFortiguardUpdate('ips');
       case 'disconnect-admin-session':
         return tail.length === 0
           ? FortiMessages.incomplete('a session index')
@@ -1174,6 +1181,11 @@ export class FortiShell {
           : FortiMessages.needsConsole(resolved.name);
       default: return FortiMessages.unknownAction(resolved.name);
     }
+  }
+
+  private executeFortiguardUpdate(family?: FortiGuardFamily): string {
+    this.fw.getFortiGuard().recordAttempt(family);
+    return FORTIGUARD_UNREACHABLE;
   }
 
   private disconnectAdminSession(raw: string): string {

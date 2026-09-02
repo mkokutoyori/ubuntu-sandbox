@@ -131,6 +131,7 @@ import type { NtpAgent } from '../../ntp/NtpAgent';
 import { FirewallPing, type FirewallPingEgress } from './diag/FirewallPing';
 import { PingOptions } from './diag/PingOptions';
 import { AdminSessionTable } from './mgmt/AdminSessionTable';
+import { FortiGuardDatabases } from './mgmt/FortiGuardDatabases';
 import { ConsoleSettings } from './mgmt/ConsoleSettings';
 import { LoginBanners } from './mgmt/LoginBanners';
 import { FirewallObservables } from './diag/FirewallObservables';
@@ -231,6 +232,7 @@ export class Firewall extends Equipment {
   private configSnapshot?: () => string;
   private readonly proxyArp = new ProxyArpTable();
   private readonly adminSessions = new AdminSessionTable();
+  private readonly fortiguard = new FortiGuardDatabases();
   private readonly arp: ArpService;
   private readonly registry = new PipelineStageRegistry();
   private readonly pipelines: PipelineCache;
@@ -1693,6 +1695,8 @@ export class Firewall extends Equipment {
   bindConfigSnapshot(render: () => string): void { this.configSnapshot = render; }
 
   getAdminSessions(): AdminSessionTable { return this.adminSessions; }
+
+  getFortiGuard(): FortiGuardDatabases { return this.fortiguard; }
 
   onAdminLogout(admin: string): void {
     this.adminSessions.closeNewestOf(admin);
