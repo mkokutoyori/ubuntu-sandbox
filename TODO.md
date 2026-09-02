@@ -65,47 +65,6 @@ CLI que ce lot refermait.
 
 ---
 
-## SNMP (les deux plateformes Cisco)
-
-### [snmp] `snmp-server host <ip> version ?` ne nomme pas 1 / 2c / 3
-Un vrai IOS annonce `1`, `2c`, `3` apres `version`, puis `auth`,
-`noauth`, `priv` et `WORD` apres `version 3`. Ici la queue de
-`snmp-server host` est UNE place `REST` : ses formes sont annoncees a
-chaque rang, donc `version ?` propose encore `version`.
-**Mesure** : `snmp-server host 10.0.0.1 version ?` rend les quatre
-suites (`informs`/`traps`/`udp-port`/`version`) et pas les versions.
-Depuis ce lot l'aide ne REFUSE plus a ce rang, ce qu'elle faisait.
-**Report** : nommer des valeurs par POSITION demande a `sequenceFamily`
-le mecanisme de continuations que `loggingFamily` porte deja
-(`logging host <ip> transport tcp`). Le donner a `sequenceFamily` est un
-enrichissement du declarateur partage, pas une retouche de SNMP — et
-declarer a cote quelques chemins types ferait DEUX grammaires pour une
-commande, le defaut que ce depot passe son temps a refermer.
-
-### [snmp] `snmp-server host <ip> vrf <nom>` est lu comme la communaute
-IOS ecrit `snmp-server host <hote> [vrf <nom>] [traps|informs] …`.
-`configHost` ne connait pas `vrf` : le mot est pris pour la communaute et
-le nom de la VRF devient un type de notification.
-**Mesure** : `snmp-server host 10.0.0.1 vrf MGMT public` est accepte et
-revient `snmp-server host 10.0.0.1 version 1 vrf MGMT public` — une
-communaute nommee `vrf`.
-**Report** : `SnmpHost` n'a pas de champ de VRF, et en ajouter un sans
-que rien ne le lise serait le critere range-mais-jamais-evalue que
-`CLAUDE.md` interdit. A faire avec le jour ou les traps suivent une VRF.
-
-### [snmp] les types de notification d'un hote ne sont pas juges
-Ce qui suit la communaute est repris tel quel : `snmp-server host
-10.0.0.1 public zorglub-notif` est accepte et rendu.
-**Mesure** : la ligne revient telle quelle dans `show running-config`,
-donc elle est rejouee a l'import d'une topologie.
-**Report** : la liste des types d'IOS est longue et depend de la
-plateforme ; en refuser une partie ferait refuser des formes qu'une vraie
-machine prend, ce qui est pire que l'inverse. Il faudrait la liste
-attestee des types que CE simulateur sait emettre — `getEnabledTraps`
-en connait trois.
-
----
-
 ## Postes Linux
 
 ### [dhcp] `dhclient -t N` est accepte, et aucun delai ne le lit
@@ -193,6 +152,45 @@ libelle — une ligne dans `winUnreachText`.
 ---
 
 ## Gestion (SNMP, NTP, syslog)
+
+### [ntp] `minpoll`, `maxpoll`, `burst` et `iburst` sont desormais REFUSES
+La queue de `ntp server|peer` ne connait que les quatre formes qu'elle
+declare (`key`, `prefer`, `source`, `version`) ; depuis le lot qui les
+juge, un mot hors de cette liste est refuse au lieu d'etre avale en
+silence. Un vrai IOS accepte pourtant `minpoll`/`maxpoll` (intervalles de
+scrutation) et `burst`/`iburst`.
+**Mesure** : `ntp server 10.0.0.1 iburst` rend `% Invalid input detected`
+ici et est accepte sur une vraie machine.
+**Pourquoi c'est ce refus qui a ete choisi** : `CLAUDE.md` tranche —
+« soit le moteur applique le mot-cle, soit l'analyseur le refuse ». Les
+accepter demanderait de RANGER une valeur que rien ne lit, ce qui est
+l'inverse du defaut que ce lot refermait.
+**Report** : `minpoll`/`maxpoll` sont applicables — `NtpAssociation`
+porte deja `pollSec` et le minuteur de scrutation existe — mais c'est un
+travail de temporisation, pas de CLI. `burst`/`iburst` demandent une
+rafale de huit paquets a l'association, que ce moteur n'a pas.
+
+### [snmp] `snmp-server host <ip> vrf <nom>` est lu comme la communaute
+IOS ecrit `snmp-server host <hote> [vrf <nom>] [traps|informs] …`.
+`configHost` ne connait pas `vrf` : le mot est pris pour la communaute et
+le nom de la VRF devient un type de notification.
+**Mesure** : `snmp-server host 10.0.0.1 vrf MGMT public` est accepte et
+revient `snmp-server host 10.0.0.1 version 1 vrf MGMT public` — une
+communaute nommee `vrf`.
+**Report** : `SnmpHost` n'a pas de champ de VRF, et en ajouter un sans
+que rien ne le lise serait le critere range-mais-jamais-evalue que
+`CLAUDE.md` interdit. A faire avec le jour ou les traps suivent une VRF.
+
+### [snmp] les types de notification d'un hote ne sont pas juges
+Ce qui suit la communaute est repris tel quel : `snmp-server host
+10.0.0.1 public zorglub-notif` est accepte et rendu.
+**Mesure** : la ligne revient telle quelle dans `show running-config`,
+donc elle est rejouee a l'import d'une topologie.
+**Report** : la liste des types d'IOS est longue et depend de la
+plateforme ; en refuser une partie ferait refuser des formes qu'une vraie
+machine prend, ce qui est pire que l'inverse. Il faudrait la liste
+attestee des types que CE simulateur sait emettre — `getEnabledTraps`
+en connait trois.
 
 ### [snmp] SNMPv3 (USM) et les formes VRP qui restent inertes
 Depuis le lot « une vue MIB filtre vraiment », `mib-view` est EVALUE :
@@ -321,6 +319,27 @@ question. C'est un lot a part, avec sa propre mesure.
 
 ## Socle CLI
 
+### [socle] une queue `REST` ne sait pas nommer ses valeurs par POSITION
+`sequenceFamily` decrit la queue libre d'une commande par UNE place
+`REST` portant ses formes. Elles sont donc annoncees a chaque rang, sans
+savoir laquelle vient d'etre tapee, et une valeur qui SUIT une forme ne
+peut pas etre nommee du tout. Deux familles en souffrent aujourd'hui :
+
+    snmp-server host 10.0.0.1 version ?   attendu 1 / 2c / 3
+    snmp-server host 10.0.0.1 version 3 ? attendu auth / noauth / priv / WORD
+    ntp server 10.0.0.1 key ?             attendu <1-4294967295>
+    ntp server 10.0.0.1 version ?         attendu <1-4>
+
+**Mesure** : chacune rend les formes de la queue (`key`, `prefer`,
+`source`, `version` cote NTP) et jamais la valeur attendue. Depuis les
+lots SNMP et NTP, l'aide ne REFUSE plus a ces rangs et ne repropose plus
+une forme deja tapee ; ce qui manque est de NOMMER.
+**Report** : le mecanisme existe deja a cote — `loggingFamily` porte des
+`continuations` (« les mots-cles qui SUIVENT l'argument »,
+`logging host <ip> transport tcp`). Le donner a `sequenceFamily` est un
+enrichissement du declarateur PARTAGE, donc un lot a lui seul ; declarer
+a cote quelques chemins types ferait DEUX grammaires pour une commande,
+le defaut que ce depot passe son temps a refermer.
 ### [aide] `aaa` est un noeud GLOUTON, donc son aide s'arrete a deux mots
 `aaa authentication login ?` et `aaa authentication login default ?`
 annoncent `<cr>` — la touche Entree — alors que la machine repond

@@ -84,7 +84,8 @@ import type { PromptMap } from './PromptBuilder';
 import { buildPrompt } from './PromptBuilder';
 import { CLIStateMachine, type ModeHierarchy } from './CLIStateMachine';
 import { estGenreAcces } from '../../ntp/accessGroups';
-import { NTP_VERSION } from '../../ntp/types';
+import { NTP_VERSION, isNtpVersion, type NtpVersion } from '../../ntp/types';
+import type { NtpAssociationOptions } from '../../ntp/NtpAgent';
 import {
   getGlobalConfig, CEF_LOAD_SHARING_ALGORITHMS, CEF_ACCOUNTING_KINDS,
 } from '../router/config/CiscoGlobalConfig';
@@ -212,6 +213,22 @@ import type { TableColumn } from './cli/TextTable';
 import { parseVlanList, compactVlanList } from './cli/vlanList';
 import { createDefaultSnoopingConfig } from '../../dhcp/types';
 import type { DHCPSnoopingConfig, DHCPSnoopingBinding } from '../../dhcp/types';
+
+const NTP_KEY_SPEC = {
+  name: 'numero', type: 'INT' as const,
+  range: [1, 4294967295] as const, description: 'Key number',
+};
+
+interface QueueAssociationNtp {
+  prefer: boolean;
+  keyId?: number;
+  options: NtpAssociationOptions;
+  refus?: string;
+}
+
+function estNumeroDeCleNtp(token: string | undefined): boolean {
+  return token !== undefined && argumentAccepts(NTP_KEY_SPEC, token);
+}
 
 const SNOOPING_BINDING_COLUMNS: ReadonlyArray<TableColumn<DHCPSnoopingBinding>> = [
   { header: 'MacAddress', width: 18, value: (b) => b.macAddress },
@@ -4339,10 +4356,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
 
 
   protected ntpSpecs(): CommandSpec[] {
-    const cle = {
-      name: 'numero', type: 'INT' as const,
-      range: [1, 4294967295] as const, description: 'Key number',
-    };
+    const cle = NTP_KEY_SPEC;
     const serveur: SequenceEntry['tail'] = {
       name: 'options', type: 'REST', optional: true,
       alternatives: [
@@ -8222,19 +8236,18 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       if ((a[0] === 'server' || a[0] === 'peer') && !a[1]) return CISCO_ERRORS.INCOMPLETE;
       const agent = getNtpAgent(this.d());
       if (!agent) return '';
-      if (a[0] === 'server' && a[1]) {
-        const target = a[1];
-        const resolved = this.resolveNtpTarget(target);
-        if (!resolved) {
-          return `Translating "${args[1]}"...domain server (255.255.255.255)\n% Bad IP address or host name`;
-        }
-        agent.addServer(resolved, a.includes('prefer'), this.parseNtpKeyId(a));
-      } else if (a[0] === 'peer' && a[1]) {
+      if ((a[0] === 'server' || a[0] === 'peer') && a[1]) {
         const resolved = this.resolveNtpTarget(a[1]);
         if (!resolved) {
           return `Translating "${args[1]}"...domain server (255.255.255.255)\n% Bad IP address or host name`;
         }
-        agent.addPeer(resolved, a.includes('prefer'), this.parseNtpKeyId(a));
+        const queue = this.lireQueueAssociationNtp(a, args);
+        if (queue.refus !== undefined) throw new CliInvalidInput({ token: queue.refus });
+        if (a[0] === 'server') {
+          agent.addServer(resolved, queue.prefer, queue.keyId, 'ntp', queue.options);
+        } else {
+          agent.addPeer(resolved, queue.prefer, queue.keyId, queue.options);
+        }
       } else if (a[0] === 'master') {
         agent.setServerMode(true);
         if (a[1] && /^\d+$/.test(a[1])) agent.setLocalStratum(parseInt(a[1], 10));
@@ -8298,10 +8311,29 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     return null;
   }
 
-  protected parseNtpKeyId(args: string[]): number | undefined {
-    const idx = args.indexOf('key');
-    if (idx < 0 || !args[idx + 1] || !/^\d+$/.test(args[idx + 1])) return undefined;
-    return parseInt(args[idx + 1], 10);
+  protected lireQueueAssociationNtp(
+    minuscules: string[], bruts: string[],
+  ): QueueAssociationNtp {
+    const queue: QueueAssociationNtp = { prefer: false, options: {} };
+    for (let i = 2; i < minuscules.length; i++) {
+      const mot = minuscules[i];
+      if (mot === 'prefer') { queue.prefer = true; continue; }
+      const valeur = minuscules[i + 1];
+      if (mot === 'key') {
+        if (!estNumeroDeCleNtp(valeur)) return { ...queue, refus: valeur ?? mot };
+        queue.keyId = Number(valeur);
+      } else if (mot === 'version') {
+        if (!isNtpVersion(valeur)) return { ...queue, refus: valeur ?? mot };
+        queue.options = { ...queue.options, version: Number(valeur) as NtpVersion };
+      } else if (mot === 'source') {
+        if (!bruts[i + 1]) return { ...queue, refus: mot };
+        queue.options = { ...queue.options, sourceInterface: bruts[i + 1] };
+      } else {
+        return { ...queue, refus: bruts[i] ?? mot };
+      }
+      i++;
+    }
+    return queue;
   }
 
   // ─── Help / Tab-Complete ────────────────────────────────────────
