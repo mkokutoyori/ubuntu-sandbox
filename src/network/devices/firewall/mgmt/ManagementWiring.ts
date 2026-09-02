@@ -47,6 +47,8 @@ export interface ManagementHost {
   managementPorts(): ManagementPorts;
   createManagementCli(user: string, origin: string): ManagementCli | null;
   authenticateAdmin(user: string, password: string, source: string): boolean;
+  leaveCluster(iface: string, ip: string, mask: string): string;
+  setDevicePriority(priority: number): string;
   knownAdmin(user: string): boolean;
   refuseManagementSource(source: string): boolean;
   managementIdleTimeoutMs(): number | null;
@@ -91,6 +93,8 @@ export function buildManagementServices(host: ManagementHost): ManagementService
       host.authenticateAdmin(admin, secret, HA_COMMAND_SOURCE),
     runManagementCommand: (admin, line) =>
       host.createManagementCli(admin, HA_COMMAND_SOURCE)?.execute(line) ?? '',
+    leaveCluster: (iface, ip, mask) => host.leaveCluster(iface, ip, mask),
+    setDevicePriority: (priority) => host.setDevicePriority(priority),
   });
 
   const ntp = buildFirewallNtp({

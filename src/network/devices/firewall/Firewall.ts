@@ -123,7 +123,7 @@ import type {
 } from './mgmt/AdminHttpServer';
 import type { ManagementCli } from './mgmt/FirewallCliServer';
 import { ManagementPlane } from './mgmt/ManagementPlane';
-import type { ManagementPorts } from './mgmt/ManagementAccess';
+import { MANAGEMENT_SERVICES, type ManagementPorts } from './mgmt/ManagementAccess';
 import type { CaptivePortalRedirect } from './auth/CaptivePortalRedirect';
 import { SslDeepInspection } from './inspection/SslDeepInspection';
 import { ModeCfgPool } from './vpn/ModeCfgPool';
@@ -517,6 +517,8 @@ export class Firewall extends Equipment {
       portalUsesHttps: () => this.authPortalSecureHttp,
       managementPorts: () => this.management.managementPorts(),
       createManagementCli: (user, origin) => this.createManagementCli(user, origin),
+      leaveCluster: (iface, ip, mask) => this.leaveCluster(iface, ip, mask),
+      setDevicePriority: (priority) => this.setDevicePriority(priority),
       authenticateAdmin: (user, password, source) =>
         this.management.login(user, password, source),
       knownAdmin: (user) => this.access.getAdmin(user) !== undefined,
@@ -764,6 +766,33 @@ export class Firewall extends Equipment {
   forwardsTransit(): boolean {
     const ha = this.haService.agent;
     return ha.getConfiguration().mode !== 'a-p' || ha.role() !== 'slave';
+  }
+
+  leaveCluster(iface: string, ip: string, mask: string): string {
+    const configuration = this.haService.agent.getConfiguration();
+    if (configuration.mode === 'standalone') {
+      return 'this unit is not part of a cluster.';
+    }
+    this.applyHa({ ...configuration, mode: 'standalone' });
+
+    for (const name of this.interfaces.names()) {
+      this.configureInterface(name, { ip: '0.0.0.0', mask: '0.0.0.0' });
+      this.setAllowedAccess(name, []);
+    }
+    if (this.interfaces.get(iface)) {
+      this.configureInterface(iface, { ip, mask });
+      this.setAllowedAccess(iface, MANAGEMENT_SERVICES);
+    }
+    return '';
+  }
+
+  setDevicePriority(priority: number): string {
+    const configuration = this.haService.agent.getConfiguration();
+    if (configuration.mode === 'standalone') {
+      return 'this unit is not part of a cluster.';
+    }
+    this.applyHa({ ...configuration, priority });
+    return '';
   }
 
   applyHa(c: HaConfiguration): string | undefined {

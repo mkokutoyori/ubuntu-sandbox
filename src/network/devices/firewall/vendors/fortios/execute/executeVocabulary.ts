@@ -34,7 +34,14 @@ export const FORTI_EXECUTE_COMMANDS: readonly FortiExecuteCommand[] = Object.fre
   { name: 'disconnect-admin-session', help: 'Disconnect a logged-in administrator.' },
   { name: 'enter', help: 'Select virtual domain.' },
   { name: 'factoryreset', help: 'Reset the configuration to factory default.' },
-  { name: 'ha', help: 'Cluster operations.' },
+  { name: 'ha', help: 'Cluster operations.',
+    options: [
+      { keyword: 'disconnect', description: 'Disconnect a unit from the cluster.' },
+      { keyword: 'failover', description: 'Force a failover.' },
+      { keyword: 'manage', description: 'Log into another cluster member.' },
+      { keyword: 'set-priority', description: 'Set a member device priority.' },
+      { keyword: 'synchronize', description: 'Start or stop synchronisation.' },
+    ] },
   { name: 'interface', help: 'Interface client operations.',
     options: [
       { keyword: 'dhcpclient-renew', description: 'Renew the DHCP lease.' },

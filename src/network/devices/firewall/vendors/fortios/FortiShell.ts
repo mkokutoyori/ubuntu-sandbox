@@ -1470,6 +1470,28 @@ export class FortiShell {
       };
       return `Connecting to ${label} (${peer.serial})...\n${label} password: `;
     }
+    if (rest[0] === 'disconnect') {
+      const [serial, iface, ip, mask] = rest.slice(1);
+      if (serial === undefined || iface === undefined
+        || ip === undefined || mask === undefined) {
+        return FortiMessages.incomplete(
+          'a serial number, an interface name, an IP address and a netmask');
+      }
+      return this.applyToClusterMember(serial, 'disconnect', `${iface} ${ip} ${mask}`);
+    }
+
+    if (rest[0] === 'set-priority') {
+      const [serial, raw] = rest.slice(1);
+      if (serial === undefined || raw === undefined) {
+        return FortiMessages.incomplete('a serial number and a priority');
+      }
+      const priority = Number.parseInt(raw, 10);
+      if (!Number.isInteger(priority) || priority < 0 || priority > 255) {
+        return FortiMessages.valueError(raw, 'a priority between 0 and 255 is expected.');
+      }
+      return this.applyToClusterMember(serial, 'set-priority', String(priority));
+    }
+
     if (rest[0] === 'synchronize') {
       if (rest[1] === 'start') {
         return ha.requestSynchronisation()
@@ -1479,6 +1501,27 @@ export class FortiShell {
       return FortiMessages.incomplete('`start` or `stop`');
     }
     return FortiMessages.unknownPath(`ha ${rest.join(' ')}`);
+  }
+
+  private applyToClusterMember(
+    serial: string, kind: 'disconnect' | 'set-priority', line: string,
+  ): string {
+    const ha = this.fw.getHa();
+    if (serial === this.fw.serialNumber()) {
+      const [iface, ip, mask] = line.split(/\s+/);
+      const refusal = kind === 'disconnect'
+        ? this.fw.leaveCluster(iface, ip, mask)
+        : this.fw.setDevicePriority(Number.parseInt(line, 10));
+      return refusal.length === 0 ? '' : FortiMessages.commandFail(refusal);
+    }
+    if (!ha.knownPeers().some(peer => peer.serial === serial)) {
+      return FortiMessages.commandFail(`no cluster member ${serial}.`);
+    }
+    const answer = ha.askPeer(serial, kind, '', '', '', line);
+    if (!answer.answered) {
+      return FortiMessages.commandFail('no response from the cluster member.');
+    }
+    return answer.output.length === 0 ? '' : FortiMessages.commandFail(answer.output);
   }
 
   private finishHaLogin(secret: string): string {

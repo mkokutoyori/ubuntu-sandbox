@@ -13,6 +13,8 @@ export interface FirewallHaDeps {
   readonly sessions: () => SessionTable;
   readonly authenticateAdmin: (admin: string, secret: string) => boolean;
   readonly runCommand: (admin: string, line: string) => string;
+  readonly leaveCluster: (iface: string, ip: string, mask: string) => string;
+  readonly setDevicePriority: (priority: number) => string;
 }
 
 export class FirewallHa {
@@ -34,6 +36,8 @@ export class FirewallHa {
       importSessions: (sessions) => { importSessions(deps.sessions(), sessions); },
       authenticateAdmin: deps.authenticateAdmin,
       runCommand: deps.runCommand,
+      leaveCluster: deps.leaveCluster,
+      setDevicePriority: deps.setDevicePriority,
     });
   }
 
@@ -62,6 +66,8 @@ export interface HaWiringHost {
   sessions(): SessionTable;
   authenticateAdmin(admin: string, secret: string): boolean;
   runManagementCommand(admin: string, line: string): string;
+  leaveCluster(iface: string, ip: string, mask: string): string;
+  setDevicePriority(priority: number): string;
 }
 
 export function buildFirewallHa(host: HaWiringHost): FirewallHa {
@@ -78,5 +84,7 @@ export function buildFirewallHa(host: HaWiringHost): FirewallHa {
     sessions: () => host.sessions(),
     authenticateAdmin: (admin, secret) => host.authenticateAdmin(admin, secret),
     runCommand: (admin, line) => host.runManagementCommand(admin, line),
+    leaveCluster: (iface, ip, mask) => host.leaveCluster(iface, ip, mask),
+    setDevicePriority: (priority) => host.setDevicePriority(priority),
   });
 }
