@@ -158,12 +158,24 @@ describe('une commande s\'abrege jusqu\'au plus court non ambigu', () => {
 });
 
 describe('`execute` connait ses sous-commandes', () => {
-  it('`exe trac` resout vers `execute traceroute`', () => {
+  it('`trac` est AMBIGU, parce que `tracert6` existe aussi', () => {
     const { sh } = shell();
-    const sortie = sh.execute('exe trac 10.9.9.9');
+    expect(sh.execute('exe trac 10.9.9.9')).toMatch(/ambiguous/i);
+  });
+
+  it('`exe tracero` resout vers `execute traceroute`', () => {
+    const { sh } = shell();
+    const sortie = sh.execute('exe tracero 10.9.9.9');
     expect(sortie).not.toMatch(/not implemented in this simulator/);
     expect(sortie).not.toMatch(/ambiguous/i);
     expect(sortie).toMatch(/traceroute|Unable|unreachable|\*/i);
+  });
+
+  it('`exe tracert` resout vers `execute tracert6`', () => {
+    const { sh } = shell();
+    const sortie = sh.execute('exe tracert 2001:db8::9');
+    expect(sortie).not.toMatch(/ambiguous/i);
+    expect(sortie).toMatch(/tracert6|traceroute/i);
   });
 
   it('`pin` est AMBIGU, parce que `ping-options` existe aussi', () => {

@@ -132,6 +132,7 @@ import { FirewallPing, type FirewallPingEgress } from './diag/FirewallPing';
 import { PingOptions } from './diag/PingOptions';
 import { AdminSessionTable } from './mgmt/AdminSessionTable';
 import { FortiGuardDatabases } from './mgmt/FortiGuardDatabases';
+import { FirewallTraceroute6 } from './diag/FirewallTraceroute6';
 import { ConsoleSettings } from './mgmt/ConsoleSettings';
 import { LoginBanners } from './mgmt/LoginBanners';
 import { FirewallObservables } from './diag/FirewallObservables';
@@ -221,11 +222,21 @@ export class Firewall extends Equipment {
     bus: () => this.getBus(),
     scheduler: () => getDefaultScheduler(),
     managementAllows: (iface, service) => this.ipv6.allowsAccess(iface, service),
-    onEchoReply: (payload) => { this.ping6.observeReply(payload); },
+    onEchoReply: (payload) => {
+      this.ping6.observeReply(payload);
+      this.traceroute6.observeReply(payload.fromIp);
+    },
+    onEchoFailed: (payload) => {
+      if (payload.reason === 'ttl-exceeded') this.traceroute6.observeHopExpiry(payload.fromIp);
+    },
     transitPermitted: (probe) => this.ipv6TransitPermitted(probe),
     localInVerdict: (iface, traffic) => this.localInVerdict6(iface, traffic),
     sessions: () => this.getSessionTable(),
   });
+
+  private readonly traceroute6 = new FirewallTraceroute6(() => this.ipv6.dataPlane());
+
+  runTraceroute6(target: string): string { return this.traceroute6.run(target); }
 
   private readonly ping6 = new FirewallPing6(
     () => this.ipv6.dataPlane(), () => this.ping6Options);

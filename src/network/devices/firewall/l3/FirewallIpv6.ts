@@ -28,6 +28,7 @@ export interface FirewallIpv6Deps {
   onEchoReply(payload: {
     fromIp: string; toIp: string; id: number; seq: number; hopLimit: number;
   }): void;
+  onEchoFailed?(payload: { fromIp: string; reason: string }): void;
   transitPermitted(probe: PolicyProbe): boolean;
   localInVerdict?(iface: string, traffic: LocalInTraffic): LocalInVerdict;
   sessions(): SessionTable;
@@ -83,6 +84,7 @@ export class FirewallIpv6 {
       getDhcpv6ServerPool: () => undefined,
       getDhcpv6RelayDestinations: () => [],
       onIcmpv6EchoReply: (payload) => { this.deps.onEchoReply(payload); },
+      onIcmpv6EchoFailed: (payload) => { this.deps.onEchoFailed?.(payload); },
       ipv6FilterPermits: (iface, direction, packet, ingress) =>
         this.permits(iface, direction, packet, ingress),
     };

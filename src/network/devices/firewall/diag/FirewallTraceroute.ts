@@ -5,6 +5,18 @@ import type { FirewallPingDeps } from './FirewallPing';
 export const TRACEROUTE_MAX_HOPS = 32;
 export const TRACEROUTE_PROBES = 3;
 
+export function tracerouteHeader(target: string, maxHops: number, bytes: number): string {
+  return `traceroute to ${target} (${target}), ${maxHops} hops max, ${bytes} byte packets`;
+}
+
+export function tracerouteHopLine(
+  hop: number, from: string | undefined, probes: readonly string[],
+): string {
+  return from === undefined
+    ? `${String(hop).padStart(2)}  * * *`
+    : `${String(hop).padStart(2)}  ${from}  ${probes.join('  ')}`;
+}
+
 interface HopAwaited {
   from?: string;
   arrived: boolean;
@@ -47,9 +59,7 @@ export class FirewallTraceroute {
     const egress = this.deps.resolve(target);
     if (!egress) return 'traceroute: unknown host';
 
-    const lines = [
-      `traceroute to ${target} (${target}), ${maxHops} hops max, 84 byte packets`,
-    ];
+    const lines = [tracerouteHeader(target, maxHops, 84)];
 
     for (let ttl = 1; ttl <= maxHops; ttl++) {
       const hop: HopAwaited = { arrived: false };
@@ -64,9 +74,7 @@ export class FirewallTraceroute {
       }
       this.awaited = null;
 
-      lines.push(hop.from === undefined
-        ? `${String(ttl).padStart(2)}  * * *`
-        : `${String(ttl).padStart(2)}  ${hop.from}  ${seen.join('  ')}`);
+      lines.push(tracerouteHopLine(ttl, hop.from, seen));
       if (hop.arrived) break;
     }
     return lines.join('\n');

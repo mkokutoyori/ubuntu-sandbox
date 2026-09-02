@@ -1140,6 +1140,10 @@ export class FortiShell {
         return tail.length === 0
           ? FortiMessages.incomplete('a destination')
           : this.fw.runTraceroute(tail[0]);
+      case 'tracert6':
+        return tail.length === 0
+          ? FortiMessages.incomplete('a destination')
+          : this.fw.runTraceroute6(tail[tail.length - 1]);
       case 'vpn':
         if (tail.length === 0) return FortiMessages.incomplete('a VPN operation');
         return tail[0] === 'certificate'
