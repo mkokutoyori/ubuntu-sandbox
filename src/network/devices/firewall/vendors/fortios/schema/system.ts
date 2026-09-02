@@ -2,6 +2,7 @@ import {
   address, addressMask, choice, count, enable, reference, refList, text, word,
   type FortiObjectView, type FortiTableSpec,
   type LldpSetting,
+  type LldpVdomSetting,
 } from './types';
 import {
   MANAGEMENT_SERVICES, type ManagementService,
@@ -356,9 +357,26 @@ export const SYSTEM_SETTINGS: FortiTableSpec = {
       availableWhen: isTransparent },
     { ...address('gateway', 'Transparent mode default gateway.'),
       availableWhen: isTransparent },
+    choice('lldp-transmission',
+      'Enable/disable Link Layer Discovery Protocol (LLDP) for this VDOM '
+      + 'or apply global settings to this VDOM.', [
+        { keyword: 'enable', description: 'Transmit LLDP in this VDOM.' },
+        { keyword: 'disable', description: 'Do not transmit LLDP in this VDOM.' },
+        { keyword: 'global', description: 'Use the setting from `config system global`.' },
+      ], 'global'),
+    choice('lldp-reception',
+      'Enable/disable Link Layer Discovery Protocol (LLDP) reception for this VDOM '
+      + 'or apply global settings to this VDOM.', [
+        { keyword: 'enable', description: 'Receive LLDP in this VDOM.' },
+        { keyword: 'disable', description: 'Do not receive LLDP in this VDOM.' },
+        { keyword: 'global', description: 'Use the setting from `config system global`.' },
+      ], 'global'),
   ],
   onCommit(object, context) {
     const management = object.effective('manageip');
+    context.device.setVdomLldp(
+      (object.effective('lldp-transmission')[0] ?? 'global') as LldpVdomSetting,
+      (object.effective('lldp-reception')[0] ?? 'global') as LldpVdomSetting);
     context.device.applyFragmentMemoryThreshold(Number.parseInt(
       object.effective('ip-fragment-mem-thresholds')[0]
       ?? String(DEFAULT_FRAGMENT_MEM_MB), 10));
@@ -527,12 +545,12 @@ export const SYSTEM_INTERFACE: FortiTableSpec = {
     choice('lldp-transmission', 'Enable/disable Link Layer Discovery Protocol (LLDP) transmission.', [
       { keyword: 'enable', description: 'Transmit LLDP on this interface.' },
       { keyword: 'disable', description: 'Do not transmit LLDP on this interface.' },
-      { keyword: 'vdom', description: 'Use the global LLDP transmission setting.' },
+      { keyword: 'vdom', description: 'Use the VDOM LLDP transmission setting.' },
     ], 'vdom'),
     choice('lldp-reception', 'Enable/disable Link Layer Discovery Protocol (LLDP) reception.', [
       { keyword: 'enable', description: 'Receive LLDP on this interface.' },
       { keyword: 'disable', description: 'Do not receive LLDP on this interface.' },
-      { keyword: 'vdom', description: 'Use the global LLDP reception setting.' },
+      { keyword: 'vdom', description: 'Use the VDOM LLDP reception setting.' },
     ], 'vdom'),
   ],
   children: [SYSTEM_INTERFACE_IPV6],

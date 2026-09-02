@@ -81,8 +81,8 @@ export interface FortiAttributeSpec {
   ) => string | null;
 }
 
-export type { LldpSetting } from '../../../l2/LldpIntent';
-import type { LldpSetting } from '../../../l2/LldpIntent';
+export type { LldpSetting, LldpVdomSetting } from '../../../l2/LldpIntent';
+import type { LldpSetting, LldpVdomSetting } from '../../../l2/LldpIntent';
 
 export interface FortiInterfacePatch {
   readonly vdom?: string;
@@ -300,6 +300,7 @@ export interface FortiCommitDevice {
   applySchedule(schedule: FortiSchedulePatch): void;
   removeSchedule(name: string): void;
   applyVdomSettings(settings: FortiVdomSettings): void;
+  setVdomLldp(transmission: LldpVdomSetting, reception: LldpVdomSetting): void;
   applyIpPool(pool: FortiIpPoolPatch): void;
   removeIpPool(name: string): void;
   applyVip(vip: FortiVipPatch): void;
