@@ -221,6 +221,8 @@ export class FortiShell {
       principal: () => this.adminName ?? '',
       vdomNames: () => this.fw.vdomNames(),
       enterVdom: (name) => this.enterVdom(name),
+      adminSessions: () => this.fw.getAdminSessions().list(),
+      disconnectAdminSession: (index) => this.disconnectAdminSession(index),
     });
     this.fw.bindConfigSnapshot(
       () => renderWholeConfig(this.tree, { full: false }).join('\n'));
@@ -1153,6 +1155,10 @@ export class FortiShell {
       case 'ping6-options':
         return this.executePingOptions(this.fw.getPing6Options(), 'ping6-options', tail);
       case 'clear': return this.executeClear(tail);
+      case 'disconnect-admin-session':
+        return tail.length === 0
+          ? FortiMessages.incomplete('a session index')
+          : this.disconnectAdminSession(tail[0]);
       case 'enter':
         return tail.length === 0
           ? FortiMessages.incomplete('a VDOM name')
@@ -1168,6 +1174,17 @@ export class FortiShell {
           : FortiMessages.needsConsole(resolved.name);
       default: return FortiMessages.unknownAction(resolved.name);
     }
+  }
+
+  private disconnectAdminSession(raw: string): string {
+    const index = Number.parseInt(raw, 10);
+    if (!Number.isInteger(index) || String(index) !== raw.trim()) {
+      return FortiMessages.commandFail(`"${raw}" is not a session index.`);
+    }
+    const closed = this.fw.getAdminSessions().close(index);
+    return closed === undefined
+      ? FortiMessages.commandFail(`no administrator session with index ${index}.`)
+      : '';
   }
 
   private enterVdom(name: string): string {

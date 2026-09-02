@@ -1,4 +1,5 @@
 import type { TcpStack } from '../../../tcp/TcpStack';
+import { adminSessionOrigin } from './AdminSessionTable';
 import type { TcpStream } from '../../../tcp/types';
 import type { AuthMethodType, ISshAuthContext } from '../../../protocols/ssh/auth/ISshAuthMethod';
 import type { ISftpFileSystem } from '../../../protocols/ssh/sftp/ISftpFileSystem';
@@ -170,7 +171,9 @@ class FirewallSshServerContext implements ISshServerContext {
   getMotd(): string { return ''; }
   getLastLogin(): string | null { return null; }
 
-  recordLogin(user: string, fromIp: string): void { this.deps.onLogin(user, fromIp); }
+  recordLogin(user: string, fromIp: string): void {
+    this.deps.onLogin(user, adminSessionOrigin('ssh', fromIp));
+  }
 
   recordAuthFailure(user: string, fromIp: string): void {
     this.deps.onAuthFailure(user, fromIp);
@@ -265,7 +268,7 @@ class FirewallTelnetServerContext implements ITelnetServerContext {
   }
 
   openSession(username: string, fromIp: string): TelnetSessionHandle | null {
-    this.deps.onLogin(username, fromIp);
+    this.deps.onLogin(username, adminSessionOrigin('telnet', fromIp));
     const line = this.nextLine();
     return { id: line, line };
   }

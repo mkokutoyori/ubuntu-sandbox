@@ -130,6 +130,7 @@ import type { IkeConfigReply, IkeConfigRequest } from '../../ipsec/IPSecTypes';
 import type { NtpAgent } from '../../ntp/NtpAgent';
 import { FirewallPing, type FirewallPingEgress } from './diag/FirewallPing';
 import { PingOptions } from './diag/PingOptions';
+import { AdminSessionTable } from './mgmt/AdminSessionTable';
 import { ConsoleSettings } from './mgmt/ConsoleSettings';
 import { LoginBanners } from './mgmt/LoginBanners';
 import { FirewallObservables } from './diag/FirewallObservables';
@@ -229,6 +230,7 @@ export class Firewall extends Equipment {
   private revisionOnLogout = false;
   private configSnapshot?: () => string;
   private readonly proxyArp = new ProxyArpTable();
+  private readonly adminSessions = new AdminSessionTable();
   private readonly arp: ArpService;
   private readonly registry = new PipelineStageRegistry();
   private readonly pipelines: PipelineCache;
@@ -482,7 +484,10 @@ export class Firewall extends Equipment {
       refuseManagementSource: (source) => this.management.refusesSource(source),
       managementIdleTimeoutMs: () => this.management.idleTimeoutMs(),
       runningConfig: () => this.managementRunningConfig(),
-      onManagementLogin: (user) => { this.management.noteLogin(user); },
+      onManagementLogin: (user, source) => {
+        this.management.noteLogin(user);
+        this.adminSessions.open(user, 'CLI', source);
+      },
       onAdminLogout: (user) => { this.onAdminLogout(user); },
       onManagementAuthFailure: (user) => {
         this.management.noteAuthFailure(user);
@@ -1687,7 +1692,10 @@ export class Firewall extends Equipment {
 
   bindConfigSnapshot(render: () => string): void { this.configSnapshot = render; }
 
+  getAdminSessions(): AdminSessionTable { return this.adminSessions; }
+
   onAdminLogout(admin: string): void {
+    this.adminSessions.closeNewestOf(admin);
     if (!this.revisionOnLogout) return;
     const text = this.configSnapshot?.();
     if (text === undefined) return;

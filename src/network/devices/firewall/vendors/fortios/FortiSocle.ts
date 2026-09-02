@@ -101,6 +101,11 @@ export interface SocleDeps {
   readonly principal?: () => string;
   readonly vdomNames?: () => readonly string[];
   readonly enterVdom?: (name: string) => string;
+  readonly adminSessions?: () => readonly {
+    readonly index: number; readonly username: string;
+    readonly type: string; readonly from: string;
+  }[];
+  readonly disconnectAdminSession?: (index: string) => string;
 }
 
 export interface FortiOutcome {
@@ -201,7 +206,8 @@ export class FortiSocle {
       return `table:${principal}:${table.spec.path.join(' ')}:${table.keys().join(',')}`;
     }
     return `root:${principal}:${this.deps.tree.specPaths().length}`
-      + `:${(this.deps.vdomNames?.() ?? []).join(',')}`;
+      + `:${(this.deps.vdomNames?.() ?? []).join(',')}`
+      + `:${(this.deps.adminSessions?.() ?? []).map(s => s.index).join(',')}`;
   }
 
   private referenceStamp(object: FortiObject): string {
@@ -275,6 +281,7 @@ export class FortiSocle {
     out.push(...this.viewSpecs());
     out.push(...this.diagnoseSpecs());
     out.push(...this.enterVdomSpecs());
+    out.push(...this.adminSessionSpecs());
     out.push(...this.executeSpecs(new Set(out.map(spec => spec.id))));
     out.push(this.withArgument('execute', ['execute',
       { name: 'command', type: 'REST', description: 'Command to execute.' }],
@@ -295,6 +302,21 @@ export class FortiSocle {
       }],
       'Select virtual domain.',
       (_session, args) => enter(args.vdom ?? ''))];
+  }
+
+  private adminSessionSpecs(): CommandSpec[] {
+    const disconnect = this.deps.disconnectAdminSession;
+    if (!disconnect) return [];
+    return [this.withArgument('execute disconnect-admin-session',
+      ['execute', 'disconnect-admin-session', {
+        name: 'index', type: 'INT', description: 'Index of the session to disconnect.',
+        alternatives: (this.deps.adminSessions?.() ?? []).map(session => ({
+          keyword: String(session.index),
+          description: `${session.username} ${session.type} from ${session.from}.`,
+        })),
+      }],
+      'Disconnect a logged-in administrator.',
+      (_session, args) => disconnect(args.index ?? ''))];
   }
 
   private executeSpecs(declared: ReadonlySet<string>): CommandSpec[] {
