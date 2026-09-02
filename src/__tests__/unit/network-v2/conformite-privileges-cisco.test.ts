@@ -338,7 +338,8 @@ describe('§18/§19 — un compte porte son niveau', () => {
     ]);
     const cfg = String(await r.executeCommand('show running-config'));
     expect(cfg).toContain('username alice privilege 5 secret 5 $1$');
-    expect(cfg).toContain('username guest privilege 1 secret 5 $1$');
+    expect(cfg).toContain('username guest secret 5 $1$');
+    expect(cfg).not.toContain('username guest privilege 1');
     expect(cfg).not.toContain('Alice123');
   });
 

@@ -1569,3 +1569,16 @@ défauts — la méthode vaut d'être reprise sur le reliquat.
   d'`UP`/`DOWN`) et le comportement des vues d'interface : le poser sur
   les boucles de Cisco est un lot a soi, avec sa propre mesure de ce
   qu'IOS affiche pour une `Loopback`.
+- `password-policy min-length|expire|alert-before-expire` de VRP porte la
+  MEME forme de defaut que `security passwords min-length` d'IOS que ce
+  lot vient de fermer : `const n = parseInt(args[1], 10); if (!isNaN(n))
+  policy.X = n;` dans `HuaweiVRPShell` (trois reglages, un seul patron),
+  donc une valeur non numerique est acceptee en SILENCE et ne pose rien —
+  l'operateur croit avoir arme une politique de mots de passe qui n'existe
+  pas. Ce n'est PAS ferme ici pour deux raisons mesurees : les bornes de
+  VRP ne sont pas attestees depuis ce reseau (la documentation Huawei
+  n'est pas atteignable, et les inventer refuserait des valeurs que la
+  vraie machine accepte), et les coquilles VRP n'ont pas encore de pont
+  vers le socle, donc la place ne peut pas y etre declaree comme elle
+  vient de l'etre cote Cisco. A rouvrir avec le pont VRP, ou contre une
+  transcription reelle qui donne les bornes.

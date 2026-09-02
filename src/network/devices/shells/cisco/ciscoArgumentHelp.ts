@@ -1,5 +1,6 @@
 import type { CommandTrie, ParamSpec } from '../CommandTrie';
 import { estTypeSansNumero } from './CiscoConfigCommands';
+import { PASSWORD_MIN_LENGTH_MAX } from './CiscoSecurityCommands';
 
 const IP = (name: string, description: string): ParamSpec =>
   ({ name, type: 'IP_ADDR', description });
@@ -211,6 +212,8 @@ function describeArgumentTypes(tries: ArgumentHelpTries): void {
     { name: 'value', type: 'WORD', description: 'Configuration register value', literal: '0x0-0xFFFF' },
   ]);
   tries.config.describeArgs('ip default-network', [IP('network', 'Default network number')]);
+  tries.config.describeArgs('security passwords min-length',
+    [INT('longueur', [0, PASSWORD_MIN_LENGTH_MAX], 'Minimum password length')]);
   tries.config.describeArgs('ip host', [WORD('name', 'Name of host'), IP('address', 'Host IP address')]);
   tries.config.describeArgs('login delay', [
     INT('seconds', [1, 65535], 'Delay between successive login attempts'),

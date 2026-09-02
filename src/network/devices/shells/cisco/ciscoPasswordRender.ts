@@ -134,6 +134,8 @@ function usernameOptionSuffix(a: CiscoRenderableAccount): string {
   return parts.length > 0 ? ` ${parts.join(' ')}` : '';
 }
 
+export const USERNAME_DEFAULT_PRIVILEGE = 1;
+
 export function renderCiscoUsernameLines(
   a: CiscoRenderableAccount, serviceEncryption: boolean,
 ): string[] {
@@ -146,7 +148,9 @@ export function renderCiscoUsernameLines(
         ? ''
         : `secret ${renderSecretField(a.secret, algo, `username:${a.name}`)}`;
 
-  const head = `username ${a.name} privilege ${a.privilege}`;
+  const head = a.privilege === USERNAME_DEFAULT_PRIVILEGE
+    ? `username ${a.name}`
+    : `username ${a.name} privilege ${a.privilege}`;
   const suffix = usernameOptionSuffix(a);
   const lines = [credential === '' ? `${head}${suffix}` : `${head}${suffix} ${credential}`];
   if (a.description) lines.push(`username ${a.name} description ${a.description}`);
