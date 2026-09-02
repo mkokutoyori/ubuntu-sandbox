@@ -6964,3 +6964,23 @@ changements.
 
 1322 cas verts sur 95 fichiers (debug, OSPF, tcpdump, tap), un seul
 échec et il est antérieur. Typecheck 229, lint 0 erreur.
+
+---
+
+## En cours (mandeng) — `nmap` doit traverser la pile TCP/IP
+
+Perimetre reserve : `src/network/devices/linux/commands/net/Nmap.ts` et
+`net/nmap/`, plus `network/HostLookup.ts` pour ce qui les nourrit.
+
+Constat de depart, a verifier par la mesure : `HostProbes` repond en
+INSPECTANT l'objet de la machine cible plutot qu'en emettant. Seul
+`tcpOutcome` passe par la vraie pile (`ctx.net.tcpConnectOutcome`) ;
+`hostState` parcourt le registre d'equipements (`findHostByAddress`),
+`udpState` et `banner` lisent les ecouteurs de l'equipement distant
+(`grabUdpListener`, `grabBanner`), `ackReaches` evalue les listes de
+controle par parcours de topologie, et `osFromDevice` lit
+`device.getOSType()`.
+
+Reference : depot `nmap/nmap` (clone superficiel). Faits releves dans la
+source plutot que de memoire — `nmap.h` pour les sondes de decouverte par
+defaut, `scan_engine_raw.cc` pour la correspondance ICMP -> etat de port.

@@ -4503,6 +4503,7 @@ export abstract class LinuxMachine extends EndHost
           (p) => p.deviceId === this.id && p.pid === pid,
           () => cb());
       },
+      runsDetached: (): boolean => this.executor.runsDetached(),
       readFile: (path: string): string | null => {
         const v = this.executor.vfs.readFile(this.executor.vfs.normalizePath(path, this.executor.getCwd()));
         if (v != null) return v;
