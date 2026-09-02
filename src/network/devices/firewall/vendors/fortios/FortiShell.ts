@@ -177,6 +177,7 @@ export class FortiShell {
   private vdom = 'root';
   private adminName: string | null = null;
   private globalScope = false;
+  private enteredVdom = 'root';
   private haRemote: HaRemoteSession | null = null;
   private haPendingLogin: HaPendingLogin | null = null;
   private continuation: string | null = null;
@@ -218,6 +219,8 @@ export class FortiShell {
       enterGlobal: () => this.enterGlobal(),
       authorize: (spec, intent) => this.authorizeSpec(spec, intent),
       principal: () => this.adminName ?? '',
+      vdomNames: () => this.fw.vdomNames(),
+      enterVdom: (name) => this.enterVdom(name),
     });
     this.fw.bindConfigSnapshot(
       () => renderWholeConfig(this.tree, { full: false }).join('\n'));
@@ -336,7 +339,8 @@ export class FortiShell {
     const host = this.fw.getName();
     const label = this.nav.label();
     if (label !== null) return `${host} (${label}) # `;
-    return this.globalScope ? `${host} (global) # ` : `${host} # `;
+    if (this.globalScope) return `${host} (global) # `;
+    return this.vdom === 'root' ? `${host} # ` : `${host} (${this.vdom}) # `;
   }
 
   getConfigTree(): FortiConfigTree {
@@ -545,7 +549,7 @@ export class FortiShell {
   }
 
   private syncActiveVdom(): void {
-    let active = 'root';
+    let active = this.enteredVdom;
     for (const frame of this.nav.frames()) {
       if (frame.kind !== 'object') continue;
       if (frame.object.spec.path.join(' ') !== 'vdom') continue;
@@ -1148,6 +1152,10 @@ export class FortiShell {
       case 'ping6-options':
         return this.executePingOptions(this.fw.getPing6Options(), 'ping6-options', tail);
       case 'clear': return this.executeClear(tail);
+      case 'enter':
+        return tail.length === 0
+          ? FortiMessages.incomplete('a VDOM name')
+          : this.enterVdom(tail[0]);
       case 'backup': return this.executeBackup(tail);
       case 'restore': return this.executeRestore(tail);
       case 'revision': return this.executeRevision(tail);
@@ -1159,6 +1167,17 @@ export class FortiShell {
           : FortiMessages.needsConsole(resolved.name);
       default: return FortiMessages.unknownAction(resolved.name);
     }
+  }
+
+  private enterVdom(name: string): string {
+    if (!this.fw.getVdomRegistry().has(name)) {
+      return FortiMessages.commandFail(`virtual domain "${name}" does not exist.`);
+    }
+    this.globalScope = false;
+    this.enteredVdom = name;
+    this.vdom = name;
+    this.fw.setActiveVdom(name);
+    return '';
   }
 
   private executeClear(rest: readonly string[]): string {

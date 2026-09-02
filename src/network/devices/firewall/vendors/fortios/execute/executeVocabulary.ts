@@ -22,6 +22,7 @@ export const FORTI_EXECUTE_COMMANDS: readonly FortiExecuteCommand[] = Object.fre
     options: [{ keyword: 'system', description: 'System tables.' }] },
   { name: 'date', help: 'Display or set the system date.' },
   { name: 'dhcp', help: 'DHCP server operations.' },
+  { name: 'enter', help: 'Select virtual domain.' },
   { name: 'factoryreset', help: 'Reset the configuration to factory default.' },
   { name: 'ha', help: 'Cluster operations.' },
   { name: 'log', help: 'Log operations.' },

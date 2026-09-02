@@ -99,6 +99,8 @@ export interface SocleDeps {
   readonly enterGlobal: () => string;
   readonly authorize?: (spec: FortiTableSpec, intent: AccessIntent) => AccessVerdict;
   readonly principal?: () => string;
+  readonly vdomNames?: () => readonly string[];
+  readonly enterVdom?: (name: string) => string;
 }
 
 export interface FortiOutcome {
@@ -198,7 +200,8 @@ export class FortiSocle {
     if (table) {
       return `table:${principal}:${table.spec.path.join(' ')}:${table.keys().join(',')}`;
     }
-    return `root:${principal}:${this.deps.tree.specPaths().length}`;
+    return `root:${principal}:${this.deps.tree.specPaths().length}`
+      + `:${(this.deps.vdomNames?.() ?? []).join(',')}`;
   }
 
   private referenceStamp(object: FortiObject): string {
@@ -271,12 +274,27 @@ export class FortiSocle {
     out.push(...this.branchSpecs());
     out.push(...this.viewSpecs());
     out.push(...this.diagnoseSpecs());
+    out.push(...this.enterVdomSpecs());
     out.push(...this.executeSpecs(new Set(out.map(spec => spec.id))));
     out.push(this.withArgument('execute', ['execute',
       { name: 'command', type: 'REST', description: 'Command to execute.' }],
       'Execute static commands.',
       (_s, args) => this.deps.runExecute((args.command ?? '').split(/\s+/).filter(Boolean))));
     return out;
+  }
+
+  private enterVdomSpecs(): CommandSpec[] {
+    const enter = this.deps.enterVdom;
+    if (!enter) return [];
+    return [this.withArgument('execute enter',
+      ['execute', 'enter', {
+        name: 'vdom', type: 'WORD', description: 'VDOM name.',
+        alternatives: (this.deps.vdomNames?.() ?? []).map(name => ({
+          keyword: name, description: 'Virtual domain.',
+        })),
+      }],
+      'Select virtual domain.',
+      (_session, args) => enter(args.vdom ?? ''))];
   }
 
   private executeSpecs(declared: ReadonlySet<string>): CommandSpec[] {
