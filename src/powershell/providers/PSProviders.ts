@@ -138,6 +138,7 @@ export interface WindowsFeatureInfo {
   name: string;
   displayName: string;
   installState: 'Installed' | 'Available';
+  featureType: 'Role' | 'Role Service' | 'Feature';
   psModule?: string;
 }
 
@@ -145,7 +146,7 @@ export interface IRoleProvider {
   listFeatures(): WindowsFeatureInfo[];
   getFeature(name: string): WindowsFeatureInfo | null;
   isInstalled(name: string): boolean;
-  installFeature(name: string, opts?: { includeManagementTools?: boolean }):
+  installFeature(name: string, opts?: { includeManagementTools?: boolean; whatIf?: boolean }):
     { ok: boolean; message: string; changed: readonly WindowsFeatureInfo[] };
   uninstallFeature(name: string): { ok: boolean; message: string; changed: readonly WindowsFeatureInfo[] };
 }

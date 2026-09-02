@@ -341,7 +341,7 @@ class WindowsRoleAdapter implements IRoleProvider {
   listFeatures(): WindowsFeatureInfo[] { return this.mgr().listFeatures(); }
   getFeature(name: string): WindowsFeatureInfo | null { return this.mgr().getFeature(name); }
   isInstalled(name: string): boolean { return this.mgr().isInstalled(name); }
-  installFeature(name: string, opts?: { includeManagementTools?: boolean }) {
+  installFeature(name: string, opts?: { includeManagementTools?: boolean; whatIf?: boolean }) {
     return this.mgr().install(name, opts, this.isAdmin());
   }
   uninstallFeature(name: string) {

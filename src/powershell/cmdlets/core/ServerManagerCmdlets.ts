@@ -31,26 +31,27 @@ function wildcardRegex(pattern: string): RegExp {
   return new RegExp(`^${escaped}$`, 'i');
 }
 
-const DISPLAY_W = 56;
-const NAME_W = 27;
-
-function featureRow(f: WindowsFeatureInfo): string {
-  const box = f.installState === 'Installed' ? '[X]' : '[ ]';
-  return `${box} ${f.displayName}`.padEnd(DISPLAY_W) + f.name.padEnd(NAME_W) + f.installState;
+function featureObject(f: WindowsFeatureInfo): Record<string, PSValue> {
+  return {
+    Name: f.name,
+    DisplayName: f.displayName,
+    Installed: f.installState === 'Installed',
+    InstallState: f.installState,
+    FeatureType: f.featureType,
+  };
 }
 
-function featureTable(features: WindowsFeatureInfo[]): string {
-  const header = 'Display Name'.padEnd(DISPLAY_W) + 'Name'.padEnd(NAME_W) + 'Install State';
-  const divider = '-'.repeat(header.length);
-  return [header, divider, ...features.map(featureRow)].join('\n');
+function featureObjects(features: WindowsFeatureInfo[]): PSValue {
+  return features.map(featureObject) as PSValue;
 }
 
-function resultTable(success: boolean, changed: WindowsFeatureInfo[]): string {
-  const header = 'Success Restart Needed Exit Code      Feature Result';
-  const divider = '------- -------------- ---------      --------------';
-  const list = changed.length ? `{${changed.map(c => c.displayName).join(', ')}}` : '{}';
-  const row = `${(success ? 'True' : 'False').padEnd(8)}No             ${(success ? 'Success' : 'Failed').padEnd(15)}${list}`;
-  return [header, divider, row].join('\n');
+function operationResult(success: boolean, changed: WindowsFeatureInfo[]): PSValue {
+  return {
+    Success: success,
+    RestartNeeded: 'No',
+    ExitCode: success ? 'Success' : 'Failed',
+    FeatureResult: changed.map(c => c.displayName) as PSValue,
+  } as PSValue;
 }
 
 // ── Get-WindowsFeature ───────────────────────────────────────────────────────
@@ -65,18 +66,18 @@ export class GetWindowsFeatureCmdlet implements ICmdlet {
     const named = ctx.named['name'];
     const nameArg = named !== undefined ? psValueToString(named)
       : (ctx.positional.length > 0 ? psValueToString(ctx.positional[0]) : null);
-    if (nameArg === null) return featureTable(roles.listFeatures());
+    if (nameArg === null) return featureObjects(roles.listFeatures());
 
     if (/[*?]/.test(nameArg)) {
       const pat = wildcardRegex(nameArg);
-      return featureTable(roles.listFeatures().filter(f => pat.test(f.name) || pat.test(f.displayName)));
+      return featureObjects(roles.listFeatures().filter(f => pat.test(f.name) || pat.test(f.displayName)));
     }
     const f = roles.getFeature(nameArg);
     if (!f) {
       ctx.emitError(`Get-WindowsFeature : The specified feature name '${nameArg}' is not recognized.`);
       return null;
     }
-    return featureTable([f]);
+    return featureObjects([f]);
   }
 }
 
@@ -85,7 +86,9 @@ export class GetWindowsFeatureCmdlet implements ICmdlet {
 export class InstallWindowsFeatureCmdlet implements ICmdlet {
   readonly name = 'install-windowsfeature';
   readonly aliases = ['add-windowsfeature'] as const;
-  readonly parameters = ['Name', 'IncludeManagementTools', 'Restart'] as const;
+  readonly parameters = [
+    'Name', 'IncludeManagementTools', 'IncludeAllSubFeature', 'Restart', 'WhatIf',
+  ] as const;
 
   execute(ctx: CmdletContext): PSValue {
     const roles = requireRoles(ctx);
@@ -98,17 +101,18 @@ export class InstallWindowsFeatureCmdlet implements ICmdlet {
     }
     const names = Array.isArray(nameArg) ? nameArg.map(psValueToString) : [psValueToString(nameArg)];
     const includeManagementTools = ctx.named['includemanagementtools'] === true;
+    const whatIf = ctx.named['whatif'] === true;
 
     const changed: WindowsFeatureInfo[] = [];
     for (const n of names) {
-      const res = roles.installFeature(n, { includeManagementTools });
+      const res = roles.installFeature(n, { includeManagementTools, whatIf });
       if (!res.ok) {
         ctx.emitError(res.message);
         return null;
       }
       changed.push(...res.changed);
     }
-    return resultTable(true, changed);
+    return operationResult(true, changed);
   }
 }
 
@@ -139,6 +143,6 @@ export class UninstallWindowsFeatureCmdlet implements ICmdlet {
       }
       changed.push(...res.changed);
     }
-    return resultTable(true, changed);
+    return operationResult(true, changed);
   }
 }

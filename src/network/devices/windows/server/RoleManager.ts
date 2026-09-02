@@ -20,6 +20,7 @@ export interface WindowsFeatureView {
   readonly name: string;
   readonly displayName: string;
   readonly installState: FeatureInstallState;
+  readonly featureType: 'Role' | 'Role Service' | 'Feature';
   readonly psModule?: string;
 }
 
@@ -71,6 +72,7 @@ export class RoleManager {
       name: f.name,
       displayName: f.displayName,
       installState: this.installed.has(f.name.toLowerCase()) ? 'Installed' : 'Available',
+      featureType: f.featureType,
       psModule: f.psModule,
     };
   }
@@ -117,7 +119,7 @@ export class RoleManager {
 
   install(
     name: string,
-    opts: { includeManagementTools?: boolean } = {},
+    opts: { includeManagementTools?: boolean; whatIf?: boolean } = {},
     isAdmin: boolean = true,
   ): FeatureOpResult {
     const f = this.find(name);
@@ -132,18 +134,17 @@ export class RoleManager {
       return { ok: false, message: 'Install-WindowsFeature : Access is denied.', changed: [] };
     }
     const changed: WindowsFeatureDef[] = [];
-    if (!this.installed.has(f.name.toLowerCase())) {
-      this.installed.add(f.name.toLowerCase());
-      for (const svcName of f.services) this.bringUpService(svcName, isAdmin);
-      changed.push(f);
-    }
+    if (!this.installed.has(f.name.toLowerCase())) changed.push(f);
     if (opts.includeManagementTools && f.managementToolsFeature) {
       const mgmt = this.find(f.managementToolsFeature);
-      if (mgmt && !this.installed.has(mgmt.name.toLowerCase())) {
-        this.installed.add(mgmt.name.toLowerCase());
-        for (const svcName of mgmt.services) this.bringUpService(svcName, isAdmin);
-        changed.push(mgmt);
-      }
+      if (mgmt && !this.installed.has(mgmt.name.toLowerCase())) changed.push(mgmt);
+    }
+    if (opts.whatIf) {
+      return { ok: true, message: 'Success', changed: changed.map(c => this.toView(c)) };
+    }
+    for (const c of changed) {
+      this.installed.add(c.name.toLowerCase());
+      for (const svcName of c.services) this.bringUpService(svcName, isAdmin);
     }
     for (const c of changed) this.announce(c.name, 'install');
     return { ok: true, message: 'Success', changed: changed.map(c => this.toView(c)) };

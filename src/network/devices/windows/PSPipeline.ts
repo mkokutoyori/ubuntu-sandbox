@@ -748,6 +748,8 @@ export function formatList(objects: PSObject[], args: string): string {
  */
 export function formatDefault(objects: PSObject[]): string {
   if (objects.length === 0) return '';
+  const serverManager = serverManagerView(objects);
+  if (serverManager !== null) return serverManager;
   const keys = Object.keys(objects[0]);
   const defaultCols = pickDefaultColumns(keys);
   if (defaultCols) {
@@ -791,6 +793,44 @@ function filesystemDirectoryBanner(objects: PSObject[]): string {
  * NetAdapter / NetIPAddress / DirectoryEntry), return the canonical
  * default columns. Otherwise null.
  */
+/**
+ * `Get-WindowsFeature` and `Install-WindowsFeature` carry views that a
+ * column list cannot express: the first shows a `[X]` box computed from
+ * `Installed` inside the Display Name column, the second renders one row
+ * whatever the pipeline holds. Real PowerShell reaches these through a
+ * format definition; here they join the filesystem banner as the shapes
+ * `formatDefault` recognises itself.
+ */
+const FEATURE_DISPLAY_W = 56;
+const FEATURE_NAME_W = 27;
+
+function serverManagerView(objects: PSObject[]): string | null {
+  const lower = new Set(Object.keys(objects[0]).map(k => k.toLowerCase()));
+  if (lower.has('installstate') && lower.has('installed') && lower.has('displayname')) {
+    const header = 'Display Name'.padEnd(FEATURE_DISPLAY_W)
+      + 'Name'.padEnd(FEATURE_NAME_W) + 'Install State';
+    const rows = objects.map((o) => {
+      const box = o.Installed === true ? '[X]' : '[ ]';
+      return `${box} ${String(o.DisplayName ?? '')}`.padEnd(FEATURE_DISPLAY_W)
+        + String(o.Name ?? '').padEnd(FEATURE_NAME_W) + String(o.InstallState ?? '');
+    });
+    return [header, '-'.repeat(header.length), ...rows].join('\n');
+  }
+  if (lower.has('success') && lower.has('restartneeded') && lower.has('featureresult')) {
+    const header = 'Success Restart Needed Exit Code      Feature Result';
+    const rows = objects.map((o) => {
+      const result = o.FeatureResult;
+      const noms = Array.isArray(result) ? result.map(String) : [];
+      const list = noms.length > 0 ? `{${noms.join(', ')}}` : '{}';
+      return `${(o.Success === true ? 'True' : 'False').padEnd(8)}`
+        + `${String(o.RestartNeeded ?? 'No').padEnd(15)}`
+        + `${String(o.ExitCode ?? '').padEnd(15)}${list}`;
+    });
+    return [header, '------- -------------- ---------      --------------', ...rows].join('\n');
+  }
+  return null;
+}
+
 function pickDefaultColumns(keys: string[]): string[] | null {
   const lower = new Set(keys.map((k) => k.toLowerCase()));
   // Service object: Status / Name / DisplayName

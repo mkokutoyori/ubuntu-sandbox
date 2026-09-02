@@ -2384,6 +2384,15 @@ export class PSRuntime {
     delete cmdletNamed['outvariable'];
 
     const cmdlet = this.registry.resolve(name);
+    if (cmdlet) {
+      const declared = new Set(
+        ((cmdlet.parameters ?? []) as readonly string[]).map(p => p.toLowerCase()));
+      for (const commun of ['whatif', 'confirm'] as const) {
+        if (declared.has(commun) && named[commun] !== undefined) {
+          cmdletNamed[commun] = named[commun];
+        }
+      }
+    }
     if (!cmdlet) {
       this.global.set('?', false);
       if (errorVarName) {
