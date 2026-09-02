@@ -146,6 +146,20 @@ export class IpsecTunnelTable {
 
   stateOf(name: string): TunnelState | undefined { return this.states.get(name); }
 
+  phase1NameFor(token: string): string | undefined {
+    if (this.phase1.has(token)) return token;
+
+    const phase2 = this.phase2.get(token);
+    if (phase2 && this.phase1.has(phase2.phase1Name)) return phase2.phase1Name;
+
+    const serial = Number.parseInt(token, 10);
+    if (!Number.isInteger(serial) || String(serial) !== token) return undefined;
+    for (const [name, state] of this.states) {
+      if (state.serial === serial) return name;
+    }
+    return undefined;
+  }
+
   recordAssignment(name: string, assignment: {
     address: string; netmask: string;
     splitInclude?: readonly string[]; dnsServers?: readonly string[];

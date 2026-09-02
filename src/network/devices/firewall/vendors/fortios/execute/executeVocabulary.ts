@@ -59,7 +59,11 @@ export const FORTI_EXECUTE_COMMANDS: readonly FortiExecuteCommand[] = Object.fre
   { name: 'time', help: 'Display or set the system time.' },
   { name: 'traceroute', help: 'Trace the route to a destination.' },
   { name: 'tracert6', help: 'Traceroute for IPv6.' },
-  { name: 'vpn', help: 'VPN operations.' },
+  { name: 'vpn', help: 'VPN operations.',
+    options: [
+      { keyword: 'certificate', description: 'Certificate operations.' },
+      { keyword: 'ipsec', description: 'IPsec tunnel operations.' },
+    ] },
 ]);
 
 export interface PrefixResolution {

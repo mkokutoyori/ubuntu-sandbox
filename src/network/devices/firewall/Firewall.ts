@@ -943,13 +943,23 @@ export class Firewall extends Equipment {
 
   clearIpsecGateway(name: string, v?: string): void {
     const tunnels = this.getVdom(v).tunnels;
-    const tunnel = tunnels.getPhase1(name);
-    if (!tunnel) return;
+    if (!this.dropIpsecGateway(name, v)) return;
+    bringUpTunnel(this.ipsec, tunnels, name);
+  }
 
-    this.ipsec.clearAllSAs();
+  bringDownIpsecTunnel(name: string, v?: string): boolean {
+    return this.dropIpsecGateway(name, v);
+  }
+
+  private dropIpsecGateway(name: string, v?: string): boolean {
+    const tunnels = this.getVdom(v).tunnels;
+    const tunnel = tunnels.getPhase1(name);
+    if (!tunnel) return false;
+
+    this.ipsec.clearSAsForPeer(tunnel.remoteGateway);
     tunnels.markDown(name, null);
     tunnels.markGateway(name, false);
-    bringUpTunnel(this.ipsec, tunnels, name);
+    return true;
   }
 
   private sendUdpToPeer(destIp: string, port: number, payload: unknown): boolean {

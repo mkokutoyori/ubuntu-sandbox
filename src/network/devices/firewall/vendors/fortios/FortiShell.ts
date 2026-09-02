@@ -1152,9 +1152,9 @@ export class FortiShell {
           : this.fw.runTraceroute6(tail[tail.length - 1]);
       case 'vpn':
         if (tail.length === 0) return FortiMessages.incomplete('a VPN operation');
-        return tail[0] === 'certificate'
-          ? this.executeCertificate(tail.slice(1))
-          : FortiMessages.unknownAction(`vpn ${tail[0]}`);
+        if (tail[0] === 'certificate') return this.executeCertificate(tail.slice(1));
+        if (tail[0] === 'ipsec') return this.executeIpsecTunnel(tail.slice(1));
+        return FortiMessages.unknownAction(`vpn ${tail[0]}`);
       case 'time': return runExecuteTime(tail, this.fw);
       case 'date': return runExecuteDate(tail, this.fw);
       case 'ping':
@@ -1277,6 +1277,31 @@ export class FortiShell {
   ): readonly T[] {
     if (iface === undefined) return leases;
     return leases.filter(lease => lease.iface === iface);
+  }
+
+  private executeIpsecTunnel(rest: readonly string[]): string {
+    if (rest[0] !== 'tunnel') {
+      return rest.length === 0
+        ? FortiMessages.incomplete('an IPsec operation')
+        : FortiMessages.unknownAction(`vpn ipsec ${rest[0]}`);
+    }
+    const action = rest[1];
+    if (action !== 'up' && action !== 'down') {
+      return action === undefined
+        ? FortiMessages.incomplete('`up` or `down`')
+        : FortiMessages.unknownAction(`vpn ipsec tunnel ${action}`);
+    }
+    if (rest[2] === undefined) return FortiMessages.incomplete('a tunnel name');
+
+    const name = this.fw.getTunnelTable().phase1NameFor(rest[2]);
+    if (name === undefined) return FortiMessages.unknownKey(rest[2]);
+
+    if (action === 'down') {
+      this.fw.bringDownIpsecTunnel(name);
+      return '';
+    }
+    return this.fw.bringUpIpsecTunnel(name)
+      ? '' : FortiMessages.commandFail(`tunnel \`${name}\` did not come up.`);
   }
 
   private executeDhcp(rest: readonly string[]): string {
