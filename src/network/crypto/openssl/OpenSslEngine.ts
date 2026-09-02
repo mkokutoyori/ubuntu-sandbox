@@ -26,6 +26,7 @@ import {
   pemToPublicKey, csrToPem, pemToCsr, crlToPem, pemToCrl, type CertificateRequest,
   encryptedPrivateKeyToPem, pemToEncryptedPrivateKey, isEncryptedPrivateKeyPem,
 } from '@/network/pki/pem';
+import { buildCertificateRequest } from '@/network/pki/CertificateSigningRequest';
 import { CertificateVerifier, type VerificationReason } from '@/network/pki/CertificateVerifier';
 import { CertificateRevocationList } from '@/network/pki/CertificateRevocationList';
 import { MANDATORY_CIPHER_SUITES } from '@/network/tls/cipherSuites';
@@ -345,14 +346,8 @@ function runReq(host: OpenSslHost, argv: readonly string[]): OpenSslResult {
     return ok(pem);
   }
 
-  const csr: CertificateRequest = {
-    subject: sujet,
-    publicKey: publique,
-    signatureAlgorithm: 'sha256WithRSAEncryption',
-    signature: PkiKeyPair.sign(cle, sujet),
-    extensions: altNames ? { subjectAltName: altNames } : undefined,
-  };
-  const pem = csrToPem(csr);
+  const pem = csrToPem(
+    buildCertificateRequest(sujet, { publicKey: publique, privateKey: cle }, altNames));
   if (typeof out === 'string') {
     return host.writeFile(out, pem) ? ok() : fail(`${out}: cannot write`);
   }
