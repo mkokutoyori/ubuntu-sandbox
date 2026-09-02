@@ -40,6 +40,8 @@
  * `srv1\Administrator` de l'autre) — ils sont corriges, pas le code.
  */
 import { describe, it, expect } from 'vitest';
+import { readFileSync } from 'node:fs';
+import { globSync } from 'node:fs';
 import { WindowsServer } from '@/network/devices/WindowsServer';
 import { WindowsPC } from '@/network/devices/WindowsPC';
 import { PowerShellSubShell } from '@/terminal/subshells/PowerShellSubShell';
@@ -126,5 +128,57 @@ describe('USERDOMAIN nomme le domaine du COMPTE', () => {
     const srv = serveur();
     await cmd(srv, 'set FOO=bar');
     expect(await cmd(srv, 'echo %FOO%')).toBe('bar');
+  });
+});
+
+describe('il n\'y a qu\'UNE table d\'environnement', () => {
+  const VARIABLES = [
+    'ALLUSERSPROFILE', 'APPDATA', 'COMPUTERNAME', 'COMSPEC', 'HOMEDRIVE', 'HOMEPATH',
+    'LOCALAPPDATA', 'LOGONSERVER', 'NUMBER_OF_PROCESSORS', 'PATHEXT', 'PROCESSOR_ARCHITECTURE',
+    'PROGRAMDATA', 'PROGRAMFILES', 'PSMODULEPATH', 'SESSIONNAME', 'SYSTEMDRIVE', 'SYSTEMROOT',
+    'USERDOMAIN', 'USERNAME', 'USERPROFILE', 'WINDIR',
+  ];
+  const DECLARATION = 'src/network/devices/WindowsPC.ts';
+
+  function declare(texte: string, variable: string): boolean {
+    for (const guillemet of ["'", '"']) {
+      const aiguille = `${guillemet}${variable}${guillemet}`;
+      let i = texte.indexOf(aiguille);
+      while (i !== -1) {
+        if (texte[i + aiguille.length] === ',' || texte[i + aiguille.length] === ':') return true;
+        i = texte.indexOf(aiguille, i + 1);
+      }
+    }
+    return false;
+  }
+
+  it('un seul fichier declare les variables bien connues de Windows', () => {
+    const fichiers = globSync('src/{network,powershell,terminal}/**/*.ts')
+      .filter(f => !f.includes('__tests__'));
+    expect(fichiers.length).toBeGreaterThan(100);
+    const tables: Array<{ fichier: string; compte: number }> = [];
+    for (const fichier of fichiers) {
+      const texte = readFileSync(fichier, 'utf-8');
+      const compte = VARIABLES.filter(v => declare(texte, v)).length;
+      if (compte >= 3) tables.push({ fichier, compte });
+    }
+    expect(tables.map(t => `${t.fichier} (${t.compte})`)).toEqual([`${DECLARATION} (${VARIABLES.length})`]);
+  });
+
+  it('les deux enumerations rendent la meme liste', async () => {
+    const srv = serveur();
+    const noms = (t: string) => t.split('\n').map(l => l.trim().split(/[\s=]/)[0])
+      .filter(n => /^[A-Za-z_(][\w()]*$/.test(n) && n !== 'Name' && !n.startsWith('---')).sort();
+    const parPowerShell = noms(await pwsh(srv)('Get-ChildItem Env:'));
+    const parCmd = noms(await cmd(srv, 'set'));
+    expect(parPowerShell.length).toBeGreaterThan(20);
+    expect(parPowerShell).toEqual(parCmd);
+  });
+
+  it('une variable posee par l\'operateur parait dans les deux', async () => {
+    const srv = serveur();
+    await cmd(srv, 'set FOO=bar');
+    expect(await pwsh(srv)('Get-ChildItem Env:')).toContain('FOO');
+    expect(await cmd(srv, 'set FOO')).toContain('bar');
   });
 });

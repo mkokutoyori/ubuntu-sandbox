@@ -3195,29 +3195,10 @@ export class PowerShellExecutor {
   }
 
   private formatGetChildItemEnv(): string {
+    const merged = this.device.getEnvVars();
+    for (const [k, v] of this.sessionEnv) merged.set(k.toUpperCase(), v);
     const lines: string[] = ['', 'Name                           Value', '----                           -----'];
-    const envVars: Record<string, string> = {
-      'Path': this.resolveEnvVar('PATH') ?? '',
-      'SystemRoot': 'C:\\Windows',
-      'TEMP': this.resolveEnvVar('TEMP') ?? '',
-      'USERNAME': this.resolveEnvVar('USERNAME') ?? '',
-      'COMPUTERNAME': this.resolveEnvVar('COMPUTERNAME') ?? '',
-      'OS': 'Windows_NT',
-      'PROCESSOR_ARCHITECTURE': 'AMD64',
-      'USERPROFILE': this.resolveEnvVar('USERPROFILE') ?? '',
-      'APPDATA': this.resolveEnvVar('APPDATA') ?? '',
-      'LOCALAPPDATA': this.resolveEnvVar('LOCALAPPDATA') ?? '',
-      'PROGRAMFILES': 'C:\\Program Files',
-      'WINDIR': 'C:\\Windows',
-      'SYSTEMDRIVE': 'C:',
-    };
-    // Include session overrides
-    for (const [k, v] of this.sessionEnv.entries()) {
-      envVars[k] = v;
-    }
-    for (const [k, v] of Object.entries(envVars)) {
-      lines.push(`${k.padEnd(31)}${v}`);
-    }
+    for (const [k, v] of merged) lines.push(`${k.padEnd(31)}${v}`);
     return lines.join('\n');
   }
 

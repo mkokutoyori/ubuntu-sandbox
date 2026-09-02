@@ -1015,7 +1015,7 @@ export class PSRuntime {
     return {
       username:               lookup('USERNAME') as PSValue,
       machinename:            lookup('COMPUTERNAME') as PSValue,
-      userdomainname:         (lookup('USERDOMAIN') || lookup('COMPUTERNAME')) as PSValue,
+      userdomainname:         lookup('USERDOMAIN') as PSValue,
       osversion:              { Platform: 'Win32NT', Version: '10.0.22631' } as Record<string, PSValue>,
       newline:                '\r\n' as PSValue,
       currentdirectory:       'C:\\' as PSValue,
