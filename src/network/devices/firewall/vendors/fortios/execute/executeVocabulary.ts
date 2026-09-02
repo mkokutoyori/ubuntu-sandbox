@@ -21,7 +21,16 @@ export const FORTI_EXECUTE_COMMANDS: readonly FortiExecuteCommand[] = Object.fre
   { name: 'clear', help: 'Clear system tables.',
     options: [{ keyword: 'system', description: 'System tables.' }] },
   { name: 'date', help: 'Display or set the system date.' },
-  { name: 'dhcp', help: 'DHCP server operations.' },
+  { name: 'dhcp', help: 'DHCP server operations.',
+    options: [
+      { keyword: 'lease-list', description: 'List all DHCP leases.' },
+      { keyword: 'lease-clear', description: 'Clear DHCP leases.' },
+    ] },
+  { name: 'dhcp6', help: 'DHCPv6 server operations.',
+    options: [
+      { keyword: 'lease-list', description: 'List all DHCPv6 leases.' },
+      { keyword: 'lease-clear', description: 'Clear DHCPv6 leases.' },
+    ] },
   { name: 'disconnect-admin-session', help: 'Disconnect a logged-in administrator.' },
   { name: 'enter', help: 'Select virtual domain.' },
   { name: 'factoryreset', help: 'Reset the configuration to factory default.' },

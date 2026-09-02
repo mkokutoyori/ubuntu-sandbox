@@ -11,7 +11,7 @@ import type { SessionTable } from '../session/SessionTable';
 export const IPV6_SESSION_TIMEOUT_SEC = 300;
 import type { IEventBus } from '@/events/EventBus';
 import type { IScheduler } from '@/events/Scheduler';
-import { DHCPv6Server } from '../../../dhcpv6/DHCPv6Server';
+import type { DHCPv6Server } from '../../../dhcpv6/DHCPv6Server';
 import {
   IPv6DataPlane, type IPv6RouterContext, type Ipv6Counters,
 } from '../../router/IPv6DataPlane';
@@ -32,6 +32,8 @@ export interface FirewallIpv6Deps {
   transitPermitted(probe: PolicyProbe): boolean;
   localInVerdict?(iface: string, traffic: LocalInTraffic): LocalInVerdict;
   sessions(): SessionTable;
+  dhcpv6Server(): DHCPv6Server;
+  dhcpv6PoolFor(iface: string): string | undefined;
 }
 
 function idleCounters(): RouterCounters {
@@ -45,7 +47,6 @@ function idleCounters(): RouterCounters {
 export class FirewallIpv6 {
   private readonly engine: IPv6DataPlane;
   private readonly counters = idleCounters();
-  private readonly dhcpv6 = new DHCPv6Server();
   private readonly allowAccess = new Map<string, ReadonlySet<string>>();
 
   constructor(private readonly deps: FirewallIpv6Deps) {
@@ -80,8 +81,8 @@ export class FirewallIpv6 {
       getCounters: () => this.counters,
       getBus: () => this.deps.bus(),
       getScheduler: () => this.deps.scheduler(),
-      getDhcpv6Server: () => this.dhcpv6,
-      getDhcpv6ServerPool: () => undefined,
+      getDhcpv6Server: () => this.deps.dhcpv6Server(),
+      getDhcpv6ServerPool: (iface) => this.deps.dhcpv6PoolFor(iface),
       getDhcpv6RelayDestinations: () => [],
       onIcmpv6EchoReply: (payload) => { this.deps.onEchoReply(payload); },
       onIcmpv6EchoFailed: (payload) => { this.deps.onEchoFailed?.(payload); },

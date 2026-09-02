@@ -11,6 +11,7 @@ import type { AccessGroup } from '../../../authz/AccessMatrix';
 import type { SdwanConfiguration } from '../../../sdwan/SdwanTable';
 import type { HaConfiguration } from '../../../ha/HaTypes';
 import type { DhcpScope } from '../../../l3/FirewallDhcp';
+import type { Dhcp6Scope } from '../../../l3/FirewallDhcp6';
 import type {
   SyslogCollectorSettings, SyslogFilterSettings,
 } from '../../../logging/SyslogCollectors';
@@ -380,6 +381,10 @@ export interface FortiCommitDevice {
   applyBgp(settings: BgpConfiguration): string | void;
   applyDhcpScope(scope: DhcpScope): void;
   removeDhcpScope(id: string): void;
+  applyDhcp6Scope(scope: Dhcp6Scope): void;
+  removeDhcp6Scope(id: string): void;
+  applyDhcp6Scope(scope: Dhcp6Scope): void;
+  removeDhcp6Scope(id: string): void;
   acquireDhcpLease(iface: string): void;
   applyOnetimeSchedule(schedule: {
     name: string; start: string; end: string;

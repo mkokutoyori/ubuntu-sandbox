@@ -101,6 +101,7 @@ import type { FirewallPortals, PortalPorts } from './auth/FirewallPortals';
 import { remoteAuthenticate, type AdminAccountDraft } from './identity/AdminAccounts';
 import type { PasswordHistory } from './identity/PasswordHistory';
 import { FirewallIpv6 } from './l3/FirewallIpv6';
+import { FirewallDhcp6, type Dhcp6Scope } from './l3/FirewallDhcp6';
 import type { PolicyProbe } from './policy/PolicyProbe';
 import { isDenyAction } from './model/SecurityRule';
 import { FirewallPing6 } from './diag/FirewallPing6';
@@ -236,7 +237,18 @@ export class Firewall extends Equipment {
     transitPermitted: (probe) => this.ipv6TransitPermitted(probe),
     localInVerdict: (iface, traffic) => this.localInVerdict6(iface, traffic),
     sessions: () => this.getSessionTable(),
+    dhcpv6Server: () => this.dhcp6.getServer(),
+    dhcpv6PoolFor: (iface) => this.dhcp6.poolOfInterface(iface),
   });
+
+  private readonly dhcp6 = new FirewallDhcp6({
+    systemDnsServers: () => {
+      const settings = this.dnsClient.getSettings();
+      return [settings.primary, settings.secondary].filter(server => server.length > 0);
+    },
+  });
+
+  getDhcp6(): FirewallDhcp6 { return this.dhcp6; }
 
   private readonly traceroute6 = new FirewallTraceroute6(() => this.ipv6.dataPlane());
 
@@ -728,6 +740,10 @@ export class Firewall extends Equipment {
   }
   getRouting(): FirewallRouting { return this.routing; }
   getDhcp(): FirewallDhcp { return this.dhcp; }
+
+  applyDhcp6Scope(scope: Dhcp6Scope): void { this.dhcp6.upsertScope(scope); }
+
+  removeDhcp6Scope(id: string): void { this.dhcp6.removeScope(id); }
   getNtp(): FirewallNtp { return this.ntp; }
   getNtpAgent(): NtpAgent { return this.ntp.getAgent(); }
   getCaptivePortal(): CaptivePortalRedirect { return this.captivePortal; }

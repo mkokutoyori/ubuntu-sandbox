@@ -8,7 +8,7 @@ import {
   MANAGEMENT_SERVICES, type ManagementService,
 } from '../../../mgmt/ManagementAccess';
 import { resolveFortiTimezone } from './timezones';
-import { IPv6Address } from '../../../../../core/types';
+import { parseIpv6Prefix } from '../../../../../core/Ipv6Arithmetic';
 import { CONSOLE_BAUD_RATES } from '../../../mgmt/ConsoleSettings';
 import { ADMIN_DISCLAIMER_MESSAGES } from '../../../mgmt/LoginBanners';
 import {
@@ -36,19 +36,8 @@ const ACCESS_SERVICES = MANAGEMENT_SERVICES.map(service => ({
   keyword: service, description: ACCESS_SERVICE_HELP[service],
 }));
 
-export function parseIpv6Prefix(
-  value: string,
-): { address: string; prefixLength: number } | null {
-  const [address, length] = value.split('/');
-  if (address === undefined || length === undefined) return null;
-  const prefixLength = Number.parseInt(length, 10);
-  if (!Number.isInteger(prefixLength) || prefixLength < 0 || prefixLength > 128) return null;
-  try {
-    return { address: new IPv6Address(address).toString(), prefixLength };
-  } catch {
-    return null;
-  }
-}
+export { parseIpv6Prefix };
+
 
 function isStatic(object: FortiObjectView): boolean {
   return object.effective('mode')[0] === 'static' && isRouted(object);
@@ -858,6 +847,103 @@ export const SYSTEM_DHCP_SERVER: FortiTableSpec = {
   },
 };
 
+export const SYSTEM_DHCP6_SERVER: FortiTableSpec = {
+  path: ['system', 'dhcp6', 'server'],
+  kind: 'table',
+  keyType: 'integer',
+  ordered: false,
+  scope: 'vdom',
+  accessGroup: 'sysgrp',
+  renderOrder: 73,
+  help: 'Configure DHCPv6 servers.',
+  attributes: [
+    {
+      name: 'id', help: 'ID.', quoted: false, readOnly: true,
+      parts: [{ name: 'id', type: 'INT', description: 'ID.', range: [0, 65535] }],
+    },
+    enable('status', 'Enable/disable this DHCPv6 configuration.', true),
+    reference('interface', 'DHCPv6 server can assign IP configurations to clients '
+      + 'connected to this interface.', ['system interface']),
+    {
+      name: 'subnet', help: 'Subnet served by this DHCPv6 server.', quoted: false,
+      parts: [{
+        name: 'subnet', type: 'WORD',
+        description: 'IPv6 address and prefix length, <address>/<1-128>.',
+      }],
+      defaultValue: ['::/0'],
+      acceptsValue: (value) => {
+        const parsed = parseIpv6Prefix(value);
+        return parsed !== null && parsed.prefixLength > 0;
+      },
+      expectedValue: 'an IPv6 prefix such as `2001:db8:1:1::/64`.',
+    },
+    count('lease-time', 'Lease time in seconds.', 300, 8640000, 604800),
+    choice('dns-service', 'Options for assigning DNS servers to DHCPv6 clients.', [
+      { keyword: 'delegated', description: 'Use the delegated DNS settings.' },
+      { keyword: 'default', description: 'Use the system DNS servers.' },
+      { keyword: 'specify', description: 'Use the servers named below.' },
+    ], 'specify'),
+    ...['dns-server1', 'dns-server2', 'dns-server3'].map((name, index) => ({
+      name, help: `DNS server ${index + 1}.`, quoted: false,
+      parts: [{ name, type: 'WORD' as const, description: 'IPv6 address.' }],
+      defaultValue: ['::'],
+      acceptsValue: (value: string) => parseIpv6Prefix(`${value}/128`) !== null,
+      expectedValue: 'an IPv6 address such as `2001:db8:1:1::53`.',
+    })),
+    word('domain', 'Domain name suffix for the addresses that the DHCPv6 server assigns.'),
+  ],
+  children: [
+    {
+      path: ['ip-range'],
+      kind: 'table',
+      keyType: 'integer',
+      ordered: false,
+      scope: 'vdom',
+      accessGroup: 'sysgrp',
+      renderOrder: 74,
+      help: 'DHCP IP range configuration.',
+      attributes: [
+        { ...word('id', 'Range identifier.'), readOnly: true },
+        {
+          name: 'start-ip', help: 'Start of IP range.', quoted: false,
+          parts: [{ name: 'start-ip', type: 'WORD', description: 'IPv6 address.' }],
+          defaultValue: ['::'],
+          acceptsValue: (value: string) => parseIpv6Prefix(`${value}/128`) !== null,
+          expectedValue: 'an IPv6 address such as `2001:db8:1:1::1000`.',
+        },
+        {
+          name: 'end-ip', help: 'End of IP range.', quoted: false,
+          parts: [{ name: 'end-ip', type: 'WORD', description: 'IPv6 address.' }],
+          defaultValue: ['::'],
+          acceptsValue: (value: string) => parseIpv6Prefix(`${value}/128`) !== null,
+          expectedValue: 'an IPv6 address such as `2001:db8:1:1::1fff`.',
+        },
+      ],
+    },
+  ],
+  onCommit(object, context) {
+    context.device.applyDhcp6Scope({
+      id: object.key,
+      enabled: object.effective('status')[0] !== 'disable',
+      iface: object.effective('interface')[0] ?? '',
+      subnet: object.effective('subnet')[0] ?? '::/0',
+      leaseTimeSec: Number.parseInt(object.effective('lease-time')[0] ?? '604800', 10),
+      dnsService: object.effective('dns-service')[0] ?? 'specify',
+      dnsServers: ['dns-server1', 'dns-server2', 'dns-server3']
+        .map(name => object.effective(name)[0] ?? '')
+        .filter(server => server.length > 0 && server !== '::'),
+      domain: object.effective('domain')[0] ?? '',
+      ranges: object.childEntries('ip-range').map(range => ({
+        startIp: range.effective('start-ip')[0] ?? '::',
+        endIp: range.effective('end-ip')[0] ?? '::',
+      })),
+    });
+  },
+  onDelete(key, context) {
+    context.device.removeDhcp6Scope(key);
+  },
+};
+
 export const SYSTEM_NTP: FortiTableSpec = {
   path: ['system', 'ntp'],
   kind: 'object',
@@ -922,5 +1008,6 @@ export const SYSTEM_SPECS: readonly FortiTableSpec[] = Object.freeze([
   SYSTEM_DNS_SERVER,
   SYSTEM_DNS_DATABASE,
   SYSTEM_DHCP_SERVER,
+  SYSTEM_DHCP6_SERVER,
   SYSTEM_NTP,
 ]);

@@ -58,7 +58,7 @@ import { renderVpnTunnelList, renderVpnTunnelSummary } from './diag/vpnTunnelRen
 import {
   renderArpTable, renderInterfaceStatus, renderPerformanceStatus,
   type InterfaceStatusFacts,
-  renderBgpNeighbors, renderBgpSummary, renderDhcpLeases,
+  renderBgpNeighbors, renderBgpSummary, renderDhcpLeases, renderDhcp6Leases,
   renderOspfNeighbors, renderRoutingTable, renderSystemStatus,
 } from './diag/getViews';
 import { renderHaChecksum, renderHaStatus } from './diag/haRenderer';
@@ -1141,6 +1141,7 @@ export class FortiShell {
       case 'log': return runExecuteLog(tail, this.diagDeps());
       case 'ha': return this.executeHa(tail);
       case 'dhcp': return this.executeDhcp(tail);
+      case 'dhcp6': return this.executeDhcp6(tail);
       case 'traceroute':
         return tail.length === 0
           ? FortiMessages.incomplete('a destination')
@@ -1271,15 +1272,41 @@ export class FortiShell {
     return FortiMessages.unknownAction(`clear ${rest.join(' ')}`);
   }
 
+  private leasesOnInterface<T extends { iface: string }>(
+    leases: readonly T[], iface: string | undefined,
+  ): readonly T[] {
+    if (iface === undefined) return leases;
+    return leases.filter(lease => lease.iface === iface);
+  }
+
   private executeDhcp(rest: readonly string[]): string {
     if (rest.length === 0) return FortiMessages.incomplete('a DHCP operation');
-    if (rest[0] === 'lease-list') return renderDhcpLeases(this.fw.getDhcp().leases());
+    const dhcp = this.fw.getDhcp();
+    if (rest[0] === 'lease-list') {
+      return renderDhcpLeases(this.leasesOnInterface(dhcp.leases(), rest[1]));
+    }
     if (rest[0] === 'lease-clear') {
       if (rest.length < 2) return FortiMessages.incomplete('an IP address');
-      return this.fw.getDhcp().clearLease(rest[1])
+      if (rest[1] === 'all') { dhcp.clearAllLeases(); return ''; }
+      return dhcp.clearLease(rest[1])
         ? '' : FortiMessages.commandFail(`no lease held for ${rest[1]}.`);
     }
     return FortiMessages.unknownAction(`dhcp ${rest[0]}`);
+  }
+
+  private executeDhcp6(rest: readonly string[]): string {
+    if (rest.length === 0) return FortiMessages.incomplete('a DHCPv6 operation');
+    const dhcp6 = this.fw.getDhcp6();
+    if (rest[0] === 'lease-list') {
+      return renderDhcp6Leases(this.leasesOnInterface(dhcp6.leases(), rest[1]));
+    }
+    if (rest[0] === 'lease-clear') {
+      if (rest.length < 2) return FortiMessages.incomplete('an IPv6 address');
+      if (rest[1] === 'all') { dhcp6.clearAllLeases(); return ''; }
+      return dhcp6.clearLease(rest[1])
+        ? '' : FortiMessages.commandFail(`no lease held for ${rest[1]}.`);
+    }
+    return FortiMessages.unknownAction(`dhcp6 ${rest[0]}`);
   }
 
   private executePingOptions(

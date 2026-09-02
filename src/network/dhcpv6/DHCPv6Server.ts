@@ -9,10 +9,13 @@
  */
 
 import { IPv6Address } from '../core/types';
+import { ipv6FromBigInt, ipv6ToBigInt } from '../core/Ipv6Arithmetic';
 import {
   DHCPv6PoolConfig, DHCPv6Binding, DHCPv6SolicitParams, DHCPv6RequestParams,
-  DHCPv6LeaseResult, DHCPv6ReleaseParams, createDefaultDHCPv6Pool,
+  DHCPv6LeaseResult, DHCPv6ReleaseParams, DHCPv6AddressRange, createDefaultDHCPv6Pool,
 } from './types';
+
+const RANGE_SCAN_LIMIT = 65536;
 
 export class DHCPv6Server {
   private enabled = false;
@@ -48,6 +51,13 @@ export class DHCPv6Server {
     return true;
   }
 
+  configurePoolRanges(name: string, ranges: readonly DHCPv6AddressRange[]): boolean {
+    const pool = this.pools.get(name);
+    if (!pool) return false;
+    pool.ranges = ranges.map(range => ({ ...range }));
+    return true;
+  }
+
   configurePoolDns(name: string, servers: string[]): boolean {
     const pool = this.pools.get(name);
     if (!pool) return false;
@@ -71,6 +81,15 @@ export class DHCPv6Server {
   }
 
   getBindings(): DHCPv6Binding[] { return [...this.bindings.values()]; }
+
+  clearBinding(address: string): boolean { return this.bindings.delete(address); }
+
+  clearAllBindings(): number {
+    const removed = this.bindings.size;
+    this.bindings.clear();
+    this.pendingOffers.clear();
+    return removed;
+  }
 
   /**
    * Candidate pools for this exchange: an explicit interface→pool binding
@@ -97,8 +116,36 @@ export class DHCPv6Server {
     return null;
   }
 
+  private addressFreeAndInPool(candidate: string, pool: DHCPv6PoolConfig): boolean {
+    if (this.bindings.has(candidate) || this.pendingOffers.has(candidate)) return false;
+    if (!pool.prefix || !pool.prefixLength) return true;
+    return new IPv6Address(candidate)
+      .isInSameSubnet(new IPv6Address(pool.prefix), pool.prefixLength);
+  }
+
+  private findInRanges(pool: DHCPv6PoolConfig): string | null {
+    for (const range of pool.ranges) {
+      let first: bigint;
+      let last: bigint;
+      try {
+        first = ipv6ToBigInt(new IPv6Address(range.startIp));
+        last = ipv6ToBigInt(new IPv6Address(range.endIp));
+      } catch {
+        continue;
+      }
+      if (last < first) continue;
+      const ceiling = first + BigInt(RANGE_SCAN_LIMIT);
+      for (let value = first; value <= last && value < ceiling; value++) {
+        const candidate = ipv6FromBigInt(value).toString();
+        if (this.addressFreeAndInPool(candidate, pool)) return candidate;
+      }
+    }
+    return null;
+  }
+
   /** First unused address in the pool's prefix (host portion, starting at ::2 — ::1 is conventionally the router). */
   private findAvailableAddress(pool: DHCPv6PoolConfig): string | null {
+    if (pool.ranges.length > 0) return this.findInRanges(pool);
     if (!pool.prefix || !pool.prefixLength) return null;
     const prefixHextets = new IPv6Address(pool.prefix).getHextets();
     const hostBits = 128 - pool.prefixLength;

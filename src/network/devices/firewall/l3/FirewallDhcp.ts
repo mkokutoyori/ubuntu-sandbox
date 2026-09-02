@@ -169,6 +169,10 @@ export class FirewallDhcp {
     return this.server.clearBinding(ip);
   }
 
+  clearAllLeases(): void {
+    this.server.clearBindings();
+  }
+
   getServer(): DHCPServer { return this.server; }
 
   scopeOfInterface(iface: string): DhcpScope | undefined {

@@ -8,11 +8,17 @@ export type DHCPv6MessageType =
   | 'REPLY' | 'RELEASE' | 'DECLINE' | 'RECONFIGURE' | 'INFORMATION-REQUEST'
   | 'RELAY-FORW' | 'RELAY-REPL';
 
+export interface DHCPv6AddressRange {
+  startIp: string;
+  endIp: string;
+}
+
 export interface DHCPv6PoolConfig {
   name: string;
   /** Network prefix (host bits zeroed), e.g. "2001:db8:1::" */
   prefix: string | null;
   prefixLength: number | null;
+  ranges: DHCPv6AddressRange[];
   dnsServers: string[];
   domainName: string | null;
   preferredLifetime: number;
@@ -24,6 +30,7 @@ export function createDefaultDHCPv6Pool(name: string): DHCPv6PoolConfig {
     name,
     prefix: null,
     prefixLength: null,
+    ranges: [],
     dnsServers: [],
     domainName: null,
     preferredLifetime: 27000,
