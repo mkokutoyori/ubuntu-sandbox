@@ -70,7 +70,6 @@ export function identityCommitHandlers(fw: Firewall): IdentityHandlers {
   applyAuthSetting(setting) {
     const seconds = setting.timeoutMinutes * 60;
     fw.getAuthPortal().setTimeoutSeconds(seconds);
-    fw.setAuthPortalPorts(setting.httpPort, setting.httpsPort);
     fw.getIdentityTable().setTimeoutPolicy(
       setting.timeoutType === 'hard-timeout' || setting.timeoutType === 'new-session'
         ? setting.timeoutType

@@ -141,6 +141,8 @@ export const SYSTEM_GLOBAL: FortiTableSpec = {
     ], 'pass'),
     count('auth-http-port', 'Port the captive portal answers HTTP on.', 1, 65535, 1000),
     count('auth-https-port', 'Port the captive portal answers HTTPS on.', 1, 65535, 1003),
+    enable('auth-keepalive',
+      'Enable to prevent user authentication sessions from timing out when idle.'),
     {
       name: 'timezone',
       help: 'Time zone.',
@@ -178,6 +180,7 @@ export const SYSTEM_GLOBAL: FortiTableSpec = {
       multiVdom: object.effective('vdom-mode')[0] !== 'no-vdom',
       authHttpPort: number('auth-http-port', 1000),
       authHttpsPort: number('auth-https-port', 1003),
+      authKeepAlive: object.effective('auth-keepalive')[0] === 'enable',
       adminSshPort: number('admin-ssh-port', 22),
       adminTelnetPort: number('admin-telnet-port', 23),
       adminHttpPort: number('admin-port', 80),

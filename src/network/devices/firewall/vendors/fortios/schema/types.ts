@@ -216,6 +216,7 @@ export interface FortiGlobalSettings {
   readonly multiVdom: boolean;
   readonly authHttpPort?: number;
   readonly authHttpsPort?: number;
+  readonly authKeepAlive?: boolean;
   readonly adminSshPort?: number;
   readonly adminTelnetPort?: number;
   readonly adminHttpPort?: number;
@@ -544,9 +545,6 @@ export interface FortiAuthSettingPatch {
   readonly timeoutMinutes: number;
   readonly timeoutType: string;
   readonly secureHttp?: boolean;
-  readonly keepAlive?: boolean;
-  readonly httpPort: number;
-  readonly httpsPort: number;
 }
 
 export interface FortiAccessProfilePatch {

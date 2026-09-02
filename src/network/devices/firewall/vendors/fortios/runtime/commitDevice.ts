@@ -154,6 +154,9 @@ export function buildCommitDevice(
         if (settings.authHttpPort !== undefined && settings.authHttpsPort !== undefined) {
           fw.setAuthPortalPorts(settings.authHttpPort, settings.authHttpsPort);
         }
+        if (settings.authKeepAlive !== undefined) {
+          fw.getIdentityTable().setKeepAlive(settings.authKeepAlive);
+        }
         fw.setManagementPorts({
           ssh: settings.adminSshPort,
           telnet: settings.adminTelnetPort,
