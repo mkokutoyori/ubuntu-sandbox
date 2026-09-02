@@ -17,6 +17,7 @@ import {
   specsFromTrieRegistrations, type AdapterKeyword,
 } from '@/cli/commands/trieAdapter';
 import { CliInvalidInput, CliIncomplete } from '../cli/CliDiagnostic';
+import { isValidIPv4 } from '@/network/core/ip';
 import { CISCO_ERRORS } from '../cli-utils';
 import { encryptType7, md5Hex } from '@/crypto';
 import { pad2 } from '@/lib/format';
@@ -185,6 +186,18 @@ export const AAA_METHODS: Record<AaaPhase, readonly string[]> = {
 };
 
 export const AAA_COMMAND_LEVEL_RANGE: readonly [number, number] = [0, 15];
+
+export const RADIUS_HOST_RANGES: Readonly<Record<string, readonly [number, number]>> = {
+  'auth-port': [0, 65535],
+  'acct-port': [0, 65535],
+  timeout: [1, 1000],
+  retransmit: [0, 100],
+};
+
+export const TACACS_HOST_RANGES: Readonly<Record<string, readonly [number, number]>> = {
+  port: [1, 65535],
+  timeout: [1, 1000],
+};
 
 const AAA_GROUP_BUILTINS: ReadonlySet<string> = new Set(['radius', 'tacacs+']);
 
@@ -474,6 +487,32 @@ export function buildIdentityConfigCommands(
    * vont pas au meme endroit, donc les confondre enverrait les traces sur
    * le port des demandes.
    */
+  const lireOptions = (
+    args: readonly string[], depuis: number,
+    bornes: Readonly<Record<string, readonly [number, number]>>,
+  ): Record<string, string> => {
+    const lues: Record<string, string> = {};
+    for (let i = depuis; i < args.length; i++) {
+      const mot = args[i].toLowerCase();
+      const valeur = args[i + 1];
+      if (mot === 'key') {
+        if (valeur === undefined) throw new CliIncomplete();
+        lues.key = args.slice(i + 1).join(' ');
+        return lues;
+      }
+      const borne = bornes[mot];
+      if (borne === undefined) throw new CliInvalidInput({ token: args[i] });
+      if (valeur === undefined) throw new CliIncomplete();
+      if (!/^\d+$/.test(valeur)
+        || Number(valeur) < borne[0] || Number(valeur) > borne[1]) {
+        throw new CliInvalidInput({ token: valeur });
+      }
+      lues[mot] = valeur;
+      i++;
+    }
+    return lues;
+  };
+
   trie.registerGreedy('radius-server', 'Legacy radius host', (args) => {
     if (args[0] === 'key' && args[1]) { sec().radiusDefaults.key = args.slice(1).join(' '); return ''; }
     if (args[0] === 'timeout' || args[0] === 'retransmit') {
@@ -484,20 +523,16 @@ export function buildIdentityConfigCommands(
       else sec().radiusDefaults.retransmit = n;
       return '';
     }
-    if (args[0] !== 'host' || !args[1]) return '';
+    if (args[0] !== 'host') throw new CliInvalidInput({ token: args[0] });
+    if (!args[1]) return CISCO_ERRORS.INCOMPLETE;
+    if (!isValidIPv4(args[1])) throw new CliInvalidInput({ token: args[1] });
     const host = args[1];
-    let key: string | undefined;
-    let authPort = 1645;
-    let acctPort = 1646;
-    let timeoutSec: number | undefined;
-    let retransmit: number | undefined;
-    for (let i = 2; i < args.length; i++) {
-      if (args[i] === 'key' && args[i + 1]) { key = args[i + 1]; i++; }
-      else if (args[i] === 'auth-port' && args[i + 1]) { authPort = Number(args[i + 1]) || authPort; i++; }
-      else if (args[i] === 'acct-port' && args[i + 1]) { acctPort = Number(args[i + 1]) || acctPort; i++; }
-      else if (args[i] === 'timeout' && args[i + 1]) { timeoutSec = Number(args[i + 1]) || timeoutSec; i++; }
-      else if (args[i] === 'retransmit' && args[i + 1]) { retransmit = Number(args[i + 1]) || retransmit; i++; }
-    }
+    const lues = lireOptions(args, 2, RADIUS_HOST_RANGES);
+    const key = lues.key;
+    const authPort = lues['auth-port'] ? Number(lues['auth-port']) : 1645;
+    const acctPort = lues['acct-port'] ? Number(lues['acct-port']) : 1646;
+    const timeoutSec = lues.timeout ? Number(lues.timeout) : undefined;
+    const retransmit = lues.retransmit ? Number(lues.retransmit) : undefined;
     const existant = sec().radiusServers.get(host);
     if (existant) {
       existant.key = key ?? existant.key;
@@ -544,16 +579,14 @@ export function buildIdentityConfigCommands(
       sec().tacacsDefaults.timeoutSec = n;
       return '';
     }
-    if (args[0] !== 'host' || !args[1]) return '';
+    if (args[0] !== 'host') throw new CliInvalidInput({ token: args[0] });
+    if (!args[1]) return CISCO_ERRORS.INCOMPLETE;
+    if (!isValidIPv4(args[1])) throw new CliInvalidInput({ token: args[1] });
     const host = args[1];
-    let key: string | undefined;
-    let port = 49;
-    let timeoutSec: number | undefined;
-    for (let i = 2; i < args.length; i++) {
-      if (args[i] === 'key' && args[i + 1]) { key = args[i + 1]; i++; }
-      else if (args[i] === 'port' && args[i + 1]) { port = Number(args[i + 1]) || 49; i++; }
-      else if (args[i] === 'timeout' && args[i + 1]) { timeoutSec = Number(args[i + 1]) || 5; i++; }
-    }
+    const lues = lireOptions(args, 2, TACACS_HOST_RANGES);
+    const key = lues.key;
+    const port = lues.port ? Number(lues.port) : 49;
+    const timeoutSec = lues.timeout ? Number(lues.timeout) : undefined;
     const existant = sec().tacacsServers.get(host);
     if (existant) {
       existant.key = key ?? existant.key;
