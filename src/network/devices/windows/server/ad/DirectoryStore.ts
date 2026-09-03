@@ -32,6 +32,7 @@ import { TrustRegistry, type TrustDirection, type TrustOpResult, type TrustInfo,
 import { DEFAULT_AD_FUNCTIONAL_LEVEL } from './adFunctionalLevels';
 import { OU_PROPERTIES, PROTECTION_OBJECT_RIGHTS, PROTECTION_PARENT_RIGHT, isProtectionAce, protectionAce } from './adOrganizationalUnit';
 import { NEVER_EXPIRES, USER_FLAGS, USER_PROPERTIES, CHANGE_PASSWORD_TRUSTEES, accountExpiresDate, applyUserFlag, cannotChangePasswordAce, isCannotChangePasswordAce, readUserFlag } from './adUser';
+import { GROUP_PROPERTIES, groupTypeParts, groupTypeValue } from './adGroup';
 
 export interface DirOpResult { ok: boolean; message: string }
 
@@ -45,25 +46,6 @@ const UAC = {
 } as const;
 
 /** Real AD groupType bit-flag values: a scope bit (2/4/8) plus the top SECURITY_ENABLED bit (0x80000000) when the group is a security group — a Distribution group carries the same scope bit without that top bit set (docs/PRD-Exchange.md §1.2 point 3/§2.1 P3-préalable). */
-const GROUP_SCOPE_BIT: Record<AdGroup['scope'], number> = {
-  Global: 0x00000002,
-  DomainLocal: 0x00000004,
-  Universal: 0x00000008,
-};
-const SCOPE_OF_BIT = new Map<number, AdGroup['scope']>(
-  (Object.keys(GROUP_SCOPE_BIT) as AdGroup['scope'][]).map(scope => [GROUP_SCOPE_BIT[scope], scope]),
-);
-const SECURITY_ENABLED_BIT = 0x80000000;
-
-function computeGroupType(scope: AdGroup['scope'], category: AdGroup['category']): number {
-  const bit = GROUP_SCOPE_BIT[scope];
-  return category === 'Security' ? (bit | SECURITY_ENABLED_BIT) : bit;
-}
-function decodeGroupType(groupType: number): { scope: AdGroup['scope']; category: AdGroup['category'] } {
-  const category: AdGroup['category'] = (groupType & SECURITY_ENABLED_BIT) !== 0 ? 'Security' : 'Distribution';
-  const scope = SCOPE_OF_BIT.get(groupType & 0x0000000e) ?? 'Global';
-  return { scope, category };
-}
 
 function firstOf(values: string[] | undefined): string { return values?.[0] ?? ''; }
 function isEnabledFromUac(values: string[] | undefined): boolean {
@@ -95,6 +77,12 @@ export interface UserWriteOptions {
   accountExpires?: string;
   changePasswordAtLogon?: boolean;
   cannotChangePassword?: boolean;
+}
+
+export interface GroupWriteOptions {
+  commonName?: string;
+  attributes?: Record<string, string>;
+  target?: { server: string; bindUser: string; bindPassword: string; authType: string; domainName?: string };
 }
 
 export interface OrgUnitWriteOptions {
@@ -1336,22 +1324,39 @@ export class DirectoryStore {
 
   // ─── Groups ─────────────────────────────────────────────────────────
 
-  newGroup(sam: string, scope: AdGroup['scope'] = 'Global', ou?: string, category: AdGroup['category'] = 'Security'): DirOpResult {
+  newGroup(sam: string, scope: AdGroup['scope'] = 'Global', ou?: string, category: AdGroup['category'] = 'Security', opts: GroupWriteOptions = {}): DirOpResult {
     const containerDn = this.resolveOuContainer(ou, this.usersOuDn);
     if (!containerDn) {
       return { ok: false, message: `Cannot find an object with identity: '${ou}'.` };
     }
-    const res = this.createGroupEntry(sam, scope, containerDn, category);
+    const res = this.createGroupEntry(sam, scope, containerDn, category, opts);
     return res.ok ? { ok: true, message: '' } : { ok: false, message: 'An object with that name already exists.' };
   }
 
-  private createGroupEntry(sam: string, scope: AdGroup['scope'], containerDn: DistinguishedName, category: AdGroup['category'] = 'Security'): DirOpResult {
-    return this.tree.addEntry(this.cnDn(sam, containerDn), {
+  setGroupAttributes(identity: string, attributes: Record<string, string>): DirOpResult {
+    const entry = this.findGroupEntry(this.resolveIdentity(identity));
+    if (!entry) return { ok: false, message: `Cannot find an object with identity: '${identity}'.` };
+    for (const [ldap, value] of Object.entries(attributes)) {
+      this.tree.modifyEntry(entry.dn, [value === ''
+        ? { op: 'delete', type: ldap, values: [] }
+        : { op: 'replace', type: ldap, values: [value] }]);
+    }
+    return { ok: true, message: '' };
+  }
+
+  private createGroupEntry(sam: string, scope: AdGroup['scope'], containerDn: DistinguishedName, category: AdGroup['category'] = 'Security', opts: GroupWriteOptions = {}): DirOpResult {
+    const cn = opts.commonName || sam;
+    const attributes: Record<string, string[]> = {
       objectClass: ['top', 'group'],
-      cn: [sam],
+      cn: [cn],
+      name: [cn],
       sAMAccountName: [sam],
-      groupType: [String(computeGroupType(scope, category))],
-    });
+      groupType: [String(groupTypeValue(scope, category))],
+    };
+    for (const [ldap, value] of Object.entries(opts.attributes ?? {})) {
+      if (value !== '') attributes[ldap] = [value];
+    }
+    return this.tree.addEntry(this.cnDn(cn, containerDn), attributes);
   }
 
   private findGroupEntry(sam: string): DirectoryEntry | null {
@@ -1373,12 +1378,26 @@ export class DirectoryStore {
 
   private projectGroup(entry: DirectoryEntry): AdGroup {
     const groupType = Number(firstOf(entry.attributes.get('grouptype')));
-    const { scope, category } = decodeGroupType(groupType);
+    const { scope, category } = groupTypeParts(groupType);
+    const known = new Set(['objectclass', 'cn', 'name', 'samaccountname', 'grouptype', 'member', 'memberof']);
+    const properties: Record<string, string> = {};
+    for (const spec of GROUP_PROPERTIES) {
+      known.add(spec.ldap.toLowerCase());
+      const value = firstOf(entry.attributes.get(spec.ldap.toLowerCase()));
+      if (value) properties[spec.parameter] = value;
+    }
+    for (const [ldap, values] of entry.attributes) {
+      if (!known.has(ldap.toLowerCase()) && values.length > 0) {
+        properties[this.tree.canonicalAttributeName(ldap)] = values[0];
+      }
+    }
     return {
       sam: firstOf(entry.attributes.get('samaccountname')),
       dn: formatDN(entry.dn),
+      name: firstOf(entry.attributes.get('name')) || firstOf(entry.attributes.get('cn')),
       scope,
       category,
+      properties,
       members: (entry.attributes.get('member') ?? []).map(dnStr => this.samOfDn(dnStr)).filter((s): s is string => s !== null),
     };
   }

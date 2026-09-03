@@ -99,12 +99,20 @@ import type {
 } from '@/powershell/providers/PSProviders';
 import type { PSValue } from '@/powershell/runtime/PSEnvironment';
 import type { AddsForestOptions } from '@/network/devices/windows/server/ad/adFunctionalLevels';
-import type { OrgUnitWriteOptions, UserWriteOptions } from '@/network/devices/windows/server/ad/DirectoryStore';
-import type { AdUser } from '@/network/devices/windows/server/ad/AdTypes';
+import type { GroupWriteOptions, OrgUnitWriteOptions, UserWriteOptions } from '@/network/devices/windows/server/ad/DirectoryStore';
+import type { AdGroup, AdUser } from '@/network/devices/windows/server/ad/AdTypes';
 import { withRemoteDirectory } from './adRemoteDirectory';
+import { groupTypeValue } from '@/network/devices/windows/server/ad/adGroup';
 import type { RemoteDirectoryHost, RemoteDirectoryTarget } from './adRemoteDirectory';
 import type { LdapClient } from '@/network/devices/windows/server/ad/ldap/LdapClient';
 import type { TcpStack } from '@/network/tcp/TcpStack';
+
+function groupInfoOf(g: AdGroup): AdGroupInfo {
+  return {
+    sam: g.sam, dn: g.dn, name: g.name, scope: g.scope, category: g.category,
+    properties: { ...g.properties }, members: [...g.members],
+  };
+}
 
 function userInfoOf(u: AdUser): AdUserInfo {
   return {
@@ -431,7 +439,7 @@ class WindowsAdAdapter implements IAdProvider {
     };
   }
 
-  private remoteOu(
+  private remoteDirectory(
     cmdletName: string, target: RemoteDirectoryTarget,
     work: (client: LdapClient) => AdOpResult,
   ): AdOpResult {
@@ -729,19 +737,52 @@ class WindowsAdAdapter implements IAdProvider {
     return store.removeUser(store.resolveIdentity(identity));
   }
 
-  newGroup(sam: string, scope: AdGroupInfo['scope'], path?: string, category?: AdGroupInfo['category']): AdOpResult {
+  newGroup(sam: string, scope: AdGroupInfo['scope'], path?: string, category?: AdGroupInfo['category'], opts?: GroupWriteOptions): AdOpResult {
+    if (opts?.target) {
+      const cn = opts.commonName || sam;
+      const base = path ?? `CN=Users,DC=${opts.target.server.split('.').slice(1).join(',DC=')}`;
+      return this.remoteDirectory('New-ADGroup', opts.target, client => {
+        const res = client.add(`CN=${cn},${base}`, [
+          { type: 'objectClass', values: ['top', 'group'] },
+          { type: 'cn', values: [cn] },
+          { type: 'name', values: [cn] },
+          { type: 'sAMAccountName', values: [sam] },
+          { type: 'groupType', values: [String(groupTypeValue(scope, category ?? 'Security'))] },
+          ...Object.entries(opts.attributes ?? {}).filter(([, v]) => v !== '')
+            .map(([type, value]) => ({ type, values: [value] })),
+        ]);
+        return res.ok ? { ok: true, message: '' } : { ok: false, message: res.result.diagnosticMessage || 'An object with that name already exists.' };
+      });
+    }
     const store = this.requireStore('New-ADGroup');
     const denied = this.requireAdmin('New-ADGroup');
     if (denied) return denied;
-    return store.newGroup(sam, scope, path, category);
+    return store.newGroup(sam, scope, path, category, opts);
+  }
+  setGroup(identity: string, attributes: Record<string, string>, target?: RemoteDirectoryTarget): AdOpResult {
+    if (target) {
+      return this.remoteDirectory('Set-ADGroup', target, client => {
+        const changes = Object.entries(attributes).map(([type, value]) => ({
+          operation: (value === '' ? 'delete' : 'replace') as 'delete' | 'replace',
+          modification: { type, values: value === '' ? [] : [value] },
+        }));
+        if (changes.length === 0) return { ok: true, message: '' };
+        const res = client.modify(identity, changes);
+        return res.ok ? { ok: true, message: '' } : { ok: false, message: res.result.diagnosticMessage || `Cannot find an object with identity: '${identity}'.` };
+      });
+    }
+    const store = this.requireStore('Set-ADGroup');
+    const denied = this.requireAdmin('Set-ADGroup');
+    if (denied) return denied;
+    return store.setGroupAttributes(identity, attributes);
   }
   getGroup(identity: string): AdGroupInfo | null {
     const store = this.requireStore('Get-ADGroup');
     const g = store.getGroup(store.resolveIdentity(identity));
-    return g ? { sam: g.sam, dn: g.dn, scope: g.scope, category: g.category, members: g.members } : null;
+    return g ? groupInfoOf(g) : null;
   }
   listGroups(): AdGroupInfo[] {
-    return this.requireStore('Get-ADGroup').listGroups().map(g => ({ sam: g.sam, dn: g.dn, scope: g.scope, category: g.category, members: g.members }));
+    return this.requireStore('Get-ADGroup').listGroups().map(groupInfoOf);
   }
   addGroupMember(groupIdentity: string, members: string[]): AdOpResult {
     const store = this.requireStore('Add-ADGroupMember');
@@ -846,7 +887,7 @@ class WindowsAdAdapter implements IAdProvider {
     if (opts?.target) {
       const base = path ?? `DC=${opts.target.server.split('.').slice(1).join(',DC=')}`;
       const dn = `OU=${name},${base}`;
-      return this.remoteOu('New-ADOrganizationalUnit', opts.target, client => {
+      return this.remoteDirectory('New-ADOrganizationalUnit', opts.target, client => {
         const attributes = [
           { type: 'objectClass', values: ['top', 'organizationalUnit'] },
           { type: 'ou', values: [name] },
@@ -864,7 +905,7 @@ class WindowsAdAdapter implements IAdProvider {
   }
   setOrganizationalUnit(identity: string, attributes: Record<string, string>, protectedFlag?: boolean, target?: RemoteDirectoryTarget): AdOpResult {
     if (target) {
-      return this.remoteOu('Set-ADOrganizationalUnit', target, client => {
+      return this.remoteDirectory('Set-ADOrganizationalUnit', target, client => {
         const changes = Object.entries(attributes).map(([type, value]) => ({
           operation: (value === '' ? 'delete' : 'replace') as 'delete' | 'replace',
           modification: { type, values: value === '' ? [] : [value] },
@@ -885,7 +926,7 @@ class WindowsAdAdapter implements IAdProvider {
   }
   removeOrganizationalUnit(identity: string, recursive?: boolean, target?: RemoteDirectoryTarget): AdOpResult {
     if (target) {
-      return this.remoteOu('Remove-ADOrganizationalUnit', target, client => {
+      return this.remoteDirectory('Remove-ADOrganizationalUnit', target, client => {
         const res = client.delete(identity);
         return res.ok ? { ok: true, message: '' } : { ok: false, message: res.result.diagnosticMessage || `Cannot find an object with identity: '${identity}'.` };
       });

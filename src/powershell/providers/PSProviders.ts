@@ -12,7 +12,7 @@
  *     → all nulls, used by the standalone PSInterpreter (no Windows device)
  */
 
-import type { OrgUnitWriteOptions, UserWriteOptions } from '@/network/devices/windows/server/ad/DirectoryStore';
+import type { GroupWriteOptions, OrgUnitWriteOptions, UserWriteOptions } from '@/network/devices/windows/server/ad/DirectoryStore';
 
 import type { AddsForestOptions } from '@/network/devices/windows/server/ad/adFunctionalLevels';
 import type { RemoteDirectoryTarget } from './adRemoteDirectory';
@@ -212,7 +212,9 @@ export interface AdAccessRuleInfo {
   inheritedObjectType: string;
 }
 export interface AdGroupInfo {
-  sam: string; dn: string; scope: 'DomainLocal' | 'Global' | 'Universal'; category: 'Security' | 'Distribution'; members: string[];
+  sam: string; dn: string; name: string;
+  scope: 'DomainLocal' | 'Global' | 'Universal'; category: 'Security' | 'Distribution';
+  properties: Record<string, string>; members: string[];
 }
 export interface AdComputerInfo {
   name: string; dn: string; enabled: boolean; servicePrincipalNames: string[];
@@ -261,7 +263,8 @@ export interface IAdProvider {
   /** `Search-ADAccount -LockedOut`. */
   listLockedOutUsers(): Array<{ sam: string; name: string; badPwdCount: number }>;
 
-  newGroup(sam: string, scope: AdGroupInfo['scope'], path?: string, category?: AdGroupInfo['category']): AdOpResult;
+  newGroup(sam: string, scope: AdGroupInfo['scope'], path?: string, category?: AdGroupInfo['category'], opts?: GroupWriteOptions): AdOpResult;
+  setGroup(identity: string, attributes: Record<string, string>, target?: RemoteDirectoryTarget): AdOpResult;
   getGroup(identity: string): AdGroupInfo | null;
   listGroups(): AdGroupInfo[];
   addGroupMember(groupIdentity: string, members: string[]): AdOpResult;
