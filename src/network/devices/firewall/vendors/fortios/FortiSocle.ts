@@ -100,6 +100,7 @@ export interface SocleDeps {
   readonly authorize?: (spec: FortiTableSpec, intent: AccessIntent) => AccessVerdict;
   readonly principal?: () => string;
   readonly vdomNames?: () => readonly string[];
+  readonly eraseableDisks?: () => readonly string[];
   readonly enterVdom?: (name: string) => string;
   readonly adminSessions?: () => readonly {
     readonly index: number; readonly username: string;
@@ -281,6 +282,7 @@ export class FortiSocle {
     out.push(...this.viewSpecs());
     out.push(...this.diagnoseSpecs());
     out.push(...this.enterVdomSpecs());
+    out.push(...this.eraseDiskSpecs());
     out.push(...this.adminSessionSpecs());
     out.push(...this.executeSpecs(new Set(out.map(spec => spec.id))));
     out.push(this.withArgument('execute', ['execute',
@@ -302,6 +304,21 @@ export class FortiSocle {
       }],
       'Select virtual domain.',
       (_session, args) => enter(args.vdom ?? ''))];
+  }
+
+  private eraseDiskSpecs(): CommandSpec[] {
+    const disks = this.deps.eraseableDisks?.() ?? [];
+    if (disks.length === 0) return [];
+    return [this.withArgument('execute erase-disk',
+      ['execute', 'erase-disk', {
+        name: 'disk', type: 'WORD', optional: true, description: 'Disk name.',
+        alternatives: disks.map(name => ({
+          keyword: name, description: 'Installed disk.',
+        })),
+      }],
+      'Erase a disk.',
+      (_session, args) => this.deps.runExecute(
+        ['erase-disk', ...(args.disk ? [args.disk] : [])]))];
   }
 
   private adminSessionSpecs(): CommandSpec[] {
