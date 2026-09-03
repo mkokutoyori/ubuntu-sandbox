@@ -2274,19 +2274,18 @@ aujourd'hui — `transmit()` part toujours d'une socket.
   verifiees par `git stash` — et font passer la reference de 247 a 248.
   Le contexte reellement passe est `WinCommandContext` ; corriger la
   declaration demande de verifier ce que les deux fonctions lisent.
-- Il reste 61 continuations DECLAREES (8 + 27 + 6 + 20, cliquet resserre
+- Il reste 53 continuations DECLAREES (0 + 27 + 6 + 20, cliquet resserre
   a ces nombres) qui ne sont pas des chemins de commande a part entiere :
   `no spanning-tree {backbonefast|bpdufilter|…}`, `ip igmp snooping
-  {immediate-leave|mrouter|querier|vlan}` et son `no`, `show ip igmp
-  snooping {groups|mrouter|querier|vlan}`, `class-map {match-all|
-  match-any|type|inspect}`, `ip flow-cache`/`ip flow-export`,
+  {immediate-leave|mrouter|querier|vlan}` et son `no`, `class-map
+  {match-all|match-any|type|inspect}`, `ip flow-cache`/`ip flow-export`,
   `zone-pair security {source|destination}`, `ip community-list
-  {expanded|standard}`, `track {interface|ip|routing}`, `radius server`,
-  `clear port-security {all|configured|dynamic|sticky}`. Les declarer est
-  la bonne facon de les annoncer aujourd'hui — c'est la decision ecrite
-  dans `ciscoContinuations.ts`, prise apres qu'une extraction depuis le
-  TEXTE SOURCE eut fait disparaitre `level` de l'aide de `no privilege`.
-  En faire de VRAIS noeuds leur donnerait en plus un gestionnaire, des
-  arguments types et un refus propre ; c'est la suite de la migration
-  vers le socle, famille par famille, et le cliquet mesure desormais ce
-  qui reste.
+  {expanded|standard}`, `track {interface|ip|routing}`, `radius server`.
+  Les declarer est la bonne facon de les annoncer aujourd'hui — c'est la
+  decision ecrite dans `ciscoContinuations.ts`, prise apres qu'une
+  extraction depuis le TEXTE SOURCE eut fait disparaitre `level` de
+  l'aide de `no privilege`. En faire de VRAIS noeuds leur donne en plus
+  un gestionnaire, des arguments types et un refus propre, ce que le lot
+  `show ip igmp snooping` + `clear port-security` vient de faire pour le
+  mode privilegie du commutateur, tombe a ZERO. Suite : famille par
+  famille, en baissant le cliquet a chaque fois.

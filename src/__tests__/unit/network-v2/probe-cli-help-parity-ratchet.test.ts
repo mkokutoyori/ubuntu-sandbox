@@ -45,7 +45,7 @@ const PROBES = 'abcdefghijklmnopqrstuvwxyz0123456789*'.split('');
 const RECORDED_GAPS: Readonly<Record<string, {
   unsuggested: number; uncompletable: number; undescribed: number; derived: number;
 }>> = {
-  'switch/privileged': { unsuggested: 0, uncompletable: 0, undescribed: 0, derived: 8 },
+  'switch/privileged': { unsuggested: 0, uncompletable: 0, undescribed: 0, derived: 0 },
   'switch/config': { unsuggested: 0, uncompletable: 0, undescribed: 0, derived: 27 },
   'routeur/privileged': { unsuggested: 0, uncompletable: 0, undescribed: 0, derived: 6 },
   'routeur/config': { unsuggested: 0, uncompletable: 0, undescribed: 0, derived: 20 },
