@@ -6,7 +6,6 @@ import {
   CiscoSecurityConfig,
   newRadiusServerStats,
   newTacacsServerStats,
-  isTimeRangeActive,
   type AaaServiceKind,
   type AaaPhase,
 } from '../../router/security/CiscoSecurityConfig';
@@ -769,14 +768,6 @@ export function buildSecurityConfigCommands(trie: CommandTrie, ctx: CiscoSecurit
     return '';
   });
 
-  trie.registerGreedy('time-range', 'Define time-range', (args) => {
-    if (!args[0]) return '% Incomplete command.';
-    sec().ensureTimeRange(args[0]);
-    ctx.setTimeRange?.(args[0]);
-    ctx.setMode('config-time-range' as CiscoShellMode);
-    return '';
-  });
-
   trie.registerGreedy('class-map', 'Define class map', (args) => {
     if (args.length < 1) return '% Incomplete command.';
     let kind: 'qos' | 'inspect' = 'qos';
@@ -1114,7 +1105,6 @@ export function buildSecuritySubmodeCommands(
   buildControlPlaneSubmodeOn(cpTrie, ctx);
   buildZoneSubmodeOn(zoneTrie, ctx);
   buildZonePairSubmodeOn(zonePairTrie, ctx);
-  buildTimeRangeSubmodeOn(trTrie, ctx);
   buildIdentitySubmodeCommands(radiusTrie, tacacsTrie, aaaGroupTrie, ctx);
   buildTrustpointSubmodeOn(trustpointTrie, ctx);
 }
@@ -1231,38 +1221,6 @@ export function buildZonePairSubmodeOn(
   });
 }
 
-export function buildTimeRangeSubmodeOn(
-  trTrie: CommandTrie, ctx: CiscoSecurityShellContext,
-): void {
-  const sec = () => getSecurityConfig(ctx.r());
-
-  trTrie.registerGreedy('periodic', 'Periodic time-range', (args) => {
-    const name = ctx.getTimeRange?.();
-    if (!name) return '';
-    const tr = sec().ensureTimeRange(name);
-    let days = '';
-    let i = 0;
-    while (i < args.length && args[i] !== 'to' && !/^\d/.test(args[i])) {
-      days += (days ? ' ' : '') + args[i];
-      i++;
-    }
-    if (i >= args.length) return '';
-    const [sh, sm] = parseHourMinute(args[i]);
-    if (args[i + 1] !== 'to' || !args[i + 2]) return '';
-    const [eh, em] = parseHourMinute(args[i + 2]);
-    tr.periodic.push({ days, startHour: sh, startMinute: sm, endHour: eh, endMinute: em });
-    return '';
-  });
-  trTrie.registerGreedy('absolute', 'Absolute time-range', (args) => {
-    const name = ctx.getTimeRange?.();
-    if (!name) return '';
-    const tr = sec().ensureTimeRange(name);
-    const parsed = parseAbsolute(args);
-    if (parsed) tr.absolute = parsed;
-    return '';
-  });
-}
-
 export function buildTrustpointSubmodeOn(
   trustpointTrie: CommandTrie, ctx: CiscoSecurityShellContext,
 ): void {
@@ -1347,19 +1305,6 @@ export function buildTrustpointSubmodeOn(
     return '';
   });
 }
-
-const JOURS_SEMAINE: readonly EnumValue[] = [
-  { keyword: 'Monday', description: 'Monday' },
-  { keyword: 'Tuesday', description: 'Tuesday' },
-  { keyword: 'Wednesday', description: 'Wednesday' },
-  { keyword: 'Thursday', description: 'Thursday' },
-  { keyword: 'Friday', description: 'Friday' },
-  { keyword: 'Saturday', description: 'Saturday' },
-  { keyword: 'Sunday', description: 'Sunday' },
-  { keyword: 'daily', description: 'Every day of the week' },
-  { keyword: 'weekdays', description: 'Monday through Friday' },
-  { keyword: 'weekend', description: 'Saturday and Sunday' },
-];
 
 const REVOCATION_MODES: readonly EnumValue[] = [
   { keyword: 'crl', description: 'Certificate revocation list' },
@@ -1545,25 +1490,6 @@ export function zonePairSubmodeSpecs(ctx: CiscoSecurityShellContext): CommandSpe
   );
 }
 
-const TIME_RANGE_ARGUMENTS:
-Readonly<Record<string, ArgumentSpec | readonly ArgumentSpec[] | null>> = {
-  periodic: formes('jours', 'Days of the week the range covers', JOURS_SEMAINE),
-  absolute: formes('bornes', 'Start and end of the range', [
-    { keyword: 'start', description: 'Time the range starts' },
-    { keyword: 'end', description: 'Time the range ends' },
-  ]),
-};
-
-export function timeRangeSubmodeSpecs(ctx: CiscoSecurityShellContext): CommandSpec[] {
-  return specsFromTrieRegistrations(
-    (collector) => buildTimeRangeSubmodeOn(collector as unknown as CommandTrie, ctx),
-    {
-      modes: ['config-time-range'], minPrivilege: 15,
-      argumentFor: (path) => TIME_RANGE_ARGUMENTS[path],
-    },
-  );
-}
-
 const RADIUS_SUBMODE_KEYWORDS: ReadonlyArray<AdapterKeyword> = [{
   keyword: 'ipv4', description: 'IPv4 address of the RADIUS server',
   argument: [
@@ -1694,36 +1620,6 @@ function addAction(
   const cls = pm.classes.find(c => c.className === cname);
   if (!cls) return;
   cls.actions.push({ kind, args });
-}
-
-function parseHourMinute(token: string): [number, number] {
-  const m = /^(\d{1,2}):(\d{2})$/.exec(token);
-  if (!m) return [0, 0];
-  return [parseInt(m[1], 10), parseInt(m[2], 10)];
-}
-
-const MONTH_MAP: Record<string, number> = {
-  january: 1, february: 2, march: 3, april: 4, may: 5, june: 6,
-  july: 7, august: 8, september: 9, october: 10, november: 11, december: 12,
-};
-
-function parseAbsolute(args: string[]): import('../../router/security/CiscoSecurityConfig').TimeRangeAbsolute | null {
-  const result: import('../../router/security/CiscoSecurityConfig').TimeRangeAbsolute = {};
-  for (let i = 0; i < args.length; i++) {
-    if (args[i] === 'start' || args[i] === 'end') {
-      const which = args[i];
-      const [h, m] = parseHourMinute(args[i + 1] ?? '');
-      const day = parseInt(args[i + 2] ?? '', 10);
-      const month = MONTH_MAP[args[i + 3]?.toLowerCase() ?? ''] ?? 0;
-      const year = parseInt(args[i + 4] ?? '', 10);
-      if (isNaN(day) || isNaN(year) || month === 0) continue;
-      const entry = { year, month, day, hour: h, minute: m };
-      if (which === 'start') result.start = entry;
-      else result.end = entry;
-      i += 4;
-    }
-  }
-  return result;
 }
 
 const SECURITY_IF_ARGUMENTS:
@@ -2021,8 +1917,6 @@ Readonly<Record<string, ArgumentSpec | readonly ArgumentSpec[] | null>> = {
     description: 'Policy-map name' },
   'show class-map': { name: 'nom', type: 'WORD', optional: true,
     description: 'Class-map name' },
-  'show time-range': { name: 'nom', type: 'WORD', optional: true,
-    description: 'Time-range name' },
   'show ip cef': { name: 'prefixe', type: 'REST', optional: true,
     description: 'Prefix to display',
     alternatives: [{ keyword: 'A.B.C.D', description: 'Prefix to display' }] },
@@ -2204,30 +2098,6 @@ export function buildSecurityShowCommands(trie: CommandTrie, getRouter: () => Ro
       }
       return lines.join('\n');
     }).join('\n');
-  });
-  trie.registerGreedy('show time-range', 'Show time-range', (args) => {
-    const s = sec();
-    const list = args[0] ? [s.timeRanges.get(args[0])].filter((x): x is NonNullable<typeof x> => !!x) : [...s.timeRanges.values()];
-    if (list.length === 0) return '';
-    // `(inactive)` était écrit EN DUR, quelle que soit l'heure : la seule
-    // vue qui répond à « ma plage est-elle en cours ? » ne consultait pas
-    // l'horloge. Elle lit désormais celle de l'ÉQUIPEMENT — celle que
-    // `clock set` pose et que le plan de données consulte — et non celle
-    // de la machine hôte, sans quoi la vue et le filtrage se
-    // contrediraient à nouveau.
-    const dev = getRouter();
-    const now = new Date(dev.getSystemClockMs());
-    const utilisee = (nom: string): boolean =>
-      dev._getAccessListsInternal()
-        .some(acl => acl.entries.some(e => e.timeRange === nom));
-    const lines: string[] = [];
-    for (const tr of list) {
-      const etat = isTimeRangeActive(tr, now) ? 'active' : 'inactive';
-      lines.push(`time-range entry: ${tr.name} (${etat})`);
-      for (const p of tr.periodic) lines.push(`   periodic ${p.days} ${p.startHour}:${pad2(p.startMinute)} to ${p.endHour}:${pad2(p.endMinute)}`);
-      if (utilisee(tr.name)) lines.push('   used in: IP ACL entry');
-    }
-    return lines.join('\n');
   });
 }
 

@@ -52,7 +52,6 @@ export interface ArgumentHelpTries {
   configExtNacl: CommandTrie;
   privileged: CommandTrie;
   configRouteMap: CommandTrie;
-  configTimeRange: CommandTrie;
   configTrack: CommandTrie;
   configRouterOnly: CommandTrie;
 }
@@ -103,7 +102,6 @@ function describeArgumentTypes(tries: ArgumentHelpTries): void {
     ['show access-lists', 'Access list name or number'],
     ['show class-map', 'Class map name'],
     ['show route-map', 'Route map name'],
-    ['show time-range', 'Time range name'],
   ] as const) {
     tries.privileged.describeArgs(cmd, [{ ...WORD('name', description), optional: true }]);
   }
@@ -247,7 +245,6 @@ function describeArgumentTypes(tries: ArgumentHelpTries): void {
     ['ipv6 access-list', 'Name of the IPv6 access list'],
     ['ipv6 prefix-list', 'Name of an IPv6 prefix list'],
     ['key chain', 'Name of the key chain'],
-    ['time-range', 'Name of the time range'],
     ['zone security', 'Name of the security zone'],
     ['no route-map', 'Name of the route map'],
     ['no username', 'Name of the local user'],
@@ -364,12 +361,6 @@ function describeArgumentTypes(tries: ArgumentHelpTries): void {
       ]),
     ]);
   }
-  tries.configTimeRange.describeArgs('absolute', [
-    ENUM('bound', 'Bound of the absolute range', [
-      ['end', 'Ending time and date'],
-      ['start', 'Starting time and date'],
-    ]),
-  ]);
   tries.configTrack.describeArgs('track', [INT('object', [1, 1000], 'Tracked object number')]);
   tries.configTrack.describeArgs('no delay', [
     ENUM('transition', 'State transition whose delay is removed', [

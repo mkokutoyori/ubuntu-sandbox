@@ -121,7 +121,8 @@ import { mstConfigDigest, vlansMappedToInstanceZero } from '@/network/stp/MstCon
 export type CLIMode =
   | 'user' | 'privileged' | 'config' | 'config-if' | 'config-vlan'
   | 'config-mst' | 'config-line' | 'config-acl' | 'config-dhcp'
-  | 'config-access-map' | 'config-archive' | 'config-archive-log';
+  | 'config-access-map' | 'config-archive' | 'config-archive-log'
+  | 'config-time-range';
 
 /**
  * Raised when a command needs a protocol this switch does not run.
@@ -828,6 +829,7 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
   private selectedAclType: 'standard' | 'extended' = 'extended';
   private selectedArpAcl: string | null = null;
   private configAccessMapTrie = new CommandTrie();
+  private configTimeRangeTrie = new CommandTrie();
   private selectedAccessMap: { name: string; seq: number } | null = null;
 
   constructor() {
@@ -1047,6 +1049,7 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
       case 'config-acl':  return this.configAclTrie;
       case 'config-dhcp': return this.configDhcpTrie;
       case 'config-access-map': return this.configAccessMapTrie;
+      case 'config-time-range': return this.configTimeRangeTrie;
       case 'config-radius-server': return this.configRadiusServerTrie;
       case 'config-tacacs-server': return this.configTacacsServerTrie;
       case 'config-aaa-group':     return this.configAaaGroupTrie;
@@ -5465,7 +5468,6 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
       configRouter: inutilise(),
       configRouterOspf: inutilise(),
       configRouteMap: inutilise(),
-      configTimeRange: inutilise(),
       configTrack: inutilise(),
       configRouterOnly: inutilise(),
     });

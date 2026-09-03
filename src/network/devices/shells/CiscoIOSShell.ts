@@ -167,7 +167,7 @@ import {
   securityShowSpecs,
   classMapSubmodeSpecs, policyMapSubmodeSpecs, policyClassSubmodeSpecs,
   controlPlaneSubmodeSpecs, zoneSubmodeSpecs, zonePairSubmodeSpecs,
-  timeRangeSubmodeSpecs, trustpointSubmodeSpecs,
+  trustpointSubmodeSpecs,
   type CiscoSecurityShellContext,
 } from './cisco/CiscoSecurityCommands';
 import {
@@ -408,7 +408,6 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
       ...controlPlaneSubmodeSpecs(this),
       ...zoneSubmodeSpecs(this),
       ...zonePairSubmodeSpecs(this),
-      ...timeRangeSubmodeSpecs(this),
       ...trustpointSubmodeSpecs(this),
       ...ipSlaSubmodeSpecs(this),
       ...ipSlaTypeSubmodeSpecs(this),
@@ -1273,7 +1272,6 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
       configExtNacl: this.configExtNaclTrie,
       privileged: this.privilegedTrie,
       configRouteMap: this.configRouteMapTrie,
-      configTimeRange: this.configTimeRangeTrie,
       configTrack: this.configTrackTrie,
       configRouterOnly: this.configTrie,
     });
@@ -1323,6 +1321,16 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
   }
 
   objectGroupStore(): ObjectGroupStore { return this.r()._getACLEngineInternal(); }
+
+  timeRangesUsedByAcls(): readonly string[] {
+    const names = new Set<string>();
+    for (const acl of this.r()._getAccessListsInternal()) {
+      for (const entry of acl.entries) {
+        if (entry.timeRange) names.add(entry.timeRange);
+      }
+    }
+    return [...names];
+  }
 
   getSelectedACL(): string | null { return this.selectedACL; }
   setSelectedACL(name: string | null): void { this.selectedACL = name; }

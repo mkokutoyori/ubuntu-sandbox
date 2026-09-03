@@ -1891,3 +1891,36 @@ défauts — la méthode vaut d'être reprise sur le reliquat.
   « causes the user to be prompted »). Ce n'est pas ferme ici parce que
   le chemin de saisie interactive de ce cmdlet n'existe pas et qu'une
   vingtaine de laboratoires passent deja le mot de passe.
+- `periodic <jours> hh:mm to <jours> hh:mm` — la forme dont le jour de
+  FIN est nomme, attestee par la reference IOS
+  (`periodic <days> hh:mm to [<days>] hh:mm`, donc `periodic Monday 23:00
+  to Tuesday 01:00`, une fenetre qui traverse minuit) — est REFUSEE
+  plutot que rangee inerte. `TimeRangePeriodic` ne porte pas de jour de
+  fin et `isTimeRangeActive` compare un seul jour de semaine a une seule
+  minute du jour, donc l'accepter rangerait un critere que rien
+  n'evalue : la plage paraitrait posee et ne s'ouvrirait jamais la nuit
+  qu'elle decrit. A rouvrir avec un jour de fin sur le modele ET la
+  moitie du calcul qui va avec, les deux ensemble.
+- Une ACE d'un Catalyst ne peut pas porter `time-range <nom>` : depuis ce
+  lot le commutateur DECLARE ses plages horaires — `time-range`,
+  `periodic`, `absolute`, `show time-range` et le rendu de configuration
+  sont ceux du routeur, une seule declaration pour les deux — mais son
+  analyse d'ACE ne lit pas le mot-cle (`grep timeRange
+  CiscoSwitchShell.ts` ne rend rien), et son moteur de listes n'appelle
+  pas `setTimeRangeResolver`. Une plage y est donc juste, relue, et sans
+  consommateur. Le fermer touche l'analyse d'ACE du commutateur ET son
+  plan de donnees, ce qui est un autre sujet que la grammaire de la
+  plage.
+- `absolute start <borne> end <borne>` n'exige pas que la fin suive le
+  debut : `absolute start 8:00 20 March 2017 end 17:00 15 March 2017` est
+  accepte et decrit une fenetre vide, qu'`isTimeRangeActive` referme
+  correctement (aucune date ne satisfait les deux). Ce que fait une vraie
+  machine — refuser a la saisie, ou accepter une plage qui ne s'ouvre
+  jamais — n'est atteste par aucune capture atteignable depuis ce reseau,
+  et les deux sont plausibles ; mesurer avant de trancher.
+- Le jour du mois d'une borne `absolute` est borne a 1..31 sans regarder
+  le MOIS : `absolute start 8:00 31 February 2017` est accepte.
+  `Date.UTC` le reporte alors au 3 mars, donc la plage s'ouvre a une date
+  que l'operateur n'a pas ecrite. Ce que refuse un vrai IOS ici n'est pas
+  atteste ; le fermer demande soit une capture, soit la decision assumee
+  de valider le calendrier.

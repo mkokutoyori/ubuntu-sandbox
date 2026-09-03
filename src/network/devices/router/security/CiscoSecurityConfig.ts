@@ -1,5 +1,6 @@
 import type { IPAddress } from '../../../core/types';
 import { renderSecretField } from '../../shells/cisco/ciscoPasswordRender';
+import { type TimeRange, timeRangeBodyLines } from './timeRange';
 
 export type AaaMethodList = 'default' | string;
 export type AaaServiceKind = 'login' | 'enable' | 'ppp' | 'exec' | 'commands' | 'network';
@@ -219,85 +220,10 @@ export interface InterfaceSecurityFlags {
   urpf?: InterfaceUrpf;
 }
 
-export interface TimeRangeAbsolute {
-  start?: { year: number; month: number; day: number; hour: number; minute: number };
-  end?: { year: number; month: number; day: number; hour: number; minute: number };
-}
-
-export interface TimeRangePeriodic {
-  days: string;
-  startHour: number;
-  startMinute: number;
-  endHour: number;
-  endMinute: number;
-}
-
-export interface TimeRange {
-  name: string;
-  absolute?: TimeRangeAbsolute;
-  periodic: TimeRangePeriodic[];
-}
-
-/** Cisco day-keyword → JS getDay() (0=Sunday..6=Saturday) set. */
-const TIME_RANGE_DAY_SETS: Record<string, ReadonlySet<number>> = {
-  monday:    new Set([1]),
-  tuesday:   new Set([2]),
-  wednesday: new Set([3]),
-  thursday:  new Set([4]),
-  friday:    new Set([5]),
-  saturday:  new Set([6]),
-  sunday:    new Set([0]),
-  weekdays:  new Set([1, 2, 3, 4, 5]),
-  weekend:   new Set([0, 6]),
-  daily:     new Set([0, 1, 2, 3, 4, 5, 6]),
-};
-
-/**
- * Decide whether a Cisco time-range is "active" at the given instant.
- * An ACE tagged `time-range NAME` only matches when this returns true.
- *
- * - absolute start/end (if set) gate the whole range — outside the
- *   window every periodic clause is inactive.
- * - inside the absolute window, the range is active if AT LEAST ONE
- *   periodic clause covers `now`'s weekday + time of day. A range
- *   with no periodic clauses is treated as "always-active inside the
- *   absolute window" (matches IOS).
- *
- * `now` is interpreted in the device's local timezone (the simulator
- * does not model timezones, so JS `Date.getHours()` / `getDay()` give
- * "device-local"). Cisco's time-range also runs in device-local time
- * by default — fidelity is exact for the educational scenarios.
- */
-export function isTimeRangeActive(tr: TimeRange, now: Date): boolean {
-  if (tr.absolute) {
-    const ts = now.getTime();
-    if (tr.absolute.start) {
-      const s = Date.UTC(
-        tr.absolute.start.year, tr.absolute.start.month - 1,
-        tr.absolute.start.day, tr.absolute.start.hour, tr.absolute.start.minute,
-      );
-      if (ts < s) return false;
-    }
-    if (tr.absolute.end) {
-      const e = Date.UTC(
-        tr.absolute.end.year, tr.absolute.end.month - 1,
-        tr.absolute.end.day, tr.absolute.end.hour, tr.absolute.end.minute,
-      );
-      if (ts > e) return false;
-    }
-  }
-  if (tr.periodic.length === 0) return true;
-  const day = now.getDay();
-  const minOfDay = now.getHours() * 60 + now.getMinutes();
-  for (const p of tr.periodic) {
-    const set = TIME_RANGE_DAY_SETS[p.days.toLowerCase()];
-    if (!set || !set.has(day)) continue;
-    const start = p.startHour * 60 + p.startMinute;
-    const end   = p.endHour   * 60 + p.endMinute;
-    if (minOfDay >= start && minOfDay <= end) return true;
-  }
-  return false;
-}
+export type {
+  TimeRange, TimeRangeAbsolute, TimeRangePeriodic, TimeRangeStamp,
+} from './timeRange';
+export { isTimeRangeActive } from './timeRange';
 
 export interface PkiTrustpoint {
   name: string;
@@ -527,6 +453,18 @@ export class CiscoSecurityConfig {
     return tr;
   }
 
+  getTimeRange(name: string): TimeRange | undefined {
+    return this.timeRanges.get(name);
+  }
+
+  listTimeRanges(): TimeRange[] {
+    return [...this.timeRanges.values()];
+  }
+
+  removeTimeRange(name: string): boolean {
+    return this.timeRanges.delete(name);
+  }
+
   /**
    * Les vues, rendues SEULES et AVANT tout le reste.
    *
@@ -696,13 +634,7 @@ export class CiscoSecurityConfig {
     }
     for (const tr of this.timeRanges.values()) {
       lines.push(`time-range ${tr.name}`);
-      if (tr.absolute) {
-        const a = tr.absolute;
-        if (a.start) lines.push(` absolute start ${a.start.hour}:${a.start.minute < 10 ? '0' : ''}${a.start.minute} ${a.start.day} ${this.monthName(a.start.month)} ${a.start.year}${a.end ? ' end ' + a.end.hour + ':' + (a.end.minute < 10 ? '0' : '') + a.end.minute + ' ' + a.end.day + ' ' + this.monthName(a.end.month) + ' ' + a.end.year : ''}`);
-      }
-      for (const p of tr.periodic) {
-        lines.push(` periodic ${p.days} ${p.startHour}:${this.pad2(p.startMinute)} to ${p.endHour}:${this.pad2(p.endMinute)}`);
-      }
+      for (const body of timeRangeBodyLines(tr)) lines.push(` ${body}`);
     }
     for (const cm of this.classMaps.values()) {
       const typ = cm.kind === 'inspect' ? ' type inspect' : '';
@@ -791,11 +723,6 @@ export class CiscoSecurityConfig {
     return parts.join(' ');
   }
 
-  private monthName(m: number): string {
-    return ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'][m - 1] || '';
-  }
-
-  private pad2(n: number): string { return n < 10 ? '0' + n : '' + n; }
 }
 
 void (null as IPAddress | null);

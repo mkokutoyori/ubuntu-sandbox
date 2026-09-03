@@ -143,9 +143,6 @@ export const ROUTEUR_SEUL: ContinuationTable = {
   configStdNacl: {
     'sequence': ['deny', 'permit'],
   },
-  configTimeRange: {
-    'periodic': ['to'],
-  },
   configTrack: {
     'delay': ['down', 'up'],
     'object': ['not', 'weight'],

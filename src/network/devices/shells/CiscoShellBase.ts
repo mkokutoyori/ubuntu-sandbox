@@ -17,6 +17,10 @@ import { IPAddress } from '@/network/core/types';
 import { IOS_SSH } from '@/terminal/ssh/sshDialect';
 import { CommandTable } from '@/cli/CommandTable';
 import {
+  TIME_RANGE_FAMILY,
+  type TimeRangeStore,
+} from '@/cli/commands/timeRange/timeRangeFamily';
+import {
   specsFromTrieRegistrations, isCollector, type AdapterKeyword,
 } from '@/cli/commands/trieAdapter';
 import { newSession, type CliSession } from '@/cli/CliSession';
@@ -5556,8 +5560,18 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     ];
   }
 
+  timeRangeStore(): TimeRangeStore {
+    return getSecurityConfig(this.d() as object);
+  }
+
+  timeRangeClockMs(): number {
+    const device = this.d() as unknown as { getSystemClockMs?: () => number };
+    return device.getSystemClockMs?.() ?? Date.now();
+  }
+
   protected socleSpecs(): readonly CommandSpec[] {
     return [
+      ...TIME_RANGE_FAMILY,
       ...debugFamily(this.debugPairs()),
       ...showConfigViewSpecs(() => this),
       ...showIpDhcpSpecs(() => this.dhcpViewServer()),
