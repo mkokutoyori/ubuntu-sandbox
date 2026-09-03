@@ -5,9 +5,31 @@ export type SnmpAccess = 'ro' | 'rw';
 
 export const SNMP_VERSIONS = ['1', '2c', '3'] as const;
 export const SNMP_V3_LEVELS = ['noauth', 'auth', 'priv'] as const;
+export const SNMP_AUTH_ALGOS = ['md5', 'sha'] as const;
+export const SNMP_PRIV_ALGOS = ['des', '3des', 'aes'] as const;
+export const SNMP_AES_KEY_BITS = [128, 192, 256] as const;
 
 export type SnmpVersion = typeof SNMP_VERSIONS[number];
 export type SnmpV3Level = typeof SNMP_V3_LEVELS[number];
+export type SnmpAuthAlgo = typeof SNMP_AUTH_ALGOS[number];
+export type SnmpPrivAlgo = typeof SNMP_PRIV_ALGOS[number];
+export type SnmpAesKeyBits = typeof SNMP_AES_KEY_BITS[number];
+
+export function isSnmpAuthAlgo(token: string | undefined): token is SnmpAuthAlgo {
+  return token !== undefined
+    && (SNMP_AUTH_ALGOS as readonly string[]).includes(token.toLowerCase());
+}
+
+export function isSnmpPrivAlgo(token: string | undefined): token is SnmpPrivAlgo {
+  return token !== undefined
+    && (SNMP_PRIV_ALGOS as readonly string[]).includes(token.toLowerCase());
+}
+
+const CLI_INCOMPLETE = '';
+
+function refusMot(token: string | undefined): string {
+  return token ?? CLI_INCOMPLETE;
+}
 
 export function isSnmpVersion(token: string | undefined): token is SnmpVersion {
   return token !== undefined
@@ -57,9 +79,9 @@ export interface SnmpUser {
   group: string;
   version: SnmpVersion;
   v3Level?: SnmpV3Level;
-  authAlgo?: 'md5' | 'sha';
+  authAlgo?: SnmpAuthAlgo;
   authPassword?: string;
-  privAlgo?: 'des' | '3des' | 'aes';
+  privAlgo?: SnmpPrivAlgo;
   /**
    * La longueur de clé d'AES (`priv aes 256 <mot de passe>`).
    *
@@ -69,7 +91,7 @@ export interface SnmpUser {
    * et le vrai secret était jeté. La machine chiffrait avec une clé que
    * personne n'avait saisie, et la configuration relue la reproduisait.
    */
-  privKeyBits?: 128 | 192 | 256;
+  privKeyBits?: SnmpAesKeyBits;
   privPassword?: string;
   acl?: string;
 }
@@ -130,7 +152,7 @@ export class SnmpService {
       case 'community': this.configCommunity(args); break;
       case 'host': return this.configHost(args);
       case 'group': this.configGroup(args); break;
-      case 'user': this.configUser(args); break;
+      case 'user': return this.configUser(args);
       case 'view': this.configView(args); break;
       case 'enable':
         if (args[1]?.toLowerCase() === 'traps') {
@@ -271,36 +293,45 @@ export class SnmpService {
     this.enable();
   }
 
-  private configUser(args: string[]): void {
+  private configUser(args: string[]): string | null {
     const name = args[1];
     const groupName = args[2];
-    if (!name || !groupName) return;
-    const user: SnmpUser = { name, group: groupName, version: '1' };
-    let i = 3;
-    if (args[i]?.toLowerCase() === 'v3' || args[i]?.toLowerCase() === 'v2c' || args[i]?.toLowerCase() === 'v1') {
-      user.version = args[i].toLowerCase().replace('v', '') as SnmpVersion;
-      i++;
-    }
+    if (!name || !groupName) return null;
+
+    const versionMot = (args[3] ?? '').toLowerCase().replace(/^v/, '');
+    if (!isSnmpVersion(versionMot)) return refusMot(args[3]);
+
+    const user: SnmpUser = { name, group: groupName, version: versionMot };
+    let i = 4;
     while (i < args.length) {
       const tok = args[i].toLowerCase();
-      if (tok === 'auth' && args[i + 1] && args[i + 2]) {
-        user.authAlgo = args[i + 1].toLowerCase() as 'md5' | 'sha';
+      if (tok === 'auth') {
+        if (!isSnmpAuthAlgo(args[i + 1])) return refusMot(args[i + 1]);
+        if (!args[i + 2]) return CLI_INCOMPLETE;
+
+        user.authAlgo = args[i + 1].toLowerCase() as SnmpAuthAlgo;
         user.authPassword = args[i + 2];
+        user.v3Level = 'auth';
         i += 3;
-        if (args[i]?.toLowerCase() === 'priv' && args[i + 1] && args[i + 2]) {
-          user.privAlgo = args[i + 1].toLowerCase() as 'des' | '3des' | 'aes';
+        if (args[i]?.toLowerCase() === 'priv') {
+          if (!isSnmpPrivAlgo(args[i + 1])) return refusMot(args[i + 1]);
+
+          user.privAlgo = args[i + 1].toLowerCase() as SnmpPrivAlgo;
           i += 2;
           // `aes` prend une longueur de clé AVANT le mot de passe. Sans
           // ce pas, `256` était lu comme le secret.
-          if (user.privAlgo === 'aes' && /^(128|192|256)$/.test(args[i] ?? '')) {
-            user.privKeyBits = Number(args[i]) as 128 | 192 | 256;
+          if (user.privAlgo === 'aes' && !/^(128|192|256)$/.test(args[i] ?? '')) {
+            return refusMot(args[i]);
+          }
+          if (user.privAlgo === 'aes') {
+            user.privKeyBits = Number(args[i]) as SnmpAesKeyBits;
             i++;
           }
+          if (!args[i]) return CLI_INCOMPLETE;
+
           user.privPassword = args[i];
           user.v3Level = 'priv';
           i++;
-        } else {
-          user.v3Level = 'auth';
         }
       } else if (tok === 'access' && args[i + 1]) {
         user.acl = args[i + 1];
@@ -309,11 +340,12 @@ export class SnmpService {
         user.v3Level = 'noauth';
         i++;
       } else {
-        i++;
+        return refusMot(args[i]);
       }
     }
     this.users.set(name, user);
     this.enable();
+    return null;
   }
 
   private configView(args: string[]): void {

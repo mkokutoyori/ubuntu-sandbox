@@ -6454,7 +6454,7 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
     return '% Error';
   }
 
-  private resolveInterfaceName(input: string): string | null {
+  protected override resolveInterfaceName(input: string): string | null {
     const lower = input.trim().replace(/\s+/g, '').toLowerCase();
 
     for (const name of this.d().getPortNames()) {

@@ -3555,8 +3555,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     return `no debug ${rest}`;
   }
 
-  /** Best-effort canonical interface name, for `debug condition interface`. */
-  protected resolveInterfaceNameForDebug(raw: string): string | null {
+  protected resolveInterfaceName(raw: string): string | null {
     const dev = this.d() as unknown as { getPortNames?: () => string[] };
     const names = dev.getPortNames?.() ?? [];
     const flat = raw.replace(/\s+/g, '').toLowerCase();
@@ -3996,7 +3995,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     if (kind !== 'interface' && kind !== 'vrf' && kind !== 'ip') return CISCO_ERRORS.INVALID_INPUT;
     if (!value) return CISCO_ERRORS.INCOMPLETE;
     const resolved = kind === 'interface'
-      ? (this.resolveInterfaceNameForDebug(value) ?? value)
+      ? (this.resolveInterfaceName(value) ?? value)
       : value;
     return svc.addCondition(kind, resolved);
   }
@@ -4012,7 +4011,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     if (kind !== 'interface' && kind !== 'vrf' && kind !== 'ip') return CISCO_ERRORS.INVALID_INPUT;
     if (!value) return CISCO_ERRORS.INCOMPLETE;
     const resolved = kind === 'interface'
-      ? (this.resolveInterfaceNameForDebug(value) ?? value)
+      ? (this.resolveInterfaceName(value) ?? value)
       : value;
     return svc.removeCondition(kind, resolved);
   }

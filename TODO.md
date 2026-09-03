@@ -2143,3 +2143,35 @@ et les tests qui l'observent, et c'est un autre sujet.
   issue de connexion qui le perd. Non ferme ici pour ne pas entrer en
   collision avec le chantier `nmap`/ICMP en cours dans les memes
   fichiers.
+- Le commutateur Cisco porte TROIS resolveurs de nom d'interface :
+  `resolvePortName` (correspondance exacte seule), sa propre
+  `resolveInterfaceName` (exacte plus une table de prefixes ecrite a la
+  main, une vingtaine d'entrees par type) et celle de `CiscoShellBase`
+  (exacte plus une heuristique par squelette numerique). Ce lot en ferme
+  UN des trois — la methode du commutateur devient un `override` explicite
+  de celle de la base, donc les deux plateformes partagent desormais la
+  meilleure des deux —, et laisse `resolvePortName`. La fondre changerait
+  le COMPORTEMENT de ses appelants (`mrouter interface Gi0/1` serait
+  accepte la ou seule la forme longue passe aujourd'hui), ce qui est une
+  amelioration mais pas la question de ce lot.
+- `snmp-server community <nom> RO <mot>` accepte n'importe quel mot comme
+  liste de controle, y compris un nom de liste qui n'existe pas. Ce n'est
+  PAS ferme ici et c'est deliberé : IOS ecrit `snmp-server` AVANT
+  `access-list` dans sa propre configuration, donc refuser une reference
+  en avant empecherait la machine de relire sa propre configuration de
+  demarrage — la meme raison qui fait accepter `ip nat inside source
+  list <n>` avant que la liste existe. Ce qui manque serait un controle
+  a l'EMPLOI et non a la saisie.
+- `ip domain lookup source-interface <interface>` accepte une interface
+  qui n'existe pas (`zorglub`, `GigabitEthernet9/9`) et la rend dans la
+  configuration. Une sonde de cette session a tente de l'exiger et le
+  correctif a fait tomber `tuto-dns-cisco-conformite`, qui nomme une
+  `Loopback0` non creee — donc un test de conformite du depot affirme le
+  contraire de la premisse. Ce que fait un vrai IOS ici n'est atteste par
+  aucune source atteignable depuis ce reseau (les domaines de Cisco sont
+  refuses par le mandataire de sortie), et l'argument du rejeu ne tranche
+  pas : ce simulateur rend cette ligne APRES les interfaces, donc un
+  rechargement fonctionnerait dans les deux cas. La moitie du lot a ete
+  ABANDONNEE plutot que forcee. A rouvrir avec une capture, en verifiant
+  d'abord si le tutoriel dont ce test est tire montre la loopback creee
+  avant.

@@ -1047,7 +1047,7 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
   }
 
   dhcpClientResolveInterface(name: string): string | null {
-    return this.resolveInterfaceNameForDebug(name);
+    return this.resolveInterfaceName(name);
   }
 
   pendingInterfaceConfig(iface: string): Record<string, unknown> {
