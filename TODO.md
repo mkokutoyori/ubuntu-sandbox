@@ -49,6 +49,20 @@ elles.
 
 ## Commutateur Cisco
 
+### [policy] `ip prefix-list` et `route-map` sont refuses sur un Catalyst
+Les deux familles sont declarees « router-only » (`CiscoPolicyCommands`
+n'est branche que sur le routeur), donc un Catalyst repond
+`% Invalid input detected` a `ip prefix-list PL permit 10.0.0.0/8` comme
+a `route-map RM permit 10`.
+**Mesure** : accepte et rendu sur le routeur, refuse sur le commutateur,
+pour la meme frappe.
+**Report** : un 3560 les connait, un 2960 non — la reponse depend du
+PROFIL de chassis, et ce depot en porte trois (`c2900`, `c2960`,
+`c3560`). Trancher demande de decider ce que ce simulateur modelise de
+cette difference, ce qui est une autre question que celle de savoir si
+la commande juge ses arguments. La brancher sans ce choix ferait
+apprendre a un 2960 une commande que la vraie machine refuse.
+
 ### [snmp] le Catalyst RANGE sa configuration SNMP, mais rien n'ecoute sur 161
 `snmp-server community|host|contact|location|chassis-id` sont desormais
 retenus, servis par `show snmp`, `show snmp community`, `show snmp host`
