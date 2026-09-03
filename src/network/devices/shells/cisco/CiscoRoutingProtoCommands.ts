@@ -339,7 +339,8 @@ export function buildRouterSubmodeOn(
     if (!REDIST_PROTOCOLS.includes(a[0].toLowerCase())) return CISCO_ERRORS.INVALID_INPUT;
     if (REDIST_AVEC_PROCESSUS.includes(a[0].toLowerCase())
       && boundedInteger(a[1], 1, REDIST_PROCESSUS_MAX) === null) {
-      return a[1] === undefined ? CISCO_ERRORS.INCOMPLETE : CISCO_ERRORS.INVALID_INPUT;
+      if (a[1] === undefined) return CISCO_ERRORS.INCOMPLETE;
+      throw new CliInvalidInput({ token: a[1] });
     }
     const parsed = parseRedistribute(a);
     if (!parsed) throw new CliInvalidInput();

@@ -7266,3 +7266,50 @@ scanner, qui interroge `connectOutcome`, distingue « rien n'ecoute » de
 tombent ; les 2 TEMOINS — port ferme ordinaire, port ouvert — passent des
 deux cotes et c'est exactement leur role, le correctif ne devant pas
 transformer tout refus en filtre.
+
+## Les trois rouges de longue date, et les deux defauts qu'ils cachaient
+
+**Perimetre revendique** : `WindowsPSProviders` (traduction Win32 → .NET),
+`ConversionCmdlets` (`Export-Csv`), `CiscoRoutingProtoCommands`
+(marqueur `^`), `classMapGrammar` (nouveau), `CiscoSecurityCommands` et
+`ciscoArgumentHelp` (lecture de cette grammaire).
+
+Les trois cas rouges de la suite avaient la meme forme : un laboratoire
+qui decrivait ce qu'une vraie machine REFUSE. Mais deux d'entre eux
+cachaient un defaut de produit, et c'est ce qui valait le detour.
+
+**(1) `Export-Csv` vers un repertoire absent** rendait « The system
+cannot find the path specified. », le libelle de Win32 que `cd` et `copy`
+affichent, sans meme le nom de l'applet. PowerShell remonte l'exception
+.NET du fournisseur : `DirectoryNotFoundException` ecrit « Could not find
+a part of the path '<chemin>'. », et l'applet la prefixe de son nom. La
+traduction est posee a la FRONTIERE entre les deux mondes — le
+fournisseur PowerShell — donc toute applet qui ecrit un fichier en
+herite, et `cd` garde les mots de Win32, ce qu'un TEMOIN verifie. Le
+laboratoire, lui, omettait le `New-Item -ItemType Directory` qu'un
+operateur doit taper : `Export-Csv` ne cree pas le repertoire manquant,
+ici comme sur une vraie machine.
+
+**(2) `redistribute ospf metric 2` sous `router rip`** etait refuse — et
+c'est JUSTE, IOS exige l'identifiant de processus, `redistribute ospf ?`
+repondant `<1-65535>  Process ID` — mais le refus arrivait SANS le
+marqueur `^`, alors que c'est tout ce que ce message apporte. Le
+gestionnaire rendait une constante la ou le depot a `CliInvalidInput`,
+qui place le curseur sous le mot fautif. Le laboratoire tapait la forme
+sans identifiant, donc rien n'etait redistribue et le test le decouvrait
+trois assertions plus loin.
+
+**(3) `class-map type ?` annoncait `<cr>`** pour une frappe que la meme
+machine refuse par `% Incomplete command.`. La grammaire de `class-map` et
+`policy-map` — `type <sorte>` facultatif, `match-all`/`match-any`
+facultatif, puis le NOM obligatoire — etait ecrite DEUX fois : dans le
+gestionnaire, qui refusait correctement, et dans la declaration d'aide,
+qui ne connaissait que le cas `match-*`. `classMapGrammar.ts` la declare
+une fois et les deux la lisent ; `policy-map`, qui n'avait aucune
+declaration, cesse du meme coup de promettre `<cr>` apres `type`.
+
+**Discrimination** : `probe-trois-rouges-de-longue-date.test.ts` (7 cas),
+2 tombent — et pas trois, ce qui est la mesure exacte : le gestionnaire
+de `class-map` refusait deja, seule l'AIDE mentait, et un `<cr>` annonce
+ne se lit pas depuis un appel a la commande ; ce mensonge-la reste garde
+par `probe-aide-cr-tient-sa-promesse`, qui le balayait.

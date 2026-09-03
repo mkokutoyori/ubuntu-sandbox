@@ -135,6 +135,25 @@ function userInfoOf(u: AdUser): AdUserInfo {
 
 // ── Filesystem adapter ────────────────────────────────────────────────────
 
+/**
+ * `WindowsFileSystem` rend les mots de Win32, ceux que `cd`, `copy` et
+ * `type` affichent. PowerShell, lui, remonte l'exception .NET du
+ * fournisseur, et ce sont deux libelles differents pour un meme fait :
+ * `DirectoryNotFoundException` dit « Could not find a part of the path
+ * '<chemin>'. » et `FileNotFoundException` « Could not find file
+ * '<chemin>'. ». La traduction se fait ICI, a la frontiere entre les
+ * deux mondes, plutot que dans chaque applet.
+ */
+function dotNetIoMessage(absPath: string, win32Error: string | undefined): string {
+  if (win32Error === 'The system cannot find the path specified.') {
+    return `Could not find a part of the path '${absPath}'.`;
+  }
+  if (win32Error === 'The system cannot find the file specified.') {
+    return `Could not find file '${absPath}'.`;
+  }
+  return win32Error ?? `Could not find a part of the path '${absPath}'.`;
+}
+
 class WindowsFileSystemAdapter implements IFileSystemProvider {
   constructor(private readonly pc: WindowsPC) {}
 
@@ -146,7 +165,7 @@ class WindowsFileSystemAdapter implements IFileSystemProvider {
   readFile(path: string): string {
     const abs = this.abs(path);
     const r = this.fs().readFile(abs);
-    if (!r.ok) throw new Error(r.error ?? `Cannot read ${path}`);
+    if (!r.ok) throw new Error(dotNetIoMessage(abs, r.error));
     this.pc.auditObjectAccess?.(abs, 'ReadData', '%%4416');
     return r.content ?? '';
   }
@@ -155,8 +174,9 @@ class WindowsFileSystemAdapter implements IFileSystemProvider {
     return all.slice(Math.max(0, all.length - lines));
   }
   writeFile(path: string, content: string): void {
-    const r = this.fs().createFile(this.abs(path), content);
-    if (!r.ok) throw new Error(r.error ?? `Cannot write ${path}`);
+    const abs = this.abs(path);
+    const r = this.fs().createFile(abs, content);
+    if (!r.ok) throw new Error(dotNetIoMessage(abs, r.error));
   }
   appendFile(path: string, content: string): void {
     const abs = this.abs(path);
@@ -165,7 +185,7 @@ class WindowsFileSystemAdapter implements IFileSystemProvider {
       return;
     }
     const r = this.fs().appendFile(abs, content);
-    if (!r.ok) throw new Error(r.error ?? `Cannot append to ${path}`);
+    if (!r.ok) throw new Error(dotNetIoMessage(abs, r.error));
   }
   listDir(path: string): DirEntry[] {
     const entries = this.fs().listDirectory(this.abs(path));

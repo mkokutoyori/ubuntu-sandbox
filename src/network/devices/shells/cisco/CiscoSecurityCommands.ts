@@ -27,6 +27,7 @@ import { pad2 } from '@/lib/format';
 import { getOrCreateCA } from '../../../pki/PkiCaRegistry';
 import type { RevocationCheckMode } from '../../../pki/CertificateVerifier';
 import { MODES_INTERFACE } from './CiscoConfigCommands';
+import { readMapPrefix } from './classMapGrammar';
 
 const SECURITY_KEY = Symbol.for('CiscoSecurityConfig');
 
@@ -774,16 +775,12 @@ export function buildSecurityConfigCommands(trie: CommandTrie, ctx: CiscoSecurit
 
   trie.registerGreedy('class-map', 'Define class map', (args) => {
     if (args.length < 1) return '% Incomplete command.';
-    let kind: 'qos' | 'inspect' = 'qos';
-    let matchAll = true;
-    let i = 0;
-    if (args[i] === 'type') {
-      if (args[i + 1] === undefined) return '% Incomplete command.';
-      if (args[i + 1] !== 'inspect') throw new CliInvalidInput({ token: args[i + 1] });
-      kind = 'inspect'; i += 2;
+    const prefix = readMapPrefix(args, true);
+    if (prefix.invalidToken !== undefined) {
+      throw new CliInvalidInput({ token: prefix.invalidToken });
     }
-    if (args[i] === 'match-all') { matchAll = true; i++; }
-    else if (args[i] === 'match-any') { matchAll = false; i++; }
+    if (prefix.incomplete) return '% Incomplete command.';
+    const { kind, matchAll, next: i } = prefix;
     const name = args[i];
     if (!name) return '% Incomplete command.';
     if (args[i + 1] !== undefined) throw new CliInvalidInput({ token: args[i + 1] });
@@ -795,13 +792,12 @@ export function buildSecurityConfigCommands(trie: CommandTrie, ctx: CiscoSecurit
 
   trie.registerGreedy('policy-map', 'Define policy map', (args) => {
     if (args.length < 1) return '% Incomplete command.';
-    let kind: 'qos' | 'inspect' = 'qos';
-    let i = 0;
-    if (args[i] === 'type') {
-      if (args[i + 1] === undefined) return '% Incomplete command.';
-      if (args[i + 1] !== 'inspect') throw new CliInvalidInput({ token: args[i + 1] });
-      kind = 'inspect'; i += 2;
+    const prefix = readMapPrefix(args, false);
+    if (prefix.invalidToken !== undefined) {
+      throw new CliInvalidInput({ token: prefix.invalidToken });
     }
+    if (prefix.incomplete) return '% Incomplete command.';
+    const { kind, next: i } = prefix;
     const name = args[i];
     if (!name) return '% Incomplete command.';
     if (args[i + 1] !== undefined) throw new CliInvalidInput({ token: args[i + 1] });
