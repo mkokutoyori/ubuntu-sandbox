@@ -1239,7 +1239,7 @@ export class FortiShell {
     if (rest[0] !== 'system' || rest[1] !== 'session' || rest[2] !== 'filter') {
       return FortiMessages.unknownAction(`set ${rest.join(' ')}`);
     }
-    return runSessionFilter(rest.slice(3), this.diagDeps(), true);
+    return runSessionFilter(rest.slice(3), this.diagDeps().state.sessionFilter, true);
   }
 
   private executeSyncSession(): string {

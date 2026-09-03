@@ -1,5 +1,6 @@
 import { flowKeyToString, reverseFlowKey, type FlowKey } from './FlowKey';
 import type { FlowDirection, ObservedTcpState, TcpStateMachine } from './TcpStateMachine';
+import { sessionFamily, type SessionFamily } from './SessionFamily';
 
 export type SessionState = 'init' | 'opening' | 'active' | 'closing' | 'closed' | 'discard';
 
@@ -80,11 +81,17 @@ export interface SessionLookup {
   readonly direction: FlowDirection;
 }
 
+export interface FamilyCounters {
+  readonly created: number;
+  readonly closed: number;
+}
+
 export interface SessionStatistics {
   readonly active: number;
   readonly created: number;
   readonly closed: number;
   readonly discarded: number;
+  readonly byFamily: Readonly<Record<SessionFamily, FamilyCounters>>;
 }
 
 export interface SessionTableView {
@@ -113,6 +120,10 @@ export class SessionTable {
   private createdCount = 0;
   private closedCount = 0;
   private discardedCount = 0;
+  private readonly familyCounts: Record<SessionFamily, { created: number; closed: number }> = {
+    ipv4: { created: 0, closed: 0 },
+    ipv6: { created: 0, closed: 0 },
+  };
 
   constructor(deps: SessionTableDeps = {}) {
     this.deps = deps;
@@ -195,6 +206,7 @@ export class SessionTable {
     this.index.delete(flowKeyToString(session.s2c));
     this.sessions.delete(session.id);
     this.closedCount++;
+    this.familyCounts[sessionFamily(session)].closed++;
     this.deps.onClosed?.(session, reason);
 
     const siblings = this.children.get(session.id);
@@ -240,6 +252,10 @@ export class SessionTable {
       created: this.createdCount,
       closed: this.closedCount,
       discarded: this.discardedCount,
+      byFamily: Object.freeze({
+        ipv4: Object.freeze({ ...this.familyCounts.ipv4 }),
+        ipv6: Object.freeze({ ...this.familyCounts.ipv6 }),
+      }),
     });
 
     return {
@@ -280,6 +296,7 @@ export class SessionTable {
     this.index.set(flowKeyToString(session.c2s), { session, direction: 'c2s' });
     this.index.set(flowKeyToString(session.s2c), { session, direction: 's2c' });
     this.createdCount++;
+    this.familyCounts[sessionFamily(session)].created++;
     this.deps.onCreated?.(session);
     return session;
   }

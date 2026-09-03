@@ -1,4 +1,5 @@
 import type { FirewallSession } from '../../../session/SessionTable';
+import type { SessionFamily } from '../../../session/SessionFamily';
 import type { InterfaceTable } from '../../../l3/InterfaceTable';
 import type { RouteTable } from '../../../l3/RouteTable';
 
@@ -17,7 +18,12 @@ export interface SessionRenderDeps {
   readonly interfaces: InterfaceTable;
   readonly routes: RouteTable;
   readonly vdom: number;
+  readonly family?: SessionFamily;
+  readonly nextHop6?: (destination: string) => { iface: string; nextHop: string } | null;
+  readonly interfaceIp6?: (iface: string) => string | null;
 }
+
+const UNSPECIFIED = Object.freeze({ ipv4: '0.0.0.0', ipv6: '::' });
 
 const TCP_PROTO_STATE: Readonly<Record<string, string>> = Object.freeze({
   'syn-sent': '02',
@@ -69,6 +75,12 @@ export function filterIsEmpty(filter: SessionFilter): boolean {
   return Object.values(filter).every(value => value === undefined);
 }
 
+export function clearFilter(filter: SessionFilter): void {
+  for (const name of Object.keys(filter)) {
+    delete filter[name as keyof SessionFilter];
+  }
+}
+
 export function renderSessionList(
   sessions: readonly FirewallSession[], deps: SessionRenderDeps,
 ): string {
@@ -76,6 +88,10 @@ export function renderSessionList(
   for (const session of sessions) lines.push(...renderSession(session, deps));
   lines.push(`total session ${sessions.length}`);
   return lines.join('\n');
+}
+
+function familyOf(deps: SessionRenderDeps): SessionFamily {
+  return deps.family ?? 'ipv4';
 }
 
 function renderSession(session: FirewallSession, deps: SessionRenderDeps): string[] {
@@ -87,8 +103,11 @@ function renderSession(session: FirewallSession, deps: SessionRenderDeps): strin
   const ingress = ifIndex(deps.interfaces, session.ingressInterface);
   const egress = ifIndex(deps.interfaces, session.egressInterface);
 
+  const family = familyOf(deps);
+
   return [
-    `session info: proto=${flow.protocol} proto_state=${protoState(session)}`
+    `${family === 'ipv6' ? 'session6' : 'session'} info:`
+    + ` proto=${flow.protocol} proto_state=${protoState(session)}`
     + ` duration=${duration} expire=${expire} timeout=${session.timeoutSec}`,
     'flags=00000000 sockflag=00000000 sockport=0 av_idx=0 use=3',
     'origin-shaper=',
@@ -103,22 +122,23 @@ function renderSession(session: FirewallSession, deps: SessionRenderDeps): strin
     `orgin->sink: org pre->post, reply pre->post dev=${ingress}->${egress}/${egress}->${ingress}`,
     `gwy=${gateway(deps, session.egressInterface, flow.destIP)}/`
     + `${gateway(deps, session.ingressInterface, flow.sourceIP)}`,
-    ...hooks(session),
+    ...hooks(session, family),
     `misc=0 policy_id=${session.policyId ?? 0} auth_info=0 chk_client_info=0 vd=${deps.vdom}`,
     `serial=${serial(session.id)} tos=ff/ff app_list=0 app=0 url_cat=0`,
   ];
 }
 
-function hooks(session: FirewallSession): string[] {
+function hooks(session: FirewallSession, family: SessionFamily): string[] {
   const flow = originalFlow(session);
   const translation = session.translation;
   const original = `${flow.sourceIP}:${flow.sourcePort}->${flow.destIP}:${flow.destPort}`;
+  const none = `(${UNSPECIFIED[family]}:0)`;
 
   if (!translation) {
     return [
-      `hook=post dir=org act=noop ${original}(0.0.0.0:0)`,
+      `hook=post dir=org act=noop ${original}${none}`,
       `hook=pre dir=reply act=noop ${flow.destIP}:${flow.destPort}`
-      + `->${flow.sourceIP}:${flow.sourcePort}(0.0.0.0:0)`,
+      + `->${flow.sourceIP}:${flow.sourcePort}${none}`,
     ];
   }
 
@@ -151,9 +171,14 @@ function ifIndex(interfaces: InterfaceTable, name: string): number {
 }
 
 function gateway(deps: SessionRenderDeps, iface: string, destination: string): string {
-  const resolved = deps.routes.resolveNextHop(destination);
+  const family = familyOf(deps);
+  const resolved = family === 'ipv6'
+    ? deps.nextHop6?.(destination) ?? null : deps.routes.resolveNextHop(destination);
   if (resolved?.iface === iface) return resolved.nextHop;
-  return deps.interfaces.get(iface)?.ip ?? '0.0.0.0';
+
+  const own = family === 'ipv6'
+    ? deps.interfaceIp6?.(iface) ?? null : deps.interfaces.get(iface)?.ip ?? null;
+  return own ?? UNSPECIFIED[family];
 }
 
 function serial(id: number): string {

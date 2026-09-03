@@ -1,6 +1,6 @@
 import type { FirewallLogLevel, FirewallLogType } from '../../../logging/FirewallLogStore';
 import { makeDebugFlowState, type DebugFlowState } from './debugFlowRenderer';
-import type { SessionFilter } from './sessionListRenderer';
+import { clearFilter, type SessionFilter } from './sessionListRenderer';
 import type { AuthListFilter } from './authListRenderer';
 
 export interface LogViewFilter {
@@ -13,6 +13,7 @@ export interface LogViewFilter {
 
 export class FortiDiagnostics {
   readonly sessionFilter: SessionFilter = {};
+  readonly session6Filter: SessionFilter = {};
   readonly debugFlow: DebugFlowState = makeDebugFlowState();
   authFilter: AuthListFilter = {};
   readonly logFilter: LogViewFilter = {
@@ -20,9 +21,7 @@ export class FortiDiagnostics {
   };
 
   clearSessionFilter(): void {
-    for (const name of Object.keys(this.sessionFilter)) {
-      delete this.sessionFilter[name as keyof SessionFilter];
-    }
+    clearFilter(this.sessionFilter);
   }
 
   resetDebug(): void {
