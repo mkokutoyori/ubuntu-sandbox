@@ -278,7 +278,7 @@ export interface IAdProvider {
   listGroups(): AdGroupInfo[];
   addGroupMember(groupIdentity: string, members: string[], opts?: AddGroupMemberOptions): AdOpResult;
   groupMemberLinks(groupIdentity: string): AdMemberLink[];
-  removeGroupMember(groupIdentity: string, members: string[]): AdOpResult;
+  removeGroupMember(groupIdentity: string, members: string[], opts?: AddGroupMemberOptions): AdOpResult;
   /** `Get-ADGroupMember` — direct members only (users, computers, nested groups, or a cross-domain `foreignSecurityPrincipal` — the AGDLP model relies on nesting Global groups inside Domain Local ones), each with enough shape to tell members apart by kind. */
   getGroupMembers(groupIdentity: string): Array<{ sam: string; dn: string; objectClass: 'user' | 'computer' | 'group' | 'foreignSecurityPrincipal' }>;
   removeGroup(identity: string): AdOpResult;

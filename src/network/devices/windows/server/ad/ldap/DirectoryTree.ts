@@ -243,10 +243,13 @@ export class DirectoryTree {
         for (const v of change.values) if (!merged.some(e => e.toLowerCase() === v.toLowerCase())) merged.push(v);
         entry.attributes.set(key, merged);
       } else { // delete
-        if (change.values.length === 0) { entry.attributes.delete(key); continue; }
-        const remaining = existing.filter(e => !change.values.some(v => v.toLowerCase() === e.toLowerCase()));
-        if (remaining.length === 0) entry.attributes.delete(key);
-        else entry.attributes.set(key, remaining);
+        if (change.values.length === 0) {
+          entry.attributes.delete(key);
+        } else {
+          const remaining = existing.filter(e => !change.values.some(v => v.toLowerCase() === e.toLowerCase()));
+          if (remaining.length === 0) entry.attributes.delete(key);
+          else entry.attributes.set(key, remaining);
+        }
       }
       if (key === MEMBER_ATTRIBUTE) {
         this.syncBackLinks(entry, existing, entry.attributes.get(key) ?? []);

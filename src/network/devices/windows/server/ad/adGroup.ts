@@ -91,6 +91,7 @@ export function groupNestingProblem(container: GroupScopeName, member: GroupScop
 }
 
 export const MEMBER_ALREADY_IN_GROUP = 'The specified account name is already a member of the group.';
+export const MEMBER_NOT_IN_GROUP = 'The specified account name is not a member of the group.';
 
 export function formatMemberTimeToLive(remainingSeconds: number, memberDn: string): string {
   return `<TTL=${remainingSeconds}>,${memberDn}`;

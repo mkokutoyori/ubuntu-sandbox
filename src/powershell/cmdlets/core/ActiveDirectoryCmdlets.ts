@@ -13,6 +13,7 @@
 
 import type { ICmdlet } from '../ICmdlet';
 import type { CmdletContext } from '../CmdletContext';
+import { NON_INTERACTIVE_HOST, confirmationDue } from '../confirmation';
 import { PSRuntimeError } from '@/powershell/runtime/PSRuntime';
 import type { PSValue } from '@/powershell/runtime/PSEnvironment';
 import type {
@@ -866,24 +867,41 @@ export class AddADGroupMemberCmdlet implements ICmdlet {
 
 export class RemoveADGroupMemberCmdlet implements ICmdlet {
   readonly name = 'remove-adgroupmember';
+  readonly displayName = 'Remove-ADGroupMember';
   readonly aliases = [] as const;
-  readonly parameters = ['Identity', 'Members', 'Confirm', 'Credential'] as const;
+  readonly pipelineByValue = 'Identity';
+  readonly parameters = ['Identity', 'Members', 'DisablePermissiveModify', 'Partition',
+    'PassThru', 'Server', 'AuthType', 'Credential', 'WhatIf', 'Confirm'] as const;
 
   execute(ctx: CmdletContext): PSValue {
     const ad = requireAd(ctx, 'Remove-ADGroupMember');
-    const identity = identityOf(ctx);
+    const identity = identityOrObjectOf(ctx);
     const members = membersOf(ctx);
     if (!identity || members.length === 0) {
       ctx.emitError("Remove-ADGroupMember : Cannot process command because of one or more missing mandatory parameters: Identity Members.");
       return null;
     }
+    if (ctx.named['whatif'] === true) {
+      ctx.emit(`What if: Performing the operation "Set" on target "${identity}".`);
+      return null;
+    }
+    if (confirmationDue(ctx, 'High')) {
+      ctx.emitError(`Remove-ADGroupMember : ${NON_INTERACTIVE_HOST}`);
+      return null;
+    }
     const scope = ad.getGroup(identity)?.scope ?? 'DomainLocal';
-    const res = ad.removeGroupMember(identity, members);
+    const res = ad.removeGroupMember(identity, members, {
+      permissiveModify: ctx.named['disablepermissivemodify'] !== true,
+      partition: ctx.named['partition'] !== undefined ? psValueToString(ctx.named['partition']) : undefined,
+      target: remoteTargetOf(ctx),
+    });
     if (!res.ok) { ctx.emitError(`Remove-ADGroupMember : ${res.message}`); return null; }
     const audit = auditSinkFor(ctx);
     const subject = subjectUserOf(ctx);
     for (const m of members) audit?.groupMemberRemoved(identity, m, scope === 'DomainLocal' ? 'Local' : scope, subject);
-    return null;
+    if (ctx.named['passthru'] !== true) return null;
+    const g = ad.getGroup(identity);
+    return g ? groupToPSObject(g) : null;
   }
 }
 

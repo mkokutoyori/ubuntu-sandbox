@@ -32,7 +32,7 @@ import { TrustRegistry, type TrustDirection, type TrustOpResult, type TrustInfo,
 import { DEFAULT_AD_FUNCTIONAL_LEVEL } from './adFunctionalLevels';
 import { OU_PROPERTIES, PROTECTION_OBJECT_RIGHTS, PROTECTION_PARENT_RIGHT, isProtectionAce, protectionAce } from './adOrganizationalUnit';
 import { NEVER_EXPIRES, USER_FLAGS, USER_PROPERTIES, CHANGE_PASSWORD_TRUSTEES, accountExpiresDate, applyUserFlag, cannotChangePasswordAce, isCannotChangePasswordAce, readUserFlag } from './adUser';
-import { GROUP_PROPERTIES, MEMBER_ALREADY_IN_GROUP, groupNestingProblem, groupTypeParts, groupTypeValue } from './adGroup';
+import { GROUP_PROPERTIES, MEMBER_ALREADY_IN_GROUP, MEMBER_NOT_IN_GROUP, groupNestingProblem, groupTypeParts, groupTypeValue } from './adGroup';
 import { RECYCLE_BIN_FEATURE, findOptionalFeature, forestModeAdmits, requiredForestModeFor } from './adOptionalFeatures';
 import { getForestForDomain } from './forest/Forest';
 
@@ -1516,12 +1516,28 @@ export class DirectoryStore {
     return { ok: true, message: '' };
   }
 
-  removeGroupMember(groupSam: string, memberSam: string): DirOpResult {
+  removeGroupMember(groupSam: string, memberSam: string, opts: GroupMemberWriteOptions = {}): DirOpResult {
+    return this.removeGroupMembers(groupSam, [memberSam], opts);
+  }
+
+  removeGroupMembers(groupSam: string, memberSams: string[], opts: GroupMemberWriteOptions = {}): DirOpResult {
     this.expireMemberships();
     const group = this.findGroupEntry(groupSam);
     if (!group) return { ok: false, message: `Cannot find an object with identity: '${groupSam}'.` };
-    const member = this.findGroupMemberEntry(memberSam);
-    this.tree.modifyEntry(group.dn, [{ op: 'delete', type: 'member', values: member ? [formatDN(member.dn)] : [] }]);
+    const held: string[] = [];
+    for (const sam of memberSams) {
+      const member = this.findGroupMemberEntry(sam);
+      if (!member) return { ok: false, message: `Cannot find an object with identity: '${sam}'.` };
+      const memberDn = formatDN(member.dn);
+      if (!this.holdsMember(group, memberDn)) {
+        if (opts.permissiveModify === false) return { ok: false, message: MEMBER_NOT_IN_GROUP };
+        continue;
+      }
+      held.push(memberDn);
+    }
+    if (held.length > 0) {
+      this.tree.modifyEntry(group.dn, [{ op: 'delete', type: 'member', values: held }]);
+    }
     return { ok: true, message: '' };
   }
 

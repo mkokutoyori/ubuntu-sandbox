@@ -162,7 +162,7 @@ describe('New/Get-ADGroup, Add/Remove-ADGroupMember', () => {
     await run(sh, 'New-ADUser -Name bob -AccountPassword (ConvertTo-SecureString "x" -AsPlainText -Force)');
     await run(sh, 'New-ADGroup -Name Engineers -GroupScope Global');
     await run(sh, 'Add-ADGroupMember -Identity Engineers -Members bob');
-    await run(sh, 'Remove-ADGroupMember -Identity Engineers -Members bob');
+    await run(sh, 'Remove-ADGroupMember -Identity Engineers -Members bob -Confirm:$false');
     expect(srv.getDirectoryStore()!.getGroup('Engineers')?.members).not.toContain('bob');
   });
 });

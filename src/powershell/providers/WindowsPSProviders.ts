@@ -102,7 +102,7 @@ import type { AddsForestOptions } from '@/network/devices/windows/server/ad/adFu
 import type { GroupWriteOptions, OrgUnitWriteOptions, UserWriteOptions } from '@/network/devices/windows/server/ad/DirectoryStore';
 import type { AdGroup, AdUser } from '@/network/devices/windows/server/ad/AdTypes';
 import { withRemoteDirectory } from './adRemoteDirectory';
-import { MEMBER_ALREADY_IN_GROUP, groupTypeValue } from '@/network/devices/windows/server/ad/adGroup';
+import { MEMBER_ALREADY_IN_GROUP, MEMBER_NOT_IN_GROUP, groupTypeValue } from '@/network/devices/windows/server/ad/adGroup';
 import { PRIVILEGED_ACCESS_MANAGEMENT_FEATURE, TTL_WITHOUT_PAM_FEATURE } from '@/network/devices/windows/server/ad/adOptionalFeatures';
 import type { RemoteDirectoryHost, RemoteDirectoryTarget } from './adRemoteDirectory';
 import type { LdapClient } from '@/network/devices/windows/server/ad/ldap/LdapClient';
@@ -792,7 +792,7 @@ class WindowsAdAdapter implements IAdProvider {
     return this.requireStore('Get-ADGroup').listGroups().map(groupInfoOf);
   }
   addGroupMember(groupIdentity: string, members: string[], opts: AddGroupMemberOptions = {}): AdOpResult {
-    if (opts.target) return this.addGroupMemberRemotely(groupIdentity, members, opts);
+    if (opts.target) return this.groupMemberModifyRemotely('Add-ADGroupMember', 'add', groupIdentity, members, opts);
     const store = this.requireStore('Add-ADGroupMember');
     const denied = this.requireAdmin('Add-ADGroupMember');
     if (denied) return denied;
@@ -824,9 +824,12 @@ class WindowsAdAdapter implements IAdProvider {
     });
   }
 
-  private addGroupMemberRemotely(groupIdentity: string, members: string[], opts: AddGroupMemberOptions): AdOpResult {
+  private groupMemberModifyRemotely(
+    cmdletName: string, operation: 'add' | 'delete',
+    groupIdentity: string, members: string[], opts: AddGroupMemberOptions,
+  ): AdOpResult {
     const target = opts.target!;
-    return this.remoteDirectory('Add-ADGroupMember', target, client => {
+    return this.remoteDirectory(cmdletName, target, client => {
       const base = opts.partition ?? defaultNamingContextOf(client) ?? rootDnOf(target.domainName ?? target.server);
       const dnOf = (identity: string): string | null => {
         if (identity.includes('=')) return identity;
@@ -843,8 +846,10 @@ class WindowsAdAdapter implements IAdProvider {
         memberDns.push(dn);
       }
       const type = opts.ttlSeconds === undefined ? 'member' : `member;TTL=${opts.ttlSeconds}`;
-      const res = client.modify(groupDn, [{ operation: 'add', modification: { type, values: memberDns } }]);
-      return res.ok ? { ok: true, message: '' } : { ok: false, message: res.result.diagnosticMessage || MEMBER_ALREADY_IN_GROUP };
+      const res = client.modify(groupDn, [{ operation, modification: { type, values: memberDns } }]);
+      if (res.ok) return { ok: true, message: '' };
+      const fallback = operation === 'add' ? MEMBER_ALREADY_IN_GROUP : MEMBER_NOT_IN_GROUP;
+      return { ok: false, message: res.result.diagnosticMessage || fallback };
     });
   }
 
@@ -857,16 +862,16 @@ class WindowsAdAdapter implements IAdProvider {
       return remaining === undefined ? { dn: m.dn } : { dn: m.dn, ttlSeconds: remaining };
     });
   }
-  removeGroupMember(groupIdentity: string, members: string[]): AdOpResult {
+  removeGroupMember(groupIdentity: string, members: string[], opts: AddGroupMemberOptions = {}): AdOpResult {
+    if (opts.target) return this.groupMemberModifyRemotely('Remove-ADGroupMember', 'delete', groupIdentity, members, opts);
     const store = this.requireStore('Remove-ADGroupMember');
     const denied = this.requireAdmin('Remove-ADGroupMember');
     if (denied) return denied;
-    const group = store.resolveIdentity(groupIdentity);
-    for (const m of members) {
-      const res = store.removeGroupMember(group, store.resolveIdentity(m));
-      if (!res.ok) return res;
-    }
-    return { ok: true, message: '' };
+    return store.removeGroupMembers(
+      store.resolveIdentity(groupIdentity),
+      members.map(m => store.resolveIdentity(m)),
+      { permissiveModify: opts.permissiveModify },
+    );
   }
   getGroupMembers(groupIdentity: string): Array<{ sam: string; dn: string; objectClass: 'user' | 'computer' | 'group' | 'foreignSecurityPrincipal' }> {
     const store = this.requireStore('Get-ADGroupMember');
