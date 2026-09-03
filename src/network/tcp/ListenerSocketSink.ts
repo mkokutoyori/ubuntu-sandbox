@@ -20,7 +20,12 @@ export interface ListenerIdentity {
   pid?: number;
   /** Nom du processus, lu par `ss -p`, `netstat -p` et `lsof`. */
   processName?: string;
-  /** Premiers octets écrits sur une connexion fraîche, lus par `nc`/`nmap`. */
+  /**
+   * Salutation applicative : les premiers octets que le service écrit sur
+   * une connexion fraîche. `TcpStack` les ÉMET à l'acceptation, avant de
+   * remettre la socket au gestionnaire, donc `nc` et `nmap` les lisent sur
+   * le fil comme sur une vraie machine au lieu de les demander à l'objet.
+   */
   banner?: string;
 }
 

@@ -1,7 +1,7 @@
 import { parsePortSpec } from './PortSpec';
 import { topPorts, fastPorts } from './ServiceRegistry';
 
-export type ScanType = 'tcp' | 'udp' | 'ack';
+export type ScanType = 'tcp' | 'syn' | 'udp' | 'ack';
 
 export interface NmapOptions {
   targets: string[];
@@ -12,6 +12,8 @@ export interface NmapOptions {
   versionScan: boolean;
   osScan: boolean;
   openOnly: boolean;
+  /** `-6` : la cible se resout en IPv6, et le balayage part en IPv6. */
+  ipv6: boolean;
   showReason: boolean;
   noDns: boolean;
   verbose: boolean;
@@ -28,6 +30,7 @@ export function parseNmapArgs(args: string[]): NmapOptions {
   let versionScan = false;
   let osScan = false;
   let openOnly = false;
+  let ipv6 = false;
   let showReason = false;
   let noDns = false;
   let verbose = false;
@@ -49,7 +52,8 @@ export function parseNmapArgs(args: string[]): NmapOptions {
 
     if (a === '-sU') { scanType = 'udp'; continue; }
     if (a === '-sA') { scanType = 'ack'; continue; }
-    if (a === '-sS' || a === '-sT') { scanType = 'tcp'; continue; }
+    if (a === '-sS') { scanType = 'syn'; continue; }
+    if (a === '-sT') { scanType = 'tcp'; continue; }
 
     if (a === '-sn' || a === '-sP') { pingOnly = true; continue; }
     if (a === '-Pn' || a === '-P0') { skipDiscovery = true; continue; }
@@ -72,7 +76,8 @@ export function parseNmapArgs(args: string[]): NmapOptions {
       continue;
     }
 
-    if (a.startsWith('-T') || a === '-R' || a === '-6' || a === '--reason-only') continue;
+    if (a === '-6') { ipv6 = true; continue; }
+    if (a.startsWith('-T') || a === '-R' || a === '--reason-only') continue;
     if (a.startsWith('-')) continue;
 
     targets.push(a);
@@ -80,6 +85,6 @@ export function parseNmapArgs(args: string[]): NmapOptions {
 
   return {
     targets, ports, scanType, pingOnly, skipDiscovery, versionScan, osScan,
-    openOnly, showReason, noDns, verbose, outputNormal, outputGreppable,
+    openOnly, ipv6, showReason, noDns, verbose, outputNormal, outputGreppable,
   };
 }

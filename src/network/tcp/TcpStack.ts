@@ -11,6 +11,16 @@ import {
 import { payloadBytes } from '@/network/layers/transport/L4Checksum';
 import { PortNumber } from '@/network/core/ports/PortNumber';
 import {
+  ICMP_UNREACH_NET_PROHIBITED, ICMP_UNREACH_HOST_PROHIBITED,
+  ICMP_UNREACH_ADMIN_PROHIBITED,
+} from '@/network/core/IcmpErrors';
+
+const PROHIBITED_UNREACH_CODES: ReadonlySet<number> = new Set([
+  ICMP_UNREACH_NET_PROHIBITED,
+  ICMP_UNREACH_HOST_PROHIBITED,
+  ICMP_UNREACH_ADMIN_PROHIBITED,
+]);
+import {
   connectedPrefixesOfPort, isUnicastDestination, type ConnectedIpv4Prefix,
 } from '@/network/layers/internet/InternetLayer';
 import { RttEstimator, TCP_MAX_RETRANSMITS, TCP_INITIAL_RTO_MS, TCP_MAX_RTO_MS } from './RttEstimator';
@@ -118,6 +128,13 @@ export class TcpSocket {
   closed = false;
   closeReason: TcpCloseReason | null = null;
   connectRefused = false;
+  /**
+   * A filter said no, out loud: ICMP administratively prohibited (codes
+   * 9, 10 and 13). The kernel reports EACCES rather than ECONNREFUSED,
+   * and `scan_engine_connect.cc` reads that as FILTERED, not closed — the
+   * distinction between "nothing listens here" and "something forbids it".
+   */
+  connectProhibited = false;
   /**
    * The handshake completed at least once. A peer that accepts and then
    * closes straight away — a telnet VTY refusing the line, an SMTP server
@@ -508,8 +525,100 @@ export class TcpStack {
       socket.close();
       return 'open';
     }
+    if (socket.connectProhibited) return 'prohibited';
     return socket.connectRefused ? 'refused' : 'timeout';
   }
+
+  /**
+   * nmap's `Probe TCP NULL q||`, and what `nc host port` prints: open the
+   * connection, send nothing, read what the service volunteers, close.
+   * `onData` replays the bytes that arrived before the handler existed —
+   * the greeting is written while the handshake completes — so the answer
+   * comes from the wire and never from the peer's object.
+   */
+  grabGreeting(remoteIp: string, remotePort: number): string | null {
+    const socket = this.connect(remoteIp, remotePort);
+    if (!socket) return null;
+    if (!socket.everEstablished) { socket.close(); return null; }
+    let text = '';
+    const stop = socket.onData((chunk) => {
+      if (typeof chunk === 'string') text += chunk;
+      else if (chunk instanceof Uint8Array) text += new TextDecoder().decode(chunk);
+    });
+    stop();
+    socket.close();
+    return text === '' ? null : text;
+  }
+
+  /**
+   * `nmap -sA` (scan_engine_raw.cc): un ACK NU, hors de toute connexion.
+   * RFC 9293 §3.10.7.1 fait repondre RST a un ACK qui ne correspond a
+   * aucune connexion, que le port soit ouvert ou ferme — un RST ne dit
+   * donc rien de l'ecoute et prouve seulement que le segment a ATTEINT
+   * l'hote, ce qui est exactement ce qu'un balayage ACK mesure : le port
+   * n'est pas filtre. Le silence, ou un ICMP inatteignable, dit qu'un
+   * filtre l'a mange.
+   */
+  ackProbe(remoteIp: string, remotePort: number): 'unfiltered' | 'filtered' {
+    const flags = noFlags();
+    flags.ack = true;
+    const seen = this.statelessProbe(remoteIp, remotePort, flags);
+    return seen === 'rst' ? 'unfiltered' : 'filtered';
+  }
+
+  /**
+   * `nmap -sS` (scan_engine_raw.cc) : le balayage DEMI-OUVERT. Un SYN
+   * part, et la connexion n'est JAMAIS achevee — un SYN/ACK ouvre le
+   * port, un RST le ferme, le silence le filtre. Ce que le balayage
+   * connecte (`-sT`) rapporte est identique ; ce qui differe est sur le
+   * FIL, et c'est tout l'objet de ce balayage : la pile repond RST a un
+   * SYN/ACK qu'aucune socket n'attend, donc le troisieme temps de la
+   * poignee de main n'a jamais lieu.
+   */
+  synProbe(remoteIp: string, remotePort: number): 'open' | 'closed' | 'filtered' {
+    const flags = noFlags();
+    flags.syn = true;
+    const seen = this.statelessProbe(remoteIp, remotePort, flags);
+    if (seen === 'syn-ack') return 'open';
+    return seen === 'rst' ? 'closed' : 'filtered';
+  }
+
+  /**
+   * Un segment emis HORS de toute connexion, et la reponse observee la ou
+   * une socket l'aurait recue. C'est ce que les balayages de `nmap` font,
+   * et ce que `sendRst` fait deja dans l'autre sens : la pile n'ouvre
+   * rien, elle pose une trace le temps de l'aller-retour.
+   */
+  private statelessProbe(
+    remoteIp: string, remotePort: number, flags: TcpFlags,
+  ): 'rst' | 'syn-ack' | 'none' {
+    const target = canonicalIpText(remoteIp);
+    const egress = this.resolveEgress(target);
+    if (!egress) return 'none';
+    const localPort = this.nextEphemeral(egress.srcIp);
+    if (localPort < 0) return 'none';
+
+    const key = makeSocketKey(egress.srcIp, localPort, target, remotePort);
+    const watch: { seen: 'rst' | 'syn-ack' | 'none' } = { seen: 'none' };
+    this.statelessProbes.set(key, watch);
+
+    const seg: TcpSegment = {
+      type: 'tcp',
+      sourcePort: localPort, destinationPort: remotePort,
+      sequence: nextIsn(), acknowledgement: 0,
+      dataOffset: 5, flags, window: TCP_DEFAULT_WINDOW,
+      checksum: 0, urgentPointer: 0, options: [], payload: undefined,
+    };
+    seg.checksum = computeTcpChecksum(seg, egress.srcIp, target);
+    try {
+      this.shipSegment(egress, egress.srcIp, target, seg);
+    } finally {
+      this.statelessProbes.delete(key);
+    }
+    return watch.seen;
+  }
+
+  private statelessProbes = new Map<string, { seen: 'rst' | 'syn-ack' | 'none' }>();
 
   hasEgressTo(remoteIp: string): boolean {
     return this.resolveEgress(canonicalIpText(remoteIp)) !== null;
@@ -522,12 +631,18 @@ export class TcpStack {
    * on an already-open connection too — e.g. the peer's firewall starts
    * rejecting mid-session).
    */
-  onIcmpUnreachable(origSourcePort: number, origDestPort: number, origDestIp: string): void {
+  onIcmpUnreachable(
+    origSourcePort: number, origDestPort: number, origDestIp: string,
+    icmpCode?: number,
+  ): void {
     for (const socket of this.sockets.values()) {
       if (socket.localPort !== origSourcePort) continue;
       if (socket.remotePort !== origDestPort) continue;
       if (socket.remoteIp !== origDestIp) continue;
       if (socket.state === 'closed' || socket.state === 'time-wait') continue;
+      if (icmpCode !== undefined && PROHIBITED_UNREACH_CODES.has(icmpCode)) {
+        socket.connectProhibited = true;
+      }
       socket.connectRefused = true;
       this._teardown(socket, 'rst');
       return;
@@ -698,6 +813,7 @@ export class TcpStack {
       }
       this.sockets.set(socket.key(), socket);
       this._transition(socket, 'syn-received');
+      if (listener.identity.banner) socket.write(listener.identity.banner);
       try { listener.onAccept(socket); } catch (e) { Logger.warn(this.host.id, 'tcp:accept', String(e)); }
       const flags = noFlags(); flags.syn = true; flags.ack = true;
       // Allocate the sequence BEFORE transmitting: Cable delivery is
@@ -716,7 +832,10 @@ export class TcpStack {
       this.transmitTracked(socket, flags, synAckSeq, socket.recvNext, undefined, 1, synAckOptions);
       return true;
     }
+    const probe = this.statelessProbes.get(socketKey);
+    if (probe && seg.flags.syn && seg.flags.ack) probe.seen = 'syn-ack';
     if (seg.flags.rst) {
+      if (probe) probe.seen = 'rst';
       return true;
     }
     this.dropped(senderIp, seg.sourcePort, 'no-socket');

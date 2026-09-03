@@ -2062,19 +2062,6 @@ défauts — la méthode vaut d'être reprise sur le reliquat.
   tomber des laboratoires qui l'utilisent ; mais un compte dont le nom
   porte une espace y prend alors un sAMAccountName avec une espace, ce
   qu'une vraie machine n'accepte pas.
-- Un refus par liste de controle d'un routeur est rendu `closed` par
-  `nmap` la ou une vraie machine dit `filtered`. Mesure sur le TP 13 :
-  R1 porte `deny ip any any` en entree de Gi0/0, la sonde TCP vers 8080
-  ressort `8080/tcp closed`, et `Host is up` — donc l'ACL est visible
-  comme un port ferme et non comme un filtre. La chaine collapse tout
-  ICMP inatteignable en `refused` (`TcpWireOutcome`), alors que le noyau
-  distingue le code 3 (port inatteignable, ECONNREFUSED, `closed`) du
-  code 13 (interdit par filtre, EACCES, `filtered`) et que
-  `scan_engine_connect.cc` de nmap applique cette distinction. Le code
-  13 est bien EMIS par `Router.sendICMPError` ; c'est la traduction en
-  issue de connexion qui le perd. Non ferme ici pour ne pas entrer en
-  collision avec le chantier `nmap`/ICMP en cours dans les memes
-  fichiers.
 - Le commutateur Cisco porte TROIS resolveurs de nom d'interface :
   `resolvePortName` (correspondance exacte seule), sa propre
   `resolveInterfaceName` (exacte plus une table de prefixes ecrite a la
@@ -2139,3 +2126,141 @@ défauts — la méthode vaut d'être reprise sur le reliquat.
   a comparer. L'evaluer demande de faire voyager la metrique de la route
   redistribuee jusqu'a la politique, ce qui est un autre sujet que la
   grammaire de la CLI.
+- `match dscp` et `match precedence` sont REFUSES sur un `class-map` de
+  qualite de service, et c'est juste en l'etat : `ClassMapMatch` ne
+  connait que quatre genres (`access-group-name`, `access-group-num`,
+  `protocol`, `any`) et RIEN n'evalue une classe QoS ici — le magasin
+  n'est lu que par le rendu de la configuration. Les accepter rangerait
+  un critere que personne ne lit, ce que la regle du depot interdit. Ce
+  qui manque pour les ouvrir est un evaluateur de classe sur le plan de
+  donnees, pas une ligne d'analyse ; `DSCP_KEYWORD_TO_VALUE` d'`ACLEngine`
+  porte deja les noms, et `vrpDscp` de `vrpPolicyValues.ts` la lit deja.
+- `match protocol <nom>` d'un `class-map` accepte n'importe quel mot. Le
+  nom vient de NBAR, dont la liste depend de la plateforme et des modules
+  charges, et aucune source atteignable depuis ce reseau ne l'atteste —
+  une liste ecrite de memoire refuserait des protocoles reels. La valeur
+  n'est de toute facon evaluee par personne (voir l'entree precedente).
+- Le nom d'une option DHCP ecrite en `hex` n'est verifie que sur son
+  alphabet (chiffres hexadecimaux et points) : la PARITE du nombre de
+  chiffres, qu'un vrai IOS controle puisqu'un octet en prend deux, ne
+  l'est pas. Trouve en ecrivant `dhcpOptionValueIsValid` ; non ferme
+  faute d'une capture disant ce qu'IOS repond a un nombre impair.
+- `import-route rip`, `import-route isis`, `import-route bgp`,
+  `import-route ospf` et `import-route unr` sont ACCEPTES par la vue OSPF
+  de VRP et JETES : seuls `static` et `direct`/`connected` alimentent
+  `_getOSPFExtraConfig()`. Le lot des vues de routage a ferme le mot
+  INVENTE (un protocole hors de la liste est desormais refuse au lieu
+  d'etre avale) et n'a pas ouvert les cinq autres : les brancher demande
+  une source de routes par protocole cote OSPF, ce qui est un sujet de
+  moteur et non de grammaire. La consequence aujourd'hui est qu'une
+  redistribution declaree pour l'un de ces cinq ne redistribue rien et
+  ne parait pas non plus dans la configuration.
+- `gateway-list` de VRP accepte plusieurs adresses et le magasin les
+  garde toutes, mais VRP borne cette liste a HUIT entrees comme IOS le
+  fait pour `default-router` — la borne est appliquee cote IOS
+  (`parseAddressList`) et PAS cote VRP, faute d'une source atteignable
+  disant si Huawei borne au meme nombre. Seule la validite de chaque
+  adresse est controlee des deux cotes.
+- `VRP_LEASE_MAX` borne `lease day` a 999 jours : c'est la borne d'IOS
+  transposee (365) elargie a ce que VRP accepte d'apres les exemples
+  atteignables, et non une valeur attestee. Les bornes de `hour` (23) et
+  `minute` (59) sont, elles, celles du calendrier et donc certaines. A
+  reprendre avec une capture.
+- La vue `ip pool` de VRP porte la meme forme que la politique et les
+  vues de routage : `gateway-list zorglub` et `dns-list zorglub` sont
+  acceptes et RENDUS, `network zorglub mask 24` et `lease day zorglub`
+  sont acceptes et jetes. Lot jumeau de `probe-vrp-vues-routage`, a
+  ecrire avec les memes outils (`estAdresseIPv4`, `boundedInteger`) ;
+  non fait ici pour ne pas melanger deux vues dans un meme lot.
+- `-Server`, `-AuthType` et `-Instance` en ENTREE DE PIPELINE ne sont pas
+  declares sur `New-ADOrganizationalUnit` (ni sur `Set-`/`Remove-`), alors
+  que la documentation du cmdlet les porte. `-Server` et `-AuthType`
+  gouvernent le choix et l'authentification du contrôleur interroge :
+  toutes les commandes d'OBJET de ce simulateur passent par
+  `requireStore()`, c'est-a-dire l'annuaire LOCAL de la machine, et aucun
+  chemin ne dialogue avec un contrôleur distant pour lire ou ecrire un
+  objet — seuls `Install-ADDSDomainController`, `New-ADDomain` et
+  `New-ADTrust` evaluent un `-Server`, parce qu'eux composent vraiment.
+  Les declarer les rangerait sans que rien ne les evalue, ce que la
+  convention du depot interdit. `-Instance` est evalue comme GABARIT (un
+  objet passe en parametre) mais pas comme entree de PIPELINE, le
+  `Import-Csv | New-ADOrganizationalUnit` de la methode 3 de la
+  documentation demandant que le cmdlet lise `ctx.pipeInput` par
+  PROPRIETE, mecanisme que ce moteur n'a pas.
+- `-Properties` est declare par `Get-ADUser`, `Get-ADComputer`,
+  `Get-ADObject` et `Get-ADOrganizationalUnit` et EVALUE PAR AUCUN : ces
+  vues rendent toutes leurs proprietes, quoi qu'on demande. Sur une vraie
+  machine le cmdlet rend un JEU PAR DEFAUT et `-Properties` seul y ajoute
+  le reste — c'est ce qui fait qu'un `Get-ADOrganizationalUnit` sans
+  `-Properties Description` n'affiche PAS la description, question posee
+  mille fois. Non ferme ici parce que c'est un lot a soi, sur quatre
+  cmdlets a la fois : leur donner un jeu par defaut a chacun demande de
+  MESURER lequel, et le faire pour la seule OU laisserait `-Properties`
+  vivant d'un cote et inerte des trois autres, c'est-a-dire deux reponses
+  a une meme question. Ce lot rend donc TOUT ce qui est pose, choix qui
+  ne cache aucune donnee — l'inverse aurait rendu invisible la
+  description que l'operateur vient d'ecrire.
+- Un attribut pose par `-OtherAttributes` est relu sous le nom que
+  l'arbre LDAP stocke, c'est-a-dire en MINUSCULES (`postofficebox`), la
+  ou une vraie machine rend la casse canonique du schema
+  (`postOfficeBox`). Sans consequence a l'usage — les noms d'attributs
+  LDAP sont insensibles a la casse et l'acces aux proprietes de ce moteur
+  PowerShell l'est aussi, donc `$ou.postOfficeBox` repond (mesure) —
+  mais un `Format-List` affiche la clef stockee. Fermer cela demande que
+  le `SchemaValidator` porte la casse canonique de chaque attribut, ce
+  qu'il ne fait pas.
+
+- `loopback-detect`, `port-security`, `storm-control`, `flow-control`,
+  `port-mirroring` et `am` d'une interface de commutateur VRP passent par
+  un SAC de texte partage : la ligne est gardee telle quelle et rendue,
+  donc `loopback-detect zorglub` survit au rechargement d'une topologie.
+  C'est la decision ECRITE de ce depot pour une commande reelle qu'il ne
+  modelise pas — la meme que pour `ip ssh server algorithm` — et le lot
+  des identifiants de VLAN l'a laissee telle quelle : leur donner un
+  vocabulaire demande d'attester celui de VRP, hors de portee depuis ce
+  reseau, et une liste ecrite de memoire refuserait des commandes reelles.
+- `iptables -p tcp --tcp-flags <masque> <compare>` est desormais JUGE (une
+  faute de frappe est refusee dans les mots du vrai iptables) mais n'est
+  toujours pas EVALUE : `PacketInfo`, la structure que `matchesRule` voit
+  d'un paquet, ne porte aucun drapeau TCP — ni SYN, ni ACK, ni RST. Le
+  ranger en ferait un critere que rien ne lit, ce que la regle du depot
+  interdit ; c'est donc le paquet qu'il faut enrichir, et non l'analyse.
+  Consequence a connaitre en attendant : une regle portant `--tcp-flags`
+  correspond comme si la clause n'y etait pas, donc elle est plus
+  PERMISSIVE que ce que l'operateur a ecrit.
+- `IPTABLES_MATCH_MODULES` declare vingt modules alors que `matchesRule`
+  n'en EVALUE que six (`state`, `conntrack`, `multiport`, `limit`, `mac`,
+  `iprange`). Les quatorze autres sont acceptes, rendus, et sautes a
+  l'evaluation — meme forme que `--tcp-flags` ci-dessus. Le lot des
+  criteres inconnus a ferme le mot INVENTE, qui est le cas dangereux (une
+  faute de frappe ouvrait la regle en silence), et n'a pas tranche pour
+  les modules reels-mais-non-evalues : les refuser casserait des
+  laboratoires qui les emploient legitimement, les evaluer demande autant
+  de travail que de modules. A reprendre module par module.
+- `scenario-windows-log-export-remoting.test.ts` > « Export-Csv puis
+  Import-Csv … en CSV » echoue sur `78370a4b3`, c'est-a-dire AVANT le lot
+  des regles de pare-feu netsh — verifie par `git stash` sur un arbre
+  propre. `(Import-Csv …).Count` rend `NaN`. A diagnostiquer ; non
+  imputable a ce lot, qui ne touche ni PowerShell ni le journal
+  d'evenements.
+- `WinNetsh.ts` reference un type `NetshContext` qui n'existe pas (deux
+  sites, `handleShowAddresses` et son voisin), donc deux erreurs de
+  compilation. Elles sont ANTERIEURES au lot des regles de pare-feu —
+  verifiees par `git stash` — et font passer la reference de 247 a 248.
+  Le contexte reellement passe est `WinCommandContext` ; corriger la
+  declaration demande de verifier ce que les deux fonctions lisent.
+- Il reste 53 continuations DECLAREES (0 + 27 + 6 + 20, cliquet resserre
+  a ces nombres) qui ne sont pas des chemins de commande a part entiere :
+  `no spanning-tree {backbonefast|bpdufilter|…}`, `ip igmp snooping
+  {immediate-leave|mrouter|querier|vlan}` et son `no`, `class-map
+  {match-all|match-any|type|inspect}`, `ip flow-cache`/`ip flow-export`,
+  `zone-pair security {source|destination}`, `ip community-list
+  {expanded|standard}`, `track {interface|ip|routing}`, `radius server`.
+  Les declarer est la bonne facon de les annoncer aujourd'hui — c'est la
+  decision ecrite dans `ciscoContinuations.ts`, prise apres qu'une
+  extraction depuis le TEXTE SOURCE eut fait disparaitre `level` de
+  l'aide de `no privilege`. En faire de VRAIS noeuds leur donne en plus
+  un gestionnaire, des arguments types et un refus propre, ce que le lot
+  `show ip igmp snooping` + `clear port-security` vient de faire pour le
+  mode privilegie du commutateur, tombe a ZERO. Suite : famille par
+  famille, en baissant le cliquet a chaque fois.

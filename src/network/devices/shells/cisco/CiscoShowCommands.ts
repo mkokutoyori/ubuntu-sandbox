@@ -31,7 +31,11 @@ import { igmpInterfaceRunningConfigLines } from './CiscoIgmpCommands';
 import { pimInterfaceRunningConfigLines, pimGlobalRunningConfigLines } from './CiscoPimCommands';
 import { globalConfigRunningConfigLines } from '../../router/config/CiscoGlobalConfig';
 
-import { CISCO_HARDWARE_PROFILES, chassisSerial, formatIosUptime, licenseTable, type CiscoChassisProfile } from './CiscoCommonShow';
+import {
+  CISCO_HARDWARE_PROFILES, chassisSerial, ciscoClockReading, formatIosUptime,
+  iosDateSuffix, iosTimeOfDay, licenseTable,
+  type CiscoChassisProfile, type ShowStateDevice,
+} from './CiscoCommonShow';
 import {
   renderSecretField, renderPasswordField, renderCiscoUsernameLines,
   type SecretAlgo, type CiscoRenderableAccount,
@@ -888,26 +892,34 @@ export function configProvenanceLines(router: Router): string[] {
   if (!p) return [];
   const lignes: string[] = [];
   if (p.changedAtMs !== null) {
-    lignes.push(`! Last configuration change at ${horodatageIos(p.changedAtMs)}`
+    lignes.push(`! Last configuration change at ${horodatageIos(router, p.changedAtMs)}`
       + `${p.changedBy ? ` by ${p.changedBy}` : ''}`);
   }
   if (p.nvramAtMs !== null) {
-    lignes.push(`! NVRAM config last updated at ${horodatageIos(p.nvramAtMs)}`
+    lignes.push(`! NVRAM config last updated at ${horodatageIos(router, p.nvramAtMs)}`
       + `${p.nvramBy ? ` by ${p.nvramBy}` : ''}`);
   }
   return lignes;
 }
 
-const JOURS_IOS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'] as const;
-const MOIS_IOS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
-  'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'] as const;
-
-/** `14:32:15 UTC Tue Aug 9 2026` — la date telle qu'IOS l'écrit ici. */
-function horodatageIos(ms: number): string {
-  const d = new Date(ms);
-  const deux = (n: number) => String(n).padStart(2, '0');
-  return `${deux(d.getHours())}:${deux(d.getMinutes())}:${deux(d.getSeconds())} UTC `
-    + `${JOURS_IOS[d.getDay()]} ${MOIS_IOS[d.getMonth()]} ${d.getDate()} ${d.getFullYear()}`;
+/**
+ * `14:32:15 UTC Tue Aug 9 2026` — la date telle qu'IOS l'écrit ici.
+ *
+ * Elle lisait `new Date(ms).getHours()`, c'est-à-dire l'heure LOCALE de
+ * la machine qui fait tourner le navigateur, et écrivait ` UTC ` en dur
+ * derrière. Mesuré sous un fuseau à +1 : `show clock` et l'horodatage
+ * syslog du même changement disaient 12:43:30 pendant que cette ligne
+ * annonçait « 13:43:30 UTC » — deux réponses à la même question sur la
+ * même machine au même instant, et celle-ci se trompait aussi de nom de
+ * fuseau. Elle lit maintenant l'horloge de l'ÉQUIPEMENT, celle que
+ * `clock set` déplace et que `clock timezone` décale, par le même
+ * lecteur que `show clock`.
+ */
+function horodatageIos(router: Router, ms: number): string {
+  const reading = ciscoClockReading(
+    router as unknown as ShowStateDevice, ms);
+  return `${iosTimeOfDay(reading.local)} ${reading.timezone}`
+    + ` ${iosDateSuffix(reading.local)}`;
 }
 
 /**

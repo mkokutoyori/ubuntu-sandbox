@@ -1,8 +1,9 @@
 /**
- * Small helper that pulls the application-layer banner (or the listener's
- * process name) from a remote device's `SocketTable`. Shared between
- * `nmap`, `nc`, `curl`, and any future protocol-inspection tool so we
- * only speak the "banner registered on bind" contract in one place.
+ * Ce qu'un port UDP laisse deviner de son service. Le pendant TCP a
+ * disparu : une salutation TCP se lit sur le FIL (`TcpStack.grabGreeting`),
+ * une vraie machine n'ayant aucun moyen de demander à sa cible ce qu'elle
+ * annonce. UDP n'a pas de connexion, donc pas de salutation à l'ouverture,
+ * et cette lecture-là reste la seule disponible.
  */
 
 import type { Equipment } from '../../../../equipment/Equipment';
@@ -15,14 +16,6 @@ type SocketTableProbe = {
 function socketTableOf(device: Equipment): SocketTableProbe | null {
   const st = (device as unknown as { socketTable?: SocketTableProbe }).socketTable;
   return st ?? null;
-}
-
-export function grabBanner(device: Equipment, port: number): string | null {
-  return socketTableOf(device)?.getBannerForPort('tcp', port) ?? null;
-}
-
-export function grabListenerProcess(device: Equipment, port: number): string | null {
-  return socketTableOf(device)?.getListenerProcess('tcp', port) ?? null;
 }
 
 export function grabUdpListener(device: Equipment, port: number): string | null {

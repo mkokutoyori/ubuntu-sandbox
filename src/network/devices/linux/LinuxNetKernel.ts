@@ -161,6 +161,13 @@ export interface LinuxNetKernel {
 
   tcpConnectOutcome(target: string, port: number): TcpWireOutcome;
 
+  /**
+   * Opens a real connection and reads what the service volunteers, then
+   * closes it — nmap's `Probe TCP NULL q||`. Null when the connection
+   * never came up.
+   */
+  grabServiceBanner(target: string, port: number): string | null;
+
   /** Le service systemd-resolved de l'hôte (stub, cache, config par lien). */
   getResolvedService(): import('./net/ResolvedService').ResolvedService;
   /** Réécrit `/run/systemd/resolve/` après un changement de configuration. */

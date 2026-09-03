@@ -23,6 +23,7 @@ interface QueueEntry<TPacket, TAddress extends string> {
   nextHop: TAddress;
   timer: TimerHandle;
   enqueuedAt: number;
+  onExpire?: (nextHop: TAddress) => void;
 }
 
 /**
@@ -73,7 +74,10 @@ export class PacketQueue<TPacket, TAddress extends string> {
    * Enqueue a packet waiting for address resolution.
    * If the queue is full, the oldest entry is evicted.
    */
-  enqueue(packet: TPacket, outIface: string, nextHop: TAddress, timeoutMs: number): void {
+  enqueue(
+    packet: TPacket, outIface: string, nextHop: TAddress, timeoutMs: number,
+    onExpire?: (nextHop: TAddress) => void,
+  ): void {
     const scheduler = this.getScheduler();
 
     // Evict oldest if at capacity
@@ -81,6 +85,7 @@ export class PacketQueue<TPacket, TAddress extends string> {
       const evicted = this.entries.shift();
       if (evicted) {
         scheduler.clear(evicted.timer);
+        evicted.onExpire?.(evicted.nextHop);
       }
     }
 
@@ -90,10 +95,12 @@ export class PacketQueue<TPacket, TAddress extends string> {
       nextHop,
       timer: 0 as TimerHandle,
       enqueuedAt: Date.now(),
+      onExpire,
     };
 
     entry.timer = scheduler.setTimeout(() => {
       this.removeByRef(entry);
+      entry.onExpire?.(entry.nextHop);
     }, timeoutMs);
 
     this.entries.push(entry);

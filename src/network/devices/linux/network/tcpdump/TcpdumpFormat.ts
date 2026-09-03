@@ -61,6 +61,18 @@ const ICMP_PHRASE: Record<string, string> = {
   redirect: 'redirect',
 };
 
+const ICMP6_PHRASE: Record<string, string> = {
+  'echo-request': 'echo request',
+  'echo-reply': 'echo reply',
+  'destination-unreachable': 'destination unreachable',
+  'packet-too-big': 'packet too big',
+  'time-exceeded': 'time exceeded',
+  'router-solicitation': 'router solicitation',
+  'router-advertisement': 'router advertisement',
+  'neighbor-solicitation': 'neighbor solicitation',
+  'neighbor-advertisement': 'neighbor advertisement',
+};
+
 function icmpUnreachPhrase(frame: CaptureFrame): string {
   const code = frame.icmpCode ?? 0;
   const target = frame.icmpOrig?.dstIp ?? frame.srcIp ?? '';
@@ -218,7 +230,19 @@ function l4Detail(frame: CaptureFrame, opt: TcpdumpOptions): string {
     return `UDP${cksum}, length ${frame.payloadLength ?? 0}`;
   }
   if (frame.l4 === 'icmp6') {
-    return `ICMP6, length ${frame.payloadLength ?? 0}`;
+    const phrase = ICMP6_PHRASE[frame.icmpType ?? ''] ?? frame.icmpType ?? 'unknown';
+    const length = `length ${frame.payloadLength ?? 0}`;
+    if (opt.quiet) return `ICMP6, ${phrase}, ${length}`;
+    if (frame.icmpType === 'echo-request' || frame.icmpType === 'echo-reply') {
+      return `ICMP6, ${phrase}, id ${frame.icmpId ?? 0}, seq ${frame.icmpSeq ?? 0}, ${length}`;
+    }
+    if (frame.icmpType === 'neighbor-solicitation' && frame.ndpTarget) {
+      return `ICMP6, ${phrase}, who has ${frame.ndpTarget}, ${length}`;
+    }
+    if (frame.icmpType === 'neighbor-advertisement' && frame.ndpTarget) {
+      return `ICMP6, ${phrase}, tgt is ${frame.ndpTarget}, ${length}`;
+    }
+    return `ICMP6, ${phrase}, ${length}`;
   }
   return `length ${frame.payloadLength ?? frame.length}`;
 }

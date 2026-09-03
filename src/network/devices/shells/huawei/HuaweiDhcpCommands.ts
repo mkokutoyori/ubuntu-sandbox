@@ -15,6 +15,7 @@ import type { HuaweiShellContext } from './HuaweiConfigCommands';
 import type { CommandTrie } from '../CommandTrie';
 import { huaweiDisplayInterfaceName, refuseMotInattenduVrp, HUAWEI_ERRORS } from '../cli-utils';
 import { isValidIPv4 } from '../../../core/ip';
+import { boundedInteger } from '@/cli/ArgumentTypes';
 
 /** Reserved DHCPServer pool name backing an interface in `dhcp select interface` mode. */
 export function interfacePoolName(ifName: string): string {
@@ -219,18 +220,39 @@ export function registerDhcpv6SystemCommands(trie: CommandTrie, ctx: HuaweiShell
   });
 }
 
+/** VRP borne chaque champ de `lease` par l'unite suivante. */
+const VRP_LEASE_MAX: Readonly<Record<string, number>> = {
+  day: 999, hour: 23, minute: 59,
+};
+
+/**
+ * `network <adresse> mask <longueur>` est la forme la plus tapee, et le
+ * magasin ne connait que le masque pointe : la longueur est traduite
+ * ICI plutot que dans le magasin, qui sert les deux constructeurs.
+ */
+function normaliserMasqueVrp(mask: string): string {
+  const longueur = boundedInteger(mask, 0, 32);
+  if (longueur === null) return mask;
+  const bits = longueur === 0 ? 0 : (0xffffffff << (32 - longueur)) >>> 0;
+  return [24, 16, 8, 0].map((d) => (bits >>> d) & 0xff).join('.');
+}
+
 // ─── DHCP Pool Mode Commands (register on pool trie) ────────────────
 
 export function buildDhcpPoolCommands(trie: CommandTrie, ctx: HuaweiShellContext): void {
   const getRouter = () => ctx.r();
 
-  trie.registerGreedy('gateway-list', 'Set default gateway', (args) => {
+  trie.registerGreedy('gateway-list', 'Set default gateway', (args, raw) => {
     if (args.length < 1 || !ctx.getSelectedPool()) return 'Error: Incomplete command.';
-    getRouter()._getDHCPServerInternal().configurePoolRouter(ctx.getSelectedPool()!, args[0]);
+    if (!getRouter()._getDHCPServerInternal()
+      .configurePoolRouter(ctx.getSelectedPool()!, args)) {
+      return refuseMotInattenduVrp(raw ?? `gateway-list ${args.join(' ')}`,
+        args.find((a) => !isValidIPv4(a)) ?? args[0]);
+    }
     return '';
   });
 
-  trie.registerGreedy('network', 'Set pool network range', (args) => {
+  trie.registerGreedy('network', 'Set pool network range', (args, raw) => {
     if (args.length < 1 || !ctx.getSelectedPool()) return 'Error: Incomplete command.';
     const network = args[0];
     let mask = '255.255.255.0';
@@ -239,13 +261,21 @@ export function buildDhcpPoolCommands(trie: CommandTrie, ctx: HuaweiShellContext
     } else if (args.length >= 2) {
       mask = args[1];
     }
-    getRouter()._getDHCPServerInternal().configurePoolNetwork(ctx.getSelectedPool()!, network, mask);
+    if (!getRouter()._getDHCPServerInternal()
+      .configurePoolNetwork(ctx.getSelectedPool()!, network, normaliserMasqueVrp(mask))) {
+      return refuseMotInattenduVrp(raw ?? `network ${args.join(' ')}`,
+        isValidIPv4(network) ? mask : network);
+    }
     return '';
   });
 
-  trie.registerGreedy('dns-list', 'Set DNS server list', (args) => {
+  trie.registerGreedy('dns-list', 'Set DNS server list', (args, raw) => {
     if (args.length < 1 || !ctx.getSelectedPool()) return 'Error: Incomplete command.';
-    getRouter()._getDHCPServerInternal().configurePoolDNS(ctx.getSelectedPool()!, args);
+    if (!getRouter()._getDHCPServerInternal()
+      .configurePoolDNS(ctx.getSelectedPool()!, args)) {
+      return refuseMotInattenduVrp(raw ?? `dns-list ${args.join(' ')}`,
+        args.find((a) => !isValidIPv4(a)) ?? args[0]);
+    }
     return '';
   });
 
@@ -260,19 +290,32 @@ export function buildDhcpPoolCommands(trie: CommandTrie, ctx: HuaweiShellContext
     return '';
   });
 
-  trie.registerGreedy('lease', 'Set lease duration (lease day D [hour H] [minute M])', (args) => {
-    if (!ctx.getSelectedPool()) return 'Error: No DHCP pool selected.';
-    let days = 0, hours = 0, minutes = 0;
-    for (let i = 0; i < args.length; i++) {
-      const kw = args[i].toLowerCase();
-      if (kw === 'day' && args[i + 1]) { days = parseInt(args[++i], 10) || 0; }
-      else if (kw === 'hour' && args[i + 1]) { hours = parseInt(args[++i], 10) || 0; }
-      else if (kw === 'minute' && args[i + 1]) { minutes = parseInt(args[++i], 10) || 0; }
-    }
-    const seconds = days * 86400 + hours * 3600 + minutes * 60;
-    getRouter()._getDHCPServerInternal().configurePoolLease(ctx.getSelectedPool()!, seconds || 86400);
-    return '';
-  });
+  trie.registerGreedy('lease', 'Set lease duration (lease day D [hour H] [minute M])',
+    (args, raw) => {
+      if (!ctx.getSelectedPool()) return 'Error: No DHCP pool selected.';
+      const ligne = raw ?? `lease ${args.join(' ')}`;
+      if (args[0]?.toLowerCase() === 'unlimited') {
+        getRouter()._getDHCPServerInternal().configurePoolLeaseInfinite(ctx.getSelectedPool()!);
+        return '';
+      }
+      let days = 0, hours = 0, minutes = 0;
+      for (let i = 0; i < args.length; i++) {
+        const kw = args[i].toLowerCase();
+        if (kw !== 'day' && kw !== 'hour' && kw !== 'minute') {
+          return refuseMotInattenduVrp(ligne, args[i]);
+        }
+        const lu = boundedInteger(args[i + 1], 0, VRP_LEASE_MAX[kw]);
+        if (lu === null) return refuseMotInattenduVrp(ligne, args[i + 1] ?? args[i]);
+        if (kw === 'day') days = lu; else if (kw === 'hour') hours = lu; else minutes = lu;
+        i++;
+      }
+      const seconds = days * 86400 + hours * 3600 + minutes * 60;
+      if (!getRouter()._getDHCPServerInternal()
+        .configurePoolLease(ctx.getSelectedPool()!, seconds)) {
+        return refuseMotInattenduVrp(ligne, args[1] ?? args[0]);
+      }
+      return '';
+    });
 
   trie.registerGreedy('domain-name', 'Set domain name for DHCP clients', (args) => {
     if (args.length < 1 || !ctx.getSelectedPool()) return 'Error: Incomplete command.';

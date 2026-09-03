@@ -777,6 +777,13 @@ interface SwitchTries {
   user: CommandTrie;
 }
 
+const PORT_SECURITY_CLEAR_KINDS: ReadonlyArray<readonly [string, string]> = [
+  ['all', 'Clear all secure MAC addresses'],
+  ['configured', 'Clear configured secure MAC addresses'],
+  ['dynamic', 'Clear dynamically learned secure MAC addresses'],
+  ['sticky', 'Clear sticky secure MAC addresses'],
+];
+
 export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISwitchShell {
   override versionText(): string {
     return showSwitchVersion(this.d());
@@ -1606,26 +1613,11 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
       });
 
     // ── clear ──
-    this.privilegedTrie.registerGreedy('clear port-security',
-      'Clear secure MAC entries', (args) => {
-        const kind = (args[0] ?? '').toLowerCase();
-        if (!['all', 'configured', 'dynamic', 'sticky'].includes(kind)) {
-          return '% Usage: clear port-security {all|configured|dynamic|sticky} [interface <if>]';
-        }
-        const ifIdx = args.findIndex(a => a.toLowerCase() === 'interface');
-        const portFilter = ifIdx >= 0
-          ? this.resolveInterfaceName(args.slice(ifIdx + 1).join(' '))
-          : null;
-        for (const [name, p] of this.d()._getPortsInternal()) {
-          if (portFilter && name !== portFilter) continue;
-          const sec = p.getPortSecurity();
-          if (kind === 'all') sec.clearAll();
-          else if (kind === 'dynamic') sec.clearDynamic();
-          else if (kind === 'sticky') sec.clearSticky();
-          else if (kind === 'configured') { sec.clearSticky(); sec.clearDynamic(); }
-        }
-        return '';
-      });
+    for (const [genre, description] of PORT_SECURITY_CLEAR_KINDS) {
+      this.privilegedTrie.registerGreedy(`clear port-security ${genre}`, description,
+        (args) => this.clearPortSecurity(genre, args));
+    }
+    this.privilegedTrie.describeNode('clear port-security', 'Clear secure MAC entries');
     // `describeNode` sort en silence sur un noeud absent : l'appel doit
     // SUIVRE l'enregistrement qui cree le noeud intermediaire.
     this.privilegedTrie.registerGreedy('clear errdisable interface',
@@ -1637,6 +1629,27 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
         return cleared ? '' : '';
       });
     this.privilegedTrie.describeNode('clear errdisable', 'Error-disable state');
+  }
+
+  private clearPortSecurity(genre: string, args: readonly string[]): string {
+    let portFilter: string | null = null;
+    if (args.length > 0) {
+      if (args[0].toLowerCase() !== 'interface') {
+        throw new CliInvalidInput({ token: args[0] });
+      }
+      if (args.length === 1) throw new CliIncomplete();
+      portFilter = this.resolveInterfaceName(args.slice(1).join(' '));
+      if (portFilter === null) throw new CliInvalidInput({ token: args[1] });
+    }
+    for (const [name, p] of this.d()._getPortsInternal()) {
+      if (portFilter && name !== portFilter) continue;
+      const sec = p.getPortSecurity();
+      if (genre === 'all') sec.clearAll();
+      else if (genre === 'dynamic') sec.clearDynamic();
+      else if (genre === 'sticky') sec.clearSticky();
+      else if (genre === 'configured') { sec.clearSticky(); sec.clearDynamic(); }
+    }
+    return '';
   }
 
   // ─── Port-Security Display ────────────────────────────────────────
@@ -1996,65 +2009,91 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
     this.configTrie.registerGreedy('no ip igmp snooping', 'Disable IGMP snooping',
       (args) => this.applyIgmpSnooping(args, false));
     for (const t of [this.userTrie, this.privilegedTrie]) {
-      t.registerGreedy('show ip igmp snooping', 'Display IGMP snooping state', (args) => {
-        const agent = this.requireIgmpSnooping();
-        const cfg = agent.getConfig();
-        if (args.includes('groups')) {
-          let vlanFilter: number | undefined;
-          const vi = args.indexOf('vlan');
-          if (vi >= 0 && args[vi + 1]) {
-            const n = parseInt(args[vi + 1], 10);
-            if (!Number.isNaN(n)) vlanFilter = n;
-          }
-          const rows = ['Vlan      Group               Type    Version  Port List'];
-          for (const { vlan, group } of agent.listGroups(vlanFilter)) {
-            const ports = Array.from(group.members.keys()).join(', ');
-            rows.push(
-              `${String(vlan).padEnd(10)}${group.groupAddress.padEnd(20)}igmp    v2       ${ports}`);
-          }
-          return rows.join('\n');
-        }
-        if (args.includes('mrouter')) {
-          const rows = ['Vlan    ports', '----    -----'];
-          for (const v of agent.listVlans()) {
-            const ports = Array.from(v.routerPorts)
-              .map(p => `${p}(${v.staticRouterPorts.has(p) ? 'static' : 'dynamic'})`)
-              .join(', ');
-            rows.push(`${String(v.vlan).padEnd(8)}${ports}`);
-          }
-          return rows.join('\n');
-        }
-        const lines: string[] = [];
-        lines.push(`Global IGMP Snooping configuration:`);
-        lines.push(`-----------------------------------------`);
-        lines.push(`IGMP snooping              : ${cfg.enabled ? 'Enabled' : 'Disabled'}`);
-        lines.push(`IGMPv3 snooping            : Disabled`);
-        lines.push(`Report suppression         : Enabled`);
-        lines.push(`TCN solicit query          : Disabled`);
-        lines.push(`Robustness variable        : 2`);
-        lines.push(`Last member query count    : 2`);
-        lines.push(`Last member query interval : 1000`);
-        if (args.includes('querier')) {
-          for (const v of agent.listVlans()) {
-            const src = agent.querierSourceIp(v.vlan);
-            const admin = cfg.querierEnabled || v.querierEnabled;
-            lines.push(``);
-            lines.push(`Vlan ${v.vlan}: IGMP snooping querier status`);
-            lines.push(`--------------------------------------------`);
-            lines.push(`Admin state                    : ${admin ? 'Enabled' : 'Disabled'}`);
-            lines.push(`Admin version                  : 2`);
-            lines.push(`Operational state              : ${agent.isQuerierOperational(v.vlan) ? 'Enabled' : 'Disabled'}`);
-            lines.push(`Querier address                : ${src ?? '0.0.0.0'}`);
-            lines.push(`Query interval                 : ${cfg.querierIntervalSec}`);
-            lines.push(`Max response time              : ${Math.round(cfg.querierMaxRespTimeDs / 10)}`);
-          }
-          return lines.join('\n');
-        }
-        lines.push(``);
-        lines.push(`Vlan ${[...agent.listVlans()].map(v => v.vlan).join(',') || '<none>'}:`);
-        return lines.join('\n');
-      });
+      t.registerGreedy('show ip igmp snooping groups',
+        'IGMP snooping multicast group information', (args) =>
+        this.showIgmpSnoopingGroups(args));
+      t.registerGreedy('show ip igmp snooping mrouter',
+        'IGMP snooping multicast router ports', () => this.showIgmpSnoopingMrouter());
+      t.registerGreedy('show ip igmp snooping querier',
+        'IGMP snooping querier status', () => this.showIgmpSnoopingQuerier());
+      t.registerGreedy('show ip igmp snooping vlan',
+        'IGMP snooping information for a VLAN', (args) =>
+        this.showIgmpSnoopingGlobal(args));
+      t.register('show ip igmp snooping', 'Display IGMP snooping state', () =>
+        this.showIgmpSnoopingGlobal([]));
     }
+  }
+
+  /** L'en-tete que les trois vues globales partagent. */
+  private igmpSnoopingHeader(): string[] {
+    const cfg = this.requireIgmpSnooping().getConfig();
+    return [
+      'Global IGMP Snooping configuration:',
+      '-----------------------------------------',
+      `IGMP snooping              : ${cfg.enabled ? 'Enabled' : 'Disabled'}`,
+      'IGMPv3 snooping            : Disabled',
+      'Report suppression         : Enabled',
+      'TCN solicit query          : Disabled',
+      'Robustness variable        : 2',
+      'Last member query count    : 2',
+      'Last member query interval : 1000',
+    ];
+  }
+
+  private showIgmpSnoopingGroups(args: readonly string[]): string {
+    const agent = this.requireIgmpSnooping();
+    const vi = args.indexOf('vlan');
+    const filtre = vi >= 0 ? parseVlanId(args[vi + 1]) ?? undefined : undefined;
+    const rows = ['Vlan      Group               Type    Version  Port List'];
+    for (const { vlan, group } of agent.listGroups(filtre)) {
+      const ports = Array.from(group.members.keys()).join(', ');
+      rows.push(
+        `${String(vlan).padEnd(10)}${group.groupAddress.padEnd(20)}igmp    v2       ${ports}`);
+    }
+    return rows.join('\n');
+  }
+
+  private showIgmpSnoopingMrouter(): string {
+    const agent = this.requireIgmpSnooping();
+    const rows = ['Vlan    ports', '----    -----'];
+    for (const v of agent.listVlans()) {
+      const ports = Array.from(v.routerPorts)
+        .map(p => `${p}(${v.staticRouterPorts.has(p) ? 'static' : 'dynamic'})`)
+        .join(', ');
+      rows.push(`${String(v.vlan).padEnd(8)}${ports}`);
+    }
+    return rows.join('\n');
+  }
+
+  private showIgmpSnoopingQuerier(): string {
+    const agent = this.requireIgmpSnooping();
+    const cfg = agent.getConfig();
+    const lines = this.igmpSnoopingHeader();
+    for (const v of agent.listVlans()) {
+      const src = agent.querierSourceIp(v.vlan);
+      const admin = cfg.querierEnabled || v.querierEnabled;
+      lines.push(``);
+      lines.push(`Vlan ${v.vlan}: IGMP snooping querier status`);
+      lines.push(`--------------------------------------------`);
+      lines.push(`Admin state                    : ${admin ? 'Enabled' : 'Disabled'}`);
+      lines.push(`Admin version                  : 2`);
+      lines.push(`Operational state              : ${agent.isQuerierOperational(v.vlan) ? 'Enabled' : 'Disabled'}`);
+      lines.push(`Querier address                : ${src ?? '0.0.0.0'}`);
+      lines.push(`Query interval                 : ${cfg.querierIntervalSec}`);
+      lines.push(`Max response time              : ${Math.round(cfg.querierMaxRespTimeDs / 10)}`);
+    }
+    return lines.join('\n');
+  }
+
+  private showIgmpSnoopingGlobal(args: readonly string[]): string {
+    const agent = this.requireIgmpSnooping();
+    if (args.length > 0 && parseVlanId(args[0]) === null) {
+      throw new CliInvalidInput({ token: args[0] });
+    }
+    const lines = this.igmpSnoopingHeader();
+    lines.push(``);
+    lines.push(`Vlan ${[...agent.listVlans()].map(v => v.vlan).join(',') || '<none>'}:`);
+    return lines.join('\n');
   }
 
   /**

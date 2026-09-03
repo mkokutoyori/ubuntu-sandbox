@@ -12,7 +12,7 @@
  *     → all nulls, used by the standalone PSInterpreter (no Windows device)
  */
 
-import type { OrgUnitWriteOptions, UserWriteOptions } from '@/network/devices/windows/server/ad/DirectoryStore';
+import type { GroupWriteOptions, OrgUnitWriteOptions, UserWriteOptions } from '@/network/devices/windows/server/ad/DirectoryStore';
 
 import type { AddsForestOptions } from '@/network/devices/windows/server/ad/adFunctionalLevels';
 import type { RemoteDirectoryTarget } from './adRemoteDirectory';
@@ -201,6 +201,15 @@ export interface AdGenericObjectInfo {
   dn: string; name: string; objectClass: string; isDeleted: boolean;
   lastKnownParent?: string; whenChanged?: string; attributes: Record<string, string[]>;
 }
+export interface AdMemberLink { dn: string; ttlSeconds?: number }
+
+export interface AddGroupMemberOptions {
+  permissiveModify?: boolean;
+  ttlSeconds?: number;
+  partition?: string;
+  target?: RemoteDirectoryTarget;
+}
+
 export interface AdOptionalFeatureInfo { name: string; enabledScopes: string[] }
 
 export interface AdAccessRuleInfo {
@@ -212,7 +221,9 @@ export interface AdAccessRuleInfo {
   inheritedObjectType: string;
 }
 export interface AdGroupInfo {
-  sam: string; dn: string; scope: 'DomainLocal' | 'Global' | 'Universal'; category: 'Security' | 'Distribution'; members: string[];
+  sam: string; dn: string; name: string;
+  scope: 'DomainLocal' | 'Global' | 'Universal'; category: 'Security' | 'Distribution';
+  properties: Record<string, string>; members: string[];
 }
 export interface AdComputerInfo {
   name: string; dn: string; enabled: boolean; servicePrincipalNames: string[];
@@ -261,11 +272,13 @@ export interface IAdProvider {
   /** `Search-ADAccount -LockedOut`. */
   listLockedOutUsers(): Array<{ sam: string; name: string; badPwdCount: number }>;
 
-  newGroup(sam: string, scope: AdGroupInfo['scope'], path?: string, category?: AdGroupInfo['category']): AdOpResult;
+  newGroup(sam: string, scope: AdGroupInfo['scope'], path?: string, category?: AdGroupInfo['category'], opts?: GroupWriteOptions): AdOpResult;
+  setGroup(identity: string, attributes: Record<string, string>, target?: RemoteDirectoryTarget): AdOpResult;
   getGroup(identity: string): AdGroupInfo | null;
   listGroups(): AdGroupInfo[];
-  addGroupMember(groupIdentity: string, members: string[]): AdOpResult;
-  removeGroupMember(groupIdentity: string, members: string[]): AdOpResult;
+  addGroupMember(groupIdentity: string, members: string[], opts?: AddGroupMemberOptions): AdOpResult;
+  groupMemberLinks(groupIdentity: string): AdMemberLink[];
+  removeGroupMember(groupIdentity: string, members: string[], opts?: AddGroupMemberOptions): AdOpResult;
   /** `Get-ADGroupMember` — direct members only (users, computers, nested groups, or a cross-domain `foreignSecurityPrincipal` — the AGDLP model relies on nesting Global groups inside Domain Local ones), each with enough shape to tell members apart by kind. */
   getGroupMembers(groupIdentity: string): Array<{ sam: string; dn: string; objectClass: 'user' | 'computer' | 'group' | 'foreignSecurityPrincipal' }>;
   removeGroup(identity: string): AdOpResult;

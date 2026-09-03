@@ -34,20 +34,24 @@
  * continuer de fonctionner — un correctif qui casserait le seul chemin
  * deja honnete serait pire que le defaut.
  *
- * DEUX DEFAUTS DU LABORATOIRE, trouves en le mesurant et ecrits ici
- * plutot que tus. (1) Un `LinuxServer` demarre DEJA son sshd, donc le cas
- * « un port ferme est vu ferme » visait un port ouvert : il vise 8888.
- * (2) La banniere annoncee par ce sshd est `Sandbox-Server`, pas
- * `OpenSSH` ; attendre `OpenSSH` faisait echouer un temoin pour une
- * raison etrangere a `nmap`. C'est un ecart de FIDELITE du serveur SSH,
- * inscrit au `TODO.md` plutot que corrige ici.
+ * UN DEFAUT DU LABORATOIRE, trouve en le mesurant et ecrit ici plutot que
+ * tu : un `LinuxServer` demarre DEJA son sshd, donc le cas « un port ferme
+ * est vu ferme » visait un port ouvert ; il vise 8888.
  *
- * Discrimination : 2 cas tombent en retirant `Nmap.ts` et
- * `ScanEngine.ts` — la decouverte d'hote et le verdict UDP, exactement
- * les deux chemins qui inspectaient l'objet. Les 9 autres passent des
- * deux cotes et c'est leur role : ce sont les TEMOINS du chemin TCP, qui
- * etait deja honnete, plus les cas de structure dont l'objet est de
- * garantir que le correctif ne l'a pas casse.
+ * La salutation, elle, etait un defaut du PRODUIT et non du laboratoire.
+ * `SocketEntry.banner` — « les premiers octets qu'un service ecrit sur une
+ * connexion fraiche » — etait DECLARE a la liaison et n'etait ecrit sur
+ * aucun fil : la capture montrait chaque segment `length 0` pendant que
+ * `nc` et `nmap -sV` rendaient la banniere, lue dans l'objet de la cible.
+ * `TcpStack` l'emet desormais a l'acceptation, et RFC 4253 §4.2 dit que
+ * c'est bien le serveur qui parle le premier.
+ *
+ * Discrimination, en retirant l'emission de la salutation
+ * (`TcpStack`, `LinuxMachine`, `CaptureFrame`, `SshServerHandler`) : 4 cas
+ * tombent — les trois qui lisent une version et celui qui exige les
+ * octets dans la capture. Les 10 autres passent des deux cotes et c'est
+ * leur role : ce sont les TEMOINS de la decouverte d'hote et du chemin
+ * TCP, dont l'objet est de garantir que le correctif ne les a pas casses.
  */
 
 import { describe, it, expect, beforeEach } from 'vitest';
@@ -170,6 +174,31 @@ describe('la detection de version LIT la banniere sur une vraie connexion', () =
     expect(vu).toMatch(/Flags \[S\]|\[S\]|SYN/);
   });
 
+  it('la version rendue est celle des OCTETS captures sur le fil', async () => {
+    const { scanner, cible } = await segment();
+    await taper(cible, 'sudo systemctl start ssh');
+    await capturer(cible, '/tmp/sv.pcap');
+
+    const sortie = await taper(scanner, 'nmap -Pn -sV -p 22 10.0.0.2');
+    const capture = await taper(cible, 'sudo tcpdump -r /tmp/sv.pcap -A');
+
+    // Ce que le serveur a REELLEMENT annonce, lu dans la capture, doit se
+    // retrouver dans ce que `nmap` rapporte : sans ce lien, une table de
+    // services indexee par numero de port donnerait la meme sortie.
+    const annonce = /SSH-[\d.]+-(\S+)/.exec(capture);
+    expect(annonce).not.toBeNull();
+    expect(sortie).toContain(annonce![1]);
+  });
+
+  it('un port ouvert par AUCUN service ne recoit pas de version inventee', async () => {
+    const { scanner } = await segment();
+
+    const sortie = await taper(scanner, 'nmap -Pn -sV -p 8888 10.0.0.2');
+
+    expect(sortie).toMatch(/8888\/tcp\s+closed/);
+    expect(sortie).not.toMatch(/8888\/tcp\s+open/);
+  });
+
   it('TEMOIN: la version rendue est celle du service', async () => {
     const { scanner, cible } = await segment();
     await taper(cible, 'sudo systemctl start ssh');
@@ -177,6 +206,21 @@ describe('la detection de version LIT la banniere sur une vraie connexion', () =
     const sortie = await taper(scanner, 'nmap -Pn -sV -p 22 10.0.0.2');
 
     expect(sortie).toMatch(/22\/tcp\s+open\s+ssh\s+\S/);
+  });
+
+  it('le serveur PARLE le premier, et ses octets sont sur le fil', async () => {
+    const { scanner, cible } = await segment();
+    await taper(cible, 'sudo systemctl start ssh');
+    await capturer(cible, '/tmp/nc.pcap');
+
+    const sortie = await taper(scanner, 'nc -v 10.0.0.2 22');
+
+    const vu = await taper(cible, 'sudo tcpdump -r /tmp/nc.pcap -A');
+    // La salutation ne peut pas venir de l'objet : elle est dans la
+    // capture, portee par un segment dont la longueur n'est pas nulle.
+    expect(vu).toMatch(/SSH-2\.0-/);
+    expect(vu).toMatch(/length (?!0\b)\d+/);
+    expect(sortie).toMatch(/SSH-2\.0-/);
   });
 });
 

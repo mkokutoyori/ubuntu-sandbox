@@ -107,6 +107,15 @@ export const FORTIOS_PROFILE: FirewallProfile = Object.freeze({
   configurationModel: 'immediate',
   virtualizationName: 'vdom',
   maxVirtualDomains: 10,
+  logDisk: {
+    label: 'Internal',
+    model: 'Virtual disk',
+    type: 'SSD',
+    device: '/dev/sda',
+    capacityBytes: 32 * 1000 ** 3,
+    partitionRef: 3,
+    partitionBytes: 31 * 1000 ** 3,
+  },
 
   portPrefix: 'port',
   portCount: 8,

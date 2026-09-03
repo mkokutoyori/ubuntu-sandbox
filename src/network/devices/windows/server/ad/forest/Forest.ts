@@ -37,7 +37,6 @@ export interface ForestFsmoRoles {
 }
 
 export class Forest {
-  /** Cosmetic, matches this simulator's other functional-level fields — no real feature-level gating. */
   functionalLevel: string = DEFAULT_AD_FUNCTIONAL_LEVEL.forestMode;
   private readonly domains = new Map<string, ForestDomain>();
   private fsmo: ForestFsmoRoles | null = null;

@@ -67,8 +67,10 @@ export interface AdAccessRule {
 export interface AdGroup {
   readonly sam: string;
   readonly dn: string;
+  readonly name: string;
   scope: 'DomainLocal' | 'Global' | 'Universal';
   category: 'Security' | 'Distribution';
+  properties: Record<string, string>;
   members: string[];
 }
 

@@ -68,9 +68,15 @@ describe('Scenario 7 — sshd hijacked onto port 443', () => {
     expect(banner).not.toMatch(/HTTP\/1/i);
   });
 
+  // La capture s'arme AVANT la connexion, comme sur une vraie machine :
+  // ce cas lisait auparavant des trames que `nc` FABRIQUAIT dans le
+  // journal de capture apres coup, la banniere etant alors demandee a
+  // l'objet du serveur. Elle traverse desormais le fil, donc il faut
+  // ecouter pendant qu'elle passe.
   it('tcpdump on the server shows the SSH-2.0 banner in a TCP payload on port 443', async () => {
+    await server.executeCommand('tcpdump -A -w /tmp/443.pcap port 443 &');
     await attacker.executeCommand('nc -w 1 192.168.1.1 443');
-    const cap = await server.executeCommand('tcpdump -A -c 20 port 443');
+    const cap = await server.executeCommand('tcpdump -A -r /tmp/443.pcap');
     expect(cap).toMatch(/SSH-2\.0-/);
     expect(cap).not.toMatch(/TLS Handshake|ClientHello/i);
   });

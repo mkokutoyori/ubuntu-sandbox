@@ -1,0 +1,3 @@
+export const SSH_SERVER_IDENTIFICATION = 'SSH-2.0-OpenSSH_8.9p1 Ubuntu-3ubuntu0.6';
+
+export const SSH_SERVER_IDENTIFICATION_LINE = `${SSH_SERVER_IDENTIFICATION}\r\n`;

@@ -129,7 +129,7 @@ import {
   InstallADDSForestCmdlet, InstallADDSDomainControllerCmdlet, GetADDomainControllerCmdlet, RemoveADDomainControllerCmdlet,
   NewADUserCmdlet, GetADUserCmdlet, SetADUserCmdlet, RemoveADUserCmdlet, SetADAccountPasswordCmdlet,
   DisableADAccountCmdlet, EnableADAccountCmdlet,
-  NewADGroupCmdlet, GetADGroupCmdlet, RemoveADGroupCmdlet, AddADGroupMemberCmdlet, RemoveADGroupMemberCmdlet, GetADGroupMemberCmdlet,
+  NewADGroupCmdlet, SetADGroupCmdlet, GetADGroupCmdlet, RemoveADGroupCmdlet, AddADGroupMemberCmdlet, RemoveADGroupMemberCmdlet, GetADGroupMemberCmdlet,
   GetADComputerCmdlet, SetADComputerCmdlet, GetADObjectCmdlet, SetADObjectCmdlet, RestoreADObjectCmdlet,
   GetADOptionalFeatureCmdlet, EnableADOptionalFeatureCmdlet, GetADRootDSECmdlet, SearchADAccountCmdlet,
   AddKdsRootKeyCmdlet, GetKdsRootKeyCmdlet, NewADServiceAccountCmdlet, GetADServiceAccountCmdlet,
@@ -578,6 +578,7 @@ export function registerServerCmdlets(registry: CmdletRegistry): void {
   registry.register(new DisableADAccountCmdlet());
   registry.register(new EnableADAccountCmdlet());
   registry.register(new NewADGroupCmdlet());
+  registry.register(new SetADGroupCmdlet());
   registry.register(new GetADGroupCmdlet());
   registry.register(new RemoveADGroupCmdlet());
   registry.register(new AddADGroupMemberCmdlet());

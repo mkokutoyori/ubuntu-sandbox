@@ -1,11 +1,11 @@
 import { describe, it, expect } from 'vitest';
-import { parsePortSpec } from '@/network/devices/linux/commands/net/nmap/PortSpec';
+import { parsePortSpec } from '@/network/scan/nmap/PortSpec';
 import {
   serviceName,
   topPorts,
   fastPorts,
   DEFAULT_TOP_COUNT,
-} from '@/network/devices/linux/commands/net/nmap/ServiceRegistry';
+} from '@/network/scan/nmap/ServiceRegistry';
 
 describe('parsePortSpec', () => {
   it('parse une liste simple', () => {

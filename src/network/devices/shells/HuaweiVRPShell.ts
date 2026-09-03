@@ -132,6 +132,9 @@ import {
   parseTimeOfDay,
   type TimeRangePeriodic,
 } from '../router/security/timeRange';
+import { estAdresseIPv4 } from './cli-utils';
+import { boundedInteger } from '@/cli/ArgumentTypes';
+import { BGP_ATTRIBUTE_MAX, BGP_HOLD_TIME_MAX } from '@/network/bgp/attributes';
 
 const JOURS_VRP: Record<string, string> = {
   daily: 'daily', 'working-day': 'weekdays', 'off-day': 'weekend',
@@ -172,6 +175,20 @@ function renderHuaweiSockets(router: Router): string {
     lines.push(` ${s.protocol.padEnd(6)} ${String(s.port).padEnd(6)} ${s.service}`);
   }
   return lines.join('\n');
+}
+
+/**
+ * Un fait rendu par la STRUCTURE ne se garde pas aussi en texte brut :
+ * `as-number` et `group` sont deja ecrits par le rendu du voisin, donc
+ * les y ajouter donnait deux lignes pour un seul voisin — et deux lignes
+ * QUI SE CONTREDISENT des que la valeur etait mal formee.
+ */
+function gardeLigneNonRendue(
+  peer: { rawLines: string[] }, ip: string, mots: readonly string[],
+): void {
+  if (mots.length === 0) return;
+  const ligne = `peer ${ip} ${mots.join(' ')}`;
+  if (!peer.rawLines.includes(ligne)) peer.rawLines.push(ligne);
 }
 
 export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiDisplayState, HuaweiIPSecContext, HuaweiACLContext, HuaweiPolicyShellCtx {
@@ -2973,8 +2990,10 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
     const bgpEng = () => this.r().getBGPEngine();
     const converge = () => this.r().convergeDynamicRouting();
     t.registerGreedy('router-id', 'Set BGP router-id', (args) => {
-      const b = bgp(); if (b && args[0]) b.routerId = args[0];
-      if (args[0]) bgpEng().getConfig().routerId = args[0];
+      if (!args[0]) return 'Error: Incomplete command.';
+      if (!estAdresseIPv4(args[0])) return 'Error: Wrong parameter.';
+      const b = bgp(); if (b) b.routerId = args[0];
+      bgpEng().getConfig().routerId = args[0];
       return '';
     });
     t.registerGreedy('network', 'Advertise a network', (args) => {
@@ -2996,8 +3015,15 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
       b.groups.set(args[0], { name: args[0], kind, rawLines: [] });
       return '';
     });
-    t.registerGreedy('peer', 'Configure a BGP peer', (args, raw) => {
-      const b = bgp(); if (!b || !args[0]) return '';
+    t.registerGreedy('peer', 'Configure a BGP peer', (args) => {
+      if (!args[0]) return 'Error: Incomplete command.';
+      if (!estAdresseIPv4(args[0])) return 'Error: Wrong parameter.';
+      const asIdx = args.indexOf('as-number');
+      if (asIdx >= 0
+        && boundedInteger(args[asIdx + 1], 1, BGP_ATTRIBUTE_MAX) === null) {
+        return 'Error: Wrong parameter.';
+      }
+      const b = bgp(); if (!b) return '';
       const peer = b.peers.get(args[0]) ?? { ip: args[0], rawLines: [] };
       // Real engine session config — a VRP peer is active for IPv4
       // unicast as soon as it's configured under [bgp] (no separate
@@ -3008,13 +3034,24 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
       for (let i = 1; i < args.length; i++) {
         const a = args[i];
         if (a === 'as-number' && args[i + 1]) { peer.asNumber = parseInt(args[i + 1], 10); bn.remoteAs = peer.asNumber; i++; }
-        else if (a === 'description' && args[i + 1]) { peer.description = args.slice(i + 1).join(' '); i = args.length; }
+        else if (a === 'description' && args[i + 1]) {
+          peer.description = args.slice(i + 1).join(' ');
+          gardeLigneNonRendue(peer, args[0], args.slice(i - 1));
+          i = args.length;
+        }
         else if (a === 'group' && args[i + 1]) { peer.groupName = args[i + 1]; i++; }
-        else if (a === 'connect-interface' && args[i + 1]) { peer.connectInterface = args[i + 1]; i++; }
-        else if (a === 'password' && args[i + 1]) { peer.passwordHash = args[i + 1]; i++; }
+        else if (a === 'connect-interface' && args[i + 1]) {
+          peer.connectInterface = args[i + 1];
+          gardeLigneNonRendue(peer, args[0], [a, args[i + 1]]);
+          i++;
+        }
+        else if (a === 'password' && args[i + 1]) {
+          peer.passwordHash = args[i + 1];
+          gardeLigneNonRendue(peer, args[0], [a, args[i + 1]]);
+          i++;
+        }
+        else gardeLigneNonRendue(peer, args[0], args.slice(i));
       }
-      const line = raw ?? `peer ${args.join(' ')}`;
-      if (!peer.rawLines.includes(line)) peer.rawLines.push(line);
       b.peers.set(args[0], peer);
       converge();
       return '';
@@ -3035,6 +3072,12 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
       return '';
     });
     t.registerGreedy('timer', 'BGP timers (keepalive/hold)', (args, raw) => {
+      for (let i = 0; i < args.length; i++) {
+        if ((args[i] === 'keepalive' || args[i] === 'hold')
+          && boundedInteger(args[i + 1], 0, BGP_HOLD_TIME_MAX) === null) {
+          return 'Error: Wrong parameter.';
+        }
+      }
       const b = bgp(); if (!b) return '';
       for (let i = 0; i < args.length; i++) {
         if (args[i] === 'keepalive' && args[i + 1]) b.keepaliveSec = parseInt(args[++i], 10);

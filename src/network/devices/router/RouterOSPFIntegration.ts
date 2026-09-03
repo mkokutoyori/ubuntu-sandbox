@@ -23,6 +23,7 @@ import { Logger } from '../../core/Logger';
 import { OSPFEngine } from '../../ospf/OSPFEngine';
 import { OSPFv3Engine } from '../../ospf/OSPFv3Engine';
 import type { OSPFNeighbor, OSPFPacket, OSPFInterface } from '../../ospf/types';
+import { OSPF_ROUTER_ID_ABSENT } from '../../ospf/types';
 import type { ACLEngine } from './ACLEngine';
 import type { IPv6DataPlane } from './IPv6DataPlane';
 import type { RouteEntry } from '../Router';
@@ -174,6 +175,31 @@ export class RouterOSPFIntegration {
     return auto;
   }
 
+  /**
+   * Un processus OSPF ne tourne JAMAIS sous l'identifiant 0.0.0.0.
+   *
+   * L'identifiant etait elu une seule fois, a l'entree dans
+   * `router ospf`, et jamais rejoue. Dans l'ordre que tout le monde
+   * tape — le processus d'abord, les adresses ensuite — aucune
+   * interface n'etait encore utilisable a cet instant : le moteur
+   * demarrait donc SANS identifiant, formait ses adjacences et
+   * annoncait ses LSA sous 0.0.0.0, que `show ip protocols` affichait
+   * tel quel. C'est ce que le message `%OSPF-4-NORTRID` existe
+   * precisement pour empecher, et 0.0.0.0 n'est pas un identifiant
+   * (RFC 2328 §1.2) mais le mot pour dire qu'il n'y en a pas.
+   *
+   * L'election est donc rejouee tant qu'il n'y en a pas, avant que la
+   * convergence n'active la moindre interface — donc avant qu'un seul
+   * Hello ne parte sous un identifiant nul. Un `router-id` pose a la
+   * main n'est jamais touche.
+   */
+  private allouerRouterIdSiManquant(): void {
+    if (!this.ospfEngine || this.routerIdManuel) return;
+    if (this.ospfEngine.getRouterId() !== OSPF_ROUTER_ID_ABSENT) return;
+    const auto = this.routerIdAutomatique();
+    if (auto) this.ospfEngine.setRouterId(auto);
+  }
+
   /** Enable OSPF and create the engine with the given process ID */
   enableOSPF(processId: number = 1): void {
     if (this.ospfEngine) return;
@@ -184,6 +210,12 @@ export class RouterOSPFIntegration {
 
     const auto = this.routerIdAutomatique();
     if (auto) this.ospfEngine.setRouterId(auto);
+    else {
+      bus?.publish({
+        topic: 'ospf.router-id.unavailable',
+        payload: { processId, deviceId: this.ctx.id },
+      });
+    }
 
     // Set up send callback for OSPF packets
     this.ospfEngine.setSendCallback((iface, packet, destIP) => {
@@ -575,6 +607,8 @@ export class RouterOSPFIntegration {
       this.v3AutoConverge();
       return;
     }
+
+    this.allouerRouterIdSiManquant();
 
     // Step 1: Auto-activate interfaces matching OSPF network statements
     const routerIfaces: Array<{ name: string; ip: string; mask: string }> = [];

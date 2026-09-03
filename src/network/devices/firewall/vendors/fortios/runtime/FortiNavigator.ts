@@ -431,6 +431,20 @@ export class FortiNavigator {
     return EMPTY;
   }
 
+  deleteEveryObject(): void {
+    const base = { ...this.deps.commitContext(), position: -1 };
+    const tables = [...this.deps.tree.existingTables()]
+      .sort((a, b) => b.spec.renderOrder - a.spec.renderOrder);
+    for (const table of tables) {
+      const onDelete = table.spec.onDelete;
+      if (onDelete === undefined) continue;
+      for (const key of table.keys()) {
+        if (table.spec.predefined?.includes(key)) continue;
+        try { onDelete(key, base); } catch { continue; }
+      }
+    }
+  }
+
   commitDefaults(spec: FortiTableSpec): void {
     if (spec.kind !== 'object' || spec.onCommit === undefined) return;
     const object = this.deps.tree.singleton(spec);

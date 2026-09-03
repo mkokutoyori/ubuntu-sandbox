@@ -188,6 +188,11 @@ export interface OspfAreaMismatchPayload extends OspfRouterRef {
   reason: string;
 }
 
+export interface OspfRouterIdUnavailablePayload {
+  processId: number;
+  deviceId?: string;
+}
+
 // ── Topic union (added to DomainEvent in src/events/types.ts) ──────────
 
 export type OspfDomainEvent =
@@ -208,4 +213,5 @@ export type OspfDomainEvent =
   | { topic: 'ospf.dd.retransmit-due'; payload: OspfDdRetransmitDuePayload }
   | { topic: 'ospf.lsr.retransmit-due'; payload: OspfLsrRetransmitDuePayload }
   | { topic: 'ospf.hello.mismatch'; payload: OspfHelloMismatchPayload }
-  | { topic: 'ospf.area.mismatch'; payload: OspfAreaMismatchPayload };
+  | { topic: 'ospf.area.mismatch'; payload: OspfAreaMismatchPayload }
+  | { topic: 'ospf.router-id.unavailable'; payload: OspfRouterIdUnavailablePayload };

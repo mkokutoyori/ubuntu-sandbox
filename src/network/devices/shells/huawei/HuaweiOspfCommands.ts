@@ -20,6 +20,13 @@ import type { Router } from '../../Router';
 import { estAdresseIPv4, refuseMotInattenduVrp } from '../cli-utils';
 import { CommandTrie } from '../CommandTrie';
 import { SubnetMask } from '../../../core/types';
+import { parseAreaId } from '@/network/ospf/types';
+
+const VRP_IMPORTABLE_PROTOCOLS = new Set([
+  'direct', 'connected', 'static', 'rip', 'isis', 'bgp', 'ospf', 'unr',
+]);
+
+const VRP_OSPF_NETWORK_TYPES = new Set(['broadcast', 'nbma', 'p2mp', 'p2p']);
 // ─── Types for Huawei Shell Context ──────────────────────────────────
 
 export type HuaweiOSPFShellMode = 'ospf' | 'ospf-area' | 'ospfv3';
@@ -120,6 +127,7 @@ export function buildOSPFViewCommands(
     if (args.length < 1) return 'Error: Incomplete command.';
     const ospf = ctx.r()._getOSPFEngineInternal();
     if (!ospf) return 'Error: OSPF is not enabled.';
+    if (parseAreaId(args[0]) === null) return 'Error: Wrong parameter.';
     setOSPFArea(args[0]);
     ctx.setMode('ospf-area');
     return '';
@@ -221,6 +229,7 @@ export function buildOSPFViewCommands(
     if (args.length < 1) return 'Error: Incomplete command.';
     const extra = ctx.r()._getOSPFExtraConfig();
     const protocol = args[0].toLowerCase();
+    if (!VRP_IMPORTABLE_PROTOCOLS.has(protocol)) return 'Error: Wrong parameter.';
     if (protocol === 'static') {
       let metricType = 2;
       for (let i = 1; i < args.length - 1; i++) {
@@ -368,6 +377,9 @@ export function buildOSPFAreaViewCommands(
 
     const network = args[0];
     const wildcard = args[1];
+    if (!estAdresseIPv4(network) || !estAdresseIPv4(wildcard)) {
+      return 'Error: Wrong parameter.';
+    }
     ospf.addNetwork(network, wildcard, areaId);
     return '';
   });
@@ -577,7 +589,9 @@ export function registerOSPFInterfaceCommands(
     if (args.length < 1) return 'Error: Incomplete command.';
     const ifName = ctx.getSelectedInterface();
     if (!ifName) return 'Error: No interface selected.';
-    setPendingOspfIf(ifName, { networkType: args[0].toLowerCase() });
+    const genre = args[0].toLowerCase();
+    if (!VRP_OSPF_NETWORK_TYPES.has(genre)) return 'Error: Wrong parameter.';
+    setPendingOspfIf(ifName, { networkType: genre });
     return '';
   });
 

@@ -127,7 +127,11 @@ describe('une destination sans route n\'est pas un delai', () => {
     lointain.getPorts()[0].configureIP(
       new IPAddress('172.16.9.9'), new SubnetMask('255.255.255.0'));
 
-    const sortie = await poste.executeCommand('nmap --reason -p 22 172.16.9.9');
+    // `-Pn` parce que la decouverte d'hote EMET desormais ses sondes : sans
+    // route elles ne partent pas, donc la cible est declaree en panne et
+    // aucun port n'est balaye — ce que fait le vrai nmap. La RAISON du
+    // balayage, qui est l'objet de ce cas, ne s'observe qu'en le forcant.
+    const sortie = await poste.executeCommand('nmap -Pn --reason -p 22 172.16.9.9');
     expect(sortie).toContain('net-unreach');
     expect(sortie).not.toContain('no-response');
   });

@@ -7031,3 +7031,238 @@ sous `-Pn` ou aucune sonde de decouverte n'a ete envoyee.
 
 Restent inspecter l'objet, inscrits au `TODO.md` : la banniere de `-sV`
 et le balayage ACK.
+
+## nmap — increment 3 : la salutation est sur le FIL, et nmap.exe existe
+
+**Perimetre revendique** : `TcpStack` (emission de la salutation),
+`SocketEntry.banner`, `ServiceBannerGrab`, `Nc`, `Nmap`, `WindowsPC`,
+`PowerShellExecutor`, `src/network/scan/nmap/`, `CaptureFrame` (`-A`).
+
+**Le defaut, mesure d'abord.** `SocketEntry.banner` — dont le
+commentaire dit « les premiers octets qu'un service ecrit sur une
+connexion fraiche » — etait DECLARE a la liaison et n'etait ecrit sur
+aucun fil. `getBannerForPort` le rendait a qui le DEMANDAIT a l'objet de
+la cible, et c'est ce que faisaient `nc` et `nmap -sV`. La capture le
+dit sans ambiguite : sur un `LinuxServer` dont le sshd tourne, chaque
+segment de la connexion sortait `length 0`, et `nc` FABRIQUAIT ensuite
+quatre segments (`seq 0`, `win 0`, sans options) des deux cotes pour que
+la capture ait l'air de porter la banniere. Une salutation qu'aucun
+paquet ne transporte n'est pas une salutation.
+
+**Le correctif est en un point.** `TcpStack` ECRIT la salutation declaree
+a l'acceptation, avant de remettre la socket au gestionnaire : toute
+ecoute qui en declare une l'emet, sans que chaque service ait a y penser.
+RFC 4253 §4.2 donne raison a ce choix pour SSH — c'est le SERVEUR qui
+parle le premier, et c'est precisement pourquoi la lecture de banniere
+fonctionne sur une vraie machine. `TcpStack.grabGreeting` est la sonde
+`Probe TCP NULL q||` de `nmap-service-probes` : ouvrir, ne rien envoyer,
+lire, fermer. `grabBanner`/`grabListenerProcess` (la lecture d'objet
+TCP) sont SUPPRIMES ; `nc` et `nmap` lisent le fil, et les segments
+synthetiques de `nc` disparaissent avec.
+
+**La banniere du serveur SSH devient celle d'un OpenSSH**, ce que le
+`TODO.md` demandait : `SSH-2.0-OpenSSH_8.9p1 Ubuntu-3ubuntu0.6`, la
+version que porte jammy — la distribution que ce simulateur declare dans
+`/etc/lsb-release`. Une seule declaration
+(`ssh/serverIdentification.ts`), lue par l'ecoute et par la reponse du
+serveur, la ou les deux etaient ecrites separement. Les 119 fichiers de
+la famille SSH (1442 cas) passent.
+
+**Defaut de `tcpdump` trouve en chemin et corrige.** `-A` n'imprimait
+l'ASCII que pour les trames qu'une commande avait FABRIQUEES :
+`decodeIpv4Payload` ne posait jamais `tcpPayload` pour un vrai segment,
+et `synthTcpBytes` s'arretait a l'en-tete TCP — donc `-x`/`-X` rendaient
+un vidage sans les donnees pour un segment que la meme ligne annonce
+`length 41`. Les octets applicatifs descendent maintenant dans `raw` et
+dans `tcpPayload`, en v4 comme en v6.
+
+**Windows.** `nmap.exe` existe, et c'est LE MEME moteur : `src/network/
+scan/nmap/` (deplace hors de `devices/linux/`, ou il n'avait rien a
+faire), `ScanHost` etant le port etroit que chaque plateforme remplit —
+fichier hosts, echo ICMP, sortie TCP, salutation, sonde UDP. Meme forme
+que `curl`. `nmap`, `nmap.exe` et `powershell -Command "nmap ..."`
+mènent au meme corps.
+
+**Discrimination** : `probe-nmap-traverse-la-pile.test.ts` (14 cas), 4
+tombent en retirant l'emission de la salutation ;
+`nmap-un-seul-moteur-deux-plateformes.test.ts` (10 cas) est nouveau et
+purement additif — 9 de ses 10 cas ont passe des le premier essai, ce qui
+est la mesure de la reutilisation.
+
+**Reste ouvert et inscrit au `TODO.md`** : le balayage ACK, qui demande
+un segment ACK NU hors connexion que `TcpStack` n'expose pas.
+
+## nmap — increment 4 : le balayage ACK EMET un ACK nu
+
+**Perimetre revendique** : `TcpStack.ackProbe`, `NmapProbes.ackReaches`,
+`Nmap` (Linux), `WindowsPC`.
+
+Dernier des trois chemins de `nmap` qui inspectaient l'objet de la cible.
+`ackReaches()` appelait `transitAckAclVerdict`, qui evalue les listes de
+controle par PARCOURS DE TOPOLOGIE : aucune trame ne portait cette
+reponse, et le verdict d'un scanner tire de la configuration de sa cible
+n'est pas une mesure. Pire, il repondait a cote de la question — il juge
+les listes de TRANSIT, pas le netfilter de la machine visee, donc une
+cible avec `iptables -A INPUT -p tcp -j DROP` etait rapportee
+`unfiltered` sur un port qui ne repond jamais.
+
+**Ce que le balayage ACK mesure**, et c'est le point a ne pas rater :
+PAS l'ecoute, le FILTRAGE. RFC 9293 §3.10.7.1 fait repondre RST a un ACK
+ne correspondant a aucune connexion, que le port soit ouvert ou ferme —
+un RST prouve donc seulement que le segment a ATTEINT l'hote. D'ou les
+deux seuls verdicts de `scan_engine_raw.cc` : `unfiltered` (RST recu) et
+`filtered` (silence).
+
+`TcpStack.ackProbe` emet un vrai segment ACK nu par `shipSegment` — le
+meme chemin apatride que le RST que la pile envoie deja a un SYN sans
+ecoute — et surveille le RST par une entree temporaire indexee comme une
+socket. La branche qui AVALAIT un RST sans socket (`if (seg.flags.rst)
+return true;`) est celle qui le rapporte.
+
+**Discrimination** : `probe-nmap-balayage-ack.test.ts` (5 cas), 2 tombent
+en rendant a `ackReaches` son parcours de topologie — celui qui observe
+la capture et celui de la cible qui jette tout ; les 3 autres sont nommes
+dans l'en-tete avec leur raison de passer des deux cotes.
+
+Plus aucun chemin de `nmap` ne lit l'objet de sa cible pour du TCP.
+
+## nmap — increment 5 : `-sS` est DEMI-OUVERT
+
+**Perimetre revendique** : `TcpStack.synProbe`/`statelessProbe`,
+`NmapOptions.ScanType`, `ScanEngine.tcpResult`, `NmapProbes`, les deux
+hotes.
+
+`-sS` et `-sT` etaient le MEME balayage : l'analyse les rangeait tous
+deux en `scanType = 'tcp'`. L'option la plus emblematique de `nmap` etait
+donc un alias. Ce qu'elle promet n'est pourtant pas un verdict different
+mais un TRAFIC different — ne pas achever la connexion —, si bien qu'un
+laboratoire enseignant « le balayage SYN ne laisse pas de connexion
+derriere lui » ne pouvait pas fonctionner.
+
+`TcpStack.synProbe` emet un SYN nu et lit la reponse : SYN/ACK ouvre,
+RST ferme, silence filtre (`scan_engine_raw.cc`, `ER_SYNACK` /
+`ER_RESETPEER`). Le RST de refus, lui, la pile l'envoyait DEJA a un
+SYN/ACK qu'aucune socket n'attend — le troisieme temps de la poignee de
+main n'a donc jamais lieu, sans code neuf. `ackProbe` et `synProbe`
+partagent `statelessProbe`, un segment emis hors de toute connexion avec
+une trace posee le temps de l'aller-retour : deux implantations de la
+meme idee auraient diverge.
+
+**Discrimination** : `probe-nmap-balayage-syn.test.ts` (5 cas), UN SEUL
+tombe en rendant a `-sS` son alias — celui qui lit la capture. C'est la
+mesure exacte du defaut et non un manque de couverture : les deux
+balayages rendent le meme etat et la meme raison, donc aucun autre cas ne
+PEUT discriminer, et l'en-tete du fichier le dit.
+
+**Corrige dans un test plutot que dans le code** : `nmap-options` portait
+`it('-sS reste un scan TCP')`, c'est-a-dire l'alias encode comme contrat.
+
+## Le PREMIER paquet IPv6 vers un voisin inconnu ne se perd plus
+
+**Perimetre revendique** : `EndHost` (files d'attente de resolution,
+`sendNeighborSolicitation`), `PacketQueue` (rappel d'expiration),
+`scenario-7-ssh-on-443` (un cas).
+
+Trouve en rendant `nmap` reel, et bien plus large que `nmap`.
+`sendIpv4FrameArpAware` MET EN FILE le paquet qui declenche la
+resolution et le REEMET quand la reponse ARP arrive ; son pendant IPv6
+confiait le sien a une PROMESSE (`resolveNDP().then(sendFrame)`) que
+personne ne rattrapait. La capture le dit sans ambiguite : la
+sollicitation de voisin part, l'annonce revient, et le paquet qui les a
+provoquees n'existe nulle part.
+
+TCP le cachait, parce qu'il retransmet son SYN ; c'est une sonde d'un
+SEUL coup qui l'a fait paraitre — `nmap -sS` sur une pile v6 froide
+rendait `filtered` un port ouvert, c'est-a-dire un faux negatif, la
+reponse qu'un scanner ne doit jamais donner. Tout emetteur d'un
+datagramme unique etait dans le meme cas.
+
+**`PacketQueue` existait deja**, avec ses tests, et n'avait AUCUN
+appelant de production — un moteur sans porte de plus, alors que son
+en-tete promettait justement d'« eliminer les patrons dupliques fwdQueue
+/ ipv6FwdQueue ». Les deux familles le lisent desormais : il n'y a plus
+qu'une file, et elle a gagne le seul mecanisme qui lui manquait pour
+porter le chemin v4, un rappel d'expiration (sans lui, la sollicitation
+en vol n'aurait jamais ete oubliee et plus aucun ARP ne serait reparti
+vers ce saut).
+
+`sendNeighborSolicitation` est extrait de `resolveNDP` : la boucle de
+reessai et la file lisent la meme construction de sollicitation.
+
+**Discrimination** : `probe-premier-paquet-ipv6.test.ts` (7 cas), 4
+tombent — les deux sondes sur cache froid, l'observation du segment sur
+le bus, et `nmap -sS` en IPv6 ; les 3 TEMOINS sont nommes dans l'en-tete.
+
+**Corrige dans un test plutot que dans le code** : le cas capture de
+`scenario-7-ssh-on-443` armait `tcpdump` APRES la connexion et lisait
+des trames que `nc` FABRIQUAIT dans le journal de capture. La banniere
+traversant desormais le fil, il ecoute pendant qu'elle passe.
+
+## nmap — increment 6 : `-6` choisit la FAMILLE, et tcpdump nomme l'ICMPv6
+
+**Perimetre revendique** : `NmapOptions` (`-6`), `NmapProbes`
+(resolution v6, echo v6), les deux hotes, `TcpdumpFormat` et
+`CaptureFrame` (rendu ICMPv6).
+
+Trois defauts, chacun cachant le suivant.
+
+**(1) `-6` etait AVALE par l'analyseur**, range avec `-T` et `-R` dans la
+ligne qui ignore ce qu'on ne traite pas. Mesure : `nmap -6 -p 22 CIBLE`
+repondait `Nmap scan report for CIBLE (10.0.0.2)`, c'est-a-dire qu'il
+balayait l'adresse IPv4 sous un drapeau qui demande exactement l'inverse.
+Un nom se resout desormais en adresse GLOBALE unicast (ni lien-local, ni
+boucle — la premiere version prenait `::1`, ce que la sonde a attrape),
+et un hote qui n'en porte pas n'est pas une cible IPv6.
+
+**(2) La decouverte n'emettait aucun echo ICMPv6** : `discoverHost`
+construisait un `IPAddress` depuis la cible, ce qui LEVE sur une adresse
+v6, et le `catch` faisait retomber sur la connexion TCP vers 80 et 443.
+La cible etait donc declaree vivante — par le bon repli de `nmap.h`, mais
+sans qu'aucun echo soit parti —, la latence rendue etait la valeur par
+defaut et `-O` ne conjecturait rien, le TTL se lisant sur la reponse
+d'echo. `DEFAULT_IPV6_PING_TYPES` porte bien l'echo ICMP, et PAS
+l'horodatage, ICMPv6 n'en ayant pas.
+
+**(3) `tcpdump` rendait `ICMP6, length N` pour TOUS les messages ICMPv6.**
+Trouve en cherchant a OBSERVER le second defaut : une capture ou l'echo,
+la sollicitation de voisin et l'annonce sont indiscernables ne permet de
+diagnostiquer rien. Le vrai `tcpdump` (`print-icmp6.c`) ecrit `echo
+request, id …, seq …`, `neighbor solicitation, who has …` et `neighbor
+advertisement, tgt is …`. La matiere etait deja dans la trame capturee ;
+seul le rendu la taisait.
+
+**Discrimination** : `probe-nmap-ipv6.test.ts` (7 cas), 5 tombent ; les 2
+TEMOINS IPv4 sont nommes dans l'en-tete.
+
+## nmap — increment 7 : un refus de liste de controle est un FILTRE
+
+**Perimetre revendique** : `TcpWireOutcome`, `TcpStack.onIcmpUnreachable`
+/ `connectOutcome`, `EndHost` (transmission du code ICMP), `ScanEngine`,
+`OpenSslEngine` (errno).
+
+Defaut mesure sur le TP 13 et inscrit au `TODO.md` en attendant que le
+chantier `nmap`/ICMP libere les memes fichiers : R1 porte `deny ip any
+any` en entree de Gi0/0, la sonde TCP ressort `closed`, donc la liste de
+controle se lit comme un port ferme et non comme un filtre. Les deux ne
+se diagnostiquent pas de la meme facon — « ferme » envoie demarrer un
+service, « filtre » envoie lire une regle.
+
+La chaine ecrasait tout ICMP inatteignable en `refused`, alors que le
+noyau distingue le code 3 (ECONNREFUSED) du code 13 (EACCES) et que
+`scan_engine_connect.cc` en tire `PORT_CLOSED` d'un cote,
+`PORT_FILTERED` avec la raison `admin-prohibited` de l'autre. Le code 13
+etait bien EMIS par `Router.sendICMPError` ; c'est la traduction en issue
+de connexion qui le perdait. `onIcmpUnreachable` recoit desormais le
+code, `TcpWireOutcome` gagne `prohibited`, et `openssl s_client` rend
+l'errno 13 comme la vraie machine.
+
+**Portee volontairement bornee, et ecrite** : un CLIENT ordinaire garde
+les trois issues qu'il sait dire — `dialTcp` rend `refused` pour un
+interdit administratif, qui EST un refus explicite du reseau. Seul le
+scanner, qui interroge `connectOutcome`, distingue « rien n'ecoute » de
+« quelque chose l'interdit ».
+
+**Discrimination** : `probe-nmap-acl-est-filtree.test.ts` (4 cas), 2
+tombent ; les 2 TEMOINS — port ferme ordinaire, port ouvert — passent des
+deux cotes et c'est exactement leur role, le correctif ne devant pas
+transformer tout refus en filtre.

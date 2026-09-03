@@ -3,8 +3,8 @@ import {
   scan,
   enumerateTargets,
   type HostProbes,
-} from '@/network/devices/linux/commands/net/nmap/ScanEngine';
-import { parseNmapArgs } from '@/network/devices/linux/commands/net/nmap/NmapOptions';
+} from '@/network/scan/nmap/ScanEngine';
+import { parseNmapArgs } from '@/network/scan/nmap/NmapOptions';
 
 interface FakeSpec {
   hosts?: Record<string, {

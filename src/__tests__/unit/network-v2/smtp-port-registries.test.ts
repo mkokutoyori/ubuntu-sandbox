@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { getServiceName } from '@/network/core/WellKnownPorts';
 import { IanaServiceRegistry } from '@/network/core/ports/IanaServiceRegistry';
-import { serviceName as nmapServiceName } from '@/network/devices/linux/commands/net/nmap/ServiceRegistry';
+import { serviceName as nmapServiceName } from '@/network/scan/nmap/ServiceRegistry';
 
 describe('Port 465 (smtps) registered consistently (§2.1.16, P18)', () => {
   it('WellKnownPorts resolves 465/tcp to smtps', () => {

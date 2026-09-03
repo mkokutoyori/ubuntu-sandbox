@@ -35,6 +35,22 @@ export interface PacketInfo {
   isV6?: boolean;           // true for IPv6 packets
 }
 
+const IPTABLES_MATCH_MODULES = new Set([
+  'state', 'conntrack', 'multiport', 'limit', 'mac', 'iprange', 'comment',
+  'tcp', 'udp', 'icmp', 'icmp6', 'ipv6-icmp', 'addrtype', 'mark', 'recent',
+  'connmark', 'owner', 'pkttype', 'length', 'ttl', 'hashlimit', 'string',
+]);
+
+const TCP_FLAG_NAMES = new Set([
+  'SYN', 'ACK', 'FIN', 'RST', 'URG', 'PSH', 'ALL', 'NONE',
+]);
+
+function tcpFlagSet(token: string | undefined): boolean {
+  if (token === undefined) return false;
+  const mots = token.toUpperCase().split(',');
+  return mots.length > 0 && mots.every((m) => TCP_FLAG_NAMES.has(m));
+}
+
 // ─── Internal types ──────────────────────────────────────────────────
 
 type TableName = 'filter' | 'nat' | 'mangle' | 'raw';
@@ -1400,6 +1416,20 @@ export class LinuxIptablesManager {
           if (!this.validatePortSpec(rule.dport)) return `iptables: invalid port/service \`${rule.dport}' specified`;
           break;
 
+        /*
+         * Les deux listes sont JUGEES et non retenues : `PacketInfo` ne
+         * porte aucun drapeau TCP, donc ranger le critere en ferait un
+         * critere que rien n'evalue. Ce lot attrape la faute de frappe ;
+         * l'evaluation est inscrite au `TODO.md`.
+         */
+        case '--tcp-flags': {
+          if (!tcpFlagSet(args[i + 1]) || !tcpFlagSet(args[i + 2])) {
+            return `iptables v1.8.7: Bad TCP flags \`${args[i + 1] ?? args[i]}'`;
+          }
+          i += 3;
+          continue;
+        }
+
         case '-j': case '--jump': {
           i++;
           if (i >= args.length) return 'iptables: option "-j" requires an argument';
@@ -1416,6 +1446,12 @@ export class LinuxIptablesManager {
               rule.targetOptions[optName] = '';
             }
           }
+          for (const opt of ['--to-source', '--to-destination']) {
+            const v = rule.targetOptions[opt];
+            if (v !== undefined && v !== '' && !this.validateNatTarget(v)) {
+              return `iptables v1.8.7: Bad IP address "${v}"`;
+            }
+          }
           continue;
         }
 
@@ -1423,6 +1459,10 @@ export class LinuxIptablesManager {
           i++;
           if (i >= args.length) return 'iptables: option "-m" requires an argument';
           const mod = args[i];
+          if (!IPTABLES_MATCH_MODULES.has(mod.toLowerCase())) {
+            return `iptables v1.8.7 (nf_tables): Couldn't load match \`${mod}':`
+              + 'No such file or directory';
+          }
           const ext: MatchExtension = { module: mod, options: new Map() };
           i++;
           while (i < args.length && args[i].startsWith('--')) {
@@ -1445,6 +1485,27 @@ export class LinuxIptablesManager {
   }
 
   // ─── Validation helpers ────────────────────────────────────────
+
+  /**
+   * `--to-source <adresse>[-<adresse>][:<port>[-<port>]]` : la plage
+   * d'adresses et la plage de ports sont facultatives, mais la premiere
+   * adresse ne l'est pas.
+   */
+  private validateNatTarget(spec: string): boolean {
+    if (this.family === 6) {
+      // En IPv6 le port se met entre crochets (`[fd00::9]:80`) parce que
+      // l'adresse contient elle-meme des deux-points : les couper comme
+      // en IPv4 detruirait l'adresse.
+      const entre = /^\[(.+)\](?::\d+(?:-\d+)?)?$/.exec(spec);
+      const adresses = entre ? entre[1] : spec;
+      const bornes = adresses.split('-').filter((b) => b.length > 0);
+      return bornes.length > 0 && bornes.every((b) => this.tryParseV6(b) !== null);
+    }
+    const [adresses] = spec.split(':');
+    const bornes = adresses.split('-').filter((b) => b.length > 0);
+    if (bornes.length === 0) return false;
+    return bornes.every((b) => this.ipToNumber(b) !== null);
+  }
 
   private validateIPSpec(spec: string): boolean {
     if (this.family === 6) return this.validateIPv6Spec(spec);

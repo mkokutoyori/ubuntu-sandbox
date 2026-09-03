@@ -12,6 +12,36 @@ export function parseVlanId(token: string | undefined): number | null {
   return boundedInteger(token, VLAN_MIN, VLAN_MAX);
 }
 
+export interface VlanListProblem {
+  readonly at: number;
+}
+
+/**
+ * `10 20 to 24 30` — la forme que VRP accepte partout ou il attend une
+ * liste de VLAN. Rend le rang du jeton fautif plutot qu'un booleen,
+ * pour que l'appelant place son caret.
+ */
+export function parseVlanList(
+  args: readonly string[],
+): { vlans: number[] } | VlanListProblem {
+  if (args.length === 0) return { at: 0 };
+  const vlans: number[] = [];
+  for (let i = 0; i < args.length; i++) {
+    const debut = parseVlanId(args[i]);
+    if (debut === null) return { at: i };
+    if ((args[i + 1] ?? '').toLowerCase() === 'to') {
+      const fin = parseVlanId(args[i + 2]);
+      if (fin === null) return { at: i + 2 };
+      if (fin < debut) return { at: i + 2 };
+      for (let v = debut; v <= fin; v++) vlans.push(v);
+      i += 2;
+    } else {
+      vlans.push(debut);
+    }
+  }
+  return { vlans };
+}
+
 export class VlanSet {
   private complemented: boolean;
   private members: Set<number>;

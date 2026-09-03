@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { parseNmapArgs } from '@/network/devices/linux/commands/net/nmap/NmapOptions';
+import { parseNmapArgs } from '@/network/scan/nmap/NmapOptions';
 
 describe('parseNmapArgs', () => {
   it('extrait une cible unique', () => {
@@ -16,8 +16,16 @@ describe('parseNmapArgs', () => {
     expect(parseNmapArgs(['x']).scanType).toBe('tcp');
   });
 
-  it('-sS reste un scan TCP', () => {
-    expect(parseNmapArgs(['-sS', 'x']).scanType).toBe('tcp');
+  // Ce cas encodait l'alias comme contrat : `-sS` et `-sT` etaient le
+  // meme balayage. Ils rendent le meme VERDICT et n'emettent pas le meme
+  // trafic — le demi-ouvert ne repond jamais ACK — donc ce sont deux
+  // types distincts.
+  it('-sS selectionne le balayage demi-ouvert', () => {
+    expect(parseNmapArgs(['-sS', 'x']).scanType).toBe('syn');
+  });
+
+  it('-sT selectionne le balayage connecte', () => {
+    expect(parseNmapArgs(['-sT', 'x']).scanType).toBe('tcp');
   });
 
   it('-sU sélectionne UDP', () => {

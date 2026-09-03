@@ -7,7 +7,7 @@
  */
 
 import {
-  type DistinguishedName, type Rdn, parseDN, dnEquals, parentOf, isDescendantOf,
+  type DistinguishedName, type Rdn, parseDN, formatDN, dnEquals, parentOf, isDescendantOf,
 } from './LdapDN';
 import { type LdapFilter, type AttributeSource, evaluateFilter } from './LdapFilter';
 import type { HighWatermarkVector } from '../replication/HighWatermarkVector';
@@ -93,6 +93,13 @@ export interface Modification { op: ModOperation; type: string; values: string[]
 
 function attrKey(name: string): string { return name.toLowerCase(); }
 
+const MEMBER_ATTRIBUTE = 'member';
+const MEMBER_OF_ATTRIBUTE = 'memberof';
+
+function linkIndexKey(groupDn: string, memberDn: string): string {
+  return `${groupDn.toLowerCase()}\u0000${memberDn.toLowerCase()}`;
+}
+
 /** Canonical key for one RDN: AVAs sorted+lowercased, so `CN=Bob+OU=X` and `OU=X+CN=Bob` key identically (RFC 4514 §2.3 multi-valued RDNs are order-independent). */
 function rdnCanonicalKey(rdn: Rdn): string {
   return [...rdn].map(a => `${a.type.toLowerCase()}=${a.value.toLowerCase()}`).sort().join('+');
@@ -111,6 +118,8 @@ export function entryAttributeSource(entry: DirectoryEntry): AttributeSource {
 export class DirectoryTree {
   private readonly root: DirectoryEntry;
   private readonly byDn = new Map<string, DirectoryEntry>();
+
+  private readonly linkDeadlines = new Map<string, number>();
   private readonly canonicalAttributeNames = new Map<string, string>();
 
   private rememberAttributeNames(names: Iterable<string>): void {
@@ -130,6 +139,7 @@ export class DirectoryTree {
     private readonly replication?: ReplicationIdentity,
     /** RFC 4512 schema validation (PRD-Windows-Server-Advanced.md §5 P7) — absent on any `DirectoryTree` with no schema partition (e.g. the LDAP wire-protocol unit tests), which behaves exactly as before this phase. */
     private readonly schema?: SchemaValidator,
+    private readonly now: () => Date = () => new Date(),
   ) {
     const dn = typeof baseDn === 'string' ? parseDN(baseDn) : baseDn;
     this.root = { dn, attributes: toAttrMap(rootAttributes), children: new Map(), replMeta: this.stampFor() };
@@ -175,6 +185,36 @@ export class DirectoryTree {
     return { ok: true, message: '' };
   }
 
+  setLinkTtl(groupDn: DistinguishedName, memberDn: string, ttlSeconds: number): void {
+    this.linkDeadlines.set(linkIndexKey(formatDN(groupDn), memberDn), this.now().getTime() + ttlSeconds * 1000);
+  }
+
+  linkTtls(groupDn: DistinguishedName): Map<string, number> {
+    this.expireLinks();
+    const prefix = `${formatDN(groupDn).toLowerCase()}\u0000`;
+    const nowMs = this.now().getTime();
+    const out = new Map<string, number>();
+    for (const [key, deadline] of this.linkDeadlines) {
+      if (!key.startsWith(prefix)) continue;
+      out.set(key.slice(prefix.length), Math.max(0, Math.round((deadline - nowMs) / 1000)));
+    }
+    return out;
+  }
+
+  expireLinks(): void {
+    if (this.linkDeadlines.size === 0) return;
+    const nowMs = this.now().getTime();
+    for (const [key, deadline] of [...this.linkDeadlines]) {
+      if (deadline > nowMs) continue;
+      this.linkDeadlines.delete(key);
+      const [groupDn, memberDn] = key.split('\u0000');
+      let dn: DistinguishedName;
+      try { dn = parseDN(groupDn); } catch { continue; }
+      if (!this.getByDn(dn)) continue;
+      this.modifyEntry(dn, [{ op: 'delete', type: MEMBER_ATTRIBUTE, values: [memberDn] }]);
+    }
+  }
+
   /** RFC 4511 §4.8 DelRequest — real AD (and this tree) refuses to delete a non-leaf entry. */
   deleteEntry(dn: DistinguishedName): TreeOpResult {
     const entry = this.getByDn(dn);
@@ -203,14 +243,50 @@ export class DirectoryTree {
         for (const v of change.values) if (!merged.some(e => e.toLowerCase() === v.toLowerCase())) merged.push(v);
         entry.attributes.set(key, merged);
       } else { // delete
-        if (change.values.length === 0) { entry.attributes.delete(key); continue; }
-        const remaining = existing.filter(e => !change.values.some(v => v.toLowerCase() === e.toLowerCase()));
-        if (remaining.length === 0) entry.attributes.delete(key);
-        else entry.attributes.set(key, remaining);
+        if (change.values.length === 0) {
+          entry.attributes.delete(key);
+        } else {
+          const remaining = existing.filter(e => !change.values.some(v => v.toLowerCase() === e.toLowerCase()));
+          if (remaining.length === 0) entry.attributes.delete(key);
+          else entry.attributes.set(key, remaining);
+        }
+      }
+      if (key === MEMBER_ATTRIBUTE) {
+        this.syncBackLinks(entry, existing, entry.attributes.get(key) ?? []);
       }
     }
     if (this.replication) entry.replMeta = this.stampFor(entry.replMeta);
     return { ok: true, message: '' };
+  }
+
+  private syncBackLinks(group: DirectoryEntry, before: readonly string[], after: readonly string[]): void {
+    const groupDn = formatDN(group.dn);
+    const lower = (list: readonly string[]) => new Set(list.map(v => v.toLowerCase()));
+    const had = lower(before);
+    const has = lower(after);
+    for (const value of after) {
+      if (had.has(value.toLowerCase())) continue;
+      this.writeBackLink(value, groupDn, 'add');
+    }
+    for (const value of before) {
+      if (has.has(value.toLowerCase())) continue;
+      this.writeBackLink(value, groupDn, 'delete');
+    }
+  }
+
+  private writeBackLink(memberDn: string, groupDn: string, op: 'add' | 'delete'): void {
+    let dn: DistinguishedName;
+    try { dn = parseDN(memberDn); } catch { return; }
+    const member = this.getByDn(dn);
+    if (!member) return;
+    const existing = member.attributes.get(MEMBER_OF_ATTRIBUTE) ?? [];
+    const next = op === 'add'
+      ? (existing.some(v => v.toLowerCase() === groupDn.toLowerCase()) ? existing : [...existing, groupDn])
+      : existing.filter(v => v.toLowerCase() !== groupDn.toLowerCase());
+    if (next.length === 0) member.attributes.delete(MEMBER_OF_ATTRIBUTE);
+    else member.attributes.set(MEMBER_OF_ATTRIBUTE, next);
+    this.rememberAttributeNames([MEMBER_OF_ATTRIBUTE]);
+    if (op === 'delete') this.linkDeadlines.delete(linkIndexKey(groupDn, memberDn));
   }
 
   /** Every entry whose replication stamp is newer than what `vector` already reflects for its originating DC — what a replication partner pulling from this tree hasn't seen yet (PRD-Windows-Server-Advanced.md §5 P4). No-op (`[]`) on a non-replicating tree. */

@@ -149,7 +149,7 @@ describe('New/Get-ADGroup, Add/Remove-ADGroupMember', () => {
     const srv = await promotedServer();
     const sh = ps(srv);
     await run(sh, 'New-ADUser -Name bob -AccountPassword (ConvertTo-SecureString "x" -AsPlainText -Force)');
-    await run(sh, 'New-ADGroup -Name Engineers');
+    await run(sh, 'New-ADGroup -Name Engineers -GroupScope Global');
     await run(sh, 'Add-ADGroupMember -Identity Engineers -Members bob');
     const store = srv.getDirectoryStore()!;
     expect(store.getGroup('Engineers')?.members).toContain('bob');
@@ -160,9 +160,9 @@ describe('New/Get-ADGroup, Add/Remove-ADGroupMember', () => {
     const srv = await promotedServer();
     const sh = ps(srv);
     await run(sh, 'New-ADUser -Name bob -AccountPassword (ConvertTo-SecureString "x" -AsPlainText -Force)');
-    await run(sh, 'New-ADGroup -Name Engineers');
+    await run(sh, 'New-ADGroup -Name Engineers -GroupScope Global');
     await run(sh, 'Add-ADGroupMember -Identity Engineers -Members bob');
-    await run(sh, 'Remove-ADGroupMember -Identity Engineers -Members bob');
+    await run(sh, 'Remove-ADGroupMember -Identity Engineers -Members bob -Confirm:$false');
     expect(srv.getDirectoryStore()!.getGroup('Engineers')?.members).not.toContain('bob');
   });
 });

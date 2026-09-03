@@ -12,6 +12,7 @@ import {
 import type { CiscoShellContext, CiscoShellMode } from './CiscoConfigCommands';
 import type { CommandSpec } from '@/cli/CommandTable';
 import type { ArgumentSpec, EnumValue } from '@/cli/ArgumentTypes';
+import { boundedInteger } from '@/cli/ArgumentTypes';
 import {
   specsFromTrieRegistrations, type AdapterKeyword,
 } from '@/cli/commands/trieAdapter';
@@ -776,11 +777,16 @@ export function buildSecurityConfigCommands(trie: CommandTrie, ctx: CiscoSecurit
     let kind: 'qos' | 'inspect' = 'qos';
     let matchAll = true;
     let i = 0;
-    if (args[i] === 'type' && args[i + 1] === 'inspect') { kind = 'inspect'; i += 2; }
+    if (args[i] === 'type') {
+      if (args[i + 1] === undefined) return '% Incomplete command.';
+      if (args[i + 1] !== 'inspect') throw new CliInvalidInput({ token: args[i + 1] });
+      kind = 'inspect'; i += 2;
+    }
     if (args[i] === 'match-all') { matchAll = true; i++; }
     else if (args[i] === 'match-any') { matchAll = false; i++; }
     const name = args[i];
     if (!name) return '% Incomplete command.';
+    if (args[i + 1] !== undefined) throw new CliInvalidInput({ token: args[i + 1] });
     sec().ensureClassMap(name, kind, matchAll);
     ctx.setClassMap?.(name);
     ctx.setMode('config-cmap' as CiscoShellMode);
@@ -791,9 +797,14 @@ export function buildSecurityConfigCommands(trie: CommandTrie, ctx: CiscoSecurit
     if (args.length < 1) return '% Incomplete command.';
     let kind: 'qos' | 'inspect' = 'qos';
     let i = 0;
-    if (args[i] === 'type' && args[i + 1] === 'inspect') { kind = 'inspect'; i += 2; }
+    if (args[i] === 'type') {
+      if (args[i + 1] === undefined) return '% Incomplete command.';
+      if (args[i + 1] !== 'inspect') throw new CliInvalidInput({ token: args[i + 1] });
+      kind = 'inspect'; i += 2;
+    }
     const name = args[i];
     if (!name) return '% Incomplete command.';
+    if (args[i + 1] !== undefined) throw new CliInvalidInput({ token: args[i + 1] });
     sec().ensurePolicyMap(name, kind);
     ctx.setPolicyMap?.(name);
     ctx.setMode('config-pmap' as CiscoShellMode);
@@ -1112,6 +1123,9 @@ export function buildSecuritySubmodeCommands(
   buildTrustpointSubmodeOn(trustpointTrie, ctx);
 }
 
+const CMAP_ACL_MIN = 1;
+const CMAP_ACL_MAX = 2799;
+
 export function buildClassMapSubmodeOn(
   cmapTrie: CommandTrie, ctx: CiscoSecurityShellContext,
 ): void {
@@ -1123,8 +1137,15 @@ export function buildClassMapSubmodeOn(
     const cm = sec().classMaps.get(name);
     if (!cm) return '';
     if (args[0] === 'access-group') {
-      if (args[1] === 'name' && args[2]) cm.matches.push({ kind: 'access-group-name', value: args[2] });
-      else if (args[1]) cm.matches.push({ kind: 'access-group-num', value: args[1] });
+      if (args[1] === undefined) throw new CliIncomplete();
+      if (args[1] === 'name') {
+        if (args[2] === undefined) throw new CliIncomplete();
+        cm.matches.push({ kind: 'access-group-name', value: args[2] });
+      } else if (boundedInteger(args[1], CMAP_ACL_MIN, CMAP_ACL_MAX) !== null) {
+        cm.matches.push({ kind: 'access-group-num', value: args[1] });
+      } else {
+        throw new CliInvalidInput({ token: args[1] });
+      }
     } else if (args[0] === 'protocol' && args[1]) {
       cm.matches.push({ kind: 'protocol', value: args[1] });
     } else if (args[0] === 'any') {
@@ -1329,7 +1350,7 @@ const CMAP_KEYWORDS: ReadonlyArray<AdapterKeyword> = [
   {
     keyword: 'access-group', description: 'Access group',
     argument: formes('liste', 'Access list to match', [
-      { keyword: '<1-2799>', description: 'Access list index' },
+      { keyword: `<${CMAP_ACL_MIN}-${CMAP_ACL_MAX}>`, description: 'Access list index' },
       { keyword: 'name', description: 'Named access list' },
     ]),
   },

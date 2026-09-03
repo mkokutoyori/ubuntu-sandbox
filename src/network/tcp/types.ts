@@ -76,7 +76,7 @@ export interface TcpStream {
   onClose?(handler: (reason: string) => void): () => void;
 }
 
-export type TcpWireOutcome = 'open' | 'refused' | 'timeout' | 'unreachable';
+export type TcpWireOutcome = 'open' | 'refused' | 'prohibited' | 'timeout' | 'unreachable';
 
 export interface TcpDialFailure {
   readonly dialFailed: 'refused' | 'timeout' | 'unreachable';

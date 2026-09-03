@@ -13,10 +13,11 @@
 
 import type { ICmdlet } from '../ICmdlet';
 import type { CmdletContext } from '../CmdletContext';
+import { NON_INTERACTIVE_HOST, confirmationDue } from '../confirmation';
 import { PSRuntimeError } from '@/powershell/runtime/PSRuntime';
 import type { PSValue } from '@/powershell/runtime/PSEnvironment';
 import type {
-  IAdProvider, AdUserInfo, AdGroupInfo, AdComputerInfo, AdOrgUnitInfo, AdSiteInfo,
+  IAdProvider, AdUserInfo, AdGroupInfo, AdComputerInfo, AdOrgUnitInfo, AdSiteInfo, AdMemberLink,
   AdSubnetInfo, AdSiteLinkInfo,
   AdAttributeSchemaInfo, AdObjectClassSchemaInfo, AdForestInfo, AdTrustInfo,
   AdPasswordPolicyInfo, AdFineGrainedPasswordPolicyInfo, AdGenericObjectInfo,
@@ -32,6 +33,7 @@ import { USER_FLAGS, USER_FLAG_PARAMETERS, USER_PROPERTIES, USER_PROPERTY_PARAME
 import { OU_DEFAULT_PROPERTIES, USER_DEFAULT_PROPERTIES, GROUP_DEFAULT_PROPERTIES, COMPUTER_DEFAULT_PROPERTIES, adView } from './adPropertySets';
 import { IPAddress } from '@/network/core/types';
 import type { RemoteDirectoryTarget } from '@/powershell/providers/adRemoteDirectory';
+import { GROUP_PROPERTIES, GROUP_PROPERTY_PARAMETERS, formatMemberTimeToLive, groupCategoryNames, groupScopeNames, parseGroupCategory, parseGroupScope } from '@/network/devices/windows/server/ad/adGroup';
 
 function requireAd(ctx: CmdletContext, cmdletName: string): IAdProvider {
   if (!ctx.providers.ad) {
@@ -219,11 +221,44 @@ function userToPSObject(u: AdUserInfo): Record<string, PSValue> {
     ...u.properties,
   };
 }
-function groupToPSObject(g: AdGroupInfo): Record<string, PSValue> {
-  return {
-    SamAccountName: g.sam, DistinguishedName: g.dn, GroupScope: g.scope, GroupCategory: g.category,
-    Members: g.members.join(', '), ObjectClass: 'group',
+function groupToPSObject(g: AdGroupInfo, links?: AdMemberLink[]): Record<string, PSValue> {
+  const members = links === undefined ? g.members
+    : links.map(l => l.ttlSeconds === undefined ? l.dn : formatMemberTimeToLive(l.ttlSeconds, l.dn));
+  const obj: Record<string, PSValue> = {
+    Name: g.name || g.sam, SamAccountName: g.sam, DistinguishedName: g.dn,
+    GroupScope: g.scope, GroupCategory: g.category,
+    Members: members.join(', '), ObjectClass: 'group',
   };
+  for (const spec of GROUP_PROPERTIES) obj[spec.parameter] = g.properties[spec.parameter] ?? '';
+  for (const [name, value] of Object.entries(g.properties)) {
+    if (obj[name] === undefined) obj[name] = value;
+  }
+  return obj;
+}
+
+function groupAttributesFrom(ctx: CmdletContext): Record<string, string> {
+  const attributes: Record<string, string> = {};
+  const template = ctx.named['instance'];
+  if (template !== null && typeof template === 'object' && !Array.isArray(template)) {
+    const record = template as Record<string, PSValue>;
+    for (const spec of GROUP_PROPERTIES) {
+      const value = record[spec.parameter];
+      if (value !== undefined && value !== null && psValueToString(value) !== '') {
+        attributes[spec.ldap] = psValueToString(value);
+      }
+    }
+  }
+  for (const spec of GROUP_PROPERTIES) {
+    const given = ctx.named[spec.parameter.toLowerCase()];
+    if (given !== undefined) attributes[spec.ldap] = psValueToString(given);
+  }
+  const other = ctx.named['otherattributes'];
+  if (other !== null && typeof other === 'object' && !Array.isArray(other)) {
+    for (const [ldap, value] of Object.entries(other as Record<string, PSValue>)) {
+      attributes[ldap] = psValueToString(value);
+    }
+  }
+  return attributes;
 }
 /** The domain DNS suffix implied by a DN's trailing `DC=` components (e.g. `CN=PC01,OU=Postes,DC=mandeng,DC=lan` → `mandeng.lan`). */
 function dnsSuffixFromDn(dn: string): string {
@@ -661,49 +696,95 @@ export class EnableADAccountCmdlet implements ICmdlet {
 
 export class NewADGroupCmdlet implements ICmdlet {
   readonly name = 'new-adgroup';
+  readonly displayName = 'New-ADGroup';
+  readonly pipelineByPropertyName = true as const;
   readonly aliases = [] as const;
-  readonly parameters = ['Name', 'GroupScope', 'GroupCategory', 'Path'] as const;
+  readonly parameters = ['Name', 'GroupScope', 'GroupCategory', 'SamAccountName', 'Path', 'Instance',
+    'OtherAttributes', 'PassThru', 'Credential', 'Server', 'AuthType', 'WhatIf', 'Confirm',
+    ...GROUP_PROPERTY_PARAMETERS] as const;
 
   execute(ctx: CmdletContext): PSValue {
     const ad = requireAd(ctx, 'New-ADGroup');
-    const sam = psValueToString(ctx.named['name'] ?? ctx.positional[0] ?? '');
-    if (!sam) { ctx.emitError("New-ADGroup : Cannot process command because of one or more missing mandatory parameters: Name."); return null; }
-    const scopeRaw = ctx.named['groupscope'] !== undefined ? psValueToString(ctx.named['groupscope']) : 'Global';
-    const scope = (['DomainLocal', 'Global', 'Universal'] as const).find(s => s.toLowerCase() === scopeRaw.toLowerCase()) ?? 'Global';
+    const name = psValueToString(ctx.named['name'] ?? ctx.positional[0] ?? '');
+    if (!name) { ctx.emitError('New-ADGroup : Cannot process command because of one or more missing mandatory parameters: Name.'); return null; }
+    const scopeRaw = ctx.named['groupscope'] ?? ctx.positional[1];
+    if (scopeRaw === undefined) {
+      ctx.emitError('New-ADGroup : Cannot process command because of one or more missing mandatory parameters: GroupScope.');
+      return null;
+    }
+    const scope = parseGroupScope(psValueToString(scopeRaw));
+    if (!scope) {
+      ctx.emitError(`New-ADGroup : Cannot validate argument on parameter 'GroupScope'. The argument "${psValueToString(scopeRaw)}" does not belong to the set "${groupScopeNames()}".`);
+      return null;
+    }
     let category: 'Security' | 'Distribution' = 'Security';
     if (ctx.named['groupcategory'] !== undefined) {
-      const categoryRaw = psValueToString(ctx.named['groupcategory']);
-      const matched = (['Security', 'Distribution'] as const).find(c => c.toLowerCase() === categoryRaw.toLowerCase());
+      const matched = parseGroupCategory(psValueToString(ctx.named['groupcategory']));
       if (!matched) {
-        ctx.emitError(`New-ADGroup : Cannot validate argument on parameter 'GroupCategory'. The argument "${categoryRaw}" does not belong to the set "Security,Distribution".`);
+        ctx.emitError(`New-ADGroup : Cannot validate argument on parameter 'GroupCategory'. The argument "${psValueToString(ctx.named['groupcategory'])}" does not belong to the set "${groupCategoryNames()}".`);
         return null;
       }
       category = matched;
     }
+    const sam = psValueToString(ctx.named['samaccountname'] ?? '') || name;
+    if (ctx.named['whatif'] === true) {
+      ctx.emit(`What if: Performing the operation "New" on target "CN=${name}".`);
+      return null;
+    }
     const path = ctx.named['path'] !== undefined ? psValueToString(ctx.named['path']) : undefined;
-    const res = ad.newGroup(sam, scope, path, category);
+    const res = ad.newGroup(sam, scope, path, category, {
+      commonName: name, attributes: groupAttributesFrom(ctx), target: remoteTargetOf(ctx),
+    });
     if (!res.ok) { ctx.emitError(`New-ADGroup : ${res.message}`); return null; }
+    if (ctx.named['passthru'] !== true) return null;
     const g = ad.getGroup(sam);
+    return g ? groupToPSObject(g) : null;
+  }
+}
+
+export class SetADGroupCmdlet implements ICmdlet {
+  readonly name = 'set-adgroup';
+  readonly displayName = 'Set-ADGroup';
+  readonly aliases = [] as const;
+  readonly parameters = ['Identity', 'PassThru', 'Credential', 'Server', 'AuthType', 'WhatIf', 'Confirm',
+    ...GROUP_PROPERTY_PARAMETERS] as const;
+
+  execute(ctx: CmdletContext): PSValue {
+    const ad = requireAd(ctx, 'Set-ADGroup');
+    const identity = identityOf(ctx);
+    if (!identity) { ctx.emitError('Set-ADGroup : Cannot process command because of one or more missing mandatory parameters: Identity.'); return null; }
+    if (ctx.named['whatif'] === true) {
+      ctx.emit(`What if: Performing the operation "Set" on target "${identity}".`);
+      return null;
+    }
+    const res = ad.setGroup(identity, groupAttributesFrom(ctx), remoteTargetOf(ctx));
+    if (!res.ok) { ctx.emitError(`Set-ADGroup : ${res.message}`); return null; }
+    if (ctx.named['passthru'] !== true) return null;
+    const g = ad.getGroup(identity);
     return g ? groupToPSObject(g) : null;
   }
 }
 
 export class GetADGroupCmdlet implements ICmdlet {
   readonly name = 'get-adgroup';
+  readonly displayName = 'Get-ADGroup';
   readonly aliases = [] as const;
-  readonly parameters = ['Identity', 'Filter', 'Properties'] as const;
+  readonly parameters = ['Identity', 'Filter', 'Properties', 'ShowMemberTimeToLive',
+    'Partition', 'Server', 'AuthType', 'Credential'] as const;
 
   execute(ctx: CmdletContext): PSValue {
     const ad = requireAd(ctx, 'Get-ADGroup');
     const vue = adView(ctx, GROUP_DEFAULT_PROPERTIES);
+    const render = (g: AdGroupInfo): Record<string, PSValue> =>
+      groupToPSObject(g, ctx.named['showmembertimetolive'] === true ? ad.groupMemberLinks(g.sam) : undefined);
     if (ctx.named['filter'] !== undefined) {
-      return (filterAdObjects(ad.listGroups().map(groupToPSObject), ctx.named['filter']) as Record<string, PSValue>[]).map(vue) as PSValue;
+      return (filterAdObjects(ad.listGroups().map(render), ctx.named['filter']) as Record<string, PSValue>[]).map(vue) as PSValue;
     }
     const identity = identityOf(ctx);
     if (!identity) { ctx.emitError("Get-ADGroup : Cannot process command because of one or more missing mandatory parameters: Identity."); return null; }
     const g = ad.getGroup(identity);
     if (!g) { ctx.emitError(`Get-ADGroup : Cannot find an object with identity: '${identity}'.`); return null; }
-    return vue(groupToPSObject(g));
+    return vue(render(g));
   }
 }
 
@@ -723,54 +804,104 @@ export class RemoveADGroupCmdlet implements ICmdlet {
 }
 
 function membersOf(ctx: CmdletContext): string[] {
-  const raw = ctx.named['members'];
+  const raw = ctx.named['members'] ?? ctx.positional[1];
   if (raw === undefined) return [];
-  return Array.isArray(raw) ? raw.map(psValueToString) : [psValueToString(raw)];
+  return (Array.isArray(raw) ? raw : [raw]).map(psValueToString).filter(m => m !== '');
+}
+
+function timeSpanSecondsOf(ctx: CmdletContext, key: string): number | null | 'invalid' {
+  const raw = ctx.named[key];
+  if (raw === undefined) return null;
+  if (raw !== null && typeof raw === 'object' && !Array.isArray(raw)) {
+    const total = (raw as Record<string, PSValue>).TotalSeconds;
+    if (total !== undefined) return Math.round(Number(total));
+    return 'invalid';
+  }
+  const match = /^(?:(\d+)\.)?(\d+):(\d+):(\d+(?:\.\d+)?)$/.exec(psValueToString(raw).trim());
+  if (!match) return 'invalid';
+  return Math.round(parseInt(match[1] ?? '0', 10) * 86400
+    + parseInt(match[2], 10) * 3600 + parseInt(match[3], 10) * 60 + parseFloat(match[4]));
 }
 
 export class AddADGroupMemberCmdlet implements ICmdlet {
   readonly name = 'add-adgroupmember';
+  readonly displayName = 'Add-ADGroupMember';
   readonly aliases = [] as const;
-  readonly parameters = ['Identity', 'Members', 'Credential'] as const;
+  readonly pipelineByValue = 'Identity';
+  readonly parameters = ['Identity', 'Members', 'DisablePermissiveModify', 'MemberTimeToLive',
+    'Partition', 'PassThru', 'Server', 'AuthType', 'Credential', 'WhatIf', 'Confirm'] as const;
 
   execute(ctx: CmdletContext): PSValue {
     const ad = requireAd(ctx, 'Add-ADGroupMember');
-    const identity = identityOf(ctx);
+    const identity = identityOrObjectOf(ctx);
     const members = membersOf(ctx);
     if (!identity || members.length === 0) {
       ctx.emitError("Add-ADGroupMember : Cannot process command because of one or more missing mandatory parameters: Identity Members.");
       return null;
     }
-    const res = ad.addGroupMember(identity, members);
+    const ttlSeconds = timeSpanSecondsOf(ctx, 'membertimetolive');
+    if (ttlSeconds === 'invalid') {
+      ctx.emitError("Add-ADGroupMember : Cannot bind parameter 'MemberTimeToLive'. Cannot convert the value to type \"System.TimeSpan\".");
+      return null;
+    }
+    if (ctx.named['whatif'] === true) {
+      ctx.emit(`What if: Performing the operation "Set" on target "${identity}".`);
+      return null;
+    }
+    const res = ad.addGroupMember(identity, members, {
+      permissiveModify: ctx.named['disablepermissivemodify'] !== true,
+      ttlSeconds: ttlSeconds ?? undefined,
+      partition: ctx.named['partition'] !== undefined ? psValueToString(ctx.named['partition']) : undefined,
+      target: remoteTargetOf(ctx),
+    });
     if (!res.ok) { ctx.emitError(`Add-ADGroupMember : ${res.message}`); return null; }
     const scope = ad.getGroup(identity)?.scope ?? 'DomainLocal';
     const audit = auditSinkFor(ctx);
     const subject = subjectUserOf(ctx);
     for (const m of members) audit?.groupMemberAdded(identity, m, scope === 'DomainLocal' ? 'Local' : scope, subject);
-    return null;
+    if (ctx.named['passthru'] !== true) return null;
+    const g = ad.getGroup(identity);
+    return g ? groupToPSObject(g) : null;
   }
 }
 
 export class RemoveADGroupMemberCmdlet implements ICmdlet {
   readonly name = 'remove-adgroupmember';
+  readonly displayName = 'Remove-ADGroupMember';
   readonly aliases = [] as const;
-  readonly parameters = ['Identity', 'Members', 'Confirm', 'Credential'] as const;
+  readonly pipelineByValue = 'Identity';
+  readonly parameters = ['Identity', 'Members', 'DisablePermissiveModify', 'Partition',
+    'PassThru', 'Server', 'AuthType', 'Credential', 'WhatIf', 'Confirm'] as const;
 
   execute(ctx: CmdletContext): PSValue {
     const ad = requireAd(ctx, 'Remove-ADGroupMember');
-    const identity = identityOf(ctx);
+    const identity = identityOrObjectOf(ctx);
     const members = membersOf(ctx);
     if (!identity || members.length === 0) {
       ctx.emitError("Remove-ADGroupMember : Cannot process command because of one or more missing mandatory parameters: Identity Members.");
       return null;
     }
+    if (ctx.named['whatif'] === true) {
+      ctx.emit(`What if: Performing the operation "Set" on target "${identity}".`);
+      return null;
+    }
+    if (confirmationDue(ctx, 'High')) {
+      ctx.emitError(`Remove-ADGroupMember : ${NON_INTERACTIVE_HOST}`);
+      return null;
+    }
     const scope = ad.getGroup(identity)?.scope ?? 'DomainLocal';
-    const res = ad.removeGroupMember(identity, members);
+    const res = ad.removeGroupMember(identity, members, {
+      permissiveModify: ctx.named['disablepermissivemodify'] !== true,
+      partition: ctx.named['partition'] !== undefined ? psValueToString(ctx.named['partition']) : undefined,
+      target: remoteTargetOf(ctx),
+    });
     if (!res.ok) { ctx.emitError(`Remove-ADGroupMember : ${res.message}`); return null; }
     const audit = auditSinkFor(ctx);
     const subject = subjectUserOf(ctx);
     for (const m of members) audit?.groupMemberRemoved(identity, m, scope === 'DomainLocal' ? 'Local' : scope, subject);
-    return null;
+    if (ctx.named['passthru'] !== true) return null;
+    const g = ad.getGroup(identity);
+    return g ? groupToPSObject(g) : null;
   }
 }
 

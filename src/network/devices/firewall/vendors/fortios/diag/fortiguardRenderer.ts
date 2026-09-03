@@ -6,31 +6,8 @@ export interface FortiguardDatabase {
   readonly lastAttempt?: string | null;
 }
 
-export const FORTIGUARD_DATABASES: readonly FortiguardDatabase[] = Object.freeze([
-  {
-    name: 'AV Engine', version: '0.00000', contract: 'Contract Expired',
-    lastUpdate: 'Wed Jan  1 00:00:00 2020',
-  },
-  {
-    name: 'Virus Definitions', version: '1.00000', contract: 'Contract Expired',
-    lastUpdate: 'Wed Jan  1 00:00:00 2020',
-  },
-  {
-    name: 'IPS Attack Engine', version: '0.00000', contract: 'Contract Expired',
-    lastUpdate: 'Wed Jan  1 00:00:00 2020',
-  },
-  {
-    name: 'IPS Attack Definitions', version: '1.00000', contract: 'Contract Expired',
-    lastUpdate: 'Wed Jan  1 00:00:00 2020',
-  },
-  {
-    name: 'Application Definitions', version: '1.00000', contract: 'Contract Expired',
-    lastUpdate: 'Wed Jan  1 00:00:00 2020',
-  },
-]);
-
 export function renderAutoupdateVersions(
-  databases: readonly FortiguardDatabase[] = FORTIGUARD_DATABASES,
+  databases: readonly FortiguardDatabase[],
 ): string {
   const lines: string[] = [];
   for (const database of databases) {

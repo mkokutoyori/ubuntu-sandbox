@@ -18,7 +18,7 @@
  * LA DECISION QUI COMPTE : la tentative n'avance AUCUNE version. Sur ce
  * simulateur le reseau de distribution de FortiGuard n'est pas
  * joignable -- `get system fortiguard-service status` le dit depuis
- * toujours, et les cinq bases portent « Contract Expired ». Faire monter
+ * toujours, et les bases portent « Contract Expired ». Faire monter
  * un numero de version reviendrait a simuler une connexion qui n'a pas
  * lieu et un abonnement qui n'existe pas ; c'est le decor que ce depot
  * refuse. Ce qui est vrai et mesurable, c'est qu'une TENTATIVE a eu
@@ -29,11 +29,14 @@
  * portent, plutot qu'une troisieme copie -- ce depot en a deja supprime
  * une de cette meme fonction.
  *
- * Trois commandes seulement de la famille sont ouvertes, et c'est
- * delibere : `update-geo-ip`, `update-list` et `update-src-vis` visent
- * des bases que ce simulateur ne porte pas. Leur ouvrir une porte
- * horodaterait une base inexistante ; elles restent donc refusees tant
- * que la base n'existe pas.
+ * Un lot ulterieur a ouvert `update-geo-ip` en AJOUTANT la base qui lui
+ * manquait : « IP Geography DB » est le nom que rend un vrai `diagnose
+ * autoupdate versions`, atteste par une transcription, donc la nommer
+ * n'invente rien. `update-list` et `update-src-vis` restent refusees
+ * pour la raison d'origine — la premiere ne vise pas une base mais la
+ * LISTE des serveurs de distribution, que rien ici ne consulte, et le
+ * nom que la seconde porte dans cette vue n'est atteste par aucune
+ * source atteignable.
  *
  * Discrimine par `git stash` sur les cinq fichiers cables : 5 cas
  * tombent. Les 3 qui passent des deux cotes sont nommes ici, et DEUX
@@ -46,7 +49,7 @@
  *  - « les bases non portees restent REFUSEES » passe parce que TOUTES
  *    les commandes `update-*` etaient refusees ; le cas garde que le lot
  *    n'a pas ouvert plus de portes qu'il ne porte de bases ;
- *  - le TEMOIN, dont c'est l'objet : la vue rend bien cinq bases non
+ *  - le TEMOIN, dont c'est l'objet : la vue rend bien ses bases non
  *    tentees.
  */
 import { describe, it, expect, beforeEach } from 'vitest';
@@ -70,11 +73,11 @@ const lignes = (sh: FortiShell, prefixe: string) =>
     .filter(l => l.startsWith(prefixe));
 
 describe('FortiGate : les mises a jour FortiGuard', () => {
-  it('TEMOIN : la vue rend les cinq bases, non tentees', () => {
+  it('TEMOIN : la vue rend les six bases, non tentees', () => {
     const sh = boitier();
-    expect(lignes(sh, 'Version')).toHaveLength(5);
+    expect(lignes(sh, 'Version')).toHaveLength(6);
     expect(lignes(sh, 'Last Update Attempt'))
-      .toEqual(Array(5).fill('Last Update Attempt: n/a'));
+      .toEqual(Array(6).fill('Last Update Attempt: n/a'));
   });
 
   it('`update-now` horodate les CINQ bases', () => {
@@ -118,19 +121,31 @@ describe('FortiGate : les mises a jour FortiGuard', () => {
     const deux = boitier();
     un.execute('execute update-now');
     expect(lignes(deux, 'Last Update Attempt'))
-      .toEqual(Array(5).fill('Last Update Attempt: n/a'));
+      .toEqual(Array(6).fill('Last Update Attempt: n/a'));
   });
 
   it('les bases que ce simulateur ne porte pas restent REFUSEES', () => {
     const sh = boitier();
-    expect(sh.execute('execute update-geo-ip')).toContain('unknown action');
+    expect(sh.execute('execute update-list')).toContain('unknown action');
     expect(sh.execute('execute update-src-vis')).toContain('unknown action');
   });
 
-  it('l aide nomme les trois commandes de mise a jour ouvertes', () => {
+  it('`update-geo-ip` horodate la base de geographie, et elle SEULE', () => {
+    const sh = boitier();
+    expect(sh.execute('execute update-geo-ip'))
+      .toContain('FortiGuard Distribution Network is not reachable.');
+
+    const vue = sh.execute('diagnose autoupdate versions').split('\n');
+    const tentees = vue.filter(l => l.startsWith('Last Update Attempt')
+      && !l.endsWith('n/a'));
+    expect(tentees).toHaveLength(1);
+    expect(vue.indexOf(tentees[0])).toBeGreaterThan(vue.indexOf('IP Geography DB'));
+  });
+
+  it('l aide nomme les quatre commandes de mise a jour ouvertes', () => {
     const sh = boitier();
     const mots = sh.help('execute up').map(l => l.trim().split(/\s{2,}/)[0]);
     expect(mots.filter(mot => mot.startsWith('update-')))
-      .toEqual(['update-av', 'update-ips', 'update-now']);
+      .toEqual(['update-av', 'update-geo-ip', 'update-ips', 'update-now']);
   });
 });

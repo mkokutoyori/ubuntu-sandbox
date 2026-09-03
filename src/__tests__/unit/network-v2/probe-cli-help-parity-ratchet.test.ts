@@ -28,13 +28,27 @@ interface Device {
 
 const PROBES = 'abcdefghijklmnopqrstuvwxyz0123456789*'.split('');
 
+/**
+ * Les budgets sont les nombres MESURES, jamais un plafond confortable.
+ *
+ * Ils valaient 56/55/72/59 pour des listes qui en comptent 8/27/6/20 :
+ * la campagne qui a fait descendre les continuations derivees n'avait
+ * pas resserre le cliquet derriere elle, si bien qu'on pouvait en
+ * reintroduire quarante-huit d'un coup sans qu'aucun test ne bronche.
+ * Un cliquet a du jeu ne cliquete pas — c'est la regle que ce depot
+ * s'est donnee pour ses trois autres garde-fous, dont chacun exige
+ * l'egalite exacte, et celui-ci ne la suivait pas.
+ *
+ * Baisser un budget en meme temps qu'on migre une famille est le geste
+ * attendu ; l'augmenter demande de dire pourquoi.
+ */
 const RECORDED_GAPS: Readonly<Record<string, {
   unsuggested: number; uncompletable: number; undescribed: number; derived: number;
 }>> = {
-  'switch/privileged': { unsuggested: 0, uncompletable: 0, undescribed: 0, derived: 56 },
-  'switch/config': { unsuggested: 0, uncompletable: 0, undescribed: 0, derived: 55 },
-  'routeur/privileged': { unsuggested: 0, uncompletable: 0, undescribed: 0, derived: 72 },
-  'routeur/config': { unsuggested: 0, uncompletable: 0, undescribed: 0, derived: 59 },
+  'switch/privileged': { unsuggested: 0, uncompletable: 0, undescribed: 0, derived: 0 },
+  'switch/config': { unsuggested: 0, uncompletable: 0, undescribed: 0, derived: 27 },
+  'routeur/privileged': { unsuggested: 0, uncompletable: 0, undescribed: 0, derived: 6 },
+  'routeur/config': { unsuggested: 0, uncompletable: 0, undescribed: 0, derived: 20 },
 };
 
 const MODES: ReadonlyArray<{ name: string; enter: string[] }> = [

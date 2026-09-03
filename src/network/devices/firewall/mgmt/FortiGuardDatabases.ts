@@ -1,6 +1,6 @@
 import { fmtHumanDate } from '../../linux/LinuxLogManager';
 
-export type FortiGuardFamily = 'antivirus' | 'ips';
+export type FortiGuardFamily = 'antivirus' | 'ips' | 'geo-ip';
 
 export interface FortiGuardDatabase {
   readonly name: string;
@@ -21,6 +21,8 @@ const SEED: readonly Omit<FortiGuardDatabase, 'lastAttempt'>[] = Object.freeze([
   { name: 'IPS Attack Definitions', family: 'ips', version: '1.00000',
     contract: 'Contract Expired', lastUpdate: 'Wed Jan  1 00:00:00 2020' },
   { name: 'Application Definitions', family: 'application', version: '1.00000',
+    contract: 'Contract Expired', lastUpdate: 'Wed Jan  1 00:00:00 2020' },
+  { name: 'IP Geography DB', family: 'geo-ip', version: '1.00000',
     contract: 'Contract Expired', lastUpdate: 'Wed Jan  1 00:00:00 2020' },
 ]);
 

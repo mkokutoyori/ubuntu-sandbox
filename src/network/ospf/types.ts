@@ -620,9 +620,11 @@ export interface OSPFConfig {
   autoCostReferenceBandwidth: number;
 }
 
+export const OSPF_ROUTER_ID_ABSENT = '0.0.0.0';
+
 export function createDefaultOSPFConfig(processId: number = 1): OSPFConfig {
   return {
-    routerId: '0.0.0.0',
+    routerId: OSPF_ROUTER_ID_ABSENT,
     processId,
     areas: new Map(),
     networks: [],

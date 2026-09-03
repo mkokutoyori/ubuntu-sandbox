@@ -32,6 +32,9 @@ import { TrustRegistry, type TrustDirection, type TrustOpResult, type TrustInfo,
 import { DEFAULT_AD_FUNCTIONAL_LEVEL } from './adFunctionalLevels';
 import { OU_PROPERTIES, PROTECTION_OBJECT_RIGHTS, PROTECTION_PARENT_RIGHT, isProtectionAce, protectionAce } from './adOrganizationalUnit';
 import { NEVER_EXPIRES, USER_FLAGS, USER_PROPERTIES, CHANGE_PASSWORD_TRUSTEES, accountExpiresDate, applyUserFlag, cannotChangePasswordAce, isCannotChangePasswordAce, readUserFlag } from './adUser';
+import { GROUP_PROPERTIES, MEMBER_ALREADY_IN_GROUP, MEMBER_NOT_IN_GROUP, groupNestingProblem, groupTypeParts, groupTypeValue } from './adGroup';
+import { RECYCLE_BIN_FEATURE, findOptionalFeature, forestModeAdmits, requiredForestModeFor } from './adOptionalFeatures';
+import { getForestForDomain } from './forest/Forest';
 
 export interface DirOpResult { ok: boolean; message: string }
 
@@ -45,25 +48,6 @@ const UAC = {
 } as const;
 
 /** Real AD groupType bit-flag values: a scope bit (2/4/8) plus the top SECURITY_ENABLED bit (0x80000000) when the group is a security group — a Distribution group carries the same scope bit without that top bit set (docs/PRD-Exchange.md §1.2 point 3/§2.1 P3-préalable). */
-const GROUP_SCOPE_BIT: Record<AdGroup['scope'], number> = {
-  Global: 0x00000002,
-  DomainLocal: 0x00000004,
-  Universal: 0x00000008,
-};
-const SCOPE_OF_BIT = new Map<number, AdGroup['scope']>(
-  (Object.keys(GROUP_SCOPE_BIT) as AdGroup['scope'][]).map(scope => [GROUP_SCOPE_BIT[scope], scope]),
-);
-const SECURITY_ENABLED_BIT = 0x80000000;
-
-function computeGroupType(scope: AdGroup['scope'], category: AdGroup['category']): number {
-  const bit = GROUP_SCOPE_BIT[scope];
-  return category === 'Security' ? (bit | SECURITY_ENABLED_BIT) : bit;
-}
-function decodeGroupType(groupType: number): { scope: AdGroup['scope']; category: AdGroup['category'] } {
-  const category: AdGroup['category'] = (groupType & SECURITY_ENABLED_BIT) !== 0 ? 'Security' : 'Distribution';
-  const scope = SCOPE_OF_BIT.get(groupType & 0x0000000e) ?? 'Global';
-  return { scope, category };
-}
 
 function firstOf(values: string[] | undefined): string { return values?.[0] ?? ''; }
 function isEnabledFromUac(values: string[] | undefined): boolean {
@@ -97,6 +81,17 @@ export interface UserWriteOptions {
   cannotChangePassword?: boolean;
 }
 
+export interface GroupWriteOptions {
+  commonName?: string;
+  attributes?: Record<string, string>;
+  target?: { server: string; bindUser: string; bindPassword: string; authType: string; domainName?: string };
+}
+
+export interface GroupMemberWriteOptions {
+  permissiveModify?: boolean;
+  ttlSeconds?: number;
+}
+
 export interface OrgUnitWriteOptions {
   target?: { server: string; bindUser: string; bindPassword: string; authType: string; domainName?: string };
   attributes?: Record<string, string>;
@@ -112,8 +107,7 @@ export class DirectoryStore {
   private readonly configurationDn: DistinguishedName;
   private readonly directoryServiceDn: DistinguishedName;
   private readonly deletedObjectsDn: DistinguishedName;
-  /** `Enable-ADOptionalFeature -Identity "Recycle Bin Feature"` (PRD AD Recycle Bin) — irreversible, matching real AD; a non-empty list means enabled at those scope DNs (`CN=Partitions,CN=Configuration,...` for `-Scope ForestOrConfigurationSet`). */
-  private recycleBinEnabledScopes: string[] = [];
+  private readonly optionalFeatureScopes = new Map<string, string[]>();
   /** `Add-KdsRootKey` — real gMSA creation refuses without this present first. */
   private kdsRootKey: { keyId: string; effectiveTime: string } | null = null;
   /** This DC's stable replication identity (PRD-Windows-Server-Advanced.md §5 P4, MS-DRSR's invocationId) — one per `DirectoryStore` instance, for its whole lifetime. */
@@ -163,7 +157,7 @@ export class DirectoryStore {
     this.schemaValidator = opts.sharedSchemaValidator ?? new SchemaValidator();
     this.tree = new DirectoryTree(rootDn, { objectClass: ['top', 'domain', 'domainDNS'] }, {
       invocationId: this.invocationId, nextUsn: () => ++this.localUsn,
-    }, this.schemaValidator);
+    }, this.schemaValidator, this.now);
     this.domainSidPrefix = `S-1-5-21-${hash32(this.dnsName, 1)}-${hash32(this.dnsName, 2)}-${hash32(this.dnsName, 3)}`;
     this.usersOuDn = [...parseDN('CN=Users'), ...rootDn];
     this.computersOuDn = [...parseDN('CN=Computers'), ...rootDn];
@@ -914,11 +908,13 @@ export class DirectoryStore {
   }
 
   getUser(sam: string): AdUser | null {
+    this.expireMemberships();
     const entry = this.findUserEntry(sam);
     return entry ? this.projectUser(entry) : null;
   }
 
   listUsers(): AdUser[] {
+    this.expireMemberships();
     return this.tree.allDescendants(this.tree.getRootDn())
       .filter(e => hasObjectClass(e, 'user') && !hasObjectClass(e, 'computer') && !isSoftDeleted(e))
       .map(e => this.projectUser(e));
@@ -1104,22 +1100,35 @@ export class DirectoryStore {
   getDirectoryServiceObjectDn(): string { return formatDN(this.directoryServiceDn); }
 
   getOptionalFeature(name: string): { name: string; enabledScopes: string[] } | null {
-    if (name.toLowerCase() !== 'recycle bin feature') return null;
-    return { name: 'Recycle Bin Feature', enabledScopes: [...this.recycleBinEnabledScopes] };
+    const feature = findOptionalFeature(name);
+    if (!feature) return null;
+    return { name: feature.name, enabledScopes: [...(this.optionalFeatureScopes.get(feature.name) ?? [])] };
   }
 
-  /** `Enable-ADOptionalFeature -Identity "Recycle Bin Feature" -Scope ForestOrConfigurationSet -Target <domain>` — irreversible in real AD (no `Disable-ADOptionalFeature` exists); idempotent here (re-enabling at the same scope is a no-op, not an error). */
   enableOptionalFeature(name: string, scopeDn: string): DirOpResult {
-    if (name.toLowerCase() !== 'recycle bin feature') return { ok: false, message: `Cannot find an optional feature with identity: '${name}'.` };
+    const feature = findOptionalFeature(name);
+    if (!feature) return { ok: false, message: `Cannot find an optional feature with identity: '${name}'.` };
+    if (!forestModeAdmits(feature, this.forestMode())) {
+      return { ok: false, message: `The forest functional level must be ${requiredForestModeFor(feature)} or higher to enable '${feature.name}'.` };
+    }
     let formatted: string;
     try { formatted = formatDN(parseDN(scopeDn)); } catch { return { ok: false, message: `Cannot find an object with distinguished name: '${scopeDn}'.` }; }
-    if (!this.recycleBinEnabledScopes.some(s => s.toLowerCase() === formatted.toLowerCase())) {
-      this.recycleBinEnabledScopes.push(formatted);
-    }
+    const scopes = this.optionalFeatureScopes.get(feature.name) ?? [];
+    if (!scopes.some(s => s.toLowerCase() === formatted.toLowerCase())) scopes.push(formatted);
+    this.optionalFeatureScopes.set(feature.name, scopes);
     return { ok: true, message: '' };
   }
 
-  private isRecycleBinEnabled(): boolean { return this.recycleBinEnabledScopes.length > 0; }
+  isOptionalFeatureEnabled(name: string): boolean {
+    const feature = findOptionalFeature(name);
+    return feature !== null && (this.optionalFeatureScopes.get(feature.name)?.length ?? 0) > 0;
+  }
+
+  forestMode(): string {
+    return getForestForDomain(this.dnsName)?.functionalLevel ?? DEFAULT_AD_FUNCTIONAL_LEVEL.forestMode;
+  }
+
+  private isRecycleBinEnabled(): boolean { return this.isOptionalFeatureEnabled(RECYCLE_BIN_FEATURE); }
 
   /**
    * Moves a deleted leaf entry into `CN=Deleted Objects` in place — same
@@ -1336,22 +1345,39 @@ export class DirectoryStore {
 
   // ─── Groups ─────────────────────────────────────────────────────────
 
-  newGroup(sam: string, scope: AdGroup['scope'] = 'Global', ou?: string, category: AdGroup['category'] = 'Security'): DirOpResult {
+  newGroup(sam: string, scope: AdGroup['scope'] = 'Global', ou?: string, category: AdGroup['category'] = 'Security', opts: GroupWriteOptions = {}): DirOpResult {
     const containerDn = this.resolveOuContainer(ou, this.usersOuDn);
     if (!containerDn) {
       return { ok: false, message: `Cannot find an object with identity: '${ou}'.` };
     }
-    const res = this.createGroupEntry(sam, scope, containerDn, category);
+    const res = this.createGroupEntry(sam, scope, containerDn, category, opts);
     return res.ok ? { ok: true, message: '' } : { ok: false, message: 'An object with that name already exists.' };
   }
 
-  private createGroupEntry(sam: string, scope: AdGroup['scope'], containerDn: DistinguishedName, category: AdGroup['category'] = 'Security'): DirOpResult {
-    return this.tree.addEntry(this.cnDn(sam, containerDn), {
+  setGroupAttributes(identity: string, attributes: Record<string, string>): DirOpResult {
+    const entry = this.findGroupEntry(this.resolveIdentity(identity));
+    if (!entry) return { ok: false, message: `Cannot find an object with identity: '${identity}'.` };
+    for (const [ldap, value] of Object.entries(attributes)) {
+      this.tree.modifyEntry(entry.dn, [value === ''
+        ? { op: 'delete', type: ldap, values: [] }
+        : { op: 'replace', type: ldap, values: [value] }]);
+    }
+    return { ok: true, message: '' };
+  }
+
+  private createGroupEntry(sam: string, scope: AdGroup['scope'], containerDn: DistinguishedName, category: AdGroup['category'] = 'Security', opts: GroupWriteOptions = {}): DirOpResult {
+    const cn = opts.commonName || sam;
+    const attributes: Record<string, string[]> = {
       objectClass: ['top', 'group'],
-      cn: [sam],
+      cn: [cn],
+      name: [cn],
       sAMAccountName: [sam],
-      groupType: [String(computeGroupType(scope, category))],
-    });
+      groupType: [String(groupTypeValue(scope, category))],
+    };
+    for (const [ldap, value] of Object.entries(opts.attributes ?? {})) {
+      if (value !== '') attributes[ldap] = [value];
+    }
+    return this.tree.addEntry(this.cnDn(cn, containerDn), attributes);
   }
 
   private findGroupEntry(sam: string): DirectoryEntry | null {
@@ -1365,20 +1391,38 @@ export class DirectoryStore {
   }
 
   getGroup(sam: string): AdGroup | null {
+    this.expireMemberships();
     const entry = this.findGroupEntry(sam);
     return entry ? this.projectGroup(entry) : null;
   }
 
-  listGroups(): AdGroup[] { return this.listGroupEntries().map(e => this.projectGroup(e)); }
+  listGroups(): AdGroup[] {
+    this.expireMemberships();
+    return this.listGroupEntries().map(e => this.projectGroup(e));
+  }
 
   private projectGroup(entry: DirectoryEntry): AdGroup {
     const groupType = Number(firstOf(entry.attributes.get('grouptype')));
-    const { scope, category } = decodeGroupType(groupType);
+    const { scope, category } = groupTypeParts(groupType);
+    const known = new Set(['objectclass', 'cn', 'name', 'samaccountname', 'grouptype', 'member', 'memberof']);
+    const properties: Record<string, string> = {};
+    for (const spec of GROUP_PROPERTIES) {
+      known.add(spec.ldap.toLowerCase());
+      const value = firstOf(entry.attributes.get(spec.ldap.toLowerCase()));
+      if (value) properties[spec.parameter] = value;
+    }
+    for (const [ldap, values] of entry.attributes) {
+      if (!known.has(ldap.toLowerCase()) && values.length > 0) {
+        properties[this.tree.canonicalAttributeName(ldap)] = values[0];
+      }
+    }
     return {
       sam: firstOf(entry.attributes.get('samaccountname')),
       dn: formatDN(entry.dn),
+      name: firstOf(entry.attributes.get('name')) || firstOf(entry.attributes.get('cn')),
       scope,
       category,
+      properties,
       members: (entry.attributes.get('member') ?? []).map(dnStr => this.samOfDn(dnStr)).filter((s): s is string => s !== null),
     };
   }
@@ -1443,30 +1487,87 @@ export class DirectoryStore {
     return res.ok ? { ok: true, message: '', sam: qualifiedSam } : { ok: false, message: 'An object with that name already exists.' };
   }
 
-  addGroupMember(groupSam: string, memberSam: string): DirOpResult {
+  addGroupMember(groupSam: string, memberSam: string, opts: GroupMemberWriteOptions = {}): DirOpResult {
+    return this.addGroupMembers(groupSam, [memberSam], opts);
+  }
+
+  addGroupMembers(groupSam: string, memberSams: string[], opts: GroupMemberWriteOptions = {}): DirOpResult {
+    this.expireMemberships();
     const group = this.findGroupEntry(groupSam);
     if (!group) return { ok: false, message: `Cannot find an object with identity: '${groupSam}'.` };
-    const member = this.findGroupMemberEntry(memberSam);
-    if (!member) return { ok: false, message: `Cannot find an object with identity: '${memberSam}'.` };
-    const memberDn = formatDN(member.dn);
     const groupDn = formatDN(group.dn);
-    this.tree.modifyEntry(group.dn, [{ op: 'add', type: 'member', values: [memberDn] }]);
-    this.tree.modifyEntry(member.dn, [{ op: 'add', type: 'memberOf', values: [groupDn] }]);
+    const resolved: DirectoryEntry[] = [];
+    for (const sam of memberSams) {
+      const member = this.findGroupMemberEntry(sam);
+      if (!member) return { ok: false, message: `Cannot find an object with identity: '${sam}'.` };
+      const nesting = this.nestingProblem(group, member);
+      if (nesting) return { ok: false, message: nesting };
+      if (this.holdsMember(group, formatDN(member.dn))) {
+        if (opts.permissiveModify === false) return { ok: false, message: MEMBER_ALREADY_IN_GROUP };
+        continue;
+      }
+      resolved.push(member);
+    }
+    for (const member of resolved) {
+      const memberDn = formatDN(member.dn);
+      this.tree.modifyEntry(group.dn, [{ op: 'add', type: 'member', values: [memberDn] }]);
+      if (opts.ttlSeconds !== undefined) this.tree.setLinkTtl(group.dn, memberDn, opts.ttlSeconds);
+    }
     return { ok: true, message: '' };
   }
 
-  removeGroupMember(groupSam: string, memberSam: string): DirOpResult {
+  removeGroupMember(groupSam: string, memberSam: string, opts: GroupMemberWriteOptions = {}): DirOpResult {
+    return this.removeGroupMembers(groupSam, [memberSam], opts);
+  }
+
+  removeGroupMembers(groupSam: string, memberSams: string[], opts: GroupMemberWriteOptions = {}): DirOpResult {
+    this.expireMemberships();
     const group = this.findGroupEntry(groupSam);
     if (!group) return { ok: false, message: `Cannot find an object with identity: '${groupSam}'.` };
-    const member = this.findGroupMemberEntry(memberSam);
-    const groupDn = formatDN(group.dn);
-    this.tree.modifyEntry(group.dn, [{ op: 'delete', type: 'member', values: member ? [formatDN(member.dn)] : [] }]);
-    if (member) this.tree.modifyEntry(member.dn, [{ op: 'delete', type: 'memberOf', values: [groupDn] }]);
+    const held: string[] = [];
+    for (const sam of memberSams) {
+      const member = this.findGroupMemberEntry(sam);
+      if (!member) return { ok: false, message: `Cannot find an object with identity: '${sam}'.` };
+      const memberDn = formatDN(member.dn);
+      if (!this.holdsMember(group, memberDn)) {
+        if (opts.permissiveModify === false) return { ok: false, message: MEMBER_NOT_IN_GROUP };
+        continue;
+      }
+      held.push(memberDn);
+    }
+    if (held.length > 0) {
+      this.tree.modifyEntry(group.dn, [{ op: 'delete', type: 'member', values: held }]);
+    }
     return { ok: true, message: '' };
+  }
+
+  private holdsMember(group: DirectoryEntry, memberDn: string): boolean {
+    return (group.attributes.get('member') ?? []).some(v => v.toLowerCase() === memberDn.toLowerCase());
+  }
+
+  private nestingProblem(group: DirectoryEntry, member: DirectoryEntry): string | null {
+    if (!hasObjectClass(member, 'group')) return null;
+    const container = groupTypeParts(this.groupTypeOf(group)).scope;
+    const nested = groupTypeParts(this.groupTypeOf(member)).scope;
+    return groupNestingProblem(container, nested);
+  }
+
+  private groupTypeOf(entry: DirectoryEntry): number {
+    const raw = firstOf(entry.attributes.get('grouptype'));
+    const parsed = raw === undefined ? NaN : parseInt(raw, 10);
+    return Number.isNaN(parsed) ? groupTypeValue('Global', 'Security') : parsed;
+  }
+
+  private expireMemberships(): void { this.tree.expireLinks(); }
+
+  memberTimeToLive(groupSam: string): Map<string, number> {
+    const group = this.findGroupEntry(groupSam);
+    return group ? this.tree.linkTtls(group.dn) : new Map();
   }
 
   /** `Get-ADGroupMember` — direct members only, each tagged by kind so a caller can distinguish a nested Global group, a cross-domain `foreignSecurityPrincipal`, or a plain user/computer (real AD's AGDLP model). */
   getGroupMembersDetailed(groupSam: string): Array<{ sam: string; dn: string; objectClass: 'user' | 'computer' | 'group' | 'foreignSecurityPrincipal' }> {
+    this.expireMemberships();
     const group = this.findGroupEntry(groupSam);
     if (!group) return [];
     const out: Array<{ sam: string; dn: string; objectClass: 'user' | 'computer' | 'group' | 'foreignSecurityPrincipal' }> = [];
@@ -1548,11 +1649,13 @@ export class DirectoryStore {
   }
 
   getComputer(name: string): AdComputer | null {
+    this.expireMemberships();
     const entry = this.findComputerEntry(name);
     return entry ? this.projectComputer(entry) : null;
   }
 
   listComputers(): AdComputer[] {
+    this.expireMemberships();
     return this.tree.allDescendants(this.tree.getRootDn()).filter(e => hasObjectClass(e, 'computer') && !isSoftDeleted(e)).map(e => this.projectComputer(e));
   }
 
