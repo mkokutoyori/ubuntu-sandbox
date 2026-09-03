@@ -2290,3 +2290,19 @@ défauts — la méthode vaut d'être reprise sur le reliquat.
   une campagne de correction a la mesure de ce nombre ; le lot du
   commutateur a ferme ce que le balayage ACTUEL voit, ce qui etait deja
   139 cas que personne ne regardait.
+- `?` propose sur un PORT PHYSIQUE de commutateur VRP les cinq commandes
+  qui n'existent que dans la vue d'une `Eth-Trunk` (`mode`, `lacp`,
+  `load-balance`, `max`, `least`). L'execution refuse correctement — le
+  lot qui a fait tenir parole a l'aide de VRP a corrige la place du caret
+  — mais l'AIDE continue de les annoncer : le trie d'interface est unique
+  pour les deux genres de port, et le filtrage par contexte n'existe que
+  cote Cisco (`commandVisibleToNow`, qui ne connait que le mode, le
+  privilege et la vue). Lui donner la notion de « quel genre d'interface
+  est selectionnee » est un autre lot.
+- Le balayage « un mot que `?` propose est un mot qui existe » n'est pas
+  encore un TEST pour VRP : le lot qui l'a fait tourner a la main sur les
+  deux machines Huawei a corrige ce qu'il a trouve (2 mots-cles nus, 3
+  carets) et n'a pas fige le balayage, faute d'un equivalent VRP du
+  `NE_PAS_EXECUTER` de la version Cisco — la liste des commandes qu'on ne
+  peut pas executer dans un balayage (`reboot`, `save`, `reset`…) doit
+  etre etablie pour VRP avant qu'un tel test soit sur.

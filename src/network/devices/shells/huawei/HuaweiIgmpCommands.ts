@@ -17,6 +17,7 @@ import type { Router } from '../../Router';
 import type { IgmpAgent } from '../../../igmp/IgmpAgent';
 import { isMulticastIpv4, isReservedMulticast } from '../../../igmp/types';
 import { hms } from '@/lib/format';
+import { HUAWEI_ERRORS } from '../cli-utils';
 
 export interface HuaweiIgmpContext {
   r(): Router;
@@ -32,7 +33,10 @@ export function registerHuaweiIgmpInterfaceCommands(trie: CommandTrie, ctx: Huaw
     const a = agent(ctx.r());
     const iface = ctx.getSelectedInterface();
     if (!a || !iface) return '';
-    const sub = (args[0] ?? '').toLowerCase();
+    if (args[0] === undefined) {
+      return HUAWEI_ERRORS.INCOMPLETE('igmp');
+    }
+    const sub = args[0].toLowerCase();
 
     if (sub === 'enable') {
       a.enableInterface(iface, a.getInterfaceRuntime(iface)?.version ?? 2);
