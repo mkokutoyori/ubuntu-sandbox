@@ -2107,3 +2107,27 @@ défauts — la méthode vaut d'être reprise sur le reliquat.
   ABANDONNEE plutot que forcee. A rouvrir avec une capture, en verifiant
   d'abord si le tutoriel dont ce test est tire montre la loopback creee
   avant.
+- `apply` et `if-match` de VRP (`HuaweiPolicyCommands.ts`) portent la
+  MEME forme que les clauses `set`/`match` d'IOS fermees par le lot
+  route-map : `apply cost zorglub` et `if-match dscp zorglub` posent un
+  `parseInt` qui rend `NaN`, un genre de clause invente est avale en
+  silence, et le rendu de la configuration le rejoue. Ce n'est PAS un
+  doublon de la table Cisco — le vocabulaire de VRP est le sien
+  (`apply ip-address next-hop`, `apply preference`, `if-match acl-ipv6`,
+  `if-match vlan`) — donc c'est le lot JUMEAU et non le meme, a ecrire
+  avec sa propre table lue par son gestionnaire et par son aide.
+- `set ip dscp`, `set ip tos`, `set traffic-index`, `set mpls-label` et
+  `set vrf` ne figurent pas dans `ROUTE_MAP_SET_CLAUSES` et sont donc
+  desormais REFUSEES sur une carte de routage. La table declare ce qui
+  est atteste et ce que le depot exerce ; ces cinq formes existent sur un
+  vrai IOS mais aucune source atteignable depuis ce reseau n'en donne la
+  grammaire exacte (les domaines de Cisco sont refuses par le mandataire
+  de sortie), et une place declaree au juge trop laxiste vaudrait le sac
+  de chaines qu'on vient de retirer. A ajouter des qu'une capture ou une
+  documentation les atteste, une entree par forme.
+- `redistribution.test.ts` > « the RIP domain learns OSPF-side prefixes
+  with the redistribute metric » echoue sur `0101d8f5`, c'est-a-dire
+  AVANT tout travail de cette session — verifie par `git stash` sur un
+  arbre propre. La route `192.168.3.0` redistribuee d'OSPF vers RIP
+  n'arrive pas jusqu'a R1. Defaut de convergence a diagnostiquer, non
+  imputable au lot route-map, qui ne touche ni RIP ni OSPF.

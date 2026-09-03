@@ -29,6 +29,7 @@ import {
   showIpEigrpNeighbors, showIpEigrpNeighborsDetail,
   showIpEigrpTopology, showIpEigrpInterfaces, eigrpProtocolBlock,
 } from './CiscoEigrpShow';
+import { BGP_WEIGHT_MAX, BGP_HOLD_TIME_MAX as BGP_TIMER_MAX } from '@/network/bgp/attributes';
 
 
 type Proto = 'rip' | 'eigrp' | 'bgp';
@@ -79,8 +80,6 @@ function requireProto(ctx: CiscoShellContext, keyword: string): void {
   if (!routerKeywordBelongsTo(keyword, curProto(ctx).proto)) throw new CliInvalidInput();
 }
 
-const BGP_WEIGHT_MAX = 65535;
-const BGP_TIMER_MAX = 65535;
 const REDIST_AVEC_PROCESSUS: readonly string[] = ['ospf', 'eigrp', 'bgp'];
 const REDIST_PROCESSUS_MAX = 65535;
 const OFFSET_MAX = 16777215;
