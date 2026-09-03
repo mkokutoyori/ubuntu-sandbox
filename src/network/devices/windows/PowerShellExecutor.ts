@@ -2403,11 +2403,6 @@ export class PowerShellExecutor {
       return net.handleGetNetIPAddress(this.buildPSNetCtx(), args);
     }
 
-    // Set-NetIPAddress
-    if (cmdLower === 'set-netipaddress') {
-      return net.handleSetNetIPAddress(this.buildPSNetCtx(), args);
-    }
-
     // Get-NetRoute
     if (cmdLower === 'get-netroute') {
       return net.handleGetNetRoute(this.buildPSNetCtx(), args);

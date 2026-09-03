@@ -180,62 +180,6 @@ export function isValidIP(ip: string): boolean {
     return isValidIPv4(ip) || isValidIPv6(ip);
   }
 
-export function handleSetNetIPAddress(ctx: PSNetContext, args: string[]): string {
-    const params = parsePSArgs(args);
-    const ip = (params.get('ipaddress') || params.get('_positional'))?.replace(/^["']|["']$/g, '');
-    const ifAlias = params.get('interfacealias')?.replace(/^["']|["']$/g, '');
-    const prefixStr = params.get('prefixlength');
-    const prefixLength = prefixStr ? parseInt(prefixStr, 10) : undefined;
-
-    // When -InterfaceAlias is given, replace the existing IPv4 for that adapter with the new IP
-    if (ifAlias && ip) {
-      if (!isValidIP(ip)) return `Set-NetIPAddress : Invalid IP address '${ip}'.`;
-      const all = buildAllIPEntries(ctx);
-      const existing = all.find(e => e.ifAlias.toLowerCase() === ifAlias.toLowerCase() && e.addressFamily === 'IPv4');
-      const port = resolveAdapterPort(ctx, ifAlias);
-      if (port && !ip.includes(':')) {
-        // Physical adapter → reconfigure the REAL interface.
-        const prefix = prefixLength ?? existing?.prefixLength ?? 24;
-        ctx.device.configureInterface(port.getName(), new IPAddress(ip), new SubnetMask(prefixToMaskString(prefix)));
-        return '';
-      }
-      if (existing) ctx.device.extraIPs.delete(existing.ip.toLowerCase());
-      ctx.device.extraIPs.set(ip.toLowerCase(), {
-        ifAlias, prefixLength: prefixLength ?? existing?.prefixLength ?? 24,
-        prefixOrigin: 'Manual', suffixOrigin: 'Manual', skipAsSource: false, addressFamily: 'IPv4',
-      });
-      return '';
-    }
-
-    if (!ip) return `Set-NetIPAddress : The -IPAddress parameter is required.\nAt line:1 char:1\n    + CategoryInfo          : InvalidArgument`;
-
-    const entry = ctx.device.extraIPs.get(ip.toLowerCase());
-    if (!entry) {
-      const all = buildAllIPEntries(ctx);
-      const found = all.find(e => e.ip.toLowerCase() === ip.toLowerCase());
-      if (!found) {
-        return `Set-NetIPAddress : No MSFT_NetIPAddress objects found with property 'IPAddress' equal to '${ip}'. Verify the value of the property and retry.`;
-      }
-      ctx.device.extraIPs.set(ip.toLowerCase(), { ifAlias: found.ifAlias, prefixLength: found.prefixLength, prefixOrigin: found.prefixOrigin, suffixOrigin: found.suffixOrigin, skipAsSource: found.skipAsSource, addressFamily: found.addressFamily });
-    }
-
-    const e = ctx.device.extraIPs.get(ip.toLowerCase())!;
-    if (prefixLength !== undefined) e.prefixLength = prefixLength;
-    if (params.has('prefixorigin')) e.prefixOrigin = params.get('prefixorigin')!;
-    if (params.has('suffixorigin')) e.suffixOrigin = params.get('suffixorigin')!;
-    if (params.has('skipassource')) e.skipAsSource = (params.get('skipassource') ?? '').toLowerCase() !== 'false' && (params.get('skipassource') ?? '') !== '$false';
-
-    // If the address lives on a real port, a prefix change must reconfigure
-    // the port so ipconfig/route/Get-NetIPAddress agree on the new mask.
-    if (prefixLength !== undefined) {
-      const port = resolveAdapterPort(ctx, e.ifAlias);
-      if (port && port.getIPAddress()?.toString().toLowerCase() === ip.toLowerCase()) {
-        ctx.device.configureInterface(port.getName(), new IPAddress(ip), new SubnetMask(prefixToMaskString(prefixLength)));
-      }
-    }
-    return '';
-  }
-
 export function buildDefaultRoutes(ctx: PSNetContext): Array<{ dest: string; ifAlias: string; nextHop: string; metric: number }> {
     // Single source of truth: the SAME routing table `route print` renders.
     // (This function's name is kept for its many call sites; it no longer

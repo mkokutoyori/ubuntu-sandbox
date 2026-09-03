@@ -68,7 +68,7 @@ import type {
   IAdProvider, AdUserInfo, AdGroupInfo, AdComputerInfo, AdOrgUnitInfo, AdOpResult, AdSiteInfo,
   AdSubnetInfo, AdSiteLinkInfo, AdUpToDatenessVectorRowInfo,
   AdKdsRootKeyInfo, AdServiceAccountInfo,
-  AdGenericObjectInfo, AdOptionalFeatureInfo, AddGroupMemberOptions, AdMemberLink, NetIPAddressOptions,
+  AdGenericObjectInfo, AdOptionalFeatureInfo, AddGroupMemberOptions, AdMemberLink, NetIPAddressOptions, NetIPAddressUpdate,
   AdAttributeSchemaInfo, AdObjectClassSchemaInfo, AdForestInfo, AdDomainInfo, AdTrustInfo,
   AdReplicationConnectionInfo, AdReplicationFailureInfo, AdPasswordPolicyInfo, AdFineGrainedPasswordPolicyInfo, AdAccessRuleInfo,
   IComputerProvider, DomainMembershipInfo,
@@ -1894,6 +1894,8 @@ class WindowsNetworkAdapter implements INetworkProvider {
       entry.skipAsSource = meta.skipAsSource;
       entry.type = meta.type;
       entry.policyStore = meta.policyStore;
+      if (meta.validLifetimeSeconds !== undefined) entry.validLifetimeSeconds = meta.validLifetimeSeconds;
+      if (meta.preferredLifetimeSeconds !== undefined) entry.preferredLifetimeSeconds = meta.preferredLifetimeSeconds;
     }
     return out;
   }
@@ -2091,10 +2093,25 @@ class WindowsNetworkAdapter implements INetworkProvider {
     if (opts.routeMetric !== undefined) cur.metric  = opts.routeMetric;
     return '';
   }
-  setIPAddress(ip: string, opts: { prefixLength?: number }): string {
-    const cur = this.state.extraIPs.get(ip.toLowerCase());
-    if (!cur) return `Cannot find IP ${ip}.`;
-    if (opts.prefixLength !== undefined) cur.prefixLength = opts.prefixLength;
+  setIPAddress(ip: string, ifAlias: string, opts: NetIPAddressUpdate): string {
+    if (ip === '127.0.0.1' || ip === '::1') return 'Cannot modify loopback address.';
+    const key = ip.toLowerCase();
+    const cur = this.state.extraIPs.get(key);
+    if (cur) {
+      if (opts.prefixLength !== undefined) cur.prefixLength = opts.prefixLength;
+      if (opts.skipAsSource !== undefined) cur.skipAsSource = opts.skipAsSource;
+      if (opts.validLifetimeSeconds !== undefined) cur.validLifetimeSeconds = opts.validLifetimeSeconds;
+      if (opts.preferredLifetimeSeconds !== undefined) cur.preferredLifetimeSeconds = opts.preferredLifetimeSeconds;
+    }
+    if (opts.prefixLength !== undefined && !ip.includes(':')) {
+      const ports = (this.pc as unknown as { ports: Map<string, { getIPAddress: () => unknown }> }).ports;
+      const portName = resolveAdapterName(ifAlias, ports as Map<string, unknown>);
+      const port = ports.get(portName);
+      if (port && String(port.getIPAddress()) === ip) {
+        (this.pc as unknown as { configureInterface: (n: string, a: IPAddress, m: SubnetMask) => void })
+          .configureInterface(portName, new IPAddress(ip), new SubnetMask(prefixToMaskOctets(opts.prefixLength)));
+      }
+    }
     return '';
   }
 

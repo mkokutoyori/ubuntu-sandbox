@@ -1181,6 +1181,13 @@ export interface IJobProvider {
 }
 
 
+export interface NetIPAddressUpdate {
+  prefixLength?: number;
+  skipAsSource?: boolean;
+  validLifetimeSeconds?: number;
+  preferredLifetimeSeconds?: number;
+}
+
 export interface NetIPAddressOptions {
   gateway?: string;
   skipAsSource?: boolean;
@@ -1289,7 +1296,7 @@ export interface INetworkProvider {
   /** Modify properties of an existing route — usually nextHop or metric. */
   setRoute(dest: string, opts: { nextHop?: string; routeMetric?: number; ifAlias?: string }): string;
   /** Modify properties of an existing IP — usually prefixLength. */
-  setIPAddress(ip: string, opts: { prefixLength?: number }): string;
+  setIPAddress(ip: string, ifAlias: string, opts: NetIPAddressUpdate): string;
   getDnsServers(ifAlias: string): string[];
   setDnsServers(ifAlias: string, servers: string[]): void;
   getDefaultGateway(): string | null;

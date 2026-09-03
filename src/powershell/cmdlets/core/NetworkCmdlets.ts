@@ -13,12 +13,13 @@ import { PSRuntimeError } from '@/powershell/runtime/PSRuntime';
 import type { PSValue } from '@/powershell/runtime/PSEnvironment';
 import { IPAddress, MACAddress } from '@/network/core/types';
 import type {
-  NetworkAdapterInfo, IPAddressInfo, INetworkProvider,
+  NetworkAdapterInfo, IPAddressInfo, INetworkProvider, NetIPAddressUpdate,
 } from '@/powershell/providers/PSProviders';
 import { psValueToString } from '@/powershell/runtime/PSExpansion';
 import { makeTimeSpan } from './DateTimeCmdlets';
 import {
-  type NetIPAddressSelection, noMatchingNetIPAddress, planNetIPAddress, selectNetIPAddresses,
+  type NetIPAddressSelection, noMatchingNetIPAddress, planNetIPAddress,
+  prefixLengthProblem, selectNetIPAddresses,
 } from '@/network/devices/windows/netIpAddress';
 
 function lifetimeSecondsOf(ctx: CmdletContext, key: string): number | undefined {
@@ -692,20 +693,59 @@ export class RemoveNetRouteCmdlet implements ICmdlet {
 
 // ── Set-NetIPAddress / Set-NetRoute ───────────────────────────────────────
 
+const NET_IP_SET_FILTERS = ['IPAddress', 'InterfaceAlias', 'InterfaceIndex', 'AddressFamily',
+  'AddressState', 'PrefixOrigin', 'SuffixOrigin', 'Type', 'PolicyStore'] as const;
+
 export class SetNetIPAddressCmdlet implements ICmdlet {
   readonly name = 'set-netipaddress';
   readonly displayName = 'Set-NetIPAddress';
   readonly aliases = [] as const;
+  readonly pipelineByPropertyName = true as const;
+  readonly description = 'Modifies the configuration of an IP address.';
+  readonly parameters = [...NET_IP_SET_FILTERS, 'PrefixLength', 'ValidLifetime',
+    'PreferredLifetime', 'SkipAsSource', 'PassThru', 'WhatIf', 'Confirm'] as const;
 
   execute(ctx: CmdletContext): PSValue {
     const net = requireNetwork(ctx);
-    const ip = psValueToString(ctx.named['ipaddress'] ?? ctx.positional[0] ?? '');
-    if (!ip) { ctx.emitError('Set-NetIPAddress requires -IPAddress'); return null; }
-    const opts: { prefixLength?: number } = {};
-    if (ctx.named['prefixlength'] !== undefined) opts.prefixLength = Number(ctx.named['prefixlength']);
-    const msg = net.setIPAddress(ip, opts);
-    if (msg) ctx.emitError(msg);
-    return null;
+    const selection = netIPSelectionOf(ctx, net);
+    selection.prefixLength = undefined;
+    selection.skipAsSource = undefined;
+    if (selection.ipAddress === undefined && ctx.positional[0] !== undefined) {
+      selection.ipAddress = [psValueToString(ctx.positional[0])];
+    }
+    const matched = selectNetIPAddresses(net.getIPAddresses(), selection);
+    if (matched.length === 0) {
+      ctx.emitError(`Set-NetIPAddress : ${noMatchingNetIPAddress(selection)}`);
+      return null;
+    }
+
+    const update: NetIPAddressUpdate = {
+      validLifetimeSeconds: lifetimeSecondsOf(ctx, 'validlifetime'),
+      preferredLifetimeSeconds: lifetimeSecondsOf(ctx, 'preferredlifetime'),
+    };
+    if (ctx.named['skipassource'] !== undefined) update.skipAsSource = ctx.named['skipassource'] === true;
+    if (ctx.named['prefixlength'] !== undefined) {
+      const given = psValueToString(ctx.named['prefixlength']);
+      for (const entry of matched) {
+        const problem = prefixLengthProblem(given, entry.addressFamily === 'IPv6' ? 'IPv6' : 'IPv4');
+        if (problem) { ctx.emitError(`Set-NetIPAddress : ${problem}`); return null; }
+      }
+      update.prefixLength = parseInt(given.trim(), 10);
+    }
+
+    if (ctx.named['whatif'] === true) {
+      for (const e of matched) {
+        ctx.emit(`What if: Performing the operation "Set-NetIPAddress" on target "IPAddress: ${e.ipAddress}, InterfaceAlias: ${e.ifAlias}".`);
+      }
+      return null;
+    }
+    for (const entry of matched) {
+      const message = net.setIPAddress(entry.ipAddress, entry.ifAlias, update);
+      if (message) ctx.emitError(`Set-NetIPAddress : ${message}`);
+    }
+    if (ctx.named['passthru'] !== true) return null;
+    const refreshed = selectNetIPAddresses(net.getIPAddresses(), selection);
+    return refreshed.map(ipToPSObject) as PSValue;
   }
 }
 
