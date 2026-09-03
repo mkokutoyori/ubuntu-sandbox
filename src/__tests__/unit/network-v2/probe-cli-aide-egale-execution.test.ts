@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { CiscoRouter } from '@/network/devices/CiscoRouter';
+import { CiscoSwitch } from '@/network/devices/CiscoSwitch';
 import { MACAddress, resetCounters } from '@/network/core/types';
 import { resetDeviceCounters } from '@/network/devices/DeviceFactory';
 import { Logger } from '@/network/core/Logger';
@@ -80,11 +81,36 @@ const MODES: Array<[string, string[]]> = [
   ['config-router (OSPF)', ['configure terminal', 'router ospf 1']],
 ];
 
+/**
+ * Le commutateur passe par le MEME balayage que le routeur.
+ *
+ * Il n'y passait pas, et l'invariant s'arretait donc a la moitie du parc
+ * — ce qui se voyait : `spanning-tree ?` y offrait cinq mots que
+ * l'analyseur refuse, `show lacp` et `show interfaces etherchannel`
+ * etaient annonces et refuses, et `duplex` seul repondait « ce mot
+ * n'existe pas » a un mot que la machine connait. Ses modes sont les
+ * siens : pas de `router rip`, mais un `config-vlan`.
+ */
+const MODES_COMMUTATEUR: Array<[string, string[]]> = [
+  ['privileged EXEC', []],
+  ['global config', ['configure terminal']],
+  ['config-if', ['configure terminal', 'interface GigabitEthernet0/1']],
+  ['config-line', ['configure terminal', 'line vty 0 4']],
+  ['config-vlan', ['configure terminal', 'vlan 10']],
+];
+
 async function routeur(): Promise<CiscoRouter & Cli> {
   const r = new CiscoRouter('R1') as CiscoRouter & Cli;
   r.powerOn?.();
   await r.executeCommand('enable');
   return r;
+}
+
+async function commutateur(): Promise<CiscoSwitch & Cli> {
+  const s = new CiscoSwitch('switch-cisco', 'S1') as CiscoSwitch & Cli;
+  s.powerOn?.();
+  await s.executeCommand('enable');
+  return s;
 }
 
 describe('un mot-clé que `?` propose est un mot-clé qui existe', () => {
@@ -97,6 +123,23 @@ describe('un mot-clé que `?` propose est un mot-clé qui existe', () => {
         await r.executeCommand('end');
         for (const c of mode) await r.executeCommand(c);
         const out = String(await r.executeCommand(cmd));
+        return out.includes('% Invalid input detected') ? `${nom}: ${cmd}` : null;
+      });
+      expect(fautes, fautes.join('\n')).toEqual([]);
+    }, 120_000);
+  }
+});
+
+describe('sur un COMMUTATEUR aussi, un mot que `?` propose existe', () => {
+  for (const [nom, mode] of MODES_COMMUTATEUR) {
+    it(nom, async () => {
+      const s = await commutateur();
+      const fautes = await balayer(s, mode, async (prefix, keyword) => {
+        if (keyword === '<cr>') return null;
+        const cmd = `${prefix}${keyword}`;
+        await s.executeCommand('end');
+        for (const c of mode) await s.executeCommand(c);
+        const out = String(await s.executeCommand(cmd));
         return out.includes('% Invalid input detected') ? `${nom}: ${cmd}` : null;
       });
       expect(fautes, fautes.join('\n')).toEqual([]);

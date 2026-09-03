@@ -313,15 +313,18 @@ const STP_INTERFACE_CONTINUATIONS: ReadonlyArray<{ keyword: string; description:
   { keyword: 'vlan', description: 'VLAN Switch Spanning Tree' },
 ];
 
+/*
+ * Ce que `spanning-tree ?` annonce en configuration GLOBALE, et rien de
+ * plus : `bpdufilter`, `bpduguard` et les trois minuteries y figuraient
+ * alors que l'analyseur les refuse a cette place — elles vivent sous
+ * `portfast` pour les deux premieres et sous `vlan <n>` pour les trois
+ * autres, comme sur un vrai Catalyst. L'aide promettait donc cinq mots
+ * que la machine ne connait pas la.
+ */
 const STP_GLOBAL_CONTINUATIONS: ReadonlyArray<{ keyword: string; description: string }> = [
   { keyword: 'backbonefast', description: 'Enable BackboneFast' },
-  { keyword: 'bpdufilter', description: 'Default BPDU filtering on portfast ports' },
-  { keyword: 'bpduguard', description: 'Default BPDU guard on portfast ports' },
   { keyword: 'extend', description: 'Spanning tree 802.1t extensions' },
-  { keyword: 'forward-time', description: 'Forward delay of the spanning tree' },
-  { keyword: 'hello-time', description: 'Hello interval of the spanning tree' },
   { keyword: 'loopguard', description: 'Default loop guard on all ports' },
-  { keyword: 'max-age', description: 'Maximum age of the spanning tree' },
   { keyword: 'mode', description: 'Spanning tree operating mode' },
   { keyword: 'mst', description: 'Multiple spanning tree configuration' },
   { keyword: 'pathcost', description: 'Spanning tree pathcost options' },
@@ -329,6 +332,26 @@ const STP_GLOBAL_CONTINUATIONS: ReadonlyArray<{ keyword: string; description: st
   { keyword: 'priority', description: 'Bridge priority of the spanning tree' },
   { keyword: 'uplinkfast', description: 'Enable UplinkFast' },
   { keyword: 'vlan', description: 'Per-VLAN spanning tree configuration' },
+];
+
+const STP_GLOBAL_SECOND_LEVEL: ReadonlyArray<
+  readonly [string, string, ReadonlyArray<{ keyword: string; description: string }>]
+> = [
+  ['extend', 'Spanning tree 802.1t extensions', [
+    { keyword: 'system-id', description: 'Enable extended system ID' },
+  ]],
+  ['loopguard', 'Default loop guard on all ports', [
+    { keyword: 'default', description: 'Enable loop guard by default on all ports' },
+  ]],
+  ['pathcost', 'Spanning tree pathcost options', [
+    { keyword: 'method', description: 'Method to calculate the default path cost' },
+  ]],
+  ['portfast', 'Default portfast on access ports', [
+    { keyword: 'bpdufilter', description: 'Default BPDU filtering on portfast ports' },
+    { keyword: 'bpduguard', description: 'Default BPDU guard on portfast ports' },
+    { keyword: 'default', description: 'Enable portfast by default on access ports' },
+    { keyword: 'edge', description: 'Portfast edge options' },
+  ]],
 ];
 
 const MAC_TABLE_FILTERS: ReadonlyArray<{ keyword: string; description: string }> = [
@@ -2126,6 +2149,7 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
 
   private registerStpCommands(): void {
     this.registerStpGlobal(this.configTrie);
+    this.registerStpGlobalRest(this.configTrie);
     this.registerStpInterface();
   }
 
@@ -2139,7 +2163,36 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
 
     // Global: every other `spanning-tree …` is accepted (priority/
     // root/extend/portfast/loopguard/…). Track the mode for `show`.
-    trie.registerGreedy('spanning-tree', 'Spanning Tree configuration', (args) => {
+    trie.registerGreedy('spanning-tree', 'Spanning Tree configuration', (args) =>
+      this.appliquerStpGlobal(args), STP_GLOBAL_CONTINUATIONS);
+    /*
+     * Un aiguillage pris ferme ses autres branches : declarees comme des
+     * SUITES du glouton, `extend`, `loopguard`, `pathcost` et `portfast`
+     * n'etaient pas des noeuds, si bien que `spanning-tree extend ?`
+     * reproposait la liste du PARENT — une aide invitant a ecrire
+     * `spanning-tree extend loopguard`, que l'analyseur refuse. Ce sont
+     * de vrais noeuds, qui lisent le MEME corps.
+     */
+    for (const [mot, description, suites] of STP_GLOBAL_SECOND_LEVEL) {
+      trie.registerGreedy(`spanning-tree ${mot}`, description,
+        (args) => this.appliquerStpGlobal([mot, ...args]), suites);
+    }
+    /*
+     * `priority` prend un NOMBRE, pas un mot-cle : sans son propre
+     * noeud, `spanning-tree priority ?` reproposait les freres du
+     * parent, exactement comme les quatre ci-dessus.
+     */
+    trie.registerGreedy('spanning-tree priority',
+      'Bridge priority of the spanning tree',
+      (args) => this.appliquerStpGlobal(['priority', ...args]));
+    trie.describeArgs('spanning-tree priority', [{
+      name: 'priorite', type: 'INT', range: [0, 61440],
+      description: 'Bridge priority in increments of 4096',
+    }]);
+  }
+
+  private appliquerStpGlobal(args: readonly string[]): string {
+    {
       const refus = refusReglageStpGlobal(args);
       if (refus !== null) return refus;
       if (args[0]?.toLowerCase() === 'mode' && args[1]) {
@@ -2196,7 +2249,10 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
         this.requireStp().setPathcostMethod(m);
       }
       return '';
-    }, STP_GLOBAL_CONTINUATIONS);
+    }
+  }
+
+  private registerStpGlobalRest(trie: CommandTrie): void {
     trie.registerGreedy('spanning-tree mst', 'MST instance configuration', (args) => {
       if (args[1]?.toLowerCase() === 'priority') {
         const inst = parseInt(args[0] ?? '', 10);
@@ -3321,7 +3377,13 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
       return this.showTrunkTable(this.d().getPortNames());
     });
 
-    this.privilegedTrie.registerGreedy('show etherchannel', 'Display EtherChannel', (args) => {
+    this.privilegedTrie.registerGreedy('show etherchannel', 'Display EtherChannel',
+      (args) => this.showEtherchannel(args));
+    this.registerEtherchannelShowRest();
+  }
+
+  private showEtherchannel(args: string[]): string {
+    {
       const lacp = this.requireLacp();
       const groups = lacp.getAllGroups();
       if (args[0]?.toLowerCase() === 'summary' || args.length === 0) {
@@ -3391,8 +3453,10 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
         return out.length > 2 ? out.join('\n') : 'No EtherChannel groups configured';
       }
       return 'EtherChannel: no detail';
-    });
+    }
+  }
 
+  private registerEtherchannelShowRest(): void {
     // `show interfaces counters [<if>]` — registered on the `counters`
     // node itself (already created, actionless, by the shared `show
     // interfaces counters errors` registration above) so it gets an
@@ -3849,7 +3913,8 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
     });
 
     trie.registerGreedy('l2protocol-tunnel', 'Tunnel a client L2 control protocol across the S-VLAN instead of terminating it locally', (args) => {
-      const proto = (args[0] ?? '').toLowerCase();
+      if (args[0] === undefined) throw new CliIncomplete();
+      const proto = args[0].toLowerCase();
       if (proto !== 'cdp' && proto !== 'stp' && proto !== 'vtp' && proto !== 'lldp') {
         return CISCO_ERRORS.INVALID_INPUT;
       }
@@ -3975,7 +4040,8 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
     };
     trie.registerGreedy('duplex', 'Set interface duplex', (args) => {
       rejectOnSvi();
-      const a = (args[0] ?? '').toLowerCase();
+      if (args[0] === undefined) throw new CliIncomplete();
+      const a = args[0].toLowerCase();
       if (a !== 'full' && a !== 'half' && a !== 'auto') {
         throw new CliInvalidInput({ argIndex: 0, token: args[0] });
       }
@@ -3988,7 +4054,8 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
     });
     trie.registerGreedy('speed', 'Set interface speed', (args) => {
       rejectOnSvi();
-      const a = (args[0] ?? '').toLowerCase();
+      if (args[0] === undefined) throw new CliIncomplete();
+      const a = args[0].toLowerCase();
       if (a === 'auto') {
         for (const port of targetPorts()) port.setNegotiationAuto(true);
         return recordIf('speed auto');
@@ -4078,7 +4145,8 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
         return '';
       }));
     trie.registerGreedy('mls qos cos', 'Default CoS applied to untrusted ingress traffic', (args) => {
-      const n = parseInt(args[0] ?? '', 10);
+      if (args[0] === undefined) throw new CliIncomplete();
+      const n = parseInt(args[0], 10);
       if (isNaN(n) || n < 0 || n > 7) return CISCO_ERRORS.INVALID_INPUT;
       return this.applyToSelectedInterfaces(p => {
         const cfg = this.d().getSwitchportConfig(p);
@@ -5978,6 +6046,13 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
     const args = cible.trim().split(/\s+/).filter(Boolean);
       if (args.length === 0) return this.showAllInterfacesDetail();
       const last = args[args.length - 1].toLowerCase();
+      /*
+       * `show interfaces etherchannel` est la MEME question que
+       * `show etherchannel`, posee par l'autre porte d'IOS : elle etait
+       * annoncee par `?` et refusee, le mot tombant dans la place du nom
+       * d'interface. Elle DELEGUE plutot que de recopier le rendu.
+       */
+      if (last === 'etherchannel' && args.length === 1) return this.showEtherchannel([]);
       if (last === 'switchport') {
         const target = args.slice(0, -1).join(' ');
         if (!target) {
@@ -6311,6 +6386,7 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
   }
 
   private showLacp(args: string[]): string {
+    if (args.length === 0) throw new CliIncomplete();
     const agent = this.requireLacp();
     const cfg = agent.getConfig();
     const restreint = /^\d+$/.test(args[0] ?? '') ? Number(args[0]) : null;

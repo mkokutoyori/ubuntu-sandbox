@@ -2273,3 +2273,20 @@ défauts — la méthode vaut d'être reprise sur le reliquat.
   un VLAN en MST) et le corriger demande de traduire VLAN vers instance
   a la coupure, ce qui est le sujet de la region MST et non celui de
   cette commande.
+- `spanning-tree priority <n>` est accepte en configuration GLOBALE alors
+  qu'un vrai Catalyst ne connait cette forme que sous `vlan <n>`. Le lot
+  qui a fait tenir parole a l'aide du commutateur l'a LAISSEE : des
+  laboratoires du depot s'en servent, et la retirer est un changement de
+  comportement a mesurer pour lui-meme. Ce qui est corrige est seulement
+  que `spanning-tree priority ?` annonce desormais un NOMBRE au lieu de
+  reproposer les freres du parent.
+- Le garde-fou « un mot que `?` propose est un mot qui existe » ne
+  DESCEND pas dans le sous-arbre d'un mot qu'il refuse d'executer :
+  `NE_PAS_EXECUTER` sert aux deux usages a la fois, si bien qu'`ip`,
+  `debug`, `do`, `show` et vingt autres bloquent tout ce qui est sous
+  eux. Mesure en separant les deux notions et en portant la profondeur a
+  quatre : 2096 signalements, dont l'immense majorite sous `debug` et
+  `do` (qui rejoue l'arbre privilegie). Les separer pour de bon demande
+  une campagne de correction a la mesure de ce nombre ; le lot du
+  commutateur a ferme ce que le balayage ACTUEL voit, ce qui etait deja
+  139 cas que personne ne regardait.
