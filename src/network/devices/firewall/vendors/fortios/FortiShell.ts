@@ -52,7 +52,8 @@ import type {
 } from '../../inspection/UtmProfiles';
 import { FortiDiagnostics } from './diag/FortiDiagnostics';
 import {
-  deniedLog, runDiagnose, runExecuteLog, parseSnifferPlan, type SnifferPlan,
+  deniedLog, runDiagnose, runExecuteLog, runSessionFilter,
+  parseSnifferPlan, type SnifferPlan,
 } from './diag/FortiDiagCommands';
 import { renderVpnTunnelList, renderVpnTunnelSummary } from './diag/vpnTunnelRenderer';
 import {
@@ -1087,6 +1088,27 @@ export class FortiShell {
     this.seedFactoryVdoms();
   }
 
+  private executeSetSystem(rest: readonly string[]): string {
+    if (rest.length === 0) return FortiMessages.incomplete('`system session filter`');
+    if (rest[0] !== 'system' || rest[1] !== 'session' || rest[2] !== 'filter') {
+      return FortiMessages.unknownAction(`set ${rest.join(' ')}`);
+    }
+    return runSessionFilter(rest.slice(3), this.diagDeps(), true);
+  }
+
+  private executeSyncSession(): string {
+    const ha = this.fw.getHa();
+    if (ha.getConfiguration().mode === 'standalone') {
+      return FortiMessages.commandFail('this unit is not part of a cluster.');
+    }
+    if (!ha.getConfiguration().sessionPickup) {
+      return FortiMessages.commandFail(
+        'session synchronisation needs `set session-pickup enable`.');
+    }
+    return ha.requestSynchronisation()
+      ? '' : FortiMessages.commandFail('no response from the cluster.');
+  }
+
   private executeCertificateGenerate(rest: readonly string[]): string {
     if (rest[0] !== 'rsa') {
       return rest[0] === undefined
@@ -1321,6 +1343,8 @@ export class FortiShell {
       case 'dhcp6': return this.executeDhcp6(tail);
       case 'interface': return this.executeInterface(tail);
       case 'policy-packet-capture': return this.executePolicyPacketCapture(tail);
+      case 'set': return this.executeSetSystem(tail);
+      case 'sync-session': return this.executeSyncSession();
       case 'traceroute':
         return tail.length === 0
           ? FortiMessages.incomplete('a destination')
