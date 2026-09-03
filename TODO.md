@@ -2062,19 +2062,6 @@ défauts — la méthode vaut d'être reprise sur le reliquat.
   tomber des laboratoires qui l'utilisent ; mais un compte dont le nom
   porte une espace y prend alors un sAMAccountName avec une espace, ce
   qu'une vraie machine n'accepte pas.
-- Un refus par liste de controle d'un routeur est rendu `closed` par
-  `nmap` la ou une vraie machine dit `filtered`. Mesure sur le TP 13 :
-  R1 porte `deny ip any any` en entree de Gi0/0, la sonde TCP vers 8080
-  ressort `8080/tcp closed`, et `Host is up` — donc l'ACL est visible
-  comme un port ferme et non comme un filtre. La chaine collapse tout
-  ICMP inatteignable en `refused` (`TcpWireOutcome`), alors que le noyau
-  distingue le code 3 (port inatteignable, ECONNREFUSED, `closed`) du
-  code 13 (interdit par filtre, EACCES, `filtered`) et que
-  `scan_engine_connect.cc` de nmap applique cette distinction. Le code
-  13 est bien EMIS par `Router.sendICMPError` ; c'est la traduction en
-  issue de connexion qui le perd. Non ferme ici pour ne pas entrer en
-  collision avec le chantier `nmap`/ICMP en cours dans les memes
-  fichiers.
 - Le commutateur Cisco porte TROIS resolveurs de nom d'interface :
   `resolvePortName` (correspondance exacte seule), sa propre
   `resolveInterfaceName` (exacte plus une table de prefixes ecrite a la
@@ -2223,18 +2210,6 @@ défauts — la méthode vaut d'être reprise sur le reliquat.
   le `SchemaValidator` porte la casse canonique de chaque attribut, ce
   qu'il ne fait pas.
 
-### [nmap] le balayage ACK inspecte encore l'objet distant
-`buildScanProbes` a ete converti pour la DECOUVERTE d'hote (vraies sondes
-ICMP et TCP, `nmap.h` : `-PE -PA80 -PS443 -PP`), pour le verdict UDP
-(lecture de l'ICMP recu, `scan_engine_raw.cc`) et pour la banniere
-(`TcpStack.grabGreeting`, la sonde `Probe TCP NULL q||` de
-`nmap-service-probes`). Un chemin reste une inspection d'objet.
-**Mesure** : `ackReaches()` appelle `transitAckAclVerdict`, qui evalue les
-listes de controle par parcours de topologie au lieu d'emettre un ACK et
-d'observer le RST. Aucune trame ne porte cette reponse.
-**Pourquoi ce n'est pas ferme ici** : le balayage ACK demande d'emettre un
-segment ACK NU, hors de toute connexion, que `TcpStack` n'expose pas
-aujourd'hui — `transmit()` part toujours d'une socket.
 - `loopback-detect`, `port-security`, `storm-control`, `flow-control`,
   `port-mirroring` et `am` d'une interface de commutateur VRP passent par
   un SAC de texte partage : la ligne est gardee telle quelle et rendue,

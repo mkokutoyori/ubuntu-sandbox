@@ -2512,6 +2512,7 @@ export abstract class EndHost extends Equipment {
           this.tcpv2.onIcmpUnreachable(
             origSeg.sourcePort, origSeg.destinationPort,
             icmp.originalPacket.destinationIP.toString(),
+            icmp.code,
           );
         }
       } else if (isFragNeeded && icmp.originalPacket && icmp.mtu !== undefined) {

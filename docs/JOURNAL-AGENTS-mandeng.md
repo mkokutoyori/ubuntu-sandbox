@@ -7233,3 +7233,36 @@ seul le rendu la taisait.
 
 **Discrimination** : `probe-nmap-ipv6.test.ts` (7 cas), 5 tombent ; les 2
 TEMOINS IPv4 sont nommes dans l'en-tete.
+
+## nmap — increment 7 : un refus de liste de controle est un FILTRE
+
+**Perimetre revendique** : `TcpWireOutcome`, `TcpStack.onIcmpUnreachable`
+/ `connectOutcome`, `EndHost` (transmission du code ICMP), `ScanEngine`,
+`OpenSslEngine` (errno).
+
+Defaut mesure sur le TP 13 et inscrit au `TODO.md` en attendant que le
+chantier `nmap`/ICMP libere les memes fichiers : R1 porte `deny ip any
+any` en entree de Gi0/0, la sonde TCP ressort `closed`, donc la liste de
+controle se lit comme un port ferme et non comme un filtre. Les deux ne
+se diagnostiquent pas de la meme facon — « ferme » envoie demarrer un
+service, « filtre » envoie lire une regle.
+
+La chaine ecrasait tout ICMP inatteignable en `refused`, alors que le
+noyau distingue le code 3 (ECONNREFUSED) du code 13 (EACCES) et que
+`scan_engine_connect.cc` en tire `PORT_CLOSED` d'un cote,
+`PORT_FILTERED` avec la raison `admin-prohibited` de l'autre. Le code 13
+etait bien EMIS par `Router.sendICMPError` ; c'est la traduction en issue
+de connexion qui le perdait. `onIcmpUnreachable` recoit desormais le
+code, `TcpWireOutcome` gagne `prohibited`, et `openssl s_client` rend
+l'errno 13 comme la vraie machine.
+
+**Portee volontairement bornee, et ecrite** : un CLIENT ordinaire garde
+les trois issues qu'il sait dire — `dialTcp` rend `refused` pour un
+interdit administratif, qui EST un refus explicite du reseau. Seul le
+scanner, qui interroge `connectOutcome`, distingue « rien n'ecoute » de
+« quelque chose l'interdit ».
+
+**Discrimination** : `probe-nmap-acl-est-filtree.test.ts` (4 cas), 2
+tombent ; les 2 TEMOINS — port ferme ordinaire, port ouvert — passent des
+deux cotes et c'est exactement leur role, le correctif ne devant pas
+transformer tout refus en filtre.

@@ -1079,6 +1079,7 @@ const IPV4_RE = /^\d{1,3}(\.\d{1,3}){3}$/;
 
 const CONNECT_ERRNO: Readonly<Record<Exclude<TcpWireOutcome, 'open'>, number>> = {
   refused: 111,
+  prohibited: 13,
   timeout: 110,
   unreachable: 101,
 };

@@ -11,6 +11,16 @@ import {
 import { payloadBytes } from '@/network/layers/transport/L4Checksum';
 import { PortNumber } from '@/network/core/ports/PortNumber';
 import {
+  ICMP_UNREACH_NET_PROHIBITED, ICMP_UNREACH_HOST_PROHIBITED,
+  ICMP_UNREACH_ADMIN_PROHIBITED,
+} from '@/network/core/IcmpErrors';
+
+const PROHIBITED_UNREACH_CODES: ReadonlySet<number> = new Set([
+  ICMP_UNREACH_NET_PROHIBITED,
+  ICMP_UNREACH_HOST_PROHIBITED,
+  ICMP_UNREACH_ADMIN_PROHIBITED,
+]);
+import {
   connectedPrefixesOfPort, isUnicastDestination, type ConnectedIpv4Prefix,
 } from '@/network/layers/internet/InternetLayer';
 import { RttEstimator, TCP_MAX_RETRANSMITS, TCP_INITIAL_RTO_MS, TCP_MAX_RTO_MS } from './RttEstimator';
@@ -118,6 +128,13 @@ export class TcpSocket {
   closed = false;
   closeReason: TcpCloseReason | null = null;
   connectRefused = false;
+  /**
+   * A filter said no, out loud: ICMP administratively prohibited (codes
+   * 9, 10 and 13). The kernel reports EACCES rather than ECONNREFUSED,
+   * and `scan_engine_connect.cc` reads that as FILTERED, not closed — the
+   * distinction between "nothing listens here" and "something forbids it".
+   */
+  connectProhibited = false;
   /**
    * The handshake completed at least once. A peer that accepts and then
    * closes straight away — a telnet VTY refusing the line, an SMTP server
@@ -508,6 +525,7 @@ export class TcpStack {
       socket.close();
       return 'open';
     }
+    if (socket.connectProhibited) return 'prohibited';
     return socket.connectRefused ? 'refused' : 'timeout';
   }
 
@@ -613,12 +631,18 @@ export class TcpStack {
    * on an already-open connection too — e.g. the peer's firewall starts
    * rejecting mid-session).
    */
-  onIcmpUnreachable(origSourcePort: number, origDestPort: number, origDestIp: string): void {
+  onIcmpUnreachable(
+    origSourcePort: number, origDestPort: number, origDestIp: string,
+    icmpCode?: number,
+  ): void {
     for (const socket of this.sockets.values()) {
       if (socket.localPort !== origSourcePort) continue;
       if (socket.remotePort !== origDestPort) continue;
       if (socket.remoteIp !== origDestIp) continue;
       if (socket.state === 'closed' || socket.state === 'time-wait') continue;
+      if (icmpCode !== undefined && PROHIBITED_UNREACH_CODES.has(icmpCode)) {
+        socket.connectProhibited = true;
+      }
       socket.connectRefused = true;
       this._teardown(socket, 'rst');
       return;

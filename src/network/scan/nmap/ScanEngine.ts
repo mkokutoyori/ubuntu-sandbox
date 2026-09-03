@@ -42,6 +42,7 @@ export interface HostProbes {
 const TCP_SCAN_REASON: Readonly<Record<TcpWireOutcome, string>> = {
   open: 'syn-ack',
   refused: 'reset',
+  prohibited: 'admin-prohibited',
   timeout: 'no-response',
   unreachable: 'net-unreach',
 };
@@ -124,6 +125,10 @@ function tcpResult(
     reason = SYN_SCAN_REASON[seen];
   } else {
     const outcome = probes.tcpOutcome(ip, port);
+    // scan_engine_connect.cc : ECONNREFUSED ferme le port, EACCES — que
+    // provoque un inatteignable « administrativement interdit » — le
+    // FILTRE. Les confondre fait passer une liste de controle pour un
+    // service absent.
     state = outcome === 'open' ? 'open' : outcome === 'refused' ? 'closed' : 'filtered';
     reason = TCP_SCAN_REASON[outcome];
   }

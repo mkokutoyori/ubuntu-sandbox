@@ -151,7 +151,12 @@ describe('TP 13 — prouver l\'absence de memoire', () => {
     ]);
     await pcLan.executeCommand('nc -l -p 8080 &');
 
-    expect(await externe.executeCommand('nmap -p 8080 192.168.10.10'))
+    // `-Pn` parce que la decouverte d'hote EMET desormais ses sondes : la
+    // liste de controle refuse l'echo ICMP et les connexions vers 80 et
+    // 443, donc la cible est declaree en panne et aucun port n'est
+    // balaye. C'est ce que fait le vrai nmap, et c'est precisement la
+    // raison d'etre de `-Pn` ; le port haut, lui, reste ouvert.
+    expect(await externe.executeCommand('nmap -Pn -p 8080 192.168.10.10'))
       .toMatch(/8080\/tcp\s+open/);
   });
 
@@ -185,7 +190,10 @@ describe('TP 13 — prouver l\'absence de memoire', () => {
       'ip access-group DEPUIS-INTERNET in', 'exit', 'end',
     ]);
 
-    const scan = await externe.executeCommand('nmap -sA -p 1-100 192.168.10.10');
+    // Meme raison qu'a l'etape 4 : la decouverte d'hote se fait au SYN et
+    // a l'echo, que cette liste refuse ; c'est justement l'ACK qui la
+    // traverse, et c'est ce que ce cas montre.
+    const scan = await externe.executeCommand('nmap -Pn -sA -p 1-100 192.168.10.10');
     expect(scan).not.toMatch(/Unknown|not implemented|invalid/i);
     expect(scan).toMatch(/unfiltered/i);
   });
