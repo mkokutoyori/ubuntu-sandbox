@@ -26,6 +26,7 @@ export interface ScanHost {
   grabGreeting(ip: string, port: number): string | null;
   sendUdpProbe(ip: string, port: number, sourcePort: number): boolean;
   ackProbe(ip: string, port: number): 'unfiltered' | 'filtered';
+  synProbe(ip: string, port: number): 'open' | 'closed' | 'filtered';
 }
 
 const UDP_PROBE_SOURCE_PORT = 51820;
@@ -144,6 +145,9 @@ export function buildScanProbes(host: ScanHost, noDns: boolean): HostProbes {
     },
     tcpOutcome(ip: string, port: number) {
       return host.tcpOutcome(ip, port);
+    },
+    synOutcome(ip: string, port: number) {
+      return host.synProbe(ip, port);
     },
     udpState(ip: string, port: number) {
       return probeUdpPort(host, ip, port);

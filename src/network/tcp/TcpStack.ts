@@ -542,18 +542,48 @@ export class TcpStack {
    * filtre l'a mange.
    */
   ackProbe(remoteIp: string, remotePort: number): 'unfiltered' | 'filtered' {
-    const target = canonicalIpText(remoteIp);
-    const egress = this.resolveEgress(target);
-    if (!egress) return 'filtered';
-    const localPort = this.nextEphemeral(egress.srcIp);
-    if (localPort < 0) return 'filtered';
-
-    const key = makeSocketKey(egress.srcIp, localPort, target, remotePort);
-    const watch = { sawRst: false };
-    this.ackProbes.set(key, watch);
-
     const flags = noFlags();
     flags.ack = true;
+    const seen = this.statelessProbe(remoteIp, remotePort, flags);
+    return seen === 'rst' ? 'unfiltered' : 'filtered';
+  }
+
+  /**
+   * `nmap -sS` (scan_engine_raw.cc) : le balayage DEMI-OUVERT. Un SYN
+   * part, et la connexion n'est JAMAIS achevee — un SYN/ACK ouvre le
+   * port, un RST le ferme, le silence le filtre. Ce que le balayage
+   * connecte (`-sT`) rapporte est identique ; ce qui differe est sur le
+   * FIL, et c'est tout l'objet de ce balayage : la pile repond RST a un
+   * SYN/ACK qu'aucune socket n'attend, donc le troisieme temps de la
+   * poignee de main n'a jamais lieu.
+   */
+  synProbe(remoteIp: string, remotePort: number): 'open' | 'closed' | 'filtered' {
+    const flags = noFlags();
+    flags.syn = true;
+    const seen = this.statelessProbe(remoteIp, remotePort, flags);
+    if (seen === 'syn-ack') return 'open';
+    return seen === 'rst' ? 'closed' : 'filtered';
+  }
+
+  /**
+   * Un segment emis HORS de toute connexion, et la reponse observee la ou
+   * une socket l'aurait recue. C'est ce que les balayages de `nmap` font,
+   * et ce que `sendRst` fait deja dans l'autre sens : la pile n'ouvre
+   * rien, elle pose une trace le temps de l'aller-retour.
+   */
+  private statelessProbe(
+    remoteIp: string, remotePort: number, flags: TcpFlags,
+  ): 'rst' | 'syn-ack' | 'none' {
+    const target = canonicalIpText(remoteIp);
+    const egress = this.resolveEgress(target);
+    if (!egress) return 'none';
+    const localPort = this.nextEphemeral(egress.srcIp);
+    if (localPort < 0) return 'none';
+
+    const key = makeSocketKey(egress.srcIp, localPort, target, remotePort);
+    const watch: { seen: 'rst' | 'syn-ack' | 'none' } = { seen: 'none' };
+    this.statelessProbes.set(key, watch);
+
     const seg: TcpSegment = {
       type: 'tcp',
       sourcePort: localPort, destinationPort: remotePort,
@@ -565,12 +595,12 @@ export class TcpStack {
     try {
       this.shipSegment(egress, egress.srcIp, target, seg);
     } finally {
-      this.ackProbes.delete(key);
+      this.statelessProbes.delete(key);
     }
-    return watch.sawRst ? 'unfiltered' : 'filtered';
+    return watch.seen;
   }
 
-  private ackProbes = new Map<string, { sawRst: boolean }>();
+  private statelessProbes = new Map<string, { seen: 'rst' | 'syn-ack' | 'none' }>();
 
   hasEgressTo(remoteIp: string): boolean {
     return this.resolveEgress(canonicalIpText(remoteIp)) !== null;
@@ -778,9 +808,10 @@ export class TcpStack {
       this.transmitTracked(socket, flags, synAckSeq, socket.recvNext, undefined, 1, synAckOptions);
       return true;
     }
+    const probe = this.statelessProbes.get(socketKey);
+    if (probe && seg.flags.syn && seg.flags.ack) probe.seen = 'syn-ack';
     if (seg.flags.rst) {
-      const probe = this.ackProbes.get(socketKey);
-      if (probe) probe.sawRst = true;
+      if (probe) probe.seen = 'rst';
       return true;
     }
     this.dropped(senderIp, seg.sourcePort, 'no-socket');

@@ -7125,3 +7125,34 @@ la capture et celui de la cible qui jette tout ; les 3 autres sont nommes
 dans l'en-tete avec leur raison de passer des deux cotes.
 
 Plus aucun chemin de `nmap` ne lit l'objet de sa cible pour du TCP.
+
+## nmap — increment 5 : `-sS` est DEMI-OUVERT
+
+**Perimetre revendique** : `TcpStack.synProbe`/`statelessProbe`,
+`NmapOptions.ScanType`, `ScanEngine.tcpResult`, `NmapProbes`, les deux
+hotes.
+
+`-sS` et `-sT` etaient le MEME balayage : l'analyse les rangeait tous
+deux en `scanType = 'tcp'`. L'option la plus emblematique de `nmap` etait
+donc un alias. Ce qu'elle promet n'est pourtant pas un verdict different
+mais un TRAFIC different — ne pas achever la connexion —, si bien qu'un
+laboratoire enseignant « le balayage SYN ne laisse pas de connexion
+derriere lui » ne pouvait pas fonctionner.
+
+`TcpStack.synProbe` emet un SYN nu et lit la reponse : SYN/ACK ouvre,
+RST ferme, silence filtre (`scan_engine_raw.cc`, `ER_SYNACK` /
+`ER_RESETPEER`). Le RST de refus, lui, la pile l'envoyait DEJA a un
+SYN/ACK qu'aucune socket n'attend — le troisieme temps de la poignee de
+main n'a donc jamais lieu, sans code neuf. `ackProbe` et `synProbe`
+partagent `statelessProbe`, un segment emis hors de toute connexion avec
+une trace posee le temps de l'aller-retour : deux implantations de la
+meme idee auraient diverge.
+
+**Discrimination** : `probe-nmap-balayage-syn.test.ts` (5 cas), UN SEUL
+tombe en rendant a `-sS` son alias — celui qui lit la capture. C'est la
+mesure exacte du defaut et non un manque de couverture : les deux
+balayages rendent le meme etat et la meme raison, donc aucun autre cas ne
+PEUT discriminer, et l'en-tete du fichier le dit.
+
+**Corrige dans un test plutot que dans le code** : `nmap-options` portait
+`it('-sS reste un scan TCP')`, c'est-a-dire l'alias encode comme contrat.

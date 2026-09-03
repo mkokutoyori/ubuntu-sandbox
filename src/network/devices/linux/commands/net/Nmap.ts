@@ -19,6 +19,7 @@ function scanHost(ctx: LinuxCommandContext): ScanHost {
     sendUdpProbe: (ip, port, sourcePort) =>
       ctx.net.sendUdpProbe(new IPAddress(ip), port, sourcePort),
     ackProbe: (ip, port) => ctx.net.getTcpStack().ackProbe(ip, port),
+    synProbe: (ip, port) => ctx.net.getTcpStack().synProbe(ip, port),
   };
 }
 

@@ -32,6 +32,8 @@ export interface HostProbes {
    */
   fingerprint?(ip: string): Promise<string | undefined>;
   tcpOutcome(ip: string, port: number): TcpWireOutcome;
+  /** `-sS` : le SYN part, la poignee de main ne s'acheve jamais. */
+  synOutcome?(ip: string, port: number): 'open' | 'closed' | 'filtered';
   udpState(ip: string, port: number): 'open' | 'closed' | 'open|filtered';
   banner(ip: string, port: number): { service: string; version?: string } | null;
   ackReaches?(ip: string, port: number): boolean;
@@ -104,12 +106,27 @@ function effectivePorts(options: NmapOptions): number[] {
   return options.ports ?? topPorts(DEFAULT_TOP_COUNT);
 }
 
+const SYN_SCAN_REASON: Readonly<Record<'open' | 'closed' | 'filtered', string>> = {
+  open: 'syn-ack',
+  closed: 'reset',
+  filtered: 'no-response',
+};
+
 function tcpResult(
   options: NmapOptions, probes: HostProbes, ip: string, port: number,
 ): PortResult {
-  const outcome = probes.tcpOutcome(ip, port);
-  const state: PortState = outcome === 'open' ? 'open' : outcome === 'refused' ? 'closed' : 'filtered';
-  const reason = TCP_SCAN_REASON[outcome];
+  const halfOpen = options.scanType === 'syn' ? probes.synOutcome : undefined;
+  let state: PortState;
+  let reason: string;
+  if (halfOpen) {
+    const seen = halfOpen(ip, port);
+    state = seen;
+    reason = SYN_SCAN_REASON[seen];
+  } else {
+    const outcome = probes.tcpOutcome(ip, port);
+    state = outcome === 'open' ? 'open' : outcome === 'refused' ? 'closed' : 'filtered';
+    reason = TCP_SCAN_REASON[outcome];
+  }
   let service = serviceName(port, 'tcp');
   let version: string | undefined;
   if (options.versionScan && state === 'open') {
