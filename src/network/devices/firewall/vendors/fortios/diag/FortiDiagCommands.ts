@@ -54,6 +54,7 @@ import {
 import { selectBundleMemberForFlow } from '@/network/lacp/loadBalance';
 import { renderAutoupdateVersions } from './fortiguardRenderer';
 import { renderPolicyRoutes, type ProuteContext } from './prouteRenderer';
+import { renderRealServers, type VirtualServerView } from './realServerRenderer';
 import { fortiLogStamp } from './timeCommands';
 import {
   describeLogCategories, logFilePrefix, resolveLogCategory, typesOfLogFile,
@@ -159,6 +160,20 @@ function diagnoseLldpRx(rest: readonly string[], deps: FortiDiagDeps): string {
       deps.fw.getPort(name)?.getMAC().toString() ?? '');
   }
   return FortiMessages.unknownPath(`lldprx ${rest.join(' ')}`);
+}
+
+function virtualServers(deps: FortiDiagDeps): VirtualServerView[] {
+  const views: VirtualServerView[] = [];
+  for (const rule of deps.fw.getNatPolicy().ordered()) {
+    const translation = rule.destinationTranslation;
+    if (translation?.kind !== 'load-balance') continue;
+    if (translation.pool === undefined) continue;
+
+    const pool = deps.fw.getRealServerPool(translation.pool);
+    if (!pool) continue;
+    views.push({ name: translation.pool, servers: pool.view() });
+  }
+  return views;
 }
 
 function policyRouteContext(deps: FortiDiagDeps): ProuteContext {
@@ -627,8 +642,21 @@ function diagnoseFqdnList(deps: FortiDiagDeps): string {
 function diagnoseIprope(rest: readonly string[], deps: FortiDiagDeps): string {
   if (rest[0] === 'auth') return diagnoseAuth(rest.slice(1), deps);
   if (rest[0] === 'vip') {
-    if (rest[1] !== 'list') return FortiMessages.unknownPath(`firewall ${rest.join(' ')}`);
-    return renderVipList(deps.fw.getNatPolicy().ordered(), deps.vdom());
+    if (rest[1] === 'list') {
+      return renderVipList(deps.fw.getNatPolicy().ordered(), deps.vdom());
+    }
+    if (rest[1] === 'realserver') {
+      if (rest[2] === 'list') {
+        return renderRealServers(virtualServers(deps), { vdom: deps.vdom() });
+      }
+      if (rest[2] === 'clear') {
+        for (const virtual of virtualServers(deps)) {
+          deps.fw.getRealServerPool(virtual.name)?.clearStats();
+        }
+        return '';
+      }
+    }
+    return FortiMessages.unknownPath(`firewall ${rest.join(' ')}`);
   }
   if (rest[0] === 'fqdn') {
     if (rest[1] !== 'list') return FortiMessages.unknownPath(`firewall ${rest.join(' ')}`);

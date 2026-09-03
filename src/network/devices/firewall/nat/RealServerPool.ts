@@ -15,6 +15,20 @@ export interface RealServerChoice {
   readonly port: number;
 }
 
+export interface RealServerStats {
+  attempts: number;
+  success: number;
+  drop: number;
+  fail: number;
+}
+
+export interface RealServerView {
+  readonly server: RealServer;
+  readonly healthy: boolean;
+  readonly active: number;
+  readonly stats: RealServerStats;
+}
+
 export interface PoolDeps {
   readonly sessionsTo?: (address: string, port: number) => number;
 }
@@ -22,6 +36,7 @@ export interface PoolDeps {
 export class RealServerPool {
   private servers: RealServer[] = [];
   private readonly dead = new Set<string>();
+  private readonly stats = new Map<string, RealServerStats>();
   private cursor = 0;
 
   constructor(
@@ -34,6 +49,9 @@ export class RealServerPool {
     this.servers = [...servers];
     for (const id of [...this.dead]) {
       if (!this.servers.some(server => server.id === id)) this.dead.delete(id);
+    }
+    for (const id of [...this.stats.keys()]) {
+      if (!this.servers.some(server => server.id === id)) this.stats.delete(id);
     }
   }
 
@@ -55,12 +73,54 @@ export class RealServerPool {
   }
 
   pick(): RealServerChoice | undefined {
-    const candidates = this.alive();
-    if (candidates.length === 0) return undefined;
+    let candidates = this.alive();
 
-    const chosen = this.choose(candidates);
-    return chosen === undefined
-      ? undefined : Object.freeze({ address: chosen.address, port: chosen.port });
+    while (candidates.length > 0) {
+      const chosen = this.choose(candidates);
+      if (chosen === undefined) return undefined;
+
+      const stats = this.statsOf(chosen.id);
+      stats.attempts++;
+      if (this.atCapacity(chosen)) {
+        stats.drop++;
+        candidates = candidates.filter(server => server.id !== chosen.id);
+        continue;
+      }
+      stats.success++;
+      return Object.freeze({ address: chosen.address, port: chosen.port });
+    }
+    return undefined;
+  }
+
+  activeSessions(server: RealServer): number {
+    return this.deps.sessionsTo?.(server.address, server.port) ?? 0;
+  }
+
+  view(): readonly RealServerView[] {
+    return Object.freeze(this.servers.map(server => Object.freeze({
+      server,
+      healthy: !this.dead.has(server.id),
+      active: this.activeSessions(server),
+      stats: { ...this.statsOf(server.id) },
+    })));
+  }
+
+  clearStats(): void {
+    this.stats.clear();
+  }
+
+  private atCapacity(server: RealServer): boolean {
+    return server.maxConnections > 0
+      && this.activeSessions(server) >= server.maxConnections;
+  }
+
+  private statsOf(id: string): RealServerStats {
+    const existing = this.stats.get(id);
+    if (existing) return existing;
+
+    const fresh: RealServerStats = { attempts: 0, success: 0, drop: 0, fail: 0 };
+    this.stats.set(id, fresh);
+    return fresh;
   }
 
   private choose(candidates: readonly RealServer[]): RealServer | undefined {
@@ -77,10 +137,9 @@ export class RealServerPool {
   }
 
   private leastLoaded(candidates: readonly RealServer[]): RealServer {
-    const load = this.deps.sessionsTo;
-    if (load === undefined) return this.nextInTurn(candidates);
+    if (this.deps.sessionsTo === undefined) return this.nextInTurn(candidates);
     return candidates.reduce((best, server) =>
-      load(server.address, server.port) < load(best.address, best.port) ? server : best);
+      this.activeSessions(server) < this.activeSessions(best) ? server : best);
   }
 
   private byWeight(candidates: readonly RealServer[]): RealServer {
