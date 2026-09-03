@@ -24,7 +24,13 @@ import { FortiConfigTree } from './runtime/FortiConfigTree';
 import {
   FortiNavigator, unquote, type FortiConfigChange,
 } from './runtime/FortiNavigator';
-import { executeNames, resolvePrefix } from './execute/executeVocabulary';
+import {
+  executeNames, executeOptionNames, resolvePrefix,
+} from './execute/executeVocabulary';
+import {
+  BATCH_ENTERED, BATCH_EXITED, BATCH_STATUS_RUNNING, BATCH_STATUS_STOPPED,
+  BatchMode, renderBatchLog,
+} from './execute/BatchMode';
 import {
   FORTI_GET_VIEWS, resolvePathWords, viewContinuations,
 } from './view/pathResolution';
@@ -225,6 +231,7 @@ export class FortiShell {
   private haRemote: HaRemoteSession | null = null;
   private haPendingLogin: HaPendingLogin | null = null;
   private continuation: string | null = null;
+  private readonly batch = new BatchMode();
 
   private claimTree(): void {
     this.tree.bindScope(() => this.vdom);
@@ -531,6 +538,12 @@ export class FortiShell {
     if (line.length === 0) return '';
     if (line.endsWith('?')) {
       return this.help(line.slice(0, -1)).join('\n');
+    }
+    if (this.batch.running()) {
+      const control = this.batchControlWords(line);
+      if (control !== null) return this.executeBatch(control);
+      this.batch.queue(line);
+      return '';
     }
 
     if (/^write\b/.test(line)) return FortiMessages.noSaveNeeded();
@@ -1088,6 +1101,36 @@ export class FortiShell {
     this.seedFactoryVdoms();
   }
 
+  private batchControlWords(line: string): readonly string[] | null {
+    const words = line.split(/\s+/).filter(Boolean);
+    if (words.length < 2) return null;
+    if (!'execute'.startsWith(words[0])) return null;
+    if (resolvePrefix(words[1], executeNames()).name !== 'batch') return null;
+    return words.slice(2);
+  }
+
+  private executeBatch(rest: readonly string[]): string {
+    if (rest.length === 0) return FortiMessages.incomplete('a batch operation');
+    const resolved = resolvePrefix(rest[0], executeOptionNames('batch'));
+    if (resolved.name === undefined) {
+      return resolved.candidates.length > 1
+        ? FortiMessages.ambiguous(rest[0], resolved.candidates)
+        : FortiMessages.unknownAction(`batch ${rest[0]}`);
+    }
+    switch (resolved.name) {
+      case 'start':
+        if (!this.batch.running()) this.batch.start();
+        return BATCH_ENTERED;
+      case 'end':
+        this.batch.end(queued => this.runLine(queued));
+        return BATCH_EXITED;
+      case 'lastlog':
+        return renderBatchLog(this.batch.lastLog());
+      default:
+        return this.batch.running() ? BATCH_STATUS_RUNNING : BATCH_STATUS_STOPPED;
+    }
+  }
+
   private executeSetSystem(rest: readonly string[]): string {
     if (rest.length === 0) return FortiMessages.incomplete('`system session filter`');
     if (rest[0] !== 'system' || rest[1] !== 'session' || rest[2] !== 'filter') {
@@ -1343,6 +1386,7 @@ export class FortiShell {
       case 'dhcp6': return this.executeDhcp6(tail);
       case 'interface': return this.executeInterface(tail);
       case 'policy-packet-capture': return this.executePolicyPacketCapture(tail);
+      case 'batch': return this.executeBatch(tail);
       case 'set': return this.executeSetSystem(tail);
       case 'sync-session': return this.executeSyncSession();
       case 'traceroute':

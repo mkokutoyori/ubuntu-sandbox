@@ -18,6 +18,13 @@ function pingOptionKeywords(family: 'ipv4' | 'ipv6'): readonly FortiExecuteOptio
 
 export const FORTI_EXECUTE_COMMANDS: readonly FortiExecuteCommand[] = Object.freeze([
   { name: 'backup', help: 'Backup the configuration to a remote server.' },
+  { name: 'batch', help: 'Run a series of CLI commands.',
+    options: [
+      { keyword: 'start', description: 'Batch mode start.' },
+      { keyword: 'end', description: 'Batch mode end.' },
+      { keyword: 'lastlog', description: 'Read the result of last batch commands.' },
+      { keyword: 'status', description: 'Batch mode status.' },
+    ] },
   { name: 'clear', help: 'Clear system tables.',
     options: [{ keyword: 'system', description: 'System tables.' }] },
   { name: 'date', help: 'Display or set the system date.' },
@@ -102,4 +109,9 @@ export function resolvePrefix(
 
 export function executeNames(): readonly string[] {
   return FORTI_EXECUTE_COMMANDS.map(command => command.name);
+}
+
+export function executeOptionNames(command: string): readonly string[] {
+  const found = FORTI_EXECUTE_COMMANDS.find(entry => entry.name === command);
+  return (found?.options ?? []).map(option => option.keyword);
 }
