@@ -8,7 +8,7 @@ import type { CommandSpec } from '@/cli/CommandTable';
 import { specsFromTrieRegistrations } from '@/cli/commands/trieAdapter';
 import { formatInvalidInput } from '../CommandTrie';
 import { isValidIPv4, isValidIPv6 } from '../../../core/ip';
-import type { ArgumentSpec } from '@/cli/ArgumentTypes';
+import { boundedInteger, type ArgumentSpec } from '@/cli/ArgumentTypes';
 import { resolveEnumValue } from '@/cli/ArgumentTypes';
 import type { PolicyRepository, PrefixListEntry }
   from '../../inspection/config/PolicyRepository';
@@ -29,17 +29,11 @@ interface AnalysePrefixe {
   horsPlage?: string;
 }
 
-function entier(token: string | undefined, min: number, max: number): number | null {
-  if (token === undefined || !/^\d+$/.test(token)) return null;
-  const valeur = Number(token);
-  return valeur >= min && valeur <= max ? valeur : null;
-}
-
 function longueurDePrefixe(prefix: string, v6: boolean): number | null {
   const coupe = prefix.lastIndexOf('/');
   if (coupe < 0) return null;
   const adresse = prefix.slice(0, coupe);
-  const longueur = entier(prefix.slice(coupe + 1), 0, v6 ? 128 : 32);
+  const longueur = boundedInteger(prefix.slice(coupe + 1), 0, v6 ? 128 : 32);
   if (longueur === null) return null;
   return (v6 ? isValidIPv6(adresse) : isValidIPv4(adresse)) ? longueur : null;
 }
@@ -82,7 +76,7 @@ function parsePrefixEntry(args: string[], repo: PolicyRepository,
   let i = 0;
   let seq: number | undefined;
   if (args[i] === 'seq') {
-    const lu = entier(args[i + 1], PREFIX_SEQ_RANGE[0], PREFIX_SEQ_RANGE[1]);
+    const lu = boundedInteger(args[i + 1], PREFIX_SEQ_RANGE[0], PREFIX_SEQ_RANGE[1]);
     if (lu === null) return { refus: args[i + 1] ?? 'seq' };
     seq = lu;
     i += 2;
@@ -103,7 +97,7 @@ function parsePrefixEntry(args: string[], repo: PolicyRepository,
   const plafond = v6 ? 128 : 32;
   for (; i < args.length; i++) {
     if (args[i] !== 'ge' && args[i] !== 'le') return { refus: args[i] };
-    const borne = entier(args[i + 1], 0, plafond);
+    const borne = boundedInteger(args[i + 1], 0, plafond);
     if (borne === null) return { refus: args[i + 1] ?? args[i] };
     if (args[i] === 'ge') entry.ge = borne; else entry.le = borne;
     i++;
@@ -139,7 +133,7 @@ export function buildPolicyConfig(
     const tete = v6 ? 'no ipv6 prefix-list ' : 'no ip prefix-list ';
     const seqIdx = a.indexOf('seq');
     if (seqIdx < 0) { repo.removePrefixList(a[0], undefined, v6); return ''; }
-    const seq = entier(a[seqIdx + 1], PREFIX_SEQ_RANGE[0], PREFIX_SEQ_RANGE[1]);
+    const seq = boundedInteger(a[seqIdx + 1], PREFIX_SEQ_RANGE[0], PREFIX_SEQ_RANGE[1]);
     if (seq === null) {
       return formatInvalidInput(colonneDuJeton(tete, a, a[seqIdx + 1]));
     }
@@ -160,7 +154,7 @@ export function buildPolicyConfig(
     }
     const realSeq = args[2] === undefined
       ? 10
-      : entier(args[2], ROUTE_MAP_SEQ_RANGE[0], ROUTE_MAP_SEQ_RANGE[1]);
+      : boundedInteger(args[2], ROUTE_MAP_SEQ_RANGE[0], ROUTE_MAP_SEQ_RANGE[1]);
     if (realSeq === null) {
       return formatInvalidInput(colonneDuJeton('route-map ', args, args[2]));
     }

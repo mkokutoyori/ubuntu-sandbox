@@ -175,6 +175,15 @@ export function resolveEnumValue(
   return prefixes.length === 1 ? prefixes[0].keyword : undefined;
 }
 
+export function boundedInteger(
+  token: string | undefined, min: number, max: number,
+): number | null {
+  if (token === undefined || !/^\d+$/.test(token)) return null;
+
+  const value = Number(token);
+  return value >= min && value <= max ? value : null;
+}
+
 const ANNOUNCED_RANGE = /^<(\d+)-(\d+)>$/;
 
 export function outsideEveryAnnouncedRange(

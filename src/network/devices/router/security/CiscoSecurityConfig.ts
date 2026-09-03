@@ -1,6 +1,7 @@
 import type { IPAddress } from '../../../core/types';
 import { renderSecretField } from '../../shells/cisco/ciscoPasswordRender';
 import { type TimeRange, timeRangeBodyLines } from './timeRange';
+import { type PolicyMapAction, policyMapActionLine } from './policyMapActions';
 
 export type AaaMethodList = 'default' | string;
 export type AaaServiceKind = 'login' | 'enable' | 'ppp' | 'exec' | 'commands' | 'network';
@@ -182,12 +183,7 @@ export interface PolicyMapClass {
   actions: PolicyMapAction[];
 }
 
-export interface PolicyMapAction {
-  kind: 'police' | 'inspect' | 'drop' | 'pass' | 'set-dscp' | 'set-precedence'
-    | 'priority' | 'bandwidth' | 'fair-queue' | 'random-detect' | 'shape'
-    | 'service-policy' | 'queue-limit' | 'compression';
-  args: string[];
-}
+export type { PolicyMapAction, PolicyMapActionKind } from './policyMapActions';
 
 export interface ControlPlane {
   servicePolicyInput?: string;
@@ -653,14 +649,7 @@ export class CiscoSecurityConfig {
       for (const cls of pm.classes) {
         const cprefix = cls.kind === 'inspect' ? 'class type inspect' : 'class';
         lines.push(` ${cprefix} ${cls.className}`);
-        for (const a of cls.actions) {
-          if (a.kind === 'police') lines.push(`  police ${a.args.join(' ')}`);
-          else if (a.kind === 'inspect') lines.push('  inspect');
-          else if (a.kind === 'drop') lines.push(`  drop${a.args.includes('log') ? ' log' : ''}`);
-          else if (a.kind === 'pass') lines.push('  pass');
-          else if (a.kind === 'set-dscp') lines.push(`  set dscp ${a.args[0]}`);
-          else if (a.kind === 'set-precedence') lines.push(`  set precedence ${a.args[0]}`);
-        }
+        for (const a of cls.actions) lines.push(`  ${policyMapActionLine(a)}`);
       }
     }
     for (const tp of this.pkiTrustpoints.values()) {

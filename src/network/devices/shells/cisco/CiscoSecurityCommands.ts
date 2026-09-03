@@ -16,6 +16,9 @@ import {
   specsFromTrieRegistrations, type AdapterKeyword,
 } from '@/cli/commands/trieAdapter';
 import { CliInvalidInput, CliIncomplete } from '../cli/CliDiagnostic';
+import {
+  POLICY_MAP_ACTIONS, policyMapActionLine,
+} from '../../router/security/policyMapActions';
 import { isValidIPv4 } from '@/network/core/ip';
 import { CISCO_ERRORS } from '../cli-utils';
 import { encryptType7, md5Hex } from '@/crypto';
@@ -1161,23 +1164,18 @@ export function buildPolicyMapSubmodeOn(
 export function buildPolicyClassSubmodeOn(
   pmapClassTrie: CommandTrie, ctx: CiscoSecurityShellContext,
 ): void {
-  pmapClassTrie.registerGreedy('police', 'Police traffic', (args) => {
-    addAction(ctx, 'police', args);
-    return '';
-  });
-  pmapClassTrie.register('inspect', 'Inspect', () => { addAction(ctx, 'inspect', []); return ''; });
-  pmapClassTrie.registerGreedy('drop', 'Drop', (args) => { addAction(ctx, 'drop', args); return ''; });
-  pmapClassTrie.register('pass', 'Pass', () => { addAction(ctx, 'pass', []); return ''; });
-  pmapClassTrie.registerGreedy('set dscp', 'Set DSCP', (args) => { addAction(ctx, 'set-dscp', args); return ''; });
-  pmapClassTrie.registerGreedy('set precedence', 'Set precedence', (args) => { addAction(ctx, 'set-precedence', args); return ''; });
-  pmapClassTrie.registerGreedy('priority', 'Reserve bandwidth for priority', (args) => { addAction(ctx, 'priority', args); return ''; });
-  pmapClassTrie.registerGreedy('bandwidth', 'Reserve bandwidth', (args) => { addAction(ctx, 'bandwidth', args); return ''; });
-  pmapClassTrie.register('fair-queue', 'Enable WFQ', () => { addAction(ctx, 'fair-queue', []); return ''; });
-  pmapClassTrie.registerGreedy('random-detect', 'WRED configuration', (args) => { addAction(ctx, 'random-detect', args); return ''; });
-  pmapClassTrie.registerGreedy('shape', 'Traffic shape', (args) => { addAction(ctx, 'shape', args); return ''; });
-  pmapClassTrie.registerGreedy('service-policy', 'Nested service-policy', (args) => { addAction(ctx, 'service-policy', args); return ''; });
-  pmapClassTrie.registerGreedy('queue-limit', 'Queue depth', (args) => { addAction(ctx, 'queue-limit', args); return ''; });
-  pmapClassTrie.registerGreedy('compression', 'Compression', (args) => { addAction(ctx, 'compression', args); return ''; });
+  for (const spec of POLICY_MAP_ACTIONS) {
+    const apply = (args: string[]): string => {
+      const problem = spec.problem?.(args) ?? null;
+      if (problem?.incomplete) throw new CliIncomplete();
+      if (problem) throw new CliInvalidInput({ token: args[problem.at] });
+
+      addAction(ctx, spec.kind, args);
+      return '';
+    };
+    if (spec.greedy) pmapClassTrie.registerGreedy(spec.words, spec.description, apply);
+    else pmapClassTrie.register(spec.words, spec.description, () => apply([]));
+  }
 }
 
 export function buildControlPlaneSubmodeOn(
@@ -1422,10 +1420,20 @@ Readonly<Record<string, ArgumentSpec | readonly ArgumentSpec[] | null>> = {
       { keyword: 'network', description: 'Match packets with network control precedence (7)' },
     ],
   }),
-  priority: place('debit', 'REST', 'Reserved bandwidth in kilobits per second'),
-  bandwidth: place('debit', 'REST', 'Reserved bandwidth in kilobits per second'),
+  priority: formes('debit', 'Reserved bandwidth for the priority queue', [
+    { keyword: '<kbps>', description: 'Reserved bandwidth in kilobits per second' },
+    { keyword: 'percent', description: 'Reserved bandwidth as a percentage' },
+  ]),
+  bandwidth: formes('debit', 'Reserved bandwidth for this class', [
+    { keyword: '<kbps>', description: 'Reserved bandwidth in kilobits per second' },
+    { keyword: 'percent', description: 'Reserved bandwidth as a percentage' },
+    { keyword: 'remaining', description: 'Percentage of the remaining bandwidth' },
+  ]),
   'random-detect': place('mode', 'REST', 'Weighted random early detection parameters'),
-  shape: place('mode', 'REST', 'Traffic shaping parameters'),
+  shape: formes('mode', 'Traffic shaping parameters', [
+    { keyword: 'average', description: 'Shape to the committed rate' },
+    { keyword: 'peak', description: 'Shape to the peak rate' },
+  ]),
   'service-policy': place('politique', 'WORD', 'Name of the nested policy map'),
   'queue-limit': place('paquets', 'REST', 'Maximum queue depth in packets'),
   compression: place('mode', 'REST', 'Header compression parameters'),
@@ -2078,7 +2086,7 @@ export function buildSecurityShowCommands(trie: CommandTrie, getRouter: () => Ro
       lines.push(`Policy Map ${pm.name}`);
       for (const cls of pm.classes) {
         lines.push(`  Class ${cls.className}`);
-        for (const a of cls.actions) lines.push(`    ${a.kind}${a.args.length ? ' ' + a.args.join(' ') : ''}`);
+        for (const a of cls.actions) lines.push(`    ${policyMapActionLine(a)}`);
       }
     }
     return lines.join('\n');

@@ -1,4 +1,5 @@
 import type { TrackType } from '../../../ipsla/TrackService';
+import { boundedInteger } from '@/cli/ArgumentTypes';
 
 export const TRACK_ID_RANGE: readonly [number, number] = [1, 1000];
 
@@ -21,12 +22,6 @@ export interface TrackParse {
   readonly idInvalide?: boolean;
 }
 
-function trackId(token: string | undefined): number | null {
-  if (token === undefined || !/^\d+$/.test(token)) return null;
-  const value = Number(token);
-  return value >= TRACK_ID_RANGE[0] && value <= TRACK_ID_RANGE[1] ? value : null;
-}
-
 function interfaceState(rest: readonly string[]): TrackType | null {
   const words = rest.join(' ');
   if (words === 'line-protocol') return 'interface-line';
@@ -35,7 +30,7 @@ function interfaceState(rest: readonly string[]): TrackType | null {
 }
 
 export function parseTrackDefinition(args: readonly string[]): TrackParse {
-  const id = trackId(args[0]);
+  const id = boundedInteger(args[0], TRACK_ID_RANGE[0], TRACK_ID_RANGE[1]);
   if (id === null) return { idInvalide: true };
   const rest = args.slice(1);
 

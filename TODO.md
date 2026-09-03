@@ -1924,3 +1924,28 @@ défauts — la méthode vaut d'être reprise sur le reliquat.
   que l'operateur n'a pas ecrite. Ce que refuse un vrai IOS ici n'est pas
   atteste ; le fermer demande soit une capture, soit la decision assumee
   de valider le calendrier.
+- La borne HAUTE de `bandwidth <kbps>`, de `priority <kbps>` et de
+  `shape {average|peak} <bps>` sous `policy-map class` n'est pas
+  appliquee : depuis ce lot un jeton non numerique est refuse et un
+  pourcentage est borne a 1..100, mais `bandwidth 999999999` reste
+  accepte. La raison est ecrite plutot que devinee — ces bornes dependent
+  de la PLATE-FORME (elles varient avec le debit de l'interface sur
+  laquelle la politique est appliquee) et la documentation de Cisco n'est
+  pas atteignable depuis ce reseau, tous les domaines qui la portent
+  etant refuses par le mandataire de sortie. Poser un maximum de memoire
+  refuserait sur ce simulateur une valeur qu'une vraie machine accepte.
+  A rouvrir avec une capture ou une documentation atteignable.
+- `queue-limit <n>` accepte le nombre et IGNORE son UNITE : IOS ecrit
+  `queue-limit {<n> [packets] | <n> ms | <n> us | <n> bytes}` et le
+  simulateur range la queue telle quelle sans distinguer les unites,
+  donc `queue-limit 40 ms` et `queue-limit 40 packets` decrivent la meme
+  profondeur pour lui. Rien n'evalue la profondeur d'une file dans ce
+  simulateur (aucune mise en file n'a lieu sous une politique de service),
+  donc juger l'unite rangerait un critere de plus que rien ne lit ; ce qui
+  manque d'abord est le mecanisme, pas la grammaire.
+- `class-default` est acceptee sous `policy-map` et rangee avec
+  `kind: 'class-default'`, mais rien ne verifie qu'une classe NOMMEE
+  designe une `class-map` qui existe : `class ZORGLUB` cree une classe
+  vide sous la politique et la rend dans la configuration. Ce qu'un vrai
+  IOS fait ici — refuser, ou creer la class-map implicitement — n'est pas
+  atteste depuis ce reseau ; mesurer avant de trancher.

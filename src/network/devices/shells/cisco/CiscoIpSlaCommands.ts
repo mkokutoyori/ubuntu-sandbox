@@ -7,7 +7,7 @@ import {
 } from '../../../ipsla/types';
 import { isReactionElement } from '../../../ipsla/reactions';
 import type { CommandSpec } from '@/cli/CommandTable';
-import type { ArgumentSpec } from '@/cli/ArgumentTypes';
+import { boundedInteger, type ArgumentSpec } from '@/cli/ArgumentTypes';
 import {
   specsFromTrieRegistrations, type AdapterKeyword,
 } from '@/cli/commands/trieAdapter';
@@ -55,11 +55,8 @@ export const IPSLA_RANGES = {
   hoursKept: [0, 25],
 } as const;
 
-function boundedInt(token: string | undefined, range: readonly [number, number]): number | null {
-  if (token === undefined || !/^\d+$/.test(token)) return null;
-  const value = parseInt(token, 10);
-  return value < range[0] || value > range[1] ? null : value;
-}
+const inRange = (token: string | undefined, range: readonly [number, number]): number | null =>
+  boundedInteger(token, range[0], range[1]);
 
 const IPV4 = /^\d{1,3}(?:\.\d{1,3}){3}$/;
 
@@ -573,10 +570,9 @@ export function registerOperationTypes(
         }
       }
       if (spec.type === 'udp-jitter' || spec.type === 'icmp-jitter') {
-        const numPackets = boundedInt(
-          findKeywordValue(args, 'num-packets'), IPSLA_RANGES.numPackets);
+        const numPackets = inRange(findKeywordValue(args, 'num-packets'), IPSLA_RANGES.numPackets);
         if (numPackets !== null) runtime.config.numPackets = numPackets;
-        const interval = boundedInt(findKeywordValue(args, 'interval'), IPSLA_RANGES.interval);
+        const interval = inRange(findKeywordValue(args, 'interval'), IPSLA_RANGES.interval);
         if (interval !== null) runtime.config.intervalMs = interval;
       }
 
@@ -632,7 +628,7 @@ function registerParameter(
       trie.registerGreedy('frequency', 'Frequency of an operation', (args) => {
         const runtime = selected(ctx);
         if (!runtime) return '';
-        const value = boundedInt(args[0], IPSLA_RANGES.frequency);
+        const value = inRange(args[0], IPSLA_RANGES.frequency);
         if (value === null) return args.length === 0 ? INCOMPLETE : INVALID_INPUT;
         runtime.config.frequencySeconds = value;
         engine().noteConfigChange(runtime.config.id);
@@ -643,7 +639,7 @@ function registerParameter(
       trie.registerGreedy('timeout', 'Timeout of an operation', (args) => {
         const runtime = selected(ctx);
         if (!runtime) return '';
-        const value = boundedInt(args[0], IPSLA_RANGES.timeout);
+        const value = inRange(args[0], IPSLA_RANGES.timeout);
         if (value === null) return args.length === 0 ? INCOMPLETE : INVALID_INPUT;
         runtime.config.timeoutMs = value;
         return '';
@@ -653,7 +649,7 @@ function registerParameter(
       trie.registerGreedy('threshold', 'Operation threshold in milliseconds', (args) => {
         const runtime = selected(ctx);
         if (!runtime) return '';
-        const value = boundedInt(args[0], IPSLA_RANGES.threshold);
+        const value = inRange(args[0], IPSLA_RANGES.threshold);
         if (value === null) return args.length === 0 ? INCOMPLETE : INVALID_INPUT;
         runtime.config.thresholdMs = value;
         return '';
@@ -663,7 +659,7 @@ function registerParameter(
       trie.registerGreedy('request-data-size', 'Request data size', (args) => {
         const runtime = selected(ctx);
         if (!runtime) return '';
-        const value = boundedInt(args[0], IPSLA_RANGES.requestDataSize);
+        const value = inRange(args[0], IPSLA_RANGES.requestDataSize);
         if (value === null) return args.length === 0 ? INCOMPLETE : INVALID_INPUT;
         runtime.config.requestDataSize = value;
         return '';
@@ -673,7 +669,7 @@ function registerParameter(
       trie.registerGreedy('tos', 'Type Of Service', (args) => {
         const runtime = selected(ctx);
         if (!runtime) return '';
-        const value = boundedInt(args[0], IPSLA_RANGES.tos);
+        const value = inRange(args[0], IPSLA_RANGES.tos);
         if (value === null) return args.length === 0 ? INCOMPLETE : INVALID_INPUT;
         runtime.config.tos = value;
         return '';
@@ -742,14 +738,14 @@ function applyHistory(ctx: IpSlaCommandContext, args: string[]): string {
   const config = runtime.config;
   switch (args[0]) {
     case 'lives-kept': {
-      const value = boundedInt(args[1], IPSLA_RANGES.livesKept);
+      const value = inRange(args[1], IPSLA_RANGES.livesKept);
       if (value === null) return args.length < 2 ? INCOMPLETE : INVALID_INPUT;
       config.historyLivesKept = value;
       if (value > 0 && config.historyFilter === 'none') config.historyFilter = 'all';
       break;
     }
     case 'buckets-kept': {
-      const value = boundedInt(args[1], IPSLA_RANGES.bucketsKept);
+      const value = inRange(args[1], IPSLA_RANGES.bucketsKept);
       if (value === null) return args.length < 2 ? INCOMPLETE : INVALID_INPUT;
       config.historyBucketsKept = value;
       break;
@@ -762,19 +758,19 @@ function applyHistory(ctx: IpSlaCommandContext, args: string[]): string {
       break;
     }
     case 'distributions-of-statistics-kept': {
-      const value = boundedInt(args[1], IPSLA_RANGES.distributions);
+      const value = inRange(args[1], IPSLA_RANGES.distributions);
       if (value === null) return args.length < 2 ? INCOMPLETE : INVALID_INPUT;
       config.distributionsKept = value;
       break;
     }
     case 'statistics-distribution-interval': {
-      const value = boundedInt(args[1], IPSLA_RANGES.distributionInterval);
+      const value = inRange(args[1], IPSLA_RANGES.distributionInterval);
       if (value === null) return args.length < 2 ? INCOMPLETE : INVALID_INPUT;
       config.distributionIntervalMs = value;
       break;
     }
     case 'hours-of-statistics-kept': {
-      const value = boundedInt(args[1], IPSLA_RANGES.hoursKept);
+      const value = inRange(args[1], IPSLA_RANGES.hoursKept);
       if (value === null) return args.length < 2 ? INCOMPLETE : INVALID_INPUT;
       config.hoursOfStatisticsKept = value;
       break;
