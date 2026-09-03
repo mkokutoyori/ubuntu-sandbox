@@ -60,36 +60,59 @@ function cdpNeighbours(dev: ShowStateDevice): NeighborDTO[] {
   return dev.getCdpNeighbors?.() ?? [];
 }
 
-export function showClock(arg: Date | ShowStateDevice = new Date()): string {
-  let now: Date;
-  let timezone = 'UTC';
-  let offsetMin = 0;
-  let synced = false;
+export const IOS_DAYS: readonly string[] =
+  Object.freeze(['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']);
+
+export const IOS_MONTHS: readonly string[] = Object.freeze([
+  'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+  'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
+]);
+
+export interface CiscoClockReading {
+  readonly local: Date;
+  readonly timezone: string;
+  readonly offsetMin: number;
+  readonly synced: boolean;
+}
+
+export function ciscoClockReading(
+  arg: Date | ShowStateDevice, atMs?: number,
+): CiscoClockReading {
   if (arg instanceof Date) {
-    now = arg;
-  } else {
-    const dev = arg as unknown as {
-      getSystemClockMs?: () => number;
-      getManagementService?: () => { getClock: () => { timezone: string; offsetMin: number } };
-      getNtpAgent?: () => { isSynced?: () => boolean };
+    return {
+      local: arg, timezone: 'UTC', offsetMin: 0, synced: false,
     };
-    now = new Date(dev.getSystemClockMs?.() ?? Date.now());
-    const mgmt = dev.getManagementService?.();
-    if (mgmt) {
-      const clock = mgmt.getClock();
-      timezone = clock.timezone;
-      offsetMin = clock.offsetMin;
-    }
-    synced = dev.getNtpAgent?.().isSynced?.() ?? false;
   }
-  const local = new Date(now.getTime() + offsetMin * 60_000);
-  const t = `${pad2(local.getUTCHours())}:${pad2(local.getUTCMinutes())}:${pad2(local.getUTCSeconds())}.000`;
-  const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-  const mons = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug',
-    'Sep', 'Oct', 'Nov', 'Dec'];
-  const marker = synced ? '' : '*';
-  return `${marker}${t} ${timezone} ${days[local.getUTCDay()]} ${mons[local.getUTCMonth()]} ` +
-    `${local.getUTCDate()} ${local.getUTCFullYear()}`;
+  const dev = arg as unknown as {
+    getSystemClockMs?: () => number;
+    getManagementService?: () => { getClock: () => { timezone: string; offsetMin: number } };
+    getNtpAgent?: () => { isSynced?: () => boolean };
+  };
+  const clock = dev.getManagementService?.().getClock();
+  const offsetMin = clock?.offsetMin ?? 0;
+  const now = atMs ?? dev.getSystemClockMs?.() ?? Date.now();
+  return {
+    local: new Date(now + offsetMin * 60_000),
+    timezone: clock?.timezone ?? 'UTC',
+    offsetMin,
+    synced: dev.getNtpAgent?.().isSynced?.() ?? false,
+  };
+}
+
+export function iosDateSuffix(local: Date): string {
+  return `${IOS_DAYS[local.getUTCDay()]} ${IOS_MONTHS[local.getUTCMonth()]} `
+    + `${local.getUTCDate()} ${local.getUTCFullYear()}`;
+}
+
+export function iosTimeOfDay(local: Date): string {
+  return `${pad2(local.getUTCHours())}:${pad2(local.getUTCMinutes())}`
+    + `:${pad2(local.getUTCSeconds())}`;
+}
+
+export function showClock(arg: Date | ShowStateDevice = new Date()): string {
+  const reading = ciscoClockReading(arg);
+  return `${reading.synced ? '' : '*'}${iosTimeOfDay(reading.local)}.000`
+    + ` ${reading.timezone} ${iosDateSuffix(reading.local)}`;
 }
 
 /** `show users` — active lines (console only in the sim). */
@@ -1431,7 +1454,9 @@ export function showFileSystems(fs: FileSystemUsage, startupConfigSize: number):
  * incertain.
  */
 export function showCalendar(arg: Date | ShowStateDevice = new Date()): string {
-  return showClock(arg).replace(/^[*.]/, '').replace(/(\d{2}:\d{2}:\d{2})\.\d+/, '$1');
+  const reading = ciscoClockReading(arg);
+  return `${iosTimeOfDay(reading.local)} ${reading.timezone}`
+    + ` ${iosDateSuffix(reading.local)}`;
 }
 
 /** `show terminal` — the active session's real defaults. */

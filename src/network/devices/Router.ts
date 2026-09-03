@@ -5146,7 +5146,11 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
   _getCiscoFileSystem(
     profile: import('./shells/cisco/CiscoCommonShow').CiscoChassisProfile,
   ): CiscoFileSystem {
-    if (!this.ciscoFs) this.ciscoFs = new CiscoFileSystem(profile);
+    if (!this.ciscoFs) {
+      this.ciscoFs = new CiscoFileSystem(profile,
+        () => new Date(this.getSystemClockMs()),
+        () => this.getManagementService().getClock().offsetMin);
+    }
     return this.ciscoFs;
   }
 

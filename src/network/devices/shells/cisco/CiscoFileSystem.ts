@@ -45,11 +45,21 @@ export interface CiscoFile {
 const MOIS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
   'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'] as const;
 
-/** `Mar 01 2024 00:00:00` — la date telle que `dir` la met. */
-function fmtDate(d: Date): string {
+/**
+ * `Mar 01 2024 00:00:00` — la date telle que `dir` la met.
+ *
+ * Elle lisait `getHours()`, c'est-à-dire l'heure LOCALE de la machine
+ * qui fait tourner le navigateur : sous un fuseau à +1, un fichier écrit
+ * par `archive config` portait 13:43:30 pendant que `show clock` du même
+ * équipement disait 12:43:30. Elle lit l'horloge de l'ÉQUIPEMENT, comme
+ * toutes les autres vues de date d'IOS.
+ */
+function fmtDate(d: Date, offsetMin: number): string {
+  const local = new Date(d.getTime() + offsetMin * 60_000);
   const deux = (n: number) => String(n).padStart(2, '0');
-  return `${MOIS[d.getMonth()]} ${deux(d.getDate())} ${d.getFullYear()} `
-    + `${deux(d.getHours())}:${deux(d.getMinutes())}:${deux(d.getSeconds())}`;
+  return `${MOIS[local.getUTCMonth()]} ${deux(local.getUTCDate())} `
+    + `${local.getUTCFullYear()} ${deux(local.getUTCHours())}`
+    + `:${deux(local.getUTCMinutes())}:${deux(local.getUTCSeconds())}`;
 }
 
 /** Le registre de configuration d'usine. */
@@ -72,9 +82,10 @@ export class CiscoFileSystem {
   constructor(
     private readonly profile: CiscoChassisProfile,
     private readonly now: () => Date = () => new Date(),
+    private readonly offsetMin: () => number = () => 0,
   ) {
     const hw = CISCO_HARDWARE_PROFILES[profile];
-    const naissance = new Date(2024, 2, 1);
+    const naissance = new Date(Date.UTC(2024, 2, 1));
     this.totalBytes = hw.flashTotalBytes;
     this.nvramBytes = hw.nvramKB * 1024 - NVRAM_RESERVE_BYTES;
     this.flash.set(hw.flashImage, { name: hw.flashImage, size: hw.flashImageSize, modified: naissance });
@@ -239,7 +250,7 @@ export class CiscoFileSystem {
       const affiche = prefixe === '' ? f.name : f.name.slice(prefixe.length);
       const mode = f.directory ? 'drwx' : '-rwx';
       lignes.push(`${String(i).padStart(5)}  ${mode}  ${String(f.size).padStart(11)}`
-        + `  ${fmtDate(f.modified)}  ${affiche}`);
+        + `  ${fmtDate(f.modified, this.offsetMin())}  ${affiche}`);
       i++;
     }
     lignes.push('', `${this.totalBytes} bytes total (${this.freeBytes()} bytes free)`);
@@ -252,7 +263,7 @@ export class CiscoFileSystem {
     let i = 1;
     for (const f of this.flash.values()) {
       lignes.push(`    ${i}  -rwx     ${String(f.size).padStart(8, ' ')}`
-        + `   ${fmtDate(f.modified)}  ${f.name}`);
+        + `   ${fmtDate(f.modified, this.offsetMin())}  ${f.name}`);
       i++;
     }
     lignes.push('', `${this.totalBytes} bytes total (${this.freeBytes()} bytes free)`);
