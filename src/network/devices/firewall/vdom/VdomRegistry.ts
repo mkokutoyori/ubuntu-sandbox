@@ -248,7 +248,7 @@ export class VdomRegistry {
       pools,
       nat,
       routes,
-      policyRoutes: new PolicyRouteTable(),
+      policyRoutes: new PolicyRouteTable({ now: this.deps.now }),
       sessions,
       evaluator,
       schedules,

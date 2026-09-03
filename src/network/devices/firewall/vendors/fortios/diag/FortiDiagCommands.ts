@@ -53,6 +53,8 @@ import {
 } from './lldpRenderer';
 import { selectBundleMemberForFlow } from '@/network/lacp/loadBalance';
 import { renderAutoupdateVersions } from './fortiguardRenderer';
+import { renderPolicyRoutes, type ProuteContext } from './prouteRenderer';
+import { fortiLogStamp } from './timeCommands';
 import {
   describeLogCategories, logFilePrefix, resolveLogCategory, typesOfLogFile,
 } from '../log/logCategories';
@@ -157,6 +159,14 @@ function diagnoseLldpRx(rest: readonly string[], deps: FortiDiagDeps): string {
       deps.fw.getPort(name)?.getMAC().toString() ?? '');
   }
   return FortiMessages.unknownPath(`lldprx ${rest.join(' ')}`);
+}
+
+function policyRouteContext(deps: FortiDiagDeps): ProuteContext {
+  return {
+    vdom: deps.vdom(),
+    interfaceIndex: (name) => bridgePortNumber(deps, name),
+    stamp: (at) => fortiLogStamp(deps.fw, at),
+  };
 }
 
 function bridgePortNumber(deps: FortiDiagDeps, port: string): number {
@@ -623,6 +633,17 @@ function diagnoseIprope(rest: readonly string[], deps: FortiDiagDeps): string {
   if (rest[0] === 'fqdn') {
     if (rest[1] !== 'list') return FortiMessages.unknownPath(`firewall ${rest.join(' ')}`);
     return diagnoseFqdnList(deps);
+  }
+  if (rest[0] === 'proute') {
+    if (rest[1] === 'list') {
+      return renderPolicyRoutes(
+        deps.fw.getPolicyRoutes().ordered(), policyRouteContext(deps));
+    }
+    if (rest[1] === 'clear') {
+      deps.fw.getPolicyRoutes().clearCounters(rest[2]);
+      return '';
+    }
+    return FortiMessages.unknownPath(`firewall ${rest.join(' ')}`);
   }
   if (rest[0] !== 'iprope') return FortiMessages.unknownPath(rest.join(' '));
 
