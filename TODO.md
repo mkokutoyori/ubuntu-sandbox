@@ -1983,3 +1983,19 @@ défauts — la méthode vaut d'être reprise sur le reliquat.
   question de grammaire. La borne haute retenue ici (9) est le numero de
   version le plus eleve que NetFlow ait porte ; `ip flow-export version 1`
   et `5` sont acceptes de la meme facon et ne changent rien non plus.
+- Les bornes des formes `storm-control <type> level {pps|bps} <debit>` ne
+  sont pas appliquees : depuis ce lot le debit doit etre un nombre positif,
+  mais `storm-control broadcast level pps 99999999999` reste accepte. La
+  borne haute depend du DEBIT DU PORT (un seuil en paquets par seconde
+  au-dela de ce que le lien peut porter n'a pas de sens) et ce que refuse
+  un vrai Catalyst n'est pas atteste depuis ce reseau. La borne du
+  POURCENTAGE, elle, est appliquee : c'est de l'arithmetique.
+- `storm-control` est range dans `ifExtra`, un sac de LIGNES DE TEXTE par
+  interface partage avec `switchport voice` et `srr-queue`. Depuis ce lot
+  la ligne est ANALYSEE a la porte, donc seule une commande valide y
+  entre, et la vue lit le meme analyseur au lieu de refaire un
+  `parseFloat` — mais le magasin reste du texte, et `srr-queue` n'est
+  toujours juge par personne (`srr-queue bandwidth share zorglub` est
+  accepte et rendu). Fermer `srr-queue` demande sa grammaire, qui n'est
+  pas attestee depuis ce reseau ; lui donner un vrai magasin est un autre
+  lot, qui touche le rendu de la configuration d'interface.

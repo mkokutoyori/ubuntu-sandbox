@@ -48,6 +48,9 @@ import {
 import type { ISwitchShell } from './ISwitchShell';
 import type { Switch, SwitchportConfig } from '../Switch';
 import { parseVlanId, type VlanSet } from '../switch/VlanSet';
+import {
+  STORM_CONTROL_TYPES, parseStormControl, stormControlPercent,
+} from './cisco/stormControlSyntax';
 import { igmpSnoopingRunningConfigLines } from '../../igmp-snooping/snoopingRunningConfig';
 import type { SnoopingConfig } from '../../igmp-snooping/types';
 import type { CiscoSwitch } from '../CiscoSwitch';
@@ -3238,15 +3241,13 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
           // est le 4ᵉ mot, le bas est optionnel et vaut le haut sinon,
           // exactement comme sur IOS. Les pourcentages sortent à deux
           // décimales, la forme du vrai binaire.
-          const parts = seuil.split(/\s+/);
-          const pct = (v: string | undefined, defaut: string) => {
-            const n = parseFloat(v ?? '');
-            return `${(Number.isNaN(n) ? parseFloat(defaut) : n).toFixed(2)}%`;
-          };
-          const haut = pct(parts[3], '100');
-          const bas = pct(parts[4], parts[3] ?? '100');
+          const { setting } = parseStormControl(seuil.split(/\s+/).slice(1));
+          if (!setting || setting.kind !== 'level') continue;
+
+          const unite = setting.unit === 'percent'
+            ? stormControlPercent : (v: number) => String(v);
           lignes.push(`${this.abbreviateInterface(nom).padEnd(11)}${'Forwarding'.padEnd(15)}`
-            + `${haut.padEnd(13)}${bas.padEnd(13)}0.00%`);
+            + `${unite(setting.upper).padEnd(13)}${unite(setting.lower).padEnd(13)}0.00%`);
         }
       }
       if (!trouve) return lignes[0];
@@ -3946,9 +3947,21 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
         if (this.selectedInterface && this.sviVlanId(this.selectedInterface) !== null) {
           return CISCO_ERRORS.INVALID_INPUT;
         }
+        if (sub === 'storm-control') {
+          const parsed = parseStormControl(args);
+          if (parsed.incomplete) throw new CliIncomplete();
+          if (!parsed.setting) throw new CliInvalidInput({ token: args[parsed.at] });
+        }
         return recordIf(`${sub} ${args.join(' ')}`.trim());
       });
     }
+    trie.registerGreedy('no storm-control', 'Remove a storm-control setting', (args) => {
+      const quoi = (args[0] ?? '').toLowerCase();
+      if (quoi === 'action') return removeIf('storm-control action');
+      if (!STORM_CONTROL_TYPES.includes(quoi)) throw new CliInvalidInput({ token: args[0] });
+
+      return removeIf(`storm-control ${quoi} level`);
+    });
 
     const removeIf = (prefix: string) => {
       const ifs = this.selectedInterface
