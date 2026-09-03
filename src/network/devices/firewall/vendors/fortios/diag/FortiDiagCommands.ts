@@ -60,6 +60,7 @@ import { selectBundleMemberForFlow } from '@/network/lacp/loadBalance';
 import { renderAutoupdateVersions } from './fortiguardRenderer';
 import { renderPolicyRoutes, type ProuteContext } from './prouteRenderer';
 import { renderRealServers, type VirtualServerView } from './realServerRenderer';
+import { renderNic, renderNicList, type NicView } from './nicRenderer';
 import { fortiLogStamp } from './timeCommands';
 import {
   describeLogCategories, logFilePrefix, resolveLogCategory, typesOfLogFile,
@@ -167,6 +168,19 @@ function diagnoseLldpRx(rest: readonly string[], deps: FortiDiagDeps): string {
   return FortiMessages.unknownPath(`lldprx ${rest.join(' ')}`);
 }
 
+function nicViews(deps: FortiDiagDeps): NicView[] {
+  return deps.fw.getPorts().map(port => ({
+    name: port.getName(),
+    currentMac: port.getMAC().toString(),
+    permanentMac: deps.fw.permanentMacOf(port.getName()),
+    adminUp: !port.isAdminDown(),
+    linkUp: port.isOperationallyUp(),
+    speed: port.getNegotiatedSpeed(),
+    duplex: port.getNegotiatedDuplex() === 'full' ? 'Full' : 'Half',
+    counters: port.getCounters(),
+  }));
+}
+
 function virtualServers(deps: FortiDiagDeps): VirtualServerView[] {
   const views: VirtualServerView[] = [];
   for (const rule of deps.fw.getNatPolicy().ordered()) {
@@ -213,6 +227,13 @@ export function runDiagnose(rest: readonly string[], deps: FortiDiagDeps): strin
     }
     if (tail[0] === 'sysinfo' && tail[1] === 'memory') {
       return procMeminfoLines(deps.fw.getSystemLoad()).join('\n');
+    }
+    if (tail[0] === 'deviceinfo' && tail[1] === 'nic') {
+      const named = tail[2];
+      if (named === undefined) return renderNicList(nicViews(deps));
+
+      const nic = nicViews(deps).find(view => view.name === named);
+      return nic ? renderNic(nic) : FortiMessages.unknownKey(named);
     }
     return FortiMessages.unknownPath(`hardware ${tail.join(' ')}`);
   }
