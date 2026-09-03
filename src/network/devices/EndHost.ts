@@ -89,6 +89,7 @@ import {
   ICMP_UNREACH_ADMIN_PROHIBITED,
   ICMP_UNREACH_FRAG_NEEDED,
   ICMP_TTL_EXPIRED_IN_TRANSIT,
+  unreachableCodeName,
   type ICMPErrorType,
 } from '../core/IcmpErrors';
 import { fragmentIPv4, IPv4Reassembler, IPV4_FLAG_DF } from '../core/Ipv4Fragmentation';
@@ -802,6 +803,25 @@ export abstract class EndHost extends Equipment {
       `${this.name}: ICMP echo to ${payload.toIp} failed (${payload.reason}) id=${payload.id} seq=${payload.seq}`,
       payload,
     );
+  }
+
+  private publishIcmpUnreachable(ipPkt: IPv4Packet, icmp: ICMPPacket): void {
+    const original = icmp.originalPacket;
+    const transport = original?.payload as
+      { sourcePort?: number; destinationPort?: number } | undefined;
+    this.getBus().publish({
+      topic: 'host.icmp.unreachable',
+      payload: {
+        ...this.hostRef(),
+        fromIp: ipPkt.sourceIP.toString(),
+        toIp: ipPkt.destinationIP.toString(),
+        code: icmp.icmpType === 'time-exceeded'
+          ? 'ttl-exceeded' : unreachableCodeName(icmp.code),
+        icmpCode: icmp.code,
+        origProtocol: original?.protocol,
+        origDestPort: transport?.destinationPort,
+      },
+    });
   }
 
   /** Bus emission helper for ARP entry learned. */
@@ -2462,6 +2482,8 @@ export abstract class EndHost extends Equipment {
         ? `Time to live exceeded (from ${ipPkt.sourceIP})`
         : `Destination unreachable (from ${ipPkt.sourceIP}) code ${icmp.code}`
           + (icmp.mtu !== undefined ? ` mtu ${icmp.mtu}` : '');
+
+      this.publishIcmpUnreachable(ipPkt, icmp);
 
       const isHardTcpError = icmp.icmpType === 'destination-unreachable'
         && (icmp.code === ICMP_UNREACH_PORT || icmp.code === ICMP_UNREACH_ADMIN_PROHIBITED);

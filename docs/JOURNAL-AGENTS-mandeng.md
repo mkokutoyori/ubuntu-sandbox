@@ -6984,3 +6984,50 @@ controle par parcours de topologie, et `osFromDevice` lit
 Reference : depot `nmap/nmap` (clone superficiel). Faits releves dans la
 source plutot que de memoire — `nmap.h` pour les sondes de decouverte par
 defaut, `scan_engine_raw.cc` pour la correspondance ICMP -> etat de port.
+
+### `nmap` sonde le fil : decouverte d'hote et balayage UDP (livre)
+
+Reference : depot `nmap/nmap`, clone superficiel, faits releves dans la
+source.
+
+- `nmap.h` — `DEFAULT_IPV4_PING_TYPES` vaut `-PE -PA80 -PS443 -PP`, et
+  `DEFAULT_PING_CONNECT_PORT_SPEC` vaut `"80,443"` pour le mode non
+  privilegie. Un RST prouve qu'un hote est vivant exactement comme un
+  SYN/ACK : c'est la raison d'etre de `-PA`, donc `refused` compte comme
+  vivant.
+- `scan_engine_raw.cc` (l. 1888-1913) — un ICMP type 3 code 3 venant de
+  la CIBLE rend le port UDP CLOS ; les codes 0, 1, 2, 9, 10 et 13 le
+  rendent FILTRE.
+
+**Ce qui etait faux.** `hostState` parcourait le registre d'equipements
+et lisait `poweredOff`/`interfaceDown` sur l'objet : aucune sonde n'etait
+emise, donc une machine sans AUCUNE route depuis le scanner etait
+declaree vivante. `udpState` emettait bien un datagramme — la capture le
+montre — mais tirait son VERDICT de `grabUdpListener(found.device, port)`,
+c'est-a-dire des ecouteurs de l'objet cible, si bien qu'une cible qui
+jette tout son ICMP sortant etait quand meme rapportee `closed` la ou un
+vrai `nmap` dit `open|filtered`. Et `osFromDevice` lisait
+`device.getOSType()`.
+
+**Ce qui est desormais mesure.** La decouverte emet un echo ICMP puis, a
+defaut de reponse, une connexion TCP vers 80 et 443. Le verdict UDP lit
+l'evenement `host.icmp.unreachable` et applique la table de codes de
+`scan_engine_raw.cc`. La conjecture de systeme se deduit du TTL OBSERVE
+sur la reponse — le seul empreinte de pile que ce simulateur mette
+vraiment sur le fil, et il la modelise par constructeur (64 Linux et
+FortiOS, 128 Windows, 255 IOS et VRP).
+
+**Defaut ferme en chemin** : `host.icmp.unreachable` etait un topic
+DECLARE, avec un abonne (`HostCaptureActor`) et AUCUN emetteur — donc une
+categorie de capture qui ne pouvait jamais survenir. Il est publie a la
+reception d'un ICMP inatteignable, et `unreachableCodeName` vit avec les
+constantes de code dans `core/IcmpErrors.ts` plutot qu'en seconde table.
+
+**Separation posee** : `resolveTarget` (nom vers adresse, une recherche)
+et `hostState` (les sondes) sont deux questions distinctes, si bien que
+`-Pn` n'emet plus rien du tout — ce que fait un vrai `nmap`. `-O` devient
+une phase a part, comme `FPEngine` cote nmap, donc il empreinte encore
+sous `-Pn` ou aucune sonde de decouverte n'a ete envoyee.
+
+Restent inspecter l'objet, inscrits au `TODO.md` : la banniere de `-sV`
+et le balayage ACK.

@@ -2058,3 +2058,29 @@ défauts — la méthode vaut d'être reprise sur le reliquat.
   mais un `Format-List` affiche la clef stockee. Fermer cela demande que
   le `SchemaValidator` porte la casse canonique de chaque attribut, ce
   qu'il ne fait pas.
+
+### [nmap] la banniere et le balayage ACK inspectent encore l'objet distant
+`buildProbes` a ete converti pour la DECOUVERTE d'hote (vraies sondes
+ICMP et TCP, `nmap.h` : `-PE -PA80 -PS443 -PP`) et pour le verdict UDP
+(lecture de l'ICMP recu, `scan_engine_raw.cc`). Deux chemins restent des
+inspections d'objet.
+**Mesure** : `banner()` appelle `grabBanner(found.device, port)`, donc
+`-sV` lit la banniere DANS l'equipement cible au lieu de l'ouvrir sur une
+vraie connexion ; `ackReaches()` appelle `transitAckAclVerdict`, qui
+evalue les listes de controle par parcours de topologie au lieu d'emettre
+un ACK et d'observer le RST. Aucune trame ne porte ces deux reponses.
+**Pourquoi ce n'est pas ferme ici** : la banniere demande d'ouvrir une
+connexion TCP et de LIRE le premier envoi du serveur, ce que `nmap.h`
+n'aide pas a trancher — c'est `nmap-service-probes` qui decrit les sondes
+et leurs correspondances, un fichier de donnees a part entiere ; et le
+balayage ACK demande d'emettre un segment ACK nu, que la pile n'expose
+pas aujourd'hui.
+
+### [ssh] la banniere du serveur n'est pas celle d'un OpenSSH
+**Mesure** : `nmap -sV -p 22` contre un `LinuxServer` rend
+`22/tcp open ssh Sandbox-Server (protocol 2.0)`. Un vrai OpenSSH annonce
+`SSH-2.0-OpenSSH_<version>` et `nmap` rend
+`OpenSSH 8.9p1 Ubuntu 3ubuntu0.4 (Ubuntu Linux; protocol 2.0)`.
+**Pourquoi ce n'est pas ferme ici** : la chaine est celle du serveur SSH
+du simulateur, pas de `nmap` ; la changer touche la poignee de main SSH
+et les tests qui l'observent, et c'est un autre sujet.

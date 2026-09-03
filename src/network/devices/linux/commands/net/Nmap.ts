@@ -1,7 +1,8 @@
 import type { LinuxCommand } from '../LinuxCommand';
 import type { LinuxCommandContext } from '../LinuxCommandContext';
 import type { Equipment } from '../../../../equipment/Equipment';
-import { IPAddress } from '../../../../core/types';
+import { IPAddress, IP_PROTO_UDP } from '../../../../core/types';
+import { ICMP_UNREACH_PORT } from '../../../../core/IcmpErrors';
 import {
   findHostByAddress, localDeviceOf, transitAckAclVerdict,
 } from '../../network/HostLookup';
@@ -14,7 +15,9 @@ import {
 import { detectServiceFromBanner } from './nmap/BannerAnalyzer';
 import { serviceFromProcess } from './nmap/ProcessServiceMap';
 import { parseNmapArgs } from './nmap/NmapOptions';
-import { scan, type HostProbes, type HostState } from './nmap/ScanEngine';
+import {
+  scan, type HostProbes, type HostState, type ResolvedTarget,
+} from './nmap/ScanEngine';
 import { renderNormal, renderGreppable } from './nmap/NmapFormatter';
 import { makeArgCompleter } from '../completionHelpers';
 
@@ -22,14 +25,50 @@ export { detectServiceFromBanner };
 
 const UDP_PROBE_SOURCE_PORT = 51820;
 
-function osFromDevice(device: Equipment): string | undefined {
-  switch (device.getOSType?.()) {
-    case 'windows': return 'Microsoft Windows';
-    case 'cisco-ios': return 'Cisco IOS';
-    case 'huawei-vrp': return 'Huawei VRP';
-    case 'linux': return 'Linux 3.2 - 5.4';
-    default: return undefined;
+/**
+ * nmap.h: the default IPv4 host discovery is `-PE -PA80 -PS443 -PP`, and
+ * the unprivileged form is a TCP connect to 80,443. A RST proves the host
+ * is alive exactly as a SYN/ACK does — that is what `-PA` exists for — so
+ * `refused` counts as up.
+ */
+const DISCOVERY_PORTS: readonly number[] = Object.freeze([80, 443]);
+const DISCOVERY_TIMEOUT_MS = 1000;
+
+interface Discovery {
+  up: boolean;
+  latencyMs?: number;
+  ttl?: number;
+}
+
+async function discoverHost(ctx: LinuxCommandContext, ip: string): Promise<Discovery> {
+  let echo: Awaited<ReturnType<typeof ctx.net.pingSequence>> = [];
+  try {
+    echo = await ctx.net.pingSequence(new IPAddress(ip), 1, DISCOVERY_TIMEOUT_MS);
+  } catch {
+    echo = [];
   }
+  const reply = echo.find((r) => r.success);
+  if (reply) return { up: true, latencyMs: reply.rttMs, ttl: reply.ttl };
+
+  for (const port of DISCOVERY_PORTS) {
+    const outcome = ctx.net.tcpConnectOutcome(ip, port);
+    if (outcome === 'open' || outcome === 'refused') return { up: true };
+  }
+  return { up: false };
+}
+
+/**
+ * The initial TTL is the cheapest real stack fingerprint, and the only one
+ * this simulator puts on the wire: a reply arrives with the sender's
+ * initial value minus the hops crossed, so rounding up to the next usual
+ * initial value names the family. Vendors set 64 (Linux, FortiOS), 128
+ * (Windows) and 255 (IOS, VRP).
+ */
+function osFromInitialTtl(observed: number): string | undefined {
+  if (observed <= 0) return undefined;
+  if (observed <= 64) return 'Linux 3.2 - 5.4';
+  if (observed <= 128) return 'Microsoft Windows';
+  return 'Cisco IOS or Huawei VRP';
 }
 
 function isNumericAddress(target: string): boolean {
@@ -47,31 +86,31 @@ function buildProbes(ctx: LinuxCommandContext, noDns: boolean): HostProbes {
   };
 
   return {
-    hostState(target: string): HostState | null {
+    resolveTarget(target: string) {
+      if (isNumericAddress(target)) return { ip: target };
       const found = resolve(target);
       if (!found) return null;
-      const hostname = !noDns && !isNumericAddress(target) ? target : undefined;
+      return { ip: found.ip, hostname: noDns ? undefined : target };
+    },
+    async hostState(target: ResolvedTarget): Promise<HostState> {
+      const alive = await discoverHost(ctx, target.ip);
       return {
-        ip: found.ip,
-        hostname,
-        up: !found.poweredOff && !found.interfaceDown,
-        poweredOff: found.poweredOff,
-        interfaceDown: found.interfaceDown,
-        osHint: osFromDevice(found.device),
+        ip: target.ip,
+        hostname: target.hostname,
+        up: alive.up,
+        latencyMs: alive.latencyMs,
+        osHint: alive.ttl === undefined ? undefined : osFromInitialTtl(alive.ttl),
       };
+    },
+    async fingerprint(ip: string): Promise<string | undefined> {
+      const alive = await discoverHost(ctx, ip);
+      return alive.ttl === undefined ? undefined : osFromInitialTtl(alive.ttl);
     },
     tcpOutcome(ip: string, port: number) {
       return ctx.net.tcpConnectOutcome(ip, port);
     },
     udpState(ip: string, port: number) {
-      const found = resolve(ip);
-      if (!found || found.poweredOff || found.interfaceDown) return 'open|filtered';
-      try {
-        ctx.net.sendUdpProbe(new IPAddress(ip), port, UDP_PROBE_SOURCE_PORT);
-      } catch {
-        return 'open|filtered';
-      }
-      return grabUdpListener(found.device, port) ? 'open' : 'closed';
+      return probeUdpPort(ctx, ip, port);
     },
     ackReaches(ip: string, port: number) {
       const found = resolve(ip);
@@ -92,6 +131,37 @@ function buildProbes(ctx: LinuxCommandContext, noDns: boolean): HostProbes {
       return null;
     },
   };
+}
+
+/**
+ * scan_engine_raw.cc: an ICMP type 3 code 3 from the target closes a UDP
+ * port; codes 0, 1, 2, 9, 10 and 13 filter it. Silence leaves the port
+ * open|filtered, and a datagram coming back opens it.
+ */
+function probeUdpPort(
+  ctx: LinuxCommandContext, ip: string, port: number,
+): 'open' | 'closed' | 'open|filtered' {
+  const device = localDeviceOf(ctx);
+  if (!device) return 'open|filtered';
+
+  let verdict: 'open' | 'closed' | 'open|filtered' = 'open|filtered';
+  const stop = device.getBus().subscribe('host.icmp.unreachable', (event) => {
+    const p = event.payload;
+    if (p.deviceId !== device.getId()) return;
+    if (p.fromIp !== ip) return;
+    if (p.origProtocol !== undefined && p.origProtocol !== IP_PROTO_UDP) return;
+    if (p.origDestPort !== undefined && p.origDestPort !== port) return;
+    verdict = p.icmpCode === ICMP_UNREACH_PORT ? 'closed' : 'open|filtered';
+  });
+
+  try {
+    ctx.net.sendUdpProbe(new IPAddress(ip), port, UDP_PROBE_SOURCE_PORT);
+  } catch {
+    stop();
+    return 'open|filtered';
+  }
+  stop();
+  return verdict;
 }
 
 function localSourceAddress(ctx: LinuxCommandContext): string {
@@ -116,14 +186,14 @@ export const nmapCommand: LinuxCommand = {
   usage: 'nmap [-sT|-sS|-sU|-sA] [-sV] [-O] [-A] [-p SPEC] [-F] [--top-ports N] [-sn] [-Pn] [--open] [--reason] [-n] [-oN file] [-oG file] <target...>',
   help: 'Discover hosts and services on a network.',
 
-  run(ctx: LinuxCommandContext, args: string[]): string {
+  async run(ctx: LinuxCommandContext, args: string[]): Promise<string> {
     const options = parseNmapArgs(args);
     if (options.targets.length === 0) {
       return 'Nmap 7.94 ( https://nmap.org )\nUsage: nmap [Scan Type(s)] [Options] {target specification}';
     }
 
     const commandLine = `nmap ${args.join(' ')}`;
-    const report = scan(options, buildProbes(ctx, options.noDns));
+    const report = await scan(options, buildProbes(ctx, options.noDns));
     const normal = renderNormal(report, options, commandLine);
 
     const vfs = ctx.executor.vfs;
