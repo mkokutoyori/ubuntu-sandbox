@@ -1949,3 +1949,20 @@ défauts — la méthode vaut d'être reprise sur le reliquat.
   vide sous la politique et la rend dans la configuration. Ce qu'un vrai
   IOS fait ici — refuser, ou creer la class-map implicitement — n'est pas
   atteste depuis ce reseau ; mesurer avant de trancher.
+- `ip igmp snooping vlan <n>` n'exige pas que le VLAN EXISTE : depuis ce
+  lot le numero est borne a 1..4094 (802.1Q), mais `ip igmp snooping vlan
+  777` est accepte sur un commutateur qui n'a pas de VLAN 777 et cree
+  l'etat de surveillance a vide. La convention d'IOS est que le VLAN
+  nomme doit exister ; ce qu'un vrai Catalyst repond exactement dans ce
+  cas (refus, ou creation implicite) n'est atteste par aucune capture
+  atteignable depuis ce reseau. La meme question se pose pour
+  `ip pim snooping vlan <n>`, corrige de la meme facon dans le meme lot.
+- Les trois autres ecritures de « un numero de VLAN vaut 1..4094 » du
+  commutateur Cisco ne lisent pas encore `parseVlanId` : elles vivent
+  dans `CiscoSwitchShell` (la liste d'identifiants d'une commande de
+  plage, la vue `show`, et la SVI) et rendent chacune un message
+  DIFFERENT pour la meme faute — `% Invalid VLAN id` d'un cote, le caret
+  generique de l'autre. Cote Huawei il y en a six de plus, avec leurs
+  propres mots (`Error: Wrong parameter found.`). Les unifier est un lot
+  a soi : ce n'est pas la borne qui differe mais le MESSAGE, et chacun
+  doit rester celui de son constructeur.

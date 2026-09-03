@@ -47,7 +47,9 @@ import {
 } from './cisco/ciscoCounterTables';
 import type { ISwitchShell } from './ISwitchShell';
 import type { Switch, SwitchportConfig } from '../Switch';
-import type { VlanSet } from '../switch/VlanSet';
+import { parseVlanId, type VlanSet } from '../switch/VlanSet';
+import { igmpSnoopingRunningConfigLines } from '../../igmp-snooping/snoopingRunningConfig';
+import type { SnoopingConfig } from '../../igmp-snooping/types';
 import type { CiscoSwitch } from '../CiscoSwitch';
 import type { PromptMap } from './PromptBuilder';
 import { CISCO_SWITCH_PROMPTS } from './PromptBuilder';
@@ -106,7 +108,7 @@ import { hsrpVirtualMac, effectivePriority as hsrpEffectivePriority } from '../.
 import { effectiveWeighting as glbpEffectiveWeighting } from '../../glbp/types';
 import { effectivePriority as vrrpEffectivePriority } from '../../vrrp/types';
 import { TrackObjectRegistry } from '../switch/TrackObjectRegistry';
-import { CliInvalidInput } from './cli/CliDiagnostic';
+import { CliInvalidInput, CliIncomplete } from './cli/CliDiagnostic';
 import { describeCiscoSwitchArguments } from './cisco/ciscoArgumentHelp';
 import { renderTableText, FIXED_TABLE } from './cli/TextTable';
 import {
@@ -1908,13 +1910,15 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
     const agent = this.requirePimSnooping();
     const a = args.map(s => s.toLowerCase());
     if (a.length === 0) { agent.setEnabled(on); return ''; }
-    if (a[0] === 'vlan' && a[1]) {
-      const vlan = parseInt(a[1], 10);
-      if (Number.isNaN(vlan)) return CISCO_ERRORS.INVALID_INPUT;
-      agent.setVlanEnabled(vlan, on);
-      return '';
-    }
-    return CISCO_ERRORS.INVALID_INPUT;
+    if (a[0] !== 'vlan') throw new CliInvalidInput({ token: args[0] });
+    if (a[1] === undefined) throw new CliIncomplete();
+
+    const vlan = parseVlanId(a[1]);
+    if (vlan === null) throw new CliInvalidInput({ token: args[1] });
+    if (a[2] !== undefined) throw new CliInvalidInput({ token: args[2] });
+
+    agent.setVlanEnabled(vlan, on);
+    return '';
   }
 
   private showPimSnooping(args: string[]): string {
@@ -1961,40 +1965,30 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
     }
   }
 
+  private applyIgmpSnooping(args: string[], on: boolean): string {
+    const agent = this.requireIgmpSnooping();
+    const a = args.map(s => s.toLowerCase());
+    if (a.length === 0) { agent.setEnabled(on); return ''; }
+    if (a[0] === 'querier') return this.applySnoopingQuerier(null, a.slice(1), on);
+    if (a[0] !== 'vlan') throw new CliInvalidInput({ token: args[0] });
+    if (a[1] === undefined) throw new CliIncomplete();
+
+    const vlan = parseVlanId(a[1]);
+    if (vlan === null) throw new CliInvalidInput({ token: args[1] });
+    if (a[2] === 'immediate-leave') { agent.setImmediateLeave(vlan, on); return ''; }
+    if (a[2] === 'mrouter') return this.applyStaticMrouter(vlan, args.slice(3), on);
+    if (a[2] === 'querier') return this.applySnoopingQuerier(vlan, a.slice(3), on);
+    if (a[2] !== undefined) throw new CliInvalidInput({ token: args[2] });
+
+    agent.setVlanEnabled(vlan, on);
+    return '';
+  }
+
   private registerIgmpSnoopingCommands(): void {
-    this.configTrie.registerGreedy('ip igmp snooping', 'IGMP snooping config', (args) => {
-      const agent = this.requireIgmpSnooping();
-      const a = args.map(s => s.toLowerCase());
-      if (a.length === 0) { agent.setEnabled(true); return ''; }
-      if (a[0] === 'querier') return this.applySnoopingQuerier(null, a.slice(1), true);
-      if (a[0] === 'vlan' && a[1]) {
-        const vlan = parseInt(a[1], 10);
-        if (!Number.isNaN(vlan)) {
-          if (a[2] === 'immediate-leave') { agent.setImmediateLeave(vlan, true); return ''; }
-          if (a[2] === 'mrouter') return this.applyStaticMrouter(vlan, args.slice(3), true);
-          if (a[2] === 'querier') return this.applySnoopingQuerier(vlan, a.slice(3), true);
-          agent.setVlanEnabled(vlan, true);
-        }
-        return '';
-      }
-      return '';
-    });
-    this.configTrie.registerGreedy('no ip igmp snooping', 'Disable IGMP snooping', (args) => {
-      const agent = this.requireIgmpSnooping();
-      const a = args.map(s => s.toLowerCase());
-      if (a.length === 0) { agent.setEnabled(false); return ''; }
-      if (a[0] === 'querier') return this.applySnoopingQuerier(null, a.slice(1), false);
-      if (a[0] === 'vlan' && a[1]) {
-        const vlan = parseInt(a[1], 10);
-        if (!Number.isNaN(vlan)) {
-          if (a[2] === 'immediate-leave') { agent.setImmediateLeave(vlan, false); return ''; }
-          if (a[2] === 'mrouter') return this.applyStaticMrouter(vlan, args.slice(3), false);
-          if (a[2] === 'querier') return this.applySnoopingQuerier(vlan, a.slice(3), false);
-          agent.setVlanEnabled(vlan, false);
-        }
-      }
-      return '';
-    });
+    this.configTrie.registerGreedy('ip igmp snooping', 'IGMP snooping config',
+      (args) => this.applyIgmpSnooping(args, true));
+    this.configTrie.registerGreedy('no ip igmp snooping', 'Disable IGMP snooping',
+      (args) => this.applyIgmpSnooping(args, false));
     for (const t of [this.userTrie, this.privilegedTrie]) {
       t.registerGreedy('show ip igmp snooping', 'Display IGMP snooping state', (args) => {
         const agent = this.requireIgmpSnooping();
@@ -4292,6 +4286,12 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
     if (dnsLignes.length > 0) { lines.push(...dnsLignes); lines.push('!'); }
     else if (sw.getDomainName()) { lines.push(`ip domain-name ${sw.getDomainName()}`); lines.push('!'); }
     if (sw.getDefaultGateway()) { lines.push(`ip default-gateway ${sw.getDefaultGateway()}`); lines.push('!'); }
+
+    const snoopingConfig = (sw as unknown as {
+      getIgmpSnoopingAgent?: () => { getConfig(): SnoopingConfig };
+    }).getIgmpSnoopingAgent?.().getConfig();
+    const snooping = snoopingConfig ? igmpSnoopingRunningConfigLines(snoopingConfig) : [];
+    if (snooping.length > 0) { lines.push(...snooping); lines.push('!'); }
 
     // Les vues AVANT les comptes, pour la meme raison que sur le
     // routeur : `username X view NOC` refuse une vue inconnue, donc une

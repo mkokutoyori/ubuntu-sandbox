@@ -1,9 +1,15 @@
+import { boundedInteger } from '@/cli/ArgumentTypes';
+
 export const VLAN_MIN = 1;
 export const VLAN_MAX = 4094;
 const VLAN_RANGE_SIZE = VLAN_MAX - VLAN_MIN + 1;
 
 function inRange(vlan: number): boolean {
   return Number.isInteger(vlan) && vlan >= VLAN_MIN && vlan <= VLAN_MAX;
+}
+
+export function parseVlanId(token: string | undefined): number | null {
+  return boundedInteger(token, VLAN_MIN, VLAN_MAX);
 }
 
 export class VlanSet {
