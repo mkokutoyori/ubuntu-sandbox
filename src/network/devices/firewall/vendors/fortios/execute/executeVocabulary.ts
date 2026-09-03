@@ -52,6 +52,8 @@ export const FORTI_EXECUTE_COMMANDS: readonly FortiExecuteCommand[] = Object.fre
     ] },
   { name: 'enter', help: 'Select virtual domain.' },
   { name: 'factoryreset', help: 'Reset the configuration to factory default.' },
+  { name: 'factoryreset2',
+    help: 'Reset to factory default, keeping VDOMs, interfaces and static routes.' },
   { name: 'formatlogdisk', help: 'Format the log disk.' },
   { name: 'ha', help: 'Cluster operations.',
     options: [

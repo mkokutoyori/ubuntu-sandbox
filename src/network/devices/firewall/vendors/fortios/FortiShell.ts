@@ -86,6 +86,7 @@ import { TftpClientSession } from '@/network/tftp/TftpSession';
 import { IPAddress } from '@/network/core/types';
 import { tokenize } from '@/cli/CommandParser';
 import { renderDiskList, renderScanRequest } from './diag/diskViews';
+import { keepConfigBlocks } from './config/keepConfigBlocks';
 import { encryptConfig, decryptConfig, isEncryptedConfig } from './backup/ConfigEncryption';
 import {
   renderOspfDatabase, renderOspfInterfaces,
@@ -139,14 +140,19 @@ const UNSIMULATED_PING_OPTIONS: Readonly<Record<string, string>> = {
 const TFTP_EXPORT_TIMEOUT_MS = 1_000;
 const TFTP_EXPORT_MAX_RETRIES = 2;
 
-type ActionDestructive = 'reboot' | 'shutdown' | 'factoryreset' | 'formatlogdisk';
+type ActionDestructive =
+  'reboot' | 'shutdown' | 'factoryreset' | 'factoryreset2' | 'formatlogdisk';
 
 const FORMATTAGE_DISQUE = 'Formatting disk, Please wait a few seconds!';
 
 const NO_LOG_DISK = 'No log disk.';
 
+const FACTORYRESET2_BRANCHES: readonly string[] = Object.freeze([
+  'vdom', 'system interface', 'system settings', 'router static', 'router static6',
+]);
+
 function annonceAlimentation(action: ActionDestructive): string {
-  if (action === 'factoryreset') {
+  if (action === 'factoryreset' || action === 'factoryreset2') {
     return 'This operation will reset the system to factory default!';
   }
   if (action === 'formatlogdisk') {
@@ -1099,6 +1105,7 @@ export class FortiShell {
 
   factoryReset(): void {
     this.nav.abort();
+    this.nav.deleteEveryObject();
     this.tree.clear();
     this.vdom = 'root';
     this.globalScope = false;
@@ -1411,7 +1418,21 @@ export class FortiShell {
     if (action === 'reboot') this.fw.rebootNow();
     else if (action === 'shutdown') this.fw.shutdownNow();
     else if (action === 'formatlogdisk') { this.formatLogDisk(); this.fw.rebootNow(); }
+    else if (action === 'factoryreset2') this.reinitialiserSaufReseau();
     else { this.factoryReset(); this.fw.rebootNow(); }
+  }
+
+  private reinitialiserSaufReseau(): void {
+    const garde = keepConfigBlocks(
+      this.fw.getRunningConfig(), FACTORYRESET2_BRANCHES);
+    const vdomMode = this.tree.setting('system global', 'vdom-mode')[0];
+    this.factoryReset();
+    if (vdomMode !== undefined && vdomMode !== 'no-vdom') {
+      this.absorbClusterConfiguration(
+        `config system global\nset vdom-mode ${vdomMode}\nend`);
+    }
+    this.absorbClusterConfiguration(garde);
+    this.fw.rebootNow();
   }
 
   private formatLogDisk(): void {
@@ -1456,7 +1477,8 @@ export class FortiShell {
   private planDestructif(
     verb: string | undefined, rest: readonly string[],
   ): { action: ActionDestructive; announce: string[]; after: string[] } | null {
-    if (verb === 'reboot' || verb === 'shutdown' || verb === 'factoryreset') {
+    if (verb === 'reboot' || verb === 'shutdown'
+      || verb === 'factoryreset' || verb === 'factoryreset2') {
       return rest.length === 0
         ? { action: verb, announce: [annonceAlimentation(verb)], after: [] }
         : null;
@@ -1561,6 +1583,7 @@ export class FortiShell {
       case 'revision': return this.executeRevision(tail);
       case 'factoryreset': case 'reboot': case 'shutdown': case 'formatlogdisk':
         return this.appliquerAlimentation(resolved.name);
+      case 'factoryreset2': return this.appliquerAlimentation('factoryreset2');
       case 'ssh': case 'telnet':
         return tail.length === 0
           ? FortiMessages.incomplete('a destination')
