@@ -64,7 +64,8 @@ export interface HaHeartbeat {
   readonly sessions: readonly HaSyncedSession[];
 }
 
-export type HaCommandKind = 'sync-pull' | 'authenticate' | 'cli';
+export type HaCommandKind =
+  | 'sync-pull' | 'authenticate' | 'cli' | 'disconnect' | 'set-priority';
 
 export interface HaCommandRequest {
   readonly type: 'fgcp-command-request';

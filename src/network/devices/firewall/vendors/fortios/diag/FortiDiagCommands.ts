@@ -21,7 +21,7 @@ import { renderDebugFlow } from './debugFlowRenderer';
 import { renderIpropeList, renderIpropeShow } from './ipropeRenderer';
 import { renderSniffer } from './snifferRenderer';
 import {
-  filterIsEmpty, renderSessionList, sessionMatchesFilter,
+  filterIsEmpty, renderSessionList, sessionMatchesFilter, type SessionFilter,
 } from './sessionListRenderer';
 
 export interface FortiDiagDeps {
@@ -185,7 +185,7 @@ export function runDiagnose(rest: readonly string[], deps: FortiDiagDeps): strin
     if (tail[0] !== 'versions') {
       return FortiMessages.unknownPath(`autoupdate ${tail.join(' ')}`);
     }
-    return renderAutoupdateVersions();
+    return renderAutoupdateVersions(deps.fw.getFortiGuard().list());
   }
   return FortiMessages.unknownPath(rest.join(' '));
 }
@@ -314,6 +314,19 @@ export function runExecuteLog(rest: readonly string[], deps: FortiDiagDeps): str
   if (rest[0] === 'delete-all') {
     return `${deps.fw.getLogStore().clear()} log entries deleted`;
   }
+  if (rest[0] === 'delete') {
+    const raw = rest[1];
+    if (raw === undefined || raw === '?') return describeLogCategories();
+    const category = resolveLogCategory(raw);
+    if (!category) {
+      return FortiMessages.valueError(raw,
+        `known categories:\n${describeLogCategories()}`);
+    }
+    const removed = deps.fw.getLogStore().deleteMatching({
+      type: category.type, subtype: category.subtype,
+    });
+    return `${removed} log entries deleted`;
+  }
   if (rest[0] === 'filter') return setLogFilter(rest.slice(1), deps);
   if (rest[0] !== 'display') return FortiMessages.unknownPath(`log ${rest.join(' ')}`);
 
@@ -395,25 +408,49 @@ function diagnoseSession(rest: readonly string[], deps: FortiDiagDeps): string {
   });
 }
 
-function setSessionFilter(words: readonly string[], deps: FortiDiagDeps): string {
-  const [name, value] = words;
-  if (name === undefined) return renderSessionFilter(deps);
-  if (name === 'clear') { deps.state.clearSessionFilter(); return ''; }
-  if (value === undefined) return FortiMessages.incomplete('the filter value');
+export const SESSION_FILTER_FIELDS: readonly string[] =
+  Object.freeze(['src', 'dst', 'sport', 'dport', 'proto', 'policy', 'vd']);
 
-  const filter = deps.state.sessionFilter;
+function assignSessionFilter(
+  filter: SessionFilter, name: string, value: string,
+): string | null {
   switch (name) {
-    case 'src': filter.src = value; return '';
-    case 'dst': filter.dst = value; return '';
-    case 'sport': filter.sport = Number.parseInt(value, 10); return '';
-    case 'dport': filter.dport = Number.parseInt(value, 10); return '';
-    case 'proto': filter.proto = Number.parseInt(value, 10); return '';
-    case 'policy': filter.policy = value; return '';
-    case 'vd': filter.vd = Number.parseInt(value, 10); return '';
+    case 'src': filter.src = value; return null;
+    case 'dst': filter.dst = value; return null;
+    case 'sport': filter.sport = Number.parseInt(value, 10); return null;
+    case 'dport': filter.dport = Number.parseInt(value, 10); return null;
+    case 'proto': filter.proto = Number.parseInt(value, 10); return null;
+    case 'policy': filter.policy = value; return null;
+    case 'vd': filter.vd = Number.parseInt(value, 10); return null;
     default:
       return FortiMessages.parseError(name,
-        'known filters: src, dst, sport, dport, proto, policy, vd, clear.');
+        `known filters: ${SESSION_FILTER_FIELDS.join(', ')}, clear.`);
   }
+}
+
+export function runSessionFilter(
+  words: readonly string[], deps: FortiDiagDeps, perFieldClear: boolean,
+): string {
+  const [name, value] = words;
+  if (name === undefined) return renderSessionFilter(deps);
+  if (name === 'clear') {
+    if (!perFieldClear || value === undefined || value === 'all') {
+      deps.state.clearSessionFilter();
+      return '';
+    }
+    if (!SESSION_FILTER_FIELDS.includes(value)) {
+      return FortiMessages.parseError(value,
+        `known filters: ${SESSION_FILTER_FIELDS.join(', ')}, all.`);
+    }
+    delete deps.state.sessionFilter[value as keyof SessionFilter];
+    return '';
+  }
+  if (value === undefined) return FortiMessages.incomplete('the filter value');
+  return assignSessionFilter(deps.state.sessionFilter, name, value) ?? '';
+}
+
+function setSessionFilter(words: readonly string[], deps: FortiDiagDeps): string {
+  return runSessionFilter(words, deps, false);
 }
 
 function renderSessionFilter(deps: FortiDiagDeps): string {

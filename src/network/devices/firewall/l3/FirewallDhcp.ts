@@ -60,8 +60,20 @@ export class FirewallDhcp {
     this.client.setWireChannelFactory((iface) => this.channelFor(iface));
   }
 
+  private readonly clientInterfaces = new Set<string>();
+
   acquireLease(iface: string): string {
+    this.clientInterfaces.add(iface);
     return this.client.requestLease(iface, {});
+  }
+
+  setClientMode(iface: string, enabled: boolean): void {
+    if (enabled) this.clientInterfaces.add(iface);
+    else this.clientInterfaces.delete(iface);
+  }
+
+  isClientInterface(iface: string): boolean {
+    return this.clientInterfaces.has(iface);
   }
 
   releaseLease(iface: string): void {
@@ -167,6 +179,10 @@ export class FirewallDhcp {
 
   clearLease(ip: string): boolean {
     return this.server.clearBinding(ip);
+  }
+
+  clearAllLeases(): void {
+    this.server.clearBindings();
   }
 
   getServer(): DHCPServer { return this.server; }

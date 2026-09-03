@@ -25,6 +25,8 @@ import { CommandTrie, formatInvalidInput } from './CommandTrie';
 import { isValidIPv4 } from '../../core/ip';
 import type { CommandSpec } from '@/cli/CommandTable';
 import type { FhrpPlacement } from './cisco/fhrpInterfaceSpecs';
+import { parseTrackDefinition, TRACK_INVALID_ID } from './cisco/trackSyntax';
+import { vrfRunningConfigLines, type VrfHost } from './cisco/ciscoVrfStore';
 import type { IpAddressHost } from './cisco/ipAddressInterfaceSpecs';
 import type { LoadMtuHost } from './cisco/interfaceLoadMtuSpecs';
 import {
@@ -45,7 +47,12 @@ import {
 } from './cisco/ciscoCounterTables';
 import type { ISwitchShell } from './ISwitchShell';
 import type { Switch, SwitchportConfig } from '../Switch';
-import type { VlanSet } from '../switch/VlanSet';
+import { parseVlanId, type VlanSet } from '../switch/VlanSet';
+import {
+  STORM_CONTROL_TYPES, parseStormControl, stormControlPercent,
+} from './cisco/stormControlSyntax';
+import { igmpSnoopingRunningConfigLines } from '../../igmp-snooping/snoopingRunningConfig';
+import type { SnoopingConfig } from '../../igmp-snooping/types';
 import type { CiscoSwitch } from '../CiscoSwitch';
 import type { PromptMap } from './PromptBuilder';
 import { CISCO_SWITCH_PROMPTS } from './PromptBuilder';
@@ -73,7 +80,7 @@ import {
 import { IOS_ACL_NUMBERING } from '../router/ACLEngine';
 import { CISCO_ERRORS } from './cli-utils';
 import { estTypeSansNumero, typesInterfaceEnMotsCles } from './cisco/CiscoConfigCommands';
-import { getNtpAgent } from '../../equipment/RouterServiceCapabilities';
+import { getNtpAgent, getSnmpService } from '../../equipment/RouterServiceCapabilities';
 import { fhrpRunningConfigLines } from '../../fhrp/runningConfig';
 import { fhrpViewOf } from './cisco/CiscoShowCommands';
 import { hsrpMaxGroup } from '../../hsrp/types';
@@ -104,7 +111,7 @@ import { hsrpVirtualMac, effectivePriority as hsrpEffectivePriority } from '../.
 import { effectiveWeighting as glbpEffectiveWeighting } from '../../glbp/types';
 import { effectivePriority as vrrpEffectivePriority } from '../../vrrp/types';
 import { TrackObjectRegistry } from '../switch/TrackObjectRegistry';
-import { CliInvalidInput } from './cli/CliDiagnostic';
+import { CliInvalidInput, CliIncomplete } from './cli/CliDiagnostic';
 import { describeCiscoSwitchArguments } from './cisco/ciscoArgumentHelp';
 import { renderTableText, FIXED_TABLE } from './cli/TextTable';
 import {
@@ -119,7 +126,8 @@ import { mstConfigDigest, vlansMappedToInstanceZero } from '@/network/stp/MstCon
 export type CLIMode =
   | 'user' | 'privileged' | 'config' | 'config-if' | 'config-vlan'
   | 'config-mst' | 'config-line' | 'config-acl' | 'config-dhcp'
-  | 'config-access-map' | 'config-archive' | 'config-archive-log';
+  | 'config-access-map' | 'config-archive' | 'config-archive-log'
+  | 'config-time-range';
 
 /**
  * Raised when a command needs a protocol this switch does not run.
@@ -826,6 +834,7 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
   private selectedAclType: 'standard' | 'extended' = 'extended';
   private selectedArpAcl: string | null = null;
   private configAccessMapTrie = new CommandTrie();
+  private configTimeRangeTrie = new CommandTrie();
   private selectedAccessMap: { name: string; seq: number } | null = null;
 
   constructor() {
@@ -1045,6 +1054,7 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
       case 'config-acl':  return this.configAclTrie;
       case 'config-dhcp': return this.configDhcpTrie;
       case 'config-access-map': return this.configAccessMapTrie;
+      case 'config-time-range': return this.configTimeRangeTrie;
       case 'config-radius-server': return this.configRadiusServerTrie;
       case 'config-tacacs-server': return this.configTacacsServerTrie;
       case 'config-aaa-group':     return this.configAaaGroupTrie;
@@ -1181,15 +1191,19 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
       return '';
     });
     this.configTrie.registerGreedy('track', 'Tracked object registry', (args) => {
-      const id = parseInt(args[0] ?? '', 10);
-      if (!Number.isFinite(id) || id < 1) return '% Invalid track id.';
-      if (args[1] === 'interface' && args[2]) {
-        const iface = this.resolveInterfaceName(args[2]) ?? args[2];
-        const kind = args[3] === 'ip' && args[4] === 'routing' ? 'ip-routing' : 'line-protocol';
-        this.trackObjects.set(id, iface, kind);
-        return '';
+      const lu = parseTrackDefinition(args);
+      if (lu.idInvalide) return TRACK_INVALID_ID;
+      if (lu.incomplet) return CISCO_ERRORS.INCOMPLETE;
+      if (lu.refus !== undefined || !lu.definition) return CISCO_ERRORS.INVALID_INPUT;
+      const def = lu.definition;
+      if (def.type !== 'interface-line' && def.type !== 'interface-routing') {
+        return CISCO_ERRORS.INVALID_INPUT;
       }
-      return CISCO_ERRORS.INCOMPLETE;
+      const iface = this.resolveInterfaceName(def.iface ?? '') ?? def.iface ?? '';
+      this.trackObjects.set(
+        def.id, iface,
+        def.type === 'interface-routing' ? 'ip-routing' : 'line-protocol');
+      return '';
     });
     this.configTrie.registerGreedy('no track', 'Remove a tracked object', (args) => {
       const id = parseInt(args[0] ?? '', 10);
@@ -1806,10 +1820,13 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
       return '';
     });
     trie.configIf.registerGreedy('udld port', 'UDLD per-port configuration', (args) => {
-      const ports = this.selectedPortsForConfigIf();
       const m = (args[0] ?? '').toLowerCase();
+      if (m !== '' && m !== 'aggressive') throw new CliInvalidInput({ token: args[0] });
+
       const mode = m === 'aggressive' ? 'aggressive' : 'normal';
-      for (const p of ports) this.requireUdld().setPortMode(p, mode);
+      for (const p of this.selectedPortsForConfigIf()) {
+        this.requireUdld().setPortMode(p, mode);
+      }
       return '';
     });
     trie.configIf.register('no udld port', 'Disable UDLD on this port', () => {
@@ -1899,13 +1916,15 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
     const agent = this.requirePimSnooping();
     const a = args.map(s => s.toLowerCase());
     if (a.length === 0) { agent.setEnabled(on); return ''; }
-    if (a[0] === 'vlan' && a[1]) {
-      const vlan = parseInt(a[1], 10);
-      if (Number.isNaN(vlan)) return CISCO_ERRORS.INVALID_INPUT;
-      agent.setVlanEnabled(vlan, on);
-      return '';
-    }
-    return CISCO_ERRORS.INVALID_INPUT;
+    if (a[0] !== 'vlan') throw new CliInvalidInput({ token: args[0] });
+    if (a[1] === undefined) throw new CliIncomplete();
+
+    const vlan = parseVlanId(a[1]);
+    if (vlan === null) throw new CliInvalidInput({ token: args[1] });
+    if (a[2] !== undefined) throw new CliInvalidInput({ token: args[2] });
+
+    agent.setVlanEnabled(vlan, on);
+    return '';
   }
 
   private showPimSnooping(args: string[]): string {
@@ -1952,40 +1971,30 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
     }
   }
 
+  private applyIgmpSnooping(args: string[], on: boolean): string {
+    const agent = this.requireIgmpSnooping();
+    const a = args.map(s => s.toLowerCase());
+    if (a.length === 0) { agent.setEnabled(on); return ''; }
+    if (a[0] === 'querier') return this.applySnoopingQuerier(null, a.slice(1), on);
+    if (a[0] !== 'vlan') throw new CliInvalidInput({ token: args[0] });
+    if (a[1] === undefined) throw new CliIncomplete();
+
+    const vlan = parseVlanId(a[1]);
+    if (vlan === null) throw new CliInvalidInput({ token: args[1] });
+    if (a[2] === 'immediate-leave') { agent.setImmediateLeave(vlan, on); return ''; }
+    if (a[2] === 'mrouter') return this.applyStaticMrouter(vlan, args.slice(3), on);
+    if (a[2] === 'querier') return this.applySnoopingQuerier(vlan, a.slice(3), on);
+    if (a[2] !== undefined) throw new CliInvalidInput({ token: args[2] });
+
+    agent.setVlanEnabled(vlan, on);
+    return '';
+  }
+
   private registerIgmpSnoopingCommands(): void {
-    this.configTrie.registerGreedy('ip igmp snooping', 'IGMP snooping config', (args) => {
-      const agent = this.requireIgmpSnooping();
-      const a = args.map(s => s.toLowerCase());
-      if (a.length === 0) { agent.setEnabled(true); return ''; }
-      if (a[0] === 'querier') return this.applySnoopingQuerier(null, a.slice(1), true);
-      if (a[0] === 'vlan' && a[1]) {
-        const vlan = parseInt(a[1], 10);
-        if (!Number.isNaN(vlan)) {
-          if (a[2] === 'immediate-leave') { agent.setImmediateLeave(vlan, true); return ''; }
-          if (a[2] === 'mrouter') return this.applyStaticMrouter(vlan, args.slice(3), true);
-          if (a[2] === 'querier') return this.applySnoopingQuerier(vlan, a.slice(3), true);
-          agent.setVlanEnabled(vlan, true);
-        }
-        return '';
-      }
-      return '';
-    });
-    this.configTrie.registerGreedy('no ip igmp snooping', 'Disable IGMP snooping', (args) => {
-      const agent = this.requireIgmpSnooping();
-      const a = args.map(s => s.toLowerCase());
-      if (a.length === 0) { agent.setEnabled(false); return ''; }
-      if (a[0] === 'querier') return this.applySnoopingQuerier(null, a.slice(1), false);
-      if (a[0] === 'vlan' && a[1]) {
-        const vlan = parseInt(a[1], 10);
-        if (!Number.isNaN(vlan)) {
-          if (a[2] === 'immediate-leave') { agent.setImmediateLeave(vlan, false); return ''; }
-          if (a[2] === 'mrouter') return this.applyStaticMrouter(vlan, args.slice(3), false);
-          if (a[2] === 'querier') return this.applySnoopingQuerier(vlan, a.slice(3), false);
-          agent.setVlanEnabled(vlan, false);
-        }
-      }
-      return '';
-    });
+    this.configTrie.registerGreedy('ip igmp snooping', 'IGMP snooping config',
+      (args) => this.applyIgmpSnooping(args, true));
+    this.configTrie.registerGreedy('no ip igmp snooping', 'Disable IGMP snooping',
+      (args) => this.applyIgmpSnooping(args, false));
     for (const t of [this.userTrie, this.privilegedTrie]) {
       t.registerGreedy('show ip igmp snooping', 'Display IGMP snooping state', (args) => {
         const agent = this.requireIgmpSnooping();
@@ -3235,15 +3244,13 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
           // est le 4ᵉ mot, le bas est optionnel et vaut le haut sinon,
           // exactement comme sur IOS. Les pourcentages sortent à deux
           // décimales, la forme du vrai binaire.
-          const parts = seuil.split(/\s+/);
-          const pct = (v: string | undefined, defaut: string) => {
-            const n = parseFloat(v ?? '');
-            return `${(Number.isNaN(n) ? parseFloat(defaut) : n).toFixed(2)}%`;
-          };
-          const haut = pct(parts[3], '100');
-          const bas = pct(parts[4], parts[3] ?? '100');
+          const { setting } = parseStormControl(seuil.split(/\s+/).slice(1));
+          if (!setting || setting.kind !== 'level') continue;
+
+          const unite = setting.unit === 'percent'
+            ? stormControlPercent : (v: number) => String(v);
           lignes.push(`${this.abbreviateInterface(nom).padEnd(11)}${'Forwarding'.padEnd(15)}`
-            + `${haut.padEnd(13)}${bas.padEnd(13)}0.00%`);
+            + `${unite(setting.upper).padEnd(13)}${unite(setting.lower).padEnd(13)}0.00%`);
         }
       }
       if (!trouve) return lignes[0];
@@ -3943,9 +3950,21 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
         if (this.selectedInterface && this.sviVlanId(this.selectedInterface) !== null) {
           return CISCO_ERRORS.INVALID_INPUT;
         }
+        if (sub === 'storm-control') {
+          const parsed = parseStormControl(args);
+          if (parsed.incomplete) throw new CliIncomplete();
+          if (!parsed.setting) throw new CliInvalidInput({ token: args[parsed.at] });
+        }
         return recordIf(`${sub} ${args.join(' ')}`.trim());
       });
     }
+    trie.registerGreedy('no storm-control', 'Remove a storm-control setting', (args) => {
+      const quoi = (args[0] ?? '').toLowerCase();
+      if (quoi === 'action') return removeIf('storm-control action');
+      if (!STORM_CONTROL_TYPES.includes(quoi)) throw new CliInvalidInput({ token: args[0] });
+
+      return removeIf(`storm-control ${quoi} level`);
+    });
 
     const removeIf = (prefix: string) => {
       const ifs = this.selectedInterface
@@ -4284,6 +4303,12 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
     else if (sw.getDomainName()) { lines.push(`ip domain-name ${sw.getDomainName()}`); lines.push('!'); }
     if (sw.getDefaultGateway()) { lines.push(`ip default-gateway ${sw.getDefaultGateway()}`); lines.push('!'); }
 
+    const snoopingConfig = (sw as unknown as {
+      getIgmpSnoopingAgent?: () => { getConfig(): SnoopingConfig };
+    }).getIgmpSnoopingAgent?.().getConfig();
+    const snooping = snoopingConfig ? igmpSnoopingRunningConfigLines(snoopingConfig) : [];
+    if (snooping.length > 0) { lines.push(...snooping); lines.push('!'); }
+
     // Les vues AVANT les comptes, pour la meme raison que sur le
     // routeur : `username X view NOC` refuse une vue inconnue, donc une
     // configuration qui nommerait la vue apres le compte ne serait pas
@@ -4321,6 +4346,12 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
     // et ne la rendait nulle part.
     const lignesNtp = getNtpAgent(sw)?.asRunningConfigLines() ?? [];
     if (lignesNtp.length > 0) { lines.push(...lignesNtp); lines.push('!'); }
+
+    const lignesSnmp = getSnmpService(sw)?.asRunningConfigLines() ?? [];
+    if (lignesSnmp.length > 0) { lines.push(...lignesSnmp); lines.push('!'); }
+
+    const lignesVrf = vrfRunningConfigLines((sw as unknown as VrfHost)._vrfs);
+    if (lignesVrf.length > 0) { lines.push(...lignesVrf); lines.push('!'); }
 
     // VTY line configuration (transport input, login, password, …).
     const vtyLines = sw._getVtyLineConfig().renderAllCisco(chiffre);
@@ -5453,7 +5484,6 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
       configRouter: inutilise(),
       configRouterOspf: inutilise(),
       configRouteMap: inutilise(),
-      configTimeRange: inutilise(),
       configTrack: inutilise(),
       configRouterOnly: inutilise(),
     });

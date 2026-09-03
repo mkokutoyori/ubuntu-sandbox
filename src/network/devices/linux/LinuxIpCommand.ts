@@ -14,6 +14,7 @@ import {
 } from './LinuxIpColor';
 import { IPAddress, MACAddress, SubnetMask } from '../../core/types';
 import { broadcastAddress } from '../../core/ip';
+import { parseIpv6Prefix } from '../../core/Ipv6Arithmetic';
 import {
   buildAddrJsonEntry,
   buildLinkJsonEntry,
@@ -135,6 +136,11 @@ export interface IpNetworkContext {
   removeInterfaceIP(ifName: string): string;
   getRoutingTable(tableId?: number): IpRouteEntry[];
   getIPv6RoutingTable?(): IpV6RouteEntry[];
+  addIPv6Route?(
+    prefix: string, prefixLength: number, gateway: string | null, dev: string | null,
+    metric?: number,
+  ): string;
+  deleteIPv6Route?(prefix: string, prefixLength: number, gateway: string | null): string;
   addDefaultRoute(gateway: IPAddress): string;
   addStaticRoute(
     network: IPAddress,
@@ -446,6 +452,10 @@ export function executeIpCommand(
 
     case 'route':
     case 'r':
+      if (family !== 'inet6' && family !== 'inet'
+        && subArgs.length > 1 && routeSpecIsIpv6(subArgs.slice(1))) {
+        return ipRoute6(ctx, subArgs, outputOpts);
+      }
       return family === 'inet6' ? ipRoute6(ctx, subArgs, outputOpts) : ipRoute(ctx, subArgs, outputOpts);
 
     case 'neigh':
@@ -1312,9 +1322,30 @@ function ipRouteShow(ctx: IpNetworkContext, args: string[], opts: IpOutputOption
   return lines.join('\n');
 }
 
+function ipRoute6Add(ctx: IpNetworkContext, args: string[]): string {
+  const spec = parseRouteSpec6(args);
+  if (typeof spec === 'string') return spec;
+  if (!ctx.addIPv6Route) return 'RTNETLINK answers: Operation not supported';
+  return ctx.addIPv6Route(
+    spec.prefix, spec.prefixLength, spec.gateway, spec.dev, spec.metric);
+}
+
+function ipRoute6Del(ctx: IpNetworkContext, args: string[]): string {
+  const spec = parseRouteSpec6(args);
+  if (typeof spec === 'string') return spec;
+  if (!ctx.deleteIPv6Route) return 'RTNETLINK answers: Operation not supported';
+  return ctx.deleteIPv6Route(spec.prefix, spec.prefixLength, spec.gateway);
+}
+
 function ipRoute6(ctx: IpNetworkContext, args: string[], opts: IpOutputOptions): string {
   if (args.length > 0 && args[0] !== 'show' && args[0] !== 'list') {
     if (args[0] === 'help') return IP_ROUTE_HELP;
+    if (args[0] === 'add' || args[0] === 'append') return ipRoute6Add(ctx, args.slice(1));
+    if (args[0] === 'replace' || args[0] === 'change') {
+      ctx.deleteIPv6Route?.(...routeKeyOf(args.slice(1)));
+      return ipRoute6Add(ctx, args.slice(1));
+    }
+    if (args[0] === 'del' || args[0] === 'delete') return ipRoute6Del(ctx, args.slice(1));
     return `Command "${args[0]}" is unknown, try "ip route help".`;
   }
   const table = ctx.getIPv6RoutingTable?.() ?? [];
@@ -1353,6 +1384,65 @@ interface ParsedRouteSpec {
   dev: string | null;
   metric?: number;
   table?: number;
+}
+
+interface ParsedRouteSpec6 {
+  isDefault: boolean;
+  prefix: string;
+  prefixLength: number;
+  gateway: string | null;
+  dev: string | null;
+  metric?: number;
+}
+
+function looksIpv6(token: string | undefined): boolean {
+  return token !== undefined && token.split('/')[0].includes(':');
+}
+
+function routeSpecIsIpv6(args: string[]): boolean {
+  const viaIdx = args.indexOf('via');
+  return looksIpv6(args[0]) || (viaIdx !== -1 && looksIpv6(args[viaIdx + 1]));
+}
+
+function routeKeyOf(args: string[]): [string, number, string | null] {
+  const spec = parseRouteSpec6(args);
+  return typeof spec === 'string' ? ['::', 0, null] : [spec.prefix, spec.prefixLength, null];
+}
+
+function parseRouteSpec6(args: string[]): ParsedRouteSpec6 | string {
+  if (args.length === 0) return 'Error: need a valid prefix or "default".';
+
+  const isDefault = args[0] === 'default' || args[0] === '::/0';
+  let prefix = '::';
+  let prefixLength = 0;
+
+  if (!isDefault) {
+    const parsed = parseIpv6Prefix(args[0]);
+    if (!parsed) return `Error: ${args[0]} is not a valid IPv6 prefix.`;
+    prefix = parsed.address;
+    prefixLength = parsed.prefixLength;
+  }
+
+  const viaIdx = args.indexOf('via');
+  const devIdx = args.indexOf('dev');
+  const metricIdx = args.indexOf('metric');
+
+  let gateway: string | null = null;
+  if (viaIdx !== -1 && args[viaIdx + 1]) {
+    if (!parseIpv6Prefix(`${args[viaIdx + 1]}/128`)) {
+      return `Error: ${args[viaIdx + 1]} is not a valid IPv6 address.`;
+    }
+    gateway = args[viaIdx + 1];
+  }
+  const dev = devIdx !== -1 && args[devIdx + 1] ? args[devIdx + 1] : null;
+  if (isDefault && !gateway && !dev) {
+    return 'Error: "via" is required for default route.';
+  }
+
+  let metric: number | undefined;
+  if (metricIdx !== -1 && args[metricIdx + 1]) metric = parseInt(args[metricIdx + 1], 10);
+
+  return { isDefault, prefix, prefixLength, gateway, dev, metric };
 }
 
 function parseRouteSpec(args: string[]): ParsedRouteSpec | string {

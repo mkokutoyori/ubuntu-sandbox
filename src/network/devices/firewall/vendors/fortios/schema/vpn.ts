@@ -434,6 +434,8 @@ export const VPN_SSL_SETTINGS: FortiTableSpec = {
     refList('source-interface', 'Interfaces the portal listens on.',
       ['system interface']),
     count('login-timeout', 'Seconds a login may take.', 10, 180, 30),
+    count('idle-timeout', 'Seconds an idle connection is kept, 0 for no limit.',
+      0, 259200, 300),
   ],
   children: [{
     path: ['vpn', 'ssl', 'settings', 'authentication-rule'],
@@ -464,6 +466,7 @@ export const VPN_SSL_SETTINGS: FortiTableSpec = {
       port: Number.parseInt(object.effective('port')[0] ?? '10443', 10),
       serverCertificate: object.effective('servercert')[0] ?? '',
       sourceInterfaces: [...object.effective('source-interface')],
+      idleTimeout: Number.parseInt(object.effective('idle-timeout')[0] ?? '300', 10),
       rules,
     });
   },

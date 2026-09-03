@@ -1,5 +1,7 @@
 import type { CommandSpec } from '../../CommandTable';
 import type { ArgumentSpec } from '../../ArgumentTypes';
+import { TUNNEL_MODES, isTunnelMode, isTunnelModeHead } from './tunnelModes';
+import { CliInvalidInput, CliIncomplete } from '../../../network/devices/shells/cli/CliDiagnostic';
 
 export interface TunnelHost {
   selectedInterfaceName(): string | null;
@@ -71,6 +73,29 @@ const PATH_MTU_DISCOVERY: CommandSpec = {
   },
 };
 
+const MODE: CommandSpec = {
+  id: 'tunnel-mode',
+  path: ['tunnel', 'mode', {
+    name: 'value', type: 'REST',
+    description: 'Tunnel encapsulation mode',
+    alternatives: TUNNEL_MODES.map(
+      (m) => ({ keyword: m.keyword, description: m.description }),
+    ),
+  }],
+  description: 'Set tunnel encapsulation mode',
+  modes: ['config-if', 'config-subif'],
+  minPrivilege: 15,
+  run: (session, args) => {
+    const mode = (args.value ?? '').trim();
+    if (!isTunnelMode(mode)) {
+      const tete = mode.split(/\s+/)[0];
+      if (isTunnelModeHead(tete)) throw new CliIncomplete();
+      throw new CliInvalidInput({ token: tete });
+    }
+    return assign(session.device, 'tunnelMode', mode);
+  },
+};
+
 export const TUNNEL_FAMILY: readonly CommandSpec[] = Object.freeze([
   PATH_MTU_DISCOVERY,
   // `tunnel source` prend une adresse OU un nom d'interface : le socle
@@ -80,9 +105,7 @@ export const TUNNEL_FAMILY: readonly CommandSpec[] = Object.freeze([
     { name: 'value', type: 'WORD' }),
   setter('tunnel-destination', 'destination', 'tunnelDest', 'Set tunnel destination',
     { name: 'value', type: 'IP_ADDR' }),
-  // Le mode s'ecrit en DEUX mots (`gre multipoint`, `ipsec ipv4`), donc
-  // il n'est pas un jeton unique enumerable.
-  setter('tunnel-mode', 'mode', 'tunnelMode', 'Set tunnel encapsulation mode'),
+  MODE,
   setter('tunnel-key', 'key', 'tunnelKey', 'Set tunnel key',
     { name: 'value', type: 'INT', range: [0, 4294967295] }),
   setter('tunnel-vrf', 'vrf', 'tunnelVrf', 'Set tunnel VRF',

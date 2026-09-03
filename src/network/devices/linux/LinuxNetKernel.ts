@@ -82,6 +82,14 @@ export interface LinuxNetKernel {
   // ─── Routing ─────────────────────────────────────────────────────
   getRoutingTable(): HostRouteEntry[];
   getIPv6RoutingTable(): HostIPv6RouteEntry[];
+  setDefaultGateway6(gateway: IPv6Address): void;
+  addIPv6StaticRoute(
+    prefix: IPv6Address, prefixLength: number,
+    nextHop: IPv6Address | null, iface: string, metric?: number,
+  ): void;
+  removeIPv6StaticRoute(
+    prefix: IPv6Address, prefixLength: number, nextHop?: IPv6Address | null,
+  ): boolean;
   addStaticRoute(network: IPAddress, mask: SubnetMask, gw: IPAddress, metric?: number): boolean;
   addDeviceRoute(network: IPAddress, mask: SubnetMask, iface: string, metric?: number): boolean;
   removeRoute(

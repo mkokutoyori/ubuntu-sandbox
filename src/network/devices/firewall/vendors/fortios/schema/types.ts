@@ -5,11 +5,13 @@ import type { LdbMethod } from '../../../nat/RealServerPool';
 import type { ArgumentSpec, EnumValue } from '../../../../../../cli/ArgumentTypes';
 import type { ObjectStore } from '../../../model/ObjectStore';
 import type { PolicyStore } from '../../../model/PolicyStore';
+import type { DosPolicyStore } from '../../../dos/DosPolicyStore';
 
 import type { AccessGroup } from '../../../authz/AccessMatrix';
 import type { SdwanConfiguration } from '../../../sdwan/SdwanTable';
 import type { HaConfiguration } from '../../../ha/HaTypes';
 import type { DhcpScope } from '../../../l3/FirewallDhcp';
+import type { Dhcp6Scope } from '../../../l3/FirewallDhcp6';
 import type {
   SyslogCollectorSettings, SyslogFilterSettings,
 } from '../../../logging/SyslogCollectors';
@@ -86,6 +88,7 @@ import type { LldpSetting, LldpVdomSetting } from '../../../l2/LldpIntent';
 
 export interface FortiInterfacePatch {
   readonly vdom?: string;
+  readonly addressingMode?: 'static' | 'dhcp' | 'pppoe';
   readonly ip?: string;
   readonly mask?: string;
   readonly up?: boolean;
@@ -379,6 +382,16 @@ export interface FortiCommitDevice {
   applyBgp(settings: BgpConfiguration): string | void;
   applyDhcpScope(scope: DhcpScope): void;
   removeDhcpScope(id: string): void;
+  applyIpv6RouterAdvertisement(iface: string, options: {
+    send: boolean; managed: boolean; other: boolean;
+  }): void;
+  applyDhcp6Scope(scope: Dhcp6Scope): void;
+  removeDhcp6Scope(id: string): void;
+  applyIpv6RouterAdvertisement(iface: string, options: {
+    send: boolean; managed: boolean; other: boolean;
+  }): void;
+  applyDhcp6Scope(scope: Dhcp6Scope): void;
+  removeDhcp6Scope(id: string): void;
   acquireDhcpLease(iface: string): void;
   applyOnetimeSchedule(schedule: {
     name: string; start: string; end: string;
@@ -473,6 +486,7 @@ export interface FortiSslVpnPatch {
   readonly port: number;
   readonly serverCertificate: string;
   readonly sourceInterfaces: readonly string[];
+  readonly idleTimeout?: number;
   readonly rules: readonly FortiSslVpnRulePatch[];
 }
 
@@ -649,6 +663,10 @@ export interface FortiProtocolOptionsPatch {
 
 export interface FortiCommitContext {
   readonly policy: PolicyStore;
+  readonly localIn: PolicyStore;
+  readonly localIn6: PolicyStore;
+  readonly dos: DosPolicyStore;
+  readonly dos6: DosPolicyStore;
   readonly objects: ObjectStore;
   readonly device: FortiCommitDevice;
   readonly vdom: string;
@@ -668,6 +686,7 @@ export interface FortiTableSpec {
   readonly attributes: readonly FortiAttributeSpec[];
   readonly children?: readonly FortiTableSpec[];
   readonly predefined?: readonly string[];
+  readonly fixedKeys?: readonly string[];
   readonly keyOnConfigLine?: boolean;
   readonly scopeOnly?: boolean;
   readonly unavailable?: string;

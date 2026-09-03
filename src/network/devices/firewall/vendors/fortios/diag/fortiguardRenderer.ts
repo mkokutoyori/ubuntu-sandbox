@@ -3,6 +3,7 @@ export interface FortiguardDatabase {
   readonly version: string;
   readonly contract: string;
   readonly lastUpdate: string;
+  readonly lastAttempt?: string | null;
 }
 
 export const FORTIGUARD_DATABASES: readonly FortiguardDatabase[] = Object.freeze([
@@ -28,15 +29,17 @@ export const FORTIGUARD_DATABASES: readonly FortiguardDatabase[] = Object.freeze
   },
 ]);
 
-export function renderAutoupdateVersions(): string {
+export function renderAutoupdateVersions(
+  databases: readonly FortiguardDatabase[] = FORTIGUARD_DATABASES,
+): string {
   const lines: string[] = [];
-  for (const database of FORTIGUARD_DATABASES) {
+  for (const database of databases) {
     lines.push(`${database.name}`);
     lines.push(`---------`);
     lines.push(`Version: ${database.version}`);
     lines.push(`Contract Expiry Date: n/a`);
     lines.push(`Last Updated using manual update on ${database.lastUpdate}`);
-    lines.push(`Last Update Attempt: n/a`);
+    lines.push(`Last Update Attempt: ${database.lastAttempt ?? 'n/a'}`);
     lines.push(`Result: ${database.contract}`);
     lines.push('');
   }

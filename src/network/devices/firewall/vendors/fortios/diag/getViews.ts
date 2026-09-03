@@ -331,6 +331,18 @@ function uptimeClock(seconds: number): string {
   return `${hh}:${mm}:${ss}`;
 }
 
+function groupLeasesByInterface<T extends { iface: string }>(
+  leases: readonly T[],
+): Map<string, T[]> {
+  const byInterface = new Map<string, T[]>();
+  for (const lease of leases) {
+    const bucket = byInterface.get(lease.iface) ?? [];
+    bucket.push(lease);
+    byInterface.set(lease.iface, bucket);
+  }
+  return byInterface;
+}
+
 export function renderDhcpLeases(
   leases: ReadonlyArray<{
     iface: string; ip: string; mac: string; expiresAt: number; serverId: string;
@@ -338,15 +350,8 @@ export function renderDhcpLeases(
 ): string {
   if (leases.length === 0) return '';
 
-  const byInterface = new Map<string, typeof leases[number][]>();
-  for (const lease of leases) {
-    const bucket = byInterface.get(lease.iface) ?? [];
-    bucket.push(lease);
-    byInterface.set(lease.iface, bucket);
-  }
-
   const lines: string[] = [];
-  for (const [iface, bucket] of byInterface) {
+  for (const [iface, bucket] of groupLeasesByInterface(leases)) {
     lines.push(iface);
     const rows = bucket.map(lease => ({
       ip: lease.ip,
@@ -361,6 +366,70 @@ export function renderDhcpLeases(
       { header: 'MAC-Address', width: 19, value: row => row.mac },
       { header: 'Hostname', width: 19, value: row => row.hostname },
       { header: 'VCI', width: 17, value: row => row.vci },
+      { header: 'SERVER-ID', width: 10, value: row => row.serverId },
+      { header: 'Expiry', width: 0, value: row => row.expiry },
+    ], FIXED_TABLE).map(line => `    ${line}`));
+  }
+  return lines.join('\n');
+}
+
+export interface SslVpnListRow {
+  readonly index: number;
+  readonly user: string;
+  readonly group: string;
+  readonly sourceIp: string;
+  readonly authType: string;
+  readonly timeout: number;
+  readonly duration: number;
+  readonly tunnelIp: string;
+}
+
+export function renderSslVpnLoginUsers(rows: readonly SslVpnListRow[]): string {
+  const lines = ['SSL VPN Login Users:'];
+  lines.push(...renderTable(rows, [
+    { header: 'Index', width: 8, value: row => String(row.index) },
+    { header: 'User', width: 16, value: row => row.user },
+    { header: 'Auth Type', width: 16, value: row => row.authType },
+    { header: 'Timeout', width: 16, value: row => String(row.timeout) },
+    { header: 'From', width: 16, value: row => row.sourceIp },
+    { header: 'HTTP in/out', width: 16, value: () => '0/0' },
+    { header: 'HTTPS in/out', width: 0, value: () => '0/0' },
+  ], FIXED_TABLE).map(line => ` ${line}`));
+  return lines.join('\n');
+}
+
+export function renderSslVpnSessions(rows: readonly SslVpnListRow[]): string {
+  const lines = ['SSL VPN sessions:'];
+  lines.push(...renderTable(rows, [
+    { header: 'Index', width: 8, value: row => String(row.index) },
+    { header: 'User', width: 16, value: row => row.user },
+    { header: 'Source IP', width: 16, value: row => row.sourceIp },
+    { header: 'Duration', width: 16, value: row => String(row.duration) },
+    { header: 'I/O Bytes', width: 16, value: () => '0/0' },
+    { header: 'Tunnel/Dest IP', width: 0, value: row => row.tunnelIp },
+  ], FIXED_TABLE).map(line => ` ${line}`));
+  return lines.join('\n');
+}
+
+export function renderDhcp6Leases(
+  leases: ReadonlyArray<{
+    iface: string; ip: string; duid: string; expiresAt: number; serverId: string;
+  }>,
+): string {
+  if (leases.length === 0) return '';
+
+  const lines: string[] = [];
+  for (const [iface, bucket] of groupLeasesByInterface(leases)) {
+    lines.push(iface);
+    const rows = bucket.map(lease => ({
+      ip: lease.ip,
+      duid: lease.duid,
+      serverId: lease.serverId,
+      expiry: new Date(lease.expiresAt).toUTCString(),
+    }));
+    lines.push(...renderTable(rows, [
+      { header: 'IPv6-Address', width: 40, value: row => row.ip },
+      { header: 'DUID', width: 32, value: row => row.duid },
       { header: 'SERVER-ID', width: 10, value: row => row.serverId },
       { header: 'Expiry', width: 0, value: row => row.expiry },
     ], FIXED_TABLE).map(line => `    ${line}`));

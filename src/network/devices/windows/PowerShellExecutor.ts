@@ -101,6 +101,7 @@ export interface PSDeviceContext {
   isDHCPConfigured(ifName: string): boolean;
   /** Get the user manager for access control cmdlets */
   getUserManager(): WindowsUserManager;
+  getEnvVars(): Map<string, string>;
   /** Get the service manager for service lifecycle cmdlets */
   getServiceManager(): WindowsServiceManager;
   /** Get the process manager for process management cmdlets */
@@ -2825,39 +2826,7 @@ export class PowerShellExecutor {
   resolveEnvVar(varName: string): string | null {
     const upper = varName.toUpperCase();
     if (this.sessionEnv.has(upper)) return this.sessionEnv.get(upper)!;
-    const currentUser = this.device.getUserManager().currentUser;
-    const u = currentUser || 'User';
-    const envMap: Record<string, string> = {
-      'USERNAME':               u,
-      'COMPUTERNAME':           this.device.getHostname(),
-      'USERPROFILE':            `C:\\Users\\${u}`,
-      'SYSTEMROOT':             'C:\\Windows',
-      'WINDIR':                 'C:\\Windows',
-      'TEMP':                   `C:\\Users\\${u}\\AppData\\Local\\Temp`,
-      'TMP':                    `C:\\Users\\${u}\\AppData\\Local\\Temp`,
-      'PATH':                   'C:\\Windows\\System32;C:\\Windows;C:\\Windows\\System32\\Wbem;C:\\Windows\\System32\\WindowsPowerShell\\v1.0',
-      'HOMEDRIVE':              'C:',
-      'HOMEPATH':               `\\Users\\${u}`,
-      'PROCESSOR_ARCHITECTURE': 'AMD64',
-      'OS':                     'Windows_NT',
-      'COMSPEC':                'C:\\Windows\\System32\\cmd.exe',
-      'PSMODULEPATH':           `C:\\Users\\${u}\\Documents\\WindowsPowerShell\\Modules;C:\\Program Files\\WindowsPowerShell\\Modules;C:\\Windows\\system32\\WindowsPowerShell\\v1.0\\Modules`,
-      // Phase 8 additions
-      'APPDATA':                `C:\\Users\\${u}\\AppData\\Roaming`,
-      'LOCALAPPDATA':           `C:\\Users\\${u}\\AppData\\Local`,
-      'PROGRAMFILES':           'C:\\Program Files',
-      'PROGRAMFILES(X86)':      'C:\\Program Files (x86)',
-      'PROGRAMDATA':            'C:\\ProgramData',
-      'PATHEXT':                '.COM;.EXE;.BAT;.CMD;.VBS;.VBE;.JS;.JSE;.WSF;.WSH;.MSC;.PS1',
-      'NUMBER_OF_PROCESSORS':   '4',
-      'USERDOMAIN':             'WORKGROUP',
-      'LOGONSERVER':            `\\\\${this.device.getHostname()}`,
-      'SESSIONNAME':            'Console',
-      'SYSTEMDRIVE':            'C:',
-      'PUBLIC':                 'C:\\Users\\Public',
-      'ALLUSERSPROFILE':        'C:\\ProgramData',
-    };
-    return envMap[varName.toUpperCase()] ?? null;
+    return this.device.getEnvVars().get(upper) ?? null;
   }
 
   private handleGetContent(args: string[]): string {
@@ -3226,29 +3195,10 @@ export class PowerShellExecutor {
   }
 
   private formatGetChildItemEnv(): string {
+    const merged = this.device.getEnvVars();
+    for (const [k, v] of this.sessionEnv) merged.set(k.toUpperCase(), v);
     const lines: string[] = ['', 'Name                           Value', '----                           -----'];
-    const envVars: Record<string, string> = {
-      'Path': this.resolveEnvVar('PATH') ?? '',
-      'SystemRoot': 'C:\\Windows',
-      'TEMP': this.resolveEnvVar('TEMP') ?? '',
-      'USERNAME': this.resolveEnvVar('USERNAME') ?? '',
-      'COMPUTERNAME': this.resolveEnvVar('COMPUTERNAME') ?? '',
-      'OS': 'Windows_NT',
-      'PROCESSOR_ARCHITECTURE': 'AMD64',
-      'USERPROFILE': this.resolveEnvVar('USERPROFILE') ?? '',
-      'APPDATA': this.resolveEnvVar('APPDATA') ?? '',
-      'LOCALAPPDATA': this.resolveEnvVar('LOCALAPPDATA') ?? '',
-      'PROGRAMFILES': 'C:\\Program Files',
-      'WINDIR': 'C:\\Windows',
-      'SYSTEMDRIVE': 'C:',
-    };
-    // Include session overrides
-    for (const [k, v] of this.sessionEnv.entries()) {
-      envVars[k] = v;
-    }
-    for (const [k, v] of Object.entries(envVars)) {
-      lines.push(`${k.padEnd(31)}${v}`);
-    }
+    for (const [k, v] of merged) lines.push(`${k.padEnd(31)}${v}`);
     return lines.join('\n');
   }
 

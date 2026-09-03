@@ -73,6 +73,20 @@ export class PolicyEvaluator {
   }
 
   evaluate(rules: readonly SecurityRule[], probe: PolicyProbe, bytes = 0): PolicyDecision {
+    const found = this.firstMatch(rules, probe, bytes);
+    if (found.decision) return found.decision;
+    return this.implicitDecision(probe, bytes, found.sawPending, found.sawIdentityGate);
+  }
+
+  evaluateExplicit(
+    rules: readonly SecurityRule[], probe: PolicyProbe, bytes = 0,
+  ): PolicyDecision | null {
+    return this.firstMatch(rules, probe, bytes).decision;
+  }
+
+  private firstMatch(
+    rules: readonly SecurityRule[], probe: PolicyProbe, bytes: number,
+  ): { decision: PolicyDecision | null; sawPending: boolean; sawIdentityGate: boolean } {
     let sawPending = false;
     let sawIdentityGate = false;
 
@@ -87,12 +101,15 @@ export class PolicyEvaluator {
       }
 
       this.countHit(rule, bytes);
-      return Object.freeze({
-        rule, action: rule.action, implicit: false, sawPending, sawIdentityGate,
-      });
+      return {
+        decision: Object.freeze({
+          rule, action: rule.action, implicit: false, sawPending, sawIdentityGate,
+        }),
+        sawPending, sawIdentityGate,
+      };
     }
 
-    return this.implicitDecision(probe, bytes, sawPending, sawIdentityGate);
+    return { decision: null, sawPending, sawIdentityGate };
   }
 
   private heldBackByIdentity(rule: SecurityRule, probe: PolicyProbe): boolean {

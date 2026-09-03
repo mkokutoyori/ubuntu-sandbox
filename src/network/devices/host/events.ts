@@ -116,7 +116,11 @@ export interface HostIcmpEchoTimeoutPayload extends HostDeviceRef {
 export interface HostIcmpUnreachablePayload extends HostDeviceRef {
   fromIp: string;
   toIp: string;
-  code: 'host-unreachable' | 'net-unreachable' | 'port-unreachable' | 'ttl-exceeded';
+  code: 'host-unreachable' | 'net-unreachable' | 'port-unreachable' | 'ttl-exceeded'
+    | 'protocol-unreachable' | 'admin-prohibited' | 'frag-needed' | 'other';
+  icmpCode?: number;
+  origProtocol?: number;
+  origDestPort?: number;
 }
 
 /**

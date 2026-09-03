@@ -13,6 +13,7 @@
  * which the cmdlet layer treats as a fallback signal.
  */
 
+
 import type { WindowsPC } from '@/network/devices/WindowsPC';
 import type { ServiceStartType } from '@/network/devices/windows/WindowsServiceManager';
 import type { WindowsServer } from '@/network/devices/WindowsServer';
@@ -97,6 +98,21 @@ import type {
   VpnConnectionInfo, ScheduledTaskInfo, DiskInfo, VolumeInfo,
 } from '@/powershell/providers/PSProviders';
 import type { PSValue } from '@/powershell/runtime/PSEnvironment';
+import type { AddsForestOptions } from '@/network/devices/windows/server/ad/adFunctionalLevels';
+import type { OrgUnitWriteOptions, UserWriteOptions } from '@/network/devices/windows/server/ad/DirectoryStore';
+import type { AdUser } from '@/network/devices/windows/server/ad/AdTypes';
+
+function userInfoOf(u: AdUser): AdUserInfo {
+  return {
+    sam: u.sam, upn: u.upn, dn: u.dn, sid: u.sid, enabled: u.enabled, memberOf: u.memberOf, fullName: u.fullName,
+    department: u.department, title: u.title, emailAddress: u.emailAddress, passwordLastSet: u.passwordLastSet,
+    passwordNeverExpires: u.passwordNeverExpires, servicePrincipalNames: u.servicePrincipalNames,
+    profilePath: u.profilePath, homeDirectory: u.homeDirectory, homeDrive: u.homeDrive,
+    properties: { ...u.properties }, flags: { ...u.flags },
+    accountExpirationDate: u.accountExpirationDate,
+    cannotChangePassword: u.cannotChangePassword, changePasswordAtLogon: u.changePasswordAtLogon,
+  };
+}
 
 // ── Filesystem adapter ────────────────────────────────────────────────────
 
@@ -341,7 +357,7 @@ class WindowsRoleAdapter implements IRoleProvider {
   listFeatures(): WindowsFeatureInfo[] { return this.mgr().listFeatures(); }
   getFeature(name: string): WindowsFeatureInfo | null { return this.mgr().getFeature(name); }
   isInstalled(name: string): boolean { return this.mgr().isInstalled(name); }
-  installFeature(name: string, opts?: { includeManagementTools?: boolean }) {
+  installFeature(name: string, opts?: { includeManagementTools?: boolean; whatIf?: boolean }) {
     return this.mgr().install(name, opts, this.isAdmin());
   }
   uninstallFeature(name: string) {
@@ -420,7 +436,7 @@ class WindowsAdAdapter implements IAdProvider {
     return this.isAdmin() ? null : { ok: false, message: `${cmdletName} : Access is denied.` };
   }
 
-  installForest(domainName: string, netbiosName: string | undefined, safeModeAdminPassword: string, opts?: { installDns?: boolean }): AdOpResult {
+  installForest(domainName: string, netbiosName: string | undefined, safeModeAdminPassword: string, opts?: AddsForestOptions): AdOpResult {
     this.requireRole('Install-ADDSForest');
     const denied = this.requireAdmin('Install-ADDSForest');
     if (denied) return denied;
@@ -649,7 +665,7 @@ class WindowsAdAdapter implements IAdProvider {
     return store.removeComputer(name);
   }
 
-  newUser(sam: string, opts: { password: string; fullName?: string; path?: string; enabled?: boolean; department?: string; title?: string; emailAddress?: string; passwordNeverExpires?: boolean; actingSam?: string }): AdOpResult {
+  newUser(sam: string, opts: { password: string; fullName?: string; path?: string; enabled?: boolean; department?: string; title?: string; emailAddress?: string; passwordNeverExpires?: boolean; actingSam?: string } & UserWriteOptions): AdOpResult {
     const store = this.requireStore('New-ADUser');
     const denied = this.requireAdmin('New-ADUser');
     if (denied) return denied;
@@ -658,17 +674,15 @@ class WindowsAdAdapter implements IAdProvider {
       ou: opts.path,
       department: opts.department, title: opts.title, emailAddress: opts.emailAddress,
       passwordNeverExpires: opts.passwordNeverExpires, actingSam: opts.actingSam,
+      commonName: opts.commonName, attributes: opts.attributes, flags: opts.flags, spns: opts.spns,
+      accountExpires: opts.accountExpires, changePasswordAtLogon: opts.changePasswordAtLogon,
+      cannotChangePassword: opts.cannotChangePassword,
     });
   }
   getUser(identity: string): AdUserInfo | null {
     const store = this.requireStore('Get-ADUser');
     const u = store.getUser(store.resolveIdentity(identity));
-    return u ? {
-      sam: u.sam, upn: u.upn, dn: u.dn, sid: u.sid, enabled: u.enabled, memberOf: u.memberOf, fullName: u.fullName,
-      department: u.department, title: u.title, emailAddress: u.emailAddress, passwordLastSet: u.passwordLastSet,
-      passwordNeverExpires: u.passwordNeverExpires, servicePrincipalNames: u.servicePrincipalNames,
-      profilePath: u.profilePath, homeDirectory: u.homeDirectory, homeDrive: u.homeDrive,
-    } : null;
+    return u ? userInfoOf(u) : null;
   }
   setUser(identity: string, opts: { enabled?: boolean; fullName?: string; password?: string; department?: string; title?: string; addSpns?: string[]; removeSpns?: string[]; actingSam?: string; profilePath?: string; homeDirectory?: string; homeDrive?: string }): AdOpResult {
     const store = this.requireStore('Set-ADUser');
@@ -677,12 +691,7 @@ class WindowsAdAdapter implements IAdProvider {
     return store.setUser(store.resolveIdentity(identity), opts);
   }
   listUsers(): AdUserInfo[] {
-    return this.requireStore('Get-ADUser').listUsers().map(u => ({
-      sam: u.sam, upn: u.upn, dn: u.dn, sid: u.sid, enabled: u.enabled, memberOf: u.memberOf, fullName: u.fullName,
-      department: u.department, title: u.title, emailAddress: u.emailAddress, passwordLastSet: u.passwordLastSet,
-      passwordNeverExpires: u.passwordNeverExpires, servicePrincipalNames: u.servicePrincipalNames,
-      profilePath: u.profilePath, homeDirectory: u.homeDirectory, homeDrive: u.homeDrive,
-    }));
+    return this.requireStore('Get-ADUser').listUsers().map(userInfoOf);
   }
   listObjectsWithSpns(): Array<{ name: string; servicePrincipalNames: string[] }> {
     return this.requireStore('Get-ADObject').listObjectsWithSpns();
@@ -810,19 +819,35 @@ class WindowsAdAdapter implements IAdProvider {
     return store.setAllowedToDelegateTo(name, targetServiceNames);
   }
 
-  newOrganizationalUnit(name: string, path?: string): AdOpResult {
+  newOrganizationalUnit(name: string, path?: string, opts?: OrgUnitWriteOptions): AdOpResult {
     const store = this.requireStore('New-ADOrganizationalUnit');
     const denied = this.requireAdmin('New-ADOrganizationalUnit');
     if (denied) return denied;
-    return store.newOrgUnit(name, path);
+    return store.newOrgUnit(name, path, opts);
+  }
+  setOrganizationalUnit(identity: string, attributes: Record<string, string>, protectedFlag?: boolean): AdOpResult {
+    const store = this.requireStore('Set-ADOrganizationalUnit');
+    const denied = this.requireAdmin('Set-ADOrganizationalUnit');
+    if (denied) return denied;
+    if (protectedFlag !== undefined) {
+      const res = store.setOrgUnitProtectionByIdentity(identity, protectedFlag);
+      if (!res.ok) return res;
+    }
+    return store.setOrgUnitAttributes(identity, attributes);
+  }
+  removeOrganizationalUnit(identity: string, recursive?: boolean): AdOpResult {
+    const store = this.requireStore('Remove-ADOrganizationalUnit');
+    const denied = this.requireAdmin('Remove-ADOrganizationalUnit');
+    if (denied) return denied;
+    return store.removeOrgUnit(identity, { recursive });
   }
   getOrganizationalUnit(identity: string): AdOrgUnitInfo | null {
     const store = this.requireStore('Get-ADOrganizationalUnit');
     const ou = store.getOrgUnit(store.resolveIdentity(identity));
-    return ou ? { name: ou.name, dn: ou.dn, gpLinks: [...ou.gpLinks] } : null;
+    return ou ? { ...ou, gpLinks: [...ou.gpLinks], properties: { ...ou.properties } } : null;
   }
   listOrganizationalUnits(): AdOrgUnitInfo[] {
-    return this.requireStore('Get-ADOrganizationalUnit').listOrgUnits().map(ou => ({ name: ou.name, dn: ou.dn, gpLinks: [...ou.gpLinks] }));
+    return this.requireStore('Get-ADOrganizationalUnit').listOrgUnits().map(ou => ({ ...ou, gpLinks: [...ou.gpLinks], properties: { ...ou.properties } }));
   }
 
   newReplicationSite(name: string, description?: string): AdOpResult {
@@ -942,7 +967,7 @@ class WindowsAdAdapter implements IAdProvider {
     const store = this.pc.getDirectoryStore();
     if (!store) return null;
     return {
-      dnsRoot: store.dnsName, netBiosName: store.netbiosName, domainMode: 'Windows2016Domain',
+      dnsRoot: store.dnsName, netBiosName: store.netbiosName, domainMode: store.domainMode,
       infrastructureMaster: this.fqdn(store.getDomainFsmoRoleOwner('InfrastructureMaster')),
       pdcEmulator: this.fqdn(store.getDomainFsmoRoleOwner('PDCEmulator')),
       ridMaster: this.fqdn(store.getDomainFsmoRoleOwner('RIDMaster')),
@@ -2308,72 +2333,27 @@ class WindowsScheduledTaskAdapter implements IScheduledTaskProvider {
 // ── Disks / volumes (read-only seeded data) ───────────────────────────────
 
 class WindowsEnvironmentAdapter implements IEnvironmentProvider {
-  /** Well-known Windows env vars that always exist on a real machine.
-   *  We compute them from the device's hostname / current user so the
-   *  values stay consistent when the user switches with runas. */
   constructor(private readonly pc: WindowsPC) {}
 
   private wellKnown(): Map<string, string> {
-    const out = new Map<string, string>();
-    const user = (this.pc as unknown as { getCurrentUser?: () => string }).getCurrentUser?.()
-              ?? 'User';
-    const host = (this.pc as unknown as { hostname?: string; getHostname?: () => string })
-      .getHostname?.() ?? (this.pc as unknown as { hostname?: string }).hostname ?? 'WIN-PC';
-    out.set('USERNAME',             user);
-    out.set('COMPUTERNAME',         host);
-    out.set('USERPROFILE',          `C:\\Users\\${user}`);
-    out.set('SYSTEMROOT',           'C:\\Windows');
-    out.set('WINDIR',               'C:\\Windows');
-    out.set('TEMP',                 `C:\\Users\\${user}\\AppData\\Local\\Temp`);
-    out.set('TMP',                  `C:\\Users\\${user}\\AppData\\Local\\Temp`);
-    out.set('PATH',                 'C:\\Windows\\System32;C:\\Windows;C:\\Windows\\System32\\Wbem');
-    out.set('HOMEDRIVE',            'C:');
-    out.set('HOMEPATH',             `\\Users\\${user}`);
-    out.set('PROCESSOR_ARCHITECTURE', 'AMD64');
-    out.set('OS',                   'Windows_NT');
-    out.set('COMSPEC',              'C:\\Windows\\System32\\cmd.exe');
-    out.set('APPDATA',              `C:\\Users\\${user}\\AppData\\Roaming`);
-    out.set('LOCALAPPDATA',         `C:\\Users\\${user}\\AppData\\Local`);
-    out.set('PROGRAMFILES',         'C:\\Program Files');
-    out.set('PROGRAMFILES(X86)',    'C:\\Program Files (x86)');
-    out.set('PROGRAMDATA',          'C:\\ProgramData');
-    out.set('PATHEXT',              '.COM;.EXE;.BAT;.CMD;.VBS;.VBE;.JS;.JSE;.WSF;.WSH;.MSC;.PS1');
-    out.set('NUMBER_OF_PROCESSORS', '4');
-    out.set('USERDOMAIN',           'WORKGROUP');
-    out.set('LOGONSERVER',          `\\\\${host}`);
-    out.set('SESSIONNAME',          'Console');
-    out.set('SYSTEMDRIVE',          'C:');
-    out.set('PUBLIC',               'C:\\Users\\Public');
-    out.set('ALLUSERSPROFILE',      'C:\\ProgramData');
-    return out;
+    return (this.pc as unknown as { getEnvVars?: () => Map<string, string> }).getEnvVars?.()
+        ?? new Map<string, string>();
   }
 
   list(): Array<{ Name: string; Value: string }> {
-    const merged = this.wellKnown();
-    const deviceEnv = (this.pc as unknown as { getEnvVars?: () => Map<string, string> }).getEnvVars?.();
-    if (deviceEnv) for (const [k, v] of deviceEnv) merged.set(k.toUpperCase(), v);
-    return Array.from(merged.entries(), ([Name, Value]) => ({ Name, Value }));
+    return Array.from(this.wellKnown().entries(), ([Name, Value]) => ({ Name, Value }));
   }
 
   get(name: string): string | undefined {
-    const u = name.toUpperCase();
-    const deviceEnv = (this.pc as unknown as { getEnvVars?: () => Map<string, string> }).getEnvVars?.();
-    if (deviceEnv) {
-      for (const [k, v] of deviceEnv) if (k.toUpperCase() === u) return v;
-    }
-    return this.wellKnown().get(u);
+    return this.wellKnown().get(name.toUpperCase());
   }
 
   set(name: string, value: string): void {
-    const deviceEnv = (this.pc as unknown as { getEnvVars?: () => Map<string, string> }).getEnvVars?.();
-    if (deviceEnv) deviceEnv.set(name, value);
+    (this.pc as unknown as { setEnvVar?: (n: string, v: string) => void }).setEnvVar?.(name, value);
   }
 
   remove(name: string): void {
-    const deviceEnv = (this.pc as unknown as { getEnvVars?: () => Map<string, string> }).getEnvVars?.();
-    if (!deviceEnv) return;
-    const u = name.toUpperCase();
-    for (const k of [...deviceEnv.keys()]) if (k.toUpperCase() === u) deviceEnv.delete(k);
+    (this.pc as unknown as { removeEnvVar?: (n: string) => void }).removeEnvVar?.(name);
   }
 }
 
@@ -3205,6 +3185,7 @@ class WindowsRemotingAdapter implements IRemotingProvider {
  * The `shared` argument therefore exists only to let a caller substitute
  * a store deliberately. Production callers can, and should, omit it.
  */
+
 export function createWindowsPSProviders(
   pc: WindowsPC,
   shared?: {

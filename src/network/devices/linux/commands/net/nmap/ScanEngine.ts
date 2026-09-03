@@ -15,8 +15,22 @@ export interface HostState {
   latencyMs?: number;
 }
 
+export interface ResolvedTarget {
+  ip: string;
+  hostname?: string;
+}
+
 export interface HostProbes {
-  hostState(target: string): HostState | null;
+  /** Name to address. A lookup, never a liveness test. */
+  resolveTarget(target: string): ResolvedTarget | null;
+  /** Emits the discovery probes and reports what came back. */
+  hostState(target: ResolvedTarget): Promise<HostState>;
+  /**
+   * `-O` is a phase of its own on a real nmap (FPEngine), run after the
+   * port scan and independent of host discovery — so it still fingerprints
+   * under `-Pn`, where no discovery probe was ever sent.
+   */
+  fingerprint?(ip: string): Promise<string | undefined>;
   tcpOutcome(ip: string, port: number): TcpWireOutcome;
   udpState(ip: string, port: number): 'open' | 'closed' | 'open|filtered';
   banner(ip: string, port: number): { service: string; version?: string } | null;
@@ -155,17 +169,28 @@ function partition(options: NmapOptions, all: PortResult[]): Pick<HostReport, 'p
   return { ports, notShown: { count: total, states } };
 }
 
-function scanHost(options: NmapOptions, probes: HostProbes, target: string): HostReport | null {
-  const info = probes.hostState(target) ?? (options.skipDiscovery ? { ip: target, up: true } : null);
-  if (!info) return null;
+async function scanHost(
+  options: NmapOptions, probes: HostProbes, target: string,
+): Promise<HostReport | null> {
+  const resolved = probes.resolveTarget(target);
+  if (!resolved) return null;
 
-  const forcedUp = options.skipDiscovery || info.up;
+  // `-Pn` skips discovery entirely on a real nmap: nothing is probed and
+  // every target is taken as up, which is the point of the flag.
+  const info = options.skipDiscovery
+    ? { ip: resolved.ip, hostname: resolved.hostname, up: true }
+    : await probes.hostState(resolved);
+
   const latencyMs = info.latencyMs ?? 0.001;
-  const osGuess = options.osScan ? info.osHint : undefined;
+  const osGuess = options.osScan
+    ? info.osHint ?? await probes.fingerprint?.(info.ip)
+    : undefined;
 
-  if (!forcedUp) {
-    const downReason = info.poweredOff ? 'powered off' : info.interfaceDown ? 'interface down' : 'no response';
-    return { ip: info.ip, hostname: info.hostname, up: false, latencyMs, downReason, ports: [] };
+  if (!info.up) {
+    return {
+      ip: info.ip, hostname: info.hostname, up: false, latencyMs,
+      downReason: 'no response', ports: [],
+    };
   }
 
   if (options.pingOnly) {
@@ -185,14 +210,16 @@ function isIpLiteral(target: string): boolean {
   return IPAddress.tryParse(target) !== null;
 }
 
-export function scan(options: NmapOptions, probes: HostProbes): NmapReport {
+export async function scan(
+  options: NmapOptions, probes: HostProbes,
+): Promise<NmapReport> {
   const hosts: HostReport[] = [];
   const unresolved: string[] = [];
   let targetsScanned = 0;
 
   for (const target of options.targets) {
     for (const address of enumerateTargets(target)) {
-      const report = scanHost(options, probes, address)
+      const report = await scanHost(options, probes, address)
         ?? (target === address && isIpLiteral(address)
           ? { ip: address, up: false, latencyMs: 0, downReason: 'no response', ports: [] }
           : null);

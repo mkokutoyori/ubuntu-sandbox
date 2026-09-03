@@ -26,7 +26,12 @@ export interface AdUser {
   /** Roaming profile / redirected home folder (real LDAP `profilePath`/`homeDirectory`/`homeDrive` attributes, PRD AD roaming-profiles gap). */
   profilePath: string;
   homeDirectory: string;
-  homeDrive: string;
+  homeDrive: string;  properties: Record<string, string>;
+  flags: Record<string, boolean>;
+  accountExpirationDate: Date | null;
+  cannotChangePassword: boolean;
+  changePasswordAtLogon: boolean;
+
 }
 
 /**
@@ -163,6 +168,8 @@ export interface AdOrgUnit {
   readonly name: string;
   readonly dn: string;
   gpLinks: string[];
+  properties: Record<string, string>;
+  protectedFromAccidentalDeletion: boolean;
 }
 
 export type AdObject = AdUser | AdGroup | AdComputer | AdOrgUnit;

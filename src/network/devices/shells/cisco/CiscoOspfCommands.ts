@@ -13,6 +13,9 @@ import type { Router } from '../../Router';
 import { normalizeOspfRouteType, ospfRouteCode } from '@/network/ospf/routeCodes';
 import { renderIpRouteTable, routerRouteTableHost } from './CiscoShowCommands';
 import { CliInvalidInput } from '../cli/CliDiagnostic';
+import { isAreaId } from '../../../ospf/types';
+import { boundedInteger } from '@/cli/ArgumentTypes';
+
 import { CISCO_ERRORS } from '../cli-utils';
 import { inSameSubnet, isValidIPv4 } from '../../../core/ip';
 import { CommandTrie } from '../CommandTrie';
@@ -33,6 +36,10 @@ import type { ArgumentSpec } from '@/cli/ArgumentTypes';
 import type { AdapterKeyword } from '@/cli/commands/trieAdapter';
 import { specsFromTrieRegistrations } from '@/cli/commands/trieAdapter';
 import { MODES_INTERFACE } from './CiscoConfigCommands';
+
+const OSPF_METRIC_MAX = 16777214;
+const OSPF_TIMER_MAX_MS = 600000;
+const OSPF_MAX_LSA = 4294967294;
 
 export function setOspfv3InterfaceParams(
   router: Router, ifName: string, updates: Record<string, unknown>,
@@ -274,6 +281,7 @@ function adresseReseau(ip: string, wildcard: string): string {
     const network = args[0];
     const wildcard = args[1];
     if (!'area'.startsWith(args[2].toLowerCase())) return '% Invalid input. Expected "area" keyword.';
+    if (!isAreaId(args[3])) throw new CliInvalidInput({ token: args[3] });
     const areaId = args[3];
 
     ospf.addNetwork(adresseReseau(network, wildcard), wildcard, areaId);
@@ -403,11 +411,13 @@ function adresseReseau(ip: string, wildcard: string): string {
     ospf.setDefaultInformationOriginate(true);
     const extra = ctx.r()._getOSPFExtraConfig();
     extra.defaultInfoAlways = args.some(a => a.toLowerCase() === 'always');
-    // Check for metric-type argument
     for (let i = 0; i < args.length - 1; i++) {
-      if (args[i] === 'metric-type') {
-        extra.defaultInfoMetricType = parseInt(args[i + 1], 10);
-      }
+      const mot = args[i].toLowerCase();
+      if (mot !== 'metric' && mot !== 'metric-type') continue;
+
+      const valeur = boundedInteger(args[i + 1], 0, OSPF_METRIC_MAX);
+      if (valeur === null) throw new CliInvalidInput({ token: args[i + 1] });
+      if (mot === 'metric-type') extra.defaultInfoMetricType = valeur;
     }
     if (extra.defaultInfoMetricType === undefined) extra.defaultInfoMetricType = 2;
     ctx.r()._ospfAutoConverge?.();
@@ -502,19 +512,27 @@ function adresseReseau(ip: string, wildcard: string): string {
 
   trie.registerGreedy('timers throttle spf', 'Set OSPF SPF throttle timers', (args) => {
     if (args.length < 3) return '% Incomplete command.';
+    const bornes = args.slice(0, 3)
+      .map((mot) => boundedInteger(mot, 0, OSPF_TIMER_MAX_MS));
+    const fautif = bornes.findIndex((v) => v === null);
+    if (fautif >= 0) throw new CliInvalidInput({ token: args[fautif] });
+
     const extra = ctx.r()._getOSPFExtraConfig();
     extra.spfThrottle = {
-      initial: parseInt(args[0], 10),
-      hold: parseInt(args[1], 10),
-      max: parseInt(args[2], 10),
+      initial: bornes[0] as number,
+      hold: bornes[1] as number,
+      max: bornes[2] as number,
     };
     return '';
   });
 
   trie.registerGreedy('max-lsa', 'Set maximum number of LSAs', (args) => {
     if (args.length < 1) return '% Incomplete command.';
+    const plafond = boundedInteger(args[0], 1, OSPF_MAX_LSA);
+    if (plafond === null) throw new CliInvalidInput({ token: args[0] });
+
     const extra = ctx.r()._getOSPFExtraConfig();
-    extra.maxLsa = parseInt(args[0], 10);
+    extra.maxLsa = plafond;
     return '';
   });
 

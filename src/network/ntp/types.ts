@@ -12,12 +12,22 @@ export type NtpLeapIndicator = 0 | 1 | 2 | 3;
  * une constante d'affichage a tenir a jour a la main. Une seule
  * ecriture : la vue lit ce que la machine emet.
  */
-export const NTP_VERSION = 4;
+export const NTP_VERSIONS = [1, 2, 3, 4] as const;
+
+export type NtpVersion = typeof NTP_VERSIONS[number];
+
+export function isNtpVersion(token: string | undefined): token is `${NtpVersion}` {
+  return token !== undefined
+    && (NTP_VERSIONS as readonly number[]).includes(Number(token))
+    && /^\d+$/.test(token);
+}
+
+export const NTP_VERSION: NtpVersion = 4;
 
 export interface NtpPacket extends NetworkPdu {
   type: 'ntp';
   leapIndicator: NtpLeapIndicator;
-  version: typeof NTP_VERSION;
+  version: NtpVersion;
   mode: NtpMode;
   stratum: number;
   poll: number;
@@ -56,6 +66,8 @@ export interface NtpAssociation {
   lastReplyMs: number;
   synced: boolean;
   keyId?: number;
+  version?: NtpVersion;
+  sourceInterface?: string;
   /**
    * La derniere reponse de ce serveur portait-elle un condensé valide ?
    *

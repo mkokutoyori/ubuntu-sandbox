@@ -1,8 +1,29 @@
 import type { IEventBus } from '@/events/EventBus';
+import { MAX_PORT, MIN_PORT } from '@/network/core/ports/PortNumber';
 
 export type SnmpAccess = 'ro' | 'rw';
-export type SnmpVersion = '1' | '2c' | '3';
-export type SnmpV3Level = 'noauth' | 'auth' | 'priv';
+
+export const SNMP_VERSIONS = ['1', '2c', '3'] as const;
+export const SNMP_V3_LEVELS = ['noauth', 'auth', 'priv'] as const;
+
+export type SnmpVersion = typeof SNMP_VERSIONS[number];
+export type SnmpV3Level = typeof SNMP_V3_LEVELS[number];
+
+export function isSnmpVersion(token: string | undefined): token is SnmpVersion {
+  return token !== undefined
+    && (SNMP_VERSIONS as readonly string[]).includes(token.toLowerCase());
+}
+
+export function isSnmpV3Level(token: string | undefined): token is SnmpV3Level {
+  return token !== undefined
+    && (SNMP_V3_LEVELS as readonly string[]).includes(token.toLowerCase());
+}
+
+function isUdpPort(token: string | undefined): boolean {
+  if (token === undefined || !/^\d+$/.test(token)) return false;
+  const value = Number(token);
+  return value >= MIN_PORT && value <= MAX_PORT;
+}
 
 export interface SnmpCommunity {
   name: string;
@@ -102,12 +123,12 @@ export class SnmpService {
   private readonly enabledTraps: Map<string, Set<string>> = new Map();
   private readonly stats: SnmpStats = SnmpService.zeroStats();
 
-  configure(args: string[]): void {
-    if (args.length === 0) return;
+  configure(args: string[]): string | null {
+    if (args.length === 0) return null;
     const head = args[0].toLowerCase();
     switch (head) {
       case 'community': this.configCommunity(args); break;
-      case 'host': this.configHost(args); break;
+      case 'host': return this.configHost(args);
       case 'group': this.configGroup(args); break;
       case 'user': this.configUser(args); break;
       case 'view': this.configView(args); break;
@@ -144,6 +165,32 @@ export class SnmpService {
         }
         break;
     }
+    return null;
+  }
+
+  unconfigure(args: string[]): void {
+    if (args.length === 0) { this.disable(); return; }
+    const head = args[0].toLowerCase();
+    switch (head) {
+      case 'community': if (args[1]) this.communities.delete(args[1]); break;
+      case 'host': if (args[1]) this.removeTrapHost(args[1]); break;
+      case 'group': if (args[1]) this.groups.delete(args[1]); break;
+      case 'user': if (args[1]) this.users.delete(args[1]); break;
+      case 'view': if (args[1]) this.removeMibView(args[1]); break;
+      case 'enable':
+        if (args[1]?.toLowerCase() === 'traps') {
+          if (args.length === 2) this.enabledTraps.clear();
+          else this.enabledTraps.delete(args[2].toLowerCase());
+        }
+        break;
+      case 'contact': this.contact = ''; break;
+      case 'location': this.location = ''; break;
+      case 'chassis-id': this.chassisId = ''; break;
+      case 'trap-source': this.trapSourceInterface = ''; break;
+      case 'engineid':
+        if (args[1]?.toLowerCase() === 'local') this.setEngineId('');
+        break;
+    }
   }
 
   private configCommunity(args: string[]): void {
@@ -163,9 +210,9 @@ export class SnmpService {
     this.enable();
   }
 
-  private configHost(args: string[]): void {
+  private configHost(args: string[]): string | null {
     const host = args[1];
-    if (!host) return;
+    if (!host) return null;
     let version: SnmpVersion = '1';
     let v3Level: SnmpV3Level | undefined;
     let community = '';
@@ -177,19 +224,33 @@ export class SnmpService {
       notificationType = args[i].toLowerCase() as 'traps' | 'informs';
       i++;
     }
-    if (args[i]?.toLowerCase() === 'version' && args[i + 1]) {
-      version = args[i + 1] as SnmpVersion;
+    if (args[i]?.toLowerCase() === 'version') {
+      const declaree = args[i + 1];
+      if (!isSnmpVersion(declaree)) return declaree ?? 'version';
+      version = declaree.toLowerCase() as SnmpVersion;
       i += 2;
-      if (version === '3' && args[i]) { v3Level = args[i].toLowerCase() as SnmpV3Level; i++; }
+      if (version === '3' && isSnmpV3Level(args[i])) {
+        v3Level = args[i].toLowerCase() as SnmpV3Level;
+        i++;
+      }
     }
-    if (args[i]?.toLowerCase() === 'udp-port' && args[i + 1]) {
-      udpPort = parseInt(args[i + 1], 10);
+    const lireUdpPort = (): string | null => {
+      if (args[i]?.toLowerCase() !== 'udp-port') return null;
+      const declare = args[i + 1];
+      if (!isUdpPort(declare)) return declare ?? 'udp-port';
+      udpPort = Number(declare);
       i += 2;
-    }
+      return null;
+    };
+    const avant = lireUdpPort();
+    if (avant !== null) return avant;
     if (args[i]) community = args[i++];
+    const apres = lireUdpPort();
+    if (apres !== null) return apres;
     while (i < args.length) { notifications.push(args[i]); i++; }
     this.hosts.push({ host, version, v3Level, community, notificationType, udpPort, notifications });
     this.enable();
+    return null;
   }
 
   private configGroup(args: string[]): void {
@@ -444,8 +505,8 @@ export class SnmpService {
       if (h.notificationType === 'informs') line += ' informs';
       line += ` version ${h.version}`;
       if (h.v3Level) line += ` ${h.v3Level}`;
-      if (h.udpPort) line += ` udp-port ${h.udpPort}`;
       line += ` ${h.community}`;
+      if (h.udpPort !== undefined) line += ` udp-port ${h.udpPort}`;
       if (h.notifications.length) line += ' ' + h.notifications.join(' ');
       lines.push(line);
     }

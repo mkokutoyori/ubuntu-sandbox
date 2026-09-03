@@ -13,6 +13,12 @@ export interface WhoamiContext {
   userManager: WindowsUserManager;
   /** Active domain logon (PRD-Windows-Server.md §5 P6) — when set (and its `sam` matches the current user), `whoami` reports `netbios\sam` and domain groups instead of the local `hostname\user` + local groups. */
   domainSession?: DomainSession | null;
+  logonDomain?: string;
+}
+
+function accountName(ctx: WhoamiContext, username: string, domain: DomainSession | null): string {
+  const scope = domain ? domain.netbiosName : (ctx.logonDomain || ctx.hostname);
+  return `${scope}\\${username}`;
 }
 
 function activeDomain(ctx: WhoamiContext, username: string): DomainSession | null {
@@ -25,7 +31,7 @@ export function cmdWhoami(ctx: WhoamiContext, args: string[]): string {
   const domain = activeDomain(ctx, username);
 
   if (!flag) {
-    return domain ? `${domain.netbiosName.toLowerCase()}\\${username.toLowerCase()}` : `${ctx.hostname.toLowerCase()}\\${username}`;
+    return accountName(ctx, username, domain);
   }
 
   switch (flag) {
@@ -50,7 +56,7 @@ export function cmdWhoami(ctx: WhoamiContext, args: string[]): string {
 
 function formatUserInfo(ctx: WhoamiContext, username: string, domain: DomainSession | null): string {
   const sid = domain ? domainSid(domain.netbiosName) : (ctx.userManager.getUserSID(username) ?? 'S-1-5-21-0-0-0-0');
-  const account = domain ? `${domain.netbiosName.toLowerCase()}\\${username.toLowerCase()}` : `${ctx.hostname.toLowerCase()}\\${username.toLowerCase()}`;
+  const account = accountName(ctx, username, domain);
   const lines: string[] = [];
   lines.push('');
   lines.push('USER INFORMATION');

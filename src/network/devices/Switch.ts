@@ -91,6 +91,7 @@ import { ArpStats } from '../arp/ArpStats';
 import type { ISwitchShell } from './shells/ISwitchShell';
 import { SwitchSecurityService } from './switch/SwitchSecurityService';
 import { CiscoHttpService } from './router/management/CiscoHttpService';
+import { SnmpService } from './router/management/SnmpService';
 import { PortMirror, type MirrorDirection, type MirrorSession } from './switch/PortMirror';
 import { ACLEngine } from './router/ACLEngine';
 import { NetworkOsCredentialStore } from './router/aaa/NetworkOsCredentialStore';
@@ -3480,6 +3481,12 @@ export abstract class Switch extends Equipment {
       () => this.getBus());
     this._ntpAgent.start();
     return this._ntpAgent;
+  }
+
+  private _snmpService: SnmpService | null = null;
+  getSnmpService(): SnmpService {
+    if (!this._snmpService) this._snmpService = new SnmpService();
+    return this._snmpService;
   }
 
   getVrrpAgent(): VrrpAgent { return this.ensureVrrpAgent(); }

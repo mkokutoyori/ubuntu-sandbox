@@ -215,6 +215,25 @@ export class BGPEngine extends AbstractRoutingProtocolEngine<BGPConfig> {
   }
 
   /**
+   * Hard clear (RFC 4271 §8.1.2): close the session so the peering falls
+   * back to Idle and the ConnectRetryTimer dials again. Returns the peers
+   * actually torn down, so a caller can tell "no such peering" from "one
+   * was reset".
+   */
+  resetPeers(matches: (ip: string, cfg: BgpNeighborCfg) => boolean): readonly string[] {
+    const reset: string[] = [];
+    for (const [ip, ps] of [...this.peers]) {
+      const cfg = this.config.neighbors.get(ip);
+      if (!cfg || !matches(ip, cfg)) continue;
+      ps.session.close();
+      this.peers.delete(ip);
+      reset.push(ip);
+    }
+    if (reset.length > 0) this.converge();
+    return reset;
+  }
+
+  /**
    * Release every ConnectRetryTimer. The device calls it when the router
    * is powered off: a retry clock outliving its chassis would go on
    * dialling from a machine that is not there.

@@ -17,6 +17,7 @@ export interface TcpdumpDeps {
   now(): Date;
   delay(ms: number): Promise<void>;
   onCancelRequested(cb: () => void): () => void;
+  runsDetached?(): boolean;
   readFile(path: string): string | null;
   writeFile(path: string, content: string): boolean;
   dirWritable(path: string): boolean;
@@ -83,6 +84,7 @@ async function runCapture(opt: TcpdumpOptions, deps: TcpdumpDeps): Promise<Tcpdu
 
   const collected: CaptureFrame[] = [];
   const target = opt.count;
+  const detached = deps.runsDetached?.() === true;
 
   if (target !== 0) {
     await new Promise<void>((resolve) => {
@@ -100,11 +102,15 @@ async function runCapture(opt: TcpdumpOptions, deps: TcpdumpDeps): Promise<Tcpdu
         if (opt.direction !== 'inout' && frame.direction !== opt.direction) return;
         if (!filter.predicate(frame)) return;
         collected.push(frame);
+        if (opt.writeFile) persistCapture(opt.writeFile, collected, deps);
         if (target !== null && collected.length >= target) finish();
       });
       unsubscribeCancel = deps.onCancelRequested(finish);
       if (settled) unsubscribeCapture();
-      else {
+      else if (detached && target === null) {
+        if (opt.writeFile) persistCapture(opt.writeFile, collected, deps);
+        resolve();
+      } else {
         const deadline = target !== null ? CAPTURE_DEADLINE_WITH_TARGET_MS : CAPTURE_WINDOW_MS;
         deps.delay(deadline).then(finish);
       }

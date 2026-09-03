@@ -83,7 +83,7 @@ describe('Scénario 2 — objets AD : OUs, utilisateurs, groupes (LAN Mandeng)',
         '-ChangePasswordAtLogon $true',
         '-PasswordNeverExpires $false',
       ].join(' '));
-      expect(out).toMatch(/jadmin/);
+      expect(out.trim()).toBe('');
 
       const get = await run(sh, 'Get-ADUser -Filter * -SearchBase "OU=Mandeng,DC=mandeng,DC=lan" -Properties Department');
       expect(get).toMatch(/jadmin@mandeng\.lan|jadmin/);

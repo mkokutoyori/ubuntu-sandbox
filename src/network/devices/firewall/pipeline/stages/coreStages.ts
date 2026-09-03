@@ -8,8 +8,6 @@ import {
 import { IPV4_FLAG_DF } from '../../../../core/Ipv4Fragmentation';
 import type { InterfaceTable } from '../../l3/InterfaceTable';
 import type { RouteTable } from '../../l3/RouteTable';
-import { icmpTypeNumber } from '../../session/FlowKey';
-import type { ICMPType } from '../../../../core/types';
 import type { ObjectStore } from '../../model/ObjectStore';
 import type { PolicyStore } from '../../model/PolicyStore';
 import { isDenyAction, type SecurityRule } from '../../model/SecurityRule';
@@ -23,6 +21,10 @@ import type { ProtocolOptions, UtmProfileStore } from '../../inspection/UtmProfi
 import type { IdentityTable } from '../../identity/IdentityTable';
 import type { ZoneTable } from '../../model/ZoneTable';
 import type { PolicyEvaluator } from '../../policy/PolicyEvaluator';
+import { transportPorts } from '../../policy/probeFields';
+import { dosFinding, dosTrafficOfIpv4, type DosTraffic } from '../../dos/DosGate';
+import type { DosPolicyStore } from '../../dos/DosPolicyStore';
+import type { DosFinding, DosSensor } from '../../dos/DosSensor';
 import { flowKeyFromPacket, reverseFlowKey, type FlowKey } from '../../session/FlowKey';
 import type { AssembledStream } from '../../inspection/StreamAssembler';
 import type { SessionTable, SessionTranslation } from '../../session/SessionTable';
@@ -48,6 +50,8 @@ export interface VdomServices {
   identities?: IdentityTable;
   centralNat?: boolean;
   opmode?: 'nat' | 'transparent';
+  dos?: DosPolicyStore;
+  dosSensor?: DosSensor;
 }
 
 export interface HaStandby {
@@ -78,6 +82,7 @@ export interface FirewallServices {
   flowInspectionPosture?: () => 'normal' | 'bypass' | 'block';
   assembleStream?: StreamJoiner;
   onInspection?: () => void;
+  onDosAnomaly?: (finding: DosFinding, iface: string, traffic: DosTraffic) => void;
 }
 
 function vdom(services: FirewallServices, context: PacketContext): VdomServices {
@@ -140,6 +145,7 @@ export function createCoreStages(services: FirewallServices): PipelineStage[] {
     vdomBindStage(services),
     switchBridgeStage(services),
     ingressZoneStage(services),
+    dosPolicyStage(services),
     sessionLookupStage(services),
     tcpStateCheckStage(services),
     natDestinationStage(services),
@@ -418,6 +424,35 @@ function ingressZoneStage(services: FirewallServices): PipelineStage {
 
       context.ingressZone = zone;
       return proceed(context, 'ingress-zone', zone);
+    },
+  };
+}
+
+function dosPolicyStage(services: FirewallServices): PipelineStage {
+  return {
+    name: 'dos-policy',
+    apply(context) {
+      const packet = ipv4(context);
+      if (!packet) return proceed(context, 'dos-policy', 'not-ipv4');
+
+      const scope = vdom(services, context);
+      if (!scope.dos || !scope.dosSensor) {
+        return proceed(context, 'dos-policy', 'no-sensor');
+      }
+      const traffic = dosTrafficOfIpv4(packet);
+      const finding = dosFinding({
+        policies: scope.dos,
+        evaluator: scope.evaluator,
+        sensor: scope.dosSensor,
+        zoneOf: (iface) => zoneNameFor(services, iface) ?? '',
+      }, context.ingressPort, traffic);
+      if (!finding) return proceed(context, 'dos-policy', 'no-anomaly');
+
+      services.onDosAnomaly?.(finding, context.ingressPort, traffic);
+      if (finding.action === 'pass') {
+        return proceed(context, 'dos-policy', `${finding.anomaly}:pass`);
+      }
+      return deny(context, 'dos-policy', 'dos-anomaly', finding.anomaly);
     },
   };
 }
@@ -897,18 +932,3 @@ function policyDestination(
   return original.type === 'ipv4' ? original : packet;
 }
 
-function transportPorts(packet: IPv4Packet): {
-  sourcePort?: number; destPort?: number; icmpType?: number; icmpCode?: number;
-} {
-  const payload = packet.payload as {
-    type?: string; sourcePort?: number; destinationPort?: number;
-    icmpType?: ICMPType; code?: number;
-  } | null;
-  if (payload && (payload.type === 'tcp' || payload.type === 'udp')) {
-    return { sourcePort: payload.sourcePort, destPort: payload.destinationPort };
-  }
-  if (payload?.type === 'icmp' && payload.icmpType !== undefined) {
-    return { icmpType: icmpTypeNumber(payload.icmpType), icmpCode: payload.code };
-  }
-  return {};
-}

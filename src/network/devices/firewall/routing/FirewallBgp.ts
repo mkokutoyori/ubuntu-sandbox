@@ -29,6 +29,11 @@ export interface FirewallBgpDeps {
 
 export const AS_NUMBER_MAX = 4294967295;
 
+export interface BgpClearScope {
+  readonly kind: 'all' | 'ip' | 'as' | 'external';
+  readonly value?: string;
+}
+
 export class FirewallBgp {
   private engine: BGPEngine | null = null;
   private config: BgpConfiguration = BGP_DEFAULTS;
@@ -70,6 +75,17 @@ export class FirewallBgp {
   }
 
   getEngine(): BGPEngine | null { return this.engine; }
+
+  clearSessions(scope: BgpClearScope): readonly string[] {
+    const engine = this.engine;
+    if (!engine) return [];
+    return engine.resetPeers((ip, cfg) => {
+      if (scope.kind === 'all') return true;
+      if (scope.kind === 'ip') return ip === scope.value;
+      if (scope.kind === 'as') return cfg.remoteAs === Number(scope.value);
+      return cfg.remoteAs !== this.config.asn;
+    });
+  }
 
   getConfig(): BgpConfiguration { return this.config; }
 

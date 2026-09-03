@@ -26,6 +26,9 @@ import { psValueToString } from '@/powershell/runtime/PSExpansion';
 import { makeTimeSpan } from './DateTimeCmdlets';
 import { parseCredentialArg } from './RemotingCmdlets';
 import { WindowsSecurityAudit, type SecurityEventSink } from '@/network/devices/windows/WindowsSecurityAudit';
+import { type AdFunctionalLevel, adFunctionalLevelKeywords, parseAdFunctionalLevel } from '@/network/devices/windows/server/ad/adFunctionalLevels';
+import { OU_PROPERTIES, OU_PROPERTY_PARAMETERS } from '@/network/devices/windows/server/ad/adOrganizationalUnit';
+import { USER_FLAGS, USER_FLAG_PARAMETERS, USER_PROPERTIES, USER_PROPERTY_PARAMETERS, accountExpiresValue } from '@/network/devices/windows/server/ad/adUser';
 
 function requireAd(ctx: CmdletContext, cmdletName: string): IAdProvider {
   if (!ctx.providers.ad) {
@@ -92,6 +95,22 @@ function identityOrObjectOf(ctx: CmdletContext): string {
 
 function installDnsOf(ctx: CmdletContext): boolean {
   return ctx.named['installdns'] !== false;
+}
+
+function pathArg(ctx: CmdletContext, key: string): string | undefined {
+  return ctx.named[key] !== undefined ? psValueToString(ctx.named[key]) : undefined;
+}
+
+function functionalLevelArg(
+  ctx: CmdletContext, key: string, cmdlet: string, label: string,
+): AdFunctionalLevel | null | 'invalid' {
+  if (ctx.named[key] === undefined) return null;
+  const level = parseAdFunctionalLevel(psValueToString(ctx.named[key]));
+  if (!level) {
+    ctx.emitError(`${cmdlet} : Cannot bind parameter '${label}'. Acceptable values are: ${adFunctionalLevelKeywords()}, Default.`);
+    return 'invalid';
+  }
+  return level;
 }
 
 interface AdFilterClause { prop: string; op: string; value: string }
@@ -190,6 +209,11 @@ function userToPSObject(u: AdUserInfo): Record<string, PSValue> {
     PasswordLastSet: (u.passwordLastSet ? new Date(u.passwordLastSet) : '') as unknown as PSValue,
     ServicePrincipalNames: [...u.servicePrincipalNames],
     ProfilePath: u.profilePath, HomeDirectory: u.homeDirectory, HomeDrive: u.homeDrive,
+    AccountExpirationDate: (u.accountExpirationDate ?? '') as unknown as PSValue,
+    CannotChangePassword: u.cannotChangePassword,
+    ChangePasswordAtLogon: u.changePasswordAtLogon,
+    ...u.flags,
+    ...u.properties,
   };
 }
 function groupToPSObject(g: AdGroupInfo): Record<string, PSValue> {
@@ -216,7 +240,51 @@ function computerToPSObject(c: AdComputerInfo): Record<string, PSValue> {
   };
 }
 function ouToPSObject(ou: AdOrgUnitInfo): Record<string, PSValue> {
-  return { Name: ou.name, DistinguishedName: ou.dn, ObjectClass: 'organizationalUnit' };
+  const obj: Record<string, PSValue> = {
+    Name: ou.name, DistinguishedName: ou.dn, ObjectClass: 'organizationalUnit',
+  };
+  for (const spec of OU_PROPERTIES) obj[spec.parameter] = ou.properties[spec.parameter] ?? '';
+  for (const [name, value] of Object.entries(ou.properties)) {
+    if (obj[name] === undefined) obj[name] = value;
+  }
+  obj.LinkedGroupPolicyObjects = [...ou.gpLinks];
+  obj.ProtectedFromAccidentalDeletion = ou.protectedFromAccidentalDeletion;
+  return obj;
+}
+
+function ouAttributesFrom(ctx: CmdletContext): Record<string, string> {
+  const attributes: Record<string, string> = {};
+  const template = ctx.named['instance'];
+  if (template !== null && typeof template === 'object' && !Array.isArray(template)) {
+    const record = template as Record<string, PSValue>;
+    for (const spec of OU_PROPERTIES) {
+      const value = record[spec.parameter];
+      if (value !== undefined && value !== null && psValueToString(value) !== '') {
+        attributes[spec.ldap] = psValueToString(value);
+      }
+    }
+  }
+  for (const spec of OU_PROPERTIES) {
+    const given = ctx.named[spec.parameter.toLowerCase()];
+    if (given !== undefined) attributes[spec.ldap] = psValueToString(given);
+  }
+  const other = ctx.named['otherattributes'];
+  if (other !== null && typeof other === 'object' && !Array.isArray(other)) {
+    for (const [ldap, value] of Object.entries(other as Record<string, PSValue>)) {
+      attributes[ldap] = psValueToString(value);
+    }
+  }
+  return attributes;
+}
+
+function booleanArg(ctx: CmdletContext, key: string): boolean | undefined {
+  const raw = ctx.named[key];
+  if (raw === undefined) return undefined;
+  if (typeof raw === 'boolean') return raw;
+  const text = psValueToString(raw).trim().toLowerCase();
+  if (text === '1' || text === 'true' || text === '$true') return true;
+  if (text === '0' || text === 'false' || text === '$false') return false;
+  return undefined;
 }
 
 // ── Install-ADDSForest ───────────────────────────────────────────────────────
@@ -224,7 +292,8 @@ function ouToPSObject(ou: AdOrgUnitInfo): Record<string, PSValue> {
 export class InstallADDSForestCmdlet implements ICmdlet {
   readonly name = 'install-addsforest';
   readonly aliases = [] as const;
-  readonly parameters = ['DomainName', 'DomainNetbiosName', 'SafeModeAdministratorPassword', 'InstallDns', 'Force'] as const;
+  readonly parameters = ['DomainName', 'DomainNetbiosName', 'SafeModeAdministratorPassword', 'InstallDns',
+    'DomainMode', 'ForestMode', 'DatabasePath', 'LogPath', 'SysvolPath', 'Force', 'WhatIf', 'Confirm'] as const;
 
   execute(ctx: CmdletContext): PSValue {
     const ad = requireAd(ctx, 'Install-ADDSForest');
@@ -239,8 +308,21 @@ export class InstallADDSForestCmdlet implements ICmdlet {
       return null;
     }
     const netbiosName = ctx.named['domainnetbiosname'] !== undefined ? psValueToString(ctx.named['domainnetbiosname']) : undefined;
-    const res = ad.installForest(domainName, netbiosName, password, { installDns: installDnsOf(ctx) });
+    const forestMode = functionalLevelArg(ctx, 'forestmode', 'Install-ADDSForest', 'ForestMode');
+    if (forestMode === 'invalid') return null;
+    const domainMode = functionalLevelArg(ctx, 'domainmode', 'Install-ADDSForest', 'DomainMode');
+    if (domainMode === 'invalid') return null;
+    const res = ad.installForest(domainName, netbiosName, password, {
+      installDns: installDnsOf(ctx),
+      forestMode: forestMode ?? undefined,
+      domainMode: domainMode ?? undefined,
+      databasePath: pathArg(ctx, 'databasepath'),
+      logPath: pathArg(ctx, 'logpath'),
+      sysvolPath: pathArg(ctx, 'sysvolpath'),
+      whatIf: ctx.named['whatif'] === true,
+    });
     if (!res.ok) { ctx.emitError(res.message); return null; }
+    if (res.message) { ctx.emit(res.message); return null; }
     return { Message: 'Success.', Context: 'DCPromo', RebootRequired: false, Status: 0 } as Record<string, PSValue>;
   }
 }
@@ -342,31 +424,90 @@ function dcToPSObject(c: AdComputerInfo): Record<string, PSValue> {
 
 // ── New/Get/Set/Remove-ADUser ────────────────────────────────────────────────
 
+function stringListArg(ctx: CmdletContext, key: string): string[] | undefined {
+  const raw = ctx.named[key];
+  if (raw === undefined) return undefined;
+  if (Array.isArray(raw)) return raw.map(psValueToString).filter(v => v !== '');
+  const text = psValueToString(raw);
+  return text === '' ? [] : [text];
+}
+
+function userAttributesFrom(ctx: CmdletContext): Record<string, string> {
+  const attributes: Record<string, string> = {};
+  const template = ctx.named['instance'];
+  if (template !== null && typeof template === 'object' && !Array.isArray(template)) {
+    const record = template as Record<string, PSValue>;
+    for (const spec of USER_PROPERTIES) {
+      const value = record[spec.parameter];
+      if (value !== undefined && value !== null && psValueToString(value) !== '') {
+        attributes[spec.ldap] = psValueToString(value);
+      }
+    }
+  }
+  for (const spec of USER_PROPERTIES) {
+    const given = ctx.named[spec.parameter.toLowerCase()];
+    if (given !== undefined) attributes[spec.ldap] = psValueToString(given);
+  }
+  const other = ctx.named['otherattributes'];
+  if (other !== null && typeof other === 'object' && !Array.isArray(other)) {
+    for (const [ldap, value] of Object.entries(other as Record<string, PSValue>)) {
+      attributes[ldap] = psValueToString(value);
+    }
+  }
+  return attributes;
+}
+
+function userFlagsFrom(ctx: CmdletContext): Record<string, boolean> {
+  const flags: Record<string, boolean> = {};
+  for (const spec of USER_FLAGS) {
+    const given = booleanArg(ctx, spec.parameter.toLowerCase());
+    if (given !== undefined) flags[spec.parameter] = given;
+  }
+  return flags;
+}
+
 export class NewADUserCmdlet implements ICmdlet {
   readonly name = 'new-aduser';
+  readonly displayName = 'New-ADUser';
   readonly aliases = [] as const;
-  readonly parameters = ['Name', 'SamAccountName', 'AccountPassword', 'Enabled', 'Path', 'DisplayName', 'Department', 'Title', 'EmailAddress', 'PasswordNeverExpires', 'Credential'] as const;
+  readonly parameters = ['Name', 'SamAccountName', 'AccountPassword', 'Path', 'Instance', 'OtherAttributes',
+    'AccountExpirationDate', 'ChangePasswordAtLogon', 'CannotChangePassword', 'ServicePrincipalNames',
+    'PassThru', 'Credential', 'WhatIf', 'Confirm',
+    ...USER_PROPERTY_PARAMETERS, ...USER_FLAG_PARAMETERS] as const;
 
   execute(ctx: CmdletContext): PSValue {
     const ad = requireAd(ctx, 'New-ADUser');
-    const sam = psValueToString(ctx.named['samaccountname'] ?? ctx.named['name'] ?? ctx.positional[0] ?? '');
+    const name = psValueToString(ctx.named['name'] ?? ctx.positional[0] ?? '');
+    const sam = psValueToString(ctx.named['samaccountname'] ?? '') || name;
     if (!sam) {
-      ctx.emitError("New-ADUser : Cannot process command because of one or more missing mandatory parameters: Name.");
+      ctx.emitError('New-ADUser : Cannot process command because of one or more missing mandatory parameters: Name.');
       return null;
     }
-    const password = securePasswordOf(ctx, 'accountpassword') ?? '';
-    const fullName = ctx.named['displayname'] !== undefined ? psValueToString(ctx.named['displayname'])
-      : (ctx.named['name'] !== undefined ? psValueToString(ctx.named['name']) : undefined);
-    const path = ctx.named['path'] !== undefined ? psValueToString(ctx.named['path']) : undefined;
-    const enabled = ctx.named['enabled'] !== undefined ? ctx.named['enabled'] === true : undefined;
-    const department = ctx.named['department'] !== undefined ? psValueToString(ctx.named['department']) : undefined;
-    const title = ctx.named['title'] !== undefined ? psValueToString(ctx.named['title']) : undefined;
-    const emailAddress = ctx.named['emailaddress'] !== undefined ? psValueToString(ctx.named['emailaddress']) : undefined;
-    const passwordNeverExpires = ctx.named['passwordneverexpires'] === true ? true : undefined;
-    const actingSam = ctx.named['credential'] !== undefined ? subjectUserOf(ctx) : undefined;
-    const res = ad.newUser(sam, { password, fullName, path, enabled, department, title, emailAddress, passwordNeverExpires, actingSam });
+    if (ctx.named['whatif'] === true) {
+      ctx.emit(`What if: Performing the operation "New" on target "CN=${name || sam}".`);
+      return null;
+    }
+    const attributes = userAttributesFrom(ctx);
+    const flags = userFlagsFrom(ctx);
+    const expiry = ctx.named['accountexpirationdate'] !== undefined
+      ? accountExpiresValue(new Date(psValueToString(ctx.named['accountexpirationdate'])))
+      : undefined;
+    const res = ad.newUser(sam, {
+      password: securePasswordOf(ctx, 'accountpassword') ?? '',
+      fullName: attributes['displayName'] ?? (name || undefined),
+      commonName: name || undefined,
+      path: ctx.named['path'] !== undefined ? psValueToString(ctx.named['path']) : undefined,
+      enabled: booleanArg(ctx, 'enabled') ?? false,
+      attributes, flags,
+      spns: stringListArg(ctx, 'serviceprincipalnames'),
+      accountExpires: expiry,
+      changePasswordAtLogon: booleanArg(ctx, 'changepasswordatlogon') ?? false,
+      cannotChangePassword: booleanArg(ctx, 'cannotchangepassword') ?? false,
+      actingSam: ctx.named['credential'] !== undefined ? subjectUserOf(ctx) : undefined,
+    });
     if (!res.ok) { ctx.emitError(`New-ADUser : ${res.message}`); return null; }
     auditSinkFor(ctx)?.accountCreated(sam, subjectUserOf(ctx));
+    if (ctx.named['passthru'] !== true) return null;
     const u = ad.getUser(sam);
     return u ? userToPSObject(u) : null;
   }
@@ -1088,18 +1229,69 @@ export class SetADAccountPasswordCmdlet implements ICmdlet {
 
 export class NewADOrganizationalUnitCmdlet implements ICmdlet {
   readonly name = 'new-adorganizationalunit';
+  readonly displayName = 'New-ADOrganizationalUnit';
   readonly aliases = [] as const;
-  readonly parameters = ['Name', 'Path', 'Description', 'ProtectedFromAccidentalDeletion'] as const;
+  readonly parameters = ['Name', 'Path', 'Instance', 'OtherAttributes', 'ProtectedFromAccidentalDeletion',
+    'PassThru', 'Credential', 'WhatIf', 'Confirm', ...OU_PROPERTY_PARAMETERS] as const;
 
   execute(ctx: CmdletContext): PSValue {
     const ad = requireAd(ctx, 'New-ADOrganizationalUnit');
     const name = psValueToString(ctx.named['name'] ?? ctx.positional[0] ?? '');
-    if (!name) { ctx.emitError("New-ADOrganizationalUnit : Cannot process command because of one or more missing mandatory parameters: Name."); return null; }
+    if (!name) { ctx.emitError('New-ADOrganizationalUnit : Cannot process command because of one or more missing mandatory parameters: Name.'); return null; }
     const path = ctx.named['path'] !== undefined ? psValueToString(ctx.named['path']) : undefined;
-    const res = ad.newOrganizationalUnit(name, path);
+    const protectedFlag = booleanArg(ctx, 'protectedfromaccidentaldeletion') ?? true;
+    if (ctx.named['whatif'] === true) {
+      ctx.emit(`What if: Performing the operation "New" on target "OU=${name}${path ? `,${path}` : ''}".`);
+      return null;
+    }
+    const res = ad.newOrganizationalUnit(name, path, { attributes: ouAttributesFrom(ctx), protected: protectedFlag });
     if (!res.ok) { ctx.emitError(`New-ADOrganizationalUnit : ${res.message}`); return null; }
+    if (ctx.named['passthru'] !== true) return null;
     const ou = ad.getOrganizationalUnit(name);
     return ou ? ouToPSObject(ou) : null;
+  }
+}
+
+export class SetADOrganizationalUnitCmdlet implements ICmdlet {
+  readonly name = 'set-adorganizationalunit';
+  readonly displayName = 'Set-ADOrganizationalUnit';
+  readonly aliases = [] as const;
+  readonly parameters = ['Identity', 'ProtectedFromAccidentalDeletion', 'PassThru', 'Credential',
+    'WhatIf', 'Confirm', ...OU_PROPERTY_PARAMETERS] as const;
+
+  execute(ctx: CmdletContext): PSValue {
+    const ad = requireAd(ctx, 'Set-ADOrganizationalUnit');
+    const identity = identityOf(ctx);
+    if (!identity) { ctx.emitError('Set-ADOrganizationalUnit : Cannot process command because of one or more missing mandatory parameters: Identity.'); return null; }
+    if (ctx.named['whatif'] === true) {
+      ctx.emit(`What if: Performing the operation "Set" on target "${identity}".`);
+      return null;
+    }
+    const res = ad.setOrganizationalUnit(identity, ouAttributesFrom(ctx), booleanArg(ctx, 'protectedfromaccidentaldeletion'));
+    if (!res.ok) { ctx.emitError(`Set-ADOrganizationalUnit : ${res.message}`); return null; }
+    if (ctx.named['passthru'] !== true) return null;
+    const ou = ad.getOrganizationalUnit(identity);
+    return ou ? ouToPSObject(ou) : null;
+  }
+}
+
+export class RemoveADOrganizationalUnitCmdlet implements ICmdlet {
+  readonly name = 'remove-adorganizationalunit';
+  readonly displayName = 'Remove-ADOrganizationalUnit';
+  readonly aliases = [] as const;
+  readonly parameters = ['Identity', 'Recursive', 'Credential', 'WhatIf', 'Confirm'] as const;
+
+  execute(ctx: CmdletContext): PSValue {
+    const ad = requireAd(ctx, 'Remove-ADOrganizationalUnit');
+    const identity = identityOf(ctx);
+    if (!identity) { ctx.emitError('Remove-ADOrganizationalUnit : Cannot process command because of one or more missing mandatory parameters: Identity.'); return null; }
+    if (ctx.named['whatif'] === true) {
+      ctx.emit(`What if: Performing the operation "Remove" on target "${identity}".`);
+      return null;
+    }
+    const res = ad.removeOrganizationalUnit(identity, ctx.named['recursive'] === true);
+    if (!res.ok) ctx.emitError(`Remove-ADOrganizationalUnit : ${res.message}`);
+    return null;
   }
 }
 

@@ -99,6 +99,13 @@ export interface SocleDeps {
   readonly enterGlobal: () => string;
   readonly authorize?: (spec: FortiTableSpec, intent: AccessIntent) => AccessVerdict;
   readonly principal?: () => string;
+  readonly vdomNames?: () => readonly string[];
+  readonly enterVdom?: (name: string) => string;
+  readonly adminSessions?: () => readonly {
+    readonly index: number; readonly username: string;
+    readonly type: string; readonly from: string;
+  }[];
+  readonly disconnectAdminSession?: (index: string) => string;
 }
 
 export interface FortiOutcome {
@@ -198,7 +205,9 @@ export class FortiSocle {
     if (table) {
       return `table:${principal}:${table.spec.path.join(' ')}:${table.keys().join(',')}`;
     }
-    return `root:${principal}:${this.deps.tree.specPaths().length}`;
+    return `root:${principal}:${this.deps.tree.specPaths().length}`
+      + `:${(this.deps.vdomNames?.() ?? []).join(',')}`
+      + `:${(this.deps.adminSessions?.() ?? []).map(s => s.index).join(',')}`;
   }
 
   private referenceStamp(object: FortiObject): string {
@@ -271,12 +280,43 @@ export class FortiSocle {
     out.push(...this.branchSpecs());
     out.push(...this.viewSpecs());
     out.push(...this.diagnoseSpecs());
+    out.push(...this.enterVdomSpecs());
+    out.push(...this.adminSessionSpecs());
     out.push(...this.executeSpecs(new Set(out.map(spec => spec.id))));
     out.push(this.withArgument('execute', ['execute',
       { name: 'command', type: 'REST', description: 'Command to execute.' }],
       'Execute static commands.',
       (_s, args) => this.deps.runExecute((args.command ?? '').split(/\s+/).filter(Boolean))));
     return out;
+  }
+
+  private enterVdomSpecs(): CommandSpec[] {
+    const enter = this.deps.enterVdom;
+    if (!enter) return [];
+    return [this.withArgument('execute enter',
+      ['execute', 'enter', {
+        name: 'vdom', type: 'WORD', description: 'VDOM name.',
+        alternatives: (this.deps.vdomNames?.() ?? []).map(name => ({
+          keyword: name, description: 'Virtual domain.',
+        })),
+      }],
+      'Select virtual domain.',
+      (_session, args) => enter(args.vdom ?? ''))];
+  }
+
+  private adminSessionSpecs(): CommandSpec[] {
+    const disconnect = this.deps.disconnectAdminSession;
+    if (!disconnect) return [];
+    return [this.withArgument('execute disconnect-admin-session',
+      ['execute', 'disconnect-admin-session', {
+        name: 'index', type: 'INT', description: 'Index of the session to disconnect.',
+        alternatives: (this.deps.adminSessions?.() ?? []).map(session => ({
+          keyword: String(session.index),
+          description: `${session.username} ${session.type} from ${session.from}.`,
+        })),
+      }],
+      'Disconnect a logged-in administrator.',
+      (_session, args) => disconnect(args.index ?? ''))];
   }
 
   private executeSpecs(declared: ReadonlySet<string>): CommandSpec[] {
@@ -286,6 +326,7 @@ export class FortiSocle {
       `execute ${command.name}`,
       ['execute', command.name, {
         name: 'rest', type: 'REST', optional: true, description: command.help,
+        ...(command.options ? { alternatives: [...command.options] } : {}),
       }],
       command.help,
       (_s, args) => this.deps.runExecute(
@@ -393,6 +434,17 @@ export class FortiSocle {
       this.plain('execute log delete-all', ['execute', 'log', 'delete-all'],
         'Delete every stored log record.',
         () => this.deps.runExecute(['log', 'delete-all'])),
+      this.withArgument('execute log delete',
+        ['execute', 'log', 'delete', {
+          name: 'category', type: 'WORD', optional: true,
+          description: 'Log category.',
+          alternatives: LOG_CATEGORIES.map(entry => ({
+            keyword: String(entry.index), description: entry.name,
+          })),
+        }],
+        'Delete local logs of one category.',
+        (_s, args) => this.deps.runExecute(
+          ['log', 'delete', ...(args.category ? [args.category] : [])])),
       this.withArgument('execute log filter',
         ['execute', 'log', 'filter', rest('rest', 'Filter criterion.')],
         'Set the log display filter.', run2(['log', 'filter'])),
@@ -652,14 +704,14 @@ export class FortiSocle {
     return [
       this.withArgument('show', ['show',
         {
-          name: 'path', type: 'REST', optional: true,
+          name: 'path', type: 'REST', optional: true, leadingOnly: true,
           description: 'Configuration path.', alternatives: branches,
         }],
         'Show configuration.',
         (_s, args) => this.deps.view(words(args.path), false)),
       this.withArgument('get', ['get',
         {
-          name: 'path', type: 'REST', optional: true,
+          name: 'path', type: 'REST', optional: true, leadingOnly: true,
           description: 'Object path.', alternatives: branches,
         }],
         'Get dynamic and system information.',

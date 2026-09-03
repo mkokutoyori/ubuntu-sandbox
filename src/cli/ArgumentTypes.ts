@@ -65,6 +65,19 @@ export interface ArgumentSpec {
    */
   readonly alternatives?: readonly EnumValue[];
   /**
+   * Les formes ne valent qu'en TETE de la place.
+   *
+   * Une place `REST` sert deux grammaires que le moteur ne peut pas
+   * distinguer seul. `snmp-server host <ip> traps version 2c public
+   * udp-port …` est une SUITE : chaque mot-cle s'ajoute, et ceux qui
+   * restent sont encore offerts. `show system global` est un CHEMIN :
+   * la premiere branche choisie ferme les treize autres, et la suite
+   * appartient a cette branche-la. Sans ce drapeau, la seconde heritait
+   * de la premiere et `show system interface ?` offrait `antivirus`,
+   * `dlp`, `webfilter` avant les vrais noms de ports.
+   */
+  readonly leadingOnly?: boolean;
+  /**
    * Le rendu impose, quand le type ne suffit pas a le decrire (`hh:mm`).
    */
   readonly literal?: string;
@@ -160,6 +173,15 @@ export function resolveEnumValue(
   const prefixes = spec.values?.filter(
     value => value.keyword.toLowerCase().startsWith(bas)) ?? [];
   return prefixes.length === 1 ? prefixes[0].keyword : undefined;
+}
+
+export function boundedInteger(
+  token: string | undefined, min: number, max: number,
+): number | null {
+  if (token === undefined || !/^\d+$/.test(token)) return null;
+
+  const value = Number(token);
+  return value >= min && value <= max ? value : null;
 }
 
 const ANNOUNCED_RANGE = /^<(\d+)-(\d+)>$/;

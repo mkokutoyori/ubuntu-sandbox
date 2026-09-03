@@ -3,6 +3,7 @@ import type { EnumValue } from '../../../../../cli/ArgumentTypes';
 import type { Suggestion, CompletionTrigger } from '../../../../../cli/CompletionEngine';
 import type { FortiGate } from './FortiGate';
 import { FORTIOS_PROFILE } from './FortiProfile';
+import type { PingOptions } from '../../diag/PingOptions';
 import {
   FortiMessages, FORTI_COMMAND_FAIL, setHintsEnabled,
 } from './FortiMessages';
@@ -51,23 +52,30 @@ import type {
 } from '../../inspection/UtmProfiles';
 import { FortiDiagnostics } from './diag/FortiDiagnostics';
 import {
-  deniedLog, runDiagnose, runExecuteLog, parseSnifferPlan, type SnifferPlan,
+  deniedLog, runDiagnose, runExecuteLog, runSessionFilter,
+  parseSnifferPlan, type SnifferPlan,
 } from './diag/FortiDiagCommands';
 import { renderVpnTunnelList, renderVpnTunnelSummary } from './diag/vpnTunnelRenderer';
 import {
   renderArpTable, renderInterfaceStatus, renderPerformanceStatus,
   type InterfaceStatusFacts,
-  renderBgpNeighbors, renderBgpSummary, renderDhcpLeases,
+  renderBgpNeighbors, renderBgpSummary, renderDhcpLeases, renderDhcp6Leases,
+  renderSslVpnLoginUsers, renderSslVpnSessions, type SslVpnListRow,
   renderOspfNeighbors, renderRoutingTable, renderSystemStatus,
 } from './diag/getViews';
+import type { SslVpnSessionMode } from '../../vpn/SslVpnSessionTable';
+import { PkiKeyPair } from '../../../../pki/PkiKeyPair';
+import { buildCertificateRequest } from '../../../../pki/CertificateSigningRequest';
+import { csrToPem, privateKeyToPem, pemToCert } from '../../../../pki/pem';
 import { renderHaChecksum, renderHaStatus } from './diag/haRenderer';
 import type { FortiLogFormat } from './log/fortiLogFormat';
 import {
   configChangeLog,
   shouldLogTraffic, shouldLogTrafficStart, trafficCloseLog, trafficStartLog,
 } from './log/trafficLog';
-import { utmLog } from './log/utmLog';
+import { anomalyLog, utmLog } from './log/utmLog';
 import { renderFortiguardServiceStatus } from './diag/fortiguardRenderer';
+import type { FortiGuardFamily } from '../../mgmt/FortiGuardDatabases';
 import { TftpClientSession } from '@/network/tftp/TftpSession';
 import { IPAddress } from '@/network/core/types';
 import { tokenize } from '@/cli/CommandParser';
@@ -107,6 +115,9 @@ interface HaRemoteSession extends HaPendingLogin {
   readonly token: string;
 }
 
+const FORTIGUARD_UNREACHABLE =
+  'Objects updated: 0\nFortiGuard Distribution Network is not reachable.';
+
 const NO_PING_PAYLOAD = 'an echo request carries no operator-chosen payload here — '
   + 'its data field is a byte count, not bytes — so a pattern could be set and never '
   + 'sent, and a reply could never be checked against it.';
@@ -127,6 +138,26 @@ function annonceAlimentation(action: 'reboot' | 'shutdown' | 'factoryreset'): st
     : `This operation will ${action} the system !`;
 }
 
+const CERTIFICATE_KEY_SIZES: readonly number[] = Object.freeze([1024, 1536, 2048, 4096]);
+
+function distinguishedName(fields: {
+  subject: string; country?: string; state?: string; city?: string;
+  org?: string; unit?: string; email?: string;
+}): string {
+  const parts: string[] = [];
+  const push = (label: string, value?: string) => {
+    if (value !== undefined && value.length > 0) parts.push(`${label} = ${value}`);
+  };
+  push('C', fields.country);
+  push('ST', fields.state);
+  push('L', fields.city);
+  push('O', fields.org);
+  push('OU', fields.unit);
+  push('CN', fields.subject);
+  push('emailAddress', fields.email);
+  return parts.join(', ');
+}
+
 export class FortiShell {
   private pendingAsync: Promise<string> | null = null;
 
@@ -140,17 +171,31 @@ export class FortiShell {
   private readonly nav: FortiNavigator;
   private readonly socle: FortiSocle;
   private readonly diagnostics = new FortiDiagnostics();
-  private seedFactoryCertificates(): void {
+  private declareLocalCertificate(
+    name: string, certificatePem: string, privateKeyPem: string, source: string,
+  ): void {
     const spec = this.tree.spec(['vpn', 'certificate', 'local']);
     if (!spec) return;
-    const table = this.tree.table(spec);
+    const object = this.tree.table(spec).ensure(name);
+    object.set('certificate', [certificatePem]);
+    object.set('private-key', [privateKeyPem]);
+    object.set('source', [source]);
+  }
+
+  private declareAuthority(name: string, certificatePem: string): void {
+    const spec = this.tree.spec(['vpn', 'certificate', 'ca']);
+    if (!spec) return;
+    const object = this.tree.table(spec).ensure(name);
+    object.set('ca', [certificatePem]);
+    object.set('certificate', [certificatePem]);
+  }
+
+  private seedFactoryCertificates(): void {
     for (const name of this.fw.getCertificateStore().localNames()) {
       const entry = this.fw.getCertificateStore().local(name);
       if (!entry || entry.source !== 'factory') continue;
-      const object = table.ensure(name);
-      object.set('certificate', [entry.certificatePem]);
-      object.set('private-key', [entry.privateKeyPem]);
-      object.set('source', ['factory']);
+      this.declareLocalCertificate(
+        name, entry.certificatePem, entry.privateKeyPem, 'factory');
     }
   }
 
@@ -176,6 +221,7 @@ export class FortiShell {
   private vdom = 'root';
   private adminName: string | null = null;
   private globalScope = false;
+  private enteredVdom = 'root';
   private haRemote: HaRemoteSession | null = null;
   private haPendingLogin: HaPendingLogin | null = null;
   private continuation: string | null = null;
@@ -217,6 +263,10 @@ export class FortiShell {
       enterGlobal: () => this.enterGlobal(),
       authorize: (spec, intent) => this.authorizeSpec(spec, intent),
       principal: () => this.adminName ?? '',
+      vdomNames: () => this.fw.vdomNames(),
+      enterVdom: (name) => this.enterVdom(name),
+      adminSessions: () => this.fw.getAdminSessions().list(),
+      disconnectAdminSession: (index) => this.disconnectAdminSession(index),
     });
     this.fw.bindConfigSnapshot(
       () => renderWholeConfig(this.tree, { full: false }).join('\n'));
@@ -240,6 +290,10 @@ export class FortiShell {
           session, rule, now: this.fw.now(),
           identity: this.loggedIdentity(session.c2s.sourceIP),
         }, reason));
+      },
+      onDosAnomaly: (finding, iface, packet) => {
+        this.fw.getLogStore().append(
+          anomalyLog(finding, iface, packet, this.fw.now()));
       },
       onDenied: (context) => {
         const utm = context.utmVerdict === undefined
@@ -335,7 +389,8 @@ export class FortiShell {
     const host = this.fw.getName();
     const label = this.nav.label();
     if (label !== null) return `${host} (${label}) # `;
-    return this.globalScope ? `${host} (global) # ` : `${host} # `;
+    if (this.globalScope) return `${host} (global) # `;
+    return this.vdom === 'root' ? `${host} # ` : `${host} (${this.vdom}) # `;
   }
 
   getConfigTree(): FortiConfigTree {
@@ -544,7 +599,7 @@ export class FortiShell {
   }
 
   private syncActiveVdom(): void {
-    let active = 'root';
+    let active = this.enteredVdom;
     for (const frame of this.nav.frames()) {
       if (frame.kind !== 'object') continue;
       if (frame.object.spec.path.join(' ') !== 'vdom') continue;
@@ -623,6 +678,10 @@ export class FortiShell {
   private commitContext(): FortiCommitContext {
     return {
       policy: this.fw.getPolicyStore(),
+      localIn: this.fw.getLocalInPolicy(),
+      localIn6: this.fw.getLocalInPolicy6(),
+      dos: this.fw.getDosPolicy(),
+      dos6: this.fw.getDosPolicy6(),
       objects: this.fw.getObjectStore(),
       device: this.commitDevice(),
       vdom: this.vdom,
@@ -676,7 +735,7 @@ export class FortiShell {
   }
 
   private referenceExists(target: string, name: string): boolean {
-    if (name === 'all' || name === 'any' || name === 'ALL') return true;
+    if (name === 'any') return true;
     return this.candidatesFor([target]).some(c => c.keyword === name);
   }
 
@@ -1029,17 +1088,175 @@ export class FortiShell {
     this.seedFactoryVdoms();
   }
 
-  private executeCertificate(rest: readonly string[]): string {
-    if (rest[0] !== 'local' || rest[1] !== 'export') {
+  private executeSetSystem(rest: readonly string[]): string {
+    if (rest.length === 0) return FortiMessages.incomplete('`system session filter`');
+    if (rest[0] !== 'system' || rest[1] !== 'session' || rest[2] !== 'filter') {
+      return FortiMessages.unknownAction(`set ${rest.join(' ')}`);
+    }
+    return runSessionFilter(rest.slice(3), this.diagDeps(), true);
+  }
+
+  private executeSyncSession(): string {
+    const ha = this.fw.getHa();
+    if (ha.getConfiguration().mode === 'standalone') {
+      return FortiMessages.commandFail('this unit is not part of a cluster.');
+    }
+    if (!ha.getConfiguration().sessionPickup) {
       return FortiMessages.commandFail(
-        'only `execute vpn certificate local export` is available here.');
+        'session synchronisation needs `set session-pickup enable`.');
+    }
+    return ha.requestSynchronisation()
+      ? '' : FortiMessages.commandFail('no response from the cluster.');
+  }
+
+  private executeCertificateGenerate(rest: readonly string[]): string {
+    if (rest[0] !== 'rsa') {
+      return rest[0] === undefined
+        ? FortiMessages.incomplete('a key algorithm')
+        : FortiMessages.unimplementedAction(`vpn certificate local generate ${rest[0]}`,
+          'this build generates RSA requests only.');
+    }
+    const [name, size, subject, country, state, city, org, unit, email, san] = rest.slice(1);
+    if (name === undefined || size === undefined || subject === undefined) {
+      return FortiMessages.incomplete(
+        'a certificate name, a key size and a subject');
+    }
+    if (!/^[0-9A-Za-z_-]+$/.test(name)) {
+      return FortiMessages.valueError(name,
+        'a certificate name holds only letters, digits, `-` and `_`.');
+    }
+    const store = this.fw.getCertificateStore();
+    if (store.local(name) || store.request(name)) {
+      return FortiMessages.commandFail(`certificate "${name}" already exists.`);
+    }
+    const keySize = Number.parseInt(size, 10);
+    if (!CERTIFICATE_KEY_SIZES.includes(keySize)) {
+      return FortiMessages.valueError(size,
+        `a key size is one of ${CERTIFICATE_KEY_SIZES.join(', ')}.`);
+    }
+
+    const distinguished = distinguishedName(
+      { subject, country, state, city, org, unit, email });
+    const keys = PkiKeyPair.generate('rsa', keySize);
+    const csr = buildCertificateRequest(distinguished, keys,
+      san === undefined || san.length === 0 ? undefined : san.split(','));
+
+    store.setRequest({
+      name, subject: distinguished, keySize,
+      publicKey: keys.publicKey,
+      privateKey: keys.privateKey,
+      privateKeyPem: privateKeyToPem(keys.privateKey),
+      csrPem: csrToPem(csr),
+    });
+    return '';
+  }
+
+  private tftpClientFor(server: string): TftpClientSession | string {
+    let address: IPAddress;
+    try { address = new IPAddress(server); }
+    catch {
+      return FortiMessages.valueError(server, 'a TFTP server address is an IPv4 address.');
+    }
+    return new TftpClientSession(
+      this.fw.getUdpEndpoint(), address, undefined,
+      TFTP_EXPORT_TIMEOUT_MS, TFTP_EXPORT_MAX_RETRIES);
+  }
+
+  private executeCertificateImport(rest: readonly string[], kind: 'local' | 'ca'): string {
+    const [destination, file, server, format] = rest;
+    if (destination !== 'tftp') {
+      return destination === undefined
+        ? FortiMessages.incomplete('`tftp`')
+        : FortiMessages.unimplementedAction(
+          `vpn certificate ${kind} import ${destination}`,
+          'this build imports over TFTP only.');
+    }
+    if (file === undefined || server === undefined) {
+      return FortiMessages.incomplete('a file name and a TFTP server address');
+    }
+    if (kind === 'local' && format !== undefined && format !== 'cer') {
+      return FortiMessages.unimplementedAction(
+        `vpn certificate local import tftp ${file} ${server} ${format}`,
+        'this build has no PKCS#12 reader; export the certificate as PEM.');
+    }
+
+    const client = this.tftpClientFor(server);
+    if (typeof client === 'string') return client;
+
+    this.pendingAsync = client.get(file).then((result) => {
+      if (!result.ok || result.content === undefined) {
+        return FortiMessages.commandFail(
+          `the TFTP server at ${server} did not give "${file}" `
+          + `(${result.error ?? 'Timed out'}).`);
+      }
+      return kind === 'local'
+        ? this.adoptSignedCertificate(result.content)
+        : this.adoptAuthority(result.content);
+    });
+    return '';
+  }
+
+  private adoptSignedCertificate(pem: string): string {
+    const certificate = pemToCert(pem);
+    if (!certificate) return FortiMessages.commandFail('the file is not a certificate.');
+
+    const store = this.fw.getCertificateStore();
+    const name = store.requestNames().find(
+      candidate => store.request(candidate)?.publicKey.material
+        === certificate.publicKey.material);
+    if (name === undefined) {
+      return FortiMessages.commandFail(
+        'no pending certificate request matches this certificate.');
+    }
+    const pending = store.request(name)!;
+    store.setLocal({
+      name,
+      certificate,
+      privateKey: pending.privateKey,
+      certificatePem: pem,
+      privateKeyPem: pending.privateKeyPem,
+      source: 'user',
+    });
+    store.removeRequest(name);
+    this.declareLocalCertificate(name, pem, pending.privateKeyPem, 'user');
+    return '';
+  }
+
+  private adoptAuthority(pem: string): string {
+    const certificate = pemToCert(pem);
+    if (!certificate) return FortiMessages.commandFail('the file is not a certificate.');
+
+    const store = this.fw.getCertificateStore();
+    let index = 1;
+    while (store.authority(`CA_Cert_${index}`)) index++;
+    const name = `CA_Cert_${index}`;
+    store.setAuthority({ name, certificate, certificatePem: pem, trusted: true });
+    this.declareAuthority(name, pem);
+    return '';
+  }
+
+  private executeCertificate(rest: readonly string[]): string {
+    if (rest[0] === 'local' && rest[1] === 'generate') {
+      return this.executeCertificateGenerate(rest.slice(2));
+    }
+    if (rest[1] === 'import' && (rest[0] === 'local' || rest[0] === 'ca')) {
+      return this.executeCertificateImport(rest.slice(2), rest[0]);
+    }
+    if ((rest[0] !== 'local' && rest[0] !== 'ca') || rest[1] !== 'export') {
+      return FortiMessages.commandFail(
+        'only `export`, `import` and `generate` are available here.');
     }
     const [destination, name, file, server] = rest.slice(2);
     if (!destination || !name || !file) {
       return FortiMessages.incomplete('a destination, a certificate name and a file name');
     }
-    const entry = this.fw.getCertificateStore().local(name);
-    if (!entry) return FortiMessages.commandFail(`certificate "${name}" does not exist.`);
+    const store = this.fw.getCertificateStore();
+    const material = rest[0] === 'ca'
+      ? store.authority(name)?.certificatePem
+      : store.local(name)?.certificatePem ?? store.request(name)?.csrPem;
+    if (material === undefined) {
+      return FortiMessages.commandFail(`certificate "${name}" does not exist.`);
+    }
 
     if (destination !== 'tftp') {
       return FortiMessages.commandFail(
@@ -1055,7 +1272,7 @@ export class FortiShell {
     const client = new TftpClientSession(
       this.fw.getUdpEndpoint(), address, undefined,
       TFTP_EXPORT_TIMEOUT_MS, TFTP_EXPORT_MAX_RETRIES);
-    this.pendingAsync = client.put(file, entry.certificatePem).then(result => (
+    this.pendingAsync = client.put(file, material).then(result => (
       result.ok ? '' : FortiMessages.commandFail(
         `the TFTP server at ${server} did not take "${file}" `
         + `(${result.error ?? 'Timed out'}).`)));
@@ -1123,15 +1340,25 @@ export class FortiShell {
       case 'log': return runExecuteLog(tail, this.diagDeps());
       case 'ha': return this.executeHa(tail);
       case 'dhcp': return this.executeDhcp(tail);
+      case 'dhcp6': return this.executeDhcp6(tail);
+      case 'interface': return this.executeInterface(tail);
+      case 'policy-packet-capture': return this.executePolicyPacketCapture(tail);
+      case 'set': return this.executeSetSystem(tail);
+      case 'sync-session': return this.executeSyncSession();
       case 'traceroute':
         return tail.length === 0
           ? FortiMessages.incomplete('a destination')
           : this.fw.runTraceroute(tail[0]);
+      case 'tracert6':
+        return tail.length === 0
+          ? FortiMessages.incomplete('a destination')
+          : this.fw.runTraceroute6(tail[tail.length - 1]);
       case 'vpn':
         if (tail.length === 0) return FortiMessages.incomplete('a VPN operation');
-        return tail[0] === 'certificate'
-          ? this.executeCertificate(tail.slice(1))
-          : FortiMessages.unknownAction(`vpn ${tail[0]}`);
+        if (tail[0] === 'certificate') return this.executeCertificate(tail.slice(1));
+        if (tail[0] === 'ipsec') return this.executeIpsecTunnel(tail.slice(1));
+        if (tail[0] === 'sslvpn') return this.executeSslVpn(tail.slice(1));
+        return FortiMessages.unknownAction(`vpn ${tail[0]}`);
       case 'time': return runExecuteTime(tail, this.fw);
       case 'date': return runExecuteDate(tail, this.fw);
       case 'ping':
@@ -1142,7 +1369,23 @@ export class FortiShell {
         return tail.length === 0
           ? FortiMessages.incomplete('a destination')
           : this.fw.getPing6().run(tail[0]);
-      case 'ping-options': return this.executePingOptions(tail);
+      case 'ping-options':
+        return this.executePingOptions(this.fw.getPingOptions(), 'ping-options', tail);
+      case 'ping6-options':
+        return this.executePingOptions(this.fw.getPing6Options(), 'ping6-options', tail);
+      case 'clear': return this.executeClear(tail);
+      case 'router': return this.executeRouter(tail);
+      case 'update-now': return this.executeFortiguardUpdate();
+      case 'update-av': return this.executeFortiguardUpdate('antivirus');
+      case 'update-ips': return this.executeFortiguardUpdate('ips');
+      case 'disconnect-admin-session':
+        return tail.length === 0
+          ? FortiMessages.incomplete('a session index')
+          : this.disconnectAdminSession(tail[0]);
+      case 'enter':
+        return tail.length === 0
+          ? FortiMessages.incomplete('a VDOM name')
+          : this.enterVdom(tail[0]);
       case 'backup': return this.executeBackup(tail);
       case 'restore': return this.executeRestore(tail);
       case 'revision': return this.executeRevision(tail);
@@ -1156,25 +1399,252 @@ export class FortiShell {
     }
   }
 
+  private executeFortiguardUpdate(family?: FortiGuardFamily): string {
+    this.fw.getFortiGuard().recordAttempt(family);
+    return FORTIGUARD_UNREACHABLE;
+  }
+
+  private disconnectAdminSession(raw: string): string {
+    const index = Number.parseInt(raw, 10);
+    if (!Number.isInteger(index) || String(index) !== raw.trim()) {
+      return FortiMessages.commandFail(`"${raw}" is not a session index.`);
+    }
+    const closed = this.fw.getAdminSessions().close(index);
+    return closed === undefined
+      ? FortiMessages.commandFail(`no administrator session with index ${index}.`)
+      : '';
+  }
+
+  private enterVdom(name: string): string {
+    if (!this.fw.getVdomRegistry().has(name)) {
+      return FortiMessages.commandFail(`virtual domain "${name}" does not exist.`);
+    }
+    this.globalScope = false;
+    this.enteredVdom = name;
+    this.vdom = name;
+    this.fw.setActiveVdom(name);
+    return '';
+  }
+
+  private executeRouter(rest: readonly string[]): string {
+    if (rest.length === 0) return FortiMessages.incomplete('a routing operation');
+    if (rest[0] === 'restart') {
+      this.fw.getRouting().getBgp().clearSessions({ kind: 'all' });
+      this.fw.getRouting().restartOspf();
+      return '';
+    }
+    if (rest[0] !== 'clear') return FortiMessages.unknownAction(`router ${rest[0]}`);
+    if (rest[1] === 'ospf' && rest[2] === 'process') {
+      return this.fw.getRouting().restartOspf()
+        ? '' : FortiMessages.commandFail('OSPF is not running.');
+    }
+    if (rest[1] !== 'bgp') {
+      return FortiMessages.unknownAction(`router clear ${rest.slice(1).join(' ')}`);
+    }
+    return this.clearBgpSessions(rest.slice(2));
+  }
+
+  private clearBgpSessions(rest: readonly string[]): string {
+    if (this.fw.getRouting().getBgp().getEngine() === null) {
+      return FortiMessages.commandFail('BGP is not running.');
+    }
+    const scope = rest[0];
+    if (scope === 'all' || scope === 'external') {
+      this.fw.getRouting().getBgp().clearSessions({ kind: scope });
+      return '';
+    }
+    if (scope !== 'ip' && scope !== 'as') {
+      return scope === undefined
+        ? FortiMessages.incomplete('what to clear')
+        : FortiMessages.unknownAction(`router clear bgp ${scope}`);
+    }
+    if (rest[1] === undefined) {
+      return FortiMessages.incomplete(scope === 'ip' ? 'a neighbour address' : 'an AS number');
+    }
+    const reset = this.fw.getRouting().getBgp()
+      .clearSessions({ kind: scope, value: rest[1] });
+    return reset.length > 0 ? '' : FortiMessages.commandFail(
+      `no established BGP peering matches ${scope} ${rest[1]}.`);
+  }
+
+  private executeClear(rest: readonly string[]): string {
+    if (rest.length === 0) return FortiMessages.incomplete('what to clear');
+    if (rest[0] === 'system' && rest[1] === 'arp' && rest[2] === 'table') {
+      this.fw.getArpService().clear();
+      return '';
+    }
+    return FortiMessages.unknownAction(`clear ${rest.join(' ')}`);
+  }
+
+  private leasesOnInterface<T extends { iface: string }>(
+    leases: readonly T[], iface: string | undefined,
+  ): readonly T[] {
+    if (iface === undefined) return leases;
+    return leases.filter(lease => lease.iface === iface);
+  }
+
+  private sslVpnRows(mode?: SslVpnSessionMode): readonly SslVpnListRow[] {
+    const table = this.fw.getSslVpnPortal().sessionTable();
+    return table.list(mode).map(session => ({
+      index: session.index,
+      user: session.user,
+      group: session.group,
+      sourceIp: session.sourceIp,
+      authType: session.authType,
+      timeout: table.remaining(session),
+      duration: table.durationOf(session),
+      tunnelIp: session.tunnelIp,
+    }));
+  }
+
+  private executePolicyPacketCapture(rest: readonly string[]): string {
+    if (rest[0] === undefined) return FortiMessages.incomplete('a capture operation');
+    if (rest[0] !== 'delete-all') {
+      return FortiMessages.unknownAction(`policy-packet-capture ${rest[0]}`);
+    }
+    const removed = this.fw.getPacketCapture().count();
+    this.fw.getPacketCapture().clear();
+    return `${removed} captured packets deleted`;
+  }
+
+  private executeSslVpn(rest: readonly string[]): string {
+    const action = rest[0];
+    if (action === undefined) return FortiMessages.incomplete('an SSL-VPN operation');
+    const table = this.fw.getSslVpnPortal().sessionTable();
+
+    if (action === 'list') {
+      const which = rest[1];
+      if (which !== undefined && which !== 'web' && which !== 'tunnel') {
+        return FortiMessages.unknownAction(`vpn sslvpn list ${which}`);
+      }
+      if (which === 'web') return renderSslVpnLoginUsers(this.sslVpnRows('web'));
+      if (which === 'tunnel') return renderSslVpnSessions(this.sslVpnRows('tunnel'));
+      return [
+        renderSslVpnLoginUsers(this.sslVpnRows('web')),
+        '',
+        renderSslVpnSessions(this.sslVpnRows('tunnel')),
+      ].join('\n');
+    }
+
+    if (action === 'del-all') {
+      const which = rest[1];
+      if (which !== undefined && which !== 'tunnel') {
+        return FortiMessages.unknownAction(`vpn sslvpn del-all ${which}`);
+      }
+      table.closeAll(which as SslVpnSessionMode | undefined);
+      return '';
+    }
+
+    if (action === 'del-web' || action === 'del-tunnel') {
+      if (rest[1] === undefined) return FortiMessages.incomplete('an index');
+      const index = Number.parseInt(rest[1], 10);
+      if (!Number.isInteger(index) || String(index) !== rest[1]) {
+        return FortiMessages.unknownKey(rest[1]);
+      }
+      const wanted: SslVpnSessionMode = action === 'del-web' ? 'web' : 'tunnel';
+      const session = table.byIndex(index);
+      if (!session || session.mode !== wanted) {
+        return FortiMessages.commandFail(`no ${wanted} connection at index ${index}.`);
+      }
+      table.close(index);
+      return '';
+    }
+
+    return FortiMessages.unknownAction(`vpn sslvpn ${action}`);
+  }
+
+  private executeIpsecTunnel(rest: readonly string[]): string {
+    if (rest[0] !== 'tunnel') {
+      return rest.length === 0
+        ? FortiMessages.incomplete('an IPsec operation')
+        : FortiMessages.unknownAction(`vpn ipsec ${rest[0]}`);
+    }
+    const action = rest[1];
+    if (action !== 'up' && action !== 'down') {
+      return action === undefined
+        ? FortiMessages.incomplete('`up` or `down`')
+        : FortiMessages.unknownAction(`vpn ipsec tunnel ${action}`);
+    }
+    if (rest[2] === undefined) return FortiMessages.incomplete('a tunnel name');
+
+    const name = this.fw.getTunnelTable().phase1NameFor(rest[2]);
+    if (name === undefined) return FortiMessages.unknownKey(rest[2]);
+
+    if (action === 'down') {
+      this.fw.bringDownIpsecTunnel(name);
+      return '';
+    }
+    return this.fw.bringUpIpsecTunnel(name)
+      ? '' : FortiMessages.commandFail(`tunnel \`${name}\` did not come up.`);
+  }
+
+  private executeInterface(rest: readonly string[]): string {
+    const action = rest[0];
+    if (action === undefined) return FortiMessages.incomplete('an interface operation');
+    if (action !== 'dhcpclient-renew' && action !== 'dhcp6client-renew'
+      && action !== 'pppoe-reconnect') {
+      return FortiMessages.unknownAction(`interface ${action}`);
+    }
+    const name = rest[1];
+    if (name === undefined) return FortiMessages.incomplete('an interface name');
+    if (!this.fw.getInterfaceTable().get(name)) return FortiMessages.unknownKey(name);
+
+    if (action === 'dhcpclient-renew') {
+      if (!this.fw.getDhcp().isClientInterface(name)) {
+        return FortiMessages.commandFail(`${name} is not a DHCP client.`);
+      }
+      this.fw.getDhcp().acquireLease(name);
+      return `renewing dhcp lease on ${name}`;
+    }
+    return FortiMessages.unimplementedAction(`interface ${action} ${name}`,
+      action === 'dhcp6client-renew'
+        ? 'this build has no DHCPv6 client; an interface takes its IPv6 '
+          + 'address by `set ip6-address` or by autoconfiguration.'
+        : 'this build has no PPPoE client.');
+  }
+
   private executeDhcp(rest: readonly string[]): string {
     if (rest.length === 0) return FortiMessages.incomplete('a DHCP operation');
-    if (rest[0] === 'lease-list') return renderDhcpLeases(this.fw.getDhcp().leases());
+    const dhcp = this.fw.getDhcp();
+    if (rest[0] === 'lease-list') {
+      return renderDhcpLeases(this.leasesOnInterface(dhcp.leases(), rest[1]));
+    }
     if (rest[0] === 'lease-clear') {
       if (rest.length < 2) return FortiMessages.incomplete('an IP address');
-      return this.fw.getDhcp().clearLease(rest[1])
+      if (rest[1] === 'all') { dhcp.clearAllLeases(); return ''; }
+      return dhcp.clearLease(rest[1])
         ? '' : FortiMessages.commandFail(`no lease held for ${rest[1]}.`);
     }
     return FortiMessages.unknownAction(`dhcp ${rest[0]}`);
   }
 
-  private executePingOptions(rest: readonly string[]): string {
+  private executeDhcp6(rest: readonly string[]): string {
+    if (rest.length === 0) return FortiMessages.incomplete('a DHCPv6 operation');
+    const dhcp6 = this.fw.getDhcp6();
+    if (rest[0] === 'lease-list') {
+      return renderDhcp6Leases(this.leasesOnInterface(dhcp6.leases(), rest[1]));
+    }
+    if (rest[0] === 'lease-clear') {
+      if (rest.length < 2) return FortiMessages.incomplete('an IPv6 address');
+      if (rest[1] === 'all') { dhcp6.clearAllLeases(); return ''; }
+      return dhcp6.clearLease(rest[1])
+        ? '' : FortiMessages.commandFail(`no lease held for ${rest[1]}.`);
+    }
+    return FortiMessages.unknownAction(`dhcp6 ${rest[0]}`);
+  }
+
+  private executePingOptions(
+    store: PingOptions, commande: string, rest: readonly string[],
+  ): string {
     if (rest.length === 0) return FortiMessages.incomplete('a ping option');
-    if (rest[0] === 'view-settings') return this.fw.getPingOptions().viewSettings();
+    if (rest[0] === 'view-settings') return store.viewSettings();
 
     const refused = UNSIMULATED_PING_OPTIONS[rest[0]];
-    if (refused) return FortiMessages.unimplemented(`ping-options ${rest[0]}`, refused);
+    if (refused && store.knows(rest[0])) {
+      return FortiMessages.unimplemented(`${commande} ${rest[0]}`, refused);
+    }
 
-    const outcome = this.fw.getPingOptions().set(rest[0], rest[1]);
+    const outcome = store.set(rest[0], rest[1]);
     return outcome.ok ? '' : FortiMessages.commandFail(outcome.message);
   }
 
@@ -1198,6 +1668,28 @@ export class FortiShell {
       };
       return `Connecting to ${label} (${peer.serial})...\n${label} password: `;
     }
+    if (rest[0] === 'disconnect') {
+      const [serial, iface, ip, mask] = rest.slice(1);
+      if (serial === undefined || iface === undefined
+        || ip === undefined || mask === undefined) {
+        return FortiMessages.incomplete(
+          'a serial number, an interface name, an IP address and a netmask');
+      }
+      return this.applyToClusterMember(serial, 'disconnect', `${iface} ${ip} ${mask}`);
+    }
+
+    if (rest[0] === 'set-priority') {
+      const [serial, raw] = rest.slice(1);
+      if (serial === undefined || raw === undefined) {
+        return FortiMessages.incomplete('a serial number and a priority');
+      }
+      const priority = Number.parseInt(raw, 10);
+      if (!Number.isInteger(priority) || priority < 0 || priority > 255) {
+        return FortiMessages.valueError(raw, 'a priority between 0 and 255 is expected.');
+      }
+      return this.applyToClusterMember(serial, 'set-priority', String(priority));
+    }
+
     if (rest[0] === 'synchronize') {
       if (rest[1] === 'start') {
         return ha.requestSynchronisation()
@@ -1207,6 +1699,27 @@ export class FortiShell {
       return FortiMessages.incomplete('`start` or `stop`');
     }
     return FortiMessages.unknownPath(`ha ${rest.join(' ')}`);
+  }
+
+  private applyToClusterMember(
+    serial: string, kind: 'disconnect' | 'set-priority', line: string,
+  ): string {
+    const ha = this.fw.getHa();
+    if (serial === this.fw.serialNumber()) {
+      const [iface, ip, mask] = line.split(/\s+/);
+      const refusal = kind === 'disconnect'
+        ? this.fw.leaveCluster(iface, ip, mask)
+        : this.fw.setDevicePriority(Number.parseInt(line, 10));
+      return refusal.length === 0 ? '' : FortiMessages.commandFail(refusal);
+    }
+    if (!ha.knownPeers().some(peer => peer.serial === serial)) {
+      return FortiMessages.commandFail(`no cluster member ${serial}.`);
+    }
+    const answer = ha.askPeer(serial, kind, '', '', '', line);
+    if (!answer.answered) {
+      return FortiMessages.commandFail('no response from the cluster member.');
+    }
+    return answer.output.length === 0 ? '' : FortiMessages.commandFail(answer.output);
   }
 
   private finishHaLogin(secret: string): string {

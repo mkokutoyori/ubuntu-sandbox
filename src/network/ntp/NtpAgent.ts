@@ -2,7 +2,7 @@ import type { IEventBus } from '@/events/EventBus';
 import { getDefaultScheduler, type IScheduler, type TimerHandle } from '@/events/Scheduler';
 import {
   type NtpAssociation, type NtpConfig, type NtpPacket, type NtpMode,
-  type NtpCounters, createNtpCounters,
+  type NtpCounters, type NtpVersion, createNtpCounters,
   createDefaultNtpConfig, defaultAssociation, computeOffsetMs,
   UDP_PORT_NTP, NTP_VERSION,
 } from './types';
@@ -33,6 +33,20 @@ export interface NtpHost {
   sendFrame(portName: string, frame: EthernetFrame): void;
   /** ARP-aware send (queues on a cold cache instead of broadcasting) — falls back to broadcast when absent (mirrors `TcpHost`). */
   sendIpv4FrameArpAware(outPortName: string, ipPkt: IPv4Packet, nextHopIP: IPAddress): void;
+}
+
+export interface NtpAssociationOptions {
+  readonly version?: NtpVersion;
+  readonly sourceInterface?: string;
+}
+
+function applyAssociationOptions(
+  association: NtpAssociation, options: NtpAssociationOptions,
+): void {
+  if (options.version !== undefined) association.version = options.version;
+  if (options.sourceInterface !== undefined) {
+    association.sourceInterface = options.sourceInterface;
+  }
 }
 
 export class NtpAgent {
@@ -85,17 +99,22 @@ export class NtpAgent {
     }
   }
 
-  addServer(serverIp: string, prefer = false, keyId?: number, configuredAs: 'ntp' | 'sntp' = 'ntp'): void {
+  addServer(
+    serverIp: string, prefer = false, keyId?: number,
+    configuredAs: 'ntp' | 'sntp' = 'ntp', options: NtpAssociationOptions = {},
+  ): void {
     if (!this.config.associations.has(serverIp)) {
       const a = defaultAssociation(serverIp, prefer);
       if (keyId !== undefined) a.keyId = keyId;
       a.configuredAs = configuredAs;
+      applyAssociationOptions(a, options);
       this.config.associations.set(serverIp, a);
     } else {
       const a = this.config.associations.get(serverIp)!;
       if (prefer) a.prefer = true;
       if (keyId !== undefined) a.keyId = keyId;
       a.configuredAs = configuredAs;
+      applyAssociationOptions(a, options);
     }
     if (this.config.enabled) {
       try { this.poll(serverIp); } catch { /* invalid target — keep the configuration entry, polling will retry once reachable */ }
@@ -106,16 +125,21 @@ export class NtpAgent {
     this.config.associations.delete(serverIp);
   }
 
-  addPeer(peerIp: string, prefer = false, keyId?: number): void {
+  addPeer(
+    peerIp: string, prefer = false, keyId?: number,
+    options: NtpAssociationOptions = {},
+  ): void {
     if (!this.config.associations.has(peerIp)) {
       const a = defaultAssociation(peerIp, prefer, 'symmetric-active');
       if (keyId !== undefined) a.keyId = keyId;
+      applyAssociationOptions(a, options);
       this.config.associations.set(peerIp, a);
     } else {
       const a = this.config.associations.get(peerIp)!;
       a.mode = 'symmetric-active';
       if (prefer) a.prefer = true;
       if (keyId !== undefined) a.keyId = keyId;
+      applyAssociationOptions(a, options);
     }
     if (this.config.enabled) {
       try { this.poll(peerIp); } catch { /* invalid target — keep the configuration entry, polling will retry once reachable */ }
@@ -249,7 +273,13 @@ export class NtpAgent {
       // d'affichage : la rendre en `ntp server` decrit une machine
       // qu'on n'a pas configuree, et la configuration est rejouee.
       const famille = a.configuredAs === 'sntp' ? 'sntp' : 'ntp';
-      lines.push(`${famille} ${kind} ${ip}${a.keyId !== undefined ? ' key ' + a.keyId : ''}${a.prefer ? ' prefer' : ''}`);
+      const options = [
+        a.version !== undefined ? ` version ${a.version}` : '',
+        a.sourceInterface ? ` source ${a.sourceInterface}` : '',
+        a.keyId !== undefined ? ` key ${a.keyId}` : '',
+        a.prefer ? ' prefer' : '',
+      ].join('');
+      lines.push(`${famille} ${kind} ${ip}${options}`);
     }
     if (this.config.sntpBroadcastClient) lines.push('sntp broadcast client');
     if (this.config.logging) lines.push(`${this.config.loggingSpelling} logging`);
@@ -757,13 +787,13 @@ export class NtpAgent {
     if (!a) return;
     const sourcePort = this.findEgressPort(serverIp);
     if (!sourcePort) return;
-    const srcIp = sourcePort.port.getIPAddress();
+    const srcIp = this.sourceIpFor(a, sourcePort.port);
     if (!srcIp) return;
     const now = Date.now();
     a.lastPollMs = now;
     const mode: NtpMode = a.mode === 'symmetric-active' ? 'symmetric-active' : 'client';
     const request: NtpPacket = {
-      type: 'ntp', leapIndicator: 0, version: NTP_VERSION, mode,
+      type: 'ntp', leapIndicator: 0, version: a.version ?? NTP_VERSION, mode,
       stratum: this.config.localStratum, poll: 6, precision: -20,
       rootDelay: 0, rootDispersion: 0, refIdentifier: this.config.refIdentifier,
       refTimestampMs: this.config.lastSyncMs,
@@ -778,6 +808,16 @@ export class NtpAgent {
         serverIp, mode,
       },
     });
+  }
+
+  private sourceIpFor(
+    association: NtpAssociation, egressPort: import('../hardware/Port').Port,
+  ): IPAddress | null {
+    const declaree = association.sourceInterface || this.config.sourceInterface;
+    const nommee = declaree
+      ? this.host.getPort(declaree)?.getIPAddress() ?? null
+      : null;
+    return nommee ?? egressPort.getIPAddress();
   }
 
   private findEgressPort(targetIp: string): { name: string; port: import('../hardware/Port').Port } | null {

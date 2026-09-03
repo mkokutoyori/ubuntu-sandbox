@@ -449,10 +449,8 @@ export function buildNATConfigCommands(trie: CommandTrie, ctx: CiscoShellContext
   trie.registerGreedy('ip vrf', 'Define a VRF instance', (args) => {
     if (args.length < 1) return '% Incomplete command.';
     const name = args[0];
-    const router = ctx.r() as any;
-    const vrfs: Map<string, { name: string; rd?: string; rts: { import: string[]; export: string[] }; interfaces: Set<string> }> =
-      router._vrfs ??= new Map();
-    if (!vrfs.has(name)) vrfs.set(name, { name, rts: { import: [], export: [] }, interfaces: new Set() });
+    if (!isVrfName(name)) return "% Invalid input detected at '^' marker.";
+    ensureVrf(vrfStoreOf(ctx.r() as unknown as VrfHost), name, 'legacy');
     (ctx as unknown as { setSelectedVRF?: (n: string) => void }).setSelectedVRF?.(name);
     ctx.setMode('config-vrf');
     return '';
@@ -460,8 +458,7 @@ export function buildNATConfigCommands(trie: CommandTrie, ctx: CiscoShellContext
   trie.registerGreedy('no ip vrf', 'Remove a VRF instance', (args) => {
     const name = args[0];
     if (!name) return '% Incomplete command.';
-    const router = ctx.r() as any;
-    router._vrfs?.delete?.(name);
+    vrfStoreOf(ctx.r() as unknown as VrfHost).delete(name);
     const engine = ctx.r()._getNATEngine();
     for (const e of engine.getStaticEntries()) {
       if (e.vrf === name) engine.removeStaticEntry(e.localIP, e.globalIP);
@@ -662,6 +659,7 @@ import {
   specsFromTrieRegistrations,
 } from '@/cli/commands/trieAdapter';
 import { MODES_INTERFACE } from './CiscoConfigCommands';
+import { ensureVrf, isVrfName, vrfStoreOf, type VrfHost } from './ciscoVrfStore';
 
 /*
  * Chaque forme de `clear ip nat translation` porte un refus qui EXPLIQUE

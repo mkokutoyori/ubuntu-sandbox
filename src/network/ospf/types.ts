@@ -96,21 +96,29 @@ export interface OSPFArea {
 
 export const OSPF_BACKBONE_AREA = '0.0.0.0';
 
-export function normalizeAreaId(areaId: string): string {
+export function parseAreaId(areaId: string): string | null {
   const raw = areaId?.trim();
-  if (!raw) return areaId;
+  if (!raw) return null;
 
   if (/^\d+$/.test(raw)) {
     const n = Number(raw);
-    if (!Number.isInteger(n) || n < 0 || n > 0xFFFFFFFF) return areaId;
+    if (!Number.isInteger(n) || n < 0 || n > 0xFFFFFFFF) return null;
     return [n >>> 24, (n >>> 16) & 255, (n >>> 8) & 255, n & 255].join('.');
   }
 
   const octets = raw.split('.');
-  if (octets.length !== 4) return areaId;
+  if (octets.length !== 4) return null;
   const values = octets.map((o) => (/^\d{1,3}$/.test(o) ? Number(o) : NaN));
-  if (values.some((v) => !Number.isInteger(v) || v < 0 || v > 255)) return areaId;
+  if (values.some((v) => !Number.isInteger(v) || v < 0 || v > 255)) return null;
   return values.join('.');
+}
+
+export function normalizeAreaId(areaId: string): string {
+  return parseAreaId(areaId) ?? areaId;
+}
+
+export function isAreaId(areaId: string): boolean {
+  return parseAreaId(areaId) !== null;
 }
 
 export function areasEqual(a: string, b: string): boolean {

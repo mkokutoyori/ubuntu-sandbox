@@ -117,8 +117,8 @@ describe('RoleManager — real feature catalog', () => {
 
 describe('RoleManager — synthetic catalog (proves generic dependency-free install/uninstall)', () => {
   const CATALOG: readonly WindowsFeatureDef[] = [
-    { name: 'Foo-Role', displayName: 'Foo Role', services: ['FooSvc'] },
-    { name: 'Bar-Role', displayName: 'Bar Role', services: [] },
+    { name: 'Foo-Role', displayName: 'Foo Role', featureType: 'Role', services: ['FooSvc'] },
+    { name: 'Bar-Role', displayName: 'Bar Role', featureType: 'Role', services: [] },
   ];
 
   it('lists exactly the injected catalog', () => {

@@ -17,6 +17,10 @@ import { IPAddress } from '@/network/core/types';
 import { IOS_SSH } from '@/terminal/ssh/sshDialect';
 import { CommandTable } from '@/cli/CommandTable';
 import {
+  TIME_RANGE_FAMILY,
+  type TimeRangeStore,
+} from '@/cli/commands/timeRange/timeRangeFamily';
+import {
   specsFromTrieRegistrations, isCollector, type AdapterKeyword,
 } from '@/cli/commands/trieAdapter';
 import { newSession, type CliSession } from '@/cli/CliSession';
@@ -84,7 +88,9 @@ import type { PromptMap } from './PromptBuilder';
 import { buildPrompt } from './PromptBuilder';
 import { CLIStateMachine, type ModeHierarchy } from './CLIStateMachine';
 import { estGenreAcces } from '../../ntp/accessGroups';
-import { NTP_VERSION } from '../../ntp/types';
+import { ensureVrf, isVrfName, vrfStoreOf, type VrfHost } from './cisco/ciscoVrfStore';
+import { NTP_VERSION, isNtpVersion, type NtpVersion } from '../../ntp/types';
+import type { NtpAssociationOptions } from '../../ntp/NtpAgent';
 import {
   getGlobalConfig, CEF_LOAD_SHARING_ALGORITHMS, CEF_ACCOUNTING_KINDS,
 } from '../router/config/CiscoGlobalConfig';
@@ -212,6 +218,22 @@ import type { TableColumn } from './cli/TextTable';
 import { parseVlanList, compactVlanList } from './cli/vlanList';
 import { createDefaultSnoopingConfig } from '../../dhcp/types';
 import type { DHCPSnoopingConfig, DHCPSnoopingBinding } from '../../dhcp/types';
+
+const NTP_KEY_SPEC = {
+  name: 'numero', type: 'INT' as const,
+  range: [1, 4294967295] as const, description: 'Key number',
+};
+
+interface QueueAssociationNtp {
+  prefer: boolean;
+  keyId?: number;
+  options: NtpAssociationOptions;
+  refus?: string;
+}
+
+function estNumeroDeCleNtp(token: string | undefined): boolean {
+  return token !== undefined && argumentAccepts(NTP_KEY_SPEC, token);
+}
 
 const SNOOPING_BINDING_COLUMNS: ReadonlyArray<TableColumn<DHCPSnoopingBinding>> = [
   { header: 'MacAddress', width: 18, value: (b) => b.macAddress },
@@ -933,6 +955,7 @@ const IOS_HARDENING: readonly HardeningEntry[] = [
     'Disable finger service', (sec, on) => { sec.ipFinger = on; }],
 ];
 
+export const ENABLE_LEVEL_RANGE: readonly [number, number] = [0, 15];
 export const AS_PATH_LIST_RANGE: readonly [number, number] = [1, 500];
 export const COMMUNITY_LIST_RANGE: readonly [number, number] = [1, 500];
 export const LEGACY_QUEUE_LIST_RANGE: readonly [number, number] = [1, 16];
@@ -1995,6 +2018,19 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
           ._configureSshAuthRetries?.(retries);
       },
     };
+  }
+
+  private lireNiveauEnable(
+    mots: readonly string[],
+  ): { level: number; reste: readonly string[] } {
+    if (mots[0]?.toLowerCase() !== 'level') return { level: 15, reste: mots };
+    const brut = mots[1];
+    if (brut === undefined) throw new CliIncomplete();
+    const [min, max] = ENABLE_LEVEL_RANGE;
+    if (!/^\d+$/.test(brut) || Number(brut) < min || Number(brut) > max) {
+      throw new CliInvalidInput({ token: brut });
+    }
+    return { level: Number(brut), reste: mots.slice(2) };
   }
 
   private exigerNumeroDeListe(
@@ -4325,10 +4361,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
 
 
   protected ntpSpecs(): CommandSpec[] {
-    const cle = {
-      name: 'numero', type: 'INT' as const,
-      range: [1, 4294967295] as const, description: 'Key number',
-    };
+    const cle = NTP_KEY_SPEC;
     const serveur: SequenceEntry['tail'] = {
       name: 'options', type: 'REST', optional: true,
       alternatives: [
@@ -4563,15 +4596,18 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       {
         path: ['snmp-server', 'contact'], description: 'Text for mib object sysContact',
         args: [texte('contact', 'Contact information')],
+        undoArgs: [], undoArgsOnlyNegated: true,
       },
       {
         path: ['snmp-server', 'location'], description: 'Text for mib object sysLocation',
         args: [texte('emplacement', 'Physical location of this node')],
+        undoArgs: [], undoArgsOnlyNegated: true,
       },
       {
         path: ['snmp-server', 'chassis-id'],
         description: 'String to uniquely identify this chassis',
         args: [texte('identifiant', 'Chassis identifier')],
+        undoArgs: [], undoArgsOnlyNegated: true,
       },
       {
         path: ['snmp-server', 'trap-source'],
@@ -4580,6 +4616,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
           name: 'interface', type: 'INTERFACE',
           description: 'Interface used as the source address',
         }],
+        undoArgs: [], undoArgsOnlyNegated: true,
       },
       {
         path: ['snmp-server', 'trap-timeout'],
@@ -4588,28 +4625,29 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
           name: 'secondes', type: 'INT', range: [1, 1000],
           description: 'Retransmission timeout in seconds',
         }],
+        undoArgs: [], undoArgsOnlyNegated: true,
       },
       {
         path: ['snmp-server', 'engineid', 'local'],
         description: 'Configure a local SNMP engine ID',
         args: [nom('identifiant', 'Engine ID octet string')],
+        undoArgs: [], undoArgsOnlyNegated: true,
       },
     ];
 
-    // `SnmpService.configure()` ne prend pas de drapeau de negation et
-    // rien n'enregistre `no snmp-server` aujourd'hui : declarer un `undo`
-    // ferait REPOSER ce qu'on demande de retirer.
-    return sequenceFamily(
-      entries.map(entry => ({ ...entry, negatable: false })),
-      () => ({
-        apply: (words) => {
-          const svc = getSnmpService(this.d());
-          if (!svc) return '';
-          svc.configure(words);
-          this.syncSnmpAgent();
-          return '';
-        },
-      }));
+    return sequenceFamily(entries, () => ({
+      apply: (words, negate) => {
+        const svc = getSnmpService(this.d());
+        if (!svc) return '';
+        if (negate) svc.unconfigure(words);
+        else {
+          const refuse = svc.configure(words);
+          if (refuse !== null) throw new CliInvalidInput({ token: refuse });
+        }
+        this.syncSnmpAgent();
+        return '';
+      },
+    }));
   }
 
 
@@ -5522,8 +5560,18 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     ];
   }
 
+  timeRangeStore(): TimeRangeStore {
+    return getSecurityConfig(this.d() as object);
+  }
+
+  timeRangeClockMs(): number {
+    const device = this.d() as unknown as { getSystemClockMs?: () => number };
+    return device.getSystemClockMs?.() ?? Date.now();
+  }
+
   protected socleSpecs(): readonly CommandSpec[] {
     return [
+      ...TIME_RANGE_FAMILY,
       ...debugFamily(this.debugPairs()),
       ...showConfigViewSpecs(() => this),
       ...showIpDhcpSpecs(() => this.dhcpViewServer()),
@@ -8203,19 +8251,18 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       if ((a[0] === 'server' || a[0] === 'peer') && !a[1]) return CISCO_ERRORS.INCOMPLETE;
       const agent = getNtpAgent(this.d());
       if (!agent) return '';
-      if (a[0] === 'server' && a[1]) {
-        const target = a[1];
-        const resolved = this.resolveNtpTarget(target);
-        if (!resolved) {
-          return `Translating "${args[1]}"...domain server (255.255.255.255)\n% Bad IP address or host name`;
-        }
-        agent.addServer(resolved, a.includes('prefer'), this.parseNtpKeyId(a));
-      } else if (a[0] === 'peer' && a[1]) {
+      if ((a[0] === 'server' || a[0] === 'peer') && a[1]) {
         const resolved = this.resolveNtpTarget(a[1]);
         if (!resolved) {
           return `Translating "${args[1]}"...domain server (255.255.255.255)\n% Bad IP address or host name`;
         }
-        agent.addPeer(resolved, a.includes('prefer'), this.parseNtpKeyId(a));
+        const queue = this.lireQueueAssociationNtp(a, args);
+        if (queue.refus !== undefined) throw new CliInvalidInput({ token: queue.refus });
+        if (a[0] === 'server') {
+          agent.addServer(resolved, queue.prefer, queue.keyId, 'ntp', queue.options);
+        } else {
+          agent.addPeer(resolved, queue.prefer, queue.keyId, queue.options);
+        }
       } else if (a[0] === 'master') {
         agent.setServerMode(true);
         if (a[1] && /^\d+$/.test(a[1])) agent.setLocalStratum(parseInt(a[1], 10));
@@ -8279,10 +8326,29 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     return null;
   }
 
-  protected parseNtpKeyId(args: string[]): number | undefined {
-    const idx = args.indexOf('key');
-    if (idx < 0 || !args[idx + 1] || !/^\d+$/.test(args[idx + 1])) return undefined;
-    return parseInt(args[idx + 1], 10);
+  protected lireQueueAssociationNtp(
+    minuscules: string[], bruts: string[],
+  ): QueueAssociationNtp {
+    const queue: QueueAssociationNtp = { prefer: false, options: {} };
+    for (let i = 2; i < minuscules.length; i++) {
+      const mot = minuscules[i];
+      if (mot === 'prefer') { queue.prefer = true; continue; }
+      const valeur = minuscules[i + 1];
+      if (mot === 'key') {
+        if (!estNumeroDeCleNtp(valeur)) return { ...queue, refus: valeur ?? mot };
+        queue.keyId = Number(valeur);
+      } else if (mot === 'version') {
+        if (!isNtpVersion(valeur)) return { ...queue, refus: valeur ?? mot };
+        queue.options = { ...queue.options, version: Number(valeur) as NtpVersion };
+      } else if (mot === 'source') {
+        if (!bruts[i + 1]) return { ...queue, refus: mot };
+        queue.options = { ...queue.options, sourceInterface: bruts[i + 1] };
+      } else {
+        return { ...queue, refus: bruts[i] ?? mot };
+      }
+      i++;
+    }
+    return queue;
   }
 
   // ─── Help / Tab-Complete ────────────────────────────────────────
@@ -9527,13 +9593,16 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     trie.registerGreedy('vrf definition', 'Configure a VRF', (args) => {
       if (args.length < 1) return CISCO_ERRORS.INCOMPLETE;
       const name = args[0];
-      const dev = this.d() as unknown as {
-        _vrfs?: Map<string, { name: string; rd?: string; rts: { import: string[]; export: string[] }; interfaces: Set<string> }>;
-      };
-      const vrfs = dev._vrfs ??= new Map();
-      if (!vrfs.has(name)) vrfs.set(name, { name, rts: { import: [], export: [] }, interfaces: new Set() });
+      if (!isVrfName(name)) return CISCO_ERRORS.INVALID_INPUT;
+      ensureVrf(vrfStoreOf(this.d() as unknown as VrfHost), name, 'modern');
       (this as unknown as { setSelectedVRF?: (n: string) => void }).setSelectedVRF?.(name);
       this.mode = 'config-vrf';
+      return '';
+    });
+    trie.registerGreedy('no vrf definition', 'Remove a VRF', (args) => {
+      const name = args[0];
+      if (!name) return CISCO_ERRORS.INCOMPLETE;
+      vrfStoreOf(this.d() as unknown as VrfHost).delete(name);
       return '';
     });
     trie.registerGreedy('ip community-list', 'Define BGP community list', (args, raw) => {
@@ -9704,11 +9773,9 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       // machine — `enable secret level 12 5 $1$…` — n'etait donc pas
       // relisible par elle-meme, et le coffre du palier disparaissait a
       // l'import d'une topologie, sans rien dire.
-      let reste = args;
-      if (reste[0]?.toLowerCase() === 'level' && /^\d+$/.test(reste[1] ?? '')) {
-        level = parseInt(reste[1], 10);
-        reste = reste.slice(2);
-      }
+      const lu = this.lireNiveauEnable(args);
+      level = lu.level;
+      const reste = lu.reste;
       const chiffres: Record<string, 'plain' | 'md5' | 'sha256' | 'scrypt' | 'type-7'> = {
         '0': 'plain', '5': 'md5', '7': 'type-7', '8': 'sha256', '9': 'scrypt',
       };
@@ -9749,13 +9816,9 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       if (!algo) return CISCO_ERRORS.INVALID_INPUT;
       if (args[1] === undefined) return CISCO_ERRORS.INCOMPLETE;
       if (args[1].toLowerCase() !== 'secret') return CISCO_ERRORS.INVALID_INPUT;
-      let level = 15;
-      let rest = args.slice(2);
-      if (rest[0]?.toLowerCase() === 'level' && /^\d+$/.test(rest[1] ?? '')) {
-        level = parseInt(rest[1], 10);
-        rest = rest.slice(2);
-      }
-      const secret = rest.join(' ');
+      const lu = this.lireNiveauEnable(args.slice(2));
+      const level = lu.level;
+      const secret = lu.reste.join(' ');
       if (secret === '') return CISCO_ERRORS.INCOMPLETE;
       const minLength = getSecurityConfig(this.d()).passwords.minLength;
       if (minLength && secret.length < minLength) {
@@ -9773,12 +9836,14 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       let password = '';
       let level = 15;
       let plaintextEntered: string | undefined;
-      if (args[0] === '0') { algo = 'plain'; password = args.slice(1).join(' '); plaintextEntered = password; }
-      else if (args[0] === '7') { algo = 'type-7'; password = args.slice(1).join(' '); }
-      else if (args[0] === 'level' && /^\d+$/.test(args[1] ?? '')) {
-        level = parseInt(args[1], 10);
-        password = args.slice(2).join(' '); plaintextEntered = password;
-      } else { password = args.join(' '); plaintextEntered = password; }
+      const lu = this.lireNiveauEnable(args);
+      level = lu.level;
+      const apres = lu.reste;
+      if (apres[0] === '0') {
+        algo = 'plain'; password = apres.slice(1).join(' '); plaintextEntered = password;
+      } else if (apres[0] === '7') {
+        algo = 'type-7'; password = apres.slice(1).join(' ');
+      } else { password = apres.join(' '); plaintextEntered = password; }
       if (password === '') return '% Incomplete command.';
       const minLength = getSecurityConfig(this.d()).passwords.minLength;
       if (plaintextEntered !== undefined && minLength && plaintextEntered.length < minLength) {

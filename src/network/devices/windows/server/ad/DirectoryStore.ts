@@ -29,6 +29,9 @@ import { SchemaValidator } from './schema/SchemaValidator';
 import { SchemaPartition, seedDefaultSchema } from './schema/SchemaPartition';
 import type { AttributeSchema, ObjectClassSchema, SchemaOpResult } from './schema/SchemaValidator';
 import { TrustRegistry, type TrustDirection, type TrustOpResult, type TrustInfo, type TrustRecord } from './forest/TrustRelationship';
+import { DEFAULT_AD_FUNCTIONAL_LEVEL } from './adFunctionalLevels';
+import { OU_PROPERTIES, PROTECTION_OBJECT_RIGHTS, PROTECTION_PARENT_RIGHT, isProtectionAce, protectionAce } from './adOrganizationalUnit';
+import { NEVER_EXPIRES, USER_FLAGS, USER_PROPERTIES, CHANGE_PASSWORD_TRUSTEES, accountExpiresDate, applyUserFlag, cannotChangePasswordAce, isCannotChangePasswordAce, readUserFlag } from './adUser';
 
 export interface DirOpResult { ok: boolean; message: string }
 
@@ -84,6 +87,21 @@ function hash32(seed: string, salt: number): number {
   return h;
 }
 
+export interface UserWriteOptions {
+  commonName?: string;
+  attributes?: Record<string, string>;
+  flags?: Record<string, boolean>;
+  spns?: string[];
+  accountExpires?: string;
+  changePasswordAtLogon?: boolean;
+  cannotChangePassword?: boolean;
+}
+
+export interface OrgUnitWriteOptions {
+  attributes?: Record<string, string>;
+  protected?: boolean;
+}
+
 export class DirectoryStore {
   private readonly tree: DirectoryTree;
   private readonly usersOuDn: DistinguishedName;
@@ -130,6 +148,8 @@ export class DirectoryStore {
    * wall-clock have diverged.
    */
   private readonly now: () => Date;
+
+  domainMode: string = DEFAULT_AD_FUNCTIONAL_LEVEL.domainMode;
 
   constructor(
     readonly dnsName: string,
@@ -400,13 +420,77 @@ export class DirectoryStore {
     return this.tree.getByDn(flat) ? flat : null;
   }
 
-  newOrgUnit(name: string, path?: string): DirOpResult {
+  newOrgUnit(name: string, path?: string, opts: OrgUnitWriteOptions = {}): DirOpResult {
     const parentDn = path ? this.resolveContainerDn(path) : this.tree.getRootDn();
     if (!parentDn) return { ok: false, message: `Cannot find an object with identity: '${path}'.` };
     const dn = [...parseDN(`OU=${name}`), ...parentDn];
-    const res = this.tree.addEntry(dn, { objectClass: ['top', 'organizationalUnit'], ou: [name] });
-    return res.ok ? { ok: true, message: '' } : { ok: false, message: 'An object with that name already exists.' };
+    const attributes: Record<string, string[]> = { objectClass: ['top', 'organizationalUnit'], ou: [name], name: [name] };
+    for (const [ldap, value] of Object.entries(opts.attributes ?? {})) {
+      if (value !== '') attributes[ldap] = [value];
+    }
+    const res = this.tree.addEntry(dn, attributes);
+    if (!res.ok) return { ok: false, message: 'An object with that name already exists.' };
+    this.setOrgUnitProtection(dn, opts.protected !== false);
+    return { ok: true, message: '' };
   }
+
+  setOrgUnitAttributes(identity: string, attributes: Record<string, string>): DirOpResult {
+    const entry = this.findOrgUnitEntry(this.resolveIdentity(identity)) ?? this.resolveTargetEntry(identity);
+    if (!entry || !hasObjectClass(entry, 'organizationalUnit')) {
+      return { ok: false, message: `Cannot find an object with identity: '${identity}'.` };
+    }
+    for (const [ldap, value] of Object.entries(attributes)) {
+      this.tree.modifyEntry(entry.dn, [value === ''
+        ? { op: 'delete', type: ldap, values: [] }
+        : { op: 'replace', type: ldap, values: [value] }]);
+    }
+    return { ok: true, message: '' };
+  }
+
+  setOrgUnitProtectionByIdentity(identity: string, protect: boolean): DirOpResult {
+    const entry = this.findOrgUnitEntry(this.resolveIdentity(identity)) ?? this.resolveTargetEntry(identity);
+    if (!entry || !hasObjectClass(entry, 'organizationalUnit')) {
+      return { ok: false, message: `Cannot find an object with identity: '${identity}'.` };
+    }
+    this.setOrgUnitProtection(entry.dn, protect);
+    return { ok: true, message: '' };
+  }
+
+  removeOrgUnit(identity: string, ctx?: { recursive?: boolean }): DirOpResult {
+    const entry = this.findOrgUnitEntry(this.resolveIdentity(identity)) ?? this.resolveTargetEntry(identity);
+    if (!entry || !hasObjectClass(entry, 'organizationalUnit')) {
+      return { ok: false, message: `Cannot find an object with identity: '${identity}'.` };
+    }
+    const dnText = formatDN(entry.dn);
+    if (this.deniedRight(dnText, 'Delete')) {
+      return { ok: false, message: `Access is denied. The object ${dnText} is protected from accidental deletion.` };
+    }
+    const children = this.tree.allDescendants(entry.dn).filter(e => e.dn.length > entry.dn.length);
+    if (children.length > 0 && ctx?.recursive !== true) {
+      return { ok: false, message: 'The directory service can perform the requested operation only on a leaf object.' };
+    }
+    for (const child of [...children].sort((a, b) => b.dn.length - a.dn.length)) {
+      if (this.deniedRight(formatDN(child.dn), 'Delete')) {
+        return { ok: false, message: `Access is denied. The object ${formatDN(child.dn)} is protected from accidental deletion.` };
+      }
+    }
+    for (const child of [...children].sort((a, b) => b.dn.length - a.dn.length)) this.softOrHardDelete(child);
+    return this.softOrHardDelete(entry);
+  }
+
+  private setOrgUnitProtection(dn: DistinguishedName, protect: boolean): void {
+    const own = formatDN(dn);
+    const kept = (this.getAcl(own) ?? []).filter(ace => !isProtectionAce(ace));
+    this.setAcl(own, protect ? [...kept, ...PROTECTION_OBJECT_RIGHTS.map(protectionAce)] : kept);
+    if (dn.length <= this.tree.getRootDn().length) return;
+    const parent = formatDN(dn.slice(1));
+    const parentKept = (this.getAcl(parent) ?? []).filter(ace => !isProtectionAce(ace));
+    const stillProtected = protect || this.tree.allDescendants(dn.slice(1))
+      .some(child => child.dn.length === dn.length && this.deniedRight(formatDN(child.dn), 'Delete'));
+    this.setAcl(parent, stillProtected ? [...parentKept, protectionAce(PROTECTION_PARENT_RIGHT)] : parentKept);
+  }
+
+  isOrgUnitProtected(dn: string): boolean { return this.deniedRight(dn, 'Delete'); }
 
   private findOrgUnitEntry(name: string): DirectoryEntry | null {
     const [entry] = this.tree.search(this.tree.getRootDn(), 'sub', { kind: 'equalityMatch', attr: 'ou', value: name })
@@ -426,7 +510,21 @@ export class DirectoryStore {
   }
 
   private projectOrgUnit(entry: DirectoryEntry): AdOrgUnit {
-    return { name: firstOf(entry.attributes.get('ou')), dn: formatDN(entry.dn), gpLinks: (entry.attributes.get('gplink') ?? []).map(v => decodeGpLink(v).gpoDn) };
+    const properties: Record<string, string> = {};
+    const known = new Set(['objectclass', 'ou', 'name', 'gplink']);
+    for (const spec of OU_PROPERTIES) {
+      known.add(spec.ldap.toLowerCase());
+      const value = firstOf(entry.attributes.get(spec.ldap.toLowerCase()));
+      if (value) properties[spec.parameter] = value;
+    }
+    for (const [ldap, values] of entry.attributes) {
+      if (!known.has(ldap.toLowerCase()) && values.length > 0) properties[ldap] = values[0];
+    }
+    return {
+      name: firstOf(entry.attributes.get('ou')), dn: formatDN(entry.dn),
+      gpLinks: (entry.attributes.get('gplink') ?? []).map(v => decodeGpLink(v).gpoDn),
+      properties, protectedFromAccidentalDeletion: this.isOrgUnitProtected(formatDN(entry.dn)),
+    };
   }
 
   // ─── Group Policy Objects (PRD-Windows-Server.md §5 P10) ────────────
@@ -737,7 +835,7 @@ export class DirectoryStore {
 
   // ─── Users ──────────────────────────────────────────────────────────
 
-  newUser(sam: string, opts: { password: string; fullName?: string; ou?: string; enabled?: boolean; department?: string; title?: string; emailAddress?: string; passwordNeverExpires?: boolean; actingSam?: string }): DirOpResult {
+  newUser(sam: string, opts: { password: string; fullName?: string; ou?: string; enabled?: boolean; department?: string; title?: string; emailAddress?: string; passwordNeverExpires?: boolean; actingSam?: string } & UserWriteOptions): DirOpResult {
     const containerDn = this.resolveOuContainer(opts.ou, this.usersOuDn);
     if (!containerDn) {
       return { ok: false, message: `Cannot find an object with identity: '${opts.ou}'.` };
@@ -749,21 +847,30 @@ export class DirectoryStore {
       password: opts.password, fullName: opts.fullName ?? '', containerDn, enabled: opts.enabled,
       department: opts.department, title: opts.title, emailAddress: opts.emailAddress,
       passwordNeverExpires: opts.passwordNeverExpires,
+      commonName: opts.commonName,
+      attributes: opts.attributes, flags: opts.flags, spns: opts.spns,
+      accountExpires: opts.accountExpires, changePasswordAtLogon: opts.changePasswordAtLogon,
     });
     if (!res.ok) return res;
+    if (opts.cannotChangePassword) this.setCannotChangePassword(sam, true);
     this.addGroupMember('Domain Users', sam);
     return { ok: true, message: '' };
   }
 
   private nextObjectSid(): string { return `${this.domainSidPrefix}-${this.nextRid++}`; }
 
-  private createUserEntry(sam: string, opts: { password: string; fullName: string; containerDn: DistinguishedName; enabled?: boolean; department?: string; title?: string; emailAddress?: string; passwordNeverExpires?: boolean }): DirOpResult {
+  private createUserEntry(sam: string, opts: { password: string; fullName: string; containerDn: DistinguishedName; enabled?: boolean; department?: string; title?: string; emailAddress?: string; passwordNeverExpires?: boolean } & UserWriteOptions): DirOpResult {
     const enabled = opts.enabled ?? true;
     let uac = enabled ? UAC.NORMAL_ACCOUNT : UAC.NORMAL_ACCOUNT | UAC.ACCOUNTDISABLE;
     if (opts.passwordNeverExpires) uac |= UAC.DONT_EXPIRE_PASSWORD;
-    const res = this.tree.addEntry(this.cnDn(sam, opts.containerDn), compact({
+    for (const spec of USER_FLAGS) {
+      const wanted = opts.flags?.[spec.parameter];
+      if (wanted !== undefined) uac = applyUserFlag(uac, spec, wanted);
+    }
+    const attributes: Record<string, string[]> = compact({
       objectClass: ['top', 'person', 'organizationalPerson', 'user'],
-      cn: [sam],
+      cn: [opts.commonName || sam],
+      name: [opts.commonName || sam],
       sAMAccountName: [sam],
       userPrincipalName: [`${sam}@${this.dnsName}`],
       objectSid: [this.nextObjectSid()],
@@ -773,9 +880,28 @@ export class DirectoryStore {
       department: opts.department ? [opts.department] : [],
       title: opts.title ? [opts.title] : [],
       mail: opts.emailAddress ? [opts.emailAddress] : [],
-      pwdLastSet: [this.now().toISOString()],
-    }));
+      pwdLastSet: [opts.changePasswordAtLogon ? '0' : this.now().toISOString()],
+      accountExpires: [opts.accountExpires ?? NEVER_EXPIRES],
+      servicePrincipalName: opts.spns ?? [],
+    });
+    for (const [ldap, value] of Object.entries(opts.attributes ?? {})) {
+      if (value !== '') attributes[ldap] = [value];
+    }
+    const res = this.tree.addEntry(this.cnDn(opts.commonName || sam, opts.containerDn), attributes);
     return res.ok ? { ok: true, message: '' } : { ok: false, message: 'An object with that name already exists.' };
+  }
+
+  setCannotChangePassword(identity: string, blocked: boolean): DirOpResult {
+    const entry = this.findUserEntry(this.resolveIdentity(identity));
+    if (!entry) return { ok: false, message: `Cannot find an object with identity: '${identity}'.` };
+    const dn = formatDN(entry.dn);
+    const kept = (this.getAcl(dn) ?? []).filter(ace => !isCannotChangePasswordAce(ace));
+    this.setAcl(dn, blocked ? [...kept, ...CHANGE_PASSWORD_TRUSTEES.map(cannotChangePasswordAce)] : kept);
+    return { ok: true, message: '' };
+  }
+
+  cannotChangePassword(dn: string): boolean {
+    return (this.getAcl(dn) ?? []).some(isCannotChangePasswordAce);
   }
 
   private findUserEntry(sam: string): DirectoryEntry | null {
@@ -795,6 +921,28 @@ export class DirectoryStore {
       .map(e => this.projectUser(e));
   }
 
+  private projectUserProperties(entry: DirectoryEntry): Record<string, string> {
+    const known = new Set(['objectclass', 'cn', 'samaccountname', 'objectsid', 'useraccountcontrol',
+      'userpassword', 'pwdlastset', 'accountexpires', 'serviceprincipalname', 'memberof', 'ou']);
+    const out: Record<string, string> = {};
+    for (const spec of USER_PROPERTIES) {
+      known.add(spec.ldap.toLowerCase());
+      const value = firstOf(entry.attributes.get(spec.ldap.toLowerCase()));
+      if (value) out[spec.parameter] = value;
+    }
+    for (const [ldap, values] of entry.attributes) {
+      if (!known.has(ldap.toLowerCase()) && values.length > 0) out[ldap] = values[0];
+    }
+    return out;
+  }
+
+  private projectUserFlags(entry: DirectoryEntry): Record<string, boolean> {
+    const uac = Number(firstOf(entry.attributes.get('useraccountcontrol'))) || 0;
+    const out: Record<string, boolean> = {};
+    for (const spec of USER_FLAGS) out[spec.parameter] = readUserFlag(uac, spec);
+    return out;
+  }
+
   private projectUser(entry: DirectoryEntry): AdUser {
     const containerDn = entry.dn.slice(1);
     return {
@@ -810,6 +958,11 @@ export class DirectoryStore {
       passwordNeverExpires: (Number(firstOf(entry.attributes.get('useraccountcontrol'))) & UAC.DONT_EXPIRE_PASSWORD) !== 0,
       memberOf: (entry.attributes.get('memberof') ?? []).map(dnStr => this.samOfDn(dnStr)).filter((s): s is string => s !== null),
       fullName: firstOf(entry.attributes.get('displayname')),
+      properties: this.projectUserProperties(entry),
+      flags: this.projectUserFlags(entry),
+      accountExpirationDate: accountExpiresDate(firstOf(entry.attributes.get('accountexpires'))),
+      cannotChangePassword: this.cannotChangePassword(formatDN(entry.dn)),
+      changePasswordAtLogon: firstOf(entry.attributes.get('pwdlastset')) === '0',
       department: firstOf(entry.attributes.get('department')),
       title: firstOf(entry.attributes.get('title')),
       servicePrincipalNames: entry.attributes.get('serviceprincipalname') ?? [],
@@ -1472,7 +1625,16 @@ export class DirectoryStore {
     return (entry.attributes.get('memberof') ?? []).some(dn => dn.toLowerCase() === domainAdminsDn);
   }
 
+  deniedRight(targetDn: string, right: string): boolean {
+    let dn: DistinguishedName;
+    try { dn = parseDN(targetDn); } catch { return false; }
+    const entry = this.tree.getByDn(dn);
+    const own = this.acls.get(formatDN(entry ? entry.dn : dn).toLowerCase());
+    return own?.some(ace => ace.accessControlType === 'Deny' && ace.rights === right) ?? false;
+  }
+
   hasPermission(subjectSam: string, targetDn: string, right: string): boolean {
+    if (this.deniedRight(targetDn, right)) return false;
     if (this.isDomainAdmin(subjectSam)) return true;
     let dn: DistinguishedName;
     try { dn = parseDN(targetDn); } catch { return false; }

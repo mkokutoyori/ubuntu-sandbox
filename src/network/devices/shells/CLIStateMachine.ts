@@ -191,6 +191,7 @@ export const CISCO_SWITCH_MODES: ModeHierarchy = {
   'config-acl':  { parent: 'config', clearOnExit: ['selectedAcl'] },
   'config-dhcp': { parent: 'config', clearOnExit: ['selectedDhcpPool'] },
   'config-access-map': { parent: 'config', clearOnExit: ['selectedAccessMap'] },
+  'config-time-range': { parent: 'config', clearOnExit: ['selectedTimeRange'] },
   'config-archive':     { parent: 'config' },
   'config-archive-log': { parent: 'config-archive' },
   // Les trois sous-modes de la famille identite. Sans eux, un `exit`

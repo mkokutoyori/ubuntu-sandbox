@@ -5874,3 +5874,165 @@ n'avait **aucun** filtre de couche lien.
 
 Le secondaire ne presente pas l'adresse virtuelle — seul le primaire y
 repond, ce que l'etape 7 du TP epingle deja.
+
+---
+
+## `firewall local-in-policy` — IPv4 (livre)
+
+Source : `official_docs/forti-cli-ref-60.txt` p. 219, et la documentation
+d'administration de Fortinet pour la regle de bout de liste.
+
+Constat de depart : `FirewallProfile.selfTrafficHandling` est declare sur
+les trois profils (`'local-in-policy'` cote FortiOS, `'control-plane-acl'`
+cote ASA) et n'etait LU nulle part — le mecanisme qu'il nomme n'existait
+pas. Le seul filtre du trafic destine au pare-feu etait `allowaccess`,
+qui ne connait ni adresse source, ni service, ni horaire : on pouvait
+ouvrir SSH sur une interface, pas l'ouvrir a une seule machine.
+
+**La regle a ne pas rater** — Fortinet l'ecrit mot pour mot : « Unlike
+IPv4 policies, there is no default implicit deny policy. The implicit
+deny policy should be placed at the bottom of the list of
+local-in-policies. » Une liste local-in ne se termine donc PAS par un
+refus ; ce qui ne correspond a rien retombe sur `allowaccess`, et c'est
+ce qui rend la fonction ADDITIVE. A distinguer d'un fait voisin : la
+valeur par defaut de l'attribut `action` est bien `deny`.
+
+**Ce que ce lot n'ecrit PAS**, parce que la pile existante repond deja :
+aucun magasin (une seconde instance de `PolicyStore`), aucun moteur de
+correspondance (`PolicyEvaluator`, donc adresses, services, horaires et
+zones passent par `ObjectStore`/`ScheduleStore`), aucun chemin de donnees
+neuf (la porte est posee dans `l3/LocalDelivery.ts`, le point ou le
+trafic pour nous etait deja trie). La boucle de `PolicyEvaluator` a ete
+EXTRAITE en `firstMatch` — `evaluate` et le nouveau `evaluateExplicit`
+la partagent — plutot que recopiee, la seule difference entre les deux
+etant la regle terminale.
+
+Duplication trouvee en chemin et fermee : `transportPorts` etait prive
+dans `pipeline/stages/coreStages.ts` ; il vit maintenant dans
+`policy/probeFields.ts`, lu par les deux appelants, plutot qu'une
+troisieme copie.
+
+## `firewall local-in-policy6` — IPv6 (livre)
+
+Le lot precedent avait laisse la table v6 hors du schema plutot que de
+l'accepter sans l'evaluer. Ce lot pose la porte et l'enregistre.
+
+**La separation des familles ne coute rien, parce que l'evaluateur la
+faisait deja** : `addressListFor` choisit `source6`/`destination6` quand
+le candidat est v6, et `matchesAddresses` refuse une liste VIDE. Il
+suffit donc que la forme v6 range dans `source6`/`destination6` en
+laissant `source`/`destination` vides, et l'inverse pour la v4, pour
+qu'aucune des deux ne puisse juger de l'autre. Les deux sens sont
+eprouves — un seul ne dirait rien de l'autre.
+
+La porte v6 est posee dans `FirewallIpv6.permits`, branche `in`, juste
+apres `addressedToUs` : une politique local-in gouverne TOUT ce qui nous
+est adresse, pas seulement l'echo, donc elle passe avant le controle
+d'echo. `localInVerdict` prend desormais un descripteur de trafic plutot
+qu'un `IPv4Packet`, si bien qu'une seule implantation sert les deux
+familles.
+
+**Defaut de socle trouve en chemin, et corrige** : `referenceExists`
+acceptait `all`, `any` et `ALL` pour N'IMPORTE quelle source de donnees.
+Or `all` est l'objet d'adresse IPv4 predefini, `all6` son homologue v6 et
+`ALL` le service predefini — trois espaces de noms confondus en un. La
+consequence n'etait pas cosmetique : `set srcaddr "all"` sur une table v6
+etait accepte en SILENCE et rangeait un nom que l'evaluateur v6 ne peut
+jamais faire correspondre, donc une politique qui ne se declenche jamais
+sans que rien ne le dise. Seul `any` reste general, les tables qui
+predefinissent `all`/`all6`/`ALL` etant deja enumerees par
+`candidatesFor`.
+
+Corrige dans des TESTS plutot que dans le code, parce qu'ils encodaient
+cette laxite comme contrat : deux cas de
+`probe-politique-incomplete-refusee.test.ts` posaient `set srcaddr6
+"all"`, c'est-a-dire un objet v4 sur un attribut v6 ; la reference donne
+`firewall.address6.name, firewall.addrgrp6.name` pour toute forme v6.
+
+`fortigate-local-in-policy6.test.ts` (14 cas) : 6 tombent contre l'etat
+d'avant, 3 en ne retirant que la porte v6, et le cas de la source de
+donnees se discrimine seul. Les 2420 cas du repertoire `firewall/`
+passent.
+
+`fortigate-local-in-policy.test.ts` (12 cas) est discrimine en deux
+temps : 5 tombent contre l'etat d'avant le lot, 4 en ne retirant que la
+porte du plan de donnees — le cinquieme etant l'affaire du schema. Les 8
+qui passent des deux cotes sont nommes dans l'en-tete du fichier.
+
+## `firewall DoS-policy` — IPv4 (livre)
+
+Source : `official_docs/forti-cli-ref-60.txt` p. 191-193, et les valeurs
+par defaut relevees sur de vraies machines.
+
+**La reference definit QUATRE anomalies et elles ne mesurent pas la meme
+chose** — c'est ce qu'il ne fallait pas rater. `Flooding` et `Scan` sont
+un DEBIT (« in one second », en paquets par seconde), respectivement par
+destination et par source ; `Source/Destination session limit` sont un
+ETAT INSTANTANE, le nombre de sessions CONCURRENTES. Les confondre
+donnerait une machine qui bloque au bon moment pour la mauvaise raison.
+`DosSensor` porte donc deux mesures distinctes : un compteur a fenetre
+d'une seconde, et une jauge qui LIT la `SessionTable` existante plutot
+que de tenir son propre compte — deux comptes de sessions finiraient par
+se contredire.
+
+Reutilise plutot que reecrit : le rapprochement politique
+(interface / srcaddr / dstaddr / service) passe par `PolicyEvaluator` et
+`PolicyStore`, comme `firewall policy` et `local-in-policy` ; l'etage du
+plan de donnees est un `PipelineStage` nomme, insere dans l'ordre declare
+par `FortiProfile` apres `ingress-zone` et AVANT `session-lookup`, comme
+sur un vrai FortiGate ou le controle DoS precede la recherche de session ;
+et le journal reprend la categorie `utm-anomaly` que `logCategories.ts`
+declarait deja sans que rien ne l'ecrive.
+
+**Ce qui est refuse en nommant ce qui manque** plutot qu'accepte a vide :
+l'action `proxy` (aucun controle de flux par mandataire ici) et
+`quarantine attacker` (aucune table d'utilisateurs bannis). Les deux
+passent par `unimplementedValues`, le mecanisme que le schema portait
+deja. `fixedKeys` est ajoute a `FortiTableSpec` pour que la liste des
+anomalies soit CLOSE, la reference ecrivant « The list of anomalies can
+be updated only when the FortiGate firmware image is upgraded ».
+
+**`DoS-policy6` n'est pas livre** : le chemin IPv6 ne traverse pas ce
+pipeline, donc la table serait acceptee sans etre evaluee.
+
+`fortigate-dos-policy.test.ts` (16 cas) : 6 tombent contre l'etat
+d'avant, et 2 en retirant seulement l'etage de l'ordre du pipeline — les
+deux qui observent un blocage. Les 2450 cas du repertoire `firewall/`
+passent.
+
+## `firewall DoS-policy6` — IPv6 (livre)
+
+Le lot precedent avait laisse la table v6 hors du schema plutot que de
+l'accepter sans l'evaluer, le chemin IPv6 ne traversant pas le pipeline
+ou vit l'etage `dos-policy`. Ce lot pose la porte dans
+`FirewallIpv6.permits`, branche `in`, AVANT `addressedToUs` — une
+politique DoS est un controle d'ENTREE et couvre donc le transit comme
+le trafic destine au pare-feu.
+
+**Ce que la version change, et qu'il ne fallait pas rater** : sur une
+politique v6, `icmp_flood` compte de l'ICMPv6 — protocole 58 — et non le
+protocole 1, qu'aucun paquet IPv6 ne porte. Se tromper la donnerait une
+anomalie qui ne se declenche JAMAIS, c'est-a-dire un decor qui passe
+pour une protection. `familyCovers` prend desormais la version et la
+table `FAMILY_PROTOCOL` porte les deux colonnes.
+
+Reutilise plutot que reecrit : `dosFinding` prend un descripteur de
+trafic au lieu d'un `IPv4Packet`, donc une seule implantation sert les
+deux familles ; la separation des familles vient de `PolicyEvaluator`
+comme pour `local-in-policy6` (la forme v6 range dans
+`source6`/`destination6`, la v4 dans `source`/`destination`, et une
+liste vide ne correspond a rien) ; et `anomalyLog` lit le meme
+descripteur, donc le journal d'anomalie est ecrit une fois pour les deux
+versions.
+
+**Defaut du laboratoire, ecrit plutot que tu** : le cas « ne vaut que
+sur l'interface nommee » visait `port2` sur une maquette a deux ports et
+echouait a juste titre — un echo est un aller-retour, donc les reponses
+ARRIVENT sur port2 et une politique posee la les compte, ce qu'un vrai
+FortiGate fait. Sur une maquette a deux ports, « l'autre interface »
+n'existe pas ; il faut un troisieme port sans trafic, et c'est pour
+cette raison que le cas jumeau du lot IPv4 passait.
+
+`fortigate-dos-policy6.test.ts` (13 cas) : 4 tombent contre l'etat
+d'avant, 2 en retirant seulement la porte v6. Les 2479 cas du repertoire
+`firewall/` passent.

@@ -127,6 +127,14 @@ export class FirewallRouting {
 
   getRip(): RIPEngine | null { return this.rip; }
 
+  getOspfConfiguration(): OspfConfiguration { return this.ospfConfig; }
+
+  restartOspf(): boolean {
+    if (!this.ospfConfig.enabled) return false;
+    this.applyOspf(this.ospfConfig);
+    return true;
+  }
+
   getOspf(): OSPFEngine | null { return this.ospf; }
 
   receiveRip(iface: string, source: IPAddress, packet: RIPPacket): void {

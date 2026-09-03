@@ -33,7 +33,8 @@ export type VerdictReason =
   | 'zone-mismatch'
   | 'interface-down'
   | 'ttl-expired'
-  | 'mtu-exceeded-df';
+  | 'mtu-exceeded-df'
+  | 'dos-anomaly';
 
 export type VerdictAction = 'accept' | 'deny' | 'drop' | 'reset' | 'reject';
 

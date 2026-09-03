@@ -20,6 +20,7 @@
  * the mechanism underneath is simplified.
  */
 import type { SchemaValidator } from '../schema/SchemaValidator';
+import { DEFAULT_AD_FUNCTIONAL_LEVEL } from '../adFunctionalLevels';
 
 export interface ForestDomain {
   readonly dnsName: string;
@@ -37,7 +38,7 @@ export interface ForestFsmoRoles {
 
 export class Forest {
   /** Cosmetic, matches this simulator's other functional-level fields — no real feature-level gating. */
-  readonly functionalLevel = 'Windows Server 2016';
+  functionalLevel: string = DEFAULT_AD_FUNCTIONAL_LEVEL.forestMode;
   private readonly domains = new Map<string, ForestDomain>();
   private fsmo: ForestFsmoRoles | null = null;
 
@@ -80,8 +81,9 @@ const domainToForest = new Map<string, ForestRegistration>();
 function key(dnsName: string): string { return dnsName.toLowerCase(); }
 
 /** `Install-ADDSForest` — the first domain of a brand-new forest. */
-export function createForest(rootDnsName: string, rootNetbiosName: string, schemaValidator: SchemaValidator): Forest {
+export function createForest(rootDnsName: string, rootNetbiosName: string, schemaValidator: SchemaValidator, forestMode?: string): Forest {
   const forest = new Forest();
+  if (forestMode) forest.functionalLevel = forestMode;
   forest.addDomain({ dnsName: rootDnsName, netbiosName: rootNetbiosName });
   domainToForest.set(key(rootDnsName), { forest, schemaValidator });
   return forest;

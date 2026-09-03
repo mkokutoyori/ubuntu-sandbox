@@ -31,6 +31,25 @@ export const ICMP_UNREACH_NET_PROHIBITED = 9;
 export const ICMP_UNREACH_HOST_PROHIBITED = 10;
 export const ICMP_UNREACH_ADMIN_PROHIBITED = 13;
 
+export type UnreachableCodeName =
+  | 'net-unreachable' | 'host-unreachable' | 'protocol-unreachable'
+  | 'port-unreachable' | 'frag-needed' | 'admin-prohibited' | 'other';
+
+const UNREACHABLE_CODE_NAMES: Readonly<Record<number, UnreachableCodeName>> = {
+  [ICMP_UNREACH_NET]: 'net-unreachable',
+  [ICMP_UNREACH_HOST]: 'host-unreachable',
+  [ICMP_UNREACH_PROTO]: 'protocol-unreachable',
+  [ICMP_UNREACH_PORT]: 'port-unreachable',
+  [ICMP_UNREACH_FRAG_NEEDED]: 'frag-needed',
+  [ICMP_UNREACH_NET_PROHIBITED]: 'admin-prohibited',
+  [ICMP_UNREACH_HOST_PROHIBITED]: 'admin-prohibited',
+  [ICMP_UNREACH_ADMIN_PROHIBITED]: 'admin-prohibited',
+};
+
+export function unreachableCodeName(code: number | undefined): UnreachableCodeName {
+  return (code === undefined ? undefined : UNREACHABLE_CODE_NAMES[code]) ?? 'other';
+}
+
 /** Time Exceeded (Type 11) codes */
 export const ICMP_TTL_EXPIRED_IN_TRANSIT = 0;
 export const ICMP_FRAG_REASSEMBLY_TIME_EXCEEDED = 1;

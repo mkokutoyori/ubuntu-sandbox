@@ -128,6 +128,10 @@ import { getVrrpAgent, getSessionRegistry, getVtyLineConfig } from '../../equipm
 import { registerUserInterfaceCommands } from './huawei/HuaweiUserInterfaceCommands';
 import { getSecurityConfig } from './cisco/CiscoSecurityCommands';
 import { parseVrpCarRule } from '../../qos/CarPolicer';
+import {
+  parseTimeOfDay,
+  type TimeRangePeriodic,
+} from '../router/security/timeRange';
 
 const JOURS_VRP: Record<string, string> = {
   daily: 'daily', 'working-day': 'weekdays', 'off-day': 'weekend',
@@ -135,25 +139,17 @@ const JOURS_VRP: Record<string, string> = {
   fri: 'Friday', sat: 'Saturday', sun: 'Sunday',
 };
 
-function analyserHeureVrp(mot: string | undefined): { h: number; m: number } | null {
-  const m = /^(\d{1,2}):(\d{2})$/.exec(mot ?? '');
-  if (!m) return null;
-  const h = Number(m[1]); const min = Number(m[2]);
-  if (h > 23 || min > 59) return null;
-  return { h, m: min };
-}
-
-function analyserPeriodeVrp(args: string[]): import('../router/security/CiscoSecurityConfig').TimeRangePeriodic | null {
-  const debut = analyserHeureVrp(args[0]);
+function analyserPeriodeVrp(args: string[]): TimeRangePeriodic | null {
+  const debut = parseTimeOfDay(args[0]);
   if (!debut || args[1]?.toLowerCase() !== 'to') return null;
-  const fin = analyserHeureVrp(args[2]);
+  const fin = parseTimeOfDay(args[2]);
   if (!fin) return null;
   const jours = args.slice(3).map((j) => JOURS_VRP[j.toLowerCase()]).filter(Boolean);
   if (args.length > 3 && jours.length !== args.length - 3) return null;
   return {
     days: jours.length > 0 ? jours.join(' ') : 'daily',
-    startHour: debut.h, startMinute: debut.m,
-    endHour: fin.h, endMinute: fin.m,
+    startHour: debut.hour, startMinute: debut.minute,
+    endHour: fin.hour, endMinute: fin.minute,
   };
 }
 

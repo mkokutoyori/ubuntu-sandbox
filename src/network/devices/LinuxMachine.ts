@@ -3588,6 +3588,18 @@ export abstract class LinuxMachine extends EndHost
       configureIPv6Interface: (name: string, address: IPv6Address, prefixLength: number): boolean => {
         return this.configureIPv6Interface(name, address, prefixLength);
       },
+      setDefaultGateway6: (gateway: IPv6Address): void => {
+        this.setDefaultGateway6(gateway);
+      },
+      addIPv6StaticRoute: (
+        prefix: IPv6Address, prefixLength: number,
+        nextHop: IPv6Address | null, iface: string, metric?: number,
+      ): void => {
+        this.addIPv6StaticRoute(prefix, prefixLength, nextHop, iface, metric);
+      },
+      removeIPv6StaticRoute: (
+        prefix: IPv6Address, prefixLength: number, nextHop?: IPv6Address | null,
+      ): boolean => this.removeIPv6StaticRoute(prefix, prefixLength, nextHop),
       clearInterfaceIP: (name: string): void => {
         const port = this.ports.get(name);
         if (!port) return;
@@ -4491,6 +4503,7 @@ export abstract class LinuxMachine extends EndHost
           (p) => p.deviceId === this.id && p.pid === pid,
           () => cb());
       },
+      runsDetached: (): boolean => this.executor.runsDetached(),
       readFile: (path: string): string | null => {
         const v = this.executor.vfs.readFile(this.executor.vfs.normalizePath(path, this.executor.getCwd()));
         if (v != null) return v;

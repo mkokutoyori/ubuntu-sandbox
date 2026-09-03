@@ -21,6 +21,8 @@ export interface HaAgentDeps {
   readonly importSessions: (sessions: readonly HaSyncedSession[]) => void;
   readonly authenticateAdmin: (admin: string, secret: string) => boolean;
   readonly runCommand: (admin: string, line: string) => string;
+  readonly leaveCluster: (iface: string, ip: string, mask: string) => string;
+  readonly setDevicePriority: (priority: number) => string;
 }
 
 export interface HaCommandOutcome {
@@ -210,6 +212,18 @@ export class HaAgent {
     if (request.kind === 'sync-pull') {
       this.answer(request, true, '', '');
       this.emitHeartbeat();
+      return;
+    }
+
+    if (request.kind === 'disconnect') {
+      const [iface, ip, mask] = request.line.split(/\s+/);
+      this.answer(request, true, '', this.deps.leaveCluster(iface ?? '', ip ?? '', mask ?? ''));
+      return;
+    }
+
+    if (request.kind === 'set-priority') {
+      const priority = Number.parseInt(request.line, 10);
+      this.answer(request, true, '', this.deps.setDevicePriority(priority));
       return;
     }
 

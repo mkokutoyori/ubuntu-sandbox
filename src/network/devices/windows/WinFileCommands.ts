@@ -20,6 +20,7 @@ export interface WinFileCommandContext {
   cwd: string;
   hostname: string;
   env: Map<string, string>;
+  setEnv(name: string, value: string): void;
   setCwd(path: string): void;
 }
 
@@ -216,7 +217,7 @@ export function cmdSet(ctx: WinFileCommandContext, args: string[]): string {
   // Set new variable
   const name = full.substring(0, eqIndex).trim();
   const value = full.substring(eqIndex + 1);
-  ctx.env.set(name.toUpperCase(), value);
+  ctx.setEnv(name, value);
   return '';
 }
 

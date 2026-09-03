@@ -1,5 +1,6 @@
 import { IP_PROTO_TCP, type IPv4Packet } from '../../../core/types';
 import { icmpEchoReply } from './FirewallEgress';
+import type { LocalInVerdict } from '../policy/LocalInPolicy';
 
 export interface LocalDeliveryDeps {
   ikeDatagram(packet: IPv4Packet): unknown;
@@ -10,11 +11,14 @@ export interface LocalDeliveryDeps {
   admitsTcp(iface: string, packet: IPv4Packet): boolean;
   allowsPing(iface: string): boolean;
   reply(iface: string, packet: IPv4Packet): void;
+  localInVerdict?(iface: string, packet: IPv4Packet): LocalInVerdict;
 }
 
 export function deliverLocally(
   deps: LocalDeliveryDeps, iface: string, packet: IPv4Packet,
 ): void {
+  if (deps.localInVerdict?.(iface, packet) === 'deny') return;
+
   const ike = deps.ikeDatagram(packet);
   if (ike) { deps.handleIke(iface, packet, ike); return; }
   if (deps.observedBySdwan(packet)) return;

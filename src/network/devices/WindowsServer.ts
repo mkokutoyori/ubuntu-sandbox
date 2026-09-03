@@ -51,6 +51,7 @@ import { Http1ServerSession } from '@/network/http/http1/Http1ServerSession';
 import { createResponse, type HttpMessage } from '@/network/http/semantics/types';
 import { IPAddress } from '@/network/core/types';
 import { mirroredDirection, type TrustDirection, type TrustInfo, type TrustRecord } from './windows/server/ad/forest/TrustRelationship';
+import { type AddsForestOptions, DEFAULT_AD_FUNCTIONAL_LEVEL, netbiosNameProblem } from './windows/server/ad/adFunctionalLevels';
 
 export interface AdDsOpResult { ok: boolean; message: string }
 
@@ -101,11 +102,7 @@ export class WindowsServer extends WindowsPC {
 
   constructor(name: string = 'WinServer', x: number = 0, y: number = 0) {
     super('windows-server', name, x, y);
-    // Real Windows Server has no built-in non-admin "User" account — setup
-    // (OOBE) only creates/activates the local Administrator, who is the
-    // account logged in by default. WindowsPC's 'User' default is correct
-    // for a client SKU but wrong here, so override it post-construction.
-    this.getUserManager().setCurrentUser('Administrator');
+    this.setCurrentUser('Administrator');
     this.roleManager.onFeatureLifecycle(() => this.materializeInstalledRoles());
   }
 
@@ -131,6 +128,12 @@ export class WindowsServer extends WindowsPC {
 
   /** PRD Phase 5 (§5 P5): the real AD DS directory, once `Install-ADDSForest` has promoted this server. */
   getDirectoryStore(): DirectoryStore | null { return this.directoryStore; }
+
+  protected override logonDomainNames(): { netbios: string; dns: string } | null {
+    const store = this.directoryStore;
+    if (store) return { netbios: store.netbiosName, dns: store.dnsName };
+    return super.logonDomainNames();
+  }
 
   /**
    * PRD Phase 7 (§5 P7): the DNS Server role, hosting the real DNS engine
@@ -339,7 +342,7 @@ export class WindowsServer extends WindowsPC {
    * real TCP/389 LDAP listener (already registered at boot, gated on
    * `getDirectoryStore()` being non-null).
    */
-  installADDSForest(domainName: string, netbiosName: string | undefined, safeModeAdminPassword: string, opts: { installDns?: boolean } = {}): AdDsOpResult {
+  installADDSForest(domainName: string, netbiosName: string | undefined, safeModeAdminPassword: string, opts: AddsForestOptions = {}): AdDsOpResult {
     if (!this.roleManager.isInstalled('AD-Domain-Services')) {
       return { ok: false, message: 'Install-ADDSForest : The Active Directory Domain Services role is not installed on this computer.' };
     }
@@ -347,23 +350,50 @@ export class WindowsServer extends WindowsPC {
       return { ok: false, message: 'Install-ADDSForest : This computer is already configured as a domain controller.' };
     }
     const netbios = netbiosName ?? domainName.split('.')[0].toUpperCase();
+    const netbiosProblem = netbiosNameProblem(netbios);
+    if (netbiosProblem) return { ok: false, message: `Install-ADDSForest : ${netbiosProblem}` };
+    const forestLevel = opts.forestMode ?? DEFAULT_AD_FUNCTIONAL_LEVEL;
+    const domainLevel = opts.domainMode ?? forestLevel;
+    if (domainLevel.rank < forestLevel.rank) {
+      return { ok: false, message: `Install-ADDSForest : The domain functional level ${domainLevel.keyword} cannot be lower than the forest functional level ${forestLevel.keyword}.` };
+    }
+    if (opts.whatIf) {
+      return { ok: true, message: `What if: Performing the operation "Install-ADDSForest" on target "${this.getHostname()}".` };
+    }
     this.directoryStore = new DirectoryStore(domainName, netbios, safeModeAdminPassword, { now: () => this.simulatedDate() });
+    this.directoryStore.domainMode = domainLevel.domainMode;
     this.directoryStore.promoteDomainController(this.getHostname(), safeModeAdminPassword);
     this.directoryStore.ensureKrbtgtPrincipal(randomSessionKey());
     this.directoryStore.newSite(DEFAULT_SITE_NAME);
     this.directoryStore.ensureDefaultSiteLink();
     this.directoryStore.assignServerToSite(this.getHostname(), DEFAULT_SITE_NAME, this.getInterfaces().find(p => p.getIPAddress() !== null)?.getIPAddress()?.toString());
-    const forest = createForest(domainName, netbios, this.directoryStore.getSchemaValidatorForSharing());
+    const forest = createForest(domainName, netbios, this.directoryStore.getSchemaValidatorForSharing(), forestLevel.forestMode);
     forest.initializeFsmoRoles(this.getHostname());
     this.directoryStore.initializeDomainFsmoRoles(this.getHostname());
     this.provisionSysvol(domainName);
     this.registerDcServices();
-    if (opts.installDns !== false) this.roleManager.install('DNS');
+    if (opts.installDns !== false) {
+      this.roleManager.install('DNS');
+      this.pointDnsClientAtLoopback();
+    }
     this.provisionDomainDnsZone(domainName);
+    this.provisionAdDsStoragePaths(opts);
     this.provisionDefaultDomainPolicy();
     this.logDirectoryServiceStartup();
     this.auditPolicy.seedDefaults('domain-controller');
     return { ok: true, message: '' };
+  }
+
+  private pointDnsClientAtLoopback(): void {
+    for (const port of this.getInterfaces()) {
+      if (port.getIPAddress() !== null) this.setDnsServers(port.getName(), ['127.0.0.1']);
+    }
+  }
+
+  private provisionAdDsStoragePaths(opts: AddsForestOptions): void {
+    const fs = this.getFileSystem();
+    fs.mkdirp(opts.databasePath ?? 'C:\\Windows\\NTDS');
+    fs.mkdirp(opts.logPath ?? 'C:\\Windows\\NTDS');
   }
 
   /**

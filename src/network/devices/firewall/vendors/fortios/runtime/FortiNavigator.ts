@@ -174,6 +174,10 @@ export class FortiNavigator {
     const refusedKey = this.refusedKey(resolved);
     if (refusedKey) return refusedKey;
 
+    if (spec.fixedKeys && !spec.fixedKeys.includes(resolved)) {
+      return FortiMessages.unknownKey(resolved);
+    }
+
     const existed = table.has(resolved);
     const object = table.ensure(resolved);
     this.stack.push({

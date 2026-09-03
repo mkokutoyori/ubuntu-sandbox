@@ -49,6 +49,74 @@ elles.
 
 ## Commutateur Cisco
 
+### [vrf] `address-family ipv4` sous `vrf definition` est refuse
+La forme MULTIPROTOCOLE d'IOS exige `address-family ipv4` pour activer
+une famille dans la VRF ; ici elle repond `% Invalid input detected`, et
+la configuration rendue n'ecrit donc que `vrf definition <nom>` + `rd` +
+`route-target`.
+**Mesure** : `vrf definition X` puis `address-family ipv4` est refuse sur
+le routeur comme sur le commutateur.
+**Report** : ce simulateur n'a AUCUNE notion de famille d'adresses par
+VRF — `_vrfs` ne porte pas la distinction et rien ne la lirait. Accepter
+la commande rangerait un critere que personne n'evalue, ce que
+`CLAUDE.md` interdit ; l'implanter veut dire porter la famille jusqu'au
+plan de donnees, ce qui est un chantier de routage et non de CLI.
+
+### [vrf] un Catalyst cree une VRF et ne peut pas la configurer
+`vrf definition <nom>` est accepte, retenu et desormais rendu sur le
+commutateur, mais `rd` et `route-target` y sont refuses — le sous-mode
+`config-vrf` n'est cable que sur le routeur (`registerVrfSubmodeOn` est
+une methode de `CiscoIOSShell`).
+**Mesure** : la meme sequence est acceptee de bout en bout sur le
+routeur et s'arrete au `rd` sur le commutateur.
+**Report** : meme forme que les deux notes voisines — un sous-systeme du
+routeur que le commutateur n'a pas. Le brancher demande de decider ce
+qu'une VRF fait sur un commutateur de niveau 3 (ses SVI, sa table), ce
+qui est une question de plan de donnees.
+
+### [track] un Catalyst ne suit qu'une INTERFACE, pas une route ni un IP SLA
+Le commutateur porte son propre `TrackObjectRegistry`, dont le type est
+`'line-protocol' | 'ip-routing'` : les formes `track <n> ip route …`,
+`track <n> ip sla …`, `track <n> list …` et `stub-object` y sont donc
+refusees, alors qu'un 3560 les connait et que le ROUTEUR les honore
+toutes par `TrackService`.
+**Mesure** : la meme frappe est acceptee sur le routeur et refusee sur le
+commutateur ; depuis le lot qui unifie la grammaire, le refus porte au
+moins le bon message au lieu de « commande incomplete ».
+**Report** : ce n'est pas un defaut d'analyse — la grammaire est
+desormais commune — mais un MAGASIN absent. Faire lire `TrackService` au
+commutateur touche ses consommateurs (FHRP, routes suivies) et non la
+CLI, et c'est le meme chantier que celui de la note ci-dessous sur
+`ip prefix-list` : un sous-systeme du routeur que le commutateur n'a pas.
+
+### [policy] `ip prefix-list` et `route-map` sont refuses sur un Catalyst
+Les deux familles sont declarees « router-only » (`CiscoPolicyCommands`
+n'est branche que sur le routeur), donc un Catalyst repond
+`% Invalid input detected` a `ip prefix-list PL permit 10.0.0.0/8` comme
+a `route-map RM permit 10`.
+**Mesure** : accepte et rendu sur le routeur, refuse sur le commutateur,
+pour la meme frappe.
+**Report** : un 3560 les connait, un 2960 non — la reponse depend du
+PROFIL de chassis, et ce depot en porte trois (`c2900`, `c2960`,
+`c3560`). Trancher demande de decider ce que ce simulateur modelise de
+cette difference, ce qui est une autre question que celle de savoir si
+la commande juge ses arguments. La brancher sans ce choix ferait
+apprendre a un 2960 une commande que la vraie machine refuse.
+
+### [snmp] le Catalyst RANGE sa configuration SNMP, mais rien n'ecoute sur 161
+`snmp-server community|host|contact|location|chassis-id` sont desormais
+retenus, servis par `show snmp`, `show snmp community`, `show snmp host`
+et rendus dans la configuration — mais `CiscoSwitch` n'instancie aucun
+`SnmpAgent`, la ou `CiscoRouter` en porte un et lui aiguille l'UDP 161.
+Un vrai `snmpget` vers un Catalyst n'obtient donc rien.
+**Mesure** : `show snmp` y rend `0 SNMP packets input` quoi qu'il arrive,
+ce qui est VRAI (aucun paquet ne peut arriver) et non un compteur mort.
+**Report** : `SnmpHost` demande `getSysDescr`, `getSysObjectId` et
+`sendUdpDatagram` en plus de la surface que `makeSwitchNtpHost` fournit
+deja ; le brancher est un travail de plan de donnees (aiguillage du 161
+dans `deliverLocalUdp`, enregistrement dans `agents`), distinct de la
+CLI que ce lot refermait.
+
 ---
 
 ## Postes Linux
@@ -98,26 +166,6 @@ n'est pas ferme ici** : les rendre inscriptibles demande de donner un
 COMPORTEMENT a chacune, sans quoi on rangerait une valeur que rien
 n'evalue. C'est un chantier par knob, pas un correctif de commande.
 
-### [icmp] `ping -b` n'emet RIEN vers une diffusion dirigee
-Trouve en fermant l'entree precedente : la cle
-`net.ipv4.icmp_echo_ignore_broadcasts` existe et gouverne bien la
-REPONSE, mais le laboratoire Smurf reste injouable parce que l'EMETTEUR
-ne sait pas envoyer.
-**Mesure** : `ping -b -c 1 10.0.0.255` depuis un hote du segment rend
-`From  icmp_seq=1 Destination Host Unreachable` — noter l'adresse VIDE
-apres `From`, un ICMP fabrique localement — et `100% packet loss`. Aucune
-trame ne part. La cause est en amont : la destination est resolue par
-ARP au lieu d'etre reconnue comme diffusion de sous-reseau et envoyee a
-`ff:ff:ff:ff:ff:ff`, ce qu'une vraie pile fait sans resolution.
-**Consequence** : la sonde de la cle observe donc le RECEPTEUR
-directement (trame livree, reponse comptee sur son tap) plutot que par
-un `ping`, faute d'emetteur capable.
-**Pourquoi ce n'est pas ferme ici** : c'est un defaut du chemin
-d'EMISSION ICMP, pas de la cle — `EndHost` a deja `sendUdpToGroup` pour
-le multicast et rien d'equivalent pour la diffusion dirigee. A fermer
-avec sa propre mesure, en donnant a l'echo la meme regle de destination
-de couche lien que l'UDP.
-
 ---
 
 ## Postes Windows
@@ -158,6 +206,45 @@ libelle — une ligne dans `winUnreachText`.
 ---
 
 ## Gestion (SNMP, NTP, syslog)
+
+### [ntp] `minpoll`, `maxpoll`, `burst` et `iburst` sont desormais REFUSES
+La queue de `ntp server|peer` ne connait que les quatre formes qu'elle
+declare (`key`, `prefer`, `source`, `version`) ; depuis le lot qui les
+juge, un mot hors de cette liste est refuse au lieu d'etre avale en
+silence. Un vrai IOS accepte pourtant `minpoll`/`maxpoll` (intervalles de
+scrutation) et `burst`/`iburst`.
+**Mesure** : `ntp server 10.0.0.1 iburst` rend `% Invalid input detected`
+ici et est accepte sur une vraie machine.
+**Pourquoi c'est ce refus qui a ete choisi** : `CLAUDE.md` tranche —
+« soit le moteur applique le mot-cle, soit l'analyseur le refuse ». Les
+accepter demanderait de RANGER une valeur que rien ne lit, ce qui est
+l'inverse du defaut que ce lot refermait.
+**Report** : `minpoll`/`maxpoll` sont applicables — `NtpAssociation`
+porte deja `pollSec` et le minuteur de scrutation existe — mais c'est un
+travail de temporisation, pas de CLI. `burst`/`iburst` demandent une
+rafale de huit paquets a l'association, que ce moteur n'a pas.
+
+### [snmp] `snmp-server host <ip> vrf <nom>` est lu comme la communaute
+IOS ecrit `snmp-server host <hote> [vrf <nom>] [traps|informs] …`.
+`configHost` ne connait pas `vrf` : le mot est pris pour la communaute et
+le nom de la VRF devient un type de notification.
+**Mesure** : `snmp-server host 10.0.0.1 vrf MGMT public` est accepte et
+revient `snmp-server host 10.0.0.1 version 1 vrf MGMT public` — une
+communaute nommee `vrf`.
+**Report** : `SnmpHost` n'a pas de champ de VRF, et en ajouter un sans
+que rien ne le lise serait le critere range-mais-jamais-evalue que
+`CLAUDE.md` interdit. A faire avec le jour ou les traps suivent une VRF.
+
+### [snmp] les types de notification d'un hote ne sont pas juges
+Ce qui suit la communaute est repris tel quel : `snmp-server host
+10.0.0.1 public zorglub-notif` est accepte et rendu.
+**Mesure** : la ligne revient telle quelle dans `show running-config`,
+donc elle est rejouee a l'import d'une topologie.
+**Report** : la liste des types d'IOS est longue et depend de la
+plateforme ; en refuser une partie ferait refuser des formes qu'une vraie
+machine prend, ce qui est pire que l'inverse. Il faudrait la liste
+attestee des types que CE simulateur sait emettre — `getEnabledTraps`
+en connait trois.
 
 ### [snmp] SNMPv3 (USM) et les formes VRP qui restent inertes
 Depuis le lot « une vue MIB filtre vraiment », `mib-view` est EVALUE :
@@ -286,6 +373,27 @@ question. C'est un lot a part, avec sa propre mesure.
 
 ## Socle CLI
 
+### [socle] une queue `REST` ne sait pas nommer ses valeurs par POSITION
+`sequenceFamily` decrit la queue libre d'une commande par UNE place
+`REST` portant ses formes. Elles sont donc annoncees a chaque rang, sans
+savoir laquelle vient d'etre tapee, et une valeur qui SUIT une forme ne
+peut pas etre nommee du tout. Deux familles en souffrent aujourd'hui :
+
+    snmp-server host 10.0.0.1 version ?   attendu 1 / 2c / 3
+    snmp-server host 10.0.0.1 version 3 ? attendu auth / noauth / priv / WORD
+    ntp server 10.0.0.1 key ?             attendu <1-4294967295>
+    ntp server 10.0.0.1 version ?         attendu <1-4>
+
+**Mesure** : chacune rend les formes de la queue (`key`, `prefer`,
+`source`, `version` cote NTP) et jamais la valeur attendue. Depuis les
+lots SNMP et NTP, l'aide ne REFUSE plus a ces rangs et ne repropose plus
+une forme deja tapee ; ce qui manque est de NOMMER.
+**Report** : le mecanisme existe deja a cote — `loggingFamily` porte des
+`continuations` (« les mots-cles qui SUIVENT l'argument »,
+`logging host <ip> transport tcp`). Le donner a `sequenceFamily` est un
+enrichissement du declarateur PARTAGE, donc un lot a lui seul ; declarer
+a cote quelques chemins types ferait DEUX grammaires pour une commande,
+le defaut que ce depot passe son temps a refermer.
 ### [aide] `aaa` est un noeud GLOUTON, donc son aide s'arrete a deux mots
 `aaa authentication login ?` et `aaa authentication login default ?`
 annoncent `<cr>` — la touche Entree — alors que la machine repond
@@ -552,6 +660,40 @@ qui l'a pris le dise ferait tomber son cas ; l'ecart est donc inscrit
 ici plutot que tranche unilateralement.
 
 ## Routeur Cisco
+
+### [ssh] `ssh` entre deux hotes ne traverse PAS le fil
+**Constat.** `ssh alice@10.0.2.10 whoami` lance par `executeCommand`
+rend `alice` sans qu'AUCUNE trame n'atteigne le serveur. Mesure : une
+prise posee sur le port du serveur voit les deux trames d'un `ping`
+(`in/ipv4/1`, `out/ipv4/1`) et ZERO pendant le SSH qui reussit.
+
+**Ce qui tient lieu de reseau.** `LinuxSshClient` appelle
+`transitTcpAclVerdict` (`devices/linux/network/HostLookup.ts`), qui
+parcourt la topologie depuis le port source, suit les cables, et evalue
+un SYN SYNTHETIQUE contre la liste de chaque routeur rencontre — par
+`evaluateACLByName`. C'est une SECONDE implantation de « ce paquet
+passerait-il ? », a cote de `evaluateForDataPlane` que suit le vrai plan
+de donnees, et les deux peuvent diverger sans que rien ne l'empeche.
+
+**Comment cela a ete trouve.** En discriminant
+`acl-protocoles-applicatifs` : les cas de blocage SSH ne tombaient pas
+avec `evaluateForDataPlane` neutralise, alors que HTTP, SMTP et FTP
+tombaient. Neutraliser `evaluateACLByName` a la place les fait tomber
+tous les deux — donc c'est bien cette fonction, et non le plan de
+donnees, qui decide du sort de SSH.
+
+**Consequence, et elle depasse l'ACL.** Le verdict rendu est JUSTE
+aujourd'hui (sans liste ca marche, `deny ip any any` coupe,
+`permit tcp … eq 22` retablit, `eq 23` ne sauve pas), mais il est
+REJOUE et non SUBI : rien ne garantit qu'il suive le plan de donnees le
+jour ou l'un des deux change. Et cela contredit la regle que ce depot
+pose comme obligatoire — tout echange entre deux machines doit traverser
+le reseau simule comme de vraies trames.
+
+**Raison du report.** Faire passer ce client par une vraie session TCP
+est le chantier d'unification des deux piles SSH que le depot documente
+deja comme large ; `transitTcpAclVerdict` a par ailleurs d'autres
+lecteurs (traceroute, sondes UDP) qui disparaitraient avec lui.
 
 ### [acl] GRE n'est pas eprouvable sur un routeur Cisco
 La matrice « chaque protocole a son transport » couvre OSPF, EIGRP, RIP,
@@ -1709,3 +1851,282 @@ défauts — la méthode vaut d'être reprise sur le reliquat.
   vers le socle, donc la place ne peut pas y etre declaree comme elle
   vient de l'etre cote Cisco. A rouvrir avec le pont VRP, ou contre une
   transcription reelle qui donne les bornes.
+- `%LOGONSERVER%` vaut `\\<nom de machine>` meme quand la machine est
+  MEMBRE d'un domaine, alors qu'un vrai Windows y met le nom NetBIOS du
+  contrôleur qui a valide l'ouverture de session. Mesure faite en
+  ecrivant la table d'environnement unique de `WindowsPC.wellKnownEnv` :
+  `DomainMembership` ne porte que `dcAddress`, documente comme « Hostname
+  or IP » — donc la valeur serait `\\192.168.1.10` la ou la vraie machine
+  ecrit `\\DC01`. La reponse est JUSTE dans les deux autres cas (compte
+  local, et controleur de domaine, ou le serveur d'ouverture de session
+  EST la machine), et l'inventer pour le troisieme afficherait une
+  adresse la ou on attend un nom. A rouvrir quand `DomainMembership`
+  portera le nom du contrôleur (`discoverDcHostname` le calcule deja dans
+  `DomainJoinClient` et le jette).
+- `Install-ADDSForest` ne REDEMARRE pas la machine, alors que la
+  documentation officielle du cmdlet ecrit, sous `-NoRebootOnCompletion`,
+  qu'« omitting this parameter indicates the computer is rebooted upon
+  completion of the command, regardless of success or failure ». Le
+  parametre n'est donc ni declare ni evalue, plutot que declare et
+  inerte. Non ferme parce que le redemarrage est le comportement par
+  DEFAUT : le poser ferait redemarrer la machine dans la vingtaine de
+  laboratoires du depot qui promeuvent un contrôleur puis continuent a
+  taper des commandes dessus, et ce que `RebootRequired` doit alors
+  rendre n'est atteste par aucune transcription atteignable depuis ce
+  reseau. A rouvrir avec un modele de redemarrage et une capture reelle
+  de la sortie du cmdlet.
+- Les parametres `-SkipPreChecks`, `-CreateDnsDelegation`,
+  `-DnsDelegationCredential`, `-NoDnsOnNetwork`, `-SkipAutoConfigureDns`
+  et `-Confirm` d'`Install-ADDSForest` ne sont pas declares : chacun
+  gouverne un mecanisme que ce simulateur n'a pas (verifications
+  prealables de DCPromo, delegation DNS dans la zone parente, decouverte
+  DNS sur le reseau, invite de confirmation). Les declarer les rangerait
+  sans que rien ne les evalue, ce que la convention du depot interdit.
+  `-SysvolPath` est declare et accepte mais SYSVOL est toujours pose sous
+  `C:\Windows\SYSVOL`, `provisionSysvol` ne prenant pas de chemin.
+- `Install-ADDSForest` REFUSE quand `-SafeModeAdministratorPassword`
+  manque, alors que la vraie commande INVITE l'operateur a la saisir (son
+  bloc de parametre dit `Required: False` avec `Default value:
+  <mandatory>`, et l'exemple 1 de la documentation l'omet en precisant
+  « causes the user to be prompted »). Ce n'est pas ferme ici parce que
+  le chemin de saisie interactive de ce cmdlet n'existe pas et qu'une
+  vingtaine de laboratoires passent deja le mot de passe.
+- `periodic <jours> hh:mm to <jours> hh:mm` — la forme dont le jour de
+  FIN est nomme, attestee par la reference IOS
+  (`periodic <days> hh:mm to [<days>] hh:mm`, donc `periodic Monday 23:00
+  to Tuesday 01:00`, une fenetre qui traverse minuit) — est REFUSEE
+  plutot que rangee inerte. `TimeRangePeriodic` ne porte pas de jour de
+  fin et `isTimeRangeActive` compare un seul jour de semaine a une seule
+  minute du jour, donc l'accepter rangerait un critere que rien
+  n'evalue : la plage paraitrait posee et ne s'ouvrirait jamais la nuit
+  qu'elle decrit. A rouvrir avec un jour de fin sur le modele ET la
+  moitie du calcul qui va avec, les deux ensemble.
+- Une ACE d'un Catalyst ne peut pas porter `time-range <nom>` : depuis ce
+  lot le commutateur DECLARE ses plages horaires — `time-range`,
+  `periodic`, `absolute`, `show time-range` et le rendu de configuration
+  sont ceux du routeur, une seule declaration pour les deux — mais son
+  analyse d'ACE ne lit pas le mot-cle (`grep timeRange
+  CiscoSwitchShell.ts` ne rend rien), et son moteur de listes n'appelle
+  pas `setTimeRangeResolver`. Une plage y est donc juste, relue, et sans
+  consommateur. Le fermer touche l'analyse d'ACE du commutateur ET son
+  plan de donnees, ce qui est un autre sujet que la grammaire de la
+  plage.
+- `absolute start <borne> end <borne>` n'exige pas que la fin suive le
+  debut : `absolute start 8:00 20 March 2017 end 17:00 15 March 2017` est
+  accepte et decrit une fenetre vide, qu'`isTimeRangeActive` referme
+  correctement (aucune date ne satisfait les deux). Ce que fait une vraie
+  machine — refuser a la saisie, ou accepter une plage qui ne s'ouvre
+  jamais — n'est atteste par aucune capture atteignable depuis ce reseau,
+  et les deux sont plausibles ; mesurer avant de trancher.
+- Le jour du mois d'une borne `absolute` est borne a 1..31 sans regarder
+  le MOIS : `absolute start 8:00 31 February 2017` est accepte.
+  `Date.UTC` le reporte alors au 3 mars, donc la plage s'ouvre a une date
+  que l'operateur n'a pas ecrite. Ce que refuse un vrai IOS ici n'est pas
+  atteste ; le fermer demande soit une capture, soit la decision assumee
+  de valider le calendrier.
+- La borne HAUTE de `bandwidth <kbps>`, de `priority <kbps>` et de
+  `shape {average|peak} <bps>` sous `policy-map class` n'est pas
+  appliquee : depuis ce lot un jeton non numerique est refuse et un
+  pourcentage est borne a 1..100, mais `bandwidth 999999999` reste
+  accepte. La raison est ecrite plutot que devinee — ces bornes dependent
+  de la PLATE-FORME (elles varient avec le debit de l'interface sur
+  laquelle la politique est appliquee) et la documentation de Cisco n'est
+  pas atteignable depuis ce reseau, tous les domaines qui la portent
+  etant refuses par le mandataire de sortie. Poser un maximum de memoire
+  refuserait sur ce simulateur une valeur qu'une vraie machine accepte.
+  A rouvrir avec une capture ou une documentation atteignable.
+- `queue-limit <n>` accepte le nombre et IGNORE son UNITE : IOS ecrit
+  `queue-limit {<n> [packets] | <n> ms | <n> us | <n> bytes}` et le
+  simulateur range la queue telle quelle sans distinguer les unites,
+  donc `queue-limit 40 ms` et `queue-limit 40 packets` decrivent la meme
+  profondeur pour lui. Rien n'evalue la profondeur d'une file dans ce
+  simulateur (aucune mise en file n'a lieu sous une politique de service),
+  donc juger l'unite rangerait un critere de plus que rien ne lit ; ce qui
+  manque d'abord est le mecanisme, pas la grammaire.
+- `class-default` est acceptee sous `policy-map` et rangee avec
+  `kind: 'class-default'`, mais rien ne verifie qu'une classe NOMMEE
+  designe une `class-map` qui existe : `class ZORGLUB` cree une classe
+  vide sous la politique et la rend dans la configuration. Ce qu'un vrai
+  IOS fait ici — refuser, ou creer la class-map implicitement — n'est pas
+  atteste depuis ce reseau ; mesurer avant de trancher.
+- `ip igmp snooping vlan <n>` n'exige pas que le VLAN EXISTE : depuis ce
+  lot le numero est borne a 1..4094 (802.1Q), mais `ip igmp snooping vlan
+  777` est accepte sur un commutateur qui n'a pas de VLAN 777 et cree
+  l'etat de surveillance a vide. La convention d'IOS est que le VLAN
+  nomme doit exister ; ce qu'un vrai Catalyst repond exactement dans ce
+  cas (refus, ou creation implicite) n'est atteste par aucune capture
+  atteignable depuis ce reseau. La meme question se pose pour
+  `ip pim snooping vlan <n>`, corrige de la meme facon dans le meme lot.
+- Les trois autres ecritures de « un numero de VLAN vaut 1..4094 » du
+  commutateur Cisco ne lisent pas encore `parseVlanId` : elles vivent
+  dans `CiscoSwitchShell` (la liste d'identifiants d'une commande de
+  plage, la vue `show`, et la SVI) et rendent chacune un message
+  DIFFERENT pour la meme faute — `% Invalid VLAN id` d'un cote, le caret
+  generique de l'autre. Cote Huawei il y en a six de plus, avec leurs
+  propres mots (`Error: Wrong parameter found.`). Les unifier est un lot
+  a soi : ce n'est pas la borne qui differe mais le MESSAGE, et chacun
+  doit rester celui de son constructeur.
+- Les bornes de `ip flow-cache timeout active <minutes>` et
+  `ip flow-cache timeout inactive <secondes>` ne sont pas appliquees :
+  depuis ce lot un jeton non numerique est refuse et la valeur doit etre
+  positive, mais `ip flow-cache timeout active 999999` reste accepte. Ces
+  deux plages sont documentees par Cisco et sa documentation n'est pas
+  atteignable depuis ce reseau (tous les domaines qui la portent sont
+  refuses par le mandataire de sortie) ; poser un maximum de memoire
+  ferait refuser une valeur qu'une vraie machine accepte.
+- `ip flow-export version <n>` est accepte pour 1..9 et RANGE, mais
+  l'exportateur emet toujours du NetFlow v5 : `NetFlowAgent` ecrit
+  `NETFLOW_V5_VERSION` et le type de son en-tete est le litteral `5`. La
+  version configuree est donc un critere que rien n'evalue — ce que la
+  convention du depot interdit — et le fermer demande d'ecrire l'encodage
+  v9 (gabarits, jeux de champs), qui est un sujet a soi et non une
+  question de grammaire. La borne haute retenue ici (9) est le numero de
+  version le plus eleve que NetFlow ait porte ; `ip flow-export version 1`
+  et `5` sont acceptes de la meme facon et ne changent rien non plus.
+- Les bornes des formes `storm-control <type> level {pps|bps} <debit>` ne
+  sont pas appliquees : depuis ce lot le debit doit etre un nombre positif,
+  mais `storm-control broadcast level pps 99999999999` reste accepte. La
+  borne haute depend du DEBIT DU PORT (un seuil en paquets par seconde
+  au-dela de ce que le lien peut porter n'a pas de sens) et ce que refuse
+  un vrai Catalyst n'est pas atteste depuis ce reseau. La borne du
+  POURCENTAGE, elle, est appliquee : c'est de l'arithmetique.
+- `storm-control` est range dans `ifExtra`, un sac de LIGNES DE TEXTE par
+  interface partage avec `switchport voice` et `srr-queue`. Depuis ce lot
+  la ligne est ANALYSEE a la porte, donc seule une commande valide y
+  entre, et la vue lit le meme analyseur au lieu de refaire un
+  `parseFloat` — mais le magasin reste du texte, et `srr-queue` n'est
+  toujours juge par personne (`srr-queue bandwidth share zorglub` est
+  accepte et rendu). Fermer `srr-queue` demande sa grammaire, qui n'est
+  pas attestee depuis ce reseau ; lui donner un vrai magasin est un autre
+  lot, qui touche le rendu de la configuration d'interface.
+- `default-information originate metric <n>` est desormais JUGE et n'est
+  RANGE nulle part : `_getOSPFExtraConfig()` porte `defaultInfoMetricType`
+  et pas de champ pour la metrique elle-meme, si bien que
+  `default-information originate metric 50` est accepte, verifie, puis
+  oublie — la route par defaut annoncee garde la metrique par defaut. Ce
+  lot refuse desormais `metric zorglub` (une valeur impossible ne passe
+  plus en silence) mais ne stocke pas la valeur juste, ce qui demande un
+  champ sur le magasin ET que l'annonce le lise.
+- `metric weights <tos> k1..k5` accepte n'importe quel TOS de 0 a 255,
+  alors que la documentation de Cisco dit que la valeur doit TOUJOURS
+  etre zero — cette documentation n'est pas atteignable depuis ce reseau
+  pour l'attester, et le simulateur n'a de toute facon aucune notion de
+  type de service dans sa metrique composite. Ce lot refuse un TOS non
+  numerique, ce qui etait le defaut mesure ; restreindre a zero demande
+  la capture.
+- Les bornes hautes retenues pour `timers throttle spf` (600000 ms),
+  `max-lsa` et `default-information originate metric` (16777214, la
+  metrique OSPF maximale) sont des ordres de grandeur RAISONNES et non
+  des valeurs attestees : la documentation de Cisco n'est pas atteignable
+  depuis ce reseau. Elles ne refusent que des valeurs absurdes ; si une
+  capture les contredit, ce sont elles qu'il faut corriger et non le
+  mecanisme.
+- `-Server`, `-AuthType` et `-Instance` en ENTREE DE PIPELINE ne sont pas
+  declares sur `New-ADOrganizationalUnit` (ni sur `Set-`/`Remove-`), alors
+  que la documentation du cmdlet les porte. `-Server` et `-AuthType`
+  gouvernent le choix et l'authentification du contrôleur interroge :
+  toutes les commandes d'OBJET de ce simulateur passent par
+  `requireStore()`, c'est-a-dire l'annuaire LOCAL de la machine, et aucun
+  chemin ne dialogue avec un contrôleur distant pour lire ou ecrire un
+  objet — seuls `Install-ADDSDomainController`, `New-ADDomain` et
+  `New-ADTrust` evaluent un `-Server`, parce qu'eux composent vraiment.
+  Les declarer les rangerait sans que rien ne les evalue, ce que la
+  convention du depot interdit. `-Instance` est evalue comme GABARIT (un
+  objet passe en parametre) mais pas comme entree de PIPELINE, le
+  `Import-Csv | New-ADOrganizationalUnit` de la methode 3 de la
+  documentation demandant que le cmdlet lise `ctx.pipeInput` par
+  PROPRIETE, mecanisme que ce moteur n'a pas.
+- `-Properties` est declare par `Get-ADUser`, `Get-ADComputer`,
+  `Get-ADObject` et `Get-ADOrganizationalUnit` et EVALUE PAR AUCUN : ces
+  vues rendent toutes leurs proprietes, quoi qu'on demande. Sur une vraie
+  machine le cmdlet rend un JEU PAR DEFAUT et `-Properties` seul y ajoute
+  le reste — c'est ce qui fait qu'un `Get-ADOrganizationalUnit` sans
+  `-Properties Description` n'affiche PAS la description, question posee
+  mille fois. Non ferme ici parce que c'est un lot a soi, sur quatre
+  cmdlets a la fois : leur donner un jeu par defaut a chacun demande de
+  MESURER lequel, et le faire pour la seule OU laisserait `-Properties`
+  vivant d'un cote et inerte des trois autres, c'est-a-dire deux reponses
+  a une meme question. Ce lot rend donc TOUT ce qui est pose, choix qui
+  ne cache aucune donnee — l'inverse aurait rendu invisible la
+  description que l'operateur vient d'ecrire.
+- Un attribut pose par `-OtherAttributes` est relu sous le nom que
+  l'arbre LDAP stocke, c'est-a-dire en MINUSCULES (`postofficebox`), la
+  ou une vraie machine rend la casse canonique du schema
+  (`postOfficeBox`). Sans consequence a l'usage — les noms d'attributs
+  LDAP sont insensibles a la casse et l'acces aux proprietes de ce moteur
+  PowerShell l'est aussi, donc `$ou.postOfficeBox` repond (mesure) —
+  mais un `Format-List` affiche la clef stockee. Fermer cela demande que
+  le `SchemaValidator` porte la casse canonique de chaque attribut, ce
+  qu'il ne fait pas.
+
+### [nmap] la banniere et le balayage ACK inspectent encore l'objet distant
+`buildProbes` a ete converti pour la DECOUVERTE d'hote (vraies sondes
+ICMP et TCP, `nmap.h` : `-PE -PA80 -PS443 -PP`) et pour le verdict UDP
+(lecture de l'ICMP recu, `scan_engine_raw.cc`). Deux chemins restent des
+inspections d'objet.
+**Mesure** : `banner()` appelle `grabBanner(found.device, port)`, donc
+`-sV` lit la banniere DANS l'equipement cible au lieu de l'ouvrir sur une
+vraie connexion ; `ackReaches()` appelle `transitAckAclVerdict`, qui
+evalue les listes de controle par parcours de topologie au lieu d'emettre
+un ACK et d'observer le RST. Aucune trame ne porte ces deux reponses.
+**Pourquoi ce n'est pas ferme ici** : la banniere demande d'ouvrir une
+connexion TCP et de LIRE le premier envoi du serveur, ce que `nmap.h`
+n'aide pas a trancher — c'est `nmap-service-probes` qui decrit les sondes
+et leurs correspondances, un fichier de donnees a part entiere ; et le
+balayage ACK demande d'emettre un segment ACK nu, que la pile n'expose
+pas aujourd'hui.
+
+### [ssh] la banniere du serveur n'est pas celle d'un OpenSSH
+**Mesure** : `nmap -sV -p 22` contre un `LinuxServer` rend
+`22/tcp open ssh Sandbox-Server (protocol 2.0)`. Un vrai OpenSSH annonce
+`SSH-2.0-OpenSSH_<version>` et `nmap` rend
+`OpenSSH 8.9p1 Ubuntu 3ubuntu0.4 (Ubuntu Linux; protocol 2.0)`.
+**Pourquoi ce n'est pas ferme ici** : la chaine est celle du serveur SSH
+du simulateur, pas de `nmap` ; la changer touche la poignee de main SSH
+et les tests qui l'observent, et c'est un autre sujet.
+- `bgp bestpath <option>` est accepte, range dans le sac de texte du
+  processus et rendu tel quel, alors que ses options forment un ensemble
+  FERME sur IOS (`as-path`, `compare-routerid`, `med`, `cost-community`…)
+  et qu'aucune n'est evaluee par ce moteur. Ce lot ne le referme pas : le
+  sac est une decision ECRITE dans le gestionnaire — une option de
+  durcissement que le simulateur ne modelise pas doit survivre au
+  rechargement d'une topologie plutot que disparaitre —, et la liste
+  exacte des options de `bestpath` n'est pas attestee depuis ce reseau.
+  A rouvrir avec une capture, en distinguant « option connue mais non
+  evaluee » (a ranger) de « mot invente » (a refuser).
+- `parseRedistribute` (`inspection/config/RoutingConfigRepository.ts`)
+  range tout mot qu'elle ne comprend pas dans un champ `tail` que SEUL le
+  rendu relit. Ce lot ferme le cas mesure — l'identifiant de processus
+  d'`ospf`/`eigrp`/`bgp`, qui doit etre un nombre — mais un mot inconnu
+  place APRES les options (`redistribute static metric 5 zorglub`) tombe
+  encore dans `tail` et revient dans la configuration. Le fermer demande
+  de trancher, option par option, ce que la commande accepte vraiment, ce
+  qui n'est pas atteste depuis ce reseau.
+- Neuf parametres de `New-ADUser` ne sont pas declares, chacun parce
+  qu'il gouverne un mecanisme que ce simulateur n'a pas : `-Server` et
+  `-AuthType` (aucun chemin d'objet ne dialogue avec un contrôleur
+  distant — meme raison que pour `New-ADOrganizationalUnit`), `-Type`
+  (creer un `iNetOrgPerson` ou toute autre sous-classe de `user`
+  demanderait que le schema porte ces classes), `-Certificates`
+  (`userCertificate` suppose un certificat X.509 attache a un compte, que
+  rien ne lit), `-AuthenticationPolicy` et `-AuthenticationPolicySilo`
+  (les silos d'authentification n'existent pas), `-KerberosEncryptionType`
+  (le KDC de ce simulateur ne negocie pas de type de chiffrement),
+  `-CompoundIdentitySupported` (l'identite composee de Kerberos armore
+  n'est pas modelisee) et `-PrincipalsAllowedToDelegateToAccount` (la
+  delegation contrainte fondee sur les ressources a bien un magasin cote
+  ORDINATEUR, `setComputerAllowedToDelegateTo`, mais aucun cote
+  utilisateur). Les declarer les rangerait sans que rien ne les evalue.
+- `-Instance` en entree de PIPELINE n'est pas lu, sur `New-ADUser` comme
+  sur `New-ADOrganizationalUnit` : la methode 3 de la documentation
+  (`Import-Csv | New-ADUser`) demande que le cmdlet lise `ctx.pipeInput`
+  PAR PROPRIETE, mecanisme que ce moteur n'a pas. `-Instance` comme
+  GABARIT, lui, est evalue.
+- `New-ADUser` accepte encore un `-Name` seul et en deduit le
+  sAMAccountName, alors que la documentation ecrit « You must specify the
+  SamAccountName parameter to create a user ». Le repli est conserve
+  parce qu'il est PERMISSIF et non producteur de mauvaise reponse — il
+  cree le compte que l'operateur voulait — et que le refuser ferait
+  tomber des laboratoires qui l'utilisent ; mais un compte dont le nom
+  porte une espace y prend alors un sAMAccountName avec une espace, ce
+  qu'une vraie machine n'accepte pas.

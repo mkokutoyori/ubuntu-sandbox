@@ -42,6 +42,7 @@ import { IPv6Address } from '@/network/core/types';
 import { renderCounterTable, renderTable, type TableColumn } from '../cli/TextTable';
 import { getHttpService } from '@/network/equipment/RouterServiceCapabilities';
 import { IPV6_NEIGHBORS_COLUMNS, IPV6_NEIGHBORS_STYLE, type Ipv6NeighborRow } from './ciscoTableLayouts';
+import { vrfRunningConfigLines, type VrfHost } from './ciscoVrfStore';
 
 export function serviceFlagLines(
   device: { getServiceFlags?: () => ReadonlyMap<string, boolean> },
@@ -601,13 +602,10 @@ export function showRunningConfig(router: Router): string {
     }
   }
 
-  const vrfs = (router as unknown as { _vrfs?: Map<string, { name: string; rd?: string }> })._vrfs;
-  if (vrfs && vrfs.size > 0) {
+  const vrfLines = vrfRunningConfigLines((router as unknown as VrfHost)._vrfs);
+  if (vrfLines.length > 0) {
     lines.push('!');
-    for (const v of vrfs.values()) {
-      lines.push(`ip vrf ${v.name}`);
-      if (v.rd) lines.push(` rd ${v.rd}`);
-    }
+    lines.push(...vrfLines);
   }
 
   const vlans = (router as unknown as { _vlans?: Map<number, { id: number; name?: string }> })._vlans;

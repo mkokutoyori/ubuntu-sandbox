@@ -90,6 +90,12 @@ export interface IPv6RouterContext {
   deliverUdp6?(inPort: string, ipv6: IPv6Packet, udp: UDPPacket): boolean;
   /** `ipv6 dhcp server <pool>` binding for a directly-attached interface. */
   getDhcpv6ServerPool(iface: string): string | undefined;
+  /**
+   * A platform whose advertisements are off until a command turns them on
+   * answers `false`; the default is the router's, which advertises as soon
+   * as an interface carries a prefix.
+   */
+  advertisesWithoutConfig?(): boolean;
   /** `ipv6 dhcp relay destination <addr>` targets for a relaying interface. */
   getDhcpv6RelayDestinations(iface: string): string[];
   /**
@@ -274,6 +280,7 @@ export class IPv6DataPlane {
     if (!this.enabled) return;
     const ra = this.raConfig.get(portName);
     if (ra && (ra.enabled === false || ra.suppressAll)) return;
+    if (!ra && this.ctx.advertisesWithoutConfig?.() === false) return;
     const port = this.ctx.getPorts().get(portName);
     if (!port || !port.isIPv6Enabled() || !port.getIsUp()) return;
     const aUnPrefixe = port.getIPv6Addresses()
@@ -869,7 +876,9 @@ export class IPv6DataPlane {
 
     // `suppress all` stops the answer too; `suppress` alone only
     // silences the unsolicited advertisement.
-    if (this.raConfig.get(inPort)?.suppressAll) return;
+    const declared = this.raConfig.get(inPort);
+    if (declared?.suppressAll) return;
+    if (!declared && this.ctx.advertisesWithoutConfig?.() === false) return;
 
     this.sendRouterAdvertisement(inPort, ipv6.sourceIP.isUnspecified() ? null : ipv6.sourceIP);
   }
@@ -972,22 +981,17 @@ export class IPv6DataPlane {
     const srcIP = port.getLinkLocalIPv6();
     if (!srcIP) return;
 
-    const prefixes = config?.prefixes || [];
-
-    if (prefixes.length === 0) {
-      for (const entry of port.getIPv6Addresses()) {
-        if (entry.origin !== 'link-local' && entry.address.isGlobalUnicast()) {
-          prefixes.push({
-            prefix: entry.address.getNetworkPrefix(entry.prefixLength),
-            prefixLength: entry.prefixLength,
-            onLink: true,
-            autonomous: true,
-            validLifetime: 2592000,
-            preferredLifetime: 604800,
-          });
-        }
-      }
-    }
+    const declared = config?.prefixes ?? [];
+    const prefixes = declared.length > 0 ? declared : port.getIPv6Addresses()
+      .filter(entry => entry.origin !== 'link-local' && entry.address.isGlobalUnicast())
+      .map(entry => ({
+        prefix: entry.address.getNetworkPrefix(entry.prefixLength),
+        prefixLength: entry.prefixLength,
+        onLink: true,
+        autonomous: true,
+        validLifetime: 2592000,
+        preferredLifetime: 604800,
+      }));
 
     const ra = createRouterAdvertisement(prefixes, port.getMAC(), {
       curHopLimit: config?.curHopLimit ?? 64,

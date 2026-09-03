@@ -1,4 +1,5 @@
 import { argumentAccepts, argumentSuggestions, argumentCompletableValues } from './ArgumentTypes';
+import type { ArgumentSpec } from './ArgumentTypes';
 import type { CliSession } from './CliSession';
 import type { CommandTable, TreeNode } from './CommandTable';
 import { subtreeReachable, tokenize, uniqueChild } from './CommandParser';
@@ -22,6 +23,7 @@ export interface Cursor {
   readonly prefix: string;
   readonly resolved: boolean;
   readonly path: readonly string[];
+  readonly restWords: readonly string[];
 }
 
 export function locateCursor(
@@ -34,7 +36,8 @@ export function locateCursor(
 
   let node = table.rootNode();
   const path: string[] = [];
-  for (const token of walked) {
+  for (let i = 0; i < walked.length; i++) {
+    const token = walked[i];
     const child = uniqueChild(node, token, table, session);
     if (child) {
       node = child;
@@ -43,13 +46,16 @@ export function locateCursor(
     }
 
     const argument = table.argumentAt(node, session, AIDE);
+    if (argument?.argument?.type === 'REST') {
+      return { node: argument, prefix, resolved: true, path, restWords: walked.slice(i) };
+    }
     if (argument?.argument && argumentAccepts(argument.argument, token)) {
       node = argument;
       continue;
     }
-    return { node, prefix, resolved: false, path };
+    return { node, prefix, resolved: false, path, restWords: [] };
   }
-  return { node, prefix, resolved: true, path };
+  return { node, prefix, resolved: true, path, restWords: [] };
 }
 
 export function complete(
@@ -70,6 +76,19 @@ export function complete(
 
 const AIDE = { modeStrict: true, forHelp: true } as const;
 
+function sansLesFormesDejaTapees(
+  argument: ArgumentSpec, restWords: readonly string[],
+): ArgumentSpec {
+  if (!argument.alternatives || restWords.length === 0) return argument;
+  if (argument.leadingOnly) return { ...argument, alternatives: undefined };
+  const tapes = new Set(restWords.map(mot => mot.toLowerCase()));
+  return {
+    ...argument,
+    alternatives: argument.alternatives.filter(
+      forme => !tapes.has(forme.keyword.toLowerCase())),
+  };
+}
+
 function suggestionsAt(
   cursor: Cursor, table: CommandTable, session: CliSession, trigger: CompletionTrigger,
 ): Suggestion[] {
@@ -88,7 +107,9 @@ function suggestionsAt(
     });
   }
 
-  const declaree = table.argumentAt(cursor.node, session, AIDE)?.argument;
+  const declaree = cursor.node.argument?.type === 'REST'
+    ? sansLesFormesDejaTapees(cursor.node.argument, cursor.restWords)
+    : table.argumentAt(cursor.node, session, AIDE)?.argument;
   /*
    * Une plage qui depend de l'etat est LUE, pas recopiee : sans cela
    * `standby ?` annoncait <0-4095> sur une interface en version 1, ou la

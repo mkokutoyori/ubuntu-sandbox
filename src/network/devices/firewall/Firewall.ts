@@ -101,6 +101,7 @@ import type { FirewallPortals, PortalPorts } from './auth/FirewallPortals';
 import { remoteAuthenticate, type AdminAccountDraft } from './identity/AdminAccounts';
 import type { PasswordHistory } from './identity/PasswordHistory';
 import { FirewallIpv6 } from './l3/FirewallIpv6';
+import { FirewallDhcp6, type Dhcp6Scope } from './l3/FirewallDhcp6';
 import type { PolicyProbe } from './policy/PolicyProbe';
 import { isDenyAction } from './model/SecurityRule';
 import { FirewallPing6 } from './diag/FirewallPing6';
@@ -122,7 +123,7 @@ import type {
 } from './mgmt/AdminHttpServer';
 import type { ManagementCli } from './mgmt/FirewallCliServer';
 import { ManagementPlane } from './mgmt/ManagementPlane';
-import type { ManagementPorts } from './mgmt/ManagementAccess';
+import { MANAGEMENT_SERVICES, type ManagementPorts } from './mgmt/ManagementAccess';
 import type { CaptivePortalRedirect } from './auth/CaptivePortalRedirect';
 import { SslDeepInspection } from './inspection/SslDeepInspection';
 import { ModeCfgPool } from './vpn/ModeCfgPool';
@@ -130,6 +131,9 @@ import type { IkeConfigReply, IkeConfigRequest } from '../../ipsec/IPSecTypes';
 import type { NtpAgent } from '../../ntp/NtpAgent';
 import { FirewallPing, type FirewallPingEgress } from './diag/FirewallPing';
 import { PingOptions } from './diag/PingOptions';
+import { AdminSessionTable } from './mgmt/AdminSessionTable';
+import { FortiGuardDatabases } from './mgmt/FortiGuardDatabases';
+import { FirewallTraceroute6 } from './diag/FirewallTraceroute6';
 import { ConsoleSettings } from './mgmt/ConsoleSettings';
 import { LoginBanners } from './mgmt/LoginBanners';
 import { FirewallObservables } from './diag/FirewallObservables';
@@ -162,6 +166,14 @@ import { TraceRing, TRACE_HISTORY } from './diag/TraceRing';
 import type { UtmProfileStore } from './inspection/UtmProfiles';
 import type { FirewallSession, SessionCloseReason } from './session/SessionTable';
 import type { SecurityRule } from './model/SecurityRule';
+import {
+  localInTrafficOfIpv4, localInVerdict,
+  type LocalInTraffic, type LocalInVerdict,
+} from './policy/LocalInPolicy';
+import { anomalyDefaultThresholds } from './dos/AnomalyCatalog';
+import type { DosPolicyStore } from './dos/DosPolicyStore';
+import type { AnomalyAction, DosFinding } from './dos/DosSensor';
+import { dosFinding, type DosTraffic } from './dos/DosGate';
 import { LoggingConfig } from '../inspection/config/LoggingConfig';
 import { SyslogAgent } from '../../syslog/SyslogAgent';
 import { SyslogCollectorTable } from './logging/SyslogCollectors';
@@ -180,6 +192,7 @@ export interface TrafficLogger {
   onSessionOpened(session: FirewallSession, rule?: SecurityRule): void;
   onSessionClosed(session: FirewallSession, reason: SessionCloseReason): void;
   onDenied(context: PacketContext): void;
+  onDosAnomaly?(finding: DosFinding, iface: string, traffic: DosTraffic): void;
 }
 
 const ETHERNET_OVERHEAD_BYTES = 18;
@@ -215,18 +228,44 @@ export class Firewall extends Equipment {
     bus: () => this.getBus(),
     scheduler: () => getDefaultScheduler(),
     managementAllows: (iface, service) => this.ipv6.allowsAccess(iface, service),
-    onEchoReply: (payload) => { this.ping6.observeReply(payload); },
+    onEchoReply: (payload) => {
+      this.ping6.observeReply(payload);
+      this.traceroute6.observeReply(payload.fromIp);
+    },
+    onEchoFailed: (payload) => {
+      if (payload.reason === 'ttl-exceeded') this.traceroute6.observeHopExpiry(payload.fromIp);
+    },
     transitPermitted: (probe) => this.ipv6TransitPermitted(probe),
+    localInVerdict: (iface, traffic) => this.localInVerdict6(iface, traffic),
+    dosVerdict: (iface, traffic) => this.dosVerdict6(iface, traffic),
     sessions: () => this.getSessionTable(),
+    dhcpv6Server: () => this.dhcp6.getServer(),
+    dhcpv6PoolFor: (iface) => this.dhcp6.poolOfInterface(iface),
   });
 
-  private readonly ping6 = new FirewallPing6(() => this.ipv6.dataPlane());
+  private readonly dhcp6 = new FirewallDhcp6({
+    systemDnsServers: () => {
+      const settings = this.dnsClient.getSettings();
+      return [settings.primary, settings.secondary].filter(server => server.length > 0);
+    },
+  });
+
+  getDhcp6(): FirewallDhcp6 { return this.dhcp6; }
+
+  private readonly traceroute6 = new FirewallTraceroute6(() => this.ipv6.dataPlane());
+
+  runTraceroute6(target: string): string { return this.traceroute6.run(target); }
+
+  private readonly ping6 = new FirewallPing6(
+    () => this.ipv6.dataPlane(), () => this.ping6Options);
 
   private readonly ipv6Routes = new Map<string, string>();
   private readonly revisions: RevisionStore;
   private revisionOnLogout = false;
   private configSnapshot?: () => string;
   private readonly proxyArp = new ProxyArpTable();
+  private readonly adminSessions = new AdminSessionTable();
+  private readonly fortiguard = new FortiGuardDatabases();
   private readonly arp: ArpService;
   private readonly registry = new PipelineStageRegistry();
   private readonly pipelines: PipelineCache;
@@ -413,6 +452,10 @@ export class Firewall extends Equipment {
       assembleStream: (key, chunk, limitMb) =>
         this.streams.append(key, chunk, oversizeLimitBytes(limitMb)),
       onInspection: () => { this.load.recordPacket('inspection'); },
+      onDosAnomaly: (finding, iface, packet) => {
+        if (!finding.log) return;
+        this.trafficLogger?.onDosAnomaly?.(finding, iface, packet);
+      },
       bridgedWith: (ingress, egress) => this.sameSwitchInterface(ingress, egress),
       macLookup: (destination, ingress) => this.lookupMac(destination, ingress),
       natOrder: {
@@ -474,13 +517,18 @@ export class Firewall extends Equipment {
       portalUsesHttps: () => this.authPortalSecureHttp,
       managementPorts: () => this.management.managementPorts(),
       createManagementCli: (user, origin) => this.createManagementCli(user, origin),
+      leaveCluster: (iface, ip, mask) => this.leaveCluster(iface, ip, mask),
+      setDevicePriority: (priority) => this.setDevicePriority(priority),
       authenticateAdmin: (user, password, source) =>
         this.management.login(user, password, source),
       knownAdmin: (user) => this.access.getAdmin(user) !== undefined,
       refuseManagementSource: (source) => this.management.refusesSource(source),
       managementIdleTimeoutMs: () => this.management.idleTimeoutMs(),
       runningConfig: () => this.managementRunningConfig(),
-      onManagementLogin: (user) => { this.management.noteLogin(user); },
+      onManagementLogin: (user, source) => {
+        this.management.noteLogin(user);
+        this.adminSessions.open(user, 'CLI', source);
+      },
       onAdminLogout: (user) => { this.onAdminLogout(user); },
       onManagementAuthFailure: (user) => {
         this.management.noteAuthFailure(user);
@@ -579,6 +627,8 @@ export class Firewall extends Equipment {
 
   getPingOptions(): PingOptions { return this.pingOptions; }
 
+  getPing6Options(): PingOptions { return this.ping6Options; }
+
   getConsoleSettings(): ConsoleSettings { return this.consoleSettings; }
 
   getLoginBanners(): LoginBanners { return this.loginBanners; }
@@ -619,6 +669,8 @@ export class Firewall extends Equipment {
   }
 
   private readonly pingOptions = new PingOptions();
+
+  private readonly ping6Options = new PingOptions('ipv6');
 
   private readonly consoleSettings = new ConsoleSettings();
   private readonly loginBanners = new LoginBanners();
@@ -692,6 +744,10 @@ export class Firewall extends Equipment {
   }
   getRouting(): FirewallRouting { return this.routing; }
   getDhcp(): FirewallDhcp { return this.dhcp; }
+
+  applyDhcp6Scope(scope: Dhcp6Scope): void { this.dhcp6.upsertScope(scope); }
+
+  removeDhcp6Scope(id: string): void { this.dhcp6.removeScope(id); }
   getNtp(): FirewallNtp { return this.ntp; }
   getNtpAgent(): NtpAgent { return this.ntp.getAgent(); }
   getCaptivePortal(): CaptivePortalRedirect { return this.captivePortal; }
@@ -710,6 +766,33 @@ export class Firewall extends Equipment {
   forwardsTransit(): boolean {
     const ha = this.haService.agent;
     return ha.getConfiguration().mode !== 'a-p' || ha.role() !== 'slave';
+  }
+
+  leaveCluster(iface: string, ip: string, mask: string): string {
+    const configuration = this.haService.agent.getConfiguration();
+    if (configuration.mode === 'standalone') {
+      return 'this unit is not part of a cluster.';
+    }
+    this.applyHa({ ...configuration, mode: 'standalone' });
+
+    for (const name of this.interfaces.names()) {
+      this.configureInterface(name, { ip: '0.0.0.0', mask: '0.0.0.0' });
+      this.setAllowedAccess(name, []);
+    }
+    if (this.interfaces.get(iface)) {
+      this.configureInterface(iface, { ip, mask });
+      this.setAllowedAccess(iface, MANAGEMENT_SERVICES);
+    }
+    return '';
+  }
+
+  setDevicePriority(priority: number): string {
+    const configuration = this.haService.agent.getConfiguration();
+    if (configuration.mode === 'standalone') {
+      return 'this unit is not part of a cluster.';
+    }
+    this.applyHa({ ...configuration, priority });
+    return '';
   }
 
   applyHa(c: HaConfiguration): string | undefined {
@@ -891,13 +974,23 @@ export class Firewall extends Equipment {
 
   clearIpsecGateway(name: string, v?: string): void {
     const tunnels = this.getVdom(v).tunnels;
-    const tunnel = tunnels.getPhase1(name);
-    if (!tunnel) return;
+    if (!this.dropIpsecGateway(name, v)) return;
+    bringUpTunnel(this.ipsec, tunnels, name);
+  }
 
-    this.ipsec.clearAllSAs();
+  bringDownIpsecTunnel(name: string, v?: string): boolean {
+    return this.dropIpsecGateway(name, v);
+  }
+
+  private dropIpsecGateway(name: string, v?: string): boolean {
+    const tunnels = this.getVdom(v).tunnels;
+    const tunnel = tunnels.getPhase1(name);
+    if (!tunnel) return false;
+
+    this.ipsec.clearSAsForPeer(tunnel.remoteGateway);
     tunnels.markDown(name, null);
     tunnels.markGateway(name, false);
-    bringUpTunnel(this.ipsec, tunnels, name);
+    return true;
   }
 
   private sendUdpToPeer(destIp: string, port: number, payload: unknown): boolean {
@@ -1593,6 +1686,12 @@ export class Firewall extends Equipment {
 
   getIpv6(): FirewallIpv6 { return this.ipv6; }
 
+  applyIpv6RouterAdvertisement(iface: string, options: {
+    send: boolean; managed: boolean; other: boolean;
+  }): void {
+    this.ipv6.setRouterAdvertisement(iface, options);
+  }
+
   getIpv6Counters(): Ipv6Counters { return this.ipv6.counterView(); }
 
   configureIpv6Interface(iface: string, address: string, prefixLength: number): boolean {
@@ -1681,7 +1780,12 @@ export class Firewall extends Equipment {
 
   bindConfigSnapshot(render: () => string): void { this.configSnapshot = render; }
 
+  getAdminSessions(): AdminSessionTable { return this.adminSessions; }
+
+  getFortiGuard(): FortiGuardDatabases { return this.fortiguard; }
+
   onAdminLogout(admin: string): void {
+    this.adminSessions.closeNewestOf(admin);
     if (!this.revisionOnLogout) return;
     const text = this.configSnapshot?.();
     if (text === undefined) return;
@@ -1859,8 +1963,52 @@ export class Firewall extends Equipment {
       admitsTcp: (iface, p) => this.management.admitsTcp(iface, p),
       allowsPing: (iface) => this.allowsAccess(iface, 'ping'),
       reply: (iface, p) => { this.forward(iface, p); },
+      localInVerdict: (iface, p) => this.localInVerdict(iface, p),
     }, portName, packet);
   }
+
+  localInVerdict(iface: string, packet: IPv4Packet): LocalInVerdict {
+    return this.localInDecision(iface, localInTrafficOfIpv4(packet), 'localIn');
+  }
+
+  localInVerdict6(iface: string, traffic: LocalInTraffic): LocalInVerdict {
+    return this.localInDecision(iface, traffic, 'localIn6');
+  }
+
+  private localInDecision(
+    iface: string, traffic: LocalInTraffic, store: 'localIn' | 'localIn6',
+  ): LocalInVerdict {
+    if (this.profile.selfTrafficHandling !== 'local-in-policy') return 'no-match';
+    const context = this.vdoms.contextOfInterface(iface);
+    return localInVerdict({
+      rules: context[store].ordered(),
+      evaluator: context.evaluator,
+      zoneOf: (name) => context.zones.zoneOf(name) ?? '',
+    }, iface, traffic);
+  }
+
+  getLocalInPolicy(vdom?: string): PolicyStore { return this.getVdom(vdom).localIn; }
+
+  getLocalInPolicy6(vdom?: string): PolicyStore { return this.getVdom(vdom).localIn6; }
+
+  getDosPolicy(vdom?: string): DosPolicyStore { return this.getVdom(vdom).dos; }
+
+  getDosPolicy6(vdom?: string): DosPolicyStore { return this.getVdom(vdom).dos6; }
+
+  dosVerdict6(iface: string, traffic: DosTraffic): AnomalyAction | 'none' {
+    const context = this.vdoms.contextOfInterface(iface);
+    const finding = dosFinding({
+      policies: context.dos6,
+      evaluator: context.evaluator,
+      sensor: context.dosSensor6,
+      zoneOf: (name) => context.zones.zoneOf(name) ?? '',
+    }, iface, traffic);
+    if (!finding) return 'none';
+    if (finding.log) this.trafficLogger?.onDosAnomaly?.(finding, iface, traffic);
+    return finding.action;
+  }
+
+  dosAnomalyDefaults(): ReadonlyMap<string, number> { return anomalyDefaultThresholds(); }
 
   private forward(
     egressPort: string, packet: IPv4Packet, gateway?: string, bridged?: BridgedFrame,
