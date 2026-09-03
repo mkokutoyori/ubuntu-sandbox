@@ -20,6 +20,8 @@ import type { ArgumentSpec } from '@/cli/ArgumentTypes';
 import type { AdapterKeyword } from '@/cli/commands/trieAdapter';
 import { specsFromTrieRegistrations } from '@/cli/commands/trieAdapter';
 import { MODES_INTERFACE } from './CiscoConfigCommands';
+import { isIpsecTransform } from '../../../ipsec/transforms';
+import { CliInvalidInput } from '../cli/CliDiagnostic';
 
 const IPV4_LITERAL_RE = /^(?:(?:25[0-5]|2[0-4]\d|[01]?\d?\d)\.){3}(?:25[0-5]|2[0-4]\d|[01]?\d?\d)$/;
 function isIPv4Literal(s: string): boolean { return IPV4_LITERAL_RE.test(s); }
@@ -107,6 +109,21 @@ export function ipsecGlobalSpecs(ctx: CiscoShellContext): CommandSpec[] {
       argumentFor: (path) => IKEV1_GLOBAL_ARGUMENTS[path],
     },
   );
+}
+
+function declareTransformSet(
+  ctx: CiscoShellContext, args: string[], entreDansLeMode: boolean,
+): string {
+  if (args.length < 2) return '% Incomplete command.';
+
+  const transforms = normalizeTransforms(args.slice(1));
+  const inconnu = transforms.find((t) => !isIpsecTransform(t));
+  if (inconnu !== undefined) throw new CliInvalidInput({ token: inconnu.split(' ')[0] });
+
+  eng(ctx).addTransformSet(args[0], transforms, 'tunnel');
+  ctx.setSelectedTransformSet(args[0]);
+  if (entreDansLeMode) ctx.setMode('config-tfset');
+  return '';
 }
 
 export function buildIPSecGlobalCommands(trie: CommandTrie, ctx: CiscoShellContext): void {
@@ -389,15 +406,8 @@ export function buildIPSecGlobalCommands(trie: CommandTrie, ctx: CiscoShellConte
   // ── crypto ipsec transform-set NAME transforms... ─────────────────
   // Syntax: crypto ipsec transform-set MYTS esp-aes esp-sha-hmac
   //    OR:  crypto ipsec transform-set MYTS esp-aes 256 esp-sha256-hmac
-  trie.registerGreedy('crypto ipsec transform-set', 'Define an IPSec transform set', (args) => {
-    if (args.length < 2) return '% Incomplete command.';
-    const name = args[0];
-    const transforms = normalizeTransforms(args.slice(1));
-    eng(ctx).addTransformSet(name, transforms, 'tunnel');
-    ctx.setSelectedTransformSet(name);
-    ctx.setMode('config-tfset');
-    return '';
-  });
+  trie.registerGreedy('crypto ipsec transform-set', 'Define an IPSec transform set',
+    (args) => declareTransformSet(ctx, args, true));
 
   // ── crypto map NAME SEQ ipsec-isakmp [dynamic DYNMAP] ────────────
   trie.registerGreedy('crypto map', 'Define a crypto map entry', (args) => {
@@ -567,14 +577,8 @@ export function buildTransformSetCommands(trie: CommandTrie, ctx: CiscoShellCont
     return '';
   });
 
-  trie.registerGreedy('crypto ipsec transform-set', 'Define an IPSec transform set', (args) => {
-    if (args.length < 2) return '% Incomplete command.';
-    const name = args[0];
-    const transforms = normalizeTransforms(args.slice(1));
-    eng(ctx).addTransformSet(name, transforms, 'tunnel');
-    ctx.setSelectedTransformSet(name);
-    return '';
-  });
+  trie.registerGreedy('crypto ipsec transform-set', 'Define an IPSec transform set',
+    (args) => declareTransformSet(ctx, args, false));
   trie.registerGreedy('crypto ipsec security-association lifetime seconds', 'Global SA lifetime (seconds)', (args) => {
     const n = parseInt(args[0] ?? '', 10);
     if (Number.isFinite(n)) eng(ctx).setGlobalSALifetime(n);

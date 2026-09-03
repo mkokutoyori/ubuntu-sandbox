@@ -9,6 +9,7 @@
  *   - DPD (Dead Peer Detection via link-down events)
  */
 
+import { findIpsecTransform } from './transforms';
 import {
   IPAddress, SubnetMask,
   IPv4Packet, ESPPacket, AHPacket, UDPPacket,
@@ -211,47 +212,22 @@ function deriveCryptoKeys(transforms: string[], keymatSeed: string): SACryptoKey
   let ahAuthKeyLength = 0;
 
   for (const t of transforms) {
-    // ESP encryption algorithms
-    if (t === 'esp-aes' || t === 'esp-aes-128') {
-      espEncAlgorithm = 'aes-cbc-128'; espEncKeyLength = 128;
-    } else if (t === 'esp-aes-192' || t === 'esp-aes 192') {
-      espEncAlgorithm = 'aes-cbc-192'; espEncKeyLength = 192;
-    } else if (t === 'esp-aes-256' || t === 'esp-aes 256') {
-      espEncAlgorithm = 'aes-cbc-256'; espEncKeyLength = 256;
-    } else if (t === 'esp-3des') {
-      espEncAlgorithm = '3des-cbc'; espEncKeyLength = 192;
-    } else if (t === 'esp-des') {
-      espEncAlgorithm = 'des-cbc'; espEncKeyLength = 64;
-    } else if (t === 'esp-gcm' || t === 'esp-gcm-128' || t === 'esp-gcm 128') {
-      espEncAlgorithm = 'aes-gcm-128'; espEncKeyLength = 128; espAuthAlgorithm = 'aes-gcm'; espAuthKeyLength = 0;
-    } else if (t === 'esp-gcm-256' || t === 'esp-gcm 256') {
-      espEncAlgorithm = 'aes-gcm-256'; espEncKeyLength = 256; espAuthAlgorithm = 'aes-gcm'; espAuthKeyLength = 0;
-    } else if (t === 'esp-null') {
-      espEncAlgorithm = 'null'; espEncKeyLength = 0;
-    }
-    // ESP authentication algorithms
-    else if (t === 'esp-sha-hmac' || t === 'esp-sha1-hmac') {
-      espAuthAlgorithm = 'hmac-sha-1'; espAuthKeyLength = 160;
-    } else if (t === 'esp-sha256-hmac' || t === 'esp-sha-256-hmac') {
-      espAuthAlgorithm = 'hmac-sha-256'; espAuthKeyLength = 256;
-    } else if (t === 'esp-sha384-hmac') {
-      espAuthAlgorithm = 'hmac-sha-384'; espAuthKeyLength = 384;
-    } else if (t === 'esp-sha512-hmac') {
-      espAuthAlgorithm = 'hmac-sha-512'; espAuthKeyLength = 512;
-    } else if (t === 'esp-md5-hmac') {
-      espAuthAlgorithm = 'hmac-md5'; espAuthKeyLength = 128;
-    }
-    // AH authentication algorithms
-    else if (t === 'ah-sha-hmac' || t === 'ah-sha1-hmac') {
-      ahAuthAlgorithm = 'hmac-sha-1'; ahAuthKeyLength = 160;
-    } else if (t === 'ah-sha256-hmac' || t === 'ah-sha-256-hmac') {
-      ahAuthAlgorithm = 'hmac-sha-256'; ahAuthKeyLength = 256;
-    } else if (t === 'ah-sha384-hmac') {
-      ahAuthAlgorithm = 'hmac-sha-384'; ahAuthKeyLength = 384;
-    } else if (t === 'ah-sha512-hmac') {
-      ahAuthAlgorithm = 'hmac-sha-512'; ahAuthKeyLength = 512;
-    } else if (t === 'ah-md5-hmac') {
-      ahAuthAlgorithm = 'hmac-md5'; ahAuthKeyLength = 128;
+    const transform = findIpsecTransform(t);
+    if (!transform) continue;
+
+    if (transform.role === 'esp-encryption') {
+      espEncAlgorithm = transform.algorithm;
+      espEncKeyLength = transform.keyLength;
+      if (transform.impliedEspAuth) {
+        espAuthAlgorithm = transform.impliedEspAuth.algorithm;
+        espAuthKeyLength = transform.impliedEspAuth.keyLength;
+      }
+    } else if (transform.role === 'esp-authentication') {
+      espAuthAlgorithm = transform.algorithm;
+      espAuthKeyLength = transform.keyLength;
+    } else if (transform.role === 'ah-authentication') {
+      ahAuthAlgorithm = transform.algorithm;
+      ahAuthKeyLength = transform.keyLength;
     }
   }
 
