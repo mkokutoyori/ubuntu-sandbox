@@ -2158,3 +2158,19 @@ défauts — la méthode vaut d'être reprise sur le reliquat.
   chiffres, qu'un vrai IOS controle puisqu'un octet en prend deux, ne
   l'est pas. Trouve en ecrivant `dhcpOptionValueIsValid` ; non ferme
   faute d'une capture disant ce qu'IOS repond a un nombre impair.
+- `import-route rip`, `import-route isis`, `import-route bgp`,
+  `import-route ospf` et `import-route unr` sont ACCEPTES par la vue OSPF
+  de VRP et JETES : seuls `static` et `direct`/`connected` alimentent
+  `_getOSPFExtraConfig()`. Le lot des vues de routage a ferme le mot
+  INVENTE (un protocole hors de la liste est desormais refuse au lieu
+  d'etre avale) et n'a pas ouvert les cinq autres : les brancher demande
+  une source de routes par protocole cote OSPF, ce qui est un sujet de
+  moteur et non de grammaire. La consequence aujourd'hui est qu'une
+  redistribution declaree pour l'un de ces cinq ne redistribue rien et
+  ne parait pas non plus dans la configuration.
+- La vue `ip pool` de VRP porte la meme forme que la politique et les
+  vues de routage : `gateway-list zorglub` et `dns-list zorglub` sont
+  acceptes et RENDUS, `network zorglub mask 24` et `lease day zorglub`
+  sont acceptes et jetes. Lot jumeau de `probe-vrp-vues-routage`, a
+  ecrire avec les memes outils (`estAdresseIPv4`, `boundedInteger`) ;
+  non fait ici pour ne pas melanger deux vues dans un meme lot.
