@@ -2262,3 +2262,15 @@ aujourd'hui — `transmit()` part toujours d'une socket.
   les modules reels-mais-non-evalues : les refuser casserait des
   laboratoires qui les emploient legitimement, les evaluer demande autant
   de travail que de modules. A reprendre module par module.
+- `scenario-windows-log-export-remoting.test.ts` > « Export-Csv puis
+  Import-Csv … en CSV » echoue sur `78370a4b3`, c'est-a-dire AVANT le lot
+  des regles de pare-feu netsh — verifie par `git stash` sur un arbre
+  propre. `(Import-Csv …).Count` rend `NaN`. A diagnostiquer ; non
+  imputable a ce lot, qui ne touche ni PowerShell ni le journal
+  d'evenements.
+- `WinNetsh.ts` reference un type `NetshContext` qui n'existe pas (deux
+  sites, `handleShowAddresses` et son voisin), donc deux erreurs de
+  compilation. Elles sont ANTERIEURES au lot des regles de pare-feu —
+  verifiees par `git stash` — et font passer la reference de 247 a 248.
+  Le contexte reellement passe est `WinCommandContext` ; corriger la
+  declaration demande de verifier ce que les deux fonctions lisent.

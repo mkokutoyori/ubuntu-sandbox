@@ -520,6 +520,10 @@ function handlePortproxyAddSet(ctx: WinCommandContext, rest: string[]): string {
   const connectPort = Number.parseInt(p.get('connectport') ?? '', 10);
   const listenAddress = p.get('listenaddress') || defaultListenAddress(family);
   const connectAddress = p.get('connectaddress') || '';
+  if (!adressePortproxyValide(connectAddress, family.slice(-2))
+    || !adressePortproxyValide(listenAddress, family.slice(0, 2))) {
+    return 'The parameter is incorrect.';
+  }
   const rule = new PortProxyRule(
     family,
     listenAddress,
@@ -529,6 +533,19 @@ function handlePortproxyAddSet(ctx: WinCommandContext, rest: string[]): string {
   );
   ctx.portProxy.add(rule);
   return '';            // netsh prints nothing on a successful add/set
+}
+
+/**
+ * `v4tov6` porte DEUX familles : celle du port d'ecoute et celle de la
+ * cible. Les confondre refuserait une redirection legitime entre les
+ * deux mondes, qui est justement ce que cette commande sert a faire.
+ */
+function adressePortproxyValide(adresse: string, famille: string): boolean {
+  if (adresse.length === 0) return false;
+  if (famille === 'v6') {
+    try { new IPv6Address(adresse); return true; } catch { return false; }
+  }
+  return isValidIPv4(adresse);
 }
 
 function handlePortproxyDelete(ctx: WinCommandContext, rest: string[]): string {
@@ -2939,18 +2956,56 @@ function handleNetshAdvfirewall(ctx: WinCommandContext, args: string[]): string 
 
 function nameToKey(name: string): string { return name.trim().toLowerCase(); }
 
-function normalizeDirection(dir: string): 'Inbound' | 'Outbound' {
-  return dir.toLowerCase() === 'out' ? 'Outbound' : 'Inbound';
+/*
+ * Les trois `lire*` RENDENT `null` sur un mot qu'ils ne connaissent pas,
+ * la ou les `normalize*` d'avant coercaient — « tout ce qui n'est pas
+ * `out` est Inbound » — donc `dir=zorglub` devenait une regle ENTRANTE
+ * que l'operateur n'a jamais ecrite, annoncee comme telle par
+ * `show rule`. Le defaut, lui, ne s'applique qu'a un parametre ABSENT.
+ */
+const FW_DIRECTIONS: Readonly<Record<string, 'Inbound' | 'Outbound'>> = {
+  in: 'Inbound', out: 'Outbound',
+};
+
+const FW_ACTIONS: Readonly<Record<string, 'Allow' | 'Block'>> = {
+  allow: 'Allow', block: 'Block', bypass: 'Allow',
+};
+
+const FW_PROTOCOL_NAMES: Readonly<Record<string, string>> = {
+  TCP: 'TCP', UDP: 'UDP', ICMPV4: 'ICMPv4', ICMP: 'ICMPv4', ICMPV6: 'ICMPv6',
+  ANY: 'Any',
+};
+
+const IP_PROTOCOL_MAX = 255;
+const PORT_MAX = 65535;
+
+function lireDirection(dir: string): 'Inbound' | 'Outbound' | null {
+  return FW_DIRECTIONS[dir.toLowerCase()] ?? null;
 }
-function normalizeAction(action: string): 'Allow' | 'Block' {
-  return action.toLowerCase() === 'block' ? 'Block' : 'Allow';
+
+function lireAction(action: string): 'Allow' | 'Block' | null {
+  return FW_ACTIONS[action.toLowerCase()] ?? null;
 }
-function normalizeProtocol(proto: string): string {
-  const p = proto.toUpperCase();
-  if (p === 'TCP') return 'TCP';
-  if (p === 'UDP') return 'UDP';
-  if (p === 'ICMPV4' || p === 'ICMP') return 'ICMPv4';
-  return 'Any';
+
+function lireProtocole(proto: string): string | null {
+  const nom = FW_PROTOCOL_NAMES[proto.toUpperCase()];
+  if (nom !== undefined) return nom;
+  const numero = Number.parseInt(proto, 10);
+  if (String(numero) !== proto.trim() || numero < 0 || numero > IP_PROTOCOL_MAX) {
+    return null;
+  }
+  return proto;
+}
+
+/** `80`, `any`, `80,443`, `1000-2000` — ou rien. */
+function portDeRegleValide(spec: string): boolean {
+  if (spec.trim().toLowerCase() === 'any') return true;
+  const morceaux = spec.split(',').map((m) => m.trim()).filter((m) => m.length > 0);
+  if (morceaux.length === 0) return false;
+  return morceaux.every((m) => m.split('-').every((b) => {
+    const n = Number.parseInt(b, 10);
+    return String(n) === b.trim() && n >= 0 && n <= PORT_MAX;
+  }));
 }
 
 function handleAdvfwFirewall(ctx: WinCommandContext, args: string[]): string {
@@ -2968,13 +3023,25 @@ function handleAdvfwFirewall(ctx: WinCommandContext, args: string[]): string {
       if (!name) return NETSH_ADVFW_FIREWALL_ADD_RULE_HELP;
       const key = nameToKey(name);
       if (ctx.dynamicFirewallRules.has(key)) return `The rule "${name}" already exists.`;
+      const direction = lireDirection(params['dir'] ?? 'in');
+      const action = lireAction(params['action'] ?? 'allow');
+      const protocol = lireProtocole(params['protocol'] ?? 'Any');
+      if (direction === null || action === null || protocol === null) {
+        return NETSH_ADVFW_FIREWALL_ADD_RULE_HELP;
+      }
+      for (const champ of ['localport', 'remoteport']) {
+        const v = params[champ];
+        if (v !== undefined && !portDeRegleValide(v)) {
+          return NETSH_ADVFW_FIREWALL_ADD_RULE_HELP;
+        }
+      }
       ctx.dynamicFirewallRules.set(key, {
         name,
         displayName: name,
         enabled: (params['enable'] ?? 'yes').toLowerCase() !== 'no',
-        action:    normalizeAction(params['action'] ?? 'allow'),
-        direction: normalizeDirection(params['dir'] ?? 'in'),
-        protocol:  normalizeProtocol(params['protocol'] ?? 'Any'),
+        action,
+        direction,
+        protocol,
         localPort: params['localport'] ?? '',
         remotePort: params['remoteport'] ?? '',
         description: '',
