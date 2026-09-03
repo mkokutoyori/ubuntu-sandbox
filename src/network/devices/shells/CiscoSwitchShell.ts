@@ -110,6 +110,15 @@ import { vrrpVirtualMac } from '../../vrrp/types';
 import { hsrpVirtualMac, effectivePriority as hsrpEffectivePriority } from '../../hsrp/types';
 import { effectiveWeighting as glbpEffectiveWeighting } from '../../glbp/types';
 import { effectivePriority as vrrpEffectivePriority } from '../../vrrp/types';
+import type { VrrpGroupRuntime } from '../../vrrp/types';
+import type { HsrpGroupRuntime } from '../../hsrp/types';
+import type { GlbpGroupRuntime } from '../../glbp/types';
+import { iosSviName } from '../inspection/InterfaceStatusView';
+import {
+  parseFhrpShowArgs, fhrpShowMatches, fhrpInterfaceResolver,
+  HSRP_SHOW_GRAMMAR, VRRP_SHOW_GRAMMAR, GLBP_SHOW_GRAMMAR,
+} from './cisco/fhrpShowFilter';
+import type { FhrpShowGrammar, FhrpShowSelection } from './cisco/fhrpShowFilter';
 import { TrackObjectRegistry } from '../switch/TrackObjectRegistry';
 import { CliInvalidInput, CliIncomplete } from './cli/CliDiagnostic';
 import { describeCiscoSwitchArguments } from './cisco/ciscoArgumentHelp';
@@ -5646,21 +5655,42 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
         }
         return lines.join('\n');
       });
-      t.registerGreedy('show vrrp', 'Display VRRP groups on SVIs', (args) =>
-        args[0] === 'brief' ? this.showVrrpBrief() : this.showVrrp());
-      t.registerGreedy('show standby', 'Display HSRP groups on SVIs', (args) =>
-        args[0] === 'brief' ? this.showStandbyBrief() : this.showStandby());
-      t.registerGreedy('show glbp', 'Display GLBP groups on SVIs', (args) =>
-        args[0] === 'brief' ? this.showGlbpBrief() : this.showGlbp());
+      t.registerGreedy('show vrrp', 'Display VRRP groups on SVIs', (args) => {
+        const groups = this.d().getVrrpAgent().listGroups();
+        const sel = this.fhrpSelection(args, VRRP_SHOW_GRAMMAR, groups);
+        const kept = groups.filter((g) => fhrpShowMatches(iosSviName(g.iface), g.vrid, sel));
+        return sel.brief ? this.showVrrpBrief(kept) : this.showVrrp(kept);
+      });
+      t.registerGreedy('show standby', 'Display HSRP groups on SVIs', (args) => {
+        const groups = this.d().getHsrpAgent().listGroups();
+        const sel = this.fhrpSelection(args, HSRP_SHOW_GRAMMAR, groups);
+        const kept = groups.filter((g) => fhrpShowMatches(iosSviName(g.iface), g.group, sel));
+        return sel.brief ? this.showStandbyBrief(kept) : this.showStandby(kept);
+      });
+      t.registerGreedy('show glbp', 'Display GLBP groups on SVIs', (args) => {
+        const groups = this.d().getGlbpAgent().listGroups();
+        const sel = this.fhrpSelection(args, GLBP_SHOW_GRAMMAR, groups);
+        const kept = groups.filter((g) => fhrpShowMatches(iosSviName(g.iface), g.group, sel));
+        return sel.brief ? this.showGlbpBrief(kept) : this.showGlbp(kept);
+      });
     }
   }
 
-  private showVrrp(): string {
-    const groups = this.d().getVrrpAgent().listGroups();
+  private fhrpSelection(
+    args: readonly string[], grammar: FhrpShowGrammar,
+    groups: ReadonlyArray<{ iface: string }>,
+  ): FhrpShowSelection {
+    const verdict = parseFhrpShowArgs(args, grammar,
+      fhrpInterfaceResolver(groups.map((g) => iosSviName(g.iface))));
+    if ('at' in verdict) throw new CliInvalidInput({ token: verdict.at });
+    return verdict;
+  }
+
+  private showVrrp(groups: readonly VrrpGroupRuntime[]): string {
     if (groups.length === 0) return '';
     const lines: string[] = [];
     for (const g of groups) {
-      const iface = g.iface.replace(/^Vlanif/, 'Vlan');
+      const iface = iosSviName(g.iface);
       const stateStr = g.state === 'master' ? 'Master' : g.state === 'backup' ? 'Backup' : 'Init';
       const effPrio = vrrpEffectivePriority(g);
       lines.push(`${iface} - Group ${g.vrid}`);
@@ -5676,7 +5706,7 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
       if (g.tracks.length > 0) {
         lines.push(`  Tracking ${g.tracks.length} object(s):`);
         for (const t of g.tracks) {
-          const tName = t.target.replace(/^Vlanif/, 'Vlan');
+          const tName = iosSviName(t.target);
           lines.push(`    ${tName} ${t.down ? 'Down' : 'Up'} decrement ${t.decrement}`);
         }
       }
@@ -5685,12 +5715,11 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
     return lines.join('\n').replace(/\n$/, '');
   }
 
-  private showGlbp(): string {
-    const groups = this.d().getGlbpAgent().listGroups();
+  private showGlbp(groups: readonly GlbpGroupRuntime[]): string {
     if (groups.length === 0) return '';
     const lines: string[] = [];
     for (const g of groups) {
-      const iface = g.iface.replace(/^Vlanif/, 'Vlan');
+      const iface = iosSviName(g.iface);
       const stateStr =
         g.avgState === 'active' ? 'Active'
         : g.avgState === 'standby' ? 'Standby'
@@ -5711,7 +5740,7 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
       if (g.tracks.length > 0) {
         lines.push(`  Tracking ${g.tracks.length} object(s):`);
         for (const t of g.tracks) {
-          const tName = t.target.replace(/^Vlanif/, 'Vlan');
+          const tName = iosSviName(t.target);
           lines.push(`    ${tName} ${t.down ? 'Down' : 'Up'} decrement ${t.decrement}`);
         }
       }
@@ -5727,12 +5756,11 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
     return lines.join('\n').replace(/\n$/, '');
   }
 
-  private showStandby(): string {
-    const groups = this.d().getHsrpAgent().listGroups();
+  private showStandby(groups: readonly HsrpGroupRuntime[]): string {
     if (groups.length === 0) return '';
     const lines: string[] = [];
     for (const g of groups) {
-      const iface = g.iface.replace(/^Vlanif/, 'Vlan');
+      const iface = iosSviName(g.iface);
       const stateStr =
         g.state === 'active' ? 'Active'
         : g.state === 'standby' ? 'Standby'
@@ -5754,7 +5782,7 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
       if (g.tracks.length > 0) {
         lines.push(`  Tracking ${g.tracks.length} object(s):`);
         for (const t of g.tracks) {
-          const tName = t.target.replace(/^Vlanif/, 'Vlan');
+          const tName = iosSviName(t.target);
           lines.push(`    ${tName} ${t.down ? 'Down' : 'Up'} decrement ${t.decrement}`);
         }
       }
@@ -5763,11 +5791,10 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
     return lines.join('\n').replace(/\n$/, '');
   }
 
-  private showVrrpBrief(): string {
-    const groups = this.d().getVrrpAgent().listGroups();
+  private showVrrpBrief(groups: readonly VrrpGroupRuntime[]): string {
     const header = 'Interface          Grp Pri Time    Own Pre State    Master addr     Group addr';
     const rows = groups.map((g) => {
-      const iface = g.iface.replace(/^Vlanif/, 'Vlan');
+      const iface = iosSviName(g.iface);
       const state = g.state === 'master' ? 'Master' : g.state === 'backup' ? 'Backup' : 'Init';
       return `${iface.padEnd(19)}${String(g.vrid).padEnd(4)}${String(vrrpEffectivePriority(g)).padEnd(4)}` +
         `${String(3 * g.advertiseSec * 1000).padEnd(8)}${'N'.padEnd(4)}${(g.preempt ? 'Y' : 'N').padEnd(4)}` +
@@ -5776,12 +5803,11 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
     return [header, ...rows].join('\n');
   }
 
-  private showStandbyBrief(): string {
-    const groups = this.d().getHsrpAgent().listGroups();
+  private showStandbyBrief(groups: readonly HsrpGroupRuntime[]): string {
     const header = '                     P indicates configured to preempt.\n' +
       '                     |\nInterface   Grp  Pri P State    Active          Standby         Virtual IP';
     const rows = groups.map((g) => {
-      const iface = g.iface.replace(/^Vlanif/, 'Vlan');
+      const iface = iosSviName(g.iface);
       const state =
         g.state === 'active' ? 'Active'
         : g.state === 'standby' ? 'Standby'
@@ -5796,12 +5822,11 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
     return [header, ...rows].join('\n');
   }
 
-  private showGlbpBrief(): string {
-    const groups = this.d().getGlbpAgent().listGroups();
+  private showGlbpBrief(groups: readonly GlbpGroupRuntime[]): string {
     const header = 'Interface   Grp  Fwd Pri State    Address         Active router   Standby router';
     const rows: string[] = [];
     for (const g of groups) {
-      const iface = g.iface.replace(/^Vlanif/, 'Vlan');
+      const iface = iosSviName(g.iface);
       const avgState =
         g.avgState === 'active' ? 'Active'
         : g.avgState === 'standby' ? 'Standby'
@@ -5972,13 +5997,12 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
   }
 
   private tableRoutageCisco(): Array<Record<string, unknown>> {
-    const cisco = (iface: string) => iface.replace(/^Vlanif/, 'Vlan');
     return this.d().getL3RoutingTable().map((r) => ({
       network: r.network,
       mask: r.mask,
       type: r.proto,
       nextHop: r.nextHop,
-      iface: cisco(r.iface),
+      iface: iosSviName(r.iface),
       ad: r.preference,
       metric: 0,
     }));

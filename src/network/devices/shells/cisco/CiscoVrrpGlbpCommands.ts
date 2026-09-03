@@ -9,12 +9,11 @@ import type {
   FhrpRepository, VrrpGroup, GlbpGroup,
 } from '../../inspection/config/FhrpRepository';
 import { getVrrpAgent, getGlbpAgent } from '../../../equipment/RouterServiceCapabilities';
-import { IPAddress } from '../../../core/types';
-import { CISCO_ERRORS } from '../cli-utils';
+import { CliInvalidInput } from '../cli/CliDiagnostic';
 import {
-  VRRP_DEFAULT_PRIORITY, VRRP_DEFAULT_ADVERTISE_SEC,
-  GLBP_DEFAULT_PRIORITY, GLBP_DEFAULT_WEIGHTING, GLBP_DEFAULT_LOAD_BALANCING,
-} from '../../../fhrp/runningConfig';
+  parseFhrpShowArgs, fhrpShowMatches, fhrpInterfaceResolver,
+  VRRP_SHOW_GRAMMAR, GLBP_SHOW_GRAMMAR,
+} from './fhrpShowFilter';
 
 interface Ctx {
   r(): Router;
@@ -103,8 +102,12 @@ export function registerVrrpGlbpShowCommands(
   trie: CommandTrie, ctx: Ctx, lireRepo: () => FhrpRepository,
 ): void {
   trie.registerGreedy('show vrrp', 'Display VRRP state', (a) => {
-    const groups = lireRepo().allVrrp();
-    if (a.includes('brief')) {
+    const verdict = parseFhrpShowArgs(
+      a, VRRP_SHOW_GRAMMAR, fhrpInterfaceResolver(ctx.r().getPortNames()));
+    if ('at' in verdict) throw new CliInvalidInput({ token: verdict.at });
+    const groups = lireRepo().allVrrp()
+      .filter((g) => fhrpShowMatches(g.iface, g.group, verdict));
+    if (verdict.brief) {
       const rows = ['Interface          Grp Pri Time  Own Pre State   Master addr     Group addr'];
       for (const g of groups) {
         rows.push(
@@ -120,8 +123,12 @@ export function registerVrrpGlbpShowCommands(
   });
 
   trie.registerGreedy('show glbp', 'Display GLBP state', (a) => {
-    const groups = lireRepo().allGlbp();
-    if (a.includes('brief')) {
+    const verdict = parseFhrpShowArgs(
+      a, GLBP_SHOW_GRAMMAR, fhrpInterfaceResolver(ctx.r().getPortNames()));
+    if ('at' in verdict) throw new CliInvalidInput({ token: verdict.at });
+    const groups = lireRepo().allGlbp()
+      .filter((g) => fhrpShowMatches(g.iface, g.group, verdict));
+    if (verdict.brief) {
       const rows = ['Interface   Grp  Fwd Pri State    Address         Active router   Standby router'];
       for (const g of groups) {
         rows.push(

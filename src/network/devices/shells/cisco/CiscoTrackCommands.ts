@@ -8,6 +8,7 @@ import {
   parseTrackDefinition, TRACK_INVALID_ID, type TrackDefinition,
 } from './trackSyntax';
 import { RETURN_CODE_LABEL } from '../../../ipsla/types';
+import { CliInvalidInput } from '../cli/CliDiagnostic';
 import type { CommandSpec } from '@/cli/CommandTable';
 import type { ArgumentSpec } from '@/cli/ArgumentTypes';
 import {
@@ -242,6 +243,8 @@ export function registerTrackShowCommands(trie: CommandTrie, ctx: TrackCommandCo
       const object = service.get(parseInt(args[0], 10));
       return object ? renderDetail(ctx, object) : '% Track object does not exist';
     }
+    const unread = args.find((w) => w !== '' && w !== 'brief');
+    if (unread !== undefined) throw new CliInvalidInput({ token: unread });
     if (args[0] === 'brief') {
       const now = ctx.r().getIpSlaEngine().nowMs();
       const lines = ['Track   Object                         Parameter        Value      Last Change'];

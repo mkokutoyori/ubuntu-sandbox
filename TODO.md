@@ -661,6 +661,54 @@ ici plutot que tranche unilateralement.
 
 ## Routeur Cisco
 
+### [fhrp] Un Catalyst RENDS trois vues FHRP qu'aucune de ses commandes ne peut peupler
+**Constat.** `CiscoSwitchShell` porte `show standby`, `show vrrp` et
+`show glbp`, qui lisent les VRAIS agents du commutateur, et il n'existe
+AUCUNE commande de configuration derriere : `standby 1 ip …`, `vrrp 2 ip
+…` et `glbp 3 ip …` sont refuses en vue d'interface sur un Catalyst.
+Les trois vues repondent donc toujours vide, quel que soit le
+laboratoire, et rien ne le dit.
+
+**Comment cela a ete mesure.** En ecrivant le laboratoire de
+`probe-vues-fhrp-filtrent-vraiment` : sa moitie commutateur ne peut pas
+etre batie par la CLI et passe par `ensureGroup`/`setVip` sur les
+agents — c'est-a-dire exactement ce que les trois familles de commandes
+appelleraient si elles existaient.
+
+**Pourquoi ce n'est pas ferme ici.** Ecrire les trois familles est un
+lot a soi : un Catalyst L3 configure HSRP sur une SVI, avec sa version,
+sa preemption, son suivi d'objets et son rendu dans la configuration —
+c'est-a-dire le pendant complet de `CiscoHsrpCommands` et
+`CiscoVrrpGlbpCommands`, qui sont ecrites pour un `Router`. Ces deux
+fichiers portent la remarque « Router-only : kept out of the shared base
+to avoid shadowing and respect the L2/L3 split », donc le partage
+demande d'abord de trancher ce que le commutateur L3 a le droit de lire.
+
+### [fhrp] Les filtres documentes que les vues `show` ne savent pas encore lire
+**Constat.** Depuis que ces vues refusent ce qu'elles ne lisent pas, les
+formes suivantes — toutes documentees par Cisco — repondent le caret au
+lieu de filtrer. Avant, elles etaient acceptees et rendaient TOUT, ce
+qui etait pire ; les refuser est le bon defaut, mais la matiere manque :
+
+- `show glbp <groupe> <etat>` : le mot d'etat (`active`, `standby`,
+  `listen`, `init`) est un filtre supplementaire de GLBP.
+- `show bfd neighbors client <nom>` et `show bfd neighbors ipv4 <ip>` :
+  le premier demande la liste des protocoles ENREGISTRES aupres d'une
+  session, que `BfdSessionRuntime` ne porte pas.
+- `show track interface`, `show track ip route`, `show track resolution`
+  et `show track timers` : quatre vues distinctes, chacune avec son
+  rendu.
+
+### [bfd] Le bloc de detail omet trois lignes d'IOS, faute de mesure derriere
+**Constat.** `show bfd neighbors details` rend desormais quatre lignes
+par session, toutes LUES sur `BfdSessionRuntime`. Trois lignes du vrai
+IOS manquent : `Holdown (hits): 900(0), Hello (hits): 300(0)` (le moteur
+ne compte pas les depassements), `Registered protocols: OSPF` (aucun
+client n'est enregistre aupres d'une session) et `Uptime: 00:00:03`
+(`lastTransitionMs` existe, mais l'horloge du routeur n'est pas lue
+ici). Les ecrire avec des zeros annoncerait une mesure qui n'a pas lieu.
+
+
 ### [ssh] `ssh` entre deux hotes ne traverse PAS le fil
 **Constat.** `ssh alice@10.0.2.10 whoami` lance par `executeCommand`
 rend `alice` sans qu'AUCUNE trame n'atteigne le serveur. Mesure : une
