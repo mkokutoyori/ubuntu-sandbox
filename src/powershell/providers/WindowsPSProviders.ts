@@ -101,6 +101,10 @@ import type { PSValue } from '@/powershell/runtime/PSEnvironment';
 import type { AddsForestOptions } from '@/network/devices/windows/server/ad/adFunctionalLevels';
 import type { OrgUnitWriteOptions, UserWriteOptions } from '@/network/devices/windows/server/ad/DirectoryStore';
 import type { AdUser } from '@/network/devices/windows/server/ad/AdTypes';
+import { withRemoteDirectory } from './adRemoteDirectory';
+import type { RemoteDirectoryHost, RemoteDirectoryTarget } from './adRemoteDirectory';
+import type { LdapClient } from '@/network/devices/windows/server/ad/ldap/LdapClient';
+import type { TcpStack } from '@/network/tcp/TcpStack';
 
 function userInfoOf(u: AdUser): AdUserInfo {
   return {
@@ -415,6 +419,25 @@ class WindowsSmbAdapter implements ISmbProvider {
 
 class WindowsAdAdapter implements IAdProvider {
   constructor(private readonly pc: WindowsPC) {}
+
+  private remoteHost(): RemoteDirectoryHost {
+    const pc = this.pc as unknown as {
+      getTcpStack(): TcpStack;
+      resolveHostnameSync(name: string): IPAddress | null;
+    };
+    return {
+      tcpStack: () => pc.getTcpStack(),
+      resolveAddress: (name: string) => IPAddress.tryParse(name) ?? pc.resolveHostnameSync(name),
+    };
+  }
+
+  private remoteOu(
+    cmdletName: string, target: RemoteDirectoryTarget,
+    work: (client: LdapClient) => AdOpResult,
+  ): AdOpResult {
+    const res = withRemoteDirectory(this.remoteHost(), target, cmdletName, work);
+    return res.value ?? { ok: false, message: res.failure ?? `${cmdletName} : Unable to contact the server.` };
+  }
 
   /** `Get/New/Set/Remove-AD*` only exist once the AD-Domain-Services role is installed — checked live, matching `WindowsSmbAdapter`'s FS-FileServer gate. */
   private requireRole(cmdletName: string): void {
@@ -820,12 +843,37 @@ class WindowsAdAdapter implements IAdProvider {
   }
 
   newOrganizationalUnit(name: string, path?: string, opts?: OrgUnitWriteOptions): AdOpResult {
+    if (opts?.target) {
+      const base = path ?? `DC=${opts.target.server.split('.').slice(1).join(',DC=')}`;
+      const dn = `OU=${name},${base}`;
+      return this.remoteOu('New-ADOrganizationalUnit', opts.target, client => {
+        const attributes = [
+          { type: 'objectClass', values: ['top', 'organizationalUnit'] },
+          { type: 'ou', values: [name] },
+          ...Object.entries(opts.attributes ?? {}).filter(([, v]) => v !== '')
+            .map(([type, value]) => ({ type, values: [value] })),
+        ];
+        const res = client.add(dn, attributes);
+        return res.ok ? { ok: true, message: '' } : { ok: false, message: res.result.diagnosticMessage || 'An object with that name already exists.' };
+      });
+    }
     const store = this.requireStore('New-ADOrganizationalUnit');
     const denied = this.requireAdmin('New-ADOrganizationalUnit');
     if (denied) return denied;
     return store.newOrgUnit(name, path, opts);
   }
-  setOrganizationalUnit(identity: string, attributes: Record<string, string>, protectedFlag?: boolean): AdOpResult {
+  setOrganizationalUnit(identity: string, attributes: Record<string, string>, protectedFlag?: boolean, target?: RemoteDirectoryTarget): AdOpResult {
+    if (target) {
+      return this.remoteOu('Set-ADOrganizationalUnit', target, client => {
+        const changes = Object.entries(attributes).map(([type, value]) => ({
+          operation: (value === '' ? 'delete' : 'replace') as 'delete' | 'replace',
+          modification: { type, values: value === '' ? [] : [value] },
+        }));
+        if (changes.length === 0) return { ok: true, message: '' };
+        const res = client.modify(identity, changes);
+        return res.ok ? { ok: true, message: '' } : { ok: false, message: res.result.diagnosticMessage || `Cannot find an object with identity: '${identity}'.` };
+      });
+    }
     const store = this.requireStore('Set-ADOrganizationalUnit');
     const denied = this.requireAdmin('Set-ADOrganizationalUnit');
     if (denied) return denied;
@@ -835,7 +883,13 @@ class WindowsAdAdapter implements IAdProvider {
     }
     return store.setOrgUnitAttributes(identity, attributes);
   }
-  removeOrganizationalUnit(identity: string, recursive?: boolean): AdOpResult {
+  removeOrganizationalUnit(identity: string, recursive?: boolean, target?: RemoteDirectoryTarget): AdOpResult {
+    if (target) {
+      return this.remoteOu('Remove-ADOrganizationalUnit', target, client => {
+        const res = client.delete(identity);
+        return res.ok ? { ok: true, message: '' } : { ok: false, message: res.result.diagnosticMessage || `Cannot find an object with identity: '${identity}'.` };
+      });
+    }
     const store = this.requireStore('Remove-ADOrganizationalUnit');
     const denied = this.requireAdmin('Remove-ADOrganizationalUnit');
     if (denied) return denied;

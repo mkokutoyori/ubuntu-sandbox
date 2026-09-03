@@ -22,11 +22,8 @@
  */
 
 import type { TcpStack } from '@/network/tcp/TcpStack';
-import { dialLdap } from '../server/ad/ldap/LdapClient';
-import { dialKdc, buildApReq } from '@/network/kerberos/KerberosClient';
-import { KU_AP_REQ_AUTHENTICATOR } from '@/network/kerberos/crypto';
-import { principalName, PrincipalNameType } from '@/network/kerberos/types';
-import { discoverDcHostname, rootDnOf } from './DcHostnameDiscovery';
+import { rootDnOf } from './DcHostnameDiscovery';
+import { bindLdapWithKerberos } from './KerberosLdapBind';
 import type { DomainMembership } from './DomainTypes';
 
 export interface DomainJoinResult { ok: boolean; message: string; membership?: DomainMembership }
@@ -55,29 +52,13 @@ export function joinDomain(opts: {
       + `Logon failure: unknown user name or bad password.`,
   };
 
-  const dcHostname = discoverDcHostname(opts.tcpStack, opts.dcAddress, opts.domainName);
-  if (!dcHostname) return networkPathNotFound;
-
-  const realm = opts.domainName.toUpperCase();
-  const kdcConn = dialKdc(opts.tcpStack, opts.dcAddress);
-  if (!kdcConn.ok || !kdcConn.client) return networkPathNotFound;
-  const cname = principalName(PrincipalNameType.NT_PRINCIPAL, opts.credentialUser);
-
-  const asResult = kdcConn.client.asExchange(opts.credentialUser, opts.credentialPassword, realm);
-  if (!asResult.ok) return badCredential;
-  const tgsResult = kdcConn.client.tgsExchange(asResult.ticket!, asResult.sessionKey!, cname, realm, dcHostname);
-  if (!tgsResult.ok) return badCredential;
-  const apReqBytes = buildApReq(tgsResult.ticket!, tgsResult.sessionKey!, cname, realm, KU_AP_REQ_AUTHENTICATOR);
-
-  const conn = dialLdap(opts.tcpStack, opts.dcAddress);
-  if (!conn.ok || !conn.client) return networkPathNotFound;
-  const ldap = conn.client;
-
-  const bind = ldap.bindSasl('GSSAPI', apReqBytes);
-  if (!bind.ok) {
-    ldap.unbind();
-    return badCredential;
-  }
+  const session = bindLdapWithKerberos({
+    tcpStack: opts.tcpStack, dcAddress: opts.dcAddress, domainName: opts.domainName,
+    user: opts.credentialUser, password: opts.credentialPassword,
+  });
+  if (session.failure === 'no-network-path') return networkPathNotFound;
+  if (session.failure !== undefined || !session.client) return badCredential;
+  const ldap = session.client;
 
   // `-OUPath` names a real, possibly-nested container DN (e.g.
   // `OU=Postes,OU=Ordinateurs,OU=Mandeng,DC=...`) — used verbatim as the

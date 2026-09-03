@@ -15,6 +15,7 @@
 import type { OrgUnitWriteOptions, UserWriteOptions } from '@/network/devices/windows/server/ad/DirectoryStore';
 
 import type { AddsForestOptions } from '@/network/devices/windows/server/ad/adFunctionalLevels';
+import type { RemoteDirectoryTarget } from './adRemoteDirectory';
 
 // ─── Entry types re-exported for cmdlet use ────────────────────────────────
 
@@ -291,8 +292,8 @@ export interface IAdProvider {
   setComputerAllowedToDelegateTo(identity: string, targetServiceNames: string[]): AdOpResult;
 
   newOrganizationalUnit(name: string, path?: string, opts?: OrgUnitWriteOptions): AdOpResult;
-  setOrganizationalUnit(identity: string, attributes: Record<string, string>, protectedFlag?: boolean): AdOpResult;
-  removeOrganizationalUnit(identity: string, recursive?: boolean): AdOpResult;
+  setOrganizationalUnit(identity: string, attributes: Record<string, string>, protectedFlag?: boolean, target?: RemoteDirectoryTarget): AdOpResult;
+  removeOrganizationalUnit(identity: string, recursive?: boolean, target?: RemoteDirectoryTarget): AdOpResult;
   getOrganizationalUnit(identity: string): AdOrgUnitInfo | null;
   listOrganizationalUnits(): AdOrgUnitInfo[];
 

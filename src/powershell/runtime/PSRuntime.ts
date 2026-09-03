@@ -2356,6 +2356,29 @@ export class PSRuntime {
    * Builds a CmdletContext and calls ICmdlet.execute().
    * Throws PSRuntimeError if the cmdlet is not found.
    */
+  private pipelineItemsFor(
+    cmdlet: { pipelineByPropertyName?: true; parameters?: readonly string[] },
+    named: Record<string, PSValue>,
+    pipeInput: PSValue,
+  ): Array<Record<string, PSValue>> | null {
+    if (cmdlet.pipelineByPropertyName !== true) return null;
+    if (pipeInput === undefined || pipeInput === null) return null;
+    const items = (Array.isArray(pipeInput) ? pipeInput : [pipeInput])
+      .filter((v): v is Record<string, PSValue> => v !== null && typeof v === 'object' && !Array.isArray(v));
+    if (items.length === 0) return null;
+    const declared = new Map(((cmdlet.parameters ?? []) as readonly string[]).map(p => [p.toLowerCase(), p]));
+    const bound = items.map(item => {
+      const merged = { ...named };
+      for (const [property, value] of Object.entries(item)) {
+        const key = property.toLowerCase();
+        if (declared.has(key) && merged[key] === undefined) merged[key] = value;
+      }
+      return merged;
+    });
+    const lie = bound.some(b => Object.keys(b).length > Object.keys(named).length);
+    return lie ? bound : null;
+  }
+
   private dispatchCmdlet(
     name: string,
     positional: PSValue[],
@@ -2407,11 +2430,23 @@ export class PSRuntime {
     const emittedValues: PSValue[] = [];
     const prevErrCount = this.errorObjects.length;
     const cmdletDisplayName = cmdlet.displayName ?? this.titleCase(cmdlet.name);
-    const ctx = this.buildCmdletContext(
-      positional, cmdletNamed, pipeInput, env, emittedValues, silentlyCont, stopOnError, cmdletDisplayName);
+    const perItem = this.pipelineItemsFor(cmdlet, cmdletNamed, pipeInput);
     let result: PSValue;
     try {
-      result = cmdlet.execute(ctx);
+      if (perItem) {
+        const results: PSValue[] = [];
+        for (const itemNamed of perItem) {
+          const itemCtx = this.buildCmdletContext(
+            positional, itemNamed, null, env, emittedValues, silentlyCont, stopOnError, cmdletDisplayName);
+          const one = cmdlet.execute(itemCtx);
+          if (one !== null && one !== undefined) results.push(one);
+        }
+        result = results.length === 0 ? null : (results.length === 1 ? results[0] : (results as PSValue));
+      } else {
+        const ctx = this.buildCmdletContext(
+          positional, cmdletNamed, pipeInput, env, emittedValues, silentlyCont, stopOnError, cmdletDisplayName);
+        result = cmdlet.execute(ctx);
+      }
       this.global.set('?', true);
     } catch (err) {
       this.global.set('?', false);

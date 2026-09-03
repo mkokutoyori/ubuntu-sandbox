@@ -2021,69 +2021,6 @@ défauts — la méthode vaut d'être reprise sur le reliquat.
   depuis ce reseau. Elles ne refusent que des valeurs absurdes ; si une
   capture les contredit, ce sont elles qu'il faut corriger et non le
   mecanisme.
-- `-Server`, `-AuthType` et `-Instance` en ENTREE DE PIPELINE ne sont pas
-  declares sur `New-ADOrganizationalUnit` (ni sur `Set-`/`Remove-`), alors
-  que la documentation du cmdlet les porte. `-Server` et `-AuthType`
-  gouvernent le choix et l'authentification du contrôleur interroge :
-  toutes les commandes d'OBJET de ce simulateur passent par
-  `requireStore()`, c'est-a-dire l'annuaire LOCAL de la machine, et aucun
-  chemin ne dialogue avec un contrôleur distant pour lire ou ecrire un
-  objet — seuls `Install-ADDSDomainController`, `New-ADDomain` et
-  `New-ADTrust` evaluent un `-Server`, parce qu'eux composent vraiment.
-  Les declarer les rangerait sans que rien ne les evalue, ce que la
-  convention du depot interdit. `-Instance` est evalue comme GABARIT (un
-  objet passe en parametre) mais pas comme entree de PIPELINE, le
-  `Import-Csv | New-ADOrganizationalUnit` de la methode 3 de la
-  documentation demandant que le cmdlet lise `ctx.pipeInput` par
-  PROPRIETE, mecanisme que ce moteur n'a pas.
-- `-Properties` est declare par `Get-ADUser`, `Get-ADComputer`,
-  `Get-ADObject` et `Get-ADOrganizationalUnit` et EVALUE PAR AUCUN : ces
-  vues rendent toutes leurs proprietes, quoi qu'on demande. Sur une vraie
-  machine le cmdlet rend un JEU PAR DEFAUT et `-Properties` seul y ajoute
-  le reste — c'est ce qui fait qu'un `Get-ADOrganizationalUnit` sans
-  `-Properties Description` n'affiche PAS la description, question posee
-  mille fois. Non ferme ici parce que c'est un lot a soi, sur quatre
-  cmdlets a la fois : leur donner un jeu par defaut a chacun demande de
-  MESURER lequel, et le faire pour la seule OU laisserait `-Properties`
-  vivant d'un cote et inerte des trois autres, c'est-a-dire deux reponses
-  a une meme question. Ce lot rend donc TOUT ce qui est pose, choix qui
-  ne cache aucune donnee — l'inverse aurait rendu invisible la
-  description que l'operateur vient d'ecrire.
-- Un attribut pose par `-OtherAttributes` est relu sous le nom que
-  l'arbre LDAP stocke, c'est-a-dire en MINUSCULES (`postofficebox`), la
-  ou une vraie machine rend la casse canonique du schema
-  (`postOfficeBox`). Sans consequence a l'usage — les noms d'attributs
-  LDAP sont insensibles a la casse et l'acces aux proprietes de ce moteur
-  PowerShell l'est aussi, donc `$ou.postOfficeBox` repond (mesure) —
-  mais un `Format-List` affiche la clef stockee. Fermer cela demande que
-  le `SchemaValidator` porte la casse canonique de chaque attribut, ce
-  qu'il ne fait pas.
-
-### [nmap] la banniere et le balayage ACK inspectent encore l'objet distant
-`buildProbes` a ete converti pour la DECOUVERTE d'hote (vraies sondes
-ICMP et TCP, `nmap.h` : `-PE -PA80 -PS443 -PP`) et pour le verdict UDP
-(lecture de l'ICMP recu, `scan_engine_raw.cc`). Deux chemins restent des
-inspections d'objet.
-**Mesure** : `banner()` appelle `grabBanner(found.device, port)`, donc
-`-sV` lit la banniere DANS l'equipement cible au lieu de l'ouvrir sur une
-vraie connexion ; `ackReaches()` appelle `transitAckAclVerdict`, qui
-evalue les listes de controle par parcours de topologie au lieu d'emettre
-un ACK et d'observer le RST. Aucune trame ne porte ces deux reponses.
-**Pourquoi ce n'est pas ferme ici** : la banniere demande d'ouvrir une
-connexion TCP et de LIRE le premier envoi du serveur, ce que `nmap.h`
-n'aide pas a trancher — c'est `nmap-service-probes` qui decrit les sondes
-et leurs correspondances, un fichier de donnees a part entiere ; et le
-balayage ACK demande d'emettre un segment ACK nu, que la pile n'expose
-pas aujourd'hui.
-
-### [ssh] la banniere du serveur n'est pas celle d'un OpenSSH
-**Mesure** : `nmap -sV -p 22` contre un `LinuxServer` rend
-`22/tcp open ssh Sandbox-Server (protocol 2.0)`. Un vrai OpenSSH annonce
-`SSH-2.0-OpenSSH_<version>` et `nmap` rend
-`OpenSSH 8.9p1 Ubuntu 3ubuntu0.4 (Ubuntu Linux; protocol 2.0)`.
-**Pourquoi ce n'est pas ferme ici** : la chaine est celle du serveur SSH
-du simulateur, pas de `nmap` ; la changer touche la poignee de main SSH
-et les tests qui l'observent, et c'est un autre sujet.
 - `bgp bestpath <option>` est accepte, range dans le sac de texte du
   processus et rendu tel quel, alors que ses options forment un ensemble
   FERME sur IOS (`as-path`, `compare-routerid`, `med`, `cost-community`…)
@@ -2117,11 +2054,6 @@ et les tests qui l'observent, et c'est un autre sujet.
   delegation contrainte fondee sur les ressources a bien un magasin cote
   ORDINATEUR, `setComputerAllowedToDelegateTo`, mais aucun cote
   utilisateur). Les declarer les rangerait sans que rien ne les evalue.
-- `-Instance` en entree de PIPELINE n'est pas lu, sur `New-ADUser` comme
-  sur `New-ADOrganizationalUnit` : la methode 3 de la documentation
-  (`Import-Csv | New-ADUser`) demande que le cmdlet lise `ctx.pipeInput`
-  PAR PROPRIETE, mecanisme que ce moteur n'a pas. `-Instance` comme
-  GABARIT, lui, est evalue.
 - `New-ADUser` accepte encore un `-Name` seul et en deduit le
   sAMAccountName, alors que la documentation ecrit « You must specify the
   SamAccountName parameter to create a user ». Le repli est conserve

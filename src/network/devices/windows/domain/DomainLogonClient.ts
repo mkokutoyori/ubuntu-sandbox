@@ -15,12 +15,9 @@
  */
 
 import type { TcpStack } from '@/network/tcp/TcpStack';
-import { dialLdap } from '../server/ad/ldap/LdapClient';
-import { dialKdc, buildApReq } from '@/network/kerberos/KerberosClient';
-import { KU_AP_REQ_AUTHENTICATOR } from '@/network/kerberos/crypto';
-import { principalName, PrincipalNameType } from '@/network/kerberos/types';
 import { discoverDcHostname, rootDnOf } from './DcHostnameDiscovery';
 import type { DomainMembership, DomainSession } from './DomainTypes';
+import { bindLdapWithKerberos } from './KerberosLdapBind';
 
 export interface DomainLogonResult { ok: boolean; message: string; session?: DomainSession }
 
@@ -37,26 +34,13 @@ export function logonDomainUser(tcpStack: TcpStack, membership: DomainMembership
   const dcHostname = discoverDcHostname(tcpStack, membership.dcAddress, membership.dnsName);
   if (!dcHostname) return trustFailed;
 
-  const realm = membership.dnsName.toUpperCase();
-  const kdcConn = dialKdc(tcpStack, membership.dcAddress);
-  if (!kdcConn.ok || !kdcConn.client) return trustFailed;
-  const cname = principalName(PrincipalNameType.NT_PRINCIPAL, sam);
-
-  const asResult = kdcConn.client.asExchange(sam, password, realm);
-  if (!asResult.ok) return badCredential;
-  const tgsResult = kdcConn.client.tgsExchange(asResult.ticket!, asResult.sessionKey!, cname, realm, dcHostname);
-  if (!tgsResult.ok) return badCredential;
-  const apReqBytes = buildApReq(tgsResult.ticket!, tgsResult.sessionKey!, cname, realm, KU_AP_REQ_AUTHENTICATOR);
-
-  const conn = dialLdap(tcpStack, membership.dcAddress);
-  if (!conn.ok || !conn.client) return trustFailed;
-  const ldap = conn.client;
-
-  const bind = ldap.bindSasl('GSSAPI', apReqBytes);
-  if (!bind.ok) {
-    ldap.unbind();
-    return badCredential;
-  }
+  const session = bindLdapWithKerberos({
+    tcpStack, dcAddress: membership.dcAddress, domainName: membership.dnsName,
+    user: sam, password,
+  });
+  if (session.failure === 'no-network-path') return trustFailed;
+  if (session.failure !== undefined || !session.client) return badCredential;
+  const ldap = session.client;
 
   const search = ldap.search(rootDnOf(membership.dnsName), 'sub', { kind: 'equalityMatch', attr: 'sAMAccountName', value: sam }, ['memberOf']);
   ldap.unbind();

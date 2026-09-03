@@ -111,6 +111,18 @@ export function entryAttributeSource(entry: DirectoryEntry): AttributeSource {
 export class DirectoryTree {
   private readonly root: DirectoryEntry;
   private readonly byDn = new Map<string, DirectoryEntry>();
+  private readonly canonicalAttributeNames = new Map<string, string>();
+
+  private rememberAttributeNames(names: Iterable<string>): void {
+    for (const name of names) {
+      const key = attrKey(name);
+      if (!this.canonicalAttributeNames.has(key)) this.canonicalAttributeNames.set(key, name);
+    }
+  }
+
+  canonicalAttributeName(name: string): string {
+    return this.canonicalAttributeNames.get(attrKey(name)) ?? name;
+  }
 
   constructor(
     baseDn: string | DistinguishedName,
@@ -156,6 +168,7 @@ export class DirectoryTree {
       const validation = this.schema.validateNewEntry(objectClasses, attributes);
       if (!validation.ok) return validation;
     }
+    this.rememberAttributeNames(Object.keys(attributes));
     const entry: DirectoryEntry = { dn, attributes: toAttrMap(attributes), children: new Map(), replMeta: this.stampFor() };
     parent.children.set(rdnKey(dn), entry);
     this.byDn.set(this.dnIndexKey(dn), entry);
@@ -178,6 +191,7 @@ export class DirectoryTree {
   modifyEntry(dn: DistinguishedName, changes: readonly Modification[]): TreeOpResult {
     const entry = this.getByDn(dn);
     if (!entry) return { ok: false, message: 'noSuchObject' };
+    this.rememberAttributeNames(changes.map(c => c.type));
     for (const change of changes) {
       const key = attrKey(change.type);
       const existing = entry.attributes.get(key) ?? [];
