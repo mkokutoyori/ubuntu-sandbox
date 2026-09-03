@@ -2084,3 +2084,21 @@ pas aujourd'hui.
 **Pourquoi ce n'est pas ferme ici** : la chaine est celle du serveur SSH
 du simulateur, pas de `nmap` ; la changer touche la poignee de main SSH
 et les tests qui l'observent, et c'est un autre sujet.
+- `bgp bestpath <option>` est accepte, range dans le sac de texte du
+  processus et rendu tel quel, alors que ses options forment un ensemble
+  FERME sur IOS (`as-path`, `compare-routerid`, `med`, `cost-community`…)
+  et qu'aucune n'est evaluee par ce moteur. Ce lot ne le referme pas : le
+  sac est une decision ECRITE dans le gestionnaire — une option de
+  durcissement que le simulateur ne modelise pas doit survivre au
+  rechargement d'une topologie plutot que disparaitre —, et la liste
+  exacte des options de `bestpath` n'est pas attestee depuis ce reseau.
+  A rouvrir avec une capture, en distinguant « option connue mais non
+  evaluee » (a ranger) de « mot invente » (a refuser).
+- `parseRedistribute` (`inspection/config/RoutingConfigRepository.ts`)
+  range tout mot qu'elle ne comprend pas dans un champ `tail` que SEUL le
+  rendu relit. Ce lot ferme le cas mesure — l'identifiant de processus
+  d'`ospf`/`eigrp`/`bgp`, qui doit etre un nombre — mais un mot inconnu
+  place APRES les options (`redistribute static metric 5 zorglub`) tombe
+  encore dans `tail` et revient dans la configuration. Le fermer demande
+  de trancher, option par option, ce que la commande accepte vraiment, ce
+  qui n'est pas atteste depuis ce reseau.

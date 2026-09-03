@@ -80,6 +80,18 @@ function requireProto(ctx: CiscoShellContext, keyword: string): void {
 }
 
 const BGP_WEIGHT_MAX = 65535;
+const BGP_TIMER_MAX = 65535;
+const REDIST_AVEC_PROCESSUS: readonly string[] = ['ospf', 'eigrp', 'bgp'];
+const REDIST_PROCESSUS_MAX = 65535;
+const OFFSET_MAX = 16777215;
+
+function jugerOffsetList(args: readonly string[]): string {
+  if (args.length < 3) return CISCO_ERRORS.INCOMPLETE;
+  if (args[1] !== 'in' && args[1] !== 'out') return CISCO_ERRORS.INVALID_INPUT;
+  if (boundedInteger(args[2], 0, OFFSET_MAX) === null) return CISCO_ERRORS.INVALID_INPUT;
+
+  return '';
+}
 
 const STUB_OPTIONS = [
   'connected', 'summary', 'static', 'redistributed', 'receive-only', 'leak-map',
@@ -326,6 +338,10 @@ export function buildRouterSubmodeOn(
   routerTrie.registerGreedy('redistribute', 'Redistribute routes', (a) => {
     if (!a[0]) return CISCO_ERRORS.INCOMPLETE;
     if (!REDIST_PROTOCOLS.includes(a[0].toLowerCase())) return CISCO_ERRORS.INVALID_INPUT;
+    if (REDIST_AVEC_PROCESSUS.includes(a[0].toLowerCase())
+      && boundedInteger(a[1], 1, REDIST_PROCESSUS_MAX) === null) {
+      return a[1] === undefined ? CISCO_ERRORS.INCOMPLETE : CISCO_ERRORS.INVALID_INPUT;
+    }
     const parsed = parseRedistribute(a);
     if (!parsed) throw new CliInvalidInput();
     const p = curProto(ctx).proto;
@@ -572,17 +588,19 @@ export function buildRouterSubmodeOn(
     }
     return '';
   });
-  routerTrie.registerGreedy('router-id', 'Set router-id', (a) => {
-    if (!a[0]) return CISCO_ERRORS.INCOMPLETE;
-    if (!isValidIPv4(a[0])) return CISCO_ERRORS.INVALID_INPUT;
+  const poserRouterId = (valeur: string | undefined): string => {
+    if (!valeur) return CISCO_ERRORS.INCOMPLETE;
+    if (!isValidIPv4(valeur)) return CISCO_ERRORS.INVALID_INPUT;
+
     const p = curProto(ctx).proto;
-    if (p === 'eigrp') { eigrp().routerId = a[0]; eigrpEng().getConfig().routerId = a[0]; }
+    if (p === 'eigrp') { eigrp().routerId = valeur; eigrpEng().getConfig().routerId = valeur; }
     else if (p === 'bgp') {
-      const b = bgp(); if (b) b.routerId = a[0];
-      bgpEng().getConfig().routerId = a[0];
+      const b = bgp(); if (b) b.routerId = valeur;
+      bgpEng().getConfig().routerId = valeur;
     }
     return '';
-  });
+  };
+  routerTrie.registerGreedy('router-id', 'Set router-id', (a) => poserRouterId(a[0]));
   routerTrie.registerGreedy('eigrp', 'EIGRP option', (a) => {
     if (a[0] === 'router-id') {
       if (!a[1]) return CISCO_ERRORS.INCOMPLETE;
@@ -680,8 +698,15 @@ export function buildRouterSubmodeOn(
       return '';
     }
     if (a[0] === 'router-id') {
-      const b = bgp(); if (b) b.routerId = a[1];
-      bgpEng().getConfig().routerId = a[1];
+      const refus = poserRouterId(a[1]);
+      if (refus !== '') return refus;
+    } else if (a[0] === 'timers') {
+      const bornes = a.slice(1, 3).map((m) => boundedInteger(m, 0, BGP_TIMER_MAX));
+      if (bornes.length < 2 || bornes.some((v) => v === null)) {
+        return a.length < 3 ? CISCO_ERRORS.INCOMPLETE : CISCO_ERRORS.INVALID_INPUT;
+      }
+      const b = bgp();
+      if (b) pushOnce(b.extras, `bgp ${a.join(' ')}`.trim());
     } else if (a[0] === 'default' && a[1] === 'local-preference') {
       const lp = parseInt(a[2], 10);
       if (Number.isNaN(lp) || lp < 0) return '% Invalid local-preference';
@@ -722,6 +747,10 @@ export function buildRouterSubmodeOn(
   for (const kw of PROTO_EXTRAS) {
     routerTrie.registerGreedy(kw, `Routing option (${kw})`, (args) => {
       requireProto(ctx, kw);
+      if (kw === 'offset-list') {
+        const refus = jugerOffsetList(args);
+        if (refus !== '') return refus;
+      }
       const p = curProto(ctx).proto;
       const line = `${kw}${args.length ? ' ' + args.join(' ') : ''}`;
       if (p === 'rip') pushOnce(repo.rip.extras, line);
