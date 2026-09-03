@@ -26,6 +26,7 @@ import { isValidIPv4 } from '../../core/ip';
 import type { CommandSpec } from '@/cli/CommandTable';
 import type { FhrpPlacement } from './cisco/fhrpInterfaceSpecs';
 import { parseTrackDefinition, TRACK_INVALID_ID } from './cisco/trackSyntax';
+import { vrfRunningConfigLines, type VrfHost } from './cisco/ciscoVrfStore';
 import type { IpAddressHost } from './cisco/ipAddressInterfaceSpecs';
 import type { LoadMtuHost } from './cisco/interfaceLoadMtuSpecs';
 import {
@@ -4329,6 +4330,9 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
 
     const lignesSnmp = getSnmpService(sw)?.asRunningConfigLines() ?? [];
     if (lignesSnmp.length > 0) { lines.push(...lignesSnmp); lines.push('!'); }
+
+    const lignesVrf = vrfRunningConfigLines((sw as unknown as VrfHost)._vrfs);
+    if (lignesVrf.length > 0) { lines.push(...lignesVrf); lines.push('!'); }
 
     // VTY line configuration (transport input, login, password, …).
     const vtyLines = sw._getVtyLineConfig().renderAllCisco(chiffre);

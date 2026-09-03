@@ -49,6 +49,31 @@ elles.
 
 ## Commutateur Cisco
 
+### [vrf] `address-family ipv4` sous `vrf definition` est refuse
+La forme MULTIPROTOCOLE d'IOS exige `address-family ipv4` pour activer
+une famille dans la VRF ; ici elle repond `% Invalid input detected`, et
+la configuration rendue n'ecrit donc que `vrf definition <nom>` + `rd` +
+`route-target`.
+**Mesure** : `vrf definition X` puis `address-family ipv4` est refuse sur
+le routeur comme sur le commutateur.
+**Report** : ce simulateur n'a AUCUNE notion de famille d'adresses par
+VRF — `_vrfs` ne porte pas la distinction et rien ne la lirait. Accepter
+la commande rangerait un critere que personne n'evalue, ce que
+`CLAUDE.md` interdit ; l'implanter veut dire porter la famille jusqu'au
+plan de donnees, ce qui est un chantier de routage et non de CLI.
+
+### [vrf] un Catalyst cree une VRF et ne peut pas la configurer
+`vrf definition <nom>` est accepte, retenu et desormais rendu sur le
+commutateur, mais `rd` et `route-target` y sont refuses — le sous-mode
+`config-vrf` n'est cable que sur le routeur (`registerVrfSubmodeOn` est
+une methode de `CiscoIOSShell`).
+**Mesure** : la meme sequence est acceptee de bout en bout sur le
+routeur et s'arrete au `rd` sur le commutateur.
+**Report** : meme forme que les deux notes voisines — un sous-systeme du
+routeur que le commutateur n'a pas. Le brancher demande de decider ce
+qu'une VRF fait sur un commutateur de niveau 3 (ses SVI, sa table), ce
+qui est une question de plan de donnees.
+
 ### [track] un Catalyst ne suit qu'une INTERFACE, pas une route ni un IP SLA
 Le commutateur porte son propre `TrackObjectRegistry`, dont le type est
 `'line-protocol' | 'ip-routing'` : les formes `track <n> ip route …`,

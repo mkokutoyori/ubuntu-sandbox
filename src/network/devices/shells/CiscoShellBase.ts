@@ -84,6 +84,7 @@ import type { PromptMap } from './PromptBuilder';
 import { buildPrompt } from './PromptBuilder';
 import { CLIStateMachine, type ModeHierarchy } from './CLIStateMachine';
 import { estGenreAcces } from '../../ntp/accessGroups';
+import { ensureVrf, isVrfName, vrfStoreOf, type VrfHost } from './cisco/ciscoVrfStore';
 import { NTP_VERSION, isNtpVersion, type NtpVersion } from '../../ntp/types';
 import type { NtpAssociationOptions } from '../../ntp/NtpAgent';
 import {
@@ -9578,13 +9579,16 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     trie.registerGreedy('vrf definition', 'Configure a VRF', (args) => {
       if (args.length < 1) return CISCO_ERRORS.INCOMPLETE;
       const name = args[0];
-      const dev = this.d() as unknown as {
-        _vrfs?: Map<string, { name: string; rd?: string; rts: { import: string[]; export: string[] }; interfaces: Set<string> }>;
-      };
-      const vrfs = dev._vrfs ??= new Map();
-      if (!vrfs.has(name)) vrfs.set(name, { name, rts: { import: [], export: [] }, interfaces: new Set() });
+      if (!isVrfName(name)) return CISCO_ERRORS.INVALID_INPUT;
+      ensureVrf(vrfStoreOf(this.d() as unknown as VrfHost), name, 'modern');
       (this as unknown as { setSelectedVRF?: (n: string) => void }).setSelectedVRF?.(name);
       this.mode = 'config-vrf';
+      return '';
+    });
+    trie.registerGreedy('no vrf definition', 'Remove a VRF', (args) => {
+      const name = args[0];
+      if (!name) return CISCO_ERRORS.INCOMPLETE;
+      vrfStoreOf(this.d() as unknown as VrfHost).delete(name);
       return '';
     });
     trie.registerGreedy('ip community-list', 'Define BGP community list', (args, raw) => {

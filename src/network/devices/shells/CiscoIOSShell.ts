@@ -37,6 +37,10 @@ import { CommandTrie, setInvalidInputPromptWidth, formatInvalidInput, formatInva
 import { IPAddress, IPv6Address, SubnetMask } from '../../core/types';
 import { isValidIPv4 } from '../../core/ip';
 import { parsePingArgs, formatCiscoPing, looksLikeIPv6 } from './cisco/ciscoPing';
+import {
+  parseRouteDistinguisher, parseRouteTarget, applyRouteTarget,
+  vrfStoreOf, type VrfHost, type VrfInstance,
+} from './cisco/ciscoVrfStore';
 import { CliInvalidInput } from './cli/CliDiagnostic';
 import { getSecurityConfig } from './cisco/CiscoSecurityCommands';
 import type { PromptMap } from './PromptBuilder';
@@ -338,24 +342,29 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
   }
 
 
+  private selectedVrfInstance(): VrfInstance | undefined {
+    if (this.selectedVRF == null) return undefined;
+    return vrfStoreOf(this.d() as unknown as VrfHost).get(this.selectedVRF);
+  }
+
   private registerVrfSubmodeOn(trie: CommandTrie): void {
     trie.registerGreedy('rd', 'Route distinguisher', (args) => {
-      const rd = args.join(' ').trim();
-      const m = /^(\d+):(\d+)$/.exec(rd);
-      if (!m) return "% Invalid input detected at '^' marker.";
-      const a = Number(m[1]);
-      const b = Number(m[2]);
-      if (!Number.isSafeInteger(a) || !Number.isSafeInteger(b) || a > 4294967295 || b > 4294967295) {
-        return "% Invalid input detected at '^' marker.";
-      }
-      const r = this.d() as unknown as { _vrfs?: Map<string, { name: string; rd?: string }> };
-      if (this.selectedVRF != null) {
-        const v = r._vrfs?.get(this.selectedVRF);
-        if (v) v.rd = rd;
-      }
+      const rd = parseRouteDistinguisher(args.join(' ').trim());
+      if (rd === null) return "% Invalid input detected at '^' marker.";
+      const vrf = this.selectedVrfInstance();
+      if (vrf) vrf.rd = rd;
       return '';
     });
-    trie.registerGreedy('route-target', 'Route target', () => '');
+    trie.registerGreedy('route-target', 'Route target', (args) => {
+      const lu = parseRouteTarget(args);
+      if (lu.incomplet) return '% Incomplete command.';
+      if (lu.refus !== undefined || !lu.direction || !lu.value) {
+        return "% Invalid input detected at '^' marker.";
+      }
+      const vrf = this.selectedVrfInstance();
+      if (vrf) applyRouteTarget(vrf, lu.direction, lu.value);
+      return '';
+    });
     trie.registerGreedy('description', 'Description', () => '');
   }
 
