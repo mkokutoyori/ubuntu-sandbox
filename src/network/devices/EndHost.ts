@@ -1504,6 +1504,10 @@ export abstract class EndHost extends Equipment {
     return this.dhcpInterfaces.has(iface);
   }
 
+  disableDhcpOnInterface(iface: string): void {
+    this.dhcpInterfaces.delete(iface);
+  }
+
   /**
    * Kept as the entry point `dhclient` / `ipconfig /renew` call before a
    * lease request, but it no longer discovers anything: a client finds

@@ -180,55 +180,6 @@ export function isValidIP(ip: string): boolean {
     return isValidIPv4(ip) || isValidIPv6(ip);
   }
 
-export function handleNewNetIPAddress(ctx: PSNetContext, args: string[]): string {
-    const params = parsePSArgs(args);
-    const ip = params.get('ipaddress') || params.get('_positional');
-    const ifAlias = (params.get('interfacealias') ?? '').replace(/^["']|["']$/g, '');
-    const prefixStr = params.get('prefixlength');
-    const gateway = params.get('defaultgateway');
-    const afParam = (params.get('addressfamily') ?? '').toLowerCase();
-    const skipAsSource = (params.get('skipassource') ?? '').toLowerCase() === '$true' || params.get('skipassource') === 'true';
-
-    if (!ip) return `New-NetIPAddress : The -IPAddress parameter is required.\nAt line:1 char:1\n    + CategoryInfo          : InvalidArgument`;
-    if (!ifAlias) return `New-NetIPAddress : The -InterfaceAlias parameter is required.\nAt line:1 char:1\n    + CategoryInfo          : InvalidArgument`;
-    if (!prefixStr) return `New-NetIPAddress : The -PrefixLength parameter is required.\nAt line:1 char:1\n    + CategoryInfo          : InvalidArgument`;
-    if (!isValidIP(ip)) return `New-NetIPAddress : Invalid IP address: '${ip}'.\nAt line:1 char:1\n    + CategoryInfo          : InvalidArgument`;
-
-    const prefixLength = parseInt(prefixStr, 10);
-    const isIPv6 = ip.includes(':');
-    const maxPrefix = isIPv6 ? 128 : 32;
-    if (isNaN(prefixLength) || prefixLength < 0 || prefixLength > maxPrefix) {
-      return `New-NetIPAddress : PrefixLength '${prefixStr}' is not in the valid range 0-${maxPrefix}.\nAt line:1 char:1\n    + CategoryInfo          : InvalidArgument`;
-    }
-
-    // Check for duplicate
-    const existing = buildAllIPEntries(ctx);
-    if (existing.some(e => e.ip.toLowerCase() === ip.toLowerCase())) {
-      return `New-NetIPAddress : The IP address '${ip}' already exists on this system.\nAt line:1 char:1\n    + CategoryInfo          : InvalidArgument`;
-    }
-
-    const addressFamily = afParam === 'ipv6' || isIPv6 ? 'IPv6' : 'IPv4';
-
-    // Configure the REAL interface whenever the alias maps to a physical
-    // port, so ipconfig/route/ARP all see the same address. The extraIPs
-    // side-store remains only for virtual adapters with no backing port.
-    const port = resolveAdapterPort(ctx, ifAlias);
-    if (port && addressFamily === 'IPv4') {
-      ctx.device.configureInterface(port.getName(), new IPAddress(ip), new SubnetMask(prefixToMaskString(prefixLength)));
-      // Retain the per-address attributes as metadata (the address lives on
-      // the port; this map only carries flags the port model doesn't hold).
-      ctx.device.extraIPs.set(ip.toLowerCase(), { ifAlias, prefixLength, prefixOrigin: 'Manual', suffixOrigin: 'Manual', skipAsSource, gateway, addressFamily });
-    } else {
-      ctx.device.extraIPs.set(ip.toLowerCase(), { ifAlias, prefixLength, prefixOrigin: 'Manual', suffixOrigin: 'Manual', skipAsSource, gateway, addressFamily });
-    }
-
-    if (gateway && isValidIPv4(gateway)) {
-      ctx.device.setDefaultGateway(new IPAddress(gateway));
-    }
-
-    return formatIPEntry({ ip, ifAlias, ifIndex: 99, addressFamily, prefixLength, prefixOrigin: 'Manual', suffixOrigin: 'Manual', addressState: 'Preferred', skipAsSource });
-  }
-
 export function handleRemoveNetIPAddress(ctx: PSNetContext, args: string[]): string {
     const params = parsePSArgs(args);
     const ip = params.get('ipaddress') || params.get('_positional');

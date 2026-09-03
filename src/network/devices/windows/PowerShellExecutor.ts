@@ -46,6 +46,7 @@ import { psGetItemProperty, psSetItemProperty, psRemoveItemProperty } from './PS
 import * as net from './PSNetCmdlets';
 import type { PSNetContext } from './PSNetCmdlets';
 import type { IEventBus } from '@/events/EventBus';
+import type { NetIPAddressEntry } from './netIpAddress';
 
 // ─── Constants ────────────────────────────────────────────────────
 
@@ -129,7 +130,7 @@ export interface PSDeviceContext {
    * on PowerShellExecutor now live on the device. The executor reads/writes
    * through these references; the interpreter providers do too.
    */
-  readonly extraIPs:             Map<string, { ifAlias: string; prefixLength: number; prefixOrigin: string; suffixOrigin: string; skipAsSource: boolean; gateway?: string; addressFamily: string }>;
+  readonly extraIPs:             Map<string, NetIPAddressEntry>;
   readonly extraRoutes:          Map<string, { ifAlias: string; nextHop: string; metric: number }>;
   readonly adapterOverrides:     Map<string, { status?: string; displayName?: string }>;
   readonly dynamicFirewallRules: Map<string, { name: string; displayName: string; enabled: boolean; action: string; direction: string; protocol: string; localPort: string; remotePort: string; description: string }>;
@@ -2400,11 +2401,6 @@ export class PowerShellExecutor {
     // Get-NetIPAddress
     if (cmdLower === 'get-netipaddress') {
       return net.handleGetNetIPAddress(this.buildPSNetCtx(), args);
-    }
-
-    // New-NetIPAddress
-    if (cmdLower === 'new-netipaddress') {
-      return net.handleNewNetIPAddress(this.buildPSNetCtx(), args);
     }
 
     // Remove-NetIPAddress

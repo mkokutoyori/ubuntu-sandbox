@@ -17,6 +17,20 @@ import type {
 } from '@/powershell/providers/PSProviders';
 import { psValueToString } from '@/powershell/runtime/PSExpansion';
 import { makeTimeSpan } from './DateTimeCmdlets';
+import { planNetIPAddress } from '@/network/devices/windows/netIpAddress';
+
+function lifetimeSecondsOf(ctx: CmdletContext, key: string): number | undefined {
+  const raw = ctx.named[key];
+  if (raw === undefined) return undefined;
+  if (raw !== null && typeof raw === 'object' && !Array.isArray(raw)) {
+    const total = (raw as Record<string, PSValue>).TotalSeconds;
+    return total === undefined ? undefined : Math.round(Number(total));
+  }
+  const match = /^(?:(\d+)\.)?(\d+):(\d+):(\d+(?:\.\d+)?)$/.exec(psValueToString(raw).trim());
+  if (!match) return undefined;
+  return Math.round(parseInt(match[1] ?? '0', 10) * 86400
+    + parseInt(match[2], 10) * 3600 + parseInt(match[3], 10) * 60 + parseFloat(match[4]));
+}
 
 function requireNetwork(ctx: CmdletContext): INetworkProvider {
   if (!ctx.providers.network) {
@@ -53,6 +67,9 @@ function ipToPSObject(ip: IPAddressInfo): Record<string, PSValue> {
     AddressFamily: ip.addressFamily,
     ValidLifetime: makeTimeSpan(validMs) as unknown as PSValue,
     PreferredLifetime: makeTimeSpan(prefMs) as unknown as PSValue,
+    Type: ip.type ?? 'Unicast',
+    SkipAsSource: ip.skipAsSource ?? false,
+    PolicyStore: ip.policyStore ?? 'ActiveStore',
   };
 }
 
@@ -87,6 +104,9 @@ export class GetNetIPAddressCmdlet implements ICmdlet {
   readonly name = 'get-netipaddress';
   readonly displayName = 'Get-NetIPAddress';
   readonly aliases = [] as const;
+  readonly parameters = ['IPAddress', 'InterfaceAlias', 'InterfaceIndex', 'AddressFamily',
+    'AddressState', 'PrefixLength', 'PrefixOrigin', 'SuffixOrigin', 'SkipAsSource',
+    'Type', 'PolicyStore'] as const;
 
   execute(ctx: CmdletContext): PSValue {
     const net = requireNetwork(ctx);
@@ -94,10 +114,25 @@ export class GetNetIPAddressCmdlet implements ICmdlet {
       ? psValueToString(ctx.named['interfacealias'])
       : undefined;
     let ips = net.getIPAddresses(ifAlias);
-    if (ctx.named['addressfamily']) {
-      const af = psValueToString(ctx.named['addressfamily']).toLowerCase();
-      ips = ips.filter(ip => ip.addressFamily.toLowerCase() === af);
-    }
+    const wanted = (key: string): string[] | null => {
+      const raw = ctx.named[key];
+      if (raw === undefined) return null;
+      return (Array.isArray(raw) ? raw : [raw]).map(v => psValueToString(v).toLowerCase());
+    };
+    const keep = (values: string[] | null, of: (e: IPAddressInfo) => string): void => {
+      if (values === null) return;
+      ips = ips.filter(e => values.includes(of(e).toLowerCase()));
+    };
+    keep(wanted('ipaddress'), e => e.ipAddress);
+    keep(wanted('addressfamily'), e => e.addressFamily);
+    keep(wanted('prefixlength'), e => String(e.prefixLength));
+    keep(wanted('interfaceindex'), e => String(e.ifIndex));
+    keep(wanted('prefixorigin'), e => e.prefixOrigin);
+    keep(wanted('suffixorigin'), e => e.suffixOrigin);
+    keep(wanted('type'), e => e.type ?? 'Unicast');
+    keep(wanted('policystore'), e => e.policyStore ?? 'ActiveStore');
+    keep(wanted('skipassource'), e => String(e.skipAsSource ?? false));
+    keep(wanted('addressstate'), () => 'Preferred');
     return ips.map(ipToPSObject) as PSValue;
   }
 }
@@ -524,26 +559,49 @@ export class NewNetIPAddressCmdlet implements ICmdlet {
   readonly name = 'new-netipaddress';
   readonly displayName = 'New-NetIPAddress';
   readonly aliases = [] as const;
+  readonly pipelineByPropertyName = true as const;
+  readonly description = 'Creates and configures an IP address.';
+  readonly parameters = ['IPAddress', 'InterfaceAlias', 'InterfaceIndex', 'DefaultGateway',
+    'AddressFamily', 'Type', 'PrefixLength', 'ValidLifetime', 'PreferredLifetime',
+    'SkipAsSource', 'PolicyStore', 'WhatIf', 'Confirm'] as const;
 
   execute(ctx: CmdletContext): PSValue {
     const net = requireNetwork(ctx);
-    const ip          = psValueToString(ctx.named['ipaddress']  ?? '');
-    const ifAlias     = psValueToString(ctx.named['interfacealias'] ?? '');
-    const prefix      = Number(ctx.named['prefixlength'] ?? 24);
-    const gatewayRaw  = ctx.named['defaultgateway'];
-    if (!ip || !ifAlias) {
-      ctx.emitError('New-NetIPAddress requires -IPAddress and -InterfaceAlias');
+    const arg = (key: string): string | undefined =>
+      ctx.named[key] === undefined ? undefined : psValueToString(ctx.named[key]);
+    const decision = planNetIPAddress({
+      ipAddress: arg('ipaddress') ?? (ctx.positional[0] === undefined ? undefined : psValueToString(ctx.positional[0])),
+      interfaceAlias: arg('interfacealias'),
+      interfaceIndex: arg('interfaceindex'),
+      prefixLength: arg('prefixlength'),
+      addressFamily: arg('addressfamily'),
+      type: arg('type'),
+      policyStore: arg('policystore'),
+      defaultGateway: arg('defaultgateway'),
+      skipAsSource: ctx.named['skipassource'] === true,
+    }, { resolveInterface: spec => net.resolveNetInterface(spec) });
+    if (!decision.ok) { ctx.emitError(`New-NetIPAddress : ${decision.message}`); return null; }
+    const plan = decision.plan;
+
+    if (ctx.named['whatif'] === true) {
+      ctx.emit(`What if: Performing the operation "Create" on target "${plan.address.text}".`);
       return null;
     }
     try {
-      net.addIPAddress(ip, prefix, ifAlias, {
-        gateway: gatewayRaw ? psValueToString(gatewayRaw) : undefined,
+      net.addIPAddress(plan.address.text, plan.prefixLength, plan.iface.alias, {
+        gateway: plan.gateway,
+        skipAsSource: plan.skipAsSource,
+        type: plan.type,
+        policyStore: plan.policyStore,
+        validLifetimeSeconds: lifetimeSecondsOf(ctx, 'validlifetime'),
+        preferredLifetimeSeconds: lifetimeSecondsOf(ctx, 'preferredlifetime'),
       });
     } catch (e) {
-      ctx.emitError(e instanceof Error ? e.message : String(e));
+      ctx.emitError(`New-NetIPAddress : ${e instanceof Error ? e.message : String(e)}`);
       return null;
     }
-    return null;
+    const created = net.getIPAddresses().find(e => e.ipAddress.toLowerCase() === plan.address.text.toLowerCase());
+    return created ? ipToPSObject(created) : null;
   }
 }
 

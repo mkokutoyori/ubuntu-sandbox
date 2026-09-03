@@ -68,7 +68,7 @@ import type {
   IAdProvider, AdUserInfo, AdGroupInfo, AdComputerInfo, AdOrgUnitInfo, AdOpResult, AdSiteInfo,
   AdSubnetInfo, AdSiteLinkInfo, AdUpToDatenessVectorRowInfo,
   AdKdsRootKeyInfo, AdServiceAccountInfo,
-  AdGenericObjectInfo, AdOptionalFeatureInfo, AddGroupMemberOptions, AdMemberLink,
+  AdGenericObjectInfo, AdOptionalFeatureInfo, AddGroupMemberOptions, AdMemberLink, NetIPAddressOptions,
   AdAttributeSchemaInfo, AdObjectClassSchemaInfo, AdForestInfo, AdDomainInfo, AdTrustInfo,
   AdReplicationConnectionInfo, AdReplicationFailureInfo, AdPasswordPolicyInfo, AdFineGrainedPasswordPolicyInfo, AdAccessRuleInfo,
   IComputerProvider, DomainMembershipInfo,
@@ -107,6 +107,7 @@ import { PRIVILEGED_ACCESS_MANAGEMENT_FEATURE, TTL_WITHOUT_PAM_FEATURE } from '@
 import type { RemoteDirectoryHost, RemoteDirectoryTarget } from './adRemoteDirectory';
 import type { LdapClient } from '@/network/devices/windows/server/ad/ldap/LdapClient';
 import type { TcpStack } from '@/network/tcp/TcpStack';
+import type { NetIPAddressEntry } from '@/network/devices/windows/netIpAddress';
 
 function defaultNamingContextOf(client: LdapClient): string | null {
   const dse = client.search('', 'base', { kind: 'present', attr: 'objectClass' }, ['defaultNamingContext']);
@@ -1603,7 +1604,7 @@ class WindowsEventLogAdapter implements IEventLogProvider {
 // fallback path see the same world.
 
 interface NetworkStateRefs {
-  readonly extraIPs:             Map<string, { ifAlias: string; prefixLength: number; prefixOrigin: string; suffixOrigin: string; skipAsSource: boolean; gateway?: string; addressFamily: string }>;
+  readonly extraIPs:             Map<string, NetIPAddressEntry>;
   readonly extraRoutes:          Map<string, { ifAlias: string; nextHop: string; metric: number }>;
   readonly adapterOverrides:     Map<string, { status?: string; displayName?: string }>;
   readonly dynamicFirewallRules: Map<string, { name: string; displayName: string; enabled: boolean; action: string; direction: string; protocol: string; localPort: string; remotePort: string; description: string }>;
@@ -1887,12 +1888,44 @@ class WindowsNetworkAdapter implements INetworkProvider {
         gateway: meta.gateway,
       });
     }
+    for (const entry of out) {
+      const meta = this.state.extraIPs.get(entry.ipAddress.toLowerCase());
+      if (!meta) continue;
+      entry.skipAsSource = meta.skipAsSource;
+      entry.type = meta.type;
+      entry.policyStore = meta.policyStore;
+    }
     return out;
   }
 
   // ─ IP add / remove ──────────────────────────────────────────────────────
 
-  addIPAddress(ip: string, prefixLength: number, ifAlias: string, opts?: { gateway?: string }): void {
+  resolveNetInterface(spec: { alias?: string; index?: number }): { alias: string; ifIndex: number } | null {
+    const adapters = this.getAdapters();
+    if (spec.index !== undefined) {
+      const byIndex = adapters.find(a => a.ifIndex === spec.index);
+      return byIndex ? { alias: byIndex.name, ifIndex: byIndex.ifIndex } : null;
+    }
+    if (spec.alias === undefined) return null;
+    const wanted = spec.alias.trim();
+    const exact = adapters.find(a => a.name.toLowerCase() === wanted.toLowerCase());
+    if (exact) return { alias: exact.name, ifIndex: exact.ifIndex };
+    const ports = (this.pc as unknown as { ports: Map<string, unknown> }).ports;
+    const portName = resolveAdapterName(wanted, ports);
+    if (!ports.has(portName)) return null;
+    const display = toDisplayName(portName);
+    const byPort = adapters.find(a => a.name.toLowerCase() === display.toLowerCase());
+    return byPort ? { alias: byPort.name, ifIndex: byPort.ifIndex } : null;
+  }
+
+  setDhcpEnabled(ifAlias: string, enabled: boolean): void {
+    if (enabled) return;
+    const ports = (this.pc as unknown as { ports: Map<string, unknown> }).ports;
+    (this.pc as unknown as { disableDhcpOnInterface: (n: string) => void })
+      .disableDhcpOnInterface(resolveAdapterName(ifAlias, ports));
+  }
+
+  addIPAddress(ip: string, prefixLength: number, ifAlias: string, opts?: NetIPAddressOptions): void {
     // Une adresse dont un octet dépasse 255 n'en est pas une. Elle
     // entrait ici sans contrôle et ressortait dans `Get-NetIPAddress` :
     // la machine croyait porter `999.1.1.1`, que `netsh` refusait au
@@ -1911,13 +1944,22 @@ class WindowsNetworkAdapter implements INetworkProvider {
       prefixLength,
       prefixOrigin: 'Manual',
       suffixOrigin: 'Manual',
-      skipAsSource: false,
+      skipAsSource: opts?.skipAsSource ?? false,
       gateway: opts?.gateway,
       addressFamily: ip.includes(':') ? 'IPv6' : 'IPv4',
+      type: opts?.type ?? 'Unicast',
+      policyStore: opts?.policyStore ?? 'ActiveStore',
+      validLifetimeSeconds: opts?.validLifetimeSeconds,
+      preferredLifetimeSeconds: opts?.preferredLifetimeSeconds,
     });
+    this.setDhcpEnabled(ifAlias, false);
     if (opts?.gateway) {
       const dest = ip.includes(':') ? '::/0' : '0.0.0.0/0';
       this.state.extraRoutes.set(dest, { ifAlias, nextHop: opts.gateway, metric: 256 });
+      if (!ip.includes(':')) {
+        (this.pc as unknown as { setDefaultGateway: (g: IPAddress) => void })
+          .setDefaultGateway(new IPAddress(opts.gateway));
+      }
     }
     // Mirror onto the device port so cmd's `ipconfig` / `netsh ipv4 show
     // addresses` see the same address PowerShell just added.
@@ -2074,7 +2116,10 @@ class WindowsNetworkAdapter implements INetworkProvider {
     const m = this.pc as unknown as { getDhcpServer?: (n: string) => string | null };
     return m.getDhcpServer ? m.getDhcpServer(toPortName(ifAlias) ?? ifAlias) : null;
   }
-  isDHCPConfigured(): boolean { return false; }
+  isDHCPConfigured(ifAlias: string): boolean {
+    return (this.pc as unknown as { isDHCPConfigured: (n: string) => boolean })
+      .isDHCPConfigured(resolveAdapterName(ifAlias, (this.pc as unknown as { ports: Map<string, unknown> }).ports));
+  }
   testConnection(target: string): boolean {
     const probe = this.testPingProbe(target);
     return probe?.success ?? false;

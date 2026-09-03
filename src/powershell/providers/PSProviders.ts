@@ -118,6 +118,9 @@ export interface IPAddressInfo {
   /** Residual DHCP lease lifetimes (seconds); undefined for non-leased addresses. */
   validLifetimeSeconds?: number;
   preferredLifetimeSeconds?: number;
+  skipAsSource?: boolean;
+  type?: 'Unicast' | 'Anycast';
+  policyStore?: 'ActiveStore' | 'PersistentStore';
 }
 
 export interface RouteInfo {
@@ -1178,6 +1181,15 @@ export interface IJobProvider {
 }
 
 
+export interface NetIPAddressOptions {
+  gateway?: string;
+  skipAsSource?: boolean;
+  type?: 'Unicast' | 'Anycast';
+  policyStore?: 'ActiveStore' | 'PersistentStore';
+  validLifetimeSeconds?: number;
+  preferredLifetimeSeconds?: number;
+}
+
 export interface NeighborInfo {
   ifIndex: number;
   ifAlias: string;
@@ -1262,8 +1274,10 @@ export interface INetworkProvider {
   getAdapter(name: string): NetworkAdapterInfo | null;
   getAdapterStatistics(name: string): AdapterStatisticsInfo | null;
   getIPAddresses(ifAlias?: string): IPAddressInfo[];
-  addIPAddress(ip: string, prefixLength: number, ifAlias: string, opts?: { gateway?: string }): void;
+  addIPAddress(ip: string, prefixLength: number, ifAlias: string, opts?: NetIPAddressOptions): void;
   removeIPAddress(ip: string, ifAlias?: string): void;
+  resolveNetInterface(spec: { alias?: string; index?: number }): { alias: string; ifIndex: number } | null;
+  setDhcpEnabled(ifAlias: string, enabled: boolean): void;
   getRoutes(ifAlias?: string): RouteInfo[];
   getNeighbors(filter?: { ipAddress?: import('@/network/core/types').IPAddress; state?: string; ifIndex?: number }): NeighborInfo[];
   addNeighbor(ipAddress: import('@/network/core/types').IPAddress, linkLayerAddress: import('@/network/core/types').MACAddress, ifAlias: string): string;

@@ -17,6 +17,7 @@ import { PowerShellExecutor, type PSDeviceContext } from '@/network/devices/wind
 import { IPAddress, SubnetMask, MACAddress, resetCounters } from '@/network/core/types';
 import { resetDeviceCounters } from '@/network/devices/DeviceFactory';
 import { Logger } from '@/network/core/Logger';
+import { PowerShellSubShell } from '@/terminal/subshells/PowerShellSubShell';
 
 beforeEach(() => {
   resetCounters();
@@ -62,19 +63,19 @@ describe('legacy Get-NetIPAddress reflects real interface state', () => {
 // New-NetIPAddress — configures the real interface
 // ═══════════════════════════════════════════════════════════════════
 
-describe('legacy New-NetIPAddress configures the real interface', () => {
+describe('New-NetIPAddress configures the real interface', () => {
   it('makes the address visible to ipconfig (cmd)', async () => {
     const pc = makePc();
-    const ps = makePs(pc);
-    await ps.execute('New-NetIPAddress -InterfaceAlias "Ethernet 0" -IPAddress 10.0.6.7 -PrefixLength 24');
+    const sh = PowerShellSubShell.create(pc).subShell;
+    await sh.processLine('New-NetIPAddress -InterfaceAlias "Ethernet 0" -IPAddress 10.0.6.7 -PrefixLength 24');
     const out = await pc.executeCommand('ipconfig');
     expect(out).toContain('10.0.6.7');
   });
 
   it('actually sets the address on the underlying port', async () => {
     const pc = makePc();
-    const ps = makePs(pc);
-    await ps.execute('New-NetIPAddress -InterfaceAlias eth0 -IPAddress 10.0.6.8 -PrefixLength 24');
+    const sh = PowerShellSubShell.create(pc).subShell;
+    await sh.processLine('New-NetIPAddress -InterfaceAlias eth0 -IPAddress 10.0.6.8 -PrefixLength 24');
     expect(pc.getPort('eth0')!.getIPAddress()?.toString()).toBe('10.0.6.8');
   });
 });
