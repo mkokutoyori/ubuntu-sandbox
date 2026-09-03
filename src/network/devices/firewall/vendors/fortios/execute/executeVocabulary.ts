@@ -18,6 +18,18 @@ function pingOptionKeywords(family: 'ipv4' | 'ipv6'): readonly FortiExecuteOptio
 
 export const FORTI_EXECUTE_COMMANDS: readonly FortiExecuteCommand[] = Object.freeze([
   { name: 'backup', help: 'Backup the configuration to a remote server.' },
+  { name: 'batch', help: 'Run a series of CLI commands.',
+    options: [
+      { keyword: 'start', description: 'Batch mode start.' },
+      { keyword: 'end', description: 'Batch mode end.' },
+      { keyword: 'lastlog', description: 'Read the result of last batch commands.' },
+      { keyword: 'status', description: 'Batch mode status.' },
+    ] },
+  { name: 'cfg', help: 'Save or reload the configuration in manual mode.',
+    options: [
+      { keyword: 'reload', description: 'Reboot to reload the configs.' },
+      { keyword: 'save', description: 'Save configs.' },
+    ] },
   { name: 'clear', help: 'Clear system tables.',
     options: [{ keyword: 'system', description: 'System tables.' }] },
   { name: 'date', help: 'Display or set the system date.' },
@@ -34,6 +46,7 @@ export const FORTI_EXECUTE_COMMANDS: readonly FortiExecuteCommand[] = Object.fre
   { name: 'disconnect-admin-session', help: 'Disconnect a logged-in administrator.' },
   { name: 'enter', help: 'Select virtual domain.' },
   { name: 'factoryreset', help: 'Reset the configuration to factory default.' },
+  { name: 'formatlogdisk', help: 'Format the log disk.' },
   { name: 'ha', help: 'Cluster operations.',
     options: [
       { keyword: 'disconnect', description: 'Disconnect a unit from the cluster.' },
@@ -75,6 +88,7 @@ export const FORTI_EXECUTE_COMMANDS: readonly FortiExecuteCommand[] = Object.fre
   { name: 'update-ips', help: 'Update IPS definitions from FortiGuard.' },
   { name: 'update-now', help: 'Update all FortiGuard databases now.' },
   { name: 'time', help: 'Display or set the system time.' },
+  { name: 'upd-vd-license', help: 'Update the VDOM license.' },
   { name: 'traceroute', help: 'Trace the route to a destination.' },
   { name: 'tracert6', help: 'Traceroute for IPv6.' },
   { name: 'vpn', help: 'VPN operations.',
@@ -102,4 +116,9 @@ export function resolvePrefix(
 
 export function executeNames(): readonly string[] {
   return FORTI_EXECUTE_COMMANDS.map(command => command.name);
+}
+
+export function executeOptionNames(command: string): readonly string[] {
+  const found = FORTI_EXECUTE_COMMANDS.find(entry => entry.name === command);
+  return (found?.options ?? []).map(option => option.keyword);
 }

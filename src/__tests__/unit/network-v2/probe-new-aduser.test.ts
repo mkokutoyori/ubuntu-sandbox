@@ -60,6 +60,11 @@
  * et que « it's a permission on the user's object ». C'est donc une ACE,
  * ecrite avec la machinerie posee pour la protection des OU.
  *
+ * Note d'un lot ULTERIEUR : `-Properties` gouverne desormais ce que
+ * `Get-ADUser` rend, et la plupart des cas ci-dessous lisent des
+ * proprietes qui ne sont PAS dans le jeu par defaut d'un utilisateur —
+ * ils demandent donc `-Properties *`, ce que fait un vrai administrateur.
+ *
  * Discrimine par `git stash` : 17 cas sur 24 tombent avant correctif.
  * Les 7 autres sont nommes plutot que laisses a decouvrir, et TROIS
  * d'entre eux passaient pour une raison qui ne prouve rien :
@@ -96,7 +101,7 @@ describe('New-ADUser — les proprietes sont posees', () => {
     await run('New-ADUser -Name "Marie Kouam" -SamAccountName "mkouam" -GivenName "Marie" -Surname "Kouam"'
       + ' -Initials "MK" -OtherName "Nadege" -Description "Analyste" -DisplayName "M. Kouam"'
       + ` -City "Douala" -Country "CM" -State "Littoral" -StreetAddress "rue 1" -POBox "BP 1" -PostalCode "0001" ${PWD}`);
-    const vue = await run('Get-ADUser -Identity "mkouam" | Format-List GivenName, Surname, Initials,'
+    const vue = await run('Get-ADUser -Identity \"mkouam\" -Properties * | Format-List GivenName, Surname, Initials,'
       + ' OtherName, Description, City, Country, State, StreetAddress, POBox, PostalCode');
     for (const attendu of ['Marie', 'Kouam', 'MK', 'Nadege', 'Analyste', 'Douala', 'CM', 'Littoral', 'rue 1', 'BP 1', '0001']) {
       expect(vue).toContain(attendu);
@@ -108,7 +113,7 @@ describe('New-ADUser — les proprietes sont posees', () => {
     await run('New-ADUser -Name "u1" -SamAccountName "u1" -Company "ACME" -Division "Div" -Department "IT"'
       + ' -Title "Chef" -Office "Douala" -OfficePhone "+237 1" -MobilePhone "+237 2" -HomePhone "+237 3"'
       + ` -Fax "+237 4" -EmployeeID "E1" -EmployeeNumber "N1" -Organization "Org" -HomePage "http://x" ${PWD}`);
-    const vue = await run('Get-ADUser -Identity "u1" | Format-List Company, Division, Department, Title,'
+    const vue = await run('Get-ADUser -Identity \"u1\" -Properties * | Format-List Company, Division, Department, Title,'
       + ' Office, OfficePhone, MobilePhone, HomePhone, Fax, EmployeeID, EmployeeNumber, Organization, HomePage');
     for (const attendu of ['ACME', 'Div', 'IT', 'Chef', 'Douala', '+237 1', '+237 2', '+237 3', '+237 4', 'E1', 'N1', 'Org', 'http://x']) {
       expect(vue).toContain(attendu);
@@ -119,34 +124,34 @@ describe('New-ADUser — les proprietes sont posees', () => {
     const { run } = await controleur();
     await run('New-ADUser -Name "u2" -SamAccountName "u2" -ProfilePath "\\\\srv\\profils\\u2"'
       + ` -HomeDirectory "\\\\srv\\home\\u2" -HomeDrive "H:" -ScriptPath "logon.bat" -LogonWorkstations "PC1,PC2" ${PWD}`);
-    const vue = await run('Get-ADUser -Identity "u2" | Format-List ProfilePath, HomeDirectory, HomeDrive, ScriptPath, LogonWorkstations');
+    const vue = await run('Get-ADUser -Identity \"u2\" -Properties * | Format-List ProfilePath, HomeDirectory, HomeDrive, ScriptPath, LogonWorkstations');
     for (const attendu of ['profils', 'home', 'H:', 'logon.bat', 'PC1,PC2']) expect(vue).toContain(attendu);
   });
 
   it('-UserPrincipalName l\'emporte sur celui que le domaine fabrique', async () => {
     const { run } = await controleur();
     await run(`New-ADUser -Name "u3" -SamAccountName "u3" -UserPrincipalName "marie.kouam@corp.local" ${PWD}`);
-    expect(await run('(Get-ADUser -Identity "u3").UserPrincipalName')).toBe('marie.kouam@corp.local');
+    expect(await run('(Get-ADUser -Identity \"u3\" -Properties *).UserPrincipalName')).toBe('marie.kouam@corp.local');
   });
 
   it('-Manager designe un autre compte', async () => {
     const { run } = await controleur();
     await run(`New-ADUser -Name "chef" -SamAccountName "chef" ${PWD}`);
     await run(`New-ADUser -Name "agent" -SamAccountName "agent" -Manager "chef" ${PWD}`);
-    expect(await run('(Get-ADUser -Identity "agent").Manager')).toBe('chef');
+    expect(await run('(Get-ADUser -Identity \"agent\" -Properties *).Manager')).toBe('chef');
   });
 
   it('-OtherAttributes pose un attribut que les parametres ne couvrent pas', async () => {
     const { run } = await controleur();
     await run(`New-ADUser -Name "u4" -SamAccountName "u4" -OtherAttributes @{ pager = "1234" } ${PWD}`);
-    expect(await run('(Get-ADUser -Identity "u4").pager')).toBe('1234');
+    expect(await run('(Get-ADUser -Identity \"u4\" -Properties *).pager')).toBe('1234');
   });
 
   it('-Instance sert de gabarit, et un parametre explicite l\'emporte', async () => {
     const { run } = await controleur();
     await run(`New-ADUser -Name "modele" -SamAccountName "modele" -Department "IT" -City "Douala" ${PWD}`);
-    await run(`$m = Get-ADUser -Identity "modele"; New-ADUser -Name "copie" -SamAccountName "copie" -Instance $m -City "Yaounde" ${PWD}`);
-    const vue = await run('Get-ADUser -Identity "copie" | Format-List Department, City');
+    await run(`$m = Get-ADUser -Identity "modele" -Properties *; New-ADUser -Name "copie" -SamAccountName "copie" -Instance $m -City "Yaounde" ${PWD}`);
+    const vue = await run('Get-ADUser -Identity \"copie\" -Properties * | Format-List Department, City');
     expect(vue).toContain('IT');
     expect(vue).toContain('Yaounde');
   });
@@ -157,7 +162,7 @@ describe('New-ADUser — les drapeaux de userAccountControl', () => {
     const { run } = await controleur();
     await run('New-ADUser -Name "d1" -SamAccountName "d1" -PasswordNotRequired $true -SmartcardLogonRequired $true'
       + ` -TrustedForDelegation $true -AccountNotDelegated $true -AllowReversiblePasswordEncryption $true ${PWD}`);
-    const vue = await run('Get-ADUser -Identity "d1" | Format-List PasswordNotRequired, SmartcardLogonRequired,'
+    const vue = await run('Get-ADUser -Identity \"d1\" -Properties * | Format-List PasswordNotRequired, SmartcardLogonRequired,'
       + ' TrustedForDelegation, AccountNotDelegated, AllowReversiblePasswordEncryption');
     expect(vue.match(/True/g) ?? []).toHaveLength(5);
   });
@@ -165,20 +170,20 @@ describe('New-ADUser — les drapeaux de userAccountControl', () => {
   it('un drapeau non demande reste faux', async () => {
     const { run } = await controleur();
     await run(`New-ADUser -Name "d2" -SamAccountName "d2" ${PWD}`);
-    const vue = await run('Get-ADUser -Identity "d2" | Format-List PasswordNotRequired, SmartcardLogonRequired, TrustedForDelegation');
+    const vue = await run('Get-ADUser -Identity \"d2\" -Properties * | Format-List PasswordNotRequired, SmartcardLogonRequired, TrustedForDelegation');
     expect(vue).not.toContain('True');
   });
 
   it('-ChangePasswordAtLogon met pwdLastSet a zero', async () => {
     const { run } = await controleur();
     await run(`New-ADUser -Name "d3" -SamAccountName "d3" -ChangePasswordAtLogon $true ${PWD}`);
-    expect(await run('(Get-ADUser -Identity "d3").ChangePasswordAtLogon')).toBe('True');
+    expect(await run('(Get-ADUser -Identity \"d3\" -Properties *).ChangePasswordAtLogon')).toBe('True');
   });
 
   it('-CannotChangePassword s\'ecrit en Deny explicites, pas en bit UAC', async () => {
     const { dc, run } = await controleur();
     await run(`New-ADUser -Name "d4" -SamAccountName "d4" -CannotChangePassword $true ${PWD}`);
-    expect(await run('(Get-ADUser -Identity "d4").CannotChangePassword')).toBe('True');
+    expect(await run('(Get-ADUser -Identity \"d4\" -Properties *).CannotChangePassword')).toBe('True');
     const acl = dc.getDirectoryStore()!.getAcl('CN=d4,CN=Users,DC=corp,DC=local') ?? [];
     const deny = acl.filter(a => a.accessControlType === 'Deny' && a.rights === 'ExtendedRight');
     expect(deny.map(a => a.identitySam).sort()).toEqual(['Everyone', 'NT AUTHORITY\\SELF']);
@@ -187,19 +192,19 @@ describe('New-ADUser — les drapeaux de userAccountControl', () => {
   it('-AccountExpirationDate est conservee', async () => {
     const { run } = await controleur();
     await run(`New-ADUser -Name "d5" -SamAccountName "d5" -AccountExpirationDate "2027-01-01" ${PWD}`);
-    expect(await run('(Get-ADUser -Identity "d5").AccountExpirationDate')).toContain('2027');
+    expect(await run('(Get-ADUser -Identity \"d5\" -Properties *).AccountExpirationDate')).toContain('2027');
   });
 
   it('sans -AccountExpirationDate le compte n\'expire pas', async () => {
     const { run } = await controleur();
     await run(`New-ADUser -Name "d6" -SamAccountName "d6" ${PWD}`);
-    expect(await run('(Get-ADUser -Identity "d6").AccountExpirationDate')).toBe('');
+    expect(await run('(Get-ADUser -Identity \"d6\" -Properties *).AccountExpirationDate')).toBe('');
   });
 
   it('-ServicePrincipalNames est conserve', async () => {
     const { run } = await controleur();
     await run(`New-ADUser -Name "d7" -SamAccountName "d7" -ServicePrincipalNames "HTTP/web.corp.local" ${PWD}`);
-    expect(await run('(Get-ADUser -Identity "d7").ServicePrincipalNames')).toContain('HTTP/web.corp.local');
+    expect(await run('(Get-ADUser -Identity \"d7\" -Properties *).ServicePrincipalNames')).toContain('HTTP/web.corp.local');
   });
 });
 
@@ -259,7 +264,7 @@ describe('New-ADUser — ce qui etait deja juste', () => {
   it('TEMOIN — une creation nominale reste une creation', async () => {
     const { run } = await controleur();
     await run(`New-ADUser -Name "temoin" -SamAccountName "temoin" ${PWD}`);
-    const vue = await run('Get-ADUser -Identity "temoin"');
+    const vue = await run('Get-ADUser -Identity "temoin" -Properties *');
     expect(vue).toContain('temoin@corp.local');
     expect(vue).toContain('Domain Users');
   });

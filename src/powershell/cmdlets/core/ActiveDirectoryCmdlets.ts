@@ -29,6 +29,9 @@ import { WindowsSecurityAudit, type SecurityEventSink } from '@/network/devices/
 import { type AdFunctionalLevel, adFunctionalLevelKeywords, parseAdFunctionalLevel } from '@/network/devices/windows/server/ad/adFunctionalLevels';
 import { OU_PROPERTIES, OU_PROPERTY_PARAMETERS } from '@/network/devices/windows/server/ad/adOrganizationalUnit';
 import { USER_FLAGS, USER_FLAG_PARAMETERS, USER_PROPERTIES, USER_PROPERTY_PARAMETERS, accountExpiresValue } from '@/network/devices/windows/server/ad/adUser';
+import { OU_DEFAULT_PROPERTIES, USER_DEFAULT_PROPERTIES, GROUP_DEFAULT_PROPERTIES, COMPUTER_DEFAULT_PROPERTIES, adView } from './adPropertySets';
+import { IPAddress } from '@/network/core/types';
+import type { RemoteDirectoryTarget } from '@/powershell/providers/adRemoteDirectory';
 
 function requireAd(ctx: CmdletContext, cmdletName: string): IAdProvider {
   if (!ctx.providers.ad) {
@@ -468,6 +471,7 @@ function userFlagsFrom(ctx: CmdletContext): Record<string, boolean> {
 
 export class NewADUserCmdlet implements ICmdlet {
   readonly name = 'new-aduser';
+  readonly pipelineByPropertyName = true as const;
   readonly displayName = 'New-ADUser';
   readonly aliases = [] as const;
   readonly parameters = ['Name', 'SamAccountName', 'AccountPassword', 'Path', 'Instance', 'OtherAttributes',
@@ -529,6 +533,7 @@ export class GetADUserCmdlet implements ICmdlet {
     // matching real AD). PasswordExpired compares PasswordLastSet against
     // the effective policy's max age.
     const now = ctx.providers.scheduledTasks?.now?.() ?? new Date();
+    const vue = adView(ctx, USER_DEFAULT_PROPERTIES);
     const withPasswordFields = (u: AdUserInfo): Record<string, PSValue> => {
       const obj = userToPSObject(u);
       const effective = ad.getResultantPasswordPolicy(u.sam) ?? ad.getDefaultDomainPasswordPolicy();
@@ -540,13 +545,13 @@ export class GetADUserCmdlet implements ICmdlet {
       return obj;
     };
     if (ctx.named['filter'] !== undefined) {
-      return filterAdObjects(ad.listUsers().map(withPasswordFields), ctx.named['filter']) as PSValue;
+      return (filterAdObjects(ad.listUsers().map(withPasswordFields), ctx.named['filter']) as Record<string, PSValue>[]).map(vue) as PSValue;
     }
     const identity = identityOf(ctx);
     if (!identity) { ctx.emitError("Get-ADUser : Cannot process command because of one or more missing mandatory parameters: Identity."); return null; }
     const u = ad.getUser(identity);
     if (!u) { ctx.emitError(`Get-ADUser : Cannot find an object with identity: '${identity}'.`); return null; }
-    return withPasswordFields(u);
+    return vue(withPasswordFields(u));
   }
 }
 
@@ -686,18 +691,19 @@ export class NewADGroupCmdlet implements ICmdlet {
 export class GetADGroupCmdlet implements ICmdlet {
   readonly name = 'get-adgroup';
   readonly aliases = [] as const;
-  readonly parameters = ['Identity', 'Filter'] as const;
+  readonly parameters = ['Identity', 'Filter', 'Properties'] as const;
 
   execute(ctx: CmdletContext): PSValue {
     const ad = requireAd(ctx, 'Get-ADGroup');
+    const vue = adView(ctx, GROUP_DEFAULT_PROPERTIES);
     if (ctx.named['filter'] !== undefined) {
-      return filterAdObjects(ad.listGroups().map(groupToPSObject), ctx.named['filter']) as PSValue;
+      return (filterAdObjects(ad.listGroups().map(groupToPSObject), ctx.named['filter']) as Record<string, PSValue>[]).map(vue) as PSValue;
     }
     const identity = identityOf(ctx);
     if (!identity) { ctx.emitError("Get-ADGroup : Cannot process command because of one or more missing mandatory parameters: Identity."); return null; }
     const g = ad.getGroup(identity);
     if (!g) { ctx.emitError(`Get-ADGroup : Cannot find an object with identity: '${identity}'.`); return null; }
-    return groupToPSObject(g);
+    return vue(groupToPSObject(g));
   }
 }
 
@@ -790,23 +796,24 @@ export class GetADGroupMemberCmdlet implements ICmdlet {
 export class GetADComputerCmdlet implements ICmdlet {
   readonly name = 'get-adcomputer';
   readonly aliases = [] as const;
-  readonly parameters = ['Identity', 'Filter', 'SearchBase'] as const;
+  readonly parameters = ['Identity', 'Filter', 'SearchBase', 'Properties'] as const;
 
   execute(ctx: CmdletContext): PSValue {
     const ad = requireAd(ctx, 'Get-ADComputer');
+    const vue = adView(ctx, COMPUTER_DEFAULT_PROPERTIES);
     if (ctx.named['filter'] !== undefined) {
       let items = filterAdObjects(ad.listComputers().map(computerToPSObject), ctx.named['filter']);
       if (ctx.named['searchbase'] !== undefined) {
         const base = psValueToString(ctx.named['searchbase']).toLowerCase();
         items = items.filter(o => (o.DistinguishedName as string).toLowerCase().includes(base));
       }
-      return items as PSValue;
+      return (items as Record<string, PSValue>[]).map(vue) as PSValue;
     }
     const identity = identityOf(ctx);
     if (!identity) { ctx.emitError("Get-ADComputer : Cannot process command because of one or more missing mandatory parameters: Identity."); return null; }
     const c = ad.getComputer(identity);
     if (!c) { ctx.emitError(`Get-ADComputer : Cannot find an object with identity: '${identity}'.`); return null; }
-    return computerToPSObject(c);
+    return vue(computerToPSObject(c));
   }
 }
 
@@ -1227,12 +1234,27 @@ export class SetADAccountPasswordCmdlet implements ICmdlet {
 
 // ── New/Get-ADOrganizationalUnit ─────────────────────────────────────────────
 
+function remoteTargetOf(ctx: CmdletContext): RemoteDirectoryTarget | undefined {
+  if (ctx.named['server'] === undefined) return undefined;
+  const raw = ctx.named['credential'] !== undefined ? psValueToString(ctx.named['credential']) : '';
+  const { username, password } = raw ? parseCredentialArg(raw) : { username: 'Administrator', password: 'admin' };
+  const server = psValueToString(ctx.named['server']);
+  const suffix = server.includes('.') && IPAddress.tryParse(server) === null
+    ? server.split('.').slice(1).join('.') : undefined;
+  return {
+    server, bindUser: username, bindPassword: password,
+    authType: ctx.named['authtype'] !== undefined ? psValueToString(ctx.named['authtype']) : 'Negotiate',
+    domainName: suffix,
+  };
+}
+
 export class NewADOrganizationalUnitCmdlet implements ICmdlet {
   readonly name = 'new-adorganizationalunit';
+  readonly pipelineByPropertyName = true as const;
   readonly displayName = 'New-ADOrganizationalUnit';
   readonly aliases = [] as const;
   readonly parameters = ['Name', 'Path', 'Instance', 'OtherAttributes', 'ProtectedFromAccidentalDeletion',
-    'PassThru', 'Credential', 'WhatIf', 'Confirm', ...OU_PROPERTY_PARAMETERS] as const;
+    'PassThru', 'Credential', 'Server', 'AuthType', 'WhatIf', 'Confirm', ...OU_PROPERTY_PARAMETERS] as const;
 
   execute(ctx: CmdletContext): PSValue {
     const ad = requireAd(ctx, 'New-ADOrganizationalUnit');
@@ -1244,7 +1266,9 @@ export class NewADOrganizationalUnitCmdlet implements ICmdlet {
       ctx.emit(`What if: Performing the operation "New" on target "OU=${name}${path ? `,${path}` : ''}".`);
       return null;
     }
-    const res = ad.newOrganizationalUnit(name, path, { attributes: ouAttributesFrom(ctx), protected: protectedFlag });
+    const res = ad.newOrganizationalUnit(name, path, {
+      attributes: ouAttributesFrom(ctx), protected: protectedFlag, target: remoteTargetOf(ctx),
+    });
     if (!res.ok) { ctx.emitError(`New-ADOrganizationalUnit : ${res.message}`); return null; }
     if (ctx.named['passthru'] !== true) return null;
     const ou = ad.getOrganizationalUnit(name);
@@ -1257,7 +1281,7 @@ export class SetADOrganizationalUnitCmdlet implements ICmdlet {
   readonly displayName = 'Set-ADOrganizationalUnit';
   readonly aliases = [] as const;
   readonly parameters = ['Identity', 'ProtectedFromAccidentalDeletion', 'PassThru', 'Credential',
-    'WhatIf', 'Confirm', ...OU_PROPERTY_PARAMETERS] as const;
+    'Server', 'AuthType', 'WhatIf', 'Confirm', ...OU_PROPERTY_PARAMETERS] as const;
 
   execute(ctx: CmdletContext): PSValue {
     const ad = requireAd(ctx, 'Set-ADOrganizationalUnit');
@@ -1267,7 +1291,7 @@ export class SetADOrganizationalUnitCmdlet implements ICmdlet {
       ctx.emit(`What if: Performing the operation "Set" on target "${identity}".`);
       return null;
     }
-    const res = ad.setOrganizationalUnit(identity, ouAttributesFrom(ctx), booleanArg(ctx, 'protectedfromaccidentaldeletion'));
+    const res = ad.setOrganizationalUnit(identity, ouAttributesFrom(ctx), booleanArg(ctx, 'protectedfromaccidentaldeletion'), remoteTargetOf(ctx));
     if (!res.ok) { ctx.emitError(`Set-ADOrganizationalUnit : ${res.message}`); return null; }
     if (ctx.named['passthru'] !== true) return null;
     const ou = ad.getOrganizationalUnit(identity);
@@ -1279,7 +1303,7 @@ export class RemoveADOrganizationalUnitCmdlet implements ICmdlet {
   readonly name = 'remove-adorganizationalunit';
   readonly displayName = 'Remove-ADOrganizationalUnit';
   readonly aliases = [] as const;
-  readonly parameters = ['Identity', 'Recursive', 'Credential', 'WhatIf', 'Confirm'] as const;
+  readonly parameters = ['Identity', 'Recursive', 'Credential', 'Server', 'AuthType', 'WhatIf', 'Confirm'] as const;
 
   execute(ctx: CmdletContext): PSValue {
     const ad = requireAd(ctx, 'Remove-ADOrganizationalUnit');
@@ -1289,7 +1313,7 @@ export class RemoveADOrganizationalUnitCmdlet implements ICmdlet {
       ctx.emit(`What if: Performing the operation "Remove" on target "${identity}".`);
       return null;
     }
-    const res = ad.removeOrganizationalUnit(identity, ctx.named['recursive'] === true);
+    const res = ad.removeOrganizationalUnit(identity, ctx.named['recursive'] === true, remoteTargetOf(ctx));
     if (!res.ok) ctx.emitError(`Remove-ADOrganizationalUnit : ${res.message}`);
     return null;
   }
@@ -1298,18 +1322,19 @@ export class RemoveADOrganizationalUnitCmdlet implements ICmdlet {
 export class GetADOrganizationalUnitCmdlet implements ICmdlet {
   readonly name = 'get-adorganizationalunit';
   readonly aliases = [] as const;
-  readonly parameters = ['Identity', 'Filter'] as const;
+  readonly parameters = ['Identity', 'Filter', 'Properties', 'SearchBase', 'Server'] as const;
 
   execute(ctx: CmdletContext): PSValue {
     const ad = requireAd(ctx, 'Get-ADOrganizationalUnit');
+    const vue = adView(ctx, OU_DEFAULT_PROPERTIES);
     if (ctx.named['filter'] !== undefined) {
-      return ad.listOrganizationalUnits().map(ouToPSObject) as PSValue;
+      return ad.listOrganizationalUnits().map(ou => vue(ouToPSObject(ou))) as PSValue;
     }
     const identity = identityOf(ctx);
     if (!identity) { ctx.emitError("Get-ADOrganizationalUnit : Cannot process command because of one or more missing mandatory parameters: Identity."); return null; }
     const ou = ad.getOrganizationalUnit(identity);
     if (!ou) { ctx.emitError(`Get-ADOrganizationalUnit : Cannot find an object with identity: '${identity}'.`); return null; }
-    return ouToPSObject(ou);
+    return vue(ouToPSObject(ou));
   }
 }
 

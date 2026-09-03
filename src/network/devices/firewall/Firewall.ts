@@ -161,6 +161,8 @@ import { RouterHostsTable } from '../router/dns/RouterHostsTable';
 import type { VdomServices } from './pipeline/stages/coreStages';
 import { ScheduleStore, type ScheduleObject } from './model/ScheduleObject';
 import { FirewallLogStore } from './logging/FirewallLogStore';
+import { LogDisk } from './logging/LogDisk';
+import { SavedConfiguration } from './config/ConfigSaveMode';
 import { PacketCapture } from './diag/PacketCapture';
 import { TraceRing, TRACE_HISTORY } from './diag/TraceRing';
 import type { UtmProfileStore } from './inspection/UtmProfiles';
@@ -206,6 +208,8 @@ const ICMP_ERROR_TTL = 64;
 const DEFAULT_INTERFACE_MTU = 1500;
 
 export class Firewall extends Equipment {
+  private readonly logDisk = new LogDisk();
+  private readonly savedConfig = new SavedConfiguration();
   consoleLineCount(): number { return 1; }
 
   applyDeviceName(name: string): void {
@@ -1111,7 +1115,8 @@ export class Firewall extends Equipment {
 
   getTimezone(): string { return this.timezoneName; }
 
-  localNow(): number { return localTimeMs(this.timezoneName, this.now()); }
+  localNow(): number { return this.localTimeOf(this.now()); }
+  localTimeOf(at: number): number { return localTimeMs(this.timezoneName, at); }
 
   setLocalClock(localMs: number): void {
     this.clock.set(utcMsForLocal(this.timezoneName, localMs));
@@ -1210,6 +1215,8 @@ export class Firewall extends Equipment {
   activeVdomName(): string { return this.activeVdom; }
 
   vdomNames(): readonly string[] { return this.vdoms.names(); }
+
+  maxVdoms(): number { return this.profile.maxVirtualDomains ?? 1; }
   setMultiVdom(enabled: boolean): void { this.multiVdom = enabled; }
   multiVdomEnabled(): boolean { return this.multiVdom; }
   assignInterfaceToVdom(i: string, v: string): void { this.vdoms.assignInterface(i, v); }
@@ -1298,6 +1305,8 @@ export class Firewall extends Equipment {
   getPolicyRoutes(vdom?: string): PolicyRouteTable { return this.getVdom(vdom).policyRoutes; }
   getScheduleStore(vdom?: string): ScheduleStore { return this.getVdom(vdom).schedules; }
   getLogStore(vdom?: string): FirewallLogStore { return this.getVdom(vdom).logs; }
+  getLogDisk(): LogDisk { return this.logDisk; }
+  getSavedConfiguration(): SavedConfiguration { return this.savedConfig; }
   getUtmProfiles(vdom?: string): UtmProfileStore { return this.getVdom(vdom).utm; }
   getIdentityTable(vdom?: string): IdentityTable { return this.getVdom(vdom).identities; }
   getUserDirectory(vdom?: string): UserDirectory { return this.getVdom(vdom).users; }

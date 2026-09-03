@@ -24,7 +24,13 @@ import { FortiConfigTree } from './runtime/FortiConfigTree';
 import {
   FortiNavigator, unquote, type FortiConfigChange,
 } from './runtime/FortiNavigator';
-import { executeNames, resolvePrefix } from './execute/executeVocabulary';
+import {
+  executeNames, executeOptionNames, resolvePrefix,
+} from './execute/executeVocabulary';
+import {
+  BATCH_ENTERED, BATCH_EXITED, BATCH_STATUS_RUNNING, BATCH_STATUS_STOPPED,
+  BatchMode, renderBatchLog,
+} from './execute/BatchMode';
 import {
   FORTI_GET_VIEWS, resolvePathWords, viewContinuations,
 } from './view/pathResolution';
@@ -132,10 +138,18 @@ const UNSIMULATED_PING_OPTIONS: Readonly<Record<string, string>> = {
 const TFTP_EXPORT_TIMEOUT_MS = 1_000;
 const TFTP_EXPORT_MAX_RETRIES = 2;
 
-function annonceAlimentation(action: 'reboot' | 'shutdown' | 'factoryreset'): string {
-  return action === 'factoryreset'
-    ? 'This operation will reset the system to factory default!'
-    : `This operation will ${action} the system !`;
+type ActionDestructive = 'reboot' | 'shutdown' | 'factoryreset' | 'formatlogdisk';
+
+const FORMATTAGE_DISQUE = 'Formatting disk, Please wait a few seconds!';
+
+function annonceAlimentation(action: ActionDestructive): string {
+  if (action === 'factoryreset') {
+    return 'This operation will reset the system to factory default!';
+  }
+  if (action === 'formatlogdisk') {
+    return 'This operation will erase all data on the log disk!';
+  }
+  return `This operation will ${action} the system !`;
 }
 
 const CERTIFICATE_KEY_SIZES: readonly number[] = Object.freeze([1024, 1536, 2048, 4096]);
@@ -225,6 +239,7 @@ export class FortiShell {
   private haRemote: HaRemoteSession | null = null;
   private haPendingLogin: HaPendingLogin | null = null;
   private continuation: string | null = null;
+  private readonly batch = new BatchMode();
 
   private claimTree(): void {
     this.tree.bindScope(() => this.vdom);
@@ -531,6 +546,12 @@ export class FortiShell {
     if (line.length === 0) return '';
     if (line.endsWith('?')) {
       return this.help(line.slice(0, -1)).join('\n');
+    }
+    if (this.batch.running()) {
+      const control = this.batchControlWords(line);
+      if (control !== null) return this.executeBatch(control);
+      this.batch.queue(line);
+      return '';
     }
 
     if (/^write\b/.test(line)) return FortiMessages.noSaveNeeded();
@@ -915,7 +936,7 @@ export class FortiShell {
       hostname: this.fw.getName(),
       operationMode: settings === 'transparent' ? 'Transparent' : 'NAT',
       vdom: this.vdom,
-      maxVdoms: 10,
+      maxVdoms: this.fw.maxVdoms(),
       vdomsInNat: settings === 'transparent' ? 0 : 1,
       vdomsInTransparent: settings === 'transparent' ? 1 : 0,
       vdomConfiguration: vdomMode === 'no-vdom' ? 'disable' : 'enable',
@@ -1086,6 +1107,72 @@ export class FortiShell {
     this.seedFactoryCertificates();
     this.seedFactoryAdmin();
     this.seedFactoryVdoms();
+  }
+
+  private batchControlWords(line: string): readonly string[] | null {
+    const words = line.split(/\s+/).filter(Boolean);
+    if (words.length < 2) return null;
+    if (!'execute'.startsWith(words[0])) return null;
+    if (resolvePrefix(words[1], executeNames()).name !== 'batch') return null;
+    return words.slice(2);
+  }
+
+  private executeBatch(rest: readonly string[]): string {
+    if (rest.length === 0) return FortiMessages.incomplete('a batch operation');
+    const resolved = resolvePrefix(rest[0], executeOptionNames('batch'));
+    if (resolved.name === undefined) {
+      return resolved.candidates.length > 1
+        ? FortiMessages.ambiguous(rest[0], resolved.candidates)
+        : FortiMessages.unknownAction(`batch ${rest[0]}`);
+    }
+    switch (resolved.name) {
+      case 'start':
+        if (!this.batch.running()) this.batch.start();
+        return BATCH_ENTERED;
+      case 'end':
+        this.batch.end(queued => this.runLine(queued));
+        return BATCH_EXITED;
+      case 'lastlog':
+        return renderBatchLog(this.batch.lastLog());
+      default:
+        return this.batch.running() ? BATCH_STATUS_RUNNING : BATCH_STATUS_STOPPED;
+    }
+  }
+
+  private executeCfg(rest: readonly string[]): string {
+    if (rest.length === 0) return FortiMessages.incomplete('`save` or `reload`');
+    const resolved = resolvePrefix(rest[0], executeOptionNames('cfg'));
+    if (resolved.name === undefined) {
+      return resolved.candidates.length > 1
+        ? FortiMessages.ambiguous(rest[0], resolved.candidates)
+        : FortiMessages.unknownAction(`cfg ${rest[0]}`);
+    }
+
+    const saved = this.fw.getSavedConfiguration();
+    if (resolved.name === 'save') {
+      return saved.save(this.fw.getRunningConfig())
+        ? 'config saved.' : 'no config to be saved.';
+    }
+
+    const text = saved.text();
+    if (text === null) return 'no config to be reloaded.';
+    this.factoryReset();
+    this.absorbClusterConfiguration(text);
+    this.fw.rebootNow();
+    return 'configs reloaded. system will reboot.';
+  }
+
+  private executeVdomLicense(rest: readonly string[]): string {
+    if (rest.length === 0) return FortiMessages.incomplete('a license key');
+    if (!/^[0-9A-Za-z]{32}$/.test(rest[0])) {
+      return FortiMessages.valueError(rest[0],
+        'a VDOM license key is a 32-character string supplied by Fortinet.');
+    }
+    return FortiMessages.unimplementedAction('upd-vd-license',
+      'the tier it grants — 25, 50, 100 or 500 domains on top of the base '
+      + `${this.fw.maxVdoms()} — is encoded inside the key, and only Fortinet's `
+      + 'own licence server decodes it, so this build cannot tell which one you '
+      + 'bought.');
   }
 
   private executeSetSystem(rest: readonly string[]): string {
@@ -1286,11 +1373,23 @@ export class FortiShell {
       words.slice(2), (name) => this.fw.getPort(name) !== undefined);
   }
 
-  private appliquerAlimentation(action: 'reboot' | 'shutdown' | 'factoryreset'): string {
+  private accomplirAction(action: ActionDestructive): void {
     if (action === 'reboot') this.fw.rebootNow();
     else if (action === 'shutdown') this.fw.shutdownNow();
+    else if (action === 'formatlogdisk') { this.formatLogDisk(); this.fw.rebootNow(); }
     else { this.factoryReset(); this.fw.rebootNow(); }
-    return annonceAlimentation(action);
+  }
+
+  private formatLogDisk(): void {
+    this.fw.getLogDisk().format();
+    for (const name of this.fw.vdomNames()) this.fw.getLogStore(name).clear();
+  }
+
+  private appliquerAlimentation(action: ActionDestructive): string {
+    this.accomplirAction(action);
+    return action === 'formatlogdisk'
+      ? `${annonceAlimentation(action)}\n${FORMATTAGE_DISQUE}`
+      : annonceAlimentation(action);
   }
 
   interactionPlanFor(commandLine: string): CommandInteractionPlan | null {
@@ -1299,14 +1398,14 @@ export class FortiShell {
 
     const resolved = resolvePrefix(words[1], executeNames());
     const action = resolved.name;
-    if (action !== 'reboot' && action !== 'shutdown' && action !== 'factoryreset') {
+    if (action !== 'reboot' && action !== 'shutdown'
+      && action !== 'factoryreset' && action !== 'formatlogdisk') {
       return null;
     }
 
-    const announcement = annonceAlimentation(action);
     return {
       steps: [
-        { kind: 'output', lines: [announcement] },
+        { kind: 'output', lines: [annonceAlimentation(action)] },
         {
           kind: 'confirmation',
           prompt: 'Do you want to continue? (y/n)',
@@ -1316,9 +1415,8 @@ export class FortiShell {
           kind: 'run',
           run: async (runtime) => {
             if ((runtime.values.get('forti_power_confirm') ?? '') !== 'yes') return;
-            if (action === 'reboot') this.fw.rebootNow();
-            else if (action === 'shutdown') this.fw.shutdownNow();
-            else { this.factoryReset(); this.fw.rebootNow(); }
+            if (action === 'formatlogdisk') runtime.output(FORMATTAGE_DISQUE);
+            this.accomplirAction(action);
           },
         },
       ],
@@ -1343,8 +1441,11 @@ export class FortiShell {
       case 'dhcp6': return this.executeDhcp6(tail);
       case 'interface': return this.executeInterface(tail);
       case 'policy-packet-capture': return this.executePolicyPacketCapture(tail);
+      case 'batch': return this.executeBatch(tail);
+      case 'cfg': return this.executeCfg(tail);
       case 'set': return this.executeSetSystem(tail);
       case 'sync-session': return this.executeSyncSession();
+      case 'upd-vd-license': return this.executeVdomLicense(tail);
       case 'traceroute':
         return tail.length === 0
           ? FortiMessages.incomplete('a destination')
@@ -1389,7 +1490,7 @@ export class FortiShell {
       case 'backup': return this.executeBackup(tail);
       case 'restore': return this.executeRestore(tail);
       case 'revision': return this.executeRevision(tail);
-      case 'factoryreset': case 'reboot': case 'shutdown':
+      case 'factoryreset': case 'reboot': case 'shutdown': case 'formatlogdisk':
         return this.appliquerAlimentation(resolved.name);
       case 'ssh': case 'telnet':
         return tail.length === 0

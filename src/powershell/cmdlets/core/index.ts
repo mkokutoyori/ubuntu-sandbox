@@ -31,7 +31,7 @@ import {
 } from './CollectionCmdlets';
 import {
   ConvertToJsonCmdlet, ConvertFromJsonCmdlet,
-  ConvertToCsvCmdlet, ConvertFromCsvCmdlet, ExportCsvCmdlet,
+  ConvertToCsvCmdlet, ConvertFromCsvCmdlet, ExportCsvCmdlet, ImportCsvCmdlet,
 } from './ConversionCmdlets';
 import {
   GetDateCmdlet, SetDateCmdlet, NewTimespanCmdlet, StartSleepCmdlet,
@@ -283,6 +283,7 @@ export function registerCoreCmdlets(registry: CmdletRegistry, opts: { includeSer
   registry.register(new ConvertToCsvCmdlet());
   registry.register(new ConvertFromCsvCmdlet());
   registry.register(new ExportCsvCmdlet());
+  registry.register(new ImportCsvCmdlet());
 
   // ── Date/Time ─────────────────────────────────────────────────────────────
   registry.register(new GetDateCmdlet());

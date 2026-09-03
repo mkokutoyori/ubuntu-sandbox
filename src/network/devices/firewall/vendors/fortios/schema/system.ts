@@ -96,6 +96,18 @@ export const SYSTEM_GLOBAL: FortiTableSpec = {
       'Enable/disable back-up of the configuration to a revision when an'
       + ' administrator logs out.'),
     {
+      ...choice('cfg-save', 'Configuration file save mode for CLI changes.', [
+        { keyword: 'automatic', description: 'Save after every change.' },
+        { keyword: 'manual', description: 'Save on `execute cfg save`.' },
+        { keyword: 'revert', description: 'Save manually, then revert on idle.' },
+      ], 'automatic'),
+      unimplementedValues: {
+        revert: 'reverting on an idle administrative session needs a per-session '
+          + 'idle timer this build does not keep; `manual` gives the same save '
+          + 'and reload behaviour without the automatic revert.',
+      },
+    },
+    {
       ...choice('vdom-mode', 'Virtual domain mode.', [
         { keyword: 'no-vdom', description: 'Disable virtual domains.' },
         { keyword: 'multi-vdom', description: 'Enable multiple virtual domains.' },
@@ -165,6 +177,7 @@ export const SYSTEM_GLOBAL: FortiTableSpec = {
       hostname: object.isExplicit('hostname')
         ? object.effective('hostname')[0] : undefined,
       multiVdom: object.effective('vdom-mode')[0] !== 'no-vdom',
+      cfgSaveMode: object.effective('cfg-save')[0] === 'manual' ? 'manual' : 'automatic',
       authHttpPort: number('auth-http-port', 1000),
       authHttpsPort: number('auth-https-port', 1003),
       authKeepAlive: object.effective('auth-keepalive')[0] === 'enable',

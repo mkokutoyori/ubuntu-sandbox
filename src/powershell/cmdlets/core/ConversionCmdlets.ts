@@ -116,6 +116,47 @@ export class ExportCsvCmdlet implements ICmdlet {
   }
 }
 
+function csvRows(
+  lines: readonly string[], headers: readonly string[], dataStart: number, delim: string,
+): Record<string, PSValue>[] {
+  const rows: Record<string, PSValue>[] = [];
+  for (let i = dataStart; i < lines.length; i++) {
+    const cells = parseCsvLine(lines[i], delim);
+    const obj: Record<string, PSValue> = {};
+    headers.forEach((h, j) => { obj[h] = cells[j] ?? ''; });
+    rows.push(obj);
+  }
+  return rows;
+}
+
+function csvHeaderOption(raw: PSValue, delim: string): string[] | null {
+  if (raw === undefined || raw === null) return null;
+  return Array.isArray(raw) ? raw.map(psValueToString) : psValueToString(raw).split(delim).map(v => v.trim());
+}
+
+export class ImportCsvCmdlet implements ICmdlet {
+  readonly name = 'import-csv';
+  readonly displayName = 'Import-Csv';
+  readonly parameters = ['Path', 'LiteralPath', 'Delimiter', 'Header', 'Encoding'] as const;
+  readonly aliases = [] as const;
+
+  execute(ctx: CmdletContext): PSValue {
+    const path = psValueToString(ctx.named['path'] ?? ctx.named['literalpath'] ?? ctx.positional[0] ?? '');
+    if (!path) { ctx.emitError('Import-Csv : Cannot process command because of one or more missing mandatory parameters: Path.'); return null; }
+    const fs = ctx.providers.filesystem;
+    if (!fs) { ctx.emitError('Import-Csv: no filesystem provider in this context'); return null; }
+    let text: string;
+    try { text = fs.readFile(path); }
+    catch { ctx.emitError(`Import-Csv : Could not find file '${path}'.`); return null; }
+    const delim = ctx.named['delimiter'] !== undefined ? psValueToString(ctx.named['delimiter']) : ',';
+    const lines = text.split(/\r?\n/).filter(l => l.length > 0 && !l.startsWith('#TYPE'));
+    const declared = csvHeaderOption(ctx.named['header'], delim);
+    if (declared) return csvRows(lines, declared, 0, delim) as PSValue;
+    if (lines.length === 0) return [];
+    return csvRows(lines, parseCsvLine(lines[0], delim), 1, delim) as PSValue;
+  }
+}
+
 // ─── ConvertFrom-Csv ──────────────────────────────────────────────────────
 
 export class ConvertFromCsvCmdlet implements ICmdlet {
@@ -146,14 +187,7 @@ export class ConvertFromCsvCmdlet implements ICmdlet {
       dataStart = 1;
     }
 
-    const rows: Record<string, PSValue>[] = [];
-    for (let i = dataStart; i < lines.length; i++) {
-      const cells = parseCsvLine(lines[i], delim);
-      const obj: Record<string, PSValue> = {};
-      headers.forEach((h, j) => { obj[h] = cells[j] ?? ''; });
-      rows.push(obj);
-    }
-    return rows;
+    return csvRows(lines, headers, dataStart, delim);
   }
 }
 

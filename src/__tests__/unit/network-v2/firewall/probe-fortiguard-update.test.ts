@@ -127,9 +127,10 @@ describe('FortiGate : les mises a jour FortiGuard', () => {
     expect(sh.execute('execute update-src-vis')).toContain('unknown action');
   });
 
-  it('l aide nomme les trois commandes ouvertes', () => {
+  it('l aide nomme les trois commandes de mise a jour ouvertes', () => {
     const sh = boitier();
     const mots = sh.help('execute up').map(l => l.trim().split(/\s{2,}/)[0]);
-    expect(mots).toEqual(['update-av', 'update-ips', 'update-now']);
+    expect(mots.filter(mot => mot.startsWith('update-')))
+      .toEqual(['update-av', 'update-ips', 'update-now']);
   });
 });

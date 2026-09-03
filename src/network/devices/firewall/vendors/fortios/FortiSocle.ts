@@ -445,6 +445,20 @@ export class FortiSocle {
         'Delete local logs of one category.',
         (_s, args) => this.deps.runExecute(
           ['log', 'delete', ...(args.category ? [args.category] : [])])),
+      this.plain('execute log roll', ['execute', 'log', 'roll'],
+        'Roll log files now.',
+        () => this.deps.runExecute(['log', 'roll'])),
+      this.withArgument('execute log list',
+        ['execute', 'log', 'list', {
+          name: 'category', type: 'WORD', optional: true,
+          description: 'Log category.',
+          alternatives: LOG_CATEGORIES.map(entry => ({
+            keyword: String(entry.index), description: entry.name,
+          })),
+        }],
+        'List current and rolled log files info.',
+        (_s, args) => this.deps.runExecute(
+          ['log', 'list', ...(args.category ? [args.category] : [])])),
       this.withArgument('execute log filter',
         ['execute', 'log', 'filter', rest('rest', 'Filter criterion.')],
         'Set the log display filter.', run2(['log', 'filter'])),

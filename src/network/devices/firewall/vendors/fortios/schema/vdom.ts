@@ -18,6 +18,9 @@ export const SYSTEM_VDOM: FortiTableSpec = {
     { ...word('name', 'VDOM name.'), readOnly: true },
     { ...count('short-name', 'VDOM short name.', 0, 0, 0), readOnly: true },
   ],
+  maxEntries(context) {
+    return context.device.maxVirtualDomains();
+  },
   onCommit(object, context) {
     context.device.applyVdom(object.key);
   },

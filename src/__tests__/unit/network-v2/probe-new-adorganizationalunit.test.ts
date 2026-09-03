@@ -46,6 +46,11 @@
  * n'evalue ; et sans le `Set-`, une OU protegee par defaut ne pourrait
  * JAMAIS etre supprimee, ce qui serait une souriciere.
  *
+ * Note d'un lot ULTERIEUR : `-Properties` gouverne desormais ce que
+ * `Get-ADOrganizationalUnit` rend, et `Description` comme
+ * `ProtectedFromAccidentalDeletion` ne sont PAS dans le jeu par defaut —
+ * les cas qui les lisent demandent donc `-Properties *`.
+ *
  * Discrimine par `git stash` : 15 cas sur 23 tombent avant correctif.
  * Les 8 autres sont nommes plutot que laisses a decouvrir, et TROIS
  * d'entre eux passaient pour une raison qui ne prouve rien :
@@ -83,7 +88,7 @@ describe('New-ADOrganizationalUnit — les proprietes sont posees', () => {
     await run('New-ADOrganizationalUnit -Name "Sieges" -Description "Le siege" -DisplayName "Siege social"'
       + ' -City "Douala" -Country "CM" -State "Littoral" -StreetAddress "rue 1" -PostalCode "0001"'
       + ` -ManagedBy "Administrator" ${LIBRE}`);
-    const vue = await run('Get-ADOrganizationalUnit -Identity "Sieges" | Format-List'
+    const vue = await run('Get-ADOrganizationalUnit -Identity \"Sieges\" -Properties * | Format-List'
       + ' Description, DisplayName, City, Country, State, StreetAddress, PostalCode, ManagedBy');
     for (const attendu of ['Le siege', 'Siege social', 'Douala', 'CM', 'Littoral', 'rue 1', '0001', 'Administrator']) {
       expect(vue).toContain(attendu);
@@ -93,14 +98,14 @@ describe('New-ADOrganizationalUnit — les proprietes sont posees', () => {
   it('-OtherAttributes pose un attribut que les parametres ne couvrent pas', async () => {
     const { run } = await controleur();
     await run(`New-ADOrganizationalUnit -Name "Autres" -OtherAttributes @{ postOfficeBox = "BP 42" } ${LIBRE}`);
-    expect(await run('(Get-ADOrganizationalUnit -Identity "Autres").postOfficeBox')).toBe('BP 42');
+    expect(await run('(Get-ADOrganizationalUnit -Identity \"Autres\" -Properties *).postOfficeBox')).toBe('BP 42');
   });
 
   it('-Instance sert de gabarit, et un parametre explicite l\'emporte', async () => {
     const { run } = await controleur();
     await run(`New-ADOrganizationalUnit -Name "Modele" -City "Douala" -Country "CM" ${LIBRE}`);
     await run(`$m = Get-ADOrganizationalUnit -Identity "Modele"; New-ADOrganizationalUnit -Name "Copie" -Instance $m -City "Yaounde" ${LIBRE}`);
-    const vue = await run('Get-ADOrganizationalUnit -Identity "Copie" | Format-List City, Country');
+    const vue = await run('Get-ADOrganizationalUnit -Identity \"Copie\" -Properties * | Format-List City, Country');
     expect(vue).toContain('Yaounde');
     expect(vue).toContain('CM');
   });
@@ -146,7 +151,7 @@ describe('New-ADOrganizationalUnit — la protection est une ACL', () => {
   it('une OU creee sans rien preciser est PROTEGEE', async () => {
     const { run } = await controleur();
     await run('New-ADOrganizationalUnit -Name "Sieges"');
-    expect(await run('(Get-ADOrganizationalUnit -Identity "Sieges").ProtectedFromAccidentalDeletion')).toBe('True');
+    expect(await run('(Get-ADOrganizationalUnit -Identity \"Sieges\" -Properties *).ProtectedFromAccidentalDeletion')).toBe('True');
     expect(await run('Remove-ADOrganizationalUnit -Identity "Sieges"')).toContain('protected from accidental deletion');
     expect(await run('(Get-ADOrganizationalUnit -Identity "Sieges").Name')).toBe('Sieges');
   });
@@ -177,7 +182,7 @@ describe('New-ADOrganizationalUnit — la protection est une ACL', () => {
   it('-ProtectedFromAccidentalDeletion $false cree une OU supprimable', async () => {
     const { run } = await controleur();
     await run(`New-ADOrganizationalUnit -Name "Libre" ${LIBRE}`);
-    expect(await run('(Get-ADOrganizationalUnit -Identity "Libre").ProtectedFromAccidentalDeletion')).toBe('False');
+    expect(await run('(Get-ADOrganizationalUnit -Identity \"Libre\" -Properties *).ProtectedFromAccidentalDeletion')).toBe('False');
     expect(await run('Remove-ADOrganizationalUnit -Identity "Libre"')).toBe('');
     expect(await run('Get-ADOrganizationalUnit -Identity "Libre"')).toContain('Cannot find an object');
   });
@@ -229,7 +234,7 @@ describe('New-ADOrganizationalUnit — suppression et arborescence', () => {
     const { run } = await controleur();
     await run(`New-ADOrganizationalUnit -Name "Sieges" -Description "avant" -City "Douala" ${LIBRE}`);
     await run('Set-ADOrganizationalUnit -Identity "Sieges" -Description "apres"');
-    const vue = await run('Get-ADOrganizationalUnit -Identity "Sieges" | Format-List Description, City');
+    const vue = await run('Get-ADOrganizationalUnit -Identity \"Sieges\" -Properties * | Format-List Description, City');
     expect(vue).toContain('apres');
     expect(vue).toContain('Douala');
   });

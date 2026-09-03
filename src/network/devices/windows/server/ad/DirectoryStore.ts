@@ -98,6 +98,7 @@ export interface UserWriteOptions {
 }
 
 export interface OrgUnitWriteOptions {
+  target?: { server: string; bindUser: string; bindPassword: string; authType: string; domainName?: string };
   attributes?: Record<string, string>;
   protected?: boolean;
 }
@@ -518,7 +519,9 @@ export class DirectoryStore {
       if (value) properties[spec.parameter] = value;
     }
     for (const [ldap, values] of entry.attributes) {
-      if (!known.has(ldap.toLowerCase()) && values.length > 0) properties[ldap] = values[0];
+      if (!known.has(ldap.toLowerCase()) && values.length > 0) {
+        properties[this.tree.canonicalAttributeName(ldap)] = values[0];
+      }
     }
     return {
       name: firstOf(entry.attributes.get('ou')), dn: formatDN(entry.dn),
@@ -922,7 +925,7 @@ export class DirectoryStore {
   }
 
   private projectUserProperties(entry: DirectoryEntry): Record<string, string> {
-    const known = new Set(['objectclass', 'cn', 'samaccountname', 'objectsid', 'useraccountcontrol',
+    const known = new Set(['objectclass', 'cn', 'name', 'samaccountname', 'objectsid', 'useraccountcontrol',
       'userpassword', 'pwdlastset', 'accountexpires', 'serviceprincipalname', 'memberof', 'ou']);
     const out: Record<string, string> = {};
     for (const spec of USER_PROPERTIES) {
@@ -931,7 +934,9 @@ export class DirectoryStore {
       if (value) out[spec.parameter] = value;
     }
     for (const [ldap, values] of entry.attributes) {
-      if (!known.has(ldap.toLowerCase()) && values.length > 0) out[ldap] = values[0];
+      if (!known.has(ldap.toLowerCase()) && values.length > 0) {
+        out[this.tree.canonicalAttributeName(ldap)] = values[0];
+      }
     }
     return out;
   }

@@ -2021,69 +2021,6 @@ défauts — la méthode vaut d'être reprise sur le reliquat.
   depuis ce reseau. Elles ne refusent que des valeurs absurdes ; si une
   capture les contredit, ce sont elles qu'il faut corriger et non le
   mecanisme.
-- `-Server`, `-AuthType` et `-Instance` en ENTREE DE PIPELINE ne sont pas
-  declares sur `New-ADOrganizationalUnit` (ni sur `Set-`/`Remove-`), alors
-  que la documentation du cmdlet les porte. `-Server` et `-AuthType`
-  gouvernent le choix et l'authentification du contrôleur interroge :
-  toutes les commandes d'OBJET de ce simulateur passent par
-  `requireStore()`, c'est-a-dire l'annuaire LOCAL de la machine, et aucun
-  chemin ne dialogue avec un contrôleur distant pour lire ou ecrire un
-  objet — seuls `Install-ADDSDomainController`, `New-ADDomain` et
-  `New-ADTrust` evaluent un `-Server`, parce qu'eux composent vraiment.
-  Les declarer les rangerait sans que rien ne les evalue, ce que la
-  convention du depot interdit. `-Instance` est evalue comme GABARIT (un
-  objet passe en parametre) mais pas comme entree de PIPELINE, le
-  `Import-Csv | New-ADOrganizationalUnit` de la methode 3 de la
-  documentation demandant que le cmdlet lise `ctx.pipeInput` par
-  PROPRIETE, mecanisme que ce moteur n'a pas.
-- `-Properties` est declare par `Get-ADUser`, `Get-ADComputer`,
-  `Get-ADObject` et `Get-ADOrganizationalUnit` et EVALUE PAR AUCUN : ces
-  vues rendent toutes leurs proprietes, quoi qu'on demande. Sur une vraie
-  machine le cmdlet rend un JEU PAR DEFAUT et `-Properties` seul y ajoute
-  le reste — c'est ce qui fait qu'un `Get-ADOrganizationalUnit` sans
-  `-Properties Description` n'affiche PAS la description, question posee
-  mille fois. Non ferme ici parce que c'est un lot a soi, sur quatre
-  cmdlets a la fois : leur donner un jeu par defaut a chacun demande de
-  MESURER lequel, et le faire pour la seule OU laisserait `-Properties`
-  vivant d'un cote et inerte des trois autres, c'est-a-dire deux reponses
-  a une meme question. Ce lot rend donc TOUT ce qui est pose, choix qui
-  ne cache aucune donnee — l'inverse aurait rendu invisible la
-  description que l'operateur vient d'ecrire.
-- Un attribut pose par `-OtherAttributes` est relu sous le nom que
-  l'arbre LDAP stocke, c'est-a-dire en MINUSCULES (`postofficebox`), la
-  ou une vraie machine rend la casse canonique du schema
-  (`postOfficeBox`). Sans consequence a l'usage — les noms d'attributs
-  LDAP sont insensibles a la casse et l'acces aux proprietes de ce moteur
-  PowerShell l'est aussi, donc `$ou.postOfficeBox` repond (mesure) —
-  mais un `Format-List` affiche la clef stockee. Fermer cela demande que
-  le `SchemaValidator` porte la casse canonique de chaque attribut, ce
-  qu'il ne fait pas.
-
-### [nmap] la banniere et le balayage ACK inspectent encore l'objet distant
-`buildProbes` a ete converti pour la DECOUVERTE d'hote (vraies sondes
-ICMP et TCP, `nmap.h` : `-PE -PA80 -PS443 -PP`) et pour le verdict UDP
-(lecture de l'ICMP recu, `scan_engine_raw.cc`). Deux chemins restent des
-inspections d'objet.
-**Mesure** : `banner()` appelle `grabBanner(found.device, port)`, donc
-`-sV` lit la banniere DANS l'equipement cible au lieu de l'ouvrir sur une
-vraie connexion ; `ackReaches()` appelle `transitAckAclVerdict`, qui
-evalue les listes de controle par parcours de topologie au lieu d'emettre
-un ACK et d'observer le RST. Aucune trame ne porte ces deux reponses.
-**Pourquoi ce n'est pas ferme ici** : la banniere demande d'ouvrir une
-connexion TCP et de LIRE le premier envoi du serveur, ce que `nmap.h`
-n'aide pas a trancher — c'est `nmap-service-probes` qui decrit les sondes
-et leurs correspondances, un fichier de donnees a part entiere ; et le
-balayage ACK demande d'emettre un segment ACK nu, que la pile n'expose
-pas aujourd'hui.
-
-### [ssh] la banniere du serveur n'est pas celle d'un OpenSSH
-**Mesure** : `nmap -sV -p 22` contre un `LinuxServer` rend
-`22/tcp open ssh Sandbox-Server (protocol 2.0)`. Un vrai OpenSSH annonce
-`SSH-2.0-OpenSSH_<version>` et `nmap` rend
-`OpenSSH 8.9p1 Ubuntu 3ubuntu0.4 (Ubuntu Linux; protocol 2.0)`.
-**Pourquoi ce n'est pas ferme ici** : la chaine est celle du serveur SSH
-du simulateur, pas de `nmap` ; la changer touche la poignee de main SSH
-et les tests qui l'observent, et c'est un autre sujet.
 - `bgp bestpath <option>` est accepte, range dans le sac de texte du
   processus et rendu tel quel, alors que ses options forment un ensemble
   FERME sur IOS (`as-path`, `compare-routerid`, `med`, `cost-community`…)
@@ -2117,11 +2054,6 @@ et les tests qui l'observent, et c'est un autre sujet.
   delegation contrainte fondee sur les ressources a bien un magasin cote
   ORDINATEUR, `setComputerAllowedToDelegateTo`, mais aucun cote
   utilisateur). Les declarer les rangerait sans que rien ne les evalue.
-- `-Instance` en entree de PIPELINE n'est pas lu, sur `New-ADUser` comme
-  sur `New-ADOrganizationalUnit` : la methode 3 de la documentation
-  (`Import-Csv | New-ADUser`) demande que le cmdlet lise `ctx.pipeInput`
-  PAR PROPRIETE, mecanisme que ce moteur n'a pas. `-Instance` comme
-  GABARIT, lui, est evalue.
 - `New-ADUser` accepte encore un `-Name` seul et en deduit le
   sAMAccountName, alors que la documentation ecrit « You must specify the
   SamAccountName parameter to create a user ». Le repli est conserve
@@ -2130,3 +2062,80 @@ et les tests qui l'observent, et c'est un autre sujet.
   tomber des laboratoires qui l'utilisent ; mais un compte dont le nom
   porte une espace y prend alors un sAMAccountName avec une espace, ce
   qu'une vraie machine n'accepte pas.
+- Un refus par liste de controle d'un routeur est rendu `closed` par
+  `nmap` la ou une vraie machine dit `filtered`. Mesure sur le TP 13 :
+  R1 porte `deny ip any any` en entree de Gi0/0, la sonde TCP vers 8080
+  ressort `8080/tcp closed`, et `Host is up` — donc l'ACL est visible
+  comme un port ferme et non comme un filtre. La chaine collapse tout
+  ICMP inatteignable en `refused` (`TcpWireOutcome`), alors que le noyau
+  distingue le code 3 (port inatteignable, ECONNREFUSED, `closed`) du
+  code 13 (interdit par filtre, EACCES, `filtered`) et que
+  `scan_engine_connect.cc` de nmap applique cette distinction. Le code
+  13 est bien EMIS par `Router.sendICMPError` ; c'est la traduction en
+  issue de connexion qui le perd. Non ferme ici pour ne pas entrer en
+  collision avec le chantier `nmap`/ICMP en cours dans les memes
+  fichiers.
+- Le commutateur Cisco porte TROIS resolveurs de nom d'interface :
+  `resolvePortName` (correspondance exacte seule), sa propre
+  `resolveInterfaceName` (exacte plus une table de prefixes ecrite a la
+  main, une vingtaine d'entrees par type) et celle de `CiscoShellBase`
+  (exacte plus une heuristique par squelette numerique). Ce lot en ferme
+  UN des trois — la methode du commutateur devient un `override` explicite
+  de celle de la base, donc les deux plateformes partagent desormais la
+  meilleure des deux —, et laisse `resolvePortName`. La fondre changerait
+  le COMPORTEMENT de ses appelants (`mrouter interface Gi0/1` serait
+  accepte la ou seule la forme longue passe aujourd'hui), ce qui est une
+  amelioration mais pas la question de ce lot.
+- `snmp-server community <nom> RO <mot>` accepte n'importe quel mot comme
+  liste de controle, y compris un nom de liste qui n'existe pas. Ce n'est
+  PAS ferme ici et c'est deliberé : IOS ecrit `snmp-server` AVANT
+  `access-list` dans sa propre configuration, donc refuser une reference
+  en avant empecherait la machine de relire sa propre configuration de
+  demarrage — la meme raison qui fait accepter `ip nat inside source
+  list <n>` avant que la liste existe. Ce qui manque serait un controle
+  a l'EMPLOI et non a la saisie.
+- `ip domain lookup source-interface <interface>` accepte une interface
+  qui n'existe pas (`zorglub`, `GigabitEthernet9/9`) et la rend dans la
+  configuration. Une sonde de cette session a tente de l'exiger et le
+  correctif a fait tomber `tuto-dns-cisco-conformite`, qui nomme une
+  `Loopback0` non creee — donc un test de conformite du depot affirme le
+  contraire de la premisse. Ce que fait un vrai IOS ici n'est atteste par
+  aucune source atteignable depuis ce reseau (les domaines de Cisco sont
+  refuses par le mandataire de sortie), et l'argument du rejeu ne tranche
+  pas : ce simulateur rend cette ligne APRES les interfaces, donc un
+  rechargement fonctionnerait dans les deux cas. La moitie du lot a ete
+  ABANDONNEE plutot que forcee. A rouvrir avec une capture, en verifiant
+  d'abord si le tutoriel dont ce test est tire montre la loopback creee
+  avant.
+- `set ip dscp`, `set ip tos`, `set traffic-index`, `set mpls-label` et
+  `set vrf` ne figurent pas dans `ROUTE_MAP_SET_CLAUSES` et sont donc
+  desormais REFUSEES sur une carte de routage. La table declare ce qui
+  est atteste et ce que le depot exerce ; ces cinq formes existent sur un
+  vrai IOS mais aucune source atteignable depuis ce reseau n'en donne la
+  grammaire exacte (les domaines de Cisco sont refuses par le mandataire
+  de sortie), et une place declaree au juge trop laxiste vaudrait le sac
+  de chaines qu'on vient de retirer. A ajouter des qu'une capture ou une
+  documentation les atteste, une entree par forme.
+- `redistribution.test.ts` > « the RIP domain learns OSPF-side prefixes
+  with the redistribute metric » echoue sur `0101d8f5`, c'est-a-dire
+  AVANT tout travail de cette session — verifie par `git stash` sur un
+  arbre propre. La route `192.168.3.0` redistribuee d'OSPF vers RIP
+  n'arrive pas jusqu'a R1. Defaut de convergence a diagnostiquer, non
+  imputable au lot route-map, qui ne touche ni RIP ni OSPF.
+- `apply preference` et `car cir` de VRP n'ont pas de borne HAUTE
+  appliquee : la premiere est une distance administrative, la seconde un
+  debit en kbit/s, toutes deux bornees par la PLATEFORME, et la
+  documentation de Huawei n'est pas atteignable depuis ce reseau. Seule
+  la certitude « c'est un nombre » est appliquee (`vrpNombre`), ce qui
+  ferme le `NaN` sans inventer un plafond. A rouvrir avec une capture.
+- Le classificateur de trafic de ce simulateur accepte `if-match vlan`
+  la ou VRP ecrit `if-match vlan-id`. Le lot des valeurs de politique VRP
+  a juge la VALEUR (1-4094, via `parseVlanId`) sans toucher au MOT :
+  changer l'orthographe acceptee sans capture remplacerait une invention
+  par une autre. A trancher avec une transcription reelle.
+- `if-match cost` de VRP est desormais range et rend le noeud ECHOUANT
+  FERME, comme `acl`, `community`, `as-path`, `interface` et
+  `ext-community` avant lui : `RoutePolicyRouteInput` ne porte aucun cout
+  a comparer. L'evaluer demande de faire voyager la metrique de la route
+  redistribuee jusqu'a la politique, ce qui est un autre sujet que la
+  grammaire de la CLI.

@@ -5991,9 +5991,23 @@ Refais le scan ACK :
 
 ```bash
 attaquant@ext:~$ sudo nmap -sA -p 1-1000 192.168.10.10
+Nmap scan report for 192.168.10.10 [host down]
+Note: Host seems down. If it is really up, but blocking our ping probes, try -Pn
 ```
 
-Cette fois, **rien ne passe**. Vérifie pourquoi :
+**Première leçon, avant même le scan** : le FortiGate rend la machine
+invisible. `nmap` commence toujours par une phase de *découverte* — un
+écho ICMP, puis une connexion TCP vers 80 et 443 — et le pare-feu jette
+les trois, faute de politique entrante. `nmap` en conclut que l'hôte
+est éteint et **ne scanne rien du tout**. Fais ce que `nmap` te dit :
+
+```bash
+attaquant@ext:~$ sudo nmap -sA -Pn -p 1-1000 192.168.10.10
+```
+
+`-Pn` saute la découverte et scanne quand même. Cette fois, **rien ne
+passe** — les ports ressortent `filtered` et non `unfiltered`. Vérifie
+pourquoi :
 
 ```
 FGT-01 # diagnose debug flow filter clear
@@ -6170,9 +6184,13 @@ user@pc-lan:~$ curl -s -o /dev/null -w "%{http_code}\n" http://neverssl.com
 **Étape 2 — Exigence n°2 : rien n'entre**
 
 ```bash
-attaquant@ext:~$ sudo nmap -sA -p 1-1000 192.168.10.10
-attaquant@ext:~$ sudo nmap -sS -p 1-1000 192.168.10.10
+attaquant@ext:~$ sudo nmap -sA -Pn -p 1-1000 192.168.10.10
+attaquant@ext:~$ sudo nmap -sS -Pn -p 1-1000 192.168.10.10
 ```
+
+> 💡 `-Pn` parce que le FortiGate jette aussi les sondes de découverte :
+> sans lui, `nmap` déclare l'hôte éteint et ne scanne rien.
+
 
 ⚠️ R1 : partiellement (échoue sur le scan ACK). ✅ Le FortiGate : oui.
 

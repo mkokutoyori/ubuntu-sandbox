@@ -200,11 +200,20 @@ describe('TP 13 — prouver l\'absence de memoire', () => {
         .not.toMatch(/set srcintf "port1"/);
     });
 
+  it('etape 7 : le pare-feu rend l\'hote INVISIBLE a la decouverte', async () => {
+    const { externe } = await laboratoirePareFeu();
+
+    const scan = await externe.executeCommand('nmap -sA -p 8080 192.168.10.10');
+    expect(scan).toMatch(/Host seems down/);
+    expect(scan).toMatch(/try -Pn/);
+  });
+
   it('etape 7 : et il BLOQUE le balayage ACK, sans regle de plus', async () => {
     const { pcLan, externe } = await laboratoirePareFeu();
     await pcLan.executeCommand('nc -l -p 8080 &');
 
-    const scan = await externe.executeCommand('nmap -sA -p 8080 192.168.10.10');
+    const scan = await externe.executeCommand('nmap -sA -Pn -p 8080 192.168.10.10');
+    expect(scan).toMatch(/8080\/tcp\s+filtered/);
     expect(scan).not.toMatch(/8080\/tcp\s+unfiltered/);
   });
 
@@ -217,7 +226,7 @@ describe('TP 13 — prouver l\'absence de memoire', () => {
       'diagnose debug flow trace start 10',
       'diagnose debug enable',
     ]);
-    await externe.executeCommand('nmap -sA -p 8080 192.168.10.10');
+    await externe.executeCommand('nmap -sA -Pn -p 8080 192.168.10.10');
 
     const trace = await fgt.executeCommand('diagnose debug enable');
     expect(trace).toMatch(/no session matched, drop/);

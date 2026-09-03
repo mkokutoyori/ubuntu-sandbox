@@ -32,6 +32,16 @@ export interface ICmdlet {
   /** Optional one-line summary surfaced by `Get-Help <Name>` / `Get-Command`. */
   readonly description?: string;
 
+  /**
+   * Declares that each pipeline item's properties bind to this cmdlet's
+   * own parameters by name, the way a real cmdlet's
+   * `ValueFromPipelineByPropertyName` does — `Import-Csv x.csv |
+   * New-ADUser` runs the cmdlet once per row. A cmdlet that reads
+   * `ctx.pipeInput` itself must NOT declare it: the runtime would fan the
+   * pipeline out before the body ever saw it.
+   */
+  readonly pipelineByPropertyName?: true;
+
   /** Optional source/module label surfaced by `Get-Command` ("Source"). */
   readonly module?: string;
 

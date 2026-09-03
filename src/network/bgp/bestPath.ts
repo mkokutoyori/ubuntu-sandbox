@@ -16,15 +16,18 @@
  * SRP: pure comparison logic only — no engine/topology knowledge.
  */
 import type { RibRoute } from '../routing/types';
+import { BGP_ORIGINS, type BgpOrigin } from './attributes';
 
-export type BgpOrigin = 'igp' | 'egp' | 'incomplete';
+export type { BgpOrigin };
 
 /** Default LOCAL_PREF advertised within an AS (Cisco/Juniper default). */
 export const BGP_DEFAULT_LOCAL_PREF = 100;
 /** Cisco default weight for locally originated paths. */
 export const BGP_WEIGHT_LOCAL = 32768;
 
-const ORIGIN_RANK: Record<BgpOrigin, number> = { igp: 0, egp: 1, incomplete: 2 };
+const ORIGIN_RANK: Record<BgpOrigin, number> = Object.fromEntries(
+  BGP_ORIGINS.map((o, rank) => [o, rank]),
+) as Record<BgpOrigin, number>;
 
 export interface BgpPathCandidate {
   readonly route: RibRoute;

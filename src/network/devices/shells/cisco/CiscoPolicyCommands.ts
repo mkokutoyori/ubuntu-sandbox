@@ -12,6 +12,10 @@ import { boundedInteger, type ArgumentSpec } from '@/cli/ArgumentTypes';
 import { resolveEnumValue } from '@/cli/ArgumentTypes';
 import type { PolicyRepository, PrefixListEntry }
   from '../../inspection/config/PolicyRepository';
+import {
+  parseRouteMapClause, routeMapClauseAlternatives, type RouteMapClauseKind,
+} from '../../router/policy/routeMapClauses';
+import { INCOMPLETE_MESSAGE } from '../cli/CliDiagnostic';
 
 interface Ctx {
   setMode(m: 'config-route-map' | 'config'): void;
@@ -51,12 +55,15 @@ function lireAction(token: string | undefined): 'permit' | 'deny' | undefined {
   return resolveEnumValue(ACTION_SPEC, token) as 'permit' | 'deny' | undefined;
 }
 
+function colonneDeIndex(tete: string, args: readonly string[], index: number): number {
+  if (index < 0 || index > args.length) return tete.length + args.join(' ').length;
+  return tete.length + args.slice(0, index).reduce((n, m) => n + m.length + 1, 0);
+}
+
 function colonneDuJeton(
   tete: string, args: readonly string[], jeton: string | undefined,
 ): number {
-  const index = jeton === undefined ? -1 : args.indexOf(jeton);
-  if (index < 0) return tete.length + args.join(' ').length;
-  return tete.length + args.slice(0, index).reduce((n, m) => n + m.length + 1, 0);
+  return colonneDeIndex(tete, args, jeton === undefined ? -1 : args.indexOf(jeton));
 }
 
 function respecteLenGeLe(
@@ -178,20 +185,21 @@ export function buildRouteMapSubmodeOn(
     const sel = ctx.getSelectedRouteMap();
     return sel ? repo.ensureRouteMap(sel.name, 'permit', sel.seq) : null;
   };
-  const addClause = (list: string[], args: string[]) => {
-    const value = args.join(' ');
+  const poser = (kind: RouteMapClauseKind, args: string[]): string => {
+    const lu = parseRouteMapClause(kind, args);
+    if (!('line' in lu)) {
+      if (lu.incomplete) return INCOMPLETE_MESSAGE;
+      return formatInvalidInput(colonneDeIndex(`${kind} `, args, lu.at));
+    }
+    const c = clause();
+    if (!c) return '';
+    const list = kind === 'match' ? c.match : c.set;
+    const value = lu.line.slice(kind.length + 1);
     if (!list.includes(value)) list.push(value);
+    return '';
   };
-  routeMapTrie.registerGreedy('match', 'Match clause', (args) => {
-    const c = clause();
-    if (c) addClause(c.match, args);
-    return '';
-  });
-  routeMapTrie.registerGreedy('set', 'Set clause', (args) => {
-    const c = clause();
-    if (c) addClause(c.set, args);
-    return '';
-  });
+  routeMapTrie.registerGreedy('match', 'Match clause', (args) => poser('match', args));
+  routeMapTrie.registerGreedy('set', 'Set clause', (args) => poser('set', args));
   routeMapTrie.registerGreedy('no match', 'Remove match clause', (args) => {
     const c = clause(); if (!c) return '';
     const pattern = args.join(' ').toLowerCase();
@@ -212,38 +220,12 @@ export function buildRouteMapSubmodeOn(
 
 const ROUTE_MAP_ARGUMENTS:
 Readonly<Record<string, ArgumentSpec | readonly ArgumentSpec[] | null>> = {
-  /*
-   * Les criteres et les actions sont NOMMES et non enumeres : le
-   * gestionnaire range ce qu'il ne reconnait pas, donc un domaine fini
-   * refuserait au caret ce que la machine avale. Ils etaient declares
-   * par `ciscoArgumentHelp`, qui s'execute apres l'elagage — donc morts
-   * depuis la migration de cette famille.
-   */
   match: { name: 'critere', type: 'REST',
     description: 'Criterion the route must satisfy',
-    alternatives: [
-      { keyword: 'as-path', description: 'Match BGP AS path list' },
-      { keyword: 'community', description: 'Match BGP community list' },
-      { keyword: 'interface', description: 'Match first hop interface of route' },
-      { keyword: 'ip', description: 'IP specific information' },
-      { keyword: 'length', description: 'Packet length' },
-      { keyword: 'metric', description: 'Match metric of route' },
-      { keyword: 'tag', description: 'Match tag of route' },
-    ] },
+    alternatives: routeMapClauseAlternatives('match') },
   set: { name: 'action', type: 'REST',
     description: 'Value the route-map applies to a matching route',
-    alternatives: [
-      { keyword: 'as-path', description: 'Prepend string for a BGP AS-path attribute' },
-      { keyword: 'community', description: 'BGP community attribute' },
-      { keyword: 'interface', description: 'Output interface' },
-      { keyword: 'ip', description: 'IP specific information' },
-      { keyword: 'local-preference', description: 'BGP local preference path attribute' },
-      { keyword: 'metric', description: 'Metric value for destination routing protocol' },
-      { keyword: 'metric-type', description: 'Type of metric for destination routing protocol' },
-      { keyword: 'origin', description: 'BGP origin code' },
-      { keyword: 'tag', description: 'Tag value for destination routing protocol' },
-      { keyword: 'weight', description: 'BGP weight for routing table' },
-    ] },
+    alternatives: routeMapClauseAlternatives('set') },
   description: { name: 'texte', type: 'REST', literal: 'LINE',
     description: 'Description of this route-map clause' },
 };
