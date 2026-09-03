@@ -138,10 +138,18 @@ const UNSIMULATED_PING_OPTIONS: Readonly<Record<string, string>> = {
 const TFTP_EXPORT_TIMEOUT_MS = 1_000;
 const TFTP_EXPORT_MAX_RETRIES = 2;
 
-function annonceAlimentation(action: 'reboot' | 'shutdown' | 'factoryreset'): string {
-  return action === 'factoryreset'
-    ? 'This operation will reset the system to factory default!'
-    : `This operation will ${action} the system !`;
+type ActionDestructive = 'reboot' | 'shutdown' | 'factoryreset' | 'formatlogdisk';
+
+const FORMATTAGE_DISQUE = 'Formatting disk, Please wait a few seconds!';
+
+function annonceAlimentation(action: ActionDestructive): string {
+  if (action === 'factoryreset') {
+    return 'This operation will reset the system to factory default!';
+  }
+  if (action === 'formatlogdisk') {
+    return 'This operation will erase all data on the log disk!';
+  }
+  return `This operation will ${action} the system !`;
 }
 
 const CERTIFICATE_KEY_SIZES: readonly number[] = Object.freeze([1024, 1536, 2048, 4096]);
@@ -1329,11 +1337,23 @@ export class FortiShell {
       words.slice(2), (name) => this.fw.getPort(name) !== undefined);
   }
 
-  private appliquerAlimentation(action: 'reboot' | 'shutdown' | 'factoryreset'): string {
+  private accomplirAction(action: ActionDestructive): void {
     if (action === 'reboot') this.fw.rebootNow();
     else if (action === 'shutdown') this.fw.shutdownNow();
+    else if (action === 'formatlogdisk') { this.formatLogDisk(); this.fw.rebootNow(); }
     else { this.factoryReset(); this.fw.rebootNow(); }
-    return annonceAlimentation(action);
+  }
+
+  private formatLogDisk(): void {
+    this.fw.getLogDisk().format();
+    for (const name of this.fw.vdomNames()) this.fw.getLogStore(name).clear();
+  }
+
+  private appliquerAlimentation(action: ActionDestructive): string {
+    this.accomplirAction(action);
+    return action === 'formatlogdisk'
+      ? `${annonceAlimentation(action)}\n${FORMATTAGE_DISQUE}`
+      : annonceAlimentation(action);
   }
 
   interactionPlanFor(commandLine: string): CommandInteractionPlan | null {
@@ -1342,14 +1362,14 @@ export class FortiShell {
 
     const resolved = resolvePrefix(words[1], executeNames());
     const action = resolved.name;
-    if (action !== 'reboot' && action !== 'shutdown' && action !== 'factoryreset') {
+    if (action !== 'reboot' && action !== 'shutdown'
+      && action !== 'factoryreset' && action !== 'formatlogdisk') {
       return null;
     }
 
-    const announcement = annonceAlimentation(action);
     return {
       steps: [
-        { kind: 'output', lines: [announcement] },
+        { kind: 'output', lines: [annonceAlimentation(action)] },
         {
           kind: 'confirmation',
           prompt: 'Do you want to continue? (y/n)',
@@ -1359,9 +1379,8 @@ export class FortiShell {
           kind: 'run',
           run: async (runtime) => {
             if ((runtime.values.get('forti_power_confirm') ?? '') !== 'yes') return;
-            if (action === 'reboot') this.fw.rebootNow();
-            else if (action === 'shutdown') this.fw.shutdownNow();
-            else { this.factoryReset(); this.fw.rebootNow(); }
+            if (action === 'formatlogdisk') runtime.output(FORMATTAGE_DISQUE);
+            this.accomplirAction(action);
           },
         },
       ],
@@ -1433,7 +1452,7 @@ export class FortiShell {
       case 'backup': return this.executeBackup(tail);
       case 'restore': return this.executeRestore(tail);
       case 'revision': return this.executeRevision(tail);
-      case 'factoryreset': case 'reboot': case 'shutdown':
+      case 'factoryreset': case 'reboot': case 'shutdown': case 'formatlogdisk':
         return this.appliquerAlimentation(resolved.name);
       case 'ssh': case 'telnet':
         return tail.length === 0

@@ -53,7 +53,12 @@ import {
 } from './lldpRenderer';
 import { selectBundleMemberForFlow } from '@/network/lacp/loadBalance';
 import { renderAutoupdateVersions } from './fortiguardRenderer';
-import { describeLogCategories, resolveLogCategory } from '../log/logCategories';
+import {
+  describeLogCategories, logFilePrefix, resolveLogCategory, typesOfLogFile,
+} from '../log/logCategories';
+import type { LogFilePrefix, RolledLogFile } from '../../../logging/LogDisk';
+import { renderLogListing } from '../log/logFileListing';
+import type { FirewallLogStore } from '../../../logging/FirewallLogStore';
 
 function vueAgregat(nom: string, deps: FortiDiagDeps): AggregateView | null {
   const spec = deps.fw.getAggregates().get(nom);
@@ -308,6 +313,44 @@ function diagnoseSdwan(rest: readonly string[], deps: FortiDiagDeps): string {
   return FortiMessages.unknownPath(`sys sdwan ${rest.join(' ')}`);
 }
 
+function currentLogFile(
+  store: FirewallLogStore, prefix: LogFilePrefix,
+): RolledLogFile | undefined {
+  let bytes = 0;
+  let at: number | null = null;
+  for (const type of typesOfLogFile(prefix)) {
+    bytes += store.usedBytes({ type });
+    const newest = store.newestAt({ type });
+    if (newest !== null && (at === null || newest > at)) at = newest;
+  }
+  return at === null ? undefined : { prefix, bytes, at };
+}
+
+function rollLogFiles(deps: FortiDiagDeps): string {
+  const store = deps.fw.getLogStore();
+  const disk = deps.fw.getLogDisk();
+  for (const prefix of ['tlog', 'elog'] as const) {
+    const current = currentLogFile(store, prefix);
+    if (current !== undefined) disk.roll(prefix, current.bytes, current.at);
+  }
+  store.clear();
+  return '';
+}
+
+function listLogFiles(raw: string | undefined, deps: FortiDiagDeps): string {
+  if (raw === undefined || raw === '?') return describeLogCategories();
+  const category = resolveLogCategory(raw);
+  if (!category) {
+    return FortiMessages.valueError(raw,
+      `known categories:\n${describeLogCategories()}`);
+  }
+
+  const prefix = logFilePrefix(category.type);
+  const current = currentLogFile(deps.fw.getLogStore(), prefix);
+  return renderLogListing(
+    deps.fw, deps.fw.getLogDisk().listing(prefix, current), category.name);
+}
+
 export function runExecuteLog(rest: readonly string[], deps: FortiDiagDeps): string {
   const view = deps.state.logFilter;
 
@@ -327,6 +370,8 @@ export function runExecuteLog(rest: readonly string[], deps: FortiDiagDeps): str
     });
     return `${removed} log entries deleted`;
   }
+  if (rest[0] === 'roll') return rollLogFiles(deps);
+  if (rest[0] === 'list') return listLogFiles(rest[1], deps);
   if (rest[0] === 'filter') return setLogFilter(rest.slice(1), deps);
   if (rest[0] !== 'display') return FortiMessages.unknownPath(`log ${rest.join(' ')}`);
 

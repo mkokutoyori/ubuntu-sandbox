@@ -1,4 +1,5 @@
 import type { FirewallLogType } from '../../../logging/FirewallLogStore';
+import type { LogFilePrefix } from '../../../logging/LogDisk';
 
 export interface LogCategory {
   readonly index: number;
@@ -45,4 +46,15 @@ export function describeLogCategories(): string {
   return LOG_CATEGORIES
     .map(category => `${String(category.index).padStart(2)}: ${category.name}`)
     .join('\n');
+}
+
+const LOG_TYPES: readonly FirewallLogType[] =
+  Object.freeze(['traffic', 'event', 'utm']);
+
+export function logFilePrefix(type: FirewallLogType): LogFilePrefix {
+  return type === 'event' ? 'elog' : 'tlog';
+}
+
+export function typesOfLogFile(prefix: LogFilePrefix): readonly FirewallLogType[] {
+  return LOG_TYPES.filter(type => logFilePrefix(type) === prefix);
 }

@@ -41,6 +41,7 @@ export const FORTI_EXECUTE_COMMANDS: readonly FortiExecuteCommand[] = Object.fre
   { name: 'disconnect-admin-session', help: 'Disconnect a logged-in administrator.' },
   { name: 'enter', help: 'Select virtual domain.' },
   { name: 'factoryreset', help: 'Reset the configuration to factory default.' },
+  { name: 'formatlogdisk', help: 'Format the log disk.' },
   { name: 'ha', help: 'Cluster operations.',
     options: [
       { keyword: 'disconnect', description: 'Disconnect a unit from the cluster.' },

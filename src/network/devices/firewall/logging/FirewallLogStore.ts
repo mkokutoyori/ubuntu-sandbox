@@ -78,8 +78,18 @@ export class FirewallLogStore {
     return this.maxBytes;
   }
 
-  usedBytes(): number {
-    return this.records.reduce((total, record) => total + sizeOf(record), 0);
+  usedBytes(filter?: FirewallLogFilter): number {
+    const scope = filter === undefined
+      ? this.records
+      : this.records.filter(record => matches(record, filter));
+    return scope.reduce((total, record) => total + sizeOf(record), 0);
+  }
+
+  newestAt(filter?: FirewallLogFilter): number | null {
+    const scope = filter === undefined
+      ? this.records
+      : this.records.filter(record => matches(record, filter));
+    return scope.length === 0 ? null : scope[scope.length - 1].at;
   }
 
   setFullThresholds(thresholds: Partial<Record<LogFullLevel, number>>): void {
