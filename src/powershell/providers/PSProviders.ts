@@ -12,7 +12,7 @@
  *     → all nulls, used by the standalone PSInterpreter (no Windows device)
  */
 
-import type { OrgUnitWriteOptions } from '@/network/devices/windows/server/ad/DirectoryStore';
+import type { OrgUnitWriteOptions, UserWriteOptions } from '@/network/devices/windows/server/ad/DirectoryStore';
 
 import type { AddsForestOptions } from '@/network/devices/windows/server/ad/adFunctionalLevels';
 
@@ -186,6 +186,11 @@ export interface AdUserInfo {
   sam: string; upn: string; dn: string; sid: string; enabled: boolean; memberOf: string[]; fullName: string;
   department: string; title: string; emailAddress: string; passwordLastSet: string; passwordNeverExpires: boolean;
   servicePrincipalNames: string[];
+  properties: Record<string, string>;
+  flags: Record<string, boolean>;
+  accountExpirationDate: Date | null;
+  cannotChangePassword: boolean;
+  changePasswordAtLogon: boolean;
   /** Roaming profile (`ProfilePath`), redirected home folder (`HomeDirectory`/`HomeDrive`) — real LDAP `profilePath`/`homeDirectory`/`homeDrive` attributes, PRD AD roaming-profiles gap. */
   profilePath: string; homeDirectory: string; homeDrive: string;
 }
@@ -245,7 +250,7 @@ export interface IAdProvider {
   /** `Remove-ADDomainController` — AD metadata cleanup for a DC that will never come back online (the `ntdsutil metadata cleanup` equivalent). */
   removeDomainController(name: string): AdOpResult;
 
-  newUser(sam: string, opts: { password: string; fullName?: string; path?: string; enabled?: boolean; department?: string; title?: string; emailAddress?: string; passwordNeverExpires?: boolean; actingSam?: string }): AdOpResult;
+  newUser(sam: string, opts: { password: string; fullName?: string; path?: string; enabled?: boolean; department?: string; title?: string; emailAddress?: string; passwordNeverExpires?: boolean; actingSam?: string } & UserWriteOptions): AdOpResult;
   getUser(identity: string): AdUserInfo | null;
   listUsers(): AdUserInfo[];
   setUser(identity: string, opts: { enabled?: boolean; fullName?: string; password?: string; department?: string; title?: string; addSpns?: string[]; removeSpns?: string[]; actingSam?: string; profilePath?: string; homeDirectory?: string; homeDrive?: string }): AdOpResult;

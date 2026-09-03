@@ -28,6 +28,7 @@ import { parseCredentialArg } from './RemotingCmdlets';
 import { WindowsSecurityAudit, type SecurityEventSink } from '@/network/devices/windows/WindowsSecurityAudit';
 import { type AdFunctionalLevel, adFunctionalLevelKeywords, parseAdFunctionalLevel } from '@/network/devices/windows/server/ad/adFunctionalLevels';
 import { OU_PROPERTIES, OU_PROPERTY_PARAMETERS } from '@/network/devices/windows/server/ad/adOrganizationalUnit';
+import { USER_FLAGS, USER_FLAG_PARAMETERS, USER_PROPERTIES, USER_PROPERTY_PARAMETERS, accountExpiresValue } from '@/network/devices/windows/server/ad/adUser';
 
 function requireAd(ctx: CmdletContext, cmdletName: string): IAdProvider {
   if (!ctx.providers.ad) {
@@ -208,6 +209,11 @@ function userToPSObject(u: AdUserInfo): Record<string, PSValue> {
     PasswordLastSet: (u.passwordLastSet ? new Date(u.passwordLastSet) : '') as unknown as PSValue,
     ServicePrincipalNames: [...u.servicePrincipalNames],
     ProfilePath: u.profilePath, HomeDirectory: u.homeDirectory, HomeDrive: u.homeDrive,
+    AccountExpirationDate: (u.accountExpirationDate ?? '') as unknown as PSValue,
+    CannotChangePassword: u.cannotChangePassword,
+    ChangePasswordAtLogon: u.changePasswordAtLogon,
+    ...u.flags,
+    ...u.properties,
   };
 }
 function groupToPSObject(g: AdGroupInfo): Record<string, PSValue> {
@@ -418,31 +424,90 @@ function dcToPSObject(c: AdComputerInfo): Record<string, PSValue> {
 
 // ── New/Get/Set/Remove-ADUser ────────────────────────────────────────────────
 
+function stringListArg(ctx: CmdletContext, key: string): string[] | undefined {
+  const raw = ctx.named[key];
+  if (raw === undefined) return undefined;
+  if (Array.isArray(raw)) return raw.map(psValueToString).filter(v => v !== '');
+  const text = psValueToString(raw);
+  return text === '' ? [] : [text];
+}
+
+function userAttributesFrom(ctx: CmdletContext): Record<string, string> {
+  const attributes: Record<string, string> = {};
+  const template = ctx.named['instance'];
+  if (template !== null && typeof template === 'object' && !Array.isArray(template)) {
+    const record = template as Record<string, PSValue>;
+    for (const spec of USER_PROPERTIES) {
+      const value = record[spec.parameter];
+      if (value !== undefined && value !== null && psValueToString(value) !== '') {
+        attributes[spec.ldap] = psValueToString(value);
+      }
+    }
+  }
+  for (const spec of USER_PROPERTIES) {
+    const given = ctx.named[spec.parameter.toLowerCase()];
+    if (given !== undefined) attributes[spec.ldap] = psValueToString(given);
+  }
+  const other = ctx.named['otherattributes'];
+  if (other !== null && typeof other === 'object' && !Array.isArray(other)) {
+    for (const [ldap, value] of Object.entries(other as Record<string, PSValue>)) {
+      attributes[ldap] = psValueToString(value);
+    }
+  }
+  return attributes;
+}
+
+function userFlagsFrom(ctx: CmdletContext): Record<string, boolean> {
+  const flags: Record<string, boolean> = {};
+  for (const spec of USER_FLAGS) {
+    const given = booleanArg(ctx, spec.parameter.toLowerCase());
+    if (given !== undefined) flags[spec.parameter] = given;
+  }
+  return flags;
+}
+
 export class NewADUserCmdlet implements ICmdlet {
   readonly name = 'new-aduser';
+  readonly displayName = 'New-ADUser';
   readonly aliases = [] as const;
-  readonly parameters = ['Name', 'SamAccountName', 'AccountPassword', 'Enabled', 'Path', 'DisplayName', 'Department', 'Title', 'EmailAddress', 'PasswordNeverExpires', 'Credential'] as const;
+  readonly parameters = ['Name', 'SamAccountName', 'AccountPassword', 'Path', 'Instance', 'OtherAttributes',
+    'AccountExpirationDate', 'ChangePasswordAtLogon', 'CannotChangePassword', 'ServicePrincipalNames',
+    'PassThru', 'Credential', 'WhatIf', 'Confirm',
+    ...USER_PROPERTY_PARAMETERS, ...USER_FLAG_PARAMETERS] as const;
 
   execute(ctx: CmdletContext): PSValue {
     const ad = requireAd(ctx, 'New-ADUser');
-    const sam = psValueToString(ctx.named['samaccountname'] ?? ctx.named['name'] ?? ctx.positional[0] ?? '');
+    const name = psValueToString(ctx.named['name'] ?? ctx.positional[0] ?? '');
+    const sam = psValueToString(ctx.named['samaccountname'] ?? '') || name;
     if (!sam) {
-      ctx.emitError("New-ADUser : Cannot process command because of one or more missing mandatory parameters: Name.");
+      ctx.emitError('New-ADUser : Cannot process command because of one or more missing mandatory parameters: Name.');
       return null;
     }
-    const password = securePasswordOf(ctx, 'accountpassword') ?? '';
-    const fullName = ctx.named['displayname'] !== undefined ? psValueToString(ctx.named['displayname'])
-      : (ctx.named['name'] !== undefined ? psValueToString(ctx.named['name']) : undefined);
-    const path = ctx.named['path'] !== undefined ? psValueToString(ctx.named['path']) : undefined;
-    const enabled = ctx.named['enabled'] !== undefined ? ctx.named['enabled'] === true : undefined;
-    const department = ctx.named['department'] !== undefined ? psValueToString(ctx.named['department']) : undefined;
-    const title = ctx.named['title'] !== undefined ? psValueToString(ctx.named['title']) : undefined;
-    const emailAddress = ctx.named['emailaddress'] !== undefined ? psValueToString(ctx.named['emailaddress']) : undefined;
-    const passwordNeverExpires = ctx.named['passwordneverexpires'] === true ? true : undefined;
-    const actingSam = ctx.named['credential'] !== undefined ? subjectUserOf(ctx) : undefined;
-    const res = ad.newUser(sam, { password, fullName, path, enabled, department, title, emailAddress, passwordNeverExpires, actingSam });
+    if (ctx.named['whatif'] === true) {
+      ctx.emit(`What if: Performing the operation "New" on target "CN=${name || sam}".`);
+      return null;
+    }
+    const attributes = userAttributesFrom(ctx);
+    const flags = userFlagsFrom(ctx);
+    const expiry = ctx.named['accountexpirationdate'] !== undefined
+      ? accountExpiresValue(new Date(psValueToString(ctx.named['accountexpirationdate'])))
+      : undefined;
+    const res = ad.newUser(sam, {
+      password: securePasswordOf(ctx, 'accountpassword') ?? '',
+      fullName: attributes['displayName'] ?? (name || undefined),
+      commonName: name || undefined,
+      path: ctx.named['path'] !== undefined ? psValueToString(ctx.named['path']) : undefined,
+      enabled: booleanArg(ctx, 'enabled') ?? false,
+      attributes, flags,
+      spns: stringListArg(ctx, 'serviceprincipalnames'),
+      accountExpires: expiry,
+      changePasswordAtLogon: booleanArg(ctx, 'changepasswordatlogon') ?? false,
+      cannotChangePassword: booleanArg(ctx, 'cannotchangepassword') ?? false,
+      actingSam: ctx.named['credential'] !== undefined ? subjectUserOf(ctx) : undefined,
+    });
     if (!res.ok) { ctx.emitError(`New-ADUser : ${res.message}`); return null; }
     auditSinkFor(ctx)?.accountCreated(sam, subjectUserOf(ctx));
+    if (ctx.named['passthru'] !== true) return null;
     const u = ad.getUser(sam);
     return u ? userToPSObject(u) : null;
   }

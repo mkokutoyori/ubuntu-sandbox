@@ -87,8 +87,10 @@ describe('New/Get/Set/Remove-ADUser', () => {
   it('creates a user visible via Get-ADUser with the expected DN/UPN', async () => {
     const srv = await promotedServer();
     const sh = ps(srv);
-    const out = await run(sh, 'New-ADUser -Name bob -AccountPassword (ConvertTo-SecureString "hunter2" -AsPlainText -Force) -DisplayName "Bob Smith"');
-    expect(out).toMatch(/bob/);
+    const muet = await run(sh, 'New-ADUser -Name bob -AccountPassword (ConvertTo-SecureString "hunter2" -AsPlainText -Force) -DisplayName "Bob Smith"');
+    expect(muet.trim()).toBe('');
+    const out = await run(sh, 'New-ADUser -Name bob2 -AccountPassword (ConvertTo-SecureString "hunter2" -AsPlainText -Force) -PassThru');
+    expect(out).toMatch(/bob2/);
     const get = await run(sh, 'Get-ADUser -Identity bob');
     expect(get).toContain('bob@lab.local');
     expect(get).toContain('CN=bob,CN=Users,DC=lab,DC=local');

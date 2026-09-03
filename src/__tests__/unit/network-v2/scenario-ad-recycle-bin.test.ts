@@ -106,7 +106,7 @@ describe('Scénario 15 — corbeille AD : activation et restauration (mandeng.la
     it('Get-ADObject -IncludeDeletedObjects retrouve l\'utilisateur supprimé avec Department/EmailAddress intacts', async () => {
       const { sh } = await labWithRecycleBinAndDeletedUser();
       const out = await run(sh, 'Get-ADObject -Filter {SamAccountName -eq "user-suppr"} -IncludeDeletedObjects -Properties * | Select-Object DistinguishedName, Department, EmailAddress, Title');
-      expect(out).toContain('user-suppr');
+      expect(out).toContain('CN=Utilisateur A Supprimer,CN=Deleted Objects,DC=mandeng,DC=lan');
       expect(out).toContain('Finance');
       expect(out).toContain('Analyste Senior');
       expect(out).toContain('user.suppr@mandeng.lan');
@@ -119,7 +119,8 @@ describe('Scénario 15 — corbeille AD : activation et restauration (mandeng.la
         'Where-Object {$_.whenChanged -gt (Get-Date).AddDays(-7)} |',
         'Select-Object Name, ObjectClass, whenChanged, LastKnownParent | Format-Table -AutoSize',
       ].join('\n'));
-      expect(out).toContain('user-suppr');
+      expect(out).toContain('Utilisateur A Supprimer');
+      expect(out).toContain('OU=Utilisateurs,OU=Mandeng,DC=mandeng,DC=lan');
     });
 
     it('Restore-ADObject restaure l\'utilisateur avec Department/Title/EmailAddress préservés', async () => {

@@ -2102,3 +2102,31 @@ et les tests qui l'observent, et c'est un autre sujet.
   encore dans `tail` et revient dans la configuration. Le fermer demande
   de trancher, option par option, ce que la commande accepte vraiment, ce
   qui n'est pas atteste depuis ce reseau.
+- Neuf parametres de `New-ADUser` ne sont pas declares, chacun parce
+  qu'il gouverne un mecanisme que ce simulateur n'a pas : `-Server` et
+  `-AuthType` (aucun chemin d'objet ne dialogue avec un contrôleur
+  distant — meme raison que pour `New-ADOrganizationalUnit`), `-Type`
+  (creer un `iNetOrgPerson` ou toute autre sous-classe de `user`
+  demanderait que le schema porte ces classes), `-Certificates`
+  (`userCertificate` suppose un certificat X.509 attache a un compte, que
+  rien ne lit), `-AuthenticationPolicy` et `-AuthenticationPolicySilo`
+  (les silos d'authentification n'existent pas), `-KerberosEncryptionType`
+  (le KDC de ce simulateur ne negocie pas de type de chiffrement),
+  `-CompoundIdentitySupported` (l'identite composee de Kerberos armore
+  n'est pas modelisee) et `-PrincipalsAllowedToDelegateToAccount` (la
+  delegation contrainte fondee sur les ressources a bien un magasin cote
+  ORDINATEUR, `setComputerAllowedToDelegateTo`, mais aucun cote
+  utilisateur). Les declarer les rangerait sans que rien ne les evalue.
+- `-Instance` en entree de PIPELINE n'est pas lu, sur `New-ADUser` comme
+  sur `New-ADOrganizationalUnit` : la methode 3 de la documentation
+  (`Import-Csv | New-ADUser`) demande que le cmdlet lise `ctx.pipeInput`
+  PAR PROPRIETE, mecanisme que ce moteur n'a pas. `-Instance` comme
+  GABARIT, lui, est evalue.
+- `New-ADUser` accepte encore un `-Name` seul et en deduit le
+  sAMAccountName, alors que la documentation ecrit « You must specify the
+  SamAccountName parameter to create a user ». Le repli est conserve
+  parce qu'il est PERMISSIF et non producteur de mauvaise reponse — il
+  cree le compte que l'operateur voulait — et que le refuser ferait
+  tomber des laboratoires qui l'utilisent ; mais un compte dont le nom
+  porte une espace y prend alors un sAMAccountName avec une espace, ce
+  qu'une vraie machine n'accepte pas.

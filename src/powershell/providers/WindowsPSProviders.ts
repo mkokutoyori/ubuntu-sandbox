@@ -13,6 +13,7 @@
  * which the cmdlet layer treats as a fallback signal.
  */
 
+
 import type { WindowsPC } from '@/network/devices/WindowsPC';
 import type { ServiceStartType } from '@/network/devices/windows/WindowsServiceManager';
 import type { WindowsServer } from '@/network/devices/WindowsServer';
@@ -98,7 +99,20 @@ import type {
 } from '@/powershell/providers/PSProviders';
 import type { PSValue } from '@/powershell/runtime/PSEnvironment';
 import type { AddsForestOptions } from '@/network/devices/windows/server/ad/adFunctionalLevels';
-import type { OrgUnitWriteOptions } from '@/network/devices/windows/server/ad/DirectoryStore';
+import type { OrgUnitWriteOptions, UserWriteOptions } from '@/network/devices/windows/server/ad/DirectoryStore';
+import type { AdUser } from '@/network/devices/windows/server/ad/AdTypes';
+
+function userInfoOf(u: AdUser): AdUserInfo {
+  return {
+    sam: u.sam, upn: u.upn, dn: u.dn, sid: u.sid, enabled: u.enabled, memberOf: u.memberOf, fullName: u.fullName,
+    department: u.department, title: u.title, emailAddress: u.emailAddress, passwordLastSet: u.passwordLastSet,
+    passwordNeverExpires: u.passwordNeverExpires, servicePrincipalNames: u.servicePrincipalNames,
+    profilePath: u.profilePath, homeDirectory: u.homeDirectory, homeDrive: u.homeDrive,
+    properties: { ...u.properties }, flags: { ...u.flags },
+    accountExpirationDate: u.accountExpirationDate,
+    cannotChangePassword: u.cannotChangePassword, changePasswordAtLogon: u.changePasswordAtLogon,
+  };
+}
 
 // ── Filesystem adapter ────────────────────────────────────────────────────
 
@@ -651,7 +665,7 @@ class WindowsAdAdapter implements IAdProvider {
     return store.removeComputer(name);
   }
 
-  newUser(sam: string, opts: { password: string; fullName?: string; path?: string; enabled?: boolean; department?: string; title?: string; emailAddress?: string; passwordNeverExpires?: boolean; actingSam?: string }): AdOpResult {
+  newUser(sam: string, opts: { password: string; fullName?: string; path?: string; enabled?: boolean; department?: string; title?: string; emailAddress?: string; passwordNeverExpires?: boolean; actingSam?: string } & UserWriteOptions): AdOpResult {
     const store = this.requireStore('New-ADUser');
     const denied = this.requireAdmin('New-ADUser');
     if (denied) return denied;
@@ -660,17 +674,15 @@ class WindowsAdAdapter implements IAdProvider {
       ou: opts.path,
       department: opts.department, title: opts.title, emailAddress: opts.emailAddress,
       passwordNeverExpires: opts.passwordNeverExpires, actingSam: opts.actingSam,
+      commonName: opts.commonName, attributes: opts.attributes, flags: opts.flags, spns: opts.spns,
+      accountExpires: opts.accountExpires, changePasswordAtLogon: opts.changePasswordAtLogon,
+      cannotChangePassword: opts.cannotChangePassword,
     });
   }
   getUser(identity: string): AdUserInfo | null {
     const store = this.requireStore('Get-ADUser');
     const u = store.getUser(store.resolveIdentity(identity));
-    return u ? {
-      sam: u.sam, upn: u.upn, dn: u.dn, sid: u.sid, enabled: u.enabled, memberOf: u.memberOf, fullName: u.fullName,
-      department: u.department, title: u.title, emailAddress: u.emailAddress, passwordLastSet: u.passwordLastSet,
-      passwordNeverExpires: u.passwordNeverExpires, servicePrincipalNames: u.servicePrincipalNames,
-      profilePath: u.profilePath, homeDirectory: u.homeDirectory, homeDrive: u.homeDrive,
-    } : null;
+    return u ? userInfoOf(u) : null;
   }
   setUser(identity: string, opts: { enabled?: boolean; fullName?: string; password?: string; department?: string; title?: string; addSpns?: string[]; removeSpns?: string[]; actingSam?: string; profilePath?: string; homeDirectory?: string; homeDrive?: string }): AdOpResult {
     const store = this.requireStore('Set-ADUser');
@@ -679,12 +691,7 @@ class WindowsAdAdapter implements IAdProvider {
     return store.setUser(store.resolveIdentity(identity), opts);
   }
   listUsers(): AdUserInfo[] {
-    return this.requireStore('Get-ADUser').listUsers().map(u => ({
-      sam: u.sam, upn: u.upn, dn: u.dn, sid: u.sid, enabled: u.enabled, memberOf: u.memberOf, fullName: u.fullName,
-      department: u.department, title: u.title, emailAddress: u.emailAddress, passwordLastSet: u.passwordLastSet,
-      passwordNeverExpires: u.passwordNeverExpires, servicePrincipalNames: u.servicePrincipalNames,
-      profilePath: u.profilePath, homeDirectory: u.homeDirectory, homeDrive: u.homeDrive,
-    }));
+    return this.requireStore('Get-ADUser').listUsers().map(userInfoOf);
   }
   listObjectsWithSpns(): Array<{ name: string; servicePrincipalNames: string[] }> {
     return this.requireStore('Get-ADObject').listObjectsWithSpns();
@@ -3178,6 +3185,7 @@ class WindowsRemotingAdapter implements IRemotingProvider {
  * The `shared` argument therefore exists only to let a caller substitute
  * a store deliberately. Production callers can, and should, omit it.
  */
+
 export function createWindowsPSProviders(
   pc: WindowsPC,
   shared?: {

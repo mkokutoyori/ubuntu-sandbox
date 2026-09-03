@@ -31,6 +31,7 @@ import type { AttributeSchema, ObjectClassSchema, SchemaOpResult } from './schem
 import { TrustRegistry, type TrustDirection, type TrustOpResult, type TrustInfo, type TrustRecord } from './forest/TrustRelationship';
 import { DEFAULT_AD_FUNCTIONAL_LEVEL } from './adFunctionalLevels';
 import { OU_PROPERTIES, PROTECTION_OBJECT_RIGHTS, PROTECTION_PARENT_RIGHT, isProtectionAce, protectionAce } from './adOrganizationalUnit';
+import { NEVER_EXPIRES, USER_FLAGS, USER_PROPERTIES, CHANGE_PASSWORD_TRUSTEES, accountExpiresDate, applyUserFlag, cannotChangePasswordAce, isCannotChangePasswordAce, readUserFlag } from './adUser';
 
 export interface DirOpResult { ok: boolean; message: string }
 
@@ -84,6 +85,16 @@ function hash32(seed: string, salt: number): number {
   let h = (salt * 0x9e3779b1) >>> 0;
   for (let i = 0; i < seed.length; i++) h = (Math.imul(h ^ seed.charCodeAt(i), 0x01000193)) >>> 0;
   return h;
+}
+
+export interface UserWriteOptions {
+  commonName?: string;
+  attributes?: Record<string, string>;
+  flags?: Record<string, boolean>;
+  spns?: string[];
+  accountExpires?: string;
+  changePasswordAtLogon?: boolean;
+  cannotChangePassword?: boolean;
 }
 
 export interface OrgUnitWriteOptions {
@@ -824,7 +835,7 @@ export class DirectoryStore {
 
   // ─── Users ──────────────────────────────────────────────────────────
 
-  newUser(sam: string, opts: { password: string; fullName?: string; ou?: string; enabled?: boolean; department?: string; title?: string; emailAddress?: string; passwordNeverExpires?: boolean; actingSam?: string }): DirOpResult {
+  newUser(sam: string, opts: { password: string; fullName?: string; ou?: string; enabled?: boolean; department?: string; title?: string; emailAddress?: string; passwordNeverExpires?: boolean; actingSam?: string } & UserWriteOptions): DirOpResult {
     const containerDn = this.resolveOuContainer(opts.ou, this.usersOuDn);
     if (!containerDn) {
       return { ok: false, message: `Cannot find an object with identity: '${opts.ou}'.` };
@@ -836,21 +847,30 @@ export class DirectoryStore {
       password: opts.password, fullName: opts.fullName ?? '', containerDn, enabled: opts.enabled,
       department: opts.department, title: opts.title, emailAddress: opts.emailAddress,
       passwordNeverExpires: opts.passwordNeverExpires,
+      commonName: opts.commonName,
+      attributes: opts.attributes, flags: opts.flags, spns: opts.spns,
+      accountExpires: opts.accountExpires, changePasswordAtLogon: opts.changePasswordAtLogon,
     });
     if (!res.ok) return res;
+    if (opts.cannotChangePassword) this.setCannotChangePassword(sam, true);
     this.addGroupMember('Domain Users', sam);
     return { ok: true, message: '' };
   }
 
   private nextObjectSid(): string { return `${this.domainSidPrefix}-${this.nextRid++}`; }
 
-  private createUserEntry(sam: string, opts: { password: string; fullName: string; containerDn: DistinguishedName; enabled?: boolean; department?: string; title?: string; emailAddress?: string; passwordNeverExpires?: boolean }): DirOpResult {
+  private createUserEntry(sam: string, opts: { password: string; fullName: string; containerDn: DistinguishedName; enabled?: boolean; department?: string; title?: string; emailAddress?: string; passwordNeverExpires?: boolean } & UserWriteOptions): DirOpResult {
     const enabled = opts.enabled ?? true;
     let uac = enabled ? UAC.NORMAL_ACCOUNT : UAC.NORMAL_ACCOUNT | UAC.ACCOUNTDISABLE;
     if (opts.passwordNeverExpires) uac |= UAC.DONT_EXPIRE_PASSWORD;
-    const res = this.tree.addEntry(this.cnDn(sam, opts.containerDn), compact({
+    for (const spec of USER_FLAGS) {
+      const wanted = opts.flags?.[spec.parameter];
+      if (wanted !== undefined) uac = applyUserFlag(uac, spec, wanted);
+    }
+    const attributes: Record<string, string[]> = compact({
       objectClass: ['top', 'person', 'organizationalPerson', 'user'],
-      cn: [sam],
+      cn: [opts.commonName || sam],
+      name: [opts.commonName || sam],
       sAMAccountName: [sam],
       userPrincipalName: [`${sam}@${this.dnsName}`],
       objectSid: [this.nextObjectSid()],
@@ -860,9 +880,28 @@ export class DirectoryStore {
       department: opts.department ? [opts.department] : [],
       title: opts.title ? [opts.title] : [],
       mail: opts.emailAddress ? [opts.emailAddress] : [],
-      pwdLastSet: [this.now().toISOString()],
-    }));
+      pwdLastSet: [opts.changePasswordAtLogon ? '0' : this.now().toISOString()],
+      accountExpires: [opts.accountExpires ?? NEVER_EXPIRES],
+      servicePrincipalName: opts.spns ?? [],
+    });
+    for (const [ldap, value] of Object.entries(opts.attributes ?? {})) {
+      if (value !== '') attributes[ldap] = [value];
+    }
+    const res = this.tree.addEntry(this.cnDn(opts.commonName || sam, opts.containerDn), attributes);
     return res.ok ? { ok: true, message: '' } : { ok: false, message: 'An object with that name already exists.' };
+  }
+
+  setCannotChangePassword(identity: string, blocked: boolean): DirOpResult {
+    const entry = this.findUserEntry(this.resolveIdentity(identity));
+    if (!entry) return { ok: false, message: `Cannot find an object with identity: '${identity}'.` };
+    const dn = formatDN(entry.dn);
+    const kept = (this.getAcl(dn) ?? []).filter(ace => !isCannotChangePasswordAce(ace));
+    this.setAcl(dn, blocked ? [...kept, ...CHANGE_PASSWORD_TRUSTEES.map(cannotChangePasswordAce)] : kept);
+    return { ok: true, message: '' };
+  }
+
+  cannotChangePassword(dn: string): boolean {
+    return (this.getAcl(dn) ?? []).some(isCannotChangePasswordAce);
   }
 
   private findUserEntry(sam: string): DirectoryEntry | null {
@@ -882,6 +921,28 @@ export class DirectoryStore {
       .map(e => this.projectUser(e));
   }
 
+  private projectUserProperties(entry: DirectoryEntry): Record<string, string> {
+    const known = new Set(['objectclass', 'cn', 'samaccountname', 'objectsid', 'useraccountcontrol',
+      'userpassword', 'pwdlastset', 'accountexpires', 'serviceprincipalname', 'memberof', 'ou']);
+    const out: Record<string, string> = {};
+    for (const spec of USER_PROPERTIES) {
+      known.add(spec.ldap.toLowerCase());
+      const value = firstOf(entry.attributes.get(spec.ldap.toLowerCase()));
+      if (value) out[spec.parameter] = value;
+    }
+    for (const [ldap, values] of entry.attributes) {
+      if (!known.has(ldap.toLowerCase()) && values.length > 0) out[ldap] = values[0];
+    }
+    return out;
+  }
+
+  private projectUserFlags(entry: DirectoryEntry): Record<string, boolean> {
+    const uac = Number(firstOf(entry.attributes.get('useraccountcontrol'))) || 0;
+    const out: Record<string, boolean> = {};
+    for (const spec of USER_FLAGS) out[spec.parameter] = readUserFlag(uac, spec);
+    return out;
+  }
+
   private projectUser(entry: DirectoryEntry): AdUser {
     const containerDn = entry.dn.slice(1);
     return {
@@ -897,6 +958,11 @@ export class DirectoryStore {
       passwordNeverExpires: (Number(firstOf(entry.attributes.get('useraccountcontrol'))) & UAC.DONT_EXPIRE_PASSWORD) !== 0,
       memberOf: (entry.attributes.get('memberof') ?? []).map(dnStr => this.samOfDn(dnStr)).filter((s): s is string => s !== null),
       fullName: firstOf(entry.attributes.get('displayname')),
+      properties: this.projectUserProperties(entry),
+      flags: this.projectUserFlags(entry),
+      accountExpirationDate: accountExpiresDate(firstOf(entry.attributes.get('accountexpires'))),
+      cannotChangePassword: this.cannotChangePassword(formatDN(entry.dn)),
+      changePasswordAtLogon: firstOf(entry.attributes.get('pwdlastset')) === '0',
       department: firstOf(entry.attributes.get('department')),
       title: firstOf(entry.attributes.get('title')),
       servicePrincipalNames: entry.attributes.get('serviceprincipalname') ?? [],
