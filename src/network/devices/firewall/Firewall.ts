@@ -162,6 +162,7 @@ import type { VdomServices } from './pipeline/stages/coreStages';
 import { ScheduleStore, type ScheduleObject } from './model/ScheduleObject';
 import { FirewallLogStore } from './logging/FirewallLogStore';
 import { LogDisk } from './logging/LogDisk';
+import { SavedConfiguration } from './config/ConfigSaveMode';
 import { PacketCapture } from './diag/PacketCapture';
 import { TraceRing, TRACE_HISTORY } from './diag/TraceRing';
 import type { UtmProfileStore } from './inspection/UtmProfiles';
@@ -208,6 +209,7 @@ const DEFAULT_INTERFACE_MTU = 1500;
 
 export class Firewall extends Equipment {
   private readonly logDisk = new LogDisk();
+  private readonly savedConfig = new SavedConfiguration();
   consoleLineCount(): number { return 1; }
 
   applyDeviceName(name: string): void {
@@ -1304,6 +1306,7 @@ export class Firewall extends Equipment {
   getScheduleStore(vdom?: string): ScheduleStore { return this.getVdom(vdom).schedules; }
   getLogStore(vdom?: string): FirewallLogStore { return this.getVdom(vdom).logs; }
   getLogDisk(): LogDisk { return this.logDisk; }
+  getSavedConfiguration(): SavedConfiguration { return this.savedConfig; }
   getUtmProfiles(vdom?: string): UtmProfileStore { return this.getVdom(vdom).utm; }
   getIdentityTable(vdom?: string): IdentityTable { return this.getVdom(vdom).identities; }
   getUserDirectory(vdom?: string): UserDirectory { return this.getVdom(vdom).users; }

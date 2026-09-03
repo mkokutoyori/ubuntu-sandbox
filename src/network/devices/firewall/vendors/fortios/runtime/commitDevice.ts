@@ -171,6 +171,10 @@ export function buildCommitDevice(
           ? null : resolveFortiTimezone(settings.timezone);
         if (zone) fw.setTimezone(zone.name);
         fw.setMultiVdom(settings.multiVdom);
+        if (settings.cfgSaveMode !== undefined) {
+          fw.getSavedConfiguration().setMode(
+            settings.cfgSaveMode, () => fw.getRunningConfig());
+        }
         if (settings.authHttpPort !== undefined && settings.authHttpsPort !== undefined) {
           fw.setAuthPortalPorts(settings.authHttpPort, settings.authHttpsPort);
         }

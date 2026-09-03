@@ -25,6 +25,11 @@ export const FORTI_EXECUTE_COMMANDS: readonly FortiExecuteCommand[] = Object.fre
       { keyword: 'lastlog', description: 'Read the result of last batch commands.' },
       { keyword: 'status', description: 'Batch mode status.' },
     ] },
+  { name: 'cfg', help: 'Save or reload the configuration in manual mode.',
+    options: [
+      { keyword: 'reload', description: 'Reboot to reload the configs.' },
+      { keyword: 'save', description: 'Save configs.' },
+    ] },
   { name: 'clear', help: 'Clear system tables.',
     options: [{ keyword: 'system', description: 'System tables.' }] },
   { name: 'date', help: 'Display or set the system date.' },

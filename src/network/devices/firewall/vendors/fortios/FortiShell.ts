@@ -1139,6 +1139,29 @@ export class FortiShell {
     }
   }
 
+  private executeCfg(rest: readonly string[]): string {
+    if (rest.length === 0) return FortiMessages.incomplete('`save` or `reload`');
+    const resolved = resolvePrefix(rest[0], executeOptionNames('cfg'));
+    if (resolved.name === undefined) {
+      return resolved.candidates.length > 1
+        ? FortiMessages.ambiguous(rest[0], resolved.candidates)
+        : FortiMessages.unknownAction(`cfg ${rest[0]}`);
+    }
+
+    const saved = this.fw.getSavedConfiguration();
+    if (resolved.name === 'save') {
+      return saved.save(this.fw.getRunningConfig())
+        ? 'config saved.' : 'no config to be saved.';
+    }
+
+    const text = saved.text();
+    if (text === null) return 'no config to be reloaded.';
+    this.factoryReset();
+    this.absorbClusterConfiguration(text);
+    this.fw.rebootNow();
+    return 'configs reloaded. system will reboot.';
+  }
+
   private executeVdomLicense(rest: readonly string[]): string {
     if (rest.length === 0) return FortiMessages.incomplete('a license key');
     if (!/^[0-9A-Za-z]{32}$/.test(rest[0])) {
@@ -1419,6 +1442,7 @@ export class FortiShell {
       case 'interface': return this.executeInterface(tail);
       case 'policy-packet-capture': return this.executePolicyPacketCapture(tail);
       case 'batch': return this.executeBatch(tail);
+      case 'cfg': return this.executeCfg(tail);
       case 'set': return this.executeSetSystem(tail);
       case 'sync-session': return this.executeSyncSession();
       case 'upd-vd-license': return this.executeVdomLicense(tail);
