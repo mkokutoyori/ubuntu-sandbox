@@ -67,6 +67,8 @@ export interface CaptureFrame {
   icmpCode?: number;
   icmpId?: number;
   icmpSeq?: number;
+  /** NDP target address: what an NS asks for and an NA answers with. */
+  ndpTarget?: string;
   /** RFC 1191 §4 Next-Hop MTU, present on Fragmentation Needed (type 3, code 4). */
   icmpNextHopMtu?: number;
   /** Original IP header + first 8 bytes, encapsulated in an ICMP error (RFC 792). */
@@ -537,6 +539,8 @@ function decodeIpv6Payload(base: CaptureFrame, ip6: IPv6Packet): void {
     base.icmpId = icmp.id;
     base.icmpSeq = icmp.sequence;
     base.payloadLength = ip6.payloadLength;
+    const ndp = icmp.ndp as { targetAddress?: { toString(): string } } | undefined;
+    if (ndp?.targetAddress) base.ndpTarget = ndp.targetAddress.toString();
     return;
   }
   if (ip6.nextHeader === IP_PROTO_TCP) {

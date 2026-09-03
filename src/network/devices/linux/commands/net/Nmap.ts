@@ -1,6 +1,6 @@
 import type { LinuxCommand } from '../LinuxCommand';
 import type { LinuxCommandContext } from '../LinuxCommandContext';
-import { IPAddress } from '../../../../core/types';
+import { IPAddress, IPv6Address } from '../../../../core/types';
 import { localDeviceOf } from '../../network/HostLookup';
 import { detectServiceFromBanner } from '@/network/scan/nmap/BannerAnalyzer';
 import type { ScanHost } from '@/network/scan/nmap/NmapProbes';
@@ -13,7 +13,9 @@ function scanHost(ctx: LinuxCommandContext): ScanHost {
   return {
     device: localDeviceOf(ctx),
     readFile: (p) => ctx.executor.vfs.readFile(p),
-    ping: (ip, timeoutMs) => ctx.net.pingSequence(new IPAddress(ip), 1, timeoutMs),
+    ping: (ip, timeoutMs) => (ip.includes(':')
+      ? ctx.net.ping6Sequence(new IPv6Address(ip), 1, timeoutMs)
+      : ctx.net.pingSequence(new IPAddress(ip), 1, timeoutMs)),
     tcpOutcome: (ip, port) => ctx.net.tcpConnectOutcome(ip, port),
     grabGreeting: (ip, port) => ctx.net.grabServiceBanner(ip, port),
     sendUdpProbe: (ip, port, sourcePort) =>

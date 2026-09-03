@@ -7197,3 +7197,39 @@ le bus, et `nmap -sS` en IPv6 ; les 3 TEMOINS sont nommes dans l'en-tete.
 `scenario-7-ssh-on-443` armait `tcpdump` APRES la connexion et lisait
 des trames que `nc` FABRIQUAIT dans le journal de capture. La banniere
 traversant desormais le fil, il ecoute pendant qu'elle passe.
+
+## nmap — increment 6 : `-6` choisit la FAMILLE, et tcpdump nomme l'ICMPv6
+
+**Perimetre revendique** : `NmapOptions` (`-6`), `NmapProbes`
+(resolution v6, echo v6), les deux hotes, `TcpdumpFormat` et
+`CaptureFrame` (rendu ICMPv6).
+
+Trois defauts, chacun cachant le suivant.
+
+**(1) `-6` etait AVALE par l'analyseur**, range avec `-T` et `-R` dans la
+ligne qui ignore ce qu'on ne traite pas. Mesure : `nmap -6 -p 22 CIBLE`
+repondait `Nmap scan report for CIBLE (10.0.0.2)`, c'est-a-dire qu'il
+balayait l'adresse IPv4 sous un drapeau qui demande exactement l'inverse.
+Un nom se resout desormais en adresse GLOBALE unicast (ni lien-local, ni
+boucle — la premiere version prenait `::1`, ce que la sonde a attrape),
+et un hote qui n'en porte pas n'est pas une cible IPv6.
+
+**(2) La decouverte n'emettait aucun echo ICMPv6** : `discoverHost`
+construisait un `IPAddress` depuis la cible, ce qui LEVE sur une adresse
+v6, et le `catch` faisait retomber sur la connexion TCP vers 80 et 443.
+La cible etait donc declaree vivante — par le bon repli de `nmap.h`, mais
+sans qu'aucun echo soit parti —, la latence rendue etait la valeur par
+defaut et `-O` ne conjecturait rien, le TTL se lisant sur la reponse
+d'echo. `DEFAULT_IPV6_PING_TYPES` porte bien l'echo ICMP, et PAS
+l'horodatage, ICMPv6 n'en ayant pas.
+
+**(3) `tcpdump` rendait `ICMP6, length N` pour TOUS les messages ICMPv6.**
+Trouve en cherchant a OBSERVER le second defaut : une capture ou l'echo,
+la sollicitation de voisin et l'annonce sont indiscernables ne permet de
+diagnostiquer rien. Le vrai `tcpdump` (`print-icmp6.c`) ecrit `echo
+request, id …, seq …`, `neighbor solicitation, who has …` et `neighbor
+advertisement, tgt is …`. La matiere etait deja dans la trame capturee ;
+seul le rendu la taisait.
+
+**Discrimination** : `probe-nmap-ipv6.test.ts` (7 cas), 5 tombent ; les 2
+TEMOINS IPv4 sont nommes dans l'en-tete.

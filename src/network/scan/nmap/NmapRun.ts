@@ -29,7 +29,8 @@ export async function runNmap(host: ScanHost, args: string[]): Promise<NmapRunRe
   }
 
   const commandLine = `nmap ${args.join(' ')}`;
-  const report = await scan(options, buildScanProbes(host, options.noDns));
+  const report = await scan(
+    options, buildScanProbes(host, options.noDns, options.ipv6));
   const normal = renderNormal(report, options, commandLine);
 
   return {

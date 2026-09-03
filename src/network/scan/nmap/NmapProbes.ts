@@ -112,7 +112,24 @@ function probeUdpPort(
   return verdict;
 }
 
-export function buildScanProbes(host: ScanHost, noDns: boolean): HostProbes {
+/**
+ * `-6` choisit la FAMILLE de la resolution : un nom se resout en AAAA, et
+ * un hote qui n'en porte pas n'est pas une cible IPv6.
+ */
+function globalIpv6Of(device: Equipment | null): string | null {
+  for (const port of device?.getPorts() ?? []) {
+    for (const entry of port.getIPv6Addresses()) {
+      if (entry.address.isGlobalUnicast()) {
+        return entry.address.toString().split('%')[0];
+      }
+    }
+  }
+  return null;
+}
+
+export function buildScanProbes(
+  host: ScanHost, noDns: boolean, preferIpv6 = false,
+): HostProbes {
   const cache = new Map<string, ReturnType<typeof findHostByAddress>>();
   const resolve = (target: string) => {
     if (!cache.has(target)) {
@@ -127,7 +144,10 @@ export function buildScanProbes(host: ScanHost, noDns: boolean): HostProbes {
       if (isNumericAddress(target)) return { ip: target };
       const found = resolve(target);
       if (!found) return null;
-      return { ip: found.ip, hostname: noDns ? undefined : target };
+      if (!preferIpv6) return { ip: found.ip, hostname: noDns ? undefined : target };
+      const v6 = globalIpv6Of(found.device);
+      if (!v6) return null;
+      return { ip: v6, hostname: noDns ? undefined : target };
     },
     async hostState(target: ResolvedTarget): Promise<HostState> {
       const alive = await discoverHost(host, target.ip);

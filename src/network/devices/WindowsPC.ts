@@ -3779,7 +3779,9 @@ export class WindowsPC extends EndHost implements UserAccountHost {
     return {
       device: this,
       readFile: (p) => { const r = this.fs.readFile(p); return r.ok ? r.content : null; },
-      ping: (ip, timeoutMs) => this.executePingSequence(new IPAddress(ip), 1, timeoutMs),
+      ping: (ip, timeoutMs) => (ip.includes(':')
+        ? this.executePing6Sequence(new IPv6Address(ip), 1, timeoutMs)
+        : this.executePingSequence(new IPAddress(ip), 1, timeoutMs)),
       tcpOutcome: (ip, port) => (ip.includes(':')
         ? this.tcpConnectOutcome6(new IPv6Address(ip), port)
         : this.tcpConnectOutcome(new IPAddress(ip), port)),
