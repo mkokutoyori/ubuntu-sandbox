@@ -2222,16 +2222,3 @@ défauts — la méthode vaut d'être reprise sur le reliquat.
   mais un `Format-List` affiche la clef stockee. Fermer cela demande que
   le `SchemaValidator` porte la casse canonique de chaque attribut, ce
   qu'il ne fait pas.
-
-### [nmap] le balayage ACK inspecte encore l'objet distant
-`buildScanProbes` a ete converti pour la DECOUVERTE d'hote (vraies sondes
-ICMP et TCP, `nmap.h` : `-PE -PA80 -PS443 -PP`), pour le verdict UDP
-(lecture de l'ICMP recu, `scan_engine_raw.cc`) et pour la banniere
-(`TcpStack.grabGreeting`, la sonde `Probe TCP NULL q||` de
-`nmap-service-probes`). Un chemin reste une inspection d'objet.
-**Mesure** : `ackReaches()` appelle `transitAckAclVerdict`, qui evalue les
-listes de controle par parcours de topologie au lieu d'emettre un ACK et
-d'observer le RST. Aucune trame ne porte cette reponse.
-**Pourquoi ce n'est pas ferme ici** : le balayage ACK demande d'emettre un
-segment ACK NU, hors de toute connexion, que `TcpStack` n'expose pas
-aujourd'hui — `transmit()` part toujours d'une socket.

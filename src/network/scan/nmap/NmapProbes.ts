@@ -2,9 +2,7 @@ import type { Equipment } from '@/network/equipment/Equipment';
 import type { TcpWireOutcome } from '@/network/tcp/types';
 import { IP_PROTO_UDP } from '@/network/core/types';
 import { ICMP_UNREACH_PORT } from '@/network/core/IcmpErrors';
-import {
-  findHostByAddress, transitAckAclVerdict,
-} from '@/network/devices/linux/network/HostLookup';
+import { findHostByAddress } from '@/network/devices/linux/network/HostLookup';
 import {
   grabUdpListener, grabUdpBanner,
 } from '@/network/devices/linux/commands/net/ServiceBannerGrab';
@@ -27,6 +25,7 @@ export interface ScanHost {
   tcpOutcome(ip: string, port: number): TcpWireOutcome;
   grabGreeting(ip: string, port: number): string | null;
   sendUdpProbe(ip: string, port: number, sourcePort: number): boolean;
+  ackProbe(ip: string, port: number): 'unfiltered' | 'filtered';
 }
 
 const UDP_PROBE_SOURCE_PORT = 51820;
@@ -112,14 +111,6 @@ function probeUdpPort(
   return verdict;
 }
 
-function localSourceAddress(host: ScanHost): string {
-  for (const port of host.device?.getPorts() ?? []) {
-    const ip = port.getIPAddress();
-    if (ip && port.getIsUp()) return ip.toString();
-  }
-  return '0.0.0.0';
-}
-
 export function buildScanProbes(host: ScanHost, noDns: boolean): HostProbes {
   const cache = new Map<string, ReturnType<typeof findHostByAddress>>();
   const resolve = (target: string) => {
@@ -158,10 +149,7 @@ export function buildScanProbes(host: ScanHost, noDns: boolean): HostProbes {
       return probeUdpPort(host, ip, port);
     },
     ackReaches(ip: string, port: number) {
-      const found = resolve(ip);
-      if (!found || found.poweredOff || found.interfaceDown) return false;
-      return transitAckAclVerdict(
-        localSourceAddress(host), ip, port, new Date(), host.device) === 'permit';
+      return host.ackProbe(ip, port) === 'unfiltered';
     },
     banner(ip: string, port: number) {
       const greeting = host.grabGreeting(ip, port);

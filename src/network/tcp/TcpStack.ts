@@ -532,6 +532,46 @@ export class TcpStack {
     return text === '' ? null : text;
   }
 
+  /**
+   * `nmap -sA` (scan_engine_raw.cc): un ACK NU, hors de toute connexion.
+   * RFC 9293 §3.10.7.1 fait repondre RST a un ACK qui ne correspond a
+   * aucune connexion, que le port soit ouvert ou ferme — un RST ne dit
+   * donc rien de l'ecoute et prouve seulement que le segment a ATTEINT
+   * l'hote, ce qui est exactement ce qu'un balayage ACK mesure : le port
+   * n'est pas filtre. Le silence, ou un ICMP inatteignable, dit qu'un
+   * filtre l'a mange.
+   */
+  ackProbe(remoteIp: string, remotePort: number): 'unfiltered' | 'filtered' {
+    const target = canonicalIpText(remoteIp);
+    const egress = this.resolveEgress(target);
+    if (!egress) return 'filtered';
+    const localPort = this.nextEphemeral(egress.srcIp);
+    if (localPort < 0) return 'filtered';
+
+    const key = makeSocketKey(egress.srcIp, localPort, target, remotePort);
+    const watch = { sawRst: false };
+    this.ackProbes.set(key, watch);
+
+    const flags = noFlags();
+    flags.ack = true;
+    const seg: TcpSegment = {
+      type: 'tcp',
+      sourcePort: localPort, destinationPort: remotePort,
+      sequence: nextIsn(), acknowledgement: 0,
+      dataOffset: 5, flags, window: TCP_DEFAULT_WINDOW,
+      checksum: 0, urgentPointer: 0, options: [], payload: undefined,
+    };
+    seg.checksum = computeTcpChecksum(seg, egress.srcIp, target);
+    try {
+      this.shipSegment(egress, egress.srcIp, target, seg);
+    } finally {
+      this.ackProbes.delete(key);
+    }
+    return watch.sawRst ? 'unfiltered' : 'filtered';
+  }
+
+  private ackProbes = new Map<string, { sawRst: boolean }>();
+
   hasEgressTo(remoteIp: string): boolean {
     return this.resolveEgress(canonicalIpText(remoteIp)) !== null;
   }
@@ -739,6 +779,8 @@ export class TcpStack {
       return true;
     }
     if (seg.flags.rst) {
+      const probe = this.ackProbes.get(socketKey);
+      if (probe) probe.sawRst = true;
       return true;
     }
     this.dropped(senderIp, seg.sourcePort, 'no-socket');

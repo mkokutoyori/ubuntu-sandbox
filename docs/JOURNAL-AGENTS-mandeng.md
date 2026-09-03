@@ -7091,3 +7091,37 @@ est la mesure de la reutilisation.
 
 **Reste ouvert et inscrit au `TODO.md`** : le balayage ACK, qui demande
 un segment ACK NU hors connexion que `TcpStack` n'expose pas.
+
+## nmap — increment 4 : le balayage ACK EMET un ACK nu
+
+**Perimetre revendique** : `TcpStack.ackProbe`, `NmapProbes.ackReaches`,
+`Nmap` (Linux), `WindowsPC`.
+
+Dernier des trois chemins de `nmap` qui inspectaient l'objet de la cible.
+`ackReaches()` appelait `transitAckAclVerdict`, qui evalue les listes de
+controle par PARCOURS DE TOPOLOGIE : aucune trame ne portait cette
+reponse, et le verdict d'un scanner tire de la configuration de sa cible
+n'est pas une mesure. Pire, il repondait a cote de la question — il juge
+les listes de TRANSIT, pas le netfilter de la machine visee, donc une
+cible avec `iptables -A INPUT -p tcp -j DROP` etait rapportee
+`unfiltered` sur un port qui ne repond jamais.
+
+**Ce que le balayage ACK mesure**, et c'est le point a ne pas rater :
+PAS l'ecoute, le FILTRAGE. RFC 9293 §3.10.7.1 fait repondre RST a un ACK
+ne correspondant a aucune connexion, que le port soit ouvert ou ferme —
+un RST prouve donc seulement que le segment a ATTEINT l'hote. D'ou les
+deux seuls verdicts de `scan_engine_raw.cc` : `unfiltered` (RST recu) et
+`filtered` (silence).
+
+`TcpStack.ackProbe` emet un vrai segment ACK nu par `shipSegment` — le
+meme chemin apatride que le RST que la pile envoie deja a un SYN sans
+ecoute — et surveille le RST par une entree temporaire indexee comme une
+socket. La branche qui AVALAIT un RST sans socket (`if (seg.flags.rst)
+return true;`) est celle qui le rapporte.
+
+**Discrimination** : `probe-nmap-balayage-ack.test.ts` (5 cas), 2 tombent
+en rendant a `ackReaches` son parcours de topologie — celui qui observe
+la capture et celui de la cible qui jette tout ; les 3 autres sont nommes
+dans l'en-tete avec leur raison de passer des deux cotes.
+
+Plus aucun chemin de `nmap` ne lit l'objet de sa cible pour du TCP.
