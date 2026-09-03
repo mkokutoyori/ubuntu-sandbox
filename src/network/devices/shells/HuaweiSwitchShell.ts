@@ -92,6 +92,8 @@ import {
 import { describeHuaweiArguments } from './huawei/huaweiArgumentHelp';
 import { buildActorState, lacpStateBits } from '@/network/lacp/types';
 import { LOAD_BALANCE_METHODS } from '@/network/lacp/loadBalance';
+import { parseVlanList } from '../switch/VlanSet';
+import { boundedInteger } from '@/cli/ArgumentTypes';
 
 const VUES_SWITCH = [
   'user', 'system', 'interface', 'vlan', 'mst-region', 'port-group',
@@ -180,6 +182,10 @@ function portTypeVrp(nom: string): string {
   if (/^FastEthernet|^Ethernet/i.test(nom)) return '100M';
   return 'GE';
 }
+
+const MST_REVISION_MAX = 65535;
+
+const ETH_TRUNK_MODES = new Set(['lacp-static', 'lacp-dynamic', 'manual']);
 
 export class HuaweiSwitchShell implements ISwitchShell {
   private mode: VRPSwitchMode = 'user';
@@ -945,12 +951,12 @@ export class HuaweiSwitchShell implements ISwitchShell {
 
       // vlan batch <id> <id> ...
       if (args[0].toLowerCase() === 'batch') {
-        for (let i = 1; i < args.length; i++) {
-          const id = parseInt(args[i], 10);
-          if (!isNaN(id) && id >= 1 && id <= 4094) {
-            this.swRef.createVLAN(id);
-          }
+        const lu = parseVlanList(args.slice(1));
+        if (!('vlans' in lu)) {
+          return refuseMotInattenduVrp(ligne ?? `vlan ${args.join(' ')}`,
+            args[lu.at + 1] ?? 'batch');
         }
+        for (const id of lu.vlans) this.swRef.createVLAN(id);
         return 'Info: This operation may take a few seconds. Please wait for a moment...done.';
       }
 
@@ -1736,6 +1742,9 @@ export class HuaweiSwitchShell implements ISwitchShell {
     this.interfaceTrie.registerGreedy('mode', 'Set Eth-Trunk working mode', (args) => {
       const id = trunkId();
       if (id === null) return `Error: Unrecognized command "mode ${args.join(' ')}"`;
+      if (!ETH_TRUNK_MODES.has((args[0] ?? '').toLowerCase())) {
+        return refuseMotInattenduVrp(`mode ${args.join(' ')}`, args[0] ?? 'mode');
+      }
       const t = this.ethTrunks.get(id)!;
       t.mode = args.join(' ');
       t.cfg.push(`mode ${args.join(' ')}`);
@@ -1862,14 +1871,13 @@ export class HuaweiSwitchShell implements ISwitchShell {
         this.swRef.setTrunkAllowedVlansNone(this.selectedInterface);
         return '';
       }
-      const vlans = new Set<number>();
-      for (const arg of args) {
-        // Support range notation e.g. "10 to 20" or "10 20"
-        const id = parseInt(arg, 10);
-        if (!isNaN(id)) vlans.add(id);
+      const lu = parseVlanList(args);
+      if (!('vlans' in lu)) {
+        return refuseMotInattenduVrp(
+          `port trunk allow-pass vlan ${args.join(' ')}`, args[lu.at] ?? args[0]);
       }
       // Huawei additive semantics: add to existing allowed list
-      this.swRef.addTrunkAllowedVlans(this.selectedInterface, vlans);
+      this.swRef.addTrunkAllowedVlans(this.selectedInterface, new Set(lu.vlans));
       return '';
     });
 
@@ -3513,8 +3521,12 @@ export class HuaweiSwitchShell implements ISwitchShell {
       return '';
     });
     t.registerGreedy('revision-level', 'Set MST revision level', (args) => {
-      const n = parseInt(args[0], 10);
-      if (!isNaN(n)) this.applyToStpAgent(ag => ag.setMstRevision(n));
+      const n = boundedInteger(args[0], 0, MST_REVISION_MAX);
+      if (n === null) {
+        return refuseMotInattenduVrp(
+          `revision-level ${args.join(' ')}`, args[0] ?? 'revision-level');
+      }
+      this.applyToStpAgent(ag => ag.setMstRevision(n));
       return '';
     });
     t.register('active region-configuration', 'Activate MST region', () =>

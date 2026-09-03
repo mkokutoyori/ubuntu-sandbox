@@ -2222,3 +2222,25 @@ défauts — la méthode vaut d'être reprise sur le reliquat.
   mais un `Format-List` affiche la clef stockee. Fermer cela demande que
   le `SchemaValidator` porte la casse canonique de chaque attribut, ce
   qu'il ne fait pas.
+
+### [nmap] le balayage ACK inspecte encore l'objet distant
+`buildScanProbes` a ete converti pour la DECOUVERTE d'hote (vraies sondes
+ICMP et TCP, `nmap.h` : `-PE -PA80 -PS443 -PP`), pour le verdict UDP
+(lecture de l'ICMP recu, `scan_engine_raw.cc`) et pour la banniere
+(`TcpStack.grabGreeting`, la sonde `Probe TCP NULL q||` de
+`nmap-service-probes`). Un chemin reste une inspection d'objet.
+**Mesure** : `ackReaches()` appelle `transitAckAclVerdict`, qui evalue les
+listes de controle par parcours de topologie au lieu d'emettre un ACK et
+d'observer le RST. Aucune trame ne porte cette reponse.
+**Pourquoi ce n'est pas ferme ici** : le balayage ACK demande d'emettre un
+segment ACK NU, hors de toute connexion, que `TcpStack` n'expose pas
+aujourd'hui — `transmit()` part toujours d'une socket.
+- `loopback-detect`, `port-security`, `storm-control`, `flow-control`,
+  `port-mirroring` et `am` d'une interface de commutateur VRP passent par
+  un SAC de texte partage : la ligne est gardee telle quelle et rendue,
+  donc `loopback-detect zorglub` survit au rechargement d'une topologie.
+  C'est la decision ECRITE de ce depot pour une commande reelle qu'il ne
+  modelise pas — la meme que pour `ip ssh server algorithm` — et le lot
+  des identifiants de VLAN l'a laissee telle quelle : leur donner un
+  vocabulaire demande d'attester celui de VRP, hors de portee depuis ce
+  reseau, et une liste ecrite de memoire refuserait des commandes reelles.
