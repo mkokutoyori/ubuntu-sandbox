@@ -85,6 +85,7 @@ import type { FortiGuardFamily } from '../../mgmt/FortiGuardDatabases';
 import { TftpClientSession } from '@/network/tftp/TftpSession';
 import { IPAddress } from '@/network/core/types';
 import { tokenize } from '@/cli/CommandParser';
+import { renderDiskList, renderScanRequest } from './diag/diskViews';
 import { encryptConfig, decryptConfig, isEncryptedConfig } from './backup/ConfigEncryption';
 import {
   renderOspfDatabase, renderOspfInterfaces,
@@ -141,6 +142,8 @@ const TFTP_EXPORT_MAX_RETRIES = 2;
 type ActionDestructive = 'reboot' | 'shutdown' | 'factoryreset' | 'formatlogdisk';
 
 const FORMATTAGE_DISQUE = 'Formatting disk, Please wait a few seconds!';
+
+const NO_LOG_DISK = 'No log disk.';
 
 function annonceAlimentation(action: ActionDestructive): string {
   if (action === 'factoryreset') {
@@ -945,7 +948,8 @@ export class FortiShell {
       licenseStatus: 'Valid',
       vmCpus: this.fw.getSystemLoad().cpuCount(),
       vmMemoryMb: Math.round(this.fw.getSystemLoad().memory().totalKib / 1024),
-      logDisk: 'Available',
+      logDisk: this.fw.getProfile().logDisk === undefined
+        ? 'Not available' : 'Available',
       systemTime: fortiSystemTime(this.fw),
     });
   }
@@ -1137,6 +1141,36 @@ export class FortiShell {
       default:
         return this.batch.running() ? BATCH_STATUS_RUNNING : BATCH_STATUS_STOPPED;
     }
+  }
+
+  private logDiskUsedBytes(): number {
+    let used = 0;
+    for (const name of this.fw.vdomNames()) used += this.fw.getLogStore(name).usedBytes();
+    return used + this.fw.getLogDisk().rolledBytes();
+  }
+
+  private executeDisk(rest: readonly string[]): string {
+    if (rest.length === 0) return FortiMessages.incomplete('a disk operation');
+    const resolved = resolvePrefix(rest[0], executeOptionNames('disk'));
+    if (resolved.name === undefined) {
+      return resolved.candidates.length > 1
+        ? FortiMessages.ambiguous(rest[0], resolved.candidates)
+        : FortiMessages.unknownAction(`disk ${rest[0]}`);
+    }
+
+    const disk = this.fw.getProfile().logDisk;
+    if (disk === undefined) return NO_LOG_DISK;
+    if (resolved.name === 'list') {
+      return renderDiskList(disk, this.fw.serialNumber(), this.logDiskUsedBytes());
+    }
+    if (rest[1] === undefined) return FortiMessages.incomplete('a partition reference');
+    if (rest[1] !== String(disk.partitionRef)) {
+      return FortiMessages.valueError(rest[1],
+        `this unit has one partition, reference ${disk.partitionRef}.`);
+    }
+    if (resolved.name === 'format') return this.appliquerAlimentation('formatlogdisk');
+    this.fw.rebootNow();
+    return renderScanRequest(disk);
   }
 
   private executeCfg(rest: readonly string[]): string {
@@ -1394,18 +1428,14 @@ export class FortiShell {
 
   interactionPlanFor(commandLine: string): CommandInteractionPlan | null {
     const words = commandLine.trim().split(/\s+/);
-    if (words.length !== 2 || words[0] !== 'execute') return null;
-
-    const resolved = resolvePrefix(words[1], executeNames());
-    const action = resolved.name;
-    if (action !== 'reboot' && action !== 'shutdown'
-      && action !== 'factoryreset' && action !== 'formatlogdisk') {
-      return null;
-    }
+    if (words[0] !== 'execute') return null;
+    const resolved = resolvePrefix(words[1] ?? '', executeNames());
+    const plan = this.planDestructif(resolved.name, words.slice(2));
+    if (plan === null) return null;
 
     return {
       steps: [
-        { kind: 'output', lines: [annonceAlimentation(action)] },
+        { kind: 'output', lines: plan.announce },
         {
           kind: 'confirmation',
           prompt: 'Do you want to continue? (y/n)',
@@ -1415,11 +1445,48 @@ export class FortiShell {
           kind: 'run',
           run: async (runtime) => {
             if ((runtime.values.get('forti_power_confirm') ?? '') !== 'yes') return;
-            if (action === 'formatlogdisk') runtime.output(FORMATTAGE_DISQUE);
-            this.accomplirAction(action);
+            for (const line of plan.after) runtime.output(line);
+            this.accomplirAction(plan.action);
           },
         },
       ],
+    };
+  }
+
+  private planDestructif(
+    verb: string | undefined, rest: readonly string[],
+  ): { action: ActionDestructive; announce: string[]; after: string[] } | null {
+    if (verb === 'reboot' || verb === 'shutdown' || verb === 'factoryreset') {
+      return rest.length === 0
+        ? { action: verb, announce: [annonceAlimentation(verb)], after: [] }
+        : null;
+    }
+    if (verb === 'formatlogdisk') {
+      return rest.length === 0
+        ? {
+          action: verb,
+          announce: [annonceAlimentation(verb)],
+          after: [FORMATTAGE_DISQUE],
+        }
+        : null;
+    }
+    if (verb !== 'disk') return null;
+
+    const disk = this.fw.getProfile().logDisk;
+    const operation = resolvePrefix(rest[0] ?? '', executeOptionNames('disk')).name;
+    if (disk === undefined || rest[1] !== String(disk.partitionRef)) return null;
+    if (operation === 'scan') {
+      return {
+        action: 'reboot',
+        announce: renderScanRequest(disk).split('\n'),
+        after: [],
+      };
+    }
+    if (operation !== 'format') return null;
+    return {
+      action: 'formatlogdisk',
+      announce: [annonceAlimentation('formatlogdisk')],
+      after: [FORMATTAGE_DISQUE],
     };
   }
 
@@ -1443,6 +1510,7 @@ export class FortiShell {
       case 'policy-packet-capture': return this.executePolicyPacketCapture(tail);
       case 'batch': return this.executeBatch(tail);
       case 'cfg': return this.executeCfg(tail);
+      case 'disk': return this.executeDisk(tail);
       case 'set': return this.executeSetSystem(tail);
       case 'sync-session': return this.executeSyncSession();
       case 'upd-vd-license': return this.executeVdomLicense(tail);

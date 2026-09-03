@@ -44,6 +44,12 @@ export const FORTI_EXECUTE_COMMANDS: readonly FortiExecuteCommand[] = Object.fre
       { keyword: 'lease-clear', description: 'Clear DHCPv6 leases.' },
     ] },
   { name: 'disconnect-admin-session', help: 'Disconnect a logged-in administrator.' },
+  { name: 'disk', help: 'List, format or scan the storage partitions.',
+    options: [
+      { keyword: 'list', description: 'List disk devices and partitions.' },
+      { keyword: 'format', description: 'Format a partition.' },
+      { keyword: 'scan', description: 'Scan a partition and fix errors.' },
+    ] },
   { name: 'enter', help: 'Select virtual domain.' },
   { name: 'factoryreset', help: 'Reset the configuration to factory default.' },
   { name: 'formatlogdisk', help: 'Format the log disk.' },

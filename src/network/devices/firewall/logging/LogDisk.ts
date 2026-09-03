@@ -33,6 +33,14 @@ export class LogDisk {
     return Object.freeze(files);
   }
 
+  rolledBytes(): number {
+    let total = 0;
+    for (const files of this.rolled.values()) {
+      for (const file of files) total += file.bytes;
+    }
+    return total;
+  }
+
   rolledCount(prefix: LogFilePrefix): number {
     return (this.rolled.get(prefix) ?? []).length;
   }

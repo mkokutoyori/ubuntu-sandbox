@@ -84,6 +84,17 @@ export interface FirewallProfile {
   readonly ports?: readonly FirewallPortSpec[];
 
   readonly chassis: ChassisResources;
+  readonly logDisk?: LogDiskSpec;
+}
+
+export interface LogDiskSpec {
+  readonly label: string;
+  readonly model: string;
+  readonly type: string;
+  readonly device: string;
+  readonly capacityBytes: number;
+  readonly partitionRef: number;
+  readonly partitionBytes: number;
 }
 
 export interface ChassisResources {
