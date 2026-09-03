@@ -2130,3 +2130,16 @@ et les tests qui l'observent, et c'est un autre sujet.
   tomber des laboratoires qui l'utilisent ; mais un compte dont le nom
   porte une espace y prend alors un sAMAccountName avec une espace, ce
   qu'une vraie machine n'accepte pas.
+- Un refus par liste de controle d'un routeur est rendu `closed` par
+  `nmap` la ou une vraie machine dit `filtered`. Mesure sur le TP 13 :
+  R1 porte `deny ip any any` en entree de Gi0/0, la sonde TCP vers 8080
+  ressort `8080/tcp closed`, et `Host is up` — donc l'ACL est visible
+  comme un port ferme et non comme un filtre. La chaine collapse tout
+  ICMP inatteignable en `refused` (`TcpWireOutcome`), alors que le noyau
+  distingue le code 3 (port inatteignable, ECONNREFUSED, `closed`) du
+  code 13 (interdit par filtre, EACCES, `filtered`) et que
+  `scan_engine_connect.cc` de nmap applique cette distinction. Le code
+  13 est bien EMIS par `Router.sendICMPError` ; c'est la traduction en
+  issue de connexion qui le perd. Non ferme ici pour ne pas entrer en
+  collision avec le chantier `nmap`/ICMP en cours dans les memes
+  fichiers.
