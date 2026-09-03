@@ -10,6 +10,7 @@
 import { IPAddress, SubnetMask } from '../../../core/types';
 import { isValidIPv4 } from '../../../core/ip';
 import { CliInvalidInput, CliIncomplete } from '../cli/CliDiagnostic';
+import { boundedInteger } from '@/cli/ArgumentTypes';
 import { CISCO_ERRORS } from '../cli-utils';
 import type { CommandTrie } from '../CommandTrie';
 import type { CiscoShellContext } from './CiscoConfigCommands';
@@ -77,6 +78,8 @@ export function routerKeywordBelongsTo(keyword: string, proto: Proto): boolean {
 function requireProto(ctx: CiscoShellContext, keyword: string): void {
   if (!routerKeywordBelongsTo(keyword, curProto(ctx).proto)) throw new CliInvalidInput();
 }
+
+const BGP_WEIGHT_MAX = 65535;
 
 const STUB_OPTIONS = [
   'connected', 'summary', 'static', 'redistributed', 'receive-only', 'leak-map',
@@ -192,6 +195,9 @@ export function buildRouterSubmodeOn(
     }
     if (args.length < 1) return CISCO_ERRORS.INCOMPLETE;
     if (!isValidIPv4(args[0])) return CISCO_ERRORS.INVALID_INPUT;
+    if (args[1] === 'mask' && !isValidIPv4(args[2] ?? '')) {
+      throw new CliInvalidInput({ token: args[2] });
+    }
     if (proto === 'eigrp') {
       const wildcard = toWildcard(args[1]);
       if (pushOnce(eigrp().networks, [args[0], wildcard].filter(Boolean).join(' '))) {
@@ -534,6 +540,9 @@ export function buildRouterSubmodeOn(
       if (a[1] === 'peer-group' && a[2] && !repo.getBgpPeerGroup(a[2])) {
         return `% Configure the peer-group ${a[2]} first`;
       }
+      if (a[1] === 'weight' && boundedInteger(a[2], 0, BGP_WEIGHT_MAX) === null) {
+        return '% Invalid weight (0-65535)';
+      }
 
       const n = repo.ensureBgpNeighbor(a[0]);
       if (n) {
@@ -551,9 +560,7 @@ export function buildRouterSubmodeOn(
       if (a[1] === 'remote-as') bn.remoteAs = parseInt(a[2], 10);
       else if (a[1] === 'activate') bn.activated = true;
       else if (a[1] === 'weight') {
-        const w = parseInt(a[2], 10);
-        if (Number.isNaN(w) || w < 0 || w > 65535) return '% Invalid weight (0-65535)';
-        bn.weight = w;
+        bn.weight = boundedInteger(a[2], 0, BGP_WEIGHT_MAX) as number;
       } else if (a[1] === 'peer-group' && a[2]) {
         // L'adhésion fait hériter tout de suite : c'est ce qui rend le
         // gabarit utile plutôt que décoratif.
@@ -642,6 +649,7 @@ export function buildRouterSubmodeOn(
       }
       // `metric weights <tos> k1 k2 k3 k4 k5` — feeds the composite metric.
       if (a[0] !== 'weights') return '% Invalid input detected.';
+      if (boundedInteger(a[1], 0, 255) === null) return '% Invalid metric weights';
       const ks = a.slice(2, 7).map((n) => parseInt(n, 10));
       if (ks.length < 5 || ks.some((n) => Number.isNaN(n) || n < 0 || n > 255)) {
         return '% Invalid metric weights';

@@ -1999,3 +1999,25 @@ défauts — la méthode vaut d'être reprise sur le reliquat.
   accepte et rendu). Fermer `srr-queue` demande sa grammaire, qui n'est
   pas attestee depuis ce reseau ; lui donner un vrai magasin est un autre
   lot, qui touche le rendu de la configuration d'interface.
+- `default-information originate metric <n>` est desormais JUGE et n'est
+  RANGE nulle part : `_getOSPFExtraConfig()` porte `defaultInfoMetricType`
+  et pas de champ pour la metrique elle-meme, si bien que
+  `default-information originate metric 50` est accepte, verifie, puis
+  oublie — la route par defaut annoncee garde la metrique par defaut. Ce
+  lot refuse desormais `metric zorglub` (une valeur impossible ne passe
+  plus en silence) mais ne stocke pas la valeur juste, ce qui demande un
+  champ sur le magasin ET que l'annonce le lise.
+- `metric weights <tos> k1..k5` accepte n'importe quel TOS de 0 a 255,
+  alors que la documentation de Cisco dit que la valeur doit TOUJOURS
+  etre zero — cette documentation n'est pas atteignable depuis ce reseau
+  pour l'attester, et le simulateur n'a de toute facon aucune notion de
+  type de service dans sa metrique composite. Ce lot refuse un TOS non
+  numerique, ce qui etait le defaut mesure ; restreindre a zero demande
+  la capture.
+- Les bornes hautes retenues pour `timers throttle spf` (600000 ms),
+  `max-lsa` et `default-information originate metric` (16777214, la
+  metrique OSPF maximale) sont des ordres de grandeur RAISONNES et non
+  des valeurs attestees : la documentation de Cisco n'est pas atteignable
+  depuis ce reseau. Elles ne refusent que des valeurs absurdes ; si une
+  capture les contredit, ce sont elles qu'il faut corriger et non le
+  mecanisme.
