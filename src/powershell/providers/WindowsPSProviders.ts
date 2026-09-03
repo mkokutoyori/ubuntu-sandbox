@@ -68,7 +68,7 @@ import type {
   IAdProvider, AdUserInfo, AdGroupInfo, AdComputerInfo, AdOrgUnitInfo, AdOpResult, AdSiteInfo,
   AdSubnetInfo, AdSiteLinkInfo, AdUpToDatenessVectorRowInfo,
   AdKdsRootKeyInfo, AdServiceAccountInfo,
-  AdGenericObjectInfo, AdOptionalFeatureInfo,
+  AdGenericObjectInfo, AdOptionalFeatureInfo, AddGroupMemberOptions, AdMemberLink,
   AdAttributeSchemaInfo, AdObjectClassSchemaInfo, AdForestInfo, AdDomainInfo, AdTrustInfo,
   AdReplicationConnectionInfo, AdReplicationFailureInfo, AdPasswordPolicyInfo, AdFineGrainedPasswordPolicyInfo, AdAccessRuleInfo,
   IComputerProvider, DomainMembershipInfo,
@@ -102,10 +102,17 @@ import type { AddsForestOptions } from '@/network/devices/windows/server/ad/adFu
 import type { GroupWriteOptions, OrgUnitWriteOptions, UserWriteOptions } from '@/network/devices/windows/server/ad/DirectoryStore';
 import type { AdGroup, AdUser } from '@/network/devices/windows/server/ad/AdTypes';
 import { withRemoteDirectory } from './adRemoteDirectory';
-import { groupTypeValue } from '@/network/devices/windows/server/ad/adGroup';
+import { MEMBER_ALREADY_IN_GROUP, groupTypeValue } from '@/network/devices/windows/server/ad/adGroup';
+import { PRIVILEGED_ACCESS_MANAGEMENT_FEATURE, TTL_WITHOUT_PAM_FEATURE } from '@/network/devices/windows/server/ad/adOptionalFeatures';
 import type { RemoteDirectoryHost, RemoteDirectoryTarget } from './adRemoteDirectory';
 import type { LdapClient } from '@/network/devices/windows/server/ad/ldap/LdapClient';
 import type { TcpStack } from '@/network/tcp/TcpStack';
+
+function defaultNamingContextOf(client: LdapClient): string | null {
+  const dse = client.search('', 'base', { kind: 'present', attr: 'objectClass' }, ['defaultNamingContext']);
+  const value = dse.entries[0]?.attributes.find(a => a.type.toLowerCase() === 'defaultnamingcontext')?.values[0];
+  return value ?? null;
+}
 
 function groupInfoOf(g: AdGroup): AdGroupInfo {
   return {
@@ -784,11 +791,16 @@ class WindowsAdAdapter implements IAdProvider {
   listGroups(): AdGroupInfo[] {
     return this.requireStore('Get-ADGroup').listGroups().map(groupInfoOf);
   }
-  addGroupMember(groupIdentity: string, members: string[]): AdOpResult {
+  addGroupMember(groupIdentity: string, members: string[], opts: AddGroupMemberOptions = {}): AdOpResult {
+    if (opts.target) return this.addGroupMemberRemotely(groupIdentity, members, opts);
     const store = this.requireStore('Add-ADGroupMember');
     const denied = this.requireAdmin('Add-ADGroupMember');
     if (denied) return denied;
+    if (opts.ttlSeconds !== undefined && !store.isOptionalFeatureEnabled(PRIVILEGED_ACCESS_MANAGEMENT_FEATURE)) {
+      return { ok: false, message: TTL_WITHOUT_PAM_FEATURE };
+    }
     const group = store.resolveIdentity(groupIdentity);
+    const resolved: string[] = [];
     for (const m of members) {
       // `<remoteRealm>\<sam>` naming a domain other than this one (trust-
       // relationships gap 1) — real AD stores this as a local
@@ -802,14 +814,48 @@ class WindowsAdAdapter implements IAdProvider {
       if (isForeign) {
         const fsp = store.addForeignSecurityPrincipal(domainPart, m.slice(backslash + 1));
         if (!fsp.ok) return fsp;
-        const res = store.addGroupMember(group, fsp.sam!);
-        if (!res.ok) return res;
+        resolved.push(fsp.sam!);
         continue;
       }
-      const res = store.addGroupMember(group, store.resolveIdentity(m));
-      if (!res.ok) return res;
+      resolved.push(store.resolveIdentity(m));
     }
-    return { ok: true, message: '' };
+    return store.addGroupMembers(group, resolved, {
+      permissiveModify: opts.permissiveModify, ttlSeconds: opts.ttlSeconds,
+    });
+  }
+
+  private addGroupMemberRemotely(groupIdentity: string, members: string[], opts: AddGroupMemberOptions): AdOpResult {
+    const target = opts.target!;
+    return this.remoteDirectory('Add-ADGroupMember', target, client => {
+      const base = opts.partition ?? defaultNamingContextOf(client) ?? rootDnOf(target.domainName ?? target.server);
+      const dnOf = (identity: string): string | null => {
+        if (identity.includes('=')) return identity;
+        const found = client.search(base, 'sub',
+          { kind: 'equalityMatch', attr: 'sAMAccountName', value: identity }, ['distinguishedName']);
+        return found.entries[0]?.dn ?? null;
+      };
+      const groupDn = dnOf(groupIdentity);
+      if (!groupDn) return { ok: false, message: `Cannot find an object with identity: '${groupIdentity}' under: '${base}'.` };
+      const memberDns: string[] = [];
+      for (const m of members) {
+        const dn = dnOf(m);
+        if (!dn) return { ok: false, message: `Cannot find an object with identity: '${m}' under: '${base}'.` };
+        memberDns.push(dn);
+      }
+      const type = opts.ttlSeconds === undefined ? 'member' : `member;TTL=${opts.ttlSeconds}`;
+      const res = client.modify(groupDn, [{ operation: 'add', modification: { type, values: memberDns } }]);
+      return res.ok ? { ok: true, message: '' } : { ok: false, message: res.result.diagnosticMessage || MEMBER_ALREADY_IN_GROUP };
+    });
+  }
+
+  groupMemberLinks(groupIdentity: string): AdMemberLink[] {
+    const store = this.requireStore('Get-ADGroup');
+    const group = store.resolveIdentity(groupIdentity);
+    const ttls = store.memberTimeToLive(group);
+    return store.getGroupMembersDetailed(group).map(m => {
+      const remaining = ttls.get(m.dn.toLowerCase());
+      return remaining === undefined ? { dn: m.dn } : { dn: m.dn, ttlSeconds: remaining };
+    });
   }
   removeGroupMember(groupIdentity: string, members: string[]): AdOpResult {
     const store = this.requireStore('Remove-ADGroupMember');

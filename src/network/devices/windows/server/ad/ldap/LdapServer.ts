@@ -64,6 +64,13 @@ export interface LdapServerContext {
   otherForestDomainRoots?: () => string[];
 }
 
+const MEMBER_ATTRIBUTE = 'member';
+
+function expiringLinkTtl(attributeDescription: string): number | null {
+  const match = /^member;ttl=(\d+)$/i.exec(attributeDescription.trim());
+  return match ? parseInt(match[1], 10) : null;
+}
+
 const CLOCK_SKEW_SECONDS = 5 * 60;
 
 function treeMessageToResultCode(message: string): number {
@@ -155,6 +162,14 @@ export class LdapServerHandler {
         return;
       case 'searchRequest': {
         if (!this.bound) { this.reply(socket, msg.messageID, { kind: 'searchResultDone', result: NOT_BOUND }); return; }
+        if (op.baseObject.trim() === '' && op.scope === 'base') {
+          this.reply(socket, msg.messageID, {
+            kind: 'searchResultEntry', objectName: '',
+            attributes: this.rootDseAttributes(op.attributes),
+          });
+          this.reply(socket, msg.messageID, { kind: 'searchResultDone', result: ldapResult(LdapResultCode.success) });
+          return;
+        }
         const baseDn = this.tryParseDn(op.baseObject);
         if (!baseDn) { this.reply(socket, msg.messageID, { kind: 'searchResultDone', result: ldapResult(LdapResultCode.invalidDNSyntax) }); return; }
 
@@ -202,7 +217,14 @@ export class LdapServerHandler {
         if (!this.bound) { this.reply(socket, msg.messageID, { kind: 'modifyResponse', result: NOT_BOUND }); return; }
         const dn = this.tryParseDn(op.object);
         if (!dn) { this.reply(socket, msg.messageID, { kind: 'modifyResponse', result: ldapResult(LdapResultCode.invalidDNSyntax) }); return; }
-        const res = this.ctx.tree.modifyEntry(dn, op.changes.map(c => ({ op: c.operation, type: c.modification.type, values: c.modification.values })));
+        const ttls: Array<{ member: string; seconds: number }> = [];
+        const res = this.ctx.tree.modifyEntry(dn, op.changes.map(c => {
+          const expiring = expiringLinkTtl(c.modification.type);
+          if (expiring === null) return { op: c.operation, type: c.modification.type, values: c.modification.values };
+          if (c.operation === 'add') for (const v of c.modification.values) ttls.push({ member: v, seconds: expiring });
+          return { op: c.operation, type: MEMBER_ATTRIBUTE, values: c.modification.values };
+        }));
+        if (res.ok) for (const { member, seconds } of ttls) this.ctx.tree.setLinkTtl(dn, member, seconds);
         this.reply(socket, msg.messageID, {
           kind: 'modifyResponse',
           result: res.ok ? ldapResult(LdapResultCode.success) : ldapResult(treeMessageToResultCode(res.message), '', res.message),
@@ -294,6 +316,22 @@ export class LdapServerHandler {
   }
 
   /** A `searchResultReference` URI if `baseDn` lies under a *different* domain of this DC's forest, else `null` (an ordinary, possibly-empty local search). */
+  private rootDseAttributes(requested: string[]): PartialAttribute[] {
+    const root = formatDN(this.ctx.tree.getRootDn());
+    const configuration = `CN=Configuration,${root}`;
+    const all: PartialAttribute[] = [
+      { type: 'namingContexts', values: [root, configuration, `CN=Schema,${configuration}`] },
+      { type: 'defaultNamingContext', values: [root] },
+      { type: 'configurationNamingContext', values: [configuration] },
+      { type: 'schemaNamingContext', values: [`CN=Schema,${configuration}`] },
+      { type: 'subschemaSubentry', values: [`CN=Aggregate,CN=Schema,${configuration}`] },
+      { type: 'supportedLDAPVersion', values: ['3'] },
+    ];
+    if (requested.length === 0) return all;
+    const wanted = new Set(requested.map(a => a.toLowerCase()));
+    return wanted.has('*') ? all : all.filter(a => wanted.has(a.type.toLowerCase()));
+  }
+
   private referralFor(baseDn: DistinguishedName): string | null {
     if (!this.ctx.otherForestDomainRoots) return null;
     const target = formatDN(baseDn).toLowerCase();

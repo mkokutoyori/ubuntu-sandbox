@@ -2357,15 +2357,20 @@ export class PSRuntime {
    * Throws PSRuntimeError if the cmdlet is not found.
    */
   private pipelineItemsFor(
-    cmdlet: { pipelineByPropertyName?: true; parameters?: readonly string[] },
+    cmdlet: { pipelineByPropertyName?: true; pipelineByValue?: string; parameters?: readonly string[] },
     named: Record<string, PSValue>,
     pipeInput: PSValue,
   ): Array<Record<string, PSValue>> | null {
-    if (cmdlet.pipelineByPropertyName !== true) return null;
+    if (cmdlet.pipelineByPropertyName !== true && cmdlet.pipelineByValue === undefined) return null;
     if (pipeInput === undefined || pipeInput === null) return null;
     const items = (Array.isArray(pipeInput) ? pipeInput : [pipeInput])
       .filter((v): v is Record<string, PSValue> => v !== null && typeof v === 'object' && !Array.isArray(v));
     if (items.length === 0) return null;
+    if (cmdlet.pipelineByValue !== undefined) {
+      const key = cmdlet.pipelineByValue.toLowerCase();
+      if (named[key] !== undefined) return null;
+      return items.map(item => ({ ...named, [key]: item }));
+    }
     const declared = new Map(((cmdlet.parameters ?? []) as readonly string[]).map(p => [p.toLowerCase(), p]));
     const bound = items.map(item => {
       const merged = { ...named };

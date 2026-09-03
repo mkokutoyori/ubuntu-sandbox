@@ -73,3 +73,25 @@ export function groupTypeParts(groupType: number): { scope: GroupScopeName; cate
     scope: SCOPE_OF_BIT.get(groupType & 0x0000000e) ?? 'Global',
   };
 }
+
+export interface GroupNestingRefusal {
+  readonly container: GroupScopeName;
+  readonly member: GroupScopeName;
+  readonly message: string;
+}
+
+export const GROUP_NESTING_REFUSALS: readonly GroupNestingRefusal[] = [
+  { container: 'Global', member: 'DomainLocal', message: 'A global group cannot have a local group as a member.' },
+  { container: 'Global', member: 'Universal', message: 'A global group cannot have a universal group as a member.' },
+  { container: 'Universal', member: 'DomainLocal', message: 'A universal group cannot have a local group as a member.' },
+];
+
+export function groupNestingProblem(container: GroupScopeName, member: GroupScopeName): string | null {
+  return GROUP_NESTING_REFUSALS.find(r => r.container === container && r.member === member)?.message ?? null;
+}
+
+export const MEMBER_ALREADY_IN_GROUP = 'The specified account name is already a member of the group.';
+
+export function formatMemberTimeToLive(remainingSeconds: number, memberDn: string): string {
+  return `<TTL=${remainingSeconds}>,${memberDn}`;
+}

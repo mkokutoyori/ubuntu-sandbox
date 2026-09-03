@@ -41,6 +41,7 @@ export interface ICmdlet {
    * pipeline out before the body ever saw it.
    */
   readonly pipelineByPropertyName?: true;
+  readonly pipelineByValue?: string;
 
   /** Optional source/module label surfaced by `Get-Command` ("Source"). */
   readonly module?: string;
