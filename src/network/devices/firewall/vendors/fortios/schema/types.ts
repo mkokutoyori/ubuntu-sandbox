@@ -346,6 +346,7 @@ export interface FortiCommitDevice {
   refreshCaptivePortal(): void;
   applySyslogCollector(settings: SyslogCollectorSettings): string | void;
   applySyslogFilter(settings: SyslogFilterSettings): string | void;
+  maxVirtualDomains(): number;
   applyVdom(name: string): void;
   removeVdom(name: string): void;
   applyVdomLink(name: string): void;
@@ -690,6 +691,7 @@ export interface FortiTableSpec {
   readonly keyOnConfigLine?: boolean;
   readonly scopeOnly?: boolean;
   readonly unavailable?: string;
+  readonly maxEntries?: (context: FortiCommitContext) => number;
   readonly onCommit?: (
     object: FortiObjectView, context: FortiCommitContext) => string | void;
   readonly onDelete?: (key: string, context: FortiCommitContext) => void;

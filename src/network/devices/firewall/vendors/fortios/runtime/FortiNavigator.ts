@@ -174,6 +174,9 @@ export class FortiNavigator {
     const refusedKey = this.refusedKey(resolved);
     if (refusedKey) return refusedKey;
 
+    const full = this.refusedWhenFull(table, resolved);
+    if (full) return full;
+
     if (spec.fixedKeys && !spec.fixedKeys.includes(resolved)) {
       return FortiMessages.unknownKey(resolved);
     }
@@ -353,6 +356,15 @@ export class FortiNavigator {
     const context = this.deps.commitContext();
     for (const key of table.purge()) table.spec.onDelete?.(key, context);
     return EMPTY;
+  }
+
+  private refusedWhenFull(table: FortiTable, key: string): string | null {
+    const ceiling = table.spec.maxEntries?.(
+      { ...this.deps.commitContext(), position: -1 });
+    if (ceiling === undefined || table.has(key)) return null;
+    if (table.keys().length < ceiling) return null;
+    return FortiMessages.commandFail(
+      `maximum number of entries has been reached (${ceiling}).`);
   }
 
   private refusedKey(key: string): string | null {

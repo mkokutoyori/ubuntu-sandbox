@@ -278,6 +278,9 @@ export function buildCommitDevice(
       applySyslogFilter(settings) {
         fw.getSyslogCollectors().applyFilter(settings);
       },
+      maxVirtualDomains() {
+        return fw.maxVdoms();
+      },
       applyVdom(name) {
         fw.getVdomRegistry().create(name);
       },

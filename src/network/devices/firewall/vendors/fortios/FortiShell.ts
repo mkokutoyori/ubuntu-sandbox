@@ -936,7 +936,7 @@ export class FortiShell {
       hostname: this.fw.getName(),
       operationMode: settings === 'transparent' ? 'Transparent' : 'NAT',
       vdom: this.vdom,
-      maxVdoms: 10,
+      maxVdoms: this.fw.maxVdoms(),
       vdomsInNat: settings === 'transparent' ? 0 : 1,
       vdomsInTransparent: settings === 'transparent' ? 1 : 0,
       vdomConfiguration: vdomMode === 'no-vdom' ? 'disable' : 'enable',
@@ -1137,6 +1137,19 @@ export class FortiShell {
       default:
         return this.batch.running() ? BATCH_STATUS_RUNNING : BATCH_STATUS_STOPPED;
     }
+  }
+
+  private executeVdomLicense(rest: readonly string[]): string {
+    if (rest.length === 0) return FortiMessages.incomplete('a license key');
+    if (!/^[0-9A-Za-z]{32}$/.test(rest[0])) {
+      return FortiMessages.valueError(rest[0],
+        'a VDOM license key is a 32-character string supplied by Fortinet.');
+    }
+    return FortiMessages.unimplementedAction('upd-vd-license',
+      'the tier it grants — 25, 50, 100 or 500 domains on top of the base '
+      + `${this.fw.maxVdoms()} — is encoded inside the key, and only Fortinet's `
+      + 'own licence server decodes it, so this build cannot tell which one you '
+      + 'bought.');
   }
 
   private executeSetSystem(rest: readonly string[]): string {
@@ -1408,6 +1421,7 @@ export class FortiShell {
       case 'batch': return this.executeBatch(tail);
       case 'set': return this.executeSetSystem(tail);
       case 'sync-session': return this.executeSyncSession();
+      case 'upd-vd-license': return this.executeVdomLicense(tail);
       case 'traceroute':
         return tail.length === 0
           ? FortiMessages.incomplete('a destination')

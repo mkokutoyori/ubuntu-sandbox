@@ -106,6 +106,7 @@ export const FORTIOS_PROFILE: FirewallProfile = Object.freeze({
   deploymentScope: 'device',
   configurationModel: 'immediate',
   virtualizationName: 'vdom',
+  maxVirtualDomains: 10,
 
   portPrefix: 'port',
   portCount: 8,

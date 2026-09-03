@@ -76,6 +76,7 @@ export interface FirewallProfile {
   readonly deploymentScope: DeploymentScope;
   readonly configurationModel: ConfigurationModel;
   readonly virtualizationName: string | null;
+  readonly maxVirtualDomains?: number;
 
   readonly portPrefix: string;
   readonly portCount: number;

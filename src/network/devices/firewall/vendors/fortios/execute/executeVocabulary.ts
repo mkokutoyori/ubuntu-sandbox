@@ -83,6 +83,7 @@ export const FORTI_EXECUTE_COMMANDS: readonly FortiExecuteCommand[] = Object.fre
   { name: 'update-ips', help: 'Update IPS definitions from FortiGuard.' },
   { name: 'update-now', help: 'Update all FortiGuard databases now.' },
   { name: 'time', help: 'Display or set the system time.' },
+  { name: 'upd-vd-license', help: 'Update the VDOM license.' },
   { name: 'traceroute', help: 'Trace the route to a destination.' },
   { name: 'tracert6', help: 'Traceroute for IPv6.' },
   { name: 'vpn', help: 'VPN operations.',
