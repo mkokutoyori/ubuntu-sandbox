@@ -8,12 +8,27 @@ import type { AdapterKeyword } from '@/cli/commands/trieAdapter';
 import { specsFromTrieRegistrations } from '@/cli/commands/trieAdapter';
 import { CISCO_ERRORS } from '../cli-utils';
 import { MODES_INTERFACE } from './CiscoConfigCommands';
+import { boundedInteger } from '@/cli/ArgumentTypes';
+import { MAX_PORT } from '../../../core/ports/PortNumber';
+import { CliInvalidInput } from '../cli/CliDiagnostic';
 
 /** Les niveaux qu'EEM accepte derrière `priority` : l'indice EST la sévérité. */
 const EEM_SEVERITES: readonly string[] = [
   'emergencies', 'alerts', 'critical', 'errors',
   'warnings', 'notifications', 'informational', 'debugging',
 ];
+
+const NETFLOW_VERSION_MAX = 9;
+const DUREE_MAX = 4294967295;
+
+function nombre(
+  args: readonly string[], index: number, min: number, max: number,
+): number {
+  const value = boundedInteger(args[index], min, max);
+  if (value === null) throw new CliInvalidInput({ token: args[index] });
+
+  return value;
+}
 
 export interface CiscoEemNetflowArchiveContext extends CiscoShellContext {
   setApplet?(name: string | null): void;
@@ -77,20 +92,20 @@ export function buildEemNetflowArchiveConfigCommands(
 
   trie.registerGreedy('ip flow-export', 'Legacy NetFlow export', (args) => {
     if (args[0] === 'destination' && args[1] && args[2]) {
-      nf().setLegacyDestination(args[1], parseInt(args[2], 10));
+      nf().setLegacyDestination(args[1], nombre(args, 2, 1, MAX_PORT));
     } else if (args[0] === 'source' && args[1]) {
       nf().setLegacySource(args[1]);
     } else if (args[0] === 'version' && args[1]) {
-      nf().setLegacyVersion(parseInt(args[1], 10));
+      nf().setLegacyVersion(nombre(args, 1, 1, NETFLOW_VERSION_MAX));
     }
     ctx.syncNetflowAgent?.();
     return '';
   });
   trie.registerGreedy('ip flow-cache', 'NetFlow cache timeout', (args) => {
     if (args[0] === 'timeout' && args[1] === 'active' && args[2]) {
-      nf().setLegacyCacheActiveMin(parseInt(args[2], 10));
+      nf().setLegacyCacheActiveMin(nombre(args, 2, 1, DUREE_MAX));
     } else if (args[0] === 'timeout' && args[1] === 'inactive' && args[2]) {
-      nf().setLegacyCacheInactiveSec(parseInt(args[2], 10));
+      nf().setLegacyCacheInactiveSec(nombre(args, 2, 1, DUREE_MAX));
     }
     ctx.syncNetflowAgent?.();
     return '';
@@ -128,9 +143,9 @@ export function buildEemAppletSubmode(trie: CommandTrie, ctx: CiscoEemNetflowArc
         a.triggers.push({ kind: 'timer.cron', cronEntry: stripQuotes(args.slice(idx + 1).join(' ')) });
       }
     } else if (args[0]?.toLowerCase() === 'watchdog' && args[1] === 'time' && args[2]) {
-      a.triggers.push({ kind: 'timer.watchdog', intervalSec: parseInt(args[2], 10) });
+      a.triggers.push({ kind: 'timer.watchdog', intervalSec: nombre(args, 2, 1, DUREE_MAX) });
     } else if (args[0]?.toLowerCase() === 'countdown' && args[1] === 'time' && args[2]) {
-      a.triggers.push({ kind: 'timer.countdown', intervalSec: parseInt(args[2], 10) });
+      a.triggers.push({ kind: 'timer.countdown', intervalSec: nombre(args, 2, 1, DUREE_MAX) });
     }
     return '';
   });

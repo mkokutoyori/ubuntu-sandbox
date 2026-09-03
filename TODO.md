@@ -1966,3 +1966,20 @@ défauts — la méthode vaut d'être reprise sur le reliquat.
   propres mots (`Error: Wrong parameter found.`). Les unifier est un lot
   a soi : ce n'est pas la borne qui differe mais le MESSAGE, et chacun
   doit rester celui de son constructeur.
+- Les bornes de `ip flow-cache timeout active <minutes>` et
+  `ip flow-cache timeout inactive <secondes>` ne sont pas appliquees :
+  depuis ce lot un jeton non numerique est refuse et la valeur doit etre
+  positive, mais `ip flow-cache timeout active 999999` reste accepte. Ces
+  deux plages sont documentees par Cisco et sa documentation n'est pas
+  atteignable depuis ce reseau (tous les domaines qui la portent sont
+  refuses par le mandataire de sortie) ; poser un maximum de memoire
+  ferait refuser une valeur qu'une vraie machine accepte.
+- `ip flow-export version <n>` est accepte pour 1..9 et RANGE, mais
+  l'exportateur emet toujours du NetFlow v5 : `NetFlowAgent` ecrit
+  `NETFLOW_V5_VERSION` et le type de son en-tete est le litteral `5`. La
+  version configuree est donc un critere que rien n'evalue — ce que la
+  convention du depot interdit — et le fermer demande d'ecrire l'encodage
+  v9 (gabarits, jeux de champs), qui est un sujet a soi et non une
+  question de grammaire. La borne haute retenue ici (9) est le numero de
+  version le plus eleve que NetFlow ait porte ; `ip flow-export version 1`
+  et `5` sont acceptes de la meme facon et ne changent rien non plus.
