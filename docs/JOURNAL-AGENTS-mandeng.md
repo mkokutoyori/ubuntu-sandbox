@@ -7313,3 +7313,47 @@ declaration, cesse du meme coup de promettre `<cr>` apres `type`.
 de `class-map` refusait deja, seule l'AIDE mentait, et un `<cr>` annonce
 ne se lit pas depuis un appel a la commande ; ce mensonge-la reste garde
 par `probe-aide-cr-tient-sa-promesse`, qui le balayait.
+
+## nmap — increment 8 : les balayages DISCRETS, et le silence qui leur manquait
+
+**Perimetre revendique** : `TcpStack` (etat LISTEN, `scanProbe`),
+`tcp/events.ts` (une raison de rejet), `scan/nmap/StatelessScans.ts`
+(nouveau), `NmapOptions`, `ScanEngine`, `NmapProbes`, les deux hotes.
+
+`-sF`, `-sN`, `-sX`, `-sM` et `-sW` etaient tous absents de l'analyseur —
+ils retombaient dans la ligne qui ignore ce qu'on ne traite pas, donc
+`nmap -sF` faisait un balayage CONNECTE, poignee de main comprise : le
+contraire exact de ce que ces options existent pour faire.
+
+**Le defaut de fond n'etait pas dans `nmap`, il etait dans la pile.**
+RFC 9293 §3.10.7.2, etat LISTEN, quatrieme controle : un segment qui
+n'est ni RST, ni ACK, ni SYN est JETE en silence ; un port ferme, lui,
+repond RST (§3.10.7.1). Cette asymetrie EST le balayage FIN. Mesure avant
+correctif : un FIN, un NULL et un Xmas vers le port 22 OUVERT d'un
+serveur recevaient tous les trois un RST, comme le port 8888 ferme —
+aucun de ces balayages ne pouvait donc distinguer quoi que ce soit.
+
+`ackProbe` et `synProbe` fusionnent en `scanProbe`, qui rend ce qui est
+REVENU — un RST avec sa fenetre, un SYN/ACK, ou rien — parce que c'est la
+LECTURE qui differe d'un balayage a l'autre, pas l'emission ;
+`StatelessScans.ts` porte les drapeaux et les verdicts, tires de
+`scan_engine.cc` et `scan_engine_raw.cc`. Le balayage ACK, qui avait son
+propre chemin, passe par la meme porte.
+
+**Deux balayages ne distinguent RIEN sur cette pile, et c'est la bonne
+reponse plutot qu'un manque.** Le Maimon : sa sonde est un FIN/ACK, donc
+elle porte un ACK, et le second controle de l'etat LISTEN fait repondre
+RST — le manuel de nmap le dit lui-meme (« According to RFC 793 (TCP), a
+RST packet should be generated in response to such a probe whether the
+port is open or closed. However, Uriel noticed that many BSD-derived
+systems simply drop the packet if the port is open. »). Le balayage par
+fenetre : cette pile emet toujours un RST a fenetre NULLE, comme Linux,
+et le manuel prevoit le cas (« Systems that don't support it will usually
+return all ports closed »). **Mon attente ecrite a l'aveugle sur le
+Maimon etait fausse, pas le produit** — c'est le test qui a change.
+
+**Discrimination** : `probe-nmap-balayages-discrets.test.ts` (12 cas), 8
+tombent, mesures en retirant ENSEMBLE les cinq fichiers touches. Un
+premier essai n'en avait retire que trois et cassait le balayage ACK par
+une importation manquante, faisant tomber un TEMOIN pour une raison
+etrangere au correctif ; l'en-tete du fichier le raconte.

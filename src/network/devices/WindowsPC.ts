@@ -3788,8 +3788,7 @@ export class WindowsPC extends EndHost implements UserAccountHost {
       grabGreeting: (ip, port) => this.getTcpStack().grabGreeting(ip, port),
       sendUdpProbe: (ip, port, sourcePort) =>
         this.sendUdpDatagram(new IPAddress(ip), port, sourcePort, null, 0),
-      ackProbe: (ip, port) => this.getTcpStack().ackProbe(ip, port),
-      synProbe: (ip, port) => this.getTcpStack().synProbe(ip, port),
+      scanProbe: (ip, port, flags) => this.getTcpStack().scanProbe(ip, port, flags),
     };
   }
 

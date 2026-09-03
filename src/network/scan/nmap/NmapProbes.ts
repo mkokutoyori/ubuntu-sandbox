@@ -1,5 +1,10 @@
 import type { Equipment } from '@/network/equipment/Equipment';
 import type { TcpWireOutcome } from '@/network/tcp/types';
+import type { StatelessProbeReply } from '@/network/tcp/TcpStack';
+import {
+  SCAN_PROBE_FLAGS, readStatelessReply,
+  type ScanProbeFlags, type StatelessScanKind,
+} from './StatelessScans';
 import { IP_PROTO_UDP } from '@/network/core/types';
 import { ICMP_UNREACH_PORT } from '@/network/core/IcmpErrors';
 import { findHostByAddress } from '@/network/devices/linux/network/HostLookup';
@@ -25,8 +30,8 @@ export interface ScanHost {
   tcpOutcome(ip: string, port: number): TcpWireOutcome;
   grabGreeting(ip: string, port: number): string | null;
   sendUdpProbe(ip: string, port: number, sourcePort: number): boolean;
-  ackProbe(ip: string, port: number): 'unfiltered' | 'filtered';
-  synProbe(ip: string, port: number): 'open' | 'closed' | 'filtered';
+  /** Un segment hors connexion, et ce qui revient — la lecture est au moteur. */
+  scanProbe(ip: string, port: number, flags: ScanProbeFlags): StatelessProbeReply;
 }
 
 const UDP_PROBE_SOURCE_PORT = 51820;
@@ -166,14 +171,12 @@ export function buildScanProbes(
     tcpOutcome(ip: string, port: number) {
       return host.tcpOutcome(ip, port);
     },
-    synOutcome(ip: string, port: number) {
-      return host.synProbe(ip, port);
+    statelessOutcome(ip: string, port: number, kind: StatelessScanKind) {
+      return readStatelessReply(
+        kind, host.scanProbe(ip, port, SCAN_PROBE_FLAGS[kind]));
     },
     udpState(ip: string, port: number) {
       return probeUdpPort(host, ip, port);
-    },
-    ackReaches(ip: string, port: number) {
-      return host.ackProbe(ip, port) === 'unfiltered';
     },
     banner(ip: string, port: number) {
       const greeting = host.grabGreeting(ip, port);

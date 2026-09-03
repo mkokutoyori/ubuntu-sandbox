@@ -71,7 +71,7 @@ export interface TcpSegmentDroppedPayload extends TcpDeviceRef {
   destinationIp: string;
   sourcePort: number;
   destinationPort: number;
-  reason: 'no-listener' | 'no-socket' | 'bad-state' | 'no-egress' | 'no-source-ip' | 'disabled' | 'bad-checksum' | 'no-ephemeral';
+  reason: 'no-listener' | 'no-socket' | 'bad-state' | 'no-egress' | 'no-source-ip' | 'disabled' | 'bad-checksum' | 'no-ephemeral' | 'listen-ignores-segment';
 }
 
 /** PRD-TCP.md P1 — a segment (SYN/data/FIN) was resent by the RTO timer. */

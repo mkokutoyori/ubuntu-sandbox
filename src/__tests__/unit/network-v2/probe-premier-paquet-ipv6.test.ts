@@ -38,7 +38,18 @@ import { resetDeviceCounters } from '@/network/devices/DeviceFactory';
 import { Logger } from '@/network/core/Logger';
 import { EquipmentRegistry } from '@/network/equipment/EquipmentRegistry';
 
+import {
+  SCAN_PROBE_FLAGS, readStatelessReply, type StatelessScanKind,
+} from '@/network/scan/nmap/StatelessScans';
+
 interface Cmd { executeCommand(cmd: string): Promise<string> }
+
+function sonde(
+  hote: { getTcpStack(): { scanProbe(ip: string, port: number, f: typeof SCAN_PROBE_FLAGS.syn): 'rst' | 'rst-window' | 'syn-ack' | 'none' } },
+  ip: string, port: number, kind: StatelessScanKind,
+) {
+  return readStatelessReply(kind, hote.getTcpStack().scanProbe(ip, port, SCAN_PROBE_FLAGS[kind]));
+}
 
 async function taper(d: Cmd, ...commands: string[]): Promise<string> {
   let last = '';
@@ -73,13 +84,13 @@ describe('un cache de voisins FROID ne mange pas le paquet', () => {
   it('le tout premier SYN IPv6 atteint la cible', async () => {
     const { scanner } = await segment();
 
-    expect(scanner.getTcpStack().synProbe('2001:db8::2', 22)).toBe('open');
+    expect(sonde(scanner, '2001:db8::2', 22, 'syn').state).toBe('open');
   });
 
   it('le tout premier ACK IPv6 atteint la cible', async () => {
     const { scanner } = await segment();
 
-    expect(scanner.getTcpStack().ackProbe('2001:db8::2', 22)).toBe('unfiltered');
+    expect(sonde(scanner, '2001:db8::2', 22, 'ack').state).toBe('unfiltered');
   });
 
   // L'observation passe par le BUS et non par un fichier de capture : ce
@@ -93,7 +104,7 @@ describe('un cache de voisins FROID ne mange pas le paquet', () => {
       emises.push(JSON.stringify(event.payload));
     });
 
-    scanner.getTcpStack().synProbe('2001:db8::2', 22);
+    sonde(scanner, '2001:db8::2', 22, 'syn');
 
     // Sollicitation de voisin, puis le SYN qui l'avait provoquee, puis le
     // RST du demi-ouvert. Avant correctif, seule la premiere partait.
@@ -111,7 +122,7 @@ describe('un cache de voisins FROID ne mange pas le paquet', () => {
   it('TEMOIN: le premier SYN IPv4 atteignait deja la cible', async () => {
     const { scanner } = await segment();
 
-    expect(scanner.getTcpStack().synProbe('10.0.0.2', 22)).toBe('open');
+    expect(sonde(scanner, '10.0.0.2', 22, 'syn').state).toBe('open');
   });
 
   it('TEMOIN: le chemin IPv4 en file continue de fonctionner', async () => {

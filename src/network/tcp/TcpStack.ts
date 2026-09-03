@@ -15,6 +15,19 @@ import {
   ICMP_UNREACH_ADMIN_PROHIBITED,
 } from '@/network/core/IcmpErrors';
 
+/**
+ * Ce qu'une sonde apatride a vu revenir. `rst-window` distingue un RST a
+ * fenetre NON NULLE, seul detail que le balayage par fenetre (`nmap -sW`)
+ * regarde : `scan_engine_raw.cc` y lit `(tcp.th_win) ? PORT_OPEN :
+ * PORT_CLOSED`.
+ */
+export type StatelessProbeReply = 'rst' | 'rst-window' | 'syn-ack' | 'none';
+
+interface StatelessProbeWatch {
+  seen: 'rst' | 'syn-ack' | 'none';
+  window: number;
+}
+
 const PROHIBITED_UNREACH_CODES: ReadonlySet<number> = new Set([
   ICMP_UNREACH_NET_PROHIBITED,
   ICMP_UNREACH_HOST_PROHIBITED,
@@ -551,47 +564,19 @@ export class TcpStack {
   }
 
   /**
-   * `nmap -sA` (scan_engine_raw.cc): un ACK NU, hors de toute connexion.
-   * RFC 9293 §3.10.7.1 fait repondre RST a un ACK qui ne correspond a
-   * aucune connexion, que le port soit ouvert ou ferme — un RST ne dit
-   * donc rien de l'ecoute et prouve seulement que le segment a ATTEINT
-   * l'hote, ce qui est exactement ce qu'un balayage ACK mesure : le port
-   * n'est pas filtre. Le silence, ou un ICMP inatteignable, dit qu'un
-   * filtre l'a mange.
-   */
-  ackProbe(remoteIp: string, remotePort: number): 'unfiltered' | 'filtered' {
-    const flags = noFlags();
-    flags.ack = true;
-    const seen = this.statelessProbe(remoteIp, remotePort, flags);
-    return seen === 'rst' ? 'unfiltered' : 'filtered';
-  }
-
-  /**
-   * `nmap -sS` (scan_engine_raw.cc) : le balayage DEMI-OUVERT. Un SYN
-   * part, et la connexion n'est JAMAIS achevee — un SYN/ACK ouvre le
-   * port, un RST le ferme, le silence le filtre. Ce que le balayage
-   * connecte (`-sT`) rapporte est identique ; ce qui differe est sur le
-   * FIL, et c'est tout l'objet de ce balayage : la pile repond RST a un
-   * SYN/ACK qu'aucune socket n'attend, donc le troisieme temps de la
-   * poignee de main n'a jamais lieu.
-   */
-  synProbe(remoteIp: string, remotePort: number): 'open' | 'closed' | 'filtered' {
-    const flags = noFlags();
-    flags.syn = true;
-    const seen = this.statelessProbe(remoteIp, remotePort, flags);
-    if (seen === 'syn-ack') return 'open';
-    return seen === 'rst' ? 'closed' : 'filtered';
-  }
-
-  /**
    * Un segment emis HORS de toute connexion, et la reponse observee la ou
-   * une socket l'aurait recue. C'est ce que les balayages de `nmap` font,
-   * et ce que `sendRst` fait deja dans l'autre sens : la pile n'ouvre
-   * rien, elle pose une trace le temps de l'aller-retour.
+   * une socket l'aurait recue. C'est ce que font TOUS les balayages de
+   * `nmap` qui n'ouvrent rien — SYN, ACK, FIN, NULL, Xmas, Maimon,
+   * fenetre — et ce que `sendRst` fait deja dans l'autre sens : la pile
+   * pose une trace le temps de l'aller-retour, sans rien ouvrir.
+   *
+   * Ce qui revient est rendu tel quel — un RST avec sa FENETRE, un
+   * SYN/ACK, ou rien — parce que c'est la LECTURE de cette reponse qui
+   * differe d'un balayage a l'autre, pas son emission.
    */
-  private statelessProbe(
+  scanProbe(
     remoteIp: string, remotePort: number, flags: TcpFlags,
-  ): 'rst' | 'syn-ack' | 'none' {
+  ): StatelessProbeReply {
     const target = canonicalIpText(remoteIp);
     const egress = this.resolveEgress(target);
     if (!egress) return 'none';
@@ -599,7 +584,7 @@ export class TcpStack {
     if (localPort < 0) return 'none';
 
     const key = makeSocketKey(egress.srcIp, localPort, target, remotePort);
-    const watch: { seen: 'rst' | 'syn-ack' | 'none' } = { seen: 'none' };
+    const watch: StatelessProbeWatch = { seen: 'none', window: 0 };
     this.statelessProbes.set(key, watch);
 
     const seg: TcpSegment = {
@@ -615,10 +600,11 @@ export class TcpStack {
     } finally {
       this.statelessProbes.delete(key);
     }
-    return watch.seen;
+    if (watch.seen !== 'rst') return watch.seen;
+    return watch.window > 0 ? 'rst-window' : 'rst';
   }
 
-  private statelessProbes = new Map<string, { seen: 'rst' | 'syn-ack' | 'none' }>();
+  private statelessProbes = new Map<string, StatelessProbeWatch>();
 
   hasEgressTo(remoteIp: string): boolean {
     return this.resolveEgress(canonicalIpText(remoteIp)) !== null;
@@ -835,7 +821,18 @@ export class TcpStack {
     const probe = this.statelessProbes.get(socketKey);
     if (probe && seg.flags.syn && seg.flags.ack) probe.seen = 'syn-ack';
     if (seg.flags.rst) {
-      if (probe) probe.seen = 'rst';
+      if (probe) {
+        probe.seen = 'rst';
+        probe.window = seg.window;
+      }
+      return true;
+    }
+    // RFC 9293 §3.10.7.2, etat LISTEN, quatrieme controle : un segment qui
+    // n'est ni RST, ni ACK, ni SYN est JETE en silence par un port a
+    // l'ecoute, alors qu'un port ferme repond RST (§3.10.7.1). Cette
+    // asymetrie EST ce que mesurent les balayages FIN, NULL et Xmas.
+    if (!seg.flags.ack && this.findListener(dstIp, seg.destinationPort)) {
+      this.dropped(senderIp, seg.sourcePort, 'listen-ignores-segment');
       return true;
     }
     this.dropped(senderIp, seg.sourcePort, 'no-socket');
@@ -1766,7 +1763,7 @@ export class TcpStack {
     return inUse.size < size;
   }
 
-  private dropped(remoteIp: string, remotePort: number, reason: 'no-listener' | 'no-socket' | 'bad-state' | 'no-egress' | 'no-source-ip' | 'disabled' | 'bad-checksum' | 'no-ephemeral'): void {
+  private dropped(remoteIp: string, remotePort: number, reason: 'no-listener' | 'no-socket' | 'bad-state' | 'no-egress' | 'no-source-ip' | 'disabled' | 'bad-checksum' | 'no-ephemeral' | 'listen-ignores-segment'): void {
     this.getBus().publish({
       topic: 'tcp.segment.dropped',
       payload: {

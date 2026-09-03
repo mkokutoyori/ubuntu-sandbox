@@ -1,7 +1,17 @@
-import type { NmapOptions } from './NmapOptions';
+import type { NmapOptions, ScanType } from './NmapOptions';
 import { IPAddress } from '@/network/core/types';
 import type { TcpWireOutcome } from '@/network/tcp/types';
 import { topPorts, serviceName, DEFAULT_TOP_COUNT } from './ServiceRegistry';
+import type { ScanVerdict, StatelessScanKind } from './StatelessScans';
+
+const STATELESS_KINDS: Readonly<Partial<Record<ScanType, StatelessScanKind>>> = {
+  syn: 'syn', ack: 'ack', fin: 'fin', null: 'null',
+  xmas: 'xmas', maimon: 'maimon', window: 'window',
+};
+
+function statelessKindOf(scanType: ScanType): StatelessScanKind | undefined {
+  return STATELESS_KINDS[scanType];
+}
 
 export type PortState = 'open' | 'closed' | 'filtered' | 'open|filtered' | 'unfiltered';
 
@@ -32,11 +42,10 @@ export interface HostProbes {
    */
   fingerprint?(ip: string): Promise<string | undefined>;
   tcpOutcome(ip: string, port: number): TcpWireOutcome;
-  /** `-sS` : le SYN part, la poignee de main ne s'acheve jamais. */
-  synOutcome?(ip: string, port: number): 'open' | 'closed' | 'filtered';
+  /** Les balayages qui n'ouvrent rien : SYN, ACK, FIN, NULL, Xmas, Maimon, fenetre. */
+  statelessOutcome?(ip: string, port: number, kind: StatelessScanKind): ScanVerdict;
   udpState(ip: string, port: number): 'open' | 'closed' | 'open|filtered';
   banner(ip: string, port: number): { service: string; version?: string } | null;
-  ackReaches?(ip: string, port: number): boolean;
 }
 
 const TCP_SCAN_REASON: Readonly<Record<TcpWireOutcome, string>> = {
@@ -107,22 +116,17 @@ function effectivePorts(options: NmapOptions): number[] {
   return options.ports ?? topPorts(DEFAULT_TOP_COUNT);
 }
 
-const SYN_SCAN_REASON: Readonly<Record<'open' | 'closed' | 'filtered', string>> = {
-  open: 'syn-ack',
-  closed: 'reset',
-  filtered: 'no-response',
-};
-
 function tcpResult(
   options: NmapOptions, probes: HostProbes, ip: string, port: number,
 ): PortResult {
-  const halfOpen = options.scanType === 'syn' ? probes.synOutcome : undefined;
+  const kind = statelessKindOf(options.scanType);
+  const stateless = kind && probes.statelessOutcome
+    ? probes.statelessOutcome(ip, port, kind) : null;
   let state: PortState;
   let reason: string;
-  if (halfOpen) {
-    const seen = halfOpen(ip, port);
-    state = seen;
-    reason = SYN_SCAN_REASON[seen];
+  if (stateless) {
+    state = stateless.state;
+    reason = stateless.reason;
   } else {
     const outcome = probes.tcpOutcome(ip, port);
     // scan_engine_connect.cc : ECONNREFUSED ferme le port, EACCES — que
@@ -142,16 +146,6 @@ function tcpResult(
     }
   }
   return { port, protocol: 'tcp', state, service, version, reason };
-}
-
-function ackResult(probes: HostProbes, ip: string, port: number): PortResult {
-  const reachable = probes.ackReaches?.(ip, port) ?? true;
-  return {
-    port, protocol: 'tcp',
-    state: reachable ? 'unfiltered' : 'filtered',
-    service: serviceName(port, 'tcp'),
-    reason: reachable ? 'reset' : 'no-response',
-  };
 }
 
 function udpResult(
@@ -226,7 +220,6 @@ async function scanHost(
   const all: PortResult[] = [];
   for (const port of effectivePorts(options)) {
     if (options.scanType === 'udp') all.push(udpResult(options, probes, info.ip, port));
-    else if (options.scanType === 'ack') all.push(ackResult(probes, info.ip, port));
     else all.push(tcpResult(options, probes, info.ip, port));
   }
   const { ports, notShown } = partition(options, all);

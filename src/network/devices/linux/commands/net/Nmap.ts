@@ -20,8 +20,7 @@ function scanHost(ctx: LinuxCommandContext): ScanHost {
     grabGreeting: (ip, port) => ctx.net.grabServiceBanner(ip, port),
     sendUdpProbe: (ip, port, sourcePort) =>
       ctx.net.sendUdpProbe(new IPAddress(ip), port, sourcePort),
-    ackProbe: (ip, port) => ctx.net.getTcpStack().ackProbe(ip, port),
-    synProbe: (ip, port) => ctx.net.getTcpStack().synProbe(ip, port),
+    scanProbe: (ip, port, flags) => ctx.net.getTcpStack().scanProbe(ip, port, flags),
   };
 }
 
@@ -32,10 +31,11 @@ export const nmapCommand: LinuxCommand = {
   complete: makeArgCompleter({
     flags: ['-6', '-A', '-F', '-O', '-P0', '-Pn', '-R', '-T', '-d', '-n',
       '-oA', '-oG', '-oN', '-p', '-p-', '-sP', '-sS', '-sT', '-sU', '-sV',
-      '-sA', '-sn', '-v', '-vv', '--open', '--reason', '--top-ports'],
+      '-sA', '-sF', '-sM', '-sN', '-sW', '-sX', '-sn', '-v', '-vv',
+      '--open', '--reason', '--top-ports'],
     hostsAtBarePosition: true,
   }),
-  usage: 'nmap [-sT|-sS|-sU|-sA] [-sV] [-O] [-A] [-p SPEC] [-F] [--top-ports N] [-sn] [-Pn] [--open] [--reason] [-n] [-oN file] [-oG file] <target...>',
+  usage: 'nmap [-sT|-sS|-sU|-sA|-sF|-sN|-sX|-sM|-sW] [-sV] [-O] [-A] [-p SPEC] [-F] [--top-ports N] [-sn] [-Pn] [--open] [--reason] [-n] [-oN file] [-oG file] <target...>',
   help: 'Discover hosts and services on a network.',
 
   async run(ctx: LinuxCommandContext, args: string[]): Promise<string> {

@@ -1,7 +1,8 @@
 import { parsePortSpec } from './PortSpec';
 import { topPorts, fastPorts } from './ServiceRegistry';
 
-export type ScanType = 'tcp' | 'syn' | 'udp' | 'ack';
+export type ScanType =
+  'tcp' | 'syn' | 'udp' | 'ack' | 'fin' | 'null' | 'xmas' | 'maimon' | 'window';
 
 export interface NmapOptions {
   targets: string[];
@@ -54,6 +55,11 @@ export function parseNmapArgs(args: string[]): NmapOptions {
     if (a === '-sA') { scanType = 'ack'; continue; }
     if (a === '-sS') { scanType = 'syn'; continue; }
     if (a === '-sT') { scanType = 'tcp'; continue; }
+    if (a === '-sF') { scanType = 'fin'; continue; }
+    if (a === '-sN') { scanType = 'null'; continue; }
+    if (a === '-sX') { scanType = 'xmas'; continue; }
+    if (a === '-sM') { scanType = 'maimon'; continue; }
+    if (a === '-sW') { scanType = 'window'; continue; }
 
     if (a === '-sn' || a === '-sP') { pingOnly = true; continue; }
     if (a === '-Pn' || a === '-P0') { skipDiscovery = true; continue; }
