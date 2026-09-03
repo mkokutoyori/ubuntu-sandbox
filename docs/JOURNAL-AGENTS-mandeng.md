@@ -7156,3 +7156,44 @@ PEUT discriminer, et l'en-tete du fichier le dit.
 
 **Corrige dans un test plutot que dans le code** : `nmap-options` portait
 `it('-sS reste un scan TCP')`, c'est-a-dire l'alias encode comme contrat.
+
+## Le PREMIER paquet IPv6 vers un voisin inconnu ne se perd plus
+
+**Perimetre revendique** : `EndHost` (files d'attente de resolution,
+`sendNeighborSolicitation`), `PacketQueue` (rappel d'expiration),
+`scenario-7-ssh-on-443` (un cas).
+
+Trouve en rendant `nmap` reel, et bien plus large que `nmap`.
+`sendIpv4FrameArpAware` MET EN FILE le paquet qui declenche la
+resolution et le REEMET quand la reponse ARP arrive ; son pendant IPv6
+confiait le sien a une PROMESSE (`resolveNDP().then(sendFrame)`) que
+personne ne rattrapait. La capture le dit sans ambiguite : la
+sollicitation de voisin part, l'annonce revient, et le paquet qui les a
+provoquees n'existe nulle part.
+
+TCP le cachait, parce qu'il retransmet son SYN ; c'est une sonde d'un
+SEUL coup qui l'a fait paraitre — `nmap -sS` sur une pile v6 froide
+rendait `filtered` un port ouvert, c'est-a-dire un faux negatif, la
+reponse qu'un scanner ne doit jamais donner. Tout emetteur d'un
+datagramme unique etait dans le meme cas.
+
+**`PacketQueue` existait deja**, avec ses tests, et n'avait AUCUN
+appelant de production — un moteur sans porte de plus, alors que son
+en-tete promettait justement d'« eliminer les patrons dupliques fwdQueue
+/ ipv6FwdQueue ». Les deux familles le lisent desormais : il n'y a plus
+qu'une file, et elle a gagne le seul mecanisme qui lui manquait pour
+porter le chemin v4, un rappel d'expiration (sans lui, la sollicitation
+en vol n'aurait jamais ete oubliee et plus aucun ARP ne serait reparti
+vers ce saut).
+
+`sendNeighborSolicitation` est extrait de `resolveNDP` : la boucle de
+reessai et la file lisent la meme construction de sollicitation.
+
+**Discrimination** : `probe-premier-paquet-ipv6.test.ts` (7 cas), 4
+tombent — les deux sondes sur cache froid, l'observation du segment sur
+le bus, et `nmap -sS` en IPv6 ; les 3 TEMOINS sont nommes dans l'en-tete.
+
+**Corrige dans un test plutot que dans le code** : le cas capture de
+`scenario-7-ssh-on-443` armait `tcpdump` APRES la connexion et lisait
+des trames que `nc` FABRIQUAIT dans le journal de capture. La banniere
+traversant desormais le fil, il ecoute pendant qu'elle passe.

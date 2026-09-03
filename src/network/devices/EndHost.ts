@@ -75,6 +75,7 @@ import {
 import { selectIpv6SourceAddress } from '../layers/internet/Ipv6Egress';
 import type { UdpSendRequest } from '../layers/transport/UdpEgress';
 import { Logger } from '../core/Logger';
+import { PacketQueue } from '../core/PacketQueue';
 import {
   buildICMPError,
   mayGenerateICMPError,
@@ -144,6 +145,7 @@ interface OwnForwardDnsName {
 export type { ARPEntry } from '../core/types';
 
 /** Linux reachable time default (RFC 4861 §10): 30 seconds */
+const NEIGHBOR_QUEUE_TIMEOUT_MS = 2000;
 export const ARP_REACHABLE_TIME_MS = 30_000;
 export const ARP_GC_STALE_TIME_MS = 60_000;
 export const ARP_AGING_INTERVAL_MS = 5_000;
@@ -331,9 +333,10 @@ export abstract class EndHost extends Equipment {
   // ─── IPv4 State ─────────────────────────────────────────────────
   /** ARP cache: IP string → { mac, iface, timestamp } */
   protected arpTable: Map<string, ARPEntry> = new Map();
-  /** Queued forwarded packets waiting for ARP resolution. Timer is a
-   *  TimerSet token (Phase 5 migration to IScheduler). */
-  protected fwdQueue: Array<{ pkt: IPv4Packet; outPort: string; nextHopIP: string; timer: symbol }> = [];
+  /** Packets held while the next hop's link-layer address is resolved. */
+  protected readonly fwdQueue = new PacketQueue<IPv4Packet, string>();
+  protected readonly ndpQueue = new PacketQueue<IPv6Packet, string>();
+  private readonly inFlightNdpSolicitations: Set<string> = new Set();
   /** In-flight ARP solicitations for forwarding — dedup signal for
    *  fwdQueueAndResolve (replaces the pendingARPs map after Phase 5.5). */
   private inFlightFwdARPs: Set<string> = new Set();
@@ -444,7 +447,7 @@ export abstract class EndHost extends Equipment {
   protected get defaultHopLimit(): number { return this.defaultTTL; }
 
   // ─── Reactive plumbing (Phase 5) ──────────────────────────────────
-  /** Owns scheduler-driven timers (fwdQueue, future Phase 5 migrations). */
+  /** Owns scheduler-driven timers (ARP aging, echo waits). */
   protected readonly hostTimers = new TimerSet(() => this.getScheduler());
   /** Engine-private writable signal store. */
   private readonly hostSignalStore = new HostSignalStore();
@@ -463,6 +466,8 @@ export abstract class EndHost extends Equipment {
   private hostScheduler: IScheduler | null = null;
   setScheduler(scheduler: IScheduler | null): void {
     this.hostScheduler = scheduler;
+    this.fwdQueue.setScheduler(scheduler);
+    this.ndpQueue.setScheduler(scheduler);
   }
   protected getScheduler(): IScheduler {
     return this.hostScheduler ?? getDefaultScheduler();
@@ -1977,21 +1982,15 @@ export abstract class EndHost extends Equipment {
 
   /** Send queued forwarded packets now that ARP has been resolved. */
   private flushFwdQueue(resolvedIP: string, resolvedMAC: MACAddress): void {
-    const ready = this.fwdQueue.filter(q => q.nextHopIP === resolvedIP);
-    this.fwdQueue = this.fwdQueue.filter(q => q.nextHopIP !== resolvedIP);
     this.inFlightFwdARPs.delete(resolvedIP);
-    for (const q of ready) {
-      this.hostTimers.clear(q.timer);
-      const outPort = this.ports.get(q.outPort);
-      if (outPort) {
-        this.sendFrame(q.outPort, {
-          srcMAC: outPort.getMAC(),
-          dstMAC: resolvedMAC,
-          etherType: ETHERTYPE_IPV4,
-          payload: q.pkt,
-        });
-      }
-    }
+    this.fwdQueue.flush(resolvedIP, (pkt, iface) => {
+      const outPort = this.ports.get(iface);
+      if (!outPort) return;
+      this.sendFrame(iface, {
+        srcMAC: outPort.getMAC(), dstMAC: resolvedMAC,
+        etherType: ETHERTYPE_IPV4, payload: pkt,
+      });
+    });
   }
 
   // ─── Firewall Hook ─────────────────────────────────────────────
@@ -2329,11 +2328,8 @@ export abstract class EndHost extends Equipment {
   /** Queue a forwarded packet and send an ARP request for the next hop. */
   private fwdQueueAndResolve(pkt: IPv4Packet, outPort: string, nextHopIP: IPAddress, port: Port): void {
     const key = nextHopIP.toString();
-    const timer = this.hostTimers.setTimeout(() => {
-      this.fwdQueue = this.fwdQueue.filter(q => !(q.nextHopIP === key && q.outPort === outPort));
-      this.inFlightFwdARPs.delete(key);
-    }, 2000);
-    this.fwdQueue.push({ pkt, outPort, nextHopIP: key, timer });
+    this.fwdQueue.enqueue(pkt, outPort, key, NEIGHBOR_QUEUE_TIMEOUT_MS,
+      (hop) => this.inFlightFwdARPs.delete(hop));
 
     // Send ARP request if not already in flight for this next hop.
     if (!this.inFlightFwdARPs.has(key)) {
@@ -2434,12 +2430,29 @@ export abstract class EndHost extends Equipment {
       });
       return;
     }
-    void this.resolveNDP(outPortName, nextHopIP).then((mac) => {
-      this.sendFrame(outPortName, {
-        srcMAC: port.getMAC(), dstMAC: mac,
-        etherType: ETHERTYPE_IPV6, payload: ipPkt,
+    this.ndpQueueAndResolve(ipPkt, outPortName, nextHopIP);
+  }
+
+  private ndpQueueAndResolve(pkt: IPv6Packet, outPort: string, nextHopIP: IPv6Address): void {
+    const key = nextHopIP.toString();
+    this.ndpQueue.enqueue(pkt, outPort, key, NEIGHBOR_QUEUE_TIMEOUT_MS,
+      (hop) => this.inFlightNdpSolicitations.delete(hop));
+    if (this.inFlightNdpSolicitations.has(key)) return;
+    this.inFlightNdpSolicitations.add(key);
+    this.sendNeighborSolicitation(outPort, nextHopIP);
+  }
+
+  /** Send queued packets now that NDP has resolved the neighbour. */
+  private flushNdpQueue(resolvedIP: string, resolvedMAC: MACAddress): void {
+    this.inFlightNdpSolicitations.delete(resolvedIP);
+    this.ndpQueue.flush(resolvedIP, (pkt, iface) => {
+      const outPort = this.ports.get(iface);
+      if (!outPort) return;
+      this.sendFrame(iface, {
+        srcMAC: outPort.getMAC(), dstMAC: resolvedMAC,
+        etherType: ETHERTYPE_IPV6, payload: pkt,
       });
-    }).catch(() => {});
+    });
   }
 
   /**
@@ -4603,6 +4616,8 @@ export abstract class EndHost extends Equipment {
 
     Logger.debug(this.id, 'ndp:na-received',
       `${this.name}: learned ${na.targetAddress} -> ${mac}`);
+
+    this.flushNdpQueue(key, mac);
   }
 
   // ─── NDP: Router Advertisement (RFC 4861 §6.3.4) ────────────────
@@ -4678,6 +4693,30 @@ export abstract class EndHost extends Equipment {
    * Resolve an IPv6 address to a MAC address via NDP.
    * Returns cached result if available, otherwise sends NS and waits.
    */
+  /**
+   * Une sollicitation de voisin, emise et rien de plus. `resolveNDP` la
+   * repete en attendant la reponse ; `sendIpv6FrameNdpAware` l'emet une
+   * fois et met son paquet en file, comme le fait le chemin ARP.
+   */
+  protected sendNeighborSolicitation(portName: string, targetIP: IPv6Address): boolean {
+    const port = this.ports.get(portName);
+    if (!port || !port.isIPv6Enabled()) return false;
+    const srcIP = targetIP.isLinkLocal()
+      ? port.getLinkLocalIPv6()
+      : (port.getGlobalIPv6() || port.getLinkLocalIPv6());
+    if (!srcIP) return false;
+
+    const ns = createNeighborSolicitation(targetIP, port.getMAC());
+    const nsPkt = createIPv6Packet(
+      srcIP, targetIP.toSolicitedNodeMulticast(), IP_PROTO_ICMPV6, 255, ns, 24);
+    this.sendFrame(portName, {
+      srcMAC: port.getMAC(),
+      dstMAC: targetIP.toSolicitedNodeMulticast().toMulticastMAC(),
+      etherType: ETHERTYPE_IPV6, payload: nsPkt,
+    });
+    return true;
+  }
+
   protected async resolveNDP(portName: string, targetIP: IPv6Address, timeoutMs: number = 2000): Promise<MACAddress> {
     const cached = this.neighborCache.markUsed(targetIP.toString());
     if (cached && cached.state !== 'incomplete') return cached.mac;
@@ -4701,17 +4740,6 @@ export abstract class EndHost extends Equipment {
     );
     const perAttemptMs = Math.max(1, Math.floor(timeoutMs / attempts));
 
-    const ns = createNeighborSolicitation(targetIP, port.getMAC());
-    const nsPkt = createIPv6Packet(
-      srcIP,
-      targetIP.toSolicitedNodeMulticast(),
-      IP_PROTO_ICMPV6,
-      255,
-      ns,
-      24,
-    );
-    const dstMAC = targetIP.toSolicitedNodeMulticast().toMulticastMAC();
-
     for (let attempt = 1; attempt <= attempts; attempt++) {
       const waitPromise = waitForEvent(
         this.getBus(),
@@ -4720,10 +4748,7 @@ export abstract class EndHost extends Equipment {
         { timeoutMs: perAttemptMs, scheduler: this.getScheduler() },
       );
 
-      this.sendFrame(portName, {
-        srcMAC: port.getMAC(), dstMAC,
-        etherType: ETHERTYPE_IPV6, payload: nsPkt,
-      });
+      this.sendNeighborSolicitation(portName, targetIP);
 
       Logger.debug(this.id, 'ndp:ns-sent',
         `${this.name}: NS for ${targetIP} sent (attempt ${attempt}/${attempts})`);
