@@ -735,10 +735,15 @@ function diagnoseVpn(rest: readonly string[], deps: FortiDiagDeps): string {
   const tunnels = deps.fw.getTunnelTable();
   if (rest[1] === 'list') return renderVpnTunnelList(tunnels, deps.fw.now());
   if (rest[1] === 'up') {
-    const name = rest[2] ?? '';
-    return deps.fw.bringUpIpsecTunnel(name)
-      ? ''
-      : FortiMessages.commandFail(`tunnel \`${name}\` did not come up.`);
+    const name = rest[2];
+    if (name === undefined) return FortiMessages.incomplete('the tunnel name');
+    if (!tunnels.getPhase1(name)) return FortiMessages.unknownKey(name);
+    if (deps.fw.bringUpIpsecTunnel(name)) return '';
+
+    const failure = tunnels.stateOf(name)?.failure;
+    return FortiMessages.commandFail(failure === undefined || failure === null
+      ? `tunnel \`${name}\` did not come up.`
+      : `tunnel \`${name}\` did not come up: ${failure}.`);
   }
   if (rest[1] === 'flush') {
     for (const tunnel of tunnels.all()) deps.fw.clearIpsecGateway(tunnel.name);
