@@ -1,5 +1,5 @@
 import type { X509Certificate } from '../../../pki/X509Certificate';
-import type { PkiPrivateKey } from '../../../pki/PkiKeyPair';
+import type { PkiPrivateKey, PkiPublicKey } from '../../../pki/PkiKeyPair';
 import { pemToCert, pemToPrivateKey } from '../../../pki/pem';
 
 export interface LocalCertificate {
@@ -16,6 +16,7 @@ export interface LocalCertificateRequest {
   readonly name: string;
   readonly subject: string;
   readonly keySize: number;
+  readonly publicKey: PkiPublicKey;
   readonly privateKey: PkiPrivateKey;
   readonly privateKeyPem: string;
   readonly csrPem: string;

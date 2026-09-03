@@ -65,7 +65,7 @@ import {
 import type { SslVpnSessionMode } from '../../vpn/SslVpnSessionTable';
 import { PkiKeyPair } from '../../../../pki/PkiKeyPair';
 import { buildCertificateRequest } from '../../../../pki/CertificateSigningRequest';
-import { csrToPem, privateKeyToPem } from '../../../../pki/pem';
+import { csrToPem, privateKeyToPem, pemToCert } from '../../../../pki/pem';
 import { renderHaChecksum, renderHaStatus } from './diag/haRenderer';
 import type { FortiLogFormat } from './log/fortiLogFormat';
 import {
@@ -170,17 +170,31 @@ export class FortiShell {
   private readonly nav: FortiNavigator;
   private readonly socle: FortiSocle;
   private readonly diagnostics = new FortiDiagnostics();
-  private seedFactoryCertificates(): void {
+  private declareLocalCertificate(
+    name: string, certificatePem: string, privateKeyPem: string, source: string,
+  ): void {
     const spec = this.tree.spec(['vpn', 'certificate', 'local']);
     if (!spec) return;
-    const table = this.tree.table(spec);
+    const object = this.tree.table(spec).ensure(name);
+    object.set('certificate', [certificatePem]);
+    object.set('private-key', [privateKeyPem]);
+    object.set('source', [source]);
+  }
+
+  private declareAuthority(name: string, certificatePem: string): void {
+    const spec = this.tree.spec(['vpn', 'certificate', 'ca']);
+    if (!spec) return;
+    const object = this.tree.table(spec).ensure(name);
+    object.set('ca', [certificatePem]);
+    object.set('certificate', [certificatePem]);
+  }
+
+  private seedFactoryCertificates(): void {
     for (const name of this.fw.getCertificateStore().localNames()) {
       const entry = this.fw.getCertificateStore().local(name);
       if (!entry || entry.source !== 'factory') continue;
-      const object = table.ensure(name);
-      object.set('certificate', [entry.certificatePem]);
-      object.set('private-key', [entry.privateKeyPem]);
-      object.set('source', ['factory']);
+      this.declareLocalCertificate(
+        name, entry.certificatePem, entry.privateKeyPem, 'factory');
     }
   }
 
@@ -1107,6 +1121,7 @@ export class FortiShell {
 
     store.setRequest({
       name, subject: distinguished, keySize,
+      publicKey: keys.publicKey,
       privateKey: keys.privateKey,
       privateKeyPem: privateKeyToPem(keys.privateKey),
       csrPem: csrToPem(csr),
@@ -1114,23 +1129,109 @@ export class FortiShell {
     return '';
   }
 
+  private tftpClientFor(server: string): TftpClientSession | string {
+    let address: IPAddress;
+    try { address = new IPAddress(server); }
+    catch {
+      return FortiMessages.valueError(server, 'a TFTP server address is an IPv4 address.');
+    }
+    return new TftpClientSession(
+      this.fw.getUdpEndpoint(), address, undefined,
+      TFTP_EXPORT_TIMEOUT_MS, TFTP_EXPORT_MAX_RETRIES);
+  }
+
+  private executeCertificateImport(rest: readonly string[], kind: 'local' | 'ca'): string {
+    const [destination, file, server, format] = rest;
+    if (destination !== 'tftp') {
+      return destination === undefined
+        ? FortiMessages.incomplete('`tftp`')
+        : FortiMessages.unimplementedAction(
+          `vpn certificate ${kind} import ${destination}`,
+          'this build imports over TFTP only.');
+    }
+    if (file === undefined || server === undefined) {
+      return FortiMessages.incomplete('a file name and a TFTP server address');
+    }
+    if (kind === 'local' && format !== undefined && format !== 'cer') {
+      return FortiMessages.unimplementedAction(
+        `vpn certificate local import tftp ${file} ${server} ${format}`,
+        'this build has no PKCS#12 reader; export the certificate as PEM.');
+    }
+
+    const client = this.tftpClientFor(server);
+    if (typeof client === 'string') return client;
+
+    this.pendingAsync = client.get(file).then((result) => {
+      if (!result.ok || result.content === undefined) {
+        return FortiMessages.commandFail(
+          `the TFTP server at ${server} did not give "${file}" `
+          + `(${result.error ?? 'Timed out'}).`);
+      }
+      return kind === 'local'
+        ? this.adoptSignedCertificate(result.content)
+        : this.adoptAuthority(result.content);
+    });
+    return '';
+  }
+
+  private adoptSignedCertificate(pem: string): string {
+    const certificate = pemToCert(pem);
+    if (!certificate) return FortiMessages.commandFail('the file is not a certificate.');
+
+    const store = this.fw.getCertificateStore();
+    const name = store.requestNames().find(
+      candidate => store.request(candidate)?.publicKey.material
+        === certificate.publicKey.material);
+    if (name === undefined) {
+      return FortiMessages.commandFail(
+        'no pending certificate request matches this certificate.');
+    }
+    const pending = store.request(name)!;
+    store.setLocal({
+      name,
+      certificate,
+      privateKey: pending.privateKey,
+      certificatePem: pem,
+      privateKeyPem: pending.privateKeyPem,
+      source: 'user',
+    });
+    store.removeRequest(name);
+    this.declareLocalCertificate(name, pem, pending.privateKeyPem, 'user');
+    return '';
+  }
+
+  private adoptAuthority(pem: string): string {
+    const certificate = pemToCert(pem);
+    if (!certificate) return FortiMessages.commandFail('the file is not a certificate.');
+
+    const store = this.fw.getCertificateStore();
+    let index = 1;
+    while (store.authority(`CA_Cert_${index}`)) index++;
+    const name = `CA_Cert_${index}`;
+    store.setAuthority({ name, certificate, certificatePem: pem, trusted: true });
+    this.declareAuthority(name, pem);
+    return '';
+  }
+
   private executeCertificate(rest: readonly string[]): string {
     if (rest[0] === 'local' && rest[1] === 'generate') {
       return this.executeCertificateGenerate(rest.slice(2));
     }
-    if (rest[0] !== 'local' || rest[1] !== 'export') {
+    if (rest[1] === 'import' && (rest[0] === 'local' || rest[0] === 'ca')) {
+      return this.executeCertificateImport(rest.slice(2), rest[0]);
+    }
+    if ((rest[0] !== 'local' && rest[0] !== 'ca') || rest[1] !== 'export') {
       return FortiMessages.commandFail(
-        'only `execute vpn certificate local export` and '
-        + '`execute vpn certificate local generate` are available here.');
+        'only `export`, `import` and `generate` are available here.');
     }
     const [destination, name, file, server] = rest.slice(2);
     if (!destination || !name || !file) {
       return FortiMessages.incomplete('a destination, a certificate name and a file name');
     }
     const store = this.fw.getCertificateStore();
-    const signed = store.local(name);
-    const pending = store.request(name);
-    const material = signed?.certificatePem ?? pending?.csrPem;
+    const material = rest[0] === 'ca'
+      ? store.authority(name)?.certificatePem
+      : store.local(name)?.certificatePem ?? store.request(name)?.csrPem;
     if (material === undefined) {
       return FortiMessages.commandFail(`certificate "${name}" does not exist.`);
     }
