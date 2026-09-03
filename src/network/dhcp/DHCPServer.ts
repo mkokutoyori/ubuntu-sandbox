@@ -41,6 +41,7 @@ import {
   type DHCPServerObservables,
   type DhcpServerLeaseVM,
 } from './observables';
+import { isDhcpOptionCode, dhcpOptionValueIsValid } from './optionSyntax';
 
 /** Default pending offer timeout from centralized constants */
 const PENDING_OFFER_TIMEOUT_MS = DHCP_CONSTANTS.PENDING_OFFER_TIMEOUT_MS;
@@ -434,6 +435,7 @@ export class DHCPServer implements IProtocolEngine {
   ): boolean {
     const pool = this.pools.get(name);
     if (!pool) return false;
+    if (!isDhcpOptionCode(code) || !dhcpOptionValueIsValid(kind, value)) return false;
     (pool.options ??= []).push({ code, kind, value });
     return true;
   }

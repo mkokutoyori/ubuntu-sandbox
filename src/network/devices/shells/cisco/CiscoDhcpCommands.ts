@@ -13,6 +13,12 @@ import type { CommandSpec } from '@/cli/CommandTable';
 import type { ArgumentSpec } from '@/cli/ArgumentTypes';
 import { specsFromTrieRegistrations } from '@/cli/commands/trieAdapter';
 import type { CiscoShellContext } from './CiscoConfigCommands';
+import { boundedInteger } from '@/cli/ArgumentTypes';
+import { CliInvalidInput } from '../cli/CliDiagnostic';
+import {
+  DHCP_OPTION_CODE_MIN, DHCP_OPTION_CODE_MAX, isDhcpOptionKind,
+  isDhcpClientIdentifier, type DhcpOptionKind,
+} from '../../../dhcp/optionSyntax';
 
 const INVALID_INPUT = "% Invalid input detected at '^' marker.";
 
@@ -122,12 +128,16 @@ export function buildConfigDhcpCommands(trie: CommandTrie, ctx: CiscoShellContex
     return '';
   });
   trie.registerGreedy('option', 'Set a raw DHCP option', (args) => {
-    // option <code> {ip|ascii|hex} <value…>
     if (args.length < 3) return '% Incomplete command.';
     if (!pool()) return '% No DHCP pool selected';
-    const code = parseInt(args[0], 10);
-    const kind = args[1] === 'ascii' ? 'ascii' : args[1] === 'hex' ? 'hex' : 'ip';
-    dhcp().configurePoolOption(pool()!, code, kind, args.slice(2).join(' '));
+    const code = boundedInteger(args[0], DHCP_OPTION_CODE_MIN, DHCP_OPTION_CODE_MAX);
+    if (code === null) throw new CliInvalidInput({ token: args[0] });
+    if (!isDhcpOptionKind(args[1])) throw new CliInvalidInput({ token: args[1] });
+    const valeur = args.slice(2).join(' ');
+    if (!dhcp().configurePoolOption(pool()!, code, args[1].toLowerCase() as DhcpOptionKind,
+      valeur)) {
+      throw new CliInvalidInput({ token: args[2] });
+    }
     return '';
   });
   trie.registerGreedy('host', 'Manual binding host address', (args) => {
@@ -145,6 +155,7 @@ export function buildConfigDhcpCommands(trie: CommandTrie, ctx: CiscoShellContex
   trie.registerGreedy('client-identifier', 'Manual binding client identifier', (args) => {
     if (args.length < 1) return '% Incomplete command.';
     if (!pool()) return '% No DHCP pool selected';
+    if (!isDhcpClientIdentifier(args[0])) throw new CliInvalidInput({ token: args[0] });
     dhcp().configurePoolManual(pool()!, 'clientIdentifier', args[0]);
     return '';
   });
@@ -215,7 +226,7 @@ Readonly<Record<string, ArgumentSpec | readonly ArgumentSpec[] | null>> = {
   'dns-server': REST('A.B.C.D', 'DNS server IP address'),
   'netbios-name-server': REST('A.B.C.D', 'NetBIOS name server IP address'),
   lease: REST('<0-365>', 'Days'),
-  option: REST('<0-254>', 'DHCP option code'),
+  option: REST(`<${DHCP_OPTION_CODE_MIN}-${DHCP_OPTION_CODE_MAX}>`, 'DHCP option code'),
   'next-server': { name: 'adresse', type: 'IP_ADDR', description: 'Boot server IP address' },
   bootfile: { name: 'fichier', type: 'WORD', description: 'Boot file name' },
   class: { name: 'nom', type: 'WORD', description: 'Name of the DHCP class' },

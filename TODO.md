@@ -2139,3 +2139,22 @@ défauts — la méthode vaut d'être reprise sur le reliquat.
   a comparer. L'evaluer demande de faire voyager la metrique de la route
   redistribuee jusqu'a la politique, ce qui est un autre sujet que la
   grammaire de la CLI.
+- `match dscp` et `match precedence` sont REFUSES sur un `class-map` de
+  qualite de service, et c'est juste en l'etat : `ClassMapMatch` ne
+  connait que quatre genres (`access-group-name`, `access-group-num`,
+  `protocol`, `any`) et RIEN n'evalue une classe QoS ici — le magasin
+  n'est lu que par le rendu de la configuration. Les accepter rangerait
+  un critere que personne ne lit, ce que la regle du depot interdit. Ce
+  qui manque pour les ouvrir est un evaluateur de classe sur le plan de
+  donnees, pas une ligne d'analyse ; `DSCP_KEYWORD_TO_VALUE` d'`ACLEngine`
+  porte deja les noms, et `vrpDscp` de `vrpPolicyValues.ts` la lit deja.
+- `match protocol <nom>` d'un `class-map` accepte n'importe quel mot. Le
+  nom vient de NBAR, dont la liste depend de la plateforme et des modules
+  charges, et aucune source atteignable depuis ce reseau ne l'atteste —
+  une liste ecrite de memoire refuserait des protocoles reels. La valeur
+  n'est de toute facon evaluee par personne (voir l'entree precedente).
+- Le nom d'une option DHCP ecrite en `hex` n'est verifie que sur son
+  alphabet (chiffres hexadecimaux et points) : la PARITE du nombre de
+  chiffres, qu'un vrai IOS controle puisqu'un octet en prend deux, ne
+  l'est pas. Trouve en ecrivant `dhcpOptionValueIsValid` ; non ferme
+  faute d'une capture disant ce qu'IOS repond a un nombre impair.
