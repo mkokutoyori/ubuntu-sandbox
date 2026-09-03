@@ -1820,10 +1820,13 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
       return '';
     });
     trie.configIf.registerGreedy('udld port', 'UDLD per-port configuration', (args) => {
-      const ports = this.selectedPortsForConfigIf();
       const m = (args[0] ?? '').toLowerCase();
+      if (m !== '' && m !== 'aggressive') throw new CliInvalidInput({ token: args[0] });
+
       const mode = m === 'aggressive' ? 'aggressive' : 'normal';
-      for (const p of ports) this.requireUdld().setPortMode(p, mode);
+      for (const p of this.selectedPortsForConfigIf()) {
+        this.requireUdld().setPortMode(p, mode);
+      }
       return '';
     });
     trie.configIf.register('no udld port', 'Disable UDLD on this port', () => {

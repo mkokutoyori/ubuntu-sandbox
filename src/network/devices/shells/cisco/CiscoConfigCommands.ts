@@ -859,7 +859,12 @@ export function buildConfigIfCommands(trie: CommandTrie, ctx: CiscoShellContext)
     const ifName = ctx.getSelectedInterface(); if (!ifName) return '';
     const port = ctx.r().getPort(ifName);
     if (!port) return '';
-    if (args[0] === 'mode' && args[1]) { port.setRipAuthMode(args[1]); return ''; }
+    if (args[0] === 'mode' && args[1]) {
+      const mode = args[1].toLowerCase();
+      if (mode !== 'text' && mode !== 'md5') throw new CliInvalidInput({ token: args[1] });
+      port.setRipAuthMode(mode);
+      return '';
+    }
     if (args[0] === 'key-chain' && args[1]) { port.setRipAuthKeyChain(args[1]); return ''; }
     return CISCO_ERRORS.INVALID_INPUT;
   }, [
@@ -931,9 +936,10 @@ export function buildConfigIfCommands(trie: CommandTrie, ctx: CiscoShellContext)
   trie.registerGreedy('ip summary-address eigrp', 'Summarize EIGRP routes', (args, raw) => {
     const ifName = ctx.getSelectedInterface(); if (!ifName) return '';
     if (args.length < 3) return CISCO_ERRORS.INCOMPLETE;
-    if (!isValidIPv4(args[1]) || !isValidIPv4(args[2])) {
-      throw new CliInvalidInput({ token: args[1] });
-    }
+    if (!/^\d+$/.test(args[0])) throw new CliInvalidInput({ token: args[0] });
+    if (!isValidIPv4(args[1])) throw new CliInvalidInput({ token: args[1] });
+    if (!isValidIPv4(args[2])) throw new CliInvalidInput({ token: args[2] });
+
     const port = ctx.r().getPort(ifName);
     port?.addEigrpSummary(raw ?? `ip summary-address eigrp ${args.join(' ')}`);
     ctx.r().addSummaryDiscardRoute(new IPAddress(args[1]), new SubnetMask(args[2]));
