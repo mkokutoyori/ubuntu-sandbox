@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { serviceFromProcess } from '@/network/devices/linux/commands/net/nmap/ProcessServiceMap';
+import { serviceFromProcess } from '@/network/scan/nmap/ProcessServiceMap';
 
 describe('serviceFromProcess', () => {
   it('mappe les daemons web vers http', () => {

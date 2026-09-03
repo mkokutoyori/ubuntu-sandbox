@@ -104,7 +104,9 @@ function effectivePorts(options: NmapOptions): number[] {
   return options.ports ?? topPorts(DEFAULT_TOP_COUNT);
 }
 
-function tcpResult(options: NmapOptions, probes: HostProbes, ip: string, port: number): PortResult {
+function tcpResult(
+  options: NmapOptions, probes: HostProbes, ip: string, port: number,
+): PortResult {
   const outcome = probes.tcpOutcome(ip, port);
   const state: PortState = outcome === 'open' ? 'open' : outcome === 'refused' ? 'closed' : 'filtered';
   const reason = TCP_SCAN_REASON[outcome];
@@ -130,7 +132,9 @@ function ackResult(probes: HostProbes, ip: string, port: number): PortResult {
   };
 }
 
-function udpResult(options: NmapOptions, probes: HostProbes, ip: string, port: number): PortResult {
+function udpResult(
+  options: NmapOptions, probes: HostProbes, ip: string, port: number,
+): PortResult {
   const state = probes.udpState(ip, port);
   const reason = state === 'open' ? 'udp-response' : state === 'closed' ? 'port-unreach' : 'no-response';
   let service = serviceName(port, 'udp');
@@ -197,11 +201,12 @@ async function scanHost(
     return { ip: info.ip, hostname: info.hostname, up: true, latencyMs, osGuess, ports: [] };
   }
 
-  const all = effectivePorts(options).map((port) => {
-    if (options.scanType === 'udp') return udpResult(options, probes, info.ip, port);
-    if (options.scanType === 'ack') return ackResult(probes, info.ip, port);
-    return tcpResult(options, probes, info.ip, port);
-  });
+  const all: PortResult[] = [];
+  for (const port of effectivePorts(options)) {
+    if (options.scanType === 'udp') all.push(udpResult(options, probes, info.ip, port));
+    else if (options.scanType === 'ack') all.push(ackResult(probes, info.ip, port));
+    else all.push(tcpResult(options, probes, info.ip, port));
+  }
   const { ports, notShown } = partition(options, all);
   return { ip: info.ip, hostname: info.hostname, up: true, latencyMs, osGuess, ports, notShown };
 }

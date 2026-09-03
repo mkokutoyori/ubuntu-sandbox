@@ -31,7 +31,7 @@ import { RRType } from '../dns/wire/RRType';
 import type { ARecordData } from '../dns/wire/ResourceRecord';
 import type { UserAccountHost } from '../equipment/HostCapabilities';
 import { Port } from '../hardware/Port';
-import { IPAddress, SubnetMask, DeviceType, type IPv4Packet, type TCPPacket, IP_PROTO_TCP, IP_PROTO_UDP, IP_PROTO_ICMP, createIPv4Packet } from '../core/types';
+import { IPAddress, IPv6Address, SubnetMask, DeviceType, type IPv4Packet, type TCPPacket, IP_PROTO_TCP, IP_PROTO_UDP, IP_PROTO_ICMP, createIPv4Packet } from '../core/types';
 import { WindowsSshServerContext } from '../protocols/ssh/server/WindowsSshServerContext';
 import { SshServerHandler } from '../protocols/ssh/server/SshServerHandler';
 import type { TcpStream } from '../tcp/types';
@@ -167,6 +167,8 @@ import { CertificateVerifier } from '@/network/pki/CertificateVerifier';
 import type { X509Certificate } from '@/network/pki/X509Certificate';
 import type { CurlHost } from '@/network/http/curl/CurlHost';
 import { runCurl } from '@/network/http/curl/CurlEngine';
+import type { ScanHost } from '@/network/scan/nmap/NmapProbes';
+import { runNmap } from '@/network/scan/nmap/NmapRun';
 import { cmdPrint } from './windows/WinPrint';
 import { runRunasNonInteractive, runAsUser } from './windows/WinRunas';
 import type { RunasHost } from './windows/WinRunas';
@@ -2832,6 +2834,8 @@ export class WindowsPC extends EndHost implements UserAccountHost {
       case 'nslookup': return this.cmdNslookup(args);
       case 'curl':
       case 'curl.exe': return this.cmdCurl(args);
+      case 'nmap':
+      case 'nmap.exe': return this.cmdNmap(args);
       case 'ssh':      return this.cmdSsh(args);
       case 'sftp':     return this.cmdSftp(args);
       case 'scp':      return this.cmdScp(args);
@@ -3769,6 +3773,33 @@ export class WindowsPC extends EndHost implements UserAccountHost {
 
   async runCurlWithStatus(args: string[]): Promise<{ output: string; exitCode: number; stderr: string }> {
     return runCurl(this.curlHost(), args);
+  }
+
+  private scanHost(): ScanHost {
+    return {
+      device: this,
+      readFile: (p) => { const r = this.fs.readFile(p); return r.ok ? r.content : null; },
+      ping: (ip, timeoutMs) => this.executePingSequence(new IPAddress(ip), 1, timeoutMs),
+      tcpOutcome: (ip, port) => (ip.includes(':')
+        ? this.tcpConnectOutcome6(new IPv6Address(ip), port)
+        : this.tcpConnectOutcome(new IPAddress(ip), port)),
+      grabGreeting: (ip, port) => this.getTcpStack().grabGreeting(ip, port),
+      sendUdpProbe: (ip, port, sourcePort) =>
+        this.sendUdpDatagram(new IPAddress(ip), port, sourcePort, null, 0),
+    };
+  }
+
+  async cmdNmap(args: string[]): Promise<string> {
+    const result = await runNmap(this.scanHost(), args);
+    if (result.outputNormalPath) {
+      this.fs.createFile(
+        this.fs.normalizePath(result.outputNormalPath, this.cwd), result.normal + '\n');
+    }
+    if (result.outputGreppablePath && result.greppable !== null) {
+      this.fs.createFile(
+        this.fs.normalizePath(result.outputGreppablePath, this.cwd), result.greppable + '\n');
+    }
+    return result.output;
   }
 
   /** nslookup command implementation for Windows */

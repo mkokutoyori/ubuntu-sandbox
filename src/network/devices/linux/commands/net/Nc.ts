@@ -18,7 +18,6 @@ import type { LinuxCommand } from '../LinuxCommand';
 import type { LinuxCommandContext } from '../LinuxCommandContext';
 import { IPAddress } from '../../../../core/types';
 import { findHostByAddress, transitTcpAclVerdict, localDeviceOf, resolveNatHairpinHost } from '../../network/HostLookup';
-import { grabBanner as grabRemoteBanner } from './ServiceBannerGrab';
 import { makeArgCompleter } from '../completionHelpers';
 
 function isIPv6Literal(host: string): boolean {
@@ -256,19 +255,8 @@ export const ncCommand: LinuxCommand = {
     if (zero && verbose) return `Connection to ${host} ${port} port [tcp/*] succeeded!`;
     if (zero) return '';
 
-    const banner = grabRemoteBanner(found.device, effectivePort);
+    const banner = ctx.net.grabServiceBanner(found.ip, effectivePort);
     if (banner) {
-      const srcPort = ctx.executor.getSocketTable()?.allocateEphemeralPort()
-        ?? 49152 + Math.floor(Math.random() * 16000);
-      ctx.executor.captureLog.captureTcpHandshake({ ip: sourceIp, port: srcPort }, { ip: found.ip, port: effectivePort });
-      const bannerBytes = new TextEncoder().encode(banner);
-      ctx.executor.captureLog.captureTcpData({ ip: found.ip, port: effectivePort }, { ip: sourceIp, port: srcPort }, bannerBytes);
-      const remoteCap = (found.device as unknown as { executor?: { captureLog?: {
-        captureTcpHandshake(src: { ip: string; port: number }, dst: { ip: string; port: number }): void;
-        captureTcpData(src: { ip: string; port: number }, dst: { ip: string; port: number }, payload: Uint8Array, seq?: number, ack?: number): void;
-      } } }).executor?.captureLog;
-      remoteCap?.captureTcpHandshake({ ip: sourceIp, port: srcPort }, { ip: found.ip, port: effectivePort });
-      remoteCap?.captureTcpData({ ip: found.ip, port: effectivePort }, { ip: sourceIp, port: srcPort }, bannerBytes);
       const printable = banner.replace(/\r\n$/, '');
       if (verbose) return `Connection to ${host} ${port} port [tcp/*] succeeded!\n${printable}`;
       return printable;

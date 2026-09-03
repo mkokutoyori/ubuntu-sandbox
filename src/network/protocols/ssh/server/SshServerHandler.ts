@@ -26,6 +26,7 @@ import type { SftpRequestPayload } from '../sftp/ISftpCommand';
 import { SftpWireSession } from '../sftp/SftpWireSession';
 import { encodeSftpWirePacket, decodeSftpWirePacket } from '../sftp/SftpWireCodec';
 import { SshUserContext } from '../SshUserContext';
+import { SSH_SERVER_IDENTIFICATION } from '../serverIdentification';
 import type { ILinuxShell, ISshServerContext } from './ISshServerContext';
 import type { SshInteractiveShell } from './SshInteractiveShell';
 import {
@@ -288,7 +289,7 @@ export class SshServerHandler {
                 algorithm: this.ctx.hostKey.algorithm,
                 publicKey: this.ctx.hostKey.publicKey,
               },
-              serverVersion: 'SSH-2.0-Sandbox-Server',
+              serverVersion: SSH_SERVER_IDENTIFICATION,
               clientVersion: protocolInfo.clientVersion,
               ...(preAuthBanner ? { preAuthBanner } : {}),
             }),

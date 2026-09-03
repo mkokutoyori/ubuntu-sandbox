@@ -187,6 +187,7 @@ import { LogindStateSync } from './linux/network/LogindStateSync';
 import type { TcpdumpDeps } from './linux/network/tcpdump/TcpdumpRunner';
 import { serializeCaptureFile } from './linux/network/tcpdump/CaptureFileFormat';
 import { decodeEthernetFrame, makeLoopbackIcmpFrame, makeTcpFrame, type CaptureFrame } from './linux/network/tcpdump/CaptureFrame';
+import { SSH_SERVER_IDENTIFICATION_LINE } from '@/network/protocols/ssh/serverIdentification';
 import { buildLinuxInteractionPlan } from './linux/interaction/LinuxInteractionPlanner';
 import type { CommandInteractionPlan, InteractionPlanContext } from '@/shell/interaction/CommandInteraction';
 
@@ -1671,7 +1672,7 @@ export abstract class LinuxMachine extends EndHost
    * créé en IPv6 l'erreur même que ce chantier corrige.
    */
   private static readonly SSHD_PID = 985;
-  private static readonly SSHD_BANNER = 'SSH-2.0-Sandbox-Server\r\n';
+  private static readonly SSHD_BANNER = SSH_SERVER_IDENTIFICATION_LINE;
   private static readonly SSHD_ADDRESSES = ['0.0.0.0', '::'] as const;
 
   private attachSshTcpListeners(): void {
@@ -3709,6 +3710,8 @@ export abstract class LinuxMachine extends EndHost
         if (target.includes(':')) return this.tcpProbeSyncIPv6(target, port);
         return this.tcpProbeSync(new IPAddress(target), port);
       },
+      grabServiceBanner: (target: string, port: number): string | null =>
+        this.getTcpStack().grabGreeting(target, port),
       tcpConnectOutcome: (target: string, port: number): TcpWireOutcome => {
         if (target.includes(':')) return this.tcpConnectOutcome6(new IPv6Address(target), port);
         return this.tcpConnectOutcome(new IPAddress(target), port);

@@ -7031,3 +7031,63 @@ sous `-Pn` ou aucune sonde de decouverte n'a ete envoyee.
 
 Restent inspecter l'objet, inscrits au `TODO.md` : la banniere de `-sV`
 et le balayage ACK.
+
+## nmap — increment 3 : la salutation est sur le FIL, et nmap.exe existe
+
+**Perimetre revendique** : `TcpStack` (emission de la salutation),
+`SocketEntry.banner`, `ServiceBannerGrab`, `Nc`, `Nmap`, `WindowsPC`,
+`PowerShellExecutor`, `src/network/scan/nmap/`, `CaptureFrame` (`-A`).
+
+**Le defaut, mesure d'abord.** `SocketEntry.banner` — dont le
+commentaire dit « les premiers octets qu'un service ecrit sur une
+connexion fraiche » — etait DECLARE a la liaison et n'etait ecrit sur
+aucun fil. `getBannerForPort` le rendait a qui le DEMANDAIT a l'objet de
+la cible, et c'est ce que faisaient `nc` et `nmap -sV`. La capture le
+dit sans ambiguite : sur un `LinuxServer` dont le sshd tourne, chaque
+segment de la connexion sortait `length 0`, et `nc` FABRIQUAIT ensuite
+quatre segments (`seq 0`, `win 0`, sans options) des deux cotes pour que
+la capture ait l'air de porter la banniere. Une salutation qu'aucun
+paquet ne transporte n'est pas une salutation.
+
+**Le correctif est en un point.** `TcpStack` ECRIT la salutation declaree
+a l'acceptation, avant de remettre la socket au gestionnaire : toute
+ecoute qui en declare une l'emet, sans que chaque service ait a y penser.
+RFC 4253 §4.2 donne raison a ce choix pour SSH — c'est le SERVEUR qui
+parle le premier, et c'est precisement pourquoi la lecture de banniere
+fonctionne sur une vraie machine. `TcpStack.grabGreeting` est la sonde
+`Probe TCP NULL q||` de `nmap-service-probes` : ouvrir, ne rien envoyer,
+lire, fermer. `grabBanner`/`grabListenerProcess` (la lecture d'objet
+TCP) sont SUPPRIMES ; `nc` et `nmap` lisent le fil, et les segments
+synthetiques de `nc` disparaissent avec.
+
+**La banniere du serveur SSH devient celle d'un OpenSSH**, ce que le
+`TODO.md` demandait : `SSH-2.0-OpenSSH_8.9p1 Ubuntu-3ubuntu0.6`, la
+version que porte jammy — la distribution que ce simulateur declare dans
+`/etc/lsb-release`. Une seule declaration
+(`ssh/serverIdentification.ts`), lue par l'ecoute et par la reponse du
+serveur, la ou les deux etaient ecrites separement. Les 119 fichiers de
+la famille SSH (1442 cas) passent.
+
+**Defaut de `tcpdump` trouve en chemin et corrige.** `-A` n'imprimait
+l'ASCII que pour les trames qu'une commande avait FABRIQUEES :
+`decodeIpv4Payload` ne posait jamais `tcpPayload` pour un vrai segment,
+et `synthTcpBytes` s'arretait a l'en-tete TCP — donc `-x`/`-X` rendaient
+un vidage sans les donnees pour un segment que la meme ligne annonce
+`length 41`. Les octets applicatifs descendent maintenant dans `raw` et
+dans `tcpPayload`, en v4 comme en v6.
+
+**Windows.** `nmap.exe` existe, et c'est LE MEME moteur : `src/network/
+scan/nmap/` (deplace hors de `devices/linux/`, ou il n'avait rien a
+faire), `ScanHost` etant le port etroit que chaque plateforme remplit —
+fichier hosts, echo ICMP, sortie TCP, salutation, sonde UDP. Meme forme
+que `curl`. `nmap`, `nmap.exe` et `powershell -Command "nmap ..."`
+mènent au meme corps.
+
+**Discrimination** : `probe-nmap-traverse-la-pile.test.ts` (14 cas), 4
+tombent en retirant l'emission de la salutation ;
+`nmap-un-seul-moteur-deux-plateformes.test.ts` (10 cas) est nouveau et
+purement additif — 9 de ses 10 cas ont passe des le premier essai, ce qui
+est la mesure de la reutilisation.
+
+**Reste ouvert et inscrit au `TODO.md`** : le balayage ACK, qui demande
+un segment ACK NU hors connexion que `TcpStack` n'expose pas.

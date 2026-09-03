@@ -1,8 +1,8 @@
 import { describe, it, expect } from 'vitest';
-import { renderNormal, renderGreppable } from '@/network/devices/linux/commands/net/nmap/NmapFormatter';
-import { scan } from '@/network/devices/linux/commands/net/nmap/ScanEngine';
-import type { HostProbes } from '@/network/devices/linux/commands/net/nmap/ScanEngine';
-import { parseNmapArgs } from '@/network/devices/linux/commands/net/nmap/NmapOptions';
+import { renderNormal, renderGreppable } from '@/network/scan/nmap/NmapFormatter';
+import { scan } from '@/network/scan/nmap/ScanEngine';
+import type { HostProbes } from '@/network/scan/nmap/ScanEngine';
+import { parseNmapArgs } from '@/network/scan/nmap/NmapOptions';
 
 function probes(): HostProbes {
   return {

@@ -511,6 +511,27 @@ export class TcpStack {
     return socket.connectRefused ? 'refused' : 'timeout';
   }
 
+  /**
+   * nmap's `Probe TCP NULL q||`, and what `nc host port` prints: open the
+   * connection, send nothing, read what the service volunteers, close.
+   * `onData` replays the bytes that arrived before the handler existed —
+   * the greeting is written while the handshake completes — so the answer
+   * comes from the wire and never from the peer's object.
+   */
+  grabGreeting(remoteIp: string, remotePort: number): string | null {
+    const socket = this.connect(remoteIp, remotePort);
+    if (!socket) return null;
+    if (!socket.everEstablished) { socket.close(); return null; }
+    let text = '';
+    const stop = socket.onData((chunk) => {
+      if (typeof chunk === 'string') text += chunk;
+      else if (chunk instanceof Uint8Array) text += new TextDecoder().decode(chunk);
+    });
+    stop();
+    socket.close();
+    return text === '' ? null : text;
+  }
+
   hasEgressTo(remoteIp: string): boolean {
     return this.resolveEgress(canonicalIpText(remoteIp)) !== null;
   }
@@ -698,6 +719,7 @@ export class TcpStack {
       }
       this.sockets.set(socket.key(), socket);
       this._transition(socket, 'syn-received');
+      if (listener.identity.banner) socket.write(listener.identity.banner);
       try { listener.onAccept(socket); } catch (e) { Logger.warn(this.host.id, 'tcp:accept', String(e)); }
       const flags = noFlags(); flags.syn = true; flags.ack = true;
       // Allocate the sequence BEFORE transmitting: Cable delivery is

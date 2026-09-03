@@ -188,6 +188,15 @@ function normalizeTcpSegment(payload: unknown): TcpSegment {
   };
 }
 
+function appPayloadBytes(payload: unknown): number[] | undefined {
+  if (typeof payload === 'string') return Array.from(new TextEncoder().encode(payload));
+  if (payload instanceof Uint8Array) return Array.from(payload);
+  if (Array.isArray(payload) && payload.every((b) => typeof b === 'number')) {
+    return payload as number[];
+  }
+  return undefined;
+}
+
 function macBytes(mac: string): number[] {
   const parts = mac.split(':').map((h) => parseInt(h, 16) & 0xff);
   while (parts.length < 6) parts.push(0);
@@ -258,6 +267,7 @@ function synthTcpBytes(seg: TcpSegment): number[] {
     ...u16(seg.checksum & 0xffff),
     ...u16(seg.urgentPointer & 0xffff),
     ...optionBytes,
+    ...(appPayloadBytes(seg.payload) ?? []),
   ];
 }
 
@@ -495,6 +505,7 @@ function decodeIpv4Payload(base: CaptureFrame, ip: IPv4Packet): void {
     base.tcpChecksumComputed = computeTcpChecksum(seg, base.srcIp!, base.dstIp!);
     base.tcpChecksumOk = seg.checksum === 0 || base.tcpChecksumComputed === seg.checksum;
     base.payloadLength = Math.max(0, (ip.totalLength ?? 40) - (ip.ihl ?? 5) * 4 - seg.dataOffset * 4);
+    base.tcpPayload = appPayloadBytes(seg.payload);
     if (seg.sourcePort === 53 || seg.destinationPort === 53) {
       decodeDnsPayload(base, seg.payload);
     }
@@ -542,6 +553,7 @@ function decodeIpv6Payload(base: CaptureFrame, ip6: IPv6Packet): void {
     base.tcpChecksumComputed = computeTcpChecksum(seg, base.srcIp!, base.dstIp!);
     base.tcpChecksumOk = seg.checksum === 0 || base.tcpChecksumComputed === seg.checksum;
     base.payloadLength = Math.max(0, ip6.payloadLength - seg.dataOffset * 4);
+    base.tcpPayload = appPayloadBytes(seg.payload);
     if (seg.sourcePort === 53 || seg.destinationPort === 53) {
       decodeDnsPayload(base, seg.payload);
     }

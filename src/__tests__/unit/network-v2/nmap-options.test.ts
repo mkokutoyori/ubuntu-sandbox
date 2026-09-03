@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { parseNmapArgs } from '@/network/devices/linux/commands/net/nmap/NmapOptions';
+import { parseNmapArgs } from '@/network/scan/nmap/NmapOptions';
 
 describe('parseNmapArgs', () => {
   it('extrait une cible unique', () => {
