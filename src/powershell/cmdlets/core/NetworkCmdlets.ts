@@ -17,7 +17,9 @@ import type {
 } from '@/powershell/providers/PSProviders';
 import { psValueToString } from '@/powershell/runtime/PSExpansion';
 import { makeTimeSpan } from './DateTimeCmdlets';
-import { planNetIPAddress } from '@/network/devices/windows/netIpAddress';
+import {
+  type NetIPAddressSelection, noMatchingNetIPAddress, planNetIPAddress, selectNetIPAddresses,
+} from '@/network/devices/windows/netIpAddress';
 
 function lifetimeSecondsOf(ctx: CmdletContext, key: string): number | undefined {
   const raw = ctx.named[key];
@@ -100,40 +102,48 @@ export class GetNetAdapterCmdlet implements ICmdlet {
 
 // ── Get-NetIPAddress ──────────────────────────────────────────────────────
 
+const NET_IP_FILTERS = ['IPAddress', 'InterfaceAlias', 'InterfaceIndex', 'AddressFamily',
+  'AddressState', 'PrefixLength', 'PrefixOrigin', 'SuffixOrigin', 'SkipAsSource',
+  'Type', 'PolicyStore'] as const;
+
+function netIPSelectionOf(ctx: CmdletContext, net: INetworkProvider): NetIPAddressSelection {
+  const list = (key: string): string[] | undefined => {
+    const raw = ctx.named[key];
+    if (raw === undefined) return undefined;
+    return (Array.isArray(raw) ? raw : [raw]).map(psValueToString);
+  };
+  const aliases = list('interfacealias');
+  return {
+    ipAddress: list('ipaddress'),
+    interfaceAlias: aliases?.map(a => net.resolveNetInterface({ alias: a })?.alias ?? a),
+    interfaceIndex: list('interfaceindex'),
+    addressFamily: list('addressfamily'),
+    prefixLength: list('prefixlength'),
+    prefixOrigin: list('prefixorigin'),
+    suffixOrigin: list('suffixorigin'),
+    addressState: list('addressstate'),
+    type: list('type'),
+    policyStore: list('policystore'),
+    skipAsSource: list('skipassource'),
+  };
+}
+
 export class GetNetIPAddressCmdlet implements ICmdlet {
   readonly name = 'get-netipaddress';
   readonly displayName = 'Get-NetIPAddress';
   readonly aliases = [] as const;
-  readonly parameters = ['IPAddress', 'InterfaceAlias', 'InterfaceIndex', 'AddressFamily',
-    'AddressState', 'PrefixLength', 'PrefixOrigin', 'SuffixOrigin', 'SkipAsSource',
-    'Type', 'PolicyStore'] as const;
+  readonly description = 'Gets the IP address configuration.';
+  readonly parameters = NET_IP_FILTERS;
 
   execute(ctx: CmdletContext): PSValue {
     const net = requireNetwork(ctx);
-    const ifAlias = ctx.named['interfacealias']
-      ? psValueToString(ctx.named['interfacealias'])
-      : undefined;
-    let ips = net.getIPAddresses(ifAlias);
-    const wanted = (key: string): string[] | null => {
-      const raw = ctx.named[key];
-      if (raw === undefined) return null;
-      return (Array.isArray(raw) ? raw : [raw]).map(v => psValueToString(v).toLowerCase());
-    };
-    const keep = (values: string[] | null, of: (e: IPAddressInfo) => string): void => {
-      if (values === null) return;
-      ips = ips.filter(e => values.includes(of(e).toLowerCase()));
-    };
-    keep(wanted('ipaddress'), e => e.ipAddress);
-    keep(wanted('addressfamily'), e => e.addressFamily);
-    keep(wanted('prefixlength'), e => String(e.prefixLength));
-    keep(wanted('interfaceindex'), e => String(e.ifIndex));
-    keep(wanted('prefixorigin'), e => e.prefixOrigin);
-    keep(wanted('suffixorigin'), e => e.suffixOrigin);
-    keep(wanted('type'), e => e.type ?? 'Unicast');
-    keep(wanted('policystore'), e => e.policyStore ?? 'ActiveStore');
-    keep(wanted('skipassource'), e => String(e.skipAsSource ?? false));
-    keep(wanted('addressstate'), () => 'Preferred');
-    return ips.map(ipToPSObject) as PSValue;
+    const selection = netIPSelectionOf(ctx, net);
+    const matched = selectNetIPAddresses(net.getIPAddresses(), selection);
+    if (matched.length === 0 && Object.values(selection).some(v => v !== undefined)) {
+      ctx.emitError(`Get-NetIPAddress : ${noMatchingNetIPAddress(selection)}`);
+      return null;
+    }
+    return matched.map(ipToPSObject) as PSValue;
   }
 }
 
@@ -609,18 +619,37 @@ export class RemoveNetIPAddressCmdlet implements ICmdlet {
   readonly name = 'remove-netipaddress';
   readonly displayName = 'Remove-NetIPAddress';
   readonly aliases = [] as const;
+  readonly pipelineByPropertyName = true as const;
+  readonly description = 'Removes an IP address and its configuration.';
+  readonly parameters = [...NET_IP_FILTERS, 'DefaultGateway', 'PassThru', 'WhatIf', 'Confirm'] as const;
 
   execute(ctx: CmdletContext): PSValue {
     const net = requireNetwork(ctx);
-    const ip      = psValueToString(ctx.named['ipaddress'] ?? ctx.positional[0] ?? '');
-    const ifAlias = ctx.named['interfacealias'] ? psValueToString(ctx.named['interfacealias']) : undefined;
-    if (!ip) { ctx.emitError('Remove-NetIPAddress requires -IPAddress'); return null; }
-    try {
-      net.removeIPAddress(ip, ifAlias);
-    } catch (e) {
-      ctx.emitError(e instanceof Error ? e.message : String(e));
+    const selection = netIPSelectionOf(ctx, net);
+    if (selection.ipAddress === undefined && ctx.positional[0] !== undefined) {
+      selection.ipAddress = [psValueToString(ctx.positional[0])];
     }
-    return null;
+    const matched = selectNetIPAddresses(net.getIPAddresses(), selection);
+    if (matched.length === 0) {
+      ctx.emitError(`Remove-NetIPAddress : ${noMatchingNetIPAddress(selection)}`);
+      return null;
+    }
+    if (ctx.named['whatif'] === true) {
+      for (const e of matched) {
+        ctx.emit(`What if: Performing the operation "Remove-NetIPAddress" on target "IPAddress: ${e.ipAddress}, InterfaceAlias: ${e.ifAlias}".`);
+      }
+      return null;
+    }
+    const removed: Record<string, PSValue>[] = [];
+    for (const entry of matched) {
+      try {
+        net.removeIPAddress(entry.ipAddress, entry.ifAlias);
+        removed.push(ipToPSObject(entry));
+      } catch (e) {
+        ctx.emitError(`Remove-NetIPAddress : ${e instanceof Error ? e.message : String(e)}`);
+      }
+    }
+    return ctx.named['passthru'] === true ? (removed as PSValue) : null;
   }
 }
 

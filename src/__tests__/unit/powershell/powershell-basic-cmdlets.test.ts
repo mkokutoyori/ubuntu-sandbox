@@ -3184,48 +3184,48 @@ describe('2. New‑NetIPAddress', () => {
 // ─────────────────────────────────────────────────────────────────────────
 describe('3. Remove‑NetIPAddress', () => {
   it('removes an existing IP address', async () => {
-    const pc = createPC(); const ps = createPS(pc);
+    const pc = createPC(); const ps = createLivePS(pc);
     await createLivePS(pc).execute('New-NetIPAddress -InterfaceAlias "Ethernet" -IPAddress 10.50.50.1 -PrefixLength 24');
     await ps.execute('Remove-NetIPAddress -IPAddress 10.50.50.1 -Confirm:$false');
-    const out = await ps.execute('Get-NetIPAddress -IPAddress 10.50.50.1 -ErrorAction SilentlyContinue');
+    const out = await ps.execute('Get-NetIPAddress -IPAddress 10.50.50.1');
     expect(out).toContain('No MSFT_NetIPAddress');
   });
   it('removes by interface alias and address', async () => {
-    const pc = createPC(); const ps = createPS(pc);
+    const pc = createPC(); const ps = createLivePS(pc);
     await createLivePS(pc).execute('New-NetIPAddress -InterfaceAlias "Ethernet" -IPAddress 10.50.50.2 -PrefixLength 24');
     await ps.execute('Remove-NetIPAddress -InterfaceAlias "Ethernet" -IPAddress 10.50.50.2 -Confirm:$false');
-    const out = await ps.execute('Get-NetIPAddress -IPAddress 10.50.50.2 -ErrorAction SilentlyContinue');
+    const out = await ps.execute('Get-NetIPAddress -IPAddress 10.50.50.2');
     expect(out).toContain('No MSFT_NetIPAddress');
   });
   it('fails when IP not found', async () => {
-    const pc = createPC(); const ps = createPS(pc);
-    const out = await ps.execute('Remove-NetIPAddress -IPAddress 10.99.99.99 -Confirm:$false -ErrorAction SilentlyContinue');
+    const pc = createPC(); const ps = createLivePS(pc);
+    const out = await ps.execute('Remove-NetIPAddress -IPAddress 10.99.99.99 -Confirm:$false');
     expect(out).toContain('No MSFT_NetIPAddress');
   });
-  it('fails without -IPAddress parameter', async () => {
-    const pc = createPC(); const ps = createPS(pc);
-    const out = await ps.execute('Remove-NetIPAddress -Confirm:$false -ErrorAction SilentlyContinue');
-    expect(out).toContain('IPAddress');
+  it('without a filter, matches every address — and refuses the loopback ones', async () => {
+    const pc = createPC(); const ps = createLivePS(pc);
+    const out = await ps.execute('Remove-NetIPAddress -Confirm:$false');
+    expect(out).toContain('Cannot remove');
   });
   it('accepts -AddressFamily', async () => {
-    const pc = createPC(); const ps = createPS(pc);
+    const pc = createPC(); const ps = createLivePS(pc);
     await createLivePS(pc).execute('New-NetIPAddress -IPAddress 10.60.60.1 -PrefixLength 24 -InterfaceAlias "Ethernet" -AddressFamily IPv4');
     await expect(ps.execute('Remove-NetIPAddress -IPAddress 10.60.60.1 -AddressFamily IPv4 -Confirm:$false')).resolves.not.toThrow();
   });
   it('should not remove system critical IP like loopback', async () => {
-    const pc = createPC(); const ps = createPS(pc);
-    const out = await ps.execute('Remove-NetIPAddress -IPAddress 127.0.0.1 -Confirm:$false -ErrorAction SilentlyContinue');
+    const pc = createPC(); const ps = createLivePS(pc);
+    const out = await ps.execute('Remove-NetIPAddress -IPAddress 127.0.0.1 -Confirm:$false');
     expect(out).toContain('Cannot remove');
   });
   it('pipeline from Get-NetIPAddress', async () => {
-    const pc = createPC(); const ps = createPS(pc);
+    const pc = createPC(); const ps = createLivePS(pc);
     await createLivePS(pc).execute('New-NetIPAddress -IPAddress 10.70.70.1 -PrefixLength 24 -InterfaceAlias "Ethernet"');
     await ps.execute('Get-NetIPAddress -IPAddress 10.70.70.1 | Remove-NetIPAddress -Confirm:$false');
-    const out = await ps.execute('Get-NetIPAddress -IPAddress 10.70.70.1 -ErrorAction SilentlyContinue');
+    const out = await ps.execute('Get-NetIPAddress -IPAddress 10.70.70.1');
     expect(out).toContain('No MSFT_NetIPAddress');
   });
   it('-WhatIf previews removal', async () => {
-    const pc = createPC(); const ps = createPS(pc);
+    const pc = createPC(); const ps = createLivePS(pc);
     await createLivePS(pc).execute('New-NetIPAddress -IPAddress 10.80.80.1 -PrefixLength 24 -InterfaceAlias "Ethernet"');
     const preview = await ps.execute('Remove-NetIPAddress -IPAddress 10.80.80.1 -WhatIf');
     expect(preview).toContain('What if');
@@ -3234,14 +3234,14 @@ describe('3. Remove‑NetIPAddress', () => {
     expect(exists).toContain('10.80.80.1');
   });
   it('Get-Help', async () => {
-    const pc = createPC(); const ps = createPS(pc);
+    const pc = createPC(); const ps = createLivePS(pc);
     const help = await ps.execute('Get-Help Remove-NetIPAddress');
     expect(help).toContain('SYNOPSIS');
   });
   // Some tests are filled with simple no-error runs to reach 20
   for (let i = 0; i < 10; i++) {
     it(`extra ${i + 1}`, async () => {
-      const pc = createPC(); const ps = createPS(pc);
+      const pc = createPC(); const ps = createLivePS(pc);
       // ensure command runs without error when given valid but non-existent params (silently)
       await expect(ps.execute('Remove-NetIPAddress -IPAddress 10.99.99.99 -Confirm:$false -ErrorAction SilentlyContinue')).resolves.not.toThrow();
     });

@@ -166,3 +166,62 @@ export function planNetIPAddress(
     plan: { address, iface, prefixLength, type, policyStore, gateway, skipAsSource: request.skipAsSource === true },
   };
 }
+
+export interface NetIPAddressSelection {
+  ipAddress?: string[];
+  interfaceAlias?: string[];
+  interfaceIndex?: string[];
+  addressFamily?: string[];
+  prefixLength?: string[];
+  prefixOrigin?: string[];
+  suffixOrigin?: string[];
+  addressState?: string[];
+  type?: string[];
+  policyStore?: string[];
+  skipAsSource?: string[];
+}
+
+export interface NetIPAddressRow {
+  ipAddress: string;
+  ifAlias: string;
+  ifIndex: number;
+  addressFamily: string;
+  prefixLength: number;
+  prefixOrigin: string;
+  suffixOrigin: string;
+  type?: NetIPAddressType;
+  policyStore?: NetPolicyStore;
+  skipAsSource?: boolean;
+}
+
+export function selectNetIPAddresses<T extends NetIPAddressRow>(
+  rows: readonly T[], selection: NetIPAddressSelection,
+): T[] {
+  const criteria: Array<[string[] | undefined, (row: T) => string]> = [
+    [selection.ipAddress, r => r.ipAddress],
+    [selection.interfaceAlias, r => r.ifAlias],
+    [selection.interfaceIndex, r => String(r.ifIndex)],
+    [selection.addressFamily, r => r.addressFamily],
+    [selection.prefixLength, r => String(r.prefixLength)],
+    [selection.prefixOrigin, r => r.prefixOrigin],
+    [selection.suffixOrigin, r => r.suffixOrigin],
+    [selection.addressState, () => 'Preferred'],
+    [selection.type, r => r.type ?? 'Unicast'],
+    [selection.policyStore, r => r.policyStore ?? 'ActiveStore'],
+    [selection.skipAsSource, r => String(r.skipAsSource ?? false)],
+  ];
+  let kept = [...rows];
+  for (const [values, of] of criteria) {
+    if (values === undefined) continue;
+    const wanted = values.map(v => v.trim().toLowerCase());
+    kept = kept.filter(r => wanted.includes(of(r).toLowerCase()));
+  }
+  return kept;
+}
+
+export function noMatchingNetIPAddress(selection: NetIPAddressSelection): string {
+  const named = selection.ipAddress?.[0];
+  return named === undefined
+    ? 'No MSFT_NetIPAddress objects found with the specified criteria. Verify the values and retry.'
+    : `No MSFT_NetIPAddress objects found with property 'IPAddress' equal to '${named}'. Verify the value of the property and retry.`;
+}

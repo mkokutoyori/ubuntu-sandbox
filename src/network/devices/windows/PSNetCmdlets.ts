@@ -180,37 +180,6 @@ export function isValidIP(ip: string): boolean {
     return isValidIPv4(ip) || isValidIPv6(ip);
   }
 
-export function handleRemoveNetIPAddress(ctx: PSNetContext, args: string[]): string {
-    const params = parsePSArgs(args);
-    const ip = params.get('ipaddress') || params.get('_positional');
-    const whatif = params.has('whatif') || args.some(a => a.toLowerCase() === '-whatif');
-
-    if (!ip) return `Remove-NetIPAddress : The -IPAddress parameter is required.\nAt line:1 char:1\n    + CategoryInfo          : InvalidArgument`;
-
-    if (ip === '127.0.0.1' || ip === '::1') {
-      return `Remove-NetIPAddress : Cannot remove the loopback address '${ip}'. This address is required for network functionality.`;
-    }
-
-    const entries = buildAllIPEntries(ctx);
-    const found = entries.find(e => e.ip.toLowerCase() === ip.toLowerCase());
-    if (!found) {
-      return `Remove-NetIPAddress : No MSFT_NetIPAddress objects found with property 'IPAddress' equal to '${ip}'. Verify the value of the property and retry.`;
-    }
-
-    if (whatif) {
-      return `What if: Performing the operation "Remove-NetIPAddress" on target "IPAddress: ${ip}, InterfaceAlias: ${found.ifAlias}".`;
-    }
-
-    // Real port address → unconfigure the interface (clears the address AND
-    // its connected route); side-store address → drop the store entry.
-    const port = resolveAdapterPort(ctx, found.ifAlias);
-    if (port && port.getIPAddress()?.toString().toLowerCase() === ip.toLowerCase()) {
-      ctx.device.unconfigureInterface(port.getName());
-    }
-    ctx.device.extraIPs.delete(ip.toLowerCase());
-    return '';
-  }
-
 export function handleSetNetIPAddress(ctx: PSNetContext, args: string[]): string {
     const params = parsePSArgs(args);
     const ip = (params.get('ipaddress') || params.get('_positional'))?.replace(/^["']|["']$/g, '');
