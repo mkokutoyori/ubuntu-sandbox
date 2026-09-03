@@ -2107,15 +2107,6 @@ défauts — la méthode vaut d'être reprise sur le reliquat.
   ABANDONNEE plutot que forcee. A rouvrir avec une capture, en verifiant
   d'abord si le tutoriel dont ce test est tire montre la loopback creee
   avant.
-- `apply` et `if-match` de VRP (`HuaweiPolicyCommands.ts`) portent la
-  MEME forme que les clauses `set`/`match` d'IOS fermees par le lot
-  route-map : `apply cost zorglub` et `if-match dscp zorglub` posent un
-  `parseInt` qui rend `NaN`, un genre de clause invente est avale en
-  silence, et le rendu de la configuration le rejoue. Ce n'est PAS un
-  doublon de la table Cisco — le vocabulaire de VRP est le sien
-  (`apply ip-address next-hop`, `apply preference`, `if-match acl-ipv6`,
-  `if-match vlan`) — donc c'est le lot JUMEAU et non le meme, a ecrire
-  avec sa propre table lue par son gestionnaire et par son aide.
 - `set ip dscp`, `set ip tos`, `set traffic-index`, `set mpls-label` et
   `set vrf` ne figurent pas dans `ROUTE_MAP_SET_CLAUSES` et sont donc
   desormais REFUSEES sur une carte de routage. La table declare ce qui
@@ -2131,3 +2122,20 @@ défauts — la méthode vaut d'être reprise sur le reliquat.
   arbre propre. La route `192.168.3.0` redistribuee d'OSPF vers RIP
   n'arrive pas jusqu'a R1. Defaut de convergence a diagnostiquer, non
   imputable au lot route-map, qui ne touche ni RIP ni OSPF.
+- `apply preference` et `car cir` de VRP n'ont pas de borne HAUTE
+  appliquee : la premiere est une distance administrative, la seconde un
+  debit en kbit/s, toutes deux bornees par la PLATEFORME, et la
+  documentation de Huawei n'est pas atteignable depuis ce reseau. Seule
+  la certitude « c'est un nombre » est appliquee (`vrpNombre`), ce qui
+  ferme le `NaN` sans inventer un plafond. A rouvrir avec une capture.
+- Le classificateur de trafic de ce simulateur accepte `if-match vlan`
+  la ou VRP ecrit `if-match vlan-id`. Le lot des valeurs de politique VRP
+  a juge la VALEUR (1-4094, via `parseVlanId`) sans toucher au MOT :
+  changer l'orthographe acceptee sans capture remplacerait une invention
+  par une autre. A trancher avec une transcription reelle.
+- `if-match cost` de VRP est desormais range et rend le noeud ECHOUANT
+  FERME, comme `acl`, `community`, `as-path`, `interface` et
+  `ext-community` avant lui : `RoutePolicyRouteInput` ne porte aucun cout
+  a comparer. L'evaluer demande de faire voyager la metrique de la route
+  redistribuee jusqu'a la politique, ce qui est un autre sujet que la
+  grammaire de la CLI.

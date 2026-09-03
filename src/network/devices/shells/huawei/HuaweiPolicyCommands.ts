@@ -1,6 +1,27 @@
 import type { Router } from '../../Router';
 import type { CommandTrie } from '../CommandTrie';
 import type { HuaweiShellContext } from './HuaweiConfigCommands';
+import { rendreErreurVrp } from '../cli-utils';
+import {
+  judgeVrpClause, judgeVrpCar, type VrpClauseSpec, type VrpClauseProblem,
+  ROUTE_POLICY_IF_MATCH, ROUTE_POLICY_APPLY, CLASSIFIER_IF_MATCH, BEHAVIOR_REMARK,
+} from '../../router/policy/vrpPolicyValues';
+
+function rendreRefusVrp(
+  tete: string, args: readonly string[], probleme: VrpClauseProblem,
+): string {
+  const ligne = [tete, ...args].join(' ');
+  if (probleme.incomplete) return rendreErreurVrp({ kind: 'incomplete' }, ligne);
+  const jeton = args[probleme.at] ?? args[args.length - 1] ?? tete;
+  return rendreErreurVrp({ kind: 'wrong', token: jeton }, ligne);
+}
+
+function refuserVrp(
+  clauses: readonly VrpClauseSpec[], tete: string, args: readonly string[],
+): string | null {
+  const probleme = judgeVrpClause(clauses, args);
+  return probleme ? rendreRefusVrp(tete, args, probleme) : null;
+}
 
 export interface HuaweiPolicyShellCtx extends HuaweiShellContext {
   setMode(mode: any): void;
@@ -223,6 +244,8 @@ export function buildRoutePolicyView(t: CommandTrie, ctx: HuaweiPolicyShellCtx):
     return r().getRoutePolicyStore().get(name)?.getNode(id) ?? null;
   };
   t.registerGreedy('if-match', 'Match clause', (args) => {
+    const refus = refuserVrp(ROUTE_POLICY_IF_MATCH, 'if-match', args);
+    if (refus) return refus;
     const n = node(); if (!n) return '';
     const kind = args[0];
     if (kind === 'ip-prefix' && args[1]) n.ifMatch({ ipPrefix: args[1] });
@@ -231,9 +254,13 @@ export function buildRoutePolicyView(t: CommandTrie, ctx: HuaweiPolicyShellCtx):
     else if (kind === 'tag' && args[1]) n.ifMatch({ tag: parseInt(args[1], 10) });
     else if (kind === 'community' && args[1]) n.ifMatch({ community: args.slice(1).join(' ') });
     else if (kind === 'as-path' && args[1]) n.ifMatch({ asPath: args.slice(1).join(' ') });
+    else if (kind === 'cost' && args[1]) n.ifMatch({ cost: parseInt(args[1], 10) });
+    else if (kind === 'route-type' && args[1]) n.ifMatch({ routeType: args[1] });
     return '';
   });
   t.registerGreedy('apply', 'Apply clause', (args) => {
+    const refus = refuserVrp(ROUTE_POLICY_APPLY, 'apply', args);
+    if (refus) return refus;
     const n = node(); if (!n) return '';
     const kind = args[0];
     if (kind === 'ip-address' && args[1] === 'next-hop' && args[2]) n.applySet({ ipNextHop: args[2] });
@@ -248,6 +275,8 @@ export function buildRoutePolicyView(t: CommandTrie, ctx: HuaweiPolicyShellCtx):
 
 export function buildTrafficClassifierView(t: CommandTrie, ctx: HuaweiPolicyShellCtx): void {
   t.registerGreedy('if-match', 'Classifier match clause', (args) => {
+    const refus = refuserVrp(CLASSIFIER_IF_MATCH, 'if-match', args);
+    if (refus) return refus;
     const name = ctx.getSelectedClassifier(); if (!name) return '';
     const c = ctx.r().getTrafficPolicyStore().getClassifier(name); if (!c) return '';
     const kind = args[0];
@@ -282,6 +311,8 @@ export function buildTrafficBehaviorView(t: CommandTrie, ctx: HuaweiPolicyShellC
     return '';
   });
   t.registerGreedy('remark', 'Remark traffic', (args) => {
+    const refus = refuserVrp(BEHAVIOR_REMARK, 'remark', args);
+    if (refus) return refus;
     const name = ctx.getSelectedBehavior(); if (!name) return '';
     const b = ctx.r().getTrafficPolicyStore().getBehavior(name); if (!b) return '';
     if (args[0] === 'dscp' && args[1]) b.addAction({ kind: 'remark-dscp', value: parseInt(args[1], 10) });
@@ -289,6 +320,8 @@ export function buildTrafficBehaviorView(t: CommandTrie, ctx: HuaweiPolicyShellC
     return '';
   });
   t.registerGreedy('car', 'Committed access rate', (args) => {
+    const probleme = judgeVrpCar(args);
+    if (probleme) return rendreRefusVrp('car', args, probleme);
     const name = ctx.getSelectedBehavior(); if (!name) return '';
     const b = ctx.r().getTrafficPolicyStore().getBehavior(name); if (!b) return '';
     let cir = 0; let pir: number | undefined; let cbs: number | undefined; let pbs: number | undefined;

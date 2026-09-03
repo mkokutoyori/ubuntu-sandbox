@@ -24,6 +24,7 @@ export interface RoutePolicyMatch {
   tag?: number;
   routeType?: string;
   extCommunity?: string;
+  cost?: number;
 }
 
 export interface RoutePolicyApply {
@@ -55,7 +56,7 @@ export class RoutePolicyNode {
 
   /**
    * Only `ip-prefix`/`tag`/`route-type` are actually evaluated — the rest
-   * (acl/community/as-path/interface/ext-community) have no matching
+   * (acl/community/as-path/interface/ext-community/cost) have no matching
    * data on a redistributed route today, so a node using one of them
    * fails closed (doesn't match) rather than risk over-permitting.
    */
@@ -68,7 +69,8 @@ export class RoutePolicyNode {
     if (m.tag !== undefined && route.tag !== m.tag) return false;
     if (m.routeType !== undefined && route.routeType !== m.routeType) return false;
     if (m.acl !== undefined || m.community !== undefined || m.asPath !== undefined
-      || m.interface !== undefined || m.extCommunity !== undefined || m.ipv6Prefix !== undefined) {
+      || m.interface !== undefined || m.extCommunity !== undefined
+      || m.ipv6Prefix !== undefined || m.cost !== undefined) {
       return false;
     }
     return true;
@@ -84,6 +86,7 @@ export class RoutePolicyNode {
     if (this.match.interface) out.push(` if-match interface ${this.match.interface}`);
     if (this.match.tag !== undefined) out.push(` if-match tag ${this.match.tag}`);
     if (this.match.routeType) out.push(` if-match route-type ${this.match.routeType}`);
+    if (this.match.cost !== undefined) out.push(` if-match cost ${this.match.cost}`);
     if (this.apply.ipNextHop) out.push(` apply ip-address next-hop ${this.apply.ipNextHop}`);
     if (this.apply.ipv6NextHop) out.push(` apply ipv6 next-hop ${this.apply.ipv6NextHop}`);
     if (this.apply.cost !== undefined) out.push(` apply cost ${this.apply.cost}`);
