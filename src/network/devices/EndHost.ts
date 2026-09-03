@@ -1382,7 +1382,7 @@ export abstract class EndHost extends Equipment {
    */
   protected defaultGatewayOrigin: 'static' | 'dhcp' | null = null;
 
-  setDefaultGateway(gw: IPAddress, origin: 'static' | 'dhcp' = 'static'): void {
+  setDefaultGateway(gw: IPAddress, origin: 'static' | 'dhcp' = 'static', metric = 0): void {
     this.defaultGateway = gw;
     this.defaultGatewayOrigin = origin;
 
@@ -1406,14 +1406,15 @@ export abstract class EndHost extends Equipment {
       nextHop: gw,
       iface: gwIface,
       type: 'default',
-      metric: 0,
+      metric,
     });
 
     Logger.info(this.id, 'host:gateway', `${this.name}: default gateway set to ${gw}`);
 
     const unchanged = previousDefault !== undefined
       && previousDefault.nextHop?.equals(gw) === true
-      && previousDefault.iface === gwIface;
+      && previousDefault.iface === gwIface
+      && previousDefault.metric === metric;
     if (unchanged) return;
     if (previousDefault) {
       this.emitRouteRemoved({
@@ -1422,7 +1423,7 @@ export abstract class EndHost extends Equipment {
     }
     this.emitRouteAdded({
       destination: '0.0.0.0', mask: '0.0.0.0',
-      gateway: gw.toString(), iface: gwIface, metric: 0, type: 'default',
+      gateway: gw.toString(), iface: gwIface, metric, type: 'default',
     });
   }
 

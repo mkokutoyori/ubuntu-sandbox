@@ -1,78 +1,20 @@
 import type { Port } from '../../hardware/Port';
 import { isValidIPv4, isValidIPv6 } from '../../core/ip';
-import { IPAddress, SubnetMask } from '../../core/types';
-import { toDisplayName, toPortName, formatLinkSpeedMbps } from './WindowsInterfaceNaming';
+import { IPAddress } from '../../core/types';
+import {
+  LOOPBACK_IFINDEX, adapterIfIndex, toDisplayName, toPortName, formatLinkSpeedMbps,
+} from './WindowsInterfaceNaming';
 import { parsePSArgs } from './psArgs';
 import type { PSDeviceContext } from './PowerShellExecutor';
-import { WINDOWS_LOOPBACK_ROUTES, LOOPBACK_IFALIAS } from './WindowsLoopbackRoutes';
-
-/** Dotted-quad mask for an IPv4 prefix length (24 → 255.255.255.0). */
-function prefixToMaskString(prefixLength: number): string {
-  const bits = 0xffffffff << (32 - prefixLength);
-  if (prefixLength === 0) return '0.0.0.0';
-  return [24, 16, 8, 0].map((shift) => (bits >>> shift) & 0xff).join('.');
-}
 
 export interface PSNetContext {
   device: PSDeviceContext;
 }
 
-export function handleGetNetIPConfiguration(ctx: PSNetContext, args: string[]): string {
-    const params = parsePSArgs(args);
-    const ifFilter = (params.get('interfacealias') ?? params.get('_positional') ?? '').replace(/^["']|["']$/g, '').toLowerCase();
-    const detailed = params.has('detailed');
-    const all = params.has('all');
-
-    return formatGetNetIPConfiguration(ctx, ifFilter, detailed, all);
-  }
-
-export function formatGetNetIPConfiguration(ctx: PSNetContext, ifFilter = '', detailed = false, all = false): string {
-    const ports = ctx.device.getPortsMap();
-    const lines: string[] = [];
-    let idx = 0;
-    let found = false;
-
-    const addEntry = (displayName: string, ip: string, mask: string, gw: string, dns: string[]) => {
-      if (idx > 0) lines.push('');
-      lines.push(`InterfaceAlias       : ${displayName}`);
-      lines.push(`InterfaceIndex       : ${idx + 1}`);
-      lines.push(`IPv4Address          : ${ip || 'Not configured'}`);
-      if (mask) lines.push(`IPv4SubnetMask       : ${mask}`);
-      lines.push(`IPv4DefaultGateway   : ${gw}`);
-      lines.push(`DNSServer            : ${dns.length > 0 ? dns.join(', ') : ''}`);
-      if (detailed) {
-        lines.push(`ComputerName         : ${ctx.device.getHostname?.() ?? 'DESKTOP'}`);
-      }
-      idx++;
-      found = true;
-    };
-
-    for (const [name, port] of ports) {
-      const displayName = toDisplayName(name);
-      if (ifFilter && !displayName.toLowerCase().includes(ifFilter) && displayName.toLowerCase() !== ifFilter) continue;
-      const ip = port.getIPAddress()?.toString() ?? '';
-      const mask = port.getSubnetMask()?.toString() ?? '';
-      const gw = ctx.device.getDefaultGatewayString() ?? '';
-      const dns = ctx.device.getDnsServers(name);
-      addEntry(displayName, ip, mask, gw, dns);
-    }
-
-    // Loopback (shown with -All or when specifically requested)
-    if (all && (!ifFilter || 'loopback'.includes(ifFilter))) {
-      addEntry('Loopback Pseudo-Interface 1', '127.0.0.1', '255.0.0.0', '', []);
-    }
-
-    if (!found && ifFilter) {
-      return `Get-NetIPConfiguration : Interface '${ifFilter}' not found. No MSFT_NetIPConfiguration objects found.`;
-    }
-
-    return lines.join('\n');
-  }
-
 export function buildAllIPEntries(ctx: PSNetContext): Array<{ ip: string; ifAlias: string; ifIndex: number; addressFamily: string; prefixLength: number; prefixOrigin: string; suffixOrigin: string; addressState: string; skipAsSource: boolean }> {
     const entries: Array<{ ip: string; ifAlias: string; ifIndex: number; addressFamily: string; prefixLength: number; prefixOrigin: string; suffixOrigin: string; addressState: string; skipAsSource: boolean }> = [];
     const ports = ctx.device.getPortsMap();
-    let idx = 2;
+    let idx = 0;
     for (const [name, port] of ports) {
       const displayName = toDisplayName(name);
       const ip = port.getIPAddress()?.toString() ?? '';
@@ -89,7 +31,7 @@ export function buildAllIPEntries(ctx: PSNetContext): Array<{ ip: string; ifAlia
         // side-map when present.
         const attr = ctx.device.extraIPs.get(ip.toLowerCase());
         entries.push({
-          ip, ifAlias: displayName, ifIndex: idx, addressFamily: 'IPv4', prefixLength,
+          ip, ifAlias: displayName, ifIndex: adapterIfIndex(idx), addressFamily: 'IPv4', prefixLength,
           prefixOrigin: attr?.prefixOrigin ?? (isDhcp ? 'Dhcp' : 'Manual'),
           suffixOrigin: attr?.suffixOrigin ?? (isDhcp ? 'Dhcp' : 'Manual'),
           addressState: 'Preferred',
@@ -101,7 +43,7 @@ export function buildAllIPEntries(ctx: PSNetContext): Array<{ ip: string; ifAlia
       const macParts = macStr.split(':');
       if (macParts.length === 6) {
         const fe80 = `fe80::${macParts[0]}${macParts[1]}:${macParts[2]}ff:fe${macParts[3]}:${macParts[4]}${macParts[5]}`;
-        entries.push({ ip: fe80, ifAlias: displayName, ifIndex: idx, addressFamily: 'IPv6', prefixLength: 64, prefixOrigin: 'WellKnown', suffixOrigin: 'Link', addressState: 'Preferred', skipAsSource: false });
+        entries.push({ ip: fe80, ifAlias: displayName, ifIndex: adapterIfIndex(idx), addressFamily: 'IPv6', prefixLength: 64, prefixOrigin: 'WellKnown', suffixOrigin: 'Link', addressState: 'Preferred', skipAsSource: false });
       }
       idx++;
     }
@@ -112,11 +54,11 @@ export function buildAllIPEntries(ctx: PSNetContext): Array<{ ip: string; ifAlia
     const portIps = new Set(entries.filter(e => e.addressFamily === 'IPv4').map(e => e.ip.toLowerCase()));
     for (const [ip, info] of ctx.device.extraIPs) {
       if (portIps.has(ip.toLowerCase())) continue;
-      entries.push({ ip, ifAlias: info.ifAlias, ifIndex: idx++, addressFamily: info.addressFamily, prefixLength: info.prefixLength, prefixOrigin: info.prefixOrigin, suffixOrigin: info.suffixOrigin, addressState: 'Preferred', skipAsSource: info.skipAsSource });
+      entries.push({ ip, ifAlias: info.ifAlias, ifIndex: adapterIfIndex(idx++), addressFamily: info.addressFamily, prefixLength: info.prefixLength, prefixOrigin: info.prefixOrigin, suffixOrigin: info.suffixOrigin, addressState: 'Preferred', skipAsSource: info.skipAsSource });
     }
     // Loopback
-    entries.push({ ip: '127.0.0.1', ifAlias: 'Loopback Pseudo-Interface 1', ifIndex: 1, addressFamily: 'IPv4', prefixLength: 8, prefixOrigin: 'WellKnown', suffixOrigin: 'WellKnown', addressState: 'Preferred', skipAsSource: false });
-    entries.push({ ip: '::1', ifAlias: 'Loopback Pseudo-Interface 1', ifIndex: 1, addressFamily: 'IPv6', prefixLength: 128, prefixOrigin: 'WellKnown', suffixOrigin: 'WellKnown', addressState: 'Preferred', skipAsSource: false });
+    entries.push({ ip: '127.0.0.1', ifAlias: 'Loopback Pseudo-Interface 1', ifIndex: LOOPBACK_IFINDEX, addressFamily: 'IPv4', prefixLength: 8, prefixOrigin: 'WellKnown', suffixOrigin: 'WellKnown', addressState: 'Preferred', skipAsSource: false });
+    entries.push({ ip: '::1', ifAlias: 'Loopback Pseudo-Interface 1', ifIndex: LOOPBACK_IFINDEX, addressFamily: 'IPv6', prefixLength: 128, prefixOrigin: 'WellKnown', suffixOrigin: 'WellKnown', addressState: 'Preferred', skipAsSource: false });
     return entries;
   }
 
@@ -180,169 +122,6 @@ export function isValidIP(ip: string): boolean {
     return isValidIPv4(ip) || isValidIPv6(ip);
   }
 
-export function buildDefaultRoutes(ctx: PSNetContext): Array<{ dest: string; ifAlias: string; nextHop: string; metric: number }> {
-    // Single source of truth: the SAME routing table `route print` renders.
-    // (This function's name is kept for its many call sites; it no longer
-    // synthesizes anything.)
-    const routes: Array<{ dest: string; ifAlias: string; nextHop: string; metric: number }> = [];
-    // Une seule declaration pour les deux vues : `Get-NetRoute` en
-    // annoncait UNE, ecrite en dur ici, la ou `route print` n'en
-    // montrait aucune.
-    for (const lo of WINDOWS_LOOPBACK_ROUTES) {
-      routes.push({
-        dest: `${lo.network}/${lo.prefixLength}`,
-        ifAlias: LOOPBACK_IFALIAS, nextHop: '0.0.0.0', metric: lo.metric,
-      });
-    }
-    for (const r of ctx.device.getRoutingTable()) {
-      const prefix = maskToPrefixLength(r.mask.toString());
-      routes.push({
-        dest: `${r.network.toString()}/${prefix}`,
-        ifAlias: toDisplayName(r.iface),
-        nextHop: r.nextHop ? r.nextHop.toString() : '0.0.0.0',
-        metric: r.metric,
-      });
-    }
-    return routes;
-  }
-
-/** Parse "a.b.c.d/len" into network + mask; null when malformed. */
-function parseDestinationPrefix(dest: string): { network: IPAddress; mask: SubnetMask } | null {
-    const m = /^(\d{1,3}(?:\.\d{1,3}){3})\/(\d{1,2})$/.exec(dest);
-    if (!m) return null;
-    const prefix = parseInt(m[2], 10);
-    if (prefix > 32 || !isValidIPv4(m[1])) return null;
-    try {
-      return { network: new IPAddress(m[1]), mask: new SubnetMask(prefixToMaskString(prefix)) };
-    } catch {
-      return null;
-    }
-  }
-
-export function handleGetNetRoute(ctx: PSNetContext, args: string[]): string {
-    const params = parsePSArgs(args);
-    const destFilter = (params.get('destinationprefix') ?? '').replace(/^["']|["']$/g, '');
-    const ifFilter = (params.get('interfacealias') ?? '').replace(/^["']|["']$/g, '').toLowerCase();
-    const nhFilter = (params.get('nexthop') ?? '').replace(/^["']|["']$/g, '');
-    const metricFilter = params.has('routemetric') ? parseInt(params.get('routemetric')!, 10) : undefined;
-
-    // Validate destination prefix format — must be CIDR notation (ip/prefix or ipv6/prefix)
-    if (destFilter && !destFilter.match(/^(\d{1,3}\.){3}\d{1,3}\/\d{1,2}$/) && !destFilter.match(/^[0-9a-f:]+\/\d+$/i)) {
-      return `Get-NetRoute : Invalid DestinationPrefix: '${destFilter}'.\nAt line:1 char:1\n    + CategoryInfo          : InvalidArgument`;
-    }
-
-    let routes = buildDefaultRoutes(ctx);
-    if (destFilter) routes = routes.filter(r => r.dest === destFilter);
-    if (ifFilter) routes = routes.filter(r => r.ifAlias.toLowerCase().includes(ifFilter));
-    if (nhFilter) routes = routes.filter(r => r.nextHop === nhFilter);
-    if (metricFilter !== undefined) routes = routes.filter(r => r.metric === metricFilter);
-
-    if (routes.length === 0) return '';
-
-    // Format as key-value blocks for pipeline compatibility (Select -ExpandProperty works on these)
-    return routes.map((r, i) => [
-      `DestinationPrefix : ${r.dest}`,
-      `NextHop           : ${r.nextHop}`,
-      `RouteMetric       : ${r.metric}`,
-      `InterfaceAlias    : ${r.ifAlias}`,
-      `InterfaceIndex    : ${i + 2}`,
-      `AddressFamily     : IPv4`,
-    ].join('\n')).join('\n\n');
-  }
-
-export function handleNewNetRoute(ctx: PSNetContext, args: string[]): string {
-    const params = parsePSArgs(args);
-    const dest = (params.get('destinationprefix') ?? params.get('_positional') ?? '').replace(/^["']|["']$/g, '');
-    const ifAlias = (params.get('interfacealias') ?? '').replace(/^["']|["']$/g, '');
-    const nextHop = (params.get('nexthop') ?? '').replace(/^["']|["']$/g, '');
-    const metricStr = params.get('routemetric') ?? '0';
-    const metric = parseInt(metricStr, 10);
-
-    if (!dest) return `New-NetRoute : The -DestinationPrefix parameter is required.\nAt line:1 char:1\n    + CategoryInfo          : InvalidArgument`;
-    if (!ifAlias) return `New-NetRoute : The -InterfaceAlias parameter is required.\nAt line:1 char:1\n    + CategoryInfo          : InvalidArgument`;
-    if (!nextHop) return `New-NetRoute : The -NextHop parameter is required.\nAt line:1 char:1\n    + CategoryInfo          : InvalidArgument`;
-
-    // Write to the REAL routing table (the same one `route add` uses).
-    if (dest === '0.0.0.0/0') {
-      if (!isValidIPv4(nextHop)) return `New-NetRoute : Invalid NextHop '${nextHop}'.`;
-      ctx.device.setDefaultGateway(new IPAddress(nextHop));
-    } else {
-      const parsed = parseDestinationPrefix(dest);
-      if (!parsed) return `New-NetRoute : Invalid DestinationPrefix: '${dest}'.\nAt line:1 char:1\n    + CategoryInfo          : InvalidArgument`;
-      if (!isValidIPv4(nextHop)) return `New-NetRoute : Invalid NextHop '${nextHop}'.`;
-      const dup = ctx.device.getRoutingTable().some(
-        (r) => r.network.toString() === parsed.network.toString() && r.mask.toString() === parsed.mask.toString(),
-      );
-      if (dup) {
-        return `New-NetRoute : Route '${dest}' already exists.\nAt line:1 char:1\n    + CategoryInfo          : InvalidArgument`;
-      }
-      if (!ctx.device.addStaticRoute(parsed.network, parsed.mask, new IPAddress(nextHop), metric)) {
-        return `New-NetRoute : The gateway '${nextHop}' is not reachable.`;
-      }
-    }
-    return [
-      `DestinationPrefix : ${dest}`,
-      `NextHop           : ${nextHop}`,
-      `RouteMetric       : ${metric}`,
-      `InterfaceAlias    : ${ifAlias}`,
-      `InterfaceIndex    : 2`,
-      `AddressFamily     : IPv4`,
-    ].join('\n');
-  }
-
-export function handleRemoveNetRoute(ctx: PSNetContext, args: string[]): string {
-    const params = parsePSArgs(args);
-    const dest = (params.get('destinationprefix') ?? params.get('_positional') ?? '').replace(/^["']|["']$/g, '');
-    const whatif = args.some(a => a.toLowerCase() === '-whatif');
-
-    if (!dest) return `Remove-NetRoute : The -DestinationPrefix parameter is required.\nAt line:1 char:1\n    + CategoryInfo          : InvalidArgument`;
-
-    const routes = buildDefaultRoutes(ctx);
-    const found = routes.find(r => r.dest === dest);
-    if (!found) {
-      return `Remove-NetRoute : No MSFT_NetRoute objects found with property 'DestinationPrefix' equal to '${dest}'.`;
-    }
-
-    if (whatif) {
-      return `What if: Performing the operation "Remove-NetRoute" on target "DestinationPrefix: ${dest}".`;
-    }
-
-    if (dest === '0.0.0.0/0') {
-      ctx.device.clearDefaultGateway();
-      return '';
-    }
-    const parsed = parseDestinationPrefix(dest);
-    if (parsed) ctx.device.removeRoute(parsed.network, parsed.mask);
-    return '';
-  }
-
-export function handleSetNetRoute(ctx: PSNetContext, args: string[]): string {
-    const params = parsePSArgs(args);
-    const dest = (params.get('destinationprefix') ?? params.get('_positional') ?? '').replace(/^["']|["']$/g, '');
-    const nextHop = params.get('nexthop')?.replace(/^["']|["']$/g, '');
-    const ifAlias = params.get('interfacealias')?.replace(/^["']|["']$/g, '');
-
-    if (!dest) return `Set-NetRoute : The -DestinationPrefix parameter is required.`;
-
-    // Update = remove + re-add on the REAL routing table.
-    if (dest === '0.0.0.0/0') {
-      if (nextHop && isValidIPv4(nextHop)) ctx.device.setDefaultGateway(new IPAddress(nextHop));
-      return '';
-    }
-    const parsed = parseDestinationPrefix(dest);
-    if (!parsed) return `Set-NetRoute : Invalid DestinationPrefix: '${dest}'.`;
-    const current = ctx.device.getRoutingTable().find(
-      (r) => r.network.toString() === parsed.network.toString() && r.mask.toString() === parsed.mask.toString(),
-    );
-    const newNextHop = nextHop && isValidIPv4(nextHop)
-      ? new IPAddress(nextHop)
-      : current?.nextHop ?? null;
-    if (!newNextHop) return `Set-NetRoute : No MSFT_NetRoute objects found with property 'DestinationPrefix' equal to '${dest}'.`;
-    if (current) ctx.device.removeRoute(parsed.network, parsed.mask);
-    ctx.device.addStaticRoute(parsed.network, parsed.mask, newNextHop, current?.metric ?? 256);
-    return '';
-  }
-
 export function handleGetNetAdapter(ctx: PSNetContext, args: string[]): string {
     const params = parsePSArgs(args);
     const nameFilter = (params.get('name') ?? params.get('_positional') ?? '').replace(/^["']|["']$/g, '').toLowerCase();
@@ -373,7 +152,7 @@ export function handleGetNetAdapter(ctx: PSNetContext, args: string[]): string {
       const mac = port.getMAC()?.toString()?.replace(/:/g, '-').toUpperCase() ?? '00-00-00-00-00-00';
       const status = port.isAdminDown() ? 'Disabled' : (port.getIsUp() ? 'Up' : 'Disconnected');
 
-      adapterEntries.push({ displayName, desc: 'Intel(R) Ethernet Connection', ifIndex: idx + 2, status, mac, speed: formatLinkSpeedMbps(port.getNegotiatedSpeed()) });
+      adapterEntries.push({ displayName, desc: 'Intel(R) Ethernet Connection', ifIndex: adapterIfIndex(idx), status, mac, speed: formatLinkSpeedMbps(port.getNegotiatedSpeed()) });
       idx++;
     }
 
@@ -381,7 +160,7 @@ export function handleGetNetAdapter(ctx: PSNetContext, args: string[]): string {
     const wifiOverride = ctx.device.adapterOverrides.get('wi-fi');
     const wifiDisplayName = wifiOverride?.displayName ?? 'Wi-Fi';
     const wifiStatus = wifiOverride?.status ?? 'Up';
-    adapterEntries.push({ displayName: wifiDisplayName, desc: 'Intel(R) Wireless-AC 9560 160MHz', ifIndex: idx + 2, status: wifiStatus, mac: '02-00-00-FF-FF-01', speed: '54 Mbps' });
+    adapterEntries.push({ displayName: wifiDisplayName, desc: 'Intel(R) Wireless-AC 9560 160MHz', ifIndex: adapterIfIndex(idx), status: wifiStatus, mac: '02-00-00-FF-FF-01', speed: '54 Mbps' });
 
     // Filter by name — exact match unless wildcard '*' or '?' is present
     const filteredEntries = nameFilter

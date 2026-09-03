@@ -9,6 +9,7 @@ export const NET_IP_ADDRESS_TYPES: readonly NetIPAddressType[] = ['Unicast', 'An
 export const NET_POLICY_STORES: readonly NetPolicyStore[] = ['ActiveStore', 'PersistentStore'];
 
 export const MAX_PREFIX_LENGTH: Record<NetAddressFamily, number> = { IPv4: 32, IPv6: 128 };
+export const TIMESPAN_MAX_SECONDS = 10675199.02 * 86400;
 
 export type ParsedNetAddress =
   | { family: 'IPv4'; value: IPAddress; text: string }

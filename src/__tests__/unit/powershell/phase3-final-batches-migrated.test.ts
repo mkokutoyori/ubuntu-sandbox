@@ -81,12 +81,13 @@ describe('Net IP / Route mutations', () => {
     expect(out).toContain('10.20.30.40');
   });
 
-  it('Set-NetRoute can change the next hop', async () => {
+  it('Set-NetRoute SELECTS by next hop — it cannot change it', async () => {
     const sh = createShell();
     await run(sh, 'New-NetRoute -DestinationPrefix "192.168.77.0/24" -InterfaceAlias eth0 -NextHop "10.0.0.1"');
-    await run(sh, 'Set-NetRoute -DestinationPrefix "192.168.77.0/24" -NextHop "10.0.0.2"');
-    const out = await run(sh, 'Get-NetRoute');
-    expect(out).toContain('10.0.0.2');
+    await run(sh, 'Set-NetRoute -DestinationPrefix "192.168.77.0/24" -NextHop "10.0.0.1" -RouteMetric 44');
+    const out = await run(sh, 'Get-NetRoute -DestinationPrefix "192.168.77.0/24"');
+    expect(out).toContain('10.0.0.1');
+    expect(out).toContain('44');
   });
 
   it('Restart-NetAdapter cycles status without error', async () => {

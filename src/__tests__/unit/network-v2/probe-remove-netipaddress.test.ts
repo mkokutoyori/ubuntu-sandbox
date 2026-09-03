@@ -53,10 +53,22 @@ async function machine(): Promise<{ pc: WindowsPC; sh: Shell }> {
   await run(sh, 'New-NetIPAddress -IPAddress 10.1.1.1 -InterfaceAlias "Ethernet 0" -PrefixLength 24');
   await run(sh, 'New-NetIPAddress -IPAddress 10.2.2.2 -InterfaceAlias "Ethernet 1" -PrefixLength 25');
   await run(sh, 'New-NetIPAddress -IPAddress 2001:db8::5 -InterfaceAlias "Ethernet 0" -PrefixLength 64');
+  await run(sh, '$ConfirmPreference = "None"');
   return { pc, sh };
 }
 
 const table = async (sh: Shell) => run(sh, 'Get-NetIPAddress | Format-Table IPAddress');
+
+describe('Remove-NetIPAddress — elle DEMANDE confirmation', () => {
+  it('sans reponse elle ne retire rien, et -Confirm:$false passe outre', async () => {
+    const { sh } = await machine();
+    await run(sh, '$ConfirmPreference = "High"');
+    expect(await run(sh, 'Remove-NetIPAddress -IPAddress 10.1.1.1')).toContain('NonInteractive');
+    expect(await table(sh)).toContain('10.1.1.1');
+    expect(await run(sh, 'Remove-NetIPAddress -IPAddress 10.1.1.1 -Confirm:$false')).toBe('');
+    expect(await table(sh)).not.toContain('10.1.1.1');
+  });
+});
 
 describe('Remove-NetIPAddress — chaque parametre est un filtre', () => {
   it('TEMOIN : retire par adresse', async () => {

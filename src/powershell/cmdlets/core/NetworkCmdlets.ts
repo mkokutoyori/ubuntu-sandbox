@@ -13,17 +13,23 @@ import { PSRuntimeError } from '@/powershell/runtime/PSRuntime';
 import type { PSValue } from '@/powershell/runtime/PSEnvironment';
 import { IPAddress, MACAddress } from '@/network/core/types';
 import type {
-  NetworkAdapterInfo, IPAddressInfo, INetworkProvider, NetIPAddressUpdate,
+  NetworkAdapterInfo, IPAddressInfo, INetworkProvider, NetIPAddressUpdate, RouteInfo,
 } from '@/powershell/providers/PSProviders';
 import { psValueToString } from '@/powershell/runtime/PSExpansion';
 import { makeTimeSpan } from './DateTimeCmdlets';
+import { NON_INTERACTIVE_HOST, confirmationDue } from '../confirmation';
 import {
-  type NetIPAddressSelection, noMatchingNetIPAddress, planNetIPAddress,
-  prefixLengthProblem, selectNetIPAddresses,
+  type NetIPAddressSelection, NO_MATCHING_INTERFACE, TIMESPAN_MAX_SECONDS, matchEnumValue,
+  noMatchingNetIPAddress, planNetIPAddress, prefixLengthProblem, selectNetIPAddresses,
 } from '@/network/devices/windows/netIpAddress';
+import { LOOPBACK_IFALIAS } from '@/network/devices/windows/WindowsLoopbackRoutes';
+import { LOOPBACK_IFINDEX } from '@/network/devices/windows/WindowsInterfaceNaming';
+import {
+  type NetRouteSelection, type NetRouteUpdate, MAX_ROUTE_METRIC, NET_ROUTE_PUBLISH,
+  netRouteKey, noMatchingNetRoute, planNetRoute, selectNetRoutes,
+} from '@/network/devices/windows/netRoute';
 
-function lifetimeSecondsOf(ctx: CmdletContext, key: string): number | undefined {
-  const raw = ctx.named[key];
+function lifetimeSeconds(raw: PSValue | undefined): number | undefined {
   if (raw === undefined) return undefined;
   if (raw !== null && typeof raw === 'object' && !Array.isArray(raw)) {
     const total = (raw as Record<string, PSValue>).TotalSeconds;
@@ -33,6 +39,10 @@ function lifetimeSecondsOf(ctx: CmdletContext, key: string): number | undefined 
   if (!match) return undefined;
   return Math.round(parseInt(match[1] ?? '0', 10) * 86400
     + parseInt(match[2], 10) * 3600 + parseInt(match[3], 10) * 60 + parseFloat(match[4]));
+}
+
+function lifetimeSecondsOf(ctx: CmdletContext, key: string): number | undefined {
+  return lifetimeSeconds(ctx.named[key]);
 }
 
 function requireNetwork(ctx: CmdletContext): INetworkProvider {
@@ -57,9 +67,8 @@ function ipToPSObject(ip: IPAddressInfo): Record<string, PSValue> {
   // ValidLifetime/PreferredLifetime are TimeSpans on a real host; leased
   // addresses carry the residual lease time, everything else is "forever"
   // (TimeSpan.MaxValue, ~10675199 days — what Get-NetIPAddress prints).
-  const FOREVER_MS = 10675199.02 * 86400 * 1000;
-  const validMs = ip.validLifetimeSeconds !== undefined ? ip.validLifetimeSeconds * 1000 : FOREVER_MS;
-  const prefMs = ip.preferredLifetimeSeconds !== undefined ? ip.preferredLifetimeSeconds * 1000 : FOREVER_MS;
+  const validMs = (ip.validLifetimeSeconds ?? TIMESPAN_MAX_SECONDS) * 1000;
+  const prefMs = (ip.preferredLifetimeSeconds ?? TIMESPAN_MAX_SECONDS) * 1000;
   return {
     IPAddress:     ip.ipAddress,
     PrefixLength:  ip.prefixLength,
@@ -329,25 +338,63 @@ export class GetNetIPConfigurationCmdlet implements ICmdlet {
   readonly name = 'get-netipconfiguration';
   readonly displayName = 'Get-NetIPConfiguration';
   readonly aliases = [] as const;
+  readonly description = 'Gets IP network configuration.';
+  readonly parameters = ['InterfaceAlias', 'InterfaceIndex', 'All', 'Detailed'] as const;
 
   execute(ctx: CmdletContext): PSValue {
     const net = requireNetwork(ctx);
-    const adapters = net.getAdapters();
-    const gateway = net.getDefaultGateway() ?? '';
-    return adapters.map(a => {
-      const ips = net.getIPAddresses(a.name);
-      const v4  = ips.find(ip => ip.addressFamily === 'IPv4');
-      return {
-        InterfaceAlias:       a.name,
-        InterfaceDescription: a.displayName,
-        InterfaceIndex:       a.ifIndex,
+    for (const [key, name] of [['allcompartments', 'AllCompartments'], ['compartmentid', 'CompartmentId']] as const) {
+      if (ctx.named[key] !== undefined) {
+        ctx.emitError(`Get-NetIPConfiguration : The -${name} parameter is not implemented in this simulator: network compartments are not modelled.`);
+        return null;
+      }
+    }
+    const alias = ctx.named['interfacealias'] ?? ctx.positional[0];
+    const index = ctx.named['interfaceindex'];
+    const named = alias !== undefined && alias !== null ? psValueToString(alias)
+      : index !== undefined && index !== null
+        ? net.resolveNetInterface({ index: Number(psValueToString(index)) })?.alias ?? psValueToString(index)
+        : null;
+    if (named !== null && net.resolveNetInterface({ alias: named }) === null
+      && named.toLowerCase() !== LOOPBACK_IFALIAS.toLowerCase()) {
+      ctx.emitError(`Get-NetIPConfiguration : ${NO_MATCHING_INTERFACE}`);
+      return null;
+    }
+
+    const all = ctx.named['all'] === true;
+    const detailed = ctx.named['detailed'] === true;
+    const defaultRoutes = net.getRoutes().filter(r => r.destinationPrefix === '0.0.0.0/0');
+    const rows: Array<{ alias: string; description: string; ifIndex: number; connected: boolean }> =
+      net.getAdapters().map(a => ({
+        alias: a.name, description: a.displayName, ifIndex: a.ifIndex, connected: a.status === 'Up',
+      }));
+    if (all || named?.toLowerCase() === LOOPBACK_IFALIAS.toLowerCase()) {
+      rows.push({
+        alias: LOOPBACK_IFALIAS, description: 'Software Loopback Interface 1',
+        ifIndex: LOOPBACK_IFINDEX, connected: true,
+      });
+    }
+
+    const kept = named !== null
+      ? rows.filter(r => r.alias.toLowerCase() === named.toLowerCase())
+      : all ? rows : rows.filter(r => r.connected);
+    return kept.map(r => {
+      const ips = net.getIPAddresses(r.alias);
+      const v4 = ips.find(ip => ip.addressFamily === 'IPv4');
+      const onLink = defaultRoutes.find(d => d.ifAlias.toLowerCase() === r.alias.toLowerCase());
+      const row: Record<string, PSValue> = {
+        InterfaceAlias:       r.alias,
+        InterfaceDescription: r.description,
+        InterfaceIndex:       r.ifIndex,
         IPv4Address:          v4 ? v4.ipAddress : '',
         IPv6Address:          ips.find(ip => ip.addressFamily === 'IPv6')?.ipAddress ?? '',
-        IPv4DefaultGateway:   gateway,
-        DNSServer:            net.getDnsServers(a.name).join(', '),
-        DhcpServer:           net.getDhcpServer?.(a.name) ?? '',
-        NetAdapter:           { Status: a.status } as Record<string, PSValue>,
-      } as Record<string, PSValue>;
+        IPv4DefaultGateway:   onLink?.nextHop ?? '',
+        DNSServer:            net.getDnsServers(r.alias).join(', '),
+        DhcpServer:           net.getDhcpServer?.(r.alias) ?? '',
+        NetAdapter:           { Status: r.connected ? 'Up' : 'Disconnected' } as Record<string, PSValue>,
+      };
+      if (detailed) row.ComputerName = ctx.env.get('env:COMPUTERNAME') ?? '';
+      return row;
     }) as PSValue;
   }
 }
@@ -357,19 +404,93 @@ export class GetNetIPConfigurationCmdlet implements ICmdlet {
 // executor (it has the formatted-table output) when there's nothing
 // structured to emit, so users still see the header columns.
 
+const NET_ROUTE_FILTERS = ['DestinationPrefix', 'InterfaceAlias', 'InterfaceIndex', 'NextHop',
+  'AddressFamily', 'RouteMetric', 'Publish', 'Protocol', 'PolicyStore', 'State',
+  'ValidLifetime', 'PreferredLifetime'] as const;
+
+const NET_ROUTE_UNSUPPORTED: ReadonlyArray<readonly [string, string, string]> = [
+  ['compartmentid', 'CompartmentId', 'network compartments are not modelled'],
+  ['includeallcompartments', 'IncludeAllCompartments', 'network compartments are not modelled'],
+  ['interfacemetric', 'InterfaceMetric', 'an interface carries no metric of its own here'],
+  ['associatedipinterface', 'AssociatedIPInterface', 'MSFT_NetIPInterface instances are not modelled'],
+];
+
+function unsupportedNetRouteFilter(ctx: CmdletContext): string | null {
+  for (const [key, name, reason] of NET_ROUTE_UNSUPPORTED) {
+    if (ctx.named[key] !== undefined) {
+      return `The -${name} parameter is not implemented in this simulator: ${reason}.`;
+    }
+  }
+  return null;
+}
+
+function netRouteSelectionOf(
+  ctx: CmdletContext, net: INetworkProvider, filters: readonly string[],
+): NetRouteSelection {
+  const allowed = new Set(filters.map(f => f.toLowerCase()));
+  const read = (key: string): PSValue[] | undefined => {
+    const raw = allowed.has(key) ? ctx.named[key] : undefined;
+    if (raw === undefined) return undefined;
+    return Array.isArray(raw) ? raw : [raw];
+  };
+  const list = (key: string): string[] | undefined => read(key)?.map(psValueToString);
+  const spans = (key: string): string[] | undefined =>
+    read(key)?.map(v => String(lifetimeSeconds(v) ?? TIMESPAN_MAX_SECONDS));
+  const aliases = list('interfacealias');
+  return {
+    destinationPrefix: list('destinationprefix'),
+    interfaceAlias: aliases?.map(a => net.resolveNetInterface({ alias: a })?.alias ?? a),
+    interfaceIndex: list('interfaceindex'),
+    nextHop: list('nexthop'),
+    addressFamily: list('addressfamily'),
+    routeMetric: list('routemetric'),
+    publish: list('publish'),
+    protocol: list('protocol'),
+    policyStore: list('policystore'),
+    state: list('state'),
+    validLifetime: spans('validlifetime'),
+    preferredLifetime: spans('preferredlifetime'),
+  };
+}
+
+function routeToPSObject(r: RouteInfo): Record<string, PSValue> {
+  return {
+    DestinationPrefix: r.destinationPrefix,
+    InterfaceAlias:    r.ifAlias,
+    InterfaceIndex:    r.ifIndex ?? 0,
+    NextHop:           r.nextHop,
+    RouteMetric:       r.routeMetric,
+    AddressFamily:     r.addressFamily ?? (r.destinationPrefix.includes(':') ? 'IPv6' : 'IPv4'),
+    Publish:           r.publish ?? 'No',
+    Protocol:          r.protocol ?? 'NetMgmt',
+    PolicyStore:       r.policyStore ?? 'ActiveStore',
+    State:             'Alive',
+    ValidLifetime:     makeTimeSpan((r.validLifetimeSeconds ?? TIMESPAN_MAX_SECONDS) * 1000) as unknown as PSValue,
+    PreferredLifetime: makeTimeSpan((r.preferredLifetimeSeconds ?? TIMESPAN_MAX_SECONDS) * 1000) as unknown as PSValue,
+  };
+}
+
 export class GetNetRouteCmdlet implements ICmdlet {
   readonly name = 'get-netroute';
   readonly displayName = 'Get-NetRoute';
   readonly aliases = [] as const;
+  readonly description = 'Gets the IP route information from the IP routing table.';
+  readonly parameters = NET_ROUTE_FILTERS;
 
   execute(ctx: CmdletContext): PSValue {
-    const routes = requireNetwork(ctx).getRoutes();
-    return routes.map(r => ({
-      DestinationPrefix: r.destinationPrefix,
-      InterfaceAlias:    r.ifAlias,
-      NextHop:           r.nextHop,
-      RouteMetric:       r.routeMetric,
-    } as Record<string, PSValue>)) as PSValue;
+    const net = requireNetwork(ctx);
+    const unsupported = unsupportedNetRouteFilter(ctx);
+    if (unsupported) { ctx.emitError(`Get-NetRoute : ${unsupported}`); return null; }
+    const selection = netRouteSelectionOf(ctx, net, NET_ROUTE_FILTERS);
+    if (selection.destinationPrefix === undefined && ctx.positional[0] !== undefined) {
+      selection.destinationPrefix = [psValueToString(ctx.positional[0])];
+    }
+    const matched = selectNetRoutes(net.getRoutes(), selection);
+    if (matched.length === 0 && Object.values(selection).some(v => v !== undefined)) {
+      ctx.emitError(`Get-NetRoute : ${noMatchingNetRoute(selection)}`);
+      return null;
+    }
+    return matched.map(routeToPSObject) as PSValue;
   }
 }
 
@@ -641,6 +762,10 @@ export class RemoveNetIPAddressCmdlet implements ICmdlet {
       }
       return null;
     }
+    if (confirmationDue(ctx, 'High')) {
+      ctx.emitError(`Remove-NetIPAddress : ${NON_INTERACTIVE_HOST}`);
+      return null;
+    }
     const removed: Record<string, PSValue>[] = [];
     for (const entry of matched) {
       try {
@@ -660,19 +785,57 @@ export class NewNetRouteCmdlet implements ICmdlet {
   readonly name = 'new-netroute';
   readonly displayName = 'New-NetRoute';
   readonly aliases = [] as const;
+  readonly pipelineByPropertyName = true as const;
+  readonly description = 'Creates a route in the IP routing table.';
+  readonly parameters = ['DestinationPrefix', 'InterfaceAlias', 'InterfaceIndex', 'NextHop',
+    'AddressFamily', 'RouteMetric', 'Publish', 'Protocol', 'PolicyStore',
+    'ValidLifetime', 'PreferredLifetime', 'WhatIf', 'Confirm'] as const;
 
   execute(ctx: CmdletContext): PSValue {
     const net = requireNetwork(ctx);
-    const dest    = psValueToString(ctx.named['destinationprefix'] ?? '');
-    const ifAlias = psValueToString(ctx.named['interfacealias'] ?? '');
-    const nextHop = psValueToString(ctx.named['nexthop'] ?? '');
-    const metric  = Number(ctx.named['routemetric'] ?? 256);
-    if (!dest || !ifAlias || !nextHop) {
-      ctx.emitError('New-NetRoute requires -DestinationPrefix, -InterfaceAlias, -NextHop');
+    const unsupported = unsupportedNetRouteFilter(ctx);
+    if (unsupported) { ctx.emitError(`New-NetRoute : ${unsupported}`); return null; }
+    const arg = (key: string): string | undefined =>
+      ctx.named[key] === undefined ? undefined : psValueToString(ctx.named[key]);
+    const decision = planNetRoute({
+      destinationPrefix: arg('destinationprefix')
+        ?? (ctx.positional[0] === undefined ? undefined : psValueToString(ctx.positional[0])),
+      interfaceAlias: arg('interfacealias'),
+      interfaceIndex: arg('interfaceindex'),
+      nextHop: arg('nexthop'),
+      addressFamily: arg('addressfamily'),
+      routeMetric: arg('routemetric'),
+      publish: arg('publish'),
+      protocol: arg('protocol'),
+      policyStore: arg('policystore'),
+      validLifetimeSeconds: lifetimeSecondsOf(ctx, 'validlifetime'),
+      preferredLifetimeSeconds: lifetimeSecondsOf(ctx, 'preferredlifetime'),
+    }, { resolveInterface: spec => net.resolveNetInterface(spec) });
+    if (!decision.ok) { ctx.emitError(`New-NetRoute : ${decision.message}`); return null; }
+    const plan = decision.plan;
+
+    const identity = {
+      destinationPrefix: plan.destination.text,
+      ifAlias: plan.iface.alias,
+      nextHop: plan.nextHop,
+    };
+    const key = netRouteKey(identity);
+    if (net.getRoutes().some(r => netRouteKey(r) === key)) {
+      ctx.emitError(`New-NetRoute : Instance MSFT_NetRoute already exists`);
       return null;
     }
-    net.addRoute(dest, ifAlias, nextHop, metric);
-    return null;
+    if (ctx.named['whatif'] === true) {
+      ctx.emit(`What if: Performing the operation "Create" on target "${plan.destination.text}".`);
+      return null;
+    }
+    net.addRoute(plan.destination.text, plan.iface.alias, plan.nextHop, plan.routeMetric, {
+      publish: plan.publish, protocol: plan.protocol, policyStore: plan.policyStore,
+      addressFamily: plan.destination.family, ifIndex: plan.iface.ifIndex,
+      validLifetimeSeconds: plan.validLifetimeSeconds,
+      preferredLifetimeSeconds: plan.preferredLifetimeSeconds,
+    });
+    const created = net.getRoutes().find(r => netRouteKey(r) === key);
+    return created ? routeToPSObject(created) : null;
   }
 }
 
@@ -680,18 +843,38 @@ export class RemoveNetRouteCmdlet implements ICmdlet {
   readonly name = 'remove-netroute';
   readonly displayName = 'Remove-NetRoute';
   readonly aliases = [] as const;
+  readonly pipelineByPropertyName = true as const;
+  readonly description = 'Removes IP routes from the IP routing table.';
+  readonly parameters = [...NET_ROUTE_FILTERS, 'PassThru', 'WhatIf', 'Confirm'] as const;
 
   execute(ctx: CmdletContext): PSValue {
     const net = requireNetwork(ctx);
-    const dest = psValueToString(ctx.named['destinationprefix'] ?? ctx.positional[0] ?? '');
-    if (!dest) { ctx.emitError('Remove-NetRoute requires -DestinationPrefix'); return null; }
-    const ifAlias = ctx.named['interfacealias'] ? psValueToString(ctx.named['interfacealias']) : undefined;
-    net.removeRoute(dest, ifAlias);
-    return null;
+    const unsupported = unsupportedNetRouteFilter(ctx);
+    if (unsupported) { ctx.emitError(`Remove-NetRoute : ${unsupported}`); return null; }
+    const selection = netRouteSelectionOf(ctx, net, NET_ROUTE_FILTERS);
+    if (selection.destinationPrefix === undefined && ctx.positional[0] !== undefined) {
+      selection.destinationPrefix = [psValueToString(ctx.positional[0])];
+    }
+    const matched = selectNetRoutes(net.getRoutes(), selection);
+    if (matched.length === 0) {
+      ctx.emitError(`Remove-NetRoute : ${noMatchingNetRoute(selection)}`);
+      return null;
+    }
+    if (ctx.named['whatif'] === true) {
+      for (const r of matched) {
+        ctx.emit(`What if: Performing the operation "Remove-NetRoute" on target "DestinationPrefix: ${r.destinationPrefix}, InterfaceAlias: ${r.ifAlias}".`);
+      }
+      return null;
+    }
+    if (confirmationDue(ctx, 'High')) {
+      ctx.emitError(`Remove-NetRoute : ${NON_INTERACTIVE_HOST}`);
+      return null;
+    }
+    const removed = matched.map(routeToPSObject);
+    for (const r of matched) net.removeRoute(r);
+    return ctx.named['passthru'] === true ? (removed as PSValue) : null;
   }
 }
-
-// ── Set-NetIPAddress / Set-NetRoute ───────────────────────────────────────
 
 const NET_IP_SET_FILTERS = ['IPAddress', 'InterfaceAlias', 'InterfaceIndex', 'AddressFamily',
   'AddressState', 'PrefixOrigin', 'SuffixOrigin', 'Type', 'PolicyStore'] as const;
@@ -749,22 +932,64 @@ export class SetNetIPAddressCmdlet implements ICmdlet {
   }
 }
 
+const NET_ROUTE_SET_FILTERS = ['DestinationPrefix', 'InterfaceAlias', 'InterfaceIndex',
+  'NextHop', 'AddressFamily', 'Protocol', 'PolicyStore'] as const;
+
 export class SetNetRouteCmdlet implements ICmdlet {
   readonly name = 'set-netroute';
   readonly displayName = 'Set-NetRoute';
   readonly aliases = [] as const;
+  readonly pipelineByPropertyName = true as const;
+  readonly description = 'Sets route information in the IP routing table.';
+  readonly parameters = [...NET_ROUTE_SET_FILTERS, 'Publish', 'RouteMetric',
+    'ValidLifetime', 'PreferredLifetime', 'PassThru', 'WhatIf', 'Confirm'] as const;
 
   execute(ctx: CmdletContext): PSValue {
     const net = requireNetwork(ctx);
-    const dest = psValueToString(ctx.named['destinationprefix'] ?? ctx.positional[0] ?? '');
-    if (!dest) { ctx.emitError('Set-NetRoute requires -DestinationPrefix'); return null; }
-    const opts: { nextHop?: string; routeMetric?: number; ifAlias?: string } = {};
-    if (ctx.named['nexthop']        !== undefined) opts.nextHop      = psValueToString(ctx.named['nexthop']);
-    if (ctx.named['routemetric']    !== undefined) opts.routeMetric  = Number(ctx.named['routemetric']);
-    if (ctx.named['interfacealias'] !== undefined) opts.ifAlias      = psValueToString(ctx.named['interfacealias']);
-    const msg = net.setRoute(dest, opts);
-    if (msg) ctx.emitError(msg);
-    return null;
+    const unsupported = unsupportedNetRouteFilter(ctx);
+    if (unsupported) { ctx.emitError(`Set-NetRoute : ${unsupported}`); return null; }
+    const selection = netRouteSelectionOf(ctx, net, NET_ROUTE_SET_FILTERS);
+    if (selection.destinationPrefix === undefined && ctx.positional[0] !== undefined) {
+      selection.destinationPrefix = [psValueToString(ctx.positional[0])];
+    }
+    const matched = selectNetRoutes(net.getRoutes(), selection);
+    if (matched.length === 0) {
+      ctx.emitError(`Set-NetRoute : ${noMatchingNetRoute(selection)}`);
+      return null;
+    }
+
+    const update: NetRouteUpdate = {};
+    if (ctx.named['publish'] !== undefined) {
+      const value = matchEnumValue(NET_ROUTE_PUBLISH, psValueToString(ctx.named['publish']));
+      if (value === null) {
+        ctx.emitError(`Set-NetRoute : Cannot validate argument on parameter 'Publish'. The argument does not belong to the set "${NET_ROUTE_PUBLISH.join(',')}".`);
+        return null;
+      }
+      update.publish = value;
+    }
+    if (ctx.named['routemetric'] !== undefined) {
+      const given = psValueToString(ctx.named['routemetric']).trim();
+      if (!/^\d+$/.test(given) || parseInt(given, 10) > MAX_ROUTE_METRIC) {
+        ctx.emitError(`Set-NetRoute : Cannot convert value "${given}" to type "System.UInt16". Error: "Value was either too large or too small for a UInt16."`);
+        return null;
+      }
+      update.routeMetric = parseInt(given, 10);
+    }
+    update.validLifetimeSeconds = lifetimeSecondsOf(ctx, 'validlifetime');
+    update.preferredLifetimeSeconds = lifetimeSecondsOf(ctx, 'preferredlifetime');
+
+    if (ctx.named['whatif'] === true) {
+      for (const r of matched) {
+        ctx.emit(`What if: Performing the operation "Set-NetRoute" on target "DestinationPrefix: ${r.destinationPrefix}, InterfaceAlias: ${r.ifAlias}".`);
+      }
+      return null;
+    }
+    for (const r of matched) {
+      const message = net.setRoute(r, update);
+      if (message) ctx.emitError(`Set-NetRoute : ${message}`);
+    }
+    if (ctx.named['passthru'] !== true) return null;
+    return selectNetRoutes(net.getRoutes(), selection).map(routeToPSObject) as PSValue;
   }
 }
 

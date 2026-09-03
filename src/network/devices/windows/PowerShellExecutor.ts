@@ -47,6 +47,7 @@ import * as net from './PSNetCmdlets';
 import type { PSNetContext } from './PSNetCmdlets';
 import type { IEventBus } from '@/events/EventBus';
 import type { NetIPAddressEntry } from './netIpAddress';
+import type { NetRouteEntry } from './netRoute';
 
 // ─── Constants ────────────────────────────────────────────────────
 
@@ -131,7 +132,7 @@ export interface PSDeviceContext {
    * through these references; the interpreter providers do too.
    */
   readonly extraIPs:             Map<string, NetIPAddressEntry>;
-  readonly extraRoutes:          Map<string, { ifAlias: string; nextHop: string; metric: number }>;
+  readonly extraRoutes:          Map<string, NetRouteEntry>;
   readonly adapterOverrides:     Map<string, { status?: string; displayName?: string }>;
   readonly dynamicFirewallRules: Map<string, { name: string; displayName: string; enabled: boolean; action: string; direction: string; protocol: string; localPort: string; remotePort: string; description: string }>;
   readonly networkProfiles:      Map<number, string>;
@@ -2393,29 +2394,9 @@ export class PowerShellExecutor {
       return this.handleGetModule(args);
     }
 
-    // Get-NetIPConfiguration
-    if (cmdLower === 'get-netipconfiguration') {
-      return net.handleGetNetIPConfiguration(this.buildPSNetCtx(), args);
-    }
-
     // Get-NetIPAddress
     if (cmdLower === 'get-netipaddress') {
       return net.handleGetNetIPAddress(this.buildPSNetCtx(), args);
-    }
-
-    // Get-NetRoute
-    if (cmdLower === 'get-netroute') {
-      return net.handleGetNetRoute(this.buildPSNetCtx(), args);
-    }
-
-    // New-NetRoute
-    if (cmdLower === 'new-netroute') {
-      return net.handleNewNetRoute(this.buildPSNetCtx(), args);
-    }
-
-    // Remove-NetRoute
-    if (cmdLower === 'remove-netroute') {
-      return net.handleRemoveNetRoute(this.buildPSNetCtx(), args);
     }
 
     // Get-DnsClientServerAddress
@@ -2495,11 +2476,6 @@ export class PowerShellExecutor {
       // up), visible to ipconfig/netsh — not just a PS-only override flip.
       net.handleDisableEnableNetAdapter(this.buildPSNetCtx(), args, 'Disabled');
       return net.handleDisableEnableNetAdapter(this.buildPSNetCtx(), args, 'Up');
-    }
-
-    // Set-NetRoute
-    if (cmdLower === 'set-netroute') {
-      return net.handleSetNetRoute(this.buildPSNetCtx(), args);
     }
 
     // Test-NetConnection
@@ -3512,6 +3488,7 @@ export class PowerShellExecutor {
     { type: 'Cmdlet', name: 'Set-DnsClientServerAddress',    version: '1.0.0.0', source: 'DnsClient',                      noun: 'DnsClientServerAddress' },
     { type: 'Cmdlet', name: 'Set-Location',                  version: '3.1.0.0', source: 'Microsoft.PowerShell.Management', noun: 'Location' },
     { type: 'Cmdlet', name: 'Set-NetIPAddress',              version: '1.0.0.0', source: 'NetTCPIP',                       noun: 'NetIPAddress' },
+    { type: 'Cmdlet', name: 'Set-NetRoute',                  version: '1.0.0.0', source: 'NetTCPIP',                       noun: 'NetRoute' },
     { type: 'Cmdlet', name: 'Set-Service',                   version: '3.1.0.0', source: 'Microsoft.PowerShell.Management', noun: 'Service' },
     { type: 'Cmdlet', name: 'Start-Service',                 version: '3.1.0.0', source: 'Microsoft.PowerShell.Management', noun: 'Service' },
     { type: 'Cmdlet', name: 'Stop-Process',                  version: '3.1.0.0', source: 'Microsoft.PowerShell.Management', noun: 'Process' },
@@ -3648,7 +3625,7 @@ export class PowerShellExecutor {
     { Name: 'Microsoft.PowerShell.Management',     Version: '3.1.0.0', ModuleType: 'Manifest', ExportedCommands: ['Get-ChildItem', 'Get-Content', 'Get-Item', 'Get-ItemProperty', 'Get-Location', 'Set-Location', 'Push-Location', 'Pop-Location', 'Set-Content', 'Add-Content', 'Copy-Item', 'Move-Item', 'Rename-Item', 'Remove-Item', 'New-Item', 'Test-Path', 'Get-Process', 'Stop-Process', 'Start-Process', 'Get-Service', 'Start-Service', 'Stop-Service', 'Restart-Service'] },
     { Name: 'Microsoft.PowerShell.Utility',        Version: '3.1.0.0', ModuleType: 'Manifest', ExportedCommands: ['Get-Date', 'Write-Host', 'Write-Output', 'Write-Error', 'Write-Warning', 'Format-List', 'Format-Table', 'ConvertTo-Json', 'ConvertFrom-Json', 'Select-String', 'Compare-Object', 'Start-Sleep', 'New-TimeSpan'] },
     { Name: 'Microsoft.PowerShell.LocalAccounts',  Version: '1.0.0.0', ModuleType: 'Manifest', ExportedCommands: ['Get-LocalUser', 'New-LocalUser', 'Set-LocalUser', 'Remove-LocalUser', 'Add-LocalGroupMember', 'Get-LocalGroup', 'New-LocalGroup'] },
-    { Name: 'NetTCPIP',                            Version: '1.0.0.0', ModuleType: 'Manifest', ExportedCommands: ['Get-NetIPAddress', 'New-NetIPAddress', 'Remove-NetIPAddress', 'Set-NetIPAddress', 'Get-NetIPConfiguration', 'Get-NetRoute', 'New-NetRoute', 'Remove-NetRoute'] },
+    { Name: 'NetTCPIP',                            Version: '1.0.0.0', ModuleType: 'Manifest', ExportedCommands: ['Get-NetIPAddress', 'New-NetIPAddress', 'Remove-NetIPAddress', 'Set-NetIPAddress', 'Get-NetIPConfiguration', 'Get-NetRoute', 'New-NetRoute', 'Remove-NetRoute', 'Set-NetRoute'] },
     { Name: 'NetAdapter',                          Version: '2.0.0.0', ModuleType: 'Manifest', ExportedCommands: ['Get-NetAdapter', 'Disable-NetAdapter', 'Enable-NetAdapter', 'Rename-NetAdapter'] },
     { Name: 'DnsClient',                           Version: '1.0.0.0', ModuleType: 'Manifest', ExportedCommands: ['Get-DnsClientServerAddress', 'Set-DnsClientServerAddress', 'Resolve-DnsName', 'Clear-DnsClientCache'] },
     { Name: 'Storage',                             Version: '2.0.0.0', ModuleType: 'Manifest', ExportedCommands: ['Get-Disk', 'Get-Partition', 'Get-Volume', 'Initialize-Disk', 'New-Partition', 'Format-Volume'] },
@@ -3764,11 +3741,6 @@ export class PowerShellExecutor {
 
 
 
-
-  // ─── Set-NetRoute ──────────────────────────────────────────────────
-
-
-  // ─── Set-NetIPAddress (upsert) ─────────────────────────────────────
 
   // ─── Firewall Rules ────────────────────────────────────────────────
 

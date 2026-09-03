@@ -83,7 +83,8 @@ describe('New-NetIPAddress — l adresse et l interface', () => {
 
   it('accepte -InterfaceIndex, le second jeu de parametres', async () => {
     const { pc, sh } = machine();
-    const out = await run(sh, 'New-NetIPAddress -InterfaceIndex 1 -IPAddress 192.168.0.1 -PrefixLength 24 -DefaultGateway 192.168.0.5');
+    const index = (await run(sh, '(Get-NetAdapter -Name "Ethernet 0").ifIndex')).trim();
+    const out = await run(sh, `New-NetIPAddress -InterfaceIndex ${index} -IPAddress 192.168.0.1 -PrefixLength 24 -DefaultGateway 192.168.0.5`);
     expect(out).toContain('192.168.0.1');
     expect(pc.getPort('eth0')!.getIPAddress()?.toString()).toBe('192.168.0.1');
   });

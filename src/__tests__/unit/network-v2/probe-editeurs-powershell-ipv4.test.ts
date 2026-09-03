@@ -78,7 +78,7 @@ describe('an IPv4 address with an octet over 255 is not an address', () => {
     const run = shell(pc);
     const err = await run(
       'New-NetIPAddress -InterfaceAlias Ethernet0 -IPAddress 999.1.1.1 -PrefixLength 24');
-    expect(err).toContain('not a valid IPv4 address');
+    expect(err).toContain('not a valid IP address');
     expect(await run('Get-NetIPAddress')).not.toContain('999.1.1.1');
   });
 
@@ -87,7 +87,7 @@ describe('an IPv4 address with an octet over 255 is not an address', () => {
       const run = shell(new WindowsPC('windows-pc', 'W1', 0, 0));
       expect(await run(
         `New-NetIPAddress -InterfaceAlias Ethernet0 -IPAddress ${bad} -PrefixLength 24`))
-        .toContain('not a valid IPv4 address');
+        .toContain('not a valid IP address');
     });
 
   it('a real address is still accepted, and shows up', async () => {
@@ -99,11 +99,13 @@ describe('an IPv4 address with an octet over 255 is not an address', () => {
     expect(await run('Get-NetIPAddress')).toContain('192.168.5.10');
   });
 
-  it('an IPv6 address is not judged by the IPv4 rule', async () => {
-    const run = shell(new WindowsPC('windows-pc', 'W1', 0, 0));
+  it('an IPv6 address is not judged by the IPv4 rule — elle est POSEE', async () => {
+    const pc = new WindowsPC('windows-pc', 'W1', 0, 0);
+    const run = shell(pc);
     expect(await run(
       'New-NetIPAddress -InterfaceAlias Ethernet0 -IPAddress "2001:db8::1" -PrefixLength 64'))
-      .not.toContain('not a valid IPv4 address');
+      .not.toContain('not a valid');
+    expect(await run('Get-NetIPAddress -AddressFamily IPv6')).toContain('2001:db8::1');
   });
 
   it('netsh and PowerShell now agree on the same bad address', async () => {

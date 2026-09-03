@@ -1228,46 +1228,49 @@ describe('9. Get‑NetIPAddress', () => {
 // ═══════════════════════════════════════════════════════════════════════════
 
 describe('10. Get‑NetIPConfiguration', () => {
-  it('shows IP configuration for adapters', async () => {
+  it('shows nothing while no interface is connected, and -All shows them anyway', async () => {
     const pc = createPC();
-    const ps = createPS(pc);
-    const out = await ps.execute('Get-NetIPConfiguration');
-    expect(out).toContain('InterfaceAlias');
-    expect(out).toContain('IPv4Address');
+    const ps = createLivePS(pc);
+    expect(await ps.execute('Get-NetIPConfiguration')).toBe('');
+    const all = await ps.execute('Get-NetIPConfiguration -All');
+    expect(all).toContain('InterfaceAlias');
+    expect(all).toContain('IPv4Address');
   });
 
-  it('-Detailed includes gateway, DNS', async () => {
+  it('-Detailed adds the computer name', async () => {
     const pc = createPC();
-    const ps = createPS(pc);
-    const out = await ps.execute('Get-NetIPConfiguration -Detailed');
-    expect(out).toContain('DNS');
+    const ps = createLivePS(pc);
+    const out = await ps.execute('Get-NetIPConfiguration -All -Detailed');
+    expect(out).toContain('DNSServer');
+    expect(out).toContain('ComputerName');
   });
 
-  it('-InterfaceAlias filter', async () => {
+  it('-InterfaceAlias names one interface, connected or not', async () => {
     const pc = createPC();
-    const ps = createPS(pc);
-    const out = await ps.execute('Get-NetIPConfiguration -InterfaceAlias "Ethernet"');
-    expect(out).toContain('Ethernet');
+    const ps = createLivePS(pc);
+    const out = await ps.execute('Get-NetIPConfiguration -InterfaceAlias "Ethernet 0"');
+    expect(out).toContain('Ethernet 0');
+    expect(out).not.toContain('Ethernet 1');
   });
 
-  it('-All includes disabled adapters', async () => {
+  it('-All includes the loopback pseudo-interface', async () => {
     const pc = createPC();
-    const ps = createPS(pc);
+    const ps = createLivePS(pc);
     const out = await ps.execute('Get-NetIPConfiguration -All');
     expect(out).toContain('Loopback');
   });
 
   it('piping to Get-NetIPAddress works', async () => {
     const pc = createPC();
-    const ps = createPS(pc);
-    await expect(ps.execute('Get-NetIPConfiguration | Get-NetIPAddress')).resolves.toBeDefined();
+    const ps = createLivePS(pc);
+    await expect(ps.execute('Get-NetIPConfiguration -All | Get-NetIPAddress')).resolves.toBeDefined();
   });
 
   it('error on bad interface name', async () => {
     const pc = createPC();
-    const ps = createPS(pc);
-    const out = await ps.execute('Get-NetIPConfiguration -InterfaceAlias NoSuch -ErrorAction SilentlyContinue');
-    expect(out).toContain('not found');
+    const ps = createLivePS(pc);
+    const out = await ps.execute('Get-NetIPConfiguration -InterfaceAlias NoSuch');
+    expect(out).toContain('No matching interface found.');
   });
 });
 
@@ -3309,56 +3312,56 @@ describe('4. Set‑NetIPAddress', () => {
 // ─────────────────────────────────────────────────────────────────────────
 describe('5. Get‑NetRoute', () => {
   it('lists routing table', async () => {
-    const pc = createPC(); const ps = createPS(pc);
+    const pc = createPC(); const ps = createLivePS(pc);
     const out = await ps.execute('Get-NetRoute');
     expect(out).toContain('DestinationPrefix');
   });
   it('-DestinationPrefix exact', async () => {
-    const pc = createPC(); const ps = createPS(pc);
+    const pc = createPC(); const ps = createLivePS(pc);
     // A default route exists only once a gateway is configured (real
     // Windows has no 0.0.0.0/0 on a gateway-less host).
-    await createLivePS(pc).execute('New-NetIPAddress -InterfaceAlias "Ethernet" -IPAddress 192.168.1.50 -PrefixLength 24 -DefaultGateway 192.168.1.1');
+    await ps.execute('New-NetIPAddress -InterfaceAlias "Ethernet" -IPAddress 192.168.1.50 -PrefixLength 24 -DefaultGateway 192.168.1.1');
     const out = await ps.execute('Get-NetRoute -DestinationPrefix "0.0.0.0/0"');
     expect(out).toContain('0.0.0.0/0');
   });
   it('-NextHop filter', async () => {
-    const pc = createPC(); const ps = createPS(pc);
+    const pc = createPC(); const ps = createLivePS(pc);
     const out = await ps.execute('Get-NetRoute -NextHop 192.168.1.1');
     // may exist, may not. We'll test that it doesn't error
     expect(out).toBeDefined();
   });
   it('-InterfaceAlias filter', async () => {
-    const pc = createPC(); const ps = createPS(pc);
+    const pc = createPC(); const ps = createLivePS(pc);
     // A connected route on the adapter exists once it has an address.
-    await createLivePS(pc).execute('New-NetIPAddress -InterfaceAlias "Ethernet" -IPAddress 192.168.1.50 -PrefixLength 24');
+    await ps.execute('New-NetIPAddress -InterfaceAlias "Ethernet" -IPAddress 192.168.1.50 -PrefixLength 24');
     const out = await ps.execute('Get-NetRoute -InterfaceAlias "Ethernet"');
     expect(out).toContain('Ethernet');
   });
   it('-RouteMetric filter', async () => {
-    const pc = createPC(); const ps = createPS(pc);
+    const pc = createPC(); const ps = createLivePS(pc);
     const out = await ps.execute('Get-NetRoute -RouteMetric 0');
     // might be empty
     expect(out).toBeDefined();
   });
   it('pipeline to Where-Object', async () => {
-    const pc = createPC(); const ps = createPS(pc);
-    await createLivePS(pc).execute('New-NetIPAddress -InterfaceAlias "Ethernet" -IPAddress 192.168.1.50 -PrefixLength 24 -DefaultGateway 192.168.1.1');
+    const pc = createPC(); const ps = createLivePS(pc);
+    await ps.execute('New-NetIPAddress -InterfaceAlias "Ethernet" -IPAddress 192.168.1.50 -PrefixLength 24 -DefaultGateway 192.168.1.1');
     const out = await ps.execute('Get-NetRoute | Where-Object DestinationPrefix -eq "0.0.0.0/0"');
     expect(out).toContain('0.0.0.0/0');
   });
   it('error on invalid DestinationPrefix', async () => {
-    const pc = createPC(); const ps = createPS(pc);
-    const out = await ps.execute('Get-NetRoute -DestinationPrefix "bad" -ErrorAction SilentlyContinue');
-    expect(out).toContain('Invalid');
+    const pc = createPC(); const ps = createLivePS(pc);
+    const out = await ps.execute('Get-NetRoute -DestinationPrefix "bad"');
+    expect(out).toContain('No MSFT_NetRoute objects found');
   });
   it('Get-Help', async () => {
-    const pc = createPC(); const ps = createPS(pc);
+    const pc = createPC(); const ps = createLivePS(pc);
     const help = await ps.execute('Get-Help Get-NetRoute');
     expect(help).toContain('SYNOPSIS');
   });
   for (let i = 0; i < 12; i++) {
     it(`extra ${i + 1}`, async () => {
-      const pc = createPC(); const ps = createPS(pc);
+      const pc = createPC(); const ps = createLivePS(pc);
       await expect(ps.execute('Get-NetRoute')).resolves.not.toThrow();
     });
   }
@@ -3369,45 +3372,46 @@ describe('5. Get‑NetRoute', () => {
 // ─────────────────────────────────────────────────────────────────────────
 describe('6. New‑NetRoute', () => {
   it('adds a static route', async () => {
-    const pc = createPC(); const ps = createPS(pc);
+    const pc = createPC(); const ps = createLivePS(pc);
     // The next-hop must be on-link (same as cmd `route add`): give the
     // adapter an address in the gateway's subnet first.
-    await createLivePS(pc).execute('New-NetIPAddress -InterfaceAlias "Ethernet" -IPAddress 192.168.1.50 -PrefixLength 24');
+    await ps.execute('New-NetIPAddress -InterfaceAlias "Ethernet" -IPAddress 192.168.1.50 -PrefixLength 24');
     await ps.execute('New-NetRoute -DestinationPrefix "10.100.0.0/16" -InterfaceAlias "Ethernet" -NextHop 192.168.1.1');
     const route = await ps.execute('Get-NetRoute -DestinationPrefix "10.100.0.0/16"');
     expect(route).toContain('10.100.0.0/16');
   });
   it('-RouteMetric sets metric', async () => {
-    const pc = createPC(); const ps = createPS(pc);
-    await createLivePS(pc).execute('New-NetIPAddress -InterfaceAlias "Ethernet" -IPAddress 192.168.1.50 -PrefixLength 24');
+    const pc = createPC(); const ps = createLivePS(pc);
+    await ps.execute('New-NetIPAddress -InterfaceAlias "Ethernet" -IPAddress 192.168.1.50 -PrefixLength 24');
     await ps.execute('New-NetRoute -DestinationPrefix "10.101.0.0/16" -InterfaceAlias "Ethernet" -NextHop 192.168.1.1 -RouteMetric 10');
     const metric = await ps.execute('(Get-NetRoute -DestinationPrefix "10.101.0.0/16").RouteMetric');
     expect(metric.trim()).toBe('10');
   });
   it('-PolicyStore Persisted', async () => {
-    const pc = createPC(); const ps = createPS(pc);
+    const pc = createPC(); const ps = createLivePS(pc);
     await expect(ps.execute('New-NetRoute -DestinationPrefix "10.102.0.0/16" -InterfaceAlias "Ethernet" -NextHop 192.168.1.1 -PolicyStore Persisted')).resolves.not.toThrow();
   });
-  it('fails with missing NextHop', async () => {
-    const pc = createPC(); const ps = createPS(pc);
-    const out = await ps.execute('New-NetRoute -DestinationPrefix "10.103.0.0/16" -InterfaceAlias "Ethernet" -ErrorAction SilentlyContinue');
-    expect(out).toContain('NextHop');
+  it('-NextHop is optional — the route is on-link, with an unspecified next hop', async () => {
+    const pc = createPC(); const ps = createLivePS(pc);
+    const out = await ps.execute('New-NetRoute -DestinationPrefix "10.103.0.0/16" -InterfaceAlias "Ethernet"');
+    expect(out).toContain('10.103.0.0/16');
+    expect(out).toMatch(/NextHop\s+:\s+0\.0\.0\.0/);
   });
   it('fails with duplicate route', async () => {
-    const pc = createPC(); const ps = createPS(pc);
-    await createLivePS(pc).execute('New-NetIPAddress -InterfaceAlias "Ethernet" -IPAddress 192.168.1.50 -PrefixLength 24');
+    const pc = createPC(); const ps = createLivePS(pc);
+    await ps.execute('New-NetIPAddress -InterfaceAlias "Ethernet" -IPAddress 192.168.1.50 -PrefixLength 24');
     await ps.execute('New-NetRoute -DestinationPrefix "10.104.0.0/16" -InterfaceAlias "Ethernet" -NextHop 192.168.1.1');
-    const out = await ps.execute('New-NetRoute -DestinationPrefix "10.104.0.0/16" -InterfaceAlias "Ethernet" -NextHop 192.168.1.1 -ErrorAction SilentlyContinue');
+    const out = await ps.execute('New-NetRoute -DestinationPrefix "10.104.0.0/16" -InterfaceAlias "Ethernet" -NextHop 192.168.1.1');
     expect(out).toContain('already exists');
   });
   it('Get-Help', async () => {
-    const pc = createPC(); const ps = createPS(pc);
+    const pc = createPC(); const ps = createLivePS(pc);
     const help = await ps.execute('Get-Help New-NetRoute');
     expect(help).toContain('SYNOPSIS');
   });
   for (let i = 0; i < 14; i++) {
     it(`extra ${i + 1}`, async () => {
-      const pc = createPC(); const ps = createPS(pc);
+      const pc = createPC(); const ps = createLivePS(pc);
       await expect(ps.execute('New-NetRoute -DestinationPrefix "10.200.0.0/16" -InterfaceAlias "Ethernet" -NextHop 192.168.1.1 -ErrorAction SilentlyContinue')).resolves.not.toThrow();
     });
   }
@@ -3418,32 +3422,32 @@ describe('6. New‑NetRoute', () => {
 // ─────────────────────────────────────────────────────────────────────────
 describe('7. Remove‑NetRoute', () => {
   it('removes a route', async () => {
-    const pc = createPC(); const ps = createPS(pc);
+    const pc = createPC(); const ps = createLivePS(pc);
     await ps.execute('New-NetRoute -DestinationPrefix "10.105.0.0/16" -InterfaceAlias "Ethernet" -NextHop 192.168.1.1');
     await ps.execute('Remove-NetRoute -DestinationPrefix "10.105.0.0/16" -Confirm:$false');
     const out = await ps.execute('Get-NetRoute -DestinationPrefix "10.105.0.0/16" -ErrorAction SilentlyContinue');
     expect(out).toContain('');
   });
   it('fails when route not found', async () => {
-    const pc = createPC(); const ps = createPS(pc);
-    const out = await ps.execute('Remove-NetRoute -DestinationPrefix "10.99.99.0/24" -Confirm:$false -ErrorAction SilentlyContinue');
+    const pc = createPC(); const ps = createLivePS(pc);
+    const out = await ps.execute('Remove-NetRoute -DestinationPrefix "10.99.99.0/24" -Confirm:$false');
     expect(out).toContain('No MSFT_NetRoute');
   });
   it('pipeline from Get-NetRoute', async () => {
-    const pc = createPC(); const ps = createPS(pc);
+    const pc = createPC(); const ps = createLivePS(pc);
     await ps.execute('New-NetRoute -DestinationPrefix "10.106.0.0/16" -InterfaceAlias "Ethernet" -NextHop 192.168.1.1');
     await ps.execute('Get-NetRoute -DestinationPrefix "10.106.0.0/16" | Remove-NetRoute -Confirm:$false');
     const out = await ps.execute('Get-NetRoute -DestinationPrefix "10.106.0.0/16" -ErrorAction SilentlyContinue');
     expect(out).toContain('');
   });
   it('Get-Help', async () => {
-    const pc = createPC(); const ps = createPS(pc);
+    const pc = createPC(); const ps = createLivePS(pc);
     const help = await ps.execute('Get-Help Remove-NetRoute');
     expect(help).toContain('SYNOPSIS');
   });
   for (let i = 0; i < 16; i++) {
     it(`extra ${i + 1}`, async () => {
-      const pc = createPC(); const ps = createPS(pc);
+      const pc = createPC(); const ps = createLivePS(pc);
       await expect(ps.execute('Remove-NetRoute -DestinationPrefix "10.200.200.0/24" -Confirm:$false -ErrorAction SilentlyContinue')).resolves.not.toThrow();
     });
   }

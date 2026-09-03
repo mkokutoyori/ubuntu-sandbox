@@ -16,6 +16,7 @@ import type { GroupWriteOptions, OrgUnitWriteOptions, UserWriteOptions } from '@
 
 import type { AddsForestOptions } from '@/network/devices/windows/server/ad/adFunctionalLevels';
 import type { RemoteDirectoryTarget } from './adRemoteDirectory';
+import type { NetRouteIdentity, NetRouteUpdate } from '@/network/devices/windows/netRoute';
 
 // ─── Entry types re-exported for cmdlet use ────────────────────────────────
 
@@ -126,8 +127,15 @@ export interface IPAddressInfo {
 export interface RouteInfo {
   destinationPrefix: string;
   ifAlias: string;
+  ifIndex?: number;
   nextHop: string;
   routeMetric: number;
+  addressFamily?: string;
+  publish?: 'No' | 'Age' | 'Yes';
+  protocol?: string;
+  policyStore?: 'ActiveStore' | 'PersistentStore';
+  validLifetimeSeconds?: number;
+  preferredLifetimeSeconds?: number;
 }
 
 // ─── PowerShell Remoting (Invoke-Command -ComputerName / Test-WSMan) ───────
@@ -1181,6 +1189,16 @@ export interface IJobProvider {
 }
 
 
+export interface NetRouteAttributes {
+  publish?: 'No' | 'Age' | 'Yes';
+  protocol?: string;
+  policyStore?: 'ActiveStore' | 'PersistentStore';
+  addressFamily?: string;
+  ifIndex?: number;
+  validLifetimeSeconds?: number;
+  preferredLifetimeSeconds?: number;
+}
+
 export interface NetIPAddressUpdate {
   prefixLength?: number;
   skipAsSource?: boolean;
@@ -1291,10 +1309,9 @@ export interface INetworkProvider {
   removeNeighbor(ipAddress: import('@/network/core/types').IPAddress, ifAlias?: string): string;
   clearNeighbors(ifAlias?: string): void;
   setNeighbor(ipAddress: import('@/network/core/types').IPAddress, linkLayerAddress: import('@/network/core/types').MACAddress, ifAlias?: string): string;
-  addRoute(dest: string, ifAlias: string, nextHop: string, metric: number): void;
-  removeRoute(dest: string, ifAlias?: string): void;
-  /** Modify properties of an existing route — usually nextHop or metric. */
-  setRoute(dest: string, opts: { nextHop?: string; routeMetric?: number; ifAlias?: string }): string;
+  addRoute(dest: string, ifAlias: string, nextHop: string, metric: number, opts?: NetRouteAttributes): void;
+  removeRoute(route: NetRouteIdentity): void;
+  setRoute(route: NetRouteIdentity, update: NetRouteUpdate): string;
   /** Modify properties of an existing IP — usually prefixLength. */
   setIPAddress(ip: string, ifAlias: string, opts: NetIPAddressUpdate): string;
   getDnsServers(ifAlias: string): string[];

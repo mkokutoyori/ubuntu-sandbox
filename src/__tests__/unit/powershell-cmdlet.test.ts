@@ -12,6 +12,7 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { WindowsPC } from '@/network/devices/WindowsPC';
 import { PowerShellExecutor } from '@/network/devices/windows/PowerShellExecutor';
+import { PowerShellSubShell } from '@/terminal/subshells/PowerShellSubShell';
 import { resetCounters } from '@/network/core/types';
 import { resetDeviceCounters } from '@/network/devices/DeviceFactory';
 import { Logger } from '@/network/core/Logger';
@@ -28,6 +29,11 @@ function createPC(name = 'WIN-CMD'): WindowsPC {
 
 function createPS(pc: WindowsPC): PowerShellExecutor {
   return new PowerShellExecutor(pc as any);
+}
+
+function createLivePS(pc: WindowsPC): { execute(line: string): Promise<string> } {
+  const shell = PowerShellSubShell.create(pc).subShell;
+  return { execute: async (line: string) => (await shell.processLine(line)).output.join('\n') };
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -1155,7 +1161,7 @@ describe('9. Get‑NetIPAddress', () => {
     const ps = createPS(pc);
     // An unconfigured adapter has NO IPv4 (the sim no longer invents one):
     // configure a real address first, then the filter must return it.
-    await ps.execute('New-NetIPAddress -InterfaceAlias "Ethernet" -IPAddress 192.168.1.50 -PrefixLength 24');
+    await createLivePS(pc).execute('New-NetIPAddress -InterfaceAlias "Ethernet" -IPAddress 192.168.1.50 -PrefixLength 24');
     const out = await ps.execute('Get-NetIPAddress -AddressFamily IPv4');
     expect(out).toContain('192.168.1.50');
   });
@@ -1178,7 +1184,7 @@ describe('9. Get‑NetIPAddress', () => {
     const pc = createPC();
     const ps = createPS(pc);
     // A /24 exists only once an address is actually configured.
-    await ps.execute('New-NetIPAddress -InterfaceAlias "Ethernet" -IPAddress 192.168.1.50 -PrefixLength 24');
+    await createLivePS(pc).execute('New-NetIPAddress -InterfaceAlias "Ethernet" -IPAddress 192.168.1.50 -PrefixLength 24');
     const out = await ps.execute('Get-NetIPAddress -PrefixLength 24');
     expect(out).toContain('192.168.1.50');
     expect(out).toContain('PrefixLength      : 24');
@@ -1211,46 +1217,42 @@ describe('9. Get‑NetIPAddress', () => {
 // ═══════════════════════════════════════════════════════════════════════════
 
 describe('10. Get‑NetIPConfiguration', () => {
-  it('shows IP configuration for adapters', async () => {
-    const pc = createPC();
-    const ps = createPS(pc);
-    const out = await ps.execute('Get-NetIPConfiguration');
-    expect(out).toContain('InterfaceAlias');
-    expect(out).toContain('IPv4Address');
+  it('shows nothing while no interface is connected, and -All shows them anyway', async () => {
+    const ps = createLivePS(createPC());
+    expect(await ps.execute('Get-NetIPConfiguration')).toBe('');
+    const all = await ps.execute('Get-NetIPConfiguration -All');
+    expect(all).toContain('InterfaceAlias');
+    expect(all).toContain('IPv4Address');
   });
 
-  it('-Detailed includes gateway, DNS', async () => {
-    const pc = createPC();
-    const ps = createPS(pc);
-    const out = await ps.execute('Get-NetIPConfiguration -Detailed');
-    expect(out).toContain('DNS');
+  it('-Detailed adds the computer name', async () => {
+    const ps = createLivePS(createPC());
+    const out = await ps.execute('Get-NetIPConfiguration -All -Detailed');
+    expect(out).toContain('DNSServer');
+    expect(out).toContain('ComputerName');
   });
 
-  it('-InterfaceAlias filter', async () => {
-    const pc = createPC();
-    const ps = createPS(pc);
-    const out = await ps.execute('Get-NetIPConfiguration -InterfaceAlias "Ethernet"');
-    expect(out).toContain('Ethernet');
+  it('-InterfaceAlias names one interface, connected or not', async () => {
+    const ps = createLivePS(createPC());
+    const out = await ps.execute('Get-NetIPConfiguration -InterfaceAlias "Ethernet 0"');
+    expect(out).toContain('Ethernet 0');
+    expect(out).not.toContain('Ethernet 1');
   });
 
-  it('-All includes disabled adapters', async () => {
-    const pc = createPC();
-    const ps = createPS(pc);
-    const out = await ps.execute('Get-NetIPConfiguration -All');
-    expect(out).toContain('Loopback');
+  it('-All includes the loopback pseudo-interface', async () => {
+    const ps = createLivePS(createPC());
+    expect(await ps.execute('Get-NetIPConfiguration -All')).toContain('Loopback');
   });
 
   it('piping to Get-NetIPAddress works', async () => {
-    const pc = createPC();
-    const ps = createPS(pc);
-    await expect(ps.execute('Get-NetIPConfiguration | Get-NetIPAddress')).resolves.toBeDefined();
+    const ps = createLivePS(createPC());
+    await expect(ps.execute('Get-NetIPConfiguration -All | Get-NetIPAddress')).resolves.toBeDefined();
   });
 
   it('error on bad interface name', async () => {
-    const pc = createPC();
-    const ps = createPS(pc);
-    const out = await ps.execute('Get-NetIPConfiguration -InterfaceAlias NoSuch -ErrorAction SilentlyContinue');
-    expect(out).toContain('not found');
+    const ps = createLivePS(createPC());
+    expect(await ps.execute('Get-NetIPConfiguration -InterfaceAlias NoSuch'))
+      .toContain('No matching interface found.');
   });
 });
 

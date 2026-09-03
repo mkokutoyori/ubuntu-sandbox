@@ -181,6 +181,7 @@ import { cmdReg as winCmdReg } from './windows/WinRegCommand';
 import { cmdDir } from './windows/WinDir';
 import { CrossVendorRemoteShell } from '@/shell/CrossVendorRemoteShell';
 import type { NetIPAddressEntry } from './windows/netIpAddress';
+import type { NetRouteEntry } from './windows/netRoute';
 import {
   cmdCd, cmdMkdir, cmdRmdir, cmdType, cmdCopy, cmdMove,
   cmdRen, cmdDel, cmdTree, cmdSet, cmdTasklist, cmdNetstat,
@@ -385,7 +386,7 @@ export class WindowsPC extends EndHost implements UserAccountHost {
   /** Additional IP addresses (added via New-NetIPAddress). */
   readonly extraIPs: Map<string, NetIPAddressEntry> = new Map();
   /** Extra routes (added via New-NetRoute). */
-  readonly extraRoutes: Map<string, { ifAlias: string; nextHop: string; metric: number }> = new Map();
+  readonly extraRoutes: Map<string, NetRouteEntry> = new Map();
   /** Adapter overrides: status / display name. */
   readonly adapterOverrides: Map<string, { status?: string; displayName?: string }> = new Map();
   /** Dynamic firewall rules (added via New-NetFirewallRule). */
