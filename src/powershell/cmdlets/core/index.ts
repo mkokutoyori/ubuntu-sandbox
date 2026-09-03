@@ -135,6 +135,7 @@ import {
   AddKdsRootKeyCmdlet, GetKdsRootKeyCmdlet, NewADServiceAccountCmdlet, GetADServiceAccountCmdlet,
   SetADServiceAccountCmdlet, AddADComputerServiceAccountCmdlet,
   NewADOrganizationalUnitCmdlet, GetADOrganizationalUnitCmdlet,
+  SetADOrganizationalUnitCmdlet, RemoveADOrganizationalUnitCmdlet,
   NewADReplicationSiteCmdlet, SetADReplicationSiteCmdlet, GetADReplicationSiteCmdlet,
   NewADReplicationSubnetCmdlet, GetADReplicationSubnetCmdlet,
   NewADReplicationSiteLinkCmdlet, GetADReplicationSiteLinkCmdlet, SetADReplicationSiteLinkCmdlet,
@@ -597,6 +598,8 @@ export function registerServerCmdlets(registry: CmdletRegistry): void {
   registry.register(new AddADComputerServiceAccountCmdlet());
   registry.register(new SearchADAccountCmdlet());
   registry.register(new NewADOrganizationalUnitCmdlet());
+  registry.register(new SetADOrganizationalUnitCmdlet());
+  registry.register(new RemoveADOrganizationalUnitCmdlet());
   registry.register(new GetADOrganizationalUnitCmdlet());
   registry.register(new NewADDomainCmdlet());
   registry.register(new GetADForestCmdlet());

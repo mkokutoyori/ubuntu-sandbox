@@ -27,6 +27,7 @@ import { makeTimeSpan } from './DateTimeCmdlets';
 import { parseCredentialArg } from './RemotingCmdlets';
 import { WindowsSecurityAudit, type SecurityEventSink } from '@/network/devices/windows/WindowsSecurityAudit';
 import { type AdFunctionalLevel, adFunctionalLevelKeywords, parseAdFunctionalLevel } from '@/network/devices/windows/server/ad/adFunctionalLevels';
+import { OU_PROPERTIES, OU_PROPERTY_PARAMETERS } from '@/network/devices/windows/server/ad/adOrganizationalUnit';
 
 function requireAd(ctx: CmdletContext, cmdletName: string): IAdProvider {
   if (!ctx.providers.ad) {
@@ -233,7 +234,51 @@ function computerToPSObject(c: AdComputerInfo): Record<string, PSValue> {
   };
 }
 function ouToPSObject(ou: AdOrgUnitInfo): Record<string, PSValue> {
-  return { Name: ou.name, DistinguishedName: ou.dn, ObjectClass: 'organizationalUnit' };
+  const obj: Record<string, PSValue> = {
+    Name: ou.name, DistinguishedName: ou.dn, ObjectClass: 'organizationalUnit',
+  };
+  for (const spec of OU_PROPERTIES) obj[spec.parameter] = ou.properties[spec.parameter] ?? '';
+  for (const [name, value] of Object.entries(ou.properties)) {
+    if (obj[name] === undefined) obj[name] = value;
+  }
+  obj.LinkedGroupPolicyObjects = [...ou.gpLinks];
+  obj.ProtectedFromAccidentalDeletion = ou.protectedFromAccidentalDeletion;
+  return obj;
+}
+
+function ouAttributesFrom(ctx: CmdletContext): Record<string, string> {
+  const attributes: Record<string, string> = {};
+  const template = ctx.named['instance'];
+  if (template !== null && typeof template === 'object' && !Array.isArray(template)) {
+    const record = template as Record<string, PSValue>;
+    for (const spec of OU_PROPERTIES) {
+      const value = record[spec.parameter];
+      if (value !== undefined && value !== null && psValueToString(value) !== '') {
+        attributes[spec.ldap] = psValueToString(value);
+      }
+    }
+  }
+  for (const spec of OU_PROPERTIES) {
+    const given = ctx.named[spec.parameter.toLowerCase()];
+    if (given !== undefined) attributes[spec.ldap] = psValueToString(given);
+  }
+  const other = ctx.named['otherattributes'];
+  if (other !== null && typeof other === 'object' && !Array.isArray(other)) {
+    for (const [ldap, value] of Object.entries(other as Record<string, PSValue>)) {
+      attributes[ldap] = psValueToString(value);
+    }
+  }
+  return attributes;
+}
+
+function booleanArg(ctx: CmdletContext, key: string): boolean | undefined {
+  const raw = ctx.named[key];
+  if (raw === undefined) return undefined;
+  if (typeof raw === 'boolean') return raw;
+  const text = psValueToString(raw).trim().toLowerCase();
+  if (text === '1' || text === 'true' || text === '$true') return true;
+  if (text === '0' || text === 'false' || text === '$false') return false;
+  return undefined;
 }
 
 // ── Install-ADDSForest ───────────────────────────────────────────────────────
@@ -1119,18 +1164,69 @@ export class SetADAccountPasswordCmdlet implements ICmdlet {
 
 export class NewADOrganizationalUnitCmdlet implements ICmdlet {
   readonly name = 'new-adorganizationalunit';
+  readonly displayName = 'New-ADOrganizationalUnit';
   readonly aliases = [] as const;
-  readonly parameters = ['Name', 'Path', 'Description', 'ProtectedFromAccidentalDeletion'] as const;
+  readonly parameters = ['Name', 'Path', 'Instance', 'OtherAttributes', 'ProtectedFromAccidentalDeletion',
+    'PassThru', 'Credential', 'WhatIf', 'Confirm', ...OU_PROPERTY_PARAMETERS] as const;
 
   execute(ctx: CmdletContext): PSValue {
     const ad = requireAd(ctx, 'New-ADOrganizationalUnit');
     const name = psValueToString(ctx.named['name'] ?? ctx.positional[0] ?? '');
-    if (!name) { ctx.emitError("New-ADOrganizationalUnit : Cannot process command because of one or more missing mandatory parameters: Name."); return null; }
+    if (!name) { ctx.emitError('New-ADOrganizationalUnit : Cannot process command because of one or more missing mandatory parameters: Name.'); return null; }
     const path = ctx.named['path'] !== undefined ? psValueToString(ctx.named['path']) : undefined;
-    const res = ad.newOrganizationalUnit(name, path);
+    const protectedFlag = booleanArg(ctx, 'protectedfromaccidentaldeletion') ?? true;
+    if (ctx.named['whatif'] === true) {
+      ctx.emit(`What if: Performing the operation "New" on target "OU=${name}${path ? `,${path}` : ''}".`);
+      return null;
+    }
+    const res = ad.newOrganizationalUnit(name, path, { attributes: ouAttributesFrom(ctx), protected: protectedFlag });
     if (!res.ok) { ctx.emitError(`New-ADOrganizationalUnit : ${res.message}`); return null; }
+    if (ctx.named['passthru'] !== true) return null;
     const ou = ad.getOrganizationalUnit(name);
     return ou ? ouToPSObject(ou) : null;
+  }
+}
+
+export class SetADOrganizationalUnitCmdlet implements ICmdlet {
+  readonly name = 'set-adorganizationalunit';
+  readonly displayName = 'Set-ADOrganizationalUnit';
+  readonly aliases = [] as const;
+  readonly parameters = ['Identity', 'ProtectedFromAccidentalDeletion', 'PassThru', 'Credential',
+    'WhatIf', 'Confirm', ...OU_PROPERTY_PARAMETERS] as const;
+
+  execute(ctx: CmdletContext): PSValue {
+    const ad = requireAd(ctx, 'Set-ADOrganizationalUnit');
+    const identity = identityOf(ctx);
+    if (!identity) { ctx.emitError('Set-ADOrganizationalUnit : Cannot process command because of one or more missing mandatory parameters: Identity.'); return null; }
+    if (ctx.named['whatif'] === true) {
+      ctx.emit(`What if: Performing the operation "Set" on target "${identity}".`);
+      return null;
+    }
+    const res = ad.setOrganizationalUnit(identity, ouAttributesFrom(ctx), booleanArg(ctx, 'protectedfromaccidentaldeletion'));
+    if (!res.ok) { ctx.emitError(`Set-ADOrganizationalUnit : ${res.message}`); return null; }
+    if (ctx.named['passthru'] !== true) return null;
+    const ou = ad.getOrganizationalUnit(identity);
+    return ou ? ouToPSObject(ou) : null;
+  }
+}
+
+export class RemoveADOrganizationalUnitCmdlet implements ICmdlet {
+  readonly name = 'remove-adorganizationalunit';
+  readonly displayName = 'Remove-ADOrganizationalUnit';
+  readonly aliases = [] as const;
+  readonly parameters = ['Identity', 'Recursive', 'Credential', 'WhatIf', 'Confirm'] as const;
+
+  execute(ctx: CmdletContext): PSValue {
+    const ad = requireAd(ctx, 'Remove-ADOrganizationalUnit');
+    const identity = identityOf(ctx);
+    if (!identity) { ctx.emitError('Remove-ADOrganizationalUnit : Cannot process command because of one or more missing mandatory parameters: Identity.'); return null; }
+    if (ctx.named['whatif'] === true) {
+      ctx.emit(`What if: Performing the operation "Remove" on target "${identity}".`);
+      return null;
+    }
+    const res = ad.removeOrganizationalUnit(identity, ctx.named['recursive'] === true);
+    if (!res.ok) ctx.emitError(`Remove-ADOrganizationalUnit : ${res.message}`);
+    return null;
   }
 }
 

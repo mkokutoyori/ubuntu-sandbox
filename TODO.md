@@ -2021,3 +2021,40 @@ défauts — la méthode vaut d'être reprise sur le reliquat.
   depuis ce reseau. Elles ne refusent que des valeurs absurdes ; si une
   capture les contredit, ce sont elles qu'il faut corriger et non le
   mecanisme.
+- `-Server`, `-AuthType` et `-Instance` en ENTREE DE PIPELINE ne sont pas
+  declares sur `New-ADOrganizationalUnit` (ni sur `Set-`/`Remove-`), alors
+  que la documentation du cmdlet les porte. `-Server` et `-AuthType`
+  gouvernent le choix et l'authentification du contrôleur interroge :
+  toutes les commandes d'OBJET de ce simulateur passent par
+  `requireStore()`, c'est-a-dire l'annuaire LOCAL de la machine, et aucun
+  chemin ne dialogue avec un contrôleur distant pour lire ou ecrire un
+  objet — seuls `Install-ADDSDomainController`, `New-ADDomain` et
+  `New-ADTrust` evaluent un `-Server`, parce qu'eux composent vraiment.
+  Les declarer les rangerait sans que rien ne les evalue, ce que la
+  convention du depot interdit. `-Instance` est evalue comme GABARIT (un
+  objet passe en parametre) mais pas comme entree de PIPELINE, le
+  `Import-Csv | New-ADOrganizationalUnit` de la methode 3 de la
+  documentation demandant que le cmdlet lise `ctx.pipeInput` par
+  PROPRIETE, mecanisme que ce moteur n'a pas.
+- `-Properties` est declare par `Get-ADUser`, `Get-ADComputer`,
+  `Get-ADObject` et `Get-ADOrganizationalUnit` et EVALUE PAR AUCUN : ces
+  vues rendent toutes leurs proprietes, quoi qu'on demande. Sur une vraie
+  machine le cmdlet rend un JEU PAR DEFAUT et `-Properties` seul y ajoute
+  le reste — c'est ce qui fait qu'un `Get-ADOrganizationalUnit` sans
+  `-Properties Description` n'affiche PAS la description, question posee
+  mille fois. Non ferme ici parce que c'est un lot a soi, sur quatre
+  cmdlets a la fois : leur donner un jeu par defaut a chacun demande de
+  MESURER lequel, et le faire pour la seule OU laisserait `-Properties`
+  vivant d'un cote et inerte des trois autres, c'est-a-dire deux reponses
+  a une meme question. Ce lot rend donc TOUT ce qui est pose, choix qui
+  ne cache aucune donnee — l'inverse aurait rendu invisible la
+  description que l'operateur vient d'ecrire.
+- Un attribut pose par `-OtherAttributes` est relu sous le nom que
+  l'arbre LDAP stocke, c'est-a-dire en MINUSCULES (`postofficebox`), la
+  ou une vraie machine rend la casse canonique du schema
+  (`postOfficeBox`). Sans consequence a l'usage — les noms d'attributs
+  LDAP sont insensibles a la casse et l'acces aux proprietes de ce moteur
+  PowerShell l'est aussi, donc `$ou.postOfficeBox` repond (mesure) —
+  mais un `Format-List` affiche la clef stockee. Fermer cela demande que
+  le `SchemaValidator` porte la casse canonique de chaque attribut, ce
+  qu'il ne fait pas.

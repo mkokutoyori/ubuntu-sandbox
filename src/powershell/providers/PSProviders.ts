@@ -12,6 +12,8 @@
  *     → all nulls, used by the standalone PSInterpreter (no Windows device)
  */
 
+import type { OrgUnitWriteOptions } from '@/network/devices/windows/server/ad/DirectoryStore';
+
 import type { AddsForestOptions } from '@/network/devices/windows/server/ad/adFunctionalLevels';
 
 // ─── Entry types re-exported for cmdlet use ────────────────────────────────
@@ -213,7 +215,11 @@ export interface AdComputerInfo {
   /** This DC's resolved IPv4 address — undefined for a plain (non-DC) computer object. */
   ipv4Address?: string | null;
 }
-export interface AdOrgUnitInfo { name: string; dn: string; gpLinks: string[] }
+export interface AdOrgUnitInfo {
+  name: string; dn: string; gpLinks: string[];
+  properties: Record<string, string>;
+  protectedFromAccidentalDeletion: boolean;
+}
 export interface AdOpResult { ok: boolean; message: string }
 export interface AdSubnetInfo { cidr: string; dn: string; site: string; description: string }
 export type AdSiteLinkTransport = 'IP' | 'SMTP';
@@ -279,7 +285,9 @@ export interface IAdProvider {
   /** `Set-ADComputer -Identity <name> -AllowedToDelegateTo <svc1,svc2,...>` (PRD-Windows-Server-Advanced.md §5 P10) — the `msDS-AllowedToDelegateTo` list S4U2Proxy checks. */
   setComputerAllowedToDelegateTo(identity: string, targetServiceNames: string[]): AdOpResult;
 
-  newOrganizationalUnit(name: string, path?: string): AdOpResult;
+  newOrganizationalUnit(name: string, path?: string, opts?: OrgUnitWriteOptions): AdOpResult;
+  setOrganizationalUnit(identity: string, attributes: Record<string, string>, protectedFlag?: boolean): AdOpResult;
+  removeOrganizationalUnit(identity: string, recursive?: boolean): AdOpResult;
   getOrganizationalUnit(identity: string): AdOrgUnitInfo | null;
   listOrganizationalUnits(): AdOrgUnitInfo[];
 

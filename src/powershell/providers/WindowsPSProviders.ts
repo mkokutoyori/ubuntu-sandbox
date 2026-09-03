@@ -98,6 +98,7 @@ import type {
 } from '@/powershell/providers/PSProviders';
 import type { PSValue } from '@/powershell/runtime/PSEnvironment';
 import type { AddsForestOptions } from '@/network/devices/windows/server/ad/adFunctionalLevels';
+import type { OrgUnitWriteOptions } from '@/network/devices/windows/server/ad/DirectoryStore';
 
 // ── Filesystem adapter ────────────────────────────────────────────────────
 
@@ -811,19 +812,35 @@ class WindowsAdAdapter implements IAdProvider {
     return store.setAllowedToDelegateTo(name, targetServiceNames);
   }
 
-  newOrganizationalUnit(name: string, path?: string): AdOpResult {
+  newOrganizationalUnit(name: string, path?: string, opts?: OrgUnitWriteOptions): AdOpResult {
     const store = this.requireStore('New-ADOrganizationalUnit');
     const denied = this.requireAdmin('New-ADOrganizationalUnit');
     if (denied) return denied;
-    return store.newOrgUnit(name, path);
+    return store.newOrgUnit(name, path, opts);
+  }
+  setOrganizationalUnit(identity: string, attributes: Record<string, string>, protectedFlag?: boolean): AdOpResult {
+    const store = this.requireStore('Set-ADOrganizationalUnit');
+    const denied = this.requireAdmin('Set-ADOrganizationalUnit');
+    if (denied) return denied;
+    if (protectedFlag !== undefined) {
+      const res = store.setOrgUnitProtectionByIdentity(identity, protectedFlag);
+      if (!res.ok) return res;
+    }
+    return store.setOrgUnitAttributes(identity, attributes);
+  }
+  removeOrganizationalUnit(identity: string, recursive?: boolean): AdOpResult {
+    const store = this.requireStore('Remove-ADOrganizationalUnit');
+    const denied = this.requireAdmin('Remove-ADOrganizationalUnit');
+    if (denied) return denied;
+    return store.removeOrgUnit(identity, { recursive });
   }
   getOrganizationalUnit(identity: string): AdOrgUnitInfo | null {
     const store = this.requireStore('Get-ADOrganizationalUnit');
     const ou = store.getOrgUnit(store.resolveIdentity(identity));
-    return ou ? { name: ou.name, dn: ou.dn, gpLinks: [...ou.gpLinks] } : null;
+    return ou ? { ...ou, gpLinks: [...ou.gpLinks], properties: { ...ou.properties } } : null;
   }
   listOrganizationalUnits(): AdOrgUnitInfo[] {
-    return this.requireStore('Get-ADOrganizationalUnit').listOrgUnits().map(ou => ({ name: ou.name, dn: ou.dn, gpLinks: [...ou.gpLinks] }));
+    return this.requireStore('Get-ADOrganizationalUnit').listOrgUnits().map(ou => ({ ...ou, gpLinks: [...ou.gpLinks], properties: { ...ou.properties } }));
   }
 
   newReplicationSite(name: string, description?: string): AdOpResult {

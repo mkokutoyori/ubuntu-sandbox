@@ -163,6 +163,8 @@ export interface AdOrgUnit {
   readonly name: string;
   readonly dn: string;
   gpLinks: string[];
+  properties: Record<string, string>;
+  protectedFromAccidentalDeletion: boolean;
 }
 
 export type AdObject = AdUser | AdGroup | AdComputer | AdOrgUnit;
