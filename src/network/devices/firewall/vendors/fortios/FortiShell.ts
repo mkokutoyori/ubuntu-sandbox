@@ -1547,6 +1547,7 @@ export class FortiShell {
       case 'update-now': return this.executeFortiguardUpdate();
       case 'update-av': return this.executeFortiguardUpdate('antivirus');
       case 'update-ips': return this.executeFortiguardUpdate('ips');
+      case 'update-geo-ip': return this.executeFortiguardUpdate('geo-ip');
       case 'disconnect-admin-session':
         return tail.length === 0
           ? FortiMessages.incomplete('a session index')

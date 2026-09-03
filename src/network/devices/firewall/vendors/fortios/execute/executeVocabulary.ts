@@ -91,6 +91,7 @@ export const FORTI_EXECUTE_COMMANDS: readonly FortiExecuteCommand[] = Object.fre
   { name: 'ssh', help: 'Open an SSH session to a remote host.' },
   { name: 'telnet', help: 'Open a telnet session to a remote host.' },
   { name: 'update-av', help: 'Update antivirus definitions from FortiGuard.' },
+  { name: 'update-geo-ip', help: 'Update the IP geography database.' },
   { name: 'update-ips', help: 'Update IPS definitions from FortiGuard.' },
   { name: 'update-now', help: 'Update all FortiGuard databases now.' },
   { name: 'time', help: 'Display or set the system time.' },
