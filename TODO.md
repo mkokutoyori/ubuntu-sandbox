@@ -2244,3 +2244,21 @@ aujourd'hui — `transmit()` part toujours d'une socket.
   des identifiants de VLAN l'a laissee telle quelle : leur donner un
   vocabulaire demande d'attester celui de VRP, hors de portee depuis ce
   reseau, et une liste ecrite de memoire refuserait des commandes reelles.
+- `iptables -p tcp --tcp-flags <masque> <compare>` est desormais JUGE (une
+  faute de frappe est refusee dans les mots du vrai iptables) mais n'est
+  toujours pas EVALUE : `PacketInfo`, la structure que `matchesRule` voit
+  d'un paquet, ne porte aucun drapeau TCP — ni SYN, ni ACK, ni RST. Le
+  ranger en ferait un critere que rien ne lit, ce que la regle du depot
+  interdit ; c'est donc le paquet qu'il faut enrichir, et non l'analyse.
+  Consequence a connaitre en attendant : une regle portant `--tcp-flags`
+  correspond comme si la clause n'y etait pas, donc elle est plus
+  PERMISSIVE que ce que l'operateur a ecrit.
+- `IPTABLES_MATCH_MODULES` declare vingt modules alors que `matchesRule`
+  n'en EVALUE que six (`state`, `conntrack`, `multiport`, `limit`, `mac`,
+  `iprange`). Les quatorze autres sont acceptes, rendus, et sautes a
+  l'evaluation — meme forme que `--tcp-flags` ci-dessus. Le lot des
+  criteres inconnus a ferme le mot INVENTE, qui est le cas dangereux (une
+  faute de frappe ouvrait la regle en silence), et n'a pas tranche pour
+  les modules reels-mais-non-evalues : les refuser casserait des
+  laboratoires qui les emploient legitimement, les evaluer demande autant
+  de travail que de modules. A reprendre module par module.
