@@ -2168,6 +2168,17 @@ défauts — la méthode vaut d'être reprise sur le reliquat.
   moteur et non de grammaire. La consequence aujourd'hui est qu'une
   redistribution declaree pour l'un de ces cinq ne redistribue rien et
   ne parait pas non plus dans la configuration.
+- `gateway-list` de VRP accepte plusieurs adresses et le magasin les
+  garde toutes, mais VRP borne cette liste a HUIT entrees comme IOS le
+  fait pour `default-router` — la borne est appliquee cote IOS
+  (`parseAddressList`) et PAS cote VRP, faute d'une source atteignable
+  disant si Huawei borne au meme nombre. Seule la validite de chaque
+  adresse est controlee des deux cotes.
+- `VRP_LEASE_MAX` borne `lease day` a 999 jours : c'est la borne d'IOS
+  transposee (365) elargie a ce que VRP accepte d'apres les exemples
+  atteignables, et non une valeur attestee. Les bornes de `hour` (23) et
+  `minute` (59) sont, elles, celles du calendrier et donc certaines. A
+  reprendre avec une capture.
 - La vue `ip pool` de VRP porte la meme forme que la politique et les
   vues de routage : `gateway-list zorglub` et `dns-list zorglub` sont
   acceptes et RENDUS, `network zorglub mask 24` et `lease day zorglub`

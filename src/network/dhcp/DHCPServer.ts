@@ -342,10 +342,16 @@ export class DHCPServer implements IProtocolEngine {
     return true;
   }
 
-  configurePoolRouter(name: string, router: string | string[]): boolean {
+  /**
+   * `null` et la liste VIDE EFFACENT l'option : c'est ce que le role
+   * DHCP de Windows envoie quand l'operateur ne l'a pas posee, et le
+   * distinguer d'une valeur invalide est tout l'objet de ce controle.
+   */
+  configurePoolRouter(name: string, router: string | string[] | null): boolean {
     const pool = this.pools.get(name);
     if (!pool) return false;
-    const routers = Array.isArray(router) ? router : [router];
+    const routers = router === null ? [] : Array.isArray(router) ? router : [router];
+    if (!routers.every((r) => this.isValidIPv4(r))) return false;
     pool.defaultRouters = routers;
     pool.defaultRouter = routers[0] ?? null;
     return true;
@@ -354,6 +360,7 @@ export class DHCPServer implements IProtocolEngine {
   configurePoolDNS(name: string, servers: string[]): boolean {
     const pool = this.pools.get(name);
     if (!pool) return false;
+    if (!servers.every((s) => this.isValidIPv4(s))) return false;
     pool.dnsServers = servers;
     return true;
   }
@@ -368,6 +375,7 @@ export class DHCPServer implements IProtocolEngine {
   configurePoolLease(name: string, durationSeconds: number): boolean {
     const pool = this.pools.get(name);
     if (!pool) return false;
+    if (!Number.isInteger(durationSeconds) || durationSeconds <= 0) return false;
     pool.leaseDuration = durationSeconds;
     return true;
   }
