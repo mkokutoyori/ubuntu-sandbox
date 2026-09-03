@@ -744,9 +744,36 @@ export class StpAgent extends ReactiveAgentBase implements StpInstanceAgent {
     }
   }
 
+  /**
+   * `no spanning-tree vlan <n>` ne coupe QUE ce VLAN : son instance
+   * cesse d'elire et ses ports passent en acheminement, les autres
+   * arbres continuant de tourner. Le drapeau global `enabled` reste ce
+   * qu'il etait, sans quoi couper un VLAN de laboratoire desarmerait la
+   * protection contre les boucles de tous les autres.
+   */
+  setVlanStpEnabled(vlan: number, on: boolean): void {
+    if (on) {
+      if (!this.config.disabledVlans.delete(vlan)) return;
+      this.recomputeOnTopologyChange();
+      this.armTimers();
+      return;
+    }
+    if (this.config.disabledVlans.has(vlan)) return;
+    this.config.disabledVlans.add(vlan);
+    this.ensurePortInstances();
+    this.instances.get(vlan)?.forceAll('forwarding');
+  }
+
+  isVlanStpEnabled(vlan: number): boolean {
+    return this.config.enabled && !this.config.disabledVlans.has(vlan);
+  }
+
   runningConfigGlobalLines(): string[] {
     const out: string[] = [];
     if (!this.config.enabled) out.push('no spanning-tree vlan 1');
+    for (const vlan of [...this.config.disabledVlans].sort((a, b) => a - b)) {
+      out.push(`no spanning-tree vlan ${vlan}`);
+    }
     /*
      * Le mode est rendu MEME quand c'est le defaut. Un Catalyst ecrit
      * `spanning-tree mode pvst` dans sa configuration d'usine — la
@@ -1125,6 +1152,9 @@ export class StpAgent extends ReactiveAgentBase implements StpInstanceAgent {
   }
 
   private sendBpdu(portName: string, key = 1): void {
+    // Le SEUL point d'emission : gardez-le ici et les dix appelants sont
+    // couverts, y compris ceux qui n'ont pas de boucle a border.
+    if (!this.isVlanStpEnabled(key)) return;
     const port = this.host.getPort(portName);
     if (!port) return;
     if (this.isBpduFilterEffective(portName)) return;

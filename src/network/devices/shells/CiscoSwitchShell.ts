@@ -777,6 +777,11 @@ interface SwitchTries {
   user: CommandTrie;
 }
 
+const NO_SPANNING_TREE_KEYWORDS = new Set([
+  'backbonefast', 'bpdufilter', 'bpduguard', 'default', 'loopguard',
+  'mode', 'pathcost', 'portfast', 'uplinkfast', 'vlan',
+]);
+
 const PORT_SECURITY_CLEAR_KINDS: ReadonlyArray<readonly [string, string]> = [
   ['all', 'Clear all secure MAC addresses'],
   ['configured', 'Clear configured secure MAC addresses'],
@@ -2143,6 +2148,16 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
         this.requireStp().setMode(
           m === 'mst' ? 'mstp' : m === 'rapid-pvst' ? 'rstp' : 'stp');
       }
+      /*
+       * `spanning-tree vlan <liste>` SEUL est le contraire de son `no` :
+       * il remet l'arbre du VLAN. Sans lui, couper un VLAN etait
+       * irreversible et la ligne restait dans la configuration.
+       */
+      if (args[0]?.toLowerCase() === 'vlan' && args[1] && !args[2]) {
+        const vlans = parseVlanList(args[1]);
+        if (vlans === null) throw new CliInvalidInput({ token: args[1] });
+        for (const v of vlans) this.requireStp().setVlanStpEnabled(v, true);
+      }
       if (args[0]?.toLowerCase() === 'vlan' && args[2]) {
         const vlan = parseInt(args[1] ?? '', 10);
         const knob = args[2].toLowerCase();
@@ -2194,8 +2209,14 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
     trie.registerGreedy('no spanning-tree', 'Disable spanning-tree', (args) => {
       const agent = this.requireStp();
       const a0 = args[0]?.toLowerCase();
-      if (a0 === 'vlan' && args[1]) agent.setEnabled(false);
-      else if (a0 === 'portfast') {
+      if (a0 === undefined) throw new CliIncomplete();
+      if (!NO_SPANNING_TREE_KEYWORDS.has(a0)) throw new CliInvalidInput({ token: args[0] });
+      if (a0 === 'vlan') {
+        if (args[1] === undefined) throw new CliIncomplete();
+        const vlans = parseVlanList(args.slice(1).join(','));
+        if (vlans === null) throw new CliInvalidInput({ token: args[1] });
+        for (const v of vlans) agent.setVlanStpEnabled(v, false);
+      } else if (a0 === 'portfast') {
         const sub = args[1]?.toLowerCase();
         if (sub === 'default') agent.setPortfastDefault(false);
         else if (sub === 'bpduguard') agent.setBpduGuardGlobal(false);

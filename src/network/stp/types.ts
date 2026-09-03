@@ -74,6 +74,13 @@ export function defaultPortGuards(): StpPortGuards {
 
 export interface StpConfig {
   enabled: boolean;
+  /**
+   * Les VLAN pour lesquels `no spanning-tree vlan <n>` a coupe l'arbre.
+   *
+   * C'est une notion PAR VLAN parce que la commande en nomme un :
+   * `enabled` seul, qui est global, faisait couper tous les autres.
+   */
+  disabledVlans: Set<number>;
   mode: StpProtocolMode;
   bridgePriority: number;
   helloSec: number;
@@ -150,6 +157,7 @@ export interface StpPortInfo {
 export function createDefaultStpConfig(baseMac: string): StpConfig {
   return {
     enabled: true,
+    disabledVlans: new Set<number>(),
     mode: 'stp',
     bridgePriority: 32768,
     helloSec: 2,

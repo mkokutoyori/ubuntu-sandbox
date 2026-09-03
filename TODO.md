@@ -2264,3 +2264,12 @@ défauts — la méthode vaut d'être reprise sur le reliquat.
   `show ip igmp snooping` + `clear port-security` vient de faire pour le
   mode privilegie du commutateur, tombe a ZERO. Suite : famille par
   famille, en baissant le cliquet a chaque fois.
+- `no spanning-tree vlan <n>` coupe desormais CE VLAN et le rend, mais la
+  garde `isVlanStpEnabled(key)` de `sendBpdu` lit la CLE d'instance : en
+  PVST la cle EST le VLAN, donc la garde est exacte ; en MST la cle est
+  un numero d'instance, si bien qu'un `no spanning-tree vlan 10` sous
+  `spanning-tree mode mst` bornerait l'instance 10 et non le VLAN 10. Le
+  cas n'est pas atteignable par les laboratoires actuels (aucun ne coupe
+  un VLAN en MST) et le corriger demande de traduire VLAN vers instance
+  a la coupure, ce qui est le sujet de la region MST et non celui de
+  cette commande.
