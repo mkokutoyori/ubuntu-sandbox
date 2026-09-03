@@ -2,8 +2,11 @@ import type { CommandTrie } from '../CommandTrie';
 import type { Router } from '../../Router';
 import {
   describeTrack, trackStateNoun,
-  type TrackObject, type TrackService, type TrackType,
+  type TrackObject, type TrackService,
 } from '../../../ipsla/TrackService';
+import {
+  parseTrackDefinition, TRACK_INVALID_ID, type TrackDefinition,
+} from './trackSyntax';
 import { RETURN_CODE_LABEL } from '../../../ipsla/types';
 import type { CommandSpec } from '@/cli/CommandTable';
 import type { ArgumentSpec } from '@/cli/ArgumentTypes';
@@ -36,58 +39,24 @@ export function formatUptime(millis: number): string {
   return `${pad(hours)}:${pad(minutes)}:${pad(seconds)}`;
 }
 
+function applyTrackDefinition(service: TrackService, def: TrackDefinition): void {
+  const object = service.ensure(def.id, def.type);
+  if (def.iface !== undefined) object.iface = def.iface;
+  if (def.prefix !== undefined) object.prefix = def.prefix;
+  if (def.mask !== undefined) object.mask = def.mask;
+  if (def.slaId !== undefined) object.slaId = def.slaId;
+  if (def.boolOp !== undefined) object.boolOp = def.boolOp;
+}
+
 function defineTrack(service: TrackService, args: string[]): string {
-  const id = parseInt(args[0], 10);
-  if (Number.isNaN(id)) return '% Invalid track number';
-  const rest = args.slice(1);
-
-  if (rest[0] === 'interface') {
-    const iface = rest[1];
-    if (!iface) return '% Incomplete command.';
-    const routing = rest.includes('ip') && rest.includes('routing');
-    const type: TrackType = routing ? 'interface-routing' : 'interface-line';
-    const object = service.ensure(id, type);
-    object.iface = iface;
-    return '';
+  const lu = parseTrackDefinition(args);
+  if (lu.idInvalide) return TRACK_INVALID_ID;
+  if (lu.incomplet) return '% Incomplete command.';
+  if (lu.refus !== undefined || !lu.definition) {
+    return '% Invalid input detected at \'^\' marker.';
   }
-
-  if (rest[0] === 'ip' && rest[1] === 'route') {
-    const prefix = rest[2];
-    const mask = rest[3];
-    if (!prefix || !mask) return '% Incomplete command.';
-    const metric = rest.includes('metric');
-    const object = service.ensure(id, metric ? 'route-metric' : 'route-reachability');
-    object.prefix = prefix;
-    object.mask = mask;
-    return '';
-  }
-
-  if (rest[0] === 'ip' && rest[1] === 'sla') {
-    const slaId = parseInt(rest[2], 10);
-    if (Number.isNaN(slaId)) return '% Incomplete command.';
-    const object = service.ensure(id, rest[3] === 'state' ? 'ipsla-state' : 'ipsla-reachability');
-    object.slaId = slaId;
-    return '';
-  }
-
-  if (rest[0] === 'list') {
-    if (rest[1] === 'boolean') {
-      const object = service.ensure(id, 'list-boolean');
-      object.boolOp = rest[2] === 'or' ? 'or' : 'and';
-      return '';
-    }
-    if (rest[1] === 'threshold') {
-      service.ensure(id, 'list-threshold');
-      return '';
-    }
-    return '% Incomplete command.';
-  }
-
-  if (rest.length === 0 || rest[0] === 'stub-object') {
-    service.ensure(id, 'stub');
-    return '';
-  }
-  return '% Invalid input detected at \'^\' marker.';
+  applyTrackDefinition(service, lu.definition);
+  return '';
 }
 
 function renderDetail(ctx: TrackCommandContext, object: TrackObject): string {

@@ -25,6 +25,7 @@ import { CommandTrie, formatInvalidInput } from './CommandTrie';
 import { isValidIPv4 } from '../../core/ip';
 import type { CommandSpec } from '@/cli/CommandTable';
 import type { FhrpPlacement } from './cisco/fhrpInterfaceSpecs';
+import { parseTrackDefinition, TRACK_INVALID_ID } from './cisco/trackSyntax';
 import type { IpAddressHost } from './cisco/ipAddressInterfaceSpecs';
 import type { LoadMtuHost } from './cisco/interfaceLoadMtuSpecs';
 import {
@@ -1181,15 +1182,19 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
       return '';
     });
     this.configTrie.registerGreedy('track', 'Tracked object registry', (args) => {
-      const id = parseInt(args[0] ?? '', 10);
-      if (!Number.isFinite(id) || id < 1) return '% Invalid track id.';
-      if (args[1] === 'interface' && args[2]) {
-        const iface = this.resolveInterfaceName(args[2]) ?? args[2];
-        const kind = args[3] === 'ip' && args[4] === 'routing' ? 'ip-routing' : 'line-protocol';
-        this.trackObjects.set(id, iface, kind);
-        return '';
+      const lu = parseTrackDefinition(args);
+      if (lu.idInvalide) return TRACK_INVALID_ID;
+      if (lu.incomplet) return CISCO_ERRORS.INCOMPLETE;
+      if (lu.refus !== undefined || !lu.definition) return CISCO_ERRORS.INVALID_INPUT;
+      const def = lu.definition;
+      if (def.type !== 'interface-line' && def.type !== 'interface-routing') {
+        return CISCO_ERRORS.INVALID_INPUT;
       }
-      return CISCO_ERRORS.INCOMPLETE;
+      const iface = this.resolveInterfaceName(def.iface ?? '') ?? def.iface ?? '';
+      this.trackObjects.set(
+        def.id, iface,
+        def.type === 'interface-routing' ? 'ip-routing' : 'line-protocol');
+      return '';
     });
     this.configTrie.registerGreedy('no track', 'Remove a tracked object', (args) => {
       const id = parseInt(args[0] ?? '', 10);

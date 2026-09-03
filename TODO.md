@@ -49,6 +49,21 @@ elles.
 
 ## Commutateur Cisco
 
+### [track] un Catalyst ne suit qu'une INTERFACE, pas une route ni un IP SLA
+Le commutateur porte son propre `TrackObjectRegistry`, dont le type est
+`'line-protocol' | 'ip-routing'` : les formes `track <n> ip route …`,
+`track <n> ip sla …`, `track <n> list …` et `stub-object` y sont donc
+refusees, alors qu'un 3560 les connait et que le ROUTEUR les honore
+toutes par `TrackService`.
+**Mesure** : la meme frappe est acceptee sur le routeur et refusee sur le
+commutateur ; depuis le lot qui unifie la grammaire, le refus porte au
+moins le bon message au lieu de « commande incomplete ».
+**Report** : ce n'est pas un defaut d'analyse — la grammaire est
+desormais commune — mais un MAGASIN absent. Faire lire `TrackService` au
+commutateur touche ses consommateurs (FHRP, routes suivies) et non la
+CLI, et c'est le meme chantier que celui de la note ci-dessous sur
+`ip prefix-list` : un sous-systeme du routeur que le commutateur n'a pas.
+
 ### [policy] `ip prefix-list` et `route-map` sont refuses sur un Catalyst
 Les deux familles sont declarees « router-only » (`CiscoPolicyCommands`
 n'est branche que sur le routeur), donc un Catalyst repond
