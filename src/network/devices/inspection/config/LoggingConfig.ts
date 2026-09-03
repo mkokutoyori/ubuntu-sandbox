@@ -1026,6 +1026,11 @@ export class LoggingConfig {
           this.append('debugging', 'ospf', ligne, true, DEBUG_VERBATIM);
         }
       }),
+      bus.subscribeWhere('ospf.router-id.unavailable', isOurs, (e) => {
+        this.append('warnings', 'ospf',
+          `OSPF process ${e.payload.processId} failed to allocate unique `
+          + 'router-id and cannot start', true, 'NORTRID');
+      }),
       bus.subscribeWhere('ospf.area.mismatch', isOurs, (e) => {
         const p = e.payload;
         this.append('warnings', 'ospf',

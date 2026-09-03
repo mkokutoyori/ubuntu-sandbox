@@ -35,6 +35,7 @@ import {
   OSPF_INFINITY_METRIC,
   OSPF_VERSION_2,
   createDefaultOSPFConfig,
+  OSPF_ROUTER_ID_ABSENT,
 } from './types';
 import type { IProtocolEngine } from '../core/interfaces';
 import { IPAddress } from '../core/types';
@@ -487,7 +488,7 @@ export class OSPFEngine implements IProtocolEngine {
    * @throws Error if routerId is '0.0.0.0' (invalid per RFC 2328 §C.1)
    */
   setRouterId(routerId: string): void {
-    if (routerId === '0.0.0.0') {
+    if (routerId === OSPF_ROUTER_ID_ABSENT) {
       throw new Error('OSPF: Router ID 0.0.0.0 is invalid (RFC 2328 §C.1)');
     }
     this.config.routerId = routerId;
