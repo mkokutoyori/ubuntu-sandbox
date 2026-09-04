@@ -176,10 +176,20 @@ describe('tout mot annonce apres ces trois prefixes s execute', () => {
 });
 
 describe('non-regression — les voisins gardent leur aide', () => {
+  /*
+   * Le `<cr>` que ce cas attendait d'abord etait un MENSONGE, et c'est
+   * la migration de la famille au socle qui l'a retire : `spanning-tree
+   * portfast` SEUL est une commande d'INTERFACE, et en configuration
+   * globale la machine repond « % Incomplete command. » — le cas
+   * l'epingle desormais des deux cotes plutot que d'exiger une aide qui
+   * promettait une frappe refusee.
+   */
   it('`spanning-tree portfast ?` garde ses quatre suites', async () => {
     const d = await commutateur('F1');
     expect(mots(d.cliHelp('spanning-tree portfast ')))
-      .toEqual(['bpdufilter', 'bpduguard', 'default', 'edge', '<cr>']);
+      .toEqual(['bpdufilter', 'bpduguard', 'default', 'edge']);
+    expect(String(await d.executeCommand('spanning-tree portfast')))
+      .toContain('% Incomplete command.');
   });
 
   it('`spanning-tree ?` garde la famille', async () => {

@@ -2446,3 +2446,14 @@ défauts — la méthode vaut d'être reprise sur le reliquat.
   plus. La bonne facon de les fermer est de les MIGRER — un mot-cle qui
   devient une vraie commande du socle porte sa place, son refus et son
   aide d'un seul tenant.
+- `show running-config` d'un Catalyst rend `spanning-tree mode pvst`
+  apres `no spanning-tree mode`, c'est-a-dire le mode par DEFAUT. Un
+  vrai Catalyst ecrit-il cette ligne dans sa configuration d'usine ? La
+  question n'est pas tranchee : `cisco.com` est refuse par le mandataire
+  de sortie de ce reseau, et la trancher de memoire est exactement ce
+  que ce depot refuse. Les deux reponses ont une consequence — si la
+  ligne est tacite, la rendre fait qu'une topologie importee decrit un
+  reglage que personne n'a pose ; si elle ne l'est pas, la taire perd
+  l'information au rechargement. La sonde de la famille observe donc le
+  COMPORTEMENT (le retour a PVST+) et pas le rendu. A rouvrir des qu'une
+  capture reelle de configuration d'usine est atteignable.

@@ -945,18 +945,6 @@ export function describeCiscoSwitchArguments(tries: SwitchArgumentHelpTries): vo
   tries.configIf.describeArgs('channel-group', [
     INT('group', [1, 64], 'Channel group number'),
   ]);
-  tries.config.takesNoArgument('spanning-tree backbonefast');
-  tries.config.describeArgs('spanning-tree uplinkfast', [
-    {
-      ...ENUM('option', 'UplinkFast options', [
-        ['max-update-rate', 'Rate at which station learning frames are sent'],
-      ]),
-      optional: true,
-    },
-  ]);
-  tries.config.describeArgs('spanning-tree uplinkfast max-update-rate', [
-    INT('pps', UPLINKFAST_RATE_RANGE, 'Rate in packets per second'),
-  ]);
   tries.configIf.describeArgs('spanning-tree cost', [
     INT('cost', [1, 200000000], 'Change an interface path cost'),
   ]);

@@ -185,8 +185,6 @@ export const COMMUTATEUR_SEUL: ContinuationTable = {
     'ip igmp snooping': ['immediate-leave', 'mrouter', 'querier', 'vlan'],
     'line': ['aux', 'console', 'vty'],
     'no ip igmp snooping': ['immediate-leave', 'mrouter', 'querier', 'vlan'],
-    'no spanning-tree': ['backbonefast', 'bpdufilter', 'bpduguard', 'default', 'loopguard', 'pathcost', 'portfast', 'uplinkfast', 'vlan'],
-    'spanning-tree mst': ['priority'],
     'track': ['interface', 'ip', 'routing'],
     'vtp mode': ['client', 'off', 'server', 'transparent'],
   },
