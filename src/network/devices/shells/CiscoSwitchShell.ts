@@ -71,6 +71,7 @@ import {
 import { orderCiscoConfigBlocks } from './cisco/ciscoConfigSerializer';
 import { describeCiscoArguments } from './cisco/ciscoArgumentHelp';
 import { stpGlobalSpecs, type StpGlobalHost } from './cisco/stpGlobalSpecs';
+import { IPV4_PLACE, valeurGlobaleSpecs } from './cisco/ipGlobalSpecs';
 import { buildActorState } from '@/network/lacp/types';
 import { etherChannelLimitFamily } from '@/cli/commands/aggregation/etherChannelLimits';
 import {
@@ -2366,6 +2367,9 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
       ...this.vlanEntrySpecs(),
       ...this.macTableSpecs(),
       ...stpGlobalSpecs(() => this.stpGlobalHost()),
+      ...valeurGlobaleSpecs('ip-default-gateway', ['ip', 'default-gateway'],
+        'Set the management default gateway', IPV4_PLACE,
+        (v) => { this.d()._setDefaultGateway(v ?? ''); }),
     ];
   }
 
@@ -3332,16 +3336,6 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
     // apres un `ip ssh version 2` accepte sur la meme machine. Les vraies
     // sont enregistrees avec la famille identite, sur le meme magasin que
     // le routeur.
-    this.configTrie.registerGreedy('ip default-gateway', 'Set the management default gateway', (args) => {
-      if (!args[0] || !IPAddress.isValid(args[0])) return CISCO_ERRORS.INVALID_INPUT;
-      this.d()._setDefaultGateway(args[0]);
-      return '';
-    });
-    this.configTrie.register('no ip default-gateway', 'Remove the management default gateway', () => {
-      this.d()._setDefaultGateway('');
-      return '';
-    });
-
   }
 
   private registerMonitorSessionCommands(trie: SwitchTries): void {
@@ -5235,7 +5229,6 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
   private registerL3Commands(): void {
     const cfg = this.configTrie;
 
-    cfg.register('ip routing', 'Enable Layer-3 routing', () => { this.d().setIpRoutingEnabled(true); return ''; });
     cfg.register('no ip routing', 'Disable Layer-3 routing', () => { this.d().setIpRoutingEnabled(false); return ''; });
 
     // ip route <net> <mask> <next-hop>

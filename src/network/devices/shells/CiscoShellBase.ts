@@ -72,6 +72,7 @@ import { getDefaultScheduler, type IScheduler, type TimerHandle } from '@/events
 import { runSshClient } from '../linux/network/LinuxSshClient';
 import { findHostByAddress } from '../linux/network/HostLookup';
 import type { Router } from '../Router';
+import { ipGlobalSpecs, type IpGlobalHost } from './cisco/ipGlobalSpecs';
 import {
   getSecurityConfig, buildIdentityShowCommands, buildIdentityConfigCommands,
 } from './cisco/CiscoSecurityCommands';
@@ -5572,9 +5573,32 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     return device.getSystemClockMs?.() ?? Date.now();
   }
 
+  /**
+   * Ce que les interrupteurs IP globaux lisent sur CETTE machine.
+   *
+   * Le drapeau vit dans le magasin de securite, que les deux
+   * plateformes rendent deja ; seul l'acheminement se pose par une
+   * methode differente de chaque cote, `Router` et `Switch` n'ayant
+   * aucune base commune de couche 3.
+   */
+  protected ipGlobalHost(): IpGlobalHost {
+    return {
+      setIpRouting: (on) => {
+        const d = this.d() as unknown as {
+          _setIpRoutingEnabled?: (v: boolean) => void;
+          setIpRoutingEnabled?: (v: boolean) => void;
+        };
+        if (d._setIpRoutingEnabled) d._setIpRoutingEnabled(on);
+        else d.setIpRoutingEnabled?.(on);
+      },
+      flags: () => getSecurityConfig(this.d()),
+    };
+  }
+
   protected socleSpecs(): readonly CommandSpec[] {
     return [
       ...TIME_RANGE_FAMILY,
+      ...ipGlobalSpecs(() => this.ipGlobalHost()),
       ...debugFamily(this.debugPairs()),
       ...showConfigViewSpecs(() => this),
       ...showIpDhcpSpecs(() => this.dhcpViewServer()),

@@ -194,6 +194,7 @@ const HORS_PLATEFORME_ISR: ReadonlySet<string> = new Set(['vxlan', 'nve', 'mls']
 
 import { routerOnlyDebugPairs, type RouterDebugHost } from '@/cli/commands/debug/routerDebugPairs';
 import { getGlobalConfig } from '../router/config/CiscoGlobalConfig';
+import { IPV4_PLACE, valeurGlobaleSpecs } from './cisco/ipGlobalSpecs';
 
 
 const VRF_ARGUMENTS:
@@ -382,6 +383,13 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
     return [
       ...super.socleSpecs(),
       ...dhcpClientFamily(),
+      ...valeurGlobaleSpecs('ip-default-network', ['ip', 'default-network'],
+        'Configure default network', IPV4_PLACE,
+        (v) => { getGlobalConfig(this.d()).defaultNetwork = v; }),
+      ...valeurGlobaleSpecs('ip-local-policy-route-map',
+        ['ip', 'local', 'policy', 'route-map'], 'Apply local PBR',
+        { name: 'map', type: 'WORD', description: 'Route map name' },
+        (v) => { getGlobalConfig(this.d()).localPolicyRouteMap = v; }),
       ...this.ipv6ExecSpecs(),
       ...dhcpPoolSpecs(this),
       ...routerOspfSpecs(this),
