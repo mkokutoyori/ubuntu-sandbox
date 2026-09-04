@@ -38,6 +38,8 @@ export interface NetworkInterfaceConfig {
   hasCarrier?: boolean;
   /** Line state, admin state and carrier all agreeing. */
   isOperational?: boolean;
+  acceptsCable: boolean;
+  hasSocket: boolean;
 }
 
 /**
@@ -66,7 +68,7 @@ export function buildConnection(
 
   const connId = generateId();
   const cable = new Cable(connId);
-  cable.connect(sourcePort, targetPort);
+  if (!cable.connect(sourcePort, targetPort)) return null;
 
   return {
     id: connId,
@@ -212,7 +214,8 @@ function sameInterfaces(a: NetworkInterfaceConfig[], b: NetworkInterfaceConfig[]
       || x.macAddress !== y.macAddress || x.isUp !== y.isUp
       // Left out, the snapshot would be judged unchanged when only the
       // carrier moved, and the canvas would keep the stale one forever.
-      || x.hasCarrier !== y.hasCarrier || x.isOperational !== y.isOperational) return false;
+      || x.hasCarrier !== y.hasCarrier || x.isOperational !== y.isOperational
+      || x.acceptsCable !== y.acceptsCable || x.hasSocket !== y.hasSocket) return false;
   }
   return true;
 }
@@ -250,6 +253,8 @@ function deviceToUI(device: Equipment): NetworkDeviceUI {
     isUp: port.getIsUp(),
     hasCarrier: port.hasCarrier(),
     isOperational: port.isOperationallyUp(),
+    acceptsCable: port.acceptsCable(),
+    hasSocket: port.hasSocket(),
   }));
 
   return {
@@ -297,8 +302,7 @@ function reconnectCable(connection: Connection, deviceInstances: Map<string, Equ
   const sourcePort = source.getPort(connection.sourceInterfaceId);
   const targetPort = target.getPort(connection.targetInterfaceId);
   if (!sourcePort || !targetPort) return false;
-  connection.cable.connect(sourcePort, targetPort);
-  return true;
+  return connection.cable.connect(sourcePort, targetPort);
 }
 
 type SetFn = (partial: Partial<NetworkState> | ((state: NetworkState) => Partial<NetworkState>)) => void;

@@ -18,6 +18,14 @@ export function isVirtualInterface(name: string): boolean {
   return VIRTUAL_INTERFACE.test(name);
 }
 
+export function isSubInterface(name: string): boolean {
+  return name.indexOf('.') > 0;
+}
+
+export function interfaceHasNoSocket(name: string): boolean {
+  return isVirtualInterface(name) || isSubInterface(name);
+}
+
 let carrierAssumedOnUncabledPorts = false;
 
 export function __assumeCarrierOnUncabledPorts(on: boolean): void {
@@ -55,9 +63,8 @@ export function carrierBearer(
   port: Port,
   ports?: ReadonlyMap<string, Port>,
 ): Port {
-  const dot = name.indexOf('.');
-  if (dot <= 0 || !ports) return port;
-  return ports.get(name.slice(0, dot)) ?? port;
+  if (!isSubInterface(name) || !ports) return port;
+  return ports.get(name.slice(0, name.indexOf('.'))) ?? port;
 }
 
 export function iosInterfaceStatus(

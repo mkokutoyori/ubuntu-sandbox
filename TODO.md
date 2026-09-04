@@ -2538,3 +2538,24 @@ défauts — la méthode vaut d'être reprise sur le reliquat.
   l'information au rechargement. La sonde de la famille observe donc le
   COMPORTEMENT (le retour a PVST+) et pas le rendu. A rouvrir des qu'une
   capture reelle de configuration d'usine est atteignable.
+
+### [ui] un port `Serial` de routeur est cree avec le type `ethernet`
+
+**Mesure** : `interface Serial0/0/0` sur un routeur Cisco passe par
+`Router._createVirtualInterface`, qui ecrit `new Port(name, 'ethernet')`
+en dur. Le port existe, il est bien cablable — une interface serie est
+un vrai port de facade, et le lot « une interface virtuelle n'a pas de
+prise » a pris soin de ne PAS l'en exclure — mais le selecteur de
+cablage le range sous « Ethernet » et propose un cable Ethernet pour un
+lien WAN serie. `ConnectionType` porte pourtant `'serial'`, et le
+selecteur sait deja grouper par type et n'offrir que les types presents
+des deux cotes.
+
+**Non corrige ici** : le type d'un port n'est pas qu'une etiquette
+d'affichage. Il est lu par la negociation de `Cable`, par le groupement
+du selecteur et par tout ce qui filtre sur `iface.type`, et aucun port
+`'serial'` n'existe aujourd'hui dans le depot — donc poser le bon type
+demande d'abord de mesurer ce qu'un lien serie doit negocier (debit,
+duplex, horloge DCE/DTE, `clock rate`), ce qui est un lot a soi et non
+un changement d'une ligne. Le faire a l'aveugle donnerait un port d'un
+type que rien ne sait traiter.

@@ -18,6 +18,7 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import { IPAddress, SubnetMask, resetCounters } from '@/network/core/types';
 import { CiscoRouter } from '@/network/devices/CiscoRouter';
 import { LinuxPC } from '@/network/devices/LinuxPC';
+import { GenericSwitch } from '@/network/devices/GenericSwitch';
 import { WindowsPC } from '@/network/devices/WindowsPC';
 import { Cable } from '@/network/hardware/Cable';
 import { resetDeviceCounters } from '@/network/devices/DeviceFactory';
@@ -49,12 +50,15 @@ function buildTwoHopLinux() {
 }
 
 function buildTwoHopWindows() {
-  const { r1, r2, dst } = buildTwoHopLinux();
-  // Add a Windows PC on the source side
+  const { src, r1, r2, dst } = buildTwoHopLinux();
+  const sw = new GenericSwitch('switch-generic', 'SW-LAN', 8, 0, 0);
   const win = new WindowsPC('windows-pc', 'WIN');
   win.configureInterface('eth0', new IPAddress('10.0.1.3'), new SubnetMask('255.255.255.0'));
   win.setDefaultGateway(new IPAddress('10.0.1.1'));
-  const c = new Cable('cWin'); c.connect(win.getPort('eth0')!, r1.getPort('GigabitEthernet0/0')!);
+  src.getPort('eth0')!.getCable()?.disconnect();
+  new Cable('cLanSrc').connect(src.getPort('eth0')!, sw.getPorts()[0]);
+  new Cable('cLanR1').connect(r1.getPort('GigabitEthernet0/0')!, sw.getPorts()[1]);
+  new Cable('cLanWin').connect(win.getPort('eth0')!, sw.getPorts()[2]);
   return { win, r1, r2, dst };
 }
 

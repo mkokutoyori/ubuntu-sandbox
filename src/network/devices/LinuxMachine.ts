@@ -2812,7 +2812,7 @@ export abstract class LinuxMachine extends EndHost
     if (this.ports.has(name)) return 'RTNETLINK answers: File exists';
     const parentPort = this.ports.get(parent);
     if (!parentPort) return `Cannot find device "${parent}"`;
-    const port = new Port(name, 'ethernet', parentPort.getMAC());
+    const port = new Port(name, 'ethernet', parentPort.getMAC(), { socketless: true });
     port.setUp(true);
     this.addPort(port);
     this.virtualInterfaces.add(name);

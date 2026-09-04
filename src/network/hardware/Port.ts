@@ -330,14 +330,22 @@ export class Port {
    */
   private carrierless = false;
 
+  private socketless = false;
+
   isLoopback(): boolean { return this.loopback; }
   isCarrierless(): boolean { return this.carrierless; }
+  hasSocket(): boolean { return !this.socketless; }
 
   constructor(
     name: string,
     type: ConnectionType = 'ethernet',
     mac?: MACAddress,
-    options?: { adminDown?: boolean; loopback?: boolean; carrierless?: boolean },
+    options?: {
+      adminDown?: boolean;
+      loopback?: boolean;
+      carrierless?: boolean;
+      socketless?: boolean;
+    },
   ) {
     this.name = name;
     this.type = type;
@@ -345,6 +353,7 @@ export class Port {
     // bouclage AVEC porteuse.
     if (options?.loopback) { this.loopback = true; this.carrierless = true; }
     if (options?.carrierless) this.carrierless = true;
+    if (this.carrierless || options?.socketless) this.socketless = true;
     this.mac = mac || MACAddress.generate();
     if (options?.adminDown) {
       this.adminDown = true;
@@ -1028,6 +1037,10 @@ export class Port {
 
   isConnected(): boolean {
     return this.cable !== null;
+  }
+
+  acceptsCable(): boolean {
+    return !this.socketless && this.cable === null;
   }
 
   connectCable(cable: Cable): void {

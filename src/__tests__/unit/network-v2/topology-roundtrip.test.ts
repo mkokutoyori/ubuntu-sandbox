@@ -127,15 +127,12 @@ describe('topology round-trip: enriched state survives export → import', () =>
     const sw = new CiscoSwitch('switch-cisco', 'sw', 8, 0, 0);
     [pc, srv, sw].forEach((d) => d.powerOn());
     const swPortArr = Array.from(sw.getPorts().values());
-    new Cable('c1').connect(pc.getPort('eth0')!, swPortArr[0]);
-    new Cable('c2').connect(srv.getPort('eth0')!, swPortArr[1]);
-    await pc.executeCommand('ifconfig eth0 192.168.1.1 netmask 255.255.255.0');
-    await srv.executeCommand('ifconfig eth0 192.168.1.2 netmask 255.255.255.0');
-
     const connections = [
       buildConnection(pc, 'eth0', sw, swPortArr[0].getName(), 'ethernet')!,
       buildConnection(srv, 'eth0', sw, swPortArr[1].getName(), 'ethernet')!,
     ];
+    await pc.executeCommand('ifconfig eth0 192.168.1.1 netmask 255.255.255.0');
+    await srv.executeCommand('ifconfig eth0 192.168.1.2 netmask 255.255.255.0');
     const instances = new Map<string, any>([
       [pc.getId(), pc], [srv.getId(), srv], [sw.getId(), sw],
     ]);
