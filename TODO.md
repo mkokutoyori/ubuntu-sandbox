@@ -2559,3 +2559,22 @@ demande d'abord de mesurer ce qu'un lien serie doit negocier (debit,
 duplex, horloge DCE/DTE, `clock rate`), ce qui est un lot a soi et non
 un changement d'une ligne. Le faire a l'aveugle donnerait un port d'un
 type que rien ne sait traiter.
+
+### [socle] une place ne sait pas etre exigee au positif et facultative au negatif
+
+**Mesure** : `radius-server timeout 5` exige sa valeur, `no radius-server
+timeout` s'en passe — c'est la forme d'IOS, la negation retablissant le
+defaut sans le nommer. Le socle ne sait declarer que l'un des deux :
+une place obligatoire fait repondre `% Incomplete command.` a la
+negation nue, une place `optional` laisse passer la forme positive nue.
+`CommandSpec.undoRequiresArgument` porte la nuance INVERSE (« la
+negation exige un mot de plus ») et n'est lue que par l'aide, jamais par
+l'analyse.
+
+**Contourne, pas corrige** : les six reglages globaux de
+`aaaServerSpecs.ts` declarent leur valeur `optional` et refusent la
+forme positive nue dans le gestionnaire, avec le meme message qu'IOS.
+La PLAGE, elle, reste declaree sur la place et appliquee par l'analyse,
+donc seul le controle de PRESENCE quitte la declaration. Fermer
+l'entree demande une notion de presence par sens dans `CommandParser`,
+qui touche toutes les familles migrees et non cette seule.
