@@ -148,9 +148,12 @@ UDLD en a ferme trois. Les autres, par famille :
 - `spanning-tree {backbonefast|uplinkfast} zorglub`, `spanning-tree mst
   zorglub`.
 - `tunnel path-mtu-discovery zorglub`.
-- `spanning-tree uplinkfast max-update-rate <n>` est accepte et rendu
-  `spanning-tree uplinkfast` : le debit est perdu a l'import. (La famille
-  `switchport voice vlan` est fermee.)
+- `tunnel path-mtu-discovery zorglub` est accepte et rendu comme la forme
+  nue : le mot de trop est jete. Cette commande n'est enregistree NULLE
+  PART — un glouton `tunnel` la sert, et `CiscoShowCommands` la rend
+  depuis `pending.tunnelPathMtuDiscovery` — donc la fermer demande
+  d'abord de lui donner une declaration. (Les familles `switchport voice
+  vlan` et `spanning-tree uplinkfast` sont fermees.)
 
 **Ce que le balayage ne voit pas.** Il ne descend qu'a un mot-cle de
 profondeur et ignore les commandes a texte libre (`description`,

@@ -6,7 +6,7 @@ import {
   type StpPortGuards, type MstRegion,
   createDefaultStpConfig, compareBridge, bridgeEquals, defaultPathCost, defaultPathCostLong,
   defaultPortGuards, createDefaultMstRegion, parseStpVlanList,
-  ETHERTYPE_STP, STP_BRIDGE_MAC, PVST_PLUS_MAC,
+  ETHERTYPE_STP, STP_BRIDGE_MAC, PVST_PLUS_MAC, UPLINKFAST_DEFAULT_RATE,
 } from './types';
 import { StpVlanInstance, type StpInstanceAgent, type StpForwardState } from './StpVlanInstance';
 import { mstConfigIdentifier, sameMstRegion, type MstConfigIdentifier } from './MstConfigId';
@@ -703,7 +703,12 @@ export class StpAgent extends ReactiveAgentBase implements StpInstanceAgent {
   setPortfastDefault(on: boolean): void { this.config.portfastDefault = on; }
   setBpduFilterGlobal(on: boolean): void { this.config.bpduFilterGlobal = on; }
   setLoopGuardGlobal(on: boolean): void { this.config.loopGuardGlobal = on; }
-  setUplinkFast(on: boolean): void { this.config.uplinkFast = on; }
+  setUplinkFast(on: boolean, maxUpdateRate?: number): void {
+    this.config.uplinkFast = on;
+    this.config.uplinkFastMaxUpdateRate = on
+      ? maxUpdateRate ?? this.config.uplinkFastMaxUpdateRate
+      : UPLINKFAST_DEFAULT_RATE;
+  }
   setBackboneFast(on: boolean): void { this.config.backboneFast = on; }
   getGlobalStp(): {
     portfastDefault: boolean; bpduGuardGlobal: boolean; bpduFilterGlobal: boolean;
@@ -800,7 +805,11 @@ export class StpAgent extends ReactiveAgentBase implements StpInstanceAgent {
     if (this.config.bpduGuardGlobal) out.push('spanning-tree portfast bpduguard default');
     if (this.config.bpduFilterGlobal) out.push('spanning-tree portfast bpdufilter default');
     if (this.config.loopGuardGlobal) out.push('spanning-tree loopguard default');
-    if (this.config.uplinkFast) out.push('spanning-tree uplinkfast');
+    if (this.config.uplinkFast) {
+      out.push('spanning-tree uplinkfast'
+        + (this.config.uplinkFastMaxUpdateRate === UPLINKFAST_DEFAULT_RATE
+          ? '' : ` max-update-rate ${this.config.uplinkFastMaxUpdateRate}`));
+    }
     if (this.config.backboneFast) out.push('spanning-tree backbonefast');
     if (this.pathcostMethod === 'long') out.push('spanning-tree pathcost method long');
     for (const vlan of this.configuredVlans()) {

@@ -48,6 +48,7 @@ import {
 import type { ISwitchShell } from './ISwitchShell';
 import type { Switch, SwitchportConfig } from '../Switch';
 import { parseVlanId, VLAN_MIN, VLAN_MAX, type VlanSet } from '../switch/VlanSet';
+import { UPLINKFAST_RATE_RANGE } from '../../stp/types';
 import {
   STORM_CONTROL_TYPES, parseStormControl, stormControlPercent,
 } from './cisco/stormControlSyntax';
@@ -298,7 +299,19 @@ function refusReglageStpGlobal(args: readonly string[]): string | null {
     return null;
   }
 
-  if (tete === 'uplinkfast' || tete === 'backbonefast') return null;
+  if (tete === 'backbonefast') {
+    if (args[1] !== undefined) throw new CliInvalidInput({ token: args[1] });
+    return null;
+  }
+
+  if (tete === 'uplinkfast') {
+    if (args[1] === undefined) return null;
+    if (mot(1) !== 'max-update-rate') throw new CliInvalidInput({ token: args[1] });
+    if (args[2] === undefined) return CISCO_ERRORS.INCOMPLETE;
+    if (args[3] !== undefined) throw new CliInvalidInput({ token: args[3] });
+    entierBorne(args[2], ...UPLINKFAST_RATE_RANGE);
+    return null;
+  }
 
   throw new CliInvalidInput({ token: args[0] });
 }
@@ -2278,7 +2291,10 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
       if (args[0]?.toLowerCase() === 'loopguard' && args[1]?.toLowerCase() === 'default') {
         this.requireStp().setLoopGuardGlobal(true);
       }
-      if (args[0]?.toLowerCase() === 'uplinkfast') this.requireStp().setUplinkFast(true);
+      if (args[0]?.toLowerCase() === 'uplinkfast') {
+        this.requireStp().setUplinkFast(true,
+          args[2] === undefined ? undefined : Number(args[2]));
+      }
       if (args[0]?.toLowerCase() === 'backbonefast') this.requireStp().setBackboneFast(true);
       if (args[0]?.toLowerCase() === 'pathcost' && args[1]?.toLowerCase() === 'method') {
         const m = args[2]?.toLowerCase();

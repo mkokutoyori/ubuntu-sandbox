@@ -72,6 +72,10 @@ export function defaultPortGuards(): StpPortGuards {
   };
 }
 
+export const UPLINKFAST_DEFAULT_RATE = 150;
+
+export const UPLINKFAST_RATE_RANGE: readonly [number, number] = [0, 32000];
+
 export interface StpConfig {
   enabled: boolean;
   /**
@@ -92,6 +96,7 @@ export interface StpConfig {
   bpduFilterGlobal: boolean;
   loopGuardGlobal: boolean;
   uplinkFast: boolean;
+  uplinkFastMaxUpdateRate: number;
   backboneFast: boolean;
 }
 
@@ -169,6 +174,7 @@ export function createDefaultStpConfig(baseMac: string): StpConfig {
     bpduFilterGlobal: false,
     loopGuardGlobal: false,
     uplinkFast: false,
+    uplinkFastMaxUpdateRate: UPLINKFAST_DEFAULT_RATE,
     backboneFast: false,
   };
 }
