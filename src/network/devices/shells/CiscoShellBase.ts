@@ -75,6 +75,7 @@ import type { Router } from '../Router';
 import {
   getSecurityConfig, buildIdentityShowCommands, buildIdentityConfigCommands,
 } from './cisco/CiscoSecurityCommands';
+import { parseLineMethodList } from './cisco/lineMethodList';
 import { parserViewMode } from '../router/security/CiscoSecurityConfig';
 import type { InterfaceSecurityFlags } from '../router/security/CiscoSecurityConfig';
 import { MODES_INTERFACE } from './cisco/CiscoConfigCommands';
@@ -593,6 +594,10 @@ const LINE_KEYWORD_SUITES: ReadonlyArray<readonly [string, ReadonlyArray<readonl
   ['authorization', [['commands', 'Authorize commands'], ['exec', 'Authorize EXEC sessions']]],
   ['accounting', [['commands', 'Account for commands'], ['connection', 'Account for connections'], ['exec', 'Account for EXEC sessions']]],
 ];
+
+function suitesDeLigne(mot: string): readonly string[] {
+  return (LINE_KEYWORD_SUITES.find(([k]) => k === mot)?.[1] ?? []).map(([s]) => s);
+}
 
 
 /**
@@ -5171,7 +5176,14 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
           // bare `login` → authenticate with the line password; `login local`
           // → local user DB; `login authentication …` → AAA.
           const sub = args[0]?.toLowerCase();
-          update.login = sub === 'local' ? 'local' : sub === 'authentication' ? 'aaa' : 'password';
+          if (sub === 'authentication') {
+            if (args[1] === undefined) throw new CliIncomplete();
+            if (args[2] !== undefined) throw new CliInvalidInput({ token: args[2] });
+            update.login = 'aaa';
+            update.loginAuthList = args[1];
+          } else {
+            update.login = sub === 'local' ? 'local' : 'password';
+          }
         } else if (kw === 'password') {
           // `password [0|7] <mot>`. Le chiffre de type n'est un type que
           // s'il est ecrit ; il etait retire INCONDITIONNELLEMENT
@@ -5227,10 +5239,12 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
           update.motdBannerSuppressed = false;
         } else if (kw === 'exec' && args[0]?.toLowerCase() === 'banner') {
           update.execBannerSuppressed = false;
-        } else if (kw === 'authorization' && args[0] && args[1]) {
-          update.authorizationList = `${args[0]} ${args[1]}`;
-        } else if (kw === 'accounting' && args[0] && args[1]) {
-          update.accountingList = `${args[0]} ${args[1]}`;
+        } else if (kw === 'authorization' || kw === 'accounting') {
+          const verdict = parseLineMethodList(args, suitesDeLigne(kw));
+          if ('incomplete' in verdict) throw new CliIncomplete();
+          if ('at' in verdict) throw new CliInvalidInput({ token: verdict.at });
+          if (kw === 'authorization') update.authorizationList = verdict.tail;
+          else update.accountingList = verdict.tail;
         } else if (kw === 'speed' && args[0]) {
           update.speedBaud = parseInt(args[0], 10);
         } else if (kw === 'stopbits' && args[0]) {
