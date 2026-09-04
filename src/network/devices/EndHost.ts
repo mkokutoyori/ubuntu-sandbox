@@ -3893,23 +3893,78 @@ export abstract class EndHost extends Equipment {
     return { success: false, rttMs: 0, ttl: 0 };
   }
 
-  private resolveArpSync(targetIP: IPAddress): void {
+  /** Vrai quand la route vers `targetIP` sort sans saut suivant : la cible EST le saut. */
+  isDirectlyConnected(targetIP: IPAddress): boolean {
     const route = this.resolveRoute(targetIP);
-    if (!route) return;
-    const nextHopIpStr = route.nextHopIP.toString();
-    if (this.arpTable.get(nextHopIpStr)) return;
-    const myIP = route.port.getIPAddress();
+    return route !== null && route.nextHopIP.equals(targetIP);
+  }
+
+  /** Pendant IPv6 de `isDirectlyConnected`. */
+  isDirectlyConnected6(targetIP: IPv6Address): boolean {
+    const route = this.resolveIPv6Route(targetIP);
+    return route !== null && route.nextHopIP.equals(targetIP);
+  }
+
+  /**
+   * L'adresse de couche lien d'une cible du MEME segment, MESUREE sur le
+   * fil : la requete part toujours et c'est la REPONSE qui est lue, sans
+   * consulter le cache. Un cache repond pour une machine qui n'est plus
+   * la — donc une sonde qui le lirait declarerait vivant un hote eteint,
+   * le faux positif qu'un scanner ne doit jamais rendre.
+   *
+   * Rend `null` des que la cible n'est pas directement connectee : il n'y
+   * a alors aucune adresse d'ELLE a apprendre, seulement celle du routeur
+   * qui y mene.
+   */
+  resolveLinkLayerAddress(targetIP: IPAddress): MACAddress | null {
+    const route = this.resolveRoute(targetIP);
+    if (!route || !route.nextHopIP.equals(targetIP)) return null;
+    const wanted = targetIP.toString();
+    let learned: MACAddress | null = null;
+    const stop = this.getBus().subscribe('host.arp.entry-learned', (event) => {
+      const p = event.payload;
+      if (p.deviceId === this.id && p.ip === wanted) learned = new MACAddress(p.mac);
+    });
+    this.sendArpRequest(route.port, targetIP);
+    stop();
+    return learned;
+  }
+
+  /** Pendant IPv6 : la decouverte de voisin repond a la meme question. */
+  resolveLinkLayerAddress6(targetIP: IPv6Address): MACAddress | null {
+    const route = this.resolveIPv6Route(targetIP);
+    if (!route || !route.nextHopIP.equals(targetIP)) return null;
+    const wanted = targetIP.toString();
+    let learned: MACAddress | null = null;
+    const stop = this.getBus().subscribe('host.ndp.entry-learned', (event) => {
+      const p = event.payload;
+      if (p.deviceId === this.id && p.ip === wanted) learned = new MACAddress(p.mac);
+    });
+    this.sendNeighborSolicitation(route.port.getName(), targetIP);
+    stop();
+    return learned;
+  }
+
+  private sendArpRequest(port: Port, targetIP: IPAddress): void {
+    const myIP = port.getIPAddress();
     if (!myIP) return;
     const arpReq: ARPPacket = {
       type: 'arp', operation: 'request',
-      senderMAC: route.port.getMAC(), senderIP: myIP,
-      targetMAC: MACAddress.broadcast(), targetIP: route.nextHopIP,
+      senderMAC: port.getMAC(), senderIP: myIP,
+      targetMAC: MACAddress.broadcast(), targetIP,
     };
-    this.emitArpRequestSent(route.port.getName(), nextHopIpStr);
-    this.sendFrame(route.port.getName(), {
-      srcMAC: route.port.getMAC(), dstMAC: MACAddress.broadcast(),
+    this.emitArpRequestSent(port.getName(), targetIP.toString());
+    this.sendFrame(port.getName(), {
+      srcMAC: port.getMAC(), dstMAC: MACAddress.broadcast(),
       etherType: ETHERTYPE_ARP, payload: arpReq,
     });
+  }
+
+  private resolveArpSync(targetIP: IPAddress): void {
+    const route = this.resolveRoute(targetIP);
+    if (!route) return;
+    if (this.arpTable.get(route.nextHopIP.toString())) return;
+    this.sendArpRequest(route.port, route.nextHopIP);
   }
 
   /**

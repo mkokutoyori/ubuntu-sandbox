@@ -3,7 +3,7 @@ import type { LinuxCommandContext } from '../LinuxCommandContext';
 import { IPAddress, IPv6Address } from '../../../../core/types';
 import { localDeviceOf } from '../../network/HostLookup';
 import { detectServiceFromBanner } from '@/network/scan/nmap/BannerAnalyzer';
-import type { ScanHost } from '@/network/scan/nmap/NmapProbes';
+import { linkNeighbourOf, type ScanHost } from '@/network/scan/nmap/NmapProbes';
 import { runNmap } from '@/network/scan/nmap/NmapRun';
 import { makeArgCompleter } from '../completionHelpers';
 
@@ -21,6 +21,7 @@ function scanHost(ctx: LinuxCommandContext): ScanHost {
     sendUdpProbe: (ip, port, sourcePort) =>
       ctx.net.sendUdpProbe(new IPAddress(ip), port, sourcePort),
     scanProbe: (ip, port, flags) => ctx.net.getTcpStack().scanProbe(ip, port, flags),
+    linkNeighbour: (ip) => linkNeighbourOf(localDeviceOf(ctx), ip),
   };
 }
 
@@ -32,7 +33,7 @@ export const nmapCommand: LinuxCommand = {
     flags: ['-6', '-A', '-F', '-O', '-P0', '-Pn', '-R', '-T', '-d', '-n',
       '-oA', '-oG', '-oN', '-p', '-p-', '-sP', '-sS', '-sT', '-sU', '-sV',
       '-sA', '-sF', '-sM', '-sN', '-sW', '-sX', '-sn', '-v', '-vv',
-      '--open', '--reason', '--top-ports'],
+      '--disable-arp-ping', '--open', '--reason', '--send-ip', '--top-ports'],
     hostsAtBarePosition: true,
   }),
   usage: 'nmap [-sT|-sS|-sU|-sA|-sF|-sN|-sX|-sM|-sW] [-sV] [-O] [-A] [-p SPEC] [-F] [--top-ports N] [-sn] [-Pn] [--open] [--reason] [-n] [-oN file] [-oG file] <target...>',

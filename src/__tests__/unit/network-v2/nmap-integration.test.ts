@@ -106,9 +106,24 @@ describe('nmap — intégration sur topologie réelle', () => {
     expect(out).not.toMatch(/1522\/tcp/);
   });
 
-  it('-Pn scanne un hôte inexistant sans découverte et rapporte filtered', async () => {
+  // Ce cas encodait une premisse que le vrai `nmap` contredit : sur un
+  // segment ethernet local, l'ARP est emis MEME sous `-Pn`, et un hote qui
+  // n'y repond pas est declare `down` — donc aucune table de ports n'est
+  // rendue. Le manuel : « Nmap normally does ARP or IPv6 Neighbor
+  // Discovery (ND) discovery of locally connected ethernet hosts, even if
+  // other host discovery options such as -Pn or -PE are used. » Ce que le
+  // cas voulait eprouver — `-Pn` saute la decouverte IP — reste eprouve
+  // par `--disable-arp-ping`, qui rend a l'option son sens litteral.
+  it('-Pn ne dispense pas de l ARP sur le segment local', async () => {
     const lab = await buildLab();
     const out = await lab.attacker.executeCommand(`nmap -Pn -p 1521 192.168.50.200`);
+    expect(out).toMatch(/Host seems down/);
+  });
+
+  it('--disable-arp-ping rend a -Pn son sens litteral', async () => {
+    const lab = await buildLab();
+    const out = await lab.attacker.executeCommand(
+      'nmap -Pn --disable-arp-ping -p 1521 192.168.50.200');
     expect(out).toMatch(/1521\/tcp\s+(filtered|closed)/);
   });
 

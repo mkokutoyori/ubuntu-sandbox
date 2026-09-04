@@ -23,6 +23,8 @@ export interface HostState {
   interfaceDown?: boolean;
   osHint?: string;
   latencyMs?: number;
+  mac?: string;
+  reason?: string;
 }
 
 export interface ResolvedTarget {
@@ -35,6 +37,14 @@ export interface HostProbes {
   resolveTarget(target: string): ResolvedTarget | null;
   /** Emits the discovery probes and reports what came back. */
   hostState(target: ResolvedTarget): Promise<HostState>;
+  /**
+   * La decouverte de couche lien d'une cible du MEME segment — ARP en
+   * IPv4, decouverte de voisin en IPv6. Les TROIS issues sont distinctes
+   * et le rester importe : `null` veut dire que la cible n'est pas sur ce
+   * segment, donc que les sondes IP reprennent la main ; `mac: null` veut
+   * dire qu'elle y est et n'a pas repondu, donc qu'elle est absente.
+   */
+  linkDiscovery?(ip: string): { mac: string | null; reason: string } | null;
   /**
    * `-O` is a phase of its own on a real nmap (FPEngine), run after the
    * port scan and independent of host discovery — so it still fingerprints
@@ -72,6 +82,8 @@ export interface HostReport {
   latencyMs: number;
   osGuess?: string;
   downReason?: string;
+  mac?: string;
+  discoveryReason?: string;
   ports: PortResult[];
   notShown?: { count: number; states: Partial<Record<PortState, number>> };
 }
@@ -195,11 +207,19 @@ async function scanHost(
   const resolved = probes.resolveTarget(target);
   if (!resolved) return null;
 
-  // `-Pn` skips discovery entirely on a real nmap: nothing is probed and
-  // every target is taken as up, which is the point of the flag.
-  const info = options.skipDiscovery
-    ? { ip: resolved.ip, hostname: resolved.hostname, up: true }
-    : await probes.hostState(resolved);
+  // targets.cc, `refresh_hostbatch` : la decouverte de couche lien passe
+  // AVANT toute sonde IP, elle les remplace quand elle repond, et le
+  // manuel dit qu'elle a lieu « even if other host discovery options such
+  // as -Pn or -PE are used » — donc une adresse locale que personne ne
+  // porte ressort `down` sous `-Pn` aussi. `--disable-arp-ping` la
+  // desarme, et `-Pn` retrouve alors son sens litteral.
+  const onLink = options.disableArpPing ? null : probes.linkDiscovery?.(resolved.ip);
+  const identified = { ip: resolved.ip, hostname: resolved.hostname };
+  const info: HostState = onLink
+    ? { ...identified, up: onLink.mac !== null, mac: onLink.mac ?? undefined, reason: onLink.reason }
+    : options.skipDiscovery
+      ? { ...identified, up: true, reason: 'user-set' }
+      : await probes.hostState(resolved);
 
   const latencyMs = info.latencyMs ?? 0.001;
   const osGuess = options.osScan
@@ -213,8 +233,13 @@ async function scanHost(
     };
   }
 
+  const identity = { mac: info.mac, discoveryReason: info.reason };
+
   if (options.pingOnly) {
-    return { ip: info.ip, hostname: info.hostname, up: true, latencyMs, osGuess, ports: [] };
+    return {
+      ip: info.ip, hostname: info.hostname, up: true, latencyMs, osGuess,
+      ...identity, ports: [],
+    };
   }
 
   const all: PortResult[] = [];
@@ -223,7 +248,10 @@ async function scanHost(
     else all.push(tcpResult(options, probes, info.ip, port));
   }
   const { ports, notShown } = partition(options, all);
-  return { ip: info.ip, hostname: info.hostname, up: true, latencyMs, osGuess, ports, notShown };
+  return {
+    ip: info.ip, hostname: info.hostname, up: true, latencyMs, osGuess,
+    ...identity, ports, notShown,
+  };
 }
 
 function isIpLiteral(target: string): boolean {

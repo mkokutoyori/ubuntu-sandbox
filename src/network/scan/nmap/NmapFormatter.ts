@@ -48,10 +48,20 @@ function renderHost(host: HostReport, options: NmapOptions): string[] {
     lines.push('Note: Host seems down. If it is really up, but blocking our ping probes, try -Pn');
     return lines;
   }
-  lines.push(`Host is up (${host.latencyMs.toFixed(4)}s latency).`);
+  // output.cc, `write_host_header` : la raison se glisse entre l'etat et
+  // la latence — `Host is up, received arp-response (0.0010s latency).`
+  const received = options.showReason && host.discoveryReason
+    ? `, received ${host.discoveryReason}` : '';
+  lines.push(`Host is up${received} (${host.latencyMs.toFixed(4)}s latency).`);
   const notShown = notShownLine(host);
   if (notShown) lines.push(notShown);
   lines.push(...renderTable(host, options));
+  // nmap.cc:2339 : `printmacinfo` vient APRES la table des ports et AVANT
+  // `printosscanoutput`. Le constructeur est `Unknown` par demonstration
+  // et non par defaut — `MACPrefix2Corp` ne cherche que dans les prefixes
+  // enregistres a l'IEEE, et toute adresse de ce simulateur porte le bit
+  // local (RFC 7042 §2.1), donc aucune n'y figure.
+  if (host.mac) lines.push(`MAC Address: ${host.mac.toUpperCase()} (Unknown)`);
   if (options.osScan && host.osGuess) {
     lines.push(`OS details: ${host.osGuess}`);
   }

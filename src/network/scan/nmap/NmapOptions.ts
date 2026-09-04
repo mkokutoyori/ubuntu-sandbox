@@ -15,6 +15,8 @@ export interface NmapOptions {
   openOnly: boolean;
   /** `-6` : la cible se resout en IPv6, et le balayage part en IPv6. */
   ipv6: boolean;
+  /** `--disable-arp-ping` : plus de decouverte de couche lien, meme sur le segment local. */
+  disableArpPing: boolean;
   showReason: boolean;
   noDns: boolean;
   verbose: boolean;
@@ -32,6 +34,7 @@ export function parseNmapArgs(args: string[]): NmapOptions {
   let osScan = false;
   let openOnly = false;
   let ipv6 = false;
+  let disableArpPing = false;
   let showReason = false;
   let noDns = false;
   let verbose = false;
@@ -83,6 +86,7 @@ export function parseNmapArgs(args: string[]): NmapOptions {
     }
 
     if (a === '-6') { ipv6 = true; continue; }
+    if (a === '--disable-arp-ping' || a === '--send-ip') { disableArpPing = true; continue; }
     if (a.startsWith('-T') || a === '-R' || a === '--reason-only') continue;
     if (a.startsWith('-')) continue;
 
@@ -91,6 +95,7 @@ export function parseNmapArgs(args: string[]): NmapOptions {
 
   return {
     targets, ports, scanType, pingOnly, skipDiscovery, versionScan, osScan,
-    openOnly, ipv6, showReason, noDns, verbose, outputNormal, outputGreppable,
+    openOnly, ipv6, disableArpPing, showReason, noDns, verbose,
+    outputNormal, outputGreppable,
   };
 }

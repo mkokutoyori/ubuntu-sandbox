@@ -132,6 +132,37 @@ test.describe('nmap sonde le fil', () => {
     expect(await lastLines(page, 6)).toContain('(0 hosts up)');
   });
 
+  test('un voisin muet est trouve par ARP, et la capture le montre', async ({ page }) => {
+    test.setTimeout(180_000);
+    await page.goto('/', { timeout: 45_000 });
+    await waitForStore(page);
+
+    const cibleId = await addDevice(page, 'linux-server', 300, 400);
+    const scannerId = await addDevice(page, 'linux-pc', 600, 400);
+    await cable(page, cibleId, scannerId);
+
+    await openTerminal(page, cibleId);
+    await typeCmd(page, `ip addr add ${CIBLE}/24 dev eth0`);
+    await typeCmd(page, 'sudo iptables -A INPUT -p icmp -j DROP');
+    await typeCmd(page, 'sudo iptables -A INPUT -p tcp -j DROP');
+    await closeTerminal(page);
+
+    await openTerminal(page, scannerId);
+    await typeCmd(page, `ip addr add ${SCANNER}/24 dev eth0`);
+    await typeCmd(page, 'sudo tcpdump -i eth0 -w /tmp/arp.pcap &');
+    await typeCmd(page, `nmap -sn --reason ${CIBLE}`);
+
+    const rapport = await lastLines(page, 10);
+    expect(rapport).toContain('Host is up');
+    expect(rapport).toContain('arp-response');
+    expect(rapport).toContain('MAC Address:');
+
+    await typeCmd(page, 'sudo tcpdump -r /tmp/arp.pcap -nn');
+    const capture = await lastLines(page, 20);
+    expect(capture).toContain(`ARP, Request who-has ${CIBLE} tell ${SCANNER}`);
+    expect(capture).not.toContain('ICMP echo request');
+  });
+
   test('nmap.exe existe aussi sur une machine Windows', async ({ page }) => {
     test.setTimeout(180_000);
     await page.goto('/', { timeout: 45_000 });

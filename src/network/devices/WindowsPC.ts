@@ -167,7 +167,7 @@ import { CertificateVerifier } from '@/network/pki/CertificateVerifier';
 import type { X509Certificate } from '@/network/pki/X509Certificate';
 import type { CurlHost } from '@/network/http/curl/CurlHost';
 import { runCurl } from '@/network/http/curl/CurlEngine';
-import type { ScanHost } from '@/network/scan/nmap/NmapProbes';
+import { linkNeighbourOf, type ScanHost } from '@/network/scan/nmap/NmapProbes';
 import { runNmap } from '@/network/scan/nmap/NmapRun';
 import { cmdPrint } from './windows/WinPrint';
 import { runRunasNonInteractive, runAsUser } from './windows/WinRunas';
@@ -3791,6 +3791,7 @@ export class WindowsPC extends EndHost implements UserAccountHost {
       sendUdpProbe: (ip, port, sourcePort) =>
         this.sendUdpDatagram(new IPAddress(ip), port, sourcePort, null, 0),
       scanProbe: (ip, port, flags) => this.getTcpStack().scanProbe(ip, port, flags),
+      linkNeighbour: (ip) => linkNeighbourOf(this, ip),
     };
   }
 

@@ -110,12 +110,17 @@ describe('`-6` choisit la famille de la resolution', () => {
   });
 });
 
+// La cible de ce laboratoire est sur le MEME segment, et un vrai `nmap`
+// la decouvre alors par sollicitation de voisin (`PING_SCAN_ND`), qui
+// REMPLACE les sondes IP au lieu de s'y ajouter. `--disable-arp-ping` est
+// precisement l'option qui les rend, et c'est donc elle qui permet
+// d'eprouver l'echo ICMPv6 sur un voisin direct.
 describe('la decouverte d hote EMET un echo ICMPv6', () => {
   it('la sonde arrive chez la cible', async () => {
     const { scanner, cible } = await segment();
     await taper(cible, 'sudo tcpdump -i eth0 -w /tmp/d6.pcap &');
 
-    await taper(scanner, 'nmap -6 -sn 2001:db8::2');
+    await taper(scanner, 'nmap -6 --disable-arp-ping -sn 2001:db8::2');
 
     const vu = await taper(cible, 'sudo tcpdump -r /tmp/d6.pcap -nn');
     // Un ECHO, et pas seulement la sollicitation de voisin qui le precede.
@@ -133,7 +138,7 @@ describe('la decouverte d hote EMET un echo ICMPv6', () => {
   it('la latence rendue est celle qui a ete MESUREE', async () => {
     const { scanner } = await segment();
 
-    const sortie = await taper(scanner, 'nmap -6 -sn 2001:db8::2');
+    const sortie = await taper(scanner, 'nmap -6 --disable-arp-ping -sn 2001:db8::2');
 
     expect(sortie).toMatch(/Host is up/);
     expect(sortie).not.toMatch(/\(0\.0010s latency\)/);

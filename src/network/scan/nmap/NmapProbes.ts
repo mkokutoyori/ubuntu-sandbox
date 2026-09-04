@@ -5,7 +5,7 @@ import {
   SCAN_PROBE_FLAGS, readStatelessReply,
   type ScanProbeFlags, type StatelessScanKind,
 } from './StatelessScans';
-import { IP_PROTO_UDP } from '@/network/core/types';
+import { IP_PROTO_UDP, IPAddress, IPv6Address } from '@/network/core/types';
 import { ICMP_UNREACH_PORT } from '@/network/core/IcmpErrors';
 import { findHostByAddress } from '@/network/devices/linux/network/HostLookup';
 import {
@@ -32,9 +32,53 @@ export interface ScanHost {
   sendUdpProbe(ip: string, port: number, sourcePort: number): boolean;
   /** Un segment hors connexion, et ce qui revient — la lecture est au moteur. */
   scanProbe(ip: string, port: number, flags: ScanProbeFlags): StatelessProbeReply;
+  /**
+   * Ce que `arpping()` demande a la machine. Les TROIS issues sont
+   * distinctes : `null` veut dire que la cible n'est pas sur ce segment,
+   * `{ mac: null }` qu'elle y est et n'a pas repondu, et une adresse
+   * qu'elle a repondu.
+   */
+  linkNeighbour(ip: string): { mac: string | null } | null;
 }
 
 const UDP_PROBE_SOURCE_PORT = 51820;
+
+interface LinkLayerResolver {
+  isDirectlyConnected(ip: IPAddress): boolean;
+  resolveLinkLayerAddress(ip: IPAddress): { toString(): string } | null;
+  isDirectlyConnected6(ip: IPv6Address): boolean;
+  resolveLinkLayerAddress6(ip: IPv6Address): { toString(): string } | null;
+}
+
+function linkLayerResolverOf(device: Equipment | null): LinkLayerResolver | null {
+  const candidate = device as unknown as Partial<LinkLayerResolver> | null;
+  return candidate && typeof candidate.isDirectlyConnected === 'function'
+    && typeof candidate.resolveLinkLayerAddress === 'function'
+    ? candidate as LinkLayerResolver : null;
+}
+
+/**
+ * Ce que `arpping()` demande a la machine, ecrit une fois pour les deux
+ * plateformes : `nmap` n'est pas une commande Linux, et un voisin se
+ * resout de la meme facon sous Windows.
+ */
+export function linkNeighbourOf(
+  device: Equipment | null, ip: string,
+): { mac: string | null } | null {
+  const resolver = linkLayerResolverOf(device);
+  if (!resolver) return null;
+  if (ip.includes(':')) {
+    let target: IPv6Address;
+    try { target = new IPv6Address(ip); } catch { return null; }
+    if (!resolver.isDirectlyConnected6(target)) return null;
+    const mac = resolver.resolveLinkLayerAddress6(target);
+    return { mac: mac ? mac.toString() : null };
+  }
+  const target = IPAddress.tryParse(ip);
+  if (!target || !resolver.isDirectlyConnected(target)) return null;
+  const mac = resolver.resolveLinkLayerAddress(target);
+  return { mac: mac ? mac.toString() : null };
+}
 
 /**
  * nmap.h: the default IPv4 host discovery is `-PE -PA80 -PS443 -PP`, and
@@ -49,6 +93,7 @@ interface Discovery {
   up: boolean;
   latencyMs?: number;
   ttl?: number;
+  reason?: string;
 }
 
 async function discoverHost(host: ScanHost, ip: string): Promise<Discovery> {
@@ -59,11 +104,14 @@ async function discoverHost(host: ScanHost, ip: string): Promise<Discovery> {
     echo = [];
   }
   const reply = echo.find((r) => r.success);
-  if (reply) return { up: true, latencyMs: reply.rttMs, ttl: reply.ttl };
+  if (reply) {
+    return { up: true, latencyMs: reply.rttMs, ttl: reply.ttl, reason: 'echo-reply' };
+  }
 
   for (const port of DISCOVERY_PORTS) {
     const outcome = host.tcpOutcome(ip, port);
-    if (outcome === 'open' || outcome === 'refused') return { up: true };
+    if (outcome === 'open') return { up: true, reason: 'syn-ack' };
+    if (outcome === 'refused') return { up: true, reason: 'reset' };
   }
   return { up: false };
 }
@@ -167,6 +215,14 @@ export function buildScanProbes(
     async fingerprint(ip: string): Promise<string | undefined> {
       const alive = await discoverHost(host, ip);
       return alive.ttl === undefined ? undefined : osFromInitialTtl(alive.ttl);
+    },
+    linkDiscovery(ip: string) {
+      const neighbour = host.linkNeighbour(ip);
+      if (!neighbour) return null;
+      const reason = ip.includes(':') ? 'nd-response' : 'arp-response';
+      return neighbour.mac === null
+        ? { mac: null, reason: 'no-response' }
+        : { mac: neighbour.mac, reason };
     },
     tcpOutcome(ip: string, port: number) {
       return host.tcpOutcome(ip, port);

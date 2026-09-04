@@ -7357,3 +7357,46 @@ tombent, mesures en retirant ENSEMBLE les cinq fichiers touches. Un
 premier essai n'en avait retire que trois et cassait le balayage ACK par
 une importation manquante, faisant tomber un TEMOIN pour une raison
 etrangere au correctif ; l'en-tete du fichier le raconte.
+
+---
+
+## 2026-09-03 — `nmap` : la DECOUVERTE d'un hote local passe par ARP
+
+**Portee reservee** : `src/network/scan/nmap/` (`NmapProbes`, `ScanEngine`,
+`NmapFormatter`, `NmapOptions`), `LinuxNmapHost`/`WindowsNmapHost`,
+`EndHost` (une porte publique de resolution de couche lien).
+
+Reference lue : `targets.cc` (`arpping`, `refresh_hostbatch`),
+`output.cc` (`printmacinfo`), `portreasons.cc` (`arp-response`,
+`nd-response`), `docs/nmap.1` (`-Pn`, `--disable-arp-ping`).
+
+`discoverHost` ne connaissait que deux moyens — un echo ICMP, puis une
+connexion TCP vers 80 et 443 — c'est-a-dire exactement ce qu'un `nmap`
+NON PRIVILEGIE fait, et rien de ce qu'il fait quand il peut ecrire sur le
+lien. Consequence mesuree : un hote du meme segment qui jette l'ICMP et
+filtre tout le TCP etait rendu `down`, alors qu'il repond a l'ARP et
+qu'un vrai `nmap` le trouve.
+
+**L'ARP ne s'AJOUTE pas aux sondes IP, il les REMPLACE** (`targets.cc` :
+`else if (!arpping_done) massping(...)`), et cela vaut MEME sous `-Pn`,
+ce que seul le manuel tranche. Donc une adresse locale que personne ne
+porte ressort `down` sous `-Pn`, et `--disable-arp-ping` — ecrite dans le
+meme lot — lui rend son sens litteral.
+
+**Ce que la sonde a APPRIS, et qui a change le correctif.** Une premiere
+version LISAIT le cache ARP. Deux cas l'ont refusee ensemble : la requete
+ne partait plus des que le cache etait chaud, et surtout un hote ETEINT
+du meme segment ressortait `up` — le faux positif qu'un scanner ne doit
+jamais rendre. `resolveLinkLayerAddress` emet donc TOUJOURS la requete et
+lit la REPONSE sur le bus, sans consulter le cache, ce que fait un vrai
+`nmap` qui construit son propre paquet.
+
+**Deux tests encodaient une premisse que le vrai `nmap` contredit** et
+sont corriges plutot que le code : `-Pn` sur une adresse locale absente
+(`nmap-integration`) et l'echo ICMPv6 vers un voisin DIRECT
+(`probe-nmap-ipv6`), qui passe desormais par `--disable-arp-ping` — la
+seule option qui rende les sondes IP sur un voisin.
+
+**Discrimination** : `probe-nmap-decouverte-arp.test.ts` (14 cas), 9
+tombent, mesures en retirant ENSEMBLE les sept fichiers touches ; les 5
+qui passent des deux cotes sont nommes dans l'en-tete.
