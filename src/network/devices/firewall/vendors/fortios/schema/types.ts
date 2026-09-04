@@ -8,6 +8,7 @@ import type { ObjectStore } from '../../../model/ObjectStore';
 import type { LogSettingsPatch } from '../../../logging/LogSettings';
 import type { PasswordExpiryPolicy } from '../../../mgmt/ManagementPlane';
 import type { AccessList, PrefixList } from '../../../routing/AccessList';
+import type { PeerType } from '../../../vpn/IpsecTunnelTable';
 import type { PolicyStore } from '../../../model/PolicyStore';
 import type { DosPolicyStore } from '../../../dos/DosPolicyStore';
 
@@ -529,6 +530,9 @@ export interface FortiCaCertificatePatch {
 }
 
 export interface FortiPhase1Patch {
+  readonly peerType?: PeerType;
+  readonly peerId?: string;
+  readonly localId?: string;
   readonly name: string;
   readonly boundInterface: string;
   readonly ikeVersion: 1 | 2;

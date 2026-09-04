@@ -930,7 +930,9 @@ export class Firewall extends Equipment {
 
   syncIpsecTunnels(v?: string) {
     const vdom = this.getVdom(v);
-    programIpsecEngine(this.ipsec, vdom.tunnels, vdom.certificates, this.services.now);
+    programIpsecEngine(this.ipsec, vdom.tunnels, vdom.certificates, this.services.now, {
+      groupMembers: (name) => vdom.users.getGroup(name)?.members ?? [],
+    });
     this.ipsec.setConfigMethod((peer, request) => this.answerConfigMethod(peer, request));
   }
 

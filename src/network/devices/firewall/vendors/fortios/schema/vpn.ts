@@ -5,6 +5,7 @@ import {
   type FortiAttributeSpec, type FortiObjectView, type FortiTableSpec,
 } from './types';
 import { passwordPolicyRefusal } from './passwordPolicy';
+import type { PeerType } from '../../../vpn/IpsecTunnelTable';
 
 const POLICY_BASED_HINT = 'policy-based IPsec (`config vpn ipsec phase1`, '
   + 'without `-interface`) is the legacy mode: the tunnel is not an interface, '
@@ -68,11 +69,26 @@ export const VPN_PHASE1_INTERFACE: FortiTableSpec = {
       { keyword: 'ddns', description: 'Remote gateway is named by dynamic DNS.' },
     ], 'static'),
     address('remote-gw', 'Remote VPN gateway address.', '0.0.0.0'),
-    choice('peertype', 'Accept this peer type.', [
-      { keyword: 'any', description: 'Accept any peer.' },
-      { keyword: 'one', description: 'Accept one named peer.' },
-      { keyword: 'dialup', description: 'Accept dial-up peers.' },
-    ], 'any'),
+    {
+      ...choice('peertype', 'Accept this peer type.', [
+        { keyword: 'any', description: 'Accept any peer ID.' },
+        { keyword: 'one', description: 'Accept this peer ID.' },
+        { keyword: 'dialup', description: 'Accept peer ID in dialup group.' },
+        { keyword: 'peer', description: 'Accept this peer certificate.' },
+        { keyword: 'peergrp', description: 'Accept this peer certificate group.' },
+      ], 'any'),
+      unimplementedValues: {
+        peer: 'this simulator has no `config user peer`, so there is no PKI '
+          + 'peer object whose certificate could be accepted',
+        peergrp: 'this simulator has no `config user peergrp`, so there is no '
+          + 'PKI peer group whose certificates could be accepted',
+      },
+    },
+    {
+      ...text('peerid', 'Accept this peer identity.'),
+      availableWhen: (view) => view.effective('peertype')[0] === 'one',
+    },
+    text('localid', 'Identity this gateway announces to the peer.'),
     choice('authmethod', 'Authentication method.', [
       { keyword: 'psk', description: 'Pre-shared key.' },
       { keyword: 'signature', description: 'Certificate signature.' },
@@ -173,6 +189,9 @@ export const VPN_PHASE1_INTERFACE: FortiTableSpec = {
         Number.parseInt(object.effective('dpd-retryinterval')[0] ?? '15', 10),
       dpdRetryCount: Number.parseInt(object.effective('dpd-retrycount')[0] ?? '3', 10),
       natTraversal: object.effective('nattraversal')[0] ?? 'enable',
+      peerType: peerTypeOf(object.effective('peertype')[0]),
+      peerId: object.effective('peerid')[0] || undefined,
+      localId: object.effective('localid')[0] || undefined,
       policyBased: false,
       modeCfg: object.effective('mode-cfg')[0] === 'enable',
       authUserGroup: object.effective('authusrgrp')[0] || undefined,
@@ -299,6 +318,9 @@ export const VPN_PHASE1_POLICY: FortiTableSpec = {
       dpdRetryIntervalSeconds: 15,
       dpdRetryCount: 3,
       natTraversal: 'enable',
+      peerType: peerTypeOf(object.effective('peertype')[0]),
+      peerId: object.effective('peerid')[0] || undefined,
+      localId: object.effective('localid')[0] || undefined,
       policyBased: true,
     });
   },
@@ -306,6 +328,11 @@ export const VPN_PHASE1_POLICY: FortiTableSpec = {
     context.device.removePhase1(key);
   },
 };
+
+function peerTypeOf(raw: string | undefined): PeerType {
+  if (raw === 'one' || raw === 'dialup') return raw;
+  return 'any';
+}
 
 function numbers(object: FortiObjectView, attribute: string): number[] {
   return object.effective(attribute)
