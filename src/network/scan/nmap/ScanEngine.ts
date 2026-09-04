@@ -37,6 +37,11 @@ export interface HostState {
    * `get_probe` lit `target->pingprobe`.
    */
   reasonPort?: number;
+  /**
+   * Le TTL de la reponse de decouverte. `--reason` l'ecrit apres la
+   * raison (`output.cc:1457`) ; une reponse ARP n'en porte aucun.
+   */
+  replyTtl?: number;
 }
 
 export interface ResolvedTarget {
@@ -56,7 +61,9 @@ export interface HostProbes {
    * segment, donc que les sondes IP reprennent la main ; `mac: null` veut
    * dire qu'elle y est et n'a pas repondu, donc qu'elle est absente.
    */
-  linkDiscovery?(ip: string): { mac: string | null; reason: string } | null;
+  linkDiscovery?(
+    ip: string,
+  ): { mac: string | null; reason: string; rttMs?: number } | null;
   /**
    * Le nom d'une adresse. `nmap` le demande pour tout hote trouve VIVANT,
    * et `-R` l'etend a ceux qui ne repondent pas.
@@ -119,6 +126,8 @@ export interface HostReport {
   discoveryReason?: string;
   /** Ce que la resolution inverse a rendu, quand elle a ete faite. */
   rdnsName?: string;
+  /** Le TTL de la reponse de decouverte, ce que `--reason` ecrit apres elle. */
+  replyTtl?: number;
   ports: PortResult[];
   notShown?: { count: number; states: Partial<Record<PortState, number>> };
   /** Ce que `--traceroute` a releve, quand il a ete demande. */
@@ -333,7 +342,10 @@ async function scanHost(
   const onLink = options.disableArpPing ? null : probes.linkDiscovery?.(resolved.ip);
   const identified = { ip: resolved.ip, hostname: resolved.hostname };
   const info: HostState = onLink
-    ? { ...identified, up: onLink.mac !== null, mac: onLink.mac ?? undefined, reason: onLink.reason }
+    ? {
+        ...identified, up: onLink.mac !== null, mac: onLink.mac ?? undefined,
+        reason: onLink.reason, latencyMs: onLink.rttMs,
+      }
     : options.skipDiscovery
       ? { ...identified, up: true, reason: 'user-set' }
       : await probes.hostState(resolved);
@@ -356,11 +368,13 @@ async function scanHost(
   if (!info.up) {
     return {
       ip: info.ip, hostname: info.hostname, up: false, latencyMs,
-      downReason: 'no response', rdnsName, ports: [],
+      downReason: 'no-response', rdnsName, ports: [],
     };
   }
 
-  const identity = { mac: info.mac, discoveryReason: info.reason, rdnsName };
+  const identity = {
+    mac: info.mac, discoveryReason: info.reason, rdnsName, replyTtl: info.replyTtl,
+  };
 
   if (options.pingOnly) {
     return {
@@ -415,7 +429,7 @@ export async function scan(
     for (const address of enumerateTargets(target)) {
       const report = await scanHost(options, probes, address, phases, hopCache)
         ?? (target === address && isIpLiteral(address)
-          ? { ip: address, up: false, latencyMs: 0, downReason: 'no response', ports: [] }
+          ? { ip: address, up: false, latencyMs: 0, downReason: 'no-response', ports: [] }
           : null);
       if (!report) {
         if (target === address) unresolved.push(address);

@@ -6,6 +6,32 @@ import { renderTrace } from './Traceroute';
 const NMAP_BANNER = 'Starting Nmap 7.94 ( https://nmap.org )';
 
 /**
+ * `num_to_string_sigdigits` (`output.cc:1362`) : arrondir a la puissance
+ * de dix qui laisse `digits` chiffres significatifs, remettre l'echelle,
+ * puis imprimer avec exactement `MAX(0, -shift)` decimales.
+ *
+ * Le second temps est ce qui ne se devine pas — c'est lui qui fait sortir
+ * `1200` pour 1234 et `0.15` pour 0,15, la ou `toPrecision(2)` rendrait
+ * `1.2e+3`.
+ */
+export function numToStringSigdigits(value: number, digits: number): string {
+  let d = value;
+  let shift: number;
+  if (d === 0) {
+    shift = -digits;
+  } else {
+    shift = Math.floor(Math.log10(Math.abs(d))) - digits + 1;
+    d = Math.floor(d / 10 ** shift + 0.5) * 10 ** shift;
+  }
+  return d.toFixed(Math.max(0, -shift));
+}
+
+/** Le compteur d'aller-retour est en millisecondes, la sortie en secondes. */
+function latencyText(latencyMs: number): string {
+  return numToStringSigdigits(latencyMs / 1000, 2);
+}
+
+/**
  * `Target::NameIP` (Target.cc:364) : le nom TAPE par l'operateur
  * l'emporte, sinon le nom resolu, sinon l'adresse nue.
  */
@@ -61,7 +87,13 @@ function renderTable(host: HostReport, options: NmapOptions): string[] {
 }
 
 function renderHost(host: HostReport, options: NmapOptions): string[] {
-  const lines: string[] = [`Nmap scan report for ${hostLabel(host)}${host.up ? '' : ' [host down]'}`];
+  // output.cc:1390 : un hote MORT porte sa raison DANS le crochet, ce qui
+  // est le seul endroit ou elle puisse tenir — il n'y a pas de ligne
+  // d'etat pour l'accueillir.
+  const down = options.showReason
+    ? ` [host down, received ${host.downReason ?? 'no-response'}]`
+    : ' [host down]';
+  const lines: string[] = [`Nmap scan report for ${hostLabel(host)}${host.up ? '' : down}`];
   const rdns = rdnsLine(host);
   if (rdns) lines.push(rdns);
   if (!host.up) {
@@ -69,10 +101,12 @@ function renderHost(host: HostReport, options: NmapOptions): string[] {
     return lines;
   }
   // output.cc, `write_host_header` : la raison se glisse entre l'etat et
-  // la latence — `Host is up, received arp-response (0.0010s latency).`
+  // la latence, et le TTL de la reponse la suit quand elle en portait un
+  // — `Host is up, received echo-reply ttl 64 (0.00058s latency).`
   const received = options.showReason && host.discoveryReason
     ? `, received ${host.discoveryReason}` : '';
-  lines.push(`Host is up${received} (${host.latencyMs.toFixed(4)}s latency).`);
+  const ttl = options.showReason && host.replyTtl ? ` ttl ${host.replyTtl}` : '';
+  lines.push(`Host is up${received}${ttl} (${latencyText(host.latencyMs)}s latency).`);
   const notShown = notShownLine(host);
   if (notShown) lines.push(notShown);
   lines.push(...renderTable(host, options));

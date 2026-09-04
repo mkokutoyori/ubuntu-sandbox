@@ -72,7 +72,13 @@ describe('nmap.exe existe sous Windows', () => {
     const court = await windows.executeCommand(`nmap -Pn -p 22 ${SRV_IP}`);
     const long = await windows.executeCommand(`nmap.exe -Pn -p 22 ${SRV_IP}`);
 
-    expect(long.replace(/in [\d.]+ seconds/, '')).toBe(court.replace(/in [\d.]+ seconds/, ''));
+    // La duree et la latence sont deux MESURES : deux balayages du meme
+    // hote n'en donnent pas les memes chiffres, sur une vraie machine
+    // comme ici. Ce que ce cas compare est le reste.
+    const sansMesures = (s: string) => s
+      .replace(/in [\d.]+ seconds/, '')
+      .replace(/\([\d.]+s latency\)/, '');
+    expect(sansMesures(long)).toBe(sansMesures(court));
   });
 
   it('PowerShell le passe a la commande native', async () => {

@@ -72,13 +72,27 @@ async function closeTerminal(page: Page): Promise<void> {
   await page.waitForTimeout(200);
 }
 
+/** Le mot de passe du compte par defaut d'un poste (`user`). */
+const SUDO_PASSWORD = 'admin';
+
 async function typeCmd(page: Page, command: string): Promise<void> {
-  const input = page.locator('[data-testid="terminal-modal"] input[type="text"]').last();
+  const input = page.locator('[data-testid="terminal-modal"] input').last();
   await input.waitFor({ state: 'attached', timeout: 15_000 });
   await input.focus();
   await input.fill(command);
   await input.press('Enter');
   await page.waitForTimeout(350);
+
+  // Sur un POSTE, le compte par defaut n'est pas root : `sudo` demande le
+  // mot de passe et le champ de saisie devient un champ de mot de passe.
+  // Un serveur, dont la session est root, ne demande rien — d'ou le test
+  // plutot qu'une reponse systematique.
+  const secret = page.locator('[data-testid="terminal-modal"] input[type="password"]');
+  if (await secret.count() > 0) {
+    await secret.last().fill(SUDO_PASSWORD);
+    await secret.last().press('Enter');
+    await page.waitForTimeout(350);
+  }
 }
 
 async function lastLines(page: Page, n = 14): Promise<string> {

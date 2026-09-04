@@ -7603,3 +7603,32 @@ fidelite.
 
 **Discrimination** : `probe-nmap-traceroute.test.ts` (15 cas), 13
 tombent. Un cas e2e Playwright monte un vrai routeur dans le navigateur.
+
+## 2026-09-04 — la ligne d'etat de l'hote dit ce qui a ete MESURE
+
+**Portee** : `scan/nmap/{NmapFormatter,ScanEngine,NmapProbes}.ts`,
+`e2e/nmap-sonde-le-fil.spec.ts`.
+
+`write_host_status` (`output.cc:1453`) tient en six lignes et ce
+simulateur en manquait quatre.
+
+**La latence etait en MILLISECONDES sous l'etiquette des secondes** :
+`latencyMs.toFixed(4)` suivi d'un `s`, donc 0,576 ms ressortait
+`0.5762s`, mille fois trop — et c'est le seul chiffre qu'un apprenant
+compare a son `ping`. Le vrai nmap ecrit
+`num_to_string_sigdigits(srtt / 1000000.0, 2)` : secondes, DEUX chiffres
+significatifs.
+
+**`--reason` n'ecrivait pas ` ttl N`**, alors que la valeur etait deja
+lue par `osFromInitialTtl` et jetee juste apres ; **un hote mort ne
+portait pas sa raison dans le crochet** ; et **la decouverte de couche
+lien ne mesurait rien**, la latence retombant sur la constante `0.001`,
+la meme pour toute topologie.
+
+**Deux cas e2e preexistants reparés** : `sudo` demande un mot de passe
+sur un POSTE (compte `user`, non root) et pas sur un serveur, donc le
+champ de saisie devient un champ de mot de passe et le selecteur
+`input[type="text"]` ne mordait plus. Le harnais y repond.
+
+**Discrimination** : `probe-nmap-entete-de-l-hote.test.ts` (11 cas), 9
+tombent ; les 2 autres sont les TEMOINS.
