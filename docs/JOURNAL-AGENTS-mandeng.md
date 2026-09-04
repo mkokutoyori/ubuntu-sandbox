@@ -7400,3 +7400,39 @@ seule option qui rende les sondes IP sur un voisin.
 **Discrimination** : `probe-nmap-decouverte-arp.test.ts` (14 cas), 9
 tombent, mesures en retirant ENSEMBLE les sept fichiers touches ; les 5
 qui passent des deux cotes sont nommes dans l'en-tete.
+
+---
+
+## 2026-09-04 — `nmap` : un hote vivant est NOMME, et il n'y a qu'une resolution inverse
+
+**Portee** : `scan/nmap/` (`NmapProbes`, `ScanEngine`, `NmapFormatter`,
+`NmapOptions`), `linux/network/ReverseName.ts` (nouveau),
+`commands/net/Nmap.ts`, `commands/net/Traceroute.ts`, `WindowsPC`.
+
+`nmap 10.0.0.2` ne rendait que l'adresse : aucune resolution inverse
+n'etait tentee, et `-R` etait dans la ligne des options ignorees. Un vrai
+`nmap` la fait par DEFAUT sur tout hote trouve en ligne — c'est `-n` qu'il
+faut ecrire pour l'en empecher.
+
+**Le defaut de fond etait la duplication.** `traceroute` portait sa PROPRE
+resolution inverse, qui ne consultait que la source `files` par un
+`as unknown as` sur l'executeur, en ignorant `/etc/nsswitch.conf` et donc
+le DNS. `ReverseName.ts` est desormais la seule, lue par les deux, et
+suit la regle sync/async de `getent` — une source sans jumeau asynchrone
+est interrogee par sa methode synchrone, faute de quoi `/etc/hosts`
+entier etait saute.
+
+**Un TROISIEME defaut est sorti de la sonde** : la resolution DIRECTE ne
+consultait pas davantage le resolveur, donc un nom que seul le DNS
+connait rendait `Failed to resolve`.
+
+**Cote Windows**, `readHostsFile().reverse()` etait ecrit a DEUX endroits
+et n'atteignait jamais le DNS ; `resolveAddressName` /
+`resolveAddressNameAsync` sont l'unique reponse, et `ptrQName`
+(`DnsWireCompat`) est REUTILISE au lieu d'une quatrieme construction
+d'`in-addr.arpa`.
+
+**Discrimination** : `probe-nmap-resolution-inverse.test.ts` (11 cas), 6
+tombent en retirant ENSEMBLE les cinq fichiers touches, le nouveau module
+compris. DEUX cas ont corrige mon laboratoire plutot que le produit, et
+l'en-tete le dit.

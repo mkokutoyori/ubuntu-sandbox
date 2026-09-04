@@ -17,6 +17,8 @@ export interface NmapOptions {
   ipv6: boolean;
   /** `--disable-arp-ping` : plus de decouverte de couche lien, meme sur le segment local. */
   disableArpPing: boolean;
+  /** `-R` : resoudre le nom meme d'un hote qui n'a pas repondu. */
+  alwaysResolve: boolean;
   showReason: boolean;
   noDns: boolean;
   verbose: boolean;
@@ -35,6 +37,7 @@ export function parseNmapArgs(args: string[]): NmapOptions {
   let openOnly = false;
   let ipv6 = false;
   let disableArpPing = false;
+  let alwaysResolve = false;
   let showReason = false;
   let noDns = false;
   let verbose = false;
@@ -87,7 +90,8 @@ export function parseNmapArgs(args: string[]): NmapOptions {
 
     if (a === '-6') { ipv6 = true; continue; }
     if (a === '--disable-arp-ping' || a === '--send-ip') { disableArpPing = true; continue; }
-    if (a.startsWith('-T') || a === '-R' || a === '--reason-only') continue;
+    if (a === '-R') { alwaysResolve = true; continue; }
+    if (a.startsWith('-T') || a === '--reason-only') continue;
     if (a.startsWith('-')) continue;
 
     targets.push(a);
@@ -95,7 +99,7 @@ export function parseNmapArgs(args: string[]): NmapOptions {
 
   return {
     targets, ports, scanType, pingOnly, skipDiscovery, versionScan, osScan,
-    openOnly, ipv6, disableArpPing, showReason, noDns, verbose,
+    openOnly, ipv6, disableArpPing, alwaysResolve, showReason, noDns, verbose,
     outputNormal, outputGreppable,
   };
 }

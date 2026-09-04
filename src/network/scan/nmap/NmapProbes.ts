@@ -39,6 +39,10 @@ export interface ScanHost {
    * qu'elle a repondu.
    */
   linkNeighbour(ip: string): { mac: string | null } | null;
+  /** Le nom d'une adresse, par la chaine de resolution de la machine. */
+  reverseName(ip: string): Promise<string | null>;
+  /** L'adresse d'un nom, par la meme chaine — ce que fait `getaddrinfo`. */
+  resolveName(name: string): Promise<string | null>;
 }
 
 const UDP_PROBE_SOURCE_PORT = 51820;
@@ -193,14 +197,22 @@ export function buildScanProbes(
   };
 
   return {
-    resolveTarget(target: string) {
+    async resolveTarget(target: string) {
       if (isNumericAddress(target)) return { ip: target };
       const found = resolve(target);
-      if (!found) return null;
-      if (!preferIpv6) return { ip: found.ip, hostname: noDns ? undefined : target };
-      const v6 = globalIpv6Of(found.device);
-      if (!v6) return null;
-      return { ip: v6, hostname: noDns ? undefined : target };
+      if (found) {
+        if (!preferIpv6) return { ip: found.ip, hostname: noDns ? undefined : target };
+        const v6 = globalIpv6Of(found.device);
+        if (!v6) return null;
+        return { ip: v6, hostname: noDns ? undefined : target };
+      }
+      // `findHostByAddress` couvre `/etc/hosts` et les noms d'equipement,
+      // c'est-a-dire la moitie LOCALE de `getaddrinfo`. Un nom que seul le
+      // DNS connait passait donc pour irresolvable ; le resolveur de la
+      // machine est interroge quand elle n'a rien su dire.
+      if (preferIpv6) return null;
+      const viaResolver = await host.resolveName(target);
+      return viaResolver ? { ip: viaResolver, hostname: noDns ? undefined : target } : null;
     },
     async hostState(target: ResolvedTarget): Promise<HostState> {
       const alive = await discoverHost(host, target.ip);
@@ -215,6 +227,9 @@ export function buildScanProbes(
     async fingerprint(ip: string): Promise<string | undefined> {
       const alive = await discoverHost(host, ip);
       return alive.ttl === undefined ? undefined : osFromInitialTtl(alive.ttl);
+    },
+    reverseName(ip: string) {
+      return host.reverseName(ip);
     },
     linkDiscovery(ip: string) {
       const neighbour = host.linkNeighbour(ip);

@@ -28,7 +28,8 @@ import { NtpAgent, type NtpHost } from '../ntp/NtpAgent';
 import { W32TimeService } from './windows/W32TimeService';
 import { WindowsDnsCache } from './windows/WinDnsCache';
 import { RRType } from '../dns/wire/RRType';
-import type { ARecordData } from '../dns/wire/ResourceRecord';
+import type { ARecordData, PtrRecordData } from '../dns/wire/ResourceRecord';
+import { ptrQName } from '../dns/compat/DnsWireCompat';
 import type { UserAccountHost } from '../equipment/HostCapabilities';
 import { Port } from '../hardware/Port';
 import { IPAddress, IPv6Address, SubnetMask, DeviceType, type IPv4Packet, type TCPPacket, IP_PROTO_TCP, IP_PROTO_UDP, IP_PROTO_ICMP, createIPv4Packet } from '../core/types';
@@ -1078,7 +1079,43 @@ export class WindowsPC extends EndHost implements UserAccountHost {
 
   /** Best-effort reverse DNS for the SMB session table's ClientComputerName column. */
   private reverseLookupClient(ip: string): string {
-    return this.readHostsFile().reverse(ip)?.canonicalName ?? ip;
+    return this.resolveAddressName(ip) ?? ip;
+  }
+
+  /**
+   * Le nom d'une adresse, dans l'ordre du client Windows : fichier hosts,
+   * puis cache du resolveur. C'est la moitie qui n'attend rien, donc la
+   * seule qu'un appelant synchrone puisse lire ; `resolveAddressNameAsync`
+   * y ajoute l'interrogation PTR. Une seule ecriture derriere les trois
+   * appelants, sans quoi cette machine nommerait un poste ici et pas la.
+   */
+  resolveAddressName(ip: string): string | null {
+    const fromHosts = this.readHostsFile().reverse(ip)?.canonicalName;
+    if (fromHosts) return fromHosts;
+    return this.dnsCache.lookup(ptrQName(ip), 'PTR');
+  }
+
+  /** La meme question, avec le droit d'interroger un serveur DNS. */
+  async resolveAddressNameAsync(ip: string): Promise<string | null> {
+    const local = this.resolveAddressName(ip);
+    if (local) return local;
+    const arpa = ptrQName(ip);
+    const seen = new Set<string>();
+    for (const [ifName] of this.ports) {
+      for (const server of this.effectiveDnsServers(ifName)) {
+        if (seen.has(server)) continue;
+        seen.add(server);
+        let response;
+        try { response = await this.queryDnsServer(new IPAddress(server), arpa, 'PTR'); }
+        catch { continue; }
+        const ptr = response?.answers.find((rr) => rr.data.type === RRType.PTR);
+        if (ptr) {
+          this.dnsCache.store(arpa, response!.answers);
+          return (ptr.data as PtrRecordData).ptrdname;
+        }
+      }
+    }
+    return null;
   }
 
   /** Build a fresh ISshServerContext bound to this machine's NTFS / users. */
@@ -3172,10 +3209,7 @@ export class WindowsPC extends EndHost implements UserAccountHost {
       executeTraceroute: (target: IPAddress, maxHops?: number, timeoutMs?: number) =>
         this.executeTraceroute(target, maxHops, timeoutMs ?? 500) as Promise<TracerouteHop[]>,
 
-      reverseLookup: (ip: string): string | null => {
-        const entry = this.readHostsFile().reverse(ip);
-        return entry ? entry.canonicalName : null;
-      },
+      reverseLookup: (ip: string): string | null => this.resolveAddressName(ip),
 
       listMulticastGroups: (ifName?: string) => this.listMulticastGroups(ifName),
 
@@ -3792,6 +3826,8 @@ export class WindowsPC extends EndHost implements UserAccountHost {
         this.sendUdpDatagram(new IPAddress(ip), port, sourcePort, null, 0),
       scanProbe: (ip, port, flags) => this.getTcpStack().scanProbe(ip, port, flags),
       linkNeighbour: (ip) => linkNeighbourOf(this, ip),
+      reverseName: (ip) => this.resolveAddressNameAsync(ip),
+      resolveName: async (name) => (await this.resolveHostname(name))?.toString() ?? null,
     };
   }
 

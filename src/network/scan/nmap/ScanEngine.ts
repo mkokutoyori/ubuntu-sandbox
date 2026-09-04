@@ -34,7 +34,7 @@ export interface ResolvedTarget {
 
 export interface HostProbes {
   /** Name to address. A lookup, never a liveness test. */
-  resolveTarget(target: string): ResolvedTarget | null;
+  resolveTarget(target: string): ResolvedTarget | null | Promise<ResolvedTarget | null>;
   /** Emits the discovery probes and reports what came back. */
   hostState(target: ResolvedTarget): Promise<HostState>;
   /**
@@ -45,6 +45,11 @@ export interface HostProbes {
    * dire qu'elle y est et n'a pas repondu, donc qu'elle est absente.
    */
   linkDiscovery?(ip: string): { mac: string | null; reason: string } | null;
+  /**
+   * Le nom d'une adresse. `nmap` le demande pour tout hote trouve VIVANT,
+   * et `-R` l'etend a ceux qui ne repondent pas.
+   */
+  reverseName?(ip: string): Promise<string | null>;
   /**
    * `-O` is a phase of its own on a real nmap (FPEngine), run after the
    * port scan and independent of host discovery — so it still fingerprints
@@ -84,6 +89,8 @@ export interface HostReport {
   downReason?: string;
   mac?: string;
   discoveryReason?: string;
+  /** Ce que la resolution inverse a rendu, quand elle a ete faite. */
+  rdnsName?: string;
   ports: PortResult[];
   notShown?: { count: number; states: Partial<Record<PortState, number>> };
 }
@@ -204,7 +211,7 @@ function partition(options: NmapOptions, all: PortResult[]): Pick<HostReport, 'p
 async function scanHost(
   options: NmapOptions, probes: HostProbes, target: string,
 ): Promise<HostReport | null> {
-  const resolved = probes.resolveTarget(target);
+  const resolved = await probes.resolveTarget(target);
   if (!resolved) return null;
 
   // targets.cc, `refresh_hostbatch` : la decouverte de couche lien passe
@@ -226,14 +233,21 @@ async function scanHost(
     ? info.osHint ?? await probes.fingerprint?.(info.ip)
     : undefined;
 
+  // docs/nmap.1 : la resolution inverse est faite par defaut sur les hotes
+  // trouves EN LIGNE, `-n` l'interdit et `-R` l'etend a ceux qui ne
+  // repondent pas.
+  const rdnsName = options.noDns || !(info.up || options.alwaysResolve)
+    ? undefined
+    : await probes.reverseName?.(info.ip) ?? undefined;
+
   if (!info.up) {
     return {
       ip: info.ip, hostname: info.hostname, up: false, latencyMs,
-      downReason: 'no response', ports: [],
+      downReason: 'no response', rdnsName, ports: [],
     };
   }
 
-  const identity = { mac: info.mac, discoveryReason: info.reason };
+  const identity = { mac: info.mac, discoveryReason: info.reason, rdnsName };
 
   if (options.pingOnly) {
     return {
@@ -252,6 +266,7 @@ async function scanHost(
     ip: info.ip, hostname: info.hostname, up: true, latencyMs, osGuess,
     ...identity, ports, notShown,
   };
+
 }
 
 function isIpLiteral(target: string): boolean {

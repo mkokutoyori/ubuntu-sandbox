@@ -3,8 +3,24 @@ import type { HostReport, NmapReport, PortResult, PortState } from './ScanEngine
 
 const NMAP_BANNER = 'Starting Nmap 7.94 ( https://nmap.org )';
 
+/**
+ * `Target::NameIP` (Target.cc:364) : le nom TAPE par l'operateur
+ * l'emporte, sinon le nom resolu, sinon l'adresse nue.
+ */
 function hostLabel(host: HostReport): string {
-  return host.hostname ? `${host.hostname} (${host.ip})` : host.ip;
+  const name = host.hostname ?? host.rdnsName;
+  return name ? `${name} (${host.ip})` : host.ip;
+}
+
+/**
+ * output.cc:1408 : la ligne n'existe QUE lorsque l'operateur a tape un nom
+ * et que la resolution inverse en rend un AUTRE — elle dit precisement
+ * cette divergence, et la rendre sinon serait repeter l'en-tete.
+ */
+function rdnsLine(host: HostReport): string | null {
+  if (!host.hostname || !host.rdnsName) return null;
+  if (host.hostname === host.rdnsName) return null;
+  return `rDNS record for ${host.ip}: ${host.rdnsName}`;
 }
 
 function pluralPorts(n: number): string {
@@ -44,6 +60,8 @@ function renderTable(host: HostReport, options: NmapOptions): string[] {
 
 function renderHost(host: HostReport, options: NmapOptions): string[] {
   const lines: string[] = [`Nmap scan report for ${hostLabel(host)}${host.up ? '' : ' [host down]'}`];
+  const rdns = rdnsLine(host);
+  if (rdns) lines.push(rdns);
   if (!host.up) {
     lines.push('Note: Host seems down. If it is really up, but blocking our ping probes, try -Pn');
     return lines;

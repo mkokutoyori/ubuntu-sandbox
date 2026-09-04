@@ -2,6 +2,7 @@ import type { LinuxCommand } from '../LinuxCommand';
 import type { LinuxCommandContext } from '../LinuxCommandContext';
 import { IPAddress, IPv6Address } from '../../../../core/types';
 import { localDeviceOf } from '../../network/HostLookup';
+import { forwardAddressOfAsync, reverseNameOfAsync } from '../../network/ReverseName';
 import { detectServiceFromBanner } from '@/network/scan/nmap/BannerAnalyzer';
 import { linkNeighbourOf, type ScanHost } from '@/network/scan/nmap/NmapProbes';
 import { runNmap } from '@/network/scan/nmap/NmapRun';
@@ -22,6 +23,8 @@ function scanHost(ctx: LinuxCommandContext): ScanHost {
       ctx.net.sendUdpProbe(new IPAddress(ip), port, sourcePort),
     scanProbe: (ip, port, flags) => ctx.net.getTcpStack().scanProbe(ip, port, flags),
     linkNeighbour: (ip) => linkNeighbourOf(localDeviceOf(ctx), ip),
+    reverseName: (ip) => reverseNameOfAsync(ctx.executor.nss, ip),
+    resolveName: (name) => forwardAddressOfAsync(ctx.executor.nss, name),
   };
 }
 

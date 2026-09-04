@@ -163,6 +163,32 @@ test.describe('nmap sonde le fil', () => {
     expect(capture).not.toContain('ICMP echo request');
   });
 
+  test('un hote vivant est NOMME, et `-n` l en empeche', async ({ page }) => {
+    test.setTimeout(180_000);
+    await page.goto('/', { timeout: 45_000 });
+    await waitForStore(page);
+
+    const cibleId = await addDevice(page, 'linux-server', 300, 450);
+    const scannerId = await addDevice(page, 'linux-pc', 600, 450);
+    await cable(page, cibleId, scannerId);
+
+    await openTerminal(page, cibleId);
+    await typeCmd(page, `ip addr add ${CIBLE}/24 dev eth0`);
+    await closeTerminal(page);
+
+    await openTerminal(page, scannerId);
+    await typeCmd(page, `ip addr add ${SCANNER}/24 dev eth0`);
+    await typeCmd(page, `sudo sh -c 'echo "${CIBLE} cible.lab" >> /etc/hosts'`);
+
+    await typeCmd(page, `nmap -sn ${CIBLE}`);
+    expect(await lastLines(page, 8)).toContain(`Nmap scan report for cible.lab (${CIBLE})`);
+
+    await typeCmd(page, `nmap -n -sn ${CIBLE}`);
+    const sansDns = await lastLines(page, 8);
+    expect(sansDns).toContain(`Nmap scan report for ${CIBLE}`);
+    expect(sansDns).not.toContain('cible.lab');
+  });
+
   test('nmap.exe existe aussi sur une machine Windows', async ({ page }) => {
     test.setTimeout(180_000);
     await page.goto('/', { timeout: 45_000 });
