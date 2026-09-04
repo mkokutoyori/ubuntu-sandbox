@@ -37,6 +37,7 @@ export interface FortiDnsZonePatch {
 import type {
   BgpConfiguration, OspfConfiguration, RipConfiguration,
 } from '../../../routing/DynamicRoutingTypes';
+import type { SwitchGroupPatch } from '../../../l3/SwitchGroupTable';
 
 export type FortiAccessGroup = AccessGroup;
 
@@ -378,7 +379,7 @@ export interface FortiCommitDevice {
   removeVdom(name: string): void;
   applyVdomLink(name: string): void;
   removeVdomLink(name: string): void;
-  applySwitchInterface(name: string, members: readonly string[]): void;
+  applySwitchInterface(name: string, patch: SwitchGroupPatch): string | void;
   removeSwitchInterface(name: string): void;
   applyAntivirusProfile(profile: FortiAntivirusPatch): void;
   removeAntivirusProfile(name: string): void;

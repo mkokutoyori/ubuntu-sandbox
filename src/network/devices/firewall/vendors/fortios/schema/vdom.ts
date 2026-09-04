@@ -1,7 +1,10 @@
 import {
-  choice, count, enable, refList, text, word,
+  choice, count, enable, reference, refList, word,
   type FortiTableSpec,
 } from './types';
+import type {
+  IntraSwitchPolicy, SpanDirection, SwitchGroupType,
+} from '../../../l3/SwitchGroupTable';
 
 export const SYSTEM_VDOM: FortiTableSpec = {
   path: ['vdom'],
@@ -69,14 +72,51 @@ export const SYSTEM_SWITCH_INTERFACE: FortiTableSpec = {
     refList('member', 'Names of the interfaces that belong to the software switch.',
       ['system interface']),
     choice('type', 'Type of switch based on functionality.', [
-      { keyword: 'switch', description: 'Basic layer 2 switch.' },
-      { keyword: 'hub', description: 'Hub with no MAC learning.' },
+      { keyword: 'switch', description: 'Switch for normal switch functionality.' },
+      { keyword: 'hub', description: 'Hub to duplicate packets to all member ports.' },
     ], 'switch'),
-    enable('intra-switch-policy', 'Allow or deny traffic between switch members.'),
-    text('span-dest-port', 'SPAN destination port name.'),
+    choice('intra-switch-policy',
+      'Allow any traffic between switch members or require firewall policies.', [
+        { keyword: 'implicit', description: 'Traffic between switch members is implicitly allowed.' },
+        { keyword: 'explicit', description: 'Traffic between switch members must match firewall policies.' },
+      ], 'implicit'),
+    enable('span', 'Enable/disable port spanning.'),
+    reference('span-dest-port', 'SPAN destination port name.', ['system interface']),
+    choice('span-direction', 'The direction in which the SPAN port operates.', [
+      { keyword: 'rx', description: 'Copies only received packets.' },
+      { keyword: 'tx', description: 'Copies only transmitted packets.' },
+      { keyword: 'both', description: 'Copies both received and transmitted packets.' },
+    ], 'both'),
+  ],
+  children: [
+    {
+      path: ['span-source-port'],
+      kind: 'table',
+      keyType: 'name',
+      ordered: false,
+      scope: 'vdom',
+      accessGroup: 'netgrp',
+      renderOrder: 47,
+      help: 'Physical interface name.',
+      attributes: [
+        {
+          ...reference('interface-name', 'Physical interface name.', ['system interface']),
+          readOnly: true,
+        },
+      ],
+    },
   ],
   onCommit(object, context) {
-    context.device.applySwitchInterface(object.key, object.effective('member'));
+    return context.device.applySwitchInterface(object.key, {
+      members: [...object.effective('member')],
+      type: (object.effective('type')[0] ?? 'switch') as SwitchGroupType,
+      intraSwitchPolicy:
+        (object.effective('intra-switch-policy')[0] ?? 'implicit') as IntraSwitchPolicy,
+      span: object.effective('span')[0] === 'enable',
+      spanDestination: object.effective('span-dest-port')[0] ?? '',
+      spanSources: object.childEntries('span-source-port').map(entry => entry.key),
+      spanDirection: (object.effective('span-direction')[0] ?? 'both') as SpanDirection,
+    });
   },
   onDelete(key, context) {
     context.device.removeSwitchInterface(key);

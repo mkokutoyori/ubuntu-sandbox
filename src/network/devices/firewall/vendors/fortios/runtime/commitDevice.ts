@@ -328,8 +328,8 @@ export function buildCommitDevice(
       removeVdomLink(name) {
         fw.removeVdomLink(name);
       },
-      applySwitchInterface(name, members) {
-        fw.setSwitchInterface(name, members);
+      applySwitchInterface(name, patch) {
+        fw.setSwitchInterface(name, patch);
       },
       removeSwitchInterface(name) {
         fw.removeSwitchInterface(name);

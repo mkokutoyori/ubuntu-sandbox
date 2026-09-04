@@ -125,7 +125,7 @@ function zoneOf(serial = SERIAL, address = '192.0.2.50'): Zone {
 
 let nextId = 1;
 
-function question(qname: string, qtype: number = RRType.A): DnsMessage {
+function question(qname: string, qtype: number): DnsMessage {
   return {
     id: nextId++,
     flags: {
@@ -191,7 +191,7 @@ function declareSecondary(sh: FortiShell, ipPrimary = PRIMARY_IP): void {
     'next', 'end');
 }
 
-function ask(from: LinuxPC, server: string, qname: string, qtype = RRType.A) {
+function ask(from: LinuxPC, server: string, qname: string, qtype: number = RRType.A) {
   return queryDnsOverUdp(from, new IPAddress(server), question(qname, qtype), 53, 800);
 }
 

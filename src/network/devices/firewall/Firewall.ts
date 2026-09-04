@@ -84,7 +84,10 @@ import { ROOT_VDOM, VdomRegistry, type VdomContext } from './vdom/VdomRegistry';
 import { VdomLinkTable } from './vdom/VdomLinkTable';
 import { clusterVirtualMac } from './ha/clusterVirtualMac';
 import { ipv4HeaderProblem } from '../../layers/internet/InternetLayer';
-import { SwitchGroupTable } from './l3/SwitchGroupTable';
+import {
+  SwitchGroupTable, spanCopies,
+  type SwitchGroup, type SwitchGroupPatch,
+} from './l3/SwitchGroupTable';
 import { logFactsOf } from './logging/logFacts';
 import { emitFirewallEvent, logPipelineOutcome } from './logging/emitFirewallEvent';
 import {
@@ -476,6 +479,8 @@ export class Firewall extends Equipment {
         this.trafficLogger?.onDosAnomaly?.(finding, iface, packet);
       },
       bridgedWith: (ingress, egress) => this.sameSwitchInterface(ingress, egress),
+      intraSwitchPolicy: (ingress) =>
+        this.switchGroups.groupOf(ingress)?.intraSwitchPolicy,
       macLookup: (destination, ingress) => this.lookupMac(destination, ingress),
       natOrder: {
         natIsPolicyField: profile.natIsPolicyField,
@@ -1273,8 +1278,12 @@ export class Firewall extends Equipment {
   vdomLinkEnds(n: string): readonly string[] { return this.vdomLinks.ends(n); }
   vdomLinkPeer(i: string): string | undefined { return this.vdomLinks.peer(i); }
 
-  setSwitchInterface(n: string, members: readonly string[]): void {
-    this.switchGroups.set(n, members);
+  setSwitchInterface(n: string, patch: SwitchGroupPatch): void {
+    this.switchGroups.set(n, patch);
+  }
+
+  switchGroupOf(iface: string): SwitchGroup | undefined {
+    return this.switchGroups.groupOf(iface);
   }
 
   removeSwitchInterface(n: string): boolean { return this.switchGroups.remove(n); }
@@ -1712,6 +1721,7 @@ export class Firewall extends Equipment {
       at: this.services.now(), iface: portName, direction: 'in', frame,
     });
     this.bridgeOf(portName).learn(frame.srcMAC.toString(), portName);
+    if (this.bridgeSoftSwitch(portName, frame) === 'consumed') return;
     if (!this.acceptsAtLinkLayer(portName, frame)) return;
 
     if (frame.etherType === ETHERTYPE_FGCP) {
@@ -1750,7 +1760,21 @@ export class Firewall extends Equipment {
     if (this.subordinateIsSilentOn(portName) && !this.secondarySpeaksLacpOn(portName, frame)) {
       return false;
     }
-    return super.sendFrame(portName, frame);
+    const sent = super.sendFrame(portName, frame);
+    if (sent) this.mirrorEgressToSpan(portName, frame);
+    return sent;
+  }
+
+  private mirrorEgressToSpan(egress: string, frame: EthernetFrame): void {
+    if (this.spanning) return;
+    const group = this.switchGroups.groupOf(egress);
+    if (group === undefined || !spanCopies(group, egress, 'tx')) return;
+    this.spanning = true;
+    try {
+      super.sendFrame(group.spanDestination, { ...frame });
+    } finally {
+      this.spanning = false;
+    }
   }
 
   private secondarySpeaksLacpOn(portName: string, frame: EthernetFrame): boolean {
@@ -1764,6 +1788,56 @@ export class Firewall extends Equipment {
     const config = ha.getConfiguration();
     if (config.mode !== 'a-p' || ha.role() !== 'slave') return false;
     return !config.heartbeatDevices.some((device) => device.iface === portName);
+  }
+
+  private bridgeSoftSwitch(
+    ingress: string, frame: EthernetFrame,
+  ): 'consumed' | 'kept' {
+    const group = this.switchGroups.groupOf(ingress);
+    if (group === undefined) return 'kept';
+
+    this.mirrorToSpan(group, ingress, frame);
+
+    const flooded = frame.dstMAC.isGroup();
+    if (!flooded && this.ownsMac(frame.dstMAC)) return 'kept';
+    if (!flooded && group.intraSwitchPolicy === 'explicit'
+      && isRoutableEtherType(frame.etherType)) {
+      return 'kept';
+    }
+
+    for (const member of this.bridgeEgressPorts(group, ingress, frame, flooded)) {
+      this.sendFrame(member, { ...frame });
+    }
+    return flooded ? 'kept' : 'consumed';
+  }
+
+  private bridgeEgressPorts(
+    group: SwitchGroup, ingress: string,
+    frame: EthernetFrame, flooded: boolean,
+  ): readonly string[] {
+    const others = [...group.members].filter(member => member !== ingress);
+    if (flooded || group.type === 'hub') return others;
+    const learned = this.bridgeOf(ingress).lookup(frame.dstMAC.toString());
+    return learned !== undefined && learned !== ingress && group.members.has(learned)
+      ? [learned] : others;
+  }
+
+  private spanning = false;
+
+  private mirrorToSpan(
+    group: SwitchGroup, ingress: string, frame: EthernetFrame,
+  ): void {
+    if (!spanCopies(group, ingress, 'rx')) return;
+    this.spanning = true;
+    try {
+      super.sendFrame(group.spanDestination, { ...frame });
+    } finally {
+      this.spanning = false;
+    }
+  }
+
+  private ownsMac(destination: MACAddress): boolean {
+    return this.getPorts().some(port => port.getMAC().equals(destination));
   }
 
   private acceptsAtLinkLayer(portName: string, frame: EthernetFrame): boolean {
@@ -2186,6 +2260,10 @@ export class Firewall extends Equipment {
       decapsulate: (p) => decryptFromTunnel(this.ipsec, this.getVdom().tunnels, p) ?? null,
     });
   }
+}
+
+function isRoutableEtherType(etherType: number): boolean {
+  return etherType === ETHERTYPE_IPV4 || etherType === ETHERTYPE_IPV6;
 }
 
 function bridgedFrameOf(
