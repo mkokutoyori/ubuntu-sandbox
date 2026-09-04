@@ -52,6 +52,10 @@ export interface NavigatorDeps {
 
 const EMPTY = '';
 
+function isPredefined(table: FortiTable, key: string): boolean {
+  return table.spec.predefined?.includes(key) === true;
+}
+
 export class FortiNavigator {
   private readonly stack: FortiFrame[] = [];
 
@@ -336,6 +340,10 @@ export class FortiNavigator {
 
     const resolved = unquote(key);
     if (!table.has(resolved)) return FortiMessages.unknownKey(resolved);
+    if (isPredefined(table, resolved)) {
+      return FortiMessages.commandFail(
+        'Entry is predefined and cannot be deleted.');
+    }
     if (referencesTo(this.deps.tree, table.spec.path, resolved).length > 0) {
       return FortiMessages.commandFail(
         'Entry is used by other entries. Cannot be deleted.');
@@ -354,7 +362,11 @@ export class FortiNavigator {
     if (!table) return FortiMessages.outsideTable('purge');
 
     const context = this.deps.commitContext();
-    for (const key of table.purge()) table.spec.onDelete?.(key, context);
+    for (const key of table.keys()) {
+      if (isPredefined(table, key)) continue;
+      if (!table.remove(key)) continue;
+      table.spec.onDelete?.(key, context);
+    }
     return EMPTY;
   }
 
@@ -439,7 +451,7 @@ export class FortiNavigator {
       const onDelete = table.spec.onDelete;
       if (onDelete === undefined) continue;
       for (const key of table.keys()) {
-        if (table.spec.predefined?.includes(key)) continue;
+        if (isPredefined(table, key)) continue;
         try { onDelete(key, base); } catch { continue; }
       }
     }
