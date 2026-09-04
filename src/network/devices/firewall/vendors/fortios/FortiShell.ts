@@ -32,7 +32,7 @@ import {
   BatchMode, renderBatchLog,
 } from './execute/BatchMode';
 import {
-  FORTI_GET_VIEWS, resolvePathWords, viewContinuations,
+  FORTI_GET_VIEWS, getViewHelp, resolvePathWords, viewContinuations,
 } from './view/pathResolution';
 import { FortiValidator } from './runtime/FortiValidator';
 import { renderPath, renderWholeConfig } from './render/showRenderer';
@@ -69,6 +69,7 @@ import {
   renderSslVpnLoginUsers, renderSslVpnSessions, type SslVpnListRow,
   renderOspfNeighbors, renderRoutingTable, renderSystemStatus,
 } from './diag/getViews';
+import { renderSessionCount, renderSessionSummary } from './view/sessionSummary';
 import type { SslVpnSessionMode } from '../../vpn/SslVpnSessionTable';
 import { PkiKeyPair } from '../../../../pki/PkiKeyPair';
 import { buildCertificateRequest } from '../../../../pki/CertificateSigningRequest';
@@ -515,8 +516,9 @@ export class FortiShell {
       ...(words[0] === 'get' ? viewContinuations(FORTI_GET_VIEWS, walked) : []),
     ])].sort();
     if (branches.length > 0) {
-      return branches.filter(retenu).map(word =>
-        proposition(word, branchHelp(this.tree.spec([...walked, word]), word)));
+      return branches.filter(retenu).map(word => proposition(word,
+        (words[0] === 'get' ? getViewHelp([...walked, word]) : undefined)
+        ?? branchHelp(this.tree.spec([...walked, word]), word)));
     }
 
     const spec = this.tree.spec(walked);
@@ -862,6 +864,17 @@ export class FortiShell {
       return renderFortiguardServiceStatus();
     }
     if (path === 'system arp') return renderArpTable(this.fw.getArpService());
+    if (path === 'system session status') {
+      return renderSessionCount(this.fw.getSessionTable().view().count());
+    }
+    if (path === 'system session list') {
+      return renderSessionSummary(
+        this.fw.getSessionTable().view().all(), this.fw.now());
+    }
+    if (path === 'hardware nic' || path.startsWith('hardware nic ')) {
+      return this.diagnose(['hardware', 'deviceinfo', 'nic',
+        ...rest.slice(2)]);
+    }
     if (path === 'system ha status') {
       return renderHaStatus(this.fw.getHa(), {
         model: 'FortiGate-VM64',
