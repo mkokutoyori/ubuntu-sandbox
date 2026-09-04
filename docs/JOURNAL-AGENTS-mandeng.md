@@ -7539,3 +7539,132 @@ les drapeaux, les deux lignes sortent des que la copie se trompe.
 
 **Discrimination** : `probe-nmap-scanflags.test.ts` (11 cas), 9 tombent ;
 `probe-tcpdump-ordre-des-drapeaux.test.ts` (7 cas), 6 tombent.
+
+## 2026-09-04 — un segment TCP est enregistre UNE fois, et sur son interface
+
+**Portee** : `tcp/events.ts`, `tcp/TcpStack.ts`,
+`linux/network/{TcpdumpCaptureProjection,PacketCaptureLog}.ts`,
+`LinuxMachine.openTcpdumpCapture`, `linux/commands/net/Nc.ts`.
+
+Ferme l'entree du `TODO.md` ouverte par le lot `--scanflags`, et
+l'ecrivain manquant est trouve : c'est `TcpdumpCaptureProjection`
+elle-meme, qui recopiait dans `captureLog` CHAQUE `tcp.segment.sent` et
+`received` pendant que la prise de port enregistrait deja la trame
+reelle. `makeTcpSegmentDedupSink` existait pour apparier les deux apres
+coup — le rattrapage etait le signe du defaut.
+
+**La regle posee** : `shipSegment` SAIT si le segment part sur un fil ou
+s'il est remis en main propre, il ne le publiait pas ; l'evenement porte
+desormais `iface`, la prise de port enregistre ce qui traverse un cable
+et la projection ce qui n'en traverse aucun. Le `dedup` disparait.
+
+**Trouve en montant le laboratoire** : `nc` vers 127.0.0.1 n'ouvrait
+AUCUNE connexion — il interrogeait `SocketTable.isPortBound` et
+repondait de lui-meme — alors que `TcpStack` sait livrer en bouclage
+depuis `ssh -L`. Seconde reponse a une question que le moteur repondait
+deja.
+
+**Quatre cas refondus plutot que le code** :
+`tcp-handshake-close-lifecycle.test.ts` lancait `tcpdump` APRES le
+trafic et lisait l'historique de `captureLog` — ce qu'aucune vraie
+machine n'offre. Ils capturent maintenant pendant.
+
+**Discrimination** : `probe-tcpdump-une-seule-ecriture.test.ts` (7 cas),
+3 tombent ; les 4 autres sont nommes dans l'en-tete.
+
+## 2026-09-04 — `nmap --traceroute`
+
+**Portee** : `scan/nmap/` (`Traceroute.ts` nouveau, `ScanEngine`,
+`NmapProbes`, `NmapOptions`, `NmapFormatter`), `shells/cli/TextTable.ts`,
+les deux portes de plateforme (`linux/commands/net/Nmap.ts`,
+`WindowsPC.scanHost`).
+
+`--traceroute` etait dans la famille « connue de nmap, non implantee
+ici ». Elle est reelle, et la marche par TTL reste celle de la machine
+(`executeTraceroute`) : ce que nmap ajoute est le CHOIX de la sonde, le
+repli des sauts partages et la mise en page.
+
+**Trois faits releves dans le depot de nmap et non devines** : une cible
+directement connectee n'emet AUCUNE sonde (`traceroute_direct`) et son
+en-tete est `TRACEROUTE` nu ; `pingprobe_score` classe un RST de port
+ferme (60) au-dessus d'un echo ICMP (50), lui-meme au-dessus d'un
+SYN/ACK de port ouvert (30) ; la ligne « Hops 1-N are the same as for … »
+ne compte pas dans la largeur de sa colonne (`fullrow`).
+
+**Trouve en chemin** : `hostState` ne rendait PAS `reason`, donc
+`--reason` restait muet sur un hote decouvert par sonde IP alors qu'il
+parlait sur un hote decouvert par ARP.
+
+**Choix ecrit plutot que garde posee** : nmap exige les privileges pour
+`--traceroute` et pour `-A --traceroute`. Ce simulateur ne modelise ce
+partage pour aucune option (`-sS`, `-sU`, `-O` fonctionnent sans
+`sudo`) ; la garder sur celle-la seule serait une incoherence, pas une
+fidelite.
+
+**Discrimination** : `probe-nmap-traceroute.test.ts` (15 cas), 13
+tombent. Un cas e2e Playwright monte un vrai routeur dans le navigateur.
+
+## 2026-09-04 — la ligne d'etat de l'hote dit ce qui a ete MESURE
+
+**Portee** : `scan/nmap/{NmapFormatter,ScanEngine,NmapProbes}.ts`,
+`e2e/nmap-sonde-le-fil.spec.ts`.
+
+`write_host_status` (`output.cc:1453`) tient en six lignes et ce
+simulateur en manquait quatre.
+
+**La latence etait en MILLISECONDES sous l'etiquette des secondes** :
+`latencyMs.toFixed(4)` suivi d'un `s`, donc 0,576 ms ressortait
+`0.5762s`, mille fois trop — et c'est le seul chiffre qu'un apprenant
+compare a son `ping`. Le vrai nmap ecrit
+`num_to_string_sigdigits(srtt / 1000000.0, 2)` : secondes, DEUX chiffres
+significatifs.
+
+**`--reason` n'ecrivait pas ` ttl N`**, alors que la valeur etait deja
+lue par `osFromInitialTtl` et jetee juste apres ; **un hote mort ne
+portait pas sa raison dans le crochet** ; et **la decouverte de couche
+lien ne mesurait rien**, la latence retombant sur la constante `0.001`,
+la meme pour toute topologie.
+
+**Deux cas e2e preexistants reparés** : `sudo` demande un mot de passe
+sur un POSTE (compte `user`, non root) et pas sur un serveur, donc le
+champ de saisie devient un champ de mot de passe et le selecteur
+`input[type="text"]` ne mordait plus. Le harnais y repond.
+
+**Discrimination** : `probe-nmap-entete-de-l-hote.test.ts` (11 cas), 9
+tombent ; les 2 autres sont les TEMOINS.
+
+## 2026-09-04 — `nmap --packet-trace`
+
+**Portee** : `scan/nmap/` (`PacketTrace.ts` nouveau, `ScanEngine`,
+`NmapProbes`, `NmapOptions`, `NmapFormatter`), plus la fermeture d'un
+DOUBLON : `core/types.ts`, `firewall/session/FlowKey.ts`,
+`tcpdump/CaptureFrame.ts`.
+
+L'option est la seule qui rende VISIBLE, depuis le terminal, que ce
+simulateur emet de vraies trames — ce que les sondes de ce depot ne
+verifiaient qu'en lancant un `tcpdump` a cote. Trois formes, relevees
+dans `tcpip.cc` et `libnetutil/packettrace.cc` : `SENT`/`RCVD` pour un
+paquet IP, `SENT`/`RCVD ARP` pour une resolution, et `CONN` pour un
+appel `connect()`.
+
+**Ce qui ne se devine pas** : le bloc IP finit par une ESPACE avant son
+crochet (les trois derniers champs du format sont vides sans options
+d'en-tete) ; l'ordre des drapeaux TCP est S,F,R,P,A,U,E,C et non celui
+de `tcpdump`, donc un SYN+FIN sort `SF` ici et `FS` la-bas, au meme
+instant, sans qu'aucun des deux soit faux ; et **un balayage CONNECTE ne
+montre AUCUN paquet**, `connect()` laissant le noyau les emettre.
+
+**Trouve et ferme en chemin** : la table type ICMP → numero de fil
+existait DEUX fois — `FlowKey.ts` (pare-feu) et `CaptureFrame.ts`
+(tcpdump), la seconde codant en dur les numeros ICMPv6 que la premiere
+lisait sur les constantes. Une seule declaration dans `core/types.ts`,
+trois lecteurs.
+
+**`-d` n'avait aucun niveau** — il etait traite comme un synonyme de
+`-v` — alors que `packetTrace()` se DEFINIT par « niveau de debogage
+>= 3 ». `-dN` et `-ddd` posent desormais le niveau, et `-d3` allume la
+trace sans l'option.
+
+**Discrimination** : `probe-nmap-packet-trace.test.ts` (13 cas), les 13
+tombent. Un cas e2e Playwright tape les deux balayages dans le vrai
+terminal.

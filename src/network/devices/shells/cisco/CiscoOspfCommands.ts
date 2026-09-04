@@ -161,29 +161,6 @@ export function registerOSPFConfigCommands(configTrie: CommandTrie, ctx: CiscoSh
     return '';
   });
 
-  // ip routing
-  configTrie.register('ip routing', 'Enable IP routing', () => {
-    const r = ctx.r() as unknown as { _setIpRoutingEnabled?: (e: boolean) => void };
-    r._setIpRoutingEnabled?.(true);
-    return '';
-  });
-  configTrie.register('no ip routing', 'Disable IP routing', () => {
-    const r = ctx.r() as unknown as { _setIpRoutingEnabled?: (e: boolean) => void };
-    r._setIpRoutingEnabled?.(false);
-    return '';
-  });
-
-  // `ip classless` et `ip subnet-zero` sont le comportement PAR DEFAUT
-  // depuis IOS 12.0 : un vrai routeur les accepte et ne fait rien, et ne
-  // les rend pas dans sa configuration puisqu'elles ne s'en ecartent
-  // pas. Les refuser cassait le rejeu d'une configuration ancienne, ou
-  // elles figurent presque toujours. Accepter sans effet est ici la
-  // fidelite meme — a la difference d'une commande qui, sur le materiel,
-  // ferait quelque chose.
-  for (const mot of ['ip classless', 'no ip classless',
-    'ip subnet-zero', 'no ip subnet-zero']) {
-    configTrie.register(mot, 'Accepted, default behaviour on IOS 12.0 and later', () => '');
-  }
 }
 
 // ─── Config-Router Mode: OSPF sub-commands ───────────────────────────
@@ -1486,7 +1463,6 @@ export function registerOSPFShowCommands(trie: CommandTrie, getRouter: () => Rou
   trie.register('show ip ospf virtual-links', 'Display OSPF virtual links', () => showIpOspfVirtualLinks(getRouter()));
   trie.register('show ip ospf border-routers', 'Display OSPF border routers', () => showIpOspfBorderRouters(getRouter()));
   trie.register('show ip ospf statistics', 'Display OSPF statistics', () => showIpOspfStatistics(getRouter()));
-  trie.registerGreedy('show ip route ospf', 'Display OSPF routes', (_args) => showIpRouteOspf(getRouter()));
   // OSPFv3 show commands
   trie.registerGreedy('show ipv6 ospf', 'Display OSPFv3 information', (args) => {
     // Handle "show ipv6 ospf <process-id>" and sub-commands
@@ -2687,7 +2663,7 @@ function showIpRouteAll(router: Router): string {
   });
 }
 
-function showIpRouteOspf(router: Router): string {
+export function showIpRouteOspf(router: Router): string {
   router._ospfAutoConverge();
   const rt = (router as any).routingTable as any[];
   const lines: string[] = [];

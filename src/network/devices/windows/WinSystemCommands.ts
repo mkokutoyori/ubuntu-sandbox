@@ -11,6 +11,7 @@
 import type { Port } from '../../hardware/Port';
 import { dhcpEnabledFor } from './WinAdapterFacts';
 import type { ProcessSession } from './WindowsProcessManager';
+import { adapterDisplayName } from './netAdapter';
 
 /** Minimal process-manager surface needed by `start`. */
 export interface WinSystemProcessManager {
@@ -120,7 +121,7 @@ export function cmdSysteminfo(ctx: WinSystemContext): string {
   lines.push(`Network Card(s):           ${ctx.ports.size} NIC(s) Installed.`);
   let idx = 1;
   for (const [name, port] of ctx.ports) {
-    const displayName = name.replace(/^eth/, 'Ethernet ');
+    const displayName = adapterDisplayName(name, ctx.ports);
     lines.push(`                           [${String(idx).padStart(2, '0')}]: Intel(R) Ethernet Connection`);
     const ip = port.getIPAddress();
     if (ip) {
@@ -583,7 +584,7 @@ function wmicNic(ctx: WinSystemContext): string {
   const lignes = [`${'MACAddress'.padEnd(20)}${'Name'.padEnd(30)}NetEnabled`];
   for (const [name, port] of ctx.ports) {
     const mac = port.getMAC()?.toString()?.replace(/:/g, '-').toUpperCase() ?? '';
-    const affiche = name.replace(/^eth/, 'Ethernet ');
+    const affiche = adapterDisplayName(name, ctx.ports);
     lignes.push(`${mac.padEnd(20)}${affiche.padEnd(30)}${port.isAdminDown() ? 'FALSE' : 'TRUE'}`);
   }
   return lignes.join('\n');

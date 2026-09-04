@@ -202,6 +202,81 @@ describe('le commutateur RELIT ce qu il accepte', () => {
   });
 });
 
+/*
+ * SUITE — la famille est passee au socle, et la migration a trouve trois
+ * defauts que cette sonde ne demandait pas. Ils sont ajoutes ICI plutot
+ * que dans une seconde sonde : c'est la meme commande.
+ *
+ * (1) `ip vrf` etait enregistree par la famille NAT, donc ROUTEUR SEUL :
+ * la meme frappe etait acceptee sur un routeur et REFUSEE sur un
+ * Catalyst, alors que VRF-lite est justement une fonction de
+ * commutateur. Cette sonde n'eprouvait le commutateur qu'avec la forme
+ * moderne, la seule que la coquille commune portait.
+ *
+ * (2) `vrf` TOUT COURT etait un noeud GLOUTON qui rangeait la ligne et
+ * rendait la main sans un mot : `vrf`, `vrf zorglub` et `vrf forwarding
+ * X` en configuration GLOBALE etaient tous acceptes, ranges et rendus
+ * dans la configuration — donc rejoues a l'import d'une topologie.
+ *
+ * (3) `vrf definition NOM zorglub` avalait le mot de trop.
+ *
+ * Discrimine dans un arbre de travail pose sur l'etat d'AVANT plutot
+ * qu'en remisant : 7 des 11 cas ajoutes par ce lot tombent. Les quatre
+ * autres sont nommes ici — `ip vrf` seul etait DEJA incomplet ; `ip vrf
+ * NOM zorglub` etait DEJA refuse, sa place ayant ete declaree par la
+ * famille NAT ; `no ip vrf` sur un commutateur passait A VIDE, la VRF
+ * n'ayant pas pu y etre creee, donc le cas ne prouvait rien avant et
+ * garde la suppression maintenant ; et « `ip vrf` revient `ip vrf` » sur
+ * le routeur est le TEMOIN de l'orthographe, deja juste.
+ */
+describe('les deux orthographes existent sur les DEUX plateformes', () => {
+  it('`ip vrf` est acceptee par un commutateur aussi', async () => {
+    const d = commutateur('SC');
+    const [out] = await conf(d, 'ip vrf CLIENT-A');
+    expect(out, out).not.toContain('%');
+  });
+
+  it('et elle y revient `ip vrf`, pas `vrf definition`', async () => {
+    const d = commutateur('SD');
+    await conf(d, 'ip vrf CLIENT-A', 'exit');
+    const lignes = await bloc(d);
+    expect(lignes).toContain('ip vrf CLIENT-A');
+    expect(lignes).not.toContain('vrf definition CLIENT-A');
+  });
+
+  it('`no ip vrf` y retire aussi', async () => {
+    const d = commutateur('SE');
+    await conf(d, 'ip vrf CLIENT-A', 'exit', 'no ip vrf CLIENT-A');
+    expect((await bloc(d)).join('\n')).not.toContain('CLIENT-A');
+  });
+});
+
+describe('`vrf` seul ne range rien', () => {
+  it.each(['vrf', 'ip vrf'])('`%s` est INCOMPLETE', async (cmd) => {
+    const d = routeur(`VI${cmd.length}`);
+    const [out] = await conf(d, cmd);
+    expect(out, out).toContain('% Incomplete');
+  });
+
+  it.each(['vrf zorglub', 'vrf forwarding CLIENT-A',
+    'vrf definition CLIENT-A zorglub', 'ip vrf CLIENT-A zorglub'])(
+    '`%s` est REFUSE', async (cmd) => {
+      const d = routeur(`VR${cmd.length}${cmd.slice(-3)}`);
+      const [out] = await conf(d, cmd);
+      expect(out, out).toContain('% Invalid');
+    });
+
+  it('et aucun de ces refus ne laisse de ligne dans la configuration', async () => {
+    const d = routeur('VZ');
+    await conf(d, 'vrf', 'vrf zorglub', 'vrf forwarding CLIENT-A',
+      'vrf definition CLIENT-A zorglub');
+    await d.executeCommand('end');
+    const cfg = String(await d.executeCommand('show running-config'));
+    expect(cfg).not.toContain('zorglub');
+    expect(cfg).not.toContain('vrf forwarding');
+  });
+});
+
 describe('non-regression — ce que la famille faisait deja', () => {
   it('`show vrf` liste toujours la VRF et son RD', async () => {
     const d = routeur('XA');

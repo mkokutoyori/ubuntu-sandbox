@@ -18,15 +18,15 @@
  *   ipconfig /allcompartments         — accepted, no-op (single compartment)
  *   ipconfig /?                       — full usage help
  *
- * Adapter arguments accept the same `*`/`?` wildcards as real ipconfig
- * (see `matchesAdapter`); omitting the adapter targets every interface.
+ * Adapter arguments accept the same `*`/`?` wildcards as real ipconfig;
+ * omitting the adapter targets every interface.
  */
 
 import type { WinCommandContext } from './WinCommandExecutor';
 import { dhcpEnabledFor } from './WinAdapterFacts';
 import { requireWindowsService } from './WinFeatureGate';
 import { renderDisplayDns } from './WinDnsCache';
-import { toDisplayName } from './WindowsInterfaceNaming';
+import { adapterDisplayName, adapterNameMatches } from './netAdapter';
 
 const IPCONFIG_HELP = `
 USAGE:
@@ -134,7 +134,7 @@ function ipconfigBasic(ctx: WinCommandContext): string {
     const suffix = ctx.getConnectionDnsSuffix(name);
     const ip = port.getIPAddress();
     const mask = port.getSubnetMask();
-    const displayName = portDisplayName(port.getName());
+    const displayName = adapterDisplayName(port.getName(), ctx.ports);
     const global6 = port.getGlobalIPv6();
     const linkLocal6 = port.getLinkLocalIPv6();
     const hasAddress = !!ip || !!global6 || !!linkLocal6;
@@ -179,7 +179,7 @@ function ipconfigAll(ctx: WinCommandContext): string {
     const ip = port.getIPAddress();
     const mask = port.getSubnetMask();
     const mac = port.getMAC().toString().replace(/:/g, '-').toUpperCase();
-    const displayName = portDisplayName(name);
+    const displayName = adapterDisplayName(name, ctx.ports);
     const isDHCP = ctx.isDHCPConfigured(name);
     const global6 = port.getGlobalIPv6();
     const linkLocal6 = port.getLinkLocalIPv6();
@@ -260,9 +260,8 @@ function ipconfigRelease(ctx: WinCommandContext, args: string[]): string {
   const adapterFilter = parseAdapterArg(args, '/release');
 
   let released = false;
-  for (const [name, port] of ctx.ports) {
-    const displayName = portDisplayName(name);
-    if (adapterFilter && !matchesAdapter(displayName, name, adapterFilter)) continue;
+  for (const [name] of ctx.ports) {
+    if (adapterFilter && !adapterFilterMatches(ctx, name, adapterFilter)) continue;
 
     const state = ctx.getDHCPState(name);
     if (state?.lease) {
@@ -285,8 +284,8 @@ function ipconfigRelease(ctx: WinCommandContext, args: string[]): string {
   lines.push('');
 
   for (const [name, port] of ctx.ports) {
-    const displayName = portDisplayName(name);
-    if (adapterFilter && !matchesAdapter(displayName, name, adapterFilter)) continue;
+    const displayName = adapterDisplayName(name, ctx.ports);
+    if (adapterFilter && !adapterFilterMatches(ctx, name, adapterFilter)) continue;
 
     lines.push(`Ethernet adapter ${displayName}:`);
     lines.push(`   Connection-specific DNS Suffix  . :`);
@@ -307,11 +306,15 @@ function ipconfigRelease(ctx: WinCommandContext, args: string[]): string {
 
 // ─── /renew ───────────────────────────────────────────────────────
 
+function adapterFilterMatches(ctx: WinCommandContext, portName: string, filter: string): boolean {
+  const port = ctx.ports.get(portName);
+  return port !== undefined && adapterNameMatches(port, filter);
+}
+
 function matchingPortNames(ctx: WinCommandContext, adapterFilter: string | null): string[] {
   const out: string[] = [];
   for (const [name] of ctx.ports) {
-    const displayName = portDisplayName(name);
-    if (adapterFilter && !matchesAdapter(displayName, name, adapterFilter)) continue;
+    if (adapterFilter && !adapterFilterMatches(ctx, name, adapterFilter)) continue;
     out.push(name);
   }
   return out;
@@ -334,7 +337,7 @@ function ipconfigRenew(ctx: WinCommandContext, args: string[]): string {
   const failed = new Set<string>();
 
   for (const name of targets) {
-    const displayName = portDisplayName(name);
+    const displayName = adapterDisplayName(name, ctx.ports);
     ctx.requestLease(name, { verbose: false });
     const state = ctx.getDHCPState(name);
 
@@ -361,7 +364,7 @@ function ipconfigRenew(ctx: WinCommandContext, args: string[]): string {
     const port = ctx.ports.get(name)!;
     const ip = port.getIPAddress();
     const mask = port.getSubnetMask();
-    const dn = portDisplayName(name);
+    const dn = adapterDisplayName(name, ctx.ports);
     const global6 = port.getGlobalIPv6();
     const linkLocal6 = port.getLinkLocalIPv6();
     lines.push(`Ethernet adapter ${dn}:`);
@@ -414,7 +417,7 @@ function ipconfigRenew6(ctx: WinCommandContext, args: string[]): string {
 
   const lines: string[] = ['Windows IP Configuration', ''];
   for (const name of targets) {
-    const displayName = portDisplayName(name);
+    const displayName = adapterDisplayName(name, ctx.ports);
     ctx.sendRouterSolicitation(name);
     const port = ctx.ports.get(name)!;
     const global6 = port.getGlobalIPv6();
@@ -439,7 +442,7 @@ function ipconfigShowClassId(ctx: WinCommandContext, args: string[], switchName:
   }
 
   for (const name of targets) {
-    const displayName = portDisplayName(name);
+    const displayName = adapterDisplayName(name, ctx.ports);
     const classId = isV6 ? ctx.getClassId6(name) : ctx.getClassId(name);
     lines.push(`Ethernet adapter ${displayName}:`, '');
     lines.push(classId
@@ -484,9 +487,7 @@ function pushDefaultGatewayLines(lines: string[], ctx: WinCommandContext): void 
   lines.push(`   Default Gateway . . . . . . . . . : ${ctx.defaultGateway ?? ''}`);
 }
 
-function portDisplayName(portName: string): string {
-  return toDisplayName(portName);
-}
+
 
 function parseAdapterArg(args: string[], switchName: string): string | null {
   const switchIdx = args.findIndex(a => a.toLowerCase() === switchName.toLowerCase());
@@ -496,11 +497,7 @@ function parseAdapterArg(args: string[], switchName: string): string | null {
   return remaining.join(' ').replace(/^["']|["']$/g, '');
 }
 
-function matchesAdapter(displayName: string, portName: string, filter: string): boolean {
-  const pattern = filter.replace(/\*/g, '.*').replace(/\?/g, '.');
-  const regex = new RegExp(`^${pattern}$`, 'i');
-  return regex.test(displayName) || regex.test(portName);
-}
+
 
 function formatWindowsDate(ts: number): string {
   const d = new Date(ts);

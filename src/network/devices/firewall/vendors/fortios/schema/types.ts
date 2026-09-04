@@ -5,6 +5,8 @@ import type { LdbMonitorType } from '../../../health/LdbMonitor';
 import type { LdbMethod } from '../../../nat/RealServerPool';
 import type { ArgumentSpec, EnumValue } from '../../../../../../cli/ArgumentTypes';
 import type { ObjectStore } from '../../../model/ObjectStore';
+import type { LogSettingsPatch } from '../../../logging/LogSettings';
+import type { PasswordExpiryPolicy } from '../../../mgmt/ManagementPlane';
 import type { PolicyStore } from '../../../model/PolicyStore';
 import type { DosPolicyStore } from '../../../dos/DosPolicyStore';
 
@@ -246,6 +248,14 @@ export interface FortiIpsGlobalSettings {
   readonly failOpen: boolean;
 }
 
+export interface FortiSessionTtlPort {
+  readonly id: string;
+  readonly protocol: number;
+  readonly startPort: number;
+  readonly endPort: number;
+  readonly timeoutSec: number;
+}
+
 export interface FortiLdbMonitorPatch {
   readonly name: string;
   readonly type: LdbMonitorType;
@@ -281,6 +291,7 @@ export interface FortiBalancedVipPatch {
 
 export interface FortiVdomSettings {
   readonly centralNat: boolean;
+  readonly tcpSessionWithoutSyn: boolean;
   readonly opmode: 'nat' | 'transparent';
   readonly manageIP?: string;
   readonly manageMask?: string;
@@ -341,6 +352,9 @@ export interface FortiCommitDevice {
   applyDnsSettings(settings: FirewallDnsSettings): void;
   applyDnsServerInterface(entry: DnsServerInterface): void;
   removeDnsServerInterface(iface: string): void;
+  applySessionTtlDefault(seconds: number): void;
+  applySessionTtlPort(entry: FortiSessionTtlPort): void;
+  removeSessionTtlPort(id: string): void;
   applyDnsZone(zone: FortiDnsZonePatch): void;
   removeDnsZone(name: string): void;
   resolveFqdnNow(fqdn: string): void;
@@ -348,6 +362,8 @@ export interface FortiCommitDevice {
   refreshCaptivePortal(): void;
   applySyslogCollector(settings: SyslogCollectorSettings): string | void;
   applySyslogFilter(settings: SyslogFilterSettings): string | void;
+  applyLogSettings(patch: LogSettingsPatch): void;
+  applyPasswordExpiry(policy: PasswordExpiryPolicy): void;
   maxVirtualDomains(): number;
   applyVdom(name: string): void;
   removeVdom(name: string): void;

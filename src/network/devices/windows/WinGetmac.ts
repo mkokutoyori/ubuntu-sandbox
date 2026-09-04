@@ -13,6 +13,7 @@
  */
 
 import type { WinCommandContext } from './WinCommandExecutor';
+import { adapterDisplayName } from './netAdapter';
 
 const GETMAC_HELP = `
 GETMAC [/S system [/U username [/P [password]]]] [/FO format] [/NH] [/V]
@@ -82,7 +83,7 @@ function buildRows(ctx: WinCommandContext): Row[] {
   const rows: Row[] = [];
   for (const [name, port] of ctx.ports) {
     const mac = port.getMAC().toString().replace(/:/g, '-').toUpperCase();
-    const displayName = name.replace(/^eth/, 'Ethernet ');
+    const displayName = adapterDisplayName(name, ctx.ports);
     const isUp = port.getIsUp() && port.isConnected();
     rows.push({
       connectionName: displayName,

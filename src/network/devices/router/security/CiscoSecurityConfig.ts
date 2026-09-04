@@ -415,6 +415,8 @@ export class CiscoSecurityConfig {
   ipFinger = false;
   ipv6Cef = false;
   ipMulticastRouting = false;
+  ipClassless = true;
+  ipSubnetZero = true;
 
   classMaps: Map<string, ClassMap> = new Map();
   policyMaps: Map<string, PolicyMap> = new Map();
@@ -573,6 +575,8 @@ export class CiscoSecurityConfig {
     if (this.ipFinger) lines.push('ip finger');
     if (this.ipv6Cef) lines.push('ipv6 cef');
     if (this.ipMulticastRouting) lines.push('ip multicast-routing');
+    if (!this.ipClassless) lines.push('no ip classless');
+    if (!this.ipSubnetZero) lines.push('no ip subnet-zero');
     if (this.ssh.version !== SSH_DEFAULTS.version) {
       lines.push(`ip ssh version ${this.ssh.version}`);
     }

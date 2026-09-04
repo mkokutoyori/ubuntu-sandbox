@@ -4,6 +4,7 @@ import {
 import type { CliSession } from './CliSession';
 import type { ReachabilityOptions } from './CommandTable';
 import type { CommandSpec, CommandTable, TreeNode } from './CommandTable';
+import { consumeOptionBag } from './OptionBag';
 
 export type ParseResult =
   | { readonly status: 'empty' }
@@ -155,6 +156,31 @@ export function parseCommand(
       node = argument;
       continue;
     }
+    /*
+     * Un SAC D'OPTIONS prend la suite de la frappe.
+     *
+     * Il n'est consulte qu'ici, une fois que ni un mot-cle enfant ni une
+     * place declaree n'ont voulu du jeton : une option ne doit jamais
+     * primer le chemin, sans quoi `crypto key generate rsa label` — si
+     * `label` etait aussi un enfant — changerait de sens selon la
+     * declaration.
+     */
+    const porteur = table.specAt(node, session);
+    if (porteur?.options) {
+      const verdict = consumeOptionBag(porteur.options, tokens, index);
+      if (verdict.kind === 'incomplete') {
+        return { status: 'incomplete', consumed: tokens.length };
+      }
+      if (verdict.kind === 'invalid') {
+        return {
+          status: 'invalid', token: tokens[verdict.at], position: verdict.at,
+          refusePar: 'argument',
+        };
+      }
+      Object.assign(args, verdict.args);
+      break;
+    }
+
     if (argument?.argument) {
       return { status: 'invalid', token, position: index, refusePar: 'argument' };
     }

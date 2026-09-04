@@ -52,10 +52,30 @@ describe('the system views answer, and answer at level 1', () => {
     await device.executeCommand('enable');
     const router = await privileged();
 
-    for (const [command] of [['show calendar'], ['show sockets'], ['show reload']] as const) {
+    for (const [command] of [['show sockets'], ['show reload']] as const) {
       expect(await device.executeCommand(command), command)
         .toBe(await router.executeCommand(command));
     }
+  });
+
+  /*
+   * `show calendar` reads the WALL CLOCK, so the two machines are asked
+   * a fraction of a second apart and a straddled second makes them
+   * disagree — this case failed with `12:59:54` against `12:59:55`,
+   * which says nothing about either platform. What can be compared is
+   * the SHAPE, which is what "the switch renders the same text" was
+   * really asking of a view whose content is a moving target.
+   */
+  it('and its clock view has the same SHAPE on both', async () => {
+    const device = createDevice('switch-cisco', 0, 0) as unknown as Cli;
+    await device.executeCommand('enable');
+    const router = await privileged();
+    const forme = /^\d{2}:\d{2}:\d{2} \w+ \w{3} \w{3} {1,2}\d{1,2} \d{4}$/;
+
+    expect(String(await device.executeCommand('show calendar')).trim())
+      .toMatch(forme);
+    expect(String(await router.executeCommand('show calendar')).trim())
+      .toMatch(forme);
   });
 });
 

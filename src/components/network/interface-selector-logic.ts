@@ -17,6 +17,7 @@ export interface InterfaceListItem {
   macAddress?: string;
   isConnected: boolean;
   isAvailable: boolean;
+  unavailableBecause: 'virtual' | 'cabled' | null;
   connectedTo?: {
     deviceId: string;
     interfaceId: string;
@@ -34,7 +35,6 @@ export function buildInterfaceList(
   filterType?: ConnectionType
 ): InterfaceListItem[] {
   return interfaces.map(iface => {
-    // Find if this interface is used in any connection
     const connAsSource = connections.find(
       c => c.sourceDeviceId === deviceId && c.sourceInterfaceId === iface.id
     );
@@ -44,7 +44,6 @@ export function buildInterfaceList(
     const conn = connAsSource || connAsTarget;
     const isConnected = !!conn;
 
-    // Determine connected peer
     let connectedTo: InterfaceListItem['connectedTo'];
     if (connAsSource) {
       connectedTo = { deviceId: connAsSource.targetDeviceId, interfaceId: connAsSource.targetInterfaceId };
@@ -52,9 +51,11 @@ export function buildInterfaceList(
       connectedTo = { deviceId: connAsTarget.sourceDeviceId, interfaceId: connAsTarget.sourceInterfaceId };
     }
 
-    // Available if: not connected AND (no filter OR type matches filter)
     const typeMatches = !filterType || iface.type === filterType;
-    const isAvailable = !isConnected && typeMatches;
+    const isAvailable = iface.acceptsCable && !isConnected && typeMatches;
+    const unavailableBecause = !iface.hasSocket ? 'virtual' as const
+      : iface.acceptsCable ? null
+      : 'cabled' as const;
 
     return {
       id: iface.id,
@@ -64,6 +65,7 @@ export function buildInterfaceList(
       macAddress: iface.macAddress,
       isConnected,
       isAvailable,
+      unavailableBecause,
       connectedTo
     };
   });

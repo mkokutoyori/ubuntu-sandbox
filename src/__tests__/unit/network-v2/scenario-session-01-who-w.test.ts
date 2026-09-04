@@ -10,6 +10,7 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { LinuxServer } from '@/network/devices/LinuxServer';
 import { LinuxPC } from '@/network/devices/LinuxPC';
+import { GenericSwitch } from '@/network/devices/GenericSwitch';
 import { Cable } from '@/network/hardware/Cable';
 import { IPAddress, SubnetMask, MACAddress, resetCounters } from '@/network/core/types';
 import { resetDeviceCounters } from '@/network/devices/DeviceFactory';
@@ -28,8 +29,10 @@ async function buildLan() {
   const pc1 = new LinuxPC('linux-pc', 'pc1', 0, 0);
   const pc2 = new LinuxPC('linux-pc', 'pc2', 0, 0);
   const srv = new LinuxServer('linux-server', 'srv', 0, 0);
-  new Cable('c1').connect(pc1.getPorts()[0], srv.getPorts()[0]);
-  new Cable('c2').connect(pc2.getPorts()[0], srv.getPorts()[0]);
+  const sw = new GenericSwitch('switch-generic', 'sw', 8, 0, 0);
+  new Cable('c1').connect(pc1.getPorts()[0], sw.getPorts()[0]);
+  new Cable('c2').connect(pc2.getPorts()[0], sw.getPorts()[1]);
+  new Cable('c3').connect(srv.getPorts()[0], sw.getPorts()[2]);
   pc1.getPorts()[0].configureIP(new IPAddress('10.0.0.1'), new SubnetMask('255.255.255.0'));
   pc2.getPorts()[0].configureIP(new IPAddress('10.0.0.2'), new SubnetMask('255.255.255.0'));
   srv.getPorts()[0].configureIP(new IPAddress('10.0.0.10'), new SubnetMask('255.255.255.0'));

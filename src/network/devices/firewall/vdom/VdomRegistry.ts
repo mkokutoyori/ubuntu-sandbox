@@ -9,12 +9,14 @@ import type { RealServerPool } from '../nat/RealServerPool';
 import { FirewallNatEngine } from '../nat/FirewallNatEngine';
 import { RouteTable } from '../l3/RouteTable';
 import { PolicyRouteTable } from '../l3/PolicyRouteTable';
+import { SessionTtlTable } from '../session/SessionTtlTable';
 import { SessionTable, type FirewallSession, type SessionCloseReason } from '../session/SessionTable';
 import { PolicyEvaluator } from '../policy/PolicyEvaluator';
 import { DosPolicyStore } from '../dos/DosPolicyStore';
 import { DosSensor } from '../dos/DosSensor';
 import { ScheduleStore } from '../model/ScheduleObject';
 import { FirewallLogStore } from '../logging/FirewallLogStore';
+import { LogSettings } from '../logging/LogSettings';
 import { UtmProfileStore } from '../inspection/UtmProfiles';
 import { IdentityTable } from '../identity/IdentityTable';
 import { UserDirectory } from '../identity/UserDirectory';
@@ -30,6 +32,7 @@ export type DeploymentMode = 'nat' | 'transparent';
 export interface VdomSettings {
   opmode: DeploymentMode;
   centralNat: boolean;
+  tcpSessionWithoutSyn: boolean;
   manageIP?: string;
   manageMask?: string;
   gateway?: string;
@@ -51,10 +54,12 @@ export interface VdomContext {
   readonly nat: FirewallNatEngine;
   readonly routes: RouteTable;
   readonly policyRoutes: PolicyRouteTable;
+  readonly sessionTtl: SessionTtlTable;
   readonly sessions: SessionTable;
   readonly evaluator: PolicyEvaluator;
   readonly schedules: ScheduleStore;
   readonly logs: FirewallLogStore;
+  readonly logSettings: LogSettings;
   readonly utm: UtmProfileStore;
   readonly identities: IdentityTable;
   readonly users: UserDirectory;
@@ -89,6 +94,7 @@ export interface VdomRegistryDeps {
     vdom: string, session: FirewallSession, reason: SessionCloseReason) => void;
   readonly onSessionCountChanged?: (count: number, created: boolean) => void;
   readonly realServerPool?: (name: string) => RealServerPool | undefined;
+  readonly tcpSessionWithoutSyn: boolean;
 }
 
 export class VdomAssignedInterfacesError extends Error {
@@ -171,7 +177,10 @@ export class VdomRegistry {
 
   private build(name: string): VdomContext {
     const deps = this.deps;
-    const settings: VdomSettings = { opmode: 'nat', centralNat: false };
+    const settings: VdomSettings = {
+      opmode: 'nat', centralNat: false,
+      tcpSessionWithoutSyn: deps.tcpSessionWithoutSyn,
+    };
     const zones = new ZoneTable();
     const objects = new ObjectStore({
       maxGroupNesting: deps.maxGroupNesting,
@@ -249,10 +258,12 @@ export class VdomRegistry {
       nat,
       routes,
       policyRoutes: new PolicyRouteTable({ now: this.deps.now }),
+      sessionTtl: new SessionTtlTable(),
       sessions,
       evaluator,
       schedules,
       logs: new FirewallLogStore(),
+      logSettings: new LogSettings(),
       utm: new UtmProfileStore(),
       identities,
       tunnels: new IpsecTunnelTable({

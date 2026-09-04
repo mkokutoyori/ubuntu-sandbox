@@ -7,7 +7,7 @@ export function toDisplayName(portName: string): string {
 export function toPortName(displayName: string): string | null {
   const trimmed = displayName.trim();
   if (/^Ethernet$/i.test(trimmed)) return 'eth0';
-  const m = trimmed.match(/^Ethernet\s+(\d+)$/i);
+  const m = trimmed.match(/^Ethernet\s*(\d+)$/i);
   if (m) return `eth${parseInt(m[1], 10)}`;
   return null;
 }

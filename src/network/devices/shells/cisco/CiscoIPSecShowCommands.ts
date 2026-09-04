@@ -173,21 +173,6 @@ export function registerIPSecShowCommands(
     ].join('\n')).join('\n\n');
   });
 
-  trie.registerGreedy('clear crypto sa', 'Clear IPSec SAs', (args) => {
-    const e = eng();
-    if (!e) return 'IPSec not configured.';
-    const peer = parsePeerFromArgs(args);
-    const n = e.clearIPSecSAs(peer);
-    return n === 0 ? 'No matching IPSec SAs found' : `Cleared ${n} IPSec SA${n === 1 ? '' : 's'}`;
-  });
-  trie.registerGreedy('clear crypto isakmp', 'Clear ISAKMP SAs', (args) => {
-    const e = eng();
-    if (!e) return 'IPSec not configured.';
-    const peer = parsePeerFromArgs(args);
-    const n = e.clearISAKMPSAs(peer);
-    return n === 0 ? 'No matching ISAKMP SAs found' : `Cleared ${n} ISAKMP SA${n === 1 ? '' : 's'}`;
-  });
-
   const debugSvc = () => getRouter().getDebugService();
   const PKI_REFUS = '% Crypto PKI has no trace point on this platform:'
     + ' the certificate engine publishes no enrolment or validation event';
@@ -208,13 +193,6 @@ export function registerIPSecShowCommands(
   trie.register('show dmvpn detail', 'Detailed DMVPN status', () => dmvpn().formatSessions(true));
 }
 
-function parsePeerFromArgs(args: string[]): string | undefined {
-  for (let i = 0; i < args.length; i++) {
-    if (args[i] === 'peer' && args[i + 1]) return args[i + 1];
-    if (/^\d+\.\d+\.\d+\.\d+$/.test(args[i])) return args[i];
-  }
-  return undefined;
-}
 
 const DEJA_AU_SOCLE = new Set(
   SHOW_CRYPTO_FAMILY.map(spec =>

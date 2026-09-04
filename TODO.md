@@ -245,6 +245,46 @@ libelle — une ligne dans `winUnreachText`.
 
 ---
 
+### [netadapter] `Set-NetAdapter -VlanID` est REFUSE faute d'etiquetage sur une carte physique
+Depuis le lot « une carte reseau est son PORT », `Set-NetAdapter` existe
+et `-MacAddress` pose vraiment l'adresse par `Port.setMAC`, c'est-a-dire
+le mecanisme que `ip link set … address` emprunte deja. `-VlanID`, lui,
+est **refuse en nommant la brique qui manque** plutot que range sans
+etre lu.
+
+**Ce qui manque, mesure.** L'etiquetage 802.1Q existe sur cette machine,
+mais seulement pour une SOUS-INTERFACE : `EndHost.sendFrame` etiquette
+quand le port emetteur est enregistre dans `vlanSubInterfaces`, ce que
+`Add-NetLbfoTeamNic` fait pour une interface d'agregation. Ce que
+`Set-NetAdapter -VlanID` demande est autre chose : que la carte PHYSIQUE
+elle-meme etiquette tout ce qu'elle emet, sans sous-interface. L'ecrire
+en enregistrant le port comme sa propre sous-interface fonctionnerait
+par accident — `sendFrame` appellerait `Equipment.sendFrame` sur le meme
+port — mais compterait la trame deux fois dans la prise de capture, et
+serait exactement la fausse reutilisation que ce depot refuse.
+
+**Report.** A fermer avec un vrai etiquetage de port (un `Port.vlanTag`
+lu a l'emission et a la reception), qui servirait aussi le pendant
+Linux `ip link set eth0 type vlan …` sur une carte sans sous-interface.
+
+---
+
+### [netadapter] `Get-NetAdapter -IncludeHidden` ne rend rien de plus
+Le filtre est REEL — `NetAdapterEntry.hidden` est lu par
+`selectNetAdapters` — et aucune carte n'est cachee aujourd'hui, donc il
+ne change rien de visible. C'est la meme limite que le PRD de la
+boucle avait deja ecrite : `Loopback Pseudo-Interface 1` n'est pas un
+`Port` de `WindowsPC`, donc l'ajouter ici serait une quatrieme copie
+ecrite en dur d'une interface qui n'existe pas, exactement le defaut que
+ce PRD venait de refermer. Le moteur historique, supprime, en fabriquait
+justement une.
+
+**Report.** A fermer le jour ou `WindowsPC` cree une vraie interface de
+bouclage comme `LinuxMachine.createLoopbackPort()` le fait ; elle sera
+alors `hidden` et le filtre la rendra sans une ligne de plus.
+
+---
+
 ## Gestion (SNMP, NTP, syslog)
 
 ### [ntp] `minpoll`, `maxpoll`, `burst` et `iburst` sont desormais REFUSES
@@ -412,6 +452,47 @@ magasin sans repenser la granularite ferait deux reglages pour une meme
 question. C'est un lot a part, avec sa propre mesure.
 
 ## Socle CLI
+
+### [track] `track <n>` tout court pose un objet « stub » sans mot-cle
+IOS documente `track <object-number> stub-object` ; ici `track 1` seul
+est accepte et cree l'objet, le repli de l'analyseur traitant « aucun
+mot apres le numero » comme la forme stub.
+**Mesure** : `track 1` rend la chaine vide sur un routeur et entre en
+`config-track`.
+**Report** : le mot-cle explicite est ATTESTE (un laboratoire du depot
+tape `track 22 stub-object`), la forme NUE ne l'est pas — aucune
+transcription atteignable depuis ce reseau ne dit si IOS la refuse comme
+incomplete. Trancher sans capture serait inventer, et les deux
+comportements sont aussi plausibles l'un que l'autre.
+
+### [alias] `snapshot`/`restore` d'`AliasRepository` ne portent pas le REFUS des alias d'usine
+`no alias exec` retire les alias d'usine (`p`, `s`, `w`) et le magasin
+retient ce refus par un booleen que `snapshot()` ne rend pas et que
+`restore()` ne repose pas — les deux ne transportent que la table des
+alias de l'operateur.
+**Mesure** : la coupure PARAIT bien dans `show running-config` (`no alias
+exec`), donc elle survit a un import de topologie, qui rejoue cette
+configuration ; ce qui ne la porte pas est le couple
+`snapshot`/`restore`, que `CiscoIOSShell` emploie pour la bascule
+`startup-config` (`reload`, `configure replace`).
+**Report** : elargir le type de retour de `snapshot()` touche ses quatre
+sites d'appel et la persistance de la configuration de demarrage, alors
+que le seul chemin observable aujourd'hui — l'import — passe par le
+rendu. Le fermer demande de decider ce qu'un `snapshot` doit porter en
+general, ce qui est un autre sujet.
+
+### [alias] un alias ne s'expanse pas dans les sous-modes qu'IOS ne nomme pas
+`aliasModeForCliMode` fait correspondre les cinq modes d'`alias` aux
+modes de la coquille : `exec`, `configure`, `interface` (y compris
+`config-subif`), `line` et `router`. Les autres sous-modes — `config-vlan`,
+`config-route-map`, `config-crypto-map`, les vingt et quelques autres —
+n'ont donc aucun alias.
+**Mesure** : `alias configure X ...` puis `X` sous `route-map` ne
+s'expanse pas.
+**Report** : c'est ce que fait IOS, dont la commande `alias` ne connait
+que ces modes ; l'entree est ici pour que la table ne soit pas prise
+pour un oubli si un mode manquait vraiment. Rien a corriger tant qu'une
+transcription ne montre pas un sixieme mode.
 
 ### [socle] une queue `REST` ne sait pas nommer ses valeurs par POSITION
 `sequenceFamily` decrit la queue libre d'une commande par UNE place
@@ -2419,35 +2500,62 @@ défauts — la méthode vaut d'être reprise sur le reliquat.
   `NE_PAS_EXECUTER` de la version Cisco — la liste des commandes qu'on ne
   peut pas executer dans un balayage (`reboot`, `save`, `reset`…) doit
   etre etablie pour VRP avant qu'un tel test soit sur.
-- **Un segment TCP est enregistre DEUX fois dans une capture, et la
-  seconde copie est fausse.** Mesure avec `nmap -Pn --scanflags SYNFIN`,
-  une capture sur la cible et le bus instrumente en parallele : le bus
-  porte exactement DEUX trames TCP — le SYN+FIN entrant (fenetre 65535)
-  et le RST+ACK sortant (fenetre 0) — pendant que `tcpdump -r` en rend
-  TROIS, la ligne du milieu etant `Flags [S], seq <le meme>, win 0`,
-  c'est-a-dire le meme segment ampute de son FIN et de sa fenetre.
-  `LinuxMachine.openTcpdumpCapture` branche DEUX sources sur une meme
-  prise — la prise de port reelle (`attachCapture`) et le journal
-  `executor.captureLog` (`subscribeCapture`, plus un rejeu de tout ce
-  qu'il contient deja) — et `makeTcpSegmentDedupSink` existe justement
-  pour apparier les deux. Sa cle inclut les DRAPEAUX et la sequence :
-  quand la copie synthetique se trompe de drapeaux, les cles different,
-  l'appariement n'a pas lieu et les deux lignes sortent. C'est pourquoi
-  le defaut ne se voyait pas avant `--scanflags` : `-sS` emet un `[S]`
-  que la copie synthetique reproduit a l'identique, donc les deux
-  s'appariaient et la prise de port gagnait. `makeTcpFrame`
-  (`CaptureFrame.ts:586`) confirme la forme de la copie fautive — elle
-  reconstruit les drapeaux depuis une CHAINE (`f.includes('S')`) et
-  ecrit `win 0` en dur, faute de champ de fenetre dans `CapturedPacket`.
-  Ce qui n'est PAS etabli, et pourquoi ce n'est pas ferme ici : quel
-  ecrivain a mis cette entree dans le journal de la cible pour un simple
-  balayage. Les trois ecrivains trouves (`captureTcpHandshake`,
-  `captureTcpSynDropped`, `CaptureRouter` via `publishWireSegment`) sont
-  tous sur des chemins SSH, et aucun n'est traverse par `scanProbe` ;
-  il en reste donc un a trouver. Deux corrections possibles et non
-  tranchees : retirer les drapeaux et la fenetre de la cle
-  d'appariement (simple, mais deux segments distincts de meme sequence
-  et meme longueur se confondraient), ou supprimer la source
-  synthetique pour tout ce que la prise de port porte deja (juste, mais
-  elle est le SEUL enregistrement des chemins scriptes qui ne
-  traversent aucun port — telnet et SSH scriptes).
+- `probe-aide-tient-ses-promesses.test.ts` — le plus lourd des garde-fous
+  d'aide, celui qui execute TOUT ce que `?` propose sur le routeur — ne
+  termine plus dans ce conteneur : le processus est tue par
+  `ERR_WORKER_OUT_OF_MEMORY` apres environ 140 s, avec ou sans
+  `--max-old-space-size=6144`, sur les deux reservoirs (`forks` comme
+  `threads`). Mesure : le meme echec se produit avec toutes les
+  modifications en cours REMISES, donc il est ANTERIEUR et ce n'est pas
+  une regression d'un lot. Ses cinq freres plus legers
+  (`probe-cli-aide-egale-execution`, `probe-aide-cr-tient-sa-promesse`,
+  `probe-commutateur-aide-tient-parole`, `probe-aide-decrit-la-bonne-place`,
+  `probe-aide-noeuds-intermediaires`) tournent et sont verts, donc la
+  couverture n'est pas perdue — mais tant que celui-la ne tourne pas, la
+  promesse « tout mot annonce s'execute » n'est plus VERIFIEE sur le
+  routeur, seulement sur le commutateur. Le fermer demande de borner ce
+  que le balayage retient en memoire (il construit un equipement par mot
+  teste) plutot que d'agrandir le tas.
+- Les onze autres mots-cles que le glouton `spanning-tree` absorbe
+  (`portfast`, `mode`, `pathcost`, `vlan`, `extend`, `loopguard`,
+  `priority`, `mst`, `bpdufilter`, `bpduguard`, `default`) reproposent
+  encore les SOEURS de la famille apres eux quand ils n'ont pas de suite
+  declaree, parce que l'aide reste sur le noeud glouton et y rejoue ses
+  propres enfants. Le lot qui a ferme `backbonefast` et `uplinkfast` ne
+  les a pas fermes : chacun demande de mesurer ce qu'il prend VRAIMENT
+  avant de le declarer, et declarer de travers y mettrait un mensonge de
+  plus. La bonne facon de les fermer est de les MIGRER — un mot-cle qui
+  devient une vraie commande du socle porte sa place, son refus et son
+  aide d'un seul tenant.
+- `show running-config` d'un Catalyst rend `spanning-tree mode pvst`
+  apres `no spanning-tree mode`, c'est-a-dire le mode par DEFAUT. Un
+  vrai Catalyst ecrit-il cette ligne dans sa configuration d'usine ? La
+  question n'est pas tranchee : `cisco.com` est refuse par le mandataire
+  de sortie de ce reseau, et la trancher de memoire est exactement ce
+  que ce depot refuse. Les deux reponses ont une consequence — si la
+  ligne est tacite, la rendre fait qu'une topologie importee decrit un
+  reglage que personne n'a pose ; si elle ne l'est pas, la taire perd
+  l'information au rechargement. La sonde de la famille observe donc le
+  COMPORTEMENT (le retour a PVST+) et pas le rendu. A rouvrir des qu'une
+  capture reelle de configuration d'usine est atteignable.
+
+### [ui] un port `Serial` de routeur est cree avec le type `ethernet`
+
+**Mesure** : `interface Serial0/0/0` sur un routeur Cisco passe par
+`Router._createVirtualInterface`, qui ecrit `new Port(name, 'ethernet')`
+en dur. Le port existe, il est bien cablable — une interface serie est
+un vrai port de facade, et le lot « une interface virtuelle n'a pas de
+prise » a pris soin de ne PAS l'en exclure — mais le selecteur de
+cablage le range sous « Ethernet » et propose un cable Ethernet pour un
+lien WAN serie. `ConnectionType` porte pourtant `'serial'`, et le
+selecteur sait deja grouper par type et n'offrir que les types presents
+des deux cotes.
+
+**Non corrige ici** : le type d'un port n'est pas qu'une etiquette
+d'affichage. Il est lu par la negociation de `Cable`, par le groupement
+du selecteur et par tout ce qui filtre sur `iface.type`, et aucun port
+`'serial'` n'existe aujourd'hui dans le depot — donc poser le bon type
+demande d'abord de mesurer ce qu'un lien serie doit negocier (debit,
+duplex, horloge DCE/DTE, `clock rate`), ce qui est un lot a soi et non
+un changement d'une ligne. Le faire a l'aveugle donnerait un port d'un
+type que rien ne sait traiter.

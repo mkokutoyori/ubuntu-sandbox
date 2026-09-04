@@ -4,6 +4,7 @@ import { FORTIOS_PROFILE } from './FortiProfile';
 import { FortiShell } from './FortiShell';
 import { FortiConfigTree } from './runtime/FortiConfigTree';
 import { schemaIndex } from './schema';
+import { seedPredefinedConfig } from './schema/seedPredefined';
 import { FortiAdminApp } from './admin/FortiAdminApp';
 import type { AdminHttpApp } from '../../mgmt/AdminHttpServer';
 import { daemonMemoryKib } from './diag/sysTopRenderer';
@@ -30,7 +31,11 @@ export class FortiGate extends Firewall {
   }
 
   configTree(): FortiConfigTree {
-    if (!this.tree) this.tree = new FortiConfigTree(schemaIndex());
+    if (!this.tree) {
+      this.tree = new FortiConfigTree(schemaIndex());
+      this.tree.bindScope(() => this.activeVdomName());
+      seedPredefinedConfig(this.tree);
+    }
     return this.tree;
   }
 

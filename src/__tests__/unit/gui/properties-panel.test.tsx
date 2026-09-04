@@ -105,6 +105,7 @@ describe('PropertiesPanel (component)', () => {
           id: 'eth0', name: 'eth0', type: 'ethernet',
           macAddress: 'AA:BB:CC:DD:EE:FF',
           ipAddress: '10.0.0.10',
+          acceptsCable: true, hasSocket: true,
         },
       ],
     });

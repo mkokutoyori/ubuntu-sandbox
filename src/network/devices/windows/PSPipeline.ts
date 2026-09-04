@@ -841,9 +841,8 @@ function pickDefaultColumns(keys: string[]): string[] | null {
   if (lower.has('handles') && lower.has('id') && lower.has('processname')) {
     return ['Handles', 'NPM(K)', 'PM(K)', 'WS(K)', 'CPU(s)', 'Id', 'ProcessName'];
   }
-  // NetAdapter: Name, InterfaceDescription, Status, MacAddress
   if (lower.has('macaddress') && lower.has('status') && lower.has('name') && lower.has('interfacedescription')) {
-    return ['Name', 'InterfaceDescription', 'Status', 'MacAddress', 'LinkSpeed'];
+    return ['Name', 'InterfaceDescription', 'ifIndex', 'Status', 'MacAddress', 'LinkSpeed'];
   }
   // NetNeighbor: ifIndex, IPAddress, LinkLayerAddress, State, PolicyStore
   if (lower.has('linklayeraddress') && lower.has('ipaddress') && lower.has('state')) {

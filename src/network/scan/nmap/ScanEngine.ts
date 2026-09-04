@@ -6,6 +6,13 @@ import type { ScanProbeFlags, ScanVerdict, StatelessScanKind } from './Stateless
 import {
   ARP_PING_PHASE, IP_PING_PHASE, ND_PING_PHASE, SCAN_PHASE_NAME, type ScanPhase,
 } from './ScanPhases';
+import {
+  chooseTraceProbe, type HostTrace, type TraceCandidate, type TraceHop,
+} from './Traceroute';
+import {
+  traceConnectLine, traceFrameLine, type TraceDirection,
+} from './PacketTrace';
+import type { EthernetFrame } from '@/network/core/types';
 
 const STATELESS_KINDS: Readonly<Partial<Record<ScanType, StatelessScanKind>>> = {
   syn: 'syn', ack: 'ack', fin: 'fin', null: 'null',
@@ -28,6 +35,17 @@ export interface HostState {
   latencyMs?: number;
   mac?: string;
   reason?: string;
+  /**
+   * Le port qui a fait repondre l'hote, quand c'est une sonde TCP qui a
+   * repondu. `--traceroute` le lit pour nommer sa propre sonde, comme
+   * `get_probe` lit `target->pingprobe`.
+   */
+  reasonPort?: number;
+  /**
+   * Le TTL de la reponse de decouverte. `--reason` l'ecrit apres la
+   * raison (`output.cc:1457`) ; une reponse ARP n'en porte aucun.
+   */
+  replyTtl?: number;
 }
 
 export interface ResolvedTarget {
@@ -47,7 +65,9 @@ export interface HostProbes {
    * segment, donc que les sondes IP reprennent la main ; `mac: null` veut
    * dire qu'elle y est et n'a pas repondu, donc qu'elle est absente.
    */
-  linkDiscovery?(ip: string): { mac: string | null; reason: string } | null;
+  linkDiscovery?(
+    ip: string,
+  ): { mac: string | null; reason: string; rttMs?: number } | null;
   /**
    * Le nom d'une adresse. `nmap` le demande pour tout hote trouve VIVANT,
    * et `-R` l'etend a ceux qui ne repondent pas.
@@ -70,6 +90,40 @@ export interface HostProbes {
   ): ScanVerdict;
   udpState(ip: string, port: number): 'open' | 'closed' | 'open|filtered';
   banner(ip: string, port: number): { service: string; version?: string } | null;
+  /**
+   * `Target::directlyConnected()` : une cible du meme segment est a une
+   * distance connue de 1, et `traceroute_direct` (`traceroute.cc:1461`)
+   * n'emet alors AUCUNE sonde.
+   */
+  directlyConnected?(ip: string): boolean;
+  /** La marche par duree de vie limitee, celle de la machine. */
+  tracePath?(ip: string): Promise<Array<{
+    ttl: number; ip?: string; rttMs?: number;
+  }>>;
+  /**
+   * Ce que la machine met sur le fil et en retire, pour `--packet-trace`.
+   * Rend de quoi se desabonner : la trace ne dure que le balayage.
+   */
+  observeWire?(
+    sink: (direction: TraceDirection, frame: EthernetFrame) => void,
+  ): () => void;
+}
+
+/**
+ * Ce que `--packet-trace` accumule pendant un balayage : les cibles que
+ * le filtre laisse passer, les lignes deja rendues, et l'horloge depuis
+ * le demarrage que chaque ligne porte.
+ */
+export interface TraceContext {
+  readonly targets: Set<string>;
+  readonly lines: string[];
+  elapsed(): number;
+  /**
+   * Un balayage CONNECTE ne montre pas ses paquets : `connect()` laisse
+   * le noyau les emettre, donc un vrai `nmap` ne les voit pas passer et
+   * n'ecrit que ses lignes `CONN`.
+   */
+  readonly connectScan: boolean;
 }
 
 const TCP_SCAN_REASON: Readonly<Record<TcpWireOutcome, string>> = {
@@ -100,8 +154,12 @@ export interface HostReport {
   discoveryReason?: string;
   /** Ce que la resolution inverse a rendu, quand elle a ete faite. */
   rdnsName?: string;
+  /** Le TTL de la reponse de decouverte, ce que `--reason` ecrit apres elle. */
+  replyTtl?: number;
   ports: PortResult[];
   notShown?: { count: number; states: Partial<Record<PortState, number>> };
+  /** Ce que `--traceroute` a releve, quand il a ete demande. */
+  trace?: HostTrace;
 }
 
 export interface NmapReport {
@@ -112,6 +170,8 @@ export interface NmapReport {
   unresolved: string[];
   /** Ce que `-v` rend visible : les phases traversees, dans l'ordre. */
   phases: ScanPhase[];
+  /** Ce que `--packet-trace` rend visible, dans l'ordre des paquets. */
+  packetTrace: string[];
 }
 
 const COLLAPSE_THRESHOLD = 24;
@@ -148,6 +208,7 @@ function effectivePorts(options: NmapOptions): number[] {
 
 function tcpResult(
   options: NmapOptions, probes: HostProbes, ip: string, port: number,
+  trace?: TraceContext,
 ): PortResult {
   const kind = statelessKindOf(options.scanType);
   const stateless = kind && probes.statelessOutcome
@@ -159,6 +220,9 @@ function tcpResult(
     reason = stateless.reason;
   } else {
     const outcome = probes.tcpOutcome(ip, port);
+    if (trace) {
+      trace.lines.push(traceConnectLine(trace.elapsed(), 'TCP', ip, port, outcome));
+    }
     // scan_engine_connect.cc : ECONNREFUSED ferme le port, EACCES — que
     // provoque un inatteignable « administrativement interdit » — le
     // FILTRE. Les confondre fait passer une liste de controle pour un
@@ -234,11 +298,77 @@ function discoveryPhase(
   return { name: IP_PING_PHASE, total: 1, unit: 'host' };
 }
 
+/**
+ * Ce que `target->pingprobe` porte a la fin du balayage : la sonde de
+ * decouverte qui a repondu, puis chaque port dont la reponse est arrivee
+ * — un port muet n'est candidat a rien.
+ */
+function traceCandidates(info: HostState, ports: readonly PortResult[]): TraceCandidate[] {
+  const family: 4 | 6 = info.ip.includes(':') ? 6 : 4;
+  const out: TraceCandidate[] = [];
+  if (info.reason === 'echo-reply') out.push({ kind: 'icmp-echo', family });
+  if ((info.reason === 'syn-ack' || info.reason === 'reset') && info.reasonPort !== undefined) {
+    out.push({
+      kind: 'tcp', port: info.reasonPort,
+      state: info.reason === 'syn-ack' ? 'open' : 'closed',
+    });
+  }
+  for (const port of ports) {
+    if (port.protocol !== 'tcp' || port.reason === 'no-response') continue;
+    if (port.state === 'open') out.push({ kind: 'tcp', port: port.port, state: 'open' });
+    else if (port.state === 'closed') out.push({ kind: 'tcp', port: port.port, state: 'closed' });
+    else if (port.state === 'filtered') out.push({ kind: 'tcp', port: port.port, state: 'filtered' });
+  }
+  return out;
+}
+
+async function buildTrace(
+  options: NmapOptions, probes: HostProbes, info: HostState,
+  latencyMs: number, rdnsName: string | undefined,
+  ports: readonly PortResult[], cache: Map<string, string>,
+): Promise<HostTrace | undefined> {
+  const family: 4 | 6 = info.ip.includes(':') ? 6 : 4;
+
+  if (probes.directlyConnected?.(info.ip)) {
+    return {
+      probe: { kind: 'none' },
+      hops: [{
+        ttl: 1, ip: info.ip, rttMs: latencyMs,
+        name: info.hostname ?? rdnsName, tag: info.ip,
+      }],
+    };
+  }
+
+  const walked = await probes.tracePath?.(info.ip);
+  if (!walked || walked.length === 0) return undefined;
+
+  const hops: TraceHop[] = [];
+  for (const step of walked) {
+    if (!step.ip) {
+      hops.push({ ttl: step.ttl, tag: info.ip });
+      continue;
+    }
+    const key = `${step.ttl}:${step.ip}`;
+    const known = cache.get(key);
+    if (known === undefined) cache.set(key, info.ip);
+    const name = options.noDns ? undefined : await probes.reverseName?.(step.ip) ?? undefined;
+    hops.push({
+      ttl: step.ttl, ip: step.ip, rttMs: step.rttMs,
+      name, tag: known ?? info.ip,
+    });
+  }
+  return { probe: chooseTraceProbe(traceCandidates(info, ports), family), hops };
+}
+
 async function scanHost(
   options: NmapOptions, probes: HostProbes, target: string, phases: ScanPhase[],
+  hopCache: Map<string, string>, trace?: TraceContext,
 ): Promise<HostReport | null> {
   const resolved = await probes.resolveTarget(target);
   if (!resolved) return null;
+  // Le filtre de `nmap` ne laisse passer que ce qui concerne ses cibles,
+  // et une cible n'est connue qu'une fois resolue.
+  trace?.targets.add(resolved.ip);
 
   // targets.cc, `refresh_hostbatch` : la decouverte de couche lien passe
   // AVANT toute sonde IP, elle les remplace quand elle repond, et le
@@ -249,7 +379,10 @@ async function scanHost(
   const onLink = options.disableArpPing ? null : probes.linkDiscovery?.(resolved.ip);
   const identified = { ip: resolved.ip, hostname: resolved.hostname };
   const info: HostState = onLink
-    ? { ...identified, up: onLink.mac !== null, mac: onLink.mac ?? undefined, reason: onLink.reason }
+    ? {
+        ...identified, up: onLink.mac !== null, mac: onLink.mac ?? undefined,
+        reason: onLink.reason, latencyMs: onLink.rttMs,
+      }
     : options.skipDiscovery
       ? { ...identified, up: true, reason: 'user-set' }
       : await probes.hostState(resolved);
@@ -272,16 +405,21 @@ async function scanHost(
   if (!info.up) {
     return {
       ip: info.ip, hostname: info.hostname, up: false, latencyMs,
-      downReason: 'no response', rdnsName, ports: [],
+      downReason: 'no-response', rdnsName, ports: [],
     };
   }
 
-  const identity = { mac: info.mac, discoveryReason: info.reason, rdnsName };
+  const identity = {
+    mac: info.mac, discoveryReason: info.reason, rdnsName, replyTtl: info.replyTtl,
+  };
 
   if (options.pingOnly) {
     return {
       ip: info.ip, hostname: info.hostname, up: true, latencyMs, osGuess,
       ...identity, ports: [],
+      trace: options.traceroute
+        ? await buildTrace(options, probes, info, latencyMs, rdnsName, [], hopCache)
+        : undefined,
     };
   }
 
@@ -295,12 +433,15 @@ async function scanHost(
   const all: PortResult[] = [];
   for (const port of scanned) {
     if (options.scanType === 'udp') all.push(udpResult(options, probes, info.ip, port));
-    else all.push(tcpResult(options, probes, info.ip, port));
+    else all.push(tcpResult(options, probes, info.ip, port, trace));
   }
   const { ports, notShown } = partition(options, all);
   return {
     ip: info.ip, hostname: info.hostname, up: true, latencyMs, osGuess,
     ...identity, ports, notShown,
+    trace: options.traceroute
+      ? await buildTrace(options, probes, info, latencyMs, rdnsName, all, hopCache)
+      : undefined,
   };
 
 }
@@ -315,13 +456,32 @@ export async function scan(
   const hosts: HostReport[] = [];
   const unresolved: string[] = [];
   const phases: ScanPhase[] = [];
+  // Le cache de sauts du lot : deux cibles derriere le meme routeur
+  // partagent leurs premiers sauts, et c'est ce qui fait ecrire
+  // « Hops 1-N are the same as for … » plutot que de les repeter.
+  const hopCache = new Map<string, string>();
   let targetsScanned = 0;
+
+  const startedAtMs = performance.now();
+  const trace: TraceContext | undefined = options.packetTrace ? {
+    targets: new Set<string>(),
+    lines: [],
+    elapsed: () => (performance.now() - startedAtMs) / 1000,
+    connectScan: options.scanType === 'tcp',
+  } : undefined;
+  const stopWire = trace && probes.observeWire
+    ? probes.observeWire((direction, frame) => {
+        const line = traceFrameLine(
+          direction, trace.elapsed(), frame, trace.targets, trace.connectScan);
+        if (line) trace.lines.push(line);
+      })
+    : undefined;
 
   for (const target of options.targets) {
     for (const address of enumerateTargets(target)) {
-      const report = await scanHost(options, probes, address, phases)
+      const report = await scanHost(options, probes, address, phases, hopCache, trace)
         ?? (target === address && isIpLiteral(address)
-          ? { ip: address, up: false, latencyMs: 0, downReason: 'no response', ports: [] }
+          ? { ip: address, up: false, latencyMs: 0, downReason: 'no-response', ports: [] }
           : null);
       if (!report) {
         if (target === address) unresolved.push(address);
@@ -336,6 +496,8 @@ export async function scan(
     }
   }
 
+  stopWire?.();
+
   return {
     startedAt: new Date().toISOString(),
     targetsScanned,
@@ -343,5 +505,6 @@ export async function scan(
     hosts,
     unresolved,
     phases,
+    packetTrace: trace?.lines ?? [],
   };
 }

@@ -208,7 +208,7 @@ export function InterfaceSelectorPopover({
                     {/* Status indicator */}
                     <div className={cn(
                       "w-2 h-2 rounded-full flex-shrink-0",
-                      item.isConnected
+                      item.unavailableBecause === 'cabled'
                         ? "bg-blue-500"
                         : item.isAvailable && (isSource ? type === selectedType : typeMatch)
                           ? "bg-green-500"
@@ -219,8 +219,11 @@ export function InterfaceSelectorPopover({
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center justify-between">
                         <span className="font-medium text-white/90 truncate">{item.name}</span>
-                        {item.isConnected && (
+                        {item.unavailableBecause === 'cabled' && (
                           <span className="text-[10px] text-blue-400 ml-2 flex-shrink-0">Connected</span>
+                        )}
+                        {item.unavailableBecause === 'virtual' && (
+                          <span className="text-[10px] text-amber-400 ml-2 flex-shrink-0">Virtual — no socket</span>
                         )}
                       </div>
                       {item.ipAddress && (

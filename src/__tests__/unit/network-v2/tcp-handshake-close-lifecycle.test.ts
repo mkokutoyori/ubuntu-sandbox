@@ -102,13 +102,28 @@ function parseTcpdumpLine(line: string): { flags: string; seq: number; ack: numb
   return { flags, seq, ack, length };
 }
 
+/**
+ * `tcpdump` capture à partir du moment où il est lancé : une vraie
+ * machine ne rend pas le trafic d'AVANT. Le trafic est donc produit
+ * pendant que la capture tourne, puis relu — l'idiome `-w` / `-r`.
+ */
+async function capturer(
+  pc: LinuxPC, fichier: string, trafic: () => void,
+): Promise<string> {
+  await pc.executeCommand(`tcpdump -nn port 8080 -w ${fichier} &`);
+  trafic();
+  return pc.executeCommand(`tcpdump -r ${fichier} -nn`);
+}
+
 describe('Scénario 1 — Cycle de vie complet d\'une connexion TCP', () => {
   it('3-way handshake : tcpdump capture SYN, SYN-ACK, ACK sur port 8080', async () => {
     const lan = buildPair();
-    const sock = tcpStack(lan.pc).connect('10.0.0.10', 8080)!;
-    expect(sock.state).toBe('established');
+    let sock: MinimalSocket | null = null;
+    const dump = await capturer(lan.pc, '/tmp/hs.pcap', () => {
+      sock = tcpStack(lan.pc).connect('10.0.0.10', 8080);
+    });
+    expect(sock!.state).toBe('established');
 
-    const dump = await lan.pc.executeCommand('tcpdump -nn port 8080');
     const flagged = dump.split('\n').filter(l => l.includes('Flags'));
     expect(flagged.some(l => /Flags \[S\],/.test(l)  && /8080/.test(l))).toBe(true);
     expect(flagged.some(l => /Flags \[S\.\],/.test(l) && /8080/.test(l))).toBe(true);
@@ -117,9 +132,9 @@ describe('Scénario 1 — Cycle de vie complet d\'une connexion TCP', () => {
 
   it('handshake : seq/ack cohérents (client_isn+1 == server_ack, server_isn+1 == client_ack)', async () => {
     const lan = buildPair();
-    tcpStack(lan.pc).connect('10.0.0.10', 8080);
-
-    const dump = await lan.pc.executeCommand('tcpdump -nn port 8080');
+    const dump = await capturer(lan.pc, '/tmp/sa.pcap', () => {
+      tcpStack(lan.pc).connect('10.0.0.10', 8080);
+    });
     const lines = dump.split('\n').filter(l => l.includes('Flags'));
     const syn    = parseTcpdumpLine(lines.find(l => /Flags \[S\],/.test(l))!);
     const synAck = parseTcpdumpLine(lines.find(l => /Flags \[S\.\],/.test(l))!);
@@ -131,10 +146,10 @@ describe('Scénario 1 — Cycle de vie complet d\'une connexion TCP', () => {
 
   it('échange de données : PSH-ACK transporte la charge utile et l\'autre côté l\'acquitte', async () => {
     const lan = buildPair();
-    const sock = tcpStack(lan.pc).connect('10.0.0.10', 8080)!;
-    sock.send('hello');
-
-    const dump = await lan.pc.executeCommand('tcpdump -nn port 8080');
+    const dump = await capturer(lan.pc, '/tmp/px.pcap', () => {
+      const sock = tcpStack(lan.pc).connect('10.0.0.10', 8080)!;
+      sock.send('hello');
+    });
     expect(dump).toMatch(/Flags \[P\.\],.*length 5/);
     // The server acknowledges the data with a bare ACK in addition to the
     // handshake's final ACK from the client.
@@ -155,13 +170,13 @@ describe('Scénario 1 — Cycle de vie complet d\'une connexion TCP', () => {
 
   it('4-way close : tcpdump capture FIN-ACK → ACK → FIN-ACK → ACK', async () => {
     const lan = buildPair();
-    const sock = tcpStack(lan.pc).connect('10.0.0.10', 8080)!;
-    sock.close();
-    // Real applications close on EOF; mimic that on the server side so the
-    // close completes through LAST-ACK → CLOSED.
-    lan.getServerSocket()!.close();
-
-    const dump = await lan.pc.executeCommand('tcpdump -nn port 8080');
+    const dump = await capturer(lan.pc, '/tmp/cl.pcap', () => {
+      const sock = tcpStack(lan.pc).connect('10.0.0.10', 8080)!;
+      sock.close();
+      // Real applications close on EOF; mimic that on the server side so the
+      // close completes through LAST-ACK → CLOSED.
+      lan.getServerSocket()!.close();
+    });
     const finAcks = dump.split('\n').filter(l => /Flags \[F\.\]/.test(l));
     expect(finAcks.length).toBeGreaterThanOrEqual(2);
   });

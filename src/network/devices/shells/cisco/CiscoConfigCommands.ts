@@ -232,23 +232,6 @@ export function buildConfigCommands(trie: CommandTrie, ctx: CiscoShellContext): 
 
   buildDhcpGlobalOn(trie, ctx);
 
-  trie.registerGreedy('ip default-network', 'Configure default-network', (args) => {
-    if (!args[0] || !isValidIPv4(args[0])) throw new CliInvalidInput({ token: args[0] ?? 'network' });
-    getGlobalConfig(ctx.r()).defaultNetwork = args[0];
-    return '';
-  });
-  trie.registerGreedy('no ip default-network', 'Remove the default-network', () => {
-    getGlobalConfig(ctx.r()).defaultNetwork = null; return '';
-  });
-  trie.registerGreedy('ip local policy route-map', 'Apply local PBR', (args) => {
-    if (!args[0]) return CISCO_ERRORS.INCOMPLETE;
-    getGlobalConfig(ctx.r()).localPolicyRouteMap = args[0];
-    return '';
-  });
-  trie.registerGreedy('no ip local policy route-map', 'Remove local PBR', () => {
-    getGlobalConfig(ctx.r()).localPolicyRouteMap = null; return '';
-  });
-
   trie.register('router rip', 'Enter RIP routing protocol configuration', () => {
     if (!ctx.r().isRIPEnabled()) ctx.r().enableRIP({ gcTimeout: 60_000 });
     ctx.setSelectedRoutingProto({ proto: 'rip' });

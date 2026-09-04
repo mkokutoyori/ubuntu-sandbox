@@ -1,4 +1,5 @@
 import { IPAddress, IPv6Address } from '@/network/core/types';
+import { cimNotFound } from './cimQuery';
 import {
   type NetAddressFamily, type NetInterfaceRef, type NetIPAddressResolver, type NetPolicyStore,
   NET_ADDRESS_FAMILIES, NET_POLICY_STORES, NO_MATCHING_INTERFACE, TIMESPAN_MAX_SECONDS, matchEnumValue,
@@ -249,8 +250,10 @@ export function selectNetRoutes<T extends NetRouteRow>(
 }
 
 export function noMatchingNetRoute(selection: NetRouteSelection): string {
-  const named = selection.destinationPrefix?.[0];
-  return named === undefined
-    ? 'No MSFT_NetRoute objects found with the specified criteria. Verify the values and retry.'
-    : `No MSFT_NetRoute objects found with property 'DestinationPrefix' equal to '${named}'. Verify the value of the property and retry.`;
+  return cimNotFound('MSFT_NetRoute', [
+    ['DestinationPrefix', selection.destinationPrefix],
+    ['InterfaceAlias', selection.interfaceAlias],
+    ['InterfaceIndex', selection.interfaceIndex],
+    ['NextHop', selection.nextHop],
+  ]);
 }

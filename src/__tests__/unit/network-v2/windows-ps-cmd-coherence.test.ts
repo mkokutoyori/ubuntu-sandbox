@@ -42,6 +42,11 @@ function createPSExecutor(pc: WindowsPC): PowerShellExecutor {
   return new PowerShellExecutor(pc as any);
 }
 
+function createLivePS(pc: WindowsPC): { execute(line: string): Promise<string> } {
+  const shell = PowerShellSubShell.create(pc).subShell;
+  return { execute: async (line: string) => (await shell.processLine(line)).output.join('\n') };
+}
+
 // ═══════════════════════════════════════════════════════════════════
 // Group 1: Native command pass-through (same output in CMD and PS)
 // ═══════════════════════════════════════════════════════════════════
@@ -243,7 +248,7 @@ describe('Group 3: PS cmdlets produce different format than CMD equivalents', ()
 
   it('PSC-15: Get-NetAdapter has PS table format', async () => {
     const pc = createConfiguredPC();
-    const ps = createPSExecutor(pc);
+    const ps = createLivePS(pc);
 
     const psOutput = await ps.execute('Get-NetAdapter');
 

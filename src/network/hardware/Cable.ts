@@ -161,7 +161,8 @@ export class Cable {
    * Connect two ports via this cable.
    * Automatically sets the cable reference on both ports and triggers auto-negotiation.
    */
-  connect(portA: Port, portB: Port): void {
+  connect(portA: Port, portB: Port): boolean {
+    if (!portA.acceptsCable() || !portB.acceptsCable()) return false;
     this.portA = portA;
     this.portB = portB;
     // Set cable references on BOTH ports before triggering any link-change
@@ -206,6 +207,7 @@ export class Cable {
         },
       });
     }
+    return true;
   }
 
   /**

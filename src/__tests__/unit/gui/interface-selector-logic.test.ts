@@ -19,23 +19,23 @@ import type { Connection, NetworkInterfaceConfig } from '@/store/networkStore';
 
 describe('interface-selector-logic', () => {
   const pcInterfaces: NetworkInterfaceConfig[] = [
-    { id: 'eth0', name: 'eth0', type: 'ethernet', ipAddress: '192.168.1.10', macAddress: '00:11:22:33:44:55' },
+    { id: 'eth0', name: 'eth0', type: 'ethernet', ipAddress: '192.168.1.10', macAddress: '00:11:22:33:44:55', acceptsCable: true, hasSocket: true },
   ];
 
   const routerInterfaces: NetworkInterfaceConfig[] = [
-    { id: 'eth0', name: 'GigabitEthernet0/0', type: 'ethernet' },
-    { id: 'eth1', name: 'GigabitEthernet0/1', type: 'ethernet' },
-    { id: 'serial0/0', name: 'Serial0/0', type: 'serial' },
-    { id: 'serial0/1', name: 'Serial0/1', type: 'serial' },
-    { id: 'console0', name: 'Console0', type: 'console' },
+    { id: 'eth0', name: 'GigabitEthernet0/0', type: 'ethernet', acceptsCable: true, hasSocket: true },
+    { id: 'eth1', name: 'GigabitEthernet0/1', type: 'ethernet', acceptsCable: true, hasSocket: true },
+    { id: 'serial0/0', name: 'Serial0/0', type: 'serial', acceptsCable: true, hasSocket: true },
+    { id: 'serial0/1', name: 'Serial0/1', type: 'serial', acceptsCable: true, hasSocket: true },
+    { id: 'console0', name: 'Console0', type: 'console', acceptsCable: true, hasSocket: true },
   ];
 
   const switchInterfaces: NetworkInterfaceConfig[] = [
-    { id: 'eth0', name: 'GigabitEthernet0/0', type: 'ethernet' },
-    { id: 'eth1', name: 'GigabitEthernet0/1', type: 'ethernet' },
-    { id: 'eth2', name: 'GigabitEthernet0/2', type: 'ethernet' },
-    { id: 'eth3', name: 'GigabitEthernet0/3', type: 'ethernet' },
-    { id: 'console0', name: 'Console0', type: 'console' },
+    { id: 'eth0', name: 'GigabitEthernet0/0', type: 'ethernet', acceptsCable: true, hasSocket: true },
+    { id: 'eth1', name: 'GigabitEthernet0/1', type: 'ethernet', acceptsCable: true, hasSocket: true },
+    { id: 'eth2', name: 'GigabitEthernet0/2', type: 'ethernet', acceptsCable: true, hasSocket: true },
+    { id: 'eth3', name: 'GigabitEthernet0/3', type: 'ethernet', acceptsCable: true, hasSocket: true },
+    { id: 'console0', name: 'Console0', type: 'console', acceptsCable: true, hasSocket: true },
   ];
 
   // ── buildInterfaceList ──────────────────────────────────────────────

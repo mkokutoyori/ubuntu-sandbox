@@ -120,6 +120,7 @@ export interface VtyLineConfigInit {
   readonly autocommand?: string;
   readonly authorizationList?: string;
   readonly accountingList?: string;
+  readonly loginAuthList?: string;
   readonly terminalLength?: number;
   readonly terminalWidth?: number;
   readonly speedBaud?: number;
@@ -158,6 +159,7 @@ export class VtyLineConfig {
   readonly autocommand: string | null;
   readonly authorizationList: string | null;
   readonly accountingList: string | null;
+  readonly loginAuthList: string | null;
   readonly terminalLength: number | null;
   readonly terminalWidth: number | null;
   readonly speedBaud: number | null;
@@ -195,6 +197,7 @@ export class VtyLineConfig {
     this.autocommand = init.autocommand ?? null;
     this.authorizationList = init.authorizationList ?? null;
     this.accountingList = init.accountingList ?? null;
+    this.loginAuthList = init.loginAuthList ?? null;
     this.terminalLength = init.terminalLength ?? null;
     this.terminalWidth = init.terminalWidth ?? null;
     this.speedBaud = init.speedBaud ?? null;
@@ -247,6 +250,7 @@ export class VtyLineConfig {
       autocommand:        patch.autocommand        ?? this.autocommand        ?? undefined,
       authorizationList:  patch.authorizationList  ?? this.authorizationList  ?? undefined,
       accountingList:     patch.accountingList     ?? this.accountingList     ?? undefined,
+      loginAuthList:      patch.loginAuthList      ?? this.loginAuthList      ?? undefined,
       terminalLength:     patch.terminalLength     ?? this.terminalLength     ?? undefined,
       terminalWidth:      patch.terminalWidth      ?? this.terminalWidth      ?? undefined,
       speedBaud:          patch.speedBaud          ?? this.speedBaud          ?? undefined,
@@ -287,7 +291,9 @@ export class VtyLineConfig {
     }
     if (this.login !== null) {
       if (this.login === 'local') lines.push(' login local');
-      else if (this.login === 'aaa') lines.push(' login authentication default');
+      else if (this.login === 'aaa') {
+        lines.push(` login authentication ${this.loginAuthList ?? 'default'}`);
+      }
       else if (this.login === 'password') lines.push(' login');
       else lines.push(' no login');
     }

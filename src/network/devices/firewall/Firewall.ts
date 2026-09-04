@@ -65,6 +65,7 @@ import { NatPolicyStore } from './nat/NatPolicyStore';
 import { FirewallNatEngine, clearVdomTranslations } from './nat/FirewallNatEngine';
 import { IpPoolAllocator, type IpPool } from './nat/IpPool';
 import { PolicyRouteTable } from './l3/PolicyRouteTable';
+import type { SessionTtlTable } from './session/SessionTtlTable';
 import { FirewallPipeline, PipelineStageRegistry } from './pipeline/FirewallPipeline';
 import { PipelineCache } from './pipeline/PipelineCache';
 import { makePacketContext, type PacketContext } from './pipeline/PacketContext';
@@ -122,7 +123,7 @@ import type {
   AdminHttpApp, AdminHttpServer, AdminServerCertificate,
 } from './mgmt/AdminHttpServer';
 import type { ManagementCli } from './mgmt/FirewallCliServer';
-import { ManagementPlane } from './mgmt/ManagementPlane';
+import { ManagementPlane, type PasswordExpiryPolicy } from './mgmt/ManagementPlane';
 import { MANAGEMENT_SERVICES, type ManagementPorts } from './mgmt/ManagementAccess';
 import type { CaptivePortalRedirect } from './auth/CaptivePortalRedirect';
 import { SslDeepInspection } from './inspection/SslDeepInspection';
@@ -144,8 +145,7 @@ import {
 import { buildEchoRequest } from '../../icmp/IcmpEcho';
 import { FirewallTraceroute } from './diag/FirewallTraceroute';
 import {
-  DNS_PORT, FirewallDnsClient, dnsQueryDatagram,
-} from './l3/FirewallDnsClient';
+  DNS_PORT, FirewallDnsClient, } from './l3/FirewallDnsClient';
 import { FirewallDnsServer } from './l3/FirewallDnsServer';
 import type { SdwanService } from './sdwan/SdwanService';
 import { ETHERTYPE_FGCP, type HaAgent } from './ha/HaAgent';
@@ -161,6 +161,9 @@ import { RouterHostsTable } from '../router/dns/RouterHostsTable';
 import type { VdomServices } from './pipeline/stages/coreStages';
 import { ScheduleStore, type ScheduleObject } from './model/ScheduleObject';
 import { FirewallLogStore } from './logging/FirewallLogStore';
+import type { LocalTrafficKind, LogSettings } from './logging/LogSettings';
+import { flowKeyFromPacket, type FlowKey } from './session/FlowKey';
+import { classifyIpv4Destination } from '../../layers/internet/InternetLayer';
 import { LogDisk } from './logging/LogDisk';
 import { SavedConfiguration } from './config/ConfigSaveMode';
 import { PacketCapture } from './diag/PacketCapture';
@@ -190,11 +193,19 @@ export interface FirewallOptions {
   now?: () => number;
 }
 
+export interface LocalTrafficFacts {
+  readonly kind: LocalTrafficKind;
+  readonly iface: string;
+  readonly vdom: string;
+  readonly flow: FlowKey;
+}
+
 export interface TrafficLogger {
   onSessionOpened(session: FirewallSession, rule?: SecurityRule): void;
   onSessionClosed(session: FirewallSession, reason: SessionCloseReason): void;
   onDenied(context: PacketContext): void;
   onDosAnomaly?(finding: DosFinding, iface: string, traffic: DosTraffic): void;
+  onLocalTraffic?(facts: LocalTrafficFacts): void;
 }
 
 const ETHERNET_OVERHEAD_BYTES = 18;
@@ -407,6 +418,7 @@ export class Firewall extends Equipment {
       implicitPolicy: profile.implicitPolicy,
       applicationShift: profile.applicationShift,
       maxGroupNesting: profile.maxGroupNesting,
+      tcpSessionWithoutSyn: !profile.tcpSynCheckDefault,
       resolveFqdn: (fqdn) => this.dnsClient.resolve(fqdn),
       predefinedAddresses: profile.predefinedAddresses,
       predefinedServices: profile.predefinedServices,
@@ -450,6 +462,7 @@ export class Firewall extends Equipment {
       sdwan: () => this.sdwan,
       ha: () => ({ forwardsTransit: () => this.forwardsTransit() }),
       policyKeyedBy: profile.policyKeyedBy,
+      sessionTimeouts: profile.timeouts,
       refusesNewSessions: () => this.load.refusesNewSessions(),
       proxyInspectionPosture: () => this.load.proxyInspectionPosture(),
       flowInspectionPosture: () => this.load.flowInspectionPosture(),
@@ -529,9 +542,18 @@ export class Firewall extends Equipment {
       refuseManagementSource: (source) => this.management.refusesSource(source),
       managementIdleTimeoutMs: () => this.management.idleTimeoutMs(),
       runningConfig: () => this.managementRunningConfig(),
-      onManagementLogin: (user, source) => {
-        this.management.noteLogin(user);
-        this.adminSessions.open(user, 'CLI', source);
+      onManagementLogin: (session) => {
+        this.management.noteLogin(session.username);
+        this.adminSessions.open({
+          username: session.username,
+          type: 'CLI',
+          transport: session.transport,
+          localInterface: this.interfaces.names()
+            .find(name => this.interfaces.get(name)?.ip === session.local.ip) ?? '',
+          local: session.local,
+          remote: session.remote,
+          vdom: this.activeVdom,
+        });
       },
       onAdminLogout: (user) => { this.onAdminLogout(user); },
       onManagementAuthFailure: (user) => {
@@ -687,13 +709,11 @@ export class Firewall extends Equipment {
   runTraceroute(target: string): string { return this.traceroute.run(target); }
 
   private readonly dnsClient = new FirewallDnsClient({
-    send: (destination, sourcePort, payload) => {
-      const egress = this.resolveEgress(destination);
-      if (!egress) return false;
-      this.forward(egress.iface,
-        dnsQueryDatagram(egress.source, destination, sourcePort, payload), egress.gateway);
-      return true;
-    },
+    send: (destination, sourcePort, payload) => this.sendUdpDatagram({
+      destination: new IPAddress(destination),
+      destinationPort: DNS_PORT, sourcePort, payload,
+      payloadBytes: payload.length,
+    }),
   });
 
   getDnsClient(): FirewallDnsClient { return this.dnsClient; }
@@ -703,16 +723,11 @@ export class Firewall extends Equipment {
   getUdpEndpoint(): ControlPlaneUdpEndpoint {
     if (!this.udpEndpoint) {
       this.udpEndpoint = new ControlPlaneUdpEndpoint({
-        sendUdpBytes: (destinationIP, destinationPort, sourcePort, payload) => {
-          const egress = this.resolveEgress(destinationIP.toString());
-          if (!egress) return false;
-          this.forward(
-            egress.iface,
-            udpDatagram(egress.source, destinationIP.toString(),
-              sourcePort, destinationPort, payload),
-            egress.gateway);
-          return true;
-        },
+        sendUdpBytes: (destinationIP, destinationPort, sourcePort, payload) =>
+          this.sendUdpDatagram({
+            destination: destinationIP, destinationPort, sourcePort, payload,
+            payloadBytes: payload instanceof Uint8Array ? payload.length : 64,
+          }),
       });
     }
     return this.udpEndpoint;
@@ -1004,13 +1019,11 @@ export class Firewall extends Equipment {
   }
 
   private sendUdpToPeer(destIp: string, port: number, payload: unknown): boolean {
-    const route = this.getVdom().routes.resolveNextHop(destIp);
-    const iface = route?.iface ?? this.interfaces.interfaceForDestination(destIp);
-    const source = iface === undefined ? undefined : this.interfaces.get(iface)?.ip;
-    if (iface === undefined || source === undefined) return false;
-
-    this.forward(iface, udpDatagram(source, destIp, port, port, payload), route?.nextHop);
-    return true;
+    return this.sendUdpDatagram({
+      destination: new IPAddress(destIp),
+      destinationPort: port, sourcePort: port, payload,
+      payloadBytes: payload instanceof Uint8Array ? payload.length : 64,
+    });
   }
 
   sourceAddressFor(destination: IPAddress): IPAddress | null {
@@ -1029,7 +1042,9 @@ export class Firewall extends Equipment {
       ?? (iface === undefined ? undefined : this.interfaces.get(iface)?.ip);
     if (iface === undefined || source === undefined) return false;
 
-    this.forward(iface, buildUdpOverIpv4(new IPAddress(source), request), route?.nextHop);
+    const packet = buildUdpOverIpv4(new IPAddress(source), request);
+    this.logLocalOut(iface, packet);
+    this.forward(iface, packet, route?.nextHop);
     return true;
   }
 
@@ -1061,6 +1076,14 @@ export class Firewall extends Equipment {
   startAuthPortal(): boolean { return this.portals.startAuth(); }
 
   applyAdminAccount(admin: AdminAccountDraft): void { this.management.applyAdmin(admin); }
+
+  applyPasswordExpiry(policy: PasswordExpiryPolicy): void {
+    this.management.applyPasswordExpiry(policy);
+  }
+
+  adminPasswordExpired(name: string): boolean {
+    return this.management.passwordExpired(name);
+  }
 
   getPasswordHistory(): PasswordHistory { return this.management.passwordHistory(); }
 
@@ -1309,8 +1332,35 @@ export class Firewall extends Equipment {
   getNatEngine(vdom?: string): FirewallNatEngine { return this.getVdom(vdom).nat; }
   getIpPools(vdom?: string): IpPoolAllocator { return this.getVdom(vdom).pools; }
   getPolicyRoutes(vdom?: string): PolicyRouteTable { return this.getVdom(vdom).policyRoutes; }
+
+  getSessionTtl(vdom?: string): SessionTtlTable { return this.getVdom(vdom).sessionTtl; }
   getScheduleStore(vdom?: string): ScheduleStore { return this.getVdom(vdom).schedules; }
   getLogStore(vdom?: string): FirewallLogStore { return this.getVdom(vdom).logs; }
+
+  getLogSettings(vdom?: string): LogSettings { return this.getVdom(vdom).logSettings; }
+
+  private logLocalTraffic(iface: string, packet: IPv4Packet, accepted: boolean): void {
+    const kind: LocalTrafficKind = accepted
+      ? 'local-in-allow'
+      : classifyIpv4Destination(packet.destinationIP) === 'unicast'
+        ? 'local-in-deny-unicast' : 'local-in-deny-broadcast';
+    this.appendLocalTrafficLog(iface, packet, kind);
+  }
+
+  private logLocalOut(iface: string, packet: IPv4Packet): void {
+    this.appendLocalTrafficLog(iface, packet, 'local-out');
+  }
+
+  private appendLocalTrafficLog(
+    iface: string, packet: IPv4Packet, kind: LocalTrafficKind,
+  ): void {
+    const context = this.vdoms.contextOfInterface(iface);
+    if (!context.logSettings.logs(kind)) return;
+
+    this.trafficLogger?.onLocalTraffic?.({
+      kind, iface, vdom: context.name, flow: flowKeyFromPacket(packet),
+    });
+  }
   getLogDisk(): LogDisk { return this.logDisk; }
   getSavedConfiguration(): SavedConfiguration { return this.savedConfig; }
   getUtmProfiles(vdom?: string): UtmProfileStore { return this.getVdom(vdom).utm; }
@@ -1321,6 +1371,14 @@ export class Firewall extends Equipment {
 
   setCentralNat(enabled: boolean, vdom?: string): void {
     this.getVdom(vdom).settings.centralNat = enabled;
+  }
+
+  setTcpSessionWithoutSyn(allowed: boolean, vdom?: string): void {
+    this.getVdom(vdom).settings.tcpSessionWithoutSyn = allowed;
+  }
+
+  allowsTcpSessionWithoutSyn(vdom?: string): boolean {
+    return this.getVdom(vdom).settings.tcpSessionWithoutSyn;
   }
 
   centralNatEnabled(vdom?: string): boolean {
@@ -1980,6 +2038,7 @@ export class Firewall extends Equipment {
       allowsPing: (iface) => this.allowsAccess(iface, 'ping'),
       reply: (iface, p) => { this.forward(iface, p); },
       localInVerdict: (iface, p) => this.localInVerdict(iface, p),
+      logLocalIn: (iface, p, accepted) => this.logLocalTraffic(iface, p, accepted),
     }, portName, packet);
   }
 
@@ -2104,6 +2163,7 @@ function vdomServices(context: VdomContext): VdomServices {
     ...context,
     centralNat: context.settings.centralNat,
     opmode: context.settings.opmode,
+    tcpSessionWithoutSyn: context.settings.tcpSessionWithoutSyn,
   };
 }
 

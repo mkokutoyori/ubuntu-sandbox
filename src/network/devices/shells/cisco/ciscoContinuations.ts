@@ -65,18 +65,12 @@ export const SOCLE: ContinuationTable = {
     'no debug ip': ['arp', 'bgp', 'eigrp', 'icmp', 'nhrp', 'packet', 'pim', 'rip', 'routing', 'ssh', 'tcp', 'udp'],
     'no debug ntp': ['events', 'packets'],
     'show archive log config': ['statistics'],
-    'show glbp': ['brief'],
     'show parser view': ['all'],
-    'show standby': ['brief'],
-    'show vrrp': ['brief'],
     'sntp server': ['prefer'],
   },
   user: {
     'clear aaa local user lockout': ['username'],
-    'show glbp': ['brief'],
     'show interfaces': ['description'],
-    'show standby': ['brief'],
-    'show vrrp': ['brief'],
   },
 };
 
@@ -185,8 +179,6 @@ export const COMMUTATEUR_SEUL: ContinuationTable = {
     'ip igmp snooping': ['immediate-leave', 'mrouter', 'querier', 'vlan'],
     'line': ['aux', 'console', 'vty'],
     'no ip igmp snooping': ['immediate-leave', 'mrouter', 'querier', 'vlan'],
-    'no spanning-tree': ['backbonefast', 'bpdufilter', 'bpduguard', 'default', 'loopguard', 'pathcost', 'portfast', 'uplinkfast', 'vlan'],
-    'spanning-tree mst': ['priority'],
     'track': ['interface', 'ip', 'routing'],
     'vtp mode': ['client', 'off', 'server', 'transparent'],
   },

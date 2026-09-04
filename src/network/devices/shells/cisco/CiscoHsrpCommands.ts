@@ -5,7 +5,6 @@
  * Router-only (the project's switches are L2): kept out of the shared
  * base to avoid shadowing and respect the L2/L3 split.
  */
-import type { CommandTrie } from '../CommandTrie';
 import type { Router } from '../../Router';
 import { FhrpRepository, hsrpVirtualMac, type HsrpGroup }
   from '../../inspection/config/FhrpRepository';
@@ -13,9 +12,9 @@ import { hsrpMaxGroup } from '../../../hsrp/types';
 import type { SessionParamRanges } from '../EquipmentParamResolver';
 import { getHsrpAgent } from '../../../equipment/RouterServiceCapabilities';
 import { iosShortInterfaceName } from '@/network/devices/inspection/InterfaceStatusView';
-import { CliInvalidInput } from '../cli/CliDiagnostic';
+import type { CommandSpec } from '@/cli/CommandTable';
 import {
-  parseFhrpShowArgs, fhrpShowMatches, fhrpInterfaceResolver, HSRP_SHOW_GRAMMAR,
+  fhrpShowMatches, fhrpShowSpec, HSRP_SHOW_GRAMMAR,
 } from './fhrpShowFilter';
 
 interface HsrpCtx {
@@ -102,18 +101,17 @@ export function hsrpGroupRange(
   };
 }
 
-export function registerHsrpShowCommands(
-  trie: CommandTrie, ctx: HsrpCtx, lireRepo: () => FhrpRepository,
-): void {
-  trie.registerGreedy('show standby', 'Display HSRP state', (args) => {
-    const router = ctx.r();
-    const verdict = parseFhrpShowArgs(
-      args, HSRP_SHOW_GRAMMAR, fhrpInterfaceResolver(router.getPortNames()));
-    if ('at' in verdict) throw new CliInvalidInput({ token: verdict.at });
-    const groups = lireRepo().all()
-      .filter((g) => fhrpShowMatches(g.iface, g.group, verdict));
-    if (verdict.brief) return renderBrief(router, groups);
-    if (!groups.length) return '';
-    return groups.map((g) => renderDetail(router, g)).join('\n');
-  });
+export function hsrpShowSpecs(
+  ctx: HsrpCtx, lireRepo: () => FhrpRepository,
+): CommandSpec[] {
+  return [fhrpShowSpec('standby', 'Display HSRP state', HSRP_SHOW_GRAMMAR,
+    () => ctx.r().getPortNames(),
+    (verdict) => {
+      const router = ctx.r();
+      const groups = lireRepo().all()
+        .filter((g) => fhrpShowMatches(g.iface, g.group, verdict));
+      if (verdict.brief) return renderBrief(router, groups);
+      if (!groups.length) return '';
+      return groups.map((g) => renderDetail(router, g)).join('\n');
+    })];
 }

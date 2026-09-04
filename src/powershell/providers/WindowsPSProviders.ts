@@ -23,10 +23,10 @@ import { domainOf } from '@/network/smtp/relay';
 import { RemoteAccessVpnClient } from '@/network/ipsec/RemoteAccessVpnClient';
 import { PSRegistryProvider, WINDOWS_CLIENT_PRODUCT_IDENTITY, WINDOWS_SERVER_PRODUCT_IDENTITY } from '@/network/devices/windows/PSRegistryProvider';
 import { PSEventLogProvider } from '@/network/devices/windows/PSEventLogProvider';
-import { resolveAdapterName } from '@/network/devices/windows/WinNetsh';
 import {
   LOOPBACK_IFINDEX, adapterIfIndex, toDisplayName, toPortName, formatLinkSpeedMbps,
 } from '@/network/devices/windows/WindowsInterfaceNaming';
+import { resolveAdapter, resolveAdapterPortName } from '@/network/devices/windows/netAdapter';
 import {
   memberFailureReason, memberStatus, normaliseAdminMode, normaliseLacpTimer,
   normaliseLbAlgorithm, normaliseTeamingMode, teamStatus, type TeamMember,
@@ -89,7 +89,7 @@ import type {
   INpsProvider, NpsOpResult, NasClientInfo, NetworkPolicyInfo,
   ConnectionRequestPolicyConditionsInfo, ConnectionRequestPolicyInfo,
   DirEntry, ServiceInfo, ProcessInfo, UserInfo, GroupInfo,
-  NetworkAdapterInfo, AdapterStatisticsInfo, IPAddressInfo, RouteInfo, EventLogEntryInfo,
+  NetAdapterEntry, AdapterStatisticsInfo, IPAddressInfo, RouteInfo, EventLogEntryInfo,
   NicTeamInfo, NicTeamMemberInfo, NicTeamNicInfo, NewNicTeamRequest, SetNicTeamRequest,
   VpnConnectionInfo, ScheduledTaskInfo, DiskInfo, VolumeInfo,
 } from '@/powershell/providers/PSProviders';
@@ -1598,18 +1598,10 @@ class WindowsEventLogAdapter implements IEventLogProvider {
 }
 
 // ── Network adapter ────────────────────────────────────────────────────────
-//
-// Most operational state for IP / route / firewall / adapter overrides /
-// connection profiles still lives on the legacy PowerShellExecutor
-// (`extraIPs`, `extraRoutes`, `adapterOverrides`, `firewallRules`,
-// `networkProfiles`, …). Until that state is relocated onto WindowsPC we
-// share the executor's maps directly so the interpreter and the executor
-// fallback path see the same world.
 
 interface NetworkStateRefs {
   readonly extraIPs:             Map<string, NetIPAddressEntry>;
   readonly extraRoutes:          Map<string, NetRouteEntry>;
-  readonly adapterOverrides:     Map<string, { status?: string; displayName?: string }>;
   readonly firewallRules: Map<string, NetFirewallRuleEntry>;
   readonly networkProfiles:      Map<number, string>;
 }
@@ -1625,21 +1617,23 @@ class WindowsNetworkAdapter implements INetworkProvider {
   getHostname(): string {
     return (this.pc as unknown as { name: string }).name;
   }
-  getAdapters(): NetworkAdapterInfo[] {
-    const ports = (this.pc as unknown as { getPorts: () => Array<{ name: string; getMAC: () => { toString: () => string }; getIsUp: () => boolean; isAdminDown: () => boolean; isConnected: () => boolean; isOperationallyUp: () => boolean; getNegotiatedSpeed: () => number }> }).getPorts();
-    return ports.map((p, idx) => {
-      const ov = this.state.adapterOverrides.get(p.name.toLowerCase()) ?? {};
-      const connected = p.isOperationallyUp();
-      const agrege = this.pc.aggregateLinkSpeedMbps(p.name);
+  getAdapters(): NetAdapterEntry[] {
+    return this.pc.getPorts().map((port, idx) => {
+      const portName = port.getName();
+      const connected = port.isOperationallyUp();
+      const aggregated = this.pc.aggregateLinkSpeedMbps(portName);
       return {
-        name: ov.displayName ?? toDisplayName(p.name),
-        displayName: ov.displayName ?? toDisplayName(p.name),
+        portName,
+        name: this.pc.adapterAlias(portName),
+        interfaceDescription: this.pc.interfaceDescriptionOf(portName),
         ifIndex: adapterIfIndex(idx),
-        status: p.isAdminDown() ? 'Disabled' : (connected ? 'Up' : 'Disconnected'),
-        macAddress: p.getMAC().toString(),
+        status: port.isAdminDown() ? 'Disabled' : (connected ? 'Up' : 'Disconnected'),
+        macAddress: port.getMAC().toString(),
         linkSpeed: connected
-          ? formatLinkSpeedMbps(agrege ?? p.getNegotiatedSpeed())
+          ? formatLinkSpeedMbps(aggregated ?? port.getNegotiatedSpeed())
           : '0 bps',
+        physical: !port.isCarrierless() && this.pc.getVlanSubInterface(portName) === undefined,
+        hidden: false,
       };
     });
   }
@@ -1780,12 +1774,11 @@ class WindowsNetworkAdapter implements INetworkProvider {
     return this.pc.removeNicTeamMember(toPortName(name) ?? name);
   }
 
-  getAdapter(name: string): NetworkAdapterInfo | null {
-    const adapters = this.getAdapters();
-    const candidates = new Set([name.toLowerCase(), toDisplayName(name).toLowerCase()]);
-    const resolvedPort = toPortName(name);
-    if (resolvedPort) candidates.add(toDisplayName(resolvedPort).toLowerCase());
-    return adapters.find(a => candidates.has(a.name.toLowerCase())) ?? null;
+  getAdapter(name: string): NetAdapterEntry | null {
+    return resolveAdapter(this.getAdapters(), name);
+  }
+  private portNameFor(name: string): string {
+    return resolveAdapterPortName(name, this.pc.getPortsMap().values()) ?? name;
   }
   getAdapterStatistics(name: string): AdapterStatisticsInfo | null {
     const adapter = this.getAdapter(name);
@@ -1915,19 +1908,14 @@ class WindowsNetworkAdapter implements INetworkProvider {
     const wanted = spec.alias.trim();
     const exact = adapters.find(a => a.name.toLowerCase() === wanted.toLowerCase());
     if (exact) return { alias: exact.name, ifIndex: exact.ifIndex };
-    const ports = (this.pc as unknown as { ports: Map<string, unknown> }).ports;
-    const portName = resolveAdapterName(wanted, ports);
-    if (!ports.has(portName)) return null;
-    const display = toDisplayName(portName);
-    const byPort = adapters.find(a => a.name.toLowerCase() === display.toLowerCase());
+    const byPort = resolveAdapter(adapters, wanted);
     return byPort ? { alias: byPort.name, ifIndex: byPort.ifIndex } : null;
   }
 
   setDhcpEnabled(ifAlias: string, enabled: boolean): void {
     if (enabled) return;
-    const ports = (this.pc as unknown as { ports: Map<string, unknown> }).ports;
     (this.pc as unknown as { disableDhcpOnInterface: (n: string) => void })
-      .disableDhcpOnInterface(resolveAdapterName(ifAlias, ports));
+      .disableDhcpOnInterface(this.portNameFor(ifAlias));
   }
 
   addIPAddress(ip: string, prefixLength: number, ifAlias: string, opts?: NetIPAddressOptions): void {
@@ -1964,8 +1952,8 @@ class WindowsNetworkAdapter implements INetworkProvider {
     // Mirror onto the device port so cmd's `ipconfig` / `netsh ipv4 show
     // addresses` see the same address PowerShell just added.
     if (!ip.includes(':')) {
-      const ports = (this.pc as unknown as { ports: Map<string, unknown> }).ports;
-      const portName = resolveAdapterName(ifAlias, ports);
+      const ports = this.pc.getPortsMap();
+      const portName = this.portNameFor(ifAlias);
       if (ports.has(portName)) {
         const maskOctets = prefixToMaskOctets(prefixLength);
         try {
@@ -1985,8 +1973,8 @@ class WindowsNetworkAdapter implements INetworkProvider {
     // `ipconfig` no longer reports it. We only clear if the port currently
     // carries that exact IP (matches netsh's `delete address` semantics).
     if (entry && !ip.includes(':')) {
-      const ports = (this.pc as unknown as { ports: Map<string, { getIPAddress: () => unknown }> }).ports;
-      const portName = resolveAdapterName(entry.ifAlias, ports as Map<string, unknown>);
+      const ports = this.pc.getPortsMap();
+      const portName = this.portNameFor(entry.ifAlias);
       const port = ports.get(portName);
       // Clear the address AND its connected route via the same device method
       // cmd's `netsh delete address` uses, so `route print` / `Get-NetRoute`
@@ -2151,8 +2139,8 @@ class WindowsNetworkAdapter implements INetworkProvider {
       if (opts.preferredLifetimeSeconds !== undefined) cur.preferredLifetimeSeconds = opts.preferredLifetimeSeconds;
     }
     if (opts.prefixLength !== undefined && !ip.includes(':')) {
-      const ports = (this.pc as unknown as { ports: Map<string, { getIPAddress: () => unknown }> }).ports;
-      const portName = resolveAdapterName(ifAlias, ports as Map<string, unknown>);
+      const ports = this.pc.getPortsMap();
+      const portName = this.portNameFor(ifAlias);
       const port = ports.get(portName);
       if (port && String(port.getIPAddress()) === ip) {
         (this.pc as unknown as { configureInterface: (n: string, a: IPAddress, m: SubnetMask) => void })
@@ -2182,7 +2170,7 @@ class WindowsNetworkAdapter implements INetworkProvider {
   }
   isDHCPConfigured(ifAlias: string): boolean {
     return (this.pc as unknown as { isDHCPConfigured: (n: string) => boolean })
-      .isDHCPConfigured(resolveAdapterName(ifAlias, (this.pc as unknown as { ports: Map<string, unknown> }).ports));
+      .isDHCPConfigured(this.portNameFor(ifAlias));
   }
   testConnection(target: string): boolean {
     const probe = this.testPingProbe(target);
@@ -2380,17 +2368,17 @@ class WindowsNetworkAdapter implements INetworkProvider {
   // ─ Adapter actions ──────────────────────────────────────────────────────
 
   setAdapterStatus(name: string, status: 'Up' | 'Down'): void {
-    const ports = (this.pc as unknown as { ports: Map<string, { setAdminDown: (down: boolean) => void }> }).ports;
-    const portName = resolveAdapterName(name, ports as unknown as Map<string, unknown>);
-    const port = ports.get(portName);
-    if (port) port.setAdminDown(status !== 'Up');
+    const entry = this.getAdapter(name);
+    if (!entry) return;
+    this.pc.getPort(entry.portName)?.setAdminDown(status !== 'Up');
   }
   renameAdapter(name: string, newName: string): void {
-    const key = name.toLowerCase();
-    const ov  = this.state.adapterOverrides.get(key) ?? {};
-    ov.displayName = newName;
-    this.state.adapterOverrides.set(key, ov);
-    this.state.adapterOverrides.set(newName.toLowerCase(), ov);
+    const entry = this.getAdapter(name);
+    if (!entry) return;
+    this.pc.setAdapterAlias(entry.portName, newName);
+  }
+  setAdapterMac(portName: string, mac: MACAddress): void {
+    this.pc.getPort(portName)?.setMAC(mac);
   }
 
   // ─ Network connection profile ──────────────────────────────────────────
@@ -3450,7 +3438,6 @@ export function createWindowsPSProviders(
   const net = shared?.network ?? {
     extraIPs:             pc.extraIPs,
     extraRoutes:          pc.extraRoutes,
-    adapterOverrides:     pc.adapterOverrides,
     firewallRules: pc.firewallRules,
     networkProfiles:      pc.networkProfiles,
   };

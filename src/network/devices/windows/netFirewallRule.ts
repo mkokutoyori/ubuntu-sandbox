@@ -1,5 +1,6 @@
 import { IPAddress } from '@/network/core/types';
 import { matchEnumValue } from './netIpAddress';
+import { cimNotFound } from './cimQuery';
 
 export type NetFirewallAction = 'NotConfigured' | 'Allow' | 'Block';
 export type NetFirewallDirection = 'Inbound' | 'Outbound';
@@ -253,11 +254,11 @@ export function selectFirewallRules<T extends NetFirewallRuleEntry>(
 }
 
 export function noMatchingFirewallRule(selection: NetFirewallSelection): string {
-  const named = selection.name?.[0] ?? selection.displayName?.[0];
-  const property = selection.name?.[0] !== undefined ? 'Name' : 'DisplayName';
-  return named === undefined
-    ? 'No MSFT_NetFirewallRule objects found with the specified criteria. Verify the values and retry.'
-    : `No MSFT_NetFirewallRule objects found with property '${property}' equal to '${named}'. Verify the value of the property and retry.`;
+  return cimNotFound('MSFT_NetFirewallRule', [
+    ['Name', selection.name],
+    ['DisplayName', selection.displayName],
+    ['Group', selection.group],
+  ]);
 }
 
 export interface FirewallPacketFacts {

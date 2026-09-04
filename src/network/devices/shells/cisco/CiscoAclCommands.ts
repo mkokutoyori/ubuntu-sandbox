@@ -979,14 +979,6 @@ export function registerACLShowCommands(trie: CommandTrie, getRouter: () => Rout
   trie.registerGreedy('show ipv6 access-lists', 'Display IPv6 access lists', (args) => showIPv6AccessLists(getRouter(), args[0]));
 }
 
-/** `clear` est de l'EXEC PRIVILÉGIÉ : il ne rejoint pas les `show`. */
-export function registerACLClearCommands(trie: CommandTrie, getRouter: () => Router): void {
-  trie.registerGreedy('clear access-list counters', 'Clear access list counters',
-    (args) => clearAccessListCounters(getRouter(), args[0]));
-  trie.registerGreedy('clear ip access-list counters', 'Clear IP access list counters',
-    (args) => clearAccessListCounters(getRouter(), args[0]));
-}
-
 /**
  * `clear access-list counters [nom|numero]`.
  *

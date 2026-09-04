@@ -72,10 +72,6 @@ export const RSA_MODULUS_MIN = 360;
 export const RSA_MODULUS_MAX = 4096;
 export const RSA_MODULUS_DEFAUT = 1024;
 
-const RSA_GENERATE_KEYWORDS: ReadonlySet<string> = new Set([
-  'general-keys', 'signature', 'encryption', 'exportable',
-]);
-
 export const NO_AAA_CONTINUATIONS: ReadonlyArray<{ keyword: string; description: string }> = [
   { keyword: 'new-model', description: 'Disable the AAA access control model' },
   { keyword: 'authentication', description: 'Remove an authentication method list' },
@@ -262,8 +258,6 @@ export interface CiscoSecurityShellContext extends CiscoShellContext {
  * toutes. Extraite ici, elle est appelee par les deux shells sans leur
  * donner le reste.
  */
-export const PASSWORD_MIN_LENGTH_MAX = 16;
-
 export function buildIdentityConfigCommands(
   trie: CommandTrie, ctx: CiscoSecurityShellContext,
 ): void {
@@ -666,83 +660,6 @@ export function buildIdentityConfigCommands(
 
 
 
-  trie.registerGreedy('crypto key generate rsa', 'Generate RSA key', (args) => {
-    // Le nom de domaine se lit de deux facons selon la plateforme : un
-    // routeur le tient dans son service de gestion, un Catalyst
-    // directement. Ne consulter que la premiere faisait repondre
-    // « definissez d'abord un nom de domaine » a un commutateur qui
-    // venait d'en poser un.
-    const dev = ctx.r() as unknown as {
-      getManagementService?: () => { domainName?: string };
-      _getDnsConfig?: () => { domainName: string };
-      getDomainName?: () => string | null | undefined;
-    };
-    const domain = dev._getDnsConfig?.().domainName
-      || dev.getManagementService?.().domainName || dev.getDomainName?.() || '';
-    if (!domain) {
-      return '% Please define a domain-name first.';
-    }
-    let modulus = RSA_MODULUS_DEFAUT;
-    // Sans `label`, IOS nomme la paire d'après l'identité pleinement
-    // qualifiée du routeur — c'est pour cela qu'il exige un nom de
-    // domaine avant de la générer.
-    const hote = (ctx.r() as unknown as { getHostname?: () => string }).getHostname?.() ?? 'Router';
-    let label = `${hote}.${domain}`;
-    // `crypto key generate rsa` produit une paire à usage GÉNÉRAL ; ce
-    // sont `usage-keys` qui en produisent deux, dont une de signature.
-    let general = true;
-    for (let i = 0; i < args.length; i++) {
-      const mot = args[i].toLowerCase();
-      if (mot === 'modulus') {
-        const brut = args[i + 1];
-        if (brut === undefined) throw new CliIncomplete();
-        if (!/^\d+$/.test(brut)) throw new CliInvalidInput({ token: brut });
-        const taille = Number(brut);
-        if (taille < RSA_MODULUS_MIN || taille > RSA_MODULUS_MAX) {
-          throw new CliInvalidInput({ token: brut });
-        }
-        modulus = taille; i++; continue;
-      }
-      if (mot === 'label') {
-        if (args[i + 1] === undefined) throw new CliIncomplete();
-        label = args[i + 1]; i++; continue;
-      }
-      if (mot === 'usage-keys') { general = false; continue; }
-      if (RSA_GENERATE_KEYWORDS.has(mot)) continue;
-      throw new CliInvalidInput({ token: args[i] });
-    }
-    const generatedAtMs = Date.now();
-    sec().cryptoKeys.push({ label, modulus, general, generatedAtMs });
-    // Generating the keys is what brings the SSH server up on IOS, so the
-    // listener has to follow — the config and the service cannot disagree.
-    (ctx.r() as unknown as { _refreshSshAvailability?: () => void })._refreshSshAvailability?.();
-    const elapsedSec = Math.max(1, Math.round(modulus / 1024));
-    return [
-      `The name for the keys will be: ${label}`,
-      `% The key modulus size is ${modulus} bits`,
-      `% Generating ${modulus} bit RSA keys, keys will be non-exportable...`,
-      `[OK] (elapsed time was ${elapsedSec} seconds)`,
-    ].join('\n');
-  });
-
-  trie.registerGreedy('crypto key zeroize rsa', 'Delete RSA host keys', () => {
-    const dev = ctx.r() as unknown as {
-      getManagementService?: () => { domainName?: string };
-      _getDnsConfig?: () => { domainName: string };
-      getDomainName?: () => string | null | undefined;
-      getHostname?: () => string;
-      _refreshSshAvailability?: () => void;
-    };
-    if (sec().cryptoKeys.length === 0) return '% No Signature RSA Keys found in configuration.';
-    const domaine = dev._getDnsConfig?.().domainName
-      || dev.getManagementService?.().domainName || dev.getDomainName?.() || '';
-    const fqdn = `${dev.getHostname?.() ?? ''}.${domaine}`;
-    sec().cryptoKeys = [];
-    // Wiping the keys really disables SSH — this is the router's F7.2, and
-    // the classic way to lock yourself out of a box you reach over SSH.
-    dev._refreshSshAvailability?.();
-    return `% Keys to be removed are named ${fqdn}.`;
-  });
 
   trie.registerGreedy('service password-encryption', 'Enable password encryption', () => {
     sec().servicePasswordEncryption = true;
@@ -785,15 +702,6 @@ export function buildIdentityConfigCommands(
     sec().servicePasswordEncryption = false;
     (ctx.r() as unknown as { _setServiceFlag?: (n: string, on: boolean) => void })
       ._setServiceFlag?.('password-encryption', false);
-    return '';
-  });
-
-  trie.registerGreedy('security passwords min-length', 'Min password length', (args) => {
-    if (args[0] === undefined) return CISCO_ERRORS.INCOMPLETE;
-    if (!/^\d+$/.test(args[0])) throw new CliInvalidInput({ token: args[0] });
-    const n = Number(args[0]);
-    if (n > PASSWORD_MIN_LENGTH_MAX) throw new CliInvalidInput({ token: args[0] });
-    sec().passwords.minLength = n;
     return '';
   });
 

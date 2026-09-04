@@ -41,6 +41,25 @@ async function cable(page: Page, a: string, b: string): Promise<void> {
   }, { from: a, to: b });
 }
 
+/** Un cable entre deux interfaces NOMMEES — un routeur en a plusieurs. */
+async function cableAt(
+  page: Page, a: string, ai: number, b: string, bi: number,
+): Promise<void> {
+  await page.evaluate(({ from, fromIdx, to, toIdx }) => {
+    const store = (window as Record<string, unknown>).__networkStore as {
+      getState(): {
+        addConnection(f: string, fi: string, t: string, ti: string): unknown;
+        getDevices(): Array<{ id: string; interfaces: Array<{ name: string }> }>;
+      };
+    };
+    const devices = store.getState().getDevices();
+    const src = devices.find((d) => d.id === from)!;
+    const dst = devices.find((d) => d.id === to)!;
+    store.getState().addConnection(
+      from, src.interfaces[fromIdx].name, to, dst.interfaces[toIdx].name);
+  }, { from: a, fromIdx: ai, to: b, toIdx: bi });
+}
+
 async function openTerminal(page: Page, id: string): Promise<void> {
   await page.locator(`[data-device-id="${id}"]`).first().dblclick({ timeout: 8_000 });
   await page.locator('[data-testid="terminal-modal"]').waitFor({ state: 'visible', timeout: 10_000 });
@@ -53,13 +72,27 @@ async function closeTerminal(page: Page): Promise<void> {
   await page.waitForTimeout(200);
 }
 
+/** Le mot de passe du compte par defaut d'un poste (`user`). */
+const SUDO_PASSWORD = 'admin';
+
 async function typeCmd(page: Page, command: string): Promise<void> {
-  const input = page.locator('[data-testid="terminal-modal"] input[type="text"]').last();
+  const input = page.locator('[data-testid="terminal-modal"] input').last();
   await input.waitFor({ state: 'attached', timeout: 15_000 });
   await input.focus();
   await input.fill(command);
   await input.press('Enter');
   await page.waitForTimeout(350);
+
+  // Sur un POSTE, le compte par defaut n'est pas root : `sudo` demande le
+  // mot de passe et le champ de saisie devient un champ de mot de passe.
+  // Un serveur, dont la session est root, ne demande rien — d'ou le test
+  // plutot qu'une reponse systematique.
+  const secret = page.locator('[data-testid="terminal-modal"] input[type="password"]');
+  if (await secret.count() > 0) {
+    await secret.last().fill(SUDO_PASSWORD);
+    await secret.last().press('Enter');
+    await page.waitForTimeout(350);
+  }
 }
 
 async function lastLines(page: Page, n = 14): Promise<string> {
@@ -263,6 +296,93 @@ test.describe('nmap sonde le fil', () => {
 
     await typeCmd(page, `nmap -Pn --scanflags 300 -p 22 ${CIBLE}`);
     expect(await lastLines(page, 6)).toContain('--scanflags option must be a number');
+  });
+
+  test('`--traceroute` releve le chemin, et une cible du meme segment n a qu un saut', async ({ page }) => {
+    test.setTimeout(180_000);
+    await page.goto('/', { timeout: 45_000 });
+    await waitForStore(page);
+
+    const cibleId = await addDevice(page, 'linux-server', 250, 450);
+    const routeurId = await addDevice(page, 'router-cisco', 450, 450);
+    const scannerId = await addDevice(page, 'linux-pc', 650, 450);
+    const commutateurId = await addDevice(page, 'switch-cisco', 550, 550);
+    const voisinId = await addDevice(page, 'linux-server', 650, 600);
+    await cableAt(page, cibleId, 0, routeurId, 0);
+    await cableAt(page, routeurId, 1, commutateurId, 0);
+    await cableAt(page, scannerId, 0, commutateurId, 1);
+
+    await openTerminal(page, routeurId);
+    for (const c of [
+      'enable', 'configure terminal',
+      'interface GigabitEthernet0/0', 'ip address 10.73.1.1 255.255.255.0',
+      'no shutdown', 'exit',
+      'interface GigabitEthernet0/1', 'ip address 10.73.0.1 255.255.255.0',
+      'no shutdown', 'end',
+    ]) await typeCmd(page, c);
+    await closeTerminal(page);
+
+    await openTerminal(page, cibleId);
+    await typeCmd(page, 'ip addr add 10.73.1.10/24 dev eth0');
+    await typeCmd(page, 'ip route add default via 10.73.1.1');
+    await typeCmd(page, 'sudo systemctl start ssh');
+    await closeTerminal(page);
+
+    await openTerminal(page, scannerId);
+    await typeCmd(page, `ip addr add ${SCANNER}/24 dev eth0`);
+    await typeCmd(page, 'ip route add default via 10.73.0.1');
+    await typeCmd(page, 'nmap --traceroute -n -p 22 10.73.1.10');
+    const trace = await lastLines(page, 16);
+    expect(trace).not.toContain('not implemented');
+    expect(trace).toContain('TRACEROUTE');
+    expect(trace).toMatch(/1\s+\S+ ms\s+10\.73\.0\.1/);
+    expect(trace).toMatch(/2\s+\S+ ms\s+10\.73\.1\.10/);
+    await closeTerminal(page);
+
+    // Une cible du MEME segment est a une distance connue de 1 : aucune
+    // sonde n'est emise et l'en-tete ne nomme aucun protocole.
+    await cableAt(page, voisinId, 0, commutateurId, 2);
+    await openTerminal(page, voisinId);
+    await typeCmd(page, 'ip addr add 10.73.0.30/24 dev eth0');
+    await closeTerminal(page);
+
+    await openTerminal(page, scannerId);
+    await typeCmd(page, 'nmap --traceroute -n -p 22 10.73.0.30');
+    const direct = await lastLines(page, 14);
+    expect(direct).toContain('TRACEROUTE');
+    expect(direct).not.toContain('using proto');
+    expect(direct).toMatch(/1\s+\S+ ms\s+10\.73\.0\.30/);
+  });
+
+  test('`--packet-trace` montre les paquets, et un balayage connecte ses appels', async ({ page }) => {
+    test.setTimeout(180_000);
+    await page.goto('/', { timeout: 45_000 });
+    await waitForStore(page);
+
+    const cibleId = await addDevice(page, 'linux-server', 300, 500);
+    const scannerId = await addDevice(page, 'linux-pc', 600, 500);
+    await cable(page, cibleId, scannerId);
+
+    await openTerminal(page, cibleId);
+    await typeCmd(page, `ip addr add ${CIBLE}/24 dev eth0`);
+    await typeCmd(page, 'sudo systemctl start ssh');
+    await closeTerminal(page);
+
+    await openTerminal(page, scannerId);
+    await typeCmd(page, `ip addr add ${SCANNER}/24 dev eth0`);
+
+    await typeCmd(page, `nmap -Pn -sS --packet-trace -p 22 ${CIBLE}`);
+    const demiOuvert = await lastLines(page, 20);
+    expect(demiOuvert).not.toContain('not implemented');
+    expect(demiOuvert).toMatch(
+      new RegExp(`SENT \\(\\d+\\.\\d{4}s\\) TCP \\[${SCANNER}:\\d+ > ${CIBLE}:22 S seq=`));
+    expect(demiOuvert).toMatch(/IP \[ttl=\d+ id=\d+ iplen=\d+ \]/);
+
+    await typeCmd(page, `nmap -Pn -sT --packet-trace -p 22 ${CIBLE}`);
+    const connecte = await lastLines(page, 20);
+    expect(connecte).toContain(`CONN`);
+    expect(connecte).toMatch(
+      new RegExp(`TCP localhost > ${CIBLE}:22 => Connected`));
   });
 
   test('nmap.exe existe aussi sur une machine Windows', async ({ page }) => {

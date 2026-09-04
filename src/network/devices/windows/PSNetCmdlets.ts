@@ -122,75 +122,6 @@ export function isValidIP(ip: string): boolean {
     return isValidIPv4(ip) || isValidIPv6(ip);
   }
 
-export function handleGetNetAdapter(ctx: PSNetContext, args: string[]): string {
-    const params = parsePSArgs(args);
-    const nameFilter = (params.get('name') ?? params.get('_positional') ?? '').replace(/^["']|["']$/g, '').toLowerCase();
-    const includeHidden = params.has('includehidden');
-    const physical = params.has('physical');
-    const cimSession = params.get('cimsession');
-
-    if (cimSession) {
-      return `Get-NetAdapter : Remote CIM sessions are not supported in this simulator.\n    + CategoryInfo          : NotImplemented: (:) [Get-NetAdapter], NotSupportedException`;
-    }
-
-    const ports = ctx.device.getPortsMap();
-    const lines: string[] = ['Name                      InterfaceDescription                    ifIndex Status       MacAddress         LinkSpeed',
-                              '----                      --------------------                    ------- ------       ----------         ---------'];
-
-    // Collect all adapter entries (Ethernet ports + virtual Wi-Fi)
-    type AdapterEntry = { displayName: string; desc: string; ifIndex: number; status: string; mac: string; speed: string };
-    const adapterEntries: AdapterEntry[] = [];
-
-    let idx = 0;
-    for (const [name, port] of ports) {
-      let displayName = toDisplayName(name);
-      // Apply rename override
-      const overrideKey = displayName.toLowerCase();
-      const override = ctx.device.adapterOverrides.get(overrideKey);
-      if (override?.displayName) displayName = override.displayName;
-
-      const mac = port.getMAC()?.toString()?.replace(/:/g, '-').toUpperCase() ?? '00-00-00-00-00-00';
-      const status = port.isAdminDown() ? 'Disabled' : (port.getIsUp() ? 'Up' : 'Disconnected');
-
-      adapterEntries.push({ displayName, desc: 'Intel(R) Ethernet Connection', ifIndex: adapterIfIndex(idx), status, mac, speed: formatLinkSpeedMbps(port.getNegotiatedSpeed()) });
-      idx++;
-    }
-
-    // Add virtual Wi-Fi adapter (always present on a Windows PC)
-    const wifiOverride = ctx.device.adapterOverrides.get('wi-fi');
-    const wifiDisplayName = wifiOverride?.displayName ?? 'Wi-Fi';
-    const wifiStatus = wifiOverride?.status ?? 'Up';
-    adapterEntries.push({ displayName: wifiDisplayName, desc: 'Intel(R) Wireless-AC 9560 160MHz', ifIndex: adapterIfIndex(idx), status: wifiStatus, mac: '02-00-00-FF-FF-01', speed: '54 Mbps' });
-
-    // Filter by name — exact match unless wildcard '*' or '?' is present
-    const filteredEntries = nameFilter
-      ? adapterEntries.filter(e => {
-          const dn = e.displayName.toLowerCase();
-          if (nameFilter.includes('*') || nameFilter.includes('?')) {
-            const regex = new RegExp('^' + nameFilter.replace(/\*/g, '.*').replace(/\?/g, '.') + '$');
-            return regex.test(dn);
-          }
-          if (dn === nameFilter) return true;
-          const resolvedPort = toPortName(nameFilter);
-          return resolvedPort !== null && dn === toDisplayName(resolvedPort).toLowerCase();
-        })
-      : adapterEntries;
-
-    // Apply -IncludeHidden (show Loopback)
-    if (includeHidden && (!nameFilter || 'loopback'.includes(nameFilter))) {
-      lines.push(`${'Loopback Pseudo-Interface 1'.padEnd(26)}${'Software Loopback Interface 1'.padEnd(40)}${String(1).padStart(7)} ${'Up'.padEnd(13)}${'00-00-00-00-00-00'.padEnd(19)}10 Gbps`);
-    }
-
-    if (filteredEntries.length === 0 && !includeHidden) {
-      return `Get-NetAdapter : No MSFT_NetAdapter objects found with property 'Name' equal to '${nameFilter}'.`;
-    }
-
-    for (const e of filteredEntries) {
-      lines.push(`${e.displayName.padEnd(26)}${e.desc.padEnd(40)}${String(e.ifIndex).padStart(7)} ${e.status.padEnd(13)}${e.mac.padEnd(19)}${e.speed}`);
-    }
-
-    return lines.join('\n');
-  }
 
 export function resolveAdapterPort(ctx: PSNetContext, name: string): Port | undefined {
     const target = name.toLowerCase();
@@ -203,39 +134,7 @@ export function resolveAdapterPort(ctx: PSNetContext, name: string): Port | unde
     return resolved ? ports.get(resolved) : undefined;
   }
 
-export function handleDisableEnableNetAdapter(ctx: PSNetContext, args: string[], newStatus: string): string {
-    const params = parsePSArgs(args);
-    const name = (params.get('name') ?? params.get('_positional') ?? '').replace(/^["']|["']$/g, '');
-    if (!name) return '';
-    if (params.has('whatif')) {
-      return `What if: Performing the operation "${newStatus === 'Disabled' ? 'Disable' : 'Enable'}-NetAdapter" on target "${name}".`;
-    }
-    const port = resolveAdapterPort(ctx, name);
-    if (port) {
-      port.setAdminDown(newStatus === 'Disabled');
-      return '';
-    }
-    const key = name.toLowerCase();
-    const override = ctx.device.adapterOverrides.get(key) ?? {};
-    override.status = newStatus;
-    ctx.device.adapterOverrides.set(key, override);
-    return '';
-  }
 
-export function handleRenameNetAdapter(ctx: PSNetContext, args: string[]): string {
-    const params = parsePSArgs(args);
-    const oldName = (params.get('name') ?? params.get('_positional') ?? '').replace(/^["']|["']$/g, '');
-    const newName = (params.get('newname') ?? '').replace(/^["']|["']$/g, '');
-    if (!oldName || !newName) return '';
-    const oldKey = oldName.toLowerCase();
-    const existing = ctx.device.adapterOverrides.get(oldKey) ?? {};
-    // Move entry to new name key
-    existing.displayName = newName;
-    ctx.device.adapterOverrides.set(oldKey, existing);
-    // Also register under new name key pointing to same override
-    ctx.device.adapterOverrides.set(newName.toLowerCase(), existing);
-    return '';
-  }
 
 export function handleTestNetConnection(ctx: PSNetContext, args: string[]): string {
     const params = parsePSArgs(args);

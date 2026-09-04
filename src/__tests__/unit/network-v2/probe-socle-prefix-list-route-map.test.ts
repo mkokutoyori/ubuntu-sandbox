@@ -54,6 +54,17 @@
  *     nommee) : ils bornent le refus ajoute a la troisieme forme ;
  *   - la forme v6 correcte, qui passait deja puisque RIEN n'etait juge
  *     de ce cote.
+ *
+ * SUITE — la famille est passee au socle depuis, et ce fichier est la
+ * non-regression de cette migration : les douze refus, la contrainte
+ * `len < ge <= le`, la relecture et les trois formes en `no` sont
+ * desormais servis par une DECLARATION (une place `IP_PREFIX` typee, un
+ * sac d'options pour `ge`/`le`) au lieu d'un gestionnaire glouton, et
+ * tous doivent repondre la meme chose. Le seul cas AJOUTE par ce lot est
+ * `description` : 4 de ses 5 cas tombent contre l'etat d'avant la
+ * migration, les deux qui restent verts — `no ip prefix-list PL` et
+ * `description` sans texte — passant parce que la commande ENTIERE etait
+ * refusee, donc qu'il n'y avait rien a retirer et rien a poser.
  */
 import { describe, it, expect, beforeEach } from 'vitest';
 import { CiscoRouter } from '@/network/devices/CiscoRouter';
@@ -248,6 +259,58 @@ describe('non-regression — le mecanisme derriere continue de servir', () => {
     const [out] = await conf(d, 'no ip prefix-list PL seq zorglub');
     expect(out).toContain('Invalid input');
     expect(await prefixLists(d)).toContain('ip prefix-list PL seq 5 permit 10.0.0.0/8');
+  });
+});
+
+/*
+ * `description` a ete ajoutee ICI plutot que dans une sonde a part.
+ *
+ * Elle a ete mesuree en migrant la famille au socle : `ip prefix-list
+ * LISTE description ma liste de prefixes` — une forme reelle d'IOS,
+ * celle qu'un operateur ecrit AVANT de remplir sa liste — repondait
+ * `% Invalid input`, l'analyse cherchant une action la ou il y a un
+ * mot-cle. C'est la meme commande que ce fichier eprouve deja ; lui
+ * donner sa propre sonde ferait deux fichiers a tenir d'accord sur un
+ * meme fait.
+ */
+describe('`ip prefix-list <nom> description` existe', () => {
+  it.each([
+    'ip prefix-list PL description ma liste de prefixes',
+    'ipv6 prefix-list P6 description ma liste v6',
+  ])('`%s` est accepte', async (cmd) => {
+    const d = routeur(`DE${cmd.length}`);
+    const [out] = await conf(d, cmd);
+    expect(out).not.toContain('%');
+  });
+
+  it('et la description se RELIT dans la configuration', async () => {
+    const d = routeur('DE1');
+    await conf(d, 'ip prefix-list PL description ma liste de prefixes');
+    expect(await prefixLists(d))
+      .toContain('ip prefix-list PL description ma liste de prefixes');
+  });
+
+  it('elle coexiste avec les entrees de la meme liste', async () => {
+    const d = routeur('DE2');
+    await conf(d,
+      'ip prefix-list PL description ma liste',
+      'ip prefix-list PL seq 5 permit 10.0.0.0/8');
+    const rendues = await prefixLists(d);
+    expect(rendues).toContain('ip prefix-list PL description ma liste');
+    expect(rendues).toContain('ip prefix-list PL seq 5 permit 10.0.0.0/8');
+  });
+
+  it('`no ip prefix-list PL` emporte la description avec la liste', async () => {
+    const d = routeur('DE3');
+    await conf(d, 'ip prefix-list PL description ma liste', 'no ip prefix-list PL');
+    expect(await prefixLists(d)).toEqual([]);
+  });
+
+  it('`description` sans texte est incomplete, pas acceptee', async () => {
+    const d = routeur('DE4');
+    const [out] = await conf(d, 'ip prefix-list PL description');
+    expect(out).toContain('%');
+    expect(await prefixLists(d)).toEqual([]);
   });
 });
 

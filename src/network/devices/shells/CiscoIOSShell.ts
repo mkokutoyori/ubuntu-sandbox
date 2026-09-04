@@ -52,11 +52,11 @@ import {
 } from './cisco/CiscoConfigCommands';
 import type { IpAddressHost } from './cisco/ipAddressInterfaceSpecs';
 import {
-  registerHsrpShowCommands, hsrpGroupRange,
+  hsrpShowSpecs, hsrpGroupRange,
 } from './cisco/CiscoHsrpCommands';
 import type { SessionParamRanges } from './EquipmentParamResolver';
 import {
-  registerVrrpGlbpShowCommands,
+  vrrpGlbpShowSpecs,
 } from './cisco/CiscoVrrpGlbpCommands';
 import {
   buildBfdInterfaceCommands, registerBfdShowCommands, bfdInterfaceSpecs,
@@ -75,7 +75,8 @@ import {
 } from './cisco/CiscoVxlanCommands';
 import { FhrpRepository } from '../inspection/config/FhrpRepository';
 import {
-  buildTrackConfigCommands, registerTrackShowCommands, trackSubmodeSpecs,
+  buildTrackConfigCommands, trackShowSpecs, trackSubmodeSpecs,
+  trackEntrySpecs, routerTrackEntryHost,
 } from './cisco/CiscoTrackCommands';
 import { KeyChainRepository } from '../inspection/config/KeyChainRepository';
 import { specsFromTrieRegistrations } from '@/cli/commands/trieAdapter';
@@ -130,7 +131,7 @@ import {
   buildACLConfigCommands,
   buildNamedStdACLCommands, buildNamedExtACLCommands,
   buildIPv6ACLGlobalCommands, buildIPv6ACLModeCommands,
-  registerACLShowCommands, registerACLClearCommands, aclShowSpecs,
+  registerACLShowCommands, aclShowSpecs,
 } from './cisco/CiscoAclCommands';
 import {
   registerOSPFConfigCommands, buildConfigRouterOSPFCommands,
@@ -194,6 +195,13 @@ const HORS_PLATEFORME_ISR: ReadonlySet<string> = new Set(['vxlan', 'nve', 'mls']
 
 import { routerOnlyDebugPairs, type RouterDebugHost } from '@/cli/commands/debug/routerDebugPairs';
 import { getGlobalConfig } from '../router/config/CiscoGlobalConfig';
+import { clearAclSpecs, clearCryptoSpecs } from './cisco/clearRestantsSpecs';
+import { showAdjacencySpec, showViewSpec } from './cisco/showViewSpecs';
+import { prefixListSpecs } from './cisco/filterListSpecs';
+import { showAdjacency } from './cisco/CiscoCommonShow';
+import { showIpRouteOspf } from './cisco/CiscoOspfCommands';
+import { clearAccessListCounters } from './cisco/CiscoAclCommands';
+import { IPV4_PLACE, valeurGlobaleSpecs } from './cisco/ipGlobalSpecs';
 
 
 const VRF_ARGUMENTS:
@@ -378,10 +386,72 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
     );
   }
 
+  /**
+   * Ce que `clear crypto {sa|isakmp}` efface, et ce qu'elle en dit.
+   *
+   * Les deux gestionnaires du trie ne differaient que par la methode
+   * appelee et le mot rendu ; leur corps est desormais ecrit une fois.
+   */
+  private effacerSa(quoi: 'ipsec' | 'isakmp', peer?: string): string {
+    const moteur = (this.d() as unknown as {
+      _getIPSecEngineInternal?: () => {
+        clearIPSecSAs(peer?: string): number;
+        clearISAKMPSAs(peer?: string): number;
+      } | undefined;
+    })._getIPSecEngineInternal?.();
+    if (!moteur) return 'IPSec not configured.';
+    const n = quoi === 'ipsec'
+      ? moteur.clearIPSecSAs(peer) : moteur.clearISAKMPSAs(peer);
+    const nom = quoi === 'ipsec' ? 'IPSec' : 'ISAKMP';
+    return n === 0
+      ? `No matching ${nom} SAs found`
+      : `Cleared ${n} ${nom} SA${n === 1 ? '' : 's'}`;
+  }
+
+  /*
+   * Retirer une VRF retire les traductions NAT qui la nommaient.
+   *
+   * Le gestionnaire de `no ip vrf` le faisait, et il vivait dans la
+   * famille NAT — donc sur le routeur seul, ce qui etait aussi la raison
+   * pour laquelle un commutateur ne connaissait pas la commande. La
+   * declaration est maintenant partagee par les deux plateformes, et ce
+   * crochet garde le nettoyage la ou le moteur existe : sans lui, une
+   * entree statique continuerait de designer une instance supprimee.
+   */
+  protected override onVrfRemoved(name: string): void {
+    const engine = this.d()._getNATEngine?.();
+    if (!engine) return;
+    for (const e of engine.getStaticEntries()) {
+      if (e.vrf === name) engine.removeStaticEntry(e.localIP, e.globalIP);
+    }
+  }
+
   protected override socleSpecs(): readonly CommandSpec[] {
     return [
       ...super.socleSpecs(),
       ...dhcpClientFamily(),
+      ...hsrpShowSpecs(this, () => this.fhrp),
+      ...trackShowSpecs(this),
+      showViewSpec('show-ip-route-ospf', ['show', 'ip', 'route', 'ospf'],
+        'Display OSPF routes', () => showIpRouteOspf(this.d())),
+      showAdjacencySpec(
+        () => showAdjacency(this.d() as unknown as Parameters<typeof showAdjacency>[0]),
+        false),
+      ...vrrpGlbpShowSpecs(this, () => this.fhrp),
+      ...clearAclSpecs(() => ({
+        clearAclCounters: (ref) => clearAccessListCounters(this.d(), ref),
+      })),
+      ...clearCryptoSpecs(() => ({
+        clearIpsecSas: (peer) => this.effacerSa('ipsec', peer),
+        clearIsakmpSas: (peer) => this.effacerSa('isakmp', peer),
+      })),
+      ...valeurGlobaleSpecs('ip-default-network', ['ip', 'default-network'],
+        'Configure default network', IPV4_PLACE,
+        (v) => { getGlobalConfig(this.d()).defaultNetwork = v; }),
+      ...valeurGlobaleSpecs('ip-local-policy-route-map',
+        ['ip', 'local', 'policy', 'route-map'], 'Apply local PBR',
+        { name: 'map', type: 'WORD', description: 'Route map name' },
+        (v) => { getGlobalConfig(this.d()).localPolicyRouteMap = v; }),
       ...this.ipv6ExecSpecs(),
       ...dhcpPoolSpecs(this),
       ...routerOspfSpecs(this),
@@ -414,9 +484,11 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
       ...ipSlaHttpRawSpecs(this),
       ...this.vrfSubmodeSpecs(),
       ...trackSubmodeSpecs(this),
+      ...trackEntrySpecs(() => routerTrackEntryHost(this), ['config']),
       ...keyChainSubmodeSpecs(this),
       ...keyChainKeySubmodeSpecs(this),
       ...routeMapSubmodeSpecs(this, this.policy),
+      ...prefixListSpecs(() => this.policy),
       ...routerSubmodeSpecs(this, this.routingCfg),
       ...bfdInterfaceSpecs({
         selectedPorts: () => this.selectedPortsForConfigIf(),
@@ -1737,7 +1809,6 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
     registerDhcpPrivilegedCommands(this.privilegedTrie, () => this.d());
     buildIPSecPrivilegedCommands(this.privilegedTrie, this);
     registerNATPrivilegedCommands(this.privilegedTrie, () => this.d());
-    registerACLClearCommands(this.privilegedTrie, () => this.d());
 
     // ── Config mode ──
     buildConfigCommands(this.configTrie, this);
@@ -1848,13 +1919,10 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
 
   private registerShowCommands(trie: CommandTrie): void {
     registerRoutingProtoShow(trie, this, this.routingCfg);
-    registerHsrpShowCommands(trie, this, () => this.fhrp);
-    registerVrrpGlbpShowCommands(trie, this, () => this.fhrp);
     registerBfdShowCommands(trie, { r: () => this.d() });
     registerIgmpShowCommands(trie, this.multicastShowContext());
     registerPimShowCommands(trie, this.multicastShowContext());
     if (this.hasVxlanHardware()) registerVxlanShowCommands(trie, { r: () => this.d() });
-    registerTrackShowCommands(trie, this);
     registerPolicyShow(trie, this.policy);
     this.registerRouterShowViews(trie);
     trie.pruneSubtreeChildren('show', HORS_PLATEFORME_ISR);

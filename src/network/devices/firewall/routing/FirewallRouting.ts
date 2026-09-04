@@ -289,6 +289,11 @@ export class FirewallRouting {
 
   private ripCallbacks() {
     return {
+      getInterfaceVersions: (name: string) => {
+        const declared = this.ripConfig.interfaces.find(entry => entry.name === name);
+        if (!declared) return null;
+        return { send: declared.sendVersion, receive: declared.receiveVersion };
+      },
       getPortIP: (name: string) => this.portOf(name)
         ? new IPAddress(this.portOf(name)!.ip) : null,
       getPortMask: (name: string) => this.portOf(name)

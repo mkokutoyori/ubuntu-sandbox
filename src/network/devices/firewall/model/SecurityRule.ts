@@ -8,6 +8,8 @@ export type RuleAction =
   | 'tunnel'
   | 'ipsec';
 
+export type TcpSessionWithoutSyn = 'all' | 'data-only' | 'disable';
+
 export interface SecurityRule {
   readonly id: string;
   seq: number;
@@ -42,6 +44,7 @@ export interface SecurityRule {
 
   securityProfileGroup?: string;
   sessionTimeoutOverrideSec?: number;
+  tcpSessionWithoutSyn?: TcpSessionWithoutSyn;
 
   utmEnabled?: boolean;
   inspectionMode?: string;
@@ -94,6 +97,7 @@ export interface SecurityRuleInit {
   logEnd?: boolean;
   securityProfileGroup?: string;
   sessionTimeoutOverrideSec?: number;
+  tcpSessionWithoutSyn?: TcpSessionWithoutSyn;
   utmEnabled?: boolean;
   inspectionMode?: string;
   authGroups?: readonly string[];
@@ -151,6 +155,7 @@ export function makeRule(init: SecurityRuleInit): SecurityRule {
     logEnd: init.logEnd ?? false,
     securityProfileGroup: init.securityProfileGroup,
     sessionTimeoutOverrideSec: init.sessionTimeoutOverrideSec,
+    tcpSessionWithoutSyn: init.tcpSessionWithoutSyn,
     utmEnabled: init.utmEnabled,
     inspectionMode: init.inspectionMode,
     authGroups: init.authGroups === undefined ? undefined : Object.freeze([...init.authGroups]),

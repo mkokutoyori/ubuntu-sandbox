@@ -1675,6 +1675,7 @@ export class TcpStack {
     srcIp: string, dstIp: string, seg: TcpSegment,
   ): void {
     const family = ipFamilyOf(dstIp);
+    const local = this.isLocalDestination(dstIp, family);
     const l3Packet = family === 'ipv6'
       ? this.buildIpv6Segment(srcIp, dstIp, seg)
       : this.buildIpv4Segment(srcIp, dstIp, seg);
@@ -1687,9 +1688,10 @@ export class TcpStack {
         flagsText: flagsString(seg.flags),
         sequence: seg.sequence, acknowledgement: seg.acknowledgement,
         payloadSize: segmentPayloadSize(seg),
+        iface: local ? 'lo' : egress.name,
       },
     });
-    if (this.isLocalDestination(dstIp, family)) {
+    if (local) {
       this.handleSegment(srcIp, dstIp, seg);
       return;
     }

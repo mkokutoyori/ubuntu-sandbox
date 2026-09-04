@@ -4,6 +4,7 @@ import {
   type RuleAction, type SecurityRule,
 } from '../model/SecurityRule';
 import type { PolicyProbe } from './PolicyProbe';
+import type { ServiceObject, ServiceProbe } from '../model/ServiceObject';
 import { familyOf } from '../model/AddressObject';
 
 export type PolicyKeyedBy = 'zone' | 'interface';
@@ -17,6 +18,7 @@ export interface PolicyDecision {
   readonly implicit: boolean;
   readonly sawPending: boolean;
   readonly sawIdentityGate: boolean;
+  readonly service?: ServiceObject;
 }
 
 export interface PolicyEvaluatorDeps {
@@ -104,6 +106,7 @@ export class PolicyEvaluator {
       return {
         decision: Object.freeze({
           rule, action: rule.action, implicit: false, sawPending, sawIdentityGate,
+          service: this.serviceMatched(rule, probe),
         }),
         sawPending, sawIdentityGate,
       };
@@ -193,14 +196,15 @@ export class PolicyEvaluator {
   }
 
   private matchesService(rule: SecurityRule, probe: PolicyProbe): boolean {
-    const hit = this.objects.matchesAnyService(rule.service, {
-      protocol: probe.protocol,
-      sourcePort: probe.sourcePort,
-      destPort: probe.destPort,
-      icmpType: probe.icmpType,
-      icmpCode: probe.icmpCode,
-    });
-    return hit !== rule.serviceNegated;
+    const hit = this.objects.serviceMatching(rule.service, serviceProbe(probe));
+    return (hit !== undefined) !== rule.serviceNegated;
+  }
+
+  private serviceMatched(
+    rule: SecurityRule, probe: PolicyProbe,
+  ): ServiceObject | undefined {
+    if (rule.serviceNegated) return undefined;
+    return this.objects.serviceMatching(rule.service, serviceProbe(probe));
   }
 
   private matchesSchedule(rule: SecurityRule): boolean {
@@ -243,4 +247,14 @@ function addressListFor(
     return side === 'source' ? rule.source : rule.destination;
   }
   return side === 'source' ? rule.source6 : rule.destination6;
+}
+
+function serviceProbe(probe: PolicyProbe): ServiceProbe {
+  return {
+    protocol: probe.protocol,
+    sourcePort: probe.sourcePort,
+    destPort: probe.destPort,
+    icmpType: probe.icmpType,
+    icmpCode: probe.icmpCode,
+  };
 }

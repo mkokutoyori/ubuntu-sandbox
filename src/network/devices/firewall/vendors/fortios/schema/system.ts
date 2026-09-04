@@ -281,8 +281,11 @@ export const SYSTEM_PASSWORD_POLICY: FortiTableSpec = {
     count('min-change-characters',
       'Minimum number of characters that must differ from the old password.', 0, 128, 0),
     enable('expire-status', 'Enable/disable password expiration.'),
-    count('expire-day', 'Number of days before an administrator password expires.',
-      1, 999, 90),
+    {
+      ...count('expire-day',
+        'Number of days before an administrator password expires.', 1, 999, 90),
+      availableWhen: (object) => object.effective('expire-status')[0] === 'enable',
+    },
     enable('reuse-password', 'Enable/disable reuse of a previous password.', true),
     count('reuse-password-limit',
       'Number of the kept passwords that may still be reused.',
@@ -290,6 +293,12 @@ export const SYSTEM_PASSWORD_POLICY: FortiTableSpec = {
       DEFAULT_REUSE_PASSWORD_LIMIT),
   ],
   onCommit(object, context) {
+    context.device.applyPasswordExpiry({
+      enabled: object.effective('status')[0] === 'enable'
+        && object.effective('expire-status')[0] === 'enable',
+      days: Number.parseInt(object.effective('expire-day')[0] ?? '90', 10),
+    });
+
     const limit = Number.parseInt(object.effective('reuse-password-limit')[0] ?? '', 10);
     if (Number.isNaN(limit)) return;
     return context.device.refuseReuseLimit(limit) ?? undefined;
@@ -378,6 +387,8 @@ export const SYSTEM_SETTINGS: FortiTableSpec = {
         { keyword: 'disable', description: 'Do not receive LLDP in this VDOM.' },
         { keyword: 'global', description: 'Use the setting from `config system global`.' },
       ], 'global'),
+    enable('tcp-session-without-syn',
+      'Enable/disable allowing TCP session without SYN flags.'),
   ],
   onCommit(object, context) {
     const management = object.effective('manageip');
@@ -387,6 +398,7 @@ export const SYSTEM_SETTINGS: FortiTableSpec = {
     context.device.setSessionDirtyMode(
       object.effective('firewall-session-dirty')[0] ?? 'check-all');
     context.device.applyVdomSettings({
+      tcpSessionWithoutSyn: object.effective('tcp-session-without-syn')[0] === 'enable',
       centralNat: object.effective('central-nat')[0] === 'enable',
       opmode: object.effective('opmode')[0] === 'transparent' ? 'transparent' : 'nat',
       manageIP: management[0],
@@ -1015,6 +1027,52 @@ export const SYSTEM_NTP: FortiTableSpec = {
   },
 };
 
+const SESSION_TTL_PORT: FortiTableSpec = {
+  path: ['port'],
+  kind: 'table',
+  keyType: 'integer',
+  ordered: false,
+  scope: 'vdom',
+  accessGroup: 'sysgrp',
+  renderOrder: 78,
+  help: 'Configure a session TTL for one protocol and port range.',
+  attributes: [
+    count('protocol', 'Protocol number. 0 matches every protocol.', 0, 255, 0),
+    count('start-port', 'First port of the range.', 0, 65535, 0),
+    count('end-port', 'Last port of the range.', 0, 65535, 65535),
+    count('timeout', 'Session timeout in seconds.', 1, 604800, 300),
+  ],
+  onCommit(object, context) {
+    context.device.applySessionTtlPort({
+      id: object.key,
+      protocol: Number(object.effective('protocol')[0] ?? '0'),
+      startPort: Number(object.effective('start-port')[0] ?? '0'),
+      endPort: Number(object.effective('end-port')[0] ?? '65535'),
+      timeoutSec: Number(object.effective('timeout')[0] ?? '300'),
+    });
+  },
+  onDelete(key, context) {
+    context.device.removeSessionTtlPort(key);
+  },
+};
+
+export const SYSTEM_SESSION_TTL: FortiTableSpec = {
+  path: ['system', 'session-ttl'],
+  kind: 'object',
+  scope: 'vdom',
+  accessGroup: 'sysgrp',
+  renderOrder: 77,
+  help: 'Configure the session timeouts.',
+  attributes: [
+    count('default', 'Default session timeout for TCP, in seconds.', 300, 604800, 3600),
+  ],
+  children: [SESSION_TTL_PORT],
+  onCommit(object, context) {
+    context.device.applySessionTtlDefault(
+      Number(object.effective('default')[0] ?? '3600'));
+  },
+};
+
 export const SYSTEM_SPECS: readonly FortiTableSpec[] = Object.freeze([
   SYSTEM_GLOBAL,
   SYSTEM_PASSWORD_POLICY,
@@ -1029,4 +1087,5 @@ export const SYSTEM_SPECS: readonly FortiTableSpec[] = Object.freeze([
   SYSTEM_DHCP_SERVER,
   SYSTEM_DHCP6_SERVER,
   SYSTEM_NTP,
+  SYSTEM_SESSION_TTL,
 ]);

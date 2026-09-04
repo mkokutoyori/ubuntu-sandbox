@@ -280,7 +280,7 @@ interface QueuedPacket {
 // ─── CLI Shell (imported from shells/) ──────────────────────────────
 
 import type { IRouterShell } from './shells/IRouterShell';
-import { iosInterfaceUsable, interfacesBootShutdown, routerPortCountOverride } from './inspection/InterfaceStatusView';
+import { iosInterfaceUsable, interfaceHasNoSocket, interfacesBootShutdown, routerPortCountOverride } from './inspection/InterfaceStatusView';
 import { ciscoPasswordMatches } from './shells/cisco/ciscoPasswordVerify';
 import { DHCP_SERVER_PORT, DHCP_CLIENT_PORT } from '../core/WellKnownPorts';
 import { buildUdpDatagram, type UdpSendRequest } from '../layers/transport/UdpEgress';
@@ -1490,7 +1490,8 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
 
   _createVirtualInterface(name: string): boolean {
     if (this.ports.has(name)) return true; // already exists
-    const port = new Port(name, 'ethernet');
+    const port = new Port(name, 'ethernet', undefined,
+      { socketless: interfaceHasNoSocket(name) });
     port.setUp(true); // virtual interfaces are always up
     // Une loopback n'a pas de lien dont déduire sa bande passante : IOS
     // lui donne les siennes, et ce sont celles-là que `show interfaces`

@@ -1,5 +1,24 @@
 import type { TcpStack } from '../../../tcp/TcpStack';
-import { adminSessionOrigin } from './AdminSessionTable';
+import type { AdminEndpoint, AdminTransport } from './AdminSessionTable';
+
+export interface PeerEndpoints {
+  readonly local: AdminEndpoint;
+  readonly remote: AdminEndpoint;
+}
+
+function endpointsOf(socket: TcpStream): PeerEndpoints {
+  return {
+    local: { ip: socket.localIp, port: socket.localPort },
+    remote: { ip: socket.remoteIp, port: socket.remotePort },
+  };
+}
+
+export interface AdminLoginFacts {
+  readonly username: string;
+  readonly transport: AdminTransport;
+  readonly local: AdminEndpoint;
+  readonly remote: AdminEndpoint;
+}
 import type { TcpStream } from '../../../tcp/types';
 import type { AuthMethodType, ISshAuthContext } from '../../../protocols/ssh/auth/ISshAuthMethod';
 import type { ISftpFileSystem } from '../../../protocols/ssh/sftp/ISftpFileSystem';
@@ -39,7 +58,7 @@ export interface FirewallCliServerDeps {
   refuseSource(source: string): boolean;
   idleTimeoutMs(): number | null;
   runningConfig(): string;
-  onLogin(user: string, source: string): void;
+  onLogin(session: AdminLoginFacts): void;
   onLogout(user: string): void;
   onAuthFailure(user: string, source: string): void;
   bannerLines(stage: LoginBannerStage): readonly string[];
@@ -71,14 +90,14 @@ export class FirewallCliServer {
 
   private rebind(
     current: number | null, wanted: number, processName: string,
-    serve: (socket: { remoteIp: string }) => void,
+    serve: (socket: TcpStream) => void,
   ): number | null {
     if (current === wanted) return current;
     const tcp = this.deps.tcp();
     if (current !== null) tcp.closeListener(current);
     try {
       tcp.listen(wanted, {
-        onAccept: (socket) => { serve(socket as { remoteIp: string }); },
+        onAccept: (socket) => { serve(socket as TcpStream); },
         identity: { processName },
       });
     } catch {
@@ -87,17 +106,16 @@ export class FirewallCliServer {
     return wanted;
   }
 
-  private serveSsh(socket: { remoteIp: string }): void {
-    const context = new FirewallSshServerContext(this.deps, socket.remoteIp, this.key());
-    new SshServerHandler(context)
-      .register(socket as unknown as TcpStream, socket.remoteIp);
+  private serveSsh(socket: TcpStream): void {
+    const context = new FirewallSshServerContext(
+      this.deps, endpointsOf(socket), this.key());
+    new SshServerHandler(context).register(socket, socket.remoteIp);
   }
 
-  private serveTelnet(socket: { remoteIp: string }): void {
+  private serveTelnet(socket: TcpStream): void {
     const context = new FirewallTelnetServerContext(
-      this.deps, socket.remoteIp, () => `line${this.sessions++}`);
-    new TelnetServerHandler(context)
-      .register(socket as unknown as TcpStream, socket.remoteIp);
+      this.deps, endpointsOf(socket), () => `line${this.sessions++}`);
+    new TelnetServerHandler(context).register(socket, socket.remoteIp);
   }
 
   private key(): SshHostKey {
@@ -113,7 +131,7 @@ class FirewallSshServerContext implements ISshServerContext {
 
   constructor(
     private readonly deps: FirewallCliServerDeps,
-    private readonly source: string,
+    private readonly peer: PeerEndpoints,
     hostKey: SshHostKey,
   ) {
     this.hostKey = hostKey;
@@ -131,7 +149,7 @@ class FirewallSshServerContext implements ISshServerContext {
   execIdleTimeoutMs(): number | null { return this.deps.idleTimeoutMs(); }
 
   getShell(userCtx: SshUserContext): ILinuxShell {
-    const cli = this.deps.createCli(userCtx.username, `ssh(${this.source})`);
+    const cli = this.deps.createCli(userCtx.username, `ssh(${this.peer.remote.ip})`);
     if (!cli) {
       return {
         execute: async (line: string) => ({
@@ -171,8 +189,8 @@ class FirewallSshServerContext implements ISshServerContext {
   getMotd(): string { return ''; }
   getLastLogin(): string | null { return null; }
 
-  recordLogin(user: string, fromIp: string): void {
-    this.deps.onLogin(user, adminSessionOrigin('ssh', fromIp));
+  recordLogin(user: string, _fromIp: string): void {
+    this.deps.onLogin({ username: user, transport: 'ssh', ...this.peer });
   }
 
   recordAuthFailure(user: string, fromIp: string): void {
@@ -193,7 +211,7 @@ class FirewallSshServerContext implements ISshServerContext {
     return {
       checkPassword: (user, password) => {
         attemptsLeft = Math.max(0, attemptsLeft - 1);
-        return this.deps.authenticate(user, password, this.source);
+        return this.deps.authenticate(user, password, this.peer.remote.ip);
       },
       checkPublicKey: () => false,
       getAttemptsRemaining: () => attemptsLeft,
@@ -208,7 +226,7 @@ class FirewallTelnetServerContext implements ITelnetServerContext {
 
   constructor(
     private readonly deps: FirewallCliServerDeps,
-    private readonly source: string,
+    private readonly peer: PeerEndpoints,
     private readonly nextLine: () => string,
   ) {}
 
@@ -236,15 +254,15 @@ class FirewallTelnetServerContext implements ITelnetServerContext {
 
   authenticate(username: string | null, password: string): boolean {
     if (username === null) return false;
-    const accepted = this.deps.authenticate(username, password, this.source);
-    if (!accepted) this.deps.onAuthFailure(username, this.source);
+    const accepted = this.deps.authenticate(username, password, this.peer.remote.ip);
+    if (!accepted) this.deps.onAuthFailure(username, this.peer.remote.ip);
     return accepted;
   }
 
   maxAuthAttempts(): number { return 3; }
 
   createShell(username: string | null): TelnetVtyShell | null {
-    this.cli = this.deps.createCli(username ?? '', `telnet(${this.source})`);
+    this.cli = this.deps.createCli(username ?? '', `telnet(${this.peer.remote.ip})`);
     const cli = this.cli;
     if (!cli) return null;
     this.disclaimer = new BannerAcceptance(this.deps.bannerLines('post'));
@@ -267,8 +285,8 @@ class FirewallTelnetServerContext implements ITelnetServerContext {
     };
   }
 
-  openSession(username: string, fromIp: string): TelnetSessionHandle | null {
-    this.deps.onLogin(username, adminSessionOrigin('telnet', fromIp));
+  openSession(username: string, _fromIp: string): TelnetSessionHandle | null {
+    this.deps.onLogin({ username, transport: 'telnet', ...this.peer });
     const line = this.nextLine();
     return { id: line, line };
   }

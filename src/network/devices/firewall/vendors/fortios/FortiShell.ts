@@ -32,7 +32,7 @@ import {
   BatchMode, renderBatchLog,
 } from './execute/BatchMode';
 import {
-  FORTI_GET_VIEWS, resolvePathWords, viewContinuations,
+  FORTI_GET_VIEWS, getViewHelp, resolvePathWords, viewContinuations,
 } from './view/pathResolution';
 import { FortiValidator } from './runtime/FortiValidator';
 import { renderPath, renderWholeConfig } from './render/showRenderer';
@@ -69,6 +69,14 @@ import {
   renderSslVpnLoginUsers, renderSslVpnSessions, type SslVpnListRow,
   renderOspfNeighbors, renderRoutingTable, renderSystemStatus,
 } from './diag/getViews';
+import {
+  renderSessionCount, renderSessionSummary, renderSessionTtl,
+} from './view/sessionSummary';
+import {
+  renderAdminSessionList, renderAdminSessionStatus,
+} from './view/adminSessions';
+import { fortiLogStamp } from './diag/timeCommands';
+import { renderIpsecTunnelStats } from './view/ipsecStats';
 import type { SslVpnSessionMode } from '../../vpn/SslVpnSessionTable';
 import { PkiKeyPair } from '../../../../pki/PkiKeyPair';
 import { buildCertificateRequest } from '../../../../pki/CertificateSigningRequest';
@@ -79,6 +87,7 @@ import {
   configChangeLog,
   shouldLogTraffic, shouldLogTrafficStart, trafficCloseLog, trafficStartLog,
 } from './log/trafficLog';
+import { localTrafficLog } from './log/localTrafficLog';
 import { anomalyLog, utmLog } from './log/utmLog';
 import { renderFortiguardServiceStatus } from './diag/fortiguardRenderer';
 import type { FortiGuardFamily } from '../../mgmt/FortiGuardDatabases';
@@ -186,6 +195,8 @@ function distinguishedName(fields: {
 
 export class FortiShell {
   private pendingAsync: Promise<string> | null = null;
+
+  private nextLocalSessionId = 1;
 
   takePendingAsync(): Promise<string> | null {
     const pending = this.pendingAsync;
@@ -321,6 +332,10 @@ export class FortiShell {
           session, rule, now: this.fw.now(),
           identity: this.loggedIdentity(session.c2s.sourceIP),
         }, reason));
+      },
+      onLocalTraffic: (facts) => {
+        this.fw.getLogStore(facts.vdom).append(localTrafficLog(
+          facts, this.fw.now(), this.nextLocalSessionId++));
       },
       onDosAnomaly: (finding, iface, packet) => {
         this.fw.getLogStore().append(
@@ -515,8 +530,9 @@ export class FortiShell {
       ...(words[0] === 'get' ? viewContinuations(FORTI_GET_VIEWS, walked) : []),
     ])].sort();
     if (branches.length > 0) {
-      return branches.filter(retenu).map(word =>
-        proposition(word, branchHelp(this.tree.spec([...walked, word]), word)));
+      return branches.filter(retenu).map(word => proposition(word,
+        (words[0] === 'get' ? getViewHelp([...walked, word]) : undefined)
+        ?? branchHelp(this.tree.spec([...walked, word]), word)));
     }
 
     const spec = this.tree.spec(walked);
@@ -777,8 +793,9 @@ export class FortiShell {
   }
 
   private show(rest: readonly string[], full: boolean): string {
-    const typed = rest[0] === 'full-configuration' ? rest.slice(1) : rest;
-    const options = { full: full || rest[0] === 'full-configuration' };
+    const asksFull = rest[0] === 'full' || rest[0] === 'full-configuration';
+    const typed = asksFull ? rest.slice(1) : rest;
+    const options = { full: full || asksFull };
 
     const resolution = resolvePathWords(typed, (prefix) => this.tree.branchNames(prefix));
     if (resolution.ambiguous) {
@@ -790,7 +807,8 @@ export class FortiShell {
     if (words.length === 0) {
       const object = this.nav.currentObject();
       if (object) {
-        return (renderPath(this.tree, object.spec.path, options) ?? []).join('\n');
+        const only = object.spec.kind === 'table' ? object.key : undefined;
+        return (renderPath(this.tree, object.spec.path, options, only) ?? []).join('\n');
       }
       const table = this.nav.currentTable();
       if (table) return (renderPath(this.tree, table.spec.path, options) ?? []).join('\n');
@@ -841,6 +859,13 @@ export class FortiShell {
     return FortiMessages.unknownPath(rest.join(' '), 'get');
   }
 
+  private adminSessionClock(): { stamp: (at: number) => string; now: () => number } {
+    return {
+      stamp: (at) => fortiLogStamp(this.fw, at),
+      now: () => this.fw.now(),
+    };
+  }
+
   private getView(rest: readonly string[]): string | null {
     const path = rest.join(' ');
 
@@ -862,6 +887,31 @@ export class FortiShell {
       return renderFortiguardServiceStatus();
     }
     if (path === 'system arp') return renderArpTable(this.fw.getArpService());
+    if (path === 'system session status') {
+      return renderSessionCount(this.fw.getSessionTable().view().count());
+    }
+    if (path === 'vpn ipsec stats tunnel') {
+      return renderIpsecTunnelStats(this.fw.getTunnelTable());
+    }
+    if (path === 'system admin list') {
+      return renderAdminSessionList(this.fw.getAdminSessions().list(),
+        this.adminSessionClock());
+    }
+    if (path === 'system admin status') {
+      return renderAdminSessionStatus(this.fw.getAdminSessions().newest(),
+        this.adminSessionClock());
+    }
+    if (path === 'system session-info ttl') {
+      return renderSessionTtl(this.fw.getSessionTtl());
+    }
+    if (path === 'system session list') {
+      return renderSessionSummary(
+        this.fw.getSessionTable().view().all(), this.fw.now());
+    }
+    if (path === 'hardware nic' || path.startsWith('hardware nic ')) {
+      return this.diagnose(['hardware', 'deviceinfo', 'nic',
+        ...rest.slice(2)]);
+    }
     if (path === 'system ha status') {
       return renderHaStatus(this.fw.getHa(), {
         model: 'FortiGate-VM64',

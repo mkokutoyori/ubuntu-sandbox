@@ -3,7 +3,7 @@ import {
   type FortiTableSpec,
 } from './types';
 import type {
-  SdwanProtocol, SdwanServiceMode,
+  SdwanLoadBalanceMode, SdwanProtocol, SdwanServiceMode,
 } from '../../../sdwan/SdwanTable';
 
 const VIRTUAL_TIME_NOTE = 'this build delivers a frame synchronously, so the '
@@ -40,6 +40,18 @@ const SDWAN_MEMBER: FortiTableSpec = {
     reference('interface', 'Interface name.', ['system interface']),
     address('gateway', 'Gateway IP reached through this member.', '0.0.0.0'),
     count('priority', 'Administrative priority — lowest wins.', 0, 65535, 1),
+    count('weight', 'Weight for weight-based load balancing — higher takes more.',
+      0, 255, 0),
+    count('volume-ratio',
+      'Volume ratio for measured-volume-based load balancing.', 0, 255, 0),
+    {
+      ...count('spillover-threshold',
+        'Egress spillover threshold for this interface, in kbit/s.',
+        0, 16776000, 0),
+      unimplemented: 'a spillover threshold is a RATE, and this simulator '
+        + 'delivers frames synchronously under a virtual clock, so no rate is '
+        + 'measurable to compare it against',
+    },
     reference('zone', 'Zone this member belongs to.', ['system sdwan zone']),
     enable('status', 'Enable/disable this member.', true),
     text('comment', 'Comments.'),
@@ -186,12 +198,21 @@ export const SYSTEM_SDWAN: FortiTableSpec = {
   help: 'Configure redundant Internet connections with multiple outbound links.',
   attributes: [
     enable('status', 'Enable/disable SD-WAN.'),
-    choice('load-balance-mode', 'How traffic is spread when several members serve.', [
-      { keyword: 'source-ip-based', description: 'By source address.' },
-      { keyword: 'weight-based', description: 'By weight.' },
-      { keyword: 'usage-based', description: 'By spillover.' },
-      { keyword: 'source-dest-ip-based', description: 'By source and destination.' },
-    ], 'source-ip-based'),
+    {
+      ...choice('load-balance-mode',
+        'How traffic is spread when several members serve.', [
+          { keyword: 'source-ip-based', description: 'By source address.' },
+          { keyword: 'weight-based', description: 'By weight.' },
+          { keyword: 'usage-based', description: 'By spillover.' },
+          { keyword: 'source-dest-ip-based', description: 'By source and destination.' },
+          { keyword: 'measured-volume-based', description: 'By volume ratio.' },
+        ], 'source-ip-based'),
+      unimplementedValues: {
+        'usage-based': 'spillover is decided on a RATE, and this simulator '
+          + 'delivers frames synchronously under a virtual clock, so no rate '
+          + 'is measurable',
+      },
+    },
     count('neighbor-hold-down-time', 'Seconds a neighbour is held down.', 0, 10000000, 0),
   ],
   children: [SDWAN_ZONE, SDWAN_MEMBER, SDWAN_HEALTH_CHECK, SDWAN_SERVICE],
@@ -203,6 +224,8 @@ export const SYSTEM_SDWAN: FortiTableSpec = {
     }
     return context.device.applySdwan({
       enabled: object.effective('status')[0] === 'enable',
+      loadBalanceMode: (object.effective('load-balance-mode')[0]
+        ?? 'source-ip-based') as SdwanLoadBalanceMode,
       zones: object.childEntries('zone').map(zone => zone.key),
       members: object.childEntries('members').map(member => ({
         sequence: Number.parseInt(member.key, 10),
@@ -211,6 +234,8 @@ export const SYSTEM_SDWAN: FortiTableSpec = {
         priority: Number.parseInt(member.effective('priority')[0] ?? '1', 10),
         zone: member.effective('zone')[0] ?? '',
         enabled: member.effective('status')[0] !== 'disable',
+        weight: Number.parseInt(member.effective('weight')[0] ?? '0', 10),
+        volumeRatio: Number.parseInt(member.effective('volume-ratio')[0] ?? '0', 10),
       })),
       healthChecks: object.childEntries('health-check').map(check => ({
         name: check.key,

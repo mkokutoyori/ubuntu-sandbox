@@ -38,11 +38,18 @@ export interface ScanHost {
    * `{ mac: null }` qu'elle y est et n'a pas repondu, et une adresse
    * qu'elle a repondu.
    */
-  linkNeighbour(ip: string): { mac: string | null } | null;
+  linkNeighbour(ip: string): { mac: string | null; rttMs?: number } | null;
   /** Le nom d'une adresse, par la chaine de resolution de la machine. */
   reverseName(ip: string): Promise<string | null>;
   /** L'adresse d'un nom, par la meme chaine — ce que fait `getaddrinfo`. */
   resolveName(name: string): Promise<string | null>;
+  /**
+   * La marche par duree de vie limitee de la machine, celle que sa propre
+   * commande `traceroute` emprunte. `nmap` ne porte pas de seconde
+   * implantation : ce qu'il ajoute est le CHOIX de la sonde et la mise en
+   * page, pas l'emission.
+   */
+  tracePath(ip: string): Promise<Array<{ ttl: number; ip?: string; rttMs?: number }>>;
 }
 
 const UDP_PROBE_SOURCE_PORT = 51820;
@@ -62,26 +69,50 @@ function linkLayerResolverOf(device: Equipment | null): LinkLayerResolver | null
 }
 
 /**
+ * `Target::directlyConnected()` : la cible est-elle sur un de nos
+ * segments ? La question est de ROUTAGE et non d'ARP — une cible du
+ * meme segment qui ne repond pas reste directement connectee — d'ou la
+ * lecture de `isDirectlyConnected` et non celle du voisin.
+ */
+export function directlyConnectedOf(device: Equipment | null, ip: string): boolean {
+  const resolver = linkLayerResolverOf(device);
+  if (!resolver) return false;
+  if (ip.includes(':')) {
+    let target: IPv6Address;
+    try { target = new IPv6Address(ip); } catch { return false; }
+    return resolver.isDirectlyConnected6(target);
+  }
+  const target = IPAddress.tryParse(ip);
+  return target !== null && resolver.isDirectlyConnected(target);
+}
+
+/**
  * Ce que `arpping()` demande a la machine, ecrit une fois pour les deux
  * plateformes : `nmap` n'est pas une commande Linux, et un voisin se
  * resout de la meme facon sous Windows.
  */
 export function linkNeighbourOf(
   device: Equipment | null, ip: string,
-): { mac: string | null } | null {
+): { mac: string | null; rttMs?: number } | null {
   const resolver = linkLayerResolverOf(device);
   if (!resolver) return null;
+  // `to.srtt` est alimente par la sonde de decouverte quelle qu'elle
+  // soit, ARP comprise : c'est l'aller-retour de CETTE sonde que la
+  // ligne d'etat annonce, et non une constante.
+  const started = performance.now();
+  const measured = (mac: { toString(): string } | null) => ({
+    mac: mac ? mac.toString() : null,
+    rttMs: mac ? performance.now() - started : undefined,
+  });
   if (ip.includes(':')) {
     let target: IPv6Address;
     try { target = new IPv6Address(ip); } catch { return null; }
     if (!resolver.isDirectlyConnected6(target)) return null;
-    const mac = resolver.resolveLinkLayerAddress6(target);
-    return { mac: mac ? mac.toString() : null };
+    return measured(resolver.resolveLinkLayerAddress6(target));
   }
   const target = IPAddress.tryParse(ip);
   if (!target || !resolver.isDirectlyConnected(target)) return null;
-  const mac = resolver.resolveLinkLayerAddress(target);
-  return { mac: mac ? mac.toString() : null };
+  return measured(resolver.resolveLinkLayerAddress(target));
 }
 
 /**
@@ -98,6 +129,8 @@ interface Discovery {
   latencyMs?: number;
   ttl?: number;
   reason?: string;
+  /** Le port de la sonde TCP qui a repondu, quand c'est elle qui a repondu. */
+  reasonPort?: number;
 }
 
 async function discoverHost(host: ScanHost, ip: string): Promise<Discovery> {
@@ -114,8 +147,8 @@ async function discoverHost(host: ScanHost, ip: string): Promise<Discovery> {
 
   for (const port of DISCOVERY_PORTS) {
     const outcome = host.tcpOutcome(ip, port);
-    if (outcome === 'open') return { up: true, reason: 'syn-ack' };
-    if (outcome === 'refused') return { up: true, reason: 'reset' };
+    if (outcome === 'open') return { up: true, reason: 'syn-ack', reasonPort: port };
+    if (outcome === 'refused') return { up: true, reason: 'reset', reasonPort: port };
   }
   return { up: false };
 }
@@ -221,6 +254,9 @@ export function buildScanProbes(
         hostname: target.hostname,
         up: alive.up,
         latencyMs: alive.latencyMs,
+        reason: alive.reason,
+        reasonPort: alive.reasonPort,
+        replyTtl: alive.ttl,
         osHint: alive.ttl === undefined ? undefined : osFromInitialTtl(alive.ttl),
       };
     },
@@ -231,13 +267,34 @@ export function buildScanProbes(
     reverseName(ip: string) {
       return host.reverseName(ip);
     },
+    directlyConnected(ip: string) {
+      return directlyConnectedOf(host.device, ip);
+    },
+    observeWire(sink) {
+      const device = host.device;
+      if (!device) return () => {};
+      const bus = device.getBus();
+      const id = device.getId();
+      const offs = [
+        bus.subscribe('port.frame.tx-requested', (e) => {
+          if (e.payload.deviceId === id) sink('SENT', e.payload.frame);
+        }),
+        bus.subscribe('port.frame.received', (e) => {
+          if (e.payload.deviceId === id) sink('RCVD', e.payload.frame);
+        }),
+      ];
+      return () => { for (const off of offs) off(); };
+    },
+    tracePath(ip: string) {
+      return host.tracePath(ip);
+    },
     linkDiscovery(ip: string) {
       const neighbour = host.linkNeighbour(ip);
       if (!neighbour) return null;
       const reason = ip.includes(':') ? 'nd-response' : 'arp-response';
       return neighbour.mac === null
         ? { mac: null, reason: 'no-response' }
-        : { mac: neighbour.mac, reason };
+        : { mac: neighbour.mac, reason, rttMs: neighbour.rttMs };
     },
     tcpOutcome(ip: string, port: number) {
       return host.tcpOutcome(ip, port);

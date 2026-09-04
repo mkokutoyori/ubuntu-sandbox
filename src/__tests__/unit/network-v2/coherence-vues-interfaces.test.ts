@@ -11,6 +11,7 @@ import { EquipmentRegistry } from '@/network/equipment/EquipmentRegistry';
 import { resetDeviceCounters } from '@/network/devices/DeviceFactory';
 import { Logger } from '@/network/core/Logger';
 import { pingOnSimulatedClock } from '../../support/fastPing';
+import { adapterIfIndex } from '@/network/devices/windows/WindowsInterfaceNaming';
 
 beforeEach(() => {
   resetCounters();
@@ -100,6 +101,12 @@ function windowsConfigure(): WindowsPC {
   pc.powerOn();
   pc.getPorts()[0].configureIP(new IPAddress('10.0.0.6'), new SubnetMask(MASQUE_24));
   return pc;
+}
+
+function windowsCable(pc: WindowsPC): void {
+  const pair = new LinuxPC('linux-pc', 'W1-PAIR', 0, 0);
+  pair.powerOn();
+  new Cable('coherence-w1').connect(pc.getPorts()[0], pair.getPorts()[0]);
 }
 
 // ───────────────────────── Cisco routeur ─────────────────────────
@@ -643,6 +650,7 @@ describe('Linux — le tableau des interfaces ne compte chaque interface qu\'une
 describe('Windows — l\'adresse est la même dans les cinq vues', () => {
   it('`ipconfig`, `ipconfig /all`, `netsh`, `Get-NetIPAddress` et `Get-NetIPConfiguration`', async () => {
     const pc = windowsConfigure();
+    windowsCable(pc);
     const ip = await vue(pc as unknown as Cli, 'ipconfig');
     const all = await vue(pc as unknown as Cli, 'ipconfig /all');
     const netsh = await vue(pc as unknown as Cli, 'netsh interface ip show config');
@@ -1002,7 +1010,9 @@ describe('Windows — la vue WMI ne contredit pas les vues natives', () => {
     const pc = windowsConfigure();
     const wmi = await vue(pc as unknown as Cli, 'powershell Get-CimInstance Win32_NetworkAdapterConfiguration');
     const netsh = await vue(pc as unknown as Cli, 'netsh interface ip show config');
-    const blocWmi = wmi.split('Description          : Ethernet 1')[1]?.split('Description')[0] ?? '';
+    const index = adapterIfIndex(1);
+    const blocWmi = wmi.split(/\n\s*\n/)
+      .find((b) => new RegExp(`InterfaceIndex\\s+:\\s+${index}\\b`).test(b)) ?? '';
     const blocNetsh = netsh.split('"Ethernet 1"')[1]?.split('Configuration for')[0] ?? '';
     const wmiDhcp = /DHCPEnabled\s+:\s+(True|False)/.exec(blocWmi)?.[1] === 'True';
     const netshDhcp = /DHCP enabled:\s+(Yes|No)/.exec(blocNetsh)?.[1] === 'Yes';

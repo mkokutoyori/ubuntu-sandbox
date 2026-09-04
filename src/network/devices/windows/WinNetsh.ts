@@ -36,7 +36,8 @@ import {
 } from './netFirewallRule';
 import { matchEnumValue } from './netIpAddress';
 import { PortProxyRule, PORT_PROXY_FAMILIES, type PortProxyFamily } from './PortProxyRule';
-import { toPortName } from './WindowsInterfaceNaming';
+import { adapterDisplayName, resolveAdapterPortName } from './netAdapter';
+import type { Port } from '../../hardware/Port';
 
 // ─── Per-device IPv6 route state (WeakMap keyed by ctx.ports for test isolation) ──
 // IPv6 addresses live on the real Port (port.configureIPv6/getIPv6Addresses),
@@ -413,7 +414,7 @@ function handleNetshInterfaceShow(ctx: WinCommandContext, args: string[]): strin
     const adminState = adminEnabled ? 'Enabled' : 'Disabled';
     const isConnected = port.isConnected();
     const state = !adminEnabled ? 'Disconnected' : (isConnected ? 'Connected' : 'Disconnected');
-    const displayName = name.replace(/^eth/, 'Ethernet ');
+    const displayName = adapterDisplayName(name, ctx.ports);
     lines.push(
       `${adminState.padEnd(15)}${state.padEnd(15)}${'Dedicated'.padEnd(17)}${displayName}`
     );
@@ -727,7 +728,7 @@ function handleShowJoins(ctx: WinCommandContext, ifFilter?: string): string {
   const lines: string[] = [];
   for (const [name] of ctx.ports) {
     if (ifFilter && name !== resolveAdapterName(ifFilter, ctx.ports)) continue;
-    const displayName = name.replace(/^eth/, 'Ethernet ');
+    const displayName = adapterDisplayName(name, ctx.ports);
     const groups = ['224.0.0.1', ...joined.filter(g => g.iface === name).map(g => g.group)];
     lines.push(`Interface ${displayName} : ${displayName}`);
     lines.push('');
@@ -759,7 +760,7 @@ function handleShowAddresses(ctx: NetshContext, ifFilter?: string): string {
     }
     const ip = port.getIPAddress();
     const mask = port.getSubnetMask();
-    const displayName = name.replace(/^eth/, 'Ethernet ');
+    const displayName = adapterDisplayName(name, ctx.ports);
     lines.push(`Configuration for interface "${displayName}"`);
     lines.push(`    DHCP enabled:                         ${dhcpEnabledFor(port, ctx.isDHCPConfigured(name)) ? 'Yes' : 'No'}`);
     if (ip) {
@@ -781,7 +782,7 @@ function handleShowIpInterfaces(ctx: NetshContext): string {
     '---  ----------  ----------  ------------  ---------------------------'];
   let idx = 1;
   for (const [name, port] of ctx.ports) {
-    const displayName = name.replace(/^eth/, 'Ethernet ');
+    const displayName = adapterDisplayName(name, ctx.ports);
     const etat = port.isAdminDown() ? 'disabled' : (port.getIsUp() && port.hasCarrier() ? 'connected' : 'disconnected');
     lines.push(
       `${String(idx).padStart(3)}${String(25).padStart(12)}${String(port.getMTU()).padStart(12)}`
@@ -802,7 +803,7 @@ function handleShowConfig(ctx: WinCommandContext, ifFilter?: string): string {
     }
     const ip = port.getIPAddress();
     const mask = port.getSubnetMask();
-    const displayName = name.replace(/^eth/, 'Ethernet ');
+    const displayName = adapterDisplayName(name, ctx.ports);
     const dhcpEnabled = dhcpEnabledFor(port, ctx.isDHCPConfigured(name));
 
     lines.push(`Configuration for interface "${displayName}"`);
@@ -844,7 +845,7 @@ function handleShowNeighbors(ctx: WinCommandContext): string {
   lines.push(`${'Interface'.padEnd(15)}${'IP Address'.padEnd(20)}${'Physical Address'.padEnd(22)}Type`);
   lines.push('----------------------------------------------------------------------');
   for (const [ip, entry] of ctx.arpTable) {
-    const displayName = entry.iface.replace(/^eth/, 'Ethernet ');
+    const displayName = adapterDisplayName(entry.iface, ctx.ports);
     const macStr = entry.mac?.toString ? entry.mac.toString() : String(entry.mac);
     lines.push(`${displayName.padEnd(15)}${ip.padEnd(20)}${macStr.padEnd(22)}${entry.type || 'static'}`);
   }
@@ -859,7 +860,7 @@ function handleShowDns(ctx: WinCommandContext, ifFilter?: string): string {
       const resolvedFilter = resolveAdapterName(ifFilter, ctx.ports);
       if (name !== resolvedFilter) continue;
     }
-    const displayName = name.replace(/^eth/, 'Ethernet ');
+    const displayName = adapterDisplayName(name, ctx.ports);
     const dnsMode = ctx.getDnsMode(name);
     const servers = ctx.getDnsServers(name);
 
@@ -1402,7 +1403,7 @@ To view help for a command, type the command, followed by a space, and then
         }
         const entries = port.getIPv6Addresses();
         if (entries.length === 0) continue;
-        const displayName = portName.replace(/^eth/, 'Ethernet ');
+        const displayName = adapterDisplayName(portName, ctx.ports);
         lines.push(`Interface ${displayName} Parameters`);
         for (const e of entries) {
           lines.push(`  Address ${e.address.toString()}/${e.prefixLength}`);
@@ -1738,7 +1739,7 @@ function handleNetshDhcpclient(ctx: WinCommandContext, args: string[]): string {
       const lines = ['', `${'Interface'.padEnd(25)}${'DHCP Enabled'.padEnd(15)}IP Address`];
       lines.push('----------------------------------------------------------------------');
       for (const [name, port] of ctx.ports) {
-        const displayName = name.replace(/^eth/, 'Ethernet ');
+        const displayName = adapterDisplayName(name, ctx.ports);
         const isDHCP = ctx.isDHCPConfigured(name);
         const ip = port.getIPAddress();
         lines.push(`${displayName.padEnd(25)}${isDHCP ? 'Yes' : 'No'.padEnd(14)} ${ip ? ip.toString() : '---'}`);
@@ -1753,7 +1754,7 @@ function handleNetshDhcpclient(ctx: WinCommandContext, args: string[]): string {
       const lines: string[] = [''];
       for (const [name, port] of ctx.ports) {
         if (portFilter && name !== portFilter) continue;
-        const displayName = name.replace(/^eth/, 'Ethernet ');
+        const displayName = adapterDisplayName(name, ctx.ports);
         const released = st.releasedIfaces.has(name);
         const ip = port.getIPAddress();
         lines.push(`DHCP parameters for interface "${displayName}":`);
@@ -1813,7 +1814,7 @@ function handleNetshDhcpclient(ctx: WinCommandContext, args: string[]): string {
     const sep   = '-'.repeat(68);
     const rows: string[] = [header, sep];
     for (const [name, port] of ctx.ports) {
-      const displayName = name.replace(/^eth/, 'Ethernet ');
+      const displayName = adapterDisplayName(name, ctx.ports);
       const ip = port.getIPAddress();
       const isDHCP = ctx.isDHCPConfigured(name);
       // State: Manual (static IP), BOUND (DHCP with lease), INIT (no IP/default DHCP)
@@ -1900,7 +1901,7 @@ function handleDnsclientShow(ctx: WinCommandContext, args: string[]): string {
       '',
     ];
     for (const [name] of ctx.ports) {
-      const displayName = name.replace(/^eth/, 'Ethernet ');
+      const displayName = adapterDisplayName(name, ctx.ports);
       const servers = ctx.getDnsServers(name);
       const mode = ctx.getDnsMode(name);
       lines.push(`  ${displayName}: DNS Source: ${mode === 'dhcp' ? 'DHCP' : 'Static'}, Servers: ${servers.join(', ') || '(none)'}`);
@@ -1913,7 +1914,7 @@ function handleDnsclientShow(ctx: WinCommandContext, args: string[]): string {
     const lines = ['', `${'Interface'.padEnd(25)}${'Mode'.padEnd(10)}DNS servers`];
     lines.push('----------------------------------------------------------------------');
     for (const [name] of ctx.ports) {
-      const displayName = name.replace(/^eth/, 'Ethernet ');
+      const displayName = adapterDisplayName(name, ctx.ports);
       const servers = ctx.getDnsServers(name);
       const mode = ctx.getDnsMode(name);
       lines.push(`${displayName.padEnd(25)}${mode.padEnd(10)}${servers.join(', ') || '(none)'}`);
@@ -1928,7 +1929,7 @@ function handleDnsclientShow(ctx: WinCommandContext, args: string[]): string {
     const lines: string[] = [''];
     for (const [name] of ctx.ports) {
       if (portFilter && name !== portFilter) continue;
-      const displayName = name.replace(/^eth/, 'Ethernet ');
+      const displayName = adapterDisplayName(name, ctx.ports);
       const mode = ctx.getDnsMode(name);
       const servers = ctx.getDnsServers(name);
       lines.push(`DNS servers for interface "${displayName}":`);
@@ -2628,7 +2629,7 @@ function handleNetshLan(ctx: WinCommandContext, args: string[]): string {
     if (obj === 'interfaces') {
       const lines = ['', 'There are 4 interfaces on the system:', ''];
       for (const [name] of ctx.ports) {
-        const display = name.replace(/^eth/, 'Ethernet ');
+        const display = adapterDisplayName(name, ctx.ports);
         const ac = st.autoconnect.get(name);
         lines.push(`    Name                   : ${display}`);
         lines.push(`    Description            : Wired adapter`);
@@ -3299,15 +3300,6 @@ function handleNetshWlan(ctx: WinCommandContext, args: string[]): string {
 
 // ─── Helpers ────────────────────────────────────────────────────────
 
-export function resolveAdapterName(name: string, ports: Map<string, any>): string {
-  if (ports.has(name)) return name;
-  const resolved = toPortName(name);
-  if (resolved && ports.has(resolved)) return resolved;
-  // "Local Area Connection" or other Ethernet-prefixed names
-  if (/^Ethernet/i.test(name)) {
-    const replaced = name.replace(/^Ethernet\s*/i, 'eth');
-    if (ports.has(replaced)) return replaced;
-  }
-  // Unknown name: return as-is so the caller can detect "not found"
-  return name;
+export function resolveAdapterName(name: string, ports: Map<string, Port>): string {
+  return resolveAdapterPortName(name, ports.values()) ?? name;
 }

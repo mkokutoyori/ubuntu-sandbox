@@ -2,6 +2,7 @@ import {
   choice, count, enable, reference, refList, text, word,
   type FortiCommitContext, type FortiObjectView, type FortiTableSpec,
 } from './types';
+import type { TcpSessionWithoutSyn } from '../../../model/SecurityRule';
 
 const ADDRESS_TARGETS = ['firewall address', 'firewall addrgrp', 'firewall vip'];
 const ADDRESS6_TARGETS = ['firewall address6', 'firewall addrgrp6'];
@@ -234,6 +235,8 @@ export const FIREWALL_POLICY: FortiTableSpec = {
       sslSshProfile: named(object, 'ssl-ssh-profile'),
       protocolOptions: named(object, 'profile-protocol-options'),
       sessionTimeoutOverrideSec: sessionTtl(object.effective('session-ttl')[0]),
+      tcpSessionWithoutSyn: tcpSessionWithoutSyn(
+        object.effective('tcp-session-without-syn')[0]),
       comment: comment === '' ? undefined : comment,
     });
     context.device.onPolicyChanged(String(object.key),
@@ -279,6 +282,11 @@ function timeRestriction(name: string | undefined): string | undefined {
 function named(object: FortiObjectView, attribute: string): string | undefined {
   const value = object.effective(attribute)[0];
   return value === undefined || value === '' ? undefined : value;
+}
+
+function tcpSessionWithoutSyn(raw: string | undefined): TcpSessionWithoutSyn | undefined {
+  if (raw === 'all' || raw === 'data-only' || raw === 'disable') return raw;
+  return undefined;
 }
 
 function sessionTtl(raw: string | undefined): number | undefined {

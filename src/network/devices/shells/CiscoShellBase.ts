@@ -72,9 +72,15 @@ import { getDefaultScheduler, type IScheduler, type TimerHandle } from '@/events
 import { runSshClient } from '../linux/network/LinuxSshClient';
 import { findHostByAddress } from '../linux/network/HostLookup';
 import type { Router } from '../Router';
+import { ipGlobalSpecs, type IpGlobalHost } from './cisco/ipGlobalSpecs';
+import { bgpFilterListSpecs, type FilterListHost } from './cisco/filterListSpecs';
+import { globalHeadSpecs, type GlobalHeadHost } from './cisco/globalHeadSpecs';
+import { cryptoKeySpecs, type CryptoKeyHost } from './cisco/cryptoKeySpecs';
+import { clearLineSpecs, type ClearRestantsHost } from './cisco/clearRestantsSpecs';
 import {
   getSecurityConfig, buildIdentityShowCommands, buildIdentityConfigCommands,
 } from './cisco/CiscoSecurityCommands';
+import { parseLineMethodList } from './cisco/lineMethodList';
 import { parserViewMode } from '../router/security/CiscoSecurityConfig';
 import type { InterfaceSecurityFlags } from '../router/security/CiscoSecurityConfig';
 import { MODES_INTERFACE } from './cisco/CiscoConfigCommands';
@@ -88,7 +94,8 @@ import type { PromptMap } from './PromptBuilder';
 import { buildPrompt } from './PromptBuilder';
 import { CLIStateMachine, type ModeHierarchy } from './CLIStateMachine';
 import { estGenreAcces } from '../../ntp/accessGroups';
-import { ensureVrf, isVrfName, vrfStoreOf, type VrfHost } from './cisco/ciscoVrfStore';
+import type { VrfHost } from './cisco/ciscoVrfStore';
+import { vrfDeclarationSpecs, type VrfDeclarationHost } from './cisco/vrfSpecs';
 import { NTP_VERSION, isNtpVersion, type NtpVersion } from '../../ntp/types';
 import type { NtpAssociationOptions } from '../../ntp/NtpAgent';
 import {
@@ -148,8 +155,7 @@ import {
   showNtpStatus, showNtpAssociations, showNtpAssociationsDetail, showNtpAuthenticationKeys,
   showNtpPackets,
   showLine, showIpSsh, showSshSessions, showHosts, showIpDnsStatistics, showVrf,
-  showVrfDetail, showVrfInterfaces, showAdjacency,
-  showRedundancy, showFileSystems, showCalendar, showTerminal,
+  showVrfDetail, showVrfInterfaces, showRedundancy, showFileSystems, showCalendar, showTerminal,
   showBuffers, showTcpBrief, showSockets, type TcpBriefSource,
   showStacks, showReload, showAaa, showEnvironment, showControllers,
   chassisSerial, CISCO_HARDWARE_PROFILES, licenseTable,
@@ -162,7 +168,7 @@ import type { CiscoDnsConfig } from '../router/dns/CiscoDnsConfig';
 import type { RouterHostsTable } from '../router/dns/RouterHostsTable';
 import { CiscoConfigState, getConfigState } from '../inspection/config/CiscoConfigState';
 import {
-  AliasRepository, parseAliasMode, type AliasMode,
+  AliasRepository, aliasModeForCliMode, type AliasMode,
 } from '../inspection/config/AliasRepository';
 import { LoggingConfig, disabledTimestampSpec, bareTimestampSpec, deviceClockSource } from '../inspection/config/LoggingConfig';
 import type { TimestampSpec } from '../inspection/config/LoggingConfig';
@@ -174,7 +180,7 @@ import {
   radiusServerSubmodeSpecs, tacacsServerSubmodeSpecs, aaaGroupSubmodeSpecs,
   type CiscoSecurityShellContext,
 } from './cisco/CiscoSecurityCommands';
-import { registerLineExecCommands } from './cisco/CiscoLineCommands';
+import { absoluteLineNumber } from '../router/aaa/SshSessionRegistry';
 import { setupInteractionPlan } from './cisco/CiscoSetupDialog';
 import {
   scopedTrie, PRIVILEGED_ONLY_SHOW_CHILDREN, PRIVILEGED_ONLY_PATHS,
@@ -182,7 +188,7 @@ import {
 } from './cisco/CiscoExecScope';
 import {
   registerLoggingConfigCommands, loggingShowViews, severityValues,
-  registerSequenceNumbersCommand, registerLoggingClearCommands,
+  registerSequenceNumbersCommand,
 } from './cisco/CiscoLoggingCommands';
 import type { LoggingCommandContext } from './cisco/CiscoLoggingCommands';
 import { encryptType7 as _encryptType7, md5Hex as _md5Hex } from '@/crypto';
@@ -594,6 +600,10 @@ const LINE_KEYWORD_SUITES: ReadonlyArray<readonly [string, ReadonlyArray<readonl
   ['accounting', [['commands', 'Account for commands'], ['connection', 'Account for connections'], ['exec', 'Account for EXEC sessions']]],
 ];
 
+function suitesDeLigne(mot: string): readonly string[] {
+  return (LINE_KEYWORD_SUITES.find(([k]) => k === mot)?.[1] ?? []).map(([s]) => s);
+}
+
 
 /**
  * Les places du sous-mode `config-view`.
@@ -857,6 +867,17 @@ const SORTES_DE_LIGNE: Readonly<Record<string, {
   vty: { canonique: 'vty', max: 15, description: 'Virtual terminal' },
 };
 
+/**
+ * La derniere ligne joignable en numerotation ABSOLUE.
+ *
+ * `clear line <n>` compte console, aux puis les vty a la suite ; sa
+ * borne haute se DEDUIT donc du nombre de vty que `line vty` declare
+ * deja, plutot que d'etre ecrite une seconde fois — deux bornes pour un
+ * meme fait finiraient par se contredire.
+ */
+export const DERNIERE_LIGNE_ABSOLUE =
+  absoluteLineNumber('vty', SORTES_DE_LIGNE.vty.max);
+
 type TeteLigne =
   | { sorte: 'console' | 'vty' | 'aux' | 'tty'; premiere: number; derniere: number }
   | { erreur: string };
@@ -952,9 +973,6 @@ const IOS_HARDENING: readonly HardeningEntry[] = [
 ];
 
 export const ENABLE_LEVEL_RANGE: readonly [number, number] = [0, 15];
-export const AS_PATH_LIST_RANGE: readonly [number, number] = [1, 500];
-export const COMMUNITY_LIST_RANGE: readonly [number, number] = [1, 500];
-export const LEGACY_QUEUE_LIST_RANGE: readonly [number, number] = [1, 16];
 
 export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
   // ─── State ───────────────────────────────────────────────────────
@@ -2029,16 +2047,6 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     return { level: Number(brut), reste: mots.slice(2) };
   }
 
-  private exigerNumeroDeListe(
-    jeton: string | undefined, [min, max]: readonly [number, number],
-  ): number {
-    if (jeton === undefined) throw new CliIncomplete();
-    if (!/^\d+$/.test(jeton)) throw new CliInvalidInput({ token: jeton });
-    const numero = Number(jeton);
-    if (numero < min || numero > max) throw new CliInvalidInput({ token: jeton });
-    return numero;
-  }
-
   protected privilegeRuleHost(): PrivilegeRuleHost {
     return {
       applyPrivilegeRule: (words, negate) => {
@@ -2806,12 +2814,18 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       return helpResult;
     }
 
-    // Exec alias expansion (real AliasRepository state): in
-    // user/privileged mode, an alias head expands to its command.
-    if (!this.isConfigMode()) {
+    /*
+     * L'expansion d'alias lisait `'exec'` EN DUR et ne s'appliquait
+     * qu'aux modes EXEC, alors que le magasin range depuis toujours des
+     * alias `configure`, `interface` et `router` : les trois etaient
+     * acceptes, rendus dans la configuration, et evalues NULLE PART.
+     * Le mode courant nomme desormais le sien.
+     */
+    const modeDAlias = aliasModeForCliMode(this.mode);
+    if (modeDAlias) {
       const sp = cmdPart.indexOf(' ');
       const head = sp === -1 ? cmdPart : cmdPart.slice(0, sp);
-      const expansion = this.aliases.resolve('exec', head);
+      const expansion = this.aliases.resolve(modeDAlias, head);
       if (expansion) cmdPart = expansion + (sp === -1 ? '' : cmdPart.slice(sp));
     }
 
@@ -5171,7 +5185,14 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
           // bare `login` → authenticate with the line password; `login local`
           // → local user DB; `login authentication …` → AAA.
           const sub = args[0]?.toLowerCase();
-          update.login = sub === 'local' ? 'local' : sub === 'authentication' ? 'aaa' : 'password';
+          if (sub === 'authentication') {
+            if (args[1] === undefined) throw new CliIncomplete();
+            if (args[2] !== undefined) throw new CliInvalidInput({ token: args[2] });
+            update.login = 'aaa';
+            update.loginAuthList = args[1];
+          } else {
+            update.login = sub === 'local' ? 'local' : 'password';
+          }
         } else if (kw === 'password') {
           // `password [0|7] <mot>`. Le chiffre de type n'est un type que
           // s'il est ecrit ; il etait retire INCONDITIONNELLEMENT
@@ -5227,10 +5248,12 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
           update.motdBannerSuppressed = false;
         } else if (kw === 'exec' && args[0]?.toLowerCase() === 'banner') {
           update.execBannerSuppressed = false;
-        } else if (kw === 'authorization' && args[0] && args[1]) {
-          update.authorizationList = `${args[0]} ${args[1]}`;
-        } else if (kw === 'accounting' && args[0] && args[1]) {
-          update.accountingList = `${args[0]} ${args[1]}`;
+        } else if (kw === 'authorization' || kw === 'accounting') {
+          const verdict = parseLineMethodList(args, suitesDeLigne(kw));
+          if ('incomplete' in verdict) throw new CliIncomplete();
+          if ('at' in verdict) throw new CliInvalidInput({ token: verdict.at });
+          if (kw === 'authorization') update.authorizationList = verdict.tail;
+          else update.accountingList = verdict.tail;
         } else if (kw === 'speed' && args[0]) {
           update.speedBaud = parseInt(args[0], 10);
         } else if (kw === 'stopbits' && args[0]) {
@@ -5558,9 +5581,117 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     return device.getSystemClockMs?.() ?? Date.now();
   }
 
+  /**
+   * Ce que les interrupteurs IP globaux lisent sur CETTE machine.
+   *
+   * Le drapeau vit dans le magasin de securite, que les deux
+   * plateformes rendent deja ; seul l'acheminement se pose par une
+   * methode differente de chaque cote, `Router` et `Switch` n'ayant
+   * aucune base commune de couche 3.
+   */
+  /**
+   * Ce que la famille `crypto key` lit sur CETTE machine.
+   *
+   * Le nom de domaine se lit de deux facons selon la plateforme : un
+   * routeur le tient dans son service de gestion, un Catalyst
+   * directement. Ne consulter que la premiere faisait repondre
+   * « definissez d'abord un nom de domaine » a un commutateur qui
+   * venait d'en poser un.
+   */
+  protected clearRestantsHost(): ClearRestantsHost {
+    return {
+      linePool: () => getSessionRegistry(this.d()),
+      clearPersistentLog: () => {
+        const ctx = this.loggingCommandContext();
+        ctx.beforeApply?.();
+        ctx.config().clearPersistent();
+        return '';
+      },
+    };
+  }
+
+  protected cryptoKeyHost(): CryptoKeyHost {
+    const dev = () => this.d() as unknown as {
+      getManagementService?: () => { domainName?: string };
+      _getDnsConfig?: () => { domainName: string };
+      getDomainName?: () => string | null | undefined;
+      getHostname?: () => string;
+      _refreshSshAvailability?: () => void;
+    };
+    return {
+      domainName: () => dev()._getDnsConfig?.().domainName
+        || dev().getManagementService?.().domainName || dev().getDomainName?.() || '',
+      hostname: () => dev().getHostname?.() ?? 'Router',
+      keys: () => getSecurityConfig(this.d()).cryptoKeys,
+      setKeys: (keys) => { getSecurityConfig(this.d()).cryptoKeys = keys; },
+      refreshSshAvailability: () => { dev()._refreshSshAvailability?.(); },
+    };
+  }
+
+  protected ipGlobalHost(): IpGlobalHost {
+    return {
+      setIpRouting: (on) => {
+        const d = this.d() as unknown as {
+          _setIpRoutingEnabled?: (v: boolean) => void;
+          setIpRoutingEnabled?: (v: boolean) => void;
+        };
+        if (d._setIpRoutingEnabled) d._setIpRoutingEnabled(on);
+        else d.setIpRoutingEnabled?.(on);
+      },
+      flags: () => getSecurityConfig(this.d()),
+    };
+  }
+
+  protected filterListHost(): FilterListHost {
+    return {
+      asPathLists: () => this.asPathLists(),
+      communityLists: () => this.communityLists(),
+      recordConfigLine: (line) => {
+        (this.d() as unknown as {
+          _recordUnhandledConfigLine?: (l: string) => void;
+        })._recordUnhandledConfigLine?.(line);
+      },
+    };
+  }
+
+  protected globalHeadHost(): GlobalHeadHost {
+    const dev = () => this.d() as unknown as {
+      _recordUnhandledConfigLine?: (l: string) => void;
+      _removeUnhandledConfigLine?: (l: string) => void;
+    };
+    return {
+      aliases: () => this.aliases,
+      setMinPasswordLength: (n) => {
+        getSecurityConfig(this.d()).passwords.minLength = n;
+      },
+      recordConfigLine: (line) => { dev()._recordUnhandledConfigLine?.(line); },
+      removeConfigLine: (needle) => { dev()._removeUnhandledConfigLine?.(needle); },
+    };
+  }
+
+  protected vrfDeclarationHost(): VrfDeclarationHost {
+    return {
+      vrfHost: () => this.d() as unknown as VrfHost,
+      selectVrf: (name) => {
+        (this as unknown as { setSelectedVRF?: (n: string) => void })
+          .setSelectedVRF?.(name);
+      },
+      enterVrfMode: () => { this.mode = 'config-vrf'; },
+      onVrfRemoved: (name) => { this.onVrfRemoved(name); },
+    };
+  }
+
+  protected onVrfRemoved(_name: string): void { /* rien de plus par defaut */ }
+
   protected socleSpecs(): readonly CommandSpec[] {
     return [
       ...TIME_RANGE_FAMILY,
+      ...ipGlobalSpecs(() => this.ipGlobalHost()),
+      ...bgpFilterListSpecs(() => this.filterListHost()),
+      ...globalHeadSpecs(() => this.globalHeadHost()),
+      ...vrfDeclarationSpecs(() => this.vrfDeclarationHost()),
+      ...cryptoKeySpecs(() => this.cryptoKeyHost()),
+      ...clearLineSpecs(() => this.clearRestantsHost(), DERNIERE_LIGNE_ABSOLUE),
       ...debugFamily(this.debugPairs()),
       ...showConfigViewSpecs(() => this),
       ...showIpDhcpSpecs(() => this.dhcpViewServer()),
@@ -8936,8 +9067,6 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       { keyword: 'detail', description: 'Detailed VRF information' },
       { keyword: 'interfaces', description: 'Interfaces bound to a VRF' },
     ]);
-    trie.registerGreedy('show adjacency', 'Display CEF adjacency table', () =>
-      showAdjacency(this.d() as unknown as Parameters<typeof showAdjacency>[0]));
     if (this.hasSwitchingHardware()) {
       trie.registerGreedy('show redundancy', 'Display redundancy state', () =>
         showRedundancy());
@@ -9311,7 +9440,6 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       }
       return this.performImmediateReload();
     });
-    registerLoggingClearCommands(this.privilegedTrie, this.loggingCommandContext());
     // `send` doit EXISTER dans le trie meme si tout son interet est dans
     // le plan interactif : sans noeud, le mot part en resolution DNS et
     // la machine cherche un hote nomme « send ».
@@ -9330,7 +9458,6 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       { keyword: 'tty', description: 'Terminal controller' },
       { keyword: 'vty', description: 'Virtual terminal' },
     ]);
-    registerLineExecCommands(this.privilegedTrie, () => getSessionRegistry(this.d()));
 
     this.registerCommonShowCommands(this.privilegedTrie);
 
@@ -9539,26 +9666,6 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       return '';
     });
 
-    // `alias <mode> <name> <command…>` — real, working aliases.
-    trie.registerGreedy('alias', 'Create a command alias', (args) => {
-      if (args.length === 0) return '% Incomplete command.';
-      const mode = parseAliasMode(args[0]);
-      if (mode === null) throw new CliInvalidInput({ token: args[0] });
-      if (args.length < 3) return '% Incomplete command.';
-      const [, name, ...rest] = args;
-      if (name.length > 31) return '% Alias name exceeds 31 characters.';
-      this.aliases.set(mode, name, rest.join(' '));
-      return '';
-    });
-    trie.registerGreedy('no alias', 'Remove a command alias', (args) => {
-      if (args.length === 0) return '% Incomplete command.';
-      const mode = parseAliasMode(args[0]);
-      if (mode === null) throw new CliInvalidInput({ token: args[0] });
-      if (args.length < 2) return '% Incomplete command.';
-      this.aliases.remove(mode, args[1]);
-      return '';
-    });
-
     this.registerHttpServerOn(trie);
     // `ip routing` / `ipv6 unicast-routing` enable forms are owned by
     // the router (CiscoOspfCommands, device-specific); only record the
@@ -9569,71 +9676,6 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       return '';
     });
     registerCiscoDnsCommands(trie, this.dnsCommandContext());
-    trie.registerGreedy('vrf', 'VRF configuration', (args, raw) => {
-      const r = this.d() as unknown as { _recordUnhandledConfigLine?: (l: string) => void };
-      r._recordUnhandledConfigLine?.(raw ?? `vrf ${args.join(' ')}`);
-      return '';
-    });
-    // `vrf definition NAME` est la forme moderne de `ip vrf NAME` : elle
-    // entre dans le MÊME sous-mode et crée la MÊME instance, sans quoi
-    // deux orthographes d'une seule commande donnaient deux résultats
-    // — l'une entrait en config-vrf, l'autre notait une ligne et rendait
-    // la main en configuration globale.
-    trie.registerGreedy('vrf definition', 'Configure a VRF', (args) => {
-      if (args.length < 1) return CISCO_ERRORS.INCOMPLETE;
-      const name = args[0];
-      if (!isVrfName(name)) return CISCO_ERRORS.INVALID_INPUT;
-      ensureVrf(vrfStoreOf(this.d() as unknown as VrfHost), name, 'modern');
-      (this as unknown as { setSelectedVRF?: (n: string) => void }).setSelectedVRF?.(name);
-      this.mode = 'config-vrf';
-      return '';
-    });
-    trie.registerGreedy('no vrf definition', 'Remove a VRF', (args) => {
-      const name = args[0];
-      if (!name) return CISCO_ERRORS.INCOMPLETE;
-      vrfStoreOf(this.d() as unknown as VrfHost).delete(name);
-      return '';
-    });
-    trie.registerGreedy('ip community-list', 'Define BGP community list', (args, raw) => {
-      if (args.length === 0) throw new CliIncomplete();
-      const kind = args[0].toLowerCase();
-      const named = kind === 'standard' || kind === 'expanded';
-      if (!named) this.exigerNumeroDeListe(args[0], COMMUNITY_LIST_RANGE);
-      if (args.length < 3) return CISCO_ERRORS.INCOMPLETE;
-      const name = named ? args[1] : args[0];
-      const rule = (named ? args.slice(2) : args.slice(1)).join(' ');
-      const store = this.communityLists();
-      const key = `${named ? kind : 'standard'} ${name}`;
-      const list = store.get(key) ?? [];
-      list.push(rule);
-      store.set(key, list);
-      const r = this.d() as unknown as { _recordUnhandledConfigLine?: (l: string) => void };
-      r._recordUnhandledConfigLine?.(raw ?? `ip community-list ${args.join(' ')}`);
-      return '';
-    });
-    trie.registerGreedy('ip as-path access-list', 'Define BGP AS-path filter', (args, raw) => {
-      this.exigerNumeroDeListe(args[0], AS_PATH_LIST_RANGE);
-      if (args.length < 3) return CISCO_ERRORS.INCOMPLETE;
-      const store = this.asPathLists();
-      const list = store.get(args[0]) ?? [];
-      list.push(args.slice(1).join(' '));
-      store.set(args[0], list);
-      const r = this.d() as unknown as { _recordUnhandledConfigLine?: (l: string) => void };
-      r._recordUnhandledConfigLine?.(raw ?? `ip as-path access-list ${args.join(' ')}`);
-      return '';
-    });
-    trie.registerGreedy('priority-list', 'Legacy PQ list', (args, raw) => {
-      this.exigerNumeroDeListe(args[0], LEGACY_QUEUE_LIST_RANGE);
-      const r = this.d() as unknown as { _recordUnhandledConfigLine?: (l: string) => void };
-      r._recordUnhandledConfigLine?.(raw ?? `priority-list ${args.join(' ')}`);
-      return '';
-    });
-    trie.registerGreedy('queue-list', 'Legacy CQ list', (args, raw) => {
-      this.exigerNumeroDeListe(args[0], LEGACY_QUEUE_LIST_RANGE);
-      const r = this.d() as unknown as { _recordUnhandledConfigLine?: (l: string) => void };
-      r._recordUnhandledConfigLine?.(raw ?? `queue-list ${args.join(' ')}`);
-      return '';
-    });
     /**
      * `parser view <nom>` — declarer une vue CLI (le RBAC d'IOS).
      *
@@ -9736,12 +9778,6 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     // suites du code de son propre gestionnaire, et proposait donc un
     // `timezone` sans description depuis que la sous-commande de ce nom
     // est passee au socle.
-    trie.register('clock calendar-valid',
-      'Hardware calendar is a valid time source', (_args, raw) => {
-        const dev = this.d() as unknown as { _recordUnhandledConfigLine?: (l: string) => void };
-        dev._recordUnhandledConfigLine?.(raw ?? 'clock calendar-valid');
-        return '';
-      });
     trie.register('clock', 'Configure time-of-day clock', () => {
       throw new CliIncomplete();
     });
@@ -9860,6 +9896,20 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     // the local-user database so the sshd dispatch can validate inbound
     // logins. Anything we don't parse is still accepted silently.
     trie.registerGreedy('crypto', 'Encryption module', (args, raw) => {
+      /*
+       * Ce glouton existe pour ne pas PERDRE une ligne `crypto` que ce
+       * simulateur ne sait pas honorer : elle est retenue telle quelle et
+       * rejouee a l'import d'une topologie. `crypto key` fait exception,
+       * parce que le socle la porte ENTIEREMENT : y retenir une forme
+       * inconnue rejouerait a l'import une ligne que la meme machine
+       * refuse. Tant que ces deux commandes etaient des noeuds du trie,
+       * le noeud intermediaire `crypto key` refusait deja ce qui n'est ni
+       * `generate` ni `zeroize` ; leur migration au socle lui a retire ce
+       * refus, et c'est lui qu'on remet ici.
+       */
+      if (args[0]?.toLowerCase() === 'key') {
+        throw new CliInvalidInput({ token: args[1] });
+      }
       const dev = this.d() as unknown as { _recordUnhandledConfigLine?: (l: string) => void };
       dev._recordUnhandledConfigLine?.(raw ?? `crypto ${args.join(' ')}`);
       return '';

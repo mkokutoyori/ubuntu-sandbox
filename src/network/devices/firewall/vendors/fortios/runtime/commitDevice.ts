@@ -124,6 +124,7 @@ export function buildCommitDevice(
       },
       applyVdomSettings(settings) {
         fw.setCentralNat(settings.centralNat);
+        fw.setTcpSessionWithoutSyn(settings.tcpSessionWithoutSyn);
         fw.setOperationMode(settings.opmode);
         if (settings.manageIP && settings.manageIP !== '0.0.0.0') {
           fw.setManagementAddress(settings.manageIP,
@@ -219,6 +220,15 @@ export function buildCommitDevice(
           fw.setAdminServerCertificate(settings.adminServerCertificate);
         }
       },
+      applySessionTtlDefault(seconds) {
+        fw.getSessionTtl().setDefault(seconds);
+      },
+      applySessionTtlPort(entry) {
+        fw.getSessionTtl().upsertPort(entry);
+      },
+      removeSessionTtlPort(id) {
+        fw.getSessionTtl().removePort(id);
+      },
       applyLdbMonitor(monitor) {
         fw.getLdbMonitors().set(monitor);
       },
@@ -278,6 +288,12 @@ export function buildCommitDevice(
       },
       applySyslogCollector(settings) {
         fw.getSyslogCollectors().applySettings(settings);
+      },
+      applyPasswordExpiry(policy) {
+        fw.applyPasswordExpiry(policy);
+      },
+      applyLogSettings(patch) {
+        fw.getLogSettings().apply(patch);
       },
       applySyslogFilter(settings) {
         fw.getSyslogCollectors().applyFilter(settings);

@@ -26,6 +26,7 @@ export class SdwanService {
     }
 
     this.table.setStatus(configuration.enabled);
+    this.table.setLoadBalanceMode(configuration.loadBalanceMode);
 
     const zones = new Set(configuration.zones);
     for (const zone of this.table.zoneNames()) {

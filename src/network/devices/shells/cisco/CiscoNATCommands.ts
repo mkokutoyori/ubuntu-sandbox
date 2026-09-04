@@ -72,13 +72,6 @@ function errorMessageFor(reason: string): string {
  */
 const NAT_GLOBAL_ARGUMENTS:
 Readonly<Record<string, ArgumentSpec | readonly ArgumentSpec[] | null>> = {
-  /*
-   * `ip vrf` vit dans ce constructeur : sa place etait declaree dans
-   * `ciscoArgumentHelp`, ou elle est morte avec l'elagage, si bien que
-   * `ip vrf ?` s'est mis a annoncer `<cr>` pour une commande qui exige
-   * un nom.
-   */
-  'ip vrf': { name: 'nom', type: 'WORD', description: 'VRF name' },
   'ip nat pool': {
     name: 'reserve', type: 'REST',
     description: 'Name, first and last address, then `netmask` or `prefix-length`',
@@ -446,26 +439,6 @@ export function buildNATConfigCommands(trie: CommandTrie, ctx: CiscoShellContext
     return '';
   });
 
-  trie.registerGreedy('ip vrf', 'Define a VRF instance', (args) => {
-    if (args.length < 1) return '% Incomplete command.';
-    const name = args[0];
-    if (!isVrfName(name)) return "% Invalid input detected at '^' marker.";
-    ensureVrf(vrfStoreOf(ctx.r() as unknown as VrfHost), name, 'legacy');
-    (ctx as unknown as { setSelectedVRF?: (n: string) => void }).setSelectedVRF?.(name);
-    ctx.setMode('config-vrf');
-    return '';
-  });
-  trie.registerGreedy('no ip vrf', 'Remove a VRF instance', (args) => {
-    const name = args[0];
-    if (!name) return '% Incomplete command.';
-    vrfStoreOf(ctx.r() as unknown as VrfHost).delete(name);
-    const engine = ctx.r()._getNATEngine();
-    for (const e of engine.getStaticEntries()) {
-      if (e.vrf === name) engine.removeStaticEntry(e.localIP, e.globalIP);
-    }
-    return '';
-  });
-
   trie.registerGreedy('ip nat inside source route-map', 'NAT via route-map', (args, raw) => {
     const r = ctx.r() as any;
     (r._ciscoNatRouteMapRules ??= []).push(raw ?? `ip nat inside source route-map ${args.join(' ')}`);
@@ -528,67 +501,6 @@ export function interfaceVrfName(router: Router, iface: string): string | undefi
   return (router as unknown as VrfTable)._ifaceVrf?.get(iface);
 }
 
-function vrfInterfaceSpecs(ctx: CiscoShellContext): CommandSpec[] {
-  const nom: ArgumentSpec = {
-    name: 'vrf', type: 'WORD',
-    description: 'VPN Routing/Forwarding instance name',
-  };
-  const table = (): VrfTable => ctx.r() as unknown as VrfTable;
-  const detacher = (iface: string): void => {
-    const t = table();
-    const lie = t._ifaceVrf?.get(iface);
-    if (lie === undefined) return;
-    t._vrfs?.get(lie)?.interfaces.delete(iface);
-    t._ifaceVrf?.delete(iface);
-  };
-  return [
-    {
-      id: 'config-if-ip-vrf-forwarding',
-      path: ['ip', 'vrf', 'forwarding', nom],
-      description: 'Configure forwarding table',
-      undoDescription: 'Remove the interface from its forwarding table',
-      modes: MODES_INTERFACE, minPrivilege: 15,
-      run: (_session, args) => {
-        const iface = ctx.getSelectedInterface();
-        if (!iface) return '% No interface selected.';
-        const cible = args.vrf ?? '';
-        const t = table();
-        if (!t._vrfs?.has(cible)) return `% VRF ${cible} not configured`;
-        detacher(iface);
-        t._vrfs.get(cible)!.interfaces.add(iface);
-        (t._ifaceVrf ??= new Map()).set(iface, cible);
-        const port = ctx.r().getPort?.(iface);
-        const adresse = port?.getIPAddress?.();
-        if (!adresse) return '';
-        ctx.r().unconfigureInterface(iface);
-        return `% Interface ${iface} IP address ${adresse.toString()} `
-          + `removed due to enabling VRF ${cible}`;
-      },
-      undo: (_session) => {
-        const iface = ctx.getSelectedInterface();
-        if (!iface) return '% No interface selected.';
-        detacher(iface);
-        return '';
-      },
-    },
-    {
-      id: 'config-if-ip-vrf-forwarding-nu',
-      path: ['ip', 'vrf', 'forwarding'],
-      description: 'Configure forwarding table',
-      undoDescription: 'Remove the interface from its forwarding table',
-      existsOnlyNegated: true,
-      modes: MODES_INTERFACE, minPrivilege: 15,
-      run: () => '% Incomplete command.',
-      undo: () => {
-        const iface = ctx.getSelectedInterface();
-        if (!iface) return '% No interface selected.';
-        detacher(iface);
-        return '';
-      },
-    },
-  ];
-}
-
 export function natInterfaceSpecs(ctx: CiscoShellContext): CommandSpec[] {
   return [
     ...specsFromTrieRegistrations(
@@ -599,7 +511,17 @@ export function natInterfaceSpecs(ctx: CiscoShellContext): CommandSpec[] {
         argumentFor: () => null,
       },
     ),
-    ...vrfInterfaceSpecs(ctx),
+    ...vrfInterfaceSpecs(() => ({
+      vrfHost: () => ctx.r() as unknown as VrfHost,
+      selectedInterface: () => ctx.getSelectedInterface(),
+      interfaceVrfTable: () => {
+        const t = ctx.r() as unknown as VrfTable;
+        return (t._ifaceVrf ??= new Map());
+      },
+      interfaceAddress: (iface) =>
+        ctx.r().getPort?.(iface)?.getIPAddress?.()?.toString(),
+      unconfigureInterface: (iface) => { ctx.r().unconfigureInterface(iface); },
+    }), MODES_INTERFACE),
   ];
 }
 
@@ -659,7 +581,8 @@ import {
   specsFromTrieRegistrations,
 } from '@/cli/commands/trieAdapter';
 import { MODES_INTERFACE } from './CiscoConfigCommands';
-import { ensureVrf, isVrfName, vrfStoreOf, type VrfHost } from './ciscoVrfStore';
+import type { VrfHost } from './ciscoVrfStore';
+import { vrfInterfaceSpecs } from './vrfSpecs';
 
 /*
  * Chaque forme de `clear ip nat translation` porte un refus qui EXPLIQUE

@@ -13,6 +13,16 @@ import {
   type ManagementPorts,
 } from './ManagementAccess';
 
+export interface PasswordExpiryPolicy {
+  readonly enabled: boolean;
+  readonly days: number;
+}
+
+export const NO_PASSWORD_EXPIRY: PasswordExpiryPolicy =
+  Object.freeze({ enabled: false, days: 0 });
+
+const DAY_MS = 24 * 60 * 60 * 1000;
+
 export class ManagementPlane {
   private readonly allowed = new Map<string, ReadonlySet<string>>();
   private readonly secrets = new Map<string, string>();
@@ -24,9 +34,12 @@ export class ManagementPlane {
   private idleTimeoutMin = MANAGEMENT_IDLE_TIMEOUT_MIN;
   private httpsRedirect = true;
   private serverCertificate = 'self-sign';
+  private expiry: PasswordExpiryPolicy = NO_PASSWORD_EXPIRY;
+  private readonly now: () => number;
 
   constructor(private readonly access: AccessMatrix, now: () => number) {
     this.lockout = new ManagementLockout(now);
+    this.now = now;
   }
 
   attachCliServer(server: FirewallCliServer): void {
@@ -118,7 +131,18 @@ export class ManagementPlane {
   }
 
   applyAdmin(admin: AdminAccountDraft): void {
-    applyAdminAccount(this.access, this.secrets, admin, this.history);
+    applyAdminAccount(this.access, this.secrets, admin, this.history, this.now());
+  }
+
+  applyPasswordExpiry(policy: PasswordExpiryPolicy): void {
+    this.expiry = policy;
+  }
+
+  passwordExpired(name: string): boolean {
+    if (!this.expiry.enabled) return false;
+    const changed = this.history.changedAt(name);
+    if (changed === undefined) return false;
+    return this.now() - changed >= this.expiry.days * DAY_MS;
   }
 
   passwordHistory(): PasswordHistory { return this.history; }
@@ -140,7 +164,8 @@ export class ManagementPlane {
   }
 
   requiresPasswordChange(name: string): boolean {
-    return adminHasNoPassword(this.access, this.secrets, name);
+    return adminHasNoPassword(this.access, this.secrets, name)
+      || this.passwordExpired(name);
   }
 
   noteLogin(user: string): void { this.lockout.recordSuccess(user); }

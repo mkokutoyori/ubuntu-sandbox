@@ -24,6 +24,11 @@ import { selectBundleMember } from '@/network/lacp/loadBalance';
 import type { EthernetFrame } from '../core/types';
 import { MACAddress } from '../core/types';
 import { toDisplayName } from './windows/WindowsInterfaceNaming';
+import { NetworkAdapter } from './host/hardware';
+import {
+  MULTIPLEXOR_DRIVER, adapterNameProblem, adapterNameTaken, identityOfPort,
+  windowsInterfaceDescription,
+} from './windows/netAdapter';
 import { NtpAgent, type NtpHost } from '../ntp/NtpAgent';
 import { W32TimeService } from './windows/W32TimeService';
 import { WindowsDnsCache } from './windows/WinDnsCache';
@@ -398,8 +403,6 @@ export class WindowsPC extends EndHost implements UserAccountHost {
   readonly extraIPs: Map<string, NetIPAddressEntry> = new Map();
   /** Extra routes (added via New-NetRoute). */
   readonly extraRoutes: Map<string, NetRouteEntry> = new Map();
-  /** Adapter overrides: status / display name. */
-  readonly adapterOverrides: Map<string, { status?: string; displayName?: string }> = new Map();
   /** Dynamic firewall rules (added via New-NetFirewallRule). */
   readonly firewallRules: Map<string, NetFirewallRuleEntry> = seededFirewallRules();
   /** Network connection profiles: ifIndex → category. */
@@ -2158,9 +2161,39 @@ export class WindowsPC extends EndHost implements UserAccountHost {
   }
 
   private createPorts(): void {
+    const nics: NetworkAdapter[] = [];
     for (let i = 0; i < 4; i++) {
-      this.addPort(new Port(`eth${i}`, 'ethernet'));
+      const port = new Port(`eth${i}`, 'ethernet');
+      this.addPort(port);
+      nics.push(new NetworkAdapter({
+        name: `eth${i}`,
+        macAddress: port.getMAC().toString(),
+        speedMbps: port.getNegotiatedSpeed(),
+      }));
     }
+    this.hardware.adapters = nics;
+  }
+
+  adapterAlias(portName: string): string {
+    return this.getPort(portName)?.getAlias() ?? toDisplayName(portName);
+  }
+
+  setAdapterAlias(portName: string, alias: string): void {
+    this.getPort(portName)?.setAlias(alias);
+  }
+
+  interfaceDescriptionOf(portName: string): string {
+    const model = this.driverModelOf(portName);
+    const ordinal = this.getPorts()
+      .filter(p => this.driverModelOf(p.getName()) === model)
+      .findIndex(p => p.getName() === portName) + 1;
+    return windowsInterfaceDescription(model, ordinal);
+  }
+
+  private driverModelOf(portName: string): string {
+    const port = this.getPort(portName);
+    if (port === undefined || port.isCarrierless()) return MULTIPLEXOR_DRIVER;
+    return this.hardware.adapters.find(a => a.name === portName)?.model ?? MULTIPLEXOR_DRIVER;
   }
 
   protected logonDomainNames(): { netbios: string; dns: string } | null {
@@ -3294,21 +3327,12 @@ export class WindowsPC extends EndHost implements UserAccountHost {
       clearARPTable: () => this.clearARPTable(),
 
       // Interface renaming
-      renameInterface: (oldName: string, newName: string): boolean => {
-        const port = this.ports.get(oldName);
-        if (!port || this.ports.has(newName)) return false;
-        this.ports.delete(oldName);
-        this.ports.set(newName, port);
-        // Migrate DNS config
-        const dns = this.dnsConfig.get(oldName);
-        if (dns) { this.dnsConfig.delete(oldName); this.dnsConfig.set(newName, dns); }
-        // Migrate DHCP state
-        if (this.dhcpInterfaces.has(oldName)) { this.dhcpInterfaces.delete(oldName); this.dhcpInterfaces.add(newName); }
-        // Migrate DHCP class ids
-        const cid = this.dhcpClassIds.get(oldName);
-        if (cid) { this.dhcpClassIds.delete(oldName); this.dhcpClassIds.set(newName, cid); }
-        const cid6 = this.dhcpClassIds6.get(oldName);
-        if (cid6) { this.dhcpClassIds6.delete(oldName); this.dhcpClassIds6.set(newName, cid6); }
+      renameInterface: (portName: string, newName: string): boolean => {
+        if (!this.ports.has(portName)) return false;
+        if (adapterNameProblem(newName) !== null) return false;
+        const identities = this.getPorts().map(identityOfPort);
+        if (adapterNameTaken(identities, newName, portName)) return false;
+        this.setAdapterAlias(portName, newName);
         return true;
       },
 
@@ -3838,6 +3862,8 @@ export class WindowsPC extends EndHost implements UserAccountHost {
       linkNeighbour: (ip) => linkNeighbourOf(this, ip),
       reverseName: (ip) => this.resolveAddressNameAsync(ip),
       resolveName: async (name) => (await this.resolveHostname(name))?.toString() ?? null,
+      tracePath: async (ip) => (await this.executeTraceroute(new IPAddress(ip)))
+        .map((h) => ({ ttl: h.hop, ip: h.ip, rttMs: h.rttMs })),
     };
   }
 

@@ -224,6 +224,82 @@ describe('le NUMERO d objet est un numero, et les deux plateformes le disent par
   });
 });
 
+/*
+ * SUITE — la famille est passee au socle, et la migration a trouve deux
+ * choses que cette sonde ne demandait pas. Elles sont ajoutees ICI
+ * plutot que dans une seconde sonde : c'est la meme commande.
+ *
+ * (1) LA FORME `A.B.C.D/nn` ETAIT REFUSEE. L'analyse exigeait DEUX
+ * jetons pour la destination d'une route suivie, alors qu'IOS accepte
+ * aussi le prefixe barre — et c'est celui que la documentation
+ * d'Enhanced Object Tracking emploie dans ses propres exemples. La
+ * lecture de la longueur est confiee a `cidrPrefixLength`, deja ecrite
+ * pour les listes de prefixes, plutot qu'a une seconde decoupe.
+ *
+ * (2) LES DEUX PLATEFORMES AVAIENT DEUX DECLARATIONS. La grammaire etait
+ * partagee (`parseTrackDefinition`), mais chaque coquille enregistrait
+ * sa propre entree, libre de borner son numero autrement ou d'ouvrir un
+ * sous-mode ou non. Il n'y a plus qu'une declaration et deux CORPS —
+ * ce qui est juste, un commutateur n'ayant ni table de routage complete
+ * ni moteur IP SLA. Ce que la sonde demande est que le refus soit un
+ * REFUS, non une acceptation muette.
+ *
+ * Discrimine dans un arbre de travail pose sur l'etat d'AVANT plutot
+ * qu'en remisant : 4 des 10 cas ajoutes tombent, et ce sont les quatre
+ * qui touchent au prefixe barre — les trois formes et le temoin du
+ * routeur. Les six autres sont nommes ici : la forme a MASQUE et le
+ * refus d'une longueur ou d'une adresse malformee etaient deja justes,
+ * et le commutateur refusait deja la route, la sonde IP SLA et la liste
+ * — ce qu'ils gardent est que la declaration PARTAGEE ne les lui ouvre
+ * pas au passage.
+ */
+describe('la destination d une route suivie s ecrit des DEUX facons', () => {
+  it.each(['track 2 ip route 10.9.0.0/16 reachability',
+    'track 2 ip route 10.9.0.0 255.255.0.0 reachability',
+    'track 3 ip route 10.9.0.0/16 metric threshold'])(
+    '`%s` est accepte', async (cmd) => {
+      const d = routeur(`BF${cmd.length}${cmd.slice(-3)}`);
+      const [out] = await conf(d, cmd);
+      expect(out, out).not.toContain('%');
+    });
+
+  it('et les deux ecritures posent la MEME destination', async () => {
+    const barre = routeur('BA');
+    const masque = routeur('BB');
+    await conf(barre, 'track 2 ip route 10.9.0.0/16 reachability');
+    await conf(masque, 'track 2 ip route 10.9.0.0 255.255.0.0 reachability');
+    expect(await suivis(barre)).toEqual(await suivis(masque));
+  });
+
+  it.each(['track 2 ip route 10.9.0.0/33 reachability',
+    'track 2 ip route zorglub/16 reachability'])(
+    '`%s` est refuse', async (cmd) => {
+      const d = routeur(`BR${cmd.length}${cmd.slice(-3)}`);
+      const [out] = await conf(d, cmd);
+      expect(out, out).toContain('%');
+    });
+});
+
+describe('le commutateur REFUSE ce qu il ne sait pas suivre', () => {
+  it.each(['track 2 ip route 10.9.0.0/16 reachability',
+    'track 3 ip sla 1 reachability',
+    'track 4 list boolean and'])('`%s`', async (cmd) => {
+      const d = commutateur(`SC${cmd.length}${cmd.slice(-3)}`);
+      const [out] = await conf(d, cmd);
+      expect(out, out).toContain('%');
+      expect(await suivis(d)).toEqual([]);
+    });
+
+  it('mais le ROUTEUR les accepte — le temoin', async () => {
+    const d = routeur('SR');
+    for (const cmd of ['track 2 ip route 10.9.0.0/16 reachability',
+      'track 3 ip sla 1 reachability', 'track 4 list boolean and']) {
+      const [out] = await conf(d, cmd, 'exit');
+      expect(out, cmd).not.toContain('%');
+    }
+  });
+});
+
 describe('non-regression — ce que le suivi sait faire ne bouge pas', () => {
   it('un objet valide se relit et `no track` le retire', async () => {
     const d = routeur('NR');

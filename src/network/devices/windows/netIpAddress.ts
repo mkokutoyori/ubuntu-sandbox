@@ -1,4 +1,5 @@
 import { IPAddress, IPv6Address } from '@/network/core/types';
+import { cimNotFound } from './cimQuery';
 
 export type NetAddressFamily = 'IPv4' | 'IPv6';
 export type NetIPAddressType = 'Unicast' | 'Anycast';
@@ -221,8 +222,9 @@ export function selectNetIPAddresses<T extends NetIPAddressRow>(
 }
 
 export function noMatchingNetIPAddress(selection: NetIPAddressSelection): string {
-  const named = selection.ipAddress?.[0];
-  return named === undefined
-    ? 'No MSFT_NetIPAddress objects found with the specified criteria. Verify the values and retry.'
-    : `No MSFT_NetIPAddress objects found with property 'IPAddress' equal to '${named}'. Verify the value of the property and retry.`;
+  return cimNotFound('MSFT_NetIPAddress', [
+    ['IPAddress', selection.ipAddress],
+    ['InterfaceAlias', selection.interfaceAlias],
+    ['InterfaceIndex', selection.interfaceIndex],
+  ]);
 }

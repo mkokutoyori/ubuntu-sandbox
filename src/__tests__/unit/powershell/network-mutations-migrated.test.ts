@@ -69,7 +69,7 @@ describe('Route mutations', () => {
 describe('Adapter actions', () => {
   it('Disable-NetAdapter then Get-NetAdapter shows Disabled', async () => {
     const sh = createShell();
-    await run(sh, 'Disable-NetAdapter -Name eth0');
+    await run(sh, 'Disable-NetAdapter -Name eth0 -Confirm:$false');
     const out = await run(sh, 'Get-NetAdapter');
     expect(out).toMatch(/disabled/i);
   });
