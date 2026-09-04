@@ -123,7 +123,7 @@ import type {
   AdminHttpApp, AdminHttpServer, AdminServerCertificate,
 } from './mgmt/AdminHttpServer';
 import type { ManagementCli } from './mgmt/FirewallCliServer';
-import { ManagementPlane } from './mgmt/ManagementPlane';
+import { ManagementPlane, type PasswordExpiryPolicy } from './mgmt/ManagementPlane';
 import { MANAGEMENT_SERVICES, type ManagementPorts } from './mgmt/ManagementAccess';
 import type { CaptivePortalRedirect } from './auth/CaptivePortalRedirect';
 import { SslDeepInspection } from './inspection/SslDeepInspection';
@@ -1076,6 +1076,14 @@ export class Firewall extends Equipment {
   startAuthPortal(): boolean { return this.portals.startAuth(); }
 
   applyAdminAccount(admin: AdminAccountDraft): void { this.management.applyAdmin(admin); }
+
+  applyPasswordExpiry(policy: PasswordExpiryPolicy): void {
+    this.management.applyPasswordExpiry(policy);
+  }
+
+  adminPasswordExpired(name: string): boolean {
+    return this.management.passwordExpired(name);
+  }
 
   getPasswordHistory(): PasswordHistory { return this.management.passwordHistory(); }
 

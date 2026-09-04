@@ -6,6 +6,7 @@ import type { LdbMethod } from '../../../nat/RealServerPool';
 import type { ArgumentSpec, EnumValue } from '../../../../../../cli/ArgumentTypes';
 import type { ObjectStore } from '../../../model/ObjectStore';
 import type { LogSettingsPatch } from '../../../logging/LogSettings';
+import type { PasswordExpiryPolicy } from '../../../mgmt/ManagementPlane';
 import type { PolicyStore } from '../../../model/PolicyStore';
 import type { DosPolicyStore } from '../../../dos/DosPolicyStore';
 
@@ -362,6 +363,7 @@ export interface FortiCommitDevice {
   applySyslogCollector(settings: SyslogCollectorSettings): string | void;
   applySyslogFilter(settings: SyslogFilterSettings): string | void;
   applyLogSettings(patch: LogSettingsPatch): void;
+  applyPasswordExpiry(policy: PasswordExpiryPolicy): void;
   maxVirtualDomains(): number;
   applyVdom(name: string): void;
   removeVdom(name: string): void;

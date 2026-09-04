@@ -21,7 +21,7 @@ export interface LdapBindTarget {
 
 export function applyAdminAccount(
   access: AccessMatrix, secrets: Map<string, string>, admin: AdminAccountDraft,
-  history?: PasswordHistory,
+  history?: PasswordHistory, at?: number,
 ): void {
   access.setAdmin({
     name: admin.name,
@@ -34,7 +34,7 @@ export function applyAdminAccount(
 
   if (admin.password === undefined) return;
   secrets.set(admin.name, admin.password);
-  history?.remember(admin.name, admin.password);
+  history?.remember(admin.name, admin.password, at);
 }
 
 export function authenticateAdmin(

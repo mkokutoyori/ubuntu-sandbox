@@ -13,9 +13,11 @@ interface KeptSecret {
 
 export class PasswordHistory {
   private readonly used = new Map<string, KeptSecret[]>();
+  private readonly changed = new Map<string, number>();
 
-  remember(name: string, secret: string): void {
+  remember(name: string, secret: string, at?: number): void {
     if (secret.length === 0) return;
+    if (at !== undefined) this.changed.set(name, at);
     const kept = this.used.get(name) ?? [];
     if (kept[0]?.secret === secret) return;
     const seen = kept.findIndex(entry => entry.secret === secret);
@@ -35,9 +37,17 @@ export class PasswordHistory {
     return seen !== undefined && seen.reuses >= reuses;
   }
 
-  forget(name: string): void { this.used.delete(name); }
+  changedAt(name: string): number | undefined { return this.changed.get(name); }
 
-  clear(): void { this.used.clear(); }
+  forget(name: string): void {
+    this.used.delete(name);
+    this.changed.delete(name);
+  }
+
+  clear(): void {
+    this.used.clear();
+    this.changed.clear();
+  }
 }
 
 export function charactersAbsentFrom(previous: string, next: string): number {

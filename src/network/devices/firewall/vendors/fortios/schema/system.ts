@@ -281,8 +281,11 @@ export const SYSTEM_PASSWORD_POLICY: FortiTableSpec = {
     count('min-change-characters',
       'Minimum number of characters that must differ from the old password.', 0, 128, 0),
     enable('expire-status', 'Enable/disable password expiration.'),
-    count('expire-day', 'Number of days before an administrator password expires.',
-      1, 999, 90),
+    {
+      ...count('expire-day',
+        'Number of days before an administrator password expires.', 1, 999, 90),
+      availableWhen: (object) => object.effective('expire-status')[0] === 'enable',
+    },
     enable('reuse-password', 'Enable/disable reuse of a previous password.', true),
     count('reuse-password-limit',
       'Number of the kept passwords that may still be reused.',
@@ -290,6 +293,12 @@ export const SYSTEM_PASSWORD_POLICY: FortiTableSpec = {
       DEFAULT_REUSE_PASSWORD_LIMIT),
   ],
   onCommit(object, context) {
+    context.device.applyPasswordExpiry({
+      enabled: object.effective('status')[0] === 'enable'
+        && object.effective('expire-status')[0] === 'enable',
+      days: Number.parseInt(object.effective('expire-day')[0] ?? '90', 10),
+    });
+
     const limit = Number.parseInt(object.effective('reuse-password-limit')[0] ?? '', 10);
     if (Number.isNaN(limit)) return;
     return context.device.refuseReuseLimit(limit) ?? undefined;
