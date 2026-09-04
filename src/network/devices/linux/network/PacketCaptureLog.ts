@@ -21,6 +21,13 @@ export interface CapturedPacket {
   readonly ack: number;
   readonly length: number;
   readonly payload?: Uint8Array;
+  /**
+   * Interface the segment belongs to, when it is known. A capture shows
+   * such a packet on that interface alone; an entry without one is a
+   * synthesized record whose interface nothing measured, and it keeps
+   * being shown on whichever interface is being watched.
+   */
+  readonly iface?: string;
 }
 
 export class PacketCaptureLog {

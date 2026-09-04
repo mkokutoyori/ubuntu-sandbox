@@ -170,20 +170,12 @@ export const ncCommand: LinuxCommand = {
     }
 
     const targetIsV6 = isIPv6Literal(host);
-    const sourceIp = targetIsV6 ? firstConfiguredIpv6(ctx) : firstConfiguredIp(ctx);
-    if (!sourceIp || sourceIp === '127.0.0.1') {
-      return `nc: connect to ${host} port ${port} (tcp) failed: Network is unreachable`;
-    }
-
     const isLoopback = host === '127.0.0.1' || host === 'localhost' || host === '::1';
-    if (isLoopback) {
-      const bound = ctx.executor.getSocketTable()?.isPortBound?.(port, 'tcp') ?? false;
-      if (bound) {
-        if (verbose) return `Connection to ${host} ${port} port [tcp/*] succeeded!`;
-        return '';
-      }
-      if (verbose) return `nc: connect to ${host} port ${port} (tcp) failed: Connection refused`;
-      return '';
+    const sourceIp = isLoopback
+      ? (host === '::1' ? '::1' : '127.0.0.1')
+      : (targetIsV6 ? firstConfiguredIpv6(ctx) : firstConfiguredIp(ctx));
+    if (!sourceIp || (!isLoopback && sourceIp === '127.0.0.1')) {
+      return `nc: connect to ${host} port ${port} (tcp) failed: Network is unreachable`;
     }
 
     const forwarding = ctx.executor.getForwardingTable();
@@ -215,7 +207,9 @@ export const ncCommand: LinuxCommand = {
       }
     }
 
-    let found = findHostByAddress(host, { readFile: (p) => ctx.executor.vfs.readFile(p) }, localDeviceOf(ctx));
+    let found = isLoopback
+      ? { ip: sourceIp, device: localDeviceOf(ctx), poweredOff: false, interfaceDown: false }
+      : findHostByAddress(host, { readFile: (p) => ctx.executor.vfs.readFile(p) }, localDeviceOf(ctx));
     // `host` may be a NAT hairpin target — the public/static-NAT address of
     // another inside host, unreachable by `findHostByAddress` because it
     // isn't configured on any real interface. Replay the real NAT engine's

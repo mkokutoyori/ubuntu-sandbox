@@ -7539,3 +7539,35 @@ les drapeaux, les deux lignes sortent des que la copie se trompe.
 
 **Discrimination** : `probe-nmap-scanflags.test.ts` (11 cas), 9 tombent ;
 `probe-tcpdump-ordre-des-drapeaux.test.ts` (7 cas), 6 tombent.
+
+## 2026-09-04 — un segment TCP est enregistre UNE fois, et sur son interface
+
+**Portee** : `tcp/events.ts`, `tcp/TcpStack.ts`,
+`linux/network/{TcpdumpCaptureProjection,PacketCaptureLog}.ts`,
+`LinuxMachine.openTcpdumpCapture`, `linux/commands/net/Nc.ts`.
+
+Ferme l'entree du `TODO.md` ouverte par le lot `--scanflags`, et
+l'ecrivain manquant est trouve : c'est `TcpdumpCaptureProjection`
+elle-meme, qui recopiait dans `captureLog` CHAQUE `tcp.segment.sent` et
+`received` pendant que la prise de port enregistrait deja la trame
+reelle. `makeTcpSegmentDedupSink` existait pour apparier les deux apres
+coup — le rattrapage etait le signe du defaut.
+
+**La regle posee** : `shipSegment` SAIT si le segment part sur un fil ou
+s'il est remis en main propre, il ne le publiait pas ; l'evenement porte
+desormais `iface`, la prise de port enregistre ce qui traverse un cable
+et la projection ce qui n'en traverse aucun. Le `dedup` disparait.
+
+**Trouve en montant le laboratoire** : `nc` vers 127.0.0.1 n'ouvrait
+AUCUNE connexion — il interrogeait `SocketTable.isPortBound` et
+repondait de lui-meme — alors que `TcpStack` sait livrer en bouclage
+depuis `ssh -L`. Seconde reponse a une question que le moteur repondait
+deja.
+
+**Quatre cas refondus plutot que le code** :
+`tcp-handshake-close-lifecycle.test.ts` lancait `tcpdump` APRES le
+trafic et lisait l'historique de `captureLog` — ce qu'aucune vraie
+machine n'offre. Ils capturent maintenant pendant.
+
+**Discrimination** : `probe-tcpdump-une-seule-ecriture.test.ts` (7 cas),
+3 tombent ; les 4 autres sont nommes dans l'en-tete.

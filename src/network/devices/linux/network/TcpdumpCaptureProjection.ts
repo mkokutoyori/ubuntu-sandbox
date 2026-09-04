@@ -1,24 +1,24 @@
 /**
- * TcpdumpCaptureProjection — feed the per-device {@link PacketCaptureLog}
- * from live TcpStack events so `tcpdump` shows real SYN / SYN-ACK / ACK /
- * FIN / RST segments produced by actual handshakes and closes.
+ * TcpdumpCaptureProjection — record the TCP segments no port tap can
+ * ever see, so `tcpdump -i lo` shows them the way a real one does.
  *
- * Before this projection, the capture log only held synthetic packets
- * appended by the ssh/telnet command wrappers — anything driven through
- * the real TcpStack (nc, tcpProbeSync, direct getTcpStack().connect()) was
- * invisible to `tcpdump`. The projection bridges the gap by subscribing to
- * both `tcp.segment.sent` and `tcp.segment.received` and recording each
- * segment in tcpdump's one-line form, with the bus's verbose flagsText
- * (`SYN|ACK`, `FIN|ACK`, …) collapsed into tcpdump's tokens (`S`, `S.`,
- * `.`, `F.`, `P.`, `R`).
+ * `TcpStack.shipSegment` delivers a segment in process when the
+ * destination is local — 127.0.0.1, ::1, or one of the machine's own
+ * addresses — so no frame is built and no cable carries it. Everything
+ * else leaves by a real port, where the tap already records the frame
+ * with its window and options; recording it here as well would put the
+ * same segment in the capture twice, the second copy poorer than the
+ * first.
+ *
+ * Only `tcp.segment.sent` is read: a loopback segment is sent and
+ * received by the same machine, and a real capture shows one packet.
  */
 
 import type { IEventBus, Unsubscribe } from '@/events/EventBus';
-import type {
-  TcpSegmentSentPayload,
-  TcpSegmentReceivedPayload,
-} from '@/network/tcp/events';
+import type { TcpSegmentSentPayload } from '@/network/tcp/events';
 import type { PacketCaptureLog } from './PacketCaptureLog';
+
+export const LOOPBACK_IFACE = 'lo';
 
 export class TcpdumpCaptureProjection {
   private readonly subscriptions: Unsubscribe[] = [];
@@ -30,7 +30,6 @@ export class TcpdumpCaptureProjection {
   ) {
     this.subscriptions.push(
       bus.subscribe('tcp.segment.sent', (e) => this.onSegment(e.payload)),
-      bus.subscribe('tcp.segment.received', (e) => this.onSegment(e.payload)),
     );
   }
 
@@ -39,8 +38,9 @@ export class TcpdumpCaptureProjection {
     this.subscriptions.length = 0;
   }
 
-  private onSegment(p: TcpSegmentSentPayload | TcpSegmentReceivedPayload): void {
+  private onSegment(p: TcpSegmentSentPayload): void {
     if (p.deviceId !== this.deviceId) return;
+    if (p.iface !== LOOPBACK_IFACE) return;
     this.captureLog.capture({
       at: new Date(),
       srcIp: p.sourceIp,
@@ -51,6 +51,7 @@ export class TcpdumpCaptureProjection {
       seq: p.sequence,
       ack: p.acknowledgement,
       length: p.payloadSize,
+      iface: LOOPBACK_IFACE,
     });
   }
 }

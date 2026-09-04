@@ -4527,53 +4527,17 @@ export abstract class LinuxMachine extends EndHost
     };
   }
 
-  // Duplicate ACKs and a bare ACK immediately followed by data can share
-  // identical (seq, flags, length), so pairing is by arrival order within
-  // each key rather than by content alone — the oldest unpaired entry for
-  // a key is always the other half of the same segment, never a later
-  // duplicate.
-  private static makeTcpSegmentDedupSink(sink: (frame: CaptureFrame) => void): (frame: CaptureFrame, fromPort: boolean) => void {
-    interface PendingEntry { frame: CaptureFrame; fromPort: boolean; paired: boolean; }
-    const pending = new Map<string, PendingEntry[]>();
-    const key = (f: CaptureFrame): string => {
-      const t = f.tcpFlags;
-      const flags = t ? `${t.syn?1:0}${t.ack?1:0}${t.fin?1:0}${t.rst?1:0}${t.psh?1:0}${t.urg?1:0}` : '';
-      return `${f.srcIp}:${f.srcPort}:${f.dstIp}:${f.dstPort}:${f.tcpSeq}:${f.l4}:${flags}:${f.payloadLength ?? 0}`;
-    };
-    return (frame: CaptureFrame, fromPort: boolean): void => {
-      if (frame.l4 !== 'tcp' || frame.tcpSeq === undefined) { sink(frame); return; }
-      const k = key(frame);
-      const queue = pending.get(k) ?? [];
-      pending.set(k, queue);
-      const waiting = queue.find((e) => !e.paired);
-      if (waiting) {
-        waiting.paired = true;
-        if (fromPort && !waiting.fromPort) { waiting.frame = frame; waiting.fromPort = true; }
-        return;
-      }
-      const entry: PendingEntry = { frame, fromPort, paired: false };
-      queue.push(entry);
-      queueMicrotask(() => {
-        const idx = queue.indexOf(entry);
-        if (idx !== -1) queue.splice(idx, 1);
-        if (queue.length === 0) pending.delete(k);
-        sink(entry.frame);
-      });
-    };
-  }
-
   openTcpdumpCapture(iface: string, sink: (frame: CaptureFrame) => void): () => void {
     const bus = this.getBus();
     const id = this.id;
     const unsubs: Array<() => void> = [];
     const wantPort = iface !== 'lo';
     const wantLoopback = iface === 'lo' || iface === 'any';
-    const dedupedSink = LinuxMachine.makeTcpSegmentDedupSink(sink);
 
     if (wantPort) {
       unsubs.push(this.attachCapture(
-        (tapped) => dedupedSink(
-          decodeEthernetFrame(tapped.frame, tapped.iface, tapped.direction, new Date()), true),
+        (tapped) => sink(
+          decodeEthernetFrame(tapped.frame, tapped.iface, tapped.direction, new Date())),
         iface === 'any' ? undefined : iface));
     }
 
@@ -4587,13 +4551,23 @@ export abstract class LinuxMachine extends EndHost
         (e) => sink(makeLoopbackIcmpFrame(e.payload.fromIp, e.payload.toIp, e.payload.id, e.payload.seq, e.payload.ttl, 56, 'echo-reply', new Date()))));
     }
 
-    // captureLog's fallback relabels every entry with whatever iface was
-    // requested, with no real per-port scoping — wrong for a VLAN
-    // subinterface, which already has a real scoped event above.
     if (!this.vlanSubInterfaces.has(iface)) {
-      const tcpIface = iface === 'any' ? 'eth0' : iface;
-      for (const pkt of this.executor.captureLog.all()) sink(makeTcpFrame(pkt, tcpIface));
-      unsubs.push(this.subscribeCapture((pkt) => dedupedSink(makeTcpFrame(pkt, tcpIface), false)));
+      const fallbackIface = iface === 'any' ? 'eth0' : iface;
+      const shown = (
+        pkt: import('./linux/network/PacketCaptureLog').CapturedPacket,
+      ): CaptureFrame | null => {
+        if (pkt.iface === undefined) return makeTcpFrame(pkt, fallbackIface);
+        if (iface !== 'any' && pkt.iface !== iface) return null;
+        return makeTcpFrame(pkt, pkt.iface);
+      };
+      for (const pkt of this.executor.captureLog.all()) {
+        const frame = shown(pkt);
+        if (frame) sink(frame);
+      }
+      unsubs.push(this.subscribeCapture((pkt) => {
+        const frame = shown(pkt);
+        if (frame) sink(frame);
+      }));
     }
 
     return () => { for (const u of unsubs) u(); };

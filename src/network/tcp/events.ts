@@ -14,6 +14,12 @@ export interface TcpSegmentSentPayload extends TcpDeviceRef {
   sequence: number;
   acknowledgement: number;
   payloadSize: number;
+  /**
+   * Interface the segment left by, `lo` when the stack delivered it in
+   * process instead of putting a frame on a wire. A capture reads this
+   * to know whether a port tap has already seen the frame.
+   */
+  iface: string;
 }
 
 export interface TcpSegmentReceivedPayload extends TcpDeviceRef {
