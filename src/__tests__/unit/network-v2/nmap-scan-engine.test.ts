@@ -112,7 +112,10 @@ describe('scan — Not shown et --open', () => {
     const host = (await scan(parseNmapArgs(['-p', ports, '10.0.0.2']), probes)).hosts[0];
     expect(host.ports.map((p) => p.port)).toEqual([22]);
     expect(host.notShown?.count).toBe(40);
-    expect(host.notShown?.states.closed).toBe(40);
+    expect(host.notShown?.groups).toEqual([
+      { state: 'closed', protocol: 'tcp', reason: 'reset', ports: expect.any(Array) },
+    ]);
+    expect(host.notShown?.groups[0].ports).toHaveLength(40);
   });
 
   it('liste les états peu nombreux au lieu de les replier', async () => {

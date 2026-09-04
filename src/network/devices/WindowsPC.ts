@@ -3877,6 +3877,10 @@ export class WindowsPC extends EndHost implements UserAccountHost {
       this.fs.createFile(
         this.fs.normalizePath(result.outputGreppablePath, this.cwd), result.greppable + '\n');
     }
+    if (result.outputXmlPath && result.xml !== null) {
+      this.fs.createFile(
+        this.fs.normalizePath(result.outputXmlPath, this.cwd), result.xml + '\n');
+    }
     return result.output;
   }
 

@@ -1,5 +1,6 @@
 import { parsePortSpec } from './PortSpec';
 import { NMAP_LONG_OPTIONS, NMAP_SHORT_OPTIONS } from './NmapOptionTables';
+import { NMAP_DEFAULT_STYLESHEET, NMAP_WEB_STYLESHEET } from './NmapXml';
 import { parseScanFlags, type ScanProbeFlags } from './StatelessScans';
 import { topPorts, fastPorts } from './ServiceRegistry';
 
@@ -55,8 +56,21 @@ export interface NmapOptions {
   showReason: boolean;
   noDns: boolean;
   verbose: boolean;
+  /**
+   * `nmap.cc:1057` : `-d` leve la verbosite ET le niveau de debogage
+   * ensemble, et c'est ce niveau qui DEFINIT `packetTrace()`.
+   */
+  debugLevel: number;
+  /**
+   * La feuille de style que le XML associe au document, ou `null` quand
+   * `--no-stylesheet` la supprime. `XSLStyleSheet()` (`NmapOps.cc:618`)
+   * cherche `nmap.xsl` sur le disque et retombe sur l'URL relative
+   * lorsqu'il ne l'y trouve pas — ce qui est toujours le cas ici.
+   */
+  stylesheet: string | null;
   outputNormal?: string;
   outputGreppable?: string;
+  outputXml?: string;
 }
 
 /**
@@ -169,6 +183,8 @@ export function parseNmapArgs(args: string[]): NmapOptions {
   let verbose = false;
   let outputNormal: string | undefined;
   let outputGreppable: string | undefined;
+  let outputXml: string | undefined;
+  let stylesheet: string | null = NMAP_DEFAULT_STYLESHEET;
 
   for (let i = 0; i < args.length; i++) {
     const a = args[i];
@@ -224,10 +240,20 @@ export function parseNmapArgs(args: string[]): NmapOptions {
 
     if (a === '-oN' && args[i + 1] !== undefined) { outputNormal = args[++i]; continue; }
     if (a === '-oG' && args[i + 1] !== undefined) { outputGreppable = args[++i]; continue; }
+    if (a === '-oX' && args[i + 1] !== undefined) { outputXml = args[++i]; continue; }
+    // `nmap.cc:918` : `-oA` ecrit TROIS fichiers, `.nmap`, `.gnmap` et
+    // `.xml`.
     if (a === '-oA' && args[i + 1] !== undefined) {
       const base = args[++i];
       outputNormal = `${base}.nmap`;
       outputGreppable = `${base}.gnmap`;
+      outputXml = `${base}.xml`;
+      continue;
+    }
+    if (a === '--no-stylesheet') { stylesheet = null; continue; }
+    if (a === '--webxml') { stylesheet = NMAP_WEB_STYLESHEET; continue; }
+    if (a === '--stylesheet' && args[i + 1] !== undefined) {
+      stylesheet = args[++i];
       continue;
     }
 
@@ -254,6 +280,7 @@ export function parseNmapArgs(args: string[]): NmapOptions {
   return {
     targets, ports, scanType, scanFlags, pingOnly, skipDiscovery, versionScan,
     osScan, openOnly, ipv6, disableArpPing, alwaysResolve, traceroute, packetTrace,
-    showReason, noDns, verbose, outputNormal, outputGreppable,
+    showReason, noDns, verbose, debugLevel, stylesheet,
+    outputNormal, outputGreppable, outputXml,
   };
 }

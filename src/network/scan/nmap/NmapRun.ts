@@ -2,15 +2,18 @@ import {
   NMAP_USAGE, NmapImmediateOutput, NmapOptionError, parseNmapArgs,
 } from './NmapOptions';
 import { scan } from './ScanEngine';
-import { renderNormal, renderGreppable } from './NmapFormatter';
+import { renderNormal, renderGreppable, totalSeconds } from './NmapFormatter';
+import { renderXml } from './NmapXml';
 import { buildScanProbes, type ScanHost } from './NmapProbes';
 
 export interface NmapRunResult {
   output: string;
   normal: string;
   greppable: string | null;
+  xml: string | null;
   outputNormalPath: string | null;
   outputGreppablePath: string | null;
+  outputXmlPath: string | null;
 }
 
 /**
@@ -32,14 +35,14 @@ export async function runNmap(host: ScanHost, args: string[]): Promise<NmapRunRe
         : null;
     if (text === null) throw e;
     return {
-      output: text, normal: text, greppable: null,
-      outputNormalPath: null, outputGreppablePath: null,
+      output: text, normal: text, greppable: null, xml: null,
+      outputNormalPath: null, outputGreppablePath: null, outputXmlPath: null,
     };
   }
   if (options.targets.length === 0) {
     return {
-      output: NMAP_USAGE, normal: NMAP_USAGE, greppable: null,
-      outputNormalPath: null, outputGreppablePath: null,
+      output: NMAP_USAGE, normal: NMAP_USAGE, greppable: null, xml: null,
+      outputNormalPath: null, outputGreppablePath: null, outputXmlPath: null,
     };
   }
 
@@ -52,7 +55,10 @@ export async function runNmap(host: ScanHost, args: string[]): Promise<NmapRunRe
     output: normal,
     normal,
     greppable: options.outputGreppable ? renderGreppable(report, commandLine) : null,
+    xml: options.outputXml
+      ? renderXml(report, options, commandLine, totalSeconds(report)) : null,
     outputNormalPath: options.outputNormal ?? null,
     outputGreppablePath: options.outputGreppable ?? null,
+    outputXmlPath: options.outputXml ?? null,
   };
 }
