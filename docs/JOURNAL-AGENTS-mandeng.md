@@ -7436,3 +7436,35 @@ d'`in-addr.arpa`.
 tombent en retirant ENSEMBLE les cinq fichiers touches, le nouveau module
 compris. DEUX cas ont corrige mon laboratoire plutot que le produit, et
 l'en-tete le dit.
+
+---
+
+## 2026-09-04 — `nmap` : `-v` etait analyse, range, et lu par personne
+
+**Portee** : `scan/nmap/ScanPhases.ts` (nouveau), `ScanEngine`,
+`NmapFormatter`.
+
+`NmapOptions.verbose` etait ecrit par `-v`, `-vv` et `-d`, et aucun
+lecteur n'existait dans tout `scan/nmap/` : la sortie de `nmap -v` etait
+mot pour mot celle de `nmap`. C'est la forme que ce depot referme sans
+cesse — un critere accepte qui ne decide rien.
+
+Ce que `-v` ajoute est lu dans la source : `timing.cc:765`
+(`Initiating %s at %02d:%02d`, `Completed %s at %02d:%02d, %.2fs
+elapsed`), `scan_engine.cc:2777` (`Scanning %s [%d port%s%s]`, pluriel
+conditionne a `numprobes != 1`), `scan_engine.cc:2828` (la precision
+finale est `total hosts` pour une DECOUVERTE et `total ports` sinon), et
+`nmap.cc:2143` (sous `-v`, un hote trouve MORT est rapporte).
+
+**La decouverte est une phase A PART, nommee.** `ARP Ping Scan` ou
+`ND Ping Scan` quand le lien a repondu, `Ping Scan` quand les sondes IP
+ont servi, rien du tout sous `-Pn` — ce qui rend VISIBLE dans la sortie
+ce que le lot ARP a rendu vrai : le lien REMPLACE les sondes IP.
+
+**Decision ecrite plutot que tue** : une phase ne MESURE rien, les trames
+etant livrees de facon synchrone. Sa duree est celle que la ligne finale
+annonce deja, repartie sur les phases ; en inventer une autre ferait dire
+deux choses a une meme sortie.
+
+**Discrimination** : `probe-nmap-verbeux.test.ts` (10 cas), 7 tombent ;
+les 3 restants sont les TEMOINS, dont c'est le role.

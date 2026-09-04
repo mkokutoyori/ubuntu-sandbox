@@ -3,6 +3,9 @@ import { IPAddress } from '@/network/core/types';
 import type { TcpWireOutcome } from '@/network/tcp/types';
 import { topPorts, serviceName, DEFAULT_TOP_COUNT } from './ServiceRegistry';
 import type { ScanVerdict, StatelessScanKind } from './StatelessScans';
+import {
+  ARP_PING_PHASE, IP_PING_PHASE, ND_PING_PHASE, SCAN_PHASE_NAME, type ScanPhase,
+} from './ScanPhases';
 
 const STATELESS_KINDS: Readonly<Partial<Record<ScanType, StatelessScanKind>>> = {
   syn: 'syn', ack: 'ack', fin: 'fin', null: 'null',
@@ -101,6 +104,8 @@ export interface NmapReport {
   hostsUp: number;
   hosts: HostReport[];
   unresolved: string[];
+  /** Ce que `-v` rend visible : les phases traversees, dans l'ordre. */
+  phases: ScanPhase[];
 }
 
 const COLLAPSE_THRESHOLD = 24;
@@ -208,8 +213,23 @@ function partition(options: NmapOptions, all: PortResult[]): Pick<HostReport, 'p
   return { ports, notShown: { count: total, states } };
 }
 
+/**
+ * La phase de decouverte porte le nom du moyen REELLEMENT employe : le
+ * lien quand il a repondu, les sondes IP sinon, et rien du tout sous
+ * `-Pn`, ou aucune decouverte n'a lieu.
+ */
+function discoveryPhase(
+  ip: string, onLink: { mac: string | null } | null | undefined, skipped: boolean,
+): ScanPhase | null {
+  if (onLink) {
+    return { name: ip.includes(':') ? ND_PING_PHASE : ARP_PING_PHASE, total: 1, unit: 'host' };
+  }
+  if (skipped) return null;
+  return { name: IP_PING_PHASE, total: 1, unit: 'host' };
+}
+
 async function scanHost(
-  options: NmapOptions, probes: HostProbes, target: string,
+  options: NmapOptions, probes: HostProbes, target: string, phases: ScanPhase[],
 ): Promise<HostReport | null> {
   const resolved = await probes.resolveTarget(target);
   if (!resolved) return null;
@@ -227,6 +247,9 @@ async function scanHost(
     : options.skipDiscovery
       ? { ...identified, up: true, reason: 'user-set' }
       : await probes.hostState(resolved);
+
+  const discovery = discoveryPhase(resolved.ip, onLink, options.skipDiscovery);
+  if (discovery) phases.push(discovery);
 
   const latencyMs = info.latencyMs ?? 0.001;
   const osGuess = options.osScan
@@ -256,8 +279,15 @@ async function scanHost(
     };
   }
 
+  const scanned = effectivePorts(options);
+  phases.push({
+    name: SCAN_PHASE_NAME[options.scanType],
+    total: scanned.length, unit: 'port',
+    scanning: { target: info.ip, probes: scanned.length },
+  });
+
   const all: PortResult[] = [];
-  for (const port of effectivePorts(options)) {
+  for (const port of scanned) {
     if (options.scanType === 'udp') all.push(udpResult(options, probes, info.ip, port));
     else all.push(tcpResult(options, probes, info.ip, port));
   }
@@ -278,11 +308,12 @@ export async function scan(
 ): Promise<NmapReport> {
   const hosts: HostReport[] = [];
   const unresolved: string[] = [];
+  const phases: ScanPhase[] = [];
   let targetsScanned = 0;
 
   for (const target of options.targets) {
     for (const address of enumerateTargets(target)) {
-      const report = await scanHost(options, probes, address)
+      const report = await scanHost(options, probes, address, phases)
         ?? (target === address && isIpLiteral(address)
           ? { ip: address, up: false, latencyMs: 0, downReason: 'no response', ports: [] }
           : null);
@@ -291,7 +322,10 @@ export async function scan(
         continue;
       }
       targetsScanned++;
-      if (options.pingOnly && !report.up) continue;
+      // nmap.cc:2143 : un hote MORT n'est rapporte que sous `-v`
+      // (`HOST_UP || (o.verbose && !o.openOnly())`) — un balayage de
+      // decouverte ordinaire ne liste que ce qu'il a trouve.
+      if (options.pingOnly && !report.up && !options.verbose) continue;
       hosts.push(report);
     }
   }
@@ -302,5 +336,6 @@ export async function scan(
     hostsUp: hosts.filter((h) => h.up).length,
     hosts,
     unresolved,
+    phases,
   };
 }

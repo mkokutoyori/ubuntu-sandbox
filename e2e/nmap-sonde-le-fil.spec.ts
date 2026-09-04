@@ -189,6 +189,31 @@ test.describe('nmap sonde le fil', () => {
     expect(sansDns).not.toContain('cible.lab');
   });
 
+  test('`-v` nomme les phases du balayage', async ({ page }) => {
+    test.setTimeout(180_000);
+    await page.goto('/', { timeout: 45_000 });
+    await waitForStore(page);
+
+    const cibleId = await addDevice(page, 'linux-server', 300, 500);
+    const scannerId = await addDevice(page, 'linux-pc', 600, 500);
+    await cable(page, cibleId, scannerId);
+
+    await openTerminal(page, cibleId);
+    await typeCmd(page, `ip addr add ${CIBLE}/24 dev eth0`);
+    await typeCmd(page, 'sudo systemctl start ssh');
+    await closeTerminal(page);
+
+    await openTerminal(page, scannerId);
+    await typeCmd(page, `ip addr add ${SCANNER}/24 dev eth0`);
+    await typeCmd(page, `nmap -v -p 22 ${CIBLE}`);
+
+    const sortie = await lastLines(page, 16);
+    expect(sortie).toContain('Initiating ARP Ping Scan');
+    expect(sortie).toContain('Initiating Connect Scan');
+    expect(sortie).toContain(`Scanning ${CIBLE} [1 port]`);
+    expect(sortie).toMatch(/22\/tcp\s+open\s+ssh/);
+  });
+
   test('nmap.exe existe aussi sur une machine Windows', async ({ page }) => {
     test.setTimeout(180_000);
     await page.goto('/', { timeout: 45_000 });

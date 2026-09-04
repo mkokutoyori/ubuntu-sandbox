@@ -1,5 +1,6 @@
 import type { NmapOptions } from './NmapOptions';
 import type { HostReport, NmapReport, PortResult, PortState } from './ScanEngine';
+import { renderPhase } from './ScanPhases';
 
 const NMAP_BANNER = 'Starting Nmap 7.94 ( https://nmap.org )';
 
@@ -86,16 +87,32 @@ function renderHost(host: HostReport, options: NmapOptions): string[] {
   return lines;
 }
 
+function totalSeconds(report: NmapReport): number {
+  return Math.max(0.02, report.targetsScanned * 0.05);
+}
+
+function phaseSeconds(report: NmapReport): number {
+  return report.phases.length === 0 ? 0 : totalSeconds(report) / report.phases.length;
+}
+
 function tally(report: NmapReport): string {
   const ips = `${report.targetsScanned} IP ${report.targetsScanned === 1 ? 'address' : 'addresses'}`;
   const up = `${report.hostsUp} ${report.hostsUp === 1 ? 'host up' : 'hosts up'}`;
-  const seconds = Math.max(0.02, report.targetsScanned * 0.05).toFixed(2);
-  return `Nmap done: ${ips} (${up}) scanned in ${seconds} seconds`;
+  return `Nmap done: ${ips} (${up}) scanned in ${totalSeconds(report).toFixed(2)} seconds`;
 }
 
 export function renderNormal(report: NmapReport, options: NmapOptions, _commandLine: string): string {
   const lines: string[] = [NMAP_BANNER];
   for (const target of report.unresolved) lines.push(`Failed to resolve "${target}".`);
+  if (options.verbose) {
+    const at = new Date(report.startedAt);
+    // Une phase ne mesure rien ici — les trames sont livrees de facon
+    // synchrone — donc sa duree est celle que le rapport annonce deja,
+    // repartie sur les phases : deux estimations differentes pour une
+    // meme sortie se contrediraient.
+    const each = phaseSeconds(report);
+    for (const phase of report.phases) lines.push(...renderPhase(phase, at, each));
+  }
   for (const host of report.hosts) {
     lines.push('');
     lines.push(...renderHost(host, options));
