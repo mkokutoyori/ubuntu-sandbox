@@ -94,7 +94,7 @@ import {
 import { deliverLocally } from './l3/LocalDelivery';
 import { ControlPlaneUdpEndpoint } from '../udp/ControlPlaneUdpEndpoint';
 import type { FirewallDhcp } from './l3/FirewallDhcp';
-import type { TcpStack } from '../../tcp/TcpStack';
+import type { TcpSocket, TcpStack } from '../../tcp/TcpStack';
 import { buildFirewallAgents } from './FirewallAgents';
 import { AccessMatrix } from './authz/AccessMatrix';
 import { AuthPortal, type RemoteAuthOutcome } from './auth/AuthPortal';
@@ -147,6 +147,7 @@ import { FirewallTraceroute } from './diag/FirewallTraceroute';
 import {
   DNS_PORT, FirewallDnsClient, } from './l3/FirewallDnsClient';
 import { FirewallDnsServer } from './l3/FirewallDnsServer';
+import { transferTransportOf } from '../../dns/transfer/ZoneTransferClient';
 import type { SdwanService } from './sdwan/SdwanService';
 import { ETHERTYPE_FGCP, type HaAgent } from './ha/HaAgent';
 import { serialNumberOf, type FirewallHa } from './ha/FirewallHa';
@@ -742,8 +743,22 @@ export class Firewall extends Equipment {
       packet.sourceIP, udp.destinationPort, udp.sourcePort, udp.payload);
   }
 
+  openTcpStream(
+    ip: string, port: number, opts: { onOpen?: () => void; onClose?: () => void },
+  ): TcpSocket | null {
+    return this.tcp.connect(ip, port, opts);
+  }
+
+  async tcpConnect(destination: string, port: number): Promise<TcpSocket | null> {
+    const target = parseDialAddress(destination);
+    if (!target || !PortNumber.isValid(port)) return null;
+    const outcome = await dialTcp(this.tcp, target, PortNumber.of(port));
+    return isDialFailure(outcome) ? null : outcome;
+  }
+
   private readonly dnsServer = new FirewallDnsServer({
     resolveExternal: (name) => this.dnsClient.resolve(name),
+    transferTransport: () => transferTransportOf(this.getUdpEndpoint(), this),
     reply: (iface, to, port, payload) => {
       const source = this.interfaces.get(iface)?.ip;
       if (source === undefined) return;

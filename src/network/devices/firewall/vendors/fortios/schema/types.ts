@@ -31,6 +31,7 @@ export interface FortiDnsZonePatch {
   readonly authoritative: boolean;
   readonly primaryName?: string;
   readonly contact?: string;
+  readonly ipPrimary?: string;
   readonly entries: ReadonlyArray<{ hostname: string; ip: string; ttl?: number }>;
 }
 import type {

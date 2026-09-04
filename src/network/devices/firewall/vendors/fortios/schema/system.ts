@@ -764,6 +764,7 @@ export const SYSTEM_DNS_DATABASE: FortiTableSpec = {
       authoritative: object.effective('authoritative')[0] !== 'disable',
       primaryName: object.effective('primary-name')[0] ?? '',
       contact: object.effective('contact')[0] ?? '',
+      ipPrimary: object.effective('ip-primary')[0] ?? '',
       entries: object.childEntries('dns-entry')
         .filter(entry => entry.effective('status')[0] !== 'disable'
           && (entry.effective('type')[0] ?? 'A') === 'A')

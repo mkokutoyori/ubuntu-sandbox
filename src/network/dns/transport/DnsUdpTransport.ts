@@ -18,6 +18,33 @@ export type DnsMessageHandler = (
 
 export type DnsMessageEncoder = (message: DnsMessage) => Uint8Array;
 
+export interface DnsUdpClient {
+  allocateEphemeralPort(): number;
+  udpBind(
+    port: number,
+    listener: (delivery: { udp: { payload: unknown } }) => void,
+    processName?: string,
+  ): boolean;
+  udpClose(port: number): void;
+  sendUdpDatagramTo(
+    destinationIP: IPAddress | IPv6Address,
+    destinationPort: number,
+    sourcePort: number,
+    payload: Uint8Array,
+    payloadBytes?: number,
+  ): boolean;
+}
+
+export function udpClientOf(host: EndHost): DnsUdpClient {
+  return {
+    allocateEphemeralPort: () => host.getSocketTable().allocateEphemeralPort(),
+    udpBind: (port, listener, processName) => host.udpBind(port, listener, processName),
+    udpClose: (port) => host.udpClose(port),
+    sendUdpDatagramTo: (ip, dstPort, srcPort, payload, bytes) =>
+      host.sendUdpDatagramTo(ip, dstPort, srcPort, payload, bytes ?? payload.length),
+  };
+}
+
 export function truncateForUdp(message: DnsMessage, maxSize: number = CLASSIC_UDP_PAYLOAD_SIZE): DnsMessage {
   if (encodeDnsMessage(message).length <= maxSize) return message;
 
@@ -88,9 +115,20 @@ export function queryDnsOverUdp(
   timeoutMs: number = 2000,
   encode: DnsMessageEncoder = encodeDnsMessage,
 ): Promise<DnsMessage | null> {
+  return askOverUdp(udpClientOf(host), serverIP, query, port, timeoutMs, encode);
+}
+
+export function askOverUdp(
+  host: DnsUdpClient,
+  serverIP: IPAddress | IPv6Address,
+  query: DnsMessage,
+  port: number = DNS_PORT,
+  timeoutMs: number = 2000,
+  encode: DnsMessageEncoder = encodeDnsMessage,
+): Promise<DnsMessage | null> {
   let sourcePort: number;
   try {
-    sourcePort = host.getSocketTable().allocateEphemeralPort();
+    sourcePort = host.allocateEphemeralPort();
   } catch {
     return Promise.resolve(null);
   }
