@@ -7,6 +7,8 @@ import {
   IP_PROTO_TCP,
   IP_PROTO_UDP,
   ethernetFrameBytes,
+  icmpTypeNumber,
+  icmpv6TypeNumber,
   verifyIPv4Checksum,
   type EthernetFrame,
   type IPv4Packet,
@@ -227,28 +229,8 @@ function u32(value: number): number[] {
   return [(value >>> 24) & 0xff, (value >>> 16) & 0xff, (value >>> 8) & 0xff, value & 0xff];
 }
 
-const ICMP_TYPE_BYTE: Record<string, number> = {
-  'echo-reply': 0,
-  'destination-unreachable': 3,
-  redirect: 5,
-  'echo-request': 8,
-  'time-exceeded': 11,
-};
-
-const ICMPV6_TYPE_BYTE: Record<string, number> = {
-  'destination-unreachable': 1,
-  'packet-too-big': 2,
-  'time-exceeded': 3,
-  'echo-request': 128,
-  'echo-reply': 129,
-  'router-solicitation': 133,
-  'router-advertisement': 134,
-  'neighbor-solicitation': 135,
-  'neighbor-advertisement': 136,
-};
-
 function synthIcmpBytes(icmp: ICMPPacket): number[] {
-  const type = ICMP_TYPE_BYTE[icmp.icmpType] ?? 8;
+  const type = icmpTypeNumber(icmp.icmpType);
   const header = [type, icmp.code & 0xff, ...u16(0), ...u16(icmp.id & 0xffff), ...u16(icmp.sequence & 0xffff)];
   const data: number[] = [];
   for (let i = 0; i < (icmp.dataSize ?? 0); i++) data.push(i & 0xff);
@@ -306,7 +288,7 @@ function synthIpv4Bytes(pkt: IPv4Packet): number[] {
 }
 
 function synthIcmpv6Bytes(icmp: ICMPv6Packet): number[] {
-  const type = ICMPV6_TYPE_BYTE[icmp.icmpType] ?? 128;
+  const type = icmpv6TypeNumber(icmp.icmpType);
   const header = [type, icmp.code & 0xff, ...u16(0)];
   if (icmp.id !== undefined && icmp.sequence !== undefined) {
     header.push(...u16(icmp.id & 0xffff), ...u16(icmp.sequence & 0xffff));
@@ -667,7 +649,7 @@ export function makeLoopbackIcmpFrame(
     ...ipBytes(fromIp),
     ...ipBytes(toIp),
   ];
-  const icmp = [ICMP_TYPE_BYTE[icmpType] ?? 8, 0, ...u16(0), ...u16(id & 0xffff), ...u16(seq & 0xffff)];
+  const icmp = [icmpTypeNumber(icmpType), 0, ...u16(0), ...u16(id & 0xffff), ...u16(seq & 0xffff)];
   for (let i = 0; i < dataSize; i++) icmp.push(i & 0xff);
   return {
     at,

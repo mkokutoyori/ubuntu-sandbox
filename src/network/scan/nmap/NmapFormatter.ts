@@ -151,6 +151,9 @@ export function renderNormal(report: NmapReport, options: NmapOptions, _commandL
     const each = phaseSeconds(report);
     for (const phase of report.phases) lines.push(...renderPhase(phase, at, each));
   }
+  // Les paquets sont emis PENDANT le balayage, donc leurs lignes
+  // precedent le rapport de chaque hote.
+  lines.push(...report.packetTrace);
   for (const host of report.hosts) {
     lines.push('');
     lines.push(...renderHost(host, options));

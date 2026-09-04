@@ -354,6 +354,37 @@ test.describe('nmap sonde le fil', () => {
     expect(direct).toMatch(/1\s+\S+ ms\s+10\.73\.0\.30/);
   });
 
+  test('`--packet-trace` montre les paquets, et un balayage connecte ses appels', async ({ page }) => {
+    test.setTimeout(180_000);
+    await page.goto('/', { timeout: 45_000 });
+    await waitForStore(page);
+
+    const cibleId = await addDevice(page, 'linux-server', 300, 500);
+    const scannerId = await addDevice(page, 'linux-pc', 600, 500);
+    await cable(page, cibleId, scannerId);
+
+    await openTerminal(page, cibleId);
+    await typeCmd(page, `ip addr add ${CIBLE}/24 dev eth0`);
+    await typeCmd(page, 'sudo systemctl start ssh');
+    await closeTerminal(page);
+
+    await openTerminal(page, scannerId);
+    await typeCmd(page, `ip addr add ${SCANNER}/24 dev eth0`);
+
+    await typeCmd(page, `nmap -Pn -sS --packet-trace -p 22 ${CIBLE}`);
+    const demiOuvert = await lastLines(page, 20);
+    expect(demiOuvert).not.toContain('not implemented');
+    expect(demiOuvert).toMatch(
+      new RegExp(`SENT \\(\\d+\\.\\d{4}s\\) TCP \\[${SCANNER}:\\d+ > ${CIBLE}:22 S seq=`));
+    expect(demiOuvert).toMatch(/IP \[ttl=\d+ id=\d+ iplen=\d+ \]/);
+
+    await typeCmd(page, `nmap -Pn -sT --packet-trace -p 22 ${CIBLE}`);
+    const connecte = await lastLines(page, 20);
+    expect(connecte).toContain(`CONN`);
+    expect(connecte).toMatch(
+      new RegExp(`TCP localhost > ${CIBLE}:22 => Connected`));
+  });
+
   test('nmap.exe existe aussi sur une machine Windows', async ({ page }) => {
     test.setTimeout(180_000);
     await page.goto('/', { timeout: 45_000 });

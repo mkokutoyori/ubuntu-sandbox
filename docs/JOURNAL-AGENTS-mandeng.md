@@ -7632,3 +7632,39 @@ champ de saisie devient un champ de mot de passe et le selecteur
 
 **Discrimination** : `probe-nmap-entete-de-l-hote.test.ts` (11 cas), 9
 tombent ; les 2 autres sont les TEMOINS.
+
+## 2026-09-04 — `nmap --packet-trace`
+
+**Portee** : `scan/nmap/` (`PacketTrace.ts` nouveau, `ScanEngine`,
+`NmapProbes`, `NmapOptions`, `NmapFormatter`), plus la fermeture d'un
+DOUBLON : `core/types.ts`, `firewall/session/FlowKey.ts`,
+`tcpdump/CaptureFrame.ts`.
+
+L'option est la seule qui rende VISIBLE, depuis le terminal, que ce
+simulateur emet de vraies trames — ce que les sondes de ce depot ne
+verifiaient qu'en lancant un `tcpdump` a cote. Trois formes, relevees
+dans `tcpip.cc` et `libnetutil/packettrace.cc` : `SENT`/`RCVD` pour un
+paquet IP, `SENT`/`RCVD ARP` pour une resolution, et `CONN` pour un
+appel `connect()`.
+
+**Ce qui ne se devine pas** : le bloc IP finit par une ESPACE avant son
+crochet (les trois derniers champs du format sont vides sans options
+d'en-tete) ; l'ordre des drapeaux TCP est S,F,R,P,A,U,E,C et non celui
+de `tcpdump`, donc un SYN+FIN sort `SF` ici et `FS` la-bas, au meme
+instant, sans qu'aucun des deux soit faux ; et **un balayage CONNECTE ne
+montre AUCUN paquet**, `connect()` laissant le noyau les emettre.
+
+**Trouve et ferme en chemin** : la table type ICMP → numero de fil
+existait DEUX fois — `FlowKey.ts` (pare-feu) et `CaptureFrame.ts`
+(tcpdump), la seconde codant en dur les numeros ICMPv6 que la premiere
+lisait sur les constantes. Une seule declaration dans `core/types.ts`,
+trois lecteurs.
+
+**`-d` n'avait aucun niveau** — il etait traite comme un synonyme de
+`-v` — alors que `packetTrace()` se DEFINIT par « niveau de debogage
+>= 3 ». `-dN` et `-ddd` posent desormais le niveau, et `-d3` allume la
+trace sans l'option.
+
+**Discrimination** : `probe-nmap-packet-trace.test.ts` (13 cas), les 13
+tombent. Un cas e2e Playwright tape les deux balayages dans le vrai
+terminal.

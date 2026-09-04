@@ -270,6 +270,21 @@ export function buildScanProbes(
     directlyConnected(ip: string) {
       return directlyConnectedOf(host.device, ip);
     },
+    observeWire(sink) {
+      const device = host.device;
+      if (!device) return () => {};
+      const bus = device.getBus();
+      const id = device.getId();
+      const offs = [
+        bus.subscribe('port.frame.tx-requested', (e) => {
+          if (e.payload.deviceId === id) sink('SENT', e.payload.frame);
+        }),
+        bus.subscribe('port.frame.received', (e) => {
+          if (e.payload.deviceId === id) sink('RCVD', e.payload.frame);
+        }),
+      ];
+      return () => { for (const off of offs) off(); };
+    },
     tracePath(ip: string) {
       return host.tracePath(ip);
     },

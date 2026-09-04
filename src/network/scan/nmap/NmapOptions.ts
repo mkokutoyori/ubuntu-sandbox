@@ -45,6 +45,13 @@ export interface NmapOptions {
    * condition la ou `nmap` l'active « if (o.isr00t) ».
    */
   traceroute: boolean;
+  /**
+   * `--packet-trace` : chaque paquet emis et recu par le balayage, dans
+   * la forme de `PacketTrace` (`tcpip.cc`). Un balayage CONNECTE ne rend
+   * que ses appels `connect()`, parce qu'un vrai `nmap` ne voit pas les
+   * paquets que le noyau emet pour lui.
+   */
+  packetTrace: boolean;
   showReason: boolean;
   noDns: boolean;
   verbose: boolean;
@@ -155,6 +162,8 @@ export function parseNmapArgs(args: string[]): NmapOptions {
   let disableArpPing = false;
   let alwaysResolve = false;
   let traceroute = false;
+  let packetTrace = false;
+  let debugLevel = 0;
   let showReason = false;
   let noDns = false;
   let verbose = false;
@@ -194,11 +203,24 @@ export function parseNmapArgs(args: string[]): NmapOptions {
     if (a === '-O') { osScan = true; continue; }
     if (a === '-A') { versionScan = true; osScan = true; traceroute = true; continue; }
     if (a === '--traceroute') { traceroute = true; continue; }
+    if (a === '--packet-trace') { packetTrace = true; continue; }
 
     if (a === '--open') { openOnly = true; continue; }
     if (a === '--reason') { showReason = true; continue; }
     if (a === '-n') { noDns = true; continue; }
-    if (a === '-v' || a === '-vv' || a === '-d') { verbose = true; continue; }
+    // `nmap.cc:1057` : `-d` leve la verbosite ET le niveau de debogage
+    // ENSEMBLE — `o.debugging = o.verbose = box(0, 10, i)` pour `-dN`,
+    // les deux incrementes d'un cran par `d` supplementaire sinon.
+    const debug = /^-d(\d+|d*)$/.exec(a);
+    if (debug) {
+      const arg = debug[1];
+      debugLevel = /^\d+$/.test(arg)
+        ? Math.min(10, Number(arg))
+        : Math.min(10, debugLevel + 1 + arg.length);
+      verbose = true;
+      continue;
+    }
+    if (/^-v(\d+|v*)$/.test(a)) { verbose = true; continue; }
 
     if (a === '-oN' && args[i + 1] !== undefined) { outputNormal = args[++i]; continue; }
     if (a === '-oG' && args[i + 1] !== undefined) { outputGreppable = args[++i]; continue; }
@@ -225,9 +247,13 @@ export function parseNmapArgs(args: string[]): NmapOptions {
   // n'aurait donc rien a faire de ces drapeaux.
   if (scanFlags && !scanTypeGiven) scanType = 'syn';
 
+  // `NmapOps.h:127` : `packetTrace()` rend vrai des le niveau de
+  // debogage 3, que `--packet-trace` ait ete ecrit ou non.
+  if (debugLevel >= 3) packetTrace = true;
+
   return {
     targets, ports, scanType, scanFlags, pingOnly, skipDiscovery, versionScan,
-    osScan, openOnly, ipv6, disableArpPing, alwaysResolve, traceroute,
+    osScan, openOnly, ipv6, disableArpPing, alwaysResolve, traceroute, packetTrace,
     showReason, noDns, verbose, outputNormal, outputGreppable,
   };
 }

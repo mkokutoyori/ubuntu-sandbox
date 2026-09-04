@@ -918,6 +918,19 @@ export type ICMPType =
   | 'redirect'                 // Type 5
   | 'time-exceeded';           // Type 11
 
+const ICMP_TYPE_NUMBER: Readonly<Record<ICMPType, number>> = {
+  'echo-reply': 0,
+  'destination-unreachable': 3,
+  redirect: 5,
+  'echo-request': 8,
+  'time-exceeded': 11,
+};
+
+/** The number the type carries on the wire (RFC 792). */
+export function icmpTypeNumber(icmpType: ICMPType): number {
+  return ICMP_TYPE_NUMBER[icmpType];
+}
+
 // ICMP Destination Unreachable codes (RFC 792, RFC 1122 §3.2.2.1)
 export const ICMP_CODE_NET_UNREACHABLE = 0;
 export const ICMP_CODE_HOST_UNREACHABLE = 1;
@@ -1200,6 +1213,23 @@ export type ICMPv6Type =
   | 'destination-unreachable'
   | 'packet-too-big'
   | 'time-exceeded';
+
+const ICMPV6_TYPE_NUMBER: Readonly<Record<ICMPv6Type, number>> = {
+  'echo-request': ICMPV6_ECHO_REQUEST,
+  'echo-reply': ICMPV6_ECHO_REPLY,
+  'router-solicitation': ICMPV6_ROUTER_SOLICITATION,
+  'router-advertisement': ICMPV6_ROUTER_ADVERTISEMENT,
+  'neighbor-solicitation': ICMPV6_NEIGHBOR_SOLICITATION,
+  'neighbor-advertisement': ICMPV6_NEIGHBOR_ADVERTISEMENT,
+  'destination-unreachable': ICMPV6_DEST_UNREACHABLE,
+  'packet-too-big': ICMPV6_PACKET_TOO_BIG,
+  'time-exceeded': ICMPV6_TIME_EXCEEDED,
+};
+
+/** The number the type carries on the wire (RFC 4443). */
+export function icmpv6TypeNumber(icmpType: ICMPv6Type): number {
+  return ICMPV6_TYPE_NUMBER[icmpType];
+}
 
 export interface ICMPv6Packet extends NetworkPdu {
   type: 'icmpv6';

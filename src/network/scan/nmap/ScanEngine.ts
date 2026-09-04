@@ -9,6 +9,10 @@ import {
 import {
   chooseTraceProbe, type HostTrace, type TraceCandidate, type TraceHop,
 } from './Traceroute';
+import {
+  traceConnectLine, traceFrameLine, type TraceDirection,
+} from './PacketTrace';
+import type { EthernetFrame } from '@/network/core/types';
 
 const STATELESS_KINDS: Readonly<Partial<Record<ScanType, StatelessScanKind>>> = {
   syn: 'syn', ack: 'ack', fin: 'fin', null: 'null',
@@ -96,6 +100,30 @@ export interface HostProbes {
   tracePath?(ip: string): Promise<Array<{
     ttl: number; ip?: string; rttMs?: number;
   }>>;
+  /**
+   * Ce que la machine met sur le fil et en retire, pour `--packet-trace`.
+   * Rend de quoi se desabonner : la trace ne dure que le balayage.
+   */
+  observeWire?(
+    sink: (direction: TraceDirection, frame: EthernetFrame) => void,
+  ): () => void;
+}
+
+/**
+ * Ce que `--packet-trace` accumule pendant un balayage : les cibles que
+ * le filtre laisse passer, les lignes deja rendues, et l'horloge depuis
+ * le demarrage que chaque ligne porte.
+ */
+export interface TraceContext {
+  readonly targets: Set<string>;
+  readonly lines: string[];
+  elapsed(): number;
+  /**
+   * Un balayage CONNECTE ne montre pas ses paquets : `connect()` laisse
+   * le noyau les emettre, donc un vrai `nmap` ne les voit pas passer et
+   * n'ecrit que ses lignes `CONN`.
+   */
+  readonly connectScan: boolean;
 }
 
 const TCP_SCAN_REASON: Readonly<Record<TcpWireOutcome, string>> = {
@@ -142,6 +170,8 @@ export interface NmapReport {
   unresolved: string[];
   /** Ce que `-v` rend visible : les phases traversees, dans l'ordre. */
   phases: ScanPhase[];
+  /** Ce que `--packet-trace` rend visible, dans l'ordre des paquets. */
+  packetTrace: string[];
 }
 
 const COLLAPSE_THRESHOLD = 24;
@@ -178,6 +208,7 @@ function effectivePorts(options: NmapOptions): number[] {
 
 function tcpResult(
   options: NmapOptions, probes: HostProbes, ip: string, port: number,
+  trace?: TraceContext,
 ): PortResult {
   const kind = statelessKindOf(options.scanType);
   const stateless = kind && probes.statelessOutcome
@@ -189,6 +220,9 @@ function tcpResult(
     reason = stateless.reason;
   } else {
     const outcome = probes.tcpOutcome(ip, port);
+    if (trace) {
+      trace.lines.push(traceConnectLine(trace.elapsed(), 'TCP', ip, port, outcome));
+    }
     // scan_engine_connect.cc : ECONNREFUSED ferme le port, EACCES — que
     // provoque un inatteignable « administrativement interdit » — le
     // FILTRE. Les confondre fait passer une liste de controle pour un
@@ -328,10 +362,13 @@ async function buildTrace(
 
 async function scanHost(
   options: NmapOptions, probes: HostProbes, target: string, phases: ScanPhase[],
-  hopCache: Map<string, string>,
+  hopCache: Map<string, string>, trace?: TraceContext,
 ): Promise<HostReport | null> {
   const resolved = await probes.resolveTarget(target);
   if (!resolved) return null;
+  // Le filtre de `nmap` ne laisse passer que ce qui concerne ses cibles,
+  // et une cible n'est connue qu'une fois resolue.
+  trace?.targets.add(resolved.ip);
 
   // targets.cc, `refresh_hostbatch` : la decouverte de couche lien passe
   // AVANT toute sonde IP, elle les remplace quand elle repond, et le
@@ -396,7 +433,7 @@ async function scanHost(
   const all: PortResult[] = [];
   for (const port of scanned) {
     if (options.scanType === 'udp') all.push(udpResult(options, probes, info.ip, port));
-    else all.push(tcpResult(options, probes, info.ip, port));
+    else all.push(tcpResult(options, probes, info.ip, port, trace));
   }
   const { ports, notShown } = partition(options, all);
   return {
@@ -425,9 +462,24 @@ export async function scan(
   const hopCache = new Map<string, string>();
   let targetsScanned = 0;
 
+  const startedAtMs = performance.now();
+  const trace: TraceContext | undefined = options.packetTrace ? {
+    targets: new Set<string>(),
+    lines: [],
+    elapsed: () => (performance.now() - startedAtMs) / 1000,
+    connectScan: options.scanType === 'tcp',
+  } : undefined;
+  const stopWire = trace && probes.observeWire
+    ? probes.observeWire((direction, frame) => {
+        const line = traceFrameLine(
+          direction, trace.elapsed(), frame, trace.targets, trace.connectScan);
+        if (line) trace.lines.push(line);
+      })
+    : undefined;
+
   for (const target of options.targets) {
     for (const address of enumerateTargets(target)) {
-      const report = await scanHost(options, probes, address, phases, hopCache)
+      const report = await scanHost(options, probes, address, phases, hopCache, trace)
         ?? (target === address && isIpLiteral(address)
           ? { ip: address, up: false, latencyMs: 0, downReason: 'no-response', ports: [] }
           : null);
@@ -444,6 +496,8 @@ export async function scan(
     }
   }
 
+  stopWire?.();
+
   return {
     startedAt: new Date().toISOString(),
     targetsScanned,
@@ -451,5 +505,6 @@ export async function scan(
     hosts,
     unresolved,
     phases,
+    packetTrace: trace?.lines ?? [],
   };
 }
