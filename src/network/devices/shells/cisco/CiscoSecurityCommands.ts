@@ -258,8 +258,6 @@ export interface CiscoSecurityShellContext extends CiscoShellContext {
  * toutes. Extraite ici, elle est appelee par les deux shells sans leur
  * donner le reste.
  */
-export const PASSWORD_MIN_LENGTH_MAX = 16;
-
 export function buildIdentityConfigCommands(
   trie: CommandTrie, ctx: CiscoSecurityShellContext,
 ): void {
@@ -704,15 +702,6 @@ export function buildIdentityConfigCommands(
     sec().servicePasswordEncryption = false;
     (ctx.r() as unknown as { _setServiceFlag?: (n: string, on: boolean) => void })
       ._setServiceFlag?.('password-encryption', false);
-    return '';
-  });
-
-  trie.registerGreedy('security passwords min-length', 'Min password length', (args) => {
-    if (args[0] === undefined) return CISCO_ERRORS.INCOMPLETE;
-    if (!/^\d+$/.test(args[0])) throw new CliInvalidInput({ token: args[0] });
-    const n = Number(args[0]);
-    if (n > PASSWORD_MIN_LENGTH_MAX) throw new CliInvalidInput({ token: args[0] });
-    sec().passwords.minLength = n;
     return '';
   });
 

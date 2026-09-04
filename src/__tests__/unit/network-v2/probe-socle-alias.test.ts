@@ -144,6 +144,72 @@ for (const [nom, fabrique] of PLATEFORMES) {
       expect(aide).toMatch(/^\s+configure\b/m);
       expect(aide).not.toMatch(/WORD/);
     });
+
+    /*
+     * SUITE — la famille est passee au socle, et la migration a trouve
+     * trois defauts que cette sonde ne demandait pas. Ils sont ajoutes
+     * ICI plutot que dans une seconde sonde : c'est la meme commande,
+     * et deux fichiers a tenir d'accord sur un meme fait sont le defaut
+     * que ce chantier referme.
+     *
+     * (1) LE MODE `line` N'EXISTAIT PAS, alors que c'est celui ou l'on
+     * abrege le plus. Le cas « tous les modes ANNONCES sont acceptes »
+     * ci-dessus le couvre desormais par construction, mais accepter
+     * n'est pas SERVIR.
+     *
+     * (2) TROIS DES QUATRE MODES ETAIENT INERTES : l'expansion lisait
+     * `'exec'` EN DUR, donc un alias pose en `configure`, `interface` ou
+     * `router` etait accepte, rendu dans la configuration, et evalue
+     * NULLE PART. Cette sonde eprouvait le raccourci en EXEC seulement,
+     * c'est-a-dire le seul mode qui fonctionnait.
+     *
+     * (3) `no alias <mode>` SANS NOM repondait « commande incomplete »
+     * alors que c'est la commande documentee pour desactiver les alias
+     * d'usine — la seule facon de retirer `p`, `s` ou `w`.
+     *
+     * Discrimine dans un arbre de travail pose sur l'etat d'AVANT : 8
+     * des 37 cas tombent, soit les quatre ajouts ci-dessous sur chacune
+     * des deux plateformes. Le cinquieme ajout — « un alias d'un AUTRE
+     * mode n'y sert pas » — passe des deux cotes, et c'est exact : avant
+     * la migration l'expansion n'avait lieu qu'en EXEC, donc un alias
+     * d'EXEC ne servait pas non plus en configuration ; il garde
+     * desormais que l'expansion par mode ne DEBORDE pas.
+     */
+    it('un alias de CONFIGURATION raccourcit vraiment', async () => {
+      const d = await fabrique();
+      await d.executeCommand('alias configure ipr ip route');
+      expect(await d.executeCommand('ipr 10.9.0.0 255.255.0.0 10.0.0.2'))
+        .not.toMatch(REFUS);
+      expect(await conf(d)).toMatch(/^ip route 10\.9\.0\.0 255\.255\.0\.0 10\.0\.0\.2/m);
+    });
+
+    it('un alias de LIGNE raccourcit vraiment', async () => {
+      const d = await fabrique();
+      await d.executeCommand('alias line eo exec-timeout');
+      await d.executeCommand('line vty 0 4');
+      expect(await d.executeCommand('eo 15 0')).not.toMatch(REFUS);
+      expect(await conf(d)).toMatch(/exec-timeout 15 0/);
+    });
+
+    it('et un alias d un AUTRE mode n y sert pas', async () => {
+      const d = await fabrique();
+      await d.executeCommand('alias exec vv show version');
+      expect(await d.executeCommand('vv')).toMatch(REFUS);
+    });
+
+    it('`no alias exec` retire les alias d USINE', async () => {
+      const d = await fabrique();
+      await jouer(d, ['end']);
+      expect(await d.executeCommand('show aliases')).toMatch(/ping/);
+      await jouer(d, ['configure terminal', 'no alias exec', 'end']);
+      expect(await d.executeCommand('show aliases')).not.toMatch(/ping/);
+    });
+
+    it('et cette coupure se RELIT', async () => {
+      const d = await fabrique();
+      expect(await d.executeCommand('no alias exec')).not.toMatch(REFUS);
+      expect(await conf(d)).toMatch(/^no alias exec\s*$/m);
+    });
   });
 }
 

@@ -453,6 +453,35 @@ question. C'est un lot a part, avec sa propre mesure.
 
 ## Socle CLI
 
+### [alias] `snapshot`/`restore` d'`AliasRepository` ne portent pas le REFUS des alias d'usine
+`no alias exec` retire les alias d'usine (`p`, `s`, `w`) et le magasin
+retient ce refus par un booleen que `snapshot()` ne rend pas et que
+`restore()` ne repose pas — les deux ne transportent que la table des
+alias de l'operateur.
+**Mesure** : la coupure PARAIT bien dans `show running-config` (`no alias
+exec`), donc elle survit a un import de topologie, qui rejoue cette
+configuration ; ce qui ne la porte pas est le couple
+`snapshot`/`restore`, que `CiscoIOSShell` emploie pour la bascule
+`startup-config` (`reload`, `configure replace`).
+**Report** : elargir le type de retour de `snapshot()` touche ses quatre
+sites d'appel et la persistance de la configuration de demarrage, alors
+que le seul chemin observable aujourd'hui — l'import — passe par le
+rendu. Le fermer demande de decider ce qu'un `snapshot` doit porter en
+general, ce qui est un autre sujet.
+
+### [alias] un alias ne s'expanse pas dans les sous-modes qu'IOS ne nomme pas
+`aliasModeForCliMode` fait correspondre les cinq modes d'`alias` aux
+modes de la coquille : `exec`, `configure`, `interface` (y compris
+`config-subif`), `line` et `router`. Les autres sous-modes — `config-vlan`,
+`config-route-map`, `config-crypto-map`, les vingt et quelques autres —
+n'ont donc aucun alias.
+**Mesure** : `alias configure X ...` puis `X` sous `route-map` ne
+s'expanse pas.
+**Report** : c'est ce que fait IOS, dont la commande `alias` ne connait
+que ces modes ; l'entree est ici pour que la table ne soit pas prise
+pour un oubli si un mode manquait vraiment. Rien a corriger tant qu'une
+transcription ne montre pas un sixieme mode.
+
 ### [socle] une queue `REST` ne sait pas nommer ses valeurs par POSITION
 `sequenceFamily` decrit la queue libre d'une commande par UNE place
 `REST` portant ses formes. Elles sont donc annoncees a chaque rang, sans

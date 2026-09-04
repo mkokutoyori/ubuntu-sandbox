@@ -1,13 +1,9 @@
 import type { CommandTrie, ParamSpec } from '../CommandTrie';
 import { estTypeSansNumero } from './CiscoConfigCommands';
-import { ALIAS_MODE_VALUES } from '../../inspection/config/AliasRepository';
 import { mapCommandIsComplete } from './classMapGrammar';
 import {
-  PASSWORD_MIN_LENGTH_MAX, RSA_MODULUS_MIN, RSA_MODULUS_MAX,
+  RSA_MODULUS_MIN, RSA_MODULUS_MAX,
 } from './CiscoSecurityCommands';
-import {
-  LEGACY_QUEUE_LIST_RANGE,
-} from '../CiscoShellBase';
 import { UPLINKFAST_RATE_RANGE } from '../../../stp/types';
 
 const IP = (name: string, description: string): ParamSpec =>
@@ -162,28 +158,8 @@ function describeArgumentTypes(tries: ArgumentHelpTries): void {
   ]);
 
   // ── Configuration globale ──
-  tries.config.describeArgs('alias', [
-    {
-      name: 'mode', type: 'ENUM', description: 'Command mode of the alias',
-      values: ALIAS_MODE_VALUES.map((v) => ({ ...v })),
-    },
-    WORD('alias', 'Alias name'),
-    LINE('command', 'Command the alias stands for'),
-  ]);
-  for (const { keyword: mode } of ALIAS_MODE_VALUES) {
-    tries.config.describeArgs(`alias ${mode}`, [
-      WORD('alias', 'Alias name'),
-      LINE('command', 'Command the alias stands for'),
-    ]);
-  }
   tries.config.describeArgs('clock set', [
     { name: 'time', type: 'WORD', description: 'Current time', literal: 'hh:mm:ss' },
-  ]);
-  tries.config.describeArgs('no alias', [
-    {
-      name: 'mode', type: 'ENUM', description: 'Command mode of the alias',
-      values: ALIAS_MODE_VALUES.map((v) => ({ ...v })),
-    },
   ]);
   tries.config.describeArgs('arp', [IP('address', 'IP address of ARP entry'), MAC('48-bit hardware address')]);
   tries.config.describeArgs('no arp', [IP('address', 'IP address of ARP entry')]);
@@ -214,8 +190,6 @@ function describeArgumentTypes(tries: ArgumentHelpTries): void {
     { name: 'value', type: 'WORD', description: 'Configuration register value', literal: '0x0-0xFFFF' },
   ]);
   tries.config.describeArgs('ip default-network', [IP('network', 'Default network number')]);
-  tries.config.describeArgs('security passwords min-length',
-    [INT('longueur', [0, PASSWORD_MIN_LENGTH_MAX], 'Minimum password length')]);
   tries.config.describeArgs('ip host', [WORD('name', 'Name of host'), IP('address', 'Host IP address')]);
   tries.config.describeArgs('login delay', [
     INT('seconds', [1, 65535], 'Delay between successive login attempts'),
@@ -266,13 +240,6 @@ function describeArgumentTypes(tries: ArgumentHelpTries): void {
   tries.config.describeArgs('no track', [
     INT('object', [1, 1000], 'Tracked object number'),
   ]);
-  for (const [path, description] of [
-    ['priority-list', 'Priority list number'],
-    ['queue-list', 'Custom queue list number'],
-  ] as const) {
-    tries.config.describeArgs(path,
-      [INT('list', LEGACY_QUEUE_LIST_RANGE, description)]);
-  }
 
   // ── Configuration d'interface ──
   tries.configIf.describeArgs('arp timeout', [

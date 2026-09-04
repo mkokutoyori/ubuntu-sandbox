@@ -168,7 +168,7 @@ describe('les DEUX plateformes repondent pareil', () => {
     'ip community-list 1 permit 100:1',
     'ip as-path access-list 1 zorglub ^$'])('`%s`', async (ligne) => {
       const r = await routeur(`F${cle(ligne)}`);
-      const s = new CiscoSwitch(`G${cle(ligne)}`) as unknown as Dev;
+      const s = new CiscoSwitch('switch-cisco', `G${cle(ligne)}`) as unknown as Dev;
       for (const c of ['enable', 'configure terminal']) await s.executeCommand(c);
       const surRouteur = String(await r.executeCommand(ligne)).trim();
       const surCommutateur = String(await s.executeCommand(ligne)).trim();
