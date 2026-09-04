@@ -786,8 +786,9 @@ export class FortiShell {
   }
 
   private show(rest: readonly string[], full: boolean): string {
-    const typed = rest[0] === 'full-configuration' ? rest.slice(1) : rest;
-    const options = { full: full || rest[0] === 'full-configuration' };
+    const asksFull = rest[0] === 'full' || rest[0] === 'full-configuration';
+    const typed = asksFull ? rest.slice(1) : rest;
+    const options = { full: full || asksFull };
 
     const resolution = resolvePathWords(typed, (prefix) => this.tree.branchNames(prefix));
     if (resolution.ambiguous) {
@@ -799,7 +800,8 @@ export class FortiShell {
     if (words.length === 0) {
       const object = this.nav.currentObject();
       if (object) {
-        return (renderPath(this.tree, object.spec.path, options) ?? []).join('\n');
+        const only = object.spec.kind === 'table' ? object.key : undefined;
+        return (renderPath(this.tree, object.spec.path, options, only) ?? []).join('\n');
       }
       const table = this.nav.currentTable();
       if (table) return (renderPath(this.tree, table.spec.path, options) ?? []).join('\n');

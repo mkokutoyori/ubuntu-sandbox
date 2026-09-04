@@ -286,7 +286,7 @@ export const FIREWALL_SERVICE_CUSTOM: FortiTableSpec = {
     context.objects.removeService(object.key);
 
     if (protocol === 'ICMP') {
-      const type = Number.parseInt(object.effective('icmptype')[0] ?? '', 10);
+      const type = Number.parseInt(object.isExplicit('icmptype') ? object.effective('icmptype')[0] ?? '' : '', 10);
       context.objects.addService(icmpService(object.key,
         Number.isFinite(type) ? type : undefined));
       return;
