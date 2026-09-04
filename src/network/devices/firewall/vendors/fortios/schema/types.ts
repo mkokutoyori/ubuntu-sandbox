@@ -7,7 +7,7 @@ import type { ArgumentSpec, EnumValue } from '../../../../../../cli/ArgumentType
 import type { ObjectStore } from '../../../model/ObjectStore';
 import type { LogSettingsPatch } from '../../../logging/LogSettings';
 import type { PasswordExpiryPolicy } from '../../../mgmt/ManagementPlane';
-import type { AccessList } from '../../../routing/AccessList';
+import type { AccessList, PrefixList } from '../../../routing/AccessList';
 import type { PolicyStore } from '../../../model/PolicyStore';
 import type { DosPolicyStore } from '../../../dos/DosPolicyStore';
 
@@ -368,6 +368,8 @@ export interface FortiCommitDevice {
   applyPasswordExpiry(policy: PasswordExpiryPolicy): void;
   applyAccessList(list: AccessList): void;
   removeAccessList(name: string): void;
+  applyPrefixList(list: PrefixList): void;
+  removePrefixList(name: string): void;
   maxVirtualDomains(): number;
   applyVdom(name: string): void;
   removeVdom(name: string): void;

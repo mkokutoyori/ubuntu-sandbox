@@ -4,8 +4,9 @@ import {
 } from './types';
 import { AS_NUMBER_MAX } from '../../../routing/FirewallBgp';
 import {
-  parseAccessListPrefix, type AccessListRule,
+  maskPrefixLength, parseAccessListPrefix, type AccessListRule,
 } from '../../../routing/AccessList';
+import type { IpPrefixEntry } from '../../../../router/policy/IpPrefixList';
 import { isValidIPv4, isValidSubnetMask } from '../../../../../core/ip';
 
 const ACCESS_LIST_RULE: FortiTableSpec = {
@@ -76,6 +77,79 @@ export const ROUTER_ACCESS_LIST: FortiTableSpec = {
   },
   onDelete(key, context) {
     context.device.removeAccessList(key);
+  },
+};
+
+const PREFIX_LIST_RULE: FortiTableSpec = {
+  path: ['router', 'prefix-list', 'rule'],
+  kind: 'table',
+  keyType: 'integer',
+  ordered: true,
+  scope: 'vdom',
+  accessGroup: 'netgrp',
+  renderOrder: 1,
+  help: 'IPv4 prefix list rule.',
+  attributes: [
+    { ...word('id', 'Rule ID.'), readOnly: true },
+    choice('action', 'Permit or deny this IP address and netmask prefix.', [
+      { keyword: 'permit', description: 'Allow or permit packets that match this rule.' },
+      { keyword: 'deny', description: 'Deny packets that match this rule.' },
+    ], 'permit'),
+    {
+      ...addressMask('prefix',
+        'IPv4 prefix to define regular filter criteria, such as "any" or subnets.',
+        ['any']),
+      optionalParts: 1,
+      acceptsValue: (value) =>
+        value === 'any' || isValidIPv4(value) || isValidSubnetMask(value),
+      expectedValue: 'either `any` or an address and a netmask, '
+        + 'such as `10.1.0.0 255.255.0.0`.',
+    },
+    count('ge', 'Minimum prefix length to be matched.', 0, 32, 0),
+    count('le', 'Maximum prefix length to be matched.', 0, 32, 0),
+  ],
+};
+
+export const ROUTER_PREFIX_LIST: FortiTableSpec = {
+  path: ['router', 'prefix-list'],
+  kind: 'table',
+  keyType: 'name',
+  ordered: false,
+  scope: 'vdom',
+  accessGroup: 'netgrp',
+  renderOrder: 228,
+  help: 'Configure IPv4 prefix lists.',
+  attributes: [
+    { ...word('name', 'Prefix list name.'), readOnly: true },
+    text('comments', 'Comment.'),
+  ],
+  children: [PREFIX_LIST_RULE],
+  onCommit(object, context) {
+    const rules: IpPrefixEntry[] = [];
+    for (const entry of object.childEntries('rule')) {
+      const prefix = parseAccessListPrefix(entry.effective('prefix'));
+      if (!prefix) {
+        return `rule ${entry.key} needs \`set prefix any\` or an address and a netmask.`;
+      }
+      rules.push({
+        index: Number.parseInt(entry.key, 10),
+        action: entry.effective('action')[0] === 'deny' ? 'deny' : 'permit',
+        network: prefix.network,
+        prefixLength: prefix.any ? 0 : maskPrefixLength(prefix.mask),
+        greaterEqual: entry.isExplicit('ge')
+          ? Number.parseInt(entry.effective('ge')[0] ?? '0', 10) : undefined,
+        lessEqual: entry.isExplicit('le')
+          ? Number.parseInt(entry.effective('le')[0] ?? '0', 10) : undefined,
+      });
+    }
+    context.device.applyPrefixList({
+      name: object.key,
+      comments: object.effective('comments')[0] || undefined,
+      rules,
+    });
+  },
+  onDelete(key, context) {
+    context.device.removePrefixList(key);
   },
 };
 
@@ -254,7 +328,7 @@ export const ROUTER_OSPF: FortiTableSpec = {
       multiValue: true,
     },
     reference('distribute-list-in', 'Filter incoming routes.',
-      ['router access-list']),
+      ['router access-list', 'router prefix-list']),
   ],
   children: [OSPF_AREA, OSPF_NETWORK, OSPF_INTERFACE],
   onCommit(object, context) {
@@ -376,4 +450,6 @@ export const ROUTER_BGP: FortiTableSpec = {
 };
 
 export const ROUTER_DYNAMIC_SPECS: readonly FortiTableSpec[] =
-  Object.freeze([ROUTER_ACCESS_LIST, ROUTER_RIP, ROUTER_OSPF, ROUTER_BGP]);
+  Object.freeze([
+    ROUTER_ACCESS_LIST, ROUTER_PREFIX_LIST, ROUTER_RIP, ROUTER_OSPF, ROUTER_BGP,
+  ]);

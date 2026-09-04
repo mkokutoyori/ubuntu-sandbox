@@ -1,6 +1,7 @@
 import {
   ipToUint32, isValidIPv4, prefixLengthToMaskUint32, tryIpToUint32, wildcardMatches,
 } from '../../../core/ip';
+import type { IpPrefixEntry } from '../../router/policy/IpPrefixList';
 
 export type AccessListAction = 'permit' | 'deny';
 
@@ -16,6 +17,12 @@ export interface AccessListRule {
   readonly prefix: AccessListPrefix;
   readonly wildcard?: string;
   readonly exactMatch: boolean;
+}
+
+export interface PrefixList {
+  readonly name: string;
+  readonly comments?: string;
+  readonly rules: readonly IpPrefixEntry[];
 }
 
 export interface AccessList {
