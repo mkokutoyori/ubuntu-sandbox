@@ -5,6 +5,9 @@ import type { SecurityRule } from '../../../model/SecurityRule';
 export const TRAFFIC_LOGID_CLOSE = '0000000013';
 export const TRAFFIC_LOGID_START = '0000000020';
 export const TRAFFIC_LOGID_DENY = '0000000015';
+export const TRAFFIC_LOGID_LOCAL = '0001000014';
+
+export const UNKNOWN_INTERFACE = 'unknown0';
 
 const PROTOCOL_SERVICE: Readonly<Record<number, string>> = Object.freeze({
   1: 'PING', 6: 'tcp/', 17: 'udp/',
@@ -158,7 +161,7 @@ function closeAction(reason: SessionCloseReason): string {
   return 'close';
 }
 
-function serviceLabel(protocol: number, port: number): string {
+export function serviceLabel(protocol: number, port: number): string {
   const prefix = PROTOCOL_SERVICE[protocol];
   if (prefix === undefined) return `ip/${protocol}`;
   if (protocol === 1) return prefix;

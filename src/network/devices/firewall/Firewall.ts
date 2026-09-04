@@ -145,8 +145,7 @@ import {
 import { buildEchoRequest } from '../../icmp/IcmpEcho';
 import { FirewallTraceroute } from './diag/FirewallTraceroute';
 import {
-  DNS_PORT, FirewallDnsClient, dnsQueryDatagram,
-} from './l3/FirewallDnsClient';
+  DNS_PORT, FirewallDnsClient, } from './l3/FirewallDnsClient';
 import { FirewallDnsServer } from './l3/FirewallDnsServer';
 import type { SdwanService } from './sdwan/SdwanService';
 import { ETHERTYPE_FGCP, type HaAgent } from './ha/HaAgent';
@@ -162,6 +161,9 @@ import { RouterHostsTable } from '../router/dns/RouterHostsTable';
 import type { VdomServices } from './pipeline/stages/coreStages';
 import { ScheduleStore, type ScheduleObject } from './model/ScheduleObject';
 import { FirewallLogStore } from './logging/FirewallLogStore';
+import type { LocalTrafficKind, LogSettings } from './logging/LogSettings';
+import { flowKeyFromPacket, type FlowKey } from './session/FlowKey';
+import { classifyIpv4Destination } from '../../layers/internet/InternetLayer';
 import { LogDisk } from './logging/LogDisk';
 import { SavedConfiguration } from './config/ConfigSaveMode';
 import { PacketCapture } from './diag/PacketCapture';
@@ -191,11 +193,19 @@ export interface FirewallOptions {
   now?: () => number;
 }
 
+export interface LocalTrafficFacts {
+  readonly kind: LocalTrafficKind;
+  readonly iface: string;
+  readonly vdom: string;
+  readonly flow: FlowKey;
+}
+
 export interface TrafficLogger {
   onSessionOpened(session: FirewallSession, rule?: SecurityRule): void;
   onSessionClosed(session: FirewallSession, reason: SessionCloseReason): void;
   onDenied(context: PacketContext): void;
   onDosAnomaly?(finding: DosFinding, iface: string, traffic: DosTraffic): void;
+  onLocalTraffic?(facts: LocalTrafficFacts): void;
 }
 
 const ETHERNET_OVERHEAD_BYTES = 18;
@@ -699,13 +709,11 @@ export class Firewall extends Equipment {
   runTraceroute(target: string): string { return this.traceroute.run(target); }
 
   private readonly dnsClient = new FirewallDnsClient({
-    send: (destination, sourcePort, payload) => {
-      const egress = this.resolveEgress(destination);
-      if (!egress) return false;
-      this.forward(egress.iface,
-        dnsQueryDatagram(egress.source, destination, sourcePort, payload), egress.gateway);
-      return true;
-    },
+    send: (destination, sourcePort, payload) => this.sendUdpDatagram({
+      destination: new IPAddress(destination),
+      destinationPort: DNS_PORT, sourcePort, payload,
+      payloadBytes: payload.length,
+    }),
   });
 
   getDnsClient(): FirewallDnsClient { return this.dnsClient; }
@@ -715,16 +723,11 @@ export class Firewall extends Equipment {
   getUdpEndpoint(): ControlPlaneUdpEndpoint {
     if (!this.udpEndpoint) {
       this.udpEndpoint = new ControlPlaneUdpEndpoint({
-        sendUdpBytes: (destinationIP, destinationPort, sourcePort, payload) => {
-          const egress = this.resolveEgress(destinationIP.toString());
-          if (!egress) return false;
-          this.forward(
-            egress.iface,
-            udpDatagram(egress.source, destinationIP.toString(),
-              sourcePort, destinationPort, payload),
-            egress.gateway);
-          return true;
-        },
+        sendUdpBytes: (destinationIP, destinationPort, sourcePort, payload) =>
+          this.sendUdpDatagram({
+            destination: destinationIP, destinationPort, sourcePort, payload,
+            payloadBytes: payload instanceof Uint8Array ? payload.length : 64,
+          }),
       });
     }
     return this.udpEndpoint;
@@ -1016,13 +1019,11 @@ export class Firewall extends Equipment {
   }
 
   private sendUdpToPeer(destIp: string, port: number, payload: unknown): boolean {
-    const route = this.getVdom().routes.resolveNextHop(destIp);
-    const iface = route?.iface ?? this.interfaces.interfaceForDestination(destIp);
-    const source = iface === undefined ? undefined : this.interfaces.get(iface)?.ip;
-    if (iface === undefined || source === undefined) return false;
-
-    this.forward(iface, udpDatagram(source, destIp, port, port, payload), route?.nextHop);
-    return true;
+    return this.sendUdpDatagram({
+      destination: new IPAddress(destIp),
+      destinationPort: port, sourcePort: port, payload,
+      payloadBytes: payload instanceof Uint8Array ? payload.length : 64,
+    });
   }
 
   sourceAddressFor(destination: IPAddress): IPAddress | null {
@@ -1041,7 +1042,9 @@ export class Firewall extends Equipment {
       ?? (iface === undefined ? undefined : this.interfaces.get(iface)?.ip);
     if (iface === undefined || source === undefined) return false;
 
-    this.forward(iface, buildUdpOverIpv4(new IPAddress(source), request), route?.nextHop);
+    const packet = buildUdpOverIpv4(new IPAddress(source), request);
+    this.logLocalOut(iface, packet);
+    this.forward(iface, packet, route?.nextHop);
     return true;
   }
 
@@ -1325,6 +1328,31 @@ export class Firewall extends Equipment {
   getSessionTtl(vdom?: string): SessionTtlTable { return this.getVdom(vdom).sessionTtl; }
   getScheduleStore(vdom?: string): ScheduleStore { return this.getVdom(vdom).schedules; }
   getLogStore(vdom?: string): FirewallLogStore { return this.getVdom(vdom).logs; }
+
+  getLogSettings(vdom?: string): LogSettings { return this.getVdom(vdom).logSettings; }
+
+  private logLocalTraffic(iface: string, packet: IPv4Packet, accepted: boolean): void {
+    const kind: LocalTrafficKind = accepted
+      ? 'local-in-allow'
+      : classifyIpv4Destination(packet.destinationIP) === 'unicast'
+        ? 'local-in-deny-unicast' : 'local-in-deny-broadcast';
+    this.appendLocalTrafficLog(iface, packet, kind);
+  }
+
+  private logLocalOut(iface: string, packet: IPv4Packet): void {
+    this.appendLocalTrafficLog(iface, packet, 'local-out');
+  }
+
+  private appendLocalTrafficLog(
+    iface: string, packet: IPv4Packet, kind: LocalTrafficKind,
+  ): void {
+    const context = this.vdoms.contextOfInterface(iface);
+    if (!context.logSettings.logs(kind)) return;
+
+    this.trafficLogger?.onLocalTraffic?.({
+      kind, iface, vdom: context.name, flow: flowKeyFromPacket(packet),
+    });
+  }
   getLogDisk(): LogDisk { return this.logDisk; }
   getSavedConfiguration(): SavedConfiguration { return this.savedConfig; }
   getUtmProfiles(vdom?: string): UtmProfileStore { return this.getVdom(vdom).utm; }
@@ -2002,6 +2030,7 @@ export class Firewall extends Equipment {
       allowsPing: (iface) => this.allowsAccess(iface, 'ping'),
       reply: (iface, p) => { this.forward(iface, p); },
       localInVerdict: (iface, p) => this.localInVerdict(iface, p),
+      logLocalIn: (iface, p, accepted) => this.logLocalTraffic(iface, p, accepted),
     }, portName, packet);
   }
 

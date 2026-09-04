@@ -87,6 +87,7 @@ import {
   configChangeLog,
   shouldLogTraffic, shouldLogTrafficStart, trafficCloseLog, trafficStartLog,
 } from './log/trafficLog';
+import { localTrafficLog } from './log/localTrafficLog';
 import { anomalyLog, utmLog } from './log/utmLog';
 import { renderFortiguardServiceStatus } from './diag/fortiguardRenderer';
 import type { FortiGuardFamily } from '../../mgmt/FortiGuardDatabases';
@@ -194,6 +195,8 @@ function distinguishedName(fields: {
 
 export class FortiShell {
   private pendingAsync: Promise<string> | null = null;
+
+  private nextLocalSessionId = 1;
 
   takePendingAsync(): Promise<string> | null {
     const pending = this.pendingAsync;
@@ -329,6 +332,10 @@ export class FortiShell {
           session, rule, now: this.fw.now(),
           identity: this.loggedIdentity(session.c2s.sourceIP),
         }, reason));
+      },
+      onLocalTraffic: (facts) => {
+        this.fw.getLogStore(facts.vdom).append(localTrafficLog(
+          facts, this.fw.now(), this.nextLocalSessionId++));
       },
       onDosAnomaly: (finding, iface, packet) => {
         this.fw.getLogStore().append(

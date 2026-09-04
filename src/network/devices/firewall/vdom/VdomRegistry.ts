@@ -16,6 +16,7 @@ import { DosPolicyStore } from '../dos/DosPolicyStore';
 import { DosSensor } from '../dos/DosSensor';
 import { ScheduleStore } from '../model/ScheduleObject';
 import { FirewallLogStore } from '../logging/FirewallLogStore';
+import { LogSettings } from '../logging/LogSettings';
 import { UtmProfileStore } from '../inspection/UtmProfiles';
 import { IdentityTable } from '../identity/IdentityTable';
 import { UserDirectory } from '../identity/UserDirectory';
@@ -58,6 +59,7 @@ export interface VdomContext {
   readonly evaluator: PolicyEvaluator;
   readonly schedules: ScheduleStore;
   readonly logs: FirewallLogStore;
+  readonly logSettings: LogSettings;
   readonly utm: UtmProfileStore;
   readonly identities: IdentityTable;
   readonly users: UserDirectory;
@@ -261,6 +263,7 @@ export class VdomRegistry {
       evaluator,
       schedules,
       logs: new FirewallLogStore(),
+      logSettings: new LogSettings(),
       utm: new UtmProfileStore(),
       identities,
       tunnels: new IpsecTunnelTable({

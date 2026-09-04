@@ -289,6 +289,9 @@ export function buildCommitDevice(
       applySyslogCollector(settings) {
         fw.getSyslogCollectors().applySettings(settings);
       },
+      applyLogSettings(patch) {
+        fw.getLogSettings().apply(patch);
+      },
       applySyslogFilter(settings) {
         fw.getSyslogCollectors().applyFilter(settings);
       },

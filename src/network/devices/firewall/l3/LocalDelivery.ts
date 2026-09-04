@@ -12,24 +12,42 @@ export interface LocalDeliveryDeps {
   allowsPing(iface: string): boolean;
   reply(iface: string, packet: IPv4Packet): void;
   localInVerdict?(iface: string, packet: IPv4Packet): LocalInVerdict;
+  logLocalIn?(iface: string, packet: IPv4Packet, accepted: boolean): void;
 }
 
 export function deliverLocally(
   deps: LocalDeliveryDeps, iface: string, packet: IPv4Packet,
 ): void {
-  if (deps.localInVerdict?.(iface, packet) === 'deny') return;
-
-  const ike = deps.ikeDatagram(packet);
-  if (ike) { deps.handleIke(iface, packet, ike); return; }
-  if (deps.observedBySdwan(packet)) return;
-  if (deps.answeredByDnsServer(iface, packet)) return;
-
-  if (packet.protocol === IP_PROTO_TCP) {
-    if (deps.admitsTcp(iface, packet)) deps.handleTcp(iface, packet);
+  if (deps.localInVerdict?.(iface, packet) === 'deny') {
+    deps.logLocalIn?.(iface, packet, false);
     return;
   }
-  if (!deps.allowsPing(iface)) return;
+
+  const ike = deps.ikeDatagram(packet);
+  if (ike) {
+    deps.logLocalIn?.(iface, packet, true);
+    deps.handleIke(iface, packet, ike);
+    return;
+  }
+  if (deps.observedBySdwan(packet)) return;
+  if (deps.answeredByDnsServer(iface, packet)) {
+    deps.logLocalIn?.(iface, packet, true);
+    return;
+  }
+
+  if (packet.protocol === IP_PROTO_TCP) {
+    const admitted = deps.admitsTcp(iface, packet);
+    deps.logLocalIn?.(iface, packet, admitted);
+    if (admitted) deps.handleTcp(iface, packet);
+    return;
+  }
 
   const echo = icmpEchoReply(packet);
+  if (!deps.allowsPing(iface)) {
+    deps.logLocalIn?.(iface, packet, false);
+    return;
+  }
+
+  deps.logLocalIn?.(iface, packet, true);
   if (echo) deps.reply(iface, echo);
 }

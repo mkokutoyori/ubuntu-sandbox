@@ -81,7 +81,11 @@ function syslogFilter(collector: string, renderOrder: number): FortiTableSpec {
       enable('forward-traffic', 'Enable/disable forward traffic logging.', true),
       enable('local-traffic', 'Enable/disable local in or out traffic logging.'),
       enable('multicast-traffic', 'Enable/disable multicast traffic logging.', true),
-      enable('sniffer-traffic', 'Enable/disable sniffer traffic logging.', true),
+      {
+        ...enable('sniffer-traffic', 'Enable/disable sniffer traffic logging.', true),
+        unimplemented: 'this simulator has no `config firewall sniffer`, so no '
+          + 'sniffer log exists to filter',
+      },
     ],
     onCommit(object, context) {
       return context.device.applySyslogFilter({
@@ -89,6 +93,7 @@ function syslogFilter(collector: string, renderOrder: number): FortiTableSpec {
         severity: object.effective('severity')[0] ?? 'information',
         forwardTraffic: object.effective('forward-traffic')[0] !== 'disable',
         localTraffic: object.effective('local-traffic')[0] === 'enable',
+        multicastTraffic: object.effective('multicast-traffic')[0] !== 'disable',
       });
     },
   };
@@ -168,11 +173,26 @@ export const LOG_SETTING: FortiTableSpec = {
       'Enable/disable implicit firewall policy logging.'),
     enable('local-in-allow', 'Enable/disable local-in-allow logging.'),
     enable('local-in-deny-unicast', 'Enable/disable local-in-deny-unicast logging.'),
+    enable('local-in-deny-broadcast', 'Enable/disable local-in-deny-broadcast logging.'),
     enable('local-out', 'Enable/disable local-out logging.'),
     enable('log-invalid-packet', 'Enable/disable invalid packet traffic logging.'),
-    enable('resolve-ip', 'Enable/disable adding resolved domain names to traffic logs.'),
+    {
+      ...enable('resolve-ip',
+        'Enable/disable adding resolved domain names to traffic logs.'),
+      unimplemented: 'this simulator resolves names forward only, so a traffic '
+        + 'log has no name to add to an address',
+    },
   ],
-  onCommit() {},
+  onCommit(object, context) {
+    context.device.applyLogSettings({
+      implicitPolicyLog: object.effective('fwpolicy-implicit-log')[0] === 'enable',
+      invalidPacket: object.effective('log-invalid-packet')[0] === 'enable',
+      localInAllow: object.effective('local-in-allow')[0] === 'enable',
+      localInDenyUnicast: object.effective('local-in-deny-unicast')[0] === 'enable',
+      localInDenyBroadcast: object.effective('local-in-deny-broadcast')[0] === 'enable',
+      localOut: object.effective('local-out')[0] === 'enable',
+    });
+  },
 };
 
 export const LOG_SPECS: readonly FortiTableSpec[] = Object.freeze([

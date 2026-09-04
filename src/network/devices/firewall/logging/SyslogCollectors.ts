@@ -18,6 +18,7 @@ export interface SyslogFilterSettings {
   readonly severity: string;
   readonly forwardTraffic: boolean;
   readonly localTraffic: boolean;
+  readonly multicastTraffic: boolean;
 }
 
 const DEFAULT_SEVERITY: SyslogSeverityName = 'informational';
