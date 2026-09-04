@@ -37,6 +37,8 @@ export interface CaptureTcpFlags {
   rst: boolean;
   psh: boolean;
   urg: boolean;
+  ece?: boolean;
+  cwr?: boolean;
 }
 
 export interface CaptureFrame {
@@ -254,7 +256,8 @@ function synthIcmpBytes(icmp: ICMPPacket): number[] {
 }
 
 function tcpFlagsByte(flags: CaptureTcpFlags): number {
-  return (flags.urg ? 0x20 : 0) | (flags.ack ? 0x10 : 0) | (flags.psh ? 0x08 : 0)
+  return (flags.cwr ? 0x80 : 0) | (flags.ece ? 0x40 : 0)
+    | (flags.urg ? 0x20 : 0) | (flags.ack ? 0x10 : 0) | (flags.psh ? 0x08 : 0)
     | (flags.rst ? 0x04 : 0) | (flags.syn ? 0x02 : 0) | (flags.fin ? 0x01 : 0);
 }
 

@@ -133,9 +133,9 @@ describe('une option que nmap CONNAIT et que ce simulateur n implante pas', () =
   it('est refusee en nommant le simulateur', async () => {
     const { scanner } = await segment();
 
-    const sortie = await taper(scanner, 'nmap --scanflags SYNFIN -p 22 10.0.0.2');
+    const sortie = await taper(scanner, 'nmap --traceroute -p 22 10.0.0.2');
 
-    expect(sortie).toContain('nmap: option --scanflags: is not implemented in this simulator');
+    expect(sortie).toContain('nmap: option --traceroute: is not implemented in this simulator');
     expect(sortie).not.toContain("unrecognized option");
     expect(sortie).not.toContain('Nmap scan report');
   });

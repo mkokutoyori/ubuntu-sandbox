@@ -242,9 +242,11 @@ export function buildScanProbes(
     tcpOutcome(ip: string, port: number) {
       return host.tcpOutcome(ip, port);
     },
-    statelessOutcome(ip: string, port: number, kind: StatelessScanKind) {
+    statelessOutcome(
+      ip: string, port: number, kind: StatelessScanKind, flags?: ScanProbeFlags,
+    ) {
       return readStatelessReply(
-        kind, host.scanProbe(ip, port, SCAN_PROBE_FLAGS[kind]));
+        kind, host.scanProbe(ip, port, flags ?? SCAN_PROBE_FLAGS[kind]));
     },
     udpState(ip: string, port: number) {
       return probeUdpPort(host, ip, port);

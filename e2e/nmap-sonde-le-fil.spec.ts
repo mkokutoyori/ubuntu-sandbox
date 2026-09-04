@@ -236,6 +236,35 @@ test.describe('nmap sonde le fil', () => {
     expect(nonImplantee).not.toContain('Nmap scan report for 100');
   });
 
+  test('`--scanflags` compose le segment, la base decide la lecture', async ({ page }) => {
+    test.setTimeout(180_000);
+    await page.goto('/', { timeout: 45_000 });
+    await waitForStore(page);
+
+    const cibleId = await addDevice(page, 'linux-server', 300, 600);
+    const scannerId = await addDevice(page, 'linux-pc', 600, 600);
+    await cable(page, cibleId, scannerId);
+
+    await openTerminal(page, cibleId);
+    await typeCmd(page, `ip addr add ${CIBLE}/24 dev eth0`);
+    await typeCmd(page, 'sudo systemctl start ssh');
+    await closeTerminal(page);
+
+    await openTerminal(page, scannerId);
+    await typeCmd(page, `ip addr add ${SCANNER}/24 dev eth0`);
+
+    // Le meme segment que `-sF`, lu comme un `-sS` : le port ouvert
+    // ressort `filtered` la ou `-sF` rendrait `open|filtered`.
+    await typeCmd(page, `nmap -Pn --scanflags FIN -p 22 ${CIBLE}`);
+    expect(await lastLines(page, 8)).toMatch(/22\/tcp\s+filtered/);
+
+    await typeCmd(page, `nmap -Pn -sF -p 22 ${CIBLE}`);
+    expect(await lastLines(page, 8)).toMatch(/22\/tcp\s+open\|filtered/);
+
+    await typeCmd(page, `nmap -Pn --scanflags 300 -p 22 ${CIBLE}`);
+    expect(await lastLines(page, 6)).toContain('--scanflags option must be a number');
+  });
+
   test('nmap.exe existe aussi sur une machine Windows', async ({ page }) => {
     test.setTimeout(180_000);
     await page.goto('/', { timeout: 45_000 });

@@ -7504,3 +7504,38 @@ refus renvoie a `nmap -h`.
 
 **Discrimination** : `probe-nmap-familles-d-options.test.ts` (13 cas), 8
 tombent ; les 5 restants sont nommes dans l'en-tete.
+
+---
+
+## 2026-09-04 — `--scanflags`, et l'ordre des drapeaux de `tcpdump`
+
+**Portee** : `scan/nmap/` (`StatelessScans`, `NmapOptions`, `ScanEngine`,
+`NmapProbes`), `linux/network/tcpdump/` (`TcpdumpFormat`,
+`CaptureFrame`).
+
+`TcpStack.scanProbe(ip, port, flags)` prenait DEJA des drapeaux
+quelconques et `readStatelessReply` savait deja lire une reponse selon le
+balayage de base : il manquait l'option qui les relie — le moteur sans sa
+porte.
+
+**La regle qui compte** : les drapeaux viennent de l'option, la LECTURE
+du balayage de base. Donc `--scanflags FIN` seul n'est PAS `-sF` — meme
+segment, verdict `filtered` au lieu d'`open|filtered`, parce que le
+manuel dit « If you don't specify a base type, SYN scan is used ».
+
+**Deux defauts de `tcpdump` trouves en ecrivant la sonde.** L'ordre des
+drapeaux etait S,F,R,P,U,`.` alors que `tcp_flag_values`
+(`print-tcp.c:105`) est F,S,R,P,`.`,U,E,W — un segment SYN+FIN sortait
+`[SF]` la ou le vrai ecrit `[FS]` —, aucun bit reconnu rendait `.` (le
+signe de l'ACK) au lieu de `none`, et ECE/CWR n'existaient ni dans
+`CaptureTcpFlags` ni dans l'octet 13 que fabrique `tcpFlagsByte`, donc
+les filtres a tranche d'octets les voyaient a zero.
+
+**Un troisieme defaut est MESURE et inscrit au `TODO.md`** faute d'avoir
+trouve son ecrivain : un segment TCP est enregistre DEUX fois dans une
+capture — la prise de port et le journal `captureLog` — et la seconde
+copie perd les drapeaux et la fenetre ; la cle d'appariement incluant
+les drapeaux, les deux lignes sortent des que la copie se trompe.
+
+**Discrimination** : `probe-nmap-scanflags.test.ts` (11 cas), 9 tombent ;
+`probe-tcpdump-ordre-des-drapeaux.test.ts` (7 cas), 6 tombent.

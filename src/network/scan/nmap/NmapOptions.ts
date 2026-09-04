@@ -1,9 +1,15 @@
 import { parsePortSpec } from './PortSpec';
 import { NMAP_LONG_OPTIONS, NMAP_SHORT_OPTIONS } from './NmapOptionTables';
+import { parseScanFlags, type ScanProbeFlags } from './StatelessScans';
 import { topPorts, fastPorts } from './ServiceRegistry';
 
 export type ScanType =
   'tcp' | 'syn' | 'udp' | 'ack' | 'fin' | 'null' | 'xmas' | 'maimon' | 'window';
+
+const SCAN_TYPE_OPTIONS: Readonly<Record<string, ScanType>> = {
+  '-sT': 'tcp', '-sS': 'syn', '-sU': 'udp', '-sA': 'ack', '-sF': 'fin',
+  '-sN': 'null', '-sX': 'xmas', '-sM': 'maimon', '-sW': 'window',
+};
 
 export interface NmapOptions {
   targets: string[];
@@ -20,6 +26,12 @@ export interface NmapOptions {
   disableArpPing: boolean;
   /** `-R` : resoudre le nom meme d'un hote qui n'a pas repondu. */
   alwaysResolve: boolean;
+  /**
+   * `--scanflags` : les drapeaux du segment emis. Le balayage de base,
+   * lui, garde la LECTURE de la reponse — les deux sont distincts, ce qui
+   * est tout l'interet de l'option.
+   */
+  scanFlags?: ScanProbeFlags;
   showReason: boolean;
   noDns: boolean;
   verbose: boolean;
@@ -119,6 +131,8 @@ export function parseNmapArgs(args: string[]): NmapOptions {
   const targets: string[] = [];
   let ports: number[] | undefined;
   let scanType: ScanType = 'tcp';
+  let scanTypeGiven = false;
+  let scanFlags: ScanProbeFlags | undefined;
   let pingOnly = false;
   let skipDiscovery = false;
   let versionScan = false;
@@ -146,15 +160,18 @@ export function parseNmapArgs(args: string[]): NmapOptions {
       continue;
     }
 
-    if (a === '-sU') { scanType = 'udp'; continue; }
-    if (a === '-sA') { scanType = 'ack'; continue; }
-    if (a === '-sS') { scanType = 'syn'; continue; }
-    if (a === '-sT') { scanType = 'tcp'; continue; }
-    if (a === '-sF') { scanType = 'fin'; continue; }
-    if (a === '-sN') { scanType = 'null'; continue; }
-    if (a === '-sX') { scanType = 'xmas'; continue; }
-    if (a === '-sM') { scanType = 'maimon'; continue; }
-    if (a === '-sW') { scanType = 'window'; continue; }
+    const chosen = SCAN_TYPE_OPTIONS[a];
+    if (chosen) { scanType = chosen; scanTypeGiven = true; continue; }
+
+    if (a === '--scanflags' && args[i + 1] !== undefined) {
+      const parsed = parseScanFlags(args[++i]);
+      if (!parsed) {
+        throw new NmapOptionError(['--scanflags option must be a number between 0'
+          + ' and 255 (inclusive) or a string like "URGPSHFIN".']);
+      }
+      scanFlags = parsed;
+      continue;
+    }
 
     if (a === '-sn' || a === '-sP') { pingOnly = true; continue; }
     if (a === '-Pn' || a === '-P0') { skipDiscovery = true; continue; }
@@ -187,9 +204,15 @@ export function parseNmapArgs(args: string[]): NmapOptions {
     targets.push(a);
   }
 
+  // « If you don't specify a base type, SYN scan is used. » Le defaut
+  // ORDINAIRE reste le balayage connecte ; c'est `--scanflags` qui le
+  // deplace, parce qu'un balayage connecte ne compose aucun segment et
+  // n'aurait donc rien a faire de ces drapeaux.
+  if (scanFlags && !scanTypeGiven) scanType = 'syn';
+
   return {
-    targets, ports, scanType, pingOnly, skipDiscovery, versionScan, osScan,
-    openOnly, ipv6, disableArpPing, alwaysResolve, showReason, noDns, verbose,
-    outputNormal, outputGreppable,
+    targets, ports, scanType, scanFlags, pingOnly, skipDiscovery, versionScan,
+    osScan, openOnly, ipv6, disableArpPing, alwaysResolve, showReason, noDns,
+    verbose, outputNormal, outputGreppable,
   };
 }

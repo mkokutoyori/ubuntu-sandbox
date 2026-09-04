@@ -2419,3 +2419,35 @@ défauts — la méthode vaut d'être reprise sur le reliquat.
   `NE_PAS_EXECUTER` de la version Cisco — la liste des commandes qu'on ne
   peut pas executer dans un balayage (`reboot`, `save`, `reset`…) doit
   etre etablie pour VRP avant qu'un tel test soit sur.
+- **Un segment TCP est enregistre DEUX fois dans une capture, et la
+  seconde copie est fausse.** Mesure avec `nmap -Pn --scanflags SYNFIN`,
+  une capture sur la cible et le bus instrumente en parallele : le bus
+  porte exactement DEUX trames TCP — le SYN+FIN entrant (fenetre 65535)
+  et le RST+ACK sortant (fenetre 0) — pendant que `tcpdump -r` en rend
+  TROIS, la ligne du milieu etant `Flags [S], seq <le meme>, win 0`,
+  c'est-a-dire le meme segment ampute de son FIN et de sa fenetre.
+  `LinuxMachine.openTcpdumpCapture` branche DEUX sources sur une meme
+  prise — la prise de port reelle (`attachCapture`) et le journal
+  `executor.captureLog` (`subscribeCapture`, plus un rejeu de tout ce
+  qu'il contient deja) — et `makeTcpSegmentDedupSink` existe justement
+  pour apparier les deux. Sa cle inclut les DRAPEAUX et la sequence :
+  quand la copie synthetique se trompe de drapeaux, les cles different,
+  l'appariement n'a pas lieu et les deux lignes sortent. C'est pourquoi
+  le defaut ne se voyait pas avant `--scanflags` : `-sS` emet un `[S]`
+  que la copie synthetique reproduit a l'identique, donc les deux
+  s'appariaient et la prise de port gagnait. `makeTcpFrame`
+  (`CaptureFrame.ts:586`) confirme la forme de la copie fautive — elle
+  reconstruit les drapeaux depuis une CHAINE (`f.includes('S')`) et
+  ecrit `win 0` en dur, faute de champ de fenetre dans `CapturedPacket`.
+  Ce qui n'est PAS etabli, et pourquoi ce n'est pas ferme ici : quel
+  ecrivain a mis cette entree dans le journal de la cible pour un simple
+  balayage. Les trois ecrivains trouves (`captureTcpHandshake`,
+  `captureTcpSynDropped`, `CaptureRouter` via `publishWireSegment`) sont
+  tous sur des chemins SSH, et aucun n'est traverse par `scanProbe` ;
+  il en reste donc un a trouver. Deux corrections possibles et non
+  tranchees : retirer les drapeaux et la fenetre de la cle
+  d'appariement (simple, mais deux segments distincts de meme sequence
+  et meme longueur se confondraient), ou supprimer la source
+  synthetique pour tout ce que la prise de port porte deja (juste, mais
+  elle est le SEUL enregistrement des chemins scriptes qui ne
+  traversent aucun port — telnet et SSH scriptes).

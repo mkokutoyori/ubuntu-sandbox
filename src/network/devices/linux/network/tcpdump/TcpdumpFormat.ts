@@ -117,17 +117,25 @@ function encapsulatedLines(frame: CaptureFrame, opt: TcpdumpOptions): string {
   return `\n${header}\n    ${src} > ${dst}: ${detail}`;
 }
 
+/**
+ * L'ordre est celui de `tcp_flag_values` (`print-tcp.c:105`), parcouru
+ * tel quel par `bittok2str_nosep` : FIN, SYN, RST, PSH, ACK, URG, ECE,
+ * CWR. Il n'est pas devinable — l'ACK se note `.` et se place AVANT
+ * l'URG, et le FIN passe avant le SYN, ce qu'un segment portant les deux
+ * rend visible. Aucun bit reconnu donne `none`, la chaine de repli que
+ * `bittok2str_nosep` recoit ligne 273.
+ */
+const TCPDUMP_FLAG_ORDER: ReadonlyArray<[keyof NonNullable<CaptureFrame['tcpFlags']>, string]> = [
+  ['fin', 'F'], ['syn', 'S'], ['rst', 'R'], ['psh', 'P'],
+  ['ack', '.'], ['urg', 'U'], ['ece', 'E'], ['cwr', 'W'],
+];
+
 export function tcpFlagToken(frame: CaptureFrame): string {
   const f = frame.tcpFlags;
-  if (!f) return '.';
+  if (!f) return 'none';
   let s = '';
-  if (f.syn) s += 'S';
-  if (f.fin) s += 'F';
-  if (f.rst) s += 'R';
-  if (f.psh) s += 'P';
-  if (f.urg) s += 'U';
-  if (f.ack) s += '.';
-  return s === '' ? '.' : s;
+  for (const [name, letter] of TCPDUMP_FLAG_ORDER) if (f[name]) s += letter;
+  return s === '' ? 'none' : s;
 }
 
 function endpoint(ip: string | undefined, port: number | undefined): string {

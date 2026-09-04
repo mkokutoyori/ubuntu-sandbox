@@ -2,7 +2,7 @@ import type { NmapOptions, ScanType } from './NmapOptions';
 import { IPAddress } from '@/network/core/types';
 import type { TcpWireOutcome } from '@/network/tcp/types';
 import { topPorts, serviceName, DEFAULT_TOP_COUNT } from './ServiceRegistry';
-import type { ScanVerdict, StatelessScanKind } from './StatelessScans';
+import type { ScanProbeFlags, ScanVerdict, StatelessScanKind } from './StatelessScans';
 import {
   ARP_PING_PHASE, IP_PING_PHASE, ND_PING_PHASE, SCAN_PHASE_NAME, type ScanPhase,
 } from './ScanPhases';
@@ -60,8 +60,14 @@ export interface HostProbes {
    */
   fingerprint?(ip: string): Promise<string | undefined>;
   tcpOutcome(ip: string, port: number): TcpWireOutcome;
-  /** Les balayages qui n'ouvrent rien : SYN, ACK, FIN, NULL, Xmas, Maimon, fenetre. */
-  statelessOutcome?(ip: string, port: number, kind: StatelessScanKind): ScanVerdict;
+  /**
+   * Les balayages qui n'ouvrent rien : SYN, ACK, FIN, NULL, Xmas, Maimon,
+   * fenetre. `kind` decide la LECTURE de la reponse, `flags` ce qui est
+   * EMIS — les deux se separent des que `--scanflags` compose le segment.
+   */
+  statelessOutcome?(
+    ip: string, port: number, kind: StatelessScanKind, flags?: ScanProbeFlags,
+  ): ScanVerdict;
   udpState(ip: string, port: number): 'open' | 'closed' | 'open|filtered';
   banner(ip: string, port: number): { service: string; version?: string } | null;
 }
@@ -145,7 +151,7 @@ function tcpResult(
 ): PortResult {
   const kind = statelessKindOf(options.scanType);
   const stateless = kind && probes.statelessOutcome
-    ? probes.statelessOutcome(ip, port, kind) : null;
+    ? probes.statelessOutcome(ip, port, kind, options.scanFlags) : null;
   let state: PortState;
   let reason: string;
   if (stateless) {

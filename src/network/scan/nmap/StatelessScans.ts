@@ -44,6 +44,48 @@ export const SCAN_PROBE_FLAGS: Readonly<Record<StatelessScanKind, ScanProbeFlags
   window: flags({ ack: true }),
 };
 
+/**
+ * Les bits du champ de controle TCP, dans l'ordre de la RFC 9293 §3.1.
+ * `parse_scanflags` (`nmap.cc:162`) lit un NOMBRE de 0 a 255 ou un
+ * amalgame de ces noms, dans un ordre indifferent ; `ALL` vaut 255 et
+ * `NONE` remet a zero, deux mots que le code connait et que la page de
+ * manuel ne cite pas.
+ */
+const TCP_FLAG_BITS: ReadonlyArray<[keyof ScanProbeFlags, number, string[]]> = [
+  ['fin', 0x01, ['FIN']],
+  ['syn', 0x02, ['SYN']],
+  ['rst', 0x04, ['RST', 'RESET']],
+  ['psh', 0x08, ['PSH', 'PUSH']],
+  ['ack', 0x10, ['ACK']],
+  ['urg', 0x20, ['URG']],
+  ['ece', 0x40, ['ECE']],
+  ['cwr', 0x80, ['CWR']],
+];
+
+export function flagsFromBits(value: number): ScanProbeFlags {
+  const out = flags({});
+  for (const [name, bit] of TCP_FLAG_BITS) out[name] = (value & bit) !== 0;
+  return out;
+}
+
+/** `null` quand la valeur n'est ni un nombre de 0 a 255 ni des noms connus. */
+export function parseScanFlags(arg: string): ScanProbeFlags | null {
+  if (/^\d/.test(arg)) {
+    const value = Number(arg);
+    if (!Number.isInteger(value) || value < 0 || value > 255) return null;
+    return flagsFromBits(value);
+  }
+  const upper = arg.toUpperCase();
+  let value = 0;
+  let matched = false;
+  for (const [, bit, names] of TCP_FLAG_BITS) {
+    if (names.some((n) => upper.includes(n))) { value |= bit; matched = true; }
+  }
+  if (upper.includes('ALL')) { value = 255; matched = true; }
+  if (upper.includes('NONE')) { value = 0; matched = true; }
+  return matched ? flagsFromBits(value) : null;
+}
+
 export interface ScanVerdict {
   state: PortState;
   reason: string;
