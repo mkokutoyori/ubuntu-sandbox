@@ -40,11 +40,29 @@ export interface TacacsServerStats {
   authRejects: number;
 }
 
+export const RADIUS_LEGACY_AUTH_PORT = 1645;
+export const RADIUS_LEGACY_ACCT_PORT = 1646;
+export const TACACS_DEFAULT_PORT = 49;
+
+export interface RadiusGlobalDefaults {
+  key?: string;
+  timeoutSec?: number;
+  retransmit?: number;
+  authPort?: number;
+  acctPort?: number;
+}
+
+export interface TacacsGlobalDefaults {
+  key?: string;
+  timeoutSec?: number;
+  port?: number;
+}
+
 export interface RadiusServer {
   name: string;
   address?: string;
-  authPort: number;
-  acctPort: number;
+  authPort?: number;
+  acctPort?: number;
   key?: string;
   retransmit?: number;
   timeoutSec?: number;
@@ -57,7 +75,7 @@ export interface TacacsServer {
   name: string;
   address?: string;
   key?: string;
-  port: number;
+  port?: number;
   timeoutSec?: number;
   singleConnection: boolean;
   stats: TacacsServerStats;
@@ -76,6 +94,24 @@ export interface TacacsServer {
    * servers configured » et l'authentification ne trouvait rien.
    */
   legacySpelling?: boolean;
+}
+
+export function radiusAuthPort(
+  server: RadiusServer, defaults: RadiusGlobalDefaults,
+): number {
+  return server.authPort ?? defaults.authPort ?? RADIUS_LEGACY_AUTH_PORT;
+}
+
+export function radiusAcctPort(
+  server: RadiusServer, defaults: RadiusGlobalDefaults,
+): number {
+  return server.acctPort ?? defaults.acctPort ?? RADIUS_LEGACY_ACCT_PORT;
+}
+
+export function tacacsServerPort(
+  server: TacacsServer, defaults: TacacsGlobalDefaults,
+): number {
+  return server.port ?? defaults.port ?? TACACS_DEFAULT_PORT;
 }
 
 export function newRadiusServerStats(): RadiusServerStats {
@@ -362,8 +398,8 @@ export class CiscoSecurityConfig {
   tacacsServers: Map<string, TacacsServer> = new Map();
   aaaGroups: Map<string, AaaServerGroup> = new Map();
   legacyHosts: AaaLegacyServerHost[] = [];
-  radiusDefaults: { key?: string; timeoutSec?: number; retransmit?: number } = {};
-  tacacsDefaults: { key?: string; timeoutSec?: number } = {};
+  radiusDefaults: RadiusGlobalDefaults = {};
+  tacacsDefaults: TacacsGlobalDefaults = {};
 
   ssh: SshConfig = { ...SSH_DEFAULTS };
   cryptoKeys: CryptoRsaKey[] = [];
@@ -572,9 +608,18 @@ export class CiscoSecurityConfig {
     if (this.radiusDefaults.retransmit !== undefined) {
       lines.push(`radius-server retransmit ${this.radiusDefaults.retransmit}`);
     }
+    if (this.radiusDefaults.authPort !== undefined) {
+      lines.push(`radius-server auth-port ${this.radiusDefaults.authPort}`);
+    }
+    if (this.radiusDefaults.acctPort !== undefined) {
+      lines.push(`radius-server acct-port ${this.radiusDefaults.acctPort}`);
+    }
     if (this.tacacsDefaults.key) lines.push(`tacacs-server key ${this.tacacsDefaults.key}`);
     if (this.tacacsDefaults.timeoutSec !== undefined) {
       lines.push(`tacacs-server timeout ${this.tacacsDefaults.timeoutSec}`);
+    }
+    if (this.tacacsDefaults.port !== undefined) {
+      lines.push(`tacacs-server port ${this.tacacsDefaults.port}`);
     }
     for (const r of this.radiusServers.values()) {
       // Même règle que pour TACACS+ : la forme héritée se rend telle
@@ -582,13 +627,17 @@ export class CiscoSecurityConfig {
       // nom de serveur que l'opérateur n'a jamais donné.
       if (r.legacySpelling) {
         lines.push(`radius-server host ${r.address ?? r.name}`
-          + (r.authPort !== 1645 ? ` auth-port ${r.authPort}` : '')
-          + (r.acctPort !== 1646 ? ` acct-port ${r.acctPort}` : '')
+          + (r.authPort !== undefined ? ` auth-port ${r.authPort}` : '')
+          + (r.acctPort !== undefined ? ` acct-port ${r.acctPort}` : '')
           + (r.key ? ` key ${r.key}` : ''));
         continue;
       }
       lines.push(`radius server ${r.name}`);
-      if (r.address) lines.push(` address ipv4 ${r.address} auth-port ${r.authPort} acct-port ${r.acctPort}`);
+      if (r.address) {
+        lines.push(` address ipv4 ${r.address}`
+          + ` auth-port ${radiusAuthPort(r, this.radiusDefaults)}`
+          + ` acct-port ${radiusAcctPort(r, this.radiusDefaults)}`);
+      }
       if (r.key) lines.push(` key ${r.key}`);
     }
     for (const t of this.tacacsServers.values()) {
@@ -598,14 +647,14 @@ export class CiscoSecurityConfig {
       // là où il n'en avait donné aucun.
       if (t.legacySpelling) {
         lines.push(`tacacs-server host ${t.address ?? t.name}`
-          + (t.port !== 49 ? ` port ${t.port}` : '')
+          + (t.port !== undefined ? ` port ${t.port}` : '')
           + (t.timeoutSec !== undefined && t.timeoutSec !== 5 ? ` timeout ${t.timeoutSec}` : '')
           + (t.key ? ` key ${t.key}` : ''));
         continue;
       }
       lines.push(`tacacs server ${t.name}`);
       if (t.address) lines.push(` address ipv4 ${t.address}`);
-      if (t.port !== 49) lines.push(` port ${t.port}`);
+      if (t.port !== undefined) lines.push(` port ${t.port}`);
       if (t.key) lines.push(` key ${t.key}`);
       if (t.timeoutSec !== undefined && t.timeoutSec !== 5) lines.push(` timeout ${t.timeoutSec}`);
     }

@@ -1,6 +1,7 @@
 import type { Router } from '../../Router';
 import { getSecurityConfig } from '../../shells/cisco/CiscoSecurityCommands';
 import type { AaaMethodEntry, AaaServerGroup, CiscoSecurityConfig, RadiusServer, TacacsServer } from '../security/CiscoSecurityConfig';
+import { radiusAuthPort, tacacsServerPort } from '../security/CiscoSecurityConfig';
 import type { RadiusClientAgent } from '../../../radius/RadiusClientAgent';
 import type { TacacsClientAgent } from '../../../tacacs/TacacsClientAgent';
 import type { TacacsAcctFlag } from '../../../tacacs/types';
@@ -512,7 +513,7 @@ export class AaaAuthenticator {
   private syncRadiusServer(client: RadiusClientAgent, server: RadiusServer): void {
     const defauts = getSecurityConfig(this.router).radiusDefaults;
     client.addServer(server.address as string, server.key ?? defauts.key ?? '', {
-      port: server.authPort,
+      port: radiusAuthPort(server, defauts),
       timeoutMs: (server.timeoutSec ?? defauts.timeoutSec ?? 5) * 1000,
       retransmit: server.retransmit ?? defauts.retransmit,
     });
@@ -521,7 +522,7 @@ export class AaaAuthenticator {
   private syncTacacsServer(client: TacacsClientAgent, server: TacacsServer): void {
     const defauts = getSecurityConfig(this.router).tacacsDefaults;
     client.addServer(server.address as string, server.key ?? defauts.key ?? '', {
-      port: server.port,
+      port: tacacsServerPort(server, defauts),
       timeoutMs: (server.timeoutSec ?? defauts.timeoutSec ?? 5) * 1000,
     });
   }

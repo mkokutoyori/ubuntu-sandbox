@@ -140,13 +140,8 @@ chemins sur le routeur et 20 sur le commutateur ou les deux sorties sont
 IDENTIQUES, c'est-a-dire ou le mot de trop est jete en silence. Le lot
 UDLD en a ferme trois. Les autres, par famille :
 
-- `aaa new-model zorglub`, `aaa local … zorglub`, `aaa session-id …
-  zorglub`, `aaa group … zorglub` — et `aaa session-id common` n'est rendu
-  NULLE PART, donc perdu a l'import d'une topologie.
-- `radius-server {acct-port|auth-port} zorglub` et `tacacs-server port
-  zorglub` : un NOMBRE hors bornes est correctement refuse (`99999`), un
-  mot ne l'est pas — donc la plage est appliquee et la forme ne l'est pas.
-  Les valeurs valides ne sont rendues nulle part non plus.
+- `aaa local … zorglub` et `aaa group … zorglub` prennent encore le mot de
+  trop (`aaa new-model` et `aaa session-id` sont fermes).
 - `ntp source zorglub` est accepte ET RENDU tel quel dans la configuration,
   alors que cette commande prend une INTERFACE ; `ntp source` nu est
   accepte aussi. `radius server` nu — qui exige un nom — de meme.
