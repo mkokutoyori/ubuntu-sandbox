@@ -132,6 +132,11 @@ export interface RIPCallbacks {
    * (RFC 1058). Defaults to 2 when absent.
    */
   getRipVersion?(): 1 | 2;
+  /**
+   * Per-interface `send-version` / `receive-version`, when the platform
+   * offers them. Absent means the device-wide version governs both.
+   */
+  getInterfaceVersions?(iface: string): RIPInterfaceVersions | null;
   /** Evaluate a `route-policy` referenced by `import-route ... route-policy <name>`. */
   evaluateRoutePolicy?(name: string, network: IPAddress, mask: SubnetMask): 'permit' | 'deny' | null;
   /** RFC 2453 §4.1 authentication configured on an interface, if any. */
@@ -140,6 +145,11 @@ export interface RIPCallbacks {
   isInterfaceUsable?(iface: string): boolean;
   /** Unicast an IPv4 packet, resolving the destination's MAC by ARP. */
   sendIpv4ArpAware(iface: string, packet: import('../core/types').IPv4Packet, nextHop: IPAddress): void;
+}
+
+export interface RIPInterfaceVersions {
+  readonly send: 1 | 2;
+  readonly receive: 1 | 2;
 }
 
 export interface RIPInterfaceAuth {
@@ -479,6 +489,12 @@ export class RIPEngine implements IProtocolEngine {
     }
 
     if (ripPkt.command === 2) {
+      if (ripPkt.version !== this.receiveVersionFor(inPort)) {
+        Logger.warn(this.equipmentId, 'rip:version-mismatch',
+          `${this.hostname}: RIPv${ripPkt.version} update from ${srcIP} on ${inPort} `
+          + `ignored (receive-version ${this.receiveVersionFor(inPort)})`);
+        return;
+      }
       if (!this.authenticated(inPort, ripPkt)) {
         Logger.warn(this.equipmentId, 'rip:auth-failed',
           `${this.hostname}: RIP update from ${srcIP} on ${inPort} rejected (authentication)`);
@@ -528,6 +544,14 @@ export class RIPEngine implements IProtocolEngine {
   /** Live version: the CLI override, or RIPv2 by default. */
   private ripVersion(): 1 | 2 {
     return this.callbacks.getRipVersion?.() ?? 2;
+  }
+
+  private sendVersionFor(iface: string): 1 | 2 {
+    return this.callbacks.getInterfaceVersions?.(iface)?.send ?? this.ripVersion();
+  }
+
+  private receiveVersionFor(iface: string): 1 | 2 {
+    return this.callbacks.getInterfaceVersions?.(iface)?.receive ?? this.ripVersion();
   }
 
   /** RFC 2453 §3.9.1 — a request for the full table is a single entry
@@ -723,7 +747,7 @@ export class RIPEngine implements IProtocolEngine {
         ...this.deviceRef(),
         iface: outIface,
         routeCount: entries.length,
-        destIp: this.destinationIp().toString(),
+        destIp: this.destinationIp(outIface).toString(),
         triggered: false,
       },
     });
@@ -787,7 +811,7 @@ export class RIPEngine implements IProtocolEngine {
           ...this.deviceRef(),
           iface: '*',
           routeCount: totalEntries,
-          destIp: this.destinationIp().toString(),
+          destIp: this.destinationForVersion(this.ripVersion()).toString(),
           triggered: true,
         },
       });
@@ -809,15 +833,21 @@ export class RIPEngine implements IProtocolEngine {
   }
 
   /** RIPv2 multicasts to 224.0.0.9; RIPv1 broadcasts (RFC 2453 §4.3). */
-  private destinationIp(): IPAddress {
-    return this.ripVersion() === 2
+  private destinationForVersion(version: 1 | 2): IPAddress {
+    return version === 2
       ? new IPAddress(RIP_V2_MULTICAST_IP)
       : new IPAddress('255.255.255.255');
   }
 
-  private sendPacket(outIface: string, ripPkt: RIPPacket, destIP?: IPAddress): void {
+  private destinationIp(outIface: string): IPAddress {
+    return this.destinationForVersion(this.sendVersionFor(outIface));
+  }
+
+  private sendPacket(outIface: string, packet: RIPPacket, destIP?: IPAddress): void {
     const myIP = this.callbacks.getPortIP(outIface);
     if (!myIP) return;
+
+    let ripPkt: RIPPacket = { ...packet, version: this.sendVersionFor(outIface) };
 
     const auth = this.callbacks.getInterfaceAuth?.(outIface) ?? null;
     if (auth) {
@@ -827,7 +857,7 @@ export class RIPEngine implements IProtocolEngine {
 
     const ripSize = 4 + ripPkt.entries.length * 20 + (ripPkt.auth ? 20 : 0);
 
-    const destination = destIP ?? this.destinationIp();
+    const destination = destIP ?? this.destinationIp(outIface);
     const ipPkt = buildUdpOverIpv4(myIP, {
       destination,
       destinationPort: UDP_PORT_RIP, sourcePort: UDP_PORT_RIP,

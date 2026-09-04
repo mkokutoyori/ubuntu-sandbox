@@ -70,6 +70,11 @@ export const ROUTER_RIP: FortiTableSpec = {
       passiveInterfaces: [...object.effective('passive-interface')],
       defaultInformationOriginate:
         object.effective('default-information-originate')[0] === 'enable',
+      interfaces: object.childEntries('interface').map(entry => ({
+        name: entry.key,
+        sendVersion: entry.effective('send-version')[0] === '1' ? 1 : 2,
+        receiveVersion: entry.effective('receive-version')[0] === '1' ? 1 : 2,
+      })),
     });
   },
 };
