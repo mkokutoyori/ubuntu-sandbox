@@ -214,6 +214,28 @@ test.describe('nmap sonde le fil', () => {
     expect(sortie).toMatch(/22\/tcp\s+open\s+ssh/);
   });
 
+  test('une option inconnue est refusee au lieu d etre ignoree', async ({ page }) => {
+    test.setTimeout(180_000);
+    await page.goto('/', { timeout: 45_000 });
+    await waitForStore(page);
+
+    const scannerId = await addDevice(page, 'linux-pc', 600, 550);
+
+    await openTerminal(page, scannerId);
+    await typeCmd(page, `ip addr add ${SCANNER}/24 dev eth0`);
+
+    await typeCmd(page, `nmap --zorglub ${CIBLE}`);
+    const inconnue = await lastLines(page, 6);
+    expect(inconnue).toContain("nmap: unrecognized option '--zorglub'");
+    expect(inconnue).not.toContain('Nmap scan report');
+
+    await typeCmd(page, `nmap --max-rate 100 ${CIBLE}`);
+    const nonImplantee = await lastLines(page, 6);
+    expect(nonImplantee).toContain(
+      'nmap: option --max-rate: is not implemented in this simulator');
+    expect(nonImplantee).not.toContain('Nmap scan report for 100');
+  });
+
   test('nmap.exe existe aussi sur une machine Windows', async ({ page }) => {
     test.setTimeout(180_000);
     await page.goto('/', { timeout: 45_000 });

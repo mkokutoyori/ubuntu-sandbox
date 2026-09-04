@@ -1,4 +1,5 @@
 import { parsePortSpec } from './PortSpec';
+import { NMAP_LONG_OPTIONS, NMAP_SHORT_OPTIONS } from './NmapOptionTables';
 import { topPorts, fastPorts } from './ServiceRegistry';
 
 export type ScanType =
@@ -24,6 +25,94 @@ export interface NmapOptions {
   verbose: boolean;
   outputNormal?: string;
   outputGreppable?: string;
+}
+
+/**
+ * Ce que l'analyseur rend quand il refuse : la ou les lignes a ecrire, et
+ * rien d'autre. Un refus d'option n'est pas un balayage rate, c'est un
+ * balayage qui n'a pas eu lieu.
+ */
+export class NmapOptionError extends Error {
+  constructor(readonly lines: string[]) {
+    super(lines.join('\n'));
+    this.name = 'NmapOptionError';
+  }
+}
+
+/**
+ * Une option qui REND un texte et n'entreprend aucun balayage : `-h` sort
+ * l'usage et `-V` la version, chacune suivie d'`exit(0)` sur une vraie
+ * machine (`nmap.cc:1091` et `1420`). Elles sont implantees plutot que
+ * refusees parce que le message de refus RENVOIE a `nmap -h` : le laisser
+ * pointer vers une option qui repond « non implantee » serait une
+ * impasse.
+ */
+export class NmapImmediateOutput extends Error {
+  constructor(readonly text: string) {
+    super(text);
+    this.name = 'NmapImmediateOutput';
+  }
+}
+
+export const NMAP_USAGE = 'Nmap 7.94 ( https://nmap.org )\n'
+  + 'Usage: nmap [Scan Type(s)] [Options] {target specification}';
+
+/**
+ * `nmap.cc:2891` : `"%s version %s ( %s )"`. Les lignes `Platform:` et
+ * `Compiled with:` qui suivent decrivent une construction qui n'existe
+ * pas ici, donc elles sont OMISES plutot qu'inventees.
+ */
+export const NMAP_VERSION_TEXT = 'Nmap version 7.94 ( https://nmap.org )';
+
+const UNKNOWN_TAIL = 'See the output of nmap -h for a summary of options.';
+
+/**
+ * `-T` ne regle qu'une vitesse et `-r` qu'un ordre de tirage des ports.
+ * Ce simulateur livre ses trames de facon synchrone et ne tire aucun
+ * ordre : leur effet observable est DEJA atteint, donc les accepter sans
+ * rien changer est exact, la ou les refuser annoncerait un manque qui
+ * n'existe pas.
+ */
+function acceptedWithoutEffect(arg: string): boolean {
+  return arg === '-r' || /^-T[0-5]?$/.test(arg);
+}
+
+function refuseUnknown(arg: string): never {
+  const name = arg.startsWith('--')
+    ? `nmap: unrecognized option '${arg}'`
+    : `nmap: invalid option -- '${arg.slice(1, 2)}'`;
+  throw new NmapOptionError([name, UNKNOWN_TAIL]);
+}
+
+function refuseUnimplemented(name: string): never {
+  throw new NmapOptionError(
+    [`nmap: option ${name}: is not implemented in this simulator`]);
+}
+
+/**
+ * Un argument commencant par un tiret que l'analyseur n'a pas reconnu.
+ * Trois issues, comme pour `curl` : connue de `nmap` et non implantee ici
+ * — refus nommant le simulateur, puisqu'aucun vrai `nmap` n'est jamais
+ * dans cette situation et que repondre « inconnue » serait un second
+ * mensonge ; inexistante — le message de `nmap` ; acceptee sans effet
+ * pour une raison ecrite.
+ *
+ * Le refus etant immediat, la valeur d'une option a valeur n'est jamais
+ * atteinte, donc jamais rangee dans les cibles : c'est ce qui faisait
+ * balayer `100` comme une machine sous `nmap --max-rate 100 <cible>`.
+ */
+function refuseUnrecognized(arg: string): void {
+  if (acceptedWithoutEffect(arg)) return;
+
+  if (arg.startsWith('--')) {
+    const name = arg.slice(2).split('=', 1)[0];
+    if (!NMAP_LONG_OPTIONS.has(name)) refuseUnknown(arg);
+    refuseUnimplemented(`--${name}`);
+  }
+
+  const letter = arg[1];
+  if (!NMAP_SHORT_OPTIONS.has(letter)) refuseUnknown(arg);
+  refuseUnimplemented(`-${letter}`);
 }
 
 export function parseNmapArgs(args: string[]): NmapOptions {
@@ -91,8 +180,9 @@ export function parseNmapArgs(args: string[]): NmapOptions {
     if (a === '-6') { ipv6 = true; continue; }
     if (a === '--disable-arp-ping' || a === '--send-ip') { disableArpPing = true; continue; }
     if (a === '-R') { alwaysResolve = true; continue; }
-    if (a.startsWith('-T') || a === '--reason-only') continue;
-    if (a.startsWith('-')) continue;
+    if (a === '-h' || a === '--help') throw new NmapImmediateOutput(NMAP_USAGE);
+    if (a === '-V' || a === '--version') throw new NmapImmediateOutput(NMAP_VERSION_TEXT);
+    if (a.startsWith('-')) { refuseUnrecognized(a); continue; }
 
     targets.push(a);
   }

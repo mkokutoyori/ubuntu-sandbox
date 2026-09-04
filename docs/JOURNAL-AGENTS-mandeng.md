@@ -7468,3 +7468,39 @@ deux choses a une meme sortie.
 
 **Discrimination** : `probe-nmap-verbeux.test.ts` (10 cas), 7 tombent ;
 les 3 restants sont les TEMOINS, dont c'est le role.
+
+---
+
+## 2026-09-04 — `nmap` : trois familles d'options, et une valeur qui n'est plus une cible
+
+**Portee** : `scan/nmap/NmapOptionTables.ts` (nouveau), `NmapOptions`,
+`NmapRun`.
+
+L'analyseur finissait par `if (a.startsWith('-')) continue;` : tout ce
+qu'il ne connaissait pas etait jete EN SILENCE. Deux consequences, dont
+la seconde n'est pas cosmetique — `nmap -Z <cible>` balayait alors
+qu'aucun `-Z` n'existe, et surtout une option a VALEUR laissait sa valeur
+derriere elle, que la boucle rangeait dans les CIBLES :
+`nmap --max-rate 100 <cible>` balayait `100` comme une machine.
+
+Les deux listes de `NmapOptionTables.ts` sont RELEVEES sur `nmap.cc`
+(`long_options[]`, 100 entrees ; la chaine de `getopt_long_only`) et non
+rappelees. C'est ainsi qu'on a constate que `--reason-only`, jusque-la
+dans notre ligne d'options explicitement ignorees, N'EXISTE PAS.
+
+Trois familles, comme pour `curl` (`docs/PRD-Curl.md`) : implantee,
+connue-de-nmap-non-implantee (refus NOMMANT le simulateur), inexistante
+(message de `nmap`). `-T` et `-r` restent acceptes sans effet, pour une
+raison ecrite : ils ne reglent qu'une vitesse et un ordre de tirage, et
+l'effet observable des deux est deja atteint.
+
+Les listes ne disent DELIBEREMENT pas quelles options prennent une
+valeur : le refus etant immediat, cette valeur n'est jamais atteinte, et
+une telle colonne ne serait lue par personne. Une premiere version
+l'avait ecrite.
+
+`-h` et `-V` sont IMPLANTEES plutot que refusees, parce que le message de
+refus renvoie a `nmap -h`.
+
+**Discrimination** : `probe-nmap-familles-d-options.test.ts` (13 cas), 8
+tombent ; les 5 restants sont nommes dans l'en-tete.
