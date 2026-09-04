@@ -19,6 +19,10 @@ import { psValueToString } from '@/powershell/runtime/PSExpansion';
 import { makeTimeSpan } from './DateTimeCmdlets';
 import { NON_INTERACTIVE_HOST, confirmationDue } from '../confirmation';
 import {
+  type NetFirewallRuleEntry, type NetFirewallSelection, generatedFirewallRuleName,
+  noMatchingFirewallRule, planNetFirewallRule, selectFirewallRules,
+} from '@/network/devices/windows/netFirewallRule';
+import {
   type NetIPAddressSelection, NO_MATCHING_INTERFACE, TIMESPAN_MAX_SECONDS, matchEnumValue,
   noMatchingNetIPAddress, planNetIPAddress, prefixLengthProblem, selectNetIPAddresses,
 } from '@/network/devices/windows/netIpAddress';
@@ -1209,30 +1213,99 @@ export class ClearDnsClientCacheCmdlet implements ICmdlet {
 
 // ── Get / New / Set / Enable / Disable / Remove-NetFirewallRule ────────────
 
+const NET_FIREWALL_FILTERS = ['Name', 'DisplayName', 'Description', 'Group', 'Enabled',
+  'Action', 'Direction'] as const;
+
+const NET_FIREWALL_UNSUPPORTED: ReadonlyArray<readonly [string, string, string]> = [
+  ['program', 'Program', 'a firewall rule cannot be tied to a process here'],
+  ['service', 'Service', 'a firewall rule cannot be tied to a service here'],
+  ['package', 'Package', 'application packages are not modelled'],
+  ['localuser', 'LocalUser', 'a firewall rule carries no security descriptor here'],
+  ['remoteuser', 'RemoteUser', 'a firewall rule carries no security descriptor here'],
+  ['remotemachine', 'RemoteMachine', 'a firewall rule carries no security descriptor here'],
+  ['authentication', 'Authentication', 'connection security rules are not modelled'],
+  ['encryption', 'Encryption', 'connection security rules are not modelled'],
+  ['icmptype', 'IcmpType', 'an ICMP type filter is not evaluated here'],
+  ['interfacetype', 'InterfaceType', 'an interface carries no media type here'],
+  ['edgetraversalpolicy', 'EdgeTraversalPolicy', 'edge traversal is not modelled'],
+  ['policystore', 'PolicyStore', 'only the active store is modelled'],
+];
+
+function unsupportedFirewallParameter(ctx: CmdletContext): string | null {
+  for (const [key, name, reason] of NET_FIREWALL_UNSUPPORTED) {
+    if (ctx.named[key] !== undefined) {
+      return `The -${name} parameter is not implemented in this simulator: ${reason}.`;
+    }
+  }
+  return null;
+}
+
+function firewallSelectionOf(ctx: CmdletContext, filters: readonly string[]): NetFirewallSelection {
+  const allowed = new Set(filters.map(f => f.toLowerCase()));
+  const list = (key: string): string[] | undefined => {
+    const raw = allowed.has(key) ? ctx.named[key] : undefined;
+    if (raw === undefined) return undefined;
+    return (Array.isArray(raw) ? raw : [raw]).map(psValueToString);
+  };
+  return {
+    name: list('name'),
+    displayName: list('displayname'),
+    description: list('description'),
+    group: list('group'),
+    enabled: list('enabled'),
+    action: list('action'),
+    direction: list('direction'),
+  };
+}
+
+function firewallRuleToPSObject(rule: NetFirewallRuleEntry): Record<string, PSValue> {
+  return {
+    Name:          rule.name,
+    DisplayName:   rule.displayName,
+    Description:   rule.description,
+    Group:         rule.group,
+    Enabled:       rule.enabled,
+    Profile:       rule.profile,
+    Direction:     rule.direction,
+    Action:        rule.action,
+    Protocol:      rule.protocol,
+    LocalPort:     rule.localPort,
+    RemotePort:    rule.remotePort,
+    LocalAddress:  rule.localAddress,
+    RemoteAddress: rule.remoteAddress,
+    PolicyStoreSource: 'PersistentStore',
+    PolicyStoreSourceType: 'Local',
+  };
+}
+
+function selectedFirewallRules(
+  ctx: CmdletContext, cmdlet: string, filters: readonly string[],
+): NetFirewallRuleEntry[] | null {
+  const net = requireNetwork(ctx);
+  const selection = firewallSelectionOf(ctx, filters);
+  if (selection.name === undefined && ctx.positional[0] !== undefined) {
+    selection.name = [psValueToString(ctx.positional[0])];
+  }
+  const matched = selectFirewallRules(net.getFirewallRules(), selection);
+  if (matched.length === 0) {
+    ctx.emitError(`${cmdlet} : ${noMatchingFirewallRule(selection)}`);
+    return null;
+  }
+  return matched;
+}
+
 export class GetNetFirewallRuleCmdlet implements ICmdlet {
   readonly name = 'get-netfirewallrule';
   readonly displayName = 'Get-NetFirewallRule';
   readonly aliases = [] as const;
+  readonly description = 'Retrieves firewall rules from the target computer.';
+  readonly parameters = [...NET_FIREWALL_FILTERS, 'All'] as const;
 
   execute(ctx: CmdletContext): PSValue {
-    const displayName = ctx.named['displayname'] !== undefined
-      ? psValueToString(ctx.named['displayname']).toLowerCase() : null;
-    const name = ctx.named['name'] !== undefined
-      ? psValueToString(ctx.named['name']).toLowerCase() : null;
-    const rules = requireNetwork(ctx).getFirewallRules()
-      .filter(r => !displayName || r.displayName?.toLowerCase() === displayName || r.name.toLowerCase() === displayName)
-      .filter(r => !name || r.name.toLowerCase() === name);
-    return rules.map(r => ({
-      Name: r.name,
-      DisplayName: r.displayName,
-      Enabled: r.enabled,
-      Action: r.action,
-      Direction: r.direction,
-      Protocol: r.protocol,
-      LocalPort: r.localPort,
-      RemotePort: r.remotePort,
-      Description: r.description,
-    } as Record<string, PSValue>)) as PSValue;
+    const unsupported = unsupportedFirewallParameter(ctx);
+    if (unsupported) { ctx.emitError(`Get-NetFirewallRule : ${unsupported}`); return null; }
+    const matched = selectedFirewallRules(ctx, 'Get-NetFirewallRule', NET_FIREWALL_FILTERS);
+    return matched === null ? null : (matched.map(firewallRuleToPSObject) as PSValue);
   }
 }
 
@@ -1240,44 +1313,65 @@ export class NewNetFirewallRuleCmdlet implements ICmdlet {
   readonly name = 'new-netfirewallrule';
   readonly displayName = 'New-NetFirewallRule';
   readonly aliases = [] as const;
+  readonly pipelineByPropertyName = true as const;
+  readonly description = 'Creates a new inbound or outbound firewall rule.';
+  readonly parameters = ['Name', 'DisplayName', 'Description', 'Group', 'Enabled', 'Profile',
+    'Direction', 'Action', 'Protocol', 'LocalPort', 'RemotePort', 'LocalAddress',
+    'RemoteAddress', 'WhatIf', 'Confirm'] as const;
 
   execute(ctx: CmdletContext): PSValue {
     const net = requireNetwork(ctx);
-    const displayName = psValueToString(ctx.named['displayname'] ?? '');
-    const name        = psValueToString(ctx.named['name']        ?? displayName);
-    const action      = psValueToString(ctx.named['action']      ?? 'Allow');
-    const direction   = psValueToString(ctx.named['direction']   ?? 'Inbound');
-    if (!displayName) {
-      ctx.emitError('New-NetFirewallRule requires -DisplayName');
+    const unsupported = unsupportedFirewallParameter(ctx);
+    if (unsupported) { ctx.emitError(`New-NetFirewallRule : ${unsupported}`); return null; }
+    const arg = (key: string): string | undefined =>
+      ctx.named[key] === undefined ? undefined : psValueToString(ctx.named[key]);
+    const list = (key: string): string[] | undefined => {
+      const raw = ctx.named[key];
+      if (raw === undefined) return undefined;
+      return (Array.isArray(raw) ? raw : [raw]).map(psValueToString);
+    };
+    const decision = planNetFirewallRule({
+      name: arg('name'),
+      displayName: arg('displayname'),
+      description: arg('description'),
+      group: arg('group'),
+      enabled: arg('enabled'),
+      action: arg('action'),
+      direction: arg('direction'),
+      profile: arg('profile'),
+      protocol: arg('protocol'),
+      localPort: list('localport'),
+      remotePort: list('remoteport'),
+      localAddress: list('localaddress'),
+      remoteAddress: list('remoteaddress'),
+    }, () => generatedFirewallRuleName(net.getFirewallRules().length));
+    if (!decision.ok) { ctx.emitError(`New-NetFirewallRule : ${decision.message}`); return null; }
+
+    if (ctx.named['whatif'] === true) {
+      ctx.emit(`What if: Performing the operation "Create" on target "${decision.rule.displayName}".`);
       return null;
     }
-    net.addFirewallRule({
-      name,
-      displayName,
-      enabled: ctx.named['enabled'] === undefined ? true : ctx.named['enabled'] === true,
-      action,
-      direction,
-      protocol:    ctx.named['protocol']    ? psValueToString(ctx.named['protocol'])    : undefined,
-      localPort:   ctx.named['localport']   ? psValueToString(ctx.named['localport'])   : undefined,
-      remotePort:  ctx.named['remoteport']  ? psValueToString(ctx.named['remoteport'])  : undefined,
-      description: ctx.named['description'] ? psValueToString(ctx.named['description']) : undefined,
-    });
-    return null;
+    const message = net.addFirewallRule(decision.rule);
+    if (message) { ctx.emitError(`New-NetFirewallRule : ${message}`); return null; }
+    return firewallRuleToPSObject(decision.rule) as PSValue;
   }
 }
 
 abstract class FirewallToggleCmdlet implements ICmdlet {
   abstract readonly name: string;
+  abstract readonly displayName: string;
   abstract readonly aliases: readonly string[];
+  readonly pipelineByPropertyName = true as const;
+  readonly parameters = [...NET_FIREWALL_FILTERS, 'PassThru'] as const;
   protected abstract enabled: boolean;
 
   execute(ctx: CmdletContext): PSValue {
     const net = requireNetwork(ctx);
-    const name = psValueToString(ctx.named['displayname'] ?? ctx.named['name'] ?? ctx.positional[0] ?? '');
-    if (!name) { ctx.emitError(`${this.name} requires -DisplayName or -Name`); return null; }
-    const msg = net.setFirewallRule(name, { enabled: this.enabled });
-    if (msg) ctx.emitError(msg);
-    return null;
+    const matched = selectedFirewallRules(ctx, this.displayName, NET_FIREWALL_FILTERS);
+    if (matched === null) return null;
+    for (const rule of matched) net.updateFirewallRule(rule.name, { enabled: this.enabled });
+    if (ctx.named['passthru'] !== true) return null;
+    return matched.map(r => firewallRuleToPSObject({ ...r, enabled: this.enabled })) as PSValue;
   }
 }
 
@@ -1285,30 +1379,78 @@ export class EnableNetFirewallRuleCmdlet extends FirewallToggleCmdlet {
   readonly name = 'enable-netfirewallrule';
   readonly displayName = 'Enable-NetFirewallRule';
   readonly aliases = [] as const;
+  readonly description = 'Enables a previously disabled firewall rule.';
   protected enabled = true;
 }
 export class DisableNetFirewallRuleCmdlet extends FirewallToggleCmdlet {
   readonly name = 'disable-netfirewallrule';
   readonly displayName = 'Disable-NetFirewallRule';
   readonly aliases = [] as const;
+  readonly description = 'Disables a firewall rule.';
   protected enabled = false;
 }
+
+const NET_FIREWALL_SET_FILTERS = ['Name', 'DisplayName', 'Description', 'Group'] as const;
 
 export class SetNetFirewallRuleCmdlet implements ICmdlet {
   readonly name = 'set-netfirewallrule';
   readonly displayName = 'Set-NetFirewallRule';
   readonly aliases = [] as const;
+  readonly pipelineByPropertyName = true as const;
+  readonly description = 'Modifies existing firewall rules.';
+  readonly parameters = [...NET_FIREWALL_SET_FILTERS, 'NewDisplayName', 'Enabled', 'Profile',
+    'Direction', 'Action', 'Protocol', 'LocalPort', 'RemotePort', 'LocalAddress',
+    'RemoteAddress', 'PassThru', 'WhatIf', 'Confirm'] as const;
 
   execute(ctx: CmdletContext): PSValue {
     const net = requireNetwork(ctx);
-    const name = psValueToString(ctx.named['displayname'] ?? ctx.named['name'] ?? ctx.positional[0] ?? '');
-    if (!name) { ctx.emitError('Set-NetFirewallRule requires -DisplayName or -Name'); return null; }
-    const opts: { enabled?: boolean; action?: string } = {};
-    if (ctx.named['enabled'] !== undefined) opts.enabled = ctx.named['enabled'] === true;
-    if (ctx.named['action']  !== undefined) opts.action  = psValueToString(ctx.named['action']);
-    const msg = net.setFirewallRule(name, opts);
-    if (msg) ctx.emitError(msg);
-    return null;
+    const unsupported = unsupportedFirewallParameter(ctx);
+    if (unsupported) { ctx.emitError(`Set-NetFirewallRule : ${unsupported}`); return null; }
+    const matched = selectedFirewallRules(ctx, 'Set-NetFirewallRule', NET_FIREWALL_SET_FILTERS);
+    if (matched === null) return null;
+
+    const arg = (key: string): string | undefined =>
+      ctx.named[key] === undefined ? undefined : psValueToString(ctx.named[key]);
+    const list = (key: string): string[] | undefined => {
+      const raw = ctx.named[key];
+      if (raw === undefined) return undefined;
+      return (Array.isArray(raw) ? raw : [raw]).map(psValueToString);
+    };
+    const reference = matched[0];
+    const decision = planNetFirewallRule({
+      name: reference.name,
+      displayName: arg('newdisplayname') ?? reference.displayName,
+      description: arg('description') ?? reference.description,
+      group: arg('group') ?? reference.group,
+      enabled: arg('enabled') ?? (reference.enabled ? 'True' : 'False'),
+      action: arg('action') ?? reference.action,
+      direction: arg('direction') ?? reference.direction,
+      profile: arg('profile') ?? reference.profile,
+      protocol: arg('protocol') ?? reference.protocol,
+      localPort: list('localport') ?? reference.localPort,
+      remotePort: list('remoteport') ?? reference.remotePort,
+      localAddress: list('localaddress') ?? reference.localAddress,
+      remoteAddress: list('remoteaddress') ?? reference.remoteAddress,
+    }, () => reference.name);
+    if (!decision.ok) { ctx.emitError(`Set-NetFirewallRule : ${decision.message}`); return null; }
+
+    if (ctx.named['whatif'] === true) {
+      for (const rule of matched) {
+        ctx.emit(`What if: Performing the operation "Modify" on target "${rule.displayName}".`);
+      }
+      return null;
+    }
+    const { name: _ignored, builtIn: _kept, ...patch } = decision.rule;
+    for (const rule of matched) {
+      net.updateFirewallRule(rule.name, {
+        ...patch,
+        displayName: arg('newdisplayname') ?? rule.displayName,
+      });
+    }
+    if (ctx.named['passthru'] !== true) return null;
+    const refreshed = net.getFirewallRules()
+      .filter(r => matched.some(m => m.name === r.name));
+    return refreshed.map(firewallRuleToPSObject) as PSValue;
   }
 }
 
@@ -1316,14 +1458,23 @@ export class RemoveNetFirewallRuleCmdlet implements ICmdlet {
   readonly name = 'remove-netfirewallrule';
   readonly displayName = 'Remove-NetFirewallRule';
   readonly aliases = [] as const;
+  readonly pipelineByPropertyName = true as const;
+  readonly description = 'Deletes one or more firewall rules.';
+  readonly parameters = [...NET_FIREWALL_FILTERS, 'PassThru', 'WhatIf'] as const;
 
   execute(ctx: CmdletContext): PSValue {
     const net = requireNetwork(ctx);
-    const name = psValueToString(ctx.named['displayname'] ?? ctx.named['name'] ?? ctx.positional[0] ?? '');
-    if (!name) { ctx.emitError('Remove-NetFirewallRule requires -DisplayName or -Name'); return null; }
-    const msg = net.removeFirewallRule(name);
-    if (msg) ctx.emitError(msg);
-    return null;
+    const matched = selectedFirewallRules(ctx, 'Remove-NetFirewallRule', NET_FIREWALL_FILTERS);
+    if (matched === null) return null;
+    if (ctx.named['whatif'] === true) {
+      for (const rule of matched) {
+        ctx.emit(`What if: Performing the operation "Delete" on target "${rule.displayName}".`);
+      }
+      return null;
+    }
+    const removed = matched.map(firewallRuleToPSObject);
+    for (const rule of matched) net.removeFirewallRule(rule.name);
+    return ctx.named['passthru'] === true ? (removed as PSValue) : null;
   }
 }
 

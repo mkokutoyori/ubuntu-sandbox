@@ -35,7 +35,6 @@ import { PSEventLogProvider } from './PSEventLogProvider';
 import type { VpnConnectionInfo } from '@/powershell/providers/PSProviders';
 import { parsePSArgs } from './psArgs';
 import { psAddVpnConnection, psGetVpnConnection, psSetVpnConnection, psRemoveVpnConnection } from './PSVpnCmdlets';
-import { psNewNetFirewallRule, psSetNetFirewallRule, psToggleNetFirewallRule, psRemoveNetFirewallRule, psGetNetFirewallRule } from './PSFirewallCmdlets';
 import { LOCAL_ACCOUNT_CMDLETS } from './PSLocalAccountCmdlets';
 import { EVENT_LOG_CMDLETS } from './PSEventLogCmdlets';
 import { STORAGE_CMDLETS } from './PSStorageCmdlets';
@@ -48,6 +47,7 @@ import type { PSNetContext } from './PSNetCmdlets';
 import type { IEventBus } from '@/events/EventBus';
 import type { NetIPAddressEntry } from './netIpAddress';
 import type { NetRouteEntry } from './netRoute';
+import type { NetFirewallRuleEntry } from './netFirewallRule';
 
 // ─── Constants ────────────────────────────────────────────────────
 
@@ -134,7 +134,7 @@ export interface PSDeviceContext {
   readonly extraIPs:             Map<string, NetIPAddressEntry>;
   readonly extraRoutes:          Map<string, NetRouteEntry>;
   readonly adapterOverrides:     Map<string, { status?: string; displayName?: string }>;
-  readonly dynamicFirewallRules: Map<string, { name: string; displayName: string; enabled: boolean; action: string; direction: string; protocol: string; localPort: string; remotePort: string; description: string }>;
+  readonly firewallRules: Map<string, NetFirewallRuleEntry>;
   readonly networkProfiles:      Map<number, string>;
   readonly vpnConnections:       Map<string, VpnConnectionInfo>;
   readonly registry:             PSRegistryProvider;
@@ -214,7 +214,7 @@ export class PowerShellExecutor {
   /** Adapter overrides — relocated to the device. */
   get adapterOverrides() { return this.device.adapterOverrides; }
   /** Dynamic firewall rules — relocated to the device. */
-  get dynamicFirewallRules() { return this.device.dynamicFirewallRules; }
+  get firewallRules() { return this.device.firewallRules; }
   /** WinHTTP proxy setting (empty = direct access) */
   private winhttpProxy: string = '';
   /** WLAN: currently connected SSID (empty = disconnected) */
@@ -2422,36 +2422,6 @@ export class PowerShellExecutor {
     // Get-NetTCPConnection (simulated netstat-like)
     if (cmdLower === 'get-nettcpconnection') {
       return net.formatGetNetTCPConnection(this.buildPSNetCtx(), args);
-    }
-
-    // Get-NetFirewallRule
-    if (cmdLower === 'get-netfirewallrule') {
-      return psGetNetFirewallRule({ dynamicFirewallRules: this.dynamicFirewallRules }, args);
-    }
-
-    // New-NetFirewallRule
-    if (cmdLower === 'new-netfirewallrule') {
-      return psNewNetFirewallRule({ dynamicFirewallRules: this.dynamicFirewallRules }, args);
-    }
-
-    // Set-NetFirewallRule
-    if (cmdLower === 'set-netfirewallrule') {
-      return psSetNetFirewallRule({ dynamicFirewallRules: this.dynamicFirewallRules }, args);
-    }
-
-    // Enable-NetFirewallRule
-    if (cmdLower === 'enable-netfirewallrule') {
-      return psToggleNetFirewallRule({ dynamicFirewallRules: this.dynamicFirewallRules }, args, true);
-    }
-
-    // Disable-NetFirewallRule
-    if (cmdLower === 'disable-netfirewallrule') {
-      return psToggleNetFirewallRule({ dynamicFirewallRules: this.dynamicFirewallRules }, args, false);
-    }
-
-    // Remove-NetFirewallRule
-    if (cmdLower === 'remove-netfirewallrule') {
-      return psRemoveNetFirewallRule({ dynamicFirewallRules: this.dynamicFirewallRules }, args);
     }
 
     // Disable-NetAdapter

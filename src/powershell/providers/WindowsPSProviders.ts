@@ -38,12 +38,6 @@ import { discoverDcHostname, rootDnOf } from '@/network/devices/windows/domain/D
 import { dialLdap } from '@/network/devices/windows/server/ad/ldap/LdapClient';
 import type { PSScriptBlock } from '@/powershell/parser/PSASTNode';
 
-type FwRow = {
-  name: string; displayName: string; enabled: boolean;
-  action: string; direction: string; protocol: string;
-  localPort: string; remotePort: string; description: string;
-};
-
 /**
  * Map a Port's IPv4 provenance to the Windows PrefixOrigin/SuffixOrigin pair
  * reported by Get-NetIPAddress. The RFC 3927 link-local fallback (APIPA) is
@@ -114,6 +108,9 @@ import {
   type NetRouteEntry, type NetRouteIdentity, type NetRouteUpdate,
   UNSPECIFIED_NEXT_HOP, netRouteKey,
 } from '@/network/devices/windows/netRoute';
+import {
+  type NetFirewallRuleEntry, firewallRuleKey,
+} from '@/network/devices/windows/netFirewallRule';
 
 function defaultNamingContextOf(client: LdapClient): string | null {
   const dse = client.search('', 'base', { kind: 'present', attr: 'objectClass' }, ['defaultNamingContext']);
@@ -1604,7 +1601,7 @@ class WindowsEventLogAdapter implements IEventLogProvider {
 //
 // Most operational state for IP / route / firewall / adapter overrides /
 // connection profiles still lives on the legacy PowerShellExecutor
-// (`extraIPs`, `extraRoutes`, `adapterOverrides`, `dynamicFirewallRules`,
+// (`extraIPs`, `extraRoutes`, `adapterOverrides`, `firewallRules`,
 // `networkProfiles`, …). Until that state is relocated onto WindowsPC we
 // share the executor's maps directly so the interpreter and the executor
 // fallback path see the same world.
@@ -1613,7 +1610,7 @@ interface NetworkStateRefs {
   readonly extraIPs:             Map<string, NetIPAddressEntry>;
   readonly extraRoutes:          Map<string, NetRouteEntry>;
   readonly adapterOverrides:     Map<string, { status?: string; displayName?: string }>;
-  readonly dynamicFirewallRules: Map<string, { name: string; displayName: string; enabled: boolean; action: string; direction: string; protocol: string; localPort: string; remotePort: string; description: string }>;
+  readonly firewallRules: Map<string, NetFirewallRuleEntry>;
   readonly networkProfiles:      Map<number, string>;
 }
 
@@ -2355,54 +2352,29 @@ class WindowsNetworkAdapter implements INetworkProvider {
 
   // ─ Firewall ─────────────────────────────────────────────────────────────
 
-  getFirewallRules() {
-    // Built-in Windows Firewall rules — matches the static set the legacy
-    // formatter shipped so cmdlets relying on these names keep working.
-    const builtins = [
-      { name: 'CoreNet-DHCP-In',      displayName: 'DHCP (UDP-In)',              enabled: true,  action: 'Allow', direction: 'Inbound',  protocol: 'UDP', localPort: '68',    remotePort: '67',  description: 'Built-in: DHCP client' },
-      { name: 'CoreNet-DHCP-Out',     displayName: 'DHCP (UDP-Out)',             enabled: true,  action: 'Allow', direction: 'Outbound', protocol: 'UDP', localPort: '68',    remotePort: '67',  description: 'Built-in: DHCP client' },
-      { name: 'CoreNet-DNS-Out',      displayName: 'DNS (UDP-Out)',              enabled: true,  action: 'Allow', direction: 'Outbound', protocol: 'UDP', localPort: 'Any',   remotePort: '53',  description: 'Built-in: DNS client' },
-      { name: 'FPS-ICMP4-ERQ-In',     displayName: 'File and Printer Sharing',   enabled: true,  action: 'Allow', direction: 'Inbound',  protocol: 'ICMPv4', localPort: 'Any', remotePort: 'Any', description: 'Built-in: ICMP echo request' },
-      { name: 'RemoteDesktop-In-TCP', displayName: 'Remote Desktop - User Mode', enabled: false, action: 'Allow', direction: 'Inbound',  protocol: 'TCP', localPort: '3389',  remotePort: 'Any', description: 'Built-in: RDP' },
-      { name: 'WinRM-HTTP-In-TCP',    displayName: 'Windows Remote Management',  enabled: false, action: 'Allow', direction: 'Inbound',  protocol: 'TCP', localPort: '5985',  remotePort: 'Any', description: 'Built-in: WinRM' },
-      { name: 'BlockTelemetry',       displayName: 'Block Windows Telemetry',    enabled: true,  action: 'Block', direction: 'Outbound', protocol: 'TCP', localPort: 'Any',   remotePort: '443', description: 'Built-in: Block Telemetry' },
-    ];
-    // Single per-device store: both PowerShell `New-NetFirewallRule`
-    // and cmd's `netsh advfirewall firewall add rule` write to the same
-    // `state.dynamicFirewallRules` map. No more cross-host leakage.
-    const dynamicMap = new Map<string, FwRow>();
-    for (const r of this.state.dynamicFirewallRules.values()) {
-      dynamicMap.set((r.displayName ?? r.name).toLowerCase(), { ...r });
+  getFirewallRules(): NetFirewallRuleEntry[] {
+    return [...this.state.firewallRules.values()];
+  }
+  addFirewallRule(rule: NetFirewallRuleEntry): string {
+    const key = firewallRuleKey(rule.name);
+    if (this.state.firewallRules.has(key)) {
+      return `Cannot create a file when that file already exists. Rule '${rule.name}' already exists.`;
     }
-    return [...builtins, ...dynamicMap.values()];
-  }
-  addFirewallRule(rule: { name: string; displayName?: string; enabled?: boolean; action: string; direction: string; protocol?: string; localPort?: string; remotePort?: string; description?: string }): void {
-    const displayName = rule.displayName ?? rule.name;
-    const key = displayName.toLowerCase();
-    this.state.dynamicFirewallRules.set(key, {
-      name: rule.name,
-      displayName,
-      enabled: rule.enabled ?? true,
-      action: rule.action,
-      direction: rule.direction,
-      protocol: rule.protocol ?? 'TCP',
-      localPort: rule.localPort ?? 'Any',
-      remotePort: rule.remotePort ?? 'Any',
-      description: rule.description ?? '',
-    });
-  }
-  setFirewallRule(name: string, opts: { enabled?: boolean; action?: string }): string {
-    const key = name.toLowerCase();
-    const rule = this.state.dynamicFirewallRules.get(key);
-    if (!rule) return `No firewall rule named '${name}'.`;
-    if (opts.enabled !== undefined) rule.enabled = opts.enabled;
-    if (opts.action  !== undefined) rule.action  = opts.action;
+    this.state.firewallRules.set(key, { ...rule });
     return '';
   }
-  removeFirewallRule(name: string): string {
-    const key = name.toLowerCase();
-    const removed = this.state.dynamicFirewallRules.delete(key);
-    return removed ? '' : `No firewall rule named '${name}'.`;
+  updateFirewallRule(name: string, patch: Partial<NetFirewallRuleEntry>): void {
+    const key = firewallRuleKey(name);
+    const rule = this.state.firewallRules.get(key);
+    if (!rule) return;
+    Object.assign(rule, patch);
+    if (patch.name !== undefined && firewallRuleKey(patch.name) !== key) {
+      this.state.firewallRules.delete(key);
+      this.state.firewallRules.set(firewallRuleKey(patch.name), rule);
+    }
+  }
+  removeFirewallRule(name: string): void {
+    this.state.firewallRules.delete(firewallRuleKey(name));
   }
 
   // ─ Adapter actions ──────────────────────────────────────────────────────
@@ -3479,7 +3451,7 @@ export function createWindowsPSProviders(
     extraIPs:             pc.extraIPs,
     extraRoutes:          pc.extraRoutes,
     adapterOverrides:     pc.adapterOverrides,
-    dynamicFirewallRules: pc.dynamicFirewallRules,
+    firewallRules: pc.firewallRules,
     networkProfiles:      pc.networkProfiles,
   };
   const vpn = shared?.vpn ?? { vpnConnections: pc.vpnConnections };

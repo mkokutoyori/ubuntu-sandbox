@@ -30,6 +30,11 @@ import { dhcpEnabledFor } from './WinAdapterFacts';
 import { requireWindowsService } from './WinFeatureGate';
 import { IPAddress, SubnetMask, IPv6Address } from '../../core/types';
 import { isValidIPv4 } from '../../core/ip';
+import {
+  ANY, NET_FIREWALL_PROFILES, firewallRuleKey, parseAddressSpec, parseFirewallProtocol,
+  parsePortSpec, seedBuiltInFirewallRules,
+} from './netFirewallRule';
+import { matchEnumValue } from './netIpAddress';
 import { PortProxyRule, PORT_PROXY_FAMILIES, type PortProxyFamily } from './PortProxyRule';
 import { toPortName } from './WindowsInterfaceNaming';
 
@@ -2887,7 +2892,7 @@ function handleNetshBridge(ctx: WinCommandContext, args: string[]): string {
 
 /**
  * Legacy type kept for backward-compat. The real rule store now lives
- * per-device on WinCommandContext.dynamicFirewallRules so a netsh-added
+ * per-device on WinCommandContext.firewallRules so a netsh-added
  * rule is honoured by the WindowsPC.firewallFilter() data path and is
  * visible through PowerShell `Get-NetFirewallRule`. The `fwRules`
  * module-level singleton was a fixture that leaked across hosts —
@@ -2948,13 +2953,12 @@ function handleNetshAdvfirewall(ctx: WinCommandContext, args: string[]): string 
   }
   const sub = args[0].toLowerCase();
   if (sub === 'firewall') return handleAdvfwFirewall(ctx, args.slice(1));
-  if (sub === 'reset')    { ctx.dynamicFirewallRules.clear(); return 'Ok.'; }
+  if (sub === 'reset')    { ctx.firewallRules.clear(); seedBuiltInFirewallRules(ctx.firewallRules); return 'Ok.'; }
   if (sub === 'show')     return 'Ok.';
   if (sub === 'set')      return 'Ok.';
   return `The subcommand "${args[0]}" was not found.\nType "netsh advfirewall ?" for more information.`;
 }
 
-function nameToKey(name: string): string { return name.trim().toLowerCase(); }
 
 /*
  * Les trois `lire*` RENDENT `null` sur un mot qu'ils ne connaissent pas,
@@ -2971,13 +2975,6 @@ const FW_ACTIONS: Readonly<Record<string, 'Allow' | 'Block'>> = {
   allow: 'Allow', block: 'Block', bypass: 'Allow',
 };
 
-const FW_PROTOCOL_NAMES: Readonly<Record<string, string>> = {
-  TCP: 'TCP', UDP: 'UDP', ICMPV4: 'ICMPv4', ICMP: 'ICMPv4', ICMPV6: 'ICMPv6',
-  ANY: 'Any',
-};
-
-const IP_PROTOCOL_MAX = 255;
-const PORT_MAX = 65535;
 
 function lireDirection(dir: string): 'Inbound' | 'Outbound' | null {
   return FW_DIRECTIONS[dir.toLowerCase()] ?? null;
@@ -2988,24 +2985,7 @@ function lireAction(action: string): 'Allow' | 'Block' | null {
 }
 
 function lireProtocole(proto: string): string | null {
-  const nom = FW_PROTOCOL_NAMES[proto.toUpperCase()];
-  if (nom !== undefined) return nom;
-  const numero = Number.parseInt(proto, 10);
-  if (String(numero) !== proto.trim() || numero < 0 || numero > IP_PROTOCOL_MAX) {
-    return null;
-  }
-  return proto;
-}
-
-/** `80`, `any`, `80,443`, `1000-2000` — ou rien. */
-function portDeRegleValide(spec: string): boolean {
-  if (spec.trim().toLowerCase() === 'any') return true;
-  const morceaux = spec.split(',').map((m) => m.trim()).filter((m) => m.length > 0);
-  if (morceaux.length === 0) return false;
-  return morceaux.every((m) => m.split('-').every((b) => {
-    const n = Number.parseInt(b, 10);
-    return String(n) === b.trim() && n >= 0 && n <= PORT_MAX;
-  }));
+  return parseFirewallProtocol(proto.toLowerCase() === 'icmp' ? 'ICMPv4' : proto);
 }
 
 function handleAdvfwFirewall(ctx: WinCommandContext, args: string[]): string {
@@ -3021,30 +3001,38 @@ function handleAdvfwFirewall(ctx: WinCommandContext, args: string[]): string {
       const params = parseNameValue(args.slice(2));
       const name = params['name'];
       if (!name) return NETSH_ADVFW_FIREWALL_ADD_RULE_HELP;
-      const key = nameToKey(name);
-      if (ctx.dynamicFirewallRules.has(key)) return `The rule "${name}" already exists.`;
+      const key = firewallRuleKey(name);
+      if (ctx.firewallRules.has(key)) return `The rule "${name}" already exists.`;
       const direction = lireDirection(params['dir'] ?? 'in');
       const action = lireAction(params['action'] ?? 'allow');
       const protocol = lireProtocole(params['protocol'] ?? 'Any');
       if (direction === null || action === null || protocol === null) {
         return NETSH_ADVFW_FIREWALL_ADD_RULE_HELP;
       }
-      for (const champ of ['localport', 'remoteport']) {
-        const v = params[champ];
-        if (v !== undefined && !portDeRegleValide(v)) {
-          return NETSH_ADVFW_FIREWALL_ADD_RULE_HELP;
-        }
+      const localPort = parsePortSpec(params['localport'] ?? ANY);
+      const remotePort = parsePortSpec(params['remoteport'] ?? ANY);
+      const localAddress = parseAddressSpec(params['localip'] ?? ANY);
+      const remoteAddress = parseAddressSpec(params['remoteip'] ?? ANY);
+      const profile = matchEnumValue(NET_FIREWALL_PROFILES, params['profile'] ?? ANY);
+      if (localPort === null || remotePort === null || localAddress === null
+        || remoteAddress === null || profile === null) {
+        return NETSH_ADVFW_FIREWALL_ADD_RULE_HELP;
       }
-      ctx.dynamicFirewallRules.set(key, {
+      ctx.firewallRules.set(key, {
         name,
         displayName: name,
+        description: '',
+        group: '',
         enabled: (params['enable'] ?? 'yes').toLowerCase() !== 'no',
         action,
         direction,
+        profile,
         protocol,
-        localPort: params['localport'] ?? '',
-        remotePort: params['remoteport'] ?? '',
-        description: '',
+        localPort,
+        remotePort,
+        localAddress,
+        remoteAddress,
+        builtIn: false,
       });
       return 'Ok.';
     }
@@ -3056,9 +3044,10 @@ function handleAdvfwFirewall(ctx: WinCommandContext, args: string[]): string {
     if (obj === 'rule') {
       const params = parseNameValue(args.slice(2));
       const name = params['name'];
-      const matches = name
-        ? Array.from(ctx.dynamicFirewallRules.values()).filter(r => r.name === name)
-        : Array.from(ctx.dynamicFirewallRules.values());
+      const all = Array.from(ctx.firewallRules.values());
+      const matches = !name || name.toLowerCase() === 'all'
+        ? all
+        : all.filter(r => firewallRuleKey(r.name) === firewallRuleKey(name));
       if (matches.length === 0) return `No rules match the specified criteria.`;
       const lines: string[] = [''];
       for (const r of matches) {
@@ -3066,7 +3055,7 @@ function handleAdvfwFirewall(ctx: WinCommandContext, args: string[]): string {
         lines.push(`----------------------------------------------------------------------`);
         lines.push(`Enabled:                              ${r.enabled ? 'Yes' : 'No'}`);
         lines.push(`Direction:                            ${r.direction.toLowerCase().startsWith('out') ? 'out' : 'in'}`);
-        lines.push(`Profiles:                             Any`);
+        lines.push(`Profiles:                             ${r.profile}`);
         lines.push(`Action:                               ${r.action}`);
         lines.push(`Protocol:                             ${r.protocol}`);
         lines.push(`LocalPort:                            ${r.localPort || 'Any'}`);
@@ -3083,9 +3072,10 @@ function handleAdvfwFirewall(ctx: WinCommandContext, args: string[]): string {
       const params = parseNameValue(args.slice(2));
       const name = params['name'];
       let removed = 0;
-      for (const [key, rule] of Array.from(ctx.dynamicFirewallRules.entries())) {
-        if (!name || rule.name === name) {
-          ctx.dynamicFirewallRules.delete(key);
+      for (const [key, rule] of Array.from(ctx.firewallRules.entries())) {
+        if (!name || name.toLowerCase() === 'all'
+          || firewallRuleKey(rule.name) === firewallRuleKey(name)) {
+          ctx.firewallRules.delete(key);
           removed++;
         }
       }

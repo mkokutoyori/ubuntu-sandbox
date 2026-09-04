@@ -17,6 +17,7 @@ import type { GroupWriteOptions, OrgUnitWriteOptions, UserWriteOptions } from '@
 import type { AddsForestOptions } from '@/network/devices/windows/server/ad/adFunctionalLevels';
 import type { RemoteDirectoryTarget } from './adRemoteDirectory';
 import type { NetRouteIdentity, NetRouteUpdate } from '@/network/devices/windows/netRoute';
+import type { NetFirewallRuleEntry } from '@/network/devices/windows/netFirewallRule';
 
 // ─── Entry types re-exported for cmdlet use ────────────────────────────────
 
@@ -1384,10 +1385,10 @@ export interface INetworkProvider {
    * réellement son port.
    */
   getUdpEndpoints?(): Array<{ localAddress: string; localPort: number; pid: number; processName: string }>;
-  getFirewallRules(): Array<{ name: string; displayName: string; enabled: boolean; action: string; direction: string; protocol: string; localPort: string; remotePort: string; description: string }>;
-  addFirewallRule(rule: { name: string; displayName?: string; enabled?: boolean; action: string; direction: string; protocol?: string; localPort?: string; remotePort?: string; description?: string }): void;
-  setFirewallRule(name: string, opts: { enabled?: boolean; action?: string }): string;
-  removeFirewallRule(name: string): string;
+  getFirewallRules(): NetFirewallRuleEntry[];
+  addFirewallRule(rule: NetFirewallRuleEntry): string;
+  updateFirewallRule(name: string, patch: Partial<NetFirewallRuleEntry>): void;
+  removeFirewallRule(name: string): void;
   /** Adapter enable/disable/rename */
   setAdapterStatus(name: string, status: 'Up' | 'Down'): void;
   renameAdapter(name: string, newName: string): void;

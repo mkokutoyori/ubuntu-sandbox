@@ -860,7 +860,8 @@ function pickDefaultColumns(keys: string[]): string[] | null {
     return ['Index', 'Time', 'EntryType', 'Source', 'InstanceID', 'Message'];
   }
   // LocalUser: Name, Enabled, Description
-  if (lower.has('enabled') && lower.has('name') && lower.has('description') && !lower.has('status')) {
+  if (lower.has('enabled') && lower.has('name') && lower.has('description')
+    && lower.has('sid') && !lower.has('status')) {
     return ['Name', 'Enabled', 'Description'];
   }
   // LocalGroup: Name, Description (real PS hides SID/Members in the default
