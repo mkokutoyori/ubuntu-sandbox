@@ -2451,3 +2451,30 @@ défauts — la méthode vaut d'être reprise sur le reliquat.
   synthetique pour tout ce que la prise de port porte deja (juste, mais
   elle est le SEUL enregistrement des chemins scriptes qui ne
   traversent aucun port — telnet et SSH scriptes).
+- `probe-aide-tient-ses-promesses.test.ts` — le plus lourd des garde-fous
+  d'aide, celui qui execute TOUT ce que `?` propose sur le routeur — ne
+  termine plus dans ce conteneur : le processus est tue par
+  `ERR_WORKER_OUT_OF_MEMORY` apres environ 140 s, avec ou sans
+  `--max-old-space-size=6144`, sur les deux reservoirs (`forks` comme
+  `threads`). Mesure : le meme echec se produit avec toutes les
+  modifications en cours REMISES, donc il est ANTERIEUR et ce n'est pas
+  une regression d'un lot. Ses cinq freres plus legers
+  (`probe-cli-aide-egale-execution`, `probe-aide-cr-tient-sa-promesse`,
+  `probe-commutateur-aide-tient-parole`, `probe-aide-decrit-la-bonne-place`,
+  `probe-aide-noeuds-intermediaires`) tournent et sont verts, donc la
+  couverture n'est pas perdue — mais tant que celui-la ne tourne pas, la
+  promesse « tout mot annonce s'execute » n'est plus VERIFIEE sur le
+  routeur, seulement sur le commutateur. Le fermer demande de borner ce
+  que le balayage retient en memoire (il construit un equipement par mot
+  teste) plutot que d'agrandir le tas.
+- Les onze autres mots-cles que le glouton `spanning-tree` absorbe
+  (`portfast`, `mode`, `pathcost`, `vlan`, `extend`, `loopguard`,
+  `priority`, `mst`, `bpdufilter`, `bpduguard`, `default`) reproposent
+  encore les SOEURS de la famille apres eux quand ils n'ont pas de suite
+  declaree, parce que l'aide reste sur le noeud glouton et y rejoue ses
+  propres enfants. Le lot qui a ferme `backbonefast` et `uplinkfast` ne
+  les a pas fermes : chacun demande de mesurer ce qu'il prend VRAIMENT
+  avant de le declarer, et declarer de travers y mettrait un mensonge de
+  plus. La bonne facon de les fermer est de les MIGRER — un mot-cle qui
+  devient une vraie commande du socle porte sa place, son refus et son
+  aide d'un seul tenant.

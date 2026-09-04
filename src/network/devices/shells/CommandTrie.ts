@@ -1562,35 +1562,54 @@ export class CommandTrie {
    * là où l'aide doit s'améliorer.
    */
   describeArgs(path: string, specs: readonly ParamSpec[]): void {
-    if (this.estElague(path)) return;
-    if (!this.attacherArgs(path, specs)) {
-      this.declarationsEnAttente.push({ path, specs: [...specs] });
-    }
+    this.declarerSurNoeud(path, (node) => { node.params = [...specs]; });
   }
 
-  private declarationsEnAttente: Array<{ path: string; specs: ParamSpec[] }> = [];
+  /**
+   * Déclare qu'une commande greedy ne prend pas d'argument : le `WORD`
+   * de dernier recours disparaît et `?` n'offre plus que `<cr>`.
+   *
+   * Elle exigeait un nœud DÉJÀ enregistré là où sa jumelle
+   * `describeArgs` en créait un indicatif sous le glouton qui absorbe le
+   * mot-clé — deux réponses à une même question, et c'est la plus
+   * restrictive qui se taisait : `spanning-tree backbonefast`, absorbé
+   * par le glouton `spanning-tree`, n'avait aucun nœud, donc la
+   * déclaration était perdue et `?` reproposait les sœurs du mot-clé.
+   */
+  takesNoArgument(path: string): void {
+    this.declarerSurNoeud(path, (node) => { node._noArgument = true; });
+  }
 
+  private declarationsEnAttente: Array<{
+    path: string; appliquer: (node: CommandNode) => void;
+  }> = [];
 
+  private declarerSurNoeud(path: string, appliquer: (node: CommandNode) => void): void {
+    if (this.estElague(path)) return;
+    const node = this.noeudDeclaratif(path);
+    if (node) { if (!node._elague) appliquer(node); }
+    else this.declarationsEnAttente.push({ path, appliquer });
+  }
 
   private viderDeclarationsEnAttente(): void {
     if (this.declarationsEnAttente.length === 0) return;
     const restantes = this.declarationsEnAttente;
     this.declarationsEnAttente = [];
     for (const declaration of restantes) {
-      if (!this.attacherArgs(declaration.path, declaration.specs)) {
-        this.declarationsEnAttente.push(declaration);
-      }
+      const node = this.noeudDeclaratif(declaration.path);
+      if (node) { if (!node._elague) declaration.appliquer(node); }
+      else this.declarationsEnAttente.push(declaration);
     }
   }
 
-  private attacherArgs(path: string, specs: readonly ParamSpec[]): boolean {
+  private noeudDeclaratif(path: string): CommandNode | null {
     const keywords = path.split(/\s+/).filter(Boolean);
     let node = this.root;
     for (const keyword of keywords) {
       const key = keyword.toLowerCase();
       let child = node.children.get(key);
       if (!child) {
-        if (!node.action && !node.greedy && !node._porteAction && !node._porteGreedy) return false;
+        if (!node.action && !node.greedy && !node._porteAction && !node._porteGreedy) return null;
         // Le mot-clé n'est pas un nœud réel : la commande est enregistrée
         // greedy et l'absorbe. On crée un nœud PUREMENT INDICATIF pour
         // pouvoir y accrocher les arguments — `prefixMatch` ignore les
@@ -1605,18 +1624,7 @@ export class CommandTrie {
       }
       node = child;
     }
-    node.params = [...specs];
-    return true;
-  }
-
-  /**
-   * Déclare qu'une commande greedy ne prend pas d'argument. Le chemin
-   * doit exister ; un chemin inconnu est ignoré, comme `describeArgs`,
-   * pour qu'une table d'aide ne dépende pas de l'ordre d'enregistrement.
-   */
-  takesNoArgument(path: string): void {
-    const node = this.nodeAt(path);
-    if (node && !node._elague) node._noArgument = true;
+    return node;
   }
 
   private hintDescription(node: CommandNode, keyword: string): string {

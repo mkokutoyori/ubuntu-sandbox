@@ -8,6 +8,7 @@ import {
 import {
   AS_PATH_LIST_RANGE, COMMUNITY_LIST_RANGE, LEGACY_QUEUE_LIST_RANGE,
 } from '../CiscoShellBase';
+import { UPLINKFAST_RATE_RANGE } from '../../../stp/types';
 
 const IP = (name: string, description: string): ParamSpec =>
   ({ name, type: 'IP_ADDR', description });
@@ -718,6 +719,12 @@ export function describeCiscoArguments(tries: ArgumentHelpTries): void {
       ['session-id', 'AAA Session ID'],
     ]),
   ]);
+  tries.config.describeArgs('aaa session-id', [
+    ENUM('type', 'AAA session ID behaviour', [
+      ['common', 'Use same session-id for all services'],
+      ['unique', 'Use unique session-id for each service'],
+    ]),
+  ]);
   tries.config.describeArgs('aaa authentication', [
     ENUM('service', 'Service to authenticate', [
       ['dot1x', 'Set authentication lists for IEEE 802.1x'],
@@ -937,6 +944,18 @@ export function describeCiscoSwitchArguments(tries: SwitchArgumentHelpTries): vo
   ]);
   tries.configIf.describeArgs('channel-group', [
     INT('group', [1, 64], 'Channel group number'),
+  ]);
+  tries.config.takesNoArgument('spanning-tree backbonefast');
+  tries.config.describeArgs('spanning-tree uplinkfast', [
+    {
+      ...ENUM('option', 'UplinkFast options', [
+        ['max-update-rate', 'Rate at which station learning frames are sent'],
+      ]),
+      optional: true,
+    },
+  ]);
+  tries.config.describeArgs('spanning-tree uplinkfast max-update-rate', [
+    INT('pps', UPLINKFAST_RATE_RANGE, 'Rate in packets per second'),
   ]);
   tries.configIf.describeArgs('spanning-tree cost', [
     INT('cost', [1, 200000000], 'Change an interface path cost'),
