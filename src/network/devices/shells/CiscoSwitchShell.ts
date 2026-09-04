@@ -73,6 +73,7 @@ import { describeCiscoArguments } from './cisco/ciscoArgumentHelp';
 import { stpGlobalSpecs, type StpGlobalHost } from './cisco/stpGlobalSpecs';
 import { IPV4_PLACE, valeurGlobaleSpecs } from './cisco/ipGlobalSpecs';
 import { clearSwitchSpecs } from './cisco/clearRestantsSpecs';
+import type { DebugPair } from '@/cli/commands/debug/debugFamily';
 import { buildActorState } from '@/network/lacp/types';
 import { etherChannelLimitFamily } from '@/cli/commands/aggregation/etherChannelLimits';
 import {
@@ -2818,14 +2819,6 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
     p.register('show debugging', 'Display active debugging', () =>
       this.mode === 'user' ? CISCO_ERRORS.INVALID_INPUT : (svc()?.format() ?? 'No debug flags are enabled'));
 
-    p.register('debug all', 'Enable all debugging', () => svc()?.enableAll() ?? '');
-    p.registerGreedy('debug spanning-tree', 'Enable STP debugging', (a) => {
-      const what = a.join(' ') || 'all';
-      return svc()?.enableScope('spanning-tree ' + what) ?? '';
-    });
-    p.registerGreedy('debug mac address-table', 'Enable MAC table debugging', () => svc()?.enableScope('mac') ?? '');
-    p.registerGreedy('debug mac-address-table', 'Enable MAC table debugging', () => svc()?.enableScope('mac') ?? '');
-    p.registerGreedy('debug link-state', 'Enable link-state debugging', () => svc()?.enableScope('link') ?? '');
     p.registerGreedy('debug', 'Enable debugging', (a, raw) => {
       if (guard(raw ?? '')) return CISCO_ERRORS.INVALID_INPUT;
       const arg = a.join(' ');
@@ -2834,14 +2827,23 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
       return service.enableScope(arg);
     });
 
-    p.register('no debug all', 'Disable all debugging', () => svc()?.disableAll() ?? 'All possible debugging has been turned off');
-    p.register('undebug all', 'Disable all debugging', () => svc()?.disableAll() ?? 'All possible debugging has been turned off');
-    p.registerGreedy('no debug spanning-tree', 'Disable STP debugging', (a) => {
-      const what = a.join(' ') || 'all';
-      return svc()?.disableScope('spanning-tree ' + what) ?? '';
+    /*
+     * Le pendant NEGATIF du glouton ci-dessus. Il n'existait pas : le
+     * noeud `no debug` naissait par accident des trois negations
+     * specifiques enregistrees a cote, et leur passage au socle l'a
+     * emporte avec elles — `no debug zorglub` cessait alors d'etre
+     * refuse pour devenir un NOM D'HOTE a resoudre (« Translating
+     * "no"... »), c'est-a-dire le pire des messages, puisqu'il envoie
+     * verifier un serveur DNS pour une faute de frappe.
+     */
+    p.registerGreedy('no debug', 'Disable debugging', (a, raw) => {
+      if (guard(raw ?? '')) return CISCO_ERRORS.INVALID_INPUT;
+      const arg = a.join(' ');
+      const service = svc();
+      if (!service || !service.recognizes(arg)) return CISCO_ERRORS.INVALID_INPUT;
+      return service.disableScope(arg);
     });
-    p.registerGreedy('no debug mac address-table', 'Disable MAC table debugging', () => svc()?.disableScope('mac') ?? '');
-    p.registerGreedy('no debug link-state', 'Disable link-state debugging', () => svc()?.disableScope('link') ?? '');
+
     const undebugScope = (arg: string): string => {
       const service = svc();
       if (!service) return '';
@@ -2850,6 +2852,42 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
       return service.disableScope(arg);
     };
     p.registerGreedy('undebug', 'Disable debugging', (a) => undebugScope(a.join(' ')));
+  }
+
+  /**
+   * Ce qu'un Catalyst ajoute a la famille `debug` du socle.
+   *
+   * Elles etaient enregistrees sur le trie a cote d'une famille qui vit
+   * au socle — donc l'aide venait d'un cote et l'execution pouvait venir
+   * de l'autre. Les declarer ICI leur donne ce qui leur manquait : trois
+   * d'entre elles ne prennent AUCUN argument, et le glouton du trie
+   * acceptait pourtant `debug link-state zorglub` en silence.
+   *
+   * `mac-address-table` est l'orthographe heritee de la meme commande ;
+   * elle vise le meme drapeau, et la garder est ce qui fait qu'une
+   * configuration ancienne se relit.
+   */
+  protected override debugPairs(): DebugPair[] {
+    const svc = () => this.switchDebug();
+    const portee = (
+      chemin: readonly string[], nom: string, cle: string,
+      avecArguments = false,
+    ): DebugPair => ({
+      path: [...chemin], description: `Enable ${nom} debugging`,
+      undoDescription: `Disable ${nom} debugging`, takesArguments: avecArguments,
+      enable: (args) => svc()?.enableScope(
+        avecArguments ? `${cle} ${args.join(' ') || 'all'}` : cle) ?? '',
+      disable: (args) => svc()?.disableScope(
+        avecArguments ? `${cle} ${args.join(' ') || 'all'}` : cle) ?? '',
+    });
+
+    return [
+      ...super.debugPairs(),
+      portee(['debug', 'spanning-tree'], 'STP', 'spanning-tree', true),
+      portee(['debug', 'mac', 'address-table'], 'MAC table', 'mac'),
+      portee(['debug', 'mac-address-table'], 'MAC table', 'mac'),
+      portee(['debug', 'link-state'], 'link-state', 'link'),
+    ];
   }
 
   private switchDebug(): import('../router/diag/RouterDebugService').RouterDebugService | undefined {
