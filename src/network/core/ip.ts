@@ -85,6 +85,26 @@ export function isValidIPv4(ip: string): boolean {
   return tryIpToUint32(ip) !== null;
 }
 
+/**
+ * La longueur d'un prefixe `A.B.C.D/L` ou `X:X::X/L`, ou `null`.
+ *
+ * La coupe est cherchee au DERNIER `/`, un litteral IPv6 n'en portant
+ * pas et un nom de zone non plus. L'adresse est confiee au validateur de
+ * sa famille plutot que redite en expression reguliere : une seconde
+ * ecriture de « qu'est-ce qu'une adresse » finirait par accepter ce que
+ * la premiere refuse.
+ */
+export function cidrPrefixLength(cidr: string, v6 = false): number | null {
+  const coupe = cidr.lastIndexOf('/');
+  if (coupe < 0) return null;
+  const adresse = cidr.slice(0, coupe);
+  const brut = cidr.slice(coupe + 1);
+  if (!/^\d+$/.test(brut)) return null;
+  const longueur = Number(brut);
+  if (longueur < 0 || longueur > (v6 ? 128 : 32)) return null;
+  return (v6 ? isValidIPv6(adresse) : isValidIPv4(adresse)) ? longueur : null;
+}
+
 export function isValidSubnetMask(mask: string): boolean {
   const v = tryIpToUint32(mask);
   if (v === null) return false;

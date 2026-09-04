@@ -1,7 +1,10 @@
-import { isValidIPv4, isValidIPv6, isValidSubnetMask } from '../network/core/ip';
+import {
+  cidrPrefixLength, isValidIPv4, isValidIPv6, isValidSubnetMask,
+} from '../network/core/ip';
 
 export type ArgumentType =
   | 'INT' | 'WORD' | 'LINE' | 'IP_ADDR' | 'IPV6_ADDR' | 'IP_ANY' | 'SUBNET_MASK'
+  | 'IP_PREFIX' | 'IPV6_PREFIX'
   | 'MAC_ADDR' | 'INTERFACE' | 'VLAN_ID' | 'REST' | 'ENUM' | 'TIME';
 
 export interface EnumValue {
@@ -130,6 +133,24 @@ export const ARGUMENT_TYPES: Readonly<Record<ArgumentType, ArgumentTypeDefinitio
       accepts: (t) => isValidIPv4(t) || isValidIPv6(t),
     },
     SUBNET_MASK: { placeholder: 'A.B.C.D', accepts: (t) => isValidSubnetMask(t) },
+    /*
+     * Un prefixe est une ADRESSE et une LONGUEUR, jugees ensemble.
+     *
+     * Declare `WORD`, `10.0.0.0/33` et `999.0.0.0/8` entrent dans le
+     * gestionnaire et n'en sont refuses qu'au fond, quand le caret ne
+     * peut plus dire ou l'operateur s'est trompe. Le predicat DELEGUE a
+     * `cidrPrefixLength`, que le gestionnaire relit ensuite pour ses
+     * propres bornes `ge`/`le` : une seule ecriture de la forme, deux
+     * lecteurs.
+     */
+    IP_PREFIX: {
+      placeholder: 'A.B.C.D/nn',
+      accepts: (t) => cidrPrefixLength(t, false) !== null,
+    },
+    IPV6_PREFIX: {
+      placeholder: 'X:X:X:X::X/<0-128>',
+      accepts: (t) => cidrPrefixLength(t, true) !== null,
+    },
     MAC_ADDR: { placeholder: 'H.H.H', accepts: (t) => MAC.test(t) },
     INTERFACE: { placeholder: 'IFACE', accepts: (t) => INTERFACE_NAME.test(t) },
     REST: { placeholder: 'LINE', accepts: (t) => t.length > 0 },

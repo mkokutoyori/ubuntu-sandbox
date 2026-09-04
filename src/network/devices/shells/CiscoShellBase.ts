@@ -73,6 +73,7 @@ import { runSshClient } from '../linux/network/LinuxSshClient';
 import { findHostByAddress } from '../linux/network/HostLookup';
 import type { Router } from '../Router';
 import { ipGlobalSpecs, type IpGlobalHost } from './cisco/ipGlobalSpecs';
+import { bgpFilterListSpecs, type FilterListHost } from './cisco/filterListSpecs';
 import { cryptoKeySpecs, type CryptoKeyHost } from './cisco/cryptoKeySpecs';
 import { clearLineSpecs, type ClearRestantsHost } from './cisco/clearRestantsSpecs';
 import {
@@ -970,8 +971,6 @@ const IOS_HARDENING: readonly HardeningEntry[] = [
 ];
 
 export const ENABLE_LEVEL_RANGE: readonly [number, number] = [0, 15];
-export const AS_PATH_LIST_RANGE: readonly [number, number] = [1, 500];
-export const COMMUNITY_LIST_RANGE: readonly [number, number] = [1, 500];
 export const LEGACY_QUEUE_LIST_RANGE: readonly [number, number] = [1, 16];
 
 export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
@@ -5646,10 +5645,23 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     };
   }
 
+  protected filterListHost(): FilterListHost {
+    return {
+      asPathLists: () => this.asPathLists(),
+      communityLists: () => this.communityLists(),
+      recordConfigLine: (line) => {
+        (this.d() as unknown as {
+          _recordUnhandledConfigLine?: (l: string) => void;
+        })._recordUnhandledConfigLine?.(line);
+      },
+    };
+  }
+
   protected socleSpecs(): readonly CommandSpec[] {
     return [
       ...TIME_RANGE_FAMILY,
       ...ipGlobalSpecs(() => this.ipGlobalHost()),
+      ...bgpFilterListSpecs(() => this.filterListHost()),
       ...cryptoKeySpecs(() => this.cryptoKeyHost()),
       ...clearLineSpecs(() => this.clearRestantsHost(), DERNIERE_LIGNE_ABSOLUE),
       ...debugFamily(this.debugPairs()),
@@ -9679,34 +9691,6 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       const name = args[0];
       if (!name) return CISCO_ERRORS.INCOMPLETE;
       vrfStoreOf(this.d() as unknown as VrfHost).delete(name);
-      return '';
-    });
-    trie.registerGreedy('ip community-list', 'Define BGP community list', (args, raw) => {
-      if (args.length === 0) throw new CliIncomplete();
-      const kind = args[0].toLowerCase();
-      const named = kind === 'standard' || kind === 'expanded';
-      if (!named) this.exigerNumeroDeListe(args[0], COMMUNITY_LIST_RANGE);
-      if (args.length < 3) return CISCO_ERRORS.INCOMPLETE;
-      const name = named ? args[1] : args[0];
-      const rule = (named ? args.slice(2) : args.slice(1)).join(' ');
-      const store = this.communityLists();
-      const key = `${named ? kind : 'standard'} ${name}`;
-      const list = store.get(key) ?? [];
-      list.push(rule);
-      store.set(key, list);
-      const r = this.d() as unknown as { _recordUnhandledConfigLine?: (l: string) => void };
-      r._recordUnhandledConfigLine?.(raw ?? `ip community-list ${args.join(' ')}`);
-      return '';
-    });
-    trie.registerGreedy('ip as-path access-list', 'Define BGP AS-path filter', (args, raw) => {
-      this.exigerNumeroDeListe(args[0], AS_PATH_LIST_RANGE);
-      if (args.length < 3) return CISCO_ERRORS.INCOMPLETE;
-      const store = this.asPathLists();
-      const list = store.get(args[0]) ?? [];
-      list.push(args.slice(1).join(' '));
-      store.set(args[0], list);
-      const r = this.d() as unknown as { _recordUnhandledConfigLine?: (l: string) => void };
-      r._recordUnhandledConfigLine?.(raw ?? `ip as-path access-list ${args.join(' ')}`);
       return '';
     });
     trie.registerGreedy('priority-list', 'Legacy PQ list', (args, raw) => {

@@ -21,9 +21,13 @@ export interface RouteMapClause {
   description?: string;
 }
 
+const prefixDescriptionKey = (name: string, v6: boolean) =>
+  `${v6 ? 'v6' : 'v4'} ${name}`;
+
 export class PolicyRepository {
   private readonly prefixLists = new Map<string, PrefixListEntry[]>();
   private readonly v6PrefixLists = new Map<string, PrefixListEntry[]>();
+  private readonly prefixDescriptions = new Map<string, string>();
   private readonly routeMaps = new Map<string, RouteMapClause[]>();
 
   // ── Prefix-lists ────────────────────────────────────────────────
@@ -38,9 +42,38 @@ export class PolicyRepository {
 
   removePrefixList(name: string, seq?: number, v6 = false): void {
     const map = v6 ? this.v6PrefixLists : this.prefixLists;
-    if (seq === undefined) { map.delete(name); return; }
+    if (seq === undefined) {
+      map.delete(name);
+      this.prefixDescriptions.delete(prefixDescriptionKey(name, v6));
+      return;
+    }
     const list = map.get(name);
     if (list) map.set(name, list.filter((e) => e.seq !== seq));
+  }
+
+  setPrefixDescription(name: string, text: string | undefined, v6 = false): void {
+    const key = prefixDescriptionKey(name, v6);
+    if (text === undefined) this.prefixDescriptions.delete(key);
+    else this.prefixDescriptions.set(key, text);
+  }
+
+  prefixDescription(name: string, v6 = false): string | undefined {
+    return this.prefixDescriptions.get(prefixDescriptionKey(name, v6));
+  }
+
+  /**
+   * Les listes qu'une DESCRIPTION nomme, meme sans une seule entree.
+   *
+   * `ip prefix-list LISTE description …` est une commande a part
+   * entiere ; ne rendre la description que pour les listes qui portent
+   * deja une entree la ferait disparaitre a l'import d'une topologie
+   * ecrite dans l'ordre d'un operateur, qui decrit avant de remplir.
+   */
+  describedPrefixLists(v6 = false): readonly string[] {
+    const prefixe = v6 ? 'v6 ' : 'v4 ';
+    return [...this.prefixDescriptions.keys()]
+      .filter((key) => key.startsWith(prefixe))
+      .map((key) => key.slice(prefixe.length));
   }
 
   nextPrefixSeq(name: string, v6 = false): number {
@@ -113,6 +146,7 @@ export class PolicyRepository {
   reset(): void {
     this.prefixLists.clear();
     this.v6PrefixLists.clear();
+    this.prefixDescriptions.clear();
     this.routeMaps.clear();
   }
 }

@@ -100,22 +100,45 @@ describe('ce que la migration rapporte, mesure', () => {
     expect(restants).toEqual([]);
   });
 
-  it('l\'inventaire du trie n\'est pas vide — sinon le garde-fou ne lirait rien', () => {
-    expect(legacyPaths().size).toBeGreaterThan(100);
+  /*
+   * Ce cas exigeait plus de CENT chemins restants, et le chiffre etait un
+   * plancher qui combat le but : la migration le fait baisser a chaque
+   * lot, donc il devait finir par tomber — il est tombe a 88. Ce qu'il
+   * garde vraiment est que l'inventaire est LU, sans quoi les deux
+   * garde-fous ci-dessus compareraient le registre a un ensemble vide et
+   * passeraient toujours. La derniere famille migree le ramenera a zero,
+   * et ce fichier dira alors que le trie est fini plutot que casser.
+   */
+  it('l\'inventaire du trie est LU — sinon le garde-fou ne lirait rien', () => {
+    const legacy = legacyPaths();
+
+    expect(legacy.size).toBeGreaterThan(0);
+    expect([...legacy].every(path => path.length > 0)).toBe(true);
   });
 });
 
 describe('elaguer un chemin ne touche PAS ce qui pend dessous', () => {
-  it('`clear logging persistent` survit a la migration de son PARENT', () => {
+  /*
+   * Ce cas lisait le TRIE, et il y a lu `clear logging persistent`
+   * jusqu'au jour ou l'enfant a migre a son tour — il exigeait donc que
+   * l'enfant reste ou la migration a justement pour but de ne plus le
+   * laisser. Ce qui se garde est que la commande REPONDE, quel que soit
+   * le moteur qui la sert ; le cas suivant, sur un trie neuf, eprouve la
+   * mecanique de l'elagage elle-meme.
+   */
+  it('`clear logging persistent` survit a la migration de son PARENT', async () => {
     resetCounters(); resetDeviceCounters(); MACAddress.resetCounter();
     const router = new CiscoRouter('router-cisco', 'R1', 0, 0);
     const shell = router.getShell() as unknown as {
-      enumerateAllExecutablePaths(): string[];
       migratedPaths(): readonly string[];
     };
+    const cli = router as unknown as { executeCommand(c: string): Promise<string> };
+    await cli.executeCommand('enable');
 
     expect(shell.migratedPaths()).toContain('clear logging');
-    expect(shell.enumerateAllExecutablePaths()).toContain('clear logging persistent');
+    const out = await cli.executeCommand('clear logging persistent');
+    expect(out).not.toContain('Invalid input');
+    expect(out).not.toContain('Incomplete');
   });
 
   it('le noeud parent perd son ACTION, pas ses enfants', () => {

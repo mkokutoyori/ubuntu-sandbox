@@ -151,6 +151,10 @@ export interface OspfConfigView {
 export function policyConfigLines(policy: PolicyRepository): string[] {
   const lines: string[] = [];
   for (const v6 of [false, true]) {
+    const tete = `ip${v6 ? 'v6' : ''} prefix-list`;
+    for (const name of policy.describedPrefixLists(v6)) {
+      lines.push(`${tete} ${name} description ${policy.prefixDescription(name, v6)}`);
+    }
     for (const [name, entries] of policy.allPrefixLists(v6)) {
       for (const e of entries) {
         lines.push(`ip${v6 ? 'v6' : ''} prefix-list ${name} seq ${e.seq} ${e.action} ${e.prefix}`

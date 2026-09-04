@@ -196,6 +196,7 @@ import { routerOnlyDebugPairs, type RouterDebugHost } from '@/cli/commands/debug
 import { getGlobalConfig } from '../router/config/CiscoGlobalConfig';
 import { clearAclSpecs, clearCryptoSpecs } from './cisco/clearRestantsSpecs';
 import { showAdjacencySpec, showViewSpec } from './cisco/showViewSpecs';
+import { prefixListSpecs } from './cisco/filterListSpecs';
 import { showAdjacency } from './cisco/CiscoCommonShow';
 import { showIpRouteOspf } from './cisco/CiscoOspfCommands';
 import { clearAccessListCounters } from './cisco/CiscoAclCommands';
@@ -467,6 +468,7 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
       ...keyChainSubmodeSpecs(this),
       ...keyChainKeySubmodeSpecs(this),
       ...routeMapSubmodeSpecs(this, this.policy),
+      ...prefixListSpecs(() => this.policy),
       ...routerSubmodeSpecs(this, this.routingCfg),
       ...bfdInterfaceSpecs({
         selectedPorts: () => this.selectedPortsForConfigIf(),
