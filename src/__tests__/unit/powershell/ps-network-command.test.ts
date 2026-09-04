@@ -137,10 +137,10 @@ describe('2. Network Adapter Management', () => {
     const pc = createPC();
     const ps = createPS(pc);
     await ps.execute('Rename-NetAdapter -Name "Ethernet" -NewName "ETH0"');
-    const out = await ps.execute('Get-NetAdapter -Name "ETH0" -ErrorAction SilentlyContinue');
+    const out = await ps.execute('Get-NetAdapter -Name "ETH0"');
     expect(out).toContain('ETH0');
-    // Restore original name
     await ps.execute('Rename-NetAdapter -Name "ETH0" -NewName "Ethernet"');
+    expect(await ps.execute('Get-NetAdapter -Name "Ethernet"')).toContain('Ethernet');
   });
 
   it.skip('Restart-NetAdapter resets and brings adapter up', async () => {

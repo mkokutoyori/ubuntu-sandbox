@@ -245,6 +245,46 @@ libelle — une ligne dans `winUnreachText`.
 
 ---
 
+### [netadapter] `Set-NetAdapter -VlanID` est REFUSE faute d'etiquetage sur une carte physique
+Depuis le lot « une carte reseau est son PORT », `Set-NetAdapter` existe
+et `-MacAddress` pose vraiment l'adresse par `Port.setMAC`, c'est-a-dire
+le mecanisme que `ip link set … address` emprunte deja. `-VlanID`, lui,
+est **refuse en nommant la brique qui manque** plutot que range sans
+etre lu.
+
+**Ce qui manque, mesure.** L'etiquetage 802.1Q existe sur cette machine,
+mais seulement pour une SOUS-INTERFACE : `EndHost.sendFrame` etiquette
+quand le port emetteur est enregistre dans `vlanSubInterfaces`, ce que
+`Add-NetLbfoTeamNic` fait pour une interface d'agregation. Ce que
+`Set-NetAdapter -VlanID` demande est autre chose : que la carte PHYSIQUE
+elle-meme etiquette tout ce qu'elle emet, sans sous-interface. L'ecrire
+en enregistrant le port comme sa propre sous-interface fonctionnerait
+par accident — `sendFrame` appellerait `Equipment.sendFrame` sur le meme
+port — mais compterait la trame deux fois dans la prise de capture, et
+serait exactement la fausse reutilisation que ce depot refuse.
+
+**Report.** A fermer avec un vrai etiquetage de port (un `Port.vlanTag`
+lu a l'emission et a la reception), qui servirait aussi le pendant
+Linux `ip link set eth0 type vlan …` sur une carte sans sous-interface.
+
+---
+
+### [netadapter] `Get-NetAdapter -IncludeHidden` ne rend rien de plus
+Le filtre est REEL — `NetAdapterEntry.hidden` est lu par
+`selectNetAdapters` — et aucune carte n'est cachee aujourd'hui, donc il
+ne change rien de visible. C'est la meme limite que le PRD de la
+boucle avait deja ecrite : `Loopback Pseudo-Interface 1` n'est pas un
+`Port` de `WindowsPC`, donc l'ajouter ici serait une quatrieme copie
+ecrite en dur d'une interface qui n'existe pas, exactement le defaut que
+ce PRD venait de refermer. Le moteur historique, supprime, en fabriquait
+justement une.
+
+**Report.** A fermer le jour ou `WindowsPC` cree une vraie interface de
+bouclage comme `LinuxMachine.createLoopbackPort()` le fait ; elle sera
+alors `hidden` et le filtre la rendra sans une ligne de plus.
+
+---
+
 ## Gestion (SNMP, NTP, syslog)
 
 ### [ntp] `minpoll`, `maxpoll`, `burst` et `iburst` sont desormais REFUSES

@@ -18,6 +18,7 @@ import type { AddsForestOptions } from '@/network/devices/windows/server/ad/adFu
 import type { RemoteDirectoryTarget } from './adRemoteDirectory';
 import type { NetRouteIdentity, NetRouteUpdate } from '@/network/devices/windows/netRoute';
 import type { NetFirewallRuleEntry } from '@/network/devices/windows/netFirewallRule';
+import type { NetAdapterEntry } from '@/network/devices/windows/netAdapter';
 
 // ─── Entry types re-exported for cmdlet use ────────────────────────────────
 
@@ -99,14 +100,7 @@ export interface EventLogEntryInfo {
   data?: Record<string, string>;
 }
 
-export interface NetworkAdapterInfo {
-  name: string;
-  displayName: string;
-  ifIndex: number;
-  status: string;
-  macAddress: string;
-  linkSpeed: string;
-}
+export type { NetAdapterEntry };
 
 export interface IPAddressInfo {
   ipAddress: string;
@@ -1296,8 +1290,9 @@ export interface INetworkProvider {
   setNicTeamMember?(name: string, administrativeMode: string): string;
   removeNicTeamMember?(name: string): string;
   getHostname(): string;
-  getAdapters(): NetworkAdapterInfo[];
-  getAdapter(name: string): NetworkAdapterInfo | null;
+  getAdapters(): NetAdapterEntry[];
+  getAdapter(name: string): NetAdapterEntry | null;
+  setAdapterMac(portName: string, mac: import('@/network/core/types').MACAddress): void;
   getAdapterStatistics(name: string): AdapterStatisticsInfo | null;
   getIPAddresses(ifAlias?: string): IPAddressInfo[];
   addIPAddress(ip: string, prefixLength: number, ifAlias: string, opts?: NetIPAddressOptions): void;

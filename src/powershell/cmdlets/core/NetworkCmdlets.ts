@@ -13,11 +13,12 @@ import { PSRuntimeError } from '@/powershell/runtime/PSRuntime';
 import type { PSValue } from '@/powershell/runtime/PSEnvironment';
 import { IPAddress, MACAddress } from '@/network/core/types';
 import type {
-  NetworkAdapterInfo, IPAddressInfo, INetworkProvider, NetIPAddressUpdate, RouteInfo,
+  NetAdapterEntry, IPAddressInfo, INetworkProvider, NetIPAddressUpdate, RouteInfo,
 } from '@/powershell/providers/PSProviders';
 import { psValueToString } from '@/powershell/runtime/PSExpansion';
 import { makeTimeSpan } from './DateTimeCmdlets';
 import { NON_INTERACTIVE_HOST, confirmationDue } from '../confirmation';
+import { remoteCimRefusal } from '../cimCommon';
 import {
   type NetFirewallRuleEntry, type NetFirewallSelection, generatedFirewallRuleName,
   noMatchingFirewallRule, planNetFirewallRule, selectFirewallRules,
@@ -32,6 +33,10 @@ import {
   type NetRouteSelection, type NetRouteUpdate, MAX_ROUTE_METRIC, NET_ROUTE_PUBLISH,
   netRouteKey, noMatchingNetRoute, planNetRoute, selectNetRoutes,
 } from '@/network/devices/windows/netRoute';
+import {
+  type NetAdapterSelection, adapterNameProblem, adapterNameTaken, formatNetAdapterMac,
+  noMatchingNetAdapter, parseNetAdapterMac, selectNetAdapters, selectionIsEmpty,
+} from '@/network/devices/windows/netAdapter';
 
 function lifetimeSeconds(raw: PSValue | undefined): number | undefined {
   if (raw === undefined) return undefined;
@@ -56,15 +61,75 @@ function requireNetwork(ctx: CmdletContext): INetworkProvider {
   return ctx.providers.network;
 }
 
-function adapterToPSObject(a: NetworkAdapterInfo): Record<string, PSValue> {
+function adapterToPSObject(a: NetAdapterEntry): Record<string, PSValue> {
   return {
     Name:         a.name,
-    InterfaceDescription: a.displayName,
+    InterfaceDescription: a.interfaceDescription,
     ifIndex:      a.ifIndex,
     Status:       a.status,
-    MacAddress:   a.macAddress.replace(/:/g, '-').toUpperCase(),
+    MacAddress:   formatNetAdapterMac(a.macAddress),
     LinkSpeed:    a.linkSpeed,
   };
+}
+
+const NET_ADAPTER_FILTERS = ['Name', 'InterfaceDescription', 'InterfaceIndex',
+  'IncludeHidden', 'Physical', 'CimSession'] as const;
+
+const NET_ADAPTER_ACTION_PARAMS = [...NET_ADAPTER_FILTERS,
+  'PassThru', 'WhatIf', 'Confirm'] as const;
+
+function netAdapterSelectionOf(ctx: CmdletContext): NetAdapterSelection {
+  const list = (key: string): string[] | undefined => {
+    const raw = ctx.named[key];
+    if (raw === undefined) return undefined;
+    return (Array.isArray(raw) ? raw : [raw]).map(psValueToString);
+  };
+  const positional = ctx.positional[0];
+  return {
+    name: list('name') ?? (positional === undefined ? undefined : [psValueToString(positional)]),
+    interfaceDescription: list('interfacedescription') ?? list('ifdesc'),
+    interfaceIndex: list('interfaceindex') ?? list('ifindex'),
+    includeHidden: ctx.named['includehidden'] === true,
+    physical: ctx.named['physical'] === true,
+  };
+}
+
+function selectedAdapters(
+  ctx: CmdletContext, net: INetworkProvider, cmdlet: string,
+): NetAdapterEntry[] | null {
+  const remote = remoteCimRefusal(ctx, cmdlet);
+  if (remote !== null) { ctx.emitError(remote); return null; }
+  const selection = netAdapterSelectionOf(ctx);
+  const matched = selectNetAdapters(net.getAdapters(), selection);
+  if (matched.length === 0 && !selectionIsEmpty(selection)) {
+    ctx.emitError(`${cmdlet} : ${noMatchingNetAdapter(selection)}`);
+    return null;
+  }
+  return matched;
+}
+
+function adapterActionAllowed(
+  ctx: CmdletContext, cmdlet: string, targets: readonly NetAdapterEntry[], impact: 'None' | 'High',
+): boolean {
+  if (ctx.named['whatif'] === true) {
+    for (const a of targets) {
+      ctx.emit(`What if: Performing the operation "${cmdlet}" on target "${a.name}".`);
+    }
+    return false;
+  }
+  if (confirmationDue(ctx, impact)) {
+    ctx.emitError(`${cmdlet} : ${NON_INTERACTIVE_HOST}`);
+    return false;
+  }
+  return true;
+}
+
+function adapterPassThru(
+  ctx: CmdletContext, net: INetworkProvider, touched: readonly NetAdapterEntry[],
+): PSValue {
+  if (ctx.named['passthru'] !== true) return null;
+  const ports = new Set(touched.map(a => a.portName));
+  return net.getAdapters().filter(a => ports.has(a.portName)).map(adapterToPSObject) as PSValue;
 }
 
 function ipToPSObject(ip: IPAddressInfo): Record<string, PSValue> {
@@ -95,22 +160,14 @@ export class GetNetAdapterCmdlet implements ICmdlet {
   readonly name = 'get-netadapter';
   readonly displayName = 'Get-NetAdapter';
   readonly aliases = [] as const;
+  readonly description = 'Gets the basic network adapter properties.';
+  readonly parameters = NET_ADAPTER_FILTERS;
 
   execute(ctx: CmdletContext): PSValue {
     const net = requireNetwork(ctx);
-    const name = ctx.named['name'] ?? ctx.positional[0];
-    const adapters = net.getAdapters();
-    if (name === undefined || name === null) {
-      return adapters.map(adapterToPSObject) as PSValue;
-    }
-    const names = Array.isArray(name) ? name.map(psValueToString) : [psValueToString(name)];
-    const out: NetworkAdapterInfo[] = [];
-    for (const n of names) {
-      const found = net.getAdapter(n);
-      if (found) out.push(found);
-      else ctx.emitError(`No MSFT_NetAdapter objects found with property 'Name' equal to '${n}'.`);
-    }
-    return out.map(adapterToPSObject) as PSValue;
+    const matched = selectedAdapters(ctx, net, 'Get-NetAdapter');
+    if (matched === null) return null;
+    return matched.map(adapterToPSObject) as PSValue;
   }
 }
 
@@ -370,7 +427,7 @@ export class GetNetIPConfigurationCmdlet implements ICmdlet {
     const defaultRoutes = net.getRoutes().filter(r => r.destinationPrefix === '0.0.0.0/0');
     const rows: Array<{ alias: string; description: string; ifIndex: number; connected: boolean }> =
       net.getAdapters().map(a => ({
-        alias: a.name, description: a.displayName, ifIndex: a.ifIndex, connected: a.status === 'Up',
+        alias: a.name, description: a.interfaceDescription, ifIndex: a.ifIndex, connected: a.status === 'Up',
       }));
     if (all || named?.toLowerCase() === LOOPBACK_IFALIAS.toLowerCase()) {
       rows.push({
@@ -997,22 +1054,6 @@ export class SetNetRouteCmdlet implements ICmdlet {
   }
 }
 
-// ── Restart-NetAdapter (cycle adapter status) ────────────────────────────
-
-export class RestartNetAdapterCmdlet implements ICmdlet {
-  readonly name = 'restart-netadapter';
-  readonly displayName = 'Restart-NetAdapter';
-  readonly aliases = [] as const;
-
-  execute(ctx: CmdletContext): PSValue {
-    const net = requireNetwork(ctx);
-    const name = psValueToString(ctx.named['name'] ?? ctx.positional[0] ?? '');
-    if (!name) { ctx.emitError('Restart-NetAdapter requires -Name'); return null; }
-    net.setAdapterStatus(name, 'Down');
-    net.setAdapterStatus(name, 'Up');
-    return null;
-  }
-}
 
 const COMMON_TCP_PORTS: Record<string, number> = {
   http: 80, smb: 445, rdp: 3389, winrm: 5985, winrmhttp: 5985, winrmhttps: 5986,
@@ -1084,51 +1125,140 @@ export class TestNetConnectionCmdlet implements ICmdlet {
   }
 }
 
-// ── Enable / Disable / Rename-NetAdapter ──────────────────────────────────
+// ── Enable / Disable / Rename / Restart / Set-NetAdapter ──────────────────
 
 export class EnableNetAdapterCmdlet implements ICmdlet {
+  readonly pipelineByPropertyName = true as const;
   readonly name = 'enable-netadapter';
   readonly displayName = 'Enable-NetAdapter';
   readonly aliases = [] as const;
+  readonly description = 'Enables a network adapter.';
+  readonly parameters = NET_ADAPTER_ACTION_PARAMS;
 
   execute(ctx: CmdletContext): PSValue {
     const net = requireNetwork(ctx);
-    const name = psValueToString(ctx.named['name'] ?? ctx.positional[0] ?? '');
-    if (!name) { ctx.emitError('Enable-NetAdapter requires -Name'); return null; }
-    net.setAdapterStatus(name, 'Up');
-    return null;
+    const matched = selectedAdapters(ctx, net, 'Enable-NetAdapter');
+    if (matched === null) return null;
+    if (!adapterActionAllowed(ctx, 'Enable-NetAdapter', matched, 'None')) return null;
+    for (const a of matched) net.setAdapterStatus(a.portName, 'Up');
+    return adapterPassThru(ctx, net, matched);
   }
 }
 
 export class DisableNetAdapterCmdlet implements ICmdlet {
+  readonly pipelineByPropertyName = true as const;
   readonly name = 'disable-netadapter';
   readonly displayName = 'Disable-NetAdapter';
   readonly aliases = [] as const;
+  readonly description = 'Disables a network adapter.';
+  readonly parameters = NET_ADAPTER_ACTION_PARAMS;
 
   execute(ctx: CmdletContext): PSValue {
     const net = requireNetwork(ctx);
-    const name = psValueToString(ctx.named['name'] ?? ctx.positional[0] ?? '');
-    if (!name) { ctx.emitError('Disable-NetAdapter requires -Name'); return null; }
-    net.setAdapterStatus(name, 'Down');
-    return null;
+    const matched = selectedAdapters(ctx, net, 'Disable-NetAdapter');
+    if (matched === null) return null;
+    if (!adapterActionAllowed(ctx, 'Disable-NetAdapter', matched, 'High')) return null;
+    for (const a of matched) net.setAdapterStatus(a.portName, 'Down');
+    return adapterPassThru(ctx, net, matched);
+  }
+}
+
+export class RestartNetAdapterCmdlet implements ICmdlet {
+  readonly pipelineByPropertyName = true as const;
+  readonly name = 'restart-netadapter';
+  readonly displayName = 'Restart-NetAdapter';
+  readonly aliases = [] as const;
+  readonly description = 'Restarts a network adapter.';
+  readonly parameters = NET_ADAPTER_ACTION_PARAMS;
+
+  execute(ctx: CmdletContext): PSValue {
+    const net = requireNetwork(ctx);
+    const matched = selectedAdapters(ctx, net, 'Restart-NetAdapter');
+    if (matched === null) return null;
+    if (!adapterActionAllowed(ctx, 'Restart-NetAdapter', matched, 'None')) return null;
+    for (const a of matched) {
+      net.setAdapterStatus(a.portName, 'Down');
+      net.setAdapterStatus(a.portName, 'Up');
+    }
+    return adapterPassThru(ctx, net, matched);
   }
 }
 
 export class RenameNetAdapterCmdlet implements ICmdlet {
+  readonly pipelineByPropertyName = true as const;
   readonly name = 'rename-netadapter';
   readonly displayName = 'Rename-NetAdapter';
   readonly aliases = [] as const;
+  readonly description = 'Renames a network adapter.';
+  readonly parameters = [...NET_ADAPTER_ACTION_PARAMS, 'NewName'] as const;
 
   execute(ctx: CmdletContext): PSValue {
     const net = requireNetwork(ctx);
-    const name    = psValueToString(ctx.named['name']    ?? ctx.positional[0] ?? '');
     const newName = psValueToString(ctx.named['newname'] ?? ctx.positional[1] ?? '');
-    if (!name || !newName) {
-      ctx.emitError('Rename-NetAdapter requires -Name and -NewName');
+    if (newName === '') {
+      ctx.emitError('Rename-NetAdapter : Cannot bind argument to parameter \'NewName\' because it is an empty string.');
       return null;
     }
-    net.renameAdapter(name, newName);
-    return null;
+    const matched = selectedAdapters(ctx, net, 'Rename-NetAdapter');
+    if (matched === null) return null;
+    const problem = adapterNameProblem(newName);
+    if (problem !== null) { ctx.emitError(`Rename-NetAdapter : ${problem}`); return null; }
+    if (matched.length > 1) {
+      ctx.emitError('Rename-NetAdapter : Cannot rename more than one network adapter to the same name.');
+      return null;
+    }
+    if (adapterNameTaken(net.getAdapters(), newName, matched[0].portName)) {
+      ctx.emitError(`Rename-NetAdapter : A network adapter named '${newName}' already exists.`);
+      return null;
+    }
+    if (!adapterActionAllowed(ctx, 'Rename-NetAdapter', matched, 'None')) return null;
+    net.renameAdapter(matched[0].portName, newName);
+    return adapterPassThru(ctx, net, matched);
+  }
+}
+
+const NET_ADAPTER_UNSUPPORTED: Record<string, string> = {
+  vlanid: 'VLAN tagging on a physical adapter is not modelled by this simulator; '
+    + 'use Set-NetLbfoTeamNic to set the VLAN of a team interface.',
+};
+
+export class SetNetAdapterCmdlet implements ICmdlet {
+  readonly pipelineByPropertyName = true as const;
+  readonly name = 'set-netadapter';
+  readonly displayName = 'Set-NetAdapter';
+  readonly aliases = [] as const;
+  readonly description = 'Sets the basic network adapter properties.';
+  readonly parameters = [...NET_ADAPTER_ACTION_PARAMS, 'MacAddress', 'NoRestart'] as const;
+
+  execute(ctx: CmdletContext): PSValue {
+    const net = requireNetwork(ctx);
+    for (const [key, reason] of Object.entries(NET_ADAPTER_UNSUPPORTED)) {
+      if (ctx.named[key] !== undefined) {
+        ctx.emitError(`Set-NetAdapter : ${reason}`);
+        return null;
+      }
+    }
+    const raw = ctx.named['macaddress'] ?? ctx.named['linklayeraddress'];
+    if (raw === undefined) {
+      ctx.emitError('Set-NetAdapter : No property was specified. Specify -MacAddress and retry.');
+      return null;
+    }
+    const mac = parseNetAdapterMac(psValueToString(raw));
+    if (mac === null) {
+      ctx.emitError(`Set-NetAdapter : The MAC address '${psValueToString(raw)}' is not valid.`);
+      return null;
+    }
+    const matched = selectedAdapters(ctx, net, 'Set-NetAdapter');
+    if (matched === null) return null;
+    if (!adapterActionAllowed(ctx, 'Set-NetAdapter', matched, 'None')) return null;
+    for (const a of matched) {
+      net.setAdapterMac(a.portName, mac);
+      if (ctx.named['norestart'] !== true) {
+        net.setAdapterStatus(a.portName, 'Down');
+        net.setAdapterStatus(a.portName, 'Up');
+      }
+    }
+    return adapterPassThru(ctx, net, matched);
   }
 }
 

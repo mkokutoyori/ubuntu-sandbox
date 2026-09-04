@@ -98,6 +98,7 @@ interface TopologyInterfaceExport {
   subnetMask?: string;
   isUp?: boolean;
   description?: string;
+  alias?: string;
   secondaryIPs?: TopologySecondaryIpExport[];
   // ── Physical layer. Emitted only when it differs from a fresh port, so
   // a plain topology file stays readable. A router recovers some of this
@@ -360,6 +361,8 @@ function captureInterface(port: Port): TopologyInterfaceExport {
   if (!port.getIsUp()) entry.isUp = false;
   const desc = port.getDescriptionText();
   if (desc) entry.description = desc;
+  const alias = port.getAlias();
+  if (alias !== null) entry.alias = alias;
   const secondaries = port.getSecondaryIPs();
   if (secondaries.length > 0) {
     entry.secondaryIPs = secondaries.map((s) => ({
@@ -1141,6 +1144,7 @@ export async function importTopology(json: TopologyExport): Promise<ImportResult
       if (ifConfig.description !== undefined) {
         port.setDescriptionText(ifConfig.description);
       }
+      if (ifConfig.alias !== undefined) port.setAlias(ifConfig.alias);
       if (ifConfig.secondaryIPs && device instanceof Router) {
         for (const sec of ifConfig.secondaryIPs) {
           try {

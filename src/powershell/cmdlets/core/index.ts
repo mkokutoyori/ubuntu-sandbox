@@ -90,7 +90,7 @@ import {
   EnableNetFirewallRuleCmdlet, DisableNetFirewallRuleCmdlet,
   GetNetConnectionProfileCmdlet, SetNetConnectionProfileCmdlet,
   SetNetIPAddressCmdlet, SetNetRouteCmdlet,
-  RestartNetAdapterCmdlet, TestNetConnectionCmdlet,
+  RestartNetAdapterCmdlet, SetNetAdapterCmdlet, TestNetConnectionCmdlet,
   ClearNetNeighborCacheCmdlet, GetNetAdapterStatisticsCmdlet,
 } from './NetworkCmdlets';
 import { SendMailMessageCmdlet } from './MailMessageCmdlets';
@@ -434,6 +434,7 @@ export function registerCoreCmdlets(registry: CmdletRegistry, opts: { includeSer
   registry.register(new SetNetIPAddressCmdlet());
   registry.register(new SetNetRouteCmdlet());
   registry.register(new RestartNetAdapterCmdlet());
+  registry.register(new SetNetAdapterCmdlet());
   registry.register(new TestNetConnectionCmdlet());
   registry.register(new SendMailMessageCmdlet());
 

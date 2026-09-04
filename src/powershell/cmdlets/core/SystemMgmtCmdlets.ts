@@ -550,7 +550,7 @@ export class GetCimInstanceCmdlet implements ICmdlet {
       return net.getAdapters().map(a => ({
         Name:              a.name,
         NetConnectionID:   a.name,
-        Description:       a.displayName,
+        Description:       a.interfaceDescription,
         Index:             a.ifIndex,
         InterfaceIndex:    a.ifIndex,
         MACAddress:        a.macAddress,
@@ -569,7 +569,7 @@ export class GetCimInstanceCmdlet implements ICmdlet {
       return net.getAdapters().map(a => {
         const ips = net.getIPAddresses(a.name);
         return {
-          Description:      a.displayName,
+          Description:      a.interfaceDescription,
           Index:            a.ifIndex,
           InterfaceIndex:   a.ifIndex,
           MACAddress:       a.macAddress,

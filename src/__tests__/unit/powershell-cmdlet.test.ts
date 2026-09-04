@@ -16,6 +16,8 @@ import { PowerShellSubShell } from '@/terminal/subshells/PowerShellSubShell';
 import { resetCounters } from '@/network/core/types';
 import { resetDeviceCounters } from '@/network/devices/DeviceFactory';
 import { Logger } from '@/network/core/Logger';
+import { LinuxPC } from '@/network/devices/LinuxPC';
+import { Cable } from '@/network/hardware/Cable';
 
 beforeEach(() => {
   resetCounters();
@@ -1073,7 +1075,7 @@ describe('7. Get‑Location', () => {
 describe('8. Get‑NetAdapter', () => {
   it('lists adapters', async () => {
     const pc = createPC();
-    const ps = createPS(pc);
+    const ps = createLivePS(pc);
     const out = await ps.execute('Get-NetAdapter');
     expect(out).toContain('Name');
     expect(out).toContain('Ethernet');
@@ -1088,24 +1090,24 @@ describe('8. Get‑NetAdapter', () => {
 
   it('Get-NetAdapter -InterfaceDescription filter', async () => {
     const pc = createPC();
-    const ps = createPS(pc);
-    // Description may contain "Intel" etc.
+    const ps = createLivePS(pc);
     const out = await ps.execute('Get-NetAdapter -InterfaceDescription "Intel*"');
     expect(out).toContain('Ethernet');
   });
 
   it('Get-NetAdapter -Physical returns physical adapters only', async () => {
     const pc = createPC();
-    const ps = createPS(pc);
+    const ps = createLivePS(pc);
     const out = await ps.execute('Get-NetAdapter -Physical');
     expect(out).toContain('Ethernet');
   });
 
-  it('Get-NetAdapter -IncludeHidden shows hidden adapters', async () => {
+  it('Get-NetAdapter -IncludeHidden is accepted, and this machine hides no adapter', async () => {
     const pc = createPC();
-    const ps = createPS(pc);
-    const out = await ps.execute('Get-NetAdapter -IncludeHidden');
-    expect(out).toContain('Loopback');
+    const ps = createLivePS(pc);
+    const avec = await ps.execute('Get-NetAdapter -IncludeHidden');
+    expect(avec).toContain('Ethernet');
+    expect(avec).toBe(await ps.execute('Get-NetAdapter'));
   });
 
   it('Get-NetAdapter | Select Status, LinkSpeed', async () => {
@@ -1117,24 +1119,23 @@ describe('8. Get‑NetAdapter', () => {
 
   it('Get-NetAdapter piped to Disable-NetAdapter (requires confirmation)', async () => {
     const pc = createPC();
-    const ps = createPS(pc);
-    // Attempt without confirm
+    const ps = createLivePS(pc);
     const result = await ps.execute('Get-NetAdapter "Ethernet" | Disable-NetAdapter -WhatIf');
     expect(result).toContain('What if');
   });
 
   it('Get-NetAdapter with error for missing name', async () => {
     const pc = createPC();
-    const ps = createPS(pc);
-    const out = await ps.execute('Get-NetAdapter -Name Fake -ErrorAction SilentlyContinue');
+    const ps = createLivePS(pc);
+    const out = await ps.execute('Get-NetAdapter -Name Fake');
     expect(out).toContain('No MSFT_NetAdapter');
   });
 
   it('Get-NetAdapter -CimSession (not supported)', async () => {
     const pc = createPC();
-    const ps = createPS(pc);
-    const out = await ps.execute('Get-NetAdapter -CimSession localhost -ErrorAction SilentlyContinue');
-    expect(out).toContain('not supported');
+    const ps = createLivePS(pc);
+    const out = await ps.execute('Get-NetAdapter -CimSession localhost');
+    expect(out).toContain('remote CIM is not available');
   });
 
   it('Get-NetAdapter -ThrottleLimit (ignored but no error)', async () => {
@@ -2333,81 +2334,84 @@ describe('7. Get-Location', () => {
 // 8. Get-NetAdapter (20 tests)
 // ───────────────────────────────────────────────────────────────────────────
 describe('8. Get-NetAdapter', () => {
+  const cable = (pc: WindowsPC) => {
+    const pair = new LinuxPC('linux-pc', `${pc.name}-PAIR`, 0, 0);
+    pair.powerOn();
+    new Cable(`c-${pc.name}`).connect(pc.getPorts()[0], pair.getPorts()[0]);
+  };
   it('lists adapters', async () => {
-    const pc = createPC(); const ps = createPS(pc);
-    const out = await ps.execute('Get-NetAdapter');
-    expect(out).toContain('Ethernet');
+    const pc = createPC(); const ps = createLivePS(pc);
+    expect(await ps.execute('Get-NetAdapter')).toContain('Ethernet');
   });
   it('-Name filter', async () => {
-    const pc = createPC(); const ps = createPS(pc);
+    const pc = createPC(); const ps = createLivePS(pc);
     expect(await ps.execute('Get-NetAdapter -Name "Ethernet"')).toContain('Ethernet');
   });
   it('-InterfaceDescription filter', async () => {
-    const pc = createPC(); const ps = createPS(pc);
+    const pc = createPC(); const ps = createLivePS(pc);
     expect(await ps.execute('Get-NetAdapter -InterfaceDescription "Intel*"')).toContain('Ethernet');
   });
   it('-Physical', async () => {
-    const pc = createPC(); const ps = createPS(pc);
+    const pc = createPC(); const ps = createLivePS(pc);
     expect(await ps.execute('Get-NetAdapter -Physical')).toContain('Ethernet');
   });
-  it('-IncludeHidden', async () => {
-    const pc = createPC(); const ps = createPS(pc);
-    expect(await ps.execute('Get-NetAdapter -IncludeHidden')).toContain('Loopback');
+  it('-IncludeHidden is accepted, and this machine hides no adapter', async () => {
+    const pc = createPC(); const ps = createLivePS(pc);
+    const avec = await ps.execute('Get-NetAdapter -IncludeHidden');
+    expect(avec).toContain('Ethernet');
+    expect(avec).toBe(await ps.execute('Get-NetAdapter'));
   });
   it('Select Name, Status, LinkSpeed', async () => {
-    const pc = createPC(); const ps = createPS(pc);
+    const pc = createPC(); const ps = createLivePS(pc);
     const out = await ps.execute('Get-NetAdapter | Select Name, Status, LinkSpeed');
     expect(out).toContain('Status');
   });
   it('piped to Disable-NetAdapter with -WhatIf', async () => {
-    const pc = createPC(); const ps = createPS(pc);
+    const pc = createPC(); const ps = createLivePS(pc);
     const out = await ps.execute('Get-NetAdapter "Ethernet" | Disable-NetAdapter -WhatIf');
     expect(out).toContain('What if');
   });
   it('error missing name', async () => {
-    const pc = createPC(); const ps = createPS(pc);
-    const out = await ps.execute('Get-NetAdapter -Name Fake -ErrorAction SilentlyContinue');
-    expect(out).toContain('No MSFT_NetAdapter');
+    const pc = createPC(); const ps = createLivePS(pc);
+    expect(await ps.execute('Get-NetAdapter -Name Fake')).toContain('No MSFT_NetAdapter');
   });
   it('-CimSession not supported', async () => {
-    const pc = createPC(); const ps = createPS(pc);
-    const out = await ps.execute('Get-NetAdapter -CimSession localhost -ErrorAction SilentlyContinue');
-    expect(out).toContain('not supported');
+    const pc = createPC(); const ps = createLivePS(pc);
+    expect(await ps.execute('Get-NetAdapter -CimSession localhost'))
+      .toContain('remote CIM is not available');
   });
   it('-ThrottleLimit ignored', async () => {
-    const pc = createPC(); const ps = createPS(pc);
+    const pc = createPC(); const ps = createLivePS(pc);
     await expect(ps.execute('Get-NetAdapter -ThrottleLimit 1')).resolves.not.toThrow();
   });
   it('Get-Help', async () => {
     const pc = createPC(); const ps = createPS(pc);
     expect(await ps.execute('Get-Help Get-NetAdapter')).toContain('SYNOPSIS');
   });
-  // ... fill remaining to 20 with variations
   it('format wide', async () => {
-    const pc = createPC(); const ps = createPS(pc);
+    const pc = createPC(); const ps = createLivePS(pc);
     await expect(ps.execute('Get-NetAdapter | Format-Wide')).resolves.not.toThrow();
   });
-  it('where clause', async () => {
-    const pc = createPC(); const ps = createPS(pc);
+  it('where clause — seule la carte CABLEE est Up', async () => {
+    const pc = createPC(); cable(pc);
+    const ps = createLivePS(pc);
     const out = await ps.execute('Get-NetAdapter | Where Status -eq "Up"');
-    expect(out).toContain('Ethernet');
+    expect(out).toContain('Ethernet 0');
+    expect(out).not.toContain('Ethernet 1');
   });
   it('measure count', async () => {
-    const pc = createPC(); const ps = createPS(pc);
+    const pc = createPC(); const ps = createLivePS(pc);
     const count = await ps.execute('(Get-NetAdapter).Count');
     expect(parseInt(count)).toBeGreaterThan(0);
   });
   it('sort by name', async () => {
-    const pc = createPC(); const ps = createPS(pc);
+    const pc = createPC(); const ps = createLivePS(pc);
     await expect(ps.execute('Get-NetAdapter | Sort-Object Name')).resolves.not.toThrow();
   });
-  it('alias gna', async () => {
-    const pc = createPC(); const ps = createPS(pc);
-    // if alias exists, we simulate
-  });
-  it('multiple interfaces', async () => {
-    const pc = createPC(); const ps = createPS(pc);
-    expect(await ps.execute('Get-NetAdapter')).toContain('Wi-Fi');
+  it('multiple interfaces — une carte par PORT, et aucune de plus', async () => {
+    const pc = createPC(); const ps = createLivePS(pc);
+    expect(parseInt(await ps.execute('(Get-NetAdapter).Count'))).toBe(pc.getPorts().length);
+    expect(await ps.execute('Get-NetAdapter')).not.toContain('Wi-Fi');
   });
 });
 

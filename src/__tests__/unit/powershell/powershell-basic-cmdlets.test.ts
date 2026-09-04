@@ -1090,7 +1090,7 @@ describe('7. Get‑Location', () => {
 describe('8. Get‑NetAdapter', () => {
   it('lists adapters', async () => {
     const pc = createPC();
-    const ps = createPS(pc);
+    const ps = createLivePS(pc);
     const out = await ps.execute('Get-NetAdapter');
     expect(out).toContain('Name');
     expect(out).toContain('Ethernet');
@@ -1105,24 +1105,25 @@ describe('8. Get‑NetAdapter', () => {
 
   it('Get-NetAdapter -InterfaceDescription filter', async () => {
     const pc = createPC();
-    const ps = createPS(pc);
-    // Description may contain "Intel" etc.
+    const ps = createLivePS(pc);
     const out = await ps.execute('Get-NetAdapter -InterfaceDescription "Intel*"');
     expect(out).toContain('Ethernet');
   });
 
   it('Get-NetAdapter -Physical returns physical adapters only', async () => {
     const pc = createPC();
-    const ps = createPS(pc);
+    const ps = createLivePS(pc);
     const out = await ps.execute('Get-NetAdapter -Physical');
     expect(out).toContain('Ethernet');
   });
 
-  it('Get-NetAdapter -IncludeHidden shows hidden adapters', async () => {
+  it('Get-NetAdapter -IncludeHidden is accepted, and this machine hides no adapter', async () => {
     const pc = createPC();
-    const ps = createPS(pc);
-    const out = await ps.execute('Get-NetAdapter -IncludeHidden');
-    expect(out).toContain('Loopback');
+    const ps = createLivePS(pc);
+    const avec = await ps.execute('Get-NetAdapter -IncludeHidden');
+    const sans = await ps.execute('Get-NetAdapter');
+    expect(avec).toContain('Ethernet');
+    expect(avec).toBe(sans);
   });
 
   it('Get-NetAdapter | Select Status, LinkSpeed', async () => {
@@ -1142,16 +1143,16 @@ describe('8. Get‑NetAdapter', () => {
 
   it('Get-NetAdapter with error for missing name', async () => {
     const pc = createPC();
-    const ps = createPS(pc);
-    const out = await ps.execute('Get-NetAdapter -Name Fake -ErrorAction SilentlyContinue');
+    const ps = createLivePS(pc);
+    const out = await ps.execute('Get-NetAdapter -Name Fake');
     expect(out).toContain('No MSFT_NetAdapter');
   });
 
   it('Get-NetAdapter -CimSession (not supported)', async () => {
     const pc = createPC();
-    const ps = createPS(pc);
-    const out = await ps.execute('Get-NetAdapter -CimSession localhost -ErrorAction SilentlyContinue');
-    expect(out).toContain('not supported');
+    const ps = createLivePS(pc);
+    const out = await ps.execute('Get-NetAdapter -CimSession localhost');
+    expect(out).toContain('remote CIM is not available');
   });
 
   it('Get-NetAdapter -ThrottleLimit (ignored but no error)', async () => {

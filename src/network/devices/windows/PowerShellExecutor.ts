@@ -133,7 +133,6 @@ export interface PSDeviceContext {
    */
   readonly extraIPs:             Map<string, NetIPAddressEntry>;
   readonly extraRoutes:          Map<string, NetRouteEntry>;
-  readonly adapterOverrides:     Map<string, { status?: string; displayName?: string }>;
   readonly firewallRules: Map<string, NetFirewallRuleEntry>;
   readonly networkProfiles:      Map<number, string>;
   readonly vpnConnections:       Map<string, VpnConnectionInfo>;
@@ -212,7 +211,6 @@ export class PowerShellExecutor {
   /** Set to true when a `continue` statement is executed inside a loop */
   private continueSignal = false;
   /** Adapter overrides — relocated to the device. */
-  get adapterOverrides() { return this.device.adapterOverrides; }
   /** Dynamic firewall rules — relocated to the device. */
   get firewallRules() { return this.device.firewallRules; }
   /** WinHTTP proxy setting (empty = direct access) */
@@ -2409,11 +2407,6 @@ export class PowerShellExecutor {
       return psSetDnsClientServerAddress(this.buildPSNetConfigCtx(), args);
     }
 
-    // Get-NetAdapter
-    if (cmdLower === 'get-netadapter') {
-      return net.handleGetNetAdapter(this.buildPSNetCtx(), args);
-    }
-
     // Test-Connection (PowerShell ping)
     if (cmdLower === 'test-connection') {
       return this.handleTestConnection(args);
@@ -2422,30 +2415,6 @@ export class PowerShellExecutor {
     // Get-NetTCPConnection (simulated netstat-like)
     if (cmdLower === 'get-nettcpconnection') {
       return net.formatGetNetTCPConnection(this.buildPSNetCtx(), args);
-    }
-
-    // Disable-NetAdapter
-    if (cmdLower === 'disable-netadapter') {
-      return net.handleDisableEnableNetAdapter(this.buildPSNetCtx(), args, 'Disabled');
-    }
-
-    // Enable-NetAdapter
-    if (cmdLower === 'enable-netadapter') {
-      return net.handleDisableEnableNetAdapter(this.buildPSNetCtx(), args, 'Up');
-    }
-
-    // Rename-NetAdapter
-    if (cmdLower === 'rename-netadapter') {
-      return net.handleRenameNetAdapter(this.buildPSNetCtx(), args);
-    }
-
-    // Restart-NetAdapter
-    if (cmdLower === 'restart-netadapter') {
-      // Real restart = down then up on the actual adapter. Route through
-      // the shared handler so a backing port is truly cycled (admin down →
-      // up), visible to ipconfig/netsh — not just a PS-only override flip.
-      net.handleDisableEnableNetAdapter(this.buildPSNetCtx(), args, 'Disabled');
-      return net.handleDisableEnableNetAdapter(this.buildPSNetCtx(), args, 'Up');
     }
 
     // Test-NetConnection
@@ -3438,6 +3407,8 @@ export class PowerShellExecutor {
     { type: 'Cmdlet', name: 'Get-LocalUser',                 version: '1.0.0.0', source: 'Microsoft.PowerShell.LocalAccounts', noun: 'LocalUser' },
     { type: 'Cmdlet', name: 'Get-Location',                  version: '3.1.0.0', source: 'Microsoft.PowerShell.Management', noun: 'Location' },
     { type: 'Cmdlet', name: 'Get-NetAdapter',                version: '2.0.0.0', source: 'NetAdapter',                     noun: 'NetAdapter' },
+    { type: 'Cmdlet', name: 'Set-NetAdapter',                version: '2.0.0.0', source: 'NetAdapter',                     noun: 'NetAdapter' },
+    { type: 'Cmdlet', name: 'Restart-NetAdapter',            version: '2.0.0.0', source: 'NetAdapter',                     noun: 'NetAdapter' },
     { type: 'Cmdlet', name: 'Get-NetIPAddress',              version: '1.0.0.0', source: 'NetTCPIP',                       noun: 'NetIPAddress' },
     { type: 'Cmdlet', name: 'Get-NetIPConfiguration',        version: '1.0.0.0', source: 'NetTCPIP',                       noun: 'NetIPConfiguration' },
     { type: 'Cmdlet', name: 'Get-NetRoute',                  version: '1.0.0.0', source: 'NetTCPIP',                       noun: 'NetRoute' },
@@ -3596,7 +3567,7 @@ export class PowerShellExecutor {
     { Name: 'Microsoft.PowerShell.Utility',        Version: '3.1.0.0', ModuleType: 'Manifest', ExportedCommands: ['Get-Date', 'Write-Host', 'Write-Output', 'Write-Error', 'Write-Warning', 'Format-List', 'Format-Table', 'ConvertTo-Json', 'ConvertFrom-Json', 'Select-String', 'Compare-Object', 'Start-Sleep', 'New-TimeSpan'] },
     { Name: 'Microsoft.PowerShell.LocalAccounts',  Version: '1.0.0.0', ModuleType: 'Manifest', ExportedCommands: ['Get-LocalUser', 'New-LocalUser', 'Set-LocalUser', 'Remove-LocalUser', 'Add-LocalGroupMember', 'Get-LocalGroup', 'New-LocalGroup'] },
     { Name: 'NetTCPIP',                            Version: '1.0.0.0', ModuleType: 'Manifest', ExportedCommands: ['Get-NetIPAddress', 'New-NetIPAddress', 'Remove-NetIPAddress', 'Set-NetIPAddress', 'Get-NetIPConfiguration', 'Get-NetRoute', 'New-NetRoute', 'Remove-NetRoute', 'Set-NetRoute'] },
-    { Name: 'NetAdapter',                          Version: '2.0.0.0', ModuleType: 'Manifest', ExportedCommands: ['Get-NetAdapter', 'Disable-NetAdapter', 'Enable-NetAdapter', 'Rename-NetAdapter'] },
+    { Name: 'NetAdapter',                          Version: '2.0.0.0', ModuleType: 'Manifest', ExportedCommands: ['Get-NetAdapter', 'Set-NetAdapter', 'Disable-NetAdapter', 'Enable-NetAdapter', 'Rename-NetAdapter', 'Restart-NetAdapter'] },
     { Name: 'DnsClient',                           Version: '1.0.0.0', ModuleType: 'Manifest', ExportedCommands: ['Get-DnsClientServerAddress', 'Set-DnsClientServerAddress', 'Resolve-DnsName', 'Clear-DnsClientCache'] },
     { Name: 'Storage',                             Version: '2.0.0.0', ModuleType: 'Manifest', ExportedCommands: ['Get-Disk', 'Get-Partition', 'Get-Volume', 'Initialize-Disk', 'New-Partition', 'Format-Volume'] },
   ];

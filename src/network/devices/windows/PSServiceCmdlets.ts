@@ -17,6 +17,7 @@
 
 import type { WindowsServiceManager, WindowsService, ServiceStartType } from './WindowsServiceManager';
 import type { WindowsProcessManager } from './WindowsProcessManager';
+import { wildcardToRegex } from '@/powershell/runtime/PSWildcard';
 
 export interface PSServiceContext {
   serviceManager: WindowsServiceManager;
@@ -618,11 +619,6 @@ function psError(cmdlet: string, message: string, categoryInfo: string, errorId:
 
 // ─── Wildcard to regex ───────────────────────────────────────────
 
-function wildcardToRegex(pattern: string): RegExp {
-  const escaped = pattern.replace(/[.+^${}()|[\]\\]/g, '\\$&');
-  const regex = escaped.replace(/\*/g, '.*').replace(/\?/g, '.');
-  return new RegExp(`^${regex}$`, 'i');
-}
 
 // ─── Arg parser (same as other PS cmdlet files) ───────────────────
 

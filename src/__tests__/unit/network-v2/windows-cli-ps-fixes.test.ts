@@ -121,8 +121,8 @@ describe('Get-NetAdapter — an uncabled but enabled port is Disconnected, not U
     const pc = new WindowsPC('windows-pc', 'PC1', 0, 0);
     const shell = ps(pc);
     const out = await run(shell, 'Get-NetAdapter -Name "Ethernet 1"');
-    expect(out).toMatch(/Ethernet 1\s+Ethernet 1\s+Disconnected/);
-    expect(out).not.toMatch(/Ethernet 1\s+Ethernet 1\s+Up/);
+    expect(out).toMatch(/Ethernet 1\s.*\sDisconnected\s/);
+    expect(out).not.toMatch(/Ethernet 1\s.*\sUp\s/);
     expect(out).toContain('0 bps');
   });
 
@@ -132,7 +132,7 @@ describe('Get-NetAdapter — an uncabled but enabled port is Disconnected, not U
     new Cable('w').connect(pc.getPort('eth0')!, router.getPort('GigabitEthernet0/0')!);
     const shell = ps(pc);
     const out = await run(shell, 'Get-NetAdapter -Name "Ethernet 0"');
-    expect(out).toMatch(/Ethernet 0\s+Ethernet 0\s+Up/);
+    expect(out).toMatch(/Ethernet 0\s.*\sUp\s/);
   });
 });
 
@@ -169,7 +169,7 @@ describe('Disable-NetAdapter (PS) — brings down the real port, not just a PS-s
     pc.configureInterface('eth0', new IPAddress('10.0.0.5'), new SubnetMask('255.255.255.0'));
 
     const shell = ps(pc);
-    await run(shell, 'Disable-NetAdapter -Name "Ethernet 0"');
+    await run(shell, 'Disable-NetAdapter -Name "Ethernet 0" -Confirm:$false');
     expect(pc.getPort('eth0')!.isAdminDown()).toBe(true);
 
     const cmdOut = await pc.executeCommand('ipconfig');

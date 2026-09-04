@@ -48,7 +48,8 @@ describe('WindowsInterfaceNaming — canonical, bijective port <-> display name'
 
 describe('WinNetsh resolveAdapterName — consistent with the canonical naming', () => {
   it('"Ethernet 2" resolves to eth2, matching toDisplayName/toPortName', () => {
-    const ports = new Map([['eth0', {}], ['eth1', {}], ['eth2', {}]]);
+    const pc = new WindowsPC('windows-pc', 'PCNAME', 0, 0);
+    const ports = pc.getPortsMap();
     expect(resolveAdapterName('Ethernet 2', ports)).toBe('eth2');
     expect(resolveAdapterName('Ethernet', ports)).toBe('eth0');
     expect(resolveAdapterName('Ethernet 1', ports)).toBe('eth1');
@@ -116,7 +117,7 @@ describe('Get-NetAdapter — LinkSpeed reflects the real negotiated port speed',
 
     const shell = ps(pc);
     const out = await run(shell, 'Get-NetAdapter');
-    const ethLine = out.split('\n').find(l => /^Ethernet 0\s+Ethernet 0\s/.test(l));
+    const ethLine = out.split('\n').find(l => /^Ethernet 0\s/.test(l));
     expect(ethLine).toMatch(/100 Mbps/);
   });
 });

@@ -371,6 +371,12 @@ export class Port {
   getName(): string { return this.name; }
 
   rename(newName: string): void { this.name = newName; }
+
+  private alias: string | null = null;
+
+  getAlias(): string | null { return this.alias; }
+  setAlias(alias: string | null): void { this.alias = alias; }
+
   getMAC(): MACAddress { return this.mac; }
 
   /**

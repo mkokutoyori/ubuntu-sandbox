@@ -11,6 +11,7 @@ import type { PSValue } from '@/powershell/runtime/PSEnvironment';
 import { psValueToString } from '@/powershell/runtime/PSExpansion';
 import { parseCredentialArg } from './RemotingCmdlets';
 import { makePSCredential } from '@/powershell/credential/PSCredential';
+import { wildcardToRegex } from '@/powershell/runtime/PSWildcard';
 
 // ─── New-Object ───────────────────────────────────────────────────────────
 
@@ -757,13 +758,6 @@ export class GetAliasCmdlet implements ICmdlet {
   }
 }
 
-function wildcardToRegex(pattern: string): RegExp {
-  const escaped = pattern
-    .replace(/[.+^${}()|[\]\\]/g, '\\$&')
-    .replace(/\*/g, '.*')
-    .replace(/\?/g, '.');
-  return new RegExp(`^${escaped}$`, 'i');
-}
 
 // ─── Get-PSProvider ───────────────────────────────────────────────────────
 

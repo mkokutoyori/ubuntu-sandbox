@@ -123,7 +123,7 @@ describe('Disable/Enable-NetAdapter — real admin state shared with ipconfig an
     pc.configureInterface('eth0', new IPAddress('10.0.4.5'), new SubnetMask('255.255.255.0'));
     const shell = ps(pc);
 
-    await run(shell, 'Disable-NetAdapter -Name eth0');
+    await run(shell, 'Disable-NetAdapter -Name eth0 -Confirm:$false');
 
     const ipcfg = await pc.executeCommand('ipconfig');
     const eth0Block = ipcfg.split(/Ethernet adapter/).find(b => /Ethernet 0/.test(b)) ?? '';
