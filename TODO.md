@@ -2457,3 +2457,23 @@ défauts — la méthode vaut d'être reprise sur le reliquat.
   l'information au rechargement. La sonde de la famille observe donc le
   COMPORTEMENT (le retour a PVST+) et pas le rendu. A rouvrir des qu'une
   capture reelle de configuration d'usine est atteignable.
+- **Le socle ne sait pas exprimer une liste d'options en ORDRE LIBRE**,
+  et c'est ce qui bloque la migration d'une classe entiere de commandes
+  IOS. `crypto key generate rsa [general-keys | usage-keys] [label <nom>]
+  [exportable] [modulus <360-4096>]` en est l'exemple type : les quatre
+  options se tapent dans n'importe quel ordre, et un `CommandSpec` decrit
+  une SEQUENCE de pas. Les trois facons de s'en tirer aujourd'hui sont
+  toutes mauvaises — declarer chaque ordre (explosion combinatoire),
+  declarer une place `REST` et analyser dans le gestionnaire (c'est le
+  glouton du trie, sans le gain), ou refuser des formes que la machine
+  accepte. Ce qui manque est une notion de SAC D'OPTIONS : un ensemble
+  de mots-cles facultatifs, chacun avec sa place, admis dans n'importe
+  quel ordre et au plus une fois, que l'analyse valide et que l'aide
+  annonce. C'est un ajout a `CommandTable`/`CommandParser`/
+  `CompletionEngine`, pas a une famille. Mesure faite en voulant migrer
+  `crypto key` : la famille est par ailleurs SANS DEFAUT — plage 360-4096
+  annoncee et appliquee, mots-cles inconnus refuses, meme reponse sur les
+  deux plateformes, et la consequence reelle (SSH tombe, SSH revient)
+  verifiee des deux cotes par `probe-socle-crypto-key-rsa.test.ts`, dont
+  les 36 cas passent deja. Elle reste donc au trie tant que le sac
+  d'options n'existe pas, plutot que d'y perdre des formes.
