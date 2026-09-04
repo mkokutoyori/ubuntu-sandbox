@@ -43,6 +43,13 @@ export interface ScanHost {
   reverseName(ip: string): Promise<string | null>;
   /** L'adresse d'un nom, par la meme chaine — ce que fait `getaddrinfo`. */
   resolveName(name: string): Promise<string | null>;
+  /**
+   * La marche par duree de vie limitee de la machine, celle que sa propre
+   * commande `traceroute` emprunte. `nmap` ne porte pas de seconde
+   * implantation : ce qu'il ajoute est le CHOIX de la sonde et la mise en
+   * page, pas l'emission.
+   */
+  tracePath(ip: string): Promise<Array<{ ttl: number; ip?: string; rttMs?: number }>>;
 }
 
 const UDP_PROBE_SOURCE_PORT = 51820;
@@ -59,6 +66,24 @@ function linkLayerResolverOf(device: Equipment | null): LinkLayerResolver | null
   return candidate && typeof candidate.isDirectlyConnected === 'function'
     && typeof candidate.resolveLinkLayerAddress === 'function'
     ? candidate as LinkLayerResolver : null;
+}
+
+/**
+ * `Target::directlyConnected()` : la cible est-elle sur un de nos
+ * segments ? La question est de ROUTAGE et non d'ARP — une cible du
+ * meme segment qui ne repond pas reste directement connectee — d'ou la
+ * lecture de `isDirectlyConnected` et non celle du voisin.
+ */
+export function directlyConnectedOf(device: Equipment | null, ip: string): boolean {
+  const resolver = linkLayerResolverOf(device);
+  if (!resolver) return false;
+  if (ip.includes(':')) {
+    let target: IPv6Address;
+    try { target = new IPv6Address(ip); } catch { return false; }
+    return resolver.isDirectlyConnected6(target);
+  }
+  const target = IPAddress.tryParse(ip);
+  return target !== null && resolver.isDirectlyConnected(target);
 }
 
 /**
@@ -98,6 +123,8 @@ interface Discovery {
   latencyMs?: number;
   ttl?: number;
   reason?: string;
+  /** Le port de la sonde TCP qui a repondu, quand c'est elle qui a repondu. */
+  reasonPort?: number;
 }
 
 async function discoverHost(host: ScanHost, ip: string): Promise<Discovery> {
@@ -114,8 +141,8 @@ async function discoverHost(host: ScanHost, ip: string): Promise<Discovery> {
 
   for (const port of DISCOVERY_PORTS) {
     const outcome = host.tcpOutcome(ip, port);
-    if (outcome === 'open') return { up: true, reason: 'syn-ack' };
-    if (outcome === 'refused') return { up: true, reason: 'reset' };
+    if (outcome === 'open') return { up: true, reason: 'syn-ack', reasonPort: port };
+    if (outcome === 'refused') return { up: true, reason: 'reset', reasonPort: port };
   }
   return { up: false };
 }
@@ -221,6 +248,8 @@ export function buildScanProbes(
         hostname: target.hostname,
         up: alive.up,
         latencyMs: alive.latencyMs,
+        reason: alive.reason,
+        reasonPort: alive.reasonPort,
         osHint: alive.ttl === undefined ? undefined : osFromInitialTtl(alive.ttl),
       };
     },
@@ -230,6 +259,12 @@ export function buildScanProbes(
     },
     reverseName(ip: string) {
       return host.reverseName(ip);
+    },
+    directlyConnected(ip: string) {
+      return directlyConnectedOf(host.device, ip);
+    },
+    tracePath(ip: string) {
+      return host.tracePath(ip);
     },
     linkDiscovery(ip: string) {
       const neighbour = host.linkNeighbour(ip);

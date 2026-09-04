@@ -52,6 +52,14 @@ export interface TableColumn<R> {
   /** `left` par défaut, comme la quasi-totalité des colonnes d'IOS. */
   readonly align?: ColumnAlign;
   readonly value: (row: R) => string;
+  /**
+   * Rendre `false` pour qu'une valeur soit ÉCRITE sans être MESURÉE :
+   * elle déborde alors sa colonne au lieu de l'élargir. C'est le
+   * `fullrow` de `NmapOutputTable` (`NmapOutputTable.cc:171`, qui
+   * restaure `maxColLen` après l'ajout), dont se sert la ligne
+   * « Hops 1-N are the same as for … » d'une section `TRACEROUTE`.
+   */
+  readonly measured?: (row: R) => boolean;
 }
 
 export interface TableStyle {
@@ -104,9 +112,19 @@ export const VRP_TABLE: TableStyle = { gap: 2, rule: false };
 /** Les vues VRP qui soulignent leur en-tête (`display vlan`). */
 export const VRP_RULED_TABLE: TableStyle = { gap: 2, rule: true };
 
+/**
+ * `NmapOutputTable` : chaque colonne prend la largeur de son contenu et
+ * un seul blanc les sépare (`NmapOutputTable.cc:247`, qui écrit
+ * `clen - strlength + 1` espaces). C'est le tableau de `nmap -h`, de
+ * `--iflist` et de la section `TRACEROUTE`.
+ */
+export const NMAP_TABLE: TableStyle = { gap: 1, rule: false };
+
 function largeur<R>(col: TableColumn<R>, rows: readonly R[]): number {
   if (col.width !== undefined) return col.width;
-  return rows.reduce((m, r) => Math.max(m, col.value(r).length), col.header.length);
+  return rows.reduce(
+    (m, r) => (col.measured?.(r) === false ? m : Math.max(m, col.value(r).length)),
+    col.header.length);
 }
 
 /**

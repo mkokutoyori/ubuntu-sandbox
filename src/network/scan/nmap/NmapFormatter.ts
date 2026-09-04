@@ -1,6 +1,7 @@
 import type { NmapOptions } from './NmapOptions';
 import type { HostReport, NmapReport, PortResult, PortState } from './ScanEngine';
 import { renderPhase } from './ScanPhases';
+import { renderTrace } from './Traceroute';
 
 const NMAP_BANNER = 'Starting Nmap 7.94 ( https://nmap.org )';
 
@@ -84,6 +85,9 @@ function renderHost(host: HostReport, options: NmapOptions): string[] {
   if (options.osScan && host.osGuess) {
     lines.push(`OS details: ${host.osGuess}`);
   }
+  // nmap.cc:2345 : la trace vient apres l'identification du service et
+  // avant les temps, et un hote sans aucun saut n'a pas de section.
+  if (host.trace) lines.push(...renderTrace(host.trace, host.ip));
   return lines;
 }
 

@@ -7571,3 +7571,35 @@ machine n'offre. Ils capturent maintenant pendant.
 
 **Discrimination** : `probe-tcpdump-une-seule-ecriture.test.ts` (7 cas),
 3 tombent ; les 4 autres sont nommes dans l'en-tete.
+
+## 2026-09-04 — `nmap --traceroute`
+
+**Portee** : `scan/nmap/` (`Traceroute.ts` nouveau, `ScanEngine`,
+`NmapProbes`, `NmapOptions`, `NmapFormatter`), `shells/cli/TextTable.ts`,
+les deux portes de plateforme (`linux/commands/net/Nmap.ts`,
+`WindowsPC.scanHost`).
+
+`--traceroute` etait dans la famille « connue de nmap, non implantee
+ici ». Elle est reelle, et la marche par TTL reste celle de la machine
+(`executeTraceroute`) : ce que nmap ajoute est le CHOIX de la sonde, le
+repli des sauts partages et la mise en page.
+
+**Trois faits releves dans le depot de nmap et non devines** : une cible
+directement connectee n'emet AUCUNE sonde (`traceroute_direct`) et son
+en-tete est `TRACEROUTE` nu ; `pingprobe_score` classe un RST de port
+ferme (60) au-dessus d'un echo ICMP (50), lui-meme au-dessus d'un
+SYN/ACK de port ouvert (30) ; la ligne « Hops 1-N are the same as for … »
+ne compte pas dans la largeur de sa colonne (`fullrow`).
+
+**Trouve en chemin** : `hostState` ne rendait PAS `reason`, donc
+`--reason` restait muet sur un hote decouvert par sonde IP alors qu'il
+parlait sur un hote decouvert par ARP.
+
+**Choix ecrit plutot que garde posee** : nmap exige les privileges pour
+`--traceroute` et pour `-A --traceroute`. Ce simulateur ne modelise ce
+partage pour aucune option (`-sS`, `-sU`, `-O` fonctionnent sans
+`sudo`) ; la garder sur celle-la seule serait une incoherence, pas une
+fidelite.
+
+**Discrimination** : `probe-nmap-traceroute.test.ts` (15 cas), 13
+tombent. Un cas e2e Playwright monte un vrai routeur dans le navigateur.

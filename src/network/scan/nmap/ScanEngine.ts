@@ -6,6 +6,9 @@ import type { ScanProbeFlags, ScanVerdict, StatelessScanKind } from './Stateless
 import {
   ARP_PING_PHASE, IP_PING_PHASE, ND_PING_PHASE, SCAN_PHASE_NAME, type ScanPhase,
 } from './ScanPhases';
+import {
+  chooseTraceProbe, type HostTrace, type TraceCandidate, type TraceHop,
+} from './Traceroute';
 
 const STATELESS_KINDS: Readonly<Partial<Record<ScanType, StatelessScanKind>>> = {
   syn: 'syn', ack: 'ack', fin: 'fin', null: 'null',
@@ -28,6 +31,12 @@ export interface HostState {
   latencyMs?: number;
   mac?: string;
   reason?: string;
+  /**
+   * Le port qui a fait repondre l'hote, quand c'est une sonde TCP qui a
+   * repondu. `--traceroute` le lit pour nommer sa propre sonde, comme
+   * `get_probe` lit `target->pingprobe`.
+   */
+  reasonPort?: number;
 }
 
 export interface ResolvedTarget {
@@ -70,6 +79,16 @@ export interface HostProbes {
   ): ScanVerdict;
   udpState(ip: string, port: number): 'open' | 'closed' | 'open|filtered';
   banner(ip: string, port: number): { service: string; version?: string } | null;
+  /**
+   * `Target::directlyConnected()` : une cible du meme segment est a une
+   * distance connue de 1, et `traceroute_direct` (`traceroute.cc:1461`)
+   * n'emet alors AUCUNE sonde.
+   */
+  directlyConnected?(ip: string): boolean;
+  /** La marche par duree de vie limitee, celle de la machine. */
+  tracePath?(ip: string): Promise<Array<{
+    ttl: number; ip?: string; rttMs?: number;
+  }>>;
 }
 
 const TCP_SCAN_REASON: Readonly<Record<TcpWireOutcome, string>> = {
@@ -102,6 +121,8 @@ export interface HostReport {
   rdnsName?: string;
   ports: PortResult[];
   notShown?: { count: number; states: Partial<Record<PortState, number>> };
+  /** Ce que `--traceroute` a releve, quand il a ete demande. */
+  trace?: HostTrace;
 }
 
 export interface NmapReport {
@@ -234,8 +255,71 @@ function discoveryPhase(
   return { name: IP_PING_PHASE, total: 1, unit: 'host' };
 }
 
+/**
+ * Ce que `target->pingprobe` porte a la fin du balayage : la sonde de
+ * decouverte qui a repondu, puis chaque port dont la reponse est arrivee
+ * — un port muet n'est candidat a rien.
+ */
+function traceCandidates(info: HostState, ports: readonly PortResult[]): TraceCandidate[] {
+  const family: 4 | 6 = info.ip.includes(':') ? 6 : 4;
+  const out: TraceCandidate[] = [];
+  if (info.reason === 'echo-reply') out.push({ kind: 'icmp-echo', family });
+  if ((info.reason === 'syn-ack' || info.reason === 'reset') && info.reasonPort !== undefined) {
+    out.push({
+      kind: 'tcp', port: info.reasonPort,
+      state: info.reason === 'syn-ack' ? 'open' : 'closed',
+    });
+  }
+  for (const port of ports) {
+    if (port.protocol !== 'tcp' || port.reason === 'no-response') continue;
+    if (port.state === 'open') out.push({ kind: 'tcp', port: port.port, state: 'open' });
+    else if (port.state === 'closed') out.push({ kind: 'tcp', port: port.port, state: 'closed' });
+    else if (port.state === 'filtered') out.push({ kind: 'tcp', port: port.port, state: 'filtered' });
+  }
+  return out;
+}
+
+async function buildTrace(
+  options: NmapOptions, probes: HostProbes, info: HostState,
+  latencyMs: number, rdnsName: string | undefined,
+  ports: readonly PortResult[], cache: Map<string, string>,
+): Promise<HostTrace | undefined> {
+  const family: 4 | 6 = info.ip.includes(':') ? 6 : 4;
+
+  if (probes.directlyConnected?.(info.ip)) {
+    return {
+      probe: { kind: 'none' },
+      hops: [{
+        ttl: 1, ip: info.ip, rttMs: latencyMs,
+        name: info.hostname ?? rdnsName, tag: info.ip,
+      }],
+    };
+  }
+
+  const walked = await probes.tracePath?.(info.ip);
+  if (!walked || walked.length === 0) return undefined;
+
+  const hops: TraceHop[] = [];
+  for (const step of walked) {
+    if (!step.ip) {
+      hops.push({ ttl: step.ttl, tag: info.ip });
+      continue;
+    }
+    const key = `${step.ttl}:${step.ip}`;
+    const known = cache.get(key);
+    if (known === undefined) cache.set(key, info.ip);
+    const name = options.noDns ? undefined : await probes.reverseName?.(step.ip) ?? undefined;
+    hops.push({
+      ttl: step.ttl, ip: step.ip, rttMs: step.rttMs,
+      name, tag: known ?? info.ip,
+    });
+  }
+  return { probe: chooseTraceProbe(traceCandidates(info, ports), family), hops };
+}
+
 async function scanHost(
   options: NmapOptions, probes: HostProbes, target: string, phases: ScanPhase[],
+  hopCache: Map<string, string>,
 ): Promise<HostReport | null> {
   const resolved = await probes.resolveTarget(target);
   if (!resolved) return null;
@@ -282,6 +366,9 @@ async function scanHost(
     return {
       ip: info.ip, hostname: info.hostname, up: true, latencyMs, osGuess,
       ...identity, ports: [],
+      trace: options.traceroute
+        ? await buildTrace(options, probes, info, latencyMs, rdnsName, [], hopCache)
+        : undefined,
     };
   }
 
@@ -301,6 +388,9 @@ async function scanHost(
   return {
     ip: info.ip, hostname: info.hostname, up: true, latencyMs, osGuess,
     ...identity, ports, notShown,
+    trace: options.traceroute
+      ? await buildTrace(options, probes, info, latencyMs, rdnsName, all, hopCache)
+      : undefined,
   };
 
 }
@@ -315,11 +405,15 @@ export async function scan(
   const hosts: HostReport[] = [];
   const unresolved: string[] = [];
   const phases: ScanPhase[] = [];
+  // Le cache de sauts du lot : deux cibles derriere le meme routeur
+  // partagent leurs premiers sauts, et c'est ce qui fait ecrire
+  // « Hops 1-N are the same as for … » plutot que de les repeter.
+  const hopCache = new Map<string, string>();
   let targetsScanned = 0;
 
   for (const target of options.targets) {
     for (const address of enumerateTargets(target)) {
-      const report = await scanHost(options, probes, address, phases)
+      const report = await scanHost(options, probes, address, phases, hopCache)
         ?? (target === address && isIpLiteral(address)
           ? { ip: address, up: false, latencyMs: 0, downReason: 'no response', ports: [] }
           : null);

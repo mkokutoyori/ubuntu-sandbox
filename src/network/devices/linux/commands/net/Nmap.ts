@@ -25,6 +25,8 @@ function scanHost(ctx: LinuxCommandContext): ScanHost {
     linkNeighbour: (ip) => linkNeighbourOf(localDeviceOf(ctx), ip),
     reverseName: (ip) => reverseNameOfAsync(ctx.executor.nss, ip),
     resolveName: (name) => forwardAddressOfAsync(ctx.executor.nss, name),
+    tracePath: async (ip) => (await ctx.net.traceroute(new IPAddress(ip)))
+      .map((h) => ({ ttl: h.hop, ip: h.ip, rttMs: h.rttMs })),
   };
 }
 

@@ -3838,6 +3838,8 @@ export class WindowsPC extends EndHost implements UserAccountHost {
       linkNeighbour: (ip) => linkNeighbourOf(this, ip),
       reverseName: (ip) => this.resolveAddressNameAsync(ip),
       resolveName: async (name) => (await this.resolveHostname(name))?.toString() ?? null,
+      tracePath: async (ip) => (await this.executeTraceroute(new IPAddress(ip)))
+        .map((h) => ({ ttl: h.hop, ip: h.ip, rttMs: h.rttMs })),
     };
   }
 

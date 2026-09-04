@@ -32,6 +32,19 @@ export interface NmapOptions {
    * est tout l'interet de l'option.
    */
   scanFlags?: ScanProbeFlags;
+  /**
+   * `--traceroute` : le chemin jusqu'a chaque hote, releve APRES le
+   * balayage et avec la sonde qui a fait repondre la cible.
+   *
+   * Sur une vraie machine l'option exige les privileges (`nmap.cc:1590`,
+   * « Traceroute has to be run as root »), tout comme `-sS`, `-sU` et
+   * `-O`. Ce simulateur ne modelise ce partage pour AUCUNE d'elles — un
+   * balayage SYN y fonctionne sans `sudo` — donc `--traceroute` suit ses
+   * soeurs plutot que de porter seule une garde que rien d'autre ne
+   * porte. C'est la meme raison qui fait `-A` l'activer ici sans
+   * condition la ou `nmap` l'active « if (o.isr00t) ».
+   */
+  traceroute: boolean;
   showReason: boolean;
   noDns: boolean;
   verbose: boolean;
@@ -141,6 +154,7 @@ export function parseNmapArgs(args: string[]): NmapOptions {
   let ipv6 = false;
   let disableArpPing = false;
   let alwaysResolve = false;
+  let traceroute = false;
   let showReason = false;
   let noDns = false;
   let verbose = false;
@@ -178,7 +192,8 @@ export function parseNmapArgs(args: string[]): NmapOptions {
 
     if (a === '-sV') { versionScan = true; continue; }
     if (a === '-O') { osScan = true; continue; }
-    if (a === '-A') { versionScan = true; osScan = true; continue; }
+    if (a === '-A') { versionScan = true; osScan = true; traceroute = true; continue; }
+    if (a === '--traceroute') { traceroute = true; continue; }
 
     if (a === '--open') { openOnly = true; continue; }
     if (a === '--reason') { showReason = true; continue; }
@@ -212,7 +227,7 @@ export function parseNmapArgs(args: string[]): NmapOptions {
 
   return {
     targets, ports, scanType, scanFlags, pingOnly, skipDiscovery, versionScan,
-    osScan, openOnly, ipv6, disableArpPing, alwaysResolve, showReason, noDns,
-    verbose, outputNormal, outputGreppable,
+    osScan, openOnly, ipv6, disableArpPing, alwaysResolve, traceroute,
+    showReason, noDns, verbose, outputNormal, outputGreppable,
   };
 }
