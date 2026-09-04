@@ -782,12 +782,8 @@ Readonly<Record<string, ArgumentSpec | readonly ArgumentSpec[] | null>> = {
  */
 const DOMAIN_LOOKUP_KEYWORDS: ReadonlyArray<AdapterKeyword> = [{
   keyword: 'source-interface', description: 'Source interface for packets',
-  /*
-   * `WORD` et non `IFACE` : c'est ce que le trie annoncait, et
-   * `probe-cli-arguments-types` l'epingle — la place accepte un nom
-   * d'interface abrege que le type `INTERFACE` refuserait.
-   */
-  argument: { name: 'interface', type: 'WORD',
+  undoWithoutArgument: true,
+  argument: { name: 'interface', type: 'INTERFACE',
     description: 'Interface used as the source address' },
 }];
 
@@ -4197,13 +4193,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
         keyword: 'source-interface',
         description: 'Specify interface for source address in logging transactions',
         undoWithoutArgument: true,
-        /*
-         * `WORD` et non `IFACE` : c'est ce que la machine annoncait, la
-         * declaration de `ciscoArgumentHelp` l'emportant sur celle-ci
-         * jusqu'a l'elagage. Le type etroit refuserait en plus un nom
-         * abrege que le gestionnaire resout.
-         */
-        argument: { name: 'interface', type: 'WORD',
+        argument: { name: 'interface', type: 'INTERFACE',
           description: 'Interface used as the source address of syslog messages' },
       },
       {
@@ -4398,7 +4388,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       {
         path: ['ntp', 'source'], description: 'Configure interface for source address',
         args: [{
-          name: 'interface', type: 'WORD',
+          name: 'interface', type: 'INTERFACE',
           description: 'Interface to use for source address',
         }],
         undoArgs: [],

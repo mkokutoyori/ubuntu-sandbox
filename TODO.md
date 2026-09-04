@@ -703,6 +703,31 @@ ici plutot que tranche unilateralement.
 
 ## Routeur Cisco
 
+### [cli] Un mot de trop apres une place declaree retombe sur le glouton du trie
+**Constat.** `logging source-interface Gi0/0 extra` est ACCEPTE et rendu
+`logging source-interface Gi0/0 extra` dans la configuration — donc rejoue
+a l'import d'une topologie. La place est pourtant declaree au socle
+(`INTERFACE`, non facultative, une seule), et le socle la refuse
+correctement : c'est le glouton `logging` du TRIE qui sert la frappe
+ensuite et joint le reste.
+
+**Ce que ce n'est pas.** Ni la declaration ni le type ne sont en cause —
+`logging source-interface zorglub` est bien refuse depuis le lot des
+places d'interface. Ce qui manque est la regle « le socle a REFUSE cette
+ligne, le trie ne la reprend pas », voisine de celle que
+`tryMigratedCommand` porte deja pour `incomplete`/`invalid` et pour le
+repli par heritage. La poser demande de distinguer « le socle ne connait
+pas ce chemin » de « le socle le connait et refuse cet argument », ce que
+`MatchResult.refusePar` sait deja dire pour les plages.
+
+### [cli] `ip flow-export source` et `ip tftp source-interface`
+**Constat.** `ip flow-export source zorglub` est accepte et rendu dans la
+configuration : ce chemin est un noeud glouton du trie, sans place
+declaree, donc la regle du lot des places d'interface ne l'atteint pas.
+`ip tftp source-interface <iface>` — commande reelle d'IOS — n'existe pas
+du tout et repond le caret.
+
+
 ### [fhrp] Un Catalyst RENDS trois vues FHRP qu'aucune de ses commandes ne peut peupler
 **Constat.** `CiscoSwitchShell` porte `show standby`, `show vrrp` et
 `show glbp`, qui lisent les VRAIS agents du commutateur, et il n'existe

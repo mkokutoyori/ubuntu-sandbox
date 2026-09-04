@@ -30,7 +30,7 @@ const REESSAIS: ArgumentSpec = {
 };
 
 const INTERFACE_SOURCE: ArgumentSpec = {
-  name: 'interface', type: 'WORD',
+  name: 'interface', type: 'INTERFACE',
   description: 'Interface the SSH client sources from',
 };
 

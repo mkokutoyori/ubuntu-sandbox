@@ -103,7 +103,7 @@ describe('les arguments portent le type qu\'IOS affiche', () => {
     await r.executeCommand('configure terminal');
     expect(r.cliHelp('arp ')).toContain('A.B.C.D');
     expect(r.cliHelp('ip default-network ')).toContain('A.B.C.D');
-    expect(r.cliHelp('logging source-interface ')).toMatch(/WORD\s+Interface used as the source/);
+    expect(r.cliHelp('logging source-interface ')).toMatch(/IFACE\s+Interface used as the source/);
     await r.executeCommand('interface GigabitEthernet0/0');
     expect(r.cliHelp('tunnel destination ')).toContain('A.B.C.D');
     expect(r.cliHelp('bfd neighbor ')).toContain('A.B.C.D');

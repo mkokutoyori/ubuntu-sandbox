@@ -568,7 +568,7 @@ export function describeCiscoArguments(tries: ArgumentHelpTries): void {
     INT('number', [1, 4294967295], 'Key number'),
   ]);
   tries.config.describeArgs('ntp source', [
-    WORD('interface', 'Interface to use for source address'),
+    IFACE('Interface to use for source address'),
   ]);
   tries.config.describeArgs('snmp-server community', [
     WORD('community', 'SNMP community string'),
