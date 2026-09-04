@@ -1,10 +1,27 @@
 import type { NmapOptions } from './NmapOptions';
 import type { HostReport, NmapReport, PortResult, PortState } from './ScanEngine';
+import { renderPhase } from './ScanPhases';
 
 const NMAP_BANNER = 'Starting Nmap 7.94 ( https://nmap.org )';
 
+/**
+ * `Target::NameIP` (Target.cc:364) : le nom TAPE par l'operateur
+ * l'emporte, sinon le nom resolu, sinon l'adresse nue.
+ */
 function hostLabel(host: HostReport): string {
-  return host.hostname ? `${host.hostname} (${host.ip})` : host.ip;
+  const name = host.hostname ?? host.rdnsName;
+  return name ? `${name} (${host.ip})` : host.ip;
+}
+
+/**
+ * output.cc:1408 : la ligne n'existe QUE lorsque l'operateur a tape un nom
+ * et que la resolution inverse en rend un AUTRE — elle dit precisement
+ * cette divergence, et la rendre sinon serait repeter l'en-tete.
+ */
+function rdnsLine(host: HostReport): string | null {
+  if (!host.hostname || !host.rdnsName) return null;
+  if (host.hostname === host.rdnsName) return null;
+  return `rDNS record for ${host.ip}: ${host.rdnsName}`;
 }
 
 function pluralPorts(n: number): string {
@@ -44,30 +61,58 @@ function renderTable(host: HostReport, options: NmapOptions): string[] {
 
 function renderHost(host: HostReport, options: NmapOptions): string[] {
   const lines: string[] = [`Nmap scan report for ${hostLabel(host)}${host.up ? '' : ' [host down]'}`];
+  const rdns = rdnsLine(host);
+  if (rdns) lines.push(rdns);
   if (!host.up) {
     lines.push('Note: Host seems down. If it is really up, but blocking our ping probes, try -Pn');
     return lines;
   }
-  lines.push(`Host is up (${host.latencyMs.toFixed(4)}s latency).`);
+  // output.cc, `write_host_header` : la raison se glisse entre l'etat et
+  // la latence — `Host is up, received arp-response (0.0010s latency).`
+  const received = options.showReason && host.discoveryReason
+    ? `, received ${host.discoveryReason}` : '';
+  lines.push(`Host is up${received} (${host.latencyMs.toFixed(4)}s latency).`);
   const notShown = notShownLine(host);
   if (notShown) lines.push(notShown);
   lines.push(...renderTable(host, options));
+  // nmap.cc:2339 : `printmacinfo` vient APRES la table des ports et AVANT
+  // `printosscanoutput`. Le constructeur est `Unknown` par demonstration
+  // et non par defaut — `MACPrefix2Corp` ne cherche que dans les prefixes
+  // enregistres a l'IEEE, et toute adresse de ce simulateur porte le bit
+  // local (RFC 7042 §2.1), donc aucune n'y figure.
+  if (host.mac) lines.push(`MAC Address: ${host.mac.toUpperCase()} (Unknown)`);
   if (options.osScan && host.osGuess) {
     lines.push(`OS details: ${host.osGuess}`);
   }
   return lines;
 }
 
+function totalSeconds(report: NmapReport): number {
+  return Math.max(0.02, report.targetsScanned * 0.05);
+}
+
+function phaseSeconds(report: NmapReport): number {
+  return report.phases.length === 0 ? 0 : totalSeconds(report) / report.phases.length;
+}
+
 function tally(report: NmapReport): string {
   const ips = `${report.targetsScanned} IP ${report.targetsScanned === 1 ? 'address' : 'addresses'}`;
   const up = `${report.hostsUp} ${report.hostsUp === 1 ? 'host up' : 'hosts up'}`;
-  const seconds = Math.max(0.02, report.targetsScanned * 0.05).toFixed(2);
-  return `Nmap done: ${ips} (${up}) scanned in ${seconds} seconds`;
+  return `Nmap done: ${ips} (${up}) scanned in ${totalSeconds(report).toFixed(2)} seconds`;
 }
 
 export function renderNormal(report: NmapReport, options: NmapOptions, _commandLine: string): string {
   const lines: string[] = [NMAP_BANNER];
   for (const target of report.unresolved) lines.push(`Failed to resolve "${target}".`);
+  if (options.verbose) {
+    const at = new Date(report.startedAt);
+    // Une phase ne mesure rien ici — les trames sont livrees de facon
+    // synchrone — donc sa duree est celle que le rapport annonce deja,
+    // repartie sur les phases : deux estimations differentes pour une
+    // meme sortie se contrediraient.
+    const each = phaseSeconds(report);
+    for (const phase of report.phases) lines.push(...renderPhase(phase, at, each));
+  }
   for (const host of report.hosts) {
     lines.push('');
     lines.push(...renderHost(host, options));

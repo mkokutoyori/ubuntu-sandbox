@@ -78,7 +78,7 @@ describe('Logging — Linux interface link events land in kern.log', () => {
 });
 
 describe('Logging — unified device.syslog.entry across all device types', () => {
-  it('one bus subscription captures Cisco, Huawei, Linux and Windows entries', () => {
+  it('one bus subscription captures Cisco, Huawei, Linux and Windows entries', async () => {
     const bus = new EventBus();
     const cisco = new CiscoRouter('CSCO');
     const huawei = new HuaweiRouter('HUWI');
@@ -103,11 +103,8 @@ describe('Logging — unified device.syslog.entry across all device types', () =
       payload: { deviceId: huawei.id, hostname: 'HUWI', portName: 'GigabitEthernet0/0/0' },
     });
     lnx.getPort('eth0')!.setUp(false);
-    win.dynamicFirewallRules.set('Block-9999', {
-      name: 'Block-9999', displayName: 'Block', enabled: true,
-      action: 'Block', direction: 'Inbound', protocol: 'TCP',
-      localPort: '9999', remotePort: 'Any', description: 'test',
-    });
+    await win.executeCommand(
+      'netsh advfirewall firewall add rule name=Block-9999 dir=in action=block protocol=TCP localport=9999');
     win.auditPolicy.set('Filtering Platform Packet Drop', { success: true, failure: true });
     bus.publish({
       topic: 'windows.firewall.drop',
@@ -242,11 +239,8 @@ describe('Logging — Cisco show logging buffers TCP/SSH events', () => {
     cli.getPort('eth0')!.configureIP(new IPAddress('10.0.0.1'), new SubnetMask('255.255.255.0'));
     win.getPort('eth0')!.configureIP(new IPAddress('10.0.0.2'), new SubnetMask('255.255.255.0'));
 
-    win.dynamicFirewallRules.set('Block-22', {
-      name: 'Block-22', displayName: 'Block SSH',
-      enabled: true, action: 'Block', direction: 'Inbound',
-      protocol: 'TCP', localPort: '22', remotePort: 'Any', description: 'test',
-    });
+    await win.executeCommand(
+      'netsh advfirewall firewall add rule name=Block-22 dir=in action=block protocol=TCP localport=22');
     win.auditPolicy.set('Filtering Platform Packet Drop', { success: true, failure: true });
 
     cli.getTcpStack().connect('10.0.0.2', 22);

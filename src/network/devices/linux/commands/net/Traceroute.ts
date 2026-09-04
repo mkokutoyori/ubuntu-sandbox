@@ -7,6 +7,7 @@ import { unquote } from '@/lib/format';
 import { icmpCodeAnnotation } from '../../LinuxFormatHelpers';
 import { makeArgCompleter } from '../completionHelpers';
 import { transitUdpAclVerdict } from '../../network/HostLookup';
+import { reverseNameOf } from '../../network/ReverseName';
 
 const TRACEROUTE_VERSION = 'Modern traceroute for Linux, version 2.1.0 (iputils-s20221126)';
 
@@ -303,7 +304,7 @@ export const tracerouteCommand: LinuxCommand = {
 
     let targetIP = await ctx.net.resolveHostname(parsed.targetStr);
     if (!targetIP && parsed.targetStr.toLowerCase() === 'localhost') {
-      try { targetIP = new IPAddress('127.0.0.1'); } catch { }
+      try { targetIP = new IPAddress('127.0.0.1'); } catch { targetIP = null; }
     }
     if (!targetIP) {
       return `traceroute: unknown host ${parsed.targetStr} (failed to resolve)`;
@@ -387,7 +388,7 @@ export const tracerouteCommand: LinuxCommand = {
         restJoined = restJoined.replace(new RegExp(`${esc} \\(${esc}\\)`, 'g'), `${name} (${ip})`);
       }
     }
-    let standardOut = `${headerLine}\n${restJoined}`;
+    const standardOut = `${headerLine}\n${restJoined}`;
 
     if (parsed.packetSize !== 60) {
       return standardOut.replace(/60 byte packets/, `${parsed.packetSize} bytes packets`);
@@ -412,12 +413,5 @@ function tracerouteUdpDenied(
 }
 
 function reverseLookup(ctx: LinuxCommandContext, ip: string): string | null {
-  try {
-    const filesSource = (ctx.executor as unknown as { filesNss?: { gethostbyaddr?: (a: string) => { status: string; entry?: { canonicalName?: string } } } }).filesNss;
-    if (filesSource?.gethostbyaddr) {
-      const r = filesSource.gethostbyaddr(ip);
-      if (r.status === 'SUCCESS' && r.entry?.canonicalName) return r.entry.canonicalName;
-    }
-  } catch { /* ignore */ }
-  return null;
+  return reverseNameOf(ctx.executor.nss, ip);
 }

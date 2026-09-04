@@ -181,13 +181,19 @@ export function bringUpTunnel(
   applyReceivedConfiguration(engine, tunnels, declared);
   const sas = engine.getIPSecSAs(declared.remoteGateway);
   if (sas.length === 0) {
-    tunnels.markDown(name, gatewayUp ? 'no matching selector' : 'negotiation failed');
+    tunnels.markDown(name,
+      failureReason(tunnels.selectorsOf(name).length > 0, gatewayUp));
     tunnels.markGateway(name, gatewayUp);
     return false;
   }
 
   tunnels.markUp(name, sas[0].natT === true);
   return true;
+}
+
+function failureReason(hasSelector: boolean, gatewayUp: boolean): string {
+  if (!hasSelector) return 'no phase2 selector bound to this phase1';
+  return gatewayUp ? 'no matching selector' : 'negotiation failed';
 }
 
 function applyReceivedConfiguration(

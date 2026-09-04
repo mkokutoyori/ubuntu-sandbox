@@ -806,11 +806,17 @@ export class Firewall extends Equipment {
   }
 
   private readonly permanentMacs = new Map<string, MACAddress>();
+  private readonly factoryMacs = new Map<string, string>();
+
+  private rememberFactoryMac(name: string, mac: MACAddress): void {
+    if (!this.factoryMacs.has(name)) this.factoryMacs.set(name, mac.toString());
+  }
 
   private applyClusterVirtualMacs(c: HaConfiguration): void {
     const heartbeat = new Set(c.heartbeatDevices.map((d) => d.iface));
     this.getPorts().forEach((port, index) => {
       const name = port.getName();
+      this.rememberFactoryMac(name, port.getMAC());
       if (!this.permanentMacs.has(name)) this.permanentMacs.set(name, port.getMAC());
       const permanent = this.permanentMacs.get(name);
       if (!permanent) return;
@@ -1524,7 +1530,7 @@ export class Firewall extends Equipment {
   private readonly aggregateSavedMacs = new Map<string, string>();
 
   permanentMacOf(member: string): string {
-    return this.aggregateSavedMacs.get(member)
+    return this.factoryMacs.get(member)
       ?? this.getPort(member)?.getMAC().toString()
       ?? '00:00:00:00:00:00';
   }
@@ -1533,6 +1539,7 @@ export class Firewall extends Equipment {
     const nic = this.getPort(aggregate);
     const port = this.getPort(member);
     if (!nic || !port) return;
+    this.rememberFactoryMac(member, port.getMAC());
     if (!this.aggregateSavedMacs.has(member)) {
       this.aggregateSavedMacs.set(member, port.getMAC().toString());
     }

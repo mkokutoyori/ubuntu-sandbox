@@ -1,4 +1,6 @@
-import { parseNmapArgs } from './NmapOptions';
+import {
+  NMAP_USAGE, NmapImmediateOutput, NmapOptionError, parseNmapArgs,
+} from './NmapOptions';
 import { scan } from './ScanEngine';
 import { renderNormal, renderGreppable } from './NmapFormatter';
 import { buildScanProbes, type ScanHost } from './NmapProbes';
@@ -11,8 +13,6 @@ export interface NmapRunResult {
   outputGreppablePath: string | null;
 }
 
-const USAGE = 'Nmap 7.94 ( https://nmap.org )\nUsage: nmap [Scan Type(s)] [Options] {target specification}';
-
 /**
  * `nmap` du premier argument au texte rendu. Les deux plateformes lisent
  * ce corps : ce que la machine EMET est decide par le `ScanHost` qu'elle
@@ -20,10 +20,25 @@ const USAGE = 'Nmap 7.94 ( https://nmap.org )\nUsage: nmap [Scan Type(s)] [Optio
  * pas de la meme facon sous Linux et sous Windows.
  */
 export async function runNmap(host: ScanHost, args: string[]): Promise<NmapRunResult> {
-  const options = parseNmapArgs(args);
+  let options;
+  try {
+    options = parseNmapArgs(args);
+  } catch (e) {
+    // Une option refusee n'est pas un balayage rate, c'est un balayage
+    // qui n'a pas eu lieu : rien n'est emis et aucun fichier n'est ecrit.
+    // `-h` et `-V` sortent par le meme chemin, pour la meme raison.
+    const text = e instanceof NmapOptionError ? e.lines.join('\n')
+      : e instanceof NmapImmediateOutput ? e.text
+        : null;
+    if (text === null) throw e;
+    return {
+      output: text, normal: text, greppable: null,
+      outputNormalPath: null, outputGreppablePath: null,
+    };
+  }
   if (options.targets.length === 0) {
     return {
-      output: USAGE, normal: USAGE, greppable: null,
+      output: NMAP_USAGE, normal: NMAP_USAGE, greppable: null,
       outputNormalPath: null, outputGreppablePath: null,
     };
   }

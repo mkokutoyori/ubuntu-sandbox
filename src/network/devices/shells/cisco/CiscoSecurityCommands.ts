@@ -6,6 +6,9 @@ import {
   CiscoSecurityConfig,
   newRadiusServerStats,
   newTacacsServerStats,
+  radiusAuthPort,
+  radiusAcctPort,
+  tacacsServerPort,
   type AaaServiceKind,
   type AaaPhase,
 } from '../../router/security/CiscoSecurityConfig';
@@ -27,6 +30,7 @@ import { pad2 } from '@/lib/format';
 import { getOrCreateCA } from '../../../pki/PkiCaRegistry';
 import type { RevocationCheckMode } from '../../../pki/CertificateVerifier';
 import { MODES_INTERFACE } from './CiscoConfigCommands';
+import { readMapPrefix } from './classMapGrammar';
 
 const SECURITY_KEY = Symbol.for('CiscoSecurityConfig');
 
@@ -174,6 +178,8 @@ export const AAA_TOP_KEYWORDS: readonly string[] = [
   'group', 'session-id', 'local',
 ];
 
+export const AAA_SESSION_ID_VALUES: readonly string[] = ['common', 'unique'];
+
 export const AAA_SERVICES: Record<AaaPhase, readonly string[]> = {
   authentication: ['login', 'enable', 'ppp', 'dot1x'],
   authorization: ['exec', 'commands', 'network', 'config-commands', 'reverse-access'],
@@ -268,11 +274,23 @@ export function buildIdentityConfigCommands(
     if (!AAA_TOP_KEYWORDS.includes((args[0] ?? '').toLowerCase())) {
       throw new CliInvalidInput({ token: args[0] });
     }
-    if (args[0] === 'new-model') { sec().aaaNewModel = true; return ''; }
-    if (args[0] === 'session-id' && args[1]) { sec().aaaSessionId = args[1]; return ''; }
+    if (args[0] === 'new-model') {
+      if (args[1] !== undefined) throw new CliInvalidInput({ token: args[1] });
+      sec().aaaNewModel = true;
+      return '';
+    }
+    if (args[0] === 'session-id') {
+      if (args[1] === undefined) throw new CliIncomplete();
+      if (!AAA_SESSION_ID_VALUES.includes(args[1].toLowerCase())) {
+        throw new CliInvalidInput({ token: args[1] });
+      }
+      if (args[2] !== undefined) throw new CliInvalidInput({ token: args[2] });
+      sec().aaaSessionId = args[1].toLowerCase();
+      return '';
+    }
     if (args[0] === 'local' && args[1] === 'authentication' && args[2] === 'attempts' && args[3] === 'max-fail' && args[4]) {
       const n = parseInt(args[4], 10);
-      if (isNaN(n)) return '% Incomplete command.';
+      if (isNaN(n)) throw new CliInvalidInput({ token: args[4] });
       sec().localAuthMaxFailAttempts = n;
       const r = ctx.r() as unknown as { _configureLocalAuthMaxFail?: (n: number) => void };
       r._configureLocalAuthMaxFail?.(n);
@@ -516,6 +534,22 @@ export function buildIdentityConfigCommands(
     return lues;
   };
 
+  /**
+   * Le port global : la PLAGE etait declaree par les continuations et
+   * appliquee par le trie, la FORME ne l'etait par personne — `zorglub`
+   * passait, ecarte ensuite en silence par un `parseInt` qui rend `NaN`.
+   */
+  const lirePortGlobal = (
+    args: readonly string[], borne: readonly [number, number],
+  ): number => {
+    if (args[1] === undefined) throw new CliIncomplete();
+    if (args[2] !== undefined) throw new CliInvalidInput({ token: args[2] });
+    if (!/^\d+$/.test(args[1])) throw new CliInvalidInput({ token: args[1] });
+    const n = Number(args[1]);
+    if (n < borne[0] || n > borne[1]) throw new CliInvalidInput({ token: args[1] });
+    return n;
+  };
+
   trie.registerGreedy('radius-server', 'Legacy radius host', (args) => {
     if (args[0] === 'key') {
       if (args[1] === undefined) return CISCO_ERRORS.INCOMPLETE;
@@ -530,18 +564,20 @@ export function buildIdentityConfigCommands(
       else sec().radiusDefaults.retransmit = n;
       return '';
     }
-    // Les mots-cles de haut niveau que ce gestionnaire ne traite pas
-    // restent acceptes tels quels : leur PLAGE est declaree par les
-    // continuations et appliquee par le trie, et ce contrat-la est
-    // anterieur. Ce lot ne juge que la forme `host <ip> …`.
+    if (args[0] === 'auth-port' || args[0] === 'acct-port') {
+      const valeur = lirePortGlobal(args, RADIUS_HOST_RANGES[args[0]]);
+      if (args[0] === 'auth-port') sec().radiusDefaults.authPort = valeur;
+      else sec().radiusDefaults.acctPort = valeur;
+      return '';
+    }
     if (args[0] !== 'host') return '';
     if (!args[1]) return CISCO_ERRORS.INCOMPLETE;
     if (!isValidIPv4(args[1])) throw new CliInvalidInput({ token: args[1] });
     const host = args[1];
     const lues = lireOptions(args, 2, RADIUS_HOST_RANGES);
     const key = lues.key;
-    const authPort = lues['auth-port'] ? Number(lues['auth-port']) : 1645;
-    const acctPort = lues['acct-port'] ? Number(lues['acct-port']) : 1646;
+    const authPort = lues['auth-port'] ? Number(lues['auth-port']) : undefined;
+    const acctPort = lues['acct-port'] ? Number(lues['acct-port']) : undefined;
     const timeoutSec = lues.timeout ? Number(lues.timeout) : undefined;
     const retransmit = lues.retransmit ? Number(lues.retransmit) : undefined;
     const existant = sec().radiusServers.get(host);
@@ -562,6 +598,8 @@ export function buildIdentityConfigCommands(
   }, RADIUS_SERVER_CONTINUATIONS);
   trie.registerGreedy('no radius-server', 'Remove legacy radius host', (args) => {
     if (args[0] === 'host' && args[1]) sec().radiusServers.delete(args[1]);
+    if (args[0] === 'auth-port') sec().radiusDefaults.authPort = undefined;
+    if (args[0] === 'acct-port') sec().radiusDefaults.acctPort = undefined;
     return '';
   }, [{ keyword: 'host', description: 'Specify a RADIUS server' }]);
 
@@ -594,13 +632,17 @@ export function buildIdentityConfigCommands(
       sec().tacacsDefaults.timeoutSec = n;
       return '';
     }
+    if (args[0] === 'port') {
+      sec().tacacsDefaults.port = lirePortGlobal(args, TACACS_HOST_RANGES.port);
+      return '';
+    }
     if (args[0] !== 'host') return '';
     if (!args[1]) return CISCO_ERRORS.INCOMPLETE;
     if (!isValidIPv4(args[1])) throw new CliInvalidInput({ token: args[1] });
     const host = args[1];
     const lues = lireOptions(args, 2, TACACS_HOST_RANGES);
     const key = lues.key;
-    const port = lues.port ? Number(lues.port) : 49;
+    const port = lues.port ? Number(lues.port) : undefined;
     const timeoutSec = lues.timeout ? Number(lues.timeout) : undefined;
     const existant = sec().tacacsServers.get(host);
     if (existant) {
@@ -617,6 +659,7 @@ export function buildIdentityConfigCommands(
     return '';
   }, TACACS_SERVER_CONTINUATIONS);
   trie.registerGreedy('no tacacs-server', 'Remove legacy tacacs host', (args) => {
+    if (args[0] === 'port') sec().tacacsDefaults.port = undefined;
     if (args[0] === 'host' && args[1]) sec().tacacsServers.delete(args[1]);
     return '';
   });
@@ -774,16 +817,12 @@ export function buildSecurityConfigCommands(trie: CommandTrie, ctx: CiscoSecurit
 
   trie.registerGreedy('class-map', 'Define class map', (args) => {
     if (args.length < 1) return '% Incomplete command.';
-    let kind: 'qos' | 'inspect' = 'qos';
-    let matchAll = true;
-    let i = 0;
-    if (args[i] === 'type') {
-      if (args[i + 1] === undefined) return '% Incomplete command.';
-      if (args[i + 1] !== 'inspect') throw new CliInvalidInput({ token: args[i + 1] });
-      kind = 'inspect'; i += 2;
+    const prefix = readMapPrefix(args, true);
+    if (prefix.invalidToken !== undefined) {
+      throw new CliInvalidInput({ token: prefix.invalidToken });
     }
-    if (args[i] === 'match-all') { matchAll = true; i++; }
-    else if (args[i] === 'match-any') { matchAll = false; i++; }
+    if (prefix.incomplete) return '% Incomplete command.';
+    const { kind, matchAll, next: i } = prefix;
     const name = args[i];
     if (!name) return '% Incomplete command.';
     if (args[i + 1] !== undefined) throw new CliInvalidInput({ token: args[i + 1] });
@@ -795,13 +834,12 @@ export function buildSecurityConfigCommands(trie: CommandTrie, ctx: CiscoSecurit
 
   trie.registerGreedy('policy-map', 'Define policy map', (args) => {
     if (args.length < 1) return '% Incomplete command.';
-    let kind: 'qos' | 'inspect' = 'qos';
-    let i = 0;
-    if (args[i] === 'type') {
-      if (args[i + 1] === undefined) return '% Incomplete command.';
-      if (args[i + 1] !== 'inspect') throw new CliInvalidInput({ token: args[i + 1] });
-      kind = 'inspect'; i += 2;
+    const prefix = readMapPrefix(args, false);
+    if (prefix.invalidToken !== undefined) {
+      throw new CliInvalidInput({ token: prefix.invalidToken });
     }
+    if (prefix.incomplete) return '% Incomplete command.';
+    const { kind, next: i } = prefix;
     const name = args[i];
     if (!name) return '% Incomplete command.';
     if (args[i + 1] !== undefined) throw new CliInvalidInput({ token: args[i + 1] });
@@ -1165,11 +1203,10 @@ export function buildPolicyMapSubmodeOn(
     if (!pname) return '';
     const pm = sec().policyMaps.get(pname);
     if (!pm) return '';
-    let cname: string;
     let kind: 'class-default' | 'named' | 'inspect' = 'named';
     let i = 0;
     if (args[i] === 'type' && args[i + 1] === 'inspect') { kind = 'inspect'; i += 2; }
-    cname = args[i] ?? '';
+    const cname = args[i] ?? '';
     if (cname === 'class-default') kind = 'class-default';
     let cls = pm.classes.find(c => c.className === cname);
     if (!cls) {
@@ -1731,7 +1768,9 @@ export function buildIdentityShowCommands(
     let idx = 1;
     for (const r of s.radiusServers.values()) {
       const st = r.stats;
-      lines.push(`RADIUS: id ${idx++}, priority 1, host ${r.address ?? '<no address>'}, auth-port ${r.authPort}, acct-port ${r.acctPort}`);
+      lines.push(`RADIUS: id ${idx++}, priority 1, host ${r.address ?? '<no address>'}`
+        + `, auth-port ${radiusAuthPort(r, s.radiusDefaults)}`
+        + `, acct-port ${radiusAcctPort(r, s.radiusDefaults)}`);
       lines.push(`    State: current UP, duration ${secondsSince(st.upSinceMs)}s, previous duration 0s`);
       lines.push(`    Authen: request ${st.authRequests}, timeouts ${st.authTimeouts}, retransmission ${st.authRetransmits}`);
       lines.push(`            Response: accept ${st.authAccepts}, reject ${st.authRejects}, challenge 0`);
@@ -1740,7 +1779,8 @@ export function buildIdentityShowCommands(
     }
     for (const t of s.tacacsServers.values()) {
       const st = t.stats;
-      lines.push(`TACACS+: id ${idx++}, host ${t.address ?? '<no address>'}, port ${t.port}`);
+      lines.push(`TACACS+: id ${idx++}, host ${t.address ?? '<no address>'}`
+        + `, port ${tacacsServerPort(t, s.tacacsDefaults)}`);
       lines.push(`    Socket opens: ${st.socketOpens}, closes: ${st.socketCloses}, aborts: ${st.socketAborts}, errors: ${st.socketErrors}`);
       lines.push(`    Authen: request ${st.authRequests}, success ${st.authAccepts}, fail ${st.authRejects}`);
     }
@@ -1823,7 +1863,7 @@ export function buildIdentityShowCommands(
     const lines: string[] = [];
     for (const t of s.tacacsServers.values()) {
       const st = t.stats;
-      lines.push(`Tacacs+ Server : ${t.address ?? t.name}/${t.port}`);
+      lines.push(`Tacacs+ Server : ${t.address ?? t.name}/${tacacsServerPort(t, s.tacacsDefaults)}`);
       lines.push(`Socket opens: ${st.socketOpens}, closes: ${st.socketCloses}`);
       lines.push(`Authen: request ${st.authRequests}, success ${st.authAccepts}, fail ${st.authRejects}`);
       // `Failed accounting` est le controle A10 d'une liste d'audit : un

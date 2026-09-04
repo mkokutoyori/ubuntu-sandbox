@@ -18,6 +18,7 @@ import type { CommandTrie } from '../CommandTrie';
 import type { Router } from '../../Router';
 import type { PimAgent } from '../../../pim/PimAgent';
 import { hms } from '@/lib/format';
+import { HUAWEI_ERRORS } from '../cli-utils';
 
 export interface HuaweiPimContext {
   r(): Router;
@@ -41,7 +42,10 @@ export function registerHuaweiPimInterfaceCommands(trie: CommandTrie, ctx: Huawe
     const a = agent(ctx.r());
     const iface = ctx.getSelectedInterface();
     if (!a || !iface) return '';
-    const sub = (args[0] ?? '').toLowerCase();
+    if (args[0] === undefined) {
+      return HUAWEI_ERRORS.INCOMPLETE('pim');
+    }
+    const sub = args[0].toLowerCase();
 
     if (sub === 'sm') { a.enableInterface(iface, 'sparse'); return ''; }
     if (sub === 'dm') { a.enableInterface(iface, 'dense'); return HUAWEI_PIM_DM_NOTE; }

@@ -1,6 +1,7 @@
 import { conserveModeLines, procMeminfoLines } from './systemLoad';
 import { renderArpKernelList } from './getViews';
-import type { IPv4Packet } from '../../../../../core/types';
+import { IPv6Address, type IPv4Packet } from '../../../../../core/types';
+import type { FirewallSession } from '../../../session/SessionTable';
 import type { Firewall } from '../../../Firewall';
 import type { FirewallLogDraft } from '../../../logging/FirewallLogStore';
 import type { PacketContext } from '../../../pipeline/PacketContext';
@@ -21,8 +22,12 @@ import { renderDebugFlow } from './debugFlowRenderer';
 import { renderIpropeList, renderIpropeShow } from './ipropeRenderer';
 import { renderSniffer } from './snifferRenderer';
 import {
-  filterIsEmpty, renderSessionList, sessionMatchesFilter, type SessionFilter,
+  clearFilter, filterIsEmpty, renderSessionList, sessionMatchesFilter,
+  type SessionFilter,
 } from './sessionListRenderer';
+import {
+  sessionFamily, type SessionFamily,
+} from '../../../session/SessionFamily';
 
 export interface FortiDiagDeps {
   readonly fw: Firewall;
@@ -53,6 +58,10 @@ import {
 } from './lldpRenderer';
 import { selectBundleMemberForFlow } from '@/network/lacp/loadBalance';
 import { renderAutoupdateVersions } from './fortiguardRenderer';
+import { renderPolicyRoutes, type ProuteContext } from './prouteRenderer';
+import { renderRealServers, type VirtualServerView } from './realServerRenderer';
+import { renderNic, renderNicList, type NicView } from './nicRenderer';
+import { fortiLogStamp } from './timeCommands';
 import {
   describeLogCategories, logFilePrefix, resolveLogCategory, typesOfLogFile,
 } from '../log/logCategories';
@@ -159,6 +168,41 @@ function diagnoseLldpRx(rest: readonly string[], deps: FortiDiagDeps): string {
   return FortiMessages.unknownPath(`lldprx ${rest.join(' ')}`);
 }
 
+function nicViews(deps: FortiDiagDeps): NicView[] {
+  return deps.fw.getPorts().map(port => ({
+    name: port.getName(),
+    currentMac: port.getMAC().toString(),
+    permanentMac: deps.fw.permanentMacOf(port.getName()),
+    adminUp: !port.isAdminDown(),
+    linkUp: port.isOperationallyUp(),
+    speed: port.getNegotiatedSpeed(),
+    duplex: port.getNegotiatedDuplex() === 'full' ? 'Full' : 'Half',
+    counters: port.getCounters(),
+  }));
+}
+
+function virtualServers(deps: FortiDiagDeps): VirtualServerView[] {
+  const views: VirtualServerView[] = [];
+  for (const rule of deps.fw.getNatPolicy().ordered()) {
+    const translation = rule.destinationTranslation;
+    if (translation?.kind !== 'load-balance') continue;
+    if (translation.pool === undefined) continue;
+
+    const pool = deps.fw.getRealServerPool(translation.pool);
+    if (!pool) continue;
+    views.push({ name: translation.pool, servers: pool.view() });
+  }
+  return views;
+}
+
+function policyRouteContext(deps: FortiDiagDeps): ProuteContext {
+  return {
+    vdom: deps.vdom(),
+    interfaceIndex: (name) => bridgePortNumber(deps, name),
+    stamp: (at) => fortiLogStamp(deps.fw, at),
+  };
+}
+
 function bridgePortNumber(deps: FortiDiagDeps, port: string): number {
   const index = deps.fw.getPorts().findIndex(known => known.getName() === port);
   return index < 0 ? 0 : index + 1;
@@ -183,6 +227,13 @@ export function runDiagnose(rest: readonly string[], deps: FortiDiagDeps): strin
     }
     if (tail[0] === 'sysinfo' && tail[1] === 'memory') {
       return procMeminfoLines(deps.fw.getSystemLoad()).join('\n');
+    }
+    if (tail[0] === 'deviceinfo' && tail[1] === 'nic') {
+      const named = tail[2];
+      if (named === undefined) return renderNicList(nicViews(deps));
+
+      const nic = nicViews(deps).find(view => view.name === named);
+      return nic ? renderNic(nic) : FortiMessages.unknownKey(named);
     }
     return FortiMessages.unknownPath(`hardware ${tail.join(' ')}`);
   }
@@ -422,35 +473,52 @@ function diagnoseSession(rest: readonly string[], deps: FortiDiagDeps): string {
     return renderNtpStatus(deps.fw);
   }
 
-  const verb = rest[1];
-  const filter = deps.state.sessionFilter;
-
-  if (verb === 'stat') {
-    const statistics = deps.fw.getSessionTable().view().statistics();
-    return `misc info: session_count=${statistics.active}`
-      + ' setup_rate=0 exp_count=0 clash=0\n'
-      + `sessions created=${statistics.created} closed=${statistics.closed}`;
+  if (rest[0] !== 'session' && rest[0] !== 'session6') {
+    return FortiMessages.unknownPath(`sys ${rest.join(' ')}`);
   }
 
-  if (verb === 'filter') return setSessionFilter(rest.slice(2), deps);
+  const family: SessionFamily = rest[0] === 'session6' ? 'ipv6' : 'ipv4';
+  const verb = rest[1];
+  const filter = family === 'ipv6'
+    ? deps.state.session6Filter : deps.state.sessionFilter;
+  const inFamily = (session: FirewallSession) =>
+    sessionFamily(session) === family && sessionMatchesFilter(session, filter);
+
+  if (verb === 'stat') {
+    const view = deps.fw.getSessionTable().view();
+    const active = view.find(session => sessionFamily(session) === family).length;
+    const counters = view.statistics().byFamily[family];
+    return `misc info: session_count=${active}`
+      + ' setup_rate=0 exp_count=0 clash=0\n'
+      + `sessions created=${counters.created} closed=${counters.closed}`;
+  }
+
+  if (verb === 'filter') return setSessionFilter(rest.slice(2), filter);
 
   if (verb === 'clear') {
-    const cleared = deps.fw.getSessionTable().clearMatching(
-      session => sessionMatchesFilter(session, filter));
+    const cleared = deps.fw.getSessionTable().clearMatching(inFamily);
     return filterIsEmpty(filter)
       ? `${cleared} sessions cleared (no filter set: the whole table)`
       : `${cleared} sessions cleared`;
   }
 
-  const matching = deps.fw.getSessionTable().view()
-    .find(session => sessionMatchesFilter(session, filter));
-
-  return renderSessionList(matching, {
+  return renderSessionList(deps.fw.getSessionTable().view().find(inFamily), {
     now: () => deps.fw.now(),
     interfaces: deps.fw.getInterfaceTable(),
     routes: deps.fw.getRouteTable(),
     vdom: 0,
+    family,
+    nextHop6: (destination) => nextHopIpv6(deps, destination),
+    interfaceIp6: (iface) => deps.fw.getPort(iface)?.getGlobalIPv6()?.toString() ?? null,
   });
+}
+
+function nextHopIpv6(
+  deps: FortiDiagDeps, destination: string,
+): { iface: string; nextHop: string } | null {
+  const route = deps.fw.getIpv6().dataPlane().lookupRoute(new IPv6Address(destination));
+  if (!route?.nextHop) return null;
+  return { iface: route.iface, nextHop: route.nextHop.toString() };
 }
 
 export const SESSION_FILTER_FIELDS: readonly string[] =
@@ -474,32 +542,31 @@ function assignSessionFilter(
 }
 
 export function runSessionFilter(
-  words: readonly string[], deps: FortiDiagDeps, perFieldClear: boolean,
+  words: readonly string[], filter: SessionFilter, perFieldClear: boolean,
 ): string {
   const [name, value] = words;
-  if (name === undefined) return renderSessionFilter(deps);
+  if (name === undefined) return renderSessionFilter(filter);
   if (name === 'clear') {
     if (!perFieldClear || value === undefined || value === 'all') {
-      deps.state.clearSessionFilter();
+      clearFilter(filter);
       return '';
     }
     if (!SESSION_FILTER_FIELDS.includes(value)) {
       return FortiMessages.parseError(value,
         `known filters: ${SESSION_FILTER_FIELDS.join(', ')}, all.`);
     }
-    delete deps.state.sessionFilter[value as keyof SessionFilter];
+    delete filter[value as keyof SessionFilter];
     return '';
   }
   if (value === undefined) return FortiMessages.incomplete('the filter value');
-  return assignSessionFilter(deps.state.sessionFilter, name, value) ?? '';
+  return assignSessionFilter(filter, name, value) ?? '';
 }
 
-function setSessionFilter(words: readonly string[], deps: FortiDiagDeps): string {
-  return runSessionFilter(words, deps, false);
+function setSessionFilter(words: readonly string[], filter: SessionFilter): string {
+  return runSessionFilter(words, filter, false);
 }
 
-function renderSessionFilter(deps: FortiDiagDeps): string {
-  const filter = deps.state.sessionFilter;
+function renderSessionFilter(filter: SessionFilter): string {
   const shown = (value: unknown): string =>
     value === undefined || value === null || Number.isNaN(value) ? 'any' : String(value);
 
@@ -617,12 +684,36 @@ function diagnoseFqdnList(deps: FortiDiagDeps): string {
 function diagnoseIprope(rest: readonly string[], deps: FortiDiagDeps): string {
   if (rest[0] === 'auth') return diagnoseAuth(rest.slice(1), deps);
   if (rest[0] === 'vip') {
-    if (rest[1] !== 'list') return FortiMessages.unknownPath(`firewall ${rest.join(' ')}`);
-    return renderVipList(deps.fw.getNatPolicy().ordered(), deps.vdom());
+    if (rest[1] === 'list') {
+      return renderVipList(deps.fw.getNatPolicy().ordered(), deps.vdom());
+    }
+    if (rest[1] === 'realserver') {
+      if (rest[2] === 'list') {
+        return renderRealServers(virtualServers(deps), { vdom: deps.vdom() });
+      }
+      if (rest[2] === 'clear') {
+        for (const virtual of virtualServers(deps)) {
+          deps.fw.getRealServerPool(virtual.name)?.clearStats();
+        }
+        return '';
+      }
+    }
+    return FortiMessages.unknownPath(`firewall ${rest.join(' ')}`);
   }
   if (rest[0] === 'fqdn') {
     if (rest[1] !== 'list') return FortiMessages.unknownPath(`firewall ${rest.join(' ')}`);
     return diagnoseFqdnList(deps);
+  }
+  if (rest[0] === 'proute') {
+    if (rest[1] === 'list') {
+      return renderPolicyRoutes(
+        deps.fw.getPolicyRoutes().ordered(), policyRouteContext(deps));
+    }
+    if (rest[1] === 'clear') {
+      deps.fw.getPolicyRoutes().clearCounters(rest[2]);
+      return '';
+    }
+    return FortiMessages.unknownPath(`firewall ${rest.join(' ')}`);
   }
   if (rest[0] !== 'iprope') return FortiMessages.unknownPath(rest.join(' '));
 
@@ -665,10 +756,15 @@ function diagnoseVpn(rest: readonly string[], deps: FortiDiagDeps): string {
   const tunnels = deps.fw.getTunnelTable();
   if (rest[1] === 'list') return renderVpnTunnelList(tunnels, deps.fw.now());
   if (rest[1] === 'up') {
-    const name = rest[2] ?? '';
-    return deps.fw.bringUpIpsecTunnel(name)
-      ? ''
-      : FortiMessages.commandFail(`tunnel \`${name}\` did not come up.`);
+    const name = rest[2];
+    if (name === undefined) return FortiMessages.incomplete('the tunnel name');
+    if (!tunnels.getPhase1(name)) return FortiMessages.unknownKey(name);
+    if (deps.fw.bringUpIpsecTunnel(name)) return '';
+
+    const failure = tunnels.stateOf(name)?.failure;
+    return FortiMessages.commandFail(failure === undefined || failure === null
+      ? `tunnel \`${name}\` did not come up.`
+      : `tunnel \`${name}\` did not come up: ${failure}.`);
   }
   if (rest[1] === 'flush') {
     for (const tunnel of tunnels.all()) deps.fw.clearIpsecGateway(tunnel.name);

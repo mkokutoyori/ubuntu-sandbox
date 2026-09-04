@@ -28,7 +28,8 @@ const LEGENDS: ReadonlyArray<readonly [readonly string[], string]> = Object.free
   [['config', 'log', 'memory'], 'Configure memory logging.'],
   [['diagnose'], 'Diagnose facility.'],
   [['diagnose', 'sys'], 'System diagnostics.'],
-  [['diagnose', 'sys', 'session'], 'Session table diagnostics.'],
+  [['diagnose', 'sys', 'session'], 'IPv4 session table diagnostics.'],
+  [['diagnose', 'sys', 'session6'], 'IPv6 session table diagnostics.'],
   [['diagnose', 'sys', 'sdwan'], 'SD-WAN diagnostics.'],
   [['diagnose', 'sys', 'ha'], 'Cluster diagnostics.'],
   [['diagnose', 'sys', 'ha', 'checksum'], 'Configuration checksums.'],
@@ -40,6 +41,8 @@ const LEGENDS: ReadonlyArray<readonly [readonly string[], string]> = Object.free
   [['diagnose', 'firewall', 'iprope'], 'Compiled policy table.'],
   [['diagnose', 'firewall', 'fqdn'], 'Resolved FQDN address objects.'],
   [['diagnose', 'firewall', 'vip'], 'Virtual IP table.'],
+  [['diagnose', 'firewall', 'proute'], 'Policy route table.'],
+  [['diagnose', 'firewall', 'vip', 'realserver'], 'Real servers of a virtual server.'],
   [['diagnose', 'sniffer'], 'Packet sniffer.'],
   [['diagnose', 'ip'], 'IP layer diagnostics.'],
   [['diagnose', 'ip', 'address'], 'Interface addresses.'],
@@ -54,6 +57,7 @@ const LEGENDS: ReadonlyArray<readonly [readonly string[], string]> = Object.free
   [['diagnose', 'autoupdate'], 'FortiGuard update facility.'],
   [['diagnose', 'hardware'], 'Hardware information.'],
   [['diagnose', 'hardware', 'sysinfo'], 'System hardware information.'],
+  [['diagnose', 'hardware', 'deviceinfo'], 'Hardware device information.'],
   [['diagnose', 'test'], 'Application test facility.'],
   [['diagnose', 'test', 'application'], 'Test a daemon.'],
   [['execute', 'ping'], 'Send ICMP echo requests.'],
@@ -100,6 +104,7 @@ export interface SocleDeps {
   readonly authorize?: (spec: FortiTableSpec, intent: AccessIntent) => AccessVerdict;
   readonly principal?: () => string;
   readonly vdomNames?: () => readonly string[];
+  readonly eraseableDisks?: () => readonly string[];
   readonly enterVdom?: (name: string) => string;
   readonly adminSessions?: () => readonly {
     readonly index: number; readonly username: string;
@@ -281,6 +286,7 @@ export class FortiSocle {
     out.push(...this.viewSpecs());
     out.push(...this.diagnoseSpecs());
     out.push(...this.enterVdomSpecs());
+    out.push(...this.eraseDiskSpecs());
     out.push(...this.adminSessionSpecs());
     out.push(...this.executeSpecs(new Set(out.map(spec => spec.id))));
     out.push(this.withArgument('execute', ['execute',
@@ -302,6 +308,21 @@ export class FortiSocle {
       }],
       'Select virtual domain.',
       (_session, args) => enter(args.vdom ?? ''))];
+  }
+
+  private eraseDiskSpecs(): CommandSpec[] {
+    const disks = this.deps.eraseableDisks?.() ?? [];
+    if (disks.length === 0) return [];
+    return [this.withArgument('execute erase-disk',
+      ['execute', 'erase-disk', {
+        name: 'disk', type: 'WORD', optional: true, description: 'Disk name.',
+        alternatives: disks.map(name => ({
+          keyword: name, description: 'Installed disk.',
+        })),
+      }],
+      'Erase a disk.',
+      (_session, args) => this.deps.runExecute(
+        ['erase-disk', ...(args.disk ? [args.disk] : [])]))];
   }
 
   private adminSessionSpecs(): CommandSpec[] {
@@ -347,8 +368,11 @@ export class FortiSocle {
 
     return [
       this.withArgument('diagnose sys session list',
-        ['diagnose', 'sys', 'session', 'list'], 'List the session table.',
+        ['diagnose', 'sys', 'session', 'list'], 'List the IPv4 session table.',
         run(['sys', 'session', 'list'])),
+      this.withArgument('diagnose sys session6 list',
+        ['diagnose', 'sys', 'session6', 'list'], 'List the IPv6 session table.',
+        run(['sys', 'session6', 'list'])),
       this.plain('diagnose ip address list',
         ['diagnose', 'ip', 'address', 'list'], 'List the interface addresses.',
         () => this.deps.diagnose(['ip', 'address', 'list'])),
@@ -405,6 +429,10 @@ export class FortiSocle {
         ['diagnose', 'hardware', 'sysinfo', 'conserve'],
         'Show the memory conserve mode state and its thresholds.',
         () => this.deps.diagnose(['hardware', 'sysinfo', 'conserve'])),
+      this.withArgument('diagnose hardware deviceinfo nic',
+        ['diagnose', 'hardware', 'deviceinfo', 'nic', rest('rest', 'Interface name.')],
+        'Show the network interface counters.',
+        run(['hardware', 'deviceinfo', 'nic'])),
       this.plain('diagnose hardware sysinfo memory',
         ['diagnose', 'hardware', 'sysinfo', 'memory'],
         'Show the kernel memory counters.',
@@ -419,9 +447,23 @@ export class FortiSocle {
       this.plain('diagnose firewall vip list',
         ['diagnose', 'firewall', 'vip', 'list'], 'List the virtual IPs.',
         () => this.deps.diagnose(['firewall', 'vip', 'list'])),
+      this.plain('diagnose firewall vip realserver list',
+        ['diagnose', 'firewall', 'vip', 'realserver', 'list'],
+        'List the real servers and their health.',
+        () => this.deps.diagnose(['firewall', 'vip', 'realserver', 'list'])),
+      this.plain('diagnose firewall vip realserver clear',
+        ['diagnose', 'firewall', 'vip', 'realserver', 'clear'],
+        'Clear the real server connection counters.',
+        () => this.deps.diagnose(['firewall', 'vip', 'realserver', 'clear'])),
       this.plain('diagnose firewall fqdn list',
         ['diagnose', 'firewall', 'fqdn', 'list'], 'List the resolved FQDN objects.',
         () => this.deps.diagnose(['firewall', 'fqdn', 'list'])),
+      this.plain('diagnose firewall proute list',
+        ['diagnose', 'firewall', 'proute', 'list'], 'List the policy routes.',
+        () => this.deps.diagnose(['firewall', 'proute', 'list'])),
+      this.withArgument('diagnose firewall proute clear',
+        ['diagnose', 'firewall', 'proute', 'clear', rest('rest', 'Policy route id.')],
+        'Clear the policy route hit counters.', run(['firewall', 'proute', 'clear'])),
       this.withArgument('diagnose sys top',
         ['diagnose', 'sys', 'top', rest('rest', '<delay> <lines>')],
         'Show the running processes.', run(['sys', 'top'])),
@@ -480,17 +522,28 @@ export class FortiSocle {
         ['execute', 'date', rest('rest', 'New date, <yyyy-mm-dd>.')],
         'Display or set the system date.', run2(['date'])),
       this.plain('diagnose sys session stat',
-        ['diagnose', 'sys', 'session', 'stat'], 'Session table statistics.',
+        ['diagnose', 'sys', 'session', 'stat'], 'IPv4 session table statistics.',
         () => this.deps.diagnose(['sys', 'session', 'stat'])),
+      this.plain('diagnose sys session6 stat',
+        ['diagnose', 'sys', 'session6', 'stat'], 'IPv6 session table statistics.',
+        () => this.deps.diagnose(['sys', 'session6', 'stat'])),
       this.plain('diagnose snmp ip frags',
         ['diagnose', 'snmp', 'ip', 'frags'], 'IP fragment reassembly counters.',
         () => this.deps.diagnose(['snmp', 'ip', 'frags'])),
       this.withArgument('diagnose sys session filter',
         ['diagnose', 'sys', 'session', 'filter', rest('rest', 'Filter criterion.')],
-        'Set the session table filter.', run(['sys', 'session', 'filter'])),
+        'Set the IPv4 session table filter.', run(['sys', 'session', 'filter'])),
       this.plain('diagnose sys session clear',
-        ['diagnose', 'sys', 'session', 'clear'], 'Clear sessions matching the filter.',
+        ['diagnose', 'sys', 'session', 'clear'],
+        'Clear IPv4 sessions matching the filter.',
         () => this.deps.diagnose(['sys', 'session', 'clear'])),
+      this.withArgument('diagnose sys session6 filter',
+        ['diagnose', 'sys', 'session6', 'filter', rest('rest', 'Filter criterion.')],
+        'Set the IPv6 session table filter.', run(['sys', 'session6', 'filter'])),
+      this.plain('diagnose sys session6 clear',
+        ['diagnose', 'sys', 'session6', 'clear'],
+        'Clear IPv6 sessions matching the filter.',
+        () => this.deps.diagnose(['sys', 'session6', 'clear'])),
       this.withArgument('diagnose sys sdwan health-check',
         ['diagnose', 'sys', 'sdwan', 'health-check', rest('rest', 'Health check name.')],
         'Show what each SD-WAN health check measured.',

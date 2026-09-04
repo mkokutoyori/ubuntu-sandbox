@@ -13,10 +13,41 @@ import { PSRuntimeError } from '@/powershell/runtime/PSRuntime';
 import type { PSValue } from '@/powershell/runtime/PSEnvironment';
 import { IPAddress, MACAddress } from '@/network/core/types';
 import type {
-  NetworkAdapterInfo, IPAddressInfo, INetworkProvider,
+  NetworkAdapterInfo, IPAddressInfo, INetworkProvider, NetIPAddressUpdate, RouteInfo,
 } from '@/powershell/providers/PSProviders';
 import { psValueToString } from '@/powershell/runtime/PSExpansion';
 import { makeTimeSpan } from './DateTimeCmdlets';
+import { NON_INTERACTIVE_HOST, confirmationDue } from '../confirmation';
+import {
+  type NetFirewallRuleEntry, type NetFirewallSelection, generatedFirewallRuleName,
+  noMatchingFirewallRule, planNetFirewallRule, selectFirewallRules,
+} from '@/network/devices/windows/netFirewallRule';
+import {
+  type NetIPAddressSelection, NO_MATCHING_INTERFACE, TIMESPAN_MAX_SECONDS, matchEnumValue,
+  noMatchingNetIPAddress, planNetIPAddress, prefixLengthProblem, selectNetIPAddresses,
+} from '@/network/devices/windows/netIpAddress';
+import { LOOPBACK_IFALIAS } from '@/network/devices/windows/WindowsLoopbackRoutes';
+import { LOOPBACK_IFINDEX } from '@/network/devices/windows/WindowsInterfaceNaming';
+import {
+  type NetRouteSelection, type NetRouteUpdate, MAX_ROUTE_METRIC, NET_ROUTE_PUBLISH,
+  netRouteKey, noMatchingNetRoute, planNetRoute, selectNetRoutes,
+} from '@/network/devices/windows/netRoute';
+
+function lifetimeSeconds(raw: PSValue | undefined): number | undefined {
+  if (raw === undefined) return undefined;
+  if (raw !== null && typeof raw === 'object' && !Array.isArray(raw)) {
+    const total = (raw as Record<string, PSValue>).TotalSeconds;
+    return total === undefined ? undefined : Math.round(Number(total));
+  }
+  const match = /^(?:(\d+)\.)?(\d+):(\d+):(\d+(?:\.\d+)?)$/.exec(psValueToString(raw).trim());
+  if (!match) return undefined;
+  return Math.round(parseInt(match[1] ?? '0', 10) * 86400
+    + parseInt(match[2], 10) * 3600 + parseInt(match[3], 10) * 60 + parseFloat(match[4]));
+}
+
+function lifetimeSecondsOf(ctx: CmdletContext, key: string): number | undefined {
+  return lifetimeSeconds(ctx.named[key]);
+}
 
 function requireNetwork(ctx: CmdletContext): INetworkProvider {
   if (!ctx.providers.network) {
@@ -40,9 +71,8 @@ function ipToPSObject(ip: IPAddressInfo): Record<string, PSValue> {
   // ValidLifetime/PreferredLifetime are TimeSpans on a real host; leased
   // addresses carry the residual lease time, everything else is "forever"
   // (TimeSpan.MaxValue, ~10675199 days — what Get-NetIPAddress prints).
-  const FOREVER_MS = 10675199.02 * 86400 * 1000;
-  const validMs = ip.validLifetimeSeconds !== undefined ? ip.validLifetimeSeconds * 1000 : FOREVER_MS;
-  const prefMs = ip.preferredLifetimeSeconds !== undefined ? ip.preferredLifetimeSeconds * 1000 : FOREVER_MS;
+  const validMs = (ip.validLifetimeSeconds ?? TIMESPAN_MAX_SECONDS) * 1000;
+  const prefMs = (ip.preferredLifetimeSeconds ?? TIMESPAN_MAX_SECONDS) * 1000;
   return {
     IPAddress:     ip.ipAddress,
     PrefixLength:  ip.prefixLength,
@@ -53,6 +83,9 @@ function ipToPSObject(ip: IPAddressInfo): Record<string, PSValue> {
     AddressFamily: ip.addressFamily,
     ValidLifetime: makeTimeSpan(validMs) as unknown as PSValue,
     PreferredLifetime: makeTimeSpan(prefMs) as unknown as PSValue,
+    Type: ip.type ?? 'Unicast',
+    SkipAsSource: ip.skipAsSource ?? false,
+    PolicyStore: ip.policyStore ?? 'ActiveStore',
   };
 }
 
@@ -83,22 +116,48 @@ export class GetNetAdapterCmdlet implements ICmdlet {
 
 // ── Get-NetIPAddress ──────────────────────────────────────────────────────
 
+const NET_IP_FILTERS = ['IPAddress', 'InterfaceAlias', 'InterfaceIndex', 'AddressFamily',
+  'AddressState', 'PrefixLength', 'PrefixOrigin', 'SuffixOrigin', 'SkipAsSource',
+  'Type', 'PolicyStore'] as const;
+
+function netIPSelectionOf(ctx: CmdletContext, net: INetworkProvider): NetIPAddressSelection {
+  const list = (key: string): string[] | undefined => {
+    const raw = ctx.named[key];
+    if (raw === undefined) return undefined;
+    return (Array.isArray(raw) ? raw : [raw]).map(psValueToString);
+  };
+  const aliases = list('interfacealias');
+  return {
+    ipAddress: list('ipaddress'),
+    interfaceAlias: aliases?.map(a => net.resolveNetInterface({ alias: a })?.alias ?? a),
+    interfaceIndex: list('interfaceindex'),
+    addressFamily: list('addressfamily'),
+    prefixLength: list('prefixlength'),
+    prefixOrigin: list('prefixorigin'),
+    suffixOrigin: list('suffixorigin'),
+    addressState: list('addressstate'),
+    type: list('type'),
+    policyStore: list('policystore'),
+    skipAsSource: list('skipassource'),
+  };
+}
+
 export class GetNetIPAddressCmdlet implements ICmdlet {
   readonly name = 'get-netipaddress';
   readonly displayName = 'Get-NetIPAddress';
   readonly aliases = [] as const;
+  readonly description = 'Gets the IP address configuration.';
+  readonly parameters = NET_IP_FILTERS;
 
   execute(ctx: CmdletContext): PSValue {
     const net = requireNetwork(ctx);
-    const ifAlias = ctx.named['interfacealias']
-      ? psValueToString(ctx.named['interfacealias'])
-      : undefined;
-    let ips = net.getIPAddresses(ifAlias);
-    if (ctx.named['addressfamily']) {
-      const af = psValueToString(ctx.named['addressfamily']).toLowerCase();
-      ips = ips.filter(ip => ip.addressFamily.toLowerCase() === af);
+    const selection = netIPSelectionOf(ctx, net);
+    const matched = selectNetIPAddresses(net.getIPAddresses(), selection);
+    if (matched.length === 0 && Object.values(selection).some(v => v !== undefined)) {
+      ctx.emitError(`Get-NetIPAddress : ${noMatchingNetIPAddress(selection)}`);
+      return null;
     }
-    return ips.map(ipToPSObject) as PSValue;
+    return matched.map(ipToPSObject) as PSValue;
   }
 }
 
@@ -283,25 +342,63 @@ export class GetNetIPConfigurationCmdlet implements ICmdlet {
   readonly name = 'get-netipconfiguration';
   readonly displayName = 'Get-NetIPConfiguration';
   readonly aliases = [] as const;
+  readonly description = 'Gets IP network configuration.';
+  readonly parameters = ['InterfaceAlias', 'InterfaceIndex', 'All', 'Detailed'] as const;
 
   execute(ctx: CmdletContext): PSValue {
     const net = requireNetwork(ctx);
-    const adapters = net.getAdapters();
-    const gateway = net.getDefaultGateway() ?? '';
-    return adapters.map(a => {
-      const ips = net.getIPAddresses(a.name);
-      const v4  = ips.find(ip => ip.addressFamily === 'IPv4');
-      return {
-        InterfaceAlias:       a.name,
-        InterfaceDescription: a.displayName,
-        InterfaceIndex:       a.ifIndex,
+    for (const [key, name] of [['allcompartments', 'AllCompartments'], ['compartmentid', 'CompartmentId']] as const) {
+      if (ctx.named[key] !== undefined) {
+        ctx.emitError(`Get-NetIPConfiguration : The -${name} parameter is not implemented in this simulator: network compartments are not modelled.`);
+        return null;
+      }
+    }
+    const alias = ctx.named['interfacealias'] ?? ctx.positional[0];
+    const index = ctx.named['interfaceindex'];
+    const named = alias !== undefined && alias !== null ? psValueToString(alias)
+      : index !== undefined && index !== null
+        ? net.resolveNetInterface({ index: Number(psValueToString(index)) })?.alias ?? psValueToString(index)
+        : null;
+    if (named !== null && net.resolveNetInterface({ alias: named }) === null
+      && named.toLowerCase() !== LOOPBACK_IFALIAS.toLowerCase()) {
+      ctx.emitError(`Get-NetIPConfiguration : ${NO_MATCHING_INTERFACE}`);
+      return null;
+    }
+
+    const all = ctx.named['all'] === true;
+    const detailed = ctx.named['detailed'] === true;
+    const defaultRoutes = net.getRoutes().filter(r => r.destinationPrefix === '0.0.0.0/0');
+    const rows: Array<{ alias: string; description: string; ifIndex: number; connected: boolean }> =
+      net.getAdapters().map(a => ({
+        alias: a.name, description: a.displayName, ifIndex: a.ifIndex, connected: a.status === 'Up',
+      }));
+    if (all || named?.toLowerCase() === LOOPBACK_IFALIAS.toLowerCase()) {
+      rows.push({
+        alias: LOOPBACK_IFALIAS, description: 'Software Loopback Interface 1',
+        ifIndex: LOOPBACK_IFINDEX, connected: true,
+      });
+    }
+
+    const kept = named !== null
+      ? rows.filter(r => r.alias.toLowerCase() === named.toLowerCase())
+      : all ? rows : rows.filter(r => r.connected);
+    return kept.map(r => {
+      const ips = net.getIPAddresses(r.alias);
+      const v4 = ips.find(ip => ip.addressFamily === 'IPv4');
+      const onLink = defaultRoutes.find(d => d.ifAlias.toLowerCase() === r.alias.toLowerCase());
+      const row: Record<string, PSValue> = {
+        InterfaceAlias:       r.alias,
+        InterfaceDescription: r.description,
+        InterfaceIndex:       r.ifIndex,
         IPv4Address:          v4 ? v4.ipAddress : '',
         IPv6Address:          ips.find(ip => ip.addressFamily === 'IPv6')?.ipAddress ?? '',
-        IPv4DefaultGateway:   gateway,
-        DNSServer:            net.getDnsServers(a.name).join(', '),
-        DhcpServer:           net.getDhcpServer?.(a.name) ?? '',
-        NetAdapter:           { Status: a.status } as Record<string, PSValue>,
-      } as Record<string, PSValue>;
+        IPv4DefaultGateway:   onLink?.nextHop ?? '',
+        DNSServer:            net.getDnsServers(r.alias).join(', '),
+        DhcpServer:           net.getDhcpServer?.(r.alias) ?? '',
+        NetAdapter:           { Status: r.connected ? 'Up' : 'Disconnected' } as Record<string, PSValue>,
+      };
+      if (detailed) row.ComputerName = ctx.env.get('env:COMPUTERNAME') ?? '';
+      return row;
     }) as PSValue;
   }
 }
@@ -311,19 +408,93 @@ export class GetNetIPConfigurationCmdlet implements ICmdlet {
 // executor (it has the formatted-table output) when there's nothing
 // structured to emit, so users still see the header columns.
 
+const NET_ROUTE_FILTERS = ['DestinationPrefix', 'InterfaceAlias', 'InterfaceIndex', 'NextHop',
+  'AddressFamily', 'RouteMetric', 'Publish', 'Protocol', 'PolicyStore', 'State',
+  'ValidLifetime', 'PreferredLifetime'] as const;
+
+const NET_ROUTE_UNSUPPORTED: ReadonlyArray<readonly [string, string, string]> = [
+  ['compartmentid', 'CompartmentId', 'network compartments are not modelled'],
+  ['includeallcompartments', 'IncludeAllCompartments', 'network compartments are not modelled'],
+  ['interfacemetric', 'InterfaceMetric', 'an interface carries no metric of its own here'],
+  ['associatedipinterface', 'AssociatedIPInterface', 'MSFT_NetIPInterface instances are not modelled'],
+];
+
+function unsupportedNetRouteFilter(ctx: CmdletContext): string | null {
+  for (const [key, name, reason] of NET_ROUTE_UNSUPPORTED) {
+    if (ctx.named[key] !== undefined) {
+      return `The -${name} parameter is not implemented in this simulator: ${reason}.`;
+    }
+  }
+  return null;
+}
+
+function netRouteSelectionOf(
+  ctx: CmdletContext, net: INetworkProvider, filters: readonly string[],
+): NetRouteSelection {
+  const allowed = new Set(filters.map(f => f.toLowerCase()));
+  const read = (key: string): PSValue[] | undefined => {
+    const raw = allowed.has(key) ? ctx.named[key] : undefined;
+    if (raw === undefined) return undefined;
+    return Array.isArray(raw) ? raw : [raw];
+  };
+  const list = (key: string): string[] | undefined => read(key)?.map(psValueToString);
+  const spans = (key: string): string[] | undefined =>
+    read(key)?.map(v => String(lifetimeSeconds(v) ?? TIMESPAN_MAX_SECONDS));
+  const aliases = list('interfacealias');
+  return {
+    destinationPrefix: list('destinationprefix'),
+    interfaceAlias: aliases?.map(a => net.resolveNetInterface({ alias: a })?.alias ?? a),
+    interfaceIndex: list('interfaceindex'),
+    nextHop: list('nexthop'),
+    addressFamily: list('addressfamily'),
+    routeMetric: list('routemetric'),
+    publish: list('publish'),
+    protocol: list('protocol'),
+    policyStore: list('policystore'),
+    state: list('state'),
+    validLifetime: spans('validlifetime'),
+    preferredLifetime: spans('preferredlifetime'),
+  };
+}
+
+function routeToPSObject(r: RouteInfo): Record<string, PSValue> {
+  return {
+    DestinationPrefix: r.destinationPrefix,
+    InterfaceAlias:    r.ifAlias,
+    InterfaceIndex:    r.ifIndex ?? 0,
+    NextHop:           r.nextHop,
+    RouteMetric:       r.routeMetric,
+    AddressFamily:     r.addressFamily ?? (r.destinationPrefix.includes(':') ? 'IPv6' : 'IPv4'),
+    Publish:           r.publish ?? 'No',
+    Protocol:          r.protocol ?? 'NetMgmt',
+    PolicyStore:       r.policyStore ?? 'ActiveStore',
+    State:             'Alive',
+    ValidLifetime:     makeTimeSpan((r.validLifetimeSeconds ?? TIMESPAN_MAX_SECONDS) * 1000) as unknown as PSValue,
+    PreferredLifetime: makeTimeSpan((r.preferredLifetimeSeconds ?? TIMESPAN_MAX_SECONDS) * 1000) as unknown as PSValue,
+  };
+}
+
 export class GetNetRouteCmdlet implements ICmdlet {
   readonly name = 'get-netroute';
   readonly displayName = 'Get-NetRoute';
   readonly aliases = [] as const;
+  readonly description = 'Gets the IP route information from the IP routing table.';
+  readonly parameters = NET_ROUTE_FILTERS;
 
   execute(ctx: CmdletContext): PSValue {
-    const routes = requireNetwork(ctx).getRoutes();
-    return routes.map(r => ({
-      DestinationPrefix: r.destinationPrefix,
-      InterfaceAlias:    r.ifAlias,
-      NextHop:           r.nextHop,
-      RouteMetric:       r.routeMetric,
-    } as Record<string, PSValue>)) as PSValue;
+    const net = requireNetwork(ctx);
+    const unsupported = unsupportedNetRouteFilter(ctx);
+    if (unsupported) { ctx.emitError(`Get-NetRoute : ${unsupported}`); return null; }
+    const selection = netRouteSelectionOf(ctx, net, NET_ROUTE_FILTERS);
+    if (selection.destinationPrefix === undefined && ctx.positional[0] !== undefined) {
+      selection.destinationPrefix = [psValueToString(ctx.positional[0])];
+    }
+    const matched = selectNetRoutes(net.getRoutes(), selection);
+    if (matched.length === 0 && Object.values(selection).some(v => v !== undefined)) {
+      ctx.emitError(`Get-NetRoute : ${noMatchingNetRoute(selection)}`);
+      return null;
+    }
+    return matched.map(routeToPSObject) as PSValue;
   }
 }
 
@@ -524,26 +695,49 @@ export class NewNetIPAddressCmdlet implements ICmdlet {
   readonly name = 'new-netipaddress';
   readonly displayName = 'New-NetIPAddress';
   readonly aliases = [] as const;
+  readonly pipelineByPropertyName = true as const;
+  readonly description = 'Creates and configures an IP address.';
+  readonly parameters = ['IPAddress', 'InterfaceAlias', 'InterfaceIndex', 'DefaultGateway',
+    'AddressFamily', 'Type', 'PrefixLength', 'ValidLifetime', 'PreferredLifetime',
+    'SkipAsSource', 'PolicyStore', 'WhatIf', 'Confirm'] as const;
 
   execute(ctx: CmdletContext): PSValue {
     const net = requireNetwork(ctx);
-    const ip          = psValueToString(ctx.named['ipaddress']  ?? '');
-    const ifAlias     = psValueToString(ctx.named['interfacealias'] ?? '');
-    const prefix      = Number(ctx.named['prefixlength'] ?? 24);
-    const gatewayRaw  = ctx.named['defaultgateway'];
-    if (!ip || !ifAlias) {
-      ctx.emitError('New-NetIPAddress requires -IPAddress and -InterfaceAlias');
+    const arg = (key: string): string | undefined =>
+      ctx.named[key] === undefined ? undefined : psValueToString(ctx.named[key]);
+    const decision = planNetIPAddress({
+      ipAddress: arg('ipaddress') ?? (ctx.positional[0] === undefined ? undefined : psValueToString(ctx.positional[0])),
+      interfaceAlias: arg('interfacealias'),
+      interfaceIndex: arg('interfaceindex'),
+      prefixLength: arg('prefixlength'),
+      addressFamily: arg('addressfamily'),
+      type: arg('type'),
+      policyStore: arg('policystore'),
+      defaultGateway: arg('defaultgateway'),
+      skipAsSource: ctx.named['skipassource'] === true,
+    }, { resolveInterface: spec => net.resolveNetInterface(spec) });
+    if (!decision.ok) { ctx.emitError(`New-NetIPAddress : ${decision.message}`); return null; }
+    const plan = decision.plan;
+
+    if (ctx.named['whatif'] === true) {
+      ctx.emit(`What if: Performing the operation "Create" on target "${plan.address.text}".`);
       return null;
     }
     try {
-      net.addIPAddress(ip, prefix, ifAlias, {
-        gateway: gatewayRaw ? psValueToString(gatewayRaw) : undefined,
+      net.addIPAddress(plan.address.text, plan.prefixLength, plan.iface.alias, {
+        gateway: plan.gateway,
+        skipAsSource: plan.skipAsSource,
+        type: plan.type,
+        policyStore: plan.policyStore,
+        validLifetimeSeconds: lifetimeSecondsOf(ctx, 'validlifetime'),
+        preferredLifetimeSeconds: lifetimeSecondsOf(ctx, 'preferredlifetime'),
       });
     } catch (e) {
-      ctx.emitError(e instanceof Error ? e.message : String(e));
+      ctx.emitError(`New-NetIPAddress : ${e instanceof Error ? e.message : String(e)}`);
       return null;
     }
-    return null;
+    const created = net.getIPAddresses().find(e => e.ipAddress.toLowerCase() === plan.address.text.toLowerCase());
+    return created ? ipToPSObject(created) : null;
   }
 }
 
@@ -551,18 +745,41 @@ export class RemoveNetIPAddressCmdlet implements ICmdlet {
   readonly name = 'remove-netipaddress';
   readonly displayName = 'Remove-NetIPAddress';
   readonly aliases = [] as const;
+  readonly pipelineByPropertyName = true as const;
+  readonly description = 'Removes an IP address and its configuration.';
+  readonly parameters = [...NET_IP_FILTERS, 'DefaultGateway', 'PassThru', 'WhatIf', 'Confirm'] as const;
 
   execute(ctx: CmdletContext): PSValue {
     const net = requireNetwork(ctx);
-    const ip      = psValueToString(ctx.named['ipaddress'] ?? ctx.positional[0] ?? '');
-    const ifAlias = ctx.named['interfacealias'] ? psValueToString(ctx.named['interfacealias']) : undefined;
-    if (!ip) { ctx.emitError('Remove-NetIPAddress requires -IPAddress'); return null; }
-    try {
-      net.removeIPAddress(ip, ifAlias);
-    } catch (e) {
-      ctx.emitError(e instanceof Error ? e.message : String(e));
+    const selection = netIPSelectionOf(ctx, net);
+    if (selection.ipAddress === undefined && ctx.positional[0] !== undefined) {
+      selection.ipAddress = [psValueToString(ctx.positional[0])];
     }
-    return null;
+    const matched = selectNetIPAddresses(net.getIPAddresses(), selection);
+    if (matched.length === 0) {
+      ctx.emitError(`Remove-NetIPAddress : ${noMatchingNetIPAddress(selection)}`);
+      return null;
+    }
+    if (ctx.named['whatif'] === true) {
+      for (const e of matched) {
+        ctx.emit(`What if: Performing the operation "Remove-NetIPAddress" on target "IPAddress: ${e.ipAddress}, InterfaceAlias: ${e.ifAlias}".`);
+      }
+      return null;
+    }
+    if (confirmationDue(ctx, 'High')) {
+      ctx.emitError(`Remove-NetIPAddress : ${NON_INTERACTIVE_HOST}`);
+      return null;
+    }
+    const removed: Record<string, PSValue>[] = [];
+    for (const entry of matched) {
+      try {
+        net.removeIPAddress(entry.ipAddress, entry.ifAlias);
+        removed.push(ipToPSObject(entry));
+      } catch (e) {
+        ctx.emitError(`Remove-NetIPAddress : ${e instanceof Error ? e.message : String(e)}`);
+      }
+    }
+    return ctx.named['passthru'] === true ? (removed as PSValue) : null;
   }
 }
 
@@ -572,19 +789,57 @@ export class NewNetRouteCmdlet implements ICmdlet {
   readonly name = 'new-netroute';
   readonly displayName = 'New-NetRoute';
   readonly aliases = [] as const;
+  readonly pipelineByPropertyName = true as const;
+  readonly description = 'Creates a route in the IP routing table.';
+  readonly parameters = ['DestinationPrefix', 'InterfaceAlias', 'InterfaceIndex', 'NextHop',
+    'AddressFamily', 'RouteMetric', 'Publish', 'Protocol', 'PolicyStore',
+    'ValidLifetime', 'PreferredLifetime', 'WhatIf', 'Confirm'] as const;
 
   execute(ctx: CmdletContext): PSValue {
     const net = requireNetwork(ctx);
-    const dest    = psValueToString(ctx.named['destinationprefix'] ?? '');
-    const ifAlias = psValueToString(ctx.named['interfacealias'] ?? '');
-    const nextHop = psValueToString(ctx.named['nexthop'] ?? '');
-    const metric  = Number(ctx.named['routemetric'] ?? 256);
-    if (!dest || !ifAlias || !nextHop) {
-      ctx.emitError('New-NetRoute requires -DestinationPrefix, -InterfaceAlias, -NextHop');
+    const unsupported = unsupportedNetRouteFilter(ctx);
+    if (unsupported) { ctx.emitError(`New-NetRoute : ${unsupported}`); return null; }
+    const arg = (key: string): string | undefined =>
+      ctx.named[key] === undefined ? undefined : psValueToString(ctx.named[key]);
+    const decision = planNetRoute({
+      destinationPrefix: arg('destinationprefix')
+        ?? (ctx.positional[0] === undefined ? undefined : psValueToString(ctx.positional[0])),
+      interfaceAlias: arg('interfacealias'),
+      interfaceIndex: arg('interfaceindex'),
+      nextHop: arg('nexthop'),
+      addressFamily: arg('addressfamily'),
+      routeMetric: arg('routemetric'),
+      publish: arg('publish'),
+      protocol: arg('protocol'),
+      policyStore: arg('policystore'),
+      validLifetimeSeconds: lifetimeSecondsOf(ctx, 'validlifetime'),
+      preferredLifetimeSeconds: lifetimeSecondsOf(ctx, 'preferredlifetime'),
+    }, { resolveInterface: spec => net.resolveNetInterface(spec) });
+    if (!decision.ok) { ctx.emitError(`New-NetRoute : ${decision.message}`); return null; }
+    const plan = decision.plan;
+
+    const identity = {
+      destinationPrefix: plan.destination.text,
+      ifAlias: plan.iface.alias,
+      nextHop: plan.nextHop,
+    };
+    const key = netRouteKey(identity);
+    if (net.getRoutes().some(r => netRouteKey(r) === key)) {
+      ctx.emitError(`New-NetRoute : Instance MSFT_NetRoute already exists`);
       return null;
     }
-    net.addRoute(dest, ifAlias, nextHop, metric);
-    return null;
+    if (ctx.named['whatif'] === true) {
+      ctx.emit(`What if: Performing the operation "Create" on target "${plan.destination.text}".`);
+      return null;
+    }
+    net.addRoute(plan.destination.text, plan.iface.alias, plan.nextHop, plan.routeMetric, {
+      publish: plan.publish, protocol: plan.protocol, policyStore: plan.policyStore,
+      addressFamily: plan.destination.family, ifIndex: plan.iface.ifIndex,
+      validLifetimeSeconds: plan.validLifetimeSeconds,
+      preferredLifetimeSeconds: plan.preferredLifetimeSeconds,
+    });
+    const created = net.getRoutes().find(r => netRouteKey(r) === key);
+    return created ? routeToPSObject(created) : null;
   }
 }
 
@@ -592,52 +847,153 @@ export class RemoveNetRouteCmdlet implements ICmdlet {
   readonly name = 'remove-netroute';
   readonly displayName = 'Remove-NetRoute';
   readonly aliases = [] as const;
+  readonly pipelineByPropertyName = true as const;
+  readonly description = 'Removes IP routes from the IP routing table.';
+  readonly parameters = [...NET_ROUTE_FILTERS, 'PassThru', 'WhatIf', 'Confirm'] as const;
 
   execute(ctx: CmdletContext): PSValue {
     const net = requireNetwork(ctx);
-    const dest = psValueToString(ctx.named['destinationprefix'] ?? ctx.positional[0] ?? '');
-    if (!dest) { ctx.emitError('Remove-NetRoute requires -DestinationPrefix'); return null; }
-    const ifAlias = ctx.named['interfacealias'] ? psValueToString(ctx.named['interfacealias']) : undefined;
-    net.removeRoute(dest, ifAlias);
-    return null;
+    const unsupported = unsupportedNetRouteFilter(ctx);
+    if (unsupported) { ctx.emitError(`Remove-NetRoute : ${unsupported}`); return null; }
+    const selection = netRouteSelectionOf(ctx, net, NET_ROUTE_FILTERS);
+    if (selection.destinationPrefix === undefined && ctx.positional[0] !== undefined) {
+      selection.destinationPrefix = [psValueToString(ctx.positional[0])];
+    }
+    const matched = selectNetRoutes(net.getRoutes(), selection);
+    if (matched.length === 0) {
+      ctx.emitError(`Remove-NetRoute : ${noMatchingNetRoute(selection)}`);
+      return null;
+    }
+    if (ctx.named['whatif'] === true) {
+      for (const r of matched) {
+        ctx.emit(`What if: Performing the operation "Remove-NetRoute" on target "DestinationPrefix: ${r.destinationPrefix}, InterfaceAlias: ${r.ifAlias}".`);
+      }
+      return null;
+    }
+    if (confirmationDue(ctx, 'High')) {
+      ctx.emitError(`Remove-NetRoute : ${NON_INTERACTIVE_HOST}`);
+      return null;
+    }
+    const removed = matched.map(routeToPSObject);
+    for (const r of matched) net.removeRoute(r);
+    return ctx.named['passthru'] === true ? (removed as PSValue) : null;
   }
 }
 
-// ── Set-NetIPAddress / Set-NetRoute ───────────────────────────────────────
+const NET_IP_SET_FILTERS = ['IPAddress', 'InterfaceAlias', 'InterfaceIndex', 'AddressFamily',
+  'AddressState', 'PrefixOrigin', 'SuffixOrigin', 'Type', 'PolicyStore'] as const;
 
 export class SetNetIPAddressCmdlet implements ICmdlet {
   readonly name = 'set-netipaddress';
   readonly displayName = 'Set-NetIPAddress';
   readonly aliases = [] as const;
+  readonly pipelineByPropertyName = true as const;
+  readonly description = 'Modifies the configuration of an IP address.';
+  readonly parameters = [...NET_IP_SET_FILTERS, 'PrefixLength', 'ValidLifetime',
+    'PreferredLifetime', 'SkipAsSource', 'PassThru', 'WhatIf', 'Confirm'] as const;
 
   execute(ctx: CmdletContext): PSValue {
     const net = requireNetwork(ctx);
-    const ip = psValueToString(ctx.named['ipaddress'] ?? ctx.positional[0] ?? '');
-    if (!ip) { ctx.emitError('Set-NetIPAddress requires -IPAddress'); return null; }
-    const opts: { prefixLength?: number } = {};
-    if (ctx.named['prefixlength'] !== undefined) opts.prefixLength = Number(ctx.named['prefixlength']);
-    const msg = net.setIPAddress(ip, opts);
-    if (msg) ctx.emitError(msg);
-    return null;
+    const selection = netIPSelectionOf(ctx, net);
+    selection.prefixLength = undefined;
+    selection.skipAsSource = undefined;
+    if (selection.ipAddress === undefined && ctx.positional[0] !== undefined) {
+      selection.ipAddress = [psValueToString(ctx.positional[0])];
+    }
+    const matched = selectNetIPAddresses(net.getIPAddresses(), selection);
+    if (matched.length === 0) {
+      ctx.emitError(`Set-NetIPAddress : ${noMatchingNetIPAddress(selection)}`);
+      return null;
+    }
+
+    const update: NetIPAddressUpdate = {
+      validLifetimeSeconds: lifetimeSecondsOf(ctx, 'validlifetime'),
+      preferredLifetimeSeconds: lifetimeSecondsOf(ctx, 'preferredlifetime'),
+    };
+    if (ctx.named['skipassource'] !== undefined) update.skipAsSource = ctx.named['skipassource'] === true;
+    if (ctx.named['prefixlength'] !== undefined) {
+      const given = psValueToString(ctx.named['prefixlength']);
+      for (const entry of matched) {
+        const problem = prefixLengthProblem(given, entry.addressFamily === 'IPv6' ? 'IPv6' : 'IPv4');
+        if (problem) { ctx.emitError(`Set-NetIPAddress : ${problem}`); return null; }
+      }
+      update.prefixLength = parseInt(given.trim(), 10);
+    }
+
+    if (ctx.named['whatif'] === true) {
+      for (const e of matched) {
+        ctx.emit(`What if: Performing the operation "Set-NetIPAddress" on target "IPAddress: ${e.ipAddress}, InterfaceAlias: ${e.ifAlias}".`);
+      }
+      return null;
+    }
+    for (const entry of matched) {
+      const message = net.setIPAddress(entry.ipAddress, entry.ifAlias, update);
+      if (message) ctx.emitError(`Set-NetIPAddress : ${message}`);
+    }
+    if (ctx.named['passthru'] !== true) return null;
+    const refreshed = selectNetIPAddresses(net.getIPAddresses(), selection);
+    return refreshed.map(ipToPSObject) as PSValue;
   }
 }
+
+const NET_ROUTE_SET_FILTERS = ['DestinationPrefix', 'InterfaceAlias', 'InterfaceIndex',
+  'NextHop', 'AddressFamily', 'Protocol', 'PolicyStore'] as const;
 
 export class SetNetRouteCmdlet implements ICmdlet {
   readonly name = 'set-netroute';
   readonly displayName = 'Set-NetRoute';
   readonly aliases = [] as const;
+  readonly pipelineByPropertyName = true as const;
+  readonly description = 'Sets route information in the IP routing table.';
+  readonly parameters = [...NET_ROUTE_SET_FILTERS, 'Publish', 'RouteMetric',
+    'ValidLifetime', 'PreferredLifetime', 'PassThru', 'WhatIf', 'Confirm'] as const;
 
   execute(ctx: CmdletContext): PSValue {
     const net = requireNetwork(ctx);
-    const dest = psValueToString(ctx.named['destinationprefix'] ?? ctx.positional[0] ?? '');
-    if (!dest) { ctx.emitError('Set-NetRoute requires -DestinationPrefix'); return null; }
-    const opts: { nextHop?: string; routeMetric?: number; ifAlias?: string } = {};
-    if (ctx.named['nexthop']        !== undefined) opts.nextHop      = psValueToString(ctx.named['nexthop']);
-    if (ctx.named['routemetric']    !== undefined) opts.routeMetric  = Number(ctx.named['routemetric']);
-    if (ctx.named['interfacealias'] !== undefined) opts.ifAlias      = psValueToString(ctx.named['interfacealias']);
-    const msg = net.setRoute(dest, opts);
-    if (msg) ctx.emitError(msg);
-    return null;
+    const unsupported = unsupportedNetRouteFilter(ctx);
+    if (unsupported) { ctx.emitError(`Set-NetRoute : ${unsupported}`); return null; }
+    const selection = netRouteSelectionOf(ctx, net, NET_ROUTE_SET_FILTERS);
+    if (selection.destinationPrefix === undefined && ctx.positional[0] !== undefined) {
+      selection.destinationPrefix = [psValueToString(ctx.positional[0])];
+    }
+    const matched = selectNetRoutes(net.getRoutes(), selection);
+    if (matched.length === 0) {
+      ctx.emitError(`Set-NetRoute : ${noMatchingNetRoute(selection)}`);
+      return null;
+    }
+
+    const update: NetRouteUpdate = {};
+    if (ctx.named['publish'] !== undefined) {
+      const value = matchEnumValue(NET_ROUTE_PUBLISH, psValueToString(ctx.named['publish']));
+      if (value === null) {
+        ctx.emitError(`Set-NetRoute : Cannot validate argument on parameter 'Publish'. The argument does not belong to the set "${NET_ROUTE_PUBLISH.join(',')}".`);
+        return null;
+      }
+      update.publish = value;
+    }
+    if (ctx.named['routemetric'] !== undefined) {
+      const given = psValueToString(ctx.named['routemetric']).trim();
+      if (!/^\d+$/.test(given) || parseInt(given, 10) > MAX_ROUTE_METRIC) {
+        ctx.emitError(`Set-NetRoute : Cannot convert value "${given}" to type "System.UInt16". Error: "Value was either too large or too small for a UInt16."`);
+        return null;
+      }
+      update.routeMetric = parseInt(given, 10);
+    }
+    update.validLifetimeSeconds = lifetimeSecondsOf(ctx, 'validlifetime');
+    update.preferredLifetimeSeconds = lifetimeSecondsOf(ctx, 'preferredlifetime');
+
+    if (ctx.named['whatif'] === true) {
+      for (const r of matched) {
+        ctx.emit(`What if: Performing the operation "Set-NetRoute" on target "DestinationPrefix: ${r.destinationPrefix}, InterfaceAlias: ${r.ifAlias}".`);
+      }
+      return null;
+    }
+    for (const r of matched) {
+      const message = net.setRoute(r, update);
+      if (message) ctx.emitError(`Set-NetRoute : ${message}`);
+    }
+    if (ctx.named['passthru'] !== true) return null;
+    return selectNetRoutes(net.getRoutes(), selection).map(routeToPSObject) as PSValue;
   }
 }
 
@@ -857,30 +1213,99 @@ export class ClearDnsClientCacheCmdlet implements ICmdlet {
 
 // ── Get / New / Set / Enable / Disable / Remove-NetFirewallRule ────────────
 
+const NET_FIREWALL_FILTERS = ['Name', 'DisplayName', 'Description', 'Group', 'Enabled',
+  'Action', 'Direction'] as const;
+
+const NET_FIREWALL_UNSUPPORTED: ReadonlyArray<readonly [string, string, string]> = [
+  ['program', 'Program', 'a firewall rule cannot be tied to a process here'],
+  ['service', 'Service', 'a firewall rule cannot be tied to a service here'],
+  ['package', 'Package', 'application packages are not modelled'],
+  ['localuser', 'LocalUser', 'a firewall rule carries no security descriptor here'],
+  ['remoteuser', 'RemoteUser', 'a firewall rule carries no security descriptor here'],
+  ['remotemachine', 'RemoteMachine', 'a firewall rule carries no security descriptor here'],
+  ['authentication', 'Authentication', 'connection security rules are not modelled'],
+  ['encryption', 'Encryption', 'connection security rules are not modelled'],
+  ['icmptype', 'IcmpType', 'an ICMP type filter is not evaluated here'],
+  ['interfacetype', 'InterfaceType', 'an interface carries no media type here'],
+  ['edgetraversalpolicy', 'EdgeTraversalPolicy', 'edge traversal is not modelled'],
+  ['policystore', 'PolicyStore', 'only the active store is modelled'],
+];
+
+function unsupportedFirewallParameter(ctx: CmdletContext): string | null {
+  for (const [key, name, reason] of NET_FIREWALL_UNSUPPORTED) {
+    if (ctx.named[key] !== undefined) {
+      return `The -${name} parameter is not implemented in this simulator: ${reason}.`;
+    }
+  }
+  return null;
+}
+
+function firewallSelectionOf(ctx: CmdletContext, filters: readonly string[]): NetFirewallSelection {
+  const allowed = new Set(filters.map(f => f.toLowerCase()));
+  const list = (key: string): string[] | undefined => {
+    const raw = allowed.has(key) ? ctx.named[key] : undefined;
+    if (raw === undefined) return undefined;
+    return (Array.isArray(raw) ? raw : [raw]).map(psValueToString);
+  };
+  return {
+    name: list('name'),
+    displayName: list('displayname'),
+    description: list('description'),
+    group: list('group'),
+    enabled: list('enabled'),
+    action: list('action'),
+    direction: list('direction'),
+  };
+}
+
+function firewallRuleToPSObject(rule: NetFirewallRuleEntry): Record<string, PSValue> {
+  return {
+    Name:          rule.name,
+    DisplayName:   rule.displayName,
+    Description:   rule.description,
+    Group:         rule.group,
+    Enabled:       rule.enabled,
+    Profile:       rule.profile,
+    Direction:     rule.direction,
+    Action:        rule.action,
+    Protocol:      rule.protocol,
+    LocalPort:     rule.localPort,
+    RemotePort:    rule.remotePort,
+    LocalAddress:  rule.localAddress,
+    RemoteAddress: rule.remoteAddress,
+    PolicyStoreSource: 'PersistentStore',
+    PolicyStoreSourceType: 'Local',
+  };
+}
+
+function selectedFirewallRules(
+  ctx: CmdletContext, cmdlet: string, filters: readonly string[],
+): NetFirewallRuleEntry[] | null {
+  const net = requireNetwork(ctx);
+  const selection = firewallSelectionOf(ctx, filters);
+  if (selection.name === undefined && ctx.positional[0] !== undefined) {
+    selection.name = [psValueToString(ctx.positional[0])];
+  }
+  const matched = selectFirewallRules(net.getFirewallRules(), selection);
+  if (matched.length === 0) {
+    ctx.emitError(`${cmdlet} : ${noMatchingFirewallRule(selection)}`);
+    return null;
+  }
+  return matched;
+}
+
 export class GetNetFirewallRuleCmdlet implements ICmdlet {
   readonly name = 'get-netfirewallrule';
   readonly displayName = 'Get-NetFirewallRule';
   readonly aliases = [] as const;
+  readonly description = 'Retrieves firewall rules from the target computer.';
+  readonly parameters = [...NET_FIREWALL_FILTERS, 'All'] as const;
 
   execute(ctx: CmdletContext): PSValue {
-    const displayName = ctx.named['displayname'] !== undefined
-      ? psValueToString(ctx.named['displayname']).toLowerCase() : null;
-    const name = ctx.named['name'] !== undefined
-      ? psValueToString(ctx.named['name']).toLowerCase() : null;
-    const rules = requireNetwork(ctx).getFirewallRules()
-      .filter(r => !displayName || r.displayName?.toLowerCase() === displayName || r.name.toLowerCase() === displayName)
-      .filter(r => !name || r.name.toLowerCase() === name);
-    return rules.map(r => ({
-      Name: r.name,
-      DisplayName: r.displayName,
-      Enabled: r.enabled,
-      Action: r.action,
-      Direction: r.direction,
-      Protocol: r.protocol,
-      LocalPort: r.localPort,
-      RemotePort: r.remotePort,
-      Description: r.description,
-    } as Record<string, PSValue>)) as PSValue;
+    const unsupported = unsupportedFirewallParameter(ctx);
+    if (unsupported) { ctx.emitError(`Get-NetFirewallRule : ${unsupported}`); return null; }
+    const matched = selectedFirewallRules(ctx, 'Get-NetFirewallRule', NET_FIREWALL_FILTERS);
+    return matched === null ? null : (matched.map(firewallRuleToPSObject) as PSValue);
   }
 }
 
@@ -888,44 +1313,65 @@ export class NewNetFirewallRuleCmdlet implements ICmdlet {
   readonly name = 'new-netfirewallrule';
   readonly displayName = 'New-NetFirewallRule';
   readonly aliases = [] as const;
+  readonly pipelineByPropertyName = true as const;
+  readonly description = 'Creates a new inbound or outbound firewall rule.';
+  readonly parameters = ['Name', 'DisplayName', 'Description', 'Group', 'Enabled', 'Profile',
+    'Direction', 'Action', 'Protocol', 'LocalPort', 'RemotePort', 'LocalAddress',
+    'RemoteAddress', 'WhatIf', 'Confirm'] as const;
 
   execute(ctx: CmdletContext): PSValue {
     const net = requireNetwork(ctx);
-    const displayName = psValueToString(ctx.named['displayname'] ?? '');
-    const name        = psValueToString(ctx.named['name']        ?? displayName);
-    const action      = psValueToString(ctx.named['action']      ?? 'Allow');
-    const direction   = psValueToString(ctx.named['direction']   ?? 'Inbound');
-    if (!displayName) {
-      ctx.emitError('New-NetFirewallRule requires -DisplayName');
+    const unsupported = unsupportedFirewallParameter(ctx);
+    if (unsupported) { ctx.emitError(`New-NetFirewallRule : ${unsupported}`); return null; }
+    const arg = (key: string): string | undefined =>
+      ctx.named[key] === undefined ? undefined : psValueToString(ctx.named[key]);
+    const list = (key: string): string[] | undefined => {
+      const raw = ctx.named[key];
+      if (raw === undefined) return undefined;
+      return (Array.isArray(raw) ? raw : [raw]).map(psValueToString);
+    };
+    const decision = planNetFirewallRule({
+      name: arg('name'),
+      displayName: arg('displayname'),
+      description: arg('description'),
+      group: arg('group'),
+      enabled: arg('enabled'),
+      action: arg('action'),
+      direction: arg('direction'),
+      profile: arg('profile'),
+      protocol: arg('protocol'),
+      localPort: list('localport'),
+      remotePort: list('remoteport'),
+      localAddress: list('localaddress'),
+      remoteAddress: list('remoteaddress'),
+    }, () => generatedFirewallRuleName(net.getFirewallRules().length));
+    if (!decision.ok) { ctx.emitError(`New-NetFirewallRule : ${decision.message}`); return null; }
+
+    if (ctx.named['whatif'] === true) {
+      ctx.emit(`What if: Performing the operation "Create" on target "${decision.rule.displayName}".`);
       return null;
     }
-    net.addFirewallRule({
-      name,
-      displayName,
-      enabled: ctx.named['enabled'] === undefined ? true : ctx.named['enabled'] === true,
-      action,
-      direction,
-      protocol:    ctx.named['protocol']    ? psValueToString(ctx.named['protocol'])    : undefined,
-      localPort:   ctx.named['localport']   ? psValueToString(ctx.named['localport'])   : undefined,
-      remotePort:  ctx.named['remoteport']  ? psValueToString(ctx.named['remoteport'])  : undefined,
-      description: ctx.named['description'] ? psValueToString(ctx.named['description']) : undefined,
-    });
-    return null;
+    const message = net.addFirewallRule(decision.rule);
+    if (message) { ctx.emitError(`New-NetFirewallRule : ${message}`); return null; }
+    return firewallRuleToPSObject(decision.rule) as PSValue;
   }
 }
 
 abstract class FirewallToggleCmdlet implements ICmdlet {
   abstract readonly name: string;
+  abstract readonly displayName: string;
   abstract readonly aliases: readonly string[];
+  readonly pipelineByPropertyName = true as const;
+  readonly parameters = [...NET_FIREWALL_FILTERS, 'PassThru'] as const;
   protected abstract enabled: boolean;
 
   execute(ctx: CmdletContext): PSValue {
     const net = requireNetwork(ctx);
-    const name = psValueToString(ctx.named['displayname'] ?? ctx.named['name'] ?? ctx.positional[0] ?? '');
-    if (!name) { ctx.emitError(`${this.name} requires -DisplayName or -Name`); return null; }
-    const msg = net.setFirewallRule(name, { enabled: this.enabled });
-    if (msg) ctx.emitError(msg);
-    return null;
+    const matched = selectedFirewallRules(ctx, this.displayName, NET_FIREWALL_FILTERS);
+    if (matched === null) return null;
+    for (const rule of matched) net.updateFirewallRule(rule.name, { enabled: this.enabled });
+    if (ctx.named['passthru'] !== true) return null;
+    return matched.map(r => firewallRuleToPSObject({ ...r, enabled: this.enabled })) as PSValue;
   }
 }
 
@@ -933,30 +1379,78 @@ export class EnableNetFirewallRuleCmdlet extends FirewallToggleCmdlet {
   readonly name = 'enable-netfirewallrule';
   readonly displayName = 'Enable-NetFirewallRule';
   readonly aliases = [] as const;
+  readonly description = 'Enables a previously disabled firewall rule.';
   protected enabled = true;
 }
 export class DisableNetFirewallRuleCmdlet extends FirewallToggleCmdlet {
   readonly name = 'disable-netfirewallrule';
   readonly displayName = 'Disable-NetFirewallRule';
   readonly aliases = [] as const;
+  readonly description = 'Disables a firewall rule.';
   protected enabled = false;
 }
+
+const NET_FIREWALL_SET_FILTERS = ['Name', 'DisplayName', 'Description', 'Group'] as const;
 
 export class SetNetFirewallRuleCmdlet implements ICmdlet {
   readonly name = 'set-netfirewallrule';
   readonly displayName = 'Set-NetFirewallRule';
   readonly aliases = [] as const;
+  readonly pipelineByPropertyName = true as const;
+  readonly description = 'Modifies existing firewall rules.';
+  readonly parameters = [...NET_FIREWALL_SET_FILTERS, 'NewDisplayName', 'Enabled', 'Profile',
+    'Direction', 'Action', 'Protocol', 'LocalPort', 'RemotePort', 'LocalAddress',
+    'RemoteAddress', 'PassThru', 'WhatIf', 'Confirm'] as const;
 
   execute(ctx: CmdletContext): PSValue {
     const net = requireNetwork(ctx);
-    const name = psValueToString(ctx.named['displayname'] ?? ctx.named['name'] ?? ctx.positional[0] ?? '');
-    if (!name) { ctx.emitError('Set-NetFirewallRule requires -DisplayName or -Name'); return null; }
-    const opts: { enabled?: boolean; action?: string } = {};
-    if (ctx.named['enabled'] !== undefined) opts.enabled = ctx.named['enabled'] === true;
-    if (ctx.named['action']  !== undefined) opts.action  = psValueToString(ctx.named['action']);
-    const msg = net.setFirewallRule(name, opts);
-    if (msg) ctx.emitError(msg);
-    return null;
+    const unsupported = unsupportedFirewallParameter(ctx);
+    if (unsupported) { ctx.emitError(`Set-NetFirewallRule : ${unsupported}`); return null; }
+    const matched = selectedFirewallRules(ctx, 'Set-NetFirewallRule', NET_FIREWALL_SET_FILTERS);
+    if (matched === null) return null;
+
+    const arg = (key: string): string | undefined =>
+      ctx.named[key] === undefined ? undefined : psValueToString(ctx.named[key]);
+    const list = (key: string): string[] | undefined => {
+      const raw = ctx.named[key];
+      if (raw === undefined) return undefined;
+      return (Array.isArray(raw) ? raw : [raw]).map(psValueToString);
+    };
+    const reference = matched[0];
+    const decision = planNetFirewallRule({
+      name: reference.name,
+      displayName: arg('newdisplayname') ?? reference.displayName,
+      description: arg('description') ?? reference.description,
+      group: arg('group') ?? reference.group,
+      enabled: arg('enabled') ?? (reference.enabled ? 'True' : 'False'),
+      action: arg('action') ?? reference.action,
+      direction: arg('direction') ?? reference.direction,
+      profile: arg('profile') ?? reference.profile,
+      protocol: arg('protocol') ?? reference.protocol,
+      localPort: list('localport') ?? reference.localPort,
+      remotePort: list('remoteport') ?? reference.remotePort,
+      localAddress: list('localaddress') ?? reference.localAddress,
+      remoteAddress: list('remoteaddress') ?? reference.remoteAddress,
+    }, () => reference.name);
+    if (!decision.ok) { ctx.emitError(`Set-NetFirewallRule : ${decision.message}`); return null; }
+
+    if (ctx.named['whatif'] === true) {
+      for (const rule of matched) {
+        ctx.emit(`What if: Performing the operation "Modify" on target "${rule.displayName}".`);
+      }
+      return null;
+    }
+    const { name: _ignored, builtIn: _kept, ...patch } = decision.rule;
+    for (const rule of matched) {
+      net.updateFirewallRule(rule.name, {
+        ...patch,
+        displayName: arg('newdisplayname') ?? rule.displayName,
+      });
+    }
+    if (ctx.named['passthru'] !== true) return null;
+    const refreshed = net.getFirewallRules()
+      .filter(r => matched.some(m => m.name === r.name));
+    return refreshed.map(firewallRuleToPSObject) as PSValue;
   }
 }
 
@@ -964,14 +1458,23 @@ export class RemoveNetFirewallRuleCmdlet implements ICmdlet {
   readonly name = 'remove-netfirewallrule';
   readonly displayName = 'Remove-NetFirewallRule';
   readonly aliases = [] as const;
+  readonly pipelineByPropertyName = true as const;
+  readonly description = 'Deletes one or more firewall rules.';
+  readonly parameters = [...NET_FIREWALL_FILTERS, 'PassThru', 'WhatIf'] as const;
 
   execute(ctx: CmdletContext): PSValue {
     const net = requireNetwork(ctx);
-    const name = psValueToString(ctx.named['displayname'] ?? ctx.named['name'] ?? ctx.positional[0] ?? '');
-    if (!name) { ctx.emitError('Remove-NetFirewallRule requires -DisplayName or -Name'); return null; }
-    const msg = net.removeFirewallRule(name);
-    if (msg) ctx.emitError(msg);
-    return null;
+    const matched = selectedFirewallRules(ctx, 'Remove-NetFirewallRule', NET_FIREWALL_FILTERS);
+    if (matched === null) return null;
+    if (ctx.named['whatif'] === true) {
+      for (const rule of matched) {
+        ctx.emit(`What if: Performing the operation "Delete" on target "${rule.displayName}".`);
+      }
+      return null;
+    }
+    const removed = matched.map(firewallRuleToPSObject);
+    for (const rule of matched) net.removeFirewallRule(rule.name);
+    return ctx.named['passthru'] === true ? (removed as PSValue) : null;
   }
 }
 

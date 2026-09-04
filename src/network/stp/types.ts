@@ -72,8 +72,19 @@ export function defaultPortGuards(): StpPortGuards {
   };
 }
 
+export const UPLINKFAST_DEFAULT_RATE = 150;
+
+export const UPLINKFAST_RATE_RANGE: readonly [number, number] = [0, 32000];
+
 export interface StpConfig {
   enabled: boolean;
+  /**
+   * Les VLAN pour lesquels `no spanning-tree vlan <n>` a coupe l'arbre.
+   *
+   * C'est une notion PAR VLAN parce que la commande en nomme un :
+   * `enabled` seul, qui est global, faisait couper tous les autres.
+   */
+  disabledVlans: Set<number>;
   mode: StpProtocolMode;
   bridgePriority: number;
   helloSec: number;
@@ -85,6 +96,7 @@ export interface StpConfig {
   bpduFilterGlobal: boolean;
   loopGuardGlobal: boolean;
   uplinkFast: boolean;
+  uplinkFastMaxUpdateRate: number;
   backboneFast: boolean;
 }
 
@@ -150,6 +162,7 @@ export interface StpPortInfo {
 export function createDefaultStpConfig(baseMac: string): StpConfig {
   return {
     enabled: true,
+    disabledVlans: new Set<number>(),
     mode: 'stp',
     bridgePriority: 32768,
     helloSec: 2,
@@ -161,6 +174,7 @@ export function createDefaultStpConfig(baseMac: string): StpConfig {
     bpduFilterGlobal: false,
     loopGuardGlobal: false,
     uplinkFast: false,
+    uplinkFastMaxUpdateRate: UPLINKFAST_DEFAULT_RATE,
     backboneFast: false,
   };
 }

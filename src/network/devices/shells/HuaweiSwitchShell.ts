@@ -1738,10 +1738,20 @@ export class HuaweiSwitchShell implements ISwitchShell {
       const m = (this.selectedInterface ?? '').match(/^Eth-Trunk(\d+)$/);
       return m ? parseInt(m[1], 10) : null;
     };
+    /*
+     * Ces cinq commandes n'existent que dans la vue d'une Eth-Trunk, et
+     * sur un port physique VRP repond qu'il ne connait pas le mot. Le
+     * refus etait ecrit a la main, quatre fois, dans une forme qui n'est
+     * celle d'aucune machine (`Error: Unrecognized command "mode …"`) ;
+     * il passe par le mecanisme d'erreur du depot, donc par les mots de
+     * VRP, et n'est ecrit qu'une fois.
+     */
+    const horsEthTrunk = (tete: string, args: readonly string[]): string =>
+      refuseMotInattenduVrp(`${tete} ${args.join(' ')}`.trim(), tete);
     // `mode <manual|lacp-static|lacp-dynamic>` (Eth-Trunk only)
     this.interfaceTrie.registerGreedy('mode', 'Set Eth-Trunk working mode', (args) => {
       const id = trunkId();
-      if (id === null) return `Error: Unrecognized command "mode ${args.join(' ')}"`;
+      if (id === null) return horsEthTrunk('mode', args);
       if (!ETH_TRUNK_MODES.has((args[0] ?? '').toLowerCase())) {
         return refuseMotInattenduVrp(`mode ${args.join(' ')}`, args[0] ?? 'mode');
       }
@@ -1753,7 +1763,7 @@ export class HuaweiSwitchShell implements ISwitchShell {
     for (const kw of ['max', 'least']) {
       this.interfaceTrie.registerGreedy(kw, `Eth-Trunk ${kw} active-linknumber`, (args) => {
         const id = trunkId();
-        if (id === null) return `Error: Unrecognized command "${kw} ${args.join(' ')}"`;
+        if (id === null) return horsEthTrunk(kw, args);
         if ((args[0] ?? '').toLowerCase() !== 'active-linknumber') {
           return refuseMotInattenduVrp(`${kw} ${args.join(' ')}`, args[0] ?? kw);
         }
@@ -1770,7 +1780,7 @@ export class HuaweiSwitchShell implements ISwitchShell {
 
     this.interfaceTrie.registerGreedy('lacp', 'Eth-Trunk LACP parameters', (args) => {
       const id = trunkId();
-      if (id === null) return `Error: Unrecognized command "lacp ${args.join(' ')}"`;
+      if (id === null) return horsEthTrunk('lacp', args);
       const sous = (args[0] ?? '').toLowerCase();
       if (sous === 'timeout') {
         const cadence = (args[1] ?? '').toLowerCase();
@@ -1806,7 +1816,7 @@ export class HuaweiSwitchShell implements ISwitchShell {
 
     this.interfaceTrie.registerGreedy('load-balance', 'Eth-Trunk load balancing', (args) => {
       const id = trunkId();
-      if (id === null) return `Error: Unrecognized command "load-balance ${args.join(' ')}"`;
+      if (id === null) return horsEthTrunk('load-balance', args);
       const methode = (args[0] ?? '').toLowerCase();
       if (!LOAD_BALANCE_METHODS.has(methode)) {
         return refuseMotInattenduVrp(`load-balance ${args.join(' ')}`, args[0] ?? 'load-balance');

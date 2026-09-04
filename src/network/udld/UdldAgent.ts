@@ -45,6 +45,14 @@ export class UdldAgent extends ReactiveAgentBase {
     else this.stopTimers();
   }
 
+  setHelloInterval(seconds: number): void {
+    this.config.helloIntervalSec = seconds;
+  }
+
+  getHelloInterval(): number {
+    return this.config.helloIntervalSec;
+  }
+
   setGlobalMode(mode: UdldMode): void {
     this.config.globalMode = mode;
     for (const port of this.host.getPorts()) {

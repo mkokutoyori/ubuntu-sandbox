@@ -16,6 +16,8 @@ import type { GroupWriteOptions, OrgUnitWriteOptions, UserWriteOptions } from '@
 
 import type { AddsForestOptions } from '@/network/devices/windows/server/ad/adFunctionalLevels';
 import type { RemoteDirectoryTarget } from './adRemoteDirectory';
+import type { NetRouteIdentity, NetRouteUpdate } from '@/network/devices/windows/netRoute';
+import type { NetFirewallRuleEntry } from '@/network/devices/windows/netFirewallRule';
 
 // ─── Entry types re-exported for cmdlet use ────────────────────────────────
 
@@ -118,13 +120,23 @@ export interface IPAddressInfo {
   /** Residual DHCP lease lifetimes (seconds); undefined for non-leased addresses. */
   validLifetimeSeconds?: number;
   preferredLifetimeSeconds?: number;
+  skipAsSource?: boolean;
+  type?: 'Unicast' | 'Anycast';
+  policyStore?: 'ActiveStore' | 'PersistentStore';
 }
 
 export interface RouteInfo {
   destinationPrefix: string;
   ifAlias: string;
+  ifIndex?: number;
   nextHop: string;
   routeMetric: number;
+  addressFamily?: string;
+  publish?: 'No' | 'Age' | 'Yes';
+  protocol?: string;
+  policyStore?: 'ActiveStore' | 'PersistentStore';
+  validLifetimeSeconds?: number;
+  preferredLifetimeSeconds?: number;
 }
 
 // ─── PowerShell Remoting (Invoke-Command -ComputerName / Test-WSMan) ───────
@@ -1178,6 +1190,32 @@ export interface IJobProvider {
 }
 
 
+export interface NetRouteAttributes {
+  publish?: 'No' | 'Age' | 'Yes';
+  protocol?: string;
+  policyStore?: 'ActiveStore' | 'PersistentStore';
+  addressFamily?: string;
+  ifIndex?: number;
+  validLifetimeSeconds?: number;
+  preferredLifetimeSeconds?: number;
+}
+
+export interface NetIPAddressUpdate {
+  prefixLength?: number;
+  skipAsSource?: boolean;
+  validLifetimeSeconds?: number;
+  preferredLifetimeSeconds?: number;
+}
+
+export interface NetIPAddressOptions {
+  gateway?: string;
+  skipAsSource?: boolean;
+  type?: 'Unicast' | 'Anycast';
+  policyStore?: 'ActiveStore' | 'PersistentStore';
+  validLifetimeSeconds?: number;
+  preferredLifetimeSeconds?: number;
+}
+
 export interface NeighborInfo {
   ifIndex: number;
   ifAlias: string;
@@ -1262,20 +1300,21 @@ export interface INetworkProvider {
   getAdapter(name: string): NetworkAdapterInfo | null;
   getAdapterStatistics(name: string): AdapterStatisticsInfo | null;
   getIPAddresses(ifAlias?: string): IPAddressInfo[];
-  addIPAddress(ip: string, prefixLength: number, ifAlias: string, opts?: { gateway?: string }): void;
+  addIPAddress(ip: string, prefixLength: number, ifAlias: string, opts?: NetIPAddressOptions): void;
   removeIPAddress(ip: string, ifAlias?: string): void;
+  resolveNetInterface(spec: { alias?: string; index?: number }): { alias: string; ifIndex: number } | null;
+  setDhcpEnabled(ifAlias: string, enabled: boolean): void;
   getRoutes(ifAlias?: string): RouteInfo[];
   getNeighbors(filter?: { ipAddress?: import('@/network/core/types').IPAddress; state?: string; ifIndex?: number }): NeighborInfo[];
   addNeighbor(ipAddress: import('@/network/core/types').IPAddress, linkLayerAddress: import('@/network/core/types').MACAddress, ifAlias: string): string;
   removeNeighbor(ipAddress: import('@/network/core/types').IPAddress, ifAlias?: string): string;
   clearNeighbors(ifAlias?: string): void;
   setNeighbor(ipAddress: import('@/network/core/types').IPAddress, linkLayerAddress: import('@/network/core/types').MACAddress, ifAlias?: string): string;
-  addRoute(dest: string, ifAlias: string, nextHop: string, metric: number): void;
-  removeRoute(dest: string, ifAlias?: string): void;
-  /** Modify properties of an existing route — usually nextHop or metric. */
-  setRoute(dest: string, opts: { nextHop?: string; routeMetric?: number; ifAlias?: string }): string;
+  addRoute(dest: string, ifAlias: string, nextHop: string, metric: number, opts?: NetRouteAttributes): void;
+  removeRoute(route: NetRouteIdentity): void;
+  setRoute(route: NetRouteIdentity, update: NetRouteUpdate): string;
   /** Modify properties of an existing IP — usually prefixLength. */
-  setIPAddress(ip: string, opts: { prefixLength?: number }): string;
+  setIPAddress(ip: string, ifAlias: string, opts: NetIPAddressUpdate): string;
   getDnsServers(ifAlias: string): string[];
   setDnsServers(ifAlias: string, servers: string[]): void;
   getDefaultGateway(): string | null;
@@ -1346,10 +1385,10 @@ export interface INetworkProvider {
    * réellement son port.
    */
   getUdpEndpoints?(): Array<{ localAddress: string; localPort: number; pid: number; processName: string }>;
-  getFirewallRules(): Array<{ name: string; displayName: string; enabled: boolean; action: string; direction: string; protocol: string; localPort: string; remotePort: string; description: string }>;
-  addFirewallRule(rule: { name: string; displayName?: string; enabled?: boolean; action: string; direction: string; protocol?: string; localPort?: string; remotePort?: string; description?: string }): void;
-  setFirewallRule(name: string, opts: { enabled?: boolean; action?: string }): string;
-  removeFirewallRule(name: string): string;
+  getFirewallRules(): NetFirewallRuleEntry[];
+  addFirewallRule(rule: NetFirewallRuleEntry): string;
+  updateFirewallRule(name: string, patch: Partial<NetFirewallRuleEntry>): void;
+  removeFirewallRule(name: string): void;
   /** Adapter enable/disable/rename */
   setAdapterStatus(name: string, status: 'Up' | 'Down'): void;
   renameAdapter(name: string, newName: string): void;

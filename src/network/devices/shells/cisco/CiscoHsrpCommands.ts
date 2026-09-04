@@ -9,15 +9,14 @@ import type { CommandTrie } from '../CommandTrie';
 import type { Router } from '../../Router';
 import { FhrpRepository, hsrpVirtualMac, type HsrpGroup }
   from '../../inspection/config/FhrpRepository';
-import { hsrpMaxGroup, HSRP_V1_MAX_GROUP } from '../../../hsrp/types';
+import { hsrpMaxGroup } from '../../../hsrp/types';
 import type { SessionParamRanges } from '../EquipmentParamResolver';
 import { getHsrpAgent } from '../../../equipment/RouterServiceCapabilities';
-import { IPAddress } from '../../../core/types';
-import { CISCO_ERRORS } from '../cli-utils';
-import {
-  HSRP_DEFAULT_PRIORITY, HSRP_DEFAULT_HELLO_SEC, HSRP_DEFAULT_HOLD_SEC,
-} from '../../../fhrp/runningConfig';
 import { iosShortInterfaceName } from '@/network/devices/inspection/InterfaceStatusView';
+import { CliInvalidInput } from '../cli/CliDiagnostic';
+import {
+  parseFhrpShowArgs, fhrpShowMatches, fhrpInterfaceResolver, HSRP_SHOW_GRAMMAR,
+} from './fhrpShowFilter';
 
 interface HsrpCtx {
   r(): Router;
@@ -108,14 +107,12 @@ export function registerHsrpShowCommands(
 ): void {
   trie.registerGreedy('show standby', 'Display HSRP state', (args) => {
     const router = ctx.r();
-    const all = lireRepo().all();
-    if (args.includes('brief')) {
-      return renderBrief(router, all);
-    }
-    // `show standby <iface> [grp]` filters; bare/all → every group.
-    const ifArg = args.find((a) => /[A-Za-z]+\d/.test(a));
-    let groups = all;
-    if (ifArg) groups = all.filter((g) => g.iface.toLowerCase().includes(ifArg.toLowerCase()));
+    const verdict = parseFhrpShowArgs(
+      args, HSRP_SHOW_GRAMMAR, fhrpInterfaceResolver(router.getPortNames()));
+    if ('at' in verdict) throw new CliInvalidInput({ token: verdict.at });
+    const groups = lireRepo().all()
+      .filter((g) => fhrpShowMatches(g.iface, g.group, verdict));
+    if (verdict.brief) return renderBrief(router, groups);
     if (!groups.length) return '';
     return groups.map((g) => renderDetail(router, g)).join('\n');
   });

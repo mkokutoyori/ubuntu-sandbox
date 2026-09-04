@@ -105,6 +105,10 @@ export function iosShortInterfaceName(name: string): string {
   return `${compact}${rest}`;
 }
 
+export function iosSviName(name: string): string {
+  return name.replace(/^Vlanif/, 'Vlan');
+}
+
 export function iosAddressMethod(port: Port): 'manual' | 'unset' | 'DHCP' {
   if (port.isDhcpClient()) return 'DHCP';
   return port.getIPAddress() ? 'manual' : 'unset';

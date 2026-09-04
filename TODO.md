@@ -119,6 +119,46 @@ CLI que ce lot refermait.
 
 ---
 
+### [udld] `show udld neighbors` est refuse faute d'une mise en forme attestee
+**Constat.** C'est une vue reelle d'IOS. Elle etait lue comme un NOM DE
+PORT, donc ne trouvait aucun port et rendait la CHAINE VIDE — le silence,
+qui se lit comme une panne du terminal. Elle rend maintenant le caret, ce
+qui est honnete sans etre juste.
+
+**Pourquoi ce n'est pas ferme.** La matiere existe (`UdldAgent.getNeighborsFor`
+rend le nom, l'identifiant, le port distant et l'echo), c'est la MISE EN
+FORME qui manque : `ntc-templates`, le jeu de reference dont ce depot tire
+ses autres largeurs de colonnes, ne porte AUCUN gabarit `udld` — verifie
+dans son index, pas suppose — et aucune transcription n'est atteignable
+depuis ce reseau. Inventer des largeurs serait le decor que ce depot
+refuse.
+
+### [cli] Vingt-cinq commandes acceptent encore un mot qu'elles ne lisent pas
+**Constat.** Un balayage des deux plateformes — pour chaque mot que `?`
+propose, comparer `<commande>` et `<commande> zorglub` — a trouve 11
+chemins sur le routeur et 20 sur le commutateur ou les deux sorties sont
+IDENTIQUES, c'est-a-dire ou le mot de trop est jete en silence. Le lot
+UDLD en a ferme trois. Les autres, par famille :
+
+- `aaa local … zorglub` et `aaa group … zorglub` prennent encore le mot de
+  trop (`aaa new-model` et `aaa session-id` sont fermes).
+- `ntp source zorglub` est accepte ET RENDU tel quel dans la configuration,
+  alors que cette commande prend une INTERFACE ; `ntp source` nu est
+  accepte aussi. `radius server` nu — qui exige un nom — de meme.
+- `spanning-tree {backbonefast|uplinkfast} zorglub`, `spanning-tree mst
+  zorglub`.
+- `tunnel path-mtu-discovery zorglub`.
+- `tunnel path-mtu-discovery zorglub` est accepte et rendu comme la forme
+  nue : le mot de trop est jete. Cette commande n'est enregistree NULLE
+  PART — un glouton `tunnel` la sert, et `CiscoShowCommands` la rend
+  depuis `pending.tunnelPathMtuDiscovery` — donc la fermer demande
+  d'abord de lui donner une declaration. (Les familles `switchport voice
+  vlan` et `spanning-tree uplinkfast` sont fermees.)
+
+**Ce que le balayage ne voit pas.** Il ne descend qu'a un mot-cle de
+profondeur et ignore les commandes a texte libre (`description`,
+`banner`, `remark`), ou un mot de trop est legitime.
+
 ## Postes Linux
 
 ### [dhcp] `dhclient -t N` est accepte, et aucun delai ne le lit
@@ -660,6 +700,79 @@ qui l'a pris le dise ferait tomber son cas ; l'ecart est donc inscrit
 ici plutot que tranche unilateralement.
 
 ## Routeur Cisco
+
+### [cli] Un mot de trop apres une place declaree retombe sur le glouton du trie
+**Constat.** `logging source-interface Gi0/0 extra` est ACCEPTE et rendu
+`logging source-interface Gi0/0 extra` dans la configuration — donc rejoue
+a l'import d'une topologie. La place est pourtant declaree au socle
+(`INTERFACE`, non facultative, une seule), et le socle la refuse
+correctement : c'est le glouton `logging` du TRIE qui sert la frappe
+ensuite et joint le reste.
+
+**Ce que ce n'est pas.** Ni la declaration ni le type ne sont en cause —
+`logging source-interface zorglub` est bien refuse depuis le lot des
+places d'interface. Ce qui manque est la regle « le socle a REFUSE cette
+ligne, le trie ne la reprend pas », voisine de celle que
+`tryMigratedCommand` porte deja pour `incomplete`/`invalid` et pour le
+repli par heritage. La poser demande de distinguer « le socle ne connait
+pas ce chemin » de « le socle le connait et refuse cet argument », ce que
+`MatchResult.refusePar` sait deja dire pour les plages.
+
+### [cli] `ip flow-export source` et `ip tftp source-interface`
+**Constat.** `ip flow-export source zorglub` est accepte et rendu dans la
+configuration : ce chemin est un noeud glouton du trie, sans place
+declaree, donc la regle du lot des places d'interface ne l'atteint pas.
+`ip tftp source-interface <iface>` — commande reelle d'IOS — n'existe pas
+du tout et repond le caret.
+
+
+### [fhrp] Un Catalyst RENDS trois vues FHRP qu'aucune de ses commandes ne peut peupler
+**Constat.** `CiscoSwitchShell` porte `show standby`, `show vrrp` et
+`show glbp`, qui lisent les VRAIS agents du commutateur, et il n'existe
+AUCUNE commande de configuration derriere : `standby 1 ip …`, `vrrp 2 ip
+…` et `glbp 3 ip …` sont refuses en vue d'interface sur un Catalyst.
+Les trois vues repondent donc toujours vide, quel que soit le
+laboratoire, et rien ne le dit.
+
+**Comment cela a ete mesure.** En ecrivant le laboratoire de
+`probe-vues-fhrp-filtrent-vraiment` : sa moitie commutateur ne peut pas
+etre batie par la CLI et passe par `ensureGroup`/`setVip` sur les
+agents — c'est-a-dire exactement ce que les trois familles de commandes
+appelleraient si elles existaient.
+
+**Pourquoi ce n'est pas ferme ici.** Ecrire les trois familles est un
+lot a soi : un Catalyst L3 configure HSRP sur une SVI, avec sa version,
+sa preemption, son suivi d'objets et son rendu dans la configuration —
+c'est-a-dire le pendant complet de `CiscoHsrpCommands` et
+`CiscoVrrpGlbpCommands`, qui sont ecrites pour un `Router`. Ces deux
+fichiers portent la remarque « Router-only : kept out of the shared base
+to avoid shadowing and respect the L2/L3 split », donc le partage
+demande d'abord de trancher ce que le commutateur L3 a le droit de lire.
+
+### [fhrp] Les filtres documentes que les vues `show` ne savent pas encore lire
+**Constat.** Depuis que ces vues refusent ce qu'elles ne lisent pas, les
+formes suivantes — toutes documentees par Cisco — repondent le caret au
+lieu de filtrer. Avant, elles etaient acceptees et rendaient TOUT, ce
+qui etait pire ; les refuser est le bon defaut, mais la matiere manque :
+
+- `show glbp <groupe> <etat>` : le mot d'etat (`active`, `standby`,
+  `listen`, `init`) est un filtre supplementaire de GLBP.
+- `show bfd neighbors client <nom>` et `show bfd neighbors ipv4 <ip>` :
+  le premier demande la liste des protocoles ENREGISTRES aupres d'une
+  session, que `BfdSessionRuntime` ne porte pas.
+- `show track interface`, `show track ip route`, `show track resolution`
+  et `show track timers` : quatre vues distinctes, chacune avec son
+  rendu.
+
+### [bfd] Le bloc de detail omet trois lignes d'IOS, faute de mesure derriere
+**Constat.** `show bfd neighbors details` rend desormais quatre lignes
+par session, toutes LUES sur `BfdSessionRuntime`. Trois lignes du vrai
+IOS manquent : `Holdown (hits): 900(0), Hello (hits): 300(0)` (le moteur
+ne compte pas les depassements), `Registered protocols: OSPF` (aucun
+client n'est enregistre aupres d'une session) et `Uptime: 00:00:03`
+(`lastTransitionMs` existe, mais l'horloge du routeur n'est pas lue
+ici). Les ecrire avec des zeros annoncerait une mesure qui n'a pas lieu.
+
 
 ### [ssh] `ssh` entre deux hotes ne traverse PAS le fil
 **Constat.** `ssh alice@10.0.2.10 whoami` lance par `executeCommand`
@@ -2264,3 +2377,77 @@ défauts — la méthode vaut d'être reprise sur le reliquat.
   `show ip igmp snooping` + `clear port-security` vient de faire pour le
   mode privilegie du commutateur, tombe a ZERO. Suite : famille par
   famille, en baissant le cliquet a chaque fois.
+- `no spanning-tree vlan <n>` coupe desormais CE VLAN et le rend, mais la
+  garde `isVlanStpEnabled(key)` de `sendBpdu` lit la CLE d'instance : en
+  PVST la cle EST le VLAN, donc la garde est exacte ; en MST la cle est
+  un numero d'instance, si bien qu'un `no spanning-tree vlan 10` sous
+  `spanning-tree mode mst` bornerait l'instance 10 et non le VLAN 10. Le
+  cas n'est pas atteignable par les laboratoires actuels (aucun ne coupe
+  un VLAN en MST) et le corriger demande de traduire VLAN vers instance
+  a la coupure, ce qui est le sujet de la region MST et non celui de
+  cette commande.
+- `spanning-tree priority <n>` est accepte en configuration GLOBALE alors
+  qu'un vrai Catalyst ne connait cette forme que sous `vlan <n>`. Le lot
+  qui a fait tenir parole a l'aide du commutateur l'a LAISSEE : des
+  laboratoires du depot s'en servent, et la retirer est un changement de
+  comportement a mesurer pour lui-meme. Ce qui est corrige est seulement
+  que `spanning-tree priority ?` annonce desormais un NOMBRE au lieu de
+  reproposer les freres du parent.
+- Le garde-fou « un mot que `?` propose est un mot qui existe » ne
+  DESCEND pas dans le sous-arbre d'un mot qu'il refuse d'executer :
+  `NE_PAS_EXECUTER` sert aux deux usages a la fois, si bien qu'`ip`,
+  `debug`, `do`, `show` et vingt autres bloquent tout ce qui est sous
+  eux. Mesure en separant les deux notions et en portant la profondeur a
+  quatre : 2096 signalements, dont l'immense majorite sous `debug` et
+  `do` (qui rejoue l'arbre privilegie). Les separer pour de bon demande
+  une campagne de correction a la mesure de ce nombre ; le lot du
+  commutateur a ferme ce que le balayage ACTUEL voit, ce qui etait deja
+  139 cas que personne ne regardait.
+- `?` propose sur un PORT PHYSIQUE de commutateur VRP les cinq commandes
+  qui n'existent que dans la vue d'une `Eth-Trunk` (`mode`, `lacp`,
+  `load-balance`, `max`, `least`). L'execution refuse correctement — le
+  lot qui a fait tenir parole a l'aide de VRP a corrige la place du caret
+  — mais l'AIDE continue de les annoncer : le trie d'interface est unique
+  pour les deux genres de port, et le filtrage par contexte n'existe que
+  cote Cisco (`commandVisibleToNow`, qui ne connait que le mode, le
+  privilege et la vue). Lui donner la notion de « quel genre d'interface
+  est selectionnee » est un autre lot.
+- Le balayage « un mot que `?` propose est un mot qui existe » n'est pas
+  encore un TEST pour VRP : le lot qui l'a fait tourner a la main sur les
+  deux machines Huawei a corrige ce qu'il a trouve (2 mots-cles nus, 3
+  carets) et n'a pas fige le balayage, faute d'un equivalent VRP du
+  `NE_PAS_EXECUTER` de la version Cisco — la liste des commandes qu'on ne
+  peut pas executer dans un balayage (`reboot`, `save`, `reset`…) doit
+  etre etablie pour VRP avant qu'un tel test soit sur.
+- **Un segment TCP est enregistre DEUX fois dans une capture, et la
+  seconde copie est fausse.** Mesure avec `nmap -Pn --scanflags SYNFIN`,
+  une capture sur la cible et le bus instrumente en parallele : le bus
+  porte exactement DEUX trames TCP — le SYN+FIN entrant (fenetre 65535)
+  et le RST+ACK sortant (fenetre 0) — pendant que `tcpdump -r` en rend
+  TROIS, la ligne du milieu etant `Flags [S], seq <le meme>, win 0`,
+  c'est-a-dire le meme segment ampute de son FIN et de sa fenetre.
+  `LinuxMachine.openTcpdumpCapture` branche DEUX sources sur une meme
+  prise — la prise de port reelle (`attachCapture`) et le journal
+  `executor.captureLog` (`subscribeCapture`, plus un rejeu de tout ce
+  qu'il contient deja) — et `makeTcpSegmentDedupSink` existe justement
+  pour apparier les deux. Sa cle inclut les DRAPEAUX et la sequence :
+  quand la copie synthetique se trompe de drapeaux, les cles different,
+  l'appariement n'a pas lieu et les deux lignes sortent. C'est pourquoi
+  le defaut ne se voyait pas avant `--scanflags` : `-sS` emet un `[S]`
+  que la copie synthetique reproduit a l'identique, donc les deux
+  s'appariaient et la prise de port gagnait. `makeTcpFrame`
+  (`CaptureFrame.ts:586`) confirme la forme de la copie fautive — elle
+  reconstruit les drapeaux depuis une CHAINE (`f.includes('S')`) et
+  ecrit `win 0` en dur, faute de champ de fenetre dans `CapturedPacket`.
+  Ce qui n'est PAS etabli, et pourquoi ce n'est pas ferme ici : quel
+  ecrivain a mis cette entree dans le journal de la cible pour un simple
+  balayage. Les trois ecrivains trouves (`captureTcpHandshake`,
+  `captureTcpSynDropped`, `CaptureRouter` via `publishWireSegment`) sont
+  tous sur des chemins SSH, et aucun n'est traverse par `scanProbe` ;
+  il en reste donc un a trouver. Deux corrections possibles et non
+  tranchees : retirer les drapeaux et la fenetre de la cle
+  d'appariement (simple, mais deux segments distincts de meme sequence
+  et meme longueur se confondraient), ou supprimer la source
+  synthetique pour tout ce que la prise de port porte deja (juste, mais
+  elle est le SEUL enregistrement des chemins scriptes qui ne
+  traversent aucun port — telnet et SSH scriptes).

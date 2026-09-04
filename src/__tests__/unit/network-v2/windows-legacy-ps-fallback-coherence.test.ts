@@ -17,6 +17,7 @@ import { PowerShellExecutor, type PSDeviceContext } from '@/network/devices/wind
 import { IPAddress, SubnetMask, MACAddress, resetCounters } from '@/network/core/types';
 import { resetDeviceCounters } from '@/network/devices/DeviceFactory';
 import { Logger } from '@/network/core/Logger';
+import { PowerShellSubShell } from '@/terminal/subshells/PowerShellSubShell';
 
 beforeEach(() => {
   resetCounters();
@@ -62,19 +63,19 @@ describe('legacy Get-NetIPAddress reflects real interface state', () => {
 // New-NetIPAddress — configures the real interface
 // ═══════════════════════════════════════════════════════════════════
 
-describe('legacy New-NetIPAddress configures the real interface', () => {
+describe('New-NetIPAddress configures the real interface', () => {
   it('makes the address visible to ipconfig (cmd)', async () => {
     const pc = makePc();
-    const ps = makePs(pc);
-    await ps.execute('New-NetIPAddress -InterfaceAlias "Ethernet 0" -IPAddress 10.0.6.7 -PrefixLength 24');
+    const sh = PowerShellSubShell.create(pc).subShell;
+    await sh.processLine('New-NetIPAddress -InterfaceAlias "Ethernet 0" -IPAddress 10.0.6.7 -PrefixLength 24');
     const out = await pc.executeCommand('ipconfig');
     expect(out).toContain('10.0.6.7');
   });
 
   it('actually sets the address on the underlying port', async () => {
     const pc = makePc();
-    const ps = makePs(pc);
-    await ps.execute('New-NetIPAddress -InterfaceAlias eth0 -IPAddress 10.0.6.8 -PrefixLength 24');
+    const sh = PowerShellSubShell.create(pc).subShell;
+    await sh.processLine('New-NetIPAddress -InterfaceAlias eth0 -IPAddress 10.0.6.8 -PrefixLength 24');
     expect(pc.getPort('eth0')!.getIPAddress()?.toString()).toBe('10.0.6.8');
   });
 });
@@ -83,33 +84,32 @@ describe('legacy New-NetIPAddress configures the real interface', () => {
 // NetRoute — one routing table shared with route (cmd)
 // ═══════════════════════════════════════════════════════════════════
 
-describe('legacy Get/New-NetRoute share the real routing table with route (cmd)', () => {
+describe('the NetRoute family shares the real routing table with route (cmd)', () => {
+  const run = async (pc: WindowsPC, line: string): Promise<string> => {
+    const sh = PowerShellSubShell.create(pc).subShell;
+    return (await sh.processLine(line)).output.join('\n');
+  };
+
   it('a route added via "route add" (cmd) is visible to Get-NetRoute', async () => {
     const pc = makePc();
     pc.configureInterface('eth0', new IPAddress('10.0.7.5'), new SubnetMask('255.255.255.0'));
     await pc.executeCommand('route add 172.16.9.0 mask 255.255.255.0 10.0.7.1');
-    const ps = makePs(pc);
-    const out = await ps.execute('Get-NetRoute');
-    expect(out).toContain('172.16.9.0/24');
+    expect(await run(pc, 'Get-NetRoute')).toContain('172.16.9.0/24');
   });
 
   it('a route added via New-NetRoute (PS) is visible to "route print" (cmd)', async () => {
     const pc = makePc();
     pc.configureInterface('eth0', new IPAddress('10.0.8.5'), new SubnetMask('255.255.255.0'));
-    const ps = makePs(pc);
-    await ps.execute('New-NetRoute -DestinationPrefix "172.16.10.0/24" -InterfaceAlias eth0 -NextHop "10.0.8.1"');
-    const out = await pc.executeCommand('route print');
-    expect(out).toContain('172.16.10.0');
+    await run(pc, 'New-NetRoute -DestinationPrefix "172.16.10.0/24" -InterfaceAlias eth0 -NextHop "10.0.8.1"');
+    expect(await pc.executeCommand('route print')).toContain('172.16.10.0');
   });
 
   it('Remove-NetRoute removes the route from the real table', async () => {
     const pc = makePc();
     pc.configureInterface('eth0', new IPAddress('10.0.8.5'), new SubnetMask('255.255.255.0'));
     await pc.executeCommand('route add 172.16.11.0 mask 255.255.255.0 10.0.8.1');
-    const ps = makePs(pc);
-    await ps.execute('Remove-NetRoute -DestinationPrefix "172.16.11.0/24" -Confirm:$false');
-    const out = await pc.executeCommand('route print');
-    expect(out).not.toContain('172.16.11.0');
+    await run(pc, 'Remove-NetRoute -DestinationPrefix "172.16.11.0/24" -Confirm:$false');
+    expect(await pc.executeCommand('route print')).not.toContain('172.16.11.0');
   });
 });
 

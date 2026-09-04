@@ -47,7 +47,7 @@ beforeEach(() => {
 });
 
 async function maquette() {
-  const routeur = new CiscoRouter('router-cisco', 'R1', 100, 0);
+  const routeur = new CiscoRouter('R1', 100, 0);
   const scanner = new LinuxPC('linux-pc', 'SCANNER', 0, 0);
   const cible = new LinuxServer('linux-server', 'CIBLE', 200, 0);
   routeur.powerOn(); scanner.powerOn(); cible.powerOn();

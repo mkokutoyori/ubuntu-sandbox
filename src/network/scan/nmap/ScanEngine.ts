@@ -1,7 +1,20 @@
-import type { NmapOptions } from './NmapOptions';
+import type { NmapOptions, ScanType } from './NmapOptions';
 import { IPAddress } from '@/network/core/types';
 import type { TcpWireOutcome } from '@/network/tcp/types';
 import { topPorts, serviceName, DEFAULT_TOP_COUNT } from './ServiceRegistry';
+import type { ScanProbeFlags, ScanVerdict, StatelessScanKind } from './StatelessScans';
+import {
+  ARP_PING_PHASE, IP_PING_PHASE, ND_PING_PHASE, SCAN_PHASE_NAME, type ScanPhase,
+} from './ScanPhases';
+
+const STATELESS_KINDS: Readonly<Partial<Record<ScanType, StatelessScanKind>>> = {
+  syn: 'syn', ack: 'ack', fin: 'fin', null: 'null',
+  xmas: 'xmas', maimon: 'maimon', window: 'window',
+};
+
+function statelessKindOf(scanType: ScanType): StatelessScanKind | undefined {
+  return STATELESS_KINDS[scanType];
+}
 
 export type PortState = 'open' | 'closed' | 'filtered' | 'open|filtered' | 'unfiltered';
 
@@ -13,6 +26,8 @@ export interface HostState {
   interfaceDown?: boolean;
   osHint?: string;
   latencyMs?: number;
+  mac?: string;
+  reason?: string;
 }
 
 export interface ResolvedTarget {
@@ -22,9 +37,22 @@ export interface ResolvedTarget {
 
 export interface HostProbes {
   /** Name to address. A lookup, never a liveness test. */
-  resolveTarget(target: string): ResolvedTarget | null;
+  resolveTarget(target: string): ResolvedTarget | null | Promise<ResolvedTarget | null>;
   /** Emits the discovery probes and reports what came back. */
   hostState(target: ResolvedTarget): Promise<HostState>;
+  /**
+   * La decouverte de couche lien d'une cible du MEME segment — ARP en
+   * IPv4, decouverte de voisin en IPv6. Les TROIS issues sont distinctes
+   * et le rester importe : `null` veut dire que la cible n'est pas sur ce
+   * segment, donc que les sondes IP reprennent la main ; `mac: null` veut
+   * dire qu'elle y est et n'a pas repondu, donc qu'elle est absente.
+   */
+  linkDiscovery?(ip: string): { mac: string | null; reason: string } | null;
+  /**
+   * Le nom d'une adresse. `nmap` le demande pour tout hote trouve VIVANT,
+   * et `-R` l'etend a ceux qui ne repondent pas.
+   */
+  reverseName?(ip: string): Promise<string | null>;
   /**
    * `-O` is a phase of its own on a real nmap (FPEngine), run after the
    * port scan and independent of host discovery — so it still fingerprints
@@ -32,11 +60,16 @@ export interface HostProbes {
    */
   fingerprint?(ip: string): Promise<string | undefined>;
   tcpOutcome(ip: string, port: number): TcpWireOutcome;
-  /** `-sS` : le SYN part, la poignee de main ne s'acheve jamais. */
-  synOutcome?(ip: string, port: number): 'open' | 'closed' | 'filtered';
+  /**
+   * Les balayages qui n'ouvrent rien : SYN, ACK, FIN, NULL, Xmas, Maimon,
+   * fenetre. `kind` decide la LECTURE de la reponse, `flags` ce qui est
+   * EMIS — les deux se separent des que `--scanflags` compose le segment.
+   */
+  statelessOutcome?(
+    ip: string, port: number, kind: StatelessScanKind, flags?: ScanProbeFlags,
+  ): ScanVerdict;
   udpState(ip: string, port: number): 'open' | 'closed' | 'open|filtered';
   banner(ip: string, port: number): { service: string; version?: string } | null;
-  ackReaches?(ip: string, port: number): boolean;
 }
 
 const TCP_SCAN_REASON: Readonly<Record<TcpWireOutcome, string>> = {
@@ -63,6 +96,10 @@ export interface HostReport {
   latencyMs: number;
   osGuess?: string;
   downReason?: string;
+  mac?: string;
+  discoveryReason?: string;
+  /** Ce que la resolution inverse a rendu, quand elle a ete faite. */
+  rdnsName?: string;
   ports: PortResult[];
   notShown?: { count: number; states: Partial<Record<PortState, number>> };
 }
@@ -73,6 +110,8 @@ export interface NmapReport {
   hostsUp: number;
   hosts: HostReport[];
   unresolved: string[];
+  /** Ce que `-v` rend visible : les phases traversees, dans l'ordre. */
+  phases: ScanPhase[];
 }
 
 const COLLAPSE_THRESHOLD = 24;
@@ -107,22 +146,17 @@ function effectivePorts(options: NmapOptions): number[] {
   return options.ports ?? topPorts(DEFAULT_TOP_COUNT);
 }
 
-const SYN_SCAN_REASON: Readonly<Record<'open' | 'closed' | 'filtered', string>> = {
-  open: 'syn-ack',
-  closed: 'reset',
-  filtered: 'no-response',
-};
-
 function tcpResult(
   options: NmapOptions, probes: HostProbes, ip: string, port: number,
 ): PortResult {
-  const halfOpen = options.scanType === 'syn' ? probes.synOutcome : undefined;
+  const kind = statelessKindOf(options.scanType);
+  const stateless = kind && probes.statelessOutcome
+    ? probes.statelessOutcome(ip, port, kind, options.scanFlags) : null;
   let state: PortState;
   let reason: string;
-  if (halfOpen) {
-    const seen = halfOpen(ip, port);
-    state = seen;
-    reason = SYN_SCAN_REASON[seen];
+  if (stateless) {
+    state = stateless.state;
+    reason = stateless.reason;
   } else {
     const outcome = probes.tcpOutcome(ip, port);
     // scan_engine_connect.cc : ECONNREFUSED ferme le port, EACCES — que
@@ -142,16 +176,6 @@ function tcpResult(
     }
   }
   return { port, protocol: 'tcp', state, service, version, reason };
-}
-
-function ackResult(probes: HostProbes, ip: string, port: number): PortResult {
-  const reachable = probes.ackReaches?.(ip, port) ?? true;
-  return {
-    port, protocol: 'tcp',
-    state: reachable ? 'unfiltered' : 'filtered',
-    service: serviceName(port, 'tcp'),
-    reason: reachable ? 'reset' : 'no-response',
-  };
 }
 
 function udpResult(
@@ -195,42 +219,90 @@ function partition(options: NmapOptions, all: PortResult[]): Pick<HostReport, 'p
   return { ports, notShown: { count: total, states } };
 }
 
+/**
+ * La phase de decouverte porte le nom du moyen REELLEMENT employe : le
+ * lien quand il a repondu, les sondes IP sinon, et rien du tout sous
+ * `-Pn`, ou aucune decouverte n'a lieu.
+ */
+function discoveryPhase(
+  ip: string, onLink: { mac: string | null } | null | undefined, skipped: boolean,
+): ScanPhase | null {
+  if (onLink) {
+    return { name: ip.includes(':') ? ND_PING_PHASE : ARP_PING_PHASE, total: 1, unit: 'host' };
+  }
+  if (skipped) return null;
+  return { name: IP_PING_PHASE, total: 1, unit: 'host' };
+}
+
 async function scanHost(
-  options: NmapOptions, probes: HostProbes, target: string,
+  options: NmapOptions, probes: HostProbes, target: string, phases: ScanPhase[],
 ): Promise<HostReport | null> {
-  const resolved = probes.resolveTarget(target);
+  const resolved = await probes.resolveTarget(target);
   if (!resolved) return null;
 
-  // `-Pn` skips discovery entirely on a real nmap: nothing is probed and
-  // every target is taken as up, which is the point of the flag.
-  const info = options.skipDiscovery
-    ? { ip: resolved.ip, hostname: resolved.hostname, up: true }
-    : await probes.hostState(resolved);
+  // targets.cc, `refresh_hostbatch` : la decouverte de couche lien passe
+  // AVANT toute sonde IP, elle les remplace quand elle repond, et le
+  // manuel dit qu'elle a lieu « even if other host discovery options such
+  // as -Pn or -PE are used » — donc une adresse locale que personne ne
+  // porte ressort `down` sous `-Pn` aussi. `--disable-arp-ping` la
+  // desarme, et `-Pn` retrouve alors son sens litteral.
+  const onLink = options.disableArpPing ? null : probes.linkDiscovery?.(resolved.ip);
+  const identified = { ip: resolved.ip, hostname: resolved.hostname };
+  const info: HostState = onLink
+    ? { ...identified, up: onLink.mac !== null, mac: onLink.mac ?? undefined, reason: onLink.reason }
+    : options.skipDiscovery
+      ? { ...identified, up: true, reason: 'user-set' }
+      : await probes.hostState(resolved);
+
+  const discovery = discoveryPhase(resolved.ip, onLink, options.skipDiscovery);
+  if (discovery) phases.push(discovery);
 
   const latencyMs = info.latencyMs ?? 0.001;
   const osGuess = options.osScan
     ? info.osHint ?? await probes.fingerprint?.(info.ip)
     : undefined;
 
+  // docs/nmap.1 : la resolution inverse est faite par defaut sur les hotes
+  // trouves EN LIGNE, `-n` l'interdit et `-R` l'etend a ceux qui ne
+  // repondent pas.
+  const rdnsName = options.noDns || !(info.up || options.alwaysResolve)
+    ? undefined
+    : await probes.reverseName?.(info.ip) ?? undefined;
+
   if (!info.up) {
     return {
       ip: info.ip, hostname: info.hostname, up: false, latencyMs,
-      downReason: 'no response', ports: [],
+      downReason: 'no response', rdnsName, ports: [],
     };
   }
 
+  const identity = { mac: info.mac, discoveryReason: info.reason, rdnsName };
+
   if (options.pingOnly) {
-    return { ip: info.ip, hostname: info.hostname, up: true, latencyMs, osGuess, ports: [] };
+    return {
+      ip: info.ip, hostname: info.hostname, up: true, latencyMs, osGuess,
+      ...identity, ports: [],
+    };
   }
 
+  const scanned = effectivePorts(options);
+  phases.push({
+    name: SCAN_PHASE_NAME[options.scanType],
+    total: scanned.length, unit: 'port',
+    scanning: { target: info.ip, probes: scanned.length },
+  });
+
   const all: PortResult[] = [];
-  for (const port of effectivePorts(options)) {
+  for (const port of scanned) {
     if (options.scanType === 'udp') all.push(udpResult(options, probes, info.ip, port));
-    else if (options.scanType === 'ack') all.push(ackResult(probes, info.ip, port));
     else all.push(tcpResult(options, probes, info.ip, port));
   }
   const { ports, notShown } = partition(options, all);
-  return { ip: info.ip, hostname: info.hostname, up: true, latencyMs, osGuess, ports, notShown };
+  return {
+    ip: info.ip, hostname: info.hostname, up: true, latencyMs, osGuess,
+    ...identity, ports, notShown,
+  };
+
 }
 
 function isIpLiteral(target: string): boolean {
@@ -242,11 +314,12 @@ export async function scan(
 ): Promise<NmapReport> {
   const hosts: HostReport[] = [];
   const unresolved: string[] = [];
+  const phases: ScanPhase[] = [];
   let targetsScanned = 0;
 
   for (const target of options.targets) {
     for (const address of enumerateTargets(target)) {
-      const report = await scanHost(options, probes, address)
+      const report = await scanHost(options, probes, address, phases)
         ?? (target === address && isIpLiteral(address)
           ? { ip: address, up: false, latencyMs: 0, downReason: 'no response', ports: [] }
           : null);
@@ -255,7 +328,10 @@ export async function scan(
         continue;
       }
       targetsScanned++;
-      if (options.pingOnly && !report.up) continue;
+      // nmap.cc:2143 : un hote MORT n'est rapporte que sous `-v`
+      // (`HOST_UP || (o.verbose && !o.openOnly())`) — un balayage de
+      // decouverte ordinaire ne liste que ce qu'il a trouve.
+      if (options.pingOnly && !report.up && !options.verbose) continue;
       hosts.push(report);
     }
   }
@@ -266,5 +342,6 @@ export async function scan(
     hostsUp: hosts.filter((h) => h.up).length,
     hosts,
     unresolved,
+    phases,
   };
 }

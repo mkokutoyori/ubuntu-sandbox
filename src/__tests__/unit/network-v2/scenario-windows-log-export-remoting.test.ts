@@ -64,6 +64,11 @@ describe('Scénario 8 (Windows) — collecte et centralisation des logs', () => 
       const sh = ps(dc);
       dc.getUserManager().checkPassword('Administrator', 'wrong-on-purpose');
 
+      // `Export-Csv` ne CREE pas le repertoire manquant, sur une vraie
+      // machine comme ici : il echoue par « Could not find a part of the
+      // path ». L'operateur le cree, ce que ce laboratoire omettait.
+      await run(sh, 'New-Item -ItemType Directory -Path "C:\\AuditExports" -Force');
+
       await run(sh, [
         '$Events = Get-WinEvent -FilterHashtable @{ LogName = \'Security\'; Id = @(4624, 4625); StartTime = (Get-Date).AddDays(-1) }',
         '$Events | Select-Object TimeCreated, Id, LevelDisplayName | Export-Csv -Path "C:\\AuditExports\\SecurityEvents.csv" -NoTypeInformation',

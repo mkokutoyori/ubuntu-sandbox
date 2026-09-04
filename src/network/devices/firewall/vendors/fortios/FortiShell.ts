@@ -140,8 +140,8 @@ const UNSIMULATED_PING_OPTIONS: Readonly<Record<string, string>> = {
 const TFTP_EXPORT_TIMEOUT_MS = 1_000;
 const TFTP_EXPORT_MAX_RETRIES = 2;
 
-type ActionDestructive =
-  'reboot' | 'shutdown' | 'factoryreset' | 'factoryreset2' | 'formatlogdisk';
+type ActionDestructive = 'reboot' | 'shutdown' | 'factoryreset'
+  | 'factoryreset2' | 'formatlogdisk' | 'erase-disk';
 
 const FORMATTAGE_DISQUE = 'Formatting disk, Please wait a few seconds!';
 
@@ -157,6 +157,9 @@ function annonceAlimentation(action: ActionDestructive): string {
   }
   if (action === 'formatlogdisk') {
     return 'This operation will erase all data on the log disk!';
+  }
+  if (action === 'erase-disk') {
+    return 'This operation will erase all data on the disk!';
   }
   return `This operation will ${action} the system !`;
 }
@@ -288,6 +291,10 @@ export class FortiShell {
       authorize: (spec, intent) => this.authorizeSpec(spec, intent),
       principal: () => this.adminName ?? '',
       vdomNames: () => this.fw.vdomNames(),
+      eraseableDisks: () => {
+        const disk = this.fw.getProfile().logDisk;
+        return disk === undefined ? [] : [disk.label];
+      },
       enterVdom: (name) => this.enterVdom(name),
       adminSessions: () => this.fw.getAdminSessions().list(),
       disconnectAdminSession: (index) => this.disconnectAdminSession(index),
@@ -1156,6 +1163,17 @@ export class FortiShell {
     return used + this.fw.getLogDisk().rolledBytes();
   }
 
+  private executeEraseDisk(rest: readonly string[]): string {
+    const disk = this.fw.getProfile().logDisk;
+    if (disk === undefined) return NO_LOG_DISK;
+    if (rest.length === 0) return FortiMessages.incomplete('a disk name');
+    if (rest[0] !== disk.label) {
+      return FortiMessages.valueError(rest[0],
+        `this unit has one disk, ${disk.label}.`);
+    }
+    return this.appliquerAlimentation('erase-disk');
+  }
+
   private executeDisk(rest: readonly string[]): string {
     if (rest.length === 0) return FortiMessages.incomplete('a disk operation');
     const resolved = resolvePrefix(rest[0], executeOptionNames('disk'));
@@ -1221,7 +1239,7 @@ export class FortiShell {
     if (rest[0] !== 'system' || rest[1] !== 'session' || rest[2] !== 'filter') {
       return FortiMessages.unknownAction(`set ${rest.join(' ')}`);
     }
-    return runSessionFilter(rest.slice(3), this.diagDeps(), true);
+    return runSessionFilter(rest.slice(3), this.diagDeps().state.sessionFilter, true);
   }
 
   private executeSyncSession(): string {
@@ -1418,6 +1436,12 @@ export class FortiShell {
     if (action === 'reboot') this.fw.rebootNow();
     else if (action === 'shutdown') this.fw.shutdownNow();
     else if (action === 'formatlogdisk') { this.formatLogDisk(); this.fw.rebootNow(); }
+    else if (action === 'erase-disk') {
+      this.formatLogDisk();
+      this.fw.getRevisions().clear();
+      this.factoryReset();
+      this.fw.rebootNow();
+    }
     else if (action === 'factoryreset2') this.reinitialiserSaufReseau();
     else { this.factoryReset(); this.fw.rebootNow(); }
   }
@@ -1485,6 +1509,16 @@ export class FortiShell {
     }
     if (verb === 'formatlogdisk') {
       return rest.length === 0
+        ? {
+          action: verb,
+          announce: [annonceAlimentation(verb)],
+          after: [FORMATTAGE_DISQUE],
+        }
+        : null;
+    }
+    if (verb === 'erase-disk') {
+      const nom = this.fw.getProfile().logDisk?.label;
+      return nom !== undefined && rest.length === 1 && rest[0] === nom
         ? {
           action: verb,
           announce: [annonceAlimentation(verb)],
@@ -1584,6 +1618,7 @@ export class FortiShell {
       case 'factoryreset': case 'reboot': case 'shutdown': case 'formatlogdisk':
         return this.appliquerAlimentation(resolved.name);
       case 'factoryreset2': return this.appliquerAlimentation('factoryreset2');
+      case 'erase-disk': return this.executeEraseDisk(tail);
       case 'ssh': case 'telnet':
         return tail.length === 0
           ? FortiMessages.incomplete('a destination')

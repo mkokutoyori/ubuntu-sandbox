@@ -38,11 +38,8 @@ describe('auditpol — P9 Filtering Platform Connection/Packet Drop', () => {
     new Cable('b').connect(win.getPort('eth0')!, sw.getPort('FastEthernet0/2')!);
     cli.getPort('eth0')!.configureIP(new IPAddress('10.0.0.1'), new SubnetMask('255.255.255.0'));
     win.getPort('eth0')!.configureIP(new IPAddress('10.0.0.2'), new SubnetMask('255.255.255.0'));
-    win.dynamicFirewallRules.set('Block-22', {
-      name: 'Block-22', displayName: 'Block SSH',
-      enabled: true, action: 'Block', direction: 'Inbound',
-      protocol: 'TCP', localPort: '22', remotePort: 'Any', description: 'test',
-    });
+    await win.executeCommand(
+      'netsh advfirewall firewall add rule name=Block-22 dir=in action=block protocol=TCP localport=22');
 
     cli.getTcpStack().connect('10.0.0.2', 22);
     const before = (win.eventLog.getEntriesStructured('Security') ?? []).filter((e) => e.eventId === 5152);

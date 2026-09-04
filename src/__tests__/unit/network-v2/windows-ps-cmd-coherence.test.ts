@@ -19,6 +19,7 @@ import { LinuxPC } from '@/network/devices/LinuxPC';
 import { CiscoSwitch } from '@/network/devices/CiscoSwitch';
 import { Cable } from '@/network/hardware/Cable';
 import { PowerShellExecutor, PS_VERSION_TABLE, PS_BANNER } from '@/network/devices/windows/PowerShellExecutor';
+import { PowerShellSubShell } from '@/terminal/subshells/PowerShellSubShell';
 import { MACAddress, resetCounters } from '@/network/core/types';
 import { resetDeviceCounters } from '@/network/devices/DeviceFactory';
 import { Logger } from '@/network/core/Logger';
@@ -224,9 +225,9 @@ describe('Group 3: PS cmdlets produce different format than CMD equivalents', ()
 
   it('PSC-14: Get-NetIPConfiguration has PS object format', async () => {
     const pc = createConfiguredPC();
-    const ps = createPSExecutor(pc);
+    const sh = PowerShellSubShell.create(pc).subShell;
 
-    const psOutput = await ps.execute('Get-NetIPConfiguration');
+    const psOutput = (await sh.processLine('Get-NetIPConfiguration -All')).output.join('\n');
     const cmdOutput = await pc.executeCommand('ipconfig');
 
     // PS format uses InterfaceAlias, IPv4Address properties

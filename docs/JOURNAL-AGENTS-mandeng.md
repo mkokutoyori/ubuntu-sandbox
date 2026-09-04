@@ -7266,3 +7266,276 @@ scanner, qui interroge `connectOutcome`, distingue « rien n'ecoute » de
 tombent ; les 2 TEMOINS — port ferme ordinaire, port ouvert — passent des
 deux cotes et c'est exactement leur role, le correctif ne devant pas
 transformer tout refus en filtre.
+
+## Les trois rouges de longue date, et les deux defauts qu'ils cachaient
+
+**Perimetre revendique** : `WindowsPSProviders` (traduction Win32 → .NET),
+`ConversionCmdlets` (`Export-Csv`), `CiscoRoutingProtoCommands`
+(marqueur `^`), `classMapGrammar` (nouveau), `CiscoSecurityCommands` et
+`ciscoArgumentHelp` (lecture de cette grammaire).
+
+Les trois cas rouges de la suite avaient la meme forme : un laboratoire
+qui decrivait ce qu'une vraie machine REFUSE. Mais deux d'entre eux
+cachaient un defaut de produit, et c'est ce qui valait le detour.
+
+**(1) `Export-Csv` vers un repertoire absent** rendait « The system
+cannot find the path specified. », le libelle de Win32 que `cd` et `copy`
+affichent, sans meme le nom de l'applet. PowerShell remonte l'exception
+.NET du fournisseur : `DirectoryNotFoundException` ecrit « Could not find
+a part of the path '<chemin>'. », et l'applet la prefixe de son nom. La
+traduction est posee a la FRONTIERE entre les deux mondes — le
+fournisseur PowerShell — donc toute applet qui ecrit un fichier en
+herite, et `cd` garde les mots de Win32, ce qu'un TEMOIN verifie. Le
+laboratoire, lui, omettait le `New-Item -ItemType Directory` qu'un
+operateur doit taper : `Export-Csv` ne cree pas le repertoire manquant,
+ici comme sur une vraie machine.
+
+**(2) `redistribute ospf metric 2` sous `router rip`** etait refuse — et
+c'est JUSTE, IOS exige l'identifiant de processus, `redistribute ospf ?`
+repondant `<1-65535>  Process ID` — mais le refus arrivait SANS le
+marqueur `^`, alors que c'est tout ce que ce message apporte. Le
+gestionnaire rendait une constante la ou le depot a `CliInvalidInput`,
+qui place le curseur sous le mot fautif. Le laboratoire tapait la forme
+sans identifiant, donc rien n'etait redistribue et le test le decouvrait
+trois assertions plus loin.
+
+**(3) `class-map type ?` annoncait `<cr>`** pour une frappe que la meme
+machine refuse par `% Incomplete command.`. La grammaire de `class-map` et
+`policy-map` — `type <sorte>` facultatif, `match-all`/`match-any`
+facultatif, puis le NOM obligatoire — etait ecrite DEUX fois : dans le
+gestionnaire, qui refusait correctement, et dans la declaration d'aide,
+qui ne connaissait que le cas `match-*`. `classMapGrammar.ts` la declare
+une fois et les deux la lisent ; `policy-map`, qui n'avait aucune
+declaration, cesse du meme coup de promettre `<cr>` apres `type`.
+
+**Discrimination** : `probe-trois-rouges-de-longue-date.test.ts` (7 cas),
+2 tombent — et pas trois, ce qui est la mesure exacte : le gestionnaire
+de `class-map` refusait deja, seule l'AIDE mentait, et un `<cr>` annonce
+ne se lit pas depuis un appel a la commande ; ce mensonge-la reste garde
+par `probe-aide-cr-tient-sa-promesse`, qui le balayait.
+
+## nmap — increment 8 : les balayages DISCRETS, et le silence qui leur manquait
+
+**Perimetre revendique** : `TcpStack` (etat LISTEN, `scanProbe`),
+`tcp/events.ts` (une raison de rejet), `scan/nmap/StatelessScans.ts`
+(nouveau), `NmapOptions`, `ScanEngine`, `NmapProbes`, les deux hotes.
+
+`-sF`, `-sN`, `-sX`, `-sM` et `-sW` etaient tous absents de l'analyseur —
+ils retombaient dans la ligne qui ignore ce qu'on ne traite pas, donc
+`nmap -sF` faisait un balayage CONNECTE, poignee de main comprise : le
+contraire exact de ce que ces options existent pour faire.
+
+**Le defaut de fond n'etait pas dans `nmap`, il etait dans la pile.**
+RFC 9293 §3.10.7.2, etat LISTEN, quatrieme controle : un segment qui
+n'est ni RST, ni ACK, ni SYN est JETE en silence ; un port ferme, lui,
+repond RST (§3.10.7.1). Cette asymetrie EST le balayage FIN. Mesure avant
+correctif : un FIN, un NULL et un Xmas vers le port 22 OUVERT d'un
+serveur recevaient tous les trois un RST, comme le port 8888 ferme —
+aucun de ces balayages ne pouvait donc distinguer quoi que ce soit.
+
+`ackProbe` et `synProbe` fusionnent en `scanProbe`, qui rend ce qui est
+REVENU — un RST avec sa fenetre, un SYN/ACK, ou rien — parce que c'est la
+LECTURE qui differe d'un balayage a l'autre, pas l'emission ;
+`StatelessScans.ts` porte les drapeaux et les verdicts, tires de
+`scan_engine.cc` et `scan_engine_raw.cc`. Le balayage ACK, qui avait son
+propre chemin, passe par la meme porte.
+
+**Deux balayages ne distinguent RIEN sur cette pile, et c'est la bonne
+reponse plutot qu'un manque.** Le Maimon : sa sonde est un FIN/ACK, donc
+elle porte un ACK, et le second controle de l'etat LISTEN fait repondre
+RST — le manuel de nmap le dit lui-meme (« According to RFC 793 (TCP), a
+RST packet should be generated in response to such a probe whether the
+port is open or closed. However, Uriel noticed that many BSD-derived
+systems simply drop the packet if the port is open. »). Le balayage par
+fenetre : cette pile emet toujours un RST a fenetre NULLE, comme Linux,
+et le manuel prevoit le cas (« Systems that don't support it will usually
+return all ports closed »). **Mon attente ecrite a l'aveugle sur le
+Maimon etait fausse, pas le produit** — c'est le test qui a change.
+
+**Discrimination** : `probe-nmap-balayages-discrets.test.ts` (12 cas), 8
+tombent, mesures en retirant ENSEMBLE les cinq fichiers touches. Un
+premier essai n'en avait retire que trois et cassait le balayage ACK par
+une importation manquante, faisant tomber un TEMOIN pour une raison
+etrangere au correctif ; l'en-tete du fichier le raconte.
+
+---
+
+## 2026-09-03 — `nmap` : la DECOUVERTE d'un hote local passe par ARP
+
+**Portee reservee** : `src/network/scan/nmap/` (`NmapProbes`, `ScanEngine`,
+`NmapFormatter`, `NmapOptions`), `LinuxNmapHost`/`WindowsNmapHost`,
+`EndHost` (une porte publique de resolution de couche lien).
+
+Reference lue : `targets.cc` (`arpping`, `refresh_hostbatch`),
+`output.cc` (`printmacinfo`), `portreasons.cc` (`arp-response`,
+`nd-response`), `docs/nmap.1` (`-Pn`, `--disable-arp-ping`).
+
+`discoverHost` ne connaissait que deux moyens — un echo ICMP, puis une
+connexion TCP vers 80 et 443 — c'est-a-dire exactement ce qu'un `nmap`
+NON PRIVILEGIE fait, et rien de ce qu'il fait quand il peut ecrire sur le
+lien. Consequence mesuree : un hote du meme segment qui jette l'ICMP et
+filtre tout le TCP etait rendu `down`, alors qu'il repond a l'ARP et
+qu'un vrai `nmap` le trouve.
+
+**L'ARP ne s'AJOUTE pas aux sondes IP, il les REMPLACE** (`targets.cc` :
+`else if (!arpping_done) massping(...)`), et cela vaut MEME sous `-Pn`,
+ce que seul le manuel tranche. Donc une adresse locale que personne ne
+porte ressort `down` sous `-Pn`, et `--disable-arp-ping` — ecrite dans le
+meme lot — lui rend son sens litteral.
+
+**Ce que la sonde a APPRIS, et qui a change le correctif.** Une premiere
+version LISAIT le cache ARP. Deux cas l'ont refusee ensemble : la requete
+ne partait plus des que le cache etait chaud, et surtout un hote ETEINT
+du meme segment ressortait `up` — le faux positif qu'un scanner ne doit
+jamais rendre. `resolveLinkLayerAddress` emet donc TOUJOURS la requete et
+lit la REPONSE sur le bus, sans consulter le cache, ce que fait un vrai
+`nmap` qui construit son propre paquet.
+
+**Deux tests encodaient une premisse que le vrai `nmap` contredit** et
+sont corriges plutot que le code : `-Pn` sur une adresse locale absente
+(`nmap-integration`) et l'echo ICMPv6 vers un voisin DIRECT
+(`probe-nmap-ipv6`), qui passe desormais par `--disable-arp-ping` — la
+seule option qui rende les sondes IP sur un voisin.
+
+**Discrimination** : `probe-nmap-decouverte-arp.test.ts` (14 cas), 9
+tombent, mesures en retirant ENSEMBLE les sept fichiers touches ; les 5
+qui passent des deux cotes sont nommes dans l'en-tete.
+
+---
+
+## 2026-09-04 — `nmap` : un hote vivant est NOMME, et il n'y a qu'une resolution inverse
+
+**Portee** : `scan/nmap/` (`NmapProbes`, `ScanEngine`, `NmapFormatter`,
+`NmapOptions`), `linux/network/ReverseName.ts` (nouveau),
+`commands/net/Nmap.ts`, `commands/net/Traceroute.ts`, `WindowsPC`.
+
+`nmap 10.0.0.2` ne rendait que l'adresse : aucune resolution inverse
+n'etait tentee, et `-R` etait dans la ligne des options ignorees. Un vrai
+`nmap` la fait par DEFAUT sur tout hote trouve en ligne — c'est `-n` qu'il
+faut ecrire pour l'en empecher.
+
+**Le defaut de fond etait la duplication.** `traceroute` portait sa PROPRE
+resolution inverse, qui ne consultait que la source `files` par un
+`as unknown as` sur l'executeur, en ignorant `/etc/nsswitch.conf` et donc
+le DNS. `ReverseName.ts` est desormais la seule, lue par les deux, et
+suit la regle sync/async de `getent` — une source sans jumeau asynchrone
+est interrogee par sa methode synchrone, faute de quoi `/etc/hosts`
+entier etait saute.
+
+**Un TROISIEME defaut est sorti de la sonde** : la resolution DIRECTE ne
+consultait pas davantage le resolveur, donc un nom que seul le DNS
+connait rendait `Failed to resolve`.
+
+**Cote Windows**, `readHostsFile().reverse()` etait ecrit a DEUX endroits
+et n'atteignait jamais le DNS ; `resolveAddressName` /
+`resolveAddressNameAsync` sont l'unique reponse, et `ptrQName`
+(`DnsWireCompat`) est REUTILISE au lieu d'une quatrieme construction
+d'`in-addr.arpa`.
+
+**Discrimination** : `probe-nmap-resolution-inverse.test.ts` (11 cas), 6
+tombent en retirant ENSEMBLE les cinq fichiers touches, le nouveau module
+compris. DEUX cas ont corrige mon laboratoire plutot que le produit, et
+l'en-tete le dit.
+
+---
+
+## 2026-09-04 — `nmap` : `-v` etait analyse, range, et lu par personne
+
+**Portee** : `scan/nmap/ScanPhases.ts` (nouveau), `ScanEngine`,
+`NmapFormatter`.
+
+`NmapOptions.verbose` etait ecrit par `-v`, `-vv` et `-d`, et aucun
+lecteur n'existait dans tout `scan/nmap/` : la sortie de `nmap -v` etait
+mot pour mot celle de `nmap`. C'est la forme que ce depot referme sans
+cesse — un critere accepte qui ne decide rien.
+
+Ce que `-v` ajoute est lu dans la source : `timing.cc:765`
+(`Initiating %s at %02d:%02d`, `Completed %s at %02d:%02d, %.2fs
+elapsed`), `scan_engine.cc:2777` (`Scanning %s [%d port%s%s]`, pluriel
+conditionne a `numprobes != 1`), `scan_engine.cc:2828` (la precision
+finale est `total hosts` pour une DECOUVERTE et `total ports` sinon), et
+`nmap.cc:2143` (sous `-v`, un hote trouve MORT est rapporte).
+
+**La decouverte est une phase A PART, nommee.** `ARP Ping Scan` ou
+`ND Ping Scan` quand le lien a repondu, `Ping Scan` quand les sondes IP
+ont servi, rien du tout sous `-Pn` — ce qui rend VISIBLE dans la sortie
+ce que le lot ARP a rendu vrai : le lien REMPLACE les sondes IP.
+
+**Decision ecrite plutot que tue** : une phase ne MESURE rien, les trames
+etant livrees de facon synchrone. Sa duree est celle que la ligne finale
+annonce deja, repartie sur les phases ; en inventer une autre ferait dire
+deux choses a une meme sortie.
+
+**Discrimination** : `probe-nmap-verbeux.test.ts` (10 cas), 7 tombent ;
+les 3 restants sont les TEMOINS, dont c'est le role.
+
+---
+
+## 2026-09-04 — `nmap` : trois familles d'options, et une valeur qui n'est plus une cible
+
+**Portee** : `scan/nmap/NmapOptionTables.ts` (nouveau), `NmapOptions`,
+`NmapRun`.
+
+L'analyseur finissait par `if (a.startsWith('-')) continue;` : tout ce
+qu'il ne connaissait pas etait jete EN SILENCE. Deux consequences, dont
+la seconde n'est pas cosmetique — `nmap -Z <cible>` balayait alors
+qu'aucun `-Z` n'existe, et surtout une option a VALEUR laissait sa valeur
+derriere elle, que la boucle rangeait dans les CIBLES :
+`nmap --max-rate 100 <cible>` balayait `100` comme une machine.
+
+Les deux listes de `NmapOptionTables.ts` sont RELEVEES sur `nmap.cc`
+(`long_options[]`, 100 entrees ; la chaine de `getopt_long_only`) et non
+rappelees. C'est ainsi qu'on a constate que `--reason-only`, jusque-la
+dans notre ligne d'options explicitement ignorees, N'EXISTE PAS.
+
+Trois familles, comme pour `curl` (`docs/PRD-Curl.md`) : implantee,
+connue-de-nmap-non-implantee (refus NOMMANT le simulateur), inexistante
+(message de `nmap`). `-T` et `-r` restent acceptes sans effet, pour une
+raison ecrite : ils ne reglent qu'une vitesse et un ordre de tirage, et
+l'effet observable des deux est deja atteint.
+
+Les listes ne disent DELIBEREMENT pas quelles options prennent une
+valeur : le refus etant immediat, cette valeur n'est jamais atteinte, et
+une telle colonne ne serait lue par personne. Une premiere version
+l'avait ecrite.
+
+`-h` et `-V` sont IMPLANTEES plutot que refusees, parce que le message de
+refus renvoie a `nmap -h`.
+
+**Discrimination** : `probe-nmap-familles-d-options.test.ts` (13 cas), 8
+tombent ; les 5 restants sont nommes dans l'en-tete.
+
+---
+
+## 2026-09-04 — `--scanflags`, et l'ordre des drapeaux de `tcpdump`
+
+**Portee** : `scan/nmap/` (`StatelessScans`, `NmapOptions`, `ScanEngine`,
+`NmapProbes`), `linux/network/tcpdump/` (`TcpdumpFormat`,
+`CaptureFrame`).
+
+`TcpStack.scanProbe(ip, port, flags)` prenait DEJA des drapeaux
+quelconques et `readStatelessReply` savait deja lire une reponse selon le
+balayage de base : il manquait l'option qui les relie — le moteur sans sa
+porte.
+
+**La regle qui compte** : les drapeaux viennent de l'option, la LECTURE
+du balayage de base. Donc `--scanflags FIN` seul n'est PAS `-sF` — meme
+segment, verdict `filtered` au lieu d'`open|filtered`, parce que le
+manuel dit « If you don't specify a base type, SYN scan is used ».
+
+**Deux defauts de `tcpdump` trouves en ecrivant la sonde.** L'ordre des
+drapeaux etait S,F,R,P,U,`.` alors que `tcp_flag_values`
+(`print-tcp.c:105`) est F,S,R,P,`.`,U,E,W — un segment SYN+FIN sortait
+`[SF]` la ou le vrai ecrit `[FS]` —, aucun bit reconnu rendait `.` (le
+signe de l'ACK) au lieu de `none`, et ECE/CWR n'existaient ni dans
+`CaptureTcpFlags` ni dans l'octet 13 que fabrique `tcpFlagsByte`, donc
+les filtres a tranche d'octets les voyaient a zero.
+
+**Un troisieme defaut est MESURE et inscrit au `TODO.md`** faute d'avoir
+trouve son ecrivain : un segment TCP est enregistre DEUX fois dans une
+capture — la prise de port et le journal `captureLog` — et la seconde
+copie perd les drapeaux et la fenetre ; la cle d'appariement incluant
+les drapeaux, les deux lignes sortent des que la copie se trompe.
+
+**Discrimination** : `probe-nmap-scanflags.test.ts` (11 cas), 9 tombent ;
+`probe-tcpdump-ordre-des-drapeaux.test.ts` (7 cas), 6 tombent.

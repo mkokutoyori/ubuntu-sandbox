@@ -8,16 +8,20 @@ function twoDigits(value: number): string {
   return String(value).padStart(2, '0');
 }
 
-export function localClockText(fw: Firewall): string {
-  const local = new Date(fw.localNow());
+export function localClockText(fw: Firewall, at?: number): string {
+  const local = new Date(at === undefined ? fw.localNow() : fw.localTimeOf(at));
   return `${twoDigits(local.getUTCHours())}:${twoDigits(local.getUTCMinutes())}`
     + `:${twoDigits(local.getUTCSeconds())}`;
 }
 
-export function localDateText(fw: Firewall): string {
-  const local = new Date(fw.localNow());
+export function localDateText(fw: Firewall, at?: number): string {
+  const local = new Date(at === undefined ? fw.localNow() : fw.localTimeOf(at));
   return `${local.getUTCFullYear()}-${twoDigits(local.getUTCMonth() + 1)}`
     + `-${twoDigits(local.getUTCDate())}`;
+}
+
+export function fortiLogStamp(fw: Firewall, at: number): string {
+  return `${localDateText(fw, at)} ${localClockText(fw, at)}`;
 }
 
 export const WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];

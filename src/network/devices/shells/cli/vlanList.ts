@@ -1,18 +1,30 @@
+import { parseVlanId } from '../../switch/VlanSet';
+
+/**
+ * La liste de VLAN d'IOS : `10`, `10,20`, `20-24`, et leurs melanges.
+ *
+ * C'est une AUTRE grammaire que celle de VRP (`10 20 to 24`, dans
+ * `VlanSet.parseVlanList`) : les deux constructeurs ecrivent une liste
+ * differemment, et les fondre accepterait sur l'un ce que l'autre
+ * refuse. Ce qu'elles partagent — la plage 1-4094 de l'IEEE 802.1Q —
+ * est lu au meme endroit par les deux.
+ */
 export function parseVlanList(input: string): Set<number> | null {
   const vlans = new Set<number>();
   const parts = input.split(',');
+  if (parts.length === 0) return null;
   for (const part of parts) {
     if (part.includes('-')) {
-      const [start, end] = part.split('-').map(Number);
-      if (isNaN(start) || isNaN(end)) return null;
-      for (let i = start; i <= end; i++) vlans.add(i);
+      const [debut, fin] = part.split('-').map((b) => parseVlanId(b));
+      if (debut === null || fin === null || fin < debut) return null;
+      for (let i = debut; i <= fin; i++) vlans.add(i);
     } else {
-      const num = parseInt(part, 10);
-      if (isNaN(num)) return null;
+      const num = parseVlanId(part);
+      if (num === null) return null;
       vlans.add(num);
     }
   }
-  return vlans;
+  return vlans.size > 0 ? vlans : null;
 }
 
 export function compactVlanList(sorted: readonly number[]): string {

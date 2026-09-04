@@ -1,6 +1,7 @@
 import type { CommandTrie, ParamSpec } from '../CommandTrie';
 import { estTypeSansNumero } from './CiscoConfigCommands';
 import { ALIAS_MODE_VALUES } from '../../inspection/config/AliasRepository';
+import { mapCommandIsComplete } from './classMapGrammar';
 import {
   PASSWORD_MIN_LENGTH_MAX, RSA_MODULUS_MIN, RSA_MODULUS_MAX,
 } from './CiscoSecurityCommands';
@@ -481,10 +482,12 @@ function describeArgumentTypes(tries: ArgumentHelpTries): void {
   // contenu, complete la commande ou non. `rate-limit input` attend
   // encore son debit.
   tries.configIf.requireArgs('rate-limit', 2);
-  // `class-map NOM` se valide ; `class-map match-all` attend son nom.
-  // Un seul argument dans les deux cas — seul son contenu les separe.
-  tries.config.executableWhen('class-map',
-    (args) => !(args.length === 1 && /^match-(all|any)$/i.test(args[0])));
+  // `class-map NOM` se valide ; `class-map match-all`, `class-map type` et
+  // `class-map type inspect` attendent encore leur nom. Un seul argument
+  // dans plusieurs de ces cas — seul son contenu les separe, et c'est la
+  // grammaire partagee qui tranche, celle-la meme que le gestionnaire lit.
+  tries.config.executableWhen('class-map', (args) => mapCommandIsComplete(args, true));
+  tries.config.executableWhen('policy-map', (args) => mapCommandIsComplete(args, false));
 
 }
 
@@ -565,7 +568,7 @@ export function describeCiscoArguments(tries: ArgumentHelpTries): void {
     INT('number', [1, 4294967295], 'Key number'),
   ]);
   tries.config.describeArgs('ntp source', [
-    WORD('interface', 'Interface to use for source address'),
+    IFACE('Interface to use for source address'),
   ]);
   tries.config.describeArgs('snmp-server community', [
     WORD('community', 'SNMP community string'),

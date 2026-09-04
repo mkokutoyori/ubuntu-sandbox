@@ -24,6 +24,7 @@ export interface PolicyRoute {
   gateway?: string;
   comment?: string;
   hitCount: number;
+  lastUsedAt: number | null;
 }
 
 export interface PolicyRouteDraft {
@@ -61,8 +62,17 @@ export interface PolicyRouteDecision {
 
 const ANY_PORT_TO = 65535;
 
+export interface PolicyRouteTableOptions {
+  readonly now?: () => number;
+}
+
 export class PolicyRouteTable {
   private routes: PolicyRoute[] = [];
+  private readonly now: () => number;
+
+  constructor(options: PolicyRouteTableOptions = {}) {
+    this.now = options.now ?? (() => Date.now());
+  }
 
   upsert(draft: PolicyRouteDraft, position = -1): void {
     this.remove(draft.id);
@@ -84,6 +94,7 @@ export class PolicyRouteTable {
       gateway: draft.gateway,
       comment: draft.comment,
       hitCount: 0,
+      lastUsedAt: null,
     };
 
     if (position < 0 || position >= this.routes.length) this.routes.push(route);
@@ -104,6 +115,14 @@ export class PolicyRouteTable {
     this.routes = [];
   }
 
+  clearCounters(id?: string): void {
+    for (const route of this.routes) {
+      if (id !== undefined && route.id !== id) continue;
+      route.hitCount = 0;
+      route.lastUsedAt = null;
+    }
+  }
+
   byId(id: string): PolicyRoute | undefined {
     return this.routes.find(route => route.id === id);
   }
@@ -122,6 +141,7 @@ export class PolicyRouteTable {
       if (!this.matches(route, probe)) continue;
 
       route.hitCount++;
+      route.lastUsedAt = this.now();
       return Object.freeze({
         route,
         action: route.action,

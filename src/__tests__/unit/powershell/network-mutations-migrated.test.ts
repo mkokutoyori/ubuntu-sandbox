@@ -43,7 +43,7 @@ describe('IP address mutations', () => {
   it('Remove-NetIPAddress drops the IP', async () => {
     const sh = createShell();
     await run(sh, 'New-NetIPAddress -IPAddress "10.10.10.11" -InterfaceAlias eth0 -PrefixLength 24');
-    await run(sh, 'Remove-NetIPAddress -IPAddress "10.10.10.11"');
+    await run(sh, 'Remove-NetIPAddress -IPAddress "10.10.10.11" -Confirm:$false');
     const out = await run(sh, 'Get-NetIPAddress -InterfaceAlias eth0');
     expect(out).not.toContain('10.10.10.11');
   });
@@ -60,7 +60,7 @@ describe('Route mutations', () => {
   it('Remove-NetRoute drops the route', async () => {
     const sh = createShell();
     await run(sh, 'New-NetRoute -DestinationPrefix "192.168.50.0/24" -InterfaceAlias eth0 -NextHop "10.0.0.1"');
-    await run(sh, 'Remove-NetRoute -DestinationPrefix "192.168.50.0/24"');
+    await run(sh, 'Remove-NetRoute -DestinationPrefix "192.168.50.0/24" -Confirm:$false');
     const out = await run(sh, 'Get-NetRoute');
     expect(out).not.toContain('192.168.50.0/24');
   });

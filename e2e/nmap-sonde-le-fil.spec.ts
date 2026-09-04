@@ -132,6 +132,139 @@ test.describe('nmap sonde le fil', () => {
     expect(await lastLines(page, 6)).toContain('(0 hosts up)');
   });
 
+  test('un voisin muet est trouve par ARP, et la capture le montre', async ({ page }) => {
+    test.setTimeout(180_000);
+    await page.goto('/', { timeout: 45_000 });
+    await waitForStore(page);
+
+    const cibleId = await addDevice(page, 'linux-server', 300, 400);
+    const scannerId = await addDevice(page, 'linux-pc', 600, 400);
+    await cable(page, cibleId, scannerId);
+
+    await openTerminal(page, cibleId);
+    await typeCmd(page, `ip addr add ${CIBLE}/24 dev eth0`);
+    await typeCmd(page, 'sudo iptables -A INPUT -p icmp -j DROP');
+    await typeCmd(page, 'sudo iptables -A INPUT -p tcp -j DROP');
+    await closeTerminal(page);
+
+    await openTerminal(page, scannerId);
+    await typeCmd(page, `ip addr add ${SCANNER}/24 dev eth0`);
+    await typeCmd(page, 'sudo tcpdump -i eth0 -w /tmp/arp.pcap &');
+    await typeCmd(page, `nmap -sn --reason ${CIBLE}`);
+
+    const rapport = await lastLines(page, 10);
+    expect(rapport).toContain('Host is up');
+    expect(rapport).toContain('arp-response');
+    expect(rapport).toContain('MAC Address:');
+
+    await typeCmd(page, 'sudo tcpdump -r /tmp/arp.pcap -nn');
+    const capture = await lastLines(page, 20);
+    expect(capture).toContain(`ARP, Request who-has ${CIBLE} tell ${SCANNER}`);
+    expect(capture).not.toContain('ICMP echo request');
+  });
+
+  test('un hote vivant est NOMME, et `-n` l en empeche', async ({ page }) => {
+    test.setTimeout(180_000);
+    await page.goto('/', { timeout: 45_000 });
+    await waitForStore(page);
+
+    const cibleId = await addDevice(page, 'linux-server', 300, 450);
+    const scannerId = await addDevice(page, 'linux-pc', 600, 450);
+    await cable(page, cibleId, scannerId);
+
+    await openTerminal(page, cibleId);
+    await typeCmd(page, `ip addr add ${CIBLE}/24 dev eth0`);
+    await closeTerminal(page);
+
+    await openTerminal(page, scannerId);
+    await typeCmd(page, `ip addr add ${SCANNER}/24 dev eth0`);
+    await typeCmd(page, `sudo sh -c 'echo "${CIBLE} cible.lab" >> /etc/hosts'`);
+
+    await typeCmd(page, `nmap -sn ${CIBLE}`);
+    expect(await lastLines(page, 8)).toContain(`Nmap scan report for cible.lab (${CIBLE})`);
+
+    await typeCmd(page, `nmap -n -sn ${CIBLE}`);
+    const sansDns = await lastLines(page, 8);
+    expect(sansDns).toContain(`Nmap scan report for ${CIBLE}`);
+    expect(sansDns).not.toContain('cible.lab');
+  });
+
+  test('`-v` nomme les phases du balayage', async ({ page }) => {
+    test.setTimeout(180_000);
+    await page.goto('/', { timeout: 45_000 });
+    await waitForStore(page);
+
+    const cibleId = await addDevice(page, 'linux-server', 300, 500);
+    const scannerId = await addDevice(page, 'linux-pc', 600, 500);
+    await cable(page, cibleId, scannerId);
+
+    await openTerminal(page, cibleId);
+    await typeCmd(page, `ip addr add ${CIBLE}/24 dev eth0`);
+    await typeCmd(page, 'sudo systemctl start ssh');
+    await closeTerminal(page);
+
+    await openTerminal(page, scannerId);
+    await typeCmd(page, `ip addr add ${SCANNER}/24 dev eth0`);
+    await typeCmd(page, `nmap -v -p 22 ${CIBLE}`);
+
+    const sortie = await lastLines(page, 16);
+    expect(sortie).toContain('Initiating ARP Ping Scan');
+    expect(sortie).toContain('Initiating Connect Scan');
+    expect(sortie).toContain(`Scanning ${CIBLE} [1 port]`);
+    expect(sortie).toMatch(/22\/tcp\s+open\s+ssh/);
+  });
+
+  test('une option inconnue est refusee au lieu d etre ignoree', async ({ page }) => {
+    test.setTimeout(180_000);
+    await page.goto('/', { timeout: 45_000 });
+    await waitForStore(page);
+
+    const scannerId = await addDevice(page, 'linux-pc', 600, 550);
+
+    await openTerminal(page, scannerId);
+    await typeCmd(page, `ip addr add ${SCANNER}/24 dev eth0`);
+
+    await typeCmd(page, `nmap --zorglub ${CIBLE}`);
+    const inconnue = await lastLines(page, 6);
+    expect(inconnue).toContain("nmap: unrecognized option '--zorglub'");
+    expect(inconnue).not.toContain('Nmap scan report');
+
+    await typeCmd(page, `nmap --max-rate 100 ${CIBLE}`);
+    const nonImplantee = await lastLines(page, 6);
+    expect(nonImplantee).toContain(
+      'nmap: option --max-rate: is not implemented in this simulator');
+    expect(nonImplantee).not.toContain('Nmap scan report for 100');
+  });
+
+  test('`--scanflags` compose le segment, la base decide la lecture', async ({ page }) => {
+    test.setTimeout(180_000);
+    await page.goto('/', { timeout: 45_000 });
+    await waitForStore(page);
+
+    const cibleId = await addDevice(page, 'linux-server', 300, 600);
+    const scannerId = await addDevice(page, 'linux-pc', 600, 600);
+    await cable(page, cibleId, scannerId);
+
+    await openTerminal(page, cibleId);
+    await typeCmd(page, `ip addr add ${CIBLE}/24 dev eth0`);
+    await typeCmd(page, 'sudo systemctl start ssh');
+    await closeTerminal(page);
+
+    await openTerminal(page, scannerId);
+    await typeCmd(page, `ip addr add ${SCANNER}/24 dev eth0`);
+
+    // Le meme segment que `-sF`, lu comme un `-sS` : le port ouvert
+    // ressort `filtered` la ou `-sF` rendrait `open|filtered`.
+    await typeCmd(page, `nmap -Pn --scanflags FIN -p 22 ${CIBLE}`);
+    expect(await lastLines(page, 8)).toMatch(/22\/tcp\s+filtered/);
+
+    await typeCmd(page, `nmap -Pn -sF -p 22 ${CIBLE}`);
+    expect(await lastLines(page, 8)).toMatch(/22\/tcp\s+open\|filtered/);
+
+    await typeCmd(page, `nmap -Pn --scanflags 300 -p 22 ${CIBLE}`);
+    expect(await lastLines(page, 6)).toContain('--scanflags option must be a number');
+  });
+
   test('nmap.exe existe aussi sur une machine Windows', async ({ page }) => {
     test.setTimeout(180_000);
     await page.goto('/', { timeout: 45_000 });

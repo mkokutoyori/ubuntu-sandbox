@@ -57,6 +57,9 @@ import {
 import { VirtualFileSystem } from '@/network/devices/linux/VirtualFileSystem';
 import { bondOptionLines } from '@/network/devices/linux/net/LinuxBonding';
 import { Firewall } from '@/network/devices/firewall/Firewall';
+import {
+  type NetFirewallRuleEntry, firewallRuleKey, seedBuiltInFirewallRules,
+} from '@/network/devices/windows/netFirewallRule';
 import { buildConnection, type Connection } from './networkStore';
 
 /** Surfaced by Save/Export UI (rapport 09, item #55) so the user knows
@@ -190,6 +193,11 @@ interface TopologyRegistryExport {
  * fields are the ones `sc config` can change, each present only when it
  * differs from the factory service of the same name.
  */
+interface TopologyFirewallExport {
+  rules: NetFirewallRuleEntry[];
+  removed: string[];
+}
+
 interface TopologyWindowsServiceExport {
   name: string;
   created?: {
@@ -271,6 +279,7 @@ interface TopologyDeviceExport {
   registry?: TopologyRegistryExport;
   /** Services whose configuration or state is no longer the factory one. */
   windowsServices?: TopologyWindowsServiceExport[];
+  windowsFirewallRules?: TopologyFirewallExport;
   vlans?: TopologyVlanExport[];
   switchports?: TopologySwitchportExport[];
   /** `show running-config`/`display current-configuration` text (Router/Switch). */
@@ -543,6 +552,26 @@ function restoreRegistry(device: WindowsPC, data: TopologyRegistryExport): void 
  * and a second copy of them in this file would drift the first time one
  * is added.
  */
+function captureWindowsFirewallRules(device: WindowsPC): TopologyFirewallExport | null {
+  const factory = new Map<string, NetFirewallRuleEntry>();
+  seedBuiltInFirewallRules(factory);
+  const rules: NetFirewallRuleEntry[] = [];
+  for (const rule of device.firewallRules.values()) {
+    const base = factory.get(firewallRuleKey(rule.name));
+    if (!base || JSON.stringify(base) !== JSON.stringify(rule)) rules.push({ ...rule });
+  }
+  const removed = [...factory.values()]
+    .filter(base => !device.firewallRules.has(firewallRuleKey(base.name)))
+    .map(base => base.name);
+  if (rules.length === 0 && removed.length === 0) return null;
+  return { rules, removed };
+}
+
+function restoreWindowsFirewallRules(device: WindowsPC, exported: TopologyFirewallExport): void {
+  for (const name of exported.removed) device.firewallRules.delete(firewallRuleKey(name));
+  for (const rule of exported.rules) device.firewallRules.set(firewallRuleKey(rule.name), { ...rule });
+}
+
 function captureWindowsServices(device: WindowsPC): TopologyWindowsServiceExport[] {
   const base = new WindowsServiceManager();
   const out: TopologyWindowsServiceExport[] = [];
@@ -874,6 +903,8 @@ export function exportTopology(
       if (teams.length > 0) entry.windowsTeams = teams;
       const services = captureWindowsServices(device);
       if (services.length > 0) entry.windowsServices = services;
+      const firewall = captureWindowsFirewallRules(device);
+      if (firewall) entry.windowsFirewallRules = firewall;
     }
     if (device instanceof Switch) {
       const vlans = captureVlans(device);
@@ -1192,6 +1223,9 @@ export async function importTopology(json: TopologyExport): Promise<ImportResult
       // hive. Replaying the captured registry afterwards means the machine
       // ends up showing exactly what was saved, projection included.
       if (devData.windowsServices) restoreWindowsServices(device, devData.windowsServices);
+      if (devData.windowsFirewallRules) {
+        restoreWindowsFirewallRules(device, devData.windowsFirewallRules);
+      }
       if (devData.registry) restoreRegistry(device, devData.registry);
       if (devData.windowsTeams) restoreWindowsTeams(device, devData.windowsTeams);
     }

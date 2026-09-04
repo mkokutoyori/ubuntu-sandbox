@@ -2,8 +2,9 @@ import type { LinuxCommand } from '../LinuxCommand';
 import type { LinuxCommandContext } from '../LinuxCommandContext';
 import { IPAddress, IPv6Address } from '../../../../core/types';
 import { localDeviceOf } from '../../network/HostLookup';
+import { forwardAddressOfAsync, reverseNameOfAsync } from '../../network/ReverseName';
 import { detectServiceFromBanner } from '@/network/scan/nmap/BannerAnalyzer';
-import type { ScanHost } from '@/network/scan/nmap/NmapProbes';
+import { linkNeighbourOf, type ScanHost } from '@/network/scan/nmap/NmapProbes';
 import { runNmap } from '@/network/scan/nmap/NmapRun';
 import { makeArgCompleter } from '../completionHelpers';
 
@@ -20,8 +21,10 @@ function scanHost(ctx: LinuxCommandContext): ScanHost {
     grabGreeting: (ip, port) => ctx.net.grabServiceBanner(ip, port),
     sendUdpProbe: (ip, port, sourcePort) =>
       ctx.net.sendUdpProbe(new IPAddress(ip), port, sourcePort),
-    ackProbe: (ip, port) => ctx.net.getTcpStack().ackProbe(ip, port),
-    synProbe: (ip, port) => ctx.net.getTcpStack().synProbe(ip, port),
+    scanProbe: (ip, port, flags) => ctx.net.getTcpStack().scanProbe(ip, port, flags),
+    linkNeighbour: (ip) => linkNeighbourOf(localDeviceOf(ctx), ip),
+    reverseName: (ip) => reverseNameOfAsync(ctx.executor.nss, ip),
+    resolveName: (name) => forwardAddressOfAsync(ctx.executor.nss, name),
   };
 }
 
@@ -32,10 +35,11 @@ export const nmapCommand: LinuxCommand = {
   complete: makeArgCompleter({
     flags: ['-6', '-A', '-F', '-O', '-P0', '-Pn', '-R', '-T', '-d', '-n',
       '-oA', '-oG', '-oN', '-p', '-p-', '-sP', '-sS', '-sT', '-sU', '-sV',
-      '-sA', '-sn', '-v', '-vv', '--open', '--reason', '--top-ports'],
+      '-sA', '-sF', '-sM', '-sN', '-sW', '-sX', '-sn', '-v', '-vv',
+      '--disable-arp-ping', '--open', '--reason', '--send-ip', '--top-ports'],
     hostsAtBarePosition: true,
   }),
-  usage: 'nmap [-sT|-sS|-sU|-sA] [-sV] [-O] [-A] [-p SPEC] [-F] [--top-ports N] [-sn] [-Pn] [--open] [--reason] [-n] [-oN file] [-oG file] <target...>',
+  usage: 'nmap [-sT|-sS|-sU|-sA|-sF|-sN|-sX|-sM|-sW] [-sV] [-O] [-A] [-p SPEC] [-F] [--top-ports N] [-sn] [-Pn] [--open] [--reason] [-n] [-oN file] [-oG file] <target...>',
   help: 'Discover hosts and services on a network.',
 
   async run(ctx: LinuxCommandContext, args: string[]): Promise<string> {

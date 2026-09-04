@@ -159,7 +159,7 @@ export const ROUTEUR_SEUL: ContinuationTable = {
     'show ip igmp groups': ['detail'],
     'show ip sla statistics': ['aggregated', 'details'],
     'show ipv6 interface': ['brief'],
-    'show track': ['brief', 'up'],
+    'show track': ['brief'],
     'show traffic-shape': ['statistics'],
   },
   user: {
@@ -172,7 +172,7 @@ export const ROUTEUR_SEUL: ContinuationTable = {
     'show ip igmp groups': ['detail'],
     'show ip sla statistics': ['aggregated', 'details'],
     'show ipv6 interface': ['brief'],
-    'show track': ['brief', 'up'],
+    'show track': ['brief'],
     'show traffic-shape': ['statistics'],
   },
 };

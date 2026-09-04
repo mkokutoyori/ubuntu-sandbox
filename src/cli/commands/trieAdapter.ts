@@ -34,6 +34,16 @@ export interface AdapterKeyword {
    * un mot-cle, lui, est une declaration a part entiere.
    */
   readonly reachableWhen?: (session: CliSession) => boolean;
+  /**
+   * `no <mot-cle>` se tape SANS la valeur, comme sur IOS.
+   *
+   * `ip domain-lookup source-interface Gi0/0` se retire par `no ip
+   * domain-lookup source-interface` : la valeur dit ce qu'on pose, pas
+   * ce qu'on enleve. Sans ce drapeau la place declaree est EXIGEE des
+   * deux cotes, donc le gestionnaire du trie — qui, lui, accepte les
+   * deux formes — n'etait jamais atteint.
+   */
+  readonly undoWithoutArgument?: boolean;
 }
 
 export interface CollectedRegistration {
@@ -514,6 +524,29 @@ export function specsFromTrieRegistrations(
           }) as CommandSpec['undo'],
         }),
       });
+
+      const negationDuMotCle = negations.get(entry.path) ?? negation;
+      if (sub.undoWithoutArgument && negationDuMotCle !== undefined
+        && placesFille.some(place => place.optional !== true)) {
+        const propre = negations.get(entry.path);
+        const cible = negationDuMotCle;
+        specs.push({
+          id: ['no', modesIci[0], ...amont, sub.keyword].join('-'),
+          path: [...amont, sub.keyword],
+          description: sub.description,
+          modes: modesIci,
+          minPrivilege: privilegeDe(entry.path),
+          ...(cache ? { hidden: true } : {}),
+          ...(sub.reachableWhen ? { reachableWhen: sub.reachableWhen }
+            : contexte ? { reachableWhen: contexte } : {}),
+          run: (() => '% Incomplete command.') as CommandSpec['run'],
+          undo: ((_session: unknown) => {
+            const argv = propre === undefined
+              ? [...words, sub.keyword] : [sub.keyword];
+            return cible.action(argv, [cible.path, ...argv].join(' '));
+          }) as CommandSpec['undo'],
+        });
+      }
     }
   }
   return specs;

@@ -16,3 +16,9 @@ export function formatLinkSpeedMbps(mbps: number): string {
   if (mbps >= 1000 && mbps % 1000 === 0) return `${mbps / 1000} Gbps`;
   return `${mbps} Mbps`;
 }
+
+export const LOOPBACK_IFINDEX = 1;
+
+export function adapterIfIndex(position: number): number {
+  return LOOPBACK_IFINDEX + 1 + position;
+}

@@ -63,11 +63,15 @@ export interface UdldConfig {
   ports: Map<string, UdldPortRuntime>;
 }
 
+export const UDLD_DEFAULT_HELLO_SEC = 15;
+
+export const UDLD_MESSAGE_TIME_RANGE: readonly [number, number] = [1, 90];
+
 export function createDefaultUdldConfig(): UdldConfig {
   return {
     enabled: true,
     globalMode: 'disabled',
-    helloIntervalSec: 15,
+    helloIntervalSec: UDLD_DEFAULT_HELLO_SEC,
     messageTimeoutSec: 45,
     aggressiveRetryLimit: 8,
     ports: new Map(),

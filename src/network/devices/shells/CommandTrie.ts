@@ -81,7 +81,7 @@ export function renderParamKeyword(param: ParamSpec): string {
     case 'INT':
       return param.range ? `<${param.range[0]}-${param.range[1]}>` : '<0-4294967295>';
     case 'INTERFACE':
-      return 'WORD';
+      return 'IFACE';
     case 'VLAN_LIST':
       return 'WORD';
     case 'STRING':

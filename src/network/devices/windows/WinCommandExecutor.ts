@@ -8,6 +8,7 @@
 import { Port } from '../../hardware/Port';
 import { IPAddress, SubnetMask } from '../../core/types';
 import type { ARPEntry } from '../EndHost';
+import type { NetFirewallRuleEntry } from './netFirewallRule';
 
 /** Ping result from EndHost.executePingSequence */
 export interface PingResult {
@@ -205,12 +206,7 @@ export interface WinCommandContext {
    * so a rule added through one surface is honoured by the data plane
    * and visible through the other.
    */
-  dynamicFirewallRules: Map<string, {
-    name: string; displayName: string; enabled: boolean;
-    action: string; direction: string;
-    protocol: string; localPort: string; remotePort: string;
-    description: string;
-  }>;
+  firewallRules: Map<string, NetFirewallRuleEntry>;
 
   /** Per-device SMB share table (`net share` / `New-SmbShare`) — instance-owned. */
   smbShares: import('./server/smb/SmbShareTable').SmbShareTable;

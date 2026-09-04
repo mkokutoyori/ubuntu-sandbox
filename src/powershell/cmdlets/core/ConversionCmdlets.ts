@@ -111,7 +111,11 @@ export class ExportCsvCmdlet implements ICmdlet {
         return null;
       }
     }
-    fs.writeFile(path, text);
+    try {
+      fs.writeFile(path, text);
+    } catch (e) {
+      ctx.emitError(`Export-Csv : ${e instanceof Error ? e.message : String(e)}`);
+    }
     return null;
   }
 }

@@ -28,7 +28,8 @@ import { NtpAgent, type NtpHost } from '../ntp/NtpAgent';
 import { W32TimeService } from './windows/W32TimeService';
 import { WindowsDnsCache } from './windows/WinDnsCache';
 import { RRType } from '../dns/wire/RRType';
-import type { ARecordData } from '../dns/wire/ResourceRecord';
+import type { ARecordData, PtrRecordData } from '../dns/wire/ResourceRecord';
+import { ptrQName } from '../dns/compat/DnsWireCompat';
 import type { UserAccountHost } from '../equipment/HostCapabilities';
 import { Port } from '../hardware/Port';
 import { IPAddress, IPv6Address, SubnetMask, DeviceType, type IPv4Packet, type TCPPacket, IP_PROTO_TCP, IP_PROTO_UDP, IP_PROTO_ICMP, createIPv4Packet } from '../core/types';
@@ -167,7 +168,7 @@ import { CertificateVerifier } from '@/network/pki/CertificateVerifier';
 import type { X509Certificate } from '@/network/pki/X509Certificate';
 import type { CurlHost } from '@/network/http/curl/CurlHost';
 import { runCurl } from '@/network/http/curl/CurlEngine';
-import type { ScanHost } from '@/network/scan/nmap/NmapProbes';
+import { linkNeighbourOf, type ScanHost } from '@/network/scan/nmap/NmapProbes';
 import { runNmap } from '@/network/scan/nmap/NmapRun';
 import { cmdPrint } from './windows/WinPrint';
 import { runRunasNonInteractive, runAsUser } from './windows/WinRunas';
@@ -180,6 +181,12 @@ import * as WinSys from './windows/WinSystemCommands';
 import { cmdReg as winCmdReg } from './windows/WinRegCommand';
 import { cmdDir } from './windows/WinDir';
 import { CrossVendorRemoteShell } from '@/shell/CrossVendorRemoteShell';
+import type { NetIPAddressEntry } from './windows/netIpAddress';
+import type { NetRouteEntry } from './windows/netRoute';
+import {
+  type FirewallPacketFacts, type NetFirewallRuleEntry,
+  firewallRuleMatches, seedBuiltInFirewallRules,
+} from './windows/netFirewallRule';
 import {
   cmdCd, cmdMkdir, cmdRmdir, cmdType, cmdCopy, cmdMove,
   cmdRen, cmdDel, cmdTree, cmdSet, cmdTasklist, cmdNetstat,
@@ -238,6 +245,12 @@ function w32ReferenceId(ref: string): string {
   const hex = ref.split('.')
     .map((o) => parseInt(o, 10).toString(16).toUpperCase().padStart(2, '0')).join('');
   return `0x${hex} (source IP:  ${ref})`;
+}
+
+function seededFirewallRules(): Map<string, NetFirewallRuleEntry> {
+  const store = new Map<string, NetFirewallRuleEntry>();
+  seedBuiltInFirewallRules(store);
+  return store;
 }
 
 export class WindowsPC extends EndHost implements UserAccountHost {
@@ -382,13 +395,13 @@ export class WindowsPC extends EndHost implements UserAccountHost {
   // own handlers via shared references) without going through the
   // executor as the source of truth.
   /** Additional IP addresses (added via New-NetIPAddress). */
-  readonly extraIPs: Map<string, { ifAlias: string; prefixLength: number; prefixOrigin: string; suffixOrigin: string; skipAsSource: boolean; gateway?: string; addressFamily: string }> = new Map();
+  readonly extraIPs: Map<string, NetIPAddressEntry> = new Map();
   /** Extra routes (added via New-NetRoute). */
-  readonly extraRoutes: Map<string, { ifAlias: string; nextHop: string; metric: number }> = new Map();
+  readonly extraRoutes: Map<string, NetRouteEntry> = new Map();
   /** Adapter overrides: status / display name. */
   readonly adapterOverrides: Map<string, { status?: string; displayName?: string }> = new Map();
   /** Dynamic firewall rules (added via New-NetFirewallRule). */
-  readonly dynamicFirewallRules: Map<string, { name: string; displayName: string; enabled: boolean; action: string; direction: string; protocol: string; localPort: string; remotePort: string; description: string }> = new Map();
+  readonly firewallRules: Map<string, NetFirewallRuleEntry> = seededFirewallRules();
   /** Network connection profiles: ifIndex → category. */
   readonly networkProfiles: Map<number, string> = new Map();
   /** VPN connections: lowercase name → details. */
@@ -1076,7 +1089,43 @@ export class WindowsPC extends EndHost implements UserAccountHost {
 
   /** Best-effort reverse DNS for the SMB session table's ClientComputerName column. */
   private reverseLookupClient(ip: string): string {
-    return this.readHostsFile().reverse(ip)?.canonicalName ?? ip;
+    return this.resolveAddressName(ip) ?? ip;
+  }
+
+  /**
+   * Le nom d'une adresse, dans l'ordre du client Windows : fichier hosts,
+   * puis cache du resolveur. C'est la moitie qui n'attend rien, donc la
+   * seule qu'un appelant synchrone puisse lire ; `resolveAddressNameAsync`
+   * y ajoute l'interrogation PTR. Une seule ecriture derriere les trois
+   * appelants, sans quoi cette machine nommerait un poste ici et pas la.
+   */
+  resolveAddressName(ip: string): string | null {
+    const fromHosts = this.readHostsFile().reverse(ip)?.canonicalName;
+    if (fromHosts) return fromHosts;
+    return this.dnsCache.lookup(ptrQName(ip), 'PTR');
+  }
+
+  /** La meme question, avec le droit d'interroger un serveur DNS. */
+  async resolveAddressNameAsync(ip: string): Promise<string | null> {
+    const local = this.resolveAddressName(ip);
+    if (local) return local;
+    const arpa = ptrQName(ip);
+    const seen = new Set<string>();
+    for (const [ifName] of this.ports) {
+      for (const server of this.effectiveDnsServers(ifName)) {
+        if (seen.has(server)) continue;
+        seen.add(server);
+        let response;
+        try { response = await this.queryDnsServer(new IPAddress(server), arpa, 'PTR'); }
+        catch { continue; }
+        const ptr = response?.answers.find((rr) => rr.data.type === RRType.PTR);
+        if (ptr) {
+          this.dnsCache.store(arpa, response!.answers);
+          return (ptr.data as PtrRecordData).ptrdname;
+        }
+      }
+    }
+    return null;
   }
 
   /** Build a fresh ISshServerContext bound to this machine's NTFS / users. */
@@ -3170,10 +3219,7 @@ export class WindowsPC extends EndHost implements UserAccountHost {
       executeTraceroute: (target: IPAddress, maxHops?: number, timeoutMs?: number) =>
         this.executeTraceroute(target, maxHops, timeoutMs ?? 500) as Promise<TracerouteHop[]>,
 
-      reverseLookup: (ip: string): string | null => {
-        const entry = this.readHostsFile().reverse(ip);
-        return entry ? entry.canonicalName : null;
-      },
+      reverseLookup: (ip: string): string | null => this.resolveAddressName(ip),
 
       listMulticastGroups: (ifName?: string) => this.listMulticastGroups(ifName),
 
@@ -3282,7 +3328,7 @@ export class WindowsPC extends EndHost implements UserAccountHost {
       },
 
       portProxy: this.portProxyTable,
-      dynamicFirewallRules: this.dynamicFirewallRules,
+      firewallRules: this.firewallRules,
       eventLog: this.eventLog,
       dnsCache: this.dnsCache,
 
@@ -3788,8 +3834,10 @@ export class WindowsPC extends EndHost implements UserAccountHost {
       grabGreeting: (ip, port) => this.getTcpStack().grabGreeting(ip, port),
       sendUdpProbe: (ip, port, sourcePort) =>
         this.sendUdpDatagram(new IPAddress(ip), port, sourcePort, null, 0),
-      ackProbe: (ip, port) => this.getTcpStack().ackProbe(ip, port),
-      synProbe: (ip, port) => this.getTcpStack().synProbe(ip, port),
+      scanProbe: (ip, port, flags) => this.getTcpStack().scanProbe(ip, port, flags),
+      linkNeighbour: (ip) => linkNeighbourOf(this, ip),
+      reverseName: (ip) => this.resolveAddressNameAsync(ip),
+      resolveName: async (name) => (await this.resolveHostname(name))?.toString() ?? null,
     };
   }
 
@@ -5584,42 +5632,39 @@ export class WindowsPC extends EndHost implements UserAccountHost {
     direction: 'in' | 'out' | 'forward',
     _outPortName?: string,
   ): 'accept' | 'drop' | 'reject' {
-    if (this.dynamicFirewallRules.size === 0) return 'accept';
-    const ports = this.extractPorts(ipPkt);
-    const dirMatch = direction === 'in' ? 'Inbound'
-                   : direction === 'out' ? 'Outbound' : null;
-    if (!dirMatch) return 'accept';
-    const proto = ipPkt.protocol === IP_PROTO_TCP ? 'TCP'
-                : ipPkt.protocol === IP_PROTO_UDP ? 'UDP'
-                : ipPkt.protocol === IP_PROTO_ICMP ? 'ICMPv4' : null;
-    const matchPort = (rulePort: string, actualPort: number): boolean => {
-      if (!rulePort || rulePort === 'Any') return true;
-      return rulePort.split(',').some((p) => p.trim() === String(actualPort));
-    };
-    for (const rule of this.dynamicFirewallRules.values()) {
-      if (!rule.enabled) continue;
-      if (rule.direction !== dirMatch) continue;
-      if (rule.protocol !== 'Any' && proto && rule.protocol !== proto) continue;
-      const local = direction === 'in' ? ports.dstPort : ports.srcPort;
-      const remote = direction === 'in' ? ports.srcPort : ports.dstPort;
-      if (!matchPort(rule.localPort, local)) continue;
-      if (!matchPort(rule.remotePort, remote)) continue;
-      if (rule.action === 'Block') {
-        this.getBus().publish({
-          topic: 'windows.firewall.drop',
-          payload: {
-            deviceId: this.id, hostname: this.getHostname(),
-            ruleName: rule.name,
-            sourceIp: ipPkt.sourceIP.toString(),
-            destinationIp: ipPkt.destinationIP.toString(),
-            sourcePort: ports.srcPort, destinationPort: ports.dstPort,
-            protocol: proto ?? 'Any', direction: dirMatch,
-          },
-        });
-        return 'drop';
-      }
-      return 'accept';
+    if (direction === 'forward') return 'accept';
+    const facts = this.firewallFactsFor(ipPkt, direction);
+    const matching = [...this.firewallRules.values()].filter(r => firewallRuleMatches(r, facts));
+    for (const rule of matching) {
+      if (rule.action !== 'Block') continue;
+      this.getBus().publish({
+        topic: 'windows.firewall.drop',
+        payload: {
+          deviceId: this.id, hostname: this.getHostname(),
+          ruleName: rule.name,
+          sourceIp: ipPkt.sourceIP.toString(),
+          destinationIp: ipPkt.destinationIP.toString(),
+          sourcePort: facts.direction === 'Inbound' ? facts.remotePort : facts.localPort,
+          destinationPort: facts.direction === 'Inbound' ? facts.localPort : facts.remotePort,
+          protocol: rule.protocol, direction: facts.direction,
+        },
+      });
+      return 'drop';
     }
     return 'accept';
+  }
+
+  private firewallFactsFor(ipPkt: IPv4Packet, direction: 'in' | 'out'): FirewallPacketFacts {
+    const ports = this.extractPorts(ipPkt);
+    const inbound = direction === 'in';
+    return {
+      direction: inbound ? 'Inbound' : 'Outbound',
+      protocolNumber: ipPkt.protocol,
+      localAddress: inbound ? ipPkt.destinationIP : ipPkt.sourceIP,
+      remoteAddress: inbound ? ipPkt.sourceIP : ipPkt.destinationIP,
+      localPort: inbound ? ports.dstPort : ports.srcPort,
+      remotePort: inbound ? ports.srcPort : ports.dstPort,
+      profile: 'Any',
+    };
   }
 }

@@ -4,6 +4,8 @@ import type { CommandSpec } from '@/cli/CommandTable';
 import type { ArgumentSpec } from '@/cli/ArgumentTypes';
 import { specsFromTrieRegistrations } from '@/cli/commands/trieAdapter';
 import { MODES_INTERFACE } from './CiscoConfigCommands';
+import { CliInvalidInput } from '../cli/CliDiagnostic';
+import type { BfdSessionRuntime } from '../../../bfd/types';
 
 interface IfCtx {
   selectedPorts(): string[];
@@ -113,28 +115,52 @@ export function buildBfdInterfaceCommands(trie: CommandTrie, ctx: IfCtx): void {
   });
 }
 
+const BFD_NEIGHBORS_HEADER =
+  'NeighAddr        LD/RD     RH/RS   Holdown(mult) State     Int';
+
+function bfdStateLabel(state: string): string {
+  return state.charAt(0).toUpperCase() + state.slice(1);
+}
+
+function bfdNeighborRow(s: BfdSessionRuntime): string {
+  return `${s.neighborIp.padEnd(17)}` +
+    `${`${s.localDiscriminator}/${s.remoteDiscriminator}`.padEnd(10)}` +
+    `${(s.state === 'up' ? '1/Up' : `0/${s.state}`).padEnd(8)}` +
+    `${`${Math.round(s.desiredMinTxUs / 1000) * s.detectMultiplier}(${s.detectMultiplier})`.padEnd(15)}` +
+    `${bfdStateLabel(s.state).padEnd(10)}${s.iface}`;
+}
+
+function bfdNeighborDetail(s: BfdSessionRuntime, echo: boolean): string[] {
+  return [
+    `Session state is ${s.state.toUpperCase()} and ` +
+      `${echo ? 'using' : 'not using'} echo function.`,
+    `Local Diag: ${s.localDiag}, Demand mode: 0, Poll bit: 0`,
+    `MinTxInt: ${s.desiredMinTxUs}, MinRxInt: ${s.requiredMinRxUs}, ` +
+      `Multiplier: ${s.detectMultiplier}`,
+    `Received MinTxInt: ${s.remoteMinTxUs}, Received MinRxInt: ${s.remoteMinRxUs}, ` +
+      `Received Diag: ${s.remoteDiag}`,
+  ];
+}
+
+function bfdEchoEnabled(router: Router, iface: string): boolean {
+  return !router._getOSPFExtraConfig().pendingIfConfig.get(iface)?.bfdEchoDisabled;
+}
+
 export function registerBfdShowCommands(trie: CommandTrie, ctx: ShowCtx): void {
   trie.registerGreedy('show bfd neighbors', 'Display BFD sessions', (args) => {
     const a = agent(ctx.r());
     if (!a) return '';
-    const sessions = a.listSessions();
-    if (args.includes('details') || args.includes('detail')) {
-      return sessions.map((s) => [
-        `NeighAddr ${s.neighborIp} LD/RD ${s.localDiscriminator}/${s.remoteDiscriminator}`,
-        `  Interface ${s.iface}`,
-        `  State: ${s.state.charAt(0).toUpperCase() + s.state.slice(1)}`,
-        `  Local Diag: ${s.localDiag}`,
-        `  Tx interval ${Math.round(s.desiredMinTxUs / 1000)} ms, Rx ${Math.round(s.requiredMinRxUs / 1000)} ms`,
-        `  Detect multiplier ${s.detectMultiplier}`,
-        `  Type: single-hop, Mode: async (echo not supported)`,
-      ].join('\n')).join('\n');
+    let details = false;
+    for (const word of args) {
+      if (word === '') continue;
+      if (word === 'details') { details = true; continue; }
+      throw new CliInvalidInput({ token: word });
     }
-    const header = 'NeighAddr        LD/RD     RH/RS   Holdown(mult) State     Int';
-    const rows = sessions.map((s) =>
-      `${s.neighborIp.padEnd(17)}${(s.localDiscriminator + '/' + s.remoteDiscriminator).padEnd(10)}` +
-      `${(s.state === 'up' ? '1/Up' : '0/' + s.state).padEnd(8)}` +
-      `${(Math.round(s.desiredMinTxUs / 1000) * s.detectMultiplier + '(' + s.detectMultiplier + ')').padEnd(15)}` +
-      `${(s.state.charAt(0).toUpperCase() + s.state.slice(1)).padEnd(10)}${s.iface}`);
-    return [header, ...rows].join('\n');
+    const lines = [BFD_NEIGHBORS_HEADER];
+    for (const s of a.listSessions()) {
+      lines.push(bfdNeighborRow(s));
+      if (details) lines.push(...bfdNeighborDetail(s, bfdEchoEnabled(ctx.r(), s.iface)));
+    }
+    return lines.join('\n');
   });
 }

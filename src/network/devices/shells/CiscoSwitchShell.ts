@@ -47,7 +47,8 @@ import {
 } from './cisco/ciscoCounterTables';
 import type { ISwitchShell } from './ISwitchShell';
 import type { Switch, SwitchportConfig } from '../Switch';
-import { parseVlanId, type VlanSet } from '../switch/VlanSet';
+import { parseVlanId, VLAN_MIN, VLAN_MAX, type VlanSet } from '../switch/VlanSet';
+import { UPLINKFAST_RATE_RANGE } from '../../stp/types';
 import {
   STORM_CONTROL_TYPES, parseStormControl, stormControlPercent,
 } from './cisco/stormControlSyntax';
@@ -78,7 +79,7 @@ import {
   runningConfigACLFrom, runningConfigInterfaceACLFrom, IOS_REMARK_MAX,
 } from './cisco/CiscoAclCommands';
 import { IOS_ACL_NUMBERING } from '../router/ACLEngine';
-import { CISCO_ERRORS } from './cli-utils';
+import { CISCO_ERRORS, resolveCiscoInterfaceName } from './cli-utils';
 import { estTypeSansNumero, typesInterfaceEnMotsCles } from './cisco/CiscoConfigCommands';
 import { getNtpAgent, getSnmpService } from '../../equipment/RouterServiceCapabilities';
 import { fhrpRunningConfigLines } from '../../fhrp/runningConfig';
@@ -110,6 +111,16 @@ import { vrrpVirtualMac } from '../../vrrp/types';
 import { hsrpVirtualMac, effectivePriority as hsrpEffectivePriority } from '../../hsrp/types';
 import { effectiveWeighting as glbpEffectiveWeighting } from '../../glbp/types';
 import { effectivePriority as vrrpEffectivePriority } from '../../vrrp/types';
+import type { VrrpGroupRuntime } from '../../vrrp/types';
+import type { HsrpGroupRuntime } from '../../hsrp/types';
+import type { GlbpGroupRuntime } from '../../glbp/types';
+import { iosSviName } from '../inspection/InterfaceStatusView';
+import { UDLD_DEFAULT_HELLO_SEC, UDLD_MESSAGE_TIME_RANGE } from '../../udld/types';
+import {
+  parseFhrpShowArgs, fhrpShowMatches, fhrpInterfaceResolver,
+  HSRP_SHOW_GRAMMAR, VRRP_SHOW_GRAMMAR, GLBP_SHOW_GRAMMAR,
+} from './cisco/fhrpShowFilter';
+import type { FhrpShowGrammar, FhrpShowSelection } from './cisco/fhrpShowFilter';
 import { TrackObjectRegistry } from '../switch/TrackObjectRegistry';
 import { CliInvalidInput, CliIncomplete } from './cli/CliDiagnostic';
 import { describeCiscoSwitchArguments } from './cisco/ciscoArgumentHelp';
@@ -288,7 +299,19 @@ function refusReglageStpGlobal(args: readonly string[]): string | null {
     return null;
   }
 
-  if (tete === 'uplinkfast' || tete === 'backbonefast') return null;
+  if (tete === 'backbonefast') {
+    if (args[1] !== undefined) throw new CliInvalidInput({ token: args[1] });
+    return null;
+  }
+
+  if (tete === 'uplinkfast') {
+    if (args[1] === undefined) return null;
+    if (mot(1) !== 'max-update-rate') throw new CliInvalidInput({ token: args[1] });
+    if (args[2] === undefined) return CISCO_ERRORS.INCOMPLETE;
+    if (args[3] !== undefined) throw new CliInvalidInput({ token: args[3] });
+    entierBorne(args[2], ...UPLINKFAST_RATE_RANGE);
+    return null;
+  }
 
   throw new CliInvalidInput({ token: args[0] });
 }
@@ -313,15 +336,18 @@ const STP_INTERFACE_CONTINUATIONS: ReadonlyArray<{ keyword: string; description:
   { keyword: 'vlan', description: 'VLAN Switch Spanning Tree' },
 ];
 
+/*
+ * Ce que `spanning-tree ?` annonce en configuration GLOBALE, et rien de
+ * plus : `bpdufilter`, `bpduguard` et les trois minuteries y figuraient
+ * alors que l'analyseur les refuse a cette place — elles vivent sous
+ * `portfast` pour les deux premieres et sous `vlan <n>` pour les trois
+ * autres, comme sur un vrai Catalyst. L'aide promettait donc cinq mots
+ * que la machine ne connait pas la.
+ */
 const STP_GLOBAL_CONTINUATIONS: ReadonlyArray<{ keyword: string; description: string }> = [
   { keyword: 'backbonefast', description: 'Enable BackboneFast' },
-  { keyword: 'bpdufilter', description: 'Default BPDU filtering on portfast ports' },
-  { keyword: 'bpduguard', description: 'Default BPDU guard on portfast ports' },
   { keyword: 'extend', description: 'Spanning tree 802.1t extensions' },
-  { keyword: 'forward-time', description: 'Forward delay of the spanning tree' },
-  { keyword: 'hello-time', description: 'Hello interval of the spanning tree' },
   { keyword: 'loopguard', description: 'Default loop guard on all ports' },
-  { keyword: 'max-age', description: 'Maximum age of the spanning tree' },
   { keyword: 'mode', description: 'Spanning tree operating mode' },
   { keyword: 'mst', description: 'Multiple spanning tree configuration' },
   { keyword: 'pathcost', description: 'Spanning tree pathcost options' },
@@ -329,6 +355,26 @@ const STP_GLOBAL_CONTINUATIONS: ReadonlyArray<{ keyword: string; description: st
   { keyword: 'priority', description: 'Bridge priority of the spanning tree' },
   { keyword: 'uplinkfast', description: 'Enable UplinkFast' },
   { keyword: 'vlan', description: 'Per-VLAN spanning tree configuration' },
+];
+
+const STP_GLOBAL_SECOND_LEVEL: ReadonlyArray<
+  readonly [string, string, ReadonlyArray<{ keyword: string; description: string }>]
+> = [
+  ['extend', 'Spanning tree 802.1t extensions', [
+    { keyword: 'system-id', description: 'Enable extended system ID' },
+  ]],
+  ['loopguard', 'Default loop guard on all ports', [
+    { keyword: 'default', description: 'Enable loop guard by default on all ports' },
+  ]],
+  ['pathcost', 'Spanning tree pathcost options', [
+    { keyword: 'method', description: 'Method to calculate the default path cost' },
+  ]],
+  ['portfast', 'Default portfast on access ports', [
+    { keyword: 'bpdufilter', description: 'Default BPDU filtering on portfast ports' },
+    { keyword: 'bpduguard', description: 'Default BPDU guard on portfast ports' },
+    { keyword: 'default', description: 'Enable portfast by default on access ports' },
+    { keyword: 'edge', description: 'Portfast edge options' },
+  ]],
 ];
 
 const MAC_TABLE_FILTERS: ReadonlyArray<{ keyword: string; description: string }> = [
@@ -572,16 +618,27 @@ const MAC_TABLE_PLACES: Readonly<Record<string, readonly ArgumentSpec[]>> = {
 const VLAN_PLACE = (name: string, description: string): ArgumentSpec =>
   ({ name, type: 'VLAN_ID', description });
 
+const VOICE_VLAN_MODES = [
+  { keyword: 'dot1p', description: 'Tag traffic with 802.1p priority' },
+  { keyword: 'none', description: 'Do not tell the telephone which VLAN to use' },
+  { keyword: 'untagged', description: 'Untagged voice traffic' },
+] as const;
+
+type VoiceVlanMode = typeof VOICE_VLAN_MODES[number]['keyword'];
+
+function voiceVlanMode(word: string): VoiceVlanMode | null {
+  const trouve = VOICE_VLAN_MODES.find((m) => m.keyword === word.toLowerCase());
+  return trouve ? trouve.keyword : null;
+}
+
 const SWITCHPORT_PLACES: Readonly<Record<string, ArgumentSpec | readonly ArgumentSpec[]>> = {
   'switchport access vlan': VLAN_PLACE('vlan', 'VLAN of the access port'),
   'switchport trunk native vlan': VLAN_PLACE('vlan', 'Native VLAN of the trunk'),
   'switchport voice vlan': {
-    name: 'vlan', type: 'VLAN_ID', description: 'Voice VLAN of the port',
+    name: 'vlan', type: 'WORD', description: 'Voice VLAN of the port',
     alternatives: [
-      { keyword: '<1-4094>', description: 'Voice VLAN of the port' },
-      { keyword: 'dot1p', description: 'Tag traffic with 802.1p priority' },
-      { keyword: 'none', description: 'Do not tell the telephone which VLAN to use' },
-      { keyword: 'untagged', description: 'Untagged voice traffic' },
+      { keyword: `<${VLAN_MIN}-${VLAN_MAX}>`, description: 'Voice VLAN of the port' },
+      ...VOICE_VLAN_MODES,
     ],
   },
   'channel-group': {
@@ -622,14 +679,6 @@ const SWITCHPORT_KEYWORDS: Readonly<Record<string, readonly AdapterKeyword[]>> =
   }],
   'switchport trunk allowed vlan': VLAN_LIST_KEYWORDS,
   'switchport trunk pruning vlan': VLAN_LIST_KEYWORDS,
-  'switchport voice vlan': [
-    { keyword: 'dot1p', description: 'Tag traffic with 802.1p priority', argument: null },
-    {
-      keyword: 'none',
-      description: 'Do not tell the telephone which VLAN to use', argument: null,
-    },
-    { keyword: 'untagged', description: 'Untagged voice traffic', argument: null },
-  ],
 };
 
 type ListeVlan = { ids: number[] } | { erreur: string };
@@ -776,6 +825,11 @@ interface SwitchTries {
   privileged: CommandTrie;
   user: CommandTrie;
 }
+
+const NO_SPANNING_TREE_KEYWORDS = new Set([
+  'backbonefast', 'bpdufilter', 'bpduguard', 'default', 'loopguard',
+  'mode', 'pathcost', 'portfast', 'uplinkfast', 'vlan',
+]);
 
 const PORT_SECURITY_CLEAR_KINDS: ReadonlyArray<readonly [string, string]> = [
   ['all', 'Clear all secure MAC addresses'],
@@ -1810,26 +1864,38 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
 
   private registerUdldCommands(trie: SwitchTries): void {
     trie.config.registerGreedy('udld', 'UDLD global configuration', (args) => {
-      const a = (args[0] ?? '').toLowerCase();
       const agent = this.requireUdld();
-      if (a === 'enable') { agent.setGlobalMode('normal'); return ''; }
-      if (a === 'aggressive') { agent.setGlobalMode('aggressive'); return ''; }
-      if (a === 'message' && args[1] === 'time') {
-        const n = parseInt(args[2] ?? '', 10);
-        if (!Number.isNaN(n)) {
-          const c = agent.getConfig() as { helloIntervalSec: number };
-          c.helloIntervalSec = n;
-        }
+      const mot = (args[0] ?? '').toLowerCase();
+      if (mot === '') throw new CliIncomplete();
+      if (mot === 'enable' || mot === 'aggressive') {
+        if (args[1] !== undefined) throw new CliInvalidInput({ token: args[1] });
+        agent.setGlobalMode(mot === 'enable' ? 'normal' : 'aggressive');
         return '';
       }
-      return '';
+      if (mot === 'message') {
+        agent.setHelloInterval(this.lireUdldMessageTime(args.slice(1)));
+        return '';
+      }
+      throw new CliInvalidInput({ token: args[0] });
     }, [
       { keyword: 'enable', description: 'Enable UDLD in normal mode on fibre ports' },
       { keyword: 'aggressive', description: 'Enable UDLD in aggressive mode on fibre ports' },
       { keyword: 'message', description: 'Set the message interval' },
     ]);
-    trie.config.registerGreedy('no udld', 'Disable UDLD globally', () => {
-      this.requireUdld().setGlobalMode('disabled');
+    trie.config.registerGreedy('no udld', 'Disable UDLD globally', (args) => {
+      const agent = this.requireUdld();
+      if ((args[0] ?? '').toLowerCase() === 'message') {
+        if ((args[1] ?? '').toLowerCase() !== 'time') {
+          throw new CliInvalidInput({ token: args[1] });
+        }
+        if (args[2] !== undefined) throw new CliInvalidInput({ token: args[2] });
+        agent.setHelloInterval(UDLD_DEFAULT_HELLO_SEC);
+        return '';
+      }
+      if (args[0] !== undefined && !['enable', 'aggressive'].includes(args[0].toLowerCase())) {
+        throw new CliInvalidInput({ token: args[0] });
+      }
+      agent.setGlobalMode('disabled');
       return '';
     });
     trie.configIf.registerGreedy('udld port', 'UDLD per-port configuration', (args) => {
@@ -1851,9 +1917,13 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
       t.registerGreedy('show udld', 'Display UDLD state', (args) => {
         const agent = this.requireUdld();
         const target = args[0];
-        const ports = target
-          ? agent.listPorts().filter(p => p.port === target || p.port.endsWith(target))
-          : agent.listPorts();
+        if (args[1] !== undefined) throw new CliInvalidInput({ token: args[1] });
+        let ports = agent.listPorts();
+        if (target !== undefined) {
+          const nom = this.resolvePortName(target);
+          if (nom === null) throw new CliInvalidInput({ token: target });
+          ports = ports.filter((p) => p.port === nom);
+        }
         if (ports.length === 0) return '';
         const lines: string[] = [];
         for (const rt of ports) {
@@ -1881,6 +1951,14 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
         return lines.join('\n');
       });
     }
+  }
+
+  private lireUdldMessageTime(args: readonly string[]): number {
+    if (args[0] === undefined) throw new CliIncomplete();
+    if (args[0].toLowerCase() !== 'time') throw new CliInvalidInput({ token: args[0] });
+    if (args[1] === undefined) throw new CliIncomplete();
+    if (args[2] !== undefined) throw new CliInvalidInput({ token: args[2] });
+    return entierBorne(args[1], ...UDLD_MESSAGE_TIME_RANGE);
   }
 
   /** `ip igmp snooping vlan <n> mrouter interface <port>`. */
@@ -2121,6 +2199,7 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
 
   private registerStpCommands(): void {
     this.registerStpGlobal(this.configTrie);
+    this.registerStpGlobalRest(this.configTrie);
     this.registerStpInterface();
   }
 
@@ -2134,7 +2213,36 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
 
     // Global: every other `spanning-tree …` is accepted (priority/
     // root/extend/portfast/loopguard/…). Track the mode for `show`.
-    trie.registerGreedy('spanning-tree', 'Spanning Tree configuration', (args) => {
+    trie.registerGreedy('spanning-tree', 'Spanning Tree configuration', (args) =>
+      this.appliquerStpGlobal(args), STP_GLOBAL_CONTINUATIONS);
+    /*
+     * Un aiguillage pris ferme ses autres branches : declarees comme des
+     * SUITES du glouton, `extend`, `loopguard`, `pathcost` et `portfast`
+     * n'etaient pas des noeuds, si bien que `spanning-tree extend ?`
+     * reproposait la liste du PARENT — une aide invitant a ecrire
+     * `spanning-tree extend loopguard`, que l'analyseur refuse. Ce sont
+     * de vrais noeuds, qui lisent le MEME corps.
+     */
+    for (const [mot, description, suites] of STP_GLOBAL_SECOND_LEVEL) {
+      trie.registerGreedy(`spanning-tree ${mot}`, description,
+        (args) => this.appliquerStpGlobal([mot, ...args]), suites);
+    }
+    /*
+     * `priority` prend un NOMBRE, pas un mot-cle : sans son propre
+     * noeud, `spanning-tree priority ?` reproposait les freres du
+     * parent, exactement comme les quatre ci-dessus.
+     */
+    trie.registerGreedy('spanning-tree priority',
+      'Bridge priority of the spanning tree',
+      (args) => this.appliquerStpGlobal(['priority', ...args]));
+    trie.describeArgs('spanning-tree priority', [{
+      name: 'priorite', type: 'INT', range: [0, 61440],
+      description: 'Bridge priority in increments of 4096',
+    }]);
+  }
+
+  private appliquerStpGlobal(args: readonly string[]): string {
+    {
       const refus = refusReglageStpGlobal(args);
       if (refus !== null) return refus;
       if (args[0]?.toLowerCase() === 'mode' && args[1]) {
@@ -2142,6 +2250,16 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
         const m = args[1].toLowerCase();
         this.requireStp().setMode(
           m === 'mst' ? 'mstp' : m === 'rapid-pvst' ? 'rstp' : 'stp');
+      }
+      /*
+       * `spanning-tree vlan <liste>` SEUL est le contraire de son `no` :
+       * il remet l'arbre du VLAN. Sans lui, couper un VLAN etait
+       * irreversible et la ligne restait dans la configuration.
+       */
+      if (args[0]?.toLowerCase() === 'vlan' && args[1] && !args[2]) {
+        const vlans = parseVlanList(args[1]);
+        if (vlans === null) throw new CliInvalidInput({ token: args[1] });
+        for (const v of vlans) this.requireStp().setVlanStpEnabled(v, true);
       }
       if (args[0]?.toLowerCase() === 'vlan' && args[2]) {
         const vlan = parseInt(args[1] ?? '', 10);
@@ -2173,7 +2291,10 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
       if (args[0]?.toLowerCase() === 'loopguard' && args[1]?.toLowerCase() === 'default') {
         this.requireStp().setLoopGuardGlobal(true);
       }
-      if (args[0]?.toLowerCase() === 'uplinkfast') this.requireStp().setUplinkFast(true);
+      if (args[0]?.toLowerCase() === 'uplinkfast') {
+        this.requireStp().setUplinkFast(true,
+          args[2] === undefined ? undefined : Number(args[2]));
+      }
       if (args[0]?.toLowerCase() === 'backbonefast') this.requireStp().setBackboneFast(true);
       if (args[0]?.toLowerCase() === 'pathcost' && args[1]?.toLowerCase() === 'method') {
         const m = args[2]?.toLowerCase();
@@ -2181,7 +2302,10 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
         this.requireStp().setPathcostMethod(m);
       }
       return '';
-    }, STP_GLOBAL_CONTINUATIONS);
+    }
+  }
+
+  private registerStpGlobalRest(trie: CommandTrie): void {
     trie.registerGreedy('spanning-tree mst', 'MST instance configuration', (args) => {
       if (args[1]?.toLowerCase() === 'priority') {
         const inst = parseInt(args[0] ?? '', 10);
@@ -2194,8 +2318,14 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
     trie.registerGreedy('no spanning-tree', 'Disable spanning-tree', (args) => {
       const agent = this.requireStp();
       const a0 = args[0]?.toLowerCase();
-      if (a0 === 'vlan' && args[1]) agent.setEnabled(false);
-      else if (a0 === 'portfast') {
+      if (a0 === undefined) throw new CliIncomplete();
+      if (!NO_SPANNING_TREE_KEYWORDS.has(a0)) throw new CliInvalidInput({ token: args[0] });
+      if (a0 === 'vlan') {
+        if (args[1] === undefined) throw new CliIncomplete();
+        const vlans = parseVlanList(args.slice(1).join(','));
+        if (vlans === null) throw new CliInvalidInput({ token: args[1] });
+        for (const v of vlans) agent.setVlanStpEnabled(v, false);
+      } else if (a0 === 'portfast') {
         const sub = args[1]?.toLowerCase();
         if (sub === 'default') agent.setPortfastDefault(false);
         else if (sub === 'bpduguard') agent.setBpduGuardGlobal(false);
@@ -3186,10 +3316,7 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
   }
 
   private resolvePortName(input: string): string | null {
-    const names = this.d().getPortNames();
-    const lower = input.replace(/\s+/g, '').toLowerCase();
-    for (const n of names) if (n.toLowerCase() === lower) return n;
-    return null;
+    return resolveCiscoInterfaceName(this.d().getPortNames(), input);
   }
 
   /**
@@ -3300,7 +3427,13 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
       return this.showTrunkTable(this.d().getPortNames());
     });
 
-    this.privilegedTrie.registerGreedy('show etherchannel', 'Display EtherChannel', (args) => {
+    this.privilegedTrie.registerGreedy('show etherchannel', 'Display EtherChannel',
+      (args) => this.showEtherchannel(args));
+    this.registerEtherchannelShowRest();
+  }
+
+  private showEtherchannel(args: string[]): string {
+    {
       const lacp = this.requireLacp();
       const groups = lacp.getAllGroups();
       if (args[0]?.toLowerCase() === 'summary' || args.length === 0) {
@@ -3370,8 +3503,10 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
         return out.length > 2 ? out.join('\n') : 'No EtherChannel groups configured';
       }
       return 'EtherChannel: no detail';
-    });
+    }
+  }
 
+  private registerEtherchannelShowRest(): void {
     // `show interfaces counters [<if>]` — registered on the `counters`
     // node itself (already created, actionless, by the shared `show
     // interfaces counters errors` registration above) so it gets an
@@ -3828,7 +3963,8 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
     });
 
     trie.registerGreedy('l2protocol-tunnel', 'Tunnel a client L2 control protocol across the S-VLAN instead of terminating it locally', (args) => {
-      const proto = (args[0] ?? '').toLowerCase();
+      if (args[0] === undefined) throw new CliIncomplete();
+      const proto = args[0].toLowerCase();
       if (proto !== 'cdp' && proto !== 'stp' && proto !== 'vtp' && proto !== 'lldp') {
         return CISCO_ERRORS.INVALID_INPUT;
       }
@@ -3954,7 +4090,8 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
     };
     trie.registerGreedy('duplex', 'Set interface duplex', (args) => {
       rejectOnSvi();
-      const a = (args[0] ?? '').toLowerCase();
+      if (args[0] === undefined) throw new CliIncomplete();
+      const a = args[0].toLowerCase();
       if (a !== 'full' && a !== 'half' && a !== 'auto') {
         throw new CliInvalidInput({ argIndex: 0, token: args[0] });
       }
@@ -3967,7 +4104,8 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
     });
     trie.registerGreedy('speed', 'Set interface speed', (args) => {
       rejectOnSvi();
-      const a = (args[0] ?? '').toLowerCase();
+      if (args[0] === undefined) throw new CliIncomplete();
+      const a = args[0].toLowerCase();
       if (a === 'auto') {
         for (const port of targetPorts()) port.setNegotiationAuto(true);
         return recordIf('speed auto');
@@ -3988,6 +4126,10 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
         // rejects them just like real IOS does.
         if (this.selectedInterface && this.sviVlanId(this.selectedInterface) !== null) {
           return CISCO_ERRORS.INVALID_INPUT;
+        }
+        if (sub === 'switchport voice') {
+          if (args[0] === undefined) throw new CliIncomplete();
+          throw new CliInvalidInput({ token: args[0] });
         }
         if (sub === 'storm-control') {
           const parsed = parseStormControl(args);
@@ -4015,16 +4157,17 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
       return '';
     };
     trie.registerGreedy('switchport voice vlan', 'Set the voice VLAN', (args) => {
-      if (!args[0]) return CISCO_ERRORS.INCOMPLETE;
-      const kw = args[0].toLowerCase();
-      const v = parseInt(args[0], 10);
-      if (kw !== 'dot1p' && kw !== 'none' && kw !== 'untagged' && (isNaN(v) || v < 1 || v > 4094)) {
-        return CISCO_ERRORS.INVALID_INPUT;
-      }
+      if (args[0] === undefined) throw new CliIncomplete();
+      if (args[1] !== undefined) throw new CliInvalidInput({ token: args[1] });
+      const mode = voiceVlanMode(args[0]);
+      const vlan = mode === null
+        ? entierBorne(args[0], VLAN_MIN, VLAN_MAX) : undefined;
       const ifs = this.selectedInterface ? [this.selectedInterface] : this.selectedInterfaceRange;
       for (const i of ifs) {
         const cfg = this.d().getSwitchportConfig(i);
-        if (cfg) cfg.voiceVlan = isNaN(v) ? undefined : v;
+        if (!cfg) continue;
+        cfg.voiceVlan = vlan;
+        cfg.voiceVlanMode = mode ?? undefined;
       }
       return '';
     });
@@ -4032,7 +4175,9 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
       const ifs = this.selectedInterface ? [this.selectedInterface] : this.selectedInterfaceRange;
       for (const i of ifs) {
         const cfg = this.d().getSwitchportConfig(i);
-        if (cfg) cfg.voiceVlan = undefined;
+        if (!cfg) continue;
+        cfg.voiceVlan = undefined;
+        cfg.voiceVlanMode = undefined;
       }
       return removeIf('switchport voice');
     });
@@ -4057,7 +4202,8 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
         return '';
       }));
     trie.registerGreedy('mls qos cos', 'Default CoS applied to untrusted ingress traffic', (args) => {
-      const n = parseInt(args[0] ?? '', 10);
+      if (args[0] === undefined) throw new CliIncomplete();
+      const n = parseInt(args[0], 10);
       if (isNaN(n) || n < 0 || n > 7) return CISCO_ERRORS.INVALID_INPUT;
       return this.applyToSelectedInterfaces(p => {
         const cfg = this.d().getSwitchportConfig(p);
@@ -4241,9 +4387,12 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
 
     }
 
-    const udldGlobalMode = sw.getUdldAgent?.()?.getConfig?.().globalMode ?? 'disabled';
-    if (udldGlobalMode !== 'disabled') {
-      out.push(udldGlobalMode === 'aggressive' ? 'udld aggressive' : 'udld enable');
+    const udld = sw.getUdldAgent?.()?.getConfig?.();
+    if (udld && udld.globalMode !== 'disabled') {
+      out.push(udld.globalMode === 'aggressive' ? 'udld aggressive' : 'udld enable');
+    }
+    if (udld && udld.helloIntervalSec !== UDLD_DEFAULT_HELLO_SEC) {
+      out.push(`udld message time ${udld.helloIntervalSec}`);
     }
     if (sw.getDot1xAgent?.()?.getConfig?.()?.enabled) out.push('dot1x system-auth-control');
 
@@ -4517,7 +4666,8 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
       } else if (cfg.accessVlan !== 1) {
         lines.push(` switchport access vlan ${cfg.accessVlan}`);
       }
-      if (cfg.voiceVlan !== undefined) lines.push(` switchport voice vlan ${cfg.voiceVlan}`);
+      const voix = cfg.voiceVlan ?? cfg.voiceVlanMode;
+      if (voix !== undefined) lines.push(` switchport voice vlan ${voix}`);
       if (sw.isPortProtected(portName)) lines.push(' switchport protected');
       lines.push(...runningConfigInterfaceACLFrom(
         sw.getVaclEngine().getInterfaceACLBindingsInternal(), portName));
@@ -4857,7 +5007,8 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
         ? 'ALL' : this.compactVlanList(Array.from(c.trunkAllowedVlans).sort((a, b) => a - b));
       lines.push(`Trunking VLANs Enabled: ${allowed}`);
     }
-    if (c?.voiceVlan) lines.push(`Voice VLAN: ${c.voiceVlan}`);
+    const voix = c?.voiceVlan ?? c?.voiceVlanMode;
+    if (voix !== undefined) lines.push(`Voice VLAN: ${voix}`);
     lines.push(`Protected: ${this.d().isPortProtected(name)}`);
     return lines.join('\n');
   }
@@ -5557,21 +5708,42 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
         }
         return lines.join('\n');
       });
-      t.registerGreedy('show vrrp', 'Display VRRP groups on SVIs', (args) =>
-        args[0] === 'brief' ? this.showVrrpBrief() : this.showVrrp());
-      t.registerGreedy('show standby', 'Display HSRP groups on SVIs', (args) =>
-        args[0] === 'brief' ? this.showStandbyBrief() : this.showStandby());
-      t.registerGreedy('show glbp', 'Display GLBP groups on SVIs', (args) =>
-        args[0] === 'brief' ? this.showGlbpBrief() : this.showGlbp());
+      t.registerGreedy('show vrrp', 'Display VRRP groups on SVIs', (args) => {
+        const groups = this.d().getVrrpAgent().listGroups();
+        const sel = this.fhrpSelection(args, VRRP_SHOW_GRAMMAR, groups);
+        const kept = groups.filter((g) => fhrpShowMatches(iosSviName(g.iface), g.vrid, sel));
+        return sel.brief ? this.showVrrpBrief(kept) : this.showVrrp(kept);
+      });
+      t.registerGreedy('show standby', 'Display HSRP groups on SVIs', (args) => {
+        const groups = this.d().getHsrpAgent().listGroups();
+        const sel = this.fhrpSelection(args, HSRP_SHOW_GRAMMAR, groups);
+        const kept = groups.filter((g) => fhrpShowMatches(iosSviName(g.iface), g.group, sel));
+        return sel.brief ? this.showStandbyBrief(kept) : this.showStandby(kept);
+      });
+      t.registerGreedy('show glbp', 'Display GLBP groups on SVIs', (args) => {
+        const groups = this.d().getGlbpAgent().listGroups();
+        const sel = this.fhrpSelection(args, GLBP_SHOW_GRAMMAR, groups);
+        const kept = groups.filter((g) => fhrpShowMatches(iosSviName(g.iface), g.group, sel));
+        return sel.brief ? this.showGlbpBrief(kept) : this.showGlbp(kept);
+      });
     }
   }
 
-  private showVrrp(): string {
-    const groups = this.d().getVrrpAgent().listGroups();
+  private fhrpSelection(
+    args: readonly string[], grammar: FhrpShowGrammar,
+    groups: ReadonlyArray<{ iface: string }>,
+  ): FhrpShowSelection {
+    const verdict = parseFhrpShowArgs(args, grammar,
+      fhrpInterfaceResolver(groups.map((g) => iosSviName(g.iface))));
+    if ('at' in verdict) throw new CliInvalidInput({ token: verdict.at });
+    return verdict;
+  }
+
+  private showVrrp(groups: readonly VrrpGroupRuntime[]): string {
     if (groups.length === 0) return '';
     const lines: string[] = [];
     for (const g of groups) {
-      const iface = g.iface.replace(/^Vlanif/, 'Vlan');
+      const iface = iosSviName(g.iface);
       const stateStr = g.state === 'master' ? 'Master' : g.state === 'backup' ? 'Backup' : 'Init';
       const effPrio = vrrpEffectivePriority(g);
       lines.push(`${iface} - Group ${g.vrid}`);
@@ -5587,7 +5759,7 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
       if (g.tracks.length > 0) {
         lines.push(`  Tracking ${g.tracks.length} object(s):`);
         for (const t of g.tracks) {
-          const tName = t.target.replace(/^Vlanif/, 'Vlan');
+          const tName = iosSviName(t.target);
           lines.push(`    ${tName} ${t.down ? 'Down' : 'Up'} decrement ${t.decrement}`);
         }
       }
@@ -5596,12 +5768,11 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
     return lines.join('\n').replace(/\n$/, '');
   }
 
-  private showGlbp(): string {
-    const groups = this.d().getGlbpAgent().listGroups();
+  private showGlbp(groups: readonly GlbpGroupRuntime[]): string {
     if (groups.length === 0) return '';
     const lines: string[] = [];
     for (const g of groups) {
-      const iface = g.iface.replace(/^Vlanif/, 'Vlan');
+      const iface = iosSviName(g.iface);
       const stateStr =
         g.avgState === 'active' ? 'Active'
         : g.avgState === 'standby' ? 'Standby'
@@ -5622,7 +5793,7 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
       if (g.tracks.length > 0) {
         lines.push(`  Tracking ${g.tracks.length} object(s):`);
         for (const t of g.tracks) {
-          const tName = t.target.replace(/^Vlanif/, 'Vlan');
+          const tName = iosSviName(t.target);
           lines.push(`    ${tName} ${t.down ? 'Down' : 'Up'} decrement ${t.decrement}`);
         }
       }
@@ -5638,12 +5809,11 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
     return lines.join('\n').replace(/\n$/, '');
   }
 
-  private showStandby(): string {
-    const groups = this.d().getHsrpAgent().listGroups();
+  private showStandby(groups: readonly HsrpGroupRuntime[]): string {
     if (groups.length === 0) return '';
     const lines: string[] = [];
     for (const g of groups) {
-      const iface = g.iface.replace(/^Vlanif/, 'Vlan');
+      const iface = iosSviName(g.iface);
       const stateStr =
         g.state === 'active' ? 'Active'
         : g.state === 'standby' ? 'Standby'
@@ -5665,7 +5835,7 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
       if (g.tracks.length > 0) {
         lines.push(`  Tracking ${g.tracks.length} object(s):`);
         for (const t of g.tracks) {
-          const tName = t.target.replace(/^Vlanif/, 'Vlan');
+          const tName = iosSviName(t.target);
           lines.push(`    ${tName} ${t.down ? 'Down' : 'Up'} decrement ${t.decrement}`);
         }
       }
@@ -5674,11 +5844,10 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
     return lines.join('\n').replace(/\n$/, '');
   }
 
-  private showVrrpBrief(): string {
-    const groups = this.d().getVrrpAgent().listGroups();
+  private showVrrpBrief(groups: readonly VrrpGroupRuntime[]): string {
     const header = 'Interface          Grp Pri Time    Own Pre State    Master addr     Group addr';
     const rows = groups.map((g) => {
-      const iface = g.iface.replace(/^Vlanif/, 'Vlan');
+      const iface = iosSviName(g.iface);
       const state = g.state === 'master' ? 'Master' : g.state === 'backup' ? 'Backup' : 'Init';
       return `${iface.padEnd(19)}${String(g.vrid).padEnd(4)}${String(vrrpEffectivePriority(g)).padEnd(4)}` +
         `${String(3 * g.advertiseSec * 1000).padEnd(8)}${'N'.padEnd(4)}${(g.preempt ? 'Y' : 'N').padEnd(4)}` +
@@ -5687,12 +5856,11 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
     return [header, ...rows].join('\n');
   }
 
-  private showStandbyBrief(): string {
-    const groups = this.d().getHsrpAgent().listGroups();
+  private showStandbyBrief(groups: readonly HsrpGroupRuntime[]): string {
     const header = '                     P indicates configured to preempt.\n' +
       '                     |\nInterface   Grp  Pri P State    Active          Standby         Virtual IP';
     const rows = groups.map((g) => {
-      const iface = g.iface.replace(/^Vlanif/, 'Vlan');
+      const iface = iosSviName(g.iface);
       const state =
         g.state === 'active' ? 'Active'
         : g.state === 'standby' ? 'Standby'
@@ -5707,12 +5875,11 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
     return [header, ...rows].join('\n');
   }
 
-  private showGlbpBrief(): string {
-    const groups = this.d().getGlbpAgent().listGroups();
+  private showGlbpBrief(groups: readonly GlbpGroupRuntime[]): string {
     const header = 'Interface   Grp  Fwd Pri State    Address         Active router   Standby router';
     const rows: string[] = [];
     for (const g of groups) {
-      const iface = g.iface.replace(/^Vlanif/, 'Vlan');
+      const iface = iosSviName(g.iface);
       const avgState =
         g.avgState === 'active' ? 'Active'
         : g.avgState === 'standby' ? 'Standby'
@@ -5883,13 +6050,12 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
   }
 
   private tableRoutageCisco(): Array<Record<string, unknown>> {
-    const cisco = (iface: string) => iface.replace(/^Vlanif/, 'Vlan');
     return this.d().getL3RoutingTable().map((r) => ({
       network: r.network,
       mask: r.mask,
       type: r.proto,
       nextHop: r.nextHop,
-      iface: cisco(r.iface),
+      iface: iosSviName(r.iface),
       ad: r.preference,
       metric: 0,
     }));
@@ -5957,6 +6123,13 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
     const args = cible.trim().split(/\s+/).filter(Boolean);
       if (args.length === 0) return this.showAllInterfacesDetail();
       const last = args[args.length - 1].toLowerCase();
+      /*
+       * `show interfaces etherchannel` est la MEME question que
+       * `show etherchannel`, posee par l'autre porte d'IOS : elle etait
+       * annoncee par `?` et refusee, le mot tombant dans la place du nom
+       * d'interface. Elle DELEGUE plutot que de recopier le rendu.
+       */
+      if (last === 'etherchannel' && args.length === 1) return this.showEtherchannel([]);
       if (last === 'switchport') {
         const target = args.slice(0, -1).join(' ');
         if (!target) {
@@ -6290,6 +6463,7 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
   }
 
   private showLacp(args: string[]): string {
+    if (args.length === 0) throw new CliIncomplete();
     const agent = this.requireLacp();
     const cfg = agent.getConfig();
     const restreint = /^\d+$/.test(args[0] ?? '') ? Number(args[0]) : null;

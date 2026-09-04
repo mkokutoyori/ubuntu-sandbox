@@ -240,7 +240,15 @@ export class GetHelpCmdlet implements ICmdlet {
       ctx.emit(sections.join('\n\n'));
       return null;
     }
-    ctx.emit(`NAME\n    ${name}\n\nSYNTAX\n    ${name} [<CommonParameters>]\n\nDESCRIPTION\n    Displays help for the ${name} cmdlet.`);
+    const known = ctx.runtime.listCmdlets().find(c =>
+      c.name.toLowerCase() === name.toLowerCase()
+      || (c.displayName ?? '').toLowerCase() === name.toLowerCase());
+    const label = known?.displayName ?? name;
+    const sections = [`NAME\n    ${label}`];
+    if (known?.description) sections.push(`SYNOPSIS\n    ${known.description}`);
+    sections.push(`SYNTAX\n    ${label} [<CommonParameters>]`);
+    sections.push(`DESCRIPTION\n    ${known?.description ?? `Displays help for the ${label} cmdlet.`}`);
+    ctx.emit(sections.join('\n\n'));
     return null;
   }
 }

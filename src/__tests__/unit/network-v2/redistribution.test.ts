@@ -40,7 +40,11 @@ async function buildMutualRedistributionLab() {
   await run(r2, ['enable', 'configure terminal',
     'interface GigabitEthernet0/0', 'ip address 10.0.12.2 255.255.255.0', 'no shutdown', 'exit',
     'interface GigabitEthernet0/1', 'ip address 10.0.23.2 255.255.255.0', 'no shutdown', 'exit',
-    'router rip', 'network 10.0.12.0', 'redistribute ospf metric 2', 'exit',
+    // `redistribute ospf` EXIGE son identifiant de processus sur IOS —
+    // `redistribute ospf ?` repond `<1-65535>  Process ID`. Sans lui, la
+    // machine refuse la ligne, donc rien n'etait redistribue et ce
+    // laboratoire decrivait une commande qu'un vrai routeur n'accepte pas.
+    'router rip', 'network 10.0.12.0', 'redistribute ospf 1 metric 2', 'exit',
     'router ospf 1', 'router-id 2.2.2.2',
     'network 10.0.23.0 0.0.0.255 area 0', 'redistribute rip subnets', 'end']);
   return { r1, r2, r3 };

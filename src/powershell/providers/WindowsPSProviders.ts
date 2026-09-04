@@ -24,7 +24,9 @@ import { RemoteAccessVpnClient } from '@/network/ipsec/RemoteAccessVpnClient';
 import { PSRegistryProvider, WINDOWS_CLIENT_PRODUCT_IDENTITY, WINDOWS_SERVER_PRODUCT_IDENTITY } from '@/network/devices/windows/PSRegistryProvider';
 import { PSEventLogProvider } from '@/network/devices/windows/PSEventLogProvider';
 import { resolveAdapterName } from '@/network/devices/windows/WinNetsh';
-import { toDisplayName, toPortName, formatLinkSpeedMbps } from '@/network/devices/windows/WindowsInterfaceNaming';
+import {
+  LOOPBACK_IFINDEX, adapterIfIndex, toDisplayName, toPortName, formatLinkSpeedMbps,
+} from '@/network/devices/windows/WindowsInterfaceNaming';
 import {
   memberFailureReason, memberStatus, normaliseAdminMode, normaliseLacpTimer,
   normaliseLbAlgorithm, normaliseTeamingMode, teamStatus, type TeamMember,
@@ -35,12 +37,6 @@ import { findHostByAddress } from '@/network/devices/linux/network/HostLookup';
 import { discoverDcHostname, rootDnOf } from '@/network/devices/windows/domain/DcHostnameDiscovery';
 import { dialLdap } from '@/network/devices/windows/server/ad/ldap/LdapClient';
 import type { PSScriptBlock } from '@/powershell/parser/PSASTNode';
-
-type FwRow = {
-  name: string; displayName: string; enabled: boolean;
-  action: string; direction: string; protocol: string;
-  localPort: string; remotePort: string; description: string;
-};
 
 /**
  * Map a Port's IPv4 provenance to the Windows PrefixOrigin/SuffixOrigin pair
@@ -68,7 +64,7 @@ import type {
   IAdProvider, AdUserInfo, AdGroupInfo, AdComputerInfo, AdOrgUnitInfo, AdOpResult, AdSiteInfo,
   AdSubnetInfo, AdSiteLinkInfo, AdUpToDatenessVectorRowInfo,
   AdKdsRootKeyInfo, AdServiceAccountInfo,
-  AdGenericObjectInfo, AdOptionalFeatureInfo, AddGroupMemberOptions, AdMemberLink,
+  AdGenericObjectInfo, AdOptionalFeatureInfo, AddGroupMemberOptions, AdMemberLink, NetIPAddressOptions, NetIPAddressUpdate, NetRouteAttributes,
   AdAttributeSchemaInfo, AdObjectClassSchemaInfo, AdForestInfo, AdDomainInfo, AdTrustInfo,
   AdReplicationConnectionInfo, AdReplicationFailureInfo, AdPasswordPolicyInfo, AdFineGrainedPasswordPolicyInfo, AdAccessRuleInfo,
   IComputerProvider, DomainMembershipInfo,
@@ -107,6 +103,14 @@ import { PRIVILEGED_ACCESS_MANAGEMENT_FEATURE, TTL_WITHOUT_PAM_FEATURE } from '@
 import type { RemoteDirectoryHost, RemoteDirectoryTarget } from './adRemoteDirectory';
 import type { LdapClient } from '@/network/devices/windows/server/ad/ldap/LdapClient';
 import type { TcpStack } from '@/network/tcp/TcpStack';
+import type { NetIPAddressEntry } from '@/network/devices/windows/netIpAddress';
+import {
+  type NetRouteEntry, type NetRouteIdentity, type NetRouteUpdate,
+  UNSPECIFIED_NEXT_HOP, netRouteKey,
+} from '@/network/devices/windows/netRoute';
+import {
+  type NetFirewallRuleEntry, firewallRuleKey,
+} from '@/network/devices/windows/netFirewallRule';
 
 function defaultNamingContextOf(client: LdapClient): string | null {
   const dse = client.search('', 'base', { kind: 'present', attr: 'objectClass' }, ['defaultNamingContext']);
@@ -135,6 +139,25 @@ function userInfoOf(u: AdUser): AdUserInfo {
 
 // ── Filesystem adapter ────────────────────────────────────────────────────
 
+/**
+ * `WindowsFileSystem` rend les mots de Win32, ceux que `cd`, `copy` et
+ * `type` affichent. PowerShell, lui, remonte l'exception .NET du
+ * fournisseur, et ce sont deux libelles differents pour un meme fait :
+ * `DirectoryNotFoundException` dit « Could not find a part of the path
+ * '<chemin>'. » et `FileNotFoundException` « Could not find file
+ * '<chemin>'. ». La traduction se fait ICI, a la frontiere entre les
+ * deux mondes, plutot que dans chaque applet.
+ */
+function dotNetIoMessage(absPath: string, win32Error: string | undefined): string {
+  if (win32Error === 'The system cannot find the path specified.') {
+    return `Could not find a part of the path '${absPath}'.`;
+  }
+  if (win32Error === 'The system cannot find the file specified.') {
+    return `Could not find file '${absPath}'.`;
+  }
+  return win32Error ?? `Could not find a part of the path '${absPath}'.`;
+}
+
 class WindowsFileSystemAdapter implements IFileSystemProvider {
   constructor(private readonly pc: WindowsPC) {}
 
@@ -146,7 +169,7 @@ class WindowsFileSystemAdapter implements IFileSystemProvider {
   readFile(path: string): string {
     const abs = this.abs(path);
     const r = this.fs().readFile(abs);
-    if (!r.ok) throw new Error(r.error ?? `Cannot read ${path}`);
+    if (!r.ok) throw new Error(dotNetIoMessage(abs, r.error));
     this.pc.auditObjectAccess?.(abs, 'ReadData', '%%4416');
     return r.content ?? '';
   }
@@ -155,8 +178,9 @@ class WindowsFileSystemAdapter implements IFileSystemProvider {
     return all.slice(Math.max(0, all.length - lines));
   }
   writeFile(path: string, content: string): void {
-    const r = this.fs().createFile(this.abs(path), content);
-    if (!r.ok) throw new Error(r.error ?? `Cannot write ${path}`);
+    const abs = this.abs(path);
+    const r = this.fs().createFile(abs, content);
+    if (!r.ok) throw new Error(dotNetIoMessage(abs, r.error));
   }
   appendFile(path: string, content: string): void {
     const abs = this.abs(path);
@@ -165,7 +189,7 @@ class WindowsFileSystemAdapter implements IFileSystemProvider {
       return;
     }
     const r = this.fs().appendFile(abs, content);
-    if (!r.ok) throw new Error(r.error ?? `Cannot append to ${path}`);
+    if (!r.ok) throw new Error(dotNetIoMessage(abs, r.error));
   }
   listDir(path: string): DirEntry[] {
     const entries = this.fs().listDirectory(this.abs(path));
@@ -1577,16 +1601,16 @@ class WindowsEventLogAdapter implements IEventLogProvider {
 //
 // Most operational state for IP / route / firewall / adapter overrides /
 // connection profiles still lives on the legacy PowerShellExecutor
-// (`extraIPs`, `extraRoutes`, `adapterOverrides`, `dynamicFirewallRules`,
+// (`extraIPs`, `extraRoutes`, `adapterOverrides`, `firewallRules`,
 // `networkProfiles`, …). Until that state is relocated onto WindowsPC we
 // share the executor's maps directly so the interpreter and the executor
 // fallback path see the same world.
 
 interface NetworkStateRefs {
-  readonly extraIPs:             Map<string, { ifAlias: string; prefixLength: number; prefixOrigin: string; suffixOrigin: string; skipAsSource: boolean; gateway?: string; addressFamily: string }>;
-  readonly extraRoutes:          Map<string, { ifAlias: string; nextHop: string; metric: number }>;
+  readonly extraIPs:             Map<string, NetIPAddressEntry>;
+  readonly extraRoutes:          Map<string, NetRouteEntry>;
   readonly adapterOverrides:     Map<string, { status?: string; displayName?: string }>;
-  readonly dynamicFirewallRules: Map<string, { name: string; displayName: string; enabled: boolean; action: string; direction: string; protocol: string; localPort: string; remotePort: string; description: string }>;
+  readonly firewallRules: Map<string, NetFirewallRuleEntry>;
   readonly networkProfiles:      Map<number, string>;
 }
 
@@ -1610,7 +1634,7 @@ class WindowsNetworkAdapter implements INetworkProvider {
       return {
         name: ov.displayName ?? toDisplayName(p.name),
         displayName: ov.displayName ?? toDisplayName(p.name),
-        ifIndex: idx + 1,
+        ifIndex: adapterIfIndex(idx),
         status: p.isAdminDown() ? 'Disabled' : (connected ? 'Up' : 'Disconnected'),
         macAddress: p.getMAC().toString(),
         linkSpeed: connected
@@ -1792,12 +1816,12 @@ class WindowsNetworkAdapter implements INetworkProvider {
   getIPAddresses(ifAlias?: string): IPAddressInfo[] {
     const out: IPAddressInfo[] = [];
     // Loopback is always present in real Windows.
-    if (!ifAlias || ifAlias.toLowerCase() === 'loopback pseudo-interface 1') {
+    if (!ifAlias || ifAlias.toLowerCase() === LOOPBACK_IFALIAS.toLowerCase()) {
       out.push({
         ipAddress: '127.0.0.1',
         prefixLength: 8,
-        ifAlias: 'Loopback Pseudo-Interface 1',
-        ifIndex: 1,
+        ifAlias: LOOPBACK_IFALIAS,
+        ifIndex: LOOPBACK_IFINDEX,
         prefixOrigin: 'WellKnown',
         suffixOrigin: 'WellKnown',
         addressFamily: 'IPv4',
@@ -1805,8 +1829,8 @@ class WindowsNetworkAdapter implements INetworkProvider {
       out.push({
         ipAddress: '::1',
         prefixLength: 128,
-        ifAlias: 'Loopback Pseudo-Interface 1',
-        ifIndex: 1,
+        ifAlias: LOOPBACK_IFALIAS,
+        ifIndex: LOOPBACK_IFINDEX,
         prefixOrigin: 'WellKnown',
         suffixOrigin: 'WellKnown',
         addressFamily: 'IPv6',
@@ -1838,7 +1862,7 @@ class WindowsNetworkAdapter implements INetworkProvider {
           ipAddress: ip,
           prefixLength: typeof cidr === 'number' ? cidr : 24,
           ifAlias: toDisplayName(p.name),
-          ifIndex: idx + 1,
+          ifIndex: adapterIfIndex(idx),
           prefixOrigin,
           suffixOrigin,
           addressFamily: ip.includes(':') ? 'IPv6' : 'IPv4',
@@ -1867,12 +1891,46 @@ class WindowsNetworkAdapter implements INetworkProvider {
         gateway: meta.gateway,
       });
     }
+    for (const entry of out) {
+      const meta = this.state.extraIPs.get(entry.ipAddress.toLowerCase());
+      if (!meta) continue;
+      entry.skipAsSource = meta.skipAsSource;
+      entry.type = meta.type;
+      entry.policyStore = meta.policyStore;
+      if (meta.validLifetimeSeconds !== undefined) entry.validLifetimeSeconds = meta.validLifetimeSeconds;
+      if (meta.preferredLifetimeSeconds !== undefined) entry.preferredLifetimeSeconds = meta.preferredLifetimeSeconds;
+    }
     return out;
   }
 
   // ─ IP add / remove ──────────────────────────────────────────────────────
 
-  addIPAddress(ip: string, prefixLength: number, ifAlias: string, opts?: { gateway?: string }): void {
+  resolveNetInterface(spec: { alias?: string; index?: number }): { alias: string; ifIndex: number } | null {
+    const adapters = this.getAdapters();
+    if (spec.index !== undefined) {
+      const byIndex = adapters.find(a => a.ifIndex === spec.index);
+      return byIndex ? { alias: byIndex.name, ifIndex: byIndex.ifIndex } : null;
+    }
+    if (spec.alias === undefined) return null;
+    const wanted = spec.alias.trim();
+    const exact = adapters.find(a => a.name.toLowerCase() === wanted.toLowerCase());
+    if (exact) return { alias: exact.name, ifIndex: exact.ifIndex };
+    const ports = (this.pc as unknown as { ports: Map<string, unknown> }).ports;
+    const portName = resolveAdapterName(wanted, ports);
+    if (!ports.has(portName)) return null;
+    const display = toDisplayName(portName);
+    const byPort = adapters.find(a => a.name.toLowerCase() === display.toLowerCase());
+    return byPort ? { alias: byPort.name, ifIndex: byPort.ifIndex } : null;
+  }
+
+  setDhcpEnabled(ifAlias: string, enabled: boolean): void {
+    if (enabled) return;
+    const ports = (this.pc as unknown as { ports: Map<string, unknown> }).ports;
+    (this.pc as unknown as { disableDhcpOnInterface: (n: string) => void })
+      .disableDhcpOnInterface(resolveAdapterName(ifAlias, ports));
+  }
+
+  addIPAddress(ip: string, prefixLength: number, ifAlias: string, opts?: NetIPAddressOptions): void {
     // Une adresse dont un octet dépasse 255 n'en est pas une. Elle
     // entrait ici sans contrôle et ressortait dans `Get-NetIPAddress` :
     // la machine croyait porter `999.1.1.1`, que `netsh` refusait au
@@ -1891,13 +1949,17 @@ class WindowsNetworkAdapter implements INetworkProvider {
       prefixLength,
       prefixOrigin: 'Manual',
       suffixOrigin: 'Manual',
-      skipAsSource: false,
+      skipAsSource: opts?.skipAsSource ?? false,
       gateway: opts?.gateway,
       addressFamily: ip.includes(':') ? 'IPv6' : 'IPv4',
+      type: opts?.type ?? 'Unicast',
+      policyStore: opts?.policyStore ?? 'ActiveStore',
+      validLifetimeSeconds: opts?.validLifetimeSeconds,
+      preferredLifetimeSeconds: opts?.preferredLifetimeSeconds,
     });
+    this.setDhcpEnabled(ifAlias, false);
     if (opts?.gateway) {
-      const dest = ip.includes(':') ? '::/0' : '0.0.0.0/0';
-      this.state.extraRoutes.set(dest, { ifAlias, nextHop: opts.gateway, metric: 256 });
+      this.addRoute(ip.includes(':') ? '::/0' : '0.0.0.0/0', ifAlias, opts.gateway, 256);
     }
     // Mirror onto the device port so cmd's `ipconfig` / `netsh ipv4 show
     // addresses` see the same address PowerShell just added.
@@ -1947,92 +2009,156 @@ class WindowsNetworkAdapter implements INetworkProvider {
     }).getRoutingTable();
     const seen = new Set<string>();
     for (const r of real) {
-      const dest = `${r.network.toString()}/${r.mask.toCIDR()}`;
-      seen.add(dest);
-      out.push({
-        destinationPrefix: dest,
+      const row: RouteInfo = {
+        destinationPrefix: `${r.network.toString()}/${r.mask.toCIDR()}`,
         ifAlias: toDisplayName(r.iface),
-        nextHop: r.nextHop ? r.nextHop.toString() : '0.0.0.0',
+        nextHop: r.nextHop ? r.nextHop.toString() : UNSPECIFIED_NEXT_HOP.IPv4,
         routeMetric: r.metric,
-      });
+      };
+      seen.add(netRouteKey(row));
+      out.push(row);
     }
     // Troisieme copie du meme fait, trouvee en verifiant les deux
     // autres : `route print`, `Get-NetRoute` cote cmd et ce fournisseur
     // declaraient chacun leurs routes de bouclage, avec des metriques
     // differentes. Une seule declaration, trois lecteurs.
     for (const lo of WINDOWS_LOOPBACK_ROUTES) {
-      out.push({
+      const row: RouteInfo = {
         destinationPrefix: `${lo.network}/${lo.prefixLength}`,
-        ifAlias: LOOPBACK_IFALIAS, nextHop: '0.0.0.0', routeMetric: lo.metric,
-      });
+        ifAlias: LOOPBACK_IFALIAS, nextHop: UNSPECIFIED_NEXT_HOP.IPv4, routeMetric: lo.metric,
+      };
+      seen.add(netRouteKey(row));
+      out.push(row);
     }
-    // Routes New-NetRoute couldn't apply to the real table (e.g. gateway not
-    // on-link) still get PS-local bookkeeping so the cmdlet stays consistent
-    // with itself even though cmd never sees them.
-    for (const [dest, meta] of this.state.extraRoutes) {
-      if (seen.has(dest)) continue;
+    for (const meta of this.state.extraRoutes.values()) {
+      if (seen.has(netRouteKey(meta))) continue;
       out.push({
-        destinationPrefix: dest,
+        destinationPrefix: meta.destinationPrefix,
         ifAlias: meta.ifAlias,
         nextHop: meta.nextHop,
         routeMetric: meta.metric,
       });
     }
+    const adapters = this.getAdapters();
+    for (const entry of out) {
+      const meta = this.state.extraRoutes.get(netRouteKey(entry));
+      entry.addressFamily = entry.destinationPrefix.includes(':') ? 'IPv6' : 'IPv4';
+      entry.publish = meta?.publish ?? 'No';
+      entry.protocol = meta?.protocol ?? (meta ? 'NetMgmt' : 'Local');
+      entry.policyStore = meta?.policyStore ?? 'ActiveStore';
+      entry.ifIndex = meta?.ifIndex
+        ?? adapters.find(a => a.name.toLowerCase() === entry.ifAlias.toLowerCase())?.ifIndex
+        ?? (entry.ifAlias === LOOPBACK_IFALIAS ? LOOPBACK_IFINDEX : 0);
+      entry.validLifetimeSeconds = meta?.validLifetimeSeconds;
+      entry.preferredLifetimeSeconds = meta?.preferredLifetimeSeconds;
+    }
     return out;
   }
-  addRoute(dest: string, ifAlias: string, nextHop: string, metric: number): void {
-    if (this.tryApplyRealRoute(dest, nextHop, metric)) return;
-    this.state.extraRoutes.set(dest, { ifAlias, nextHop, metric });
+  addRoute(dest: string, ifAlias: string, nextHop: string, metric: number, opts?: NetRouteAttributes): void {
+    const entry: NetRouteEntry = {
+      destinationPrefix: dest, ifAlias, nextHop, metric,
+      publish: opts?.publish, protocol: opts?.protocol as NetRouteEntry['protocol'],
+      policyStore: opts?.policyStore, ifIndex: opts?.ifIndex,
+      addressFamily: opts?.addressFamily as NetRouteEntry['addressFamily'],
+      validLifetimeSeconds: opts?.validLifetimeSeconds,
+      preferredLifetimeSeconds: opts?.preferredLifetimeSeconds,
+    };
+    const applied = this.tryApplyRealRoute(dest, nextHop, metric);
+    if (applied && opts === undefined) return;
+    this.state.extraRoutes.set(netRouteKey(entry), entry);
   }
-  removeRoute(dest: string): void {
-    const applied = this.tryRemoveRealRoute(dest);
-    if (!applied) this.state.extraRoutes.delete(dest);
+  removeRoute(route: NetRouteIdentity): void {
+    this.state.extraRoutes.delete(netRouteKey(route));
+    this.tryRemoveRealRoute(route.destinationPrefix, route.nextHop);
+  }
+  private parsePrefix(dest: string): { network: IPAddress; mask: SubnetMask } | null {
+    const slash = dest.lastIndexOf('/');
+    if (slash === -1) return null;
+    const network = IPAddress.tryParse(dest.slice(0, slash));
+    const length = Number(dest.slice(slash + 1));
+    if (network === null || !Number.isInteger(length) || length < 0 || length > 32) return null;
+    return { network, mask: new SubnetMask(prefixToMaskOctets(length)) };
+  }
+  private isDefaultPrefix(dest: string): boolean {
+    const parsed = this.parsePrefix(dest);
+    return parsed !== null && parsed.mask.toCIDR() === 0;
   }
   private tryApplyRealRoute(dest: string, nextHop: string, metric: number): boolean {
-    const [netStr, prefixStr] = dest.split('/');
-    try {
-      const network = new IPAddress(netStr);
-      const mask = new SubnetMask(prefixToMaskOctets(Number(prefixStr ?? '32')));
-      const gw = new IPAddress(nextHop);
-      return (this.pc as unknown as {
-        addStaticRoute: (n: IPAddress, m: SubnetMask, g: IPAddress, metric: number) => boolean;
-      }).addStaticRoute(network, mask, gw, metric);
-    } catch {
-      return false;
+    const parsed = this.parsePrefix(dest);
+    const gw = IPAddress.tryParse(nextHop);
+    if (!parsed || gw === null || gw.toString() === UNSPECIFIED_NEXT_HOP.IPv4) return false;
+    const device = this.pc as unknown as {
+      addStaticRoute: (n: IPAddress, m: SubnetMask, g: IPAddress, metric: number) => boolean;
+      setDefaultGateway: (g: IPAddress, origin?: 'static' | 'dhcp', metric?: number) => void;
+      getDefaultGateway?: () => IPAddress | null;
+    };
+    if (this.isDefaultPrefix(dest)) {
+      const before = device.getDefaultGateway?.() ?? null;
+      device.setDefaultGateway(gw, 'static', metric);
+      return (device.getDefaultGateway?.() ?? before)?.toString() === gw.toString();
     }
+    return device.addStaticRoute(parsed.network, parsed.mask, gw, metric);
   }
-  private tryRemoveRealRoute(dest: string): boolean {
-    const [netStr, prefixStr] = dest.split('/');
-    try {
-      const network = new IPAddress(netStr);
-      const mask = new SubnetMask(prefixToMaskOctets(Number(prefixStr ?? '32')));
-      return (this.pc as unknown as {
-        removeRoute: (n: IPAddress, m: SubnetMask) => boolean;
-      }).removeRoute(network, mask);
-    } catch {
-      return false;
+  private tryRemoveRealRoute(dest: string, nextHop?: string): boolean {
+    const parsed = this.parsePrefix(dest);
+    if (!parsed) return false;
+    const device = this.pc as unknown as {
+      removeRoute: (n: IPAddress, m: SubnetMask) => boolean;
+      clearDefaultGateway: () => void;
+      getDefaultGateway?: () => IPAddress | null;
+    };
+    if (this.isDefaultPrefix(dest)) {
+      const current = device.getDefaultGateway?.() ?? null;
+      if (current === null) return device.removeRoute(parsed.network, parsed.mask);
+      if (nextHop !== undefined && current.toString() !== nextHop) return false;
+      device.clearDefaultGateway();
+      return true;
     }
+    return device.removeRoute(parsed.network, parsed.mask);
   }
-  setRoute(dest: string, opts: { nextHop?: string; routeMetric?: number; ifAlias?: string }): string {
-    const cur = this.state.extraRoutes.get(dest);
-    if (!cur) {
-      // Upsert (matches the legacy executor) using whatever was provided.
-      this.state.extraRoutes.set(dest, {
-        ifAlias: opts.ifAlias ?? '',
-        nextHop: opts.nextHop ?? '0.0.0.0',
-        metric:  opts.routeMetric ?? 256,
-      });
-      return '';
+  setRoute(route: NetRouteIdentity, update: NetRouteUpdate): string {
+    const key = netRouteKey(route);
+    const known = this.state.extraRoutes.get(key);
+    if (update.routeMetric !== undefined) {
+      const applied = this.getRoutes().find(r => netRouteKey(r) === key);
+      if (applied && this.tryRemoveRealRoute(route.destinationPrefix, route.nextHop)) {
+        this.tryApplyRealRoute(route.destinationPrefix, route.nextHop, update.routeMetric);
+      }
     }
-    if (opts.ifAlias     !== undefined) cur.ifAlias = opts.ifAlias;
-    if (opts.nextHop     !== undefined) cur.nextHop = opts.nextHop;
-    if (opts.routeMetric !== undefined) cur.metric  = opts.routeMetric;
+    const entry: NetRouteEntry = known ?? {
+      destinationPrefix: route.destinationPrefix,
+      ifAlias: route.ifAlias,
+      nextHop: route.nextHop,
+      metric: this.getRoutes().find(r => netRouteKey(r) === key)?.routeMetric ?? 256,
+    };
+    if (update.publish !== undefined) entry.publish = update.publish;
+    if (update.routeMetric !== undefined) entry.metric = update.routeMetric;
+    if (update.validLifetimeSeconds !== undefined) entry.validLifetimeSeconds = update.validLifetimeSeconds;
+    if (update.preferredLifetimeSeconds !== undefined) {
+      entry.preferredLifetimeSeconds = update.preferredLifetimeSeconds;
+    }
+    this.state.extraRoutes.set(key, entry);
     return '';
   }
-  setIPAddress(ip: string, opts: { prefixLength?: number }): string {
-    const cur = this.state.extraIPs.get(ip.toLowerCase());
-    if (!cur) return `Cannot find IP ${ip}.`;
-    if (opts.prefixLength !== undefined) cur.prefixLength = opts.prefixLength;
+  setIPAddress(ip: string, ifAlias: string, opts: NetIPAddressUpdate): string {
+    if (ip === '127.0.0.1' || ip === '::1') return 'Cannot modify loopback address.';
+    const key = ip.toLowerCase();
+    const cur = this.state.extraIPs.get(key);
+    if (cur) {
+      if (opts.prefixLength !== undefined) cur.prefixLength = opts.prefixLength;
+      if (opts.skipAsSource !== undefined) cur.skipAsSource = opts.skipAsSource;
+      if (opts.validLifetimeSeconds !== undefined) cur.validLifetimeSeconds = opts.validLifetimeSeconds;
+      if (opts.preferredLifetimeSeconds !== undefined) cur.preferredLifetimeSeconds = opts.preferredLifetimeSeconds;
+    }
+    if (opts.prefixLength !== undefined && !ip.includes(':')) {
+      const ports = (this.pc as unknown as { ports: Map<string, { getIPAddress: () => unknown }> }).ports;
+      const portName = resolveAdapterName(ifAlias, ports as Map<string, unknown>);
+      const port = ports.get(portName);
+      if (port && String(port.getIPAddress()) === ip) {
+        (this.pc as unknown as { configureInterface: (n: string, a: IPAddress, m: SubnetMask) => void })
+          .configureInterface(portName, new IPAddress(ip), new SubnetMask(prefixToMaskOctets(opts.prefixLength)));
+      }
+    }
     return '';
   }
 
@@ -2054,7 +2180,10 @@ class WindowsNetworkAdapter implements INetworkProvider {
     const m = this.pc as unknown as { getDhcpServer?: (n: string) => string | null };
     return m.getDhcpServer ? m.getDhcpServer(toPortName(ifAlias) ?? ifAlias) : null;
   }
-  isDHCPConfigured(): boolean { return false; }
+  isDHCPConfigured(ifAlias: string): boolean {
+    return (this.pc as unknown as { isDHCPConfigured: (n: string) => boolean })
+      .isDHCPConfigured(resolveAdapterName(ifAlias, (this.pc as unknown as { ports: Map<string, unknown> }).ports));
+  }
   testConnection(target: string): boolean {
     const probe = this.testPingProbe(target);
     return probe?.success ?? false;
@@ -2223,54 +2352,29 @@ class WindowsNetworkAdapter implements INetworkProvider {
 
   // ─ Firewall ─────────────────────────────────────────────────────────────
 
-  getFirewallRules() {
-    // Built-in Windows Firewall rules — matches the static set the legacy
-    // formatter shipped so cmdlets relying on these names keep working.
-    const builtins = [
-      { name: 'CoreNet-DHCP-In',      displayName: 'DHCP (UDP-In)',              enabled: true,  action: 'Allow', direction: 'Inbound',  protocol: 'UDP', localPort: '68',    remotePort: '67',  description: 'Built-in: DHCP client' },
-      { name: 'CoreNet-DHCP-Out',     displayName: 'DHCP (UDP-Out)',             enabled: true,  action: 'Allow', direction: 'Outbound', protocol: 'UDP', localPort: '68',    remotePort: '67',  description: 'Built-in: DHCP client' },
-      { name: 'CoreNet-DNS-Out',      displayName: 'DNS (UDP-Out)',              enabled: true,  action: 'Allow', direction: 'Outbound', protocol: 'UDP', localPort: 'Any',   remotePort: '53',  description: 'Built-in: DNS client' },
-      { name: 'FPS-ICMP4-ERQ-In',     displayName: 'File and Printer Sharing',   enabled: true,  action: 'Allow', direction: 'Inbound',  protocol: 'ICMPv4', localPort: 'Any', remotePort: 'Any', description: 'Built-in: ICMP echo request' },
-      { name: 'RemoteDesktop-In-TCP', displayName: 'Remote Desktop - User Mode', enabled: false, action: 'Allow', direction: 'Inbound',  protocol: 'TCP', localPort: '3389',  remotePort: 'Any', description: 'Built-in: RDP' },
-      { name: 'WinRM-HTTP-In-TCP',    displayName: 'Windows Remote Management',  enabled: false, action: 'Allow', direction: 'Inbound',  protocol: 'TCP', localPort: '5985',  remotePort: 'Any', description: 'Built-in: WinRM' },
-      { name: 'BlockTelemetry',       displayName: 'Block Windows Telemetry',    enabled: true,  action: 'Block', direction: 'Outbound', protocol: 'TCP', localPort: 'Any',   remotePort: '443', description: 'Built-in: Block Telemetry' },
-    ];
-    // Single per-device store: both PowerShell `New-NetFirewallRule`
-    // and cmd's `netsh advfirewall firewall add rule` write to the same
-    // `state.dynamicFirewallRules` map. No more cross-host leakage.
-    const dynamicMap = new Map<string, FwRow>();
-    for (const r of this.state.dynamicFirewallRules.values()) {
-      dynamicMap.set((r.displayName ?? r.name).toLowerCase(), { ...r });
+  getFirewallRules(): NetFirewallRuleEntry[] {
+    return [...this.state.firewallRules.values()];
+  }
+  addFirewallRule(rule: NetFirewallRuleEntry): string {
+    const key = firewallRuleKey(rule.name);
+    if (this.state.firewallRules.has(key)) {
+      return `Cannot create a file when that file already exists. Rule '${rule.name}' already exists.`;
     }
-    return [...builtins, ...dynamicMap.values()];
-  }
-  addFirewallRule(rule: { name: string; displayName?: string; enabled?: boolean; action: string; direction: string; protocol?: string; localPort?: string; remotePort?: string; description?: string }): void {
-    const displayName = rule.displayName ?? rule.name;
-    const key = displayName.toLowerCase();
-    this.state.dynamicFirewallRules.set(key, {
-      name: rule.name,
-      displayName,
-      enabled: rule.enabled ?? true,
-      action: rule.action,
-      direction: rule.direction,
-      protocol: rule.protocol ?? 'TCP',
-      localPort: rule.localPort ?? 'Any',
-      remotePort: rule.remotePort ?? 'Any',
-      description: rule.description ?? '',
-    });
-  }
-  setFirewallRule(name: string, opts: { enabled?: boolean; action?: string }): string {
-    const key = name.toLowerCase();
-    const rule = this.state.dynamicFirewallRules.get(key);
-    if (!rule) return `No firewall rule named '${name}'.`;
-    if (opts.enabled !== undefined) rule.enabled = opts.enabled;
-    if (opts.action  !== undefined) rule.action  = opts.action;
+    this.state.firewallRules.set(key, { ...rule });
     return '';
   }
-  removeFirewallRule(name: string): string {
-    const key = name.toLowerCase();
-    const removed = this.state.dynamicFirewallRules.delete(key);
-    return removed ? '' : `No firewall rule named '${name}'.`;
+  updateFirewallRule(name: string, patch: Partial<NetFirewallRuleEntry>): void {
+    const key = firewallRuleKey(name);
+    const rule = this.state.firewallRules.get(key);
+    if (!rule) return;
+    Object.assign(rule, patch);
+    if (patch.name !== undefined && firewallRuleKey(patch.name) !== key) {
+      this.state.firewallRules.delete(key);
+      this.state.firewallRules.set(firewallRuleKey(patch.name), rule);
+    }
+  }
+  removeFirewallRule(name: string): void {
+    this.state.firewallRules.delete(firewallRuleKey(name));
   }
 
   // ─ Adapter actions ──────────────────────────────────────────────────────
@@ -3347,7 +3451,7 @@ export function createWindowsPSProviders(
     extraIPs:             pc.extraIPs,
     extraRoutes:          pc.extraRoutes,
     adapterOverrides:     pc.adapterOverrides,
-    dynamicFirewallRules: pc.dynamicFirewallRules,
+    firewallRules: pc.firewallRules,
     networkProfiles:      pc.networkProfiles,
   };
   const vpn = shared?.vpn ?? { vpnConnections: pc.vpnConnections };

@@ -6,7 +6,7 @@ import {
   type StpPortGuards, type MstRegion,
   createDefaultStpConfig, compareBridge, bridgeEquals, defaultPathCost, defaultPathCostLong,
   defaultPortGuards, createDefaultMstRegion, parseStpVlanList,
-  ETHERTYPE_STP, STP_BRIDGE_MAC, PVST_PLUS_MAC,
+  ETHERTYPE_STP, STP_BRIDGE_MAC, PVST_PLUS_MAC, UPLINKFAST_DEFAULT_RATE,
 } from './types';
 import { StpVlanInstance, type StpInstanceAgent, type StpForwardState } from './StpVlanInstance';
 import { mstConfigIdentifier, sameMstRegion, type MstConfigIdentifier } from './MstConfigId';
@@ -703,7 +703,12 @@ export class StpAgent extends ReactiveAgentBase implements StpInstanceAgent {
   setPortfastDefault(on: boolean): void { this.config.portfastDefault = on; }
   setBpduFilterGlobal(on: boolean): void { this.config.bpduFilterGlobal = on; }
   setLoopGuardGlobal(on: boolean): void { this.config.loopGuardGlobal = on; }
-  setUplinkFast(on: boolean): void { this.config.uplinkFast = on; }
+  setUplinkFast(on: boolean, maxUpdateRate?: number): void {
+    this.config.uplinkFast = on;
+    this.config.uplinkFastMaxUpdateRate = on
+      ? maxUpdateRate ?? this.config.uplinkFastMaxUpdateRate
+      : UPLINKFAST_DEFAULT_RATE;
+  }
   setBackboneFast(on: boolean): void { this.config.backboneFast = on; }
   getGlobalStp(): {
     portfastDefault: boolean; bpduGuardGlobal: boolean; bpduFilterGlobal: boolean;
@@ -744,9 +749,36 @@ export class StpAgent extends ReactiveAgentBase implements StpInstanceAgent {
     }
   }
 
+  /**
+   * `no spanning-tree vlan <n>` ne coupe QUE ce VLAN : son instance
+   * cesse d'elire et ses ports passent en acheminement, les autres
+   * arbres continuant de tourner. Le drapeau global `enabled` reste ce
+   * qu'il etait, sans quoi couper un VLAN de laboratoire desarmerait la
+   * protection contre les boucles de tous les autres.
+   */
+  setVlanStpEnabled(vlan: number, on: boolean): void {
+    if (on) {
+      if (!this.config.disabledVlans.delete(vlan)) return;
+      this.recomputeOnTopologyChange();
+      this.armTimers();
+      return;
+    }
+    if (this.config.disabledVlans.has(vlan)) return;
+    this.config.disabledVlans.add(vlan);
+    this.ensurePortInstances();
+    this.instances.get(vlan)?.forceAll('forwarding');
+  }
+
+  isVlanStpEnabled(vlan: number): boolean {
+    return this.config.enabled && !this.config.disabledVlans.has(vlan);
+  }
+
   runningConfigGlobalLines(): string[] {
     const out: string[] = [];
     if (!this.config.enabled) out.push('no spanning-tree vlan 1');
+    for (const vlan of [...this.config.disabledVlans].sort((a, b) => a - b)) {
+      out.push(`no spanning-tree vlan ${vlan}`);
+    }
     /*
      * Le mode est rendu MEME quand c'est le defaut. Un Catalyst ecrit
      * `spanning-tree mode pvst` dans sa configuration d'usine — la
@@ -773,7 +805,11 @@ export class StpAgent extends ReactiveAgentBase implements StpInstanceAgent {
     if (this.config.bpduGuardGlobal) out.push('spanning-tree portfast bpduguard default');
     if (this.config.bpduFilterGlobal) out.push('spanning-tree portfast bpdufilter default');
     if (this.config.loopGuardGlobal) out.push('spanning-tree loopguard default');
-    if (this.config.uplinkFast) out.push('spanning-tree uplinkfast');
+    if (this.config.uplinkFast) {
+      out.push('spanning-tree uplinkfast'
+        + (this.config.uplinkFastMaxUpdateRate === UPLINKFAST_DEFAULT_RATE
+          ? '' : ` max-update-rate ${this.config.uplinkFastMaxUpdateRate}`));
+    }
     if (this.config.backboneFast) out.push('spanning-tree backbonefast');
     if (this.pathcostMethod === 'long') out.push('spanning-tree pathcost method long');
     for (const vlan of this.configuredVlans()) {
@@ -1125,6 +1161,9 @@ export class StpAgent extends ReactiveAgentBase implements StpInstanceAgent {
   }
 
   private sendBpdu(portName: string, key = 1): void {
+    // Le SEUL point d'emission : gardez-le ici et les dix appelants sont
+    // couverts, y compris ceux qui n'ont pas de boucle a border.
+    if (!this.isVlanStpEnabled(key)) return;
     const port = this.host.getPort(portName);
     if (!port) return;
     if (this.isBpduFilterEffective(portName)) return;
