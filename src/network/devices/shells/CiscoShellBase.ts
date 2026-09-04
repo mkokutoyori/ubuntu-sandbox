@@ -74,6 +74,7 @@ import { findHostByAddress } from '../linux/network/HostLookup';
 import type { Router } from '../Router';
 import { ipGlobalSpecs, type IpGlobalHost } from './cisco/ipGlobalSpecs';
 import { cryptoKeySpecs, type CryptoKeyHost } from './cisco/cryptoKeySpecs';
+import { clearLineSpecs, type ClearRestantsHost } from './cisco/clearRestantsSpecs';
 import {
   getSecurityConfig, buildIdentityShowCommands, buildIdentityConfigCommands,
 } from './cisco/CiscoSecurityCommands';
@@ -177,7 +178,7 @@ import {
   radiusServerSubmodeSpecs, tacacsServerSubmodeSpecs, aaaGroupSubmodeSpecs,
   type CiscoSecurityShellContext,
 } from './cisco/CiscoSecurityCommands';
-import { registerLineExecCommands } from './cisco/CiscoLineCommands';
+import { absoluteLineNumber } from '../router/aaa/SshSessionRegistry';
 import { setupInteractionPlan } from './cisco/CiscoSetupDialog';
 import {
   scopedTrie, PRIVILEGED_ONLY_SHOW_CHILDREN, PRIVILEGED_ONLY_PATHS,
@@ -185,7 +186,7 @@ import {
 } from './cisco/CiscoExecScope';
 import {
   registerLoggingConfigCommands, loggingShowViews, severityValues,
-  registerSequenceNumbersCommand, registerLoggingClearCommands,
+  registerSequenceNumbersCommand,
 } from './cisco/CiscoLoggingCommands';
 import type { LoggingCommandContext } from './cisco/CiscoLoggingCommands';
 import { encryptType7 as _encryptType7, md5Hex as _md5Hex } from '@/crypto';
@@ -863,6 +864,17 @@ const SORTES_DE_LIGNE: Readonly<Record<string, {
   tty: { canonique: 'tty', max: 15, description: 'Terminal controller' },
   vty: { canonique: 'vty', max: 15, description: 'Virtual terminal' },
 };
+
+/**
+ * La derniere ligne joignable en numerotation ABSOLUE.
+ *
+ * `clear line <n>` compte console, aux puis les vty a la suite ; sa
+ * borne haute se DEDUIT donc du nombre de vty que `line vty` declare
+ * deja, plutot que d'etre ecrite une seconde fois — deux bornes pour un
+ * meme fait finiraient par se contredire.
+ */
+export const DERNIERE_LIGNE_ABSOLUE =
+  absoluteLineNumber('vty', SORTES_DE_LIGNE.vty.max);
 
 type TeteLigne =
   | { sorte: 'console' | 'vty' | 'aux' | 'tty'; premiere: number; derniere: number }
@@ -5591,6 +5603,18 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
    * « definissez d'abord un nom de domaine » a un commutateur qui
    * venait d'en poser un.
    */
+  protected clearRestantsHost(): ClearRestantsHost {
+    return {
+      linePool: () => getSessionRegistry(this.d()),
+      clearPersistentLog: () => {
+        const ctx = this.loggingCommandContext();
+        ctx.beforeApply?.();
+        ctx.config().clearPersistent();
+        return '';
+      },
+    };
+  }
+
   protected cryptoKeyHost(): CryptoKeyHost {
     const dev = () => this.d() as unknown as {
       getManagementService?: () => { domainName?: string };
@@ -5628,6 +5652,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       ...TIME_RANGE_FAMILY,
       ...ipGlobalSpecs(() => this.ipGlobalHost()),
       ...cryptoKeySpecs(() => this.cryptoKeyHost()),
+      ...clearLineSpecs(() => this.clearRestantsHost(), DERNIERE_LIGNE_ABSOLUE),
       ...debugFamily(this.debugPairs()),
       ...showConfigViewSpecs(() => this),
       ...showIpDhcpSpecs(() => this.dhcpViewServer()),
@@ -9378,7 +9403,6 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       }
       return this.performImmediateReload();
     });
-    registerLoggingClearCommands(this.privilegedTrie, this.loggingCommandContext());
     // `send` doit EXISTER dans le trie meme si tout son interet est dans
     // le plan interactif : sans noeud, le mot part en resolution DNS et
     // la machine cherche un hote nomme « send ».
@@ -9397,7 +9421,6 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       { keyword: 'tty', description: 'Terminal controller' },
       { keyword: 'vty', description: 'Virtual terminal' },
     ]);
-    registerLineExecCommands(this.privilegedTrie, () => getSessionRegistry(this.d()));
 
     this.registerCommonShowCommands(this.privilegedTrie);
 

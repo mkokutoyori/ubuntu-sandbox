@@ -427,10 +427,3 @@ export function loggingShowViews(ctx: LoggingCommandContext): LoggingShowView[] 
  * vider l'autre est précisément l'erreur que cette commande existe pour
  * éviter.
  */
-export function registerLoggingClearCommands(trie: CommandTrie, ctx: LoggingCommandContext): void {
-  trie.register('clear logging persistent', 'Clear the persistent log files', () => {
-    ctx.beforeApply?.();
-    ctx.config().clearPersistent();
-    return '';
-  });
-}

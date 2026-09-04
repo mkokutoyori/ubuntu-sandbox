@@ -130,7 +130,7 @@ import {
   buildACLConfigCommands,
   buildNamedStdACLCommands, buildNamedExtACLCommands,
   buildIPv6ACLGlobalCommands, buildIPv6ACLModeCommands,
-  registerACLShowCommands, registerACLClearCommands, aclShowSpecs,
+  registerACLShowCommands, aclShowSpecs,
 } from './cisco/CiscoAclCommands';
 import {
   registerOSPFConfigCommands, buildConfigRouterOSPFCommands,
@@ -194,6 +194,8 @@ const HORS_PLATEFORME_ISR: ReadonlySet<string> = new Set(['vxlan', 'nve', 'mls']
 
 import { routerOnlyDebugPairs, type RouterDebugHost } from '@/cli/commands/debug/routerDebugPairs';
 import { getGlobalConfig } from '../router/config/CiscoGlobalConfig';
+import { clearAclSpecs, clearCryptoSpecs } from './cisco/clearRestantsSpecs';
+import { clearAccessListCounters } from './cisco/CiscoAclCommands';
 import { IPV4_PLACE, valeurGlobaleSpecs } from './cisco/ipGlobalSpecs';
 
 
@@ -379,10 +381,39 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
     );
   }
 
+  /**
+   * Ce que `clear crypto {sa|isakmp}` efface, et ce qu'elle en dit.
+   *
+   * Les deux gestionnaires du trie ne differaient que par la methode
+   * appelee et le mot rendu ; leur corps est desormais ecrit une fois.
+   */
+  private effacerSa(quoi: 'ipsec' | 'isakmp', peer?: string): string {
+    const moteur = (this.d() as unknown as {
+      _getIPSecEngineInternal?: () => {
+        clearIPSecSAs(peer?: string): number;
+        clearISAKMPSAs(peer?: string): number;
+      } | undefined;
+    })._getIPSecEngineInternal?.();
+    if (!moteur) return 'IPSec not configured.';
+    const n = quoi === 'ipsec'
+      ? moteur.clearIPSecSAs(peer) : moteur.clearISAKMPSAs(peer);
+    const nom = quoi === 'ipsec' ? 'IPSec' : 'ISAKMP';
+    return n === 0
+      ? `No matching ${nom} SAs found`
+      : `Cleared ${n} ${nom} SA${n === 1 ? '' : 's'}`;
+  }
+
   protected override socleSpecs(): readonly CommandSpec[] {
     return [
       ...super.socleSpecs(),
       ...dhcpClientFamily(),
+      ...clearAclSpecs(() => ({
+        clearAclCounters: (ref) => clearAccessListCounters(this.d(), ref),
+      })),
+      ...clearCryptoSpecs(() => ({
+        clearIpsecSas: (peer) => this.effacerSa('ipsec', peer),
+        clearIsakmpSas: (peer) => this.effacerSa('isakmp', peer),
+      })),
       ...valeurGlobaleSpecs('ip-default-network', ['ip', 'default-network'],
         'Configure default network', IPV4_PLACE,
         (v) => { getGlobalConfig(this.d()).defaultNetwork = v; }),
@@ -1745,7 +1776,6 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
     registerDhcpPrivilegedCommands(this.privilegedTrie, () => this.d());
     buildIPSecPrivilegedCommands(this.privilegedTrie, this);
     registerNATPrivilegedCommands(this.privilegedTrie, () => this.d());
-    registerACLClearCommands(this.privilegedTrie, () => this.d());
 
     // ── Config mode ──
     buildConfigCommands(this.configTrie, this);

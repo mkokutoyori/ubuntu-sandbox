@@ -72,6 +72,7 @@ import { orderCiscoConfigBlocks } from './cisco/ciscoConfigSerializer';
 import { describeCiscoArguments } from './cisco/ciscoArgumentHelp';
 import { stpGlobalSpecs, type StpGlobalHost } from './cisco/stpGlobalSpecs';
 import { IPV4_PLACE, valeurGlobaleSpecs } from './cisco/ipGlobalSpecs';
+import { clearSwitchSpecs } from './cisco/clearRestantsSpecs';
 import { buildActorState } from '@/network/lacp/types';
 import { etherChannelLimitFamily } from '@/cli/commands/aggregation/etherChannelLimits';
 import {
@@ -1254,16 +1255,11 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
     // ── clear / recovery ──
     trie.privileged.register('clear ip arp inspection statistics',
       'Reset DAI counters', () => { this.d()._resetArpInspectionStats(); return ''; });
-    trie.privileged.registerGreedy('clear spanning-tree detected-protocols',
-      'Restart protocol migration', () => '');
-    trie.privileged.registerGreedy('clear spanning-tree counters',
-      'Clear spanning-tree counters', () => '');
     // Quatre noeuds INTERMEDIAIRES nes de l'enregistrement de chemins
     // plus profonds, donc sans description propre : `?` les offrait nus.
     // Ils n'etaient visibles que depuis l'EXEC d'un Catalyst, que le
     // garde-fou des descriptions ne parcourait pas ; `do ?` les expose
     // desormais depuis la configuration, ou il passe.
-    trie.privileged.describeNode('clear spanning-tree', 'Spanning trees');
     trie.privileged.describeNode('show errdisable', 'Error-disable configuration');
     trie.privileged.describeNode('show queuing', 'Show queueing configuration');
   }
@@ -1447,15 +1443,6 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
     this.privilegedTrie.describeNode('clear port-security', 'Clear secure MAC entries');
     // `describeNode` sort en silence sur un noeud absent : l'appel doit
     // SUIVRE l'enregistrement qui cree le noeud intermediaire.
-    this.privilegedTrie.registerGreedy('clear errdisable interface',
-      'Recover an err-disabled port', (args) => {
-        const portName = this.resolveInterfaceName(args.join(' ')) ?? args.join(' ');
-        const cleared = this.d()._clearArpInspectionErrDisable(portName)
-          || this.d()._clearPsecErrDisable(portName)
-          || (this.d()._clearBpduGuardErrDisable?.(portName) ?? false);
-        return cleared ? '' : '';
-      });
-    this.privilegedTrie.describeNode('clear errdisable', 'Error-disable state');
   }
 
   private clearPortSecurity(genre: string, args: readonly string[]): string {
@@ -2367,6 +2354,14 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
       ...this.vlanEntrySpecs(),
       ...this.macTableSpecs(),
       ...stpGlobalSpecs(() => this.stpGlobalHost()),
+      ...clearSwitchSpecs(() => ({
+        resolveInterface: (name) => this.resolveInterfaceName(name) ?? null,
+        recoverErrDisable: (port) => {
+          this.d()._clearArpInspectionErrDisable(port);
+          this.d()._clearPsecErrDisable(port);
+          this.d()._clearBpduGuardErrDisable?.(port);
+        },
+      })),
       ...valeurGlobaleSpecs('ip-default-gateway', ['ip', 'default-gateway'],
         'Set the management default gateway', IPV4_PLACE,
         (v) => { this.d()._setDefaultGateway(v ?? ''); }),

@@ -1,4 +1,3 @@
-import type { CommandTrie } from '../CommandTrie';
 import { absoluteLineNumber, type LineKind, type SshSessionRecord } from '../../router/aaa/SshSessionRegistry';
 
 export interface LinePool {
@@ -55,11 +54,3 @@ export function clearLine(pool: LinePool | undefined, args: readonly string[]): 
   return '[confirm]\n [OK]';
 }
 
-export function registerLineExecCommands(trie: CommandTrie, pool: LinePoolAccessor): void {
-  trie.registerGreedy('clear line', 'Reset a terminal line', (args) => clearLine(pool(), args));
-  trie.addCompletionKeywords('clear line', [
-    { keyword: 'aux', description: 'Auxiliary line' },
-    { keyword: 'console', description: 'Primary terminal line' },
-    { keyword: 'vty', description: 'Virtual terminal' },
-  ]);
-}
