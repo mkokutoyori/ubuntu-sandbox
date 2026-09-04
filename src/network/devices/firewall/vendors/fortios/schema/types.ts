@@ -246,6 +246,14 @@ export interface FortiIpsGlobalSettings {
   readonly failOpen: boolean;
 }
 
+export interface FortiSessionTtlPort {
+  readonly id: string;
+  readonly protocol: number;
+  readonly startPort: number;
+  readonly endPort: number;
+  readonly timeoutSec: number;
+}
+
 export interface FortiLdbMonitorPatch {
   readonly name: string;
   readonly type: LdbMonitorType;
@@ -341,6 +349,9 @@ export interface FortiCommitDevice {
   applyDnsSettings(settings: FirewallDnsSettings): void;
   applyDnsServerInterface(entry: DnsServerInterface): void;
   removeDnsServerInterface(iface: string): void;
+  applySessionTtlDefault(seconds: number): void;
+  applySessionTtlPort(entry: FortiSessionTtlPort): void;
+  removeSessionTtlPort(id: string): void;
   applyDnsZone(zone: FortiDnsZonePatch): void;
   removeDnsZone(name: string): void;
   resolveFqdnNow(fqdn: string): void;

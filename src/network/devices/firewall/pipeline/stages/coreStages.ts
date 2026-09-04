@@ -2,7 +2,7 @@ import { Continue, Drop, type FilterVerdict } from '../../../../core/FilterChain
 import { decrementForForwarding } from '../../../../layers/internet/InternetLayer';
 import { getPacketDstPort, getPacketSrcPort, rewriteSrcIP } from '../../../../nat/rewrite';
 import {
-  IP_PROTO_TCP,
+  IP_PROTO_ICMP, IP_PROTO_TCP, IP_PROTO_UDP,
   type IPv4Packet, type MACAddress, type TCPPacket,
 } from '../../../../core/types';
 import { IPV4_FLAG_DF } from '../../../../core/Ipv4Fragmentation';
@@ -10,6 +10,8 @@ import type { InterfaceTable } from '../../l3/InterfaceTable';
 import type { RouteTable } from '../../l3/RouteTable';
 import type { ObjectStore } from '../../model/ObjectStore';
 import type { PolicyStore } from '../../model/PolicyStore';
+import type { SessionTimeoutProfile } from '../../FirewallProfile';
+import type { SessionTtlTable } from '../../session/SessionTtlTable';
 import { isDenyAction, type SecurityRule } from '../../model/SecurityRule';
 import {
   inspectTls, protocolOfFlow, scanAntivirus, scanApplicationControl,
@@ -28,7 +30,10 @@ import type { DosFinding, DosSensor } from '../../dos/DosSensor';
 import { flowKeyFromPacket, reverseFlowKey, type FlowKey } from '../../session/FlowKey';
 import type { AssembledStream } from '../../inspection/StreamAssembler';
 import type { SessionTable, SessionTranslation } from '../../session/SessionTable';
-import { TcpStateMachine, type ObservedTcpFlags } from '../../session/TcpStateMachine';
+import {
+  DEFAULT_TCP_TIMEOUTS, TcpStateMachine,
+  type ObservedTcpFlags, type TcpTimeouts,
+} from '../../session/TcpStateMachine';
 import type { FirewallNatEngine } from '../../nat/FirewallNatEngine';
 import type { NatPolicyStore } from '../../nat/NatPolicyStore';
 import type { PolicyRouteTable } from '../../l3/PolicyRouteTable';
@@ -46,6 +51,7 @@ export interface VdomServices {
   natPolicy?: NatPolicyStore;
   nat?: FirewallNatEngine;
   policyRoutes?: PolicyRouteTable;
+  sessionTtl?: SessionTtlTable;
   utm?: UtmProfileStore;
   identities?: IdentityTable;
   centralNat?: boolean;
@@ -76,6 +82,7 @@ export interface FirewallServices {
   bridgedWith?: (ingress: string, egress: string) => boolean;
   macLookup?: (destination: MACAddress, ingress: string) => string | undefined;
   defaultTimeoutSec?: number;
+  sessionTimeouts?: SessionTimeoutProfile;
   discardTimeoutSec?: number;
   refusesNewSessions?: () => boolean;
   proxyInspectionPosture?: () => 'normal' | 'bypass' | 'block';
@@ -100,6 +107,29 @@ export interface NatOrder {
 }
 
 const DEFAULT_TIMEOUT_SEC = 3600;
+
+function sessionTimeoutFor(
+  services: FirewallServices, ttl: SessionTtlTable | undefined, packet: IPv4Packet,
+): number {
+  const configured = ttl?.timeoutFor(packet.protocol, getPacketDstPort(packet));
+  if (configured !== undefined) return configured;
+
+  const profile = services.sessionTimeouts;
+  if (!profile) return services.defaultTimeoutSec ?? DEFAULT_TIMEOUT_SEC;
+
+  if (protocolUsesSessionTtlDefault(packet.protocol)) {
+    return ttl?.getDefault() ?? profile.tcpEstablished;
+  }
+  if (packet.protocol === IP_PROTO_UDP) return profile.udp;
+  if (packet.protocol === IP_PROTO_ICMP) return profile.icmp;
+  return profile.other;
+}
+
+function protocolUsesSessionTtlDefault(protocol: number): boolean {
+  return protocol === IP_PROTO_TCP || protocol === IP_PROTO_SCTP;
+}
+
+const IP_PROTO_SCTP = 132;
 const DISCARD_TIMEOUT_SEC = 5;
 
 const tcpMachines = new WeakMap<object, TcpStateMachine>();
@@ -526,6 +556,20 @@ function sessionLookupStage(services: FirewallServices): PipelineStage {
   };
 }
 
+function tcpTimeoutsFor(
+  services: FirewallServices, ttl: SessionTtlTable | undefined,
+): TcpTimeouts | undefined {
+  const profile = services.sessionTimeouts;
+  if (!profile) return undefined;
+
+  return {
+    established: ttl?.getDefault() ?? profile.tcpEstablished,
+    handshake: profile.tcpHandshake,
+    timeWait: profile.tcpTimeWait,
+    closing: DEFAULT_TCP_TIMEOUTS.closing,
+  };
+}
+
 function tcpStateCheckStage(_services: FirewallServices): PipelineStage {
   return {
     name: 'tcp-state-check',
@@ -534,7 +578,9 @@ function tcpStateCheckStage(_services: FirewallServices): PipelineStage {
       const flags = packet ? tcpFlagsOf(packet) : undefined;
       if (!packet || !flags) return proceed(context, 'tcp-state-check', 'not-tcp');
 
-      const machine = new TcpStateMachine();
+      const machine = new TcpStateMachine({
+        timeouts: tcpTimeoutsFor(_services, vdom(_services, context).sessionTtl),
+      });
       const verdict = machine.onFirstPacket(flags);
       if (!verdict.accepted) {
         return deny(context, 'tcp-state-check', verdict.reason as VerdictReason);
@@ -879,7 +925,8 @@ function sessionInstallStage(services: FirewallServices): PipelineStage {
         egressZone: context.egressZone ?? '',
         ingressInterface: context.ingressPort,
         egressInterface: context.egressPort ?? '',
-        timeoutSec: services.defaultTimeoutSec ?? DEFAULT_TIMEOUT_SEC,
+        timeoutSec: sessionTimeoutFor(
+          services, vdom(services, context).sessionTtl, arrived),
         policyId: context.matchedPolicy?.id,
         tcpState: tcpMachines.get(context)?.state,
         replyKey: reverseFlowKey(flowKeyFromPacket(packet)),

@@ -65,6 +65,7 @@ import { NatPolicyStore } from './nat/NatPolicyStore';
 import { FirewallNatEngine, clearVdomTranslations } from './nat/FirewallNatEngine';
 import { IpPoolAllocator, type IpPool } from './nat/IpPool';
 import { PolicyRouteTable } from './l3/PolicyRouteTable';
+import type { SessionTtlTable } from './session/SessionTtlTable';
 import { FirewallPipeline, PipelineStageRegistry } from './pipeline/FirewallPipeline';
 import { PipelineCache } from './pipeline/PipelineCache';
 import { makePacketContext, type PacketContext } from './pipeline/PacketContext';
@@ -450,6 +451,7 @@ export class Firewall extends Equipment {
       sdwan: () => this.sdwan,
       ha: () => ({ forwardsTransit: () => this.forwardsTransit() }),
       policyKeyedBy: profile.policyKeyedBy,
+      sessionTimeouts: profile.timeouts,
       refusesNewSessions: () => this.load.refusesNewSessions(),
       proxyInspectionPosture: () => this.load.proxyInspectionPosture(),
       flowInspectionPosture: () => this.load.flowInspectionPosture(),
@@ -1309,6 +1311,8 @@ export class Firewall extends Equipment {
   getNatEngine(vdom?: string): FirewallNatEngine { return this.getVdom(vdom).nat; }
   getIpPools(vdom?: string): IpPoolAllocator { return this.getVdom(vdom).pools; }
   getPolicyRoutes(vdom?: string): PolicyRouteTable { return this.getVdom(vdom).policyRoutes; }
+
+  getSessionTtl(vdom?: string): SessionTtlTable { return this.getVdom(vdom).sessionTtl; }
   getScheduleStore(vdom?: string): ScheduleStore { return this.getVdom(vdom).schedules; }
   getLogStore(vdom?: string): FirewallLogStore { return this.getVdom(vdom).logs; }
   getLogDisk(): LogDisk { return this.logDisk; }

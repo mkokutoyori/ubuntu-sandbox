@@ -219,6 +219,15 @@ export function buildCommitDevice(
           fw.setAdminServerCertificate(settings.adminServerCertificate);
         }
       },
+      applySessionTtlDefault(seconds) {
+        fw.getSessionTtl().setDefault(seconds);
+      },
+      applySessionTtlPort(entry) {
+        fw.getSessionTtl().upsertPort(entry);
+      },
+      removeSessionTtlPort(id) {
+        fw.getSessionTtl().removePort(id);
+      },
       applyLdbMonitor(monitor) {
         fw.getLdbMonitors().set(monitor);
       },

@@ -1015,6 +1015,52 @@ export const SYSTEM_NTP: FortiTableSpec = {
   },
 };
 
+const SESSION_TTL_PORT: FortiTableSpec = {
+  path: ['port'],
+  kind: 'table',
+  keyType: 'integer',
+  ordered: false,
+  scope: 'vdom',
+  accessGroup: 'sysgrp',
+  renderOrder: 78,
+  help: 'Configure a session TTL for one protocol and port range.',
+  attributes: [
+    count('protocol', 'Protocol number. 0 matches every protocol.', 0, 255, 0),
+    count('start-port', 'First port of the range.', 0, 65535, 0),
+    count('end-port', 'Last port of the range.', 0, 65535, 65535),
+    count('timeout', 'Session timeout in seconds.', 1, 604800, 300),
+  ],
+  onCommit(object, context) {
+    context.device.applySessionTtlPort({
+      id: object.key,
+      protocol: Number(object.effective('protocol')[0] ?? '0'),
+      startPort: Number(object.effective('start-port')[0] ?? '0'),
+      endPort: Number(object.effective('end-port')[0] ?? '65535'),
+      timeoutSec: Number(object.effective('timeout')[0] ?? '300'),
+    });
+  },
+  onDelete(key, context) {
+    context.device.removeSessionTtlPort(key);
+  },
+};
+
+export const SYSTEM_SESSION_TTL: FortiTableSpec = {
+  path: ['system', 'session-ttl'],
+  kind: 'object',
+  scope: 'vdom',
+  accessGroup: 'sysgrp',
+  renderOrder: 77,
+  help: 'Configure the session timeouts.',
+  attributes: [
+    count('default', 'Default session timeout for TCP, in seconds.', 300, 604800, 3600),
+  ],
+  children: [SESSION_TTL_PORT],
+  onCommit(object, context) {
+    context.device.applySessionTtlDefault(
+      Number(object.effective('default')[0] ?? '3600'));
+  },
+};
+
 export const SYSTEM_SPECS: readonly FortiTableSpec[] = Object.freeze([
   SYSTEM_GLOBAL,
   SYSTEM_PASSWORD_POLICY,
@@ -1029,4 +1075,5 @@ export const SYSTEM_SPECS: readonly FortiTableSpec[] = Object.freeze([
   SYSTEM_DHCP_SERVER,
   SYSTEM_DHCP6_SERVER,
   SYSTEM_NTP,
+  SYSTEM_SESSION_TTL,
 ]);

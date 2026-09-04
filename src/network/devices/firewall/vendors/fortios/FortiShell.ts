@@ -69,7 +69,9 @@ import {
   renderSslVpnLoginUsers, renderSslVpnSessions, type SslVpnListRow,
   renderOspfNeighbors, renderRoutingTable, renderSystemStatus,
 } from './diag/getViews';
-import { renderSessionCount, renderSessionSummary } from './view/sessionSummary';
+import {
+  renderSessionCount, renderSessionSummary, renderSessionTtl,
+} from './view/sessionSummary';
 import type { SslVpnSessionMode } from '../../vpn/SslVpnSessionTable';
 import { PkiKeyPair } from '../../../../pki/PkiKeyPair';
 import { buildCertificateRequest } from '../../../../pki/CertificateSigningRequest';
@@ -866,6 +868,9 @@ export class FortiShell {
     if (path === 'system arp') return renderArpTable(this.fw.getArpService());
     if (path === 'system session status') {
       return renderSessionCount(this.fw.getSessionTable().view().count());
+    }
+    if (path === 'system session-info ttl') {
+      return renderSessionTtl(this.fw.getSessionTtl());
     }
     if (path === 'system session list') {
       return renderSessionSummary(

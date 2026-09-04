@@ -9,6 +9,7 @@ import type { RealServerPool } from '../nat/RealServerPool';
 import { FirewallNatEngine } from '../nat/FirewallNatEngine';
 import { RouteTable } from '../l3/RouteTable';
 import { PolicyRouteTable } from '../l3/PolicyRouteTable';
+import { SessionTtlTable } from '../session/SessionTtlTable';
 import { SessionTable, type FirewallSession, type SessionCloseReason } from '../session/SessionTable';
 import { PolicyEvaluator } from '../policy/PolicyEvaluator';
 import { DosPolicyStore } from '../dos/DosPolicyStore';
@@ -51,6 +52,7 @@ export interface VdomContext {
   readonly nat: FirewallNatEngine;
   readonly routes: RouteTable;
   readonly policyRoutes: PolicyRouteTable;
+  readonly sessionTtl: SessionTtlTable;
   readonly sessions: SessionTable;
   readonly evaluator: PolicyEvaluator;
   readonly schedules: ScheduleStore;
@@ -249,6 +251,7 @@ export class VdomRegistry {
       nat,
       routes,
       policyRoutes: new PolicyRouteTable({ now: this.deps.now }),
+      sessionTtl: new SessionTtlTable(),
       sessions,
       evaluator,
       schedules,

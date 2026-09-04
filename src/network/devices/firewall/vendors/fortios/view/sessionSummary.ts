@@ -1,5 +1,6 @@
 import { protocolKeywordFor } from '../../../../router/acl/AclSyntax';
 import type { FirewallSession } from '../../../session/SessionTable';
+import type { SessionTtlTable } from '../../../session/SessionTtlTable';
 import { originalFlow } from '../diag/sessionListRenderer';
 
 const NONE = '-';
@@ -50,4 +51,13 @@ export function renderSessionSummary(
 
 export function renderSessionCount(count: number): string {
   return `The total number of sessions for the current VDOM: ${count}`;
+}
+
+export function renderSessionTtl(ttl: SessionTtlTable): string {
+  const lines = ['session timeout:', `Default timeout=${ttl.getDefault()}`];
+  for (const entry of ttl.list()) {
+    lines.push(`id=${entry.id} protocol=${entry.protocol}`
+      + ` port=${entry.startPort}-${entry.endPort} timeout=${entry.timeoutSec}`);
+  }
+  return lines.join('\n');
 }
