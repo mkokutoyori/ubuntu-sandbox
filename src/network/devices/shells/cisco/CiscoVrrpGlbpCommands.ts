@@ -3,15 +3,14 @@
  * config + their `show` families, projecting the REAL FhrpRepository
  * state. Router-only (switches are L2); mirrors CiscoHsrpCommands.
  */
-import type { CommandTrie } from '../CommandTrie';
 import type { Router } from '../../Router';
 import type {
   FhrpRepository, VrrpGroup, GlbpGroup,
 } from '../../inspection/config/FhrpRepository';
 import { getVrrpAgent, getGlbpAgent } from '../../../equipment/RouterServiceCapabilities';
-import { CliInvalidInput } from '../cli/CliDiagnostic';
+import type { CommandSpec } from '@/cli/CommandTable';
 import {
-  parseFhrpShowArgs, fhrpShowMatches, fhrpInterfaceResolver,
+  fhrpShowMatches, fhrpShowSpec,
   VRRP_SHOW_GRAMMAR, GLBP_SHOW_GRAMMAR,
 } from './fhrpShowFilter';
 
@@ -98,48 +97,44 @@ function glbpDetail(router: Router, g: GlbpGroup): string {
   return lines.join('\n');
 }
 
-export function registerVrrpGlbpShowCommands(
-  trie: CommandTrie, ctx: Ctx, lireRepo: () => FhrpRepository,
-): void {
-  trie.registerGreedy('show vrrp', 'Display VRRP state', (a) => {
-    const verdict = parseFhrpShowArgs(
-      a, VRRP_SHOW_GRAMMAR, fhrpInterfaceResolver(ctx.r().getPortNames()));
-    if ('at' in verdict) throw new CliInvalidInput({ token: verdict.at });
-    const groups = lireRepo().allVrrp()
-      .filter((g) => fhrpShowMatches(g.iface, g.group, verdict));
-    if (verdict.brief) {
-      const rows = ['Interface          Grp Pri Time  Own Pre State   Master addr     Group addr'];
-      for (const g of groups) {
-        rows.push(
-          `${g.iface.slice(0, 18).padEnd(19)}${String(g.group).padEnd(4)}` +
-          `${String(g.priority).padEnd(4)}    -   ${g.preempt ? 'Y' : 'N'}   ` +
-          `${vrrpState(ctx.r(), g).padEnd(8)}` +
-          `${vrrpMasterIp(ctx.r(), g).padEnd(16)}${g.vip ?? 'unknown'}`);
+export function vrrpGlbpShowSpecs(
+  ctx: Ctx, lireRepo: () => FhrpRepository,
+): CommandSpec[] {
+  const noms = () => ctx.r().getPortNames();
+  return [
+    fhrpShowSpec('vrrp', 'Display VRRP state', VRRP_SHOW_GRAMMAR, noms, (verdict) => {
+      const groups = lireRepo().allVrrp()
+        .filter((g) => fhrpShowMatches(g.iface, g.group, verdict));
+      if (verdict.brief) {
+        const rows = ['Interface          Grp Pri Time  Own Pre State   Master addr     Group addr'];
+        for (const g of groups) {
+          rows.push(
+            `${g.iface.slice(0, 18).padEnd(19)}${String(g.group).padEnd(4)}` +
+            `${String(g.priority).padEnd(4)}    -   ${g.preempt ? 'Y' : 'N'}   ` +
+            `${vrrpState(ctx.r(), g).padEnd(8)}` +
+            `${vrrpMasterIp(ctx.r(), g).padEnd(16)}${g.vip ?? 'unknown'}`);
+        }
+        return rows.join('\n');
       }
-      return rows.join('\n');
-    }
-    return groups.length
-      ? groups.map((g) => vrrpDetail(ctx.r(), g)).join('\n') : '';
-  });
-
-  trie.registerGreedy('show glbp', 'Display GLBP state', (a) => {
-    const verdict = parseFhrpShowArgs(
-      a, GLBP_SHOW_GRAMMAR, fhrpInterfaceResolver(ctx.r().getPortNames()));
-    if ('at' in verdict) throw new CliInvalidInput({ token: verdict.at });
-    const groups = lireRepo().allGlbp()
-      .filter((g) => fhrpShowMatches(g.iface, g.group, verdict));
-    if (verdict.brief) {
-      const rows = ['Interface   Grp  Fwd Pri State    Address         Active router   Standby router'];
-      for (const g of groups) {
-        rows.push(
-          `${g.iface.slice(0, 11).padEnd(12)}${String(g.group).padEnd(5)}` +
-          `-   ${String(g.priority).padEnd(4)}` +
-          `${glbpState(ctx.r(), g).padEnd(9)}` +
-          `${(g.vip ?? 'unknown').padEnd(16)}${glbpActiveIp(ctx.r(), g).padEnd(16)}unknown`);
+      return groups.length
+        ? groups.map((g) => vrrpDetail(ctx.r(), g)).join('\n') : '';
+    }),
+    fhrpShowSpec('glbp', 'Display GLBP state', GLBP_SHOW_GRAMMAR, noms, (verdict) => {
+      const groups = lireRepo().allGlbp()
+        .filter((g) => fhrpShowMatches(g.iface, g.group, verdict));
+      if (verdict.brief) {
+        const rows = ['Interface   Grp  Fwd Pri State    Address         Active router   Standby router'];
+        for (const g of groups) {
+          rows.push(
+            `${g.iface.slice(0, 11).padEnd(12)}${String(g.group).padEnd(5)}` +
+            `-   ${String(g.priority).padEnd(4)}` +
+            `${glbpState(ctx.r(), g).padEnd(9)}` +
+            `${(g.vip ?? 'unknown').padEnd(16)}${glbpActiveIp(ctx.r(), g).padEnd(16)}unknown`);
+        }
+        return rows.join('\n');
       }
-      return rows.join('\n');
-    }
-    return groups.length
-      ? groups.map((g) => glbpDetail(ctx.r(), g)).join('\n') : '';
-  });
+      return groups.length
+        ? groups.map((g) => glbpDetail(ctx.r(), g)).join('\n') : '';
+    }),
+  ];
 }

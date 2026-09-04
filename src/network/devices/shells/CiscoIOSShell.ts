@@ -52,11 +52,11 @@ import {
 } from './cisco/CiscoConfigCommands';
 import type { IpAddressHost } from './cisco/ipAddressInterfaceSpecs';
 import {
-  registerHsrpShowCommands, hsrpGroupRange,
+  hsrpShowSpecs, hsrpGroupRange,
 } from './cisco/CiscoHsrpCommands';
 import type { SessionParamRanges } from './EquipmentParamResolver';
 import {
-  registerVrrpGlbpShowCommands,
+  vrrpGlbpShowSpecs,
 } from './cisco/CiscoVrrpGlbpCommands';
 import {
   buildBfdInterfaceCommands, registerBfdShowCommands, bfdInterfaceSpecs,
@@ -407,6 +407,8 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
     return [
       ...super.socleSpecs(),
       ...dhcpClientFamily(),
+      ...hsrpShowSpecs(this, () => this.fhrp),
+      ...vrrpGlbpShowSpecs(this, () => this.fhrp),
       ...clearAclSpecs(() => ({
         clearAclCounters: (ref) => clearAccessListCounters(this.d(), ref),
       })),
@@ -1886,8 +1888,6 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
 
   private registerShowCommands(trie: CommandTrie): void {
     registerRoutingProtoShow(trie, this, this.routingCfg);
-    registerHsrpShowCommands(trie, this, () => this.fhrp);
-    registerVrrpGlbpShowCommands(trie, this, () => this.fhrp);
     registerBfdShowCommands(trie, { r: () => this.d() });
     registerIgmpShowCommands(trie, this.multicastShowContext());
     registerPimShowCommands(trie, this.multicastShowContext());

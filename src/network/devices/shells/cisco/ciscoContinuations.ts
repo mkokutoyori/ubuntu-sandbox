@@ -65,18 +65,12 @@ export const SOCLE: ContinuationTable = {
     'no debug ip': ['arp', 'bgp', 'eigrp', 'icmp', 'nhrp', 'packet', 'pim', 'rip', 'routing', 'ssh', 'tcp', 'udp'],
     'no debug ntp': ['events', 'packets'],
     'show archive log config': ['statistics'],
-    'show glbp': ['brief'],
     'show parser view': ['all'],
-    'show standby': ['brief'],
-    'show vrrp': ['brief'],
     'sntp server': ['prefer'],
   },
   user: {
     'clear aaa local user lockout': ['username'],
-    'show glbp': ['brief'],
     'show interfaces': ['description'],
-    'show standby': ['brief'],
-    'show vrrp': ['brief'],
   },
 };
 

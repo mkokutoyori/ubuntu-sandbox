@@ -120,7 +120,7 @@ import type { GlbpGroupRuntime } from '../../glbp/types';
 import { iosSviName } from '../inspection/InterfaceStatusView';
 import { UDLD_DEFAULT_HELLO_SEC, UDLD_MESSAGE_TIME_RANGE } from '../../udld/types';
 import {
-  parseFhrpShowArgs, fhrpShowMatches, fhrpInterfaceResolver,
+  parseFhrpShowArgs, fhrpShowMatches, fhrpInterfaceResolver, fhrpShowSpec,
   HSRP_SHOW_GRAMMAR, VRRP_SHOW_GRAMMAR, GLBP_SHOW_GRAMMAR,
 } from './cisco/fhrpShowFilter';
 import type { FhrpShowGrammar, FhrpShowSelection } from './cisco/fhrpShowFilter';
@@ -2355,6 +2355,7 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
       ...this.vlanEntrySpecs(),
       ...this.macTableSpecs(),
       ...stpGlobalSpecs(() => this.stpGlobalHost()),
+      ...this.fhrpShowSpecs(),
       ...clearSwitchSpecs(() => ({
         resolveInterface: (name) => this.resolveInterfaceName(name) ?? null,
         recoverErrDisable: (port) => {
@@ -5344,25 +5345,37 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
         }
         return lines.join('\n');
       });
-      t.registerGreedy('show vrrp', 'Display VRRP groups on SVIs', (args) => {
-        const groups = this.d().getVrrpAgent().listGroups();
-        const sel = this.fhrpSelection(args, VRRP_SHOW_GRAMMAR, groups);
-        const kept = groups.filter((g) => fhrpShowMatches(iosSviName(g.iface), g.vrid, sel));
-        return sel.brief ? this.showVrrpBrief(kept) : this.showVrrp(kept);
-      });
-      t.registerGreedy('show standby', 'Display HSRP groups on SVIs', (args) => {
-        const groups = this.d().getHsrpAgent().listGroups();
-        const sel = this.fhrpSelection(args, HSRP_SHOW_GRAMMAR, groups);
-        const kept = groups.filter((g) => fhrpShowMatches(iosSviName(g.iface), g.group, sel));
-        return sel.brief ? this.showStandbyBrief(kept) : this.showStandby(kept);
-      });
-      t.registerGreedy('show glbp', 'Display GLBP groups on SVIs', (args) => {
-        const groups = this.d().getGlbpAgent().listGroups();
-        const sel = this.fhrpSelection(args, GLBP_SHOW_GRAMMAR, groups);
-        const kept = groups.filter((g) => fhrpShowMatches(iosSviName(g.iface), g.group, sel));
-        return sel.brief ? this.showGlbpBrief(kept) : this.showGlbp(kept);
-      });
     }
+  }
+
+  /**
+   * Les trois vues FHRP d'un Catalyst, declarees comme celles du
+   * routeur : meme constructeur de commande, meme grammaire, deux modes
+   * EXEC en une declaration au lieu de six enregistrements.
+   */
+  private fhrpShowSpecs(): CommandSpec[] {
+    const nomsDe = (groups: ReadonlyArray<{ iface: string }>) =>
+      groups.map((g) => iosSviName(g.iface));
+    return [
+      fhrpShowSpec('vrrp', 'Display VRRP groups on SVIs', VRRP_SHOW_GRAMMAR,
+        () => nomsDe(this.d().getVrrpAgent().listGroups()), (sel) => {
+          const groups = this.d().getVrrpAgent().listGroups();
+          const kept = groups.filter((g) => fhrpShowMatches(iosSviName(g.iface), g.vrid, sel));
+          return sel.brief ? this.showVrrpBrief(kept) : this.showVrrp(kept);
+        }),
+      fhrpShowSpec('standby', 'Display HSRP groups on SVIs', HSRP_SHOW_GRAMMAR,
+        () => nomsDe(this.d().getHsrpAgent().listGroups()), (sel) => {
+          const groups = this.d().getHsrpAgent().listGroups();
+          const kept = groups.filter((g) => fhrpShowMatches(iosSviName(g.iface), g.group, sel));
+          return sel.brief ? this.showStandbyBrief(kept) : this.showStandby(kept);
+        }),
+      fhrpShowSpec('glbp', 'Display GLBP groups on SVIs', GLBP_SHOW_GRAMMAR,
+        () => nomsDe(this.d().getGlbpAgent().listGroups()), (sel) => {
+          const groups = this.d().getGlbpAgent().listGroups();
+          const kept = groups.filter((g) => fhrpShowMatches(iosSviName(g.iface), g.group, sel));
+          return sel.brief ? this.showGlbpBrief(kept) : this.showGlbp(kept);
+        }),
+    ];
   }
 
   private fhrpSelection(
