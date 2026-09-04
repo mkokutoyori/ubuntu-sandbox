@@ -78,7 +78,7 @@ import {
   runningConfigACLFrom, runningConfigInterfaceACLFrom, IOS_REMARK_MAX,
 } from './cisco/CiscoAclCommands';
 import { IOS_ACL_NUMBERING } from '../router/ACLEngine';
-import { CISCO_ERRORS } from './cli-utils';
+import { CISCO_ERRORS, resolveCiscoInterfaceName } from './cli-utils';
 import { estTypeSansNumero, typesInterfaceEnMotsCles } from './cisco/CiscoConfigCommands';
 import { getNtpAgent, getSnmpService } from '../../equipment/RouterServiceCapabilities';
 import { fhrpRunningConfigLines } from '../../fhrp/runningConfig';
@@ -114,6 +114,7 @@ import type { VrrpGroupRuntime } from '../../vrrp/types';
 import type { HsrpGroupRuntime } from '../../hsrp/types';
 import type { GlbpGroupRuntime } from '../../glbp/types';
 import { iosSviName } from '../inspection/InterfaceStatusView';
+import { UDLD_DEFAULT_HELLO_SEC, UDLD_MESSAGE_TIME_RANGE } from '../../udld/types';
 import {
   parseFhrpShowArgs, fhrpShowMatches, fhrpInterfaceResolver,
   HSRP_SHOW_GRAMMAR, VRRP_SHOW_GRAMMAR, GLBP_SHOW_GRAMMAR,
@@ -1847,26 +1848,38 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
 
   private registerUdldCommands(trie: SwitchTries): void {
     trie.config.registerGreedy('udld', 'UDLD global configuration', (args) => {
-      const a = (args[0] ?? '').toLowerCase();
       const agent = this.requireUdld();
-      if (a === 'enable') { agent.setGlobalMode('normal'); return ''; }
-      if (a === 'aggressive') { agent.setGlobalMode('aggressive'); return ''; }
-      if (a === 'message' && args[1] === 'time') {
-        const n = parseInt(args[2] ?? '', 10);
-        if (!Number.isNaN(n)) {
-          const c = agent.getConfig() as { helloIntervalSec: number };
-          c.helloIntervalSec = n;
-        }
+      const mot = (args[0] ?? '').toLowerCase();
+      if (mot === '') throw new CliIncomplete();
+      if (mot === 'enable' || mot === 'aggressive') {
+        if (args[1] !== undefined) throw new CliInvalidInput({ token: args[1] });
+        agent.setGlobalMode(mot === 'enable' ? 'normal' : 'aggressive');
         return '';
       }
-      return '';
+      if (mot === 'message') {
+        agent.setHelloInterval(this.lireUdldMessageTime(args.slice(1)));
+        return '';
+      }
+      throw new CliInvalidInput({ token: args[0] });
     }, [
       { keyword: 'enable', description: 'Enable UDLD in normal mode on fibre ports' },
       { keyword: 'aggressive', description: 'Enable UDLD in aggressive mode on fibre ports' },
       { keyword: 'message', description: 'Set the message interval' },
     ]);
-    trie.config.registerGreedy('no udld', 'Disable UDLD globally', () => {
-      this.requireUdld().setGlobalMode('disabled');
+    trie.config.registerGreedy('no udld', 'Disable UDLD globally', (args) => {
+      const agent = this.requireUdld();
+      if ((args[0] ?? '').toLowerCase() === 'message') {
+        if ((args[1] ?? '').toLowerCase() !== 'time') {
+          throw new CliInvalidInput({ token: args[1] });
+        }
+        if (args[2] !== undefined) throw new CliInvalidInput({ token: args[2] });
+        agent.setHelloInterval(UDLD_DEFAULT_HELLO_SEC);
+        return '';
+      }
+      if (args[0] !== undefined && !['enable', 'aggressive'].includes(args[0].toLowerCase())) {
+        throw new CliInvalidInput({ token: args[0] });
+      }
+      agent.setGlobalMode('disabled');
       return '';
     });
     trie.configIf.registerGreedy('udld port', 'UDLD per-port configuration', (args) => {
@@ -1888,9 +1901,13 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
       t.registerGreedy('show udld', 'Display UDLD state', (args) => {
         const agent = this.requireUdld();
         const target = args[0];
-        const ports = target
-          ? agent.listPorts().filter(p => p.port === target || p.port.endsWith(target))
-          : agent.listPorts();
+        if (args[1] !== undefined) throw new CliInvalidInput({ token: args[1] });
+        let ports = agent.listPorts();
+        if (target !== undefined) {
+          const nom = this.resolvePortName(target);
+          if (nom === null) throw new CliInvalidInput({ token: target });
+          ports = ports.filter((p) => p.port === nom);
+        }
         if (ports.length === 0) return '';
         const lines: string[] = [];
         for (const rt of ports) {
@@ -1918,6 +1935,14 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
         return lines.join('\n');
       });
     }
+  }
+
+  private lireUdldMessageTime(args: readonly string[]): number {
+    if (args[0] === undefined) throw new CliIncomplete();
+    if (args[0].toLowerCase() !== 'time') throw new CliInvalidInput({ token: args[0] });
+    if (args[1] === undefined) throw new CliIncomplete();
+    if (args[2] !== undefined) throw new CliInvalidInput({ token: args[2] });
+    return entierBorne(args[1], ...UDLD_MESSAGE_TIME_RANGE);
   }
 
   /** `ip igmp snooping vlan <n> mrouter interface <port>`. */
@@ -3272,10 +3297,7 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
   }
 
   private resolvePortName(input: string): string | null {
-    const names = this.d().getPortNames();
-    const lower = input.replace(/\s+/g, '').toLowerCase();
-    for (const n of names) if (n.toLowerCase() === lower) return n;
-    return null;
+    return resolveCiscoInterfaceName(this.d().getPortNames(), input);
   }
 
   /**
@@ -4339,9 +4361,12 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
 
     }
 
-    const udldGlobalMode = sw.getUdldAgent?.()?.getConfig?.().globalMode ?? 'disabled';
-    if (udldGlobalMode !== 'disabled') {
-      out.push(udldGlobalMode === 'aggressive' ? 'udld aggressive' : 'udld enable');
+    const udld = sw.getUdldAgent?.()?.getConfig?.();
+    if (udld && udld.globalMode !== 'disabled') {
+      out.push(udld.globalMode === 'aggressive' ? 'udld aggressive' : 'udld enable');
+    }
+    if (udld && udld.helloIntervalSec !== UDLD_DEFAULT_HELLO_SEC) {
+      out.push(`udld message time ${udld.helloIntervalSec}`);
     }
     if (sw.getDot1xAgent?.()?.getConfig?.()?.enabled) out.push('dot1x system-auth-control');
 

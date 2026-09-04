@@ -119,6 +119,48 @@ CLI que ce lot refermait.
 
 ---
 
+### [udld] `show udld neighbors` est refuse faute d'une mise en forme attestee
+**Constat.** C'est une vue reelle d'IOS. Elle etait lue comme un NOM DE
+PORT, donc ne trouvait aucun port et rendait la CHAINE VIDE — le silence,
+qui se lit comme une panne du terminal. Elle rend maintenant le caret, ce
+qui est honnete sans etre juste.
+
+**Pourquoi ce n'est pas ferme.** La matiere existe (`UdldAgent.getNeighborsFor`
+rend le nom, l'identifiant, le port distant et l'echo), c'est la MISE EN
+FORME qui manque : `ntc-templates`, le jeu de reference dont ce depot tire
+ses autres largeurs de colonnes, ne porte AUCUN gabarit `udld` — verifie
+dans son index, pas suppose — et aucune transcription n'est atteignable
+depuis ce reseau. Inventer des largeurs serait le decor que ce depot
+refuse.
+
+### [cli] Vingt-cinq commandes acceptent encore un mot qu'elles ne lisent pas
+**Constat.** Un balayage des deux plateformes — pour chaque mot que `?`
+propose, comparer `<commande>` et `<commande> zorglub` — a trouve 11
+chemins sur le routeur et 20 sur le commutateur ou les deux sorties sont
+IDENTIQUES, c'est-a-dire ou le mot de trop est jete en silence. Le lot
+UDLD en a ferme trois. Les autres, par famille :
+
+- `aaa new-model zorglub`, `aaa local … zorglub`, `aaa session-id …
+  zorglub`, `aaa group … zorglub` — et `aaa session-id common` n'est rendu
+  NULLE PART, donc perdu a l'import d'une topologie.
+- `radius-server {acct-port|auth-port} zorglub` et `tacacs-server port
+  zorglub` : un NOMBRE hors bornes est correctement refuse (`99999`), un
+  mot ne l'est pas — donc la plage est appliquee et la forme ne l'est pas.
+  Les valeurs valides ne sont rendues nulle part non plus.
+- `ntp source zorglub` est accepte ET RENDU tel quel dans la configuration,
+  alors que cette commande prend une INTERFACE ; `ntp source` nu est
+  accepte aussi. `radius server` nu — qui exige un nom — de meme.
+- `spanning-tree {backbonefast|uplinkfast} zorglub`, `spanning-tree mst
+  zorglub`.
+- `tunnel path-mtu-discovery zorglub`.
+- `switchport voice zorglub` est accepte ET RENDU `switchport voice
+  zorglub` ; `switchport voice vlan dot1p` et `… none`, eux, sont acceptes
+  et rendus NULLE PART.
+
+**Ce que le balayage ne voit pas.** Il ne descend qu'a un mot-cle de
+profondeur et ignore les commandes a texte libre (`description`,
+`banner`, `remark`), ou un mot de trop est legitime.
+
 ## Postes Linux
 
 ### [dhcp] `dhclient -t N` est accepte, et aucun delai ne le lit
