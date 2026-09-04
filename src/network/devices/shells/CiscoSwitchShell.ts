@@ -25,7 +25,7 @@ import { CommandTrie, formatInvalidInput } from './CommandTrie';
 import { isValidIPv4 } from '../../core/ip';
 import type { CommandSpec } from '@/cli/CommandTable';
 import type { FhrpPlacement } from './cisco/fhrpInterfaceSpecs';
-import { parseTrackDefinition, TRACK_INVALID_ID } from './cisco/trackSyntax';
+import { trackEntrySpecs, type TrackEntryHost } from './cisco/CiscoTrackCommands';
 import { vrfRunningConfigLines, type VrfHost } from './cisco/ciscoVrfStore';
 import type { IpAddressHost } from './cisco/ipAddressInterfaceSpecs';
 import type { LoadMtuHost } from './cisco/interfaceLoadMtuSpecs';
@@ -1025,26 +1025,6 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
       if (a !== 'forward' && a !== 'drop') return '% Invalid action';
       const rule = this.d().setVlanAccessMapRule(this.selectedAccessMap.name, this.selectedAccessMap.seq);
       rule.action = a;
-      return '';
-    });
-    this.configTrie.registerGreedy('track', 'Tracked object registry', (args) => {
-      const lu = parseTrackDefinition(args);
-      if (lu.idInvalide) return TRACK_INVALID_ID;
-      if (lu.incomplet) return CISCO_ERRORS.INCOMPLETE;
-      if (lu.refus !== undefined || !lu.definition) return CISCO_ERRORS.INVALID_INPUT;
-      const def = lu.definition;
-      if (def.type !== 'interface-line' && def.type !== 'interface-routing') {
-        return CISCO_ERRORS.INVALID_INPUT;
-      }
-      const iface = this.resolveInterfaceName(def.iface ?? '') ?? def.iface ?? '';
-      this.trackObjects.set(
-        def.id, iface,
-        def.type === 'interface-routing' ? 'ip-routing' : 'line-protocol');
-      return '';
-    });
-    this.configTrie.registerGreedy('no track', 'Remove a tracked object', (args) => {
-      const id = parseInt(args[0] ?? '', 10);
-      if (Number.isFinite(id)) this.trackObjects.delete(id);
       return '';
     });
     this.configTrie.registerGreedy('ip access-list', 'Named ACL', (args) => {
@@ -2334,9 +2314,35 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
     return this.trackObjects.resolve(raw) ?? this.resolveInterfaceName(raw) ?? raw;
   }
 
+  /**
+   * Ce qu'un COMMUTATEUR fait d'un objet suivi.
+   *
+   * Il n'a ni table de routage complete ni moteur IP SLA, donc il ne
+   * retient que les deux formes d'interface et refuse les autres — un
+   * objet qui n'observe rien vaut moins qu'une commande absente. La
+   * DECLARATION, elle, est celle du routeur : meme plage, meme
+   * grammaire, meme refus du mot de trop.
+   */
+  private trackEntryHost(): TrackEntryHost {
+    return {
+      define: (def) => {
+        if (def.type !== 'interface-line' && def.type !== 'interface-routing') {
+          return CISCO_ERRORS.INVALID_INPUT;
+        }
+        const iface = this.resolveInterfaceName(def.iface ?? '') ?? def.iface ?? '';
+        this.trackObjects.set(
+          def.id, iface,
+          def.type === 'interface-routing' ? 'ip-routing' : 'line-protocol');
+        return '';
+      },
+      remove: (id) => { this.trackObjects.delete(id); },
+    };
+  }
+
   protected override socleSpecs(): readonly CommandSpec[] {
     return [
       ...super.socleSpecs(),
+      ...trackEntrySpecs(() => this.trackEntryHost(), ['config']),
       ...switchPortPhysicalSpecs(() => this.portPhysiqueHost()),
       ...stpInterfaceSpecs(() => this.stpInterfaceHost()),
       ...this.dot1xPaeSpecs(),

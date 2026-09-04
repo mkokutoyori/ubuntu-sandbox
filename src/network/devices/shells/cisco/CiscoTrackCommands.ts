@@ -5,10 +5,10 @@ import {
   type TrackObject, type TrackService,
 } from '../../../ipsla/TrackService';
 import {
-  parseTrackDefinition, TRACK_INVALID_ID, type TrackDefinition,
+  parseTrackDefinition, TRACK_ID_RANGE, TRACK_INVALID_ID, type TrackDefinition,
 } from './trackSyntax';
 import { RETURN_CODE_LABEL } from '../../../ipsla/types';
-import { CliInvalidInput } from '../cli/CliDiagnostic';
+import { CliInvalidInput, INCOMPLETE_MESSAGE } from '../cli/CliDiagnostic';
 import type { CommandSpec } from '@/cli/CommandTable';
 import type { ArgumentSpec } from '@/cli/ArgumentTypes';
 import { showTrackSpec } from './showViewSpecs';
@@ -137,25 +137,6 @@ export function buildTrackConfigCommands(
   trackTrie: CommandTrie,
   ctx: TrackCommandContext,
 ): void {
-  const enterTrack = (args: string[]): string => {
-    if (args.length < 1) return '% Incomplete command.';
-    const id = parseInt(args[0], 10);
-    if (Number.isNaN(id)) return '% Invalid track number';
-    const error = defineTrack(serviceOf(ctx), args);
-    if (error) return error;
-    ctx.setSelectedTrack(id);
-    ctx.setMode('config-track');
-    return '';
-  };
-
-  configTrie.registerGreedy('track', 'Tracking configuration commands', enterTrack);
-
-  configTrie.registerGreedy('no track', 'Remove a tracked object', (args) => {
-    const id = parseInt(args[0], 10);
-    if (!Number.isNaN(id)) serviceOf(ctx).remove(id);
-    return '';
-  });
-
   buildTrackSubmodeOn(trackTrie, ctx);
 }
 
@@ -325,6 +306,69 @@ Readonly<Record<string, ArgumentSpec | readonly ArgumentSpec[] | null>> = {
   threshold: null,
   delay: null,
 };
+
+/**
+ * Ce qu'une plateforme fait d'un objet suivi qu'on vient de declarer.
+ *
+ * Le routeur ecrit dans `TrackService` et entre en `config-track` ; le
+ * commutateur, qui n'a ni table de routage complete ni moteur IP SLA,
+ * ecrit dans son propre registre et ne retient que les deux formes
+ * d'interface. Ce sont deux CORPS pour une commande, et c'est justifie ;
+ * ce qui ne l'etait pas est qu'ils aient eu deux DECLARATIONS, chacune
+ * libre de border son numero autrement et d'ouvrir un sous-mode ou non.
+ */
+export interface TrackEntryHost {
+  define(definition: TrackDefinition): string;
+  remove(id: number): void;
+}
+
+const TRACK_ID_PLACE: ArgumentSpec = {
+  name: 'numero', type: 'INT', range: TRACK_ID_RANGE,
+  description: 'Tracked object number',
+};
+
+export function trackEntrySpecs(
+  ctx: () => TrackEntryHost, modes: readonly string[],
+): CommandSpec[] {
+  return [
+    {
+      id: 'track-entry',
+      path: ['track', TRACK_ID_PLACE,
+        { name: 'suite', type: 'REST', literal: 'LINE', optional: true,
+          description: 'What this object tracks' }],
+      description: 'Tracking configuration commands',
+      undoDescription: 'Remove a tracked object',
+      modes, minPrivilege: 15,
+      run: (_session, args) => {
+        const mots = [args.numero, ...(args.suite ?? '').split(/\s+/)]
+          .filter((mot) => mot.length > 0);
+        const lu = parseTrackDefinition(mots);
+        if (lu.idInvalide) return TRACK_INVALID_ID;
+        if (lu.incomplet) return INCOMPLETE_MESSAGE;
+        if (lu.refus !== undefined || !lu.definition) {
+          throw new CliInvalidInput({ token: lu.refus });
+        }
+        return ctx().define(lu.definition);
+      },
+      undo: (_session, args) => {
+        ctx().remove(Number(args.numero));
+        return '';
+      },
+    },
+  ];
+}
+
+export function routerTrackEntryHost(ctx: TrackCommandContext): TrackEntryHost {
+  return {
+    define: (definition) => {
+      applyTrackDefinition(serviceOf(ctx), definition);
+      ctx.setSelectedTrack(definition.id);
+      ctx.setMode('config-track');
+      return '';
+    },
+    remove: (id) => { serviceOf(ctx).remove(id); },
+  };
+}
 
 export function trackSubmodeSpecs(ctx: TrackCommandContext): CommandSpec[] {
   return specsFromTrieRegistrations(

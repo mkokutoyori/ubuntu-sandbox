@@ -76,6 +76,7 @@ import {
 import { FhrpRepository } from '../inspection/config/FhrpRepository';
 import {
   buildTrackConfigCommands, trackShowSpecs, trackSubmodeSpecs,
+  trackEntrySpecs, routerTrackEntryHost,
 } from './cisco/CiscoTrackCommands';
 import { KeyChainRepository } from '../inspection/config/KeyChainRepository';
 import { specsFromTrieRegistrations } from '@/cli/commands/trieAdapter';
@@ -483,6 +484,7 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
       ...ipSlaHttpRawSpecs(this),
       ...this.vrfSubmodeSpecs(),
       ...trackSubmodeSpecs(this),
+      ...trackEntrySpecs(() => routerTrackEntryHost(this), ['config']),
       ...keyChainSubmodeSpecs(this),
       ...keyChainKeySubmodeSpecs(this),
       ...routeMapSubmodeSpecs(this, this.policy),

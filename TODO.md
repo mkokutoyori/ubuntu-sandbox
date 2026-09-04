@@ -453,6 +453,18 @@ question. C'est un lot a part, avec sa propre mesure.
 
 ## Socle CLI
 
+### [track] `track <n>` tout court pose un objet « stub » sans mot-cle
+IOS documente `track <object-number> stub-object` ; ici `track 1` seul
+est accepte et cree l'objet, le repli de l'analyseur traitant « aucun
+mot apres le numero » comme la forme stub.
+**Mesure** : `track 1` rend la chaine vide sur un routeur et entre en
+`config-track`.
+**Report** : le mot-cle explicite est ATTESTE (un laboratoire du depot
+tape `track 22 stub-object`), la forme NUE ne l'est pas — aucune
+transcription atteignable depuis ce reseau ne dit si IOS la refuse comme
+incomplete. Trancher sans capture serait inventer, et les deux
+comportements sont aussi plausibles l'un que l'autre.
+
 ### [alias] `snapshot`/`restore` d'`AliasRepository` ne portent pas le REFUS des alias d'usine
 `no alias exec` retire les alias d'usine (`p`, `s`, `w`) et le magasin
 retient ce refus par un booleen que `snapshot()` ne rend pas et que

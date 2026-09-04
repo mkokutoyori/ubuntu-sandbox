@@ -234,12 +234,6 @@ function describeArgumentTypes(tries: ArgumentHelpTries): void {
   ] as const) {
     tries.configRouterOnly.describeArgs(path, [WORD('name', description)]);
   }
-  tries.config.describeArgs('track', [
-    INT('object', [1, 1000], 'Tracked object number'),
-  ]);
-  tries.config.describeArgs('no track', [
-    INT('object', [1, 1000], 'Tracked object number'),
-  ]);
 
   // ── Configuration d'interface ──
   tries.configIf.describeArgs('arp timeout', [
