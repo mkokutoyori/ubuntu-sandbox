@@ -2,6 +2,12 @@ export type SdwanProtocol = 'ping' | 'http' | 'dns' | 'tcp-echo' | 'udp-echo';
 
 export type SdwanServiceMode = 'auto' | 'manual' | 'priority' | 'sla' | 'load-balance';
 
+export type SdwanLoadBalanceMode =
+  | 'source-ip-based'
+  | 'weight-based'
+  | 'source-dest-ip-based'
+  | 'measured-volume-based';
+
 export interface SdwanMember {
   readonly sequence: number;
   readonly iface: string;
@@ -9,6 +15,8 @@ export interface SdwanMember {
   readonly priority: number;
   readonly zone: string;
   readonly enabled: boolean;
+  readonly weight: number;
+  readonly volumeRatio: number;
 }
 
 export interface SdwanSlaTarget {
@@ -54,6 +62,7 @@ export interface SdwanMemberHealth {
 
 export interface SdwanConfiguration {
   readonly enabled: boolean;
+  readonly loadBalanceMode: SdwanLoadBalanceMode;
   readonly zones: readonly string[];
   readonly members: readonly SdwanMember[];
   readonly healthChecks: readonly SdwanHealthCheck[];
@@ -68,6 +77,57 @@ export interface SdwanHealthTransition {
 
 export const DEAD_LOSS_PERCENT = 100;
 
+export interface SdwanSteeringProbe {
+  readonly sourceIP: string;
+  readonly destinationIP: string;
+}
+
+function flowDigest(text: string): number {
+  let digest = 0;
+  for (let index = 0; index < text.length; index++) {
+    digest = (Math.imul(digest, 31) + text.charCodeAt(index)) >>> 0;
+  }
+  return avalanche(digest);
+}
+
+function avalanche(value: number): number {
+  let mixed = value >>> 0;
+  mixed ^= mixed >>> 16;
+  mixed = Math.imul(mixed, 0x85ebca6b) >>> 0;
+  mixed ^= mixed >>> 13;
+  mixed = Math.imul(mixed, 0xc2b2ae35) >>> 0;
+  mixed ^= mixed >>> 16;
+  return mixed >>> 0;
+}
+
+function weightOf(mode: SdwanLoadBalanceMode, member: SdwanMember): number {
+  return mode === 'measured-volume-based' ? member.volumeRatio : member.weight;
+}
+
+export function spreadAcross(
+  mode: SdwanLoadBalanceMode, eligible: readonly SdwanMember[],
+  probe: SdwanSteeringProbe,
+): SdwanMember {
+  const key = mode === 'source-ip-based'
+    ? probe.sourceIP
+    : `${probe.sourceIP}|${probe.destinationIP}`;
+  const digest = flowDigest(key);
+
+  if (mode === 'source-ip-based' || mode === 'source-dest-ip-based') {
+    return eligible[digest % eligible.length];
+  }
+
+  const total = eligible.reduce((sum, member) => sum + weightOf(mode, member), 0);
+  if (total <= 0) return eligible[0];
+
+  let remaining = digest % total;
+  for (const member of eligible) {
+    remaining -= weightOf(mode, member);
+    if (remaining < 0) return member;
+  }
+  return eligible[eligible.length - 1];
+}
+
 export class SdwanTable {
   private readonly members = new Map<number, SdwanMember>();
   private readonly checks = new Map<string, SdwanHealthCheck>();
@@ -75,8 +135,13 @@ export class SdwanTable {
   private readonly zones = new Set<string>();
   private readonly health = new Map<string, Map<number, SdwanMemberHealth>>();
   private enabled = false;
+  private loadBalanceMode: SdwanLoadBalanceMode = 'source-ip-based';
 
   setStatus(enabled: boolean): void { this.enabled = enabled; }
+
+  setLoadBalanceMode(mode: SdwanLoadBalanceMode): void { this.loadBalanceMode = mode; }
+
+  getLoadBalanceMode(): SdwanLoadBalanceMode { return this.loadBalanceMode; }
 
   isEnabled(): boolean { return this.enabled; }
 
@@ -190,27 +255,37 @@ export class SdwanTable {
       if (rule.destinations.length > 0
         && !matchesAddress(rule.destinations, probe.destinationIP)) continue;
 
-      const member = this.ruleMember(rule);
+      const member = this.ruleMember(rule, probe);
       if (member) return { iface: member.iface, gateway: member.gateway, ruleId: rule.id };
     }
     return undefined;
   }
 
-  private ruleMember(rule: SdwanService): SdwanMember | undefined {
+  private ruleMember(
+    rule: SdwanService, probe: SdwanSteeringProbe,
+  ): SdwanMember | undefined {
     const ordered = rule.priorityMembers
       .map(sequence => this.members.get(sequence))
       .filter((member): member is SdwanMember => member !== undefined && member.enabled);
     const candidates = ordered.length > 0 ? ordered : this.allMembers();
 
     if (rule.mode === 'sla' && rule.healthCheck.length > 0) {
-      const meeting = candidates.find(
+      const meeting = candidates.filter(
         member => this.slaMet(rule.healthCheck, member.sequence, rule.slaId));
-      if (meeting) return meeting;
+      if (meeting.length > 0) return this.chosenAmong(rule, meeting, probe);
     }
 
-    const alive = candidates.find(
+    const alive = candidates.filter(
       member => this.healthOf(rule.healthCheck, member.sequence)?.alive !== false);
-    return alive ?? candidates[0];
+    if (alive.length > 0) return this.chosenAmong(rule, alive, probe);
+    return candidates[0];
+  }
+
+  private chosenAmong(
+    rule: SdwanService, eligible: readonly SdwanMember[], probe: SdwanSteeringProbe,
+  ): SdwanMember | undefined {
+    if (rule.mode !== 'load-balance' || eligible.length < 2) return eligible[0];
+    return spreadAcross(this.loadBalanceMode, eligible, probe);
   }
 
   preferredMember(check: string, slaId?: number): SdwanMember | undefined {
