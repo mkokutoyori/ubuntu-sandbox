@@ -161,6 +161,7 @@ import { RouterHostsTable } from '../router/dns/RouterHostsTable';
 import type { VdomServices } from './pipeline/stages/coreStages';
 import { ScheduleStore, type ScheduleObject } from './model/ScheduleObject';
 import { FirewallLogStore } from './logging/FirewallLogStore';
+import { PolicyCaptureStore } from './diag/PolicyCaptureStore';
 import type { LocalTrafficKind, LogSettings } from './logging/LogSettings';
 import { flowKeyFromPacket, type FlowKey } from './session/FlowKey';
 import { classifyIpv4Destination } from '../../layers/internet/InternetLayer';
@@ -1341,6 +1342,25 @@ export class Firewall extends Equipment {
 
   getLogSettings(vdom?: string): LogSettings { return this.getVdom(vdom).logSettings; }
 
+  getPolicyCaptures(): PolicyCaptureStore { return this.policyCaptures; }
+
+  private readonly policyCaptures = new PolicyCaptureStore();
+
+  private capturePolicyPacket(
+    context: PacketContext, frame: EthernetFrame | undefined,
+  ): void {
+    if (!frame) return;
+    const rule = context.matchedPolicy;
+    if (rule?.capturePackets !== true) return;
+
+    this.policyCaptures.record(rule.id, {
+      at: this.services.now(),
+      iface: context.ingressPort,
+      direction: 'in',
+      frame,
+    });
+  }
+
   private logLocalTraffic(iface: string, packet: IPv4Packet, accepted: boolean): void {
     const kind: LocalTrafficKind = accepted
       ? 'local-in-allow'
@@ -1940,6 +1960,7 @@ export class Firewall extends Equipment {
     const outcome = this.processPipeline(context);
     this.traces.remember(context);
     this.logPipelineOutcome(context, outcome.verdict === 'accepted');
+    this.capturePolicyPacket(context, frame);
     if (outcome.verdict !== 'accepted') {
       if (context.verdict?.reason === 'auth-required') {
         this.captivePortal.capture(portName, packet);

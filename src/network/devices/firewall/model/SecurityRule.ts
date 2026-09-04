@@ -44,6 +44,7 @@ export interface SecurityRule {
 
   securityProfileGroup?: string;
   sessionTimeoutOverrideSec?: number;
+  capturePackets?: boolean;
   tcpSessionWithoutSyn?: TcpSessionWithoutSyn;
 
   utmEnabled?: boolean;
@@ -97,6 +98,7 @@ export interface SecurityRuleInit {
   logEnd?: boolean;
   securityProfileGroup?: string;
   sessionTimeoutOverrideSec?: number;
+  capturePackets?: boolean;
   tcpSessionWithoutSyn?: TcpSessionWithoutSyn;
   utmEnabled?: boolean;
   inspectionMode?: string;
@@ -155,6 +157,7 @@ export function makeRule(init: SecurityRuleInit): SecurityRule {
     logEnd: init.logEnd ?? false,
     securityProfileGroup: init.securityProfileGroup,
     sessionTimeoutOverrideSec: init.sessionTimeoutOverrideSec,
+    capturePackets: init.capturePackets,
     tcpSessionWithoutSyn: init.tcpSessionWithoutSyn,
     utmEnabled: init.utmEnabled,
     inspectionMode: init.inspectionMode,

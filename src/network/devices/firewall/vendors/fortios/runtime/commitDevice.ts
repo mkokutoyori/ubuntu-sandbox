@@ -304,6 +304,9 @@ export function buildCommitDevice(
       applyPasswordExpiry(policy) {
         fw.applyPasswordExpiry(policy);
       },
+      applyPolicyCaptureSize(megabytes) {
+        fw.getPolicyCaptures().setMaxSizeMb(megabytes);
+      },
       applyLogSettings(patch) {
         fw.getLogSettings().apply(patch);
       },

@@ -366,6 +366,7 @@ export interface FortiCommitDevice {
   applySyslogCollector(settings: SyslogCollectorSettings): string | void;
   applySyslogFilter(settings: SyslogFilterSettings): string | void;
   applyLogSettings(patch: LogSettingsPatch): void;
+  applyPolicyCaptureSize(megabytes: number): void;
   applyPasswordExpiry(policy: PasswordExpiryPolicy): void;
   applyAccessList(list: AccessList): void;
   removeAccessList(name: string): void;
