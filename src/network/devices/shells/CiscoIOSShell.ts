@@ -75,7 +75,7 @@ import {
 } from './cisco/CiscoVxlanCommands';
 import { FhrpRepository } from '../inspection/config/FhrpRepository';
 import {
-  buildTrackConfigCommands, registerTrackShowCommands, trackSubmodeSpecs,
+  buildTrackConfigCommands, trackShowSpecs, trackSubmodeSpecs,
 } from './cisco/CiscoTrackCommands';
 import { KeyChainRepository } from '../inspection/config/KeyChainRepository';
 import { specsFromTrieRegistrations } from '@/cli/commands/trieAdapter';
@@ -195,6 +195,9 @@ const HORS_PLATEFORME_ISR: ReadonlySet<string> = new Set(['vxlan', 'nve', 'mls']
 import { routerOnlyDebugPairs, type RouterDebugHost } from '@/cli/commands/debug/routerDebugPairs';
 import { getGlobalConfig } from '../router/config/CiscoGlobalConfig';
 import { clearAclSpecs, clearCryptoSpecs } from './cisco/clearRestantsSpecs';
+import { showAdjacencySpec, showViewSpec } from './cisco/showViewSpecs';
+import { showAdjacency } from './cisco/CiscoCommonShow';
+import { showIpRouteOspf } from './cisco/CiscoOspfCommands';
 import { clearAccessListCounters } from './cisco/CiscoAclCommands';
 import { IPV4_PLACE, valeurGlobaleSpecs } from './cisco/ipGlobalSpecs';
 
@@ -408,6 +411,12 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
       ...super.socleSpecs(),
       ...dhcpClientFamily(),
       ...hsrpShowSpecs(this, () => this.fhrp),
+      ...trackShowSpecs(this),
+      showViewSpec('show-ip-route-ospf', ['show', 'ip', 'route', 'ospf'],
+        'Display OSPF routes', () => showIpRouteOspf(this.d())),
+      showAdjacencySpec(
+        () => showAdjacency(this.d() as unknown as Parameters<typeof showAdjacency>[0]),
+        false),
       ...vrrpGlbpShowSpecs(this, () => this.fhrp),
       ...clearAclSpecs(() => ({
         clearAclCounters: (ref) => clearAccessListCounters(this.d(), ref),
@@ -1892,7 +1901,6 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
     registerIgmpShowCommands(trie, this.multicastShowContext());
     registerPimShowCommands(trie, this.multicastShowContext());
     if (this.hasVxlanHardware()) registerVxlanShowCommands(trie, { r: () => this.d() });
-    registerTrackShowCommands(trie, this);
     registerPolicyShow(trie, this.policy);
     this.registerRouterShowViews(trie);
     trie.pruneSubtreeChildren('show', HORS_PLATEFORME_ISR);

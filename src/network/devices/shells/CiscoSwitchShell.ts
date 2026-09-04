@@ -73,6 +73,7 @@ import { describeCiscoArguments } from './cisco/ciscoArgumentHelp';
 import { stpGlobalSpecs, type StpGlobalHost } from './cisco/stpGlobalSpecs';
 import { IPV4_PLACE, valeurGlobaleSpecs } from './cisco/ipGlobalSpecs';
 import { clearSwitchSpecs } from './cisco/clearRestantsSpecs';
+import { showAdjacencySpec, showTrackSpec } from './cisco/showViewSpecs';
 import type { DebugPair } from '@/cli/commands/debug/debugFamily';
 import { buildActorState } from '@/network/lacp/types';
 import { etherChannelLimitFamily } from '@/cli/commands/aggregation/etherChannelLimits';
@@ -2356,6 +2357,7 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
       ...this.macTableSpecs(),
       ...stpGlobalSpecs(() => this.stpGlobalHost()),
       ...this.fhrpShowSpecs(),
+      ...this.showViewSpecs(),
       ...clearSwitchSpecs(() => ({
         resolveInterface: (name) => this.resolveInterfaceName(name) ?? null,
         recoverErrDisable: (port) => {
@@ -5330,11 +5332,22 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
         dhcp().formatDatabaseShow());
       t.register('show ip dhcp snooping statistics', 'Display DHCP snooping statistics', () =>
         this.showIpDhcpSnoopingStatistics());
-      t.registerGreedy('show track', 'Display tracked objects', (args) => {
+    }
+  }
+
+  /**
+   * Les trois vues FHRP d'un Catalyst, declarees comme celles du
+   * routeur : meme constructeur de commande, meme grammaire, deux modes
+   * EXEC en une declaration au lieu de six enregistrements.
+   */
+  private showViewSpecs(): CommandSpec[] {
+    return [
+      showAdjacencySpec((portee) => this.showAdjacency(portee ? [portee] : []), true),
+      showTrackSpec((cible) => {
         const objs = this.trackObjects.list();
         if (objs.length === 0) return '';
-        const filterId = parseInt(args[0] ?? '', 10);
-        const filtered = Number.isFinite(filterId) ? objs.filter((o) => o.id === filterId) : objs;
+        const filtered = cible !== undefined && cible !== 'brief'
+          ? objs.filter((o) => o.id === Number(cible)) : objs;
         const lines: string[] = [];
         for (const o of filtered) {
           const state = this.trackObjects.stateOf(this.d(), o.id);
@@ -5344,15 +5357,10 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
           lines.push(`  ${kindStr} is ${state}`);
         }
         return lines.join('\n');
-      });
-    }
+      }),
+    ];
   }
 
-  /**
-   * Les trois vues FHRP d'un Catalyst, declarees comme celles du
-   * routeur : meme constructeur de commande, meme grammaire, deux modes
-   * EXEC en une declaration au lieu de six enregistrements.
-   */
   private fhrpShowSpecs(): CommandSpec[] {
     const nomsDe = (groups: ReadonlyArray<{ iface: string }>) =>
       groups.map((g) => iosSviName(g.iface));

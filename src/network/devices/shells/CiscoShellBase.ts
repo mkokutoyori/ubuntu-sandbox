@@ -152,8 +152,7 @@ import {
   showNtpStatus, showNtpAssociations, showNtpAssociationsDetail, showNtpAuthenticationKeys,
   showNtpPackets,
   showLine, showIpSsh, showSshSessions, showHosts, showIpDnsStatistics, showVrf,
-  showVrfDetail, showVrfInterfaces, showAdjacency,
-  showRedundancy, showFileSystems, showCalendar, showTerminal,
+  showVrfDetail, showVrfInterfaces, showRedundancy, showFileSystems, showCalendar, showTerminal,
   showBuffers, showTcpBrief, showSockets, type TcpBriefSource,
   showStacks, showReload, showAaa, showEnvironment, showControllers,
   chassisSerial, CISCO_HARDWARE_PROFILES, licenseTable,
@@ -9028,8 +9027,6 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       { keyword: 'detail', description: 'Detailed VRF information' },
       { keyword: 'interfaces', description: 'Interfaces bound to a VRF' },
     ]);
-    trie.registerGreedy('show adjacency', 'Display CEF adjacency table', () =>
-      showAdjacency(this.d() as unknown as Parameters<typeof showAdjacency>[0]));
     if (this.hasSwitchingHardware()) {
       trie.registerGreedy('show redundancy', 'Display redundancy state', () =>
         showRedundancy());

@@ -11,6 +11,7 @@ import { RETURN_CODE_LABEL } from '../../../ipsla/types';
 import { CliInvalidInput } from '../cli/CliDiagnostic';
 import type { CommandSpec } from '@/cli/CommandTable';
 import type { ArgumentSpec } from '@/cli/ArgumentTypes';
+import { showTrackSpec } from './showViewSpecs';
 import {
   specsFromTrieRegistrations, type AdapterKeyword,
 } from '@/cli/commands/trieAdapter';
@@ -232,20 +233,18 @@ export function buildTrackSubmodeOn(
   });
 }
 
-export function registerTrackShowCommands(trie: CommandTrie, ctx: TrackCommandContext): void {
-  trie.registerGreedy('show track', 'Tracking information', (args) => {
+export function trackShowSpecs(ctx: TrackCommandContext): CommandSpec[] {
+  return [showTrackSpec((cible) => {
     const service = serviceOf(ctx);
     service.evaluateAll();
     const objects = service.all();
     if (objects.length === 0) return '% No tracked objects configured.';
 
-    if (/^\d+$/.test(args[0] ?? '')) {
-      const object = service.get(parseInt(args[0], 10));
+    if (cible !== undefined && cible !== 'brief') {
+      const object = service.get(Number(cible));
       return object ? renderDetail(ctx, object) : '% Track object does not exist';
     }
-    const unread = args.find((w) => w !== '' && w !== 'brief');
-    if (unread !== undefined) throw new CliInvalidInput({ token: unread });
-    if (args[0] === 'brief') {
+    if (cible === 'brief') {
       const now = ctx.r().getIpSlaEngine().nowMs();
       const lines = ['Track   Object                         Parameter        Value      Last Change'];
       for (const object of objects) {
@@ -261,7 +260,7 @@ export function registerTrackShowCommands(trie: CommandTrie, ctx: TrackCommandCo
       return lines.join('\n');
     }
     return objects.map((object) => renderDetail(ctx, object)).join('\n');
-  });
+  })];
 }
 
 const OBJET_KEYWORDS: ReadonlyArray<AdapterKeyword> = [
