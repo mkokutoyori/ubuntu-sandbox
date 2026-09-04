@@ -137,6 +137,7 @@ export interface SwitchportConfig {
   trunkNativeVlan: number;      // Native VLAN for trunk mode (default 1)
   trunkAllowedVlans: VlanSet;
   voiceVlan?: number;             // Voice VLAN (switchport voice vlan N)
+  voiceVlanMode?: 'dot1p' | 'none' | 'untagged';
   voiceVlanAutoOui?: boolean;
   hybridPvid?: number;
   hybridUntaggedVlans?: Set<number>;

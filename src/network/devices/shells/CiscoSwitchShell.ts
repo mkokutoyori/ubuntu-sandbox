@@ -47,7 +47,7 @@ import {
 } from './cisco/ciscoCounterTables';
 import type { ISwitchShell } from './ISwitchShell';
 import type { Switch, SwitchportConfig } from '../Switch';
-import { parseVlanId, type VlanSet } from '../switch/VlanSet';
+import { parseVlanId, VLAN_MIN, VLAN_MAX, type VlanSet } from '../switch/VlanSet';
 import {
   STORM_CONTROL_TYPES, parseStormControl, stormControlPercent,
 } from './cisco/stormControlSyntax';
@@ -605,16 +605,27 @@ const MAC_TABLE_PLACES: Readonly<Record<string, readonly ArgumentSpec[]>> = {
 const VLAN_PLACE = (name: string, description: string): ArgumentSpec =>
   ({ name, type: 'VLAN_ID', description });
 
+const VOICE_VLAN_MODES = [
+  { keyword: 'dot1p', description: 'Tag traffic with 802.1p priority' },
+  { keyword: 'none', description: 'Do not tell the telephone which VLAN to use' },
+  { keyword: 'untagged', description: 'Untagged voice traffic' },
+] as const;
+
+type VoiceVlanMode = typeof VOICE_VLAN_MODES[number]['keyword'];
+
+function voiceVlanMode(word: string): VoiceVlanMode | null {
+  const trouve = VOICE_VLAN_MODES.find((m) => m.keyword === word.toLowerCase());
+  return trouve ? trouve.keyword : null;
+}
+
 const SWITCHPORT_PLACES: Readonly<Record<string, ArgumentSpec | readonly ArgumentSpec[]>> = {
   'switchport access vlan': VLAN_PLACE('vlan', 'VLAN of the access port'),
   'switchport trunk native vlan': VLAN_PLACE('vlan', 'Native VLAN of the trunk'),
   'switchport voice vlan': {
-    name: 'vlan', type: 'VLAN_ID', description: 'Voice VLAN of the port',
+    name: 'vlan', type: 'WORD', description: 'Voice VLAN of the port',
     alternatives: [
-      { keyword: '<1-4094>', description: 'Voice VLAN of the port' },
-      { keyword: 'dot1p', description: 'Tag traffic with 802.1p priority' },
-      { keyword: 'none', description: 'Do not tell the telephone which VLAN to use' },
-      { keyword: 'untagged', description: 'Untagged voice traffic' },
+      { keyword: `<${VLAN_MIN}-${VLAN_MAX}>`, description: 'Voice VLAN of the port' },
+      ...VOICE_VLAN_MODES,
     ],
   },
   'channel-group': {
@@ -655,14 +666,6 @@ const SWITCHPORT_KEYWORDS: Readonly<Record<string, readonly AdapterKeyword[]>> =
   }],
   'switchport trunk allowed vlan': VLAN_LIST_KEYWORDS,
   'switchport trunk pruning vlan': VLAN_LIST_KEYWORDS,
-  'switchport voice vlan': [
-    { keyword: 'dot1p', description: 'Tag traffic with 802.1p priority', argument: null },
-    {
-      keyword: 'none',
-      description: 'Do not tell the telephone which VLAN to use', argument: null,
-    },
-    { keyword: 'untagged', description: 'Untagged voice traffic', argument: null },
-  ],
 };
 
 type ListeVlan = { ids: number[] } | { erreur: string };
@@ -4108,6 +4111,10 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
         if (this.selectedInterface && this.sviVlanId(this.selectedInterface) !== null) {
           return CISCO_ERRORS.INVALID_INPUT;
         }
+        if (sub === 'switchport voice') {
+          if (args[0] === undefined) throw new CliIncomplete();
+          throw new CliInvalidInput({ token: args[0] });
+        }
         if (sub === 'storm-control') {
           const parsed = parseStormControl(args);
           if (parsed.incomplete) throw new CliIncomplete();
@@ -4134,16 +4141,17 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
       return '';
     };
     trie.registerGreedy('switchport voice vlan', 'Set the voice VLAN', (args) => {
-      if (!args[0]) return CISCO_ERRORS.INCOMPLETE;
-      const kw = args[0].toLowerCase();
-      const v = parseInt(args[0], 10);
-      if (kw !== 'dot1p' && kw !== 'none' && kw !== 'untagged' && (isNaN(v) || v < 1 || v > 4094)) {
-        return CISCO_ERRORS.INVALID_INPUT;
-      }
+      if (args[0] === undefined) throw new CliIncomplete();
+      if (args[1] !== undefined) throw new CliInvalidInput({ token: args[1] });
+      const mode = voiceVlanMode(args[0]);
+      const vlan = mode === null
+        ? entierBorne(args[0], VLAN_MIN, VLAN_MAX) : undefined;
       const ifs = this.selectedInterface ? [this.selectedInterface] : this.selectedInterfaceRange;
       for (const i of ifs) {
         const cfg = this.d().getSwitchportConfig(i);
-        if (cfg) cfg.voiceVlan = isNaN(v) ? undefined : v;
+        if (!cfg) continue;
+        cfg.voiceVlan = vlan;
+        cfg.voiceVlanMode = mode ?? undefined;
       }
       return '';
     });
@@ -4151,7 +4159,9 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
       const ifs = this.selectedInterface ? [this.selectedInterface] : this.selectedInterfaceRange;
       for (const i of ifs) {
         const cfg = this.d().getSwitchportConfig(i);
-        if (cfg) cfg.voiceVlan = undefined;
+        if (!cfg) continue;
+        cfg.voiceVlan = undefined;
+        cfg.voiceVlanMode = undefined;
       }
       return removeIf('switchport voice');
     });
@@ -4640,7 +4650,8 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
       } else if (cfg.accessVlan !== 1) {
         lines.push(` switchport access vlan ${cfg.accessVlan}`);
       }
-      if (cfg.voiceVlan !== undefined) lines.push(` switchport voice vlan ${cfg.voiceVlan}`);
+      const voix = cfg.voiceVlan ?? cfg.voiceVlanMode;
+      if (voix !== undefined) lines.push(` switchport voice vlan ${voix}`);
       if (sw.isPortProtected(portName)) lines.push(' switchport protected');
       lines.push(...runningConfigInterfaceACLFrom(
         sw.getVaclEngine().getInterfaceACLBindingsInternal(), portName));
@@ -4980,7 +4991,8 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
         ? 'ALL' : this.compactVlanList(Array.from(c.trunkAllowedVlans).sort((a, b) => a - b));
       lines.push(`Trunking VLANs Enabled: ${allowed}`);
     }
-    if (c?.voiceVlan) lines.push(`Voice VLAN: ${c.voiceVlan}`);
+    const voix = c?.voiceVlan ?? c?.voiceVlanMode;
+    if (voix !== undefined) lines.push(`Voice VLAN: ${voix}`);
     lines.push(`Protected: ${this.d().isPortProtected(name)}`);
     return lines.join('\n');
   }

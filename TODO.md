@@ -148,9 +148,9 @@ UDLD en a ferme trois. Les autres, par famille :
 - `spanning-tree {backbonefast|uplinkfast} zorglub`, `spanning-tree mst
   zorglub`.
 - `tunnel path-mtu-discovery zorglub`.
-- `switchport voice zorglub` est accepte ET RENDU `switchport voice
-  zorglub` ; `switchport voice vlan dot1p` et `… none`, eux, sont acceptes
-  et rendus NULLE PART.
+- `spanning-tree uplinkfast max-update-rate <n>` est accepte et rendu
+  `spanning-tree uplinkfast` : le debit est perdu a l'import. (La famille
+  `switchport voice vlan` est fermee.)
 
 **Ce que le balayage ne voit pas.** Il ne descend qu'a un mot-cle de
 profondeur et ignore les commandes a texte libre (`description`,
