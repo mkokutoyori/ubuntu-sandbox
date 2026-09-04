@@ -76,6 +76,7 @@ import {
   renderAdminSessionList, renderAdminSessionStatus,
 } from './view/adminSessions';
 import { fortiLogStamp } from './diag/timeCommands';
+import { renderIpsecTunnelStats } from './view/ipsecStats';
 import type { SslVpnSessionMode } from '../../vpn/SslVpnSessionTable';
 import { PkiKeyPair } from '../../../../pki/PkiKeyPair';
 import { buildCertificateRequest } from '../../../../pki/CertificateSigningRequest';
@@ -879,6 +880,9 @@ export class FortiShell {
     if (path === 'system arp') return renderArpTable(this.fw.getArpService());
     if (path === 'system session status') {
       return renderSessionCount(this.fw.getSessionTable().view().count());
+    }
+    if (path === 'vpn ipsec stats tunnel') {
+      return renderIpsecTunnelStats(this.fw.getTunnelTable());
     }
     if (path === 'system admin list') {
       return renderAdminSessionList(this.fw.getAdminSessions().list(),
