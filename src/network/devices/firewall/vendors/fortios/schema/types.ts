@@ -7,6 +7,7 @@ import type { ArgumentSpec, EnumValue } from '../../../../../../cli/ArgumentType
 import type { ObjectStore } from '../../../model/ObjectStore';
 import type { LogSettingsPatch } from '../../../logging/LogSettings';
 import type { PasswordExpiryPolicy } from '../../../mgmt/ManagementPlane';
+import type { AccessList } from '../../../routing/AccessList';
 import type { PolicyStore } from '../../../model/PolicyStore';
 import type { DosPolicyStore } from '../../../dos/DosPolicyStore';
 
@@ -64,6 +65,7 @@ export interface FortiAttributeSpec {
   readonly name: string;
   readonly help: string;
   readonly parts: readonly ArgumentSpec[];
+  readonly optionalParts?: number;
   readonly multiValue?: boolean;
   readonly referenceTo?: readonly string[];
   readonly quoted?: boolean;
@@ -364,6 +366,8 @@ export interface FortiCommitDevice {
   applySyslogFilter(settings: SyslogFilterSettings): string | void;
   applyLogSettings(patch: LogSettingsPatch): void;
   applyPasswordExpiry(policy: PasswordExpiryPolicy): void;
+  applyAccessList(list: AccessList): void;
+  removeAccessList(name: string): void;
   maxVirtualDomains(): number;
   applyVdom(name: string): void;
   removeVdom(name: string): void;
@@ -747,6 +751,10 @@ export function keyAttributeName(spec: FortiTableSpec): string | undefined {
 
 export function attributeArity(spec: FortiAttributeSpec): number {
   return spec.parts.length;
+}
+
+export function attributeMinimumArity(spec: FortiAttributeSpec): number {
+  return spec.parts.length - (spec.optionalParts ?? 0);
 }
 
 export function isQuoted(spec: FortiAttributeSpec): boolean {

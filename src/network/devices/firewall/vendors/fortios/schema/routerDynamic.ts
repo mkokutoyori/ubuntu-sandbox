@@ -3,6 +3,81 @@ import {
   type FortiTableSpec,
 } from './types';
 import { AS_NUMBER_MAX } from '../../../routing/FirewallBgp';
+import {
+  parseAccessListPrefix, type AccessListRule,
+} from '../../../routing/AccessList';
+import { isValidIPv4, isValidSubnetMask } from '../../../../../core/ip';
+
+const ACCESS_LIST_RULE: FortiTableSpec = {
+  path: ['router', 'access-list', 'rule'],
+  kind: 'table',
+  keyType: 'integer',
+  ordered: true,
+  scope: 'vdom',
+  accessGroup: 'netgrp',
+  renderOrder: 1,
+  help: 'Rule.',
+  attributes: [
+    { ...word('id', 'Rule ID.'), readOnly: true },
+    choice('action', 'Permit or deny this IP address and netmask prefix.', [
+      { keyword: 'permit', description: 'Permit or allow this prefix.' },
+      { keyword: 'deny', description: 'Deny this prefix.' },
+    ], 'permit'),
+    {
+      ...addressMask('prefix',
+        'IPv4 prefix to define regular filter criteria, such as "any" or subnets.',
+        ['any']),
+      optionalParts: 1,
+      acceptsValue: (value) =>
+        value === 'any' || isValidIPv4(value) || isValidSubnetMask(value),
+      expectedValue: 'either `any` or an address and a netmask, '
+        + 'such as `10.1.0.0 255.255.0.0`.',
+    },
+    address('wildcard', 'Wildcard to define Cisco-style wildcard filter criteria.'),
+    enable('exact-match', 'Enable/disable exact match.'),
+  ],
+};
+
+export const ROUTER_ACCESS_LIST: FortiTableSpec = {
+  path: ['router', 'access-list'],
+  kind: 'table',
+  keyType: 'name',
+  ordered: false,
+  scope: 'vdom',
+  accessGroup: 'netgrp',
+  renderOrder: 229,
+  help: 'Configure access lists.',
+  attributes: [
+    { ...word('name', 'Access list name.'), readOnly: true },
+    text('comments', 'Comment.'),
+  ],
+  children: [ACCESS_LIST_RULE],
+  onCommit(object, context) {
+    const rules: AccessListRule[] = [];
+    for (const entry of object.childEntries('rule')) {
+      const prefix = parseAccessListPrefix(entry.effective('prefix'));
+      if (!prefix) {
+        return `rule ${entry.key} needs \`set prefix any\` or an address and a netmask.`;
+      }
+      const wildcard = entry.effective('wildcard')[0];
+      rules.push({
+        id: Number.parseInt(entry.key, 10),
+        action: entry.effective('action')[0] === 'deny' ? 'deny' : 'permit',
+        prefix,
+        wildcard: wildcard && wildcard !== '0.0.0.0' ? wildcard : undefined,
+        exactMatch: entry.effective('exact-match')[0] === 'enable',
+      });
+    }
+    context.device.applyAccessList({
+      name: object.key,
+      comments: object.effective('comments')[0] || undefined,
+      rules,
+    });
+  },
+  onDelete(key, context) {
+    context.device.removeAccessList(key);
+  },
+};
 
 const RIP_NETWORK: FortiTableSpec = {
   path: ['router', 'rip', 'network'],
@@ -178,7 +253,8 @@ export const ROUTER_OSPF: FortiTableSpec = {
       ...text('passive-interface', 'Interfaces that listen without advertising.'),
       multiValue: true,
     },
-    enable('distribute-list-in', 'Filter incoming routes.'),
+    reference('distribute-list-in', 'Filter incoming routes.',
+      ['router access-list']),
   ],
   children: [OSPF_AREA, OSPF_NETWORK, OSPF_INTERFACE],
   onCommit(object, context) {
@@ -217,6 +293,7 @@ export const ROUTER_OSPF: FortiTableSpec = {
       passiveInterfaces: [...object.effective('passive-interface')],
       redistributeConnected: false,
       redistributeStatic: false,
+      distributeListIn: object.effective('distribute-list-in')[0] || undefined,
     });
   },
 };
@@ -299,4 +376,4 @@ export const ROUTER_BGP: FortiTableSpec = {
 };
 
 export const ROUTER_DYNAMIC_SPECS: readonly FortiTableSpec[] =
-  Object.freeze([ROUTER_RIP, ROUTER_OSPF, ROUTER_BGP]);
+  Object.freeze([ROUTER_ACCESS_LIST, ROUTER_RIP, ROUTER_OSPF, ROUTER_BGP]);

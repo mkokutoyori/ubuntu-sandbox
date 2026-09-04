@@ -13,6 +13,10 @@ import type {
 } from '../../../ospf/types';
 
 import { RIPEngine } from '../../../rip/RIPEngine';
+import {
+  AccessListStore, accessListPermits, maskPrefixLength,
+  type AccessList,
+} from './AccessList';
 import type { IEventBus } from '../../../../events/EventBus';
 import type { TcpStack } from '../../../tcp/TcpStack';
 import {
@@ -62,6 +66,7 @@ function authTypeOf(mode: string | undefined): number {
 export class FirewallRouting {
   private readonly bgpService: FirewallBgp;
   private rip: RIPEngine | null = null;
+  private readonly accessLists = new AccessListStore();
   private ospf: OSPFEngine | null = null;
   private ripConfig: RipConfiguration = RIP_DEFAULTS;
   private ospfConfig: OspfConfiguration = OSPF_DEFAULTS;
@@ -126,6 +131,17 @@ export class FirewallRouting {
   }
 
   getRip(): RIPEngine | null { return this.rip; }
+
+  getAccessLists(): AccessListStore { return this.accessLists; }
+
+  applyAccessList(list: AccessList): void {
+    this.accessLists.upsert(list);
+    this.installOspfRoutes();
+  }
+
+  removeAccessList(name: string): void {
+    if (this.accessLists.remove(name)) this.installOspfRoutes();
+  }
 
   getOspfConfiguration(): OspfConfiguration { return this.ospfConfig; }
 
@@ -257,8 +273,13 @@ export class FirewallRouting {
   private installOspfRoutes(): void {
     if (!this.ospf) return;
 
+    const filter = this.ospfInboundFilter();
+
     this.deps.removeRoutes('ospf');
     for (const route of this.ospf.getRoutes()) {
+      if (filter && !accessListPermits(filter, route.network, maskPrefixLength(route.mask))) {
+        continue;
+      }
       this.deps.installRoute({
         network: route.network,
         mask: route.mask,
@@ -270,6 +291,12 @@ export class FirewallRouting {
         routeType: route.routeType,
       });
     }
+  }
+
+  private ospfInboundFilter(): AccessList | undefined {
+    const named = this.ospfConfig.distributeListIn;
+    if (!named) return undefined;
+    return this.accessLists.get(named);
   }
 
   private emitOspf(iface: string, packet: OSPFPacket, destIP: string): void {
