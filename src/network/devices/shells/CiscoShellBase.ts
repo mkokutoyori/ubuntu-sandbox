@@ -73,6 +73,7 @@ import { runSshClient } from '../linux/network/LinuxSshClient';
 import { findHostByAddress } from '../linux/network/HostLookup';
 import type { Router } from '../Router';
 import { ipGlobalSpecs, type IpGlobalHost } from './cisco/ipGlobalSpecs';
+import { cryptoKeySpecs, type CryptoKeyHost } from './cisco/cryptoKeySpecs';
 import {
   getSecurityConfig, buildIdentityShowCommands, buildIdentityConfigCommands,
 } from './cisco/CiscoSecurityCommands';
@@ -5581,6 +5582,33 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
    * methode differente de chaque cote, `Router` et `Switch` n'ayant
    * aucune base commune de couche 3.
    */
+  /**
+   * Ce que la famille `crypto key` lit sur CETTE machine.
+   *
+   * Le nom de domaine se lit de deux facons selon la plateforme : un
+   * routeur le tient dans son service de gestion, un Catalyst
+   * directement. Ne consulter que la premiere faisait repondre
+   * « definissez d'abord un nom de domaine » a un commutateur qui
+   * venait d'en poser un.
+   */
+  protected cryptoKeyHost(): CryptoKeyHost {
+    const dev = () => this.d() as unknown as {
+      getManagementService?: () => { domainName?: string };
+      _getDnsConfig?: () => { domainName: string };
+      getDomainName?: () => string | null | undefined;
+      getHostname?: () => string;
+      _refreshSshAvailability?: () => void;
+    };
+    return {
+      domainName: () => dev()._getDnsConfig?.().domainName
+        || dev().getManagementService?.().domainName || dev().getDomainName?.() || '',
+      hostname: () => dev().getHostname?.() ?? 'Router',
+      keys: () => getSecurityConfig(this.d()).cryptoKeys,
+      setKeys: (keys) => { getSecurityConfig(this.d()).cryptoKeys = keys; },
+      refreshSshAvailability: () => { dev()._refreshSshAvailability?.(); },
+    };
+  }
+
   protected ipGlobalHost(): IpGlobalHost {
     return {
       setIpRouting: (on) => {
@@ -5599,6 +5627,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     return [
       ...TIME_RANGE_FAMILY,
       ...ipGlobalSpecs(() => this.ipGlobalHost()),
+      ...cryptoKeySpecs(() => this.cryptoKeyHost()),
       ...debugFamily(this.debugPairs()),
       ...showConfigViewSpecs(() => this),
       ...showIpDhcpSpecs(() => this.dhcpViewServer()),
@@ -9898,6 +9927,20 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     // the local-user database so the sshd dispatch can validate inbound
     // logins. Anything we don't parse is still accepted silently.
     trie.registerGreedy('crypto', 'Encryption module', (args, raw) => {
+      /*
+       * Ce glouton existe pour ne pas PERDRE une ligne `crypto` que ce
+       * simulateur ne sait pas honorer : elle est retenue telle quelle et
+       * rejouee a l'import d'une topologie. `crypto key` fait exception,
+       * parce que le socle la porte ENTIEREMENT : y retenir une forme
+       * inconnue rejouerait a l'import une ligne que la meme machine
+       * refuse. Tant que ces deux commandes etaient des noeuds du trie,
+       * le noeud intermediaire `crypto key` refusait deja ce qui n'est ni
+       * `generate` ni `zeroize` ; leur migration au socle lui a retire ce
+       * refus, et c'est lui qu'on remet ici.
+       */
+      if (args[0]?.toLowerCase() === 'key') {
+        throw new CliInvalidInput({ token: args[1] });
+      }
       const dev = this.d() as unknown as { _recordUnhandledConfigLine?: (l: string) => void };
       dev._recordUnhandledConfigLine?.(raw ?? `crypto ${args.join(' ')}`);
       return '';

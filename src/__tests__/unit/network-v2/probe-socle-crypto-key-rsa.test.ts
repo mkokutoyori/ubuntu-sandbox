@@ -28,6 +28,32 @@
  * genrsa` qui en fabrique une vraie — et pretendre le contraire serait
  * le decor que ce depot refuse. La sonde demande que la valeur soit
  * BORNEE et RETENUE, pas qu'elle soit calculee.
+ *
+ * SA PREMIERE VERSION PASSAIT INTEGRALEMENT, et c'est ce qui a rendu ce
+ * lot possible : la famille etait deja juste, donc la migration devait
+ * etre PURE — mais elle ne pouvait pas se faire, faute d'une notion de
+ * SAC D'OPTIONS au socle. Le lot ajoute cette notion, migre la famille
+ * dessus, et la sonde gagne les cas qui eprouvent le sac lui-meme :
+ * ordre libre, doublon refuse, valeur manquante incomplete, et une aide
+ * qui n'offre plus ce qui vient d'etre tape.
+ *
+ * DEUX DEFAUTS TROUVES EN MIGRANT, et par la migration seule :
+ *
+ *   crypto key generate rsa modulus 1024 modulus 2048
+ *       -> ACCEPTE, le second ecrasant le premier en silence
+ *   crypto key zeroize rsa MACLE
+ *       -> effacait TOUTES les cles, le nom etant lu et JETE
+ *
+ * Le second est le plus couteux : l'operateur nomme une paire pour la
+ * detruire, et la machine detruit aussi celles qu'il gardait — dont la
+ * cle d'hote qui porte son propre acces SSH.
+ *
+ * Discrimine par `git stash` sur `src/cli/` et `src/network/devices/shells/`
+ * : 3 des 44 cas tombent, et ce sont exactement les trois ci-dessus plus
+ * l'aide qui reproposait une option deja donnee. Les 41 autres passent
+ * des deux cotes et c'est le RESULTAT ATTENDU d'une migration — ce
+ * qu'ils gardent est qu'aucune des formes de la famille n'ait change de
+ * reponse en changeant de moteur.
  */
 import { describe, it, expect, beforeEach } from 'vitest';
 import { CiscoRouter } from '@/network/devices/CiscoRouter';
@@ -166,13 +192,71 @@ describe('la meme frappe recoit la meme reponse sur les deux plateformes', () =>
     });
 });
 
+describe('le SAC D OPTIONS : ordre libre, une fois chacune', () => {
+  it.each([
+    'crypto key generate rsa modulus 1024 label MACLE',
+    'crypto key generate rsa label MACLE modulus 1024',
+    'crypto key generate rsa exportable label MACLE general-keys modulus 2048',
+    'crypto key generate rsa modulus 2048 general-keys exportable label MACLE',
+  ])('`%s` est accepte quel que soit l ordre', async (ligne) => {
+    const d = await routeur(`I${cle(ligne)}`);
+    for (const c of PRET) await d.executeCommand(c);
+    expect(String(await d.executeCommand(ligne))).not.toContain('%\n');
+    await d.executeCommand('end');
+    expect(String(await d.executeCommand('show crypto key mypubkey rsa')))
+      .toContain('MACLE');
+  });
+
+  it('une option donnee DEUX fois est refusee', async () => {
+    const d = await routeur('I2');
+    for (const c of PRET) await d.executeCommand(c);
+    expect(String(await d.executeCommand(
+      'crypto key generate rsa modulus 1024 modulus 2048'))).toContain('% Invalid');
+  });
+
+  it('une option attendant une valeur, donnee sans valeur, dit INCOMPLET', async () => {
+    const d = await routeur('I3');
+    for (const c of PRET) await d.executeCommand(c);
+    expect(String(await d.executeCommand('crypto key generate rsa exportable label')))
+      .toContain('% Incomplete command.');
+  });
+
+  it('`?` n offre plus une option deja tapee', async () => {
+    const d = await routeur('I4');
+    const offerts = (ligne: string) => d.cliHelp(ligne).split('\n')
+      .map((l) => l.trim().split(/\s+/)[0]).filter((m) => m.length > 0);
+    expect(offerts('crypto key generate rsa ')).toContain('modulus');
+    expect(offerts('crypto key generate rsa modulus 1024 ')).not.toContain('modulus');
+    expect(offerts('crypto key generate rsa modulus 1024 ')).toContain('label');
+  });
+
+  it('et `?` sur une place PRISE annonce la valeur, pas les options', async () => {
+    const d = await routeur('I5');
+    const aide = d.cliHelp('crypto key generate rsa modulus ');
+    expect(aide).toContain('<360-4096>');
+    expect(aide).not.toContain('exportable');
+  });
+});
+
 describe('non-regression — les voisines de la famille `crypto`', () => {
-  it('`crypto key zeroize rsa MACLE` reste accepte', async () => {
+  /*
+   * Le nom de la paire etait ACCEPTE et JETE : `crypto key zeroize rsa
+   * MACLE` effacait TOUTES les cles, y compris celles que l'operateur
+   * venait de nommer pour les garder. La migration le declare, donc il
+   * est lu ; le cas est ecrit ici parce que c'est la sonde qui l'a
+   * trouve, en migrant, et non avant.
+   */
+  it('`crypto key zeroize rsa MACLE` n efface QUE la paire nommee', async () => {
     const d = await routeur('H1');
     for (const c of PRET) await d.executeCommand(c);
     await d.executeCommand('crypto key generate rsa label MACLE modulus 1024');
+    await d.executeCommand('crypto key generate rsa label AUTRE modulus 1024');
     expect(String(await d.executeCommand('crypto key zeroize rsa MACLE')))
       .not.toContain('% Invalid');
+    await d.executeCommand('end');
+    const vue = String(await d.executeCommand('show crypto key mypubkey rsa'));
+    expect(vue).not.toContain('MACLE');
+    expect(vue).toContain('AUTRE');
   });
 
   it.each(['crypto isakmp policy 10', 'crypto ipsec transform-set TS esp-aes'])(

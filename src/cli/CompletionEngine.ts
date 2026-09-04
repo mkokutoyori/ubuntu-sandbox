@@ -3,6 +3,7 @@ import type { ArgumentSpec } from './ArgumentTypes';
 import type { CliSession } from './CliSession';
 import type { CommandTable, TreeNode } from './CommandTable';
 import { subtreeReachable, tokenize, uniqueChild } from './CommandParser';
+import { pendingOptionArgument, remainingOptions } from './OptionBag';
 
 export type CompletionTrigger = 'TAB' | 'QUESTION_MARK';
 
@@ -24,6 +25,13 @@ export interface Cursor {
   readonly resolved: boolean;
   readonly path: readonly string[];
   readonly restWords: readonly string[];
+  /**
+   * Les mots deja tapes dans le SAC D'OPTIONS de la commande atteinte.
+   *
+   * Sans eux, l'aide reproposerait une option que la meme frappe vient
+   * de donner, et ne saurait pas qu'une valeur est attendue.
+   */
+  readonly optionWords?: readonly string[];
 }
 
 export function locateCursor(
@@ -53,9 +61,17 @@ export function locateCursor(
       node = argument;
       continue;
     }
+    // La commande atteinte porte-t-elle un sac d'options ? Alors la
+    // suite de la frappe en est faite, et le curseur y reste.
+    if (table.specAt(node, session, AIDE)?.options) {
+      return {
+        node, prefix, resolved: true, path, restWords: [],
+        optionWords: walked.slice(i),
+      };
+    }
     return { node, prefix, resolved: false, path, restWords: [] };
   }
-  return { node, prefix, resolved: true, path, restWords: [] };
+  return { node, prefix, resolved: true, path, restWords: [], optionWords: [] };
 }
 
 export function complete(
@@ -107,9 +123,27 @@ function suggestionsAt(
     });
   }
 
-  const declaree = cursor.node.argument?.type === 'REST'
+  /*
+   * Le SAC D'OPTIONS de la commande atteinte : ce qui reste a proposer,
+   * ou la VALEUR qu'une option deja tapee attend. Les deux questions
+   * sont posees au meme module que l'analyse consulte, sans quoi `?`
+   * offrirait une option que la commande refuse comme doublon.
+   */
+  const sac = table.specAt(cursor.node, session, AIDE)?.options;
+  const enAttente = sac
+    ? pendingOptionArgument(sac, cursor.optionWords ?? []) : undefined;
+  if (sac && !enAttente) {
+    for (const option of remainingOptions(sac, cursor.optionWords ?? [])) {
+      if (!option.keyword.toLowerCase().startsWith(lowered)) continue;
+      out.push({
+        value: option.keyword, description: option.description, isArgument: false,
+      });
+    }
+  }
+
+  const declaree = enAttente ?? (cursor.node.argument?.type === 'REST'
     ? sansLesFormesDejaTapees(cursor.node.argument, cursor.restWords)
-    : table.argumentAt(cursor.node, session, AIDE)?.argument;
+    : table.argumentAt(cursor.node, session, AIDE)?.argument);
   /*
    * Une plage qui depend de l'etat est LUE, pas recopiee : sans cela
    * `standby ?` annoncait <0-4095> sur une interface en version 1, ou la
