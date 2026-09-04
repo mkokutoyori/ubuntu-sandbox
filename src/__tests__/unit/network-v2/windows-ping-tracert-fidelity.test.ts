@@ -153,14 +153,6 @@ describe('Test-NetConnection resolves DNS names like ping does', () => {
     expect(out).toMatch(/PingSucceeded\s*:?\s*True/);
   });
 
-  it('legacy executor path: PingSucceeded=True for a DNS-only name', async () => {
-    const { win } = await buildDnsLab();
-    const ps = new PowerShellExecutor(win as unknown as PSDeviceContext);
-    const out = await ps.execute('Test-NetConnection webserver');
-    expect(out).toContain('192.168.1.10');
-    expect(out).toMatch(/PingSucceeded\s*:?\s*True/);
-  });
-
   it('Test-Connection succeeds for a DNS-only name (interpreter path)', async () => {
     const { win } = await buildDnsLab();
     const out = await psShell(win)('Test-Connection webserver -Count 1');

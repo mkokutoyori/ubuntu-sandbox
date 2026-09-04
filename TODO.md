@@ -2559,3 +2559,111 @@ demande d'abord de mesurer ce qu'un lien serie doit negocier (debit,
 duplex, horloge DCE/DTE, `clock rate`), ce qui est un lot a soi et non
 un changement d'une ligne. Le faire a l'aveugle donnerait un port d'un
 type que rien ne sait traiter.
+
+### [nettcpip] pas de flux WARNING : une cmdlet ne peut pas AVERTIR et rendre un objet
+
+**Mesure** : `Test-NetConnection zorglub.invalid` sur une vraie machine
+Windows ecrit `WARNING: Name resolution of zorglub.invalid failed` PUIS
+l'objet de resultat — deux flux distincts, l'avertissement et la sortie.
+Ici le runtime n'en a qu'un : `PSRuntime` ecrit
+`const emitted = this.outputLines.length > before; if (!emitted && result
+!== null …)`, donc **la valeur de retour d'une cmdlet est JETEE des que la
+cmdlet a emis une seule ligne**. Emettre l'avertissement puis l'objet par
+`ctx.emit` fonctionne mais rend l'objet par le formateur brut
+(`ComputerName=zorglub.invalid; RemoteAddress=; …`) au lieu de la vue en
+liste, ce qui est pire que l'absence d'avertissement.
+
+**Choix fait** : `Test-NetConnection` REND l'objet et n'avertit pas ;
+`RemoteAddress` vide et `PingSucceeded : False` disent deja que la
+resolution a echoue, et aucune interface n'est inventee. `Write-Warning`
+(`OutputCmdlets.ts`) a la meme limite et la contourne en n'ayant rien a
+rendre.
+
+**A rouvrir** avec un vrai flux d'avertissement dans `PSRuntime`, distinct
+de la sortie — ce qui profiterait a toute cmdlet, pas seulement a
+celle-ci.
+
+### [nettcpip] une carte Windows n'a pas d'adresse IPv6 de lien-local
+
+**Mesure** : `Get-NetIPAddress -AddressFamily IPv6` sur un `WindowsPC` ne
+rend que `::1`. Une vraie machine Windows porte une adresse `fe80::/64`
+par carte, autoconfiguree au demarrage — c'est ce que `ipconfig` affiche
+en premier sous chaque adaptateur. Le moteur historique la FABRIQUAIT
+depuis l'adresse MAC au moment de l'affichage (`buildAllIPEntries`), donc
+elle n'existait nulle part : aucune trame ne pouvait la porter, et
+`New-NetIPAddress`/`Get-NetRoute` ne la voyaient pas. Ce moteur est
+supprime, donc la fiction disparait avec lui.
+
+**Non corrige ici** : la poser vraiment veut dire faire autoconfigurer
+IPv6 a `WindowsPC` comme `LinuxMachine` le fait (`enableIPv6`), ce qui
+change ce que rendent `ipconfig`, `route print`, `Get-NetIPInterface` et
+le plan de donnees IPv6 de chaque hote Windows du depot. C'est un lot a
+soi, avec sa propre mesure de ce qu'une vraie machine affiche.
+
+### [nettcpip] `InterfaceMetric` est la constante 25
+
+**Mesure** : `Get-NetIPInterface` rend `InterfaceMetric : 25` pour chaque
+interface, quelle que soit la vitesse du lien. Windows calcule une
+metrique AUTOMATIQUE depuis le debit (une carte a 1 Gbit/s ne porte pas la
+meme qu'une carte a 10 Mbit/s), et `Set-NetIPInterface -InterfaceMetric`
+la surcharge. La colonne est retiree du rendu plutot que d'annoncer un
+nombre que rien ne mesure, et `-InterfaceMetric`/`-AutomaticMetric` sont
+REFUSES en nommant la brique qui manque.
+
+**Non corrige ici** : la table de correspondance debit → metrique est
+publiee par Microsoft mais `learn.microsoft.com` est refuse par le
+mandataire de sortie de ce reseau, et l'ecrire de memoire serait
+l'invention que ce depot refuse. A rouvrir quand la table est atteignable.
+
+### [nettcpip] `Get-NetConnectionProfile.Name` est l'alias de la carte
+
+**Mesure** : le profil rend `Name : Ethernet 0`, c'est-a-dire le nom de la
+CONNEXION. Sur une vraie machine `Name` est le nom du RESEAU — « Network »,
+ou le nom du domaine quand la carte est `DomainAuthenticated` — et c'est
+ce que `-Name` filtre. Les deux se confondent ici parce qu'aucune notion
+de nom de reseau n'existe.
+
+**Non corrige ici** : le deduire du domaine joint est faisable
+(`WindowsPC` porte un modele de domaine) mais ne couvre pas le cas non
+joint, ou Windows numerote les reseaux qu'il a vus (« Network 2 ») — un
+etat persistant qui n'existe pas ici. Inventer l'un des deux serait pire
+que la confusion actuelle, qui est au moins stable.
+
+### [nettcpip] `Test-Connection -Count N` sonde UNE fois et rend N lignes identiques
+
+**Mesure** : `TestConnectionCmdlet` appelle `net.testPingProbe(target)` une
+seule fois, puis recopie la meme ligne `count` fois dans une boucle — meme
+RTT, meme `Status`, meme adresse. Sur le fil, `Test-Connection -Count 4`
+emet donc UN echo la ou `ping -n 4` en emet quatre : les deux vues d'un
+meme geste ne mettent pas le meme trafic sur le cable, et un laboratoire
+qui compte les trames voit la difference. `-Delay`, `-BufferSize`,
+`-TimeoutSeconds`, `-Source`, `-IPv4`/`-IPv6`, `-ResolveDestination`,
+`-Repeat`, `-Traceroute`, `-MtuSize` et `-TcpPort` sont declares par la
+documentation de PowerShell 7 et lus par personne ; `Status` rend
+`Success`/`Failure` alors que le champ est un `IPStatus`, dont `Failure`
+n'est pas une valeur (`TimedOut`, `DestinationHostUnreachable`…).
+
+**Non corrige ici** : le lot en cours porte sur les vues NetNeighbor /
+DnsClient / NetUDPEndpoint. Faire emettre N sondes veut dire passer par
+`executePingSequence` — le chemin que `ping` emprunte deja, donc une
+reutilisation et non une reecriture — et decider ce que `-Quiet` rend
+quand une sonde sur quatre repond (la documentation dit `$true` des
+qu'une seule aboutit). Les quatre jeux de parametres (`DefaultPing`,
+`RepeatPing`, `TraceRoute`, `MtuSizeDetect`, `TcpPort`) sont un lot a
+soi.
+
+### [dnsclient] `Get-DnsClient`, `Set-DnsClient` et `Register-DnsClient` n'existent pas
+
+**Mesure** : `grep` sur le registre de cmdlets ne trouve aucune de ces
+trois ; les occurrences du nom dans le depot sont toutes des
+sous-chaines de `Get-DnsClientServerAddress` et `Get-DnsClientCache`.
+`Get-DnsClient` rend les proprietes DNS par interface (`Suffix`,
+`RegisterThisConnectionsAddress`, `UseSuffixWhenRegistering`), dont la
+matiere existe deja en partie (`WindowsPC` porte un suffixe DNS et
+`ipconfig /all` l'affiche).
+
+**Non corrige ici** : `Register-DnsClient` suppose la mise a jour
+dynamique DNS cote client, que `src/network/dns/update/` sait faire cote
+serveur — c'est donc un branchement reel et non une invention, mais il
+touche l'enregistrement A/PTR d'un hote et son interaction avec le role
+serveur DNS de Windows, ce qui est un lot a soi.

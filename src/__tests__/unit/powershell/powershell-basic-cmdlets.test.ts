@@ -1169,34 +1169,34 @@ describe('8. Get‑NetAdapter', () => {
 describe('9. Get‑NetIPAddress', () => {
   it('lists all IP addresses', async () => {
     const pc = createPC();
-    const ps = createPS(pc);
+    const ps = createLivePS(pc);
     const out = await ps.execute('Get-NetIPAddress');
     expect(out).toContain('IPAddress');
   });
 
   it('-AddressFamily IPv4', async () => {
     const pc = createPC();
-    const ps = createPS(pc);
+    const ps = createLivePS(pc);
     const out = await ps.execute('Get-NetIPAddress -AddressFamily IPv4');
     expect(out).toContain('127.');
   });
 
   it('-InterfaceAlias filter', async () => {
     const pc = createPC();
-    const ps = createPS(pc);
+    const ps = createLivePS(pc);
     const out = await ps.execute('Get-NetIPAddress -InterfaceAlias "Ethernet"');
     expect(out).toContain('Ethernet');
   });
 
   it('-IPAddress specific', async () => {
     const pc = createPC();
-    const ps = createPS(pc);
+    const ps = createLivePS(pc);
     const out = await ps.execute('Get-NetIPAddress -IPAddress 127.0.0.1');
     expect(out).toContain('127.0.0.1');
   });
 
   it('-PrefixLength filter', async () => {
-    const pc = createPC(); const ps = createPS(pc);
+    const pc = createPC(); const ps = createLivePS(pc);
     await createLivePS(pc).execute('New-NetIPAddress -InterfaceAlias "Ethernet" -IPAddress 10.1.1.1 -PrefixLength 24');
     const out = await ps.execute('Get-NetIPAddress -PrefixLength 24');
     expect(out).toContain('24');
@@ -1204,21 +1204,22 @@ describe('9. Get‑NetIPAddress', () => {
 
   it('returns objects with InterfaceAlias, IPAddress, PrefixLength', async () => {
     const pc = createPC();
-    const ps = createPS(pc);
+    const ps = createLivePS(pc);
     const out = await ps.execute('Get-NetIPAddress | Select InterfaceAlias, IPAddress, PrefixLength');
     expect(out).toContain('IPAddress');
   });
 
   it('errors on invalid IPAddress', async () => {
     const pc = createPC();
-    const ps = createPS(pc);
-    const out = await ps.execute('Get-NetIPAddress -IPAddress 999.999.999.999 -ErrorAction SilentlyContinue');
-    expect(out).toContain('Invalid');
+    const ps = createLivePS(pc);
+    const out = await ps.execute('Get-NetIPAddress -IPAddress 999.999.999.999');
+    expect(out).toContain("No MSFT_NetIPAddress objects found with property 'IPAddress'"
+      + " equal to '999.999.999.999'");
   });
 
   it('pipeline to Select-Object -First 1', async () => {
     const pc = createPC();
-    const ps = createPS(pc);
+    const ps = createLivePS(pc);
     const out = await ps.execute('Get-NetIPAddress | Select -First 1');
     expect(out).toContain('IPAddress');
   });
@@ -3012,86 +3013,87 @@ describe('25. Get-LocalUser', () => {
 // ─────────────────────────────────────────────────────────────────────────
 describe('1. Get‑NetIPAddress', () => {
   it('lists IP addresses', async () => {
-    const pc = createPC(); const ps = createPS(pc);
+    const pc = createPC(); const ps = createLivePS(pc);
     const out = await ps.execute('Get-NetIPAddress');
     expect(out).toContain('IPAddress');
   });
   it('-AddressFamily IPv4', async () => {
-    const pc = createPC(); const ps = createPS(pc);
+    const pc = createPC(); const ps = createLivePS(pc);
     const out = await ps.execute('Get-NetIPAddress -AddressFamily IPv4');
     expect(out).toContain('127.');
   });
   it('-AddressFamily IPv6', async () => {
-    const pc = createPC(); const ps = createPS(pc);
+    const pc = createPC(); const ps = createLivePS(pc);
     const out = await ps.execute('Get-NetIPAddress -AddressFamily IPv6');
-    expect(out).toContain('fe80');
+    expect(out).toContain('::1');
   });
   it('-InterfaceAlias filter', async () => {
-    const pc = createPC(); const ps = createPS(pc);
+    const pc = createPC(); const ps = createLivePS(pc);
     const out = await ps.execute('Get-NetIPAddress -InterfaceAlias "Ethernet"');
     expect(out).toContain('Ethernet');
   });
   it('-IPAddress exact match', async () => {
-    const pc = createPC(); const ps = createPS(pc);
+    const pc = createPC(); const ps = createLivePS(pc);
     const out = await ps.execute('Get-NetIPAddress -IPAddress 127.0.0.1');
     expect(out).toContain('127.0.0.1');
   });
   it('-PrefixLength filter', async () => {
-    const pc = createPC(); const ps = createPS(pc);
+    const pc = createPC(); const ps = createLivePS(pc);
     await createLivePS(pc).execute('New-NetIPAddress -InterfaceAlias "Ethernet" -IPAddress 10.2.2.2 -PrefixLength 24');
     const out = await ps.execute('Get-NetIPAddress -PrefixLength 24');
     expect(out).toContain('24');
   });
   it('-PrefixOrigin filter', async () => {
     // PrefixOrigin may be Manual, WellKnown, Dhcp
-    const pc = createPC(); const ps = createPS(pc);
+    const pc = createPC(); const ps = createLivePS(pc);
     await expect(ps.execute('Get-NetIPAddress -PrefixOrigin Manual')).resolves.not.toThrow();
   });
   it('-SuffixOrigin filter', async () => {
-    const pc = createPC(); const ps = createPS(pc);
+    const pc = createPC(); const ps = createLivePS(pc);
     await expect(ps.execute('Get-NetIPAddress -SuffixOrigin Manual')).resolves.not.toThrow();
   });
   it('-AddressState filter', async () => {
-    const pc = createPC(); const ps = createPS(pc);
-    await expect(ps.execute('Get-NetIPAddress -AddressState Preferred')).resolves.toContain('Preferred');
+    const pc = createPC(); const ps = createLivePS(pc);
+    await expect(ps.execute('(Get-NetIPAddress -AddressState Preferred).AddressState'))
+      .resolves.toContain('Preferred');
   });
   it('Select specific properties', async () => {
-    const pc = createPC(); const ps = createPS(pc);
+    const pc = createPC(); const ps = createLivePS(pc);
     const out = await ps.execute('Get-NetIPAddress | Select InterfaceAlias, IPAddress, PrefixLength');
     expect(out).toContain('InterfaceAlias');
   });
   it('pipeline to Where-Object', async () => {
-    const pc = createPC(); const ps = createPS(pc);
+    const pc = createPC(); const ps = createLivePS(pc);
     const out = await ps.execute('Get-NetIPAddress | Where-Object AddressFamily -eq "IPv4"');
     expect(out).toContain('127.0.0.1');
   });
   it('-IncludeAllCompartments', async () => {
-    const pc = createPC(); const ps = createPS(pc);
+    const pc = createPC(); const ps = createLivePS(pc);
     await expect(ps.execute('Get-NetIPAddress -IncludeAllCompartments')).resolves.not.toThrow();
   });
   it('invalid IPAddress error', async () => {
-    const pc = createPC(); const ps = createPS(pc);
-    const out = await ps.execute('Get-NetIPAddress -IPAddress "notanip" -ErrorAction SilentlyContinue');
-    expect(out).toContain('Invalid');
+    const pc = createPC(); const ps = createLivePS(pc);
+    const out = await ps.execute('Get-NetIPAddress -IPAddress "notanip"');
+    expect(out).toContain("No MSFT_NetIPAddress objects found with property 'IPAddress' equal to 'notanip'");
   });
   it('error on non-existent interface alias', async () => {
-    const pc = createPC(); const ps = createPS(pc);
-    const out = await ps.execute('Get-NetIPAddress -InterfaceAlias NoInterface -ErrorAction SilentlyContinue');
+    const pc = createPC(); const ps = createLivePS(pc);
+    const out = await ps.execute('Get-NetIPAddress -InterfaceAlias NoInterface');
     expect(out).toContain('No MSFT_NetIPAddress');
   });
   it('pipelines to Get-NetAdapter', async () => {
     // Not directly, but can get adapter name and use it
-    const pc = createPC(); const ps = createPS(pc);
+    const pc = createPC(); const ps = createLivePS(pc);
     await expect(ps.execute('Get-NetIPAddress | ForEach-Object { Get-NetAdapter -Name $_.InterfaceAlias }')).resolves.not.toThrow();
   });
   it('Measure-Object count', async () => {
-    const pc = createPC(); const ps = createPS(pc);
+    const pc = createPC(); const ps = createLivePS(pc);
     const out = await ps.execute('Get-NetIPAddress | Measure-Object | Select-Object -ExpandProperty Count');
     const count = parseInt(out.trim());
     expect(count).toBeGreaterThan(0);
   });
   it('Get-Help', async () => {
-    const pc = createPC(); const ps = createPS(pc);
+    const pc = createPC(); const ps = createLivePS(pc);
     const help = await ps.execute('Get-Help Get-NetIPAddress');
     expect(help).toContain('SYNOPSIS');
   });

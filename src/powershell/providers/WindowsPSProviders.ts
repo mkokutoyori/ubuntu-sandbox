@@ -1632,6 +1632,7 @@ class WindowsNetworkAdapter implements INetworkProvider {
         linkSpeed: connected
           ? formatLinkSpeedMbps(aggregated ?? port.getNegotiatedSpeed())
           : '0 bps',
+        mtu: port.getMTU(),
         physical: !port.isCarrierless() && this.pc.getVlanSubInterface(portName) === undefined,
         hidden: false,
       };

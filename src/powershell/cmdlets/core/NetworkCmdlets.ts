@@ -37,6 +37,23 @@ import {
   type NetAdapterSelection, adapterNameProblem, adapterNameTaken, formatNetAdapterMac,
   noMatchingNetAdapter, parseNetAdapterMac, selectNetAdapters, selectionIsEmpty,
 } from '@/network/devices/windows/netAdapter';
+import {
+  type NetTcpConnectionRow, type NetTcpConnectionSelection, NET_TCP_APPLIED_SETTINGS,
+  NET_TCP_OFFLOAD_STATES, NET_TCP_STATES, netTcpSelectionIsEmpty, netTcpStateOf,
+  noMatchingNetTcpConnection, selectNetTcpConnections,
+} from '@/network/devices/windows/netTcpConnection';
+import {
+  type NetConnectionProfileRow, type NetConnectionProfileSelection, NETWORK_CATEGORIES,
+  SETTABLE_NETWORK_CATEGORIES, connectivityOf, noMatchingNetConnectionProfile,
+  profileSelectionIsEmpty, selectNetConnectionProfiles,
+} from '@/network/devices/windows/netConnectionProfile';
+import {
+  type DnsClientServerAddressRow, type DnsClientServerAddressSelection,
+  dnsServerSelectionIsEmpty, noMatchingDnsClientServerAddress, selectDnsClientServerAddresses,
+} from '@/network/devices/windows/dnsClientServerAddress';
+import { type NetAddressFamily, NET_ADDRESS_FAMILIES } from '@/network/devices/windows/netIpAddress';
+import { applyCimCriteria, cimNotFound } from '@/network/devices/windows/cimQuery';
+import { PortNumber } from '@/network/core/ports/PortNumber';
 
 function lifetimeSeconds(raw: PSValue | undefined): number | undefined {
   if (raw === undefined) return undefined;
@@ -78,12 +95,25 @@ const NET_ADAPTER_FILTERS = ['Name', 'InterfaceDescription', 'InterfaceIndex',
 const NET_ADAPTER_ACTION_PARAMS = [...NET_ADAPTER_FILTERS,
   'PassThru', 'WhatIf', 'Confirm'] as const;
 
-function netAdapterSelectionOf(ctx: CmdletContext): NetAdapterSelection {
-  const list = (key: string): string[] | undefined => {
-    const raw = ctx.named[key];
+function cimFilterReader(
+  ctx: CmdletContext, filters?: readonly string[],
+): (key: string) => string[] | undefined {
+  const allowed = filters === undefined ? null : new Set(filters.map(f => f.toLowerCase()));
+  return (key: string): string[] | undefined => {
+    const raw = allowed !== null && !allowed.has(key) ? undefined : ctx.named[key];
     if (raw === undefined) return undefined;
     return (Array.isArray(raw) ? raw : [raw]).map(psValueToString);
   };
+}
+
+function resolvedAliases(
+  net: INetworkProvider, aliases: string[] | undefined,
+): string[] | undefined {
+  return aliases?.map(a => net.resolveNetInterface({ alias: a })?.alias ?? a);
+}
+
+function netAdapterSelectionOf(ctx: CmdletContext): NetAdapterSelection {
+  const list = cimFilterReader(ctx);
   const positional = ctx.positional[0];
   return {
     name: list('name') ?? (positional === undefined ? undefined : [psValueToString(positional)]),
@@ -139,13 +169,14 @@ function ipToPSObject(ip: IPAddressInfo): Record<string, PSValue> {
   const validMs = (ip.validLifetimeSeconds ?? TIMESPAN_MAX_SECONDS) * 1000;
   const prefMs = (ip.preferredLifetimeSeconds ?? TIMESPAN_MAX_SECONDS) * 1000;
   return {
-    IPAddress:     ip.ipAddress,
-    PrefixLength:  ip.prefixLength,
+    IPAddress:      ip.ipAddress,
+    PrefixLength:   ip.prefixLength,
     InterfaceAlias: ip.ifAlias,
-    ifIndex:       ip.ifIndex,
+    InterfaceIndex: ip.ifIndex,
     PrefixOrigin:  ip.prefixOrigin,
     SuffixOrigin:  ip.suffixOrigin,
     AddressFamily: ip.addressFamily,
+    AddressState:  'Preferred',
     ValidLifetime: makeTimeSpan(validMs) as unknown as PSValue,
     PreferredLifetime: makeTimeSpan(prefMs) as unknown as PSValue,
     Type: ip.type ?? 'Unicast',
@@ -178,15 +209,11 @@ const NET_IP_FILTERS = ['IPAddress', 'InterfaceAlias', 'InterfaceIndex', 'Addres
   'Type', 'PolicyStore'] as const;
 
 function netIPSelectionOf(ctx: CmdletContext, net: INetworkProvider): NetIPAddressSelection {
-  const list = (key: string): string[] | undefined => {
-    const raw = ctx.named[key];
-    if (raw === undefined) return undefined;
-    return (Array.isArray(raw) ? raw : [raw]).map(psValueToString);
-  };
+  const list = cimFilterReader(ctx);
   const aliases = list('interfacealias');
   return {
     ipAddress: list('ipaddress'),
-    interfaceAlias: aliases?.map(a => net.resolveNetInterface({ alias: a })?.alias ?? a),
+    interfaceAlias: resolvedAliases(net, aliases),
     interfaceIndex: list('interfaceindex'),
     addressFamily: list('addressfamily'),
     prefixLength: list('prefixlength'),
@@ -218,32 +245,127 @@ export class GetNetIPAddressCmdlet implements ICmdlet {
   }
 }
 
+const NET_IP_INTERFACE_FILTERS = ['InterfaceAlias', 'InterfaceIndex', 'AddressFamily',
+  'NlMtuBytes', 'Dhcp', 'ConnectionState', 'CimSession'] as const;
+
+const NET_IP_INTERFACE_UNSUPPORTED: ReadonlyArray<readonly [string, string, string]> = [
+  ['forwarding', 'Forwarding', 'per-interface IP forwarding is not modelled'],
+  ['advertising', 'Advertising', 'router advertisement is not modelled on a Windows host'],
+  ['clampmss', 'ClampMss', 'MSS clamping is not modelled'],
+  ['interfacemetric', 'InterfaceMetric', 'a per-interface routing metric is not modelled'],
+  ['automaticmetric', 'AutomaticMetric', 'a per-interface routing metric is not modelled'],
+  ['neighborunreachabilitydetection', 'NeighborUnreachabilityDetection', 'NUD state is not modelled'],
+  ['basereachabletimems', 'BaseReachableTimeMs', 'NUD timers are not modelled'],
+  ['reachabletimems', 'ReachableTimeMs', 'NUD timers are not modelled'],
+  ['retransmittimems', 'RetransmitTimeMs', 'NUD timers are not modelled'],
+  ['dadtransmits', 'DadTransmits', 'duplicate address detection is not modelled'],
+  ['dadretransmittimems', 'DadRetransmitTimeMs', 'duplicate address detection is not modelled'],
+  ['routerdiscovery', 'RouterDiscovery', 'router discovery is not modelled on a Windows host'],
+  ['managedaddressconfiguration', 'ManagedAddressConfiguration', 'router advertisement flags are not modelled'],
+  ['otherstatefulconfiguration', 'OtherStatefulConfiguration', 'router advertisement flags are not modelled'],
+  ['weakhostsend', 'WeakHostSend', 'the weak host model is not modelled'],
+  ['weakhostreceive', 'WeakHostReceive', 'the weak host model is not modelled'],
+  ['ignoredefaultroutes', 'IgnoreDefaultRoutes', 'per-interface route policy is not modelled'],
+  ['advertisedrouterlifetime', 'AdvertisedRouterLifetime', 'router advertisement is not modelled on a Windows host'],
+  ['advertisedefaultroute', 'AdvertiseDefaultRoute', 'router advertisement is not modelled on a Windows host'],
+  ['currenthoplimit', 'CurrentHopLimit', 'a per-interface hop limit is not modelled'],
+  ['forcearpndwolpattern', 'ForceArpNdWolPattern', 'wake-on-LAN is not modelled'],
+  ['directedmacwolpattern', 'DirectedMacWolPattern', 'wake-on-LAN is not modelled'],
+  ['ecnmarking', 'EcnMarking', 'ECN is not modelled'],
+  ['neighbordiscoverysupported', 'NeighborDiscoverySupported', 'NDP capability is not modelled'],
+  ['compartmentid', 'CompartmentId', 'network compartments are not modelled'],
+  ['includeallcompartments', 'IncludeAllCompartments', 'network compartments are not modelled'],
+  ['associatedroute', 'AssociatedRoute', 'the by-route parameter set is not modelled'],
+  ['associatedipaddress', 'AssociatedIPAddress', 'the by-address parameter set is not modelled'],
+  ['associatedneighbor', 'AssociatedNeighbor', 'the by-neighbor parameter set is not modelled'],
+  ['associatedadapter', 'AssociatedAdapter', 'the by-adapter parameter set is not modelled'],
+];
+
+interface NetIPInterfaceRow {
+  ifAlias: string;
+  ifIndex: number;
+  addressFamily: NetAddressFamily;
+  nlMtu: number;
+  dhcp: string;
+  connectionState: string;
+}
+
 export class GetNetIPInterfaceCmdlet implements ICmdlet {
   readonly name = 'get-netipinterface';
   readonly displayName = 'Get-NetIPInterface';
   readonly aliases = [] as const;
+  readonly description = 'Gets the IP interface properties.';
+  readonly parameters = NET_IP_INTERFACE_FILTERS;
 
   execute(ctx: CmdletContext): PSValue {
     const net = requireNetwork(ctx);
-    const familleDemandee = ctx.named['addressfamily']
-      ? psValueToString(ctx.named['addressfamily']).toLowerCase()
-      : undefined;
-    const familles = familleDemandee ? [familleDemandee] : ['ipv4', 'ipv6'];
-    const out: Record<string, PSValue>[] = [];
+    const remote = remoteCimRefusal(ctx, this.displayName);
+    if (remote !== null) { ctx.emitError(remote); return null; }
+    for (const [key, name, why] of NET_IP_INTERFACE_UNSUPPORTED) {
+      if (ctx.named[key] === undefined) continue;
+      ctx.emitError(`${this.displayName} : The -${name} parameter is not implemented`
+        + ` in this simulator: ${why}.`);
+      return null;
+    }
+    const list = cimFilterReader(ctx, NET_IP_INTERFACE_FILTERS);
+    const positional = ctx.positional[0];
+    const aliases = list('interfacealias')
+      ?? (positional === undefined ? undefined : [psValueToString(positional)]);
+    const family = list('addressfamily');
+    const bad = family?.find(v => matchEnumValue(NET_ADDRESS_FAMILIES, v) === null);
+    if (bad !== undefined) {
+      ctx.emitError(`${this.displayName} : Cannot validate argument on parameter 'AddressFamily'.`
+        + ` The argument does not belong to the set "${NET_ADDRESS_FAMILIES.join(',')}".`);
+      return null;
+    }
+
+    const rows: NetIPInterfaceRow[] = [];
     for (const a of net.getAdapters()) {
-      for (const famille of familles) {
-        out.push({
+      for (const addressFamily of NET_ADDRESS_FAMILIES) {
+        rows.push({
+          ifAlias: a.name,
           ifIndex: a.ifIndex,
-          InterfaceAlias: a.name,
-          AddressFamily: famille === 'ipv6' ? 'IPv6' : 'IPv4',
-          NlMtu: 1500,
-          InterfaceMetric: 25,
-          Dhcp: net.isDHCPConfigured(a.name) ? 'Enabled' : 'Disabled',
-          ConnectionState: a.status === 'Up' ? 'Connected' : 'Disconnected',
+          addressFamily,
+          nlMtu: a.mtu,
+          dhcp: net.isDHCPConfigured(a.name) ? 'Enabled' : 'Disabled',
+          connectionState: a.status === 'Up' ? 'Connected' : 'Disconnected',
         });
       }
     }
-    return out as PSValue;
+    const selection = {
+      interfaceAlias: resolvedAliases(net, aliases),
+      interfaceIndex: list('interfaceindex'),
+      addressFamily: family,
+      nlMtuBytes: list('nlmtubytes'),
+      dhcp: list('dhcp'),
+      connectionState: list('connectionstate'),
+    };
+    const matched = applyCimCriteria(rows, [
+      [selection.interfaceAlias, r => r.ifAlias],
+      [selection.interfaceIndex, r => String(r.ifIndex)],
+      [selection.addressFamily, r => r.addressFamily],
+      [selection.nlMtuBytes, r => String(r.nlMtu)],
+      [selection.dhcp, r => r.dhcp],
+      [selection.connectionState, r => r.connectionState],
+    ]);
+    if (matched.length === 0 && Object.values(selection).some(v => v !== undefined)) {
+      ctx.emitError(`${this.displayName} : ${cimNotFound('MSFT_NetIPInterface', [
+        ['InterfaceAlias', selection.interfaceAlias],
+        ['InterfaceIndex', selection.interfaceIndex],
+        ['AddressFamily', selection.addressFamily],
+        ['Dhcp', selection.dhcp],
+        ['ConnectionState', selection.connectionState],
+      ])}`);
+      return null;
+    }
+    return matched.map(r => ({
+      ifIndex:         r.ifIndex,
+      InterfaceAlias:  r.ifAlias,
+      AddressFamily:   r.addressFamily,
+      NlMtu:           r.nlMtu,
+      Dhcp:            r.dhcp,
+      ConnectionState: r.connectionState,
+    } as Record<string, PSValue>)) as PSValue;
   }
 }
 
@@ -306,13 +428,13 @@ export class ResolveDnsNameCmdlet implements ICmdlet {
     if (ipv4) {
       const [, a, b, c, d] = ipv4;
       const ptrName = `${d}.${c}.${b}.${a}.in-addr.arpa`;
-      const host = (a === '127') ? 'localhost' : `host-${a}-${b}-${c}-${d}.local`;
+      if (a !== '127') { ctx.emitError(`${ptrName} : DNS name does not exist`); return null; }
       return [{
         Name: ptrName,
         Type: 'PTR',
         TTL: 300,
         Section: 'Answer',
-        NameHost: host,
+        NameHost: 'localhost',
       } as Record<string, PSValue>] as PSValue;
     }
 
@@ -400,28 +522,19 @@ export class GetNetIPConfigurationCmdlet implements ICmdlet {
   readonly displayName = 'Get-NetIPConfiguration';
   readonly aliases = [] as const;
   readonly description = 'Gets IP network configuration.';
-  readonly parameters = ['InterfaceAlias', 'InterfaceIndex', 'All', 'Detailed'] as const;
+  readonly parameters = ['InterfaceAlias', 'InterfaceIndex', 'All', 'Detailed',
+    'CimSession'] as const;
 
   execute(ctx: CmdletContext): PSValue {
     const net = requireNetwork(ctx);
+    const remote = remoteCimRefusal(ctx, this.displayName);
+    if (remote !== null) { ctx.emitError(remote); return null; }
     for (const [key, name] of [['allcompartments', 'AllCompartments'], ['compartmentid', 'CompartmentId']] as const) {
       if (ctx.named[key] !== undefined) {
         ctx.emitError(`Get-NetIPConfiguration : The -${name} parameter is not implemented in this simulator: network compartments are not modelled.`);
         return null;
       }
     }
-    const alias = ctx.named['interfacealias'] ?? ctx.positional[0];
-    const index = ctx.named['interfaceindex'];
-    const named = alias !== undefined && alias !== null ? psValueToString(alias)
-      : index !== undefined && index !== null
-        ? net.resolveNetInterface({ index: Number(psValueToString(index)) })?.alias ?? psValueToString(index)
-        : null;
-    if (named !== null && net.resolveNetInterface({ alias: named }) === null
-      && named.toLowerCase() !== LOOPBACK_IFALIAS.toLowerCase()) {
-      ctx.emitError(`Get-NetIPConfiguration : ${NO_MATCHING_INTERFACE}`);
-      return null;
-    }
-
     const all = ctx.named['all'] === true;
     const detailed = ctx.named['detailed'] === true;
     const defaultRoutes = net.getRoutes().filter(r => r.destinationPrefix === '0.0.0.0/0');
@@ -429,16 +542,27 @@ export class GetNetIPConfigurationCmdlet implements ICmdlet {
       net.getAdapters().map(a => ({
         alias: a.name, description: a.interfaceDescription, ifIndex: a.ifIndex, connected: a.status === 'Up',
       }));
-    if (all || named?.toLowerCase() === LOOPBACK_IFALIAS.toLowerCase()) {
-      rows.push({
-        alias: LOOPBACK_IFALIAS, description: 'Software Loopback Interface 1',
-        ifIndex: LOOPBACK_IFINDEX, connected: true,
-      });
+    rows.push({
+      alias: LOOPBACK_IFALIAS, description: 'Software Loopback Interface 1',
+      ifIndex: LOOPBACK_IFINDEX, connected: true,
+    });
+
+    const alias = ctx.named['interfacealias'] ?? ctx.positional[0];
+    const index = ctx.named['interfaceindex'];
+    const named = alias !== undefined && alias !== null
+      ? rows.find(r => r.alias.toLowerCase() === psValueToString(alias).toLowerCase()
+          || r.alias.toLowerCase() === (net.resolveNetInterface({ alias: psValueToString(alias) })?.alias ?? '').toLowerCase())
+      : index !== undefined && index !== null
+        ? rows.find(r => String(r.ifIndex) === psValueToString(index).trim())
+        : undefined;
+    const asked = (alias !== undefined && alias !== null) || (index !== undefined && index !== null);
+    if (asked && named === undefined) {
+      ctx.emitError(`Get-NetIPConfiguration : ${NO_MATCHING_INTERFACE}`);
+      return null;
     }
 
-    const kept = named !== null
-      ? rows.filter(r => r.alias.toLowerCase() === named.toLowerCase())
-      : all ? rows : rows.filter(r => r.connected);
+    const kept = named !== undefined ? [named]
+      : all ? rows : rows.filter(r => r.connected && r.ifIndex !== LOOPBACK_IFINDEX);
     return kept.map(r => {
       const ips = net.getIPAddresses(r.alias);
       const v4 = ips.find(ip => ip.addressFamily === 'IPv4');
@@ -454,7 +578,7 @@ export class GetNetIPConfigurationCmdlet implements ICmdlet {
         DhcpServer:           net.getDhcpServer?.(r.alias) ?? '',
         NetAdapter:           { Status: r.connected ? 'Up' : 'Disconnected' } as Record<string, PSValue>,
       };
-      if (detailed) row.ComputerName = ctx.env.get('env:COMPUTERNAME') ?? '';
+      if (detailed) row.ComputerName = net.getHostname();
       return row;
     }) as PSValue;
   }
@@ -489,18 +613,17 @@ function netRouteSelectionOf(
   ctx: CmdletContext, net: INetworkProvider, filters: readonly string[],
 ): NetRouteSelection {
   const allowed = new Set(filters.map(f => f.toLowerCase()));
-  const read = (key: string): PSValue[] | undefined => {
+  const list = cimFilterReader(ctx, filters);
+  const spans = (key: string): string[] | undefined => {
     const raw = allowed.has(key) ? ctx.named[key] : undefined;
     if (raw === undefined) return undefined;
-    return Array.isArray(raw) ? raw : [raw];
+    return (Array.isArray(raw) ? raw : [raw])
+      .map(v => String(lifetimeSeconds(v) ?? TIMESPAN_MAX_SECONDS));
   };
-  const list = (key: string): string[] | undefined => read(key)?.map(psValueToString);
-  const spans = (key: string): string[] | undefined =>
-    read(key)?.map(v => String(lifetimeSeconds(v) ?? TIMESPAN_MAX_SECONDS));
   const aliases = list('interfacealias');
   return {
     destinationPrefix: list('destinationprefix'),
-    interfaceAlias: aliases?.map(a => net.resolveNetInterface({ alias: a })?.alias ?? a),
+    interfaceAlias: resolvedAliases(net, aliases),
     interfaceIndex: list('interfaceindex'),
     nextHop: list('nexthop'),
     addressFamily: list('addressfamily'),
@@ -689,29 +812,88 @@ export class SetNetNeighborCmdlet implements ICmdlet {
   }
 }
 
+const NET_TCP_FILTERS = ['LocalAddress', 'LocalPort', 'RemoteAddress', 'RemotePort',
+  'State', 'AppliedSetting', 'OffloadState', 'OwningProcess', 'CreationTime',
+  'CimSession'] as const;
+
+function netTcpSelectionOf(ctx: CmdletContext): NetTcpConnectionSelection {
+  const list = cimFilterReader(ctx, NET_TCP_FILTERS);
+  const positional = (n: number): string[] | undefined =>
+    ctx.positional[n] === undefined ? undefined : [psValueToString(ctx.positional[n])];
+  return {
+    localAddress: list('localaddress') ?? list('ipaddress') ?? positional(0),
+    localPort: list('localport') ?? positional(1),
+    remoteAddress: list('remoteaddress'),
+    remotePort: list('remoteport'),
+    state: list('state'),
+    appliedSetting: list('appliedsetting'),
+    offloadState: list('offloadstate'),
+    owningProcess: list('owningprocess'),
+    creationTime: list('creationtime'),
+  };
+}
+
+const NET_TCP_ENUMS: ReadonlyArray<readonly [keyof NetTcpConnectionSelection, string, readonly string[]]> = [
+  ['state', 'State', NET_TCP_STATES],
+  ['appliedSetting', 'AppliedSetting', NET_TCP_APPLIED_SETTINGS],
+  ['offloadState', 'OffloadState', NET_TCP_OFFLOAD_STATES],
+];
+
 export class GetNetTCPConnectionCmdlet implements ICmdlet {
   readonly name = 'get-nettcpconnection';
   readonly displayName = 'Get-NetTCPConnection';
   readonly aliases = [] as const;
+  readonly description = 'Gets TCP connections.';
+  readonly parameters = NET_TCP_FILTERS;
 
   execute(ctx: CmdletContext): PSValue {
-    // Always emit at least a representative loopback row so the cmdlet
-    // produces non-empty output (real Windows always has Local LISTEN
-    // sockets). Avoids the historical throw-and-fallback dance.
-    const seeded = [{
-      localAddress: '0.0.0.0', localPort: 135,
-      remoteAddress: '0.0.0.0', remotePort: 0,
-      state: 'Listen', pid: 4,
-    }];
-    const real = requireNetwork(ctx).getTcpConnections();
-    const conns = real.length ? real : seeded;
-    return conns.map(c => ({
-      LocalAddress:   c.localAddress,
-      LocalPort:      c.localPort,
-      RemoteAddress:  c.remoteAddress,
-      RemotePort:     c.remotePort,
-      State:          c.state,
-      OwningProcess:  c.pid,
+    const remote = remoteCimRefusal(ctx, this.displayName);
+    if (remote !== null) { ctx.emitError(remote); return null; }
+    const selection = netTcpSelectionOf(ctx);
+    for (const [key, name, table] of NET_TCP_ENUMS) {
+      const given = selection[key];
+      if (given === undefined) continue;
+      const bad = given.find(v => matchEnumValue(table, v) === null);
+      if (bad !== undefined) {
+        ctx.emitError(`${this.displayName} : Cannot validate argument on parameter '${name}'.`
+          + ` The argument does not belong to the set "${table.join(',')}".`);
+        return null;
+      }
+    }
+    for (const [key, name] of [['localPort', 'LocalPort'], ['remotePort', 'RemotePort']] as const) {
+      const given = selection[key];
+      const bad = given?.find(v => !PortNumber.isValid(Number(v.trim())));
+      if (bad !== undefined) {
+        ctx.emitError(`${this.displayName} : Cannot convert value "${bad}" to type "System.UInt16".`
+          + ' Error: "Value was either too large or too small for a UInt16."');
+        return null;
+      }
+    }
+
+    const rows: NetTcpConnectionRow[] = requireNetwork(ctx).getTcpConnections().map(c => ({
+      localAddress:   c.localAddress,
+      localPort:      c.localPort,
+      remoteAddress:  c.remoteAddress,
+      remotePort:     c.remotePort,
+      state:          netTcpStateOf(c.state),
+      appliedSetting: 'Internet',
+      offloadState:   'InHost',
+      owningProcess:  c.pid,
+      creationTime:   '',
+    }));
+    const matched = selectNetTcpConnections(rows, selection);
+    if (matched.length === 0 && !netTcpSelectionIsEmpty(selection)) {
+      ctx.emitError(`${this.displayName} : ${noMatchingNetTcpConnection(selection)}`);
+      return null;
+    }
+    return matched.map(r => ({
+      LocalAddress:   r.localAddress,
+      LocalPort:      r.localPort,
+      RemoteAddress:  r.remoteAddress,
+      RemotePort:     r.remotePort,
+      State:          r.state,
+      AppliedSetting: r.appliedSetting,
+      OwningProcess:  r.owningProcess,
     } as Record<string, PSValue>)) as PSValue;
   }
 }
@@ -1056,71 +1238,107 @@ export class SetNetRouteCmdlet implements ICmdlet {
 
 
 const COMMON_TCP_PORTS: Record<string, number> = {
-  http: 80, smb: 445, rdp: 3389, winrm: 5985, winrmhttp: 5985, winrmhttps: 5986,
+  http: 80, smb: 445, rdp: 3389, winrm: 5985,
 };
+
+const INFORMATION_LEVELS = ['Detailed', 'Quiet'] as const;
 
 export class TestNetConnectionCmdlet implements ICmdlet {
   readonly name = 'test-netconnection';
   readonly displayName = 'Test-NetConnection';
   readonly aliases = [] as const;
-  readonly parameters = ['ComputerName', 'Port', 'CommonTCPPort', 'InformationLevel', 'TraceRoute'] as const;
+  readonly parameters = ['ComputerName', 'Port', 'CommonTCPPort', 'InformationLevel',
+    'TraceRoute', 'Hops'] as const;
 
   execute(ctx: CmdletContext): PSValue {
     const net = requireNetwork(ctx);
     const target = psValueToString(
-      ctx.named['computername'] ?? ctx.named['targetname'] ?? ctx.positional[0] ?? '',
+      ctx.named['computername'] ?? ctx.named['remoteaddress'] ?? ctx.named['cn']
+      ?? ctx.positional[0] ?? '',
     );
-    if (!target) { ctx.emitError('Test-NetConnection requires -ComputerName'); return null; }
+    if (!target) {
+      ctx.emitError(`${this.displayName} : Cannot process command because of one or more`
+        + ' missing mandatory parameters: ComputerName.');
+      return null;
+    }
+    for (const [key, name, why] of [
+      ['diagnoserouting', 'DiagnoseRouting', 'route selection diagnostics are not modelled'],
+      ['constrainsourceaddress', 'ConstrainSourceAddress', 'route selection diagnostics are not modelled'],
+      ['constraininterface', 'ConstrainInterface', 'route selection diagnostics are not modelled'],
+    ] as const) {
+      if (ctx.named[key] === undefined) continue;
+      ctx.emitError(`${this.displayName} : The -${name} parameter is not implemented`
+        + ` in this simulator: ${why}.`);
+      return null;
+    }
 
     let port: number | undefined;
     if (ctx.named['port'] !== undefined) {
-      const n = Number(psValueToString(ctx.named['port']));
-      if (Number.isFinite(n) && n > 0) port = n;
+      const given = psValueToString(ctx.named['port']).trim();
+      const n = Number(given);
+      if (!/^\d+$/.test(given) || !PortNumber.isValid(n)) {
+        ctx.emitError(`${this.displayName} : Cannot validate argument on parameter 'Port'.`
+          + ` The "${given}" value is not a valid TCP port number.`);
+        return null;
+      }
+      port = n;
     } else if (ctx.named['commontcpport'] !== undefined) {
-      const name = psValueToString(ctx.named['commontcpport']).toLowerCase();
-      if (COMMON_TCP_PORTS[name] !== undefined) port = COMMON_TCP_PORTS[name];
+      const given = psValueToString(ctx.named['commontcpport']);
+      const known = COMMON_TCP_PORTS[given.trim().toLowerCase()];
+      if (known === undefined) {
+        ctx.emitError(`${this.displayName} : Cannot validate argument on parameter 'CommonTCPPort'.`
+          + ` The argument does not belong to the set "${Object.keys(COMMON_TCP_PORTS)
+            .map(k => k.toUpperCase()).join(',')}".`);
+        return null;
+      }
+      port = known;
     }
 
-    const level = psValueToString(ctx.named['informationlevel'] ?? 'standard').toLowerCase();
-    const detailed = level === 'detailed';
-    const quiet = level === 'quiet';
+    let detailed = false;
+    let quiet = false;
+    if (ctx.named['informationlevel'] !== undefined) {
+      const given = psValueToString(ctx.named['informationlevel']);
+      const level = matchEnumValue(INFORMATION_LEVELS, given);
+      if (level === null) {
+        ctx.emitError(`${this.displayName} : Cannot validate argument on parameter`
+          + ` 'InformationLevel'. The argument does not belong to the set`
+          + ` "${INFORMATION_LEVELS.join(',')}".`);
+        return null;
+      }
+      detailed = level === 'Detailed';
+      quiet = level === 'Quiet';
+    }
 
     const probe = net.testPingProbe?.(target) ?? null;
-    const remoteAddress = probe?.resolvedIp ?? target;
+    const resolved = probe?.resolvedIp ?? '';
     const pingSucceeded = probe?.success ?? false;
     const rttMs = probe?.success ? Math.round(probe.rttMs) : 0;
 
     const tcpTested = port !== undefined;
-    const tcpSucceeded = tcpTested && pingSucceeded
+    const tcpSucceeded = tcpTested && resolved !== ''
       ? (net.testTcpProbe?.(target, port!) ?? false)
       : false;
 
-    const egress = probe ? (net.egressInfoFor?.(target) ?? null) : null;
-    const sourceAddress = egress?.sourceIp ?? '0.0.0.0';
-    const interfaceAlias = egress?.interfaceAlias ?? 'Ethernet';
-    const nextHop = egress?.nextHop ?? '0.0.0.0';
-
     if (quiet) return tcpTested ? tcpSucceeded : pingSucceeded;
 
+    const egress = resolved === '' ? null : (net.egressInfoFor?.(target) ?? null);
+
     const result: Record<string, PSValue> = {
-      ComputerName:        target,
-      RemoteAddress:       remoteAddress,
-      InterfaceAlias:      interfaceAlias,
-      SourceAddress:       sourceAddress,
-      PingSucceeded:       pingSucceeded,
-      PingReplyDetails:    rttMs,
+      ComputerName:  target,
+      RemoteAddress: resolved,
     };
+    if (tcpTested) result.RemotePort = port!;
+    if (detailed) result.NameResolutionResults = resolved === '' ? [] : [resolved];
+    result.InterfaceAlias = egress?.interfaceAlias ?? '';
+    result.SourceAddress = egress?.sourceIp ?? '';
+    if (detailed) result['NetRoute (NextHop)'] = egress?.nextHop ?? '';
     if (tcpTested) {
-      result.RemotePort = port!;
       result.TcpTestSucceeded = tcpSucceeded;
+    } else {
+      result.PingSucceeded = pingSucceeded;
+      result['PingReplyDetails (RTT)'] = `${rttMs} ms`;
     }
-    if (detailed) {
-      result.NameResolutionResults = probe ? [remoteAddress] : [];
-      result.NetRouteNextHop = nextHop;
-    }
-    if (ctx.named['traceroute'] !== undefined) {
-      result.TraceRoute = net.traceRoute(target);
-    }
+    if (ctx.named['traceroute'] === true) result.TraceRoute = net.traceRoute(target);
     return result;
   }
 }
@@ -1264,25 +1482,58 @@ export class SetNetAdapterCmdlet implements ICmdlet {
 
 // ── Get / Set-DnsClientServerAddress + Clear-DnsClientCache ────────────────
 
+const DNS_SERVER_FILTERS = ['InterfaceAlias', 'InterfaceIndex', 'AddressFamily',
+  'CimSession'] as const;
+
 export class GetDnsClientServerAddressCmdlet implements ICmdlet {
   readonly name = 'get-dnsclientserveraddress';
   readonly displayName = 'Get-DnsClientServerAddress';
   readonly aliases = [] as const;
+  readonly description = 'Gets the DNS server IP addresses of an interface.';
+  readonly parameters = DNS_SERVER_FILTERS;
 
   execute(ctx: CmdletContext): PSValue {
     const net = requireNetwork(ctx);
-    const ifAlias = ctx.named['interfacealias']
-      ? psValueToString(ctx.named['interfacealias'])
-      : undefined;
-    const adapters = net.getAdapters();
-    const filtered = ifAlias
-      ? (() => { const match = net.getAdapter(ifAlias); return match ? [match] : []; })()
-      : adapters;
-    return filtered.map(a => ({
-      InterfaceAlias: a.name,
-      InterfaceIndex: a.ifIndex,
-      AddressFamily:  'IPv4',
-      ServerAddresses: net.getDnsServers(a.name),
+    const remote = remoteCimRefusal(ctx, this.displayName);
+    if (remote !== null) { ctx.emitError(remote); return null; }
+    const list = cimFilterReader(ctx, DNS_SERVER_FILTERS);
+    const positional = ctx.positional[0];
+    const aliases = list('interfacealias')
+      ?? (positional === undefined ? undefined : [psValueToString(positional)]);
+    const selection: DnsClientServerAddressSelection = {
+      interfaceAlias: resolvedAliases(net, aliases),
+      interfaceIndex: list('interfaceindex'),
+      addressFamily: list('addressfamily'),
+    };
+    const bad = selection.addressFamily?.find(v => matchEnumValue(NET_ADDRESS_FAMILIES, v) === null);
+    if (bad !== undefined) {
+      ctx.emitError(`${this.displayName} : Cannot validate argument on parameter 'AddressFamily'.`
+        + ` The argument does not belong to the set "${NET_ADDRESS_FAMILIES.join(',')}".`);
+      return null;
+    }
+
+    const rows: DnsClientServerAddressRow[] = [];
+    for (const a of net.getAdapters()) {
+      const configured = net.getDnsServers(a.name);
+      for (const family of NET_ADDRESS_FAMILIES) {
+        rows.push({
+          ifAlias: a.name,
+          ifIndex: a.ifIndex,
+          addressFamily: family,
+          serverAddresses: configured.filter(s => (s.includes(':') ? 'IPv6' : 'IPv4') === family),
+        });
+      }
+    }
+    const matched = selectDnsClientServerAddresses(rows, selection);
+    if (matched.length === 0 && !dnsServerSelectionIsEmpty(selection)) {
+      ctx.emitError(`${this.displayName} : ${noMatchingDnsClientServerAddress(selection)}`);
+      return null;
+    }
+    return matched.map(r => ({
+      InterfaceAlias:  r.ifAlias,
+      InterfaceIndex:  r.ifIndex,
+      AddressFamily:   r.addressFamily,
+      ServerAddresses: r.serverAddresses,
     } as Record<string, PSValue>)) as PSValue;
   }
 }
@@ -1371,12 +1622,7 @@ function unsupportedFirewallParameter(ctx: CmdletContext): string | null {
 }
 
 function firewallSelectionOf(ctx: CmdletContext, filters: readonly string[]): NetFirewallSelection {
-  const allowed = new Set(filters.map(f => f.toLowerCase()));
-  const list = (key: string): string[] | undefined => {
-    const raw = allowed.has(key) ? ctx.named[key] : undefined;
-    if (raw === undefined) return undefined;
-    return (Array.isArray(raw) ? raw : [raw]).map(psValueToString);
-  };
+  const list = cimFilterReader(ctx, filters);
   return {
     name: list('name'),
     displayName: list('displayname'),
@@ -1610,42 +1856,139 @@ export class RemoveNetFirewallRuleCmdlet implements ICmdlet {
 
 // ── Get / Set-NetConnectionProfile ────────────────────────────────────────
 
+const NET_PROFILE_FILTERS = ['Name', 'InterfaceAlias', 'InterfaceIndex', 'NetworkCategory',
+  'IPv4Connectivity', 'IPv6Connectivity', 'CimSession'] as const;
+
+const NET_PROFILE_SET_FILTERS = NET_PROFILE_FILTERS
+  .filter(f => f !== 'NetworkCategory');
+
+const NET_PROFILE_SET_PARAMS = [...NET_PROFILE_FILTERS,
+  'PassThru', 'WhatIf', 'Confirm'] as const;
+
+function netProfileSelectionOf(
+  ctx: CmdletContext, net: INetworkProvider, filters: readonly string[],
+): NetConnectionProfileSelection {
+  const list = cimFilterReader(ctx, filters);
+  return {
+    name: list('name'),
+    interfaceAlias: resolvedAliases(net, list('interfacealias')),
+    interfaceIndex: list('interfaceindex'),
+    networkCategory: list('networkcategory'),
+    ipv4Connectivity: list('ipv4connectivity'),
+    ipv6Connectivity: list('ipv6connectivity'),
+  };
+}
+
+function connectionProfiles(net: INetworkProvider): NetConnectionProfileRow[] {
+  const defaultRoutes = net.getRoutes()
+    .filter(r => r.destinationPrefix === '0.0.0.0/0' || r.destinationPrefix === '::/0');
+  return net.getAdapters()
+    .filter(a => a.status === 'Up' && a.physical)
+    .map(a => {
+      const ips = net.getIPAddresses(a.name);
+      const gateway = (prefix: string): boolean =>
+        defaultRoutes.some(r => r.destinationPrefix === prefix
+          && r.ifAlias.toLowerCase() === a.name.toLowerCase());
+      return {
+        name: a.name,
+        ifAlias: a.name,
+        ifIndex: a.ifIndex,
+        networkCategory: matchEnumValue(NETWORK_CATEGORIES, net.getNetworkProfile(a.ifIndex))
+          ?? 'DomainAuthenticated',
+        ipv4Connectivity: connectivityOf(
+          ips.some(ip => ip.addressFamily === 'IPv4'), gateway('0.0.0.0/0')),
+        ipv6Connectivity: connectivityOf(
+          ips.some(ip => ip.addressFamily === 'IPv6'), gateway('::/0')),
+      };
+    });
+}
+
+function profileToPSObject(r: NetConnectionProfileRow): Record<string, PSValue> {
+  return {
+    Name:             r.name,
+    InterfaceAlias:   r.ifAlias,
+    InterfaceIndex:   r.ifIndex,
+    NetworkCategory:  r.networkCategory,
+    IPv4Connectivity: r.ipv4Connectivity,
+    IPv6Connectivity: r.ipv6Connectivity,
+  };
+}
+
+function matchedProfiles(
+  ctx: CmdletContext, net: INetworkProvider, cmdlet: string, filters: readonly string[],
+): NetConnectionProfileRow[] | null {
+  const remote = remoteCimRefusal(ctx, cmdlet);
+  if (remote !== null) { ctx.emitError(remote); return null; }
+  const selection = netProfileSelectionOf(ctx, net, filters);
+  const matched = selectNetConnectionProfiles(connectionProfiles(net), selection);
+  if (matched.length === 0 && !profileSelectionIsEmpty(selection)) {
+    ctx.emitError(`${cmdlet} : ${noMatchingNetConnectionProfile(selection)}`);
+    return null;
+  }
+  return matched;
+}
+
 export class GetNetConnectionProfileCmdlet implements ICmdlet {
   readonly name = 'get-netconnectionprofile';
   readonly displayName = 'Get-NetConnectionProfile';
   readonly aliases = [] as const;
+  readonly description = 'Gets a connection profile.';
+  readonly parameters = NET_PROFILE_FILTERS;
 
   execute(ctx: CmdletContext): PSValue {
-    const net = requireNetwork(ctx);
-    const adapters = net.getAdapters();
-    return adapters.map(a => ({
-      Name:                    a.name,
-      InterfaceAlias:          a.name,
-      InterfaceIndex:          a.ifIndex,
-      NetworkCategory:         net.getNetworkProfile(a.ifIndex),
-      IPv4Connectivity:        'Internet',
-      IPv6Connectivity:        'NoTraffic',
-    } as Record<string, PSValue>)) as PSValue;
+    const matched = matchedProfiles(ctx, requireNetwork(ctx), this.displayName,
+      NET_PROFILE_FILTERS);
+    if (matched === null) return null;
+    return matched.map(profileToPSObject) as PSValue;
   }
 }
 
 export class SetNetConnectionProfileCmdlet implements ICmdlet {
+  readonly pipelineByPropertyName = true as const;
   readonly name = 'set-netconnectionprofile';
   readonly displayName = 'Set-NetConnectionProfile';
   readonly aliases = [] as const;
+  readonly description = 'Changes the network category of a connection profile.';
+  readonly parameters = NET_PROFILE_SET_PARAMS;
 
   execute(ctx: CmdletContext): PSValue {
     const net = requireNetwork(ctx);
-    const ifAlias  = psValueToString(ctx.named['interfacealias'] ?? '');
-    const category = psValueToString(ctx.named['networkcategory'] ?? '');
-    if (!ifAlias || !category) {
-      ctx.emitError('Set-NetConnectionProfile requires -InterfaceAlias and -NetworkCategory');
+    const raw = ctx.named['networkcategory'];
+    if (raw === undefined) {
+      ctx.emitError(`${this.displayName} : Cannot process command because of one or more`
+        + " missing mandatory parameters: NetworkCategory.");
       return null;
     }
-    const adapter = net.getAdapter(ifAlias);
-    if (!adapter) { ctx.emitError(`Interface ${ifAlias} not found`); return null; }
-    net.setNetworkProfile(adapter.ifIndex, category);
-    return null;
+    const wanted = psValueToString(raw);
+    const category = matchEnumValue(NETWORK_CATEGORIES, wanted);
+    if (category === null) {
+      ctx.emitError(`${this.displayName} : Cannot validate argument on parameter 'NetworkCategory'.`
+        + ` The argument does not belong to the set "${NETWORK_CATEGORIES.join(',')}".`);
+      return null;
+    }
+    if (!SETTABLE_NETWORK_CATEGORIES.includes(category)) {
+      ctx.emitError(`${this.displayName} : The DomainAuthenticated network category cannot be set.`
+        + ' It is set automatically when the network is authenticated to a domain controller.');
+      return null;
+    }
+
+    const matched = matchedProfiles(ctx, net, this.displayName, NET_PROFILE_SET_FILTERS);
+    if (matched === null) return null;
+    if (ctx.named['whatif'] === true) {
+      for (const r of matched) {
+        ctx.emit(`What if: Performing the operation "${this.displayName}" on target "${r.ifAlias}".`);
+      }
+      return null;
+    }
+    if (confirmationDue(ctx, 'None')) {
+      ctx.emitError(`${this.displayName} : ${NON_INTERACTIVE_HOST}`);
+      return null;
+    }
+    for (const r of matched) net.setNetworkProfile(r.ifIndex, category);
+    if (ctx.named['passthru'] !== true) return null;
+    return selectNetConnectionProfiles(connectionProfiles(net), {
+      interfaceIndex: matched.map(r => String(r.ifIndex)),
+    }).map(profileToPSObject) as PSValue;
   }
 }
 

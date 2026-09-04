@@ -81,12 +81,12 @@ describe('Windows PowerShell — Test-NetConnection (real ping + TCP, end to end
     expect(texts(session).some((t) => t.trim() === 'True')).toBe(true);
   });
 
-  it('-InformationLevel Detailed adds NameResolutionResults + NetRouteNextHop', async () => {
+  it('-InformationLevel Detailed adds NameResolutionResults + NetRoute (NextHop)', async () => {
     await typePsLine(session, 'Test-NetConnection 192.168.1.20 -InformationLevel Detailed');
     await waitFor(session, (l) => l.some((t) => /PingSucceeded/.test(t)));
     const lines = texts(session);
     expect(lines.some((t) => /NameResolutionResults\s*:.*192\.168\.1\.20/.test(t))).toBe(true);
-    expect(lines.some((t) => /NetRouteNextHop\s+:/.test(t))).toBe(true);
+    expect(lines.some((t) => /NetRoute \(NextHop\)\s+:/.test(t))).toBe(true);
   });
 
   it('script use: $r.PingSucceeded works for assigned cmdlet output', async () => {

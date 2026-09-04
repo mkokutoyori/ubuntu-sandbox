@@ -9,6 +9,8 @@
 
 import { describe, it, expect, beforeEach } from 'vitest';
 import { PowerShellSubShell } from '@/terminal/subshells/PowerShellSubShell';
+import { Cable } from '@/network/hardware/Cable';
+import { Hub } from '@/network/devices/Hub';
 import { WindowsPC } from '@/network/devices/WindowsPC';
 import { resetCounters } from '@/network/core/types';
 import { resetDeviceCounters } from '@/network/devices/DeviceFactory';
@@ -23,11 +25,18 @@ beforeEach(() => {
 function createShell() {
   const pc = new WindowsPC('windows-pc', 'WIN-NETMUT');
   pc.setCurrentUser('Administrator');
+  cablerPremierPort(pc);
   return PowerShellSubShell.create(pc).subShell;
 }
 async function run(sh: PowerShellSubShell, line: string): Promise<string> {
   const r = await sh.processLine(line);
   return r.output.join('\n');
+}
+
+function cablerPremierPort(pc: WindowsPC): void {
+  const hub = new Hub('HUB-NETMUT', 4, 0, 0);
+  hub.powerOn();
+  new Cable('c-netmut').connect(pc.getPort('eth0')!, hub.getPorts()[0]);
 }
 
 describe('IP address mutations', () => {

@@ -1,5 +1,5 @@
 import { IPAddress, IPv6Address } from '@/network/core/types';
-import { cimNotFound } from './cimQuery';
+import { applyCimCriteria, cimNotFound } from './cimQuery';
 
 export type NetAddressFamily = 'IPv4' | 'IPv6';
 export type NetIPAddressType = 'Unicast' | 'Anycast';
@@ -199,7 +199,7 @@ export interface NetIPAddressRow {
 export function selectNetIPAddresses<T extends NetIPAddressRow>(
   rows: readonly T[], selection: NetIPAddressSelection,
 ): T[] {
-  const criteria: Array<[string[] | undefined, (row: T) => string]> = [
+  return applyCimCriteria(rows, [
     [selection.ipAddress, r => r.ipAddress],
     [selection.interfaceAlias, r => r.ifAlias],
     [selection.interfaceIndex, r => String(r.ifIndex)],
@@ -211,14 +211,7 @@ export function selectNetIPAddresses<T extends NetIPAddressRow>(
     [selection.type, r => r.type ?? 'Unicast'],
     [selection.policyStore, r => r.policyStore ?? 'ActiveStore'],
     [selection.skipAsSource, r => String(r.skipAsSource ?? false)],
-  ];
-  let kept = [...rows];
-  for (const [values, of] of criteria) {
-    if (values === undefined) continue;
-    const wanted = values.map(v => v.trim().toLowerCase());
-    kept = kept.filter(r => wanted.includes(of(r).toLowerCase()));
-  }
-  return kept;
+  ]);
 }
 
 export function noMatchingNetIPAddress(selection: NetIPAddressSelection): string {

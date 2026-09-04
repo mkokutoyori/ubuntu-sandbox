@@ -42,8 +42,6 @@ import { psGetDnsClientServerAddress, psSetDnsClientServerAddress, psGetNetConne
 import { psTestPath, psResolvePath, psSplitPath, psJoinPath, type PSPathContext } from './PSPathCmdlets';
 import { formatGetHelp } from './PSHelpText';
 import { psGetItemProperty, psSetItemProperty, psRemoveItemProperty } from './PSRegistryCmdlets';
-import * as net from './PSNetCmdlets';
-import type { PSNetContext } from './PSNetCmdlets';
 import type { IEventBus } from '@/events/EventBus';
 import type { NetIPAddressEntry } from './netIpAddress';
 import type { NetRouteEntry } from './netRoute';
@@ -2392,11 +2390,6 @@ export class PowerShellExecutor {
       return this.handleGetModule(args);
     }
 
-    // Get-NetIPAddress
-    if (cmdLower === 'get-netipaddress') {
-      return net.handleGetNetIPAddress(this.buildPSNetCtx(), args);
-    }
-
     // Get-DnsClientServerAddress
     if (cmdLower === 'get-dnsclientserveraddress') {
       return psGetDnsClientServerAddress(this.buildPSNetConfigCtx(), args);
@@ -2410,16 +2403,6 @@ export class PowerShellExecutor {
     // Test-Connection (PowerShell ping)
     if (cmdLower === 'test-connection') {
       return this.handleTestConnection(args);
-    }
-
-    // Get-NetTCPConnection (simulated netstat-like)
-    if (cmdLower === 'get-nettcpconnection') {
-      return net.formatGetNetTCPConnection(this.buildPSNetCtx(), args);
-    }
-
-    // Test-NetConnection
-    if (cmdLower === 'test-netconnection') {
-      return net.handleTestNetConnection(this.buildPSNetCtx(), args);
     }
 
     // Get-NetConnectionProfile
@@ -2457,15 +2440,6 @@ export class PowerShellExecutor {
     if (cmdLower === 'clear-dnsclientcache') {
       await this.device.executeCmdCommand('ipconfig /flushdns');
       return '';
-    }
-
-    // Resolve-DnsName
-    if (cmdLower === 'resolve-dnsname') {
-      const target = (args.find((a) => !a.startsWith('-')) ?? '').replace(
-        /^["']|["']$/g,
-        '',
-      );
-      return net.renderResolveDnsName(this.buildPSNetCtx(), target);
     }
 
     if (STORAGE_CMDLETS[cmdLower]) {
@@ -3655,10 +3629,6 @@ export class PowerShellExecutor {
 
 
 
-
-  private buildPSNetCtx(): PSNetContext {
-    return { device: this.device };
-  }
 
   private buildPSNetConfigCtx(): PSNetConfigContext {
     return {

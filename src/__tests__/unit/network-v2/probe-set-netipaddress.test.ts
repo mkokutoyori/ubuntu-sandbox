@@ -27,7 +27,7 @@
  * sont bien la avant qu'on demande de les modifier.
  */
 import { describe, it, expect, beforeEach } from 'vitest';
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { resetCounters, MACAddress } from '@/network/core/types';
 import { WindowsPC } from '@/network/devices/WindowsPC';
 import { resetDeviceCounters } from '@/network/devices/DeviceFactory';
@@ -161,8 +161,7 @@ describe('Set-NetIPAddress — ce qu elle refuse et ce qu elle rend', () => {
 
 describe('Set-NetIPAddress — une seule source de verite', () => {
   it('le moteur historique ne porte plus de Set-NetIPAddress a lui', () => {
-    expect(readFileSync('src/network/devices/windows/PSNetCmdlets.ts', 'utf8'))
-      .not.toContain('handleSetNetIPAddress');
+    expect(existsSync('src/network/devices/windows/PSNetCmdlets.ts')).toBe(false);
     expect(readFileSync('src/network/devices/windows/PowerShellExecutor.ts', 'utf8'))
       .not.toContain('handleSetNetIPAddress');
   });

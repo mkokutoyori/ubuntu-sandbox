@@ -16,6 +16,7 @@ export interface NetAdapterEntry extends AdapterIdentity {
   status: NetAdapterStatus;
   macAddress: string;
   linkSpeed: string;
+  mtu: number;
   physical: boolean;
   hidden: boolean;
 }

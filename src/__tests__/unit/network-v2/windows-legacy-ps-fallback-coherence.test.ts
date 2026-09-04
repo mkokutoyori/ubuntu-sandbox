@@ -1,14 +1,11 @@
 /**
- * Legacy PowerShellExecutor fallback — cmd/PS state coherence.
+ * Coherence cmd / PowerShell — une machine, un seul etat.
  *
- * The PSInterpreter (src/powershell/) is the primary engine behind the
- * PowerShell subshell, but the legacy PowerShellExecutor is still reachable:
- *   - as the fallback when the interpreter cannot parse/handle a line,
- *   - through `powershell -Command` invoked from cmd (PowerShellCmdShim).
- *
- * Whatever path serves a cmdlet, it must read and write the SAME device
- * state as the cmd commands. These tests pin that contract on the legacy
- * executor directly (audit AUDIT-COHERENCE-CMD-PS-UX-HELP.md §1).
+ * Quel que soit le chemin qui sert une cmdlet, elle lit et ecrit le MEME
+ * etat que les commandes cmd (audit AUDIT-COHERENCE-CMD-PS-UX-HELP.md §1).
+ * Les cas de `Get-NetIPAddress` et de `Resolve-DnsName` pilotaient le
+ * moteur HISTORIQUE, qui ne porte plus ces vues ; ils pilotent desormais
+ * celui que la machine sert, et c'est le meme contrat.
  */
 
 import { describe, it, expect, beforeEach } from 'vitest';
@@ -29,15 +26,19 @@ beforeEach(() => {
 const makePc = (): WindowsPC => new WindowsPC('windows-pc', 'PC1', 0, 0);
 const makePs = (pc: WindowsPC): PowerShellExecutor =>
   new PowerShellExecutor(pc as unknown as PSDeviceContext);
+const makeLivePs = (pc: WindowsPC): { execute(l: string): Promise<string> } => {
+  const sh = PowerShellSubShell.create(pc).subShell;
+  return { execute: async (l: string) => (await sh.processLine(l)).output.join('\n') };
+};
 
 // ═══════════════════════════════════════════════════════════════════
 // Get-NetIPAddress — reads real port state, never invents addresses
 // ═══════════════════════════════════════════════════════════════════
 
-describe('legacy Get-NetIPAddress reflects real interface state', () => {
+describe('Get-NetIPAddress reflects real interface state', () => {
   it('does not fabricate a 192.168.1.10x address for an unconfigured adapter', async () => {
     const pc = makePc();
-    const ps = makePs(pc);
+    const ps = makeLivePs(pc);
     const out = await ps.execute('Get-NetIPAddress');
     expect(out).not.toMatch(/192\.168\.1\.10\d/);
   });
@@ -45,7 +46,7 @@ describe('legacy Get-NetIPAddress reflects real interface state', () => {
   it('shows the address actually configured on the port', async () => {
     const pc = makePc();
     pc.configureInterface('eth0', new IPAddress('10.0.1.5'), new SubnetMask('255.255.255.0'));
-    const ps = makePs(pc);
+    const ps = makeLivePs(pc);
     const out = await ps.execute('Get-NetIPAddress');
     expect(out).toContain('10.0.1.5');
   });
@@ -53,7 +54,7 @@ describe('legacy Get-NetIPAddress reflects real interface state', () => {
   it('reflects an address set from cmd via netsh', async () => {
     const pc = makePc();
     await pc.executeCommand('netsh interface ip set address "Ethernet 0" static 10.0.2.9 255.255.255.0');
-    const ps = makePs(pc);
+    const ps = makeLivePs(pc);
     const out = await ps.execute('Get-NetIPAddress');
     expect(out).toContain('10.0.2.9');
   });
@@ -142,11 +143,11 @@ describe('legacy Get-NetTCPConnection reflects the real socket table', () => {
 // Resolve-DnsName — real resolver chain, no hardcoded answers
 // ═══════════════════════════════════════════════════════════════════
 
-describe('legacy Resolve-DnsName resolves through the real chain', () => {
+describe('Resolve-DnsName resolves through the real chain', () => {
   it('resolves a hosts-file entry to its real address, not 192.168.1.1', async () => {
     const pc = makePc();
     await pc.executeCommand('echo 10.5.5.5 realhost.local >> C:\\Windows\\System32\\drivers\\etc\\hosts');
-    const ps = makePs(pc);
+    const ps = makeLivePs(pc);
     const out = await ps.execute('Resolve-DnsName realhost.local');
     expect(out).toContain('10.5.5.5');
     expect(out).not.toContain('192.168.1.1');
@@ -154,7 +155,7 @@ describe('legacy Resolve-DnsName resolves through the real chain', () => {
 
   it('fails like nslookup for an unresolvable name instead of inventing 192.168.1.1', async () => {
     const pc = makePc();
-    const ps = makePs(pc);
+    const ps = makeLivePs(pc);
     const out = await ps.execute('Resolve-DnsName no-such-host.nowhere');
     expect(out).not.toContain('192.168.1.1');
   });

@@ -28,3 +28,15 @@ export function cimNotFound(
   }
   return cimNotFoundByQuery(cimClass, cimQueryDescription(criteria));
 }
+
+export type CimCriteria<T> = Array<[readonly string[] | undefined, (row: T) => string]>;
+
+export function applyCimCriteria<T>(rows: readonly T[], criteria: CimCriteria<T>): T[] {
+  let kept = [...rows];
+  for (const [values, of] of criteria) {
+    if (values === undefined) continue;
+    const wanted = values.map(v => v.trim().toLowerCase());
+    kept = kept.filter(r => wanted.includes(of(r).toLowerCase()));
+  }
+  return kept;
+}

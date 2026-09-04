@@ -1,5 +1,5 @@
 import { IPAddress, IPv6Address } from '@/network/core/types';
-import { cimNotFound } from './cimQuery';
+import { applyCimCriteria, cimNotFound } from './cimQuery';
 import {
   type NetAddressFamily, type NetInterfaceRef, type NetIPAddressResolver, type NetPolicyStore,
   NET_ADDRESS_FAMILIES, NET_POLICY_STORES, NO_MATCHING_INTERFACE, TIMESPAN_MAX_SECONDS, matchEnumValue,
@@ -226,7 +226,7 @@ export interface NetRouteRow {
 export function selectNetRoutes<T extends NetRouteRow>(
   rows: readonly T[], selection: NetRouteSelection,
 ): T[] {
-  const criteria: Array<[string[] | undefined, (row: T) => string]> = [
+  return applyCimCriteria(rows, [
     [selection.destinationPrefix, r => r.destinationPrefix],
     [selection.interfaceAlias, r => r.ifAlias],
     [selection.interfaceIndex, r => String(r.ifIndex ?? '')],
@@ -239,14 +239,7 @@ export function selectNetRoutes<T extends NetRouteRow>(
     [selection.state, () => 'Alive'],
     [selection.validLifetime, r => String(r.validLifetimeSeconds ?? TIMESPAN_MAX_SECONDS)],
     [selection.preferredLifetime, r => String(r.preferredLifetimeSeconds ?? TIMESPAN_MAX_SECONDS)],
-  ];
-  let kept = [...rows];
-  for (const [values, of] of criteria) {
-    if (values === undefined) continue;
-    const wanted = values.map(v => v.trim().toLowerCase());
-    kept = kept.filter(r => wanted.includes(of(r).toLowerCase()));
-  }
-  return kept;
+  ]);
 }
 
 export function noMatchingNetRoute(selection: NetRouteSelection): string {

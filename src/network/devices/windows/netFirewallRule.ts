@@ -1,6 +1,6 @@
 import { IPAddress } from '@/network/core/types';
 import { matchEnumValue } from './netIpAddress';
-import { cimNotFound } from './cimQuery';
+import { applyCimCriteria, cimNotFound } from './cimQuery';
 
 export type NetFirewallAction = 'NotConfigured' | 'Allow' | 'Block';
 export type NetFirewallDirection = 'Inbound' | 'Outbound';
@@ -235,7 +235,7 @@ export interface NetFirewallSelection {
 export function selectFirewallRules<T extends NetFirewallRuleEntry>(
   rules: readonly T[], selection: NetFirewallSelection,
 ): T[] {
-  const criteria: Array<[string[] | undefined, (rule: T) => string]> = [
+  return applyCimCriteria(rules, [
     [selection.name, r => r.name],
     [selection.displayName, r => r.displayName],
     [selection.description, r => r.description],
@@ -243,14 +243,7 @@ export function selectFirewallRules<T extends NetFirewallRuleEntry>(
     [selection.enabled, r => (r.enabled ? 'True' : 'False')],
     [selection.action, r => r.action],
     [selection.direction, r => r.direction],
-  ];
-  let kept = [...rules];
-  for (const [values, of] of criteria) {
-    if (values === undefined) continue;
-    const wanted = values.map(v => v.trim().toLowerCase());
-    kept = kept.filter(r => wanted.includes(of(r).toLowerCase()));
-  }
-  return kept;
+  ]);
 }
 
 export function noMatchingFirewallRule(selection: NetFirewallSelection): string {

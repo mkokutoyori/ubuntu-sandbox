@@ -256,18 +256,20 @@ describe('Phase 2 — reconnaissance depuis le poste utilisateur Windows', () =>
 
   it('WKS Test-NetConnection APP : ICMP réussit et remonte la route source→cible', async () => {
     const out = await LAB.wks.executeCommand(
-      `powershell -Command "Test-NetConnection ${APP_IP} -Port 22"`,
+      `powershell -Command "Test-NetConnection ${APP_IP}"`,
     );
     expect(out).toMatch(/RemoteAddress\s*:\s*10\.0\.30\.20/);
     expect(out).toMatch(/PingSucceeded\s*:\s*True/i);
+    expect(out).toMatch(/SourceAddress\s*:\s*10\.0\.10\./);
   });
 
-  it('WKS Test-NetConnection DB : ICMP réussit sur 10.0.40.30 (misconfig prouvée)', async () => {
+  it('WKS Test-NetConnection DB : le port 1521 repond sur 10.0.40.30 (misconfig prouvée)', async () => {
     const out = await LAB.wks.executeCommand(
       `powershell -Command "Test-NetConnection ${DB_IP} -Port 1521"`,
     );
     expect(out).toMatch(/RemoteAddress\s*:\s*10\.0\.40\.30/);
-    expect(out).toMatch(/PingSucceeded\s*:\s*True/i);
+    expect(out).toMatch(/RemotePort\s*:\s*1521/);
+    expect(out).toMatch(/TcpTestSucceeded\s*:\s*True/i);
   });
 
   it('WKS arp -a apprend la MAC de la gateway (10.0.10.1) après le ping', async () => {
