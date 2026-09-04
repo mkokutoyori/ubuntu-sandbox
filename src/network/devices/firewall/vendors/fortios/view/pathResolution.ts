@@ -19,6 +19,8 @@ const VIEWS: readonly GetView[] = Object.freeze([
   { words: ['system', 'ha', 'status'], help: 'Cluster members and their roles.' },
   { words: ['system', 'interface'], help: 'Interface addresses and link state.' },
   { words: ['system', 'interface', 'physical'], help: 'Physical interfaces only.' },
+  { words: ['system', 'admin', 'list'], help: 'Open administrative sessions.' },
+  { words: ['system', 'admin', 'status'], help: 'The administrative session in use.' },
   { words: ['system', 'session', 'status'], help: 'Number of active sessions.' },
   { words: ['system', 'session', 'list'], help: 'Active sessions and their translation.' },
   { words: ['system', 'session-info', 'ttl'], help: 'Configured session timeouts.' },

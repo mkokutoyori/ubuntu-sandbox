@@ -531,9 +531,18 @@ export class Firewall extends Equipment {
       refuseManagementSource: (source) => this.management.refusesSource(source),
       managementIdleTimeoutMs: () => this.management.idleTimeoutMs(),
       runningConfig: () => this.managementRunningConfig(),
-      onManagementLogin: (user, source) => {
-        this.management.noteLogin(user);
-        this.adminSessions.open(user, 'CLI', source);
+      onManagementLogin: (session) => {
+        this.management.noteLogin(session.username);
+        this.adminSessions.open({
+          username: session.username,
+          type: 'CLI',
+          transport: session.transport,
+          localInterface: this.interfaces.names()
+            .find(name => this.interfaces.get(name)?.ip === session.local.ip) ?? '',
+          local: session.local,
+          remote: session.remote,
+          vdom: this.activeVdom,
+        });
       },
       onAdminLogout: (user) => { this.onAdminLogout(user); },
       onManagementAuthFailure: (user) => {

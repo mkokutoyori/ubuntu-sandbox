@@ -126,8 +126,10 @@ describe('FortiGate : execute disconnect-admin-session', () => {
 
   it('la commande COUPE la session nommee', async () => {
     const { fw, sh } = await laboratoire();
-    fw.getAdminSessions().open('admin', 'CLI', 'ssh(10.0.0.5)');
-    fw.getAdminSessions().open('admin2', 'WEB', '10.0.0.6');
+    fw.getAdminSessions().open({ username: 'admin', type: 'CLI', transport: 'ssh',
+      remote: { ip: '10.0.0.5', port: 40000 } });
+    fw.getAdminSessions().open({ username: 'admin2', type: 'WEB', transport: 'web',
+      remote: { ip: '10.0.0.6', port: 44300 } });
 
     expect(sh.execute('execute disconnect-admin-session 0')).toBe('');
     expect(fw.getAdminSessions().list().map(s => s.index)).toEqual([1]);
@@ -143,8 +145,10 @@ describe('FortiGate : execute disconnect-admin-session', () => {
 
   it('`?` nomme les sessions VIVANTES et ce qu elles sont', async () => {
     const { fw, sh } = await laboratoire();
-    fw.getAdminSessions().open('admin', 'CLI', 'ssh(172.20.120.54)');
-    fw.getAdminSessions().open('admin2', 'WEB', '172.20.120.51');
+    fw.getAdminSessions().open({ username: 'admin', type: 'CLI', transport: 'ssh',
+      remote: { ip: '172.20.120.54', port: 40000 } });
+    fw.getAdminSessions().open({ username: 'admin2', type: 'WEB', transport: 'web',
+      remote: { ip: '172.20.120.51', port: 44300 } });
 
     const aide = sh.help('execute disconnect-admin-session ');
     expect(aide.find(l => l.startsWith('0')))
@@ -158,8 +162,10 @@ describe('FortiGate : execute disconnect-admin-session', () => {
 
   it('l aide SUIT les coupures', async () => {
     const { fw, sh } = await laboratoire();
-    fw.getAdminSessions().open('admin', 'CLI', 'ssh(10.0.0.5)');
-    fw.getAdminSessions().open('admin2', 'WEB', '10.0.0.6');
+    fw.getAdminSessions().open({ username: 'admin', type: 'CLI', transport: 'ssh',
+      remote: { ip: '10.0.0.5', port: 40000 } });
+    fw.getAdminSessions().open({ username: 'admin2', type: 'WEB', transport: 'web',
+      remote: { ip: '10.0.0.6', port: 44300 } });
     expect(mots(sh, 'execute disconnect-admin-session ')).toEqual(['0', '1']);
 
     sh.execute('execute disconnect-admin-session 0');

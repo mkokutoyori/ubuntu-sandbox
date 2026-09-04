@@ -72,6 +72,10 @@ import {
 import {
   renderSessionCount, renderSessionSummary, renderSessionTtl,
 } from './view/sessionSummary';
+import {
+  renderAdminSessionList, renderAdminSessionStatus,
+} from './view/adminSessions';
+import { fortiLogStamp } from './diag/timeCommands';
 import type { SslVpnSessionMode } from '../../vpn/SslVpnSessionTable';
 import { PkiKeyPair } from '../../../../pki/PkiKeyPair';
 import { buildCertificateRequest } from '../../../../pki/CertificateSigningRequest';
@@ -845,6 +849,13 @@ export class FortiShell {
     return FortiMessages.unknownPath(rest.join(' '), 'get');
   }
 
+  private adminSessionClock(): { stamp: (at: number) => string; now: () => number } {
+    return {
+      stamp: (at) => fortiLogStamp(this.fw, at),
+      now: () => this.fw.now(),
+    };
+  }
+
   private getView(rest: readonly string[]): string | null {
     const path = rest.join(' ');
 
@@ -868,6 +879,14 @@ export class FortiShell {
     if (path === 'system arp') return renderArpTable(this.fw.getArpService());
     if (path === 'system session status') {
       return renderSessionCount(this.fw.getSessionTable().view().count());
+    }
+    if (path === 'system admin list') {
+      return renderAdminSessionList(this.fw.getAdminSessions().list(),
+        this.adminSessionClock());
+    }
+    if (path === 'system admin status') {
+      return renderAdminSessionStatus(this.fw.getAdminSessions().newest(),
+        this.adminSessionClock());
     }
     if (path === 'system session-info ttl') {
       return renderSessionTtl(this.fw.getSessionTtl());

@@ -15,7 +15,9 @@ import {
 import {
   AdminHttpServer, type AdminHttpApp, type AdminServerCertificate,
 } from './AdminHttpServer';
-import { FirewallCliServer, type ManagementCli } from './FirewallCliServer';
+import {
+  FirewallCliServer, type AdminLoginFacts, type ManagementCli,
+} from './FirewallCliServer';
 import type { LoginBannerStage } from './LoginBanners';
 import type { ManagementPorts } from './ManagementAccess';
 
@@ -53,7 +55,7 @@ export interface ManagementHost {
   refuseManagementSource(source: string): boolean;
   managementIdleTimeoutMs(): number | null;
   runningConfig(): string;
-  onManagementLogin(user: string, source: string): void;
+  onManagementLogin(session: AdminLoginFacts): void;
   onAdminLogout(user: string): void;
   onManagementAuthFailure(user: string, source: string): void;
   loginBannerLines(stage: LoginBannerStage): readonly string[];
@@ -141,7 +143,7 @@ export function buildManagementServices(host: ManagementHost): ManagementService
     refuseSource: (source) => host.refuseManagementSource(source),
     idleTimeoutMs: () => host.managementIdleTimeoutMs(),
     runningConfig: () => host.runningConfig(),
-    onLogin: (user, source) => { host.onManagementLogin(user, source); },
+    onLogin: (session) => { host.onManagementLogin(session); },
     onLogout: (user) => { host.onAdminLogout(user); },
     onAuthFailure: (user, source) => { host.onManagementAuthFailure(user, source); },
     bannerLines: (stage) => host.loginBannerLines(stage),
