@@ -94,7 +94,8 @@ import type { PromptMap } from './PromptBuilder';
 import { buildPrompt } from './PromptBuilder';
 import { CLIStateMachine, type ModeHierarchy } from './CLIStateMachine';
 import { estGenreAcces } from '../../ntp/accessGroups';
-import { ensureVrf, isVrfName, vrfStoreOf, type VrfHost } from './cisco/ciscoVrfStore';
+import type { VrfHost } from './cisco/ciscoVrfStore';
+import { vrfDeclarationSpecs, type VrfDeclarationHost } from './cisco/vrfSpecs';
 import { NTP_VERSION, isNtpVersion, type NtpVersion } from '../../ntp/types';
 import type { NtpAssociationOptions } from '../../ntp/NtpAgent';
 import {
@@ -5668,12 +5669,27 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     };
   }
 
+  protected vrfDeclarationHost(): VrfDeclarationHost {
+    return {
+      vrfHost: () => this.d() as unknown as VrfHost,
+      selectVrf: (name) => {
+        (this as unknown as { setSelectedVRF?: (n: string) => void })
+          .setSelectedVRF?.(name);
+      },
+      enterVrfMode: () => { this.mode = 'config-vrf'; },
+      onVrfRemoved: (name) => { this.onVrfRemoved(name); },
+    };
+  }
+
+  protected onVrfRemoved(_name: string): void { /* rien de plus par defaut */ }
+
   protected socleSpecs(): readonly CommandSpec[] {
     return [
       ...TIME_RANGE_FAMILY,
       ...ipGlobalSpecs(() => this.ipGlobalHost()),
       ...bgpFilterListSpecs(() => this.filterListHost()),
       ...globalHeadSpecs(() => this.globalHeadHost()),
+      ...vrfDeclarationSpecs(() => this.vrfDeclarationHost()),
       ...cryptoKeySpecs(() => this.cryptoKeyHost()),
       ...clearLineSpecs(() => this.clearRestantsHost(), DERNIERE_LIGNE_ABSOLUE),
       ...debugFamily(this.debugPairs()),
@@ -9660,31 +9676,6 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       return '';
     });
     registerCiscoDnsCommands(trie, this.dnsCommandContext());
-    trie.registerGreedy('vrf', 'VRF configuration', (args, raw) => {
-      const r = this.d() as unknown as { _recordUnhandledConfigLine?: (l: string) => void };
-      r._recordUnhandledConfigLine?.(raw ?? `vrf ${args.join(' ')}`);
-      return '';
-    });
-    // `vrf definition NAME` est la forme moderne de `ip vrf NAME` : elle
-    // entre dans le MÊME sous-mode et crée la MÊME instance, sans quoi
-    // deux orthographes d'une seule commande donnaient deux résultats
-    // — l'une entrait en config-vrf, l'autre notait une ligne et rendait
-    // la main en configuration globale.
-    trie.registerGreedy('vrf definition', 'Configure a VRF', (args) => {
-      if (args.length < 1) return CISCO_ERRORS.INCOMPLETE;
-      const name = args[0];
-      if (!isVrfName(name)) return CISCO_ERRORS.INVALID_INPUT;
-      ensureVrf(vrfStoreOf(this.d() as unknown as VrfHost), name, 'modern');
-      (this as unknown as { setSelectedVRF?: (n: string) => void }).setSelectedVRF?.(name);
-      this.mode = 'config-vrf';
-      return '';
-    });
-    trie.registerGreedy('no vrf definition', 'Remove a VRF', (args) => {
-      const name = args[0];
-      if (!name) return CISCO_ERRORS.INCOMPLETE;
-      vrfStoreOf(this.d() as unknown as VrfHost).delete(name);
-      return '';
-    });
     /**
      * `parser view <nom>` — declarer une vue CLI (le RBAC d'IOS).
      *

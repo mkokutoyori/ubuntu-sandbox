@@ -407,6 +407,24 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
       : `Cleared ${n} ${nom} SA${n === 1 ? '' : 's'}`;
   }
 
+  /*
+   * Retirer une VRF retire les traductions NAT qui la nommaient.
+   *
+   * Le gestionnaire de `no ip vrf` le faisait, et il vivait dans la
+   * famille NAT — donc sur le routeur seul, ce qui etait aussi la raison
+   * pour laquelle un commutateur ne connaissait pas la commande. La
+   * declaration est maintenant partagee par les deux plateformes, et ce
+   * crochet garde le nettoyage la ou le moteur existe : sans lui, une
+   * entree statique continuerait de designer une instance supprimee.
+   */
+  protected override onVrfRemoved(name: string): void {
+    const engine = this.d()._getNATEngine?.();
+    if (!engine) return;
+    for (const e of engine.getStaticEntries()) {
+      if (e.vrf === name) engine.removeStaticEntry(e.localIP, e.globalIP);
+    }
+  }
+
   protected override socleSpecs(): readonly CommandSpec[] {
     return [
       ...super.socleSpecs(),

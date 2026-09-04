@@ -122,6 +122,51 @@ describe('`ip vrf forwarding` sur un routeur', () => {
   });
 });
 
+/*
+ * SUITE — la migration de la famille VRF a trouve que seule
+ * l'orthographe HERITEE etait declaree. La forme MODERNE, `vrf
+ * forwarding <nom>`, tombait dans le noeud glouton `vrf` de la
+ * configuration GLOBALE : elle etait acceptee, rangee, rendue dans la
+ * configuration — et l'interface n'etait rattachee a RIEN. C'est le pire
+ * des trois etats, la configuration decrivant une isolation que le plan
+ * de donnees n'applique pas ; et il ne se voyait qu'en observant le
+ * RATTACHEMENT plutot que la ligne rendue, puisque la ligne, elle,
+ * paraissait.
+ *
+ * Discrimine dans un arbre de travail pose sur l'etat d'AVANT : les
+ * QUATRE cas ci-dessous tombent, ce qui est attendu — l'orthographe
+ * moderne n'existait nulle part, ni a l'analyse, ni a l'aide, ni au
+ * rattachement.
+ */
+describe('`vrf forwarding` — la meme chose, ecrite comme IOS moderne', () => {
+  it('rattache pour de bon, et le prouve en retirant l adresse', async () => {
+    const r = await routeur();
+    await r.executeCommand('ip address 10.0.0.1 255.255.255.0');
+    const out = await r.executeCommand('vrf forwarding CLIENT-A');
+    expect(out).not.toMatch(REFUS);
+    expect(out).toMatch(/removed due to enabling VRF CLIENT-A/);
+    expect(await conf(r)).not.toMatch(/ip address 10\.0\.0\.1/);
+  });
+
+  it('une VRF NON declaree y est refusee aussi', async () => {
+    const r = await routeur();
+    expect(await r.executeCommand('vrf forwarding ZORGLUB'))
+      .toMatch(/not configured/);
+  });
+
+  it('`no vrf forwarding` SANS nom detache', async () => {
+    const r = await routeur();
+    await r.executeCommand('vrf forwarding CLIENT-A');
+    await r.executeCommand('no vrf forwarding');
+    expect(await conf(r)).not.toMatch(/vrf forwarding CLIENT-A/);
+  });
+
+  it('et l aide nomme `forwarding` sous `vrf`', async () => {
+    const r = await routeur();
+    expect(r.cliHelp('vrf ')).toMatch(/^\s+forwarding\b/m);
+  });
+});
+
 describe('`bfd echo` sur un routeur', () => {
   it('`no bfd echo` est accepte et se relit', async () => {
     const r = await routeur();
