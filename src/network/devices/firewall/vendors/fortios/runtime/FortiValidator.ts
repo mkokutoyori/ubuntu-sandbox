@@ -3,7 +3,7 @@ import {
 } from '../../../../../../cli/ArgumentTypes';
 import { FortiMessages } from '../FortiMessages';
 import {
-  attributeArity, EMPTY_ENVIRONMENT,
+  attributeArity, attributeMinimumArity, EMPTY_ENVIRONMENT,
   type FortiAttributeSpec, type FortiSchemaEnvironment,
 } from '../schema/types';
 import { reservedCharacterHint, reservedCharacterIn } from '../schema/reservedCharacters';
@@ -36,10 +36,12 @@ export class FortiValidator {
     if (refused) return KO(refused);
 
     const arity = attributeArity(spec);
+    const minimum = attributeMinimumArity(spec);
     if (spec.multiValue) return this.validateList(spec, raw);
-    if (raw.length !== arity) {
+    if (raw.length < minimum || raw.length > arity) {
       return KO(FortiMessages.incomplete(
-        `${arity} value(s) for \`${spec.name}\`, ${raw.length} given`,
+        `${minimum === arity ? arity : `${minimum} to ${arity}`} value(s) `
+        + `for \`${spec.name}\`, ${raw.length} given`,
       ));
     }
 

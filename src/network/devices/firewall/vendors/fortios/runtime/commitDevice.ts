@@ -289,6 +289,18 @@ export function buildCommitDevice(
       applySyslogCollector(settings) {
         fw.getSyslogCollectors().applySettings(settings);
       },
+      applyAccessList(list) {
+        fw.getRouting().applyAccessList(list);
+      },
+      removeAccessList(name) {
+        fw.getRouting().removeAccessList(name);
+      },
+      applyPrefixList(list) {
+        fw.getRouting().applyPrefixList(list);
+      },
+      removePrefixList(name) {
+        fw.getRouting().removePrefixList(name);
+      },
       applyPasswordExpiry(policy) {
         fw.applyPasswordExpiry(policy);
       },

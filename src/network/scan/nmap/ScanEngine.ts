@@ -143,6 +143,29 @@ export interface PortResult {
   reason: string;
 }
 
+/**
+ * Ce que `get_state_reason_summary` (`portreasons.cc:369`) rend : les
+ * ports replies regroupes par etat, puis par RAISON et par protocole.
+ * Garder la raison n'est pas un detail de XML — `output.cc:594` l'ecrit
+ * dans la ligne humaine aussi, et c'est la seule moitie qui diagnostique,
+ * un port muet et un port qui repond RST n'ayant pas la meme cause.
+ */
+export interface NotShownGroup {
+  state: PortState;
+  protocol: 'tcp' | 'udp';
+  reason: string;
+  ports: number[];
+}
+
+export interface NotShown {
+  count: number;
+  /**
+   * Les etats, du plus peuple au moins peuple, et dans chacun les raisons
+   * dans le meme ordre (`PortList::nextIgnoredState`, `reason_sort`).
+   */
+  groups: NotShownGroup[];
+}
+
 export interface HostReport {
   ip: string;
   hostname?: string;
@@ -157,7 +180,7 @@ export interface HostReport {
   /** Le TTL de la reponse de decouverte, ce que `--reason` ecrit apres elle. */
   replyTtl?: number;
   ports: PortResult[];
-  notShown?: { count: number; states: Partial<Record<PortState, number>> };
+  notShown?: NotShown;
   /** Ce que `--traceroute` a releve, quand il a ete demande. */
   trace?: HostTrace;
 }
@@ -202,7 +225,7 @@ export function enumerateTargets(target: string): string[] {
   return out;
 }
 
-function effectivePorts(options: NmapOptions): number[] {
+export function effectivePorts(options: NmapOptions): number[] {
   return options.ports ?? topPorts(DEFAULT_TOP_COUNT);
 }
 
@@ -273,14 +296,22 @@ function partition(options: NmapOptions, all: PortResult[]): Pick<HostReport, 'p
   const ports = all.filter((p) => !collapsed.has(p.state));
   if (collapsed.size === 0) return { ports };
 
-  const states: Partial<Record<PortState, number>> = {};
-  let total = 0;
-  for (const state of collapsed) {
-    const n = byState.get(state) ?? 0;
-    states[state] = n;
-    total += n;
+  const hidden = all.filter((p) => collapsed.has(p.state));
+  const byGroup = new Map<string, NotShownGroup>();
+  for (const p of hidden) {
+    const key = `${p.state}|${p.protocol}|${p.reason}`;
+    const group = byGroup.get(key);
+    if (group) group.ports.push(p.port);
+    else {
+      byGroup.set(key,
+        { state: p.state, protocol: p.protocol, reason: p.reason, ports: [p.port] });
+    }
   }
-  return { ports, notShown: { count: total, states } };
+  const groups = [...byGroup.values()].sort((a, b) => {
+    const byStateCount = (byState.get(b.state) ?? 0) - (byState.get(a.state) ?? 0);
+    return byStateCount !== 0 ? byStateCount : b.ports.length - a.ports.length;
+  });
+  return { ports, notShown: { count: hidden.length, groups } };
 }
 
 /**

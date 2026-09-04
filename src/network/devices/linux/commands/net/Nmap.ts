@@ -36,12 +36,14 @@ export const nmapCommand: LinuxCommand = {
   needsNetworkContext: true,
   complete: makeArgCompleter({
     flags: ['-6', '-A', '-F', '-O', '-P0', '-Pn', '-R', '-T', '-d', '-n',
-      '-oA', '-oG', '-oN', '-p', '-p-', '-sP', '-sS', '-sT', '-sU', '-sV',
+      '-oA', '-oG', '-oN', '-oX', '-p', '-p-', '-sP', '-sS', '-sT', '-sU', '-sV',
       '-sA', '-sF', '-sM', '-sN', '-sW', '-sX', '-sn', '-v', '-vv',
-      '--disable-arp-ping', '--open', '--reason', '--send-ip', '--top-ports'],
+      '--disable-arp-ping', '--no-stylesheet', '--open', '--packet-trace',
+      '--reason', '--send-ip', '--stylesheet', '--top-ports', '--traceroute',
+      '--webxml'],
     hostsAtBarePosition: true,
   }),
-  usage: 'nmap [-sT|-sS|-sU|-sA|-sF|-sN|-sX|-sM|-sW] [-sV] [-O] [-A] [-p SPEC] [-F] [--top-ports N] [-sn] [-Pn] [--open] [--reason] [-n] [-oN file] [-oG file] <target...>',
+  usage: 'nmap [-sT|-sS|-sU|-sA|-sF|-sN|-sX|-sM|-sW] [-sV] [-O] [-A] [-p SPEC] [-F] [--top-ports N] [-sn] [-Pn] [--open] [--reason] [-n] [-oN file] [-oG file] [-oX file] [-oA base] <target...>',
   help: 'Discover hosts and services on a network.',
 
   async run(ctx: LinuxCommandContext, args: string[]): Promise<string> {
@@ -56,6 +58,9 @@ export const nmapCommand: LinuxCommand = {
     }
     if (result.outputGreppablePath && result.greppable !== null) {
       vfs.writeFile(vfs.normalizePath(result.outputGreppablePath, cwd), result.greppable + '\n', uid, gid, 0o022);
+    }
+    if (result.outputXmlPath && result.xml !== null) {
+      vfs.writeFile(vfs.normalizePath(result.outputXmlPath, cwd), result.xml + '\n', uid, gid, 0o022);
     }
 
     return result.output;

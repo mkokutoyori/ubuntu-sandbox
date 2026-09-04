@@ -13,6 +13,11 @@ import type {
 } from '../../../ospf/types';
 
 import { RIPEngine } from '../../../rip/RIPEngine';
+import {
+  AccessListStore, accessListPermits, maskPrefixLength,
+  type AccessList, type PrefixList,
+} from './AccessList';
+import { IpPrefixListStore } from '../../router/policy/IpPrefixList';
 import type { IEventBus } from '../../../../events/EventBus';
 import type { TcpStack } from '../../../tcp/TcpStack';
 import {
@@ -62,6 +67,8 @@ function authTypeOf(mode: string | undefined): number {
 export class FirewallRouting {
   private readonly bgpService: FirewallBgp;
   private rip: RIPEngine | null = null;
+  private readonly accessLists = new AccessListStore();
+  private readonly prefixLists = new IpPrefixListStore();
   private ospf: OSPFEngine | null = null;
   private ripConfig: RipConfiguration = RIP_DEFAULTS;
   private ospfConfig: OspfConfiguration = OSPF_DEFAULTS;
@@ -126,6 +133,30 @@ export class FirewallRouting {
   }
 
   getRip(): RIPEngine | null { return this.rip; }
+
+  getAccessLists(): AccessListStore { return this.accessLists; }
+
+  getPrefixLists(): IpPrefixListStore { return this.prefixLists; }
+
+  applyAccessList(list: AccessList): void {
+    this.accessLists.upsert(list);
+    this.installOspfRoutes();
+  }
+
+  removeAccessList(name: string): void {
+    if (this.accessLists.remove(name)) this.installOspfRoutes();
+  }
+
+  applyPrefixList(list: PrefixList): void {
+    const stored = this.prefixLists.upsert(list.name);
+    stored.clear();
+    for (const rule of list.rules) stored.upsert(rule);
+    this.installOspfRoutes();
+  }
+
+  removePrefixList(name: string): void {
+    if (this.prefixLists.remove(name)) this.installOspfRoutes();
+  }
 
   getOspfConfiguration(): OspfConfiguration { return this.ospfConfig; }
 
@@ -257,8 +288,13 @@ export class FirewallRouting {
   private installOspfRoutes(): void {
     if (!this.ospf) return;
 
+    const named = this.ospfConfig.distributeListIn;
+
     this.deps.removeRoutes('ospf');
     for (const route of this.ospf.getRoutes()) {
+      if (named && !this.inboundFilterPermits(named, route.network, route.mask)) {
+        continue;
+      }
       this.deps.installRoute({
         network: route.network,
         mask: route.mask,
@@ -270,6 +306,18 @@ export class FirewallRouting {
         routeType: route.routeType,
       });
     }
+  }
+
+  private inboundFilterPermits(named: string, network: string, mask: string): boolean {
+    const length = maskPrefixLength(mask);
+
+    const accessList = this.accessLists.get(named);
+    if (accessList) return accessListPermits(accessList, network, length);
+
+    const prefixList = this.prefixLists.get(named);
+    if (prefixList) return prefixList.evaluate(network, length) === 'permit';
+
+    return false;
   }
 
   private emitOspf(iface: string, packet: OSPFPacket, destIP: string): void {
@@ -289,6 +337,11 @@ export class FirewallRouting {
 
   private ripCallbacks() {
     return {
+      getInterfaceVersions: (name: string) => {
+        const declared = this.ripConfig.interfaces.find(entry => entry.name === name);
+        if (!declared) return null;
+        return { send: declared.sendVersion, receive: declared.receiveVersion };
+      },
       getPortIP: (name: string) => this.portOf(name)
         ? new IPAddress(this.portOf(name)!.ip) : null,
       getPortMask: (name: string) => this.portOf(name)

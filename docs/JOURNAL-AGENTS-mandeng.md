@@ -7668,3 +7668,53 @@ trace sans l'option.
 **Discrimination** : `probe-nmap-packet-trace.test.ts` (13 cas), les 13
 tombent. Un cas e2e Playwright tape les deux balayages dans le vrai
 terminal.
+
+## 2026-09-04 — `nmap -oX`
+
+**Portee** : `scan/nmap/` (`NmapXml.ts` nouveau, `NmapOptions`,
+`NmapRun`, `NmapFormatter`, `ScanEngine`, `PortSpec`), plus les deux
+portes de plateforme (`linux/commands/net/Nmap.ts`, `WindowsPC.cmdNmap`).
+Aucun fichier de journalisation touche.
+
+Le depart n'est pas une option manquante mais un defaut MESURE :
+**`-oA <base>` promet TROIS fichiers et n'en ecrivait que deux**
+(`nmap.cc:918` ecrit `%s.nmap`, `%s.gnmap` ET `%s.xml`), sans un mot.
+
+**Ce que le XML a revele dans la sortie NORMALE** : `<extraports>` exige
+`<extrareasons reason count proto ports>`, donc la RAISON et le
+PROTOCOLE de chaque port replie — que le moteur jetait en repliant vers
+`{ count, states }`. La meme donnee alimente la ligne humaine, que
+`output.cc:594` ecrit `994 closed tcp ports (reset)` la ou ce depot
+rendait `994 closed ports` : la seule moitie qui DIAGNOSTIQUE manquait,
+un port muet et un port qui repond RST n'ayant pas la meme cause.
+
+**Deux details que la sonde a corriges plutot que le code**, parce qu'ils
+etaient ecrits a l'aveugle et que la source dit l'inverse : aucun
+ecrivain de `xml.cc` n'indente et `xml_start_tag("ports")` n'est suivi
+d'aucun retour a la ligne, donc `<ports><port …>` tient sur une ligne ;
+et `write_xml_initial_hostinfo` ecrit le nom TAPE et le nom RESOLU tous
+les deux, sans les comparer, chacun sur sa ligne — c'est la ligne
+`rDNS record for` de la sortie humaine qui, elle, ne parait que
+lorsqu'ils different.
+
+**Trois valeurs qui ne s'inventent pas.** `<times>` est en
+MICROSECONDES, et `adjust_timeouts2` (`timing.cc:120`) sur un premier
+echantillon borne `rttvar` a [5 ms, 2 s] et le delai a [100 ms, 10 s]. Le
+`reason_ttl` d'un PORT est zero — `state_reason_init` en part, et un
+balayage connecte n'en observe jamais. Et `line` d'un `<osmatch>` vaut
+`-1`, valeur que `FingerMatch()` (`osscan.h:185`) porte quand la
+correspondance ne vient pas d'une ligne de `nmap-os-db` : l'indication de
+ce simulateur vient du TTL initial et d'aucune base.
+
+`--no-stylesheet`, `--stylesheet` et `--webxml` viennent avec, etant les
+trois options qui gouvernent ce que le document declare ; sans elles la
+feuille de style serait un fait non reglable. Le defaut est l'URL
+RELATIVE `nmap.xsl`, la branche que `XSLStyleSheet()` (`NmapOps.cc:618`)
+prend faute de trouver le fichier — « It won't work, but it gives a clue
+that there is an nmap.xsl somewhere ».
+
+**Discrimination** : `probe-nmap-sortie-xml.test.ts` (18 cas), 17
+tombent ; le 18e est le TEMOIN `-oN`, dont c'est l'objet de passer des
+deux cotes. Deux tests preexistants encodaient le defaut comme contrat
+(`nmap-formatter`, `nmap-scan-engine`) et sont corriges. Un cas e2e
+Playwright tape `-oA` et relit le XML dans le vrai terminal.

@@ -13,6 +13,8 @@ export interface IpsecProposal {
   readonly integrity: string;
 }
 
+export type PeerType = 'any' | 'one' | 'dialup';
+
 export interface Phase1Tunnel {
   readonly name: string;
   readonly boundInterface: string;
@@ -29,6 +31,9 @@ export interface Phase1Tunnel {
   readonly dpdRetryIntervalSeconds: number;
   readonly dpdRetryCount: number;
   readonly natTraversal: NatTraversalMode;
+  readonly peerType?: PeerType;
+  readonly peerId?: string;
+  readonly localId?: string;
   readonly policyBased: boolean;
   readonly modeCfg?: boolean;
   readonly authUserGroup?: string;

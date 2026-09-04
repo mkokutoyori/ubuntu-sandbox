@@ -30,6 +30,24 @@ function parseToken(token: string): number[] {
   return [port];
 }
 
+/**
+ * L'inverse de `parsePortSpec` : `output_rangelist_given_ports`
+ * (`output.cc:1082`) recolle les ports consecutifs en plages et separe
+ * par une virgule, ce que lisent `<scaninfo services>` et
+ * `<extrareasons ports>`.
+ */
+export function formatPortRanges(ports: readonly number[]): string {
+  const sorted = [...new Set(ports)].sort((a, b) => a - b);
+  const out: string[] = [];
+  for (let start = 0; start < sorted.length;) {
+    let end = start;
+    while (end + 1 < sorted.length && sorted[end + 1] === sorted[end] + 1) end++;
+    out.push(start === end ? `${sorted[start]}` : `${sorted[start]}-${sorted[end]}`);
+    start = end + 1;
+  }
+  return out.join(',');
+}
+
 export function parsePortSpec(spec: string): number[] {
   const seen = new Set<number>();
   for (const token of spec.split(',')) {

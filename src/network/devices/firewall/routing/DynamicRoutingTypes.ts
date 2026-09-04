@@ -5,12 +5,19 @@ export interface DynamicNetwork {
   readonly area: string;
 }
 
+export interface RipInterfaceSettings {
+  readonly name: string;
+  readonly sendVersion: 1 | 2;
+  readonly receiveVersion: 1 | 2;
+}
+
 export interface RipConfiguration {
   readonly enabled: boolean;
   readonly version: 1 | 2;
   readonly networks: readonly DynamicNetwork[];
   readonly passiveInterfaces: readonly string[];
   readonly defaultInformationOriginate: boolean;
+  readonly interfaces: readonly RipInterfaceSettings[];
 }
 
 export interface OspfInterfaceSettings {
@@ -39,6 +46,7 @@ export interface OspfConfiguration {
   readonly passiveInterfaces: readonly string[];
   readonly redistributeConnected: boolean;
   readonly redistributeStatic: boolean;
+  readonly distributeListIn?: string;
 }
 
 export interface BgpNeighbour {
@@ -66,6 +74,7 @@ export const BGP_DEFAULTS: BgpConfiguration = Object.freeze({
 export const RIP_DEFAULTS: RipConfiguration = Object.freeze({
   enabled: false,
   version: 2,
+  interfaces: Object.freeze([]),
   networks: Object.freeze([]),
   passiveInterfaces: Object.freeze([]),
   defaultInformationOriginate: false,

@@ -385,6 +385,39 @@ test.describe('nmap sonde le fil', () => {
       new RegExp(`TCP localhost > ${CIBLE}:22 => Connected`));
   });
 
+  test('`-oA` ecrit les TROIS fichiers, et le XML se relit', async ({ page }) => {
+    test.setTimeout(180_000);
+    await page.goto('/', { timeout: 45_000 });
+    await waitForStore(page);
+
+    const cibleId = await addDevice(page, 'linux-server', 300, 550);
+    const scannerId = await addDevice(page, 'linux-pc', 600, 550);
+    await cable(page, cibleId, scannerId);
+
+    await openTerminal(page, cibleId);
+    await typeCmd(page, `ip addr add ${CIBLE}/24 dev eth0`);
+    await typeCmd(page, 'sudo systemctl start ssh');
+    await closeTerminal(page);
+
+    await openTerminal(page, scannerId);
+    await typeCmd(page, `ip addr add ${SCANNER}/24 dev eth0`);
+
+    await typeCmd(page, `nmap -Pn -oA balayage -p 22 ${CIBLE}`);
+    await typeCmd(page, 'ls');
+    const liste = await lastLines(page, 6);
+    expect(liste).toContain('balayage.nmap');
+    expect(liste).toContain('balayage.gnmap');
+    expect(liste).toContain('balayage.xml');
+
+    await typeCmd(page, 'cat balayage.xml');
+    const xml = await lastLines(page, 24);
+    expect(xml).toContain('<!DOCTYPE nmaprun>');
+    expect(xml).toContain('<scaninfo type="connect" protocol="tcp" numservices="1" services="22"/>');
+    expect(xml).toContain(`<address addr="${CIBLE}" addrtype="ipv4"/>`);
+    expect(xml).toContain('<state state="open" reason="syn-ack"');
+    expect(xml).toContain('</nmaprun>');
+  });
+
   test('nmap.exe existe aussi sur une machine Windows', async ({ page }) => {
     test.setTimeout(180_000);
     await page.goto('/', { timeout: 45_000 });

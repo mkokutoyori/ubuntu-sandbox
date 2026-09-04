@@ -68,7 +68,7 @@ describe('renderNormal', () => {
     const ports = ['22', ...Array.from({ length: 40 }, (_, i) => String(3000 + i))].join(',');
     const opts = parseNmapArgs(['-p', ports, '10.0.0.1']);
     const out = renderNormal(await scan(opts, probes()), opts, 'x');
-    expect(out).toMatch(/Not shown: 40 closed ports/);
+    expect(out).toMatch(/Not shown: 40 closed tcp ports \(reset\)/);
     expect(out).toMatch(/^22\/tcp\s+open/m);
   });
 

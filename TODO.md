@@ -2667,3 +2667,21 @@ dynamique DNS cote client, que `src/network/dns/update/` sait faire cote
 serveur — c'est donc un branchement reel et non une invention, mais il
 touche l'enregistrement A/PTR d'un hote et son interaction avec le role
 serveur DNS de Windows, ce qui est un lot a soi.
+### [socle] une place ne sait pas etre exigee au positif et facultative au negatif
+
+**Mesure** : `radius-server timeout 5` exige sa valeur, `no radius-server
+timeout` s'en passe — c'est la forme d'IOS, la negation retablissant le
+defaut sans le nommer. Le socle ne sait declarer que l'un des deux :
+une place obligatoire fait repondre `% Incomplete command.` a la
+negation nue, une place `optional` laisse passer la forme positive nue.
+`CommandSpec.undoRequiresArgument` porte la nuance INVERSE (« la
+negation exige un mot de plus ») et n'est lue que par l'aide, jamais par
+l'analyse.
+
+**Contourne, pas corrige** : les six reglages globaux de
+`aaaServerSpecs.ts` declarent leur valeur `optional` et refusent la
+forme positive nue dans le gestionnaire, avec le meme message qu'IOS.
+La PLAGE, elle, reste declaree sur la place et appliquee par l'analyse,
+donc seul le controle de PRESENCE quitte la declaration. Fermer
+l'entree demande une notion de presence par sens dans `CommandParser`,
+qui touche toutes les familles migrees et non cette seule.
