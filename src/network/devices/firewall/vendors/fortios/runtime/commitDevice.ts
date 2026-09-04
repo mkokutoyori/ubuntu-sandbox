@@ -124,6 +124,7 @@ export function buildCommitDevice(
       },
       applyVdomSettings(settings) {
         fw.setCentralNat(settings.centralNat);
+        fw.setTcpSessionWithoutSyn(settings.tcpSessionWithoutSyn);
         fw.setOperationMode(settings.opmode);
         if (settings.manageIP && settings.manageIP !== '0.0.0.0') {
           fw.setManagementAddress(settings.manageIP,

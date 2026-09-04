@@ -242,6 +242,8 @@ export const FIREWALL_ADDRGRP: FortiTableSpec = {
   },
 };
 
+const SERVICE_SESSION_TTL_MIN = 300;
+
 export const FIREWALL_SERVICE_CUSTOM: FortiTableSpec = {
   path: ['firewall', 'service', 'custom'],
   kind: 'table',
@@ -279,10 +281,23 @@ export const FIREWALL_SERVICE_CUSTOM: FortiTableSpec = {
     count('icmpcode', 'ICMP code.', 0, 255, 0),
     count('protocol-number', 'IP protocol number.', 0, 254, 0),
     reference('category', 'Service category.', ['firewall service category']),
+    {
+      ...count('session-ttl',
+        'Session TTL in seconds, 0 to use the policy or VDOM setting.',
+        0, 604800, 0),
+      availableWhen: (object) =>
+        (object.effective('protocol')[0] ?? 'TCP/UDP/SCTP') === 'TCP/UDP/SCTP',
+    },
     text('comment', 'Comment.'),
   ],
   onCommit(object, context) {
+    const ttl = Number.parseInt(object.effective('session-ttl')[0] ?? '0', 10);
+    if (ttl !== 0 && ttl < SERVICE_SESSION_TTL_MIN) {
+      return `session-ttl must be 0 or at least ${SERVICE_SESSION_TTL_MIN} seconds.`;
+    }
+
     const protocol = object.effective('protocol')[0];
+    const options = { sessionTtlSec: ttl > 0 ? ttl : undefined };
     context.objects.removeService(object.key);
 
     if (protocol === 'ICMP') {
@@ -304,7 +319,7 @@ export const FIREWALL_SERVICE_CUSTOM: FortiTableSpec = {
     if (tcp.length > 0) entries.push({ protocol: 'tcp', destinationPorts: tcp });
     if (udp.length > 0) entries.push({ protocol: 'udp', destinationPorts: udp });
     if (entries.length === 0) return;
-    context.objects.addService(makeService(object.key, entries));
+    context.objects.addService(makeService(object.key, entries, options));
   },
   onDelete(key, context) {
     context.objects.removeService(key);

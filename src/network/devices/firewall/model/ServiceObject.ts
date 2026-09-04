@@ -25,6 +25,7 @@ export interface ServiceObject {
   readonly predefined: boolean;
   readonly category?: string;
   readonly comment?: string;
+  readonly sessionTtlSec?: number;
 }
 
 export interface ServiceProbe {
@@ -39,6 +40,7 @@ export interface ServiceObjectOptions {
   predefined?: boolean;
   category?: string;
   comment?: string;
+  sessionTtlSec?: number;
 }
 
 export type PortSpec = number | PortRange;
@@ -60,6 +62,7 @@ export function makeService(
     predefined: options.predefined ?? false,
     category: options.category,
     comment: options.comment,
+    sessionTtlSec: options.sessionTtlSec,
   });
 }
 
@@ -71,12 +74,17 @@ export function udpService(name: string, ...ports: PortSpec[]): ServiceObject {
   return makeService(name, [{ protocol: 'udp', destinationPorts: ports.map(toRange) }]);
 }
 
-export function icmpService(name: string, icmpType?: number, icmpCode?: number): ServiceObject {
-  return makeService(name, [{ protocol: 'icmp', icmpType, icmpCode }]);
+export function icmpService(
+  name: string, icmpType?: number, icmpCode?: number,
+  options: ServiceObjectOptions = {},
+): ServiceObject {
+  return makeService(name, [{ protocol: 'icmp', icmpType, icmpCode }], options);
 }
 
-export function ipProtocolService(name: string, ipProtocolNumber: number): ServiceObject {
-  return makeService(name, [{ protocol: 'ip', ipProtocolNumber }]);
+export function ipProtocolService(
+  name: string, ipProtocolNumber: number, options: ServiceObjectOptions = {},
+): ServiceObject {
+  return makeService(name, [{ protocol: 'ip', ipProtocolNumber }], options);
 }
 
 export function anyService(name = 'any'): ServiceObject {

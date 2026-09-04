@@ -31,6 +31,7 @@ export type DeploymentMode = 'nat' | 'transparent';
 export interface VdomSettings {
   opmode: DeploymentMode;
   centralNat: boolean;
+  tcpSessionWithoutSyn: boolean;
   manageIP?: string;
   manageMask?: string;
   gateway?: string;
@@ -91,6 +92,7 @@ export interface VdomRegistryDeps {
     vdom: string, session: FirewallSession, reason: SessionCloseReason) => void;
   readonly onSessionCountChanged?: (count: number, created: boolean) => void;
   readonly realServerPool?: (name: string) => RealServerPool | undefined;
+  readonly tcpSessionWithoutSyn: boolean;
 }
 
 export class VdomAssignedInterfacesError extends Error {
@@ -173,7 +175,10 @@ export class VdomRegistry {
 
   private build(name: string): VdomContext {
     const deps = this.deps;
-    const settings: VdomSettings = { opmode: 'nat', centralNat: false };
+    const settings: VdomSettings = {
+      opmode: 'nat', centralNat: false,
+      tcpSessionWithoutSyn: deps.tcpSessionWithoutSyn,
+    };
     const zones = new ZoneTable();
     const objects = new ObjectStore({
       maxGroupNesting: deps.maxGroupNesting,

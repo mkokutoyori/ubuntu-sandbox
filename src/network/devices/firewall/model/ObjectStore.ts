@@ -213,11 +213,21 @@ export class ObjectStore {
   }
 
   matchesService(name: string, probe: ServiceProbe): boolean {
-    return this.matchServiceWithDepth(name, probe, 0, new Set());
+    return this.serviceMatching([name], probe) !== undefined;
   }
 
   matchesAnyService(names: readonly string[], probe: ServiceProbe): boolean {
-    return names.some(name => this.matchesService(name, probe));
+    return this.serviceMatching(names, probe) !== undefined;
+  }
+
+  serviceMatching(
+    names: readonly string[], probe: ServiceProbe,
+  ): ServiceObject | undefined {
+    for (const name of names) {
+      const matched = this.matchServiceWithDepth(name, probe, 0, new Set());
+      if (matched) return matched;
+    }
+    return undefined;
   }
 
   // ─── References ─────────────────────────────────────────────────
@@ -268,18 +278,21 @@ export class ObjectStore {
 
   private matchServiceWithDepth(
     name: string, probe: ServiceProbe, depth: number, seen: Set<string>,
-  ): boolean {
-    if (depth > this.maxNesting || seen.has(name)) return false;
+  ): ServiceObject | undefined {
+    if (depth > this.maxNesting || seen.has(name)) return undefined;
 
     const object = this.services.get(name);
-    if (object) return serviceObjectMatches(object, probe);
+    if (object) return serviceObjectMatches(object, probe) ? object : undefined;
 
     const group = this.serviceGroups.get(name);
-    if (!group) return false;
+    if (!group) return undefined;
 
     seen.add(name);
-    const matched = group.members.some(
-      member => this.matchServiceWithDepth(member, probe, depth + 1, seen));
+    let matched: ServiceObject | undefined;
+    for (const member of group.members) {
+      matched = this.matchServiceWithDepth(member, probe, depth + 1, seen);
+      if (matched) break;
+    }
     seen.delete(name);
     return matched;
   }

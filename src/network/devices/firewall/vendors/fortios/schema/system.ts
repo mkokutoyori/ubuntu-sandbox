@@ -378,6 +378,8 @@ export const SYSTEM_SETTINGS: FortiTableSpec = {
         { keyword: 'disable', description: 'Do not receive LLDP in this VDOM.' },
         { keyword: 'global', description: 'Use the setting from `config system global`.' },
       ], 'global'),
+    enable('tcp-session-without-syn',
+      'Enable/disable allowing TCP session without SYN flags.'),
   ],
   onCommit(object, context) {
     const management = object.effective('manageip');
@@ -387,6 +389,7 @@ export const SYSTEM_SETTINGS: FortiTableSpec = {
     context.device.setSessionDirtyMode(
       object.effective('firewall-session-dirty')[0] ?? 'check-all');
     context.device.applyVdomSettings({
+      tcpSessionWithoutSyn: object.effective('tcp-session-without-syn')[0] === 'enable',
       centralNat: object.effective('central-nat')[0] === 'enable',
       opmode: object.effective('opmode')[0] === 'transparent' ? 'transparent' : 'nat',
       manageIP: management[0],

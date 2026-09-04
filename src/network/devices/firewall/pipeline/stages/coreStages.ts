@@ -13,6 +13,7 @@ import type { PolicyStore } from '../../model/PolicyStore';
 import type { SessionTimeoutProfile } from '../../FirewallProfile';
 import type { SessionTtlTable } from '../../session/SessionTtlTable';
 import { isDenyAction, type SecurityRule } from '../../model/SecurityRule';
+import type { ServiceObject } from '../../model/ServiceObject';
 import {
   inspectTls, protocolOfFlow, scanAntivirus, scanApplicationControl,
   scanDnsFilter, scanFileFilter,
@@ -52,6 +53,7 @@ export interface VdomServices {
   nat?: FirewallNatEngine;
   policyRoutes?: PolicyRouteTable;
   sessionTtl?: SessionTtlTable;
+  tcpSessionWithoutSyn?: boolean;
   utm?: UtmProfileStore;
   identities?: IdentityTable;
   centralNat?: boolean;
@@ -110,7 +112,15 @@ const DEFAULT_TIMEOUT_SEC = 3600;
 
 function sessionTimeoutFor(
   services: FirewallServices, ttl: SessionTtlTable | undefined, packet: IPv4Packet,
+  policy?: SecurityRule, service?: ServiceObject,
 ): number {
+  if (service?.sessionTtlSec !== undefined && service.sessionTtlSec > 0) {
+    return service.sessionTtlSec;
+  }
+
+  const override = policy?.sessionTimeoutOverrideSec;
+  if (override !== undefined && override > 0) return override;
+
   const configured = ttl?.timeoutFor(packet.protocol, getPacketDstPort(packet));
   if (configured !== undefined) return configured;
 
@@ -133,6 +143,14 @@ const IP_PROTO_SCTP = 132;
 const DISCARD_TIMEOUT_SEC = 5;
 
 const tcpMachines = new WeakMap<object, TcpStateMachine>();
+const outOfState = new WeakSet<object>();
+const matchedServices = new WeakMap<object, ServiceObject>();
+
+function acceptsSessionWithoutSyn(context: PacketContext): boolean {
+  const policy = context.matchedPolicy?.tcpSessionWithoutSyn;
+  return policy === 'all' || policy === 'data-only';
+}
+
 const pendingTranslations = new WeakMap<object, SessionTranslation>();
 
 function deny(
@@ -570,7 +588,7 @@ function tcpTimeoutsFor(
   };
 }
 
-function tcpStateCheckStage(_services: FirewallServices): PipelineStage {
+function tcpStateCheckStage(services: FirewallServices): PipelineStage {
   return {
     name: 'tcp-state-check',
     apply(context) {
@@ -579,7 +597,8 @@ function tcpStateCheckStage(_services: FirewallServices): PipelineStage {
       if (!packet || !flags) return proceed(context, 'tcp-state-check', 'not-tcp');
 
       const machine = new TcpStateMachine({
-        timeouts: tcpTimeoutsFor(_services, vdom(_services, context).sessionTtl),
+        timeouts: tcpTimeoutsFor(services, vdom(services, context).sessionTtl),
+        synCheck: vdom(services, context).tcpSessionWithoutSyn !== true,
       });
       const verdict = machine.onFirstPacket(flags);
       if (!verdict.accepted) {
@@ -587,6 +606,7 @@ function tcpStateCheckStage(_services: FirewallServices): PipelineStage {
       }
 
       tcpMachines.set(context, machine);
+      if (!flags.syn || flags.ack) outOfState.add(context);
       return proceed(context, 'tcp-state-check', machine.state);
     },
   };
@@ -884,6 +904,7 @@ function policyLookupStage(services: FirewallServices): PipelineStage {
       );
 
       context.matchedPolicy = decision.rule;
+      if (decision.service) matchedServices.set(context, decision.service);
 
       if (isDenyAction(decision.action)) {
         if (decision.implicit && decision.sawIdentityGate) {
@@ -893,6 +914,10 @@ function policyLookupStage(services: FirewallServices): PipelineStage {
         return deny(context, 'policy-lookup',
           decision.implicit ? 'implicit-deny' : 'policy-deny',
           decision.implicit ? undefined : decision.rule.id);
+      }
+
+      if (outOfState.has(context) && !acceptsSessionWithoutSyn(context)) {
+        return deny(context, 'policy-lookup', 'no-session-non-syn', decision.rule.id);
       }
 
       context.trace.push({
@@ -926,7 +951,8 @@ function sessionInstallStage(services: FirewallServices): PipelineStage {
         ingressInterface: context.ingressPort,
         egressInterface: context.egressPort ?? '',
         timeoutSec: sessionTimeoutFor(
-          services, vdom(services, context).sessionTtl, arrived),
+          services, vdom(services, context).sessionTtl, arrived,
+          context.matchedPolicy, matchedServices.get(context)),
         policyId: context.matchedPolicy?.id,
         tcpState: tcpMachines.get(context)?.state,
         replyKey: reverseFlowKey(flowKeyFromPacket(packet)),

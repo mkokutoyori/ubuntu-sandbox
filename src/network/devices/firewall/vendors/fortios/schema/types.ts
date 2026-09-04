@@ -289,6 +289,7 @@ export interface FortiBalancedVipPatch {
 
 export interface FortiVdomSettings {
   readonly centralNat: boolean;
+  readonly tcpSessionWithoutSyn: boolean;
   readonly opmode: 'nat' | 'transparent';
   readonly manageIP?: string;
   readonly manageMask?: string;

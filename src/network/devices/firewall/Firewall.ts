@@ -408,6 +408,7 @@ export class Firewall extends Equipment {
       implicitPolicy: profile.implicitPolicy,
       applicationShift: profile.applicationShift,
       maxGroupNesting: profile.maxGroupNesting,
+      tcpSessionWithoutSyn: !profile.tcpSynCheckDefault,
       resolveFqdn: (fqdn) => this.dnsClient.resolve(fqdn),
       predefinedAddresses: profile.predefinedAddresses,
       predefinedServices: profile.predefinedServices,
@@ -1336,6 +1337,14 @@ export class Firewall extends Equipment {
     this.getVdom(vdom).settings.centralNat = enabled;
   }
 
+  setTcpSessionWithoutSyn(allowed: boolean, vdom?: string): void {
+    this.getVdom(vdom).settings.tcpSessionWithoutSyn = allowed;
+  }
+
+  allowsTcpSessionWithoutSyn(vdom?: string): boolean {
+    return this.getVdom(vdom).settings.tcpSessionWithoutSyn;
+  }
+
   centralNatEnabled(vdom?: string): boolean {
     return this.getVdom(vdom).settings.centralNat;
   }
@@ -2117,6 +2126,7 @@ function vdomServices(context: VdomContext): VdomServices {
     ...context,
     centralNat: context.settings.centralNat,
     opmode: context.settings.opmode,
+    tcpSessionWithoutSyn: context.settings.tcpSessionWithoutSyn,
   };
 }
 
