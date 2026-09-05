@@ -10,6 +10,7 @@ import {
 import {
   chooseTraceProbe, type HostTrace, type TraceCandidate, type TraceHop,
 } from './Traceroute';
+import { addrSetContains, enumerateTargets } from './TargetSpec';
 import {
   traceConnectLine, traceFrameLine, type TraceDirection,
 } from './PacketTrace';
@@ -202,32 +203,6 @@ export interface NmapReport {
 }
 
 const COLLAPSE_THRESHOLD = 24;
-const MAX_CIDR_HOSTS = 1024;
-
-export function enumerateTargets(target: string): string[] {
-  const slash = target.indexOf('/');
-  if (slash < 0) return [target];
-
-  const base = target.slice(0, slash);
-  const prefix = Number(target.slice(slash + 1));
-  const octets = base.split('.').map(Number);
-  if (octets.length !== 4 || octets.some((o) => !Number.isInteger(o) || o < 0 || o > 255)) {
-    return [target];
-  }
-  if (!Number.isInteger(prefix) || prefix < 0 || prefix > 32) return [target];
-
-  const count = 2 ** (32 - prefix);
-  if (count > MAX_CIDR_HOSTS) return [target];
-
-  const baseInt = ((octets[0] << 24) | (octets[1] << 16) | (octets[2] << 8) | octets[3]) >>> 0;
-  const network = prefix === 0 ? 0 : (baseInt & (0xffffffff << (32 - prefix))) >>> 0;
-  const out: string[] = [];
-  for (let i = 0; i < count; i++) {
-    const addr = (network + i) >>> 0;
-    out.push([addr >>> 24, (addr >>> 16) & 255, (addr >>> 8) & 255, addr & 255].join('.'));
-  }
-  return out;
-}
 
 export function effectivePorts(options: NmapOptions): number[] {
   return options.ports ?? topPorts(DEFAULT_TOP_COUNT);
@@ -539,6 +514,7 @@ export async function scan(
 
   for (const target of options.targets) {
     for (const address of enumerateTargets(target)) {
+      if (options.excluded && addrSetContains(options.excluded, address)) continue;
       const report = await scanHost(options, probes, address, phases, hopCache, trace)
         ?? (target === address && isIpLiteral(address)
           ? { ip: address, up: false, latencyMs: 0, downReason: 'no-response', ports: [] }

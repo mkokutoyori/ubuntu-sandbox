@@ -5,6 +5,7 @@ import type { ScanProbeShape } from '@/network/tcp/TcpStack';
 import { IPAddress } from '@/network/core/types';
 import { parseScanFlags, type ScanProbeFlags } from './StatelessScans';
 import { topPorts, fastPorts } from './ServiceRegistry';
+import { MAX_SPEC_HOSTS, type AddrSet } from './TargetSpec';
 
 /**
  * `NmapOps.cc:527` et `nmap.cc:1833` : les options qui composent le
@@ -171,6 +172,11 @@ export interface NmapOptions {
   outputNormal?: string;
   outputGreppable?: string;
   outputXml?: string;
+  inputFile?: string;
+  excludeFile?: string;
+  excludeSpecs?: string[];
+  randomTargets?: number;
+  excluded?: AddrSet;
 }
 
 /**
@@ -291,6 +297,10 @@ export function parseNmapArgs(args: string[]): NmapOptions {
   let fragmentMtu = 0;
   let decoySpec: DecoySource[] | undefined;
   let spoofSource: string | undefined;
+  let inputFile: string | undefined;
+  let excludeFile: string | undefined;
+  let excludeSpecs: string[] | undefined;
+  let randomTargets: number | undefined;
   const warnings: string[] = [];
 
   for (let i = 0; i < args.length; i++) {
@@ -369,6 +379,35 @@ export function parseNmapArgs(args: string[]): NmapOptions {
       if (!Number.isInteger(fragmentMtu) || fragmentMtu <= 0 || fragmentMtu % 8 !== 0) {
         throw new NmapOptionError(['Data payload MTU must be >0 and multiple of 8']);
       }
+      continue;
+    }
+    if (a === '-iL' && args[i + 1] !== undefined) {
+      if (inputFile !== undefined) {
+        throw new NmapOptionError(['Only one input filename allowed']);
+      }
+      inputFile = args[++i];
+      if (inputFile === '-') refuseUnimplemented('-iL -');
+      continue;
+    }
+    if (a === '-iR' && args[i + 1] !== undefined) {
+      const spec = args[++i];
+      if (!/^\d+$/.test(spec)) {
+        throw new NmapOptionError(['ERROR: -iR argument must be the maximum number'
+          + ' of random IPs you wish to scan (use 0 for unlimited)']);
+      }
+      randomTargets = Number(spec);
+      if (randomTargets === 0 || randomTargets > MAX_SPEC_HOSTS) {
+        throw new NmapOptionError([`nmap: -iR is bounded to ${MAX_SPEC_HOSTS}`
+          + ' addresses in this simulator, which has no unlimited scan to run.']);
+      }
+      continue;
+    }
+    if (a === '--exclude' && args[i + 1] !== undefined) {
+      excludeSpecs = [...(excludeSpecs ?? []), ...args[++i].split(',')];
+      continue;
+    }
+    if (a === '--excludefile' && args[i + 1] !== undefined) {
+      excludeFile = args[++i];
       continue;
     }
     if (a === '-D' && args[i + 1] !== undefined) {
@@ -468,5 +507,6 @@ export function parseNmapArgs(args: string[]): NmapOptions {
     osScan, openOnly, ipv6, disableArpPing, alwaysResolve, traceroute, packetTrace,
     showReason, noDns, verbose, debugLevel, stylesheet, probeShape, decoys, warnings,
     outputNormal, outputGreppable, outputXml,
+    inputFile, excludeFile, excludeSpecs, randomTargets,
   };
 }

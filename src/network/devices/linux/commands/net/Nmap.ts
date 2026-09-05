@@ -13,7 +13,8 @@ export { detectServiceFromBanner };
 function scanHost(ctx: LinuxCommandContext): ScanHost {
   return {
     device: localDeviceOf(ctx),
-    readFile: (p) => ctx.executor.vfs.readFile(p),
+    readFile: (p) => ctx.executor.vfs.readFile(
+      ctx.executor.vfs.normalizePath(p, ctx.executor.getCwd())),
     ping: (ip, timeoutMs) => (ip.includes(':')
       ? ctx.net.ping6Sequence(new IPv6Address(ip), 1, timeoutMs)
       : ctx.net.pingSequence(new IPAddress(ip), 1, timeoutMs)),
@@ -36,15 +37,16 @@ export const nmapCommand: LinuxCommand = {
   package: 'nmap',
   needsNetworkContext: true,
   complete: makeArgCompleter({
-    flags: ['-6', '-A', '-D', '-F', '-O', '-P0', '-Pn', '-R', '-S', '-T', '-d', '-n',
+    flags: ['-6', '-A', '-D', '-F', '-O', '-P0', '-Pn', '-R', '-S', '-T', '-d', '-iL', '-iR', '-n',
       '-f', '-ff', '-g', '-oA', '-oG', '-oN', '-oX', '-p', '-p-', '-sP', '-sS', '-sT', '-sU',
       '-sV', '-sA', '-sF', '-sM', '-sN', '-sW', '-sX', '-sn', '-v', '-vv',
-      '--badsum', '--disable-arp-ping', '--mtu', '--no-stylesheet', '--open',
+      '--badsum', '--disable-arp-ping', '--exclude', '--excludefile', '--mtu',
+      '--no-stylesheet', '--open',
       '--packet-trace', '--reason', '--send-ip', '--source-port', '--stylesheet',
       '--top-ports', '--traceroute', '--ttl', '--webxml'],
     hostsAtBarePosition: true,
   }),
-  usage: 'nmap [-sT|-sS|-sU|-sA|-sF|-sN|-sX|-sM|-sW] [-sV] [-O] [-A] [-p SPEC] [-F] [--top-ports N] [-sn] [-Pn] [--open] [--reason] [-n] [-oN file] [-oG file] [-oX file] [-oA base] <target...>',
+  usage: 'nmap [-iL file] [-iR n] [--exclude spec] [-sT|-sS|-sU|-sA|-sF|-sN|-sX|-sM|-sW] [-sV] [-O] [-A] [-p SPEC] [-F] [--top-ports N] [-sn] [-Pn] [--open] [--reason] [-n] [-oN file] [-oG file] [-oX file] [-oA base] <target...>',
   help: 'Discover hosts and services on a network.',
 
   async run(ctx: LinuxCommandContext, args: string[]): Promise<string> {
