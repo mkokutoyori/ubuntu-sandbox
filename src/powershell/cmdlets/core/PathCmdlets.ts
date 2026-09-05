@@ -395,7 +395,7 @@ export class SetContentCmdlet implements ICmdlet {
     // array/pipeline writes one value per line (NOT space-joined).
     const lines = Array.isArray(raw) ? raw.map(v => psValueToString(v)) : [psValueToString(raw)];
     const noNewline = ctx.named['nonewline'] === true || ctx.named['nonewline'] === 'true';
-    fs.writeFile(path, lines.join('\n') + (noNewline ? '' : '\n'));
+    fs.writeFile(path, noNewline ? lines.join('') : `${lines.join('\n')}\n`);
     if (ctx.named['passthru'] === true || ctx.named['passthru'] === 'true') {
       return lines.length === 1 ? lines[0] : (lines as unknown as PSValue);
     }
@@ -461,6 +461,11 @@ export class NewItemCmdlet implements ICmdlet {
   execute(ctx: CmdletContext): PSValue {
     const path     = pathArgOf(ctx);
     const itemType = psValueToString(ctx.named['itemtype'] ?? ctx.named['type'] ?? 'File').toLowerCase();
+    if (itemType === 'symboliclink' || itemType === 'hardlink' || itemType === 'junction') {
+      ctx.emitError(`New-Item : -ItemType ${itemType} is not supported in this simulator: `
+        + 'the file system has no links.');
+      return null;
+    }
     const value    = ctx.named['value'] !== undefined ? psValueToString(ctx.named['value']) : null;
 
     if (isRegistryPath(path)) {
@@ -532,6 +537,12 @@ export class RemoveItemCmdlet implements ICmdlet {
       }
       const fs = ctx.providers.filesystem;
       if (!fs) return null;
+      if (!recurse && fs.exists(path) && fs.isDirectory(path) && fs.listDir(path).length > 0) {
+        ctx.emitError(`Remove-Item : The item at ${path} has children and the Recurse `
+          + `parameter was not specified. If you continue, all children will be removed with `
+          + `the item. It is a directory.`);
+        continue;
+      }
       try { fs.remove(path, recurse); }
       catch (e) { ctx.emitError(e instanceof Error ? e.message : String(e)); }
     }
@@ -727,7 +738,7 @@ export class RenameItemCmdlet implements ICmdlet {
   readonly aliases = ['ren', 'rni'] as const;
 
   execute(ctx: CmdletContext): PSValue {
-    const src     = pathArgOf(ctx);
+    const src     = pathArgOf(ctx) || (pipedPath(ctx.pipeInput) ?? '');
     const newName = psValueToString(ctx.named['newname'] ?? ctx.positional[1] ?? '');
     if (!src || !newName) {
       ctx.emitError('Rename-Item requires -Path and -NewName');

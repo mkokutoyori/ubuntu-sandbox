@@ -25,11 +25,13 @@ export class WriteOutputCmdlet implements ICmdlet {
         ? (Array.isArray(ctx.pipeInput) ? ctx.pipeInput : [ctx.pipeInput])
         : [];
     if (args.length === 0) { ctx.emit(''); return null; }
+    const flat: PSValue[] = [];
     for (const item of args) {
-      if (Array.isArray(item)) for (const sub of item) ctx.emit(psValueToString(sub));
-      else ctx.emit(psValueToString(item));
+      if (Array.isArray(item)) flat.push(...item);
+      else flat.push(item);
     }
-    return args.length === 1 ? args[0] : args;
+    for (const item of flat) ctx.emit(psValueToString(item));
+    return flat.length === 1 ? flat[0] : (flat as PSValue);
   }
 }
 
@@ -39,11 +41,15 @@ export class WriteHostCmdlet implements ICmdlet {
   readonly name = 'write-host';
   readonly aliases = [] as const;
 
+  readonly parameters = ['Object', 'NoNewline', 'Separator', 'ForegroundColor', 'BackgroundColor'] as const;
+
   execute(ctx: CmdletContext): PSValue {
+    const flatten = (value: PSValue): string[] =>
+      Array.isArray(value) ? value.flatMap(flatten) : [psValueToString(value)];
     const parts: string[] = [];
-    for (const p of ctx.positional) parts.push(psValueToString(p));
+    for (const p of ctx.positional) parts.push(...flatten(p));
     if (parts.length === 0 && ctx.pipeInput !== null && ctx.pipeInput !== undefined)
-      parts.push(psValueToString(ctx.pipeInput));
+      parts.push(...flatten(ctx.pipeInput));
 
     const sep = ctx.named['separator'] !== undefined ? psValueToString(ctx.named['separator']) : ' ';
     ctx.emit(parts.join(sep));

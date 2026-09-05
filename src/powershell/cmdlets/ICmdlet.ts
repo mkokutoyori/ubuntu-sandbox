@@ -55,6 +55,10 @@ export interface ICmdlet {
    */
   readonly parameters?: readonly string[];
 
+  readonly supportsShouldProcess?: true;
+
+  whatIfTarget?(ctx: CmdletContext): string;
+
   /**
    * Execute the cmdlet and return a value (or null/void).
    * To write multiple values to the output stream, call ctx.emit() for each.

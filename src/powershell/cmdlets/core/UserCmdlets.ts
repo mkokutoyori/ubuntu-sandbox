@@ -151,18 +151,21 @@ abstract class UserActionCmdlet implements ICmdlet {
 
 export class RemoveLocalUserCmdlet extends UserActionCmdlet {
   readonly name = 'remove-localuser';
+  readonly supportsShouldProcess = true as const;
   readonly displayName = 'Remove-LocalUser';
   readonly aliases = [] as const;
   protected act(u: IUserProvider, n: string) { return u.removeUser(n); }
 }
 export class EnableLocalUserCmdlet extends UserActionCmdlet {
   readonly name = 'enable-localuser';
+  readonly supportsShouldProcess = true as const;
   readonly displayName = 'Enable-LocalUser';
   readonly aliases = [] as const;
   protected act(u: IUserProvider, n: string) { return u.enableUser(n); }
 }
 export class DisableLocalUserCmdlet extends UserActionCmdlet {
   readonly name = 'disable-localuser';
+  readonly supportsShouldProcess = true as const;
   readonly displayName = 'Disable-LocalUser';
   readonly aliases = [] as const;
   protected act(u: IUserProvider, n: string) { return u.disableUser(n); }

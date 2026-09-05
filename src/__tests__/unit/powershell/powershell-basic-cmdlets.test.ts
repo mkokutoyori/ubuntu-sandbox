@@ -1039,12 +1039,12 @@ describe('7. Get‑Location', () => {
     await expect(ps.execute('Get-Location | Out-String')).resolves.toBeDefined();
   });
 
-  it('Get-Location when in registry provider', async () => {
+  it('Get-Location in the registry provider shows the drive path, ProviderPath the long form', async () => {
     const pc = createPC();
     const ps = createPS(pc);
     await ps.execute('Set-Location HKCU:\\Software');
-    const loc = await ps.execute('Get-Location');
-    expect(loc).toContain('HKEY_CURRENT_USER');
+    expect(await ps.execute('Get-Location')).toContain('HKCU:\\Software');
+    expect(await ps.execute('(Get-Location).ProviderPath')).toContain('HKEY_CURRENT_USER');
     await ps.execute('Set-Location C:\\'); // back
   });
 
@@ -1298,11 +1298,11 @@ describe('11. Get‑Process – extended', () => {
     expect(out).not.toBeNull();
   });
 
-  it('Get-Process -Module returns loaded modules', async () => {
+  it('Get-Process -Module is REFUSED: a process carries no loaded-module list here', async () => {
     const pc = createPC();
     const ps = createPS(pc);
-    const out = await ps.execute('(Get-Process -Id $pid -Module).ModuleName');
-    expect(out).toContain('ntdll.dll');
+    const out = await ps.execute('Get-Process -Id $pid -Module');
+    expect(out).toContain('not supported');
   });
 
   it('Get-Process -IncludeUserName shows user', async () => {
@@ -1312,11 +1312,12 @@ describe('11. Get‑Process – extended', () => {
     expect(out).toContain('UserName');
   });
 
-  it('Get-Process -ComputerName fails gracefully (remoting not supported)', async () => {
+  it('Get-Process -ComputerName localhost is served LOCALLY, another machine is REFUSED', async () => {
     const pc = createPC();
     const ps = createPS(pc);
-    const out = await ps.execute('Get-Process -ComputerName localhost -ErrorAction SilentlyContinue');
-    expect(out).toContain('not supported');
+    expect(await ps.execute('Get-Process -ComputerName localhost')).toContain('ProcessName');
+    expect(await ps.execute('Get-Process -ComputerName AUTRE-PC'))
+      .toContain('no remote process channel');
   });
 
   it('Get-Process with multiple -Name values', async () => {
@@ -1404,8 +1405,7 @@ describe('13. New‑Item', () => {
   it('creates a symbolic link (if simulated)', async () => {
     const pc = createPC();
     const ps = createPS(pc);
-    const out = await ps.execute('New-Item -Path C:\\link -ItemType SymbolicLink -Target C:\\Windows -ErrorAction SilentlyContinue');
-    // May fail depending on OS privileges, simulation may handle
+    const out = await ps.execute('New-Item -Path C:\\link -ItemType SymbolicLink -Target C:\\Windows');
     expect(out).toContain('not supported');
   });
 
@@ -1446,7 +1446,8 @@ describe('14. Remove‑Item', () => {
     const pc = createPC();
     const ps = createPS(pc);
     await ps.execute('New-Item -Path C:\\noRecDir -ItemType Directory');
-    const out = await ps.execute('Remove-Item C:\\noRecDir -ErrorAction SilentlyContinue');
+    await ps.execute('Set-Content C:\\noRecDir\\enfant.txt -Value e');
+    const out = await ps.execute('Remove-Item C:\\noRecDir');
     expect(out).toContain('is a directory');
   });
 });
@@ -1573,11 +1574,12 @@ describe('18. Test‑Connection', () => {
     expect(out).toMatch(/Source.*Destination/s);
   });
 
-  it('fails for unreachable host', async () => {
+  it('unreachable host: one line per attempt carrying Status Failure, and -Quiet False', async () => {
     const pc = createPC();
     const ps = createPS(pc);
-    const out = await ps.execute('Test-Connection 10.255.255.1 -Count 1 -ErrorAction SilentlyContinue');
-    expect(out).toContain('failed');
+    const out = await ps.execute('Test-Connection 10.255.255.1 -Count 1');
+    expect(out).toMatch(/Status\s*:\s*Failure/);
+    expect((await ps.execute('Test-Connection 10.255.255.1 -Count 1 -Quiet')).trim()).toBe('False');
   });
 });
 
@@ -2758,14 +2760,15 @@ describe('21. Get-Service', () => {
     const help = await ps.execute('Get-Help Get-Service');
     expect(help).toContain('SYNOPSIS');
   });
-  it('-ComputerName fails gracefully (remoting not simulated)', async () => {
+  it('-ComputerName localhost is served LOCALLY, another machine is REFUSED', async () => {
     const pc = createPC(); const ps = createPS(pc);
-    const out = await ps.execute('Get-Service -ComputerName localhost -ErrorAction SilentlyContinue');
-    expect(out).toContain('not supported');
+    expect(await ps.execute('Get-Service -ComputerName localhost')).toContain('Spooler');
+    expect(await ps.execute('Get-Service -ComputerName AUTRE-PC'))
+      .toContain('no remote service control');
   });
   it('unknown service name returns error', async () => {
     const pc = createPC(); const ps = createPS(pc);
-    const out = await ps.execute('Get-Service -Name NoSuchService -ErrorAction SilentlyContinue');
+    const out = await ps.execute('Get-Service -Name NoSuchService');
     expect(out).toContain('Cannot find any service');
   });
   it('alias gsv works', async () => {
@@ -2809,12 +2812,12 @@ describe('22. Stop-Process', () => {
   });
   it('error non-existent process', async () => {
     const pc = createPC(); const ps = createPS(pc);
-    const out = await ps.execute('Stop-Process -Name FakeApp -ErrorAction SilentlyContinue');
+    const out = await ps.execute('Stop-Process -Name FakeApp');
     expect(out).toContain('Cannot find a process');
   });
   it('deny stopping system processes as standard user', async () => {
     const pc = createPC(); const ps = createPS(pc);
-    const out = await ps.execute('Stop-Process -Name lsass -ErrorAction SilentlyContinue');
+    const out = await ps.execute('Stop-Process -Name lsass');
     expect(out).toContain('Access is denied');
   });
   it('-WhatIf previews stop', async () => {
@@ -2841,11 +2844,10 @@ describe('22. Stop-Process', () => {
     const pc = createPC(); const ps = createPS(pc);
     await expect(ps.execute('Stop-Process -Name conhost -ErrorAction SilentlyContinue')).resolves.toBeDefined();
   });
-  it('-PassThru returns process object?', async () => {
-    // Stop-Process doesn't have -PassThru, so will error
+  it('-PassThru rend le processus arrete', async () => {
     const pc = createPC(); const ps = createPS(pc);
-    const out = await ps.execute('Stop-Process -Name conhost -PassThru -ErrorAction SilentlyContinue');
-    expect(out).toContain('parameter');
+    const out = await ps.execute('(Stop-Process -Name conhost -PassThru).ProcessName');
+    expect(out).toContain('conhost');
   });
   it('alias kill works', async () => {
     const pc = createPC(); const ps = createPS(pc);
@@ -2893,7 +2895,7 @@ describe('23. Get-Disk', () => {
   it('-SerialNumber filter', async () => {
     // might be null in simulation
     const pc = createPC(); const ps = createPS(pc);
-    const out = await ps.execute('Get-Disk -SerialNumber "1234" -ErrorAction SilentlyContinue');
+    const out = await ps.execute('Get-Disk -SerialNumber "1234"');
     expect(out).toContain('No MSFT_Disk');
   });
   it('returns IsBoot, IsSystem properties', async () => {
@@ -2905,10 +2907,11 @@ describe('23. Get-Disk', () => {
     const pc = createPC(); const ps = createPS(pc);
     await expect(ps.execute('Get-Disk | Get-Partition')).resolves.toBeDefined();
   });
-  it('pipeline to Initialize-Disk -WhatIf', async () => {
+  it('Initialize-Disk -WhatIf answers the REFUSAL, not a What-if it could not honour', async () => {
     const pc = createPC(); const ps = createPS(pc);
     const out = await ps.execute('Get-Disk -Number 0 | Initialize-Disk -WhatIf');
-    expect(out).toContain('What if');
+    expect(out).toContain('a disk carries no partition table');
+    expect(out).not.toContain('What if');
   });
   it('Get-Help', async () => {
     const pc = createPC(); const ps = createPS(pc);
@@ -2916,7 +2919,7 @@ describe('23. Get-Disk', () => {
   });
   it('error invalid Number', async () => {
     const pc = createPC(); const ps = createPS(pc);
-    const out = await ps.execute('Get-Disk -Number 99 -ErrorAction SilentlyContinue');
+    const out = await ps.execute('Get-Disk -Number 99');
     expect(out).toContain('No MSFT_Disk');
   });
 });
@@ -2953,10 +2956,11 @@ describe('24. Get-Volume', () => {
     const pc = createPC(); const ps = createPS(pc);
     await expect(ps.execute('Get-Volume | Get-Disk')).resolves.not.toThrow();
   });
-  it('pipe to Format-Volume -WhatIf', async () => {
+  it('Format-Volume -WhatIf answers the REFUSAL, not a What-if it could not honour', async () => {
     const pc = createPC(); const ps = createPS(pc);
     const out = await ps.execute('Get-Volume -DriveLetter C | Format-Volume -WhatIf');
-    expect(out).toContain('What if');
+    expect(out).toContain('erasing it would erase the machine');
+    expect(out).not.toContain('What if');
   });
   it('Get-Help', async () => {
     const pc = createPC(); const ps = createPS(pc);
@@ -2991,8 +2995,8 @@ describe('25. Get-LocalUser', () => {
   });
   it('error non-existent user', async () => {
     const pc = createPC(); const ps = createPS(pc);
-    const out = await ps.execute('Get-LocalUser -Name NoSuch -ErrorAction SilentlyContinue');
-    expect(out).toContain('User not found');
+    const out = await ps.execute('Get-LocalUser -Name NoSuch');
+    expect(out).toContain('User NoSuch was not found');
   });
   it('pipeline to Disable-LocalUser -WhatIf', async () => {
     const pc = createPC(); const ps = createPS(pc);

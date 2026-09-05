@@ -856,9 +856,10 @@ function pickDefaultColumns(keys: string[]): string[] | null {
   if (lower.has('status') && lower.has('name') && lower.has('displayname')) {
     return ['Status', 'Name', 'DisplayName'];
   }
-  // Process object: Handles, NPM(K), PM(K), WS(K), CPU(s), Id, ProcessName
   if (lower.has('handles') && lower.has('id') && lower.has('processname')) {
-    return ['Handles', 'NPM(K)', 'PM(K)', 'WS(K)', 'CPU(s)', 'Id', 'ProcessName'];
+    return lower.has('username')
+      ? ['Handles', 'WS(K)', 'CPU(s)', 'Id', 'UserName', 'ProcessName']
+      : ['Handles', 'NPM(K)', 'PM(K)', 'WS(K)', 'CPU(s)', 'Id', 'ProcessName'];
   }
   if (lower.has('macaddress') && lower.has('status') && lower.has('name') && lower.has('interfacedescription')) {
     return ['Name', 'InterfaceDescription', 'ifIndex', 'Status', 'MacAddress', 'LinkSpeed'];

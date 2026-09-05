@@ -2686,26 +2686,6 @@ donc seul le controle de PRESENCE quitte la declaration. Fermer
 l'entree demande une notion de presence par sens dans `CommandParser`,
 qui touche toutes les familles migrees et non cette seule.
 
-### [dnsclient] `Clear-DnsClientCache` a encore DEUX portes
-
-**Mesure** : apres la migration de la famille DnsClient, le moteur
-historique (`PowerShellExecutor`) ne dispatche plus AUCUNE commande
-`Net*` ni `Dns*` — sauf deux : `test-connection` (entree separee
-ci-dessus) et `clear-dnsclientcache`, dont la branche appelle
-`executeCmdCommand('ipconfig /flushdns')`.
-
-**Ce n'est PAS une incoherence de magasin** : les deux portes vident le
-meme cache, ce que la regle de coherence demande justement. Ce qui reste
-est une seconde IMPLANTATION de la commande : la branche historique
-ignore `-WhatIf` et `-CimSession`, que la cmdlet vivante honore
-desormais, donc les deux repondent differemment a
-`Clear-DnsClientCache -WhatIf` selon le chemin emprunte.
-
-**Non ferme ici** : la suppression tient en quatre lignes, mais elle est
-arrivee apres le lancement du balayage complet de `network-v2` qui valide
-le lot ; l'appliquer aurait invalide la mesure. A retirer au lot suivant,
-avec sa propre verification.
-
 ### [powershell] `netsh wlan add profile` ne lit pas le XML du profil
 
 **Mesure** : `netsh wlan add profile filename="C:\temp\quoi-que-ce-soit.xml"`
@@ -2748,19 +2728,57 @@ toutes bloquees par le proxy de sortie. Aucune des deux n'a donc ete
 choisie sur autorite — on a garde celle qui vit avec ses tests, et la
 question reste ouverte.
 
-### [powershell] les dernieres familles de `powershell-basic-cmdlets.test.ts`
+### [powershell] pas de canal de controle de services / de processus a distance
 
-**Mesure** : le fichier (558 cas) mesure le moteur VIVANT depuis que
-l'executeur historique est supprime. Il etait a 128 rouges au debut de la
-migration, il est a 32. Ferme depuis : `-?`, `Get-Help`, `Copy-Item`,
-`Get-Content`, `Get-ChildItem`, `Get-Location`, `Get-Command`,
-`-LiteralPath`, le filtrage par joker, les attributs de fichier, le
-stockage.
+**Mesure** : `Get-Service -ComputerName <autre machine>` et
+`Get-Process -ComputerName <autre machine>` sont REFUSES, en nommant la
+brique : il n'y a pas de canal SCM ni de canal de processus a distance
+dans ce simulateur. Le parametre etait auparavant ACCEPTE et IGNORE, si
+bien qu'une supervision interrogeant un second contrôleur de domaine
+lisait en fait les services de la machine locale et concluait « tout va
+bien » — le pire des trois cas de la regle 6.
+`scenario-ad-health-monitoring` mesure desormais la consequence : les six
+services du DC distant comptent comme inaccessibles.
 
-**Reste** : `Get-Service` (6), `Stop-Process` (6), `Get-Process` etendu
-(4 — `-Module`, `-IncludeUserName`, `-ComputerName`), `Get-LocalUser` (3),
-`Get-Disk`/`Get-Volume` (quelques cas de filtre), et huit cas isoles
-(`New-Item`, `Remove-Item`, `Rename-Item`, `Set-Content`,
-`Test-Connection`, `Write-Host`, `Write-Output`). Chaque famille est un
-lot : on ferme le manque que le cas revele, ou on corrige le cas quand il
-epingle une invention du moteur mort.
+**Ce qu'il faudrait** : un vrai dialogue (RPC/WinRM) entre les deux
+machines, sur le fil, comme le reste du projet — pas un raccourci qui
+appellerait la methode de l'objet distant.
+
+### [powershell] `Test-Connection` sur un hote injoignable : ligne ou erreur ?
+
+**Mesure** : le simulateur rend UNE LIGNE par tentative, portant
+`Status : Failure`, et `-Quiet` rend `False`. Un vrai PowerShell 5.1
+semble plutot lever `Test-Connection : Testing connection to computer 'x'
+failed: Error due to lack of resources` et ne rien rendre. La bascule a
+ete essayee : elle casse les ateliers AD qui lisent les lignes
+(`scenario-ad-fsmo-roles`), et surtout **aucune transcription n'a pu etre
+atteinte** pour trancher — la documentation de Microsoft ne publie pas la
+sortie d'echec, et les pages qui la portent sont bloquees par le proxy de
+sortie. Le contrat en place est donc conserve, et la question reste
+ouverte.
+
+### [powershell] quatre criteres REFUSES faute de la brique en dessous
+
+**Mesure** : ce lot a ferme quatre parametres qui etaient ACCEPTES et
+IGNORES — le pire des trois cas de la regle 6, l'apparence sans l'effet.
+Chacun rend desormais un refus qui NOMME la brique absente :
+
+- `Get-Process -Module` / `-FileVersionInfo` : un processus du simulateur
+  ne porte pas de liste de modules charges, ni de bloc de version de
+  fichier. Il faudrait que `ProcessInfo` porte l'image et ses
+  dependances.
+- `New-Item -ItemType SymbolicLink` / `HardLink` / `Junction` :
+  `SimulatedFileSystem` n'a pas de notion de lien — un chemin y designe
+  un seul noeud. Il faudrait un type de noeud « lien » et sa resolution
+  dans chaque lecture.
+- `Initialize-Disk` : un disque du simulateur est derive du systeme de
+  fichiers et ne porte AUCUNE table de partition ; il n'y a rien a
+  initialiser.
+- `Format-Volume` : un volume EST le systeme de fichiers de la machine ;
+  le formater reviendrait a l'effacer.
+
+**Consequence tenue** : aucune de ces cmdlets ne declare
+`supportsShouldProcess`. Annoncer « What if: Performing the operation … »
+pour un geste que le moteur ne sait pas poser serait exactement la meme
+apparence sans l'effet, dans l'autre sens — les deux tests qui
+l'attendaient epinglaient une invention du moteur mort et sont corriges.

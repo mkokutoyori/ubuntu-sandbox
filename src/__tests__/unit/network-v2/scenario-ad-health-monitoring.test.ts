@@ -104,12 +104,15 @@ const healthCheckScript = [
 
 describe('Scénario 20 — supervision AD : santé, réplication et alertes (mandeng.lan)', () => {
   describe('script de supervision AD complet sur un lab sain', () => {
-    it('Invoke-ADHealthCheck retourne un Score de 100/100 sans aucune alerte sur une infrastructure saine', async () => {
+    it('le score ne compte QUE ce que la machine peut verifier — les services du DC distant sont INACCESSIBLES', async () => {
       const { dc1 } = await buildTwoDcs();
       const sh = ps(dc1);
       await run(sh, healthCheckScript);
-      const out = await run(sh, '(Invoke-ADHealthCheck).Score');
-      expect(out.trim()).toBe('100');
+      const score = await run(sh, '(Invoke-ADHealthCheck).Score');
+      expect(Number(score.trim())).toBe(100 - 6 * 20);
+      const alertes = await run(sh, '(Invoke-ADHealthCheck).Alerts');
+      expect(alertes).toContain('DC02');
+      expect(alertes).not.toContain('sur DC01');
     });
 
     it('le rapport contient les catégories Services, Replication et FSMO', async () => {

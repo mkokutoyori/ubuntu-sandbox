@@ -116,6 +116,7 @@ import {
   GetScheduledTaskInfoCmdlet, StartScheduledTaskCmdlet, StopScheduledTaskCmdlet,
   EnableScheduledTaskCmdlet, DisableScheduledTaskCmdlet, SetScheduledTaskCmdlet,
   NewScheduledTaskActionCmdlet, NewScheduledTaskPrincipalCmdlet, GetDiskCmdlet, GetVolumeCmdlet,
+  InitializeDiskCmdlet, FormatVolumeCmdlet,
   GetCimInstanceCmdlet, GetCounterCmdlet,
   GetComputerInfoCmdlet,
 } from './SystemMgmtCmdlets';
@@ -477,6 +478,8 @@ export function registerCoreCmdlets(registry: CmdletRegistry, opts: { includeSer
   registry.register(new NewScheduledTaskActionCmdlet());
   registry.register(new NewScheduledTaskPrincipalCmdlet());
   registry.register(new GetDiskCmdlet());
+  registry.register(new InitializeDiskCmdlet());
+  registry.register(new FormatVolumeCmdlet());
   registry.register(new GetVolumeCmdlet());
   registry.register(new GetCimInstanceCmdlet());
   registry.register(new GetCounterCmdlet());

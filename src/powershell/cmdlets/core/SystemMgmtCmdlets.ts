@@ -457,13 +457,20 @@ export class GetDiskCmdlet implements ICmdlet {
       UniqueId:         d.uniqueId,
     } as Record<string, PSValue>));
 
-    const asked = ctx.named['number'] ?? ctx.positional[0];
-    const kept = asked === undefined || asked === null
-      ? rows
-      : rows.filter(r => Number(r['Number']) === Number(asked));
-    if (kept.length === 0) {
-      ctx.emitError(`Get-Disk : No MSFT_Disk objects found with Number = ${psValueToString(asked)}.`);
-      return null;
+    const filters: Array<[string, string]> = [
+      ['Number', 'number'], ['FriendlyName', 'friendlyname'],
+      ['UniqueId', 'uniqueid'], ['SerialNumber', 'serialnumber'],
+    ];
+    let kept = rows;
+    for (const [property, parameter] of filters) {
+      const asked = ctx.named[parameter] ?? (parameter === 'number' ? ctx.positional[0] : undefined);
+      if (asked === undefined || asked === null) continue;
+      const wanted = psValueToString(asked).replace(/^["']|["']$/g, '');
+      kept = kept.filter(r => psValueToString(r[property]).toLowerCase() === wanted.toLowerCase());
+      if (kept.length === 0) {
+        ctx.emitError(`Get-Disk : No MSFT_Disk objects found with ${property} = ${wanted}.`);
+        return null;
+      }
     }
     return kept as PSValue;
   }
@@ -478,7 +485,7 @@ function gigabytes(bytes: number): string {
 export class GetVolumeCmdlet implements ICmdlet {
   readonly name = 'get-volume';
   readonly displayName = 'Get-Volume';
-  readonly parameters = ['DriveLetter', 'FileSystemLabel'] as const;
+  readonly parameters = ['DriveLetter', 'FileSystemLabel', 'FileSystem', 'FileSystemType'] as const;
   readonly aliases = [] as const;
 
   execute(ctx: CmdletContext): PSValue {
@@ -486,6 +493,8 @@ export class GetVolumeCmdlet implements ICmdlet {
       DriveLetter:       v.driveLetter,
       FriendlyName:      v.fileSystemLabel,
       FileSystem:        v.fileSystem,
+      FileSystemType:    v.fileSystem,
+      FileSystemLabel:   v.fileSystemLabel,
       DriveType:         v.driveType,
       HealthStatus:      v.healthStatus,
       OperationalStatus: v.operationalStatus,
@@ -493,6 +502,16 @@ export class GetVolumeCmdlet implements ICmdlet {
       Size:              gigabytes(v.size),
     } as Record<string, PSValue>));
 
+    const fileSystem = ctx.named['filesystem'] ?? ctx.named['filesystemtype'];
+    if (fileSystem !== undefined && fileSystem !== null) {
+      const wanted = psValueToString(fileSystem).toUpperCase();
+      const byFs = rows.filter(r => psValueToString(r['FileSystem']).toUpperCase() === wanted);
+      if (byFs.length === 0) {
+        ctx.emitError(`Get-Volume : No MSFT_Volume objects found with FileSystemType = ${wanted}.`);
+        return null;
+      }
+      return byFs as PSValue;
+    }
     const asked = psValueToString(ctx.named['driveletter'] ?? ctx.positional[0] ?? '')
       .replace(/:$/, '').toUpperCase();
     if (!asked) return rows as PSValue;
@@ -502,6 +521,32 @@ export class GetVolumeCmdlet implements ICmdlet {
       return null;
     }
     return kept as PSValue;
+  }
+}
+
+export class InitializeDiskCmdlet implements ICmdlet {
+  readonly name = 'initialize-disk';
+  readonly displayName = 'Initialize-Disk';
+  readonly parameters = ['Number', 'PartitionStyle', 'PassThru'] as const;
+  readonly aliases = [] as const;
+
+  execute(ctx: CmdletContext): PSValue {
+    ctx.emitError('Initialize-Disk : partitioning is not supported in this simulator: '
+      + 'a disk carries no partition table.');
+    return null;
+  }
+}
+
+export class FormatVolumeCmdlet implements ICmdlet {
+  readonly name = 'format-volume';
+  readonly displayName = 'Format-Volume';
+  readonly parameters = ['DriveLetter', 'FileSystem', 'NewFileSystemLabel', 'Full', 'Force'] as const;
+  readonly aliases = [] as const;
+
+  execute(ctx: CmdletContext): PSValue {
+    ctx.emitError('Format-Volume : formatting is not supported in this simulator: '
+      + 'a volume is the file system itself, and erasing it would erase the machine.');
+    return null;
   }
 }
 
