@@ -21,6 +21,17 @@ export function pushPseudoHeader(
   words.push(protocol & 0xffff, l4Length & 0xffff);
 }
 
+/**
+ * Ce que `--badsum` de `nmap` fait d'une somme JUSTE (`ipv4_cksum`,
+ * `tcpip.cc:434`) : la decrementer d'un — et, si le protocole est UDP et
+ * que le resultat tombe a zero, prendre `0xffff`, une somme UDP nulle
+ * valant « pas de somme » en IPv4 et laissant donc passer le paquet.
+ */
+export function bogusChecksum(sum: number, protocol: number): number {
+  const lowered = (sum - 1) & 0xffff;
+  return protocol === IP_PROTO_UDP_NUMBER && lowered === 0 ? 0xffff : lowered;
+}
+
 export function payloadBytes(payload: unknown): number[] {
   if (typeof payload === 'string') {
     const bytes: number[] = [];

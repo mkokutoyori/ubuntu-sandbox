@@ -3727,8 +3727,11 @@ export abstract class LinuxMachine extends EndHost
         const hops = await this.executeTraceroute(target, maxHops, timeoutMs ?? 2000, probesPerHop, firstTtl);
         return hops as TracerouteHop[];
       },
-      sendUdpProbe: (target: IPAddress, destinationPort: number, sourcePort: number): boolean => {
-        return this.sendUdpDatagram(target, destinationPort, sourcePort, null, 0);
+      sendUdpProbe: (
+        target: IPAddress, destinationPort: number, sourcePort: number,
+        options: { ttl?: number; badChecksum?: boolean } = {},
+      ): boolean => {
+        return this.sendUdpDatagram(target, destinationPort, sourcePort, null, 0, options);
       },
       getResolvedService: () => this.getResolvedService(),
       publishResolvedState: () => this.publishResolvedState(),

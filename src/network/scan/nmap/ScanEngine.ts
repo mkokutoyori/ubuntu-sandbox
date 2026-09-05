@@ -1,6 +1,7 @@
 import type { NmapOptions, ScanType } from './NmapOptions';
 import { IPAddress } from '@/network/core/types';
 import type { TcpWireOutcome } from '@/network/tcp/types';
+import type { ScanProbeShape } from '@/network/tcp/TcpStack';
 import { topPorts, serviceName, DEFAULT_TOP_COUNT } from './ServiceRegistry';
 import type { ScanProbeFlags, ScanVerdict, StatelessScanKind } from './StatelessScans';
 import {
@@ -87,8 +88,11 @@ export interface HostProbes {
    */
   statelessOutcome?(
     ip: string, port: number, kind: StatelessScanKind, flags?: ScanProbeFlags,
+    shape?: ScanProbeShape,
   ): ScanVerdict;
-  udpState(ip: string, port: number): 'open' | 'closed' | 'open|filtered';
+  udpState(
+    ip: string, port: number, shape?: ScanProbeShape,
+  ): 'open' | 'closed' | 'open|filtered';
   banner(ip: string, port: number): { service: string; version?: string } | null;
   /**
    * `Target::directlyConnected()` : une cible du meme segment est a une
@@ -235,7 +239,8 @@ function tcpResult(
 ): PortResult {
   const kind = statelessKindOf(options.scanType);
   const stateless = kind && probes.statelessOutcome
-    ? probes.statelessOutcome(ip, port, kind, options.scanFlags) : null;
+    ? probes.statelessOutcome(ip, port, kind, options.scanFlags, options.probeShape)
+    : null;
   let state: PortState;
   let reason: string;
   if (stateless) {
@@ -268,7 +273,7 @@ function tcpResult(
 function udpResult(
   options: NmapOptions, probes: HostProbes, ip: string, port: number,
 ): PortResult {
-  const state = probes.udpState(ip, port);
+  const state = probes.udpState(ip, port, options.probeShape);
   const reason = state === 'open' ? 'udp-response' : state === 'closed' ? 'port-unreach' : 'no-response';
   let service = serviceName(port, 'udp');
   let version: string | undefined;

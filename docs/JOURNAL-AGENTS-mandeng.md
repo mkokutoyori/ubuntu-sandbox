@@ -7718,3 +7718,47 @@ tombent ; le 18e est le TEMOIN `-oN`, dont c'est l'objet de passer des
 deux cotes. Deux tests preexistants encodaient le defaut comme contrat
 (`nmap-formatter`, `nmap-scan-engine`) et sont corriges. Un cas e2e
 Playwright tape `-oA` et relit le XML dans le vrai terminal.
+
+## 2026-09-05 — `--badsum`, `-g/--source-port`, `--ttl`
+
+**Portee** : `scan/nmap/` (`NmapOptions`, `ScanEngine`, `NmapProbes`,
+`NmapFormatter`), `tcp/TcpStack.ts`, `devices/EndHost.ts`,
+`layers/transport/{L4Checksum,UdpEgress}.ts`, `linux/LinuxNetKernel.ts`,
+`LinuxMachine.ts`, plus les deux portes de plateforme. Aucun fichier de
+journalisation touche.
+
+Les trois options appartiennent a la meme section du manuel — FIREWALL/
+IDS EVASION — et au MEME mecanisme : le paquet du balayage n'est plus
+celui que la pile aurait compose. Elles partagent donc un seul joint,
+`ScanProbeShape`, plutot que trois rustines.
+
+**Ce qui les rend reelles ici et non decoratives** : ce simulateur JUGE
+ce qu'elles changent. `TcpStack.handleIp` verifie la somme TCP et jette
+(`bad-checksum`), `EndHost.deliverUDP` de meme pour UDP — silencieusement,
+RFC 768, donc aucun ICMP en retour —, et un routeur decremente la duree
+de vie. Sous `--badsum` la trame ARRIVE (un `tcpdump` sur la cible la
+voit) et c'est la PILE qui la jette : c'est exactement ce que nmap
+documente (« virtually all host IP stacks properly drop these packets »).
+
+**La regle du decrement vient de `ipv4_cksum` (`tcpip.cc:434`)** : la
+somme JUSTE moins un, et `0xffff` si le protocole est UDP et que le
+resultat tombe a zero — une somme UDP nulle valant « pas de somme » en
+IPv4, elle laisserait passer le paquet.
+
+**Les trois n'affectent PAS la decouverte, et c'est ecrit plutot que
+tu** : `--badsum` corrompt ce que nmap COMPOSE ; la decouverte de ce
+simulateur emprunte le `ping` et le `connect` de la machine, que nmap ne
+compose pas — la meme raison qui fait qu'un balayage CONNECTE ne peut
+honorer aucune des trois. Sous `-sT` elles sont acceptees, averties et
+non honorees (`nmap.cc:1833`), `-g` portant en plus son avertissement
+propre (`NmapOps.cc:527`), emis AVANT le generique.
+
+**Un defaut trouve en chemin** : `UdpSendRequest.ttl` etait declare et
+JETE par `EndHost.sendUdpDatagram`, alors que `buildUdpOverIpv4` —
+l'autre implantation de la meme offre — l'honore. Deux ecritures d'un
+meme envoi, dont une seule lisait le champ.
+
+**Discrimination** : `probe-nmap-forme-de-la-sonde.test.ts` (12 cas), les
+12 tombent contre l'etat d'avant, ou les trois options sont refusees
+avant tout balayage. Un cas e2e Playwright tape les quatre formes dans le
+vrai terminal.

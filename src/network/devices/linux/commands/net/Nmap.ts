@@ -19,9 +19,10 @@ function scanHost(ctx: LinuxCommandContext): ScanHost {
       : ctx.net.pingSequence(new IPAddress(ip), 1, timeoutMs)),
     tcpOutcome: (ip, port) => ctx.net.tcpConnectOutcome(ip, port),
     grabGreeting: (ip, port) => ctx.net.grabServiceBanner(ip, port),
-    sendUdpProbe: (ip, port, sourcePort) =>
-      ctx.net.sendUdpProbe(new IPAddress(ip), port, sourcePort),
-    scanProbe: (ip, port, flags) => ctx.net.getTcpStack().scanProbe(ip, port, flags),
+    sendUdpProbe: (ip, port, sourcePort, options) =>
+      ctx.net.sendUdpProbe(new IPAddress(ip), port, sourcePort, options),
+    scanProbe: (ip, port, flags, shape) =>
+      ctx.net.getTcpStack().scanProbe(ip, port, flags, shape),
     linkNeighbour: (ip) => linkNeighbourOf(localDeviceOf(ctx), ip),
     reverseName: (ip) => reverseNameOfAsync(ctx.executor.nss, ip),
     resolveName: (name) => forwardAddressOfAsync(ctx.executor.nss, name),
@@ -36,11 +37,11 @@ export const nmapCommand: LinuxCommand = {
   needsNetworkContext: true,
   complete: makeArgCompleter({
     flags: ['-6', '-A', '-F', '-O', '-P0', '-Pn', '-R', '-T', '-d', '-n',
-      '-oA', '-oG', '-oN', '-oX', '-p', '-p-', '-sP', '-sS', '-sT', '-sU', '-sV',
-      '-sA', '-sF', '-sM', '-sN', '-sW', '-sX', '-sn', '-v', '-vv',
-      '--disable-arp-ping', '--no-stylesheet', '--open', '--packet-trace',
-      '--reason', '--send-ip', '--stylesheet', '--top-ports', '--traceroute',
-      '--webxml'],
+      '-g', '-oA', '-oG', '-oN', '-oX', '-p', '-p-', '-sP', '-sS', '-sT', '-sU',
+      '-sV', '-sA', '-sF', '-sM', '-sN', '-sW', '-sX', '-sn', '-v', '-vv',
+      '--badsum', '--disable-arp-ping', '--no-stylesheet', '--open',
+      '--packet-trace', '--reason', '--send-ip', '--source-port', '--stylesheet',
+      '--top-ports', '--traceroute', '--ttl', '--webxml'],
     hostsAtBarePosition: true,
   }),
   usage: 'nmap [-sT|-sS|-sU|-sA|-sF|-sN|-sX|-sM|-sW] [-sV] [-O] [-A] [-p SPEC] [-F] [--top-ports N] [-sn] [-Pn] [--open] [--reason] [-n] [-oN file] [-oG file] [-oX file] [-oA base] <target...>',

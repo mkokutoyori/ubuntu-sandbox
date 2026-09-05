@@ -19,6 +19,19 @@ export interface UdpEgressHost {
   sendUdpDatagram(request: UdpSendRequest): boolean;
 }
 
+/**
+ * Ce que l'ECRITURE positionnelle de `sendUdpDatagram` accepte en plus de
+ * ses parametres : les memes faits que `UdpSendRequest` porte par champ,
+ * plus `badChecksum`, qui n'a de sens que pour un emetteur composant
+ * deliberement un datagramme faux (`nmap --badsum`).
+ */
+export interface UdpEmissionOptions {
+  df?: boolean;
+  iface?: string;
+  ttl?: number;
+  badChecksum?: boolean;
+}
+
 const DEFAULT_TTL = 64;
 
 export function buildUdpDatagram(request: UdpSendRequest): UDPPacket {

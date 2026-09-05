@@ -1,6 +1,6 @@
 import type { Equipment } from '@/network/equipment/Equipment';
 import type { TcpWireOutcome } from '@/network/tcp/types';
-import type { StatelessProbeReply } from '@/network/tcp/TcpStack';
+import type { ScanProbeShape, StatelessProbeReply } from '@/network/tcp/TcpStack';
 import {
   SCAN_PROBE_FLAGS, readStatelessReply,
   type ScanProbeFlags, type StatelessScanKind,
@@ -29,9 +29,14 @@ export interface ScanHost {
   }>>;
   tcpOutcome(ip: string, port: number): TcpWireOutcome;
   grabGreeting(ip: string, port: number): string | null;
-  sendUdpProbe(ip: string, port: number, sourcePort: number): boolean;
+  sendUdpProbe(
+    ip: string, port: number, sourcePort: number,
+    options?: { ttl?: number; badChecksum?: boolean },
+  ): boolean;
   /** Un segment hors connexion, et ce qui revient — la lecture est au moteur. */
-  scanProbe(ip: string, port: number, flags: ScanProbeFlags): StatelessProbeReply;
+  scanProbe(
+    ip: string, port: number, flags: ScanProbeFlags, shape?: ScanProbeShape,
+  ): StatelessProbeReply;
   /**
    * Ce que `arpping()` demande a la machine. Les TROIS issues sont
    * distinctes : `null` veut dire que la cible n'est pas sur ce segment,
@@ -177,7 +182,7 @@ function isNumericAddress(target: string): boolean {
  * open|filtered, and a datagram coming back opens it.
  */
 function probeUdpPort(
-  host: ScanHost, ip: string, port: number,
+  host: ScanHost, ip: string, port: number, shape: ScanProbeShape = {},
 ): 'open' | 'closed' | 'open|filtered' {
   const device = host.device;
   if (!device) return 'open|filtered';
@@ -193,7 +198,8 @@ function probeUdpPort(
   });
 
   try {
-    host.sendUdpProbe(ip, port, UDP_PROBE_SOURCE_PORT);
+    host.sendUdpProbe(ip, port, shape.sourcePort ?? UDP_PROBE_SOURCE_PORT,
+      { ttl: shape.ttl, badChecksum: shape.badChecksum });
   } catch {
     stop();
     return 'open|filtered';
@@ -301,12 +307,13 @@ export function buildScanProbes(
     },
     statelessOutcome(
       ip: string, port: number, kind: StatelessScanKind, flags?: ScanProbeFlags,
+      shape?: ScanProbeShape,
     ) {
       return readStatelessReply(
-        kind, host.scanProbe(ip, port, flags ?? SCAN_PROBE_FLAGS[kind]));
+        kind, host.scanProbe(ip, port, flags ?? SCAN_PROBE_FLAGS[kind], shape));
     },
-    udpState(ip: string, port: number) {
-      return probeUdpPort(host, ip, port);
+    udpState(ip: string, port: number, shape?: ScanProbeShape) {
+      return probeUdpPort(host, ip, port, shape);
     },
     banner(ip: string, port: number) {
       const greeting = host.grabGreeting(ip, port);

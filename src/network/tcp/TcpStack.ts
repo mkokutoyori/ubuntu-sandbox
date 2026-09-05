@@ -8,7 +8,7 @@ import {
   computeTcpChecksum, verifyTcpChecksum, seqLt,
   TCP_DEFAULT_MSS, TCP_DEFAULT_WINDOW, TCP_TIME_WAIT_MS, TCP_MIN_MSS,
 } from './types';
-import { payloadBytes } from '@/network/layers/transport/L4Checksum';
+import { bogusChecksum, payloadBytes } from '@/network/layers/transport/L4Checksum';
 import { PortNumber } from '@/network/core/ports/PortNumber';
 import {
   ICMP_UNREACH_NET_PROHIBITED, ICMP_UNREACH_HOST_PROHIBITED,
@@ -22,6 +22,20 @@ import {
  * PORT_CLOSED`.
  */
 export type StatelessProbeReply = 'rst' | 'rst-window' | 'syn-ack' | 'none';
+
+/**
+ * Ce qu'un balayeur COMPOSE dans sa sonde au lieu de laisser la pile le
+ * decider — les trois options d'evasion de `nmap` que ce simulateur juge
+ * reellement : `-g`/`--source-port`, `--ttl` et `--badsum`.
+ */
+export interface ScanProbeShape {
+  sourcePort?: number;
+  ttl?: number;
+  badChecksum?: boolean;
+}
+
+/** La duree de vie qu'une pile TCP pose sur ses propres segments. */
+const TCP_DEFAULT_TTL = 64;
 
 interface StatelessProbeWatch {
   seen: 'rst' | 'syn-ack' | 'none';
@@ -576,11 +590,12 @@ export class TcpStack {
    */
   scanProbe(
     remoteIp: string, remotePort: number, flags: TcpFlags,
+    shape: ScanProbeShape = {},
   ): StatelessProbeReply {
     const target = canonicalIpText(remoteIp);
     const egress = this.resolveEgress(target);
     if (!egress) return 'none';
-    const localPort = this.nextEphemeral(egress.srcIp);
+    const localPort = shape.sourcePort ?? this.nextEphemeral(egress.srcIp);
     if (localPort < 0) return 'none';
 
     const key = makeSocketKey(egress.srcIp, localPort, target, remotePort);
@@ -594,9 +609,10 @@ export class TcpStack {
       dataOffset: 5, flags, window: TCP_DEFAULT_WINDOW,
       checksum: 0, urgentPointer: 0, options: [], payload: undefined,
     };
-    seg.checksum = computeTcpChecksum(seg, egress.srcIp, target);
+    const sum = computeTcpChecksum(seg, egress.srcIp, target);
+    seg.checksum = shape.badChecksum ? bogusChecksum(sum, IP_PROTO_TCP) : sum;
     try {
-      this.shipSegment(egress, egress.srcIp, target, seg);
+      this.shipSegment(egress, egress.srcIp, target, seg, shape.ttl);
     } finally {
       this.statelessProbes.delete(key);
     }
@@ -1672,13 +1688,13 @@ export class TcpStack {
 
   private shipSegment(
     egress: { name: string; port?: import('../hardware/Port').Port; nextHopIp?: string },
-    srcIp: string, dstIp: string, seg: TcpSegment,
+    srcIp: string, dstIp: string, seg: TcpSegment, ttl?: number,
   ): void {
     const family = ipFamilyOf(dstIp);
     const local = this.isLocalDestination(dstIp, family);
     const l3Packet = family === 'ipv6'
-      ? this.buildIpv6Segment(srcIp, dstIp, seg)
-      : this.buildIpv4Segment(srcIp, dstIp, seg);
+      ? this.buildIpv6Segment(srcIp, dstIp, seg, ttl)
+      : this.buildIpv4Segment(srcIp, dstIp, seg, ttl);
     this.getBus().publish({
       topic: 'tcp.segment.sent',
       payload: {
@@ -1705,21 +1721,26 @@ export class TcpStack {
       egress.name, l3Packet as IPv4Packet, new IPAddress(nextHopIp));
   }
 
-  private buildIpv4Segment(srcIp: string, dstIp: string, seg: TcpSegment): IPv4Packet {
+  private buildIpv4Segment(
+    srcIp: string, dstIp: string, seg: TcpSegment, ttl = TCP_DEFAULT_TTL,
+  ): IPv4Packet {
     const tcpHeaderBytes = seg.dataOffset * 4;
     // PRD-TCP.md P7 (RFC 1191 §1) — DF set, matching real TCP stacks:
     // without it, a smaller-MTU router would just silently fragment
     // instead of reporting back so PMTUD can shrink our MSS.
     return createIPv4Packet(
-      new IPAddress(srcIp), new IPAddress(dstIp), IP_PROTO_TCP, 64,
+      new IPAddress(srcIp), new IPAddress(dstIp), IP_PROTO_TCP, ttl,
       seg, tcpHeaderBytes + payloadBytes(seg.payload).length, { flags: 0b010 });
   }
 
-  private buildIpv6Segment(srcIp: string, dstIp: string, seg: TcpSegment): IPv6Packet {
+  private buildIpv6Segment(
+    srcIp: string, dstIp: string, seg: TcpSegment, hopLimit = TCP_DEFAULT_TTL,
+  ): IPv6Packet {
     const tcpHeaderBytes = seg.dataOffset * 4;
     const payloadLength = tcpHeaderBytes + payloadBytes(seg.payload).length;
     return createIPv6Packet(
-      new IPv6Address(srcIp), new IPv6Address(dstIp), IP_PROTO_TCP, 64, seg, payloadLength,
+      new IPv6Address(srcIp), new IPv6Address(dstIp), IP_PROTO_TCP, hopLimit,
+      seg, payloadLength,
     );
   }
 

@@ -3856,9 +3856,10 @@ export class WindowsPC extends EndHost implements UserAccountHost {
         ? this.tcpConnectOutcome6(new IPv6Address(ip), port)
         : this.tcpConnectOutcome(new IPAddress(ip), port)),
       grabGreeting: (ip, port) => this.getTcpStack().grabGreeting(ip, port),
-      sendUdpProbe: (ip, port, sourcePort) =>
-        this.sendUdpDatagram(new IPAddress(ip), port, sourcePort, null, 0),
-      scanProbe: (ip, port, flags) => this.getTcpStack().scanProbe(ip, port, flags),
+      sendUdpProbe: (ip, port, sourcePort, options) =>
+        this.sendUdpDatagram(new IPAddress(ip), port, sourcePort, null, 0, options),
+      scanProbe: (ip, port, flags, shape) =>
+        this.getTcpStack().scanProbe(ip, port, flags, shape),
       linkNeighbour: (ip) => linkNeighbourOf(this, ip),
       reverseName: (ip) => this.resolveAddressNameAsync(ip),
       resolveName: async (name) => (await this.resolveHostname(name))?.toString() ?? null,
