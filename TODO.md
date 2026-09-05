@@ -2765,14 +2765,14 @@ migre : il mesure desormais le moteur vivant, et le compte est descendu a
 deplacees hors de l'executeur), `Copy-Item` (tous ses criteres declares),
 `-LiteralPath` pour toute la famille des chemins, le filtrage par joker.
 
-Restent, par famille : `Get-Content` (13 — `-Stream` et `-AsByteStream` a
-refuser en nommant la brique, `-First`/`-Last` non lus, joker de chemin,
-`Cannot find path` muet), `Get-ChildItem` (11 — `-Exclude`, `-Depth`,
-`-Hidden`, `-Attributes` declares et non evalues, joker de chemin),
-`Get-Location` (6 — `-Stack`, `-PSProvider`, `-PSDrive`), `Stop-Process`
-(6), `Get-Service` (6), `Get-Disk` (4), `Get-Process` etendu (4),
-`Get-Command` (6), `Get-LocalUser` (3), `Get-Volume` (2), et huit cas
-isoles. Chaque famille est un lot : on ferme les manques que le fichier
+`Get-Content` et `Get-ChildItem` sont fermes a leur tour (avec la graine
+d'attributs du systeme de fichiers, qui marquait les binaires de System32
+comme SYSTEM, et `dir /a`, qui etait un no-op declare).
+
+Restent, par famille : `Get-Location` (6 — `-Stack`, `-PSProvider`,
+`-PSDrive`), `Stop-Process` (6), `Get-Service` (6), `Get-Disk` (4),
+`Get-Process` etendu (4), `Get-Command` (6), `Get-LocalUser` (3),
+`Get-Volume` (2), et huit cas isoles. Chaque famille est un lot : on ferme les manques que le fichier
 revele. `PowerShellExecutor.ts` disparait quand le dernier fichier de
 test qui l'importe est migre — il en reste une vingtaine, dont
 `powershell-cmdlet.test.ts` (346) et `cmd-netsh.test.ts` (186).

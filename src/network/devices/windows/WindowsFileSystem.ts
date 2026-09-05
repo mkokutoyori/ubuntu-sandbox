@@ -251,48 +251,48 @@ export class WindowsFileSystem {
     // Realistic system files
     const systemFiles: Array<[string, string, number, string[]]> = [
       // [path, content, size, attributes]
-      ['C:\\Windows\\System32\\cmd.exe', '', 289792, ['system']],
-      ['C:\\Windows\\System32\\notepad.exe', '', 201216, ['system']],
-      ['C:\\Windows\\System32\\calc.exe', '', 26112, ['system']],
-      ['C:\\Windows\\System32\\mspaint.exe', '', 6656, ['system']],
-      ['C:\\Windows\\System32\\taskmgr.exe', '', 368128, ['system']],
-      ['C:\\Windows\\System32\\regedit.exe', '', 360448, ['system']],
-      ['C:\\Windows\\System32\\explorer.exe', '', 4883944, ['system']],
-      ['C:\\Windows\\System32\\mmc.exe', '', 147968, ['system']],
-      ['C:\\Windows\\System32\\net.exe', '', 62464, ['system']],
-      ['C:\\Windows\\System32\\ping.exe', '', 22528, ['system']],
-      ['C:\\Windows\\System32\\ipconfig.exe', '', 26624, ['system']],
-      ['C:\\Windows\\System32\\netsh.exe', '', 96768, ['system']],
-      ['C:\\Windows\\System32\\tracert.exe', '', 13312, ['system']],
-      ['C:\\Windows\\System32\\nslookup.exe', '', 80896, ['system']],
-      ['C:\\Windows\\System32\\hostname.exe', '', 11264, ['system']],
-      ['C:\\Windows\\System32\\shutdown.exe', '', 28672, ['system']],
-      ['C:\\Windows\\System32\\where.exe', '', 22016, ['system']],
-      ['C:\\Windows\\System32\\findstr.exe', '', 32256, ['system']],
-      ['C:\\Windows\\System32\\attrib.exe', '', 15872, ['system']],
-      ['C:\\Windows\\System32\\xcopy.exe', '', 51712, ['system']],
-      ['C:\\Windows\\System32\\sfc.exe', '', 19456, ['system']],
-      ['C:\\Windows\\System32\\dism.exe', '', 280064, ['system']],
-      ['C:\\Windows\\System32\\wbem\\wmic.exe', '', 47104, ['system']],
-      ['C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe', '', 452608, ['system']],
+      ['C:\\Windows\\System32\\cmd.exe', '', 289792, ['archive']],
+      ['C:\\Windows\\System32\\notepad.exe', '', 201216, ['archive']],
+      ['C:\\Windows\\System32\\calc.exe', '', 26112, ['archive']],
+      ['C:\\Windows\\System32\\mspaint.exe', '', 6656, ['archive']],
+      ['C:\\Windows\\System32\\taskmgr.exe', '', 368128, ['archive']],
+      ['C:\\Windows\\System32\\regedit.exe', '', 360448, ['archive']],
+      ['C:\\Windows\\System32\\explorer.exe', '', 4883944, ['archive']],
+      ['C:\\Windows\\System32\\mmc.exe', '', 147968, ['archive']],
+      ['C:\\Windows\\System32\\net.exe', '', 62464, ['archive']],
+      ['C:\\Windows\\System32\\ping.exe', '', 22528, ['archive']],
+      ['C:\\Windows\\System32\\ipconfig.exe', '', 26624, ['archive']],
+      ['C:\\Windows\\System32\\netsh.exe', '', 96768, ['archive']],
+      ['C:\\Windows\\System32\\tracert.exe', '', 13312, ['archive']],
+      ['C:\\Windows\\System32\\nslookup.exe', '', 80896, ['archive']],
+      ['C:\\Windows\\System32\\hostname.exe', '', 11264, ['archive']],
+      ['C:\\Windows\\System32\\shutdown.exe', '', 28672, ['archive']],
+      ['C:\\Windows\\System32\\where.exe', '', 22016, ['archive']],
+      ['C:\\Windows\\System32\\findstr.exe', '', 32256, ['archive']],
+      ['C:\\Windows\\System32\\attrib.exe', '', 15872, ['archive']],
+      ['C:\\Windows\\System32\\xcopy.exe', '', 51712, ['archive']],
+      ['C:\\Windows\\System32\\sfc.exe', '', 19456, ['archive']],
+      ['C:\\Windows\\System32\\dism.exe', '', 280064, ['archive']],
+      ['C:\\Windows\\System32\\wbem\\wmic.exe', '', 47104, ['archive']],
+      ['C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe', '', 452608, ['archive']],
       ['C:\\Windows\\System32\\drivers\\etc\\hosts', hostsContent, hostsContent.length, []],
       ['C:\\Windows\\System32\\drivers\\etc\\networks', '# Copyright (c) 1993-2009 Microsoft Corp.\n#\n# This file contains network name/number mappings.\n#\nloopback        127\n', 407, []],
       ['C:\\Windows\\System32\\drivers\\etc\\protocol', '# Copyright (c) 1993-2009 Microsoft Corp.\n#\nicmp    1   ICMP\ntcp     6   TCP\nudp    17   UDP\n', 1795, []],
       ['C:\\Windows\\System32\\drivers\\etc\\services', WINDOWS_SERVICES_FILE, WINDOWS_SERVICES_FILE.length, []],
-      ['C:\\Windows\\notepad.exe', '', 201216, ['system']],
-      ['C:\\Windows\\explorer.exe', '', 4883944, ['system']],
-      ['C:\\Windows\\regedit.exe', '', 360448, ['system']],
-      ['C:\\Windows\\write.exe', '', 10752, ['system']],
-      ['C:\\Windows\\win.ini', '; for 16-bit app support\n[fonts]\n[extensions]\n[mci extensions]\n[files]\n[Mail]\nMAPI=1\n', 92, ['hidden']],
+      ['C:\\Windows\\notepad.exe', '', 201216, ['archive']],
+      ['C:\\Windows\\explorer.exe', '', 4883944, ['archive']],
+      ['C:\\Windows\\regedit.exe', '', 360448, ['archive']],
+      ['C:\\Windows\\write.exe', '', 10752, ['archive']],
+      ['C:\\Windows\\win.ini', '; for 16-bit app support\n[fonts]\n[extensions]\n[mci extensions]\n[files]\n[Mail]\nMAPI=1\n', 92, ['archive']],
       // DLL files in System32
-      ['C:\\Windows\\System32\\ntdll.dll', '', 2027520, ['system']],
-      ['C:\\Windows\\System32\\kernel32.dll', '', 1248768, ['system']],
-      ['C:\\Windows\\System32\\user32.dll', '', 1671168, ['system']],
-      ['C:\\Windows\\System32\\msvcrt.dll', '', 822272, ['system']],
-      ['C:\\Windows\\System32\\advapi32.dll', '', 696320, ['system']],
-      ['C:\\Windows\\System32\\shell32.dll', '', 23224832, ['system']],
-      ['C:\\Windows\\System32\\ole32.dll', '', 1503232, ['system']],
-      ['C:\\Windows\\System32\\gdi32.dll', '', 483328, ['system']],
+      ['C:\\Windows\\System32\\ntdll.dll', '', 2027520, ['archive']],
+      ['C:\\Windows\\System32\\kernel32.dll', '', 1248768, ['archive']],
+      ['C:\\Windows\\System32\\user32.dll', '', 1671168, ['archive']],
+      ['C:\\Windows\\System32\\msvcrt.dll', '', 822272, ['archive']],
+      ['C:\\Windows\\System32\\advapi32.dll', '', 696320, ['archive']],
+      ['C:\\Windows\\System32\\shell32.dll', '', 23224832, ['archive']],
+      ['C:\\Windows\\System32\\ole32.dll', '', 1503232, ['archive']],
+      ['C:\\Windows\\System32\\gdi32.dll', '', 483328, ['archive']],
       ['C:\\Windows\\System32\\config\\SYSTEM', '', 26214400, ['system', 'hidden']],
       ['C:\\Windows\\System32\\config\\SOFTWARE', '', 104857600, ['system', 'hidden']],
       ['C:\\Windows\\System32\\config\\SAM', '', 262144, ['system', 'hidden']],
@@ -359,7 +359,7 @@ export class WindowsFileSystem {
         const entry = this.resolve(binPath);
         if (entry) {
           entry.size = binSize;
-          entry.attributes.add('system');
+          entry.attributes.add('archive');
         }
       }
     }
@@ -391,9 +391,6 @@ export class WindowsFileSystem {
         entry.attributes.add('hidden');
       }
     }
-    // Windows is a system dir but NOT hidden
-    const windowsEntry = this.resolve('C:\\Windows');
-    if (windowsEntry) windowsEntry.attributes.add('system');
   }
 
   // ─── Entry Creation ──────────────────────────────────────────────

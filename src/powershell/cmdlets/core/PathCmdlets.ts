@@ -16,6 +16,7 @@ import { sha256Hex } from '@/crypto/hash/sha256';
 import { sha512Hex } from '@/crypto/hash/sha512';
 import { commandNotFoundMessage } from '@/powershell/commandNotFound';
 import { wildcardToRegex, wildcardMatches, hasWildcard } from '@/powershell/runtime/PSWildcard';
+import { parseAttributeNames, isDefaultVisible } from '@/network/devices/windows/fileAttributes';
 
 function isRegistryPath(path: string): boolean {
   return /^(HKLM|HKCU|HKCR|HKU|HKCC):/i.test(path) || /^HKEY_/i.test(path);
@@ -151,9 +152,14 @@ export class GetChildItemCmdlet implements ICmdlet {
   readonly aliases = ['ls', 'dir', 'gci'] as const;
 
   execute(ctx: CmdletContext): PSValue {
-    const path    = pathArgOf(ctx, '.');
+    const path = ctx.named['path'] !== undefined || ctx.named['literalpath'] !== undefined
+      || ctx.positional[0] !== undefined
+      ? pathArgOf(ctx, '.')
+      : (pipedPath(ctx.pipeInput) ?? '.');
+    const literal = ctx.named['literalpath'] !== undefined;
     const filter  = ctx.named['filter']  ? psValueToString(ctx.named['filter'])  : null;
     const recurse = ctx.named['recurse'] === true || ctx.named['recurse'] === 'true';
+    const depth   = ctx.named['depth'] !== undefined ? Number(ctx.named['depth']) : undefined;
     const onlyFiles = ctx.named['file']      === true;
     const onlyDirs  = ctx.named['directory'] === true;
     const nameOnly  = ctx.named['name']      === true;
@@ -177,98 +183,199 @@ export class GetChildItemCmdlet implements ICmdlet {
       if (path !== '.') ctx.emitError(`Cannot find path '${path}' because it does not exist.`);
       return [];
     }
-    if (path !== '.' && !fs.exists(path)) {
-      ctx.emitError(`Cannot find path '${path}' because it does not exist.`);
+
+    const wanted = this.attributeFilter(ctx);
+    if (wanted === null) return [];
+
+    const roots = literal || !hasWildcard(path) ? [path] : expandPathSpec(fs, path);
+    if (roots.length === 0) {
+      ctx.emitError(`Get-ChildItem : Cannot find path '${path}' because it does not exist.`);
       return [];
     }
 
-    if (path !== '.' && !fs.isDirectory(path)) {
-      return [itemObject(fs, path)];
+    const items: PSValue[] = [];
+    for (const root of roots) {
+      if (root !== '.' && !fs.exists(root)) {
+        ctx.emitError(`Cannot find path '${root}' because it does not exist.`);
+        continue;
+      }
+      if (root !== '.' && !fs.isDirectory(root)) {
+        items.push(itemObject(fs, root));
+        continue;
+      }
+      items.push(...this.collect(fs, root, recurse, depth, 0, wanted));
     }
 
-    const collect = (dir: string): PSValue[] => {
-      const entries = fs.listDir(dir);
-      const out: PSValue[] = entries.map(e => ({
-        Name: e.name,
-        FullName: `${dir}\\${e.name}`,
-        // FileInfo.Extension includes the leading dot; directories and
-        // extension-less files report an empty string (matches real PS).
-        Extension: e.isDirectory ? '' : (e.name.includes('.') ? e.name.slice(e.name.lastIndexOf('.')) : ''),
-        BaseName: e.isDirectory
-          ? e.name
-          : (e.name.includes('.') ? e.name.slice(0, e.name.lastIndexOf('.')) : e.name),
-        // Real PowerShell's DirectoryInfo has no `Length` — Format-Table
-        // renders an empty cell.  Setting it to null reproduces that
-        // visually; downstream `Where-Object { $_.Length -gt 0 }` keeps
-        // working because PS coerces null → 0.
-        Length: e.isDirectory ? null : e.size,
-        // Real PS uses a 6-char `darhsl` mode column. Plain files have the
-        // archive bit on (-a----); plain directories show only d (d-----).
-        Mode: e.isDirectory ? 'd-----' : '-a----',
-        PSIsContainer: e.isDirectory,
-        LastWriteTime: e.mtime,
-      } as Record<string, PSValue>));
-      if (recurse) {
-        for (const e of entries) {
-          if (e.isDirectory) out.push(...collect(`${dir}\\${e.name}`));
-        }
-      }
-      return out;
-    };
-
-    let items = collect(path);
+    let kept = items;
     if (filter) {
       const pat = wildcardToRegex(filter);
-      items = items.filter(item => pat.test(psValueToString((item as Record<string, PSValue>)['Name'])));
+      kept = kept.filter(item => pat.test(psValueToString((item as Record<string, PSValue>)['Name'])));
+    }
+    const include = patternList(ctx.named['include']);
+    if (include.length > 0) {
+      kept = kept.filter(item => include.some(
+        p => wildcardMatches(p, psValueToString((item as Record<string, PSValue>)['Name']))));
+    }
+    const exclude = patternList(ctx.named['exclude']);
+    if (exclude.length > 0) {
+      kept = kept.filter(item => !exclude.some(
+        p => wildcardMatches(p, psValueToString((item as Record<string, PSValue>)['Name']))));
     }
     if (onlyFiles) {
-      items = items.filter(item => !(item as Record<string, PSValue>)['PSIsContainer']);
+      kept = kept.filter(item => !(item as Record<string, PSValue>)['PSIsContainer']);
     }
     if (onlyDirs) {
-      items = items.filter(item => (item as Record<string, PSValue>)['PSIsContainer']);
+      kept = kept.filter(item => (item as Record<string, PSValue>)['PSIsContainer']);
     }
     if (nameOnly) {
-      return items.map(item => (item as Record<string, PSValue>)['Name']) as PSValue;
+      return kept.map(item => (item as Record<string, PSValue>)['Name']) as PSValue;
     }
-    return items;
+    return kept;
   }
+
+  private attributeFilter(ctx: CmdletContext): ((attrs: ReadonlySet<string>) => boolean) | null {
+    const spec = ctx.named['attributes'];
+    if (spec !== undefined) {
+      const asked = parseAttributeNames(psValueToString(spec));
+      if (asked === null) {
+        ctx.emitError(`Get-ChildItem : Cannot convert value "${psValueToString(spec)}" to type `
+          + `"System.IO.FileAttributes". Invalid attribute name.`);
+        return null;
+      }
+      return attrs => asked.every(a => attrs.has(a));
+    }
+    const only: string[] = [];
+    for (const flag of ['hidden', 'system', 'readonly'] as const) {
+      if (ctx.named[flag] === true) only.push(flag);
+    }
+    if (only.length > 0) return attrs => only.every(a => attrs.has(a));
+    if (ctx.named['force'] === true) return () => true;
+    return isDefaultVisible;
+  }
+
+  private collect(
+    fs: NonNullable<CmdletContext['providers']['filesystem']>,
+    dir: string, recurse: boolean, depth: number | undefined, level: number,
+    wanted: (attrs: ReadonlySet<string>) => boolean,
+  ): PSValue[] {
+    const entries = fs.listDir(dir).filter(e => wanted(e.attributes ?? new Set<string>()));
+    const out: PSValue[] = entries.map(e => ({
+      Name: e.name,
+      FullName: `${dir}\\${e.name}`,
+      // FileInfo.Extension includes the leading dot; directories and
+      // extension-less files report an empty string (matches real PS).
+      Extension: e.isDirectory ? '' : (e.name.includes('.') ? e.name.slice(e.name.lastIndexOf('.')) : ''),
+      BaseName: e.isDirectory
+        ? e.name
+        : (e.name.includes('.') ? e.name.slice(0, e.name.lastIndexOf('.')) : e.name),
+      // Real PowerShell's DirectoryInfo has no `Length` — Format-Table
+      // renders an empty cell.  Setting it to null reproduces that
+      // visually; downstream `Where-Object { $_.Length -gt 0 }` keeps
+      // working because PS coerces null → 0.
+      Length: e.isDirectory ? null : e.size,
+      Mode: modeOf(e.isDirectory, e.attributes ?? new Set<string>()),
+      PSIsContainer: e.isDirectory,
+      LastWriteTime: e.mtime,
+      Attributes: [...(e.attributes ?? new Set<string>())].join(', '),
+    } as Record<string, PSValue>));
+    if (recurse && (depth === undefined || level < depth)) {
+      for (const e of entries) {
+        if (e.isDirectory) out.push(...this.collect(fs, `${dir}\\${e.name}`, recurse, depth, level + 1, wanted));
+      }
+    }
+    return out;
+  }
+}
+
+function modeOf(isDirectory: boolean, attrs: ReadonlySet<string>): string {
+  return [
+    isDirectory ? 'd' : '-',
+    attrs.has('archive') ? 'a' : '-',
+    attrs.has('readonly') ? 'r' : '-',
+    attrs.has('hidden') ? 'h' : '-',
+    attrs.has('system') ? 's' : '-',
+    '-',
+  ].join('');
 }
 
 // ─── Get-Content ─────────────────────────────────────────────────────────
 
 export class GetContentCmdlet implements ICmdlet {
   readonly name = 'get-content';
-  readonly parameters = ['Path', 'LiteralPath', 'ReadCount', 'TotalCount', 'Tail', 'Filter', 'Include', 'Exclude', 'Force', 'Raw', 'Encoding', 'Delimiter', 'Wait', 'Stream'] as const;
+  readonly displayName = 'Get-Content';
+  readonly parameters = ['Path', 'LiteralPath', 'ReadCount', 'TotalCount', 'First', 'Head', 'Tail', 'Last', 'Filter', 'Include', 'Exclude', 'Force', 'Raw', 'Encoding', 'Delimiter', 'Wait', 'Stream', 'AsByteStream'] as const;
   readonly aliases = ['cat', 'type', 'gc'] as const;
 
   execute(ctx: CmdletContext): PSValue {
-    const path = pathArgOf(ctx);
     const fs = ctx.providers.filesystem;
     if (!fs) return null;
-    let content: string;
-    try { content = fs.readFile(path); }
-    catch { return null; }
-    const raw = ctx.named['raw'] === true || ctx.named['raw'] === 'true';
-    if (raw) return content;
+    if (ctx.named['stream'] !== undefined) {
+      ctx.emitError('Get-Content : -Stream is not supported in this simulator: '
+        + 'the file system has no alternate data streams.');
+      return null;
+    }
+    if (ctx.named['wait'] === true) {
+      ctx.emitError('Get-Content : -Wait is not supported in this simulator: '
+        + 'the engine is synchronous, so a file cannot be followed as it grows.');
+      return null;
+    }
 
-    // PowerShell Get-Content returns one PSValue per line. The trailing empty
-    // token from a final newline is dropped so `.Count` matches user intent.
-    const lines = content.split(/\r?\n/);
-    if (lines.length > 0 && lines[lines.length - 1] === '') lines.pop();
+    const literal = ctx.named['literalpath'];
+    const specs = literal !== undefined
+      ? pathListOf(literal)
+      : pathListOf(ctx.named['path'] ?? ctx.positional[0] ?? '');
+    if (specs.length === 0) return null;
 
-    const tail       = ctx.named['tail']       !== undefined ? Number(ctx.named['tail'])       : undefined;
-    const totalCount = ctx.named['totalcount'] !== undefined ? Number(ctx.named['totalcount']) : undefined;
-    const sliced = tail !== undefined
-      ? lines.slice(Math.max(0, lines.length - tail))
-      : totalCount !== undefined
-        ? lines.slice(0, totalCount)
-        : lines;
-    // PowerShell unwraps single-element arrays produced by Get-Content so
-    // `$x = Get-Content single-line.txt` yields a string; `.Count` still
-    // works on the array form when content has multiple lines.
-    if (sliced.length === 1) return sliced[0] as PSValue;
-    return sliced as unknown as PSValue;
+    const targets: string[] = [];
+    for (const spec of specs) {
+      const matched = literal !== undefined ? [spec] : expandPathSpec(fs, spec);
+      if (matched.length === 0) {
+        ctx.emitError(`Get-Content : Cannot find path '${spec}' because it does not exist.`);
+        continue;
+      }
+      targets.push(...matched);
+    }
+    if (targets.length === 0) return null;
+
+    let text = '';
+    for (const target of targets) {
+      try { text += fs.readFile(target); }
+      catch { ctx.emitError(`Get-Content : Cannot find path '${target}' because it does not exist.`); }
+    }
+
+    if (ctx.named['asbytestream'] === true) {
+      return [...text].map(ch => ch.charCodeAt(0)) as unknown as PSValue;
+    }
+    if (ctx.named['raw'] === true || ctx.named['raw'] === 'true') return text;
+
+    const delimiter = ctx.named['delimiter'] !== undefined
+      ? psValueToString(ctx.named['delimiter']) : null;
+    let pieces = delimiter !== null && delimiter !== ''
+      ? text.split(delimiter)
+      : text.split(/\r?\n/);
+    if (pieces.length > 0 && pieces[pieces.length - 1] === '') pieces.pop();
+
+    const head = firstNumberOf(ctx, ['totalcount', 'first', 'head']);
+    const tail = firstNumberOf(ctx, ['tail', 'last']);
+    if (tail !== undefined) pieces = pieces.slice(Math.max(0, pieces.length - tail));
+    else if (head !== undefined) pieces = pieces.slice(0, head);
+
+    if (Number(ctx.named['readcount'] ?? -1) === 0) return pieces as unknown as PSValue;
+    if (pieces.length === 1) return pieces[0] as PSValue;
+    return pieces as unknown as PSValue;
   }
+}
+
+function pathListOf(value: PSValue): string[] {
+  if (value === undefined || value === null) return [];
+  return (Array.isArray(value) ? value : [value]).map(psValueToString).filter(p => p !== '');
+}
+
+function firstNumberOf(ctx: CmdletContext, keys: readonly string[]): number | undefined {
+  for (const key of keys) {
+    if (ctx.named[key] !== undefined) return Number(ctx.named[key]);
+  }
+  return undefined;
 }
 
 // ─── Set-Content ─────────────────────────────────────────────────────────

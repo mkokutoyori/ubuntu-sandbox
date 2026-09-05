@@ -446,13 +446,12 @@ describe('3. Get‑ChildItem', () => {
     const pc = createPC();
     const ps = createPS(pc);
     await ps.execute('New-Item -Path C:\\hiddenDir -ItemType Directory -Force');
-    await ps.execute('Set-Content C:\\hiddenDir\\.hidden.txt "hid"');
-    // Simulate hidden attribute
-    await ps.execute('(Get-Item C:\\hiddenDir\\.hidden.txt).Attributes += "Hidden"');
+    await ps.execute('Set-Content C:\\hiddenDir\\secret.txt "hid"');
+    await ps.execute('attrib +h C:\\hiddenDir\\secret.txt');
     const out = await ps.execute('Get-ChildItem C:\\hiddenDir');
-    expect(out).not.toContain('.hidden.txt'); // default
+    expect(out).not.toContain('secret.txt'); // default
     const outHidden = await ps.execute('Get-ChildItem C:\\hiddenDir -Hidden');
-    expect(outHidden).toContain('.hidden.txt');
+    expect(outHidden).toContain('secret.txt');
   });
 
   it('-ReadOnly includes read-only files', async () => {
@@ -460,7 +459,7 @@ describe('3. Get‑ChildItem', () => {
     const ps = createPS(pc);
     await ps.execute('New-Item -Path C:\\roDir -ItemType Directory -Force');
     await ps.execute('Set-Content C:\\roDir\\ro.txt "ro"');
-    await ps.execute('(Get-Item C:\\roDir\\ro.txt).IsReadOnly = $true');
+    await ps.execute('attrib +r C:\\roDir\\ro.txt');
     const out = await ps.execute('Get-ChildItem C:\\roDir -ReadOnly');
     expect(out).toContain('ro.txt');
   });
@@ -468,9 +467,8 @@ describe('3. Get‑ChildItem', () => {
   it('-System includes system files', async () => {
     const pc = createPC();
     const ps = createPS(pc);
-    const out = await ps.execute('Get-ChildItem C:\\Windows\\System32 -System');
-    // At least one system file expected
-    expect(out).toContain('ntdll.dll');
+    const out = await ps.execute('Get-ChildItem C:\\Windows\\System32\\config -System');
+    expect(out).toContain('SYSTEM');
   });
 
   it('-Force includes hidden and system items', async () => {
@@ -734,7 +732,7 @@ describe('5. Get‑Content', () => {
     const pc = createPC();
     const ps = createPS(pc);
     await ps.execute('"hello" | Set-Content C:\\numbers.txt');
-    const result = await ps.execute('Get-Content C:\\numbers.txt -Stream Zone.Identifier -ErrorAction SilentlyContinue');
+    const result = await ps.execute('Get-Content C:\\numbers.txt -Stream Zone.Identifier');
     expect(result).toContain('not supported');
   });
 
@@ -768,7 +766,7 @@ describe('5. Get‑Content', () => {
   it('error on missing file', async () => {
     const pc = createPC();
     const ps = createPS(pc);
-    const out = await ps.execute('Get-Content C:\\nope.txt -ErrorAction SilentlyContinue');
+    const out = await ps.execute('Get-Content C:\\nope.txt');
     expect(out).toContain('Cannot find path');
   });
 
@@ -2086,10 +2084,10 @@ describe('3. Get‑ChildItem (30+)', () => {
     const pc = createPC();
     const ps = createPS(pc);
     await ps.execute('New-Item -Path C:\\gciHidden -ItemType Directory -Force');
-    await ps.execute('Set-Content C:\\gciHidden\\.hidden.txt "hid"');
-    await ps.execute('(Get-Item C:\\gciHidden\\.hidden.txt).Attributes += "Hidden"');
+    await ps.execute('Set-Content C:\\gciHidden\\secret.txt "hid"');
+    await ps.execute('attrib +h C:\\gciHidden\\secret.txt');
     const out = await ps.execute('Get-ChildItem C:\\gciHidden -Hidden');
-    expect(out).toContain('.hidden.txt');
+    expect(out).toContain('secret.txt');
   });
 
   it('13: -ReadOnly shows read-only files', async () => {
@@ -2097,7 +2095,7 @@ describe('3. Get‑ChildItem (30+)', () => {
     const ps = createPS(pc);
     await ps.execute('New-Item -Path C:\\gciRO -ItemType Directory -Force');
     await ps.execute('Set-Content C:\\gciRO\\ro.txt "ro"');
-    await ps.execute('(Get-Item C:\\gciRO\\ro.txt).IsReadOnly = $true');
+    await ps.execute('attrib +r C:\\gciRO\\ro.txt');
     const out = await ps.execute('Get-ChildItem C:\\gciRO -ReadOnly');
     expect(out).toContain('ro.txt');
   });
@@ -2105,8 +2103,8 @@ describe('3. Get‑ChildItem (30+)', () => {
   it('14: -System shows system files', async () => {
     const pc = createPC();
     const ps = createPS(pc);
-    const out = await ps.execute('Get-ChildItem C:\\Windows\\System32 -System');
-    expect(out).toContain('ntdll.dll');
+    const out = await ps.execute('Get-ChildItem C:\\Windows\\System32\\config -System');
+    expect(out).toContain('SYSTEM');
   });
 
   // -Force
@@ -2137,7 +2135,7 @@ describe('3. Get‑ChildItem (30+)', () => {
   it('18: invalid -Attributes value causes error', async () => {
     const pc = createPC();
     const ps = createPS(pc);
-    const result = await ps.execute('Get-ChildItem C:\\ -Attributes Nonsense -ErrorAction SilentlyContinue');
+    const result = await ps.execute('Get-ChildItem C:\\ -Attributes Nonsense');
     expect(result).toContain('Invalid');
   });
 
@@ -2426,7 +2424,7 @@ describe('5. Get‑Content (25+)', () => {
   it('07: -Stream (ADS) not supported -> error', async () => {
     const pc = createPC();
     const ps = createPS(pc);
-    const result = await ps.execute('Get-Content C:\\gc02.txt -Stream Zone.Identifier -ErrorAction SilentlyContinue');
+    const result = await ps.execute('Get-Content C:\\gc02.txt -Stream Zone.Identifier');
     expect(result).toContain('not supported');
   });
 
@@ -2450,21 +2448,22 @@ describe('5. Get‑Content (25+)', () => {
     const pc = createPC(); const ps = createPS(pc);
     await ps.execute('"A" | Set-Content C:\\gc10.txt');
     const out = await ps.execute('Get-Content C:\\gc10.txt -AsByteStream');
-    // 'A' is ASCII 65
-    expect(out.trim()).toBe('65');
+    // 'A' is ASCII 65, and Set-Content terminates the line, so the
+    // newline byte is part of the file and part of the answer.
+    expect(out.split(/\r?\n/).filter(l => l)).toEqual(['65', '10']);
   });
 
   it('11: error on missing file', async () => {
     const pc = createPC();
     const ps = createPS(pc);
-    const out = await ps.execute('Get-Content C:\\nonex.txt -ErrorAction SilentlyContinue');
+    const out = await ps.execute('Get-Content C:\\nonex.txt');
     expect(out).toContain('Cannot find path');
   });
 
   it('12: -Wait not supported in simulator', async () => {
     const pc = createPC(); const ps = createPS(pc);
     await ps.execute('1,2,3,4,5 | Set-Content C:\\gc12.txt');
-    const result = await ps.execute('Get-Content C:\\gc12.txt -Wait -ErrorAction SilentlyContinue');
+    const result = await ps.execute('Get-Content C:\\gc12.txt -Wait');
     expect(result).toContain('not supported');
   });
 
