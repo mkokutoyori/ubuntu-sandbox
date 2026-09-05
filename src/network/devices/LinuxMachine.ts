@@ -3729,9 +3729,14 @@ export abstract class LinuxMachine extends EndHost
       },
       sendUdpProbe: (
         target: IPAddress, destinationPort: number, sourcePort: number,
-        options: { ttl?: number; badChecksum?: boolean; sourceIp?: IPAddress } = {},
+        options: {
+          ttl?: number; badChecksum?: boolean; sourceIp?: IPAddress; payload?: Uint8Array;
+        } = {},
       ): boolean => {
-        return this.sendUdpDatagram(target, destinationPort, sourcePort, null, 0, options);
+        const { payload, ...emission } = options;
+        return this.sendUdpDatagram(
+          target, destinationPort, sourcePort, payload ?? null,
+          payload?.length ?? 0, emission);
       },
       getResolvedService: () => this.getResolvedService(),
       publishResolvedState: () => this.publishResolvedState(),

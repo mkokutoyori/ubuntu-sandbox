@@ -7941,3 +7941,54 @@ simulateur, un `nmap` n'ayant pas d'entree standard ici.
 MALFORMEES, qui rendaient deja « Failed to resolve » mais parce que RIEN
 n'etait analyse : meme texte, autre raison. Un cas e2e Playwright tape une
 plage, un `-iL` et un `--exclude` dans le vrai terminal.
+
+---
+
+## Une sonde porte une CHARGE, et `-A` la montrait pour TCP seulement
+
+**Perimetre revendique** : `src/network/scan/nmap/` (`NmapOptions`,
+`NmapProbes`), `src/network/tcp/TcpStack.ts`,
+`src/network/devices/{LinuxMachine,WindowsPC}.ts`,
+`src/network/devices/linux/LinuxNetKernel.ts`,
+`src/network/devices/linux/network/tcpdump/`.
+
+`--data`, `--data-string` et `--data-length` etaient refusees comme non
+implantees. Elles n'ont d'interet que si les octets partent pour de bon :
+une charge qui ne quitterait pas la machine ne traverserait aucun filtre
+et ne ferait grossir aucun paquet. `ScanProbeShape.payload` la porte, le
+segment TCP la prend telle quelle — la somme de controle la couvrait deja
+— et le datagramme UDP la recoit par le parametre `data` que
+`sendUdpDatagram` avait depuis toujours et qu'aucune sonde ne remplissait.
+
+**La grammaire de `--data` vient d'`utils.cc:430`** : `0xAABB`,
+`\xAA\xBB` ou `AABB` nu, chiffres hexadecimaux en nombre PAIR, vide
+refuse — sinon « Invalid hex string specified ». La borne des trois est
+`MAX_PAYLOAD_ALLOWED` (`nmap.h:254` = 65535-60-40 = 65435), et au-dela de
+1400 c'est un AVERTISSEMENT et non un refus : le paquet part quand meme,
+et le dire a l'envers ferait croire a une limite qui n'existe pas.
+
+**Les trois s'excluent l'une l'autre** (`nmap.cc:822`), la meme deux fois
+comprise, et les trois posent `raw_scan_options` — donc un balayage
+CONNECTE les accepte, avertit, et la charge ne part pas.
+
+**La charge compte dans le decoupage** : `probePayloadBytes` ajoute
+desormais la charge supplementaire, de sorte que `--data-length 100 -f`
+ne rend plus l'avertissement « payload is too small already ».
+
+**Deux defauts de tcpdump trouves en chemin et corriges.** (1) `-A` ne
+rendait RIEN pour un datagramme UDP : le champ que le formateur lit
+s'appelait `tcpPayload` et n'etait rempli que pour un segment TCP — son
+NOM est la raison pour laquelle personne ne l'avait vu. Il s'appelle
+`appPayload` et les deux familles le remplissent, ce qui rend aussi
+visibles les octets d'une requete DNS, qu'un vrai `tcpdump -A` montre.
+(2) La synthese des octets UDP existait en DEUX exemplaires — IPv4 et
+IPv6, mot pour mot — et TOUTES DEUX s'arretaient a l'en-tete de huit
+octets, la ou la synthese TCP ajoutait sa charge : une meme question,
+deux reponses, et c'est la copie qui avait oublie. Une seule ecriture,
+`synthUdpBytes`, lue par les deux.
+
+**Discrimination** : `probe-nmap-charge-de-la-sonde.test.ts` (13 cas), 12
+tombent contre l'etat d'avant. Le treizieme est le TEMOIN — le balayage
+sans charge, dont la capture montre `length 0` — et son role est de
+passer des deux cotes. Un cas e2e Playwright balaye avec `--data-string`
+et relit la capture de la cible en `-A`.

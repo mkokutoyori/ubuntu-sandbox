@@ -153,7 +153,9 @@ export interface LinuxNetKernel {
   /** Emit a single locally-originated UDP probe (for UDP-mode traceroute and the like). */
   sendUdpProbe(
     target: IPAddress, destinationPort: number, sourcePort: number,
-    options?: { ttl?: number; badChecksum?: boolean; sourceIp?: IPAddress },
+    options?: {
+      ttl?: number; badChecksum?: boolean; sourceIp?: IPAddress; payload?: Uint8Array;
+    },
   ): boolean;
 
   /**

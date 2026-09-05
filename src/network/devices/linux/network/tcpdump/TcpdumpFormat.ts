@@ -384,8 +384,8 @@ export function formatFrame(frame: CaptureFrame, opt: TcpdumpOptions, prev: Date
   }
   const lines = [`${ts}${body}`];
   if (opt.hex !== 'none') lines.push(...hexDump(frame, opt));
-  if (opt.ascii && frame.tcpPayload && frame.tcpPayload.length > 0) {
-    const text = frame.tcpPayload.map(b => (b >= 0x20 && b <= 0x7e) ? String.fromCharCode(b) : '.').join('');
+  if (opt.ascii && frame.appPayload && frame.appPayload.length > 0) {
+    const text = frame.appPayload.map(b => (b >= 0x20 && b <= 0x7e) ? String.fromCharCode(b) : '.').join('');
     lines.push(text);
   }
   return lines.join('\n');
