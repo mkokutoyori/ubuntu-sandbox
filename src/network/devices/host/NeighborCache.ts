@@ -1,7 +1,8 @@
 import type { MACAddress } from '../../core/types';
 import type { IScheduler, TimerHandle } from '../../../events/Scheduler';
 
-export type NeighborState = 'incomplete' | 'reachable' | 'stale' | 'delay' | 'probe';
+export type NeighborState =
+  | 'incomplete' | 'reachable' | 'stale' | 'delay' | 'probe' | 'permanent';
 
 export interface NeighborCacheEntry {
   mac: MACAddress;
@@ -66,6 +67,7 @@ export class NeighborCache implements Iterable<[string, NeighborCacheEntry]> {
 
   learnFromSource(ip: string, mac: MACAddress, iface: string, isRouter: boolean): void {
     const existing = this.entries.get(ip);
+    if (existing?.state === 'permanent') return;
     if (existing && existing.mac.equals(mac)) {
       existing.iface = iface;
       if (isRouter) existing.isRouter = true;
@@ -86,6 +88,7 @@ export class NeighborCache implements Iterable<[string, NeighborCacheEntry]> {
     flags: { solicited: boolean; isRouter: boolean; override: boolean },
   ): void {
     const existing = this.entries.get(ip);
+    if (existing?.state === 'permanent') return;
     if (existing && !flags.override && !existing.mac.equals(mac)) {
       if (existing.state === 'reachable') existing.state = 'stale';
       return;
@@ -100,7 +103,7 @@ export class NeighborCache implements Iterable<[string, NeighborCacheEntry]> {
 
   confirmReachability(ip: string): void {
     const entry = this.entries.get(ip);
-    if (!entry) return;
+    if (!entry || entry.state === 'permanent') return;
     entry.state = 'reachable';
     entry.timestamp = this.now();
     this.cancelTimer(ip);
@@ -108,13 +111,13 @@ export class NeighborCache implements Iterable<[string, NeighborCacheEntry]> {
 
   markUsed(ip: string): NeighborCacheEntry | undefined {
     const entry = this.get(ip);
-    if (!entry) return undefined;
+    if (!entry || entry.state === 'permanent') return entry;
     if (entry.state === 'stale') this.enterDelay(ip, entry);
     return entry;
   }
 
-  setStatic(ip: string, entry: NeighborCacheEntry): void {
-    this.setEntry(ip, entry);
+  setStatic(ip: string, mac: MACAddress, iface: string, isRouter = false): void {
+    this.setEntry(ip, { mac, iface, state: 'permanent', isRouter, timestamp: this.now() });
   }
 
   remove(ip: string): boolean {

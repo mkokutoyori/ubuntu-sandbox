@@ -38,7 +38,6 @@ import { psAddVpnConnection, psGetVpnConnection, psSetVpnConnection, psRemoveVpn
 import { LOCAL_ACCOUNT_CMDLETS } from './PSLocalAccountCmdlets';
 import { EVENT_LOG_CMDLETS } from './PSEventLogCmdlets';
 import { STORAGE_CMDLETS } from './PSStorageCmdlets';
-import { psGetDnsClientServerAddress, psSetDnsClientServerAddress, psGetNetConnectionProfile, psSetNetConnectionProfile, type PSNetConfigContext } from './PSNetConfigCmdlets';
 import { psTestPath, psResolvePath, psSplitPath, psJoinPath, type PSPathContext } from './PSPathCmdlets';
 import { formatGetHelp } from './PSHelpText';
 import { psGetItemProperty, psSetItemProperty, psRemoveItemProperty } from './PSRegistryCmdlets';
@@ -2390,29 +2389,9 @@ export class PowerShellExecutor {
       return this.handleGetModule(args);
     }
 
-    // Get-DnsClientServerAddress
-    if (cmdLower === 'get-dnsclientserveraddress') {
-      return psGetDnsClientServerAddress(this.buildPSNetConfigCtx(), args);
-    }
-
-    // Set-DnsClientServerAddress
-    if (cmdLower === 'set-dnsclientserveraddress') {
-      return psSetDnsClientServerAddress(this.buildPSNetConfigCtx(), args);
-    }
-
     // Test-Connection (PowerShell ping)
     if (cmdLower === 'test-connection') {
       return this.handleTestConnection(args);
-    }
-
-    // Get-NetConnectionProfile
-    if (cmdLower === 'get-netconnectionprofile') {
-      return psGetNetConnectionProfile(this.buildPSNetConfigCtx(), args);
-    }
-
-    // Set-NetConnectionProfile
-    if (cmdLower === 'set-netconnectionprofile') {
-      return psSetNetConnectionProfile(this.buildPSNetConfigCtx(), args);
     }
 
     // Add-VpnConnection
@@ -3629,15 +3608,6 @@ export class PowerShellExecutor {
 
 
 
-
-  private buildPSNetConfigCtx(): PSNetConfigContext {
-    return {
-      ports: this.device.getPortsMap(),
-      getDnsServers: (n: string) => this.device.getDnsServers(n),
-      setDnsServers: (n: string, s: string[]) => this.device.setDnsServers?.(n, s),
-      networkProfiles: this.networkProfiles,
-    };
-  }
 
   /**
    * Disk table. Disk 0 carries the system partition C:; one disk per

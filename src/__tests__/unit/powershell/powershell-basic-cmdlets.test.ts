@@ -3461,38 +3461,38 @@ describe('7. Remove‑NetRoute', () => {
 // ─────────────────────────────────────────────────────────────────────────
 describe('8. Get‑DnsClientServerAddress', () => {
   it('lists DNS servers', async () => {
-    const pc = createPC(); const ps = createPS(pc);
+    const pc = createPC(); const ps = createLivePS(pc);
     const out = await ps.execute('Get-DnsClientServerAddress');
     expect(out).toContain('ServerAddresses');
   });
   it('-InterfaceAlias filter', async () => {
-    const pc = createPC(); const ps = createPS(pc);
+    const pc = createPC(); const ps = createLivePS(pc);
     const out = await ps.execute('Get-DnsClientServerAddress -InterfaceAlias "Ethernet"');
     expect(out).toContain('Ethernet');
   });
   it('-AddressFamily IPv4', async () => {
-    const pc = createPC(); const ps = createPS(pc);
+    const pc = createPC(); const ps = createLivePS(pc);
     const out = await ps.execute('Get-DnsClientServerAddress -AddressFamily IPv4');
     expect(out).toContain('ServerAddresses');
   });
   it('returns array of servers', async () => {
-    const pc = createPC(); const ps = createPS(pc);
+    const pc = createPC(); const ps = createLivePS(pc);
     const count = await ps.execute('(Get-DnsClientServerAddress -InterfaceAlias "Ethernet" | Select -ExpandProperty ServerAddresses).Count');
     expect(parseInt(count)).toBeGreaterThanOrEqual(0);
   });
   it('error non-existent interface', async () => {
-    const pc = createPC(); const ps = createPS(pc);
-    const out = await ps.execute('Get-DnsClientServerAddress -InterfaceAlias "NoSuch" -ErrorAction SilentlyContinue');
-    expect(out).toContain('not found');
+    const pc = createPC(); const ps = createLivePS(pc);
+    const out = await ps.execute('Get-DnsClientServerAddress -InterfaceAlias "NoSuch"');
+    expect(out).toContain("No MSFT_DNSClientServerAddress objects found with property 'InterfaceAlias' equal to 'NoSuch'.");
   });
   it('Get-Help', async () => {
-    const pc = createPC(); const ps = createPS(pc);
+    const pc = createPC(); const ps = createLivePS(pc);
     const help = await ps.execute('Get-Help Get-DnsClientServerAddress');
     expect(help).toContain('SYNOPSIS');
   });
   for (let i = 0; i < 14; i++) {
     it(`extra ${i + 1}`, async () => {
-      const pc = createPC(); const ps = createPS(pc);
+      const pc = createPC(); const ps = createLivePS(pc);
       await expect(ps.execute('Get-DnsClientServerAddress')).resolves.not.toThrow();
     });
   }
@@ -3503,38 +3503,38 @@ describe('8. Get‑DnsClientServerAddress', () => {
 // ─────────────────────────────────────────────────────────────────────────
 describe('9. Set‑DnsClientServerAddress', () => {
   it('sets a single DNS server', async () => {
-    const pc = createPC(); const ps = createPS(pc);
+    const pc = createPC(); const ps = createLivePS(pc);
     await ps.execute('Set-DnsClientServerAddress -InterfaceAlias "Ethernet" -ServerAddresses "8.8.8.8"');
     const dns = await ps.execute('(Get-DnsClientServerAddress -InterfaceAlias "Ethernet").ServerAddresses');
     expect(dns).toContain('8.8.8.8');
   });
   it('sets multiple DNS servers', async () => {
-    const pc = createPC(); const ps = createPS(pc);
+    const pc = createPC(); const ps = createLivePS(pc);
     await ps.execute('Set-DnsClientServerAddress -InterfaceAlias "Ethernet" -ServerAddresses ("8.8.8.8","1.1.1.1")');
     const dns = await ps.execute('(Get-DnsClientServerAddress -InterfaceAlias "Ethernet").ServerAddresses');
     expect(dns).toContain('8.8.8.8');
     expect(dns).toContain('1.1.1.1');
   });
   it('resets to DHCP (by setting empty?)', async () => {
-    const pc = createPC(); const ps = createPS(pc);
+    const pc = createPC(); const ps = createLivePS(pc);
     await ps.execute('Set-DnsClientServerAddress -InterfaceAlias "Ethernet" -ResetServerAddresses');
     const dns = await ps.execute('(Get-DnsClientServerAddress -InterfaceAlias "Ethernet").ServerAddresses');
     // should be empty or obtained from DHCP
     expect(dns).toBeDefined();
   });
   it('fails without InterfaceAlias', async () => {
-    const pc = createPC(); const ps = createPS(pc);
-    const out = await ps.execute('Set-DnsClientServerAddress -ServerAddresses "8.8.8.8" -ErrorAction SilentlyContinue');
+    const pc = createPC(); const ps = createLivePS(pc);
+    const out = await ps.execute('Set-DnsClientServerAddress -ServerAddresses "8.8.8.8"');
     expect(out).toContain('InterfaceAlias');
   });
   it('Get-Help', async () => {
-    const pc = createPC(); const ps = createPS(pc);
+    const pc = createPC(); const ps = createLivePS(pc);
     const help = await ps.execute('Get-Help Set-DnsClientServerAddress');
     expect(help).toContain('SYNOPSIS');
   });
   for (let i = 0; i < 15; i++) {
     it(`extra ${i + 1}`, async () => {
-      const pc = createPC(); const ps = createPS(pc);
+      const pc = createPC(); const ps = createLivePS(pc);
       await expect(ps.execute('Set-DnsClientServerAddress -InterfaceAlias "Ethernet" -ServerAddresses "8.8.8.8" -ErrorAction SilentlyContinue')).resolves.not.toThrow();
     });
   }

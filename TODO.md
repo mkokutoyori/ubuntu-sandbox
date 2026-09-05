@@ -2685,3 +2685,23 @@ La PLAGE, elle, reste declaree sur la place et appliquee par l'analyse,
 donc seul le controle de PRESENCE quitte la declaration. Fermer
 l'entree demande une notion de presence par sens dans `CommandParser`,
 qui touche toutes les familles migrees et non cette seule.
+
+### [dnsclient] `Clear-DnsClientCache` a encore DEUX portes
+
+**Mesure** : apres la migration de la famille DnsClient, le moteur
+historique (`PowerShellExecutor`) ne dispatche plus AUCUNE commande
+`Net*` ni `Dns*` — sauf deux : `test-connection` (entree separee
+ci-dessus) et `clear-dnsclientcache`, dont la branche appelle
+`executeCmdCommand('ipconfig /flushdns')`.
+
+**Ce n'est PAS une incoherence de magasin** : les deux portes vident le
+meme cache, ce que la regle de coherence demande justement. Ce qui reste
+est une seconde IMPLANTATION de la commande : la branche historique
+ignore `-WhatIf` et `-CimSession`, que la cmdlet vivante honore
+desormais, donc les deux repondent differemment a
+`Clear-DnsClientCache -WhatIf` selon le chemin emprunte.
+
+**Non ferme ici** : la suppression tient en quatre lignes, mais elle est
+arrivee apres le lancement du balayage complet de `network-v2` qui valide
+le lot ; l'appliquer aurait invalide la mesure. A retirer au lot suivant,
+avec sa propre verification.

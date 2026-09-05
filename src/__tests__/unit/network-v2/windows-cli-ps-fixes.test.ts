@@ -103,7 +103,8 @@ describe('Clear-NetNeighborCache — actually empties the ARP table', () => {
 
     await run(shell, 'Clear-NetNeighborCache');
     const after = await run(shell, 'Get-NetNeighbor -IPAddress 10.0.0.9');
-    expect(after).not.toMatch(/10\.0\.0\.9/);
+    expect(after).toContain("No MSFT_NetNeighbor objects found with property 'IPAddress' equal to '10.0.0.9'.");
+    expect(after).not.toMatch(/aa-bb-cc-dd-ee-ff/i);
   });
 });
 

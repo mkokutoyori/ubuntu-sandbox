@@ -6,7 +6,7 @@
  */
 
 import { Port } from '../../hardware/Port';
-import { IPAddress, SubnetMask } from '../../core/types';
+import { IPAddress, MACAddress, SubnetMask } from '../../core/types';
 import type { ARPEntry } from '../EndHost';
 import type { NetFirewallRuleEntry } from './netFirewallRule';
 
@@ -96,9 +96,10 @@ export interface WinCommandContext {
   defaultGateway6: string | null;
   /** ARP table */
   arpTable: Map<string, ARPEntry>;
+  getNeighborCache?: () => Map<string, { mac: MACAddress; iface: string; state: string }>;
 
   // ARP table mutation
-  addStaticARP(ip: IPAddress, mac: any, iface: string): void;
+  addStaticARP(ip: IPAddress, mac: MACAddress, iface: string): void;
   deleteARP(ip: IPAddress): boolean;
   clearARPTable(): void;
 
@@ -195,7 +196,7 @@ export interface WinCommandContext {
   // Port-proxy rules (netsh interface portproxy)
   portProxy: import('./PortProxyTable').PortProxyTable;
 
-  dnsCache: import('./WinDnsCache').WindowsDnsCache;
+  dnsCache: import('@/network/dns/resolver/DnsCache').DnsCache;
 
   /**
    * Per-device firewall rule store shared by:

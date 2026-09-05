@@ -26,12 +26,15 @@ import { PSEventLogProvider } from '@/network/devices/windows/PSEventLogProvider
 import {
   LOOPBACK_IFINDEX, adapterIfIndex, toDisplayName, toPortName, formatLinkSpeedMbps,
 } from '@/network/devices/windows/WindowsInterfaceNaming';
+import { NO_MATCHING_INTERFACE } from '@/network/devices/windows/netIpAddress';
+import { type DnsCacheRow, dnsCacheRowsOf } from '@/network/devices/windows/dnsClientCache';
 import { resolveAdapter, resolveAdapterPortName } from '@/network/devices/windows/netAdapter';
 import {
   memberFailureReason, memberStatus, normaliseAdminMode, normaliseLacpTimer,
   normaliseLbAlgorithm, normaliseTeamingMode, teamStatus, type TeamMember,
 } from '@/network/devices/windows/WindowsNicTeam';
-import { IPAddress, MACAddress, SubnetMask } from '@/network/core/types';
+import { IPAddress, IPv6Address, MACAddress, SubnetMask } from '@/network/core/types';
+import type { NetNeighborPlan, NetNeighborState } from '@/network/devices/windows/netNeighbor';
 import { isValidIPv4 } from '@/network/core/ip';
 import { findHostByAddress } from '@/network/devices/linux/network/HostLookup';
 import { discoverDcHostname, rootDnOf } from '@/network/devices/windows/domain/DcHostnameDiscovery';
@@ -92,6 +95,7 @@ import type {
   NetAdapterEntry, AdapterStatisticsInfo, IPAddressInfo, RouteInfo, EventLogEntryInfo,
   NicTeamInfo, NicTeamMemberInfo, NicTeamNicInfo, NewNicTeamRequest, SetNicTeamRequest,
   VpnConnectionInfo, ScheduledTaskInfo, DiskInfo, VolumeInfo,
+  NeighborInfo,
 } from '@/powershell/providers/PSProviders';
 import type { PSValue } from '@/powershell/runtime/PSEnvironment';
 import type { AddsForestOptions } from '@/network/devices/windows/server/ad/adFunctionalLevels';
@@ -2188,10 +2192,8 @@ class WindowsNetworkAdapter implements INetworkProvider {
   resolveDnsViaServerWithTtl(name: string, server: string): Array<{ ip: string; ttl: number }> {
     return this.pc.resolveDnsViaServerWithTtlSync(name, server);
   }
-  getDnsClientCache(): Array<{ name: string; type: string; value: string; ttl: number }> {
-    return this.pc.dnsCache.activeEntries().map(e => ({
-      name: e.name, type: e.type, value: e.value, ttl: e.ttl,
-    }));
+  getDnsClientCache(): DnsCacheRow[] {
+    return dnsCacheRowsOf(this.pc.dnsCache.entries());
   }
   clearDnsClientCache(): void { this.pc.dnsCache.flush(); }
   invokeWebRequest(url: string) { return this.pc.invokeWebRequest(url); }
@@ -2242,65 +2244,113 @@ class WindowsNetworkAdapter implements INetworkProvider {
     if (!viaDns) return null;
     try { return new IPAddress(viaDns); } catch { return null; }
   }
-  getNeighbors(filter?: { ipAddress?: IPAddress; state?: string; ifIndex?: number }) {
-    const arp = (this.pc as unknown as { arpTable: Map<string, { mac: { toString: () => string }; iface: string; timestamp: number; type: 'dynamic' | 'static' | 'failed' }> }).arpTable;
-    const ports = (this.pc as unknown as { getPorts: () => Array<{ name: string }> }).getPorts();
-    const portIndex = new Map(ports.map((p, i) => [p.name, i + 1]));
-    const stateMap: Record<string, 'Reachable' | 'Permanent' | 'Unreachable' | 'Stale' | 'Incomplete'> = {
+  getNeighbors(): NeighborInfo[] {
+    const pc = this.pc as unknown as {
+      arpTable: Map<string, { mac: MACAddress; iface: string; type: 'dynamic' | 'static' | 'failed' }>;
+      getPorts: () => Array<{ name: string }>;
+      getNeighborCache?: () => Map<string, { mac: MACAddress; iface: string; state: string }>;
+    };
+    const ports = pc.getPorts();
+    const indexOf = (iface: string): number => {
+      const position = ports.findIndex(p => p.name === iface);
+      return position < 0 ? LOOPBACK_IFINDEX : adapterIfIndex(position);
+    };
+    const arpState: Record<string, NetNeighborState> = {
       static: 'Permanent', dynamic: 'Reachable', failed: 'Unreachable',
     };
-    const rows = [] as Array<{
-      ifIndex: number; ifAlias: string; ipAddress: string;
-      linkLayerAddress: string;
-      state: 'Reachable' | 'Permanent' | 'Unreachable' | 'Stale' | 'Incomplete';
-      addressFamily: 'IPv4'; policyStore: 'ActiveStore' | 'PersistentStore';
-    }>;
-    const filterIpKey = filter?.ipAddress?.toString();
-    for (const [ip, entry] of arp) {
-      const state = stateMap[entry.type] ?? 'Reachable';
-      const ifIndex = portIndex.get(entry.iface) ?? 1;
-      if (filterIpKey && ip !== filterIpKey) continue;
-      if (filter?.state && state !== filter.state) continue;
-      if (filter?.ifIndex !== undefined && ifIndex !== filter.ifIndex) continue;
+    const ndpState: Record<string, NetNeighborState> = {
+      permanent: 'Permanent', reachable: 'Reachable', stale: 'Stale',
+      delay: 'Delay', probe: 'Probe', incomplete: 'Incomplete',
+    };
+    const rows: NeighborInfo[] = [];
+    for (const [ip, entry] of pc.arpTable) {
       rows.push({
-        ifIndex,
+        ifIndex: indexOf(entry.iface),
         ifAlias: toDisplayName(entry.iface),
         ipAddress: ip,
-        linkLayerAddress: entry.mac.toString().toUpperCase().replace(/:/g, '-'),
-        state,
+        linkLayerAddress: entry.mac.toWindowsString(),
+        state: arpState[entry.type] ?? 'Reachable',
         addressFamily: 'IPv4',
         policyStore: entry.type === 'static' ? 'PersistentStore' : 'ActiveStore',
+      });
+    }
+    for (const [ip, entry] of pc.getNeighborCache?.() ?? []) {
+      const state = ndpState[entry.state] ?? 'Reachable';
+      rows.push({
+        ifIndex: indexOf(entry.iface),
+        ifAlias: toDisplayName(entry.iface),
+        ipAddress: ip,
+        linkLayerAddress: entry.mac.toWindowsString(),
+        state,
+        addressFamily: 'IPv6',
+        policyStore: state === 'Permanent' ? 'PersistentStore' : 'ActiveStore',
       });
     }
     return rows;
   }
 
-  addNeighbor(ipAddress: IPAddress, linkLayerAddress: MACAddress, ifAlias: string): string {
-    const iface = toPortName(ifAlias) ?? ifAlias;
+  addNeighbor(plan: NetNeighborPlan): string {
+    const ports = (this.pc as unknown as { getPorts: () => Array<{ name: string }> }).getPorts();
+    const iface = plan.interfaceAlias !== undefined
+      ? (toPortName(plan.interfaceAlias) ?? plan.interfaceAlias)
+      : ports[plan.interfaceIndex! - LOOPBACK_IFINDEX - 1]?.name;
+    if (iface === undefined || !ports.some(p => p.name === iface)) return NO_MATCHING_INTERFACE;
+    if (plan.linkLayerAddress === null) {
+      return "Cannot process command because of one or more missing mandatory parameters: LinkLayerAddress.";
+    }
+    if (plan.address.family === 'IPv6') {
+      (this.pc as unknown as {
+        addStaticNeighbor6: (ip: IPv6Address, mac: MACAddress, iface: string) => void;
+      }).addStaticNeighbor6(plan.address.value, plan.linkLayerAddress, iface);
+      return '';
+    }
     (this.pc as unknown as { addStaticARP: (ip: IPAddress, mac: MACAddress, iface: string) => void })
-      .addStaticARP(ipAddress, linkLayerAddress, iface);
+      .addStaticARP(plan.address.value, plan.linkLayerAddress, iface);
     return '';
   }
 
-  removeNeighbor(ipAddress: IPAddress, _ifAlias?: string): string {
-    const ok = (this.pc as unknown as { deleteARP: (ip: IPAddress) => boolean }).deleteARP(ipAddress);
-    return ok ? '' : `Remove-NetNeighbor : No matching neighbor cache entry found.`;
+  removeNeighbors(rows: readonly NeighborInfo[]): number {
+    const pc = this.pc as unknown as {
+      deleteARP: (ip: IPAddress) => boolean;
+      removeNeighbor6: (ip: IPv6Address) => boolean;
+    };
+    let removed = 0;
+    for (const row of rows) {
+      const ok = row.addressFamily === 'IPv6'
+        ? pc.removeNeighbor6(new IPv6Address(row.ipAddress))
+        : pc.deleteARP(new IPAddress(row.ipAddress));
+      if (ok) removed++;
+    }
+    return removed;
   }
 
-  setNeighbor(ipAddress: IPAddress, linkLayerAddress: MACAddress, ifAlias?: string): string {
-    const arp = (this.pc as unknown as { arpTable: Map<string, { iface: string }> }).arpTable;
-    const existing = arp.get(ipAddress.toString());
-    const iface = ifAlias ? (toPortName(ifAlias) ?? ifAlias) : (existing?.iface ?? 'eth0');
-    return this.addNeighbor(ipAddress, linkLayerAddress, toDisplayName(iface));
+  setNeighborLinkLayer(rows: readonly NeighborInfo[], linkLayerAddress: MACAddress): number {
+    const pc = this.pc as unknown as {
+      addStaticARP: (ip: IPAddress, mac: MACAddress, iface: string) => void;
+      addStaticNeighbor6: (ip: IPv6Address, mac: MACAddress, iface: string) => void;
+    };
+    let changed = 0;
+    for (const row of rows) {
+      const iface = toPortName(row.ifAlias) ?? row.ifAlias;
+      if (row.addressFamily === 'IPv6') {
+        pc.addStaticNeighbor6(new IPv6Address(row.ipAddress), linkLayerAddress, iface);
+      } else {
+        pc.addStaticARP(new IPAddress(row.ipAddress), linkLayerAddress, iface);
+      }
+      changed++;
+    }
+    return changed;
   }
 
   clearNeighbors(ifAlias?: string): void {
     const pc = this.pc as unknown as {
       arpTable: Map<string, { iface: string }>;
       deleteARP: (ip: IPAddress) => boolean;
+      clearNeighbors6: (iface?: string) => void;
     };
     if (!ifAlias) {
       pc.arpTable.clear();
+      pc.clearNeighbors6();
       return;
     }
     const portName = toPortName(ifAlias) ?? ifAlias;
@@ -2309,6 +2359,7 @@ class WindowsNetworkAdapter implements INetworkProvider {
         pc.deleteARP(new IPAddress(ip));
       }
     }
+    pc.clearNeighbors6(portName);
   }
 
   getTcpConnections() {

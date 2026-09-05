@@ -28,7 +28,7 @@
 import type { WinCommandContext } from './WinCommandExecutor';
 import { dhcpEnabledFor } from './WinAdapterFacts';
 import { requireWindowsService } from './WinFeatureGate';
-import { IPAddress, SubnetMask, IPv6Address } from '../../core/types';
+import { IPAddress, MACAddress, SubnetMask, IPv6Address } from '../../core/types';
 import { isValidIPv4 } from '../../core/ip';
 import {
   ANY, NET_FIREWALL_PROFILES, firewallRuleKey, parseAddressSpec, parseFirewallProtocol,
@@ -699,7 +699,7 @@ function handleInterfaceIpShow(ctx: WinCommandContext, args: string[]): string {
   }
 
   if (sub === 'neighbors') {
-    return handleShowNeighbors(ctx);
+    return handleShowNeighbors(ctx, 'ipv4');
   }
 
   if (sub === 'joins') {
@@ -839,15 +839,38 @@ function handleShowConfig(ctx: WinCommandContext, ifFilter?: string): string {
   return lines.join('\n');
 }
 
-function handleShowNeighbors(ctx: WinCommandContext): string {
+const NETSH_NEIGHBOR_STATE: Record<string, string> = {
+  static: 'Permanent', dynamic: 'Reachable', failed: 'Unreachable',
+  permanent: 'Permanent', reachable: 'Reachable', stale: 'Stale',
+  delay: 'Delay', probe: 'Probe', incomplete: 'Incomplete',
+};
+
+function handleShowNeighbors(ctx: WinCommandContext, family: 'ipv4' | 'ipv6'): string {
+  const rows: Array<{ iface: string; ip: string; mac: string; state: string }> = [];
+  if (family === 'ipv4') {
+    for (const [ip, entry] of ctx.arpTable) {
+      rows.push({
+        iface: entry.iface, ip,
+        mac: entry.mac.toWindowsString(),
+        state: NETSH_NEIGHBOR_STATE[entry.type] ?? 'Reachable',
+      });
+    }
+  } else {
+    for (const [ip, entry] of ctx.getNeighborCache?.() ?? []) {
+      rows.push({
+        iface: entry.iface, ip,
+        mac: entry.mac.toWindowsString(),
+        state: NETSH_NEIGHBOR_STATE[entry.state] ?? 'Reachable',
+      });
+    }
+  }
   const lines: string[] = [];
   lines.push('');
-  lines.push(`${'Interface'.padEnd(15)}${'IP Address'.padEnd(20)}${'Physical Address'.padEnd(22)}Type`);
-  lines.push('----------------------------------------------------------------------');
-  for (const [ip, entry] of ctx.arpTable) {
-    const displayName = adapterDisplayName(entry.iface, ctx.ports);
-    const macStr = entry.mac?.toString ? entry.mac.toString() : String(entry.mac);
-    lines.push(`${displayName.padEnd(15)}${ip.padEnd(20)}${macStr.padEnd(22)}${entry.type || 'static'}`);
+  lines.push(`${'Interface'.padEnd(15)}${'Internet Address'.padEnd(38)}${'Physical Address'.padEnd(20)}Type`);
+  lines.push('---------------------------------------------------------------------------------------');
+  for (const row of rows) {
+    const displayName = adapterDisplayName(row.iface, ctx.ports);
+    lines.push(`${displayName.padEnd(15)}${row.ip.padEnd(38)}${row.mac.padEnd(20)}${row.state}`);
   }
   lines.push('');
   return lines.join('\n');
@@ -1160,12 +1183,11 @@ function handleAddNeighbors(ctx: WinCommandContext, joined: string): string {
 
   const ifName = match[1].trim();
   const ip = match[2];
-  const mac = match[3];
-
-  // Validate MAC: must be exactly 6 hex pairs
-  const parts = mac.split(/[-:]/);
-  if (parts.length !== 6) {
-    return `Invalid MAC address: "${mac}". A MAC address must have exactly 6 octets separated by hyphens.`;
+  const rawMac = match[3];
+  let mac: MACAddress;
+  try { mac = new MACAddress(rawMac); }
+  catch {
+    return `Invalid MAC address: "${rawMac}". A MAC address must have exactly 6 octets separated by hyphens.`;
   }
 
   const portName = resolveAdapterName(ifName, ctx.ports);
@@ -1413,6 +1435,10 @@ To view help for a command, type the command, followed by a space, and then
         }
       }
       return lines.join('\n');
+    }
+
+    if (obj === 'neighbors' || obj === 'neighbor') {
+      return handleShowNeighbors(ctx, 'ipv6');
     }
 
     if (obj === 'route' || obj === 'routes') {

@@ -10,7 +10,8 @@ import { RRType } from '@/network/dns/wire/RRType';
 import { DnsRcode } from '@/network/dns/wire/DnsHeaderFlags';
 import { makeARecord, makeCnameRecord } from '@/network/dns/wire/ResourceRecord';
 import type { ARecordData, ResourceRecord } from '@/network/dns/wire/ResourceRecord';
-import { WindowsDnsCache, renderDisplayDns } from '@/network/devices/windows/WinDnsCache';
+import { DnsCache } from '@/network/dns/resolver/DnsCache';
+import { dnsCacheRowsOf, renderDisplayDns } from '@/network/devices/windows/dnsClientCache';
 
 const SERVER_IP = '10.0.1.10';
 
@@ -82,16 +83,16 @@ describe('NSS dns source consumes the native model', () => {
 
 describe('Windows DNS cache stores engine-native records', () => {
   it('accepts ResourceRecords and renders them in ipconfig /displaydns form', () => {
-    const cache = new WindowsDnsCache();
+    const cache = new DnsCache();
     const records: ResourceRecord[] = [
       makeARecord('app.corp.local', 300, '192.0.2.50'),
       makeCnameRecord('www.corp.local', 300, 'app.corp.local'),
     ];
 
-    cache.store('app.corp.local', records);
+    cache.storePositive(records, 'app.corp.local');
 
     expect(cache.size()).toBe(2);
-    const rendered = renderDisplayDns(cache);
+    const rendered = renderDisplayDns(dnsCacheRowsOf(cache.entries()));
     expect(rendered).toContain('app.corp.local');
     expect(rendered).toContain('192.0.2.50');
     expect(rendered).toContain('Record Type . . . . . : 1');

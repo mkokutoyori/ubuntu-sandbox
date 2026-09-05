@@ -4415,6 +4415,21 @@ export abstract class EndHost extends Equipment {
     return this.neighborCache.snapshot();
   }
 
+  addStaticNeighbor6(ip: IPv6Address, mac: MACAddress, iface: string): void {
+    this.neighborCache.setStatic(ip.toString(), mac, iface);
+  }
+
+  removeNeighbor6(ip: IPv6Address): boolean {
+    return this.neighborCache.remove(ip.toString());
+  }
+
+  clearNeighbors6(iface?: string): void {
+    if (iface === undefined) { this.neighborCache.clear(); return; }
+    for (const [ip, entry] of this.neighborCache.snapshot()) {
+      if (entry.iface === iface) this.neighborCache.remove(ip);
+    }
+  }
+
   // ─── IPv6 Packet Handling ──────────────────────────────────────
 
   private handleIPv6(portName: string, ipv6: IPv6Packet): void {

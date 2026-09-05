@@ -91,6 +91,10 @@ export class MACAddress {
     return this.toCiscoString().replace(/\./g, '-');
   }
 
+  toWindowsString(): string {
+    return this.octets.map(o => o.toString(16).padStart(2, '0').toUpperCase()).join('-');
+  }
+
   toJSON(): string {
     return this.toString();
   }

@@ -14,6 +14,7 @@ import type { PSValue } from '@/powershell/runtime/PSEnvironment';
 import { IPAddress, MACAddress } from '@/network/core/types';
 import type {
   NetAdapterEntry, IPAddressInfo, INetworkProvider, NetIPAddressUpdate, RouteInfo,
+  NeighborInfo,
 } from '@/powershell/providers/PSProviders';
 import { psValueToString } from '@/powershell/runtime/PSExpansion';
 import { makeTimeSpan } from './DateTimeCmdlets';
@@ -24,7 +25,8 @@ import {
   noMatchingFirewallRule, planNetFirewallRule, selectFirewallRules,
 } from '@/network/devices/windows/netFirewallRule';
 import {
-  type NetIPAddressSelection, NO_MATCHING_INTERFACE, TIMESPAN_MAX_SECONDS, matchEnumValue,
+  type NetIPAddressSelection, NET_ADDRESS_FAMILIES, NET_POLICY_STORES,
+  NO_MATCHING_INTERFACE, TIMESPAN_MAX_SECONDS, matchEnumValue,
   noMatchingNetIPAddress, planNetIPAddress, prefixLengthProblem, selectNetIPAddresses,
 } from '@/network/devices/windows/netIpAddress';
 import { LOOPBACK_IFALIAS } from '@/network/devices/windows/WindowsLoopbackRoutes';
@@ -37,6 +39,18 @@ import {
   type NetAdapterSelection, adapterNameProblem, adapterNameTaken, formatNetAdapterMac,
   noMatchingNetAdapter, parseNetAdapterMac, selectNetAdapters, selectionIsEmpty,
 } from '@/network/devices/windows/netAdapter';
+import {
+  type DnsCacheSelection, dnsCacheEnumProblem, dnsCacheSelectionIsEmpty,
+  noMatchingDnsCacheEntry, selectDnsCacheEntries,
+} from '@/network/devices/windows/dnsClientCache';
+import {
+  type NetUdpEndpointRow, type NetUdpEndpointSelection, noMatchingNetUdpEndpoint,
+  selectNetUdpEndpoints, udpEndpointSelectionIsEmpty, udpPortProblem,
+} from '@/network/devices/windows/netUdpEndpoint';
+import {
+  type NetNeighborSelection, NET_NEIGHBOR_STATES, neighborSelectionIsEmpty,
+  noMatchingNetNeighbor, planNetNeighbor, selectNetNeighbors,
+} from '@/network/devices/windows/netNeighbor';
 import {
   type NetTcpConnectionRow, type NetTcpConnectionSelection, NET_TCP_APPLIED_SETTINGS,
   NET_TCP_OFFLOAD_STATES, NET_TCP_STATES, netTcpSelectionIsEmpty, netTcpStateOf,
@@ -51,7 +65,7 @@ import {
   type DnsClientServerAddressRow, type DnsClientServerAddressSelection,
   dnsServerSelectionIsEmpty, noMatchingDnsClientServerAddress, selectDnsClientServerAddresses,
 } from '@/network/devices/windows/dnsClientServerAddress';
-import { type NetAddressFamily, NET_ADDRESS_FAMILIES } from '@/network/devices/windows/netIpAddress';
+import type { NetAddressFamily } from '@/network/devices/windows/netIpAddress';
 import { applyCimCriteria, cimNotFound } from '@/network/devices/windows/cimQuery';
 import { PortNumber } from '@/network/core/ports/PortNumber';
 
@@ -481,7 +495,7 @@ export class ResolveDnsNameCmdlet implements ICmdlet {
     if (ips.length === 0) { ctx.emitError(`${name} : DNS name does not exist`); return null; }
     const cacheEntries = net.getDnsClientCache?.() ?? [];
     const ttlFor = (ip: string): number =>
-      cacheEntries.find(e => e.name.toLowerCase() === name.toLowerCase() && e.value === ip)?.ttl ?? 300;
+      cacheEntries.find(e => e.recordName.toLowerCase() === name.toLowerCase() && e.data === ip)?.timeToLive ?? 300;
     return ips.map(ip => ({
       Name: name,
       Type: ip.includes(':') ? 'AAAA' : 'A',
@@ -678,29 +692,96 @@ export class GetNetRouteCmdlet implements ICmdlet {
   }
 }
 
+const NET_NEIGHBOR_FILTERS = ['IPAddress', 'InterfaceIndex', 'InterfaceAlias',
+  'LinkLayerAddress', 'State', 'AddressFamily', 'PolicyStore',
+  'AssociatedIPInterface', 'IncludeAllCompartments', 'CimSession'] as const;
+
+const NET_NEIGHBOR_UNSUPPORTED: ReadonlyArray<readonly [string, string]> = [
+  ['associatedipinterface', 'no CIM instance pipeline binds an IP interface object'],
+  ['includeallcompartments', 'network compartments are not modelled'],
+  ['cimsession', 'no remote CIM session exists in this simulator'],
+];
+
+function netNeighborUnsupported(ctx: CmdletContext, displayName: string): string | null {
+  for (const [key, why] of NET_NEIGHBOR_UNSUPPORTED) {
+    if (ctx.named[key] !== undefined) {
+      return `${displayName} : -${key} is not supported by this simulator: ${why}.`;
+    }
+  }
+  return null;
+}
+
+function netNeighborSelectionOf(ctx: CmdletContext, net: INetworkProvider): NetNeighborSelection {
+  const list = cimFilterReader(ctx, NET_NEIGHBOR_FILTERS);
+  const positional = ctx.positional[0] === undefined
+    ? undefined : [psValueToString(ctx.positional[0])];
+  return {
+    ipAddress: list('ipaddress') ?? positional,
+    interfaceIndex: list('interfaceindex'),
+    interfaceAlias: resolvedAliases(net, list('interfacealias')),
+    linkLayerAddress: list('linklayeraddress'),
+    state: list('state'),
+    addressFamily: list('addressfamily'),
+    policyStore: list('policystore'),
+  };
+}
+
+const NET_NEIGHBOR_ENUMS: ReadonlyArray<readonly [keyof NetNeighborSelection, string, readonly string[]]> = [
+  ['state', 'State', NET_NEIGHBOR_STATES],
+  ['addressFamily', 'AddressFamily', NET_ADDRESS_FAMILIES],
+  ['policyStore', 'PolicyStore', NET_POLICY_STORES],
+];
+
+function netNeighborEnumProblem(selection: NetNeighborSelection): string | null {
+  for (const [key, label, table] of NET_NEIGHBOR_ENUMS) {
+    for (const given of (selection[key] ?? []) as string[]) {
+      if (matchEnumValue(table, given) === null) {
+        return `Cannot validate argument on parameter '${label}'. The argument "${given}" does not belong to the set "${table.join(',')}".`;
+      }
+    }
+  }
+  return null;
+}
+
+function selectedNeighbors(
+  ctx: CmdletContext, net: INetworkProvider, displayName: string,
+): NeighborInfo[] | null {
+  const unsupported = netNeighborUnsupported(ctx, displayName);
+  if (unsupported) { ctx.emitError(unsupported); return null; }
+  const selection = netNeighborSelectionOf(ctx, net);
+  const enumProblem = netNeighborEnumProblem(selection);
+  if (enumProblem) { ctx.emitError(`${displayName} : ${enumProblem}`); return null; }
+  const matched = selectNetNeighbors(net.getNeighbors(), selection);
+  if (matched.length === 0 && !neighborSelectionIsEmpty(selection)) {
+    ctx.emitError(`${displayName} : ${noMatchingNetNeighbor(selection)}`);
+    return null;
+  }
+  return matched;
+}
+
+function neighborToPSObject(n: NeighborInfo): Record<string, PSValue> {
+  return {
+    InterfaceIndex:   n.ifIndex,
+    InterfaceAlias:   n.ifAlias,
+    IPAddress:        n.ipAddress,
+    LinkLayerAddress: n.linkLayerAddress,
+    State:            n.state,
+    AddressFamily:    n.addressFamily,
+    PolicyStore:      n.policyStore,
+  };
+}
+
 export class GetNetNeighborCmdlet implements ICmdlet {
   readonly name = 'get-netneighbor';
   readonly displayName = 'Get-NetNeighbor';
   readonly aliases = [] as const;
+  readonly description = 'Gets the neighbor cache entries.';
+  readonly parameters = NET_NEIGHBOR_FILTERS;
 
   execute(ctx: CmdletContext): PSValue {
-    const filter: { ipAddress?: IPAddress; state?: string; ifIndex?: number } = {};
-    if (ctx.named['ipaddress']) {
-      try { filter.ipAddress = new IPAddress(psValueToString(ctx.named['ipaddress'])); }
-      catch (e) { throw new PSRuntimeError((e as Error).message); }
-    }
-    if (ctx.named['state']) filter.state = psValueToString(ctx.named['state']);
-    if (ctx.named['ifindex']) filter.ifIndex = Number.parseInt(psValueToString(ctx.named['ifindex']), 10);
-    const neighbors = requireNetwork(ctx).getNeighbors(filter);
-    return neighbors.map((n) => ({
-      ifIndex:          n.ifIndex,
-      InterfaceAlias:   n.ifAlias,
-      IPAddress:        n.ipAddress,
-      LinkLayerAddress: n.linkLayerAddress,
-      State:            n.state,
-      AddressFamily:    n.addressFamily,
-      PolicyStore:      n.policyStore,
-    } as Record<string, PSValue>)) as PSValue;
+    const matched = selectedNeighbors(ctx, requireNetwork(ctx), this.displayName);
+    if (matched === null) return null;
+    return matched.map(neighborToPSObject) as PSValue;
   }
 }
 
@@ -751,35 +832,41 @@ export class GetNetAdapterStatisticsCmdlet implements ICmdlet {
   }
 }
 
-function parseNeighborIp(ctx: CmdletContext, displayName: string): IPAddress {
-  if (!ctx.named['ipaddress']) {
-    throw new PSRuntimeError(`${displayName} : Missing -IPAddress.`);
-  }
-  try { return new IPAddress(psValueToString(ctx.named['ipaddress'])); }
-  catch (e) { throw new PSRuntimeError(`${displayName} : ${(e as Error).message}`); }
-}
-
-function parseNeighborMac(ctx: CmdletContext, displayName: string): MACAddress {
-  if (!ctx.named['linklayeraddress']) {
-    throw new PSRuntimeError(`${displayName} : Missing -LinkLayerAddress.`);
-  }
-  const raw = psValueToString(ctx.named['linklayeraddress']).replace(/-/g, ':').toLowerCase();
-  try { return new MACAddress(raw); }
-  catch (e) { throw new PSRuntimeError(`${displayName} : ${(e as Error).message}`); }
-}
+const NET_NEIGHBOR_WRITE_PARAMS = [...NET_NEIGHBOR_FILTERS,
+  'PassThru', 'WhatIf', 'Confirm'] as const;
 
 export class NewNetNeighborCmdlet implements ICmdlet {
   readonly name = 'new-netneighbor';
   readonly displayName = 'New-NetNeighbor';
   readonly aliases = [] as const;
+  readonly parameters = NET_NEIGHBOR_WRITE_PARAMS;
 
   execute(ctx: CmdletContext): PSValue {
-    const ip = parseNeighborIp(ctx, this.displayName);
-    const mac = parseNeighborMac(ctx, this.displayName);
-    const ifAlias = ctx.named['interfacealias'] ? psValueToString(ctx.named['interfacealias']) : 'Ethernet';
-    const err = requireNetwork(ctx).addNeighbor(ip, mac, ifAlias);
-    if (err) throw new PSRuntimeError(err);
-    return null;
+    const net = requireNetwork(ctx);
+    const unsupported = netNeighborUnsupported(ctx, this.displayName);
+    if (unsupported) { ctx.emitError(unsupported); return null; }
+    const named = (key: string): string | undefined =>
+      ctx.named[key] === undefined ? undefined : psValueToString(ctx.named[key]);
+    const decision = planNetNeighbor({
+      ipAddress: named('ipaddress') ?? (ctx.positional[0] === undefined
+        ? undefined : psValueToString(ctx.positional[0])),
+      interfaceAlias: named('interfacealias'),
+      interfaceIndex: named('interfaceindex'),
+      linkLayerAddress: named('linklayeraddress'),
+      state: named('state'),
+      addressFamily: named('addressfamily'),
+      policyStore: named('policystore'),
+    });
+    if (!decision.ok) { ctx.emitError(`${this.displayName} : ${decision.message}`); return null; }
+    if (ctx.named['whatif'] !== undefined) {
+      ctx.emit(`What if: Creating a neighbor entry for ${decision.plan.address.text}.`);
+      return null;
+    }
+    const failure = net.addNeighbor(decision.plan);
+    if (failure) { ctx.emitError(`${this.displayName} : ${failure}`); return null; }
+    if (ctx.named['passthru'] === undefined) return null;
+    const created = selectNetNeighbors(net.getNeighbors(), { ipAddress: [decision.plan.address.text] });
+    return created.map(neighborToPSObject) as PSValue;
   }
 }
 
@@ -787,13 +874,21 @@ export class RemoveNetNeighborCmdlet implements ICmdlet {
   readonly name = 'remove-netneighbor';
   readonly displayName = 'Remove-NetNeighbor';
   readonly aliases = [] as const;
+  readonly parameters = NET_NEIGHBOR_WRITE_PARAMS;
 
   execute(ctx: CmdletContext): PSValue {
-    const ip = parseNeighborIp(ctx, this.displayName);
-    const ifAlias = ctx.named['interfacealias'] ? psValueToString(ctx.named['interfacealias']) : undefined;
-    const err = requireNetwork(ctx).removeNeighbor(ip, ifAlias);
-    if (err) throw new PSRuntimeError(err);
-    return null;
+    const net = requireNetwork(ctx);
+    const matched = selectedNeighbors(ctx, net, this.displayName);
+    if (matched === null) return null;
+    if (ctx.named['whatif'] !== undefined) {
+      for (const row of matched) {
+        ctx.emit(`What if: Removing the neighbor entry for ${row.ipAddress}.`);
+      }
+      return null;
+    }
+    net.removeNeighbors(matched);
+    if (ctx.named['passthru'] === undefined) return null;
+    return matched.map(neighborToPSObject) as PSValue;
   }
 }
 
@@ -801,14 +896,36 @@ export class SetNetNeighborCmdlet implements ICmdlet {
   readonly name = 'set-netneighbor';
   readonly displayName = 'Set-NetNeighbor';
   readonly aliases = [] as const;
+  readonly parameters = NET_NEIGHBOR_WRITE_PARAMS;
 
   execute(ctx: CmdletContext): PSValue {
-    const ip = parseNeighborIp(ctx, this.displayName);
-    const mac = parseNeighborMac(ctx, this.displayName);
-    const ifAlias = ctx.named['interfacealias'] ? psValueToString(ctx.named['interfacealias']) : undefined;
-    const err = requireNetwork(ctx).setNeighbor(ip, mac, ifAlias);
-    if (err) throw new PSRuntimeError(err);
-    return null;
+    const net = requireNetwork(ctx);
+    const raw = ctx.named['linklayeraddress'];
+    if (raw === undefined) {
+      ctx.emitError(`${this.displayName} : Cannot process command because of one or more missing mandatory parameters: LinkLayerAddress.`);
+      return null;
+    }
+    let mac: MACAddress;
+    try { mac = new MACAddress(psValueToString(raw).trim()); }
+    catch {
+      ctx.emitError(`${this.displayName} : Cannot validate argument on parameter 'LinkLayerAddress'. The argument "${psValueToString(raw)}" is not a valid link-layer address.`);
+      return null;
+    }
+    const selectionCtx = { ...ctx, named: { ...ctx.named } };
+    delete selectionCtx.named['linklayeraddress'];
+    const matched = selectedNeighbors(selectionCtx as CmdletContext, net, this.displayName);
+    if (matched === null) return null;
+    if (ctx.named['whatif'] !== undefined) {
+      for (const row of matched) {
+        ctx.emit(`What if: Setting the neighbor entry for ${row.ipAddress}.`);
+      }
+      return null;
+    }
+    net.setNeighborLinkLayer(matched, mac);
+    if (ctx.named['passthru'] === undefined) return null;
+    const after = selectNetNeighbors(net.getNeighbors(),
+      { ipAddress: matched.map(r => r.ipAddress) });
+    return after.map(neighborToPSObject) as PSValue;
   }
 }
 
@@ -907,24 +1024,45 @@ export class GetNetTCPConnectionCmdlet implements ICmdlet {
  * 5353 — la preuve qu'un répondeur de lien tient son port, et non un
  * réglage qui l'affirmerait.
  */
+const NET_UDP_FILTERS = ['LocalAddress', 'LocalPort', 'OwningProcess',
+  'CreationTime', 'CimSession'] as const;
+
 export class GetNetUDPEndpointCmdlet implements ICmdlet {
   readonly name = 'get-netudpendpoint';
   readonly displayName = 'Get-NetUDPEndpoint';
   readonly aliases = [] as const;
+  readonly description = 'Gets current statistics for UDP endpoints.';
+  readonly parameters = NET_UDP_FILTERS;
 
   execute(ctx: CmdletContext): PSValue {
+    const refusal = remoteCimRefusal(ctx, this.displayName);
+    if (refusal) { ctx.emitError(refusal); return null; }
     const net = requireNetwork(ctx);
-    const endpoints = net.getUdpEndpoints?.() ?? [];
-    const rawPort = ctx.named['localport'];
-    const portFilter = rawPort !== undefined ? Number(psValueToString(rawPort)) : null;
-    return endpoints
-      .filter(e => portFilter === null || e.localPort === portFilter)
-      .map(e => ({
-        LocalAddress:  e.localAddress,
-        LocalPort:     e.localPort,
-        OwningProcess: e.pid,
-        ProcessName:   e.processName,
-      } as Record<string, PSValue>)) as PSValue;
+    const list = cimFilterReader(ctx, NET_UDP_FILTERS);
+    const positional = (n: number): string[] | undefined =>
+      ctx.positional[n] === undefined ? undefined : [psValueToString(ctx.positional[n])];
+    const selection: NetUdpEndpointSelection = {
+      localAddress: list('localaddress') ?? positional(0),
+      localPort: list('localport') ?? positional(1),
+      owningProcess: list('owningprocess'),
+      creationTime: list('creationtime'),
+    };
+    for (const given of selection.localPort ?? []) {
+      const problem = udpPortProblem(given);
+      if (problem) { ctx.emitError(`${this.displayName} : ${problem}`); return null; }
+    }
+    const rows = (net.getUdpEndpoints?.() ?? []) as NetUdpEndpointRow[];
+    const matched = selectNetUdpEndpoints(rows, selection);
+    if (matched.length === 0 && !udpEndpointSelectionIsEmpty(selection)) {
+      ctx.emitError(`${this.displayName} : ${noMatchingNetUdpEndpoint(selection)}`);
+      return null;
+    }
+    return matched.map(e => ({
+      LocalAddress:  e.localAddress,
+      LocalPort:     e.localPort,
+      OwningProcess: e.pid,
+      ProcessName:   e.processName,
+    } as Record<string, PSValue>)) as PSValue;
   }
 }
 
@@ -1542,6 +1680,7 @@ export class SetDnsClientServerAddressCmdlet implements ICmdlet {
   readonly name = 'set-dnsclientserveraddress';
   readonly displayName = 'Set-DnsClientServerAddress';
   readonly aliases = [] as const;
+  readonly description = 'Sets DNS server addresses associated with the TCP/IP properties on an interface.';
 
   execute(ctx: CmdletContext): PSValue {
     const net = requireNetwork(ctx);
@@ -1558,26 +1697,50 @@ export class SetDnsClientServerAddressCmdlet implements ICmdlet {
   }
 }
 
+const DNS_CACHE_FILTERS = ['Entry', 'Name', 'Type', 'Status', 'Section',
+  'TimeToLive', 'DataLength', 'Data', 'CimSession'] as const;
+
 export class GetDnsClientCacheCmdlet implements ICmdlet {
   readonly name = 'get-dnsclientcache';
   readonly displayName = 'Get-DnsClientCache';
   readonly aliases = [] as const;
+  readonly description = 'Retrieves the contents of the DNS client cache.';
+  readonly parameters = DNS_CACHE_FILTERS;
 
   execute(ctx: CmdletContext): PSValue {
-    const entries = requireNetwork(ctx).getDnsClientCache?.() ?? [];
-    const rawFilter = ctx.named['name'] ?? ctx.positional[0];
-    const nameFilter = rawFilter !== undefined ? psValueToString(rawFilter).toLowerCase() : null;
-    return entries
-      .filter(e => !nameFilter || e.name.toLowerCase() === nameFilter)
-      .map(e => ({
-        Entry:      e.name,
-        RecordName: e.name,
-        RecordType: e.type,
-        Status:     'Success',
-        Section:    'Answer',
-        TimeToLive: e.ttl,
-        Data:       e.value,
-      } as Record<string, PSValue>)) as PSValue;
+    const refusal = remoteCimRefusal(ctx, this.displayName);
+    if (refusal) { ctx.emitError(refusal); return null; }
+    const list = cimFilterReader(ctx, DNS_CACHE_FILTERS);
+    const positional = ctx.positional[0] === undefined
+      ? undefined : [psValueToString(ctx.positional[0])];
+    const selection: DnsCacheSelection = {
+      entry: list('entry') ?? positional,
+      name: list('name'),
+      type: list('type'),
+      status: list('status'),
+      section: list('section'),
+      timeToLive: list('timetolive'),
+      dataLength: list('datalength'),
+      data: list('data'),
+    };
+    const enumProblem = dnsCacheEnumProblem(selection);
+    if (enumProblem) { ctx.emitError(`${this.displayName} : ${enumProblem}`); return null; }
+    const rows = requireNetwork(ctx).getDnsClientCache?.() ?? [];
+    const matched = selectDnsCacheEntries(rows, selection);
+    if (matched.length === 0 && !dnsCacheSelectionIsEmpty(selection)) {
+      ctx.emitError(`${this.displayName} : ${noMatchingDnsCacheEntry(selection)}`);
+      return null;
+    }
+    return matched.map(r => ({
+      Entry:      r.entry,
+      RecordName: r.recordName,
+      RecordType: r.recordType,
+      Status:     r.status,
+      Section:    r.section,
+      TimeToLive: r.timeToLive,
+      DataLength: r.dataLength,
+      Data:       r.data,
+    } as Record<string, PSValue>)) as PSValue;
   }
 }
 
@@ -1585,8 +1748,16 @@ export class ClearDnsClientCacheCmdlet implements ICmdlet {
   readonly name = 'clear-dnsclientcache';
   readonly displayName = 'Clear-DnsClientCache';
   readonly aliases = [] as const;
+  readonly description = 'Removes the contents of the DNS client cache.';
+  readonly parameters = ['CimSession', 'WhatIf', 'Confirm'] as const;
 
   execute(ctx: CmdletContext): PSValue {
+    const refusal = remoteCimRefusal(ctx, this.displayName);
+    if (refusal) { ctx.emitError(refusal); return null; }
+    if (ctx.named['whatif'] !== undefined) {
+      ctx.emit('What if: Clearing the DNS client cache.');
+      return null;
+    }
     requireNetwork(ctx).clearDnsClientCache?.();
     return null;
   }
