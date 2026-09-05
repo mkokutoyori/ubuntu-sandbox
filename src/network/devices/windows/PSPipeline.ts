@@ -831,8 +831,27 @@ function serverManagerView(objects: PSObject[]): string | null {
   return null;
 }
 
+export function hasDefaultColumns(obj: PSObject): boolean {
+  return pickDefaultColumns(Object.keys(obj)) !== null;
+}
+
 function pickDefaultColumns(keys: string[]): string[] | null {
   const lower = new Set(keys.map((k) => k.toLowerCase()));
+  // Volume (Get-Volume) and Disk (Get-Disk): real PowerShell renders both
+  // as tables, in the column order Storage's format file declares.
+  if (lower.has('driveletter') && lower.has('healthstatus') && lower.has('sizeremaining')) {
+    return ['DriveLetter', 'FriendlyName', 'FileSystemType', 'DriveType', 'HealthStatus',
+            'OperationalStatus', 'SizeRemaining', 'Size'];
+  }
+  if (lower.has('number') && lower.has('isboot') && lower.has('partitionstyle')) {
+    return ['Number', 'FriendlyName', 'SerialNumber', 'OperationalStatus', 'TotalSize',
+            'PartitionStyle', 'IsBoot', 'IsSystem', 'UniqueId'];
+  }
+  // PathInfo (Get-Location): real PowerShell's default view is the Path
+  // column alone; ProviderPath / Provider / Drive stay reachable to scripts.
+  if (lower.has('path') && lower.has('providerpath') && lower.has('provider')) {
+    return ['Path'];
+  }
   // Service object: Status / Name / DisplayName
   if (lower.has('status') && lower.has('name') && lower.has('displayname')) {
     return ['Status', 'Name', 'DisplayName'];

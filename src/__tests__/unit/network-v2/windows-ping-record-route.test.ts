@@ -9,7 +9,7 @@ import { WindowsPC } from '@/network/devices/WindowsPC';
 import { LinuxPC } from '@/network/devices/LinuxPC';
 import { CiscoRouter } from '@/network/devices/CiscoRouter';
 import { GenericSwitch } from '@/network/devices/GenericSwitch';
-import { PowerShellExecutor, type PSDeviceContext } from '@/network/devices/windows/PowerShellExecutor';
+import { PowerShellSubShell } from '@/terminal/subshells/PowerShellSubShell';
 import { Cable } from '@/network/hardware/Cable';
 import { IPAddress, SubnetMask, MACAddress, resetCounters } from '@/network/core/types';
 import { resetDeviceCounters } from '@/network/devices/DeviceFactory';
@@ -52,8 +52,11 @@ describe('ping -r records the real route', () => {
   });
 });
 
-describe('legacy PowerShellExecutor stubs are no longer no-ops', () => {
-  const makePs = (pc: WindowsPC) => new PowerShellExecutor(pc as unknown as PSDeviceContext);
+describe('les vues PowerShell agissent sur la machine, elles ne sont pas des stubs', () => {
+  const makePs = (pc: WindowsPC) => {
+    const shell = PowerShellSubShell.create(pc).subShell;
+    return { execute: async (line: string) => (await shell.processLine(line)).output.join('\n') };
+  };
 
   it('Clear-DnsClientCache flushes the cache ipconfig /displaydns reads', async () => {
     const pc = new WindowsPC('windows-pc', 'PC1', 0, 0);

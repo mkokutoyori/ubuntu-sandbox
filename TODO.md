@@ -2748,31 +2748,19 @@ toutes bloquees par le proxy de sortie. Aucune des deux n'a donc ete
 choisie sur autorite — on a garde celle qui vit avec ses tests, et la
 question reste ouverte.
 
-### [powershell] l'executeur historique n'a plus d'appelant en production, mais 1300 tests le pilotent
+### [powershell] les dernieres familles de `powershell-basic-cmdlets.test.ts`
 
-**Mesure** : apres ce lot, `grep -rn "PowerShellExecutor" src/ --include=*.ts`
-hors `__tests__` ne rend plus un seul `import` ni un seul `new`. Le
-fichier — 4000 lignes, un second interpreteur PowerShell a base
-d'expressions regulieres — n'est donc plus atteignable par l'application.
-Il reste importe par ~25 fichiers de test, soit environ 1300 cas, dont
-les trois gros : `powershell-basic-cmdlets.test.ts` (558),
-`powershell-cmdlet.test.ts` (354), `cmd-netsh.test.ts` (186).
+**Mesure** : le fichier (558 cas) mesure le moteur VIVANT depuis que
+l'executeur historique est supprime. Il etait a 128 rouges au debut de la
+migration, il est a 32. Ferme depuis : `-?`, `Get-Help`, `Copy-Item`,
+`Get-Content`, `Get-ChildItem`, `Get-Location`, `Get-Command`,
+`-LiteralPath`, le filtrage par joker, les attributs de fichier, le
+stockage.
 
-**Ce que coute la fermeture** : pointer `powershell-basic-cmdlets.test.ts`
-vers le moteur vivant faisait tomber 128 cas sur 558. Le fichier EST
-migre : il mesure desormais le moteur vivant, et le compte est descendu a
-68. Fermees : `<commande> -?`, `Get-Help` (corps complet, notices
-deplacees hors de l'executeur), `Copy-Item` (tous ses criteres declares),
-`-LiteralPath` pour toute la famille des chemins, le filtrage par joker.
-
-`Get-Content` et `Get-ChildItem` sont fermes a leur tour (avec la graine
-d'attributs du systeme de fichiers, qui marquait les binaires de System32
-comme SYSTEM, et `dir /a`, qui etait un no-op declare).
-
-Restent, par famille : `Get-Location` (6 — `-Stack`, `-PSProvider`,
-`-PSDrive`), `Stop-Process` (6), `Get-Service` (6), `Get-Disk` (4),
-`Get-Process` etendu (4), `Get-Command` (6), `Get-LocalUser` (3),
-`Get-Volume` (2), et huit cas isoles. Chaque famille est un lot : on ferme les manques que le fichier
-revele. `PowerShellExecutor.ts` disparait quand le dernier fichier de
-test qui l'importe est migre — il en reste une vingtaine, dont
-`powershell-cmdlet.test.ts` (346) et `cmd-netsh.test.ts` (186).
+**Reste** : `Get-Service` (6), `Stop-Process` (6), `Get-Process` etendu
+(4 — `-Module`, `-IncludeUserName`, `-ComputerName`), `Get-LocalUser` (3),
+`Get-Disk`/`Get-Volume` (quelques cas de filtre), et huit cas isoles
+(`New-Item`, `Remove-Item`, `Rename-Item`, `Set-Content`,
+`Test-Connection`, `Write-Host`, `Write-Output`). Chaque famille est un
+lot : on ferme le manque que le cas revele, ou on corrige le cas quand il
+epingle une invention du moteur mort.

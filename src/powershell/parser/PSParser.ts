@@ -72,6 +72,7 @@ const BAREWORD_LEADERS: ReadonlySet<PSTokenType> = new Set([
 const BAREWORD_GLUE: ReadonlySet<PSTokenType> = new Set([
   PSTokenType.MODULO, PSTokenType.MULTIPLY, PSTokenType.DIVIDE,
   PSTokenType.DOT, PSTokenType.RANGE, PSTokenType.WORD, PSTokenType.NUMBER,
+  PSTokenType.MINUS,
 ]);
 
 export class PSParser {
@@ -566,7 +567,8 @@ export class PSParser {
       const suite = this.peekAt(1);
       const glued = suite !== undefined
         && suite.position.offset === tok.position.offset + tok.value.length
-        && (suite.type === PSTokenType.MODULO || suite.type === PSTokenType.DIVIDE);
+        && (suite.type === PSTokenType.MODULO || suite.type === PSTokenType.DIVIDE
+            || suite.type === PSTokenType.MINUS);
       if (glued) return this.parseBareword(false);
     }
     if (tok.type === PSTokenType.WORD) {

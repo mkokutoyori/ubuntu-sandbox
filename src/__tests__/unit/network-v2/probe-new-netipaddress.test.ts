@@ -198,15 +198,12 @@ describe('New-NetIPAddress — ce qu elle rend et ce qu elle retient', () => {
 describe('New-NetIPAddress — une seule source de verite', () => {
   it('le moteur historique ne porte plus de New-NetIPAddress a lui', () => {
     expect(existsSync('src/network/devices/windows/PSNetCmdlets.ts')).toBe(false);
-    const executor = readFileSync('src/network/devices/windows/PowerShellExecutor.ts', 'utf8');
-    expect(executor).not.toContain('handleNewNetIPAddress');
   });
 
   it('la forme de l entree d adresse est declaree une seule fois', () => {
     const shape = /prefixOrigin: string; suffixOrigin: string; skipAsSource: boolean/g;
     for (const f of ['src/network/devices/WindowsPC.ts',
-                     'src/powershell/providers/WindowsPSProviders.ts',
-                     'src/network/devices/windows/PowerShellExecutor.ts']) {
+                     'src/powershell/providers/WindowsPSProviders.ts']) {
       expect(readFileSync(f, 'utf8').match(shape)).toBeNull();
     }
     expect(readFileSync('src/network/devices/windows/netIpAddress.ts', 'utf8'))

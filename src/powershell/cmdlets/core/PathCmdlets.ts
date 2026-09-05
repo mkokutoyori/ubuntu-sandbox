@@ -187,7 +187,8 @@ export class GetChildItemCmdlet implements ICmdlet {
     const wanted = this.attributeFilter(ctx);
     if (wanted === null) return [];
 
-    const roots = literal || !hasWildcard(path) ? [path] : expandPathSpec(fs, path);
+    const listed = path === '.' ? fs.getCwd() : path;
+    const roots = literal || !hasWildcard(listed) ? [listed] : expandPathSpec(fs, listed);
     if (roots.length === 0) {
       ctx.emitError(`Get-ChildItem : Cannot find path '${path}' because it does not exist.`);
       return [];

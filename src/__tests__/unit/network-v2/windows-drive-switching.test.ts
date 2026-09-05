@@ -21,7 +21,7 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { WindowsPC } from '@/network/devices/WindowsPC';
 import { LinuxPC } from '@/network/devices/LinuxPC';
-import { PowerShellExecutor } from '@/network/devices/windows/PowerShellExecutor';
+import { PowerShellSubShell } from '@/terminal/subshells/PowerShellSubShell';
 import { MACAddress, resetCounters } from '@/network/core/types';
 import { resetDeviceCounters } from '@/network/devices/DeviceFactory';
 import { Logger } from '@/network/core/Logger';
@@ -93,10 +93,15 @@ describe('cmd: bare drive letter switches drive and remembers cwd', () => {
 
 // ─── PowerShell drive switching, and round-tripping with cmd ─────────
 
+function livePs(pc: WindowsPC): { execute(line: string): Promise<string> } {
+  const shell = PowerShellSubShell.create(pc).subShell;
+  return { execute: async (line: string) => (await shell.processLine(line)).output.join('\n') };
+}
+
 describe('PowerShell drive switching mirrors cmd semantics', () => {
   it('Set-Location D: switches drives (was a silent no-op pre-fix)', async () => {
     const pc = new WindowsPC('windows-pc', 'PC1', 0, 0);
-    const ps = new PowerShellExecutor(pc as any);
+    const ps = livePs(pc);
     await ps.execute('Set-Location D:');
     const loc = await ps.execute('Get-Location');
     // Get-Location formats as a Path table — match the path field.
@@ -105,7 +110,7 @@ describe('PowerShell drive switching mirrors cmd semantics', () => {
 
   it('PS `cd D:\\Data` lands in D:\\Data, cmd `cd` confirms the same', async () => {
     const pc = new WindowsPC('windows-pc', 'PC1', 0, 0);
-    const ps = new PowerShellExecutor(pc as any);
+    const ps = livePs(pc);
     await ps.execute('cd D:\\Data');
     // Device cwd is shared with cmd — confirm via the cmd surface.
     const cmdOut = await pc.executeCommand('cd');
@@ -114,7 +119,7 @@ describe('PowerShell drive switching mirrors cmd semantics', () => {
 
   it('PS → cmd → PS round-trip keeps the active drive in sync', async () => {
     const pc = new WindowsPC('windows-pc', 'PC1', 0, 0);
-    const ps = new PowerShellExecutor(pc as any);
+    const ps = livePs(pc);
     // 1. PS hops to D:.
     await ps.execute('Set-Location D:\\Projects');
     // 2. cmd reports the same cwd (state is device-wide, not shell-local).
@@ -132,9 +137,11 @@ describe('PowerShell drive switching mirrors cmd semantics', () => {
 
   it('Set-Location to a non-existent drive surfaces an error', async () => {
     const pc = new WindowsPC('windows-pc', 'PC1', 0, 0);
-    const ps = new PowerShellExecutor(pc as any);
+    const ps = livePs(pc);
     const out = await ps.execute('Set-Location Q:');
-    expect(out).toMatch(/cannot find the drive/i);
+    // PowerShell nomme le LECTEUR absent ; « the system cannot find the
+    // drive specified » est la phrase de cmd, pas la sienne.
+    expect(out).toMatch(/Cannot find drive\. A drive with the name 'Q' does not exist\./);
   });
 });
 
@@ -191,7 +198,7 @@ describe('SSH login as Administrator lands in a directory that exists', () => {
 describe('Get-Volume / Get-PSDrive / wmic logicaldisk derive from the FS', () => {
   it('Get-Volume lists exactly the FS-mounted drives, sorted', async () => {
     const pc = new WindowsPC('windows-pc', 'PC1', 0, 0);
-    const ps = new PowerShellExecutor(pc as any);
+    const ps = livePs(pc);
     const out = await ps.execute('Get-Volume');
     // Both drives the FS seeds at init must appear.
     expect(out).toMatch(/^C\s/m);
@@ -201,7 +208,7 @@ describe('Get-Volume / Get-PSDrive / wmic logicaldisk derive from the FS', () =>
   it('seeding a new drive via mkdirp makes it visible in Get-Volume', async () => {
     const pc = new WindowsPC('windows-pc', 'PC1', 0, 0);
     pc.getFileSystem().mkdirp('E:\\Media');
-    const ps = new PowerShellExecutor(pc as any);
+    const ps = livePs(pc);
     const out = await ps.execute('Get-Volume');
     expect(out).toMatch(/^E\s/m);
     // No phantom drive that the FS never created.
@@ -211,7 +218,7 @@ describe('Get-Volume / Get-PSDrive / wmic logicaldisk derive from the FS', () =>
   it('Get-PSDrive FileSystem rows match Get-Volume rows', async () => {
     const pc = new WindowsPC('windows-pc', 'PC1', 0, 0);
     pc.getFileSystem().mkdirp('E:\\');
-    const ps = new PowerShellExecutor(pc as any);
+    const ps = livePs(pc);
     const psd = await ps.execute('Get-PSDrive');
     const vol = await ps.execute('Get-Volume');
     for (const letter of ['C', 'D', 'E']) {
@@ -308,7 +315,7 @@ describe('Storage stats are FS-derived, not frozen constants', () => {
   it('Get-Volume Size + SizeRemaining reflect real FS state', async () => {
     const pc = new WindowsPC('windows-pc', 'PC1', 0, 0);
     pc.getFileSystem().setDriveCapacity('C', 200_000_000_000);
-    const ps = new PowerShellExecutor(pc as any);
+    const ps = livePs(pc);
     const out = await ps.execute('Get-Volume -DriveLetter C');
     // 200 GB capacity → "186.26 GB" in the GiB display we use.
     expect(out).toMatch(/186\.\d{2} GB/);
@@ -322,7 +329,7 @@ describe('Storage stats are FS-derived, not frozen constants', () => {
     fs.createFile('C:\\hog.bin', '');
     const entry = (fs as any).resolve('C:\\hog.bin');
     entry.size = 5_368_709_120; // 5 GB
-    const ps = new PowerShellExecutor(pc as any);
+    const ps = livePs(pc);
     const out = await ps.execute('Get-PSDrive');
     const cLine = out.split('\n').find(l => /^C\s/.test(l)) ?? '';
     // 5 GB hog dominates the system seeds — Used reads "5.xx".
@@ -334,19 +341,21 @@ describe('Storage stats are FS-derived, not frozen constants', () => {
   it('Get-Disk emits one row per FS-mounted drive', async () => {
     const pc = new WindowsPC('windows-pc', 'PC1', 0, 0);
     pc.getFileSystem().mkdirp('E:\\');
-    const ps = new PowerShellExecutor(pc as any);
+    const ps = livePs(pc);
     const out = await ps.execute('Get-Disk');
     // Number column shows 0/1/2 for the three drives.
-    const rows = out.split('\n').filter(l => /^\d\s+Virtual|^\d\s+Microsoft/.test(l));
+    // La colonne Number est numerique, donc alignee a DROITE, comme dans
+    // le vrai format-table de PowerShell.
+    const rows = out.split('\n').filter(l => /^\s*\d\s+(Virtual|Microsoft)/.test(l));
     expect(rows.length).toBe(3);
   });
 
   it('Get-Disk for C: is the boot/system disk', async () => {
     const pc = new WindowsPC('windows-pc', 'PC1', 0, 0);
-    const ps = new PowerShellExecutor(pc as any);
+    const ps = livePs(pc);
     const out = await ps.execute('Get-Disk -Number 0');
-    expect(out).toMatch(/IsBoot\s+:\s+true/);
-    expect(out).toMatch(/IsSystem\s+:\s+true/);
+    // Get-Disk a une vue TABLE, y compris pour une seule ligne.
+    expect(out).toMatch(/^\s*0\s+Microsoft Virtual Disk\b.*\bTrue\s+True\b/m);
   });
 });
 

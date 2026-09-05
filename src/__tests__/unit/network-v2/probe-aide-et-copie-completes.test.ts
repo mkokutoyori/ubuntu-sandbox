@@ -12,8 +12,8 @@
  *    part : moins l'operateur point d'interrogation, soit zero.
  *  - `Get-Help <cmdlet>` rendait NAME et SYNTAX et rien d'autre. Les
  *    trente-quatre notices completes — synopsis, syntaxe, exemples,
- *    parametres — vivaient dans `PSHelpText.ts`, cote executeur mort. Le
- *    moteur vivant ne les voyait pas, et personne ne pouvait les lire.
+ *    parametres — vivaient du cote de l'executeur mort. Le moteur vivant
+ *    ne les voyait pas, et personne ne pouvait les lire.
  *  - `Copy-Item` DECLARAIT `-Filter`, `-Include`, `-Exclude`, `-Force`,
  *    `-PassThru`, `-Container` et n'en evaluait AUCUN : la commande avait
  *    toutes les apparences de l'existence sauf l'effet. Elle ne savait ni

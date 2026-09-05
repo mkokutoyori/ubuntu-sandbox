@@ -12,6 +12,19 @@ export function nativeArgv(positional: readonly PSValue[], named: Record<string,
     out.push(psValueToString(value));
   }
   for (const p of positional) out.push(psValueToString(p));
+  return rejoinSwitchValues(out);
+}
+
+function rejoinSwitchValues(argv: readonly string[]): string[] {
+  const out: string[] = [];
+  for (let i = 0; i < argv.length; i++) {
+    const token = argv[i];
+    if (token.endsWith('=') && token.length > 1 && i + 1 < argv.length) {
+      out.push(token + argv[++i]);
+      continue;
+    }
+    out.push(token);
+  }
   return out;
 }
 

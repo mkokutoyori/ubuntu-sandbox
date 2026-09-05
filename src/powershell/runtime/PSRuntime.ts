@@ -32,7 +32,7 @@ import { NULL_PROVIDERS } from '@/powershell/providers/NullProviders';
 import { PSRuntimeError } from './PSRuntimeError';
 import { commandNotFoundMessage } from '@/powershell/commandNotFound';
 import { NativeCommandNeedsAsync, nativeArgv, isNativeProgramName } from '@/powershell/nativeAsync';
-import { formatDefault, type PSObject } from '@/network/devices/windows/PSPipeline';
+import { formatDefault, hasDefaultColumns, type PSObject } from '@/network/devices/windows/PSPipeline';
 import type { PSProviders } from '@/powershell/providers/PSProviders';
 import type { CmdletContext, IRuntimeRef } from '@/powershell/cmdlets/CmdletContext';
 import type {
@@ -326,6 +326,10 @@ export class PSRuntime {
    * `Key=Value; ...` hashtable form psValueToString produces.
    */
   private renderValue(result: PSValue): void {
+    if (result instanceof Date) {
+      this.outputLines.push(formatDotNetDate(result, 'dddd, MMMM d, yyyy h:mm:ss tt'));
+      return;
+    }
     if (Array.isArray(result)) {
       // Array of plain objects (all elements are non-null records with at
       // least one string-keyed field) → table format.
@@ -348,7 +352,8 @@ export class PSRuntime {
         && !this.isScriptBlock(result)
         && Object.keys(result as Record<string, unknown>).length > 0
         && !this.hasInternalSentinel(result as Record<string, unknown>)
-        && this.allScalarValues(result as Record<string, unknown>)) {
+        && (this.allScalarValues(result as Record<string, unknown>)
+            || hasDefaultColumns(result as unknown as PSObject))) {
       const formatted = formatDefault([result as unknown as PSObject]);
       if (formatted) { this.outputLines.push(formatted); return; }
     }
@@ -406,7 +411,7 @@ export class PSRuntime {
   }
 
   /** User-defined functions survive between execute() calls. */
-  private readonly functions = new Map<string, { block: PSScriptBlock; isFilter: boolean }>();
+  private readonly functions = new Map<string, { block: PSScriptBlock; isFilter: boolean; declaredName: string }>();
   private readonly functionSources = new Map<string, string>();
 
   /** User-defined PowerShell classes. */
@@ -1293,7 +1298,10 @@ export class PSRuntime {
     if (!fs) return undefined;
     const lower = name.toLowerCase();
     if (lower !== 'pwd' && lower !== 'executioncontext') return undefined;
-    const cwd = fs.getCwd();
+    const foreign = this.global.get('__psLocation__');
+    const cwd = foreign !== undefined && foreign !== null && psValueToString(foreign) !== ''
+      ? psValueToString(foreign)
+      : fs.getCwd();
     const location = { Path: cwd, ProviderPath: cwd, Provider: 'FileSystem' } as Record<string, PSValue>;
     if (lower === 'pwd') return location;
     return { SessionState: { Path: { CurrentLocation: location } } } as unknown as PSValue;
@@ -1846,7 +1854,7 @@ export class PSRuntime {
 
   private execFunctionDef(node: PSFunctionDefinition, env: PSEnvironment): PSValue {
     const isFilter = node.kind === 'filter';
-    this.functions.set(node.name.toLowerCase(), { block: node.body, isFilter });
+    this.functions.set(node.name.toLowerCase(), { block: node.body, isFilter, declaredName: node.name });
     env.set(node.name, node.name as PSValue);
     return null;
   }
@@ -2572,7 +2580,7 @@ export class PSRuntime {
       execute:            (code) => self.execute(code),
       executeInteractive: (code) => self.executeInteractive(code),
       executeForValue:    (code) => self.executeForValue(code),
-      getVariable:        (name) => self.global.get(name),
+      getVariable:        (name) => self.getVariable(name),
       setVariable:        (name, val) => self.global.set(name, val),
       invokeScriptBlock:  (block, namedV, posV, env2, $under) =>
         self.invokeScriptBlock(block, namedV, posV, env2, $under),
@@ -2591,6 +2599,7 @@ export class PSRuntime {
         })),
       listEnvVars: () => self.providers.environment?.list() ?? [],
       getFunctionSource: (name) => self.functionSources.get(name.toLowerCase()) ?? null,
+      listFunctions: () => [...self.functions.values()].map(f => f.declaredName),
       listHistory: () => self.listHistory(),
     };
 

@@ -563,8 +563,9 @@ describe('4. Get‑Command', () => {
   it('Get-Command -CommandType Function', async () => {
     const pc = createPC();
     const ps = createPS(pc);
+    await ps.execute('function Test-Maison { 1 }');
     const out = await ps.execute('Get-Command -CommandType Function');
-    expect(out).toContain('Function');
+    expect(out).toContain('Test-Maison');
   });
 
   it('Get-Command -All includes duplicate names (e.g., from different modules)', async () => {
@@ -608,7 +609,7 @@ describe('4. Get‑Command', () => {
   it('Get-Command unknown name returns error', async () => {
     const pc = createPC();
     const ps = createPS(pc);
-    const out = await ps.execute('Get-Command NoSuchCommand -ErrorAction SilentlyContinue');
+    const out = await ps.execute('Get-Command NoSuchCommand');
     expect(out).toContain('not recognized');
   });
 
@@ -985,7 +986,7 @@ describe('7. Get‑Location', () => {
   it('Get-Location -PSDrive returns drive', async () => {
     const pc = createPC();
     const ps = createPS(pc);
-    const drive = await ps.execute('(Get-Location -PSDrive C).Name');
+    const drive = await ps.execute('(Get-Location -PSDrive C).Drive.Name');
     expect(drive.trim()).toBe('C');
   });
 
@@ -1059,16 +1060,21 @@ describe('7. Get‑Location', () => {
   it('error on invalid -PSDrive', async () => {
     const pc = createPC();
     const ps = createPS(pc);
-    const out = await ps.execute('Get-Location -PSDrive Z -ErrorAction SilentlyContinue');
+    const out = await ps.execute('Get-Location -PSDrive Z');
     expect(out).toContain('Cannot find drive');
   });
 
-  it('error on invalid -PSProvider', async () => {
+  it('-PSProvider remembers the last location on that provider', async () => {
     const pc = createPC();
     const ps = createPS(pc);
-    const out = await ps.execute('Get-Location -PSProvider Registry -ErrorAction SilentlyContinue');
-    // Should fail if location not on that provider
-    expect(out).toContain('location is not');
+    // Real PowerShell keeps one current location PER provider: after coming
+    // back to the file system, -PSProvider Registry still answers with the
+    // registry location (Get-Location doc, example 2).
+    await ps.execute('Set-Location HKCU:\\Software');
+    await ps.execute('Set-Location C:\\');
+    expect(await ps.execute('Get-Location -PSProvider Registry')).toContain('HKCU:\\Software');
+    const out = await ps.execute('Get-Location -PSProvider Zorglub');
+    expect(out).toContain("Cannot find the PowerShell provider 'Zorglub'");
   });
 
   it('returns C: when at root', async () => {
@@ -2257,8 +2263,9 @@ describe('4. Get‑Command (25+)', () => {
   it('06: -CommandType Function', async () => {
     const pc = createPC();
     const ps = createPS(pc);
+    await ps.execute('function Test-Maison { 1 }');
     const out = await ps.execute('Get-Command -CommandType Function');
-    expect(out).toContain('Function');
+    expect(out).toContain('Test-Maison');
   });
 
   it('07: -All lists duplicates from different modules', async () => {
@@ -2300,7 +2307,7 @@ describe('4. Get‑Command (25+)', () => {
   it('12: unknown command returns error', async () => {
     const pc = createPC();
     const ps = createPS(pc);
-    const out = await ps.execute('Get-Command NoSuchCmd -ErrorAction SilentlyContinue');
+    const out = await ps.execute('Get-Command NoSuchCmd');
     expect(out).toContain('not recognized');
   });
 

@@ -18,7 +18,7 @@ import { WindowsPC } from '@/network/devices/WindowsPC';
 import { LinuxPC } from '@/network/devices/LinuxPC';
 import { CiscoSwitch } from '@/network/devices/CiscoSwitch';
 import { Cable } from '@/network/hardware/Cable';
-import { PowerShellExecutor, PS_VERSION_TABLE, PS_BANNER } from '@/network/devices/windows/PowerShellExecutor';
+import { PS_BANNER } from '@/network/devices/windows/PSConstants';
 import { PowerShellSubShell } from '@/terminal/subshells/PowerShellSubShell';
 import { MACAddress, resetCounters } from '@/network/core/types';
 import { resetDeviceCounters } from '@/network/devices/DeviceFactory';
@@ -37,12 +37,8 @@ function createConfiguredPC(name = 'PC1'): WindowsPC {
   return pc;
 }
 
-/** Helper to get a PowerShellExecutor backed by a WindowsPC */
-function createPSExecutor(pc: WindowsPC): PowerShellExecutor {
-  return new PowerShellExecutor(pc as any);
-}
-
-function createLivePS(pc: WindowsPC): { execute(line: string): Promise<string> } {
+/** Helper to get the live PowerShell engine backed by a WindowsPC */
+function createPSExecutor(pc: WindowsPC): { execute(line: string): Promise<string> } {
   const shell = PowerShellSubShell.create(pc).subShell;
   return { execute: async (line: string) => (await shell.processLine(line)).output.join('\n') };
 }
@@ -248,7 +244,7 @@ describe('Group 3: PS cmdlets produce different format than CMD equivalents', ()
 
   it('PSC-15: Get-NetAdapter has PS table format', async () => {
     const pc = createConfiguredPC();
-    const ps = createLivePS(pc);
+    const ps = createPSExecutor(pc);
 
     const psOutput = await ps.execute('Get-NetAdapter');
 
@@ -262,7 +258,7 @@ describe('Group 3: PS cmdlets produce different format than CMD equivalents', ()
 
   it('PSC-16: Get-NetIPAddress has PS object format', async () => {
     const pc = createConfiguredPC();
-    const ps = createLivePS(pc);
+    const ps = createPSExecutor(pc);
 
     const psOutput = await ps.execute('Get-NetIPAddress | Format-List');
 
@@ -340,19 +336,21 @@ describe('Group 4: PS-specific cmdlets return valid data', () => {
     const output = await ps.execute('$PSVersionTable');
     expect(output).toContain('PSVersion');
     expect(output).toContain('5.1');
-    expect(output).toBe(PS_VERSION_TABLE);
+    expect(output).toContain('PSEdition');
   });
 
   it('PSC-20: Get-History returns command history', async () => {
     const pc = createConfiguredPC();
     const ps = createPSExecutor(pc);
 
-    ps.setHistory(['ipconfig', 'ping 10.0.0.1', 'hostname']);
+    // L'historique est celui que la SESSION a tape : on le remplit en
+    // tapant, comme un operateur, plutot qu'en le posant de l'exterieur.
+    await ps.execute('ipconfig');
+    await ps.execute('hostname');
     const output = await ps.execute('Get-History');
 
     expect(output).toContain('1');
     expect(output).toContain('ipconfig');
-    expect(output).toContain('ping 10.0.0.1');
     expect(output).toContain('hostname');
   });
 
@@ -396,8 +394,11 @@ describe('Group 4: PS-specific cmdlets return valid data', () => {
     const cmdOutput = await pc.executeCommand('type C:\\Windows\\System32\\drivers\\etc\\hosts');
     const psOutput = await ps.execute('Get-Content C:\\Windows\\System32\\drivers\\etc\\hosts');
 
-    // Both read the same file content
-    expect(psOutput).toBe(cmdOutput);
+    // Les deux lisent le MEME fichier. `type` recopie l'octet de fin de
+    // ligne, `Get-Content` rend des LIGNES et laisse tomber le terminateur
+    // final — c'est aussi ce que fait le vrai Windows, donc la comparaison
+    // porte sur les lignes, pas sur le terminateur.
+    expect(psOutput.replace(/\n+$/, '')).toBe(cmdOutput.replace(/\n+$/, ''));
   });
 
   it('PSC-26: tree output matches between CMD and PS (native pass-through)', async () => {

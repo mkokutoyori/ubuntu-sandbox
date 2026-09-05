@@ -440,34 +440,68 @@ export class NewScheduledTaskPrincipalCmdlet implements ICmdlet {
 
 export class GetDiskCmdlet implements ICmdlet {
   readonly name = 'get-disk';
+  readonly displayName = 'Get-Disk';
+  readonly parameters = ['Number', 'FriendlyName', 'UniqueId', 'SerialNumber'] as const;
   readonly aliases = [] as const;
 
   execute(ctx: CmdletContext): PSValue {
-    return requireDisks(ctx).listDisks().map(d => ({
+    const rows = requireDisks(ctx).listDisks().map(d => ({
       Number:           d.number,
       FriendlyName:     d.friendlyName,
-      Size:             d.size,
-      PartitionStyle:   d.partitionStyle,
+      SerialNumber:     d.serialNumber,
       OperationalStatus: d.operationalStatus,
-    } as Record<string, PSValue>)) as PSValue;
+      TotalSize:        gigabytes(d.size),
+      PartitionStyle:   d.partitionStyle,
+      IsBoot:           d.isBoot,
+      IsSystem:         d.isSystem,
+      UniqueId:         d.uniqueId,
+    } as Record<string, PSValue>));
+
+    const asked = ctx.named['number'] ?? ctx.positional[0];
+    const kept = asked === undefined || asked === null
+      ? rows
+      : rows.filter(r => Number(r['Number']) === Number(asked));
+    if (kept.length === 0) {
+      ctx.emitError(`Get-Disk : No MSFT_Disk objects found with Number = ${psValueToString(asked)}.`);
+      return null;
+    }
+    return kept as PSValue;
   }
+}
+
+function gigabytes(bytes: number): string {
+  return `${(bytes / 1_073_741_824).toFixed(2)} GB`;
 }
 
 // ── Get-Volume ────────────────────────────────────────────────────────────
 
 export class GetVolumeCmdlet implements ICmdlet {
   readonly name = 'get-volume';
+  readonly displayName = 'Get-Volume';
+  readonly parameters = ['DriveLetter', 'FileSystemLabel'] as const;
   readonly aliases = [] as const;
 
   execute(ctx: CmdletContext): PSValue {
-    return requireDisks(ctx).listVolumes().map(v => ({
-      DriveLetter:     v.driveLetter,
-      FileSystemLabel: v.fileSystemLabel,
-      FileSystem:      v.fileSystem,
-      SizeRemaining:   v.sizeRemaining,
-      Size:            v.size,
-      DriveType:       v.driveType,
-    } as Record<string, PSValue>)) as PSValue;
+    const rows = requireDisks(ctx).listVolumes().map(v => ({
+      DriveLetter:       v.driveLetter,
+      FriendlyName:      v.fileSystemLabel,
+      FileSystem:        v.fileSystem,
+      DriveType:         v.driveType,
+      HealthStatus:      v.healthStatus,
+      OperationalStatus: v.operationalStatus,
+      SizeRemaining:     gigabytes(v.sizeRemaining),
+      Size:              gigabytes(v.size),
+    } as Record<string, PSValue>));
+
+    const asked = psValueToString(ctx.named['driveletter'] ?? ctx.positional[0] ?? '')
+      .replace(/:$/, '').toUpperCase();
+    if (!asked) return rows as PSValue;
+    const kept = rows.filter(r => psValueToString(r['DriveLetter']).toUpperCase() === asked);
+    if (kept.length === 0) {
+      ctx.emitError(`Get-Volume : No MSFT_Volume objects found with DriveLetter = ${asked}.`);
+      return null;
+    }
+    return kept as PSValue;
   }
 }
 
