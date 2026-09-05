@@ -227,19 +227,32 @@ pas des recommandations.
 
 ## 4. L'architecture cible
 
-### 4.1 `src/core/time/` — le socle temporel
+### 4.1 `src/network/core/time/` — le socle temporel
+
+L'emplacement suit la maison : les valeurs de domaine vivent sous
+`network/core/` (`types.ts`, `ports/PortNumber.ts`), pas sous un
+`src/core/` qui n'existe pas.
 
 ```
-core/time/
-  TimeZone.ts          — le TYPE : un nom IANA validé, rien d'autre
-  TimeZoneRegistry.ts  — l'unique résolveur : nom → zone ; offsetAt(zone, t)
+network/core/time/
+  TimeZone.ts          — le TYPE : un nom IANA validé et canonicalisé   [T1 ✅]
+  TimeZoneRegistry.ts  — l'unique résolveur : offsetMinutesAt(zone, t),
+                         partsAt, isDaylightSavingAt, utcMsForLocal     [T1 ✅]
   ZoneAliases.ts       — les trois portes : index FortiOS, identifiant
-                         Windows, libellé Cisco/VRP → TimeZone
+                         Windows, libellé Cisco/VRP → TimeZone          [T5]
   DeviceClock.ts       — l'horloge d'UN équipement : UTC + zone + réglage
-                         manuel + discipline NTP
+                         manuel + discipline NTP                        [T4]
   Stamp.ts             — les formats : RFC 3339, BSD RFC 3164, IOS, VRP,
-                         FortiOS `date=`/`time=`
+                         FortiOS `date=`/`time=`                        [T8]
 ```
+
+**Mesure prise au lot T1, qui contraint T2.** `Intl` ne rend **pas**
+l'abréviation attendue : `timeZoneName: 'short'` donne `GMT+1`/`GMT+2`
+pour `Europe/Paris`, et non `CET`/`CEST` ; seules les zones américaines
+rendent `EST`/`EDT`. La table `TimezoneDatabase` ne disparaît donc pas
+en T2 — elle **perd son `offsetMin`**, qui devient une fonction du
+registre, et **garde son abréviation**, que rien d'autre ne sait
+produire.
 
 `TimeZoneRegistry` **encapsule** `Intl` — c'est-à-dire la tzdata du
 moteur JavaScript, donc les vraies règles d'heure d'été, tenues à jour
@@ -306,7 +319,7 @@ part qu'avec sa sonde.
 
 | # | Lot | Ce qu'il referme | Mesure de départ |
 |---|---|---|---|
-| **T1** | `core/time/` : le registre, le type `TimeZone`, `offsetAt` | I-T1, I-T3 | l'écart de 60 min du §1.1 |
+| **T1** ✅ | `network/core/time/` : le type `TimeZone`, le registre, `offsetMinutesAt` | I-T1, I-T3 | l'écart de 60 min du §1.1 ; et, mesuré en chemin, `setTimezone('Zorglub/Ville')` accepté puis `localTimeOf` qui **lève** |
 | **T2** | `TimezoneDatabase` devient une **vue** du registre | la table fixe #2 | `timedatectl` dit `CET +0100` un 5 septembre |
 | **T3** | `date` et `timedatectl` s'accordent | I-T6 | `15:33 UTC` contre `16:33 CET`, même machine |
 | **T4** | `DeviceClock` sur Cisco et VRP ; `summer-time`/`daylight-saving-time` réels | modèle #3 | `show clock` faux six mois sur douze |

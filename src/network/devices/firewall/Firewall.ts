@@ -48,7 +48,8 @@ import { PortNumber } from '../../core/ports/PortNumber';
 import {
   RealServerPool, type LdbMethod, type RealServer,
 } from './nat/RealServerPool';
-import { localTimeMs, utcMsForLocal } from '../../core/Timezone';
+import { TimeZone } from '../../core/time/TimeZone';
+import { localMsAt, utcMsForLocal } from '../../core/time/TimeZoneRegistry';
 import { decryptFromTunnel, sealedLegs } from './vpn/IpsecDataPlane';
 import { ikeDatagram, ipsecHostFacts } from './vpn/FirewallIpsecHost';
 import { InterfaceTable, type InterfaceConfig } from './l3/InterfaceTable';
@@ -1205,17 +1206,22 @@ export class Firewall extends Equipment {
 
   getSystemClock(): SystemClock { return this.clock; }
 
-  private timezoneName = 'Europe/Paris';
+  private timezone = TimeZone.of('Europe/Paris');
 
-  setTimezone(name: string): void { this.timezoneName = name; }
+  setTimezone(name: string): void {
+    const zone = TimeZone.parse(name);
+    if (zone) this.timezone = zone;
+  }
 
-  getTimezone(): string { return this.timezoneName; }
+  getTimezone(): string { return this.timezone.name; }
+
+  getTimeZone(): TimeZone { return this.timezone; }
 
   localNow(): number { return this.localTimeOf(this.now()); }
-  localTimeOf(at: number): number { return localTimeMs(this.timezoneName, at); }
+  localTimeOf(at: number): number { return localMsAt(this.timezone, at); }
 
   setLocalClock(localMs: number): void {
-    this.clock.set(utcMsForLocal(this.timezoneName, localMs));
+    this.clock.set(utcMsForLocal(this.timezone, localMs));
   }
 
   managementIdleTimeoutMs(): number { return this.management.idleTimeoutMs(); }

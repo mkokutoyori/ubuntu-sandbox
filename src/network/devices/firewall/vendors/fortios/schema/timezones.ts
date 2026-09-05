@@ -1,4 +1,4 @@
-import { isIanaTimezone } from '../../../../../core/Timezone';
+import { TimeZone } from '../../../../../core/time/TimeZone';
 
 export interface FortiTimezone {
   readonly index: number;
@@ -33,6 +33,6 @@ export function resolveFortiTimezone(raw: string): FortiTimezone | null {
 
   const known = BY_NAME.get(value.toLowerCase());
   if (known) return known;
-  if (!isIanaTimezone(value)) return null;
+  if (!TimeZone.isValid(value)) return null;
   return { index: -1, name: value, label: value };
 }
