@@ -14,7 +14,7 @@ import type { KeyEvent } from '@/terminal/sessions/TerminalSession';
 import type { ISubShell, SubShellResult } from './ISubShell';
 import { PromiseInputBroker as PromiseInputBrokerPS } from '@/shell/input';
 import { isRegistryPath } from '@/network/devices/windows/PSRegistryProvider';
-import { NativeCommandNeedsAsync } from '@/powershell/nativeAsync';
+import { NativeCommandNeedsAsync, translateNativeAnswer, nativeLineFor } from '@/powershell/nativeAsync';
 import { PS_BANNER } from '@/network/devices/windows/PSConstants';
 import { PSInterpreter } from '@/powershell/interpreter/PSInterpreter';
 import { createWindowsPSProviders } from '@/powershell/providers/WindowsPSProviders';
@@ -286,7 +286,7 @@ export class PowerShellSubShell implements ISubShell {
     } catch (e) {
       if (e instanceof NativeCommandNeedsAsync) {
         const device = this.device as unknown as { executeCmdCommand(c: string): Promise<string> };
-        return device.executeCmdCommand(e.commandLine);
+        return translateNativeAnswer(e.command, await device.executeCmdCommand(nativeLineFor(e, line)));
       }
       return this.formatInterpreterError(e);
     }

@@ -607,8 +607,46 @@ export class GetCimInstanceCmdlet implements ICmdlet {
         LocalAccount: true,
       } as Record<string, PSValue>)) as PSValue;
     }
-    // Other classes — defer to the legacy executor (it has a wider catalog).
-    throw new PSRuntimeError(commandNotFoundMessage(`Get-CimInstance ${className}`));
+    if (className === 'win32_computersystem') {
+      const hostname = ctx.providers.network?.getHostname?.() ?? '';
+      const membership = ctx.providers.computer?.getDomainInfo?.() ?? null;
+      const registry = ctx.providers.registry;
+      const values = registry?.getItemPropertyValues?.(CURRENT_VERSION_KEY) ?? {};
+      return {
+        Name:                hostname,
+        DNSHostName:         hostname,
+        Domain:              membership?.dnsName ?? 'WORKGROUP',
+        PartOfDomain:        membership !== null,
+        Workgroup:           membership === null ? 'WORKGROUP' : null,
+        DomainRole:          membership === null ? 0 : 1,
+        Manufacturer:        'Microsoft Corporation',
+        Model:               'Virtual Machine',
+        PrimaryOwnerName:    String(values['RegisteredOwner'] ?? 'User'),
+        SystemType:          'x64-based PC',
+        TotalPhysicalMemory: 8589934592,
+      } as Record<string, PSValue>;
+    }
+    if (className === 'win32_operatingsystem') {
+      const registry = ctx.providers.registry;
+      const values = registry?.getItemPropertyValues?.(CURRENT_VERSION_KEY) ?? {};
+      const hostname = ctx.providers.network?.getHostname?.() ?? '';
+      const build = String(values['CurrentBuildNumber'] ?? '');
+      const currentVersion = String(values['CurrentVersion'] ?? '10.0');
+      return {
+        Caption:         `Microsoft ${String(values['ProductName'] ?? 'Windows')}`,
+        Version:         build ? `${currentVersion}.${build}` : currentVersion,
+        BuildNumber:     build,
+        CSName:          hostname,
+        InstallationType: String(values['InstallationType'] ?? 'Client'),
+        OSArchitecture:  '64-bit',
+        SystemDirectory: 'C:\\Windows\\system32',
+        WindowsDirectory: 'C:\\Windows',
+        RegisteredUser:  String(values['RegisteredOwner'] ?? 'User'),
+        Organization:    String(values['RegisteredOrganization'] ?? ''),
+        SerialNumber:    String(values['ProductId'] ?? ''),
+      } as Record<string, PSValue>;
+    }
+    throw new PSRuntimeError(`Get-CimInstance : Invalid class "${className}"`);
   }
 }
 

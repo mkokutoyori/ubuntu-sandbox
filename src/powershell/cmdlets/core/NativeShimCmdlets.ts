@@ -17,31 +17,14 @@ import type { ICmdlet } from '../ICmdlet';
 import type { CmdletContext } from '../CmdletContext';
 import { PSRuntimeError } from '@/powershell/runtime/PSRuntime';
 import { commandNotFoundMessage } from '@/powershell/commandNotFound';
-import { NativeCommandNeedsAsync } from '@/powershell/nativeAsync';
+import { NativeCommandNeedsAsync, nativeArgv } from '@/powershell/nativeAsync';
 import type { PSValue } from '@/powershell/runtime/PSEnvironment';
-import { psValueToString } from '@/powershell/runtime/PSExpansion';
-
-/**
- * Reconstruct the argv the native handlers expect from a CmdletContext.
- * Named flags become `-flag value` (or just `-flag` when value is true).
- */
-function rebuildArgs(ctx: CmdletContext): string[] {
-  const out: string[] = [];
-  for (const [k, v] of Object.entries(ctx.named)) {
-    if (v === true) { out.push(`-${k}`); continue; }
-    if (v === false || v === null || v === undefined) continue;
-    out.push(`-${k}`);
-    out.push(psValueToString(v));
-  }
-  for (const p of ctx.positional) out.push(psValueToString(p));
-  return out;
-}
 
 function runNative(name: string, ctx: CmdletContext): PSValue {
   if (!ctx.providers.network) {
     throw new PSRuntimeError(commandNotFoundMessage(name));
   }
-  const args = rebuildArgs(ctx);
+  const args = nativeArgv(ctx.positional, ctx.named);
   const out = ctx.providers.network.runSyncNativeCommand(name, args);
   if (out === null) {
     throw new NativeCommandNeedsAsync(name, args);

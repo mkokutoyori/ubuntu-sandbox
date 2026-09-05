@@ -59,6 +59,12 @@ describe('Scénario 9 — panne du contrôleur de domaine DC01', () => {
   const ps = (cmd: string): Promise<string> => psOn(poste, cmd);
 
   async function installScripts(): Promise<void> {
+    // Un poste Windows sort d'usine en `Restricted` : aucun script ne
+    // tourne tant que l'operateur n'a pas pose de politique. C'est la
+    // premiere commande de tout atelier de scripts, et `RemoteSigned`
+    // est celle qu'un administrateur pose pour executer ses scripts
+    // LOCAUX.
+    await ps('Set-ExecutionPolicy RemoteSigned -Scope LocalMachine');
     await ps('New-Item -Path C:\\Scripts -ItemType Directory -Force');
 
     // Surveillance de la disponibilité d'un DC (port LDAP 389).

@@ -29,7 +29,9 @@ import { makeTimeSpan } from '@/powershell/cmdlets/core/DateTimeCmdlets';
 import { formatDotNetDate } from '@/powershell/runtime/dotnetDateFormat';
 import { CmdletRegistry } from '@/powershell/runtime/PSCmdletRegistry';
 import { NULL_PROVIDERS } from '@/powershell/providers/NullProviders';
+import { PSRuntimeError } from './PSRuntimeError';
 import { commandNotFoundMessage } from '@/powershell/commandNotFound';
+import { NativeCommandNeedsAsync, nativeArgv, isNativeProgramName } from '@/powershell/nativeAsync';
 import { formatDefault, type PSObject } from '@/network/devices/windows/PSPipeline';
 import type { PSProviders } from '@/powershell/providers/PSProviders';
 import type { CmdletContext, IRuntimeRef } from '@/powershell/cmdlets/CmdletContext';
@@ -63,10 +65,7 @@ export class BreakSignal    { constructor(public readonly label?: string) {} }
 /** Thrown by continue statements inside loops. Carries optional label for labeled loops. */
 export class ContinueSignal { constructor(public readonly label?: string) {} }
 
-/** Runtime error (unrecognised cmdlet, type mismatch, etc.). */
-export class PSRuntimeError extends Error {
-  constructor(message: string) { super(message); this.name = 'PSRuntimeError'; }
-}
+export { PSRuntimeError } from './PSRuntimeError';
 
 // ─── Static type map ([math], [system.math]) ─────────────────────────────────
 
@@ -2494,7 +2493,8 @@ export class PSRuntime {
         this.global.set(errorVarName, errObj);
       }
       if (silentlyCont) return null;
-      throw new PSRuntimeError(commandNotFoundMessage(name));
+      if (!isNativeProgramName(name)) throw new PSRuntimeError(commandNotFoundMessage(name));
+      throw new NativeCommandNeedsAsync(name, nativeArgv(positional, cmdletNamed));
     }
 
     const emittedValues: PSValue[] = [];
