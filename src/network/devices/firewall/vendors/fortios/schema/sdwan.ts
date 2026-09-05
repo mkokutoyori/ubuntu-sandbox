@@ -3,7 +3,7 @@ import {
   type FortiTableSpec,
 } from './types';
 import type {
-  SdwanLoadBalanceMode, SdwanProtocol, SdwanServiceMode,
+  SdwanLoadBalanceMode, SdwanProtocol, SdwanServiceMode, SdwanTieBreak,
 } from '../../../sdwan/SdwanTable';
 
 const VIRTUAL_TIME_NOTE = 'this build delivers a frame synchronously, so the '
@@ -22,7 +22,21 @@ const SDWAN_ZONE: FortiTableSpec = {
   help: 'Configure SD-WAN zones.',
   attributes: [
     { ...word('name', 'Zone name.'), readOnly: true },
-    text('service-sla-tie-break', 'How a tie between members is broken.'),
+    choice('service-sla-tie-break',
+      'Method of selecting member if more than one meets the SLA.', [
+        {
+          keyword: 'cfg-order',
+          description: 'Members that meet the SLA are selected in configuration order.',
+        },
+        {
+          keyword: 'fib-best-match',
+          description: 'Members that meet the SLA are selected by best route match.',
+        },
+        {
+          keyword: 'input-device',
+          description: 'Members that meet the SLA are selected by matching the input device.',
+        },
+      ], 'cfg-order'),
   ],
 };
 
@@ -226,7 +240,11 @@ export const SYSTEM_SDWAN: FortiTableSpec = {
       enabled: object.effective('status')[0] === 'enable',
       loadBalanceMode: (object.effective('load-balance-mode')[0]
         ?? 'source-ip-based') as SdwanLoadBalanceMode,
-      zones: object.childEntries('zone').map(zone => zone.key),
+      zones: object.childEntries('zone').map(zone => ({
+        name: zone.key,
+        tieBreak: (zone.effective('service-sla-tie-break')[0]
+          ?? 'cfg-order') as SdwanTieBreak,
+      })),
       members: object.childEntries('members').map(member => ({
         sequence: Number.parseInt(member.key, 10),
         iface: member.effective('interface')[0] ?? '',

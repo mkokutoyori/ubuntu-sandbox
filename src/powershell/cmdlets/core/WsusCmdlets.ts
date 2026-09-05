@@ -12,17 +12,18 @@ import { PSRuntimeError } from '@/powershell/runtime/PSRuntime';
 import type { PSValue } from '@/powershell/runtime/PSEnvironment';
 import type { IWsusProvider, IWindowsUpdateProvider, WsusUpdateInfo, WsusApprovalActionInfo } from '@/powershell/providers/PSProviders';
 import { psValueToString } from '@/powershell/runtime/PSExpansion';
+import { commandNotFoundMessage } from '@/powershell/commandNotFound';
 
 function requireWsus(ctx: CmdletContext, cmdletName: string): IWsusProvider {
   if (!ctx.providers.wsus) {
-    throw new PSRuntimeError(`${cmdletName} is not recognized as the name of a cmdlet, function, script file, or operable program`);
+    throw new PSRuntimeError(commandNotFoundMessage(cmdletName));
   }
   return ctx.providers.wsus;
 }
 
 function requireWindowsUpdate(ctx: CmdletContext, cmdletName: string): IWindowsUpdateProvider {
   if (!ctx.providers.windowsUpdate) {
-    throw new PSRuntimeError(`${cmdletName} is not recognized as the name of a cmdlet, function, script file, or operable program`);
+    throw new PSRuntimeError(commandNotFoundMessage(cmdletName));
   }
   return ctx.providers.windowsUpdate;
 }

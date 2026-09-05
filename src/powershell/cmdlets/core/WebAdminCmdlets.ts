@@ -14,10 +14,11 @@ import { PSRuntimeError } from '@/powershell/runtime/PSRuntime';
 import type { PSValue } from '@/powershell/runtime/PSEnvironment';
 import type { IIisProvider, WebsiteInfo, AppPoolInfo, WebModuleInfo } from '@/powershell/providers/PSProviders';
 import { psValueToString } from '@/powershell/runtime/PSExpansion';
+import { commandNotFoundMessage } from '@/powershell/commandNotFound';
 
 function requireIis(ctx: CmdletContext, cmdletName: string): IIisProvider {
   if (!ctx.providers.iis) {
-    throw new PSRuntimeError(`${cmdletName} is not recognized as the name of a cmdlet, function, script file, or operable program`);
+    throw new PSRuntimeError(commandNotFoundMessage(cmdletName));
   }
   return ctx.providers.iis;
 }

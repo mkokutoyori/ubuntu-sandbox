@@ -65,6 +65,15 @@ const PRECEDENCE: Record<string, number> = {
   '*': 10, '/': 10, '%': 10,
 };
 
+const BAREWORD_LEADERS: ReadonlySet<PSTokenType> = new Set([
+  PSTokenType.MODULO, PSTokenType.MULTIPLY, PSTokenType.DIVIDE,
+]);
+
+const BAREWORD_GLUE: ReadonlySet<PSTokenType> = new Set([
+  PSTokenType.MODULO, PSTokenType.MULTIPLY, PSTokenType.DIVIDE,
+  PSTokenType.DOT, PSTokenType.RANGE, PSTokenType.WORD, PSTokenType.NUMBER,
+]);
+
 export class PSParser {
   private tokens: PSToken[] = [];
   private pos: number = 0;
@@ -305,6 +314,13 @@ export class PSParser {
           && v !== 'finally' && v !== 'default' && v !== 'end' && v !== 'process' && v !== 'begin');
   }
 
+  private startsCommandArgument(): boolean {
+    const t = this.peek().type;
+    if (this.canStartExpression()) return true;
+    if (BAREWORD_LEADERS.has(t) || t === PSTokenType.DOT || t === PSTokenType.RANGE) return true;
+    return t === PSTokenType.WORD && this.peekAt(1)?.type !== PSTokenType.LBRACE;
+  }
+
   /** True if current token is `++` or `--` */
   private isIncrDecr(): boolean {
     return this.check(PSTokenType.INCREMENT) || this.check(PSTokenType.DECREMENT);
@@ -375,11 +391,7 @@ export class PSParser {
     while (!this.isAtEnd() && !this.isTerminator() && !this.check(PSTokenType.PIPE) && !this.isRedirection()) {
       if (this.check(PSTokenType.PARAMETER)) {
         parameters.push(this.parseCommandParameter());
-      } else if (this.canStartExpression() || this.check(PSTokenType.MODULO)
-                 || this.check(PSTokenType.MULTIPLY) || this.check(PSTokenType.DIVIDE)) {
-        // A `%`-, `*`- or `/`-led token here is a bareword argument (`echo
-        // %PATH%`, `Select-Object *`, `Get-Service *Tcp*`, `ipconfig /all`);
-        // those symbols are only operators in expression position.
+      } else if (this.startsCommandArgument()) {
         args.push(this.parseCommandArgument());
       } else {
         break;
@@ -491,16 +503,8 @@ export class PSParser {
     // parameters and DO need their value consumed).
     let value: PSExpression | null = null;
     if (!PS_AMBIGUOUS_OPERATOR_PARAMS.has(name)
-        && (this.canStartExpression()
-            || this.check(PSTokenType.MULTIPLY)
-            || this.check(PSTokenType.MODULO)
-            || this.check(PSTokenType.DIVIDE))
+        && this.startsCommandArgument()
         && !this.isTerminator() && !this.check(PSTokenType.PIPE)) {
-      // A `*`/`%`/`/`-led value is a wildcard/bareword (`-Filter *.jpg`,
-      // `-Path %TEMP%`, `-Argument /silent`), not an operator. `/` était
-      // absent de cette liste : la valeur n'était pas consommée du tout,
-      // et le paramètre devenait un commutateur — `-Argument /silent`
-      // rendait `Argument: True`, la valeur perdue sans un mot.
       value = this.parseCommandArgument();
     }
 
@@ -548,164 +552,59 @@ export class PSParser {
         return this.parseUnaryExpression();
       }
     }
-    // A command argument that begins with `%` is a bareword (`echo
-    // %PATH%`, a literal `%`), NOT modulo / ForEach-Object — those only
-    // apply in expression / command position. Glue the adjacent run.
-    if (tok.type === PSTokenType.MODULO) {
-      const pos = this.pos_();
-      this.advance();
-      let value = '%';
-      let prevEnd = tok.position.offset + 1;
-      for (;;) {
-        const nxt = this.peek();
-        if (nxt.position.offset !== prevEnd) break;
-        if (nxt.type === PSTokenType.MODULO) value += '%';
-        else if (nxt.type === PSTokenType.DOT) value += '.';
-        else if (nxt.type === PSTokenType.MULTIPLY) value += '*';
-        else if (nxt.type === PSTokenType.WORD) value += nxt.value;
-        else if (nxt.type === PSTokenType.NUMBER) value += nxt.value;
-        else break;
-        this.advance();
-        prevEnd = nxt.position.offset + (
-          nxt.type === PSTokenType.WORD || nxt.type === PSTokenType.NUMBER
-            ? nxt.value.length : 1
-        );
-      }
-      return makeLiteral(value, value, 'string', pos);
+    if (tok.type === PSTokenType.DOT || tok.type === PSTokenType.RANGE) {
+      return this.parseBareword(true);
     }
-    // A command argument that begins with `*` is a wildcard bareword
-    // (`Select-Object *`, `Format-List *`, `*.txt`, `*Service*`), NOT
-    // multiplication — that only applies in expression position. Glue the
-    // adjacent run into one string token.
-    if (tok.type === PSTokenType.MULTIPLY) {
-      const pos = this.pos_();
-      this.advance();
-      let value = '*';
-      let prevEnd = tok.position.offset + 1;
-      for (;;) {
-        const nxt = this.peek();
-        if (nxt.position.offset !== prevEnd) break;
-        if (nxt.type === PSTokenType.MULTIPLY) value += '*';
-        else if (nxt.type === PSTokenType.DOT) value += '.';
-        else if (nxt.type === PSTokenType.WORD) value += nxt.value;
-        else if (nxt.type === PSTokenType.NUMBER) value += nxt.value;
-        else break;
-        this.advance();
-        prevEnd = nxt.position.offset + (
-          nxt.type === PSTokenType.WORD || nxt.type === PSTokenType.NUMBER
-            ? nxt.value.length : 1
-        );
-      }
-      return makeLiteral(value, value, 'string', pos);
+    if (BAREWORD_LEADERS.has(tok.type)) {
+      return this.parseBareword(false);
     }
-    // A command argument that begins with `/` is a native-command switch
-    // bareword (`ipconfig /release`, `/all`, `/flushdns`, `netsh /?`), NOT
-    // division — that only applies in expression position. Glue the adjacent
-    // run so `/release`, `/release6`, `/setclassid` stay a single token.
-    if (tok.type === PSTokenType.DIVIDE) {
-      const pos = this.pos_();
-      this.advance();
-      let value = '/';
-      let prevEnd = tok.position.offset + 1;
-      for (;;) {
-        const nxt = this.peek();
-        if (nxt.position.offset !== prevEnd) break;
-        if (nxt.type === PSTokenType.DIVIDE) value += '/';
-        else if (nxt.type === PSTokenType.DOT) value += '.';
-        else if (nxt.type === PSTokenType.WORD) value += nxt.value;
-        else if (nxt.type === PSTokenType.NUMBER) value += nxt.value;
-        else break;
-        this.advance();
-        prevEnd = nxt.position.offset + (
-          nxt.type === PSTokenType.WORD || nxt.type === PSTokenType.NUMBER
-            ? nxt.value.length : 1
-        );
-      }
-      return makeLiteral(value, value, 'string', pos);
+    if ((tok.type === PSTokenType.NUMBER || tok.type === PSTokenType.VARIABLE)
+        && this.peekAt(1)?.type === PSTokenType.RANGE) {
+      return this.parseRangeTail(this.parsePostfixExpression());
     }
-    // Un nombre suivi **sans espace** de `%` ou `/` est un mot nu, pas un
-    // calcul : `50%`, `8/tcp`. Seuls ces deux signes sont recollés ici —
-    // ni le point ni `*`, qui appartiennent aux décimaux (`2.5`) et aux
-    // intervalles (`1..10`) et n'ont rien à faire dans un mot.
     if (tok.type === PSTokenType.NUMBER) {
       const suite = this.peekAt(1);
-      const colle = suite !== undefined
+      const glued = suite !== undefined
         && suite.position.offset === tok.position.offset + tok.value.length
         && (suite.type === PSTokenType.MODULO || suite.type === PSTokenType.DIVIDE);
-      if (colle) {
-        const pos = this.pos_();
-        const startTok = this.advance();
-        let value = startTok.value;
-        let prevEnd = startTok.position.offset + startTok.value.length;
-        for (;;) {
-          const nxt = this.peek();
-          if (nxt.position.offset !== prevEnd) break;
-          if (nxt.type === PSTokenType.MODULO) value += '%';
-          else if (nxt.type === PSTokenType.DIVIDE) value += '/';
-          else if (nxt.type === PSTokenType.WORD) value += nxt.value;
-          else if (nxt.type === PSTokenType.NUMBER) value += nxt.value;
-          else break;
-          this.advance();
-          prevEnd = nxt.position.offset + (
-            nxt.type === PSTokenType.WORD || nxt.type === PSTokenType.NUMBER
-              ? nxt.value.length : 1
-          );
-        }
-        return makeLiteral(value, value, 'string', pos);
-      }
+      if (glued) return this.parseBareword(false);
     }
     if (tok.type === PSTokenType.WORD) {
-      const next = this.peekAt(1);
-      const nt   = next?.type;
+      const nt = this.peekAt(1)?.type;
       const postfixFollows =
         nt === PSTokenType.DOT ||
         nt === PSTokenType.LBRACKET ||
         nt === PSTokenType.LPAREN ||
         nt === PSTokenType.INCREMENT ||
         nt === PSTokenType.DECREMENT;
-      if (!postfixFollows) {
-        const pos = this.pos_();
-        const startTok = this.advance();
-        // Bareword wildcard / extension glue: `Get-*`, `*.txt`, `file?.log`,
-        // `Get-Foo*Bar`. The lexer breaks at MULTIPLY/QUESTION/DOT, but in
-        // command-argument position consecutive tokens with no whitespace
-        // between them form a single bareword string.
-        let value = startTok.value;
-        let prevEnd = startTok.position.offset + startTok.value.length;
-        for (;;) {
-          const nxt = this.peek();
-          if (nxt.position.offset !== prevEnd) break;
-          // `key=value` / `key= value` — sc.exe/netsh-style native switches
-          // (`binPath=`, `start=`, `obj=`, `reset=`, …). The "=" is part of
-          // the switch bareword; whatever follows (possibly after a space)
-          // is a separate argument, parsed normally so it can be any
-          // expression — a variable, a member-access chain, a sub-expression
-          // — not just a literal.
-          if (nxt.type === PSTokenType.ASSIGN) { value += '='; this.advance(); break; }
-          if (nxt.type === PSTokenType.MULTIPLY) value += '*';
-          else if (nxt.type === PSTokenType.DOT) value += '.';
-          // `/` et `%` collés à un mot en font partie : un nom de canal
-          // (`Microsoft-Windows-TaskScheduler/Operational`), un chemin
-          // (`etc/passwd`), un pourcentage (`50%`). Les branches
-          // ci-dessus recollaient déjà un argument qui *commence* par
-          // `/` ou `%` ; celui qui en contient un plus loin ressortait
-          // coupé en deux, et l'appelant ne recevait que la moitié
-          // gauche — silencieusement.
-          else if (nxt.type === PSTokenType.DIVIDE) value += '/';
-          else if (nxt.type === PSTokenType.MODULO) value += '%';
-          else if (nxt.type === PSTokenType.WORD) value += nxt.value;
-          else if (nxt.type === PSTokenType.NUMBER) value += nxt.value;
-          else break;
-          this.advance();
-          prevEnd = nxt.position.offset + (
-            nxt.type === PSTokenType.WORD || nxt.type === PSTokenType.NUMBER
-              ? nxt.value.length : 1
-          );
-        }
-        return makeLiteral(value, value, 'string', pos);
-      }
+      if (!postfixFollows) return this.parseBareword(false);
     }
     return this.parsePostfixExpression();
+  }
+
+  private parseRangeTail(left: PSExpression): PSExpression {
+    if (!this.check(PSTokenType.RANGE)) return left;
+    this.advance();
+    const end = this.parseExpression(PRECEDENCE['+']);
+    return makeRange(left, end, left.position);
+  }
+
+  private parseBareword(withRange: boolean): PSExpression {
+    const pos = this.pos_();
+    const head = this.advance();
+    let value = head.value;
+    let prevEnd = head.position.offset + head.value.length;
+    for (;;) {
+      const nxt = this.peek();
+      if (nxt.position.offset !== prevEnd) break;
+      if (nxt.type === PSTokenType.ASSIGN) { value += '='; this.advance(); break; }
+      if (nxt.type === PSTokenType.RANGE && !withRange) break;
+      if (!BAREWORD_GLUE.has(nxt.type)) break;
+      value += nxt.value;
+      this.advance();
+      prevEnd = nxt.position.offset + nxt.value.length;
+    }
+    return makeLiteral(value, value, 'string', pos);
   }
 
   // ─── Redirections ──────────────────────────────────────────────────────────
@@ -1500,14 +1399,7 @@ export class PSParser {
       left = makeBinary(op as PSBinaryOperator, left, right, left.position);
     }
 
-    // Range operator a..b
-    if (this.check(PSTokenType.RANGE)) {
-      this.advance();
-      const end = this.parseExpression(PRECEDENCE['+']);
-      left = makeRange(left, end, left.position);
-    }
-
-    return left;
+    return this.parseRangeTail(left);
   }
 
   private parseUnaryExpression(): PSExpression {

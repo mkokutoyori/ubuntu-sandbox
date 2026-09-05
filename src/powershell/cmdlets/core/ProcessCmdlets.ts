@@ -15,6 +15,7 @@ import type { ProcessInfo, IProcessProvider } from '@/powershell/providers/PSPro
 import { psValueToString } from '@/powershell/runtime/PSExpansion';
 import { isPSCredential, getNetworkCredential } from '@/powershell/credential/PSCredential';
 import { parseCredentialArg } from './RemotingCmdlets';
+import { commandNotFoundMessage } from '@/powershell/commandNotFound';
 
 /** Accepts a real `PSCredentialValue` (from `Get-Credential`) or the legacy `"user:password"` string form. */
 function credentialOf(ctx: CmdletContext): { userName: string; password: string } | null {
@@ -27,7 +28,7 @@ function credentialOf(ctx: CmdletContext): { userName: string; password: string 
 
 function requireProcesses(ctx: CmdletContext): IProcessProvider {
   if (!ctx.providers.processes) {
-    throw new PSRuntimeError('Get-Process is not recognized as a process provider operation in this context');
+    throw new PSRuntimeError(commandNotFoundMessage('Get-Process'));
   }
   return ctx.providers.processes;
 }

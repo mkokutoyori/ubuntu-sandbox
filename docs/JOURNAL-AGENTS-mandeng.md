@@ -7668,3 +7668,327 @@ trace sans l'option.
 **Discrimination** : `probe-nmap-packet-trace.test.ts` (13 cas), les 13
 tombent. Un cas e2e Playwright tape les deux balayages dans le vrai
 terminal.
+
+## 2026-09-04 — `nmap -oX`
+
+**Portee** : `scan/nmap/` (`NmapXml.ts` nouveau, `NmapOptions`,
+`NmapRun`, `NmapFormatter`, `ScanEngine`, `PortSpec`), plus les deux
+portes de plateforme (`linux/commands/net/Nmap.ts`, `WindowsPC.cmdNmap`).
+Aucun fichier de journalisation touche.
+
+Le depart n'est pas une option manquante mais un defaut MESURE :
+**`-oA <base>` promet TROIS fichiers et n'en ecrivait que deux**
+(`nmap.cc:918` ecrit `%s.nmap`, `%s.gnmap` ET `%s.xml`), sans un mot.
+
+**Ce que le XML a revele dans la sortie NORMALE** : `<extraports>` exige
+`<extrareasons reason count proto ports>`, donc la RAISON et le
+PROTOCOLE de chaque port replie — que le moteur jetait en repliant vers
+`{ count, states }`. La meme donnee alimente la ligne humaine, que
+`output.cc:594` ecrit `994 closed tcp ports (reset)` la ou ce depot
+rendait `994 closed ports` : la seule moitie qui DIAGNOSTIQUE manquait,
+un port muet et un port qui repond RST n'ayant pas la meme cause.
+
+**Deux details que la sonde a corriges plutot que le code**, parce qu'ils
+etaient ecrits a l'aveugle et que la source dit l'inverse : aucun
+ecrivain de `xml.cc` n'indente et `xml_start_tag("ports")` n'est suivi
+d'aucun retour a la ligne, donc `<ports><port …>` tient sur une ligne ;
+et `write_xml_initial_hostinfo` ecrit le nom TAPE et le nom RESOLU tous
+les deux, sans les comparer, chacun sur sa ligne — c'est la ligne
+`rDNS record for` de la sortie humaine qui, elle, ne parait que
+lorsqu'ils different.
+
+**Trois valeurs qui ne s'inventent pas.** `<times>` est en
+MICROSECONDES, et `adjust_timeouts2` (`timing.cc:120`) sur un premier
+echantillon borne `rttvar` a [5 ms, 2 s] et le delai a [100 ms, 10 s]. Le
+`reason_ttl` d'un PORT est zero — `state_reason_init` en part, et un
+balayage connecte n'en observe jamais. Et `line` d'un `<osmatch>` vaut
+`-1`, valeur que `FingerMatch()` (`osscan.h:185`) porte quand la
+correspondance ne vient pas d'une ligne de `nmap-os-db` : l'indication de
+ce simulateur vient du TTL initial et d'aucune base.
+
+`--no-stylesheet`, `--stylesheet` et `--webxml` viennent avec, etant les
+trois options qui gouvernent ce que le document declare ; sans elles la
+feuille de style serait un fait non reglable. Le defaut est l'URL
+RELATIVE `nmap.xsl`, la branche que `XSLStyleSheet()` (`NmapOps.cc:618`)
+prend faute de trouver le fichier — « It won't work, but it gives a clue
+that there is an nmap.xsl somewhere ».
+
+**Discrimination** : `probe-nmap-sortie-xml.test.ts` (18 cas), 17
+tombent ; le 18e est le TEMOIN `-oN`, dont c'est l'objet de passer des
+deux cotes. Deux tests preexistants encodaient le defaut comme contrat
+(`nmap-formatter`, `nmap-scan-engine`) et sont corriges. Un cas e2e
+Playwright tape `-oA` et relit le XML dans le vrai terminal.
+
+## 2026-09-05 — `--badsum`, `-g/--source-port`, `--ttl`
+
+**Portee** : `scan/nmap/` (`NmapOptions`, `ScanEngine`, `NmapProbes`,
+`NmapFormatter`), `tcp/TcpStack.ts`, `devices/EndHost.ts`,
+`layers/transport/{L4Checksum,UdpEgress}.ts`, `linux/LinuxNetKernel.ts`,
+`LinuxMachine.ts`, plus les deux portes de plateforme. Aucun fichier de
+journalisation touche.
+
+Les trois options appartiennent a la meme section du manuel — FIREWALL/
+IDS EVASION — et au MEME mecanisme : le paquet du balayage n'est plus
+celui que la pile aurait compose. Elles partagent donc un seul joint,
+`ScanProbeShape`, plutot que trois rustines.
+
+**Ce qui les rend reelles ici et non decoratives** : ce simulateur JUGE
+ce qu'elles changent. `TcpStack.handleIp` verifie la somme TCP et jette
+(`bad-checksum`), `EndHost.deliverUDP` de meme pour UDP — silencieusement,
+RFC 768, donc aucun ICMP en retour —, et un routeur decremente la duree
+de vie. Sous `--badsum` la trame ARRIVE (un `tcpdump` sur la cible la
+voit) et c'est la PILE qui la jette : c'est exactement ce que nmap
+documente (« virtually all host IP stacks properly drop these packets »).
+
+**La regle du decrement vient de `ipv4_cksum` (`tcpip.cc:434`)** : la
+somme JUSTE moins un, et `0xffff` si le protocole est UDP et que le
+resultat tombe a zero — une somme UDP nulle valant « pas de somme » en
+IPv4, elle laisserait passer le paquet.
+
+**Les trois n'affectent PAS la decouverte, et c'est ecrit plutot que
+tu** : `--badsum` corrompt ce que nmap COMPOSE ; la decouverte de ce
+simulateur emprunte le `ping` et le `connect` de la machine, que nmap ne
+compose pas — la meme raison qui fait qu'un balayage CONNECTE ne peut
+honorer aucune des trois. Sous `-sT` elles sont acceptees, averties et
+non honorees (`nmap.cc:1833`), `-g` portant en plus son avertissement
+propre (`NmapOps.cc:527`), emis AVANT le generique.
+
+**Un defaut trouve en chemin** : `UdpSendRequest.ttl` etait declare et
+JETE par `EndHost.sendUdpDatagram`, alors que `buildUdpOverIpv4` —
+l'autre implantation de la meme offre — l'honore. Deux ecritures d'un
+meme envoi, dont une seule lisait le champ.
+
+**Discrimination** : `probe-nmap-forme-de-la-sonde.test.ts` (12 cas), les
+12 tombent contre l'etat d'avant, ou les trois options sont refusees
+avant tout balayage. Un cas e2e Playwright tape les quatre formes dans le
+vrai terminal.
+
+## 2026-09-05 — `-f`/`--ff`/`--mtu`, et le bit MF qui n'existait pour personne
+
+**Portee** : `scan/nmap/` (`NmapOptions`, `PacketTrace`), `tcp/TcpStack.ts`,
+`core/Ipv4Fragmentation.ts`, `linux/network/tcpdump/`
+(`CaptureFrame`, `TcpdumpFormat`), plus la porte Linux. Aucun fichier de
+journalisation touche.
+
+L'option d'evasion la plus ancienne de nmap, et la seule qui exerce un
+mecanisme que ce depot porte deja des DEUX cotes : `fragmentIPv4` et
+`IPv4Reassembler`, jusqu'ici employes par le seul ACHEMINEMENT. Ici
+l'EMETTEUR decoupe deliberement et l'hote de destination recolle, donc le
+port se lit toujours `open` pendant que la capture montre trois paquets.
+
+**LE DEFAUT QUE LA MESURE A TROUVE, et qui depasse nmap** :
+`IPV4_FLAG_MF` valait `0b100` — le bit RESERVE de la RFC 791 §3.1, pas
+MF — pendant que TROIS lecteurs numeriques testaient `& 0x1`, la vraie
+valeur du fil. Consequences mesurees : `tcpdump` rendait `flags [none]`
+sur un fragment qui porte MF (`flags [DF]` marchait, ce qui masquait
+tout), et **le mot-cle `fragments` d'une liste de controle ne voyait pas
+le PREMIER fragment** — celui de decalage nul, qui porte l'en-tete de
+transport et donc les ports que la regle veut juger.
+
+**Deux fictions de rendu fermees avec** : un fragment NON INITIAL etait
+decode comme s'il portait un en-tete TCP, `tcpdump` annoncant
+`10.0.0.1.0 > 10.0.0.2.0: Flags [none], cksum 0x0000, seq 0` — la
+description d'octets absents du paquet ; il rend desormais
+`10.0.0.1 > 10.0.0.2: ip-proto-6` (`print-ip.c:506`). Et le nom du
+protocole venait de ce que la capture avait su DECODER, si bien qu'un
+fragment devenait `proto unknown (6)` : il vient du NUMERO de l'en-tete
+IP, donc `proto TCP (6)`.
+
+**DF est clair sur une sonde de nmap** (`scan_engine_raw.cc:1075` passe
+`false`), et `tcpip.cc:387` ne fragmente que ce qui ne l'interdit pas :
+demander `-f` claire donc le bit. Ce simulateur pose DF sur tout segment
+TCP — juste pour une CONNEXION, faux pour une sonde apatride — et ne le
+claire que la ou la fragmentation est demandee.
+
+**Une divergence assumee et ecrite** : l'avertissement « payload is too
+small already » est emis UNE fois par balayage et non par paquet comme le
+vrai. La sonde a la meme taille pour tous les ports d'un balayage, donc
+la repeter par port enfouirait le rapport sans rien apprendre.
+
+**Discrimination** : `probe-nmap-sonde-fragmentee.test.ts` (10 cas), les
+10 tombent contre l'etat d'avant. Deux premisses ecrites a l'aveugle
+etaient fausses et c'est la SONDE qui a ete corrigee : un balayage SYN
+emet un SECOND paquet apres coup (le RST au SYN/ACK, ce qu'un vrai `-sS`
+provoque aussi), et `--packet-trace` d'un vrai nmap montre UNE ligne pour
+le datagramme entier, la trace etant posee sur le paquet d'AVANT
+decoupage (`tcpip.cc:394`). Un cas e2e Playwright balaye avec `-f` et
+relit la capture de la cible.
+
+---
+
+## `-D` seme de vraies trames, `-S` forge la seule qui parte
+
+**Perimetre revendique** : `src/network/scan/nmap/` (`NmapOptions`,
+`ScanEngine`, `NmapRun`), `src/network/tcp/TcpStack.ts`,
+`src/network/devices/EndHost.ts`, `src/network/core/types.ts`,
+`src/network/layers/transport/UdpEgress.ts`,
+`src/network/devices/linux/{LinuxNetKernel,commands/net/Nmap}.ts`.
+
+Les deux options etaient refusees comme non implantees. Elles ne valent
+que si les paquets partent POUR DE BON : un leurre qui ne quitterait pas
+la machine ne cacherait rien, et une source forgee qui ne serait pas sur
+le fil n'empecherait aucune reponse de revenir. L'observable est donc la
+capture sur la CIBLE, jamais le rapport.
+
+**`ScanProbeShape.sourceIp`** est la troisieme chose que la forme de la
+sonde decide, a cote du port source, du TTL, de la somme fausse et du
+decoupage. `TcpStack.scanProbe` indexe sa veille sur l'adresse EMISE et
+calcule la somme sur le pseudo-en-tete FORGE — sans quoi la reponse
+qu'on n'attend plus serait quand meme retrouvee, et la sonde serait
+rejetee par la cible. `EndHost.sendUdpDatagram` honore la meme option, un
+balayage UDP a leurres etant le meme mecanisme un etage plus bas.
+
+**`IPAddress.isReserved()`** porte les blocs a usage special de l'IANA
+(`libnetutil/netutil.cc:485`), et c'est ce que `RND`/`RND:n` interroge :
+tirer une adresse reservee ferait un leurre que le premier routeur jette.
+Le multicast n'en fait deliberement pas partie, la table du vrai nmap ne
+le comptant pas.
+
+**`ME` marque la place de la VRAIE source** et ne peut paraitre qu'une
+fois ; sans lui, nmap l'INSERE a une place tiree au hasard PARMI les
+leurres (`nmap.cc:1826` : l'indice est tire modulo le nombre de leurres,
+donc jamais en queue). `ScanEngine.withDecoys` emet une sonde par entree
+et ne garde le verdict que de celle de rang `decoyturn`
+(`scan_engine_raw.cc:1227`) — c'est ce qui fait qu'un balayage a leurres
+garde un resultat JUSTE tout en noyant l'origine.
+
+**Un leurre qui ne se resout pas est un refus** et le balayage n'a pas
+lieu (`nmap.cc:1816`). La resolution etant asynchrone ici, elle ne peut
+pas vivre dans l'analyseur : `runNmap` la fait avant la premiere sonde,
+sur le MEME `ScanProbes` que le balayage — l'objet etait construit deux
+fois, il ne l'est plus qu'une.
+
+**Ce que la mesure a corrige contre l'ecriture a l'aveugle** : sous
+`-S`, la cible n'emet PAS le SYN/ACK attendu. Elle doit d'abord resoudre
+l'adresse forgee, personne ne repond, et la reponse ne quitte jamais la
+machine — ce qu'un vrai Linux fait aussi. La preuve qu'elle a repondu
+AILLEURS est donc l'ARP `who-has <adresse forgee>`, et c'est la bonne :
+elle NOMME l'adresse vers laquelle la reponse partait. Le port se lit
+`filtered`, ce qui est exact.
+
+**Corrige dans un test plutot que dans le code** :
+`probe-nmap-familles-d-options.test.ts` illustrait « une option courte a
+valeur n'en fait pas une cible » avec `-D`, qui est desormais implantee ;
+elle emploie `-b`, qui ne l'est pas.
+
+**Discrimination** : `probe-nmap-leurres-et-source.test.ts` (11 cas), 10
+tombent contre l'etat d'avant ; le onzieme est le TEMOIN — le balayage
+sans option, dont la capture ne montre qu'une source — et son role est de
+passer des deux cotes. Un cas e2e Playwright balaye avec `-D` puis `-S`
+et relit la capture de la cible.
+
+---
+
+## Une cible se DECRIT, elle ne se nomme pas une par une
+
+**Perimetre revendique** : `src/network/scan/nmap/` (`TargetSpec` — nouveau,
+`NmapOptions`, `NmapRun`, `ScanEngine`),
+`src/network/devices/linux/commands/net/Nmap.ts`,
+`src/network/devices/WindowsPC.ts` (le `ScanHost` de `nmap.exe`).
+
+`nmap 192.168.1.0/24` est l'invocation canonique de l'outil, et le
+simulateur savait deja l'etendre — mais c'etait la SEULE forme qu'il
+connaissait. `10.0.0.1-3`, `10.0.0.2,3`, `10.0.0.*` et `10.0.[0-1].2`
+repondaient tous « Failed to resolve », c'est-a-dire un diagnostic de DNS
+pour une expression qui n'a rien a resoudre.
+
+**La grammaire vient de `libnetutil/NetBlock.cc:150`** et non d'un
+souvenir : chaque octet satisfait `(\*|#?(-#?)?(,#?(-#?)?)*)`. Une borne
+gauche absente vaut 0, une borne droite absente vaut 255, `*` vaut les
+deux, la virgule enumere, et une borne hors [0,255] ou une plage a
+l'envers est un REFUS de la grammaire — l'expression retombe alors sur la
+resolution de nom, ce qui explique pourquoi le message d'origine etait le
+bon message pour la mauvaise raison.
+
+**Le masque ELARGIT au lieu de restreindre** (`NetBlock.cc:433`), et
+c'etait le point a ne pas rater : `10.0.0.1-3/24` couvre tout
+10.0.0.0-255 et non trois adresses, parce que le masque s'applique octet
+par octet APRES l'analyse des plages. `applyNetmaskOctet` reproduit
+l'appariement de blocs du vrai plutot qu'une approximation.
+
+**Un ensemble d'exclusion ne s'ETEND pas** : `--exclude 10.0.0.0/8`
+tiendrait 16 millions d'adresses, donc l'appartenance se teste sur les
+vecteurs de bits, comme l'`addrset` du vrai nmap. Une seule ecriture de
+la grammaire sert la cible et l'exclusion — deux analyses de la meme
+expression finiraient par accepter d'un cote ce que l'autre refuse.
+
+**`--exclude` decoupe sur les VIRGULES avant d'analyser chaque morceau**
+(`targets.cc`, `load_exclude_string`), ce qui est une verrue REELLE et non
+une simplification : `--exclude 10.0.0.2,3` donne `10.0.0.2` puis `3`, et
+le second est refuse par `Invalid address specification: 3`. La
+reproduire est plus fidele que de la corriger, la virgule appartenant
+aussi a la grammaire d'octet.
+
+**Les cibles de la LIGNE DE COMMANDE passent avant celles de `-iL`**
+(`libnetutil/netutil.cc:3792`), le fichier se lit par jetons separes par
+des blancs — donc plusieurs cibles par ligne — et `#` ouvre un
+commentaire. `--excludefile` lit le meme format, une seule ecriture.
+
+**Trouve en chemin et corrige** : `nmap` ECRIVAIT ses fichiers en
+normalisant contre le repertoire courant (`-oN rapport.txt`) et LISAIT
+sans le faire — asymetrie invisible tant que rien ne lisait. Les deux
+plateformes normalisent desormais des deux cotes.
+
+**Deux bornes assumees et ecrites** : `-iR 0` (illimite sur une vraie
+machine) et `-iR n` au-dela de `MAX_SPEC_HOSTS` sont refuses en nommant
+la borne — ce simulateur n'a pas de balayage sans fin a executer ; et
+`-iL -` (l'entree standard) est refuse par le message de famille du
+simulateur, un `nmap` n'ayant pas d'entree standard ici.
+
+**Discrimination** : `probe-nmap-specification-de-cible.test.ts` (20 cas),
+16 tombent contre l'etat d'avant. Les 4 autres sont nommes dans l'en-tete
+— les deux TEMOINS (cible unique, `/29`) et les deux specifications
+MALFORMEES, qui rendaient deja « Failed to resolve » mais parce que RIEN
+n'etait analyse : meme texte, autre raison. Un cas e2e Playwright tape une
+plage, un `-iL` et un `--exclude` dans le vrai terminal.
+
+---
+
+## Une sonde porte une CHARGE, et `-A` la montrait pour TCP seulement
+
+**Perimetre revendique** : `src/network/scan/nmap/` (`NmapOptions`,
+`NmapProbes`), `src/network/tcp/TcpStack.ts`,
+`src/network/devices/{LinuxMachine,WindowsPC}.ts`,
+`src/network/devices/linux/LinuxNetKernel.ts`,
+`src/network/devices/linux/network/tcpdump/`.
+
+`--data`, `--data-string` et `--data-length` etaient refusees comme non
+implantees. Elles n'ont d'interet que si les octets partent pour de bon :
+une charge qui ne quitterait pas la machine ne traverserait aucun filtre
+et ne ferait grossir aucun paquet. `ScanProbeShape.payload` la porte, le
+segment TCP la prend telle quelle — la somme de controle la couvrait deja
+— et le datagramme UDP la recoit par le parametre `data` que
+`sendUdpDatagram` avait depuis toujours et qu'aucune sonde ne remplissait.
+
+**La grammaire de `--data` vient d'`utils.cc:430`** : `0xAABB`,
+`\xAA\xBB` ou `AABB` nu, chiffres hexadecimaux en nombre PAIR, vide
+refuse — sinon « Invalid hex string specified ». La borne des trois est
+`MAX_PAYLOAD_ALLOWED` (`nmap.h:254` = 65535-60-40 = 65435), et au-dela de
+1400 c'est un AVERTISSEMENT et non un refus : le paquet part quand meme,
+et le dire a l'envers ferait croire a une limite qui n'existe pas.
+
+**Les trois s'excluent l'une l'autre** (`nmap.cc:822`), la meme deux fois
+comprise, et les trois posent `raw_scan_options` — donc un balayage
+CONNECTE les accepte, avertit, et la charge ne part pas.
+
+**La charge compte dans le decoupage** : `probePayloadBytes` ajoute
+desormais la charge supplementaire, de sorte que `--data-length 100 -f`
+ne rend plus l'avertissement « payload is too small already ».
+
+**Deux defauts de tcpdump trouves en chemin et corriges.** (1) `-A` ne
+rendait RIEN pour un datagramme UDP : le champ que le formateur lit
+s'appelait `tcpPayload` et n'etait rempli que pour un segment TCP — son
+NOM est la raison pour laquelle personne ne l'avait vu. Il s'appelle
+`appPayload` et les deux familles le remplissent, ce qui rend aussi
+visibles les octets d'une requete DNS, qu'un vrai `tcpdump -A` montre.
+(2) La synthese des octets UDP existait en DEUX exemplaires — IPv4 et
+IPv6, mot pour mot — et TOUTES DEUX s'arretaient a l'en-tete de huit
+octets, la ou la synthese TCP ajoutait sa charge : une meme question,
+deux reponses, et c'est la copie qui avait oublie. Une seule ecriture,
+`synthUdpBytes`, lue par les deux.
+
+**Discrimination** : `probe-nmap-charge-de-la-sonde.test.ts` (13 cas), 12
+tombent contre l'etat d'avant. Le treizieme est le TEMOIN — le balayage
+sans charge, dont la capture montre `length 0` — et son role est de
+passer des deux cotes. Un cas e2e Playwright balaye avec `--data-string`
+et relit la capture de la cible en `-A`.

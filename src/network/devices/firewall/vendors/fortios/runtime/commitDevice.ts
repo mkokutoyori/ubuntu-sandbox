@@ -289,8 +289,23 @@ export function buildCommitDevice(
       applySyslogCollector(settings) {
         fw.getSyslogCollectors().applySettings(settings);
       },
+      applyAccessList(list) {
+        fw.getRouting().applyAccessList(list);
+      },
+      removeAccessList(name) {
+        fw.getRouting().removeAccessList(name);
+      },
+      applyPrefixList(list) {
+        fw.getRouting().applyPrefixList(list);
+      },
+      removePrefixList(name) {
+        fw.getRouting().removePrefixList(name);
+      },
       applyPasswordExpiry(policy) {
         fw.applyPasswordExpiry(policy);
+      },
+      applyPolicyCaptureSize(megabytes) {
+        fw.getPolicyCaptures().setMaxSizeMb(megabytes);
       },
       applyLogSettings(patch) {
         fw.getLogSettings().apply(patch);
@@ -313,8 +328,14 @@ export function buildCommitDevice(
       removeVdomLink(name) {
         fw.removeVdomLink(name);
       },
-      applySwitchInterface(name, members) {
-        fw.setSwitchInterface(name, members);
+      applyGeoIpOverride(override) {
+        fw.applyGeoIpOverride(override);
+      },
+      removeGeoIpOverride(name) {
+        return fw.removeGeoIpOverride(name);
+      },
+      applySwitchInterface(name, patch) {
+        fw.setSwitchInterface(name, patch);
       },
       removeSwitchInterface(name) {
         fw.removeSwitchInterface(name);

@@ -9,9 +9,15 @@ import type { ICmdlet } from '../ICmdlet';
 import type { CmdletContext } from '../CmdletContext';
 import type { PSValue } from '@/powershell/runtime/PSEnvironment';
 import { psValueToString } from '@/powershell/runtime/PSExpansion';
+import {
+  type ProcessPolicyPort, EXECUTION_POLICIES, EXECUTION_POLICY_SCOPES,
+  PROCESS_POLICY_VARIABLE, effectiveExecutionPolicy, matchExecutionPolicy,
+  matchExecutionPolicyScope, storedPolicy, writeExecutionPolicy,
+} from '@/powershell/executionPolicy';
 import { parseCredentialArg } from './RemotingCmdlets';
 import { makePSCredential } from '@/powershell/credential/PSCredential';
-import { wildcardToRegex } from '@/powershell/runtime/PSWildcard';
+import { wildcardMatches, wildcardToRegex } from '@/powershell/runtime/PSWildcard';
+import { renderCmdletHelp, helpTopicNotFound, HELP_SYSTEM_TOPIC } from '@/powershell/help/renderHelp';
 
 // ─── New-Object ───────────────────────────────────────────────────────────
 
@@ -218,13 +224,15 @@ export class ConvertToSecureStringCmdlet implements ICmdlet {
 
 export class GetHelpCmdlet implements ICmdlet {
   readonly name = 'get-help';
+  readonly description = 'Displays information about PowerShell commands and concepts.';
   readonly parameters = ['Name', 'Path', 'Category', 'Component', 'Functionality', 'Role', 'Detailed', 'Full', 'Examples', 'Parameter', 'Online', 'ShowWindow'] as const;
-  readonly aliases = ['help'] as const;
+  readonly aliases = ['help', 'man'] as const;
 
   execute(ctx: CmdletContext): PSValue {
-    const name = psValueToString(ctx.named['name'] ?? ctx.positional[0] ?? '');
+    const name = psValueToString(
+      ctx.named['name'] ?? ctx.positional[0] ?? helpTopicOf(ctx.pipeInput) ?? '');
     if (!name) {
-      ctx.emit('TOPIC\n    PowerShell Help System\n\nSHORT DESCRIPTION\n    Use Get-Help <cmdlet> for cmdlet help.');
+      ctx.emit(HELP_SYSTEM_TOPIC);
       return null;
     }
     const source = ctx.runtime.getFunctionSource(name);
@@ -241,17 +249,45 @@ export class GetHelpCmdlet implements ICmdlet {
       ctx.emit(sections.join('\n\n'));
       return null;
     }
+    const rendered = renderCmdletHelp(name, {
+      examples:   ctx.named['examples'] === true,
+      detailed:   ctx.named['detailed'] === true,
+      full:       ctx.named['full'] === true,
+      online:     ctx.named['online'] === true,
+      showWindow: ctx.named['showwindow'] === true,
+      parameter:  ctx.named['parameter'] !== undefined ? psValueToString(ctx.named['parameter']) : undefined,
+    });
+    if (rendered !== null) {
+      ctx.emit(rendered);
+      return null;
+    }
     const known = ctx.runtime.listCmdlets().find(c =>
       c.name.toLowerCase() === name.toLowerCase()
       || (c.displayName ?? '').toLowerCase() === name.toLowerCase());
-    const label = known?.displayName ?? name;
+    if (!known) {
+      ctx.emit(helpTopicNotFound(name));
+      return null;
+    }
+    const label = known.displayName ?? name;
     const sections = [`NAME\n    ${label}`];
-    if (known?.description) sections.push(`SYNOPSIS\n    ${known.description}`);
+    if (known.description) sections.push(`SYNOPSIS\n    ${known.description}`);
     sections.push(`SYNTAX\n    ${label} [<CommonParameters>]`);
-    sections.push(`DESCRIPTION\n    ${known?.description ?? `Displays help for the ${label} cmdlet.`}`);
+    sections.push(`DESCRIPTION\n    ${known.description ?? `Displays help for the ${label} cmdlet.`}`);
     ctx.emit(sections.join('\n\n'));
     return null;
   }
+}
+
+function helpTopicOf(pipeInput: PSValue): string | null {
+  const first = Array.isArray(pipeInput) ? pipeInput[0] : pipeInput;
+  if (first === null || first === undefined) return null;
+  if (typeof first === 'string') return first;
+  if (typeof first === 'object') {
+    const record = first as Record<string, PSValue>;
+    const named = record['Name'] ?? record['name'];
+    if (named !== undefined) return psValueToString(named);
+  }
+  return null;
 }
 
 /**
@@ -357,9 +393,9 @@ export class GetCommandCmdlet implements ICmdlet {
       const dash  = display.indexOf('-');
       const verb  = dash > 0 ? display.slice(0, dash).toLowerCase() : '';
       const noun  = dash > 0 ? display.slice(dash + 1).toLowerCase() : lower;
-      if (nameFilter && !wildcardLike(lower, nameFilter.toLowerCase())) return false;
-      if (verbFilter && !wildcardLike(verb,  verbFilter.toLowerCase())) return false;
-      if (nounFilter && !wildcardLike(noun,  nounFilter.toLowerCase())) return false;
+      if (nameFilter && !wildcardMatches(nameFilter, lower)) return false;
+      if (verbFilter && !wildcardMatches(verbFilter, verb)) return false;
+      if (nounFilter && !wildcardMatches(nounFilter, noun)) return false;
       return true;
     };
 
@@ -398,12 +434,6 @@ function titleCaseCmdletName(raw: string): string {
 }
 
 /** PowerShell-style match: literal substring OR `*?` wildcard (Like operator). */
-function wildcardLike(value: string, pattern: string): boolean {
-  if (!pattern.includes('*') && !pattern.includes('?')) return value === pattern;
-  const re = '^' + pattern.replace(/[.+^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '.*').replace(/\?/g, '.') + '$';
-  return new RegExp(re).test(value);
-}
-
 // ─── Get-Module ───────────────────────────────────────────────────────────
 
 export class GetModuleCmdlet implements ICmdlet {
@@ -603,9 +633,6 @@ export class SetLocationCmdlet implements ICmdlet {
       return null;
     }
     if (fs && path) fs.setCwd(path);
-    if (path) {
-      ctx.runtime.setVariable('PWD', { Path: path, ProviderPath: path, Provider: 'FileSystem' } as Record<string, PSValue>);
-    }
     return null;
   }
 }
@@ -626,9 +653,6 @@ export class PushLocationCmdlet implements ICmdlet {
       return null;
     }
     if (fs && path) fs.setCwd(path);
-    if (path) {
-      ctx.runtime.setVariable('PWD', { Path: path, ProviderPath: path, Provider: 'FileSystem' } as Record<string, PSValue>);
-    }
     return null;
   }
 }
@@ -646,7 +670,6 @@ export class PopLocationCmdlet implements ICmdlet {
     if (prev !== undefined && prev !== null) {
       const path = psValueToString(prev);
       if (fs) fs.setCwd(path);
-      ctx.runtime.setVariable('PWD', { Path: path, ProviderPath: path, Provider: 'FileSystem' } as Record<string, PSValue>);
     }
     return null;
   }
@@ -688,7 +711,7 @@ export class NewPSDriveCmdlet implements ICmdlet {
 export class GetPSDriveCmdlet implements ICmdlet {
   readonly name = 'get-psdrive';
   readonly displayName = 'Get-PSDrive';
-  readonly aliases = [] as const;
+  readonly aliases = ['gdr'] as const;
 
   execute(ctx: CmdletContext): PSValue {
     const nameFilter = psValueToString(ctx.named['name'] ?? ctx.positional[0] ?? '').toLowerCase();
@@ -780,5 +803,113 @@ export class GetPSProviderCmdlet implements ICmdlet {
     const pat = wildcardToRegex(filter);
     const matched = providers.filter(p => pat.test(p.Name));
     return matched as unknown as PSValue;
+  }
+}
+
+export class GetHistoryCmdlet implements ICmdlet {
+  readonly name = 'get-history';
+  readonly displayName = 'Get-History';
+  readonly aliases = ['h', 'history'] as const;
+  readonly description = 'Gets a list of the commands entered during the current session.';
+  readonly parameters = ['Id', 'Count'] as const;
+
+  execute(ctx: CmdletContext): PSValue {
+    const entries = ctx.runtime.listHistory()
+      .map((line, index) => ({ Id: index + 1, CommandLine: line }));
+    const idRaw = ctx.named['id'] ?? ctx.positional[0];
+    if (idRaw !== undefined) {
+      const wanted = (Array.isArray(idRaw) ? idRaw : [idRaw])
+        .map(v => Number(psValueToString(v)));
+      const picked = entries.filter(e => wanted.includes(e.Id));
+      for (const missing of wanted.filter(w => !entries.some(e => e.Id === w))) {
+        ctx.emitError(`Get-History : Cannot find command history for Id '${missing}'.`);
+      }
+      return picked as unknown as PSValue;
+    }
+    const countRaw = ctx.named['count'] ?? ctx.positional[1];
+    if (countRaw === undefined) return entries as unknown as PSValue;
+    const count = Number(psValueToString(countRaw));
+    if (!Number.isFinite(count) || count < 0) {
+      ctx.emitError(`Get-History : Cannot convert value "${psValueToString(countRaw)}" to type "System.Int32".`);
+      return null;
+    }
+    return entries.slice(Math.max(0, entries.length - count)) as unknown as PSValue;
+  }
+}
+
+function processPolicyPort(ctx: CmdletContext): ProcessPolicyPort {
+  return {
+    read: () => {
+      const v = ctx.runtime.getVariable(PROCESS_POLICY_VARIABLE);
+      return v === undefined || v === null || v === '' ? null : psValueToString(v);
+    },
+    write: (value: string | null) => {
+      ctx.runtime.setVariable(PROCESS_POLICY_VARIABLE, value === null ? '' : value);
+    },
+  };
+}
+
+export class GetExecutionPolicyCmdlet implements ICmdlet {
+  readonly name = 'get-executionpolicy';
+  readonly displayName = 'Get-ExecutionPolicy';
+  readonly aliases = [] as const;
+  readonly description = 'Gets the execution policies for the current session.';
+  readonly parameters = ['Scope', 'List'] as const;
+
+  execute(ctx: CmdletContext): PSValue {
+    const port = processPolicyPort(ctx);
+    if (ctx.named['list'] !== undefined) {
+      return EXECUTION_POLICY_SCOPES.map(scope => ({
+        Scope: scope,
+        ExecutionPolicy: storedPolicy(ctx.providers, scope, port),
+      } as Record<string, PSValue>)) as PSValue;
+    }
+    const rawScope = ctx.named['scope'] ?? ctx.positional[0];
+    if (rawScope === undefined) {
+      return effectiveExecutionPolicy(ctx.providers, port).policy;
+    }
+    const scope = matchExecutionPolicyScope(psValueToString(rawScope));
+    if (scope === null) {
+      ctx.emitError(`Get-ExecutionPolicy : Cannot validate argument on parameter 'Scope'. The argument does not belong to the set "${EXECUTION_POLICY_SCOPES.join(',')}".`);
+      return null;
+    }
+    return storedPolicy(ctx.providers, scope, port);
+  }
+}
+
+export class SetExecutionPolicyCmdlet implements ICmdlet {
+  readonly name = 'set-executionpolicy';
+  readonly displayName = 'Set-ExecutionPolicy';
+  readonly aliases = [] as const;
+  readonly description = 'Sets the PowerShell execution policies for Windows computers.';
+  readonly parameters = ['ExecutionPolicy', 'Scope', 'Force', 'WhatIf', 'Confirm'] as const;
+
+  execute(ctx: CmdletContext): PSValue {
+    const rawPolicy = ctx.named['executionpolicy'] ?? ctx.positional[0];
+    if (rawPolicy === undefined) {
+      ctx.emitError('Set-ExecutionPolicy : Cannot process command because of one or more missing mandatory parameters: ExecutionPolicy.');
+      return null;
+    }
+    const policy = matchExecutionPolicy(psValueToString(rawPolicy));
+    if (policy === null) {
+      ctx.emitError(`Set-ExecutionPolicy : Cannot validate argument on parameter 'ExecutionPolicy'. The argument does not belong to the set "${EXECUTION_POLICIES.join(',')}".`);
+      return null;
+    }
+    const rawScope = ctx.named['scope'] ?? ctx.positional[1];
+    const scope = rawScope === undefined
+      ? 'LocalMachine'
+      : matchExecutionPolicyScope(psValueToString(rawScope));
+    if (scope === null) {
+      ctx.emitError(`Set-ExecutionPolicy : Cannot validate argument on parameter 'Scope'. The argument does not belong to the set "${EXECUTION_POLICY_SCOPES.join(',')}".`);
+      return null;
+    }
+    if (ctx.named['whatif'] !== undefined) {
+      ctx.emit(`What if: Setting the execution policy to ${policy} in the ${scope} scope.`);
+      return null;
+    }
+    const failure = writeExecutionPolicy(
+      ctx.providers, scope, policy, processPolicyPort(ctx));
+    if (failure) { ctx.emitError(`Set-ExecutionPolicy : ${failure}`); return null; }
+    return null;
   }
 }

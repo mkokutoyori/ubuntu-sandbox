@@ -1,7 +1,7 @@
 /**
  * PowerShellSubShell — Interactive PowerShell sub-shell.
  *
- * Wraps the PowerShellExecutor into the ISubShell interface,
+ * Wraps the PowerShell interpreter into the ISubShell interface,
  * making PowerShell a proper sub-shell of cmd.exe (just like
  * SQL*Plus is a sub-shell of bash).
  *
@@ -13,11 +13,10 @@ import type { Equipment } from '@/network';
 import type { KeyEvent } from '@/terminal/sessions/TerminalSession';
 import type { ISubShell, SubShellResult } from './ISubShell';
 import { PromiseInputBroker as PromiseInputBrokerPS } from '@/shell/input';
-import { PowerShellExecutor } from '@/network/devices/windows/PowerShellExecutor';
+import { isRegistryPath } from '@/network/devices/windows/PSRegistryProvider';
+import { NativeCommandNeedsAsync, translateNativeAnswer, nativeLineFor } from '@/powershell/nativeAsync';
 import { PS_BANNER } from '@/network/devices/windows/PSConstants';
 import { PSInterpreter } from '@/powershell/interpreter/PSInterpreter';
-import { PSRuntimeError } from '@/powershell/interpreter/PSInterpreter';
-import { PSParserError } from '@/powershell/parser/PSParserError';
 import { createWindowsPSProviders } from '@/powershell/providers/WindowsPSProviders';
 import { WindowsPC } from '@/network/devices/WindowsPC';
 import type { WindowsShellSession } from '@/network/devices/windows/shell/WindowsShellSession';
@@ -26,11 +25,12 @@ import { parseCredentialArg } from '@/powershell/cmdlets/core/RemotingCmdlets';
 import { makePSCredential, formatPSCredentialTable } from '@/powershell/credential/PSCredential';
 
 /**
- * Tokens that bypass the interpreter and go straight to the legacy
- * PowerShellExecutor. After Phase 4 only `ping` / `tracert` remain —
- * their handlers (cmdPing / cmdTracert) are async and the PSRuntime
- * tree-walker is sync, so making them real ICmdlets is gated on an
- * async-runtime conversion.
+ * Tokens that bypass the interpreter and are handed straight to the
+ * device's cmd engine. Only `ping` / `tracert` remain — their handlers
+ * (cmdPing / cmdTracert) are async and the PSRuntime tree-walker is
+ * sync, so making them real ICmdlets is gated on an async-runtime
+ * conversion. `$variables` in their arguments are expanded by the
+ * interpreter first, so the bypass is not a second variable scope.
  *
  * Every other native (ipconfig / netsh / arp / route / getmac /
  * systeminfo / ver / nslookup / net) is a real ICmdlet wired to
@@ -47,7 +47,6 @@ const DEVICE_ONLY_COMMANDS = new Set([
 export class PowerShellSubShell implements ISubShell {
   readonly kind = 'powershell';
   readonly connection = 'subshell' as const;
-  private psExecutor: PowerShellExecutor;
   private interp: PSInterpreter;
   private device: Equipment;
   private commandHistory: string[] = [];
@@ -64,7 +63,6 @@ export class PowerShellSubShell implements ISubShell {
 
   private constructor(device: Equipment) {
     this.device = device;
-    this.psExecutor = new PowerShellExecutor(device as any);
     // The interpreter and the legacy executor look at the same per-device
     // state (Phase 4 relocation): registry / event-log / network maps /
     // VPN connections all live on the WindowsPC itself, not on the
@@ -97,12 +95,12 @@ export class PowerShellSubShell implements ISubShell {
     subShell.promptPrefix = opts?.promptPrefix ?? '';
     // Prefer the caller-provided cwd (per-terminal session); fall back to
     // the device's shared cwd so legacy call sites still work.
-    const startCwd = opts?.initialCwd ?? opts?.session?.cwd ?? (device as any).getCwd();
-    subShell.psExecutor.setCwd(startCwd);
+    if (opts?.initialCwd && !subShell.session) (device as unknown as { setCwd(p: string): void }).setCwd(opts.initialCwd);
     // Wire env-var resolution so $env:APPDATA etc. return Windows-accurate values
-    subShell.interp.envVarHook = (name: string) => subShell.psExecutor.resolveEnvVar(name);
+    subShell.interp.envVarHook = (name: string) => subShell.deviceEnvVar(name);
     // Wire Test-Path to filesystem + registry
-    subShell.interp.testPathHook = (path: string) => subShell.psExecutor.testPathRaw(path);
+    subShell.interp.testPathHook = (path: string) => subShell.devicePathExists(path);
+    subShell.interp.historyHook = () => subShell.commandHistory;
     return {
       subShell,
       banner: PS_BANNER.split('\n'),
@@ -110,7 +108,25 @@ export class PowerShellSubShell implements ISubShell {
   }
 
   getPrompt(): string {
-    return this.promptPrefix + this.psExecutor.getPrompt();
+    const cwd = this.session?.cwd ?? (this.device as unknown as { getCwd(): string }).getCwd();
+    return `${this.promptPrefix}PS ${cwd}> `;
+  }
+
+  private deviceEnvVar(name: string): string | null {
+    const device = this.device as unknown as { getEnvVars?(): Map<string, string> };
+    return device.getEnvVars?.().get(name.toUpperCase()) ?? null;
+  }
+
+  private devicePathExists(path: string): boolean {
+    const device = this.device as unknown as {
+      registry?: { testPath(p: string): boolean };
+      getFileSystem?(): { normalizePath(p: string, cwd: string): string; exists(p: string): boolean };
+      getCwd(): string;
+    };
+    if (isRegistryPath(path)) return device.registry?.testPath(path) ?? false;
+    const fs = device.getFileSystem?.();
+    if (!fs) return false;
+    return fs.exists(fs.normalizePath(path, device.getCwd()));
   }
 
   handleKey(e: KeyEvent): boolean {
@@ -144,8 +160,6 @@ export class PowerShellSubShell implements ISubShell {
     if (trimmed) {
       this.commandHistory.push(trimmed);
     }
-    this.psExecutor.setHistory(this.commandHistory);
-
     // "cmd" / "cmd.exe" → signal to the session that a nested cmd is needed.
     // The banner is intentionally NOT included in `output` here: the
     // session's enterNestedCmd() owns banner rendering via
@@ -178,14 +192,9 @@ export class PowerShellSubShell implements ISubShell {
 
     // Dispatch inside the owning terminal's session window when one is
     // attached. Inside the window, `device.getCwd()` and any
-    // `device.executeCmdCommand(...)` delegation from PowerShellExecutor
-    // observe THIS terminal's cwd / env (terminal_gap.md §7.x).
-    const dispatch = async (): Promise<string | null> => {
-      this.psExecutor.setCwd((this.device as any).getCwd());
-      const out = await this.dispatchCommand(trimmed);
-      this.psExecutor.setCwd((this.device as any).getCwd());
-      return out;
-    };
+    // `device.executeCmdCommand(...)` delegation observe THIS terminal's
+    // cwd / env (terminal_gap.md §7.x).
+    const dispatch = async (): Promise<string | null> => this.dispatchCommand(trimmed);
 
     const result = (this.session && this.device instanceof WindowsPC)
       ? await this.device.runInSession(this.session, dispatch)
@@ -269,14 +278,15 @@ export class PowerShellSubShell implements ISubShell {
   private async dispatchCommand(line: string): Promise<string | null> {
     if (this.shouldBypassInterpreter(line)) {
       PowerShellSubShell.fallbackHits++;
-      return this.psExecutor.execute(line);
+      const device = this.device as unknown as { executeCmdCommand(c: string): Promise<string> };
+      return device.executeCmdCommand(this.interp.expandInterpolation(line));
     }
     try {
       return this.interp.executeInteractive(line);
     } catch (e) {
-      if (this.isFallbackError(e)) {
-        PowerShellSubShell.fallbackHits++;
-        return this.psExecutor.execute(line);
+      if (e instanceof NativeCommandNeedsAsync) {
+        const device = this.device as unknown as { executeCmdCommand(c: string): Promise<string> };
+        return translateNativeAnswer(e.command, await device.executeCmdCommand(nativeLineFor(e, line)));
       }
       return this.formatInterpreterError(e);
     }
@@ -294,14 +304,6 @@ export class PowerShellSubShell implements ISubShell {
   private shouldBypassInterpreter(line: string): boolean {
     const firstToken = line.split(/\s+/)[0]?.toLowerCase() ?? '';
     return DEVICE_ONLY_COMMANDS.has(firstToken);
-  }
-
-  private isFallbackError(e: unknown): boolean {
-    if (e instanceof PSParserError) return true;
-    if (e instanceof PSRuntimeError) return /not recognized/i.test(e.message);
-    // Cmdlets throw plain Error with "not recognized" to signal provider fallback
-    if (e instanceof Error) return /not recognized/i.test(e.message);
-    return false;
   }
 
   private formatInterpreterError(e: unknown): string {

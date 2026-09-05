@@ -167,7 +167,7 @@ function handleShow(ctx: WinCommandContext, flags: WinArpFlags): string {
   for (const [ip, entry] of entries) {
     const iface = entry.iface;
     if (!byIface.has(iface)) byIface.set(iface, []);
-    const macStr = entry.mac.toString().replace(/:/g, '-');
+    const macStr = entry.mac.toWindowsString().toLowerCase();
     const entryType = entry.type === 'static' ? 'static' : 'dynamic';
     byIface.get(iface)!.push({ ip, mac: macStr, type: entryType });
   }

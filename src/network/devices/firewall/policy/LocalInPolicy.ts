@@ -16,6 +16,14 @@ export interface LocalInDeps {
   readonly rules: readonly SecurityRule[];
   readonly evaluator: PolicyEvaluator;
   readonly zoneOf?: (iface: string) => string;
+  readonly isHaManagementInterface?: (iface: string) => boolean;
+}
+
+export function rulesApplyingOn(
+  deps: LocalInDeps, iface: string,
+): readonly SecurityRule[] {
+  return deps.rules.filter(rule => rule.haMgmtInterfaceOnly !== true
+    || deps.isHaManagementInterface?.(iface) === true);
 }
 
 export function localInTrafficOfIpv4(packet: IPv4Packet): LocalInTraffic {
@@ -31,9 +39,10 @@ export function localInTrafficOfIpv4(packet: IPv4Packet): LocalInTraffic {
 export function localInVerdict(
   deps: LocalInDeps, iface: string, traffic: LocalInTraffic,
 ): LocalInVerdict {
-  if (deps.rules.length === 0) return 'no-match';
+  const rules = rulesApplyingOn(deps, iface);
+  if (rules.length === 0) return 'no-match';
 
-  const decision = deps.evaluator.evaluateExplicit(deps.rules, {
+  const decision = deps.evaluator.evaluateExplicit(rules, {
     ingressZone: deps.zoneOf?.(iface) ?? '',
     egressZone: '',
     ingressInterface: iface,

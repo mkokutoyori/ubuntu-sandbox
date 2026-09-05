@@ -6,6 +6,8 @@
 // through PowerShell cmdlets.
 
 import { describe, it, expect, beforeEach } from 'vitest';
+import { Cable } from '@/network/hardware/Cable';
+import { Hub } from '@/network/devices/Hub';
 import { WindowsPC } from '@/network/devices/WindowsPC';
 import { PowerShellSubShell } from '@/terminal/subshells/PowerShellSubShell';
 import { resetCounters } from '@/network/core/types';
@@ -19,7 +21,11 @@ beforeEach(() => {
 });
 
 function createPC(name = 'WIN-NET'): WindowsPC {
-  return new WindowsPC('windows-pc', name);
+  const pc = new WindowsPC('windows-pc', name);
+  const hub = new Hub(`HUB-${name}`, 4, 0, 0);
+  hub.powerOn();
+  new Cable(`c-${name}`).connect(pc.getPort('eth0')!, hub.getPorts()[0]);
+  return pc;
 }
 
 function createPS(pc: WindowsPC): { execute: (l: string) => Promise<string | null> } {

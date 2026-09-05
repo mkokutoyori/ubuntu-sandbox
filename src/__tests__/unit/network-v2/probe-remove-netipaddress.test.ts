@@ -29,7 +29,7 @@
  *     `positional[0]` — elle ne lisait QUE cela.
  */
 import { describe, it, expect, beforeEach } from 'vitest';
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { resetCounters, MACAddress } from '@/network/core/types';
 import { WindowsPC } from '@/network/devices/WindowsPC';
 import { resetDeviceCounters } from '@/network/devices/DeviceFactory';
@@ -162,8 +162,7 @@ describe('Remove-NetIPAddress — ce qu elle refuse et ce qu elle rend', () => {
 
 describe('Remove-NetIPAddress — une seule source de verite', () => {
   it('le moteur historique ne porte plus de Remove-NetIPAddress a lui', () => {
-    expect(readFileSync('src/network/devices/windows/PSNetCmdlets.ts', 'utf8'))
-      .not.toContain('handleRemoveNetIPAddress');
+    expect(existsSync('src/network/devices/windows/PSNetCmdlets.ts')).toBe(false);
     expect(readFileSync('src/network/devices/windows/PowerShellExecutor.ts', 'utf8'))
       .not.toContain('handleRemoveNetIPAddress');
   });

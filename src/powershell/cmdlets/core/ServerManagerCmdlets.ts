@@ -18,17 +18,14 @@ import { PSRuntimeError } from '@/powershell/runtime/PSRuntime';
 import type { PSValue } from '@/powershell/runtime/PSEnvironment';
 import type { IRoleProvider, WindowsFeatureInfo } from '@/powershell/providers/PSProviders';
 import { psValueToString } from '@/powershell/runtime/PSExpansion';
+import { commandNotFoundMessage } from '@/powershell/commandNotFound';
+import { wildcardToRegex } from '@/powershell/runtime/PSWildcard';
 
 function requireRoles(ctx: CmdletContext): IRoleProvider {
   if (!ctx.providers.roles) {
-    throw new PSRuntimeError('Get-WindowsFeature is not recognized as the name of a cmdlet, function, script file, or operable program');
+    throw new PSRuntimeError(commandNotFoundMessage('Get-WindowsFeature'));
   }
   return ctx.providers.roles;
-}
-
-function wildcardRegex(pattern: string): RegExp {
-  const escaped = pattern.replace(/[.+^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '.*').replace(/\?/g, '.');
-  return new RegExp(`^${escaped}$`, 'i');
 }
 
 function featureObject(f: WindowsFeatureInfo): Record<string, PSValue> {
@@ -69,7 +66,7 @@ export class GetWindowsFeatureCmdlet implements ICmdlet {
     if (nameArg === null) return featureObjects(roles.listFeatures());
 
     if (/[*?]/.test(nameArg)) {
-      const pat = wildcardRegex(nameArg);
+      const pat = wildcardToRegex(nameArg);
       return featureObjects(roles.listFeatures().filter(f => pat.test(f.name) || pat.test(f.displayName)));
     }
     const f = roles.getFeature(nameArg);

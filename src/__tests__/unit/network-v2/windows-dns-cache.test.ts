@@ -5,7 +5,8 @@ import { Cable } from '@/network/hardware/Cable';
 import { IPAddress, SubnetMask, MACAddress, resetCounters } from '@/network/core/types';
 import { Logger } from '@/network/core/Logger';
 import { EquipmentRegistry } from '@/network/equipment/EquipmentRegistry';
-import { WindowsDnsCache, renderDisplayDns } from '@/network/devices/windows/WinDnsCache';
+import { DnsCache } from '@/network/dns/resolver/DnsCache';
+import { dnsCacheRowsOf, renderDisplayDns } from '@/network/devices/windows/dnsClientCache';
 import { makeARecord, makeAaaaRecord } from '@/network/dns/wire/ResourceRecord';
 
 beforeEach(() => {
@@ -15,46 +16,45 @@ beforeEach(() => {
   EquipmentRegistry.resetInstance();
 });
 
-describe('WindowsDnsCache — pure data structure', () => {
+describe('le cache DNS du client Windows est celui du projet', () => {
   it('starts empty', () => {
-    const c = new WindowsDnsCache();
+    const c = new DnsCache();
     expect(c.size()).toBe(0);
   });
 
   it('store() registers one entry per answer record', () => {
-    const c = new WindowsDnsCache();
-    c.store('example.com', [
+    const c = new DnsCache();
+    c.storePositive([
       makeARecord('example.com', 3600, '93.184.216.34'),
       makeAaaaRecord('example.com', 3600, '2606:2800:220:1::1'),
-    ]);
+    ], 'example.com');
     expect(c.size()).toBe(2);
   });
 
   it('store() de-dups on (name, type) — last write wins', () => {
-    const c = new WindowsDnsCache();
-    c.store('example.com', [makeARecord('example.com', 60, '1.1.1.1')]);
-    c.store('example.com', [makeARecord('example.com', 60, '2.2.2.2')]);
-    const entries = c.activeEntries();
+    const c = new DnsCache();
+    c.storePositive([makeARecord('example.com', 60, '1.1.1.1')], 'example.com');
+    c.storePositive([makeARecord('example.com', 60, '2.2.2.2')], 'example.com');
+    const entries = c.entries();
     expect(entries).toHaveLength(1);
-    expect(entries[0].value).toBe('2.2.2.2');
+    expect(entries[0].data).toBe('2.2.2.2');
   });
 
   it('flush() drops every entry', () => {
-    const c = new WindowsDnsCache();
-    c.store('example.com', [
+    const c = new DnsCache();
+    c.storePositive([
       makeARecord('example.com', 60, '1.1.1.1'),
       makeAaaaRecord('example.com', 60, '::1'),
-    ]);
+    ], 'example.com');
     expect(c.size()).toBe(2);
     c.flush();
     expect(c.size()).toBe(0);
   });
 
   it('honours TTL — entries past their lifetime are evicted on read', () => {
-    const c = new WindowsDnsCache();
     let now = 1_700_000_000_000;
-    c.now = () => now;
-    c.store('example.com', [makeARecord('example.com', 30, '1.1.1.1')]);
+    const c = new DnsCache(() => now);
+    c.storePositive([makeARecord('example.com', 30, '1.1.1.1')], 'example.com');
     expect(c.size()).toBe(1);
     now += 29_000;
     expect(c.size()).toBe(1);
@@ -63,29 +63,28 @@ describe('WindowsDnsCache — pure data structure', () => {
   });
 
   it('case-insensitive name keying', () => {
-    const c = new WindowsDnsCache();
-    c.store('EXAMPLE.com', [makeARecord('EXAMPLE.com', 60, '1.1.1.1')]);
-    c.store('example.COM', [makeARecord('example.COM', 60, '2.2.2.2')]);
-    expect(c.activeEntries()).toHaveLength(1);
-    expect(c.activeEntries()[0].value).toBe('2.2.2.2');
+    const c = new DnsCache();
+    c.storePositive([makeARecord('EXAMPLE.com', 60, '1.1.1.1')], 'EXAMPLE.com');
+    c.storePositive([makeARecord('example.COM', 60, '2.2.2.2')], 'example.COM');
+    expect(c.entries()).toHaveLength(1);
+    expect(c.entries()[0].data).toBe('2.2.2.2');
   });
 });
 
 describe('renderDisplayDns — ipconfig /displaydns formatting', () => {
   it('reproduces the empty-cache form verbatim', () => {
-    const c = new WindowsDnsCache();
-    const out = renderDisplayDns(c);
+    const c = new DnsCache();
+    const out = renderDisplayDns(dnsCacheRowsOf(c.entries()));
     expect(out).toContain('Windows IP Configuration');
     expect(out).toContain('(no entries)');
   });
 
   it('renders one paragraph per record with the real Windows fields', () => {
-    const c = new WindowsDnsCache();
     let now = 1_700_000_000_000;
-    c.now = () => now;
-    c.store('example.com', [makeARecord('example.com', 3600, '93.184.216.34')]);
+    const c = new DnsCache(() => now);
+    c.storePositive([makeARecord('example.com', 3600, '93.184.216.34')], 'example.com');
     now += 10_000;
-    const out = renderDisplayDns(c);
+    const out = renderDisplayDns(dnsCacheRowsOf(c.entries()));
     expect(out).toContain('Record Name . . . . . : example.com');
     expect(out).toMatch(/Record Type \. \. \. \. \. : 1/);
     expect(out).toMatch(/Time To Live  \. \. \. \. : 3590/);
@@ -113,7 +112,7 @@ describe('Integration — WindowsPC.resolveHostname populates the cache', () => 
     const ip = await win.resolveHostname('example.com');
     expect(ip?.toString()).toBe('93.184.216.34');
     expect(win.dnsCache.size()).toBeGreaterThanOrEqual(1);
-    const out = renderDisplayDns(win.dnsCache);
+    const out = renderDisplayDns(dnsCacheRowsOf(win.dnsCache.entries()));
     expect(out).toContain('example.com');
     expect(out).toContain('93.184.216.34');
   });

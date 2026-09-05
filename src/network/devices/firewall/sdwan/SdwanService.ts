@@ -3,6 +3,7 @@ import { SdwanHealthProbe, type ProbeDeps } from './SdwanHealthProbe';
 import {
   SdwanTable,
   type SdwanConfiguration, type SdwanHealthTransition, type SdwanMember,
+  type SdwanSteeringProbe,
 } from './SdwanTable';
 
 export interface SdwanHealthObserver {
@@ -28,11 +29,11 @@ export class SdwanService {
     this.table.setStatus(configuration.enabled);
     this.table.setLoadBalanceMode(configuration.loadBalanceMode);
 
-    const zones = new Set(configuration.zones);
-    for (const zone of this.table.zoneNames()) {
-      if (!zones.has(zone)) this.table.removeZone(zone);
+    const zones = new Map(configuration.zones.map(zone => [zone.name, zone]));
+    for (const name of this.table.zoneNames()) {
+      if (!zones.has(name)) this.table.removeZone(name);
     }
-    for (const zone of zones) this.table.setZone(zone);
+    for (const zone of zones.values()) this.table.setZone(zone);
 
     const sequences = new Set(configuration.members.map(member => member.sequence));
     for (const member of this.table.allMembers()) {
@@ -69,7 +70,7 @@ export class SdwanService {
   }
 
   steer(
-    probe: { readonly sourceIP: string; readonly destinationIP: string },
+    probe: SdwanSteeringProbe,
     matchesAddress: (names: readonly string[], candidate: string) => boolean,
   ): { iface: string; gateway: string; ruleId: string } | undefined {
     return this.table.steer(probe, matchesAddress);

@@ -55,6 +55,7 @@ export interface FirewallProfile {
   readonly selfTrafficHandling: SelfTrafficMode;
 
   readonly policyKeyedBy: PolicyKeyedBy;
+  readonly policyNamesZones?: boolean;
   readonly implicitPolicy: ImplicitPolicyMode;
   readonly implicitRuleEditable: boolean;
   readonly supportedActions: readonly RuleAction[];

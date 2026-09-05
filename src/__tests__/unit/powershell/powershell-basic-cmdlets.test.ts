@@ -11,7 +11,6 @@
 
 import { describe, it, expect, beforeEach } from 'vitest';
 import { WindowsPC } from '@/network/devices/WindowsPC';
-import { PowerShellExecutor } from '@/network/devices/windows/PowerShellExecutor';
 import { resetCounters } from '@/network/core/types';
 import { resetDeviceCounters } from '@/network/devices/DeviceFactory';
 import { Logger } from '@/network/core/Logger';
@@ -27,8 +26,8 @@ function createPC(name = 'WIN-CMD'): WindowsPC {
   return new WindowsPC('windows-pc', name);
 }
 
-function createPS(pc: WindowsPC): PowerShellExecutor {
-  return new PowerShellExecutor(pc as any);
+function createPS(pc: WindowsPC): { execute(line: string): Promise<string> } {
+  return createLivePS(pc);
 }
 
 function createLivePS(pc: WindowsPC): { execute(line: string): Promise<string> } {
@@ -213,13 +212,13 @@ describe('2. Copy‑Item', () => {
     expect(content.trim()).toBe('first');
   });
 
-  it('Copy-Item without -Force fails if destination exists', async () => {
+  it('Copy-Item onto an existing file overwrites it', async () => {
     const pc = createPC();
     const ps = createPS(pc);
     await ps.execute('Set-Content C:\\exist.txt "old"');
     await ps.execute('Set-Content C:\\new.txt "new"');
-    const result = await ps.execute('Copy-Item C:\\new.txt C:\\exist.txt -ErrorAction SilentlyContinue');
-    expect(result).toContain('already exists');
+    await ps.execute('Copy-Item C:\\new.txt C:\\exist.txt');
+    expect((await ps.execute('Get-Content C:\\exist.txt')).trim()).toBe('new');
   });
 
   it('Copy-Item -PassThru returns the object', async () => {
@@ -230,14 +229,14 @@ describe('2. Copy‑Item', () => {
     expect(out.trim()).toBe('pass2.txt');
   });
 
-  it('Copy-Item -Container copies directory without child items (if no -Recurse)', async () => {
+  it('Copy-Item -Container copies the directory itself, children left behind', async () => {
     const pc = createPC();
     const ps = createPS(pc);
     await ps.execute('New-Item -Path C:\\dir -ItemType Directory');
     await ps.execute('Set-Content C:\\dir\\child.txt "child"');
-    const result = await ps.execute('Copy-Item C:\\dir C:\\dirCopy -Container');
-    // Should be an error because directory contains children but no -Recurse
-    expect(result).toContain('directory');
+    await ps.execute('Copy-Item C:\\dir C:\\dirCopy -Container');
+    expect((await ps.execute('Test-Path C:\\dirCopy')).trim()).toBe('True');
+    expect((await ps.execute('Test-Path C:\\dirCopy\\child.txt')).trim()).toBe('False');
   });
 
   it('Copy-Item -Filter copies only matching files', async () => {
@@ -328,7 +327,7 @@ describe('2. Copy‑Item', () => {
   it('Copy-Item fails gracefully with missing source', async () => {
     const pc = createPC();
     const ps = createPS(pc);
-    const result = await ps.execute('Copy-Item C:\\noFile.txt C:\\dst.txt -ErrorAction SilentlyContinue');
+    const result = await ps.execute('Copy-Item C:\\noFile.txt C:\\dst.txt');
     expect(result).toContain('Cannot find path');
   });
 
@@ -344,7 +343,7 @@ describe('2. Copy‑Item', () => {
   it('Copy-Item -ToSession (remote) throws not supported in simulator', async () => {
     const pc = createPC();
     const ps = createPS(pc);
-    const result = await ps.execute('Copy-Item C:\\test.txt -ToSession (New-PSSession) -ErrorAction SilentlyContinue');
+    const result = await ps.execute('Copy-Item C:\\test.txt -ToSession (New-PSSession)');
     expect(result).toContain('not supported');
   });
 });
@@ -447,13 +446,12 @@ describe('3. Get‑ChildItem', () => {
     const pc = createPC();
     const ps = createPS(pc);
     await ps.execute('New-Item -Path C:\\hiddenDir -ItemType Directory -Force');
-    await ps.execute('Set-Content C:\\hiddenDir\\.hidden.txt "hid"');
-    // Simulate hidden attribute
-    await ps.execute('(Get-Item C:\\hiddenDir\\.hidden.txt).Attributes += "Hidden"');
+    await ps.execute('Set-Content C:\\hiddenDir\\secret.txt "hid"');
+    await ps.execute('attrib +h C:\\hiddenDir\\secret.txt');
     const out = await ps.execute('Get-ChildItem C:\\hiddenDir');
-    expect(out).not.toContain('.hidden.txt'); // default
+    expect(out).not.toContain('secret.txt'); // default
     const outHidden = await ps.execute('Get-ChildItem C:\\hiddenDir -Hidden');
-    expect(outHidden).toContain('.hidden.txt');
+    expect(outHidden).toContain('secret.txt');
   });
 
   it('-ReadOnly includes read-only files', async () => {
@@ -461,7 +459,7 @@ describe('3. Get‑ChildItem', () => {
     const ps = createPS(pc);
     await ps.execute('New-Item -Path C:\\roDir -ItemType Directory -Force');
     await ps.execute('Set-Content C:\\roDir\\ro.txt "ro"');
-    await ps.execute('(Get-Item C:\\roDir\\ro.txt).IsReadOnly = $true');
+    await ps.execute('attrib +r C:\\roDir\\ro.txt');
     const out = await ps.execute('Get-ChildItem C:\\roDir -ReadOnly');
     expect(out).toContain('ro.txt');
   });
@@ -469,9 +467,8 @@ describe('3. Get‑ChildItem', () => {
   it('-System includes system files', async () => {
     const pc = createPC();
     const ps = createPS(pc);
-    const out = await ps.execute('Get-ChildItem C:\\Windows\\System32 -System');
-    // At least one system file expected
-    expect(out).toContain('ntdll.dll');
+    const out = await ps.execute('Get-ChildItem C:\\Windows\\System32\\config -System');
+    expect(out).toContain('SYSTEM');
   });
 
   it('-Force includes hidden and system items', async () => {
@@ -735,7 +732,7 @@ describe('5. Get‑Content', () => {
     const pc = createPC();
     const ps = createPS(pc);
     await ps.execute('"hello" | Set-Content C:\\numbers.txt');
-    const result = await ps.execute('Get-Content C:\\numbers.txt -Stream Zone.Identifier -ErrorAction SilentlyContinue');
+    const result = await ps.execute('Get-Content C:\\numbers.txt -Stream Zone.Identifier');
     expect(result).toContain('not supported');
   });
 
@@ -769,7 +766,7 @@ describe('5. Get‑Content', () => {
   it('error on missing file', async () => {
     const pc = createPC();
     const ps = createPS(pc);
-    const out = await ps.execute('Get-Content C:\\nope.txt -ErrorAction SilentlyContinue');
+    const out = await ps.execute('Get-Content C:\\nope.txt');
     expect(out).toContain('Cannot find path');
   });
 
@@ -930,7 +927,7 @@ describe('6. Get‑Help', () => {
     const pc = createPC();
     const ps = createPS(pc);
     const out = await ps.execute('Get-Help NoSuchCmdlet -ErrorAction SilentlyContinue');
-    expect(out).toContain('not found');
+    expect(out).toContain('could not find');
   });
 
   it('man alias for help', async () => {
@@ -1169,34 +1166,34 @@ describe('8. Get‑NetAdapter', () => {
 describe('9. Get‑NetIPAddress', () => {
   it('lists all IP addresses', async () => {
     const pc = createPC();
-    const ps = createPS(pc);
+    const ps = createLivePS(pc);
     const out = await ps.execute('Get-NetIPAddress');
     expect(out).toContain('IPAddress');
   });
 
   it('-AddressFamily IPv4', async () => {
     const pc = createPC();
-    const ps = createPS(pc);
+    const ps = createLivePS(pc);
     const out = await ps.execute('Get-NetIPAddress -AddressFamily IPv4');
     expect(out).toContain('127.');
   });
 
   it('-InterfaceAlias filter', async () => {
     const pc = createPC();
-    const ps = createPS(pc);
+    const ps = createLivePS(pc);
     const out = await ps.execute('Get-NetIPAddress -InterfaceAlias "Ethernet"');
     expect(out).toContain('Ethernet');
   });
 
   it('-IPAddress specific', async () => {
     const pc = createPC();
-    const ps = createPS(pc);
+    const ps = createLivePS(pc);
     const out = await ps.execute('Get-NetIPAddress -IPAddress 127.0.0.1');
     expect(out).toContain('127.0.0.1');
   });
 
   it('-PrefixLength filter', async () => {
-    const pc = createPC(); const ps = createPS(pc);
+    const pc = createPC(); const ps = createLivePS(pc);
     await createLivePS(pc).execute('New-NetIPAddress -InterfaceAlias "Ethernet" -IPAddress 10.1.1.1 -PrefixLength 24');
     const out = await ps.execute('Get-NetIPAddress -PrefixLength 24');
     expect(out).toContain('24');
@@ -1204,21 +1201,22 @@ describe('9. Get‑NetIPAddress', () => {
 
   it('returns objects with InterfaceAlias, IPAddress, PrefixLength', async () => {
     const pc = createPC();
-    const ps = createPS(pc);
+    const ps = createLivePS(pc);
     const out = await ps.execute('Get-NetIPAddress | Select InterfaceAlias, IPAddress, PrefixLength');
     expect(out).toContain('IPAddress');
   });
 
   it('errors on invalid IPAddress', async () => {
     const pc = createPC();
-    const ps = createPS(pc);
-    const out = await ps.execute('Get-NetIPAddress -IPAddress 999.999.999.999 -ErrorAction SilentlyContinue');
-    expect(out).toContain('Invalid');
+    const ps = createLivePS(pc);
+    const out = await ps.execute('Get-NetIPAddress -IPAddress 999.999.999.999');
+    expect(out).toContain("No MSFT_NetIPAddress objects found with property 'IPAddress'"
+      + " equal to '999.999.999.999'");
   });
 
   it('pipeline to Select-Object -First 1', async () => {
     const pc = createPC();
-    const ps = createPS(pc);
+    const ps = createLivePS(pc);
     const out = await ps.execute('Get-NetIPAddress | Select -First 1');
     expect(out).toContain('IPAddress');
   });
@@ -1820,13 +1818,13 @@ describe('2. Copy‑Item (25+)', () => {
     expect(content.trim()).toBe('first');
   });
 
-  it('04: fails without -Force when destination exists', async () => {
+  it('04: overwrites an existing destination file', async () => {
     const pc = createPC();
     const ps = createPS(pc);
     await ps.execute('Set-Content C:\\copy4_exist.txt "old"');
     await ps.execute('Set-Content C:\\copy4_new.txt "new"');
-    const result = await ps.execute('Copy-Item C:\\copy4_new.txt C:\\copy4_exist.txt -ErrorAction SilentlyContinue');
-    expect(result).toContain('already exists');
+    await ps.execute('Copy-Item C:\\copy4_new.txt C:\\copy4_exist.txt');
+    expect((await ps.execute('Get-Content C:\\copy4_exist.txt')).trim()).toBe('new');
   });
 
   it('05: -PassThru returns the copied object', async () => {
@@ -1837,13 +1835,14 @@ describe('2. Copy‑Item (25+)', () => {
     expect(out.trim()).toBe('copy5_pass2.txt');
   });
 
-  it('06: -Container without -Recurse fails for non-empty directory', async () => {
+  it('06: -Container without -Recurse leaves the children behind', async () => {
     const pc = createPC();
     const ps = createPS(pc);
     await ps.execute('New-Item -Path C:\\copy6_dir -ItemType Directory');
     await ps.execute('Set-Content C:\\copy6_dir\\child.txt "child"');
-    const result = await ps.execute('Copy-Item C:\\copy6_dir C:\\copy6_dest -Container');
-    expect(result).toContain('directory');
+    await ps.execute('Copy-Item C:\\copy6_dir C:\\copy6_dest -Container');
+    expect((await ps.execute('Test-Path C:\\copy6_dest')).trim()).toBe('True');
+    expect((await ps.execute('Test-Path C:\\copy6_dest\\child.txt')).trim()).toBe('False');
   });
 
   it('07: -Filter copies only matching files', async () => {
@@ -1921,7 +1920,7 @@ describe('2. Copy‑Item (25+)', () => {
   it('14: error on missing source', async () => {
     const pc = createPC();
     const ps = createPS(pc);
-    const result = await ps.execute('Copy-Item C:\\noFile.txt C:\\dst.txt -ErrorAction SilentlyContinue');
+    const result = await ps.execute('Copy-Item C:\\noFile.txt C:\\dst.txt');
     expect(result).toContain('Cannot find path');
   });
 
@@ -1937,7 +1936,7 @@ describe('2. Copy‑Item (25+)', () => {
   it('16: -ToSession not supported gracefully fails', async () => {
     const pc = createPC();
     const ps = createPS(pc);
-    const result = await ps.execute('Copy-Item C:\\test.txt -ToSession (New-PSSession) -ErrorAction SilentlyContinue');
+    const result = await ps.execute('Copy-Item C:\\test.txt -ToSession (New-PSSession)');
     expect(result).toContain('not supported');
   });
 
@@ -2085,10 +2084,10 @@ describe('3. Get‑ChildItem (30+)', () => {
     const pc = createPC();
     const ps = createPS(pc);
     await ps.execute('New-Item -Path C:\\gciHidden -ItemType Directory -Force');
-    await ps.execute('Set-Content C:\\gciHidden\\.hidden.txt "hid"');
-    await ps.execute('(Get-Item C:\\gciHidden\\.hidden.txt).Attributes += "Hidden"');
+    await ps.execute('Set-Content C:\\gciHidden\\secret.txt "hid"');
+    await ps.execute('attrib +h C:\\gciHidden\\secret.txt');
     const out = await ps.execute('Get-ChildItem C:\\gciHidden -Hidden');
-    expect(out).toContain('.hidden.txt');
+    expect(out).toContain('secret.txt');
   });
 
   it('13: -ReadOnly shows read-only files', async () => {
@@ -2096,7 +2095,7 @@ describe('3. Get‑ChildItem (30+)', () => {
     const ps = createPS(pc);
     await ps.execute('New-Item -Path C:\\gciRO -ItemType Directory -Force');
     await ps.execute('Set-Content C:\\gciRO\\ro.txt "ro"');
-    await ps.execute('(Get-Item C:\\gciRO\\ro.txt).IsReadOnly = $true');
+    await ps.execute('attrib +r C:\\gciRO\\ro.txt');
     const out = await ps.execute('Get-ChildItem C:\\gciRO -ReadOnly');
     expect(out).toContain('ro.txt');
   });
@@ -2104,8 +2103,8 @@ describe('3. Get‑ChildItem (30+)', () => {
   it('14: -System shows system files', async () => {
     const pc = createPC();
     const ps = createPS(pc);
-    const out = await ps.execute('Get-ChildItem C:\\Windows\\System32 -System');
-    expect(out).toContain('ntdll.dll');
+    const out = await ps.execute('Get-ChildItem C:\\Windows\\System32\\config -System');
+    expect(out).toContain('SYSTEM');
   });
 
   // -Force
@@ -2136,7 +2135,7 @@ describe('3. Get‑ChildItem (30+)', () => {
   it('18: invalid -Attributes value causes error', async () => {
     const pc = createPC();
     const ps = createPS(pc);
-    const result = await ps.execute('Get-ChildItem C:\\ -Attributes Nonsense -ErrorAction SilentlyContinue');
+    const result = await ps.execute('Get-ChildItem C:\\ -Attributes Nonsense');
     expect(result).toContain('Invalid');
   });
 
@@ -2425,7 +2424,7 @@ describe('5. Get‑Content (25+)', () => {
   it('07: -Stream (ADS) not supported -> error', async () => {
     const pc = createPC();
     const ps = createPS(pc);
-    const result = await ps.execute('Get-Content C:\\gc02.txt -Stream Zone.Identifier -ErrorAction SilentlyContinue');
+    const result = await ps.execute('Get-Content C:\\gc02.txt -Stream Zone.Identifier');
     expect(result).toContain('not supported');
   });
 
@@ -2449,21 +2448,22 @@ describe('5. Get‑Content (25+)', () => {
     const pc = createPC(); const ps = createPS(pc);
     await ps.execute('"A" | Set-Content C:\\gc10.txt');
     const out = await ps.execute('Get-Content C:\\gc10.txt -AsByteStream');
-    // 'A' is ASCII 65
-    expect(out.trim()).toBe('65');
+    // 'A' is ASCII 65, and Set-Content terminates the line, so the
+    // newline byte is part of the file and part of the answer.
+    expect(out.split(/\r?\n/).filter(l => l)).toEqual(['65', '10']);
   });
 
   it('11: error on missing file', async () => {
     const pc = createPC();
     const ps = createPS(pc);
-    const out = await ps.execute('Get-Content C:\\nonex.txt -ErrorAction SilentlyContinue');
+    const out = await ps.execute('Get-Content C:\\nonex.txt');
     expect(out).toContain('Cannot find path');
   });
 
   it('12: -Wait not supported in simulator', async () => {
     const pc = createPC(); const ps = createPS(pc);
     await ps.execute('1,2,3,4,5 | Set-Content C:\\gc12.txt');
-    const result = await ps.execute('Get-Content C:\\gc12.txt -Wait -ErrorAction SilentlyContinue');
+    const result = await ps.execute('Get-Content C:\\gc12.txt -Wait');
     expect(result).toContain('not supported');
   });
 
@@ -2629,7 +2629,7 @@ describe('6. Get‑Help (20+)', () => {
     const pc = createPC();
     const ps = createPS(pc);
     const out = await ps.execute('Get-Help NoExist -ErrorAction SilentlyContinue');
-    expect(out).toContain('not found');
+    expect(out).toContain('could not find');
   });
 
   it('15: man alias', async () => {
@@ -3012,86 +3012,87 @@ describe('25. Get-LocalUser', () => {
 // ─────────────────────────────────────────────────────────────────────────
 describe('1. Get‑NetIPAddress', () => {
   it('lists IP addresses', async () => {
-    const pc = createPC(); const ps = createPS(pc);
+    const pc = createPC(); const ps = createLivePS(pc);
     const out = await ps.execute('Get-NetIPAddress');
     expect(out).toContain('IPAddress');
   });
   it('-AddressFamily IPv4', async () => {
-    const pc = createPC(); const ps = createPS(pc);
+    const pc = createPC(); const ps = createLivePS(pc);
     const out = await ps.execute('Get-NetIPAddress -AddressFamily IPv4');
     expect(out).toContain('127.');
   });
   it('-AddressFamily IPv6', async () => {
-    const pc = createPC(); const ps = createPS(pc);
+    const pc = createPC(); const ps = createLivePS(pc);
     const out = await ps.execute('Get-NetIPAddress -AddressFamily IPv6');
-    expect(out).toContain('fe80');
+    expect(out).toContain('::1');
   });
   it('-InterfaceAlias filter', async () => {
-    const pc = createPC(); const ps = createPS(pc);
+    const pc = createPC(); const ps = createLivePS(pc);
     const out = await ps.execute('Get-NetIPAddress -InterfaceAlias "Ethernet"');
     expect(out).toContain('Ethernet');
   });
   it('-IPAddress exact match', async () => {
-    const pc = createPC(); const ps = createPS(pc);
+    const pc = createPC(); const ps = createLivePS(pc);
     const out = await ps.execute('Get-NetIPAddress -IPAddress 127.0.0.1');
     expect(out).toContain('127.0.0.1');
   });
   it('-PrefixLength filter', async () => {
-    const pc = createPC(); const ps = createPS(pc);
+    const pc = createPC(); const ps = createLivePS(pc);
     await createLivePS(pc).execute('New-NetIPAddress -InterfaceAlias "Ethernet" -IPAddress 10.2.2.2 -PrefixLength 24');
     const out = await ps.execute('Get-NetIPAddress -PrefixLength 24');
     expect(out).toContain('24');
   });
   it('-PrefixOrigin filter', async () => {
     // PrefixOrigin may be Manual, WellKnown, Dhcp
-    const pc = createPC(); const ps = createPS(pc);
+    const pc = createPC(); const ps = createLivePS(pc);
     await expect(ps.execute('Get-NetIPAddress -PrefixOrigin Manual')).resolves.not.toThrow();
   });
   it('-SuffixOrigin filter', async () => {
-    const pc = createPC(); const ps = createPS(pc);
+    const pc = createPC(); const ps = createLivePS(pc);
     await expect(ps.execute('Get-NetIPAddress -SuffixOrigin Manual')).resolves.not.toThrow();
   });
   it('-AddressState filter', async () => {
-    const pc = createPC(); const ps = createPS(pc);
-    await expect(ps.execute('Get-NetIPAddress -AddressState Preferred')).resolves.toContain('Preferred');
+    const pc = createPC(); const ps = createLivePS(pc);
+    await expect(ps.execute('(Get-NetIPAddress -AddressState Preferred).AddressState'))
+      .resolves.toContain('Preferred');
   });
   it('Select specific properties', async () => {
-    const pc = createPC(); const ps = createPS(pc);
+    const pc = createPC(); const ps = createLivePS(pc);
     const out = await ps.execute('Get-NetIPAddress | Select InterfaceAlias, IPAddress, PrefixLength');
     expect(out).toContain('InterfaceAlias');
   });
   it('pipeline to Where-Object', async () => {
-    const pc = createPC(); const ps = createPS(pc);
+    const pc = createPC(); const ps = createLivePS(pc);
     const out = await ps.execute('Get-NetIPAddress | Where-Object AddressFamily -eq "IPv4"');
     expect(out).toContain('127.0.0.1');
   });
   it('-IncludeAllCompartments', async () => {
-    const pc = createPC(); const ps = createPS(pc);
+    const pc = createPC(); const ps = createLivePS(pc);
     await expect(ps.execute('Get-NetIPAddress -IncludeAllCompartments')).resolves.not.toThrow();
   });
   it('invalid IPAddress error', async () => {
-    const pc = createPC(); const ps = createPS(pc);
-    const out = await ps.execute('Get-NetIPAddress -IPAddress "notanip" -ErrorAction SilentlyContinue');
-    expect(out).toContain('Invalid');
+    const pc = createPC(); const ps = createLivePS(pc);
+    const out = await ps.execute('Get-NetIPAddress -IPAddress "notanip"');
+    expect(out).toContain("No MSFT_NetIPAddress objects found with property 'IPAddress' equal to 'notanip'");
   });
   it('error on non-existent interface alias', async () => {
-    const pc = createPC(); const ps = createPS(pc);
-    const out = await ps.execute('Get-NetIPAddress -InterfaceAlias NoInterface -ErrorAction SilentlyContinue');
+    const pc = createPC(); const ps = createLivePS(pc);
+    const out = await ps.execute('Get-NetIPAddress -InterfaceAlias NoInterface');
     expect(out).toContain('No MSFT_NetIPAddress');
   });
   it('pipelines to Get-NetAdapter', async () => {
     // Not directly, but can get adapter name and use it
-    const pc = createPC(); const ps = createPS(pc);
+    const pc = createPC(); const ps = createLivePS(pc);
     await expect(ps.execute('Get-NetIPAddress | ForEach-Object { Get-NetAdapter -Name $_.InterfaceAlias }')).resolves.not.toThrow();
   });
   it('Measure-Object count', async () => {
-    const pc = createPC(); const ps = createPS(pc);
+    const pc = createPC(); const ps = createLivePS(pc);
     const out = await ps.execute('Get-NetIPAddress | Measure-Object | Select-Object -ExpandProperty Count');
     const count = parseInt(out.trim());
     expect(count).toBeGreaterThan(0);
   });
   it('Get-Help', async () => {
-    const pc = createPC(); const ps = createPS(pc);
+    const pc = createPC(); const ps = createLivePS(pc);
     const help = await ps.execute('Get-Help Get-NetIPAddress');
     expect(help).toContain('SYNOPSIS');
   });
@@ -3459,38 +3460,38 @@ describe('7. Remove‑NetRoute', () => {
 // ─────────────────────────────────────────────────────────────────────────
 describe('8. Get‑DnsClientServerAddress', () => {
   it('lists DNS servers', async () => {
-    const pc = createPC(); const ps = createPS(pc);
+    const pc = createPC(); const ps = createLivePS(pc);
     const out = await ps.execute('Get-DnsClientServerAddress');
     expect(out).toContain('ServerAddresses');
   });
   it('-InterfaceAlias filter', async () => {
-    const pc = createPC(); const ps = createPS(pc);
+    const pc = createPC(); const ps = createLivePS(pc);
     const out = await ps.execute('Get-DnsClientServerAddress -InterfaceAlias "Ethernet"');
     expect(out).toContain('Ethernet');
   });
   it('-AddressFamily IPv4', async () => {
-    const pc = createPC(); const ps = createPS(pc);
+    const pc = createPC(); const ps = createLivePS(pc);
     const out = await ps.execute('Get-DnsClientServerAddress -AddressFamily IPv4');
     expect(out).toContain('ServerAddresses');
   });
   it('returns array of servers', async () => {
-    const pc = createPC(); const ps = createPS(pc);
+    const pc = createPC(); const ps = createLivePS(pc);
     const count = await ps.execute('(Get-DnsClientServerAddress -InterfaceAlias "Ethernet" | Select -ExpandProperty ServerAddresses).Count');
     expect(parseInt(count)).toBeGreaterThanOrEqual(0);
   });
   it('error non-existent interface', async () => {
-    const pc = createPC(); const ps = createPS(pc);
-    const out = await ps.execute('Get-DnsClientServerAddress -InterfaceAlias "NoSuch" -ErrorAction SilentlyContinue');
-    expect(out).toContain('not found');
+    const pc = createPC(); const ps = createLivePS(pc);
+    const out = await ps.execute('Get-DnsClientServerAddress -InterfaceAlias "NoSuch"');
+    expect(out).toContain("No MSFT_DNSClientServerAddress objects found with property 'InterfaceAlias' equal to 'NoSuch'.");
   });
   it('Get-Help', async () => {
-    const pc = createPC(); const ps = createPS(pc);
+    const pc = createPC(); const ps = createLivePS(pc);
     const help = await ps.execute('Get-Help Get-DnsClientServerAddress');
     expect(help).toContain('SYNOPSIS');
   });
   for (let i = 0; i < 14; i++) {
     it(`extra ${i + 1}`, async () => {
-      const pc = createPC(); const ps = createPS(pc);
+      const pc = createPC(); const ps = createLivePS(pc);
       await expect(ps.execute('Get-DnsClientServerAddress')).resolves.not.toThrow();
     });
   }
@@ -3501,38 +3502,38 @@ describe('8. Get‑DnsClientServerAddress', () => {
 // ─────────────────────────────────────────────────────────────────────────
 describe('9. Set‑DnsClientServerAddress', () => {
   it('sets a single DNS server', async () => {
-    const pc = createPC(); const ps = createPS(pc);
+    const pc = createPC(); const ps = createLivePS(pc);
     await ps.execute('Set-DnsClientServerAddress -InterfaceAlias "Ethernet" -ServerAddresses "8.8.8.8"');
     const dns = await ps.execute('(Get-DnsClientServerAddress -InterfaceAlias "Ethernet").ServerAddresses');
     expect(dns).toContain('8.8.8.8');
   });
   it('sets multiple DNS servers', async () => {
-    const pc = createPC(); const ps = createPS(pc);
+    const pc = createPC(); const ps = createLivePS(pc);
     await ps.execute('Set-DnsClientServerAddress -InterfaceAlias "Ethernet" -ServerAddresses ("8.8.8.8","1.1.1.1")');
     const dns = await ps.execute('(Get-DnsClientServerAddress -InterfaceAlias "Ethernet").ServerAddresses');
     expect(dns).toContain('8.8.8.8');
     expect(dns).toContain('1.1.1.1');
   });
   it('resets to DHCP (by setting empty?)', async () => {
-    const pc = createPC(); const ps = createPS(pc);
+    const pc = createPC(); const ps = createLivePS(pc);
     await ps.execute('Set-DnsClientServerAddress -InterfaceAlias "Ethernet" -ResetServerAddresses');
     const dns = await ps.execute('(Get-DnsClientServerAddress -InterfaceAlias "Ethernet").ServerAddresses');
     // should be empty or obtained from DHCP
     expect(dns).toBeDefined();
   });
   it('fails without InterfaceAlias', async () => {
-    const pc = createPC(); const ps = createPS(pc);
-    const out = await ps.execute('Set-DnsClientServerAddress -ServerAddresses "8.8.8.8" -ErrorAction SilentlyContinue');
+    const pc = createPC(); const ps = createLivePS(pc);
+    const out = await ps.execute('Set-DnsClientServerAddress -ServerAddresses "8.8.8.8"');
     expect(out).toContain('InterfaceAlias');
   });
   it('Get-Help', async () => {
-    const pc = createPC(); const ps = createPS(pc);
+    const pc = createPC(); const ps = createLivePS(pc);
     const help = await ps.execute('Get-Help Set-DnsClientServerAddress');
     expect(help).toContain('SYNOPSIS');
   });
   for (let i = 0; i < 15; i++) {
     it(`extra ${i + 1}`, async () => {
-      const pc = createPC(); const ps = createPS(pc);
+      const pc = createPC(); const ps = createLivePS(pc);
       await expect(ps.execute('Set-DnsClientServerAddress -InterfaceAlias "Ethernet" -ServerAddresses "8.8.8.8" -ErrorAction SilentlyContinue')).resolves.not.toThrow();
     });
   }

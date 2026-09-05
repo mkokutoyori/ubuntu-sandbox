@@ -764,6 +764,7 @@ export const SYSTEM_DNS_DATABASE: FortiTableSpec = {
       authoritative: object.effective('authoritative')[0] !== 'disable',
       primaryName: object.effective('primary-name')[0] ?? '',
       contact: object.effective('contact')[0] ?? '',
+      ipPrimary: object.effective('ip-primary')[0] ?? '',
       entries: object.childEntries('dns-entry')
         .filter(entry => entry.effective('status')[0] !== 'disable'
           && (entry.effective('type')[0] ?? 'A') === 'A')
@@ -1073,6 +1074,58 @@ export const SYSTEM_SESSION_TTL: FortiTableSpec = {
   },
 };
 
+export const SYSTEM_GEOIP_OVERRIDE: FortiTableSpec = {
+  path: ['system', 'geoip-override'],
+  kind: 'table',
+  keyType: 'name',
+  ordered: false,
+  scope: 'global',
+  accessGroup: 'netgrp',
+  renderOrder: 64,
+  help: 'Configure geographical location mapping for IP addresses.',
+  attributes: [
+    { ...word('name', 'Location name.'), readOnly: true },
+    text('description', 'Description.'),
+    word('country-id', 'Two character country ID code.'),
+  ],
+  children: [
+    {
+      path: ['ip-range'],
+      kind: 'table',
+      keyType: 'integer',
+      ordered: false,
+      scope: 'global',
+      accessGroup: 'netgrp',
+      renderOrder: 65,
+      help: 'Table of IP ranges assigned to the country.',
+      attributes: [
+        { ...word('id', 'Entry identifier.'), readOnly: true },
+        address('start-ip', 'Starting IP address, inclusive, of the address range.'),
+        address('end-ip', 'Final IP address, inclusive, of the address range.'),
+      ],
+    },
+  ],
+  onCommit(object, context) {
+    const countryId = object.effective('country-id')[0] ?? '';
+    if (countryId.length !== 2) {
+      return 'a geoip override needs `set country-id <two letters>`.';
+    }
+    context.device.applyGeoIpOverride({
+      name: object.key,
+      countryId,
+      description: object.effective('description')[0] || undefined,
+      ranges: object.childEntries('ip-range').map(entry => ({
+        id: entry.key,
+        from: entry.effective('start-ip')[0] ?? '0.0.0.0',
+        to: entry.effective('end-ip')[0] ?? '0.0.0.0',
+      })),
+    });
+  },
+  onDelete(key, context) {
+    context.device.removeGeoIpOverride(key);
+  },
+};
+
 export const SYSTEM_SPECS: readonly FortiTableSpec[] = Object.freeze([
   SYSTEM_GLOBAL,
   SYSTEM_PASSWORD_POLICY,
@@ -1084,6 +1137,7 @@ export const SYSTEM_SPECS: readonly FortiTableSpec[] = Object.freeze([
   SYSTEM_DNS,
   SYSTEM_DNS_SERVER,
   SYSTEM_DNS_DATABASE,
+  SYSTEM_GEOIP_OVERRIDE,
   SYSTEM_DHCP_SERVER,
   SYSTEM_DHCP6_SERVER,
   SYSTEM_NTP,

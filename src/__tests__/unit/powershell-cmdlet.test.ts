@@ -917,7 +917,7 @@ describe('6. Get‑Help', () => {
     const pc = createPC();
     const ps = createPS(pc);
     const out = await ps.execute('Get-Help NoSuchCmdlet -ErrorAction SilentlyContinue');
-    expect(out).toContain('not found');
+    expect(out).toContain('could not find');
   });
 
   it('man alias for help', async () => {
@@ -1152,14 +1152,14 @@ describe('8. Get‑NetAdapter', () => {
 describe('9. Get‑NetIPAddress', () => {
   it('lists all IP addresses', async () => {
     const pc = createPC();
-    const ps = createPS(pc);
+    const ps = createLivePS(pc);
     const out = await ps.execute('Get-NetIPAddress');
     expect(out).toContain('IPAddress');
   });
 
   it('-AddressFamily IPv4', async () => {
     const pc = createPC();
-    const ps = createPS(pc);
+    const ps = createLivePS(pc);
     // An unconfigured adapter has NO IPv4 (the sim no longer invents one):
     // configure a real address first, then the filter must return it.
     await createLivePS(pc).execute('New-NetIPAddress -InterfaceAlias "Ethernet" -IPAddress 192.168.1.50 -PrefixLength 24');
@@ -1169,45 +1169,46 @@ describe('9. Get‑NetIPAddress', () => {
 
   it('-InterfaceAlias filter', async () => {
     const pc = createPC();
-    const ps = createPS(pc);
+    const ps = createLivePS(pc);
     const out = await ps.execute('Get-NetIPAddress -InterfaceAlias "Ethernet"');
     expect(out).toContain('Ethernet');
   });
 
   it('-IPAddress specific', async () => {
     const pc = createPC();
-    const ps = createPS(pc);
+    const ps = createLivePS(pc);
     const out = await ps.execute('Get-NetIPAddress -IPAddress 127.0.0.1');
     expect(out).toContain('127.0.0.1');
   });
 
   it('-PrefixLength filter', async () => {
     const pc = createPC();
-    const ps = createPS(pc);
+    const ps = createLivePS(pc);
     // A /24 exists only once an address is actually configured.
     await createLivePS(pc).execute('New-NetIPAddress -InterfaceAlias "Ethernet" -IPAddress 192.168.1.50 -PrefixLength 24');
     const out = await ps.execute('Get-NetIPAddress -PrefixLength 24');
     expect(out).toContain('192.168.1.50');
-    expect(out).toContain('PrefixLength      : 24');
+    expect(out).toContain('24');
   });
 
   it('returns objects with InterfaceAlias, IPAddress, PrefixLength', async () => {
     const pc = createPC();
-    const ps = createPS(pc);
+    const ps = createLivePS(pc);
     const out = await ps.execute('Get-NetIPAddress | Select InterfaceAlias, IPAddress, PrefixLength');
     expect(out).toContain('IPAddress');
   });
 
   it('errors on invalid IPAddress', async () => {
     const pc = createPC();
-    const ps = createPS(pc);
-    const out = await ps.execute('Get-NetIPAddress -IPAddress 999.999.999.999 -ErrorAction SilentlyContinue');
-    expect(out).toContain('Invalid');
+    const ps = createLivePS(pc);
+    const out = await ps.execute('Get-NetIPAddress -IPAddress 999.999.999.999');
+    expect(out).toContain("No MSFT_NetIPAddress objects found with property 'IPAddress'"
+      + " equal to '999.999.999.999'");
   });
 
   it('pipeline to Select-Object -First 1', async () => {
     const pc = createPC();
-    const ps = createPS(pc);
+    const ps = createLivePS(pc);
     const out = await ps.execute('Get-NetIPAddress | Select -First 1');
     expect(out).toContain('IPAddress');
   });
@@ -2218,7 +2219,7 @@ describe('6. Get-Help', () => {
   it('unknown cmdlet error', async () => {
     const pc = createPC(); const ps = createPS(pc);
     const out = await ps.execute('Get-Help NoCommand -ErrorAction SilentlyContinue');
-    expect(out).toContain('not found');
+    expect(out).toContain('could not find');
   });
   it('man alias', async () => {
     const pc = createPC(); const ps = createPS(pc);

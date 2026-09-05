@@ -24,6 +24,7 @@ export interface PolicyDecision {
 export interface PolicyEvaluatorDeps {
   objects: ObjectStore;
   policyKeyedBy?: PolicyKeyedBy;
+  policyNamesZones?: boolean;
   implicitPolicy?: ImplicitPolicyMode;
   applicationShift?: boolean;
   securityLevelOf?: (zone: string) => number | undefined;
@@ -50,6 +51,7 @@ function namedIdentities(rule: SecurityRule): readonly string[] {
 export class PolicyEvaluator {
   private readonly objects: ObjectStore;
   private readonly keyedBy: PolicyKeyedBy;
+  private readonly namesZones: boolean;
   private readonly implicitMode: ImplicitPolicyMode;
   private readonly applicationShift: boolean;
   private readonly deps: PolicyEvaluatorDeps;
@@ -60,6 +62,7 @@ export class PolicyEvaluator {
     this.deps = deps;
     this.objects = deps.objects;
     this.keyedBy = deps.policyKeyedBy ?? 'zone';
+    this.namesZones = deps.policyNamesZones ?? false;
     this.implicitMode = deps.implicitPolicy ?? 'deny-all';
     this.applicationShift = deps.applicationShift ?? false;
     this.now = deps.now ?? (() => Date.now());
@@ -168,9 +171,20 @@ export class PolicyEvaluator {
   }
 
   private matchesEndpoints(rule: SecurityRule, probe: PolicyProbe): boolean {
-    const source = this.keyedBy === 'zone' ? probe.ingressZone : probe.ingressInterface;
-    const dest = this.keyedBy === 'zone' ? probe.egressZone : probe.egressInterface;
-    return listMatches(rule.from, source) && listMatches(rule.to, dest);
+    if (this.keyedBy === 'zone') {
+      return listMatches(rule.from, probe.ingressZone)
+        && listMatches(rule.to, probe.egressZone);
+    }
+    return this.namesEndpoint(rule.from, probe.ingressInterface, probe.ingressZone)
+      && this.namesEndpoint(rule.to, probe.egressInterface, probe.egressZone);
+  }
+
+  private namesEndpoint(
+    declared: readonly string[], iface: string, zone: string,
+  ): boolean {
+    if (listMatches(declared, iface)) return true;
+    if (!this.namesZones || zone.length === 0 || zone === iface) return false;
+    return listMatches(declared, zone);
   }
 
   private matchesAddresses(rule: SecurityRule, probe: PolicyProbe): boolean {

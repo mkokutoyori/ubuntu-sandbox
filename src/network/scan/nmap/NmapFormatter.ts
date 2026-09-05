@@ -1,5 +1,5 @@
 import type { NmapOptions } from './NmapOptions';
-import type { HostReport, NmapReport, PortResult, PortState } from './ScanEngine';
+import type { HostReport, NmapReport, PortResult } from './ScanEngine';
 import { renderPhase } from './ScanPhases';
 import { renderTrace } from './Traceroute';
 
@@ -55,10 +55,16 @@ function pluralPorts(n: number): string {
   return n === 1 ? 'port' : 'ports';
 }
 
+/**
+ * `output.cc:594` : `%d %s %s %s%s (%s)` — compte, etat, PROTOCOLE,
+ * « port »/« ports », puis la RAISON entre parentheses. Sans elle la
+ * ligne ne dit pas si le port s'est tu ou a repondu, c'est-a-dire ne dit
+ * rien de ce qui se diagnostique.
+ */
 function notShownLine(host: HostReport): string | null {
   if (!host.notShown) return null;
-  const parts = (Object.entries(host.notShown.states) as [PortState, number][])
-    .map(([state, count]) => `${count} ${state} ${pluralPorts(count)}`);
+  const parts = host.notShown.groups.map((g) =>
+    `${g.ports.length} ${g.state} ${g.protocol} ${pluralPorts(g.ports.length)} (${g.reason})`);
   return `Not shown: ${parts.join(', ')}`;
 }
 
@@ -125,7 +131,7 @@ function renderHost(host: HostReport, options: NmapOptions): string[] {
   return lines;
 }
 
-function totalSeconds(report: NmapReport): number {
+export function totalSeconds(report: NmapReport): number {
   return Math.max(0.02, report.targetsScanned * 0.05);
 }
 
@@ -140,7 +146,10 @@ function tally(report: NmapReport): string {
 }
 
 export function renderNormal(report: NmapReport, options: NmapOptions, _commandLine: string): string {
-  const lines: string[] = [NMAP_BANNER];
+  // `error()` ecrit sur la sortie d'erreur, donc AVANT la banniere : les
+  // trois controles qui les produisent (`nmap.cc:1088`, `1535`, `1833`)
+  // precedent tous l'ouverture du journal.
+  const lines: string[] = [...options.warnings, NMAP_BANNER];
   for (const target of report.unresolved) lines.push(`Failed to resolve "${target}".`);
   if (options.verbose) {
     const at = new Date(report.startedAt);
@@ -175,8 +184,13 @@ export function renderGreppable(report: NmapReport, commandLine: string): string
     if (!host.up) continue;
     const ports = host.ports.map(greppablePort).join(', ');
     let line = `${label}\tPorts: ${ports}`;
+    // Le format greppable ne sait porter qu'UN etat ignore, et il en
+    // compte tous les ports quel que soit le nombre de raisons.
     if (host.notShown) {
-      const [state, count] = (Object.entries(host.notShown.states) as [PortState, number][])[0] ?? ['closed', 0];
+      const state = host.notShown.groups[0]?.state ?? 'closed';
+      const count = host.notShown.groups
+        .filter((g) => g.state === state)
+        .reduce((n, g) => n + g.ports.length, 0);
       line += `\tIgnored State: ${state} (${count})`;
     }
     lines.push(line);

@@ -10,6 +10,7 @@ import type { CmdletContext } from '../CmdletContext';
 import type { PSValue } from '@/powershell/runtime/PSEnvironment';
 import { psValueToString } from '@/powershell/runtime/PSExpansion';
 import { parseCredentialArg } from './RemotingCmdlets';
+import { commandNotFoundMessage } from '@/powershell/commandNotFound';
 
 export class AddComputerCmdlet implements ICmdlet {
   readonly name = 'add-computer';
@@ -19,7 +20,7 @@ export class AddComputerCmdlet implements ICmdlet {
   execute(ctx: CmdletContext): PSValue {
     const computer = ctx.providers.computer;
     if (!computer) {
-      ctx.emitError('Add-Computer : The term \'Add-Computer\' is not recognized as the name of a cmdlet, function, script file, or operable program.');
+      ctx.emitError(`Add-Computer : ${commandNotFoundMessage('Add-Computer')}`);
       return null;
     }
     const domainName = psValueToString(ctx.named['domainname'] ?? ctx.positional[0] ?? '');
@@ -53,7 +54,7 @@ export class RemoveComputerCmdlet implements ICmdlet {
   execute(ctx: CmdletContext): PSValue {
     const computer = ctx.providers.computer;
     if (!computer) {
-      ctx.emitError('Remove-Computer : The term \'Remove-Computer\' is not recognized as the name of a cmdlet, function, script file, or operable program.');
+      ctx.emitError(`Remove-Computer : ${commandNotFoundMessage('Remove-Computer')}`);
       return null;
     }
     if (!computer.getDomainInfo()) {
@@ -82,7 +83,7 @@ export class RenameComputerCmdlet implements ICmdlet {
   execute(ctx: CmdletContext): PSValue {
     const computer = ctx.providers.computer;
     if (!computer) {
-      ctx.emitError('Rename-Computer : The term \'Rename-Computer\' is not recognized as the name of a cmdlet, function, script file, or operable program.');
+      ctx.emitError(`Rename-Computer : ${commandNotFoundMessage('Rename-Computer')}`);
       return null;
     }
     const newName = psValueToString(ctx.named['newname'] ?? ctx.positional[0] ?? '');
@@ -132,7 +133,7 @@ export class InstallADServiceAccountCmdlet implements ICmdlet {
   execute(ctx: CmdletContext): PSValue {
     const computer = ctx.providers.computer;
     if (!computer) {
-      ctx.emitError('Install-ADServiceAccount : The term \'Install-ADServiceAccount\' is not recognized as the name of a cmdlet, function, script file, or operable program.');
+      ctx.emitError(`Install-ADServiceAccount : ${commandNotFoundMessage('Install-ADServiceAccount')}`);
       return null;
     }
     const identity = serviceAccountIdentityOf(ctx);
@@ -153,7 +154,7 @@ export class TestADServiceAccountCmdlet implements ICmdlet {
   execute(ctx: CmdletContext): PSValue {
     const computer = ctx.providers.computer;
     if (!computer) {
-      ctx.emitError('Test-ADServiceAccount : The term \'Test-ADServiceAccount\' is not recognized as the name of a cmdlet, function, script file, or operable program.');
+      ctx.emitError(`Test-ADServiceAccount : ${commandNotFoundMessage('Test-ADServiceAccount')}`);
       return null;
     }
     const identity = serviceAccountIdentityOf(ctx);

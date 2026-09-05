@@ -56,9 +56,9 @@ describe('Resolve-DnsName — table output', () => {
     expect(out).toContain('localhost');
   });
 
-  it('reverse lookup arbitrary IP also returns PTR format', async () => {
+  it('une adresse que rien ne publie n a pas de PTR a fabriquer', async () => {
     const out = await run(createShell(), 'Resolve-DnsName "192.168.1.50"');
-    expect(out).toContain('PTR');
-    expect(out).toContain('50.1.168.192.in-addr.arpa');
+    expect(out).toContain('50.1.168.192.in-addr.arpa : DNS name does not exist');
+    expect(out).not.toContain('host-192-168-1-50');
   });
 });

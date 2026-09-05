@@ -14,6 +14,9 @@ import { md5Hex } from '@/crypto/hash/md5';
 import { sha1Hex } from '@/crypto/hash/sha1';
 import { sha256Hex } from '@/crypto/hash/sha256';
 import { sha512Hex } from '@/crypto/hash/sha512';
+import { commandNotFoundMessage } from '@/powershell/commandNotFound';
+import { wildcardToRegex, wildcardMatches, hasWildcard } from '@/powershell/runtime/PSWildcard';
+import { parseAttributeNames, isDefaultVisible } from '@/network/devices/windows/fileAttributes';
 
 function isRegistryPath(path: string): boolean {
   return /^(HKLM|HKCU|HKCR|HKU|HKCC):/i.test(path) || /^HKEY_/i.test(path);
@@ -53,7 +56,7 @@ export class SplitPathCmdlet implements ICmdlet {
   readonly aliases = [] as const;
 
   execute(ctx: CmdletContext): PSValue {
-    const p   = psValueToString(ctx.named['path'] ?? ctx.positional[0] ?? '');
+    const p   = pathArgOf(ctx);
     const idx = Math.max(p.lastIndexOf('\\'), p.lastIndexOf('/'));
     const leaf   = idx >= 0 ? p.slice(idx + 1) : p;
     const parent = idx >= 0 ? p.slice(0, idx)   : '';
@@ -103,7 +106,7 @@ export class TestPathCmdlet implements ICmdlet {
   readonly aliases = [] as const;
 
   execute(ctx: CmdletContext): PSValue {
-    const path = psValueToString(ctx.named['path'] ?? ctx.positional[0] ?? '');
+    const path = pathArgOf(ctx);
     if (!path) return false;
 
     if (ctx.providers.registry) {
@@ -123,10 +126,10 @@ export class TestPathCmdlet implements ICmdlet {
 export class ResolvePathCmdlet implements ICmdlet {
   readonly name = 'resolve-path';
   readonly parameters = ['Path', 'LiteralPath', 'Relative', 'RelativeBasePath'] as const;
-  readonly aliases = [] as const;
+  readonly aliases = ['rvpa'] as const;
 
   execute(ctx: CmdletContext): PSValue {
-    const path = psValueToString(ctx.named['path'] ?? ctx.positional[0] ?? '');
+    const path = pathArgOf(ctx);
     const fs   = ctx.providers.filesystem;
     if (!fs) return path;
     const abs = fs.normalizePath(path, fs.getCwd());
@@ -136,6 +139,12 @@ export class ResolvePathCmdlet implements ICmdlet {
 
 // ─── Get-ChildItem ────────────────────────────────────────────────────────
 
+function pathArgOf(ctx: CmdletContext, fallback = ''): string {
+  const literal = ctx.named['literalpath'];
+  if (literal !== undefined) return psValueToString(literal);
+  return psValueToString(ctx.named['path'] ?? ctx.positional[0] ?? fallback);
+}
+
 export class GetChildItemCmdlet implements ICmdlet {
   readonly name = 'get-childitem';
   readonly parameters = ['Path', 'LiteralPath', 'Filter', 'Include', 'Exclude', 'Recurse', 'Depth', 'Force', 'Name', 'Attributes', 'Directory', 'File', 'Hidden', 'ReadOnly', 'System'] as const;
@@ -143,9 +152,14 @@ export class GetChildItemCmdlet implements ICmdlet {
   readonly aliases = ['ls', 'dir', 'gci'] as const;
 
   execute(ctx: CmdletContext): PSValue {
-    const path    = psValueToString(ctx.named['path'] ?? ctx.positional[0] ?? '.');
+    const path = ctx.named['path'] !== undefined || ctx.named['literalpath'] !== undefined
+      || ctx.positional[0] !== undefined
+      ? pathArgOf(ctx, '.')
+      : (pipedPath(ctx.pipeInput) ?? '.');
+    const literal = ctx.named['literalpath'] !== undefined;
     const filter  = ctx.named['filter']  ? psValueToString(ctx.named['filter'])  : null;
     const recurse = ctx.named['recurse'] === true || ctx.named['recurse'] === 'true';
+    const depth   = ctx.named['depth'] !== undefined ? Number(ctx.named['depth']) : undefined;
     const onlyFiles = ctx.named['file']      === true;
     const onlyDirs  = ctx.named['directory'] === true;
     const nameOnly  = ctx.named['name']      === true;
@@ -169,94 +183,199 @@ export class GetChildItemCmdlet implements ICmdlet {
       if (path !== '.') ctx.emitError(`Cannot find path '${path}' because it does not exist.`);
       return [];
     }
-    if (path !== '.' && !fs.exists(path)) {
-      ctx.emitError(`Cannot find path '${path}' because it does not exist.`);
+
+    const wanted = this.attributeFilter(ctx);
+    if (wanted === null) return [];
+
+    const roots = literal || !hasWildcard(path) ? [path] : expandPathSpec(fs, path);
+    if (roots.length === 0) {
+      ctx.emitError(`Get-ChildItem : Cannot find path '${path}' because it does not exist.`);
       return [];
     }
 
-    const collect = (dir: string): PSValue[] => {
-      const entries = fs.listDir(dir);
-      const out: PSValue[] = entries.map(e => ({
-        Name: e.name,
-        FullName: `${dir}\\${e.name}`,
-        // FileInfo.Extension includes the leading dot; directories and
-        // extension-less files report an empty string (matches real PS).
-        Extension: e.isDirectory ? '' : (e.name.includes('.') ? e.name.slice(e.name.lastIndexOf('.')) : ''),
-        BaseName: e.isDirectory
-          ? e.name
-          : (e.name.includes('.') ? e.name.slice(0, e.name.lastIndexOf('.')) : e.name),
-        // Real PowerShell's DirectoryInfo has no `Length` — Format-Table
-        // renders an empty cell.  Setting it to null reproduces that
-        // visually; downstream `Where-Object { $_.Length -gt 0 }` keeps
-        // working because PS coerces null → 0.
-        Length: e.isDirectory ? null : e.size,
-        // Real PS uses a 6-char `darhsl` mode column. Plain files have the
-        // archive bit on (-a----); plain directories show only d (d-----).
-        Mode: e.isDirectory ? 'd-----' : '-a----',
-        PSIsContainer: e.isDirectory,
-        LastWriteTime: e.mtime,
-      } as Record<string, PSValue>));
-      if (recurse) {
-        for (const e of entries) {
-          if (e.isDirectory) out.push(...collect(`${dir}\\${e.name}`));
-        }
+    const items: PSValue[] = [];
+    for (const root of roots) {
+      if (root !== '.' && !fs.exists(root)) {
+        ctx.emitError(`Cannot find path '${root}' because it does not exist.`);
+        continue;
       }
-      return out;
-    };
+      if (root !== '.' && !fs.isDirectory(root)) {
+        items.push(itemObject(fs, root));
+        continue;
+      }
+      items.push(...this.collect(fs, root, recurse, depth, 0, wanted));
+    }
 
-    let items = collect(path);
+    let kept = items;
     if (filter) {
-      const pat = new RegExp(`^${filter.replace(/\./g, '\\.').replace(/\*/g, '.*').replace(/\?/g, '.')}$`, 'i');
-      items = items.filter(item => pat.test(psValueToString((item as Record<string, PSValue>)['Name'])));
+      const pat = wildcardToRegex(filter);
+      kept = kept.filter(item => pat.test(psValueToString((item as Record<string, PSValue>)['Name'])));
+    }
+    const include = patternList(ctx.named['include']);
+    if (include.length > 0) {
+      kept = kept.filter(item => include.some(
+        p => wildcardMatches(p, psValueToString((item as Record<string, PSValue>)['Name']))));
+    }
+    const exclude = patternList(ctx.named['exclude']);
+    if (exclude.length > 0) {
+      kept = kept.filter(item => !exclude.some(
+        p => wildcardMatches(p, psValueToString((item as Record<string, PSValue>)['Name']))));
     }
     if (onlyFiles) {
-      items = items.filter(item => !(item as Record<string, PSValue>)['PSIsContainer']);
+      kept = kept.filter(item => !(item as Record<string, PSValue>)['PSIsContainer']);
     }
     if (onlyDirs) {
-      items = items.filter(item => (item as Record<string, PSValue>)['PSIsContainer']);
+      kept = kept.filter(item => (item as Record<string, PSValue>)['PSIsContainer']);
     }
     if (nameOnly) {
-      return items.map(item => (item as Record<string, PSValue>)['Name']) as PSValue;
+      return kept.map(item => (item as Record<string, PSValue>)['Name']) as PSValue;
     }
-    return items;
+    return kept;
   }
+
+  private attributeFilter(ctx: CmdletContext): ((attrs: ReadonlySet<string>) => boolean) | null {
+    const spec = ctx.named['attributes'];
+    if (spec !== undefined) {
+      const asked = parseAttributeNames(psValueToString(spec));
+      if (asked === null) {
+        ctx.emitError(`Get-ChildItem : Cannot convert value "${psValueToString(spec)}" to type `
+          + `"System.IO.FileAttributes". Invalid attribute name.`);
+        return null;
+      }
+      return attrs => asked.every(a => attrs.has(a));
+    }
+    const only: string[] = [];
+    for (const flag of ['hidden', 'system', 'readonly'] as const) {
+      if (ctx.named[flag] === true) only.push(flag);
+    }
+    if (only.length > 0) return attrs => only.every(a => attrs.has(a));
+    if (ctx.named['force'] === true) return () => true;
+    return isDefaultVisible;
+  }
+
+  private collect(
+    fs: NonNullable<CmdletContext['providers']['filesystem']>,
+    dir: string, recurse: boolean, depth: number | undefined, level: number,
+    wanted: (attrs: ReadonlySet<string>) => boolean,
+  ): PSValue[] {
+    const entries = fs.listDir(dir).filter(e => wanted(e.attributes ?? new Set<string>()));
+    const out: PSValue[] = entries.map(e => ({
+      Name: e.name,
+      FullName: `${dir}\\${e.name}`,
+      // FileInfo.Extension includes the leading dot; directories and
+      // extension-less files report an empty string (matches real PS).
+      Extension: e.isDirectory ? '' : (e.name.includes('.') ? e.name.slice(e.name.lastIndexOf('.')) : ''),
+      BaseName: e.isDirectory
+        ? e.name
+        : (e.name.includes('.') ? e.name.slice(0, e.name.lastIndexOf('.')) : e.name),
+      // Real PowerShell's DirectoryInfo has no `Length` — Format-Table
+      // renders an empty cell.  Setting it to null reproduces that
+      // visually; downstream `Where-Object { $_.Length -gt 0 }` keeps
+      // working because PS coerces null → 0.
+      Length: e.isDirectory ? null : e.size,
+      Mode: modeOf(e.isDirectory, e.attributes ?? new Set<string>()),
+      PSIsContainer: e.isDirectory,
+      LastWriteTime: e.mtime,
+      Attributes: [...(e.attributes ?? new Set<string>())].join(', '),
+    } as Record<string, PSValue>));
+    if (recurse && (depth === undefined || level < depth)) {
+      for (const e of entries) {
+        if (e.isDirectory) out.push(...this.collect(fs, `${dir}\\${e.name}`, recurse, depth, level + 1, wanted));
+      }
+    }
+    return out;
+  }
+}
+
+function modeOf(isDirectory: boolean, attrs: ReadonlySet<string>): string {
+  return [
+    isDirectory ? 'd' : '-',
+    attrs.has('archive') ? 'a' : '-',
+    attrs.has('readonly') ? 'r' : '-',
+    attrs.has('hidden') ? 'h' : '-',
+    attrs.has('system') ? 's' : '-',
+    '-',
+  ].join('');
 }
 
 // ─── Get-Content ─────────────────────────────────────────────────────────
 
 export class GetContentCmdlet implements ICmdlet {
   readonly name = 'get-content';
-  readonly parameters = ['Path', 'LiteralPath', 'ReadCount', 'TotalCount', 'Tail', 'Filter', 'Include', 'Exclude', 'Force', 'Raw', 'Encoding', 'Delimiter', 'Wait', 'Stream'] as const;
+  readonly displayName = 'Get-Content';
+  readonly parameters = ['Path', 'LiteralPath', 'ReadCount', 'TotalCount', 'First', 'Head', 'Tail', 'Last', 'Filter', 'Include', 'Exclude', 'Force', 'Raw', 'Encoding', 'Delimiter', 'Wait', 'Stream', 'AsByteStream'] as const;
   readonly aliases = ['cat', 'type', 'gc'] as const;
 
   execute(ctx: CmdletContext): PSValue {
-    const path = psValueToString(ctx.named['path'] ?? ctx.positional[0] ?? '');
     const fs = ctx.providers.filesystem;
     if (!fs) return null;
-    let content: string;
-    try { content = fs.readFile(path); }
-    catch { return null; }
-    const raw = ctx.named['raw'] === true || ctx.named['raw'] === 'true';
-    if (raw) return content;
+    if (ctx.named['stream'] !== undefined) {
+      ctx.emitError('Get-Content : -Stream is not supported in this simulator: '
+        + 'the file system has no alternate data streams.');
+      return null;
+    }
+    if (ctx.named['wait'] === true) {
+      ctx.emitError('Get-Content : -Wait is not supported in this simulator: '
+        + 'the engine is synchronous, so a file cannot be followed as it grows.');
+      return null;
+    }
 
-    // PowerShell Get-Content returns one PSValue per line. The trailing empty
-    // token from a final newline is dropped so `.Count` matches user intent.
-    const lines = content.split(/\r?\n/);
-    if (lines.length > 0 && lines[lines.length - 1] === '') lines.pop();
+    const literal = ctx.named['literalpath'];
+    const specs = literal !== undefined
+      ? pathListOf(literal)
+      : pathListOf(ctx.named['path'] ?? ctx.positional[0] ?? '');
+    if (specs.length === 0) return null;
 
-    const tail       = ctx.named['tail']       !== undefined ? Number(ctx.named['tail'])       : undefined;
-    const totalCount = ctx.named['totalcount'] !== undefined ? Number(ctx.named['totalcount']) : undefined;
-    const sliced = tail !== undefined
-      ? lines.slice(Math.max(0, lines.length - tail))
-      : totalCount !== undefined
-        ? lines.slice(0, totalCount)
-        : lines;
-    // PowerShell unwraps single-element arrays produced by Get-Content so
-    // `$x = Get-Content single-line.txt` yields a string; `.Count` still
-    // works on the array form when content has multiple lines.
-    if (sliced.length === 1) return sliced[0] as PSValue;
-    return sliced as unknown as PSValue;
+    const targets: string[] = [];
+    for (const spec of specs) {
+      const matched = literal !== undefined ? [spec] : expandPathSpec(fs, spec);
+      if (matched.length === 0) {
+        ctx.emitError(`Get-Content : Cannot find path '${spec}' because it does not exist.`);
+        continue;
+      }
+      targets.push(...matched);
+    }
+    if (targets.length === 0) return null;
+
+    let text = '';
+    for (const target of targets) {
+      try { text += fs.readFile(target); }
+      catch { ctx.emitError(`Get-Content : Cannot find path '${target}' because it does not exist.`); }
+    }
+
+    if (ctx.named['asbytestream'] === true) {
+      return [...text].map(ch => ch.charCodeAt(0)) as unknown as PSValue;
+    }
+    if (ctx.named['raw'] === true || ctx.named['raw'] === 'true') return text;
+
+    const delimiter = ctx.named['delimiter'] !== undefined
+      ? psValueToString(ctx.named['delimiter']) : null;
+    let pieces = delimiter !== null && delimiter !== ''
+      ? text.split(delimiter)
+      : text.split(/\r?\n/);
+    if (pieces.length > 0 && pieces[pieces.length - 1] === '') pieces.pop();
+
+    const head = firstNumberOf(ctx, ['totalcount', 'first', 'head']);
+    const tail = firstNumberOf(ctx, ['tail', 'last']);
+    if (tail !== undefined) pieces = pieces.slice(Math.max(0, pieces.length - tail));
+    else if (head !== undefined) pieces = pieces.slice(0, head);
+
+    if (Number(ctx.named['readcount'] ?? -1) === 0) return pieces as unknown as PSValue;
+    if (pieces.length === 1) return pieces[0] as PSValue;
+    return pieces as unknown as PSValue;
   }
+}
+
+function pathListOf(value: PSValue): string[] {
+  if (value === undefined || value === null) return [];
+  return (Array.isArray(value) ? value : [value]).map(psValueToString).filter(p => p !== '');
+}
+
+function firstNumberOf(ctx: CmdletContext, keys: readonly string[]): number | undefined {
+  for (const key of keys) {
+    if (ctx.named[key] !== undefined) return Number(ctx.named[key]);
+  }
+  return undefined;
 }
 
 // ─── Set-Content ─────────────────────────────────────────────────────────
@@ -267,7 +386,7 @@ export class SetContentCmdlet implements ICmdlet {
   readonly aliases = ['sc'] as const;
 
   execute(ctx: CmdletContext): PSValue {
-    const path  = psValueToString(ctx.named['path']  ?? ctx.positional[0] ?? '');
+    const path  = pathArgOf(ctx);
     const raw   = ctx.named['value'] ?? ctx.positional[1] ?? ctx.pipeInput ?? '';
     const fs = ctx.providers.filesystem;
     if (!fs) return null;
@@ -283,6 +402,31 @@ export class SetContentCmdlet implements ICmdlet {
   }
 }
 
+// ─── Clear-Content ───────────────────────────────────────────────────────
+
+export class ClearContentCmdlet implements ICmdlet {
+  readonly name = 'clear-content';
+  readonly parameters = ['Path', 'LiteralPath', 'Force', 'Stream', 'Filter', 'Include', 'Exclude'] as const;
+  readonly aliases = ['clc'] as const;
+
+  execute(ctx: CmdletContext): PSValue {
+    const path = psValueToString(
+      ctx.named['path'] ?? ctx.named['literalpath'] ?? ctx.positional[0] ?? '');
+    if (path === '') {
+      ctx.emitError("Clear-Content : Cannot bind argument to parameter 'Path' because it is an empty string.");
+      return null;
+    }
+    const fs = ctx.providers.filesystem;
+    if (!fs) return null;
+    if (!fs.exists(path)) {
+      ctx.emitError(`Clear-Content : Cannot find path '${path}' because it does not exist.`);
+      return null;
+    }
+    fs.writeFile(path, '');
+    return null;
+  }
+}
+
 // ─── Add-Content ─────────────────────────────────────────────────────────
 
 export class AddContentCmdlet implements ICmdlet {
@@ -291,7 +435,7 @@ export class AddContentCmdlet implements ICmdlet {
   readonly aliases = ['ac'] as const;
 
   execute(ctx: CmdletContext): PSValue {
-    const path  = psValueToString(ctx.named['path']  ?? ctx.positional[0] ?? '');
+    const path  = pathArgOf(ctx);
     const raw   = ctx.named['value'] ?? ctx.positional[1] ?? ctx.pipeInput ?? '';
     const fs = ctx.providers.filesystem;
     if (!fs) return null;
@@ -314,7 +458,7 @@ export class NewItemCmdlet implements ICmdlet {
   readonly aliases = ['ni'] as const;
 
   execute(ctx: CmdletContext): PSValue {
-    const path     = psValueToString(ctx.named['path']     ?? ctx.positional[0] ?? '');
+    const path     = pathArgOf(ctx);
     const itemType = psValueToString(ctx.named['itemtype'] ?? ctx.named['type'] ?? 'File').toLowerCase();
     const value    = ctx.named['value'] !== undefined ? psValueToString(ctx.named['value']) : null;
 
@@ -362,7 +506,7 @@ export class RemoveItemCmdlet implements ICmdlet {
 
     // Build the target list. An explicit -Path/positional wins; otherwise
     // accept pipeline input (strings or FileInfo objects from Get-ChildItem).
-    const explicit = ctx.named['path'] ?? ctx.positional[0];
+    const explicit = ctx.named['literalpath'] ?? ctx.named['path'] ?? ctx.positional[0];
     let targets: string[];
     if (explicit !== undefined && explicit !== null) {
       targets = (Array.isArray(explicit) ? explicit : [explicit]).map(pathOf);
@@ -411,38 +555,149 @@ function pathOf(v: PSValue): string {
 
 export class CopyItemCmdlet implements ICmdlet {
   readonly name = 'copy-item';
-  readonly parameters = ['Path', 'LiteralPath', 'Destination', 'Filter', 'Include', 'Exclude', 'Recurse', 'Force', 'PassThru', 'Container'] as const;
+  readonly displayName = 'Copy-Item';
+  readonly parameters = ['Path', 'LiteralPath', 'Destination', 'Filter', 'Include', 'Exclude', 'Recurse', 'Force', 'PassThru', 'Container', 'WhatIf', 'Confirm', 'Credential', 'ToSession', 'FromSession'] as const;
   readonly aliases = ['cp', 'copy', 'cpi'] as const;
 
   execute(ctx: CmdletContext): PSValue {
-    const src  = psValueToString(ctx.named['path']        ?? ctx.named['literalpath'] ?? ctx.positional[0] ?? '');
-    const dest = psValueToString(ctx.named['destination'] ?? ctx.positional[1] ?? '');
-    const recurse = ctx.named['recurse'] === true;
     const fs = ctx.providers.filesystem;
     if (!fs) return null;
-
-    // Directory copy: the provider's copy() only handles files, so walk the
-    // tree ourselves when -Recurse is given (matches real Copy-Item).
-    if (fs.isDirectory(src)) {
-      if (!recurse) return null;
-      const walk = (s: string, d: string) => {
-        if (!fs.exists(d)) fs.createDir(d);
-        for (const e of fs.listDir(s)) {
-          const sp = `${s}\\${e.name}`;
-          const dp = `${d}\\${e.name}`;
-          if (e.isDirectory) walk(sp, dp);
-          else fs.writeFile(dp, fs.readFile(sp));
-        }
-      };
-      try { walk(src, dest); }
-      catch (e) { ctx.emitError(e instanceof Error ? e.message : String(e)); }
+    if (ctx.named['tosession'] !== undefined || ctx.named['fromsession'] !== undefined) {
+      ctx.emitError('Copy-Item : -ToSession / -FromSession are not supported in this simulator: '
+        + 'there is no PowerShell remoting file transfer.');
       return null;
     }
 
-    try { fs.copy(src, dest); }
-    catch (e) { ctx.emitError(e instanceof Error ? e.message : String(e)); }
-    return null;
+    const literal = ctx.named['literalpath'] !== undefined;
+    const spec = psValueToString(
+      ctx.named['path'] ?? ctx.named['literalpath'] ?? ctx.positional[0]
+      ?? pipedPath(ctx.pipeInput) ?? '');
+    const dest = psValueToString(ctx.named['destination'] ?? ctx.positional[1] ?? '');
+    if (!spec || !dest) {
+      ctx.emitError('Copy-Item : Both -Path and -Destination are required.');
+      return null;
+    }
+
+    const sources = literal ? [spec] : expandPathSpec(fs, spec);
+    if (sources.length === 0) {
+      ctx.emitError(`Copy-Item : Cannot find path '${spec}' because it does not exist.`);
+      return null;
+    }
+    const kept = sources.filter(source => nameSurvivesFilters(ctx, baseNameOf(source)));
+
+    const recurse = ctx.named['recurse'] === true;
+    const whatIf = ctx.named['whatif'] === true;
+    const many = kept.length > 1 || (!literal && hasWildcard(spec));
+    const copied: PSValue[] = [];
+    if (many && !whatIf && !fs.exists(dest)) fs.createDir(dest);
+
+    for (const source of kept) {
+      if (!fs.exists(source)) {
+        ctx.emitError(`Copy-Item : Cannot find path '${source}' because it does not exist.`);
+        continue;
+      }
+      const target = many || (fs.exists(dest) && fs.isDirectory(dest) && !fs.isDirectory(source))
+        ? `${dest.replace(/\\+$/, '')}\\${baseNameOf(source)}`
+        : dest;
+      if (whatIf) {
+        ctx.emit(`What if: Performing the operation "Copy ${fs.isDirectory(source) ? 'Directory' : 'File'}" `
+          + `on target "Item: ${source} Destination: ${target}".`);
+        continue;
+      }
+      try {
+        if (fs.isDirectory(source)) this.copyTree(ctx, fs, source, target, recurse);
+        else fs.copy(source, target);
+      } catch (e) {
+        ctx.emitError(e instanceof Error ? e.message : String(e));
+        continue;
+      }
+      if (ctx.named['passthru'] === true) copied.push(itemObject(fs, target));
+    }
+
+    if (copied.length === 0) return null;
+    return (copied.length === 1 ? copied[0] : copied) as PSValue;
   }
+
+  private copyTree(
+    ctx: CmdletContext, fs: NonNullable<CmdletContext['providers']['filesystem']>,
+    source: string, target: string, recurse: boolean,
+  ): void {
+    if (!fs.exists(target)) fs.createDir(target);
+    if (!recurse) return;
+    for (const entry of fs.listDir(source)) {
+      if (!nameSurvivesFilters(ctx, entry.name)) continue;
+      const from = `${source}\\${entry.name}`;
+      const to = `${target}\\${entry.name}`;
+      if (entry.isDirectory) this.copyTree(ctx, fs, from, to, recurse);
+      else fs.copy(from, to);
+    }
+  }
+}
+
+function baseNameOf(path: string): string {
+  const cleaned = path.replace(/[\\/]+$/, '');
+  const cut = Math.max(cleaned.lastIndexOf('\\'), cleaned.lastIndexOf('/'));
+  return cut === -1 ? cleaned : cleaned.slice(cut + 1);
+}
+
+function parentOf(path: string): string {
+  const cleaned = path.replace(/[\\/]+$/, '');
+  const cut = Math.max(cleaned.lastIndexOf('\\'), cleaned.lastIndexOf('/'));
+  return cut <= 0 ? cleaned.slice(0, cut + 1) : cleaned.slice(0, cut);
+}
+
+function pipedPath(pipeInput: PSValue): string | null {
+  const first = Array.isArray(pipeInput) ? pipeInput[0] : pipeInput;
+  if (first === null || first === undefined) return null;
+  if (typeof first === 'string') return first;
+  if (typeof first === 'object') {
+    const record = first as Record<string, PSValue>;
+    const full = record['FullName'] ?? record['PSPath'] ?? record['Path'];
+    if (full !== undefined) return psValueToString(full);
+  }
+  return null;
+}
+
+function expandPathSpec(
+  fs: NonNullable<CmdletContext['providers']['filesystem']>, spec: string,
+): string[] {
+  if (!hasWildcard(spec)) return fs.exists(spec) ? [spec] : [];
+  const dir = parentOf(spec);
+  const pattern = baseNameOf(spec);
+  if (!fs.exists(dir) || !fs.isDirectory(dir)) return [];
+  const matcher = wildcardToRegex(pattern);
+  return fs.listDir(dir)
+    .filter(entry => matcher.test(entry.name))
+    .map(entry => `${dir.replace(/\\+$/, '')}\\${entry.name}`);
+}
+
+function nameSurvivesFilters(ctx: CmdletContext, name: string): boolean {
+  const filter = ctx.named['filter'] !== undefined ? psValueToString(ctx.named['filter']) : null;
+  if (filter !== null && !wildcardMatches(filter, name)) return false;
+  const include = patternList(ctx.named['include']);
+  if (include.length > 0 && !include.some(p => wildcardMatches(p, name))) return false;
+  const exclude = patternList(ctx.named['exclude']);
+  if (exclude.some(p => wildcardMatches(p, name))) return false;
+  return true;
+}
+
+function patternList(value: PSValue): string[] {
+  if (value === undefined || value === null) return [];
+  return (Array.isArray(value) ? value : [value]).map(psValueToString).filter(p => p !== '');
+}
+
+function itemObject(
+  fs: NonNullable<CmdletContext['providers']['filesystem']>, path: string,
+): PSValue {
+  const isDir = fs.exists(path) && fs.isDirectory(path);
+  const name = baseNameOf(path);
+  return {
+    Name: name,
+    FullName: path,
+    PSIsContainer: isDir,
+    Extension: isDir ? '' : (name.includes('.') ? name.slice(name.lastIndexOf('.')) : ''),
+    Mode: isDir ? 'd-----' : '-a----',
+  } as Record<string, PSValue>;
 }
 
 // ─── Move-Item ────────────────────────────────────────────────────────────
@@ -453,7 +708,7 @@ export class MoveItemCmdlet implements ICmdlet {
   readonly aliases = ['mv', 'move', 'mi'] as const;
 
   execute(ctx: CmdletContext): PSValue {
-    const src  = psValueToString(ctx.named['path']        ?? ctx.positional[0] ?? '');
+    const src  = pathArgOf(ctx);
     const dest = psValueToString(ctx.named['destination'] ?? ctx.positional[1] ?? '');
     const fs = ctx.providers.filesystem;
     if (!fs) return null;
@@ -471,7 +726,7 @@ export class RenameItemCmdlet implements ICmdlet {
   readonly aliases = ['ren', 'rni'] as const;
 
   execute(ctx: CmdletContext): PSValue {
-    const src     = psValueToString(ctx.named['path']    ?? ctx.positional[0] ?? '');
+    const src     = pathArgOf(ctx);
     const newName = psValueToString(ctx.named['newname'] ?? ctx.positional[1] ?? '');
     if (!src || !newName) {
       ctx.emitError('Rename-Item requires -Path and -NewName');
@@ -495,7 +750,7 @@ export class MkdirCmdlet implements ICmdlet {
   readonly aliases = ['md'] as const;
 
   execute(ctx: CmdletContext): PSValue {
-    const path = psValueToString(ctx.named['path'] ?? ctx.positional[0] ?? '');
+    const path = pathArgOf(ctx);
     if (!path) { ctx.emitError('mkdir requires a path'); return null; }
     const fs = ctx.providers.filesystem;
     if (!fs) return null;
@@ -512,7 +767,7 @@ export class OutFileCmdlet implements ICmdlet {
   readonly aliases = [] as const;
 
   execute(ctx: CmdletContext): PSValue {
-    const filePath = psValueToString(ctx.named['filepath'] ?? ctx.named['path'] ?? ctx.positional[0] ?? '');
+    const filePath = psValueToString(ctx.named['filepath'] ?? ctx.named['literalpath'] ?? ctx.named['path'] ?? ctx.positional[0] ?? '');
     const append   = ctx.named['append'] === true;
     const input    = ctx.pipeInput ?? ctx.positional[0] ?? '';
     const content  = typeof input === 'string' ? input
@@ -584,7 +839,7 @@ export class SetItemPropertyCmdlet implements ICmdlet {
   readonly aliases = ['sp'] as const;
 
   execute(ctx: CmdletContext): PSValue {
-    const path  = psValueToString(ctx.named['path']  ?? ctx.positional[0] ?? '');
+    const path  = pathArgOf(ctx);
     const name  = psValueToString(ctx.named['name']  ?? ctx.positional[1] ?? '');
     const raw   = ctx.named['value'] ?? ctx.positional[2];
     const value = typeof raw === 'number' ? raw : psValueToString(raw ?? '');
@@ -621,7 +876,7 @@ export class NewItemPropertyCmdlet implements ICmdlet {
   readonly aliases = [] as const;
 
   execute(ctx: CmdletContext): PSValue {
-    const path = psValueToString(ctx.named['path'] ?? ctx.positional[0] ?? '');
+    const path = pathArgOf(ctx);
     const name = psValueToString(ctx.named['name'] ?? ctx.positional[1] ?? '');
     const raw  = ctx.named['value'] ?? ctx.positional[2];
     const kind = psValueToString(ctx.named['propertytype'] ?? '').toLowerCase();
@@ -657,7 +912,7 @@ export class RemoveItemPropertyCmdlet implements ICmdlet {
   readonly aliases = ['rp'] as const;
 
   execute(ctx: CmdletContext): PSValue {
-    const path = psValueToString(ctx.named['path'] ?? ctx.positional[0] ?? '');
+    const path = pathArgOf(ctx);
     const name = psValueToString(ctx.named['name'] ?? ctx.positional[1] ?? '');
     if (isRegistryPath(path)) {
       if (!ctx.providers.registry) requireRegistryProvider(path);
@@ -684,7 +939,7 @@ export class ClearItemPropertyCmdlet implements ICmdlet {
   readonly aliases = ['clp'] as const;
 
   execute(ctx: CmdletContext): PSValue {
-    const path = psValueToString(ctx.named['path'] ?? ctx.positional[0] ?? '');
+    const path = pathArgOf(ctx);
     const name = psValueToString(ctx.named['name'] ?? ctx.positional[1] ?? '');
     if (!isRegistryPath(path)) {
       ctx.emitError(`Clear-ItemProperty : Cannot find path '${path}' because it does not exist.`);
@@ -711,7 +966,7 @@ export class GetItemCmdlet implements ICmdlet {
   readonly aliases = ['gi'] as const;
 
   execute(ctx: CmdletContext): PSValue {
-    const path = psValueToString(ctx.named['path'] ?? ctx.positional[0] ?? '');
+    const path = pathArgOf(ctx);
     if (!path) { ctx.emitError('Get-Item requires -Path'); return null; }
     if (isRegistryPath(path)) {
       if (!ctx.providers.registry) requireRegistryProvider(path);
@@ -790,7 +1045,7 @@ export class SetItemCmdlet implements ICmdlet {
   readonly aliases = [] as const;
 
   execute(ctx: CmdletContext): PSValue {
-    const path  = psValueToString(ctx.named['path']  ?? ctx.positional[0] ?? '');
+    const path  = pathArgOf(ctx);
     const value = psValueToString(ctx.named['value'] ?? ctx.positional[1] ?? '');
     if (!path) { ctx.emitError('Set-Item requires -Path'); return null; }
     // Env:VAR — write through to the environment provider so cmd subshells
@@ -807,7 +1062,7 @@ export class SetItemCmdlet implements ICmdlet {
     }
     if (isRegistryPath(path)) {
       // Defer to legacy executor (which has rich registry-Set-Item behaviour).
-      throw new PSRuntimeError('Set-Item on registry paths is not recognized in this provider context');
+      throw new PSRuntimeError(commandNotFoundMessage('Set-Item on registry paths'));
     }
     const fs = ctx.providers.filesystem;
     if (!fs) return null;
@@ -834,7 +1089,7 @@ export class GetAclCmdlet implements ICmdlet {
   readonly aliases = [] as const;
 
   execute(ctx: CmdletContext): PSValue {
-    const path = psValueToString(ctx.named['path'] ?? ctx.positional[0] ?? '');
+    const path = pathArgOf(ctx);
     if (/^ad:/i.test(path)) {
       const ad = ctx.providers.ad;
       if (!ad) { ctx.emitError("Get-Acl : Cannot find drive. A drive with the name 'AD' does not exist."); return null; }
@@ -929,7 +1184,7 @@ export class SetAclCmdlet implements ICmdlet {
   readonly aliases = [] as const;
 
   execute(ctx: CmdletContext): PSValue {
-    const path = psValueToString(ctx.named['path'] ?? ctx.positional[0] ?? '');
+    const path = pathArgOf(ctx);
     if (/^ad:/i.test(path)) {
       const ad = ctx.providers.ad;
       if (!ad) { ctx.emitError("Set-Acl : Cannot find drive. A drive with the name 'AD' does not exist."); return null; }
@@ -1015,7 +1270,7 @@ export class GetFileHashCmdlet implements ICmdlet {
   readonly aliases = [] as const;
 
   execute(ctx: CmdletContext): PSValue {
-    const path = psValueToString(ctx.named['path'] ?? ctx.named['literalpath'] ?? ctx.positional[0] ?? '');
+    const path = pathArgOf(ctx);
     if (!path) { ctx.emitError("Get-FileHash : Cannot bind argument to parameter 'Path' because it is an empty string."); return null; }
     const algorithm = psValueToString(ctx.named['algorithm'] ?? 'SHA256').toUpperCase();
     const hashFn = FILE_HASH_ALGORITHMS[algorithm];
@@ -1024,7 +1279,7 @@ export class GetFileHashCmdlet implements ICmdlet {
       return null;
     }
     const fs = ctx.providers.filesystem;
-    if (!fs) { ctx.emitError('Get-FileHash is not recognized in this provider context'); return null; }
+    if (!fs) { ctx.emitError(commandNotFoundMessage('Get-FileHash')); return null; }
     if (!fs.exists(path)) {
       ctx.emitError(`Get-FileHash : Could not find file '${path}'.`);
       return null;
@@ -1056,7 +1311,7 @@ export class GetAuthenticodeSignatureCmdlet implements ICmdlet {
     const path = psValueToString(ctx.named['filepath'] ?? ctx.named['literalpath'] ?? ctx.positional[0] ?? '');
     if (!path) { ctx.emitError("Get-AuthenticodeSignature : Cannot bind argument to parameter 'FilePath' because it is an empty string."); return null; }
     const fs = ctx.providers.filesystem;
-    if (!fs) { ctx.emitError('Get-AuthenticodeSignature is not recognized in this provider context'); return null; }
+    if (!fs) { ctx.emitError(commandNotFoundMessage('Get-AuthenticodeSignature')); return null; }
     if (!fs.exists(path)) {
       ctx.emitError(`Get-AuthenticodeSignature : Cannot find path '${path}' because it does not exist.`);
       return null;

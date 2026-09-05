@@ -350,7 +350,7 @@ describe('Un index d interface designe UNE interface', () => {
   it('le meme index nomme la meme interface pour Get-NetAdapter et Get-NetIPAddress', async () => {
     const { sh } = await machine();
     const carte = (await run(sh, '(Get-NetAdapter -Name "Ethernet 0").ifIndex')).trim();
-    const parIp = (await run(sh, '(Get-NetIPAddress -IPAddress 10.1.1.1).ifIndex')).trim();
+    const parIp = (await run(sh, '(Get-NetIPAddress -IPAddress 10.1.1.1).InterfaceIndex')).trim();
     expect(parIp).toBe(carte);
   });
 });

@@ -34,10 +34,11 @@ import { OU_DEFAULT_PROPERTIES, USER_DEFAULT_PROPERTIES, GROUP_DEFAULT_PROPERTIE
 import { IPAddress } from '@/network/core/types';
 import type { RemoteDirectoryTarget } from '@/powershell/providers/adRemoteDirectory';
 import { GROUP_PROPERTIES, GROUP_PROPERTY_PARAMETERS, formatMemberTimeToLive, groupCategoryNames, groupScopeNames, parseGroupCategory, parseGroupScope } from '@/network/devices/windows/server/ad/adGroup';
+import { commandNotFoundMessage } from '@/powershell/commandNotFound';
 
 function requireAd(ctx: CmdletContext, cmdletName: string): IAdProvider {
   if (!ctx.providers.ad) {
-    throw new PSRuntimeError(`${cmdletName} is not recognized as the name of a cmdlet, function, script file, or operable program`);
+    throw new PSRuntimeError(commandNotFoundMessage(cmdletName));
   }
   return ctx.providers.ad;
 }

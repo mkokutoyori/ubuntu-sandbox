@@ -28,7 +28,7 @@
 import type { WinCommandContext } from './WinCommandExecutor';
 import { dhcpEnabledFor } from './WinAdapterFacts';
 import { requireWindowsService } from './WinFeatureGate';
-import { IPAddress, SubnetMask, IPv6Address } from '../../core/types';
+import { IPAddress, MACAddress, SubnetMask, IPv6Address } from '../../core/types';
 import { isValidIPv4 } from '../../core/ip';
 import {
   ANY, NET_FIREWALL_PROFILES, firewallRuleKey, parseAddressSpec, parseFirewallProtocol,
@@ -699,7 +699,7 @@ function handleInterfaceIpShow(ctx: WinCommandContext, args: string[]): string {
   }
 
   if (sub === 'neighbors') {
-    return handleShowNeighbors(ctx);
+    return handleShowNeighbors(ctx, 'ipv4');
   }
 
   if (sub === 'joins') {
@@ -839,15 +839,38 @@ function handleShowConfig(ctx: WinCommandContext, ifFilter?: string): string {
   return lines.join('\n');
 }
 
-function handleShowNeighbors(ctx: WinCommandContext): string {
+const NETSH_NEIGHBOR_STATE: Record<string, string> = {
+  static: 'Permanent', dynamic: 'Reachable', failed: 'Unreachable',
+  permanent: 'Permanent', reachable: 'Reachable', stale: 'Stale',
+  delay: 'Delay', probe: 'Probe', incomplete: 'Incomplete',
+};
+
+function handleShowNeighbors(ctx: WinCommandContext, family: 'ipv4' | 'ipv6'): string {
+  const rows: Array<{ iface: string; ip: string; mac: string; state: string }> = [];
+  if (family === 'ipv4') {
+    for (const [ip, entry] of ctx.arpTable) {
+      rows.push({
+        iface: entry.iface, ip,
+        mac: entry.mac.toWindowsString(),
+        state: NETSH_NEIGHBOR_STATE[entry.type] ?? 'Reachable',
+      });
+    }
+  } else {
+    for (const [ip, entry] of ctx.getNeighborCache?.() ?? []) {
+      rows.push({
+        iface: entry.iface, ip,
+        mac: entry.mac.toWindowsString(),
+        state: NETSH_NEIGHBOR_STATE[entry.state] ?? 'Reachable',
+      });
+    }
+  }
   const lines: string[] = [];
   lines.push('');
-  lines.push(`${'Interface'.padEnd(15)}${'IP Address'.padEnd(20)}${'Physical Address'.padEnd(22)}Type`);
-  lines.push('----------------------------------------------------------------------');
-  for (const [ip, entry] of ctx.arpTable) {
-    const displayName = adapterDisplayName(entry.iface, ctx.ports);
-    const macStr = entry.mac?.toString ? entry.mac.toString() : String(entry.mac);
-    lines.push(`${displayName.padEnd(15)}${ip.padEnd(20)}${macStr.padEnd(22)}${entry.type || 'static'}`);
+  lines.push(`${'Interface'.padEnd(15)}${'Internet Address'.padEnd(38)}${'Physical Address'.padEnd(20)}Type`);
+  lines.push('---------------------------------------------------------------------------------------');
+  for (const row of rows) {
+    const displayName = adapterDisplayName(row.iface, ctx.ports);
+    lines.push(`${displayName.padEnd(15)}${row.ip.padEnd(38)}${row.mac.padEnd(20)}${row.state}`);
   }
   lines.push('');
   return lines.join('\n');
@@ -1160,12 +1183,11 @@ function handleAddNeighbors(ctx: WinCommandContext, joined: string): string {
 
   const ifName = match[1].trim();
   const ip = match[2];
-  const mac = match[3];
-
-  // Validate MAC: must be exactly 6 hex pairs
-  const parts = mac.split(/[-:]/);
-  if (parts.length !== 6) {
-    return `Invalid MAC address: "${mac}". A MAC address must have exactly 6 octets separated by hyphens.`;
+  const rawMac = match[3];
+  let mac: MACAddress;
+  try { mac = new MACAddress(rawMac); }
+  catch {
+    return `Invalid MAC address: "${rawMac}". A MAC address must have exactly 6 octets separated by hyphens.`;
   }
 
   const portName = resolveAdapterName(ifName, ctx.ports);
@@ -1413,6 +1435,10 @@ To view help for a command, type the command, followed by a space, and then
         }
       }
       return lines.join('\n');
+    }
+
+    if (obj === 'neighbors' || obj === 'neighbor') {
+      return handleShowNeighbors(ctx, 'ipv6');
     }
 
     if (obj === 'route' || obj === 'routes') {
@@ -3193,6 +3219,14 @@ function getWlanProfiles(ctx: WinCommandContext): WlanProfile[] {
   return wlanProfileStore.get(ctx.ports)!;
 }
 
+const wlanConnectionStore = new WeakMap<Map<string, any>, string>();
+function getWlanConnection(ctx: WinCommandContext): string {
+  return wlanConnectionStore.get(ctx.ports) ?? '';
+}
+function setWlanConnection(ctx: WinCommandContext, ssid: string): void {
+  wlanConnectionStore.set(ctx.ports, ssid);
+}
+
 // ─── netsh winhttp ──────────────────────────────────────────────────
 
 const winhttpProxyStore = new WeakMap<Map<string, any>, string>();
@@ -3241,7 +3275,11 @@ function handleNetshWlan(ctx: WinCommandContext, args: string[]): string {
       lines.push('');
       return lines.join('\n');
     }
-    if (obj === 'interfaces') return `There is 1 interface on the system:\n\n    Name                   : Wi-Fi\n    Description            : Wireless LAN adapter\n    GUID                   : 00000000-0000-0000-0000-000000000001\n    Physical address       : 00-AA-BB-CC-DD-EE\n    State                  : connected\n`;
+    if (obj === 'interfaces') {
+      const ssid = getWlanConnection(ctx);
+      const ssidLines = ssid ? `    SSID                   : ${ssid}\n` : '';
+      return `There is 1 interface on the system:\n\n    Name                   : Wi-Fi\n    Description            : Wireless LAN adapter\n    GUID                   : 00000000-0000-0000-0000-000000000001\n    Physical address       : 00-AA-BB-CC-DD-EE\n    State                  : ${ssid ? 'connected' : 'disconnected'}\n${ssidLines}`;
+    }
     if (obj === 'networks') return `\nSSID 1 : TestWiFi\n    Network type       : Infrastructure\n    Authentication     : WPA2-Personal\n    Encryption         : CCMP\n`;
     return `Usage: netsh wlan show profiles|interfaces|networks|drivers|settings`;
   }
@@ -3275,6 +3313,7 @@ function handleNetshWlan(ctx: WinCommandContext, args: string[]): string {
       const idx = profiles.findIndex(p => p.name === name);
       if (idx < 0) return `Profile "${name}" is not found in the system.`;
       profiles.splice(idx, 1);
+      if (getWlanConnection(ctx).toLowerCase() === name.toLowerCase()) setWlanConnection(ctx, '');
       return `Profile "${name}" is deleted from interface Wi-Fi.`;
     }
     return NETSH_WLAN_HELP;
@@ -3282,12 +3321,17 @@ function handleNetshWlan(ctx: WinCommandContext, args: string[]): string {
 
   if (sub === 'connect') {
     const joined = args.slice(1).join(' ');
-    const nameMatch = joined.match(/name=(.+)/i);
+    const nameMatch = joined.match(/name=(.+?)(?:\s+(?:ssid|interface)=|$)/i);
     if (!nameMatch) return `Usage: netsh wlan connect name=<string> [interface=<string>]`;
+    const name = nameMatch[1].trim().replace(/^["']|["']$/g, '');
+    const profile = profiles.find(p => p.name.toLowerCase() === name.toLowerCase());
+    if (!profile) return `There is no profile assigned to the specified interface.`;
+    setWlanConnection(ctx, profile.ssid);
     return `Connection request was completed successfully.`;
   }
 
   if (sub === 'disconnect') {
+    setWlanConnection(ctx, '');
     return `Disconnection request was completed successfully.`;
   }
 

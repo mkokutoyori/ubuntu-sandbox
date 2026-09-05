@@ -31,10 +31,35 @@ export class PacketCapture {
 
   private readonly listeners = new Set<(entry: CapturedFrame) => void>();
 
+  private byteBudget: number | null = null;
+
+  private storedBytes = 0;
+
+  setByteBudget(bytes: number | null): void {
+    this.byteBudget = bytes !== null && bytes > 0 ? bytes : null;
+    this.trim();
+  }
+
+  storedByteCount(): number { return this.storedBytes; }
+
   record(entry: CapturedFrame): void {
     this.frames.push(entry);
-    while (this.frames.length > RING_CAPACITY) this.frames.shift();
+    this.storedBytes += frameBytes(entry.frame);
+    this.trim();
     for (const listener of [...this.listeners]) listener(entry);
+  }
+
+  private trim(): void {
+    while (this.frames.length > RING_CAPACITY) this.dropOldest();
+    while (this.byteBudget !== null && this.storedBytes > this.byteBudget
+      && this.frames.length > 0) {
+      this.dropOldest();
+    }
+  }
+
+  private dropOldest(): void {
+    const gone = this.frames.shift();
+    if (gone) this.storedBytes -= frameBytes(gone.frame);
   }
 
   observe(listener: (entry: CapturedFrame) => void): () => void {
@@ -44,6 +69,7 @@ export class PacketCapture {
 
   clear(): void {
     this.frames.length = 0;
+    this.storedBytes = 0;
   }
 
   count(): number {
@@ -138,3 +164,10 @@ export function icmpOf(packet: IPv4Packet): ICMPPacket | undefined {
   const payload = packet.payload as ICMPPacket | null | undefined;
   return payload?.type === 'icmp' ? payload : undefined;
 }
+
+function frameBytes(frame: EthernetFrame): number {
+  const payload = frame.payload as { totalLength?: number } | undefined;
+  return ETHERNET_HEADER_BYTES + (payload?.totalLength ?? 46);
+}
+
+const ETHERNET_HEADER_BYTES = 18;

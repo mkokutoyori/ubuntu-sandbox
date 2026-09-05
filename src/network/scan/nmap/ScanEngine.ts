@@ -1,6 +1,7 @@
 import type { NmapOptions, ScanType } from './NmapOptions';
 import { IPAddress } from '@/network/core/types';
 import type { TcpWireOutcome } from '@/network/tcp/types';
+import type { ScanProbeShape } from '@/network/tcp/TcpStack';
 import { topPorts, serviceName, DEFAULT_TOP_COUNT } from './ServiceRegistry';
 import type { ScanProbeFlags, ScanVerdict, StatelessScanKind } from './StatelessScans';
 import {
@@ -9,6 +10,7 @@ import {
 import {
   chooseTraceProbe, type HostTrace, type TraceCandidate, type TraceHop,
 } from './Traceroute';
+import { addrSetContains, enumerateTargets } from './TargetSpec';
 import {
   traceConnectLine, traceFrameLine, type TraceDirection,
 } from './PacketTrace';
@@ -87,8 +89,11 @@ export interface HostProbes {
    */
   statelessOutcome?(
     ip: string, port: number, kind: StatelessScanKind, flags?: ScanProbeFlags,
+    shape?: ScanProbeShape,
   ): ScanVerdict;
-  udpState(ip: string, port: number): 'open' | 'closed' | 'open|filtered';
+  udpState(
+    ip: string, port: number, shape?: ScanProbeShape,
+  ): 'open' | 'closed' | 'open|filtered';
   banner(ip: string, port: number): { service: string; version?: string } | null;
   /**
    * `Target::directlyConnected()` : une cible du meme segment est a une
@@ -143,6 +148,29 @@ export interface PortResult {
   reason: string;
 }
 
+/**
+ * Ce que `get_state_reason_summary` (`portreasons.cc:369`) rend : les
+ * ports replies regroupes par etat, puis par RAISON et par protocole.
+ * Garder la raison n'est pas un detail de XML — `output.cc:594` l'ecrit
+ * dans la ligne humaine aussi, et c'est la seule moitie qui diagnostique,
+ * un port muet et un port qui repond RST n'ayant pas la meme cause.
+ */
+export interface NotShownGroup {
+  state: PortState;
+  protocol: 'tcp' | 'udp';
+  reason: string;
+  ports: number[];
+}
+
+export interface NotShown {
+  count: number;
+  /**
+   * Les etats, du plus peuple au moins peuple, et dans chacun les raisons
+   * dans le meme ordre (`PortList::nextIgnoredState`, `reason_sort`).
+   */
+  groups: NotShownGroup[];
+}
+
 export interface HostReport {
   ip: string;
   hostname?: string;
@@ -157,7 +185,7 @@ export interface HostReport {
   /** Le TTL de la reponse de decouverte, ce que `--reason` ecrit apres elle. */
   replyTtl?: number;
   ports: PortResult[];
-  notShown?: { count: number; states: Partial<Record<PortState, number>> };
+  notShown?: NotShown;
   /** Ce que `--traceroute` a releve, quand il a ete demande. */
   trace?: HostTrace;
 }
@@ -175,35 +203,32 @@ export interface NmapReport {
 }
 
 const COLLAPSE_THRESHOLD = 24;
-const MAX_CIDR_HOSTS = 1024;
 
-export function enumerateTargets(target: string): string[] {
-  const slash = target.indexOf('/');
-  if (slash < 0) return [target];
-
-  const base = target.slice(0, slash);
-  const prefix = Number(target.slice(slash + 1));
-  const octets = base.split('.').map(Number);
-  if (octets.length !== 4 || octets.some((o) => !Number.isInteger(o) || o < 0 || o > 255)) {
-    return [target];
-  }
-  if (!Number.isInteger(prefix) || prefix < 0 || prefix > 32) return [target];
-
-  const count = 2 ** (32 - prefix);
-  if (count > MAX_CIDR_HOSTS) return [target];
-
-  const baseInt = ((octets[0] << 24) | (octets[1] << 16) | (octets[2] << 8) | octets[3]) >>> 0;
-  const network = prefix === 0 ? 0 : (baseInt & (0xffffffff << (32 - prefix))) >>> 0;
-  const out: string[] = [];
-  for (let i = 0; i < count; i++) {
-    const addr = (network + i) >>> 0;
-    out.push([addr >>> 24, (addr >>> 16) & 255, (addr >>> 8) & 255, addr & 255].join('.'));
-  }
-  return out;
+export function effectivePorts(options: NmapOptions): number[] {
+  return options.ports ?? topPorts(DEFAULT_TOP_COUNT);
 }
 
-function effectivePorts(options: NmapOptions): number[] {
-  return options.ports ?? topPorts(DEFAULT_TOP_COUNT);
+/**
+ * `scan_engine_raw.cc:1218` : la boucle d'emission construit UNE sonde
+ * par leurre, chacune avec SA source, et seule celle de rang `decoyturn`
+ * est suivie. C'est ce qui fait qu'un balayage a leurres garde un
+ * resultat JUSTE tout en noyant l'origine — une sonde partie d'une
+ * adresse forgee ne peut rien recevoir, donc son verdict ne veut rien
+ * dire et il est jete.
+ */
+function withDecoys<T>(
+  options: NmapOptions, emit: (shape: ScanProbeShape | undefined) => T,
+): T {
+  if (!options.decoys) return emit(options.probeShape);
+  let real: T | undefined;
+  for (const decoy of options.decoys) {
+    const shape = decoy.kind === 'me'
+      ? options.probeShape
+      : { ...options.probeShape, sourceIp: decoy.ip };
+    const verdict = emit(shape);
+    if (decoy.kind === 'me') real = verdict;
+  }
+  return real as T;
 }
 
 function tcpResult(
@@ -212,7 +237,9 @@ function tcpResult(
 ): PortResult {
   const kind = statelessKindOf(options.scanType);
   const stateless = kind && probes.statelessOutcome
-    ? probes.statelessOutcome(ip, port, kind, options.scanFlags) : null;
+    ? withDecoys(options, (shape) =>
+      probes.statelessOutcome!(ip, port, kind, options.scanFlags, shape))
+    : null;
   let state: PortState;
   let reason: string;
   if (stateless) {
@@ -245,7 +272,7 @@ function tcpResult(
 function udpResult(
   options: NmapOptions, probes: HostProbes, ip: string, port: number,
 ): PortResult {
-  const state = probes.udpState(ip, port);
+  const state = probes.udpState(ip, port, options.probeShape);
   const reason = state === 'open' ? 'udp-response' : state === 'closed' ? 'port-unreach' : 'no-response';
   let service = serviceName(port, 'udp');
   let version: string | undefined;
@@ -273,14 +300,22 @@ function partition(options: NmapOptions, all: PortResult[]): Pick<HostReport, 'p
   const ports = all.filter((p) => !collapsed.has(p.state));
   if (collapsed.size === 0) return { ports };
 
-  const states: Partial<Record<PortState, number>> = {};
-  let total = 0;
-  for (const state of collapsed) {
-    const n = byState.get(state) ?? 0;
-    states[state] = n;
-    total += n;
+  const hidden = all.filter((p) => collapsed.has(p.state));
+  const byGroup = new Map<string, NotShownGroup>();
+  for (const p of hidden) {
+    const key = `${p.state}|${p.protocol}|${p.reason}`;
+    const group = byGroup.get(key);
+    if (group) group.ports.push(p.port);
+    else {
+      byGroup.set(key,
+        { state: p.state, protocol: p.protocol, reason: p.reason, ports: [p.port] });
+    }
   }
-  return { ports, notShown: { count: total, states } };
+  const groups = [...byGroup.values()].sort((a, b) => {
+    const byStateCount = (byState.get(b.state) ?? 0) - (byState.get(a.state) ?? 0);
+    return byStateCount !== 0 ? byStateCount : b.ports.length - a.ports.length;
+  });
+  return { ports, notShown: { count: hidden.length, groups } };
 }
 
 /**
@@ -479,6 +514,7 @@ export async function scan(
 
   for (const target of options.targets) {
     for (const address of enumerateTargets(target)) {
+      if (options.excluded && addrSetContains(options.excluded, address)) continue;
       const report = await scanHost(options, probes, address, phases, hopCache, trace)
         ?? (target === address && isIpLiteral(address)
           ? { ip: address, up: false, latencyMs: 0, downReason: 'no-response', ports: [] }

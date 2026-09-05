@@ -86,6 +86,9 @@ export interface CryptoMapEntry {
   peerHostname?: string;
   /** Huawei `ike-peer NAME` — named peer whose remote-address feeds `peers`. */
   ikePeerName?: string;
+  localIdentity?: string;
+  acceptedPeerIdentities?: readonly string[];
+  requirePeerIdentity?: boolean;
   trafficSelectors?: SATrafficSelector;
 }
 

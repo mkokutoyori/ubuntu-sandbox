@@ -25,7 +25,7 @@
 import type { WinCommandContext } from './WinCommandExecutor';
 import { dhcpEnabledFor } from './WinAdapterFacts';
 import { requireWindowsService } from './WinFeatureGate';
-import { renderDisplayDns } from './WinDnsCache';
+import { dnsCacheRowsOf, renderDisplayDns } from './dnsClientCache';
 import { adapterDisplayName, adapterNameMatches } from './netAdapter';
 
 const IPCONFIG_HELP = `
@@ -112,7 +112,7 @@ export function cmdIpconfig(ctx: WinCommandContext, args: string[]): string {
     return 'Windows IP Configuration\n\nSuccessfully flushed the DNS Resolver Cache.';
   }
   if (restLower.includes('/displaydns')) {
-    return renderDisplayDns(ctx.dnsCache);
+    return renderDisplayDns(dnsCacheRowsOf(ctx.dnsCache.entries()));
   }
   if (restLower.includes('/registerdns')) {
     return 'Windows IP Configuration\n\nRegistration of the DNS resource records for all adapters of this computer\nhas been initiated. Any errors will be reported in the Event Viewer in 15 minutes.';
@@ -178,7 +178,7 @@ function ipconfigAll(ctx: WinCommandContext): string {
   for (const [name, port] of ctx.ports) {
     const ip = port.getIPAddress();
     const mask = port.getSubnetMask();
-    const mac = port.getMAC().toString().replace(/:/g, '-').toUpperCase();
+    const mac = port.getMAC().toWindowsString();
     const displayName = adapterDisplayName(name, ctx.ports);
     const isDHCP = ctx.isDHCPConfigured(name);
     const global6 = port.getGlobalIPv6();

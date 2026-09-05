@@ -34,6 +34,7 @@ import { computeTcpChecksum, isDialFailure } from '../tcp/types';
 import {
   computeUdpChecksum, verifyUdpChecksum, stampUdpChecksum,
 } from '@/network/layers/transport/UdpChecksum';
+import { bogusChecksum } from '@/network/layers/transport/L4Checksum';
 import { dialTcp, parseDialAddress, type DialAddress } from '../tcp/dial';
 import { PortNumber } from '../core/ports/PortNumber';
 import { TimerSet } from '@/events/TimerSet';
@@ -73,7 +74,7 @@ import {
   type Ipv4SendRequest,
 } from '../layers/internet/Ipv4Egress';
 import { selectIpv6SourceAddress } from '../layers/internet/Ipv6Egress';
-import type { UdpSendRequest } from '../layers/transport/UdpEgress';
+import type { UdpEmissionOptions, UdpSendRequest } from '../layers/transport/UdpEgress';
 import { Logger } from '../core/Logger';
 import { PacketQueue } from '../core/PacketQueue';
 import {
@@ -2889,7 +2890,7 @@ export abstract class EndHost extends Equipment {
     sourcePort: number,
     payload: unknown,
     payloadBytes?: number,
-    options?: { df?: boolean; iface?: string },
+    options?: UdpEmissionOptions,
   ): boolean;
   public sendUdpDatagram(
     first: IPAddress | UdpSendRequest,
@@ -2897,13 +2898,17 @@ export abstract class EndHost extends Equipment {
     source?: number,
     body?: unknown,
     bytes: number = 0,
-    opts: { df?: boolean; iface?: string } = {},
+    opts: UdpEmissionOptions = {},
   ): boolean {
     if (!(first instanceof IPAddress)) {
+      // `UdpSendRequest.ttl` etait declare et JETE sur ce chemin, alors
+      // que `buildUdpOverIpv4` — l'autre implantation de la meme offre —
+      // l'honore : deux ecritures d'un meme envoi, dont une seule lisait
+      // le champ.
       return this.emitUdpDatagram(
         first.destination, first.destinationPort, first.sourcePort,
         first.payload, first.payloadBytes,
-        first.iface === undefined ? {} : { iface: first.iface });
+        { iface: first.iface, ttl: first.ttl });
     }
     return this.emitUdpDatagram(first, port as number, source as number, body, bytes, opts);
   }
@@ -2914,7 +2919,7 @@ export abstract class EndHost extends Equipment {
     sourcePort: number,
     payload: unknown,
     payloadBytes: number = 0,
-    options: { df?: boolean; iface?: string } = {},
+    options: UdpEmissionOptions = {},
   ): boolean {
     // OUTPUT: nat OUTPUT-chain DNAT/REDIRECT applies to this host's own
     // outbound traffic before the loopback/local-delivery decision below,
@@ -2972,15 +2977,17 @@ export abstract class EndHost extends Equipment {
 
     const route = this.resolveRoute(destinationIP);
     if (!route) return false;
-    const srcIP = route.port.getIPAddress();
+    const srcIP = options.sourceIp ?? route.port.getIPAddress();
     if (!srcIP) return false;
 
+    const sum = computeUdpChecksum(udpBase, srcIP.toString(), destinationIP.toString());
     const udp: UDPPacket = {
       ...udpBase,
-      checksum: computeUdpChecksum(udpBase, srcIP.toString(), destinationIP.toString()),
+      checksum: options.badChecksum ? bogusChecksum(sum, IP_PROTO_UDP) : sum,
     };
     const ipPkt = createIPv4Packet(
-      srcIP, destinationIP, IP_PROTO_UDP, this.defaultTTL, udp, udp.length, { flags },
+      srcIP, destinationIP, IP_PROTO_UDP, options.ttl ?? this.defaultTTL,
+      udp, udp.length, { flags },
     );
 
     const outPortName = route.port.getName();
@@ -4413,6 +4420,21 @@ export abstract class EndHost extends Equipment {
 
   getNeighborCache(): Map<string, NeighborCacheEntry> {
     return this.neighborCache.snapshot();
+  }
+
+  addStaticNeighbor6(ip: IPv6Address, mac: MACAddress, iface: string): void {
+    this.neighborCache.setStatic(ip.toString(), mac, iface);
+  }
+
+  removeNeighbor6(ip: IPv6Address): boolean {
+    return this.neighborCache.remove(ip.toString());
+  }
+
+  clearNeighbors6(iface?: string): void {
+    if (iface === undefined) { this.neighborCache.clear(); return; }
+    for (const [ip, entry] of this.neighborCache.snapshot()) {
+      if (entry.iface === iface) this.neighborCache.remove(ip);
+    }
   }
 
   // ─── IPv6 Packet Handling ──────────────────────────────────────

@@ -32,7 +32,7 @@
  *     devait pas casser.
  */
 import { describe, it, expect, beforeEach } from 'vitest';
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { resetCounters, MACAddress } from '@/network/core/types';
 import { WindowsPC } from '@/network/devices/WindowsPC';
 import { CiscoRouter } from '@/network/devices/CiscoRouter';
@@ -197,8 +197,7 @@ describe('New-NetIPAddress — ce qu elle rend et ce qu elle retient', () => {
 
 describe('New-NetIPAddress — une seule source de verite', () => {
   it('le moteur historique ne porte plus de New-NetIPAddress a lui', () => {
-    const legacy = readFileSync('src/network/devices/windows/PSNetCmdlets.ts', 'utf8');
-    expect(legacy).not.toContain('handleNewNetIPAddress');
+    expect(existsSync('src/network/devices/windows/PSNetCmdlets.ts')).toBe(false);
     const executor = readFileSync('src/network/devices/windows/PowerShellExecutor.ts', 'utf8');
     expect(executor).not.toContain('handleNewNetIPAddress');
   });

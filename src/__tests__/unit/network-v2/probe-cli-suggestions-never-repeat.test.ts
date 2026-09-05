@@ -383,8 +383,12 @@ describe('Tab lit la même règle que `?`', () => {
     const cli = r as unknown as TabCli;
     expect(tabWords(cli, 'tacacs s')).toContain('server');
     expect(tabWords(cli, 'tacacs server s')).not.toContain('server');
-    expect(tabWords(cli, 'tacacs-server host k')).toContain('key');
-    expect(tabWords(cli, 'tacacs-server host key k')).not.toContain('key');
+    // L'option se complete APRES l'adresse, jamais a sa place : la
+    // premisse d'origine placait `key` au rang de l'adresse, ou la
+    // machine n'accepte qu'un `A.B.C.D` — le cas voisin l'exige deja.
+    expect(tabWords(cli, 'tacacs-server host 1.1.1.1 k')).toContain('key');
+    expect(tabWords(cli, 'tacacs-server host 1.1.1.1 key SEC k'))
+      .not.toContain('key');
   }, 30_000);
 
   it('un sélecteur de protocole ne se recomplète pas après la cible', async () => {

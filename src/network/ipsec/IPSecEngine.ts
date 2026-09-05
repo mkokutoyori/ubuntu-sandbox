@@ -1106,6 +1106,15 @@ export class IPSecEngine implements IProtocolEngine {
     this.isakmpProfiles.delete(name);
   }
 
+  private peerIdentityAccepted(
+    entry: CryptoMapEntry, identity: string, srcIp: string,
+  ): boolean {
+    const accepted = entry.acceptedPeerIdentities;
+    if (!accepted) return true;
+    if (identity === srcIp && entry.requirePeerIdentity !== true) return true;
+    return accepted.includes(identity);
+  }
+
   setIsakmpIdentity(identity: string): void {
     this.isakmpIdentity = identity;
   }
@@ -3510,10 +3519,11 @@ export class IPSecEngine implements IProtocolEngine {
       : this.findISAKMPPSK(entry, peerIP, ...this.hostnamesFor(peerIP));
     const profile = version === 1 && entry.isakmpProfileName
       ? this.isakmpProfiles.get(entry.isakmpProfileName) : undefined;
-    const identity = version === 1
-      ? (this.resolveSelfIdentity(profile?.selfIdentity)
-        ?? (this.isakmpIdentity === 'hostname' ? this.router._getHostnameInternal() : apparentSrcIP))
-      : apparentSrcIP;
+    const identity = entry.localIdentity
+      ?? (version === 1
+        ? (this.resolveSelfIdentity(profile?.selfIdentity)
+          ?? (this.isakmpIdentity === 'hostname' ? this.router._getHostnameInternal() : apparentSrcIP))
+        : apparentSrcIP);
     const wantedGroup = this.preferredDhGroup(version, policies, ikev2Proposals);
     const exchange = wantedGroup === null ? null : generateIkeKeyShare(wantedGroup);
     if (wantedGroup !== null && !exchange) {
@@ -3706,6 +3716,11 @@ export class IPSecEngine implements IProtocolEngine {
       }
     }
     const peerEntry = this.findEntryForPeer(offer.identity, null) || this.findEntryForPeer(srcIp, null);
+    if (peerEntry && !this.peerIdentityAccepted(peerEntry, offer.identity, srcIp)) {
+      this.rejectIke(srcIp, 'Peer ID mismatch');
+      if (!isV2) this.createFailedIKESA(srcIp, '', 'Peer ID mismatch');
+      return;
+    }
     const myPSK = usingCert
       ? 'cert-auth-key'
       : (isV2

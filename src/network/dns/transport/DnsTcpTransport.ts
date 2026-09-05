@@ -43,8 +43,12 @@ export function unbindDnsTcpServer(host: EndHost, port: number = DNS_PORT, addre
   host.getTcpStack().closeListener(port, address);
 }
 
+export interface DnsTcpClient {
+  tcpConnect(destination: string, port: number): Promise<TcpSocket | null>;
+}
+
 export async function queryDnsOverTcp(
-  host: EndHost,
+  host: DnsTcpClient,
   serverIP: IPAddress | IPv6Address,
   query: DnsMessage,
   port: number = DNS_PORT,

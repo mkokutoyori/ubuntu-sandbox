@@ -21,10 +21,17 @@ import { PSParser } from '@/powershell/parser/PSParser';
 import { PS_OPERATOR_PARAMS } from '@/powershell/lexer/PSToken';
 import { PSEnvironment, PSValue, seedBuiltins } from '@/powershell/runtime/PSEnvironment';
 import { expandString, psValueToString } from '@/powershell/runtime/PSExpansion';
+import {
+  type ProcessPolicyPort, PROCESS_POLICY_VARIABLE,
+  effectiveExecutionPolicy, scriptRefusal,
+} from '@/powershell/executionPolicy';
 import { makeTimeSpan } from '@/powershell/cmdlets/core/DateTimeCmdlets';
 import { formatDotNetDate } from '@/powershell/runtime/dotnetDateFormat';
 import { CmdletRegistry } from '@/powershell/runtime/PSCmdletRegistry';
 import { NULL_PROVIDERS } from '@/powershell/providers/NullProviders';
+import { PSRuntimeError } from './PSRuntimeError';
+import { commandNotFoundMessage } from '@/powershell/commandNotFound';
+import { NativeCommandNeedsAsync, nativeArgv, isNativeProgramName } from '@/powershell/nativeAsync';
 import { formatDefault, type PSObject } from '@/network/devices/windows/PSPipeline';
 import type { PSProviders } from '@/powershell/providers/PSProviders';
 import type { CmdletContext, IRuntimeRef } from '@/powershell/cmdlets/CmdletContext';
@@ -58,10 +65,7 @@ export class BreakSignal    { constructor(public readonly label?: string) {} }
 /** Thrown by continue statements inside loops. Carries optional label for labeled loops. */
 export class ContinueSignal { constructor(public readonly label?: string) {} }
 
-/** Runtime error (unrecognised cmdlet, type mismatch, etc.). */
-export class PSRuntimeError extends Error {
-  constructor(message: string) { super(message); this.name = 'PSRuntimeError'; }
-}
+export { PSRuntimeError } from './PSRuntimeError';
 
 // ─── Static type map ([math], [system.math]) ─────────────────────────────────
 
@@ -426,6 +430,26 @@ export class PSRuntime {
   /** Optional hook for Test-Path resolution (set by the host shell). */
   envVarHook: ((name: string) => string | null) | null = null;
 
+  historyHook: (() => readonly string[]) | null = null;
+
+  listHistory(): readonly string[] {
+    return this.historyHook?.() ?? [];
+  }
+
+  private scriptPolicyRefusal(path: string): string | null {
+    const port: ProcessPolicyPort = {
+      read: () => {
+        const v = this.global.get(PROCESS_POLICY_VARIABLE);
+        return v === undefined || v === null || v === '' ? null : String(v);
+      },
+      write: (value: string | null) => {
+        this.global.set(PROCESS_POLICY_VARIABLE, value === null ? '' : value);
+      },
+    };
+    const { policy } = effectiveExecutionPolicy(this.providers, port);
+    return scriptRefusal(policy, path);
+  }
+
   constructor(
     registry: CmdletRegistry,
     providers: PSProviders = NULL_PROVIDERS,
@@ -446,6 +470,7 @@ export class PSRuntime {
         hkcu:     { Name: 'HKCU',     Root: 'HKCU:\\', Used: 0, Free: 0 },
       } as Record<string, PSValue>);
     }
+    this.seedVersionTableFromRegistry();
   }
 
   /** Register a script file's content for dot-sourcing simulation. */
@@ -683,7 +708,9 @@ export class PSRuntime {
     return last;
   }
 
-  getVariable(name: string): PSValue { return this.global.get(name); }
+  getVariable(name: string): PSValue {
+    return this.locationVariable(name) ?? this.global.get(name);
+  }
   setVariable(name: string, value: PSValue): void { this.global.set(name, value); }
 
   // ── Program / StatementList ────────────────────────────────────────────────
@@ -1204,6 +1231,10 @@ export class PSRuntime {
     return node.value as PSValue;
   }
 
+  expandInterpolation(raw: string): string {
+    return this.expandDoubleQuotedString(raw, this.global);
+  }
+
   private expandDoubleQuotedString(raw: string, env: PSEnvironment): string {
     return expandString(
       raw,
@@ -1245,8 +1276,36 @@ export class PSRuntime {
     return env.get(varName) ?? null;
   }
 
+  private seedVersionTableFromRegistry(): void {
+    const values = this.providers.registry?.getItemPropertyValues?.(
+      'HKLM:\\SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion');
+    if (!values) return;
+    const table = this.global.get('PSVersionTable') as Record<string, PSValue> | undefined;
+    if (!table) return;
+    const currentVersion = String(values['CurrentVersion'] ?? '10.0');
+    const build = String(values['CurrentBuildNumber'] ?? '');
+    if (!build) return;
+    table['BuildVersion'] = `${currentVersion}.${build}.1`;
+  }
+
+  private locationVariable(name: string): PSValue | undefined {
+    const fs = this.providers.filesystem;
+    if (!fs) return undefined;
+    const lower = name.toLowerCase();
+    if (lower !== 'pwd' && lower !== 'executioncontext') return undefined;
+    const cwd = fs.getCwd();
+    const location = { Path: cwd, ProviderPath: cwd, Provider: 'FileSystem' } as Record<string, PSValue>;
+    if (lower === 'pwd') return location;
+    return { SessionState: { Path: { CurrentLocation: location } } } as unknown as PSValue;
+  }
+
   private evalVariable(node: PSVariableExpression, env: PSEnvironment): PSValue {
     const name = node.varName ?? node.name;
+
+    if (node.scope !== 'env') {
+      const derived = this.locationVariable(name);
+      if (derived !== undefined) return derived;
+    }
 
     if (node.scope === 'global') return env.getGlobal(name);
     if (node.scope === 'script') return env.getGlobal(name);
@@ -2023,6 +2082,8 @@ export class PSRuntime {
           catch { /* no such file */ }
         }
         if (scriptContent) {
+          const refusal = this.scriptPolicyRefusal(rawName);
+          if (refusal) throw new PSRuntimeError(refusal);
           const ast = this.parseCached(scriptContent);
           // Dot-source binds param() in the caller scope (no child env) so
           // `. script.ps1 -X foo` leaves $X visible to subsequent statements.
@@ -2054,6 +2115,8 @@ export class PSRuntime {
         try { scriptContent = this.providers.filesystem.readFile(psValueToString(target ?? '')); }
         catch { scriptContent = undefined; }
         if (scriptContent) {
+          const refusal = this.scriptPolicyRefusal(rawName);
+          if (refusal) throw new PSRuntimeError(refusal);
           const ast = this.parseCached(scriptContent);
           const block: PSScriptBlock = {
             type: 'ScriptBlock',
@@ -2082,6 +2145,8 @@ export class PSRuntime {
       try { scriptContent = this.providers.filesystem.readFile(rawName); }
       catch { scriptContent = undefined; }
       if (scriptContent) {
+        const refusal = this.scriptPolicyRefusal(rawName);
+        if (refusal) throw new PSRuntimeError(refusal);
         const ast = this.parseCached(scriptContent);
         const block: PSScriptBlock = {
           type: 'ScriptBlock',
@@ -2424,12 +2489,17 @@ export class PSRuntime {
     if (!cmdlet) {
       this.global.set('?', false);
       if (errorVarName) {
-        const errObj = { Exception: { Message: `The term '${name}' is not recognized` }, CategoryInfo: {} } as Record<string, PSValue>;
+        const errObj = { Exception: { Message: commandNotFoundMessage(name) }, CategoryInfo: {} } as Record<string, PSValue>;
         this.global.set(errorVarName, errObj);
       }
       if (silentlyCont) return null;
-      throw new PSRuntimeError(
-        `The term '${name}' is not recognized as a cmdlet, function, script file, or operable program.`);
+      if (!isNativeProgramName(name)) throw new PSRuntimeError(commandNotFoundMessage(name));
+      throw new NativeCommandNeedsAsync(name, nativeArgv(positional, cmdletNamed));
+    }
+
+    if (cmdletNamed['?'] === true) {
+      return this.dispatchCmdlet(
+        'get-help', [cmdlet.displayName ?? this.titleCase(cmdlet.name)], {}, null, env);
     }
 
     const emittedValues: PSValue[] = [];
@@ -2521,6 +2591,7 @@ export class PSRuntime {
         })),
       listEnvVars: () => self.providers.environment?.list() ?? [],
       getFunctionSource: (name) => self.functionSources.get(name.toLowerCase()) ?? null,
+      listHistory: () => self.listHistory(),
     };
 
     return {

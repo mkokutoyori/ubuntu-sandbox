@@ -262,9 +262,9 @@ describe('Group 3: PS cmdlets produce different format than CMD equivalents', ()
 
   it('PSC-16: Get-NetIPAddress has PS object format', async () => {
     const pc = createConfiguredPC();
-    const ps = createPSExecutor(pc);
+    const ps = createLivePS(pc);
 
-    const psOutput = await ps.execute('Get-NetIPAddress');
+    const psOutput = await ps.execute('Get-NetIPAddress | Format-List');
 
     expect(psOutput).toContain('IPAddress');
     expect(psOutput).toContain('InterfaceIndex');

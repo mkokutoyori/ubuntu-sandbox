@@ -23,7 +23,9 @@ beforeEach(() => {
 function createShell(): PowerShellSubShell {
   const pc = new WindowsPC('windows-pc', 'WIN-SCR');
   pc.setCurrentUser('Administrator');
-  return PowerShellSubShell.create(pc).subShell;
+  const sub = PowerShellSubShell.create(pc).subShell;
+  void sub.processLine('Set-ExecutionPolicy Bypass -Scope CurrentUser');
+  return sub;
 }
 async function run(sh: PowerShellSubShell, line: string): Promise<string> {
   const r = await sh.processLine(line);

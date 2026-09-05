@@ -31,10 +31,10 @@ import {
 } from './windows/netAdapter';
 import { NtpAgent, type NtpHost } from '../ntp/NtpAgent';
 import { W32TimeService } from './windows/W32TimeService';
-import { WindowsDnsCache } from './windows/WinDnsCache';
+import { DnsCache } from '../dns/resolver/DnsCache';
 import { RRType } from '../dns/wire/RRType';
 import type { ARecordData, PtrRecordData } from '../dns/wire/ResourceRecord';
-import { ptrQName } from '../dns/compat/DnsWireCompat';
+import { ptrQName, resourceRecordToLegacyRecord } from '../dns/compat/DnsWireCompat';
 import type { UserAccountHost } from '../equipment/HostCapabilities';
 import { Port } from '../hardware/Port';
 import { IPAddress, IPv6Address, SubnetMask, DeviceType, type IPv4Packet, type TCPPacket, IP_PROTO_TCP, IP_PROTO_UDP, IP_PROTO_ICMP, createIPv4Packet } from '../core/types';
@@ -295,7 +295,7 @@ export class WindowsPC extends EndHost implements UserAccountHost {
   private dhcpClassIds: Map<string, string> = new Map();
   /** Per-interface DHCPv6 class id, set via `ipconfig /setclassid6`. */
   private dhcpClassIds6: Map<string, string> = new Map();
-  readonly dnsCache = new WindowsDnsCache();
+  readonly dnsCache = new DnsCache();
   /** DHCP client trace flag */
   private dhcpTraceEnabled: boolean = false;
   /** Primary DNS suffix (set via netsh dnsclient set global) */
@@ -1102,10 +1102,20 @@ export class WindowsPC extends EndHost implements UserAccountHost {
    * y ajoute l'interrogation PTR. Une seule ecriture derriere les trois
    * appelants, sans quoi cette machine nommerait un poste ici et pas la.
    */
+  private dnsCacheValue(qname: string, qtype: number): string | null {
+    const hit = this.dnsCache.lookup(qname, qtype);
+    if (hit.kind !== 'hit') return null;
+    for (const rr of hit.records) {
+      const legacy = resourceRecordToLegacyRecord(rr);
+      if (legacy) return legacy.value;
+    }
+    return null;
+  }
+
   resolveAddressName(ip: string): string | null {
     const fromHosts = this.readHostsFile().reverse(ip)?.canonicalName;
     if (fromHosts) return fromHosts;
-    return this.dnsCache.lookup(ptrQName(ip), 'PTR');
+    return this.dnsCacheValue(ptrQName(ip), RRType.PTR);
   }
 
   /** La meme question, avec le droit d'interroger un serveur DNS. */
@@ -1123,7 +1133,7 @@ export class WindowsPC extends EndHost implements UserAccountHost {
         catch { continue; }
         const ptr = response?.answers.find((rr) => rr.data.type === RRType.PTR);
         if (ptr) {
-          this.dnsCache.store(arpa, response!.answers);
+          this.dnsCache.storePositive(response!.answers, arpa);
           return (ptr.data as PtrRecordData).ptrdname;
         }
       }
@@ -2363,9 +2373,9 @@ export class WindowsPC extends EndHost implements UserAccountHost {
   private cacheLinkLocalAnswer(name: string, addresses: readonly string[]): void {
     if (addresses.length === 0) return;
     const ttl = this.isMdnsName(name) ? MDNS_RECORD_TTL : LLMNR_RECORD_TTL;
-    this.dnsCache.store(name, addresses.map((ip) => ({
+    this.dnsCache.storePositive(addresses.map((ip) => ({
       name, ttl, rrClass: 1, data: { type: RRType.A, address: new IPAddress(ip) },
-    })));
+    })), name);
   }
 
   /**
@@ -2392,7 +2402,7 @@ export class WindowsPC extends EndHost implements UserAccountHost {
 
     // 4. Resolver cache, then DNS over the wire via every effective server.
     for (const qname of this.dnsSearchCandidates(name)) {
-      const cached = this.dnsCache.lookup(qname, 'A');
+      const cached = this.dnsCacheValue(qname, RRType.A);
       if (cached) {
         try { return new IPAddress(cached); } catch { void 0; }
       }
@@ -2402,7 +2412,7 @@ export class WindowsPC extends EndHost implements UserAccountHost {
         const response = await this.queryDnsServer(server, qname, 'A');
         const aRecords = response?.answers.filter((rr) => rr.data.type === RRType.A) ?? [];
         if (aRecords.length > 0) {
-          this.dnsCache.store(qname, response!.answers);
+          this.dnsCache.storePositive(response!.answers, qname);
           return (aRecords[0].data as ARecordData).address;
         }
       }
@@ -2432,7 +2442,7 @@ export class WindowsPC extends EndHost implements UserAccountHost {
     }
     if (!linkOnly) {
       for (const qname of this.dnsSearchCandidates(name)) {
-        const cached = this.dnsCache.lookup(qname, 'A');
+        const cached = this.dnsCacheValue(qname, RRType.A);
         if (cached) return [cached];
       }
     }
@@ -2442,7 +2452,7 @@ export class WindowsPC extends EndHost implements UserAccountHost {
         const response = this.queryDnsServerSync(server, qname, 'A');
         const aRecords = response?.answers.filter((rr) => rr.data.type === RRType.A) ?? [];
         if (aRecords.length > 0) {
-          this.dnsCache.store(qname, response!.answers);
+          this.dnsCache.storePositive(response!.answers, qname);
           return aRecords.map((rr) => (rr.data as ARecordData).address.toString());
         }
       }
@@ -3218,6 +3228,7 @@ export class WindowsPC extends EndHost implements UserAccountHost {
       get defaultGateway() { return host.defaultGateway?.toString() || null; },
       get defaultGateway6() { return host.getDefaultGateway6()?.toString() || null; },
       arpTable: this.arpTable,
+      getNeighborCache: () => this.getNeighborCache(),
 
       configureInterface: (ifName: string, ip: IPAddress, mask: SubnetMask) =>
         this.configureInterface(ifName, ip, mask),
@@ -3848,7 +3859,10 @@ export class WindowsPC extends EndHost implements UserAccountHost {
   private scanHost(): ScanHost {
     return {
       device: this,
-      readFile: (p) => { const r = this.fs.readFile(p); return r.ok ? r.content : null; },
+      readFile: (p) => {
+        const r = this.fs.readFile(this.fs.normalizePath(p, this.cwd));
+        return r.ok ? r.content : null;
+      },
       ping: (ip, timeoutMs) => (ip.includes(':')
         ? this.executePing6Sequence(new IPv6Address(ip), 1, timeoutMs)
         : this.executePingSequence(new IPAddress(ip), 1, timeoutMs)),
@@ -3856,9 +3870,14 @@ export class WindowsPC extends EndHost implements UserAccountHost {
         ? this.tcpConnectOutcome6(new IPv6Address(ip), port)
         : this.tcpConnectOutcome(new IPAddress(ip), port)),
       grabGreeting: (ip, port) => this.getTcpStack().grabGreeting(ip, port),
-      sendUdpProbe: (ip, port, sourcePort) =>
-        this.sendUdpDatagram(new IPAddress(ip), port, sourcePort, null, 0),
-      scanProbe: (ip, port, flags) => this.getTcpStack().scanProbe(ip, port, flags),
+      sendUdpProbe: (ip, port, sourcePort, options) => {
+        const { payload, ...emission } = options ?? {};
+        return this.sendUdpDatagram(
+          new IPAddress(ip), port, sourcePort, payload ?? null,
+          payload?.length ?? 0, emission);
+      },
+      scanProbe: (ip, port, flags, shape) =>
+        this.getTcpStack().scanProbe(ip, port, flags, shape),
       linkNeighbour: (ip) => linkNeighbourOf(this, ip),
       reverseName: (ip) => this.resolveAddressNameAsync(ip),
       resolveName: async (name) => (await this.resolveHostname(name))?.toString() ?? null,
@@ -3876,6 +3895,10 @@ export class WindowsPC extends EndHost implements UserAccountHost {
     if (result.outputGreppablePath && result.greppable !== null) {
       this.fs.createFile(
         this.fs.normalizePath(result.outputGreppablePath, this.cwd), result.greppable + '\n');
+    }
+    if (result.outputXmlPath && result.xml !== null) {
+      this.fs.createFile(
+        this.fs.normalizePath(result.outputXmlPath, this.cwd), result.xml + '\n');
     }
     return result.output;
   }

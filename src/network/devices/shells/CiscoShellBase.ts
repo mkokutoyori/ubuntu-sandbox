@@ -75,6 +75,7 @@ import type { Router } from '../Router';
 import { ipGlobalSpecs, type IpGlobalHost } from './cisco/ipGlobalSpecs';
 import { bgpFilterListSpecs, type FilterListHost } from './cisco/filterListSpecs';
 import { globalHeadSpecs, type GlobalHeadHost } from './cisco/globalHeadSpecs';
+import { aaaServerSpecs, type AaaServerHost } from './cisco/aaaServerSpecs';
 import { cryptoKeySpecs, type CryptoKeyHost } from './cisco/cryptoKeySpecs';
 import { clearLineSpecs, type ClearRestantsHost } from './cisco/clearRestantsSpecs';
 import {
@@ -5683,12 +5684,32 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
 
   protected onVrfRemoved(_name: string): void { /* rien de plus par defaut */ }
 
+  /*
+   * La SELECTION passe par le meme contexte que les sous-modes lisent.
+   * Le routeur porte `setRadiusServer` sur le shell, le commutateur sur
+   * un objet de contexte : viser le shell des deux cotes ouvrait le
+   * sous-mode du commutateur sans lui dire de QUEL serveur il parle, et
+   * `address ipv4` y retombait alors dans le vide.
+   */
+  protected aaaServerHost(): AaaServerHost {
+    return {
+      security: () => getSecurityConfig(this.d()),
+      selectRadiusServer: (name) => {
+        this.identitySubmodeContext()?.setRadiusServer?.(name);
+      },
+      selectTacacsServer: (name) => {
+        this.identitySubmodeContext()?.setTacacsServer?.(name);
+      },
+    };
+  }
+
   protected socleSpecs(): readonly CommandSpec[] {
     return [
       ...TIME_RANGE_FAMILY,
       ...ipGlobalSpecs(() => this.ipGlobalHost()),
       ...bgpFilterListSpecs(() => this.filterListHost()),
       ...globalHeadSpecs(() => this.globalHeadHost()),
+      ...aaaServerSpecs(() => this.aaaServerHost()),
       ...vrfDeclarationSpecs(() => this.vrfDeclarationHost()),
       ...cryptoKeySpecs(() => this.cryptoKeyHost()),
       ...clearLineSpecs(() => this.clearRestantsHost(), DERNIERE_LIGNE_ABSOLUE),

@@ -16,6 +16,7 @@ export interface NetAdapterEntry extends AdapterIdentity {
   status: NetAdapterStatus;
   macAddress: string;
   linkSpeed: string;
+  mtu: number;
   physical: boolean;
   hidden: boolean;
 }
@@ -132,7 +133,8 @@ export function parseNetAdapterMac(raw: string): MACAddress | null {
 }
 
 export function formatNetAdapterMac(mac: string): string {
-  return mac.replace(/:/g, '-').toUpperCase();
+  try { return new MACAddress(mac).toWindowsString(); }
+  catch { return mac.toUpperCase(); }
 }
 
 export function adapterNameTaken(

@@ -1,6 +1,7 @@
 import type { CaptureFrame } from './CaptureFrame';
 import type { TcpdumpOptions } from './TcpdumpCli';
 import { decodeOptions } from '@/network/tcp/TcpOptionsCodec';
+import { IP_PROTO_ICMP, IP_PROTO_TCP, IP_PROTO_UDP } from '@/network/core/types';
 
 export function banner(opt: TcpdumpOptions): string[] {
   const lines: string[] = [];
@@ -252,6 +253,12 @@ function l4Detail(frame: CaptureFrame, opt: TcpdumpOptions): string {
     }
     return `ICMP6, ${phrase}, ${length}`;
   }
+  // `print-ip.c:506` : « This isn't the first frag, so we're missing the
+  // next level protocol header. print the ip addr and the protocol. »
+  // Sous `-n`, le protocole se nomme par son numero.
+  if ((frame.ipFragmentOffset ?? 0) > 0) {
+    return `ip-proto-${frame.ipProtocol ?? 0}`;
+  }
   return `length ${frame.payloadLength ?? frame.length}`;
 }
 
@@ -265,7 +272,18 @@ function truncationMarker(frame: CaptureFrame, opt: TcpdumpOptions): string | nu
   return captured < needed ? `[|${frame.l4}]` : null;
 }
 
+/**
+ * Le nom vient du NUMERO de protocole de l'en-tete IP (`ipproto_string`),
+ * pas de ce que la capture a su decoder : un fragment non initial reste
+ * `proto TCP (6)` bien que son en-tete de transport soit ailleurs.
+ */
+const IP_PROTO_NAMES: Readonly<Record<number, string>> = {
+  [IP_PROTO_ICMP]: 'ICMP', [IP_PROTO_TCP]: 'TCP', [IP_PROTO_UDP]: 'UDP',
+};
+
 function ipProtoName(frame: CaptureFrame): string {
+  const byNumber = IP_PROTO_NAMES[frame.ipProtocol ?? -1];
+  if (byNumber) return byNumber;
   if (frame.l4 === 'icmp') return 'ICMP';
   if (frame.l4 === 'tcp') return 'TCP';
   if (frame.l4 === 'udp') return 'UDP';
@@ -366,8 +384,8 @@ export function formatFrame(frame: CaptureFrame, opt: TcpdumpOptions, prev: Date
   }
   const lines = [`${ts}${body}`];
   if (opt.hex !== 'none') lines.push(...hexDump(frame, opt));
-  if (opt.ascii && frame.tcpPayload && frame.tcpPayload.length > 0) {
-    const text = frame.tcpPayload.map(b => (b >= 0x20 && b <= 0x7e) ? String.fromCharCode(b) : '.').join('');
+  if (opt.ascii && frame.appPayload && frame.appPayload.length > 0) {
+    const text = frame.appPayload.map(b => (b >= 0x20 && b <= 0x7e) ? String.fromCharCode(b) : '.').join('');
     lines.push(text);
   }
   return lines.join('\n');

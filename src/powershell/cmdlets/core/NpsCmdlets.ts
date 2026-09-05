@@ -18,10 +18,11 @@ import type {
   INpsProvider, NasClientInfo, NetworkPolicyInfo, ConnectionRequestPolicyInfo,
 } from '@/powershell/providers/PSProviders';
 import { psValueToString } from '@/powershell/runtime/PSExpansion';
+import { commandNotFoundMessage } from '@/powershell/commandNotFound';
 
 function requireNps(ctx: CmdletContext, cmdletName: string): INpsProvider {
   if (!ctx.providers.nps) {
-    throw new PSRuntimeError(`${cmdletName} is not recognized as the name of a cmdlet, function, script file, or operable program`);
+    throw new PSRuntimeError(commandNotFoundMessage(cmdletName));
   }
   return ctx.providers.nps;
 }

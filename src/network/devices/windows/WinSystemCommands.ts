@@ -583,7 +583,7 @@ export function cmdWmic(ctx: WinSystemContext, args: string[]): string {
 function wmicNic(ctx: WinSystemContext): string {
   const lignes = [`${'MACAddress'.padEnd(20)}${'Name'.padEnd(30)}NetEnabled`];
   for (const [name, port] of ctx.ports) {
-    const mac = port.getMAC()?.toString()?.replace(/:/g, '-').toUpperCase() ?? '';
+    const mac = port.getMAC()?.toWindowsString() ?? '';
     const affiche = adapterDisplayName(name, ctx.ports);
     lignes.push(`${mac.padEnd(20)}${affiche.padEnd(30)}${port.isAdminDown() ? 'FALSE' : 'TRUE'}`);
   }
@@ -593,7 +593,7 @@ function wmicNic(ctx: WinSystemContext): string {
 function wmicNicConfig(ctx: WinSystemContext): string {
   const lignes = [`${'IPAddress'.padEnd(24)}${'IPSubnet'.padEnd(20)}MACAddress`];
   for (const [name, port] of ctx.ports) {
-    const mac = port.getMAC()?.toString()?.replace(/:/g, '-').toUpperCase() ?? '';
+    const mac = port.getMAC()?.toWindowsString() ?? '';
     const ip = port.getIPAddress();
     const mask = port.getSubnetMask();
     lignes.push(

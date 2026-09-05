@@ -16,10 +16,11 @@ import { PSRuntimeError } from '@/powershell/runtime/PSRuntime';
 import type { PSValue } from '@/powershell/runtime/PSEnvironment';
 import type { ISmbProvider, SmbShareInfo, SmbSessionInfo } from '@/powershell/providers/PSProviders';
 import { psValueToString } from '@/powershell/runtime/PSExpansion';
+import { commandNotFoundMessage } from '@/powershell/commandNotFound';
 
 function requireSmb(ctx: CmdletContext): ISmbProvider {
   if (!ctx.providers.smb) {
-    throw new PSRuntimeError('New-SmbShare is not recognized as the name of a cmdlet, function, script file, or operable program');
+    throw new PSRuntimeError(commandNotFoundMessage('New-SmbShare'));
   }
   return ctx.providers.smb;
 }

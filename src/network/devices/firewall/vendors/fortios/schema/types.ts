@@ -7,6 +7,8 @@ import type { ArgumentSpec, EnumValue } from '../../../../../../cli/ArgumentType
 import type { ObjectStore } from '../../../model/ObjectStore';
 import type { LogSettingsPatch } from '../../../logging/LogSettings';
 import type { PasswordExpiryPolicy } from '../../../mgmt/ManagementPlane';
+import type { AccessList, PrefixList } from '../../../routing/AccessList';
+import type { PeerType } from '../../../vpn/IpsecTunnelTable';
 import type { PolicyStore } from '../../../model/PolicyStore';
 import type { DosPolicyStore } from '../../../dos/DosPolicyStore';
 
@@ -29,11 +31,14 @@ export interface FortiDnsZonePatch {
   readonly authoritative: boolean;
   readonly primaryName?: string;
   readonly contact?: string;
+  readonly ipPrimary?: string;
   readonly entries: ReadonlyArray<{ hostname: string; ip: string; ttl?: number }>;
 }
 import type {
   BgpConfiguration, OspfConfiguration, RipConfiguration,
 } from '../../../routing/DynamicRoutingTypes';
+import type { SwitchGroupPatch } from '../../../l3/SwitchGroupTable';
+import type { GeoIpOverride } from '../../../model/GeoIpOverrides';
 
 export type FortiAccessGroup = AccessGroup;
 
@@ -64,6 +69,7 @@ export interface FortiAttributeSpec {
   readonly name: string;
   readonly help: string;
   readonly parts: readonly ArgumentSpec[];
+  readonly optionalParts?: number;
   readonly multiValue?: boolean;
   readonly referenceTo?: readonly string[];
   readonly quoted?: boolean;
@@ -363,13 +369,20 @@ export interface FortiCommitDevice {
   applySyslogCollector(settings: SyslogCollectorSettings): string | void;
   applySyslogFilter(settings: SyslogFilterSettings): string | void;
   applyLogSettings(patch: LogSettingsPatch): void;
+  applyPolicyCaptureSize(megabytes: number): void;
   applyPasswordExpiry(policy: PasswordExpiryPolicy): void;
+  applyAccessList(list: AccessList): void;
+  removeAccessList(name: string): void;
+  applyPrefixList(list: PrefixList): void;
+  removePrefixList(name: string): void;
   maxVirtualDomains(): number;
   applyVdom(name: string): void;
   removeVdom(name: string): void;
   applyVdomLink(name: string): void;
   removeVdomLink(name: string): void;
-  applySwitchInterface(name: string, members: readonly string[]): void;
+  applySwitchInterface(name: string, patch: SwitchGroupPatch): string | void;
+  applyGeoIpOverride(override: GeoIpOverride): void;
+  removeGeoIpOverride(name: string): boolean;
   removeSwitchInterface(name: string): void;
   applyAntivirusProfile(profile: FortiAntivirusPatch): void;
   removeAntivirusProfile(name: string): void;
@@ -523,6 +536,9 @@ export interface FortiCaCertificatePatch {
 }
 
 export interface FortiPhase1Patch {
+  readonly peerType?: PeerType;
+  readonly peerId?: string;
+  readonly localId?: string;
   readonly name: string;
   readonly boundInterface: string;
   readonly ikeVersion: 1 | 2;
@@ -747,6 +763,10 @@ export function keyAttributeName(spec: FortiTableSpec): string | undefined {
 
 export function attributeArity(spec: FortiAttributeSpec): number {
   return spec.parts.length;
+}
+
+export function attributeMinimumArity(spec: FortiAttributeSpec): number {
+  return spec.parts.length - (spec.optionalParts ?? 0);
 }
 
 export function isQuoted(spec: FortiAttributeSpec): boolean {

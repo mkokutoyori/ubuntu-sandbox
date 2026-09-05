@@ -46,6 +46,7 @@ export interface OspfConfiguration {
   readonly passiveInterfaces: readonly string[];
   readonly redistributeConnected: boolean;
   readonly redistributeStatic: boolean;
+  readonly distributeListIn?: string;
 }
 
 export interface BgpNeighbour {

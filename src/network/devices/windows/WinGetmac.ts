@@ -82,7 +82,7 @@ export function cmdGetmac(ctx: WinCommandContext, args: string[]): string {
 function buildRows(ctx: WinCommandContext): Row[] {
   const rows: Row[] = [];
   for (const [name, port] of ctx.ports) {
-    const mac = port.getMAC().toString().replace(/:/g, '-').toUpperCase();
+    const mac = port.getMAC().toWindowsString();
     const displayName = adapterDisplayName(name, ctx.ports);
     const isUp = port.getIsUp() && port.isConnected();
     rows.push({

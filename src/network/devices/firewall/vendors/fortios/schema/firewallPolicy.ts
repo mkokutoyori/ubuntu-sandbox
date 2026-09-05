@@ -111,7 +111,13 @@ export const FIREWALL_POLICY: FortiTableSpec = {
       { keyword: 'disable', description: 'Disable all logging for this policy.' },
     ], 'utm'),
     enable('logtraffic-start', 'Record logs when a session starts.'),
-    enable('capture-packet', 'Enable/disable capture packets.'),
+    {
+      ...enable('capture-packet', 'Enable/disable capture packets.'),
+      availableWhen: (object) => {
+        const logging = object.effective('logtraffic')[0] ?? 'utm';
+        return logging === 'all' || logging === 'utm';
+      },
+    },
     refList('groups', 'Names of user groups that can authenticate with this policy.',
       ['user group']),
     refList('users', 'Names of individual users that can authenticate with this policy.',
@@ -235,6 +241,7 @@ export const FIREWALL_POLICY: FortiTableSpec = {
       sslSshProfile: named(object, 'ssl-ssh-profile'),
       protocolOptions: named(object, 'profile-protocol-options'),
       sessionTimeoutOverrideSec: sessionTtl(object.effective('session-ttl')[0]),
+      capturePackets: object.effective('capture-packet')[0] === 'enable',
       tcpSessionWithoutSyn: tcpSessionWithoutSyn(
         object.effective('tcp-session-without-syn')[0]),
       comment: comment === '' ? undefined : comment,

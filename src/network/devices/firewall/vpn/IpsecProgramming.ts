@@ -67,9 +67,14 @@ function espTransform(cipher: string): string {
   return 'esp-aes';
 }
 
+export interface IpsecIdentitySources {
+  groupMembers(name: string): readonly string[];
+}
+
 export function programIpsecEngine(
   engine: IPSecEngine, tunnels: IpsecTunnelTable,
   certificates?: CertificateStore, now?: () => number,
+  identities?: IpsecIdentitySources,
 ): void {
   let priority = 10;
   if (certificates) programCertificateAuth(engine, tunnels, certificates, now);
@@ -98,6 +103,9 @@ export function programIpsecEngine(
     entry.peers = [tunnel.remoteGateway];
     entry.transformSets = [transformSetName(tunnel.name)];
     entry.saLifetimeSeconds = selectors[0]?.keyLifeSeconds ?? tunnel.keyLifeSeconds;
+    entry.localIdentity = tunnel.localId;
+    entry.acceptedPeerIdentities = acceptedIdentities(tunnel, identities);
+    entry.requirePeerIdentity = tunnel.peerType === 'one';
     entry.trafficSelectors = selectorsOf(selectors[0]);
     if (selectors[0]?.pfs) entry.pfsGroup = `group${selectors[0].dhGroups[0] ?? 14}`;
 
@@ -113,6 +121,18 @@ export function programIpsecEngine(
       });
     }
   }
+}
+
+function acceptedIdentities(
+  tunnel: Phase1Tunnel, identities: IpsecIdentitySources | undefined,
+): readonly string[] | undefined {
+  if (tunnel.peerType === 'one') return tunnel.peerId ? [tunnel.peerId] : [];
+  if (tunnel.peerType === 'dialup') {
+    const group = tunnel.authUserGroup;
+    if (!group) return [];
+    return identities?.groupMembers(group) ?? [];
+  }
+  return undefined;
 }
 
 function ikeEncryption(proposals: readonly IpsecProposal[]): string {

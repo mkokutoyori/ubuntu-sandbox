@@ -10,10 +10,26 @@
  */
 
 import type { WinFileCommandContext } from './WinFileCommands';
+import { wildcardToRegex } from '@/powershell/runtime/PSWildcard';
+import {
+  isDefaultVisible, parseDirAttributeSpec, selectionAccepts,
+  type AttributeSelection,
+} from './fileAttributes';
+
+type DirListing = ReturnType<WinFileCommandContext['fs']['listDirectory']>;
+
+function keepVisible(entries: DirListing, selection: AttributeSelection | null): DirListing {
+  if (selection === null) {
+    return entries.filter(e => isDefaultVisible(e.entry.attributes)) as DirListing;
+  }
+  return entries.filter(
+    e => selectionAccepts(selection, e.entry.attributes, e.entry.type === 'directory')) as DirListing;
+}
 
 export function cmdDir(ctx: WinFileCommandContext, args: string[]): string {
   const flags = new Set<string>();
   const positionals: string[] = [];
+  let selection: AttributeSelection | null = null;
 
   for (const arg of args) {
     const lower = arg.toLowerCase();
@@ -24,7 +40,13 @@ export function cmdDir(ctx: WinFileCommandContext, args: string[]): string {
     // `/a` shows all attributes, `/a:<spec>` filters; `/o:<spec>` sorts.
     // The simulator does not store dates per attribute filter, so we accept
     // these flags as no-ops rather than failing with "File Not Found".
-    else if (lower === '/a' || lower.startsWith('/a:')) flags.add('all-attrs');
+    else if (lower === '/a' || lower.startsWith('/a:')) {
+      const spec = lower.slice(2).replace(/^:/, '');
+      if (spec === '') { selection = { required: [], forbidden: [] }; continue; }
+      const parsed = parseDirAttributeSpec(spec);
+      if (parsed === null) return `Invalid switch - "${spec}".`;
+      selection = parsed;
+    }
     else if (lower === '/o' || lower.startsWith('/o:') || lower.startsWith('/od')) flags.add('sort');
     else if (lower.startsWith('/')) continue;
     else positionals.push(arg);
@@ -60,20 +82,20 @@ export function cmdDir(ctx: WinFileCommandContext, args: string[]): string {
     return dirSingleFile(ctx, absPath);
   }
   if (wildcard) {
-    return dirWildcard(ctx, absPath, wildcard);
+    return dirWildcard(ctx, absPath, wildcard, selection);
   }
 
   // `/b` — bare format: names only, no header / summary / . / .. .
   // Equivalent in meaning to PowerShell `Get-ChildItem -Name`.
   if (flags.has('bare')) {
-    return dirBare(ctx, absPath, flags.has('recursive'));
+    return dirBare(ctx, absPath, flags.has('recursive'), selection);
   }
 
   if (flags.has('recursive')) {
-    return dirRecursive(ctx, absPath, flags);
+    return dirRecursive(ctx, absPath, flags, selection);
   }
 
-  return dirSingle(ctx, absPath, flags);
+  return dirSingle(ctx, absPath, flags, selection);
 }
 
 /**
@@ -82,10 +104,13 @@ export function cmdDir(ctx: WinFileCommandContext, args: string[]): string {
  * (directories then files, each alphabetical) so it stays coherent
  * with `Get-ChildItem -Name`.
  */
-function dirBare(ctx: WinFileCommandContext, absPath: string, recursive: boolean): string {
+function dirBare(
+  ctx: WinFileCommandContext, absPath: string, recursive: boolean,
+  selection: AttributeSelection | null,
+): string {
   const out: string[] = [];
   const walk = (dir: string, prefix: string) => {
-    const entries = ctx.fs.listDirectory(dir);
+    const entries = keepVisible(ctx.fs.listDirectory(dir), selection);
     for (const { name, entry } of entries) {
       out.push(recursive ? `${dir}\\${name}` : (prefix ? `${prefix}\\${name}` : name));
       if (recursive && entry.type === 'directory') {
@@ -98,9 +123,12 @@ function dirBare(ctx: WinFileCommandContext, absPath: string, recursive: boolean
   return out.join('\n');
 }
 
-function dirWildcard(ctx: WinFileCommandContext, absPath: string, pattern: string): string {
-  const re = new RegExp('^' + pattern.replace(/[.+^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '.*').replace(/\?/g, '.') + '$', 'i');
-  const entries = ctx.fs.listDirectory(absPath).filter(e => re.test(e.name));
+function dirWildcard(
+  ctx: WinFileCommandContext, absPath: string, pattern: string,
+  selection: AttributeSelection | null,
+): string {
+  const re = wildcardToRegex(pattern);
+  const entries = keepVisible(ctx.fs.listDirectory(absPath), selection).filter(e => re.test(e.name));
   if (entries.length === 0) return 'File Not Found';
   const lines: string[] = [];
   lines.push(` Volume in drive ${absPath[0]} has no label.`);
@@ -149,8 +177,11 @@ function dirSingleFile(ctx: WinFileCommandContext, absPath: string): string {
   return lines.join('\n');
 }
 
-function dirSingle(ctx: WinFileCommandContext, absPath: string, flags: Set<string>): string {
-  const entries = ctx.fs.listDirectory(absPath);
+function dirSingle(
+  ctx: WinFileCommandContext, absPath: string, flags: Set<string>,
+  selection: AttributeSelection | null,
+): string {
+  const entries = keepVisible(ctx.fs.listDirectory(absPath), selection);
   const lines: string[] = [];
 
   // Volume header
@@ -221,7 +252,10 @@ function dirWide(
   return lines.join('\n');
 }
 
-function dirRecursive(ctx: WinFileCommandContext, absPath: string, flags: Set<string>): string {
+function dirRecursive(
+  ctx: WinFileCommandContext, absPath: string, flags: Set<string>,
+  selection: AttributeSelection | null,
+): string {
   const allDirs = ctx.fs.listDirectoryRecursive(absPath);
   const lines: string[] = [];
 
@@ -241,7 +275,7 @@ function dirRecursive(ctx: WinFileCommandContext, absPath: string, flags: Set<st
     lines.push(`${dotDate}    <DIR>          ..`);
 
     let fileCount = 0, fileBytes = 0, dirCount = 2;
-    for (const { name, entry } of entries) {
+    for (const { name, entry } of keepVisible(entries, selection)) {
       const date = formatDate(entry.mtime);
       if (entry.type === 'directory') {
         lines.push(`${date}    <DIR>          ${name}`);

@@ -96,7 +96,7 @@ export interface CaptureFrame {
   arpTargetMac?: string;
   raw: number[];
   rawLinkOffset: number;
-  tcpPayload?: number[];
+  appPayload?: number[];
   vlanId?: number;
   vlanPriority?: number;
   vlanDei?: number;
@@ -258,14 +258,19 @@ function synthTcpBytes(seg: TcpSegment): number[] {
   ];
 }
 
+function synthUdpBytes(udp: UDPPacket): number[] {
+  return [
+    ...u16(udp.sourcePort), ...u16(udp.destinationPort),
+    ...u16(udp.length), ...u16(udp.checksum & 0xffff),
+    ...(appPayloadBytes(udp.payload) ?? []),
+  ];
+}
+
 function synthL4Bytes(pkt: IPv4Packet): number[] {
   const payload = pkt.payload as { type?: string };
   if (payload?.type === 'icmp') return synthIcmpBytes(pkt.payload as ICMPPacket);
   if (payload?.type === 'tcp') return synthTcpBytes(normalizeTcpSegment(pkt.payload));
-  if (payload?.type === 'udp') {
-    const udp = pkt.payload as UDPPacket;
-    return [...u16(udp.sourcePort), ...u16(udp.destinationPort), ...u16(udp.length), ...u16(udp.checksum & 0xffff)];
-  }
+  if (payload?.type === 'udp') return synthUdpBytes(pkt.payload as UDPPacket);
   return [];
 }
 
@@ -302,10 +307,7 @@ function synthL4BytesV6(pkt: IPv6Packet): number[] {
   const payload = pkt.payload as { type?: string };
   if (payload?.type === 'icmpv6') return synthIcmpv6Bytes(pkt.payload as ICMPv6Packet);
   if (payload?.type === 'tcp') return synthTcpBytes(normalizeTcpSegment(pkt.payload));
-  if (payload?.type === 'udp') {
-    const udp = pkt.payload as UDPPacket;
-    return [...u16(udp.sourcePort), ...u16(udp.destinationPort), ...u16(udp.length), ...u16(udp.checksum & 0xffff)];
-  }
+  if (payload?.type === 'udp') return synthUdpBytes(pkt.payload as UDPPacket);
   return [];
 }
 
@@ -466,6 +468,15 @@ function decodeIcmpOrig(orig: IPv4Packet): IcmpOrigInfo {
 }
 
 function decodeIpv4Payload(base: CaptureFrame, ip: IPv4Packet): void {
+  // `print-ip.c:470` : seul le fragment de decalage NUL porte l'en-tete
+  // de transport. Le decoder sur les suivants fabriquait un en-tete TCP
+  // de zeros — ports 0, sequence 0, somme 0 — c'est-a-dire la
+  // description d'octets qui ne sont pas dans le paquet.
+  if (ip.fragmentOffset > 0) {
+    base.l4 = 'other';
+    base.payloadLength = Math.max(0, ip.totalLength - (ip.ihl ?? 5) * 4);
+    return;
+  }
   if (ip.protocol === IP_PROTO_ICMP) {
     const icmp = ip.payload as ICMPPacket;
     base.l4 = 'icmp';
@@ -492,7 +503,7 @@ function decodeIpv4Payload(base: CaptureFrame, ip: IPv4Packet): void {
     base.tcpChecksumComputed = computeTcpChecksum(seg, base.srcIp!, base.dstIp!);
     base.tcpChecksumOk = seg.checksum === 0 || base.tcpChecksumComputed === seg.checksum;
     base.payloadLength = Math.max(0, (ip.totalLength ?? 40) - (ip.ihl ?? 5) * 4 - seg.dataOffset * 4);
-    base.tcpPayload = appPayloadBytes(seg.payload);
+    base.appPayload = appPayloadBytes(seg.payload);
     if (seg.sourcePort === 53 || seg.destinationPort === 53) {
       decodeDnsPayload(base, seg.payload);
     }
@@ -507,6 +518,7 @@ function decodeIpv4Payload(base: CaptureFrame, ip: IPv4Packet): void {
     base.udpChecksumOk = udp.checksum === 0
       || computeUdpChecksum(udp, base.srcIp!, base.dstIp!) === udp.checksum;
     base.payloadLength = Math.max(0, (udp.length ?? 8) - 8);
+    base.appPayload = appPayloadBytes(udp.payload);
     if (udp.sourcePort === 53 || udp.destinationPort === 53) {
       decodeDnsPayload(base, udp.payload);
     }
@@ -542,7 +554,7 @@ function decodeIpv6Payload(base: CaptureFrame, ip6: IPv6Packet): void {
     base.tcpChecksumComputed = computeTcpChecksum(seg, base.srcIp!, base.dstIp!);
     base.tcpChecksumOk = seg.checksum === 0 || base.tcpChecksumComputed === seg.checksum;
     base.payloadLength = Math.max(0, ip6.payloadLength - seg.dataOffset * 4);
-    base.tcpPayload = appPayloadBytes(seg.payload);
+    base.appPayload = appPayloadBytes(seg.payload);
     if (seg.sourcePort === 53 || seg.destinationPort === 53) {
       decodeDnsPayload(base, seg.payload);
     }
@@ -557,6 +569,7 @@ function decodeIpv6Payload(base: CaptureFrame, ip6: IPv6Packet): void {
     base.udpChecksumOk = udp.checksum === 0
       || computeUdpChecksum(udp, base.srcIp!, base.dstIp!) === udp.checksum;
     base.payloadLength = Math.max(0, (udp.length ?? 8) - 8);
+    base.appPayload = appPayloadBytes(udp.payload);
     if (udp.sourcePort === 53 || udp.destinationPort === 53) {
       decodeDnsPayload(base, udp.payload);
     }
@@ -622,7 +635,7 @@ export function makeTcpFrame(
     tcpWindow: 0,
     raw: [...header, ...tcp, ...(pkt.payload ? Array.from(pkt.payload) : [])],
     rawLinkOffset: 0,
-    tcpPayload: pkt.payload ? Array.from(pkt.payload) : undefined,
+    appPayload: pkt.payload ? Array.from(pkt.payload) : undefined,
   };
 }
 

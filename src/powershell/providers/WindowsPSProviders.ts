@@ -26,12 +26,15 @@ import { PSEventLogProvider } from '@/network/devices/windows/PSEventLogProvider
 import {
   LOOPBACK_IFINDEX, adapterIfIndex, toDisplayName, toPortName, formatLinkSpeedMbps,
 } from '@/network/devices/windows/WindowsInterfaceNaming';
+import { NO_MATCHING_INTERFACE } from '@/network/devices/windows/netIpAddress';
+import { type DnsCacheRow, dnsCacheRowsOf } from '@/network/devices/windows/dnsClientCache';
 import { resolveAdapter, resolveAdapterPortName } from '@/network/devices/windows/netAdapter';
 import {
   memberFailureReason, memberStatus, normaliseAdminMode, normaliseLacpTimer,
   normaliseLbAlgorithm, normaliseTeamingMode, teamStatus, type TeamMember,
 } from '@/network/devices/windows/WindowsNicTeam';
-import { IPAddress, MACAddress, SubnetMask } from '@/network/core/types';
+import { IPAddress, IPv6Address, MACAddress, SubnetMask } from '@/network/core/types';
+import type { NetNeighborPlan, NetNeighborState } from '@/network/devices/windows/netNeighbor';
 import { isValidIPv4 } from '@/network/core/ip';
 import { findHostByAddress } from '@/network/devices/linux/network/HostLookup';
 import { discoverDcHostname, rootDnOf } from '@/network/devices/windows/domain/DcHostnameDiscovery';
@@ -92,6 +95,7 @@ import type {
   NetAdapterEntry, AdapterStatisticsInfo, IPAddressInfo, RouteInfo, EventLogEntryInfo,
   NicTeamInfo, NicTeamMemberInfo, NicTeamNicInfo, NewNicTeamRequest, SetNicTeamRequest,
   VpnConnectionInfo, ScheduledTaskInfo, DiskInfo, VolumeInfo,
+  NeighborInfo,
 } from '@/powershell/providers/PSProviders';
 import type { PSValue } from '@/powershell/runtime/PSEnvironment';
 import type { AddsForestOptions } from '@/network/devices/windows/server/ad/adFunctionalLevels';
@@ -111,6 +115,7 @@ import {
 import {
   type NetFirewallRuleEntry, firewallRuleKey,
 } from '@/network/devices/windows/netFirewallRule';
+import { commandNotFoundMessage } from '@/powershell/commandNotFound';
 
 function defaultNamingContextOf(client: LdapClient): string | null {
   const dse = client.search('', 'base', { kind: 'present', attr: 'objectClass' }, ['defaultNamingContext']);
@@ -416,7 +421,7 @@ class WindowsSmbAdapter implements ISmbProvider {
   /** `New-SmbShare`/`Remove-SmbShare` only exist once the FS-FileServer role is installed (PRD-Windows-Server.md §8 acceptance criterion 2) — checked live on every call. `Get-SmbShare`/`Get-SmbSession` (and `net share`) are not gated this way, matching real Windows. */
   private requireRole(): void {
     if (!this.pc.getRoleManager()?.isInstalled('FS-FileServer')) {
-      throw new Error('New-SmbShare is not recognized as the name of a cmdlet, function, script file, or operable program');
+      throw new Error(commandNotFoundMessage('New-SmbShare'));
     }
   }
 
@@ -481,7 +486,7 @@ class WindowsAdAdapter implements IAdProvider {
   /** `Get/New/Set/Remove-AD*` only exist once the AD-Domain-Services role is installed — checked live, matching `WindowsSmbAdapter`'s FS-FileServer gate. */
   private requireRole(cmdletName: string): void {
     if (!this.pc.getRoleManager()?.isInstalled('AD-Domain-Services')) {
-      throw new Error(`${cmdletName} is not recognized as the name of a cmdlet, function, script file, or operable program`);
+      throw new Error(commandNotFoundMessage(cmdletName));
     }
   }
 
@@ -1192,7 +1197,7 @@ class WindowsDnsServerAdapter implements IDnsServerProvider {
 
   private requireRole(cmdletName: string): void {
     if (!this.pc.getRoleManager()?.isInstalled('DNS')) {
-      throw new Error(`${cmdletName} is not recognized as the name of a cmdlet, function, script file, or operable program`);
+      throw new Error(commandNotFoundMessage(cmdletName));
     }
   }
 
@@ -1239,7 +1244,7 @@ class WindowsDhcpServerAdapter implements IDhcpServerProvider {
 
   private requireRole(cmdletName: string): void {
     if (!this.pc.getRoleManager()?.isInstalled('DHCP')) {
-      throw new Error(`${cmdletName} is not recognized as the name of a cmdlet, function, script file, or operable program`);
+      throw new Error(commandNotFoundMessage(cmdletName));
     }
   }
 
@@ -1307,7 +1312,7 @@ class WindowsNpsAdapter implements INpsProvider {
 
   private requireRole(cmdletName: string): void {
     if (!this.pc.getRoleManager()?.isInstalled('NPAS')) {
-      throw new Error(`${cmdletName} is not recognized as the name of a cmdlet, function, script file, or operable program`);
+      throw new Error(commandNotFoundMessage(cmdletName));
     }
   }
 
@@ -1478,8 +1483,10 @@ class WindowsUserAdapter implements IUserProvider {
     return this.mgr().disableUser(name);
   }
   renameUser(oldName: string, newName: string): string {
-    const m = this.mgr() as unknown as { renameUser?: (a: string, b: string) => string };
-    return m.renameUser ? m.renameUser(oldName, newName) : `Rename-LocalUser not supported`;
+    return this.mgr().renameUser(oldName, newName);
+  }
+  renameGroup(oldName: string, newName: string): string {
+    return this.mgr().renameGroup(oldName, newName);
   }
 
   listGroups(): GroupInfo[] {
@@ -1632,6 +1639,7 @@ class WindowsNetworkAdapter implements INetworkProvider {
         linkSpeed: connected
           ? formatLinkSpeedMbps(aggregated ?? port.getNegotiatedSpeed())
           : '0 bps',
+        mtu: port.getMTU(),
         physical: !port.isCarrierless() && this.pc.getVlanSubInterface(portName) === undefined,
         hidden: false,
       };
@@ -2187,10 +2195,8 @@ class WindowsNetworkAdapter implements INetworkProvider {
   resolveDnsViaServerWithTtl(name: string, server: string): Array<{ ip: string; ttl: number }> {
     return this.pc.resolveDnsViaServerWithTtlSync(name, server);
   }
-  getDnsClientCache(): Array<{ name: string; type: string; value: string; ttl: number }> {
-    return this.pc.dnsCache.activeEntries().map(e => ({
-      name: e.name, type: e.type, value: e.value, ttl: e.ttl,
-    }));
+  getDnsClientCache(): DnsCacheRow[] {
+    return dnsCacheRowsOf(this.pc.dnsCache.entries());
   }
   clearDnsClientCache(): void { this.pc.dnsCache.flush(); }
   invokeWebRequest(url: string) { return this.pc.invokeWebRequest(url); }
@@ -2241,65 +2247,113 @@ class WindowsNetworkAdapter implements INetworkProvider {
     if (!viaDns) return null;
     try { return new IPAddress(viaDns); } catch { return null; }
   }
-  getNeighbors(filter?: { ipAddress?: IPAddress; state?: string; ifIndex?: number }) {
-    const arp = (this.pc as unknown as { arpTable: Map<string, { mac: { toString: () => string }; iface: string; timestamp: number; type: 'dynamic' | 'static' | 'failed' }> }).arpTable;
-    const ports = (this.pc as unknown as { getPorts: () => Array<{ name: string }> }).getPorts();
-    const portIndex = new Map(ports.map((p, i) => [p.name, i + 1]));
-    const stateMap: Record<string, 'Reachable' | 'Permanent' | 'Unreachable' | 'Stale' | 'Incomplete'> = {
+  getNeighbors(): NeighborInfo[] {
+    const pc = this.pc as unknown as {
+      arpTable: Map<string, { mac: MACAddress; iface: string; type: 'dynamic' | 'static' | 'failed' }>;
+      getPorts: () => Array<{ name: string }>;
+      getNeighborCache?: () => Map<string, { mac: MACAddress; iface: string; state: string }>;
+    };
+    const ports = pc.getPorts();
+    const indexOf = (iface: string): number => {
+      const position = ports.findIndex(p => p.name === iface);
+      return position < 0 ? LOOPBACK_IFINDEX : adapterIfIndex(position);
+    };
+    const arpState: Record<string, NetNeighborState> = {
       static: 'Permanent', dynamic: 'Reachable', failed: 'Unreachable',
     };
-    const rows = [] as Array<{
-      ifIndex: number; ifAlias: string; ipAddress: string;
-      linkLayerAddress: string;
-      state: 'Reachable' | 'Permanent' | 'Unreachable' | 'Stale' | 'Incomplete';
-      addressFamily: 'IPv4'; policyStore: 'ActiveStore' | 'PersistentStore';
-    }>;
-    const filterIpKey = filter?.ipAddress?.toString();
-    for (const [ip, entry] of arp) {
-      const state = stateMap[entry.type] ?? 'Reachable';
-      const ifIndex = portIndex.get(entry.iface) ?? 1;
-      if (filterIpKey && ip !== filterIpKey) continue;
-      if (filter?.state && state !== filter.state) continue;
-      if (filter?.ifIndex !== undefined && ifIndex !== filter.ifIndex) continue;
+    const ndpState: Record<string, NetNeighborState> = {
+      permanent: 'Permanent', reachable: 'Reachable', stale: 'Stale',
+      delay: 'Delay', probe: 'Probe', incomplete: 'Incomplete',
+    };
+    const rows: NeighborInfo[] = [];
+    for (const [ip, entry] of pc.arpTable) {
       rows.push({
-        ifIndex,
+        ifIndex: indexOf(entry.iface),
         ifAlias: toDisplayName(entry.iface),
         ipAddress: ip,
-        linkLayerAddress: entry.mac.toString().toUpperCase().replace(/:/g, '-'),
-        state,
+        linkLayerAddress: entry.mac.toWindowsString(),
+        state: arpState[entry.type] ?? 'Reachable',
         addressFamily: 'IPv4',
         policyStore: entry.type === 'static' ? 'PersistentStore' : 'ActiveStore',
+      });
+    }
+    for (const [ip, entry] of pc.getNeighborCache?.() ?? []) {
+      const state = ndpState[entry.state] ?? 'Reachable';
+      rows.push({
+        ifIndex: indexOf(entry.iface),
+        ifAlias: toDisplayName(entry.iface),
+        ipAddress: ip,
+        linkLayerAddress: entry.mac.toWindowsString(),
+        state,
+        addressFamily: 'IPv6',
+        policyStore: state === 'Permanent' ? 'PersistentStore' : 'ActiveStore',
       });
     }
     return rows;
   }
 
-  addNeighbor(ipAddress: IPAddress, linkLayerAddress: MACAddress, ifAlias: string): string {
-    const iface = toPortName(ifAlias) ?? ifAlias;
+  addNeighbor(plan: NetNeighborPlan): string {
+    const ports = (this.pc as unknown as { getPorts: () => Array<{ name: string }> }).getPorts();
+    const iface = plan.interfaceAlias !== undefined
+      ? (toPortName(plan.interfaceAlias) ?? plan.interfaceAlias)
+      : ports[plan.interfaceIndex! - LOOPBACK_IFINDEX - 1]?.name;
+    if (iface === undefined || !ports.some(p => p.name === iface)) return NO_MATCHING_INTERFACE;
+    if (plan.linkLayerAddress === null) {
+      return "Cannot process command because of one or more missing mandatory parameters: LinkLayerAddress.";
+    }
+    if (plan.address.family === 'IPv6') {
+      (this.pc as unknown as {
+        addStaticNeighbor6: (ip: IPv6Address, mac: MACAddress, iface: string) => void;
+      }).addStaticNeighbor6(plan.address.value, plan.linkLayerAddress, iface);
+      return '';
+    }
     (this.pc as unknown as { addStaticARP: (ip: IPAddress, mac: MACAddress, iface: string) => void })
-      .addStaticARP(ipAddress, linkLayerAddress, iface);
+      .addStaticARP(plan.address.value, plan.linkLayerAddress, iface);
     return '';
   }
 
-  removeNeighbor(ipAddress: IPAddress, _ifAlias?: string): string {
-    const ok = (this.pc as unknown as { deleteARP: (ip: IPAddress) => boolean }).deleteARP(ipAddress);
-    return ok ? '' : `Remove-NetNeighbor : No matching neighbor cache entry found.`;
+  removeNeighbors(rows: readonly NeighborInfo[]): number {
+    const pc = this.pc as unknown as {
+      deleteARP: (ip: IPAddress) => boolean;
+      removeNeighbor6: (ip: IPv6Address) => boolean;
+    };
+    let removed = 0;
+    for (const row of rows) {
+      const ok = row.addressFamily === 'IPv6'
+        ? pc.removeNeighbor6(new IPv6Address(row.ipAddress))
+        : pc.deleteARP(new IPAddress(row.ipAddress));
+      if (ok) removed++;
+    }
+    return removed;
   }
 
-  setNeighbor(ipAddress: IPAddress, linkLayerAddress: MACAddress, ifAlias?: string): string {
-    const arp = (this.pc as unknown as { arpTable: Map<string, { iface: string }> }).arpTable;
-    const existing = arp.get(ipAddress.toString());
-    const iface = ifAlias ? (toPortName(ifAlias) ?? ifAlias) : (existing?.iface ?? 'eth0');
-    return this.addNeighbor(ipAddress, linkLayerAddress, toDisplayName(iface));
+  setNeighborLinkLayer(rows: readonly NeighborInfo[], linkLayerAddress: MACAddress): number {
+    const pc = this.pc as unknown as {
+      addStaticARP: (ip: IPAddress, mac: MACAddress, iface: string) => void;
+      addStaticNeighbor6: (ip: IPv6Address, mac: MACAddress, iface: string) => void;
+    };
+    let changed = 0;
+    for (const row of rows) {
+      const iface = toPortName(row.ifAlias) ?? row.ifAlias;
+      if (row.addressFamily === 'IPv6') {
+        pc.addStaticNeighbor6(new IPv6Address(row.ipAddress), linkLayerAddress, iface);
+      } else {
+        pc.addStaticARP(new IPAddress(row.ipAddress), linkLayerAddress, iface);
+      }
+      changed++;
+    }
+    return changed;
   }
 
   clearNeighbors(ifAlias?: string): void {
     const pc = this.pc as unknown as {
       arpTable: Map<string, { iface: string }>;
       deleteARP: (ip: IPAddress) => boolean;
+      clearNeighbors6: (iface?: string) => void;
     };
     if (!ifAlias) {
       pc.arpTable.clear();
+      pc.clearNeighbors6();
       return;
     }
     const portName = toPortName(ifAlias) ?? ifAlias;
@@ -2308,6 +2362,7 @@ class WindowsNetworkAdapter implements INetworkProvider {
         pc.deleteARP(new IPAddress(ip));
       }
     }
+    pc.clearNeighbors6(portName);
   }
 
   getTcpConnections() {
@@ -2413,7 +2468,7 @@ function prefixToMaskOctets(prefix: number): number[] {
 function notImpl(name: string): Error {
   // The cmdlet layer recognises "not implemented" and falls through to the
   // legacy PowerShellExecutor; keep the message in sync with isFallbackError.
-  return new Error(`${name} is not recognized as a network provider operation`);
+  return new Error(commandNotFoundMessage(name));
 }
 
 // 255.255.255.0 → 24.
@@ -2704,7 +2759,7 @@ class WindowsGpoAdapter implements IGpoProvider {
 
   private requireDc(cmdletName: string): DirectoryStore {
     const store = this.pc.getDirectoryStore();
-    if (!store) throw new Error(`${cmdletName} is not recognized as the name of a cmdlet, function, script file, or operable program`);
+    if (!store) throw new Error(commandNotFoundMessage(cmdletName));
     return store;
   }
 
@@ -2753,7 +2808,7 @@ class WindowsIisAdapter implements IIisProvider {
 
   private requireRole(cmdletName: string) {
     if (!this.pc.getRoleManager()?.isInstalled('Web-Server')) {
-      throw new Error(`${cmdletName} is not recognized as the name of a cmdlet, function, script file, or operable program`);
+      throw new Error(commandNotFoundMessage(cmdletName));
     }
     const role = this.pc.getIisRole();
     if (!role) throw new Error(`${cmdletName} : The Web Server (IIS) service is not available on this computer.`);
@@ -2790,7 +2845,7 @@ class WindowsExchangeAdapter implements IExchangeProvider {
   /** `Install-ExchangeServer` never needs an org to already exist — every other Exchange cmdlet does, and fails as "not recognized" (mimics the Exchange Management Shell module never having been loaded), matching docs/PRD-Exchange.md §1.3/§8. */
   private requireOrg(cmdletName: string): void {
     if (this.pc.getExchangeOrganizationName() === null) {
-      throw new Error(`${cmdletName} is not recognized as the name of a cmdlet, function, script file, or operable program`);
+      throw new Error(commandNotFoundMessage(cmdletName));
     }
   }
 
@@ -3071,7 +3126,7 @@ class WindowsDfsAdapter implements IDfsProvider {
 
   private requireNamespaceRole(cmdletName: string) {
     if (!this.pc.getRoleManager()?.isInstalled('FS-DFS-Namespace')) {
-      throw new Error(`${cmdletName} is not recognized as the name of a cmdlet, function, script file, or operable program`);
+      throw new Error(commandNotFoundMessage(cmdletName));
     }
     const role = this.pc.getDfsNamespaceRole();
     if (!role) throw new Error(`${cmdletName} : DFS Namespaces is not available on this computer.`);
@@ -3080,7 +3135,7 @@ class WindowsDfsAdapter implements IDfsProvider {
 
   private requireDfsrRole(cmdletName: string) {
     if (!this.pc.getRoleManager()?.isInstalled('FS-DFS-Replication')) {
-      throw new Error(`${cmdletName} is not recognized as the name of a cmdlet, function, script file, or operable program`);
+      throw new Error(commandNotFoundMessage(cmdletName));
     }
     const role = this.pc.getDfsrRole();
     if (!role) throw new Error(`${cmdletName} : DFS Replication is not available on this computer.`);
@@ -3146,7 +3201,7 @@ class WindowsAdcsAdapter implements IAdcsProvider {
 
   private requireRole(cmdletName: string) {
     if (!this.pc.getRoleManager()?.isInstalled('AD-Certificate')) {
-      throw new Error(`${cmdletName} is not recognized as the name of a cmdlet, function, script file, or operable program`);
+      throw new Error(commandNotFoundMessage(cmdletName));
     }
     const role = this.pc.getAdcsRole();
     if (!role) throw new Error(`${cmdletName} : Active Directory Certificate Services is not available on this computer.`);
@@ -3227,7 +3282,7 @@ class WindowsClusterAdapter implements IClusterProvider {
 
   private requireRole(cmdletName: string): void {
     if (!this.pc.getRoleManager()?.isInstalled('Failover-Clustering')) {
-      throw new Error(`${cmdletName} is not recognized as the name of a cmdlet, function, script file, or operable program`);
+      throw new Error(commandNotFoundMessage(cmdletName));
     }
   }
 
@@ -3269,7 +3324,7 @@ class WindowsWsusAdapter implements IWsusProvider {
 
   private requireRole(cmdletName: string) {
     if (!this.pc.getRoleManager()?.isInstalled('UpdateServices')) {
-      throw new Error(`${cmdletName} is not recognized as the name of a cmdlet, function, script file, or operable program`);
+      throw new Error(commandNotFoundMessage(cmdletName));
     }
     const role = this.pc.getWsusRole();
     if (!role) throw new Error(`${cmdletName} : Windows Server Update Services is not available on this computer.`);
@@ -3303,7 +3358,7 @@ class WindowsPrintAdapter implements IPrintProvider {
 
   private requireRole(cmdletName: string) {
     if (!this.pc.getRoleManager()?.isInstalled('Print-Services')) {
-      throw new Error(`${cmdletName} is not recognized as the name of a cmdlet, function, script file, or operable program`);
+      throw new Error(commandNotFoundMessage(cmdletName));
     }
     const role = this.pc.getPrintServerRole();
     if (!role) throw new Error(`${cmdletName} : Print and Document Services is not available on this computer.`);

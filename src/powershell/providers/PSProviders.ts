@@ -19,6 +19,8 @@ import type { RemoteDirectoryTarget } from './adRemoteDirectory';
 import type { NetRouteIdentity, NetRouteUpdate } from '@/network/devices/windows/netRoute';
 import type { NetFirewallRuleEntry } from '@/network/devices/windows/netFirewallRule';
 import type { NetAdapterEntry } from '@/network/devices/windows/netAdapter';
+import type { NetNeighborPlan, NetNeighborRow } from '@/network/devices/windows/netNeighbor';
+import type { DnsCacheRow } from '@/network/devices/windows/dnsClientCache';
 
 // ─── Entry types re-exported for cmdlet use ────────────────────────────────
 
@@ -1210,15 +1212,7 @@ export interface NetIPAddressOptions {
   preferredLifetimeSeconds?: number;
 }
 
-export interface NeighborInfo {
-  ifIndex: number;
-  ifAlias: string;
-  ipAddress: string;
-  linkLayerAddress: string;
-  state: 'Reachable' | 'Permanent' | 'Unreachable' | 'Stale' | 'Incomplete';
-  addressFamily: 'IPv4' | 'IPv6';
-  policyStore: 'ActiveStore' | 'PersistentStore';
-}
+export type NeighborInfo = NetNeighborRow;
 
 export interface AdapterStatisticsInfo {
   name: string;
@@ -1300,11 +1294,11 @@ export interface INetworkProvider {
   resolveNetInterface(spec: { alias?: string; index?: number }): { alias: string; ifIndex: number } | null;
   setDhcpEnabled(ifAlias: string, enabled: boolean): void;
   getRoutes(ifAlias?: string): RouteInfo[];
-  getNeighbors(filter?: { ipAddress?: import('@/network/core/types').IPAddress; state?: string; ifIndex?: number }): NeighborInfo[];
-  addNeighbor(ipAddress: import('@/network/core/types').IPAddress, linkLayerAddress: import('@/network/core/types').MACAddress, ifAlias: string): string;
-  removeNeighbor(ipAddress: import('@/network/core/types').IPAddress, ifAlias?: string): string;
+  getNeighbors(): NeighborInfo[];
+  addNeighbor(plan: NetNeighborPlan): string;
+  removeNeighbors(rows: readonly NeighborInfo[]): number;
+  setNeighborLinkLayer(rows: readonly NeighborInfo[], linkLayerAddress: import('@/network/core/types').MACAddress): number;
   clearNeighbors(ifAlias?: string): void;
-  setNeighbor(ipAddress: import('@/network/core/types').IPAddress, linkLayerAddress: import('@/network/core/types').MACAddress, ifAlias?: string): string;
   addRoute(dest: string, ifAlias: string, nextHop: string, metric: number, opts?: NetRouteAttributes): void;
   removeRoute(route: NetRouteIdentity): void;
   setRoute(route: NetRouteIdentity, update: NetRouteUpdate): string;
@@ -1350,7 +1344,7 @@ export interface INetworkProvider {
   /** Resolve-DnsName -Server, with each answer's real TTL (does not touch the client cache). */
   resolveDnsViaServerWithTtl?(name: string, server: string): Array<{ ip: string; ttl: number }>;
   /** Get-DnsClientCache */
-  getDnsClientCache?(): Array<{ name: string; type: string; value: string; ttl: number }>;
+  getDnsClientCache?(): DnsCacheRow[];
   /** Clear-DnsClientCache */
   clearDnsClientCache?(): void;
   /**
@@ -1421,6 +1415,7 @@ export interface IUserProvider {
   getGroup(name: string): GroupInfo | null;
   createGroup(name: string, opts?: { description?: string }): string;
   removeGroup(name: string): string;
+  renameGroup(oldName: string, newName: string): string;
   addGroupMember(group: string, member: string): string;
   removeGroupMember(group: string, member: string): string;
   getGroupMembers(group: string): UserInfo[];

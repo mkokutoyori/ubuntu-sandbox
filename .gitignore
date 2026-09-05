@@ -44,3 +44,4 @@ graphify-out/
 
 # Vitest coverage reports (large, regenerable)
 coverage/
+__pycache__/
