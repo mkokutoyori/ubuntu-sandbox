@@ -155,7 +155,7 @@ import { transferTransportOf } from '../../dns/transfer/ZoneTransferClient';
 import type { SdwanService } from './sdwan/SdwanService';
 import { ETHERTYPE_FGCP, type HaAgent } from './ha/HaAgent';
 import { serialNumberOf, type FirewallHa } from './ha/FirewallHa';
-import type { HaConfiguration } from './ha/HaTypes';
+import { HA_DEFAULTS, type HaConfiguration } from './ha/HaTypes';
 import type {
   SdwanConfiguration, SdwanHealthTransition, SdwanTable,
 } from './sdwan/SdwanTable';
@@ -839,9 +839,17 @@ export class Firewall extends Equipment {
   }
 
   applyHa(c: HaConfiguration): string | undefined {
+    this.haConfiguration = c;
     this.haService.agent.configure(c);
     this.applyClusterVirtualMacs(c);
     return undefined;
+  }
+
+  private haConfiguration: HaConfiguration = HA_DEFAULTS;
+
+  isHaManagementInterface(iface: string): boolean {
+    return this.haConfiguration.managementStatus
+      && this.haConfiguration.managementInterfaces.includes(iface);
   }
 
   private readonly permanentMacs = new Map<string, MACAddress>();
@@ -2184,6 +2192,7 @@ export class Firewall extends Equipment {
       rules: context[store].ordered(),
       evaluator: context.evaluator,
       zoneOf: (name) => context.zones.zoneOf(name) ?? '',
+      isHaManagementInterface: (name) => this.isHaManagementInterface(name),
     }, iface, traffic);
   }
 

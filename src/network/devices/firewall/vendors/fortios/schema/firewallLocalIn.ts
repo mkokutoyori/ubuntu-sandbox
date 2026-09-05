@@ -109,6 +109,8 @@ function localInSpec(family: LocalInFamily): FortiTableSpec {
         enabled: object.effective('status')[0] !== 'disable',
         schedule: timeRestriction(object.effective('schedule')[0]),
         comment: comment === '' ? undefined : comment,
+        haMgmtInterfaceOnly:
+          object.effective('ha-mgmt-intf-only')[0] === 'enable' ? true : undefined,
       });
     },
     onDelete(key, context) {
