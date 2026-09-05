@@ -31,7 +31,9 @@ export interface ScanHost {
   grabGreeting(ip: string, port: number): string | null;
   sendUdpProbe(
     ip: string, port: number, sourcePort: number,
-    options?: { ttl?: number; badChecksum?: boolean; sourceIp?: IPAddress },
+    options?: {
+      ttl?: number; badChecksum?: boolean; sourceIp?: IPAddress; payload?: Uint8Array;
+    },
   ): boolean;
   /** Un segment hors connexion, et ce qui revient — la lecture est au moteur. */
   scanProbe(
@@ -203,6 +205,7 @@ function probeUdpPort(
       badChecksum: shape.badChecksum,
       sourceIp: shape.sourceIp === undefined
         ? undefined : new IPAddress(shape.sourceIp),
+      payload: shape.payload,
     });
   } catch {
     stop();

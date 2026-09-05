@@ -716,7 +716,7 @@ function deserializeCapture(raw: string): CapturedPacket[] {
       seq: f.tcpSeq ?? 0,
       ack: f.tcpAck ?? 0,
       length: f.payloadLength ?? 0,
-      payload: f.tcpPayload ? new Uint8Array(f.tcpPayload) : undefined,
+      payload: f.appPayload ? new Uint8Array(f.appPayload) : undefined,
     }));
 }
 

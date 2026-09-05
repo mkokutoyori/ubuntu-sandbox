@@ -37,6 +37,25 @@ function probePayloadBytes(scanType: ScanType): number {
   return scanType === 'udp' ? UDP_HEADER_BYTES : TCP_HEADER_BYTES;
 }
 
+const MAX_PAYLOAD_ALLOWED = 65535 - 60 - 40;
+const BIG_PAYLOAD_WARNING =
+  'WARNING: Payloads bigger than 1400 bytes may not be sent successfully.';
+const DOUBLE_PAYLOAD =
+  "Can't use the --data option(s) multiple times, or together.";
+
+function parseHexPayload(spec: string): Uint8Array | null {
+  let body = spec;
+  if (spec.startsWith('0x')) body = spec.slice(2);
+  else if (spec.startsWith('\\x')) body = spec.replace(/[\\xX]/g, '');
+  if (body.length === 0 || body.length % 2 !== 0) return null;
+  if (!/^[0-9a-fA-F]+$/.test(body)) return null;
+  const out = new Uint8Array(body.length / 2);
+  for (let i = 0; i < out.length; i++) {
+    out[i] = Number.parseInt(body.slice(i * 2, i * 2 + 2), 16);
+  }
+  return out;
+}
+
 export type DecoySource = { kind: 'me' } | { kind: 'forged'; ip: string };
 
 const MAX_DECOYS = 128;
@@ -301,6 +320,7 @@ export function parseNmapArgs(args: string[]): NmapOptions {
   let excludeFile: string | undefined;
   let excludeSpecs: string[] | undefined;
   let randomTargets: number | undefined;
+  let extraPayload: Uint8Array | undefined;
   const warnings: string[] = [];
 
   for (let i = 0; i < args.length; i++) {
@@ -379,6 +399,37 @@ export function parseNmapArgs(args: string[]): NmapOptions {
       if (!Number.isInteger(fragmentMtu) || fragmentMtu <= 0 || fragmentMtu % 8 !== 0) {
         throw new NmapOptionError(['Data payload MTU must be >0 and multiple of 8']);
       }
+      continue;
+    }
+    if (a === '--data' && args[i + 1] !== undefined) {
+      if (extraPayload !== undefined) throw new NmapOptionError([DOUBLE_PAYLOAD]);
+      const parsed = parseHexPayload(args[++i]);
+      if (parsed === null) throw new NmapOptionError(['Invalid hex string specified']);
+      extraPayload = parsed;
+      if (extraPayload.length > 1400) warnings.push(BIG_PAYLOAD_WARNING);
+      continue;
+    }
+    if (a === '--data-string' && args[i + 1] !== undefined) {
+      if (extraPayload !== undefined) throw new NmapOptionError([DOUBLE_PAYLOAD]);
+      const text = args[++i];
+      if (text.length > MAX_PAYLOAD_ALLOWED) {
+        throw new NmapOptionError(
+          [`string length must be between 0 and ${MAX_PAYLOAD_ALLOWED}`]);
+      }
+      extraPayload = new TextEncoder().encode(text);
+      if (extraPayload.length > 1400) warnings.push(BIG_PAYLOAD_WARNING);
+      continue;
+    }
+    if (a === '--data-length' && args[i + 1] !== undefined) {
+      if (extraPayload !== undefined) throw new NmapOptionError([DOUBLE_PAYLOAD]);
+      const length = Number(args[++i]);
+      if (!Number.isInteger(length) || length < 0 || length > MAX_PAYLOAD_ALLOWED) {
+        throw new NmapOptionError(
+          [`data-length must be between 0 and ${MAX_PAYLOAD_ALLOWED}`]);
+      }
+      if (length > 1400) warnings.push(BIG_PAYLOAD_WARNING);
+      extraPayload = new Uint8Array(length);
+      for (let b = 0; b < length; b++) extraPayload[b] = Math.floor(Math.random() * 256);
       continue;
     }
     if (a === '-iL' && args[i + 1] !== undefined) {
@@ -474,7 +525,7 @@ export function parseNmapArgs(args: string[]): NmapOptions {
   // l'ecrit par paquet, depuis la fonction d'emission ; ici la sonde a la
   // meme taille pour tous les ports d'un balayage, donc la repeter par
   // port enfouirait le rapport sans rien apprendre de plus.
-  const payload = probePayloadBytes(scanType);
+  const payload = probePayloadBytes(scanType) + (extraPayload?.length ?? 0);
   if (fragmentMtu > 0 && payload <= fragmentMtu) {
     warnings.push(`Warning: fragmentation (mtu=${fragmentMtu}) requested but`
       + ` the payload is too small already (${payload})`);
@@ -483,7 +534,8 @@ export function parseNmapArgs(args: string[]): NmapOptions {
 
   const shapesTheProbe = badChecksum || sourcePort !== undefined
     || probeTtl !== undefined || fragmentMtu > 0
-    || spoofSource !== undefined || decoySpec !== undefined;
+    || spoofSource !== undefined || decoySpec !== undefined
+    || extraPayload !== undefined;
   // Un balayage CONNECTE ne compose pas son paquet, donc il n'honore
   // aucune des trois. L'avertissement propre a `-g` precede le
   // generique, `ValidateOptions()` (`nmap.cc:1535`) etant appele avant
@@ -497,6 +549,7 @@ export function parseNmapArgs(args: string[]): NmapOptions {
     shapesTheProbe && !connectScan
       ? {
         sourcePort, ttl: probeTtl, badChecksum, sourceIp: spoofSource,
+        payload: extraPayload,
         fragmentMtu: fragmentMtu > 0 ? fragmentMtu : undefined,
       }
       : undefined;

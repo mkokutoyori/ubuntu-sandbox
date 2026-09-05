@@ -47,6 +47,7 @@ export interface ScanProbeShape {
    * options — et ce qui fait qu'un leurre ne rapporte aucun verdict.
    */
   sourceIp?: string;
+  payload?: Uint8Array;
 }
 
 /** La duree de vie qu'une pile TCP pose sur ses propres segments. */
@@ -627,7 +628,7 @@ export class TcpStack {
       sourcePort: localPort, destinationPort: remotePort,
       sequence: nextIsn(), acknowledgement: 0,
       dataOffset: 5, flags, window: TCP_DEFAULT_WINDOW,
-      checksum: 0, urgentPointer: 0, options: [], payload: undefined,
+      checksum: 0, urgentPointer: 0, options: [], payload: shape.payload,
     };
     const sum = computeTcpChecksum(seg, srcIp, target);
     seg.checksum = shape.badChecksum ? bogusChecksum(sum, IP_PROTO_TCP) : sum;
