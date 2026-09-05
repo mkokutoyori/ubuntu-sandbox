@@ -19,6 +19,19 @@ const SOURCE_PORT_CONNECT_WARNING = 'WARNING: -g is incompatible with the'
 
 const ZERO_SOURCE_PORT_WARNING =
   'WARNING: a source port of zero may not work on all systems.';
+
+/**
+ * La CHARGE que chaque type de balayage compose, en octets, donc ce que
+ * `--mtu` a a decouper : un en-tete TCP sans option pour les balayages
+ * qui composent un segment, un en-tete UDP pour `-sU`. Sans `--data`, un
+ * vrai nmap n'ajoute aucune donnee derriere.
+ */
+const TCP_HEADER_BYTES = 20;
+const UDP_HEADER_BYTES = 8;
+
+function probePayloadBytes(scanType: ScanType): number {
+  return scanType === 'udp' ? UDP_HEADER_BYTES : TCP_HEADER_BYTES;
+}
 import { parseScanFlags, type ScanProbeFlags } from './StatelessScans';
 import { topPorts, fastPorts } from './ServiceRegistry';
 
@@ -219,6 +232,7 @@ export function parseNmapArgs(args: string[]): NmapOptions {
   let sourcePort: number | undefined;
   let probeTtl: number | undefined;
   let badChecksum = false;
+  let fragmentMtu = 0;
   const warnings: string[] = [];
 
   for (let i = 0; i < args.length; i++) {
@@ -285,6 +299,20 @@ export function parseNmapArgs(args: string[]): NmapOptions {
       outputXml = `${base}.xml`;
       continue;
     }
+    // `nmap.cc:1082` : `-f` AJOUTE huit, donc `-f -f` vaut `-ff`, que la
+    // forme longue ecrit d'un coup (`nmap.cc:961`).
+    if (a === '-f') { fragmentMtu += 8; continue; }
+    if (a === '-ff' || a === '--ff') { fragmentMtu += 16; continue; }
+    // `nmap.cc:969` : `--mtu` POSE la valeur, et le champ « fragment
+    // offset » comptant par huit octets, une valeur qui n'en est pas un
+    // multiple ne serait pas representable.
+    if (a === '--mtu' && args[i + 1] !== undefined) {
+      fragmentMtu = Number(args[++i]);
+      if (!Number.isInteger(fragmentMtu) || fragmentMtu <= 0 || fragmentMtu % 8 !== 0) {
+        throw new NmapOptionError(['Data payload MTU must be >0 and multiple of 8']);
+      }
+      continue;
+    }
     if (a === '--badsum') { badChecksum = true; continue; }
     if ((a === '-g' || a === '--source-port') && args[i + 1] !== undefined) {
       sourcePort = Number(args[++i]);
@@ -332,8 +360,20 @@ export function parseNmapArgs(args: string[]): NmapOptions {
   // debogage 3, que `--packet-trace` ait ete ecrit ou non.
   if (debugLevel >= 3) packetTrace = true;
 
+  // `send_frag_ip_packet` (`libnetutil/netutil.cc:2748`) : une charge deja
+  // plus petite que la MTU demandee part ENTIERE, et le dit. Un vrai nmap
+  // l'ecrit par paquet, depuis la fonction d'emission ; ici la sonde a la
+  // meme taille pour tous les ports d'un balayage, donc la repeter par
+  // port enfouirait le rapport sans rien apprendre de plus.
+  const payload = probePayloadBytes(scanType);
+  if (fragmentMtu > 0 && payload <= fragmentMtu) {
+    warnings.push(`Warning: fragmentation (mtu=${fragmentMtu}) requested but`
+      + ` the payload is too small already (${payload})`);
+    fragmentMtu = 0;
+  }
+
   const shapesTheProbe = badChecksum || sourcePort !== undefined
-    || probeTtl !== undefined;
+    || probeTtl !== undefined || fragmentMtu > 0;
   // Un balayage CONNECTE ne compose pas son paquet, donc il n'honore
   // aucune des trois. L'avertissement propre a `-g` precede le
   // generique, `ValidateOptions()` (`nmap.cc:1535`) etant appele avant
@@ -345,7 +385,10 @@ export function parseNmapArgs(args: string[]): NmapOptions {
   if (shapesTheProbe && connectScan) warnings.push(...RAW_OPTIONS_WARNING);
   const probeShape: ScanProbeShape | undefined =
     shapesTheProbe && !connectScan
-      ? { sourcePort, ttl: probeTtl, badChecksum }
+      ? {
+        sourcePort, ttl: probeTtl, badChecksum,
+        fragmentMtu: fragmentMtu > 0 ? fragmentMtu : undefined,
+      }
       : undefined;
 
   return {

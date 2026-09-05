@@ -7762,3 +7762,54 @@ meme envoi, dont une seule lisait le champ.
 12 tombent contre l'etat d'avant, ou les trois options sont refusees
 avant tout balayage. Un cas e2e Playwright tape les quatre formes dans le
 vrai terminal.
+
+## 2026-09-05 — `-f`/`--ff`/`--mtu`, et le bit MF qui n'existait pour personne
+
+**Portee** : `scan/nmap/` (`NmapOptions`, `PacketTrace`), `tcp/TcpStack.ts`,
+`core/Ipv4Fragmentation.ts`, `linux/network/tcpdump/`
+(`CaptureFrame`, `TcpdumpFormat`), plus la porte Linux. Aucun fichier de
+journalisation touche.
+
+L'option d'evasion la plus ancienne de nmap, et la seule qui exerce un
+mecanisme que ce depot porte deja des DEUX cotes : `fragmentIPv4` et
+`IPv4Reassembler`, jusqu'ici employes par le seul ACHEMINEMENT. Ici
+l'EMETTEUR decoupe deliberement et l'hote de destination recolle, donc le
+port se lit toujours `open` pendant que la capture montre trois paquets.
+
+**LE DEFAUT QUE LA MESURE A TROUVE, et qui depasse nmap** :
+`IPV4_FLAG_MF` valait `0b100` — le bit RESERVE de la RFC 791 §3.1, pas
+MF — pendant que TROIS lecteurs numeriques testaient `& 0x1`, la vraie
+valeur du fil. Consequences mesurees : `tcpdump` rendait `flags [none]`
+sur un fragment qui porte MF (`flags [DF]` marchait, ce qui masquait
+tout), et **le mot-cle `fragments` d'une liste de controle ne voyait pas
+le PREMIER fragment** — celui de decalage nul, qui porte l'en-tete de
+transport et donc les ports que la regle veut juger.
+
+**Deux fictions de rendu fermees avec** : un fragment NON INITIAL etait
+decode comme s'il portait un en-tete TCP, `tcpdump` annoncant
+`10.0.0.1.0 > 10.0.0.2.0: Flags [none], cksum 0x0000, seq 0` — la
+description d'octets absents du paquet ; il rend desormais
+`10.0.0.1 > 10.0.0.2: ip-proto-6` (`print-ip.c:506`). Et le nom du
+protocole venait de ce que la capture avait su DECODER, si bien qu'un
+fragment devenait `proto unknown (6)` : il vient du NUMERO de l'en-tete
+IP, donc `proto TCP (6)`.
+
+**DF est clair sur une sonde de nmap** (`scan_engine_raw.cc:1075` passe
+`false`), et `tcpip.cc:387` ne fragmente que ce qui ne l'interdit pas :
+demander `-f` claire donc le bit. Ce simulateur pose DF sur tout segment
+TCP — juste pour une CONNEXION, faux pour une sonde apatride — et ne le
+claire que la ou la fragmentation est demandee.
+
+**Une divergence assumee et ecrite** : l'avertissement « payload is too
+small already » est emis UNE fois par balayage et non par paquet comme le
+vrai. La sonde a la meme taille pour tous les ports d'un balayage, donc
+la repeter par port enfouirait le rapport sans rien apprendre.
+
+**Discrimination** : `probe-nmap-sonde-fragmentee.test.ts` (10 cas), les
+10 tombent contre l'etat d'avant. Deux premisses ecrites a l'aveugle
+etaient fausses et c'est la SONDE qui a ete corrigee : un balayage SYN
+emet un SECOND paquet apres coup (le RST au SYN/ACK, ce qu'un vrai `-sS`
+provoque aussi), et `--packet-trace` d'un vrai nmap montre UNE ligne pour
+le datagramme entier, la trace etant posee sur le paquet d'AVANT
+decoupage (`tcpip.cc:394`). Un cas e2e Playwright balaye avec `-f` et
+relit la capture de la cible.

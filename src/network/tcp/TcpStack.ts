@@ -9,6 +9,7 @@ import {
   TCP_DEFAULT_MSS, TCP_DEFAULT_WINDOW, TCP_TIME_WAIT_MS, TCP_MIN_MSS,
 } from './types';
 import { bogusChecksum, payloadBytes } from '@/network/layers/transport/L4Checksum';
+import { fragmentIPv4, IPV4_FLAG_DF } from '@/network/core/Ipv4Fragmentation';
 import { PortNumber } from '@/network/core/ports/PortNumber';
 import {
   ICMP_UNREACH_NET_PROHIBITED, ICMP_UNREACH_HOST_PROHIBITED,
@@ -32,6 +33,14 @@ export interface ScanProbeShape {
   sourcePort?: number;
   ttl?: number;
   badChecksum?: boolean;
+  /**
+   * `-f`/`--mtu` : la taille de la CHARGE de chaque fragment, en-tete
+   * IPv4 exclu (`NmapOps.h:253`, « 0 or MTU (without IPv4 header
+   * size) »). Demander un decoupage CLAIRE le bit DF, qu'un datagramme
+   * fragmente ne peut pas porter — c'est pourquoi les sondes brutes de
+   * nmap le laissent a zero (`scan_engine_raw.cc:1075`).
+   */
+  fragmentMtu?: number;
 }
 
 /** La duree de vie qu'une pile TCP pose sur ses propres segments. */
@@ -612,7 +621,7 @@ export class TcpStack {
     const sum = computeTcpChecksum(seg, egress.srcIp, target);
     seg.checksum = shape.badChecksum ? bogusChecksum(sum, IP_PROTO_TCP) : sum;
     try {
-      this.shipSegment(egress, egress.srcIp, target, seg, shape.ttl);
+      this.shipSegment(egress, egress.srcIp, target, seg, shape);
     } finally {
       this.statelessProbes.delete(key);
     }
@@ -1688,13 +1697,13 @@ export class TcpStack {
 
   private shipSegment(
     egress: { name: string; port?: import('../hardware/Port').Port; nextHopIp?: string },
-    srcIp: string, dstIp: string, seg: TcpSegment, ttl?: number,
+    srcIp: string, dstIp: string, seg: TcpSegment, shape?: ScanProbeShape,
   ): void {
     const family = ipFamilyOf(dstIp);
     const local = this.isLocalDestination(dstIp, family);
     const l3Packet = family === 'ipv6'
-      ? this.buildIpv6Segment(srcIp, dstIp, seg, ttl)
-      : this.buildIpv4Segment(srcIp, dstIp, seg, ttl);
+      ? this.buildIpv6Segment(srcIp, dstIp, seg, shape?.ttl)
+      : this.buildIpv4Segment(srcIp, dstIp, seg, shape?.ttl, shape?.fragmentMtu);
     this.getBus().publish({
       topic: 'tcp.segment.sent',
       payload: {
@@ -1717,12 +1726,23 @@ export class TcpStack {
         egress.name, l3Packet as IPv6Packet, new IPv6Address(nextHopIp));
       return;
     }
-    this.host.sendIpv4FrameArpAware(
-      egress.name, l3Packet as IPv4Packet, new IPAddress(nextHopIp));
+    const nextHop = new IPAddress(nextHopIp);
+    const packet = l3Packet as IPv4Packet;
+    if (shape?.fragmentMtu === undefined) {
+      this.host.sendIpv4FrameArpAware(egress.name, packet, nextHop);
+      return;
+    }
+    // `fragmentIPv4` compte la MTU du LIEN, en-tete compris ; `fragscan`
+    // compte la charge seule.
+    const fragments = fragmentIPv4(packet, packet.ihl * 4 + shape.fragmentMtu);
+    for (const fragment of fragments) {
+      this.host.sendIpv4FrameArpAware(egress.name, fragment, nextHop);
+    }
   }
 
   private buildIpv4Segment(
     srcIp: string, dstIp: string, seg: TcpSegment, ttl = TCP_DEFAULT_TTL,
+    fragmentMtu?: number,
   ): IPv4Packet {
     const tcpHeaderBytes = seg.dataOffset * 4;
     // PRD-TCP.md P7 (RFC 1191 §1) — DF set, matching real TCP stacks:
@@ -1730,7 +1750,8 @@ export class TcpStack {
     // instead of reporting back so PMTUD can shrink our MSS.
     return createIPv4Packet(
       new IPAddress(srcIp), new IPAddress(dstIp), IP_PROTO_TCP, ttl,
-      seg, tcpHeaderBytes + payloadBytes(seg.payload).length, { flags: 0b010 });
+      seg, tcpHeaderBytes + payloadBytes(seg.payload).length,
+      { flags: fragmentMtu === undefined ? IPV4_FLAG_DF : 0 });
   }
 
   private buildIpv6Segment(

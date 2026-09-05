@@ -19,7 +19,7 @@ import type { NetworkPdu } from './NetworkPdu';
 
 /** Header flag bits, matching the convention documented on `IPv4Packet.flags`. */
 export const IPV4_FLAG_DF = 0b010;
-export const IPV4_FLAG_MF = 0b100;
+export const IPV4_FLAG_MF = 0b001;
 
 /** Placeholder payload for a non-first fragment — no upper-layer header lives here. */
 export interface IPv4FragmentData extends NetworkPdu {

@@ -37,9 +37,9 @@ export const nmapCommand: LinuxCommand = {
   needsNetworkContext: true,
   complete: makeArgCompleter({
     flags: ['-6', '-A', '-F', '-O', '-P0', '-Pn', '-R', '-T', '-d', '-n',
-      '-g', '-oA', '-oG', '-oN', '-oX', '-p', '-p-', '-sP', '-sS', '-sT', '-sU',
+      '-f', '-ff', '-g', '-oA', '-oG', '-oN', '-oX', '-p', '-p-', '-sP', '-sS', '-sT', '-sU',
       '-sV', '-sA', '-sF', '-sM', '-sN', '-sW', '-sX', '-sn', '-v', '-vv',
-      '--badsum', '--disable-arp-ping', '--no-stylesheet', '--open',
+      '--badsum', '--disable-arp-ping', '--mtu', '--no-stylesheet', '--open',
       '--packet-trace', '--reason', '--send-ip', '--source-port', '--stylesheet',
       '--top-ports', '--traceroute', '--ttl', '--webxml'],
     hostsAtBarePosition: true,

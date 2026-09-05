@@ -457,6 +457,37 @@ test.describe('nmap sonde le fil', () => {
     expect(connecte).toMatch(/22\/tcp\s+open\s+ssh/);
   });
 
+  test('`-f` decoupe la sonde, et la cible la recolle', async ({ page }) => {
+    test.setTimeout(180_000);
+    await page.goto('/', { timeout: 45_000 });
+    await waitForStore(page);
+
+    const cibleId = await addDevice(page, 'linux-server', 300, 470);
+    const scannerId = await addDevice(page, 'linux-pc', 600, 470);
+    await cable(page, cibleId, scannerId);
+
+    await openTerminal(page, cibleId);
+    await typeCmd(page, `ip addr add ${CIBLE}/24 dev eth0`);
+    await typeCmd(page, 'sudo systemctl start ssh');
+    await typeCmd(page, 'tcpdump -nn -i eth0 -w frag.pcap &');
+    await closeTerminal(page);
+
+    await openTerminal(page, scannerId);
+    await typeCmd(page, `ip addr add ${SCANNER}/24 dev eth0`);
+    await typeCmd(page, `nmap -Pn -sS -f -p 22 ${CIBLE}`);
+    const rapport = await lastLines(page, 8);
+    expect(rapport).not.toContain('not implemented');
+    expect(rapport).toMatch(/22\/tcp\s+open\s+ssh/);
+    await closeTerminal(page);
+
+    await openTerminal(page, cibleId);
+    await typeCmd(page, 'tcpdump -r frag.pcap -nn -v');
+    const capture = await lastLines(page, 24);
+    expect(capture).toContain('offset 0, flags [+]');
+    expect(capture).toContain('offset 8, flags [+]');
+    expect(capture).toContain(`${SCANNER} > ${CIBLE}: ip-proto-6`);
+  });
+
   test('nmap.exe existe aussi sur une machine Windows', async ({ page }) => {
     test.setTimeout(180_000);
     await page.goto('/', { timeout: 45_000 });
