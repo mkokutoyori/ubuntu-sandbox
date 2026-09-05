@@ -41,6 +41,7 @@ import {
 import {
   SplitPathCmdlet, JoinPathCmdlet, TestPathCmdlet, ResolvePathCmdlet,
   GetChildItemCmdlet, GetContentCmdlet, SetContentCmdlet, AddContentCmdlet,
+  ClearContentCmdlet,
   NewItemCmdlet, RemoveItemCmdlet, CopyItemCmdlet, MoveItemCmdlet,
   OutFileCmdlet as OutFilePathCmdlet,
   GetItemPropertyCmdlet, SetItemPropertyCmdlet, NewItemPropertyCmdlet, RemoveItemPropertyCmdlet, ClearItemPropertyCmdlet,
@@ -55,6 +56,7 @@ import {
   SetLocationCmdlet, GetLocationCmdlet, PushLocationCmdlet, PopLocationCmdlet,
   NewPSDriveCmdlet, GetPSDriveCmdlet,
   GetAliasCmdlet, GetPSProviderCmdlet,
+  GetHistoryCmdlet, GetExecutionPolicyCmdlet, SetExecutionPolicyCmdlet,
 } from './MiscCmdlets';
 import { AddMemberCmdlet } from './AddMemberCmdlet';
 import {
@@ -115,6 +117,7 @@ import {
   EnableScheduledTaskCmdlet, DisableScheduledTaskCmdlet, SetScheduledTaskCmdlet,
   NewScheduledTaskActionCmdlet, NewScheduledTaskPrincipalCmdlet, GetDiskCmdlet, GetVolumeCmdlet,
   GetCimInstanceCmdlet, GetCounterCmdlet,
+  GetComputerInfoCmdlet,
 } from './SystemMgmtCmdlets';
 import {
   EnablePSRemotingCmdlet, TestWSManCmdlet, GetWSManCredSSPCmdlet,
@@ -303,6 +306,11 @@ export function registerCoreCmdlets(registry: CmdletRegistry, opts: { includeSer
   registry.register(new GetContentCmdlet());
   registry.register(new SetContentCmdlet());
   registry.register(new AddContentCmdlet());
+  registry.register(new ClearContentCmdlet());
+  registry.register(new GetHistoryCmdlet());
+  registry.register(new GetExecutionPolicyCmdlet());
+  registry.register(new SetExecutionPolicyCmdlet());
+  registry.register(new GetComputerInfoCmdlet());
   registry.register(new NewItemCmdlet());
   registry.register(new RemoveItemCmdlet());
   registry.register(new CopyItemCmdlet());

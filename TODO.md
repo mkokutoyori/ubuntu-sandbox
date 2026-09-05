@@ -2705,3 +2705,66 @@ desormais, donc les deux repondent differemment a
 arrivee apres le lancement du balayage complet de `network-v2` qui valide
 le lot ; l'appliquer aurait invalide la mesure. A retirer au lot suivant,
 avec sa propre verification.
+
+### [powershell] `netsh wlan add profile` ne lit pas le XML du profil
+
+**Mesure** : `netsh wlan add profile filename="C:\temp\quoi-que-ce-soit.xml"`
+repond « Cannot find the file » pour tout nom de fichier autre que
+`test-wifi.xml`, seul profil modelise, enregistre sous le nom `TestWiFi`.
+Le vrai `netsh` lit le fichier, y trouve `<name>` et `<SSID>`, et
+enregistre le profil sous CE nom.
+
+**Pourquoi ce n'est pas ferme ici** : `WinCommandContext` — le contexte
+que tous les `netsh` recoivent — ne porte AUCUN acces au systeme de
+fichiers. Lire le XML demande d'y ajouter un port de lecture, ce qui
+touche tous les sous-contextes de `netsh` ; c'est un lot a soi. En
+attendant, le seul profil connu est declare comme tel plutot que
+d'accepter n'importe quel nom en pretendant l'avoir lu.
+
+### [powershell] `NULL_PROVIDERS` est un SINGLETON de module
+
+**Mesure** : `NullProviders.ts` construit `filesystem: new SimulatedFileSystem()`
+une fois pour tout le module. Deux `new PSInterpreter()` sans providers
+partagent donc UN systeme de fichiers : ce que l'un ecrit, l'autre le
+lit, et un `Set-Location` fait dans un test deplace le repertoire courant
+du suivant. Le defaut existait avant que `$PWD` en derive ; il est
+simplement devenu observable par une variable de plus.
+
+**Pourquoi ce n'est pas ferme ici** : `NULL_PROVIDERS` est passe par
+DEFAUT dans une trentaine de signatures ; en faire une fabrique
+(`nullProviders()`) est mecanique mais large, et se mesure a part.
+
+### [powershell] la mise en page de `netsh winhttp` n'est pas verifiee sur transcription
+
+**Mesure** : deux ecritures de `netsh winhttp show proxy` coexistaient —
+celle de `WinNetsh` (deux espaces d'indentation, pas de ligne vide) et
+celle de l'executeur PowerShell (quatre espaces, ligne vide apres
+l'en-tete). La seconde est supprimee comme doublon ; la premiere reste
+donc la seule. Laquelle correspond a la vraie sortie de Windows n'a pas
+pu etre tranchee : la documentation de Microsoft ne publie que la
+grammaire, et les pages qui portent une transcription
+(`documentation.n-able.com`, `parsiya.net`, `learn.microsoft.com`) sont
+toutes bloquees par le proxy de sortie. Aucune des deux n'a donc ete
+choisie sur autorite — on a garde celle qui vit avec ses tests, et la
+question reste ouverte.
+
+### [powershell] l'executeur historique n'a plus d'appelant en production, mais 1300 tests le pilotent
+
+**Mesure** : apres ce lot, `grep -rn "PowerShellExecutor" src/ --include=*.ts`
+hors `__tests__` ne rend plus un seul `import` ni un seul `new`. Le
+fichier — 4000 lignes, un second interpreteur PowerShell a base
+d'expressions regulieres — n'est donc plus atteignable par l'application.
+Il reste importe par ~25 fichiers de test, soit environ 1300 cas, dont
+les trois gros : `powershell-basic-cmdlets.test.ts` (558),
+`powershell-cmdlet.test.ts` (354), `cmd-netsh.test.ts` (186).
+
+**Ce que coute la fermeture** : pointer `powershell-basic-cmdlets.test.ts`
+vers le moteur vivant fait tomber 128 cas sur 558. Ils se rangent en
+familles : `<commande> -?` rend `0` au lieu de l'aide ; `Get-Help` vivant
+n'a ni DESCRIPTION ni EXAMPLES la ou l'executeur en avait ; `Copy-Item`,
+`Get-ChildItem`, `Get-Content`, `Get-Service`, `Stop-Process`,
+`Get-Disk`, `Get-Volume` ont des ecarts de rendu ou de parametres. Chaque
+famille est un lot : on migre le fichier, on ferme les manques qu'il
+revele, et le fichier de tests devient enfin une mesure du moteur REEL au
+lieu d'une mesure d'un moteur mort. `PowerShellExecutor.ts` disparait
+quand le dernier fichier est migre.

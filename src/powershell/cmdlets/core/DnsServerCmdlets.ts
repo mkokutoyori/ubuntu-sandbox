@@ -16,10 +16,11 @@ import { PSRuntimeError } from '@/powershell/runtime/PSRuntime';
 import type { PSValue } from '@/powershell/runtime/PSEnvironment';
 import type { IDnsServerProvider, DnsZoneInfo, DnsRecordInfo } from '@/powershell/providers/PSProviders';
 import { psValueToString } from '@/powershell/runtime/PSExpansion';
+import { commandNotFoundMessage } from '@/powershell/commandNotFound';
 
 function requireDns(ctx: CmdletContext, cmdletName: string): IDnsServerProvider {
   if (!ctx.providers.dns) {
-    throw new PSRuntimeError(`${cmdletName} is not recognized as the name of a cmdlet, function, script file, or operable program`);
+    throw new PSRuntimeError(commandNotFoundMessage(cmdletName));
   }
   return ctx.providers.dns;
 }

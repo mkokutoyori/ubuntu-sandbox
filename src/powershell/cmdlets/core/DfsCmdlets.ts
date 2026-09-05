@@ -14,10 +14,11 @@ import type { PSValue } from '@/powershell/runtime/PSEnvironment';
 import type { IDfsProvider, DfsFolderInfo, DfsNamespaceTypeInfo, DfsReferralPriorityClassInfo } from '@/powershell/providers/PSProviders';
 import { psValueToString } from '@/powershell/runtime/PSExpansion';
 import { parseNamespacePath, parseUncTarget } from '@/network/devices/windows/server/dfs/DfsNamespace';
+import { commandNotFoundMessage } from '@/powershell/commandNotFound';
 
 function requireDfs(ctx: CmdletContext, cmdletName: string): IDfsProvider {
   if (!ctx.providers.dfs) {
-    throw new PSRuntimeError(`${cmdletName} is not recognized as the name of a cmdlet, function, script file, or operable program`);
+    throw new PSRuntimeError(commandNotFoundMessage(cmdletName));
   }
   return ctx.providers.dfs;
 }

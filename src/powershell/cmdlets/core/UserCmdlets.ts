@@ -9,13 +9,14 @@
 import type { ICmdlet } from '../ICmdlet';
 import type { CmdletContext } from '../CmdletContext';
 import { PSRuntimeError } from '@/powershell/runtime/PSRuntime';
+import { commandNotFoundMessage } from '@/powershell/commandNotFound';
 import type { PSValue } from '@/powershell/runtime/PSEnvironment';
 import type { UserInfo, GroupInfo, IUserProvider } from '@/powershell/providers/PSProviders';
 import { psValueToString } from '@/powershell/runtime/PSExpansion';
 
 function requireUsers(ctx: CmdletContext): IUserProvider {
   if (!ctx.providers.users) {
-    throw new PSRuntimeError('Get-LocalUser is not recognized as a user provider operation in this context');
+    throw new PSRuntimeError(commandNotFoundMessage('Get-LocalUser'));
   }
   return ctx.providers.users;
 }
@@ -180,7 +181,7 @@ export class RenameLocalUserCmdlet implements ICmdlet {
       return null;
     }
     const msg = users.renameUser(oldName, newName);
-    if (msg && /error|denied|not found/i.test(msg)) ctx.emitError(msg);
+    if (msg) ctx.emitError(msg);
     return null;
   }
 }
@@ -285,10 +286,16 @@ export class RenameLocalGroupCmdlet implements ICmdlet {
   readonly aliases = [] as const;
 
   execute(ctx: CmdletContext): PSValue {
-    void ctx;
-    // The current IUserProvider doesn't expose group rename; defer to the
-    // legacy executor whose handler does the in-place rename.
-    throw new PSRuntimeError('Rename-LocalGroup is not recognized in this provider context');
+    const users = requireUsers(ctx);
+    const oldName = psValueToString(ctx.named['name'] ?? ctx.positional[0] ?? '');
+    const newName = psValueToString(ctx.named['newname'] ?? ctx.positional[1] ?? '');
+    if (!oldName || !newName) {
+      ctx.emitError('Rename-LocalGroup requires -Name and -NewName');
+      return null;
+    }
+    const msg = users.renameGroup(oldName, newName);
+    if (msg) ctx.emitError(msg);
+    return null;
   }
 }
 

@@ -14,6 +14,7 @@ import { md5Hex } from '@/crypto/hash/md5';
 import { sha1Hex } from '@/crypto/hash/sha1';
 import { sha256Hex } from '@/crypto/hash/sha256';
 import { sha512Hex } from '@/crypto/hash/sha512';
+import { commandNotFoundMessage } from '@/powershell/commandNotFound';
 
 function isRegistryPath(path: string): boolean {
   return /^(HKLM|HKCU|HKCR|HKU|HKCC):/i.test(path) || /^HKEY_/i.test(path);
@@ -123,7 +124,7 @@ export class TestPathCmdlet implements ICmdlet {
 export class ResolvePathCmdlet implements ICmdlet {
   readonly name = 'resolve-path';
   readonly parameters = ['Path', 'LiteralPath', 'Relative', 'RelativeBasePath'] as const;
-  readonly aliases = [] as const;
+  readonly aliases = ['rvpa'] as const;
 
   execute(ctx: CmdletContext): PSValue {
     const path = psValueToString(ctx.named['path'] ?? ctx.positional[0] ?? '');
@@ -279,6 +280,31 @@ export class SetContentCmdlet implements ICmdlet {
     if (ctx.named['passthru'] === true || ctx.named['passthru'] === 'true') {
       return lines.length === 1 ? lines[0] : (lines as unknown as PSValue);
     }
+    return null;
+  }
+}
+
+// ─── Clear-Content ───────────────────────────────────────────────────────
+
+export class ClearContentCmdlet implements ICmdlet {
+  readonly name = 'clear-content';
+  readonly parameters = ['Path', 'LiteralPath', 'Force', 'Stream', 'Filter', 'Include', 'Exclude'] as const;
+  readonly aliases = ['clc'] as const;
+
+  execute(ctx: CmdletContext): PSValue {
+    const path = psValueToString(
+      ctx.named['path'] ?? ctx.named['literalpath'] ?? ctx.positional[0] ?? '');
+    if (path === '') {
+      ctx.emitError("Clear-Content : Cannot bind argument to parameter 'Path' because it is an empty string.");
+      return null;
+    }
+    const fs = ctx.providers.filesystem;
+    if (!fs) return null;
+    if (!fs.exists(path)) {
+      ctx.emitError(`Clear-Content : Cannot find path '${path}' because it does not exist.`);
+      return null;
+    }
+    fs.writeFile(path, '');
     return null;
   }
 }
@@ -807,7 +833,7 @@ export class SetItemCmdlet implements ICmdlet {
     }
     if (isRegistryPath(path)) {
       // Defer to legacy executor (which has rich registry-Set-Item behaviour).
-      throw new PSRuntimeError('Set-Item on registry paths is not recognized in this provider context');
+      throw new PSRuntimeError(commandNotFoundMessage('Set-Item on registry paths'));
     }
     const fs = ctx.providers.filesystem;
     if (!fs) return null;
@@ -1024,7 +1050,7 @@ export class GetFileHashCmdlet implements ICmdlet {
       return null;
     }
     const fs = ctx.providers.filesystem;
-    if (!fs) { ctx.emitError('Get-FileHash is not recognized in this provider context'); return null; }
+    if (!fs) { ctx.emitError(commandNotFoundMessage('Get-FileHash')); return null; }
     if (!fs.exists(path)) {
       ctx.emitError(`Get-FileHash : Could not find file '${path}'.`);
       return null;
@@ -1056,7 +1082,7 @@ export class GetAuthenticodeSignatureCmdlet implements ICmdlet {
     const path = psValueToString(ctx.named['filepath'] ?? ctx.named['literalpath'] ?? ctx.positional[0] ?? '');
     if (!path) { ctx.emitError("Get-AuthenticodeSignature : Cannot bind argument to parameter 'FilePath' because it is an empty string."); return null; }
     const fs = ctx.providers.filesystem;
-    if (!fs) { ctx.emitError('Get-AuthenticodeSignature is not recognized in this provider context'); return null; }
+    if (!fs) { ctx.emitError(commandNotFoundMessage('Get-AuthenticodeSignature')); return null; }
     if (!fs.exists(path)) {
       ctx.emitError(`Get-AuthenticodeSignature : Cannot find path '${path}' because it does not exist.`);
       return null;

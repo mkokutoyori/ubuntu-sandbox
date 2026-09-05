@@ -6,11 +6,12 @@ import type {
   INetworkProvider, NicTeamInfo, NicTeamMemberInfo,
 } from '@/powershell/providers/PSProviders';
 import { psValueToString } from '@/powershell/runtime/PSExpansion';
+import { commandNotFoundMessage } from '@/powershell/commandNotFound';
 
 function requireTeaming(ctx: CmdletContext): INetworkProvider {
   const net = ctx.providers.network;
   if (!net || !net.getNicTeams) {
-    throw new PSRuntimeError('The term \'NetLbfo\' is not recognized as the name of a cmdlet on this system');
+    throw new PSRuntimeError(commandNotFoundMessage('NetLbfo'));
   }
   return net;
 }

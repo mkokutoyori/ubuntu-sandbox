@@ -3219,6 +3219,14 @@ function getWlanProfiles(ctx: WinCommandContext): WlanProfile[] {
   return wlanProfileStore.get(ctx.ports)!;
 }
 
+const wlanConnectionStore = new WeakMap<Map<string, any>, string>();
+function getWlanConnection(ctx: WinCommandContext): string {
+  return wlanConnectionStore.get(ctx.ports) ?? '';
+}
+function setWlanConnection(ctx: WinCommandContext, ssid: string): void {
+  wlanConnectionStore.set(ctx.ports, ssid);
+}
+
 // ─── netsh winhttp ──────────────────────────────────────────────────
 
 const winhttpProxyStore = new WeakMap<Map<string, any>, string>();
@@ -3267,7 +3275,11 @@ function handleNetshWlan(ctx: WinCommandContext, args: string[]): string {
       lines.push('');
       return lines.join('\n');
     }
-    if (obj === 'interfaces') return `There is 1 interface on the system:\n\n    Name                   : Wi-Fi\n    Description            : Wireless LAN adapter\n    GUID                   : 00000000-0000-0000-0000-000000000001\n    Physical address       : 00-AA-BB-CC-DD-EE\n    State                  : connected\n`;
+    if (obj === 'interfaces') {
+      const ssid = getWlanConnection(ctx);
+      const ssidLines = ssid ? `    SSID                   : ${ssid}\n` : '';
+      return `There is 1 interface on the system:\n\n    Name                   : Wi-Fi\n    Description            : Wireless LAN adapter\n    GUID                   : 00000000-0000-0000-0000-000000000001\n    Physical address       : 00-AA-BB-CC-DD-EE\n    State                  : ${ssid ? 'connected' : 'disconnected'}\n${ssidLines}`;
+    }
     if (obj === 'networks') return `\nSSID 1 : TestWiFi\n    Network type       : Infrastructure\n    Authentication     : WPA2-Personal\n    Encryption         : CCMP\n`;
     return `Usage: netsh wlan show profiles|interfaces|networks|drivers|settings`;
   }
@@ -3301,6 +3313,7 @@ function handleNetshWlan(ctx: WinCommandContext, args: string[]): string {
       const idx = profiles.findIndex(p => p.name === name);
       if (idx < 0) return `Profile "${name}" is not found in the system.`;
       profiles.splice(idx, 1);
+      if (getWlanConnection(ctx).toLowerCase() === name.toLowerCase()) setWlanConnection(ctx, '');
       return `Profile "${name}" is deleted from interface Wi-Fi.`;
     }
     return NETSH_WLAN_HELP;
@@ -3308,12 +3321,17 @@ function handleNetshWlan(ctx: WinCommandContext, args: string[]): string {
 
   if (sub === 'connect') {
     const joined = args.slice(1).join(' ');
-    const nameMatch = joined.match(/name=(.+)/i);
+    const nameMatch = joined.match(/name=(.+?)(?:\s+(?:ssid|interface)=|$)/i);
     if (!nameMatch) return `Usage: netsh wlan connect name=<string> [interface=<string>]`;
+    const name = nameMatch[1].trim().replace(/^["']|["']$/g, '');
+    const profile = profiles.find(p => p.name.toLowerCase() === name.toLowerCase());
+    if (!profile) return `There is no profile assigned to the specified interface.`;
+    setWlanConnection(ctx, profile.ssid);
     return `Connection request was completed successfully.`;
   }
 
   if (sub === 'disconnect') {
+    setWlanConnection(ctx, '');
     return `Disconnection request was completed successfully.`;
   }
 

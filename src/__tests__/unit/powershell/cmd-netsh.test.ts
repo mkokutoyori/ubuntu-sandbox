@@ -149,21 +149,22 @@ describe('netsh add – comprehensive', () => {
   });
 
   // ─── 6. wlan add profile ──────────────────────────────────────────────
-  // The simulator records `add profile` against the filename token, not
-  // the WiFi SSID it would extract from a real XML — the XML body is
-  // not modelled (no live wlansvc parser). Assertions reflect that
-  // contract.
-  it('wlan add profile from XML file records the profile', async () => {
+  // `show profiles` lists PROFILE NAMES, never the filename the profile
+  // was imported from. The XML body is not modelled, so only the one
+  // modelled profile file is known; every other filename is refused in
+  // Windows' own words (TODO.md — netsh wlan add profile ne lit pas le XML).
+  it('wlan add profile from XML file records the profile NAME, not the filename', async () => {
     const pc = createPC(); const ps = createPS(pc);
     await ps.execute('netsh wlan add profile filename="C:\\temp\\test-wifi.xml"');
     const profiles = await ps.execute('netsh wlan show profiles');
-    expect(profiles).toContain('test-wifi.xml');
+    expect(profiles).toContain('TestWiFi');
+    expect(profiles).not.toContain('test-wifi.xml');
   });
 
-  it('wlan add profile accepts any filename (XML body is not modelled)', async () => {
+  it('wlan add profile refuses a file that is not there', async () => {
     const pc = createPC(); const ps = createPS(pc);
     const out = await ps.execute('netsh wlan add profile filename="C:\\missing.xml" 2>&1');
-    expect(out).toMatch(/added on interface/);
+    expect(out).toContain('Cannot find the file');
   });
 
   // ─── 7. http add iplisten ─────────────────────────────────────────────

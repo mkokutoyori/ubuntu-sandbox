@@ -18,6 +18,7 @@ import type { PSValue } from '@/powershell/runtime/PSEnvironment';
 import type { PSScriptBlock } from '@/powershell/parser/PSASTNode';
 import type { ServiceInfo, IServiceProvider } from '@/powershell/providers/PSProviders';
 import { psValueToString } from '@/powershell/runtime/PSExpansion';
+import { commandNotFoundMessage } from '@/powershell/commandNotFound';
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 
@@ -48,7 +49,7 @@ function requireServices(ctx: CmdletContext): IServiceProvider {
     // PowerShellSubShell.isFallbackError catches "not recognized" and falls
     // back to the legacy executor, so this becomes invisible to end users
     // running the standalone PSInterpreter.
-    throw new PSRuntimeError('Get-Service is not recognized as a service provider operation in this context');
+    throw new PSRuntimeError(commandNotFoundMessage('Get-Service'));
   }
   return ctx.providers.services;
 }

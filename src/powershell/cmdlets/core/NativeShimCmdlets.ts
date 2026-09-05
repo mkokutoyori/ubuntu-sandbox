@@ -16,6 +16,8 @@
 import type { ICmdlet } from '../ICmdlet';
 import type { CmdletContext } from '../CmdletContext';
 import { PSRuntimeError } from '@/powershell/runtime/PSRuntime';
+import { commandNotFoundMessage } from '@/powershell/commandNotFound';
+import { NativeCommandNeedsAsync } from '@/powershell/nativeAsync';
 import type { PSValue } from '@/powershell/runtime/PSEnvironment';
 import { psValueToString } from '@/powershell/runtime/PSExpansion';
 
@@ -37,11 +39,12 @@ function rebuildArgs(ctx: CmdletContext): string[] {
 
 function runNative(name: string, ctx: CmdletContext): PSValue {
   if (!ctx.providers.network) {
-    throw new PSRuntimeError(`${name} is not recognized in this provider context`);
+    throw new PSRuntimeError(commandNotFoundMessage(name));
   }
-  const out = ctx.providers.network.runSyncNativeCommand(name, rebuildArgs(ctx));
+  const args = rebuildArgs(ctx);
+  const out = ctx.providers.network.runSyncNativeCommand(name, args);
   if (out === null) {
-    throw new PSRuntimeError(`${name} is not recognized in this provider context`);
+    throw new NativeCommandNeedsAsync(name, args);
   }
   return out;
 }

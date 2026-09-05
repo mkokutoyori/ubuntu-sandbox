@@ -10,7 +10,6 @@ import { WindowsPC } from '@/network/devices/WindowsPC';
 import { WindowsServer } from '@/network/devices/WindowsServer';
 import { createDevice, resetDeviceCounters } from '@/network/devices/DeviceFactory';
 import { PowerShellSubShell } from '@/terminal/subshells/PowerShellSubShell';
-import { PowerShellExecutor } from '@/network/devices/windows/PowerShellExecutor';
 import { resetCounters } from '@/network/core/types';
 import { Logger } from '@/network/core/Logger';
 
@@ -56,14 +55,14 @@ describe('4-source identity coherence — windows-server', () => {
 
     const gci = await run(ps(srv), 'Get-ComputerInfo');
     expect(gci).toContain('Windows Server 2022 Standard');
-    expect(gci).toContain('WindowsInstallationType  : Server');
+    expect(gci).toMatch(/WindowsInstallationType\s+: Server/);
 
-    // $PSVersionTable.OS — same registry-backed build string sourced by
-    // the other 3 checks above (executor-level; the tree-walking
-    // interpreter's static $PSVersionTable has no .OS property at all,
-    // a pre-existing gap unrelated to Windows Server identity).
-    const psVersion = await new PowerShellExecutor(srv as any).execute('$PSVersionTable.OS');
+    // $PSVersionTable.BuildVersion — same registry-backed build as the
+    // three checks above. Windows PowerShell 5.1 has no `OS` key (that is
+    // PowerShell Core's), so the build is read where 5.1 publishes it.
+    const psVersion = await run(ps(srv), '$PSVersionTable.BuildVersion');
     expect(psVersion).toContain('10.0.20348');
+    expect(await run(ps(srv), '(Get-ComputerInfo).OsVersion')).toContain('10.0.20348');
   });
 });
 
@@ -87,9 +86,9 @@ describe('4-source identity coherence — windows-pc (unaffected by server chang
 
     const gci = await run(ps(pc), 'Get-ComputerInfo');
     expect(gci).toContain('Windows 10 Pro');
-    expect(gci).toContain('WindowsInstallationType  : Client');
+    expect(gci).toMatch(/WindowsInstallationType\s+: Client/);
 
-    const psVersion = await new PowerShellExecutor(pc as any).execute('$PSVersionTable.OS');
+    const psVersion = await run(ps(pc), '$PSVersionTable.BuildVersion');
     expect(psVersion).toContain('10.0.22631');
   });
 });

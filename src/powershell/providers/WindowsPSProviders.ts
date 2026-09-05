@@ -115,6 +115,7 @@ import {
 import {
   type NetFirewallRuleEntry, firewallRuleKey,
 } from '@/network/devices/windows/netFirewallRule';
+import { commandNotFoundMessage } from '@/powershell/commandNotFound';
 
 function defaultNamingContextOf(client: LdapClient): string | null {
   const dse = client.search('', 'base', { kind: 'present', attr: 'objectClass' }, ['defaultNamingContext']);
@@ -420,7 +421,7 @@ class WindowsSmbAdapter implements ISmbProvider {
   /** `New-SmbShare`/`Remove-SmbShare` only exist once the FS-FileServer role is installed (PRD-Windows-Server.md §8 acceptance criterion 2) — checked live on every call. `Get-SmbShare`/`Get-SmbSession` (and `net share`) are not gated this way, matching real Windows. */
   private requireRole(): void {
     if (!this.pc.getRoleManager()?.isInstalled('FS-FileServer')) {
-      throw new Error('New-SmbShare is not recognized as the name of a cmdlet, function, script file, or operable program');
+      throw new Error(commandNotFoundMessage('New-SmbShare'));
     }
   }
 
@@ -485,7 +486,7 @@ class WindowsAdAdapter implements IAdProvider {
   /** `Get/New/Set/Remove-AD*` only exist once the AD-Domain-Services role is installed — checked live, matching `WindowsSmbAdapter`'s FS-FileServer gate. */
   private requireRole(cmdletName: string): void {
     if (!this.pc.getRoleManager()?.isInstalled('AD-Domain-Services')) {
-      throw new Error(`${cmdletName} is not recognized as the name of a cmdlet, function, script file, or operable program`);
+      throw new Error(commandNotFoundMessage(cmdletName));
     }
   }
 
@@ -1196,7 +1197,7 @@ class WindowsDnsServerAdapter implements IDnsServerProvider {
 
   private requireRole(cmdletName: string): void {
     if (!this.pc.getRoleManager()?.isInstalled('DNS')) {
-      throw new Error(`${cmdletName} is not recognized as the name of a cmdlet, function, script file, or operable program`);
+      throw new Error(commandNotFoundMessage(cmdletName));
     }
   }
 
@@ -1243,7 +1244,7 @@ class WindowsDhcpServerAdapter implements IDhcpServerProvider {
 
   private requireRole(cmdletName: string): void {
     if (!this.pc.getRoleManager()?.isInstalled('DHCP')) {
-      throw new Error(`${cmdletName} is not recognized as the name of a cmdlet, function, script file, or operable program`);
+      throw new Error(commandNotFoundMessage(cmdletName));
     }
   }
 
@@ -1311,7 +1312,7 @@ class WindowsNpsAdapter implements INpsProvider {
 
   private requireRole(cmdletName: string): void {
     if (!this.pc.getRoleManager()?.isInstalled('NPAS')) {
-      throw new Error(`${cmdletName} is not recognized as the name of a cmdlet, function, script file, or operable program`);
+      throw new Error(commandNotFoundMessage(cmdletName));
     }
   }
 
@@ -1482,8 +1483,10 @@ class WindowsUserAdapter implements IUserProvider {
     return this.mgr().disableUser(name);
   }
   renameUser(oldName: string, newName: string): string {
-    const m = this.mgr() as unknown as { renameUser?: (a: string, b: string) => string };
-    return m.renameUser ? m.renameUser(oldName, newName) : `Rename-LocalUser not supported`;
+    return this.mgr().renameUser(oldName, newName);
+  }
+  renameGroup(oldName: string, newName: string): string {
+    return this.mgr().renameGroup(oldName, newName);
   }
 
   listGroups(): GroupInfo[] {
@@ -2465,7 +2468,7 @@ function prefixToMaskOctets(prefix: number): number[] {
 function notImpl(name: string): Error {
   // The cmdlet layer recognises "not implemented" and falls through to the
   // legacy PowerShellExecutor; keep the message in sync with isFallbackError.
-  return new Error(`${name} is not recognized as a network provider operation`);
+  return new Error(commandNotFoundMessage(name));
 }
 
 // 255.255.255.0 → 24.
@@ -2756,7 +2759,7 @@ class WindowsGpoAdapter implements IGpoProvider {
 
   private requireDc(cmdletName: string): DirectoryStore {
     const store = this.pc.getDirectoryStore();
-    if (!store) throw new Error(`${cmdletName} is not recognized as the name of a cmdlet, function, script file, or operable program`);
+    if (!store) throw new Error(commandNotFoundMessage(cmdletName));
     return store;
   }
 
@@ -2805,7 +2808,7 @@ class WindowsIisAdapter implements IIisProvider {
 
   private requireRole(cmdletName: string) {
     if (!this.pc.getRoleManager()?.isInstalled('Web-Server')) {
-      throw new Error(`${cmdletName} is not recognized as the name of a cmdlet, function, script file, or operable program`);
+      throw new Error(commandNotFoundMessage(cmdletName));
     }
     const role = this.pc.getIisRole();
     if (!role) throw new Error(`${cmdletName} : The Web Server (IIS) service is not available on this computer.`);
@@ -2842,7 +2845,7 @@ class WindowsExchangeAdapter implements IExchangeProvider {
   /** `Install-ExchangeServer` never needs an org to already exist — every other Exchange cmdlet does, and fails as "not recognized" (mimics the Exchange Management Shell module never having been loaded), matching docs/PRD-Exchange.md §1.3/§8. */
   private requireOrg(cmdletName: string): void {
     if (this.pc.getExchangeOrganizationName() === null) {
-      throw new Error(`${cmdletName} is not recognized as the name of a cmdlet, function, script file, or operable program`);
+      throw new Error(commandNotFoundMessage(cmdletName));
     }
   }
 
@@ -3123,7 +3126,7 @@ class WindowsDfsAdapter implements IDfsProvider {
 
   private requireNamespaceRole(cmdletName: string) {
     if (!this.pc.getRoleManager()?.isInstalled('FS-DFS-Namespace')) {
-      throw new Error(`${cmdletName} is not recognized as the name of a cmdlet, function, script file, or operable program`);
+      throw new Error(commandNotFoundMessage(cmdletName));
     }
     const role = this.pc.getDfsNamespaceRole();
     if (!role) throw new Error(`${cmdletName} : DFS Namespaces is not available on this computer.`);
@@ -3132,7 +3135,7 @@ class WindowsDfsAdapter implements IDfsProvider {
 
   private requireDfsrRole(cmdletName: string) {
     if (!this.pc.getRoleManager()?.isInstalled('FS-DFS-Replication')) {
-      throw new Error(`${cmdletName} is not recognized as the name of a cmdlet, function, script file, or operable program`);
+      throw new Error(commandNotFoundMessage(cmdletName));
     }
     const role = this.pc.getDfsrRole();
     if (!role) throw new Error(`${cmdletName} : DFS Replication is not available on this computer.`);
@@ -3198,7 +3201,7 @@ class WindowsAdcsAdapter implements IAdcsProvider {
 
   private requireRole(cmdletName: string) {
     if (!this.pc.getRoleManager()?.isInstalled('AD-Certificate')) {
-      throw new Error(`${cmdletName} is not recognized as the name of a cmdlet, function, script file, or operable program`);
+      throw new Error(commandNotFoundMessage(cmdletName));
     }
     const role = this.pc.getAdcsRole();
     if (!role) throw new Error(`${cmdletName} : Active Directory Certificate Services is not available on this computer.`);
@@ -3279,7 +3282,7 @@ class WindowsClusterAdapter implements IClusterProvider {
 
   private requireRole(cmdletName: string): void {
     if (!this.pc.getRoleManager()?.isInstalled('Failover-Clustering')) {
-      throw new Error(`${cmdletName} is not recognized as the name of a cmdlet, function, script file, or operable program`);
+      throw new Error(commandNotFoundMessage(cmdletName));
     }
   }
 
@@ -3321,7 +3324,7 @@ class WindowsWsusAdapter implements IWsusProvider {
 
   private requireRole(cmdletName: string) {
     if (!this.pc.getRoleManager()?.isInstalled('UpdateServices')) {
-      throw new Error(`${cmdletName} is not recognized as the name of a cmdlet, function, script file, or operable program`);
+      throw new Error(commandNotFoundMessage(cmdletName));
     }
     const role = this.pc.getWsusRole();
     if (!role) throw new Error(`${cmdletName} : Windows Server Update Services is not available on this computer.`);
@@ -3355,7 +3358,7 @@ class WindowsPrintAdapter implements IPrintProvider {
 
   private requireRole(cmdletName: string) {
     if (!this.pc.getRoleManager()?.isInstalled('Print-Services')) {
-      throw new Error(`${cmdletName} is not recognized as the name of a cmdlet, function, script file, or operable program`);
+      throw new Error(commandNotFoundMessage(cmdletName));
     }
     const role = this.pc.getPrintServerRole();
     if (!role) throw new Error(`${cmdletName} : Print and Document Services is not available on this computer.`);

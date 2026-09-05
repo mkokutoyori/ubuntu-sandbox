@@ -8,10 +8,11 @@ import type {
   MailboxDatabaseCopyInfo, ServiceHealthCheckInfo, MailflowTestResultInfo,
 } from '@/powershell/providers/PSProviders';
 import { psValueToString } from '@/powershell/runtime/PSExpansion';
+import { commandNotFoundMessage } from '@/powershell/commandNotFound';
 
 function requireExchange(ctx: CmdletContext, cmdletName: string): IExchangeProvider {
   if (!ctx.providers.exchange) {
-    throw new PSRuntimeError(`${cmdletName} is not recognized as the name of a cmdlet, function, script file, or operable program`);
+    throw new PSRuntimeError(commandNotFoundMessage(cmdletName));
   }
   return ctx.providers.exchange;
 }

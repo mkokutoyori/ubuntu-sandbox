@@ -108,6 +108,10 @@ export class PSInterpreter {
 
   // ── Hooks (forwarded to the runtime) ──────────────────────────────────────
 
+  expandInterpolation(raw: string): string {
+    return this.runtime.expandInterpolation(raw);
+  }
+
   get testPathHook(): ((path: string) => boolean) | null {
     return this.runtime.testPathHook;
   }
@@ -120,5 +124,12 @@ export class PSInterpreter {
   }
   set envVarHook(fn: ((name: string) => string | null) | null) {
     this.runtime.envVarHook = fn;
+  }
+
+  get historyHook(): (() => readonly string[]) | null {
+    return this.runtime.historyHook;
+  }
+  set historyHook(fn: (() => readonly string[]) | null) {
+    this.runtime.historyHook = fn;
   }
 }

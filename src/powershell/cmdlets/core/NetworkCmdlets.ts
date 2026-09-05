@@ -68,6 +68,7 @@ import {
 import type { NetAddressFamily } from '@/network/devices/windows/netIpAddress';
 import { applyCimCriteria, cimNotFound } from '@/network/devices/windows/cimQuery';
 import { PortNumber } from '@/network/core/ports/PortNumber';
+import { commandNotFoundMessage } from '@/powershell/commandNotFound';
 
 function lifetimeSeconds(raw: PSValue | undefined): number | undefined {
   if (raw === undefined) return undefined;
@@ -87,7 +88,7 @@ function lifetimeSecondsOf(ctx: CmdletContext, key: string): number | undefined 
 
 function requireNetwork(ctx: CmdletContext): INetworkProvider {
   if (!ctx.providers.network) {
-    throw new PSRuntimeError('This cmdlet is not recognized as a network provider operation in this context');
+    throw new PSRuntimeError(commandNotFoundMessage('This cmdlet'));
   }
   return ctx.providers.network;
 }
@@ -2183,7 +2184,7 @@ export class WhoamiCmdlet implements ICmdlet {
   readonly aliases = [] as const;
 
   execute(ctx: CmdletContext): PSValue {
-    if (!ctx.providers.network) throw new PSRuntimeError('whoami is not recognized in this context');
+    if (!ctx.providers.network) throw new PSRuntimeError(commandNotFoundMessage('whoami'));
     const host = ctx.providers.network.getHostname();
     const user = ctx.env.get('env:username') ?? ctx.runtime.executeForValue('$env:USERNAME') ?? 'user';
     const domain = ctx.providers.environment?.get('USERDOMAIN') ?? host;

@@ -18,10 +18,11 @@ import { PSRuntimeError } from '@/powershell/runtime/PSRuntime';
 import type { PSValue } from '@/powershell/runtime/PSEnvironment';
 import type { IRoleProvider, WindowsFeatureInfo } from '@/powershell/providers/PSProviders';
 import { psValueToString } from '@/powershell/runtime/PSExpansion';
+import { commandNotFoundMessage } from '@/powershell/commandNotFound';
 
 function requireRoles(ctx: CmdletContext): IRoleProvider {
   if (!ctx.providers.roles) {
-    throw new PSRuntimeError('Get-WindowsFeature is not recognized as the name of a cmdlet, function, script file, or operable program');
+    throw new PSRuntimeError(commandNotFoundMessage('Get-WindowsFeature'));
   }
   return ctx.providers.roles;
 }

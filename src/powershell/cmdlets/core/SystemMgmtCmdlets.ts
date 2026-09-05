@@ -16,6 +16,7 @@ import type {
 import { LICENSE_STATUS_CODE } from '@/network/devices/windows/licensing/LicensingState';
 import { psValueToString } from '@/powershell/runtime/PSExpansion';
 import { SubnetMask } from '@/network/core/types';
+import { commandNotFoundMessage } from '@/powershell/commandNotFound';
 
 function requireTasks(ctx: CmdletContext): IScheduledTaskProvider {
   if (!ctx.providers.scheduledTasks) {
@@ -76,7 +77,7 @@ export class GetCounterCmdlet implements ICmdlet {
       const m = PROCESS_COUNTER_RE.exec(path);
       if (!m) { ctx.emitError(`Get-Counter: unsupported counter path "${path}"`); continue; }
       const [, instanceName, counterName] = m;
-      if (!procs) { ctx.emitError('Get-Counter is not recognized in this provider context'); continue; }
+      if (!procs) { ctx.emitError(commandNotFoundMessage('Get-Counter')); continue; }
       const p = procs.getProcess(instanceName);
       if (!p) { ctx.emitError(`Get-Counter: could not find the process "${instanceName}"`); continue; }
       const value = processCounterCookedValue(p, counterName);
@@ -248,7 +249,7 @@ export class StartScheduledTaskCmdlet implements ICmdlet {
     const t = oneTask(ctx, 'Start-ScheduledTask');
     if (!t) return null;
     const tasks = requireTasks(ctx);
-    if (!tasks.runTask) { ctx.emitError('Start-ScheduledTask is not recognized in this provider context'); return null; }
+    if (!tasks.runTask) { ctx.emitError(commandNotFoundMessage('Start-ScheduledTask')); return null; }
     const err = tasks.runTask(t.taskName);
     if (err) ctx.emitError(err);
     return null;
@@ -283,7 +284,7 @@ class ToggleScheduledTaskCmdlet implements ICmdlet {
     const t = oneTask(ctx, this.displayName);
     if (!t) return null;
     const tasks = requireTasks(ctx);
-    if (!tasks.updateTask) { ctx.emitError(`${this.displayName} is not recognized in this provider context`); return null; }
+    if (!tasks.updateTask) { ctx.emitError(commandNotFoundMessage(this.displayName)); return null; }
     const err = tasks.updateTask(t.taskName, { state: this.state });
     if (err) { ctx.emitError(err); return null; }
     return { TaskPath: t.taskPath, TaskName: t.taskName, State: this.state } as Record<string, PSValue>;
@@ -307,7 +308,7 @@ export class SetScheduledTaskCmdlet implements ICmdlet {
     const t = oneTask(ctx, 'Set-ScheduledTask');
     if (!t) return null;
     const tasks = requireTasks(ctx);
-    if (!tasks.updateTask) { ctx.emitError('Set-ScheduledTask is not recognized in this provider context'); return null; }
+    if (!tasks.updateTask) { ctx.emitError(commandNotFoundMessage('Set-ScheduledTask')); return null; }
     const patch: Partial<ScheduledTaskInfo> = {};
     const actionRaw = ctx.named['action'];
     const action = (Array.isArray(actionRaw) ? actionRaw[0] : actionRaw) as ScheduledTaskAction | undefined;
@@ -489,7 +490,7 @@ export class GetCimInstanceCmdlet implements ICmdlet {
     // Win32_Process → forward to the Process provider.
     if (className === 'win32_process') {
       const procs = ctx.providers.processes;
-      if (!procs) throw new PSRuntimeError('Get-CimInstance Win32_Process is not recognized in this context');
+      if (!procs) throw new PSRuntimeError(commandNotFoundMessage('Get-CimInstance Win32_Process'));
       return procs.listProcesses().map(p => ({
         ProcessId:  p.pid,
         Name:       p.name,
@@ -502,7 +503,7 @@ export class GetCimInstanceCmdlet implements ICmdlet {
     // Win32_Service → forward to the Service provider.
     if (className === 'win32_service') {
       const svcs = ctx.providers.services;
-      if (!svcs) throw new PSRuntimeError('Get-CimInstance Win32_Service is not recognized in this context');
+      if (!svcs) throw new PSRuntimeError(commandNotFoundMessage('Get-CimInstance Win32_Service'));
       return svcs.listServices().map(s => ({
         Name:        s.name,
         DisplayName: s.displayName,
@@ -519,7 +520,7 @@ export class GetCimInstanceCmdlet implements ICmdlet {
     // Process provider like Win32_Process above.
     if (className === 'win32_perfformatteddata_perfproc_process') {
       const procs = ctx.providers.processes;
-      if (!procs) throw new PSRuntimeError('Get-CimInstance Win32_PerfFormattedData_PerfProc_Process is not recognized in this context');
+      if (!procs) throw new PSRuntimeError(commandNotFoundMessage('Get-CimInstance Win32_PerfFormattedData_PerfProc_Process'));
       return procs.listProcesses().map(p => ({
         Name:                 p.name.replace(/\.exe$/i, ''),
         IDProcess:             p.pid,
@@ -533,7 +534,7 @@ export class GetCimInstanceCmdlet implements ICmdlet {
     // SoftwareLicensingProduct → forward to the licensing provider (PRD-Windows-Server-Advanced.md §5 P21).
     if (className === 'softwarelicensingproduct') {
       const licensing = ctx.providers.licensing;
-      if (!licensing) throw new PSRuntimeError('Get-CimInstance SoftwareLicensingProduct is not recognized in this context');
+      if (!licensing) throw new PSRuntimeError(commandNotFoundMessage('Get-CimInstance SoftwareLicensingProduct'));
       const state = licensing.getState();
       const key = licensing.getProductKey();
       return [{
@@ -546,7 +547,7 @@ export class GetCimInstanceCmdlet implements ICmdlet {
     // Win32_NetworkAdapter → forward to the Network provider.
     if (className === 'win32_networkadapter') {
       const net = ctx.providers.network;
-      if (!net) throw new PSRuntimeError('Get-CimInstance Win32_NetworkAdapter is not recognized in this context');
+      if (!net) throw new PSRuntimeError(commandNotFoundMessage('Get-CimInstance Win32_NetworkAdapter'));
       return net.getAdapters().map(a => ({
         Name:              a.name,
         NetConnectionID:   a.name,
@@ -564,7 +565,7 @@ export class GetCimInstanceCmdlet implements ICmdlet {
     // Get-NetIPAddress); this class is just a per-adapter merge of them.
     if (className === 'win32_networkadapterconfiguration') {
       const net = ctx.providers.network;
-      if (!net) throw new PSRuntimeError('Get-CimInstance Win32_NetworkAdapterConfiguration is not recognized in this context');
+      if (!net) throw new PSRuntimeError(commandNotFoundMessage('Get-CimInstance Win32_NetworkAdapterConfiguration'));
       const gateway = net.getDefaultGateway();
       return net.getAdapters().map(a => {
         const ips = net.getIPAddresses(a.name);
@@ -585,7 +586,7 @@ export class GetCimInstanceCmdlet implements ICmdlet {
     // Win32_UserAccount / Win32_Group → forward to the User provider.
     if (className === 'win32_useraccount') {
       const users = ctx.providers.users;
-      if (!users) throw new PSRuntimeError('Get-CimInstance Win32_UserAccount is not recognized in this context');
+      if (!users) throw new PSRuntimeError(commandNotFoundMessage('Get-CimInstance Win32_UserAccount'));
       return users.listUsers().map(u => ({
         Name:        u.name,
         FullName:    u.fullName,
@@ -598,7 +599,7 @@ export class GetCimInstanceCmdlet implements ICmdlet {
     }
     if (className === 'win32_group') {
       const users = ctx.providers.users;
-      if (!users) throw new PSRuntimeError('Get-CimInstance Win32_Group is not recognized in this context');
+      if (!users) throw new PSRuntimeError(commandNotFoundMessage('Get-CimInstance Win32_Group'));
       return users.listGroups().map(g => ({
         Name:        g.name,
         Description: g.description,
@@ -607,6 +608,47 @@ export class GetCimInstanceCmdlet implements ICmdlet {
       } as Record<string, PSValue>)) as PSValue;
     }
     // Other classes — defer to the legacy executor (it has a wider catalog).
-    throw new PSRuntimeError(`Get-CimInstance ${className} is not recognized in this provider context`);
+    throw new PSRuntimeError(commandNotFoundMessage(`Get-CimInstance ${className}`));
+  }
+}
+
+const CURRENT_VERSION_KEY = 'HKLM:\\SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion';
+
+export class GetComputerInfoCmdlet implements ICmdlet {
+  readonly name = 'get-computerinfo';
+  readonly displayName = 'Get-ComputerInfo';
+  readonly aliases = [] as const;
+  readonly description = 'Gets a consolidated object of system and operating system properties.';
+  readonly parameters = ['Property'] as const;
+
+  execute(ctx: CmdletContext): PSValue {
+    const registry = ctx.providers.registry;
+    const values = registry?.getItemPropertyValues?.(CURRENT_VERSION_KEY) ?? {};
+    const read = (key: string, fallback: string): string =>
+      values[key] === undefined ? fallback : String(values[key]);
+    const productName = read('ProductName', 'Windows 10 Pro');
+    const buildNumber = read('CurrentBuildNumber', '22631');
+    const build = `10.0.${buildNumber}`;
+    const hostname = ctx.providers.network?.getHostname?.() ?? '';
+    const row: Record<string, PSValue> = {
+      WindowsProductName: productName,
+      WindowsEditionId: read('EditionID', 'Professional'),
+      WindowsInstallationType: read('InstallationType', 'Client'),
+      WindowsVersion: read('ReleaseId', '2009'),
+      WindowsBuildLabEx: `${buildNumber}.1.amd64fre.ni_release`,
+      OsName: `Microsoft ${productName}`,
+      OsVersion: build,
+      OsHardwareAbstractionLayer: build,
+      CsDNSHostName: hostname,
+      CsName: hostname,
+    };
+    const wanted = ctx.named['property'] ?? ctx.positional[0];
+    if (wanted === undefined) return row as PSValue;
+    const names = (Array.isArray(wanted) ? wanted : [wanted]).map(v => String(v));
+    const picked: Record<string, PSValue> = {};
+    for (const key of Object.keys(row)) {
+      if (names.some(n => n.toLowerCase() === key.toLowerCase())) picked[key] = row[key];
+    }
+    return picked as PSValue;
   }
 }

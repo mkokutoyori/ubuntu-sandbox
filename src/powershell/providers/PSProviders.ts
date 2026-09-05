@@ -1415,6 +1415,7 @@ export interface IUserProvider {
   getGroup(name: string): GroupInfo | null;
   createGroup(name: string, opts?: { description?: string }): string;
   removeGroup(name: string): string;
+  renameGroup(oldName: string, newName: string): string;
   addGroupMember(group: string, member: string): string;
   removeGroupMember(group: string, member: string): string;
   getGroupMembers(group: string): UserInfo[];
