@@ -6,6 +6,9 @@ import { IPAddress } from '@/network/core/types';
 import { parseScanFlags, type ScanProbeFlags } from './StatelessScans';
 import { topPorts, fastPorts } from './ServiceRegistry';
 import { MAX_SPEC_HOSTS, type AddrSet } from './TargetSpec';
+import {
+  ALL_VERSION_INTENSITY, DEFAULT_VERSION_INTENSITY, LIGHT_VERSION_INTENSITY,
+} from './ServiceProbes';
 
 /**
  * `NmapOps.cc:527` et `nmap.cc:1833` : les options qui composent le
@@ -120,6 +123,7 @@ export interface NmapOptions {
   pingOnly: boolean;
   skipDiscovery: boolean;
   versionScan: boolean;
+  versionIntensity: number;
   osScan: boolean;
   openOnly: boolean;
   /** `-6` : la cible se resout en IPv6, et le balayage part en IPv6. */
@@ -295,6 +299,7 @@ export function parseNmapArgs(args: string[]): NmapOptions {
   let pingOnly = false;
   let skipDiscovery = false;
   let versionScan = false;
+  let versionIntensity = DEFAULT_VERSION_INTENSITY;
   let osScan = false;
   let openOnly = false;
   let ipv6 = false;
@@ -353,6 +358,17 @@ export function parseNmapArgs(args: string[]): NmapOptions {
     if (a === '-Pn' || a === '-P0') { skipDiscovery = true; continue; }
 
     if (a === '-sV') { versionScan = true; continue; }
+    if (a === '--version-intensity' && args[i + 1] !== undefined) {
+      versionIntensity = Number(args[++i]);
+      if (!Number.isInteger(versionIntensity)
+        || versionIntensity < 0 || versionIntensity > ALL_VERSION_INTENSITY) {
+        throw new NmapOptionError(
+          [`version-intensity must be between 0 and ${ALL_VERSION_INTENSITY}`]);
+      }
+      continue;
+    }
+    if (a === '--version-light') { versionIntensity = LIGHT_VERSION_INTENSITY; continue; }
+    if (a === '--version-all') { versionIntensity = ALL_VERSION_INTENSITY; continue; }
     if (a === '-O') { osScan = true; continue; }
     if (a === '-A') { versionScan = true; osScan = true; traceroute = true; continue; }
     if (a === '--traceroute') { traceroute = true; continue; }
@@ -557,6 +573,7 @@ export function parseNmapArgs(args: string[]): NmapOptions {
 
   return {
     targets, ports, scanType, scanFlags, pingOnly, skipDiscovery, versionScan,
+    versionIntensity,
     osScan, openOnly, ipv6, disableArpPing, alwaysResolve, traceroute, packetTrace,
     showReason, noDns, verbose, debugLevel, stylesheet, probeShape, decoys, warnings,
     outputNormal, outputGreppable, outputXml,

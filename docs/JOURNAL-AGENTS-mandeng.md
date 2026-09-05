@@ -7992,3 +7992,60 @@ tombent contre l'etat d'avant. Le treizieme est le TEMOIN — le balayage
 sans charge, dont la capture montre `length 0` — et son role est de
 passer des deux cotes. Un cas e2e Playwright balaye avec `--data-string`
 et relit la capture de la cible en `-A`.
+
+---
+
+## `-sV` SONDE, il ne se contente pas d'ecouter
+
+**Perimetre revendique** : `src/network/scan/nmap/` (`ServiceProbes` —
+nouveau, `NmapProbes`, `NmapOptions`, `ScanEngine`),
+`src/network/tcp/TcpStack.ts`,
+`src/network/devices/{LinuxMachine,WindowsPC}.ts`,
+`src/network/devices/linux/{LinuxNetKernel,commands/net/Nmap}.ts`.
+
+Mesure de depart : un vrai nginx qui ecoute et repond sur le port 80 est
+rapporte `80/tcp open http` avec la colonne VERSION **vide**. La
+detection de version ne lisait que ce qu'un service VOLONTAIRE — la
+salutation d'OpenSSH, de SMTP, de FTP — donc toute la famille des
+services qui attendent que le CLIENT parle d'abord etait invisible a
+`-sV`, alors que le simulateur fait tourner un vrai nginx et un vrai
+Apache.
+
+**Les sondes viennent de `nmap-service-probes` et non d'un souvenir** :
+`Probe TCP NULL q||` (ligne 33) n'envoie rien, `Probe TCP GetRequest
+q|GET / HTTP/1.0\r\n\r\n|` (ligne 6423, `rarity 1`) parle la premiere,
+avec sa liste `ports` recopiee telle quelle. Les lignes `match`
+reprises sont celles des serveurs que ce simulateur fait vraiment
+tourner : nginx (7027-7028), Apache (10696-10697), IIS (7034).
+
+**L'ordre des sondes n'est pas celui qu'on croit, et c'est le point que
+la lecture du code a corrige.** `service_scan.cc:1822` : la sonde NULL
+est essayee la PREMIERE et SANS CONDITION pour TCP — ni raretee ni
+intensite ne la gouvernent. Puis `:1843` essaie les sondes dont la liste
+`ports` contient le port, la encore sans regarder la raretee. Ce n'est
+qu'ensuite (`:1870`) que les sondes restantes sont filtrees par
+`raretee <= intensite`. Consequence : `--version-intensity 0` ne
+desactive PAS la detection sur le port 80 — 80 figure dans la liste de
+`GetRequest` — elle la desactive sur un port qui n'y figure pas, 9200
+par exemple, et elle ne desactive jamais la lecture de la salutation.
+Une premiere lecture, qui n'avait vu que la boucle de raretee, en aurait
+fait le contraire.
+
+**`TcpStack.grabGreeting` DEVIENT `probeService(ip, port, charge)`** —
+la salutation est la sonde de charge VIDE, donc une seule ecriture et
+non deux. La livraison des trames etant synchrone, la reponse arrive
+pendant l'ecriture, comme la salutation arrivait pendant la connexion.
+
+**Limite ecrite plutot que tue** : ce lot ne porte que DEUX sondes,
+parce que ce sont les deux dont le simulateur sait produire une reponse.
+`--version-light` (2) et `--version-all` (9) sont donc acceptees et
+exactes, mais aucune paire d'intensites entre 1 et 9 ne peut se
+distinguer par le comportement tant qu'aucune sonde de raretee
+intermediaire n'existe.
+
+**Discrimination** : `probe-nmap-sv-sonde-vraiment.test.ts` (11 cas), 9
+tombent contre l'etat d'avant. Les 2 autres sont les TEMOINS nommes dans
+l'en-tete — la salutation d'OpenSSH et un port ferme — et leur role est
+de prouver que donner une seconde sonde a `-sV` n'a pas casse la
+premiere. Un cas e2e Playwright balaye un nginx en `-sV` et retrouve la
+requete `GET / HTTP/1.0` dans la capture de la cible.

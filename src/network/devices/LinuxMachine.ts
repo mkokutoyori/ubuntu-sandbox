@@ -3713,6 +3713,8 @@ export abstract class LinuxMachine extends EndHost
       },
       grabServiceBanner: (target: string, port: number): string | null =>
         this.getTcpStack().grabGreeting(target, port),
+      probeService: (target: string, port: number, payload: string): string | null =>
+        this.getTcpStack().probeService(target, port, payload),
       tcpConnectOutcome: (target: string, port: number): TcpWireOutcome => {
         if (target.includes(':')) return this.tcpConnectOutcome6(new IPv6Address(target), port);
         return this.tcpConnectOutcome(new IPAddress(target), port);
