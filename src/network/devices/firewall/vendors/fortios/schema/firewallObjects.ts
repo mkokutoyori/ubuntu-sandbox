@@ -80,9 +80,20 @@ export const FIREWALL_ADDRESS: FortiTableSpec = {
   ],
   onCommit(object, context) {
     const kind = object.effective('type')[0];
-    if (kind !== 'ipmask' && kind !== 'iprange' && kind !== 'fqdn' && kind !== 'wildcard') return;
+    if (kind !== 'ipmask' && kind !== 'iprange' && kind !== 'fqdn'
+      && kind !== 'wildcard' && kind !== 'geography') return;
 
     context.objects.removeAddress(object.key);
+    if (kind === 'geography') {
+      const country = object.effective('country')[0] ?? '';
+      if (country.length === 0) return;
+      context.objects.addAddress({
+        name: object.key, kind: 'geography', family: 'ipv4',
+        value: '', countryCode: country.toUpperCase(),
+        predefined: false, tags: [],
+      });
+      return;
+    }
     if (kind === 'ipmask' || kind === 'wildcard') {
       const parts = object.effective(kind === 'ipmask' ? 'subnet' : 'wildcard');
       if (parts.length < 2) return;

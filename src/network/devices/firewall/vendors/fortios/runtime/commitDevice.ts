@@ -328,6 +328,12 @@ export function buildCommitDevice(
       removeVdomLink(name) {
         fw.removeVdomLink(name);
       },
+      applyGeoIpOverride(override) {
+        fw.applyGeoIpOverride(override);
+      },
+      removeGeoIpOverride(name) {
+        return fw.removeGeoIpOverride(name);
+      },
       applySwitchInterface(name, patch) {
         fw.setSwitchInterface(name, patch);
       },

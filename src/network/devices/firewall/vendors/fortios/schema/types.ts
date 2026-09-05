@@ -38,6 +38,7 @@ import type {
   BgpConfiguration, OspfConfiguration, RipConfiguration,
 } from '../../../routing/DynamicRoutingTypes';
 import type { SwitchGroupPatch } from '../../../l3/SwitchGroupTable';
+import type { GeoIpOverride } from '../../../model/GeoIpOverrides';
 
 export type FortiAccessGroup = AccessGroup;
 
@@ -380,6 +381,8 @@ export interface FortiCommitDevice {
   applyVdomLink(name: string): void;
   removeVdomLink(name: string): void;
   applySwitchInterface(name: string, patch: SwitchGroupPatch): string | void;
+  applyGeoIpOverride(override: GeoIpOverride): void;
+  removeGeoIpOverride(name: string): boolean;
   removeSwitchInterface(name: string): void;
   applyAntivirusProfile(profile: FortiAntivirusPatch): void;
   removeAntivirusProfile(name: string): void;

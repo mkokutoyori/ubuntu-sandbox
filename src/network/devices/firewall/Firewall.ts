@@ -84,6 +84,7 @@ import { ROOT_VDOM, VdomRegistry, type VdomContext } from './vdom/VdomRegistry';
 import { VdomLinkTable } from './vdom/VdomLinkTable';
 import { clusterVirtualMac } from './ha/clusterVirtualMac';
 import { ipv4HeaderProblem } from '../../layers/internet/InternetLayer';
+import { GeoIpOverrides, type GeoIpOverride } from './model/GeoIpOverrides';
 import {
   SwitchGroupTable, spanCopies,
   type SwitchGroup, type SwitchGroupPatch,
@@ -236,6 +237,7 @@ export class Firewall extends Equipment {
   private readonly interfaces = new InterfaceTable((name) => this.getPort(name));
   private readonly vdoms: VdomRegistry;
   private readonly switchGroups = new SwitchGroupTable();
+  private readonly geoIp = new GeoIpOverrides();
   private readonly vdomLinks: VdomLinkTable;
   private readonly bridges = new Map<string, BridgeFdb>();
   private readonly fragments = new FragmentReassembly();
@@ -425,6 +427,7 @@ export class Firewall extends Equipment {
       maxGroupNesting: profile.maxGroupNesting,
       tcpSessionWithoutSyn: !profile.tcpSynCheckDefault,
       resolveFqdn: (fqdn) => this.dnsClient.resolve(fqdn),
+      countryOf: (candidate) => this.geoIp.countryOf(candidate),
       predefinedAddresses: profile.predefinedAddresses,
       predefinedServices: profile.predefinedServices,
       connectedRoutes: (vdom) => this.interfaces.connectedRoutes()
@@ -1285,6 +1288,16 @@ export class Firewall extends Equipment {
   switchGroupOf(iface: string): SwitchGroup | undefined {
     return this.switchGroups.groupOf(iface);
   }
+
+  applyGeoIpOverride(override: GeoIpOverride): void {
+    this.geoIp.apply(override);
+  }
+
+  removeGeoIpOverride(name: string): boolean {
+    return this.geoIp.remove(name);
+  }
+
+  getGeoIpOverrides(): GeoIpOverrides { return this.geoIp; }
 
   removeSwitchInterface(n: string): boolean { return this.switchGroups.remove(n); }
   switchInterfaces(): readonly string[] { return this.switchGroups.names(); }
