@@ -19,7 +19,7 @@ function scanHost(ctx: LinuxCommandContext): ScanHost {
       ? ctx.net.ping6Sequence(new IPv6Address(ip), 1, timeoutMs)
       : ctx.net.pingSequence(new IPAddress(ip), 1, timeoutMs)),
     tcpOutcome: (ip, port) => ctx.net.tcpConnectOutcome(ip, port),
-    grabGreeting: (ip, port) => ctx.net.grabServiceBanner(ip, port),
+    probeService: (ip, port, payload) => ctx.net.probeService(ip, port, payload),
     sendUdpProbe: (ip, port, sourcePort, options) =>
       ctx.net.sendUdpProbe(new IPAddress(ip), port, sourcePort, options),
     scanProbe: (ip, port, flags, shape) =>
@@ -44,7 +44,8 @@ export const nmapCommand: LinuxCommand = {
       '--exclude', '--excludefile', '--mtu',
       '--no-stylesheet', '--open',
       '--packet-trace', '--reason', '--send-ip', '--source-port', '--stylesheet',
-      '--top-ports', '--traceroute', '--ttl', '--webxml'],
+      '--top-ports', '--traceroute', '--ttl', '--version-all', '--version-intensity',
+      '--version-light', '--webxml'],
     hostsAtBarePosition: true,
   }),
   usage: 'nmap [-iL file] [-iR n] [--exclude spec] [-sT|-sS|-sU|-sA|-sF|-sN|-sX|-sM|-sW] [-sV] [-O] [-A] [-p SPEC] [-F] [--top-ports N] [-sn] [-Pn] [--open] [--reason] [-n] [-oN file] [-oG file] [-oX file] [-oA base] <target...>',
