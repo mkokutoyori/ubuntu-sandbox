@@ -39,7 +39,7 @@ beforeEach(() => {
   Logger.clear();
 });
 
-type Dev = { cliHelp(s: string): string; executeCommand(c: string): Promise<string> };
+type Dev = { cliHelp(s: string): string; executeCommand(c: string): Promise<string>; dispose(): void };
 
 const MOT = /^\s\s(\S+)\s\s/;
 const offerts = (t: string): string[] =>
@@ -71,6 +71,7 @@ async function promessesNonTenues(
 ): Promise<string[]> {
   const guide = await neuf(prelude);
   const fautes: string[] = [];
+  const relacherGuide = (): void => guide.dispose();
   const vus = new Set<string>();
   let file = [racine];
   for (let p = 0; p < profondeur; p++) {
@@ -84,6 +85,7 @@ async function promessesNonTenues(
         if (suivant.length < 240) suivant.push(chemin);
         const essai = await neuf(prelude);
         const out = String(await essai.executeCommand(chemin));
+        essai.dispose();
         if (out.includes('Invalid input')) {
           fautes.push(`«${base === '' ? '' : base + ' '}?» offre «${k}»`);
         }
@@ -91,6 +93,7 @@ async function promessesNonTenues(
     }
     file = suivant;
   }
+  relacherGuide();
   return fautes;
 }
 

@@ -1579,6 +1579,7 @@ export class Firewall extends Equipment {
         },
         () => this.getBus(),
         this.getPorts()[0]?.getMAC().toString() ?? '00:00:00:00:00:00',
+        () => this.getScheduler(),
       );
       this.lacpAgentInstance.start();
     }

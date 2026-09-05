@@ -88,12 +88,12 @@ export class CiscoSwitch extends Switch {
       // access VLAN — same resolution the snooping agents use.
       getNativeVlan: (p: string) => this.resolveSnoopingVlan(p),
       getVoiceVlan: (p: string) => this.getSwitchportConfig(p)?.voiceVlan,
-    }, () => this.getBus());
-    this.lldpAgent = new LldpAgent(hostBase, () => this.getBus());
+    }, () => this.getBus(), () => this.getScheduler());
+    this.lldpAgent = new LldpAgent(hostBase, () => this.getBus(), () => this.getScheduler());
     this.dtpAgent = new DtpAgent({
       ...hostBase,
       onOperationalModeChanged: (p, m) => this.applyDtpOperationalMode(p, m),
-    }, () => this.getBus());
+    }, () => this.getBus(), () => this.getScheduler());
     const firstPort = this.getPorts()[0];
     const baseMac = firstPort ? firstPort.getMAC().toString() : '00:00:00:00:00:00';
     this.stpAgent = new StpAgent({
@@ -105,12 +105,12 @@ export class CiscoSwitch extends Switch {
       isStpTrunkPort: (p) => this._vtpIsTrunkPort(p),
       getStpNativeVlan: (p) => this.getSwitchportConfig(p)?.trunkNativeVlan ?? 1,
       getStpBundleGroup: (p) => this.getStpBundleGroup(p),
-    }, () => this.getBus(), baseMac);
+    }, () => this.getBus(), baseMac, () => this.getScheduler());
     this.lacpAgent = new LacpAgent({
       ...hostBase,
       onLacpBundleChanged: (port, groupId, bundled) =>
         this.stpAgent.onBundleChanged(port, `Port-channel${groupId}`, bundled),
-    }, () => this.getBus(), baseMac);
+    }, () => this.getBus(), baseMac, () => this.getScheduler());
     this.vtpAgent = new VtpAgent({
       ...hostBase,
       vtpListVlans: () => this._vtpListVlans(),
@@ -125,11 +125,11 @@ export class CiscoSwitch extends Switch {
       vtpApplyMstRegion: (region) => {
         this.stpAgent.applyMstRegion(region.name, region.revision, region.instances);
       },
-    }, () => this.getBus(), baseMac);
+    }, () => this.getBus(), baseMac, () => this.getScheduler());
     this.udldAgent = new UdldAgent({
       ...hostBase,
       onUdldErrDisable: (p: string) => this.applyUdldErrDisable(p),
-    }, () => this.getBus());
+    }, () => this.getBus(), () => this.getScheduler());
     this.igmpSnoopingAgent = new IgmpSnoopingAgent({
       ...hostBase,
       resolveIngressVlan: (p: string) => this.resolveSnoopingVlan(p),
@@ -137,17 +137,17 @@ export class CiscoSwitch extends Switch {
       getSviIp: (vlan: number) =>
         this.getSvis().find(s => s.vlan === vlan)?.ip?.toString() ?? null,
       getVlanIds: () => [...this.getVLANs().keys()],
-    }, () => this.getBus());
+    }, () => this.getBus(), () => this.getScheduler());
     this.pimSnoopingAgent = new PimSnoopingAgent({
       ...hostBase,
       resolveIngressVlan: (p: string) => this.resolveSnoopingVlan(p),
       isTrunkPort: (p: string) => this._vtpIsTrunkPort(p),
-    }, () => this.getBus());
+    }, () => this.getBus(), () => this.getScheduler());
     this.syslogAgent = new SyslogAgent(hostBase, () => this.getBus());
     this.dot1xAgent = new Dot1xAgent({
       ...hostBase,
       onDot1xPortAuthorized: (p, authorized) => this.applyDot1xAuth(p, authorized),
-    }, () => this.getBus());
+    }, () => this.getBus(), () => this.getScheduler());
     this.agents.registerAll(
       this.cdpAgent, this.lldpAgent, this.dtpAgent, this.stpAgent,
       this.lacpAgent, this.vtpAgent, this.udldAgent,

@@ -3956,6 +3956,7 @@ export class WindowsPC extends EndHost implements UserAccountHost {
         },
         () => this.getBus(),
         this.getPorts()[0]?.getMAC().toString() ?? '00:00:00:00:00:00',
+        () => this.getScheduler(),
       );
       this.lacpAgentInstance.start();
     }
@@ -5172,7 +5173,7 @@ export class WindowsPC extends EndHost implements UserAccountHost {
   private _ntpAgent: NtpAgent | null = null;
   getNtpAgent(): NtpAgent {
     if (!this._ntpAgent) {
-      this._ntpAgent = new NtpAgent(this as unknown as NtpHost, () => this.getBus());
+      this._ntpAgent = new NtpAgent(this as unknown as NtpHost, () => this.getBus(), () => this.getScheduler());
     }
     return this._ntpAgent;
   }

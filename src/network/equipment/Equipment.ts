@@ -22,6 +22,7 @@ import { TapPoint, type FrameTap, type DetachTap } from '../hardware/PortTap';
 import { EquipmentRegistry } from './EquipmentRegistry';
 import { DEVICE_CATALOG } from '../core/deviceCatalog';
 import { EventBus, type IEventBus } from '@/events/EventBus';
+import { OwnedScheduler, getDefaultScheduler, type IScheduler } from '@/events/Scheduler';
 
 export abstract class Equipment {
   readonly id: string;
@@ -152,6 +153,20 @@ export abstract class Equipment {
     if (this.busOverride) return this.busOverride;
     if (!this.machineBus) this.machineBus = new EventBus();
     return this.machineBus;
+  }
+
+  private machineScheduler: OwnedScheduler | null = null;
+
+  protected getScheduler(): IScheduler {
+    if (!this.machineScheduler) {
+      this.machineScheduler = new OwnedScheduler(() => getDefaultScheduler());
+    }
+    return this.machineScheduler;
+  }
+
+  dispose(): void {
+    this.machineScheduler?.clearAll();
+    EquipmentRegistry.getInstance().deregister(this.id);
   }
 
   getLinkLayer(): LinkLayer {

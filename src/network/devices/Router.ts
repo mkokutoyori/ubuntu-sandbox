@@ -1401,7 +1401,14 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
 
   /** Return the active scheduler — injected one, or the singleton default. */
   protected getRouterScheduler(): IScheduler {
-    return this.routerScheduler ?? getDefaultScheduler();
+    return this.routerScheduler ?? this.getScheduler();
+  }
+
+  override dispose(): void {
+    this.shell.getLoggingConfig?.().detachFromBus();
+    this.ospfIntegration?.dispose();
+    this.routerTimers.clearAll();
+    super.dispose();
   }
 
   /** Identity payload for host.* events emitted by this router. */

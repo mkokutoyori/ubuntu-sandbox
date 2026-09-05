@@ -1,6 +1,6 @@
 import type { CommandSpec } from '@/cli/CommandTable';
 import { resolveCiscoInterfaceName } from '../cli-utils';
-import { CliInvalidInput } from '../cli/CliDiagnostic';
+import { CliInvalidInput, CliIncomplete } from '../cli/CliDiagnostic';
 
 export interface FhrpShowSelection {
   brief: boolean;
@@ -8,7 +8,7 @@ export interface FhrpShowSelection {
   group: number | null;
 }
 
-export type FhrpShowVerdict = FhrpShowSelection | { at: string };
+export type FhrpShowVerdict = FhrpShowSelection | { at: string } | { incomplete: true };
 
 export interface FhrpShowGrammar {
   readonly groupRange: readonly [number, number];
@@ -48,8 +48,9 @@ export function parseFhrpShowArgs(
     if (word === 'all' && grammar.acceptsAll) continue;
     if (grammar.interfaceKeyword && word === 'interface') {
       const next = args[i + 1];
-      const name = next === undefined ? null : resolveInterface(next);
-      if (name === null) return { at: next ?? word };
+      if (next === undefined) return { incomplete: true };
+      const name = resolveInterface(next);
+      if (name === null) return { at: next };
       selection.iface = name;
       i += 1;
       continue;
@@ -118,7 +119,7 @@ export function fhrpShowSpec(
   return {
     id: `show-${protocole}`,
     path: ['show', protocole, {
-      name: 'filtre', type: 'REST', optional: true,
+      name: 'filtre', type: 'REST', optional: true, leadingOnly: true,
       description: 'What to display', alternatives: formes,
     }],
     description,
@@ -128,6 +129,7 @@ export function fhrpShowSpec(
       const verdict = parseFhrpShowArgs(
         mots.length === 0 ? [] : mots.split(/\s+/),
         grammar, fhrpInterfaceResolver(portNames()));
+      if ('incomplete' in verdict) throw new CliIncomplete();
       if ('at' in verdict) throw new CliInvalidInput({ token: verdict.at });
       return rendre(verdict);
     },

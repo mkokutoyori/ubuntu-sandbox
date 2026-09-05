@@ -118,6 +118,21 @@ function survey(d: Device): Survey {
   };
 }
 
+const SURVEYS = new Map<string, Promise<Survey>>();
+
+function surveyOf(cle: string, fabrique: () => Machine, enter: string[]): Promise<Survey> {
+  let pending = SURVEYS.get(cle);
+  if (pending === undefined) {
+    pending = inMode(fabrique, enter).then((d) => {
+      const releve = survey(d);
+      (d as unknown as { dispose(): void }).dispose();
+      return releve;
+    });
+    SURVEYS.set(cle, pending);
+  }
+  return pending;
+}
+
 async function inMode(fabrique: () => Machine, enter: string[]): Promise<Device> {
   const d = fabrique();
   d.powerOn();
@@ -137,12 +152,12 @@ for (const [nom, fabrique] of PLATEFORMES) {
 
     describe(`${cle} — parité \`?\` / Tab`, () => {
       it('l\'arbre parcouru est non vide', async () => {
-        const r = survey(await inMode(fabrique, mode.enter));
+        const r = await surveyOf(cle, fabrique, mode.enter);
         expect(r.paths).toBeGreaterThan(100);
       }, 120_000);
 
       it(`au plus ${budget.unsuggested} commande(s) exécutable(s) que \`?\` ne propose pas`, async () => {
-        const { unsuggested } = survey(await inMode(fabrique, mode.enter));
+        const { unsuggested } = await surveyOf(cle, fabrique, mode.enter);
         if (unsuggested.length > budget.unsuggested) {
           console.log(`[${cle}] non proposées (${unsuggested.length}) :\n  `
             + unsuggested.slice(0, 40).join('\n  '));
@@ -151,7 +166,7 @@ for (const [nom, fabrique] of PLATEFORMES) {
       }, 120_000);
 
       it(`au plus ${budget.uncompletable} mot(s) proposé(s) par \`?\` que Tab ne complète pas`, async () => {
-        const { uncompletable } = survey(await inMode(fabrique, mode.enter));
+        const { uncompletable } = await surveyOf(cle, fabrique, mode.enter);
         if (uncompletable.length > budget.uncompletable) {
           console.log(`[${cle}] non complétables (${uncompletable.length}) :\n  `
             + uncompletable.slice(0, 40).join('\n  '));
@@ -162,6 +177,7 @@ for (const [nom, fabrique] of PLATEFORMES) {
       it(`au plus ${budget.derived} continuation(s) DÉRIVÉE(S) du texte source`, async () => {
         const d = await inMode(fabrique, mode.enter);
         const derives = d.cliDerivedContinuations();
+        (d as unknown as { dispose(): void }).dispose();
         if (derives.length > budget.derived) {
           console.log(`[${cle}] dérivées (${derives.length}) :\n  `
             + derives.slice(0, 40).join('\n  '));
@@ -170,7 +186,7 @@ for (const [nom, fabrique] of PLATEFORMES) {
       }, 120_000);
 
       it(`au plus ${budget.undescribed} continuation(s) que Tab accepte et que \`?\` tait`, async () => {
-        const { undescribed } = survey(await inMode(fabrique, mode.enter));
+        const { undescribed } = await surveyOf(cle, fabrique, mode.enter);
         if (undescribed.length > budget.undescribed) {
           console.log(`[${cle}] muettes (${undescribed.length}) :\n  `
             + undescribed.slice(0, 40).join('\n  '));

@@ -2980,7 +2980,12 @@ export abstract class Switch extends Equipment {
   }
 
   protected getScheduler(): IScheduler {
-    return this.schedulerOverride ?? getDefaultScheduler();
+    return this.schedulerOverride ?? super.getScheduler();
+  }
+
+  override dispose(): void {
+    this.getLoggingConfig()?.detachFromBus();
+    super.dispose();
   }
 
   private startMACAgingProcess(): void {
@@ -3442,20 +3447,20 @@ export abstract class Switch extends Equipment {
   }
   private ensureVrrpAgent(): VrrpAgent {
     if (this._vrrpAgent) return this._vrrpAgent;
-    this._vrrpAgent = new VrrpAgent(this.fhrpHost(), () => this.getBus());
+    this._vrrpAgent = new VrrpAgent(this.fhrpHost(), () => this.getBus(), () => this.getScheduler());
     this._vrrpAgent.start();
     return this._vrrpAgent;
   }
   private ensureHsrpAgent(): HsrpAgent {
     if (this._hsrpAgent) return this._hsrpAgent;
-    this._hsrpAgent = new HsrpAgent(this.fhrpHost(), () => this.getBus());
+    this._hsrpAgent = new HsrpAgent(this.fhrpHost(), () => this.getBus(), () => this.getScheduler());
     this._hsrpAgent.start();
     return this._hsrpAgent;
   }
   private _glbpAgent: GlbpAgent | null = null;
   private ensureGlbpAgent(): GlbpAgent {
     if (this._glbpAgent) return this._glbpAgent;
-    this._glbpAgent = new GlbpAgent(this.fhrpHost(), () => this.getBus());
+    this._glbpAgent = new GlbpAgent(this.fhrpHost(), () => this.getBus(), () => this.getScheduler());
     this._glbpAgent.start();
     return this._glbpAgent;
   }
@@ -3479,7 +3484,7 @@ export abstract class Switch extends Equipment {
         vlanHasActivePort: (vlan) => this.vlanHasActivePort(vlan),
         getBridgeMac: () => this.getBridgeMac(),
       }) as unknown as ConstructorParameters<typeof NtpAgent>[0],
-      () => this.getBus());
+      () => this.getBus(), () => this.getScheduler());
     this._ntpAgent.start();
     return this._ntpAgent;
   }

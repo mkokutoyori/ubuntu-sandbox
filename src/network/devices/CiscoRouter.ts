@@ -209,26 +209,26 @@ export class CiscoRouter extends Router {
       evaluateAclPermit: (aclName: string, sourceIp: string) =>
         this.evaluateAclPermit(aclName, sourceIp),
     };
-    this.cdpAgent = new CdpAgent(hostBase, () => this.getBus());
-    this.lldpAgent = new LldpAgent(hostBase, () => this.getBus());
-    this.hsrpAgent = new HsrpAgent(hostBase, () => this.getBus());
-    this.vrrpAgent = new VrrpAgent(hostBase, () => this.getBus());
-    this.ntpAgent = new NtpAgent(hostBase, () => this.getBus());
+    this.cdpAgent = new CdpAgent(hostBase, () => this.getBus(), () => this.getScheduler());
+    this.lldpAgent = new LldpAgent(hostBase, () => this.getBus(), () => this.getScheduler());
+    this.hsrpAgent = new HsrpAgent(hostBase, () => this.getBus(), () => this.getScheduler());
+    this.vrrpAgent = new VrrpAgent(hostBase, () => this.getBus(), () => this.getScheduler());
+    this.ntpAgent = new NtpAgent(hostBase, () => this.getBus(), () => this.getScheduler());
     // Un routeur repond a `ntpq` ; un poste sous chronyd non.
     this.ntpAgent.setModeControlResponder(true);
     // `ntp access-group` consulte les MEMES listes d'acces que le reste
     // du routeur (lot N6) : une seconde evaluation finirait par rendre
     // un verdict different pour la meme liste, sur la meme machine.
     this.ntpAgent.setAclMatchFn((acl, srcIp) => this.evaluateAclPermit(acl, srcIp));
-    this.glbpAgent = new GlbpAgent(hostBase, () => this.getBus());
-    this.bfdAgent = new BfdAgent(hostBase, () => this.getBus());
+    this.glbpAgent = new GlbpAgent(hostBase, () => this.getBus(), () => this.getScheduler());
+    this.bfdAgent = new BfdAgent(hostBase, () => this.getBus(), () => this.getScheduler());
     this.getBus().subscribe('bfd.session.changed', (e) => {
       if (e.payload.deviceId !== this.id) return;
       if (e.payload.newState !== 'down' && e.payload.newState !== 'admin-down') return;
       this.ospfIntegration.onBfdSessionDown(e.payload.iface, e.payload.neighborIp);
     });
-    this.igmpAgent = new IgmpAgent(hostBase, () => this.getBus());
-    this.pimAgent = new PimAgent(hostBase, () => this.getBus());
+    this.igmpAgent = new IgmpAgent(hostBase, () => this.getBus(), () => this.getScheduler());
+    this.pimAgent = new PimAgent(hostBase, () => this.getBus(), () => this.getScheduler());
     this.bindIgmpToPim();
     this.syslogAgent = new SyslogAgent(hostBase, () => this.getBus(),
       () => this.getRouterScheduler());

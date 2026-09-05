@@ -5398,6 +5398,7 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
   ): FhrpShowSelection {
     const verdict = parseFhrpShowArgs(args, grammar,
       fhrpInterfaceResolver(groups.map((g) => iosSviName(g.iface))));
+    if ('incomplete' in verdict) throw new CliIncomplete();
     if ('at' in verdict) throw new CliInvalidInput({ token: verdict.at });
     return verdict;
   }
