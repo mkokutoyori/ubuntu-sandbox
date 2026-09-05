@@ -169,6 +169,24 @@ export class RouteTable {
     });
   }
 
+  prefixLengthTowards(iface: string, destination: string): number | undefined {
+    const value = tryIpToUint32(destination);
+    if (value === null) return undefined;
+
+    let longest: number | undefined;
+    for (const route of this.selected()) {
+      if (route.iface !== iface) continue;
+      const mask = tryIpToUint32(route.mask);
+      const network = tryIpToUint32(route.network);
+      if (mask === null || network === null) continue;
+      if (((value & mask) >>> 0) !== ((network & mask) >>> 0)) continue;
+
+      const prefix = prefixBits(mask);
+      if (longest === undefined || prefix > longest) longest = prefix;
+    }
+    return longest;
+  }
+
   all(): readonly FirewallRoute[] {
     const routes: FirewallRoute[] = [...this.deps.connectedRoutes()];
 

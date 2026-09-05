@@ -422,6 +422,7 @@ export class Firewall extends Equipment {
       },
       onTunnelRemoved: (_vdom, tunnel) => { this.interfaces.remove(tunnel); },
       policyKeyedBy: profile.policyKeyedBy,
+      policyNamesZones: profile.policyNamesZones,
       implicitPolicy: profile.implicitPolicy,
       applicationShift: profile.applicationShift,
       maxGroupNesting: profile.maxGroupNesting,
@@ -613,6 +614,10 @@ export class Firewall extends Equipment {
     this.routing = l3.routing;
     this.dhcp = l3.dhcp;
     this.sdwan = l3.sdwan;
+    this.sdwan.getTable().setRouteReach({
+      prefixLengthTowards: (iface, destination) =>
+        this.getVdom().routes.prefixLengthTowards(iface, destination),
+    });
     this.sdwan.onHealthChange((changes) => { this.onSdwanHealthChange(changes); });
   }
 
@@ -878,8 +883,36 @@ export class Firewall extends Equipment {
   serialNumber(): string { return this.serial; }
   applySdwan(c: SdwanConfiguration): string | undefined {
     const refusal = this.sdwan.apply(c);
-    if (refusal === undefined) this.refreshSdwanRoutes();
-    return refusal;
+    if (refusal !== undefined) return refusal;
+    this.publishSdwanZones();
+    this.refreshSdwanRoutes();
+    return undefined;
+  }
+
+  private readonly sdwanZoneNames = new Set<string>();
+
+  private publishSdwanZones(): void {
+    const zones = this.getVdom().zones;
+    const declared = new Set(this.sdwan.getTable().zoneNames());
+
+    for (const stale of this.sdwanZoneNames) {
+      if (declared.has(stale)) continue;
+      for (const iface of zones.interfacesOf(stale)) zones.removeInterface(iface);
+      zones.deleteZone(stale);
+      this.sdwanZoneNames.delete(stale);
+    }
+
+    for (const name of declared) {
+      if (!zones.getZone(name)) zones.createZone(name);
+      this.sdwanZoneNames.add(name);
+
+      const members = new Set(
+        this.sdwan.getTable().membersOfZone(name).map(member => member.iface));
+      for (const iface of zones.interfacesOf(name)) {
+        if (!members.has(iface)) zones.removeInterface(iface);
+      }
+      for (const iface of members) zones.assignInterface(name, iface);
+    }
   }
 
   getSdwanTable(): SdwanTable { return this.sdwan.getTable(); }
