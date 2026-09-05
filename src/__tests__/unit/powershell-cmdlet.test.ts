@@ -917,7 +917,7 @@ describe('6. Get‑Help', () => {
     const pc = createPC();
     const ps = createPS(pc);
     const out = await ps.execute('Get-Help NoSuchCmdlet -ErrorAction SilentlyContinue');
-    expect(out).toContain('not found');
+    expect(out).toContain('could not find');
   });
 
   it('man alias for help', async () => {
@@ -2219,7 +2219,7 @@ describe('6. Get-Help', () => {
   it('unknown cmdlet error', async () => {
     const pc = createPC(); const ps = createPS(pc);
     const out = await ps.execute('Get-Help NoCommand -ErrorAction SilentlyContinue');
-    expect(out).toContain('not found');
+    expect(out).toContain('could not find');
   });
   it('man alias', async () => {
     const pc = createPC(); const ps = createPS(pc);

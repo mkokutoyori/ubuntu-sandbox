@@ -19,15 +19,11 @@ import type { PSScriptBlock } from '@/powershell/parser/PSASTNode';
 import type { ServiceInfo, IServiceProvider } from '@/powershell/providers/PSProviders';
 import { psValueToString } from '@/powershell/runtime/PSExpansion';
 import { commandNotFoundMessage } from '@/powershell/commandNotFound';
+import { wildcardToRegex } from '@/powershell/runtime/PSWildcard';
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 
 /** Compile a PowerShell-style wildcard (`*`, `?`) into a case-insensitive regex. */
-function wildcardRegex(pattern: string): RegExp {
-  const escaped = pattern.replace(/[.+^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '.*').replace(/\?/g, '.');
-  return new RegExp(`^${escaped}$`, 'i');
-}
-
 /**
  * Map PowerShell's user-visible `-StartupType` values onto the canonical
  * `ServiceStartType` enum the device service manager understands. Mirrors
@@ -129,7 +125,7 @@ export class GetServiceCmdlet implements ICmdlet {
     const displayPattern = ctx.named['displayname'] !== undefined
       ? psValueToString(ctx.named['displayname']) : null;
     if (displayPattern !== null) {
-      const pat = wildcardRegex(displayPattern);
+      const pat = wildcardToRegex(displayPattern);
       return asPSObjects(svc.listServices().filter(s => pat.test(s.displayName)));
     }
     const name = pickServiceName(ctx);

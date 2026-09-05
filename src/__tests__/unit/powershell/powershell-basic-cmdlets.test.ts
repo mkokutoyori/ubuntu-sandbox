@@ -11,7 +11,6 @@
 
 import { describe, it, expect, beforeEach } from 'vitest';
 import { WindowsPC } from '@/network/devices/WindowsPC';
-import { PowerShellExecutor } from '@/network/devices/windows/PowerShellExecutor';
 import { resetCounters } from '@/network/core/types';
 import { resetDeviceCounters } from '@/network/devices/DeviceFactory';
 import { Logger } from '@/network/core/Logger';
@@ -27,8 +26,8 @@ function createPC(name = 'WIN-CMD'): WindowsPC {
   return new WindowsPC('windows-pc', name);
 }
 
-function createPS(pc: WindowsPC): PowerShellExecutor {
-  return new PowerShellExecutor(pc as any);
+function createPS(pc: WindowsPC): { execute(line: string): Promise<string> } {
+  return createLivePS(pc);
 }
 
 function createLivePS(pc: WindowsPC): { execute(line: string): Promise<string> } {
@@ -213,13 +212,13 @@ describe('2. Copy‑Item', () => {
     expect(content.trim()).toBe('first');
   });
 
-  it('Copy-Item without -Force fails if destination exists', async () => {
+  it('Copy-Item onto an existing file overwrites it', async () => {
     const pc = createPC();
     const ps = createPS(pc);
     await ps.execute('Set-Content C:\\exist.txt "old"');
     await ps.execute('Set-Content C:\\new.txt "new"');
-    const result = await ps.execute('Copy-Item C:\\new.txt C:\\exist.txt -ErrorAction SilentlyContinue');
-    expect(result).toContain('already exists');
+    await ps.execute('Copy-Item C:\\new.txt C:\\exist.txt');
+    expect((await ps.execute('Get-Content C:\\exist.txt')).trim()).toBe('new');
   });
 
   it('Copy-Item -PassThru returns the object', async () => {
@@ -230,14 +229,14 @@ describe('2. Copy‑Item', () => {
     expect(out.trim()).toBe('pass2.txt');
   });
 
-  it('Copy-Item -Container copies directory without child items (if no -Recurse)', async () => {
+  it('Copy-Item -Container copies the directory itself, children left behind', async () => {
     const pc = createPC();
     const ps = createPS(pc);
     await ps.execute('New-Item -Path C:\\dir -ItemType Directory');
     await ps.execute('Set-Content C:\\dir\\child.txt "child"');
-    const result = await ps.execute('Copy-Item C:\\dir C:\\dirCopy -Container');
-    // Should be an error because directory contains children but no -Recurse
-    expect(result).toContain('directory');
+    await ps.execute('Copy-Item C:\\dir C:\\dirCopy -Container');
+    expect((await ps.execute('Test-Path C:\\dirCopy')).trim()).toBe('True');
+    expect((await ps.execute('Test-Path C:\\dirCopy\\child.txt')).trim()).toBe('False');
   });
 
   it('Copy-Item -Filter copies only matching files', async () => {
@@ -328,7 +327,7 @@ describe('2. Copy‑Item', () => {
   it('Copy-Item fails gracefully with missing source', async () => {
     const pc = createPC();
     const ps = createPS(pc);
-    const result = await ps.execute('Copy-Item C:\\noFile.txt C:\\dst.txt -ErrorAction SilentlyContinue');
+    const result = await ps.execute('Copy-Item C:\\noFile.txt C:\\dst.txt');
     expect(result).toContain('Cannot find path');
   });
 
@@ -344,7 +343,7 @@ describe('2. Copy‑Item', () => {
   it('Copy-Item -ToSession (remote) throws not supported in simulator', async () => {
     const pc = createPC();
     const ps = createPS(pc);
-    const result = await ps.execute('Copy-Item C:\\test.txt -ToSession (New-PSSession) -ErrorAction SilentlyContinue');
+    const result = await ps.execute('Copy-Item C:\\test.txt -ToSession (New-PSSession)');
     expect(result).toContain('not supported');
   });
 });
@@ -930,7 +929,7 @@ describe('6. Get‑Help', () => {
     const pc = createPC();
     const ps = createPS(pc);
     const out = await ps.execute('Get-Help NoSuchCmdlet -ErrorAction SilentlyContinue');
-    expect(out).toContain('not found');
+    expect(out).toContain('could not find');
   });
 
   it('man alias for help', async () => {
@@ -1821,13 +1820,13 @@ describe('2. Copy‑Item (25+)', () => {
     expect(content.trim()).toBe('first');
   });
 
-  it('04: fails without -Force when destination exists', async () => {
+  it('04: overwrites an existing destination file', async () => {
     const pc = createPC();
     const ps = createPS(pc);
     await ps.execute('Set-Content C:\\copy4_exist.txt "old"');
     await ps.execute('Set-Content C:\\copy4_new.txt "new"');
-    const result = await ps.execute('Copy-Item C:\\copy4_new.txt C:\\copy4_exist.txt -ErrorAction SilentlyContinue');
-    expect(result).toContain('already exists');
+    await ps.execute('Copy-Item C:\\copy4_new.txt C:\\copy4_exist.txt');
+    expect((await ps.execute('Get-Content C:\\copy4_exist.txt')).trim()).toBe('new');
   });
 
   it('05: -PassThru returns the copied object', async () => {
@@ -1838,13 +1837,14 @@ describe('2. Copy‑Item (25+)', () => {
     expect(out.trim()).toBe('copy5_pass2.txt');
   });
 
-  it('06: -Container without -Recurse fails for non-empty directory', async () => {
+  it('06: -Container without -Recurse leaves the children behind', async () => {
     const pc = createPC();
     const ps = createPS(pc);
     await ps.execute('New-Item -Path C:\\copy6_dir -ItemType Directory');
     await ps.execute('Set-Content C:\\copy6_dir\\child.txt "child"');
-    const result = await ps.execute('Copy-Item C:\\copy6_dir C:\\copy6_dest -Container');
-    expect(result).toContain('directory');
+    await ps.execute('Copy-Item C:\\copy6_dir C:\\copy6_dest -Container');
+    expect((await ps.execute('Test-Path C:\\copy6_dest')).trim()).toBe('True');
+    expect((await ps.execute('Test-Path C:\\copy6_dest\\child.txt')).trim()).toBe('False');
   });
 
   it('07: -Filter copies only matching files', async () => {
@@ -1922,7 +1922,7 @@ describe('2. Copy‑Item (25+)', () => {
   it('14: error on missing source', async () => {
     const pc = createPC();
     const ps = createPS(pc);
-    const result = await ps.execute('Copy-Item C:\\noFile.txt C:\\dst.txt -ErrorAction SilentlyContinue');
+    const result = await ps.execute('Copy-Item C:\\noFile.txt C:\\dst.txt');
     expect(result).toContain('Cannot find path');
   });
 
@@ -1938,7 +1938,7 @@ describe('2. Copy‑Item (25+)', () => {
   it('16: -ToSession not supported gracefully fails', async () => {
     const pc = createPC();
     const ps = createPS(pc);
-    const result = await ps.execute('Copy-Item C:\\test.txt -ToSession (New-PSSession) -ErrorAction SilentlyContinue');
+    const result = await ps.execute('Copy-Item C:\\test.txt -ToSession (New-PSSession)');
     expect(result).toContain('not supported');
   });
 
@@ -2630,7 +2630,7 @@ describe('6. Get‑Help (20+)', () => {
     const pc = createPC();
     const ps = createPS(pc);
     const out = await ps.execute('Get-Help NoExist -ErrorAction SilentlyContinue');
-    expect(out).toContain('not found');
+    expect(out).toContain('could not find');
   });
 
   it('15: man alias', async () => {

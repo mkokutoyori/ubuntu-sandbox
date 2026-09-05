@@ -2759,12 +2759,20 @@ les trois gros : `powershell-basic-cmdlets.test.ts` (558),
 `powershell-cmdlet.test.ts` (354), `cmd-netsh.test.ts` (186).
 
 **Ce que coute la fermeture** : pointer `powershell-basic-cmdlets.test.ts`
-vers le moteur vivant fait tomber 128 cas sur 558. Ils se rangent en
-familles : `<commande> -?` rend `0` au lieu de l'aide ; `Get-Help` vivant
-n'a ni DESCRIPTION ni EXAMPLES la ou l'executeur en avait ; `Copy-Item`,
-`Get-ChildItem`, `Get-Content`, `Get-Service`, `Stop-Process`,
-`Get-Disk`, `Get-Volume` ont des ecarts de rendu ou de parametres. Chaque
-famille est un lot : on migre le fichier, on ferme les manques qu'il
-revele, et le fichier de tests devient enfin une mesure du moteur REEL au
-lieu d'une mesure d'un moteur mort. `PowerShellExecutor.ts` disparait
-quand le dernier fichier est migre.
+vers le moteur vivant faisait tomber 128 cas sur 558. Le fichier EST
+migre : il mesure desormais le moteur vivant, et le compte est descendu a
+68. Fermees : `<commande> -?`, `Get-Help` (corps complet, notices
+deplacees hors de l'executeur), `Copy-Item` (tous ses criteres declares),
+`-LiteralPath` pour toute la famille des chemins, le filtrage par joker.
+
+Restent, par famille : `Get-Content` (13 — `-Stream` et `-AsByteStream` a
+refuser en nommant la brique, `-First`/`-Last` non lus, joker de chemin,
+`Cannot find path` muet), `Get-ChildItem` (11 — `-Exclude`, `-Depth`,
+`-Hidden`, `-Attributes` declares et non evalues, joker de chemin),
+`Get-Location` (6 — `-Stack`, `-PSProvider`, `-PSDrive`), `Stop-Process`
+(6), `Get-Service` (6), `Get-Disk` (4), `Get-Process` etendu (4),
+`Get-Command` (6), `Get-LocalUser` (3), `Get-Volume` (2), et huit cas
+isoles. Chaque famille est un lot : on ferme les manques que le fichier
+revele. `PowerShellExecutor.ts` disparait quand le dernier fichier de
+test qui l'importe est migre — il en reste une vingtaine, dont
+`powershell-cmdlet.test.ts` (346) et `cmd-netsh.test.ts` (186).

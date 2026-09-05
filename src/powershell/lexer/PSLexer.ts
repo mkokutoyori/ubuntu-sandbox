@@ -490,6 +490,11 @@ export class PSLexer {
       return psToken(PSTokenType.DECREMENT, '--', start);
     }
 
+    if (next === '?') {
+      this.advance();
+      return psToken(PSTokenType.PARAMETER, '?', start);
+    }
+
     // -word → PARAMETER (cmdlet switch or operator like -eq, -and)
     if (this.isAlpha(next) || next === '_') {
       let word = '';

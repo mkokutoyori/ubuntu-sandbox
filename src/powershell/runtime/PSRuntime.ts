@@ -2497,6 +2497,11 @@ export class PSRuntime {
       throw new NativeCommandNeedsAsync(name, nativeArgv(positional, cmdletNamed));
     }
 
+    if (cmdletNamed['?'] === true) {
+      return this.dispatchCmdlet(
+        'get-help', [cmdlet.displayName ?? this.titleCase(cmdlet.name)], {}, null, env);
+    }
+
     const emittedValues: PSValue[] = [];
     const prevErrCount = this.errorObjects.length;
     const cmdletDisplayName = cmdlet.displayName ?? this.titleCase(cmdlet.name);

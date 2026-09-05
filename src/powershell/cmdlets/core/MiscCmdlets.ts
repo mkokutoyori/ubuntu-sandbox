@@ -16,7 +16,8 @@ import {
 } from '@/powershell/executionPolicy';
 import { parseCredentialArg } from './RemotingCmdlets';
 import { makePSCredential } from '@/powershell/credential/PSCredential';
-import { wildcardToRegex } from '@/powershell/runtime/PSWildcard';
+import { wildcardMatches, wildcardToRegex } from '@/powershell/runtime/PSWildcard';
+import { renderCmdletHelp, helpTopicNotFound, HELP_SYSTEM_TOPIC } from '@/powershell/help/renderHelp';
 
 // ─── New-Object ───────────────────────────────────────────────────────────
 
@@ -223,13 +224,15 @@ export class ConvertToSecureStringCmdlet implements ICmdlet {
 
 export class GetHelpCmdlet implements ICmdlet {
   readonly name = 'get-help';
+  readonly description = 'Displays information about PowerShell commands and concepts.';
   readonly parameters = ['Name', 'Path', 'Category', 'Component', 'Functionality', 'Role', 'Detailed', 'Full', 'Examples', 'Parameter', 'Online', 'ShowWindow'] as const;
   readonly aliases = ['help', 'man'] as const;
 
   execute(ctx: CmdletContext): PSValue {
-    const name = psValueToString(ctx.named['name'] ?? ctx.positional[0] ?? '');
+    const name = psValueToString(
+      ctx.named['name'] ?? ctx.positional[0] ?? helpTopicOf(ctx.pipeInput) ?? '');
     if (!name) {
-      ctx.emit('TOPIC\n    PowerShell Help System\n\nSHORT DESCRIPTION\n    Use Get-Help <cmdlet> for cmdlet help.');
+      ctx.emit(HELP_SYSTEM_TOPIC);
       return null;
     }
     const source = ctx.runtime.getFunctionSource(name);
@@ -246,17 +249,45 @@ export class GetHelpCmdlet implements ICmdlet {
       ctx.emit(sections.join('\n\n'));
       return null;
     }
+    const rendered = renderCmdletHelp(name, {
+      examples:   ctx.named['examples'] === true,
+      detailed:   ctx.named['detailed'] === true,
+      full:       ctx.named['full'] === true,
+      online:     ctx.named['online'] === true,
+      showWindow: ctx.named['showwindow'] === true,
+      parameter:  ctx.named['parameter'] !== undefined ? psValueToString(ctx.named['parameter']) : undefined,
+    });
+    if (rendered !== null) {
+      ctx.emit(rendered);
+      return null;
+    }
     const known = ctx.runtime.listCmdlets().find(c =>
       c.name.toLowerCase() === name.toLowerCase()
       || (c.displayName ?? '').toLowerCase() === name.toLowerCase());
-    const label = known?.displayName ?? name;
+    if (!known) {
+      ctx.emit(helpTopicNotFound(name));
+      return null;
+    }
+    const label = known.displayName ?? name;
     const sections = [`NAME\n    ${label}`];
-    if (known?.description) sections.push(`SYNOPSIS\n    ${known.description}`);
+    if (known.description) sections.push(`SYNOPSIS\n    ${known.description}`);
     sections.push(`SYNTAX\n    ${label} [<CommonParameters>]`);
-    sections.push(`DESCRIPTION\n    ${known?.description ?? `Displays help for the ${label} cmdlet.`}`);
+    sections.push(`DESCRIPTION\n    ${known.description ?? `Displays help for the ${label} cmdlet.`}`);
     ctx.emit(sections.join('\n\n'));
     return null;
   }
+}
+
+function helpTopicOf(pipeInput: PSValue): string | null {
+  const first = Array.isArray(pipeInput) ? pipeInput[0] : pipeInput;
+  if (first === null || first === undefined) return null;
+  if (typeof first === 'string') return first;
+  if (typeof first === 'object') {
+    const record = first as Record<string, PSValue>;
+    const named = record['Name'] ?? record['name'];
+    if (named !== undefined) return psValueToString(named);
+  }
+  return null;
 }
 
 /**
@@ -362,9 +393,9 @@ export class GetCommandCmdlet implements ICmdlet {
       const dash  = display.indexOf('-');
       const verb  = dash > 0 ? display.slice(0, dash).toLowerCase() : '';
       const noun  = dash > 0 ? display.slice(dash + 1).toLowerCase() : lower;
-      if (nameFilter && !wildcardLike(lower, nameFilter.toLowerCase())) return false;
-      if (verbFilter && !wildcardLike(verb,  verbFilter.toLowerCase())) return false;
-      if (nounFilter && !wildcardLike(noun,  nounFilter.toLowerCase())) return false;
+      if (nameFilter && !wildcardMatches(nameFilter, lower)) return false;
+      if (verbFilter && !wildcardMatches(verbFilter, verb)) return false;
+      if (nounFilter && !wildcardMatches(nounFilter, noun)) return false;
       return true;
     };
 
@@ -403,12 +434,6 @@ function titleCaseCmdletName(raw: string): string {
 }
 
 /** PowerShell-style match: literal substring OR `*?` wildcard (Like operator). */
-function wildcardLike(value: string, pattern: string): boolean {
-  if (!pattern.includes('*') && !pattern.includes('?')) return value === pattern;
-  const re = '^' + pattern.replace(/[.+^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '.*').replace(/\?/g, '.') + '$';
-  return new RegExp(re).test(value);
-}
-
 // ─── Get-Module ───────────────────────────────────────────────────────────
 
 export class GetModuleCmdlet implements ICmdlet {
