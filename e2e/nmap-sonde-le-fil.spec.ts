@@ -525,6 +525,40 @@ test.describe('nmap sonde le fil', () => {
     expect(capture).toContain('ARP, Request who-has 10.73.0.99');
   });
 
+  test('une cible se decrit : plage, fichier et exclusion', async ({ page }) => {
+    test.setTimeout(180_000);
+    await page.goto('/', { timeout: 45_000 });
+    await waitForStore(page);
+
+    const cibleId = await addDevice(page, 'linux-server', 300, 470);
+    const scannerId = await addDevice(page, 'linux-pc', 600, 470);
+    await cable(page, cibleId, scannerId);
+
+    await openTerminal(page, cibleId);
+    await typeCmd(page, `ip addr add ${CIBLE}/24 dev eth0`);
+    await closeTerminal(page);
+
+    await openTerminal(page, scannerId);
+    await typeCmd(page, `ip addr add ${SCANNER}/24 dev eth0`);
+
+    await typeCmd(page, 'nmap -sn 10.73.0.9-11');
+    const plage = await lastLines(page, 8);
+    expect(plage).not.toContain('Failed to resolve');
+    expect(plage).toContain(`Nmap scan report for ${CIBLE}`);
+    expect(plage).toContain('Nmap done: 3 IP addresses');
+
+    await typeCmd(page, `echo "${CIBLE} 10.73.0.11" > cibles.txt`);
+    await typeCmd(page, 'nmap -sn -iL cibles.txt');
+    const fichier = await lastLines(page, 8);
+    expect(fichier).not.toContain('not implemented');
+    expect(fichier).toContain('Nmap done: 2 IP addresses');
+
+    await typeCmd(page, `nmap -sn --exclude ${CIBLE} 10.73.0.9-11`);
+    const exclu = await lastLines(page, 4);
+    expect(exclu).toContain('Nmap done: 2 IP addresses (0 hosts up)');
+    expect(exclu).not.toContain(`Nmap scan report for ${CIBLE}`);
+  });
+
   test('nmap.exe existe aussi sur une machine Windows', async ({ page }) => {
     test.setTimeout(180_000);
     await page.goto('/', { timeout: 45_000 });

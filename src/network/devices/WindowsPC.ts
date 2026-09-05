@@ -3859,7 +3859,10 @@ export class WindowsPC extends EndHost implements UserAccountHost {
   private scanHost(): ScanHost {
     return {
       device: this,
-      readFile: (p) => { const r = this.fs.readFile(p); return r.ok ? r.content : null; },
+      readFile: (p) => {
+        const r = this.fs.readFile(this.fs.normalizePath(p, this.cwd));
+        return r.ok ? r.content : null;
+      },
       ping: (ip, timeoutMs) => (ip.includes(':')
         ? this.executePing6Sequence(new IPv6Address(ip), 1, timeoutMs)
         : this.executePingSequence(new IPAddress(ip), 1, timeoutMs)),

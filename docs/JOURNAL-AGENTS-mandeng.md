@@ -7876,3 +7876,68 @@ tombent contre l'etat d'avant ; le onzieme est le TEMOIN — le balayage
 sans option, dont la capture ne montre qu'une source — et son role est de
 passer des deux cotes. Un cas e2e Playwright balaye avec `-D` puis `-S`
 et relit la capture de la cible.
+
+---
+
+## Une cible se DECRIT, elle ne se nomme pas une par une
+
+**Perimetre revendique** : `src/network/scan/nmap/` (`TargetSpec` — nouveau,
+`NmapOptions`, `NmapRun`, `ScanEngine`),
+`src/network/devices/linux/commands/net/Nmap.ts`,
+`src/network/devices/WindowsPC.ts` (le `ScanHost` de `nmap.exe`).
+
+`nmap 192.168.1.0/24` est l'invocation canonique de l'outil, et le
+simulateur savait deja l'etendre — mais c'etait la SEULE forme qu'il
+connaissait. `10.0.0.1-3`, `10.0.0.2,3`, `10.0.0.*` et `10.0.[0-1].2`
+repondaient tous « Failed to resolve », c'est-a-dire un diagnostic de DNS
+pour une expression qui n'a rien a resoudre.
+
+**La grammaire vient de `libnetutil/NetBlock.cc:150`** et non d'un
+souvenir : chaque octet satisfait `(\*|#?(-#?)?(,#?(-#?)?)*)`. Une borne
+gauche absente vaut 0, une borne droite absente vaut 255, `*` vaut les
+deux, la virgule enumere, et une borne hors [0,255] ou une plage a
+l'envers est un REFUS de la grammaire — l'expression retombe alors sur la
+resolution de nom, ce qui explique pourquoi le message d'origine etait le
+bon message pour la mauvaise raison.
+
+**Le masque ELARGIT au lieu de restreindre** (`NetBlock.cc:433`), et
+c'etait le point a ne pas rater : `10.0.0.1-3/24` couvre tout
+10.0.0.0-255 et non trois adresses, parce que le masque s'applique octet
+par octet APRES l'analyse des plages. `applyNetmaskOctet` reproduit
+l'appariement de blocs du vrai plutot qu'une approximation.
+
+**Un ensemble d'exclusion ne s'ETEND pas** : `--exclude 10.0.0.0/8`
+tiendrait 16 millions d'adresses, donc l'appartenance se teste sur les
+vecteurs de bits, comme l'`addrset` du vrai nmap. Une seule ecriture de
+la grammaire sert la cible et l'exclusion — deux analyses de la meme
+expression finiraient par accepter d'un cote ce que l'autre refuse.
+
+**`--exclude` decoupe sur les VIRGULES avant d'analyser chaque morceau**
+(`targets.cc`, `load_exclude_string`), ce qui est une verrue REELLE et non
+une simplification : `--exclude 10.0.0.2,3` donne `10.0.0.2` puis `3`, et
+le second est refuse par `Invalid address specification: 3`. La
+reproduire est plus fidele que de la corriger, la virgule appartenant
+aussi a la grammaire d'octet.
+
+**Les cibles de la LIGNE DE COMMANDE passent avant celles de `-iL`**
+(`libnetutil/netutil.cc:3792`), le fichier se lit par jetons separes par
+des blancs — donc plusieurs cibles par ligne — et `#` ouvre un
+commentaire. `--excludefile` lit le meme format, une seule ecriture.
+
+**Trouve en chemin et corrige** : `nmap` ECRIVAIT ses fichiers en
+normalisant contre le repertoire courant (`-oN rapport.txt`) et LISAIT
+sans le faire — asymetrie invisible tant que rien ne lisait. Les deux
+plateformes normalisent desormais des deux cotes.
+
+**Deux bornes assumees et ecrites** : `-iR 0` (illimite sur une vraie
+machine) et `-iR n` au-dela de `MAX_SPEC_HOSTS` sont refuses en nommant
+la borne — ce simulateur n'a pas de balayage sans fin a executer ; et
+`-iL -` (l'entree standard) est refuse par le message de famille du
+simulateur, un `nmap` n'ayant pas d'entree standard ici.
+
+**Discrimination** : `probe-nmap-specification-de-cible.test.ts` (20 cas),
+16 tombent contre l'etat d'avant. Les 4 autres sont nommes dans l'en-tete
+— les deux TEMOINS (cible unique, `/29`) et les deux specifications
+MALFORMEES, qui rendaient deja « Failed to resolve » mais parce que RIEN
+n'etait analyse : meme texte, autre raison. Un cas e2e Playwright tape une
+plage, un `-iL` et un `--exclude` dans le vrai terminal.

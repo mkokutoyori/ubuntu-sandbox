@@ -1,9 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import {
-  scan,
-  enumerateTargets,
-  type HostProbes,
-} from '@/network/scan/nmap/ScanEngine';
+import { scan, type HostProbes } from '@/network/scan/nmap/ScanEngine';
+import { enumerateTargets } from '@/network/scan/nmap/TargetSpec';
 import { parseNmapArgs } from '@/network/scan/nmap/NmapOptions';
 
 interface FakeSpec {
