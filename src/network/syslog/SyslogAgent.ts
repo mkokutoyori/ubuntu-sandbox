@@ -34,7 +34,7 @@ export interface SyslogHost {
    * fois et gardee. Absente, le transport TCP ne peut pas etre honore et
    * l'agent le dit plutot que de retomber en UDP en silence.
    */
-  tcpConnect?(ip: string, port: number, opts: {
+  openTcpStream?(ip: string, port: number, opts: {
     onOpen?: () => void; onClose?: () => void;
   }): { send(data: unknown): void; close(): void; readonly state: string } | null;
 }
@@ -321,7 +321,7 @@ export class SyslogAgent {
    */
   private deliverTcp(s: SyslogServer, severity: SyslogSeverityName,
                      tag: string, message: string): void {
-    if (!this.host.tcpConnect) { this.dropped(s.ip, 'no-tcp'); return; }
+    if (!this.host.openTcpStream) { this.dropped(s.ip, 'no-tcp'); return; }
     const ligne = this.ligneRfc3164(s, severity, tag, message) + (s.delimiter ? '\n' : '');
     let lien = this.liens.get(s.ip);
     if (!lien) {
@@ -344,7 +344,7 @@ export class SyslogAgent {
     }
     if (lien.ouverture) return;
     lien.ouverture = true;
-    const socket = this.host.tcpConnect(s.ip, s.port, {
+    const socket = this.host.openTcpStream(s.ip, s.port, {
       onOpen: () => {
         const l = this.liens.get(s.ip);
         if (!l?.socket) return;

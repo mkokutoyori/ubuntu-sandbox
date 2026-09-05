@@ -81,6 +81,8 @@ export interface VdomRegistryDeps {
   readonly applicationShift: boolean;
   readonly maxGroupNesting: number;
   readonly resolveFqdn?: (fqdn: string) => readonly string[];
+  readonly countryOf?: (candidate: string) => string | undefined;
+  readonly policyNamesZones?: boolean;
   readonly predefinedAddresses?: readonly AddressObject[];
   readonly predefinedServices?: readonly ServiceObject[];
   readonly connectedRoutes: (vdom: string) => readonly ConnectedRoute[];
@@ -185,6 +187,7 @@ export class VdomRegistry {
     const objects = new ObjectStore({
       maxGroupNesting: deps.maxGroupNesting,
       resolveFqdn: (fqdn) => deps.resolveFqdn?.(fqdn) ?? [],
+      countryOf: (candidate) => deps.countryOf?.(candidate),
     });
     for (const object of deps.predefinedAddresses ?? []) objects.addAddress(object);
     for (const object of deps.predefinedServices ?? []) objects.addService(object);
@@ -225,6 +228,7 @@ export class VdomRegistry {
         return [];
       },
       policyKeyedBy: deps.policyKeyedBy,
+      policyNamesZones: deps.policyNamesZones,
       implicitPolicy: deps.implicitPolicy,
       applicationShift: deps.applicationShift,
       securityLevelOf: (zone) => deps.securityLevelOf(name, zone),

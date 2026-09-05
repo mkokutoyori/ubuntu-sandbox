@@ -152,9 +152,9 @@ describe('une option que nmap CONNAIT et que ce simulateur n implante pas', () =
   it('une option courte a valeur non plus', async () => {
     const { scanner } = await segment();
 
-    const sortie = await taper(scanner, 'nmap -D 10.0.0.9 -p 22 10.0.0.2');
+    const sortie = await taper(scanner, 'nmap -b 10.0.0.9 -p 22 10.0.0.2');
 
-    expect(sortie).toContain('nmap: option -D: is not implemented in this simulator');
+    expect(sortie).toContain('nmap: option -b: is not implemented in this simulator');
     expect(sortie).not.toContain('Nmap scan report for 10.0.0.9');
   });
 });

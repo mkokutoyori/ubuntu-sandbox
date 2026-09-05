@@ -258,7 +258,7 @@ function matchesCareMask(
   return ((value & care) >>> 0) === ((base & care) >>> 0);
 }
 
-function matchesRange(candidate: string, from: string | undefined, to: string | undefined): boolean {
+export function matchesRange(candidate: string, from: string | undefined, to: string | undefined): boolean {
   if (from === undefined || to === undefined) return false;
   const value = tryIpToUint32(candidate);
   const low = tryIpToUint32(from);

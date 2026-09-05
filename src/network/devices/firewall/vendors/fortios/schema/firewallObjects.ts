@@ -80,9 +80,20 @@ export const FIREWALL_ADDRESS: FortiTableSpec = {
   ],
   onCommit(object, context) {
     const kind = object.effective('type')[0];
-    if (kind !== 'ipmask' && kind !== 'iprange' && kind !== 'fqdn' && kind !== 'wildcard') return;
+    if (kind !== 'ipmask' && kind !== 'iprange' && kind !== 'fqdn'
+      && kind !== 'wildcard' && kind !== 'geography') return;
 
     context.objects.removeAddress(object.key);
+    if (kind === 'geography') {
+      const country = object.effective('country')[0] ?? '';
+      if (country.length === 0) return;
+      context.objects.addAddress({
+        name: object.key, kind: 'geography', family: 'ipv4',
+        value: '', countryCode: country.toUpperCase(),
+        predefined: false, tags: [],
+      });
+      return;
+    }
     if (kind === 'ipmask' || kind === 'wildcard') {
       const parts = object.effective(kind === 'ipmask' ? 'subnet' : 'wildcard');
       if (parts.length < 2) return;
@@ -205,8 +216,10 @@ export const FIREWALL_ADDRGRP6: FortiTableSpec = {
     context.objects.removeAddressGroup(object.key);
     const members = object.effective('member');
     if (members.length === 0) return;
+    const excluding = object.effective('exclude')[0] === 'enable';
     context.objects.addAddressGroup(object.key, members,
-      object.effective('comment')[0] || undefined);
+      object.effective('comment')[0] || undefined,
+      excluding ? [...object.effective('exclude-member')] : []);
   },
   onDelete(key, context) {
     context.objects.removeAddressGroup(key);
@@ -227,15 +240,20 @@ export const FIREWALL_ADDRGRP: FortiTableSpec = {
     refList('member', 'Address objects contained within the group.',
       ['firewall address', 'firewall addrgrp']),
     enable('exclude', 'Enable/disable address exclusion.'),
-    refList('exclude-member', 'Address exclusion member.', ['firewall address']),
+    {
+      ...refList('exclude-member', 'Address exclusion member.', ['firewall address']),
+      availableWhen: (object) => object.effective('exclude')[0] === 'enable',
+    },
     text('comment', 'Comment.'),
   ],
   onCommit(object, context) {
     context.objects.removeAddressGroup(object.key);
     const members = object.effective('member');
     if (members.length === 0) return;
+    const excluding = object.effective('exclude')[0] === 'enable';
     context.objects.addAddressGroup(object.key, members,
-      object.effective('comment')[0] || undefined);
+      object.effective('comment')[0] || undefined,
+      excluding ? [...object.effective('exclude-member')] : []);
   },
   onDelete(key, context) {
     context.objects.removeAddressGroup(key);

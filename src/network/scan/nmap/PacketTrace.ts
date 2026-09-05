@@ -150,7 +150,14 @@ export function traceFrameLine(
   if (!targets.has(peer)) return null;
   if (connectScan && packet.protocol === IP_PROTO_TCP) return null;
   const block = protocolBlock(packet);
-  if (!block) return null;
+  // Un fragment NON INITIAL ne porte aucun en-tete de transport a lire,
+  // et `ippackethdrinfo` le rend alors par son seul bloc IP — ce que ses
+  // trois lecteurs de protocole disent chacun en sortant sur `frag_off`
+  // (`packettrace.cc:800`, `:864`, `:1169`).
+  if (!block) {
+    return packet.fragmentOffset > 0
+      ? `${direction} ${stamp(elapsed)} ${ipBlock(packet)}` : null;
+  }
   return `${direction} ${stamp(elapsed)} ${block} ${ipBlock(packet)}`;
 }
 

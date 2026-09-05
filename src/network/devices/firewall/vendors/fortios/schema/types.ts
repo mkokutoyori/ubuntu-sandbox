@@ -31,11 +31,14 @@ export interface FortiDnsZonePatch {
   readonly authoritative: boolean;
   readonly primaryName?: string;
   readonly contact?: string;
+  readonly ipPrimary?: string;
   readonly entries: ReadonlyArray<{ hostname: string; ip: string; ttl?: number }>;
 }
 import type {
   BgpConfiguration, OspfConfiguration, RipConfiguration,
 } from '../../../routing/DynamicRoutingTypes';
+import type { SwitchGroupPatch } from '../../../l3/SwitchGroupTable';
+import type { GeoIpOverride } from '../../../model/GeoIpOverrides';
 
 export type FortiAccessGroup = AccessGroup;
 
@@ -366,6 +369,7 @@ export interface FortiCommitDevice {
   applySyslogCollector(settings: SyslogCollectorSettings): string | void;
   applySyslogFilter(settings: SyslogFilterSettings): string | void;
   applyLogSettings(patch: LogSettingsPatch): void;
+  applyPolicyCaptureSize(megabytes: number): void;
   applyPasswordExpiry(policy: PasswordExpiryPolicy): void;
   applyAccessList(list: AccessList): void;
   removeAccessList(name: string): void;
@@ -376,7 +380,9 @@ export interface FortiCommitDevice {
   removeVdom(name: string): void;
   applyVdomLink(name: string): void;
   removeVdomLink(name: string): void;
-  applySwitchInterface(name: string, members: readonly string[]): void;
+  applySwitchInterface(name: string, patch: SwitchGroupPatch): string | void;
+  applyGeoIpOverride(override: GeoIpOverride): void;
+  removeGeoIpOverride(name: string): boolean;
   removeSwitchInterface(name: string): void;
   applyAntivirusProfile(profile: FortiAntivirusPatch): void;
   removeAntivirusProfile(name: string): void;

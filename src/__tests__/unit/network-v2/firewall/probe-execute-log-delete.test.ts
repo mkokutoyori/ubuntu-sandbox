@@ -1,6 +1,7 @@
 /**
  * `execute log delete <categorie>` ne supprime QUE cette categorie, et
- * `execute policy-packet-capture delete-all` vide la capture.
+ * `execute policy-packet-capture delete-all` vide les captures de
+ * POLITIQUE.
  *
  * Les deux commandes existent dans la reference et n'existaient pas ici,
  * chacune avec son magasin sous la main. `execute log delete-all` etait
@@ -9,6 +10,15 @@
  * commande dont la reference dit qu'elle prend une categorie, tapee avec
  * une categorie, repondait « unknown path ». Cote capture, `PacketCapture`
  * portait `clear()` depuis toujours et personne ne l'appelait.
+ *
+ * CORRIGE APRES COUP, et dans le TEST plutot que dans le code : ce
+ * fichier faisait vider a `policy-packet-capture delete-all` le tampon
+ * du RENIFLEUR, et epinglait donc une confusion comme si c'etait un
+ * contrat. Sur une vraie machine cette commande efface les captures
+ * posees par `set capture-packet enable` sur une politique, et n'a rien
+ * a voir avec `diagnose sniffer packet`. Le cas porte desormais sur le
+ * magasin par politique, et le renifleur a le sien dans
+ * `probe-capture-par-politique.test.ts`.
  *
  * La categorie se resout par le MEME `resolveLogCategory` que
  * `execute log filter category` — nom, forme abregee ou numero — plutot
@@ -108,15 +118,15 @@ describe('execute log delete', () => {
 describe('execute policy-packet-capture', () => {
   it('`delete-all` vide la capture', () => {
     const { fw, sh } = laboratoire();
-    const capture = fw.getPacketCapture();
-    capture.record({ at: 1, iface: 'port1', direction: 'in',
+    const capture = fw.getPolicyCaptures();
+    capture.record('1', { at: 1, iface: 'port1', direction: 'in',
       frame: { srcMAC: MACAddress.broadcast(), dstMAC: MACAddress.broadcast(),
         etherType: 0x0800, payload: undefined } });
-    expect(capture.count()).toBe(1);
+    expect(capture.total()).toBe(1);
 
     expect(sh.execute('execute policy-packet-capture delete-all'))
       .toBe('1 captured packets deleted');
-    expect(capture.count()).toBe(0);
+    expect(capture.total()).toBe(0);
   });
 
   it('une operation inconnue est refusee', () => {

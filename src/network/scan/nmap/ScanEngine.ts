@@ -1,6 +1,7 @@
 import type { NmapOptions, ScanType } from './NmapOptions';
 import { IPAddress } from '@/network/core/types';
 import type { TcpWireOutcome } from '@/network/tcp/types';
+import type { ScanProbeShape } from '@/network/tcp/TcpStack';
 import { topPorts, serviceName, DEFAULT_TOP_COUNT } from './ServiceRegistry';
 import type { ScanProbeFlags, ScanVerdict, StatelessScanKind } from './StatelessScans';
 import {
@@ -87,8 +88,11 @@ export interface HostProbes {
    */
   statelessOutcome?(
     ip: string, port: number, kind: StatelessScanKind, flags?: ScanProbeFlags,
+    shape?: ScanProbeShape,
   ): ScanVerdict;
-  udpState(ip: string, port: number): 'open' | 'closed' | 'open|filtered';
+  udpState(
+    ip: string, port: number, shape?: ScanProbeShape,
+  ): 'open' | 'closed' | 'open|filtered';
   banner(ip: string, port: number): { service: string; version?: string } | null;
   /**
    * `Target::directlyConnected()` : une cible du meme segment est a une
@@ -229,13 +233,38 @@ export function effectivePorts(options: NmapOptions): number[] {
   return options.ports ?? topPorts(DEFAULT_TOP_COUNT);
 }
 
+/**
+ * `scan_engine_raw.cc:1218` : la boucle d'emission construit UNE sonde
+ * par leurre, chacune avec SA source, et seule celle de rang `decoyturn`
+ * est suivie. C'est ce qui fait qu'un balayage a leurres garde un
+ * resultat JUSTE tout en noyant l'origine — une sonde partie d'une
+ * adresse forgee ne peut rien recevoir, donc son verdict ne veut rien
+ * dire et il est jete.
+ */
+function withDecoys<T>(
+  options: NmapOptions, emit: (shape: ScanProbeShape | undefined) => T,
+): T {
+  if (!options.decoys) return emit(options.probeShape);
+  let real: T | undefined;
+  for (const decoy of options.decoys) {
+    const shape = decoy.kind === 'me'
+      ? options.probeShape
+      : { ...options.probeShape, sourceIp: decoy.ip };
+    const verdict = emit(shape);
+    if (decoy.kind === 'me') real = verdict;
+  }
+  return real as T;
+}
+
 function tcpResult(
   options: NmapOptions, probes: HostProbes, ip: string, port: number,
   trace?: TraceContext,
 ): PortResult {
   const kind = statelessKindOf(options.scanType);
   const stateless = kind && probes.statelessOutcome
-    ? probes.statelessOutcome(ip, port, kind, options.scanFlags) : null;
+    ? withDecoys(options, (shape) =>
+      probes.statelessOutcome!(ip, port, kind, options.scanFlags, shape))
+    : null;
   let state: PortState;
   let reason: string;
   if (stateless) {
@@ -268,7 +297,7 @@ function tcpResult(
 function udpResult(
   options: NmapOptions, probes: HostProbes, ip: string, port: number,
 ): PortResult {
-  const state = probes.udpState(ip, port);
+  const state = probes.udpState(ip, port, options.probeShape);
   const reason = state === 'open' ? 'udp-response' : state === 'closed' ? 'port-unreach' : 'no-response';
   let service = serviceName(port, 'udp');
   let version: string | undefined;

@@ -80,6 +80,7 @@ export const FORTIOS_PROFILE: FirewallProfile = Object.freeze({
   selfTrafficHandling: 'local-in-policy',
 
   policyKeyedBy: 'interface',
+  policyNamesZones: true,
   implicitPolicy: 'deny-all',
   implicitRuleEditable: false,
   supportedActions: Object.freeze<RuleAction[]>(['allow', 'deny']),

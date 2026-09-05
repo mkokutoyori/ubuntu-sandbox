@@ -17,6 +17,7 @@ export interface ObjectGroup {
   readonly name: string;
   readonly kind: ObjectKind;
   readonly members: readonly string[];
+  readonly exclusions: readonly string[];
   readonly comment?: string;
 }
 
@@ -49,6 +50,7 @@ interface GroupRecord {
   name: string;
   kind: ObjectKind;
   members: string[];
+  exclusions: string[];
   comment?: string;
 }
 
@@ -130,8 +132,11 @@ export class ObjectStore {
 
   // ─── Groups ─────────────────────────────────────────────────────
 
-  addAddressGroup(name: string, members: readonly string[], comment?: string): ObjectMutation {
-    return this.addGroup(this.addressGroups, 'address', name, members, comment);
+  addAddressGroup(
+    name: string, members: readonly string[], comment?: string,
+    exclusions: readonly string[] = [],
+  ): ObjectMutation {
+    return this.addGroup(this.addressGroups, 'address', name, members, comment, exclusions);
   }
 
   addServiceGroup(name: string, members: readonly string[], comment?: string): ObjectMutation {
@@ -271,7 +276,9 @@ export class ObjectStore {
 
     seen.add(name);
     const matched = group.members.some(
-      member => this.matchAddressWithDepth(member, candidate, depth + 1, seen));
+      member => this.matchAddressWithDepth(member, candidate, depth + 1, seen))
+      && !group.exclusions.some(
+        member => this.matchAddressWithDepth(member, candidate, depth + 1, seen));
     seen.delete(name);
     return matched;
   }
@@ -300,15 +307,16 @@ export class ObjectStore {
   private addGroup(
     into: Map<string, GroupRecord>, kind: ObjectKind,
     name: string, members: readonly string[], comment?: string,
+    exclusions: readonly string[] = [],
   ): ObjectMutation {
     if (kind === 'address' ? this.addressNameTaken(name) : this.serviceNameTaken(name)) {
       return failure({ kind: 'duplicate-name', name });
     }
-    for (const member of members) {
+    for (const member of [...members, ...exclusions]) {
       if (!this.memberExists(kind, member)) return failure({ kind: 'unknown-member', group: name, member });
     }
 
-    into.set(name, { name, kind, members: [...members], comment });
+    into.set(name, { name, kind, members: [...members], exclusions: [...exclusions], comment });
 
     const depth = this.depthOf(kind, name, 0, new Set());
     if (depth > this.maxNesting) {
@@ -379,6 +387,7 @@ function freezeGroup(group: GroupRecord | undefined): ObjectGroup | undefined {
     name: group.name,
     kind: group.kind,
     members: Object.freeze([...group.members]),
+    exclusions: Object.freeze([...group.exclusions]),
     comment: group.comment,
   });
 }

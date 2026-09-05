@@ -204,7 +204,7 @@ export class CiscoRouter extends Router {
       sourceAddressFor: (destination: IPAddress) => this.sourceAddressFor(destination),
       sendArpRequestFor: (iface: string, target: IPAddress) =>
         this.sendArpRequestFor(iface, target),
-      tcpConnect: (ip: string, port: number, opts: { onOpen?: () => void; onClose?: () => void }) =>
+      openTcpStream: (ip: string, port: number, opts: { onOpen?: () => void; onClose?: () => void }) =>
         this.getTcpStack().connect(ip, port, opts),
       evaluateAclPermit: (aclName: string, sourceIp: string) =>
         this.evaluateAclPermit(aclName, sourceIp),

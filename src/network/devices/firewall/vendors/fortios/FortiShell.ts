@@ -1780,8 +1780,7 @@ export class FortiShell {
     if (rest[0] !== 'delete-all') {
       return FortiMessages.unknownAction(`policy-packet-capture ${rest[0]}`);
     }
-    const removed = this.fw.getPacketCapture().count();
-    this.fw.getPacketCapture().clear();
+    const removed = this.fw.getPolicyCaptures().clear();
     return `${removed} captured packets deleted`;
   }
 

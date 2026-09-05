@@ -304,6 +304,9 @@ export function buildCommitDevice(
       applyPasswordExpiry(policy) {
         fw.applyPasswordExpiry(policy);
       },
+      applyPolicyCaptureSize(megabytes) {
+        fw.getPolicyCaptures().setMaxSizeMb(megabytes);
+      },
       applyLogSettings(patch) {
         fw.getLogSettings().apply(patch);
       },
@@ -325,8 +328,14 @@ export function buildCommitDevice(
       removeVdomLink(name) {
         fw.removeVdomLink(name);
       },
-      applySwitchInterface(name, members) {
-        fw.setSwitchInterface(name, members);
+      applyGeoIpOverride(override) {
+        fw.applyGeoIpOverride(override);
+      },
+      removeGeoIpOverride(name) {
+        return fw.removeGeoIpOverride(name);
+      },
+      applySwitchInterface(name, patch) {
+        fw.setSwitchInterface(name, patch);
       },
       removeSwitchInterface(name) {
         fw.removeSwitchInterface(name);

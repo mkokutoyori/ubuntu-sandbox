@@ -60,10 +60,17 @@ export interface SdwanMemberHealth {
   consecutiveSuccesses: number;
 }
 
+export type SdwanTieBreak = 'cfg-order' | 'fib-best-match' | 'input-device';
+
+export interface SdwanZone {
+  readonly name: string;
+  readonly tieBreak: SdwanTieBreak;
+}
+
 export interface SdwanConfiguration {
   readonly enabled: boolean;
   readonly loadBalanceMode: SdwanLoadBalanceMode;
-  readonly zones: readonly string[];
+  readonly zones: readonly SdwanZone[];
   readonly members: readonly SdwanMember[];
   readonly healthChecks: readonly SdwanHealthCheck[];
   readonly services: readonly SdwanService[];
@@ -80,6 +87,37 @@ export const DEAD_LOSS_PERCENT = 100;
 export interface SdwanSteeringProbe {
   readonly sourceIP: string;
   readonly destinationIP: string;
+  readonly ingressPort?: string;
+}
+
+export interface SdwanRouteReach {
+  prefixLengthTowards(iface: string, destination: string): number | undefined;
+}
+
+export function brokenBy(
+  tieBreak: SdwanTieBreak, eligible: readonly SdwanMember[],
+  probe: SdwanSteeringProbe, routes?: SdwanRouteReach,
+): SdwanMember | undefined {
+  if (eligible.length < 2) return eligible[0];
+
+  if (tieBreak === 'input-device') {
+    const arrived = probe.ingressPort;
+    return eligible.find(member => member.iface === arrived) ?? eligible[0];
+  }
+
+  if (tieBreak === 'fib-best-match' && routes) {
+    let best: SdwanMember | undefined;
+    let longest = -1;
+    for (const member of eligible) {
+      const length = routes.prefixLengthTowards(member.iface, probe.destinationIP);
+      if (length === undefined || length <= longest) continue;
+      longest = length;
+      best = member;
+    }
+    return best ?? eligible[0];
+  }
+
+  return eligible[0];
 }
 
 function flowDigest(text: string): number {
@@ -132,7 +170,7 @@ export class SdwanTable {
   private readonly members = new Map<number, SdwanMember>();
   private readonly checks = new Map<string, SdwanHealthCheck>();
   private readonly services = new Map<string, SdwanService>();
-  private readonly zones = new Set<string>();
+  private readonly zones = new Map<string, SdwanZone>();
   private readonly health = new Map<string, Map<number, SdwanMemberHealth>>();
   private enabled = false;
   private loadBalanceMode: SdwanLoadBalanceMode = 'source-ip-based';
@@ -145,11 +183,17 @@ export class SdwanTable {
 
   isEnabled(): boolean { return this.enabled; }
 
-  setZone(name: string): void { this.zones.add(name); }
+  setZone(zone: SdwanZone): void { this.zones.set(zone.name, zone); }
 
   removeZone(name: string): boolean { return this.zones.delete(name); }
 
-  zoneNames(): readonly string[] { return Object.freeze([...this.zones]); }
+  zoneNames(): readonly string[] { return Object.freeze([...this.zones.keys()]); }
+
+  zone(name: string): SdwanZone | undefined { return this.zones.get(name); }
+
+  setRouteReach(routes: SdwanRouteReach | undefined): void { this.routes = routes; }
+
+  private routes: SdwanRouteReach | undefined;
 
   setMember(member: SdwanMember): void { this.members.set(member.sequence, member); }
 
@@ -284,8 +328,19 @@ export class SdwanTable {
   private chosenAmong(
     rule: SdwanService, eligible: readonly SdwanMember[], probe: SdwanSteeringProbe,
   ): SdwanMember | undefined {
-    if (rule.mode !== 'load-balance' || eligible.length < 2) return eligible[0];
-    return spreadAcross(this.loadBalanceMode, eligible, probe);
+    if (eligible.length < 2) return eligible[0];
+    if (rule.mode === 'load-balance') {
+      return spreadAcross(this.loadBalanceMode, eligible, probe);
+    }
+    return brokenBy(this.tieBreakFor(eligible), eligible, probe, this.routes);
+  }
+
+  private tieBreakFor(eligible: readonly SdwanMember[]): SdwanTieBreak {
+    for (const member of eligible) {
+      const declared = this.zones.get(member.zone)?.tieBreak;
+      if (declared !== undefined) return declared;
+    }
+    return 'cfg-order';
   }
 
   preferredMember(check: string, slaId?: number): SdwanMember | undefined {

@@ -5,6 +5,7 @@ import { scan } from './ScanEngine';
 import { renderNormal, renderGreppable, totalSeconds } from './NmapFormatter';
 import { renderXml } from './NmapXml';
 import { buildScanProbes, type ScanHost } from './NmapProbes';
+import { IPAddress } from '@/network/core/types';
 
 export interface NmapRunResult {
   output: string;
@@ -46,9 +47,23 @@ export async function runNmap(host: ScanHost, args: string[]): Promise<NmapRunRe
     };
   }
 
+  const scanProbes = buildScanProbes(host, options.noDns, options.ipv6);
+  for (const decoy of options.decoys ?? []) {
+    if (decoy.kind === 'me' || IPAddress.tryParse(decoy.ip) !== null) continue;
+    const resolved = await scanProbes.resolveTarget(decoy.ip);
+    if (!resolved) {
+      const line = `Failed to resolve decoy host "${decoy.ip}":`
+        + ' Name or service not known';
+      return {
+        output: line, normal: line, greppable: null, xml: null,
+        outputNormalPath: null, outputGreppablePath: null, outputXmlPath: null,
+      };
+    }
+    decoy.ip = resolved.ip;
+  }
+
   const commandLine = `nmap ${args.join(' ')}`;
-  const report = await scan(
-    options, buildScanProbes(host, options.noDns, options.ipv6));
+  const report = await scan(options, scanProbes);
   const normal = renderNormal(report, options, commandLine);
 
   return {

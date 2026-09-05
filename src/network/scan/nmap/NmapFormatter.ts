@@ -146,7 +146,10 @@ function tally(report: NmapReport): string {
 }
 
 export function renderNormal(report: NmapReport, options: NmapOptions, _commandLine: string): string {
-  const lines: string[] = [NMAP_BANNER];
+  // `error()` ecrit sur la sortie d'erreur, donc AVANT la banniere : les
+  // trois controles qui les produisent (`nmap.cc:1088`, `1535`, `1833`)
+  // precedent tous l'ouverture du journal.
+  const lines: string[] = [...options.warnings, NMAP_BANNER];
   for (const target of report.unresolved) lines.push(`Failed to resolve "${target}".`);
   if (options.verbose) {
     const at = new Date(report.startedAt);

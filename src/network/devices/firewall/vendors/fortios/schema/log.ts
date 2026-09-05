@@ -161,6 +161,24 @@ export const LOG_MEMORY_GLOBAL_SETTING: FortiTableSpec = {
   },
 };
 
+export const LOG_DISK_SETTING: FortiTableSpec = {
+  path: ['log', 'disk', 'setting'],
+  kind: 'object',
+  scope: 'global',
+  accessGroup: 'loggrp',
+  renderOrder: 355,
+  help: 'Settings for local disk logging.',
+  attributes: [
+    count('max-policy-packet-capture-size',
+      'Maximum size of policy sniffer in MB, 0 for unlimited.',
+      0, 4294967295, 0),
+  ],
+  onCommit(object, context) {
+    context.device.applyPolicyCaptureSize(Number.parseInt(
+      object.effective('max-policy-packet-capture-size')[0] ?? '0', 10));
+  },
+};
+
 export const LOG_SETTING: FortiTableSpec = {
   path: ['log', 'setting'],
   kind: 'object',
@@ -197,6 +215,7 @@ export const LOG_SETTING: FortiTableSpec = {
 
 export const LOG_SPECS: readonly FortiTableSpec[] = Object.freeze([
   ...SYSLOG_COLLECTORS,
+  LOG_DISK_SETTING,
   LOG_MEMORY_SETTING,
   LOG_MEMORY_GLOBAL_SETTING,
   LOG_SETTING,

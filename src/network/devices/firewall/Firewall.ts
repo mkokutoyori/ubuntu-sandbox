@@ -84,7 +84,11 @@ import { ROOT_VDOM, VdomRegistry, type VdomContext } from './vdom/VdomRegistry';
 import { VdomLinkTable } from './vdom/VdomLinkTable';
 import { clusterVirtualMac } from './ha/clusterVirtualMac';
 import { ipv4HeaderProblem } from '../../layers/internet/InternetLayer';
-import { SwitchGroupTable } from './l3/SwitchGroupTable';
+import { GeoIpOverrides, type GeoIpOverride } from './model/GeoIpOverrides';
+import {
+  SwitchGroupTable, spanCopies,
+  type SwitchGroup, type SwitchGroupPatch,
+} from './l3/SwitchGroupTable';
 import { logFactsOf } from './logging/logFacts';
 import { emitFirewallEvent, logPipelineOutcome } from './logging/emitFirewallEvent';
 import {
@@ -94,7 +98,7 @@ import {
 import { deliverLocally } from './l3/LocalDelivery';
 import { ControlPlaneUdpEndpoint } from '../udp/ControlPlaneUdpEndpoint';
 import type { FirewallDhcp } from './l3/FirewallDhcp';
-import type { TcpStack } from '../../tcp/TcpStack';
+import type { TcpSocket, TcpStack } from '../../tcp/TcpStack';
 import { buildFirewallAgents } from './FirewallAgents';
 import { AccessMatrix } from './authz/AccessMatrix';
 import { AuthPortal, type RemoteAuthOutcome } from './auth/AuthPortal';
@@ -147,10 +151,11 @@ import { FirewallTraceroute } from './diag/FirewallTraceroute';
 import {
   DNS_PORT, FirewallDnsClient, } from './l3/FirewallDnsClient';
 import { FirewallDnsServer } from './l3/FirewallDnsServer';
+import { transferTransportOf } from '../../dns/transfer/ZoneTransferClient';
 import type { SdwanService } from './sdwan/SdwanService';
 import { ETHERTYPE_FGCP, type HaAgent } from './ha/HaAgent';
 import { serialNumberOf, type FirewallHa } from './ha/FirewallHa';
-import type { HaConfiguration } from './ha/HaTypes';
+import { HA_DEFAULTS, type HaConfiguration } from './ha/HaTypes';
 import type {
   SdwanConfiguration, SdwanHealthTransition, SdwanTable,
 } from './sdwan/SdwanTable';
@@ -161,6 +166,7 @@ import { RouterHostsTable } from '../router/dns/RouterHostsTable';
 import type { VdomServices } from './pipeline/stages/coreStages';
 import { ScheduleStore, type ScheduleObject } from './model/ScheduleObject';
 import { FirewallLogStore } from './logging/FirewallLogStore';
+import { PolicyCaptureStore } from './diag/PolicyCaptureStore';
 import type { LocalTrafficKind, LogSettings } from './logging/LogSettings';
 import { flowKeyFromPacket, type FlowKey } from './session/FlowKey';
 import { classifyIpv4Destination } from '../../layers/internet/InternetLayer';
@@ -231,6 +237,7 @@ export class Firewall extends Equipment {
   private readonly interfaces = new InterfaceTable((name) => this.getPort(name));
   private readonly vdoms: VdomRegistry;
   private readonly switchGroups = new SwitchGroupTable();
+  private readonly geoIp = new GeoIpOverrides();
   private readonly vdomLinks: VdomLinkTable;
   private readonly bridges = new Map<string, BridgeFdb>();
   private readonly fragments = new FragmentReassembly();
@@ -415,11 +422,13 @@ export class Firewall extends Equipment {
       },
       onTunnelRemoved: (_vdom, tunnel) => { this.interfaces.remove(tunnel); },
       policyKeyedBy: profile.policyKeyedBy,
+      policyNamesZones: profile.policyNamesZones,
       implicitPolicy: profile.implicitPolicy,
       applicationShift: profile.applicationShift,
       maxGroupNesting: profile.maxGroupNesting,
       tcpSessionWithoutSyn: !profile.tcpSynCheckDefault,
       resolveFqdn: (fqdn) => this.dnsClient.resolve(fqdn),
+      countryOf: (candidate) => this.geoIp.countryOf(candidate),
       predefinedAddresses: profile.predefinedAddresses,
       predefinedServices: profile.predefinedServices,
       connectedRoutes: (vdom) => this.interfaces.connectedRoutes()
@@ -474,6 +483,8 @@ export class Firewall extends Equipment {
         this.trafficLogger?.onDosAnomaly?.(finding, iface, packet);
       },
       bridgedWith: (ingress, egress) => this.sameSwitchInterface(ingress, egress),
+      intraSwitchPolicy: (ingress) =>
+        this.switchGroups.groupOf(ingress)?.intraSwitchPolicy,
       macLookup: (destination, ingress) => this.lookupMac(destination, ingress),
       natOrder: {
         natIsPolicyField: profile.natIsPolicyField,
@@ -603,6 +614,10 @@ export class Firewall extends Equipment {
     this.routing = l3.routing;
     this.dhcp = l3.dhcp;
     this.sdwan = l3.sdwan;
+    this.sdwan.getTable().setRouteReach({
+      prefixLengthTowards: (iface, destination) =>
+        this.getVdom().routes.prefixLengthTowards(iface, destination),
+    });
     this.sdwan.onHealthChange((changes) => { this.onSdwanHealthChange(changes); });
   }
 
@@ -741,8 +756,22 @@ export class Firewall extends Equipment {
       packet.sourceIP, udp.destinationPort, udp.sourcePort, udp.payload);
   }
 
+  openTcpStream(
+    ip: string, port: number, opts: { onOpen?: () => void; onClose?: () => void },
+  ): TcpSocket | null {
+    return this.tcp.connect(ip, port, opts);
+  }
+
+  async tcpConnect(destination: string, port: number): Promise<TcpSocket | null> {
+    const target = parseDialAddress(destination);
+    if (!target || !PortNumber.isValid(port)) return null;
+    const outcome = await dialTcp(this.tcp, target, PortNumber.of(port));
+    return isDialFailure(outcome) ? null : outcome;
+  }
+
   private readonly dnsServer = new FirewallDnsServer({
     resolveExternal: (name) => this.dnsClient.resolve(name),
+    transferTransport: () => transferTransportOf(this.getUdpEndpoint(), this),
     reply: (iface, to, port, payload) => {
       const source = this.interfaces.get(iface)?.ip;
       if (source === undefined) return;
@@ -815,9 +844,17 @@ export class Firewall extends Equipment {
   }
 
   applyHa(c: HaConfiguration): string | undefined {
+    this.haConfiguration = c;
     this.haService.agent.configure(c);
     this.applyClusterVirtualMacs(c);
     return undefined;
+  }
+
+  private haConfiguration: HaConfiguration = HA_DEFAULTS;
+
+  isHaManagementInterface(iface: string): boolean {
+    return this.haConfiguration.managementStatus
+      && this.haConfiguration.managementInterfaces.includes(iface);
   }
 
   private readonly permanentMacs = new Map<string, MACAddress>();
@@ -846,8 +883,36 @@ export class Firewall extends Equipment {
   serialNumber(): string { return this.serial; }
   applySdwan(c: SdwanConfiguration): string | undefined {
     const refusal = this.sdwan.apply(c);
-    if (refusal === undefined) this.refreshSdwanRoutes();
-    return refusal;
+    if (refusal !== undefined) return refusal;
+    this.publishSdwanZones();
+    this.refreshSdwanRoutes();
+    return undefined;
+  }
+
+  private readonly sdwanZoneNames = new Set<string>();
+
+  private publishSdwanZones(): void {
+    const zones = this.getVdom().zones;
+    const declared = new Set(this.sdwan.getTable().zoneNames());
+
+    for (const stale of this.sdwanZoneNames) {
+      if (declared.has(stale)) continue;
+      for (const iface of zones.interfacesOf(stale)) zones.removeInterface(iface);
+      zones.deleteZone(stale);
+      this.sdwanZoneNames.delete(stale);
+    }
+
+    for (const name of declared) {
+      if (!zones.getZone(name)) zones.createZone(name);
+      this.sdwanZoneNames.add(name);
+
+      const members = new Set(
+        this.sdwan.getTable().membersOfZone(name).map(member => member.iface));
+      for (const iface of zones.interfacesOf(name)) {
+        if (!members.has(iface)) zones.removeInterface(iface);
+      }
+      for (const iface of members) zones.assignInterface(name, iface);
+    }
   }
 
   getSdwanTable(): SdwanTable { return this.sdwan.getTable(); }
@@ -1257,9 +1322,23 @@ export class Firewall extends Equipment {
   vdomLinkEnds(n: string): readonly string[] { return this.vdomLinks.ends(n); }
   vdomLinkPeer(i: string): string | undefined { return this.vdomLinks.peer(i); }
 
-  setSwitchInterface(n: string, members: readonly string[]): void {
-    this.switchGroups.set(n, members);
+  setSwitchInterface(n: string, patch: SwitchGroupPatch): void {
+    this.switchGroups.set(n, patch);
   }
+
+  switchGroupOf(iface: string): SwitchGroup | undefined {
+    return this.switchGroups.groupOf(iface);
+  }
+
+  applyGeoIpOverride(override: GeoIpOverride): void {
+    this.geoIp.apply(override);
+  }
+
+  removeGeoIpOverride(name: string): boolean {
+    return this.geoIp.remove(name);
+  }
+
+  getGeoIpOverrides(): GeoIpOverrides { return this.geoIp; }
 
   removeSwitchInterface(n: string): boolean { return this.switchGroups.remove(n); }
   switchInterfaces(): readonly string[] { return this.switchGroups.names(); }
@@ -1340,6 +1419,25 @@ export class Firewall extends Equipment {
   getLogStore(vdom?: string): FirewallLogStore { return this.getVdom(vdom).logs; }
 
   getLogSettings(vdom?: string): LogSettings { return this.getVdom(vdom).logSettings; }
+
+  getPolicyCaptures(): PolicyCaptureStore { return this.policyCaptures; }
+
+  private readonly policyCaptures = new PolicyCaptureStore();
+
+  private capturePolicyPacket(
+    context: PacketContext, frame: EthernetFrame | undefined,
+  ): void {
+    if (!frame) return;
+    const rule = context.matchedPolicy;
+    if (rule?.capturePackets !== true) return;
+
+    this.policyCaptures.record(rule.id, {
+      at: this.services.now(),
+      iface: context.ingressPort,
+      direction: 'in',
+      frame,
+    });
+  }
 
   private logLocalTraffic(iface: string, packet: IPv4Packet, accepted: boolean): void {
     const kind: LocalTrafficKind = accepted
@@ -1677,6 +1775,7 @@ export class Firewall extends Equipment {
       at: this.services.now(), iface: portName, direction: 'in', frame,
     });
     this.bridgeOf(portName).learn(frame.srcMAC.toString(), portName);
+    if (this.bridgeSoftSwitch(portName, frame) === 'consumed') return;
     if (!this.acceptsAtLinkLayer(portName, frame)) return;
 
     if (frame.etherType === ETHERTYPE_FGCP) {
@@ -1715,7 +1814,21 @@ export class Firewall extends Equipment {
     if (this.subordinateIsSilentOn(portName) && !this.secondarySpeaksLacpOn(portName, frame)) {
       return false;
     }
-    return super.sendFrame(portName, frame);
+    const sent = super.sendFrame(portName, frame);
+    if (sent) this.mirrorEgressToSpan(portName, frame);
+    return sent;
+  }
+
+  private mirrorEgressToSpan(egress: string, frame: EthernetFrame): void {
+    if (this.spanning) return;
+    const group = this.switchGroups.groupOf(egress);
+    if (group === undefined || !spanCopies(group, egress, 'tx')) return;
+    this.spanning = true;
+    try {
+      super.sendFrame(group.spanDestination, { ...frame });
+    } finally {
+      this.spanning = false;
+    }
   }
 
   private secondarySpeaksLacpOn(portName: string, frame: EthernetFrame): boolean {
@@ -1729,6 +1842,56 @@ export class Firewall extends Equipment {
     const config = ha.getConfiguration();
     if (config.mode !== 'a-p' || ha.role() !== 'slave') return false;
     return !config.heartbeatDevices.some((device) => device.iface === portName);
+  }
+
+  private bridgeSoftSwitch(
+    ingress: string, frame: EthernetFrame,
+  ): 'consumed' | 'kept' {
+    const group = this.switchGroups.groupOf(ingress);
+    if (group === undefined) return 'kept';
+
+    this.mirrorToSpan(group, ingress, frame);
+
+    const flooded = frame.dstMAC.isGroup();
+    if (!flooded && this.ownsMac(frame.dstMAC)) return 'kept';
+    if (!flooded && group.intraSwitchPolicy === 'explicit'
+      && isRoutableEtherType(frame.etherType)) {
+      return 'kept';
+    }
+
+    for (const member of this.bridgeEgressPorts(group, ingress, frame, flooded)) {
+      this.sendFrame(member, { ...frame });
+    }
+    return flooded ? 'kept' : 'consumed';
+  }
+
+  private bridgeEgressPorts(
+    group: SwitchGroup, ingress: string,
+    frame: EthernetFrame, flooded: boolean,
+  ): readonly string[] {
+    const others = [...group.members].filter(member => member !== ingress);
+    if (flooded || group.type === 'hub') return others;
+    const learned = this.bridgeOf(ingress).lookup(frame.dstMAC.toString());
+    return learned !== undefined && learned !== ingress && group.members.has(learned)
+      ? [learned] : others;
+  }
+
+  private spanning = false;
+
+  private mirrorToSpan(
+    group: SwitchGroup, ingress: string, frame: EthernetFrame,
+  ): void {
+    if (!spanCopies(group, ingress, 'rx')) return;
+    this.spanning = true;
+    try {
+      super.sendFrame(group.spanDestination, { ...frame });
+    } finally {
+      this.spanning = false;
+    }
+  }
+
+  private ownsMac(destination: MACAddress): boolean {
+    return this.getPorts().some(port => port.getMAC().equals(destination));
   }
 
   private acceptsAtLinkLayer(portName: string, frame: EthernetFrame): boolean {
@@ -1940,6 +2103,7 @@ export class Firewall extends Equipment {
     const outcome = this.processPipeline(context);
     this.traces.remember(context);
     this.logPipelineOutcome(context, outcome.verdict === 'accepted');
+    this.capturePolicyPacket(context, frame);
     if (outcome.verdict !== 'accepted') {
       if (context.verdict?.reason === 'auth-required') {
         this.captivePortal.capture(portName, packet);
@@ -2061,6 +2225,7 @@ export class Firewall extends Equipment {
       rules: context[store].ordered(),
       evaluator: context.evaluator,
       zoneOf: (name) => context.zones.zoneOf(name) ?? '',
+      isHaManagementInterface: (name) => this.isHaManagementInterface(name),
     }, iface, traffic);
   }
 
@@ -2150,6 +2315,10 @@ export class Firewall extends Equipment {
       decapsulate: (p) => decryptFromTunnel(this.ipsec, this.getVdom().tunnels, p) ?? null,
     });
   }
+}
+
+function isRoutableEtherType(etherType: number): boolean {
+  return etherType === ETHERTYPE_IPV4 || etherType === ETHERTYPE_IPV6;
 }
 
 function bridgedFrameOf(

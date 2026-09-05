@@ -466,6 +466,15 @@ function decodeIcmpOrig(orig: IPv4Packet): IcmpOrigInfo {
 }
 
 function decodeIpv4Payload(base: CaptureFrame, ip: IPv4Packet): void {
+  // `print-ip.c:470` : seul le fragment de decalage NUL porte l'en-tete
+  // de transport. Le decoder sur les suivants fabriquait un en-tete TCP
+  // de zeros — ports 0, sequence 0, somme 0 — c'est-a-dire la
+  // description d'octets qui ne sont pas dans le paquet.
+  if (ip.fragmentOffset > 0) {
+    base.l4 = 'other';
+    base.payloadLength = Math.max(0, ip.totalLength - (ip.ihl ?? 5) * 4);
+    return;
+  }
   if (ip.protocol === IP_PROTO_ICMP) {
     const icmp = ip.payload as ICMPPacket;
     base.l4 = 'icmp';

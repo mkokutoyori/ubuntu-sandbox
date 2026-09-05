@@ -1,5 +1,5 @@
 import {
-  choice, count, enable, refList, text, word,
+  choice, count, enable, reference, refList, text, word,
   type FortiAttributeSpec, type FortiTableSpec,
 } from './types';
 import type { HaMode } from '../../../ha/HaTypes';
@@ -43,9 +43,28 @@ export const SYSTEM_HA: FortiTableSpec = {
       ['system interface']),
     count('hb-interval', 'Heartbeat interval, in 100 ms units.', 1, 20, 2),
     count('hb-lost-threshold', 'Missed heartbeats before a peer is lost.', 1, 60, 6),
+    enable('ha-mgmt-status',
+      'Enable to reserve interfaces to manage individual cluster units.'),
     { ...word('unicast-hb', 'Use unicast heartbeats.'), unimplemented:
       'this build broadcasts the heartbeat on `hbdev`; a unicast heartbeat would '
       + 'need a heartbeat address plan the cluster does not carry yet.' },
+  ],
+  children: [
+    {
+      path: ['ha-mgmt-interfaces'],
+      kind: 'table',
+      keyType: 'integer',
+      ordered: false,
+      scope: 'global',
+      accessGroup: 'sysgrp',
+      renderOrder: 31,
+      help: 'Reserve interfaces to manage individual cluster units.',
+      attributes: [
+        { ...word('id', 'Table identifier.'), readOnly: true },
+        reference('interface', 'Interface to reserve for HA management.',
+          ['system interface']),
+      ],
+    },
   ],
   onCommit(object, context) {
     const devices = parseHeartbeatDevices(object.effective('hbdev'));
@@ -69,6 +88,10 @@ export const SYSTEM_HA: FortiTableSpec = {
         Number.parseInt(object.effective('hb-interval')[0] ?? '2', 10),
       lostThreshold:
         Number.parseInt(object.effective('hb-lost-threshold')[0] ?? '6', 10),
+      managementStatus: object.effective('ha-mgmt-status')[0] === 'enable',
+      managementInterfaces: object.childEntries('ha-mgmt-interfaces')
+        .map(entry => entry.effective('interface')[0] ?? '')
+        .filter(name => name.length > 0),
     });
   },
 };

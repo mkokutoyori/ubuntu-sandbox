@@ -8,6 +8,8 @@ import {
 import { IPV4_FLAG_DF } from '../../../../core/Ipv4Fragmentation';
 import type { InterfaceTable } from '../../l3/InterfaceTable';
 import type { RouteTable } from '../../l3/RouteTable';
+import type { IntraSwitchPolicy } from '../../l3/SwitchGroupTable';
+import type { SdwanSteeringProbe } from '../../sdwan/SdwanTable';
 import type { ObjectStore } from '../../model/ObjectStore';
 import type { PolicyStore } from '../../model/PolicyStore';
 import type { SessionTimeoutProfile } from '../../FirewallProfile';
@@ -68,7 +70,7 @@ export interface HaStandby {
 
 export interface SdwanSteering {
   steer(
-    probe: { readonly sourceIP: string; readonly destinationIP: string },
+    probe: SdwanSteeringProbe,
     matchesAddress: (names: readonly string[], candidate: string) => boolean,
   ): { iface: string; gateway: string; ruleId: string } | undefined;
 }
@@ -82,6 +84,7 @@ export interface FirewallServices {
   natOrder?: NatOrder;
   policyKeyedBy?: 'zone' | 'interface';
   bridgedWith?: (ingress: string, egress: string) => boolean;
+  intraSwitchPolicy?: (ingress: string) => IntraSwitchPolicy | undefined;
   macLookup?: (destination: MACAddress, ingress: string) => string | undefined;
   defaultTimeoutSec?: number;
   sessionTimeouts?: SessionTimeoutProfile;
@@ -427,6 +430,9 @@ function switchBridgeStage(services: FirewallServices): PipelineStage {
 
       context.egressPort = egress;
       context.bridged = true;
+      if (services.intraSwitchPolicy?.(context.ingressPort) === 'explicit') {
+        return proceed(context, 'switch-bridge', 'explicit-policy');
+      }
       context.trace.push({ stage: 'switch-bridge', verdict: 'bridged', detail: egress });
       context.verdict = Object.freeze({
         action: 'accept' as const, reason: 'policy-deny' as VerdictReason,
@@ -783,6 +789,7 @@ function sdwanRuleStage(services: FirewallServices): PipelineStage {
       const chosen = steering.steer({
         sourceIP: packet.sourceIP.toString(),
         destinationIP: packet.destinationIP.toString(),
+        ingressPort: context.ingressPort,
       }, (names, candidate) => objects.matchesAnyAddress(names, candidate));
       if (!chosen) return proceed(context, 'sdwan', 'no-match');
       if (!services.interfaces.isUp(chosen.iface)) {
