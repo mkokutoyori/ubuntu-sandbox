@@ -7813,3 +7813,66 @@ provoque aussi), et `--packet-trace` d'un vrai nmap montre UNE ligne pour
 le datagramme entier, la trace etant posee sur le paquet d'AVANT
 decoupage (`tcpip.cc:394`). Un cas e2e Playwright balaye avec `-f` et
 relit la capture de la cible.
+
+---
+
+## `-D` seme de vraies trames, `-S` forge la seule qui parte
+
+**Perimetre revendique** : `src/network/scan/nmap/` (`NmapOptions`,
+`ScanEngine`, `NmapRun`), `src/network/tcp/TcpStack.ts`,
+`src/network/devices/EndHost.ts`, `src/network/core/types.ts`,
+`src/network/layers/transport/UdpEgress.ts`,
+`src/network/devices/linux/{LinuxNetKernel,commands/net/Nmap}.ts`.
+
+Les deux options etaient refusees comme non implantees. Elles ne valent
+que si les paquets partent POUR DE BON : un leurre qui ne quitterait pas
+la machine ne cacherait rien, et une source forgee qui ne serait pas sur
+le fil n'empecherait aucune reponse de revenir. L'observable est donc la
+capture sur la CIBLE, jamais le rapport.
+
+**`ScanProbeShape.sourceIp`** est la troisieme chose que la forme de la
+sonde decide, a cote du port source, du TTL, de la somme fausse et du
+decoupage. `TcpStack.scanProbe` indexe sa veille sur l'adresse EMISE et
+calcule la somme sur le pseudo-en-tete FORGE — sans quoi la reponse
+qu'on n'attend plus serait quand meme retrouvee, et la sonde serait
+rejetee par la cible. `EndHost.sendUdpDatagram` honore la meme option, un
+balayage UDP a leurres etant le meme mecanisme un etage plus bas.
+
+**`IPAddress.isReserved()`** porte les blocs a usage special de l'IANA
+(`libnetutil/netutil.cc:485`), et c'est ce que `RND`/`RND:n` interroge :
+tirer une adresse reservee ferait un leurre que le premier routeur jette.
+Le multicast n'en fait deliberement pas partie, la table du vrai nmap ne
+le comptant pas.
+
+**`ME` marque la place de la VRAIE source** et ne peut paraitre qu'une
+fois ; sans lui, nmap l'INSERE a une place tiree au hasard PARMI les
+leurres (`nmap.cc:1826` : l'indice est tire modulo le nombre de leurres,
+donc jamais en queue). `ScanEngine.withDecoys` emet une sonde par entree
+et ne garde le verdict que de celle de rang `decoyturn`
+(`scan_engine_raw.cc:1227`) — c'est ce qui fait qu'un balayage a leurres
+garde un resultat JUSTE tout en noyant l'origine.
+
+**Un leurre qui ne se resout pas est un refus** et le balayage n'a pas
+lieu (`nmap.cc:1816`). La resolution etant asynchrone ici, elle ne peut
+pas vivre dans l'analyseur : `runNmap` la fait avant la premiere sonde,
+sur le MEME `ScanProbes` que le balayage — l'objet etait construit deux
+fois, il ne l'est plus qu'une.
+
+**Ce que la mesure a corrige contre l'ecriture a l'aveugle** : sous
+`-S`, la cible n'emet PAS le SYN/ACK attendu. Elle doit d'abord resoudre
+l'adresse forgee, personne ne repond, et la reponse ne quitte jamais la
+machine — ce qu'un vrai Linux fait aussi. La preuve qu'elle a repondu
+AILLEURS est donc l'ARP `who-has <adresse forgee>`, et c'est la bonne :
+elle NOMME l'adresse vers laquelle la reponse partait. Le port se lit
+`filtered`, ce qui est exact.
+
+**Corrige dans un test plutot que dans le code** :
+`probe-nmap-familles-d-options.test.ts` illustrait « une option courte a
+valeur n'en fait pas une cible » avec `-D`, qui est desormais implantee ;
+elle emploie `-b`, qui ne l'est pas.
+
+**Discrimination** : `probe-nmap-leurres-et-source.test.ts` (11 cas), 10
+tombent contre l'etat d'avant ; le onzieme est le TEMOIN — le balayage
+sans option, dont la capture ne montre qu'une source — et son role est de
+passer des deux cotes. Un cas e2e Playwright balaye avec `-D` puis `-S`
+et relit la capture de la cible.

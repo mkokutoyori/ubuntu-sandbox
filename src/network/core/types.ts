@@ -122,6 +122,13 @@ export class MACAddress {
 
 // ─── IPv4 Address ────────────────────────────────────────────────────
 
+const RESERVED_IPV4_BLOCKS: ReadonlyArray<readonly [number, number]> = [
+  [0x00000000, 8], [0x0a000000, 8], [0x64400000, 10], [0x7f000000, 8],
+  [0xa9fe0000, 16], [0xac100000, 12], [0xc0000000, 24], [0xc0000200, 24],
+  [0xc0a80000, 16], [0xc6120000, 15], [0xc6336400, 24], [0xcb007100, 24],
+  [0xf0000000, 4], [0xffffffff, 32],
+];
+
 export class IPAddress {
   private readonly octets: number[];
 
@@ -205,6 +212,18 @@ export class IPAddress {
   /** True for any address in the loopback block 127.0.0.0/8 (RFC 1122 §3.2.1.3). */
   isLoopback(): boolean {
     return this.octets[0] === 127;
+  }
+
+  /**
+   * Les blocs du registre IANA des adresses IPv4 a usage special, tels
+   * que `get_reserved_addrset` (`libnetutil/netutil.cc:485`) les
+   * enumere. La liste ne contient PAS le multicast : « reserve » nomme
+   * ici l'usage special, qui est une autre question que la portee.
+   */
+  isReserved(): boolean {
+    const n = this.toUint32();
+    return RESERVED_IPV4_BLOCKS.some(([base, prefix]) =>
+      (n >>> (32 - prefix)) === (base >>> (32 - prefix)));
   }
 
   /** Convert to 32-bit unsigned integer (for LPM calculations) */

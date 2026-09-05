@@ -488,6 +488,43 @@ test.describe('nmap sonde le fil', () => {
     expect(capture).toContain(`${SCANNER} > ${CIBLE}: ip-proto-6`);
   });
 
+  test('`-D` seme de vraies trames, `-S` forge la seule qui parte', async ({ page }) => {
+    test.setTimeout(180_000);
+    await page.goto('/', { timeout: 45_000 });
+    await waitForStore(page);
+
+    const cibleId = await addDevice(page, 'linux-server', 300, 470);
+    const scannerId = await addDevice(page, 'linux-pc', 600, 470);
+    await cable(page, cibleId, scannerId);
+
+    await openTerminal(page, cibleId);
+    await typeCmd(page, `ip addr add ${CIBLE}/24 dev eth0`);
+    await typeCmd(page, 'sudo systemctl start ssh');
+    await typeCmd(page, 'tcpdump -nn -i eth0 -w leurres.pcap &');
+    await closeTerminal(page);
+
+    await openTerminal(page, scannerId);
+    await typeCmd(page, `ip addr add ${SCANNER}/24 dev eth0`);
+    await typeCmd(page, `nmap -Pn -sS -D 10.0.0.31,ME,10.0.0.32 -p 22 ${CIBLE}`);
+    const rapport = await lastLines(page, 8);
+    expect(rapport).not.toContain('not implemented');
+    expect(rapport).toMatch(/22\/tcp\s+open\s+ssh/);
+
+    await typeCmd(page, `nmap -Pn -sS -S 10.73.0.99 -p 22 ${CIBLE}`);
+    const usurpe = await lastLines(page, 8);
+    expect(usurpe).toMatch(/22\/tcp\s+filtered\s+ssh/);
+    await closeTerminal(page);
+
+    await openTerminal(page, cibleId);
+    await typeCmd(page, 'tcpdump -r leurres.pcap -nn');
+    const capture = await lastLines(page, 30);
+    expect(capture).toContain(`IP 10.0.0.31.`);
+    expect(capture).toContain(`IP 10.0.0.32.`);
+    expect(capture).toContain(`IP ${SCANNER}.`);
+    expect(capture).toContain('IP 10.73.0.99.');
+    expect(capture).toContain('ARP, Request who-has 10.73.0.99');
+  });
+
   test('nmap.exe existe aussi sur une machine Windows', async ({ page }) => {
     test.setTimeout(180_000);
     await page.goto('/', { timeout: 45_000 });

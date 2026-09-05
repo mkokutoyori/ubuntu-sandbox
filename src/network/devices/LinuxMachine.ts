@@ -3729,7 +3729,7 @@ export abstract class LinuxMachine extends EndHost
       },
       sendUdpProbe: (
         target: IPAddress, destinationPort: number, sourcePort: number,
-        options: { ttl?: number; badChecksum?: boolean } = {},
+        options: { ttl?: number; badChecksum?: boolean; sourceIp?: IPAddress } = {},
       ): boolean => {
         return this.sendUdpDatagram(target, destinationPort, sourcePort, null, 0, options);
       },

@@ -30,6 +30,8 @@ export interface UdpEmissionOptions {
   iface?: string;
   ttl?: number;
   badChecksum?: boolean;
+  /** Une adresse source FORGEE, celle que `nmap -S`/`-D` compose. */
+  sourceIp?: IPAddress;
 }
 
 const DEFAULT_TTL = 64;

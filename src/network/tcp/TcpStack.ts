@@ -41,6 +41,12 @@ export interface ScanProbeShape {
    * nmap le laissent a zero (`scan_engine_raw.cc:1075`).
    */
   fragmentMtu?: number;
+  /**
+   * `-S`/`-D` : l'adresse source FORGEE de la sonde. La reponse part
+   * alors vers elle et non vers nous, ce qui est tout l'objet des deux
+   * options — et ce qui fait qu'un leurre ne rapporte aucun verdict.
+   */
+  sourceIp?: string;
 }
 
 /** La duree de vie qu'une pile TCP pose sur ses propres segments. */
@@ -607,7 +613,12 @@ export class TcpStack {
     const localPort = shape.sourcePort ?? this.nextEphemeral(egress.srcIp);
     if (localPort < 0) return 'none';
 
-    const key = makeSocketKey(egress.srcIp, localPort, target, remotePort);
+    // La trace est posee sur l'adresse REELLEMENT emise : une source
+    // forgee ne peut recevoir aucune reponse, et la garder ici serait
+    // pretendre en attendre une.
+    const srcIp = shape.sourceIp === undefined
+      ? egress.srcIp : canonicalIpText(shape.sourceIp);
+    const key = makeSocketKey(srcIp, localPort, target, remotePort);
     const watch: StatelessProbeWatch = { seen: 'none', window: 0 };
     this.statelessProbes.set(key, watch);
 
@@ -618,10 +629,10 @@ export class TcpStack {
       dataOffset: 5, flags, window: TCP_DEFAULT_WINDOW,
       checksum: 0, urgentPointer: 0, options: [], payload: undefined,
     };
-    const sum = computeTcpChecksum(seg, egress.srcIp, target);
+    const sum = computeTcpChecksum(seg, srcIp, target);
     seg.checksum = shape.badChecksum ? bogusChecksum(sum, IP_PROTO_TCP) : sum;
     try {
-      this.shipSegment(egress, egress.srcIp, target, seg, shape);
+      this.shipSegment(egress, srcIp, target, seg, shape);
     } finally {
       this.statelessProbes.delete(key);
     }

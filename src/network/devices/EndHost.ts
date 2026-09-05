@@ -2977,7 +2977,7 @@ export abstract class EndHost extends Equipment {
 
     const route = this.resolveRoute(destinationIP);
     if (!route) return false;
-    const srcIP = route.port.getIPAddress();
+    const srcIP = options.sourceIp ?? route.port.getIPAddress();
     if (!srcIP) return false;
 
     const sum = computeUdpChecksum(udpBase, srcIP.toString(), destinationIP.toString());

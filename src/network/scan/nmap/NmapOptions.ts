@@ -2,6 +2,9 @@ import { parsePortSpec } from './PortSpec';
 import { NMAP_LONG_OPTIONS, NMAP_SHORT_OPTIONS } from './NmapOptionTables';
 import { NMAP_DEFAULT_STYLESHEET, NMAP_WEB_STYLESHEET } from './NmapXml';
 import type { ScanProbeShape } from '@/network/tcp/TcpStack';
+import { IPAddress } from '@/network/core/types';
+import { parseScanFlags, type ScanProbeFlags } from './StatelessScans';
+import { topPorts, fastPorts } from './ServiceRegistry';
 
 /**
  * `NmapOps.cc:527` et `nmap.cc:1833` : les options qui composent le
@@ -32,8 +35,55 @@ const UDP_HEADER_BYTES = 8;
 function probePayloadBytes(scanType: ScanType): number {
   return scanType === 'udp' ? UDP_HEADER_BYTES : TCP_HEADER_BYTES;
 }
-import { parseScanFlags, type ScanProbeFlags } from './StatelessScans';
-import { topPorts, fastPorts } from './ServiceRegistry';
+
+export type DecoySource = { kind: 'me' } | { kind: 'forged'; ip: string };
+
+const MAX_DECOYS = 128;
+
+function randomUnreservedIpv4(): string {
+  for (;;) {
+    const n = Math.floor(Math.random() * 0x100000000) >>> 0;
+    const candidate = IPAddress.fromUint32(n);
+    if (!candidate.isReserved()) return candidate.toString();
+  }
+}
+
+function parseDecoys(spec: string): DecoySource[] {
+  const parsed: DecoySource[] = [];
+  let sawMe = false;
+  for (const raw of spec.split(',')) {
+    const entry = raw.trim();
+    if (entry.toLowerCase() === 'me') {
+      if (sawMe) throw new NmapOptionError(["Can only use 'ME' as a decoy once."]);
+      sawMe = true;
+      parsed.push({ kind: 'me' });
+      continue;
+    }
+    const random = /^rnd(?::(\d+))?$/i.exec(entry);
+    if (random) {
+      const howMany = random[1] === undefined ? 1 : Number(random[1]);
+      if (howMany < 1) throw new NmapOptionError([`Bad 'rnd' decoy "${entry}"`]);
+      if (parsed.length + howMany >= MAX_DECOYS - 1) {
+        throw new NmapOptionError([`You are only allowed ${MAX_DECOYS} decoys`
+          + ` (if you need more redefine MAX_DECOYS in nmap.h)`]);
+      }
+      for (let i = 0; i < howMany; i++) {
+        parsed.push({ kind: 'forged', ip: randomUnreservedIpv4() });
+      }
+      continue;
+    }
+    if (parsed.length >= MAX_DECOYS - 1) {
+      throw new NmapOptionError([`You are only allowed ${MAX_DECOYS} decoys`
+        + ` (if you need more redefine MAX_DECOYS in nmap.h)`]);
+    }
+    parsed.push({ kind: 'forged', ip: entry });
+  }
+  if (!sawMe) {
+    const turn = parsed.length === 0 ? 0 : Math.floor(Math.random() * parsed.length);
+    parsed.splice(turn, 0, { kind: 'me' });
+  }
+  return parsed;
+}
 
 export type ScanType =
   'tcp' | 'syn' | 'udp' | 'ack' | 'fin' | 'null' | 'xmas' | 'maimon' | 'window';
@@ -107,6 +157,12 @@ export interface NmapOptions {
    * place de nmap (`nmap.cc:1833`).
    */
   probeShape?: ScanProbeShape;
+  /**
+   * `-D` : les sources dont partiront les sondes, dans l'ordre, la vraie
+   * a sa place. Absent quand l'option n'est pas demandee, et absent aussi
+   * sous un balayage CONNECTE, qui ne compose pas ses paquets.
+   */
+  decoys?: DecoySource[];
   /**
    * Ce que nmap ecrit AVANT sa banniere : les avertissements des options
    * qu'il accepte sans pouvoir les honorer.
@@ -233,6 +289,8 @@ export function parseNmapArgs(args: string[]): NmapOptions {
   let probeTtl: number | undefined;
   let badChecksum = false;
   let fragmentMtu = 0;
+  let decoySpec: DecoySource[] | undefined;
+  let spoofSource: string | undefined;
   const warnings: string[] = [];
 
   for (let i = 0; i < args.length; i++) {
@@ -313,6 +371,18 @@ export function parseNmapArgs(args: string[]): NmapOptions {
       }
       continue;
     }
+    if (a === '-D' && args[i + 1] !== undefined) {
+      decoySpec = parseDecoys(args[++i]);
+      continue;
+    }
+    if (a === '-S' && args[i + 1] !== undefined) {
+      if (spoofSource !== undefined) {
+        throw new NmapOptionError(['You can only use the source option once!'
+          + '  Use -D <decoy1> -D <decoy2> etc. for decoys']);
+      }
+      spoofSource = args[++i];
+      continue;
+    }
     if (a === '--badsum') { badChecksum = true; continue; }
     if ((a === '-g' || a === '--source-port') && args[i + 1] !== undefined) {
       sourcePort = Number(args[++i]);
@@ -373,7 +443,8 @@ export function parseNmapArgs(args: string[]): NmapOptions {
   }
 
   const shapesTheProbe = badChecksum || sourcePort !== undefined
-    || probeTtl !== undefined || fragmentMtu > 0;
+    || probeTtl !== undefined || fragmentMtu > 0
+    || spoofSource !== undefined || decoySpec !== undefined;
   // Un balayage CONNECTE ne compose pas son paquet, donc il n'honore
   // aucune des trois. L'avertissement propre a `-g` precede le
   // generique, `ValidateOptions()` (`nmap.cc:1535`) etant appele avant
@@ -386,15 +457,16 @@ export function parseNmapArgs(args: string[]): NmapOptions {
   const probeShape: ScanProbeShape | undefined =
     shapesTheProbe && !connectScan
       ? {
-        sourcePort, ttl: probeTtl, badChecksum,
+        sourcePort, ttl: probeTtl, badChecksum, sourceIp: spoofSource,
         fragmentMtu: fragmentMtu > 0 ? fragmentMtu : undefined,
       }
       : undefined;
+  const decoys = shapesTheProbe && !connectScan ? decoySpec : undefined;
 
   return {
     targets, ports, scanType, scanFlags, pingOnly, skipDiscovery, versionScan,
     osScan, openOnly, ipv6, disableArpPing, alwaysResolve, traceroute, packetTrace,
-    showReason, noDns, verbose, debugLevel, stylesheet, probeShape, warnings,
+    showReason, noDns, verbose, debugLevel, stylesheet, probeShape, decoys, warnings,
     outputNormal, outputGreppable, outputXml,
   };
 }

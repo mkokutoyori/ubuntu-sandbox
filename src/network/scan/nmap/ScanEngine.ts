@@ -233,13 +233,37 @@ export function effectivePorts(options: NmapOptions): number[] {
   return options.ports ?? topPorts(DEFAULT_TOP_COUNT);
 }
 
+/**
+ * `scan_engine_raw.cc:1218` : la boucle d'emission construit UNE sonde
+ * par leurre, chacune avec SA source, et seule celle de rang `decoyturn`
+ * est suivie. C'est ce qui fait qu'un balayage a leurres garde un
+ * resultat JUSTE tout en noyant l'origine — une sonde partie d'une
+ * adresse forgee ne peut rien recevoir, donc son verdict ne veut rien
+ * dire et il est jete.
+ */
+function withDecoys<T>(
+  options: NmapOptions, emit: (shape: ScanProbeShape | undefined) => T,
+): T {
+  if (!options.decoys) return emit(options.probeShape);
+  let real: T | undefined;
+  for (const decoy of options.decoys) {
+    const shape = decoy.kind === 'me'
+      ? options.probeShape
+      : { ...options.probeShape, sourceIp: decoy.ip };
+    const verdict = emit(shape);
+    if (decoy.kind === 'me') real = verdict;
+  }
+  return real as T;
+}
+
 function tcpResult(
   options: NmapOptions, probes: HostProbes, ip: string, port: number,
   trace?: TraceContext,
 ): PortResult {
   const kind = statelessKindOf(options.scanType);
   const stateless = kind && probes.statelessOutcome
-    ? probes.statelessOutcome(ip, port, kind, options.scanFlags, options.probeShape)
+    ? withDecoys(options, (shape) =>
+      probes.statelessOutcome!(ip, port, kind, options.scanFlags, shape))
     : null;
   let state: PortState;
   let reason: string;
