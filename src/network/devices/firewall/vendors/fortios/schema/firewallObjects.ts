@@ -205,8 +205,10 @@ export const FIREWALL_ADDRGRP6: FortiTableSpec = {
     context.objects.removeAddressGroup(object.key);
     const members = object.effective('member');
     if (members.length === 0) return;
+    const excluding = object.effective('exclude')[0] === 'enable';
     context.objects.addAddressGroup(object.key, members,
-      object.effective('comment')[0] || undefined);
+      object.effective('comment')[0] || undefined,
+      excluding ? [...object.effective('exclude-member')] : []);
   },
   onDelete(key, context) {
     context.objects.removeAddressGroup(key);
@@ -227,15 +229,20 @@ export const FIREWALL_ADDRGRP: FortiTableSpec = {
     refList('member', 'Address objects contained within the group.',
       ['firewall address', 'firewall addrgrp']),
     enable('exclude', 'Enable/disable address exclusion.'),
-    refList('exclude-member', 'Address exclusion member.', ['firewall address']),
+    {
+      ...refList('exclude-member', 'Address exclusion member.', ['firewall address']),
+      availableWhen: (object) => object.effective('exclude')[0] === 'enable',
+    },
     text('comment', 'Comment.'),
   ],
   onCommit(object, context) {
     context.objects.removeAddressGroup(object.key);
     const members = object.effective('member');
     if (members.length === 0) return;
+    const excluding = object.effective('exclude')[0] === 'enable';
     context.objects.addAddressGroup(object.key, members,
-      object.effective('comment')[0] || undefined);
+      object.effective('comment')[0] || undefined,
+      excluding ? [...object.effective('exclude-member')] : []);
   },
   onDelete(key, context) {
     context.objects.removeAddressGroup(key);

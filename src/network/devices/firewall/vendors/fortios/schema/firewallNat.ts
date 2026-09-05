@@ -31,6 +31,14 @@ function isStaticNat(object: FortiObjectView): boolean {
   return object.effective('type')[0] === 'static-nat';
 }
 
+function vipIngressInterfaces(object: FortiObjectView): string[] {
+  const bound = [...object.effective('extintf')].filter(name => name !== 'any');
+  const filtered = [...object.effective('srcintf-filter')].filter(name => name !== 'any');
+  if (bound.length === 0) return filtered;
+  if (filtered.length === 0) return bound;
+  return bound.filter(name => filtered.includes(name));
+}
+
 const REALSERVERS: FortiTableSpec = {
   path: ['realservers'],
   kind: 'table',
@@ -360,7 +368,7 @@ export const FIREWALL_VIP: FortiTableSpec = {
         name: object.key,
         externalAddress: external.from,
         externalEndAddress: external.to,
-        externalInterfaces: [...object.effective('extintf')],
+        externalInterfaces: vipIngressInterfaces(object),
         sourceFilters: [...object.effective('srcfilter')],
         arpReply: object.effective('arp-reply')[0] !== 'disable',
         protocol: protocolNumber(object.effective('server-type')[0] === 'udp'
@@ -382,7 +390,7 @@ export const FIREWALL_VIP: FortiTableSpec = {
         externalAddress: external.from,
         externalEndAddress: external.to,
         mappedAddressObject: mappedAddress,
-        externalInterfaces: [...object.effective('extintf')],
+        externalInterfaces: vipIngressInterfaces(object),
         sourceFilters: [...object.effective('srcfilter')],
         arpReply: object.effective('arp-reply')[0] !== 'disable',
         comment: object.effective('comment')[0] || undefined,
@@ -403,7 +411,7 @@ export const FIREWALL_VIP: FortiTableSpec = {
       externalEndAddress: external.to,
       mappedAddress: mapped.from,
       mappedEndAddress: mapped.to,
-      externalInterfaces: [...object.effective('extintf')],
+      externalInterfaces: vipIngressInterfaces(object),
       sourceFilters: [...object.effective('srcfilter')],
       arpReply: object.effective('arp-reply')[0] !== 'disable',
       portForward: forwarding,
