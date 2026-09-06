@@ -124,6 +124,8 @@ export interface NmapOptions {
   skipDiscovery: boolean;
   versionScan: boolean;
   versionIntensity: number;
+  ifList: boolean;
+  device?: string;
   osScan: boolean;
   openOnly: boolean;
   /** `-6` : la cible se resout en IPv6, et le balayage part en IPv6. */
@@ -300,6 +302,8 @@ export function parseNmapArgs(args: string[]): NmapOptions {
   let skipDiscovery = false;
   let versionScan = false;
   let versionIntensity = DEFAULT_VERSION_INTENSITY;
+  let ifList = false;
+  let device: string | undefined;
   let osScan = false;
   let openOnly = false;
   let ipv6 = false;
@@ -358,6 +362,8 @@ export function parseNmapArgs(args: string[]): NmapOptions {
     if (a === '-Pn' || a === '-P0') { skipDiscovery = true; continue; }
 
     if (a === '-sV') { versionScan = true; continue; }
+    if (a === '--iflist') { ifList = true; continue; }
+    if (a === '-e' && args[i + 1] !== undefined) { device = args[++i]; continue; }
     if (a === '--version-intensity' && args[i + 1] !== undefined) {
       versionIntensity = Number(args[++i]);
       if (!Number.isInteger(versionIntensity)
@@ -562,10 +568,10 @@ export function parseNmapArgs(args: string[]): NmapOptions {
   }
   if (shapesTheProbe && connectScan) warnings.push(...RAW_OPTIONS_WARNING);
   const probeShape: ScanProbeShape | undefined =
-    shapesTheProbe && !connectScan
+    (shapesTheProbe || device !== undefined) && !connectScan
       ? {
         sourcePort, ttl: probeTtl, badChecksum, sourceIp: spoofSource,
-        payload: extraPayload,
+        payload: extraPayload, iface: device,
         fragmentMtu: fragmentMtu > 0 ? fragmentMtu : undefined,
       }
       : undefined;
@@ -573,7 +579,7 @@ export function parseNmapArgs(args: string[]): NmapOptions {
 
   return {
     targets, ports, scanType, scanFlags, pingOnly, skipDiscovery, versionScan,
-    versionIntensity,
+    versionIntensity, ifList, device,
     osScan, openOnly, ipv6, disableArpPing, alwaysResolve, traceroute, packetTrace,
     showReason, noDns, verbose, debugLevel, stylesheet, probeShape, decoys, warnings,
     outputNormal, outputGreppable, outputXml,

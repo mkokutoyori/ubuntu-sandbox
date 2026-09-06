@@ -9,6 +9,7 @@ import { IPAddress } from '@/network/core/types';
 import {
   parseTargetSpec, randomTargets, readHostSpecs, type OctetSet,
 } from './TargetSpec';
+import { interfacesOf, renderIfList } from './NmapIfList';
 
 export interface NmapRunResult {
   output: string;
@@ -44,6 +45,20 @@ export async function runNmap(host: ScanHost, args: string[]): Promise<NmapRunRe
         : null;
     if (text === null) throw e;
     return refuse(text);
+  }
+
+  const interfaces = interfacesOf(host.device);
+
+  if (options.ifList) {
+    return refuse(renderIfList(interfaces, host.routes?.() ?? []));
+  }
+
+  if (options.device !== undefined) {
+    const chosen = interfaces.find((i) => i.name === options.device);
+    if (!chosen || chosen.ip === null) {
+      return refuse('I cannot figure out what source address to use for device'
+        + ` ${options.device}, does it even exist?`);
+    }
   }
 
   if (options.inputFile !== undefined) {

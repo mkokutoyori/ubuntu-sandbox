@@ -8049,3 +8049,59 @@ l'en-tete — la salutation d'OpenSSH et un port ferme — et leur role est
 de prouver que donner une seconde sonde a `-sV` n'a pas casse la
 premiere. Un cas e2e Playwright balaye un nginx en `-sV` et retrouve la
 requete `GET / HTTP/1.0` dans la capture de la cible.
+
+---
+
+## `--iflist` decrit la machine, `-e` choisit la carte d'emission
+
+**Perimetre revendique** : `src/network/scan/nmap/` (`NmapIfList` —
+nouveau, `NmapOptions`, `NmapRun`, `NmapProbes`),
+`src/network/tcp/TcpStack.ts`,
+`src/network/devices/{WindowsPC,linux/commands/net/Nmap}.ts`.
+
+Les deux options etaient refusees comme non implantees alors que TOUTE
+la matiere existe : la machine porte ses interfaces, leurs adresses,
+leurs MTU, leurs adresses de couche lien et sa table de routage, et
+`ip addr` / `ip route` les rendent deja. Ce qui manquait etait la porte,
+pas le moteur — la forme que ce depot referme regulierement.
+
+**`--iflist` rend deux tableaux et SORT** (`nmap.cc:1958` appelle
+`print_iflist()` puis `exit(0)`), donc aucune sonde n'est emise meme
+lorsqu'une cible est nommee. Les colonnes sont celles d'`output.cc:294` :
+`DEV (SHORT) IP/MASK TYPE UP MTU MAC` puis
+`DST/MASK DEV METRIC GATEWAY`, la colonne MAC restant vide pour ce qui
+n'est pas ethernet.
+
+**La mise en page N'A PAS ete redessinee a la main** : celle de
+`NmapOutputTable::printableTable` (`NmapOutputTable.cc:203`) — largeur
+de colonne = plus longue cellule, un blanc de separation, aucun blanc de
+fin — est EXACTEMENT `NMAP_TABLE` du module de tableaux du depot, dont
+l'en-tete cite deja `NmapOutputTable` et que la section `TRACEROUTE`
+emploie. Une seconde ecriture aurait ete le defaut que ce module existe
+pour empecher.
+
+**`interfacesOf` lit `Equipment.getPorts()`, donc les deux plateformes
+partagent une seule implantation** plutot qu'un shim chacune ; `routes()`
+de meme, `getRoutingTable()` etant declare sur `EndHost` et donc porte
+par le poste Linux comme par le poste Windows. **La boucle est remontee
+en tete de liste** pour que `--iflist` et `ip addr` s'accordent sur
+l'ordre : `getPorts()` la place en dernier, decision de CABLAGE mesuree
+ailleurs dans ce depot, et deux vues d'une meme liste ne doivent pas se
+contredire.
+
+**`-e` DEDUIT l'adresse source du peripherique** (`nmap.cc:1756`) et
+refuse par « I cannot figure out what source address to use for device
+%s, does it even exist? » quand il n'existe pas ou n'a pas d'adresse.
+`ScanProbeShape.iface` force l'egress dans `resolveEgress`, ce qu'une
+machine a deux cartes sur le meme segment rend observable : l'adresse de
+couche lien SOURCE que voit la cible change. `-e` ne fait
+DELIBEREMENT pas partie des options « brutes » qui declenchent
+l'avertissement de balayage connecte — `nmap.cc:1074` ne pose pas
+`raw_scan_options` pour elle.
+
+**Discrimination** : `probe-nmap-interface.test.ts` (9 cas), 7 tombent
+contre l'etat d'avant. Les 2 autres sont nommes dans l'en-tete — le
+TEMOIN sans `-e`, et « aucune sonde n'est emise », qui passait avant
+pour une raison qui ne prouve rien puisque l'option entiere etait
+refusee. Un cas e2e Playwright tape `--iflist`, `-e eth0` et
+`-e zorglub` dans le vrai terminal.
