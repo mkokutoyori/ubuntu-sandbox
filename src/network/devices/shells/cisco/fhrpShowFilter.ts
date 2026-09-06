@@ -95,43 +95,60 @@ export function fhrpShowMatches(
  * cette vue-la accepte, et pas celles de ses soeurs. `show vrrp ?`
  * taisait `interface`, le seul mot-cle qui la distingue des deux autres.
  */
-export function fhrpShowSpec(
+export function fhrpShowSpecs(
   protocole: string,
   description: string,
   grammar: FhrpShowGrammar,
   portNames: () => Iterable<string>,
   rendre: (selection: FhrpShowSelection) => string,
-): CommandSpec {
+): CommandSpec[] {
   const formes: Array<{ keyword: string; description: string }> = [
     { keyword: 'brief', description: 'Brief output' },
   ];
   if (grammar.acceptsAll) {
     formes.push({ keyword: 'all', description: 'Include inactive groups' });
   }
-  if (grammar.interfaceKeyword) {
-    formes.push({ keyword: 'interface', description: 'Groups on one interface' });
-  }
   formes.push({
     keyword: `<${grammar.groupRange[0]}-${grammar.groupRange[1]}>`,
     description: 'Group number',
   });
 
-  return {
+  const specs: CommandSpec[] = [];
+  const executer = (mots: string): string => {
+    const propres = mots.trim();
+    const verdict = parseFhrpShowArgs(
+      propres.length === 0 ? [] : propres.split(/\s+/),
+      grammar, fhrpInterfaceResolver(portNames()));
+    if ('incomplete' in verdict) throw new CliIncomplete();
+    if ('at' in verdict) throw new CliInvalidInput({ token: verdict.at });
+    return rendre(verdict);
+  };
+
+  if (grammar.interfaceKeyword) {
+    specs.push({
+      id: `show-${protocole}-interface`,
+      path: ['show', protocole, 'interface',
+        { name: 'nom', type: 'INTERFACE', description: 'Interface name' },
+        {
+          name: 'filtre', type: 'REST', optional: true,
+          description: 'What to display', alternatives: formes,
+        }],
+      description: 'Groups on one interface',
+      modes: ['user', 'privileged'], minPrivilege: 1,
+      run: (_session, args) =>
+        executer(`interface ${args.nom ?? ''} ${args.filtre ?? ''}`),
+    });
+  }
+
+  specs.push({
     id: `show-${protocole}`,
     path: ['show', protocole, {
-      name: 'filtre', type: 'REST', optional: true, leadingOnly: true,
+      name: 'filtre', type: 'REST', optional: true,
       description: 'What to display', alternatives: formes,
     }],
     description,
     modes: ['user', 'privileged'], minPrivilege: 1,
-    run: (_session, args) => {
-      const mots = (args.filtre ?? '').trim();
-      const verdict = parseFhrpShowArgs(
-        mots.length === 0 ? [] : mots.split(/\s+/),
-        grammar, fhrpInterfaceResolver(portNames()));
-      if ('incomplete' in verdict) throw new CliIncomplete();
-      if ('at' in verdict) throw new CliInvalidInput({ token: verdict.at });
-      return rendre(verdict);
-    },
-  };
+    run: (_session, args) => executer(args.filtre ?? ''),
+  });
+  return specs;
 }

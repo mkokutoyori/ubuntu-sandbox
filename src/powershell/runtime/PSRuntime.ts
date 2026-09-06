@@ -1194,11 +1194,7 @@ export class PSRuntime {
       if (block.body) return this.aggregateCaptured(this.runBlockCapture(block.body, childEnv, captured));
       return null;
     } catch (e) {
-      if (e instanceof ReturnSignal) {
-        if (captured.length === 0) return e.value;
-        if (e.value !== null && e.value !== undefined) captured.push(e.value);
-        return this.aggregateCaptured(captured);
-      }
+      if (e instanceof ReturnSignal) return e.value;
       throw e;
     }
   }
@@ -2216,21 +2212,33 @@ export class PSRuntime {
     node: PSStatementList, env: PSEnvironment, captured: PSValue[] = [],
   ): PSValue[] {
     const before = this.outputLines.length;
+    const printed: string[] = [];
     try {
-      this.captureStatements(node, env, captured);
-    } finally {
-      this.promoteOutputLinesEvenWhenUnwinding(before, captured);
+      this.captureStatements(node, env, captured, printed);
+    } catch (e) {
+      if (e instanceof ReturnSignal) {
+        if (printed.length > 0) this.outputLines.splice(before, 0, ...printed);
+        throw e;
+      }
+      this.promoteOutputLinesEvenWhenUnwinding(before, captured, printed);
+      throw e;
     }
+    this.promoteOutputLinesEvenWhenUnwinding(before, captured, printed);
     return captured;
   }
 
-  private promoteOutputLinesEvenWhenUnwinding(from: number, captured: PSValue[]): void {
-    for (let i = from; i < this.outputLines.length; i++) captured.push(this.outputLines[i]);
+  private promoteOutputLinesEvenWhenUnwinding(
+    from: number, captured: PSValue[], printed: string[],
+  ): void {
+    for (let i = from; i < this.outputLines.length; i++) {
+      captured.push(this.outputLines[i]);
+      printed.push(this.outputLines[i]);
+    }
     this.outputLines.splice(from);
   }
 
   private captureStatements(
-    node: PSStatementList, env: PSEnvironment, captured: PSValue[],
+    node: PSStatementList, env: PSEnvironment, captured: PSValue[], printed: string[],
   ): void {
     for (const stmt of node.statements) {
       const linesBefore = this.outputLines.length;
@@ -2248,7 +2256,7 @@ export class PSRuntime {
         if (Array.isArray(result)) captured.push(...result);
         else captured.push(result);
       }
-      this.promoteOutputLinesEvenWhenUnwinding(linesBefore, captured);
+      this.promoteOutputLinesEvenWhenUnwinding(linesBefore, captured, printed);
     }
   }
 
