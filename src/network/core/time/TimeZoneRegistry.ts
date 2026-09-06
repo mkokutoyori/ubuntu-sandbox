@@ -81,3 +81,10 @@ export function observesDaylightSaving(zone: TimeZone, atMs: number): boolean {
   return offsetMinutesAt(zone, Date.UTC(year, 0, 1))
     !== offsetMinutesAt(zone, Date.UTC(year, 6, 1));
 }
+
+export function formatOffsetCompact(minutes: number): string {
+  const sign = minutes < 0 ? '-' : '+';
+  const abs = Math.abs(minutes);
+  return `${sign}${String(Math.floor(abs / 60)).padStart(2, '0')}`
+    + String(abs % 60).padStart(2, '0');
+}

@@ -17,7 +17,7 @@
 import type { LinuxCommand } from '../LinuxCommand';
 import type { LinuxCommandContext } from '../LinuxCommandContext';
 import {
-  trouverTimezone, listerTimezones, formatOffset,
+  trouverTimezone, listerTimezones, formatOffset, abreviationA, decalageA,
 } from '../../time/TimezoneDatabase';
 
 const JOURS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
@@ -31,10 +31,11 @@ function estampille(d: Date): string {
 /** Le rapport de statut, monte sur ce que la machine sait vraiment. */
 function statut(ctx: LinuxCommandContext): string {
   const nomZone = ctx.executor.identity.timezone;
-  const zone = trouverTimezone(nomZone);
-  const offsetMin = zone?.offsetMin ?? 0;
-  const utc = new Date();
-  const local = new Date(utc.getTime() + offsetMin * 60_000);
+  const maintenant = Date.now();
+  const offsetMin = decalageA(nomZone, maintenant);
+  const abbr = abreviationA(nomZone, maintenant);
+  const utc = new Date(maintenant);
+  const local = new Date(maintenant + offsetMin * 60_000);
   const agent = ctx.executor.ntpAgent?.();
   const chrony = ctx.executor.chronyService;
   // `NTP service` est l'etat du DEMON, `System clock synchronized` celui
@@ -43,10 +44,10 @@ function statut(ctx: LinuxCommandContext): string {
   const serviceActif = chrony?.isRunning() ?? false;
   const synchro = serviceActif && (agent?.isSynced() ?? false);
   return [
-    `               Local time: ${estampille(local)} ${zone?.abbr ?? 'UTC'}`,
+    `               Local time: ${estampille(local)} ${abbr}`,
     `           Universal time: ${estampille(utc)} UTC`,
     `                 RTC time: ${estampille(utc)}`,
-    `                Time zone: ${nomZone} (${zone?.abbr ?? 'UTC'}, ${formatOffset(offsetMin)})`,
+    `                Time zone: ${nomZone} (${abbr}, ${formatOffset(offsetMin)})`,
     `System clock synchronized: ${synchro ? 'yes' : 'no'}`,
     `              NTP service: ${serviceActif ? 'active' : 'inactive'}`,
     `          RTC in local TZ: no`,
@@ -77,7 +78,8 @@ export const timedatectlCommand: LinuxCommand = {
         // machine.
         ctx.executor.vfs.writeFile('/etc/timezone', `${zone.nom}\n`, 0, 0, 0o022, true);
         ctx.executor.vfs.writeFile('/etc/localtime',
-          `TZif2 ${zone.nom} ${formatOffset(zone.offsetMin)}\n`, 0, 0, 0o022, true);
+          `TZif2 ${zone.nom} ${formatOffset(decalageA(zone.nom, Date.now()))}\n`,
+          0, 0, 0o022, true);
         return '';
       }
       case 'set-ntp': {
@@ -89,7 +91,6 @@ export const timedatectlCommand: LinuxCommand = {
       }
       case 'show': {
         const nomZone = ctx.executor.identity.timezone;
-        const zone = trouverTimezone(nomZone);
         const agent = ctx.executor.ntpAgent?.();
         const actif = ctx.executor.chronyService?.isRunning() ?? false;
         return [
@@ -99,7 +100,7 @@ export const timedatectlCommand: LinuxCommand = {
           `NTP=${actif ? 'yes' : 'no'}`,
           `NTPSynchronized=${actif && (agent?.isSynced() ?? false) ? 'yes' : 'no'}`,
           `TimeUSec=${Date.now() * 1000}`,
-          `TimezoneOffset=${zone?.offsetMin ?? 0}`,
+          `TimezoneOffset=${decalageA(nomZone, Date.now())}`,
         ].join('\n');
       }
       default:

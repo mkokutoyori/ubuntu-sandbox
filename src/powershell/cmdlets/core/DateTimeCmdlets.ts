@@ -9,7 +9,10 @@ import type { PSValue } from '@/powershell/runtime/PSEnvironment';
 import { psValueToString } from '@/powershell/runtime/PSExpansion';
 import type { PSScriptBlock } from '@/powershell/parser/PSASTNode';
 import { PSRuntimeError } from '@/powershell/runtime/PSRuntime';
-import { trouverTimezone } from '@/network/devices/linux/time/TimezoneDatabase';
+import { TimeZone } from '@/network/core/time/TimeZone';
+import {
+  observesDaylightSaving, standardOffsetMinutes,
+} from '@/network/core/time/TimeZoneRegistry';
 
 // ─── Get-TimeZone / Set-TimeZone ──────────────────────────────────────────
 
@@ -47,13 +50,10 @@ const ZONES_WINDOWS: ReadonlyArray<{ id: string; iana: string; nom: string }> = 
   { id: 'AUS Eastern Standard Time', iana: 'Australia/Sydney', nom: 'Canberra, Melbourne, Sydney' },
 ];
 
-/** Le decalage d'un identifiant Windows, via la table partagee. */
-function decalageDe(iana: string): number {
-  return trouverTimezone(iana)?.offsetMin ?? 0;
-}
-
 function objetZone(z: { id: string; iana: string; nom: string }): PSValue {
-  const min = decalageDe(z.iana);
+  const zone = TimeZone.parse(z.iana);
+  const maintenant = Date.now();
+  const min = zone ? standardOffsetMinutes(zone, maintenant) : 0;
   const signe = min < 0 ? '-' : '+';
   const abs = Math.abs(min);
   const hh = String(Math.floor(abs / 60)).padStart(2, '0');
@@ -63,7 +63,7 @@ function objetZone(z: { id: string; iana: string; nom: string }): PSValue {
     DisplayName: `(UTC${signe}${hh}:${mm}) ${z.nom}`,
     StandardName: z.id,
     BaseUtcOffset: `${signe}${hh}:${mm}:00`,
-    SupportsDaylightSavingTime: false,
+    SupportsDaylightSavingTime: zone !== null && observesDaylightSaving(zone, maintenant),
   } as unknown as PSValue;
 }
 

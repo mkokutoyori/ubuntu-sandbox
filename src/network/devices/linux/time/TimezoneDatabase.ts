@@ -1,109 +1,121 @@
 /**
- * PRD-NTP-Tutoriel.md §4 / lot N3 — la base des fuseaux, et pourquoi
- * elle existe.
+ * Lot T2 du `docs/PRD-Geographie-Et-Temps-Local.md` : cette table n'est
+ * plus une SECONDE ecriture du decalage, seulement la porte des
+ * ABREVIATIONS.
  *
- * `timedatectl set-timezone Africa/Douala` etait ACCEPTE et ne changeait
- * rien : l'heure restait UTC, `timedatectl` continuait d'ecrire
- * `Time zone: Etc/UTC (UTC, +0000)`, et `timedatectl list-timezones` ne
- * rendait rien. Il n'y avait aucune notion de fuseau sur la machine —
- * seulement une chaine rangee dans l'identite systeme, que la vue
- * reimprimait avec un decalage ECRIT EN DUR a `+0000` quel qu'il soit.
+ * Elle rangeait un `offsetMin` FIXE par zone, et l'assumait en tete de
+ * fichier : « `Europe/Paris` vaut ici UTC+1 toute l'annee ». Ce
+ * raisonnement etait juste quand il a ete ecrit — rien ne portait les
+ * regles d'heure d'ete. Il ne l'est plus depuis que
+ * `core/time/TimeZoneRegistry` les calcule, et le garder faisait dire
+ * a une machine Linux une heure differente de celle du pare-feu, au
+ * meme instant et pour le meme fuseau.
  *
- * Ce fichier est ce qui manquait : un nom de zone porte un decalage et
- * une abreviation, donc `set-timezone` peut agir et `list-timezones`
- * peut repondre.
+ * Le decalage vient donc du registre, ou il est une FONCTION de
+ * l'instant. Ce qui RESTE ici est ce que le registre ne sait pas
+ * produire : l'abreviation. Mesure : `Intl` rend `GMT+1`/`GMT+2` pour
+ * `Europe/Paris`, jamais `CET`/`CEST` ; seules quelques zones
+ * americaines rendent `EST`/`EDT`. Les abreviations tabulees ci-dessous
+ * sont relevees sur le nom long qu'`Intl` rend, lui, correctement
+ * (« Central European Summer Time » -> `CEST`), et non devinees : un
+ * acronyme automatique donnerait `CUT` pour UTC et `MST` pour Moscou.
  *
- * ── Ce qui est delibrement absent, et dit plutot que tu ─────────────
- *
- * La vraie base tzdata compte plus de six cents zones et decrit leurs
- * regles d'heure d'ete sur plus d'un siecle. Celle-ci en porte une
- * cinquantaine, choisies pour couvrir les continents et les cas du
- * tutoriel (Afrique centrale et de l'Ouest), avec un decalage FIXE.
- * Les zones a heure d'ete y figurent avec leur heure normale : une
- * bascule saisonniere demanderait les regles de tzdata, que ce
- * simulateur n'a pas — et inventer une date de bascule serait pire que
- * de ne pas en avoir, puisque personne ne pourrait la verifier.
- *
- * Consequence assumee : `Europe/Paris` vaut ici UTC+1 toute l'annee.
+ * Une zone ABSENTE de cette table reste acceptee si tzdata la connait,
+ * avec la forme numerique que tzdata emploie lui-meme faute
+ * d'abreviation propre (`+01`, `-05`) — c'est ce que `timedatectl`
+ * affiche pour `Africa/Casablanca`.
  */
+import { TimeZone } from '../../../core/time/TimeZone';
+import {
+  formatOffsetCompact, isDaylightSavingAt, offsetMinutesAt,
+} from '../../../core/time/TimeZoneRegistry';
 
 export interface Timezone {
   /** Le nom de zone, tel que `set-timezone` l'attend. */
   readonly nom: string;
-  /** L'abreviation que `timedatectl` affiche : `WAT`, `CET`, `EST`. */
+  /** L'abreviation hors heure d'ete : `WAT`, `CET`, `EST`. */
   readonly abbr: string;
-  /** Le decalage sur UTC, en minutes. */
-  readonly offsetMin: number;
+  /** Celle d'heure d'ete, quand la zone en a une : `CEST`, `EDT`. */
+  readonly abbrDst?: string;
 }
 
-const Z = (nom: string, abbr: string, offsetMin: number): Timezone => ({ nom, abbr, offsetMin });
+const Z = (nom: string, abbr: string, abbrDst?: string): Timezone =>
+  abbrDst === undefined ? { nom, abbr } : { nom, abbr, abbrDst };
 
-/**
- * Les zones connues. `Etc/UTC` est la premiere parce que c'est le
- * defaut d'une image Debian nue, celui que la machine porte au demarrage.
- */
 export const TIMEZONES: readonly Timezone[] = [
-  Z('Etc/UTC', 'UTC', 0),
-  Z('UTC', 'UTC', 0),
-  // Afrique — les fuseaux du tutoriel.
-  Z('Africa/Abidjan', 'GMT', 0),
-  Z('Africa/Accra', 'GMT', 0),
-  Z('Africa/Algiers', 'CET', 60),
-  Z('Africa/Bangui', 'WAT', 60),
-  Z('Africa/Brazzaville', 'WAT', 60),
-  Z('Africa/Cairo', 'EET', 120),
-  Z('Africa/Casablanca', 'WEST', 60),
-  Z('Africa/Dakar', 'GMT', 0),
-  Z('Africa/Dar_es_Salaam', 'EAT', 180),
-  Z('Africa/Douala', 'WAT', 60),
-  Z('Africa/Johannesburg', 'SAST', 120),
-  Z('Africa/Kampala', 'EAT', 180),
-  Z('Africa/Kinshasa', 'WAT', 60),
-  Z('Africa/Lagos', 'WAT', 60),
-  Z('Africa/Libreville', 'WAT', 60),
-  Z('Africa/Lubumbashi', 'CAT', 120),
-  Z('Africa/Nairobi', 'EAT', 180),
-  Z('Africa/Ndjamena', 'WAT', 60),
-  Z('Africa/Tunis', 'CET', 60),
-  Z('Africa/Yaounde', 'WAT', 60),
-  // Europe.
-  Z('Europe/Berlin', 'CET', 60),
-  Z('Europe/Brussels', 'CET', 60),
-  Z('Europe/Lisbon', 'WET', 0),
-  Z('Europe/London', 'GMT', 0),
-  Z('Europe/Madrid', 'CET', 60),
-  Z('Europe/Moscow', 'MSK', 180),
-  Z('Europe/Paris', 'CET', 60),
-  Z('Europe/Rome', 'CET', 60),
-  // Ameriques.
-  Z('America/Bogota', '-05', -300),
-  Z('America/Chicago', 'CST', -360),
-  Z('America/Denver', 'MST', -420),
-  Z('America/Los_Angeles', 'PST', -480),
-  Z('America/Mexico_City', 'CST', -360),
-  Z('America/New_York', 'EST', -300),
-  Z('America/Sao_Paulo', '-03', -180),
-  Z('America/Toronto', 'EST', -300),
-  // Asie et Oceanie.
-  Z('Asia/Dubai', '+04', 240),
-  Z('Asia/Hong_Kong', 'HKT', 480),
-  Z('Asia/Jerusalem', 'IST', 120),
-  Z('Asia/Kolkata', 'IST', 330),
-  Z('Asia/Riyadh', '+03', 180),
-  Z('Asia/Seoul', 'KST', 540),
-  Z('Asia/Shanghai', 'CST', 480),
-  Z('Asia/Singapore', '+08', 480),
-  Z('Asia/Tokyo', 'JST', 540),
-  Z('Australia/Melbourne', 'AEST', 600),
-  Z('Australia/Sydney', 'AEST', 600),
-  Z('Pacific/Auckland', 'NZST', 720),
+  Z('Etc/UTC', 'UTC'),
+  Z('UTC', 'UTC'),
+  Z('Africa/Abidjan', 'GMT'),
+  Z('Africa/Accra', 'GMT'),
+  Z('Africa/Algiers', 'CET'),
+  Z('Africa/Bangui', 'WAT'),
+  Z('Africa/Brazzaville', 'WAT'),
+  Z('Africa/Cairo', 'EET', 'EEST'),
+  Z('Africa/Casablanca', '+01'),
+  Z('Africa/Dakar', 'GMT'),
+  Z('Africa/Dar_es_Salaam', 'EAT'),
+  Z('Africa/Douala', 'WAT'),
+  Z('Africa/Johannesburg', 'SAST'),
+  Z('Africa/Kampala', 'EAT'),
+  Z('Africa/Kinshasa', 'WAT'),
+  Z('Africa/Lagos', 'WAT'),
+  Z('Africa/Libreville', 'WAT'),
+  Z('Africa/Lubumbashi', 'CAT'),
+  Z('Africa/Nairobi', 'EAT'),
+  Z('Africa/Ndjamena', 'WAT'),
+  Z('Africa/Tunis', 'CET'),
+  Z('Europe/Berlin', 'CET', 'CEST'),
+  Z('Europe/Brussels', 'CET', 'CEST'),
+  Z('Europe/Lisbon', 'WET', 'WEST'),
+  Z('Europe/London', 'GMT', 'BST'),
+  Z('Europe/Madrid', 'CET', 'CEST'),
+  Z('Europe/Moscow', 'MSK'),
+  Z('Europe/Paris', 'CET', 'CEST'),
+  Z('Europe/Rome', 'CET', 'CEST'),
+  Z('America/Bogota', '-05'),
+  Z('America/Chicago', 'CST', 'CDT'),
+  Z('America/Denver', 'MST', 'MDT'),
+  Z('America/Los_Angeles', 'PST', 'PDT'),
+  Z('America/Mexico_City', 'CST'),
+  Z('America/New_York', 'EST', 'EDT'),
+  Z('America/Sao_Paulo', '-03'),
+  Z('America/Toronto', 'EST', 'EDT'),
+  Z('Asia/Dubai', '+04'),
+  Z('Asia/Hong_Kong', 'HKT'),
+  Z('Asia/Jerusalem', 'IST', 'IDT'),
+  Z('Asia/Kolkata', 'IST'),
+  Z('Asia/Riyadh', '+03'),
+  Z('Asia/Seoul', 'KST'),
+  Z('Asia/Shanghai', 'CST'),
+  Z('Asia/Singapore', '+08'),
+  Z('Asia/Tokyo', 'JST'),
+  Z('Australia/Melbourne', 'AEST', 'AEDT'),
+  Z('Australia/Sydney', 'AEST', 'AEDT'),
+  Z('Pacific/Auckland', 'NZST', 'NZDT'),
 ];
 
 const PAR_NOM = new Map(TIMEZONES.map((z) => [z.nom.toLowerCase(), z]));
 
-/** La zone portant ce nom, si elle existe. La casse est celle de tzdata. */
+function numericAbbreviation(zone: TimeZone, atMs: number): string {
+  const minutes = offsetMinutesAt(zone, atMs);
+  const signe = minutes < 0 ? '-' : '+';
+  const abs = Math.abs(minutes);
+  const heures = String(Math.floor(abs / 60)).padStart(2, '0');
+  return abs % 60 === 0
+    ? `${signe}${heures}`
+    : `${signe}${heures}:${String(abs % 60).padStart(2, '0')}`;
+}
+
+/** La zone portant ce nom, si tzdata la connait. La casse est la sienne. */
 export function trouverTimezone(nom: string): Timezone | undefined {
-  return PAR_NOM.get(nom.trim().toLowerCase());
+  const zone = TimeZone.parse(nom);
+  if (!zone) return undefined;
+
+  const tabulee = PAR_NOM.get(zone.name.toLowerCase())
+    ?? PAR_NOM.get(nom.trim().toLowerCase());
+  if (tabulee) return tabulee;
+
+  return { nom: zone.name, abbr: numericAbbreviation(zone, Date.now()) };
 }
 
 /** Les noms, tries — ce que `timedatectl list-timezones` imprime. */
@@ -111,9 +123,21 @@ export function listerTimezones(): string[] {
   return TIMEZONES.map((z) => z.nom).sort();
 }
 
-/** `+0100`, `-0500` — la forme que `timedatectl` met entre parentheses. */
-export function formatOffset(offsetMin: number): string {
-  const signe = offsetMin < 0 ? '-' : '+';
-  const abs = Math.abs(offsetMin);
-  return `${signe}${String(Math.floor(abs / 60)).padStart(2, '0')}${String(abs % 60).padStart(2, '0')}`;
+/** Le decalage de cette zone A CET INSTANT, heure d'ete comprise. */
+export function decalageA(nom: string, atMs: number): number {
+  const zone = TimeZone.parse(nom);
+  return zone ? offsetMinutesAt(zone, atMs) : 0;
 }
+
+/** L'abreviation A CET INSTANT : `CET` en janvier, `CEST` en juillet. */
+export function abreviationA(nom: string, atMs: number): string {
+  const zone = TimeZone.parse(nom);
+  if (!zone) return 'UTC';
+
+  const tabulee = PAR_NOM.get(zone.name.toLowerCase());
+  if (!tabulee) return numericAbbreviation(zone, atMs);
+  if (tabulee.abbrDst && isDaylightSavingAt(zone, atMs)) return tabulee.abbrDst;
+  return tabulee.abbr;
+}
+
+export { formatOffsetCompact as formatOffset };
