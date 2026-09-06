@@ -321,7 +321,7 @@ part qu'avec sa sonde.
 |---|---|---|---|
 | **T1** ✅ | `network/core/time/` : le type `TimeZone`, le registre, `offsetMinutesAt` | I-T1, I-T3 | l'écart de 60 min du §1.1 ; et, mesuré en chemin, `setTimezone('Zorglub/Ville')` accepté puis `localTimeOf` qui **lève** |
 | **T2** ✅ | `TimezoneDatabase` devient la porte des **abréviations** ; le décalage vient du registre | la table fixe #2 | `timedatectl` dit `CET +0100` un 5 septembre ; et, mesurés en chemin, `Africa/Yaounde` **absent de tzdata** mais déclaré, `Asia/Bangkok` refusé, `Africa/Casablanca` étiqueté `WEST` au lieu de `+01`, et `SupportsDaylightSavingTime` câblé à `false` côté Windows |
-| **T3** | `date` et `timedatectl` s'accordent | I-T6 | `15:33 UTC` contre `16:33 CET`, même machine |
+| **T3** ✅ | `date` et `timedatectl` s'accordent ; `date`/`time` de cmd Windows aussi | I-T6 | `17:56 UTC` contre `19:56 CEST`, même machine ; `date -u` identique à `date` ; `%Z`/`%z` câblés à `UTC`/`+0000` |
 | **T4** | `DeviceClock` sur Cisco et VRP ; `summer-time`/`daylight-saving-time` réels | modèle #3 | `show clock` faux six mois sur douze |
 | **T5** | Les 87 index FortiOS ; un index inconnu est **refusé** | I-T4 | `set timezone 55` accepté → UTC |
 | **T6** | `ScheduleObject` lit l'horloge de sa machine | I-T5 | un horaire suit le fuseau du navigateur |

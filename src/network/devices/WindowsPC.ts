@@ -3757,11 +3757,11 @@ export class WindowsPC extends EndHost implements UserAccountHost {
   }
 
   private cmdDate(args: string[]): string {
-    return WinSys.cmdDate(args);
+    return WinSys.cmdDate(args, this.identity.timezone);
   }
 
   private cmdTime(args: string[]): string {
-    return WinSys.cmdTime(args);
+    return WinSys.cmdTime(args, this.identity.timezone);
   }
 
   private cmdStart(args: string[]): string {
