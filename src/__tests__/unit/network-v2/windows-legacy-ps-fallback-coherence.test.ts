@@ -3,14 +3,12 @@
  *
  * Quel que soit le chemin qui sert une cmdlet, elle lit et ecrit le MEME
  * etat que les commandes cmd (audit AUDIT-COHERENCE-CMD-PS-UX-HELP.md §1).
- * Les cas de `Get-NetIPAddress` et de `Resolve-DnsName` pilotaient le
- * moteur HISTORIQUE, qui ne porte plus ces vues ; ils pilotent desormais
- * celui que la machine sert, et c'est le meme contrat.
+ * Tous les cas pilotent le moteur que la machine sert reellement ; le
+ * moteur historique a ete supprime.
  */
 
 import { describe, it, expect, beforeEach } from 'vitest';
 import { WindowsPC } from '@/network/devices/WindowsPC';
-import { PowerShellExecutor, type PSDeviceContext } from '@/network/devices/windows/PowerShellExecutor';
 import { IPAddress, SubnetMask, MACAddress, resetCounters } from '@/network/core/types';
 import { resetDeviceCounters } from '@/network/devices/DeviceFactory';
 import { Logger } from '@/network/core/Logger';
@@ -24,8 +22,6 @@ beforeEach(() => {
 });
 
 const makePc = (): WindowsPC => new WindowsPC('windows-pc', 'PC1', 0, 0);
-const makePs = (pc: WindowsPC): PowerShellExecutor =>
-  new PowerShellExecutor(pc as unknown as PSDeviceContext);
 const makeLivePs = (pc: WindowsPC): { execute(l: string): Promise<string> } => {
   const sh = PowerShellSubShell.create(pc).subShell;
   return { execute: async (l: string) => (await sh.processLine(l)).output.join('\n') };
@@ -121,14 +117,14 @@ describe('the NetRoute family shares the real routing table with route (cmd)', (
 describe('legacy Get-NetTCPConnection reflects the real socket table', () => {
   it('does not fabricate an Established connection to 8.8.8.8', async () => {
     const pc = makePc();
-    const ps = makePs(pc);
+    const ps = makeLivePs(pc);
     const out = await ps.execute('Get-NetTCPConnection');
     expect(out).not.toContain('8.8.8.8');
   });
 
   it('every port it reports is also reported by netstat (cmd)', async () => {
     const pc = makePc();
-    const ps = makePs(pc);
+    const ps = makeLivePs(pc);
     const psOut = await ps.execute('Get-NetTCPConnection');
     const cmdOut = await pc.executeCommand('netstat -an');
     const psPorts = [...psOut.matchAll(/^\s*\S+\s+(\d+)\s/gm)].map((m) => m[1]);
@@ -170,14 +166,14 @@ describe('legacy Get/Register-ScheduledTask share the schtasks store', () => {
   it('a task created via schtasks /create (cmd) is visible to Get-ScheduledTask (PS)', async () => {
     const pc = makePc();
     await pc.executeCommand('schtasks /create /tn CoherenceTask /tr "cmd /c echo hi" /sc daily /st 10:00');
-    const ps = makePs(pc);
+    const ps = makeLivePs(pc);
     const out = await ps.execute('Get-ScheduledTask');
     expect(out).toContain('CoherenceTask');
   });
 
   it('does not report fabricated tasks that schtasks /query does not know', async () => {
     const pc = makePc();
-    const ps = makePs(pc);
+    const ps = makeLivePs(pc);
     const psOut = await ps.execute('Get-ScheduledTask');
     const cmdOut = await pc.executeCommand('schtasks /query');
     const psNames = [...psOut.matchAll(/^\\?\S*\s{2,}(\S[^ ]*(?: [^ ]+)*?)\s{2,}\S+\s*$/gm)]
@@ -190,7 +186,7 @@ describe('legacy Get/Register-ScheduledTask share the schtasks store', () => {
 
   it('a task created via Register-ScheduledTask (PS) is visible to schtasks /query (cmd)', async () => {
     const pc = makePc();
-    const ps = makePs(pc);
+    const ps = makeLivePs(pc);
     await ps.execute('Register-ScheduledTask -TaskName PsBornTask -Action X');
     const out = await pc.executeCommand('schtasks /query');
     expect(out).toContain('PsBornTask');

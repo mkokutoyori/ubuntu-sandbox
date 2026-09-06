@@ -64,7 +64,7 @@ export class HuaweiSwitch extends Switch {
       getPorts: () => this.getPorts(),
       sendFrame: (p: string, f: EthernetFrame) => { this.sendFrame(p, f); },
     };
-    this.lldpAgent = new LldpAgent(hostBase, () => this.getBus());
+    this.lldpAgent = new LldpAgent(hostBase, () => this.getBus(), () => this.getScheduler());
     const firstPort = this.getPorts()[0];
     const baseMac = firstPort ? firstPort.getMAC().toString() : '00:00:00:00:00:00';
     this.stpAgent = new StpAgent({
@@ -73,12 +73,12 @@ export class HuaweiSwitch extends Switch {
       onTopologyChangeAging: (sec) => this._setStpFastAging(sec),
       getStpPortVlans: (p) => this.getStpPortVlans(p),
       getStpBundleGroup: (p) => this.getStpBundleGroup(p),
-    }, () => this.getBus(), baseMac);
+    }, () => this.getBus(), baseMac, () => this.getScheduler());
     this.lacpAgent = new LacpAgent({
       ...hostBase,
       onLacpBundleChanged: (port, groupId, bundled) =>
         this.stpAgent.onBundleChanged(port, `Eth-Trunk${groupId}`, bundled),
-    }, () => this.getBus(), baseMac);
+    }, () => this.getBus(), baseMac, () => this.getScheduler());
     this.stpAgent.setMode('mstp');
     this.stpAgent.setPathcostMethod('long');
     this.igmpSnoopingAgent = new IgmpSnoopingAgent({

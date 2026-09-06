@@ -1472,6 +1472,10 @@ export interface DiskInfo {
   size: number;       // bytes
   partitionStyle: string;
   operationalStatus: string;
+  uniqueId: string;
+  serialNumber: string;
+  isBoot: boolean;
+  isSystem: boolean;
 }
 export interface VolumeInfo {
   driveLetter: string;
@@ -1480,6 +1484,8 @@ export interface VolumeInfo {
   sizeRemaining: number;
   size: number;
   driveType: string;
+  healthStatus: string;
+  operationalStatus: string;
 }
 export interface IEnvironmentProvider {
   /** Returns every environment variable visible on the device. */

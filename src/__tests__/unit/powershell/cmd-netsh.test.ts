@@ -4,7 +4,7 @@
 
 import { describe, it, expect, beforeEach } from 'vitest';
 import { WindowsPC } from '@/network/devices/WindowsPC';
-import { PowerShellExecutor } from '@/network/devices/windows/PowerShellExecutor';
+import { PowerShellSubShell } from '@/terminal/subshells/PowerShellSubShell';
 import { resetCounters } from '@/network/core/types';
 import { resetDeviceCounters } from '@/network/devices/DeviceFactory';
 import { Logger } from '@/network/core/Logger';
@@ -19,8 +19,9 @@ function createPC(name = 'WIN-ADD'): WindowsPC {
   return new WindowsPC('windows-pc', name);
 }
 
-function createPS(pc: WindowsPC): PowerShellExecutor {
-  return new PowerShellExecutor(pc as any);
+function createPS(pc: WindowsPC): { execute(line: string): Promise<string> } {
+  const shell = PowerShellSubShell.create(pc).subShell;
+  return { execute: async (line: string) => (await shell.processLine(line)).output.join('\n') };
 }
 
 describe('netsh add – comprehensive', () => {

@@ -94,7 +94,9 @@ export interface HostProbes {
   udpState(
     ip: string, port: number, shape?: ScanProbeShape,
   ): 'open' | 'closed' | 'open|filtered';
-  banner(ip: string, port: number): { service: string; version?: string } | null;
+  banner(
+    ip: string, port: number, intensity: number,
+  ): { service: string; version?: string } | null;
   /**
    * `Target::directlyConnected()` : une cible du meme segment est a une
    * distance connue de 1, et `traceroute_direct` (`traceroute.cc:1461`)
@@ -260,7 +262,7 @@ function tcpResult(
   let service = serviceName(port, 'tcp');
   let version: string | undefined;
   if (options.versionScan && state === 'open') {
-    const detected = probes.banner(ip, port);
+    const detected = probes.banner(ip, port, options.versionIntensity);
     if (detected) {
       service = detected.service;
       version = detected.version;
@@ -277,7 +279,7 @@ function udpResult(
   let service = serviceName(port, 'udp');
   let version: string | undefined;
   if (options.versionScan && state === 'open') {
-    const detected = probes.banner(ip, port);
+    const detected = probes.banner(ip, port, options.versionIntensity);
     if (detected) {
       service = detected.service;
       version = detected.version;

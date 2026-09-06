@@ -580,6 +580,10 @@ export class TcpStack {
    * comes from the wire and never from the peer's object.
    */
   grabGreeting(remoteIp: string, remotePort: number): string | null {
+    return this.probeService(remoteIp, remotePort, '');
+  }
+
+  probeService(remoteIp: string, remotePort: number, payload: string): string | null {
     const socket = this.connect(remoteIp, remotePort);
     if (!socket) return null;
     if (!socket.everEstablished) { socket.close(); return null; }
@@ -588,6 +592,7 @@ export class TcpStack {
       if (typeof chunk === 'string') text += chunk;
       else if (chunk instanceof Uint8Array) text += new TextDecoder().decode(chunk);
     });
+    if (payload.length > 0) socket.write(payload);
     stop();
     socket.close();
     return text === '' ? null : text;

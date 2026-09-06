@@ -10,7 +10,7 @@ import type {
 import { getVrrpAgent, getGlbpAgent } from '../../../equipment/RouterServiceCapabilities';
 import type { CommandSpec } from '@/cli/CommandTable';
 import {
-  fhrpShowMatches, fhrpShowSpec,
+  fhrpShowMatches, fhrpShowSpecs,
   VRRP_SHOW_GRAMMAR, GLBP_SHOW_GRAMMAR,
 } from './fhrpShowFilter';
 
@@ -102,7 +102,7 @@ export function vrrpGlbpShowSpecs(
 ): CommandSpec[] {
   const noms = () => ctx.r().getPortNames();
   return [
-    fhrpShowSpec('vrrp', 'Display VRRP state', VRRP_SHOW_GRAMMAR, noms, (verdict) => {
+    ...fhrpShowSpecs('vrrp', 'Display VRRP state', VRRP_SHOW_GRAMMAR, noms, (verdict) => {
       const groups = lireRepo().allVrrp()
         .filter((g) => fhrpShowMatches(g.iface, g.group, verdict));
       if (verdict.brief) {
@@ -119,7 +119,7 @@ export function vrrpGlbpShowSpecs(
       return groups.length
         ? groups.map((g) => vrrpDetail(ctx.r(), g)).join('\n') : '';
     }),
-    fhrpShowSpec('glbp', 'Display GLBP state', GLBP_SHOW_GRAMMAR, noms, (verdict) => {
+    ...fhrpShowSpecs('glbp', 'Display GLBP state', GLBP_SHOW_GRAMMAR, noms, (verdict) => {
       const groups = lireRepo().allGlbp()
         .filter((g) => fhrpShowMatches(g.iface, g.group, verdict));
       if (verdict.brief) {

@@ -354,16 +354,17 @@ function scSdshow(ctx: ScContext, args: string[]): string {
 /** Parse "key= value" pairs as used by sc.exe */
 function parseScOptions(args: string[]): Record<string, string> {
   const result: Record<string, string> = {};
+  const normalizeKey = (raw: string): string => raw.toLowerCase().replace(/\s/g, '');
+  const unquote = (raw: string): string => raw.replace(/^["']|["']$/g, '');
   for (let i = 0; i < args.length; i++) {
-    let key = args[i].toLowerCase();
+    const token = args[i];
     // Handle "binPath=" "value" and "binpath=value"
-    if (key.endsWith('=')) {
-      const val = args[i + 1] || '';
-      result[key.slice(0, -1).replace(/\s/g, '')] = val.replace(/^["']|["']$/g, '');
+    if (token.endsWith('=')) {
+      result[normalizeKey(token.slice(0, -1))] = unquote(args[i + 1] || '');
       i++;
-    } else if (key.includes('=')) {
-      const [k, ...v] = key.split('=');
-      result[k.replace(/\s/g, '')] = v.join('=').replace(/^["']|["']$/g, '');
+    } else if (token.includes('=')) {
+      const separator = token.indexOf('=');
+      result[normalizeKey(token.slice(0, separator))] = unquote(token.slice(separator + 1));
     }
   }
   return result;

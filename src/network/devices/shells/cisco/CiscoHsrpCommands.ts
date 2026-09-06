@@ -14,7 +14,7 @@ import { getHsrpAgent } from '../../../equipment/RouterServiceCapabilities';
 import { iosShortInterfaceName } from '@/network/devices/inspection/InterfaceStatusView';
 import type { CommandSpec } from '@/cli/CommandTable';
 import {
-  fhrpShowMatches, fhrpShowSpec, HSRP_SHOW_GRAMMAR,
+  fhrpShowMatches, fhrpShowSpecs, HSRP_SHOW_GRAMMAR,
 } from './fhrpShowFilter';
 
 interface HsrpCtx {
@@ -104,7 +104,7 @@ export function hsrpGroupRange(
 export function hsrpShowSpecs(
   ctx: HsrpCtx, lireRepo: () => FhrpRepository,
 ): CommandSpec[] {
-  return [fhrpShowSpec('standby', 'Display HSRP state', HSRP_SHOW_GRAMMAR,
+  return [...fhrpShowSpecs('standby', 'Display HSRP state', HSRP_SHOW_GRAMMAR,
     () => ctx.r().getPortNames(),
     (verdict) => {
       const router = ctx.r();

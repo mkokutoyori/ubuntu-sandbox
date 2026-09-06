@@ -471,7 +471,7 @@ export abstract class EndHost extends Equipment {
     this.ndpQueue.setScheduler(scheduler);
   }
   protected getScheduler(): IScheduler {
-    return this.hostScheduler ?? getDefaultScheduler();
+    return this.hostScheduler ?? super.getScheduler();
   }
 
   /** Common host identity stamped on every `host.*` event. */
@@ -520,7 +520,7 @@ export abstract class EndHost extends Equipment {
         getPorts: () => [...this.ports.values()],
         sendFrame: (p: string, f: EthernetFrame) => { this.sendFrame(p, f); },
         systemDescription: () => this.lldpSystemDescription(),
-      } as never, () => this.getBus());
+      } as never, () => this.getBus(), () => this.getScheduler());
       // networkd écoute par défaut (`LLDP=yes`) mais n'émet pas
       // (`EmitLLDP=no`) : un poste voit le commutateur auquel il est
       // câblé sans rien configurer, et n'encombre pas le LAN pour autant.

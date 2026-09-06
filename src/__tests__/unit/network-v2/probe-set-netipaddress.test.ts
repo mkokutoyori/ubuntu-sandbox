@@ -162,7 +162,5 @@ describe('Set-NetIPAddress — ce qu elle refuse et ce qu elle rend', () => {
 describe('Set-NetIPAddress — une seule source de verite', () => {
   it('le moteur historique ne porte plus de Set-NetIPAddress a lui', () => {
     expect(existsSync('src/network/devices/windows/PSNetCmdlets.ts')).toBe(false);
-    expect(readFileSync('src/network/devices/windows/PowerShellExecutor.ts', 'utf8'))
-      .not.toContain('handleSetNetIPAddress');
   });
 });

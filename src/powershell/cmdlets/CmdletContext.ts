@@ -68,6 +68,8 @@ export interface IRuntimeRef {
   /** Enumerate the host's environment variables (for `Get-ChildItem Env:`). */
   listEnvVars(): Array<{ Name: string; Value: string }>;
   getFunctionSource(name: string): string | null;
+  /** Names of the functions this session has defined, for Get-Command. */
+  listFunctions(): readonly string[];
   /** The session's command history, newest last, for Get-History. */
   listHistory(): readonly string[];
 }

@@ -16,6 +16,8 @@ import { psValueToString } from '@/powershell/runtime/PSExpansion';
 import { isPSCredential, getNetworkCredential } from '@/powershell/credential/PSCredential';
 import { parseCredentialArg } from './RemotingCmdlets';
 import { commandNotFoundMessage } from '@/powershell/commandNotFound';
+import { wildcardToRegex, hasWildcard } from '@/powershell/runtime/PSWildcard';
+import { namesThisMachine } from './ServiceCmdlets';
 
 /** Accepts a real `PSCredentialValue` (from `Get-Credential`) or the legacy `"user:password"` string form. */
 function credentialOf(ctx: CmdletContext): { userName: string; password: string } | null {
@@ -63,8 +65,10 @@ function toPSObject(p: ProcessInfo): Record<string, PSValue> {
   };
 }
 
-function asPSObjects(list: ProcessInfo[]): PSValue {
-  return list.map(toPSObject) as PSValue;
+function asPSObjects(list: ProcessInfo[], withUserName = false): PSValue {
+  return list.map(p => withUserName
+    ? { UserName: p.owner, ...toPSObject(p) }
+    : toPSObject(p)) as PSValue;
 }
 
 // ── Get-Process / gps / ps ────────────────────────────────────────────────
@@ -75,7 +79,19 @@ export class GetProcessCmdlet implements ICmdlet {
   readonly parameters = ['Name', 'Id', 'IncludeUserName', 'ComputerName', 'Module', 'FileVersionInfo'] as const;
 
   execute(ctx: CmdletContext): PSValue {
+    const remote = ctx.named['computername'];
+    if (remote !== undefined && !namesThisMachine(ctx, remote)) {
+      ctx.emitError(`Get-Process : Couldn't connect to remote machine `
+        + `'${psValueToString(remote)}'. There is no remote process channel in this simulator.`);
+      return null;
+    }
+    if (ctx.named['module'] === true || ctx.named['fileversioninfo'] === true) {
+      ctx.emitError('Get-Process : -Module and -FileVersionInfo are not supported in this '
+        + 'simulator: a process carries no loaded-module list.');
+      return null;
+    }
     const procs = requireProcesses(ctx);
+    const withUser = ctx.named['includeusername'] === true;
     const id    = ctx.named['id'];
     const name  = ctx.named['name'] ?? ctx.positional[0];
 
@@ -87,15 +103,15 @@ export class GetProcessCmdlet implements ICmdlet {
         if (found) out.push(found);
         else ctx.emitError(`Cannot find a process with the process identifier ${v}.`);
       }
-      return asPSObjects(out);
+      return asPSObjects(out, withUser);
     }
 
     if (name !== undefined && name !== null && name !== '') {
       const names = Array.isArray(name) ? name.map(psValueToString) : [psValueToString(name)];
       const out: ProcessInfo[] = [];
       for (const n of names) {
-        if (/[*?]/.test(n)) {
-          const pat = new RegExp('^' + n.replace(/\./g, '\\.').replace(/\*/g, '.*').replace(/\?/g, '.') + '$', 'i');
+        if (hasWildcard(n)) {
+          const pat = wildcardToRegex(n);
           for (const p of procs.listProcesses()) {
             const stripped = p.name.replace(/\.exe$/i, '');
             if (pat.test(p.name) || pat.test(stripped)) out.push(p);
@@ -109,10 +125,10 @@ export class GetProcessCmdlet implements ICmdlet {
         if (matches.length === 0) ctx.emitError(`Cannot find a process with the name "${n}".`);
         out.push(...matches);
       }
-      return asPSObjects(out);
+      return asPSObjects(out, withUser);
     }
 
-    return asPSObjects(procs.listProcesses());
+    return asPSObjects(procs.listProcesses(), withUser);
   }
 }
 
@@ -120,14 +136,27 @@ export class GetProcessCmdlet implements ICmdlet {
 
 export class StopProcessCmdlet implements ICmdlet {
   readonly name = 'stop-process';
+  readonly displayName = 'Stop-Process';
+  readonly supportsShouldProcess = true as const;
   readonly aliases = ['kill', 'spps'] as const;
   readonly parameters = ['Name', 'Id', 'InputObject', 'Force', 'PassThru'] as const;
 
   execute(ctx: CmdletContext): PSValue {
     const procs = requireProcesses(ctx);
     const force = ctx.named['force'] === true;
+    const passThru = ctx.named['passthru'] === true;
+    const stopped: ProcessInfo[] = [];
     const id    = ctx.named['id'];
     const name  = ctx.named['name'];
+    const remember = (key: string | number): void => {
+      if (!passThru) return;
+      const all = procs.listProcesses();
+      const found = typeof key === 'number'
+        ? all.find(p => p.pid === key)
+        : all.find(p => p.name.toLowerCase() === String(key).toLowerCase()
+            || p.name.toLowerCase() === `${String(key).toLowerCase()}.exe`);
+      if (found) stopped.push(found);
+    };
 
     // Pipeline input: array of process objects (Get-Process | Stop-Process)
     if (ctx.pipeInput !== null && ctx.pipeInput !== undefined && id === undefined && name === undefined) {
@@ -135,40 +164,54 @@ export class StopProcessCmdlet implements ICmdlet {
       for (const item of items) {
         const pid = (item as Record<string, PSValue>)?.['Id'] ?? (item as Record<string, PSValue>)?.['id'];
         if (pid !== undefined) {
+          remember(Number(pid));
           const msg = procs.killProcess(Number(pid), force);
           if (msg) emitMsg(ctx, msg);
         }
       }
-      return null;
+      return passThru ? asPSObjects(stopped) : null;
     }
 
     if (id !== undefined && id !== null) {
       const ids = Array.isArray(id) ? id : [id];
       for (const v of ids) {
+        remember(Number(v));
         const msg = procs.killProcess(Number(v), force);
         if (msg) emitMsg(ctx, msg);
       }
-      return null;
+      return passThru ? asPSObjects(stopped) : null;
     }
     if (name !== undefined && name !== null) {
       const names = Array.isArray(name) ? name : [name];
       for (const n of names) {
-        const msg = procs.killProcess(psValueToString(n), force);
+        const wanted = psValueToString(n);
+        const known = procs.listProcesses().some(p =>
+          p.name.toLowerCase() === wanted.toLowerCase()
+          || p.name.toLowerCase() === `${wanted.toLowerCase()}.exe`);
+        if (!known) {
+          ctx.emitError(`Stop-Process : Cannot find a process with the name "${wanted}". `
+            + `Verify the process name and call the cmdlet again.`);
+          continue;
+        }
+        remember(wanted);
+        const msg = procs.killProcess(wanted, force);
         if (msg) emitMsg(ctx, msg);
       }
-      return null;
+      return passThru ? asPSObjects(stopped) : null;
     }
 
     // Positional: number → id, otherwise → name
     const arg = ctx.positional[0];
     if (arg !== undefined && arg !== null) {
       const asNum = Number(arg);
-      const msg = Number.isFinite(asNum) && String(asNum) === String(arg)
+      const byId = Number.isFinite(asNum) && String(asNum) === String(arg);
+      remember(byId ? asNum : psValueToString(arg));
+      const msg = byId
         ? procs.killProcess(asNum, force)
         : procs.killProcess(psValueToString(arg), force);
       if (msg) emitMsg(ctx, msg);
     }
-    return null;
+    return passThru ? asPSObjects(stopped) : null;
   }
 }
 
@@ -177,9 +220,11 @@ export class StopProcessCmdlet implements ICmdlet {
 function emitMsg(ctx: CmdletContext, msg: string): void {
   if (/^ERROR:\s*/i.test(msg)) {
     ctx.emitError(msg.replace(/^ERROR:\s*/i, ''));
-  } else {
-    ctx.emit(msg);
+    return;
   }
+  const isTaskkillSuccessAnnouncement = /^SUCCESS:/i.test(msg);
+  if (isTaskkillSuccessAnnouncement) return;
+  ctx.emit(msg);
 }
 
 // ── Start-Process / saps ──────────────────────────────────────────────────

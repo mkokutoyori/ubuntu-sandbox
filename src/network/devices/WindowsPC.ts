@@ -185,6 +185,7 @@ import { SessionSwapWindow } from './host/session/SessionSwapWindow';
 import * as WinSys from './windows/WinSystemCommands';
 import { cmdReg as winCmdReg } from './windows/WinRegCommand';
 import { cmdDir } from './windows/WinDir';
+import { applyFindstr } from './windows/textFilters';
 import { CrossVendorRemoteShell } from '@/shell/CrossVendorRemoteShell';
 import type { NetIPAddressEntry } from './windows/netIpAddress';
 import type { NetRouteEntry } from './windows/netRoute';
@@ -205,38 +206,6 @@ import {
  * separated by spaces are split into individual `OR` patterns to mirror real
  * `findstr` behaviour (use `/C:"..."` to force a single literal substring).
  */
-function parseFindstrFilter(filter: string): { patterns: string[]; ignoreCase: boolean; invert: boolean; count: boolean } {
-  const tokens = filter.split(/\s+/).slice(1);
-  let ignoreCase = false;
-  let invert = false;
-  let count = false;
-  let cLiteral: string | null = null;
-  const positional: string[] = [];
-
-  for (let i = 0; i < tokens.length; i++) {
-    const t = tokens[i];
-    if (t.toLowerCase() === '/i') { ignoreCase = true; continue; }
-    if (t.toLowerCase() === '/v') { invert = true; continue; }
-    if (t.toLowerCase() === '/c')  { count = true; continue; }
-    if (/^\/c:/i.test(t)) {
-      cLiteral = t.slice(3).replace(/^"|"$/g, '');
-      continue;
-    }
-    if (t.startsWith('"')) {
-      let str = t.slice(1);
-      while (i < tokens.length - 1 && !str.endsWith('"')) { i++; str += ' ' + tokens[i]; }
-      if (str.endsWith('"')) str = str.slice(0, -1);
-      positional.push(str);
-      continue;
-    }
-    positional.push(t);
-  }
-
-  if (cLiteral !== null) return { patterns: [cLiteral], ignoreCase, invert, count };
-  // Bareword multi-token form: each token is a separate literal (OR semantics).
-  return { patterns: positional, ignoreCase, invert, count };
-}
-
 /** Le pas du planificateur de tâches — la minute, comme sous Windows. */
 const TASK_TICK_MS = 60_000;
 
@@ -3051,14 +3020,7 @@ export class WindowsPC extends EndHost implements UserAccountHost {
       const filterCmd = filterParts[0].toLowerCase();
 
       if (filterCmd === 'findstr') {
-        const { patterns, ignoreCase, invert, count } = parseFindstrFilter(filter);
-        const lines = output.split('\n');
-        const matches = (line: string): boolean => {
-          const haystack = ignoreCase ? line.toLowerCase() : line;
-          return patterns.some(p => haystack.includes(ignoreCase ? p.toLowerCase() : p));
-        };
-        const filtered = lines.filter(l => invert ? !matches(l) : matches(l));
-        output = count ? String(filtered.length) : filtered.join('\n');
+        output = applyFindstr(output, filter);
       } else if (filterCmd === 'grep') {
         const pattern = filterParts[filterParts.length - 1];
         const lines = output.split('\n');
@@ -3869,7 +3831,8 @@ export class WindowsPC extends EndHost implements UserAccountHost {
       tcpOutcome: (ip, port) => (ip.includes(':')
         ? this.tcpConnectOutcome6(new IPv6Address(ip), port)
         : this.tcpConnectOutcome(new IPAddress(ip), port)),
-      grabGreeting: (ip, port) => this.getTcpStack().grabGreeting(ip, port),
+      probeService: (ip, port, payload) =>
+        this.getTcpStack().probeService(ip, port, payload),
       sendUdpProbe: (ip, port, sourcePort, options) => {
         const { payload, ...emission } = options ?? {};
         return this.sendUdpDatagram(
@@ -3994,6 +3957,7 @@ export class WindowsPC extends EndHost implements UserAccountHost {
         },
         () => this.getBus(),
         this.getPorts()[0]?.getMAC().toString() ?? '00:00:00:00:00:00',
+        () => this.getScheduler(),
       );
       this.lacpAgentInstance.start();
     }
@@ -5210,7 +5174,7 @@ export class WindowsPC extends EndHost implements UserAccountHost {
   private _ntpAgent: NtpAgent | null = null;
   getNtpAgent(): NtpAgent {
     if (!this._ntpAgent) {
-      this._ntpAgent = new NtpAgent(this as unknown as NtpHost, () => this.getBus());
+      this._ntpAgent = new NtpAgent(this as unknown as NtpHost, () => this.getBus(), () => this.getScheduler());
     }
     return this._ntpAgent;
   }

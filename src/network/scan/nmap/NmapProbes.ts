@@ -12,6 +12,7 @@ import {
   grabUdpListener, grabUdpBanner,
 } from '@/network/devices/linux/commands/net/ServiceBannerGrab';
 import { detectServiceFromBanner } from './BannerAnalyzer';
+import { NULL_PROBE, matchProbeResponse, probesForPort } from './ServiceProbes';
 import { serviceFromProcess } from './ProcessServiceMap';
 import type { HostProbes, HostState, ResolvedTarget } from './ScanEngine';
 
@@ -28,7 +29,7 @@ export interface ScanHost {
     success: boolean; rttMs?: number; ttl?: number;
   }>>;
   tcpOutcome(ip: string, port: number): TcpWireOutcome;
-  grabGreeting(ip: string, port: number): string | null;
+  probeService(ip: string, port: number, payload: string): string | null;
   sendUdpProbe(
     ip: string, port: number, sourcePort: number,
     options?: {
@@ -322,10 +323,18 @@ export function buildScanProbes(
     udpState(ip: string, port: number, shape?: ScanProbeShape) {
       return probeUdpPort(host, ip, port, shape);
     },
-    banner(ip: string, port: number) {
-      const greeting = host.grabGreeting(ip, port);
+    banner(ip: string, port: number, intensity: number) {
+      const greeting = host.probeService(ip, port, NULL_PROBE.payload);
       if (greeting) {
-        const detected = detectServiceFromBanner(greeting);
+        const detected = detectServiceFromBanner(greeting)
+          ?? matchProbeResponse(greeting);
+        if (detected) return detected;
+      }
+      for (const probe of probesForPort(port, intensity)) {
+        const response = host.probeService(ip, port, probe.payload);
+        if (!response) continue;
+        const detected = matchProbeResponse(response)
+          ?? detectServiceFromBanner(response);
         if (detected) return detected;
       }
       // A UDP service never opens a TCP connection, so its identity still

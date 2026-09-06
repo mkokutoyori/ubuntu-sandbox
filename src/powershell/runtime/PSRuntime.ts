@@ -32,7 +32,7 @@ import { NULL_PROVIDERS } from '@/powershell/providers/NullProviders';
 import { PSRuntimeError } from './PSRuntimeError';
 import { commandNotFoundMessage } from '@/powershell/commandNotFound';
 import { NativeCommandNeedsAsync, nativeArgv, isNativeProgramName } from '@/powershell/nativeAsync';
-import { formatDefault, type PSObject } from '@/network/devices/windows/PSPipeline';
+import { formatDefault, hasDefaultColumns, type PSObject } from '@/network/devices/windows/PSPipeline';
 import type { PSProviders } from '@/powershell/providers/PSProviders';
 import type { CmdletContext, IRuntimeRef } from '@/powershell/cmdlets/CmdletContext';
 import type {
@@ -66,6 +66,19 @@ export class BreakSignal    { constructor(public readonly label?: string) {} }
 export class ContinueSignal { constructor(public readonly label?: string) {} }
 
 export { PSRuntimeError } from './PSRuntimeError';
+
+function pipelineTarget(pipeInput: PSValue): string | null {
+  const first = Array.isArray(pipeInput) ? pipeInput[0] : pipeInput;
+  if (first === null || first === undefined) return null;
+  if (typeof first === 'string') return first;
+  if (typeof first === 'object') {
+    const record = first as Record<string, PSValue>;
+    for (const key of ['Name', 'DisplayName', 'FullName', 'ProcessName', 'DriveLetter', 'Number']) {
+      if (record[key] !== undefined) return psValueToString(record[key]);
+    }
+  }
+  return null;
+}
 
 // ─── Static type map ([math], [system.math]) ─────────────────────────────────
 
@@ -326,6 +339,10 @@ export class PSRuntime {
    * `Key=Value; ...` hashtable form psValueToString produces.
    */
   private renderValue(result: PSValue): void {
+    if (result instanceof Date) {
+      this.outputLines.push(formatDotNetDate(result, 'dddd, MMMM d, yyyy h:mm:ss tt'));
+      return;
+    }
     if (Array.isArray(result)) {
       // Array of plain objects (all elements are non-null records with at
       // least one string-keyed field) → table format.
@@ -348,7 +365,8 @@ export class PSRuntime {
         && !this.isScriptBlock(result)
         && Object.keys(result as Record<string, unknown>).length > 0
         && !this.hasInternalSentinel(result as Record<string, unknown>)
-        && this.allScalarValues(result as Record<string, unknown>)) {
+        && (this.allScalarValues(result as Record<string, unknown>)
+            || hasDefaultColumns(result as unknown as PSObject))) {
       const formatted = formatDefault([result as unknown as PSObject]);
       if (formatted) { this.outputLines.push(formatted); return; }
     }
@@ -406,7 +424,7 @@ export class PSRuntime {
   }
 
   /** User-defined functions survive between execute() calls. */
-  private readonly functions = new Map<string, { block: PSScriptBlock; isFilter: boolean }>();
+  private readonly functions = new Map<string, { block: PSScriptBlock; isFilter: boolean; declaredName: string }>();
   private readonly functionSources = new Map<string, string>();
 
   /** User-defined PowerShell classes. */
@@ -1106,14 +1124,16 @@ export class PSRuntime {
     parentEnv: PSEnvironment,
     pipelineInput?: PSValue,
   ): PSValue {
+    const captured: PSValue[] = [];
     try {
-      const value = this.invokeScriptBlock(block, namedArgs, positionalArgs, parentEnv, pipelineInput);
+      const value = this.invokeScriptBlock(
+        block, namedArgs, positionalArgs, parentEnv, pipelineInput, captured);
       this.global.set('LASTEXITCODE', 0);
       return value;
     } catch (e) {
       if (e instanceof ExitSignal) {
         this.global.set('LASTEXITCODE', e.code);
-        return null;
+        return this.aggregateCaptured(captured);
       }
       throw e;
     }
@@ -1125,6 +1145,7 @@ export class PSRuntime {
     positionalArgs: PSValue[],
     parentEnv: PSEnvironment,
     pipelineInput?: PSValue,
+    captured: PSValue[] = [],
   ): PSValue {
     // If the ScriptBlock was created via GetNewClosure(), inject the captured
     // variables into a new scope that sits between parentEnv and childEnv.
@@ -1170,7 +1191,7 @@ export class PSRuntime {
       if (block.beginBlock)   this.execStatementList(block.beginBlock,   childEnv);
       if (block.processBlock) this.execStatementList(block.processBlock, childEnv);
       if (block.endBlock)     this.execStatementList(block.endBlock,     childEnv);
-      if (block.body) return this.aggregateCaptured(this.runBlockCapture(block.body, childEnv));
+      if (block.body) return this.aggregateCaptured(this.runBlockCapture(block.body, childEnv, captured));
       return null;
     } catch (e) {
       if (e instanceof ReturnSignal) return e.value;
@@ -1293,7 +1314,10 @@ export class PSRuntime {
     if (!fs) return undefined;
     const lower = name.toLowerCase();
     if (lower !== 'pwd' && lower !== 'executioncontext') return undefined;
-    const cwd = fs.getCwd();
+    const foreign = this.global.get('__psLocation__');
+    const cwd = foreign !== undefined && foreign !== null && psValueToString(foreign) !== ''
+      ? psValueToString(foreign)
+      : fs.getCwd();
     const location = { Path: cwd, ProviderPath: cwd, Provider: 'FileSystem' } as Record<string, PSValue>;
     if (lower === 'pwd') return location;
     return { SessionState: { Path: { CurrentLocation: location } } } as unknown as PSValue;
@@ -1846,7 +1870,7 @@ export class PSRuntime {
 
   private execFunctionDef(node: PSFunctionDefinition, env: PSEnvironment): PSValue {
     const isFilter = node.kind === 'filter';
-    this.functions.set(node.name.toLowerCase(), { block: node.body, isFilter });
+    this.functions.set(node.name.toLowerCase(), { block: node.body, isFilter, declaredName: node.name });
     env.set(node.name, node.name as PSValue);
     return null;
   }
@@ -1945,8 +1969,12 @@ export class PSRuntime {
 
     let pipeInput: PSValue = undefined;
     let result:    PSValue = null;
-    for (const cmd of node.commands) {
-      result    = this.execCommand(cmd, env, pipeInput);
+    for (let i = 0; i < node.commands.length; i++) {
+      const printedByThisStage = this.outputLines.length;
+      result = this.execCommand(node.commands[i], env, pipeInput);
+      const isLast = i === node.commands.length - 1;
+      const valueIsConsumed = !isLast && result !== null && result !== undefined;
+      if (valueIsConsumed) this.outputLines.splice(printedByThisStage);
       pipeInput = result;
     }
     return result;
@@ -2099,7 +2127,17 @@ export class PSRuntime {
               else env.set(pname, null);
             }
           }
-          return this.aggregateCaptured(this.runBlockCapture(ast.body, env));
+          {
+            const captured: PSValue[] = [];
+            try {
+              this.runBlockCapture(ast.body, env, captured);
+              this.global.set('LASTEXITCODE', 0);
+            } catch (e) {
+              if (!(e instanceof ExitSignal)) throw e;
+              this.global.set('LASTEXITCODE', e.code);
+            }
+            return this.aggregateCaptured(captured);
+          }
         }
         // No registered script — silently return null (file not found in simulator)
         return null;
@@ -2170,9 +2208,38 @@ export class PSRuntime {
    * Unlike execStatementList (which returns last result), this collects output
    * from every non-assignment statement, mirroring what execute() does at top level.
    */
-  private runBlockCapture(node: PSStatementList, env: PSEnvironment): PSValue[] {
-    const captured: PSValue[] = [];
+  private runBlockCapture(
+    node: PSStatementList, env: PSEnvironment, captured: PSValue[] = [],
+  ): PSValue[] {
     const before = this.outputLines.length;
+    const printed: string[] = [];
+    try {
+      this.captureStatements(node, env, captured, printed);
+    } catch (e) {
+      if (e instanceof ReturnSignal) {
+        if (printed.length > 0) this.outputLines.splice(before, 0, ...printed);
+        throw e;
+      }
+      this.promoteOutputLinesEvenWhenUnwinding(before, captured, printed);
+      throw e;
+    }
+    this.promoteOutputLinesEvenWhenUnwinding(before, captured, printed);
+    return captured;
+  }
+
+  private promoteOutputLinesEvenWhenUnwinding(
+    from: number, captured: PSValue[], printed: string[],
+  ): void {
+    for (let i = from; i < this.outputLines.length; i++) {
+      captured.push(this.outputLines[i]);
+      printed.push(this.outputLines[i]);
+    }
+    this.outputLines.splice(from);
+  }
+
+  private captureStatements(
+    node: PSStatementList, env: PSEnvironment, captured: PSValue[], printed: string[],
+  ): void {
     for (const stmt of node.statements) {
       const linesBefore = this.outputLines.length;
       const result = this.execStatement(stmt, env);
@@ -2189,14 +2256,8 @@ export class PSRuntime {
         if (Array.isArray(result)) captured.push(...result);
         else captured.push(result);
       }
-      // Values emitted via outputLines (from cmdlets) → promote to PSValue
-      for (let i = linesBefore; i < this.outputLines.length; i++) {
-        captured.push(this.outputLines[i]);
-      }
+      this.promoteOutputLinesEvenWhenUnwinding(linesBefore, captured, printed);
     }
-    // Remove the lines we captured (they'll be re-emitted via the return value)
-    this.outputLines.splice(before);
-    return captured;
   }
 
   /**
@@ -2497,6 +2558,16 @@ export class PSRuntime {
       throw new NativeCommandNeedsAsync(name, nativeArgv(positional, cmdletNamed));
     }
 
+    if (named['whatif'] === true && cmdlet.supportsShouldProcess === true) {
+      const label = cmdlet.displayName ?? this.titleCase(cmdlet.name);
+      const target = cmdlet.whatIfTarget !== undefined
+        ? cmdlet.whatIfTarget(this.buildCmdletContext(
+            positional, cmdletNamed, pipeInput, env, [], silentlyCont, stopOnError, label))
+        : psValueToString(cmdletNamed['name'] ?? positional[0] ?? pipelineTarget(pipeInput) ?? '');
+      this.outputLines.push(`What if: Performing the operation "${label}" on target "${target}".`);
+      return null;
+    }
+
     if (cmdletNamed['?'] === true) {
       return this.dispatchCmdlet(
         'get-help', [cmdlet.displayName ?? this.titleCase(cmdlet.name)], {}, null, env);
@@ -2572,7 +2643,7 @@ export class PSRuntime {
       execute:            (code) => self.execute(code),
       executeInteractive: (code) => self.executeInteractive(code),
       executeForValue:    (code) => self.executeForValue(code),
-      getVariable:        (name) => self.global.get(name),
+      getVariable:        (name) => self.getVariable(name),
       setVariable:        (name, val) => self.global.set(name, val),
       invokeScriptBlock:  (block, namedV, posV, env2, $under) =>
         self.invokeScriptBlock(block, namedV, posV, env2, $under),
@@ -2591,6 +2662,7 @@ export class PSRuntime {
         })),
       listEnvVars: () => self.providers.environment?.list() ?? [],
       getFunctionSource: (name) => self.functionSources.get(name.toLowerCase()) ?? null,
+      listFunctions: () => [...self.functions.values()].map(f => f.declaredName),
       listHistory: () => self.listHistory(),
     };
 

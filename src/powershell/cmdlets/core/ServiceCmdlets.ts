@@ -19,7 +19,7 @@ import type { PSScriptBlock } from '@/powershell/parser/PSASTNode';
 import type { ServiceInfo, IServiceProvider } from '@/powershell/providers/PSProviders';
 import { psValueToString } from '@/powershell/runtime/PSExpansion';
 import { commandNotFoundMessage } from '@/powershell/commandNotFound';
-import { wildcardToRegex } from '@/powershell/runtime/PSWildcard';
+import { wildcardToRegex, wildcardMatches, hasWildcard } from '@/powershell/runtime/PSWildcard';
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 
@@ -38,6 +38,14 @@ function normalizeStartupType(raw: string): string {
   if (k === 'boot')                   return 'Boot';
   if (k === 'system')                 return 'System';
   return raw;
+}
+
+export function namesThisMachine(ctx: CmdletContext, value: PSValue): boolean {
+  const asked = psValueToString(value).toLowerCase();
+  if (asked === '' || asked === '.' || asked === 'localhost' || asked === '127.0.0.1') return true;
+  const hostname = (ctx.providers.network?.getHostname?.() ?? '').toLowerCase();
+  if (hostname === '') return false;
+  return asked === hostname || asked.split('.')[0] === hostname;
 }
 
 function requireServices(ctx: CmdletContext): IServiceProvider {
@@ -116,9 +124,15 @@ function asPSObjects(list: ServiceInfo[]): PSValue {
 export class GetServiceCmdlet implements ICmdlet {
   readonly name = 'get-service';
   readonly aliases = ['gsv'] as const;
-  readonly parameters = ['Name', 'DisplayName', 'Include', 'Exclude', 'InputObject', 'DependentServices', 'RequiredServices'] as const;
+  readonly parameters = ['Name', 'DisplayName', 'Include', 'Exclude', 'InputObject', 'DependentServices', 'RequiredServices', 'ComputerName'] as const;
 
   execute(ctx: CmdletContext): PSValue {
+    const remote = ctx.named['computername'];
+    if (remote !== undefined && !namesThisMachine(ctx, remote)) {
+      ctx.emitError(`Get-Service : Cannot open Service Control Manager on computer `
+        + `'${psValueToString(remote)}'. There is no remote service control channel in this simulator.`);
+      return null;
+    }
     const svc = requireServices(ctx);
     // -DisplayName filter (wildcard-capable). Applied before -Name so the
     // two parameters compose cleanly when both are present.
@@ -126,17 +140,17 @@ export class GetServiceCmdlet implements ICmdlet {
       ? psValueToString(ctx.named['displayname']) : null;
     if (displayPattern !== null) {
       const pat = wildcardToRegex(displayPattern);
-      return asPSObjects(svc.listServices().filter(s => pat.test(s.displayName)));
+      return asPSObjects(this.sift(ctx, svc.listServices().filter(s => pat.test(s.displayName))));
     }
     const name = pickServiceName(ctx);
-    if (name === null) return asPSObjects(svc.listServices());
+    if (name === null) return asPSObjects(this.sift(ctx, svc.listServices()));
 
     const names = Array.isArray(name) ? name : [name];
     const out: ServiceInfo[] = [];
     for (const n of names) {
       // Wildcard support — `Get-Service "spo*"` filters by name + display.
-      if (/[*?]/.test(n)) {
-        const pat = new RegExp('^' + n.replace(/\./g, '\\.').replace(/\*/g, '.*').replace(/\?/g, '.') + '$', 'i');
+      if (hasWildcard(n)) {
+        const pat = wildcardToRegex(n);
         let matched = 0;
         for (const s of svc.listServices()) {
           if (pat.test(s.name) || pat.test(s.displayName)) { out.push(s); matched++; }
@@ -150,7 +164,24 @@ export class GetServiceCmdlet implements ICmdlet {
       if (found) out.push(found);
       else ctx.emitError(`Cannot find any service with service name '${n}'.`);
     }
-    return asPSObjects(out);
+    return asPSObjects(this.sift(ctx, out));
+  }
+
+  private sift(ctx: CmdletContext, services: ServiceInfo[]): ServiceInfo[] {
+    const patterns = (value: PSValue): string[] =>
+      value === undefined || value === null
+        ? []
+        : (Array.isArray(value) ? value : [value]).map(psValueToString).filter(p => p !== '');
+    const include = patterns(ctx.named['include']);
+    const exclude = patterns(ctx.named['exclude']);
+    let kept = services;
+    if (include.length > 0) {
+      kept = kept.filter(s => include.some(p => wildcardMatches(p, s.name) || wildcardMatches(p, s.displayName)));
+    }
+    if (exclude.length > 0) {
+      kept = kept.filter(s => !exclude.some(p => wildcardMatches(p, s.name) || wildcardMatches(p, s.displayName)));
+    }
+    return kept;
   }
 }
 
@@ -181,18 +212,21 @@ abstract class ServiceActionCmdlet implements ICmdlet {
 
 export class StartServiceCmdlet extends ServiceActionCmdlet {
   readonly name = 'start-service';
+  readonly supportsShouldProcess = true as const;
   readonly aliases = ['sasv'] as const;
   protected act(svc: IServiceProvider, name: string) { return svc.startService(name); }
 }
 
 export class StopServiceCmdlet extends ServiceActionCmdlet {
   readonly name = 'stop-service';
+  readonly supportsShouldProcess = true as const;
   readonly aliases = ['spsv'] as const;
   protected act(svc: IServiceProvider, name: string, force: boolean) { return svc.stopService(name, force); }
 }
 
 export class RestartServiceCmdlet extends ServiceActionCmdlet {
   readonly name = 'restart-service';
+  readonly supportsShouldProcess = true as const;
   readonly aliases = [] as const;
   protected act(svc: IServiceProvider, name: string, force: boolean) { return svc.restartService(name, force); }
 }
@@ -213,6 +247,7 @@ export class ResumeServiceCmdlet extends ServiceActionCmdlet {
 
 export class SetServiceCmdlet implements ICmdlet {
   readonly name = 'set-service';
+  readonly supportsShouldProcess = true as const;
   readonly aliases = [] as const;
   readonly parameters = ['Name', 'DisplayName', 'Description', 'StartupType', 'Status', 'Credential', 'PassThru'] as const;
 

@@ -173,6 +173,9 @@ export interface LinuxNetKernel {
    */
   grabServiceBanner(target: string, port: number): string | null;
 
+  /** Une sonde de version : la charge est ecrite, puis ce qui revient est lu. */
+  probeService(target: string, port: number, payload: string): string | null;
+
   /** Le service systemd-resolved de l'hôte (stub, cache, config par lien). */
   getResolvedService(): import('./net/ResolvedService').ResolvedService;
   /** Réécrit `/run/systemd/resolve/` après un changement de configuration. */

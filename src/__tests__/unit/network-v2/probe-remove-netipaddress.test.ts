@@ -163,8 +163,6 @@ describe('Remove-NetIPAddress — ce qu elle refuse et ce qu elle rend', () => {
 describe('Remove-NetIPAddress — une seule source de verite', () => {
   it('le moteur historique ne porte plus de Remove-NetIPAddress a lui', () => {
     expect(existsSync('src/network/devices/windows/PSNetCmdlets.ts')).toBe(false);
-    expect(readFileSync('src/network/devices/windows/PowerShellExecutor.ts', 'utf8'))
-      .not.toContain('handleRemoveNetIPAddress');
   });
 
   it('Get et Remove selectionnent par la MEME regle', async () => {

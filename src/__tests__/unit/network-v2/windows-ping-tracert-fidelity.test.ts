@@ -21,7 +21,6 @@ import { IPAddress, SubnetMask, MACAddress, resetCounters } from '@/network/core
 import { resetDeviceCounters } from '@/network/devices/DeviceFactory';
 import { Logger } from '@/network/core/Logger';
 import { PowerShellSubShell } from '@/terminal/subshells/PowerShellSubShell';
-import { PowerShellExecutor, type PSDeviceContext } from '@/network/devices/windows/PowerShellExecutor';
 
 beforeEach(() => {
   resetCounters();

@@ -152,7 +152,9 @@ export class EquipmentRegistry {
   /** Clear all registrations */
   clear(): void {
     if (this.devices.size === 0) return;
+    const released = [...this.devices.values()];
     this.devices.clear();
+    for (const device of released) device.dispose();
     this.getBus().publish({
       topic: 'registry.cleared',
       payload: {},

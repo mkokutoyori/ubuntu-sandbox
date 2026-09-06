@@ -170,6 +170,18 @@ function buildHKCU(): RegistryKey {
 /**
  * Returns true if the path starts with a known registry hive prefix.
  */
+const HIVE_FULL_NAME: Record<string, string> = {
+  HKLM: 'HKEY_LOCAL_MACHINE',
+  HKCU: 'HKEY_CURRENT_USER',
+};
+
+export function registryProviderPath(path: string): string {
+  const parsed = parseRegistryPath(path);
+  if (parsed === null) return path;
+  const full = HIVE_FULL_NAME[parsed.hive] ?? parsed.hive;
+  return [full, ...parsed.segments].join('\\');
+}
+
 export function isRegistryPath(path: string): boolean {
   const p = path.toUpperCase();
   return p.startsWith('HKLM:') || p.startsWith('HKCU:') ||

@@ -2653,17 +2653,39 @@ class WindowsEnvironmentAdapter implements IEnvironmentProvider {
 class WindowsDiskAdapter implements IDiskProvider {
   constructor(private readonly pc: WindowsPC) {}
   listDisks(): DiskInfo[] {
-    return [
-      { number: 0, friendlyName: 'Virtual HD',     size: 100 * 1024 ** 3, partitionStyle: 'GPT', operationalStatus: 'Online' },
-      { number: 1, friendlyName: 'Data Disk',      size:  50 * 1024 ** 3, partitionStyle: 'GPT', operationalStatus: 'Online' },
-    ];
+    const fs = this.pc.getFileSystem();
+    return fs.listDrives().map((drive, index) => {
+      const letter = drive.charAt(0).toUpperCase();
+      const boot = letter === 'C';
+      return {
+        number: index,
+        friendlyName: boot ? 'Microsoft Virtual Disk' : `Virtual HD ${letter}:`,
+        size: fs.getDriveCapacity(letter),
+        partitionStyle: 'MBR',
+        operationalStatus: 'Online',
+        uniqueId: `{00000000-0000-0000-0000-${String(index + 1).padStart(12, '0')}}`,
+        serialNumber: fs.getVolumeSerialNumber(letter).replace('-', ''),
+        isBoot: boot,
+        isSystem: boot,
+      };
+    });
   }
   listVolumes(): VolumeInfo[] {
-    void this.pc; // future: hook into device drives if/when modelled
-    return [
-      { driveLetter: 'C', fileSystemLabel: 'System',     fileSystem: 'NTFS', sizeRemaining: 60 * 1024 ** 3, size: 100 * 1024 ** 3, driveType: 'Fixed' },
-      { driveLetter: 'D', fileSystemLabel: 'Data',        fileSystem: 'NTFS', sizeRemaining: 30 * 1024 ** 3, size:  50 * 1024 ** 3, driveType: 'Fixed' },
-    ];
+    const fs = this.pc.getFileSystem();
+    const labels: Record<string, string> = { C: 'Windows', D: 'Data' };
+    return fs.listDrives().map(drive => {
+      const letter = drive.charAt(0).toUpperCase();
+      return {
+        driveLetter: letter,
+        fileSystemLabel: labels[letter] ?? 'Local Disk',
+        fileSystem: 'NTFS',
+        sizeRemaining: fs.getFreeDiskSpace(letter),
+        size: fs.getDriveCapacity(letter),
+        driveType: 'Fixed',
+        healthStatus: 'Healthy',
+        operationalStatus: 'OK',
+      };
+    });
   }
 }
 

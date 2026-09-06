@@ -300,6 +300,55 @@ export class VirtualTimeScheduler implements IScheduler {
 let defaultSchedulerInstance: IScheduler | null = null;
 let defaultSchedulerGeneration = 0;
 
+export class OwnedScheduler implements IScheduler {
+  private readonly owned = new Map<TimerHandle, { scheduler: IScheduler; handle: TimerHandle }>();
+  private nextToken = 1;
+
+  constructor(private readonly resolve: () => IScheduler) {}
+
+  now(): number {
+    return this.resolve().now();
+  }
+
+  setTimeout(fn: () => void, delayMs: number): TimerHandle {
+    const scheduler = this.resolve();
+    const token = this.nextToken++;
+    const handle = scheduler.setTimeout(() => {
+      this.owned.delete(token);
+      fn();
+    }, delayMs);
+    this.owned.set(token, { scheduler, handle });
+    return token;
+  }
+
+  setInterval(fn: () => void, periodMs: number): TimerHandle {
+    const scheduler = this.resolve();
+    const token = this.nextToken++;
+    this.owned.set(token, { scheduler, handle: scheduler.setInterval(fn, periodMs) });
+    return token;
+  }
+
+  clear(token: TimerHandle): void {
+    const entry = this.owned.get(token);
+    if (!entry) return;
+    entry.scheduler.clear(entry.handle);
+    this.owned.delete(token);
+  }
+
+  delay(ms: number): Promise<void> {
+    return new Promise((resolve) => this.setTimeout(resolve, ms));
+  }
+
+  clearAll(): void {
+    for (const entry of this.owned.values()) entry.scheduler.clear(entry.handle);
+    this.owned.clear();
+  }
+
+  pendingCount(): number {
+    return this.owned.size;
+  }
+}
+
 export function getDefaultScheduler(): IScheduler {
   if (!defaultSchedulerInstance) {
     defaultSchedulerInstance = new RealTimeScheduler();

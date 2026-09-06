@@ -1388,6 +1388,10 @@ export class LoggingConfig {
     return this.busUnsub;
   }
 
+  detachFromBus(): void {
+    if (this.busUnsub) this.busUnsub();
+  }
+
   /** Apply `logging …` (negate=false) or `no logging …` (negate=true). */
   apply(args: string[], negate: boolean): void {
     this.applyLogging(args, negate);

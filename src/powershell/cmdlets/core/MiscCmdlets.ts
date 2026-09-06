@@ -16,7 +16,9 @@ import {
 } from '@/powershell/executionPolicy';
 import { parseCredentialArg } from './RemotingCmdlets';
 import { makePSCredential } from '@/powershell/credential/PSCredential';
-import { wildcardMatches, wildcardToRegex } from '@/powershell/runtime/PSWildcard';
+import { wildcardMatches, wildcardToRegex, hasWildcard } from '@/powershell/runtime/PSWildcard';
+import { commandNotFoundMessage } from '@/powershell/commandNotFound';
+import { isRegistryPath, registryProviderPath } from '@/network/devices/windows/PSRegistryProvider';
 import { renderCmdletHelp, helpTopicNotFound, HELP_SYSTEM_TOPIC } from '@/powershell/help/renderHelp';
 
 // ─── New-Object ───────────────────────────────────────────────────────────
@@ -379,12 +381,16 @@ export class GetCommandCmdlet implements ICmdlet {
         });
       }
     }
+    for (const fn of ctx.runtime.listFunctions()) {
+      rows.push({ CommandType: 'Function', Name: fn, Version: '', Source: '' });
+    }
 
     // -Name (positional or named): wildcard / exact, matched against the
     // display name. -Verb / -Noun split on the first dash.
     const nameRaw    = ctx.named['name'] ?? ctx.positional[0];
-    const nameFilter = nameRaw !== undefined && nameRaw !== null && nameRaw !== ''
-      ? psValueToString(nameRaw) : null;
+    const nameFilters = nameRaw === undefined || nameRaw === null || nameRaw === ''
+      ? []
+      : (Array.isArray(nameRaw) ? nameRaw : [nameRaw]).map(psValueToString).filter(n => n !== '');
     const verbFilter = ctx.named['verb'] ? psValueToString(ctx.named['verb']) : null;
     const nounFilter = ctx.named['noun'] ? psValueToString(ctx.named['noun']) : null;
 
@@ -393,13 +399,13 @@ export class GetCommandCmdlet implements ICmdlet {
       const dash  = display.indexOf('-');
       const verb  = dash > 0 ? display.slice(0, dash).toLowerCase() : '';
       const noun  = dash > 0 ? display.slice(dash + 1).toLowerCase() : lower;
-      if (nameFilter && !wildcardMatches(nameFilter, lower)) return false;
+      if (nameFilters.length > 0 && !nameFilters.some(n => wildcardMatches(n, lower))) return false;
       if (verbFilter && !wildcardMatches(verbFilter, verb)) return false;
       if (nounFilter && !wildcardMatches(nounFilter, noun)) return false;
       return true;
     };
 
-    const filtered = (nameFilter || verbFilter || nounFilter)
+    const filtered = (nameFilters.length > 0 || verbFilter || nounFilter)
       ? rows.filter(r => nameMatches(r.Name))
       : rows;
 
@@ -420,6 +426,13 @@ export class GetCommandCmdlet implements ICmdlet {
       seen.add(key);
       return true;
     });
+
+    for (const asked of nameFilters) {
+      if (hasWildcard(asked)) continue;
+      if (!unique.some(r => r.Name.toLowerCase() === asked.toLowerCase())) {
+        ctx.emitError(`Get-Command : ${commandNotFoundMessage(asked)}`);
+      }
+    }
 
     return unique as unknown as Record<string, PSValue>[];
   }
@@ -616,78 +629,186 @@ export class WaitJobCmdlet implements ICmdlet {
 
 // ─── Set-Location ─────────────────────────────────────────────────────────
 
+const PROVIDER_DRIVES: Record<string, string[]> = {
+  filesystem: ['C', 'D'],
+  registry: ['HKLM', 'HKCU'],
+  environment: ['Env'],
+  variable: ['Variable'],
+  function: ['Function'],
+};
+
+function driveOf(path: string): string {
+  const qualifier = /^([A-Za-z]+):/.exec(path);
+  return qualifier === null ? 'C' : qualifier[1].toUpperCase();
+}
+
+function providerOfPath(path: string): string {
+  const drive = driveOf(path);
+  for (const [provider, drives] of Object.entries(PROVIDER_DRIVES)) {
+    if (drives.some(d => d.toUpperCase() === drive)) {
+      return provider === 'filesystem' ? 'FileSystem'
+        : provider.charAt(0).toUpperCase() + provider.slice(1);
+    }
+  }
+  return 'FileSystem';
+}
+
+function pathInfoOf(path: string): Record<string, PSValue> {
+  return {
+    Path: path,
+    ProviderPath: isRegistryPath(path) ? registryProviderPath(path) : path,
+    Provider: { Name: providerOfPath(path) } as Record<string, PSValue>,
+    Drive: { Name: driveOf(path) } as Record<string, PSValue>,
+  };
+}
+
+function rememberLocation(ctx: CmdletContext, path: string): void {
+  const seen = (ctx.runtime.getVariable('__locations__') as Record<string, PSValue> | null) ?? {};
+  seen[driveOf(path)] = path;
+  ctx.runtime.setVariable('__locations__', seen);
+}
+
+function rememberedLocation(ctx: CmdletContext, drive: string): string | null {
+  const seen = (ctx.runtime.getVariable('__locations__') as Record<string, PSValue> | null) ?? {};
+  const found = seen[drive.toUpperCase()];
+  return found === undefined ? null : psValueToString(found);
+}
+
+function currentLocation(ctx: CmdletContext): string {
+  const pwd = ctx.runtime.getVariable('PWD') as Record<string, PSValue> | null;
+  if (pwd !== null && pwd !== undefined && pwd['Path'] !== undefined) return psValueToString(pwd['Path']);
+  return ctx.providers.filesystem ? ctx.providers.filesystem.getCwd() : 'C:\\';
+}
+
+function moveTo(ctx: CmdletContext, path: string): boolean {
+  const fs = ctx.providers.filesystem;
+  if (isFileSystemPath(path)) {
+    const letter = /^([A-Za-z]):/.exec(path);
+    if (letter !== null && fs && !fs.exists(`${letter[1].toUpperCase()}:\\`)) {
+      ctx.emitError(`Set-Location : Cannot find drive. A drive with the name `
+        + `'${letter[1].toUpperCase()}' does not exist.`);
+      return false;
+    }
+    if (fs && !fs.exists(path)) {
+      ctx.emitError(`Cannot find path '${path}' because it does not exist.`);
+      return false;
+    }
+    ctx.runtime.setVariable('__psLocation__', '');
+    if (fs) fs.setCwd(path);
+    rememberLocation(ctx, fs ? fs.getCwd() : path);
+    return true;
+  }
+  if (isRegistryPath(path) && ctx.providers.registry && !ctx.providers.registry.testPath(path)) {
+    ctx.emitError(`Cannot find path '${path}' because it does not exist.`);
+    return false;
+  }
+  ctx.runtime.setVariable('__psLocation__', path);
+  rememberLocation(ctx, path);
+  return true;
+}
+
+function locationStack(ctx: CmdletContext, name: string): PSValue[] {
+  const key = `__locationStack__${name === '' ? '' : `:${name.toLowerCase()}`}`;
+  return (ctx.runtime.getVariable(key) as PSValue[] | null) ?? [];
+}
+
+function saveLocationStack(ctx: CmdletContext, name: string, stack: PSValue[]): void {
+  const key = `__locationStack__${name === '' ? '' : `:${name.toLowerCase()}`}`;
+  ctx.runtime.setVariable(key, stack as unknown as PSValue);
+}
+
+function stackNameOf(ctx: CmdletContext): string {
+  return ctx.named['stackname'] !== undefined ? psValueToString(ctx.named['stackname']) : '';
+}
+
 export class SetLocationCmdlet implements ICmdlet {
   readonly name = 'set-location';
+  readonly displayName = 'Set-Location';
   readonly parameters = ['Path', 'LiteralPath', 'PassThru', 'StackName'] as const;
   readonly aliases = ['cd', 'chdir', 'sl'] as const;
 
   execute(ctx: CmdletContext): PSValue {
-    const path = psValueToString(ctx.named['path'] ?? ctx.positional[0] ?? '');
-    const fs = ctx.providers.filesystem;
-    // Se placer dans un répertoire qui n'existe pas est refusé, comme
-    // par PowerShell : le curseur suivait n'importe quel chemin, si bien
-    // que `$PWD` désignait un dossier absent et que tout ce qui suivait
-    // travaillait dans le vide.
-    if (fs && path && isFileSystemPath(path) && !fs.exists(path)) {
-      ctx.emitError(`Cannot find path '${path}' because it does not exist.`);
-      return null;
-    }
-    if (fs && path) fs.setCwd(path);
-    return null;
+    const path = psValueToString(ctx.named['path'] ?? ctx.named['literalpath'] ?? ctx.positional[0] ?? '');
+    if (!path) return null;
+    if (!moveTo(ctx, path)) return null;
+    return ctx.named['passthru'] === true ? pathInfoOf(currentLocation(ctx)) : null;
   }
 }
 
 export class PushLocationCmdlet implements ICmdlet {
   readonly name = 'push-location';
+  readonly displayName = 'Push-Location';
   readonly parameters = ['Path', 'LiteralPath', 'PassThru', 'StackName'] as const;
   readonly aliases = ['pushd'] as const;
 
   execute(ctx: CmdletContext): PSValue {
-    const fs = ctx.providers.filesystem;
-    const stack = (ctx.runtime.getVariable('__locationStack__') as PSValue[] | null) ?? [];
-    stack.push((fs ? fs.getCwd() : 'C:\\') as PSValue);
-    ctx.runtime.setVariable('__locationStack__', stack as unknown as PSValue);
-    const path = psValueToString(ctx.named['path'] ?? ctx.positional[0] ?? '');
-    if (fs && path && isFileSystemPath(path) && !fs.exists(path)) {
-      ctx.emitError(`Cannot find path '${path}' because it does not exist.`);
-      return null;
-    }
-    if (fs && path) fs.setCwd(path);
-    return null;
+    const name = stackNameOf(ctx);
+    const stack = locationStack(ctx, name);
+    stack.push(currentLocation(ctx) as PSValue);
+    saveLocationStack(ctx, name, stack);
+    const path = psValueToString(ctx.named['path'] ?? ctx.named['literalpath'] ?? ctx.positional[0] ?? '');
+    if (path) moveTo(ctx, path);
+    return ctx.named['passthru'] === true ? pathInfoOf(currentLocation(ctx)) : null;
   }
 }
 
 export class PopLocationCmdlet implements ICmdlet {
   readonly name = 'pop-location';
+  readonly displayName = 'Pop-Location';
   readonly parameters = ['PassThru', 'StackName'] as const;
   readonly aliases = ['popd'] as const;
 
   execute(ctx: CmdletContext): PSValue {
-    const fs = ctx.providers.filesystem;
-    const stack = (ctx.runtime.getVariable('__locationStack__') as PSValue[] | null) ?? [];
-    const prev = stack.pop();
-    ctx.runtime.setVariable('__locationStack__', stack as unknown as PSValue);
-    if (prev !== undefined && prev !== null) {
-      const path = psValueToString(prev);
-      if (fs) fs.setCwd(path);
-    }
-    return null;
+    const name = stackNameOf(ctx);
+    const stack = locationStack(ctx, name);
+    const previous = stack.pop();
+    saveLocationStack(ctx, name, stack);
+    if (previous !== undefined && previous !== null) moveTo(ctx, psValueToString(previous));
+    return ctx.named['passthru'] === true ? pathInfoOf(currentLocation(ctx)) : null;
   }
 }
 
 export class GetLocationCmdlet implements ICmdlet {
   readonly name = 'get-location';
+  readonly displayName = 'Get-Location';
   readonly parameters = ['PSProvider', 'PSDrive', 'Stack', 'StackName'] as const;
   readonly aliases = ['pwd', 'gl'] as const;
 
   execute(ctx: CmdletContext): PSValue {
-    const fs = ctx.providers.filesystem;
-    const cwd = fs ? fs.getCwd() : 'C:\\';
-    return { Path: cwd, ProviderPath: cwd, Provider: 'FileSystem' } as Record<string, PSValue>;
+    if (ctx.named['stack'] === true || ctx.named['stackname'] !== undefined) {
+      const stack = locationStack(ctx, stackNameOf(ctx));
+      return stack.map(p => pathInfoOf(psValueToString(p))) as PSValue;
+    }
+
+    const drive = ctx.named['psdrive'] !== undefined ? psValueToString(ctx.named['psdrive']) : null;
+    if (drive !== null) {
+      const known = Object.values(PROVIDER_DRIVES).flat()
+        .find(d => d.toUpperCase() === drive.toUpperCase());
+      if (known === undefined) {
+        ctx.emitError(`Get-Location : Cannot find drive. A drive with the name '${drive}' does not exist.`);
+        return null;
+      }
+      return pathInfoOf(rememberedLocation(ctx, known) ?? `${known}:\\`);
+    }
+
+    const provider = ctx.named['psprovider'] !== undefined ? psValueToString(ctx.named['psprovider']) : null;
+    if (provider !== null) {
+      const drives = PROVIDER_DRIVES[provider.toLowerCase()];
+      if (drives === undefined) {
+        ctx.emitError(`Get-Location : Cannot find the PowerShell provider '${provider}'.`);
+        return null;
+      }
+      for (const candidate of drives) {
+        const seen = rememberedLocation(ctx, candidate);
+        if (seen !== null) return pathInfoOf(seen);
+      }
+      return pathInfoOf(`${drives[0]}:\\`);
+    }
+
+    return pathInfoOf(currentLocation(ctx));
   }
 }
 
-// ─── New-PSDrive ──────────────────────────────────────────────────────────
 
 export class NewPSDriveCmdlet implements ICmdlet {
   readonly name = 'new-psdrive';
@@ -715,23 +836,43 @@ export class GetPSDriveCmdlet implements ICmdlet {
 
   execute(ctx: CmdletContext): PSValue {
     const nameFilter = psValueToString(ctx.named['name'] ?? ctx.positional[0] ?? '').toLowerCase();
-    const drives = (ctx.runtime.getVariable('__drives__') as Record<string, PSValue> | null) ?? {};
-    const shape = (d: PSValue): Record<string, PSValue> => {
-      const rec = d as Record<string, PSValue>;
-      return {
+    const declared = (ctx.runtime.getVariable('__drives__') as Record<string, PSValue> | null) ?? {};
+    const rows: Record<string, PSValue>[] = [];
+
+    // The file-system drives are the volumes the machine actually mounts,
+    // with their real occupancy — not a frozen list beside the file system.
+    for (const volume of ctx.providers.disks?.listVolumes() ?? []) {
+      rows.push({
+        Name:     volume.driveLetter,
+        Used:     driveGigabytes(volume.size - volume.sizeRemaining),
+        Free:     driveGigabytes(volume.sizeRemaining),
+        Provider: 'FileSystem',
+        Root:     `${volume.driveLetter}:\\`,
+      });
+    }
+    const mounted = new Set(rows.map(r => psValueToString(r['Name']).toLowerCase()));
+    for (const [key, value] of Object.entries(declared)) {
+      if (mounted.has(key)) continue;
+      const rec = value as Record<string, PSValue>;
+      rows.push({
         Name:     rec['Name'],
         Used:     rec['Used'] ?? '',
         Free:     rec['Free'] ?? '',
         Provider: rec['Provider'] ?? inferProvider(String(rec['Root'] ?? '')),
         Root:     rec['Root'],
-      } as Record<string, PSValue>;
-    };
-    if (nameFilter) {
-      const drive = drives[nameFilter];
-      return drive ? shape(drive) : null;
+      });
     }
-    return Object.values(drives).map(shape);
+
+    if (nameFilter) {
+      const found = rows.find(r => psValueToString(r['Name']).toLowerCase() === nameFilter);
+      return found ?? null;
+    }
+    return rows;
   }
+}
+
+function driveGigabytes(bytes: number): string {
+  return (bytes / 1_073_741_824).toFixed(2);
 }
 
 function inferProvider(root: string): string {

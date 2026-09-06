@@ -1403,7 +1403,7 @@ export abstract class LinuxMachine extends EndHost
   private _ntpAgent: NtpAgent | null = null;
   getNtpAgent(): NtpAgent {
     if (!this._ntpAgent) {
-      this._ntpAgent = new NtpAgent(this as unknown as NtpHost, () => this.getBus());
+      this._ntpAgent = new NtpAgent(this as unknown as NtpHost, () => this.getBus(), () => this.getScheduler());
     }
     return this._ntpAgent;
   }
@@ -2588,6 +2588,7 @@ export abstract class LinuxMachine extends EndHost
         },
         () => this.getBus(),
         this.getPorts()[0]?.getMAC().toString() ?? '00:00:00:00:00:00',
+        () => this.getScheduler(),
       );
       this.lacpAgentInstance.setDefaultPortPriority(255);
       this.lacpAgentInstance.start();
@@ -3712,6 +3713,8 @@ export abstract class LinuxMachine extends EndHost
       },
       grabServiceBanner: (target: string, port: number): string | null =>
         this.getTcpStack().grabGreeting(target, port),
+      probeService: (target: string, port: number, payload: string): string | null =>
+        this.getTcpStack().probeService(target, port, payload),
       tcpConnectOutcome: (target: string, port: number): TcpWireOutcome => {
         if (target.includes(':')) return this.tcpConnectOutcome6(new IPv6Address(target), port);
         return this.tcpConnectOutcome(new IPAddress(target), port);
