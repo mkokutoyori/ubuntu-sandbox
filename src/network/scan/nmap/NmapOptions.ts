@@ -126,6 +126,8 @@ export interface NmapOptions {
   versionIntensity: number;
   ifList: boolean;
   device?: string;
+  allPorts: boolean;
+  excludedPorts?: ReadonlySet<number>;
   osScan: boolean;
   openOnly: boolean;
   /** `-6` : la cible se resout en IPv6, et le balayage part en IPv6. */
@@ -304,6 +306,8 @@ export function parseNmapArgs(args: string[]): NmapOptions {
   let versionIntensity = DEFAULT_VERSION_INTENSITY;
   let ifList = false;
   let device: string | undefined;
+  let allPorts = false;
+  let excludedPorts: Set<number> | undefined;
   let osScan = false;
   let openOnly = false;
   let ipv6 = false;
@@ -363,6 +367,15 @@ export function parseNmapArgs(args: string[]): NmapOptions {
 
     if (a === '-sV') { versionScan = true; continue; }
     if (a === '--iflist') { ifList = true; continue; }
+    if (a === '--allports') { allPorts = true; continue; }
+    if (a === '--exclude-ports' && args[i + 1] !== undefined) {
+      if (excludedPorts !== undefined) {
+        throw new NmapOptionError(['Only 1 --exclude-ports option allowed,'
+          + ' separate multiple ranges with commas.']);
+      }
+      excludedPorts = new Set(parsePortSpec(args[++i]));
+      continue;
+    }
     if (a === '-e' && args[i + 1] !== undefined) { device = args[++i]; continue; }
     if (a === '--version-intensity' && args[i + 1] !== undefined) {
       versionIntensity = Number(args[++i]);
@@ -579,7 +592,7 @@ export function parseNmapArgs(args: string[]): NmapOptions {
 
   return {
     targets, ports, scanType, scanFlags, pingOnly, skipDiscovery, versionScan,
-    versionIntensity, ifList, device,
+    versionIntensity, ifList, device, allPorts, excludedPorts,
     osScan, openOnly, ipv6, disableArpPing, alwaysResolve, traceroute, packetTrace,
     showReason, noDns, verbose, debugLevel, stylesheet, probeShape, decoys, warnings,
     outputNormal, outputGreppable, outputXml,

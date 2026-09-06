@@ -11,6 +11,7 @@ import {
   chooseTraceProbe, type HostTrace, type TraceCandidate, type TraceHop,
 } from './Traceroute';
 import { addrSetContains, enumerateTargets } from './TargetSpec';
+import { versionScanExcludes } from './ServiceProbes';
 import {
   traceConnectLine, traceFrameLine, type TraceDirection,
 } from './PacketTrace';
@@ -206,8 +207,14 @@ export interface NmapReport {
 
 const COLLAPSE_THRESHOLD = 24;
 
+function versionScanAllowed(options: NmapOptions, port: number): boolean {
+  return options.allPorts || !versionScanExcludes(port);
+}
+
 export function effectivePorts(options: NmapOptions): number[] {
-  return options.ports ?? topPorts(DEFAULT_TOP_COUNT);
+  const chosen = options.ports ?? topPorts(DEFAULT_TOP_COUNT);
+  if (!options.excludedPorts) return chosen;
+  return chosen.filter((p) => !options.excludedPorts!.has(p));
 }
 
 /**
@@ -261,7 +268,7 @@ function tcpResult(
   }
   let service = serviceName(port, 'tcp');
   let version: string | undefined;
-  if (options.versionScan && state === 'open') {
+  if (options.versionScan && state === 'open' && versionScanAllowed(options, port)) {
     const detected = probes.banner(ip, port, options.versionIntensity);
     if (detected) {
       service = detected.service;
@@ -278,7 +285,7 @@ function udpResult(
   const reason = state === 'open' ? 'udp-response' : state === 'closed' ? 'port-unreach' : 'no-response';
   let service = serviceName(port, 'udp');
   let version: string | undefined;
-  if (options.versionScan && state === 'open') {
+  if (options.versionScan && state === 'open' && versionScanAllowed(options, port)) {
     const detected = probes.banner(ip, port, options.versionIntensity);
     if (detected) {
       service = detected.service;

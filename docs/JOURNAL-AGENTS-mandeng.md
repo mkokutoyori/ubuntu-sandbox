@@ -8105,3 +8105,42 @@ TEMOIN sans `-e`, et « aucune sonde n'est emise », qui passait avant
 pour une raison qui ne prouve rien puisque l'option entiere etait
 refusee. Un cas e2e Playwright tape `--iflist`, `-e eth0` et
 `-e zorglub` dans le vrai terminal.
+
+---
+
+## Un port se RETIRE, et `--allports` n'annule pas l'exclusion qu'on croit
+
+**Perimetre revendique** : `src/network/scan/nmap/`
+(`NmapOptions`, `ScanEngine`, `ServiceProbes`),
+`src/network/devices/linux/commands/net/Nmap.ts`.
+
+`--exclude-ports` et `--allports` etaient toutes deux refusees comme non
+implantees, et ce sont DEUX exclusions differentes — les confondre etait
+le defaut a ne pas commettre, et c'est le genre de raccourci qu'une
+lecture rapide du manuel produit.
+
+**`--exclude-ports` retire du BALAYAGE.** `nmap.cc:1709` appelle
+`removepts` APRES toute la selection de ports, donc l'exclusion mord
+quelle que soit la facon dont les ports ont ete choisis — `-p`, `-F`,
+`--top-ports`. `effectivePorts` est le point unique ou ce depot decide
+les ports, donc une seule ligne y suffit. La grammaire est celle de
+`-p`, prefixes `T:`/`U:` compris, que `parsePortSpec` savait deja lire.
+Deux occurrences sont un refus (`nmap.cc:980`).
+
+**`--allports` ne retire rien : il ANNULE, et pas l'exclusion de
+l'operateur.** Ce qu'il court-circuite (`service_scan.cc:1444` et
+`:2809`) est la directive `Exclude` de `nmap-service-probes` — une seule
+ligne, `Exclude T:9100-9107` (ligne 29 du fichier) — c'est-a-dire les
+ports que la table des sondes demande de ne JAMAIS soumettre a la
+detection de version, historiquement les imprimantes qu'une sonde HTTP
+fait imprimer des pages de charabia. Un cas de la sonde epingle que
+`--allports` ne fait revenir aucun port qu'`--exclude-ports` a retire :
+les deux options ne se croisent nulle part.
+
+**Discrimination** : `probe-nmap-ports-exclus.test.ts` (9 cas), 6
+tombent contre l'etat d'avant. Les 3 autres sont nommes dans l'en-tete —
+le TEMOIN, le cas du port 9200 qui garde le lot precedent, et
+« l'exclusion s'applique aussi a un choix par -F », qui passait avant
+pour une raison qui ne prouve rien puisque l'option entiere etait
+refusee et qu'aucun port n'etait donc rendu. Un cas e2e Playwright
+compare le meme balayage avec et sans l'exclusion.
