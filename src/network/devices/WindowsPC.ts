@@ -30,6 +30,7 @@ import {
   windowsInterfaceDescription,
 } from './windows/netAdapter';
 import { NtpAgent, type NtpHost } from '../ntp/NtpAgent';
+import { UDP_PORT_NTP } from '../ntp/types';
 import { W32TimeService } from './windows/W32TimeService';
 import { DnsCache } from '../dns/resolver/DnsCache';
 import { RRType } from '../dns/wire/RRType';
@@ -5180,6 +5181,9 @@ export class WindowsPC extends EndHost implements UserAccountHost {
   getNtpAgent(): NtpAgent {
     if (!this._ntpAgent) {
       this._ntpAgent = new NtpAgent(this as unknown as NtpHost, () => this.getBus(), () => this.getScheduler());
+      this.udpBind(UDP_PORT_NTP, ({ inPort, sourceIP, udp }) => {
+        this._ntpAgent?.handleUdp(inPort, sourceIP as IPAddress, udp);
+      }, 'svchost');
     }
     return this._ntpAgent;
   }

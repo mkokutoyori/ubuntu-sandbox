@@ -50,9 +50,12 @@
  */
 
 import type { NtpAgent } from '../../../ntp/NtpAgent';
+import { UDP_PORT_NTP } from '../../../ntp/types';
 import { parseChronyConf, type ChronyConf, CHRONY_CONF_DEBIAN } from './ChronyConfig';
 import { parseChronyKeys, type ChronyKeysLecture } from './ChronyKeys';
 import { isValidIPv4 } from '../../../core/ip';
+import type { ServiceSocketServer } from '../ports/ServiceSocketServer';
+import type { PortSpec } from '../../../core/ports/PortNumber';
 
 /** Le chemin Debian, celui que le tutoriel fait editer. */
 export const CHRONY_CONF_PATH = '/etc/chrony/chrony.conf';
@@ -64,9 +67,11 @@ export interface ChronyHost {
   readFile(chemin: string): string | null;
   /** L'agent NTP de la machine — le seul moteur. */
   ntp(): NtpAgent;
+  bindNtpPort?(port: number): boolean;
+  releaseNtpPort?(port: number): void;
 }
 
-export class LinuxChronyService {
+export class LinuxChronyService implements ServiceSocketServer {
   private actif = false;
   private conf: ChronyConf = parseChronyConf('');
   private demarreALe = 0;
@@ -77,6 +82,14 @@ export class LinuxChronyService {
 
   /** Ce que le fichier de cles a donne au dernier demarrage/relecture. */
   private cles: ChronyKeysLecture = { cles: [], refusees: [] };
+
+  open(spec: PortSpec): boolean {
+    return this.host.bindNtpPort?.(spec.port) ?? false;
+  }
+
+  close(spec: PortSpec): void {
+    this.host.releaseNtpPort?.(spec.port);
+  }
 
   isRunning(): boolean { return this.actif; }
   getConf(): ChronyConf { return this.conf; }
@@ -114,6 +127,7 @@ export class LinuxChronyService {
       };
     }
     this.conf = parseChronyConf(this.host.readFile(chemin) ?? '');
+    this.host.bindNtpPort?.(UDP_PORT_NTP);
     this.appliquer();
     this.actif = true;
     this.demarreALe = Date.now();
@@ -125,6 +139,7 @@ export class LinuxChronyService {
   stop(): void {
     if (!this.actif) return;
     this.actif = false;
+    this.host.releaseNtpPort?.(UDP_PORT_NTP);
     const agent = this.host.ntp();
     agent.stop();
     // Un demon arrete ne laisse pas ses associations derriere lui : c'est

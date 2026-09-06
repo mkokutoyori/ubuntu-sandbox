@@ -8144,3 +8144,65 @@ le TEMOIN, le cas du port 9200 qui garde le lot precedent, et
 pour une raison qui ne prouve rien puisque l'option entiere etait
 refusee et qu'aucun port n'etait donc rendu. Un cas e2e Playwright
 compare le meme balayage avec et sans l'exclusion.
+
+---
+
+## Le port 123 est TENU par un demon, ou il est ferme
+
+**Perimetre revendique** : `src/network/devices/EndHost.ts`,
+`src/network/devices/{LinuxMachine,WindowsPC}.ts`,
+`src/network/devices/linux/time/LinuxChronyService.ts`,
+`src/network/devices/linux/LinuxServiceManager.ts`.
+
+Trouve en BALAYANT une machine plutot qu'en lisant du code : `nmap -sU`
+rendait `123/udp open|filtered` sur un hote dont `ss -lun` n'annoncait
+rien sur ce port. Trois vues de la meme machine se contredisaient au
+meme instant — `systemctl` disait chrony `running`, `ss` ne montrait
+rien, et le datagramme etait AVALE en silence sur le fil.
+
+**La cause** : `EndHost.deliverUDP` portait un aiguillage code en dur,
+`if (udp.destinationPort === 123)`, qui remettait le datagramme a l'agent
+NTP sans que rien n'ait jamais LIE le port. Aucune consequence n'est
+cosmetique : `ss` et `netstat` niaient un service qui tourne ; le port ne
+repondait pas ICMP port unreachable non plus, donc il n'etait ni ouvert
+ni ferme ; et un `udpBind(123)` par n'importe quoi d'autre etait ACCEPTE
+puis ombre par l'aiguillage — accepte et inerte, exactement le defaut que
+le plan de controle d'un routeur a deja referme avec
+`controlPlaneUdpClaims`. L'en-tete de `ServiceSocketServer` nommait deja
+la regle dans l'autre sens (« un port affiche doit etre joignable ») ;
+ici c'etait un port JOIGNABLE et NON AFFICHE.
+
+**Le correctif emprunte le mecanisme existant** plutot que d'en ecrire
+un : `chrony` entre dans `SERVICE_LISTENERS` avec `123/udp`,
+`LinuxChronyService` realise `ServiceSocketServer`, et l'aiguillage code
+en dur DISPARAIT. Donc `systemctl stop chrony` rend vraiment le port —
+`ss` le perd, la machine repond ICMP port unreachable, et `nmap` le lit
+`closed`.
+
+**Deux choses que la mesure a imposees, et qu'une lecture n'aurait pas
+donnees.** (1) Le demon doit lier son port AVANT de sonder : la
+projection de ports appelle `open()` APRES le demarrage de l'unite, si
+bien que les rafales `iburst` partaient et que leurs reponses arrivaient
+sur un port pas encore lie — seize cas de tutoriel sont tombes la-dessus.
+`start()` lie donc lui-meme, et `open()` est idempotent, ce qui est
+exactement le chemin que `systemd-resolved` emprunte deja. (2) Windows
+n'a pas chrony : l'aiguillage retire, `w32tm` a cesse de fonctionner
+d'un coup. `WindowsPC` lie 123 sous `svchost` a la creation de son agent,
+ce que fait un vrai W32Time.
+
+**Corrige dans un test plutot que dans le code** :
+`tcp-ip-phase4-transit-udp` liait 123 sur l'hote de destination pour
+verifier qu'un ROUTEUR ne mange pas le transit — premisse qui n'etait
+vraie que parce que personne ne tenait le port. Il arrete le demon
+d'abord, ce que ferait un operateur, et verifie desormais que la liaison
+a REUSSI.
+
+**Divergence assumee et ecrite** : un vrai `chronyd` en mode client
+n'occupe pas `0.0.0.0:123` — il emet depuis un port ephemere. Le moteur
+NTP de ce depot est PARTAGE avec les routeurs, ou l'echange est 123 vers
+123, et il emet donc depuis 123 comme `ntpd`. C'est ce que la machine
+FAIT, et c'est cela que `ss` doit decrire.
+
+**Discrimination** : `probe-ntp-port-est-lie.test.ts` (7 cas), 5 tombent
+contre l'etat d'avant. Les 2 autres sont les TEMOINS — un port UDP que
+personne ne tient, qui repondait deja `closed`.
