@@ -29,6 +29,7 @@ import type { NATEngine } from '../../router/NATEngine';
 import type { HuaweiDebugService } from '../../router/diag/HuaweiDebugService';
 
 export interface HuaweiSwitchDevice extends Switch {
+  getSystemClockMs?(): number;
   getStpAgent?(): StpAgent;
   getManagementService?(): import('../../router/management/RouterManagementService').RouterManagementService;
   getLldpAgent?(): LldpAgent;

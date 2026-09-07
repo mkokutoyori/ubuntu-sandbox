@@ -2012,13 +2012,10 @@ export function registerDisplayCommands(
 
   // ── Common VRP display commands (shared with the switch, DRY) ──
   trie.register('display clock', 'Display system clock', () => {
-    const dev = getRouter() as unknown as {
-      getManagementService?: () => import('../../router/management/RouterManagementService').RouterManagementService;
-      getSystemClockMs?: () => number;
-    };
+    const dev = getRouter();
     return commonDisplayClock(
-      new Date(dev.getSystemClockMs?.() ?? Date.now()),
-      dev.getManagementService?.().getClock());
+      new Date(dev.getSystemClockMs()),
+      dev.getManagementService().getClock());
   });
   trie.register('display cpu-usage', 'Display CPU usage', () => commonDisplayCpuUsage());
   trie.register('display memory-usage', 'Display memory usage', () => commonDisplayMemoryUsage());

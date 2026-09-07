@@ -1917,7 +1917,9 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
       return '';
     });
     this.registerScreenSizeCommands(t);
-    registerHuaweiCommonSecurity(t, () => this.r() as unknown as { getManagementService: () => import('../router/management/RouterManagementService').RouterManagementService });
+    registerHuaweiCommonSecurity(t,
+      () => this.r() as unknown as { getManagementService: () => import('../router/management/RouterManagementService').RouterManagementService },
+      undefined, undefined, (epochMs) => this.r()?._setSystemClock(epochMs));
     registerHuaweiCommonSecurityDisplay(t, () => new Map(), undefined,
       () => this.r()?.getSnmpService());
     t.registerGreedy('ssh', 'SSH server configuration', (args) => {

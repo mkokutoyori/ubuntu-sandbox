@@ -1211,7 +1211,8 @@ export class HuaweiSwitchShell implements ISwitchShell {
     registerHuaweiCommonSecurity(this.systemTrie,
       () => commeRouteur(this.swRef),
       () => this.swRef?.getNtpAgent(),
-      () => this.swRef?.getSnmpService());
+      () => this.swRef?.getSnmpService(),
+      (epochMs) => commeRouteur(this.swRef)._setSystemClock(epochMs));
 
     this.systemTrie.register('dhcp enable', 'Enable DHCP', () => {
       this.swRef.getSecurityService().setDhcpEnabled(true);
@@ -2829,9 +2830,8 @@ export class HuaweiSwitchShell implements ISwitchShell {
 
     // ── Common VRP display commands (shared with the router, DRY) ──
     trie.register('display clock', 'Display system clock', () => {
-      const dev = this.swRef as unknown as { getSystemClockMs?: () => number } | undefined;
       return displayClock(
-        new Date(dev?.getSystemClockMs?.() ?? Date.now()),
+        new Date(this.swRef?.getSystemClockMs?.() ?? Date.now()),
         this.swRef?.getManagementService?.().getClock());
     });
     trie.register('display cpu-usage', 'Display CPU usage', () => displayCpuUsage());

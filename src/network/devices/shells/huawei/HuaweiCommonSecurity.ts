@@ -100,6 +100,7 @@ export function registerHuaweiCommonSecurity(
    */
   getNtpAgentDirect?: () => import('../../../ntp/NtpAgent').NtpAgent | undefined,
   getSnmpServiceDirect?: () => SnmpService | undefined,
+  setSystemClock?: (epochMs: number) => void,
 ): void {
   const dispatch = (feature: 'stelnet' | 'telnet' | 'ssh' | 'ntp-service' | 'clock' | 'sflow', args: string[]) => {
     if (!getRouter) return '';
@@ -121,10 +122,7 @@ export function registerHuaweiCommonSecurity(
       case 'clock': {
         const verdict = mgmt.configureClock(args);
         if (typeof verdict === 'string') return HUAWEI_ERRORS.WRONG(args.join(' '), 0);
-        if (verdict !== null) {
-          const dev = getRouter() as unknown as { _setSystemClock?: (ms: number) => void };
-          dev._setSystemClock?.(verdict);
-        }
+        if (verdict !== null) setSystemClock?.(verdict);
         break;
       }
       case 'sflow': mgmt.configureSflow(args); break;
