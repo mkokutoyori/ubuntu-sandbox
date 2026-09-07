@@ -535,6 +535,23 @@ part entiere : la grammaire d'`aaa` a quatre niveaux, une liste nommee
 libre au milieu, et une suite de methodes de longueur variable dont
 `group` consomme le mot suivant.
 
+### [horloge] la convention de BORD de `clock summer-time` n'est pas sourcee
+`core/time/DeviceClock` evalue une regle d'heure d'ete en comparant
+l'heure de DEBUT a l'heure standard locale et l'heure de FIN a l'heure
+d'ete locale — la convention de tzdata et des textes americains et
+europeens.
+**Mesure** : `cisco.com` et `support.huawei.com` sont tous deux
+injoignables depuis cet environnement (proxy de sortie), et aucune source
+secondaire atteignable ne tranche ce point. Ce qui EST etabli, par deux
+rendus concordants de la reference IOS : `recurring` sans parametres
+prend les regles americaines (1er dimanche d'avril 02:00 au dernier
+dimanche d'octobre 02:00) et le decalage par defaut vaut 60 minutes.
+**Report** : l'ecart ne porte que sur l'heure meme de la bascule, deux
+fois l'an. Le fermer demande une reference constructeur atteignable ou
+une transcription capturee sur un vrai equipement ; jusque-la, assumer
+la convention universelle vaut mieux que la deviner autrement, et le
+dire vaut mieux que de l'attribuer a Cisco.
+
 ### [horloge] un Catalyst n'a pas d'horloge : `clock timezone` y est inerte
 `clock timezone CET 1` et `clock summer-time CEST recurring` sont
 ACCEPTES sur un commutateur Cisco, ne paraissent dans aucune
