@@ -95,7 +95,18 @@ function optionsDeServeur(
         : mot === 'timeout' ? 'Wait time in seconds' : 'Number of retries',
     } as ArgumentSpec,
   }));
-  sac.push({ keyword: 'key', description: 'Per-server encryption key', argument: cle });
+  /*
+   * La cle d'un serveur est UN jeton ici, la ou la forme GLOBALE prend
+   * la ligne entiere : `tacacs-server host 1.1.1.1 key SEC port 49` est
+   * une saisie legitime, donc la cle ne peut pas manger ce qui la suit.
+   */
+  sac.push({
+    keyword: 'key', description: 'Per-server encryption key',
+    argument: {
+      name: 'cle', type: 'WORD', literal: 'LINE',
+      description: 'The shared key itself',
+    },
+  });
   return sac;
 }
 

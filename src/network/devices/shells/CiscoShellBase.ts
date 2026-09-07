@@ -76,6 +76,9 @@ import { ipGlobalSpecs, type IpGlobalHost } from './cisco/ipGlobalSpecs';
 import { bgpFilterListSpecs, type FilterListHost } from './cisco/filterListSpecs';
 import { globalHeadSpecs, type GlobalHeadHost } from './cisco/globalHeadSpecs';
 import { aaaServerSpecs, type AaaServerHost } from './cisco/aaaServerSpecs';
+import {
+  usernameSpecs, type UsernameHost, type UsernameSettings,
+} from './cisco/usernameSpecs';
 import { cryptoKeySpecs, type CryptoKeyHost } from './cisco/cryptoKeySpecs';
 import { clearLineSpecs, type ClearRestantsHost } from './cisco/clearRestantsSpecs';
 import {
@@ -5691,6 +5694,19 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
    * sous-mode du commutateur sans lui dire de QUEL serveur il parle, et
    * `address ipv4` y retombait alors dans le vide.
    */
+  protected usernameHost(): UsernameHost {
+    const dev = () => this.d() as unknown as {
+      _upsertCiscoUsername?: (n: string, kv: UsernameSettings) => void;
+      _removeLocalUser?: (n: string) => void;
+    };
+    return {
+      viewExists: (name) => getSecurityConfig(this.d()).parserViews.has(name),
+      minPasswordLength: () => getSecurityConfig(this.d()).passwords.minLength,
+      upsert: (name, settings) => { dev()._upsertCiscoUsername?.(name, settings); },
+      remove: (name) => { dev()._removeLocalUser?.(name); },
+    };
+  }
+
   protected aaaServerHost(): AaaServerHost {
     return {
       security: () => getSecurityConfig(this.d()),
@@ -5710,6 +5726,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       ...bgpFilterListSpecs(() => this.filterListHost()),
       ...globalHeadSpecs(() => this.globalHeadHost()),
       ...aaaServerSpecs(() => this.aaaServerHost()),
+      ...usernameSpecs(() => this.usernameHost()),
       ...vrfDeclarationSpecs(() => this.vrfDeclarationHost()),
       ...cryptoKeySpecs(() => this.cryptoKeyHost()),
       ...clearLineSpecs(() => this.clearRestantsHost(), DERNIERE_LIGNE_ABSOLUE),
@@ -9938,11 +9955,6 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     // `service timestamps` has its own registration above and the trie
     // routes to the more specific one, so the second parser this handler
     // used to carry never ran — it could only ever contradict the first.
-    trie.registerGreedy('no username', 'Remove a local user', (args) => {
-      const dev = this.d() as unknown as { _removeLocalUser?: (n: string) => void };
-      if (args[0] && typeof dev._removeLocalUser === 'function') dev._removeLocalUser(args[0]);
-      return '';
-    });
     // `ip ssh …` : le handler qui vivait ici ecrivait un SECOND magasin
     // (celui du gestionnaire) que rien ne lisait pour ces champs, et il
     // etait de toute facon ombre sur le routeur par l'enregistrement plus
