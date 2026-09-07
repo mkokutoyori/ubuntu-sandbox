@@ -124,6 +124,11 @@ describe('M6 — un `<cr>` annonce se valide vraiment', () => {
       ['configure terminal', 'aaa new-model', 'parser view NOC'], '');
     expect(f, f.join('\n')).toEqual([]);
   }, 240_000);
+
+  it('dans le sous-mode `route-map`', async () => {
+    const f = await crMensongers(['configure terminal', 'route-map RM permit 10'], '');
+    expect(f, f.join('\n')).toEqual([]);
+  }, 240_000);
 });
 
 describe('les cas nommes de l audit', () => {
