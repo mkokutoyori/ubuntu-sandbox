@@ -44,7 +44,9 @@ import { showIpDhcpSpecs, type DhcpViewServer } from '@/cli/commands/show/showIp
 import { showConfigViewSpecs } from '@/cli/commands/show/showSlice';
 import { debugFamily, type DebugPair } from '@/cli/commands/debug/debugFamily';
 import { legacyFamily } from '@/cli/LegacyDeclaration';
-import { loggingFamily, type LoggingEntry } from '@/cli/commands/logging/loggingFamily';
+import {
+  loggingFamily, type LoggingEntry, type LoggingContinuation,
+} from '@/cli/commands/logging/loggingFamily';
 import { sequenceFamily, type SequenceEntry } from '@/cli/commands/SequenceFamily';
 import {
   FACILITY_NAMES, BUFFERED_SIZE_MIN, BUFFERED_SIZE_MAX,
@@ -193,7 +195,7 @@ import {
   PRIVILEGED_EXEC_ONLY, type ExecScope,
 } from './cisco/CiscoExecScope';
 import {
-  registerLoggingConfigCommands, loggingShowViews, severityValues,
+  loggingShowViews, severityValues,
   registerSequenceNumbersCommand,
 } from './cisco/CiscoLoggingCommands';
 import type { LoggingCommandContext } from './cisco/CiscoLoggingCommands';
@@ -4117,6 +4119,38 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     // `REST` decrit ce qu'on sait : la suite est du texte.
     const LIGNE_FILTRE = { name: 'filtre', type: 'REST' as const };
 
+    const md = (suite: LoggingContinuation[] = []): LoggingContinuation => ({
+      keyword: 'discriminator', description: 'Establish MD-Host association',
+      argument: { name: 'nom', type: 'WORD', description: 'Message discriminator name' },
+      continuations: suite,
+    });
+
+    // `port` ne vaut que DERRIERE un transport, et c'est exactement ce
+    // que le moteur lit : `logging host <ip> transport {udp|tcp} [port
+    // <n>]`. Le declarer sous le transport le fait annoncer la, et
+    // nulle part ailleurs.
+    const transport = (suite: LoggingContinuation[] = []): LoggingContinuation => ({
+      keyword: 'transport', description: 'Specify the transport protocol',
+      argument: {
+        name: 'protocole', type: 'ENUM',
+        values: [
+          { keyword: 'tcp', description: 'Send messages over TCP' },
+          { keyword: 'udp', description: 'Send messages over UDP' },
+        ],
+      },
+      continuations: [
+        {
+          keyword: 'port', description: 'Specify the port number',
+          argument: {
+            name: 'numero', type: 'INT', range: [1, 65535],
+            description: 'Port the syslog server listens on',
+          },
+          continuations: suite,
+        },
+        ...suite,
+      ],
+    });
+
     // Les phrases d'IOS viennent de la table qui les porte deja : les
     // retaper ici en ferait une seconde, et la premiere divergence
     // passerait inapercue. Le `<0-7>` en tete est un TYPE, pas une
@@ -4194,15 +4228,26 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       {
         keyword: 'origin-id', description: 'Add origin ID to syslog messages',
         undoWithoutArgument: true,
+        // `string` EXIGE son texte, les trois autres n'en prennent
+        // aucun : les quatre dans une meme ENUM faisaient de `string` un
+        // mode complet, et `logging origin-id string SITE-A` ne vivait
+        // que par le noeud glouton qui avalait le reste de la ligne.
+        continuationsReplaceArgument: true,
         argument: {
           name: 'mode', type: 'ENUM',
           values: [
             { keyword: 'hostname', description: 'Use hostname as ID' },
             { keyword: 'ip', description: 'Use IP address as ID' },
             { keyword: 'ipv6', description: 'Use IPv6 address as ID' },
-            { keyword: 'string', description: 'Use a user-defined string as ID' },
           ],
         },
+        continuations: [{
+          keyword: 'string', description: 'Use a user-defined string as ID',
+          argument: {
+            name: 'texte', type: 'REST', literal: 'LINE',
+            description: 'The string to use as origin ID',
+          },
+        }],
       },
       {
         keyword: 'snmp-trap', description: 'Set syslog level for sending snmp trap',
@@ -4309,6 +4354,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       {
         keyword: 'reload', description: 'Set reload logging level',
         argument: { name: 'level', type: 'INT', range: [0, 7], values: severites, optional: true },
+        continuationsAlsoAfterArgument: true,
         continuations: [{
           keyword: 'message-limit', description: 'Maximum messages kept across a reload',
           argument: { name: 'limite', type: 'INT', range: [1, 4294967295] },
@@ -4323,6 +4369,15 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
             { keyword: 'console', description: 'Rate limit console messages only' },
           ],
         },
+        // La PORTEE et le nombre sont deux places, pas une : `logging
+        // rate-limit all 10` en donne les deux. Une seule les rendait
+        // exclusives, et la forme complete ne vivait que par le noeud
+        // glouton.
+        second: {
+          name: 'nombre', type: 'INT', optional: true,
+          range: [RATE_LIMIT_MIN, RATE_LIMIT_MAX],
+          description: 'Message rate limit',
+        },
         continuations: [{
           keyword: 'except',
           description: 'Messages of this severity or higher are not limited',
@@ -4331,23 +4386,9 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       },
       {
         keyword: 'host', description: 'Set syslog server IP address and parameters',
+        keywordOptional: true,
         argument: { name: 'ip', type: 'IP_ADDR' },
-        continuations: [
-          {
-            keyword: 'transport', description: 'Specify the transport protocol',
-            argument: {
-              name: 'protocole', type: 'ENUM',
-              values: [
-                { keyword: 'tcp', description: 'Send messages over TCP' },
-                { keyword: 'udp', description: 'Send messages over UDP' },
-              ],
-            },
-          },
-          {
-            keyword: 'discriminator', description: 'Establish MD-Host association',
-            argument: { name: 'nom', type: 'WORD' },
-          },
-        ],
+        continuations: [md([transport()]), transport([md()])],
       },
     ];
   }
@@ -9801,7 +9842,6 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     trie.describeNode('parser', 'Configure parser');
     trie.describeNode('no parser', 'Negate a parser command');
 
-    registerLoggingConfigCommands(trie, this.loggingCommandContext());
     registerSequenceNumbersCommand(trie, this.loggingCommandContext());
     trie.registerGreedy('service timestamps', 'Timestamp log/debug messages', (args) =>
       this.applyServiceTimestamps(args, false));

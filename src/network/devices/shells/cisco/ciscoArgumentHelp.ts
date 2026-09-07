@@ -638,17 +638,6 @@ export function describeCiscoArguments(tries: ArgumentHelpTries): void {
   tries.config.describeArgs('ip name-server', [
     IP('address', 'Domain server IP address'),
   ]);
-  tries.config.describeArgs('logging host', [
-    IP('address', 'IP address of the syslog server'),
-  ]);
-  tries.config.addCompletionKeywords('logging', [
-    { keyword: 'host', description: 'Set syslog server IP address and parameters' },
-    { keyword: 'buffered', description: 'Set buffered logging parameters' },
-    { keyword: 'console', description: 'Set console logging parameters' },
-    { keyword: 'monitor', description: 'Set terminal line (monitor) logging parameters' },
-    { keyword: 'on', description: 'Enable logging to all supported destinations' },
-    { keyword: 'trap', description: 'Set syslog server logging level' },
-  ]);
   // `aaa authentication ?` retombait sur les mots-clés de la RACINE
   // `aaa` (il proposait `new-model`, `attempts`, `session-id`…), parce
   // que rien ne décrivait ce qui vient après. Chaque niveau porte
@@ -821,7 +810,6 @@ export function describeCiscoArguments(tries: ArgumentHelpTries): void {
   tries.config.requireArgs('enable secret', 1);
   tries.config.requireArgs('enable password', 1);
   tries.config.requireArgs('access-list', 2);
-  tries.config.requireArgs('logging', 1);
   tries.config.requireArgs('ntp', 1);
   tries.config.requireArgs('ip nat', 1);
   tries.config.requireArgs('ip dhcp', 1);

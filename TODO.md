@@ -2763,3 +2763,22 @@ Chacun rend desormais un refus qui NOMME la brique absente :
 pour un geste que le moteur ne sait pas poser serait exactement la meme
 apparence sans l'effet, dans l'autre sens — les deux tests qui
 l'attendaient epinglaient une invention du moteur mort et sont corriges.
+
+### [logging] `logging host` ne porte ni `vrf`, ni `xml`, ni `filtered`, ni `session-id`
+La commande declaree — et evaluee — est `logging [host] <ip>
+[discriminator <nom>] [transport {udp|tcp} [port <1-65535>]]`. La
+documentation Cisco decrit en plus, sur les plateformes recentes,
+`vrf <nom>`, `xml`, `filtered [stream <id>]`, `sequence-num-session`
+et `session-id {hostname|ipv4|ipv6|string <texte>}`.
+**Mesure** : `logging host 10.0.0.1 vrf V1` repond `% Invalid input
+detected at '^' marker.`, comme les quatre autres.
+**Ce qui a ete cherche** : `cisco.com` est BLOQUE par le mandataire de
+sortie de ce reseau (`EGRESS_BLOCKED` sur
+`/c/en/us/td/docs/ios-xml/ios/esm/command/esm-cr-book/esm-cr-a1.html`),
+et le resume d'un moteur de recherche nomme ces mots-cles sans donner
+leur grammaire exacte ni leur effet.
+**Report** : declarer une place dont on ne connait ni la forme ni
+l'effet, c'est la faire accepter puis ne rien en faire — exactement le
+defaut que la migration referme partout ailleurs. Le refus actuel dit
+la verite : la plateforme ne les porte pas. A rouvrir des que la
+reference est atteignable.
