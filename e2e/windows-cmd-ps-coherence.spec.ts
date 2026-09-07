@@ -164,3 +164,19 @@ test.describe('netstat rend ses colonnes et honore ses options', () => {
     expect(apres.split('\n').map((l) => l.trim()).some((l) => /^TCP\s/.test(l))).toBe(false);
   });
 });
+
+test.describe('un poste Windows du canevas repond au lien local', () => {
+  test('il tient 5355 et 5353 sans qu on l ait rallume', async ({ page }) => {
+    await page.goto('/', { timeout: 45_000 });
+    await waitForStore(page);
+
+    const id = await addDevice(page, 'windows-pc');
+    await openTerminal(page, id);
+    await typeCmd(page, 'netstat -an -p UDP');
+    await waitForText(page, 'Active Connections');
+
+    const lignes = (await modalText(page)).split('\n').map((l) => l.trim());
+    expect(lignes.some((l) => /^UDP\s+0\.0\.0\.0:5355\s+\*:\*$/.test(l))).toBe(true);
+    expect(lignes.some((l) => /^UDP\s+0\.0\.0\.0:5353\s+\*:\*$/.test(l))).toBe(true);
+  });
+});

@@ -444,6 +444,7 @@ export class WindowsPC extends EndHost implements UserAccountHost {
       this.syncLinkLocalResponders();
       if (change) this.auditRegistryChange(change);
     };
+    this.syncLinkLocalResponders();
   }
 
   // ─── LLMNR / mDNS (client DNS Windows) ──────────────────────────

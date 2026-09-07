@@ -8262,3 +8262,51 @@ la ligne TCP, deja juste ; le nom du demon sous Linux, deja juste ; et
 n'existait dans aucun cas. Deux cas e2e Playwright verifient l'alignement
 et les options dans le vrai terminal ; la ligne `*:*` reste a la sonde
 unitaire, le poste Windows du navigateur ne tenant aucune socket UDP.
+
+---
+
+## Un poste Windows du canevas repond au lien local
+
+**Perimetre revendique** : `src/network/devices/WindowsPC.ts`.
+
+Trouve en montant un segment sur le CHEMIN DE L'APPLICATION plutot que
+sur celui des tests. Les equipements du canevas sont construits par
+`createDevice`, qui n'appelle jamais `powerOn()` — un equipement nait
+deja allume, `Equipment.isPoweredOn` valant `true`. Or `WindowsPC`
+n'appelait `syncLinkLocalResponders()` que depuis `powerOn()` et depuis
+le crochet de changement du registre, JAMAIS a la construction ;
+`LinuxMachine`, elle, l'appelle dans son constructeur.
+
+Mesure entre deux machines du meme segment, montees comme l'application
+les monte :
+
+```
+[linux] resolvectl query PC2   →  PC2: Name or service not known
+[win]   netstat -an -p udp     →  (aucune ligne)
+```
+
+Le repondeur LLMNR et le repondeur mDNS d'un poste Windows n'existaient
+donc pas dans l'application, alors que les tests qui appellent
+`powerOn()` a la main les voyaient tous les deux — un defaut visible
+seulement hors des tests, ce qui est le pire endroit ou il puisse etre.
+Une ligne le ferme : le constructeur appelle la meme synchronisation que
+Linux.
+
+**Ce qui n'est PAS un defaut, verifie avant d'y toucher.** La premiere
+lecture voulait « corriger » deux autres ecarts, et la mesure a donne
+tort a la lecture. (1) `ping PC2` et `getent hosts PC2` ne resolvent pas
+par LLMNR la ou `resolvectl query PC2` le fait : c'est le comportement
+d'un vrai Ubuntu, ou `libnss-resolve` n'est PAS installe par defaut — la
+ligne `hosts:` ne porte donc pas `resolve` et la glibc s'en tient a
+`nss-dns`, seul `resolvectl` parlant directement au demon. (2)
+`PC2.local` reste irresolu parce que le mDNS GLOBAL est a `no`, ce que
+`resolvectl status` affiche et ce qu'Ubuntu regle ainsi. Les deux sont
+desormais epingles comme TEMOINS, pour qu'une prochaine lecture ne
+refasse pas le meme faux diagnostic.
+
+**Discrimination** : `probe-windows-repondeurs-lien-local.test.ts`
+(6 cas), 2 tombent contre l'etat d'avant — c'est peu parce que le
+correctif tient en une ligne. Les 4 autres sont nommes dans l'en-tete :
+trois TEMOINS de ce qui ne doit pas changer, et un cas qui passait pour
+une raison qui ne prouve rien, 5355 etant absent des deux cotes. Un cas
+e2e Playwright verifie les deux ports dans le vrai terminal.
