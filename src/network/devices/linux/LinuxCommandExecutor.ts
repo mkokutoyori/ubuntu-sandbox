@@ -80,6 +80,7 @@ import { cmdIostat } from './system/Iostat';
 import { cmdPidstat } from './system/Pidstat';
 import { parseDstatArgs, DSTAT_USAGE, DSTAT_VERSION, DSTAT_LISTING } from './system/Dstat';
 import { MountTable, MountEntry } from './MountTable';
+import { FSTAB_PATH, renderFstab } from './fs/FstabFile';
 import { SysfsTree } from './Sysfs';
 import { cmdNetstat, cmdWget } from './LinuxNetCommands';
 import { PACKAGE_DB, findPackage } from './packages/PackageDatabase';
@@ -552,6 +553,9 @@ export class LinuxCommandExecutor {
     this.identity = identity ?? SystemIdentity.ubuntu();
     this.vfs = new VirtualFileSystem();
     this.mountTable = MountTable.fromHardware(this.hardware.storage);
+    const rootPartition = this.hardware.storage
+      .flatMap((d) => d.partitions).find((p) => p.mountPoint === '/');
+    if (rootPartition) this.vfs.setCapacityBytes(rootPartition.sizeBytes);
     this.vfs.setReadOnlyResolver((p) => this.mountTable.isReadOnly(p));
     this.seedSetuidBinaries();
     this.userMgr = new LinuxUserManager(this.vfs);
@@ -603,6 +607,9 @@ export class LinuxCommandExecutor {
     if (this.vfs.readFile('/etc/protocols') == null) this.vfs.writeFile('/etc/protocols', ETC_PROTOCOLS, 0, 0, 0o022);
     if (this.vfs.readFile('/etc/networks')  == null) this.vfs.writeFile('/etc/networks',  ETC_NETWORKS,  0, 0, 0o022);
     if (this.vfs.readFile('/etc/rpc')       == null) this.vfs.writeFile('/etc/rpc',       ETC_RPC,       0, 0, 0o022);
+    if (this.vfs.readFile(FSTAB_PATH) == null) {
+      this.vfs.writeFile(FSTAB_PATH, renderFstab(this.hardware.storage), 0, 0, 0o022);
+    }
     if (this.vfs.readFile('/etc/profile') == null) {
       this.vfs.writeFile('/etc/profile',
         '# /etc/profile: system-wide .profile file for the Bourne shell (sh(1))\n'
@@ -4974,7 +4981,13 @@ export class LinuxCommandExecutor {
         this.serviceMgr.rebootCycle();
         return { output: '', exitCode: 0 };
       }
-      case 'df': return { output: cmdDf(c, args), exitCode: 0 };
+      case 'df': return {
+        output: cmdDf(
+          { ...c, mounts: this.mountTable.list(), storage: this.hardware.storage },
+          args,
+        ),
+        exitCode: 0,
+      };
       case 'du': return { output: cmdDu(c, args), exitCode: 0 };
       case 'free': return { output: cmdFree(args, this.hardware.memory), exitCode: 0 };
       case 'vmstat': return cmdVmstat(args, { pm: this.processMgr, memory: this.hardware.memory });

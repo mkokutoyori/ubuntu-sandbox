@@ -96,9 +96,10 @@ describe('Scénario — permission refusée réelle (LinuxPC + LinuxEditorFsCont
     pc.powerOn();
   });
 
-  it('un utilisateur non privilégié ne peut pas créer /etc/fstab (parent /etc root:root 0755) : ^O échoue avec un message d\'erreur', () => {
+  it('un utilisateur non privilégié ne peut pas écrire /etc/fstab (root:root 0644) : ^O échoue avec un message d\'erreur', () => {
     const fsCtx = new LinuxEditorFsContext(pc);
-    expect(fsCtx.readFile('/etc/fstab')).toBeNull();
+    const avant = fsCtx.readFile('/etc/fstab');
+    expect(avant).toContain('# /etc/fstab: static file system information.');
 
     const nano = new NanoEngine(fsCtx, '/etc/fstab', '', true, false);
     typeText(nano, 'tmpfs /mnt/ramtest tmpfs defaults 0 0');
@@ -107,7 +108,7 @@ describe('Scénario — permission refusée réelle (LinuxPC + LinuxEditorFsCont
 
     expect(nano.statusMessage).toBe('[ Error writing /etc/fstab ]');
     expect(nano.modified).toBe(true);
-    expect(fsCtx.readFile('/etc/fstab')).toBeNull(); // still absent — the write never landed
+    expect(fsCtx.readFile('/etc/fstab')).toBe(avant); // unchanged — the write never landed
   });
 
   it('le même utilisateur non privilégié : ^X→Y échoue et ne quitte pas nano', () => {

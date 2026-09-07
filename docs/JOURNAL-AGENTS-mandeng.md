@@ -8310,3 +8310,89 @@ correctif tient en une ligne. Les 4 autres sont nommes dans l'en-tete :
 trois TEMOINS de ce qui ne doit pas changer, et un cas qui passait pour
 une raison qui ne prouve rien, 5355 etant absent des deux cotes. Un cas
 e2e Playwright verifie les deux ports dans le vrai terminal.
+
+---
+
+## Une machine a UN agencement de disques, et `df` le lit comme les autres
+
+**Perimetre revendique** : `src/network/devices/linux/LinuxSystemCommands.ts`
+(`df`), `src/network/devices/linux/LinuxCommandExecutor.ts`,
+`src/network/devices/linux/fs/FstabFile.ts` (nouveau),
+`src/network/devices/host/hardware/partitionUuid.ts` (nouveau),
+`src/network/devices/linux/commands/hw/Blkid.ts`.
+
+Trouve en posant la MEME question a cinq vues du meme poste :
+
+```
+lsblk         sda 50G  ├─sda1 48G /   └─sda2 2G /boot        (pas de sdb)
+mount         /dev/sda1 on /   /dev/sda2 on /boot            (pas de sdb1)
+findmnt       idem                                           (pas de sdb1)
+/proc/mounts  idem                                           (pas de sdb1)
+df -h         /dev/sda1 50G /   /dev/sda2 976M /boot   /dev/sdb1 100G /u01
+```
+
+Quatre vues disaient que la machine n'a qu'un disque ; la cinquieme en
+inventait un second et se trompait en plus sur les deux partitions qui
+existent. `dfTable()` etait une LISTE ECRITE EN DUR, la ou `lsblk` et
+`blkid` lisent `HardwareProfile.storage` et ou `mount`, `findmnt` et
+`/proc/mounts` lisent la `MountTable` que `MountTable.fromHardware()`
+derive du meme inventaire. Rien de cosmetique : sur un poste sans second
+disque, `df` annoncait 100 Go de libre sur un point de montage qui
+n'existe pas, et `df -h /boot` annoncait 976 Mo la ou la partition en
+fait 2 Gio. Un laboratoire qui remplit un disque, qui compare avant et
+apres, ou qui apprend a lire `df`, partait d'un chiffre faux.
+
+**Le correctif ne reecrit pas l'inventaire, il s'y branche** : `df`
+recoit la table de montage et les tailles de partition, et chaque ligne
+en DERIVE. La proportion occupee d'une partition que le VFS ne modelise
+pas reste une illustration, mais elle est declaree une fois
+(`DEFAULT_PARTITION_USE`) au lieu d'etre dispersee en chiffres ecrits a
+la main.
+
+**Deux duplications fermees dans le meme changement.** (1) Un second
+`cmdLsblk()` dormait dans `LinuxSystemCommands.ts`, sans appelant, avec
+sa propre table de disques ecrite en dur — celle-la meme qui inventait
+`sdb1` ; il est supprime, le vivant etant `commands/hw/Lsblk.ts`. (2)
+`df -i` rendait trois lignes figees (`/dev/sda1`, `tmpfs`, `/dev/sda2`)
+quel que soit l'agencement reel ; il derive desormais des memes lignes,
+avec le rapport que `mke2fs` applique (un inode tous les 16 Ko) et celui
+de `tmpfs` (un tous les 4 Ko) — ce qui redonne exactement les 131072
+inodes d'une partition de 2 Gio et les ~127960 d'un tmpfs de 512 Mio que
+la table figee affichait, mais cette fois pour la bonne raison.
+
+**La capacite de la racine avait DEUX ecritures.** Le VFS declarait
+50 Gio, `sda1` en fait 48 : `lsblk` et `df` ne pouvaient pas s'accorder.
+Le VFS prend desormais sa capacite de la partition racine a la
+construction. La ligne `/` de `df` continue de lire le VFS — et non la
+partition — parce que c'est le VFS qui REFUSE les ecritures : une panne
+qui retrecit le volume doit rester visible dans `df` et dans la prochaine
+ecriture au meme instant (docs/PRD-Pannes.md §F9.1).
+
+**`/etc/fstab` n'existait pas.** `cat /etc/fstab` repondait `No such
+file or directory` sur une machine qui monte pourtant deux systemes de
+fichiers — le fichier qui DECIDE de ce qui est monte au demarrage. Il est
+desormais seme depuis le meme inventaire, au format que documente Ubuntu
+(help.ubuntu.com/community/Fstab) : six champs, la racine nommee par
+`UUID=` avec `relatime,errors=remount-ro 0 1`, les autres en passe 2. Les
+UUID sont ceux que `blkid` rend, la fonction de synthese ayant ete
+extraite de `Blkid.ts` vers `partitionUuid.ts` pour que les deux vues ne
+puissent pas diverger.
+
+**Corrige dans des tests plutot que dans le code.** Trois cas
+(`nano-write-errors`, `vim-system-config-filetype` x2) posaient en
+premisse que `/etc/fstab` est ABSENT — la premisse etant le defaut
+lui-meme. Ils verifient maintenant ce qu'ils voulaient vraiment
+verifier : un utilisateur non privilegie ne peut pas l'ECRIRE, et le
+contenu est inchange apres l'echec. Deux autres
+(`fault-disk-full-and-inodes`, `linux-df-du-real`) epinglaient les 50 Gio
+du VFS ; ils attendent les 48 Gio de `sda1`, ce que `lsblk` annonce.
+
+**Discrimination** (`git stash push -- src/network`) :
+`probe-stockage-une-seule-verite-linux.test.ts` (11 cas), 8 tombent
+contre l'etat d'avant. Les 3 autres sont nommes dans l'en-tete : deux
+TEMOINS (`mount`/`findmnt` lisaient deja le bon inventaire ; la racine
+bouge encore apres une ecriture de 64 Mio) et une NON-REGRESSION (le
+serveur affichait deja `/u01`, mais parce que la table figee le portait
+pour tout le monde). Suites connexes : 38 fichiers, 1716 cas, tous verts.
+Trois cas e2e Playwright confrontent `df`, `lsblk`, `blkid`,
+`/proc/mounts` et `/etc/fstab` dans le vrai terminal.

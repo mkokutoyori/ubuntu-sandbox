@@ -3,6 +3,9 @@ import type { DiskPartition } from '@/network/devices/host/hardware/StorageDevic
 import type { LinuxCommand } from '../LinuxCommand';
 import type { LinuxCommandContext } from '../LinuxCommandContext';
 import { Satisfy, Deny } from '../../iam/policy/CommandPrivilegePolicy';
+import {
+  partitionPartUuid, partitionUuid,
+} from '@/network/devices/host/hardware/partitionUuid';
 
 export function cmdBlkid(profile: HardwareProfile, args: string[], isPrivileged: boolean): { output: string; exitCode: number } {
   if (!isPrivileged) return { output: 'blkid: error: Permission denied', exitCode: 1 };
@@ -17,7 +20,6 @@ export function cmdBlkid(profile: HardwareProfile, args: string[], isPrivileged:
   const all: Array<{ disk: string; part: DiskPartition }> = [];
   for (const d of profile.storage) for (const p of d.partitions) all.push({ disk: d.name, part: p });
 
-  const seen = new Set<string>();
   const matches = targets.length === 0
     ? all
     : all.filter(e => targets.includes(`/dev/${e.part.name}`));
@@ -26,19 +28,10 @@ export function cmdBlkid(profile: HardwareProfile, args: string[], isPrivileged:
     return { output: `blkid: error: ${targets[0]}: No such file or directory`, exitCode: 2 };
   }
 
-  const lines = matches.map(e => {
-    const uuid = e.part.uuid || synthUuid(e.part.name);
-    seen.add(uuid);
-    return `/dev/${e.part.name}: UUID="${uuid}" TYPE="${e.part.fsType}" PARTUUID="${synthUuid('part-' + e.part.name)}"`;
-  });
+  const lines = matches.map(e =>
+    `/dev/${e.part.name}: UUID="${partitionUuid(e.part)}"`
+    + ` TYPE="${e.part.fsType}" PARTUUID="${partitionPartUuid(e.part)}"`);
   return { output: lines.join('\n'), exitCode: 0 };
-}
-
-function synthUuid(seed: string): string {
-  let h = 0;
-  for (const c of seed) h = ((h << 5) - h + c.charCodeAt(0)) | 0;
-  const u = (h >>> 0).toString(16).padStart(8, '0');
-  return `${u}-${u.slice(0, 4)}-${u.slice(4, 8)}-${u.slice(0, 4)}-${u}${u.slice(0, 4)}`;
 }
 
 function helpText(): string {
