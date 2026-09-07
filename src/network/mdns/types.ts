@@ -19,7 +19,6 @@ export const MDNS_BINDING: McastDnsBinding = {
   port: MDNS_PORT,
   group: MDNS_IPV4_GROUP,
   group6: MDNS_IPV6_GROUP,
-  processName: 'systemd-resolved',
 };
 
 /** RFC 6762 §10 : le TTL d'un enregistrement d'adresse mDNS. */

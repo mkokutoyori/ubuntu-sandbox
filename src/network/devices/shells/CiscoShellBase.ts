@@ -58,6 +58,8 @@ import { projectSnmpServiceOntoAgent } from '@/network/snmp/snmpProjection';
 import { renderStartupConfig } from './cisco/ciscoConfigSerializer';
 import { CommandTrie, type ParamType } from './CommandTrie';
 import { fhrpInterfaceSpecs, type FhrpPlacement } from './cisco/fhrpInterfaceSpecs';
+import { DEFAULT_SUMMER_OFFSET_MIN } from '@/network/core/time/DeviceClock';
+import { getDeviceClock } from '@/network/equipment/RouterServiceCapabilities';
 import {
   parseSummerTimeRule, type SummerTimeRule,
 } from './cisco/clockSummerTime';
@@ -4708,35 +4710,27 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       regle = verdict.rule;
     }
 
-    const mgmt = getManagementService(this.d());
-    if (!mgmt) return '';
-    const config = mgmt.getClock();
+    const horloge = getDeviceClock(this.d());
+    if (!horloge) return '';
 
     if (tete === 'timezone') {
-      if (negate) {
-        config.timezone = 'UTC';
-        config.offsetMin = 0;
-        return '';
-      }
+      if (negate) { horloge.clearStandard(); return ''; }
       const heures = parseInt(reste[1] ?? '', 10);
       const minutes = parseInt(reste[2] ?? '0', 10);
-      config.timezone = reste[0];
-      config.offsetMin = (isNaN(heures) ? 0 : heures) * 60
-        + (isNaN(minutes) ? 0 : minutes) * (heures < 0 ? -1 : 1);
+      horloge.setStandard(reste[0], (isNaN(heures) ? 0 : heures) * 60
+        + (isNaN(minutes) ? 0 : minutes) * (heures < 0 ? -1 : 1));
       return '';
     }
 
-    if (negate) {
-      config.summerTimezone = '';
-      config.daylightStart = '';
-      config.daylightEnd = '';
-      return '';
-    }
+    if (negate) { horloge.clearSummer(); return ''; }
 
-    config.summerTimezone = reste[0] ?? '';
-    config.summerKind = regle?.kind ?? 'recurring';
-    config.daylightStart = regle?.start ?? '';
-    config.daylightEnd = regle?.end ?? '';
+    horloge.setSummer({
+      zoneName: reste[0] ?? '',
+      kind: regle?.kind ?? 'recurring',
+      start: regle?.start ?? '',
+      end: regle?.end ?? '',
+      offsetMin: regle?.offsetMin ?? DEFAULT_SUMMER_OFFSET_MIN,
+    });
     return '';
   }
 

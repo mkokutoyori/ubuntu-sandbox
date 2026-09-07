@@ -119,3 +119,64 @@ test.describe('Windows cmd ↔ PowerShell — one device state, two shells', () 
     expect(text).not.toContain('8.8.8.8');
   });
 });
+
+test.describe('netstat rend ses colonnes et honore ses options', () => {
+  // Le poste Windows du navigateur ne tient aucune socket UDP, donc la
+  // ligne `*:*` se verifie dans la sonde unitaire ; ce qui se verifie
+  // ICI est ce que le vrai terminal rend : l'alignement des colonnes,
+  // la colonne PID de `-o`, et le filtre de `-p`.
+  test('les colonnes des donnees tombent sous celles de l en-tete', async ({ page }) => {
+    await page.goto('/', { timeout: 45_000 });
+    await waitForStore(page);
+
+    const id = await addDevice(page, 'windows-pc');
+    await openTerminal(page, id);
+    await typeCmd(page, 'netstat -an');
+    await waitForText(page, 'Active Connections');
+
+    const lignes = (await modalText(page)).split('\n');
+    const entete = lignes.find((l) => /Proto\s+Local Address/.test(l)) ?? '';
+    const tcp = lignes.find((l) => /^\s*TCP\s/.test(l)) ?? '';
+    expect(entete).not.toBe('');
+    expect(tcp).not.toBe('');
+    for (const [titre, valeur] of [
+      ['Local Address', tcp.trim().split(/\s+/)[1]],
+      ['Foreign Address', '0.0.0.0:0'],
+      ['State', 'LISTENING'],
+    ] as const) {
+      expect(tcp.indexOf(valeur)).toBe(entete.indexOf(titre));
+    }
+  });
+
+  test('-o ajoute la colonne PID et -p filtre le protocole', async ({ page }) => {
+    await page.goto('/', { timeout: 45_000 });
+    await waitForStore(page);
+
+    const id = await addDevice(page, 'windows-pc');
+    await openTerminal(page, id);
+
+    await typeCmd(page, 'netstat -ano');
+    await waitForText(page, /State\s+PID/);
+
+    await typeCmd(page, 'netstat -an -p UDP');
+    await page.waitForTimeout(600);
+    const apres = (await modalText(page)).split('netstat -an -p UDP').pop() ?? '';
+    expect(apres.split('\n').map((l) => l.trim()).some((l) => /^TCP\s/.test(l))).toBe(false);
+  });
+});
+
+test.describe('un poste Windows du canevas repond au lien local', () => {
+  test('il tient 5355 et 5353 sans qu on l ait rallume', async ({ page }) => {
+    await page.goto('/', { timeout: 45_000 });
+    await waitForStore(page);
+
+    const id = await addDevice(page, 'windows-pc');
+    await openTerminal(page, id);
+    await typeCmd(page, 'netstat -an -p UDP');
+    await waitForText(page, 'Active Connections');
+
+    const lignes = (await modalText(page)).split('\n').map((l) => l.trim());
+    expect(lignes.some((l) => /^UDP\s+0\.0\.0\.0:5355\s+\*:\*$/.test(l))).toBe(true);
+    expect(lignes.some((l) => /^UDP\s+0\.0\.0\.0:5353\s+\*:\*$/.test(l))).toBe(true);
+  });
+});

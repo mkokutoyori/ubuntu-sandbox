@@ -37,6 +37,7 @@ import {
 } from './huaweiTableLayouts';
 import { runningConfigACL, runningConfigInterfaceACL } from './HuaweiAclCommands';
 import { isInterfacePoolName } from './HuaweiDhcpCommands';
+import { renderVrpDaylightSaving } from './huaweiDaylightSaving';
 import {
   displayClock as commonDisplayClock,
   displayCpuUsage as commonDisplayCpuUsage,
@@ -1142,7 +1143,7 @@ function appendManagementConfig(lines: string[], router: Router): void {
       lines.push(`clock timezone ${clock.timezone} ${vrpRenderOffset(clock.offsetMin)}`);
     }
     if (clock.summerTimezone) {
-      lines.push(`clock daylight-saving-time ${clock.summerTimezone} repeating ${clock.daylightStart} ${clock.daylightEnd}`);
+      lines.push(renderVrpDaylightSaving(clock));
     }
   }
   // La configuration est REJOUÉE à l'import : elle rend maintenant ce
@@ -2011,10 +2012,10 @@ export function registerDisplayCommands(
 
   // ── Common VRP display commands (shared with the switch, DRY) ──
   trie.register('display clock', 'Display system clock', () => {
-    const mgmt = (getRouter() as unknown as { getManagementService?: () => import('../../router/management/RouterManagementService').RouterManagementService }).getManagementService?.();
-    const c = mgmt?.getClock();
-    return commonDisplayClock(new Date(),
-      c ? { timezone: c.timezone, offsetMin: c.offsetMin } : undefined);
+    const dev = getRouter();
+    return commonDisplayClock(
+      new Date(dev.getSystemClockMs()),
+      dev.getManagementService().getClock());
   });
   trie.register('display cpu-usage', 'Display CPU usage', () => commonDisplayCpuUsage());
   trie.register('display memory-usage', 'Display memory usage', () => commonDisplayMemoryUsage());

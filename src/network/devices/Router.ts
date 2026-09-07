@@ -71,6 +71,7 @@ import { isDialFailure } from '../tcp/types';
 import { verifyUdpChecksum, stampUdpChecksum } from '@/network/layers/transport/UdpChecksum';
 import { dialTcp, parseDialAddress, type DialAddress } from '../tcp/dial';
 import { SystemClock } from '../core/SystemClock';
+import type { DeviceClockStore } from '../core/time/DeviceClock';
 import { PortNumber } from '../core/ports/PortNumber';
 import { SshServerHandler } from '../protocols/ssh/server/SshServerHandler';
 import { RouterSshServerContext } from '../protocols/ssh/server/RouterSshServerContext';
@@ -4658,6 +4659,8 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
    * l'équipement — ne pourrait pas le voir.
    */
   private _httpService: CiscoHttpService | null = null;
+  getDeviceClock(): DeviceClockStore { return this.getManagementService().getClockStore(); }
+
   getHttpService(): CiscoHttpService {
     if (!this._httpService) this._httpService = new CiscoHttpService();
     return this._httpService;

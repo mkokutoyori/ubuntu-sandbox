@@ -11,6 +11,10 @@ import type { DeviceType } from '@/network/core/types';
 import { EquipmentStateView } from '@/network/devices/inspection/EquipmentStateView';
 import type { NeighborDTO } from '@/network/devices/inspection/DeviceStateView';
 import { pad2 } from '@/lib/format';
+import {
+  clockReadingAt, DEFAULT_SUMMER_OFFSET_MIN, type DeviceClockConfig,
+} from '@/network/core/time/DeviceClock';
+import { getDeviceClock } from '@/network/equipment/RouterServiceCapabilities';
 import { CISCO_ERRORS } from '../cli-utils';
 import {
   tableauLignes, blocDetailLigne, REGLAGES_PAR_DEFAUT,
@@ -85,18 +89,41 @@ export function ciscoClockReading(
   }
   const dev = arg as unknown as {
     getSystemClockMs?: () => number;
-    getManagementService?: () => { getClock: () => { timezone: string; offsetMin: number } };
     getNtpAgent?: () => { isSynced?: () => boolean };
   };
-  const clock = dev.getManagementService?.().getClock();
-  const offsetMin = clock?.offsetMin ?? 0;
+  const clock = getDeviceClock(arg)?.get();
   const now = atMs ?? dev.getSystemClockMs?.() ?? Date.now();
+  const synced = dev.getNtpAgent?.().isSynced?.() ?? false;
+  if (!clock) {
+    return { local: new Date(now), timezone: 'UTC', offsetMin: 0, synced };
+  }
+
+  const reading = clockReadingAt(clock, now);
   return {
-    local: new Date(now + offsetMin * 60_000),
-    timezone: clock?.timezone ?? 'UTC',
-    offsetMin,
-    synced: dev.getNtpAgent?.().isSynced?.() ?? false,
+    local: new Date(reading.localMs),
+    timezone: reading.zoneName,
+    offsetMin: reading.offsetMin,
+    synced,
   };
+}
+
+export function iosClockConfigLines(clock: DeviceClockConfig | undefined): string[] {
+  if (!clock) return [];
+  const lines: string[] = [];
+  if (clock.timezone !== 'UTC') {
+    const sign = clock.offsetMin >= 0 ? '' : '-';
+    const abs = Math.abs(clock.offsetMin);
+    lines.push(`clock timezone ${clock.timezone} ${sign}${Math.floor(abs / 60)} ${abs % 60}`);
+  }
+  if (clock.summerTimezone) {
+    const decalage = clock.daylightOffsetMin === DEFAULT_SUMMER_OFFSET_MIN
+      ? '' : String(clock.daylightOffsetMin);
+    lines.push([
+      'clock summer-time', clock.summerTimezone, clock.summerKind,
+      clock.daylightStart, clock.daylightEnd, decalage,
+    ].filter((m) => m.length > 0).join(' '));
+  }
+  return lines;
 }
 
 export function iosDateSuffix(local: Date): string {

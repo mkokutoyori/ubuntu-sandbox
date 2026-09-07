@@ -2870,6 +2870,14 @@ export abstract class EndHost extends Equipment {
     this.socketTable.unbind('udp', address, port);
   }
 
+  /**
+   * Le demon qui porte les repondeurs de nom de lien — mDNS et LLMNR.
+   * C'est une propriete de la PLATEFORME et non du protocole : sous
+   * Linux les deux vivent dans `systemd-resolved`, sous Windows dans le
+   * `svchost` du service de client DNS.
+   */
+  public resolverProcessName(): string { return 'systemd-resolved'; }
+
   /** Close a UDP port: remove the listener and the socket-table entry. */
   public udpClose(port: number): void {
     this.udpListeners.delete(port);

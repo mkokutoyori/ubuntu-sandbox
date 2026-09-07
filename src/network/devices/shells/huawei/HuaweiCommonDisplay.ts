@@ -8,6 +8,7 @@
  */
 
 import { pad2 } from '@/lib/format';
+import { clockReadingAt, type DeviceClockConfig } from '@/network/core/time/DeviceClock';
 import {
   HuaweiHardwareProfile, S5720_HARDWARE_PROFILE,
   renderHardwareDevice, renderHardwareElabel,
@@ -28,29 +29,23 @@ const WEEKDAYS = [
  */
 export function displayClock(
   now: Date = new Date(),
-  fuseau?: { timezone: string; offsetMin: number },
+  fuseau?: DeviceClockConfig,
 ): string {
-  const decale = fuseau && fuseau.offsetMin
-    ? new Date(now.getTime() + fuseau.offsetMin * 60_000)
-    : now;
-  const d = fuseau ? {
-    an: decale.getUTCFullYear(), mo: decale.getUTCMonth() + 1, j: decale.getUTCDate(),
-    h: decale.getUTCHours(), mi: decale.getUTCMinutes(), s: decale.getUTCSeconds(),
-    jour: decale.getUTCDay(),
-  } : {
-    an: now.getFullYear(), mo: now.getMonth() + 1, j: now.getDate(),
-    h: now.getHours(), mi: now.getMinutes(), s: now.getSeconds(), jour: now.getDay(),
-  };
-  const nom = fuseau?.timezone || 'UTC';
-  const signe = (fuseau?.offsetMin ?? 0) < 0 ? 'minus' : 'add';
-  const abs = Math.abs(fuseau?.offsetMin ?? 0);
+  const lecture = fuseau
+    ? clockReadingAt(fuseau, now.getTime())
+    : { localMs: now.getTime(), zoneName: 'UTC', offsetMin: 0, inSummer: false };
+  const local = new Date(lecture.localMs);
+  const signe = lecture.offsetMin < 0 ? 'minus' : 'add';
+  const abs = Math.abs(lecture.offsetMin);
   const decalage = `${pad2(Math.floor(abs / 60))}:${pad2(abs % 60)}:00`;
   return [
-    `${d.an}-${pad2(d.mo)}-${pad2(d.j)} ${pad2(d.h)}:${pad2(d.mi)}:${pad2(d.s)}`,
-    WEEKDAYS[d.jour],
-    fuseau && fuseau.offsetMin
-      ? `Time Zone(${nom}) : UTC ${signe} ${decalage}`
-      : `Time Zone(${nom}) : UTC`,
+    `${local.getUTCFullYear()}-${pad2(local.getUTCMonth() + 1)}-${pad2(local.getUTCDate())}`
+    + ` ${pad2(local.getUTCHours())}:${pad2(local.getUTCMinutes())}`
+    + `:${pad2(local.getUTCSeconds())}`,
+    WEEKDAYS[local.getUTCDay()],
+    lecture.offsetMin === 0
+      ? `Time Zone(${lecture.zoneName}) : UTC`
+      : `Time Zone(${lecture.zoneName}) : UTC ${signe} ${decalage}`,
   ].join('\n');
 }
 

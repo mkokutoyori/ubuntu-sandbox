@@ -535,25 +535,22 @@ part entiere : la grammaire d'`aaa` a quatre niveaux, une liste nommee
 libre au milieu, et une suite de methodes de longueur variable dont
 `group` consomme le mot suivant.
 
-### [horloge] un Catalyst n'a pas d'horloge : `clock timezone` y est inerte
-`clock timezone CET 1` et `clock summer-time CEST recurring` sont
-ACCEPTES sur un commutateur Cisco, ne paraissent dans aucune
-configuration, et `show clock` continue d'annoncer `UTC` — la ou le
-routeur repond `CET` apres la meme saisie. La grammaire, elle, est
-desormais jugee des deux cotes : une saisie fautive est refusee
-identiquement, seule la POSE se perd.
-**Mesure** : `getManagementService(sw)` rend `undefined` sur un
-`CiscoSwitch`, et `applyClock` sort par `if (!mgmt) return ''` — donc en
-silence. `show running-config` d'un Catalyst ne porte aucune ligne
-`clock`.
-**Report** : ce n'est pas la commande qui manque mais le MAGASIN. Donner
-une horloge au commutateur veut dire soit lui attacher un
-`RouterManagementService` (qui porte bien plus que l'horloge : NTP,
-info-center, sFlow, SSH…), soit extraire la configuration d'horloge dans
-un porteur a part que les deux plateformes tiennent — le second est le
-bon geste et c'est un chantier de decoupage, pas de grammaire. En
-attendant, un `no-op` SILENCIEUX reste le pire des trois etats possibles
-et merite d'etre ferme.
+### [horloge] la convention de BORD de `clock summer-time` n'est pas sourcee
+`core/time/DeviceClock` evalue une regle d'heure d'ete en comparant
+l'heure de DEBUT a l'heure standard locale et l'heure de FIN a l'heure
+d'ete locale — la convention de tzdata et des textes americains et
+europeens.
+**Mesure** : `cisco.com` et `support.huawei.com` sont tous deux
+injoignables depuis cet environnement (proxy de sortie), et aucune source
+secondaire atteignable ne tranche ce point. Ce qui EST etabli, par deux
+rendus concordants de la reference IOS : `recurring` sans parametres
+prend les regles americaines (1er dimanche d'avril 02:00 au dernier
+dimanche d'octobre 02:00) et le decalage par defaut vaut 60 minutes.
+**Report** : l'ecart ne porte que sur l'heure meme de la bascule, deux
+fois l'an. Le fermer demande une reference constructeur atteignable ou
+une transcription capturee sur un vrai equipement ; jusque-la, assumer
+la convention universelle vaut mieux que la deviner autrement, et le
+dire vaut mieux que de l'attribuer a Cisco.
 
 ### [uniformite] `track <mot>` refuse avec DEUX messages selon la plateforme
 `track zorglub interface GigabitEthernet0/0 line-protocol` rend

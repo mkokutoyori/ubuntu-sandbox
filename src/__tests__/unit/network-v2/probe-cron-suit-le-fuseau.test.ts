@@ -49,6 +49,32 @@
  * summer-time` n'est pas encore honore par ce chemin — c'est le lot T4,
  * qui donnera au routeur une vraie horloge.
  *
+ * ── Le piege que le balayage complet a leve, et sa mesure ────────────
+ *
+ * Ces tours etaient d'abord dates du JOUR MEME (2026-09-07). Le cas
+ * `CRON_TZ` tombait a 12:30 UTC, et le balayage complet — une heure de
+ * machine — est passe par cette minute-la : le cas est devenu rouge,
+ * puis vert au balayage suivant.
+ *
+ * Mesure du mecanisme, prise au banc :
+ *
+ *     tour dont la minute simulee tombe sur la minute REELLE -> rien
+ *     tour loin de la minute reelle                          -> part
+ *
+ * `startCronTicker()` lance un `cronTick()` IMMEDIAT a l'allumage. Ce
+ * tour demarrait le moteur et marquait sa minute avec `new Date()` —
+ * l'horloge du navigateur sur une machine dont tout le reste du temps
+ * est simule. Un tour pilote tombant dans cette meme minute etait alors
+ * pris pour un doublon et avale.
+ *
+ * Deux corrections, et elles ne se remplacent pas. Le fond : la machine
+ * lit desormais SA propre horloge (`executor.simulatedDate()`) pour son
+ * tour d'allumage, son moteur et le courrier de cron — c'est l'invariant
+ * I-T5, et le melange des deux horloges etait le defaut. La forme : ces
+ * tours sont dates de 2027, parce qu'une sonde qui choisit l'instant du
+ * jour mesure le calendrier autant que le code. `probe-cron-01` avait
+ * appris la meme lecon et l'avait ecrite ; il fallait la relire.
+ *
  * ── Discrimination ──────────────────────────────────────────────────
  *
  * Mesure, et non prediction : `git stash push -- src/network` fait
@@ -118,7 +144,7 @@ describe('cron suit le fuseau de sa machine', () => {
   it('la tache de 08:30 part a 08:30 LOCALES', async () => {
     const { pc, tour } = await poseA('Europe/Paris', [TACHE]);
 
-    tour('2026-09-07T06:30:00Z');
+    tour('2027-09-06T06:30:00Z');
 
     expect(await partie(pc)).toBe(true);
   }, 30000);
@@ -126,7 +152,7 @@ describe('cron suit le fuseau de sa machine', () => {
   it('et ne part pas a 08:30 UTC, qui est 10:30 chez elle', async () => {
     const { pc, tour } = await poseA('Europe/Paris', [TACHE]);
 
-    tour('2026-09-07T08:30:00Z');
+    tour('2027-09-06T08:30:00Z');
 
     expect(await partie(pc)).toBe(false);
   }, 30000);
@@ -135,7 +161,7 @@ describe('cron suit le fuseau de sa machine', () => {
     const { pc, tour } = await poseA('Europe/Paris',
       ['30 1 * * mon echo tick >> /home/user/t.txt']);
 
-    tour('2026-09-06T23:30:00Z');
+    tour('2027-09-05T23:30:00Z');
 
     expect(await partie(pc)).toBe(true);
   }, 30000);
@@ -143,7 +169,7 @@ describe('cron suit le fuseau de sa machine', () => {
   it('CRON_TZ deplace la tache dans SON fuseau', async () => {
     const { pc, tour } = await poseA('Europe/Paris', ['CRON_TZ=America/New_York', TACHE]);
 
-    tour('2026-09-07T12:30:00Z');
+    tour('2027-09-06T12:30:00Z');
 
     expect(await partie(pc)).toBe(true);
   }, 30000);
@@ -151,7 +177,7 @@ describe('cron suit le fuseau de sa machine', () => {
   it('et l_ecarte de l_heure qu_elle aurait eue sans lui', async () => {
     const { pc, tour } = await poseA('Europe/Paris', ['CRON_TZ=America/New_York', TACHE]);
 
-    tour('2026-09-07T06:30:00Z');
+    tour('2027-09-06T06:30:00Z');
 
     expect(await partie(pc)).toBe(false);
   }, 30000);
@@ -159,7 +185,7 @@ describe('cron suit le fuseau de sa machine', () => {
   it('un CRON_TZ que tzdata ignore laisse le fuseau de la machine', async () => {
     const { pc, tour } = await poseA('Europe/Paris', ['CRON_TZ=Zorglub/Ville', TACHE]);
 
-    tour('2026-09-07T06:30:00Z');
+    tour('2027-09-06T06:30:00Z');
 
     expect(await partie(pc)).toBe(true);
   }, 30000);
@@ -167,7 +193,7 @@ describe('cron suit le fuseau de sa machine', () => {
   it('une machine restee a UTC part bien a l_heure UTC', async () => {
     const { pc, tour } = await poseA('Etc/UTC', [TACHE]);
 
-    tour('2026-09-07T08:30:00Z');
+    tour('2027-09-06T08:30:00Z');
 
     expect(await partie(pc)).toBe(true);
   }, 30000);
@@ -176,7 +202,7 @@ describe('cron suit le fuseau de sa machine', () => {
     const { pc, tour } = await poseA('Europe/Paris',
       ['* * * * * echo tick >> /home/user/t.txt']);
 
-    tour('2026-09-07T06:30:00Z');
+    tour('2027-09-06T06:30:00Z');
 
     expect(await partie(pc)).toBe(true);
   }, 30000);
