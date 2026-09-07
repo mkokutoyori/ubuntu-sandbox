@@ -1116,7 +1116,7 @@ export abstract class LinuxMachine extends EndHost
         deliverMail: (recipient, body) => this.deliverCronMail(recipient, body),
         homeFor: (user) => this.executor.userMgr.getUser(user)?.home ?? (user === 'root' ? '/root' : `/home/${user}`),
         hostname: (this.executor.vfs.readFile('/etc/hostname') ?? this.name).trim(),
-        now: () => new Date(),
+        now: () => this.executor.simulatedDate(),
       });
     }
     return this._cronEngine;
@@ -1128,7 +1128,7 @@ export abstract class LinuxMachine extends EndHost
     this.cronTick();
   }
 
-  cronTick(at: Date = new Date()): void {
+  cronTick(at: Date = this.executor.simulatedDate()): void {
     const engine = this.getCronEngine();
     const active = this.isServiceActive('cron');
     if (active && !engine.isRunning) engine.start();
@@ -1172,7 +1172,7 @@ export abstract class LinuxMachine extends EndHost
   private deliverCronMail(recipient: string, body: string): void {
     const entry = this.executor.userMgr.getUser(recipient);
     const host = (this.executor.vfs.readFile('/etc/hostname') ?? this.name).trim();
-    const envelope = `From cron@${host}  ${formatCtime(new Date())}\n`;
+    const envelope = `From cron@${host}  ${formatCtime(this.executor.simulatedDate())}\n`;
     this.executor.vfs.writeFile(`/var/mail/${recipient}`, envelope + body + '\n', entry?.uid ?? 0, entry?.gid ?? 0, 0o022, true);
   }
 
