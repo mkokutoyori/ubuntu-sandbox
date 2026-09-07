@@ -40,13 +40,6 @@ export const RSA_MODULUS_MIN = 360;
 export const RSA_MODULUS_MAX = 4096;
 export const RSA_MODULUS_DEFAUT = 1024;
 
-export const NO_AAA_CONTINUATIONS: ReadonlyArray<{ keyword: string; description: string }> = [
-  { keyword: 'new-model', description: 'Disable the AAA access control model' },
-  { keyword: 'authentication', description: 'Remove an authentication method list' },
-  { keyword: 'authorization', description: 'Remove an authorization method list' },
-  { keyword: 'accounting', description: 'Remove an accounting method list' },
-  { keyword: 'session-id', description: 'Restore the default session ID behaviour' },
-];
 
 interface UsernameValeur {
   keyword: string;
@@ -137,19 +130,8 @@ export const USERNAME_CONTINUATIONS: ReadonlyArray<{
  * se contredire. Auparavant le gestionnaire finissait par `return ''`,
  * si bien que n'importe quelle forme était acceptée en silence.
  */
-export const AAA_TOP_KEYWORDS: readonly string[] = [
-  'new-model', 'authentication', 'authorization', 'accounting',
-  'group', 'session-id', 'local',
-];
 
-export const AAA_SESSION_ID_VALUES: readonly string[] = ['common', 'unique'];
-
-export const AAA_SERVICES: Record<AaaPhase, readonly string[]> = {
-  authentication: ['login', 'enable', 'ppp', 'dot1x'],
-  authorization: ['exec', 'commands', 'network', 'config-commands', 'reverse-access'],
-  accounting: ['exec', 'commands', 'network', 'system', 'connection'],
-};
-
+import { AAA_SERVICES } from './aaaHeadSpecs';
 export const AAA_METHODS: Record<AaaPhase, readonly string[]> = {
   authentication: [
     'enable', 'group', 'krb5', 'krb5-telnet', 'line', 'local', 'local-case', 'none',
@@ -218,71 +200,6 @@ export function buildIdentityConfigCommands(
   trie: CommandTrie, ctx: CiscoSecurityShellContext,
 ): void {
   const sec = () => getSecurityConfig(ctx.r());
-
-  trie.registerGreedy('aaa', 'AAA configuration', (args) => {
-    if (args.length === 0) return CISCO_ERRORS.INCOMPLETE;
-    if (!AAA_TOP_KEYWORDS.includes((args[0] ?? '').toLowerCase())) {
-      throw new CliInvalidInput({ token: args[0] });
-    }
-    if (args[0] === 'new-model') {
-      if (args[1] !== undefined) throw new CliInvalidInput({ token: args[1] });
-      sec().aaaNewModel = true;
-      return '';
-    }
-    if (args[0] === 'session-id') {
-      if (args[1] === undefined) throw new CliIncomplete();
-      if (!AAA_SESSION_ID_VALUES.includes(args[1].toLowerCase())) {
-        throw new CliInvalidInput({ token: args[1] });
-      }
-      if (args[2] !== undefined) throw new CliInvalidInput({ token: args[2] });
-      sec().aaaSessionId = args[1].toLowerCase();
-      return '';
-    }
-    if (args[0] === 'local' && args[1] === 'authentication' && args[2] === 'attempts' && args[3] === 'max-fail' && args[4]) {
-      const n = parseInt(args[4], 10);
-      if (isNaN(n)) throw new CliInvalidInput({ token: args[4] });
-      sec().localAuthMaxFailAttempts = n;
-      const r = ctx.r() as unknown as { _configureLocalAuthMaxFail?: (n: number) => void };
-      r._configureLocalAuthMaxFail?.(n);
-      return '';
-    }
-    if (args[0] === 'authentication' || args[0] === 'authorization' || args[0] === 'accounting') {
-      return parseAaaMethod(sec(), args[0] as AaaPhase, args.slice(1));
-    }
-    if (args[0] === 'group' && args[1] === 'server' && args[2] && args[3]) {
-      const kind = args[2] === 'tacacs+' ? 'tacacs+' : 'radius';
-      const name = args[3];
-      const existing = sec().aaaGroups.get(name) ?? { name, kind: kind as 'radius' | 'tacacs+', members: [] };
-      sec().aaaGroups.set(name, existing);
-      ctx.setAaaGroup?.(name);
-      ctx.setMode('config-aaa-group' as CiscoShellMode);
-      return '';
-    }
-    return '';
-  });
-
-  trie.registerGreedy('no aaa', 'Disable AAA', (args) => {
-    if (args.length === 0) return CISCO_ERRORS.INCOMPLETE;
-    const quoi = (args[0] ?? '').toLowerCase();
-    if (!AAA_TOP_KEYWORDS.includes(quoi)) throw new CliInvalidInput({ token: args[0] });
-    if (quoi === 'new-model') {
-      const s = sec();
-      s.aaaNewModel = false;
-      s.aaaMethods.length = 0;
-      return '';
-    }
-    if (quoi === 'session-id') { sec().aaaSessionId = undefined; return ''; }
-    if (quoi === 'authentication' || quoi === 'authorization' || quoi === 'accounting') {
-      const phase = quoi as AaaPhase;
-      const service = (args[1] ?? '').toLowerCase();
-      const nom = (args[2] ?? '').toLowerCase() === 'default' ? 'default' : args[2];
-      const s = sec();
-      s.aaaMethods = s.aaaMethods.filter((m) =>
-        !(m.phase === phase && m.service === service && (!nom || m.listName === nom)));
-      return '';
-    }
-    return '';
-  }, NO_AAA_CONTINUATIONS);
 
   trie.registerGreedy('service password-encryption', 'Enable password encryption', () => {
     sec().servicePasswordEncryption = true;
@@ -493,7 +410,7 @@ function mapRevocationCheck(mode: string | undefined): RevocationCheckMode {
   return 'none';
 }
 
-function parseAaaMethod(sec: CiscoSecurityConfig, phase: AaaPhase, args: string[]): string {
+export function parseAaaMethod(sec: CiscoSecurityConfig, phase: AaaPhase, args: string[]): string {
   // `aaa authentication` seul était ACCEPTÉ en silence : rien n'était
   // enregistré, rien n'apparaissait dans la running-config, et
   // l'opérateur croyait avoir configuré une méthode.

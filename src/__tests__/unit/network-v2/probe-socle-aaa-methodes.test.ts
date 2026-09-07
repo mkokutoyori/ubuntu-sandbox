@@ -151,3 +151,185 @@ describe('les deux plateformes repondent la MEME chose', () => {
     });
   }
 });
+
+/*
+ * SUITE — les TETES de `aaa`, ecrites A L'AVEUGLE depuis la
+ * documentation IOS avant toute lecture du code.
+ *
+ * La sonde d'origine mesurait les LISTES DE METHODES. Ce qui restait a
+ * mesurer est ce qui les porte : les six autres formes de la tete.
+ *
+ * Ce que la reference dit :
+ *   `aaa group server { radius | tacacs+ } <nom>` — DEUX sortes, pas
+ *   une de plus : le groupe declare le protocole que ses membres
+ *   parlent, donc s'en tromper envoie les demandes au mauvais port avec
+ *   la mauvaise mise en forme ;
+ *   `aaa new-model` — aucun mot apres ;
+ *   `aaa session-id { common | unique }` ;
+ *   `aaa local authentication attempts max-fail <nombre>`.
+ *
+ * NON MESURE ET DIT PLUTOT QUE DEVINE : la PLAGE de `max-fail` n'est
+ * attestee par aucune source atteignable depuis ce reseau — la
+ * documentation Cisco decrit la commande sans borner la valeur. Aucun
+ * cas ne l'exige donc, et la declaration n'en pose pas : annoncer un
+ * `<min-max>` invente ferait refuser une saisie qu'une vraie machine
+ * accepte.
+ *
+ * Discriminee contre l'etat d'avant : 40 des 89 cas tombent. Les 49
+ * autres sont nommes ici plutot que laisses a decouvrir.
+ *   - les 24 cas d'origine — 18 par plateforme, 6 croises — passaient
+ *     deja, et le doivent : ils portent sur les LISTES DE METHODES, que
+ *     le gestionnaire glouton analysait mot a mot ; c'est ce qui les
+ *     PORTE qu'il avalait ;
+ *   - `aaa group server radius GR` et `aaa group server tacacs+ GT`
+ *     passaient : le defaut n'etait pas que la forme complete echoue,
+ *     mais que ses voisines tronquees reussissent ;
+ *   - `le groupe declare la SORTE qu on a nommee` passait pour
+ *     `tacacs+`, seul mot que le ternaire `args[2] === 'tacacs+'`
+ *     reconnaissait ; c'est `zorglub` qui devenait un groupe RADIUS, et
+ *     ce cas-la tombe ;
+ *   - `aaa new-model` seul est le TEMOIN : il passe des deux cotes, et
+ *     doit, sinon le laboratoire ne mesure rien. `aaa session-id
+ *     unique` est son pendant pour la forme complete ;
+ *   - `aaa local authentication attempts max-fail zorglub` passait, par
+ *     plateforme et croise : cette forme-la, seule, controlait deja son
+ *     nombre. C'est son ABSENCE qu'elle n'exigeait nulle part ;
+ *   - dans la suite `<cr>`, les dix `no <saisie>` passent : la negation
+ *     se passait deja de la valeur — c'est l'aide qui mentait, pas le
+ *     `no`. Ils sont la pour garder que le correctif n'a pas achete
+ *     l'honnetete de `?` au prix de la negation. Et `aaa session-id ?`
+ *     passait parce que le trie n'annoncait pas `<cr>` : c'est en le
+ *     migrant qu'on l'aurait perdu.
+ */
+
+const TETES_INCOMPLETES: readonly string[] = [
+  'aaa group',
+  'aaa group server',
+  'aaa group server radius',
+  'aaa group server tacacs+',
+  'aaa local authentication attempts max-fail',
+  'aaa local',
+];
+
+const TETES_REFUSEES: readonly string[] = [
+  'aaa group server zorglub G1',
+  'aaa group serveur radius G1',
+  'aaa local zorglub',
+  'aaa local authentication zorglub',
+  'aaa local authentication attempts max-fail zorglub',
+];
+
+for (const [nom, fabrique] of PLATEFORMES) {
+  describe(`les TETES de \`aaa\` sur un ${nom}`, () => {
+    for (const saisie of TETES_INCOMPLETES) {
+      it(`\`${saisie}\` est INCOMPLETE`, async () => {
+        const d = await fabrique();
+        await d.executeCommand('aaa new-model');
+        expect(await d.executeCommand(saisie)).toMatch(/Incomplete command/);
+      });
+    }
+
+    for (const saisie of TETES_REFUSEES) {
+      it(`\`${saisie}\` est refuse, pas avale`, async () => {
+        const d = await fabrique();
+        await d.executeCommand('aaa new-model');
+        expect(await d.executeCommand(saisie)).toMatch(/Invalid input/);
+        expect(await conf(d)).not.toMatch(/zorglub|serveur/);
+      });
+    }
+
+    it('un groupe RADIUS se declare et se relit', async () => {
+      const d = await fabrique();
+      await d.executeCommand('aaa new-model');
+      expect(await d.executeCommand('aaa group server radius GR')).not.toMatch(REFUS);
+      expect(await conf(d)).toContain('aaa group server radius GR');
+    });
+
+    it('un groupe TACACS+ se declare et se relit', async () => {
+      const d = await fabrique();
+      await d.executeCommand('aaa new-model');
+      expect(await d.executeCommand('aaa group server tacacs+ GT')).not.toMatch(REFUS);
+      expect(await conf(d)).toContain('aaa group server tacacs+ GT');
+    });
+
+    it('le groupe declare la SORTE qu on a nommee', async () => {
+      const d = await fabrique();
+      await jouer(d, ['aaa new-model', 'aaa group server tacacs+ GT']);
+      const texte = await conf(d);
+      expect(texte).toContain('aaa group server tacacs+ GT');
+      expect(texte).not.toContain('aaa group server radius GT');
+    });
+
+    it('`aaa new-model` seul reste accepte — le TEMOIN', async () => {
+      const d = await fabrique();
+      expect(await d.executeCommand('aaa new-model')).not.toMatch(REFUS);
+      expect(await conf(d)).toContain('aaa new-model');
+    });
+
+    it('`aaa session-id unique` se pose', async () => {
+      const d = await fabrique();
+      expect(await d.executeCommand('aaa session-id unique')).not.toMatch(REFUS);
+    });
+
+    it('`no aaa group server` retire le groupe', async () => {
+      const d = await fabrique();
+      await jouer(d, ['aaa new-model', 'aaa group server radius GR', 'exit']);
+      expect(await d.executeCommand('no aaa group server radius GR'))
+        .not.toMatch(REFUS);
+      expect(await conf(d)).not.toContain('aaa group server radius GR');
+    });
+  });
+}
+
+describe('les TETES repondent la MEME chose des deux cotes', () => {
+  for (const saisie of [...TETES_INCOMPLETES, ...TETES_REFUSEES]) {
+    it(`\`${saisie}\``, async () => {
+      const r = await routeur(); const s = await commutateur();
+      await r.executeCommand('aaa new-model');
+      await s.executeCommand('aaa new-model');
+      const nettoie = (t: string) => t.replace(/\^/g, '').replace(/\s+/g, ' ').trim();
+      const cote = nettoie(await r.executeCommand(saisie));
+      expect(cote.length).toBeGreaterThan(0);
+      expect(nettoie(await s.executeCommand(saisie))).toBe(cote);
+    });
+  }
+});
+
+/*
+ * SUITE — `?` ne promet pas un `<cr>` que la machine refuse.
+ *
+ * Une place exigee au POSITIF et omise au NEGATIF n'etait pas
+ * exprimable : `aaa session-id common` veut sa valeur, `no aaa
+ * session-id` s'en passe. La declarer facultative faisait annoncer
+ * `<cr>` par `?` pour une frappe que la meme machine refuse — le
+ * mensonge que les trois garde-fous de l'aide existent pour empecher —
+ * et l'exiger rendait la negation incomplete. `undoOmitsArguments`
+ * porte la nuance ; ces cas la mesurent des DEUX cotes, parce qu'un
+ * correctif qui rendrait l'aide juste en cassant le `no` serait un
+ * echange, pas une correction.
+ */
+
+const PLACES_OMISES_AU_NEGATIF: readonly string[] = [
+  'aaa session-id',
+  'aaa local authentication attempts max-fail',
+  'radius-server timeout',
+  'radius-server key',
+  'tacacs-server port',
+];
+
+for (const [nom, fabrique] of PLATEFORMES) {
+  describe(`\`?\` ne promet pas de \`<cr>\` menteur sur un ${nom}`, () => {
+    for (const saisie of PLACES_OMISES_AU_NEGATIF) {
+      it(`\`${saisie} ?\` n'annonce pas <cr>, et la frappe est INCOMPLETE`, async () => {
+        const d = await fabrique();
+        expect(d.cliHelp(`${saisie} `)).not.toContain('<cr>');
+        expect(await d.executeCommand(saisie)).toMatch(/Incomplete command/);
+      });
+
+      it(`\`no ${saisie}\` se passe de la valeur`, async () => {
+        const d = await fabrique();
+        expect(await d.executeCommand(`no ${saisie}`)).not.toMatch(REFUS);
+      });
+    }
+  });
+}

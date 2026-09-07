@@ -190,7 +190,8 @@ export function parseCommand(
   // Une commande d'un AUTRE mode n'est pas la commande de celui-ci : la
   // traiter comme telle faisait repondre `% Invalid input` la ou le
   // noeud porte, dans ce mode, des continuations parfaitement valides.
-  const spec = table.specAt(node, session);
+  const spec = table.specAt(node, session)
+    ?? (negated ? table.undoOnlySpecAt(node, session) : undefined);
   if (!spec) return { status: 'incomplete', consumed: tokens.length };
   if (spec.existsOnlyNegated && !negated) {
     return { status: 'incomplete', consumed: tokens.length };

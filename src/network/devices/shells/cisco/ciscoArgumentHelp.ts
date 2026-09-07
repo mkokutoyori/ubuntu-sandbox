@@ -653,61 +653,7 @@ export function describeCiscoArguments(tries: ArgumentHelpTries): void {
   // `aaa` (il proposait `new-model`, `attempts`, `session-id`…), parce
   // que rien ne décrivait ce qui vient après. Chaque niveau porte
   // maintenant ses propres valeurs.
-  tries.config.describeArgs('aaa', [
-    ENUM('function', 'AAA function', [
-      ['accounting', 'Accounting configurations parameters'],
-      ['authentication', 'Authentication configurations parameters'],
-      ['authorization', 'Authorization configurations parameters'],
-      ['group', 'AAA server-group definitions'],
-      ['local', 'AAA local authentication parameters'],
-      ['new-model', 'Enable NEW access control commands and functions'],
-      ['session-id', 'AAA Session ID'],
-    ]),
-  ]);
-  tries.config.describeArgs('no aaa', [
-    ENUM('function', 'AAA function', [
-      ['accounting', 'Accounting configurations parameters'],
-      ['authentication', 'Authentication configurations parameters'],
-      ['authorization', 'Authorization configurations parameters'],
-      ['group', 'AAA server-group definitions'],
-      ['local', 'AAA local authentication parameters'],
-      ['new-model', 'Enable NEW access control commands and functions'],
-      ['session-id', 'AAA Session ID'],
-    ]),
-  ]);
-  tries.config.describeArgs('aaa session-id', [
-    ENUM('type', 'AAA session ID behaviour', [
-      ['common', 'Use same session-id for all services'],
-      ['unique', 'Use unique session-id for each service'],
-    ]),
-  ]);
-  tries.config.describeArgs('aaa authentication', [
-    ENUM('service', 'Service to authenticate', [
-      ['dot1x', 'Set authentication lists for IEEE 802.1x'],
-      ['enable', 'Set authentication list for enable'],
-      ['login', 'Set authentication lists for logins'],
-      ['ppp', 'Set authentication lists for ppp'],
-    ]),
-  ]);
-  tries.config.describeArgs('aaa authorization', [
-    ENUM('service', 'Service to authorize', [
-      ['commands', 'For exec (shell) commands'],
-      ['config-commands', 'For configuration mode commands'],
-      ['exec', 'For starting an exec (shell)'],
-      ['network', 'For network services (PPP, SLIP, ARAP)'],
-      ['reverse-access', 'For reverse access connections'],
-    ]),
-  ]);
-  tries.config.describeArgs('aaa accounting', [
-    ENUM('service', 'Service to account for', [
-      ['commands', 'For exec (shell) commands'],
-      ['connection', 'For outbound connections'],
-      ['exec', 'For starting an exec (shell)'],
-      ['network', 'For network services (PPP, SLIP, ARAP)'],
-      ['system', 'For system events'],
-    ]),
-  ]);
-  // Les QUATRE bannieres d'IOS, pas seulement `motd` : `banner ?` n'en
+              // Les QUATRE bannieres d'IOS, pas seulement `motd` : `banner ?` n'en
   // proposait qu'une, donc les trois autres etaient acceptees, rendues
   // dans la configuration, et introuvables par l'aide.
   tries.config.describeArgs('banner', [

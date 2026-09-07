@@ -183,3 +183,65 @@ describe('ajouter une commande ne touche pas le moteur', () => {
     expect(out).toContain('10.0.0.1');
   });
 });
+
+/*
+ * `undoOmitsArguments` — une place EXIGEE au positif, OMISE au negatif.
+ *
+ * Le socle ne savait dire que l'un des deux, et les deux issues etaient
+ * mauvaises : une place facultative fait annoncer `<cr>` par `?` pour
+ * une frappe que la machine refuse, une place exigee rend la negation
+ * incomplete. La commande n'est donc PAS posee au noeud qui precede la
+ * place — `?` y reste juste — mais l'analyse d'un `no` l'y trouve.
+ */
+describe('une place exigee au positif peut etre omise au negatif', () => {
+  const POSE = {
+    id: 'reglage', path: ['reglage', {
+      name: 'valeur', type: 'INT', range: [1, 10] as [number, number],
+      description: 'La valeur',
+    }],
+    description: 'Un reglage borne',
+    modes: ['config'], minPrivilege: 15,
+    undoOmitsArguments: true,
+    run: (_s: unknown, args: Record<string, string>) => `pose ${args.valeur}`,
+    undo: () => 'defait',
+  };
+
+  const table = (): CommandTable => {
+    const t = new CommandTable();
+    t.declare(POSE as never);
+    return t;
+  };
+  const session = (): CliSession =>
+    newSession('R1', {}, { initialMode: 'config', privilegeLevel: 15 });
+
+  it('la forme positive EXIGE la valeur', async () => {
+    const engine = new CliEngine(table());
+    expect(await engine.execute('reglage', session())).toBe(IOS_INCOMPLETE);
+  });
+
+  it('la forme positive avec sa valeur passe', async () => {
+    const engine = new CliEngine(table());
+    expect(await engine.execute('reglage 5', session())).toBe('pose 5');
+  });
+
+  it('la NEGATION se passe de la valeur', async () => {
+    const engine = new CliEngine(table());
+    expect(await engine.execute('no reglage', session())).toBe('defait');
+  });
+
+  it('la negation accepte AUSSI la valeur', async () => {
+    const engine = new CliEngine(table());
+    expect(await engine.execute('no reglage 5', session())).toBe('defait');
+  });
+
+  it('la plage reste appliquee, negation comprise', async () => {
+    const engine = new CliEngine(table());
+    expect(await engine.execute('reglage 11', session())).toContain(IOS_INVALID_INPUT.trim());
+  });
+
+  it('sans le drapeau, la negation nue reste incomplete', async () => {
+    const t = new CommandTable();
+    t.declare({ ...POSE, undoOmitsArguments: false } as never);
+    expect(await new CliEngine(t).execute('no reglage', session())).toBe(IOS_INCOMPLETE);
+  });
+});

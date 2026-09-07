@@ -55,7 +55,7 @@ const adresse = (quoi: string): ArgumentSpec =>
 const cle: ArgumentSpec =
   { name: 'cle', type: 'REST', literal: 'LINE', description: 'The shared key itself' };
 
-const cleGlobale: ArgumentSpec = { ...cle, optional: true };
+const cleGlobale: ArgumentSpec = cle;
 
 /*
  * La valeur est declaree FACULTATIVE parce que la NEGATION s'en passe :
@@ -69,9 +69,7 @@ const cleGlobale: ArgumentSpec = { ...cle, optional: true };
  */
 const entier = (
   bornes: readonly [number, number], description: string,
-): ArgumentSpec => ({
-  name: 'valeur', type: 'INT', range: bornes, description, optional: true,
-});
+): ArgumentSpec => ({ name: 'valeur', type: 'INT', range: bornes, description });
 
 /**
  * Ce qui suit une adresse est un SAC D'OPTIONS, pas une suite.
@@ -150,11 +148,8 @@ export function aaaServerSpecs(ctx: () => AaaServerHost): CommandSpec[] {
   ): CommandSpec => ({
     id, path: ['radius-server', mot, entier(bornes, valeurDescription)],
     description, modes: MODES, minPrivilege: 15,
-    run: (_s, args) => {
-      if (args.valeur === undefined) throw new CliIncomplete();
-      pose(Number(args.valeur));
-      return '';
-    },
+    undoOmitsArguments: true,
+    run: (_s, args) => { pose(Number(args.valeur)); return ''; },
     undo: () => { defait(); return ''; },
   });
 
@@ -165,11 +160,8 @@ export function aaaServerSpecs(ctx: () => AaaServerHost): CommandSpec[] {
   ): CommandSpec => ({
     id, path: ['tacacs-server', mot, entier(bornes, valeurDescription)],
     description, modes: MODES, minPrivilege: 15,
-    run: (_s, args) => {
-      if (args.valeur === undefined) throw new CliIncomplete();
-      pose(Number(args.valeur));
-      return '';
-    },
+    undoOmitsArguments: true,
+    run: (_s, args) => { pose(Number(args.valeur)); return ''; },
     undo: () => { defait(); return ''; },
   });
 
@@ -272,11 +264,8 @@ export function aaaServerSpecs(ctx: () => AaaServerHost): CommandSpec[] {
       path: ['radius-server', 'key', cleGlobale],
       description: 'Encryption key shared with the RADIUS servers',
       modes: MODES, minPrivilege: 15,
-      run: (_s, args) => {
-        if (args.cle === undefined) throw new CliIncomplete();
-        ctx().security().radiusDefaults.key = args.cle;
-        return '';
-      },
+      undoOmitsArguments: true,
+      run: (_s, args) => { ctx().security().radiusDefaults.key = args.cle; return ''; },
       undo: () => { ctx().security().radiusDefaults.key = undefined; return ''; },
     },
     {
@@ -284,11 +273,8 @@ export function aaaServerSpecs(ctx: () => AaaServerHost): CommandSpec[] {
       path: ['tacacs-server', 'key', cleGlobale],
       description: 'Encryption key shared with the TACACS+ servers',
       modes: MODES, minPrivilege: 15,
-      run: (_s, args) => {
-        if (args.cle === undefined) throw new CliIncomplete();
-        ctx().security().tacacsDefaults.key = args.cle;
-        return '';
-      },
+      undoOmitsArguments: true,
+      run: (_s, args) => { ctx().security().tacacsDefaults.key = args.cle; return ''; },
       undo: () => { ctx().security().tacacsDefaults.key = undefined; return ''; },
     },
     globalRadius('radius-server-timeout', 'timeout', RADIUS_RANGES.timeout,

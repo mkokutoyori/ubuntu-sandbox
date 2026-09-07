@@ -79,10 +79,12 @@ import { aaaServerSpecs, type AaaServerHost } from './cisco/aaaServerSpecs';
 import {
   usernameSpecs, type UsernameHost, type UsernameSettings,
 } from './cisco/usernameSpecs';
+import { aaaHeadSpecs, type AaaHeadHost } from './cisco/aaaHeadSpecs';
 import { cryptoKeySpecs, type CryptoKeyHost } from './cisco/cryptoKeySpecs';
 import { clearLineSpecs, type ClearRestantsHost } from './cisco/clearRestantsSpecs';
 import {
   getSecurityConfig, buildIdentityShowCommands, buildIdentityConfigCommands,
+  parseAaaMethod,
 } from './cisco/CiscoSecurityCommands';
 import { parseLineMethodList } from './cisco/lineMethodList';
 import { parserViewMode } from '../router/security/CiscoSecurityConfig';
@@ -5694,6 +5696,21 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
    * sous-mode du commutateur sans lui dire de QUEL serveur il parle, et
    * `address ipv4` y retombait alors dans le vide.
    */
+  protected aaaHeadHost(): AaaHeadHost {
+    return {
+      security: () => getSecurityConfig(this.d()),
+      selectAaaGroup: (name) => {
+        this.identitySubmodeContext()?.setAaaGroup?.(name);
+      },
+      setLocalAuthMaxFail: (n) => {
+        (this.d() as unknown as { _configureLocalAuthMaxFail?: (v: number) => void })
+          ._configureLocalAuthMaxFail?.(n);
+      },
+      parseMethodList: (phase, args) =>
+        parseAaaMethod(getSecurityConfig(this.d()), phase, [...args]),
+    };
+  }
+
   protected usernameHost(): UsernameHost {
     const dev = () => this.d() as unknown as {
       _upsertCiscoUsername?: (n: string, kv: UsernameSettings) => void;
@@ -5727,6 +5744,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       ...globalHeadSpecs(() => this.globalHeadHost()),
       ...aaaServerSpecs(() => this.aaaServerHost()),
       ...usernameSpecs(() => this.usernameHost()),
+      ...aaaHeadSpecs(() => this.aaaHeadHost()),
       ...vrfDeclarationSpecs(() => this.vrfDeclarationHost()),
       ...cryptoKeySpecs(() => this.cryptoKeyHost()),
       ...clearLineSpecs(() => this.clearRestantsHost(), DERNIERE_LIGNE_ABSOLUE),
