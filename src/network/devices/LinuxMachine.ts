@@ -1110,7 +1110,7 @@ export abstract class LinuxMachine extends EndHost
         // par minute. Le fichier fait foi, comme sur un vrai système : il
         // est ce que `SystemCron` lit, et ce qu'un `vim` sur le spool
         // modifierait.
-        sources: [new SystemCron(this.executor.vfs)],
+        sources: [new SystemCron(this.executor.vfs, () => this.executor.identity.getTimeZone())],
         runner: (command, ctx) => this.runCronJob(command, ctx),
         syslog: (tag, message) => this.executor.logMgr.logDaemon(tag, message),
         deliverMail: (recipient, body) => this.deliverCronMail(recipient, body),

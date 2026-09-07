@@ -2460,7 +2460,7 @@ export class LinuxCommandExecutor {
     const source = new SystemCron({
       readFile: (p) => this.vfs.readFile(p),
       listDirectory: (p) => this.vfs.listDirectory(p) ?? null,
-    });
+    }, () => this.identity.getTimeZone());
     this.cronEngine = new CronEngine({
       sources: [source],
       runner: (command, ctx) => this.runWithEnv(command, ctx.env),

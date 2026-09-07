@@ -15,6 +15,7 @@ import { PolicyEvaluator } from '../policy/PolicyEvaluator';
 import { DosPolicyStore } from '../dos/DosPolicyStore';
 import { DosSensor } from '../dos/DosSensor';
 import { ScheduleStore } from '../model/ScheduleObject';
+import type { TimeZone } from '../../../core/time/TimeZone';
 import { FirewallLogStore } from '../logging/FirewallLogStore';
 import { LogSettings } from '../logging/LogSettings';
 import { UtmProfileStore } from '../inspection/UtmProfiles';
@@ -72,6 +73,7 @@ export const ROOT_VDOM = 'root';
 
 export interface VdomRegistryDeps {
   readonly now: () => number;
+  readonly timezone: () => TimeZone;
   readonly deviceId: string;
   readonly bus: () => IEventBus;
   readonly onTunnelInterface?: (vdom: string, tunnel: string, boundTo: string) => void;
@@ -199,7 +201,7 @@ export class VdomRegistry {
     const dos6 = new DosPolicyStore();
     const natPolicy = new NatPolicyStore();
     const pools = new IpPoolAllocator(deps.now);
-    const schedules = new ScheduleStore();
+    const schedules = new ScheduleStore(deps.timezone);
 
     const routes = new RouteTable({
       connectedRoutes: () => deps.connectedRoutes(name),

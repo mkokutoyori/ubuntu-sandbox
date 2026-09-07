@@ -46,6 +46,10 @@ export function partsAt(zone: TimeZone, atMs: number): LocalParts {
   });
 }
 
+export function partsAtOffset(offsetMinutes: number, atMs: number): LocalParts {
+  return partsAt(TimeZone.UTC, atMs + offsetMinutes * 60_000);
+}
+
 export function offsetMinutesAt(zone: TimeZone, atMs: number): number {
   const local = partsAt(zone, atMs);
   const asUtc = Date.UTC(

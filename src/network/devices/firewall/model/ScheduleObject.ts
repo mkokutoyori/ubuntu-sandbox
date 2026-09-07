@@ -1,3 +1,6 @@
+import type { TimeZone } from '../../../core/time/TimeZone';
+import { localMsAt, partsAt } from '../../../core/time/TimeZoneRegistry';
+
 export type Weekday =
   | 'sunday' | 'monday' | 'tuesday' | 'wednesday'
   | 'thursday' | 'friday' | 'saturday';
@@ -113,20 +116,23 @@ export function makeScheduleGroup(
   });
 }
 
-export function scheduleActiveAt(schedule: ScheduleObject, at: number): boolean {
+export function scheduleActiveAt(
+  schedule: ScheduleObject, at: number, zone: TimeZone,
+): boolean {
   if (schedule.always) return true;
   if (schedule.kind === 'onetime') {
+    const local = localMsAt(zone, at);
     return schedule.startAt !== undefined && schedule.endAt !== undefined
-      && at >= schedule.startAt && at < schedule.endAt;
+      && local >= schedule.startAt && local < schedule.endAt;
   }
   if (schedule.kind === 'group') return false;
   if (schedule.days.length === 0) return false;
 
-  const moment = new Date(at);
-  const day = WEEKDAYS[moment.getDay()];
+  const moment = partsAt(zone, at);
+  const day = WEEKDAYS[moment.weekday];
   if (!schedule.days.includes(day)) return false;
 
-  const minutes = moment.getHours() * 60 + moment.getMinutes();
+  const minutes = moment.hour * 60 + moment.minute;
   if (schedule.startMinutes <= schedule.endMinutes) {
     return minutes >= schedule.startMinutes && minutes < schedule.endMinutes;
   }
@@ -136,7 +142,7 @@ export function scheduleActiveAt(schedule: ScheduleObject, at: number): boolean 
 export class ScheduleStore {
   private readonly schedules = new Map<string, ScheduleObject>();
 
-  constructor() {
+  constructor(private readonly zone: () => TimeZone) {
     this.schedules.set(ALWAYS_SCHEDULE.name, ALWAYS_SCHEDULE);
   }
 
@@ -169,6 +175,6 @@ export class ScheduleStore {
       const visited = new Set(seen).add(name);
       return (schedule.members ?? []).some(member => this.activeAt(member, at, visited));
     }
-    return scheduleActiveAt(schedule, at);
+    return scheduleActiveAt(schedule, at, this.zone());
   }
 }

@@ -1,8 +1,13 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { CronSchedule, CronJob, LinuxCronManager } from '@/network/devices/linux/LinuxCronManager';
+import { CronSchedule, LinuxCronManager } from '@/network/devices/linux/LinuxCronManager';
+import { TimeZone } from '@/network/core/time/TimeZone';
+import { partsAt } from '@/network/core/time/TimeZoneRegistry';
 import { parseCrontab } from '@/network/devices/linux/cron/CrontabParser';
 import { cronAllowed } from '@/network/devices/linux/cron/CronPermissions';
 import { VirtualFileSystem } from '@/network/devices/linux/VirtualFileSystem';
+
+const instant = (y: number, m: number, d: number, h: number, min: number) =>
+  partsAt(TimeZone.UTC, Date.UTC(y, m, d, h, min));
 
 describe('CronSchedule — parsing', () => {
   it('CM-01 parses a five-field expression and rejects malformed ones', () => {
@@ -14,53 +19,53 @@ describe('CronSchedule — parsing', () => {
 
   it('CM-02 a star schedule is always due (non-reboot)', () => {
     const s = CronSchedule.parse('* * * * *')!;
-    expect(s.isDue(new Date(2026, 4, 22, 13, 37))).toBe(true);
+    expect(s.isDue(instant(2026, 4, 22, 13, 37))).toBe(true);
     expect(s.isReboot).toBe(false);
   });
 
   it('CM-03 honours a specific minute and hour', () => {
     const s = CronSchedule.parse('30 9 * * *')!;
-    expect(s.isDue(new Date(2026, 4, 22, 9, 30))).toBe(true);
-    expect(s.isDue(new Date(2026, 4, 22, 9, 31))).toBe(false);
+    expect(s.isDue(instant(2026, 4, 22, 9, 30))).toBe(true);
+    expect(s.isDue(instant(2026, 4, 22, 9, 31))).toBe(false);
   });
 
   it('CM-04 supports steps, ranges and lists', () => {
-    expect(CronSchedule.parse('*/15 * * * *')!.isDue(new Date(2026, 0, 1, 0, 45))).toBe(true);
-    expect(CronSchedule.parse('0 9-17 * * *')!.isDue(new Date(2026, 0, 1, 12, 0))).toBe(true);
-    expect(CronSchedule.parse('0 0 * * 1,3,5')!.isDue(new Date(2026, 0, 5, 0, 0))).toBe(true);
+    expect(CronSchedule.parse('*/15 * * * *')!.isDue(instant(2026, 0, 1, 0, 45))).toBe(true);
+    expect(CronSchedule.parse('0 9-17 * * *')!.isDue(instant(2026, 0, 1, 12, 0))).toBe(true);
+    expect(CronSchedule.parse('0 0 * * 1,3,5')!.isDue(instant(2026, 0, 5, 0, 0))).toBe(true);
   });
 
   it('CM-05 expands @daily / @hourly / @weekly / @monthly / @yearly macros', () => {
-    expect(CronSchedule.parse('@hourly')!.isDue(new Date(2026, 0, 1, 7, 0))).toBe(true);
-    expect(CronSchedule.parse('@daily')!.isDue(new Date(2026, 0, 1, 0, 0))).toBe(true);
-    expect(CronSchedule.parse('@daily')!.isDue(new Date(2026, 0, 1, 1, 0))).toBe(false);
-    expect(CronSchedule.parse('@weekly')!.isDue(new Date(2026, 0, 4, 0, 0))).toBe(true); // Sunday
-    expect(CronSchedule.parse('@monthly')!.isDue(new Date(2026, 0, 1, 0, 0))).toBe(true);
-    expect(CronSchedule.parse('@yearly')!.isDue(new Date(2026, 0, 1, 0, 0))).toBe(true);
+    expect(CronSchedule.parse('@hourly')!.isDue(instant(2026, 0, 1, 7, 0))).toBe(true);
+    expect(CronSchedule.parse('@daily')!.isDue(instant(2026, 0, 1, 0, 0))).toBe(true);
+    expect(CronSchedule.parse('@daily')!.isDue(instant(2026, 0, 1, 1, 0))).toBe(false);
+    expect(CronSchedule.parse('@weekly')!.isDue(instant(2026, 0, 4, 0, 0))).toBe(true); // Sunday
+    expect(CronSchedule.parse('@monthly')!.isDue(instant(2026, 0, 1, 0, 0))).toBe(true);
+    expect(CronSchedule.parse('@yearly')!.isDue(instant(2026, 0, 1, 0, 0))).toBe(true);
   });
 
   it('CM-06 @reboot is never time-due but is flagged', () => {
     const s = CronSchedule.parse('@reboot')!;
     expect(s.isReboot).toBe(true);
-    expect(s.isDue(new Date(2026, 0, 1, 0, 0))).toBe(false);
+    expect(s.isDue(instant(2026, 0, 1, 0, 0))).toBe(false);
   });
 
   it('CM-07 accepts month and weekday names', () => {
-    expect(CronSchedule.parse('0 0 1 jan *')!.isDue(new Date(2026, 0, 1, 0, 0))).toBe(true);
-    expect(CronSchedule.parse('0 0 1 jan *')!.isDue(new Date(2026, 1, 1, 0, 0))).toBe(false);
-    expect(CronSchedule.parse('0 0 * * mon')!.isDue(new Date(2026, 0, 5, 0, 0))).toBe(true); // Mon
-    expect(CronSchedule.parse('0 0 * * sun')!.isDue(new Date(2026, 0, 4, 0, 0))).toBe(true);
+    expect(CronSchedule.parse('0 0 1 jan *')!.isDue(instant(2026, 0, 1, 0, 0))).toBe(true);
+    expect(CronSchedule.parse('0 0 1 jan *')!.isDue(instant(2026, 1, 1, 0, 0))).toBe(false);
+    expect(CronSchedule.parse('0 0 * * mon')!.isDue(instant(2026, 0, 5, 0, 0))).toBe(true); // Mon
+    expect(CronSchedule.parse('0 0 * * sun')!.isDue(instant(2026, 0, 4, 0, 0))).toBe(true);
   });
 
   it('CM-08 treats weekday 7 and 0 both as Sunday', () => {
-    expect(CronSchedule.parse('0 0 * * 7')!.isDue(new Date(2026, 0, 4, 0, 0))).toBe(true);
-    expect(CronSchedule.parse('0 0 * * 0')!.isDue(new Date(2026, 0, 4, 0, 0))).toBe(true);
+    expect(CronSchedule.parse('0 0 * * 7')!.isDue(instant(2026, 0, 4, 0, 0))).toBe(true);
+    expect(CronSchedule.parse('0 0 * * 0')!.isDue(instant(2026, 0, 4, 0, 0))).toBe(true);
   });
 
   it('CM-09 name ranges and stepped ranges', () => {
-    expect(CronSchedule.parse('0 0 * * mon-fri')!.isDue(new Date(2026, 0, 6, 0, 0))).toBe(true); // Tue
-    expect(CronSchedule.parse('0 0 * * mon-fri')!.isDue(new Date(2026, 0, 4, 0, 0))).toBe(false); // Sun
-    expect(CronSchedule.parse('0 0-23/6 * * *')!.isDue(new Date(2026, 0, 1, 12, 0))).toBe(true);
+    expect(CronSchedule.parse('0 0 * * mon-fri')!.isDue(instant(2026, 0, 6, 0, 0))).toBe(true); // Tue
+    expect(CronSchedule.parse('0 0 * * mon-fri')!.isDue(instant(2026, 0, 4, 0, 0))).toBe(false); // Sun
+    expect(CronSchedule.parse('0 0-23/6 * * *')!.isDue(instant(2026, 0, 1, 12, 0))).toBe(true);
   });
 });
 
@@ -125,14 +130,6 @@ describe('LinuxCronManager — per-user table (backward compatible)', () => {
     expect(cron.list()).toBeNull();
   });
 
-  it('CM-18 selects jobs due at an instant (legacy)', () => {
-    const cron = new LinuxCronManager();
-    cron.install('30 9 * * * /bin/morning\n0 * * * * /bin/hourly\n', 'bob');
-    const due = cron.dueJobs(new Date(2026, 4, 22, 9, 30));
-    expect(due.map((j: CronJob) => j.command)).toContain('/bin/morning');
-    expect(due.map((j: CronJob) => j.command)).not.toContain('/bin/hourly');
-  });
-
   it('CM-19 keeps independent per-user tables', () => {
     const cron = new LinuxCronManager();
     cron.install('* * * * * /bin/alice\n', 'alice');
@@ -144,22 +141,20 @@ describe('LinuxCronManager — per-user table (backward compatible)', () => {
     expect(cron.list('bob')).toContain('/bin/bob');
   });
 
-  it('CM-20 dueJobs aggregates across users and tags each job with its user', () => {
+  it('CM-20 tags each job of a table with its user', () => {
     const cron = new LinuxCronManager();
     cron.install('* * * * * /bin/alice\n', 'alice');
     cron.install('* * * * * /bin/bob\n', 'bob');
-    const due = cron.dueJobs(new Date(2026, 0, 1, 0, 0));
-    const owners = new Set(due.map((j) => j.user));
-    expect(owners.has('alice')).toBe(true);
-    expect(owners.has('bob')).toBe(true);
+    expect(cron.getJobs('alice')[0].user).toBe('alice');
+    expect(cron.getJobs('bob')[0].user).toBe('bob');
   });
 
-  it('CM-21 exposes per-crontab environment and reboot jobs', () => {
+  it('CM-21 exposes per-crontab environment and marks the reboot job', () => {
     const cron = new LinuxCronManager();
     cron.install('MAILTO=ops\n@reboot /bin/boot\n* * * * * /bin/tick\n', 'root');
     expect(cron.getEnv('root').MAILTO).toBe('ops');
-    expect(cron.rebootJobs().map((j) => j.command)).toContain('/bin/boot');
-    expect(cron.dueJobs(new Date(2026, 0, 1, 0, 0)).map((j) => j.command)).not.toContain('/bin/boot');
+    const boot = cron.getJobs('root').find((j) => j.command === '/bin/boot');
+    expect(boot?.schedule.isReboot).toBe(true);
   });
 
   it('CM-22 jobs carry the env of their crontab', () => {

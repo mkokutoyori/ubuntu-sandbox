@@ -1,6 +1,8 @@
 import { CronJob } from './CronSchedule';
 import { parseCrontab } from './CrontabParser';
 import type { CronSource } from './CronEngine';
+import { TimeZone } from '../../../core/time/TimeZone';
+import { partsAt } from '../../../core/time/TimeZoneRegistry';
 
 interface SystemCronFs {
   readFile(path: string): string | null;
@@ -8,7 +10,14 @@ interface SystemCronFs {
 }
 
 export class SystemCron implements CronSource {
-  constructor(private readonly vfs: SystemCronFs) {}
+  constructor(
+    private readonly vfs: SystemCronFs,
+    private readonly zone: () => TimeZone,
+  ) {}
+
+  private zoneOf(job: CronJob): TimeZone {
+    return TimeZone.parse(job.env.CRON_TZ ?? '') ?? this.zone();
+  }
 
   private collect(): CronJob[] {
     const jobs: CronJob[] = [];
@@ -43,7 +52,8 @@ export class SystemCron implements CronSource {
   }
 
   dueJobs(at: Date): CronJob[] {
-    return this.collect().filter((j) => !j.schedule.isReboot && j.schedule.isDue(at));
+    return this.collect().filter((j) => !j.schedule.isReboot
+      && j.schedule.isDue(partsAt(this.zoneOf(j), at.getTime())));
   }
 
   rebootJobs(): CronJob[] {

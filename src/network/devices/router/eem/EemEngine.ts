@@ -2,6 +2,8 @@ import { type IEventBus, type Unsubscribe } from '@/events/EventBus';
 import { ownBusProvider } from '@/events/BusHolder';
 import { getDefaultScheduler, type IScheduler, type TimerHandle } from '@/events/Scheduler';
 import { CronSchedule } from '../../linux/LinuxCronManager';
+import { partsAtOffset } from '../../../core/time/TimeZoneRegistry';
+import { getManagementService } from '../../../equipment/RouterServiceCapabilities';
 import type { SnmpAgent } from '../../../snmp/SnmpAgent';
 import { EemService, type EemAction, type EemApplet, type EemTrigger } from './EemService';
 import { syslogFullLine } from '@/network/syslog/types';
@@ -37,7 +39,7 @@ export interface EemHost {
 interface TimerTriggerState {
   nextDueMs?: number;
   fired?: boolean;
-  lastCronMinuteKey?: string;
+  lastCronMinute?: number;
 }
 
 function severityName(n: number | undefined): typeof SYSLOG_SEVERITY_NAMES[number] {
@@ -216,6 +218,10 @@ export class EemEngine {
     void this.runApplet(applet);
   }
 
+  private clockOffsetMinutes(): number {
+    return getManagementService(this.host)?.getClock().offsetMin ?? 0;
+  }
+
   private evaluateCronTimer(
     applet: EemApplet,
     trig: Extract<EemTrigger, { kind: 'timer.cron' }>,
@@ -224,17 +230,16 @@ export class EemEngine {
   ): void {
     const schedule = CronSchedule.parse(trig.cronEntry);
     if (!schedule) return;
-    const at = new Date(now);
-    const minuteKey = `${at.getFullYear()}-${at.getMonth()}-${at.getDate()}-${at.getHours()}-${at.getMinutes()}`;
+    const minute = Math.floor(now / 60_000);
     const key = this.timerKey(applet, index);
     let st = this.timerStates.get(key);
     if (!st) {
       st = {};
       this.timerStates.set(key, st);
     }
-    if (st.lastCronMinuteKey === minuteKey) return;
-    if (!schedule.isDue(at)) return;
-    st.lastCronMinuteKey = minuteKey;
+    if (st.lastCronMinute === minute) return;
+    if (!schedule.isDue(partsAtOffset(this.clockOffsetMinutes(), now))) return;
+    st.lastCronMinute = minute;
     void this.runApplet(applet);
   }
 
