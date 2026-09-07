@@ -8487,3 +8487,75 @@ connexes : 82 fichiers, 2789 cas, tous verts. `npm run typecheck` : 248
 erreurs, comme sur la base. Trois cas e2e Playwright verifient dans le
 vrai terminal que deux machines different et que `wmic` range ses
 colonnes et refuse une propriete inconnue.
+
+---
+
+## Un poste Windows a UN agencement de disques, lui aussi
+
+**Perimetre revendique** : `src/network/devices/host/hardware/HardwareProfile.ts`,
+`src/network/devices/WindowsPC.ts`,
+`src/network/devices/windows/` (`Fsutil.ts` nouveau, `WindowsFileSystem.ts`,
+`PSPipeline.ts`), `src/powershell/providers/` (`PSProviders.ts`,
+`WindowsPSProviders.ts`), `src/powershell/cmdlets/core/SystemMgmtCmdlets.ts`,
+`src/powershell/cmdlets/core/index.ts`.
+
+Mesure de depart sur un `windows-pc` ordinaire :
+
+```
+Get-Disk        0 Microsoft Virtual Disk  100.00 GB  MBR  True True
+                1 Virtual HD D:            50.00 GB  MBR  False False
+Get-Partition   « n'est pas reconnu »
+fsutil          « n'est pas reconnu »
+wmic diskdrive  QEMU HARDDISK  53687091200        (un disque ext4 !)
+```
+
+**Trois defauts, tous mesures.**
+
+(1) `Get-Disk` rendait UNE LIGNE PAR LETTRE DE LECTEUR. Un disque
+physique n'est pas un volume : deux lettres portees par le meme disque
+en faisaient deux, et un `mkdir E:\` en faisait apparaitre un
+troisieme — un disque qui n'existe pas. Le numero de serie « du
+disque » etait meme derive du numero de serie du VOLUME, deux notions
+que Windows distingue soigneusement.
+
+(2) L'inventaire materiel de la machine decrivait un disque LINUX.
+`HardwareProfile.defaultFor()` ne connaissait qu'un ROLE, pas une
+plateforme, si bien qu'un poste Windows portait `sda1` monte sur `/` en
+`ext4` — ce que `wmic diskdrive` rendait mot pour mot depuis le lot
+precedent. Pendant ce temps le systeme de fichiers Windows inventait ses
+propres 100 Go pour `C:` et 50 Go pour `D:` : deux ecritures du meme
+fait, qui ne pouvaient que se contredire des qu'on toucherait a l'une.
+Un preset Windows existe donc (`disk0` : « System Reserved » de 549 Mio
+sans lettre, puis `C:` ; `disk1` : `D:`), et `WindowsPC` SEME depuis lui
+la capacite et l'etiquette de chaque volume. L'etiquette codee en dur
+dans `WindowsFileSystem` disparait du meme coup : elle vient de la
+partition.
+
+(3) `Get-Partition` et `fsutil` n'existaient pas, alors que ce sont les
+deux commandes par lesquelles on lit un agencement de disques sous
+Windows. `Get-Partition` rend les partitions groupees par disque
+(`Disk Number: 0`), comme le fait la vue de format du module Storage, et
+accepte `-DiskNumber`, `-PartitionNumber`, `-DriveLetter`. Le
+regroupement emprunte le mecanisme du bandeau `Directory:` de
+`Get-ChildItem`, deja present dans `PSPipeline`. `fsutil volume diskfree`
+rend les trois totaux avec leur equivalent en Go, au format des
+`fsutil.exe` recents (`Total # of bytes             : N (X.XXGB)`), et
+`fsutil volume list` les lettres montees ; un volume absent est REFUSE
+(`Error:  The system cannot find the path specified.`) plutot que rendu
+a zero.
+
+**Corrige dans un test plutot que dans le code** :
+`windows-drive-switching` portait le cas « Get-Disk emits one row per
+FS-mounted drive », dont l'intitule EST le defaut. Il verifie maintenant
+l'inverse et le prouve : deux disques physiques, et toujours deux apres
+un `mkdir E:\`.
+
+**Discrimination** (`git stash push -- src/network src/powershell`) :
+`probe-stockage-une-seule-verite-windows.test.ts` (10 cas), 8 tombent
+contre l'etat d'avant. Les 2 autres sont les TEMOINS nommes dans
+l'en-tete : les tailles de volume et les etiquettes de `Get-Volume`, qui
+etaient justes parce que le systeme de fichiers les inventait et qui le
+restent parce que la partition les porte. Suites connexes : 75 fichiers,
+2537 cas, tous verts. `npm run typecheck` : 248 erreurs, comme sur la
+base. Deux cas e2e Playwright confrontent `Get-Disk`, `Get-Partition`,
+`wmic diskdrive`, `fsutil` et `dir` dans le vrai terminal.

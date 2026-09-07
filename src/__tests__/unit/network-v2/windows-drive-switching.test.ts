@@ -338,16 +338,17 @@ describe('Storage stats are FS-derived, not frozen constants', () => {
     expect(cLine).toMatch(/\b9[4-5]\.\d{2}\b/);
   });
 
-  it('Get-Disk emits one row per FS-mounted drive', async () => {
+  it('Get-Disk emits one row per PHYSICAL disk, pas par lettre de lecteur', async () => {
     const pc = new WindowsPC('windows-pc', 'PC1', 0, 0);
-    pc.getFileSystem().mkdirp('E:\\');
     const ps = livePs(pc);
-    const out = await ps.execute('Get-Disk');
-    // Number column shows 0/1/2 for the three drives.
+    const disques = async () => (await ps.execute('Get-Disk'))
+      .split('\n').filter(l => /^\s*\d\s+(Virtual|Microsoft)/.test(l)).length;
+
     // La colonne Number est numerique, donc alignee a DROITE, comme dans
     // le vrai format-table de PowerShell.
-    const rows = out.split('\n').filter(l => /^\s*\d\s+(Virtual|Microsoft)/.test(l));
-    expect(rows.length).toBe(3);
+    expect(await disques()).toBe(2);
+    pc.getFileSystem().mkdirp('E:\\');
+    expect(await disques()).toBe(2);
   });
 
   it('Get-Disk for C: is the boot/system disk', async () => {

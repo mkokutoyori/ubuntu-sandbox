@@ -920,6 +920,7 @@ export abstract class EndHost extends Equipment {
     this.attachListenerProjection();
     this.hardware = HardwareProfile.defaultFor(
       String(type).includes('server') ? 'server' : 'workstation',
+      String(type).includes('windows') ? 'windows' : 'linux',
     );
     this.hardware.identify(this.name);
     this.lifecycle = new HostLifecycle();

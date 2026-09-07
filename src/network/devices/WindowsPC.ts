@@ -186,6 +186,7 @@ import { SessionSwapWindow } from './host/session/SessionSwapWindow';
 import * as WinSys from './windows/WinSystemCommands';
 import { cmdReg as winCmdReg } from './windows/WinRegCommand';
 import { cmdDir } from './windows/WinDir';
+import { cmdFsutil } from './windows/Fsutil';
 import { applyFindstr } from './windows/textFilters';
 import { CrossVendorRemoteShell } from '@/shell/CrossVendorRemoteShell';
 import type { NetIPAddressEntry } from './windows/netIpAddress';
@@ -418,6 +419,7 @@ export class WindowsPC extends EndHost implements UserAccountHost {
     this.hostModel = 'strong';
     this.createPorts();
     this.fs = new WindowsFileSystem(name);
+    this.seedVolumesFromHardware();
     // Materialise the event logs as .evtx files under winevt\Logs.
     this.eventLog.attachFilesystem(this.fs);
     this.userMgr = new WindowsUserManager();
@@ -2705,6 +2707,7 @@ export class WindowsPC extends EndHost implements UserAccountHost {
       case 'nbtstat': return this.cmdNbtstat(args);
       case 'w32tm':   return this.cmdW32tm(args);
       case 'wmic':    return this.cmdWmic(args);
+      case 'fsutil':  return cmdFsutil(this.buildSystemContext(), args);
       case 'reg':     return this.cmdReg(args);
       case 'nltest':  return cmdNltest({
         domainMembership: this.domainMembership,
@@ -3790,6 +3793,24 @@ export class WindowsPC extends EndHost implements UserAccountHost {
 
   private cmdWmic(args: string[]): string {
     return WinSys.cmdWmic(this.buildSystemContext(), args);
+  }
+
+  /**
+   * La taille et l'etiquette d'un volume viennent de la partition qui le
+   * porte. Sans cela le systeme de fichiers inventait ses propres 100 Go
+   * pour `C:` pendant que l'inventaire materiel en annoncait d'autres —
+   * deux ecritures du meme fait.
+   */
+  private seedVolumesFromHardware(): void {
+    for (const disk of this.hardware.storage) {
+      for (const part of disk.partitions) {
+        if (!part.mountPoint) continue;
+        const letter = part.mountPoint.charAt(0).toUpperCase();
+        this.fs.mkdirp(`${letter}:\\`);
+        this.fs.setDriveCapacity(letter, part.sizeBytes);
+        this.fs.setVolumeLabel(letter, part.label);
+      }
+    }
   }
 
   private cmdReg(args: string[]): string {

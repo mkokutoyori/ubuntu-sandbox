@@ -750,6 +750,8 @@ export function formatDefault(objects: PSObject[]): string {
   if (objects.length === 0) return '';
   const serverManager = serverManagerView(objects);
   if (serverManager !== null) return serverManager;
+  const partitions = partitionDiskGroups(objects);
+  if (partitions !== null) return partitions;
   const keys = Object.keys(objects[0]);
   const defaultCols = pickDefaultColumns(keys);
   if (defaultCols) {
@@ -761,6 +763,26 @@ export function formatDefault(objects: PSObject[]): string {
   }
   if (keys.length <= 4) return formatTable(objects, '');
   return formatList(objects, '');
+}
+
+/**
+ * `Get-Partition` is grouped by disk: real PowerShell prints a
+ * `Disk Number: N` heading above each disk's table, because a partition
+ * number only means something next to the disk that carries it.
+ */
+function partitionDiskGroups(objects: PSObject[]): string | null {
+  const lower = new Set(Object.keys(objects[0]).map(k => k.toLowerCase()));
+  if (!lower.has('partitionnumber') || !lower.has('offset') || !lower.has('disknumber')) return null;
+  const key = Object.keys(objects[0]).find(k => k.toLowerCase() === 'disknumber')!;
+  const groups = new Map<string, PSObject[]>();
+  for (const o of objects) {
+    const disk = String((o as Record<string, unknown>)[key] ?? '');
+    (groups.get(disk) ?? groups.set(disk, []).get(disk)!).push(o);
+  }
+  const columns = 'PartitionNumber, DriveLetter, Offset, Size, Type';
+  return [...groups.entries()]
+    .map(([disk, rows]) => `\nDisk Number: ${disk}\n${formatTable(rows, columns)}`)
+    .join('\n');
 }
 
 /**
@@ -842,6 +864,11 @@ function pickDefaultColumns(keys: string[]): string[] | null {
   if (lower.has('driveletter') && lower.has('healthstatus') && lower.has('sizeremaining')) {
     return ['DriveLetter', 'FriendlyName', 'FileSystemType', 'DriveType', 'HealthStatus',
             'OperationalStatus', 'SizeRemaining', 'Size'];
+  }
+  // Partition (Get-Partition): `DiskNumber` carries the grouping and is
+  // not a column, exactly as `FullName` carries the directory banner.
+  if (lower.has('partitionnumber') && lower.has('offset') && lower.has('disknumber')) {
+    return ['PartitionNumber', 'DriveLetter', 'Offset', 'Size', 'Type'];
   }
   if (lower.has('number') && lower.has('isboot') && lower.has('partitionstyle')) {
     return ['Number', 'FriendlyName', 'SerialNumber', 'OperationalStatus', 'TotalSize',

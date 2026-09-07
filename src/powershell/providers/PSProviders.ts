@@ -1498,9 +1498,19 @@ export interface IEnvironmentProvider {
   remove(name: string): void;
 }
 
+export interface PartitionInfo {
+  diskNumber: number;
+  partitionNumber: number;
+  driveLetter: string;
+  offset: number;
+  size: number;
+  type: string;
+}
+
 export interface IDiskProvider {
   listDisks(): DiskInfo[];
   listVolumes(): VolumeInfo[];
+  listPartitions(): PartitionInfo[];
 }
 
 export interface VpnConnectionInfo {

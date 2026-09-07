@@ -94,7 +94,7 @@ import type {
   DirEntry, ServiceInfo, ProcessInfo, UserInfo, GroupInfo,
   NetAdapterEntry, AdapterStatisticsInfo, IPAddressInfo, RouteInfo, EventLogEntryInfo,
   NicTeamInfo, NicTeamMemberInfo, NicTeamNicInfo, NewNicTeamRequest, SetNicTeamRequest,
-  VpnConnectionInfo, ScheduledTaskInfo, DiskInfo, VolumeInfo,
+  VpnConnectionInfo, ScheduledTaskInfo, DiskInfo, VolumeInfo, PartitionInfo,
   NeighborInfo,
 } from '@/powershell/providers/PSProviders';
 import type { PSValue } from '@/powershell/runtime/PSEnvironment';
@@ -2650,26 +2650,60 @@ class WindowsEnvironmentAdapter implements IEnvironmentProvider {
   }
 }
 
+/** Windows aligne sa premiere partition sur 1 Mio. */
+const FIRST_PARTITION_OFFSET = 1_048_576;
+
+/**
+ * Un disque PHYSIQUE n'est pas un volume. Cet adaptateur lisait la liste
+ * des lettres de lecteur et en fabriquait un disque par lettre, si bien
+ * qu'un `mkdir E:\` faisait apparaitre un troisieme disque dur, et que
+ * le numero de serie « du disque » etait celui du VOLUME. Les disques,
+ * leurs partitions et leurs tailles viennent de l'inventaire materiel ;
+ * seule la place LIBRE vient du systeme de fichiers, qui la consomme.
+ */
 class WindowsDiskAdapter implements IDiskProvider {
   constructor(private readonly pc: WindowsPC) {}
+
+  private disks() {
+    return this.pc.getHardware().storage;
+  }
+
   listDisks(): DiskInfo[] {
-    const fs = this.pc.getFileSystem();
-    return fs.listDrives().map((drive, index) => {
-      const letter = drive.charAt(0).toUpperCase();
-      const boot = letter === 'C';
+    return this.disks().map((disk, index) => {
+      const boot = disk.partitions.some((p) => p.mountPoint.toUpperCase().startsWith('C'));
       return {
         number: index,
-        friendlyName: boot ? 'Microsoft Virtual Disk' : `Virtual HD ${letter}:`,
-        size: fs.getDriveCapacity(letter),
+        friendlyName: disk.model,
+        size: disk.sizeBytes,
         partitionStyle: 'MBR',
         operationalStatus: 'Online',
         uniqueId: `{00000000-0000-0000-0000-${String(index + 1).padStart(12, '0')}}`,
-        serialNumber: fs.getVolumeSerialNumber(letter).replace('-', ''),
+        serialNumber: disk.serial,
         isBoot: boot,
         isSystem: boot,
       };
     });
   }
+
+  listPartitions(): PartitionInfo[] {
+    const out: PartitionInfo[] = [];
+    this.disks().forEach((disk, diskNumber) => {
+      let offset = FIRST_PARTITION_OFFSET;
+      disk.partitions.forEach((part, index) => {
+        out.push({
+          diskNumber,
+          partitionNumber: index + 1,
+          driveLetter: part.mountPoint.charAt(0).toUpperCase(),
+          offset,
+          size: part.sizeBytes,
+          type: 'IFS',
+        });
+        offset += part.sizeBytes;
+      });
+    });
+    return out;
+  }
+
   listVolumes(): VolumeInfo[] {
     const fs = this.pc.getFileSystem();
     return fs.listDrives().map(drive => {

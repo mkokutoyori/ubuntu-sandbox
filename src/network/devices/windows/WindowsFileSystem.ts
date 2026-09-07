@@ -103,9 +103,10 @@ export class WindowsFileSystem {
    * et `wmic logicaldisk get volumename`. Elle vivait auparavant dans
    * l'adaptateur PowerShell seul, si bien que `Get-Volume` annonçait
    * « Windows » quand `vol` répondait « has no label » sur le même
-   * lecteur au même instant.
+   * lecteur au même instant. Elle est SEMÉE depuis la partition qui
+   * porte le volume, pas écrite ici une seconde fois.
    */
-  private volumeLabels: Map<string, string> = new Map([['C', 'Windows'], ['D', 'Data']]);
+  private volumeLabels: Map<string, string> = new Map();
 
   /** Default capacity for a drive that hasn't been configured. */
   private readonly DEFAULT_DRIVE_CAPACITY = 53_687_091_200; // 50 GB

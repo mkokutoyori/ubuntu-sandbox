@@ -116,6 +116,7 @@ import {
   GetScheduledTaskInfoCmdlet, StartScheduledTaskCmdlet, StopScheduledTaskCmdlet,
   EnableScheduledTaskCmdlet, DisableScheduledTaskCmdlet, SetScheduledTaskCmdlet,
   NewScheduledTaskActionCmdlet, NewScheduledTaskPrincipalCmdlet, GetDiskCmdlet, GetVolumeCmdlet,
+  GetPartitionCmdlet,
   InitializeDiskCmdlet, FormatVolumeCmdlet,
   GetCimInstanceCmdlet, GetCounterCmdlet,
   GetComputerInfoCmdlet,
@@ -481,6 +482,7 @@ export function registerCoreCmdlets(registry: CmdletRegistry, opts: { includeSer
   registry.register(new InitializeDiskCmdlet());
   registry.register(new FormatVolumeCmdlet());
   registry.register(new GetVolumeCmdlet());
+  registry.register(new GetPartitionCmdlet());
   registry.register(new GetCimInstanceCmdlet());
   registry.register(new GetCounterCmdlet());
 
