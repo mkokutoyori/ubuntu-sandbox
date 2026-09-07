@@ -5178,6 +5178,8 @@ export class WindowsPC extends EndHost implements UserAccountHost {
 
   /** L'agent NTP de cette machine — le MEME moteur que Cisco et Linux. */
   private _ntpAgent: NtpAgent | null = null;
+  public override resolverProcessName(): string { return 'svchost'; }
+
   getNtpAgent(): NtpAgent {
     if (!this._ntpAgent) {
       this._ntpAgent = new NtpAgent(this as unknown as NtpHost, () => this.getBus(), () => this.getScheduler());
