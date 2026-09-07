@@ -535,22 +535,39 @@ part entiere : la grammaire d'`aaa` a quatre niveaux, une liste nommee
 libre au milieu, et une suite de methodes de longueur variable dont
 `group` consomme le mot suivant.
 
-### [horloge] la convention de BORD de `clock summer-time` n'est pas sourcee
-`core/time/DeviceClock` evalue une regle d'heure d'ete en comparant
-l'heure de DEBUT a l'heure standard locale et l'heure de FIN a l'heure
-d'ete locale — la convention de tzdata et des textes americains et
-europeens.
-**Mesure** : `cisco.com` et `support.huawei.com` sont tous deux
-injoignables depuis cet environnement (proxy de sortie), et aucune source
-secondaire atteignable ne tranche ce point. Ce qui EST etabli, par deux
-rendus concordants de la reference IOS : `recurring` sans parametres
-prend les regles americaines (1er dimanche d'avril 02:00 au dernier
-dimanche d'octobre 02:00) et le decalage par defaut vaut 60 minutes.
-**Report** : l'ecart ne porte que sur l'heure meme de la bascule, deux
-fois l'an. Le fermer demande une reference constructeur atteignable ou
-une transcription capturee sur un vrai equipement ; jusque-la, assumer
-la convention universelle vaut mieux que la deviner autrement, et le
-dire vaut mieux que de l'attribuer a Cisco.
+### [horloge] la FORMULATION constructeur de `clock summer-time` n'est pas lue
+Ce qui manque ne porte plus que sur les MOTS des deux references, pas
+sur le comportement.
+
+**Ce qui est etabli, et garde par une sonde.** La regle
+`clock timezone CET 1` + `clock summer-time CEST recurring last Sun Mar
+2:00 last Sun Oct 3:00` decrit `Europe/Paris`. tzdata, lui, est
+joignable par `core/time/TimeZoneRegistry`. Les deux ont donc ete
+compares directement :
+
+    525 600 minutes comparees sur l'annee 2026 -> AUCUN ecart
+
+Bascules comprises : au printemps l'heure locale saute de 01:59 a 03:00
+et l'heure 02:00-02:59 n'existe pas ; a l'automne elle repasse de 02:59
+CEST a 02:00 CET, qui se produit donc deux fois. Les deux cas vivent
+dans `probe-horloge-suit-son-equipement.test.ts`, si bien qu'un
+retournement futur de la convention tomberait au lieu de passer
+inapercu. Etabli par ailleurs, par deux rendus concordants de la
+reference IOS : `recurring` sans parametres prend les regles
+americaines, et le decalage par defaut vaut 60 minutes.
+
+**Ce qui reste ouvert.** `cisco.com` et `support.huawei.com` sont tous
+deux bloques par le proxy de sortie de cet environnement, si bien que la
+phrase exacte par laquelle chaque constructeur decrit ses bornes n'a pas
+pu etre lue. La correspondance a tzdata rend un DESACCORD tres
+improbable — il faudrait que Cisco s'ecarte du fuseau que sa propre
+commande sert a decrire — mais elle ne remplace pas la lecture.
+
+**Ce qu'il faudrait pour fermer.** L'acces a l'une des deux pages, ou
+une transcription capturee sur un vrai equipement a l'heure meme de la
+bascule. Les formes que la grammaire VRP accepte et que
+`huaweiDaylightSaving` refuse aujourd'hui (les bornes datees d'un
+`repeating`) dependent de la meme lecture.
 
 ### [uniformite] `track <mot>` refuse avec DEUX messages selon la plateforme
 `track zorglub interface GigabitEthernet0/0 line-protocol` rend
