@@ -20,15 +20,16 @@ export const FORTIOS_TIMEZONES: readonly FortiTimezone[] = Object.freeze([
 const BY_INDEX = new Map(FORTIOS_TIMEZONES.map(zone => [zone.index, zone]));
 const BY_NAME = new Map(FORTIOS_TIMEZONES.map(zone => [zone.name.toLowerCase(), zone]));
 
+export function implementedFortiIndexes(): string {
+  return FORTIOS_TIMEZONES.map((zone) => zone.index).sort((a, b) => a - b).join(', ');
+}
+
 export function resolveFortiTimezone(raw: string): FortiTimezone | null {
   const value = raw.trim();
   if (value.length === 0) return null;
 
   if (/^\d+$/.test(value)) {
-    const index = Number.parseInt(value, 10);
-    if (index < 0 || index > 86) return null;
-    return BY_INDEX.get(index)
-      ?? { index, name: 'UTC', label: `(GMT) time zone ${value}` };
+    return BY_INDEX.get(Number.parseInt(value, 10)) ?? null;
   }
 
   const known = BY_NAME.get(value.toLowerCase());

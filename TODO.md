@@ -535,6 +535,45 @@ part entiere : la grammaire d'`aaa` a quatre niveaux, une liste nommee
 libre au milieu, et une suite de methodes de longueur variable dont
 `group` consomme le mot suivant.
 
+### [horloge] 79 des 87 index de fuseau FortiOS ne sont pas implantes
+`set timezone 55` est un index VALIDE sur un vrai FortiGate. Ici, seuls
+huit index sont tabules (0, 1, 2, 3, 4, 12, 26, 27) ; les autres sont
+desormais REFUSES en nommant ceux qui existent, la ou ils etaient
+auparavant acceptes et valaient UTC en silence.
+
+**Mesure** : `resolveFortiTimezone` fabriquait
+`{ index, name: 'UTC', label: '(GMT) time zone 55' }` pour tout index de
+0 a 86 absent de la table. Le pare-feu affichait donc `set timezone 55`
+dans sa configuration pendant que son horloge, ses journaux et ses
+horaires de politique etaient a UTC — un fuseau annonce que rien ne
+soutenait (I-T4).
+
+**Pourquoi la table n'est pas remplie.** Il faut la correspondance
+index -> fuseau, et aucune source atteignable ne la donne :
+`docs.fortinet.com` et `registry.terraform.io` sont tous deux bloques
+par le proxy de sortie, et `official_docs/forti-cli-ref-60.txt`
+(l. 33538) donne la PLAGE (« from 00 to 86 ») en renvoyant a
+`set timezone ?` pour la liste, qu'il ne reproduit pas.
+
+Un resume de recherche a bien rendu une liste, et il ne faut PAS s'en
+servir : elle est decalee d'un cran par rapport aux huit lignes deja
+presentes ici (elle donne Midway/Samoa a l'index 01 la ou la table le
+met a 0), et elle melange des versions dont certaines vont jusqu'a 89 —
+FortiOS 7.4.2 ayant par ailleurs remplace l'entier par un nom IANA.
+Ecrire 87 lignes depuis cette source injecterait 87 faits non verifies,
+et l'ecart d'un cran dit qu'au moins une des deux numerotations est
+fausse. Laquelle, cette entree ne le sait pas.
+
+**Ce qui reste possible sans elle** : n'importe quel fuseau est
+atteignable par son nom IANA (`set timezone Europe/Paris`), chemin qui
+n'est pas borne par la table.
+
+**Ce qu'il faudrait pour fermer** : la sortie de `set timezone ?` sur un
+vrai FortiGate, ou l'acces a l'une des deux pages. La sonde
+`probe-fuseaux-fortios` verifie deja que chaque ligne AJOUTEE porte le
+decalage standard que son libelle annonce, de sorte qu'une ligne
+mal recopiee tombera au lieu de s'installer.
+
 ### [horloge] la FORMULATION constructeur de `clock summer-time` n'est pas lue
 Ce qui manque ne porte plus que sur les MOTS des deux references, pas
 sur le comportement.
