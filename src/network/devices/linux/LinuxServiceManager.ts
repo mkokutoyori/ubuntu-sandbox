@@ -583,7 +583,27 @@ export class LinuxServiceManager {
    * would reject it, instead of being silently applied.
    */
   registerConfigCheck(name: string, check: () => OperationResult): void {
-    this.configChecks.set(name.replace(/\.service$/, ''), check);
+    const unitName = name.replace(/\.service$/, '');
+    this.configChecks.set(unitName, check);
+    this.reconcileAlreadyActive(unitName, check);
+  }
+
+  /**
+   * Les unites activees au demarrage sont demarrees a la CONSTRUCTION du
+   * gestionnaire, alors que chaque demon n'enregistre son controle de
+   * configuration que plus tard, quand la machine le cable. L'unite
+   * etait donc marquee active sans que le demon soit jamais passe par sa
+   * propre sequence de demarrage : `systemctl is-active chrony` repondait
+   * `active` pendant que `timedatectl` annoncait `NTP service: inactive`.
+   *
+   * Un controle enregistre pour une unite DEJA active est donc joue tout
+   * de suite. Il echoue exactement comme il aurait echoue au demarrage,
+   * et l'unite tombe alors en `failed` — ce que systemd aurait fait.
+   */
+  private reconcileAlreadyActive(unitName: string, check: () => OperationResult): void {
+    if (!this.isActive(unitName)) return;
+    const verdict = check();
+    if (!verdict.ok) this.markFailed(unitName, verdict.error ?? 'configuration check failed');
   }
 
   /** Subscribe to service lifecycle changes. Returns an unsubscribe handle. */

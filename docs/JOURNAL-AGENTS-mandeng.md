@@ -8559,3 +8559,63 @@ restent parce que la partition les porte. Suites connexes : 75 fichiers,
 2537 cas, tous verts. `npm run typecheck` : 248 erreurs, comme sur la
 base. Deux cas e2e Playwright confrontent `Get-Disk`, `Get-Partition`,
 `wmic diskdrive`, `fsutil` et `dir` dans le vrai terminal.
+
+---
+
+## Une unite qu'un `systemctl` dit ACTIVE a un demon qui tourne
+
+**Perimetre revendique** : `src/network/devices/linux/LinuxServiceManager.ts`
+(`registerConfigCheck`).
+
+Trouve en BALAYANT un poste neuf, sans rien avoir tape avant :
+
+```
+systemctl is-active chrony   active
+timedatectl                  NTP service: inactive
+timedatectl show             NTP=no
+chronyc tracking             506 Cannot talk to daemon
+```
+
+Trois vues de la MEME machine, au MEME instant, se contredisent sur
+l'etat du meme demon.
+
+**La cause n'est pas dans `timedatectl`**, qui lit bien le service. C'est
+un ORDRE : `LinuxServiceManager` demarre les unites activees dans son
+propre constructeur, appele par `LinuxCommandExecutor`, tandis que
+`LinuxMachine.initChrony()` n'enregistre le controle de configuration de
+chrony que bien plus tard. Au moment ou systemd marque l'unite active, le
+demon n'est jamais passe par sa sequence de demarrage — et il n'y
+passera jamais.
+
+**Ce n'est pas un defaut de chrony.** NEUF demons enregistrent leur
+controle apres l'amorcage (`named`, `isc-dhcp-server`, `nginx`,
+`rsyslog`, `chrony`, `apache2`, `ssh`, `auditd`, `freeradius`) ; tous
+ceux qui sont actives par defaut portaient le meme trou. La correction va
+donc dans le gestionnaire, UNE fois : un controle enregistre pour une
+unite DEJA active est joue tout de suite, et s'il echoue l'unite tombe en
+`failed` — exactement ce que systemd aurait fait au demarrage. Corriger
+chrony seul aurait laisse les huit autres.
+
+**Corrige dans un test plutot que dans le code** : `tuto-ntp-chrony-cles`
+posait en premisse qu'une machine neuve n'a pas de demon
+(`506 Cannot talk to daemon`) — premisse qui n'etait vraie qu'a cause du
+defaut, une Ubuntu demarrant chrony au boot. Le cas PROVOQUE desormais
+l'absence de demon (`systemctl stop chrony`), ce qui est ce qu'il voulait
+verifier : `chronyc keygen` repond sans demon.
+
+**Une assertion ecrite a l'aveugle a d'abord passe POUR RIEN** :
+`toContain('NTP=yes')` etait satisfait par la ligne `CanNTP=yes` de
+`timedatectl show`. Ancree (`/^NTP=yes$/m`), elle tombe comme les autres.
+C'est le genre de faux vert que l'ecriture a l'aveugle sert justement a
+faire apparaitre.
+
+**Discrimination** (`git stash push -- src/network`) :
+`probe-un-demon-actif-tourne-vraiment.test.ts` (6 cas), 4 tombent contre
+l'etat d'avant. Les 2 autres sont les TEMOINS nommes dans l'en-tete :
+l'arret explicite, qui marchait deja parce qu'il passe par le cycle de
+vie, et l'horloge NON synchronisee, qui doit le rester — un demon actif
+sans source joignable ne synchronise rien, et c'est precisement le cas
+qu'un depannage cherche. Suites connexes : 54 fichiers, 867 cas, tous
+verts. `npm run typecheck` : 248 erreurs, comme sur la base. Un cas e2e
+Playwright confronte `systemctl`, `timedatectl` et `chronyc` dans le vrai
+terminal, avant et apres un arret.

@@ -168,7 +168,12 @@ describe('`chronyc keygen` produit une ligne collable, avec les vrais defauts', 
   });
 
   it('elle repond sans demon : on prepare le fichier AVANT de demarrer', async () => {
+    // Une Ubuntu demarre chrony au boot, donc l'absence de demon se
+    // PROVOQUE. La premisse d'origine — « une machine neuve n'a pas de
+    // demon » — n'etait vraie que parce que l'unite etait marquee active
+    // sans que le demon soit passe par son demarrage.
     const pc = new LinuxPC(`K${++serie}`);
+    await pc.executeCommand('systemctl stop chrony');
     expect(await pc.executeCommand('chronyc tracking')).toContain('506 Cannot talk to daemon');
     expect(await pc.executeCommand('chronyc keygen')).toMatch(/^1 SHA1 HEX:/);
   });
