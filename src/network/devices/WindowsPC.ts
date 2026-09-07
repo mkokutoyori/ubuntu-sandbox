@@ -3468,6 +3468,12 @@ export class WindowsPC extends EndHost implements UserAccountHost {
       os: this.getIdentity().os,
       bootedAt: () => this.getLifecycle().bootedAt() ?? null,
       hardware: this.hardware,
+      volumes: {
+        letters: () => this.fs.listDrives(),
+        capacityBytes: (letter) => this.fs.getDriveCapacity(letter),
+        freeBytes: (letter) => this.fs.getFreeDiskSpace(letter),
+        label: (letter) => this.fs.getVolumeLabel(letter),
+      },
       ports: this.ports,
       isDHCPConfigured: (ifName) => this.isDHCPConfigured(ifName),
       getVolumeSerialNumber: (letter) => this.fs.getVolumeSerialNumber(letter),
@@ -3783,10 +3789,6 @@ export class WindowsPC extends EndHost implements UserAccountHost {
   }
 
   private cmdWmic(args: string[]): string {
-    if (args.join(' ').toLowerCase().includes('logicaldisk')) {
-      const drives = this.fs.listDrives();
-      return ['Name  ', ...drives.map((d) => d.padEnd(6))].join('\n');
-    }
     return WinSys.cmdWmic(this.buildSystemContext(), args);
   }
 

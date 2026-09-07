@@ -98,6 +98,15 @@ export class WindowsFileSystem {
    */
   private driveCapacityBytes: Map<string, number> = new Map();
 
+  /**
+   * L'étiquette de volume, source UNIQUE pour `vol`, `dir`, `Get-Volume`
+   * et `wmic logicaldisk get volumename`. Elle vivait auparavant dans
+   * l'adaptateur PowerShell seul, si bien que `Get-Volume` annonçait
+   * « Windows » quand `vol` répondait « has no label » sur le même
+   * lecteur au même instant.
+   */
+  private volumeLabels: Map<string, string> = new Map([['C', 'Windows'], ['D', 'Data']]);
+
   /** Default capacity for a drive that hasn't been configured. */
   private readonly DEFAULT_DRIVE_CAPACITY = 53_687_091_200; // 50 GB
   /** Capacity for the system drive (C:) — 100 GB. */
@@ -922,6 +931,16 @@ export class WindowsFileSystem {
     return [...this.drives.keys()]
       .map((d) => d.replace(/:.*$/, ':').toUpperCase())
       .sort();
+  }
+
+  getVolumeLabel(drive: string = 'C'): string {
+    return this.volumeLabels.get(this.normaliseDriveLetter(drive)) ?? '';
+  }
+
+  setVolumeLabel(drive: string, label: string): void {
+    const letter = this.normaliseDriveLetter(drive);
+    if (label) this.volumeLabels.set(letter, label);
+    else this.volumeLabels.delete(letter);
   }
 
   /**

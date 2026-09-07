@@ -2672,12 +2672,11 @@ class WindowsDiskAdapter implements IDiskProvider {
   }
   listVolumes(): VolumeInfo[] {
     const fs = this.pc.getFileSystem();
-    const labels: Record<string, string> = { C: 'Windows', D: 'Data' };
     return fs.listDrives().map(drive => {
       const letter = drive.charAt(0).toUpperCase();
       return {
         driveLetter: letter,
-        fileSystemLabel: labels[letter] ?? 'Local Disk',
+        fileSystemLabel: fs.getVolumeLabel(letter) || 'Local Disk',
         fileSystem: 'NTFS',
         sizeRemaining: fs.getFreeDiskSpace(letter),
         size: fs.getDriveCapacity(letter),

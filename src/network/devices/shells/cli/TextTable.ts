@@ -76,6 +76,13 @@ export interface TableStyle {
    * largeur et un alignement ; il leur manque seulement la ligne du haut.
    */
   readonly header?: boolean;
+  /**
+   * WMIC est la seule vue reproduite ici qui LAISSE ses blancs de fin :
+   * chaque colonne est calée à sa largeur, la dernière comprise, et un
+   * script qui découpe par position s'appuie dessus. Les vues IOS et VRP
+   * n'en laissent pas, d'où le retrait par défaut.
+   */
+  readonly padTrailing?: boolean;
 }
 
 /**
@@ -154,8 +161,10 @@ export function renderTable<R>(
   const largeurs = columns.map((c) => largeur(c, rows));
   const sep = ' '.repeat(style.gap);
   const indent = style.indent ?? '';
-  const ligne = (cellules: readonly string[]): string =>
-    (indent + cellules.map((c, i) => caler(c, largeurs[i], columns[i].align ?? 'left')).join(sep)).trimEnd();
+  const ligne = (cellules: readonly string[]): string => {
+    const brut = indent + cellules.map((c, i) => caler(c, largeurs[i], columns[i].align ?? 'left')).join(sep);
+    return style.padTrailing ? brut : brut.trimEnd();
+  };
 
   const out: string[] = [];
   if (style.header !== false) out.push(ligne(columns.map((c) => c.header)));

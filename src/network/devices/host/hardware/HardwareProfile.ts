@@ -19,6 +19,7 @@ import { NetworkAdapter } from './NetworkAdapter';
 import { Firmware, Mainboard } from './SystemBoard';
 import { PciBus } from './PciBus';
 import { UsbBus } from './UsbBus';
+import { filesystemUuidFor, smbiosUuidFor } from './HardwareIdentity';
 
 /** SMBIOS chassis type — what `dmidecode -t chassis` reports. */
 export type ChassisType =
@@ -115,6 +116,31 @@ export class HardwareProfile {
     return role === 'server' ? HardwareProfile.server() : HardwareProfile.workstation();
   }
 
+  /**
+   * Stamp the identity a hypervisor gives to ONE machine: the SMBIOS
+   * system UUID libvirt assigns per domain, and the filesystem UUID
+   * `mkfs` writes into each partition. Both are unique per install in
+   * the real world, so two hosts of the same canvas must not share them.
+   *
+   * What is deliberately NOT stamped: the chassis serial, which a bare
+   * QEMU guest genuinely leaves unset, and the disk serial, which QEMU
+   * derives from the DRIVE INDEX (`QM00001`, `QM00002`) and which two
+   * separate guests really do share.
+   */
+  identify(seed: string): void {
+    this.productUuid = smbiosUuidFor(seed);
+    for (const disk of this.storage) {
+      disk.partitions = disk.partitions.map((p) => new DiskPartition({
+        name: p.name,
+        sizeBytes: p.sizeBytes,
+        fsType: p.fsType,
+        mountPoint: p.mountPoint,
+        label: p.label,
+        uuid: p.uuid || filesystemUuidFor(seed, p.name),
+      }));
+    }
+  }
+
   // ─── Derived accessors ─────────────────────────────────────────────────
 
   /** Every partition across every disk that is currently mounted. */
@@ -144,12 +170,17 @@ function defaultRootDisk(): StorageDevice {
   });
 }
 
-/** A 100 GiB data disk: `sdb1` → `/u01` (the Oracle mount). */
+/**
+ * A 100 GiB data disk: `sdb1` → `/u01` (the Oracle mount). QEMU numbers
+ * its IDE serials by drive index, so the second disk of a guest is
+ * `QM00002` — `/dev/disk/by-id/ata-QEMU_HARDDISK_QM00002`.
+ */
 function defaultDataDisk(): StorageDevice {
   return new StorageDevice({
     name: 'sdb',
     sizeBytes: 100 * GIB,
     model: 'QEMU HARDDISK',
+    serial: 'QM00002',
     medium: 'HDD',
     partitions: [
       new DiskPartition({ name: 'sdb1', sizeBytes: 100 * GIB, fsType: 'ext4', mountPoint: '/u01' }),

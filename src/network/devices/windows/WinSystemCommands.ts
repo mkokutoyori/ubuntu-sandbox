@@ -14,6 +14,7 @@ import { partsAt } from '../../core/time/TimeZoneRegistry';
 import { dhcpEnabledFor } from './WinAdapterFacts';
 import type { ProcessSession } from './WindowsProcessManager';
 import { adapterDisplayName } from './netAdapter';
+import { parseWmicProperties, wmicQuery } from './Wmic';
 
 /** Minimal process-manager surface needed by `start`. */
 export interface WinSystemProcessManager {
@@ -61,9 +62,26 @@ export interface WinSystemContext {
   readonly hardware: {
     manufacturer: string;
     productName: string;
+    productUuid: string;
+    serialNumber: string;
     cpu: { sockets: number; cpuFamily: number; model: number; stepping: number; vendor: string; clockMhz: number };
     memory: { totalKib: number; availableKib: number; swapTotalKib: number };
     firmware: { vendor: string; version: string; releaseDate: string };
+    storage: ReadonlyArray<{
+      name: string; sizeBytes: number; model: string; serial: string;
+      partitions: ReadonlyArray<unknown>;
+    }>;
+  };
+  /**
+   * Les volumes montés, lus là où `dir` et `Get-Volume` les lisent — le
+   * système de fichiers — pour que `wmic logicaldisk` ne puisse pas
+   * annoncer une place libre que `dir` compte autrement.
+   */
+  readonly volumes: {
+    letters(): string[];
+    capacityBytes(letter: string): number;
+    freeBytes(letter: string): number;
+    label(letter: string): string;
   };
   readonly ports: Map<string, Port>;
   isDHCPConfigured(ifName: string): boolean;
@@ -185,8 +203,9 @@ export function cmdVol(ctx: WinSystemContext, args: string[]): string {
   const arg = (args[0] ?? 'C:').toUpperCase().replace(/[:\\]+$/, '');
   const letter = arg.charAt(0) || 'C';
   const serial = ctx.getVolumeSerialNumber(letter);
+  const label = ctx.volumes.label(letter);
   return [
-    ` Volume in drive ${letter} has no label.`,
+    label ? ` Volume in drive ${letter} is ${label}` : ` Volume in drive ${letter} has no label.`,
     ` Volume Serial Number is ${serial}`,
   ].join('\n');
 }
@@ -564,22 +583,17 @@ export function cmdNbtstat(ctx: WinSystemContext, args: string[]): string {
   return 'NBTSTAT [ [-a RemoteName] [-A IP address] [-c] [-n] [-r] [-R] [-RR] [-s] [-S] [interval] ]';
 }
 
-/** `wmic logicaldisk get name` / minimal WMI stub. */
 export function cmdWmic(ctx: WinSystemContext, args: string[]): string {
   if (args.length === 0) return 'wmic:root\\cli>';
   const joined = args.join(' ').toLowerCase();
-  if (joined.includes('logicaldisk') && joined.includes('get name')) {
-    return 'Name  \nC:    ';
-  }
-  if (joined.includes('os get caption')) {
-    return `Caption                              \n${ctx.os.prettyName.padEnd(38)}`;
-  }
-  if (joined.includes('cpu get name')) {
-    return 'Name                                              \nIntel(R) Core(TM) i7 CPU @ 2.50GHz                ';
-  }
   if (joined.startsWith('nic ') || joined === 'nic') return wmicNic(ctx);
   if (joined.startsWith('nicconfig')) return wmicNicConfig(ctx);
-  return '';
+
+  const alias = args[0];
+  const getIndex = args.findIndex((a) => a.toLowerCase() === 'get');
+  if (getIndex > 1) return '';
+  const asked = getIndex < 0 ? [] : parseWmicProperties(args.slice(getIndex + 1));
+  return wmicQuery(ctx, alias, asked) ?? '';
 }
 
 function wmicNic(ctx: WinSystemContext): string {

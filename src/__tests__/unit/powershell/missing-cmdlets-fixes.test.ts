@@ -95,7 +95,7 @@ describe('vol — cmd builtin + PS shim', () => {
     const pc = new WindowsPC('windows-pc', 'WIN');
     pc.setCurrentUser('Administrator');
     const out = await pc.executeCmdCommand('vol C:');
-    expect(out).toContain('Volume in drive C has no label.');
+    expect(out).toContain('Volume in drive C is Windows');
     expect(out).toMatch(/Volume Serial Number is [0-9A-F]{4}-[0-9A-F]{4}/);
   });
 
@@ -103,7 +103,7 @@ describe('vol — cmd builtin + PS shim', () => {
     const pc = new WindowsPC('windows-pc', 'WIN');
     pc.setCurrentUser('Administrator');
     const out = await execPS(pc, 'vol');
-    expect(out).toContain('Volume in drive C has no label.');
+    expect(out).toContain('Volume in drive C is Windows');
     expect(out).toMatch(/Volume Serial Number is [0-9A-F]{4}-[0-9A-F]{4}/);
   });
 

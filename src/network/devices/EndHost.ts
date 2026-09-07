@@ -107,6 +107,7 @@ import type { DnsQueryOptions } from '../dns/compat/DnsWireCompat';
 import { queryDnsOverTcp } from '../dns/transport/DnsTcpTransport';
 import { queryDnsOverTls, DOT_PORT } from '../dns/transport/DnsTlsTransport';
 import { HardwareProfile } from './host/hardware';
+import { machineIdFor } from './host/hardware/HardwareIdentity';
 import { HostLifecycle } from './host/lifecycle';
 import { SystemIdentity } from './host/identity';
 import { DHCPClient } from '../dhcp/DHCPClient';
@@ -920,11 +921,13 @@ export abstract class EndHost extends Equipment {
     this.hardware = HardwareProfile.defaultFor(
       String(type).includes('server') ? 'server' : 'workstation',
     );
+    this.hardware.identify(this.name);
     this.lifecycle = new HostLifecycle();
     this.lifecycle.attachBus(this.getBus(), this.id, name);
     this.identity = String(type).includes('windows')
       ? (String(type).includes('server') ? SystemIdentity.windowsServer() : SystemIdentity.windows())
       : SystemIdentity.ubuntu();
+    this.identity.machineId = machineIdFor(this.name);
     this.identity.attachBus(this.getBus(), this.id);
     this.attachHostActors();
     this.dhcpClient = new DHCPClient(

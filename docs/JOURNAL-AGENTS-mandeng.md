@@ -8396,3 +8396,94 @@ serveur affichait deja `/u01`, mais parce que la table figee le portait
 pour tout le monde). Suites connexes : 38 fichiers, 1716 cas, tous verts.
 Trois cas e2e Playwright confrontent `df`, `lsblk`, `blkid`,
 `/proc/mounts` et `/etc/fstab` dans le vrai terminal.
+
+---
+
+## Deux machines du canevas sont deux machines DIFFERENTES
+
+**Perimetre revendique** : `src/network/devices/host/hardware/`
+(`HardwareIdentity.ts` nouveau, `HardwareProfile.ts`, `partitionUuid.ts`),
+`src/network/devices/EndHost.ts`,
+`src/network/devices/windows/` (`Wmic.ts` nouveau, `WinSystemCommands.ts`,
+`WinDir.ts`, `WindowsFileSystem.ts`), `src/network/devices/WindowsPC.ts`,
+`src/powershell/providers/WindowsPSProviders.ts`,
+`src/network/devices/shells/cli/TextTable.ts`.
+
+Mesure de depart : deux `linux-pc` poses cote a cote, la meme question
+a chacun.
+
+```
+blkid                     /dev/sda1: UUID="0035ca01-…"        IDENTIQUE
+cat /etc/machine-id       0a1b2c3d4e5f60718293a4b5c6d7e8f9    IDENTIQUE
+dmidecode -s system-uuid  00000000-0000-0000-0000-000000000000 (les deux)
+lsblk -o NAME,SERIAL      sda QM00001                         IDENTIQUE
+```
+
+Rien de cosmetique. `/etc/machine-id` est ce qu'un client DHCP emet
+comme identifiant (RFC 4361), ce qui journalise une machine et ce sur
+quoi un inventaire s'appuie. Les UUID de `blkid` sont pires depuis le
+lot precedent : `/etc/fstab` nomme la racine par `UUID=`, donc le fstab
+d'une machine designait aussi bien le disque de sa voisine. Et l'UUID
+SMBIOS a zero prive tout laboratoire d'inventaire, de PXE ou de licence
+de la seule chose qui distingue un chassis.
+
+**Le mecanisme existait deja** : `getVolumeSerialNumber()` derive un
+numero de serie de volume du nom d'hote, et les deux postes Windows en
+avaient bien deux differents. Il manquait a l'inventaire materiel.
+`HardwareProfile.identify(seed)` pose donc, une fois a la construction,
+l'UUID SMBIOS qu'un hyperviseur donne par domaine et l'UUID de systeme
+de fichiers que `mkfs` ecrit dans chaque partition. Le condense employe
+est `simulatedDigest`, celui que Kerberos, TLS et QUIC utilisent deja —
+pas une neuvieme fonction de hachage.
+
+**DEUX cas ecrits a l'aveugle ont ete RETIRES apres verification.** La
+premiere sonde exigeait aussi des numeros de serie de CHASSIS et de
+DISQUE distincts d'une machine a l'autre ; la documentation dit le
+contraire et c'est elle qui gagne. Un invite QEMU nu ne porte pas de
+numero de serie SMBIOS (`dmidecode -s system-serial-number` rend « Not
+Specified » tant que libvirt n'en pose pas un), et `QM00001` est le
+numero que QEMU donne par defaut a son PREMIER disque IDE. Rendre l'un
+ou l'autre unique aurait EDULCORE le modele. Le vrai defaut du
+voisinage etait ailleurs et il est ferme : les DEUX disques d'un serveur
+annoncaient `QM00001`, alors que QEMU numerote par index
+(`/dev/disk/by-id/ata-QEMU_HARDDISK_QM00002`).
+
+**Cote Windows, `wmic` repondait a une autre question que celle
+posee.** `wmic logicaldisk get caption,freespace,size` rendait la
+colonne `Name` et les lettres de lecteur : la liste de proprietes etait
+purement IGNOREE. `wmic csproduct` et `wmic diskdrive` n'existaient pas
+du tout. Les classes sont desormais declarees une fois avec leurs
+proprietes ; les colonnes demandees sortent RANGEES par nom, comme le
+fait un vrai WMIC (`get size,model,serialnumber` sort `Model`,
+`SerialNumber`, `Size`) ; et une propriete que la classe ne porte pas
+fait echouer la requete entiere (`Description = Invalid query`) au lieu
+d'etre avalee.
+
+**Une duplication en fermait une autre.** `WindowsPC.cmdWmic` portait sa
+PROPRE branche `logicaldisk`, en dur, qui court-circuitait
+`WinSystemCommands.cmdWmic` : tant qu'elle etait la, aucune correction
+dans le module partage n'etait visible. Elle est supprimee.
+
+**Une etiquette de volume, une seule.** `Get-Volume` annoncait
+« Windows » quand `vol` et `dir` repondaient « has no label » sur le
+meme lecteur au meme instant : l'etiquette vivait dans l'adaptateur
+PowerShell seul. Elle vit maintenant dans `WindowsFileSystem`, et les
+quatre vues (`vol`, `dir`, `Get-Volume`, `wmic logicaldisk get
+volumename`) la lisent. Deux cas de `missing-cmdlets-fixes` epinglaient
+la contradiction du cote `vol` ; ils attendent l'etiquette.
+
+**`TextTable` gagne `padTrailing`** : WMIC est la seule vue reproduite
+ici qui laisse ses blancs de fin, un script decoupant par position s'y
+appuyant. Le retrait reste le defaut pour IOS et VRP.
+
+**Discrimination** (`git stash push -- src/network src/powershell`) :
+`probe-identite-materielle-par-machine.test.ts` (13 cas), 10 tombent
+contre l'etat d'avant. Les 3 autres sont nommes dans l'en-tete : deux
+TEMOINS (`vol`, seul identifiant deja unique ; `wmic logicaldisk get
+name`, seule requete que l'ancienne branche servait juste) et un TEMOIN
+de coherence (`lsblk` et `hdparm` nomment le meme disque, ce qui prouve
+qu'indexer le numero de serie ne les a pas fait diverger). Suites
+connexes : 82 fichiers, 2789 cas, tous verts. `npm run typecheck` : 248
+erreurs, comme sur la base. Trois cas e2e Playwright verifient dans le
+vrai terminal que deux machines different et que `wmic` range ses
+colonnes et refuse une propriete inconnue.
