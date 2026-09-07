@@ -11,6 +11,7 @@ import type { DeviceType } from '@/network/core/types';
 import { EquipmentStateView } from '@/network/devices/inspection/EquipmentStateView';
 import type { NeighborDTO } from '@/network/devices/inspection/DeviceStateView';
 import { pad2 } from '@/lib/format';
+import { clockReadingAt, type DeviceClockConfig } from '@/network/core/time/DeviceClock';
 import { CISCO_ERRORS } from '../cli-utils';
 import {
   tableauLignes, blocDetailLigne, REGLAGES_PAR_DEFAUT,
@@ -85,17 +86,22 @@ export function ciscoClockReading(
   }
   const dev = arg as unknown as {
     getSystemClockMs?: () => number;
-    getManagementService?: () => { getClock: () => { timezone: string; offsetMin: number } };
+    getManagementService?: () => { getClock: () => DeviceClockConfig };
     getNtpAgent?: () => { isSynced?: () => boolean };
   };
   const clock = dev.getManagementService?.().getClock();
-  const offsetMin = clock?.offsetMin ?? 0;
   const now = atMs ?? dev.getSystemClockMs?.() ?? Date.now();
+  const synced = dev.getNtpAgent?.().isSynced?.() ?? false;
+  if (!clock) {
+    return { local: new Date(now), timezone: 'UTC', offsetMin: 0, synced };
+  }
+
+  const reading = clockReadingAt(clock, now);
   return {
-    local: new Date(now + offsetMin * 60_000),
-    timezone: clock?.timezone ?? 'UTC',
-    offsetMin,
-    synced: dev.getNtpAgent?.().isSynced?.() ?? false,
+    local: new Date(reading.localMs),
+    timezone: reading.zoneName,
+    offsetMin: reading.offsetMin,
+    synced,
   };
 }
 

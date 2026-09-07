@@ -58,6 +58,7 @@ import { projectSnmpServiceOntoAgent } from '@/network/snmp/snmpProjection';
 import { renderStartupConfig } from './cisco/ciscoConfigSerializer';
 import { CommandTrie, type ParamType } from './CommandTrie';
 import { fhrpInterfaceSpecs, type FhrpPlacement } from './cisco/fhrpInterfaceSpecs';
+import { DEFAULT_SUMMER_OFFSET_MIN } from '@/network/core/time/DeviceClock';
 import {
   parseSummerTimeRule, type SummerTimeRule,
 } from './cisco/clockSummerTime';
@@ -4730,6 +4731,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       config.summerTimezone = '';
       config.daylightStart = '';
       config.daylightEnd = '';
+      config.daylightOffsetMin = DEFAULT_SUMMER_OFFSET_MIN;
       return '';
     }
 
@@ -4737,6 +4739,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     config.summerKind = regle?.kind ?? 'recurring';
     config.daylightStart = regle?.start ?? '';
     config.daylightEnd = regle?.end ?? '';
+    config.daylightOffsetMin = regle?.offsetMin ?? DEFAULT_SUMMER_OFFSET_MIN;
     return '';
   }
 

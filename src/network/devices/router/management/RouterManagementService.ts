@@ -1,4 +1,6 @@
 import { InfoCenterConfig, type InfoCenterError } from './InfoCenterConfig';
+import { vrpDatetimeToEpochMs } from '../../shells/huawei/huaweiClockDatetime';
+import { parseVrpDaylightSaving } from '../../shells/huawei/huaweiDaylightSaving';
 
 export interface RawConfigEntry {
   feature: string;
@@ -110,15 +112,21 @@ export class RouterManagementService {
   }
   getNtp(): typeof this.ntpService { return this.ntpService; }
 
-  configureClock(args: string[]): void {
+  configureClock(args: string[]): number | string | null {
     const head = (args[0] ?? '').toLowerCase();
+    if (head === 'datetime') return vrpDatetimeToEpochMs(args.slice(1));
     if (head === 'daylight-saving-time') {
-      this.clockCfg.summerTimezone = args[1] ?? '';
-      this.clockCfg.daylightStart = args.slice(3, 6).join(' ');
-      this.clockCfg.daylightEnd = args.slice(7, 10).join(' ');
+      const verdict = parseVrpDaylightSaving(args.slice(1));
+      if (!verdict.rule) return verdict.badToken ?? '';
+      this.clockCfg.summerTimezone = verdict.rule.zoneName;
+      this.clockCfg.summerKind = verdict.rule.kind;
+      this.clockCfg.daylightStart = verdict.rule.start;
+      this.clockCfg.daylightEnd = verdict.rule.end;
+      this.clockCfg.daylightOffsetMin = verdict.rule.offsetMin;
     } else {
       this.recordRaw('clock', args.join(' '));
     }
+    return null;
   }
   getClock(): typeof this.clockCfg { return this.clockCfg; }
 
