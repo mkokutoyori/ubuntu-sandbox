@@ -619,6 +619,70 @@ test.describe('nmap sonde le fil', () => {
     expect(capture).toContain('Server: nginx/1.24.0');
   });
 
+  test('`--iflist` decrit la machine, `-e` choisit la carte', async ({ page }) => {
+    test.setTimeout(180_000);
+    await page.goto('/', { timeout: 45_000 });
+    await waitForStore(page);
+
+    const cibleId = await addDevice(page, 'linux-server', 300, 470);
+    const scannerId = await addDevice(page, 'linux-pc', 600, 470);
+    await cable(page, cibleId, scannerId);
+
+    await openTerminal(page, cibleId);
+    await typeCmd(page, `ip addr add ${CIBLE}/24 dev eth0`);
+    await typeCmd(page, 'sudo systemctl start ssh');
+    await closeTerminal(page);
+
+    await openTerminal(page, scannerId);
+    await typeCmd(page, `ip addr add ${SCANNER}/24 dev eth0`);
+
+    await typeCmd(page, 'nmap --iflist');
+    const iflist = await lastLines(page, 20);
+    expect(iflist).not.toContain('not implemented');
+    expect(iflist).toContain('INTERFACES');
+    expect(iflist).toContain('ROUTES');
+    expect(iflist).toMatch(/eth0 +\(eth0\) +10\.73\.0\.20\/24 +ethernet +up +1500/);
+    expect(iflist).toMatch(/lo +\(lo\) +127\.0\.0\.1\/8 +loopback/);
+
+    await typeCmd(page, `nmap -Pn -sS -e eth0 -p 22 ${CIBLE}`);
+    const choisi = await lastLines(page, 8);
+    expect(choisi).toMatch(/22\/tcp\s+open\s+ssh/);
+
+    await typeCmd(page, `nmap -Pn -sS -e zorglub -p 22 ${CIBLE}`);
+    const refus = await lastLines(page, 4);
+    expect(refus).toContain('does it even exist?');
+  });
+
+  test('`--exclude-ports` retire un port du balayage', async ({ page }) => {
+    test.setTimeout(180_000);
+    await page.goto('/', { timeout: 45_000 });
+    await waitForStore(page);
+
+    const cibleId = await addDevice(page, 'linux-server', 300, 470);
+    const scannerId = await addDevice(page, 'linux-pc', 600, 470);
+    await cable(page, cibleId, scannerId);
+
+    await openTerminal(page, cibleId);
+    await typeCmd(page, `ip addr add ${CIBLE}/24 dev eth0`);
+    await typeCmd(page, 'sudo systemctl start ssh');
+    await typeCmd(page, 'sudo systemctl start nginx');
+    await closeTerminal(page);
+
+    await openTerminal(page, scannerId);
+    await typeCmd(page, `ip addr add ${SCANNER}/24 dev eth0`);
+
+    await typeCmd(page, `nmap -Pn -p 22,80 ${CIBLE}`);
+    const complet = await lastLines(page, 8);
+    expect(complet).toMatch(/22\/tcp\s+open\s+ssh/);
+    expect(complet).toMatch(/80\/tcp\s+open\s+http/);
+
+    await typeCmd(page, `nmap -Pn --exclude-ports 22 -p 22,80 ${CIBLE}`);
+    const reduit = await lastLines(page, 7);
+    expect(reduit).not.toContain('not implemented');
+    expect(reduit).toMatch(/80\/tcp\s+open\s+http/);
+    expect(reduit).not.toMatch(/22\/tcp/);
+  });
+
   test('nmap.exe existe aussi sur une machine Windows', async ({ page }) => {
     test.setTimeout(180_000);
     await page.goto('/', { timeout: 45_000 });

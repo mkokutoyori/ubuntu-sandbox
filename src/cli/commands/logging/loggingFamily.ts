@@ -12,6 +12,15 @@ export interface LoggingContinuation {
   readonly keyword: string;
   readonly description: string;
   readonly argument?: ArgumentSpec;
+  /**
+   * Ce qui peut suivre CETTE continuation.
+   *
+   * `logging host <ip> transport tcp port 1470` porte un mot-cle apres
+   * un mot-cle : le moteur le lit depuis toujours, mais un seul rang de
+   * continuations ne savait pas le declarer, si bien que `port`
+   * s'executait sans que `?` l'annonce jamais.
+   */
+  readonly continuations?: readonly LoggingContinuation[];
 }
 
 export interface LoggingEntry {
@@ -36,7 +45,28 @@ export interface LoggingEntry {
    */
   readonly continuations?: readonly LoggingContinuation[];
   readonly continuationsReplaceArgument?: boolean;
+  /**
+   * La continuation vient APRES l'argument facultatif aussi bien qu'a sa
+   * place.
+   *
+   * `logging reload critical message-limit 10` donne la severite ET la
+   * borne : les deux places sont facultatives et INDEPENDANTES, la ou
+   * `logging console 5` et `logging console discriminator X` sont deux
+   * choix qui s'excluent. Un seul defaut ne peut pas dire les deux.
+   */
+  readonly continuationsAlsoAfterArgument?: boolean;
   readonly undoWithoutArgument?: boolean;
+  /**
+   * Le mot-cle lui-meme peut etre OMIS.
+   *
+   * `logging <ip>` est l'ecriture heritee de `logging host <ip>`, et la
+   * machine range les deux sous la seconde. Les declarer separement
+   * faisait deux vocabulaires pour une commande : la forme heritee
+   * vivait sur le trie, ou son adresse etait suivie des mots-cles
+   * declares sur `logging` — `buffered`, `console`, `on`… — que la meme
+   * machine refusait a cette place. Une entree, deux chemins engendres.
+   */
+  readonly keywordOptional?: boolean;
 }
 
 export interface LoggingHost {
@@ -66,62 +96,84 @@ function valueOf(args: Record<string, string>, argument?: ArgumentSpec): string[
   return [value];
 }
 
+function declarerSuites(
+  suites: readonly LoggingContinuation[],
+  amont: ReadonlyArray<string | ArgumentSpec>,
+  idAmont: string,
+  motsAmont: (args: Record<string, string>) => string[],
+  host: () => LoggingHost,
+  specs: CommandSpec[],
+): void {
+  for (const suite of suites) {
+    const tete = [...amont, suite.keyword];
+    const path = suite.argument ? [...tete, suite.argument] : tete;
+    const id = `${idAmont}-${suite.keyword}`;
+    const mots = (args: Record<string, string>) => [
+      ...motsAmont(args), suite.keyword, ...valueOf(args, suite.argument),
+    ];
+
+    specs.push(specFor(id, path, suite.description, mots, host));
+    declarerSuites(suite.continuations ?? [], path, id, mots, host, specs);
+  }
+}
+
+function declarerEntree(
+  entry: LoggingEntry, tete: ReadonlyArray<string | ArgumentSpec>,
+  id: string, motsTete: readonly string[],
+  host: () => LoggingHost, specs: CommandSpec[],
+): void {
+  const base: Array<string | ArgumentSpec> = entry.argument
+    ? [...tete, entry.argument] : [...tete];
+  const complet = entry.second ? [...base, entry.second] : base;
+  const debut = (args: Record<string, string>) => [
+    ...motsTete, ...valueOf(args, entry.argument), ...valueOf(args, entry.second),
+  ];
+
+  specs.push(specFor(id, complet, entry.description, debut, host));
+
+  if (entry.undoWithoutArgument) {
+    specs.push({
+      ...specFor(`${id}-undo`, tete, entry.description, () => [...motsTete], host),
+      existsOnlyNegated: true,
+    });
+  }
+
+  const remplace = entry.continuationsReplaceArgument
+    ?? entry.argument?.optional === true;
+
+  // Un argument OPTIONNEL et un mot-cle qui le suit sont deux CHOIX,
+  // pas une sequence : IOS accepte `logging console 5` ou `logging
+  // console discriminator X`, jamais les deux a la fois. Le chemin de
+  // la continuation saute donc l'argument — le declarer apres ferait
+  // accepter une forme qu'aucune machine reelle ne prend, ce qui est
+  // pire qu'en refuser une vraie.
+  const ancres: Array<[string, ReadonlyArray<string | ArgumentSpec>,
+    (args: Record<string, string>) => string[]]> = [];
+  if (remplace) ancres.push([id, tete, () => [...motsTete]]);
+  if (!remplace || entry.continuationsAlsoAfterArgument) {
+    ancres.push([`${id}-apres`, base,
+      (args) => [...motsTete, ...valueOf(args, entry.argument)]]);
+  }
+  if (entry.second) ancres.push([`${id}-second`, complet, debut]);
+
+  for (const [idAncre, amont, mots] of ancres) {
+    declarerSuites(entry.continuations ?? [], amont, idAncre, mots, host, specs);
+  }
+}
+
 export function loggingFamily(
   entries: readonly LoggingEntry[], host: () => LoggingHost,
 ): CommandSpec[] {
   const specs: CommandSpec[] = [];
 
   for (const entry of entries) {
-    const base: Array<string | ArgumentSpec> = entry.argument
-      ? ['logging', entry.keyword, entry.argument]
-      : ['logging', entry.keyword];
-    const complet = entry.second ? [...base, entry.second] : base;
+    declarerEntree(entry, ['logging', entry.keyword],
+      `logging-${entry.keyword}`, [entry.keyword], host, specs);
 
-    specs.push(specFor(
-      `logging-${entry.keyword}`, complet, entry.description,
-      (args) => [
-        entry.keyword,
-        ...valueOf(args, entry.argument), ...valueOf(args, entry.second),
-      ], host));
-
-    if (entry.undoWithoutArgument) {
-      specs.push({
-        ...specFor(
-          `logging-${entry.keyword}-undo`, ['logging', entry.keyword],
-          entry.description, () => [entry.keyword], host),
-        existsOnlyNegated: true,
-      });
-    }
-
-    const remplace = entry.continuationsReplaceArgument
-      ?? entry.argument?.optional === true;
-
-    for (const suite of entry.continuations ?? []) {
-      // Un argument OPTIONNEL et un mot-cle qui le suit sont deux
-      // CHOIX, pas une sequence : IOS accepte `logging console 5` ou
-      // `logging console discriminator X`, jamais les deux a la fois. Le
-      // chemin de la continuation saute donc l'argument — le declarer
-      // apres ferait accepter une forme qu'aucune machine reelle ne
-      // prend, ce qui est pire qu'en refuser une vraie.
-      const amont: Array<string | ArgumentSpec> = remplace
-        ? ['logging', entry.keyword, suite.keyword]
-        : [...base, suite.keyword];
-      const path = suite.argument ? [...amont, suite.argument] : amont;
-
-      specs.push(specFor(
-        `logging-${entry.keyword}-${suite.keyword}`, path, suite.description,
-        (args) => [
-          entry.keyword,
-          ...(remplace ? [] : valueOf(args, entry.argument)),
-          suite.keyword, ...valueOf(args, suite.argument),
-        ], host));
+    if (entry.keywordOptional) {
+      declarerEntree(entry, ['logging'],
+        `logging-${entry.keyword}-implicite`, [entry.keyword], host, specs);
     }
   }
   return specs;
-}
-
-export function loggingPaths(entries: readonly LoggingEntry[]): string[] {
-  return entries.flatMap(entry => [
-    `logging ${entry.keyword}`, `no logging ${entry.keyword}`,
-  ]);
 }

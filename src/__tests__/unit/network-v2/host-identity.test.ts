@@ -59,10 +59,13 @@ describe('SystemIdentity', () => {
     expect(out).toContain('Machine ID:');
   });
 
-  it('renders a timedatectl report', () => {
-    const out = SystemIdentity.ubuntu().toTimedatectl(new Date(Date.UTC(2026, 4, 21, 14, 0, 0)));
-    expect(out).toContain('Time zone: Etc/UTC');
-    expect(out).toContain('Universal time: Thu 2026-05-21 14:00:00 UTC');
+  it('rend le fuseau de la machine comme un type, pas comme une chaine', () => {
+    const identity = SystemIdentity.ubuntu();
+    expect(identity.getTimeZone().name).toBe('UTC');
+
+    identity.setTimezone('Europe/Paris');
+
+    expect(identity.getTimeZone().name).toBe('Europe/Paris');
   });
 
   it('exposes a Windows preset distinct from the Ubuntu one', () => {

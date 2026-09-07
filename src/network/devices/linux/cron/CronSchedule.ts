@@ -1,3 +1,5 @@
+import type { LocalParts } from '../../../core/time/TimeZoneRegistry';
+
 /** Les cinq champs d'une ligne cron, tels que Vixie cron les nomme. */
 export type ScheduleField = 'minute' | 'hour' | 'day-of-month' | 'month' | 'day-of-week';
 
@@ -120,14 +122,13 @@ export class CronSchedule {
     );
   }
 
-  isDue(at: Date): boolean {
+  isDue(at: LocalParts): boolean {
     if (this.isReboot) return false;
-    if (!this.minutes.has(at.getMinutes())) return false;
-    if (!this.hours.has(at.getHours())) return false;
-    if (!this.months.has(at.getMonth() + 1)) return false;
-    const dow = at.getDay();
-    const dowMatch = this.daysOfWeek.has(dow);
-    const domMatch = this.daysOfMonth.has(at.getDate());
+    if (!this.minutes.has(at.minute)) return false;
+    if (!this.hours.has(at.hour)) return false;
+    if (!this.months.has(at.month)) return false;
+    const dowMatch = this.daysOfWeek.has(at.weekday);
+    const domMatch = this.daysOfMonth.has(at.day);
     if (this.domRestricted && this.dowRestricted) return domMatch || dowMatch;
     if (this.domRestricted) return domMatch;
     if (this.dowRestricted) return dowMatch;

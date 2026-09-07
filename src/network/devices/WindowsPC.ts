@@ -30,6 +30,7 @@ import {
   windowsInterfaceDescription,
 } from './windows/netAdapter';
 import { NtpAgent, type NtpHost } from '../ntp/NtpAgent';
+import { UDP_PORT_NTP } from '../ntp/types';
 import { W32TimeService } from './windows/W32TimeService';
 import { DnsCache } from '../dns/resolver/DnsCache';
 import { RRType } from '../dns/wire/RRType';
@@ -3757,11 +3758,11 @@ export class WindowsPC extends EndHost implements UserAccountHost {
   }
 
   private cmdDate(args: string[]): string {
-    return WinSys.cmdDate(args);
+    return WinSys.cmdDate(args, this.identity.timezone);
   }
 
   private cmdTime(args: string[]): string {
-    return WinSys.cmdTime(args);
+    return WinSys.cmdTime(args, this.identity.timezone);
   }
 
   private cmdStart(args: string[]): string {
@@ -3833,6 +3834,11 @@ export class WindowsPC extends EndHost implements UserAccountHost {
         : this.tcpConnectOutcome(new IPAddress(ip), port)),
       probeService: (ip, port, payload) =>
         this.getTcpStack().probeService(ip, port, payload),
+      routes: () => this.getRoutingTable().map((r) => ({
+        dest: r.network.toString(), maskBits: r.mask.toCIDR(),
+        dev: r.iface, metric: r.metric,
+        gateway: r.nextHop?.toString(),
+      })),
       sendUdpProbe: (ip, port, sourcePort, options) => {
         const { payload, ...emission } = options ?? {};
         return this.sendUdpDatagram(
@@ -5175,6 +5181,9 @@ export class WindowsPC extends EndHost implements UserAccountHost {
   getNtpAgent(): NtpAgent {
     if (!this._ntpAgent) {
       this._ntpAgent = new NtpAgent(this as unknown as NtpHost, () => this.getBus(), () => this.getScheduler());
+      this.udpBind(UDP_PORT_NTP, ({ inPort, sourceIP, udp }) => {
+        this._ntpAgent?.handleUdp(inPort, sourceIP as IPAddress, udp);
+      }, 'svchost');
     }
     return this._ntpAgent;
   }

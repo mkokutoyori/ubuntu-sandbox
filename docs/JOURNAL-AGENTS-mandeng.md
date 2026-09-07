@@ -8049,3 +8049,160 @@ l'en-tete — la salutation d'OpenSSH et un port ferme — et leur role est
 de prouver que donner une seconde sonde a `-sV` n'a pas casse la
 premiere. Un cas e2e Playwright balaye un nginx en `-sV` et retrouve la
 requete `GET / HTTP/1.0` dans la capture de la cible.
+
+---
+
+## `--iflist` decrit la machine, `-e` choisit la carte d'emission
+
+**Perimetre revendique** : `src/network/scan/nmap/` (`NmapIfList` —
+nouveau, `NmapOptions`, `NmapRun`, `NmapProbes`),
+`src/network/tcp/TcpStack.ts`,
+`src/network/devices/{WindowsPC,linux/commands/net/Nmap}.ts`.
+
+Les deux options etaient refusees comme non implantees alors que TOUTE
+la matiere existe : la machine porte ses interfaces, leurs adresses,
+leurs MTU, leurs adresses de couche lien et sa table de routage, et
+`ip addr` / `ip route` les rendent deja. Ce qui manquait etait la porte,
+pas le moteur — la forme que ce depot referme regulierement.
+
+**`--iflist` rend deux tableaux et SORT** (`nmap.cc:1958` appelle
+`print_iflist()` puis `exit(0)`), donc aucune sonde n'est emise meme
+lorsqu'une cible est nommee. Les colonnes sont celles d'`output.cc:294` :
+`DEV (SHORT) IP/MASK TYPE UP MTU MAC` puis
+`DST/MASK DEV METRIC GATEWAY`, la colonne MAC restant vide pour ce qui
+n'est pas ethernet.
+
+**La mise en page N'A PAS ete redessinee a la main** : celle de
+`NmapOutputTable::printableTable` (`NmapOutputTable.cc:203`) — largeur
+de colonne = plus longue cellule, un blanc de separation, aucun blanc de
+fin — est EXACTEMENT `NMAP_TABLE` du module de tableaux du depot, dont
+l'en-tete cite deja `NmapOutputTable` et que la section `TRACEROUTE`
+emploie. Une seconde ecriture aurait ete le defaut que ce module existe
+pour empecher.
+
+**`interfacesOf` lit `Equipment.getPorts()`, donc les deux plateformes
+partagent une seule implantation** plutot qu'un shim chacune ; `routes()`
+de meme, `getRoutingTable()` etant declare sur `EndHost` et donc porte
+par le poste Linux comme par le poste Windows. **La boucle est remontee
+en tete de liste** pour que `--iflist` et `ip addr` s'accordent sur
+l'ordre : `getPorts()` la place en dernier, decision de CABLAGE mesuree
+ailleurs dans ce depot, et deux vues d'une meme liste ne doivent pas se
+contredire.
+
+**`-e` DEDUIT l'adresse source du peripherique** (`nmap.cc:1756`) et
+refuse par « I cannot figure out what source address to use for device
+%s, does it even exist? » quand il n'existe pas ou n'a pas d'adresse.
+`ScanProbeShape.iface` force l'egress dans `resolveEgress`, ce qu'une
+machine a deux cartes sur le meme segment rend observable : l'adresse de
+couche lien SOURCE que voit la cible change. `-e` ne fait
+DELIBEREMENT pas partie des options « brutes » qui declenchent
+l'avertissement de balayage connecte — `nmap.cc:1074` ne pose pas
+`raw_scan_options` pour elle.
+
+**Discrimination** : `probe-nmap-interface.test.ts` (9 cas), 7 tombent
+contre l'etat d'avant. Les 2 autres sont nommes dans l'en-tete — le
+TEMOIN sans `-e`, et « aucune sonde n'est emise », qui passait avant
+pour une raison qui ne prouve rien puisque l'option entiere etait
+refusee. Un cas e2e Playwright tape `--iflist`, `-e eth0` et
+`-e zorglub` dans le vrai terminal.
+
+---
+
+## Un port se RETIRE, et `--allports` n'annule pas l'exclusion qu'on croit
+
+**Perimetre revendique** : `src/network/scan/nmap/`
+(`NmapOptions`, `ScanEngine`, `ServiceProbes`),
+`src/network/devices/linux/commands/net/Nmap.ts`.
+
+`--exclude-ports` et `--allports` etaient toutes deux refusees comme non
+implantees, et ce sont DEUX exclusions differentes — les confondre etait
+le defaut a ne pas commettre, et c'est le genre de raccourci qu'une
+lecture rapide du manuel produit.
+
+**`--exclude-ports` retire du BALAYAGE.** `nmap.cc:1709` appelle
+`removepts` APRES toute la selection de ports, donc l'exclusion mord
+quelle que soit la facon dont les ports ont ete choisis — `-p`, `-F`,
+`--top-ports`. `effectivePorts` est le point unique ou ce depot decide
+les ports, donc une seule ligne y suffit. La grammaire est celle de
+`-p`, prefixes `T:`/`U:` compris, que `parsePortSpec` savait deja lire.
+Deux occurrences sont un refus (`nmap.cc:980`).
+
+**`--allports` ne retire rien : il ANNULE, et pas l'exclusion de
+l'operateur.** Ce qu'il court-circuite (`service_scan.cc:1444` et
+`:2809`) est la directive `Exclude` de `nmap-service-probes` — une seule
+ligne, `Exclude T:9100-9107` (ligne 29 du fichier) — c'est-a-dire les
+ports que la table des sondes demande de ne JAMAIS soumettre a la
+detection de version, historiquement les imprimantes qu'une sonde HTTP
+fait imprimer des pages de charabia. Un cas de la sonde epingle que
+`--allports` ne fait revenir aucun port qu'`--exclude-ports` a retire :
+les deux options ne se croisent nulle part.
+
+**Discrimination** : `probe-nmap-ports-exclus.test.ts` (9 cas), 6
+tombent contre l'etat d'avant. Les 3 autres sont nommes dans l'en-tete —
+le TEMOIN, le cas du port 9200 qui garde le lot precedent, et
+« l'exclusion s'applique aussi a un choix par -F », qui passait avant
+pour une raison qui ne prouve rien puisque l'option entiere etait
+refusee et qu'aucun port n'etait donc rendu. Un cas e2e Playwright
+compare le meme balayage avec et sans l'exclusion.
+
+---
+
+## Le port 123 est TENU par un demon, ou il est ferme
+
+**Perimetre revendique** : `src/network/devices/EndHost.ts`,
+`src/network/devices/{LinuxMachine,WindowsPC}.ts`,
+`src/network/devices/linux/time/LinuxChronyService.ts`,
+`src/network/devices/linux/LinuxServiceManager.ts`.
+
+Trouve en BALAYANT une machine plutot qu'en lisant du code : `nmap -sU`
+rendait `123/udp open|filtered` sur un hote dont `ss -lun` n'annoncait
+rien sur ce port. Trois vues de la meme machine se contredisaient au
+meme instant — `systemctl` disait chrony `running`, `ss` ne montrait
+rien, et le datagramme etait AVALE en silence sur le fil.
+
+**La cause** : `EndHost.deliverUDP` portait un aiguillage code en dur,
+`if (udp.destinationPort === 123)`, qui remettait le datagramme a l'agent
+NTP sans que rien n'ait jamais LIE le port. Aucune consequence n'est
+cosmetique : `ss` et `netstat` niaient un service qui tourne ; le port ne
+repondait pas ICMP port unreachable non plus, donc il n'etait ni ouvert
+ni ferme ; et un `udpBind(123)` par n'importe quoi d'autre etait ACCEPTE
+puis ombre par l'aiguillage — accepte et inerte, exactement le defaut que
+le plan de controle d'un routeur a deja referme avec
+`controlPlaneUdpClaims`. L'en-tete de `ServiceSocketServer` nommait deja
+la regle dans l'autre sens (« un port affiche doit etre joignable ») ;
+ici c'etait un port JOIGNABLE et NON AFFICHE.
+
+**Le correctif emprunte le mecanisme existant** plutot que d'en ecrire
+un : `chrony` entre dans `SERVICE_LISTENERS` avec `123/udp`,
+`LinuxChronyService` realise `ServiceSocketServer`, et l'aiguillage code
+en dur DISPARAIT. Donc `systemctl stop chrony` rend vraiment le port —
+`ss` le perd, la machine repond ICMP port unreachable, et `nmap` le lit
+`closed`.
+
+**Deux choses que la mesure a imposees, et qu'une lecture n'aurait pas
+donnees.** (1) Le demon doit lier son port AVANT de sonder : la
+projection de ports appelle `open()` APRES le demarrage de l'unite, si
+bien que les rafales `iburst` partaient et que leurs reponses arrivaient
+sur un port pas encore lie — seize cas de tutoriel sont tombes la-dessus.
+`start()` lie donc lui-meme, et `open()` est idempotent, ce qui est
+exactement le chemin que `systemd-resolved` emprunte deja. (2) Windows
+n'a pas chrony : l'aiguillage retire, `w32tm` a cesse de fonctionner
+d'un coup. `WindowsPC` lie 123 sous `svchost` a la creation de son agent,
+ce que fait un vrai W32Time.
+
+**Corrige dans un test plutot que dans le code** :
+`tcp-ip-phase4-transit-udp` liait 123 sur l'hote de destination pour
+verifier qu'un ROUTEUR ne mange pas le transit — premisse qui n'etait
+vraie que parce que personne ne tenait le port. Il arrete le demon
+d'abord, ce que ferait un operateur, et verifie desormais que la liaison
+a REUSSI.
+
+**Divergence assumee et ecrite** : un vrai `chronyd` en mode client
+n'occupe pas `0.0.0.0:123` — il emet depuis un port ephemere. Le moteur
+NTP de ce depot est PARTAGE avec les routeurs, ou l'echange est 123 vers
+123, et il emet donc depuis 123 comme `ntpd`. C'est ce que la machine
+FAIT, et c'est cela que `ss` doit decrire.
+
+**Discrimination** : `probe-ntp-port-est-lie.test.ts` (7 cas), 5 tombent
+contre l'etat d'avant. Les 2 autres sont les TEMOINS — un port UDP que
+personne ne tient, qui repondait deja `closed`.

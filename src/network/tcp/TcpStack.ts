@@ -48,6 +48,7 @@ export interface ScanProbeShape {
    */
   sourceIp?: string;
   payload?: Uint8Array;
+  iface?: string;
 }
 
 /** La duree de vie qu'une pile TCP pose sur ses propres segments. */
@@ -614,7 +615,7 @@ export class TcpStack {
     shape: ScanProbeShape = {},
   ): StatelessProbeReply {
     const target = canonicalIpText(remoteIp);
-    const egress = this.resolveEgress(target);
+    const egress = this.resolveEgress(target, shape.iface);
     if (!egress) return 'none';
     const localPort = shape.sourcePort ?? this.nextEphemeral(egress.srcIp);
     if (localPort < 0) return 'none';
@@ -1838,8 +1839,18 @@ export class TcpStack {
   }
 
   private resolveEgress(
-    targetIp: string,
+    targetIp: string, iface?: string,
   ): { name: string; port?: import('../hardware/Port').Port; srcIp: string; nextHopIp: string } | null {
+    if (iface !== undefined) {
+      const forced = this.host.getPort(iface);
+      const src = forced?.getIPAddress();
+      if (!forced || !src) return null;
+      const routed = this.host.resolveRoute?.(targetIp);
+      return {
+        name: forced.getName(), port: forced, srcIp: src.toString(),
+        nextHopIp: routed?.iface === iface ? routed.nextHopIp : targetIp,
+      };
+    }
     if (ipFamilyOf(targetIp) === 'ipv6') return this.resolveEgress6(targetIp);
     // Ce qui arrive ici est censé être une adresse : la résolution de nom
     // est le travail de l'appelant. Mais un nom non résolu y parvenait,

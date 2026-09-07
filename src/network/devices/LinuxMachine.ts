@@ -1110,7 +1110,7 @@ export abstract class LinuxMachine extends EndHost
         // par minute. Le fichier fait foi, comme sur un vrai système : il
         // est ce que `SystemCron` lit, et ce qu'un `vim` sur le spool
         // modifierait.
-        sources: [new SystemCron(this.executor.vfs)],
+        sources: [new SystemCron(this.executor.vfs, () => this.executor.identity.getTimeZone())],
         runner: (command, ctx) => this.runCronJob(command, ctx),
         syslog: (tag, message) => this.executor.logMgr.logDaemon(tag, message),
         deliverMail: (recipient, body) => this.deliverCronMail(recipient, body),
@@ -1410,6 +1410,7 @@ export abstract class LinuxMachine extends EndHost
 
   /** Le démon chrony — `null` avant l'amorçage. */
   chronyService: LinuxChronyService | null = null;
+  private ntpPortBound = false;
 
   /**
    * chrony (`docs/PRD-NTP-Tutoriel.md` §4) — le paquet était déclaré
@@ -1441,8 +1442,14 @@ export abstract class LinuxMachine extends EndHost
     this.chronyService = new LinuxChronyService({
       readFile: (p) => vfs.readFile(p),
       ntp: () => this.getNtpAgent(),
+      bindNtpPort: (port) => this.ntpPortBound
+        || (this.ntpPortBound = this.udpBind(port, ({ inPort, sourceIP, udp }) => {
+          this.getNtpAgent().handleUdp(inPort, sourceIP as IPAddress, udp);
+        }, 'chronyd')),
+      releaseNtpPort: (port) => { this.udpClose(port); this.ntpPortBound = false; },
     });
     this.executor.chronyService = this.chronyService;
+    this.executor.registerServiceSocketServer('chrony', this.chronyService);
     this.executor.ntpAgent = () => this.getNtpAgent();
     this.executor.dnsUpdateSender = () => (server, request, key) =>
       sendDynamicUpdate(this, server, request, 2000, key);

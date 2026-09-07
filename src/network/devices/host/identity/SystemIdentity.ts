@@ -23,6 +23,7 @@ import type { IEventBus } from '@/events/EventBus';
 import type { HostIdentityField } from '../events';
 import { OsRelease } from './OsRelease';
 import { KernelInfo } from './KernelInfo';
+import { TimeZone } from '../../../core/time/TimeZone';
 
 /** `hostnamectl` chassis classification. */
 export type ChassisClass =
@@ -146,6 +147,10 @@ export class SystemIdentity {
 
   // ─── Mutators (publish host.identity.changed) ──────────────────────────
 
+  getTimeZone(): TimeZone {
+    return TimeZone.parse(this.timezone) ?? TimeZone.UTC;
+  }
+
   setTimezone(timezone: string): void {
     this.change('timezone', this.timezone, timezone, () => { this.timezone = timezone; });
   }
@@ -184,20 +189,6 @@ export class SystemIdentity {
     ].join('\n');
   }
 
-  /** Render the `timedatectl` status report. */
-  toTimedatectl(now: Date = new Date()): string {
-    const stamp = formatTimestamp(now);
-    return [
-      `               Local time: ${stamp} UTC`,
-      `           Universal time: ${stamp} UTC`,
-      `                 RTC time: ${stamp}`,
-      `                Time zone: ${this.timezone} (UTC, +0000)`,
-      `System clock synchronized: yes`,
-      `              NTP service: active`,
-      `          RTC in local TZ: no`,
-    ].join('\n');
-  }
-
   // ─── Internals ─────────────────────────────────────────────────────────
 
   private change(field: HostIdentityField, from: string, to: string, apply: () => void): void {
@@ -208,13 +199,4 @@ export class SystemIdentity {
       payload: { deviceId: this.deviceId, field, from, to },
     });
   }
-}
-
-const WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-
-/** `Tue 2026-05-21 14:00:00` — the `timedatectl` timestamp shape. */
-function formatTimestamp(d: Date): string {
-  const pad = (n: number): string => String(n).padStart(2, '0');
-  return `${WEEKDAYS[d.getUTCDay()]} ${d.getUTCFullYear()}-${pad(d.getUTCMonth() + 1)}-` +
-    `${pad(d.getUTCDate())} ${pad(d.getUTCHours())}:${pad(d.getUTCMinutes())}:${pad(d.getUTCSeconds())}`;
 }

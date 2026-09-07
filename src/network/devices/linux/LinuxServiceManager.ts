@@ -506,6 +506,7 @@ export const SERVICE_LISTENERS: Readonly<Record<string, ServiceListenerSpec>> = 
     processName: 'apache2',
     sockets: [{ port: 80, protocol: 'tcp' }, { port: 443, protocol: 'tcp' }],
   },
+  chrony: { processName: 'chronyd', sockets: [{ port: 123, protocol: 'udp' }] },
   lldpd: { processName: 'lldpd', sockets: [] },
   nginx: {
     processName: 'nginx',

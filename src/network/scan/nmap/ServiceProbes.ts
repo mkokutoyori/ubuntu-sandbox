@@ -28,6 +28,12 @@ function ports(spec: string): ReadonlySet<number> {
   return out;
 }
 
+const VERSION_EXCLUDED_PORTS = ports('9100-9107');
+
+export function versionScanExcludes(port: number): boolean {
+  return VERSION_EXCLUDED_PORTS.has(port);
+}
+
 export const NULL_PROBE: ServiceProbe = {
   name: 'NULL', rarity: 5, payload: '', ports: new Set(),
 };

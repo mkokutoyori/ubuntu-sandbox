@@ -22,7 +22,7 @@ export interface CronEngineDeps {
 
 export class CronEngine {
   private running = false;
-  private lastMinute = '';
+  private lastMinute = Number.NaN;
 
   constructor(private readonly deps: CronEngineDeps) {}
 
@@ -31,7 +31,7 @@ export class CronEngine {
   start(): void {
     if (this.running) return;
     this.running = true;
-    this.lastMinute = '';
+    this.lastMinute = Number.NaN;
     this.fireReboot();
   }
 
@@ -41,7 +41,7 @@ export class CronEngine {
 
   tick(now: Date = this.deps.now()): void {
     if (!this.running) return;
-    const key = `${now.getFullYear()}-${now.getMonth()}-${now.getDate()}-${now.getHours()}-${now.getMinutes()}`;
+    const key = Math.floor(now.getTime() / 60_000);
     if (key === this.lastMinute) return;
     this.lastMinute = key;
     for (const source of this.deps.sources) {

@@ -20,6 +20,11 @@ function scanHost(ctx: LinuxCommandContext): ScanHost {
       : ctx.net.pingSequence(new IPAddress(ip), 1, timeoutMs)),
     tcpOutcome: (ip, port) => ctx.net.tcpConnectOutcome(ip, port),
     probeService: (ip, port, payload) => ctx.net.probeService(ip, port, payload),
+    routes: () => ctx.net.getRoutingTable().map((r) => ({
+      dest: r.network.toString(), maskBits: r.mask.toCIDR(),
+      dev: r.iface, metric: r.metric,
+      gateway: r.nextHop?.toString(),
+    })),
     sendUdpProbe: (ip, port, sourcePort, options) =>
       ctx.net.sendUdpProbe(new IPAddress(ip), port, sourcePort, options),
     scanProbe: (ip, port, flags, shape) =>
@@ -38,10 +43,11 @@ export const nmapCommand: LinuxCommand = {
   needsNetworkContext: true,
   complete: makeArgCompleter({
     flags: ['-6', '-A', '-D', '-F', '-O', '-P0', '-Pn', '-R', '-S', '-T', '-d', '-iL', '-iR', '-n',
-      '-f', '-ff', '-g', '-oA', '-oG', '-oN', '-oX', '-p', '-p-', '-sP', '-sS', '-sT', '-sU',
+      '-e', '-f', '-ff', '-g', '-oA', '-oG', '-oN', '-oX', '-p', '-p-', '-sP', '-sS', '-sT', '-sU',
       '-sV', '-sA', '-sF', '-sM', '-sN', '-sW', '-sX', '-sn', '-v', '-vv',
       '--badsum', '--data', '--data-length', '--data-string', '--disable-arp-ping',
-      '--exclude', '--excludefile', '--mtu',
+      '--allports', '--exclude', '--exclude-ports', '--excludefile', '--iflist',
+      '--mtu',
       '--no-stylesheet', '--open',
       '--packet-trace', '--reason', '--send-ip', '--source-port', '--stylesheet',
       '--top-ports', '--traceroute', '--ttl', '--version-all', '--version-intensity',

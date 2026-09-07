@@ -35,6 +35,7 @@ import { resetCounters, MACAddress } from '@/network/core/types';
 import { resetDeviceCounters } from '@/network/devices/DeviceFactory';
 import { Logger } from '@/network/core/Logger';
 import { pingOnSimulatedClock } from '../../../support/fastPing';
+import { utcMsForLocal } from '@/network/core/time/TimeZoneRegistry';
 
 interface Cmd { executeCommand(cmd: string): Promise<string> }
 const runOn = (d: Cmd, cmds: string[]) =>
@@ -275,11 +276,11 @@ describe('config firewall schedule recurring', () => {
       'set start 22:00', 'set end 23:00', 'next', 'end');
     run(sh, 'config firewall policy', 'edit 1', 'set schedule "NUIT"', 'next', 'end');
 
-    const midi = new Date(2026, 7, 17, 12, 0, 0).getTime();
-    expect(fw.getScheduleStore().activeAt('NUIT', midi)).toBe(false);
+    const chezLePareFeu = (heure: number, minute: number): number =>
+      utcMsForLocal(fw.getTimeZone(), Date.UTC(2026, 7, 17, heure, minute));
 
-    const nuit = new Date(2026, 7, 17, 22, 30, 0).getTime();
-    expect(fw.getScheduleStore().activeAt('NUIT', nuit)).toBe(true);
+    expect(fw.getScheduleStore().activeAt('NUIT', chezLePareFeu(12, 0))).toBe(false);
+    expect(fw.getScheduleStore().activeAt('NUIT', chezLePareFeu(22, 30))).toBe(true);
   });
 
   it('`always` est toujours actif — le temoin', async () => {

@@ -9,6 +9,8 @@
  */
 
 import type { Port } from '../../hardware/Port';
+import { TimeZone } from '../../core/time/TimeZone';
+import { partsAt } from '../../core/time/TimeZoneRegistry';
 import { dhcpEnabledFor } from './WinAdapterFacts';
 import type { ProcessSession } from './WindowsProcessManager';
 import { adapterDisplayName } from './netAdapter';
@@ -197,24 +199,24 @@ export function cmdChcp(args: string[]): string {
   return `Active code page: ${cp}`;
 }
 
-/** date /t — print today's date in MM/DD/YYYY (en-US). */
-export function cmdDate(_args: string[]): string {
-  const d = new Date();
+/** date /t — print today's date in MM/DD/YYYY (en-US), in the machine's zone. */
+export function cmdDate(_args: string[], timezone = 'UTC'): string {
+  const zone = TimeZone.parse(timezone) ?? TimeZone.of('UTC');
+  const local = partsAt(zone, Date.now());
   const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-  const dow = days[d.getDay()];
-  const mm = String(d.getMonth() + 1).padStart(2, '0');
-  const dd = String(d.getDate()).padStart(2, '0');
-  const yyyy = d.getFullYear();
-  return `${dow} ${mm}/${dd}/${yyyy}`;
+  const dow = days[local.weekday];
+  const mm = String(local.month).padStart(2, '0');
+  const dd = String(local.day).padStart(2, '0');
+  return `${dow} ${mm}/${dd}/${local.year}`;
 }
 
-/** time /t — print current time in h:mm AM/PM (en-US). */
-export function cmdTime(_args: string[]): string {
-  const d = new Date();
-  const h24 = d.getHours();
-  const min = String(d.getMinutes()).padStart(2, '0');
-  const tt = h24 >= 12 ? 'PM' : 'AM';
-  const h12 = h24 % 12 === 0 ? 12 : h24 % 12;
+/** time /t — print current time in h:mm AM/PM (en-US), in the machine's zone. */
+export function cmdTime(_args: string[], timezone = 'UTC'): string {
+  const zone = TimeZone.parse(timezone) ?? TimeZone.of('UTC');
+  const local = partsAt(zone, Date.now());
+  const min = String(local.minute).padStart(2, '0');
+  const tt = local.hour >= 12 ? 'PM' : 'AM';
+  const h12 = local.hour % 12 === 0 ? 12 : local.hour % 12;
   return `${h12}:${min} ${tt}`;
 }
 

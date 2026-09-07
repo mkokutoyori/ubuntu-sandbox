@@ -105,6 +105,30 @@ describe('M6 — un `<cr>` annonce se valide vraiment', () => {
       ['configure terminal', 'interface GigabitEthernet0/0'], '');
     expect(f, f.join('\n')).toEqual([]);
   }, 240_000);
+
+  /*
+   * Le balayage n'entrait dans AUCUN sous-mode, et c'est la que les
+   * `<cr>` menteurs se sont accumules : 77 mesures dans huit sous-modes
+   * le jour ou on l'y a promene. Ils sont nommes dans TODO.md, et
+   * chaque famille migree au socle en ferme un lot — le socle deduit
+   * l'arite des places declarees, la ou un noeud du trie sans parametre
+   * annonce zero.
+   *
+   * `config-view` est le premier a entrer ici parce qu'il est le
+   * premier a etre entierement declare. Le suivant s'ajoute a cette
+   * liste quand il l'est ; l'ajouter avant reviendrait a epingler le
+   * defaut au lieu de le mesurer.
+   */
+  it('dans le sous-mode `parser view`', async () => {
+    const f = await crMensongers(
+      ['configure terminal', 'aaa new-model', 'parser view NOC'], '');
+    expect(f, f.join('\n')).toEqual([]);
+  }, 240_000);
+
+  it('dans le sous-mode `route-map`', async () => {
+    const f = await crMensongers(['configure terminal', 'route-map RM permit 10'], '');
+    expect(f, f.join('\n')).toEqual([]);
+  }, 240_000);
 });
 
 describe('les cas nommes de l audit', () => {

@@ -78,6 +78,18 @@ export function consumeOptionBag(
     }
     const brut = tokens[index + 1];
     if (brut === undefined) return { kind: 'incomplete' };
+    /*
+     * Une valeur `REST` prend TOUTE la suite de la ligne et termine le
+     * sac : `username bob description chef de projet` decrit un chef de
+     * projet, pas une option `chef` suivie de deux mots inconnus. C'est
+     * la meme regle qu'une place `REST` dans un chemin — le sac ne
+     * savait pas la dire, si bien qu'une famille dont une option prend
+     * une phrase ne pouvait pas se declarer et restait glouton.
+     */
+    if (option.argument.type === 'REST') {
+      args[optionArgName(option)] = tokens.slice(index + 1).join(' ');
+      return { kind: 'ok', args };
+    }
     if (!argumentAccepts(option.argument, brut)) {
       return { kind: 'invalid', at: index + 1 };
     }
@@ -104,6 +116,7 @@ export function remainingOptions(
     const option = resolveOption(restantes, typed[index]);
     if (!option) continue;
     restantes = restantes.filter(autre => autre !== option);
+    if (option.argument?.type === 'REST' && index + 1 < typed.length) return [];
     if (option.argument) index++;
   }
   return restantes;

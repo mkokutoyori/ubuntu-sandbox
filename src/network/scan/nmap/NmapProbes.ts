@@ -13,6 +13,7 @@ import {
 } from '@/network/devices/linux/commands/net/ServiceBannerGrab';
 import { detectServiceFromBanner } from './BannerAnalyzer';
 import { NULL_PROBE, matchProbeResponse, probesForPort } from './ServiceProbes';
+import type { NmapRoute } from './NmapIfList';
 import { serviceFromProcess } from './ProcessServiceMap';
 import type { HostProbes, HostState, ResolvedTarget } from './ScanEngine';
 
@@ -30,6 +31,8 @@ export interface ScanHost {
   }>>;
   tcpOutcome(ip: string, port: number): TcpWireOutcome;
   probeService(ip: string, port: number, payload: string): string | null;
+  /** Ce que `--iflist` rend sous sa seconde banniere. */
+  routes?(): NmapRoute[];
   sendUdpProbe(
     ip: string, port: number, sourcePort: number,
     options?: {

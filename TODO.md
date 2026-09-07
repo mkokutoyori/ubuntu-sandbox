@@ -2667,25 +2667,6 @@ dynamique DNS cote client, que `src/network/dns/update/` sait faire cote
 serveur — c'est donc un branchement reel et non une invention, mais il
 touche l'enregistrement A/PTR d'un hote et son interaction avec le role
 serveur DNS de Windows, ce qui est un lot a soi.
-### [socle] une place ne sait pas etre exigee au positif et facultative au negatif
-
-**Mesure** : `radius-server timeout 5` exige sa valeur, `no radius-server
-timeout` s'en passe — c'est la forme d'IOS, la negation retablissant le
-defaut sans le nommer. Le socle ne sait declarer que l'un des deux :
-une place obligatoire fait repondre `% Incomplete command.` a la
-negation nue, une place `optional` laisse passer la forme positive nue.
-`CommandSpec.undoRequiresArgument` porte la nuance INVERSE (« la
-negation exige un mot de plus ») et n'est lue que par l'aide, jamais par
-l'analyse.
-
-**Contourne, pas corrige** : les six reglages globaux de
-`aaaServerSpecs.ts` declarent leur valeur `optional` et refusent la
-forme positive nue dans le gestionnaire, avec le meme message qu'IOS.
-La PLAGE, elle, reste declaree sur la place et appliquee par l'analyse,
-donc seul le controle de PRESENCE quitte la declaration. Fermer
-l'entree demande une notion de presence par sens dans `CommandParser`,
-qui touche toutes les familles migrees et non cette seule.
-
 ### [powershell] `netsh wlan add profile` ne lit pas le XML du profil
 
 **Mesure** : `netsh wlan add profile filename="C:\temp\quoi-que-ce-soit.xml"`
@@ -2782,3 +2763,52 @@ Chacun rend desormais un refus qui NOMME la brique absente :
 pour un geste que le moteur ne sait pas poser serait exactement la meme
 apparence sans l'effet, dans l'autre sens — les deux tests qui
 l'attendaient epinglaient une invention du moteur mort et sont corriges.
+
+### [logging] `logging host` ne porte ni `vrf`, ni `xml`, ni `filtered`, ni `session-id`
+La commande declaree — et evaluee — est `logging [host] <ip>
+[discriminator <nom>] [transport {udp|tcp} [port <1-65535>]]`. La
+documentation Cisco decrit en plus, sur les plateformes recentes,
+`vrf <nom>`, `xml`, `filtered [stream <id>]`, `sequence-num-session`
+et `session-id {hostname|ipv4|ipv6|string <texte>}`.
+**Mesure** : `logging host 10.0.0.1 vrf V1` repond `% Invalid input
+detected at '^' marker.`, comme les quatre autres.
+**Ce qui a ete cherche** : `cisco.com` est BLOQUE par le mandataire de
+sortie de ce reseau (`EGRESS_BLOCKED` sur
+`/c/en/us/td/docs/ios-xml/ios/esm/command/esm-cr-book/esm-cr-a1.html`),
+et le resume d'un moteur de recherche nomme ces mots-cles sans donner
+leur grammaire exacte ni leur effet.
+**Report** : declarer une place dont on ne connait ni la forme ni
+l'effet, c'est la faire accepter puis ne rien en faire — exactement le
+defaut que la migration referme partout ailleurs. Le refus actuel dit
+la verite : la plateforme ne les porte pas. A rouvrir des que la
+reference est atteignable.
+
+### [cli] le garde-fou des `<cr>` n'entrait dans aucun sous-mode — 49 promesses menteuses y restent
+`probe-aide-cr-tient-sa-promesse` balayait trois modes : `show` en EXEC
+privilegie, la configuration globale et celle d'interface. Aucun
+sous-mode. Promene dans huit d'entre eux, le meme balayage a trouve 77
+`<cr>` annonces pour des frappes que la machine refuse par
+`% Incomplete command.` — le defaut exact que ce garde-fou existe pour
+empecher, dans les endroits ou il ne regardait pas.
+**Mesure** (routeur Cisco, profondeur 3, un materiel neuf par
+validation) :
+- `config-router-ospf` 20 : `area`, `area range`, `area stub`,
+  `area virtual-link`, `auto-cost`, `auto-cost reference-bandwidth`,
+  `capability`, `neighbor`, `passive-interface`, `no passive-interface`…
+- `config-line` 13 : `accounting`, `authorization`, `exec-timeout`,
+  `login-timeout`, `transport`, `transport input`, `transport output`…
+- `config-router-eigrp` 6, `config-router-bgp` 5, `config-acl-ext` 3
+  (`sequence`, `sequence deny`, `sequence permit`), `config-dhcp` 2
+  (`option ascii`, `option hex`) ;
+- `config-view` 4 et `config-route-map` 24 — FERMES, et les deux
+  sous-modes sont desormais balayes.
+`config-class-map`, `config-policy-map`, `config-keychain` et
+`config-vrf` en comptent zero : ils sont deja declares sur le socle.
+**Cause** : un noeud du trie porte une action et aucun parametre
+declare, donc son arite minimale vaut zero, donc `?` annonce qu'on peut
+valider. Le socle, lui, la deduit des places declarees.
+**Report** : poser 73 `requireArgs` sur un trie qu'on vide serait
+ecrire une seconde fois ce que chaque gestionnaire sait deja, sur un
+moteur qui doit disparaitre. Chaque famille migree en ferme son lot,
+et le sous-mode entre alors dans le balayage — l'y faire entrer avant
+epinglerait le defaut au lieu de le mesurer.

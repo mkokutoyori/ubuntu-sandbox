@@ -40,13 +40,6 @@ export const RSA_MODULUS_MIN = 360;
 export const RSA_MODULUS_MAX = 4096;
 export const RSA_MODULUS_DEFAUT = 1024;
 
-export const NO_AAA_CONTINUATIONS: ReadonlyArray<{ keyword: string; description: string }> = [
-  { keyword: 'new-model', description: 'Disable the AAA access control model' },
-  { keyword: 'authentication', description: 'Remove an authentication method list' },
-  { keyword: 'authorization', description: 'Remove an authorization method list' },
-  { keyword: 'accounting', description: 'Remove an accounting method list' },
-  { keyword: 'session-id', description: 'Restore the default session ID behaviour' },
-];
 
 interface UsernameValeur {
   keyword: string;
@@ -137,19 +130,8 @@ export const USERNAME_CONTINUATIONS: ReadonlyArray<{
  * se contredire. Auparavant le gestionnaire finissait par `return ''`,
  * si bien que n'importe quelle forme était acceptée en silence.
  */
-export const AAA_TOP_KEYWORDS: readonly string[] = [
-  'new-model', 'authentication', 'authorization', 'accounting',
-  'group', 'session-id', 'local',
-];
 
-export const AAA_SESSION_ID_VALUES: readonly string[] = ['common', 'unique'];
-
-export const AAA_SERVICES: Record<AaaPhase, readonly string[]> = {
-  authentication: ['login', 'enable', 'ppp', 'dot1x'],
-  authorization: ['exec', 'commands', 'network', 'config-commands', 'reverse-access'],
-  accounting: ['exec', 'commands', 'network', 'system', 'connection'],
-};
-
+import { AAA_SERVICES } from './aaaHeadSpecs';
 export const AAA_METHODS: Record<AaaPhase, readonly string[]> = {
   authentication: [
     'enable', 'group', 'krb5', 'krb5-telnet', 'line', 'local', 'local-case', 'none',
@@ -218,203 +200,6 @@ export function buildIdentityConfigCommands(
   trie: CommandTrie, ctx: CiscoSecurityShellContext,
 ): void {
   const sec = () => getSecurityConfig(ctx.r());
-
-  trie.registerGreedy('aaa', 'AAA configuration', (args) => {
-    if (args.length === 0) return CISCO_ERRORS.INCOMPLETE;
-    if (!AAA_TOP_KEYWORDS.includes((args[0] ?? '').toLowerCase())) {
-      throw new CliInvalidInput({ token: args[0] });
-    }
-    if (args[0] === 'new-model') {
-      if (args[1] !== undefined) throw new CliInvalidInput({ token: args[1] });
-      sec().aaaNewModel = true;
-      return '';
-    }
-    if (args[0] === 'session-id') {
-      if (args[1] === undefined) throw new CliIncomplete();
-      if (!AAA_SESSION_ID_VALUES.includes(args[1].toLowerCase())) {
-        throw new CliInvalidInput({ token: args[1] });
-      }
-      if (args[2] !== undefined) throw new CliInvalidInput({ token: args[2] });
-      sec().aaaSessionId = args[1].toLowerCase();
-      return '';
-    }
-    if (args[0] === 'local' && args[1] === 'authentication' && args[2] === 'attempts' && args[3] === 'max-fail' && args[4]) {
-      const n = parseInt(args[4], 10);
-      if (isNaN(n)) throw new CliInvalidInput({ token: args[4] });
-      sec().localAuthMaxFailAttempts = n;
-      const r = ctx.r() as unknown as { _configureLocalAuthMaxFail?: (n: number) => void };
-      r._configureLocalAuthMaxFail?.(n);
-      return '';
-    }
-    if (args[0] === 'authentication' || args[0] === 'authorization' || args[0] === 'accounting') {
-      return parseAaaMethod(sec(), args[0] as AaaPhase, args.slice(1));
-    }
-    if (args[0] === 'group' && args[1] === 'server' && args[2] && args[3]) {
-      const kind = args[2] === 'tacacs+' ? 'tacacs+' : 'radius';
-      const name = args[3];
-      const existing = sec().aaaGroups.get(name) ?? { name, kind: kind as 'radius' | 'tacacs+', members: [] };
-      sec().aaaGroups.set(name, existing);
-      ctx.setAaaGroup?.(name);
-      ctx.setMode('config-aaa-group' as CiscoShellMode);
-      return '';
-    }
-    return '';
-  });
-
-  trie.registerGreedy('no aaa', 'Disable AAA', (args) => {
-    if (args.length === 0) return CISCO_ERRORS.INCOMPLETE;
-    const quoi = (args[0] ?? '').toLowerCase();
-    if (!AAA_TOP_KEYWORDS.includes(quoi)) throw new CliInvalidInput({ token: args[0] });
-    if (quoi === 'new-model') {
-      const s = sec();
-      s.aaaNewModel = false;
-      s.aaaMethods.length = 0;
-      return '';
-    }
-    if (quoi === 'session-id') { sec().aaaSessionId = undefined; return ''; }
-    if (quoi === 'authentication' || quoi === 'authorization' || quoi === 'accounting') {
-      const phase = quoi as AaaPhase;
-      const service = (args[1] ?? '').toLowerCase();
-      const nom = (args[2] ?? '').toLowerCase() === 'default' ? 'default' : args[2];
-      const s = sec();
-      s.aaaMethods = s.aaaMethods.filter((m) =>
-        !(m.phase === phase && m.service === service && (!nom || m.listName === nom)));
-      return '';
-    }
-    return '';
-  }, NO_AAA_CONTINUATIONS);
-
-  trie.registerGreedy('username', 'Local user', (args) => {
-    if (args.length < 1) return '% Incomplete command.';
-    const name = args[0];
-    let privilege: number | undefined;
-    let secret: string | undefined;
-    let secretAlgo: 'plain' | 'plain-password' | 'md5' | 'sha256' | 'scrypt' | 'type-7' = 'plain';
-    let nopassword = false;
-    let description: string | undefined;
-    // Set only for forms where the operator typed a real cleartext password
-    // (type 0, or the bare/unqualified form) — never for a pre-computed
-    // hash pasted in via `secret 5|8|9|4` / `password 7`, which `security
-    // passwords min-length` does not (and cannot) validate.
-    let plaintextEntered: string | undefined;
-    // Real IOS: entering a type-0 (cleartext) password via `password`
-    // triggers a deprecation warning as the command's own output — never
-    // for `secret`, which real IOS always hashes on save.
-    let type0PasswordWarning = false;
-    // `username X algorithm-type {md5|sha256|scrypt} secret <pwd>` : le
-    // mot-cle etait accepte et JETE, si bien qu'un secret demande en
-    // scrypt etait range en MD5 -- la commande de durcissement produisait
-    // exactement l'inverse de ce qu'elle promet, en silence. Son
-    // homologue `enable algorithm-type` fonctionne depuis toujours : meme
-    // famille, deux comportements.
-    let algoDemande: 'md5' | 'sha256' | 'scrypt' | undefined;
-    let vue: string | undefined;
-    let autocommand: string | undefined;
-    let nohangup = false;
-    let oneTime = false;
-    let accessClass: number | undefined;
-    let maxLinks: number | undefined;
-    for (let i = 1; i < args.length; i++) {
-      const t = args[i];
-      if (t === 'privilege' && args[i + 1]) {
-        const niveau = Number(args[i + 1]);
-        if (!Number.isInteger(niveau) || niveau < 0 || niveau > 15) {
-          throw new CliInvalidInput({ token: args[i + 1] });
-        }
-        privilege = niveau; i++;
-      }
-      else if (t === 'algorithm-type') {
-        const nom = (args[i + 1] ?? '').toLowerCase();
-        if (nom !== 'md5' && nom !== 'sha256' && nom !== 'scrypt') {
-          throw new CliInvalidInput({ token: args[i + 1] });
-        }
-        algoDemande = nom; i++;
-      }
-      else if (t === 'view' && args[i + 1]) {
-        // `username X view NOC_VIEW` — la vue attachee au compte. Le
-        // mot-cle etait avale en silence par la boucle, donc le lien
-        // entre un compte et son role disparaissait de la
-        // configuration ; refuser une vue inexistante evite d'attacher
-        // un role qui n'a jamais ete decrit.
-        vue = args[i + 1]; i++;
-      }
-      else if (t === 'nopassword') { nopassword = true; }
-      else if (t === 'nohangup') { nohangup = true; }
-      else if (t === 'one-time') { oneTime = true; }
-      else if (t === 'access-class') {
-        const n = Number(args[i + 1]);
-        if (!Number.isInteger(n) || n < 1 || n > 199) {
-          throw new CliInvalidInput({ token: args[i + 1] ?? t });
-        }
-        accessClass = n; i++;
-      }
-      else if (t === 'user-maxlinks') {
-        const n = Number(args[i + 1]);
-        if (!Number.isInteger(n) || n < 0 || n > 255) {
-          throw new CliInvalidInput({ token: args[i + 1] ?? t });
-        }
-        maxLinks = n; i++;
-      }
-      else if (t === 'description') { description = args.slice(i + 1).join(' '); break; }
-      else if (t === 'secret') {
-        const next = args[i + 1];
-        if (next === '0') { secret = args.slice(i + 2).join(' '); secretAlgo = 'plain'; plaintextEntered = secret; break; }
-        if (next === '5') { secret = args.slice(i + 2).join(' '); secretAlgo = 'md5'; break; }
-        if (next === '8') { secret = args.slice(i + 2).join(' '); secretAlgo = 'sha256'; break; }
-        if (next === '9') { secret = args.slice(i + 2).join(' '); secretAlgo = 'scrypt'; break; }
-        if (next === '4') { secret = args.slice(i + 2).join(' '); secretAlgo = 'sha256'; break; }
-        // Bare `secret <pwd>` is hashed (type 5) by real IOS, unless
-        // `algorithm-type` named another one. Un chiffre explicite
-        // (`secret 5|8|9`) decrit un condense DEJA calcule et sort plus
-        // haut : l'algorithme demande ne porte que sur du clair a hacher.
-        secret = args.slice(i + 1).join(' ');
-        secretAlgo = algoDemande ?? 'md5';
-        plaintextEntered = secret; break;
-      }
-      else if (t === 'password') {
-        const next = args[i + 1];
-        if (next === '0') {
-          secret = args.slice(i + 2).join(' '); secretAlgo = 'plain-password';
-          plaintextEntered = secret; type0PasswordWarning = true; break;
-        }
-        if (next === '7') { secret = args.slice(i + 2).join(' '); secretAlgo = 'type-7'; break; }
-        secret = args.slice(i + 1).join(' '); secretAlgo = 'plain-password';
-        plaintextEntered = secret; type0PasswordWarning = true; break;
-      }
-      else if (t === 'autocommand') { autocommand = args.slice(i + 1).join(' '); break; }
-      else if (!USERNAME_KEYWORDS.has(t.toLowerCase())) {
-        throw new CliInvalidInput({ token: t });
-      }
-    }
-    if (vue !== undefined && !sec().parserViews.has(vue)) {
-      return `%Error: View ${vue} is not present in the system`;
-    }
-    const minLength = sec().passwords.minLength;
-    if (!nopassword && plaintextEntered !== undefined && minLength && plaintextEntered.length < minLength) {
-      return `Password too short - must be at least ${minLength} characters. Password configuration failed`;
-    }
-    const router = ctx.r() as unknown as {
-      _upsertCiscoUsername?: (n: string, kv: {
-        privilege?: number; secret?: string;
-        secretAlgo?: 'plain' | 'plain-password' | 'md5' | 'sha256' | 'scrypt' | 'type-7';
-        nopassword?: boolean; description?: string; view?: string;
-        autocommand?: string; nohangup?: boolean; oneTime?: boolean;
-        accessClass?: number; maxLinks?: number;
-      }) => void;
-    };
-    if (router._upsertCiscoUsername) {
-      router._upsertCiscoUsername(name, {
-        privilege, secret, secretAlgo, nopassword, description, view: vue,
-        autocommand, nohangup, oneTime, accessClass, maxLinks,
-      });
-    }
-    if (type0PasswordWarning) {
-      return "WARNING: Command has been added to the configuration using a type 0\n"
-        + "password. However, type 0 passwords will soon be deprecated. Migrate\n"
-        + "to a supported password type";
-    }
-    return '';
-  }, USERNAME_CONTINUATIONS);
 
   trie.registerGreedy('service password-encryption', 'Enable password encryption', () => {
     sec().servicePasswordEncryption = true;
@@ -625,7 +410,7 @@ function mapRevocationCheck(mode: string | undefined): RevocationCheckMode {
   return 'none';
 }
 
-function parseAaaMethod(sec: CiscoSecurityConfig, phase: AaaPhase, args: string[]): string {
+export function parseAaaMethod(sec: CiscoSecurityConfig, phase: AaaPhase, args: string[]): string {
   // `aaa authentication` seul était ACCEPTÉ en silence : rien n'était
   // enregistré, rien n'apparaissait dans la running-config, et
   // l'opérateur croyait avoir configuré une méthode.
