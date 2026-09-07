@@ -28,6 +28,8 @@
  */
 
 import { Equipment } from '../equipment/Equipment';
+import { SystemClock } from '../core/SystemClock';
+import { DeviceClockStore } from '../core/time/DeviceClock';
 import {
   CarPolicer, suppressionKindOf, cloneCarRule,
   type SuppressionKind, type CarRule,
@@ -308,6 +310,25 @@ export abstract class Switch extends Equipment {
     if (!this._httpService) this._httpService = new CiscoHttpService();
     return this._httpService;
   }
+
+  /**
+   * L'horloge d'un commutateur, systeme et fuseau.
+   *
+   * Elle n'existait PAS : `clock timezone`, `clock summer-time` et
+   * `clock set` etaient acceptes en silence sur un Catalyst, ne
+   * paraissaient dans aucune configuration, et `show clock` repondait
+   * l'heure reelle du navigateur en UTC. Le `TODO.md` demandait
+   * d'extraire le magasin d'horloge du service de gestion vers un
+   * porteur que les deux plateformes tiennent : le voici, et le service
+   * de gestion du commutateur Huawei recoit CETTE instance plutot que
+   * d'en fabriquer une seconde.
+   */
+  private readonly _systemClock = new SystemClock();
+  getSystemClockMs(): number { return this._systemClock.now(); }
+  _setSystemClock(epochMs: number): void { this._systemClock.set(epochMs); }
+
+  private readonly _deviceClock = new DeviceClockStore();
+  getDeviceClock(): DeviceClockStore { return this._deviceClock; }
 
   private macTable: Map<string, MACTableEntry> = new Map(); // key: "vlan:mac"
   private macLearningPorts = new Map<string, MacLearningAction>();

@@ -13,6 +13,7 @@
  */
 
 import type { Equipment } from './Equipment';
+import type { DeviceClockStore } from '../core/time/DeviceClock';
 import type { RouterManagementService } from '../devices/router/management/RouterManagementService';
 import type { CiscoHttpService } from '../devices/router/management/CiscoHttpService';
 import type { SnmpService } from '../devices/router/management/SnmpService';
@@ -58,6 +59,9 @@ function call<T>(dev: unknown, name: string): T | undefined {
 
 export const getManagementService = (dev: unknown): RouterManagementService | undefined =>
   call(dev, 'getManagementService');
+export const getDeviceClock = (dev: unknown): DeviceClockStore | undefined =>
+  call<DeviceClockStore>(dev, 'getDeviceClock')
+  ?? call<RouterManagementService>(dev, 'getManagementService')?.getClockStore();
 export const getHttpService = (dev: unknown): CiscoHttpService | undefined =>
   call(dev, 'getHttpService');
 export const getSnmpService = (dev: unknown): SnmpService | undefined =>

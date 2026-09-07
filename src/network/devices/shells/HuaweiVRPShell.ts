@@ -730,14 +730,12 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
   }
 
   vrpSetTimezone(nom: string, minutes: number): string {
-    const clock = this.routerRef?.getManagementService?.().getClock();
-    if (clock) { clock.timezone = nom; clock.offsetMin = minutes; }
+    this.routerRef?.getManagementService?.().getClockStore().setStandard(nom, minutes);
     return '';
   }
 
   vrpClearTimezone(): string {
-    const clock = this.routerRef?.getManagementService?.().getClock();
-    if (clock) { clock.timezone = VRP_TIMEZONE_DEFAUT; clock.offsetMin = 0; }
+    this.routerRef?.getManagementService?.().getClockStore().clearStandard();
     return '';
   }
 

@@ -151,3 +151,51 @@ export function clockReadingAt(
     inSummer: true,
   };
 }
+
+export class DeviceClockStore {
+  private config: DeviceClockConfig = {
+    timezone: 'UTC',
+    offsetMin: 0,
+    summerTimezone: '',
+    summerKind: 'recurring',
+    daylightStart: '',
+    daylightEnd: '',
+    daylightOffsetMin: DEFAULT_SUMMER_OFFSET_MIN,
+  };
+
+  get(): DeviceClockConfig { return this.config; }
+
+  setStandard(timezone: string, offsetMin: number): void {
+    this.config = { ...this.config, timezone, offsetMin };
+  }
+
+  clearStandard(): void {
+    this.config = { ...this.config, timezone: 'UTC', offsetMin: 0 };
+  }
+
+  setSummer(setting: SummerTimeSetting): void {
+    this.config = {
+      ...this.config,
+      summerTimezone: setting.zoneName,
+      summerKind: setting.kind,
+      daylightStart: setting.start,
+      daylightEnd: setting.end,
+      daylightOffsetMin: setting.offsetMin,
+    };
+  }
+
+  clearSummer(): void {
+    this.config = {
+      ...this.config,
+      summerTimezone: '',
+      summerKind: 'recurring',
+      daylightStart: '',
+      daylightEnd: '',
+      daylightOffsetMin: DEFAULT_SUMMER_OFFSET_MIN,
+    };
+  }
+
+  readingAt(atMs: number): DeviceClockReading {
+    return clockReadingAt(this.config, atMs);
+  }
+}

@@ -11,7 +11,10 @@ import type { DeviceType } from '@/network/core/types';
 import { EquipmentStateView } from '@/network/devices/inspection/EquipmentStateView';
 import type { NeighborDTO } from '@/network/devices/inspection/DeviceStateView';
 import { pad2 } from '@/lib/format';
-import { clockReadingAt, type DeviceClockConfig } from '@/network/core/time/DeviceClock';
+import {
+  clockReadingAt, DEFAULT_SUMMER_OFFSET_MIN, type DeviceClockConfig,
+} from '@/network/core/time/DeviceClock';
+import { getDeviceClock } from '@/network/equipment/RouterServiceCapabilities';
 import { CISCO_ERRORS } from '../cli-utils';
 import {
   tableauLignes, blocDetailLigne, REGLAGES_PAR_DEFAUT,
@@ -86,10 +89,9 @@ export function ciscoClockReading(
   }
   const dev = arg as unknown as {
     getSystemClockMs?: () => number;
-    getManagementService?: () => { getClock: () => DeviceClockConfig };
     getNtpAgent?: () => { isSynced?: () => boolean };
   };
-  const clock = dev.getManagementService?.().getClock();
+  const clock = getDeviceClock(arg)?.get();
   const now = atMs ?? dev.getSystemClockMs?.() ?? Date.now();
   const synced = dev.getNtpAgent?.().isSynced?.() ?? false;
   if (!clock) {
@@ -103,6 +105,25 @@ export function ciscoClockReading(
     offsetMin: reading.offsetMin,
     synced,
   };
+}
+
+export function iosClockConfigLines(clock: DeviceClockConfig | undefined): string[] {
+  if (!clock) return [];
+  const lines: string[] = [];
+  if (clock.timezone !== 'UTC') {
+    const sign = clock.offsetMin >= 0 ? '' : '-';
+    const abs = Math.abs(clock.offsetMin);
+    lines.push(`clock timezone ${clock.timezone} ${sign}${Math.floor(abs / 60)} ${abs % 60}`);
+  }
+  if (clock.summerTimezone) {
+    const decalage = clock.daylightOffsetMin === DEFAULT_SUMMER_OFFSET_MIN
+      ? '' : String(clock.daylightOffsetMin);
+    lines.push([
+      'clock summer-time', clock.summerTimezone, clock.summerKind,
+      clock.daylightStart, clock.daylightEnd, decalage,
+    ].filter((m) => m.length > 0).join(' '));
+  }
+  return lines;
 }
 
 export function iosDateSuffix(local: Date): string {

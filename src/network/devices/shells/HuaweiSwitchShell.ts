@@ -607,14 +607,12 @@ export class HuaweiSwitchShell implements ISwitchShell {
   }
 
   vrpSetTimezone(nom: string, minutes: number): string {
-    const clock = this.swRef?.getManagementService?.().getClock();
-    if (clock) { clock.timezone = nom; clock.offsetMin = minutes; }
+    this.swRef?.getManagementService?.().getClockStore().setStandard(nom, minutes);
     return '';
   }
 
   vrpClearTimezone(): string {
-    const clock = this.swRef?.getManagementService?.().getClock();
-    if (clock) { clock.timezone = VRP_TIMEZONE_DEFAUT; clock.offsetMin = 0; }
+    this.swRef?.getManagementService?.().getClockStore().clearStandard();
     return '';
   }
 
@@ -2831,7 +2829,7 @@ export class HuaweiSwitchShell implements ISwitchShell {
     // ── Common VRP display commands (shared with the router, DRY) ──
     trie.register('display clock', 'Display system clock', () => {
       return displayClock(
-        new Date(this.swRef?.getSystemClockMs?.() ?? Date.now()),
+        new Date(this.swRef?.getSystemClockMs() ?? Date.now()),
         this.swRef?.getManagementService?.().getClock());
     });
     trie.register('display cpu-usage', 'Display CPU usage', () => displayCpuUsage());

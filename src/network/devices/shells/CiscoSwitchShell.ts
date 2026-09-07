@@ -93,7 +93,7 @@ import {
   buildIdentityConfigCommands, buildIdentitySubmodeCommands, getSecurityConfig,
   type CiscoSecurityShellContext,
 } from './cisco/CiscoSecurityCommands';
-import { showSwitchVersion, showIpTraffic } from './cisco/CiscoCommonShow';
+import { showSwitchVersion, showIpTraffic, iosClockConfigLines } from './cisco/CiscoCommonShow';
 import { buildArchiveSubmodeOn, buildArchiveLogSubmodeOn } from './cisco/CiscoArchiveCommands';
 import type { LoggingCommandContext } from './cisco/CiscoLoggingCommands';
 import { buildConfigDhcpCommands, dhcpPoolSpecs } from './cisco/CiscoDhcpCommands';
@@ -4413,6 +4413,8 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
     // acceptee puis perdue a l'enregistrement.
     const httpLines = sw.getHttpService().runningConfigLines();
     if (httpLines.length > 0) lines.push(...httpLines);
+
+    lines.push(...iosClockConfigLines(sw.getDeviceClock().get()));
 
     const reglesPriv = privilegeConfigLines(
       getPrivilegeRules(sw),

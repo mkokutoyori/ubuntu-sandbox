@@ -6,7 +6,8 @@
  */
 
 import type { Router } from '../../Router';
-import { DEFAULT_SUMMER_OFFSET_MIN } from '@/network/core/time/DeviceClock';
+import { iosClockConfigLines } from './CiscoCommonShow';
+import { getDeviceClock } from '@/network/equipment/RouterServiceCapabilities';
 import { loadIntervalLabel, DEFAULT_LOAD_INTERVAL_SEC } from '../../../hardware/PortLoad';
 import { dhcpRunningConfigLines, dhcpSnoopingInterfaceLines, dhcpSnoopingRunningConfigLines } from '../../../dhcp/dhcpRunningConfig';
 import { createDefaultSnoopingConfig } from '../../../dhcp/types';
@@ -724,23 +725,7 @@ export function showRunningConfig(router: Router): string {
     lines.push(...unhandled);
   }
 
-  const mgmt = (router as unknown as { getManagementService?: () => import('../../router/management/RouterManagementService').RouterManagementService }).getManagementService?.();
-  if (mgmt) {
-    const clock = mgmt.getClock();
-    if (clock.timezone !== 'UTC') {
-      const sign = clock.offsetMin >= 0 ? '' : '-';
-      const abs = Math.abs(clock.offsetMin);
-      lines.push(`clock timezone ${clock.timezone} ${sign}${Math.floor(abs / 60)} ${abs % 60}`);
-    }
-    if (clock.summerTimezone) {
-      const decalage = clock.daylightOffsetMin === DEFAULT_SUMMER_OFFSET_MIN
-        ? '' : String(clock.daylightOffsetMin);
-      lines.push([
-        'clock summer-time', clock.summerTimezone, clock.summerKind,
-        clock.daylightStart, clock.daylightEnd, decalage,
-      ].filter((m) => m.length > 0).join(' '));
-    }
-  }
+  lines.push(...iosClockConfigLines(getDeviceClock(router)?.get()));
 
   const loggingCfg = (router as unknown as { _loggingConfig?: { asRunningConfigLines: () => string[] } })._loggingConfig;
   if (loggingCfg) {

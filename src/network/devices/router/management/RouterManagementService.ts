@@ -1,6 +1,7 @@
 import { InfoCenterConfig, type InfoCenterError } from './InfoCenterConfig';
 import { vrpDatetimeToEpochMs } from '../../shells/huawei/huaweiClockDatetime';
 import { parseVrpDaylightSaving } from '../../shells/huawei/huaweiDaylightSaving';
+import { DeviceClockStore, type DeviceClockConfig } from '../../../core/time/DeviceClock';
 
 export interface RawConfigEntry {
   feature: string;
@@ -33,15 +34,9 @@ export class RouterManagementService {
     masterStratum: undefined as number | undefined,
     refclock: '',
   };
-  private readonly clockCfg = {
-    timezone: 'UTC',
-    offsetMin: 0,
-    summerTimezone: '',
-    summerKind: 'recurring' as 'recurring' | 'date',
-    daylightStart: '',
-    daylightEnd: '',
-    daylightOffsetMin: 60,
-  };
+  constructor(private readonly clockStore: DeviceClockStore = new DeviceClockStore()) {}
+
+  getClockStore(): DeviceClockStore { return this.clockStore; }
   private readonly infoCenter = new InfoCenterConfig();
   private readonly sflow = {
     enabled: false,
@@ -118,17 +113,13 @@ export class RouterManagementService {
     if (head === 'daylight-saving-time') {
       const verdict = parseVrpDaylightSaving(args.slice(1));
       if (!verdict.rule) return verdict.badToken ?? '';
-      this.clockCfg.summerTimezone = verdict.rule.zoneName;
-      this.clockCfg.summerKind = verdict.rule.kind;
-      this.clockCfg.daylightStart = verdict.rule.start;
-      this.clockCfg.daylightEnd = verdict.rule.end;
-      this.clockCfg.daylightOffsetMin = verdict.rule.offsetMin;
+      this.clockStore.setSummer(verdict.rule);
     } else {
       this.recordRaw('clock', args.join(' '));
     }
     return null;
   }
-  getClock(): typeof this.clockCfg { return this.clockCfg; }
+  getClock(): DeviceClockConfig { return this.clockStore.get(); }
 
   /**
    * `info-center …` / `undo info-center …`.

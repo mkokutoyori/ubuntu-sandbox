@@ -215,7 +215,9 @@ export class HuaweiSwitch extends Switch {
 
   private _managementService: RouterManagementService | null = null;
   getManagementService(): RouterManagementService {
-    if (!this._managementService) this._managementService = new RouterManagementService();
+    if (!this._managementService) {
+      this._managementService = new RouterManagementService(this.getDeviceClock());
+    }
     return this._managementService;
   }
 
