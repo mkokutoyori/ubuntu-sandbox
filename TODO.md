@@ -2782,3 +2782,35 @@ l'effet, c'est la faire accepter puis ne rien en faire — exactement le
 defaut que la migration referme partout ailleurs. Le refus actuel dit
 la verite : la plateforme ne les porte pas. A rouvrir des que la
 reference est atteignable.
+
+### [cli] le garde-fou des `<cr>` n'entrait dans aucun sous-mode — 73 promesses menteuses y restent
+`probe-aide-cr-tient-sa-promesse` balayait trois modes : `show` en EXEC
+privilegie, la configuration globale et celle d'interface. Aucun
+sous-mode. Promene dans huit d'entre eux, le meme balayage a trouve 77
+`<cr>` annonces pour des frappes que la machine refuse par
+`% Incomplete command.` — le defaut exact que ce garde-fou existe pour
+empecher, dans les endroits ou il ne regardait pas.
+**Mesure** (routeur Cisco, profondeur 3, un materiel neuf par
+validation) :
+- `config-router-ospf` 20 : `area`, `area range`, `area stub`,
+  `area virtual-link`, `auto-cost`, `auto-cost reference-bandwidth`,
+  `capability`, `neighbor`, `passive-interface`, `no passive-interface`…
+- `config-route-map` 24 : les dix `match <critere>` et les quatorze
+  `set <action>` ;
+- `config-line` 13 : `accounting`, `authorization`, `exec-timeout`,
+  `login-timeout`, `transport`, `transport input`, `transport output`…
+- `config-router-eigrp` 6, `config-router-bgp` 5, `config-acl-ext` 3
+  (`sequence`, `sequence deny`, `sequence permit`), `config-dhcp` 2
+  (`option ascii`, `option hex`) ;
+- `config-view` 4 — FERMES par ce lot, et le sous-mode est desormais
+  balaye.
+`config-class-map`, `config-policy-map`, `config-keychain` et
+`config-vrf` en comptent zero : ils sont deja declares sur le socle.
+**Cause** : un noeud du trie porte une action et aucun parametre
+declare, donc son arite minimale vaut zero, donc `?` annonce qu'on peut
+valider. Le socle, lui, la deduit des places declarees.
+**Report** : poser 73 `requireArgs` sur un trie qu'on vide serait
+ecrire une seconde fois ce que chaque gestionnaire sait deja, sur un
+moteur qui doit disparaitre. Chaque famille migree en ferme son lot,
+et le sous-mode entre alors dans le balayage — l'y faire entrer avant
+epinglerait le defaut au lieu de le mesurer.
