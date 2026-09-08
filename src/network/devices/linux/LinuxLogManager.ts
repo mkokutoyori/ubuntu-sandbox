@@ -160,13 +160,27 @@ export class LinuxLogManager {
   }
 
   // ── logger command ─────────────────────────────────────────────
+  /**
+   * La taille maximale d'un message `logger`, celle de la RFC 3164 que
+   * `logger(1)` applique par defaut. Elle valait 2048 ici, un chiffre
+   * qu'aucune machine ne porte.
+   */
+  private static readonly DEFAULT_MESSAGE_SIZE = 1024;
+
   executeLogger(args: string[], currentUser: string): string {
+    const DEFAULT_MESSAGE_SIZE = LinuxLogManager.DEFAULT_MESSAGE_SIZE;
+    const split = (line: string, size: number): string[] => {
+      const out: string[] = [];
+      for (let at = 0; at < line.length; at += size) out.push(line.slice(at, at + size));
+      return out.length > 0 ? out : [''];
+    };
     let tag = currentUser;
     let priority = 'user.notice';
     let includePid = false;
     let toStderr = false;
     let expandNewlines = false;
     let fromFile: string | null = null;
+    let sizeArg: string | null = null;
     const msgParts: string[] = [];
 
     let i = 0;
@@ -178,8 +192,14 @@ export class LinuxLogManager {
       else if (a === '-s' || a === '--stderr') { toStderr = true; i++; }
       else if (a === '-e') { expandNewlines = true; i++; }
       else if (a === '-f' || a === '--file') { fromFile = args[++i] ?? null; i++; }
+      else if (a === '-S' || a === '--size') { sizeArg = args[++i] ?? ''; i++; }
       else { msgParts.push(a); i++; }
     }
+
+    if (sizeArg !== null && !/^\d+$/.test(sizeArg)) {
+      return `logger: failed to parse message size: '${sizeArg}': Invalid argument`;
+    }
+    const size = sizeArg === null ? DEFAULT_MESSAGE_SIZE : Number(sizeArg);
 
     const parsed = this.parsePriority(priority);
     if (!parsed) return `logger: unknown priority name: ${priority}`;
@@ -188,13 +208,17 @@ export class LinuxLogManager {
     if (fromFile !== null) {
       const content = this.vfs.readFile(fromFile);
       if (content === null) return `logger: ${fromFile}: No such file or directory`;
-      messages = content.split('\n').filter((l) => l.length > 0);
+      messages = content.split('\n').filter((l) => l.length > 0).flatMap((l) => split(l, size));
     } else {
       if (args.length === 0) return 'Usage: logger [options] [<message>]';
       let msg = msgParts.join(' ');
       if (expandNewlines) msg = msg.replace(/\\n/g, '\n');
-      if (msg.length > 2048) msg = msg.slice(0, 2048);
-      messages = [msg];
+      // Un message passe en ARGUMENT est coupe et le reste jete ; un
+      // FICHIER est decoupe en messages successifs. Les deux formes sont
+      // relevees sur util-linux, la page de manuel annoncant par
+      // ailleurs une limite « en-tete comprise » que le binaire
+      // n'applique pas.
+      messages = [msg.slice(0, size)];
     }
 
     const safeTag = tag.length > 255 ? tag.slice(0, 255) : tag;

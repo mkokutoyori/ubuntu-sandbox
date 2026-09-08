@@ -9001,3 +9001,56 @@ cas, tous verts (hors le rouge de base ci-dessus). `npm run typecheck` :
 248 erreurs, comme sur la base. Deux cas e2e Playwright confrontent
 `uptime`, `top`, `/proc/loadavg`, `/proc/stat` et `/proc/self` dans le
 vrai terminal.
+
+---
+
+## `logger` tronque a la taille que `--size` fixe, pas a une autre
+
+**Perimetre revendique** :
+`src/network/devices/linux/LinuxLogManager.ts` (`executeLogger`).
+
+Trouve en balayant les ROUGES DE LA BASE pendant le lot precedent : le
+cas « automated truncation (snaplen) » de `journalization.test.ts` etait
+rouge avant ce lot comme apres, ce que `git stash` a confirme. Il ne
+venait donc pas de mon changement — et sa premisse etait juste.
+
+```
+logger "<4000 x>"     →  /var/log/syslog garde 2048 caracteres
+logger -S 200 "..."   →  -S inconnu, avale comme un morceau du message
+```
+
+Le 2048 etait une invention : `logger(1)` limite le message a 1 KiO par
+defaut — la limite traditionnelle de la RFC 3164 — et `-S`/`--size` la
+deplace. Un journal qui garde deux fois trop laisse croire qu'un message
+long passe entier, alors qu'une vraie machine le coupe ; c'est justement
+ce qu'un laboratoire de journalisation cherche a montrer.
+
+**L'autorite est un transcrit capture**, et il CONTREDIT la page de
+manuel. Celle-ci annonce une limite « en-tete comprise » ; le binaire
+d'util-linux livre sur cette machine limite le MESSAGE seul :
+
+```
+$ logger --no-act --stderr --rfc3164 -t probe "<4000 x>"
+  une ligne de 1054 = 30 d'en-tete + 1024 de message
+$ ... -S 200 "<4000 x>"       230 = 30 + 200
+$ ... -S 2048 "<4000 x>"      2078 = 30 + 2048
+$ ... -f <fichier de 3000>    1054, 1054, 982
+$ ... -S abc "hi"
+  logger: failed to parse message size: 'abc': Invalid argument
+```
+
+**La derniere ligne de mesure a change le modele.** Un message passe en
+ARGUMENT est coupe et le reste jete ; un FICHIER est DECOUPE en messages
+successifs — trois entrees pour trois mille caracteres, pas une seule
+tronquee. La premiere lecture aurait applique la meme troncature aux
+deux.
+
+**Discrimination** (`git stash push -- src/network`) :
+`probe-logger-tronque-comme-le-vrai.test.ts` (7 cas), 5 tombent contre
+l'etat d'avant. Les 2 autres sont les TEMOINS nommes dans l'en-tete : le
+message court, qui traverse intact, et le refus d'une priorite inconnue,
+qui prouve qu'en ajoutant `-S` a l'analyse des options on n'a pas casse
+celle qui existait. Suites connexes : 10 fichiers, 408 cas, tous verts —
+le rouge de base compris, qui passe desormais. `npm run typecheck` : 248
+erreurs, comme sur la base. Un cas e2e Playwright compte les caracteres
+retenus dans `/var/log/syslog` depuis le vrai terminal.
