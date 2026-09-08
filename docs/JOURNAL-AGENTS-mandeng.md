@@ -8848,3 +8848,77 @@ servaient deja. Suites connexes : 68 fichiers, 2055 cas, tous verts.
 `npm run typecheck` : 248 erreurs, comme sur la base. Deux cas e2e
 Playwright confrontent `systeminfo`, `wmic` et `Get-CimInstance` dans le
 vrai terminal.
+
+---
+
+## `nice` abaisse la commande, pas le shell qui la lance
+
+**Perimetre revendique** :
+`src/network/devices/linux/process/PriorityCommands.ts`,
+`src/network/devices/linux/LinuxProcessCommands.ts`,
+`src/network/devices/linux/LinuxProcessManager.ts`,
+`src/network/devices/linux/LinuxCommandExecutor.ts`.
+
+Trouve en BALAYANT un poste, pas en lisant du code :
+
+```
+$ nice                              0
+$ nice -n 5 sleep 0
+$ nice                              5      <-- le shell a change
+$ ps -eo pid,ni,comm | grep bash    39  5 -bash
+```
+
+Une seule commande niceee DEGRADAIT le shell, definitivement : tout ce
+que l'operateur tape ensuite tourne a la priorite reduite, et rien ne le
+lui dit. Le commentaire du code expliquait que « nice(1) fait
+setpriority() sur lui-meme puis execve() » — c'est vrai, mais `nice` est
+un ENFANT du shell : ce qu'il abaisse meurt avec la commande.
+L'implementation appliquait l'abaissement a `currentPid ?? shellPid`,
+donc au shell des qu'aucun enfant n'etait en cours.
+
+**L'autorite est un transcrit capture** sur la machine reelle qui
+execute ce depot (`coreutils 9.4`), ce qui prime sur la documentation :
+
+```
+$ nice -n 5 sleep 0 ; nice          0        le shell ne bouge pas
+$ nice -n 5 nice                    5        l'enfant, lui, est abaisse
+$ nice nice                         10       l'ajustement par defaut
+$ nice -n 3 nice -n 4 nice          7        les ajustements S'AJOUTENT
+$ nice -n 5                         rc=125   « a command must be given »
+$ nice -n abc true                  rc=125   « invalid adjustment 'abc' »
+```
+
+**Le correctif emprunte un joint qui existait deja** :
+`withProcessIdentity`, dont le shell se sert pour ses sous-shells. `nice`
+engendre un VRAI processus enfant portant `herite + ajustement`, y
+execute la commande, puis le reape. La cascade `3 puis 4 → 7` en decoule
+sans code special, parce qu'un enfant HERITE desormais la priorite de son
+parent — une ligne dans `LinuxProcessManager.spawn`, et c'est le
+comportement du noyau.
+
+**Un cas de scenario est tombe, et il avait raison.**
+`scenario2-process-lifecycle` verifie que `nice -n 19 sleep 300 &` laisse
+le `sleep` a 19. Il passait avant pour une raison fausse : `nice`
+renicait le processus d'arriere-plan courant. Le shell traitant le `&`
+AVANT de dispatcher `nice`, la commande n'entre jamais dans le chemin de
+l'enfant ; `niceWrappedCommand`, qui savait deja retirer le prefixe pour
+nommer le processus, rend maintenant aussi l'AJUSTEMENT, et
+`spawnBackgroundJob` le pose a la naissance. Le cas passe donc pour la
+bonne raison, et la sonde en porte un equivalent.
+
+**Deux refus ajoutes, mesures** : `nice -n 5` sans commande et
+`nice -n abc true` rendent le texte de coreutils, ses deux lignes, et son
+code de sortie 125 — la premiere version rendait `''` et 0, c'est-a-dire
+un succes silencieux.
+
+**Discrimination** (`git stash push -- src/network`) :
+`probe-nice-ne-degrade-pas-le-shell.test.ts` (11 cas), 6 tombent contre
+l'etat d'avant. Les 5 autres sont nommes dans l'en-tete : deux etaient
+JUSTES POUR LA MAUVAISE RAISON (`nice -n 5 nice` rendait 5 parce que
+l'ancien code abaissait le shell puis le relisait), deux sont les TEMOINS
+`renice` (qui doit continuer d'ecrire sur un processus designe, et de
+refuser sur le PID 1), et le cinquieme est le cas d'heritage ajoute apres
+coup. Suites connexes : 15 fichiers, 135 cas, tous verts.
+`npm run typecheck` : 248 erreurs, comme sur la base. Deux cas e2e
+Playwright verifient dans le vrai terminal que le shell garde sa
+priorite et que la cascade rend 7.

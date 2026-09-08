@@ -49,6 +49,13 @@ export interface ProcessCmdContext {
   memory?: import('../host/hardware').MemoryProfile;
   /** Runs a command line through the shell — backs `nice <cmd>`. */
   execute?: (cmd: string) => { output: string; exitCode: number };
+  /**
+   * Lance une commande dans un PROCESSUS ENFANT portant la priorite
+   * donnee, puis le reape. C'est ce que fait `nice` : il s'abaisse
+   * lui-meme, execve la commande, et disparait avec elle — le shell qui
+   * l'a lance n'est jamais touche.
+   */
+  runAsChild?: (nice: number, cmd: string) => { output: string; exitCode: number };
 }
 
 // ─── ps ───────────────────────────────────────────────────────────────

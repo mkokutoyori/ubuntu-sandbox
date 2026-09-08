@@ -2289,7 +2289,33 @@ export class LinuxCommandExecutor {
         const out = this.execute(cmd);
         return { output: out, exitCode: this.lastExitCode };
       },
+      runAsChild: (nice: number, cmd: string) => this.runAsChild(nice, cmd),
     };
+  }
+
+  /**
+   * Lance une commande dans un vrai processus enfant du shell, portant
+   * la priorite demandee, puis le reape. C'est le chemin de `nice` : le
+   * processus abaisse est l'enfant, pas le shell, et il disparait avec
+   * la commande.
+   */
+  private runAsChild(nice: number, cmd: string): { output: string; exitCode: number } {
+    const child = this.processMgr.spawn({
+      command: cmd,
+      user: this.userMgr.currentUser,
+      uid: this.userMgr.currentUid,
+      gid: this.userMgr.currentGid,
+      ppid: this.currentBashPid(),
+      tty: 'pts/0',
+      nice,
+    });
+    try {
+      const out = this.withProcessIdentity(child.pid, () => this.execute(cmd));
+      return { output: out, exitCode: this.lastExitCode };
+    } finally {
+      this.processMgr.exit(child.pid, this.lastExitCode);
+      this.processMgr.reap(child.pid);
+    }
   }
 
   /** Context for job builtins (jobs/bg/fg/wait/disown/pstree). */
@@ -2377,8 +2403,8 @@ export class LinuxCommandExecutor {
     // real nice(1) execve()s over itself, so comm/cmdline should reflect
     // the wrapped command, not "nice" — see niceWrappedCommand().
     const niceInner = niceWrappedCommand(argv);
-    const spawnCommand = niceInner ? niceInner.join(' ') : cmdLine;
-    const spawnComm = basenameOf((niceInner ?? argv)[0]);
+    const spawnCommand = niceInner ? niceInner.argv.join(' ') : cmdLine;
+    const spawnComm = basenameOf((niceInner?.argv ?? argv)[0]);
     const proc = this.processMgr.spawn({
       command: spawnCommand,
       comm: spawnComm,
@@ -2388,6 +2414,7 @@ export class LinuxCommandExecutor {
       ppid: nohup ? 1 : this.currentBashPid(),
       tty: nohup ? '?' : 'pts/0',
       cwd: this.cwd,
+      nice: niceInner?.adjustment,
     });
     // §F5.7 — un accès à un montage réseau mort part en attente
     // ininterruptible et n'en revient pas. Le job est enregistré mais son
@@ -7656,16 +7683,23 @@ function basenameOf(path: string): string {
   return i >= 0 ? path.slice(i + 1) : path;
 }
 
-/** For `nice [-n ADJ] realcmd…`, return the wrapped command's argv (or
- *  null if `argv` isn't that shape) — see call site for why. */
-function niceWrappedCommand(argv: string[]): string[] | null {
+/**
+ * For `nice [-n ADJ] realcmd…`, return the wrapped command's argv AND
+ * the adjustment it asks for (or null if `argv` isn't that shape). Le
+ * chiffre compte autant que la commande : c'est la priorite que le
+ * processus d'arriere-plan doit porter, `nice` ne pouvant plus la poser
+ * apres coup depuis un enfant qui n'existe pas dans ce chemin.
+ */
+function niceWrappedCommand(argv: string[]): { argv: string[]; adjustment: number } | null {
   if (argv[0] !== 'nice') return null;
   let i = 1;
-  if (argv[i] === '-n' || argv[i] === '--adjustment') i += 2;
-  else if (argv[i] && /^-n\d/.test(argv[i])) i += 1;
-  else if (argv[i] && /^--adjustment=/.test(argv[i])) i += 1;
-  else if (argv[i] && /^-\d+$/.test(argv[i])) i += 1;
-  return i < argv.length ? argv.slice(i) : null;
+  let adjustment = 10;
+  if (argv[i] === '-n' || argv[i] === '--adjustment') { adjustment = Number(argv[i + 1]); i += 2; }
+  else if (argv[i] && /^-n\d/.test(argv[i])) { adjustment = Number(argv[i].slice(2)); i += 1; }
+  else if (argv[i] && /^--adjustment=/.test(argv[i])) { adjustment = Number(argv[i].split('=')[1]); i += 1; }
+  else if (argv[i] && /^-\d+$/.test(argv[i])) { adjustment = Number(argv[i]); i += 1; }
+  if (i >= argv.length || Number.isNaN(adjustment)) return null;
+  return { argv: argv.slice(i), adjustment: Math.max(-20, Math.min(19, adjustment)) };
 }
 
 /**
