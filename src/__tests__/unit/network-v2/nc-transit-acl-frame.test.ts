@@ -1,24 +1,19 @@
 /**
- * nc through a filtering router — coverage the suite lacked, and a guard
- * for the frame-only fix the TODO tracks.
+ * nc through a filtering router — the ACL verdict is now SUFFERED on the
+ * wire, not replayed by transitTcpAclVerdict.
  *
- * Measured (Rule 7). nc gates a connection on BOTH transitTcpAclVerdict
- * (a synthetic-SYN replay over evaluateACLByName) AND the real
- * ctx.net.tcpConnectOutcome probe, so the question was whether the replay
- * is redundant. Forcing transitTcpAclVerdict to 'permit' and re-running,
- * the DENY case reports "succeeded", not "timed out": the real TCP connect
- * path does NOT suffer a transit router's ACL — it never reaches the
- * router's evaluateForDataPlane. So the replay is LOAD-BEARING today, not a
- * removable duplicate; the ACL verdict on an ssh/nc/telnet connection is
- * still replayed, not suffered on the wire (TODO: "[ssh] ssh entre deux
- * hotes ne traverse PAS le fil").
+ * Measured (Rule 7). nc used to gate on transitTcpAclVerdict (a synthetic-SYN
+ * replay over evaluateACLByName) before its real ctx.net.tcpConnectOutcome
+ * probe. The probe already crosses the router and suffers evaluateForDataPlane:
+ * a `deny ip any any` router answers ICMP administratively-prohibited, so
+ * tcpConnectOutcome returns 'prohibited'. nc simply did not handle that
+ * outcome and fell through to "succeeded", which the replay masked. Handling
+ * 'prohibited' (→ "Permission denied", the rendering scan/nmap PacketTrace
+ * already uses) lets the replay go: the verdict rides the real frames.
  *
- * This file guards the verdict as it stands and will pass through the real
- * data plane the day tcpConnectOutcome crosses transit ACLs.
- *
- * Discrimination: the WITNESS (no ACL) succeeds either way; the DENY case
- * needs transitTcpAclVerdict active — neutralising it makes the DENY case
- * report "succeeded" (measured), which is what proves the gate load-bearing.
+ * Discrimination: the WITNESS (no ACL) succeeds; the DENY case now fails via
+ * the real probe alone (transitTcpAclVerdict removed from nc); the eq22/eq23
+ * pair proves the port is decided by the data plane, not a name.
  */
 
 import { describe, it, expect, beforeEach } from 'vitest';
@@ -69,9 +64,9 @@ describe('nc through a filtering router', () => {
     expect(await ncVerbose(pc, '10.0.2.10', 22)).toMatch(/succeeded/i);
   });
 
-  it('deny ip any any times the connection out', async () => {
+  it('deny ip any any is refused on the wire (ICMP prohibited)', async () => {
     const { pc } = await lab(['access-list 100 deny ip any any']);
-    expect(await ncVerbose(pc, '10.0.2.10', 22)).toMatch(/timed out/i);
+    expect(await ncVerbose(pc, '10.0.2.10', 22)).toMatch(/Permission denied/i);
   });
 
   it('permit tcp any any eq 22 restores it, eq 23 does not', async () => {
@@ -85,6 +80,6 @@ describe('nc through a filtering router', () => {
       'access-list 100 permit tcp any any eq 23',
       'access-list 100 deny ip any any',
     ]);
-    expect(await ncVerbose(wrong, '10.0.2.10', 22)).toMatch(/timed out/i);
+    expect(await ncVerbose(wrong, '10.0.2.10', 22)).toMatch(/Permission denied/i);
   });
 });
