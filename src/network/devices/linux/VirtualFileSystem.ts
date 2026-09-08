@@ -454,7 +454,13 @@ export class VirtualFileSystem {
     for (let i = 0; i < parts.length; i++) {
       // If current is a symlink, resolve it
       if (current.type === 'symlink' && followSymlinks) {
-        const target = this.normalizePath(current.target, this.parentPath(path, parts, i));
+        // La cible RELATIVE d'un lien se lit depuis le repertoire qui
+        // CONTIENT le lien, pas depuis le lien lui-meme : `current` est
+        // le composant `parts[i - 1]`, donc sa base est `parts[0..i-2]`.
+        // Avec `i`, `/proc/self -> 39` menait a `/proc/self/39`, et
+        // aucun chemin traversant un lien relatif ne resolvait.
+        const base = this.parentPath(path, parts, Math.max(0, i - 1));
+        const target = this.normalizePath(this.resolutionTarget(current), base);
         const resolved = this.resolveInode(target, true, maxDepth - 1);
         if (!resolved) return null;
         current = resolved;
@@ -476,7 +482,7 @@ export class VirtualFileSystem {
     // Final symlink resolution
     if (current.type === 'symlink' && followSymlinks) {
       const parentDir = '/' + parts.slice(0, -1).join('/');
-      const target = this.normalizePath(current.target, parentDir || '/');
+      const target = this.normalizePath(this.resolutionTarget(current), parentDir || '/');
       return this.resolveInode(target, true, maxDepth - 1);
     }
 
@@ -771,6 +777,18 @@ export class VirtualFileSystem {
   /** What `ls -l` and `readlink` print for a symlink. */
   linkTarget(inode: INode): string {
     return inode.targetGenerator ? inode.targetGenerator() : inode.target;
+  }
+
+  /**
+   * Le chemin qu'un lien engendre designe MAINTENANT. La resolution
+   * utilisait le `target` fige a l'enregistrement, si bien que
+   * `/proc/self` menait au PID capture ce jour-la — et, quand ce PID
+   * n'existait pas encore, a rien du tout. Le suffixe d'affichage
+   * `(deleted)` n'appartient qu'a `ls -l` et ne resout pas.
+   */
+  private resolutionTarget(inode: INode): string {
+    const generated = inode.targetGenerator?.().replace(/ \(deleted\)$/, '');
+    return generated && generated.length > 0 ? generated : inode.target;
   }
 
   /**

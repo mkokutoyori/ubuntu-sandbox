@@ -20,10 +20,7 @@ function topCpuTime(ms: number): string {
   return `${min}:${String(sec).padStart(2, '0')}.${String(cs).padStart(2, '0')}`;
 }
 
-function loadAverage(running: number): string {
-  const v = running.toFixed(2);
-  return `${v}, ${v}, ${v}`;
-}
+import { CPU_IDLE_LINE, IDLE_LOAD_AVERAGE } from './system/LoadAverage';
 import { LinuxService } from './service/LinuxService';
 import { fullUnitName, unitSuffix } from './systemd/DependencyGraph';
 import { exitStatusLabel } from './systemd/ExitStatus';
@@ -96,16 +93,11 @@ export function cmdTop(args: string[], ctx: ProcessCmdContext): string {
   const upClause = upDays > 0
     ? `${upDays} day${upDays > 1 ? 's' : ''}, ${upH}:${String(upM).padStart(2, '0')}`
     : upH > 0 ? `${upH}:${String(upM).padStart(2, '0')}` : `${upM} min`;
-  const runnable = procs.filter(p => p.state === 'R' || p.state === 'D').length;
-  lines.push(`top - ${timeStr} up  ${upClause},  1 user,  load average: ${loadAverage(runnable)}`);
+  lines.push(`top - ${timeStr} up  ${upClause},  1 user,  load average: ${IDLE_LOAD_AVERAGE}`);
   lines.push(
     `Tasks: ${procs.length} total,  ${running} running, ${sleeping} sleeping,  ${stopped} stopped,  ${zombie} zombie`,
   );
-  const busyPct = Math.min(100, running * 100);
-  const us = (busyPct * 0.6).toFixed(1);
-  const sy = (busyPct * 0.4).toFixed(1);
-  const id = (100 - busyPct).toFixed(1);
-  lines.push(`%Cpu(s):  ${us} us,  ${sy} sy,  0.0 ni,${id.padStart(5)} id,  0.0 wa,  0.0 hi,  0.0 si,  0.0 st`);
+  lines.push(`%Cpu(s):  ${CPU_IDLE_LINE}`);
   lines.push(`MiB Mem :  ${totalMem}.0 total,  ${freeMem}.0 free,  ${usedMem}.0 used,  ${bufCache}.0 buff/cache`);
   lines.push('MiB Swap:  2048.0 total,  2048.0 free,      0.0 used.  2519.0 avail Mem');
   lines.push('');

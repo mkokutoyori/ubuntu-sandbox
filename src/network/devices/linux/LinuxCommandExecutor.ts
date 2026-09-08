@@ -125,6 +125,7 @@ import { runTruncate } from './commands/fs/Truncate';
 import { runDd } from './commands/fs/Dd';
 import { runFallocate } from './commands/fs/Fallocate';
 import { renderProcSwaps } from './commands/system/Swapon';
+import { loadSnapshot, renderProcLoadavg, renderProcStat } from './system/LoadAverage';
 import { VfsSftpFileSystem } from '../../protocols/ssh/sftp/VfsSftpFileSystem';
 import { PermissionCheckingFSDecorator } from '../../protocols/ssh/sftp/PermissionCheckingFSDecorator';
 import { ChrootedSftpFileSystem } from '../../protocols/ssh/sftp/ChrootedSftpFileSystem';
@@ -939,14 +940,18 @@ export class LinuxCommandExecutor {
           '',
         ].join('\n');
       });
+      this.vfs.registerGeneratedFile(`/proc/${pid}/mounts`, () => this.mountTable.toProcMounts());
+      this.vfs.registerGeneratedFile(`/proc/${pid}/mountinfo`, () => this.mountTable.toMountInfo());
       this.materializeProcExe(pid);
       this.materializeProcFd(pid);
       this.materializedProcPids.add(pid);
     }
-    // Also expose /proc/self → /proc/<shellPid> symlink for convenience.
-    if (this.shellPid && !this.vfs.exists('/proc/self')) {
-      this.vfs.createSymlink('/proc/self', String(this.shellPid), 0, 0);
-    }
+    // `/proc/self` designe le processus COURANT, pas le shell de la
+    // session : un sous-shell ou l'enfant de `nice` doit s'y retrouver.
+    // Le lien etait pose une fois avec le PID du shell, et les fichiers
+    // enregistres sous `/proc/self/` ne resolvaient meme pas — c'est par
+    // `/proc/self` qu'un script lit son propre processus.
+    this.vfs.registerGeneratedSymlink('/proc/self', () => String(this.currentBashPid()), 0, 0);
   }
 
   /**
@@ -1064,13 +1069,16 @@ export class LinuxCommandExecutor {
     this.vfs.registerGeneratedFile('/proc/meminfo', () => this.hardware.memory.toProcMeminfo());
     this.vfs.registerGeneratedFile('/proc/swaps', () => renderProcSwaps(this.hardware.memory));
     this.vfs.registerGeneratedFile('/proc/mounts', () => this.mountTable.toProcMounts());
-    this.vfs.registerGeneratedFile('/proc/self/mounts', () => this.mountTable.toProcMounts());
-    this.vfs.registerGeneratedFile('/proc/self/mountinfo', () => this.mountTable.toMountInfo());
     this.vfs.registerGeneratedFile('/etc/mtab', () => this.mountTable.toProcMounts());
     this.vfs.registerGeneratedFile('/proc/uptime', () => {
       const up = this.lifecycle.uptimeSeconds();
       return `${up}.00 ${up}.00\n`;
     });
+    this.vfs.registerGeneratedFile('/proc/loadavg',
+      () => renderProcLoadavg(loadSnapshot(this.processMgr)));
+    this.vfs.registerGeneratedFile('/proc/stat', () => renderProcStat(
+      this.processMgr, this.hardware.cpu.logicalCpus,
+      this.lifecycle.uptimeSeconds(), this.lifecycle.bootedAt() ?? new Date()));
   }
 
   /**

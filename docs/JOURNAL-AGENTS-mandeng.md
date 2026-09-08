@@ -8922,3 +8922,82 @@ coup. Suites connexes : 15 fichiers, 135 cas, tous verts.
 `npm run typecheck` : 248 erreurs, comme sur la base. Deux cas e2e
 Playwright verifient dans le vrai terminal que le shell garde sa
 priorite et que la cascade rend 7.
+
+---
+
+## Une machine a UNE charge, et `/proc` la porte
+
+**Perimetre revendique** :
+`src/network/devices/linux/system/LoadAverage.ts` (nouveau),
+`src/network/devices/linux/system/SystemInfo.ts`,
+`src/network/devices/linux/LinuxProcessCommands.ts`,
+`src/network/devices/linux/LinuxSystemCommands.ts`,
+`src/network/devices/linux/network/SshSessionTable.ts`,
+`src/network/devices/linux/LinuxCommandExecutor.ts`,
+`src/network/devices/linux/VirtualFileSystem.ts`.
+
+Trouve en BALAYANT un poste :
+
+```
+uptime                 load average: 0.00, 0.01, 0.05
+top -b -n 1            load average: 0.00, 0.00, 0.00
+cat /proc/loadavg      No such file or directory
+cat /proc/stat         No such file or directory
+cat /proc/self/status  No such file or directory   (alors que
+                       /proc/self -> 39 et /proc/39/status existe)
+```
+
+**QUATRE ecritures de la charge**, dont deux vivantes qui se
+contredisent : une constante `0.00, 0.01, 0.05` dans l'en-tete
+d'`uptime`/`w`, un `0.08, 0.03, 0.01` dans un `cmdTop` MORT de
+`LinuxSystemCommands`, un `0.00, 0.00, 0.00` dans la vue `w` d'une
+session SSH, et le nombre de processus executables reformate en trois
+decimales pour `top`. Un processus executable n'est pas du temps
+processeur consomme : la meme fonction faisait aussi annoncer
+`%Cpu(s): 100.0 us` des qu'un seul processus etait dans l'etat R, sur
+une machine qui ne brule rien.
+
+**Ce que le simulateur peut honnetement dire**, et qui est desormais
+ecrit une seule fois : rien n'y consomme de temps processeur, donc la
+charge est `0.00 0.00 0.00` — ce que `top` disait deja, ce que confirment
+son `%Cpu(s): 100.0 id` et le `id 100` de `vmstat`. Le `0.00, 0.01, 0.05`
+etait une decoration. Les trois autres champs de `/proc/loadavg` sont des
+FAITS que la table des processus detient : combien tournent, combien il y
+en a, quel PID a ete alloue en dernier. `/proc/stat` suit la meme regle :
+compteurs de temps a zero sauf `idle`, qui vaut l'uptime — litteralement
+vrai — et compteurs de processus lus dans la table.
+
+**Le `cmdTop` mort est supprime**, avec sa table de disques, sa memoire
+et son `%Cpu(s)` ecrits en dur ; le vivant est celui de
+`LinuxProcessCommands`.
+
+**Et la cause du troisieme defaut n'etait pas la ou on la cherchait.**
+`/proc/self` EXISTE et pointe bien vers `39` ; c'est la RESOLUTION du VFS
+qui etait fausse. La cible relative d'un lien INTERMEDIAIRE etait lue
+depuis le lien lui-meme au lieu du repertoire qui le contient :
+`/proc/self/status` cherchait `/proc/self/39/status`. Aucun chemin
+traversant un lien relatif ne resolvait — `/proc/self` n'etait que le cas
+qu'on remarque. Deux fichiers enregistres sous `/proc/self/` (`mounts`,
+`mountinfo`) etaient d'ailleurs INJOIGNABLES depuis toujours ; ils vivent
+maintenant sous chaque `/proc/<pid>/`, et `/proc/self` est un lien
+ENGENDRE qui suit le processus courant, donc juste aussi dans un
+sous-shell ou dans l'enfant de `nice`. La resolution lit la cible
+engendree, plus celle figee a l'enregistrement.
+
+**Trouve, non cause, et corrige au lot suivant** : `journalization.test.ts`
+« automated truncation (snaplen) » est ROUGE SUR LA BASE (verifie par
+`git stash`). Il n'a rien a voir avec ce lot ; sa premisse est juste, le
+simulateur ne tronque pas — `logger(1)` limite le message a 1 KiO
+en-tete comprise. C'est le lot suivant.
+
+**Discrimination** (`git stash push -- src/network`) :
+`probe-une-seule-charge.test.ts` (12 cas), 9 tombent contre l'etat
+d'avant. Les 3 autres sont les TEMOINS nommes dans l'en-tete :
+`/proc/1/status` et `/proc/uptime`, qui prouvent que la correction de
+resolution n'a pas casse les chemins directs, et l'accord
+`free` / `/proc/meminfo`, la projection voisine dont `/proc/loadavg` et
+`/proc/stat` copient le mecanisme. Suites connexes : 80 fichiers, 1893
+cas, tous verts (hors le rouge de base ci-dessus). `npm run typecheck` :
+248 erreurs, comme sur la base. Deux cas e2e Playwright confrontent
+`uptime`, `top`, `/proc/loadavg`, `/proc/stat` et `/proc/self` dans le
+vrai terminal.

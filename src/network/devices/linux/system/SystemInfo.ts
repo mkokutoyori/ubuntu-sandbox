@@ -12,8 +12,9 @@ import type { HostLifecycle } from '../../host/lifecycle';
 import type { KernelInfo } from '../../host/identity';
 import { formatOffsetCompact } from '../../../core/time/TimeZoneRegistry';
 import { abreviationA, decalageA } from '../time/TimezoneDatabase';
+import { IDLE_LOAD_AVERAGE } from './LoadAverage';
 
-const LOAD_AVERAGE = '0.00, 0.01, 0.05';
+
 
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 const DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
@@ -59,13 +60,14 @@ function uptimeClause(uptimeSeconds: number): string {
 
 /**
  * The shared `uptime`/`w` header line, e.g.
- * ` 16:32:55 up 5 min,  1 user,  load average: 0.00, 0.01, 0.05`.
- * `uptimeSeconds` comes from the host's {@link HostLifecycle}.
+ * ` 16:32:55 up 5 min,  1 user,  load average: 0.00, 0.00, 0.00`.
+ * `uptimeSeconds` comes from the host's {@link HostLifecycle}, and the
+ * load from {@link IDLE_LOAD_AVERAGE} — la seule ecriture de ce fait.
  */
 export function uptimeHeader(users = 1, uptimeSeconds = 0): string {
   const now = new Date();
   return ` ${hhmmss(now)} up ${uptimeClause(uptimeSeconds)},  ${users} user${users !== 1 ? 's' : ''}, ` +
-    ` load average: ${LOAD_AVERAGE}`;
+    ` load average: ${IDLE_LOAD_AVERAGE}`;
 }
 
 /**
