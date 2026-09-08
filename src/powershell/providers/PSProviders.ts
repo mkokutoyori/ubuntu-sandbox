@@ -1507,6 +1507,15 @@ export interface PartitionInfo {
   type: string;
 }
 
+/**
+ * Les classes WMI adossees a l'inventaire materiel de la machine. Une
+ * seule declaration les porte (`network/devices/windows/WmiClasses.ts`),
+ * lue par `wmic` comme par `Get-CimInstance` : deux facades, un WMI.
+ */
+export interface IWmiProvider {
+  instances(className: string): Array<Record<string, string>> | null;
+}
+
 export interface IDiskProvider {
   listDisks(): DiskInfo[];
   listVolumes(): VolumeInfo[];
@@ -1582,6 +1591,7 @@ export interface PSProviders {
   readonly vpn:            IVpnProvider            | null;
   readonly scheduledTasks: IScheduledTaskProvider  | null;
   readonly disks:          IDiskProvider           | null;
+  readonly wmi:            IWmiProvider            | null;
   readonly environment:    IEnvironmentProvider    | null;
   readonly remoting:       IRemotingProvider       | null;
   readonly roles:          IRoleProvider           | null;

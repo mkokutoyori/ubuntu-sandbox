@@ -14,6 +14,7 @@
  */
 
 
+import { findWmiClass } from '@/network/devices/windows/WmiClasses';
 import type { WindowsPC } from '@/network/devices/WindowsPC';
 import type { ServiceStartType } from '@/network/devices/windows/WindowsServiceManager';
 import type { WindowsServer } from '@/network/devices/WindowsServer';
@@ -94,7 +95,7 @@ import type {
   DirEntry, ServiceInfo, ProcessInfo, UserInfo, GroupInfo,
   NetAdapterEntry, AdapterStatisticsInfo, IPAddressInfo, RouteInfo, EventLogEntryInfo,
   NicTeamInfo, NicTeamMemberInfo, NicTeamNicInfo, NewNicTeamRequest, SetNicTeamRequest,
-  VpnConnectionInfo, ScheduledTaskInfo, DiskInfo, VolumeInfo, PartitionInfo,
+  VpnConnectionInfo, ScheduledTaskInfo, DiskInfo, VolumeInfo, PartitionInfo, IWmiProvider,
   NeighborInfo,
 } from '@/powershell/providers/PSProviders';
 import type { PSValue } from '@/powershell/runtime/PSEnvironment';
@@ -2650,6 +2651,21 @@ class WindowsEnvironmentAdapter implements IEnvironmentProvider {
   }
 }
 
+/**
+ * `Get-CimInstance` et `wmic` sont DEUX FACADES du meme WMI. Elles
+ * tirent donc de la meme declaration de classes, sans quoi
+ * `wmic logicaldisk` pouvait servir une classe que
+ * `Get-CimInstance Win32_LogicalDisk` declarait invalide — ce qui etait
+ * le cas mesure.
+ */
+class WindowsWmiAdapter implements IWmiProvider {
+  constructor(private readonly pc: WindowsPC) {}
+  instances(className: string): Array<Record<string, string>> | null {
+    const klass = findWmiClass(className);
+    return klass ? klass.rows(this.pc.wmiHost()) : null;
+  }
+}
+
 /** Windows aligne sa premiere partition sur 1 Mio. */
 const FIRST_PARTITION_OFFSET = 1_048_576;
 
@@ -3570,6 +3586,7 @@ export function createWindowsPSProviders(
     identity: (pc as unknown as { getTimezoneStore?: () => { timezone: string; setTimezone(n: string): void } }).getTimezoneStore?.() ?? null,
     scheduledTasks: new WindowsScheduledTaskAdapter(pc),
     disks:          new WindowsDiskAdapter(pc),
+    wmi:            new WindowsWmiAdapter(pc),
     environment:    new WindowsEnvironmentAdapter(pc),
     remoting:       new WindowsRemotingAdapter(pc),
     roles:          pc.getRoleManager() ? new WindowsRoleAdapter(pc) : null,

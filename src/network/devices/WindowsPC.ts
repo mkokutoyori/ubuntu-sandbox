@@ -187,6 +187,7 @@ import * as WinSys from './windows/WinSystemCommands';
 import { cmdReg as winCmdReg } from './windows/WinRegCommand';
 import { cmdDir } from './windows/WinDir';
 import { cmdFsutil } from './windows/Fsutil';
+import type { WmiHost } from './windows/WmiClasses';
 import { applyFindstr } from './windows/textFilters';
 import { CrossVendorRemoteShell } from '@/shell/CrossVendorRemoteShell';
 import type { NetIPAddressEntry } from './windows/netIpAddress';
@@ -3793,6 +3794,15 @@ export class WindowsPC extends EndHost implements UserAccountHost {
 
   private cmdWmic(args: string[]): string {
     return WinSys.cmdWmic(this.buildSystemContext(), args);
+  }
+
+  /**
+   * Ce que les classes WMI lisent de la machine. `wmic` y arrive par le
+   * contexte des commandes cmd, `Get-CimInstance` par le fournisseur
+   * PowerShell : deux facades, une seule source.
+   */
+  wmiHost(): WmiHost {
+    return this.buildSystemContext();
   }
 
   /**

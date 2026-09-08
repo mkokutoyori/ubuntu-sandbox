@@ -8778,3 +8778,73 @@ fichiers, 2082 cas, tous verts. `npm run typecheck` : 248 erreurs,
 comme sur la base. Deux cas e2e Playwright confrontent `localectl`,
 `locale`, `$LANG` et `/etc/default/locale` dans le vrai terminal, avant
 et apres un changement.
+
+---
+
+## Un poste Windows n'a qu'UN inventaire, et WMI le lit
+
+**Perimetre revendique** : `src/network/devices/windows/WmiClasses.ts`
+(nouveau), `src/network/devices/windows/Wmic.ts`,
+`src/network/devices/windows/WinSystemCommands.ts`,
+`src/network/devices/WindowsPC.ts`,
+`src/powershell/providers/` (`PSProviders.ts`, `NullProviders.ts`,
+`WindowsPSProviders.ts`),
+`src/powershell/cmdlets/core/SystemMgmtCmdlets.ts`.
+
+Trouve en posant la meme question a `systeminfo` et a WMI :
+
+```
+systeminfo                     System Manufacturer:   QEMU
+                               System Model:          Standard PC (i440FX...)
+                               Total Physical Memory: 3,888 MB
+Get-CimInstance Win32_ComputerSystem
+                               Manufacturer:        Microsoft Corporation
+                               Model:               Virtual Machine
+                               TotalPhysicalMemory: 8589934592
+wmic bios get serialnumber     (rien)
+wmic memorychip get capacity   (rien)
+Get-CimInstance Win32_LogicalDisk   Invalid class
+```
+
+**TROIS faits ecrits deux fois**, et les deux ecritures se contredisent
+sur la meme machine au meme instant : le constructeur, le modele et la
+quantite de memoire. `systeminfo` lit `HardwareProfile` ; WMI portait ses
+propres constantes, dont 8 Gio de RAM sur une machine qui en a 3,8. Un
+laboratoire d'inventaire — recenser un parc, comparer deux postes,
+verifier une migration — partait donc de deux reponses selon la commande
+tapee.
+
+**Trois classes manquaient, et leur absence etait PIRE qu'une erreur** :
+`wmic bios get serialnumber` rendait une ligne VIDE, sortie 0. La
+commande avait l'air d'avoir repondu. Un alias que WMI ne connait pas est
+desormais REFUSE (`zorglub Alias not found!`, la forme que documente
+Microsoft), et `bios`, `memorychip`, `baseboard`, `computersystem` et
+`cpu` lisent l'inventaire.
+
+**Et surtout, les DEUX FACADES sont reunies.** `wmic logicaldisk`
+fonctionnait quand `Get-CimInstance Win32_LogicalDisk` repondait
+« Invalid class » : deux facades de WMI sur une machine qui n'en a qu'un.
+Les classes sont maintenant declarees UNE fois
+(`WmiClasses.ts`, nom CIM + alias `wmic`), `wmic` les rend en tableau et
+`Get-CimInstance` en objets, via un fournisseur PowerShell. Ajouter une
+classe la sert donc aux deux, et aucune des deux ne peut plus connaitre
+ce que l'autre ignore. `Win32_ComputerSystem` garde ses champs de
+DOMAINE dans le cmdlet — ils ne sont pas du materiel — et prend le reste
+de l'inventaire.
+
+**Un cas ecrit a l'aveugle passait POUR RIEN** : « Win32_BIOS rend le
+meme numero que wmic » comparait `<absent>` a `<absent>`, les deux cotes
+ignorant la classe. Il exige desormais la valeur, et il tombe comme les
+autres — c'est exactement le faux vert que l'ecriture a l'aveugle sert a
+faire apparaitre, le second de la journee apres le `CanNTP=yes` de
+`timedatectl`.
+
+**Discrimination** (`git stash push -- src/network src/powershell`) :
+`probe-un-seul-inventaire-wmi.test.ts` (11 cas), 9 tombent contre l'etat
+d'avant. Les 2 autres sont les TEMOINS nommes dans l'en-tete :
+`systeminfo`, deja juste, qui est le point de comparaison de tout le
+reste ; et `wmic logicaldisk`, la seule classe que les deux facades
+servaient deja. Suites connexes : 68 fichiers, 2055 cas, tous verts.
+`npm run typecheck` : 248 erreurs, comme sur la base. Deux cas e2e
+Playwright confrontent `systeminfo`, `wmic` et `Get-CimInstance` dans le
+vrai terminal.

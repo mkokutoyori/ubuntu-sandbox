@@ -733,20 +733,27 @@ export class GetCimInstanceCmdlet implements ICmdlet {
       const membership = ctx.providers.computer?.getDomainInfo?.() ?? null;
       const registry = ctx.providers.registry;
       const values = registry?.getItemPropertyValues?.(CURRENT_VERSION_KEY) ?? {};
+      // Constructeur, modele, type et memoire viennent de l'inventaire
+      // materiel — le meme que lit `systeminfo`, qui annoncait « QEMU /
+      // Standard PC » quand cette classe repondait « Microsoft
+      // Corporation / Virtual Machine ». Seule l'appartenance au domaine
+      // reste ici : elle n'est pas du materiel.
+      const chassis = ctx.providers.wmi?.instances('Win32_ComputerSystem')?.[0] ?? {};
       return {
+        ...chassis,
         Name:                hostname,
         DNSHostName:         hostname,
         Domain:              membership?.dnsName ?? 'WORKGROUP',
         PartOfDomain:        membership !== null,
         Workgroup:           membership === null ? 'WORKGROUP' : null,
         DomainRole:          membership === null ? 0 : 1,
-        Manufacturer:        'Microsoft Corporation',
-        Model:               'Virtual Machine',
         PrimaryOwnerName:    String(values['RegisteredOwner'] ?? 'User'),
-        SystemType:          'x64-based PC',
-        TotalPhysicalMemory: 8589934592,
       } as Record<string, PSValue>;
     }
+    // Les classes adossees a l'inventaire materiel : une seule
+    // declaration les porte, et `wmic` la lit aussi.
+    const hardwareClass = ctx.providers.wmi?.instances(className);
+    if (hardwareClass) return hardwareClass as unknown as PSValue;
     if (className === 'win32_operatingsystem') {
       const registry = ctx.providers.registry;
       const values = registry?.getItemPropertyValues?.(CURRENT_VERSION_KEY) ?? {};

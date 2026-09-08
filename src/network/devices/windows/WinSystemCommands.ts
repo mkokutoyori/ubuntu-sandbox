@@ -14,7 +14,7 @@ import { partsAt } from '../../core/time/TimeZoneRegistry';
 import { dhcpEnabledFor } from './WinAdapterFacts';
 import type { ProcessSession } from './WindowsProcessManager';
 import { adapterDisplayName } from './netAdapter';
-import { parseWmicProperties, wmicQuery } from './Wmic';
+import { aliasNotFound, parseWmicProperties, wmicQuery } from './Wmic';
 
 /** Minimal process-manager surface needed by `start`. */
 export interface WinSystemProcessManager {
@@ -65,8 +65,15 @@ export interface WinSystemContext {
     productUuid: string;
     serialNumber: string;
     cpu: { sockets: number; cpuFamily: number; model: number; stepping: number; vendor: string; clockMhz: number };
-    memory: { totalKib: number; availableKib: number; swapTotalKib: number };
+    memory: {
+      totalKib: number; availableKib: number; swapTotalKib: number;
+      modules: ReadonlyArray<{
+        sizeMib: number; type: string; speedMtps: number;
+        manufacturer: string; locator: string; formFactor: string;
+      }>;
+    };
     firmware: { vendor: string; version: string; releaseDate: string };
+    mainboard: { manufacturer: string; productName: string; version: string; serialNumber: string };
     storage: ReadonlyArray<{
       name: string; sizeBytes: number; model: string; serial: string;
       partitions: ReadonlyArray<unknown>;
@@ -591,9 +598,9 @@ export function cmdWmic(ctx: WinSystemContext, args: string[]): string {
 
   const alias = args[0];
   const getIndex = args.findIndex((a) => a.toLowerCase() === 'get');
-  if (getIndex > 1) return '';
+  if (getIndex > 1) return aliasNotFound(alias);
   const asked = getIndex < 0 ? [] : parseWmicProperties(args.slice(getIndex + 1));
-  return wmicQuery(ctx, alias, asked) ?? '';
+  return wmicQuery(ctx, alias, asked) ?? aliasNotFound(alias);
 }
 
 function wmicNic(ctx: WinSystemContext): string {
