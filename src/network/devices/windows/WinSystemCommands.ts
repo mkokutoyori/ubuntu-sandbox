@@ -13,7 +13,7 @@ import { TimeZone } from '../../core/time/TimeZone';
 import { partsAt } from '../../core/time/TimeZoneRegistry';
 import { dhcpEnabledFor } from './WinAdapterFacts';
 import type { ProcessSession } from './WindowsProcessManager';
-import { adapterDisplayName } from './netAdapter';
+import { adapterDisplayName, type WindowsAdapterIdentity } from './netAdapter';
 import { aliasNotFound, parseWmicProperties, wmicQuery } from './Wmic';
 
 /** Minimal process-manager surface needed by `start`. */
@@ -91,6 +91,8 @@ export interface WinSystemContext {
     label(letter: string): string;
   };
   readonly ports: Map<string, Port>;
+  /** L'identite de la carte — description, index, GUID — lue a sa source. */
+  adapterIdentityOf(portName: string): WindowsAdapterIdentity;
   isDHCPConfigured(ifName: string): boolean;
   /** Volume serial source — same serial `dir` prints (single source of truth). */
   getVolumeSerialNumber(letter: string): string;
@@ -149,7 +151,7 @@ export function cmdSysteminfo(ctx: WinSystemContext): string {
   let idx = 1;
   for (const [name, port] of ctx.ports) {
     const displayName = adapterDisplayName(name, ctx.ports);
-    lines.push(`                           [${String(idx).padStart(2, '0')}]: Intel(R) Ethernet Connection`);
+    lines.push(`                           [${String(idx).padStart(2, '0')}]: ${ctx.adapterIdentityOf(name).description}`);
     const ip = port.getIPAddress();
     if (ip) {
       lines.push(`                                 Connection Name: ${displayName}`);

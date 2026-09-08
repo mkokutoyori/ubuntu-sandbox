@@ -16,3 +16,7 @@ export function machineIdFor(seed: string): string {
 export function filesystemUuidFor(seed: string, partitionName: string): string {
   return uuidFromSeed(`filesystem:${seed}:${partitionName}`);
 }
+
+export function interfaceGuidFor(seed: string, adapterName: string): string {
+  return `{${uuidFromSeed(`netcfginstance:${seed}:${adapterName}`).toUpperCase()}}`;
+}

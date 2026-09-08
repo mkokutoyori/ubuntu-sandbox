@@ -191,13 +191,13 @@ function ipconfigAll(ctx: WinCommandContext): string {
     if (!adapterUp) {
       lines.push(`   Media State . . . . . . . . . . . : Media disconnected`);
       lines.push(`   Connection-specific DNS Suffix  . :`);
-      lines.push(`   Description . . . . . . . . . . . : Intel(R) Ethernet Connection`);
+      lines.push(`   Description . . . . . . . . . . . : ${ctx.adapterIdentityOf(name).description}`);
       lines.push(`   Physical Address. . . . . . . . . : ${mac}`);
       lines.push(`   DHCP Enabled. . . . . . . . . . . : ${dhcpEnabledFor(port, isDHCP) ? 'Yes' : 'No'}`);
       lines.push(`   Autoconfiguration Enabled . . . . : Yes`);
     } else {
       lines.push(`   Connection-specific DNS Suffix  . : ${ctx.getConnectionDnsSuffix(name)}`.trimEnd());
-      lines.push(`   Description . . . . . . . . . . . : Intel(R) Ethernet Connection`);
+      lines.push(`   Description . . . . . . . . . . . : ${ctx.adapterIdentityOf(name).description}`);
       lines.push(`   Physical Address. . . . . . . . . : ${mac}`);
       lines.push(`   DHCP Enabled. . . . . . . . . . . : ${dhcpEnabledFor(port, isDHCP) ? 'Yes' : 'No'}`);
       lines.push(`   Autoconfiguration Enabled . . . . : Yes`);

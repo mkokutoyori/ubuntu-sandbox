@@ -12,7 +12,7 @@
 import type { WinCommandContext } from './WinCommandExecutor';
 import { IPAddress, SubnetMask } from '../../core/types';
 import { WINDOWS_LOOPBACK_ROUTES, LOOPBACK_IPV4 } from './WindowsLoopbackRoutes';
-import { LOOPBACK_IFINDEX, adapterIfIndex } from './WindowsInterfaceNaming';
+import { LOOPBACK_IFINDEX } from './WindowsInterfaceNaming';
 
 const ROUTE_HELP = `
 Manipulates network routing tables.
@@ -208,9 +208,8 @@ export function showRoutePrint(ctx: WinCommandContext): string {
   // List interfaces
   for (const [name, port] of ctx.ports) {
     const mac = port.getMAC().toString().replace(/:/g, ' ');
-    const position = parseInt(name.replace('eth', ''), 10);
-    const desc = `Intel(R) Ethernet Connection #${position + 1}`;
-    lines.push(`  ${adapterIfIndex(position).toString().padStart(2)}...${mac} ......${desc}`);
+    const card = ctx.adapterIdentityOf(name);
+    lines.push(`  ${card.ifIndex.toString().padStart(2)}...${mac} ......${card.description}`);
   }
   lines.push(`  ${String(LOOPBACK_IFINDEX).padStart(2)}...........................Software Loopback Interface 1`);
   lines.push('===========================================================================');

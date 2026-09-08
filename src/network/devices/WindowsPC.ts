@@ -23,7 +23,9 @@ import {
 import { selectBundleMember } from '@/network/lacp/loadBalance';
 import type { EthernetFrame } from '../core/types';
 import { MACAddress } from '../core/types';
-import { toDisplayName } from './windows/WindowsInterfaceNaming';
+import { toDisplayName, adapterIfIndex, LOOPBACK_IFINDEX } from './windows/WindowsInterfaceNaming';
+import { interfaceGuidFor } from './host/hardware/HardwareIdentity';
+import type { WindowsAdapterIdentity } from './windows/netAdapter';
 import { NetworkAdapter } from './host/hardware';
 import {
   MULTIPLEXOR_DRIVER, adapterNameProblem, adapterNameTaken, identityOfPort,
@@ -2174,6 +2176,23 @@ export class WindowsPC extends EndHost implements UserAccountHost {
     return windowsInterfaceDescription(model, ordinal);
   }
 
+  adapterIfIndexOf(portName: string): number {
+    const position = this.getPorts().findIndex(p => p.getName() === portName);
+    return position < 0 ? LOOPBACK_IFINDEX : adapterIfIndex(position);
+  }
+
+  interfaceGuidOf(portName: string): string {
+    return interfaceGuidFor(this.name, portName);
+  }
+
+  adapterIdentityOf(portName: string): WindowsAdapterIdentity {
+    return {
+      description: this.interfaceDescriptionOf(portName),
+      ifIndex: this.adapterIfIndexOf(portName),
+      guid: this.interfaceGuidOf(portName),
+    };
+  }
+
   private driverModelOf(portName: string): string {
     const port = this.getPort(portName);
     if (port === undefined || port.isCarrierless()) return MULTIPLEXOR_DRIVER;
@@ -3193,6 +3212,7 @@ export class WindowsPC extends EndHost implements UserAccountHost {
     return {
       hostname: this.hostname,
       ports: this.ports,
+      adapterIdentityOf: (portName: string) => this.adapterIdentityOf(portName),
       get defaultGateway() { return host.defaultGateway?.toString() || null; },
       get defaultGateway6() { return host.getDefaultGateway6()?.toString() || null; },
       arpTable: this.arpTable,
@@ -3472,6 +3492,7 @@ export class WindowsPC extends EndHost implements UserAccountHost {
       os: this.getIdentity().os,
       bootedAt: () => this.getLifecycle().bootedAt() ?? null,
       hardware: this.hardware,
+      adapterIdentityOf: (portName: string) => this.adapterIdentityOf(portName),
       volumes: {
         letters: () => this.fs.listDrives(),
         capacityBytes: (letter) => this.fs.getDriveCapacity(letter),

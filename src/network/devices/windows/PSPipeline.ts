@@ -893,7 +893,7 @@ function pickDefaultColumns(keys: string[]): string[] | null {
   }
   // NetNeighbor: ifIndex, IPAddress, LinkLayerAddress, State, PolicyStore
   if (lower.has('linklayeraddress') && lower.has('ipaddress') && lower.has('state')) {
-    return ['ifIndex', 'InterfaceAlias', 'IPAddress', 'LinkLayerAddress', 'State', 'PolicyStore'];
+    return ['ifIndex', 'IPAddress', 'LinkLayerAddress', 'State', 'PolicyStore'];
   }
   // NetIPAddress: IPAddress, InterfaceAlias, AddressFamily, PrefixLength
   if (lower.has('ipaddress') && lower.has('interfacealias') && lower.has('addressfamily')) {

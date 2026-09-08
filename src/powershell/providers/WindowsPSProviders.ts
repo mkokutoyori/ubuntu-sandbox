@@ -25,7 +25,7 @@ import { RemoteAccessVpnClient } from '@/network/ipsec/RemoteAccessVpnClient';
 import { PSRegistryProvider, WINDOWS_CLIENT_PRODUCT_IDENTITY, WINDOWS_SERVER_PRODUCT_IDENTITY } from '@/network/devices/windows/PSRegistryProvider';
 import { PSEventLogProvider } from '@/network/devices/windows/PSEventLogProvider';
 import {
-  LOOPBACK_IFINDEX, adapterIfIndex, toDisplayName, toPortName, formatLinkSpeedMbps,
+  LOOPBACK_IFINDEX, toDisplayName, toPortName, formatLinkSpeedMbps,
 } from '@/network/devices/windows/WindowsInterfaceNaming';
 import { NO_MATCHING_INTERFACE } from '@/network/devices/windows/netIpAddress';
 import { type DnsCacheRow, dnsCacheRowsOf } from '@/network/devices/windows/dnsClientCache';
@@ -1626,15 +1626,17 @@ class WindowsNetworkAdapter implements INetworkProvider {
     return (this.pc as unknown as { name: string }).name;
   }
   getAdapters(): NetAdapterEntry[] {
-    return this.pc.getPorts().map((port, idx) => {
+    return this.pc.getPorts().map((port) => {
       const portName = port.getName();
       const connected = port.isOperationallyUp();
       const aggregated = this.pc.aggregateLinkSpeedMbps(portName);
+      const card = this.pc.adapterIdentityOf(portName);
       return {
         portName,
         name: this.pc.adapterAlias(portName),
-        interfaceDescription: this.pc.interfaceDescriptionOf(portName),
-        ifIndex: adapterIfIndex(idx),
+        interfaceDescription: card.description,
+        interfaceGuid: card.guid,
+        ifIndex: card.ifIndex,
         status: port.isAdminDown() ? 'Disabled' : (connected ? 'Up' : 'Disconnected'),
         macAddress: port.getMAC().toString(),
         linkSpeed: connected
@@ -1852,7 +1854,7 @@ class WindowsNetworkAdapter implements INetworkProvider {
     const filtered = resolvedFilter
       ? ports.filter(p => p.name.toLowerCase() === resolvedFilter.toLowerCase())
       : ports;
-    filtered.forEach((p, idx) => {
+    filtered.forEach((p) => {
       const raw = p.getIPAddress();
       if (raw) {
         const ip = String((raw as { toString: () => string }).toString());
@@ -1864,7 +1866,7 @@ class WindowsNetworkAdapter implements INetworkProvider {
           ipAddress: ip,
           prefixLength: typeof cidr === 'number' ? cidr : 24,
           ifAlias: toDisplayName(p.name),
-          ifIndex: adapterIfIndex(idx),
+          ifIndex: this.pc.adapterIfIndexOf(p.name),
           prefixOrigin,
           suffixOrigin,
           addressFamily: ip.includes(':') ? 'IPv6' : 'IPv4',
@@ -2254,11 +2256,7 @@ class WindowsNetworkAdapter implements INetworkProvider {
       getPorts: () => Array<{ name: string }>;
       getNeighborCache?: () => Map<string, { mac: MACAddress; iface: string; state: string }>;
     };
-    const ports = pc.getPorts();
-    const indexOf = (iface: string): number => {
-      const position = ports.findIndex(p => p.name === iface);
-      return position < 0 ? LOOPBACK_IFINDEX : adapterIfIndex(position);
-    };
+    const indexOf = (iface: string): number => this.pc.adapterIfIndexOf(iface);
     const arpState: Record<string, NetNeighborState> = {
       static: 'Permanent', dynamic: 'Reachable', failed: 'Unreachable',
     };

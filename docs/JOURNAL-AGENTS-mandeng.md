@@ -9170,3 +9170,80 @@ n'a pas deplace l'arbre existant. Suites connexes : 9 fichiers, 470 cas,
 tous verts. `npm run typecheck` : 248 erreurs, comme sur la base. Un cas
 e2e Playwright lit les vingt-quatre compteurs et `ifindex` dans le vrai
 terminal.
+
+## Une carte Windows porte UNE identite, que six vues repetent
+
+**Perimetre revendique** : `WinIpconfig`, `WinRoute`, `WinGetmac`,
+`WinArp`, `WinSystemCommands` (bloc `Network Card(s)`), `netAdapter.ts`,
+`PSPipeline` (colonnes par defaut de NetNeighbor), `NetworkCmdlets`
+(objets NetAdapter / NetNeighbor), `WindowsPSProviders`,
+`HardwareIdentity`. Rien du cote journalisation.
+
+**Mesure de depart** — un poste Windows cable a un poste Linux par un
+commutateur, `10.0.0.1/24` pose par `netsh`, trois `ping`, puis la MEME
+question a chaque vue :
+
+```
+ipconfig /all      Description . . . : Intel(R) Ethernet Connection
+route print        2...02 00 00 00 00 01 ......Intel(R) Ethernet Connection #1
+getmac             02-00-00-00-00-01 \Device\Tcpip_Ethernet_0
+systeminfo         [01]: Intel(R) Ethernet Connection
+Get-NetAdapter     Intel(R) 82540EM Gigabit Ethernet Controller  ifIndex 2
+arp -a             Interface: 10.0.0.1 --- 0x1
+Get-NetNeighbor    ifIndex <colonne vide>  Ethernet 0  10.0.0.2
+```
+
+**Quatre ecritures d'une meme carte, et aucune ne dit ce que dit la
+cinquieme.** `Get-NetAdapter` etait la seule a LIRE le materiel
+(`hardware.adapters[].model`, un 82540EM comme en pose QEMU) ; les quatre
+autres portaient une constante ecrite a la main dans leur propre fichier,
+et `route print` inventait meme un suffixe `#1` sur la premiere carte, la
+ou Windows ne suffixe qu'a partir de la deuxieme. Le numero d'interface
+se contredisait de la meme facon : `route print` et `Get-NetAdapter`
+disaient 2, `arp -a` disait `0x1` (il derivait « 0 » du nom `eth0` et
+ajoutait 1), et `Get-NetNeighbor` annoncait une colonne `ifIndex` que son
+objet ne portait pas — il l'ecrivait `InterfaceIndex`, donc la colonne
+sortait VIDE alors que la valeur etait juste.
+
+**L'autorite** : sur une vraie machine, `ipconfig /all` « Description »,
+la ligne d'`Interface List` de `route print`, la colonne « Network
+Adapter » de `getmac /v` et l'entree `Network Card(s)` de `systeminfo`
+rendent toutes la description d'interface, celle que `Get-NetAdapter`
+publie sous `InterfaceDescription`. `arp -a` prefixe chaque table par
+`Interface: <ip> --- 0x<n>`, ou `n` est l'index d'interface EN
+HEXADECIMAL. `getmac` rend un « Transport Name » de la forme
+`\Device\Tcpip_{GUID}`, ou le GUID est le `NetCfgInstanceId` de la carte.
+La documentation NetTCPIP donne `ifIndex` comme l'alias de
+`InterfaceIndex` et le tableau par defaut de `Get-NetNeighbor` comme
+CINQ colonnes — ifIndex, IPAddress, LinkLayerAddress, State, PolicyStore
+— sans `InterfaceAlias`, que ce depot ajoutait.
+
+**Ce qui manquait vraiment** : le GUID de carte n'existait nulle part.
+`getmac` fabriquait `\Device\Tcpip_Ethernet_0` a partir du nom de
+connexion — donc un « GUID » qui change quand on renomme la connexion,
+alors que le vrai est fige a l'installation du pilote. Il est desormais
+derive du couple (machine, carte) par `interfaceGuidFor`, ecrit sur
+`uuidFromSeed` — le meme generateur que le UUID SMBIOS et les UUID de
+systeme de fichiers, pas un second. Deux cartes d'une machine, et deux
+machines du meme canevas, en portent des differents. `Get-NetAdapter` le
+publie sous `InterfaceGuid`, la ou Windows le publie.
+
+**Une seule source** : `WindowsPC.adapterIdentityOf(port)` rend le
+triplet description / ifIndex / GUID, et les six vues le lisent. Une
+deuxieme ecriture de l'index a ete fermee au passage dans
+`getIPAddresses(alias)` : le provider numerotait avec la position DANS LA
+LISTE FILTREE, donc `Get-NetIPAddress -InterfaceAlias "Ethernet 1"`
+portait l'index 2. Aucun lecteur ne rendait ce champ, donc rien ne le
+montrait — c'est une duplication supprimee, pas un symptome corrige, et
+le cas de sonde qui la couvre est nomme NON-REGRESSION.
+
+**Discrimination** (`git stash push -- src/network src/powershell`) :
+`probe-une-seule-carte-une-seule-identite.test.ts` (17 cas), 12 tombent
+contre l'etat d'avant. Les 5 autres sont nommes dans l'en-tete avec leur
+raison : deux TEMOINS (`route print` numerote deja comme
+`Get-NetAdapter` ; `netstat -e` compte deja comme
+`Get-NetAdapterStatistics`), une NON-REGRESSION (une carte debranchee
+reste `Media disconnected` dans `getmac`, elle ne recoit pas de GUID),
+un cas STRUCTUREL (`InterfaceIndex` portait deja le bon entier, ce qui
+isole le defaut dans le RENDU et non dans la donnee) et la
+NON-REGRESSION du filtre `Get-NetIPAddress` ci-dessus.

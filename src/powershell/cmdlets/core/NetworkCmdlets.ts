@@ -97,6 +97,7 @@ function adapterToPSObject(a: NetAdapterEntry): Record<string, PSValue> {
   return {
     Name:         a.name,
     InterfaceDescription: a.interfaceDescription,
+    InterfaceGuid: a.interfaceGuid,
     ifIndex:      a.ifIndex,
     Status:       a.status,
     MacAddress:   formatNetAdapterMac(a.macAddress),
@@ -762,6 +763,7 @@ function selectedNeighbors(
 
 function neighborToPSObject(n: NeighborInfo): Record<string, PSValue> {
   return {
+    ifIndex:          n.ifIndex,
     InterfaceIndex:   n.ifIndex,
     InterfaceAlias:   n.ifAlias,
     IPAddress:        n.ipAddress,
