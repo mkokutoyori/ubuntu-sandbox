@@ -946,6 +946,17 @@ est le chantier d'unification des deux piles SSH que le depot documente
 deja comme large ; `transitTcpAclVerdict` a par ailleurs d'autres
 lecteurs (traceroute, sondes UDP) qui disparaitraient avec lui.
 
+**Mesure affinee (probe `nc-transit-acl-frame`).** On a cru pouvoir retirer
+le repli en s'appuyant sur `ctx.net.tcpConnectOutcome`, que `nc` appelle
+DEJA a cote du repli. Neutralise `transitTcpAclVerdict` a `permit`, la sonde
+reelle rend `succeeded` a travers un routeur `deny ip any any` : le chemin
+TCP-connect n'atteint PAS `evaluateForDataPlane` du routeur de transit. Donc
+le repli est PORTEUR, pas un doublon retirable, et le vrai correctif n'est
+pas de supprimer le repli mais de faire SUBIR les ACL de transit au chemin
+`tcpConnectOutcome`/`TcpStack` lui-meme. Le garde-fou `nc-transit-acl-frame`
+tient le verdict d'aujourd'hui et passera par le vrai plan de donnees le
+jour ou ce chemin traverse les ACL.
+
 ### [acl] GRE n'est pas eprouvable sur un routeur Cisco
 La matrice « chaque protocole a son transport » couvre OSPF, EIGRP, RIP,
 BGP, DHCP et IPsec, et laisse GRE dehors.
