@@ -9054,3 +9054,68 @@ celle qui existait. Suites connexes : 10 fichiers, 408 cas, tous verts —
 le rouge de base compris, qui passe desormais. `npm run typecheck` : 248
 erreurs, comme sur la base. Un cas e2e Playwright compte les caracteres
 retenus dans `/var/log/syslog` depuis le vrai terminal.
+
+---
+
+## Une machine a UN noyau, et toutes ses vues le nomment
+
+**Perimetre revendique** :
+`src/network/devices/host/identity/SystemIdentity.ts`,
+`src/network/devices/LinuxMachine.ts`,
+`src/network/devices/linux/network/` (`LinuxSshClient.ts`,
+`lastFormatter.ts`), `src/network/devices/linux/LinuxLogManager.ts`,
+`src/network/devices/linux/commands/net/Ipsec.ts`,
+`src/network/devices/linux/kernel/KernelModuleTable.ts`,
+`src/network/devices/linux/LinuxCommandExecutor.ts`,
+`src/network/devices/linux/VirtualFileSystem.ts`,
+`src/network/devices/linux/LinuxFileCommands.ts`.
+
+Trouve en posant la MEME question a chaque vue d'un poste :
+
+```
+uname -r         5.15.0-130-generic
+/proc/version    5.15.0-130-generic
+modinfo e1000    vermagic: 5.15.0-130-generic
+cat /etc/motd    Ubuntu 22.04.3 LTS (GNU/Linux 5.15.0-91-generic)
+last             reboot   system boot   5.15.0-91-generic
+dmesg            Linux version 5.15.0-generic
+ipsec version    Linux strongSwan U5.9.8/K5.15.0-generic
+```
+
+**TROIS noyaux differents sur la meme machine au meme instant, et DEUX
+versions d'Ubuntu** : `lsb_release` et `/etc/os-release` disent 22.04.4,
+la banniere dit 22.04.3. Un operateur qui ouvre une session lit une
+banniere, tape `uname -a`, et voit deux machines. Pire : une connexion
+SSH affichait DEUX lignes « Welcome to Ubuntu » contradictoires — une
+ecrite en dur dans le client, l'autre venant du MOTD. La ligne en dur
+disparait : sur une vraie Ubuntu elle vient du MOTD
+(`/etc/update-motd.d/00-header`), et c'est desormais le cas ici.
+
+`/etc/issue` — ce que getty imprime avant l'invite — manquait alors que
+le code le LIT deja, avec une banniere de repli ecrite en dur. Il est
+seme depuis la meme identite, comme `/etc/issue.net`.
+
+**Deux causes de resolution trouvees en chemin, toutes deux dans le
+VFS.** `modinfo` nommait `/lib/modules/<release>/kernel/...` alors que
+l'arbre n'existait pas — le geste normal, `ls /lib/modules/$(uname -r)`,
+ne trouvait rien. L'arbre est desormais seme depuis la table des
+modules, le CONTENU des fichiers restant vide : ce qui est modelise est
+leur PRESENCE, pas leur code. Mais le semis ne suffisait pas :
+
+  1. `resolveInode(chemin, false)` cessait de suivre les liens
+     INTERMEDIAIRES, alors que `lstat(2)` ne parle que du DERNIER
+     composant. `/lib` etant un lien vers `usr/lib`, `ls /lib/modules`
+     echouait sur une arborescence pourtant presente.
+  2. `ls <lien>` decrivait le lien au lieu de lister ce qu'il designe.
+     Releve sur la machine reelle : `ls /lib` liste `usr/lib`, tandis que
+     `ls -l /lib` rend bien la ligne `lib -> usr/lib`.
+
+**Discrimination** (`git stash push -- src/network`) :
+`probe-un-seul-noyau.test.ts` (12 cas), 9 tombent contre l'etat d'avant.
+Les 3 autres sont les TEMOINS nommes dans l'en-tete : `uname -a` et
+`/proc/version`, qui lisaient deja l'identite et servent de reference a
+tout le reste, et `lsb_release`, qui donne la version d'Ubuntu que la
+banniere doit rejoindre. Suites connexes : 64 fichiers, 1836 cas, tous
+verts. `npm run typecheck` : 248 erreurs, comme sur la base. Deux cas
+e2e Playwright confrontent `uname -r`, le MOTD, `last`, `dmesg` et
+`ls /lib/modules/$(uname -r)` dans le vrai terminal.

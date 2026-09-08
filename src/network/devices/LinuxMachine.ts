@@ -1607,17 +1607,15 @@ export abstract class LinuxMachine extends EndHost
   private initSshFiles(): void {
     this.getSshServerContext();
     const vfs = this.executor.vfs;
+    const id = this.executor.identity;
     if (!vfs.exists('/etc/motd')) {
-      vfs.writeFile(
-        '/etc/motd',
-        `Welcome to Ubuntu 22.04.3 LTS (GNU/Linux 5.15.0-91-generic x86_64)\n`,
-        0,
-        0,
-        0o022,
-      );
+      vfs.writeFile('/etc/motd', `${id.welcomeBanner()}\n`, 0, 0, 0o022);
+    }
+    if (!vfs.exists('/etc/issue')) {
+      vfs.writeFile('/etc/issue', id.toIssue(), 0, 0, 0o022);
     }
     if (!vfs.exists('/etc/issue.net')) {
-      vfs.writeFile('/etc/issue.net', 'Ubuntu 22.04.3 LTS\n', 0, 0, 0o022);
+      vfs.writeFile('/etc/issue.net', id.toIssueNet(), 0, 0, 0o022);
     }
   }
 
@@ -1979,7 +1977,7 @@ export abstract class LinuxMachine extends EndHost
 
   sshBanner(): string {
     const issue = this.executor.vfs.readFile('/etc/issue.net') ?? '';
-    return issue.replace(/\n*$/, '') || `Welcome to Ubuntu 22.04.3 LTS (GNU/Linux 5.15.0-91-generic x86_64)`;
+    return issue.replace(/\n*$/, '') || this.executor.identity.welcomeBanner();
   }
 
   async runSshCommand(
@@ -2144,6 +2142,7 @@ export abstract class LinuxMachine extends EndHost
         table: this.sessionTable,
         utmp: this.utmpSync,
         bootDate: this.executor.lifecycle.bootedAt(),
+        kernelRelease: this.executor.identity.kernel.release,
         now: new Date(),
       }, argv.slice(1));
     }

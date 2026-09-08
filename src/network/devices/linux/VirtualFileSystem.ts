@@ -453,7 +453,11 @@ export class VirtualFileSystem {
 
     for (let i = 0; i < parts.length; i++) {
       // If current is a symlink, resolve it
-      if (current.type === 'symlink' && followSymlinks) {
+      // Un lien INTERMEDIAIRE est toujours suivi, meme quand l'appelant
+      // demande un `lstat` : `followSymlinks` ne parle que du DERNIER
+      // composant, comme `lstat(2)`. Sans cela, `ls /lib/modules`
+      // echouait parce que `/lib` est un lien vers `usr/lib`.
+      if (current.type === 'symlink') {
         // La cible RELATIVE d'un lien se lit depuis le repertoire qui
         // CONTIENT le lien, pas depuis le lien lui-meme : `current` est
         // le composant `parts[i - 1]`, donc sa base est `parts[0..i-2]`.

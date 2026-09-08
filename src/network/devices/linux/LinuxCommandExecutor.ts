@@ -571,7 +571,7 @@ export class LinuxCommandExecutor {
     this.iptables = new LinuxIptablesManager(this.vfs, (port, proto) => this.resolveServiceName(port, proto));
     this.ip6tables = new LinuxIptablesManager(this.vfs, (port, proto) => this.resolveServiceName(port, proto), { family: 6 });
     this.firewall = new LinuxFirewallManager(this.vfs, this.iptables, this.ip6tables);
-    this.logMgr = new LinuxLogManager(this.vfs);
+    this.logMgr = new LinuxLogManager(this.vfs, this.identity.kernel.release);
     this.netConfig = new LinuxNetworkConfigManager(this.vfs, this.logMgr);
     this.auditLog = new LinuxAuditLog(this.vfs);
     this.auditRules = new LinuxAuditRules(this.auditLog, this.vfs);
@@ -614,6 +614,11 @@ export class LinuxCommandExecutor {
     if (this.vfs.readFile('/etc/rpc')       == null) this.vfs.writeFile('/etc/rpc',       ETC_RPC,       0, 0, 0o022);
     if (this.vfs.readFile(FSTAB_PATH) == null) {
       this.vfs.writeFile(FSTAB_PATH, renderFstab(this.hardware.storage), 0, 0, 0o022);
+    }
+    for (const chemin of this.kernelModules.allFilenames()) {
+      const dossier = chemin.slice(0, chemin.lastIndexOf('/'));
+      if (!this.vfs.exists(dossier)) this.vfs.mkdirp(dossier, 0o755, 0, 0);
+      if (this.vfs.readFile(chemin) == null) this.vfs.writeFile(chemin, '', 0, 0, 0o022);
     }
     if (this.vfs.readFile('/etc/profile') == null) {
       this.vfs.writeFile('/etc/profile',
@@ -4620,6 +4625,7 @@ export class LinuxCommandExecutor {
             table: this.sessionTable,
             utmp: this.utmpSync,
             bootDate: this.lifecycle.bootedAt(),
+            kernelRelease: this.identity.kernel.release,
             now: new Date(),
           }, args);
           const exit = out.startsWith('last: ') ? 1 : 0;
@@ -4633,6 +4639,7 @@ export class LinuxCommandExecutor {
             table: this.sessionTable,
             utmp: this.utmpSync,
             bootDate: this.lifecycle.bootedAt(),
+            kernelRelease: this.identity.kernel.release,
             now: new Date(),
           }, args);
           const exit = out.startsWith('lastb: ') ? 1 : 0;

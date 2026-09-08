@@ -180,6 +180,27 @@ export class SystemIdentity {
     return `LANG=${this.locale}\n`;
   }
 
+  /**
+   * La banniere que le MOTD, `/etc/issue` et la connexion SSH portent.
+   * Elle etait ecrite QUATRE fois en dur — avec un `5.15.0-91-generic`
+   * et un `Ubuntu 22.04.3 LTS` que ni `uname -r` ni `lsb_release` ne
+   * disaient : un operateur qui ouvrait une session lisait une machine,
+   * et `uname -a` lui en montrait une autre.
+   */
+  welcomeBanner(): string {
+    return `Welcome to ${this.os.prettyName} (GNU/Linux ${this.kernel.release} ${this.kernel.machine})`;
+  }
+
+  /** `/etc/issue`, ce que getty imprime avant l'invite de connexion. */
+  toIssue(): string {
+    return `${this.os.prettyName} \\n \\l\n\n`;
+  }
+
+  /** `/etc/issue.net`, la meme sans les echappements de getty. */
+  toIssueNet(): string {
+    return `${this.os.prettyName}\n`;
+  }
+
   /** Le `/etc/default/keyboard` de Debian, que `localectl` lit pour X11. */
   toKeyboardConf(): string {
     return [

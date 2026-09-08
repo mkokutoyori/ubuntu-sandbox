@@ -1297,7 +1297,10 @@ export function runSshClient(opts: SshClientOpts): SshClientResult {
   const printLastLog  = remoteExec ? readRemoteSshdDirective(remoteExec, 'PrintLastLog') !== 'no' : true;
   const lines: string[] = [];
   if (banner.trim()) lines.push(banner.replace(/\n*$/, ''));
-  lines.push(`Welcome to Ubuntu 22.04.3 LTS (GNU/Linux 5.15.0-91-generic x86_64)`);
+  // La ligne « Welcome to Ubuntu … » vient du MOTD, comme sur une vraie
+  // Ubuntu (`/etc/update-motd.d/00-header`). Elle etait AUSSI ecrite ici
+  // en dur, avec une autre version et un autre noyau : une seule
+  // connexion en affichait donc deux, contradictoires.
   if (printLastLog) {
     lines.push(`Last login: ${fmtHumanDate(new Date())} from ${opts.sourceIp}`);
   }

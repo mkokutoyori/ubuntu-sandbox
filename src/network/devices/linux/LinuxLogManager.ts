@@ -121,7 +121,15 @@ export class LinuxLogManager {
     'warnings', 'notifications', 'informational', 'debugging',
   ] as const;
 
-  constructor(private vfs: VirtualFileSystem) {
+  /**
+   * Le noyau que les lignes d'amorcage de `dmesg` nomment. Elles en
+   * portaient une copie ecrite en dur (`5.15.0-generic`), differente de
+   * ce que `uname -r` annonce et de ce que `last` annoncait encore.
+   */
+  private kernelRelease = '5.15.0-130-generic';
+
+  constructor(private vfs: VirtualFileSystem, kernelRelease?: string) {
+    if (kernelRelease) this.kernelRelease = kernelRelease;
     this.bootTime = new Date(Date.now() - 30_000);
     this.bootId = this.generateBootId();
     this.populateBootMessages();
@@ -971,8 +979,8 @@ export class LinuxLogManager {
 
     // Kernel dmesg messages
     const kernelMsgs: Array<{ offset: number; level: number; msg: string }> = [
-      { offset: 0.000000, level: 6, msg: 'Linux version 5.15.0-generic (buildd@lcy02-amd64-032) (gcc-11 (Ubuntu 11.3.0-1ubuntu1~22.04) 11.3.0) #1 SMP x86_64' },
-      { offset: 0.000001, level: 6, msg: 'Command line: BOOT_IMAGE=/vmlinuz-5.15.0-generic root=/dev/sda1 ro quiet splash' },
+      { offset: 0.000000, level: 6, msg: `Linux version ${this.kernelRelease} (buildd@lcy02-amd64-032) (gcc-11 (Ubuntu 11.3.0-1ubuntu1~22.04) 11.3.0) #1 SMP x86_64` },
+      { offset: 0.000001, level: 6, msg: `Command line: BOOT_IMAGE=/vmlinuz-${this.kernelRelease} root=/dev/sda1 ro quiet splash` },
       { offset: 0.010000, level: 6, msg: 'DMI: QEMU Standard PC (i440FX + PIIX, 1996), BIOS 1.16.2-debian-1.16.2-1 04/01/2014' },
       { offset: 0.050000, level: 6, msg: 'Memory: 2048000K/2097152K available (14339K kernel code, 2560K rwdata)' },
       { offset: 0.100000, level: 6, msg: 'CPU: Intel(R) Core(TM) i7-10750H CPU @ 2.60GHz' },
