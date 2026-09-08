@@ -765,6 +765,8 @@ export class LinuxCommandExecutor {
         if (!info) return null;
         return { carrier: info.isConnected, operUp: info.isUp && info.isConnected };
       },
+      liveCounters: (iface) => this.ipNetworkCtx?.getInterfaceInfo(iface)?.counters ?? null,
+      liveIfIndex: (iface) => this.ipNetworkCtx?.getIfIndex(iface) ?? null,
     });
     for (const leaf of tree.leaves()) {
       const slash = leaf.path.lastIndexOf('/');

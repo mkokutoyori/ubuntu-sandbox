@@ -9119,3 +9119,54 @@ banniere doit rejoindre. Suites connexes : 64 fichiers, 1836 cas, tous
 verts. `npm run typecheck` : 248 erreurs, comme sur la base. Deux cas
 e2e Playwright confrontent `uname -r`, le MOTD, `last`, `dmesg` et
 `ls /lib/modules/$(uname -r)` dans le vrai terminal.
+
+---
+
+## `/sys/class/net` porte les compteurs que cinq autres vues comptent
+
+**Perimetre revendique** : `src/network/devices/linux/Sysfs.ts`,
+`src/network/devices/linux/LinuxCommandExecutor.ts`.
+
+Mesure de depart : deux postes cables sur un commutateur, trois `ping`,
+puis la MEME question a chaque vue.
+
+```
+ip -s link show eth0     RX 685 / 8     TX 752 / 9
+ifconfig eth0            RX 685 / 8     TX 752 / 9
+ethtool -S eth0          rx_packets: 8  tx_packets: 9
+cat /proc/net/dev        685  8 … 752  9
+netstat -i               RX-OK 8        TX-OK 9
+cat /sys/class/net/eth0/statistics/rx_packets
+                         No such file or directory
+```
+
+**Cinq vues d'accord, et la sixieme absente.** C'est le contraire du
+defaut habituel de ce depot : ici l'accord etait deja fait, il manquait
+seulement la vue que lit un AGENT. `node_exporter`, collectd et munin
+lisent les compteurs sous `/sys`, pas dans `ifconfig` ; un laboratoire de
+metrologie n'avait donc rien a lire. `/sys/class/net/<if>/` portait
+pourtant deja `address`, `mtu`, `operstate`, `carrier` et `speed` — mais
+ni `statistics/`, ni `ifindex`.
+
+**L'autorite** : les vingt-quatre noms de fichiers sont RELEVES sur la
+machine reelle qui execute ce depot (`ls /sys/class/net/eth0/statistics/`).
+Ce simulateur en mesure six ; les dix-huit autres valent zero, ce qui est
+le compte JUSTE — rien ici ne produit d'erreur de trame, de collision ni
+de depassement de file. Ils sont declares plutot qu'omis : un agent qui
+lit `rx_crc_errors` doit trouver `0`, pas un fichier absent.
+
+**Rien n'est recompte** : les six mesures viennent de
+`getInterfaceInfo(iface).counters`, la meme source qu'`ethtool -S` et
+`/proc/net/dev`. Et `ifindex` vient de `getIfIndex`, celui que `ip link`
+affiche deja devant le nom — la machine ne numerote ses interfaces
+qu'une fois.
+
+**Discrimination** (`git stash push -- src/network`) :
+`probe-compteurs-interface-une-source.test.ts` (9 cas), 7 tombent contre
+l'etat d'avant. Les 2 autres sont les TEMOINS nommes dans l'en-tete :
+les cinq vues deja d'accord, dont la sixieme ne doit surtout pas
+s'ecarter, et les attributs que `/sys` portait deja, qui prouvent qu'on
+n'a pas deplace l'arbre existant. Suites connexes : 9 fichiers, 470 cas,
+tous verts. `npm run typecheck` : 248 erreurs, comme sur la base. Un cas
+e2e Playwright lit les vingt-quatre compteurs et `ifindex` dans le vrai
+terminal.
