@@ -1,4 +1,5 @@
 import type { TcpStream } from '@/network/tcp/types';
+import { SshSftpChannel } from './channels/SshSftpChannel';
 
 export const SSH_CLIENT_IDENTIFICATION = 'SSH-2.0-OpenSSH_9.6';
 
@@ -19,18 +20,29 @@ export interface SshWireExecResult {
   error?: string;
 }
 
+export interface SshWireTransferResult {
+  connected: boolean;
+  authenticated: boolean;
+  ok: boolean;
+  content?: string;
+  error?: string;
+}
+
 export interface SshWireStack {
   connect(ip: string, port: number): TcpStream | null;
 }
 
-export interface SshWireExecOptions {
+export interface SshWireAuthOptions {
   stack: SshWireStack;
   host: string;
   port: number;
   user: string;
   password?: string;
-  command: string;
   clientVersion?: string;
+}
+
+export interface SshWireExecOptions extends SshWireAuthOptions {
+  command: string;
 }
 
 interface Inbox {
@@ -63,19 +75,55 @@ function attachInbox(socket: TcpStream): Inbox {
   };
 }
 
-export async function sshWireExec(opts: SshWireExecOptions): Promise<SshWireExecResult> {
-  const socket = opts.stack.connect(opts.host, opts.port);
-  const empty: SshWireExecResult = {
-    connected: false, authenticated: false, stdout: '', stderr: '', exitCode: 255,
-  };
-  if (!socket) return { ...empty, error: 'connect failed' };
+type Session =
+  | { ok: true; socket: TcpStream; inbox: Inbox; hostKey?: SshWireHostKey; serverVersion?: string; preAuthBanner?: string }
+  | { ok: false; connected: boolean; authenticated: boolean; error: string; hostKey?: SshWireHostKey; serverVersion?: string; preAuthBanner?: string };
 
+async function connectAndAuth(opts: SshWireAuthOptions): Promise<Session> {
+  const socket = opts.stack.connect(opts.host, opts.port);
+  if (!socket) return { ok: false, connected: false, authenticated: false, error: 'connect failed' };
   if ((socket as unknown as { everEstablished?: boolean }).everEstablished !== true) {
     socket.close();
-    return { ...empty, error: 'connection failed' };
+    return { ok: false, connected: false, authenticated: false, error: 'connection failed' };
   }
 
   const inbox = attachInbox(socket);
+  socket.write(JSON.stringify({
+    op: 'hello',
+    clientVersion: opts.clientVersion ?? SSH_CLIENT_IDENTIFICATION,
+  }));
+  const hello = await inbox.next();
+  const hostKey = hello.hostKey as SshWireHostKey | undefined;
+  const serverVersion = hello.serverVersion as string | undefined;
+  const preAuthBanner = hello.preAuthBanner as string | undefined;
+
+  socket.write(JSON.stringify({
+    op: 'auth', user: opts.user, method: 'password', password: opts.password ?? '',
+  }));
+  const auth = await inbox.next();
+  if (auth.ok !== true) {
+    inbox.dispose();
+    socket.close();
+    return {
+      ok: false, connected: true, authenticated: false,
+      error: (auth.error as string | undefined) ?? 'authentication failed',
+      hostKey, serverVersion, preAuthBanner,
+    };
+  }
+  return { ok: true, socket, inbox, hostKey, serverVersion, preAuthBanner };
+}
+
+export async function sshWireExec(opts: SshWireExecOptions): Promise<SshWireExecResult> {
+  const session = await connectAndAuth(opts);
+  if (!session.ok) {
+    return {
+      connected: session.connected, authenticated: session.authenticated,
+      stdout: '', stderr: '', exitCode: 255, error: session.error,
+      hostKey: session.hostKey, serverVersion: session.serverVersion, preAuthBanner: session.preAuthBanner,
+    };
+  }
+
+  const { socket, inbox, hostKey, serverVersion, preAuthBanner } = session;
   const finish = (result: SshWireExecResult): SshWireExecResult => {
     inbox.dispose();
     socket.close();
@@ -83,27 +131,6 @@ export async function sshWireExec(opts: SshWireExecOptions): Promise<SshWireExec
   };
 
   try {
-    socket.write(JSON.stringify({
-      op: 'hello',
-      clientVersion: opts.clientVersion ?? SSH_CLIENT_IDENTIFICATION,
-    }));
-    const hello = await inbox.next();
-    const hostKey = hello.hostKey as SshWireHostKey | undefined;
-    const serverVersion = hello.serverVersion as string | undefined;
-    const preAuthBanner = hello.preAuthBanner as string | undefined;
-
-    socket.write(JSON.stringify({
-      op: 'auth', user: opts.user, method: 'password', password: opts.password ?? '',
-    }));
-    const auth = await inbox.next();
-    if (auth.ok !== true) {
-      return finish({
-        connected: true, authenticated: false, stdout: '', stderr: '', exitCode: 255,
-        hostKey, serverVersion, preAuthBanner,
-        error: (auth.error as string | undefined) ?? 'authentication failed',
-      });
-    }
-
     const channelId = 0;
     socket.write(JSON.stringify({ op: 'open_channel', channelType: 'exec', channelId }));
     const opened = await inbox.next();
@@ -127,6 +154,52 @@ export async function sshWireExec(opts: SshWireExecOptions): Promise<SshWireExec
       hostKey, serverVersion, preAuthBanner,
     });
   } catch (e) {
-    return finish({ ...empty, connected: true, error: e instanceof Error ? e.message : String(e) });
+    return finish({
+      connected: true, authenticated: true, stdout: '', stderr: '', exitCode: 255,
+      hostKey, serverVersion, preAuthBanner, error: e instanceof Error ? e.message : String(e),
+    });
   }
+}
+
+async function sshWireSftp(
+  opts: SshWireAuthOptions,
+  drive: (channel: SshSftpChannel) => SshWireTransferResult,
+): Promise<SshWireTransferResult> {
+  const session = await connectAndAuth(opts);
+  if (!session.ok) {
+    return { connected: session.connected, authenticated: session.authenticated, ok: false, error: session.error };
+  }
+  const { socket, inbox } = session;
+  inbox.dispose();
+  const channel = new SshSftpChannel(socket, 0);
+  try {
+    channel.open();
+    return drive(channel);
+  } catch (e) {
+    return { connected: true, authenticated: true, ok: false, error: e instanceof Error ? e.message : String(e) };
+  } finally {
+    channel.close();
+    socket.close();
+  }
+}
+
+export function sshWireSftpPut(
+  opts: SshWireAuthOptions & { remotePath: string; content: string },
+): Promise<SshWireTransferResult> {
+  return sshWireSftp(opts, (channel) => {
+    const reply = channel.sendRequest({ op: 'put', path: opts.remotePath, content: opts.content });
+    return { connected: true, authenticated: true, ok: reply.ok === true, error: reply.error as string | undefined };
+  });
+}
+
+export function sshWireSftpGet(
+  opts: SshWireAuthOptions & { remotePath: string },
+): Promise<SshWireTransferResult> {
+  return sshWireSftp(opts, (channel) => {
+    const reply = channel.sendRequest({ op: 'get', path: opts.remotePath });
+    return {
+      connected: true, authenticated: true, ok: reply.ok === true,
+      content: reply.content as string | undefined, error: reply.error as string | undefined,
+    };
+  });
 }
