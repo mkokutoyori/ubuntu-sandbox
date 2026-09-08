@@ -122,6 +122,9 @@ import { runSshClient } from './network/LinuxSshClient';
 import { findHostByAddress, isPathReachable, findReachableHost } from './network/HostLookup';
 import type { ProbedHostKey } from '@/network/protocols/ssh/SshHostKeyProbe';
 import { runTruncate } from './commands/fs/Truncate';
+import { runDd } from './commands/fs/Dd';
+import { runFallocate } from './commands/fs/Fallocate';
+import { renderProcSwaps } from './commands/system/Swapon';
 import { VfsSftpFileSystem } from '../../protocols/ssh/sftp/VfsSftpFileSystem';
 import { PermissionCheckingFSDecorator } from '../../protocols/ssh/sftp/PermissionCheckingFSDecorator';
 import { ChrootedSftpFileSystem } from '../../protocols/ssh/sftp/ChrootedSftpFileSystem';
@@ -184,6 +187,7 @@ const KNOWN_LINUX_COMMANDS: readonly string[] = [
   'chown', 'chgrp', 'ln', 'find', 'grep', 'egrep', 'fgrep', 'head', 'tail',
   'wc', 'sort', 'cut', 'uniq', 'tr', 'awk', 'sed', 'stat', 'test', 'mkfifo',
   'tee', 'basename', 'dirname', 'readlink', 'realpath', 'file', 'xargs', 'truncate',
+  'dd', 'fallocate', 'sync',
   'expr', 'seq', '[',
   'less', 'more', 'diff', 'cmp', 'patch',
   // Text streams
@@ -1043,6 +1047,7 @@ export class LinuxCommandExecutor {
   private registerHardwareProcFiles(): void {
     this.vfs.registerGeneratedFile('/proc/cpuinfo', () => this.hardware.cpu.toProcCpuinfo());
     this.vfs.registerGeneratedFile('/proc/meminfo', () => this.hardware.memory.toProcMeminfo());
+    this.vfs.registerGeneratedFile('/proc/swaps', () => renderProcSwaps(this.hardware.memory));
     this.vfs.registerGeneratedFile('/proc/mounts', () => this.mountTable.toProcMounts());
     this.vfs.registerGeneratedFile('/proc/self/mounts', () => this.mountTable.toProcMounts());
     this.vfs.registerGeneratedFile('/proc/self/mountinfo', () => this.mountTable.toMountInfo());
@@ -4892,6 +4897,9 @@ export class LinuxCommandExecutor {
       // `truncate` lives in `commands/fs/Truncate.ts` as a `LinuxCommand`;
       // this case only routes to it, so there is one implementation.
       case 'truncate': return runTruncate(this, args);
+      case 'dd': return runDd(this, args);
+      case 'fallocate': return runFallocate(this, args);
+      case 'sync': return { output: '', exitCode: 0 };
       // kill — send signal via process manager
       case 'kill': {
         this.publishSyscall('kill');

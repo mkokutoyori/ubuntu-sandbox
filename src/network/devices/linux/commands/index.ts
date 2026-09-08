@@ -93,6 +93,9 @@ import { chownCommand } from './fs/Chown';
 import { chgrpCommand } from './fs/Chgrp';
 import { chattrCommand, lsattrCommand } from './fs/Chattr';
 import { truncateCommand } from './fs/Truncate';
+import { ddCommand } from './fs/Dd';
+import { fallocateCommand } from './fs/Fallocate';
+import { syncCommand } from './fs/Sync';
 import { mountCommand } from './fs/Mount';
 import { umountCommand } from './fs/Umount';
 import { mkfsCommand, mkfsExt4Command, mkfsXfsCommand, mkfsBtrfsCommand } from './fs/Mkfs';
@@ -225,6 +228,9 @@ export {
   chattrCommand,
   lsattrCommand,
   truncateCommand,
+  ddCommand,
+  fallocateCommand,
+  syncCommand,
   mountCommand,
   umountCommand,
   mkfsCommand,
@@ -371,6 +377,9 @@ export const CORE_LINUX_COMMANDS: readonly LinuxCommand[] = [
   chattrCommand,
   lsattrCommand,
   truncateCommand,
+  ddCommand,
+  fallocateCommand,
+  syncCommand,
   mountCommand,
   umountCommand,
   mkfsCommand,

@@ -8619,3 +8619,85 @@ qu'un depannage cherche. Suites connexes : 54 fichiers, 867 cas, tous
 verts. `npm run typecheck` : 248 erreurs, comme sur la base. Un cas e2e
 Playwright confronte `systemctl`, `timedatectl` et `chronyc` dans le vrai
 terminal, avant et apres un arret.
+
+---
+
+## `dd`, `fallocate`, `sync` : occuper une place, et la voir occupee
+
+**Perimetre revendique** : `src/network/devices/linux/commands/fs/`
+(`Dd.ts`, `Fallocate.ts`, `Sync.ts` nouveaux),
+`src/network/devices/linux/commands/system/Swapon.ts`,
+`src/network/devices/linux/commands/index.ts`,
+`src/network/devices/linux/LinuxCommandExecutor.ts`.
+
+Mesure de depart sur un poste Linux ordinaire :
+
+```
+dd if=/dev/zero of=/tmp/x bs=1M count=8   dd: command not found
+fallocate -l 8M /tmp/y                    fallocate: command not found
+sync                                      sync: command not found
+cat /proc/swaps                           No such file or directory
+```
+
+`dd` est LA commande par laquelle on remplit un disque, on fabrique un
+fichier d'echange, on copie une image, on mesure un debit. Son absence
+laissait `truncate` seul, qui pose une taille mais ne copie rien. Et
+`/proc/swaps` manquait alors que `free` annonce 2 Gio d'echange et que
+`swapon -s` rendait deja EXACTEMENT ce tableau : une troisieme vue du
+meme fait, absente. Elle est desormais rendue par la meme fonction,
+`renderProcSwaps`, plutot que par une seconde ecriture.
+
+**L'autorite est un transcrit capture, pas une page de manuel.** La
+machine qui execute ce depot est une vraie GNU/Linux
+(`dd (coreutils) 9.4`), et les formats viennent de la. Trois regles en
+sortent qu'aucune documentation n'ecrit :
+
+```
+999 octets      999 bytes copied, ...
+1000 octets     1000 bytes (1.0 kB) copied, ...
+1024 octets     1024 bytes (1.0 kB, 1.0 KiB) copied, ...
+```
+
+La forme SI parait a 1000 octets, la forme IEC seulement a 1024. Le
+compte d'octets garde sa decimale sous 10 (`10 kB`, mais `9.8 KiB`), le
+DEBIT la garde jusqu'a 100 (`87.0 MB/s`, mais `511 kB/s`) — deux
+arrondis differents dans la meme ligne. Un bloc incomplet se compte a
+part (`0+1 records in` pour 11 octets lus par blocs de 512). Et la duree
+suit `%g` a six chiffres significatifs, donc exponentielle sous 1e-4
+(`3.9518e-05 s`). Cette duree est MESUREE (`performance.now()`), pas
+inventee : c'est le seul chiffre de la ligne qu'on puisse honnetement
+produire.
+
+**La taille passe par le joint que `truncate` avait deja ouvert** —
+`declaredSizeBytes` — donc `ls -l`, `du`, `stat` et `df` lisent un seul
+nombre, et un disque plein arrete vraiment la copie avec le mot du
+noyau (`dd: error writing '...': No space left on device`). Une source
+qui est un VRAI fichier est copiee pour de bon ; seul `/dev/zero` pose
+une taille sans contenu.
+
+**Rien n'est accepte sans effet** : une conversion inconnue
+(`dd: invalid conversion: 'x'`), un niveau de rapport inconnu
+(`dd: invalid status level: 'x'`), un nombre invalide
+(`dd: invalid number: 'abc'`) et un operande inconnu sont REFUSES, avec
+le `Try 'dd --help' for more information.` que la vraie commande ajoute.
+
+**`sync` ne fait rien, et c'est ecrit** : le VFS ecrit synchroniquement,
+il n'y a aucun tampon a vider. La commande existe parce qu'un operateur
+la tape apres `dd`, et qu'un `command not found` a cet endroit du geste
+ferait douter du geste entier.
+
+**Ce qui n'est PAS fait dans ce lot** : l'equivalent Windows
+(`fsutil file createnew`). La documentation Microsoft donne la syntaxe
+mais pas le texte exact de la confirmation, et la recherche n'etait pas
+joignable au moment d'ecrire ; plutot que d'inventer une phrase, le lot
+s'arrete a Linux, ou le transcrit est capture.
+
+**Discrimination** (`git stash push -- src/network`) :
+`probe-occuper-une-place-reelle.test.ts` (15 cas), 13 tombent contre
+l'etat d'avant. Les 2 autres sont les TEMOINS nommes dans l'en-tete :
+`truncate`, qui partage desormais son joint avec `dd` et `fallocate` et
+doit continuer de poser sa taille, et `swapon -s`, dont `/proc/swaps`
+reprend les chiffres. Suites connexes : 31 fichiers, 777 cas, tous
+verts. `npm run typecheck` : 248 erreurs, comme sur la base. Deux cas
+e2e Playwright verifient dans le vrai terminal que `dd`, `ls -l` et
+`du` comptent les memes huit mebioctets.

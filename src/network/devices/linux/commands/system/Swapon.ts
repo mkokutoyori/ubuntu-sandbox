@@ -34,6 +34,20 @@ function human(kib: number): string {
   return `${kib}K`;
 }
 
+/**
+ * Le tableau que le noyau expose dans `/proc/swaps`, et que `swapon -s`
+ * recopie tel quel — c'est d'ailleurs ce que fait le vrai `swapon`. Une
+ * seule ecriture, donc, pour les deux vues.
+ */
+export function renderProcSwaps(mem: { swapTotalKib: number; swapUsedKib: number }): string {
+  const entete = 'Filename\t\t\t\tType\t\tSize\t\tUsed\t\tPriority';
+  if (mem.swapTotalKib === 0) return `${entete}\n`;
+  return [
+    entete,
+    `/swapfile                               file\t\t${mem.swapTotalKib}\t\t${mem.swapUsedKib}\t\t-2`,
+  ].join('\n') + '\n';
+}
+
 export function runSwapon(ctx: LinuxCommandContext, args: string[]): { output: string; exitCode: number } {
   const mem = ctx.executor.hardware.memory;
   const summary = args.includes('-s') || args.includes('--summary');
@@ -54,13 +68,7 @@ export function runSwapon(ctx: LinuxCommandContext, args: string[]): { output: s
   if (mem.swapTotalKib === 0) return { output: '', exitCode: 0 };
 
   if (summary) {
-    return {
-      output: [
-        'Filename\t\t\t\tType\t\tSize\t\tUsed\t\tPriority',
-        `/swapfile                               file\t\t${mem.swapTotalKib}\t\t${mem.swapUsedKib}\t\t-2`,
-      ].join('\n'),
-      exitCode: 0,
-    };
+    return { output: renderProcSwaps(mem).replace(/\n$/, ''), exitCode: 0 };
   }
 
   // `--show` est la vue par défaut de swapon(8) depuis util-linux 2.26.
