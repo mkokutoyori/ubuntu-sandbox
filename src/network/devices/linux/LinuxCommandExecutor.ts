@@ -208,7 +208,7 @@ const KNOWN_LINUX_COMMANDS: readonly string[] = [
   'which', 'whereis', 'command', 'locate', 'updatedb', 'apropos', 'man', 'info',
   // System / processes / time
   'crontab', 'run-parts', 'at', 'atq', 'atrm', 'batch', 'anacron', 'systemd-analyze', 'clear', 'reset', 'date', 'uptime', 'umask', 'ulimit', 'true', 'false',
-  'runlevel', 'hostnamectl', 'timedatectl',
+  'runlevel', 'hostnamectl', 'timedatectl', 'localectl',
   'exit', 'help', 'ps', 'top', 'htop', 'free', 'vmstat', 'mpstat', 'pidstat', 'iostat', 'dstat', 'df', 'du', 'mount', 'umount', 'findmnt',
   'pkill', 'pgrep', 'pidof', 'killall', 'pgid',
   'systemctl', 'service', 'journalctl', 'dmesg', 'logrotate', 'lsof', 'fuser', 'nice', 'reboot', 'shutdown',
@@ -715,6 +715,21 @@ export class LinuxCommandExecutor {
     this.vfs.writeFile('/etc/machine-id', `${id.machineId}\n`, 0, 0, 0o022);
     this.vfs.writeFile('/etc/timezone', `${id.timezone}\n`, 0, 0, 0o022);
     this.vfs.writeFile('/etc/default/locale', id.toLocaleConf(), 0, 0, 0o022);
+    this.vfs.writeFile('/etc/default/keyboard', id.toKeyboardConf(), 0, 0, 0o022);
+    // PAM exporte `LANG` depuis `/etc/default/locale` a l'ouverture de
+    // session : sans cette ligne, `locale` et `$LANG` repondaient `C`
+    // sur une machine dont le fichier et l'identite disaient
+    // `en_US.UTF-8`.
+    this.env.set('LANG', id.locale);
+  }
+
+  /**
+   * Rejouer la projection de l'identite apres un changement — ce que
+   * `localectl` et `timedatectl` provoquent. Publique parce qu'elle est
+   * appelee depuis les commandes, qui n'ont que l'executeur.
+   */
+  projectIdentity(): void {
+    this.seedIdentityFiles();
   }
 
   /**

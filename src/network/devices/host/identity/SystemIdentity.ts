@@ -25,6 +25,12 @@ import { OsRelease } from './OsRelease';
 import { KernelInfo } from './KernelInfo';
 import { TimeZone } from '../../../core/time/TimeZone';
 
+/** Le clavier que Debian declare par defaut dans `/etc/default/keyboard`. */
+const X11_MODEL = 'pc105';
+
+/** Ce que la table verticale de systemd ecrit a la place d'un champ vide. */
+const UNSET = '(unset)';
+
 /** `hostnamectl` chassis classification. */
 export type ChassisClass =
   | 'desktop' | 'laptop' | 'server' | 'vm' | 'container' | 'tablet' | 'handset';
@@ -172,6 +178,38 @@ export class SystemIdentity {
   /** `LANG=`-style content of `/etc/default/locale`. */
   toLocaleConf(): string {
     return `LANG=${this.locale}\n`;
+  }
+
+  /** Le `/etc/default/keyboard` de Debian, que `localectl` lit pour X11. */
+  toKeyboardConf(): string {
+    return [
+      `XKBMODEL="${X11_MODEL}"`,
+      `XKBLAYOUT="${this.keymap}"`,
+      'XKBVARIANT=""',
+      'XKBOPTIONS=""',
+      '',
+      'BACKSPACE="guess"',
+      '',
+    ].join('\n');
+  }
+
+  /**
+   * Le rapport de `localectl status`. Les intitules et les champs
+   * conditionnels sont ceux de `print_status_info` (systemd v255,
+   * `src/locale/localectl.c`) : `VC Toggle Keymap`, `X11 Variant` et
+   * `X11 Options` ne paraissent que renseignes, et un champ vide rend
+   * `(unset)`. L'alignement est celui de `hostnamectl` ci-dessous, la
+   * vue soeur.
+   */
+  toLocalectl(): string {
+    const champs: Array<[string, string]> = [
+      ['System Locale', `LANG=${this.locale}`],
+      ['VC Keymap', UNSET],
+      ['X11 Layout', this.keymap],
+      ['X11 Model', X11_MODEL],
+    ];
+    const largeur = Math.max(...champs.map(([nom]) => nom.length)) + 2;
+    return champs.map(([nom, valeur]) => `${nom.padStart(largeur)}: ${valeur}`).join('\n');
   }
 
   /** Render the `hostnamectl` status report. */

@@ -8701,3 +8701,80 @@ reprend les chiffres. Suites connexes : 31 fichiers, 777 cas, tous
 verts. `npm run typecheck` : 248 erreurs, comme sur la base. Deux cas
 e2e Playwright verifient dans le vrai terminal que `dd`, `ls -l` et
 `du` comptent les memes huit mebioctets.
+
+---
+
+## Une machine a UNE locale, et toutes ses vues la disent
+
+**Perimetre revendique** : `src/network/devices/host/identity/SystemIdentity.ts`,
+`src/network/devices/linux/commands/system/Localectl.ts` (nouveau),
+`src/network/devices/linux/LinuxCommandExecutor.ts`,
+`src/network/devices/LinuxMachine.ts` (`openShellSession`),
+`src/network/devices/linux/service/CriticalFiles.ts`.
+
+Mesure de depart sur un poste Linux ordinaire :
+
+```
+cat /etc/default/locale   LANG=en_US.UTF-8
+SystemIdentity.locale     en_US.UTF-8
+locale                    LANG=            LC_CTYPE="C"
+echo $LANG                (vide)
+localectl                 localectl: command not found
+```
+
+Le fichier et l'identite s'accordent ; l'ENVIRONNEMENT et `locale`
+disaient autre chose, et la commande qui arbitre n'existait pas. Sur une
+vraie Ubuntu, PAM exporte `LANG` depuis `/etc/default/locale` a
+l'ouverture de session : tout ce qui lit `$LANG` — un script, un `date`,
+un message traduit — part du bon reglage. Ici il partait de rien.
+
+**Le trou etait a DEUX endroits**, et le second ne s'est vu qu'en e2e.
+L'executeur ne posait pas `LANG` dans son environnement (corrige dans la
+projection de l'identite, la ou `/etc/default/locale` est deja ecrit) ;
+et `openShellSession` n'heritait que de `PATH`, `HOME`, `USER`,
+`LOGNAME` et `SHELL`, si bien que le TERMINAL du canevas restait sans
+locale meme une fois l'executeur corrige. Le cas e2e est ce qui l'a
+montre : la sonde unitaire passait deja.
+
+**L'autorite.** Les intitules de `localectl status` sont EXTRAITS du
+binaire `/usr/bin/localectl` livre sur la machine qui execute ce depot
+(`strings`), et le comportement vient de `src/locale/localed.c` de
+systemd, lu a la source : les refus (`Locale %s not installed,
+refusing.`, `Locale assignment %s not valid, refusing.`, `Specified
+locale is not installed: %s`), la regle qui prend un nom seul pour
+`LANG`, et le `(unset)` d'un champ vide (`TABLE_ERSATZ_UNSET`,
+`src/shared/format-table.c`). Le client prefixe ces messages de
+`Failed to issue method call: `, template lui aussi extrait du binaire.
+
+**Un cas ecrit a l'aveugle etait FAUX, et la source l'a tranche.** Il
+exigeait `VC Keymap: us`. Sur une Debian le clavier est declare dans
+`/etc/default/keyboard` (XKBLAYOUT), pas dans la console virtuelle :
+`localectl` le rend sous `X11 Layout`, et `VC Keymap` reste `(unset)`.
+Le cas verifie desormais les deux, et `/etc/default/keyboard` est seme
+depuis la meme identite.
+
+**Ce qui est REFUSE plutot que fait semblant.** `/etc/locale.gen`
+n'est pas cree : `locale-gen` n'est pas modelise, et declarer le fichier
+sans savoir le jouer serait un critere range et jamais evalue (§6). La
+machine ne porte donc que les locales generees (`C`, `C.UTF-8`,
+`POSIX`, `en_US.UTF-8`), et `set-locale LANG=fr_FR.UTF-8` est refuse
+avec le mot de systemd — ce qui est aussi le comportement d'une vraie
+Ubuntu minimale.
+
+**Verifie avant d'y toucher, et laisse tel quel** : `systemd-analyze`
+sans verbe repond « Only 'calendar' and 'timespan' are simulated. » Ce
+n'est PAS un defaut a fermer. La forme longue de la commande rapporte
+des durees d'amorcage que systemd a mesurees ; ici rien n'est
+chronometre, et rendre « 1.129s (kernel) » serait une fiction de mesure.
+Le refus qui NOMME la brique manquante est deja la bonne reponse (§6).
+
+**Discrimination** (`git stash push -- src/network`) :
+`probe-une-seule-locale.test.ts` (12 cas), 9 tombent contre l'etat
+d'avant. Les 3 autres sont les TEMOINS nommes dans l'en-tete :
+`/etc/default/locale`, deja juste ; `hostnamectl`, la vue soeur dont
+l'alignement sert de modele ; et le droit de veto de `LC_ALL`, qui doit
+survivre au fait que `LANG` cesse d'etre vide. Suites connexes : 72
+fichiers, 2082 cas, tous verts. `npm run typecheck` : 248 erreurs,
+comme sur la base. Deux cas e2e Playwright confrontent `localectl`,
+`locale`, `$LANG` et `/etc/default/locale` dans le vrai terminal, avant
+et apres un changement.

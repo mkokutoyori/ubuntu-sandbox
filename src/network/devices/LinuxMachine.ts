@@ -4380,6 +4380,10 @@ export abstract class LinuxMachine extends EndHost
       env.set('USER', userName);
       env.set('LOGNAME', userName);
       env.set('SHELL', '/bin/bash');
+      // PAM exporte la locale du système à l'ouverture de session : sans
+      // elle, `locale` et `$LANG` répondaient `C` dans le terminal alors
+      // que `/etc/default/locale` et `localectl` disaient `en_US.UTF-8`.
+      env.set('LANG', this.executor.identity.locale);
     }
 
     const tty = this.tty.allocate();
