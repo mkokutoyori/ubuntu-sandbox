@@ -35,12 +35,27 @@
  * lignes depuis la injecterait 87 faits non verifies. `CLAUDE.md` §8 :
  * quand la source est injoignable, on le dit et on n'implante pas.
  *
- * Refuser est donc PLUS DUR qu'un vrai FortiGate, qui accepte ces index.
- * C'est assume : le §6 tranche que le silence permissif est le pire des
- * trois etats, et le refus NOMME les index implantes. Surtout, aucun
- * fuseau ne devient inatteignable — `set timezone Europe/Paris` passe
- * par le chemin IANA, que la table ne borne pas. C'est ce que verifie le
- * temoin.
+ * Refuser est donc PLUS DUR qu'un vrai FortiGate, qui accepte ces index,
+ * et c'est un ecart de fidelite assume. Il suit la convention que le
+ * depot applique deja partout ailleurs pour une valeur qu'un vrai
+ * boitier accepte et que le simulateur ne sait pas honorer :
+ * `unimplementedValues`, la meme porte que SIP, l'acceleration
+ * materielle ou les signatures FortiGuard. Le message le DIT — « exists
+ * on a real FortiGate » — au lieu de faire passer une limite du
+ * simulateur pour une faute de syntaxe. Un index hors plage, lui, reste
+ * une vraie faute et garde l'autre message : deux refus differents pour
+ * deux causes differentes.
+ *
+ * Surtout, aucun fuseau ne devient inatteignable — `set timezone
+ * Europe/Paris` passe par le chemin IANA, que la table ne borne pas.
+ * C'est ce que verifie le temoin.
+ *
+ * **Ce compromis a ete corrige APRES coup, et par une mesure.** La
+ * premiere version de ce lot refusait avec un simple « value parse
+ * error », et le balayage complet a fait tomber un cas du tutoriel
+ * FortiGate — ecrit a l'aveugle depuis le guide — qui tapait
+ * `set timezone 15`. C'etait le signe que le refus etait mal FORME, pas
+ * qu'il etait mal venu.
  *
  * ── Le dernier cas garde les lignes FUTURES ─────────────────────────
  *
@@ -114,13 +129,23 @@ describe('un index de fuseau que le simulateur n_implante pas', () => {
     expect(fw.getTimezone()).toBe('Europe/Paris');
   }, 30000);
 
-  it('le refus NOMME les index qui existent', async () => {
+  it('le refus dit que la valeur existe sur un VRAI boitier', async () => {
     const fw = await pareFeu();
 
     const reponse = await poser(fw, '55');
 
+    expect(reponse).toContain('exists on a real FortiGate');
     expect(reponse).toContain('12');
-    expect(reponse).toContain('26');
+    expect(reponse).toContain('Europe/Paris');
+  }, 30000);
+
+  it('un index hors plage est refuse AUTREMENT — c_est une faute, pas une limite', async () => {
+    const fw = await pareFeu();
+
+    const reponse = await poser(fw, '999');
+
+    expect(reponse).not.toContain('exists on a real FortiGate');
+    expect(reponse).toContain('<0-86>');
   }, 30000);
 
   it('la resolution elle-meme ne fabrique plus rien', () => {

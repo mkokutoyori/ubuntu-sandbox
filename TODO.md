@@ -538,8 +538,12 @@ libre au milieu, et une suite de methodes de longueur variable dont
 ### [horloge] 79 des 87 index de fuseau FortiOS ne sont pas implantes
 `set timezone 55` est un index VALIDE sur un vrai FortiGate. Ici, seuls
 huit index sont tabules (0, 1, 2, 3, 4, 12, 26, 27) ; les autres sont
-desormais REFUSES en nommant ceux qui existent, la ou ils etaient
-auparavant acceptes et valaient UTC en silence.
+desormais refuses par `unimplementedValues` — la porte que le depot
+emploie deja pour SIP, l'acceleration materielle ou les signatures
+FortiGuard — avec le message « exists on a real FortiGate », la ou ils
+etaient auparavant acceptes et valaient UTC en silence. Un index HORS
+plage garde l'autre refus, celui d'une vraie faute : deux causes, deux
+messages.
 
 **Mesure** : `resolveFortiTimezone` fabriquait
 `{ index, name: 'UTC', label: '(GMT) time zone 55' }` pour tout index de

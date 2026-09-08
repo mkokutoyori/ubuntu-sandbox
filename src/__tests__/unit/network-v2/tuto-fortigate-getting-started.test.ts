@@ -176,10 +176,36 @@ describe('Partie 6.1 — `config system global`', () => {
     expect(fw.getPrompt?.() ?? '').toContain('FW-BANQUE-01');
   });
 
-  it('`set timezone 15` est accepte', async () => {
+  /*
+   * `set timezone 15` etait ici parce que le tutoriel le fait taper, et
+   * un vrai FortiGate l'accepte. Ce simulateur ne tabule que huit des
+   * quatre-vingt-sept index, faute d'une source atteignable donnant la
+   * correspondance index -> fuseau (voir `TODO.md`). Le cas mesurait
+   * donc une acceptation qui, jusqu'au lot T5, voulait dire UTC en
+   * SILENCE : la configuration affichait `timezone: 15` pendant que
+   * l'horloge, les journaux et les horaires etaient a UTC.
+   *
+   * La convention du depot pour une valeur qu'un vrai boitier accepte et
+   * que le simulateur ne sait pas honorer est de la REFUSER en le
+   * disant — c'est `unimplementedValues`, la meme porte que SIP,
+   * l'acceleration materielle ou les signatures FortiGuard. Le cas suit
+   * cette convention plutot que l'acceptation muette, et son jumeau
+   * garde ce qui compte pour le lecteur du tutoriel : regler son fuseau
+   * reste possible, par le nom IANA.
+   */
+  it('`set timezone 15` est refuse EN LE DISANT, pas en valant UTC', async () => {
     const fw = await fortigate('config system global');
 
-    expect(refuse(await fw.executeCommand('set timezone 15'))).toBe(false);
+    const reponse = await fw.executeCommand('set timezone 15');
+
+    expect(reponse).toContain('exists on a real FortiGate');
+    expect(reponse).toContain('Europe/Paris');
+  });
+
+  it('et le lecteur peut regler son fuseau malgre tout', async () => {
+    const fw = await fortigate('config system global');
+
+    expect(refuse(await fw.executeCommand('set timezone Europe/Paris'))).toBe(false);
   });
 
   it('un parametre inconnu est REFUSE — sinon un reglage se perd en silence', async () => {
