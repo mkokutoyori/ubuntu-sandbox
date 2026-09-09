@@ -1,4 +1,7 @@
 import { InfoCenterConfig, type InfoCenterError } from './InfoCenterConfig';
+import { vrpDatetimeToEpochMs } from '../../shells/huawei/huaweiClockDatetime';
+import { parseVrpDaylightSaving } from '../../shells/huawei/huaweiDaylightSaving';
+import { DeviceClockStore, type DeviceClockConfig } from '../../../core/time/DeviceClock';
 
 export interface RawConfigEntry {
   feature: string;
@@ -31,15 +34,9 @@ export class RouterManagementService {
     masterStratum: undefined as number | undefined,
     refclock: '',
   };
-  private readonly clockCfg = {
-    timezone: 'UTC',
-    offsetMin: 0,
-    summerTimezone: '',
-    summerKind: 'recurring' as 'recurring' | 'date',
-    daylightStart: '',
-    daylightEnd: '',
-    daylightOffsetMin: 60,
-  };
+  constructor(private readonly clockStore: DeviceClockStore = new DeviceClockStore()) {}
+
+  getClockStore(): DeviceClockStore { return this.clockStore; }
   private readonly infoCenter = new InfoCenterConfig();
   private readonly sflow = {
     enabled: false,
@@ -110,17 +107,19 @@ export class RouterManagementService {
   }
   getNtp(): typeof this.ntpService { return this.ntpService; }
 
-  configureClock(args: string[]): void {
+  configureClock(args: string[]): number | string | null {
     const head = (args[0] ?? '').toLowerCase();
+    if (head === 'datetime') return vrpDatetimeToEpochMs(args.slice(1));
     if (head === 'daylight-saving-time') {
-      this.clockCfg.summerTimezone = args[1] ?? '';
-      this.clockCfg.daylightStart = args.slice(3, 6).join(' ');
-      this.clockCfg.daylightEnd = args.slice(7, 10).join(' ');
+      const verdict = parseVrpDaylightSaving(args.slice(1));
+      if (!verdict.rule) return verdict.badToken ?? '';
+      this.clockStore.setSummer(verdict.rule);
     } else {
       this.recordRaw('clock', args.join(' '));
     }
+    return null;
   }
-  getClock(): typeof this.clockCfg { return this.clockCfg; }
+  getClock(): DeviceClockConfig { return this.clockStore.get(); }
 
   /**
    * `info-center …` / `undo info-center …`.

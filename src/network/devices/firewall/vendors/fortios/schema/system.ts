@@ -7,7 +7,7 @@ import {
 import {
   MANAGEMENT_SERVICES, type ManagementService,
 } from '../../../mgmt/ManagementAccess';
-import { resolveFortiTimezone } from './timezones';
+import { resolveFortiTimezone, unimplementedFortiIndexes } from './timezones';
 import { parseIpv6Prefix } from '../../../../../core/Ipv6Arithmetic';
 import { CONSOLE_BAUD_RATES } from '../../../mgmt/ConsoleSettings';
 import { ADMIN_DISCLAIMER_MESSAGES } from '../../../mgmt/LoginBanners';
@@ -153,6 +153,7 @@ export const SYSTEM_GLOBAL: FortiTableSpec = {
       defaultValue: ['4'],
       acceptsValue: (value) => resolveFortiTimezone(value) !== null,
       expectedValue: 'a time zone index <0-86> or an IANA name such as `Europe/Paris`.',
+      unimplementedValues: unimplementedFortiIndexes(),
     },
     enable('pre-login-banner',
       'Enable/disable the disclaimer shown before the login prompt.'),

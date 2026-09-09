@@ -195,6 +195,7 @@ export const STANDARD_BIN_PATHS: Readonly<Record<string, string>> = {
   chronyd: '/usr/sbin/chronyd',
   lldpd: '/usr/sbin/lldpd', lldpcli: '/usr/sbin/lldpcli',
   timedatectl: '/usr/bin/timedatectl',
+  localectl: '/usr/bin/localectl',
   wget: '/usr/bin/wget', ping: '/bin/ping', ssh: '/usr/bin/ssh', scp: '/usr/bin/scp',
   sftp: '/usr/bin/sftp', ip: '/sbin/ip', ifconfig: '/sbin/ifconfig',
   netstat: '/bin/netstat', ss: '/usr/sbin/ss', iptables: '/usr/sbin/iptables',

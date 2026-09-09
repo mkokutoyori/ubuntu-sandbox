@@ -23,6 +23,13 @@ import type { IEventBus } from '@/events/EventBus';
 import type { HostIdentityField } from '../events';
 import { OsRelease } from './OsRelease';
 import { KernelInfo } from './KernelInfo';
+import { TimeZone } from '../../../core/time/TimeZone';
+
+/** Le clavier que Debian declare par defaut dans `/etc/default/keyboard`. */
+const X11_MODEL = 'pc105';
+
+/** Ce que la table verticale de systemd ecrit a la place d'un champ vide. */
+const UNSET = '(unset)';
 
 /** `hostnamectl` chassis classification. */
 export type ChassisClass =
@@ -146,6 +153,10 @@ export class SystemIdentity {
 
   // ─── Mutators (publish host.identity.changed) ──────────────────────────
 
+  getTimeZone(): TimeZone {
+    return TimeZone.parse(this.timezone) ?? TimeZone.UTC;
+  }
+
   setTimezone(timezone: string): void {
     this.change('timezone', this.timezone, timezone, () => { this.timezone = timezone; });
   }
@@ -169,6 +180,59 @@ export class SystemIdentity {
     return `LANG=${this.locale}\n`;
   }
 
+  /**
+   * La banniere que le MOTD, `/etc/issue` et la connexion SSH portent.
+   * Elle etait ecrite QUATRE fois en dur — avec un `5.15.0-91-generic`
+   * et un `Ubuntu 22.04.3 LTS` que ni `uname -r` ni `lsb_release` ne
+   * disaient : un operateur qui ouvrait une session lisait une machine,
+   * et `uname -a` lui en montrait une autre.
+   */
+  welcomeBanner(): string {
+    return `Welcome to ${this.os.prettyName} (GNU/Linux ${this.kernel.release} ${this.kernel.machine})`;
+  }
+
+  /** `/etc/issue`, ce que getty imprime avant l'invite de connexion. */
+  toIssue(): string {
+    return `${this.os.prettyName} \\n \\l\n\n`;
+  }
+
+  /** `/etc/issue.net`, la meme sans les echappements de getty. */
+  toIssueNet(): string {
+    return `${this.os.prettyName}\n`;
+  }
+
+  /** Le `/etc/default/keyboard` de Debian, que `localectl` lit pour X11. */
+  toKeyboardConf(): string {
+    return [
+      `XKBMODEL="${X11_MODEL}"`,
+      `XKBLAYOUT="${this.keymap}"`,
+      'XKBVARIANT=""',
+      'XKBOPTIONS=""',
+      '',
+      'BACKSPACE="guess"',
+      '',
+    ].join('\n');
+  }
+
+  /**
+   * Le rapport de `localectl status`. Les intitules et les champs
+   * conditionnels sont ceux de `print_status_info` (systemd v255,
+   * `src/locale/localectl.c`) : `VC Toggle Keymap`, `X11 Variant` et
+   * `X11 Options` ne paraissent que renseignes, et un champ vide rend
+   * `(unset)`. L'alignement est celui de `hostnamectl` ci-dessous, la
+   * vue soeur.
+   */
+  toLocalectl(): string {
+    const champs: Array<[string, string]> = [
+      ['System Locale', `LANG=${this.locale}`],
+      ['VC Keymap', UNSET],
+      ['X11 Layout', this.keymap],
+      ['X11 Model', X11_MODEL],
+    ];
+    const largeur = Math.max(...champs.map(([nom]) => nom.length)) + 2;
+    return champs.map(([nom, valeur]) => `${nom.padStart(largeur)}: ${valeur}`).join('\n');
+  }
+
   /** Render the `hostnamectl` status report. */
   toHostnamectl(hostname: string): string {
     return [
@@ -184,20 +248,6 @@ export class SystemIdentity {
     ].join('\n');
   }
 
-  /** Render the `timedatectl` status report. */
-  toTimedatectl(now: Date = new Date()): string {
-    const stamp = formatTimestamp(now);
-    return [
-      `               Local time: ${stamp} UTC`,
-      `           Universal time: ${stamp} UTC`,
-      `                 RTC time: ${stamp}`,
-      `                Time zone: ${this.timezone} (UTC, +0000)`,
-      `System clock synchronized: yes`,
-      `              NTP service: active`,
-      `          RTC in local TZ: no`,
-    ].join('\n');
-  }
-
   // ─── Internals ─────────────────────────────────────────────────────────
 
   private change(field: HostIdentityField, from: string, to: string, apply: () => void): void {
@@ -208,13 +258,4 @@ export class SystemIdentity {
       payload: { deviceId: this.deviceId, field, from, to },
     });
   }
-}
-
-const WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-
-/** `Tue 2026-05-21 14:00:00` — the `timedatectl` timestamp shape. */
-function formatTimestamp(d: Date): string {
-  const pad = (n: number): string => String(n).padStart(2, '0');
-  return `${WEEKDAYS[d.getUTCDay()]} ${d.getUTCFullYear()}-${pad(d.getUTCMonth() + 1)}-` +
-    `${pad(d.getUTCDate())} ${pad(d.getUTCHours())}:${pad(d.getUTCMinutes())}:${pad(d.getUTCSeconds())}`;
 }

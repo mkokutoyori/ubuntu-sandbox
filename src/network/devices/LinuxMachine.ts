@@ -1110,13 +1110,13 @@ export abstract class LinuxMachine extends EndHost
         // par minute. Le fichier fait foi, comme sur un vrai système : il
         // est ce que `SystemCron` lit, et ce qu'un `vim` sur le spool
         // modifierait.
-        sources: [new SystemCron(this.executor.vfs)],
+        sources: [new SystemCron(this.executor.vfs, () => this.executor.identity.getTimeZone())],
         runner: (command, ctx) => this.runCronJob(command, ctx),
         syslog: (tag, message) => this.executor.logMgr.logDaemon(tag, message),
         deliverMail: (recipient, body) => this.deliverCronMail(recipient, body),
         homeFor: (user) => this.executor.userMgr.getUser(user)?.home ?? (user === 'root' ? '/root' : `/home/${user}`),
         hostname: (this.executor.vfs.readFile('/etc/hostname') ?? this.name).trim(),
-        now: () => new Date(),
+        now: () => this.executor.simulatedDate(),
       });
     }
     return this._cronEngine;
@@ -1128,7 +1128,7 @@ export abstract class LinuxMachine extends EndHost
     this.cronTick();
   }
 
-  cronTick(at: Date = new Date()): void {
+  cronTick(at: Date = this.executor.simulatedDate()): void {
     const engine = this.getCronEngine();
     const active = this.isServiceActive('cron');
     if (active && !engine.isRunning) engine.start();
@@ -1172,7 +1172,7 @@ export abstract class LinuxMachine extends EndHost
   private deliverCronMail(recipient: string, body: string): void {
     const entry = this.executor.userMgr.getUser(recipient);
     const host = (this.executor.vfs.readFile('/etc/hostname') ?? this.name).trim();
-    const envelope = `From cron@${host}  ${formatCtime(new Date())}\n`;
+    const envelope = `From cron@${host}  ${formatCtime(this.executor.simulatedDate())}\n`;
     this.executor.vfs.writeFile(`/var/mail/${recipient}`, envelope + body + '\n', entry?.uid ?? 0, entry?.gid ?? 0, 0o022, true);
   }
 
@@ -1410,6 +1410,7 @@ export abstract class LinuxMachine extends EndHost
 
   /** Le démon chrony — `null` avant l'amorçage. */
   chronyService: LinuxChronyService | null = null;
+  private ntpPortBound = false;
 
   /**
    * chrony (`docs/PRD-NTP-Tutoriel.md` §4) — le paquet était déclaré
@@ -1441,8 +1442,14 @@ export abstract class LinuxMachine extends EndHost
     this.chronyService = new LinuxChronyService({
       readFile: (p) => vfs.readFile(p),
       ntp: () => this.getNtpAgent(),
+      bindNtpPort: (port) => this.ntpPortBound
+        || (this.ntpPortBound = this.udpBind(port, ({ inPort, sourceIP, udp }) => {
+          this.getNtpAgent().handleUdp(inPort, sourceIP as IPAddress, udp);
+        }, 'chronyd')),
+      releaseNtpPort: (port) => { this.udpClose(port); this.ntpPortBound = false; },
     });
     this.executor.chronyService = this.chronyService;
+    this.executor.registerServiceSocketServer('chrony', this.chronyService);
     this.executor.ntpAgent = () => this.getNtpAgent();
     this.executor.dnsUpdateSender = () => (server, request, key) =>
       sendDynamicUpdate(this, server, request, 2000, key);
@@ -1600,17 +1607,15 @@ export abstract class LinuxMachine extends EndHost
   private initSshFiles(): void {
     this.getSshServerContext();
     const vfs = this.executor.vfs;
+    const id = this.executor.identity;
     if (!vfs.exists('/etc/motd')) {
-      vfs.writeFile(
-        '/etc/motd',
-        `Welcome to Ubuntu 22.04.3 LTS (GNU/Linux 5.15.0-91-generic x86_64)\n`,
-        0,
-        0,
-        0o022,
-      );
+      vfs.writeFile('/etc/motd', `${id.welcomeBanner()}\n`, 0, 0, 0o022);
+    }
+    if (!vfs.exists('/etc/issue')) {
+      vfs.writeFile('/etc/issue', id.toIssue(), 0, 0, 0o022);
     }
     if (!vfs.exists('/etc/issue.net')) {
-      vfs.writeFile('/etc/issue.net', 'Ubuntu 22.04.3 LTS\n', 0, 0, 0o022);
+      vfs.writeFile('/etc/issue.net', id.toIssueNet(), 0, 0, 0o022);
     }
   }
 
@@ -1675,8 +1680,18 @@ export abstract class LinuxMachine extends EndHost
   private static readonly SSHD_BANNER = SSH_SERVER_IDENTIFICATION_LINE;
   private static readonly SSHD_ADDRESSES = ['0.0.0.0', '::'] as const;
 
+  /**
+   * Le pid du demon sshd, lu dans la TABLE DES PROCESSUS. L'ecoute en
+   * portait une copie ecrite en dur, si bien que `ss -tlnp` annoncait
+   * un pid que ni `ps` ni `systemctl status ssh` ne connaissaient.
+   */
+  private sshdPid(): number {
+    return this.executor.processMgr.list({ comm: 'sshd' })[0]?.pid ?? LinuxMachine.SSHD_PID;
+  }
+
   private attachSshTcpListeners(): void {
     const stack = this.getTcpStack();
+    const pid = this.sshdPid();
     const desired = new Set(this.sshdPortsFromConfig());
     for (const port of this._sshdActivePorts) {
       if (!desired.has(port)) {
@@ -1690,12 +1705,12 @@ export abstract class LinuxMachine extends EndHost
         try {
           stack.listen(port, {
             identity: {
-              pid: LinuxMachine.SSHD_PID,
+              pid,
               processName: 'sshd',
               banner: LinuxMachine.SSHD_BANNER,
             },
             onAccept: (socket) => {
-              stack.setSocketOwner(socket, LinuxMachine.SSHD_PID);
+              stack.setSocketOwner(socket, pid);
               this.getSshServerHandler().register(socket as unknown as TcpStream, socket.remoteIp);
             },
           }, addr);
@@ -1972,7 +1987,7 @@ export abstract class LinuxMachine extends EndHost
 
   sshBanner(): string {
     const issue = this.executor.vfs.readFile('/etc/issue.net') ?? '';
-    return issue.replace(/\n*$/, '') || `Welcome to Ubuntu 22.04.3 LTS (GNU/Linux 5.15.0-91-generic x86_64)`;
+    return issue.replace(/\n*$/, '') || this.executor.identity.welcomeBanner();
   }
 
   async runSshCommand(
@@ -2137,6 +2152,7 @@ export abstract class LinuxMachine extends EndHost
         table: this.sessionTable,
         utmp: this.utmpSync,
         bootDate: this.executor.lifecycle.bootedAt(),
+        kernelRelease: this.executor.identity.kernel.release,
         now: new Date(),
       }, argv.slice(1));
     }
@@ -4373,6 +4389,10 @@ export abstract class LinuxMachine extends EndHost
       env.set('USER', userName);
       env.set('LOGNAME', userName);
       env.set('SHELL', '/bin/bash');
+      // PAM exporte la locale du système à l'ouverture de session : sans
+      // elle, `locale` et `$LANG` répondaient `C` dans le terminal alors
+      // que `/etc/default/locale` et `localectl` disaient `en_US.UTF-8`.
+      env.set('LANG', this.executor.identity.locale);
     }
 
     const tty = this.tty.allocate();

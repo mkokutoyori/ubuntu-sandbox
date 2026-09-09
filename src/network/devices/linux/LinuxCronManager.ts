@@ -1,4 +1,4 @@
-import { CronSchedule, CronJob } from './cron/CronSchedule';
+import { CronJob } from './cron/CronSchedule';
 import { parseCrontab } from './cron/CrontabParser';
 
 export { CronSchedule, CronJob } from './cron/CronSchedule';
@@ -55,17 +55,4 @@ export class LinuxCronManager {
     return [...this.tables.keys()];
   }
 
-  allJobs(): CronJob[] {
-    const out: CronJob[] = [];
-    for (const table of this.tables.values()) out.push(...table.jobs);
-    return out;
-  }
-
-  dueJobs(at: Date = new Date()): CronJob[] {
-    return this.allJobs().filter((j) => !j.schedule.isReboot && j.schedule.isDue(at));
-  }
-
-  rebootJobs(): CronJob[] {
-    return this.allJobs().filter((j) => j.schedule.isReboot);
-  }
 }

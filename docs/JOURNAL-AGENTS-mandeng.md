@@ -8049,3 +8049,1676 @@ l'en-tete — la salutation d'OpenSSH et un port ferme — et leur role est
 de prouver que donner une seconde sonde a `-sV` n'a pas casse la
 premiere. Un cas e2e Playwright balaye un nginx en `-sV` et retrouve la
 requete `GET / HTTP/1.0` dans la capture de la cible.
+
+---
+
+## `--iflist` decrit la machine, `-e` choisit la carte d'emission
+
+**Perimetre revendique** : `src/network/scan/nmap/` (`NmapIfList` —
+nouveau, `NmapOptions`, `NmapRun`, `NmapProbes`),
+`src/network/tcp/TcpStack.ts`,
+`src/network/devices/{WindowsPC,linux/commands/net/Nmap}.ts`.
+
+Les deux options etaient refusees comme non implantees alors que TOUTE
+la matiere existe : la machine porte ses interfaces, leurs adresses,
+leurs MTU, leurs adresses de couche lien et sa table de routage, et
+`ip addr` / `ip route` les rendent deja. Ce qui manquait etait la porte,
+pas le moteur — la forme que ce depot referme regulierement.
+
+**`--iflist` rend deux tableaux et SORT** (`nmap.cc:1958` appelle
+`print_iflist()` puis `exit(0)`), donc aucune sonde n'est emise meme
+lorsqu'une cible est nommee. Les colonnes sont celles d'`output.cc:294` :
+`DEV (SHORT) IP/MASK TYPE UP MTU MAC` puis
+`DST/MASK DEV METRIC GATEWAY`, la colonne MAC restant vide pour ce qui
+n'est pas ethernet.
+
+**La mise en page N'A PAS ete redessinee a la main** : celle de
+`NmapOutputTable::printableTable` (`NmapOutputTable.cc:203`) — largeur
+de colonne = plus longue cellule, un blanc de separation, aucun blanc de
+fin — est EXACTEMENT `NMAP_TABLE` du module de tableaux du depot, dont
+l'en-tete cite deja `NmapOutputTable` et que la section `TRACEROUTE`
+emploie. Une seconde ecriture aurait ete le defaut que ce module existe
+pour empecher.
+
+**`interfacesOf` lit `Equipment.getPorts()`, donc les deux plateformes
+partagent une seule implantation** plutot qu'un shim chacune ; `routes()`
+de meme, `getRoutingTable()` etant declare sur `EndHost` et donc porte
+par le poste Linux comme par le poste Windows. **La boucle est remontee
+en tete de liste** pour que `--iflist` et `ip addr` s'accordent sur
+l'ordre : `getPorts()` la place en dernier, decision de CABLAGE mesuree
+ailleurs dans ce depot, et deux vues d'une meme liste ne doivent pas se
+contredire.
+
+**`-e` DEDUIT l'adresse source du peripherique** (`nmap.cc:1756`) et
+refuse par « I cannot figure out what source address to use for device
+%s, does it even exist? » quand il n'existe pas ou n'a pas d'adresse.
+`ScanProbeShape.iface` force l'egress dans `resolveEgress`, ce qu'une
+machine a deux cartes sur le meme segment rend observable : l'adresse de
+couche lien SOURCE que voit la cible change. `-e` ne fait
+DELIBEREMENT pas partie des options « brutes » qui declenchent
+l'avertissement de balayage connecte — `nmap.cc:1074` ne pose pas
+`raw_scan_options` pour elle.
+
+**Discrimination** : `probe-nmap-interface.test.ts` (9 cas), 7 tombent
+contre l'etat d'avant. Les 2 autres sont nommes dans l'en-tete — le
+TEMOIN sans `-e`, et « aucune sonde n'est emise », qui passait avant
+pour une raison qui ne prouve rien puisque l'option entiere etait
+refusee. Un cas e2e Playwright tape `--iflist`, `-e eth0` et
+`-e zorglub` dans le vrai terminal.
+
+---
+
+## Un port se RETIRE, et `--allports` n'annule pas l'exclusion qu'on croit
+
+**Perimetre revendique** : `src/network/scan/nmap/`
+(`NmapOptions`, `ScanEngine`, `ServiceProbes`),
+`src/network/devices/linux/commands/net/Nmap.ts`.
+
+`--exclude-ports` et `--allports` etaient toutes deux refusees comme non
+implantees, et ce sont DEUX exclusions differentes — les confondre etait
+le defaut a ne pas commettre, et c'est le genre de raccourci qu'une
+lecture rapide du manuel produit.
+
+**`--exclude-ports` retire du BALAYAGE.** `nmap.cc:1709` appelle
+`removepts` APRES toute la selection de ports, donc l'exclusion mord
+quelle que soit la facon dont les ports ont ete choisis — `-p`, `-F`,
+`--top-ports`. `effectivePorts` est le point unique ou ce depot decide
+les ports, donc une seule ligne y suffit. La grammaire est celle de
+`-p`, prefixes `T:`/`U:` compris, que `parsePortSpec` savait deja lire.
+Deux occurrences sont un refus (`nmap.cc:980`).
+
+**`--allports` ne retire rien : il ANNULE, et pas l'exclusion de
+l'operateur.** Ce qu'il court-circuite (`service_scan.cc:1444` et
+`:2809`) est la directive `Exclude` de `nmap-service-probes` — une seule
+ligne, `Exclude T:9100-9107` (ligne 29 du fichier) — c'est-a-dire les
+ports que la table des sondes demande de ne JAMAIS soumettre a la
+detection de version, historiquement les imprimantes qu'une sonde HTTP
+fait imprimer des pages de charabia. Un cas de la sonde epingle que
+`--allports` ne fait revenir aucun port qu'`--exclude-ports` a retire :
+les deux options ne se croisent nulle part.
+
+**Discrimination** : `probe-nmap-ports-exclus.test.ts` (9 cas), 6
+tombent contre l'etat d'avant. Les 3 autres sont nommes dans l'en-tete —
+le TEMOIN, le cas du port 9200 qui garde le lot precedent, et
+« l'exclusion s'applique aussi a un choix par -F », qui passait avant
+pour une raison qui ne prouve rien puisque l'option entiere etait
+refusee et qu'aucun port n'etait donc rendu. Un cas e2e Playwright
+compare le meme balayage avec et sans l'exclusion.
+
+---
+
+## Le port 123 est TENU par un demon, ou il est ferme
+
+**Perimetre revendique** : `src/network/devices/EndHost.ts`,
+`src/network/devices/{LinuxMachine,WindowsPC}.ts`,
+`src/network/devices/linux/time/LinuxChronyService.ts`,
+`src/network/devices/linux/LinuxServiceManager.ts`.
+
+Trouve en BALAYANT une machine plutot qu'en lisant du code : `nmap -sU`
+rendait `123/udp open|filtered` sur un hote dont `ss -lun` n'annoncait
+rien sur ce port. Trois vues de la meme machine se contredisaient au
+meme instant — `systemctl` disait chrony `running`, `ss` ne montrait
+rien, et le datagramme etait AVALE en silence sur le fil.
+
+**La cause** : `EndHost.deliverUDP` portait un aiguillage code en dur,
+`if (udp.destinationPort === 123)`, qui remettait le datagramme a l'agent
+NTP sans que rien n'ait jamais LIE le port. Aucune consequence n'est
+cosmetique : `ss` et `netstat` niaient un service qui tourne ; le port ne
+repondait pas ICMP port unreachable non plus, donc il n'etait ni ouvert
+ni ferme ; et un `udpBind(123)` par n'importe quoi d'autre etait ACCEPTE
+puis ombre par l'aiguillage — accepte et inerte, exactement le defaut que
+le plan de controle d'un routeur a deja referme avec
+`controlPlaneUdpClaims`. L'en-tete de `ServiceSocketServer` nommait deja
+la regle dans l'autre sens (« un port affiche doit etre joignable ») ;
+ici c'etait un port JOIGNABLE et NON AFFICHE.
+
+**Le correctif emprunte le mecanisme existant** plutot que d'en ecrire
+un : `chrony` entre dans `SERVICE_LISTENERS` avec `123/udp`,
+`LinuxChronyService` realise `ServiceSocketServer`, et l'aiguillage code
+en dur DISPARAIT. Donc `systemctl stop chrony` rend vraiment le port —
+`ss` le perd, la machine repond ICMP port unreachable, et `nmap` le lit
+`closed`.
+
+**Deux choses que la mesure a imposees, et qu'une lecture n'aurait pas
+donnees.** (1) Le demon doit lier son port AVANT de sonder : la
+projection de ports appelle `open()` APRES le demarrage de l'unite, si
+bien que les rafales `iburst` partaient et que leurs reponses arrivaient
+sur un port pas encore lie — seize cas de tutoriel sont tombes la-dessus.
+`start()` lie donc lui-meme, et `open()` est idempotent, ce qui est
+exactement le chemin que `systemd-resolved` emprunte deja. (2) Windows
+n'a pas chrony : l'aiguillage retire, `w32tm` a cesse de fonctionner
+d'un coup. `WindowsPC` lie 123 sous `svchost` a la creation de son agent,
+ce que fait un vrai W32Time.
+
+**Corrige dans un test plutot que dans le code** :
+`tcp-ip-phase4-transit-udp` liait 123 sur l'hote de destination pour
+verifier qu'un ROUTEUR ne mange pas le transit — premisse qui n'etait
+vraie que parce que personne ne tenait le port. Il arrete le demon
+d'abord, ce que ferait un operateur, et verifie desormais que la liaison
+a REUSSI.
+
+**Divergence assumee et ecrite** : un vrai `chronyd` en mode client
+n'occupe pas `0.0.0.0:123` — il emet depuis un port ephemere. Le moteur
+NTP de ce depot est PARTAGE avec les routeurs, ou l'echange est 123 vers
+123, et il emet donc depuis 123 comme `ntpd`. C'est ce que la machine
+FAIT, et c'est cela que `ss` doit decrire.
+
+**Discrimination** : `probe-ntp-port-est-lie.test.ts` (7 cas), 5 tombent
+contre l'etat d'avant. Les 2 autres sont les TEMOINS — un port UDP que
+personne ne tient, qui repondait deja `closed`.
+
+---
+
+## `netstat` dit d'UDP ce qu'UDP est, et Windows ne nomme pas un demon Linux
+
+**Perimetre revendique** : `src/network/devices/windows/WinFileCommands.ts`,
+`src/network/dns/transport/MulticastDnsTransport.ts`,
+`src/network/{llmnr,mdns}/types.ts`,
+`src/network/devices/{EndHost,WindowsPC}.ts`.
+
+Trouve en balayant un poste Windows au nmap puis en comparant le rapport
+a ce que la machine dit d'elle-meme :
+
+```
+  UDP    0.0.0.0:5355          0.0.0.0:0             LISTENING
+```
+
+**Trois choses fausses sur une seule ligne**, et la documentation de
+Microsoft tranche les deux premieres : « State — Indicates the state of a
+TCP CONNECTION », donc une ligne UDP n'a pas d'etat ; et « If the port is
+not yet established, the port number is shown as an asterisk », d'ou le
+`*:*` d'une socket UDP a l'ecoute. La troisieme est l'adresse LOCALE,
+ecrite `0.0.0.0:` EN DUR — une socket liee a une adresse precise etait
+rendue comme si elle ecoutait partout, c'est-a-dire le contraire de ce
+qu'elle fait.
+
+S'y ajoutaient deux options acceptees et jetees : `-o`, qui doit ajouter
+la colonne PID, et `-p <proto>`, qui doit ne montrer QUE ce protocole
+(`tcp`, `udp`, `tcpv6`, `udpv6`).
+
+**La mise en page passe par le module de tableaux du depot** plutot que
+par des `padEnd` comptes a la main, dont les colonnes de donnees
+tombaient un cran avant celles de l'en-tete. Les largeurs sont celles de
+Windows (Proto 7, Local 23, Foreign 23, State 16) et portent leur propre
+blanc, donc `FIXED_TABLE` — exactement ce que ce style existe pour dire.
+
+**Le demon qui n'etait pas le bon** : `Get-NetUDPEndpoint` sur un poste
+WINDOWS rendait `ProcessName: systemd-resolved`. Le nom vivait dans
+`llmnr/types.ts` et `mdns/types.ts`, c'est-a-dire dans le PROTOCOLE,
+alors qu'il nomme le DEMON de la plateforme. Il est retire des deux
+declarations — donc il n'est plus ecrit deux fois — et vient desormais de
+l'hote : `systemd-resolved` sous Linux, `svchost` sous Windows.
+
+**Corrige dans un test plutot que dans le code** :
+`windows-portproxy-relay` epinglait `0.0.0.0:8080` pour une ecoute liee a
+`10.0.0.2`, et son propre commentaire appelait cela « a pre-existing,
+unrelated quirk » — c'etait le defaut d'adresse, encode comme contrat. Il
+attend desormais l'adresse reelle, et le commentaire part avec.
+
+**Discrimination** : `probe-netstat-windows-udp.test.ts` (10 cas), 7
+tombent contre l'etat d'avant. Les 3 autres sont nommes dans l'en-tete —
+la ligne TCP, deja juste ; le nom du demon sous Linux, deja juste ; et
+« sans -o, pas de colonne PID », qui passait parce que la colonne
+n'existait dans aucun cas. Deux cas e2e Playwright verifient l'alignement
+et les options dans le vrai terminal ; la ligne `*:*` reste a la sonde
+unitaire, le poste Windows du navigateur ne tenant aucune socket UDP.
+
+---
+
+## Un poste Windows du canevas repond au lien local
+
+**Perimetre revendique** : `src/network/devices/WindowsPC.ts`.
+
+Trouve en montant un segment sur le CHEMIN DE L'APPLICATION plutot que
+sur celui des tests. Les equipements du canevas sont construits par
+`createDevice`, qui n'appelle jamais `powerOn()` — un equipement nait
+deja allume, `Equipment.isPoweredOn` valant `true`. Or `WindowsPC`
+n'appelait `syncLinkLocalResponders()` que depuis `powerOn()` et depuis
+le crochet de changement du registre, JAMAIS a la construction ;
+`LinuxMachine`, elle, l'appelle dans son constructeur.
+
+Mesure entre deux machines du meme segment, montees comme l'application
+les monte :
+
+```
+[linux] resolvectl query PC2   →  PC2: Name or service not known
+[win]   netstat -an -p udp     →  (aucune ligne)
+```
+
+Le repondeur LLMNR et le repondeur mDNS d'un poste Windows n'existaient
+donc pas dans l'application, alors que les tests qui appellent
+`powerOn()` a la main les voyaient tous les deux — un defaut visible
+seulement hors des tests, ce qui est le pire endroit ou il puisse etre.
+Une ligne le ferme : le constructeur appelle la meme synchronisation que
+Linux.
+
+**Ce qui n'est PAS un defaut, verifie avant d'y toucher.** La premiere
+lecture voulait « corriger » deux autres ecarts, et la mesure a donne
+tort a la lecture. (1) `ping PC2` et `getent hosts PC2` ne resolvent pas
+par LLMNR la ou `resolvectl query PC2` le fait : c'est le comportement
+d'un vrai Ubuntu, ou `libnss-resolve` n'est PAS installe par defaut — la
+ligne `hosts:` ne porte donc pas `resolve` et la glibc s'en tient a
+`nss-dns`, seul `resolvectl` parlant directement au demon. (2)
+`PC2.local` reste irresolu parce que le mDNS GLOBAL est a `no`, ce que
+`resolvectl status` affiche et ce qu'Ubuntu regle ainsi. Les deux sont
+desormais epingles comme TEMOINS, pour qu'une prochaine lecture ne
+refasse pas le meme faux diagnostic.
+
+**Discrimination** : `probe-windows-repondeurs-lien-local.test.ts`
+(6 cas), 2 tombent contre l'etat d'avant — c'est peu parce que le
+correctif tient en une ligne. Les 4 autres sont nommes dans l'en-tete :
+trois TEMOINS de ce qui ne doit pas changer, et un cas qui passait pour
+une raison qui ne prouve rien, 5355 etant absent des deux cotes. Un cas
+e2e Playwright verifie les deux ports dans le vrai terminal.
+
+---
+
+## Une machine a UN agencement de disques, et `df` le lit comme les autres
+
+**Perimetre revendique** : `src/network/devices/linux/LinuxSystemCommands.ts`
+(`df`), `src/network/devices/linux/LinuxCommandExecutor.ts`,
+`src/network/devices/linux/fs/FstabFile.ts` (nouveau),
+`src/network/devices/host/hardware/partitionUuid.ts` (nouveau),
+`src/network/devices/linux/commands/hw/Blkid.ts`.
+
+Trouve en posant la MEME question a cinq vues du meme poste :
+
+```
+lsblk         sda 50G  ├─sda1 48G /   └─sda2 2G /boot        (pas de sdb)
+mount         /dev/sda1 on /   /dev/sda2 on /boot            (pas de sdb1)
+findmnt       idem                                           (pas de sdb1)
+/proc/mounts  idem                                           (pas de sdb1)
+df -h         /dev/sda1 50G /   /dev/sda2 976M /boot   /dev/sdb1 100G /u01
+```
+
+Quatre vues disaient que la machine n'a qu'un disque ; la cinquieme en
+inventait un second et se trompait en plus sur les deux partitions qui
+existent. `dfTable()` etait une LISTE ECRITE EN DUR, la ou `lsblk` et
+`blkid` lisent `HardwareProfile.storage` et ou `mount`, `findmnt` et
+`/proc/mounts` lisent la `MountTable` que `MountTable.fromHardware()`
+derive du meme inventaire. Rien de cosmetique : sur un poste sans second
+disque, `df` annoncait 100 Go de libre sur un point de montage qui
+n'existe pas, et `df -h /boot` annoncait 976 Mo la ou la partition en
+fait 2 Gio. Un laboratoire qui remplit un disque, qui compare avant et
+apres, ou qui apprend a lire `df`, partait d'un chiffre faux.
+
+**Le correctif ne reecrit pas l'inventaire, il s'y branche** : `df`
+recoit la table de montage et les tailles de partition, et chaque ligne
+en DERIVE. La proportion occupee d'une partition que le VFS ne modelise
+pas reste une illustration, mais elle est declaree une fois
+(`DEFAULT_PARTITION_USE`) au lieu d'etre dispersee en chiffres ecrits a
+la main.
+
+**Deux duplications fermees dans le meme changement.** (1) Un second
+`cmdLsblk()` dormait dans `LinuxSystemCommands.ts`, sans appelant, avec
+sa propre table de disques ecrite en dur — celle-la meme qui inventait
+`sdb1` ; il est supprime, le vivant etant `commands/hw/Lsblk.ts`. (2)
+`df -i` rendait trois lignes figees (`/dev/sda1`, `tmpfs`, `/dev/sda2`)
+quel que soit l'agencement reel ; il derive desormais des memes lignes,
+avec le rapport que `mke2fs` applique (un inode tous les 16 Ko) et celui
+de `tmpfs` (un tous les 4 Ko) — ce qui redonne exactement les 131072
+inodes d'une partition de 2 Gio et les ~127960 d'un tmpfs de 512 Mio que
+la table figee affichait, mais cette fois pour la bonne raison.
+
+**La capacite de la racine avait DEUX ecritures.** Le VFS declarait
+50 Gio, `sda1` en fait 48 : `lsblk` et `df` ne pouvaient pas s'accorder.
+Le VFS prend desormais sa capacite de la partition racine a la
+construction. La ligne `/` de `df` continue de lire le VFS — et non la
+partition — parce que c'est le VFS qui REFUSE les ecritures : une panne
+qui retrecit le volume doit rester visible dans `df` et dans la prochaine
+ecriture au meme instant (docs/PRD-Pannes.md §F9.1).
+
+**`/etc/fstab` n'existait pas.** `cat /etc/fstab` repondait `No such
+file or directory` sur une machine qui monte pourtant deux systemes de
+fichiers — le fichier qui DECIDE de ce qui est monte au demarrage. Il est
+desormais seme depuis le meme inventaire, au format que documente Ubuntu
+(help.ubuntu.com/community/Fstab) : six champs, la racine nommee par
+`UUID=` avec `relatime,errors=remount-ro 0 1`, les autres en passe 2. Les
+UUID sont ceux que `blkid` rend, la fonction de synthese ayant ete
+extraite de `Blkid.ts` vers `partitionUuid.ts` pour que les deux vues ne
+puissent pas diverger.
+
+**Corrige dans des tests plutot que dans le code.** Trois cas
+(`nano-write-errors`, `vim-system-config-filetype` x2) posaient en
+premisse que `/etc/fstab` est ABSENT — la premisse etant le defaut
+lui-meme. Ils verifient maintenant ce qu'ils voulaient vraiment
+verifier : un utilisateur non privilegie ne peut pas l'ECRIRE, et le
+contenu est inchange apres l'echec. Deux autres
+(`fault-disk-full-and-inodes`, `linux-df-du-real`) epinglaient les 50 Gio
+du VFS ; ils attendent les 48 Gio de `sda1`, ce que `lsblk` annonce.
+
+**Discrimination** (`git stash push -- src/network`) :
+`probe-stockage-une-seule-verite-linux.test.ts` (11 cas), 8 tombent
+contre l'etat d'avant. Les 3 autres sont nommes dans l'en-tete : deux
+TEMOINS (`mount`/`findmnt` lisaient deja le bon inventaire ; la racine
+bouge encore apres une ecriture de 64 Mio) et une NON-REGRESSION (le
+serveur affichait deja `/u01`, mais parce que la table figee le portait
+pour tout le monde). Suites connexes : 38 fichiers, 1716 cas, tous verts.
+Trois cas e2e Playwright confrontent `df`, `lsblk`, `blkid`,
+`/proc/mounts` et `/etc/fstab` dans le vrai terminal.
+
+---
+
+## Deux machines du canevas sont deux machines DIFFERENTES
+
+**Perimetre revendique** : `src/network/devices/host/hardware/`
+(`HardwareIdentity.ts` nouveau, `HardwareProfile.ts`, `partitionUuid.ts`),
+`src/network/devices/EndHost.ts`,
+`src/network/devices/windows/` (`Wmic.ts` nouveau, `WinSystemCommands.ts`,
+`WinDir.ts`, `WindowsFileSystem.ts`), `src/network/devices/WindowsPC.ts`,
+`src/powershell/providers/WindowsPSProviders.ts`,
+`src/network/devices/shells/cli/TextTable.ts`.
+
+Mesure de depart : deux `linux-pc` poses cote a cote, la meme question
+a chacun.
+
+```
+blkid                     /dev/sda1: UUID="0035ca01-…"        IDENTIQUE
+cat /etc/machine-id       0a1b2c3d4e5f60718293a4b5c6d7e8f9    IDENTIQUE
+dmidecode -s system-uuid  00000000-0000-0000-0000-000000000000 (les deux)
+lsblk -o NAME,SERIAL      sda QM00001                         IDENTIQUE
+```
+
+Rien de cosmetique. `/etc/machine-id` est ce qu'un client DHCP emet
+comme identifiant (RFC 4361), ce qui journalise une machine et ce sur
+quoi un inventaire s'appuie. Les UUID de `blkid` sont pires depuis le
+lot precedent : `/etc/fstab` nomme la racine par `UUID=`, donc le fstab
+d'une machine designait aussi bien le disque de sa voisine. Et l'UUID
+SMBIOS a zero prive tout laboratoire d'inventaire, de PXE ou de licence
+de la seule chose qui distingue un chassis.
+
+**Le mecanisme existait deja** : `getVolumeSerialNumber()` derive un
+numero de serie de volume du nom d'hote, et les deux postes Windows en
+avaient bien deux differents. Il manquait a l'inventaire materiel.
+`HardwareProfile.identify(seed)` pose donc, une fois a la construction,
+l'UUID SMBIOS qu'un hyperviseur donne par domaine et l'UUID de systeme
+de fichiers que `mkfs` ecrit dans chaque partition. Le condense employe
+est `simulatedDigest`, celui que Kerberos, TLS et QUIC utilisent deja —
+pas une neuvieme fonction de hachage.
+
+**DEUX cas ecrits a l'aveugle ont ete RETIRES apres verification.** La
+premiere sonde exigeait aussi des numeros de serie de CHASSIS et de
+DISQUE distincts d'une machine a l'autre ; la documentation dit le
+contraire et c'est elle qui gagne. Un invite QEMU nu ne porte pas de
+numero de serie SMBIOS (`dmidecode -s system-serial-number` rend « Not
+Specified » tant que libvirt n'en pose pas un), et `QM00001` est le
+numero que QEMU donne par defaut a son PREMIER disque IDE. Rendre l'un
+ou l'autre unique aurait EDULCORE le modele. Le vrai defaut du
+voisinage etait ailleurs et il est ferme : les DEUX disques d'un serveur
+annoncaient `QM00001`, alors que QEMU numerote par index
+(`/dev/disk/by-id/ata-QEMU_HARDDISK_QM00002`).
+
+**Cote Windows, `wmic` repondait a une autre question que celle
+posee.** `wmic logicaldisk get caption,freespace,size` rendait la
+colonne `Name` et les lettres de lecteur : la liste de proprietes etait
+purement IGNOREE. `wmic csproduct` et `wmic diskdrive` n'existaient pas
+du tout. Les classes sont desormais declarees une fois avec leurs
+proprietes ; les colonnes demandees sortent RANGEES par nom, comme le
+fait un vrai WMIC (`get size,model,serialnumber` sort `Model`,
+`SerialNumber`, `Size`) ; et une propriete que la classe ne porte pas
+fait echouer la requete entiere (`Description = Invalid query`) au lieu
+d'etre avalee.
+
+**Une duplication en fermait une autre.** `WindowsPC.cmdWmic` portait sa
+PROPRE branche `logicaldisk`, en dur, qui court-circuitait
+`WinSystemCommands.cmdWmic` : tant qu'elle etait la, aucune correction
+dans le module partage n'etait visible. Elle est supprimee.
+
+**Une etiquette de volume, une seule.** `Get-Volume` annoncait
+« Windows » quand `vol` et `dir` repondaient « has no label » sur le
+meme lecteur au meme instant : l'etiquette vivait dans l'adaptateur
+PowerShell seul. Elle vit maintenant dans `WindowsFileSystem`, et les
+quatre vues (`vol`, `dir`, `Get-Volume`, `wmic logicaldisk get
+volumename`) la lisent. Deux cas de `missing-cmdlets-fixes` epinglaient
+la contradiction du cote `vol` ; ils attendent l'etiquette.
+
+**`TextTable` gagne `padTrailing`** : WMIC est la seule vue reproduite
+ici qui laisse ses blancs de fin, un script decoupant par position s'y
+appuyant. Le retrait reste le defaut pour IOS et VRP.
+
+**Discrimination** (`git stash push -- src/network src/powershell`) :
+`probe-identite-materielle-par-machine.test.ts` (13 cas), 10 tombent
+contre l'etat d'avant. Les 3 autres sont nommes dans l'en-tete : deux
+TEMOINS (`vol`, seul identifiant deja unique ; `wmic logicaldisk get
+name`, seule requete que l'ancienne branche servait juste) et un TEMOIN
+de coherence (`lsblk` et `hdparm` nomment le meme disque, ce qui prouve
+qu'indexer le numero de serie ne les a pas fait diverger). Suites
+connexes : 82 fichiers, 2789 cas, tous verts. `npm run typecheck` : 248
+erreurs, comme sur la base. Trois cas e2e Playwright verifient dans le
+vrai terminal que deux machines different et que `wmic` range ses
+colonnes et refuse une propriete inconnue.
+
+---
+
+## Un poste Windows a UN agencement de disques, lui aussi
+
+**Perimetre revendique** : `src/network/devices/host/hardware/HardwareProfile.ts`,
+`src/network/devices/WindowsPC.ts`,
+`src/network/devices/windows/` (`Fsutil.ts` nouveau, `WindowsFileSystem.ts`,
+`PSPipeline.ts`), `src/powershell/providers/` (`PSProviders.ts`,
+`WindowsPSProviders.ts`), `src/powershell/cmdlets/core/SystemMgmtCmdlets.ts`,
+`src/powershell/cmdlets/core/index.ts`.
+
+Mesure de depart sur un `windows-pc` ordinaire :
+
+```
+Get-Disk        0 Microsoft Virtual Disk  100.00 GB  MBR  True True
+                1 Virtual HD D:            50.00 GB  MBR  False False
+Get-Partition   « n'est pas reconnu »
+fsutil          « n'est pas reconnu »
+wmic diskdrive  QEMU HARDDISK  53687091200        (un disque ext4 !)
+```
+
+**Trois defauts, tous mesures.**
+
+(1) `Get-Disk` rendait UNE LIGNE PAR LETTRE DE LECTEUR. Un disque
+physique n'est pas un volume : deux lettres portees par le meme disque
+en faisaient deux, et un `mkdir E:\` en faisait apparaitre un
+troisieme — un disque qui n'existe pas. Le numero de serie « du
+disque » etait meme derive du numero de serie du VOLUME, deux notions
+que Windows distingue soigneusement.
+
+(2) L'inventaire materiel de la machine decrivait un disque LINUX.
+`HardwareProfile.defaultFor()` ne connaissait qu'un ROLE, pas une
+plateforme, si bien qu'un poste Windows portait `sda1` monte sur `/` en
+`ext4` — ce que `wmic diskdrive` rendait mot pour mot depuis le lot
+precedent. Pendant ce temps le systeme de fichiers Windows inventait ses
+propres 100 Go pour `C:` et 50 Go pour `D:` : deux ecritures du meme
+fait, qui ne pouvaient que se contredire des qu'on toucherait a l'une.
+Un preset Windows existe donc (`disk0` : « System Reserved » de 549 Mio
+sans lettre, puis `C:` ; `disk1` : `D:`), et `WindowsPC` SEME depuis lui
+la capacite et l'etiquette de chaque volume. L'etiquette codee en dur
+dans `WindowsFileSystem` disparait du meme coup : elle vient de la
+partition.
+
+(3) `Get-Partition` et `fsutil` n'existaient pas, alors que ce sont les
+deux commandes par lesquelles on lit un agencement de disques sous
+Windows. `Get-Partition` rend les partitions groupees par disque
+(`Disk Number: 0`), comme le fait la vue de format du module Storage, et
+accepte `-DiskNumber`, `-PartitionNumber`, `-DriveLetter`. Le
+regroupement emprunte le mecanisme du bandeau `Directory:` de
+`Get-ChildItem`, deja present dans `PSPipeline`. `fsutil volume diskfree`
+rend les trois totaux avec leur equivalent en Go, au format des
+`fsutil.exe` recents (`Total # of bytes             : N (X.XXGB)`), et
+`fsutil volume list` les lettres montees ; un volume absent est REFUSE
+(`Error:  The system cannot find the path specified.`) plutot que rendu
+a zero.
+
+**Corrige dans un test plutot que dans le code** :
+`windows-drive-switching` portait le cas « Get-Disk emits one row per
+FS-mounted drive », dont l'intitule EST le defaut. Il verifie maintenant
+l'inverse et le prouve : deux disques physiques, et toujours deux apres
+un `mkdir E:\`.
+
+**Discrimination** (`git stash push -- src/network src/powershell`) :
+`probe-stockage-une-seule-verite-windows.test.ts` (10 cas), 8 tombent
+contre l'etat d'avant. Les 2 autres sont les TEMOINS nommes dans
+l'en-tete : les tailles de volume et les etiquettes de `Get-Volume`, qui
+etaient justes parce que le systeme de fichiers les inventait et qui le
+restent parce que la partition les porte. Suites connexes : 75 fichiers,
+2537 cas, tous verts. `npm run typecheck` : 248 erreurs, comme sur la
+base. Deux cas e2e Playwright confrontent `Get-Disk`, `Get-Partition`,
+`wmic diskdrive`, `fsutil` et `dir` dans le vrai terminal.
+
+---
+
+## Une unite qu'un `systemctl` dit ACTIVE a un demon qui tourne
+
+**Perimetre revendique** : `src/network/devices/linux/LinuxServiceManager.ts`
+(`registerConfigCheck`).
+
+Trouve en BALAYANT un poste neuf, sans rien avoir tape avant :
+
+```
+systemctl is-active chrony   active
+timedatectl                  NTP service: inactive
+timedatectl show             NTP=no
+chronyc tracking             506 Cannot talk to daemon
+```
+
+Trois vues de la MEME machine, au MEME instant, se contredisent sur
+l'etat du meme demon.
+
+**La cause n'est pas dans `timedatectl`**, qui lit bien le service. C'est
+un ORDRE : `LinuxServiceManager` demarre les unites activees dans son
+propre constructeur, appele par `LinuxCommandExecutor`, tandis que
+`LinuxMachine.initChrony()` n'enregistre le controle de configuration de
+chrony que bien plus tard. Au moment ou systemd marque l'unite active, le
+demon n'est jamais passe par sa sequence de demarrage — et il n'y
+passera jamais.
+
+**Ce n'est pas un defaut de chrony.** NEUF demons enregistrent leur
+controle apres l'amorcage (`named`, `isc-dhcp-server`, `nginx`,
+`rsyslog`, `chrony`, `apache2`, `ssh`, `auditd`, `freeradius`) ; tous
+ceux qui sont actives par defaut portaient le meme trou. La correction va
+donc dans le gestionnaire, UNE fois : un controle enregistre pour une
+unite DEJA active est joue tout de suite, et s'il echoue l'unite tombe en
+`failed` — exactement ce que systemd aurait fait au demarrage. Corriger
+chrony seul aurait laisse les huit autres.
+
+**Corrige dans un test plutot que dans le code** : `tuto-ntp-chrony-cles`
+posait en premisse qu'une machine neuve n'a pas de demon
+(`506 Cannot talk to daemon`) — premisse qui n'etait vraie qu'a cause du
+defaut, une Ubuntu demarrant chrony au boot. Le cas PROVOQUE desormais
+l'absence de demon (`systemctl stop chrony`), ce qui est ce qu'il voulait
+verifier : `chronyc keygen` repond sans demon.
+
+**Une assertion ecrite a l'aveugle a d'abord passe POUR RIEN** :
+`toContain('NTP=yes')` etait satisfait par la ligne `CanNTP=yes` de
+`timedatectl show`. Ancree (`/^NTP=yes$/m`), elle tombe comme les autres.
+C'est le genre de faux vert que l'ecriture a l'aveugle sert justement a
+faire apparaitre.
+
+**Discrimination** (`git stash push -- src/network`) :
+`probe-un-demon-actif-tourne-vraiment.test.ts` (6 cas), 4 tombent contre
+l'etat d'avant. Les 2 autres sont les TEMOINS nommes dans l'en-tete :
+l'arret explicite, qui marchait deja parce qu'il passe par le cycle de
+vie, et l'horloge NON synchronisee, qui doit le rester — un demon actif
+sans source joignable ne synchronise rien, et c'est precisement le cas
+qu'un depannage cherche. Suites connexes : 54 fichiers, 867 cas, tous
+verts. `npm run typecheck` : 248 erreurs, comme sur la base. Un cas e2e
+Playwright confronte `systemctl`, `timedatectl` et `chronyc` dans le vrai
+terminal, avant et apres un arret.
+
+---
+
+## `dd`, `fallocate`, `sync` : occuper une place, et la voir occupee
+
+**Perimetre revendique** : `src/network/devices/linux/commands/fs/`
+(`Dd.ts`, `Fallocate.ts`, `Sync.ts` nouveaux),
+`src/network/devices/linux/commands/system/Swapon.ts`,
+`src/network/devices/linux/commands/index.ts`,
+`src/network/devices/linux/LinuxCommandExecutor.ts`.
+
+Mesure de depart sur un poste Linux ordinaire :
+
+```
+dd if=/dev/zero of=/tmp/x bs=1M count=8   dd: command not found
+fallocate -l 8M /tmp/y                    fallocate: command not found
+sync                                      sync: command not found
+cat /proc/swaps                           No such file or directory
+```
+
+`dd` est LA commande par laquelle on remplit un disque, on fabrique un
+fichier d'echange, on copie une image, on mesure un debit. Son absence
+laissait `truncate` seul, qui pose une taille mais ne copie rien. Et
+`/proc/swaps` manquait alors que `free` annonce 2 Gio d'echange et que
+`swapon -s` rendait deja EXACTEMENT ce tableau : une troisieme vue du
+meme fait, absente. Elle est desormais rendue par la meme fonction,
+`renderProcSwaps`, plutot que par une seconde ecriture.
+
+**L'autorite est un transcrit capture, pas une page de manuel.** La
+machine qui execute ce depot est une vraie GNU/Linux
+(`dd (coreutils) 9.4`), et les formats viennent de la. Trois regles en
+sortent qu'aucune documentation n'ecrit :
+
+```
+999 octets      999 bytes copied, ...
+1000 octets     1000 bytes (1.0 kB) copied, ...
+1024 octets     1024 bytes (1.0 kB, 1.0 KiB) copied, ...
+```
+
+La forme SI parait a 1000 octets, la forme IEC seulement a 1024. Le
+compte d'octets garde sa decimale sous 10 (`10 kB`, mais `9.8 KiB`), le
+DEBIT la garde jusqu'a 100 (`87.0 MB/s`, mais `511 kB/s`) — deux
+arrondis differents dans la meme ligne. Un bloc incomplet se compte a
+part (`0+1 records in` pour 11 octets lus par blocs de 512). Et la duree
+suit `%g` a six chiffres significatifs, donc exponentielle sous 1e-4
+(`3.9518e-05 s`). Cette duree est MESUREE (`performance.now()`), pas
+inventee : c'est le seul chiffre de la ligne qu'on puisse honnetement
+produire.
+
+**La taille passe par le joint que `truncate` avait deja ouvert** —
+`declaredSizeBytes` — donc `ls -l`, `du`, `stat` et `df` lisent un seul
+nombre, et un disque plein arrete vraiment la copie avec le mot du
+noyau (`dd: error writing '...': No space left on device`). Une source
+qui est un VRAI fichier est copiee pour de bon ; seul `/dev/zero` pose
+une taille sans contenu.
+
+**Rien n'est accepte sans effet** : une conversion inconnue
+(`dd: invalid conversion: 'x'`), un niveau de rapport inconnu
+(`dd: invalid status level: 'x'`), un nombre invalide
+(`dd: invalid number: 'abc'`) et un operande inconnu sont REFUSES, avec
+le `Try 'dd --help' for more information.` que la vraie commande ajoute.
+
+**`sync` ne fait rien, et c'est ecrit** : le VFS ecrit synchroniquement,
+il n'y a aucun tampon a vider. La commande existe parce qu'un operateur
+la tape apres `dd`, et qu'un `command not found` a cet endroit du geste
+ferait douter du geste entier.
+
+**Ce qui n'est PAS fait dans ce lot** : l'equivalent Windows
+(`fsutil file createnew`). La documentation Microsoft donne la syntaxe
+mais pas le texte exact de la confirmation, et la recherche n'etait pas
+joignable au moment d'ecrire ; plutot que d'inventer une phrase, le lot
+s'arrete a Linux, ou le transcrit est capture.
+
+**Discrimination** (`git stash push -- src/network`) :
+`probe-occuper-une-place-reelle.test.ts` (15 cas), 13 tombent contre
+l'etat d'avant. Les 2 autres sont les TEMOINS nommes dans l'en-tete :
+`truncate`, qui partage desormais son joint avec `dd` et `fallocate` et
+doit continuer de poser sa taille, et `swapon -s`, dont `/proc/swaps`
+reprend les chiffres. Suites connexes : 31 fichiers, 777 cas, tous
+verts. `npm run typecheck` : 248 erreurs, comme sur la base. Deux cas
+e2e Playwright verifient dans le vrai terminal que `dd`, `ls -l` et
+`du` comptent les memes huit mebioctets.
+
+---
+
+## Une machine a UNE locale, et toutes ses vues la disent
+
+**Perimetre revendique** : `src/network/devices/host/identity/SystemIdentity.ts`,
+`src/network/devices/linux/commands/system/Localectl.ts` (nouveau),
+`src/network/devices/linux/LinuxCommandExecutor.ts`,
+`src/network/devices/LinuxMachine.ts` (`openShellSession`),
+`src/network/devices/linux/service/CriticalFiles.ts`.
+
+Mesure de depart sur un poste Linux ordinaire :
+
+```
+cat /etc/default/locale   LANG=en_US.UTF-8
+SystemIdentity.locale     en_US.UTF-8
+locale                    LANG=            LC_CTYPE="C"
+echo $LANG                (vide)
+localectl                 localectl: command not found
+```
+
+Le fichier et l'identite s'accordent ; l'ENVIRONNEMENT et `locale`
+disaient autre chose, et la commande qui arbitre n'existait pas. Sur une
+vraie Ubuntu, PAM exporte `LANG` depuis `/etc/default/locale` a
+l'ouverture de session : tout ce qui lit `$LANG` — un script, un `date`,
+un message traduit — part du bon reglage. Ici il partait de rien.
+
+**Le trou etait a DEUX endroits**, et le second ne s'est vu qu'en e2e.
+L'executeur ne posait pas `LANG` dans son environnement (corrige dans la
+projection de l'identite, la ou `/etc/default/locale` est deja ecrit) ;
+et `openShellSession` n'heritait que de `PATH`, `HOME`, `USER`,
+`LOGNAME` et `SHELL`, si bien que le TERMINAL du canevas restait sans
+locale meme une fois l'executeur corrige. Le cas e2e est ce qui l'a
+montre : la sonde unitaire passait deja.
+
+**L'autorite.** Les intitules de `localectl status` sont EXTRAITS du
+binaire `/usr/bin/localectl` livre sur la machine qui execute ce depot
+(`strings`), et le comportement vient de `src/locale/localed.c` de
+systemd, lu a la source : les refus (`Locale %s not installed,
+refusing.`, `Locale assignment %s not valid, refusing.`, `Specified
+locale is not installed: %s`), la regle qui prend un nom seul pour
+`LANG`, et le `(unset)` d'un champ vide (`TABLE_ERSATZ_UNSET`,
+`src/shared/format-table.c`). Le client prefixe ces messages de
+`Failed to issue method call: `, template lui aussi extrait du binaire.
+
+**Un cas ecrit a l'aveugle etait FAUX, et la source l'a tranche.** Il
+exigeait `VC Keymap: us`. Sur une Debian le clavier est declare dans
+`/etc/default/keyboard` (XKBLAYOUT), pas dans la console virtuelle :
+`localectl` le rend sous `X11 Layout`, et `VC Keymap` reste `(unset)`.
+Le cas verifie desormais les deux, et `/etc/default/keyboard` est seme
+depuis la meme identite.
+
+**Ce qui est REFUSE plutot que fait semblant.** `/etc/locale.gen`
+n'est pas cree : `locale-gen` n'est pas modelise, et declarer le fichier
+sans savoir le jouer serait un critere range et jamais evalue (§6). La
+machine ne porte donc que les locales generees (`C`, `C.UTF-8`,
+`POSIX`, `en_US.UTF-8`), et `set-locale LANG=fr_FR.UTF-8` est refuse
+avec le mot de systemd — ce qui est aussi le comportement d'une vraie
+Ubuntu minimale.
+
+**Verifie avant d'y toucher, et laisse tel quel** : `systemd-analyze`
+sans verbe repond « Only 'calendar' and 'timespan' are simulated. » Ce
+n'est PAS un defaut a fermer. La forme longue de la commande rapporte
+des durees d'amorcage que systemd a mesurees ; ici rien n'est
+chronometre, et rendre « 1.129s (kernel) » serait une fiction de mesure.
+Le refus qui NOMME la brique manquante est deja la bonne reponse (§6).
+
+**Discrimination** (`git stash push -- src/network`) :
+`probe-une-seule-locale.test.ts` (12 cas), 9 tombent contre l'etat
+d'avant. Les 3 autres sont les TEMOINS nommes dans l'en-tete :
+`/etc/default/locale`, deja juste ; `hostnamectl`, la vue soeur dont
+l'alignement sert de modele ; et le droit de veto de `LC_ALL`, qui doit
+survivre au fait que `LANG` cesse d'etre vide. Suites connexes : 72
+fichiers, 2082 cas, tous verts. `npm run typecheck` : 248 erreurs,
+comme sur la base. Deux cas e2e Playwright confrontent `localectl`,
+`locale`, `$LANG` et `/etc/default/locale` dans le vrai terminal, avant
+et apres un changement.
+
+---
+
+## Un poste Windows n'a qu'UN inventaire, et WMI le lit
+
+**Perimetre revendique** : `src/network/devices/windows/WmiClasses.ts`
+(nouveau), `src/network/devices/windows/Wmic.ts`,
+`src/network/devices/windows/WinSystemCommands.ts`,
+`src/network/devices/WindowsPC.ts`,
+`src/powershell/providers/` (`PSProviders.ts`, `NullProviders.ts`,
+`WindowsPSProviders.ts`),
+`src/powershell/cmdlets/core/SystemMgmtCmdlets.ts`.
+
+Trouve en posant la meme question a `systeminfo` et a WMI :
+
+```
+systeminfo                     System Manufacturer:   QEMU
+                               System Model:          Standard PC (i440FX...)
+                               Total Physical Memory: 3,888 MB
+Get-CimInstance Win32_ComputerSystem
+                               Manufacturer:        Microsoft Corporation
+                               Model:               Virtual Machine
+                               TotalPhysicalMemory: 8589934592
+wmic bios get serialnumber     (rien)
+wmic memorychip get capacity   (rien)
+Get-CimInstance Win32_LogicalDisk   Invalid class
+```
+
+**TROIS faits ecrits deux fois**, et les deux ecritures se contredisent
+sur la meme machine au meme instant : le constructeur, le modele et la
+quantite de memoire. `systeminfo` lit `HardwareProfile` ; WMI portait ses
+propres constantes, dont 8 Gio de RAM sur une machine qui en a 3,8. Un
+laboratoire d'inventaire — recenser un parc, comparer deux postes,
+verifier une migration — partait donc de deux reponses selon la commande
+tapee.
+
+**Trois classes manquaient, et leur absence etait PIRE qu'une erreur** :
+`wmic bios get serialnumber` rendait une ligne VIDE, sortie 0. La
+commande avait l'air d'avoir repondu. Un alias que WMI ne connait pas est
+desormais REFUSE (`zorglub Alias not found!`, la forme que documente
+Microsoft), et `bios`, `memorychip`, `baseboard`, `computersystem` et
+`cpu` lisent l'inventaire.
+
+**Et surtout, les DEUX FACADES sont reunies.** `wmic logicaldisk`
+fonctionnait quand `Get-CimInstance Win32_LogicalDisk` repondait
+« Invalid class » : deux facades de WMI sur une machine qui n'en a qu'un.
+Les classes sont maintenant declarees UNE fois
+(`WmiClasses.ts`, nom CIM + alias `wmic`), `wmic` les rend en tableau et
+`Get-CimInstance` en objets, via un fournisseur PowerShell. Ajouter une
+classe la sert donc aux deux, et aucune des deux ne peut plus connaitre
+ce que l'autre ignore. `Win32_ComputerSystem` garde ses champs de
+DOMAINE dans le cmdlet — ils ne sont pas du materiel — et prend le reste
+de l'inventaire.
+
+**Un cas ecrit a l'aveugle passait POUR RIEN** : « Win32_BIOS rend le
+meme numero que wmic » comparait `<absent>` a `<absent>`, les deux cotes
+ignorant la classe. Il exige desormais la valeur, et il tombe comme les
+autres — c'est exactement le faux vert que l'ecriture a l'aveugle sert a
+faire apparaitre, le second de la journee apres le `CanNTP=yes` de
+`timedatectl`.
+
+**Discrimination** (`git stash push -- src/network src/powershell`) :
+`probe-un-seul-inventaire-wmi.test.ts` (11 cas), 9 tombent contre l'etat
+d'avant. Les 2 autres sont les TEMOINS nommes dans l'en-tete :
+`systeminfo`, deja juste, qui est le point de comparaison de tout le
+reste ; et `wmic logicaldisk`, la seule classe que les deux facades
+servaient deja. Suites connexes : 68 fichiers, 2055 cas, tous verts.
+`npm run typecheck` : 248 erreurs, comme sur la base. Deux cas e2e
+Playwright confrontent `systeminfo`, `wmic` et `Get-CimInstance` dans le
+vrai terminal.
+
+---
+
+## `nice` abaisse la commande, pas le shell qui la lance
+
+**Perimetre revendique** :
+`src/network/devices/linux/process/PriorityCommands.ts`,
+`src/network/devices/linux/LinuxProcessCommands.ts`,
+`src/network/devices/linux/LinuxProcessManager.ts`,
+`src/network/devices/linux/LinuxCommandExecutor.ts`.
+
+Trouve en BALAYANT un poste, pas en lisant du code :
+
+```
+$ nice                              0
+$ nice -n 5 sleep 0
+$ nice                              5      <-- le shell a change
+$ ps -eo pid,ni,comm | grep bash    39  5 -bash
+```
+
+Une seule commande niceee DEGRADAIT le shell, definitivement : tout ce
+que l'operateur tape ensuite tourne a la priorite reduite, et rien ne le
+lui dit. Le commentaire du code expliquait que « nice(1) fait
+setpriority() sur lui-meme puis execve() » — c'est vrai, mais `nice` est
+un ENFANT du shell : ce qu'il abaisse meurt avec la commande.
+L'implementation appliquait l'abaissement a `currentPid ?? shellPid`,
+donc au shell des qu'aucun enfant n'etait en cours.
+
+**L'autorite est un transcrit capture** sur la machine reelle qui
+execute ce depot (`coreutils 9.4`), ce qui prime sur la documentation :
+
+```
+$ nice -n 5 sleep 0 ; nice          0        le shell ne bouge pas
+$ nice -n 5 nice                    5        l'enfant, lui, est abaisse
+$ nice nice                         10       l'ajustement par defaut
+$ nice -n 3 nice -n 4 nice          7        les ajustements S'AJOUTENT
+$ nice -n 5                         rc=125   « a command must be given »
+$ nice -n abc true                  rc=125   « invalid adjustment 'abc' »
+```
+
+**Le correctif emprunte un joint qui existait deja** :
+`withProcessIdentity`, dont le shell se sert pour ses sous-shells. `nice`
+engendre un VRAI processus enfant portant `herite + ajustement`, y
+execute la commande, puis le reape. La cascade `3 puis 4 → 7` en decoule
+sans code special, parce qu'un enfant HERITE desormais la priorite de son
+parent — une ligne dans `LinuxProcessManager.spawn`, et c'est le
+comportement du noyau.
+
+**Un cas de scenario est tombe, et il avait raison.**
+`scenario2-process-lifecycle` verifie que `nice -n 19 sleep 300 &` laisse
+le `sleep` a 19. Il passait avant pour une raison fausse : `nice`
+renicait le processus d'arriere-plan courant. Le shell traitant le `&`
+AVANT de dispatcher `nice`, la commande n'entre jamais dans le chemin de
+l'enfant ; `niceWrappedCommand`, qui savait deja retirer le prefixe pour
+nommer le processus, rend maintenant aussi l'AJUSTEMENT, et
+`spawnBackgroundJob` le pose a la naissance. Le cas passe donc pour la
+bonne raison, et la sonde en porte un equivalent.
+
+**Deux refus ajoutes, mesures** : `nice -n 5` sans commande et
+`nice -n abc true` rendent le texte de coreutils, ses deux lignes, et son
+code de sortie 125 — la premiere version rendait `''` et 0, c'est-a-dire
+un succes silencieux.
+
+**Discrimination** (`git stash push -- src/network`) :
+`probe-nice-ne-degrade-pas-le-shell.test.ts` (11 cas), 6 tombent contre
+l'etat d'avant. Les 5 autres sont nommes dans l'en-tete : deux etaient
+JUSTES POUR LA MAUVAISE RAISON (`nice -n 5 nice` rendait 5 parce que
+l'ancien code abaissait le shell puis le relisait), deux sont les TEMOINS
+`renice` (qui doit continuer d'ecrire sur un processus designe, et de
+refuser sur le PID 1), et le cinquieme est le cas d'heritage ajoute apres
+coup. Suites connexes : 15 fichiers, 135 cas, tous verts.
+`npm run typecheck` : 248 erreurs, comme sur la base. Deux cas e2e
+Playwright verifient dans le vrai terminal que le shell garde sa
+priorite et que la cascade rend 7.
+
+---
+
+## Une machine a UNE charge, et `/proc` la porte
+
+**Perimetre revendique** :
+`src/network/devices/linux/system/LoadAverage.ts` (nouveau),
+`src/network/devices/linux/system/SystemInfo.ts`,
+`src/network/devices/linux/LinuxProcessCommands.ts`,
+`src/network/devices/linux/LinuxSystemCommands.ts`,
+`src/network/devices/linux/network/SshSessionTable.ts`,
+`src/network/devices/linux/LinuxCommandExecutor.ts`,
+`src/network/devices/linux/VirtualFileSystem.ts`.
+
+Trouve en BALAYANT un poste :
+
+```
+uptime                 load average: 0.00, 0.01, 0.05
+top -b -n 1            load average: 0.00, 0.00, 0.00
+cat /proc/loadavg      No such file or directory
+cat /proc/stat         No such file or directory
+cat /proc/self/status  No such file or directory   (alors que
+                       /proc/self -> 39 et /proc/39/status existe)
+```
+
+**QUATRE ecritures de la charge**, dont deux vivantes qui se
+contredisent : une constante `0.00, 0.01, 0.05` dans l'en-tete
+d'`uptime`/`w`, un `0.08, 0.03, 0.01` dans un `cmdTop` MORT de
+`LinuxSystemCommands`, un `0.00, 0.00, 0.00` dans la vue `w` d'une
+session SSH, et le nombre de processus executables reformate en trois
+decimales pour `top`. Un processus executable n'est pas du temps
+processeur consomme : la meme fonction faisait aussi annoncer
+`%Cpu(s): 100.0 us` des qu'un seul processus etait dans l'etat R, sur
+une machine qui ne brule rien.
+
+**Ce que le simulateur peut honnetement dire**, et qui est desormais
+ecrit une seule fois : rien n'y consomme de temps processeur, donc la
+charge est `0.00 0.00 0.00` — ce que `top` disait deja, ce que confirment
+son `%Cpu(s): 100.0 id` et le `id 100` de `vmstat`. Le `0.00, 0.01, 0.05`
+etait une decoration. Les trois autres champs de `/proc/loadavg` sont des
+FAITS que la table des processus detient : combien tournent, combien il y
+en a, quel PID a ete alloue en dernier. `/proc/stat` suit la meme regle :
+compteurs de temps a zero sauf `idle`, qui vaut l'uptime — litteralement
+vrai — et compteurs de processus lus dans la table.
+
+**Le `cmdTop` mort est supprime**, avec sa table de disques, sa memoire
+et son `%Cpu(s)` ecrits en dur ; le vivant est celui de
+`LinuxProcessCommands`.
+
+**Et la cause du troisieme defaut n'etait pas la ou on la cherchait.**
+`/proc/self` EXISTE et pointe bien vers `39` ; c'est la RESOLUTION du VFS
+qui etait fausse. La cible relative d'un lien INTERMEDIAIRE etait lue
+depuis le lien lui-meme au lieu du repertoire qui le contient :
+`/proc/self/status` cherchait `/proc/self/39/status`. Aucun chemin
+traversant un lien relatif ne resolvait — `/proc/self` n'etait que le cas
+qu'on remarque. Deux fichiers enregistres sous `/proc/self/` (`mounts`,
+`mountinfo`) etaient d'ailleurs INJOIGNABLES depuis toujours ; ils vivent
+maintenant sous chaque `/proc/<pid>/`, et `/proc/self` est un lien
+ENGENDRE qui suit le processus courant, donc juste aussi dans un
+sous-shell ou dans l'enfant de `nice`. La resolution lit la cible
+engendree, plus celle figee a l'enregistrement.
+
+**Trouve, non cause, et corrige au lot suivant** : `journalization.test.ts`
+« automated truncation (snaplen) » est ROUGE SUR LA BASE (verifie par
+`git stash`). Il n'a rien a voir avec ce lot ; sa premisse est juste, le
+simulateur ne tronque pas — `logger(1)` limite le message a 1 KiO
+en-tete comprise. C'est le lot suivant.
+
+**Discrimination** (`git stash push -- src/network`) :
+`probe-une-seule-charge.test.ts` (12 cas), 9 tombent contre l'etat
+d'avant. Les 3 autres sont les TEMOINS nommes dans l'en-tete :
+`/proc/1/status` et `/proc/uptime`, qui prouvent que la correction de
+resolution n'a pas casse les chemins directs, et l'accord
+`free` / `/proc/meminfo`, la projection voisine dont `/proc/loadavg` et
+`/proc/stat` copient le mecanisme. Suites connexes : 80 fichiers, 1893
+cas, tous verts (hors le rouge de base ci-dessus). `npm run typecheck` :
+248 erreurs, comme sur la base. Deux cas e2e Playwright confrontent
+`uptime`, `top`, `/proc/loadavg`, `/proc/stat` et `/proc/self` dans le
+vrai terminal.
+
+---
+
+## `logger` tronque a la taille que `--size` fixe, pas a une autre
+
+**Perimetre revendique** :
+`src/network/devices/linux/LinuxLogManager.ts` (`executeLogger`).
+
+Trouve en balayant les ROUGES DE LA BASE pendant le lot precedent : le
+cas « automated truncation (snaplen) » de `journalization.test.ts` etait
+rouge avant ce lot comme apres, ce que `git stash` a confirme. Il ne
+venait donc pas de mon changement — et sa premisse etait juste.
+
+```
+logger "<4000 x>"     →  /var/log/syslog garde 2048 caracteres
+logger -S 200 "..."   →  -S inconnu, avale comme un morceau du message
+```
+
+Le 2048 etait une invention : `logger(1)` limite le message a 1 KiO par
+defaut — la limite traditionnelle de la RFC 3164 — et `-S`/`--size` la
+deplace. Un journal qui garde deux fois trop laisse croire qu'un message
+long passe entier, alors qu'une vraie machine le coupe ; c'est justement
+ce qu'un laboratoire de journalisation cherche a montrer.
+
+**L'autorite est un transcrit capture**, et il CONTREDIT la page de
+manuel. Celle-ci annonce une limite « en-tete comprise » ; le binaire
+d'util-linux livre sur cette machine limite le MESSAGE seul :
+
+```
+$ logger --no-act --stderr --rfc3164 -t probe "<4000 x>"
+  une ligne de 1054 = 30 d'en-tete + 1024 de message
+$ ... -S 200 "<4000 x>"       230 = 30 + 200
+$ ... -S 2048 "<4000 x>"      2078 = 30 + 2048
+$ ... -f <fichier de 3000>    1054, 1054, 982
+$ ... -S abc "hi"
+  logger: failed to parse message size: 'abc': Invalid argument
+```
+
+**La derniere ligne de mesure a change le modele.** Un message passe en
+ARGUMENT est coupe et le reste jete ; un FICHIER est DECOUPE en messages
+successifs — trois entrees pour trois mille caracteres, pas une seule
+tronquee. La premiere lecture aurait applique la meme troncature aux
+deux.
+
+**Discrimination** (`git stash push -- src/network`) :
+`probe-logger-tronque-comme-le-vrai.test.ts` (7 cas), 5 tombent contre
+l'etat d'avant. Les 2 autres sont les TEMOINS nommes dans l'en-tete : le
+message court, qui traverse intact, et le refus d'une priorite inconnue,
+qui prouve qu'en ajoutant `-S` a l'analyse des options on n'a pas casse
+celle qui existait. Suites connexes : 10 fichiers, 408 cas, tous verts —
+le rouge de base compris, qui passe desormais. `npm run typecheck` : 248
+erreurs, comme sur la base. Un cas e2e Playwright compte les caracteres
+retenus dans `/var/log/syslog` depuis le vrai terminal.
+
+---
+
+## Une machine a UN noyau, et toutes ses vues le nomment
+
+**Perimetre revendique** :
+`src/network/devices/host/identity/SystemIdentity.ts`,
+`src/network/devices/LinuxMachine.ts`,
+`src/network/devices/linux/network/` (`LinuxSshClient.ts`,
+`lastFormatter.ts`), `src/network/devices/linux/LinuxLogManager.ts`,
+`src/network/devices/linux/commands/net/Ipsec.ts`,
+`src/network/devices/linux/kernel/KernelModuleTable.ts`,
+`src/network/devices/linux/LinuxCommandExecutor.ts`,
+`src/network/devices/linux/VirtualFileSystem.ts`,
+`src/network/devices/linux/LinuxFileCommands.ts`.
+
+Trouve en posant la MEME question a chaque vue d'un poste :
+
+```
+uname -r         5.15.0-130-generic
+/proc/version    5.15.0-130-generic
+modinfo e1000    vermagic: 5.15.0-130-generic
+cat /etc/motd    Ubuntu 22.04.3 LTS (GNU/Linux 5.15.0-91-generic)
+last             reboot   system boot   5.15.0-91-generic
+dmesg            Linux version 5.15.0-generic
+ipsec version    Linux strongSwan U5.9.8/K5.15.0-generic
+```
+
+**TROIS noyaux differents sur la meme machine au meme instant, et DEUX
+versions d'Ubuntu** : `lsb_release` et `/etc/os-release` disent 22.04.4,
+la banniere dit 22.04.3. Un operateur qui ouvre une session lit une
+banniere, tape `uname -a`, et voit deux machines. Pire : une connexion
+SSH affichait DEUX lignes « Welcome to Ubuntu » contradictoires — une
+ecrite en dur dans le client, l'autre venant du MOTD. La ligne en dur
+disparait : sur une vraie Ubuntu elle vient du MOTD
+(`/etc/update-motd.d/00-header`), et c'est desormais le cas ici.
+
+`/etc/issue` — ce que getty imprime avant l'invite — manquait alors que
+le code le LIT deja, avec une banniere de repli ecrite en dur. Il est
+seme depuis la meme identite, comme `/etc/issue.net`.
+
+**Deux causes de resolution trouvees en chemin, toutes deux dans le
+VFS.** `modinfo` nommait `/lib/modules/<release>/kernel/...` alors que
+l'arbre n'existait pas — le geste normal, `ls /lib/modules/$(uname -r)`,
+ne trouvait rien. L'arbre est desormais seme depuis la table des
+modules, le CONTENU des fichiers restant vide : ce qui est modelise est
+leur PRESENCE, pas leur code. Mais le semis ne suffisait pas :
+
+  1. `resolveInode(chemin, false)` cessait de suivre les liens
+     INTERMEDIAIRES, alors que `lstat(2)` ne parle que du DERNIER
+     composant. `/lib` etant un lien vers `usr/lib`, `ls /lib/modules`
+     echouait sur une arborescence pourtant presente.
+  2. `ls <lien>` decrivait le lien au lieu de lister ce qu'il designe.
+     Releve sur la machine reelle : `ls /lib` liste `usr/lib`, tandis que
+     `ls -l /lib` rend bien la ligne `lib -> usr/lib`.
+
+**Discrimination** (`git stash push -- src/network`) :
+`probe-un-seul-noyau.test.ts` (12 cas), 9 tombent contre l'etat d'avant.
+Les 3 autres sont les TEMOINS nommes dans l'en-tete : `uname -a` et
+`/proc/version`, qui lisaient deja l'identite et servent de reference a
+tout le reste, et `lsb_release`, qui donne la version d'Ubuntu que la
+banniere doit rejoindre. Suites connexes : 64 fichiers, 1836 cas, tous
+verts. `npm run typecheck` : 248 erreurs, comme sur la base. Deux cas
+e2e Playwright confrontent `uname -r`, le MOTD, `last`, `dmesg` et
+`ls /lib/modules/$(uname -r)` dans le vrai terminal.
+
+---
+
+## `/sys/class/net` porte les compteurs que cinq autres vues comptent
+
+**Perimetre revendique** : `src/network/devices/linux/Sysfs.ts`,
+`src/network/devices/linux/LinuxCommandExecutor.ts`.
+
+Mesure de depart : deux postes cables sur un commutateur, trois `ping`,
+puis la MEME question a chaque vue.
+
+```
+ip -s link show eth0     RX 685 / 8     TX 752 / 9
+ifconfig eth0            RX 685 / 8     TX 752 / 9
+ethtool -S eth0          rx_packets: 8  tx_packets: 9
+cat /proc/net/dev        685  8 … 752  9
+netstat -i               RX-OK 8        TX-OK 9
+cat /sys/class/net/eth0/statistics/rx_packets
+                         No such file or directory
+```
+
+**Cinq vues d'accord, et la sixieme absente.** C'est le contraire du
+defaut habituel de ce depot : ici l'accord etait deja fait, il manquait
+seulement la vue que lit un AGENT. `node_exporter`, collectd et munin
+lisent les compteurs sous `/sys`, pas dans `ifconfig` ; un laboratoire de
+metrologie n'avait donc rien a lire. `/sys/class/net/<if>/` portait
+pourtant deja `address`, `mtu`, `operstate`, `carrier` et `speed` — mais
+ni `statistics/`, ni `ifindex`.
+
+**L'autorite** : les vingt-quatre noms de fichiers sont RELEVES sur la
+machine reelle qui execute ce depot (`ls /sys/class/net/eth0/statistics/`).
+Ce simulateur en mesure six ; les dix-huit autres valent zero, ce qui est
+le compte JUSTE — rien ici ne produit d'erreur de trame, de collision ni
+de depassement de file. Ils sont declares plutot qu'omis : un agent qui
+lit `rx_crc_errors` doit trouver `0`, pas un fichier absent.
+
+**Rien n'est recompte** : les six mesures viennent de
+`getInterfaceInfo(iface).counters`, la meme source qu'`ethtool -S` et
+`/proc/net/dev`. Et `ifindex` vient de `getIfIndex`, celui que `ip link`
+affiche deja devant le nom — la machine ne numerote ses interfaces
+qu'une fois.
+
+**Discrimination** (`git stash push -- src/network`) :
+`probe-compteurs-interface-une-source.test.ts` (9 cas), 7 tombent contre
+l'etat d'avant. Les 2 autres sont les TEMOINS nommes dans l'en-tete :
+les cinq vues deja d'accord, dont la sixieme ne doit surtout pas
+s'ecarter, et les attributs que `/sys` portait deja, qui prouvent qu'on
+n'a pas deplace l'arbre existant. Suites connexes : 9 fichiers, 470 cas,
+tous verts. `npm run typecheck` : 248 erreurs, comme sur la base. Un cas
+e2e Playwright lit les vingt-quatre compteurs et `ifindex` dans le vrai
+terminal.
+
+## Une carte Windows porte UNE identite, que six vues repetent
+
+**Perimetre revendique** : `WinIpconfig`, `WinRoute`, `WinGetmac`,
+`WinArp`, `WinSystemCommands` (bloc `Network Card(s)`), `netAdapter.ts`,
+`PSPipeline` (colonnes par defaut de NetNeighbor), `NetworkCmdlets`
+(objets NetAdapter / NetNeighbor), `WindowsPSProviders`,
+`HardwareIdentity`. Rien du cote journalisation.
+
+**Mesure de depart** — un poste Windows cable a un poste Linux par un
+commutateur, `10.0.0.1/24` pose par `netsh`, trois `ping`, puis la MEME
+question a chaque vue :
+
+```
+ipconfig /all      Description . . . : Intel(R) Ethernet Connection
+route print        2...02 00 00 00 00 01 ......Intel(R) Ethernet Connection #1
+getmac             02-00-00-00-00-01 \Device\Tcpip_Ethernet_0
+systeminfo         [01]: Intel(R) Ethernet Connection
+Get-NetAdapter     Intel(R) 82540EM Gigabit Ethernet Controller  ifIndex 2
+arp -a             Interface: 10.0.0.1 --- 0x1
+Get-NetNeighbor    ifIndex <colonne vide>  Ethernet 0  10.0.0.2
+```
+
+**Quatre ecritures d'une meme carte, et aucune ne dit ce que dit la
+cinquieme.** `Get-NetAdapter` etait la seule a LIRE le materiel
+(`hardware.adapters[].model`, un 82540EM comme en pose QEMU) ; les quatre
+autres portaient une constante ecrite a la main dans leur propre fichier,
+et `route print` inventait meme un suffixe `#1` sur la premiere carte, la
+ou Windows ne suffixe qu'a partir de la deuxieme. Le numero d'interface
+se contredisait de la meme facon : `route print` et `Get-NetAdapter`
+disaient 2, `arp -a` disait `0x1` (il derivait « 0 » du nom `eth0` et
+ajoutait 1), et `Get-NetNeighbor` annoncait une colonne `ifIndex` que son
+objet ne portait pas — il l'ecrivait `InterfaceIndex`, donc la colonne
+sortait VIDE alors que la valeur etait juste.
+
+**L'autorite** : sur une vraie machine, `ipconfig /all` « Description »,
+la ligne d'`Interface List` de `route print`, la colonne « Network
+Adapter » de `getmac /v` et l'entree `Network Card(s)` de `systeminfo`
+rendent toutes la description d'interface, celle que `Get-NetAdapter`
+publie sous `InterfaceDescription`. `arp -a` prefixe chaque table par
+`Interface: <ip> --- 0x<n>`, ou `n` est l'index d'interface EN
+HEXADECIMAL. `getmac` rend un « Transport Name » de la forme
+`\Device\Tcpip_{GUID}`, ou le GUID est le `NetCfgInstanceId` de la carte.
+La documentation NetTCPIP donne `ifIndex` comme l'alias de
+`InterfaceIndex` et le tableau par defaut de `Get-NetNeighbor` comme
+CINQ colonnes — ifIndex, IPAddress, LinkLayerAddress, State, PolicyStore
+— sans `InterfaceAlias`, que ce depot ajoutait.
+
+**Ce qui manquait vraiment** : le GUID de carte n'existait nulle part.
+`getmac` fabriquait `\Device\Tcpip_Ethernet_0` a partir du nom de
+connexion — donc un « GUID » qui change quand on renomme la connexion,
+alors que le vrai est fige a l'installation du pilote. Il est desormais
+derive du couple (machine, carte) par `interfaceGuidFor`, ecrit sur
+`uuidFromSeed` — le meme generateur que le UUID SMBIOS et les UUID de
+systeme de fichiers, pas un second. Deux cartes d'une machine, et deux
+machines du meme canevas, en portent des differents. `Get-NetAdapter` le
+publie sous `InterfaceGuid`, la ou Windows le publie.
+
+**Une seule source** : `WindowsPC.adapterIdentityOf(port)` rend le
+triplet description / ifIndex / GUID, et les six vues le lisent. Une
+deuxieme ecriture de l'index a ete fermee au passage dans
+`getIPAddresses(alias)` : le provider numerotait avec la position DANS LA
+LISTE FILTREE, donc `Get-NetIPAddress -InterfaceAlias "Ethernet 1"`
+portait l'index 2. Aucun lecteur ne rendait ce champ, donc rien ne le
+montrait — c'est une duplication supprimee, pas un symptome corrige, et
+le cas de sonde qui la couvre est nomme NON-REGRESSION.
+
+**Discrimination** (`git stash push -- src/network src/powershell`) :
+`probe-une-seule-carte-une-seule-identite.test.ts` (17 cas), 12 tombent
+contre l'etat d'avant. Les 5 autres sont nommes dans l'en-tete avec leur
+raison : deux TEMOINS (`route print` numerote deja comme
+`Get-NetAdapter` ; `netstat -e` compte deja comme
+`Get-NetAdapterStatistics`), une NON-REGRESSION (une carte debranchee
+reste `Media disconnected` dans `getmac`, elle ne recoit pas de GUID),
+un cas STRUCTUREL (`InterfaceIndex` portait deja le bon entier, ce qui
+isole le defaut dans le RENDU et non dans la donnee) et la
+NON-REGRESSION du filtre `Get-NetIPAddress` ci-dessus.
+
+## Une machine compte ses paquets, et `netstat -s` lit ce compte
+
+**Perimetre revendique** : `layers/internet/ProtocolCounters` (nouveau),
+`EndHost` (points de comptage), `Router` (le TYPE des compteurs, pas ses
+valeurs), `linux/ports/PortsFilesystem` (`/proc/net/snmp`),
+`LinuxNetCommands` (`netstat -s`), `WinFileCommands` +
+`WinNetstatStatistics` (nouveau, `netstat -s` de Windows). Rien du cote
+journalisation.
+
+**Mesure de depart** — deux postes cables sur un commutateur,
+`ping -c 3` cote Linux et `ping -n 3` cote Windows, puis la question aux
+deux plateformes :
+
+```
+Linux   netstat -s          Ip:  0 total packets received
+                                 0 requests sent out
+                            Icmp: 0 ICMP messages received
+                                  0 ICMP messages sent
+Linux   cat /proc/net/snmp  Ip: 1 64 0 0 0 0 0 0 0 0 ...
+Windows netstat -s          Active Connections
+                              Proto  Local Address  Foreign Address  State
+```
+
+**Trois defauts d'un coup.** Cote Linux, `netstat -s` ecrivait ses
+propres zeros dans son propre fichier sans jamais lire
+`/proc/net/snmp`, qui est POURTANT la source que le vrai `netstat`
+ouvre — deux ecritures du meme fait, toutes deux fausses, et rien pour
+dire laquelle est juste. Pire, la seule valeur non nulle qu'il produisait
+etait un mensonge : il rendait le nombre de sockets ETABLIES SOUS
+l'intitule « active connection openings », qui est un compteur cumulatif
+d'ouvertures, pas un etat instantane.
+
+Cote Windows, `-s` n'etait pas traite du tout : la commande tombait dans
+la branche par defaut et repondait la table des CONNEXIONS — une autre
+question que celle posee — alors que `-s` est annonce dans la liste de
+completion de `netstat`. C'est exactement la regle 6 : un mot que la
+CLI accepte et que le moteur n'honore pas.
+
+Et sous les deux, la machine ne comptait rien : `EndHost` n'avait aucun
+compteur de protocole, alors que `Router` en portait neuf depuis
+toujours.
+
+**L'autorite** : le vrai `netstat -s` de net-tools lit `/proc/net/snmp`
+et `/proc/net/netstat` ; les noms de champs sont ceux de la MIB-II
+(RFC 1213 / RFC 4293). Windows rend les memes compteurs sous ses propres
+intitules, releves sur une sortie capturee : `IPv4 Statistics` avec
+`Packets Received` / `Received Packets Delivered` / `Output Requests`,
+`ICMPv4 Statistics` en deux colonnes `Received` et `Sent`,
+`TCP Statistics for IPv4` et `UDP Statistics for IPv4`.
+
+**Une seule definition, une seule mesure.** `ProtocolCounters` decrit le
+jeu MIB-II une fois ; `RouterCounters` en devient un `Pick`, de sorte
+que « ce que veut dire `icmpOutEchoReps` » est ecrit UNE fois pour les
+routeurs comme pour les hotes. Les valeurs, elles, restent par machine.
+
+Le comptage se fait la ou le datagramme passe reellement, pas la ou une
+commande voudrait le lire : `ipInReceives` a l'entree de `handleIPv4`,
+`ipInDelivers` apres le pare-feu, `icmpIn*` dans `handleICMP`,
+`udpInDatagrams` / `udpNoPorts` dans `deliverUDP`, `ipForwDatagrams`
+dans `forwardIPv4`, et l'emission dans l'unique surcharge
+`EndHost.sendFrame` — la seule porte par laquelle une trame sort.
+
+**Le piege mesure** : `ping` n'emet PAS par `sendIpv4FrameArpAware`, il
+appelle `sendFrame` directement, comme le font aussi la reponse d'echo
+et les erreurs ICMP. Un premier jet comptait dans
+`sendIpv4FrameArpAware` : la reception montait, l'emission restait a
+zero, et seule la sonde l'a montre. Le comptage a donc ete descendu dans
+`sendFrame`. Reste alors a distinguer le datagramme RELAYE — que MIB-II
+exclut d'`ipOutRequests` — du datagramme local, et la file d'attente ARP
+porte les deux : l'appartenance se marque sur le datagramme lui-meme
+(`WeakSet`), ce qui reste exact meme quand l'emission est differee par
+une resolution ARP froide.
+
+**Ce qui vaut zero vaut zero, pas rien** : les champs que ce simulateur
+ne mesure pas (`ipReasmReqds`, `tcpRetransSegs`, horodatages ICMP…) sont
+declares et rendus a `0`. Un agent de supervision distingue un compteur
+a zero d'un compteur absent ; et le jour ou l'un d'eux sera mesure, sa
+place existe deja.
+
+**Discrimination** (`git stash push -- src/network`) :
+`probe-une-machine-compte-ses-paquets.test.ts` (15 cas), 11 tombent
+contre l'etat d'avant. Les 4 autres sont nommes dans l'en-tete : trois
+TEMOINS (les compteurs de LIEN, deja justes, ne bougent pas ; `netstat`
+sans `-s` rend toujours la table des connexions ; `netstat -e` de
+Windows compte toujours les octets du lien) et un cas VACUEUX AVANT,
+NON-REGRESSION APRES (« une machine qui n'a rien echange compte zero,
+pas rien » : avant le correctif tout valait zero, donc il ne prouvait
+rien ; apres, il est le seul a garantir qu'un compteur non mesure se lit
+`0` et non pas absent).
+
+## `dmesg` raconte le demarrage de CETTE machine
+
+**Perimetre revendique** : `linux/boot/KernelBootLog` (nouveau),
+`LinuxLogManager` (les messages d'amorcage), `LinuxCommandExecutor`
+(`/proc/cmdline` et la lecture des faits), `commands/hw/Dmidecode`
+(l'inventaire memoire). Le reste de la journalisation n'est pas touche.
+
+**Mesure de depart** — un poste Linux neuf, puis la MEME question au
+tampon du noyau et aux vues qui portent deja la reponse :
+
+```
+dmesg          [0.000000] Linux version 5.15.0-130-generic
+                          (buildd@lcy02-amd64-032) (gcc-11 …11.3.0) #1 SMP x86_64
+/proc/version  Linux version 5.15.0-130-generic (buildd@lcy02-amd64-001)
+               (gcc (Ubuntu 11.4.0…) 11.4.0, GNU ld …) #140-Ubuntu SMP …
+
+dmesg          [0.100000] CPU: Intel(R) Core(TM) i7-10750H CPU @ 2.60GHz
+/proc/cpuinfo  model name : Intel(R) Xeon(R) CPU E5-2686 v4 @ 2.30GHz
+
+dmesg          [0.050000] Memory: 2048000K/2097152K available
+/proc/meminfo  MemTotal: 3981312 kB
+
+dmesg          [0.010000] DMI: … BIOS 1.16.2-debian-1.16.2-1 04/01/2014
+/sys/…/dmi/id  bios_version: 1.16.0-1
+
+dmesg          … 0.500000 … 0.600000 … 0.300000 … 0.310000 …
+```
+
+**Cinq contradictions sur une seule machine**, plus un tampon dont les
+horodatages RECULENT. Le tampon du noyau etait une liste de quinze
+phrases ecrites a la main, sans aucun lien avec le materiel et le noyau
+que la machine porte par ailleurs : un poste dont on changerait la RAM,
+le processeur ou le disque aurait continue de raconter le meme
+demarrage.
+
+**L'autorite** — RELEVEE sur le GNU/Linux qui execute ce depot, ce qui
+prime sur toute documentation :
+
+```
+$ cat /proc/version
+Linux version 6.18.44-fc-v24 (builder@sandboxing) (gcc (GCC) 15.2.0,
+GNU ld (GNU Binutils) 2.46) #1 SMP PREEMPT_DYNAMIC @0
+$ dmesg | head -1
+[    0.000000] Linux version 6.18.44-fc-v24 (builder@sandboxing) (gcc
+(GCC) 15.2.0, GNU ld (GNU Binutils) 2.46) #1 SMP PREEMPT_DYNAMIC @0
+```
+
+La premiere ligne de `dmesg` EST `/proc/version`, au prefixe
+d'horodatage pres — le noyau imprime `linux_banner` au demarrage et
+`/proc/version` rend ce meme `linux_banner`. Sur la meme machine :
+`smpboot: CPU0: Intel(R) Xeon(R) Processor @ 2.10GHz` reprend mot pour
+mot le `model name` de `/proc/cpuinfo` ; `Memory: 16437712K/16776824K
+available` encadre les 16461028 kB de `MemTotal` ; et les quarante
+premieres lignes du tampon ont des horodatages qui ne reculent jamais
+(verifie par tri).
+
+**Ce qui a change** : `KernelBootLog` construit les messages a partir
+des faits, la ou chacun vit deja — `SystemIdentity.kernel` pour la
+banniere, `HardwareProfile` pour le processeur, la memoire, le chassis,
+le disque racine et les cartes. Les messages sont tries par
+horodatage : un tampon est une chronologie, pas une liste.
+
+`/proc/cmdline` n'existait pas. Il existe maintenant, et il rend la
+MEME chaine que la ligne `Command line:` de `dmesg` — une seule
+ecriture, deux lecteurs.
+
+**Un defaut trouve en chemin, ferme dans le meme changement** :
+`dmidecode -t memory` annoncait `Size: 3888 MB`, c'est-a-dire
+`MemTotal` — la RAM VISIBLE DU NOYAU — la ou le SMBIOS decrit la
+barrette PHYSIQUE (4096 MB). Il ne rendait par ailleurs qu'un seul
+`Memory Device` quel que soit le nombre de barrettes, et ecrivait en dur
+un type, une vitesse et un fabricant que `MemoryModule` porte pourtant
+deja par barrette — donnees stockees et jamais rendues, alors que le
+`Win32_PhysicalMemory` de Windows les rend depuis un correctif
+precedent. `MemoryProfile.installedKib` existait deja : c'est lui qui
+repond desormais, aux deux endroits.
+
+**Une premisse fausse corrigee** (regle 7) : la sonde ecrite a l'aveugle
+affirmait que « deux machines de memoire differente racontent des
+demarrages differents » en comparant un poste et un serveur. FAUX :
+dans ce modele les deux profils portent la MEME `MemoryProfile` par
+defaut. Le cas a ete remplace par la propriete qui est vraie et qui est
+le vrai sujet — la RAM annoncee par `dmesg` est la somme des barrettes
+que `dmidecode` inventorie.
+
+**Discrimination** (`git stash push -- src/network`) :
+`probe-dmesg-raconte-cette-machine.test.ts` (13 cas), 8 tombent contre
+l'etat d'avant. Les 5 autres sont nommes dans l'en-tete : trois DEJA
+JUSTES (`uname -r`, le pilote `e1000`, la partition `sda1` — la copie
+en dur tombait juste sur un poste par defaut, et ces cas sont gardes
+parce qu'ils ne tombent plus juste par hasard) et deux TEMOINS
+(`journalctl -k` et `dmesg -T`, les deux autres vues du MEME tampon,
+qui prouvent qu'on n'a ni perdu ni ajoute de message). Suites connexes :
+91 fichiers, 1944 cas, tous verts. `npm run typecheck` : 248 erreurs,
+comme sur la base ; eslint inchange. Deux cas e2e Playwright lisent la
+banniere, le materiel et `/proc/cmdline` dans le vrai terminal.
+
+## Une machine a UN inventaire de processus, et ses vues le comptent pareil
+
+**Perimetre revendique** : `LinuxProcessCommands` (`top`),
+`ps/PsCommand` (l'en-tete et la colonne `bsdtime`),
+`system/ProcFormat` (les formats de temps, le compartimentage des
+etats, `SHR`, le nom tronque). Rien du cote journalisation.
+
+**Mesure de depart** — un poste Linux neuf, puis la MEME question a
+`top` et a `ps` :
+
+```
+Tasks: 39 total,  0 running, 33 sleeping,  0 stopped,  0 zombie
+    PID USER      PR  NI    VIRT    RES    SHR S  %CPU  %MEM     TIME+ COMMAND
+      1 root       20    0    165M    12M     4M S   0.0   0.3   0:00.00 systemd
+      2 root       20    0      0M     0M     4M S   0.0   0.0   0:00.00 [kthreadd]
+
+USER     PID   %CPU %MEM VSZ     RSS    TTY      STAT START    TIME     COMMAND
+root         1  0.0  0.3  169000  13000 ?        S    09:59       00:00 /sbin/init
+```
+
+**`Tasks: 39 total` alors que 0 + 33 + 0 + 0 = 33.** Six taches
+manquaient a l'appel : les fils noyau au repos portent l'etat `I`, que
+le compte rangeait dans aucun compartiment. La ligne se contredisait
+elle-meme, ce qu'une vraie machine ne fait jamais.
+
+`VIRT`/`RES`/`SHR` sortaient suffixes en `M` la ou `top` compte en
+KIBIOCTETS — on ne pouvait donc plus les rapprocher du `VSZ`/`RSS` de
+`ps`, qui decrit pourtant les MEMES processus. Et un fil noyau, qui n'a
+ni espace virtuel ni resident, se voyait tout de meme attribuer `4M` de
+memoire partagee : une constante, identique pour les trente-neuf
+taches.
+
+`top` ne se comptait pas lui-meme alors que `ps` le fait deja
+(`transientPsProcess`), d'ou un ecart d'une tache entre les deux vues.
+
+Enfin `ps aux` centrait ses en-tetes a GAUCHE pendant que ses valeurs
+etaient alignees a DROITE, si bien qu'aucune colonne numerique ne
+tombait sous son titre ; et `TIME` s'ecrivait `00:00` dans les deux
+formats.
+
+**L'autorite** — RELEVEE sur le GNU/Linux qui execute ce depot :
+
+```
+$ top -b -n 1 | head -8
+Tasks:  81 total,   1 running,  79 sleeping,   0 stopped,   1 zombie
+  PID USER      PR  NI    VIRT    RES    SHR S  %CPU  %MEM     TIME+ COMMAND
+    1 root      20   0   26288   6312   3380 S   0.0   0.0   0:44.87 process_a+
+    2 root      20   0       0      0      0 S   0.0   0.0   0:00.03 kthreadd
+$ ps aux | head -2
+USER       PID %CPU %MEM    VSZ   RSS TTY      STAT START   TIME COMMAND
+root         1  0.0  0.0  26288  6312 ?        SLl  Sep08   0:44 /process_api …
+$ ps -eo pid,time --no-headers | head -1
+    1 00:00:44
+$ ps aux | awk 'NR==2{print $10}'
+0:44
+$ ps -eo state --no-headers | sort | uniq -c
+     44 I
+     37 S
+      1 Z
+      1 R
+```
+
+1 + 79 + 0 + 1 = 81 : la ligne `Tasks` s'additionne exactement, et les
+44 taches en etat `I` sont comptees DORMANTES — c'est ce que
+l'echantillon d'etats montre. `VIRT`/`RES`/`SHR` valent 26288 / 6312 /
+3380, des kibioctets nus, et ce sont les MEMES nombres que `VSZ`/`RSS`
+de `ps`. Un fil noyau porte `0 0 0`. `top` affiche le `comm` SANS les
+crochets, tronque a neuf caracteres avec un `+`. Et surtout : `ps -o
+time` rend `HH:MM:SS` tandis que la colonne `TIME` de `ps aux` rend
+`M:SS` — ce ne sont pas deux formats d'une meme colonne, ce sont DEUX
+COLONNES (`time` et `bsdtime`), ce que la mesure a tranche.
+
+**Ce qui a change** : `taskBucketOf` range chaque etat dans exactement
+un compartiment, donc le total s'additionne par construction. `top`
+porte son propre processus transitoire, via le meme
+`transientSelfProcess` que `ps` — une seule definition pour les deux.
+`VIRT`/`RES` sont les kibioctets du modele, les memes que `ps`. `SHR`
+vaut 0 : ce simulateur ne modelise aucune projection partagee, et il
+compte zero pour ce qu'il ne mesure pas, comme les compteurs MIB-II du
+correctif precedent. L'en-tete de `ps` reprend l'alignement de sa
+colonne. Et `bsdtime` rejoint le registre a cote de `time`.
+
+**Discrimination** (`git stash push -- src/network`) :
+`probe-un-seul-inventaire-de-processus.test.ts` (11 cas), 7 tombent
+contre l'etat d'avant. Les 4 autres sont nommes dans l'en-tete : deux
+TEMOINS (`top` rend la memoire de `free` et la charge d'`uptime`, deux
+vues raccordees par des correctifs precedents) et deux DEJA JUSTES qui
+passaient PAR ACCIDENT — `00:00` satisfait `/^\d+:\d{2}$/` parce que le
+zero de tete est un chiffre comme un autre, et l'etat `S` du processus
+initial s'ecrit pareil sur une lettre et sur la chaine entiere. Les deux
+sont gardes parce qu'ils cessent d'etre accidentels des qu'un processus
+depasse l'heure de calcul ou porte un etat multi-lettres. Suites
+connexes : 117 fichiers, 1889 cas, tous verts. `npm run typecheck` :
+248 erreurs, comme sur la base ; eslint sans probleme avant comme
+apres. Trois cas e2e Playwright verifient l'addition de `Tasks`,
+l'accord memoire `top`/`ps` et les deux formats de `TIME`.
+
+## `env` rend l'ENVIRONNEMENT, pas la table de variables du shell
+
+**Perimetre revendique** : `bash/runtime/Environment` (l'ensemble
+exporte a la construction), `bash/interpreter/BashInterpreter`
+(l'environnement remis au processus enfant). Rien du cote
+journalisation.
+
+**Mesure de depart** — un poste Linux neuf, `env | sort` :
+
+```
+#=0
+*=
+0=bash
+@=
+EUID=1000
+HOME=/home/user
+HOSTNAME=linux-pc
+…
+UID=1000
+```
+
+**Six lignes qui n'ont rien a faire la.** `$#`, `$*`, `$@` et `$0` sont
+des PARAMETRES du shell — le nombre d'arguments, la liste des
+arguments, le nom du programme — et n'entrent jamais dans
+l'environnement d'un processus. `UID`, `EUID` et `HOSTNAME` sont des
+variables que bash pose pour lui-meme et n'exporte pas.
+
+**Le mecanisme existait pourtant** : `Environment` tient un ensemble
+`exported` et rend `getExported()`, que `export -p` lit deja
+correctement. Mais l'interprete passait `getAll()` — TOUTE la table —
+au processus enfant. Un critere stocke et jamais evalue : la regle 6.
+Le commentaire de `ExecuteCommand` promettait meme le bon contrat
+(« exported variables plus any per-command `VAR=val` prefix
+assignments ») ; c'est le code qui ne le tenait pas.
+
+**L'autorite** — RELEVEE sur le GNU/Linux qui execute ce depot :
+
+```
+$ bash -c 'for v in HOSTNAME PPID BASH OSTYPE SHELL PWD OLDPWD IFS; do
+    printf "%-10s env=%s set=%s\n" "$v" "$(env|grep -c "^$v=")" "${!v:+yes}"; done'
+HOSTNAME   env=0 set=yes
+PPID       env=0 set=yes
+BASH       env=0 set=yes
+OSTYPE     env=0 set=yes
+SHELL      env=1 set=yes
+PWD        env=1 set=yes
+OLDPWD     env=1 set=yes
+IFS        env=0 set=yes
+$ bash -c 'env | grep -c "^EUID="; env | grep -c "^UID="'
+0
+0
+```
+
+La distinction n'est donc pas « connu / inconnu » mais « exporte / pas
+exporte » : `HOSTNAME`, `PPID`, `BASH`, `OSTYPE`, `IFS`, `UID` et
+`EUID` sont POSES et VISIBLES dans le shell sans etre dans
+l'environnement.
+
+**Ce qui a change** : les variables heritees a la construction d'un
+`Environment` sont marquees exportees — c'est ce qu'elles sont, un
+processus herite d'un environnement — sauf celles que bash pose pour
+lui-meme, listees d'apres la mesure ci-dessus. Et l'interprete remet a
+l'enfant `getExported()` plus les affectations `VAR=val` posees devant
+la commande, exactement le contrat que son commentaire annoncait.
+
+**Ce que la sonde n'avait pas prevu** : la premiere version du
+correctif a casse cinq cas, tous instructifs.
+
+`FOO=1 ssh alice@hote env` cessait de transmettre `FOO`. C'est une
+VRAIE regression et pas une premisse fausse : bash exporte une
+affectation de prefixe pour la duree de cette commande. D'ou
+`childEnvironment(prefixAssigned)`, qui recompose les deux moities.
+
+En revanche `env-vars.test.ts` affirmait `printenv` doit contenir
+`HOSTNAME=linux-pc`. C'etait le DEFAUT epingle comme contrat : la
+mesure sur machine reelle dit `env=0`. Le cas a ete reecrit — il exige
+maintenant que `HOSTNAME` soit ABSENT de `printenv` et PRESENT pour
+`echo $HOSTNAME`, ce qui est la vraie propriete et distingue les deux
+tables.
+
+**Discrimination** (`git stash push -- src/network src/bash`) :
+`probe-env-ne-rend-que-l-environnement.test.ts` (11 cas), 5 tombent
+contre l'etat d'avant. Les 6 autres sont nommes dans l'en-tete : deux
+TEMOINS qui ENCADRENT le defaut (`export -p` lisait deja
+`getExported()` et disait donc la verite pendant qu'`env` mentait ;
+`set` doit continuer de montrer `UID` et `HOME`, ce qui prouve qu'on
+n'a pas EFFACE les variables non exportees mais seulement cesse de les
+transmettre), deux NON-REGRESSIONS qui gardent la reparation honnete
+(l'environnement herite est toujours la ; `$UID` reste lisible), et
+deux DEJA JUSTES (`printenv` et `env` lisaient deja la meme table —
+fausse ensemble — et le cas nominal de la variable exportee marchait).
+Suites connexes : bash / shell / terminal, 125 fichiers et 1639 cas ;
+puis 240 fichiers et 3785 cas cote reseau, tous verts.
+`npm run typecheck` : 248 erreurs, comme sur la base ; eslint inchange.
+Deux cas e2e Playwright verifient l'absence de `UID`/`HOSTNAME` dans
+`env`, leur presence dans le shell, et les trois formes
+`VAR=` / `export VAR=` / `VAR= commande`.
+
+## `systemctl` repond a la question posee, et un demon n'a qu'UN pid
+
+**Perimetre revendique** : `LinuxProcessCommands` (le `list-units` de
+`systemctl`), `LinuxMachine` (le pid de l'ecoute sshd). Rien du cote
+journalisation.
+
+**Mesure de depart** — un poste Linux neuf, la meme commande avec et
+sans ses filtres :
+
+```
+$ systemctl list-units --type=service --state=running
+  UNIT                          LOAD   ACTIVE SUB     DESCRIPTION
+
+0 loaded units listed. Pass --all to see loaded but inactive units, too.
+
+$ systemctl list-units --type=service
+  apparmor.service               loaded active   running  Load AppArmor profiles
+  apt-daily.service              loaded inactive dead     Daily apt download activities
+  … 26 loaded units listed …
+```
+
+**`--state=running` rend ZERO unite** alors que la MEME commande sans
+le filtre en montre dix-huit dont la colonne SUB dit `running`. La
+cause : le filtre etait passe a `sm.list({ state })`, ou `state` est un
+`ServiceState` du modele (`active` / `inactive` / `failed`). Seul
+`--state=inactive` marchait donc — par coincidence de vocabulaire. Un
+mot accepte, affiche dans l'aide, et jete a l'evaluation : la regle 6.
+
+Symetriquement `--all` ne changeait rien : la liste par defaut
+contenait deja les unites `dead`, et le pied de page invitait pourtant
+a passer `--all` « pour voir les unites inactives ». Et les colonnes ne
+tombaient pas sous leur en-tete, l'en-tete etant une chaine ecrite a la
+main pendant que les lignes se calaient a d'autres largeurs.
+
+Un troisieme desaccord, sur la meme machine :
+
+```
+$ ss -tlnp | grep :22     users:(("sshd",pid=985,fd=3))
+$ ps -e | grep sshd          22 ?        00:00:00 sshd
+$ systemctl status ssh       Main PID: 22 (sshd)
+```
+
+Trois vues, deux reponses. L'ecoute portait `SSHD_PID = 985`, une
+constante, pendant que la table des processus en attribuait un vrai.
+`systemd-resolved`, lui, etait d'accord partout — ce qui prouvait que
+le chemin correct existait deja.
+
+**L'autorite** — RELEVEE sur le systemd 255 installe sur la machine qui
+execute ce depot (`systemctl --help`) :
+
+```
+     --state=STATE       List units with particular LOAD or SUB or ACTIVE state
+  -a --all               Show all properties/all units currently in memory,
+                         including dead/empty ones. To list all units installed
+                         on the system, use 'list-unit-files' instead.
+```
+
+`--state` filtre donc sur l'une QUELCONQUE des trois colonnes, et
+`--all` est ce qui fait apparaitre les unites mortes. Le systeme simule
+etant une Ubuntu 22.04 (systemd 249), la legende en `LOAD   = …` de
+cette version est conservee telle quelle : seule la SELECTION etait en
+cause.
+
+**Ce qui a change** : les unites sont d'abord RENDUES en lignes
+(unit / load / active / sub / description), puis filtrees sur ces
+lignes-la — ce que dit l'aide. `--all` decide de la presence des unites
+mortes quand aucun `--state` n'est donne, et le pied de page cesse de
+proposer `--all` quand il est deja passe. Le tableau passe par
+`renderTable` : en-tete et valeurs partagent enfin une seule mesure de
+largeur. Et l'ecoute sshd lit son pid dans la table des processus.
+
+**Une premisse fausse corrigee** (regle 7) :
+`sockets-une-seule-verite.test.ts` affirmait `expect(l.pid).toBe(985)`
+— le defaut epingle comme contrat, dans la suite meme qui s'appelle
+« une seule verite ». Le cas exige desormais que le pid de l'ecoute
+soit celui que `ps` liste, ce qui est la propriete que la suite
+cherchait a garantir.
+
+**Discrimination** (`git stash push -- src/network`) :
+`probe-systemctl-repond-a-la-question.test.ts` (11 cas), 6 tombent
+contre l'etat d'avant. Les 5 autres sont nommes dans l'en-tete : un
+DEJA JUSTE qui ISOLE la panne (`--state=inactive`, le seul etat qui
+marchait, ce qui montre que le defaut est dans le vocabulaire du filtre
+et non dans son principe), un VACUEUX AVANT (le pied de page comptait
+zero pour zero ligne), deux TEMOINS sur le registre de services
+(`is-active` et `service --status-all`, deja d'accord, qui prouvent que
+le defaut etait dans la SELECTION et non dans l'etat des unites) et un
+TEMOIN sur les pids (`systemd-resolved`, deja coherent partout). Suites
+connexes : 244 fichiers, 4628 cas, tous verts. `npm run typecheck` :
+248 erreurs, comme sur la base ; eslint revenu a son compte d'avant.
+Trois cas e2e Playwright verifient `--state=running`, l'effet de
+`--all` et l'accord `ss` / `systemctl status` sur le pid de sshd.

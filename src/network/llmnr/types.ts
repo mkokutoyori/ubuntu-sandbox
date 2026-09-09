@@ -16,7 +16,6 @@ export const LLMNR_BINDING: McastDnsBinding = {
   port: LLMNR_PORT,
   group: LLMNR_IPV4_GROUP,
   group6: LLMNR_IPV6_GROUP,
-  processName: 'systemd-resolved',
 };
 
 /**

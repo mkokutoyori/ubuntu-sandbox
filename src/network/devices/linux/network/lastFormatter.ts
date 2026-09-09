@@ -82,6 +82,13 @@ export interface LastContext {
   utmp: UtmpSync | null;
   bootDate: Date | null;
   now: Date;
+  /**
+   * Le noyau sous lequel la machine a demarre, celui que `uname -r`
+   * nomme. `last` en portait une copie ecrite en dur, si bien que
+   * l'enregistrement de demarrage annoncait un autre noyau que la
+   * machine elle-meme.
+   */
+  kernelRelease: string;
 }
 
 function readSessions(ctx: LastContext): SshSession[] {
@@ -155,9 +162,9 @@ function renderRow(s: SshSession, opts: LastOptions, now: Date): string {
   return cols.join(' ');
 }
 
-function rebootRow(boot: Date, opts: LastOptions, now: Date): string {
+function rebootRow(boot: Date, opts: LastOptions, now: Date, kernelRelease: string): string {
   const cols: string[] = [pad('reboot', 8), pad('system boot', 12)];
-  if (!opts.nohostname) cols.push(pad('5.15.0-91-generic', 16));
+  if (!opts.nohostname) cols.push(pad(kernelRelease, 16));
   cols.push(fmtTimestamp(boot, opts.fulltimes));
   const dur = Math.floor((now.getTime() - boot.getTime()) / 1000);
   cols.push('  still running');
@@ -175,7 +182,7 @@ export function renderLast(ctx: LastContext, args: string[]): string {
   const reboots = readRebootEntries(ctx);
   if (filter && filter === 'reboot') {
     const lines: string[] = [];
-    for (const r of reboots) lines.push(rebootRow(r, opts, ctx.now));
+    for (const r of reboots) lines.push(rebootRow(r, opts, ctx.now, ctx.kernelRelease));
     lines.push('', wtmpFooter(ctx));
     return lines.join('\n');
   }
@@ -187,7 +194,7 @@ export function renderLast(ctx: LastContext, args: string[]): string {
   const lines: string[] = sessions.map((s) => renderRow(s, opts, ctx.now));
   if (!filter && reboots.length > 0) {
     if (limit === 10_000 || sessions.length < limit) {
-      for (const r of reboots) lines.push(rebootRow(r, opts, ctx.now));
+      for (const r of reboots) lines.push(rebootRow(r, opts, ctx.now, ctx.kernelRelease));
     }
   }
   lines.push('', wtmpFooter(ctx));

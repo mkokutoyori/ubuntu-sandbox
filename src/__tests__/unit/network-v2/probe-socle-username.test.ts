@@ -208,3 +208,127 @@ describe('les deux plateformes repondent la MEME chose', () => {
     expect(decrit(s.cliHelp(''))).toBe(cote);
   });
 });
+
+/*
+ * SUITE — les formes TRONQUEES, ecrites A L'AVEUGLE depuis la
+ * documentation IOS de `username` avant toute lecture du code.
+ *
+ * Ce que la reference dit, et que les 18 premiers cas ne touchaient
+ * pas :
+ *   `username <nom> secret { 0 <mot> | 4 | 5 | 8 | 9 <condense> }`,
+ *   `username <nom> password { 0 | 7 } <chaine>`,
+ *   `username <nom> view <vue>`, `access-class <1-199>`,
+ *   `user-maxlinks <0-255>`.
+ * Une valeur ABSENTE n'est pas un LINE : la commande est INCOMPLETE.
+ *
+ * Discriminee contre l'etat d'avant : 16 des 91 cas tombent. Les 75
+ * autres sont nommes ici plutot que laisses a decouvrir.
+ *   - les 18 cas d'origine passaient deja, et le doivent : ils portent
+ *     sur les formes COMPLETES, que le glouton honorait ;
+ *   - `no username` et les cinq cas de REFUS passaient parce que le
+ *     gestionnaire controlait deja `privilege`, `access-class` et
+ *     `user-maxlinks` quand la valeur etait PRESENTE — c'est son
+ *     ABSENCE qu'il n'exigeait nulle part ;
+ *   - `password 7`, `secret 8|9`, le chiffre inconnu et la description
+ *     de plusieurs mots sont des cas de NON-REGRESSION : ils gardent
+ *     que le sac d'options n'a rien perdu de ce que la boucle faisait ;
+ *   - `view INEXISTANTE` passait, la verification de la vue existant
+ *     deja et etant simplement DEPLACEE dans le gestionnaire declare.
+ *
+ * DEUX PREMISSES DE CETTE SUITE ETAIENT FAUSSES et la reference les a
+ * corrigees plutot que le code : j'avais exige que `username bob secret
+ * 99 abcd` et `username bob password 9 abcd` soient REFUSES, le chiffre
+ * n'etant pas un type de condense connu. Mais la forme NUE `secret
+ * <LINE>` existe aussi, et `99 abcd` est un LINE parfaitement valide —
+ * une vraie machine en fait donc le mot de passe. Les deux cas sont
+ * retires : les garder aurait fait refuser une saisie qu'IOS accepte.
+ */
+
+const MANQUANTS: readonly string[] = [
+  'username bob secret',
+  'username bob password',
+  'username bob privilege',
+  'username bob view',
+  'username bob algorithm-type',
+  'username bob algorithm-type scrypt secret',
+  'username bob access-class',
+  'username bob user-maxlinks',
+  'no username',
+];
+
+const REFUSES: readonly string[] = [
+  'username bob access-class zorglub',
+  'username bob access-class 0',
+  'username bob user-maxlinks 256',
+  'username bob privilege 15 zorglub Cisco123',
+  'username bob nopassword zorglub',
+];
+
+for (const [nom, fabrique] of PLATEFORMES) {
+  describe(`\`username\` — formes tronquees et refusees sur un ${nom}`, () => {
+    for (const saisie of MANQUANTS) {
+      it(`\`${saisie}\` est INCOMPLETE`, async () => {
+        const d = await fabrique();
+        expect(await d.executeCommand(saisie)).toMatch(/Incomplete command/);
+      });
+    }
+
+    for (const saisie of REFUSES) {
+      it(`\`${saisie}\` est refuse, pas range`, async () => {
+        const d = await fabrique();
+        expect(await d.executeCommand(saisie)).toMatch(REFUS);
+        expect(await conf(d)).not.toMatch(/zorglub/);
+      });
+    }
+
+    it('`view` exige une vue qui EXISTE', async () => {
+      const d = await fabrique();
+      expect(await d.executeCommand('username zoe view INEXISTANTE secret X'))
+        .toMatch(/Invalid input|not present|%/);
+      expect(await conf(d)).not.toMatch(/view INEXISTANTE/);
+    });
+
+    it('`privilege 15` seul, sans secret, se pose et se relit', async () => {
+      const d = await fabrique();
+      expect(await d.executeCommand('username zoe privilege 15')).not.toMatch(REFUS);
+      expect(await conf(d)).toMatch(/^username zoe privilege 15\s*$/m);
+    });
+
+    it('`password 7` garde le condense tel quel', async () => {
+      const d = await fabrique();
+      await d.executeCommand('username zoe password 7 070C285F4D06');
+      expect(await conf(d)).toContain('username zoe password 7 070C285F4D06');
+    });
+
+    it('`secret 8` et `secret 9` sont acceptes', async () => {
+      const d = await fabrique();
+      expect(await d.executeCommand('username zoe secret 8 $8$abcd$efgh'))
+        .not.toMatch(REFUS);
+      expect(await d.executeCommand('username ava secret 9 $9$abcd$efgh'))
+        .not.toMatch(REFUS);
+    });
+
+    it('une DESCRIPTION de plusieurs mots se relit entiere', async () => {
+      const d = await fabrique();
+      await d.executeCommand('username zoe description Chef du reseau');
+      expect(await conf(d)).toContain('description Chef du reseau');
+    });
+
+    it('un CHIFFRE inconnu reste le mot de passe, comme sur IOS', async () => {
+      const d = await fabrique();
+      expect(await d.executeCommand('username zoe secret 99 abcd')).not.toMatch(REFUS);
+    });
+  });
+}
+
+describe('les formes tronquees repondent la MEME chose des deux cotes', () => {
+  for (const saisie of [...MANQUANTS, ...REFUSES]) {
+    it(`\`${saisie}\``, async () => {
+      const r = await routeur(); const s = await commutateur();
+      const nettoie = (t: string) => t.replace(/\^/g, '').replace(/\s+/g, ' ').trim();
+      const cote = nettoie(await r.executeCommand(saisie));
+      expect(cote.length).toBeGreaterThan(0);
+      expect(nettoie(await s.executeCommand(saisie))).toBe(cote);
+    });
+  }
+});

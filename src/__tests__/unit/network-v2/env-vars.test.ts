@@ -57,12 +57,13 @@ describe('EV-01 — Linux printenv', () => {
 // ═══════════════════════════════════════════════════════════════════════
 
 describe('EV-02 — Linux login shell exports standard variables', () => {
-  it('exposes HOSTNAME, TERM and MAIL', async () => {
+  it('exposes TERM and MAIL, and keeps HOSTNAME out of the environment', async () => {
     const pc = new LinuxPC('linux-pc', 'PC1');
     const out = await pc.executeCommand('printenv');
-    expect(out).toMatch(/^HOSTNAME=linux-pc$/m);
     expect(out).toMatch(/^TERM=/m);
     expect(out).toMatch(/^MAIL=\/var\/mail\//m);
+    expect(out).not.toMatch(/^HOSTNAME=/m);
+    expect((await pc.executeCommand('echo $HOSTNAME')).trim()).toBe('linux-pc');
   });
 
   it('$HOSTNAME expands to the configured hostname', async () => {

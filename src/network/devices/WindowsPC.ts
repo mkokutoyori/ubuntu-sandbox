@@ -23,13 +23,16 @@ import {
 import { selectBundleMember } from '@/network/lacp/loadBalance';
 import type { EthernetFrame } from '../core/types';
 import { MACAddress } from '../core/types';
-import { toDisplayName } from './windows/WindowsInterfaceNaming';
+import { toDisplayName, adapterIfIndex, LOOPBACK_IFINDEX } from './windows/WindowsInterfaceNaming';
+import { interfaceGuidFor } from './host/hardware/HardwareIdentity';
+import type { WindowsAdapterIdentity } from './windows/netAdapter';
 import { NetworkAdapter } from './host/hardware';
 import {
   MULTIPLEXOR_DRIVER, adapterNameProblem, adapterNameTaken, identityOfPort,
   windowsInterfaceDescription,
 } from './windows/netAdapter';
 import { NtpAgent, type NtpHost } from '../ntp/NtpAgent';
+import { UDP_PORT_NTP } from '../ntp/types';
 import { W32TimeService } from './windows/W32TimeService';
 import { DnsCache } from '../dns/resolver/DnsCache';
 import { RRType } from '../dns/wire/RRType';
@@ -185,6 +188,8 @@ import { SessionSwapWindow } from './host/session/SessionSwapWindow';
 import * as WinSys from './windows/WinSystemCommands';
 import { cmdReg as winCmdReg } from './windows/WinRegCommand';
 import { cmdDir } from './windows/WinDir';
+import { cmdFsutil } from './windows/Fsutil';
+import type { WmiHost } from './windows/WmiClasses';
 import { applyFindstr } from './windows/textFilters';
 import { CrossVendorRemoteShell } from '@/shell/CrossVendorRemoteShell';
 import type { NetIPAddressEntry } from './windows/netIpAddress';
@@ -417,6 +422,7 @@ export class WindowsPC extends EndHost implements UserAccountHost {
     this.hostModel = 'strong';
     this.createPorts();
     this.fs = new WindowsFileSystem(name);
+    this.seedVolumesFromHardware();
     // Materialise the event logs as .evtx files under winevt\Logs.
     this.eventLog.attachFilesystem(this.fs);
     this.userMgr = new WindowsUserManager();
@@ -443,6 +449,7 @@ export class WindowsPC extends EndHost implements UserAccountHost {
       this.syncLinkLocalResponders();
       if (change) this.auditRegistryChange(change);
     };
+    this.syncLinkLocalResponders();
   }
 
   // ─── LLMNR / mDNS (client DNS Windows) ──────────────────────────
@@ -2169,6 +2176,23 @@ export class WindowsPC extends EndHost implements UserAccountHost {
     return windowsInterfaceDescription(model, ordinal);
   }
 
+  adapterIfIndexOf(portName: string): number {
+    const position = this.getPorts().findIndex(p => p.getName() === portName);
+    return position < 0 ? LOOPBACK_IFINDEX : adapterIfIndex(position);
+  }
+
+  interfaceGuidOf(portName: string): string {
+    return interfaceGuidFor(this.name, portName);
+  }
+
+  adapterIdentityOf(portName: string): WindowsAdapterIdentity {
+    return {
+      description: this.interfaceDescriptionOf(portName),
+      ifIndex: this.adapterIfIndexOf(portName),
+      guid: this.interfaceGuidOf(portName),
+    };
+  }
+
   private driverModelOf(portName: string): string {
     const port = this.getPort(portName);
     if (port === undefined || port.isCarrierless()) return MULTIPLEXOR_DRIVER;
@@ -2703,6 +2727,7 @@ export class WindowsPC extends EndHost implements UserAccountHost {
       case 'nbtstat': return this.cmdNbtstat(args);
       case 'w32tm':   return this.cmdW32tm(args);
       case 'wmic':    return this.cmdWmic(args);
+      case 'fsutil':  return cmdFsutil(this.buildSystemContext(), args);
       case 'reg':     return this.cmdReg(args);
       case 'nltest':  return cmdNltest({
         domainMembership: this.domainMembership,
@@ -3187,6 +3212,8 @@ export class WindowsPC extends EndHost implements UserAccountHost {
     return {
       hostname: this.hostname,
       ports: this.ports,
+      adapterIdentityOf: (portName: string) => this.adapterIdentityOf(portName),
+      protocolCounters: () => this.getProtocolCounters(),
       get defaultGateway() { return host.defaultGateway?.toString() || null; },
       get defaultGateway6() { return host.getDefaultGateway6()?.toString() || null; },
       arpTable: this.arpTable,
@@ -3466,6 +3493,13 @@ export class WindowsPC extends EndHost implements UserAccountHost {
       os: this.getIdentity().os,
       bootedAt: () => this.getLifecycle().bootedAt() ?? null,
       hardware: this.hardware,
+      adapterIdentityOf: (portName: string) => this.adapterIdentityOf(portName),
+      volumes: {
+        letters: () => this.fs.listDrives(),
+        capacityBytes: (letter) => this.fs.getDriveCapacity(letter),
+        freeBytes: (letter) => this.fs.getFreeDiskSpace(letter),
+        label: (letter) => this.fs.getVolumeLabel(letter),
+      },
       ports: this.ports,
       isDHCPConfigured: (ifName) => this.isDHCPConfigured(ifName),
       getVolumeSerialNumber: (letter) => this.fs.getVolumeSerialNumber(letter),
@@ -3757,11 +3791,11 @@ export class WindowsPC extends EndHost implements UserAccountHost {
   }
 
   private cmdDate(args: string[]): string {
-    return WinSys.cmdDate(args);
+    return WinSys.cmdDate(args, this.identity.timezone);
   }
 
   private cmdTime(args: string[]): string {
-    return WinSys.cmdTime(args);
+    return WinSys.cmdTime(args, this.identity.timezone);
   }
 
   private cmdStart(args: string[]): string {
@@ -3781,11 +3815,34 @@ export class WindowsPC extends EndHost implements UserAccountHost {
   }
 
   private cmdWmic(args: string[]): string {
-    if (args.join(' ').toLowerCase().includes('logicaldisk')) {
-      const drives = this.fs.listDrives();
-      return ['Name  ', ...drives.map((d) => d.padEnd(6))].join('\n');
-    }
     return WinSys.cmdWmic(this.buildSystemContext(), args);
+  }
+
+  /**
+   * Ce que les classes WMI lisent de la machine. `wmic` y arrive par le
+   * contexte des commandes cmd, `Get-CimInstance` par le fournisseur
+   * PowerShell : deux facades, une seule source.
+   */
+  wmiHost(): WmiHost {
+    return this.buildSystemContext();
+  }
+
+  /**
+   * La taille et l'etiquette d'un volume viennent de la partition qui le
+   * porte. Sans cela le systeme de fichiers inventait ses propres 100 Go
+   * pour `C:` pendant que l'inventaire materiel en annoncait d'autres —
+   * deux ecritures du meme fait.
+   */
+  private seedVolumesFromHardware(): void {
+    for (const disk of this.hardware.storage) {
+      for (const part of disk.partitions) {
+        if (!part.mountPoint) continue;
+        const letter = part.mountPoint.charAt(0).toUpperCase();
+        this.fs.mkdirp(`${letter}:\\`);
+        this.fs.setDriveCapacity(letter, part.sizeBytes);
+        this.fs.setVolumeLabel(letter, part.label);
+      }
+    }
   }
 
   private cmdReg(args: string[]): string {
@@ -3833,6 +3890,11 @@ export class WindowsPC extends EndHost implements UserAccountHost {
         : this.tcpConnectOutcome(new IPAddress(ip), port)),
       probeService: (ip, port, payload) =>
         this.getTcpStack().probeService(ip, port, payload),
+      routes: () => this.getRoutingTable().map((r) => ({
+        dest: r.network.toString(), maskBits: r.mask.toCIDR(),
+        dev: r.iface, metric: r.metric,
+        gateway: r.nextHop?.toString(),
+      })),
       sendUdpProbe: (ip, port, sourcePort, options) => {
         const { payload, ...emission } = options ?? {};
         return this.sendUdpDatagram(
@@ -5172,9 +5234,14 @@ export class WindowsPC extends EndHost implements UserAccountHost {
 
   /** L'agent NTP de cette machine — le MEME moteur que Cisco et Linux. */
   private _ntpAgent: NtpAgent | null = null;
+  public override resolverProcessName(): string { return 'svchost'; }
+
   getNtpAgent(): NtpAgent {
     if (!this._ntpAgent) {
       this._ntpAgent = new NtpAgent(this as unknown as NtpHost, () => this.getBus(), () => this.getScheduler());
+      this.udpBind(UDP_PORT_NTP, ({ inPort, sourceIP, udp }) => {
+        this._ntpAgent?.handleUdp(inPort, sourceIP as IPAddress, udp);
+      }, 'svchost');
     }
     return this._ntpAgent;
   }

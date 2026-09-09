@@ -23,8 +23,6 @@ export interface McastDnsBinding {
   readonly group: string;
   /** Link-scoped IPv6 group — `ff02::1:3` or `ff02::fb`. */
   readonly group6?: string;
-  /** Nom du processus, pour `ss`/`netstat`. */
-  readonly processName: string;
 }
 
 /** Ce qu'un répondeur décide : se taire, ou répondre par tel chemin. */
@@ -128,7 +126,7 @@ export function bindMulticastDns(
     } else {
       sendOnBothGroups(host, binding, binding.port, bytes);
     }
-  }, binding.processName);
+  }, host.resolverProcessName());
   joinIpv6Group(host, binding);
 }
 
@@ -188,7 +186,7 @@ export function queryMulticastDnsSync(
       try { response = decodeDnsMessage(udp.payload); } catch { return; }
       if (!response.flags.qr || response.id !== query.id) return;
       collected.push(response);
-    }, `${binding.processName}-client`);
+    }, `${host.resolverProcessName()}-client`);
   } catch { return []; }
 
   const bytes = encodeDnsMessage(query);
@@ -228,7 +226,7 @@ export function queryMulticastDns(
         if (!response.flags.qr || response.id !== query.id) return;
         collected.push(response);
         if (options.firstOnly) finish();
-      }, `${binding.processName}-client`);
+      }, `${host.resolverProcessName()}-client`);
     } catch {
       resolve([]);
       return;

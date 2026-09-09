@@ -60,7 +60,7 @@ describe('df reads the real VFS', () => {
   it('df -h prints human-readable units on the / row', async () => {
     const pc = new LinuxPC('linux-pc', 'PC1', 0, 0);
     const out = await pc.executeCommand('df -h');
-    expect(out).toMatch(/\/dev\/sda1\s+50G\s+\S+[KMGT]?\s+\S+[KMGT]?\s+\d+%\s+\//);
+    expect(out).toMatch(/\/dev\/sda1\s+48G\s+\S+[KMGT]?\s+\S+[KMGT]?\s+\d+%\s+\//);
   });
 
   it('df -i Used inode count tracks actual file count', async () => {

@@ -1,4 +1,5 @@
 import { registerInfoCenterCommands } from './HuaweiInfoCenterCommands';
+import { HUAWEI_ERRORS } from '../cli-utils';
 import { InfoCenterConfig } from '../../router/management/InfoCenterConfig';
 /**
  * HuaweiCommonSecurity — management-plane commands common to the Huawei
@@ -99,6 +100,7 @@ export function registerHuaweiCommonSecurity(
    */
   getNtpAgentDirect?: () => import('../../../ntp/NtpAgent').NtpAgent | undefined,
   getSnmpServiceDirect?: () => SnmpService | undefined,
+  setSystemClock?: (epochMs: number) => void,
 ): void {
   const dispatch = (feature: 'stelnet' | 'telnet' | 'ssh' | 'ntp-service' | 'clock' | 'sflow', args: string[]) => {
     if (!getRouter) return '';
@@ -117,7 +119,12 @@ export function registerHuaweiCommonSecurity(
       case 'telnet': mgmt.configureTelnet(args); break;
       case 'ssh': mgmt.configureSsh(args); break;
       case 'ntp-service': mgmt.configureNtp(args); break;
-      case 'clock': mgmt.configureClock(args); break;
+      case 'clock': {
+        const verdict = mgmt.configureClock(args);
+        if (typeof verdict === 'string') return HUAWEI_ERRORS.WRONG(args.join(' '), 0);
+        if (verdict !== null) setSystemClock?.(verdict);
+        break;
+      }
       case 'sflow': mgmt.configureSflow(args); break;
     }
     return '';

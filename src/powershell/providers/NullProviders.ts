@@ -24,6 +24,7 @@ export const NULL_PROVIDERS: PSProviders = {
   vpn:            null,
   scheduledTasks: null,
   disks:          null,
+  wmi:            null,
   environment:    null,
   remoting:       null,
   roles:          null,

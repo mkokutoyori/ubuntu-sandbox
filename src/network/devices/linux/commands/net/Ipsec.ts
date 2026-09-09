@@ -125,7 +125,7 @@ export const ipsecCommand: LinuxCommand = {
         });
       case 'version':
         return Promise.resolve({
-          output: `Linux strongSwan U${VERSION}/K5.15.0-generic\n`
+          output: `Linux strongSwan U${VERSION}/K${ctx.executor.identity.kernel.release}\n`
             + 'University of Applied Sciences Rapperswil, Switzerland',
           exitCode: 0,
         });
@@ -137,7 +137,7 @@ export const ipsecCommand: LinuxCommand = {
       case 'statusall': {
         if (!running()) return Promise.resolve(notRunning);
         const lines = [
-          `Status of IKE charon daemon (strongSwan ${VERSION}, Linux 5.15.0-generic, x86_64):`,
+          `Status of IKE charon daemon (strongSwan ${VERSION}, Linux ${ctx.executor.identity.kernel.release}, ${ctx.executor.identity.kernel.machine}):`,
           '  uptime: 0 seconds, since now',
           '  worker threads: 16 of 16 idle, 5/0/0/0 working, job queue: 0/0/0/0',
           '  loaded plugins: charon aes sha2 sha1 md5 hmac pem x509 kernel-netlink',

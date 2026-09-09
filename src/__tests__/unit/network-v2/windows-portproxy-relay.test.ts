@@ -132,12 +132,9 @@ describe('PRD-Port-Forwarding.md Phase 7 — portproxy relays real TCP data', ()
   });
 
   it('netstat visibility still works (no regression on prior phases)', async () => {
-    // netstat's own address rendering for a LISTEN entry is a pre-existing,
-    // unrelated quirk (already covered by windows-port-forwarding.test.ts's
-    // PP-02) — this only re-confirms the port itself still surfaces once a
-    // real TcpStack listener is also opened alongside the SocketTable bind.
     const { gw } = await buildLab();
     const out = await gw.executeCommand('netstat -an');
-    expect(out).toMatch(new RegExp(`0\\.0\\.0\\.0:${LISTEN_PORT}\\s+0\\.0\\.0\\.0:0\\s+LISTENING`));
+    expect(out).toMatch(
+      new RegExp(`${GW_CLIENT_SIDE_IP}:${LISTEN_PORT}\\s+0\\.0\\.0\\.0:0\\s+LISTENING`));
   });
 });

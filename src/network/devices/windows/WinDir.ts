@@ -18,6 +18,13 @@ import {
 
 type DirListing = ReturnType<WinFileCommandContext['fs']['listDirectory']>;
 
+export function volumeHeading(ctx: WinFileCommandContext, letter: string): string {
+  const label = ctx.fs.getVolumeLabel(letter);
+  return label
+    ? ` Volume in drive ${letter} is ${label}`
+    : ` Volume in drive ${letter} has no label.`;
+}
+
 function keepVisible(entries: DirListing, selection: AttributeSelection | null): DirListing {
   if (selection === null) {
     return entries.filter(e => isDefaultVisible(e.entry.attributes)) as DirListing;
@@ -131,7 +138,7 @@ function dirWildcard(
   const entries = keepVisible(ctx.fs.listDirectory(absPath), selection).filter(e => re.test(e.name));
   if (entries.length === 0) return 'File Not Found';
   const lines: string[] = [];
-  lines.push(` Volume in drive ${absPath[0]} has no label.`);
+  lines.push(volumeHeading(ctx, absPath[0]));
   lines.push(` Volume Serial Number is ${ctx.fs.getVolumeSerialNumber(absPath[0])}`);
   lines.push('');
   lines.push(` Directory of ${absPath}`);
@@ -164,7 +171,7 @@ function dirSingleFile(ctx: WinFileCommandContext, absPath: string): string {
   const hit = entries.find(e => e.name.toLowerCase() === leaf.toLowerCase());
   if (!hit) return 'File Not Found';
   const lines: string[] = [];
-  lines.push(` Volume in drive ${absPath[0]} has no label.`);
+  lines.push(volumeHeading(ctx, absPath[0]));
   lines.push(` Volume Serial Number is ${ctx.fs.getVolumeSerialNumber(absPath[0])}`);
   lines.push('');
   lines.push(` Directory of ${parent}`);
@@ -185,7 +192,7 @@ function dirSingle(
   const lines: string[] = [];
 
   // Volume header
-  lines.push(` Volume in drive ${absPath[0]} has no label.`);
+  lines.push(volumeHeading(ctx, absPath[0]));
   lines.push(` Volume Serial Number is ${ctx.fs.getVolumeSerialNumber(absPath[0])}`);
   lines.push('');
   lines.push(` Directory of ${absPath}`);
@@ -260,7 +267,7 @@ function dirRecursive(
   const lines: string[] = [];
 
   // Volume header
-  lines.push(` Volume in drive ${absPath[0]} has no label.`);
+  lines.push(volumeHeading(ctx, absPath[0]));
   lines.push(` Volume Serial Number is ${ctx.fs.getVolumeSerialNumber(absPath[0])}`);
   lines.push('');
 

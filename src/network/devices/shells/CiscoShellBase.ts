@@ -21,7 +21,7 @@ import {
   type TimeRangeStore,
 } from '@/cli/commands/timeRange/timeRangeFamily';
 import {
-  specsFromTrieRegistrations, isCollector, type AdapterKeyword,
+  specsFromTrieRegistrations, type AdapterKeyword,
 } from '@/cli/commands/trieAdapter';
 import { newSession, type CliSession } from '@/cli/CliSession';
 import { parseCommand, uniqueChild } from '@/cli/CommandParser';
@@ -44,7 +44,9 @@ import { showIpDhcpSpecs, type DhcpViewServer } from '@/cli/commands/show/showIp
 import { showConfigViewSpecs } from '@/cli/commands/show/showSlice';
 import { debugFamily, type DebugPair } from '@/cli/commands/debug/debugFamily';
 import { legacyFamily } from '@/cli/LegacyDeclaration';
-import { loggingFamily, type LoggingEntry } from '@/cli/commands/logging/loggingFamily';
+import {
+  loggingFamily, type LoggingEntry, type LoggingContinuation,
+} from '@/cli/commands/logging/loggingFamily';
 import { sequenceFamily, type SequenceEntry } from '@/cli/commands/SequenceFamily';
 import {
   FACILITY_NAMES, BUFFERED_SIZE_MIN, BUFFERED_SIZE_MAX,
@@ -56,6 +58,8 @@ import { projectSnmpServiceOntoAgent } from '@/network/snmp/snmpProjection';
 import { renderStartupConfig } from './cisco/ciscoConfigSerializer';
 import { CommandTrie, type ParamType } from './CommandTrie';
 import { fhrpInterfaceSpecs, type FhrpPlacement } from './cisco/fhrpInterfaceSpecs';
+import { DEFAULT_SUMMER_OFFSET_MIN } from '@/network/core/time/DeviceClock';
+import { getDeviceClock } from '@/network/equipment/RouterServiceCapabilities';
 import {
   parseSummerTimeRule, type SummerTimeRule,
 } from './cisco/clockSummerTime';
@@ -76,10 +80,16 @@ import { ipGlobalSpecs, type IpGlobalHost } from './cisco/ipGlobalSpecs';
 import { bgpFilterListSpecs, type FilterListHost } from './cisco/filterListSpecs';
 import { globalHeadSpecs, type GlobalHeadHost } from './cisco/globalHeadSpecs';
 import { aaaServerSpecs, type AaaServerHost } from './cisco/aaaServerSpecs';
+import {
+  usernameSpecs, type UsernameHost, type UsernameSettings,
+} from './cisco/usernameSpecs';
+import { parserViewSpecs, type ParserViewHost } from './cisco/parserViewSpecs';
+import { aaaHeadSpecs, type AaaHeadHost } from './cisco/aaaHeadSpecs';
 import { cryptoKeySpecs, type CryptoKeyHost } from './cisco/cryptoKeySpecs';
 import { clearLineSpecs, type ClearRestantsHost } from './cisco/clearRestantsSpecs';
 import {
   getSecurityConfig, buildIdentityShowCommands, buildIdentityConfigCommands,
+  parseAaaMethod,
 } from './cisco/CiscoSecurityCommands';
 import { parseLineMethodList } from './cisco/lineMethodList';
 import { parserViewMode } from '../router/security/CiscoSecurityConfig';
@@ -188,7 +198,7 @@ import {
   PRIVILEGED_EXEC_ONLY, type ExecScope,
 } from './cisco/CiscoExecScope';
 import {
-  registerLoggingConfigCommands, loggingShowViews, severityValues,
+  loggingShowViews, severityValues,
   registerSequenceNumbersCommand,
 } from './cisco/CiscoLoggingCommands';
 import type { LoggingCommandContext } from './cisco/CiscoLoggingCommands';
@@ -604,55 +614,6 @@ const LINE_KEYWORD_SUITES: ReadonlyArray<readonly [string, ReadonlyArray<readonl
 function suitesDeLigne(mot: string): readonly string[] {
   return (LINE_KEYWORD_SUITES.find(([k]) => k === mot)?.[1] ?? []).map(([s]) => s);
 }
-
-
-/**
- * Les places du sous-mode `config-view`.
- *
- * `commands` en prend TROIS avant la commande elle-meme — le mode, le
- * sens, puis un `all` facultatif — et les annoncer comme un mot muet
- * laissait l'operateur deviner l'ordre d'une commande dont l'ordre EST
- * la difficulte.
- */
-const VIEW_SUBMODE_ARGUMENTS:
-Readonly<Record<string, ArgumentSpec | readonly ArgumentSpec[] | null>> = {
-  secret: {
-    name: 'secret', type: 'REST', literal: 'LINE',
-    description: 'The password itself, or a digest already computed',
-  },
-  view: { name: 'membre', type: 'WORD', description: 'Name of the member view' },
-  commands: [{
-    name: 'mode', type: 'ENUM', description: 'Mode the commands belong to',
-    values: [
-      { keyword: 'exec', description: 'EXEC mode commands' },
-      { keyword: 'configure', description: 'Global configuration commands' },
-      { keyword: 'interface', description: 'Interface configuration commands' },
-      { keyword: 'line', description: 'Line configuration commands' },
-    ],
-  }],
-};
-
-const VIEW_COMMANDS_KEYWORDS: ReadonlyArray<AdapterKeyword> = [
-  {
-    keyword: 'include', description: 'Add a command to the view',
-    afterArguments: true,
-    argument: { name: 'commande', type: 'REST', literal: 'LINE',
-      description: 'The command, optionally preceded by `all`' },
-  },
-  {
-    keyword: 'include-exclusive',
-    description: 'Add a command to the view and reserve it for this view',
-    afterArguments: true,
-    argument: { name: 'commande', type: 'REST', literal: 'LINE',
-      description: 'The command, optionally preceded by `all`' },
-  },
-  {
-    keyword: 'exclude', description: 'Remove a command from the view',
-    afterArguments: true,
-    argument: { name: 'commande', type: 'REST', literal: 'LINE',
-      description: 'The command, optionally preceded by `all`' },
-  },
-];
 
 
 /*
@@ -4112,6 +4073,38 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     // `REST` decrit ce qu'on sait : la suite est du texte.
     const LIGNE_FILTRE = { name: 'filtre', type: 'REST' as const };
 
+    const md = (suite: LoggingContinuation[] = []): LoggingContinuation => ({
+      keyword: 'discriminator', description: 'Establish MD-Host association',
+      argument: { name: 'nom', type: 'WORD', description: 'Message discriminator name' },
+      continuations: suite,
+    });
+
+    // `port` ne vaut que DERRIERE un transport, et c'est exactement ce
+    // que le moteur lit : `logging host <ip> transport {udp|tcp} [port
+    // <n>]`. Le declarer sous le transport le fait annoncer la, et
+    // nulle part ailleurs.
+    const transport = (suite: LoggingContinuation[] = []): LoggingContinuation => ({
+      keyword: 'transport', description: 'Specify the transport protocol',
+      argument: {
+        name: 'protocole', type: 'ENUM',
+        values: [
+          { keyword: 'tcp', description: 'Send messages over TCP' },
+          { keyword: 'udp', description: 'Send messages over UDP' },
+        ],
+      },
+      continuations: [
+        {
+          keyword: 'port', description: 'Specify the port number',
+          argument: {
+            name: 'numero', type: 'INT', range: [1, 65535],
+            description: 'Port the syslog server listens on',
+          },
+          continuations: suite,
+        },
+        ...suite,
+      ],
+    });
+
     // Les phrases d'IOS viennent de la table qui les porte deja : les
     // retaper ici en ferait une seconde, et la premiere divergence
     // passerait inapercue. Le `<0-7>` en tete est un TYPE, pas une
@@ -4189,15 +4182,26 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       {
         keyword: 'origin-id', description: 'Add origin ID to syslog messages',
         undoWithoutArgument: true,
+        // `string` EXIGE son texte, les trois autres n'en prennent
+        // aucun : les quatre dans une meme ENUM faisaient de `string` un
+        // mode complet, et `logging origin-id string SITE-A` ne vivait
+        // que par le noeud glouton qui avalait le reste de la ligne.
+        continuationsReplaceArgument: true,
         argument: {
           name: 'mode', type: 'ENUM',
           values: [
             { keyword: 'hostname', description: 'Use hostname as ID' },
             { keyword: 'ip', description: 'Use IP address as ID' },
             { keyword: 'ipv6', description: 'Use IPv6 address as ID' },
-            { keyword: 'string', description: 'Use a user-defined string as ID' },
           ],
         },
+        continuations: [{
+          keyword: 'string', description: 'Use a user-defined string as ID',
+          argument: {
+            name: 'texte', type: 'REST', literal: 'LINE',
+            description: 'The string to use as origin ID',
+          },
+        }],
       },
       {
         keyword: 'snmp-trap', description: 'Set syslog level for sending snmp trap',
@@ -4304,6 +4308,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       {
         keyword: 'reload', description: 'Set reload logging level',
         argument: { name: 'level', type: 'INT', range: [0, 7], values: severites, optional: true },
+        continuationsAlsoAfterArgument: true,
         continuations: [{
           keyword: 'message-limit', description: 'Maximum messages kept across a reload',
           argument: { name: 'limite', type: 'INT', range: [1, 4294967295] },
@@ -4318,6 +4323,15 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
             { keyword: 'console', description: 'Rate limit console messages only' },
           ],
         },
+        // La PORTEE et le nombre sont deux places, pas une : `logging
+        // rate-limit all 10` en donne les deux. Une seule les rendait
+        // exclusives, et la forme complete ne vivait que par le noeud
+        // glouton.
+        second: {
+          name: 'nombre', type: 'INT', optional: true,
+          range: [RATE_LIMIT_MIN, RATE_LIMIT_MAX],
+          description: 'Message rate limit',
+        },
         continuations: [{
           keyword: 'except',
           description: 'Messages of this severity or higher are not limited',
@@ -4326,23 +4340,9 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       },
       {
         keyword: 'host', description: 'Set syslog server IP address and parameters',
+        keywordOptional: true,
         argument: { name: 'ip', type: 'IP_ADDR' },
-        continuations: [
-          {
-            keyword: 'transport', description: 'Specify the transport protocol',
-            argument: {
-              name: 'protocole', type: 'ENUM',
-              values: [
-                { keyword: 'tcp', description: 'Send messages over TCP' },
-                { keyword: 'udp', description: 'Send messages over UDP' },
-              ],
-            },
-          },
-          {
-            keyword: 'discriminator', description: 'Establish MD-Host association',
-            argument: { name: 'nom', type: 'WORD' },
-          },
-        ],
+        continuations: [md([transport()]), transport([md()])],
       },
     ];
   }
@@ -4710,35 +4710,27 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       regle = verdict.rule;
     }
 
-    const mgmt = getManagementService(this.d());
-    if (!mgmt) return '';
-    const config = mgmt.getClock();
+    const horloge = getDeviceClock(this.d());
+    if (!horloge) return '';
 
     if (tete === 'timezone') {
-      if (negate) {
-        config.timezone = 'UTC';
-        config.offsetMin = 0;
-        return '';
-      }
+      if (negate) { horloge.clearStandard(); return ''; }
       const heures = parseInt(reste[1] ?? '', 10);
       const minutes = parseInt(reste[2] ?? '0', 10);
-      config.timezone = reste[0];
-      config.offsetMin = (isNaN(heures) ? 0 : heures) * 60
-        + (isNaN(minutes) ? 0 : minutes) * (heures < 0 ? -1 : 1);
+      horloge.setStandard(reste[0], (isNaN(heures) ? 0 : heures) * 60
+        + (isNaN(minutes) ? 0 : minutes) * (heures < 0 ? -1 : 1));
       return '';
     }
 
-    if (negate) {
-      config.summerTimezone = '';
-      config.daylightStart = '';
-      config.daylightEnd = '';
-      return '';
-    }
+    if (negate) { horloge.clearSummer(); return ''; }
 
-    config.summerTimezone = reste[0] ?? '';
-    config.summerKind = regle?.kind ?? 'recurring';
-    config.daylightStart = regle?.start ?? '';
-    config.daylightEnd = regle?.end ?? '';
+    horloge.setSummer({
+      zoneName: reste[0] ?? '',
+      kind: regle?.kind ?? 'recurring',
+      start: regle?.start ?? '',
+      end: regle?.end ?? '',
+      offsetMin: regle?.offsetMin ?? DEFAULT_SUMMER_OFFSET_MIN,
+    });
     return '';
   }
 
@@ -5691,6 +5683,34 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
    * sous-mode du commutateur sans lui dire de QUEL serveur il parle, et
    * `address ipv4` y retombait alors dans le vide.
    */
+  protected aaaHeadHost(): AaaHeadHost {
+    return {
+      security: () => getSecurityConfig(this.d()),
+      selectAaaGroup: (name) => {
+        this.identitySubmodeContext()?.setAaaGroup?.(name);
+      },
+      setLocalAuthMaxFail: (n) => {
+        (this.d() as unknown as { _configureLocalAuthMaxFail?: (v: number) => void })
+          ._configureLocalAuthMaxFail?.(n);
+      },
+      parseMethodList: (phase, args) =>
+        parseAaaMethod(getSecurityConfig(this.d()), phase, [...args]),
+    };
+  }
+
+  protected usernameHost(): UsernameHost {
+    const dev = () => this.d() as unknown as {
+      _upsertCiscoUsername?: (n: string, kv: UsernameSettings) => void;
+      _removeLocalUser?: (n: string) => void;
+    };
+    return {
+      viewExists: (name) => getSecurityConfig(this.d()).parserViews.has(name),
+      minPasswordLength: () => getSecurityConfig(this.d()).passwords.minLength,
+      upsert: (name, settings) => { dev()._upsertCiscoUsername?.(name, settings); },
+      remove: (name) => { dev()._removeLocalUser?.(name); },
+    };
+  }
+
   protected aaaServerHost(): AaaServerHost {
     return {
       security: () => getSecurityConfig(this.d()),
@@ -5710,6 +5730,8 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       ...bgpFilterListSpecs(() => this.filterListHost()),
       ...globalHeadSpecs(() => this.globalHeadHost()),
       ...aaaServerSpecs(() => this.aaaServerHost()),
+      ...usernameSpecs(() => this.usernameHost()),
+      ...aaaHeadSpecs(() => this.aaaHeadHost()),
       ...vrfDeclarationSpecs(() => this.vrfDeclarationHost()),
       ...cryptoKeySpecs(() => this.cryptoKeyHost()),
       ...clearLineSpecs(() => this.clearRestantsHost(), DERNIERE_LIGNE_ABSOLUE),
@@ -5753,7 +5775,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       ...this.showSocleSpecs(),
       ...this.archiveSubmodeSpecs(),
       ...this.identitySubmodeSpecs(),
-      ...this.viewSubmodeSpecs(),
+      ...parserViewSpecs(() => this.parserViewHost()),
       ...this.httpServerSpecs(),
       ...this.dnsConfigSpecs(),
       ...this.fileSystemSpecs(),
@@ -5826,17 +5848,6 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
         argumentFor: (path) => DNS_ARGUMENTS[path],
         keywordsFor: (path) => /^ip domain[- ]lookup$/.test(path)
           ? DOMAIN_LOOKUP_KEYWORDS : undefined,
-      },
-    );
-  }
-
-  protected viewSubmodeSpecs(): readonly CommandSpec[] {
-    return specsFromTrieRegistrations(
-      (collector) => this.registerViewSubmodeOn(collector as unknown as CommandTrie),
-      {
-        modes: ['config-view'], minPrivilege: 15,
-        argumentFor: (path) => VIEW_SUBMODE_ARGUMENTS[path],
-        keywordsFor: (path) => path === 'commands' ? VIEW_COMMANDS_KEYWORDS : undefined,
       },
     );
   }
@@ -9706,67 +9717,6 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
      * restreinte pourrait s'octroyer des commandes, ce qui viderait le
      * mecanisme de son sens).
      */
-    trie.registerGreedy('parser view', 'Define a CLI view', (args) => {
-      if (args.length === 0) throw new CliIncomplete();
-      const sec = getSecurityConfig(this.d());
-      if (!sec.aaaNewModel) {
-        return '%Parser view commands are not available. AAA must be enabled first';
-      }
-      if (this.activeParserView !== null) {
-        return '%Currently in view mode. Please exit to root view first';
-      }
-      /**
-       * La vue RACINE est la condition d'IOS, et Cisco la definit par le
-       * niveau : un utilisateur de la vue racine a les privileges du
-       * niveau 15, et c'est ce qui le distingue des autres — lui seul
-       * peut declarer une vue et en changer le contenu.
-       *
-       * Sans ce controle, il suffisait de se DELEGUER `parser view`
-       * (`privilege configure level 5 parser view`) pour que le
-       * mecanisme d'autorisation se reconfigure depuis l'interieur de
-       * ce qu'il restreint : la session s'ecrivait un role sur mesure.
-       */
-      if (this.currentPrivilegeLevel < 15) {
-        return '%Root view is required to configure a view';
-      }
-      const nom = args[0];
-      // `parser view <nom> superview` : le mot-cle etait accepte et JETE,
-      // donc la vue naissait ordinaire ET VIDE — un compte qui la portait
-      // ne voyait rien du tout, ce qui est pire qu'un refus.
-      const superview = (args[1] ?? '').toLowerCase() === 'superview';
-      if (args[1] !== undefined && !superview) throw new CliInvalidInput({ token: args[1] });
-      const existante = sec.parserViews.get(nom);
-      // Cisco documente un maximum de 15 vues et superviews, vue racine
-      // non comprise. Re-entrer dans une vue EXISTANTE n'est pas une
-      // creation et ne compte donc pas. Le libelle exact du refus d'IOS
-      // n'a pas pu etre verifie : celui-ci dit la limite plutot que
-      // d'imiter une phrase dont on n'est pas sur.
-      if (!existante && sec.parserViews.size >= MAX_PARSER_VIEWS) {
-        return `%Error: maximum number of views (${MAX_PARSER_VIEWS}) already configured`;
-      }
-      if (!existante) {
-        sec.parserViews.set(nom, {
-          name: nom, modes: new Map(),
-          superview: superview || undefined, members: superview ? [] : undefined,
-        });
-      } else if (superview && !existante.superview) {
-        return '%View is already defined as a normal view';
-      }
-      this.selectedParserView = nom;
-      this.mode = 'config-view';
-      return '';
-    }, [{ keyword: 'superview', description: 'Define this view as a superview' }]);
-    trie.registerGreedy('no parser view', 'Remove a CLI view', (args) => {
-      if (args.length === 0) throw new CliIncomplete();
-      getSecurityConfig(this.d()).parserViews.delete(args[0]);
-      return '';
-    });
-    // Après les deux enregistrements, qui créent les nœuds : sans cela
-    // `?` proposerait `parser` et `no parser` nus.
-    trie.describeNode('parser', 'Configure parser');
-    trie.describeNode('no parser', 'Negate a parser command');
-
-    registerLoggingConfigCommands(trie, this.loggingCommandContext());
     registerSequenceNumbersCommand(trie, this.loggingCommandContext());
     trie.registerGreedy('service timestamps', 'Timestamp log/debug messages', (args) =>
       this.applyServiceTimestamps(args, false));
@@ -9938,11 +9888,6 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     // `service timestamps` has its own registration above and the trie
     // routes to the more specific one, so the second parser this handler
     // used to carry never ran — it could only ever contradict the first.
-    trie.registerGreedy('no username', 'Remove a local user', (args) => {
-      const dev = this.d() as unknown as { _removeLocalUser?: (n: string) => void };
-      if (args[0] && typeof dev._removeLocalUser === 'function') dev._removeLocalUser(args[0]);
-      return '';
-    });
     // `ip ssh …` : le handler qui vivait ici ecrivait un SECOND magasin
     // (celui du gestionnaire) que rien ne lisait pour ces champs, et il
     // etait de toute facon ombre sur le routeur par l'enregistrement plus
@@ -10018,9 +9963,6 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
 
     // `exec-timeout <minutes> [seconds]` — persisted on the VTY block
     // so show running-config can echo it back exactly.
-    this.registerViewSubmodeOn(
-      isCollector(trie) ? new CommandTrie() : this.configViewTrie);
-
     /**
      * La commande existe-t-elle dans l'arbre de ce mode ?
      *
@@ -10047,96 +9989,96 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
    * l'écoutille que `ping` emprunte, et c'est celle-ci.
    */
 
-  protected registerViewSubmodeOn(trie: CommandTrie): void {
-    trie.registerGreedy('secret', 'Set the view password', (args) => {
-      if (args.length === 0) throw new CliIncomplete();
+  protected parserViewHost(): ParserViewHost {
+    const secret = (brut: string): string => {
       const vue = this.vueEnCours();
       if (!vue) return '';
-      // Meme forme que `username … secret` : un chiffre en tete decrit un
-      // condense deja calcule, sinon on hache.
-      const chiffre = args[0];
+      const mots = brut.split(/\s+/);
       const map: Record<string, 'plain' | 'md5' | 'sha256' | 'scrypt' | 'type-7'> = {
         '0': 'plain', '5': 'md5', '7': 'type-7', '8': 'sha256', '9': 'scrypt',
       };
-      if (map[chiffre] !== undefined && args.length > 1) {
-        vue.secretAlgo = map[chiffre];
-        vue.secret = args.slice(1).join(' ');
+      const chiffre = map[mots[0]];
+      if (chiffre !== undefined && mots.length > 1) {
+        vue.secretAlgo = chiffre;
+        vue.secret = mots.slice(1).join(' ');
       } else {
         vue.secretAlgo = 'md5';
-        vue.secret = args.join(' ');
+        vue.secret = brut;
       }
       return '';
-    });
-    /**
-     * `view <nom>` sous une superview : ajouter une vue MEMBRE. La
-     * commande etait refusee, donc une superview restait vide quoi qu'on
-     * y mette. Une superview ne porte pas de commandes a elle et une vue
-     * ordinaire n'a pas de membres : melanger les deux produirait un
-     * objet qu'IOS ne connait pas.
-     */
-    trie.registerGreedy('view', 'Add a member view to this superview', (args) => {
-      if (args.length < 1) throw new CliIncomplete();
-      const vue = this.vueEnCours();
-      if (!vue) return '';
-      if (!vue.superview) return '%View is not a superview';
-      const nom = args[0];
-      const sec = getSecurityConfig(this.d());
-      const membre = sec.parserViews.get(nom);
-      if (!membre) return `%Error: View ${nom} is not present in the system`;
-      if (membre.superview) return '%A superview cannot be a member of another superview';
-      (vue.members ??= []);
-      if (!vue.members.includes(nom)) vue.members.push(nom);
-      return '';
-    });
+    };
 
-    trie.registerGreedy('commands', 'Configure the commands of a view', (args) => {
-      // `commands <mode> {include | include-exclusive | exclude} [all] <cmd>`
-      if (args.length < 3) throw new CliIncomplete();
-      const vue = this.vueEnCours();
-      if (!vue) return '';
-      const mode = args[0].toLowerCase();
-      if (!AUTH_SCOPES.includes(mode as AuthScope)) throw new CliInvalidInput({ token: args[0] });
-      const sens = args[1].toLowerCase();
-      if (sens !== 'include' && sens !== 'include-exclusive' && sens !== 'exclude') {
-        throw new CliInvalidInput({ token: args[1] });
-      }
-      // `all` etend l'entree a ce qui COMPLETE la commande, comme le
-      // mot-cle homonyme des regles de niveau. La documentation Cisco
-      // l'emploie elle-meme : `commands exec include all show`.
-      const tous = args[2].toLowerCase() === 'all';
-      const reste = args.slice(tous ? 3 : 2);
-      if (reste.length === 0) throw new CliIncomplete();
-      const commande = this.autorisation()
-        .formeDeVue(mode as AuthScope, reste.join(' '));
-      // Une commande qui n'existe pas n'accorderait rien : l'accepter
-      // ferait d'une faute de frappe une vue silencieusement vide, ce
-      // qui est le defaut que ce mecanisme est cense refermer.
-      if (!this.commandeConnueDansMode(mode as AuthScope, commande)) return '%Command not found';
+    return {
+      declareView: (nom, superview) => {
+        const sec = getSecurityConfig(this.d());
+        if (!sec.aaaNewModel) {
+          return '%Parser view commands are not available. AAA must be enabled first';
+        }
+        if (this.activeParserView !== null) {
+          return '%Currently in view mode. Please exit to root view first';
+        }
+        if (this.currentPrivilegeLevel < 15) {
+          return '%Root view is required to configure a view';
+        }
+        const existante = sec.parserViews.get(nom);
+        if (!existante && sec.parserViews.size >= MAX_PARSER_VIEWS) {
+          return `%Error: maximum number of views (${MAX_PARSER_VIEWS}) already configured`;
+        }
+        if (!existante) {
+          sec.parserViews.set(nom, {
+            name: nom, modes: new Map(),
+            superview: superview || undefined, members: superview ? [] : undefined,
+          });
+        } else if (superview && !existante.superview) {
+          return '%View is already defined as a normal view';
+        }
+        this.selectedParserView = nom;
+        return '';
+      },
+      removeView: (nom) => {
+        getSecurityConfig(this.d()).parserViews.delete(nom);
+        return '';
+      },
+      setSecret: secret,
+      addMember: (nom) => {
+        const vue = this.vueEnCours();
+        if (!vue) return '';
+        if (!vue.superview) return '%View is not a superview';
+        const membre = getSecurityConfig(this.d()).parserViews.get(nom);
+        if (!membre) return `%Error: View ${nom} is not present in the system`;
+        if (membre.superview) return '%A superview cannot be a member of another superview';
+        (vue.members ??= []);
+        if (!vue.members.includes(nom)) vue.members.push(nom);
+        return '';
+      },
+      applyCommands: (espace, sens, tous, brut) => {
+        const vue = this.vueEnCours();
+        if (!vue) return '';
+        const commande = this.autorisation().formeDeVue(espace, brut);
+        if (!this.commandeConnueDansMode(espace, commande)) return '%Command not found';
 
-      const jeu = parserViewMode(vue, mode);
-      if (sens === 'exclude') {
-        if (!jeu.exclude.some((c) => c.command === commande)) {
-          jeu.exclude.push({ command: commande, all: tous, exclusive: false });
+        const jeu = parserViewMode(vue, espace);
+        if (sens === 'exclude') {
+          if (!jeu.exclude.some((c) => c.command === commande)) {
+            jeu.exclude.push({ command: commande, all: tous, exclusive: false });
+          }
+          return '';
+        }
+        const reservee = this.autorisation().views
+          .reservedBy(espace, commande, vue.name);
+        if (reservee !== null) {
+          return `%Command is set as include-exclusive in view ${reservee}`;
+        }
+        const exclusive = sens === 'include-exclusive';
+        const deja = jeu.include.find((c) => c.command === commande);
+        if (deja) {
+          jeu.include[jeu.include.indexOf(deja)] = { command: commande, all: tous, exclusive };
+        } else {
+          jeu.include.push({ command: commande, all: tous, exclusive });
         }
         return '';
-      }
-      // `include-exclusive` RESERVE la commande : aucune autre vue ne
-      // peut la revendiquer. Le mot-cle etait traite comme `include`,
-      // donc il produisait autre chose que ce qu'il promet, en silence.
-      const reservee = this.autorisation().views
-        .reservedBy(mode as AuthScope, commande, vue.name);
-      if (reservee !== null) {
-        return `%Command is set as include-exclusive in view ${reservee}`;
-      }
-      const exclusive = sens === 'include-exclusive';
-      const deja = jeu.include.find((c) => c.command === commande);
-      if (deja) {
-        jeu.include[jeu.include.indexOf(deja)] = { command: commande, all: tous, exclusive };
-      } else {
-        jeu.include.push({ command: commande, all: tous, exclusive });
-      }
-      return '';
-    });
+      },
+    };
   }
 
   private registerTestAaaCommand(): void {

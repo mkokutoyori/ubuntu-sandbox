@@ -71,6 +71,7 @@ import { isDialFailure } from '../tcp/types';
 import { verifyUdpChecksum, stampUdpChecksum } from '@/network/layers/transport/UdpChecksum';
 import { dialTcp, parseDialAddress, type DialAddress } from '../tcp/dial';
 import { SystemClock } from '../core/SystemClock';
+import type { DeviceClockStore } from '../core/time/DeviceClock';
 import { PortNumber } from '../core/ports/PortNumber';
 import { SshServerHandler } from '../protocols/ssh/server/SshServerHandler';
 import { RouterSshServerContext } from '../protocols/ssh/server/RouterSshServerContext';
@@ -138,6 +139,7 @@ import {
   type Ipv4SendRequest,
 } from '../layers/internet/Ipv4Egress';
 import { selectIpv6SourceAddress } from '../layers/internet/Ipv6Egress';
+import type { ProtocolCounters } from '../layers/internet/ProtocolCounters';
 import {
   DHCP_FREE_ADDRESS_HIGH, DHCP_FREE_ADDRESS_LOW, DHCP_SHARED_NET_ENTRY,
   snmpAdminStringIndex,
@@ -246,26 +248,10 @@ const RECURSION_MAX = 4;
 
 // ─── Performance Counters (SNMP-ready) ──────────────────────────────
 
-export interface RouterCounters {
-  /** Total octets received on all interfaces */
-  ifInOctets: number;
-  /** Total octets sent on all interfaces */
-  ifOutOctets: number;
-  /** Packets dropped due to invalid header (version, IHL, checksum, length) */
-  ipInHdrErrors: number;
-  /** Packets with IP addresses that were invalid for the entity (not for us, no route) */
-  ipInAddrErrors: number;
-  /** Packets successfully forwarded to next hop */
-  ipForwDatagrams: number;
-  /** Total ICMP messages sent */
-  icmpOutMsgs: number;
-  /** ICMP Destination Unreachable messages sent */
-  icmpOutDestUnreachs: number;
-  /** ICMP Time Exceeded messages sent */
-  icmpOutTimeExcds: number;
-  /** ICMP echo-reply messages sent */
-  icmpOutEchoReps: number;
-}
+export type RouterCounters = Pick<ProtocolCounters,
+  'ifInOctets' | 'ifOutOctets' | 'ipInHdrErrors' | 'ipInAddrErrors'
+  | 'ipForwDatagrams' | 'icmpOutMsgs' | 'icmpOutDestUnreachs'
+  | 'icmpOutTimeExcds' | 'icmpOutEchoReps'>;
 
 // ─── ARP State ─────────────────────────────────────────────────────
 
@@ -4658,6 +4644,8 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
    * l'équipement — ne pourrait pas le voir.
    */
   private _httpService: CiscoHttpService | null = null;
+  getDeviceClock(): DeviceClockStore { return this.getManagementService().getClockStore(); }
+
   getHttpService(): CiscoHttpService {
     if (!this._httpService) this._httpService = new CiscoHttpService();
     return this._httpService;

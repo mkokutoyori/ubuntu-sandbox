@@ -94,7 +94,7 @@ import { describeCiscoArguments } from './cisco/ciscoArgumentHelp';
 import { renderStartupConfig } from './cisco/ciscoConfigSerializer';
 import { PolicyRepository } from '../inspection/config/PolicyRepository';
 import {
-  buildPolicyConfig, registerPolicyShow, policyShowSpecs, routeMapSubmodeSpecs,
+  registerPolicyShow, policyShowSpecs,
 } from './cisco/CiscoPolicyCommands';
 
 // Extracted command modules
@@ -198,6 +198,12 @@ import { getGlobalConfig } from '../router/config/CiscoGlobalConfig';
 import { clearAclSpecs, clearCryptoSpecs } from './cisco/clearRestantsSpecs';
 import { showAdjacencySpec, showViewSpec } from './cisco/showViewSpecs';
 import { prefixListSpecs } from './cisco/filterListSpecs';
+import {
+  routeMapSpecs, refuserSelonLeJuge, type RouteMapHost,
+} from './cisco/routeMapSpecs';
+import {
+  parseRouteMapClause, type RouteMapClauseKind,
+} from '../router/policy/routeMapClauses';
 import { showAdjacency } from './cisco/CiscoCommonShow';
 import { showIpRouteOspf } from './cisco/CiscoOspfCommands';
 import { clearAccessListCounters } from './cisco/CiscoAclCommands';
@@ -487,7 +493,7 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
       ...trackEntrySpecs(() => routerTrackEntryHost(this), ['config']),
       ...keyChainSubmodeSpecs(this),
       ...keyChainKeySubmodeSpecs(this),
-      ...routeMapSubmodeSpecs(this, this.policy),
+      ...routeMapSpecs(() => this.routeMapHost()),
       ...prefixListSpecs(() => this.policy),
       ...routerSubmodeSpecs(this, this.routingCfg),
       ...bfdInterfaceSpecs({
@@ -826,6 +832,8 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
         ['config-crypto-map', 'config-ipsec-profile']],
       [['set', 'security-association'], 'Security association parameters'],
       [['set', 'security-association', 'lifetime'], 'Security association lifetime'],
+      [['match'], 'Match clause', ['config-route-map']],
+      [['set'], 'Set clause', ['config-route-map']],
       [['match'], 'Match values',
         ['config-crypto-map', 'config-isakmp-profile', 'config-ikev2-profile']],
       [['match'], 'Field the record matches on', ['config-flow-record']],
@@ -1180,6 +1188,51 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
   private selectedRouteMap: { name: string; seq: number } | null = null;
   getSelectedRouteMap(): { name: string; seq: number } | null { return this.selectedRouteMap; }
   setSelectedRouteMap(v: { name: string; seq: number } | null): void { this.selectedRouteMap = v; }
+
+  private routeMapHost(): RouteMapHost {
+    const clause = () => {
+      const sel = this.selectedRouteMap;
+      return sel ? this.policy.ensureRouteMap(sel.name, 'permit', sel.seq) : null;
+    };
+    const liste = (kind: RouteMapClauseKind) => {
+      const c = clause();
+      if (!c) return null;
+      return kind === 'match' ? c.match : c.set;
+    };
+
+    return {
+      enterClause: (nom, action, seq) => {
+        this.policy.ensureRouteMap(nom, action, seq);
+        this.selectedRouteMap = { name: nom, seq };
+        return '';
+      },
+      removeMap: (nom) => { this.policy.removeRouteMap(nom); return ''; },
+      addClause: (kind, mots, queue) => {
+        const args = [...mots, ...queue.split(/\s+/).filter(Boolean)];
+        const lu = parseRouteMapClause(kind, args);
+        if (!('line' in lu)) refuserSelonLeJuge(kind, mots, args.slice(mots.length));
+        const cible = liste(kind);
+        if (!cible) return '';
+        const valeur = lu.line.slice(kind.length + 1);
+        if (!cible.includes(valeur)) cible.push(valeur);
+        return '';
+      },
+      removeClause: (kind, mots) => {
+        const c = clause();
+        if (!c) return '';
+        const prefixe = mots.join(' ').toLowerCase();
+        const garde = (l: string) => !l.toLowerCase().startsWith(prefixe);
+        if (kind === 'match') c.match = c.match.filter(garde);
+        else c.set = c.set.filter(garde);
+        return '';
+      },
+      setDescription: (texte) => {
+        const c = clause();
+        if (c) c.description = texte;
+        return '';
+      },
+    };
+  }
   getSelectedTrack(): number | null { return this.selectedTrack; }
   setSelectedTrack(id: number | null): void { this.selectedTrack = id; }
   getSelectedIpSla(): number | null { return this.selectedIpSla; }
@@ -1833,7 +1886,6 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
         r: () => this.d(),
       });
     }
-    buildPolicyConfig(this.configTrie, this.configRouteMapTrie, this, this.policy);
     buildTrackConfigCommands(this.configTrie, this.configTrackTrie, this);
     buildIpSlaConfigCommands(this.configTrie, this.configIpSlaTrie,
       this.configIpSlaHttpRawTrie, this);

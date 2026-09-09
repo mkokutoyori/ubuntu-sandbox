@@ -10,9 +10,16 @@
  */
 
 import { WindowsFileSystem } from './WindowsFileSystem';
-import type { SocketTable } from '../../core/SocketTable';
+import type {
+  SocketEntry, SocketProtocol, SocketTable,
+} from '../../core/SocketTable';
+import {
+  renderTable, type TableColumn, type TableStyle,
+} from '../shells/cli/TextTable';
 import type { WinCommandContext } from './WinCommandExecutor';
 import { showRoutePrint } from './WinRoute';
+import { netstatStatistics, type NetstatProtocolFilter } from './WinNetstatStatistics';
+import { snmpSnapshot } from '../linux/ports/PortsFilesystem';
 
 /** Context provided to all Windows file command modules */
 export interface WinFileCommandContext {
@@ -286,6 +293,29 @@ function statistiquesInterfaces(netCtx: WinCommandContext): string {
   ].join('\n');
 }
 
+const WINDOWS_NETSTAT_TABLE: TableStyle = { gap: 0, rule: false, indent: '  ' };
+
+const NETSTAT_PROTOCOLS: Readonly<Record<string, SocketProtocol>> = {
+  tcp: 'tcp', udp: 'udp', tcpv6: 'tcp', udpv6: 'udp',
+};
+
+const NETSTAT_FAMILIES: Record<string, NetstatProtocolFilter> = {
+  ip: 'ip', ipv4: 'ipv4', icmp: 'icmp', icmpv4: 'icmpv4',
+  tcp: 'tcp', tcpv4: 'tcpv4', udp: 'udp', udpv4: 'udpv4',
+};
+
+function familleDemandee(args: string[]): NetstatProtocolFilter | null {
+  const at = args.findIndex((a) => a.toLowerCase() === '-p');
+  if (at < 0 || args[at + 1] === undefined) return null;
+  return NETSTAT_FAMILIES[args[at + 1].toLowerCase()] ?? null;
+}
+
+function protocoleDemande(args: string[]): SocketProtocol | null {
+  const at = args.findIndex((a) => a.toLowerCase() === '-p');
+  if (at < 0 || args[at + 1] === undefined) return null;
+  return NETSTAT_PROTOCOLS[args[at + 1].toLowerCase()] ?? null;
+}
+
 export function cmdNetstat(
   ctx: WinFileCommandContext,
   args: string[] = [],
@@ -304,24 +334,43 @@ export function cmdNetstat(
     return netCtx ? statistiquesInterfaces(netCtx) : '';
   }
 
-  const showAll = hasFlag('a') || args.includes('-an');
-
-  const lines: string[] = ['', 'Active Connections', '',
-    '  Proto  Local Address          Foreign Address        State'];
-
-  if (socketTable) {
-    for (const sock of socketTable.getAll()) {
-      if (!showAll && sock.state !== 'ESTABLISHED') continue;
-      // Windows uses LISTENING (not LISTEN) and TCP/UDP uppercase
-      const proto = sock.protocol.toUpperCase();
-      const local  = `0.0.0.0:${sock.localPort}`.padEnd(22);
-      const remote = (sock.state === 'LISTEN' ? '0.0.0.0:0' : `${sock.remoteAddress}:${sock.remotePort}`).padEnd(22);
-      const state  = sock.state === 'LISTEN' ? 'LISTENING' : sock.state;
-      lines.push(`  ${proto.padEnd(7)}${local}${remote}${state}`);
-    }
+  if (hasFlag('s')) {
+    return netstatStatistics(
+      snmpSnapshot(socketTable, netCtx?.protocolCounters()),
+      familleDemandee(args));
   }
 
-  return lines.join('\n');
+  const showAll = hasFlag('a') || args.includes('-an');
+  const withPid = hasFlag('o');
+  const only = protocoleDemande(args);
+
+  const rows = (socketTable?.getAll() ?? []).filter((sock) => {
+    if (!showAll && sock.state !== 'ESTABLISHED') return false;
+    return only === null || sock.protocol === only;
+  });
+
+  const columns: Array<TableColumn<SocketEntry>> = [
+    { header: 'Proto', width: 7, value: (s) => s.protocol.toUpperCase() },
+    {
+      header: 'Local Address', width: 23,
+      value: (s) => `${s.localAddress}:${s.localPort}`,
+    },
+    {
+      header: 'Foreign Address', width: 23,
+      value: (s) => (s.protocol === 'udp' ? '*:*'
+        : s.state === 'LISTEN' ? '0.0.0.0:0'
+          : `${s.remoteAddress}:${s.remotePort}`),
+    },
+    {
+      header: 'State', width: 16,
+      value: (s) => (s.protocol === 'udp' ? ''
+        : s.state === 'LISTEN' ? 'LISTENING' : s.state),
+    },
+  ];
+  if (withPid) columns.push({ header: 'PID', value: (s) => String(s.pid ?? 0) });
+
+  return ['', 'Active Connections', '',
+    ...renderTable(rows, columns, WINDOWS_NETSTAT_TABLE)].join('\n');
 }
 
 // ─── attrib ───────────────────────────────────────────────────────

@@ -93,6 +93,9 @@ import { chownCommand } from './fs/Chown';
 import { chgrpCommand } from './fs/Chgrp';
 import { chattrCommand, lsattrCommand } from './fs/Chattr';
 import { truncateCommand } from './fs/Truncate';
+import { ddCommand } from './fs/Dd';
+import { fallocateCommand } from './fs/Fallocate';
+import { syncCommand } from './fs/Sync';
 import { mountCommand } from './fs/Mount';
 import { umountCommand } from './fs/Umount';
 import { mkfsCommand, mkfsExt4Command, mkfsXfsCommand, mkfsBtrfsCommand } from './fs/Mkfs';
@@ -115,6 +118,7 @@ import { uptimeCommand } from './system/Uptime';
 import { unameCommand } from './system/Uname';
 import { hostnamectlCommand } from './system/Hostnamectl';
 import { timedatectlCommand } from './system/Timedatectl';
+import { localectlCommand } from './system/Localectl';
 import { chronycCommand } from './system/Chronyc';
 import { ntpqCommand } from './net/Ntpq';
 import { nsupdateCommand } from './net/Nsupdate';
@@ -225,6 +229,9 @@ export {
   chattrCommand,
   lsattrCommand,
   truncateCommand,
+  ddCommand,
+  fallocateCommand,
+  syncCommand,
   mountCommand,
   umountCommand,
   mkfsCommand,
@@ -250,6 +257,7 @@ export {
   unameCommand,
   hostnamectlCommand,
   timedatectlCommand,
+  localectlCommand,
   chronycCommand,
   ntpqCommand,
   nsupdateCommand,
@@ -371,6 +379,9 @@ export const CORE_LINUX_COMMANDS: readonly LinuxCommand[] = [
   chattrCommand,
   lsattrCommand,
   truncateCommand,
+  ddCommand,
+  fallocateCommand,
+  syncCommand,
   mountCommand,
   umountCommand,
   mkfsCommand,
@@ -396,6 +407,7 @@ export const CORE_LINUX_COMMANDS: readonly LinuxCommand[] = [
   unameCommand,
   hostnamectlCommand,
   timedatectlCommand,
+  localectlCommand,
   chronycCommand,
   ntpqCommand,
   nsupdateCommand,

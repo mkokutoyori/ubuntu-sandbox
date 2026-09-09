@@ -116,7 +116,13 @@ export function cmdLs(ctx: ShellContext, args: string[]): string {
 
     for (const p of expandedPaths) {
       const absPath = ctx.vfs.normalizePath(p, ctx.cwd);
-      const inode = ctx.vfs.resolveInode(absPath, false);
+      // `ls <lien>` liste ce que le lien DESIGNE ; `ls -l` et `ls -d`
+      // decrivent le lien lui-meme. C'est le comportement de coreutils,
+      // releve sur la machine reelle : `ls /lib` liste `usr/lib`, tandis
+      // que `ls -l /lib` rend la ligne `lib -> usr/lib`.
+      const suitLeLien = !longFormat && !dirOnly;
+      const inode = ctx.vfs.resolveInode(absPath, suitLeLien)
+        ?? ctx.vfs.resolveInode(absPath, false);
 
       if (!inode) {
         allOutput.push(`ls: cannot access '${p}': No such file or directory`);

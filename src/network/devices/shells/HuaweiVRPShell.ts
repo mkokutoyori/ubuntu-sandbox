@@ -730,14 +730,12 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
   }
 
   vrpSetTimezone(nom: string, minutes: number): string {
-    const clock = this.routerRef?.getManagementService?.().getClock();
-    if (clock) { clock.timezone = nom; clock.offsetMin = minutes; }
+    this.routerRef?.getManagementService?.().getClockStore().setStandard(nom, minutes);
     return '';
   }
 
   vrpClearTimezone(): string {
-    const clock = this.routerRef?.getManagementService?.().getClock();
-    if (clock) { clock.timezone = VRP_TIMEZONE_DEFAUT; clock.offsetMin = 0; }
+    this.routerRef?.getManagementService?.().getClockStore().clearStandard();
     return '';
   }
 
@@ -1917,7 +1915,9 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
       return '';
     });
     this.registerScreenSizeCommands(t);
-    registerHuaweiCommonSecurity(t, () => this.r() as unknown as { getManagementService: () => import('../router/management/RouterManagementService').RouterManagementService });
+    registerHuaweiCommonSecurity(t,
+      () => this.r() as unknown as { getManagementService: () => import('../router/management/RouterManagementService').RouterManagementService },
+      undefined, undefined, (epochMs) => this.r()?._setSystemClock(epochMs));
     registerHuaweiCommonSecurityDisplay(t, () => new Map(), undefined,
       () => this.r()?.getSnmpService());
     t.registerGreedy('ssh', 'SSH server configuration', (args) => {

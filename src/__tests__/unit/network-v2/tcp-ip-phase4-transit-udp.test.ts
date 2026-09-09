@@ -63,7 +63,14 @@ describe('a router must FORWARD transit UDP, not eat it', () => {
     it(`transit UDP on ${name} (${port}) reaches the far host`, async () => {
       const { left, right } = await transitLab();
       const got: number[] = [];
-      right.udpBind(port, () => { got.push(1); });
+      // Le sujet ici est le ROUTEUR, qui ne doit pas manger le transit.
+      // Encore faut-il que le port soit libre SUR LA CIBLE : depuis que
+      // chronyd tient vraiment 123, un `udpBind` de plus y est refuse
+      // comme sur une vraie machine, et l'ecoute du test ne serait
+      // jamais posee. On arrete donc le demon, ce que ferait un
+      // operateur qui veut ce port.
+      await right.executeCommand('sudo systemctl stop chrony');
+      expect(right.udpBind(port, () => { got.push(1); })).toBe(true);
 
       left.sendUdpDatagram(new IPAddress('10.0.1.2'), port, 40000, 'transit');
       await wait();

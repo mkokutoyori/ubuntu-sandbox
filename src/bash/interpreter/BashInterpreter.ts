@@ -709,6 +709,22 @@ export class BashInterpreter {
     return `/tmp/.psub-${fd}`;
   }
 
+  /**
+   * L'environnement que recoit un processus enfant : les variables
+   * EXPORTEES, plus les affectations `VAR=val` posees devant la
+   * commande — que bash exporte pour cette commande-la seulement. La
+   * table complete du shell (`$UID`, `$HOSTNAME`, les parametres
+   * positionnels) n'en fait pas partie.
+   */
+  private childEnvironment(prefixAssigned: string[]): Record<string, string> {
+    const env = this.env.getExported();
+    for (const name of prefixAssigned) {
+      const value = this.env.get(name);
+      if (value !== undefined) env[name] = value;
+    }
+    return env;
+  }
+
   private flushOutSubs(): void {
     if (this.pendingOutSubs.length === 0) return;
     const pending = this.pendingOutSubs.splice(0);
@@ -845,7 +861,7 @@ export class BashInterpreter {
       this.env.lastExitCode = result.exitCode;
     } else {
       const fullArgs = pipeInput ? [...args, pipeInput] : args;
-      const envSnapshot = Object.fromEntries(this.env.getAll());
+      const envSnapshot = this.childEnvironment(node.assignments.map(a => a.name));
       const background = this.pendingBackground || undefined;
       this.pendingBackground = false;
       // Stdout specifically (not a `2>`-only redirect, which leaves fd 1
@@ -1027,7 +1043,7 @@ export class BashInterpreter {
       return;
     }
     const fullArgs = pipeInput ? [...target, pipeInput] : target;
-    const envSnapshot = Object.fromEntries(this.env.getAll());
+    const envSnapshot = this.childEnvironment([]);
     const result = normalizeResult(yield {
       argv: fullArgs, env: envSnapshot, stdin: pipeInput || undefined,
     });

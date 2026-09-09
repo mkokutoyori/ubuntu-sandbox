@@ -535,25 +535,82 @@ part entiere : la grammaire d'`aaa` a quatre niveaux, une liste nommee
 libre au milieu, et une suite de methodes de longueur variable dont
 `group` consomme le mot suivant.
 
-### [horloge] un Catalyst n'a pas d'horloge : `clock timezone` y est inerte
-`clock timezone CET 1` et `clock summer-time CEST recurring` sont
-ACCEPTES sur un commutateur Cisco, ne paraissent dans aucune
-configuration, et `show clock` continue d'annoncer `UTC` — la ou le
-routeur repond `CET` apres la meme saisie. La grammaire, elle, est
-desormais jugee des deux cotes : une saisie fautive est refusee
-identiquement, seule la POSE se perd.
-**Mesure** : `getManagementService(sw)` rend `undefined` sur un
-`CiscoSwitch`, et `applyClock` sort par `if (!mgmt) return ''` — donc en
-silence. `show running-config` d'un Catalyst ne porte aucune ligne
-`clock`.
-**Report** : ce n'est pas la commande qui manque mais le MAGASIN. Donner
-une horloge au commutateur veut dire soit lui attacher un
-`RouterManagementService` (qui porte bien plus que l'horloge : NTP,
-info-center, sFlow, SSH…), soit extraire la configuration d'horloge dans
-un porteur a part que les deux plateformes tiennent — le second est le
-bon geste et c'est un chantier de decoupage, pas de grammaire. En
-attendant, un `no-op` SILENCIEUX reste le pire des trois etats possibles
-et merite d'etre ferme.
+### [horloge] 79 des 87 index de fuseau FortiOS ne sont pas implantes
+`set timezone 55` est un index VALIDE sur un vrai FortiGate. Ici, seuls
+huit index sont tabules (0, 1, 2, 3, 4, 12, 26, 27) ; les autres sont
+desormais refuses par `unimplementedValues` — la porte que le depot
+emploie deja pour SIP, l'acceleration materielle ou les signatures
+FortiGuard — avec le message « exists on a real FortiGate », la ou ils
+etaient auparavant acceptes et valaient UTC en silence. Un index HORS
+plage garde l'autre refus, celui d'une vraie faute : deux causes, deux
+messages.
+
+**Mesure** : `resolveFortiTimezone` fabriquait
+`{ index, name: 'UTC', label: '(GMT) time zone 55' }` pour tout index de
+0 a 86 absent de la table. Le pare-feu affichait donc `set timezone 55`
+dans sa configuration pendant que son horloge, ses journaux et ses
+horaires de politique etaient a UTC — un fuseau annonce que rien ne
+soutenait (I-T4).
+
+**Pourquoi la table n'est pas remplie.** Il faut la correspondance
+index -> fuseau, et aucune source atteignable ne la donne :
+`docs.fortinet.com` et `registry.terraform.io` sont tous deux bloques
+par le proxy de sortie, et `official_docs/forti-cli-ref-60.txt`
+(l. 33538) donne la PLAGE (« from 00 to 86 ») en renvoyant a
+`set timezone ?` pour la liste, qu'il ne reproduit pas.
+
+Un resume de recherche a bien rendu une liste, et il ne faut PAS s'en
+servir : elle est decalee d'un cran par rapport aux huit lignes deja
+presentes ici (elle donne Midway/Samoa a l'index 01 la ou la table le
+met a 0), et elle melange des versions dont certaines vont jusqu'a 89 —
+FortiOS 7.4.2 ayant par ailleurs remplace l'entier par un nom IANA.
+Ecrire 87 lignes depuis cette source injecterait 87 faits non verifies,
+et l'ecart d'un cran dit qu'au moins une des deux numerotations est
+fausse. Laquelle, cette entree ne le sait pas.
+
+**Ce qui reste possible sans elle** : n'importe quel fuseau est
+atteignable par son nom IANA (`set timezone Europe/Paris`), chemin qui
+n'est pas borne par la table.
+
+**Ce qu'il faudrait pour fermer** : la sortie de `set timezone ?` sur un
+vrai FortiGate, ou l'acces a l'une des deux pages. La sonde
+`probe-fuseaux-fortios` verifie deja que chaque ligne AJOUTEE porte le
+decalage standard que son libelle annonce, de sorte qu'une ligne
+mal recopiee tombera au lieu de s'installer.
+
+### [horloge] la FORMULATION constructeur de `clock summer-time` n'est pas lue
+Ce qui manque ne porte plus que sur les MOTS des deux references, pas
+sur le comportement.
+
+**Ce qui est etabli, et garde par une sonde.** La regle
+`clock timezone CET 1` + `clock summer-time CEST recurring last Sun Mar
+2:00 last Sun Oct 3:00` decrit `Europe/Paris`. tzdata, lui, est
+joignable par `core/time/TimeZoneRegistry`. Les deux ont donc ete
+compares directement :
+
+    525 600 minutes comparees sur l'annee 2026 -> AUCUN ecart
+
+Bascules comprises : au printemps l'heure locale saute de 01:59 a 03:00
+et l'heure 02:00-02:59 n'existe pas ; a l'automne elle repasse de 02:59
+CEST a 02:00 CET, qui se produit donc deux fois. Les deux cas vivent
+dans `probe-horloge-suit-son-equipement.test.ts`, si bien qu'un
+retournement futur de la convention tomberait au lieu de passer
+inapercu. Etabli par ailleurs, par deux rendus concordants de la
+reference IOS : `recurring` sans parametres prend les regles
+americaines, et le decalage par defaut vaut 60 minutes.
+
+**Ce qui reste ouvert.** `cisco.com` et `support.huawei.com` sont tous
+deux bloques par le proxy de sortie de cet environnement, si bien que la
+phrase exacte par laquelle chaque constructeur decrit ses bornes n'a pas
+pu etre lue. La correspondance a tzdata rend un DESACCORD tres
+improbable — il faudrait que Cisco s'ecarte du fuseau que sa propre
+commande sert a decrire — mais elle ne remplace pas la lecture.
+
+**Ce qu'il faudrait pour fermer.** L'acces a l'une des deux pages, ou
+une transcription capturee sur un vrai equipement a l'heure meme de la
+bascule. Les formes que la grammaire VRP accepte et que
+`huaweiDaylightSaving` refuse aujourd'hui (les bornes datees d'un
+`repeating`) dependent de la meme lecture.
 
 ### [uniformite] `track <mot>` refuse avec DEUX messages selon la plateforme
 `track zorglub interface GigabitEthernet0/0 line-protocol` rend
@@ -888,6 +945,51 @@ le reseau simule comme de vraies trames.
 est le chantier d'unification des deux piles SSH que le depot documente
 deja comme large ; `transitTcpAclVerdict` a par ailleurs d'autres
 lecteurs (traceroute, sondes UDP) qui disparaitraient avec lui.
+
+**Mesure affinee (probe `nc-transit-acl-frame`).** On a cru pouvoir retirer
+le repli en s'appuyant sur `ctx.net.tcpConnectOutcome`, que `nc` appelle
+DEJA a cote du repli. Neutralise `transitTcpAclVerdict` a `permit`, la sonde
+reelle rend `succeeded` a travers un routeur `deny ip any any` : le chemin
+TCP-connect n'atteint PAS `evaluateForDataPlane` du routeur de transit. Donc
+le repli est PORTEUR, pas un doublon retirable, et le vrai correctif n'est
+pas de supprimer le repli mais de faire SUBIR les ACL de transit au chemin
+`tcpConnectOutcome`/`TcpStack` lui-meme. Le garde-fou `nc-transit-acl-frame`
+tient le verdict d'aujourd'hui et passera par le vrai plan de donnees le
+jour ou ce chemin traverse les ACL.
+
+**Le client reel canonique existe deja : `SshSession` (session/SshSession.ts).**
+Le serveur `SshServerHandler` est un vrai sshd sur TCP (ops JSON
+hello/auth/open_channel/exec sur la socket :22 acceptee) ; `SshSession` en est
+le CLIENT — banniere + host key (`known_hosts`, `strictHostKeyChecking`), auth
+negociee, puis `openExecChannel(cmd).execute()`, `openShellChannel()`,
+`openSftpChannel()`. Le lanceur `sshLauncher` (via `openWireSshConnection`)
+fait DEJA passer `ssh user@host cmd` par `SshSession.openExecChannel().execute()`
+— mesure `ssh-exec-runs-on-the-wire` : la commande coute ses propres trames et
+`whoami` rend l'utilisateur SSH, pas le root du peripherique. `runSshTransportAsync`
+fait DEJA passer scp/sftp avec mot de passe par `SshSession` + `SshSftpChannel`
+(`tryOpenWireSftpFs`). Les fixtures `ssh-lan-fixtures` (`openSshSession`,
+`sshExec`, `openSftpSession`) sont le point d'entree partage ; les gardes
+`ssh-wire-exec` / `ssh-journalctl-tcpdump-coherence` / `sftp-scp-wire-coherence`
+prouvent la coherence trois-vues (ssh/journalctl/tcpdump) et la subissance ACL
+de transit sur ce client.
+
+Un second client, `SshWireClient.sshWireExec`, avait ete ecrit a cote : il
+DOUBLONNAIT `SshSession` (meme protocole, meme serveur) en plus permissif (pas
+de host key, pas de negociation d'auth). Retire ; ses gardes rejouent desormais
+`SshSession` via les fixtures.
+
+**Ce qui reste : migrer `LinuxSshClient.runSshClient` (~1555 lignes) sur
+`SshSession`.** C'est le chemin god-mode SYNCHRONE encore appele par la commande
+bash `ssh` (`LinuxCommandExecutor`) et par les shells Cisco/Huawei : il retrouve
+le peripherique pair par `findHostByAddress` puis appelle ses methodes en memoire
+(`machine.executor.execute`, gates sshd re-derivees cote client). Mesure : 274
+fichiers de tests EPINGLENT ce comportement client (lignes `auth.log`,
+forced-command, port/env forwarding, banner, motd, `.bashrc`). Les faire passer
+par `SshServerHandler` deplace ces effets du client vers le serveur et doit
+reproduire chaque sortie a l'octet ; migration incrementale, famille par famille,
+validee lot par lot contre ces 274 fichiers — pas un remplacement d'un bloc. La
+barriere reelle est le passage synchrone->async : `runSshClient` rend un resultat
+synchrone la ou `SshSession.connect()`/`.execute()` sont `async`.
 
 ### [acl] GRE n'est pas eprouvable sur un routeur Cisco
 La matrice « chaque protocole a son transport » couvre OSPF, EIGRP, RIP,
@@ -2667,25 +2769,6 @@ dynamique DNS cote client, que `src/network/dns/update/` sait faire cote
 serveur — c'est donc un branchement reel et non une invention, mais il
 touche l'enregistrement A/PTR d'un hote et son interaction avec le role
 serveur DNS de Windows, ce qui est un lot a soi.
-### [socle] une place ne sait pas etre exigee au positif et facultative au negatif
-
-**Mesure** : `radius-server timeout 5` exige sa valeur, `no radius-server
-timeout` s'en passe — c'est la forme d'IOS, la negation retablissant le
-defaut sans le nommer. Le socle ne sait declarer que l'un des deux :
-une place obligatoire fait repondre `% Incomplete command.` a la
-negation nue, une place `optional` laisse passer la forme positive nue.
-`CommandSpec.undoRequiresArgument` porte la nuance INVERSE (« la
-negation exige un mot de plus ») et n'est lue que par l'aide, jamais par
-l'analyse.
-
-**Contourne, pas corrige** : les six reglages globaux de
-`aaaServerSpecs.ts` declarent leur valeur `optional` et refusent la
-forme positive nue dans le gestionnaire, avec le meme message qu'IOS.
-La PLAGE, elle, reste declaree sur la place et appliquee par l'analyse,
-donc seul le controle de PRESENCE quitte la declaration. Fermer
-l'entree demande une notion de presence par sens dans `CommandParser`,
-qui touche toutes les familles migrees et non cette seule.
-
 ### [powershell] `netsh wlan add profile` ne lit pas le XML du profil
 
 **Mesure** : `netsh wlan add profile filename="C:\temp\quoi-que-ce-soit.xml"`
@@ -2782,3 +2865,52 @@ Chacun rend desormais un refus qui NOMME la brique absente :
 pour un geste que le moteur ne sait pas poser serait exactement la meme
 apparence sans l'effet, dans l'autre sens — les deux tests qui
 l'attendaient epinglaient une invention du moteur mort et sont corriges.
+
+### [logging] `logging host` ne porte ni `vrf`, ni `xml`, ni `filtered`, ni `session-id`
+La commande declaree — et evaluee — est `logging [host] <ip>
+[discriminator <nom>] [transport {udp|tcp} [port <1-65535>]]`. La
+documentation Cisco decrit en plus, sur les plateformes recentes,
+`vrf <nom>`, `xml`, `filtered [stream <id>]`, `sequence-num-session`
+et `session-id {hostname|ipv4|ipv6|string <texte>}`.
+**Mesure** : `logging host 10.0.0.1 vrf V1` repond `% Invalid input
+detected at '^' marker.`, comme les quatre autres.
+**Ce qui a ete cherche** : `cisco.com` est BLOQUE par le mandataire de
+sortie de ce reseau (`EGRESS_BLOCKED` sur
+`/c/en/us/td/docs/ios-xml/ios/esm/command/esm-cr-book/esm-cr-a1.html`),
+et le resume d'un moteur de recherche nomme ces mots-cles sans donner
+leur grammaire exacte ni leur effet.
+**Report** : declarer une place dont on ne connait ni la forme ni
+l'effet, c'est la faire accepter puis ne rien en faire — exactement le
+defaut que la migration referme partout ailleurs. Le refus actuel dit
+la verite : la plateforme ne les porte pas. A rouvrir des que la
+reference est atteignable.
+
+### [cli] le garde-fou des `<cr>` n'entrait dans aucun sous-mode — 49 promesses menteuses y restent
+`probe-aide-cr-tient-sa-promesse` balayait trois modes : `show` en EXEC
+privilegie, la configuration globale et celle d'interface. Aucun
+sous-mode. Promene dans huit d'entre eux, le meme balayage a trouve 77
+`<cr>` annonces pour des frappes que la machine refuse par
+`% Incomplete command.` — le defaut exact que ce garde-fou existe pour
+empecher, dans les endroits ou il ne regardait pas.
+**Mesure** (routeur Cisco, profondeur 3, un materiel neuf par
+validation) :
+- `config-router-ospf` 20 : `area`, `area range`, `area stub`,
+  `area virtual-link`, `auto-cost`, `auto-cost reference-bandwidth`,
+  `capability`, `neighbor`, `passive-interface`, `no passive-interface`…
+- `config-line` 13 : `accounting`, `authorization`, `exec-timeout`,
+  `login-timeout`, `transport`, `transport input`, `transport output`…
+- `config-router-eigrp` 6, `config-router-bgp` 5, `config-acl-ext` 3
+  (`sequence`, `sequence deny`, `sequence permit`), `config-dhcp` 2
+  (`option ascii`, `option hex`) ;
+- `config-view` 4 et `config-route-map` 24 — FERMES, et les deux
+  sous-modes sont desormais balayes.
+`config-class-map`, `config-policy-map`, `config-keychain` et
+`config-vrf` en comptent zero : ils sont deja declares sur le socle.
+**Cause** : un noeud du trie porte une action et aucun parametre
+declare, donc son arite minimale vaut zero, donc `?` annonce qu'on peut
+valider. Le socle, lui, la deduit des places declarees.
+**Report** : poser 73 `requireArgs` sur un trie qu'on vide serait
+ecrire une seconde fois ce que chaque gestionnaire sait deja, sur un
+moteur qui doit disparaitre. Chaque famille migree en ferme son lot,
+et le sous-mode entre alors dans le balayage — l'y faire entrer avant
+epinglerait le defaut au lieu de le mesurer.

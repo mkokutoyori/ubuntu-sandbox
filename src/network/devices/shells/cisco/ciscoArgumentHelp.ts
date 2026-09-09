@@ -638,76 +638,11 @@ export function describeCiscoArguments(tries: ArgumentHelpTries): void {
   tries.config.describeArgs('ip name-server', [
     IP('address', 'Domain server IP address'),
   ]);
-  tries.config.describeArgs('logging host', [
-    IP('address', 'IP address of the syslog server'),
-  ]);
-  tries.config.addCompletionKeywords('logging', [
-    { keyword: 'host', description: 'Set syslog server IP address and parameters' },
-    { keyword: 'buffered', description: 'Set buffered logging parameters' },
-    { keyword: 'console', description: 'Set console logging parameters' },
-    { keyword: 'monitor', description: 'Set terminal line (monitor) logging parameters' },
-    { keyword: 'on', description: 'Enable logging to all supported destinations' },
-    { keyword: 'trap', description: 'Set syslog server logging level' },
-  ]);
   // `aaa authentication ?` retombait sur les mots-clés de la RACINE
   // `aaa` (il proposait `new-model`, `attempts`, `session-id`…), parce
   // que rien ne décrivait ce qui vient après. Chaque niveau porte
   // maintenant ses propres valeurs.
-  tries.config.describeArgs('aaa', [
-    ENUM('function', 'AAA function', [
-      ['accounting', 'Accounting configurations parameters'],
-      ['authentication', 'Authentication configurations parameters'],
-      ['authorization', 'Authorization configurations parameters'],
-      ['group', 'AAA server-group definitions'],
-      ['local', 'AAA local authentication parameters'],
-      ['new-model', 'Enable NEW access control commands and functions'],
-      ['session-id', 'AAA Session ID'],
-    ]),
-  ]);
-  tries.config.describeArgs('no aaa', [
-    ENUM('function', 'AAA function', [
-      ['accounting', 'Accounting configurations parameters'],
-      ['authentication', 'Authentication configurations parameters'],
-      ['authorization', 'Authorization configurations parameters'],
-      ['group', 'AAA server-group definitions'],
-      ['local', 'AAA local authentication parameters'],
-      ['new-model', 'Enable NEW access control commands and functions'],
-      ['session-id', 'AAA Session ID'],
-    ]),
-  ]);
-  tries.config.describeArgs('aaa session-id', [
-    ENUM('type', 'AAA session ID behaviour', [
-      ['common', 'Use same session-id for all services'],
-      ['unique', 'Use unique session-id for each service'],
-    ]),
-  ]);
-  tries.config.describeArgs('aaa authentication', [
-    ENUM('service', 'Service to authenticate', [
-      ['dot1x', 'Set authentication lists for IEEE 802.1x'],
-      ['enable', 'Set authentication list for enable'],
-      ['login', 'Set authentication lists for logins'],
-      ['ppp', 'Set authentication lists for ppp'],
-    ]),
-  ]);
-  tries.config.describeArgs('aaa authorization', [
-    ENUM('service', 'Service to authorize', [
-      ['commands', 'For exec (shell) commands'],
-      ['config-commands', 'For configuration mode commands'],
-      ['exec', 'For starting an exec (shell)'],
-      ['network', 'For network services (PPP, SLIP, ARAP)'],
-      ['reverse-access', 'For reverse access connections'],
-    ]),
-  ]);
-  tries.config.describeArgs('aaa accounting', [
-    ENUM('service', 'Service to account for', [
-      ['commands', 'For exec (shell) commands'],
-      ['connection', 'For outbound connections'],
-      ['exec', 'For starting an exec (shell)'],
-      ['network', 'For network services (PPP, SLIP, ARAP)'],
-      ['system', 'For system events'],
-    ]),
-  ]);
-  // Les QUATRE bannieres d'IOS, pas seulement `motd` : `banner ?` n'en
+              // Les QUATRE bannieres d'IOS, pas seulement `motd` : `banner ?` n'en
   // proposait qu'une, donc les trois autres etaient acceptees, rendues
   // dans la configuration, et introuvables par l'aide.
   tries.config.describeArgs('banner', [
@@ -875,7 +810,6 @@ export function describeCiscoArguments(tries: ArgumentHelpTries): void {
   tries.config.requireArgs('enable secret', 1);
   tries.config.requireArgs('enable password', 1);
   tries.config.requireArgs('access-list', 2);
-  tries.config.requireArgs('logging', 1);
   tries.config.requireArgs('ntp', 1);
   tries.config.requireArgs('ip nat', 1);
   tries.config.requireArgs('ip dhcp', 1);

@@ -12,6 +12,8 @@ import { broadcastAddress, tryIpToUint32, prefixLengthToMaskUint32 } from '../..
 import { serializeCaptureFile, deserializeCaptureFile } from './network/tcpdump/CaptureFileFormat';
 import { makeTcpFrame } from './network/tcpdump/CaptureFrame';
 import { tcpFlagToken } from './network/tcpdump/TcpdumpFormat';
+import { snmpSnapshot, type SnmpSnapshot } from './ports/PortsFilesystem';
+import type { ProtocolCounters } from '../../layers/internet/ProtocolCounters';
 
 export type ServiceResolver = (port: number, proto: string) => string | null;
 
@@ -258,6 +260,7 @@ export function cmdNetstat(
   socketTable?: SocketTable | null,
   resolveService?: ServiceResolver,
   resolvePid?: PidResolver,
+  counters?: ProtocolCounters,
 ): string {
   // Expand combined flags: '-tlnp' → individual chars t,l,n,p
   const hasFlag = (ch: string): boolean =>
@@ -319,7 +322,7 @@ export function cmdNetstat(
   }
 
   if (hasFlag('s') || args.includes('--statistics')) {
-    return cmdNetstatStatistics(socketTable);
+    return cmdNetstatStatistics(snmpSnapshot(socketTable, counters));
   }
 
   // Determine which protocols to show (no -t/-u → show both)
@@ -381,47 +384,62 @@ export function cmdNetstat(
   return lines.join('\n');
 }
 
-function cmdNetstatStatistics(socketTable?: SocketTable | null): string {
-  let tcpListen = 0;
-  let tcpEstablished = 0;
-  if (socketTable) {
-    for (const sock of socketTable.getAll()) {
-      if (sock.protocol !== 'tcp') continue;
-      if (sock.state === 'LISTEN') tcpListen++;
-      else if (sock.state === 'ESTABLISHED') tcpEstablished++;
-    }
-  }
+function cmdNetstatStatistics(snapshot: SnmpSnapshot): string {
+  const c = snapshot.counters;
   return [
     'Ip:',
     '    Forwarding: 2',
-    '    0 total packets received',
-    '    0 forwarded',
-    '    0 incoming packets discarded',
-    '    0 incoming packets delivered',
-    '    0 requests sent out',
+    `    ${c.ipInReceives} total packets received`,
+    `    ${c.ipForwDatagrams} forwarded`,
+    `    ${c.ipInDiscards} incoming packets discarded`,
+    `    ${c.ipInDelivers} incoming packets delivered`,
+    `    ${c.ipOutRequests} requests sent out`,
+    ...(c.ipOutNoRoutes > 0 ? [`    ${c.ipOutNoRoutes} dropped because of missing route`] : []),
     'Icmp:',
-    '    0 ICMP messages received',
-    '    0 input ICMP message failed',
+    `    ${c.icmpInMsgs} ICMP messages received`,
+    `    ${c.icmpInErrors} input ICMP message failed`,
     '    ICMP input histogram:',
-    '    0 ICMP messages sent',
-    '    0 ICMP messages failed',
+    ...icmpHistogram({
+      'destination unreachable': c.icmpInDestUnreachs,
+      'timeout in transit': c.icmpInTimeExcds,
+      redirects: c.icmpInRedirects,
+      'echo requests': c.icmpInEchos,
+      'echo replies': c.icmpInEchoReps,
+    }),
+    `    ${c.icmpOutMsgs} ICMP messages sent`,
+    `    ${c.icmpOutErrors} ICMP messages failed`,
     '    ICMP output histogram:',
+    ...icmpHistogram({
+      'destination unreachable': c.icmpOutDestUnreachs,
+      'time exceeded': c.icmpOutTimeExcds,
+      redirects: c.icmpOutRedirects,
+      'echo requests': c.icmpOutEchos,
+      'echo replies': c.icmpOutEchoReps,
+    }),
     'Tcp:',
-    `    ${tcpEstablished} active connection openings`,
-    `    ${tcpListen} passive connection openings`,
-    '    0 failed connection attempts',
-    '    0 connection resets received',
-    `    ${tcpEstablished} connections established`,
-    '    0 segments retransmitted',
+    `    ${c.tcpActiveOpens} active connection openings`,
+    `    ${c.tcpPassiveOpens} passive connection openings`,
+    `    ${c.tcpAttemptFails} failed connection attempts`,
+    `    ${c.tcpEstabResets} connection resets received`,
+    `    ${snapshot.currEstab} connections established`,
+    `    ${c.tcpInSegs} segments received`,
+    `    ${c.tcpOutSegs} segments sent out`,
+    `    ${c.tcpRetransSegs} segments retransmitted`,
     'Udp:',
-    '    0 packets received',
-    '    0 packets to unknown port received',
-    '    0 packet receive errors',
-    '    0 packets sent',
+    `    ${c.udpInDatagrams} packets received`,
+    `    ${c.udpNoPorts} packets to unknown port received`,
+    `    ${c.udpInErrors} packet receive errors`,
+    `    ${c.udpOutDatagrams} packets sent`,
     '    0 receive buffer errors',
     'TcpExt:',
     'IpExt:',
   ].join('\n');
+}
+
+function icmpHistogram(lignes: Record<string, number>): string[] {
+  return Object.entries(lignes)
+    .filter(([, n]) => n > 0)
+    .map(([nom, n]) => `        ${nom}: ${n}`);
 }
 
 function formatNetstatLine(

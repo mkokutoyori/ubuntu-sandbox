@@ -169,10 +169,10 @@ describe('une machine intacte ne voit jamais rien de tout cela', () => {
   it('les valeurs par défaut laissent le disque invisible', async () => {
     const pc = box();
 
-    // 50 G et 655 360 inodes : les plafonds que `df` affichait déjà.
-    expect(vfsOf(pc).getCapacityBytes()).toBe(50 * 1024 * 1024 * 1024);
+    // La racine tient dans `sda1`, la partition que `lsblk` annonce : 48 Gio.
+    expect(vfsOf(pc).getCapacityBytes()).toBe(48 * 1024 * 1024 * 1024);
     expect(await pc.executeCommand('touch /tmp/a')).toBe('');
     expect(await pc.executeCommand('mkdir /tmp/d')).toBe('');
-    expect(await pc.executeCommand('df -h /')).toContain('50G');
+    expect(await pc.executeCommand('df -h /')).toContain('48G');
   });
 });

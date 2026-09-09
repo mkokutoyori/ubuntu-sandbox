@@ -46,6 +46,10 @@ export function partsAt(zone: TimeZone, atMs: number): LocalParts {
   });
 }
 
+export function partsAtOffset(offsetMinutes: number, atMs: number): LocalParts {
+  return partsAt(TimeZone.UTC, atMs + offsetMinutes * 60_000);
+}
+
 export function offsetMinutesAt(zone: TimeZone, atMs: number): number {
   const local = partsAt(zone, atMs);
   const asUtc = Date.UTC(
@@ -80,4 +84,11 @@ export function observesDaylightSaving(zone: TimeZone, atMs: number): boolean {
   const year = partsAt(zone, atMs).year;
   return offsetMinutesAt(zone, Date.UTC(year, 0, 1))
     !== offsetMinutesAt(zone, Date.UTC(year, 6, 1));
+}
+
+export function formatOffsetCompact(minutes: number): string {
+  const sign = minutes < 0 ? '-' : '+';
+  const abs = Math.abs(minutes);
+  return `${sign}${String(Math.floor(abs / 60)).padStart(2, '0')}`
+    + String(abs % 60).padStart(2, '0');
 }

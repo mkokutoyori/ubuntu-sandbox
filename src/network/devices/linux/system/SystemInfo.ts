@@ -2,8 +2,7 @@
  * SystemInfo — `uname`, `date`, `uptime`, `tty`, `runlevel`,
  * `hostnamectl` and the shared uptime/load formatter.
  *
- * The debug transcript showed `date -u` identical to `date` in a
- * JS `Date.toString()` shape, `uptime` printing an AM/PM clock with
+ * The debug transcript showed `uptime` printing an AM/PM clock with
  * "0 min" while `w` claimed "up 1 day" (inconsistent), and `tty` /
  * `runlevel` / `hostnamectl` missing. These helpers centralise the
  * formatting so `uptime` and `w` cannot drift apart again.
@@ -11,8 +10,11 @@
 
 import type { HostLifecycle } from '../../host/lifecycle';
 import type { KernelInfo } from '../../host/identity';
+import { formatOffsetCompact } from '../../../core/time/TimeZoneRegistry';
+import { abreviationA, decalageA } from '../time/TimezoneDatabase';
+import { IDLE_LOAD_AVERAGE } from './LoadAverage';
 
-const LOAD_AVERAGE = '0.00, 0.01, 0.05';
+
 
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 const DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
@@ -26,9 +28,9 @@ function hhmmss(d: Date): string {
 }
 
 /** `Tue May 19 16:32:55 UTC 2026` — the real coreutils `date` shape. */
-function fullDate(d: Date): string {
+function fullDate(d: Date, abbr = 'UTC'): string {
   return `${DAYS[d.getUTCDay()]} ${MONTHS[d.getUTCMonth()]} ${two(d.getUTCDate())} ` +
-    `${hhmmss(d)} UTC ${d.getUTCFullYear()}`;
+    `${hhmmss(d)} ${abbr} ${d.getUTCFullYear()}`;
 }
 
 /** Pretty uptime: `up 17 minutes` / `up 2 hours, 5 minutes`. */
@@ -58,13 +60,14 @@ function uptimeClause(uptimeSeconds: number): string {
 
 /**
  * The shared `uptime`/`w` header line, e.g.
- * ` 16:32:55 up 5 min,  1 user,  load average: 0.00, 0.01, 0.05`.
- * `uptimeSeconds` comes from the host's {@link HostLifecycle}.
+ * ` 16:32:55 up 5 min,  1 user,  load average: 0.00, 0.00, 0.00`.
+ * `uptimeSeconds` comes from the host's {@link HostLifecycle}, and the
+ * load from {@link IDLE_LOAD_AVERAGE} — la seule ecriture de ce fait.
  */
 export function uptimeHeader(users = 1, uptimeSeconds = 0): string {
   const now = new Date();
   return ` ${hhmmss(now)} up ${uptimeClause(uptimeSeconds)},  ${users} user${users !== 1 ? 's' : ''}, ` +
-    ` load average: ${LOAD_AVERAGE}`;
+    ` load average: ${IDLE_LOAD_AVERAGE}`;
 }
 
 /**
@@ -157,7 +160,7 @@ function dayOfYear(d: Date): number {
  * came back with the placeholder unreplaced — visibly wrong, but
  * easy to miss when the format string itself was short.
  */
-function strftime(fmt: string, d: Date): string {
+function strftime(fmt: string, d: Date, rendu: DateRendering = UTC_RENDERING): string {
   const Y = d.getUTCFullYear();
   const M = d.getUTCMonth();
   const D = d.getUTCDate();
@@ -198,19 +201,19 @@ function strftime(fmt: string, d: Date): string {
     'U': two(Math.floor((dayOfYear(d) + 6 - dow) / 7)),
     'V': two(weekISO),
     'N': String(d.getUTCMilliseconds()).padStart(3, '0') + '000000',
-    'Z': 'UTC',
-    'z': '+0000',
+    'Z': rendu.abbr,
+    'z': formatOffsetCompact(rendu.offsetMin),
     'F': `${Y}-${two(M + 1)}-${two(D)}`,
     'T': `${two(H)}:${two(m)}:${two(S)}`,
     'R': `${two(H)}:${two(m)}`,
     'r': `${two(I12)}:${two(m)}:${two(S)} ${p}`,
     'D': `${two(M + 1)}/${two(D)}/${two(Y % 100)}`,
-    'c': fullDate(d),
+    'c': fullDate(d, rendu.abbr),
     'x': `${two(M + 1)}/${two(D)}/${two(Y % 100)}`,
     'X': `${two(H)}:${two(m)}:${two(S)}`,
     'n': '\n',
     't': '\t',
-    's': String(Math.floor(d.getTime() / 1000)),
+    's': String(Math.floor(rendu.epochMs / 1000)),
     '%': '%',
   };
   return fmt.replace(/%([YyCmdejHkIlMSpPaAbhBwuUVNZzFTRrDcxXnts%])/g, (_, c) => map[c] ?? `%${c}`);
@@ -266,10 +269,30 @@ function parseDateSpec(spec: string): Date | null {
   return isNaN(t) ? null : new Date(t);
 }
 
-export function cmdDate(args: string[]): string {
+export interface DateRendering {
+  readonly abbr: string;
+  readonly offsetMin: number;
+  readonly epochMs: number;
+}
+
+const UTC_RENDERING: DateRendering = Object.freeze({
+  abbr: 'UTC', offsetMin: 0, epochMs: 0,
+});
+
+function renderingIn(timezone: string | undefined, epochMs: number): DateRendering {
+  if (timezone === undefined) return { ...UTC_RENDERING, epochMs };
+  return {
+    abbr: abreviationA(timezone, epochMs),
+    offsetMin: decalageA(timezone, epochMs),
+    epochMs,
+  };
+}
+
+export function cmdDate(args: string[], timezone?: string): string {
   // Accept -d <spec> / --date=<spec> / --date <spec>.
   let when = new Date();
   let fmtArg: string | undefined;
+  let forceUtc = false;
   for (let i = 0; i < args.length; i++) {
     const a = args[i];
     if (a === '-d' || a === '--date') {
@@ -289,10 +312,13 @@ export function cmdDate(args: string[]): string {
       fmtArg = a.slice(1);
       continue;
     }
-    // -u / --utc are no-ops here (sandbox TZ is already UTC).
+    if (a === '-u' || a === '--utc' || a === '--universal') forceUtc = true;
   }
-  if (fmtArg !== undefined) return strftime(fmtArg, when);
-  return fullDate(when);
+
+  const rendu = renderingIn(forceUtc ? undefined : timezone, when.getTime());
+  const local = new Date(when.getTime() + rendu.offsetMin * 60_000);
+  if (fmtArg !== undefined) return strftime(fmtArg, local, rendu);
+  return fullDate(local, rendu.abbr);
 }
 
 export function cmdTty(currentTty: string): string {

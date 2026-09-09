@@ -24,6 +24,7 @@ import {
   connectedPrefixesOfPort, martianSource, type ConnectedIpv4Prefix,
 } from '../layers/internet/InternetLayer';
 import { linkDestinationFor } from '../layers/internet/Ipv4Egress';
+import { newProtocolCounters, countIcmpIn, countIcmpOut, type ProtocolCounters } from '../layers/internet/ProtocolCounters';
 import { Port } from '../hardware/Port';
 import type { IPv4AddressOrigin } from '../hardware/Port';
 import { SocketTable } from '../core/SocketTable';
@@ -107,6 +108,7 @@ import type { DnsQueryOptions } from '../dns/compat/DnsWireCompat';
 import { queryDnsOverTcp } from '../dns/transport/DnsTcpTransport';
 import { queryDnsOverTls, DOT_PORT } from '../dns/transport/DnsTlsTransport';
 import { HardwareProfile } from './host/hardware';
+import { machineIdFor } from './host/hardware/HardwareIdentity';
 import { HostLifecycle } from './host/lifecycle';
 import { SystemIdentity } from './host/identity';
 import { DHCPClient } from '../dhcp/DHCPClient';
@@ -407,6 +409,18 @@ export abstract class EndHost extends Equipment {
   protected ipForwardEnabled: boolean = false;
 
   private broadcastEchoIgnored = true;
+
+  private readonly protocolCounters: ProtocolCounters = newProtocolCounters();
+
+  /**
+   * Les datagrammes que cette machine RELAIE. MIB-II compte un relais
+   * dans `ipForwDatagrams` et l'exclut d'`ipOutRequests` ; la file
+   * d'attente ARP portant les deux origines, l'appartenance se marque
+   * sur le datagramme lui-meme.
+   */
+  private readonly forwardedDatagrams = new WeakSet<IPv4Packet>();
+
+  getProtocolCounters(): ProtocolCounters { return this.protocolCounters; }
 
   ignoresBroadcastEcho(): boolean { return this.broadcastEchoIgnored; }
   setIgnoresBroadcastEcho(on: boolean): void { this.broadcastEchoIgnored = on; }
@@ -919,12 +933,15 @@ export abstract class EndHost extends Equipment {
     this.attachListenerProjection();
     this.hardware = HardwareProfile.defaultFor(
       String(type).includes('server') ? 'server' : 'workstation',
+      String(type).includes('windows') ? 'windows' : 'linux',
     );
+    this.hardware.identify(this.name);
     this.lifecycle = new HostLifecycle();
     this.lifecycle.attachBus(this.getBus(), this.id, name);
     this.identity = String(type).includes('windows')
       ? (String(type).includes('server') ? SystemIdentity.windowsServer() : SystemIdentity.windows())
       : SystemIdentity.ubuntu();
+    this.identity.machineId = machineIdFor(this.name);
     this.identity.attachBus(this.getBus(), this.id);
     this.attachHostActors();
     this.dhcpClient = new DHCPClient(
@@ -1817,6 +1834,12 @@ export abstract class EndHost extends Equipment {
   }
 
   override sendFrame(portName: string, frame: EthernetFrame): boolean {
+    if (frame.etherType === ETHERTYPE_IPV4) {
+      const ipPkt = frame.payload as IPv4Packet;
+      if (ipPkt && ipPkt.type === 'ipv4' && !this.forwardedDatagrams.has(ipPkt)) {
+        this.countLocallyOriginated(ipPkt);
+      }
+    }
     const sub = this.vlanSubInterfaces.get(portName);
     if (!sub) return super.sendFrame(portName, frame);
     const tagged: TaggedEthernetFrame = {
@@ -2137,8 +2160,10 @@ export abstract class EndHost extends Equipment {
   private handleIPv4(portName: string, ipPkt: IPv4Packet, srcMac?: string): void {
     if (!ipPkt || ipPkt.type !== 'ipv4') return;
 
+    this.protocolCounters.ipInReceives++;
     const headerProblem = ipv4HeaderProblem(ipPkt);
     if (headerProblem) {
+      this.protocolCounters.ipInHdrErrors++;
       Logger.warn(this.id, `ipv4:${headerProblem}-fail`,
         `${this.name}: IPv4 header ${headerProblem}, dropping packet`);
       return;
@@ -2201,6 +2226,7 @@ export abstract class EndHost extends Equipment {
       // ── Firewall: filter incoming packets ──
       const verdict = this.firewallFilter(portName, ipPkt, 'in');
       if (verdict === 'drop' || verdict === 'reject') {
+        this.protocolCounters.ipInDiscards++;
         Logger.info(this.id, 'ipv4:firewall-blocked',
           `${this.name}: firewall ${verdict} ${ipPkt.sourceIP} → ${ipPkt.destinationIP} on ${portName}`);
         if (verdict === 'reject') {
@@ -2209,10 +2235,12 @@ export abstract class EndHost extends Equipment {
         return;
       }
 
+      this.protocolCounters.ipInDelivers++;
       // Deliver to upper layer
       if (ipPkt.protocol === IP_PROTO_ICMP) {
         this.handleICMP(portName, ipPkt);
       } else if (ipPkt.protocol === IP_PROTO_TCP) {
+        this.protocolCounters.tcpInSegs++;
         this.tcpv2.handleIp(portName, ipPkt.sourceIP, ipPkt);
       } else if (ipPkt.protocol === IP_PROTO_UDP) {
         // Un multicast sans écouteur se jette en silence, comme un
@@ -2222,6 +2250,8 @@ export abstract class EndHost extends Equipment {
       } else if (ipPkt.protocol === IP_PROTO_GRE && this.greAgent) {
         const inner = this.greAgent.handleIp(portName, ipPkt.sourceIP, ipPkt);
         if (inner) this.handleIPv4(portName, inner, srcMac);
+      } else {
+        this.protocolCounters.ipInUnknownProtos++;
       }
       return;
     }
@@ -2316,6 +2346,8 @@ export abstract class EndHost extends Equipment {
     }
 
     const nextHopMAC = this.arpTable.get(route.nextHopIP.toString());
+    this.protocolCounters.ipForwDatagrams += outgoingFragments.length;
+    for (const frag of outgoingFragments) this.forwardedDatagrams.add(frag);
     if (nextHopMAC) {
       for (const frag of outgoingFragments) {
         this.sendFrame(outPortName, {
@@ -2382,7 +2414,10 @@ export abstract class EndHost extends Equipment {
     }
 
     const route = this.resolveRoute(request.destination);
-    if (!route || !route.port.isOperationallyUp()) return false;
+    if (!route || !route.port.isOperationallyUp()) {
+      this.protocolCounters.ipOutNoRoutes++;
+      return false;
+    }
     const source = request.source ?? route.port.getIPAddress();
     if (!source) return false;
 
@@ -2392,6 +2427,18 @@ export abstract class EndHost extends Equipment {
         request.payload, request.payloadBytes, options),
       route.nextHopIP);
     return true;
+  }
+
+  private countLocallyOriginated(ipPkt: IPv4Packet): void {
+    this.protocolCounters.ipOutRequests++;
+    if (ipPkt.protocol === IP_PROTO_ICMP) {
+      const icmp = ipPkt.payload as ICMPPacket;
+      if (icmp && icmp.type === 'icmp') countIcmpOut(this.protocolCounters, icmp.icmpType);
+    } else if (ipPkt.protocol === IP_PROTO_TCP) {
+      this.protocolCounters.tcpOutSegs++;
+    } else if (ipPkt.protocol === IP_PROTO_UDP) {
+      this.protocolCounters.udpOutDatagrams++;
+    }
   }
 
   private connectedIpv4Prefixes(): ConnectedIpv4Prefix[] {
@@ -2481,6 +2528,7 @@ export abstract class EndHost extends Equipment {
     const icmp = ipPkt.payload as ICMPPacket;
     if (!icmp || icmp.type !== 'icmp') return;
 
+    countIcmpIn(this.protocolCounters, icmp.icmpType);
     if (icmp.icmpType === 'echo-request') {
       if (this.broadcastEchoIgnored && !this.getPortOwningIP(ipPkt.destinationIP)) return;
       this.sendEchoReply(portName, ipPkt, icmp);
@@ -2870,6 +2918,14 @@ export abstract class EndHost extends Equipment {
     this.socketTable.unbind('udp', address, port);
   }
 
+  /**
+   * Le demon qui porte les repondeurs de nom de lien — mDNS et LLMNR.
+   * C'est une propriete de la PLATEFORME et non du protocole : sous
+   * Linux les deux vivent dans `systemd-resolved`, sous Windows dans le
+   * `svchost` du service de client DNS.
+   */
+  public resolverProcessName(): string { return 'systemd-resolved'; }
+
   /** Close a UDP port: remove the listener and the socket-table entry. */
   public udpClose(port: number): void {
     this.udpListeners.delete(port);
@@ -3158,23 +3214,18 @@ export abstract class EndHost extends Equipment {
     // RFC 768: a non-zero checksum that doesn't match is corruption — a
     // real kernel silently discards it (UdpInErrors), no ICMP reply.
     if (!verifyUdpChecksum(udp, ipPkt.sourceIP.toString(), ipPkt.destinationIP.toString())) {
+      this.protocolCounters.udpInErrors++;
       Logger.warn(this.id, 'udp:checksum-fail',
         `${this.name}: invalid UDP checksum from ${ipPkt.sourceIP}:${udp.sourcePort}, dropping`);
       return;
     }
 
-    if (this.dispatchUdpToListener(portName, udp, ipPkt.sourceIP, ipPkt.destinationIP, srcMac)) return;
-
-    // NTP (`docs/PRD-NTP-Tutoriel.md` §4). Un hote qui interroge un
-    // serveur doit pouvoir entendre sa REPONSE : sans ce point de
-    // remise, chronyd emettait ses paquets et rien ne revenait jamais,
-    // donc aucune machine Linux ne pouvait se synchroniser.
-    if (udp.destinationPort === 123) {
-      const ntp = (this as unknown as { getNtpAgent?: () => import('../ntp/NtpAgent').NtpAgent })
-        .getNtpAgent?.();
-      if (ntp) { ntp.handleUdp(portName, ipPkt.sourceIP, udp); return; }
+    if (this.dispatchUdpToListener(portName, udp, ipPkt.sourceIP, ipPkt.destinationIP, srcMac)) {
+      this.protocolCounters.udpInDatagrams++;
+      return;
     }
 
+    this.protocolCounters.udpNoPorts++;
     if (!wasBroadcast) {
       Logger.info(this.id, 'udp:port-unreachable',
         `${this.name}: no listener on UDP ${udp.destinationPort}, ` +

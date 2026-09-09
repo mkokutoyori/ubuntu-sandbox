@@ -320,12 +320,12 @@ part qu'avec sa sonde.
 | # | Lot | Ce qu'il referme | Mesure de départ |
 |---|---|---|---|
 | **T1** ✅ | `network/core/time/` : le type `TimeZone`, le registre, `offsetMinutesAt` | I-T1, I-T3 | l'écart de 60 min du §1.1 ; et, mesuré en chemin, `setTimezone('Zorglub/Ville')` accepté puis `localTimeOf` qui **lève** |
-| **T2** | `TimezoneDatabase` devient une **vue** du registre | la table fixe #2 | `timedatectl` dit `CET +0100` un 5 septembre |
-| **T3** | `date` et `timedatectl` s'accordent | I-T6 | `15:33 UTC` contre `16:33 CET`, même machine |
-| **T4** | `DeviceClock` sur Cisco et VRP ; `summer-time`/`daylight-saving-time` réels | modèle #3 | `show clock` faux six mois sur douze |
+| **T2** ✅ | `TimezoneDatabase` devient la porte des **abréviations** ; le décalage vient du registre | la table fixe #2 | `timedatectl` dit `CET +0100` un 5 septembre ; et, mesurés en chemin, `Africa/Yaounde` **absent de tzdata** mais déclaré, `Asia/Bangkok` refusé, `Africa/Casablanca` étiqueté `WEST` au lieu de `+01`, et `SupportsDaylightSavingTime` câblé à `false` côté Windows |
+| **T3** ✅ | `date` et `timedatectl` s'accordent ; `date`/`time` de cmd Windows aussi | I-T6 | `17:56 UTC` contre `19:56 CEST`, même machine ; `date -u` identique à `date` ; `%Z`/`%z` câblés à `UTC`/`+0000` |
+| **T4** ✅ | `core/time/DeviceClock` évalue la règle ; `show clock`, `show calendar` et `display clock` s'y branchent ; `clock datetime` pose vraiment l'horloge VRP | modèle #3, §6, I-T5 | `show clock` faux six mois sur douze ; le décalage `120` analysé, borné, **jeté et non rendu** ; `display clock` sur `new Date()` ; la règle VRP **mutilée** au rangement (`02:00 last Sun`) et recrachée telle quelle, donc un aller-retour de topologie corrompait la configuration. Le commutateur reçoit à son tour une horloge — magasin, horloge système et rendu, les trois manquaient — et `DeviceClockStore` est le porteur unique que les deux plateformes tiennent, l'entrée `TODO.md` étant refermée. **Reste ouvert** : la convention de bord est assumée faute de source constructeur atteignable |
 | **T5** | Les 87 index FortiOS ; un index inconnu est **refusé** | I-T4 | `set timezone 55` accepté → UTC |
-| **T6** | `ScheduleObject` lit l'horloge de sa machine | I-T5 | un horaire suit le fuseau du navigateur |
-| **T7** | `CronSchedule` idem | I-T5 | `/etc/timezone` ignoré |
+| **T6** ✅ | `ScheduleObject` lit l'horloge de sa machine ; la fenêtre `onetime` devient **murale** | I-T5, I-T6 | `execute time` disait 19:30 pendant que le moteur d'horaires lisait 17:30 — et l'écart tombait du côté OUVERT : « 08:00–18:00 lundi » laissait passer à 19:30 |
+| **T7** ✅ | `CronSchedule` idem ; `CRON_TZ` est **évalué** ; la minute de cron est un instant, plus une heure murale ; EEM lit `clock timezone` | I-T5, §6 | la tâche de 08:30 partait à 10:30, celle du lundi ne partait pas le lundi, `CRON_TZ` était rendu par `crontab -l` sans rien décider, et l'heure murale supprimait la tâche de l'heure répétée d'automne |
 | **T8** | `SyslogAgent` cesse d'appeler `Date.now()` ; RFC 5424 porte son décalage | I-T5, RFC 5424 | `clock set` sans effet sur le fil |
 | **T9** | `date=`/`time=` dans les journaux FortiOS | fidélité | champs absents |
 | **T10** | Oracle : `DBTIMEZONE`, `SESSIONTIMEZONE`, `SYSDATE`/`SYSTIMESTAMP` | I-T2 | tout en UTC, aucun réglage |
@@ -407,6 +407,15 @@ Documentation constructeur (proprietaire, donc citée comme telle) :
 - [Cisco IOS — Setting Time and Calendar Services](https://www.cisco.com/c/en/us/td/docs/ios-xml/ios/bsm/configuration/15-2mt/bsm-time-calendar-set.html)
 - [Huawei VRP — `clock daylight-saving-time`](https://support.huawei.com/enterprise/en/doc/EDOC1100096312/8f75d1a3/clock-daylight-saving-time)
 - FortiOS 6.0.4 CLI Reference, `config system global` → `set timezone` (`official_docs/forti-cli-ref-60.txt`, l. 33537)
+- [FortiOS — Setting the system time](https://docs.fortinet.com/document/fortigate/7.6.6/administration-guide/512210/setting-the-system-time) — « for many features to work, including scheduling, logging, and SSL-dependent features, the FortiOS system time must be accurate » ; c'est l'autorité du lot T6
+- [FortiOS CLI — `firewall schedule recurring`](https://docs.fortinet.com/document/fortigate/6.4.0/cli-reference/283620/firewall-schedule-recurring)
+
+Vixie cron / cronie (lot T7) — un horaire cron s'interprète dans le
+fuseau du système (`/etc/localtime`), et une ligne `CRON_TZ=Area/City`
+placée au-dessus d'une tâche fait suivre à celle-ci CE fuseau. Au retour
+à l'heure d'hiver, une tâche de l'heure répétée part **deux fois** ; c'est
+pourquoi la minute déjà traitée est retenue comme un instant et non comme
+une heure murale.
 
 Forme de données :
 
