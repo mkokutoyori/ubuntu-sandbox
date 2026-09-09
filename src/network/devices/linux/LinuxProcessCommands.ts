@@ -8,10 +8,11 @@
 
 import type { LinuxProcessManager, Signal } from './LinuxProcessManager';
 import { SIGNAL_NUMBERS } from './LinuxProcessManager';
-import type { LinuxServiceManager, ServiceUnit, ServiceState } from './LinuxServiceManager';
+import type { LinuxServiceManager, ServiceUnit } from './LinuxServiceManager';
 import type { LinuxJobTable } from './jobs/LinuxJobTable';
 import { runPs, transientSelfProcess } from './ps/PsCommand';
 import { memPercent, sharedKib, topCommand, taskBucketOf, type TaskBucket } from './system/ProcFormat';
+import { renderTable, type TableColumn, type TableStyle } from '../shells/cli/TextTable';
 
 function topCpuTime(ms: number): string {
   const min = Math.floor(ms / 60_000);
@@ -389,6 +390,29 @@ const ACTIVE_SUBSTATE: Record<ReturnType<typeof unitSuffix>, string> = {
   timer: 'waiting',
 };
 
+interface UnitRow {
+  unit: string;
+  load: string;
+  active: string;
+  sub: string;
+  description: string;
+}
+
+/**
+ * Le tableau de `systemctl list-units`, dont l'en-tete et les valeurs
+ * partagent une seule mesure de largeur : ils s'ecrivaient chacun de
+ * leur cote, et aucune colonne ne tombait sous son intitule.
+ */
+const UNIT_COLUMNS: ReadonlyArray<TableColumn<UnitRow>> = [
+  { header: 'UNIT', value: (r) => r.unit },
+  { header: 'LOAD', value: (r) => r.load },
+  { header: 'ACTIVE', value: (r) => r.active },
+  { header: 'SUB', value: (r) => r.sub },
+  { header: 'DESCRIPTION', value: (r) => r.description },
+];
+
+const UNIT_TABLE: TableStyle = { gap: 1, rule: false, indent: '  ' };
+
 /**
  * La ligne `Active:` en DEUX morceaux, parce que la couleur ne les couvre
  * pas tous les deux.
@@ -686,23 +710,28 @@ export function cmdSystemctl(args: string[], sm: LinuxServiceManager, color = fa
       const typeArg = args.find((a) => a.startsWith('--type='))?.slice('--type='.length)
         ?? (args.includes('-t') ? args[args.indexOf('-t') + 1] : undefined);
       const matchesType = (name: string): boolean => !typeArg || unitSuffix(name) === typeArg;
-      const allUnits = (stateFilter
-        ? sm.list({ state: stateFilter as ServiceState })
-        : sm.list()).filter((u) => matchesType(u.name));
-      const lines = ['  UNIT                          LOAD   ACTIVE SUB     DESCRIPTION'];
-      for (const u of allUnits) {
-        const active = u.state === 'active' ? 'active' : u.state === 'failed' ? 'failed' : 'inactive';
-        const sub2 = u.state !== 'active' ? 'dead' : ACTIVE_SUBSTATE[unitSuffix(u.name)];
-        lines.push(
-          `  ${fullUnitName(u.name).padEnd(30)} loaded ${active.padEnd(8)} ${sub2.padEnd(8)} ${u.description}`,
-        );
-      }
+      const showAll = args.includes('--all') || args.includes('-a');
+      const rows: UnitRow[] = sm.list()
+        .filter((u) => matchesType(u.name))
+        .map((u) => ({
+          unit: fullUnitName(u.name),
+          load: 'loaded',
+          active: u.state === 'active' ? 'active' : u.state === 'failed' ? 'failed' : 'inactive',
+          sub: u.state !== 'active' ? 'dead' : ACTIVE_SUBSTATE[unitSuffix(u.name)],
+          description: u.description,
+        }));
+      const kept = stateFilter
+        ? rows.filter((r) => r.load === stateFilter || r.active === stateFilter || r.sub === stateFilter)
+        : rows.filter((r) => showAll || r.sub !== 'dead');
+      const lines = renderTable(kept, UNIT_COLUMNS, UNIT_TABLE);
       lines.push('');
       lines.push('LOAD   = Reflects whether the unit definition was properly loaded.');
       lines.push('ACTIVE = The high-level unit activation state, i.e. generalization of SUB.');
       lines.push('SUB    = The low-level unit activation state, values depend on unit type.');
       lines.push('');
-      lines.push(`${allUnits.length} loaded units listed. Pass --all to see loaded but inactive units, too.`);
+      lines.push(showAll
+        ? `${kept.length} loaded units listed.`
+        : `${kept.length} loaded units listed. Pass --all to see loaded but inactive units, too.`);
       lines.push("To show all installed unit files use 'systemctl list-unit-files'.");
       return { output: lines.join('\n'), exitCode: 0 };
     }

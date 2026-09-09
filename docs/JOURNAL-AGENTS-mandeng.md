@@ -9629,3 +9629,96 @@ puis 240 fichiers et 3785 cas cote reseau, tous verts.
 Deux cas e2e Playwright verifient l'absence de `UID`/`HOSTNAME` dans
 `env`, leur presence dans le shell, et les trois formes
 `VAR=` / `export VAR=` / `VAR= commande`.
+
+## `systemctl` repond a la question posee, et un demon n'a qu'UN pid
+
+**Perimetre revendique** : `LinuxProcessCommands` (le `list-units` de
+`systemctl`), `LinuxMachine` (le pid de l'ecoute sshd). Rien du cote
+journalisation.
+
+**Mesure de depart** — un poste Linux neuf, la meme commande avec et
+sans ses filtres :
+
+```
+$ systemctl list-units --type=service --state=running
+  UNIT                          LOAD   ACTIVE SUB     DESCRIPTION
+
+0 loaded units listed. Pass --all to see loaded but inactive units, too.
+
+$ systemctl list-units --type=service
+  apparmor.service               loaded active   running  Load AppArmor profiles
+  apt-daily.service              loaded inactive dead     Daily apt download activities
+  … 26 loaded units listed …
+```
+
+**`--state=running` rend ZERO unite** alors que la MEME commande sans
+le filtre en montre dix-huit dont la colonne SUB dit `running`. La
+cause : le filtre etait passe a `sm.list({ state })`, ou `state` est un
+`ServiceState` du modele (`active` / `inactive` / `failed`). Seul
+`--state=inactive` marchait donc — par coincidence de vocabulaire. Un
+mot accepte, affiche dans l'aide, et jete a l'evaluation : la regle 6.
+
+Symetriquement `--all` ne changeait rien : la liste par defaut
+contenait deja les unites `dead`, et le pied de page invitait pourtant
+a passer `--all` « pour voir les unites inactives ». Et les colonnes ne
+tombaient pas sous leur en-tete, l'en-tete etant une chaine ecrite a la
+main pendant que les lignes se calaient a d'autres largeurs.
+
+Un troisieme desaccord, sur la meme machine :
+
+```
+$ ss -tlnp | grep :22     users:(("sshd",pid=985,fd=3))
+$ ps -e | grep sshd          22 ?        00:00:00 sshd
+$ systemctl status ssh       Main PID: 22 (sshd)
+```
+
+Trois vues, deux reponses. L'ecoute portait `SSHD_PID = 985`, une
+constante, pendant que la table des processus en attribuait un vrai.
+`systemd-resolved`, lui, etait d'accord partout — ce qui prouvait que
+le chemin correct existait deja.
+
+**L'autorite** — RELEVEE sur le systemd 255 installe sur la machine qui
+execute ce depot (`systemctl --help`) :
+
+```
+     --state=STATE       List units with particular LOAD or SUB or ACTIVE state
+  -a --all               Show all properties/all units currently in memory,
+                         including dead/empty ones. To list all units installed
+                         on the system, use 'list-unit-files' instead.
+```
+
+`--state` filtre donc sur l'une QUELCONQUE des trois colonnes, et
+`--all` est ce qui fait apparaitre les unites mortes. Le systeme simule
+etant une Ubuntu 22.04 (systemd 249), la legende en `LOAD   = …` de
+cette version est conservee telle quelle : seule la SELECTION etait en
+cause.
+
+**Ce qui a change** : les unites sont d'abord RENDUES en lignes
+(unit / load / active / sub / description), puis filtrees sur ces
+lignes-la — ce que dit l'aide. `--all` decide de la presence des unites
+mortes quand aucun `--state` n'est donne, et le pied de page cesse de
+proposer `--all` quand il est deja passe. Le tableau passe par
+`renderTable` : en-tete et valeurs partagent enfin une seule mesure de
+largeur. Et l'ecoute sshd lit son pid dans la table des processus.
+
+**Une premisse fausse corrigee** (regle 7) :
+`sockets-une-seule-verite.test.ts` affirmait `expect(l.pid).toBe(985)`
+— le defaut epingle comme contrat, dans la suite meme qui s'appelle
+« une seule verite ». Le cas exige desormais que le pid de l'ecoute
+soit celui que `ps` liste, ce qui est la propriete que la suite
+cherchait a garantir.
+
+**Discrimination** (`git stash push -- src/network`) :
+`probe-systemctl-repond-a-la-question.test.ts` (11 cas), 6 tombent
+contre l'etat d'avant. Les 5 autres sont nommes dans l'en-tete : un
+DEJA JUSTE qui ISOLE la panne (`--state=inactive`, le seul etat qui
+marchait, ce qui montre que le defaut est dans le vocabulaire du filtre
+et non dans son principe), un VACUEUX AVANT (le pied de page comptait
+zero pour zero ligne), deux TEMOINS sur le registre de services
+(`is-active` et `service --status-all`, deja d'accord, qui prouvent que
+le defaut etait dans la SELECTION et non dans l'etat des unites) et un
+TEMOIN sur les pids (`systemd-resolved`, deja coherent partout). Suites
+connexes : 244 fichiers, 4628 cas, tous verts. `npm run typecheck` :
+248 erreurs, comme sur la base ; eslint revenu a son compte d'avant.
+Trois cas e2e Playwright verifient `--state=running`, l'effet de
+`--all` et l'accord `ss` / `systemctl status` sur le pid de sshd.

@@ -1680,8 +1680,18 @@ export abstract class LinuxMachine extends EndHost
   private static readonly SSHD_BANNER = SSH_SERVER_IDENTIFICATION_LINE;
   private static readonly SSHD_ADDRESSES = ['0.0.0.0', '::'] as const;
 
+  /**
+   * Le pid du demon sshd, lu dans la TABLE DES PROCESSUS. L'ecoute en
+   * portait une copie ecrite en dur, si bien que `ss -tlnp` annoncait
+   * un pid que ni `ps` ni `systemctl status ssh` ne connaissaient.
+   */
+  private sshdPid(): number {
+    return this.executor.processMgr.list({ comm: 'sshd' })[0]?.pid ?? LinuxMachine.SSHD_PID;
+  }
+
   private attachSshTcpListeners(): void {
     const stack = this.getTcpStack();
+    const pid = this.sshdPid();
     const desired = new Set(this.sshdPortsFromConfig());
     for (const port of this._sshdActivePorts) {
       if (!desired.has(port)) {
@@ -1695,12 +1705,12 @@ export abstract class LinuxMachine extends EndHost
         try {
           stack.listen(port, {
             identity: {
-              pid: LinuxMachine.SSHD_PID,
+              pid,
               processName: 'sshd',
               banner: LinuxMachine.SSHD_BANNER,
             },
             onAccept: (socket) => {
-              stack.setSocketOwner(socket, LinuxMachine.SSHD_PID);
+              stack.setSocketOwner(socket, pid);
               this.getSshServerHandler().register(socket as unknown as TcpStream, socket.remoteIp);
             },
           }, addr);
