@@ -957,26 +957,39 @@ pas de supprimer le repli mais de faire SUBIR les ACL de transit au chemin
 tient le verdict d'aujourd'hui et passera par le vrai plan de donnees le
 jour ou ce chemin traverse les ACL.
 
-**Premiere moitie livree : le client reel existe (`SshWireClient.sshWireExec`).**
-Le serveur `SshServerHandler` etait deja un vrai sshd sur TCP (ops JSON
-hello/auth/open_channel/exec sur la socket :22 acceptee) ; ce qui manquait
-etait un CLIENT qui s'y connecte par le fil. `sshWireExec` fait
-`stack.connect(:22)` puis la sequence hello -> auth -> open_channel(session)
--> exec -> close (ordre OpenSSH, clientloop.c), rend la vraie sortie distante,
-laisse le SERVEUR arbitrer l'auth, et SUBIT les ACL de transit (mesure
-`ssh-wire-exec` : un routeur `deny ip any any` bloque la session sur le fil).
+**Le client reel canonique existe deja : `SshSession` (session/SshSession.ts).**
+Le serveur `SshServerHandler` est un vrai sshd sur TCP (ops JSON
+hello/auth/open_channel/exec sur la socket :22 acceptee) ; `SshSession` en est
+le CLIENT — banniere + host key (`known_hosts`, `strictHostKeyChecking`), auth
+negociee, puis `openExecChannel(cmd).execute()`, `openShellChannel()`,
+`openSftpChannel()`. Le lanceur `sshLauncher` (via `openWireSshConnection`)
+fait DEJA passer `ssh user@host cmd` par `SshSession.openExecChannel().execute()`
+— mesure `ssh-exec-runs-on-the-wire` : la commande coute ses propres trames et
+`whoami` rend l'utilisateur SSH, pas le root du peripherique. `runSshTransportAsync`
+fait DEJA passer scp/sftp avec mot de passe par `SshSession` + `SshSftpChannel`
+(`tryOpenWireSftpFs`). Les fixtures `ssh-lan-fixtures` (`openSshSession`,
+`sshExec`, `openSftpSession`) sont le point d'entree partage ; les gardes
+`ssh-wire-exec` / `ssh-journalctl-tcpdump-coherence` / `sftp-scp-wire-coherence`
+prouvent la coherence trois-vues (ssh/journalctl/tcpdump) et la subissance ACL
+de transit sur ce client.
 
-**Ce qui reste : migrer `LinuxSshClient.runSshClient` (1555 lignes) sur ce
-client.** Mesure : 274 fichiers de tests exercent SSH et EPINGLENT le
-comportement re-derive cote client (lignes `auth.log`, forced-command, port/env
-forwarding, banner, motd, `.bashrc`, agent-forwarding). Les faire passer par
-`SshServerHandler` deplace ces effets du client vers le serveur et doit
-reproduire chaque sortie a l'octet ; c'est une migration incrementale a valider
-lot par lot contre ces 274 fichiers, pas un remplacement d'un bloc. Le client
-etant desormais prouve, chaque famille (exec simple, puis env/banner/motd, puis
-forwarding, puis interactif/scp/sftp) se migre et se retire du bloc client
-separement. `sshLauncher` (interactif) sonde deja le fil (`wireProbe`) mais
-relie encore l'objet pour la session — meme migration.
+Un second client, `SshWireClient.sshWireExec`, avait ete ecrit a cote : il
+DOUBLONNAIT `SshSession` (meme protocole, meme serveur) en plus permissif (pas
+de host key, pas de negociation d'auth). Retire ; ses gardes rejouent desormais
+`SshSession` via les fixtures.
+
+**Ce qui reste : migrer `LinuxSshClient.runSshClient` (~1555 lignes) sur
+`SshSession`.** C'est le chemin god-mode SYNCHRONE encore appele par la commande
+bash `ssh` (`LinuxCommandExecutor`) et par les shells Cisco/Huawei : il retrouve
+le peripherique pair par `findHostByAddress` puis appelle ses methodes en memoire
+(`machine.executor.execute`, gates sshd re-derivees cote client). Mesure : 274
+fichiers de tests EPINGLENT ce comportement client (lignes `auth.log`,
+forced-command, port/env forwarding, banner, motd, `.bashrc`). Les faire passer
+par `SshServerHandler` deplace ces effets du client vers le serveur et doit
+reproduire chaque sortie a l'octet ; migration incrementale, famille par famille,
+validee lot par lot contre ces 274 fichiers — pas un remplacement d'un bloc. La
+barriere reelle est le passage synchrone->async : `runSshClient` rend un resultat
+synchrone la ou `SshSession.connect()`/`.execute()` sont `async`.
 
 ### [acl] GRE n'est pas eprouvable sur un routeur Cisco
 La matrice « chaque protocole a son transport » couvre OSPF, EIGRP, RIP,

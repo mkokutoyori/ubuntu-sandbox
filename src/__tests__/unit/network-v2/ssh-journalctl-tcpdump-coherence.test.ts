@@ -4,15 +4,17 @@
  * Rule 4 (real frames): a session that crosses the wire must be visible in
  * all three, and a session the wire refuses must be absent from all three.
  *
- * Measured (Rule 7). sshWireExec drives the real sshd over TCP, so:
+ * Measured (Rule 7). The exchange is driven through the canonical SshSession
+ * (`openSshSession`/`sshExec` fixtures), the one client that already speaks to
+ * the sshd handler over TCP, so:
  *   - ssh   -> the remote command output;
  *   - journalctl -u ssh (server) -> Accepted/Failed password + session lines;
  *   - tcpdump -i eth0 (client) -> the real SYN/handshake to :22.
  * WITNESS: a successful exec shows the user in all three. DISCRIMINATION: a
  * wrong password still crossed the wire (tcpdump + journalctl see the
- * connection, journal says "Failed password", ssh says not authenticated) —
- * the real-login-precedes-command point of Rule 4; and a deny-ACL router
- * leaves NO journal session and NO established handshake — coherent absence.
+ * connection, journal says "Failed password", the connect is refused) — the
+ * real-login-precedes-command point of Rule 4; and a deny-ACL router leaves NO
+ * journal session and NO established handshake — coherent absence.
  */
 
 import { describe, it, expect, beforeEach } from 'vitest';
@@ -23,15 +25,13 @@ import { Cable } from '@/network/hardware/Cable';
 import { IPAddress, SubnetMask, resetCounters } from '@/network/core/types';
 import { resetDeviceCounters } from '@/network/devices/DeviceFactory';
 import { Logger } from '@/network/core/Logger';
-import { sshWireExec, type SshWireStack } from '@/network/protocols/ssh/SshWireClient';
+import { openSshSession, sshExec } from './ssh-lan-fixtures';
 
 beforeEach(() => {
   resetCounters();
   resetDeviceCounters();
   Logger.reset();
 });
-
-const stackOf = (d: LinuxPC) => (d as unknown as { getTcpStack: () => SshWireStack }).getTcpStack();
 
 async function directLab() {
   const pc = new LinuxPC('linux-pc', 'PC1');
@@ -74,10 +74,7 @@ describe('SSH coherence across ssh / journalctl / tcpdump', () => {
     const { pc, srv } = await directLab();
     await pc.executeCommand('tcpdump -i eth0 -w /tmp/s.pcap &');
 
-    const r = await sshWireExec({
-      stack: stackOf(pc), host: '10.0.0.10', port: 22, user: 'alice', password: 'secret123',
-      command: 'whoami',
-    });
+    const r = await sshExec(pc, '10.0.0.10', 'whoami', 'alice', 'secret123');
     expect(r.stdout.trim()).toBe('alice');
 
     const journal = await srv.executeCommand('journalctl -u ssh --no-pager');
@@ -93,11 +90,7 @@ describe('SSH coherence across ssh / journalctl / tcpdump', () => {
     const { pc, srv } = await directLab();
     await pc.executeCommand('tcpdump -i eth0 -w /tmp/s.pcap &');
 
-    const r = await sshWireExec({
-      stack: stackOf(pc), host: '10.0.0.10', port: 22, user: 'alice', password: 'wrong',
-      command: 'whoami',
-    });
-    expect(r.authenticated).toBe(false);
+    await expect(openSshSession(pc, '10.0.0.10', 'alice', 'wrong')).rejects.toThrow();
 
     expect(await srv.executeCommand('journalctl -u ssh --no-pager')).toMatch(/Failed password for alice/);
     expect(await pc.executeCommand('tcpdump -r /tmp/s.pcap')).toMatch(/10\.0\.0\.1\.\d+ > 10\.0\.0\.10\.22: Flags \[S\]/);
@@ -107,11 +100,7 @@ describe('SSH coherence across ssh / journalctl / tcpdump', () => {
     const { pc, srv } = await routedDenyLab();
     await pc.executeCommand('tcpdump -i eth0 -w /tmp/s.pcap &');
 
-    const r = await sshWireExec({
-      stack: stackOf(pc), host: '10.0.2.10', port: 22, user: 'alice', password: 'secret123',
-      command: 'whoami',
-    });
-    expect(r.authenticated).toBe(false);
+    await expect(openSshSession(pc, '10.0.2.10', 'alice', 'secret123')).rejects.toThrow();
 
     expect(await srv.executeCommand('journalctl -u ssh --no-pager')).not.toMatch(/Accepted password for alice/);
     expect(await pc.executeCommand('tcpdump -r /tmp/s.pcap')).not.toMatch(/Flags \[S\.\]/);

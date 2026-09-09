@@ -1,16 +1,16 @@
 /**
- * scp / sftp file transfer crosses the wire, coherent across the three views:
- * the transfer result, the server journalctl (sshd + sftp subsystem), and the
- * client tcpdump. Modern OpenSSH scp rides the SFTP subsystem, so one wire
- * client (sshWireSftpPut/Get over the real TcpStack) covers both.
+ * sftp file transfer crosses the wire on the canonical SftpSession, coherent
+ * across three views: the transfer itself, the server journalctl (sshd + sftp
+ * subsystem), and the client tcpdump. Modern OpenSSH scp rides the same SFTP
+ * subsystem, so this one session covers both tools.
  *
- * Measured (Rule 7). sshWireSftpPut connect()s to :22, authenticates, then
- * drives the real SFTP wire session (INIT/OPEN/WRITE/CLOSE via SftpWireCodec)
- * over the TCP connection. WITNESS: a put lands the file on the server's real
- * VFS (a subsequent `cat` reads it back) AND a get returns the same bytes;
- * journalctl shows the sftp session; tcpdump shows real :22 frames.
- * DISCRIMINATION: a deny-ACL router blocks the transfer on the wire (no file
- * written, not authenticated).
+ * Measured (Rule 7). `openSftpSession` authenticates over TCP to :22 and drives
+ * the real SFTP wire session (INIT/OPEN/WRITE/CLOSE via SftpWireCodec) through
+ * SshSftpChannel. WITNESS: a put lands the file on the server's real VFS (a
+ * subsequent `cat` reads it back) AND a get returns the same bytes; journalctl
+ * shows the session; tcpdump shows real :22 frames. DISCRIMINATION: a deny-ACL
+ * router blocks the transfer on the wire (connect never establishes, no file
+ * written).
  */
 
 import { describe, it, expect, beforeEach } from 'vitest';
@@ -21,15 +21,13 @@ import { Cable } from '@/network/hardware/Cable';
 import { IPAddress, SubnetMask, resetCounters } from '@/network/core/types';
 import { resetDeviceCounters } from '@/network/devices/DeviceFactory';
 import { Logger } from '@/network/core/Logger';
-import { sshWireSftpPut, sshWireSftpGet, type SshWireStack } from '@/network/protocols/ssh/SshWireClient';
+import { openSftpSession } from './ssh-lan-fixtures';
 
 beforeEach(() => {
   resetCounters();
   resetDeviceCounters();
   Logger.reset();
 });
-
-const stackOf = (d: LinuxPC) => (d as unknown as { getTcpStack: () => SshWireStack }).getTcpStack();
 
 async function directLab() {
   const pc = new LinuxPC('linux-pc', 'PC1');
@@ -67,26 +65,21 @@ async function denyLab() {
   return { pc, srv };
 }
 
-describe('scp/sftp transfer crosses the wire, coherent in three views', () => {
+describe('sftp transfer crosses the wire, coherent in three views', () => {
   it('WITNESS: put lands on the server VFS, get reads it back, all three views agree', async () => {
     const { pc, srv } = await directLab();
     await pc.executeCommand('tcpdump -i eth0 -w /tmp/s.pcap &');
 
-    const put = await sshWireSftpPut({
-      stack: stackOf(pc), host: '10.0.0.10', port: 22, user: 'alice', password: 'secret123',
-      remotePath: '/home/alice/uploaded.txt', content: 'payload-over-the-wire',
-    });
-    expect(put.ok).toBe(true);
+    const { sftp, localVfs } = await openSftpSession(pc, '10.0.0.10', 'alice', 'secret123');
+    localVfs.writeFile('/payload.txt', 'payload-over-the-wire', 0, 0, 0o022);
+    sftp.put('/payload.txt', '/home/alice/uploaded.txt');
 
     const onServer = await srv.executeCommand('cat /home/alice/uploaded.txt');
     expect(onServer).toContain('payload-over-the-wire');
 
-    const get = await sshWireSftpGet({
-      stack: stackOf(pc), host: '10.0.0.10', port: 22, user: 'alice', password: 'secret123',
-      remotePath: '/home/alice/uploaded.txt',
-    });
-    expect(get.ok).toBe(true);
-    expect(get.content).toContain('payload-over-the-wire');
+    sftp.get('/home/alice/uploaded.txt', '/downloaded.txt');
+    expect(localVfs.readFile('/downloaded.txt')).toContain('payload-over-the-wire');
+    sftp.disconnect();
 
     expect(await srv.executeCommand('journalctl -u ssh --no-pager')).toMatch(/Accepted password for alice/);
     expect(await pc.executeCommand('tcpdump -r /tmp/s.pcap')).toMatch(/10\.0\.0\.1\.\d+ > 10\.0\.0\.10\.22: Flags \[S\]/);
@@ -94,12 +87,7 @@ describe('scp/sftp transfer crosses the wire, coherent in three views', () => {
 
   it('DISCRIMINATION: a deny-ACL router blocks the transfer on the wire', async () => {
     const { pc, srv } = await denyLab();
-    const put = await sshWireSftpPut({
-      stack: stackOf(pc), host: '10.0.2.10', port: 22, user: 'alice', password: 'secret123',
-      remotePath: '/home/alice/blocked.txt', content: 'never-arrives',
-    });
-    expect(put.ok).toBe(false);
-    expect(put.authenticated).toBe(false);
+    await expect(openSftpSession(pc, '10.0.2.10', 'alice', 'secret123')).rejects.toThrow();
     expect(await srv.executeCommand('cat /home/alice/blocked.txt')).not.toContain('never-arrives');
   });
 });
