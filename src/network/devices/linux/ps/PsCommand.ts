@@ -17,7 +17,7 @@
  */
 
 import type { LinuxProcessManager, ProcessInfo } from '../LinuxProcessManager';
-import { formatClock, formatCpuTime, memPercent } from '../system/ProcFormat';
+import { formatClock, formatCpuTime, formatBsdCpuTime, memPercent } from '../system/ProcFormat';
 
 /** Context describing the calling interactive shell. */
 export interface PsContext {
@@ -74,6 +74,7 @@ interface Column {
 
 const fmtClock = formatClock;
 const fmtCpu = formatCpuTime;
+const fmtBsdCpu = formatBsdCpuTime;
 const memPct = memPercent;
 
 const COLUMN_REGISTRY: Record<string, Column> = {
@@ -100,6 +101,7 @@ const COLUMN_REGISTRY: Record<string, Column> = {
   stime: { header: 'STIME', align: 'l', width: 5, value: p => fmtClock(p.startTime) },
   start: { header: 'START', align: 'l', width: 8, value: p => fmtClock(p.startTime) },
   time: { header: 'TIME', align: 'r', width: 8, value: p => fmtCpu(p.cpuTime), num: p => p.cpuTime },
+  bsdtime: { header: 'TIME', align: 'r', width: 6, value: p => fmtBsdCpu(p.cpuTime), num: p => p.cpuTime },
   ni: { header: 'NI', align: 'r', width: 3, value: p => String(p.nice), num: p => p.nice },
   nice: { header: 'NI', align: 'r', width: 3, value: p => String(p.nice), num: p => p.nice },
   pri: { header: 'PRI', align: 'r', width: 3, value: p => String(p.priority), num: p => p.priority },
@@ -128,7 +130,7 @@ const FORMAT_PRESETS: Record<FormatPreset, string[]> = {
   default: ['pid', 'tty', 'time', 'ucmd'],
   full: ['fuid', 'pid', 'ppid', 'c', 'stime', 'tty', 'time', 'cmd'],
   long: ['f', 's', 'uid', 'pid', 'ppid', 'c', 'pri', 'ni', 'addr', 'sz', 'wchan', 'tty', 'time', 'cmd'],
-  aux: ['user', 'pid', 'pcpu', 'pmem', 'vsz', 'rss', 'tty', 'stat', 'start', 'time', 'args'],
+  aux: ['user', 'pid', 'pcpu', 'pmem', 'vsz', 'rss', 'tty', 'stat', 'start', 'bsdtime', 'args'],
 };
 
 // ─── Argument parsing ─────────────────────────────────────────────────
@@ -274,7 +276,13 @@ function commMatches(p: ProcessInfo, name: string): boolean {
  *  enumerates itself: max(pids)+1, ppid = shell, comm 'ps', state 'R',
  *  tty inherited from the shell. The simulator's process manager is
  *  not mutated. */
-function transientPsProcess(ctx: PsContext): ProcessInfo {
+/**
+ * Le processus que la commande d'inventaire est ELLE-MEME. `ps` et
+ * `top` figurent l'un comme l'autre dans leur propre sortie sur une
+ * vraie machine ; sans lui, les deux vues ne comptaient pas le meme
+ * nombre de taches.
+ */
+export function transientSelfProcess(ctx: PsContext, comm: string): ProcessInfo {
   const peers = ctx.pm.list();
   const maxPid = peers.reduce((m, p) => Math.max(m, p.pid), 1);
   const now = new Date();
@@ -286,9 +294,9 @@ function transientPsProcess(ctx: PsContext): ProcessInfo {
     uid: ctx.currentUid,
     gid: ctx.currentUid,
     user: ctx.currentUser,
-    command: 'ps',
-    comm: 'ps',
-    args: ['ps'],
+    command: comm,
+    comm,
+    args: [comm],
     state: 'R',
     startTime: now,
     cpuTime: 0,
@@ -298,12 +306,12 @@ function transientPsProcess(ctx: PsContext): ProcessInfo {
     nice: 0,
     priority: 20,
     cwd: '/',
-    exe: '/usr/bin/ps',
+    exe: `/usr/bin/${comm}`,
   };
 }
 
 function selectProcesses(q: PsQuery, ctx: PsContext): ProcessInfo[] {
-  let list = [...ctx.pm.list(), transientPsProcess(ctx)];
+  let list = [...ctx.pm.list(), transientSelfProcess(ctx, 'ps')];
   const hasSelector = q.pids || q.ppids || q.comms || q.users;
 
   if (q.pids) list = list.filter(p => q.pids!.includes(p.pid));
@@ -389,7 +397,7 @@ function renderTable(list: ProcessInfo[], q: PsQuery): string {
   if (!suppressHeader) {
     const head = columns.map(({ spec, col }, idx) => {
       const text = spec.header ?? col?.header ?? spec.key.toUpperCase();
-      return padCell(text, col, idx === columns.length - 1, 'l');
+      return padCell(text, col, idx === columns.length - 1, col?.align ?? 'l');
     }).join(' ');
     lines.push(head.replace(/\s+$/, ''));
   }

@@ -9434,3 +9434,100 @@ qui prouvent qu'on n'a ni perdu ni ajoute de message). Suites connexes :
 91 fichiers, 1944 cas, tous verts. `npm run typecheck` : 248 erreurs,
 comme sur la base ; eslint inchange. Deux cas e2e Playwright lisent la
 banniere, le materiel et `/proc/cmdline` dans le vrai terminal.
+
+## Une machine a UN inventaire de processus, et ses vues le comptent pareil
+
+**Perimetre revendique** : `LinuxProcessCommands` (`top`),
+`ps/PsCommand` (l'en-tete et la colonne `bsdtime`),
+`system/ProcFormat` (les formats de temps, le compartimentage des
+etats, `SHR`, le nom tronque). Rien du cote journalisation.
+
+**Mesure de depart** — un poste Linux neuf, puis la MEME question a
+`top` et a `ps` :
+
+```
+Tasks: 39 total,  0 running, 33 sleeping,  0 stopped,  0 zombie
+    PID USER      PR  NI    VIRT    RES    SHR S  %CPU  %MEM     TIME+ COMMAND
+      1 root       20    0    165M    12M     4M S   0.0   0.3   0:00.00 systemd
+      2 root       20    0      0M     0M     4M S   0.0   0.0   0:00.00 [kthreadd]
+
+USER     PID   %CPU %MEM VSZ     RSS    TTY      STAT START    TIME     COMMAND
+root         1  0.0  0.3  169000  13000 ?        S    09:59       00:00 /sbin/init
+```
+
+**`Tasks: 39 total` alors que 0 + 33 + 0 + 0 = 33.** Six taches
+manquaient a l'appel : les fils noyau au repos portent l'etat `I`, que
+le compte rangeait dans aucun compartiment. La ligne se contredisait
+elle-meme, ce qu'une vraie machine ne fait jamais.
+
+`VIRT`/`RES`/`SHR` sortaient suffixes en `M` la ou `top` compte en
+KIBIOCTETS — on ne pouvait donc plus les rapprocher du `VSZ`/`RSS` de
+`ps`, qui decrit pourtant les MEMES processus. Et un fil noyau, qui n'a
+ni espace virtuel ni resident, se voyait tout de meme attribuer `4M` de
+memoire partagee : une constante, identique pour les trente-neuf
+taches.
+
+`top` ne se comptait pas lui-meme alors que `ps` le fait deja
+(`transientPsProcess`), d'ou un ecart d'une tache entre les deux vues.
+
+Enfin `ps aux` centrait ses en-tetes a GAUCHE pendant que ses valeurs
+etaient alignees a DROITE, si bien qu'aucune colonne numerique ne
+tombait sous son titre ; et `TIME` s'ecrivait `00:00` dans les deux
+formats.
+
+**L'autorite** — RELEVEE sur le GNU/Linux qui execute ce depot :
+
+```
+$ top -b -n 1 | head -8
+Tasks:  81 total,   1 running,  79 sleeping,   0 stopped,   1 zombie
+  PID USER      PR  NI    VIRT    RES    SHR S  %CPU  %MEM     TIME+ COMMAND
+    1 root      20   0   26288   6312   3380 S   0.0   0.0   0:44.87 process_a+
+    2 root      20   0       0      0      0 S   0.0   0.0   0:00.03 kthreadd
+$ ps aux | head -2
+USER       PID %CPU %MEM    VSZ   RSS TTY      STAT START   TIME COMMAND
+root         1  0.0  0.0  26288  6312 ?        SLl  Sep08   0:44 /process_api …
+$ ps -eo pid,time --no-headers | head -1
+    1 00:00:44
+$ ps aux | awk 'NR==2{print $10}'
+0:44
+$ ps -eo state --no-headers | sort | uniq -c
+     44 I
+     37 S
+      1 Z
+      1 R
+```
+
+1 + 79 + 0 + 1 = 81 : la ligne `Tasks` s'additionne exactement, et les
+44 taches en etat `I` sont comptees DORMANTES — c'est ce que
+l'echantillon d'etats montre. `VIRT`/`RES`/`SHR` valent 26288 / 6312 /
+3380, des kibioctets nus, et ce sont les MEMES nombres que `VSZ`/`RSS`
+de `ps`. Un fil noyau porte `0 0 0`. `top` affiche le `comm` SANS les
+crochets, tronque a neuf caracteres avec un `+`. Et surtout : `ps -o
+time` rend `HH:MM:SS` tandis que la colonne `TIME` de `ps aux` rend
+`M:SS` — ce ne sont pas deux formats d'une meme colonne, ce sont DEUX
+COLONNES (`time` et `bsdtime`), ce que la mesure a tranche.
+
+**Ce qui a change** : `taskBucketOf` range chaque etat dans exactement
+un compartiment, donc le total s'additionne par construction. `top`
+porte son propre processus transitoire, via le meme
+`transientSelfProcess` que `ps` — une seule definition pour les deux.
+`VIRT`/`RES` sont les kibioctets du modele, les memes que `ps`. `SHR`
+vaut 0 : ce simulateur ne modelise aucune projection partagee, et il
+compte zero pour ce qu'il ne mesure pas, comme les compteurs MIB-II du
+correctif precedent. L'en-tete de `ps` reprend l'alignement de sa
+colonne. Et `bsdtime` rejoint le registre a cote de `time`.
+
+**Discrimination** (`git stash push -- src/network`) :
+`probe-un-seul-inventaire-de-processus.test.ts` (11 cas), 7 tombent
+contre l'etat d'avant. Les 4 autres sont nommes dans l'en-tete : deux
+TEMOINS (`top` rend la memoire de `free` et la charge d'`uptime`, deux
+vues raccordees par des correctifs precedents) et deux DEJA JUSTES qui
+passaient PAR ACCIDENT — `00:00` satisfait `/^\d+:\d{2}$/` parce que le
+zero de tete est un chiffre comme un autre, et l'etat `S` du processus
+initial s'ecrit pareil sur une lettre et sur la chaine entiere. Les deux
+sont gardes parce qu'ils cessent d'etre accidentels des qu'un processus
+depasse l'heure de calcul ou porte un etat multi-lettres. Suites
+connexes : 117 fichiers, 1889 cas, tous verts. `npm run typecheck` :
+248 erreurs, comme sur la base ; eslint sans probleme avant comme
+apres. Trois cas e2e Playwright verifient l'addition de `Tasks`,
+l'accord memoire `top`/`ps` et les deux formats de `TIME`.

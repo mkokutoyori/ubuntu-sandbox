@@ -10,8 +10,8 @@ import type { LinuxProcessManager, Signal } from './LinuxProcessManager';
 import { SIGNAL_NUMBERS } from './LinuxProcessManager';
 import type { LinuxServiceManager, ServiceUnit, ServiceState } from './LinuxServiceManager';
 import type { LinuxJobTable } from './jobs/LinuxJobTable';
-import { runPs } from './ps/PsCommand';
-import { memPercent, kbToMiB } from './system/ProcFormat';
+import { runPs, transientSelfProcess } from './ps/PsCommand';
+import { memPercent, sharedKib, topCommand, taskBucketOf, type TaskBucket } from './system/ProcFormat';
 
 function topCpuTime(ms: number): string {
   const min = Math.floor(ms / 60_000);
@@ -70,7 +70,7 @@ export function cmdPs(args: string[], ctx: ProcessCmdContext): string {
 
 export function cmdTop(args: string[], ctx: ProcessCmdContext): string {
   // We always print one snapshot — the simulator has no interactive top.
-  const procs = ctx.pm.list();
+  const procs = [...ctx.pm.list(), transientSelfProcess(ctx, 'top')];
   const now = new Date();
   const timeStr = now.toLocaleTimeString('en-US', { hour12: false });
   const mib = (kib: number) => Math.round(kib / 1024);
@@ -80,10 +80,12 @@ export function cmdTop(args: string[], ctx: ProcessCmdContext): string {
   const freeMem = mem ? mib(mem.freeKib) : 1468;
   const bufCache = mem ? mib(mem.buffCacheKib) : 1254;
 
-  const sleeping = procs.filter(p => p.state === 'S').length;
-  const running = procs.filter(p => p.state === 'R').length;
-  const stopped = procs.filter(p => p.state === 'T').length;
-  const zombie = procs.filter(p => p.state === 'Z').length;
+  const compte = (bucket: TaskBucket) =>
+    procs.filter(p => taskBucketOf(p.state) === bucket).length;
+  const running = compte('running');
+  const sleeping = compte('sleeping');
+  const stopped = compte('stopped');
+  const zombie = compte('zombie');
 
   const lines: string[] = [];
   const upSec = ctx.uptimeSeconds ?? 0;
@@ -112,14 +114,14 @@ export function cmdTop(args: string[], ctx: ProcessCmdContext): string {
         p.user.padEnd(9),
         String(p.priority).padStart(3),
         String(p.nice).padStart(4),
-        `${kbToMiB(p.vsize)}M`.padStart(7),
-        `${kbToMiB(p.rss)}M`.padStart(6),
-        '4M'.padStart(6),
-        p.state,
+        String(p.vsize).padStart(7),
+        String(p.rss).padStart(6),
+        String(sharedKib(p)).padStart(6),
+        p.state[0],
         pcpu.toFixed(1).padStart(5),
         mem.padStart(5),
         topCpuTime(p.cpuTime).padStart(9),
-        p.comm,
+        topCommand(p.comm),
       ].join(' '),
     );
   }
