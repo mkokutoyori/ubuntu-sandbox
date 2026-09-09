@@ -19,14 +19,9 @@ import type { Router } from '../../Router';
 import { CommandTrie } from '../CommandTrie';
 import type { CommandSpec } from '@/cli/CommandTable';
 import { specsFromTrieRegistrations } from '@/cli/commands/trieAdapter';
-import { IOS_ACL_NUMBERING } from '../../router/ACLEngine';
 
-/** Les quatre plages de numéros qu'IOS accepte pour une liste IP. */
-export function isValidIosAclNumber(num: number): boolean {
-  return (num >= 1 && num <= 99) || (num >= 100 && num <= 199)
-    || (num >= 1300 && num <= 1999) || (num >= 2000 && num <= 2699);
-}
-import type { CiscoShellContext, CiscoShellMode } from './CiscoConfigCommands';
+export { isValidIosAclNumber } from './aclHeadSpecs';
+import type { CiscoShellContext } from './CiscoConfigCommands';
 
 // ─── Extended Shell Context for ACL modes ────────────────────────────
 
@@ -484,104 +479,6 @@ function parseStandardSource(args: string[]): { ip: IPAddress; wildcard: SubnetM
     return { ip: new IPAddress(args[0]), wildcard: new SubnetMask('0.0.0.0'), consumed: 1 };
   }
   return { ip: new IPAddress(args[0]), wildcard: new SubnetMask(args[1]), consumed: 2 };
-}
-
-// ─── Global Config Mode: access-list commands ─────────────────────────
-
-export function buildACLConfigCommands(trie: CommandTrie, ctx: CiscoACLShellContext): void {
-  // access-list <number> {permit|deny} ...
-  trie.registerGreedy('access-list', 'Define a standard or extended access list', (args) => {
-    if (args.length < 2) return '% Incomplete command.';
-    const num = parseInt(args[0], 10);
-    if (isNaN(num) || !isValidIosAclNumber(num)) return CISCO_INVALID_INPUT;
-
-    const action = args[1].toLowerCase();
-    const type = IOS_ACL_NUMBERING(num);
-
-    if (action === 'remark') {
-      const texte = args.slice(2).join(' ');
-      if (texte.length === 0) return '% Incomplete command.';
-      ctx.r().addAccessListEntry(num, 'permit', {
-        srcIP: new IPAddress('0.0.0.0'),
-        srcWildcard: new SubnetMask('255.255.255.255'),
-        ...(type === 'extended' ? {
-          protocol: 'ip',
-          dstIP: new IPAddress('0.0.0.0'),
-          dstWildcard: new SubnetMask('255.255.255.255'),
-        } : {}),
-        remark: texteDeRemarque(args.slice(2)),
-      });
-      return '';
-    }
-
-    if (action !== 'permit' && action !== 'deny') return `% Invalid action "${args[1]}"`;
-
-    const parsed = parseCiscoAce(args.slice(2), type);
-    if ('error' in parsed) return parsed.error;
-    ctx.r().addAccessListEntry(num, action as 'permit' | 'deny', parsed.opts);
-    return '';
-  });
-
-  // no access-list <number>
-  trie.registerGreedy('no access-list', 'Remove an access list', (args) => {
-    if (args.length < 1) return '% Incomplete command.';
-    const num = parseInt(args[0], 10);
-    if (isNaN(num)) return '% Invalid access-list number.';
-    ctx.r().removeAccessList(num);
-    return '';
-  });
-
-  // ip access-list standard <name>
-  trie.registerGreedy('ip access-list standard', 'Create a named standard access list', (args) => {
-    if (args.length < 1) return '% Incomplete command.';
-    const name = args[0];
-    // La liste existe des sa creation, meme vide : sur IOS elle figure
-    // aussitot dans `running-config`. Elle n'etait materialisee qu'au
-    // premier ACE, de sorte qu'une liste vide etait invisible.
-    ctx.r()._ensureNamedAccessList(name, 'standard');
-    ctx.setSelectedACL(name);
-    ctx.setSelectedACLType('standard');
-    ctx.setMode('config-std-nacl' as CiscoShellMode);
-    return '';
-  });
-
-  // ip access-list extended <name>
-  trie.registerGreedy('ip access-list extended', 'Create a named extended access list', (args) => {
-    if (args.length < 1) return '% Incomplete command.';
-    const name = args[0];
-    // La liste existe des sa creation, meme vide : sur IOS elle figure
-    // aussitot dans `running-config`. Elle n'etait materialisee qu'au
-    // premier ACE, de sorte qu'une liste vide etait invisible.
-    ctx.r()._ensureNamedAccessList(name, 'extended');
-    ctx.setSelectedACL(name);
-    ctx.setSelectedACLType('extended');
-    ctx.setMode('config-ext-nacl' as CiscoShellMode);
-    return '';
-  });
-
-  // no ip access-list standard <name>
-  trie.registerGreedy('no ip access-list standard', 'Remove a named standard access list', (args) => {
-    if (args.length < 1) return '% Incomplete command.';
-    ctx.r().removeNamedAccessList(args[0]);
-    return '';
-  });
-
-  // no ip access-list extended <name>
-  trie.registerGreedy('no ip access-list extended', 'Remove a named extended access list', (args) => {
-    if (args.length < 1) return '% Incomplete command.';
-    ctx.r().removeNamedAccessList(args[0]);
-    return '';
-  });
-
-  trie.registerGreedy('ip access-list resequence', 'Resequence an access list', (args) => {
-    if (args.length < 3) return '% Incomplete command.';
-    const name = args[0];
-    const start = parseInt(args[1], 10);
-    const step = parseInt(args[2], 10);
-    if (isNaN(start) || isNaN(step)) return '% Invalid arguments';
-    const ok = ctx.r()._resequenceNamedACL(name, start, step);
-    return ok ? '' : `% Access-list ${name} not found`;
-  });
 }
 
 // ─── Named Standard ACL Config Mode ──────────────────────────────────
