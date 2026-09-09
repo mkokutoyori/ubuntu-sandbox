@@ -93,6 +93,7 @@ function setKeymap(ctx: LinuxCommandContext, args: string[]): string {
 
 export const localectlCommand: LinuxCommand = {
   name: 'localectl',
+  package: 'systemd',
   needsNetworkContext: true,
   binaryPath: '/usr/bin/localectl',
   usage: 'localectl [status|set-locale LOCALE...|list-locales|set-keymap MAP|list-keymaps]',

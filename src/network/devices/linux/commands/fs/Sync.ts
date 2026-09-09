@@ -10,6 +10,7 @@ import type { LinuxCommand } from '../LinuxCommand';
  */
 export const syncCommand: LinuxCommand = {
   name: 'sync',
+  package: 'coreutils',
   needsNetworkContext: false,
   usage: 'sync [FILE]...',
   help: 'Synchronize cached writes to persistent storage.',

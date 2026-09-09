@@ -58,6 +58,7 @@ export function runFallocate(
 
 export const fallocateCommand: LinuxCommand = {
   name: 'fallocate',
+  package: 'util-linux',
   needsNetworkContext: false,
   usage: 'fallocate [-o OFFSET] -l LENGTH FILE...',
   options: FALLOCATE_OPTIONS,

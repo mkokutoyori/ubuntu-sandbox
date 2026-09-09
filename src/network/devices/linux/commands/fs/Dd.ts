@@ -227,6 +227,7 @@ export function runDd(
 
 export const ddCommand: LinuxCommand = {
   name: 'dd',
+  package: 'coreutils',
   needsNetworkContext: false,
   usage: 'dd [if=FILE] [of=FILE] [bs=BYTES] [count=N] [seek=N] [skip=N] [status=LEVEL] [conv=CONVS]',
   help: 'Convert and copy a file.',

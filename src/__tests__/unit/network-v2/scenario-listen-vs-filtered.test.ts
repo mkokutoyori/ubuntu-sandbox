@@ -139,7 +139,7 @@ describe('Scénario 2 — LISTEN local vs filtré côté réseau', () => {
     expect(ss).toMatch(/:8080/);
   });
 
-  it('ACL routeur en amont: LISTEN toujours actif, mais le poste distant voit un timeout (drop silencieux)', async () => {
+  it('ACL routeur en amont: LISTEN toujours actif, et le distant voit ce que le routeur consent a dire', async () => {
     const { clientRemote, server, gw } = await buildRouted();
     for (const cmd of [
       'enable', 'configure terminal',
@@ -149,10 +149,21 @@ describe('Scénario 2 — LISTEN local vs filtré côté réseau', () => {
     ]) await gw.executeCommand(cmd);
     const local = await server.executeCommand('ss -tlnp');
     expect(local).toMatch(/:8080/);
-    const remote = await clientRemote.executeCommand('nc -zv 10.0.0.20 8080');
-    expect(remote).toMatch(/timed out/i);
-    expect(remote).not.toMatch(/refused/i);
-    expect(remote).not.toMatch(/succeeded|open/i);
+
+    const parDefaut = await clientRemote.executeCommand('nc -zv 10.0.0.20 8080');
+    expect(parDefaut).toMatch(/permission denied/i);
+    expect(parDefaut).not.toMatch(/refused/i);
+    expect(parDefaut).not.toMatch(/succeeded|open/i);
+
+    for (const cmd of [
+      'enable', 'configure terminal',
+      'interface GigabitEthernet0/0', 'no ip unreachables', 'end',
+    ]) await gw.executeCommand(cmd);
+
+    const silencieux = await clientRemote.executeCommand('nc -zv 10.0.0.20 8080');
+    expect(silencieux).toMatch(/timed out/i);
+    expect(silencieux).not.toMatch(/refused/i);
+    expect(silencieux).not.toMatch(/succeeded|open/i);
   });
 
   it('divergence documentée: local=LISTEN, iptables DROP → deux vérités observables selon le point de mesure', async () => {
