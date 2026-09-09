@@ -2914,3 +2914,51 @@ ecrire une seconde fois ce que chaque gestionnaire sait deja, sur un
 moteur qui doit disparaitre. Chaque famille migree en ferme son lot,
 et le sous-mode entre alors dans le balayage — l'y faire entrer avant
 epinglerait le defaut au lieu de le mesurer.
+
+### [acl] les SOUS-MODES d'ACL divergent encore, et un commutateur accepte `evaluate` dans une liste STANDARD
+Les TETES (`access-list`, `ip access-list`) sont declarees une fois pour
+les deux plateformes. Leurs SOUS-MODES ne le sont pas : le routeur en a
+deux (`config-std-nacl`, `config-ext-nacl`), le commutateur un seul
+(`config-acl`), partage de surcroit avec `arp access-list`.
+**Mesure**, meme frappe des deux cotes, dans `ip access-list standard SL` :
+- `evaluate REFLEX` — routeur : `% Invalid input detected at '^' marker.`
+  Commutateur : ACCEPTE, et la ligne ` evaluate REFLEX` entre dans
+  `show running-config`. Une clause de liste REFLEXIVE dans une liste
+  standard n'existe pas ; la configuration exportee porte donc une
+  ligne que la machine a inventee, et qui sera rejouee a l'import.
+- `permit ?` — le commutateur propose `icmp`, `ip`, `tcp`, `udp`, qui
+  n'appartiennent qu'a une liste ETENDUE. Les quatre sont refuses si
+  on les tape : quatre mots annonces qui ne s'executent pas.
+- les descriptions du sous-mode sont derivees du MOT-CLE cote
+  commutateur — « ACL deny », « ACL permit », « ACL no », « ACL
+  evaluate » — la ou le routeur rend celles d'IOS (« Specify packets to
+  reject », « Remove an entry »…).
+- `sequence` : `?` annonce `<cr>` des deux cotes alors que la frappe
+  est incomplete ; le routeur y propose `permit`/`deny` sans jamais
+  annoncer le NUMERO qu'elle prend d'abord, le commutateur un `WORD`
+  pour un nombre. `sequence` seul rend `% Incomplete command.` sur le
+  routeur et `% Invalid sequence number.` sur le commutateur ;
+  `sequence 10` rend `% Incomplete command.` la et
+  `% Invalid input detected at '^' marker.` ici.
+**Report** : faire adopter au commutateur les deux sous-modes du
+routeur touche aussi `arp access-list`, qui vit dans le meme trie et
+n'a rien a voir avec les listes IP. C'est un lot a part, pas un
+supplement a celui-ci.
+
+### [tests] `wan-vpn-tests` 15.09 tombe par intermittence dans un grand balayage
+`15.09 — Huawei BR3 routing should remain intact with VPN config` a
+rendu `expected '…' to contain '0% packet loss'` une fois sur deux
+passages du MEME jeu de 234 fichiers.
+**Mesure** : seul, il passe des deux cotes ; dans le grand balayage il
+est tombe au premier passage sur la branche, et pas au second, ni sur
+le meme jeu joue sur la base. Un `ping` qui perd des paquets n'est pas
+un depassement de delai — `pingOnSimulatedClock` lui prete deja une
+horloge virtuelle, et `advanceUntilSettled` est borne en TOURS, pas en
+secondes. La piste la plus probable est un etat partage entre fichiers
+d'un meme worker : `beforeEach` y remet a zero les generateurs de noms
+et de MAC, ce que `setupGlobalState` fait deja, et deux remises a zero
+peuvent redonner a un equipement une adresse qu'un autre porte encore.
+**Report** : un cas qui tombe une fois sur deux ne dit pas ce qu'il
+mesure. Le stabiliser demande de trouver le fichier avec lequel il se
+couple, ce qui est un lot en soi — et il ne bloque aucun autre travail
+tant qu'il est nomme ici.
