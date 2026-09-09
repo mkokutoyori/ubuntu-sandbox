@@ -404,23 +404,24 @@ export class TestConnectionCmdlet implements ICmdlet {
       return null;
     }
 
-    const probe = net.testPingProbe?.(target) ?? null;
-    const reachable = probe?.success ?? false;
-    const rttMs = probe?.success ? Math.max(1, Math.round(probe.rttMs)) : 0;
+    const probe = net.testPingProbe?.(target, count) ?? null;
+    const probes = probe?.probes ?? [];
     const resolvedIp = probe?.resolvedIp ?? (target.includes(':') ? '' : target);
     const sourceIp = probe ? (net.egressInfoFor?.(target)?.sourceIp ?? 'localhost') : 'localhost';
 
-    if (ctx.named['quiet'] === true) return reachable;
+    if (ctx.named['quiet'] === true) return probes.some((p) => p.success);
 
     const out: PSValue[] = [];
-    for (let i = 1; i <= count; i++) {
+    for (let i = 0; i < count; i++) {
+      const attempt = probes[i];
+      const answered = attempt?.success ?? false;
       out.push({
         Source: sourceIp,
         Destination: target,
         IPV4Address: resolvedIp,
         Bytes: 32,
-        'Time(ms)': rttMs,
-        Status: reachable ? 'Success' : 'Failure',
+        'Time(ms)': answered ? Math.max(1, Math.round(attempt!.rttMs)) : 0,
+        Status: answered ? 'Success' : 'Failure',
       } as Record<string, PSValue>);
     }
     return out as PSValue;
@@ -1452,8 +1453,8 @@ export class TestNetConnectionCmdlet implements ICmdlet {
 
     const probe = net.testPingProbe?.(target) ?? null;
     const resolved = probe?.resolvedIp ?? '';
-    const pingSucceeded = probe?.success ?? false;
-    const rttMs = probe?.success ? Math.round(probe.rttMs) : 0;
+    const pingSucceeded = probe?.probes[0]?.success ?? false;
+    const rttMs = pingSucceeded ? Math.round(probe!.probes[0]!.rttMs) : 0;
 
     const tcpTested = port !== undefined;
     const tcpSucceeded = tcpTested && resolved !== ''

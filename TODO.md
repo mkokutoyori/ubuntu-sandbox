@@ -2731,26 +2731,16 @@ joint, ou Windows numerote les reseaux qu'il a vus (« Network 2 ») — un
 etat persistant qui n'existe pas ici. Inventer l'un des deux serait pire
 que la confusion actuelle, qui est au moins stable.
 
-### [nettcpip] `Test-Connection -Count N` sonde UNE fois et rend N lignes identiques
+### [nettcpip] `Test-Connection` : dix parametres declares et lus par personne
 
-**Mesure** : `TestConnectionCmdlet` appelle `net.testPingProbe(target)` une
-seule fois, puis recopie la meme ligne `count` fois dans une boucle — meme
-RTT, meme `Status`, meme adresse. Sur le fil, `Test-Connection -Count 4`
-emet donc UN echo la ou `ping -n 4` en emet quatre : les deux vues d'un
-meme geste ne mettent pas le meme trafic sur le cable, et un laboratoire
-qui compte les trames voit la difference. `-Delay`, `-BufferSize`,
-`-TimeoutSeconds`, `-Source`, `-IPv4`/`-IPv6`, `-ResolveDestination`,
-`-Repeat`, `-Traceroute`, `-MtuSize` et `-TcpPort` sont declares par la
-documentation de PowerShell 7 et lus par personne ; `Status` rend
-`Success`/`Failure` alors que le champ est un `IPStatus`, dont `Failure`
-n'est pas une valeur (`TimedOut`, `DestinationHostUnreachable`…).
+**Mesure** : `-Delay`, `-BufferSize`, `-TimeoutSeconds`, `-Source`,
+`-IPv4`/`-IPv6`, `-ResolveDestination`, `-Repeat`, `-Traceroute`,
+`-MtuSize` et `-TcpPort` sont declares par la documentation de PowerShell
+et lus par personne ; `Status` rend `Success`/`Failure` alors que le champ
+est un `IPStatus`, dont `Failure` n'est pas une valeur (`TimedOut`,
+`DestinationHostUnreachable`…).
 
-**Non corrige ici** : le lot en cours porte sur les vues NetNeighbor /
-DnsClient / NetUDPEndpoint. Faire emettre N sondes veut dire passer par
-`executePingSequence` — le chemin que `ping` emprunte deja, donc une
-reutilisation et non une reecriture — et decider ce que `-Quiet` rend
-quand une sonde sur quatre repond (la documentation dit `$true` des
-qu'une seule aboutit). Les quatre jeux de parametres (`DefaultPing`,
+**Non corrige ici** : les quatre jeux de parametres (`DefaultPing`,
 `RepeatPing`, `TraceRoute`, `MtuSizeDetect`, `TcpPort`) sont un lot a
 soi.
 

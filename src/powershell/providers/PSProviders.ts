@@ -1311,12 +1311,8 @@ export interface INetworkProvider {
   getDhcpServer?(ifAlias: string): string | null;
   /** Test-Connection (ping) */
   testConnection(target: string): boolean;
-  /**
-   * Synchronous reachability probe: send a real ICMP echo, capture the
-   * reply via the bus's synchronous publish, return the outcome. Returns
-   * null only when the target cannot be resolved to an IP.
-   */
-  testPingProbe(target: string): { success: boolean; rttMs: number; resolvedIp: string } | null;
+  testPingProbe(target: string, count?: number):
+    { resolvedIp: string; probes: ReadonlyArray<{ success: boolean; rttMs: number }> } | null;
   /**
    * Synchronous TCP probe: open the socket, observe whether the handshake
    * settles to established inline. The simulator's bus is synchronous so

@@ -2185,7 +2185,7 @@ class WindowsNetworkAdapter implements INetworkProvider {
   }
   testConnection(target: string): boolean {
     const probe = this.testPingProbe(target);
-    return probe?.success ?? false;
+    return probe?.probes[0]?.success ?? false;
   }
   resolveDns(name: string): string[] { return this.pc.resolveDnsSync(name); }
   resolveDnsWithOptions(name: string, options: {
@@ -2204,11 +2204,15 @@ class WindowsNetworkAdapter implements INetworkProvider {
   clearDnsClientCache(): void { this.pc.dnsCache.flush(); }
   invokeWebRequest(url: string) { return this.pc.invokeWebRequest(url); }
   sendMailMessage(opts: Parameters<WindowsPC['sendMailMessage']>[0]) { return this.pc.sendMailMessage(opts); }
-  testPingProbe(target: string) {
+  testPingProbe(target: string, count = 1) {
     const ip = this.resolveTargetSync(target);
     if (!ip) return null;
-    const r = this.pc.sendPingProbeSync(ip);
-    return { success: r.success, rttMs: r.rttMs, resolvedIp: ip.toString() };
+    const probes: Array<{ success: boolean; rttMs: number }> = [];
+    for (let sent = 0; sent < Math.max(1, count); sent++) {
+      const r = this.pc.sendPingProbeSync(ip);
+      probes.push({ success: r.success, rttMs: r.rttMs });
+    }
+    return { resolvedIp: ip.toString(), probes };
   }
   traceRoute(target: string): string[] {
     const ip = this.resolveTargetSync(target);
