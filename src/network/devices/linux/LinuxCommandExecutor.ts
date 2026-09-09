@@ -105,6 +105,7 @@ import {
   STANDARD_BIN_PATHS, resolveExePath, checkCommandDependencies, canonicalBinPath,
 } from './service/CriticalFiles';
 import { PortsFilesystem } from './ports/PortsFilesystem';
+import { newProtocolCounters, type ProtocolCounters } from '@/network/layers/internet/ProtocolCounters';
 import { ServicePortProjection } from './ports/ServicePortProjection';
 import type { ServiceSocketServer } from './ports/ServiceSocketServer';
 import type { NginxControl } from './http/nginx/LinuxNginxService';
@@ -2151,7 +2152,7 @@ export class LinuxCommandExecutor {
     // generated files that always reflect the live table. `/etc/services`
     // is seeded once at construction from the canonical SystemFiles list.
     const portsFs = new PortsFilesystem(this.vfs);
-    portsFs.registerProcNet(table);
+    portsFs.registerProcNet(table, () => this.protocolCounters());
   }
 
   /** The SSH port-forwarding table — `-R` listeners are bound here too. */
@@ -2190,6 +2191,11 @@ export class LinuxCommandExecutor {
    * (docs/PRD-Frame-Only-Refactor.md P6).
    */
   private localDevice: object | null = null;
+
+  protocolCounters(): ProtocolCounters {
+    const holder = this.localDevice as { getProtocolCounters?: () => ProtocolCounters } | null;
+    return holder?.getProtocolCounters?.() ?? newProtocolCounters();
+  }
   setLocalDevice(device: object): void { this.localDevice = device; }
   getLocalDevice(): object | null { return this.localDevice; }
 
@@ -5092,7 +5098,7 @@ export class LinuxCommandExecutor {
       // 05, constat A8). A `case` here used to shadow that hook with a
       // second, independently-drifted implementation that only a script
       // (`bash script.sh`) could reach.
-      case 'netstat': return { output: cmdNetstat(args, this.ipNetworkCtx, this.isServer, this.socketTable, (p, pr) => this.resolveServiceName(p, pr), (name) => this.processMgr.list({ comm: name })[0]?.pid), exitCode: 0 };
+      case 'netstat': return { output: cmdNetstat(args, this.ipNetworkCtx, this.isServer, this.socketTable, (p, pr) => this.resolveServiceName(p, pr), (name) => this.processMgr.list({ comm: name })[0]?.pid, this.protocolCounters()), exitCode: 0 };
       case 'wget': return { output: cmdWget(args), exitCode: 0 };
       case 'dstat': {
         const parsed = parseDstatArgs(args);

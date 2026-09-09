@@ -9247,3 +9247,93 @@ reste `Media disconnected` dans `getmac`, elle ne recoit pas de GUID),
 un cas STRUCTUREL (`InterfaceIndex` portait deja le bon entier, ce qui
 isole le defaut dans le RENDU et non dans la donnee) et la
 NON-REGRESSION du filtre `Get-NetIPAddress` ci-dessus.
+
+## Une machine compte ses paquets, et `netstat -s` lit ce compte
+
+**Perimetre revendique** : `layers/internet/ProtocolCounters` (nouveau),
+`EndHost` (points de comptage), `Router` (le TYPE des compteurs, pas ses
+valeurs), `linux/ports/PortsFilesystem` (`/proc/net/snmp`),
+`LinuxNetCommands` (`netstat -s`), `WinFileCommands` +
+`WinNetstatStatistics` (nouveau, `netstat -s` de Windows). Rien du cote
+journalisation.
+
+**Mesure de depart** — deux postes cables sur un commutateur,
+`ping -c 3` cote Linux et `ping -n 3` cote Windows, puis la question aux
+deux plateformes :
+
+```
+Linux   netstat -s          Ip:  0 total packets received
+                                 0 requests sent out
+                            Icmp: 0 ICMP messages received
+                                  0 ICMP messages sent
+Linux   cat /proc/net/snmp  Ip: 1 64 0 0 0 0 0 0 0 0 ...
+Windows netstat -s          Active Connections
+                              Proto  Local Address  Foreign Address  State
+```
+
+**Trois defauts d'un coup.** Cote Linux, `netstat -s` ecrivait ses
+propres zeros dans son propre fichier sans jamais lire
+`/proc/net/snmp`, qui est POURTANT la source que le vrai `netstat`
+ouvre — deux ecritures du meme fait, toutes deux fausses, et rien pour
+dire laquelle est juste. Pire, la seule valeur non nulle qu'il produisait
+etait un mensonge : il rendait le nombre de sockets ETABLIES SOUS
+l'intitule « active connection openings », qui est un compteur cumulatif
+d'ouvertures, pas un etat instantane.
+
+Cote Windows, `-s` n'etait pas traite du tout : la commande tombait dans
+la branche par defaut et repondait la table des CONNEXIONS — une autre
+question que celle posee — alors que `-s` est annonce dans la liste de
+completion de `netstat`. C'est exactement la regle 6 : un mot que la
+CLI accepte et que le moteur n'honore pas.
+
+Et sous les deux, la machine ne comptait rien : `EndHost` n'avait aucun
+compteur de protocole, alors que `Router` en portait neuf depuis
+toujours.
+
+**L'autorite** : le vrai `netstat -s` de net-tools lit `/proc/net/snmp`
+et `/proc/net/netstat` ; les noms de champs sont ceux de la MIB-II
+(RFC 1213 / RFC 4293). Windows rend les memes compteurs sous ses propres
+intitules, releves sur une sortie capturee : `IPv4 Statistics` avec
+`Packets Received` / `Received Packets Delivered` / `Output Requests`,
+`ICMPv4 Statistics` en deux colonnes `Received` et `Sent`,
+`TCP Statistics for IPv4` et `UDP Statistics for IPv4`.
+
+**Une seule definition, une seule mesure.** `ProtocolCounters` decrit le
+jeu MIB-II une fois ; `RouterCounters` en devient un `Pick`, de sorte
+que « ce que veut dire `icmpOutEchoReps` » est ecrit UNE fois pour les
+routeurs comme pour les hotes. Les valeurs, elles, restent par machine.
+
+Le comptage se fait la ou le datagramme passe reellement, pas la ou une
+commande voudrait le lire : `ipInReceives` a l'entree de `handleIPv4`,
+`ipInDelivers` apres le pare-feu, `icmpIn*` dans `handleICMP`,
+`udpInDatagrams` / `udpNoPorts` dans `deliverUDP`, `ipForwDatagrams`
+dans `forwardIPv4`, et l'emission dans l'unique surcharge
+`EndHost.sendFrame` — la seule porte par laquelle une trame sort.
+
+**Le piege mesure** : `ping` n'emet PAS par `sendIpv4FrameArpAware`, il
+appelle `sendFrame` directement, comme le font aussi la reponse d'echo
+et les erreurs ICMP. Un premier jet comptait dans
+`sendIpv4FrameArpAware` : la reception montait, l'emission restait a
+zero, et seule la sonde l'a montre. Le comptage a donc ete descendu dans
+`sendFrame`. Reste alors a distinguer le datagramme RELAYE — que MIB-II
+exclut d'`ipOutRequests` — du datagramme local, et la file d'attente ARP
+porte les deux : l'appartenance se marque sur le datagramme lui-meme
+(`WeakSet`), ce qui reste exact meme quand l'emission est differee par
+une resolution ARP froide.
+
+**Ce qui vaut zero vaut zero, pas rien** : les champs que ce simulateur
+ne mesure pas (`ipReasmReqds`, `tcpRetransSegs`, horodatages ICMP…) sont
+declares et rendus a `0`. Un agent de supervision distingue un compteur
+a zero d'un compteur absent ; et le jour ou l'un d'eux sera mesure, sa
+place existe deja.
+
+**Discrimination** (`git stash push -- src/network`) :
+`probe-une-machine-compte-ses-paquets.test.ts` (15 cas), 11 tombent
+contre l'etat d'avant. Les 4 autres sont nommes dans l'en-tete : trois
+TEMOINS (les compteurs de LIEN, deja justes, ne bougent pas ; `netstat`
+sans `-s` rend toujours la table des connexions ; `netstat -e` de
+Windows compte toujours les octets du lien) et un cas VACUEUX AVANT,
+NON-REGRESSION APRES (« une machine qui n'a rien echange compte zero,
+pas rien » : avant le correctif tout valait zero, donc il ne prouvait
+rien ; apres, il est le seul a garantir qu'un compteur non mesure se lit
+`0` et non pas absent).

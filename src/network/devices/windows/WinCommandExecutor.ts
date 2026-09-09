@@ -10,6 +10,7 @@ import { IPAddress, MACAddress, SubnetMask } from '../../core/types';
 import type { ARPEntry } from '../EndHost';
 import type { NetFirewallRuleEntry } from './netFirewallRule';
 import type { WindowsAdapterIdentity } from './netAdapter';
+import type { ProtocolCounters } from '../../layers/internet/ProtocolCounters';
 
 /** Ping result from EndHost.executePingSequence */
 export interface PingResult {
@@ -93,6 +94,8 @@ export interface WinCommandContext {
   ports: Map<string, Port>;
   /** L'identite de la carte — description, index, GUID — lue a sa source. */
   adapterIdentityOf(portName: string): WindowsAdapterIdentity;
+  /** Les compteurs MIB-II que la machine tient — `netstat -s` les lit ici. */
+  protocolCounters(): ProtocolCounters;
   /** Default gateway IP string or null */
   defaultGateway: string | null;
   /** IPv6 default gateway string or null (router-advertised or static) */
