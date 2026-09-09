@@ -9531,3 +9531,101 @@ connexes : 117 fichiers, 1889 cas, tous verts. `npm run typecheck` :
 248 erreurs, comme sur la base ; eslint sans probleme avant comme
 apres. Trois cas e2e Playwright verifient l'addition de `Tasks`,
 l'accord memoire `top`/`ps` et les deux formats de `TIME`.
+
+## `env` rend l'ENVIRONNEMENT, pas la table de variables du shell
+
+**Perimetre revendique** : `bash/runtime/Environment` (l'ensemble
+exporte a la construction), `bash/interpreter/BashInterpreter`
+(l'environnement remis au processus enfant). Rien du cote
+journalisation.
+
+**Mesure de depart** — un poste Linux neuf, `env | sort` :
+
+```
+#=0
+*=
+0=bash
+@=
+EUID=1000
+HOME=/home/user
+HOSTNAME=linux-pc
+…
+UID=1000
+```
+
+**Six lignes qui n'ont rien a faire la.** `$#`, `$*`, `$@` et `$0` sont
+des PARAMETRES du shell — le nombre d'arguments, la liste des
+arguments, le nom du programme — et n'entrent jamais dans
+l'environnement d'un processus. `UID`, `EUID` et `HOSTNAME` sont des
+variables que bash pose pour lui-meme et n'exporte pas.
+
+**Le mecanisme existait pourtant** : `Environment` tient un ensemble
+`exported` et rend `getExported()`, que `export -p` lit deja
+correctement. Mais l'interprete passait `getAll()` — TOUTE la table —
+au processus enfant. Un critere stocke et jamais evalue : la regle 6.
+Le commentaire de `ExecuteCommand` promettait meme le bon contrat
+(« exported variables plus any per-command `VAR=val` prefix
+assignments ») ; c'est le code qui ne le tenait pas.
+
+**L'autorite** — RELEVEE sur le GNU/Linux qui execute ce depot :
+
+```
+$ bash -c 'for v in HOSTNAME PPID BASH OSTYPE SHELL PWD OLDPWD IFS; do
+    printf "%-10s env=%s set=%s\n" "$v" "$(env|grep -c "^$v=")" "${!v:+yes}"; done'
+HOSTNAME   env=0 set=yes
+PPID       env=0 set=yes
+BASH       env=0 set=yes
+OSTYPE     env=0 set=yes
+SHELL      env=1 set=yes
+PWD        env=1 set=yes
+OLDPWD     env=1 set=yes
+IFS        env=0 set=yes
+$ bash -c 'env | grep -c "^EUID="; env | grep -c "^UID="'
+0
+0
+```
+
+La distinction n'est donc pas « connu / inconnu » mais « exporte / pas
+exporte » : `HOSTNAME`, `PPID`, `BASH`, `OSTYPE`, `IFS`, `UID` et
+`EUID` sont POSES et VISIBLES dans le shell sans etre dans
+l'environnement.
+
+**Ce qui a change** : les variables heritees a la construction d'un
+`Environment` sont marquees exportees — c'est ce qu'elles sont, un
+processus herite d'un environnement — sauf celles que bash pose pour
+lui-meme, listees d'apres la mesure ci-dessus. Et l'interprete remet a
+l'enfant `getExported()` plus les affectations `VAR=val` posees devant
+la commande, exactement le contrat que son commentaire annoncait.
+
+**Ce que la sonde n'avait pas prevu** : la premiere version du
+correctif a casse cinq cas, tous instructifs.
+
+`FOO=1 ssh alice@hote env` cessait de transmettre `FOO`. C'est une
+VRAIE regression et pas une premisse fausse : bash exporte une
+affectation de prefixe pour la duree de cette commande. D'ou
+`childEnvironment(prefixAssigned)`, qui recompose les deux moities.
+
+En revanche `env-vars.test.ts` affirmait `printenv` doit contenir
+`HOSTNAME=linux-pc`. C'etait le DEFAUT epingle comme contrat : la
+mesure sur machine reelle dit `env=0`. Le cas a ete reecrit — il exige
+maintenant que `HOSTNAME` soit ABSENT de `printenv` et PRESENT pour
+`echo $HOSTNAME`, ce qui est la vraie propriete et distingue les deux
+tables.
+
+**Discrimination** (`git stash push -- src/network src/bash`) :
+`probe-env-ne-rend-que-l-environnement.test.ts` (11 cas), 5 tombent
+contre l'etat d'avant. Les 6 autres sont nommes dans l'en-tete : deux
+TEMOINS qui ENCADRENT le defaut (`export -p` lisait deja
+`getExported()` et disait donc la verite pendant qu'`env` mentait ;
+`set` doit continuer de montrer `UID` et `HOME`, ce qui prouve qu'on
+n'a pas EFFACE les variables non exportees mais seulement cesse de les
+transmettre), deux NON-REGRESSIONS qui gardent la reparation honnete
+(l'environnement herite est toujours la ; `$UID` reste lisible), et
+deux DEJA JUSTES (`printenv` et `env` lisaient deja la meme table —
+fausse ensemble — et le cas nominal de la variable exportee marchait).
+Suites connexes : bash / shell / terminal, 125 fichiers et 1639 cas ;
+puis 240 fichiers et 3785 cas cote reseau, tous verts.
+`npm run typecheck` : 248 erreurs, comme sur la base ; eslint inchange.
+Deux cas e2e Playwright verifient l'absence de `UID`/`HOSTNAME` dans
+`env`, leur presence dans le shell, et les trois formes
+`VAR=` / `export VAR=` / `VAR= commande`.
