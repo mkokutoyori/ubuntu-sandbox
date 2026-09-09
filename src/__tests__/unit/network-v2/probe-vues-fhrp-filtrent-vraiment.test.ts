@@ -248,9 +248,11 @@ describe('non-regression — les vues sans argument et les vues nommees', () => 
       expect(out.match(/^Track \d+/gm)).toHaveLength(1);
     });
 
-  it('`show track 9999` garde son message', async () => {
+  it('un numero HORS de la plage annoncee est refuse, un numero DEDANS garde son message', async () => {
     const d = await routeur('O9');
     expect(String(await d.executeCommand('show track 9999')))
+      .toContain("% Invalid input detected at '^' marker.");
+    expect(String(await d.executeCommand('show track 500')))
       .toContain('% Track object does not exist');
   });
 

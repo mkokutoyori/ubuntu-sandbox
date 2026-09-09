@@ -70,9 +70,12 @@ describe('Scenario 9 — dual-stack IPv4/IPv6 on port 22', () => {
   });
 
   it('tcpdump on the server captures BOTH the IPv4 handshake and the IPv6 handshake', async () => {
+    const pending = server.executeCommand('tcpdump -n -c 12 port 22');
+    await new Promise((resolve) => setTimeout(resolve, 50));
     await client4.executeCommand('nc -zv 192.168.1.1 22');
     await client6.executeCommand('nc -zv fd00::1 22');
-    const cap = await server.executeCommand('tcpdump -n -c 100 port 22');
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    const cap = await pending;
     expect(cap).toMatch(/192\.168\.1\.2\..*192\.168\.1\.1\.22/);
     expect(cap).toMatch(/fd00::2\..*fd00::1\.22/);
   });

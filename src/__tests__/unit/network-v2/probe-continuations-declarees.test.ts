@@ -100,7 +100,8 @@ describe('les tables decrivent ce que la machine offre', () => {
 
   it('un echantillon du routeur est bien rendu par `?`', () => {
     const r = new CiscoRouter('C1') as unknown as Dev;
-    expect(offerts(r.cliHelp('show track '))).toEqual(expect.arrayContaining(['brief', 'up']));
+    expect(offerts(r.cliHelp('show track '))).toEqual(expect.arrayContaining(['brief']));
+    expect(offerts(r.cliHelp('show track '))).not.toContain('up');
     expect(offerts(r.cliHelp('show ip igmp groups ')))
       .toEqual(expect.arrayContaining(['detail']));
     expect(offerts(r.cliHelp('show interfaces ')))
