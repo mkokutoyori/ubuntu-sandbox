@@ -106,6 +106,7 @@ import {
 } from './service/CriticalFiles';
 import { PortsFilesystem } from './ports/PortsFilesystem';
 import { newProtocolCounters, type ProtocolCounters } from '@/network/layers/internet/ProtocolCounters';
+import type { KernelBootFacts } from './boot/KernelBootLog';
 import { ServicePortProjection } from './ports/ServicePortProjection';
 import type { ServiceSocketServer } from './ports/ServiceSocketServer';
 import type { NginxControl } from './http/nginx/LinuxNginxService';
@@ -572,7 +573,7 @@ export class LinuxCommandExecutor {
     this.iptables = new LinuxIptablesManager(this.vfs, (port, proto) => this.resolveServiceName(port, proto));
     this.ip6tables = new LinuxIptablesManager(this.vfs, (port, proto) => this.resolveServiceName(port, proto), { family: 6 });
     this.firewall = new LinuxFirewallManager(this.vfs, this.iptables, this.ip6tables);
-    this.logMgr = new LinuxLogManager(this.vfs, this.identity.kernel.release);
+    this.logMgr = new LinuxLogManager(this.vfs, this.bootFacts());
     this.netConfig = new LinuxNetworkConfigManager(this.vfs, this.logMgr);
     this.auditLog = new LinuxAuditLog(this.vfs);
     this.auditRules = new LinuxAuditRules(this.auditLog, this.vfs);
@@ -747,6 +748,7 @@ export class LinuxCommandExecutor {
     this.vfs.mkdirp('/proc/sys/kernel', 0o755, 0, 0);
     const k = () => this.identity.kernel;
     this.vfs.registerGeneratedFile('/proc/version', () => k().toProcVersion());
+    this.vfs.registerGeneratedFile('/proc/cmdline', () => `${this.logMgr.kernelCommandLine()}\n`);
     this.vfs.registerGeneratedFile('/proc/sys/kernel/ostype', () => `${k().sysname}\n`);
     this.vfs.registerGeneratedFile('/proc/sys/kernel/osrelease', () => `${k().release}\n`);
     this.vfs.registerGeneratedFile('/proc/sys/kernel/version', () => `${k().version}\n`);
@@ -2191,6 +2193,35 @@ export class LinuxCommandExecutor {
    * (docs/PRD-Frame-Only-Refactor.md P6).
    */
   private localDevice: object | null = null;
+
+  /**
+   * Ce que le noyau a vu au demarrage, lu la ou chaque fait vit deja :
+   * l'identite pour la banniere et la version, le profil materiel pour
+   * le processeur, la memoire, le chassis, le disque racine et les
+   * cartes. `dmesg` en portait sa propre copie, qui contredisait
+   * `/proc/version`, `/proc/cpuinfo`, `/proc/meminfo` et `/sys/…/dmi`.
+   */
+  private bootFacts(): KernelBootFacts {
+    const hw = this.hardware;
+    const racine = hw.storage.flatMap((d) => d.partitions).find((p) => p.mountPoint === '/');
+    return {
+      procVersion: this.identity.kernel.toProcVersion().trim(),
+      kernelRelease: this.identity.kernel.release,
+      cpuModel: hw.cpu.modelName,
+      cpuFamily: hw.cpu.cpuFamily,
+      cpuModelId: hw.cpu.model,
+      cpuStepping: hw.cpu.stepping,
+      memTotalKib: hw.memory.totalKib,
+      installedKib: hw.memory.installedKib,
+      dmiVendor: hw.manufacturer,
+      dmiProduct: hw.productName,
+      biosVersion: hw.firmware.version,
+      biosDate: hw.firmware.releaseDate,
+      rootPartition: racine?.name ?? 'sda1',
+      rootFsType: racine?.fsType ?? 'ext4',
+      adapters: hw.adapters.map((a) => ({ name: a.name, driver: a.driver, busInfo: a.busInfo })),
+    };
+  }
 
   protocolCounters(): ProtocolCounters {
     const holder = this.localDevice as { getProtocolCounters?: () => ProtocolCounters } | null;

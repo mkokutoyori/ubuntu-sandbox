@@ -195,24 +195,30 @@ function cacheTable(p: HardwareProfile): string {
 }
 
 function memoryTable(p: HardwareProfile): string {
-  const total = p.memory.totalKib;
-  return [
+  const modules = p.memory.modules;
+  const lines = [
     'Handle 0x1000, DMI type 16, 23 bytes',
     'Physical Memory Array',
     `\tLocation: System Board Or Motherboard`,
     `\tUse: System Memory`,
-    `\tMaximum Capacity: ${Math.ceil(total / 1024)} MB`,
-    `\tNumber Of Devices: 1`,
-    '',
-    'Handle 0x1100, DMI type 17, 40 bytes',
-    'Memory Device',
-    `\tArray Handle: 0x1000`,
-    `\tSize: ${Math.ceil(total / 1024)} MB`,
-    `\tForm Factor: DIMM`,
-    `\tType: DDR4`,
-    `\tSpeed: 2400 MT/s`,
-    `\tManufacturer: ${p.manufacturer}`,
-  ].join('\n');
+    `\tMaximum Capacity: ${Math.ceil(p.memory.installedKib / 1024)} MB`,
+    `\tNumber Of Devices: ${modules.length}`,
+  ];
+  modules.forEach((m, index) => {
+    lines.push(
+      '',
+      `Handle 0x${(0x1100 + index).toString(16).toUpperCase()}, DMI type 17, 40 bytes`,
+      'Memory Device',
+      `\tArray Handle: 0x1000`,
+      `\tSize: ${m.sizeMib} MB`,
+      `\tForm Factor: ${m.formFactor}`,
+      `\tLocator: ${m.locator}`,
+      `\tType: ${m.type}`,
+      `\tSpeed: ${m.speedMtps} MT/s`,
+      `\tManufacturer: ${m.manufacturer}`,
+    );
+  });
+  return lines.join('\n');
 }
 
 function helpText(): string {

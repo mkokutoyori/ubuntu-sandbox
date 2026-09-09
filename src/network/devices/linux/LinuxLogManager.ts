@@ -5,6 +5,7 @@
 
 import { VirtualFileSystem } from './VirtualFileSystem';
 import type { IEventBus, Unsubscribe } from '@/events/EventBus';
+import { kernelBootMessages, kernelCommandLine, defaultKernelBootFacts, type KernelBootFacts } from './boot/KernelBootLog';
 
 // ── Priority levels (syslog) ─────────────────────────────────────
 const PRIORITY_NAMES: Record<string, number> = {
@@ -128,11 +129,19 @@ export class LinuxLogManager {
    */
   private kernelRelease = '5.15.0-130-generic';
 
-  constructor(private vfs: VirtualFileSystem, kernelRelease?: string) {
-    if (kernelRelease) this.kernelRelease = kernelRelease;
+  private readonly bootFacts: KernelBootFacts;
+
+  constructor(private vfs: VirtualFileSystem, facts?: KernelBootFacts) {
+    this.bootFacts = facts ?? defaultKernelBootFacts();
+    this.kernelRelease = this.bootFacts.kernelRelease;
     this.bootTime = new Date(Date.now() - 30_000);
     this.bootId = this.generateBootId();
     this.populateBootMessages();
+  }
+
+  /** La ligne de commande du noyau, celle que `/proc/cmdline` rend. */
+  kernelCommandLine(): string {
+    return kernelCommandLine(this.bootFacts.kernelRelease, this.bootFacts.rootPartition);
   }
 
   /**
@@ -977,26 +986,7 @@ export class LinuxLogManager {
   private populateBootMessages(): void {
     const bt = this.bootTime;
 
-    // Kernel dmesg messages
-    const kernelMsgs: Array<{ offset: number; level: number; msg: string }> = [
-      { offset: 0.000000, level: 6, msg: `Linux version ${this.kernelRelease} (buildd@lcy02-amd64-032) (gcc-11 (Ubuntu 11.3.0-1ubuntu1~22.04) 11.3.0) #1 SMP x86_64` },
-      { offset: 0.000001, level: 6, msg: `Command line: BOOT_IMAGE=/vmlinuz-${this.kernelRelease} root=/dev/sda1 ro quiet splash` },
-      { offset: 0.010000, level: 6, msg: 'DMI: QEMU Standard PC (i440FX + PIIX, 1996), BIOS 1.16.2-debian-1.16.2-1 04/01/2014' },
-      { offset: 0.050000, level: 6, msg: 'Memory: 2048000K/2097152K available (14339K kernel code, 2560K rwdata)' },
-      { offset: 0.100000, level: 6, msg: 'CPU: Intel(R) Core(TM) i7-10750H CPU @ 2.60GHz' },
-      { offset: 0.500000, level: 6, msg: 'NET: Registered PF_INET protocol family' },
-      { offset: 0.600000, level: 6, msg: 'NET: Registered PF_INET6 protocol family' },
-      { offset: 0.300000, level: 6, msg: 'PCI: Using configuration type 1 for base access' },
-      { offset: 0.310000, level: 6, msg: 'pci 0000:00:01.0: PIIX/ICH IDE controller' },
-      { offset: 0.320000, level: 6, msg: 'usbcore: registered new interface driver usbfs' },
-      { offset: 0.330000, level: 6, msg: 'usbcore: registered new interface driver hub' },
-      { offset: 0.340000, level: 6, msg: 'e1000: Intel(R) PRO/1000 Network Driver' },
-      { offset: 0.350000, level: 6, msg: 'e1000 0000:00:03.0 eth0: (PCI:33MHz:32-bit) link up' },
-      { offset: 1.000000, level: 6, msg: 'EXT4-fs (sda1): mounted filesystem with ordered data mode. Opts: (null)' },
-      { offset: 1.200000, level: 6, msg: 'EXT4-fs (sda1): re-mounted. Opts: errors=remount-ro' },
-    ];
-
-    for (const km of kernelMsgs) {
+    for (const km of kernelBootMessages(this.bootFacts)) {
       this.dmesgBuffer.push({ offsetSec: km.offset, level: km.level, message: km.msg });
       // Also add to journal
       this.journal.push({

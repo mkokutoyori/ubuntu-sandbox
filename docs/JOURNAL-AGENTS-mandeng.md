@@ -9337,3 +9337,100 @@ NON-REGRESSION APRES (« une machine qui n'a rien echange compte zero,
 pas rien » : avant le correctif tout valait zero, donc il ne prouvait
 rien ; apres, il est le seul a garantir qu'un compteur non mesure se lit
 `0` et non pas absent).
+
+## `dmesg` raconte le demarrage de CETTE machine
+
+**Perimetre revendique** : `linux/boot/KernelBootLog` (nouveau),
+`LinuxLogManager` (les messages d'amorcage), `LinuxCommandExecutor`
+(`/proc/cmdline` et la lecture des faits), `commands/hw/Dmidecode`
+(l'inventaire memoire). Le reste de la journalisation n'est pas touche.
+
+**Mesure de depart** — un poste Linux neuf, puis la MEME question au
+tampon du noyau et aux vues qui portent deja la reponse :
+
+```
+dmesg          [0.000000] Linux version 5.15.0-130-generic
+                          (buildd@lcy02-amd64-032) (gcc-11 …11.3.0) #1 SMP x86_64
+/proc/version  Linux version 5.15.0-130-generic (buildd@lcy02-amd64-001)
+               (gcc (Ubuntu 11.4.0…) 11.4.0, GNU ld …) #140-Ubuntu SMP …
+
+dmesg          [0.100000] CPU: Intel(R) Core(TM) i7-10750H CPU @ 2.60GHz
+/proc/cpuinfo  model name : Intel(R) Xeon(R) CPU E5-2686 v4 @ 2.30GHz
+
+dmesg          [0.050000] Memory: 2048000K/2097152K available
+/proc/meminfo  MemTotal: 3981312 kB
+
+dmesg          [0.010000] DMI: … BIOS 1.16.2-debian-1.16.2-1 04/01/2014
+/sys/…/dmi/id  bios_version: 1.16.0-1
+
+dmesg          … 0.500000 … 0.600000 … 0.300000 … 0.310000 …
+```
+
+**Cinq contradictions sur une seule machine**, plus un tampon dont les
+horodatages RECULENT. Le tampon du noyau etait une liste de quinze
+phrases ecrites a la main, sans aucun lien avec le materiel et le noyau
+que la machine porte par ailleurs : un poste dont on changerait la RAM,
+le processeur ou le disque aurait continue de raconter le meme
+demarrage.
+
+**L'autorite** — RELEVEE sur le GNU/Linux qui execute ce depot, ce qui
+prime sur toute documentation :
+
+```
+$ cat /proc/version
+Linux version 6.18.44-fc-v24 (builder@sandboxing) (gcc (GCC) 15.2.0,
+GNU ld (GNU Binutils) 2.46) #1 SMP PREEMPT_DYNAMIC @0
+$ dmesg | head -1
+[    0.000000] Linux version 6.18.44-fc-v24 (builder@sandboxing) (gcc
+(GCC) 15.2.0, GNU ld (GNU Binutils) 2.46) #1 SMP PREEMPT_DYNAMIC @0
+```
+
+La premiere ligne de `dmesg` EST `/proc/version`, au prefixe
+d'horodatage pres — le noyau imprime `linux_banner` au demarrage et
+`/proc/version` rend ce meme `linux_banner`. Sur la meme machine :
+`smpboot: CPU0: Intel(R) Xeon(R) Processor @ 2.10GHz` reprend mot pour
+mot le `model name` de `/proc/cpuinfo` ; `Memory: 16437712K/16776824K
+available` encadre les 16461028 kB de `MemTotal` ; et les quarante
+premieres lignes du tampon ont des horodatages qui ne reculent jamais
+(verifie par tri).
+
+**Ce qui a change** : `KernelBootLog` construit les messages a partir
+des faits, la ou chacun vit deja — `SystemIdentity.kernel` pour la
+banniere, `HardwareProfile` pour le processeur, la memoire, le chassis,
+le disque racine et les cartes. Les messages sont tries par
+horodatage : un tampon est une chronologie, pas une liste.
+
+`/proc/cmdline` n'existait pas. Il existe maintenant, et il rend la
+MEME chaine que la ligne `Command line:` de `dmesg` — une seule
+ecriture, deux lecteurs.
+
+**Un defaut trouve en chemin, ferme dans le meme changement** :
+`dmidecode -t memory` annoncait `Size: 3888 MB`, c'est-a-dire
+`MemTotal` — la RAM VISIBLE DU NOYAU — la ou le SMBIOS decrit la
+barrette PHYSIQUE (4096 MB). Il ne rendait par ailleurs qu'un seul
+`Memory Device` quel que soit le nombre de barrettes, et ecrivait en dur
+un type, une vitesse et un fabricant que `MemoryModule` porte pourtant
+deja par barrette — donnees stockees et jamais rendues, alors que le
+`Win32_PhysicalMemory` de Windows les rend depuis un correctif
+precedent. `MemoryProfile.installedKib` existait deja : c'est lui qui
+repond desormais, aux deux endroits.
+
+**Une premisse fausse corrigee** (regle 7) : la sonde ecrite a l'aveugle
+affirmait que « deux machines de memoire differente racontent des
+demarrages differents » en comparant un poste et un serveur. FAUX :
+dans ce modele les deux profils portent la MEME `MemoryProfile` par
+defaut. Le cas a ete remplace par la propriete qui est vraie et qui est
+le vrai sujet — la RAM annoncee par `dmesg` est la somme des barrettes
+que `dmidecode` inventorie.
+
+**Discrimination** (`git stash push -- src/network`) :
+`probe-dmesg-raconte-cette-machine.test.ts` (13 cas), 8 tombent contre
+l'etat d'avant. Les 5 autres sont nommes dans l'en-tete : trois DEJA
+JUSTES (`uname -r`, le pilote `e1000`, la partition `sda1` — la copie
+en dur tombait juste sur un poste par defaut, et ces cas sont gardes
+parce qu'ils ne tombent plus juste par hasard) et deux TEMOINS
+(`journalctl -k` et `dmesg -T`, les deux autres vues du MEME tampon,
+qui prouvent qu'on n'a ni perdu ni ajoute de message). Suites connexes :
+91 fichiers, 1944 cas, tous verts. `npm run typecheck` : 248 erreurs,
+comme sur la base ; eslint inchange. Deux cas e2e Playwright lisent la
+banniere, le materiel et `/proc/cmdline` dans le vrai terminal.
