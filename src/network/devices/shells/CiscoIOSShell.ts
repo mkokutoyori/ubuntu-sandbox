@@ -131,7 +131,7 @@ import {
   buildNamedStdACLCommands, buildNamedExtACLCommands,
   buildIPv6ACLGlobalCommands, buildIPv6ACLModeCommands,
   registerACLShowCommands, aclShowSpecs,
-  parseCiscoAce, texteDeRemarque,
+  parseCiscoAce, texteDeRemarque, type NamedAclEditContext,
 } from './cisco/CiscoAclCommands';
 import { IOS_ACL_NUMBERING } from '../router/ACLEngine';
 import {
@@ -1157,6 +1157,13 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
   getSelectedRouteMap(): { name: string; seq: number } | null { return this.selectedRouteMap; }
   setSelectedRouteMap(v: { name: string; seq: number } | null): void { this.selectedRouteMap = v; }
 
+  private namedAclEditContext(): NamedAclEditContext {
+    return {
+      engine: () => this.d()._getACLEngineInternal(),
+      getSelectedACL: () => this.getSelectedACL(),
+    };
+  }
+
   private aclHeadHost(): AclHeadHost {
     const entree = (id: number, action: 'permit' | 'deny', queue: string): string => {
       const parsed = parseCiscoAce(
@@ -1918,8 +1925,8 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
     this.configRouterTrie.setCompletionFilter((path, keyword) =>
       routerKeywordBelongsTo(path.length > 0 ? path[0] : keyword,
         this.selectedRoutingProto?.proto ?? 'rip'));
-    buildNamedStdACLCommands(this.configStdNaclTrie, this);
-    buildNamedExtACLCommands(this.configExtNaclTrie, this);
+    buildNamedStdACLCommands(this.configStdNaclTrie, this.namedAclEditContext());
+    buildNamedExtACLCommands(this.configExtNaclTrie, this.namedAclEditContext());
     buildIPv6ACLGlobalCommands(this.configTrie, this);
     buildIPv6ACLModeCommands(this.configIpv6NaclTrie, this);
     // OSPF

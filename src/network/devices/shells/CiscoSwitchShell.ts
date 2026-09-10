@@ -80,6 +80,7 @@ import { etherChannelLimitFamily } from '@/cli/commands/aggregation/etherChannel
 import {
   parseCiscoAce, renderCiscoAce, formatCiscoAclEntry,
   showAccessListsFrom, isValidIosAclNumber,
+  buildNamedStdACLCommands, buildNamedExtACLCommands, type NamedAclEditContext,
   runningConfigACLFrom, runningConfigInterfaceACLFrom, IOS_REMARK_MAX,
 } from './cisco/CiscoAclCommands';
 import { IOS_ACL_NUMBERING } from '../router/ACLEngine';
@@ -142,6 +143,7 @@ import { mstConfigDigest, vlansMappedToInstanceZero } from '@/network/stp/MstCon
 export type CLIMode =
   | 'user' | 'privileged' | 'config' | 'config-if' | 'config-vlan'
   | 'config-mst' | 'config-line' | 'config-acl' | 'config-dhcp'
+  | 'config-std-nacl' | 'config-ext-nacl'
   | 'config-access-map' | 'config-archive' | 'config-archive-log'
   | 'config-time-range';
 
@@ -667,7 +669,17 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
   private stpMode = 'pvst';
   private ifStp = new Map<string, string[]>();
   private ifExtra = new Map<string, string[]>();
+  /**
+   * `config-acl` ne sert plus qu'aux ACL ARP.
+   *
+   * Il servait AUSSI les listes IP, standard et etendue confondues : une
+   * liste standard y proposait donc les protocoles et `evaluate`, qui
+   * n'appartiennent qu'a une etendue. Les listes IP ont desormais leurs
+   * deux arbres, batis par le meme code que ceux du routeur.
+   */
   private configAclTrie = new CommandTrie();
+  private configStdAclTrie = new CommandTrie();
+  private configExtAclTrie = new CommandTrie();
   private selectedAcl: string | null = null;
   private selectedAclType: 'standard' | 'extended' = 'extended';
   private selectedArpAcl: string | null = null;
@@ -890,6 +902,8 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
       // existe, ne peut rien contenir, et dans laquelle on peut entrer.
       case 'config-view': return this.configViewTrie;
       case 'config-acl':  return this.configAclTrie;
+      case 'config-std-nacl': return this.configStdAclTrie;
+      case 'config-ext-nacl': return this.configExtAclTrie;
       case 'config-dhcp': return this.configDhcpTrie;
       case 'config-access-map': return this.configAccessMapTrie;
       case 'config-time-range': return this.configTimeRangeTrie;
@@ -1018,28 +1032,16 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
       config: this.configTrie, configIf: this.configIfTrie,
       privileged: this.privilegedTrie, user: this.userTrie,
     });
-    for (const kw of ['permit', 'deny', 'remark', 'no', 'evaluate']) {
-      this.configAclTrie.registerGreedy(kw, `ACL ${kw}`, (args) => {
-        if (this.selectedArpAcl) return this.handleArpAclLine(kw, args);
-        if (!this.selectedAcl) return '';
-        return this.handleNamedAclLine(kw, args);
-      });
+    for (const kw of ['permit', 'deny']) {
+      this.configAclTrie.registerGreedy(kw, `ARP ACL ${kw}`, (args) =>
+        this.handleArpAclLine(kw, args));
     }
-    // `10 permit ip any any` — une entree numerotee. Elle etait poussee
-    // dans le magasin de texte et n'atteignait NI le moteur NI, en fait,
-    // la vue : elle disparaissait entierement, en silence.
-    //
-    // `CiscoShellBase` reecrit deja un chiffre initial en `sequence <…>`
-    // dans une sous-vue d'ACL ; il fallait que le mode du commutateur en
-    // soit une (voir `isAclSubMode` plus bas) et que `sequence` existe.
-    this.configAclTrie.registerGreedy('sequence', 'Sequence number', (args) => {
-      if (!this.selectedAcl) return '';
-      const seq = parseInt(args[0] ?? '', 10);
-      if (isNaN(seq)) return '% Invalid sequence number.';
-      const kw = args[1]?.toLowerCase();
-      if (kw !== 'permit' && kw !== 'deny') return CISCO_ERRORS.INVALID_INPUT;
-      return this.handleNamedAclLine(kw, args.slice(2), seq);
-    });
+    const editionAcl: NamedAclEditContext = {
+      engine: () => this.d().getVaclEngine(),
+      getSelectedACL: () => this.selectedAcl,
+    };
+    buildNamedStdACLCommands(this.configStdAclTrie, editionAcl);
+    buildNamedExtACLCommands(this.configExtAclTrie, editionAcl);
     this.registerL3Commands();
     for (const t of [this.userTrie, this.privilegedTrie]) {
       const vueAcl = (args: string[]): string =>
@@ -2296,7 +2298,7 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
         this.selectedAclType = kind;
         this.selectedAcl = nom;
         moteur().ensureNamedAccessList(nom, kind);
-        this.mode = 'config-acl';
+        this.mode = kind === 'standard' ? 'config-std-nacl' : 'config-ext-nacl';
         return '';
       },
       removeNamed: (_kind: AclKind, nom) => {
@@ -5287,8 +5289,8 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
       configLine: this.configLineTrie,
       configDhcp: this.configDhcpTrie,
       privileged: this.privilegedTrie,
-      configStdNacl: this.configAclTrie,
-      configExtNacl: this.configAclTrie,
+      configStdNacl: this.configStdAclTrie,
+      configExtNacl: this.configExtAclTrie,
       configRouter: inutilise(),
       configRouterOspf: inutilise(),
       configRouteMap: inutilise(),
@@ -6490,58 +6492,6 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
    */
   protected override isAclSubMode(): boolean {
     return super.isAclSubMode() || this.mode === 'config-acl';
-  }
-
-  private handleNamedAclLine(kw: string, args: string[], sequence?: number): string {
-    const name = this.selectedAcl;
-    if (!name) return '';
-    const engine = this.d().getVaclEngine();
-    const type = this.selectedAclType;
-    const anyOpts = () => ({
-      srcIP: new IPAddress('0.0.0.0'), srcWildcard: new SubnetMask('255.255.255.255'),
-      ...(type === 'extended'
-        ? {
-          protocol: 'ip',
-          dstIP: new IPAddress('0.0.0.0'), dstWildcard: new SubnetMask('255.255.255.255'),
-        }
-        : {}),
-    });
-
-    if (kw === 'remark') {
-      engine.addNamedAccessListEntry(name, type, 'permit',
-        { ...anyOpts(), remark: args.join(' ') });
-      return '';
-    }
-    if (kw === 'evaluate') {
-      if (!args[0]) return CISCO_ERRORS.INCOMPLETE;
-      engine.addNamedAccessListEntry(name, type, 'permit',
-        { ...anyOpts(), evaluate: args[0] });
-      return '';
-    }
-    if (kw === 'no') {
-      const seq = parseInt(args[0] ?? '', 10);
-      if (!isNaN(seq) && args.length === 1) {
-        return engine.removeEntryBySequence(name, seq) ? '' : '% Sequence number not found';
-      }
-      const action = args[0]?.toLowerCase();
-      if (action !== 'permit' && action !== 'deny') return CISCO_ERRORS.INCOMPLETE;
-      const parsed = parseCiscoAce(args.slice(1), type);
-      if ('error' in parsed) return parsed.error;
-      const cible = renderCiscoAce(action, type, parsed.opts);
-      const acl = engine.findByName(name);
-      const idx = acl
-        ? acl.entries.findIndex((e) => formatCiscoAclEntry(type, e) === cible)
-        : -1;
-      if (idx === -1) return '% Access list entry does not exist.';
-      acl!.entries.splice(idx, 1);
-      return '';
-    }
-
-    const parsed = parseCiscoAce(args, type, sequence);
-    if ('error' in parsed) return parsed.error;
-    const ok = engine.addNamedAccessListEntry(
-      name, type, kw as 'permit' | 'deny', parsed.opts);
-    return ok ? '' : '% Duplicate sequence number.';
   }
 
   private abbreviateInterface(name: string): string {
