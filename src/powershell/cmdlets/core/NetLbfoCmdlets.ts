@@ -58,6 +58,7 @@ export class GetNetLbfoTeamCmdlet implements ICmdlet {
   readonly name = 'get-netlbfoteam';
   readonly displayName = 'Get-NetLbfoTeam';
   readonly aliases = [] as const;
+  readonly parameters = ['Name'] as const;
 
   execute(ctx: CmdletContext): PSValue {
     const net = requireTeaming(ctx);

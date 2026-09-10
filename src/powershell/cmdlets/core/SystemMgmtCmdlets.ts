@@ -97,6 +97,7 @@ export class GetScheduledTaskCmdlet implements ICmdlet {
   readonly name = 'get-scheduledtask';
   readonly displayName = 'Get-ScheduledTask';
   readonly aliases = [] as const;
+  readonly parameters = ['TaskName'] as const;
 
   execute(ctx: CmdletContext): PSValue {
     const tasks = requireTasks(ctx);
@@ -113,6 +114,7 @@ export class RegisterScheduledTaskCmdlet implements ICmdlet {
   readonly name = 'register-scheduledtask';
   readonly displayName = 'Register-ScheduledTask';
   readonly aliases = [] as const;
+  readonly parameters = ['Action', 'Principal', 'TaskName', 'TaskPath', 'Trigger'] as const;
 
   execute(ctx: CmdletContext): PSValue {
     const tasks = requireTasks(ctx);
@@ -328,6 +330,7 @@ export class UnregisterScheduledTaskCmdlet implements ICmdlet {
   readonly name = 'unregister-scheduledtask';
   readonly displayName = 'Unregister-ScheduledTask';
   readonly aliases = [] as const;
+  readonly parameters = ['TaskName'] as const;
 
   execute(ctx: CmdletContext): PSValue {
     const tasks = requireTasks(ctx);
@@ -601,6 +604,7 @@ export class GetCimInstanceCmdlet implements ICmdlet {
   // an object pipeline (Where-Object/Select-Object/…) needs the real cmdlet,
   // not the legacy string-formatting executor.
   readonly aliases = ['get-wmiobject', 'gwmi'] as const;
+  readonly parameters = ['ClassName'] as const;
 
   execute(ctx: CmdletContext): PSValue {
     const className = psValueToString(
